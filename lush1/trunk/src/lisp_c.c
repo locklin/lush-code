@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.15 2002-07-23 18:58:34 leonb Exp $
+ * $Id: lisp_c.c,v 1.16 2002-07-29 14:58:45 leonb Exp $
  **********************************************************************/
 
 
@@ -1036,9 +1036,9 @@ alloc_list(int ndim)
   struct srg *srg = malloc((ndim+i)*sizeof(dharg));
   if (!srg) 
     error(NIL,"Out of memory",NIL);
-  srg->type = ST_D;
+  srg->type = ST_U8;
   srg->data = ((dharg*)(srg)) + i;
-  srg->size = ndim;
+  srg->size = ndim * sizeof(dharg);
   srg->flags = 0;
   n = avl_add(srg);
   if (n==0)
