@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.24 2003-03-04 17:21:33 leonb Exp $
+ * $Id: dldbfd.c,v 1.25 2003-03-04 23:27:16 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1045,12 +1045,12 @@ mipself_install_patches(bfd *abfd)
       *(void**)&(howto->special_function) = mipself_new_lo16_reloc;
       ASSERT_BFD(mipself_old_lo16_reloc);
     }
+#if 0
   /* GPREL32 */
-  /*
   howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_MIPS_GPREL32);
   ASSERT_BFD(howto);
-  */
   *(void**)&(howto->special_function) = mipself_new_gprel32_reloc;
+#endif
   /* GOT16 */
   howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_MIPS_GOT16);
   ASSERT_BFD(howto);
