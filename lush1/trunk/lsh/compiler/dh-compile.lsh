@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.12 2002-07-23 19:25:04 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.13 2002-07-23 19:42:57 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -428,7 +428,15 @@
         (dhc-error "class slots are not typed" fname) )
       (if  (and (not (classinfo-t sup-cls))
                 (not (dhc-search-symtable (classname sup-cls) global-table)) )
-          (dhc-error "the superclass must be compiled first" sup-name))
+          ;; maybe there is another by the same name.
+          (let ((ncls (eval `:,(classname sup-cls))))
+            (if (and (classp ncls) 
+                     (= (classname ncls) (classname sup-cls))
+                     (= (getp ncls 'saved) sup-cls)
+                     (classinfo-t ncls) )
+                (setq sup-cls ncls)
+              ;; give up searching for the superclass
+              (dhc-error "the superclass must be compiled first" sup-name) ) ) )
       (setq sup-type (dhc-class-to-dhc-type sup-cls))
       ;; Slot types
       (each ((slot tslots))
@@ -568,7 +576,12 @@
       (setq kcsupername 
             (if (= (dhu-class stype) :object)
                 "Kc_object"
-              (sprintf "Kc_%s_R%s" (dhu-name stype) (dhu-hash stype))) ) )
+              (sprintf "Kc_%s_R%s" (dhu-name stype) (dhu-hash stype))) )
+      (while (==> stype is-a-class)
+        (when (dhu-class stype)
+          (dhc-add-c-externs (sprintf "struct CClass_%s;" (dhu-name stype))) )
+        (setq stype (dhu-type stype)) ) )
+    ;; add other externs
     (dhc-add-c-externs 
      (dhc-class-to-struct-decl class-dhc-type))
     (dhc-add-c-externs 
