@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.8 2003-05-20 16:04:29 leonb Exp $
+ * $Id: check_func.h,v 1.9 2004-04-16 14:28:03 leonb Exp $
  **********************************************************************/
 
 #ifndef CHECK_FUNC_H
@@ -120,7 +120,7 @@ extern LUSHAPI char *rterr_bad_dimensions;
 /* ---------------------------------------- */
 
 LUSHAPI void check_obj_class(void *obj, void *classvtable);
-
+LUSHAPI int  test_obj_class(void *obj, void *classvtable);
 
 /* ---------------------------------------- */
 /* CHECKING MATRICES                        */

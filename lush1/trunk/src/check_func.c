@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.c,v 1.4 2003-05-06 20:32:37 leonb Exp $
+ * $Id: check_func.c,v 1.5 2004-04-16 14:28:24 leonb Exp $
  **********************************************************************/
 
 /* Functions that check the dimensions of index parameters */
@@ -121,32 +121,41 @@ void print_dh_trace_stack(void)
  *
  *****************************************************************************/
 
-void 
+int
+test_obj_class(void *obj, void *classvtable)
+{
+  if (obj)
+    {
+      struct VClass_object *vtable = *(struct VClass_object**)obj;
+      while (vtable && vtable != classvtable)
+        {
+	  /* This is tricky because Cdoc contains
+	     different things in the NOLISP case. */
+#ifndef NOLISP
+	  dhclassdoc_t *cdoc = (dhclassdoc_t*)(vtable->Cdoc);
+	  if (! cdoc)
+	    run_time_error("Found null Cdoc in virtual table");
+	  if (vtable != cdoc->lispdata.vtable)
+	    run_time_error("Found improper Cdoc in virtual table");
+	  cdoc = cdoc->lispdata.ksuper;
+	  vtable = (cdoc) ? cdoc->lispdata.vtable : 0;
+#else
+	  vtable = (struct VClass_object*)(vtable->Cdoc);
+#endif
+	}
+      if (vtable && vtable == classvtable)
+	return 1;
+    }
+  return 0;
+}
+
+void
 check_obj_class(void *obj, void *classvtable)
 {
   if (! obj)
-    {
-      run_time_error("Casting a null gptr as an object");
-    }
-#ifndef NOLISP
-  else
-    {
-      void *vtable = *(void**)obj;
-      while (vtable != classvtable)
-        {
-          dhclassdoc_t *cdoc;
-          cdoc = *(dhclassdoc_t**)vtable;
-          if (! cdoc)
-            run_time_error("Found uninitialized virtual table");
-          cdoc = cdoc->lispdata.ksuper;
-          if (! cdoc)
-            run_time_error("Illegal object cast");
-          vtable = cdoc->lispdata.vtable;
-          if (! vtable)
-            run_time_error("Found uninitialized classdoc");
-        }
-    }
-#endif
+    run_time_error("Casting a null gptr as an object");
+  if (! test_obj_class(obj, classvtable))
+    run_time_error("Illegal object cast");
 }
 
 

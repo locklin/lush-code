@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.17 2004-02-10 18:39:07 leonb Exp $
+ * $Id: oostruct.c,v 1.18 2004-04-16 14:28:24 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1376,8 +1376,28 @@ DX(xis_of_class)
     error(NIL,"not a class",q);
   if (is_of_class(p,q->Object))
     return true();
-  else
-    return NIL;
+#ifdef DHCLASSDOC
+  if (GPTRP(p))
+    {
+      /* Handle gptrs by calling to-obj behind the scenes. Ugly. */
+      int flag = 0;
+      at *sym = named("to-obj");
+      at *fun = find_primitive(0, sym);
+      if (EXTERNP(fun, &dx_class))
+	{
+	  at *arg = new_cons(p,NIL);
+	  UNLOCK(sym);
+	  sym = apply(fun, arg);
+	  UNLOCK(arg);
+	  flag = is_of_class(sym, q->Object);
+	}
+      UNLOCK(sym);
+      UNLOCK(fun);
+      if (flag)
+	return true();
+    }
+#endif
+  return NIL;
 }
 
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.13 2003-01-28 18:00:39 leonb Exp $
+ * $Id: dh.c,v 1.14 2004-04-16 14:28:24 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -674,14 +674,11 @@ Cdestroy_C_object(gptr p)
 }
 
 struct VClass_object Vt_object = { 
-  &Kc_object, 
+  (void*)&Kc_object, 
   &Cdestroy_C_object,
 };
 
-DHCLASSDOC(Kc_object, 
-           NULL, 
-           object, "object", 
-           Vt_object, 0) =
+DHCLASSDOC(Kc_object, NULL, object, "object", Vt_object, 0) =
 { 
   DH_CLASS(0, Kc_object), 
   DH_END_CLASS, 
