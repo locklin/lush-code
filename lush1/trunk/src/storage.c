@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.2 2002-04-25 22:54:27 leonb Exp $
+ * $Id: storage.c,v 1.3 2002-04-26 19:56:25 leonb Exp $
  **********************************************************************/
 
 
@@ -329,28 +329,48 @@ storage_listeval(at *p, at *q)
   return NIL;
 }
 
-/* dummy at the moment. must be written */
-static int 
-storage_compare(at *p, at *q, int n) 
-{ 
-  return 0; 
-}
 
-static unsigned long 
-storage_hash(at *p)
-{ 
-  return 0; 
-}
-
-static at *
-storage_getslot(at *p, at *q)
-{ 
-  return NIL;
-}
-
-static void 
-storage_setslot(at *p, at *q, at *r)
-{ 
+static void
+storage_serialize(at **pp, int code)
+{
+  struct storage *st;
+  int type ,flags, size;
+  
+  if (code != SRZ_READ)
+    {
+      st = (*pp)->Object;
+      type = st->srg.type;
+      flags = st->srg.type;
+      size = st->srg.size;
+    }
+  // Read/write basic info
+  serialize_int(&type, code);
+  serialize_int(&flags, code);
+  serialize_int(&size, code);
+  // Create storage if needed
+  if (code == SRZ_READ)
+    *pp = new_storage_nc(type, size);
+  // Read/write storage data
+  if (! (flags & STF_UNSIZED))
+    {
+      st = (*pp)->Object;
+      if (type == ST_AT)
+        {
+          int i;
+          struct storage *st = (*pp)->Object;
+          at **data = st->srg.data;
+          for (i=0; i<size; i++)
+            serialize_atstar( &data[i], code);
+        }
+      else 
+        {
+          FILE *f = serialization_file_descriptor(code);
+          if (code == SRZ_WRITE)
+            storage_save(*pp, f);
+          else if (code == SRZ_READ)
+            storage_load(*pp, f);     // what about endianness?
+        }
+    }
 }
 
 
@@ -361,11 +381,11 @@ class name2(Prefix,_storage_class) = {   				     \
   storage_name,   							     \
   generic_eval,   							     \
   storage_listeval,   							     \
-  generic_serialize,   							     \
-  storage_compare,   							     \
-  storage_hash,   							     \
-  storage_getslot,   							     \
-  storage_setslot   							     \
+  storage_serialize,   							     \
+  generic_compare,   							     \
+  generic_hash,   							     \
+  generic_getslot,   							     \
+  generic_setslot   							     \
 }
 
 Generic_class(AT);
