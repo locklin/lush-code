@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.3 2002-07-06 02:07:47 leonb Exp $
+ * $Id: check_func.h,v 1.4 2002-07-19 22:03:51 leonb Exp $
  **********************************************************************/
 
 #ifndef CHECK_FUNC_H
@@ -152,8 +152,8 @@ LUSHAPI void srg_free(struct srg *);
 	    run_time_error(rterr_not_same_dim);}
 
 #define Msrg_resize(sr, new_size) \
-if((sr)->size < new_size) \
-   srg_resize_compiled(sr, new_size, __FILE__, __LINE__);
+   if((sr)->size < new_size) \
+      srg_resize_compiled(sr, new_size, __FILE__, __LINE__);
 
 #define Midx_checksize0(i1) { \
     int siz = (i1)->offset + 1; \
@@ -214,19 +214,18 @@ if((sr)->size < new_size) \
     if ((i2)->flags & IDF_UNSIZED) { \
 	int j, m=1; \
 	for (j=(i2)->ndim-1; j>=0; --j) { \
-	    (i2)->dim[j]=(i1)->dim[j]; \
-	    (i2)->mod[j]=m; \
-	    m *= (i2)->dim[j]; \
+	  (i2)->dim[j]=(i1)->dim[j]; \
+	  (i2)->mod[j]=m; \
+	  m *= (i2)->dim[j]; \
 	} \
         Midx_checksize(i2);  \
         (i2)->flags &= ~IDF_UNSIZED; \
     } else {  /* both are dimensioned, then check */ \
-        int s1=1, s2=1, j; \
+        int j; \
+        if ((i1)->ndim != (i2)->ndim) \
+          run_time_error(rterr_bad_dimensions); \
         for (j=0; j< (i1)->ndim; j++)  \
-            s1 *= (i1)->dim[j]; \
-        for (j=0; j< (i2)->ndim; j++) \
-            s2 *= (i2)->dim[j]; \
-        if (s1 != s2) \
+          if ((i1)->dim[j] != (i2)->dim[j]) \
             run_time_error(rterr_bad_dimensions); \
     }
 

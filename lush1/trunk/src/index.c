@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.14 2002-07-19 21:45:07 leonb Exp $
+ * $Id: index.c,v 1.15 2002-07-19 22:03:53 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -3041,108 +3041,6 @@ DY(ybloop)
 
 
 
-/* ------------ FROM SN3.2 CHECK_FUNC ------------ */
-
-
-
-static void 
-index_is_sized(struct idx *i1)
-{ 
-  if((i1)->flags & IDF_UNSIZED)
-    error(NIL, rterr_unsized_matrix, NIL); 
-}
-
-DX(xindex_is_sized)
-{		
-    struct idx i1;
-    struct index *ind1;
-    ALL_ARGS_EVAL;
-    ARG_NUMBER(1);
-    ind1 = AINDEX(1);
-    index_read_idx(ind1, &i1);
-    index_is_sized(&i1);
-    index_rls_idx(ind1, &i1);		
-    return NIL;
-}
-
-static void 
-index_same_size(struct idx *i1, struct idx *i2)
-{ 
-  if(((i1)->flags & IDF_UNSIZED) || ((i2)->flags & IDF_UNSIZED))
-    error(NIL, rterr_unsized_matrix, NIL); 
-  if((i1)->dim[0] != (i2)->dim[0])
-    error(NIL, rterr_not_same_dim, NIL);
-}
-
-DX(xindex_same_size)
-{		
-  struct idx i1,i2;
-  struct index *ind1, *ind2;
-  ALL_ARGS_EVAL;
-  ARG_NUMBER(2);
-  ind1 = AINDEX(1);
-  ind2 = AINDEX(2);
-  index_read_idx(ind1, &i1);
-  index_read_idx(ind2, &i2);
-  index_same_size(&i1, &i2);
-  index_rls_idx(ind1, &i1);		
-  index_rls_idx(ind2, &i2);		
-  return NIL;
-}
-
-static void 
-index_size_or_check(struct idx *i1, struct idx *i2)
-{ 
-  index_is_sized(i1);
-  if ((i2)->flags & IDF_UNSIZED) 
-    {
-      int j, siz, m=1;
-      for (j=(i2)->ndim-1; j>=0; --j) 
-        {
-          (i2)->dim[j]=(i1)->dim[j];
-          (i2)->mod[j]=m;
-          m *= (i2)->dim[j];
-        } 
-      siz = (i2)->offset+1; 
-      for(j=0; j<(i2)->ndim; j++) 
-        siz += ((i2)->dim[j] - 1) * (i2)->mod[j]; 
-      if(siz > (i2)->srg->size) 
-        if(((i2)->srg)->size < siz) 
-          srg_resize((i2)->srg, siz, __FILE__, __LINE__);
-      (i2)->flags &= ~IDF_UNSIZED;
-    } 
-  else 
-    {  /* both are dimensioned, then check */
-      int s1=1, s2=1, j;
-      for (j=0; j< (i1)->ndim; j++)
-        s1 *= (i1)->dim[j];
-      for (j=0; j< (i2)->ndim; j++)
-        s2 *= (i2)->dim[j];
-      if (s1 != s2)
-        error(NIL,rterr_bad_dimensions,NIL);
-    }
-}
-
-DX(xindex_size_or_check)
-{		
-  struct idx i1,i2;
-  struct index *ind1, *ind2;
-  
-  ALL_ARGS_EVAL;
-  ARG_NUMBER(2);
-  ind1 = AINDEX(1);
-  ind2 = AINDEX(2);
-  
-  index_read_idx(ind1, &i1);
-  index_write_idx(ind2, &i2);
-  index_size_or_check(&i1,&i2);
-  index_rls_idx(ind1, &i1);		
-  index_rls_idx(ind2, &i2);		
-  return NIL;
-}
-
-
-
 /* ------------ THE INITIALIZATION ------------ */
 
 
@@ -3222,9 +3120,4 @@ void init_index()
   /* loops */
   dy_define("idx-eloop", yeloop);
   dy_define("idx-bloop", ybloop);
-
-  /* checks */
-  dx_define("idx-is-sized", xindex_is_sized);
-  dx_define("idx-same-size", xindex_same_size);
-  dx_define("idx-size-or-check", xindex_size_or_check);
 }
