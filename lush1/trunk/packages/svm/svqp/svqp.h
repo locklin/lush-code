@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.h,v 1.2 2004-05-10 21:27:41 leonb Exp $
+ * $Id: svqp.h,v 1.3 2004-05-11 19:13:52 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -74,7 +74,7 @@
 //
 //  This is a subclass of "ConvexProgram".
 //  Matrix A is implicitely defined by a virtual
-//  function which computes product A.x given x.
+//  function which computes rows of matrix A.
 //
 // ----------------------------------------------------------------
 //  Class "SimpleQuadraticProgram
@@ -113,7 +113,7 @@
 //
 //   6- Call member function run().
 //           Function returns -1 if a problem occurs.
-//           A description of the problem is found in pgm.error.
+//           A description of the problem is found in pgm.err.
 //           Functions returns a number of iterations on success.
 //           The solution is found in pgm.x (vector) and pgm.w (value).
 //
@@ -122,7 +122,7 @@
 //  Subclassing "QuadraticProgram" or "ConvexProgram"
 //
 //  1- Define subclasses that define the virtual functions
-//           compute_Ax (QuadraticProgram)
+//           compute_Ax and/or compute_Arow (QuadraticProgram)
 //           compute_gx, compute_ggx (ConvexProgram)
 //
 //  2- Initialize the base class by specifying the vector sizes
@@ -202,15 +202,15 @@ public:
   // run() -- compute optimum, return -1 or number of iterations
   int run(void);
 
-protected:
   // compute_gx -- stores gradient of f into vector g and returns f(x)
   virtual svreal compute_gx(const svreal *x, svreal *g);
   // compute_ggx -- returns curvature along direction z at point x
   virtual svreal compute_ggx(const svreal *x, const svreal *z);
 
-private:
+protected:
   // conjugate gradient stuff
   int        iterations;
+  svreal    *grad;
   svreal    *g;
   svreal    *z;
   svreal     gnorm;
@@ -227,6 +227,9 @@ private:
   void   project_with_linear_constraint(void);
   void   project_without_linear_constraint(void);
   svbool adjust_clamped_variables(void);
+  // coordinate descent
+  virtual svbool perform_coordinate_descent(void);
+  // debug
   void   info(int level, const char *format, ...);
 };
 
@@ -250,19 +253,22 @@ public:
   QuadraticProgram(int n);
   virtual ~QuadraticProgram();
   // b -- linear term
-  const svreal *b;
-
-protected:
-  // compute_Ax -- store into y product of matrix A by vector x
+  svreal *b;
+  // compute_Arow -- store the ith row of matrix A into r.
+  virtual void compute_Arow(int i, svreal *r);
+  // compute_Ax -- computes Ax into y.
   virtual void compute_Ax(const svreal *x, svreal *y);
   
-private:
+protected:
   // memory allocation
-  svreal *tmp;
+  svreal *tmp1;
+  svreal *tmp2;
   svreal *mem;
+  svbool  arow;
   // overrides
-  svreal compute_gx(const svreal *x, svreal *g);
-  svreal compute_ggx(const svreal *x, const svreal *z);
+  virtual svreal compute_gx(const svreal *x, svreal *g);
+  virtual svreal compute_ggx(const svreal *x, const svreal *z);
+  virtual svbool perform_coordinate_descent(void);
 };
 
 
@@ -285,15 +291,11 @@ public:
   SimpleQuadraticProgram(int n);
   virtual ~SimpleQuadraticProgram();
   // a -- quadratic matrix (line order)
-  const svreal *a;
+  svreal *a;
   
-private:
+protected:
   // memory allocation
   svreal *mem;
   // overrides
-  void compute_Ax(const svreal *x, svreal *y);
+  virtual void compute_Arow(int i, svreal *r);
 };
-
-
-
-

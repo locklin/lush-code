@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.5 2004-05-10 21:42:57 leonb Exp $
+ * $Id: svqp.cpp,v 1.6 2004-05-11 19:13:52 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -67,89 +67,6 @@ dot(const svreal *x, const svreal *y, int n)
 
 
 
-
-
-// ================================================================
-// SimpleQuadraticProgram
-// ================================================================
-//     Maximize          - x.A.x + b.x
-//     with              Cmin_i <= x_i <= Cmax_i
-//     and (optionally)  sum_i x_i = 0
-
-
-
-SimpleQuadraticProgram::SimpleQuadraticProgram(int n)
-  : QuadraticProgram(n)
-{
-  mem = new svreal[n*n];
-  a = mem;
-}
-
-SimpleQuadraticProgram::~SimpleQuadraticProgram()
-{
-  delete [] mem;
-}
-
-void
-SimpleQuadraticProgram::compute_Ax(const svreal *x, svreal *y)
-{
-  const svreal *aa = a;
-  for (int i=0; i<n; i+=1,aa+=n)
-    y[i] = dot(x,aa,n);
-}
-
-
-
-
-// ================================================================
-// QuadraticProgram
-// ================================================================
-//     Maximize          - 1/2 x.A.x + b.x
-//     with              Cmin_i <= x_i <= Cmax_i
-//     and (optionally)  sum_i x_i = 0
-
-
-
-QuadraticProgram::QuadraticProgram(int n)
-  : ConvexProgram(n)
-{
-  mem = new svreal[n+n];
-  b = mem;
-  tmp = mem+n;
-}
-
-QuadraticProgram::~QuadraticProgram()
-{
-  delete [] mem;
-}
-
-svreal
-QuadraticProgram::compute_gx(const svreal *x, svreal *g)
-{
-  compute_Ax(x,g);
-  for (int i=0; i<n; i++)
-    {
-      tmp[i] = g[i]/2 - b[i];
-      g[i] = g[i] - b[i];
-    }
-  return dot(tmp,x,n);
-}
-
-svreal 
-QuadraticProgram::compute_ggx(const svreal*, const svreal *z)
-{
-  compute_Ax(z,tmp);    // can be faster when A is symetric
-  return dot(tmp,z,n);
-}
-
-void
-QuadraticProgram::compute_Ax(const svreal *x, svreal *y)
-{
-}
-
-
-
-
 // ================================================================
 // ConvexProgram
 // ================================================================
@@ -180,7 +97,7 @@ ConvexProgram::ConvexProgram(int n)
   : n(n)
 {
   // allocate memory
-  mem     = new svreal[6*n];
+  mem     = new svreal[7*n];
   clamp   = new char[n];
   x       = mem;
   cmin    = mem+n;
@@ -188,6 +105,7 @@ ConvexProgram::ConvexProgram(int n)
   g       = mem+3*n;
   z       = mem+4*n;
   gsav    = mem+5*n;
+  grad    = mem+6*n;
   // initialize variables
   sumflag = 0;
   ktflag  = 1;
@@ -303,9 +221,8 @@ ConvexProgram::adjust_clamped_variables(void)
   int i;
   int oldactive = nactive;
   // Recompute gradient again
-  w = - compute_gx(x, g);
   for (i=0; i<n; i++)
-    g[i] = - g[i];
+    g[i] = - grad[i];
   // Reset clamp status
   nactive = n;
   for (i=0; i<n; i++)
@@ -347,9 +264,11 @@ ConvexProgram::run(void)
   for (;;)
     {
       // compute gradient
-      w = - compute_gx(x, g);
+      w = - compute_gx(x, grad);
+      if (err)
+	return -1;
       for (i=0; i<n; i++)
-        g[i] = - g[i];
+        g[i] = - grad[i];
       // test instabilities
       if (iterations < n)
         avgw = w;
@@ -373,7 +292,6 @@ ConvexProgram::run(void)
       gnorm = dot(g,g,n);
       if (gnorm<epsgr)
         {
-	  info(1,"\n");
           if (! ktflag)
             break;
           // Reexamine clamping status
@@ -382,12 +300,16 @@ ConvexProgram::run(void)
           if (gnorm<epsgr)
             break;
           // Continue processing
+	  info(1,"@");
           restartp = 1;
         }
       // compute search direction
       if (restartp)
         {
-	  info(1,"+");
+	  if (itercg<2 && perform_coordinate_descent())
+	    info(1,"+");
+	  else
+	    info(1,"-");
           // Just copy gradient into search direction
           itercg = 0;
           for (i=0; i<n; i++)
@@ -398,7 +320,7 @@ ConvexProgram::run(void)
         }
       else
         {
-	  info(1,".");
+	  info(1,">");
           // Self restarting Hestenes Stiefel
           for (i=0; i<n; i++)
             gsav[i] = g[i] - gsav[i];
@@ -430,6 +352,8 @@ ConvexProgram::run(void)
         }
       // Compute optimal quadratic step
       svreal curvature = compute_ggx(x,z);
+      if (err)
+	return -1;
       if (curvature >= epskt)
         {
           svreal ostep = zgsav / curvature;
@@ -450,22 +374,244 @@ ConvexProgram::run(void)
       itercg += 1;
     }
   // Termination
+  info(1,"\n");
   return iterations;
 }
-
 
 svreal
 ConvexProgram::compute_gx(const svreal *x, svreal *g)
 {
+  err = "compute_gx is not defined";
+  info(1,"? %s\n", err);
   return 0;
 }
 
 svreal 
 ConvexProgram::compute_ggx(const svreal*, const svreal *z)
 {
+  err = "compute_ggx is not defined";
+  info(1,"? %s\n", err);
   return 0;
 }
 
+svbool 
+ConvexProgram::perform_coordinate_descent(void)
+{
+  return 0;
+}
+
+
+
+
+// ================================================================
+// QuadraticProgram
+// ================================================================
+//     Maximize          - 1/2 x.A.x + b.x
+//     with              Cmin_i <= x_i <= Cmax_i
+//     and (optionally)  sum_i x_i = 0
+
+
+
+QuadraticProgram::QuadraticProgram(int n)
+  : ConvexProgram(n)
+{
+  mem = new svreal[n+n+n];
+  b = mem;
+  tmp1 = mem+n;
+  tmp2 = mem+n+n;
+  // do we have compute_Arow?
+  err = 0;
+  compute_Arow(0,tmp1);
+  arow = !!err;
+  err = 0;
+}
+
+QuadraticProgram::~QuadraticProgram()
+{
+  delete [] mem;
+}
+
+svbool 
+QuadraticProgram::perform_coordinate_descent(void)
+{
+  int maxrun = n;
+  // Bail out if no compute_Arow
+  if (! arow)
+    return 0;
+  // Loop at most n times without reaching constraints.
+  while (maxrun > 0)
+    {
+      svreal gmax = -maxst;
+      svreal gmin = +maxst;
+      int gmaxidx = -1;
+      int gminidx = -1;
+      for (int i=0; i<n; i++)
+	{
+	  svreal gx = grad[i];
+	  if (gx>gmax && x[i]>cmin[i]+epskt)
+	    {
+	      gmax = gx;
+	      gmaxidx = i;
+	    }
+	  else if (gx<gmin && x[i]<cmax[i]-epskt)
+	    {
+	      gmin = gx;
+	      gminidx = i;
+	    }
+	}
+      if (sumflag)
+	{
+	  int j;
+	  svreal ostep;
+	  svreal step = maxst;
+	  svreal curvature;
+	  compute_Arow(gmaxidx, tmp1);
+	  compute_Arow(gminidx, tmp2);
+	  // box constraints
+	  ostep = x[gmaxidx] - cmin[gmaxidx];
+	  if (ostep < step)
+	    step = ostep;
+	  ostep = cmax[gminidx] - x[gminidx];
+	  if (ostep < step)
+	    step = ostep;
+	  // newton
+	  curvature = tmp1[gmaxidx] + tmp2[gminidx]
+	          - ( tmp1[gminidx] + tmp2[gmaxidx] );
+	  if (curvature > epskt)
+	    {
+	      ostep = (gmax - gmin) / curvature;
+	      if (ostep < step)
+		{
+		  maxrun -= 2;
+		  step = ostep;
+		}
+	    }
+	  if (step >= maxst)
+	    break;
+	  // update
+	  x[gmaxidx] -= step;
+	  x[gminidx] += step;
+	  for (j=0; j<n; j++)
+	    grad[j] = grad[j] + step * ( tmp2[j] - tmp1[j] );
+	}
+      else
+	{
+	  int j;
+	  svreal ostep;
+	  svreal step = maxst;
+	  svreal curvature;
+	  if (fabs(gmax) < fabs(gmin))
+	    {
+	      gmax = gmin;
+	      gmaxidx = gminidx;
+	    }
+	  compute_Arow(gmaxidx, tmp2);
+	  curvature = tmp2[gmaxidx];
+	  // box constraints
+	  if (gmax > 0)
+	    ostep = x[gmaxidx] - cmin[gmaxidx];
+	  else
+	    ostep = cmax[gmaxidx] - x[gmaxidx];
+	  if (ostep < step)
+	    step = ostep;
+	  // newton
+	  if (curvature > epskt)
+	    {
+	      ostep = fabs(gmax) / curvature;
+	      if (ostep < step)
+		{
+		  step = ostep;
+		  maxrun -= 1;
+		}
+	    }
+	  // update
+	  if (gmax > 0)
+	    step = - step;
+	  x[gmaxidx] += step;
+	  for (j=0; j<n; j++)
+	    grad[j] = grad[j] + step * tmp2[j];
+	}
+    }
+  // Restore and return
+  adjust_clamped_variables();
+  // Success.
+  return 1;
+}
+
+svreal
+QuadraticProgram::compute_gx(const svreal *x, svreal *g)
+{
+  compute_Ax(x,g);
+  for (int i=0; i<n; i++)
+    {
+      tmp1[i] = g[i]/2 - b[i];
+      g[i] = g[i] - b[i];
+    }
+  return dot(tmp1,x,n);
+}
+
+svreal 
+QuadraticProgram::compute_ggx(const svreal*, const svreal *z)
+{
+  compute_Ax(z,tmp1);    // can be faster when A is symetric
+  return dot(tmp1,z,n);
+}
+
+void
+QuadraticProgram::compute_Ax(const svreal *x, svreal *y)
+{
+  int i,j;
+  for (j=0; j<n; j++)
+    y[j] = 0;
+  for (i=0; i<n; i++)
+    {
+      svreal xx = x[i];
+      if (xx)
+	{
+	  compute_Arow(i, tmp2);
+	  for (j=0; j<n; j++)
+	    y[j] += xx * tmp2[j];
+	}
+    }
+  if (err)
+    info(0, "?%s\n", err);
+}
+
+void
+QuadraticProgram::compute_Arow(int i, svreal *r)
+{
+  err = "neither compute_Ax not compute_Arow are defined";
+}
+
+
+// ================================================================
+// SimpleQuadraticProgram
+// ================================================================
+//     Maximize          - x.A.x + b.x
+//     with              Cmin_i <= x_i <= Cmax_i
+//     and (optionally)  sum_i x_i = 0
+
+
+
+SimpleQuadraticProgram::SimpleQuadraticProgram(int n)
+  : QuadraticProgram(n)
+{
+  mem = new svreal[n*n];
+  a = mem;
+}
+
+SimpleQuadraticProgram::~SimpleQuadraticProgram()
+{
+  delete [] mem;
+}
+
+void
+SimpleQuadraticProgram::compute_Arow(int i, svreal *r)
+{
+  const svreal *aa = a + i*n;
+  for (int j=0; j<n; j++)
+    r[i] = aa[i];
+}
 
 
 
