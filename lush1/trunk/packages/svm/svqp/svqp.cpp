@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.1 2004-02-17 19:47:48 leonb Exp $
+ * $Id: svqp.cpp,v 1.2 2004-03-26 00:06:44 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -81,7 +81,7 @@ SimpleQuadraticProgram::SimpleQuadraticProgram(int n)
 
 SimpleQuadraticProgram::~SimpleQuadraticProgram()
 {
-  delete mem;
+  delete [] mem;
 }
 
 void
@@ -114,7 +114,7 @@ QuadraticProgram::QuadraticProgram(int n)
 
 QuadraticProgram::~QuadraticProgram()
 {
-  delete mem;
+  delete [] mem;
 }
 
 svreal
@@ -179,8 +179,8 @@ ConvexProgram::ConvexProgram(int n)
 
 ConvexProgram::~ConvexProgram()
 {
-  delete mem;
-  delete clamp;
+  delete [] mem;
+  delete [] clamp;
 }
 
 
