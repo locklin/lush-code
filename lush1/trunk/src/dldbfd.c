@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.30 2004-02-13 22:52:03 leonb Exp $
+ * $Id: dldbfd.c,v 1.31 2004-03-01 16:42:48 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -831,13 +831,14 @@ handle_common_symbols(module_entry *ent)
 
 
 /* ---------------------------------------- */
-/* GOT TABLE ALLOCATION (SGI MIPS-ELF) */
+/* SPECIAL PROCESSING FOR MIPS-ELF */
+
+#ifdef __mips__
 
 /* These subroutines alter the relocation code
  * and generate the GOT table that BFD
  * does not handle properly.
  */
-
 
 /* mipself_old_{lo16,hi16}_reloc --
    pointer to old reloc functions */
@@ -940,29 +941,6 @@ mipself_new_lo16_reloc (bfd *abfd,
                                    output_bfd, error_message);
 }
 
-#if 0
-static bfd_reloc_status_type
-mipself_new_gprel32_reloc (bfd *abfd,
-                           arelent *reloc_entry,
-                           asymbol *symbol,
-                           PTR data,
-                           asection *input_section,
-                           bfd *output_bfd,
-                           char **error_message)
-{
-  asection *sgot = bfd_get_section_by_name(abfd, ".got");
-  bfd_byte *addr = (bfd_byte*)(data) + reloc_entry->address;
-  bfd_vma value = symbol->section->vma + symbol->value;
-  if (output_bfd || !sgot)
-    return bfd_reloc_notsupported;    
-  value += reloc_entry->addend;
-  value += bfd_get_32(abfd, addr);
-  value -= sgot->vma;
-  bfd_put_32(abfd, value, addr);
-  return bfd_reloc_ok;
-}
-#endif
-
 static bfd_reloc_status_type
 mipself_new_call16_reloc (bfd *abfd, 
                          arelent *reloc_entry,
@@ -986,7 +964,6 @@ mipself_new_call16_reloc (bfd *abfd,
   bfd_put_32(abfd, insn, addr);
   return bfd_reloc_ok;
 }
-
 
 static bfd_reloc_status_type
 mipself_new_got16_reloc (bfd *abfd, 
@@ -1025,7 +1002,6 @@ mipself_new_got16_reloc (bfd *abfd,
 }
 
 
-
 /* mipself_install_patches -- install patches into BFD */
 
 static void
@@ -1049,12 +1025,6 @@ mipself_install_patches(bfd *abfd)
       *(void**)&(howto->special_function) = mipself_new_lo16_reloc;
       ASSERT_BFD(mipself_old_lo16_reloc);
     }
-#if 0
-  /* GPREL32 */
-  howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_MIPS_GPREL32);
-  ASSERT_BFD(howto);
-  *(void**)&(howto->special_function) = mipself_new_gprel32_reloc;
-#endif
   /* GOT16 */
   howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_MIPS_GOT16);
   ASSERT_BFD(howto);
@@ -1064,8 +1034,6 @@ mipself_install_patches(bfd *abfd)
   ASSERT_BFD(howto);
   *(void**)&(howto->special_function) = mipself_new_call16_reloc;  
 }
-
-
 
 
 /* mipself_got_info -- structure containing GOT information */
@@ -1088,7 +1056,6 @@ typedef struct mipself_got_entry {
   bfd_vma offset;
   int index;
 } mipself_got_entry;
-
 
 
 /* mipself_init_got_entry -- initialize got hash table component */
@@ -1226,7 +1193,6 @@ mipself_create_got(module_entry *ent,
 }
 
 
-
 /* mipself_fix_relocs -- patches the relocation for GOT */
 
 static void 
@@ -1297,12 +1263,10 @@ mipself_fix_relocs(module_entry *ent,
     }
 }
 
-
-
-/* handle_got_relocations -- creates got when needed */
+/* mipself_special -- special processing for mips elf */
 
 static void
-handle_got_relocations(module_entry *ent)
+mipself_special(module_entry *ent)
 {
   /* MIPSELF case */
   if (bfd_get_flavour(ent->abfd) == bfd_target_elf_flavour &&
@@ -1328,6 +1292,45 @@ handle_got_relocations(module_entry *ent)
     }
 }
    
+#endif
+
+/* ---------------------------------------- */
+/* SPECIAL PROCESSING FOR MACH-O */
+
+#ifdef __MACH__
+
+
+/* mipself_special -- special processing for mips elf */
+
+static void
+mach_o_special(module_entry *ent)
+{
+  /* MACH-O case */
+  if (bfd_get_flavour(ent->abfd) == bfd_target_mach_o_flavour)
+    {
+      /**/
+    }
+}
+
+#endif
+
+
+/* ---------------------------------------- */
+/* HANDLE ALL SPECIAL CASES */
+
+
+/* handle_special_cases -- calls all special case routines */
+
+static void
+handle_special_cases(module_entry *ent)
+{
+#ifdef __mips__
+  mipself_special(ent);
+#endif
+#ifdef __MACH__
+  mach_o_special(ent);
+#endif
+}
 
 
 /* ---------------------------------------- */
@@ -1678,15 +1681,15 @@ resolve_newly_defined_symbols(module_entry *chain)
 /* PERFORM RELOCATION */
 
 
-/* update_i_cache -- update the instruction cache,
+/* update_instruction_cache -- update the instruction cache,
    either by clearing the relevant cache lines,
    or by synchronizing with the data cache */
 
 static void
-update_i_cache(bfd_vma s, bfd_size_type l)
+update_instruction_cache(bfd_vma s, bfd_size_type l)
 {
-#ifdef __PPC__
-  /* PPC has split i-cache and d-cache */
+  /* ----- POWER PC ----- */
+#if defined(__ppc__) || defined(__PPC__)
 # ifndef CACHELINESIZE
 #  define CACHELINESIZE 16
 # endif
@@ -1700,7 +1703,7 @@ update_i_cache(bfd_vma s, bfd_size_type l)
 # else
 #  error "GCC-dependent code here."
 # endif
-#endif /* __PPC__ */
+#endif /* __ppc__ */
 }
 
 
@@ -1798,7 +1801,7 @@ apply_relocations(module_entry *module, int externalp)
                 }
               }
             /* Update I-cache */
-            update_i_cache(p->vma, bfd_section_size(abfd, p));
+            update_instruction_cache(p->vma, bfd_section_size(abfd, p));
         }
     /* Mark module as relocated */
     if (externalp)
@@ -2160,7 +2163,7 @@ arlink_traverse(struct bfd_hash_entry *gsym, void *gcookie)
             /* Update global symbol table */
             handle_common_symbols(armodule);
             check_multiple_definitions(armodule);
-            handle_got_relocations(armodule);
+	    handle_special_cases(armodule);
             allocate_memory_for_object(armodule);
             load_object_file_data(armodule);
             apply_relocations(armodule,FALSE);
@@ -2349,7 +2352,7 @@ dld_link (const char *oname)
         {
             handle_common_symbols(module);
             check_multiple_definitions(module);
-            handle_got_relocations(module);
+            handle_special_cases(module);
             allocate_memory_for_object(module);
             load_object_file_data(module);
             apply_relocations(module,FALSE);
