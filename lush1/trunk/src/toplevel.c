@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.20 2003-01-10 23:29:19 leonb Exp $
+ * $Id: toplevel.c,v 1.21 2003-01-15 16:32:37 leonb Exp $
  **********************************************************************/
 
 
@@ -497,7 +497,7 @@ toplevel(char *in, char *out, char *new_prompt)
 
   f1 = f2 = NIL;
   if (in) {
-    f1 = open_read(in, ".lshc|.snc|.tlc|.lsh|.sn|.tl|");
+    f1 = open_read(in, "|.lshc|.snc|.tlc|.lsh|.sn|.tl");
     ans = new_string(file_name);
   }
   if (out)
