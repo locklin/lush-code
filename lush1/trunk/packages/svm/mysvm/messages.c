@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: messages.c,v 1.2 2004-08-30 23:24:30 leonb Exp $
+ * $Id: messages.c,v 1.3 2004-10-03 09:38:20 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -43,9 +43,11 @@ defaultproc(mysvm_message_t level, const char *fmt, va_list ap)
   if (level <= mysvm_message_level)
     vprintf(fmt, ap);
 #ifdef LUSH
-  extern void run_time_error(const char *s);
   if (level <= MYSVM_ERROR)
-    run_time_error("mysvm error");
+    {
+      extern void run_time_error(const char *s);
+      run_time_error("mysvm error");
+    }
 #endif
   if (level <= MYSVM_ERROR)
     abort();

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.c,v 1.3 2004-09-21 21:34:15 leonb Exp $
+ * $Id: kcache.c,v 1.4 2004-10-03 09:38:20 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -232,16 +232,12 @@ xtruncate(mysvm_kcache_t *this, row_t *row, int n)
 static void
 xswap(mysvm_kcache_t *this, int i1, int i2, int r1, int r2)
 {
-  row_t *r;
-  this->r2i[r1] = i2;
-  this->r2i[r2] = i1;
-  this->i2r[i1] = r2;
-  this->i2r[i2] = r1;
-  r=this->lru.next;
+  row_t *r = this->lru.next;
   while (r != (row_t*)& this->lru)
     {
       row_t *next = r->lru.next;
       int n = r->size;
+      int rr = this->i2r[r->i];
       if (r1 < n)
 	{
 	  if (r2 < n)
@@ -251,16 +247,40 @@ xswap(mysvm_kcache_t *this, int i1, int i2, int r1, int r2)
 	      r->data[r1] = t2;
 	      r->data[r2] = t1;
 	    }
-	  else
-	    xtruncate(this, r, r1);
+	  else if (rr == r2)
+            {
+              r->data[r1] = r->diag;
+            }
+          else
+            {
+              row_t *or = this->row[i2];
+              if (or && rr < or->size && rr != r1)
+                r->data[r1] = or->data[rr];
+              else
+                xtruncate(this, r, r1);
+            }
 	}
-      else
-	{
-	  if (r2 < n)
-	    xtruncate(this, r, r2);
-	}
+      else if (r2 < n)
+        {
+          if (rr == r1)
+            {
+              r->data[r2] = r->diag;
+            }
+          else 
+            {
+              row_t *or = this->row[i1]; 
+              if (or && rr < or->size && rr != r2)
+                r->data[r2] = or->data[rr];
+              else
+                xtruncate(this, r, r2);
+            }
+        }
       r = next;
     }
+  this->r2i[r1] = i2;
+  this->r2i[r2] = i1;
+  this->i2r[i1] = r2;
+  this->i2r[i2] = r1;
 }
 
 void 
@@ -319,10 +339,10 @@ xpurge(mysvm_kcache_t *this)
   if (this->cursize > this->maxsize)
     {
       row_t *r = this->lru.prev;
-      while ( this->cursize > this->maxsize && r != (row_t*) & this->lru )
+      while ( this->cursize > this->maxsize && r != this->lru.next )
 	{
 	  row_t *prev = r->lru.prev;
-	  xtruncate(this, r, 0);
+          xtruncate(this, r, 0);
 	  r = prev;
 	}
     }
@@ -379,8 +399,10 @@ mysvm_kcache_query_row(mysvm_kcache_t *this, int i, int len)
       r = this->row[j];
       if (r && q < r->size)
 	nr->data[p] = r->data[q];
-      else
+      else if (p != q)
 	nr->data[p] = (*this->func)(i, j, this->closure);
+      else 
+        nr->data[p] = nr->diag;
     }
   /* Return */
   this->row[i] = nr;
