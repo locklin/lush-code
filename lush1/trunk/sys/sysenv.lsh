@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.84 2003-01-10 21:40:28 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.85 2003-01-10 22:06:46 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -70,32 +70,6 @@
 
 
 ;;; --------- Toplevel, Break, and Debug  ---------
-
-(de startup argv
-    ;; no command line argument: set default library to lushenv-path
-  (when (not argv)
-    (when lushenv-path 
-      (setq argv (list lushenv-path))))
-  (if (= (car argv) "@@")
-      ;; script mode
-      (progn
-        (setq startup ())
-        (setq argv (cdr argv))
-        (when argv (load (car argv))) )
-    ;; interactive mode
-    (each ((file argv))
-      (cond
-       ((and mod-load (= (left file 1) "+"))
-        (printf "... loading extension file \"%s\"\n" file)
-        (mod-load (mid file 2)) )
-       (t
-        (setq file (or (filepath file) file))
-        (printf "... loading library file \"%s\"\n" file)
-        (load file) ) ) ) )
-  (de startup argv
-    (when argv
-      (printf "... command line arguments: ")
-      (print argv) ) ) )
 
 (de toplevel()
     (let ((break-hook :nice-break-hook)
@@ -1693,7 +1667,7 @@
   (printf "Type ^Atopic for help at the console on a particular topic\n"))
 
 
-;;; --------- Search Startup File -----------
+;;; --------- File searching -----------
 
 (de find-file (dirlist file &optional extlist)
   (setq extlist (or extlist (list "")))
@@ -1735,21 +1709,34 @@
              find-static-library  
              find-shared-or-static-library )
 
-;; Default search path for C libraries.
-;; This will be refined in lushenv.lsh
-(defvar shared-library-path '("/usr/lib" "/lib"))
-(defvar static-library-path '("/usr/lib" "/lib"))
 
-;; Default search path for C include files.
-;; This will be refined in lushenv.lsh
-(defvar c-include-path '("/usr/include"))
 
-;; Default lushenv.[dump,lshc,lsh] 
-;; in curent dir, local, packages, and lsh.
-(defvar lushenv-path 
-  (find-file (list (concat-fname lushdir "local")
-                   (concat-fname lushdir "packages")
-                   (concat-fname lushdir "lsh") )
-             "lushenv"
-             (list ".dump" ".lshc" ".lsh") ) )
+;;; --------- Boostrap startup -----------
 
+
+(dm startup(f . argv)
+  (when argv
+    ;; This is only used to create nice dump files
+    (when (or (<> (length argv) 3) (<> (nth 1 argv) "--"))
+      (writing "$stderr"
+        (printf "Usage: lush @sysenv <lushfile> -- <dumpfile>\n") 
+        (exit 10) ) )
+    (let ((file (car argv)))
+      (apply path (path))
+      (setq file (or (filepath file) file))
+      (when (not (filep file))
+        (writing "$stderr"
+          (printf "lush @sysenv: cannot locate file '%s'\n" file)
+          (exit 10) ) )
+      `(progn
+         (printf "Lush dump file creation tool\n")
+         (lush-is-quiet ())
+         (printf "... loading file \"%s\".\n" ,file)
+         (libload ,file)
+         (when (== startup ,startup)
+           (writing "$stderr"
+             (printf "lush @sysenv: lush file must define 'startup'.\n")
+             (exit 10) ) )
+         (printf "... dumping to \"%s\".\n" ,(last argv))
+         (dump ,(last argv))
+         (exit 0) ) ) ) )
