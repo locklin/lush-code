@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.99 2003-05-12 14:38:29 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.100 2003-05-22 19:32:27 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -634,8 +634,14 @@
       ((= typ |U8STORAGE|)   (setq begin "[u"))
       ((= typ |GPTRSTORAGE|) (setq begin "[p"))
       ((= typ |ATSTORAGE|)   (setq begin "#[" end "#]")) )
-    (if (or (not (idx-ndim this)) (0= (idx-ndim this)))
-        (printf "%s" (pname this))
+    (cond
+     ((not (idx-ndim this))
+      (printf "%s" (pname this)) )
+     ((0= (idx-ndim this))
+      (printf "%s@ " begin)
+      (prin (this))
+      (printf " %s" end) )
+     (t
       (printf begin)
       (let ((tabnow (tab))
             (len (idx-bound this 0)))
@@ -658,7 +664,7 @@
                (when (< i len)
                  (print)
                  (tab tabnow) ) ) ) )
-      (printf end) ) ) )
+      (printf end) ) ) ) )
 
 (demethod |INDEX| print()
   (if (and (indexp this)
@@ -666,20 +672,32 @@
       (index-print this)
     (printf "%s" (pname this)) ) )
 
-(de list-to-index(l matrix)
-  (if (= (car l) 'quote)
-      ;; this is a list of literal
-      (let ((m (matrix (1- (length l)))))
-        (m () (cdr l)) )
-    ;; this is a list of matrices
-    (let ((m (apply matrix (cons (length l) (idx-dim (car l))))))
-      (for (i 0 (idx-bound m 0))
-           (copy-matrix (car l)
-                        (new-index m
-                                   (cons 0 (cdr (idx-dim m)))
-                                   (list i) ) ) 
-           (setq l (cdr l)) )
-      m ) ) )
+
+(de index-read(matfun)
+  (let ((l ())
+        (m ())
+        (|]|
+         (cond
+          ((= (skip-char) "@")          ; zero dimension
+           (read-string 1)
+           (lambda()
+             (when (cdr l) (error 'read "Bad index0 syntax" ()))
+             (setq m ((matfun) (car l))) ) )
+          ((or (= matfun atom-matrix) 
+               (<> (skip-char) "["))    ; one dimension
+           (lambda()
+             (setq m (matfun (length l)))
+             (m () l) ) )
+          (t                            ; more
+           (lambda()
+             (let ((n (length l)))
+               (setq m (apply matfun (cons n (idx-dim (car l)))))
+               (for (i 0 (1- n))
+                    (copy-matrix (car l) (select m 0 i))
+                    (setq l (cdr l)) ) ) ) ) ) ) )
+    (while (not m)
+      (setq l (nconc1 l (read))) )
+    m ) )
 
 (dmc |]| 
      (error 'read "extra ']' found"))
@@ -695,29 +713,18 @@
          ("b" (setq matfunc byte-matrix)   (read-string 1))
          ("u" (setq matfunc ubyte-matrix)  (read-string 1))
          ("p" (setq matfunc gptr-matrix)   (read-string 1)) )
-       (let ((l (when (<> (skip-char) "[") (list 'quote)))
-             (|]| (lambda() (setq m (list-to-index l matfunc))))
-             (m ()) )
-         (while ~m
-           (setq l (nconc1 l (read))) )
-         m ))))
+       (index-read matfunc) ) )
 
 (dmc |#]| 
-     (error 'read "extra '#]' found"))
+     (error 'read "extra ']' found"))
 
 (dmc |#[|
-     (let ((l (list 'quote))
-           (m ())
-           (|#]| (lambda() 
-                   (list (setq m (list-to-index l atom-matrix))) )) )
-       (while ~m
-         (setq l (nconc1 l (read))) )
-       (list m) ) ) )
+     (let ((|#]| (lambda() (list (|]|)))))
+       (list (index-read atom-matrix)) ) )
 
 (lock_symbol contiguousp clone-matrix 
              redim unfold select diagonal narrow idx-gloop
-             index-print list-to-index 
-             |[| |]| |#[| |#]|)
+             index-print index-read |[| |]| |#[| |#]|)
 
 
 
