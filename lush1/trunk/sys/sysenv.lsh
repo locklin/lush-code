@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.28 2002-07-09 00:43:18 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.29 2002-07-09 21:19:35 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -395,6 +395,24 @@
         (while ,expr (setq |MAP| (cons (progn ,@body) |MAP|)))
         (reverse |MAP|) ) )
 
+(dm filter(fn ((fexp dexp)) . body)
+  (let ((f (mlambda(fn f d b)
+             (let ((okay t)
+                   (match (lambda(f d)
+                            (while (and okay (consp f) (consp d))
+                              (match (car f) (car d))
+                              (setq f (cdr f))
+                              (setq d (cdr d)) )
+                            (cond
+                             ((and okay (symbolp f))
+                              (setq bindings (cons (list f (list 'quote d)) bindings)) )
+                             ((or f d)
+                              (setq okay ()) ) ) )) )
+               (match f d)
+               (when okay
+                 `(let ,(reverse bindings) ,@b) ) ) )))
+    `(eval (list ,f ',fexp ,dexp ',body)) ) )
+
 (de sort-list (l comp)
     (if (cdr l)
 	(let* ((piv ())
@@ -452,7 +470,7 @@
              nconc nconc1 classp dmd alist-get alist-add
              |*PROPERTIES| putp getp 
              defclass defmethod demethod dfmethod dmmethod
-             mapfor mapwhile sort-list 
+             mapfor mapwhile filter sort-list 
              hset hset-and hset-or)
 
 
@@ -1158,6 +1176,8 @@
 
 ;;; --------- Declaring types -----------
 
+;; Types have no existence in the interpreter.
+;; This is all compiler support...
 
 ;; type macros
 (let ((m (mlambda fn (mlambda args (cons 'declare args)))))
@@ -1176,9 +1196,9 @@
   (when (or (not (consp source))
             (not (symbolp (car source))) )
     (error where "invalid type specifier" source) )
-  (let ((check (getp (car source) 'parse-type)))
-    (if (functionp check)
-        (check where source)
+  (let ((check-type-syntax (getp (car source) 'type-syntax)))
+    (if (functionp check-type-syntax)
+        (check-type-syntax where source)
       (error where "invalid type specifier" source) ) ) )
 
 ;; idx base types
@@ -1192,321 +1212,78 @@
 (putp '-double- 'srg-type |DSTORAGE|)
 (putp '-gptr-   'srg-type |GPTRSTORAGE|)
 
-;; type syntax checks (simple types)
-(let ((m (lambda(where (fn . args))
-           (when args
-             (error where "syntax error in simple type" (cons fn args)) ) )))
-  (each ((fn (append '(-bool- -ubyte- -byte- -short- -int-)
-                     '(-flt- -real- -float- -double- -str-) )))
-    (putp fn 'parse-type m) ) )
-
-;; type syntax checks (idx types)
-(let ((m (lambda(where (fn . args))
-           (when (not (and (consp args) 
-                           (consp (car args))
-                           (not (cdr args))))
-             (error where "syntax error in idx type" (cons fn args)) )
-           (when (not (getp (caar args) 'srg-type))
-             (error where "illegal base type in idx type specifier" (cons fn args)) ) )))
-  (for (i 0 15)
-       (putp (named (sprintf "-idx%d-" i)) 'parse-type m) ) )
-
-;; type syntax checks (obj types)
-(putp '-obj- 'parse-type
-      (lambda (where (fn . args))
-        (when (not (and (consp args) 
-                        (consp (car args)) 
-                        (not (cdr args)) 
-                        (not (cdar args))
-                        (symbolp (caar args)) ))
-          (error where "syntax error in object type" (cons fn args)) ) ) )
-
-;; type syntax checks (gptr types)
-(putp '-gptr- 'parse-type
-      (lambda (where (fn . args))
-        (when (not (or (not args)
-                       (and (consp args) 
-                            (not (cdr args))
-                            (or (stringp (car args))
-                                (and (consp (car args)) 
-                                     (symbolp (caar args)) 
-                                     (not (cdar args)) ) ) ) ))
-          (error where "syntax error in gptr type" (cons fn args)) ) ) )
-
-;; type syntax checks (list types)
-(putp '-list- 'parse-type
-      (lambda (where (fn . args))
-        (each ((arg args)) (verify-type-decl-format arg where)) ) )
-
-
-
-;;;;;;;;;;;;;;;;;;;;;; BEGIN JUNK
-(when ()
-
-(each ((fn '(-bool- -int- -flt- -float- -real- -double-
-                    -ord- -ubyte- -byte- -short- -str-)))
-      (eval
-       '(dm `fn (fn . args)
-	    (if (= 0 (length args))    ; new style format
-		(list 'mlambda '(fn . args)
-		      (quote (append (list 'declare (list (quote `fn))) args)))
-	      (each ((arg args))
-		    (when ~(symbolp arg)
-			  (error 'declare "expected a symbol" arg))
-		    (append (list 'declare (list (quote `fn))) args)))))
-      (eval (list 'lock-symbol fn)))
-
-;
-; creation of dm's for -list- -array- (new style only)  ; mdh
-;
-
-(dm -gptr- (fn . args)
-    (cond
-     ((= 0 (length args))
-      (list 'mlambda '(fn . args)
-	    '(append (list 'declare (list '-gptr-)) args) ))
-     ((and (= 1 (length args)) (stringp (car args)))
-      (list 'mlambda '(fn . args)
-	    '(append (list 'declare (list '-gptr- `(car args))) args) ) )
-     ((and (= 1 (length args)) (consp (car args)) (= 1 (length (car args))))
-      (list 'mlambda '(fn . args)
-	    '(append (list 'declare (list '-gptr- (quote `(car args)))) args) ) )
-     (t
-      (each ((arg args))
-	    (when (null (symbolp arg))
-		  (error 'declare "expected a symbol" arg) )
-	    (append (list 'declare (list '-gptr-)) args) ) ) ) )
+;; boolean type check
+(putp '-bool- 'type-syntax
+      (lambda(where source)
+        (or (filter (((fn) source)) (lambda(x) t))
+            (error where "Illegal syntax in boolean type" source) ) ) )
+;; string type check
+(putp '-str-  'type-syntax
+      (lambda(where source)
+        (or (filter (((fn) source)) stringp)
+            (error where "Illegal syntax in boolean type" source) ) ) )
+;; numeric type check
+(each ((fn '(-ubyte- -byte- -short- -int- -flt- -float- -real- -double-)))
+  (putp fn 'type-syntax
+        (lambda(where source)
+          (or (filter (((fn) source)) numberp)
+              (error where "Illegal syntax in boolean type" source) ) ) ) )
+;; object type check
+(putp '-obj-  'type-syntax
+      (lambda(where source)
+        (or (filter (((fn (classname)) source))
+              (and (symbolp classname) 
+                   (eval `(lambda(x) (is-of-class x ,classname)))) )
+            (error where "Illegal syntax in object type" source) ) ) )
+;; gptr type check
+(putp '-gptr- 'type-syntax
+      (lambda(where source)
+        (let ((gptrp (lambda(x) (or (not x) (is-of-class x |GPTR|)))))
+          (or (filter (((fn) source)) gptrp)
+              (filter (((fn arg) source)) (and (stringp arg) gptrp))
+              (filter (((fn (arg)) source)) (and (symbolp arg) gptrp))
+              (error where "Illegal syntax in gptr type" source) ) ) ) )
+;; list type check
+(putp '-list- 'type-syntax
+      (lambda(where source)
+        (let ((chk ())
+              (listchk (lambda(x chk)
+                         (let ((okay t))
+                           (while (and okay (consp x) (consp chk))
+                             (setq okay ((car chk) (car x)))
+                             (setq chk (cdr chk))
+                             (setq x (cdr x)) )
+                           (and okay (not x) (not chk)) ) )))
+          (each ((arg (cdr source)))
+            (setq chk (nconc1 chk (verify-type-decl-format arg where))) )
+          (eval `(lambda(x) (,listchk x ',chk))) ) ) )
+;; idx type check
+(let* ((idxsyntax 
+        (lambda(ndim where source)
+          (let ((idxcheck 
+                 (lambda(x ndim srgtype)
+                   (and (indexp x) (= (idx-ndim x) ndim)
+                        (is-of-class (idx-storage x) srgtype) ) ) ))
+            (or (filter (((fn (base)) source))
+                  (let ((srgtype (getp base 'srg-type)))
+                    (when (not srgtype)
+                      (error where "Illegal base for idx type" source) )
+                    (eval `(lambda(x) (,idxcheck x ,ndim ,srgtype))) ) )
+                (error where "Illegal syntax in idx type" source) ) ) ) ))
+  (for (ndim 0 15)
+       (putp (named (sprintf "-idx%d-" ndim)) 'type-syntax
+             (eval `(lambda(where source) (,idxsyntax ,ndim where source))) ) ) )
 
 
-(dm -list- (fn . args)
-    (verify-type-decl-format (cons fn args))
-    (list 'mlambda '(f . args)     ; new style declaration method
-	  '(append (list (quote declare)
-			 (quote  `(cons fn args))) args)))
+(df declare(|Type| . |Syms|)
+  (setq |Type| (verify-type-decl-format |Type|))
+  (each ((|Sym| |Syms|))
+    (when (not (symbolp |Sym|))
+      (error 'declare "not a symbol" |Sym|) )
+    (when (not (|Type| (eval |Sym|)))
+      (error 'declare "type mismatch" |Sym|) ) ) )
 
-(dm -array- (fn . args)
-    (verify-type-decl-format (cons fn args))
-    (list 'mlambda '(f . args)     ; new style declaration method
-	  '(append (list (quote declare)
-			 (quote  `(cons fn args))) args)))
-
-(lock-symbol -gptr- -list- -array-)
-
-;
-; creation of dm's for -idxN-'s (N in 0 .. 15) and -obj-  ; mdh
-;
-(each ((fn '(-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7-
-		    -idx8- -idx9- -idx10- -idx11- -idx12- -idx13-
-		    -idx14- -idx15-)))
-      (eval '(dm `fn (fn . body)
-		 (if (null body)
-		     (error fn "expected an argument" fn))
-		 (let ((format ())
-		       (args ()))
-		   (if (and ~(null (car body))
-			    (listp (car body))
-			    (= 1 (length (car body))))
-		       (setq format (append (list fn) body))   ; new style
-		     (if ~(listp (car body))                   ; oldstyle
-		       (progn
-			 (setq args body)
-			 (setq format (list fn '(-flt-))))
-		       (if (< 1 (length body))
-			   (error fn "too many arguments" body))
-		       (setq args (cdr (car body)))
-		       (setq format (list fn (list (car (car body)))))))
-		   (if (= 0 (length args))       ; new style decl method
-		       (list 'mlambda '(fn . args)
-			     '(append
-			       (list 'declare (quote `format)) args))
-		     (each ((arg args))
-			   (when ~(symbolp arg)
-				 (error fn "expected a symbol" arg)))
-		     (append
-			(list 'declare format) args)))))
-      (eval (list 'lock-symbol fn)))
-
-(dm -obj- (fn . args)
-    (verify-type-decl-format (cons fn args))
-    (list 'mlambda '(f . args)     ; new style declaration method
-	  '(append (list (quote declare)
-			 (quote  `(cons fn args))) args)))
-(lock-symbol -obj-)
-
-;#?  (verify-type-decl-format <source>)
-;; Returns true if <source> is an acceptable variable type declaration
-;; format.  An error message is generated if not.  <source> is a list
-;; of variable types.
-;; 
-;; For example, the following two expressions both return true since both are
-;; valid type declaration formats:
-;;
-;;  (verify-type-decl-format '(-list- (-flt-) (-int-)))
-;;
-;;  (verify-type-decl-format '(-idx2- (-int-)))
-(de verify-type-decl-format(source)                   ; mdh
-    (let ((idx-format-types '(-bool- -int- -flt- -float- -real- -double-
-				     -ord- -ubyte- -byte- -short- -gptr-)))
-      (if ~(listp source)
-	(error 'declare "expected a list containing a type declaration"
-	       source))
-      
-      (selectq (car source)
-       
-       ((-bool- -int- -flt- -float- -real- -double-
-		-ord- -ubyte- -byte- -short- -str-)    ;SIMPLE
-	(if (<> 1 (length source))
-	    (error 'declare "expected no additional type declarations" 
-		   (cdr source))))
-
-       ((-gptr-)
-	(when (<> 1 (length source))
-	      (if (or (<> 2 (length source))
-		      (and (not (stringp (cadr source)))
-			   (or (not (consp (cadr source)))
-			       (<> 1 (length (cadr source)))
-			       (not (symbolp (caadr source))) ) ) )
-		  (error 'declare "syntax error" source) ) ) )
-
-       ((-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7- -idx8-
-		-idx9- -idx10- -idx11- -idx12- -idx13- -idx14- -idx15-) ; IDX
-	(if ~(= 1 (length (cdr source)))
-	  (error 'declare "expected only one argument"  source))
-	(if ~(listp (cadr source))
-	  (error 'declare "expected a list as an argument" source))
-	(if (or ~(= 1 (length (cadr source)))
-		~(member (caadr source) idx-format-types))
-	    (error 'declare "invalid idx format type" (cdr source))))
-
-      (-list-                                                ; LIST
-       (each ((arg (cdr source)))
-	     (verify-type-decl-format arg)))
-      
-      (-array-                                               ; ARRAY
-       (if ~(= 1 (length (cdr source)))
-	 (error 'declare "expected only one argument"  source))
-       (if ~(listp (cadr source))
-	 (error 'declare "expected a list as an argument" source))
-       (verify-type-decl-format (cadr source)))
-					
-      (-obj-                                                  ; OBJ
-       (when ~(= 1 (length (cdr source)))
-	     (error 'declare "expected only one argument"  source))
-       (when ~(listp (cadr source))
-	     (error 'declare "expected a list as an argument" source))
-       )
-      (t (error 'declare "unknown declaration type" (car source))))
-      )
-    t)    
-
-
-
-(de verify-symbol-type(format symb)
-
-    (if ~(listp format)
-	(error 'declare "expected a list containing a type declaration"
-	       format))
-
-    ; theoretically, the format of the source has already been checked at this
-    ; point.  Perhaps a call to verify-type-decl-format would be in order.
-    ; (this should only be called from declare, which should have already
-    ; checked the format)
-    (selectq 
-     (car format)
-     
-     ((-int- -real- -double- -float- -flt- -ord- -ubyte- -byte- -short-)
-      (if ~(numberp symb)
-	(error 'declare "symbol is not numeric" symb)))
-
-     (-str-                                                ;STRING
-      (if ~(stringp symb) (error 'declare "symbol is not a string" symb)))
-
-     (-bool-                                                ;BOOLEAN
-      (if ~(boolp symb)	(error 'declare "symbol is not a boolean" symb)))
-
-     (-list-                                           ; LIST
-      (if ~(listp symb)	(error 'declare "symbol is not a list" symb))
-      (if (<> (length symb) (length (cdr format)))
-	  (error 'declare
-		 "number of elements in format and symbol do not match"
-		 (list format symb)))
-      (each ((arg (cdr format)) (sym symb))
-	    (verify-symbol-type arg sym)))
-
-     (-array-                                           ; ARRAY
-; NOTE: array verify method?
-      (printf "\n Warning:  Array type checking not available yet\n\n")
-      (if (<> (length symb) (length (cdr format)))
-	  (error 'declare
-		 "number of elements in format and symbol do not match"
-		 (list format symb)))
-      (each ((arg (cdr format)) (sym symb))
-	    (verify-symbol-type arg sym)))
-
-     (-obj-                                           ; OBJECT
-      (when ~(classp (classof symb))
-	    (error 'declare
-		   "symbols is not object of a class" symb))
-      (let ((oclass (classof symb))
-	    (cclass (eval (caadr format))))
-	(while (and ~(null oclass)
-		    (<> cclass oclass))
-	  (setq oclass (super oclass)))
-	(when (null oclass)
-	      (error 'declare
-		     "symbol is not a subclass of class" (caadr format)))))
-
-     (-gptr-                                           ; GPTR
-      ())
-
-     ((-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7- -idx8-
-	      -idx9- -idx10- -idx11- -idx12- -idx13- -idx14- -idx15-) ; IDX
-      (let ((idxs
-	     '(-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7- -idx8-
-		      -idx9- -idx10- -idx11- -idx12- -idx13- -idx14- -idx15-)))
-	(if ~(matrixp symb)
-	  (error 'declare "symbol is not an idx" symb))
-	(if (<> (idx-ndim symb)
-		(- (length idxs) (length (member (car format) idxs))) )
-	    (error 'declare "dimension of idx symbol is incorrect" symb))
-	(if (<> (classof (idx-storage symb))
-		(selectq (caadr format)
-			 (-int-             |I32STORAGE|)
-			 (-short-           |I16STORAGE|)
-			 (-byte-            |I8STORAGE|)
-			 (-ubyte-           |U8STORAGE|)
-			 ((-flt- -float-)   |FSTORAGE|)
-			 ((-real- -double-) |DSTORAGE|)
-			 (-gptr-            |GPTRSTORAGE|)
-			 (t (error 'declare "unknown type declaration"
-				   (caadr format)))))
-	    (error 'declare "storage type mismatch" 
-		   (list (cadr format) symb)))
-	))
-     
-     (t (error 'declare "IPE!  unknown type declaration in format" format)))
-
-)
-
-;
-;  declare  
-;
-(df declare(format . args)
-    (if (or ~(listp args)
-	    (= 0 (length args)))
-	(error 'declare "no arguments to declare" (cons format args)))
-
-;    (verify-type-decl-format format)  ; no longer needed?
-					; symbol check
-    (each ((arg args))
-	  (if ~(symbolp arg)
-	    (error 'declare "expected a symbol to be declared" arg))
-	  (verify-symbol-type format (eval arg))))
-
-(lock-symbol declare)
-
-)))))))))))))))))
-;;;;;;;;;;;;;;;;;;;;;; END JUNK
+(lock-symbol verify-type-decl-format declare)
 
 
 
