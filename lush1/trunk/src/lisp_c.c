@@ -24,18 +24,13 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.32 2004-07-20 18:51:06 leonb Exp $
+ * $Id: lisp_c.c,v 1.33 2004-07-20 18:59:01 leonb Exp $
  **********************************************************************/
 
 
 #include "header.h"
 #include "check_func.h"
 #include "dh.h"
-
-#if HAVE_LIBBFD
-# define DLDBFD 1
-# include "dldbfd.h"
-#endif
 
 /* From symbol.c */
 extern at *at_true;
@@ -2884,7 +2879,6 @@ DX(xto_gptr)
       n = lside_create_str(p);
       return NEW_GPTR(n->citem);
     }      
-#if DLDBFD
   else if (EXTERNP(p, &dh_class))
     {
       struct cfunction *cfunc;
@@ -2893,9 +2887,8 @@ DX(xto_gptr)
       if (CONSP(cfunc->name))
         check_primitive(cfunc->name, cfunc->info);
       if (( dhdoc = (dhdoc_t*)(cfunc->info) ))
-        return NEW_GPTR(dld_get_func(dhdoc->lispdata.c_name));
+        return NEW_GPTR(dhdoc->lispdata.call);
     }
-#endif
   error(NIL,"Cannot make a compiled version of this lisp object",p);
 }
 
