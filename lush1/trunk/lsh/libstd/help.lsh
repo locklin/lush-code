@@ -27,7 +27,7 @@
 ;;;;    The help subsystem...
 ;;;;	Yann LeCun 2002
 ;;;;
-;;;;  $Id: help.lsh,v 1.13 2002-11-06 23:37:44 leonb Exp $
+;;;;  $Id: help.lsh,v 1.14 2003-01-18 16:32:01 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "libstd/ldoc")
@@ -137,7 +137,7 @@
 		       (>= choice 1)
 		       (<= choice (length ch)))
 		  (setq done t)
-		  (==> (==> (==> (nth ch choice) getdata) getdata) render-text))
+		  (==> (setq :zzz (==> (==> (nth ch choice) getdata) getdata)) render-text))
 		 (t (printf "invalid choice, try again\n")))))))
 	 ))
       (delete rez)))))
@@ -166,22 +166,20 @@
 ;;; Parsing help files
 ;;; ========================================
 
-;; (setq help-dir-list '("manual" "packages" "local"))
-
 ;; ----------------------------------------
 
 #? (help-search-file <file> [<hd>])
 ;; Tries to locate a given help file <file>.
-;; Help files are searched along the help path. SN files are searched
-;; along the SN path. If everything fails, the specified directory <hd>
-;; is assumed.
+;; Files are searched along the help path.
+;; If everything fails, the specified 
+;; directory <hd> is assumed.
 (de help-search-file (file &optional (hd "."))
   ;; Search along help path
-  (let ((dirs (or help-dir-list  (cons "." (path))))
+  (let ((dirs (or help-dir-list (path)))
 	(fullname ()) )
     (when (regex-match ".*\\.(lsh|sn|tl)" file)
       ;; Search SN files along SN path
-      (setq dirs (cons "." (path))) )
+      (setq dirs (path)) )
     (while (and dirs 
 		(setq fullname (concat-fname (car dirs) file))
 		(not (filep fullname)) )
@@ -281,7 +279,7 @@
 (defmethod help-node help-node (lname lfile lkey ldata &optional lchildren)
   (setq data ldata)
   (setq keywords lkey)
-  (setq file lfile)
+  (setq file (or (relative-fname lushdir lfile) lfile))
   (setq name lname)
   (each ((c lchildren))
     (==> this insert c)))
@@ -291,7 +289,8 @@
 
 (defmethod help-node getdata () 
   (when (not data) (setq data (new ldoc)))
-  (let ((z (==> data read-when)))
+  (let ((z (==> data read-when))
+        (file (concat-fname lushdir file)) )
     (if (or (not z) (> (alist-get 'mtime (fileinfo file)) z))
 	(read-help-entry file data name)))
   data)
@@ -328,18 +327,18 @@
 
 (defmethod help-book help-book (f title &optional (start-page ""))
   (setq root (new help-node title start-page () ()))
-  (setq files (list (list f root)))
+  (setq files (list (list (or (relative-fname lushdir f) f) root)))
   (let* ((help-code  (read-help-headers f 0))
 	 (current-file f)
 	 (current-node root)
 	 (current-book this))
     (eval help-code)))
 
-;; supposed to build the hash table mapping files to nodes
-(defmethod help-book  put-entry (f n) 
+;; supposed to build the alist mapping files to nodes
+(defmethod help-book put-entry (f n) 
+  (setq f (or (relative-fname lushdir f) f))
   (let ((pair (assoc f files)))
-    (if pair 
-	(nconc1 pair n)
+    (if pair (nconc1 pair n)
       (setq files (cons (list f n) files)))))
 
 (defmethod help-book make-ltree () (make-ltree-from-tree root))
@@ -359,7 +358,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; HTML rendering of a help-book
 
-(de help-htmlfile-from-path (s) (concat (hashcode s) ".html"))
+(de help-htmlfile-from-path (s) 
+  (concat (hashcode s) ".html"))
 
 ;; render the body of a help node <r> to HTML
 ;; and render the children nodes recursively.
@@ -480,10 +480,6 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; turn a full filename into a short one
-;; removing the prefix if it is the Lush directory
-(de shorten-filename (f) (regex-subst (concat "^" lushdir "/") "" f))
-
 ;; parse a single help entry line and return the entry name
 (de read-help-entry-name ()
     (let* ((line (read-string "~{\n\r\f\e"))
@@ -492,7 +488,6 @@
 			     (regex-subst pattern "%4" line)))
 	   (includep (= (regex-subst pattern "%2" line) "<<")))
       (if includep "" txt)))
-
 
 ;; look for help entry <lname> in file <lfile> 
 ;; and read it into the ldoc object.
@@ -517,7 +512,8 @@
 		    (setq found t)
 		    (skip-char "\n")
 		    (==> theldoc read-help-body 
-			 (shorten-filename fname) lname file-type))))))
+			 (or (relative-fname lushdir fname) fname)
+                         lname file-type))))))
 	(when (not found)
 	  (==> theldoc set-entry-not-found fname lname)))))
 

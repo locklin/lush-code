@@ -24,7 +24,7 @@
 #;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-#;;; $Id: Makefile.in,v 1.16 2003-01-11 08:03:08 leonb Exp $
+#;;; $Id: Makefile.in,v 1.17 2003-01-18 16:31:43 leonb Exp $
 #;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 @SET_MAKE@
@@ -44,7 +44,7 @@ libdir = @libdir@
 mandir = @mandir@
 
 MV = @MV@
-RM = @RM@
+M = @RM@
 LN_S = @LN_S@
 INSTALL = @INSTALL@
 
@@ -52,9 +52,19 @@ INSTALL = @INSTALL@
 
 SUBDIRS=src
 
-world: all
+world: all ${mybindir}/lush ${mysysdir}/stdenv.dump
+	@echo "-------------------------------------------------------"
+	@echo "Congratulations: the compilation was successful!"
+	@echo ""
+	@echo "Lush is designed to run from the compilation directory."
+	@echo "Simply include" `pwd`"/bin in your shell search path,"
+	@echo "or create a symlink to the executable" `pwd`"/bin/lush."
+	@echo ""
+	@echo "If you have root permissions, you can also perform a"
+	@echo "system wide installation by typing 'make install'"
+	@echo "-------------------------------------------------------"
 
-${mybindir}/lush: FORCE
+${mybindir}/lush: all FORCE
 	@test -d ${mybindir} || mkdir ${mybindir}
 	@test -r ${mybindir}/lush~3 && \
 	  ${MV} ${mybindir}/lush~3 ${mybindir}/lush~4 || true
@@ -66,7 +76,7 @@ ${mybindir}/lush: FORCE
           ${MV} ${mybindir}/lush ${mybindir}/lush~1 || true
 	${INSTALL} -m 755 src/lush ${mybindir}
 
-${mysysdir}/stdenv.dump: FORCE
+${mysysdir}/stdenv.dump: all FORCE
 	${mybindir}/lush @sysenv stdenv -- ${mysysdir}/stdenv.dump
 
 dump: ${mysysdir}/stdenv.dump 
@@ -80,17 +90,8 @@ all depend clean distclean: FORCE
 	  do ( cd $$d && ${MAKE} $@ ) || exit ; done
 	${MAKE} post-$@
 
-post-all: ${mybindir}/lush ${mysysdir}/stdenv.dump
-	@echo "-------------------------------------------------------"
-	@echo "Congratulations: the compilation was successful!"
-	@echo ""
-	@echo "Lush is designed to run from the compilation directory."
-	@echo "Simply include" `pwd`"/bin in your shell search path,"
-	@echo "or create a symlink to the executable" `pwd`"/bin/lush."
-	@echo ""
-	@echo "If you have root permissions, you can also perform a"
-	@echo "system wide installation by typing 'make install'"
-	@echo "-------------------------------------------------------"
+post-all: FORCE
+	@echo Compilation Done.
 
 post-depend: FORCE
 	@echo Done.
@@ -105,8 +106,8 @@ post-distclean: post-clean FORCE
 	-${RM} 2>/dev/null Makefile config.log config.status
 
 INSTALLDIRS =  etc include src sys lsh packages
-FINDDIRS  = \( -type d -name C\* -prune \) -o \( -type d -print \)
-FINDFILES = \( -type d -name C\* -prune \) -o \( -type f -print \)
+FINDDIRS  = -type d -name C\* -prune -o -type d -print
+FINDFILES = -type d -name C\* -prune -o -type f -print
 
 install-sub: FORCE
 	@echo "-- Installing executable"
@@ -127,10 +128,15 @@ install-sub: FORCE
 	  for f in `find $$subdir ${FINDFILES}` ; do \
 	    ${INSTALL} ${srcdir}/$$f ${datadir}/lush/$$f ; done ; done
 
-install-nolink: install-sub
+install-dump: ${mysysdir}/stdenv.dump
+	# This must be done after installing the other files
+	# because the time stamps must be correct
+	${INSTALL} ${mysysdir}/stdenv.dump ${datadir}/lush/sys/stdenv.dump
+
+install-nolink: install-sub install-dump
 	@echo "-- Install done."
 
-install: all install-sub
+install: all install-sub install-dump
 	-@if test ${bindir} != /usr/bin ; then \
 	    echo "-- Trying to setup a link in the standard lush location." ; \
 	    echo "-- You can avoid this step with 'make install-nolink'." ; \

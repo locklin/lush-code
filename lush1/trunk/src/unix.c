@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.33 2003-01-14 16:41:27 leonb Exp $
+ * $Id: unix.c,v 1.34 2003-01-18 16:32:02 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -778,19 +778,19 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
 static int console_in_eventproc = 0;
 
 static void
-console_wait_for_char(void)
+console_wait_for_char(int prep)
 {
   fflush(stdout);
   console_in_eventproc = 1;
   process_pending_events();
-  rl_prep_terminal(1);
+  if (prep) rl_prep_terminal(1);
   console_in_eventproc = 0;
   for(;;)
     {
       at *handler = event_wait(TRUE);
       console_in_eventproc = 1;
       process_pending_events();
-      rl_prep_terminal(1);
+      if (prep) rl_prep_terminal(1);
       console_in_eventproc = 0;
       if (! handler) break;
       UNLOCK(handler);
@@ -803,7 +803,7 @@ console_getc(FILE *f)
 {
   if (f != stdin)
     return rl_getc(f);
-  console_wait_for_char();
+  console_wait_for_char(TRUE);
   if (break_attempt)
     return EOF;
   return rl_getc(f);
@@ -944,7 +944,6 @@ console_init(void)
 #endif 
 }
 
-
 void
 console_getline(char *prompt, char *buf, int size)
 {
@@ -952,7 +951,7 @@ console_getline(char *prompt, char *buf, int size)
   buf[0] = 0;
   /* Problem: Recursive calls to readline happen when an 
      event handler attempts to read something on the tty.
-     Solution: Revert to non-readline operation. */
+     Solution: Revert to non-readline non-event operation. */
   if (console_in_eventproc)
     {
       rl_deprep_terminal();
@@ -964,15 +963,20 @@ console_getline(char *prompt, char *buf, int size)
       return;
     }
   /* Problem: Readline erases previous output on the same line.
-     Solution: Wait until user types something and go to new line. */
+     Solution: Revert to non-readline operation. */
   if (context->output_tab > 0)
     {
+      rl_deprep_terminal();
       fputs(prompt, stdout);
       fflush(stdout);
-      console_wait_for_char();
-      if (break_attempt)
-        return;
-      print_string("\n");
+      console_wait_for_char(FALSE);
+      if (context->output_tab > 0)
+        {
+          if (!break_attempt)
+            if (!feof(stdin))
+              fgets(buf,size-2,stdin);
+          return;
+        }
     }
   /* Call readline */
   line = readline(prompt);
