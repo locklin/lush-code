@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.14 2002-11-05 14:11:20 leonb Exp $
+ * $Id: toplevel.c,v 1.15 2002-11-06 16:09:48 leonb Exp $
  **********************************************************************/
 
 
@@ -528,8 +528,6 @@ toplevel(char *in, char *out, char *new_prompt)
     else
       prompt_string = 0;
     TOPLEVEL_MACHINE;
-    if (next_char()==(char)EOF)
-      exit_flag = 1;
     q1 = read_list();
     if (q1) {
       error_doc.debug_tab = 0;
@@ -612,6 +610,12 @@ DY(ydiscard)
  * exit
  */
 
+void
+set_toplevel_exit_flag(void)
+{
+  exit_flag = 1;
+}
+
 DX(xexit)
 {
   if (arg_number==1) {
@@ -620,7 +624,7 @@ DX(xexit)
     clean_up();
     exit(n);
   }
-  exit_flag = 1;
+  set_toplevel_exit_flag();
   return NIL;
 }
 

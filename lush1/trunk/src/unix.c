@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.23 2002-11-06 05:21:28 leonb Exp $
+ * $Id: unix.c,v 1.24 2002-11-06 16:09:49 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -764,11 +764,9 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
 
 #if HAVE_LIBREADLINE
 
-static int
-console_getc(FILE *f)
+static void
+console_wait_for_char(void)
 {
-  if (f != stdin)
-    return rl_getc(f);
   fflush(stdout);
   rl_deprep_terminal();
   process_pending_events();
@@ -782,6 +780,14 @@ console_getc(FILE *f)
       if (! handler) break;
       UNLOCK(handler);
     }
+}
+
+static int
+console_getc(FILE *f)
+{
+  if (f != stdin)
+    return rl_getc(f);
+  console_wait_for_char();
   if (break_attempt)
     return EOF;
   return rl_getc(f);
@@ -882,7 +888,8 @@ console_complete(const char *text, int start, int end)
     return NULL; /* first word of a string */
   if (state == 0 && lasti>=0 && rl_line_buffer[lasti]==(0x1f&'L'))
     return NULL; /* after ctrl-L */
-  if (state == 0 && lasti>=1 && rl_line_buffer[lasti-1]=='^' && rl_line_buffer[lasti]=='L')
+  if (state == 0 && lasti>=1 && 
+      rl_line_buffer[lasti-1]=='^' && rl_line_buffer[lasti]=='L')
     return NULL; /* after ^L */
   /* Symbol completion */
   if ((state==0 || state=='|') && end>start)
@@ -916,7 +923,7 @@ console_init(void)
   rl_bind_key (')', rl_insert_close);
   rl_bind_key (']', rl_insert_close);
   rl_bind_key ('}', rl_insert_close);
-#endif
+#endif 
 }
 
 void
@@ -924,6 +931,18 @@ console_getline(char *prompt, char *buf, int size)
 {
   char *s, *line;
   buf[0] = 0;
+  
+  if (context->output_tab > 0)
+    {
+      /* Make sure that readline does not 
+         erase the entire line right away. */
+      fputs(prompt, stdout);
+      fflush(stdout);
+      console_wait_for_char();
+      if (break_attempt)
+        return;
+      print_string("\n");
+    }
   line = readline(prompt);
   if (line)
     {
@@ -954,6 +973,8 @@ console_getline(char *prompt, char *buf, int size)
     }
   else
     {
+      extern void set_toplevel_exit_flag(void);
+      set_toplevel_exit_flag();
       buf[0] = (char)EOF;
       buf[1] = 0;
     }
