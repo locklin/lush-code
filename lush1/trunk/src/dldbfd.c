@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.12 2002-12-11 08:06:07 leonb Exp $
+ * $Id: dldbfd.c,v 1.13 2002-12-12 08:24:06 leonb Exp $
  **********************************************************************/
 
 
@@ -45,41 +45,41 @@
 
 
 #if HAVE_UNISTD_H
-#include <sys/unistd.h>
+# include <unistd.h>
 #endif
 
 #if HAVE_SYS_MMAN_H
-#include <sys/mman.h>
+# include <sys/mman.h>
 #endif
 
 #if HAVE_DLFCN_H
 #if HAVE_DLOPEN
-#include <dlfcn.h>
-#define DLOPEN 1
+# include <dlfcn.h>
+# define DLOPEN 1
 typedef void* dlopen_handle_t;
 #endif
 #endif
 
 #if HAVE_DL_H 
 #if HAVE_LIBDLD
-#include <dl.h>
-#define DLOPEN 1
+# include <dl.h>
+# define DLOPEN 1
 typedef shl_t dlopen_handle_t
 #endif
 #endif
 
 #ifdef WIN32
-#define DLOPEN 1
+# define DLOPEN 1
 typedef void* dlopen_handle_t;
 #endif
 
 #if DLOPEN
-#ifndef RTLD_LAZY
-#define RTLD_LAZY 1
-#endif
-#ifndef RTLD_NOW
-#define RTLD_NOW 1
-#endif
+# ifndef RTLD_LAZY
+#  define RTLD_LAZY 1
+# endif
+# ifndef RTLD_NOW
+#  define RTLD_NOW 1
+# endif
 #endif
 
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dz.c,v 1.3 2002-11-06 16:30:49 leonb Exp $
+ * $Id: dz.c,v 1.4 2002-12-12 08:24:06 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -563,6 +563,13 @@ dz_new(int narg, int reqs, int plen)
 
 /* ------------ STATIC CODE ANALYSIS ------------- */
 
+/* This code proves that the virtual machine code will never access illegal
+ * stack position.  It works my pre-computing the stack contents expected by
+ * each byte code location.  This static code analyser was written in 1991 by
+ * Leon Bottou and Patrice Simard, well before the popular java byte code
+ * analyzer.
+ */
+
 static struct progmap {
   int pc;
   int sp;
@@ -729,7 +736,7 @@ gen_code(at *ins, inst **pc_p, int *inum_p)
 	  else if (!strcmp(dz_opnames[op]+dz_offname,"POP@"))
 	    (*pc_p)[-1].code.op = find_opname("NOP");
 	  else
-	    error(NIL,"stack relative operand is 0",ins);
+	    error("DZ Analyzer","Stack relative operand is 0",ins);
 	}
 	break;
 	
@@ -789,7 +796,7 @@ make_progmap_1(at *ins, int *inum_p)
     progmap[*inum_p].pc += 1 + find_n_arg(ins,NULL);
     break;
   default:
-    error("dz_lisp.c/acc_inst_sizes","unknown dz_opnames[op][0]",NIL);
+    error("DZ Analyzer","Unknown opcode class",NIL);
   }
 
   switch( dz_opnames[op][1] ) {
@@ -811,7 +818,7 @@ make_progmap_1(at *ins, int *inum_p)
     progmap[*inum_p].sp -= 3;
     break;
   default:
-    error("dz_lisp.c/acc_inst_sizes","unknown dz_opnames[op][0]",NIL);
+    error("DZ Analyzer","Unknown opcode class",NIL);
   }
 }
 
@@ -833,7 +840,7 @@ make_progmap_2(at *ins, int *inum_p)
 	if (d == progmap[i].pc)
 	  break;
       if (d != progmap[i].pc)
-	error(NIL,"Jump to a stupid location",ins);
+	error("DZ Analyzer","Jump to a stupid location",ins);
 
       switch (dz_opnames[op][1]) {
       case '<':
@@ -848,13 +855,12 @@ make_progmap_2(at *ins, int *inum_p)
 	brsp = progmap[*inum_p].sp + 1;
 	break;
       default:
-	error("dz_lisp.c/make_progmap_2",
-	      "unknown stack behavior for a branch",ins);
+	error("DZ Analyzer","Unknown stack behavior for a branch",ins);
       }
       
       if ( progmap[*inum_p].sg == progmap[i].sg ) {
 	if ( brsp != progmap[i].sp )
-	  error(NIL,"stack mismatch in a jump",ins); 
+	  error("DZ Analyzer","Stack mismatch in a jump",ins); 
       } else {
 	d = brsp - progmap[i].sp;
 	sgsrc = progmap[i].sg;
@@ -904,15 +910,15 @@ make_progmap(void)
   this_reqstack = this_num_arg;
   for (inum=1; inum<=this_imax; inum++) {
     if (progmap[inum].sg != 0)
-      error(NIL,"statement not reached",q->Car);
+      error("DZ Analyzer","Statement not reached",q->Car);
     if (progmap[inum].sp < 0)
-      error(NIL,"stack is popped below the ground level",q->Car);
+      error("DZ Analyzer","Stack is popped below the ground level",q->Car);
     if (progmap[inum].sp > this_reqstack)
       this_reqstack = progmap[inum].sp + 1;
     q = q->Cdr;
   }
   if (progmap[this_imax].sp != 1)
-    error(NIL,"Stack must be properly rewound",
+    error("DZ Analyzer","Stack must be properly rewound",
 	  NEW_NUMBER(progmap[this_imax].sp));
 }
 
@@ -1199,7 +1205,7 @@ DX(xdz_def)
 	*where = cons(gen_inst(&pc),NIL);
 	where = &((*where)->Cdr);
 	if (pc > dz->program + dz->program_size)
-	  error("dz_lisp.c/xdzdef","going past program",p);
+	  error("dz.c/xdzdef","going past program",p);
       }
     }
     return ans;

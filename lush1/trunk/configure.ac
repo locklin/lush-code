@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.17 2002-12-11 08:05:36 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.18 2002-12-12 08:23:54 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -147,7 +147,7 @@ AC_HEADER_DIRENT
 AC_HEADER_TIME
 AC_HEADER_SYS_WAIT     
 AC_CHECK_HEADERS(memory.h string.h strings.h)
-AC_CHECK_HEADERS(unistd.h sys/mman.h termios.h pty.h)
+AC_CHECK_HEADERS(unistd.h sys/mman.h termios.h pty.h util.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/ttold.h)
 AC_CHECK_HEADERS(sys/time.h sys/timeb.h readline/readline.h bfd.h)

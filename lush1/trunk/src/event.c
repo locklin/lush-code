@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.15 2002-11-06 21:09:42 leonb Exp $
+ * $Id: event.c,v 1.16 2002-12-12 08:24:07 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -490,7 +490,7 @@ async_poll_setup(void)
 
 
 /* unregister_poll_functions --
-   Unregistes a previously registered event source.
+   Unregisters a previously registered event source.
    Argument handle is the handle returned by the
    registering function below.
 */
@@ -524,7 +524,7 @@ unregister_poll_functions(void *handle)
    structures within the source.
 
    Function bwait() is called on all sources whenever
-   lush is waiting for user events.  Function ewait()
+   lush starts waiting for user events.  Function ewait()
    is called whenever lush stops waiting for user events.
    These function are usuful to present the user
    with some feedback such as a hourglass cursor.

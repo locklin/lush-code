@@ -24,26 +24,26 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dump.c,v 1.3 2002-05-07 17:30:12 leonb Exp $
+ * $Id: dump.c,v 1.4 2002-12-12 08:24:06 leonb Exp $
  **********************************************************************/
 
 
 #include "header.h"
 
-
-/* ------ FORMAT OF A DUMP FILE ----- */
-
-
-/* - 4 bytes of magic number 				    */
-/* - 4 bytes of version number 				    */
-/* - 256 bytes of character map (marking macro chars)       */
-/* - 1 list executed before undumping everything            */
-/* - 1 list of pairs (symbol . value) for the classes       */
-/* - 1 list of pairs (symbol . value) for the other symbols */
+/* Format of a dump file: 
+ *  + 4 bytes of magic number
+ *  + 4 bytes of version number
+ *  + 256 bytes of character map (marking macro chars)
+ *  + 1 big list containing
+ *      - either individual atoms needed for the rest
+ *      - or pairs (symbol . value)
+ *  The file search path is currently missing from dump files.
+ *  The correct fix would be to maintain the execution path in
+ *  symbol |*PATH*| instead of the current hacks in fileio.c.
+ */
 
 #define DUMPMAGIC  0x44454d50
 #define DUMPVERSION 3
-
 
 /* From IO.C */
 extern char char_map[];

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.28 2002-12-11 08:06:07 leonb Exp $
+ * $Id: unix.c,v 1.29 2002-12-12 08:24:07 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -102,6 +102,9 @@
 #endif
 #ifdef HAVE_PTY_H
 # include <pty.h>
+#endif
+#ifdef HAVE_UTIL_H
+# include <util.h>
 #endif
 #ifdef HAVE_READLINE_READLINE_H
 # include <readline/readline.h>
@@ -723,7 +726,7 @@ os_curtime(int *sec, int *msec)
   gettimeofday(&tv, NULL);
   *sec = tv.tv_sec;
   *msec = tv.tv_usec / 1000;
-#elif define(HAVE_FTIME)
+#elif defined(HAVE_FTIME)
   struct timeb tb;
   ftime(&tb);
   *sec = (int)tb.time;
@@ -766,6 +769,12 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
 
 #if HAVE_LIBREADLINE
 
+#if RL_READLINE_VERSION >= 0x400
+# define READLINE_COMPLETION 1
+#else
+# define READLINE_COMPLETION 0
+#endif
+
 static void
 console_wait_for_char(void)
 {
@@ -784,6 +793,7 @@ console_wait_for_char(void)
     }
 }
 
+
 static int
 console_getc(FILE *f)
 {
@@ -794,6 +804,8 @@ console_getc(FILE *f)
     return EOF;
   return rl_getc(f);
 }
+
+#if READLINE_COMPLETION
 
 static char *
 symbol_generator(const char *text, int state)
@@ -847,6 +859,7 @@ symbol_generator(const char *text, int state)
   return 0;
 }
 
+
 static char **
 console_complete(const char *text, int start, int end)
 {
@@ -895,6 +908,8 @@ console_complete(const char *text, int start, int end)
   return 0;
 }
 
+#endif
+
 static void
 console_init(void)
 {
@@ -910,17 +925,21 @@ console_init(void)
     "\031\032\033\034\035\036\037";
   /* callbacks */
   rl_getc_function = console_getc;
+  /* completion */
+#if READLINE_COMPLETION
   rl_attempted_completion_function = console_complete;
+#endif
   /* matching parenthesis */
 #if RL_READLINE_VERSION > 0x401
-#if RL_READLINE_VERSION > 0x402
+# if RL_READLINE_VERSION > 0x402
   rl_set_paren_blink_timeout(250000);
-#endif
+# endif
   rl_bind_key (')', rl_insert_close);
   rl_bind_key (']', rl_insert_close);
   rl_bind_key ('}', rl_insert_close);
 #endif 
 }
+
 
 void
 console_getline(char *prompt, char *buf, int size)
@@ -982,6 +1001,7 @@ static void
 console_init(void)
 {
 }
+
 
 void
 console_getline(char *prompt, char *buf, int size)
@@ -1266,6 +1286,7 @@ DX(xgetconf)
 #undef pclose
 
 #ifdef NEED_POPEN
+
 static pid_t *kidpid = 0;
 static int  kidpidsize = 0;
 
@@ -1292,13 +1313,14 @@ kidpidalloc(int fd)
 }
 #endif
 
+
 FILE* 
 unix_popen(const char *cmd, const char *mode)
 {
 #ifndef NEED_POPEN
   return popen(cmd, mode);
 #else
-#define	tst(a,b) (*mode == 'r'? (b) : (a))
+# define tst(a,b) (*mode == 'r'? (b) : (a))
   int i;
   int p[2];
   int rd = (mode[0]=='r');
@@ -1335,11 +1357,11 @@ unix_popen(const char *cmd, const char *mode)
           close(child_fd);
         }
 #ifdef HAVE_SETPGRP
-#ifdef SETPGRP_VOID
+# ifdef SETPGRP_VOID
       setpgrp();
-#else
+# else
       setpgrp(0,0);
-#endif
+# endif
 #endif
       for (i=0; i<kidpidsize; i++)
         if (kidpid[i])
@@ -1354,6 +1376,7 @@ unix_popen(const char *cmd, const char *mode)
   return fdopen(parent_fd, mode);
 #endif
 }
+
 
 int 
 unix_pclose(FILE *f)
@@ -1439,11 +1462,11 @@ filteropen(const char *cmd, FILE **pfw, FILE **pfr)
         close(fd_dn[1]);
       }
 #ifdef HAVE_SETPGRP
-#ifdef SETPGRP_VOID
+# ifdef SETPGRP_VOID
       setpgrp();
-#else
+# else
       setpgrp(0,0);
-#endif
+# endif
 #endif
 #ifdef NEED_POPEN
       for (i=0; i<kidpidsize; i++)
@@ -1499,6 +1522,7 @@ DX(xfilteropen)
   return cons(f2,f1);
 }
 
+
 void
 filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
 {
@@ -1510,11 +1534,11 @@ filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
   sprintf(string_buffer,"exec %s",cmd);
   if (openpty(&master, &slave, 0, 0, 0) < 0)
     test_file_error(NULL);
-#ifdef HAVE_VFORK
+# ifdef HAVE_VFORK
   pid = vfork();
-#else
+# else
   pid = fork();
-#endif
+# endif
   if (pid < 0)
     {
       close(master);
@@ -1531,30 +1555,30 @@ filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
         _exit(127);
       if (slave != fileno(stdin) && slave != fileno(stdout))
         close(slave);
-#ifdef HAVE_SETPGRP
-#ifdef SETPGRP_VOID
+# ifdef HAVE_SETPGRP
+#  ifdef SETPGRP_VOID
       setpgrp();
-#else
+#  else
       setpgrp(0,0);
-#endif
-#endif
-#ifdef NEED_POPEN
+#  endif
+# endif
+# ifdef NEED_POPEN
       for (i=0; i<kidpidsize; i++)
         if (kidpid[i])
           close(i);
-#endif
+# endif
       execl("/bin/sh", "sh", "-c", string_buffer, 0);
       _exit(127);
     }
   /* Parent process */ 
   close(slave);
   slave = dup(master);
-#ifdef NEED_POPEN
+# ifdef NEED_POPEN
   if (kidpidalloc(master))
     kidpid[master] = pid;
   if (kidpidalloc(slave))
     kidpid[slave] = pid;
-#endif
+# endif
   if (! (*pfw = fdopen(master, "w")))
     test_file_error(NULL);
   if (! (*pfr = fdopen(slave, "r")))
@@ -1563,6 +1587,7 @@ filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
   error(NIL,"filteropenpty is not supported on this system",NIL);
 #endif
 }
+
 
 DX(xfilteropenpty) 
 {
@@ -1593,9 +1618,6 @@ DX(xfilteropenpty)
     var_set(p2,f2);
   return cons(f2,f1);
 }
-
-
-
 
 
 DX(xsocketopen)
