@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.7 2002-05-08 19:52:47 leonb Exp $
+ * $Id: dldbfd.c,v 1.8 2002-08-19 18:59:58 leonb Exp $
  **********************************************************************/
 
 
@@ -378,6 +378,18 @@ create_module_entry(bfd *abfd, module_entry **here, boolean archivep)
     long storage_needed;
     asection *p;
     int i;
+
+    /* Heuristically probe bfd version */
+#ifndef NO_BFD_VERSION_ANALYSIS
+    {
+      for (p=abfd->sections; p; p=p->next)
+        if (p->owner != abfd)
+          THROW("Snafu in bfd section. Possible mismatch between libbfd and bfd.h");
+      const struct bfd_target *tgt = abfd->xvec;
+      if (tgt->alternative_target && tgt->alternative_target->alternative_target != tgt)
+        THROW("Snafu in bfd target. Possible mismatch between libbfd and bfd.h");
+    }
+#endif
 
     /* Fix section flags (GCC2.7.2 on MIPS) */
     if (bfd_get_flavour(abfd) == bfd_target_elf_flavour &&
