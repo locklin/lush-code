@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.6 2002-11-01 22:02:24 leonb Exp $
+ * $Id: nan.c,v 1.7 2003-02-28 23:20:24 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -398,7 +398,7 @@ nop_irq(void)
 
 /* probe_fpe_irq -- signal handler for testing SIGFPE */
 
-static sigjmp_buf probe_fpe_jmp;
+static int fpe_flag;
 
 static void 
 probe_fpe_irq(void)
@@ -406,7 +406,7 @@ probe_fpe_irq(void)
 #ifdef WIN32
   _clearfp();
 #endif
-  siglongjmp(probe_fpe_jmp, 1);
+  fpe_flag = 1;
 }
 
 
@@ -421,23 +421,29 @@ set_fpe_irq(void)
   while (ieee_present)
     {
       /* Check whether "INV" exception must be masked */
+      fpe_flag = 0;
       signal(SIGFPE, (void*)probe_fpe_irq);
-      if (!sigsetjmp(probe_fpe_jmp, 1)) 
-	{ isnanD(3.0 + getnanD()); break; }
-      setup_fpu(FALSE,TRUE);
+      isnanD(3.0 + getnanD());
+      if (! fpe_flag) break;
       /* Check whether all exceptions must be masked */
+      fpe_flag = 0;
+      signal(SIGFPE, (void*)nop_irq);
+      setup_fpu(FALSE,TRUE);
       signal(SIGFPE, (void*)probe_fpe_irq);
-      if (!sigsetjmp(probe_fpe_jmp, 1)) 
-	{ isnanD(3.0 + getnanD()); break; }
-      setup_fpu(FALSE,FALSE);
+      isnanD(3.0 + getnanD());
+      if (! fpe_flag) break;
       /* Check whether signal must be ignored */
+      fpe_flag = 0;
+      signal(SIGFPE, (void*)nop_irq);
+      setup_fpu(FALSE,FALSE);
       signal(SIGFPE, (void*)probe_fpe_irq);
-      if (!sigsetjmp(probe_fpe_jmp, 1)) 
-	{ isnanD(3.0 + getnanD()); break; }
+      isnanD(3.0 + getnanD());
+      if (! fpe_flag) break;
       /* Disable FPE signal at OS level.
        * You would think that SIG_IGN would do it,
        * but Linux forces sigfpe anyway.
        */
+      fpe_flag = 0;
       signal(SIGFPE, (void*)nop_irq);
       return;
     }

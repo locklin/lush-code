@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.12 2003-02-28 18:55:21 leonb Exp $
+ * $Id: allocate.c,v 1.13 2003-02-28 23:20:22 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -106,7 +106,7 @@ typedef struct s_finalizer {
 } finalizer;
 
 static struct alloc_root finalizer_alloc = {
-  NIL, NIL, sizeof(at), 100
+  NIL, NIL, sizeof(finalizer), 100
 };
 
 static finalizer *finalizers[HASHTABLESIZE];

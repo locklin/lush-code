@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.12 2002-11-06 21:13:22 leonb Exp $
+ * $Id: function.c,v 1.13 2003-02-28 23:20:23 leonb Exp $
  **********************************************************************/
 
 
@@ -672,7 +672,7 @@ DX(xfunctionp)
 
 static char need_arg_num[80];
 static char *need_errlist[] =
-{ "bad argument number",
+{ "incorrect number of arguments",
   "not a number",
   "not a list",
   "empty list",
@@ -680,18 +680,16 @@ static char *need_errlist[] =
   "not a cell",
   "not a clist",
   "not a symbol",
-  "not an external object",
-  "not a nlf descriptor",
+  "not an object",
+  "not a gptr",
   "not an index"
 };
-
 
 gptr 
 need_error(int i, int j, at **arg_array_ptr)
 {
   char *s2;
   at *p;
-
   s2 = need_errlist[i];
   p = NIL;
   if (i)
@@ -702,15 +700,12 @@ need_error(int i, int j, at **arg_array_ptr)
   } else if (j == 1)
     s2 = "one argument was expected";
   else if (j == 0)
-    s2 = "no arguments expected";
-
-  ifn(p && p->count)
+    s2 = "no arguments were expected";
+  if (! (p && p->count))
     p = NIL;
   error(NIL, s2, p);
   return NIL;
 }
-
-
 
 void 
 arg_eval(at **arg_array, int i)
