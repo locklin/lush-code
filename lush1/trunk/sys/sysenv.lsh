@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.69 2002-09-05 18:35:59 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.70 2002-10-01 22:36:50 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -37,9 +37,6 @@
 (dmc |~|                                   ;; the NULL macro
      (list 'null (read)))
 
-(dmc |!|                                   ;; the SYS macro
-     (list 'sys (read_string)))
-
 (dmc |:|                                   ;; the SCOPE macro
      (when (= (skip-char) ":")
            (error 'load "Names beginning by :: are reserved" ()) )
@@ -49,11 +46,15 @@
 	 (setq ans (nconc1 ans (read))) )
        ans ) )
 
+(dmc |#$|                                   ;; the SYS macro
+     (list 'sys (read_string)))
+
 (dmc |#!|                                  ;; the SCRIPT macro
      (read-string)
      () )
 
-(lock_symbol |'| |~| |!| |:| |#!|)
+;; (lock_symbol |'| |~| |!| |:| |#!|)
+(lock_symbol |'| |~| |:| |#!| |#$|)
 
 
 
@@ -528,7 +529,35 @@
 	     list-insert list-delete list-merge)
 
 
+;;; ---------- Scheme pseudo-compatibility
 
+(defvar set! setq)
+(defvar begin progn)
+(defvar else t)
+(defvar equal? =)
+(defvar eqv? =)
+(defvar eq? ==)
+(defvar define defvar)
+(defvar map mapcar)
+(defvar for-each mapc)
+(de boolean? (a) (or (= a ()) (= a t)))
+(de null? (a) (= a ()))
+(defvar pair? consp)
+(defvar number? numberp)
+(defvar string? stringp)
+(defvar vector? indexp)
+(defvar symbol? symbolp)
+(defvar procedure? functionp)
+(df set-car! (a b) (set a (rplaca (eval a) (eval b))))
+(df set-cdr! (a b) (set a (rplacd (eval a) (eval b))))
+(defvar symbol->string pname)
+(defvar string->symbol named)
+
+(lock-symbol 
+ set!  begin else equal?  eqv?  eq?  define map for-each boolean?
+ null?  pair?  number?  string?  vector?  symbol?  procedure?  set-car!
+ set-cdr!  symbol->string string->symbol
+ )
 
 ;;; --------- Packages ---------
 
@@ -686,30 +715,24 @@
 
 (dmc |]| (error 'read "extra ']' found"))
 
-(dmc |}| (error 'read "extra '}' found"))
-
 (dmc |[| 
      (on-error (error 'list-to-index "Illegal matrix syntax")
        (let ((l (when (<> (skip-char) "[") (list 'quote)))
-             (|]| (lambda() (setq m (list-to-index l matrix))))
+             (|]| (lambda() (setq m (list-to-index l double-matrix))))
              (m ()) )
          (while ~m
            (setq l (nconc1 l (read))) )
          m ) ) )
 
-(dmc |{| 
-     (on-error (error 'list-to-index "Illegal array syntax")
-       (let ((l (when (<> (skip-char) "{") (list 'quote)))
-             (|}| (lambda() (setq m (list-to-index l array))))
-             (m ()) )
-         (while ~m
-           (setq l (nconc1 l (read))) )
-         m ) ) )
+(dmc |#]| (error 'read "extra '#]' found"))
+(dmc |#[|
+     (on-error (error 'list-to-index "array literal not implemented") 
+       ()))
 
 (lock_symbol contiguousp clone-matrix 
              redim unfold select diagonal narrow idx-gloop
              index-print list-to-index 
-             |[| |]| |{| |}|)
+             |[| |]| |#[| |#]|)
 
 
 
