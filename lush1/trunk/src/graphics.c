@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.6 2002-09-27 20:58:47 leonb Exp $
+ * $Id: graphics.c,v 1.7 2002-09-27 21:06:16 leonb Exp $
  **********************************************************************/
 
 
@@ -2039,62 +2039,57 @@ DX(xaddclip)
   int x, y, w, h;
   int x1, y1, w1, h1;
   
-  win = current_window();
-  if (! win->gdriver->clip)
-    error(NIL, "this driver does not support 'clip'", NIL);
-  
   ARG_NUMBER(1);
   ARG_EVAL(1);
+  win = current_window();
   getrect(ALIST(1),&x1,&y1,&w1,&h1);
-  
-  if (win->clipw || win->cliph) {
-    
+
+  if (win->gdriver->clip)
+    {
+      if (win->clipw || win->cliph) {
 #define TLMAX(u,v) (((u)>(v))?(u):(v))
 #define TLMIN(u,v) (((u)<(v))?(u):(v))
-    
-    x = TLMAX(x1,win->clipx);
-    y = TLMAX(y1,win->clipy);
-    w = TLMIN(x1+w1,win->clipx+win->clipw)-x;
-    h = TLMIN(y1+h1,win->clipy+win->cliph)-y;
-    
+        x = TLMAX(x1,win->clipx);
+        y = TLMAX(y1,win->clipy);
+        w = TLMIN(x1+w1,win->clipx+win->clipw)-x;
+        h = TLMIN(y1+h1,win->clipy+win->cliph)-y;
 #undef TLMAX
 #undef TLMIN
-    
-    if (w>0 && h>0) {
-      (*win->gdriver->begin) (win);
-      (*win->gdriver->clip) (win, x, y, w, h);
-      (*win->gdriver->end) (win);
-      win->clipx = x;
-      win->clipy = y;
-      win->clipw = w;
-      win->cliph = h;
-    } else {
-      int xs = (*win->gdriver->xsize)(win);
-      int ys = (*win->gdriver->ysize)(win);
-      (*win->gdriver->begin) (win);
-      (*win->gdriver->clip) (win, xs+10,ys+10,1,1);
-      (*win->gdriver->end) (win);
-      win->clipx = xs+10;
-      win->clipy = ys+10;
-      win->clipw = 1;
-      win->cliph = 1;
+        if (w>0 && h>0) {
+          (*win->gdriver->begin) (win);
+          (*win->gdriver->clip) (win, x, y, w, h);
+          (*win->gdriver->end) (win);
+          win->clipx = x;
+          win->clipy = y;
+          win->clipw = w;
+          win->cliph = h;
+        } else {
+          int xs = (*win->gdriver->xsize)(win);
+          int ys = (*win->gdriver->ysize)(win);
+          (*win->gdriver->begin) (win);
+          (*win->gdriver->clip) (win, xs+10,ys+10,1,1);
+          (*win->gdriver->end) (win);
+          win->clipx = xs+10;
+          win->clipy = ys+10;
+          win->clipw = 1;
+          win->cliph = 1;
+        }
+      } else {
+        (*win->gdriver->begin) (win);
+        (*win->gdriver->clip) (win, x1, y1, w1, h1);
+        (*win->gdriver->end) (win);
+        win->clipx = x1;
+        win->clipy = y1;
+        win->clipw = w = w1;
+        win->cliph = h = h1;
+      }
     }
-  } else {
-    (*win->gdriver->begin) (win);
-    (*win->gdriver->clip) (win, x1, y1, w1, h1);
-    (*win->gdriver->end) (win);
-    win->clipx = x1;
-    win->clipy = y1;
-    win->clipw = w = w1;
-    win->cliph = h = h1;
-  }
   if (w>0 && h>0)
     return cons(NEW_NUMBER(win->clipx),
 		cons(NEW_NUMBER(win->clipy),
 		     cons(NEW_NUMBER(win->clipw),
 			  cons(NEW_NUMBER(win->cliph), NIL))));
-  else
-    return NIL;
+  return NIL;
 }
 
 
