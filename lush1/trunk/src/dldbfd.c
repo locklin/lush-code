@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.32 2004-03-03 00:49:08 leonb Exp $
+ * $Id: dldbfd.c,v 1.33 2004-03-03 00:54:52 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2446,11 +2446,10 @@ define_symbol_of_main_program(const char *exec)
                     hsym->flags |= DLDF_FUNCTION;
             }
 #if defined(__GNUC__) && (__GNUC__ >= 3)
-	    else if (sym->name && sym->name[0] 
-		     && !strcmp("__dso_handle",
-				drop_leading_char(abfd,sym->name)) )
+	    if (sym->name && sym->name[0] &&
+		!strcmp("__dso_handle",drop_leading_char(abfd,sym->name)) 
+		/* This is the __dso_handle thing for gcc >= 3 */ )
 	    {
-	        /* This is the __dso_handle thing for gcc >= 3 */
 	        if (!is_bfd_symbol_defined(sym)) 
 		    continue;
                 hsym = insert_symbol("__dso_handle");
