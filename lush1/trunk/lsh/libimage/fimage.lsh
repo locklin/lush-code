@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: fimage.lsh,v 1.2 2003-01-07 08:35:12 profshadoko Exp $
+;;; $Id: fimage.lsh,v 1.3 2003-04-30 21:50:47 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? *** Greyscale Images of Floats
@@ -32,6 +32,7 @@
 ;; where each pixel is a float.
 
 (libload "idx-macros")
+(libload "libimage/image-transform")
 
 #? (fim-subsample <in> <nlin> <ncol>)
 ;; subsample image <in> by integer ratios <nlin> 
@@ -86,5 +87,263 @@
   out))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (fim-interpolate-bilin <background> <pin> <indimi> <indimj> <inmodi> <inmodj> <ppi> <ppj>)
+;;.VP
+;; (-gptr- pin):
+;; (-int-  background indimi indimj inmodi inmodj ppi ppj):
+;;
+;; RETURNS: (-float-)
+;; SIDE EFFECTS: None
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; returns a bilinearly interpolated pixel value for coordinate
+;; <ppi> <ppj>. The image data is pointed to by <pin>, with 
+;; <indimi> <indimj> <inmodi> <inmodj> being the dimensions and modulos.
+;; This function clips automatically if <ppi> <ppj> are outside of the
+;; bounds by assuming the outside values are equal to <background>.
+;; pixel values are floats, while coordinates are 32 bit fixed point
+;; with 16 bit integer part and 16 bit fractional part.
+;; The function does not use floating point arithmetics.
+(de fim-interpolate-bilin (background pin indimi indimj inmodi inmodj ppi ppj)
+  ((-gptr- "float *") pin)
+  ((-float-) background)
+  ((-int-)  indimi indimj inmodi inmodj ppi ppj)
+  (let ((rez 0.0))
+    ((-float-) rez)
+    #{{
+         int li0, lj0;
+	 register int li1, lj1;
+	 flt deltai, ndeltai;
+	 flt deltaj, ndeltaj;
+	 register flt *pin00;
+	 register flt v00, v01, v10, v11;
+	 li0 = $ppi >> 16;
+	 li1 = li0+1;
+	 deltai = 0.0000152587890625*(flt)($ppi & 0x0000ffff);
+	 ndeltai = 1.0 - deltai;
+	 lj0 = $ppj  >> 16;
+	 lj1 = lj0+1;
+	 deltaj = 0.0000152587890625*(flt)($ppj & 0x0000ffff);
+	 ndeltaj = 1.0 - deltaj;
+	 pin00 = (flt*)($pin)+$inmodi*li0+$inmodj*lj0;
+         if ((li1>0)&&(li1<$indimi)) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = *(pin00); 
+		 v01 = *(pin00+$inmodj); 
+		 v11 = *(pin00+$inmodi+$inmodj); 
+		 v10 = *(pin00+$inmodi);
+		 v00 = *(pin00); 
+	     } else if (lj1==0) { 
+		 v00 = $background;
+		 v01 = *(pin00+$inmodj); 
+		 v11 = *(pin00+$inmodi+$inmodj);
+		 v10 = $background;
+	     } else if (lj1==$indimj) {
+		 v00 = *(pin00); 
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = *(pin00+$inmodi); 
+	     } else {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     }
+	 } else if (li1==0) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = *(pin00+$inmodi+$inmodj); 
+		 v10 = *(pin00+$inmodi);
+	     } else if (lj1==0) { 
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = *(pin00+$inmodi+$inmodj);
+		 v10 = $background;
+	     } else if (lj1==$indimj) {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = *(pin00+$inmodi); 
+	     } else {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     }
+	 } else if (li1==$indimi) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = *(pin00); 
+		 v01 = *(pin00+$inmodj); 
+		 v11 = $background;
+		 v10 = $background;
+	     } else if (lj1==0) { 
+		 v00 = $background;
+		 v01 = *(pin00+$inmodj); 
+		 v11 = $background;
+		 v10 = $background;
+	     } else if (lj1==$indimj) {
+		 v00 = *(pin00); 
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     } else {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     }
+         } else {
+	     v00 = $background;
+	     v01 = $background;
+	     v11 = $background;
+	     v10 = $background;
+	 }
+         $rez = (ndeltaj * (( v10*deltai + v00*ndeltai )) +
+                 deltaj  * (( v11*deltai + v01*ndeltai )));
+     }
 
-(dhc-make () fim-subsample)
+  #} rez))
+
+
+#? (fim-warp <in> <out> <background> <pi> <pj>)
+;;.VP
+;; ((-float-) background):
+;; ((-idx2- (-float-)) in out):
+;; ((-idx2- (-int-)) pi pj):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out> 
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Warps an image using <pi> and <pj> as tabulated coordinate transforms.
+;; <in> and <out> are idx2 of floats. <background> is the value assumed outside
+;; of the input image. <pi> and <pj> are tabulated coordinates which can
+;; be filled up using compute-bilin-transform or similar functions.
+;; Pixel values are antialiased using bilinear interpolation.
+(de fim-warp (in out background pi pj)
+    ((-float-) background)
+    ((-idx2- (-float-)) in out)
+    ((-idx2- (-int-)) pi pj)
+
+    (let ((ni (idx-dim in 0))
+          (nj (idx-dim in 1))
+          (pin (gptr (cinline "IDX_PTR(%s, float)" in)))
+          (indimi (idx-dim in 0))
+          (indimj (idx-dim in 1))
+          (inmodi (idx-modulo in 0))
+          (inmodj (idx-modulo in 1)))
+      ((-gptr- "float *") pin)
+      ((-int-)  indimi indimj inmodi inmodj)
+      (idx-bloop ((lout out) (lpi pi) (lpj pj))
+        (idx-bloop ((llout lout) (llpi lpi) (llpj lpj))
+          (let ((ppi (llpi)) (ppj (llpj)))
+            ((-int-) ppi ppj)
+            (llout (fim-interpolate-bilin background pin indimi indimj inmodi inmodj ppi ppj))))))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; fast version, not interpolation.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (fim-warp-fast <in> <out> <background> <pi> <pj>)
+;;.VP
+;; ((-int-) background):
+;; ((-idx2- (-float-)) in out):
+;; ((-idx2- (-int-)) pi pj):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Warps an image using <pi> and <pj> as tabulated coordinate transforms.
+;; <in> and <out> are idx2 of floats. <background> is the value assumed outside
+;; of the input image. <pi> and <pj> are tabulated coordinates which can
+;; be filled up using compute-bilin-transform or similar functions.
+;; This is essentially identical to warp-fimage, except no antialiasing
+;; is performed (it goes a lot faster, but is not nearly as nice).
+(de fim-warp-fast (in out background pi pj)
+    ((-float-) background)
+    ((-idx2- (-float-)) in out)
+    ((-idx2- (-int-)) pi pj)
+
+    (unprotect
+      (let ((ni (idx-dim in 0))
+            (nj (idx-dim in 1))
+            (pin (gptr (cinline "IDX_PTR(%s, float)" in)))
+            (indimi (idx-dim in 0))
+            (indimj (idx-dim in 1))
+            (inmodi (idx-modulo in 0))
+            (inmodj (idx-modulo in 1)))
+        ((-gptr- "float *") pin)
+        ((-int-)  indimi indimj inmodi inmodj)
+        (idx-bloop ((lout out) (lpi pi) (lpj pj))
+          (idx-bloop ((llout lout) (llpi lpi) (llpj lpj))
+            (let ((ppi (llpi)) (ppj (llpj)))
+              ((-int-) ppi ppj)
+  	    (let ((resu 0))
+  	      ((-float-) resu)
+                #{{
+  		     register int li, lj;
+  		     li = ($ppi+0x7f) >> 16;
+  		     lj = ($ppj+0x7f) >> 16;
+  		     if ((li>=0)&&(li<$indimi)&&(lj>=0)&&(lj<$indimj)) {
+  			 $resu = *((float*)($pin)+$inmodi*li+$inmodj*lj);
+		     } else {
+			 $resu = $background;
+		     }
+  		   }
+                 #} 
+  	         (llout resu)))))))
+      ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; top-level function
+
+
+#? (fim-warp-quad <in> <out> <background> <mode> <x1> <y1> <x2> <y2> <x3> <y3> <x4> <y4> <p1> <q1> <p3> <q3>)
+;;.VP
+;; ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3):
+;; ((-float-) background)
+;; ((-int-) mode):
+;; ((-idx2- (-float-)) in out):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; transforms fimage <in> (idx2 of float) mapping quadrilateral <x1> <y1> <x2>
+;; <y2> <x3> <y3> <x4> (points are numbered clockwise starting from upper left)
+;; to rectangle whose upper left and lower right points are <p1><q1>, <p3><q3>.
+;; result is put in <out> (idx2 of float).  Clipping is automatically performed.
+;; pixels outside of the bounds of <in> are assumed to have the value
+;; <background>.  <mode>=0: no antialiasing, <mode>=1: antialiasing with
+;; bilinear interpolation (2 times slower).  execution time on sparc 10 is about
+;; 5 ms in mode 0 and 10 ms in mode 1 for a 32x32 target image.
+(de fim-warp-quad (in out background mode x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    ((-float-) background)
+    ((-int-) mode)
+    ((-idx2- (-float-)) in out)
+
+    (let* ((outi (idx-dim out 0))
+	   (outj (idx-dim out 1))
+	   (dispi (int-matrix-nc outi outj))
+	   (dispj (int-matrix-nc outi outj)))
+      (compute-bilin-transform dispi dispj x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+      (if (= 0 mode)
+	  (fim-warp-fast in out background dispi dispj)
+	(fim-warp in out background dispi dispj)))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make () 
+	  fim-subsample 
+	  fim-interpolate-bilin fim-warp fim-warp-fast fim-warp-quad)
+
