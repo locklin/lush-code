@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.2 2002-04-24 20:55:36 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.3 2002-04-24 20:56:40 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -150,7 +150,7 @@ AC_SUBST(CC_EXP_FLAG)
 AC_SUBST(CC_PIC_FLAG)
 AC_SUBST(MAKESO)
 
-if test $EXEEXT = exe ; then
+if test x$EXEEXT = xexe ; then
     SOEXT=dll
     DEFS="$DEFS -DWIN32"
     UNIX_YES='#'
