@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.9 2002-11-06 16:30:50 leonb Exp $
+ * $Id: io.c,v 1.10 2003-05-06 20:32:37 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1133,7 +1133,7 @@ print_list(at *list)
       {
         if (recur_push_ok(&elt,&print_string,list))
         {
-          list = letslot(list,l,NIL,-1);
+          list = send_message(NIL, list, at_print, NIL);
           recur_pop(&elt);
           UNLOCK(l);
           UNLOCK(list);
@@ -1386,7 +1386,7 @@ convert(register char *s, register at *list, register char *end)
 	  || ((list->flags & C_EXTERN)
 	      && (p=checksend(list->Class,at_pname))) )
 	{
-	  q = letslot(list,p,NIL,-1);
+	  q = send_message(NIL, list, at_pname, NIL);
 	  ifn (q && (q->flags&X_STRING))
 	    error(NIL,"pname does not return a string",q);
 	  n = SADD(q->Object);

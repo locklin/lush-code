@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.6 2002-07-30 15:04:04 leonb Exp $
+ * $Id: check_func.h,v 1.7 2003-05-06 20:31:57 leonb Exp $
  **********************************************************************/
 
 #ifndef CHECK_FUNC_H
@@ -342,6 +342,9 @@ LUSHAPI void srg_free(struct srg *);
 /* Mcheck_m1in_m1in_m1out, Mcheck_m2in_m2in_m2out --> Mcheck_main_main_maout */
 
 LUSHAPI void check_main_maout(struct idx *i1, struct idx *i2);
+
+LUSHAPI void check_main_maout_any(struct idx *i1, struct idx *i2);
+
 LUSHAPI void check_main_main_maout(struct idx *i0, 
                                    struct idx *i1, struct idx *i2);
 LUSHAPI void check_main_m0out(struct idx *i1, struct idx *i2);

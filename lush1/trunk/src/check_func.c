@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.c,v 1.3 2002-07-24 15:09:44 leonb Exp $
+ * $Id: check_func.c,v 1.4 2003-05-06 20:32:37 leonb Exp $
  **********************************************************************/
 
 /* Functions that check the dimensions of index parameters */
@@ -245,6 +245,27 @@ void
 check_main_maout(struct idx *i1, struct idx *i2)
 {
   Mcheck_main_maout(i1, i2);
+}
+
+void 
+check_main_maout_any(struct idx *i1, struct idx *i2)
+{
+  if (i2->flags & IDF_UNSIZED)
+    {
+      if (i1->ndim != i2->ndim)
+        run_time_error(rterr_not_same_dim);
+      Mcheck_main_maout(i1, i2);
+    }
+  else
+    {
+      int i, n1=1, n2=1;
+      for (i=0; i<i1->ndim; i++)
+        n1 *= i1->dim[i];
+      for (i=0; i<i2->ndim; i++)
+        n2 *= i2->dim[i];
+      if (n1 != n2)
+        run_time_error(rterr_not_same_dim);
+    }
 }
 
 void 
