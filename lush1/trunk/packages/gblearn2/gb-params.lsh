@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: gb-params.lsh,v 1.2 2002-12-18 05:42:34 profshadoko Exp $
+;;; $Id: gb-params.lsh,v 1.3 2002-12-19 04:27:25 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -32,9 +32,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "gblearn2/gb-config")
-(libload "idx-macros")
-(libload "idx-float")
-(libload "idx-double")
+(libload "libidx/idx-macros")
+(libload "libidx/idx-float")
+(libload "libidx/idx-double")
 (libload "gblearn2/gb-states")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -164,13 +164,14 @@
 (defmethod idx1-dparam clear-dx () (idx-clear dx) ())
 (defmethod idx1-dparam clear-deltas () (idx-clear deltas) ())
 
-#? (==> <idx1-dparam> update-deltas <inertia>)
-;; update the running average of the derivative.
-;; This is called by the <update> if it is called
-;; with a non-zero <inertia> parameter.
-(defmethod idx1-dparam update-deltas (inertia) 
-  ((-gbtype-) inertia)
-  (idx-f1lincomb dx (- 1 inertia) deltas inertia deltas) ())
+#? (==> <idx1-dparam> update-deltas <knew> <kold>)
+;; update the average derivatives <deltas> as follow:
+;; {<c> deltas = knew*dx + kold*deltas}.
+;; The <update> method calls this whenever it is 
+;; called with a non-zero <inertia> parameter.
+(defmethod idx1-dparam update-deltas (knew kold) 
+  ((-gbtype-) kold knew)
+  (idx-f1lincomb dx knew deltas kold deltas) ())
 
 #? (==> <idx1-dparam> update <eta> <inertia>)
 ;; simple gradient descent update.
@@ -184,7 +185,7 @@
   ((-gbtype-) eta inertia)
   (if (= 0 inertia)
       (idx-f1dotcacc dx (- eta) x)
-    (==> this update-deltas inertia)
+    (==> this update-deltas (- 1 inertia) inertia)
     (idx-f1dotcacc deltas (- eta) x))
   ())
 
@@ -292,7 +293,7 @@
       (progn
 	(idx-mul dx epsilons temp)
 	(idx-f1dotcacc temp (- eta) x))
-    (==> this update-deltas inertia)
+    (==> this update-deltas (- 1 inertia) inertia)
     (idx-mul deltas epsilons temp)
     (idx-f1dotcacc temp (- eta) x))
   ())
@@ -302,6 +303,12 @@
 (defmethod idx1-dparam-eps set-epsilons (m)
   ((-idx1- (-gbtype-)) m)
   (idx-copy m epsilons) ())
+
+#? (==> <idx1-dparam-eps> set-epsilons <m>)
+;; copy the values in vector <m> to epsilons
+(defmethod idx1-dparam-eps set-epsilon (m)
+  ((-gbtype-) m)
+  (idx-f1fill epsilons m) ())
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -344,14 +351,15 @@
 (defmethod idx1-ddparam clear-ddx () (idx-clear ddx)())
 (defmethod idx1-ddparam clear-ddeltas () (idx-clear ddeltas)())
 
-#? (==> <idx1-ddparam> update-ddeltas <gamma>)
-;; update second derivative estimates on-line, using
-;; current value in the instantaneous second derivative field ddx
-(defmethod idx1-ddparam update-ddeltas (gamma)
-  ((-gbtype-) gamma)
-  (idx-f1lincomb ddx gamma ddeltas (- 1 gamma) ddeltas) ())
+#? (==> <idx1-ddparam> update-ddeltas <knew> <kold>)
+;; update average second derivative <ddeltas> as follows:
+;; {<c> ddeltas = knew*ddx + kold*ddletas}.
+;; where <ddx> is the instantaneous second derivative.
+(defmethod idx1-ddparam update-ddeltas (knew kold)
+  ((-gbtype-) knew kold)
+  (idx-f1lincomb ddx knew ddeltas kold ddeltas) ())
 
-#? (==> <idx1-ddparam> update-ddeltas <gamma>)
+#? (==> <idx1-ddparam> saliencies)
 ;; Compute the parameters saliencies as defined by the 
 ;; Optimal Brain Damage algorithm of (LeCun, Denker, Solla, NIPS 1989).
 ;; This uses the average first and second derivatives of the energy
@@ -444,12 +452,14 @@
  (idx1-param resize idx1-param size get set 
 	     alloc-idx0-state alloc-idx1-state alloc-idx2-state
 	     alloc-idx3-state alloc-idx4-state)
- (idx1-dparam resize idx1-dparam clear-dx update-deltas update 
+ (idx1-dparam resize idx1-dparam clear-dx clear-deltas 
+	      update-deltas update 
 	      alloc-idx0-dstate alloc-idx1-dstate alloc-idx2-dstate
 	      alloc-idx3-dstate alloc-idx4-dstate)
- (idx1-dparam-eps resize idx1-dparam-eps update set-epsilons)
- (idx1-ddparam resize idx1-ddparam clear-ddx update-ddeltas
-	       compute-epsilons saliencies
+ (idx1-dparam-eps resize idx1-dparam-eps update 
+		  set-epsilons set-epsilon)
+ (idx1-ddparam resize idx1-ddparam clear-ddx clear-ddeltas
+	       update-ddeltas compute-epsilons saliencies
 	       alloc-idx0-ddstate alloc-idx1-ddstate alloc-idx2-ddstate
 	       alloc-idx3-ddstate alloc-idx4-ddstate))
 
