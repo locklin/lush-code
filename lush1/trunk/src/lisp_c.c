@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.14 2002-07-22 16:14:07 leonb Exp $
+ * $Id: lisp_c.c,v 1.15 2002-07-23 18:58:34 leonb Exp $
  **********************************************************************/
 
 
@@ -1924,7 +1924,7 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           arg->dh_obj_ptr = at_obj->Gptr;
           return;
         }
-      if (at_obj->flags & X_OOSTRUCT)
+      if (! (at_obj->flags & X_OOSTRUCT))
         lisp2c_error("OBJECT expected", errctx, at_obj);
       /* check type */
       for (cl = at_obj->Class; cl; cl=cl->super)
@@ -2190,7 +2190,7 @@ update_c_from_lisp(avlnode *n)
         dhclassdoc_t *cdoc, *super, *class_list[1024];
         dhrecord *drec;
         dharg tmparg;
-        int k,j,sl;
+        int k,j,sl,nsl;
         
         if (object==0)
           /* happens during call to the destructor */
@@ -2208,27 +2208,26 @@ update_c_from_lisp(avlnode *n)
           }
         if (sl > object->size)
           error(NIL,"lisp_c internal: class slot mismatch",n->litem);
-        sl = object->size - 1;
         while (--k>=0)
           {
             super=class_list[k];
-            j = super->argdata->ndim;
+            nsl = sl - super->argdata->ndim;
             drec = super->argdata + 1;
-            while (--j>=0)
+            for (j=nsl; j<sl; j++)
               {
                 /* quick check of slot name */
                 char *pos;
-                struct symbol *symb = object->slots[sl].symb->Object;
+                struct symbol *symb = object->slots[j].symb->Object;
                 if (symb->name->name[0] != drec->name[0])
                   error(NIL,"lisp_c internal : object slot mismatch",n->litem);
                 /* copy field described by current record */
-                at_to_dharg(object->slots[sl].val,&tmparg,drec+1,n->litem);
+                at_to_dharg(object->slots[j].val,&tmparg,drec+1,n->litem);
                 pos = (char*)cptr + (unsigned int)(drec->arg);
                 dharg_to_address(&tmparg, pos, drec+1);
                 /* next record */
                 drec = drec->end;
-                sl -= 1;
               }
+            sl = nsl;
           }
         break;
       }
@@ -2333,7 +2332,7 @@ update_lisp_from_c(avlnode *n)
         dhclassdoc_t *cdoc, *super, *class_list[1024];
         dhrecord *drec;
         dharg tmparg;
-        int k,j,sl;
+        int k,j,sl, nsl;
         at *orig, *new;
             
         if (object==0)
@@ -2353,30 +2352,29 @@ update_lisp_from_c(avlnode *n)
           }
         if (sl > object->size)
           error(NIL,"lisp_c internal: class slot mismatch",n->litem);
-        sl = object->size - 1;
         while (--k>=0)
           {
             super=class_list[k];
-            j = super->argdata->ndim;
+            nsl = sl - super->argdata->ndim;
             drec = super->argdata + 1;
-            while (--j>=0)
+            for (j=nsl; j<sl; j++)
               {
                 /* quick check of slot name */
                 char *pos;
-                struct symbol *symb = object->slots[sl].symb->Object;
+                struct symbol *symb = object->slots[j].symb->Object;
                 if (symb->name->name[0] != drec->name[0])
                   error(NIL,"lisp_c internal : object slot mismatch",n->litem);
                 /* copy field described by current record */
                 pos = (char*)cptr + (unsigned int)(drec->arg);
                 address_to_dharg(&tmparg, pos, drec+1);
-                orig = object->slots[sl].val;
+                orig = object->slots[j].val;
                 new = dharg_to_at(&tmparg, drec+1, n->litem);
-                object->slots[sl].val = new;
+                object->slots[j].val = new;
                 DELAYED_UNLOCK(new, orig);
                 /* next record */
                 drec = drec->end;
-                sl -= 1;
               }
+            sl = nsl;
           }
         break;
       }

@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.17 2002-07-22 22:42:05 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.18 2002-07-23 18:58:29 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -412,6 +412,19 @@
     (dht-byte  "ST_I8")
     (dht-gptr  "ST_GPTR")
     (t (dhc-error "not a know type of matrix"))))
+
+(de dhc-objptr-cast(type &optional type2)
+  (let ((cast ""))
+    (when (and (==> type is-a-ptr)
+               (or (not type2) (==> type2 is-a-ptr)) )
+      (setq type (dhu-type type))
+      (setq type2 (when type2 (dhu-type type2)))
+      (when (and (==> type is-an-obj)
+                 (not (and type2 (==> type2 is-an-obj)
+                           (= (dhu-name (dhu-type type))
+                              (dhu-name (dhu-type type2)) ) ) ) )
+        (setq cast (concat "(" (dhc-type-to-c-decl type) "*)")) ) )
+    cast ) )
 
 
 #? (dhc-declare-var <name> <type>)
@@ -2823,13 +2836,22 @@
           (args (all ((so (cdr source)) 
                       (tt (cdr :treetype:tn-list)))
                   (dhc-parse-expr-c so tt ()))) )
-      ;; Correct numerical types
+      ;; Cast numerical types
       (setq args 
             (all ((arg args) 
                   (ty (cdr :treetype:tn-list)))
               (if (==> :ty:type is-a-number)
                   (concat "(" (dhc-type-to-c-decl :ty:type) ") " arg)
                 arg ) ) )
+      ;; Cast object types
+      (let ((functype :(car :treetype:tn-list):type))
+        (setq args
+              (all ((arg args)
+                    (argtype (dhu-extra functype))
+                    (argnode (cdr :treetype:tn-list)) )
+                (if (==> argtype is-an-objptr)
+                    (concat (dhc-objptr-cast argtype :argnode:type) arg)
+                  arg  ) ) ) )
       ;; Update extern declaration and dependencies
       (let ((ftype :(car :treetype:tn-list):type))
         (when (and ~symbol (= mfunc ""))

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.8 2002-07-02 19:56:38 leonb Exp $
+ * $Id: toplevel.c,v 1.9 2002-07-23 18:58:35 leonb Exp $
  **********************************************************************/
 
 
@@ -553,12 +553,20 @@ toplevel(char *in, char *out, char *new_prompt)
   }
   
   if (context->input_file)
-    clearerr(context->input_file);
-  if (f1) {
-    file_close(f1);
-    strcpy(file_name, SADD(ans->Object));
-    UNLOCK(ans);
-  }
+    {
+      clearerr(context->input_file);
+      if (context->input_file == stdin) 
+        {
+          line_pos = line_buffer;
+          *line_buffer = 0;
+        }
+    }
+  if (f1) 
+    {
+      file_close(f1);
+      strcpy(file_name, SADD(ans->Object));
+      UNLOCK(ans);
+    }
   if (f2)
     file_close(f2);
   context_pop();

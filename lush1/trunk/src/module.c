@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.19 2002-07-03 18:25:00 leonb Exp $
+ * $Id: module.c,v 1.20 2002-07-23 18:58:34 leonb Exp $
  **********************************************************************/
 
 
@@ -610,7 +610,7 @@ cleanup_module(struct module *m)
                         "marked %d instances of class %s as unlinked\n", 
                         n, pname(q));
             }
-          else
+          if (! cl->goaway)
             {
               n = 0;
               begin_iter_at(x) 
@@ -635,7 +635,20 @@ cleanup_module(struct module *m)
   if (m->defs)
     for (p = m->defs; CONSP(p); p = p->Cdr)
       if (CONSP(p->Car))
-        delete_at_special(p->Car->Car, FALSE);
+        {
+          at *q = p->Car->Car;
+          if (EXTERNP(q, &class_class))
+            {
+              class *cl = q->Object;
+              cl->classdoc = 0;
+              if (! cl->goaway)
+                delete_at_special(q, FALSE);
+            }
+          else
+            {
+              delete_at(q);
+            }
+        }
   UNLOCK(m->defs);
   m->defs = NIL;
 }

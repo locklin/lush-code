@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.9 2002-07-22 22:54:39 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.10 2002-07-23 18:58:29 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -377,11 +377,11 @@
         (num 0) )
     ;; take care arguments and temporaries
     (each ((sym (all ((x :args:tn-list)) :x:symbol)))
-      (let ((format (concat "a[%d]." (dhc-arg-format :sym:type))))
+      (let* ((cast (dhc-objptr-cast :sym:type))
+             (format (concat cast "a[%d]." (dhc-arg-format :sym:type))))
         (setq arg-list (nconc1 arg-list (sprintf format (incr num))))))
     (each ((sym :(cadr :treetype:tn-list):symbol))
-      (let* ((type (if (==> :sym:type is-a-ptr) 
-                       :sym:type 
+      (let* ((type (if (==> :sym:type is-a-ptr) :sym:type 
                      (new dhc-type 'dht-ptr :sym:type))) 
              (format  (concat "a[%d]." (dhc-arg-format type))) )
         (setq arg-list (nconc1 arg-list (sprintf format (incr num))))))
@@ -410,7 +410,7 @@
 ;;; ------------------------------------------------------------------------
 
 (de dhc-compile-class-t (fname cname cls)
-    (let* ((dhc-debug-stack (cons `(defclass ,fname ...) dhc-debug-stack))
+    (let* ((dhc-debug-stack (cons `(defclass ,(car fname) ...) dhc-debug-stack))
            (slot-dhc-types ())
            (method-list (cdr fname))
 	   (fname (car fname))
@@ -424,10 +424,8 @@
       ;; Basic checks
       (when  (classinfo-t (eval fname))
         (error 'dhc-compile-class-t "class has already been compiled" fname))
-      (when (<> (length tslots) (length (slots cls)))
-        (if (not tslots)
-            (dhc-error "class slots are not typed" fname)
-          (dhc-error "slots definition are garbled" fname) ) )
+      (when (and (slots cls) (not tslots))
+        (dhc-error "class slots are not typed" fname) )
       (if  (and (not (classinfo-t sup-cls))
                 (not (dhc-search-symtable (classname sup-cls) global-table)) )
           (dhc-error "the superclass must be compiled first" sup-name))
@@ -575,7 +573,8 @@
 ;;; ------------------------------------------------------------------------
 
 (de dhc-compile-class-c(fname cname cls treetype)
-  (let* ((class-dhc-type (car treetype))
+  (let* ((dhc-debug-stack (cons `(defclass ,(car fname) ...) dhc-debug-stack))
+         (class-dhc-type (car treetype))
          (fname (car fname))
          (cname (car cname))
          (c-depends ())
@@ -659,8 +658,9 @@
     ;; generate dhclassdoc
     (dhc-add-metaprogram
      (append (list  "" "/*" (sprintf " * CLASS %l DHCLASSDOC" fname) " */")
-             (list (sprintf "DHCLASSDOC(%s, &%s, %s, %l, %s, 0) ="
-                            kcname kcsupername cname (pname fname) vtname )
+             (list (sprintf "DHCLASSDOC(%s, &%s, %s, %l, %s, %d) ="
+                            kcname kcsupername cname (pname fname) 
+                            vtname (length (cadr treetype)) )
                    "{" 
                    (sprintf "DH_CLASS(%d, %s),"
                             (length (dhu-temps class-dhc-type)) kcname) )
@@ -783,7 +783,7 @@
 ;; the <".c"> suffix.
 (de dhc-make-c(fname fsymblist)
   (let ((strlist ())
-        (indent (getconf "INDENT"))
+        (indent (and (getconf "INDENT")))
         (cfname (if fname (concat fname "." (or (getconf "CEXT") "c")))) )
     (when (not (listp fsymblist))
       (error 'dhc-make-c "Not a list" fsymblist) )

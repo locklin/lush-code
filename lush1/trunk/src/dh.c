@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.7 2002-07-22 22:42:11 leonb Exp $
+ * $Id: dh.c,v 1.8 2002-07-23 18:58:34 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -511,16 +511,18 @@ dhinfo_record(dhrecord *drec)
       return cons(named("func"), p);
       
     case DHT_NAME:
-    case DHT_METHOD:
       p = dhinfo_record(drec+1);
+      return cons(new_string(strclean(drec->name)), cons(p,NIL));
+
+    case DHT_METHOD:
+      p = dhinfo_record( ((dhdoc_t*)(drec->arg))->argdata );
       return cons(new_string(strclean(drec->name)), cons(p,NIL));
 
     case DHT_CLASS:
       cdoc = drec->arg;
       drec1 = drec+1;
       p = dhinfo_chain(drec1, drec->ndim, dhinfo_record);
-      while (drec1->op == DHT_NAME)
-        drec1 = drec1->end;
+      drec1 = drec->end;
       q = dhinfo_chain(drec1, cdoc->lispdata.nmet, dhinfo_record);
       p = cons(p, cons( q, NIL));
       q = NIL;
