@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.15 2005-02-19 18:05:17 leonb Exp $
+ * $Id: io.c,v 1.16 2005-02-20 20:03:34 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -231,7 +231,7 @@ fill_line_buffer(void)
 char 
 read_char(void)
 {
-  char c = (char) EOF;
+  int c = EOF;
   if (context->input_file==stdin && prompt_string) {
     fill_line_buffer();
     c = *line_pos++;
@@ -245,7 +245,7 @@ read_char(void)
       return read_char();
   }
   /* Simulate newline when on EOF */
-  if (c == (char) EOF && context->input_tab)
+  if (c == EOF && context->input_tab)
     c = '\n';
   /* Adjust imput tab */
   if (isprint(toascii((unsigned char)c)))
@@ -286,7 +286,7 @@ read_char(void)
       putc(c, error_doc.script_file);
     }
   }
-  return c;
+  return (char) c;
 }
 
 
@@ -296,20 +296,20 @@ read_char(void)
 char 
 next_char(void)
 {
-  char c = (char) EOF;
+  int c = EOF;
   if (context->input_file==stdin && prompt_string) {
     fill_line_buffer();
     c = *line_pos;
   } else if (context->input_file) {
     c = getc(context->input_file);
-    if (c != (char)EOF)
+    if (c != EOF)
       ungetc(c,context->input_file);
   }
   if (c == '\r')
     c = '\n';
-  if (c == (char) EOF && context->input_tab)
+  if (c == EOF && context->input_tab)
     c = '\n';
-  return c;
+  return (char) c;
 }
 
 
@@ -457,7 +457,9 @@ make_testchar_map(char *s, char *buf)
 char 
 skip_char(char *s)
 {
-  char c, map[256];
+  int c;
+  char map[256];
+
   make_testchar_map(s, map);
   map[255] = FALSE;
   map['\r'] |= map['\n'];
@@ -501,11 +503,19 @@ skip_char(char *s)
               c = getc(context->input_file);
 #endif
             }
-          test_file_error(context->input_file);
 #ifdef HAVE_FLOCKFILE
           funlockfile(context->input_file);
 #endif
-          if (c != (char)EOF)
+	  if (ferror(context->input_file))
+	    {
+#ifdef EINTR
+	      if (errno == EINTR)
+		clearerr(context->input_file);
+	      else
+#endif
+		test_file_error(context->input_file);
+	    }
+          if (c != EOF)
             ungetc(c, context->input_file);
         }
     }
