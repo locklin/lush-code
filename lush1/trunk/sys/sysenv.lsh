@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.108 2004-02-18 20:46:46 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.109 2004-04-14 13:37:01 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1719,22 +1719,17 @@
   (find-file static-library-path name extlist) )
 
 (de find-shared-library(name &optional extlist)
-  (let ((p ()))
+  (let ((p shared-library-path))
     (when (not extlist)
       (setq extlist '(""))
       (when (not (index "." (basename name)))
         (setq extlist (list (concat "." (or (getconf "SOEXT") "so")))) ) )
-    (when (filep "/sbin/ldconfig")
-      (let* ((c "| 2>/dev/null /sbin/ldconfig -p | grep '^\t%s[. ]'"))
-        (reading (sprintf c name)
-          (while (<> (skip-char) "\e")
-            (let* ((s (read-string))
-                   (n (regex-seek "=> /" s)) )
-              (when (consp n)
-                (setq s (dirname (mid s (+ (car n) 3))))
-                (when (and (dirp s) (not (member s p)))
-                  (setq p (cons s p)) ) ) ) ) ) ) )
-    (setq p (nconc (reverse p) shared-library-path))
+    (when (filep "/etc/ld.so.conf")
+      (reading "/etc/ld.so.conf"
+	(while (<> (skip-char) "\e")
+	  (let ((d (read-string "~\n\r\t\b ")))
+	    (when (and (dirp d) (not (member d p)))
+	      (setq p (cons d p)) ) ) ) ) )
     (find-file p name extlist) ) )
 
 (de find-shared-or-static-library(name &optional extlist)
