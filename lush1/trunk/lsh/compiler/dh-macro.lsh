@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-macro.lsh,v 1.27 2002-09-05 22:46:10 profshadoko Exp $
+;;; $Id: dh-macro.lsh,v 1.28 2002-09-06 17:44:31 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1039,29 +1039,32 @@
 ;; the returned value. The arguments are passed in <arglist>, and the
 ;; type of the return value in <rettype>.
 ;;
-(de process-numerical-args-t (arglist)
-
-    ;; determin the natural type of each arglist, except if rettype is
-    (let* ((types (all ((x arglist)) (dhc-parse-expr-t x)))
-	   (rtyp (1+ (length dhc-number-types))))
-
-      ;; determine return type of arglist. Casting is: number->int ->flt ->real
-      ;; use priority order determined by dhc-number-types
-      (each ((y types) (x arglist)) 
-	    (if (not (==> :y:type is-a-number)) 
-		(dhc-error "not a numerical expression" x))
-	    (let ((prio (length (member (unode-val (scope :y:type u-tclass))
-					dhc-number-types))))
-	      (if (< prio rtyp) 
-		  (setq rtyp prio))))
-      (setq rtyp (nth (1- rtyp) (reverse dhc-number-types)))
-      (new t-node types (new dhc-type rtyp))))
+(de process-numerical-args-t (arglist &optional forcertyp)
+  ;; determin the natural type of each arglist, except if rettype is
+  (let* ((types (all ((x arglist)) (dhc-parse-expr-t x)))
+         (rtyp (1+ (length dhc-number-types))))
+    ;; determine return type of arglist. Casting is: number->int ->flt ->real
+    ;; use priority order determined by dhc-number-types
+    (each ((y types) (x arglist)) 
+      (if (not (==> :y:type is-a-number)) 
+          (dhc-error "not a numerical expression" x))
+      (let ((prio (length (member (dhu-tclass :y:type) dhc-number-types))))
+        (setq rtyp (min rtyp prio)) ) )
+    (setq rtyp (or forcertyp (nth (1- rtyp) (reverse dhc-number-types))))
+    (new t-node types (new dhc-type rtyp))))
 
 (de process-numerical-args-c (source treetype func-string)
-    (concat "(" (dhc-insert-op 
-		 (all ((so (cdr source)) (ty (cdr :treetype:tn-list)))
-		      (dhc-parse-expr-c so ty ()))
-		 func-string) ")"))
+  (concat "(" (dhc-insert-op 
+               (all ((so (cdr source)) (ty (cdr :treetype:tn-list)))
+                 (dhc-parse-expr-c so ty ()))
+               func-string) ")"))
+
+(de process-numerical-args-with-cast-c (source treetype cast func-string)
+  (concat "(" (dhc-insert-op 
+               (all ((so (cdr source)) (ty (cdr :treetype:tn-list)))
+                 (concat "((" cast ")" (dhc-parse-expr-c so ty ()) ")") )
+               func-string) ")"))
+
 
 ;;; N-ADIC FUNCTIONS
 ;;; -----------------
@@ -1117,86 +1120,62 @@
 (dhm-t div(source)
   (when (<> 3 (length source))
 	(dhc-error "wrong number of arguments"))
-  (process-numerical-args-t (cdr source)))
+  (process-numerical-args-t (cdr source) 'dht-int))
 
 (dhm-c div(source treetype retplace)
-       (let ((arg1 (dhc-parse-expr-c (cadr source) 
-				     (cadr :treetype:tn-list) ())))
-	   (sprintf "(((int)%s) / ((int)%s))" 
-		    arg1 
-		    (dhc-parse-expr-c (caddr source) 
-				      (caddr :treetype:tn-list)
-				      ()))))
+  (process-numerical-args-with-cast-c source treetype "int" "/") )
 
 (dhm-t mod(source)
   (when (<> 3 (length source))
 	(dhc-error "wrong number of arguments"))
-  (process-numerical-args-t (cdr source)))
+  (process-numerical-args-t (cdr source) 'dht-int))
 
 (dhm-c mod(source treetype retplace)
-       (let ((arg1 (dhc-parse-expr-c (cadr source) 
-				     (cadr :treetype:tn-list) ())))
-	   (sprintf "(((int)%s) %% ((int)%s))" 
-		    arg1 
-		    (dhc-parse-expr-c (caddr source) 
-				      (caddr :treetype:tn-list)
-				      ()))))
+  (process-numerical-args-with-cast-c source treetype "int" "%") )
 
 (dhm-t bitand(source)
-       (process-numerical-args-t (cdr source)))
+  (process-numerical-args-t (cdr source) 'dht-int))
 
 (dhm-c bitand(source treetype retplace)
-       (process-numerical-args-c source treetype "&"))
+  (process-numerical-args-with-cast-c source treetype "int" "&"))
 
 (dhm-t bitor(source)
-       (process-numerical-args-t (cdr source)))
+  (process-numerical-args-t (cdr source) 'dht-int))
 
 (dhm-c bitor(source treetype retplace)
-       (process-numerical-args-c source treetype "|"))
+  (process-numerical-args-with-cast-c source treetype "int" "|"))
 
 (dhm-t bitxor(source)
-  (process-numerical-args-t (cdr source)))
+  (process-numerical-args-t (cdr source) 'dht-int))
 
 (dhm-c bitxor(source treetype retplace)
-       (process-numerical-args-c source treetype "^"))
+  (process-numerical-args-with-cast-c source treetype "int" "^"))
 
 (dhm-t bitshl(source)
   (when (<> 3 (length source))
-	(dhc-error "wrong number of arguments"))
-  (process-numerical-args-t (cdr source)))
+    (dhc-error "wrong number of arguments"))
+  (process-numerical-args-t (cdr source) 'dht-int))
 
 (dhm-c bitshl(source treetype retplace)
-       (let ((arg1 (dhc-parse-expr-c (cadr source) 
-				     (cadr :treetype:tn-list) ())))
-	   (sprintf "(((int)%s) << ((int)%s))" 
-		    arg1 
-		    (dhc-parse-expr-c (caddr source) 
-				      (caddr :treetype:tn-list)
-				      ()))))
+  (process-numerical-args-with-cast-c source treetype "int" "<<") )
 
 (dhm-t bitshr(source)
   (when (<> 3 (length source))
-	(dhc-error "wrong number of arguments"))
-  (process-numerical-args-t (cdr source)))
+    (dhc-error "wrong number of arguments"))
+  (process-numerical-args-t (cdr source) 'dht-int))
 
 (dhm-c bitshr(source treetype retplace)
-       (let ((arg1 (dhc-parse-expr-c (cadr source) 
-				     (cadr :treetype:tn-list) ())))
-	   (sprintf "(((int)%s) >> ((int)%s))" 
-		    arg1 
-		    (dhc-parse-expr-c (caddr source) 
-				      (caddr :treetype:tn-list)
-				      ()))))
+  (process-numerical-args-with-cast-c source treetype "int" ">>") )
 
 (dhm-t **(source)
   (when (<> 3 (length source)) (dhc-error "wrong number of arguments"))
   (process-numerical-args-t (cdr source)))
 
 (dhm-c **(source treetype retplace)
-  (concat "pow((double)(" (dhc-parse-expr-c (cadr source) 
-					    (cadr :treetype:tn-list) ())
-	  "),(double)(" (dhc-parse-expr-c (caddr source)
-					  (caddr :treetype:tn-list) ())
+  (concat "pow((double)(" 
+          (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ())
+	  "),(double)("
+          (dhc-parse-expr-c (caddr source) (caddr :treetype:tn-list) ())
 	  "))"))
 
 (dhm-t max(source)
