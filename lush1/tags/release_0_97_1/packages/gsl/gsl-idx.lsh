@@ -1,0 +1,452 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** (idx2gsl (<gsl-function> <arg1> <arg2> <argn>))
+;; This macros makes it easy to call GSL functions that
+;; take vectors or matrices as arguments. It allows to call
+;; GSL functions that normally take gsl_vector or gsl_matrix
+;; with regular Lush idx. In other words, you can do (for example):
+;;{<code>
+;; (setq z [1 2 3])
+;; (idx2gsl (gsl_linalg_householder_transform z))
+;;</code>}
+;; No data is copied in the process (no hidden inefficiency).
+;; This macro analyses the type of the arguments expected by 
+;; <gsl-function>, then generates appropriate gsl structures
+;; that point to the idx data, then calls the gsl function.
+;; For example, the above call is turned into:
+;;{<code>
+;; (let ((z (gsl-vector-double-idx-ptr z)))
+;;   (prog1
+;;       (gsl_linalg_householder_transform z)
+;;     (progn
+;;       (free z))))
+;;</code>}
+
+
+#? ** Allocating a GSL vector/matrix views from an idx.
+;; GSL functions that operate on vectors and matrices
+;; often take a gsl_vector_xxx or a gsl_matrix_xxx
+;; as argument. The functions below allocate appropriate
+;; GSL vector/matrix access structure that point to the
+;; data of the idx passed as argument. No actual data is 
+;; copied. The pointer returned by these functions must
+;; be freed with the <free> function defined in <libc/libc.lsh>.
+;; The functions that create views of complex vectors and matrices
+;; take a Lush idx with an extra dimension of size 2 (the last
+;; dimension). So calling <gsl-vector-complex-double-idx-ptr>
+;; with an idx2 of double of size Nx2 will create a 
+;; <gsl_vector_complex> of size N.
+#? * (gsl-vector-complex-double-idx-ptr <m>)
+#? * (gsl-vector-complex-float-idx-ptr <m>)
+#? * (gsl-vector-double-idx-ptr <m>)
+#? * (gsl-vector-float-idx-ptr <m>)
+#? * (gsl-vector-int-idx-ptr <m>)
+#? * (gsl-vector-short-idx-ptr <m>)
+#? * (gsl-vector-ubyte-idx-ptr <m>)
+#? * (gsl-vector-byte-idx-ptr <m>)
+#? * (gsl-matrix-complex-double-idx-ptr <m>)
+#? * (gsl-matrix-complex-float-idx-ptr <m>)
+#? * (gsl-matrix-double-idx-ptr <m>)
+#? * (gsl-matrix-float-idx-ptr <m>)
+#? * (gsl-matrix-int-idx-ptr <m>)
+#? * (gsl-matrix-short-idx-ptr <m>)
+#? * (gsl-matrix-byte-idx-ptr <m>)
+#? * (gsl-matrix-ubyte-idx-ptr <m>)
+
+(libload "gsl/gsl-config")
+(libload "libc/libc")
+
+;; dummy function that adds GSL C header files in C file
+(eval `(de dummy_gsl_idx () ,gsl-cpheader-cmd ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defvar gsltype2func
+  '(
+    ("gsl_vector_complex" . gsl-vector-complex-double-idx-ptr )
+    ("gsl_vector_complex_float" . gsl-vector-complex-float-idx-ptr )
+    ("gsl_vector" . gsl-vector-double-idx-ptr )
+    ("gsl_vector_float" . gsl-vector-float-idx-ptr )
+    ("gsl_vector_int" . gsl-vector-int-idx-ptr )
+    ("gsl_vector_uint" . gsl-vector-int-idx-ptr )
+    ("gsl_vector_short" . gsl-vector-short-idx-ptr )
+    ("gsl_vector_ushort" . gsl-vector-short-idx-ptr )
+    ("gsl_vector_char" . gsl-vector-byte-idx-ptr )
+    ("gsl_vector_uchar" . gsl-vector-ubyte-idx-ptr )
+
+    ("gsl_matrix_complex" . gsl-matrix-complex-double-idx-ptr )
+    ("gsl_matrix_complex_float" . gsl-matrix-complex-float-idx-ptr )
+    ("gsl_matrix" . gsl-matrix-double-idx-ptr )
+    ("gsl_matrix_float" . gsl-matrix-float-idx-ptr )
+    ("gsl_matrix_int" . gsl-matrix-int-idx-ptr )
+    ("gsl_matrix_uint" . gsl-matrix-int-idx-ptr )
+    ("gsl_matrix_short" . gsl-matrix-short-idx-ptr )
+    ("gsl_matrix_ushort" . gsl-matrix-short-idx-ptr )
+    ("gsl_matrix_byte" . gsl-matrix-byte-idx-ptr )
+    ("gsl_matrix_ubyte" . gsl-matrix-ubyte-idx-ptr )))
+
+
+(dmd idx2gsl (p)
+  (let* ((psymb (car p))
+	 (pargs (cdr p))
+	 (fsource (getp (eval psymb) 'source))
+	 (fargs (cadr fsource))
+	 (fbody (cddr fsource))
+	 (gsl-symbs ())
+	 (args (all ((f fargs) (p pargs)) (cons f p)))
+	 (code ()))
+    ;; find symbols declared as ((-gptr-) "<ptr-type> *") where
+    ;; <ptr-type> is one of gsl_vector, gsl_vector_float,
+    ;; gsl_vector_complex, gsl_vector_complex_float,
+    ;; gsl_vector_int, gsl_vector_uint,
+    ;; gsl_vector_short, gsl_vector_ushort,
+    ;; gsl_vector_char, gsl_vector_uchar.
+    (each ((x fbody))
+      (when (and (consp (Car x)) (= (caar x) '-gptr-))
+	(let ((type (cadr (car x)))
+	      (symbs (cdr x)))
+	  (cond 
+	   ((regex-seek "gsl_vector(_[a-z]+)?[ ]+\\*" type)
+	    (let ((gsl-type (regex-subst 
+			     "(const[ ]+)?gsl_vector(_[a-z]+)?[ ]+\\*" 
+			     "gsl_vector%1" type)))
+	      (each ((s symbs))
+		(setq gsl-symbs
+		      (alist-add 
+		       (alist-get s args)
+		       (alist-get gsl-type gsltype2func) gsl-symbs)))))
+	   ((regex-seek "gsl_matrix(_[a-z]+)?[ ]+\\*" type)
+	    (let ((gsl-type (regex-subst 
+			     "(const[ ]+)?gsl_matrix(_[a-z]+)?[ ]+\\*" 
+			     "gsl_matrix%1" type)))
+	      (each ((s symbs))
+		(setq gsl-symbs
+		      (alist-add 
+		       (alist-get s args)
+		       (alist-get gsl-type gsltype2func) gsl-symbs)))))))))
+
+    `(let ,(all ((s gsl-symbs)) (list (car s) (list (cdr s) (car s)))) 
+       (prog1 ,p ,(cons 'progn (all ((s gsl-symbs)) (list 'free (car s))))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; these functions create a GSL vector of matrix structure
+;; that points the the data of an existing IDX.
+
+(de gsl-vector-complex-double-idx-ptr (m)
+  ((-idx2- (-double-)) m)
+  (when (or (<> (idx-dim m 1) 2) (<> (idx-modulo m 1) 1))
+    (error "not a vector of complex"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_vector_complex *p;
+        p = malloc(sizeof(gsl_vector_complex));
+        p->data = IDX_PTR($m,double);
+        p->size = $m->dim[0];
+        p->stride = $m->mod[0]/2;
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-vector-complex-float-idx-ptr (m)
+  ((-idx2- (-float-)) m)
+  (when (or (<> (idx-dim m 1) 2) (<> (idx-modulo m 1) 1))
+    (error "not a vector of complex"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_vector_complex_float *p;
+        p = malloc(sizeof(gsl_vector_complex_float));
+        p->data = IDX_PTR($m,float);
+        p->size = $m->dim[0];
+        p->stride = $m->mod[0]/2;
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-vector-double-idx-ptr (m)
+  ((-idx1- (-double-)) m)
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_vector *p;
+        p = malloc(sizeof(gsl_vector));
+        p->data = IDX_PTR($m,double);
+        p->size = $m->dim[0];
+        p->stride = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-vector-float-idx-ptr (m)
+  ((-idx1- (-float-)) m)
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_vector_float *p;
+        p = malloc(sizeof(gsl_vector_float));
+        p->data = IDX_PTR($m,float);
+        p->size = $m->dim[0];
+        p->stride = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-vector-int-idx-ptr (m)
+  ((-idx1- (-int-)) m)
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_vector_int *p;
+        p = malloc(sizeof(gsl_vector_int));
+        p->data = IDX_PTR($m,int);
+        p->size = $m->dim[0];
+        p->stride = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-vector-short-idx-ptr (m)
+  ((-idx1- (-short-)) m)
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_vector_short *p;
+        p = malloc(sizeof(gsl_vector_short));
+        p->data = IDX_PTR($m,short);
+        p->size = $m->dim[0];
+        p->stride = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-vector-ubyte-idx-ptr (m)
+  ((-idx1- (-ubyte-)) m)
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_vector_uchar *p;
+        p = malloc(sizeof(gsl_vector_uchar));
+        p->data = IDX_PTR($m,unsigned char);
+        p->size = $m->dim[0];
+        p->stride = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-vector-byte-idx-ptr (m)
+  ((-idx1- (-byte-)) m)
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_vector_char *p;
+        p = malloc(sizeof(gsl_vector_char));
+        p->data = IDX_PTR($m,char);
+        p->size = $m->dim[0];
+        p->stride = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+
+
+(de gsl-matrix-complex-double-idx-ptr (m)
+  ((-idx3- (-double-)) m)
+  (when (or (<> (idx-dim m 2) 2) (<> (idx-modulo m 2) 1) (<> (idx-modulo m 1) 2))
+    (error "not a matrix of complex"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_matrix_complex *p;
+        p = malloc(sizeof(gsl_matrix_complex));
+        p->data = IDX_PTR($m,double);
+        p->size1 = $m->dim[0];
+        p->size2 = $m->dim[1];
+        p->tda = $m->mod[0]/2;
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-matrix-complex-float-idx-ptr (m)
+  ((-idx3- (-float-)) m)
+  (when (or (<> (idx-dim m 2) 2) (<> (idx-modulo m 2) 1) (<> (idx-modulo m 1) 2))
+    (error "not a matrix of complex"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_matrix_complex_float *p;
+        p = malloc(sizeof(gsl_matrix_complex_float));
+        p->data = IDX_PTR($m,float);
+        p->size1 = $m->dim[0];
+        p->size2 = $m->dim[1];
+        p->tda = $m->mod[0]/2;
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-matrix-double-idx-ptr (m)
+  ((-idx2- (-double-)) m)
+  (when (<> (idx-modulo m 1) 1)
+    (error "last dimension is not contiguous"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_matrix *p;
+        p = malloc(sizeof(gsl_matrix));
+        p->data = IDX_PTR($m,double);
+        p->size1 = $m->dim[0];
+        p->size2 = $m->dim[1];
+        p->tda = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-matrix-float-idx-ptr (m)
+  ((-idx2- (-float-)) m)
+  (when (<> (idx-modulo m 1) 1)
+    (error "last dimension is not contiguous"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_matrix_float *p;
+        p = malloc(sizeof(gsl_matrix_float));
+        p->data = IDX_PTR($m,float);
+        p->size1 = $m->dim[0];
+        p->size2 = $m->dim[1];
+        p->tda = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-matrix-int-idx-ptr (m)
+  ((-idx2- (-int-)) m)
+  (when (<> (idx-modulo m 1) 1)
+    (error "last dimension is not contiguous"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_matrix_int *p;
+        p = malloc(sizeof(gsl_matrix_int));
+        p->data = IDX_PTR($m,int);
+        p->size1 = $m->dim[0];
+        p->size2 = $m->dim[1];
+        p->tda = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-matrix-short-idx-ptr (m)
+  ((-idx2- (-short-)) m)
+  (when (<> (idx-modulo m 1) 1)
+    (error "last dimension is not contiguous"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_matrix_short *p;
+        p = malloc(sizeof(gsl_matrix_short));
+        p->data = IDX_PTR($m,short);
+        p->size1 = $m->dim[0];
+        p->size2 = $m->dim[1];
+        p->tda = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-matrix-byte-idx-ptr (m)
+  ((-idx2- (-byte-)) m)
+  (when (<> (idx-modulo m 1) 1)
+    (error "last dimension is not contiguous"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_matrix_char *p;
+        p = malloc(sizeof(gsl_matrix_char));
+        p->data = IDX_PTR($m,char);
+        p->size1 = $m->dim[0];
+        p->size2 = $m->dim[1];
+        p->tda = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+(de gsl-matrix-ubyte-idx-ptr (m)
+  ((-idx2- (-ubyte-)) m)
+  (when (<> (idx-modulo m 1) 1)
+    (error "last dimension is not contiguous"))
+  (let ((rez (to-gptr ())))
+    ((-gptr-) rez)
+    #{{ gsl_matrix_uchar *p;
+        p = malloc(sizeof(gsl_matrix_uchar));
+        p->data = IDX_PTR($m,unsigned char);
+        p->size1 = $m->dim[0];
+        p->size2 = $m->dim[1];
+        p->tda = $m->mod[0];
+        p->block = NULL;
+        p->owner = 0;
+        $rez = (void *)p;
+    } #}
+    rez))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make 
+ ()
+ dummy_gsl_idx
+ gsl-vector-complex-double-idx-ptr
+ gsl-vector-complex-float-idx-ptr
+ gsl-vector-double-idx-ptr
+ gsl-vector-float-idx-ptr
+ gsl-vector-int-idx-ptr
+ gsl-vector-short-idx-ptr
+ gsl-vector-ubyte-idx-ptr
+
+ gsl-matrix-complex-double-idx-ptr
+ gsl-matrix-complex-float-idx-ptr
+ gsl-matrix-double-idx-ptr
+ gsl-matrix-float-idx-ptr
+ gsl-matrix-int-idx-ptr
+ gsl-matrix-short-idx-ptr
+ gsl-matrix-ubyte-idx-ptr
+ )
