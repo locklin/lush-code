@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.49 2003-01-26 20:05:32 leonb Exp $
+ * $Id: header.h,v 1.50 2003-03-03 15:50:36 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -602,7 +602,7 @@ TLAPI void all_args_eval(at **arg_array, int i);
 
 #define APOINTER(i)     ( arg_array[i] )
 #define AREAL(i)        ( ISNUMBER(i) ? APOINTER(i)->Number:(long)DX_ERROR(1,i))
-#define AGPTR(i)        ( ISGPTR(i) ? APOINTER(i)->Gptr:(gptr)DX_ERROR(1,i))
+#define AGPTR(i)        ( ISGPTR(i) ? APOINTER(i)->Gptr:(gptr)DX_ERROR(9,i))
 #define AINTEGER(i)     ( (int) AREAL(i) )
 #define AFLT(i)         ( rtoF(AREAL(i)) )
 #define ALIST(i)        ( ISLIST(i) ? APOINTER(i):(at*)DX_ERROR(2,i) )
