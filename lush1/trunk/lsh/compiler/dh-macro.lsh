@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-macro.lsh,v 1.36 2003-09-02 19:09:44 leonb Exp $
+;;; $Id: dh-macro.lsh,v 1.37 2003-09-09 18:28:28 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -2606,6 +2606,8 @@
 (putp idx-sum 'cname "sum")
 (putp idx-sup 'cname "sup")
 (putp idx-inf 'cname "inf")
+(putp idx-sum 'clear t)
+
 (putp idx-sumacc 'cname "sumacc")
 (putp idx-supacc 'cname "supacc")
 (putp idx-infacc 'cname "infacc")
@@ -2620,8 +2622,8 @@
          (inner-name (or (getp name 'dhmarg) name))
          (tn-in (dhc-parse-expr-t in))
          (ndimin (==> :tn-in:type is-an-idxptr))
-         (mgen (caddr (assoc (==> :tn-in:type get-element-type)
-                             dhc-type-to-matrix))))
+         (mgen (cadr (assoc (==> :tn-in:type get-element-type)
+                            dhc-type-to-matrix))))
     
 	 
     (if ~ndimin (dhc-error "not a matrix" in))
@@ -2648,28 +2650,22 @@
                (while (> ndimin 3)
                  (setq yo `(idx-bloop ((in in)) ,yo))
                  (incr ndimin -1))
-               (setq yo `(idx-bloop ((in ,in)) ,yo))
-               (setq yo `(let ((tEmP_m3AT 
-                                ,(if (= inner-name name)
-                                     out `(idx-clear ,out))))
-                           ,yo tEmP_m3AT))
+               (setq yo `((idx-bloop ((in ,in)) ,yo)))
+               (when (<> inner-name name)
+                 (print inner-name name)
+                 (if (print (getp (get-dhm-target name) 'clear))
+                     (setq yo  `((idx-clear tEmP_m3AT) ,@yo))
+                   (let ((to (new dhc-type (==> :tn-out:type get-element-type)))
+                         (ti (new dhc-type (==> :tn-in:type get-element-type))) )
+                     (setq yo `((cinline 
+                                 ,(concat "*IDX_PTR((%s)," (dhc-type-to-c-decl to) 
+                                          ") = *IDX_PTR((%s)," (dhc-type-to-c-decl ti) ");" )
+                                 tEmP_m3AT ,in ) ,@yo)) ) ) )
+               (setq yo `(let ((tEmP_m3AT ,out)) ,@yo tEmP_m3AT))
                yo))))
       ;; small idx, missing arg
-      (if (< ndimin 3)
-          (dhc-parse-replacement-source-t 
-           source
-           ;; progn necessary or it generates 2 dhm cells in treetype
-           `(progn (,name ,in (,mgen))))
-        ;; idx3, missing arg
-        (dhc-parse-replacement-source-t
-         source
-         (let ((yo `(,inner-name in tEmP_m3AT)))
-           (while (> ndimin 3)
-             (setq yo `(idx-bloop ((in in)) ,yo))
-             (incr ndimin -1))
-           (setq yo `(let* ((tEmP_m3AT (,mgen)))
-                       (idx-bloop ((in ,in)) ,yo) tEmP_m3AT))
-           yo))))))
+      (dhc-parse-replacement-source-t 
+       source `(progn (,name ,in (,mgen))) ) ) ) )
 
 (dhm-c idx-sum(source treetype retplace)
   (let* ((idx-type-in :(cadr :treetype:tn-list):type)
