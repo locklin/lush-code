@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.9 2002-08-02 21:13:19 leonb Exp $
+ * $Id: unix.c,v 1.10 2002-08-02 21:20:47 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -575,6 +575,21 @@ setup_trigger_signal()
       switch (trigger_mode)
         {
         case MODE_UNKNOWN:
+#ifndef BROKEN_FASYNC
+#ifdef FASYNC
+#ifdef F_SETOWN
+          pid = getpid();
+          if (fcntl(fd, F_SETOWN, pid) != -1)
+            if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | FASYNC) != -1)
+              {
+                trigger_mode = MODE_FASYNC;
+                trigger_signal = SIGIO;
+                setup_signal_once();
+                break;
+              }
+#endif
+#endif
+#endif /* !BROKEN_FASYNC */
 #ifndef BROKEN_FIOASYNC
 #ifdef FIOASYNC
 #ifdef FIOSETOWN
@@ -591,21 +606,6 @@ setup_trigger_signal()
 #endif
 #endif
 #endif /* !BROKEN_FIOASYNC */
-#ifndef BROKEN_FASYNC
-#ifdef FASYNC
-#ifdef F_SETOWN
-          pid = getpid();
-          if (fcntl(fd, F_SETOWN, pid) != -1)
-            if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | FASYNC) != -1)
-              {
-                trigger_mode = MODE_FASYNC;
-                trigger_signal = SIGIO;
-                setup_signal_once();
-                break;
-              }
-#endif
-#endif
-#endif /* !BROKEN_FASYNC */
 #ifndef BROKEN_SETSIG
 #ifdef I_SETSIG
 #ifdef I_GETSIG
