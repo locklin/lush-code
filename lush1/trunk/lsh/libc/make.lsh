@@ -24,17 +24,44 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: make.lsh,v 1.2 2003-03-18 18:17:10 leonb Exp $
+;;; $Id: make.lsh,v 1.3 2003-03-19 21:41:12 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 (libload "dh-compile.lsh")
 
 
-#? *** Controlling compilation with "make.lsh".
-;; Class <LushMake> provide a means to
-;; compile a set of C sources and load
-;; the resulting object files into lush.
+#? ** Compiling and loading C code.
+;; It is often useful to compile and load C subroutines
+;; that either define new Lush primitives, or provide
+;; support functions to compiled lush functions.
+;;
+;; Class <LushMake> provides a familiar interface
+;; for controlling the compilation of these subroutines
+;; and for loading them into the Lush system.
+;;.IP
+;; First you create a <LushMake> object.
+;; Optionally you can specify the directory containing the source files,
+;; a different directory for the object files, and 
+;; additional compilation options.  
+;;.IP
+;; Then you add compilation rules very similar in spirit
+;; to makefile rules.
+;;.IP
+;; Finally you invoke methods <make> and <load>.
+;;.CODE
+;;  (let ((lm (new LushMake)))
+;;    ;; Define the rules
+;;    (==> lm rule "foo.o" '("foo.c" "foo.h"))
+;;    (==> lm rule "bar.o" '("bar.f" "foo.h")
+;;            "$F77 $DEFS $LUSHFLAGS -c $SRC -o $OBJ" )
+;;    ;; Compile and load
+;;    (==> lm make)
+;;    (==> lm load) )
+;;.PP
+;; A more extensive example can be seen in 
+;; <"packages/sn28/sn28common.lsh">.
+
 
 (defclass LushMake Object
   objdir
@@ -44,15 +71,27 @@
 
 
 #? (new LushMake [<srcdir> [<objdir>]])
+;; Create a new <LushMake> object.
+;;
+;; The source files will be searched under directory <srcdir>.  The default is
+;; to search source files under the directory containing the file being
+;; loaded. The object files will be created in architecture dependent
+;; subdirectories of <objdir>.  The default is to create these subdirectories
+;; inside the source directory.
 
 (defmethod LushMake lushmake(&optional d1 d2)
   (setq rules (htable))
-  (setq srcdir (dirname file-being-loaded))
+  (setq srcdir (dirname (or file-being-loaded ".")))
   (setq moreflags "")
   (when d1 (==> this setdirs d1 d2)) )
 
 
 #? (==> <lushmake> setdirs <srcdir> [<objdir>])
+;; Sets the source directory <srcdir> (where source files are searched)
+;; and the object directory <objdir> (where architecture dependent subdirectories
+;; are created to hold the object files).  The default value for <objdir> is 
+;; equal to <srcdir>.
+
 
 (defmethod LushMake setdirs(srcd &optional objd)
   (when (not (dirp srcdir))
@@ -72,12 +111,44 @@
 
 
 #? (==> <lushmake> setflags <flags>)
+;; Sets additional compilation flags.
+;; These additional compilation flags will be appended
+;; to the contents of the rule variable <"$LUSHFLAGS">.
 
 (defmethod LushMake setflags(flags)
   (setq moreflags flags) )
 
 
 #? (==> <lushmake> rule <target> <deps> [<command>])
+;; Define a compilation rule in the spirit of makefiles.
+;;
+;; Argument <target> is the name of the object file to create
+;; relative to an architecture dependent subdirectory of the
+;; object directory. 
+;;
+;; Argument <deps> is a list containing the names of the files
+;; on which the target depends. The target is rebuilt if 
+;; any of these files is more recent than the current target.
+;; 
+;; The optional argument <command> is a string containing
+;; the command to execute to rebuild <target>.  The default 
+;; command is provided in variable <dhc-make-command> and
+;; should be adequate for C programs.  Environment variables
+;; in the command are expanded using <getenv> or <getconf>.
+;; The following additional variables are also defined:
+;;.IP <$LUSHFLAGS>:
+;; Compilation flags composed by concatenating the contents
+;; of variable <dhc-make-lushflags>, the string <"-I$SRCDIR">,
+;; and the additional flags defined using method <setflags>.
+;;.IP <$SRCDIR>:
+;; The pathname of the source directory.
+;;.IP <$SRC>:
+;; The pathname of the first file listed in argument <deps>.
+;;.IP <$OBJ>:
+;; The pathname of the target file <target>.
+;;.PP
+;;.SEE dhc-make-command
+;;.SEE dhc-make-lushflags
 
 (defmethod LushMake rule(target deps &optional command)
   (when (not objdir) 
@@ -90,8 +161,6 @@
   target )
 
 
-#? (==> <lushmake> rebuild <target>)
-
 (defmethod LushMake rebuild(target &optional done)
   (when (not (rules target))
     (error '==> "Do not know how to make" target) )
@@ -103,7 +172,7 @@
           (setq flag dhc-make-force)
           (each ((src deps))
             (let ((srctime (alist-get 'mtime (fileinfo src))))
-              (when (not srctime)
+              (when (or (rules src) (not srctime))
                 (setq flag (or flag (==> this rebuild src))) )
               (when (< objtime srctime)
                 (setq flag t) ) ) ) )
@@ -117,7 +186,6 @@
             (setq lushflags (dhc-substitute-env dhc-make-lushflags vars))
             (vars "LUSHFLAGS" (concat lushflags " -I" srcdir " " moreflags))
             (vars "SRCDIR" srcdir)
-            (vars "OBJDIR" objdir)
             (vars "SRC" (car deps))
             (vars "OBJ" obj)
             ;; Execute 
@@ -130,6 +198,14 @@
 
   
 #? (==> <lushmake> make [<...target...>])
+;; Makes sure that the targets listed as argument are 
+;; up-to-date relative to their dependencies.
+;; This method finds the relevant rule and checks each dependency file.
+;; It first checks whether the dependency files themselves must be rebuilt.
+;; The rule command is then invoked if any of the dependency is more recent than the target.
+;;
+;; Calling this method without arguments processes all
+;; targets defined by the rules.
 
 (defmethod LushMake make targets
   (when (not targets)
@@ -141,6 +217,11 @@
 
 
 #? (==> <lushmake> load [<...targets...>])
+;; Makes sure that all listed targets are up-to-date 
+;; and loads all listed object files using <mod-load>.
+;;
+;; Calling this method without arguments processes all
+;; object file targets defined by the rules.
 
 (defmethod LushMake load targets
   (when (not targets)
