@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.4 2002-04-25 22:54:27 leonb Exp $
+ * $Id: index.c,v 1.5 2002-04-26 14:39:47 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -1769,7 +1769,7 @@ format_save_ascii_matrix(at *p, FILE *f, int h)
 {
   struct index *ind;
   struct idx id;
-  int magic, type;
+  int type;
   flt (*getf)(gptr,int);
   gptr base;
   /* validation */  
@@ -1903,9 +1903,8 @@ import_raw_matrix(at *p, FILE *f, int offset)
       /* must loop on each element */
       rsize = 1;
       begin_idx_aloop1(&id, off) {
-        char *p = pntr + (off * elsize);
         if (rsize == 1)
-          rsize = fread(pntr, elsize, 1, f);
+          rsize = fread(pntr + (off * elsize), elsize, 1, f);
       } end_idx_aloop1(&id, off);
       index_rls_idx(ind,&id);
       if (rsize < 0)
@@ -2074,7 +2073,6 @@ load_matrix_header(FILE *f,
 at *
 load_matrix(FILE *f)
 {
-  int i;
   at *ans;
   int magic;
   int ndim, dim[MAXDIMS];
@@ -2709,17 +2707,12 @@ DY(yeloop)
   struct index *inds[MAXEBLOOP];
   
   n = ebloop_args(ARG_LIST, syms, iats, inds, &last_index);
-
+  d = inds[0]->dim[ inds[0]->ndim - 1 ];
   for (i=0; i<n; i++) {
     ind = inds[i];
-
     j = --(ind->ndim);		/* remove last dimension */
-
-    if (i==0)			/* test equality of looping dimensions */
-      d = ind->dim[j];
-    else if (d!=ind->dim[j])
+    if (d != ind->dim[j])
       error(NIL,"looping dimension are different",ARG_LIST->Car);
-
     symbol_push(syms[i], iats[i]);
   }
 
@@ -2754,15 +2747,11 @@ DY(ybloop)
   struct index *inds[MAXEBLOOP];
   
   n = ebloop_args(ARG_LIST, syms, iats, inds, &last_index);
-
+  d = inds[0]->dim[ 0 ];
   for (i=0; i<n; i++) {
     ind = inds[i];
-
-    if (i==0)			/* test equality of looping dimensions */
-      d = ind->dim[0];
-    else if (d!=ind->dim[0])
+    if (d != ind->dim[0])
       error(NIL,"looping dimension are different",ARG_LIST->Car);
-
     --(ind->ndim);		/* remove one dimension */
     m = ind->mod[0];		/* reorganize the dim and mod arrays */
     for (j=0; j<ind->ndim; j++) {
@@ -2770,7 +2759,6 @@ DY(ybloop)
       ind->mod[j] = ind->mod[j+1];
     }
     ind->mod[ind->ndim] = m;	/* put the stride at the end! */
-
     symbol_push(syms[i], iats[i]);
   }
 
