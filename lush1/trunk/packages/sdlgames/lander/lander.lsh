@@ -1,14 +1,12 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; a slightly more sophisticated version on Lunar Lander
+;; a simple Lunar Lander
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Yann LeCun 07-2001
 
-(mload "sdl/libsdl")
-(setq image-dir (dirname file-being-loaded))
+(libload "sdl/libsdl")
+(defvar image-dir (dirname file-being-loaded))
 
-(when (< (SDL_Init @@SDL_INIT_VIDEO) 0) (error "Unable to init SDL"))
-
-(setq pi/180 (/ 3.1415927 180))
+(defvar pi/180 (/ 3.1415927 180))
 
 ;; modulo for floating point numbers
 (de fmod (x n) (if (or (< x 0) (>= x n)) (- x (* n (int (/ x n)))) x))
@@ -97,125 +95,124 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; game proper
 
-(de lander ()
-    (let* ((scr (new sdl-screen 800 600 "Lander")) ; open screen
-           (bgd (new sdl-sprite scr 0))     ; create background sdl-sprite
-           (lem (new sdl-sprite scr 1))     ; create lem sdl-sprite
-           (lems (new sdl-sprite scr 2))    ; create lem shadow sdl-sprite
-           (lem-flame (new sdl-sprite scr 1))    ; create lem shadow sdl-sprite
-           (bulletsp (new sdl-sprite scr 3))
-           (ground 510)
-           ;; set initial position, velocity, acceleration of lem
-           (x 100) (y ground) (vx 4) (vy 0) (ax 0) (ay 0) 
-           (z 0)                        ; initial angle of lem
-           ;; set mass, inverse mass, and deltat of lem
-           (mass 1) (mass-inv (/ 1 mass)) (deltat 0.01)
-           (main-thrust 400)          ; set main engine thrust
-           (friction -0.0)            ; set air friction (say -0.04)
-           (grav 200)                 ; set gravity coefficient in pixels/s/s
-           (vb 300)                   ; bullet speed
-           ;; bullet list
-           (blist ())
-           ;; other thingies
-           (stop ())
-           (event (new sdl-event))
-           (xyk (int-matrix 3))
-           ;; (gui (make-lander-gui))
-           )
-      (init-explose scr)
-      (==> bgd load-frame (concat-fname image-dir "moon-svga.png") 0 0 0)
-      (==> bgd move 0 406)
-      (==> lems load-frame (concat-fname image-dir "lem-shadow.png") 0 40 -6)
-      (==> lem load-frame (concat-fname image-dir "lem.png") 0 40 35)
-      (==> lem-flame load-frame (concat-fname image-dir "lem-flame.png") 0 40 35)
-      (==> bulletsp load-frame (concat-fname image-dir "bullet.png") 0 6 6)
-      ;; fill up frames with rotated lems
-      (let ((i 1))
-        (for (angle 10 350 10)
-          (==> lem rotscale-frame 0 i angle 1)
-          (==> lem-flame rotscale-frame 0 i angle 1)
-          (incr i)))
-      (while (not stop)
-        ;; (process-pending-events)
-        (==> scr clear)                 ; fill image with black
-        (==> bgd draw)                  ; draw moon ground
-        (==> event get-arrows xyk)      ; read keyboard
-        (when (= (xyk 2) @@SDLK_q) (setq stop t)) ; stop when q is pressed
-        (setq z (+ z (xyk 0)))
-        (while (>= z 36) (setq z (- z 36)))
-        (while (< z 0) (setq z (+ z 36)))
-        (==> lem set-frame (int z))
-        (==> lem-flame set-frame (int z))
-        (setq ax (* mass-inv main-thrust (xyk 1) (sin (* pi/180 -10 z)))) ; update acceleration 
-        (setq ay (+ grav (* mass-inv main-thrust (xyk 1) (cos (* pi/180 10 z))))) ; update acceleration 
-        (setq vx (+ vx (* friction vx) (* ax deltat)))  ; update velocity
-        (setq vy (+ vy (* friction vy) (* ay deltat)))  ; update velocity
-        (setq x  (+ x (* vx deltat)))   ; update position
-        (setq y  (+ y (* vy deltat)))   ; update position
-        (when (< x -40) (setq x (+ 800 (- x -40)))) ; wrap around left side
-        (when (> x 800) (setq x (+ -40 (- x 800)))) ; wrap around right side
-        (when (> y ground)              ; bounce on ground
-          (if (or (<> 0 (int z))
-                  (> vx 100)
-                  (> vy 100))
-              (progn
-                (explose scr bgd x ground vx (- vy) deltat grav)
-                (setq x 100 y ground vx 4 vy 0 ax 0 ay 0 z 0))
-            (setq vy (* -0.5 vy)) 
-            (setq vx (* 0.25 vx))
-            (setq z 0)
-            (==> lem set-frame (int z))
-            (==> lem-flame set-frame (int z))
-            (setq y ground)))
-        ;; bullet stuff
-        (when (= (xyk 2) @@SDLK_z)
-          (setq blist (cons (new bullet x y 
-                                 (- vx (* vb (sin (* pi/180 -10 z))))
-                                 (- vy (* vb (cos (* pi/180 -10 z))))
-                                 0 grav
-                                 3 bulletsp) blist))
-                  (+ vx (* vb (sin (* pi/180 -10 z))))
-                  (+ vy (* vb (cos (* pi/180 -10 z)))))
-        (let ((blist-new ())) 
-          (each ((b blist))
-            (when (> :b:life 0) 
-              (==> b update deltat) (==> b draw) 
-              (setq blist-new (nconc1 blist-new b))))
-          (setq blist blist-new))
-        (==> lem move x y)              ; move lem sdl-sprite to position
-        (==> lem-flame move x y)              ; move lem sdl-sprite to position
-        (==> lems move x ground)        ; move shadow sdl-sprite to position
-        (==> lems draw)                 ; draw shadow
-        (when (<> 0 (xyk 1)) (==> lem-flame draw))
-        (==> lem draw)                  ; draw lem
-        (==> scr flip)                  ; flip screens
-        (setq deltat :scr:deltat)       ; update deltat to time between screen flips
-        )
-      ;;(delete gui)
-      ))
+;; main-thrust, gravity, friction.
+(de lander (main-thrust grav mass cx)
+  (sdl-initialize)
+  (let* ((scr (new sdl-screen 800 600 "Lander")) ; open screen
+	 (bgd (new sdl-sprite scr 0))	; create background sdl-sprite
+	 (lem (new sdl-sprite scr 1))	; create lem sdl-sprite
+	 (lems (new sdl-sprite scr 2))	; create lem shadow sdl-sprite
+	 (lem-flame (new sdl-sprite scr 1)) ; create lem shadow sdl-sprite
+	 (bulletsp (new sdl-sprite scr 3))
+	 (ground 510)
+	 ;; set initial position, velocity, acceleration of lem
+	 (x 100) (y ground) (vx 4) (vy 0) (ax 0) (ay 0) 
+	 (z 0)				; initial angle of lem
+	 ;; set mass, inverse mass, and deltat of lem
+	 (mass-inv (/ 1 mass)) (deltat 0.01)
+	 (vb 300)			; bullet speed
+	 ;; bullet list
+	 (blist ())
+	 ;; other thingies
+	 (stop ())
+	 (event (new sdl-event))
+	 (xyk (int-matrix 3))
+	 ;; (gui (make-lander-gui))
+	 )
+    (init-explose scr)
+    (==> bgd load-frame (concat-fname image-dir "moon-svga.png") 0 0 0)
+    (==> bgd move 0 406)
+    (==> lems load-frame (concat-fname image-dir "lem-shadow.png") 0 40 -6)
+    (==> lem load-frame (concat-fname image-dir "lem.png") 0 40 35)
+    (==> lem-flame load-frame (concat-fname image-dir "lem-flame.png") 0 40 35)
+    (==> bulletsp load-frame (concat-fname image-dir "bullet.png") 0 6 6)
+    ;; fill up frames with rotated lems
+    (let ((i 1))
+      (for (angle 10 350 10)
+	   (==> lem rotscale-frame 0 i angle 1)
+	   (==> lem-flame rotscale-frame 0 i angle 1)
+	   (incr i)))
+    (while (not stop)
+      ;; (process-pending-events)
+      (==> scr clear)			; fill image with black
+      (==> bgd draw)			; draw moon ground
+      (==> event get-arrows xyk)	; read keyboard
+      (when (= (xyk 2) @@SDLK_q) (setq stop t))	; stop when q is pressed
+      (setq z (+ z (xyk 0)))
+      (while (>= z 36) (setq z (- z 36)))
+      (while (< z 0) (setq z (+ z 36)))
+      (==> lem set-frame (int z))
+      (==> lem-flame set-frame (int z))
+      (setq ax (* mass-inv main-thrust (xyk 1) (sin (* pi/180 -10 z))))	; update acceleration 
+      (setq ay (+ grav (* mass-inv main-thrust (xyk 1) (cos (* pi/180 10 z)))))	; update acceleration 
+      (setq vx (+ vx (* (sgn vx) (- cx) vx vx mass-inv deltat) (* ax deltat))) ; update velocity
+      (setq vy (+ vy (* (sgn vy) (- cx) vy vy mass-inv deltat) (* ay deltat))) ; update velocity
+      (setq x  (+ x (* vx deltat)))	; update position
+      (setq y  (+ y (* vy deltat)))	; update position
+      (when (< x -40) (setq x (+ 800 (- x -40)))) ; wrap around left side
+      (when (> x 800) (setq x (+ -40 (- x 800)))) ; wrap around right side
+      (when (> y ground)		; bounce on ground
+	(if (or (<> 0 (int z))
+		(> vx 100)
+		(> vy 100))
+	    (progn
+	      (explose scr bgd x ground vx (- vy) deltat grav)
+	      (setq x 100 y ground vx 4 vy 0 ax 0 ay 0 z 0))
+	  (setq vy (* -0.5 vy)) 
+	  (setq vx (* 0.25 vx))
+	  (setq z 0)
+	  (==> lem set-frame (int z))
+	  (==> lem-flame set-frame (int z))
+	  (setq y ground)))
+      ;; bullet stuff
+      (when (= (xyk 2) @@SDLK_z)
+	(setq blist (cons (new bullet x y 
+			       (- vx (* vb (sin (* pi/180 -10 z))))
+			       (- vy (* vb (cos (* pi/180 -10 z))))
+			       0 grav
+			       3 bulletsp) blist))
+	(+ vx (* vb (sin (* pi/180 -10 z))))
+	(+ vy (* vb (cos (* pi/180 -10 z)))))
+      (let ((blist-new ())) 
+	(each ((b blist))
+	  (when (> :b:life 0) 
+	    (==> b update deltat) (==> b draw) 
+	    (setq blist-new (nconc1 blist-new b))))
+	(setq blist blist-new))
+      (==> lem move x y)	     ; move lem sdl-sprite to position
+      (==> lem-flame move x y)	     ; move lem sdl-sprite to position
+      (==> lems move x ground)	  ; move shadow sdl-sprite to position
+      (==> lems draw)			; draw shadow
+      (when (<> 0 (xyk 1)) (==> lem-flame draw))
+      (==> lem draw)			; draw lem
+      (==> scr flip)			; flip screens
+      (setq deltat :scr:deltat)	; update deltat to time between screen flips
+      )
+    ;; (delete gui)
+    ))
 
 ;; this code is not used at the moment
 (de make-lander-gui ()
-    (setq lander-gui 
-          (new windowobject 10 10 180 100 "Lander Params"
-               (new grid 2
-                    (new string "Thrust") 
-                    (setq gui-thrust (new hslider 0 2000 
-                         (lambda (c) (setq main-thrust (==> c getdata)))))
-                    (new string "Gravity") 
-                    (setq gui-gravity (new hslider 0 2000 
-                         (lambda (c) (setq grav (==> c getdata)))))
-                    (new string "Friction") 
-                    (setq gui-friction (new hslider 0 1 
-                         (lambda (c) (setq friction (- (==> c getdata)))))))))
-    (==> gui-thrust setdata main-thrust)
-    (==> gui-gravity setdata grav)
-    (==> gui-friction setdata (- friction)))
+  (ogre)
+  (setq gui-lander
+	(new windowobject 10 10 180 100 "Lander Params"
+	     (new grid 2
+		  (new string "Thrust") 
+		  (setq gui-thrust 
+			(new hslider 0 2000 
+			     (lambda (c) (setq main-thrust (==> c getdata)))))
+		  (new string "Gravity") 
+		  (setq gui-gravity 
+			(new hslider 0 2000 
+			     (lambda (c) (setq grav (==> c getdata)))))
+		  (new string "Friction") 
+		  (setq gui-friction 
+			(new hslider 0 1 
+			     (lambda (c) (setq cx (==> c getdata))))))))
+  (==> gui-thrust setdata main-thrust)
+  (==> gui-gravity setdata grav)
+  (==> gui-friction setdata (- cx)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; start GUI toolkit
-;; (ogre)
-
 ;; start game
-(lander)
+;; (lander 400 200 1)
