@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.15 2002-11-07 20:36:44 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.16 2002-12-09 13:01:00 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -29,6 +29,15 @@ AC_ARG_WITH(extra-libraries,
           else
             AC_MSG_ERROR([Cannot stat directory $withval])
           fi ] )
+
+
+curwd=`pwd`
+if test -d $curwd/gnu/include ; then
+   CPPFLAGS="$CPPFLAGS -I$curwd/gnu/include"
+fi
+if test -d $curwd/gnu/lib ; then
+   LDFLAGS="$LDFLAGS -L$curwd/gnu/lib"
+fi
 
 
 # ----------------------------------------
@@ -151,7 +160,7 @@ AC_FUNC_STRFTIME
 AC_CHECK_FUNCS(strchr memcpy sigaction sigvec strerror getcwd)
 AC_CHECK_FUNCS(feenableexcept ieee_handler fpsetmask __setfpucw)
 AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp waitpid openpty)
-AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime)
+AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(flockfile sysconf fpathconf tcsetattr)
 
 

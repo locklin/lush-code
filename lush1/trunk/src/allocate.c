@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.9 2002-08-02 15:08:49 leonb Exp $
+ * $Id: allocate.c,v 1.10 2002-12-09 13:01:11 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -517,7 +517,11 @@ void lush_free(void *x,char *file,int line)
 
 void lush_cfree(void *x,char *file,int line)
 {
+#if HAVE_CFREE
     cfree(x);
+#else
+    free(x);
+#endif
     if (malloc_file)
 	fprintf(malloc_file,"%x\tcfree\t%d\t%s:%d\n",(unsigned int)x,0,file,line);
 }
