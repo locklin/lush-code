@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: idx-array.lsh,v 1.1 2002-08-19 07:01:28 profshadoko Exp $
+;;; $Id: idx-array.lsh,v 1.2 2002-08-19 17:47:10 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? *** Arrays of vectors and matrices
@@ -39,6 +39,61 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "dynamic")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (to-idx1flt <gptr>)
+;; Casts a gptr into a (-idx1- (-flt-))
+;; No checks are performed in compiled mode.
+(de to-idx1flt(g)
+  (when (is-of-class g |GPTR|)
+    (setq g (to-obj g)) )
+  (when (not (and (indexp g) 
+                  (= (idx-ndim g) 1)
+                  (is-of-class (idx-storage g) |FSTORAGE|) ))
+    (error 'to-idx1flt "Incorrect index type" g) )
+  g )
+
+#? (to-idx2flt <gptr>)
+;; Casts a gptr into a (-idx2- (-flt-))
+;; No checks are performed in compiled mode.
+(de to-idx2flt(g)
+  (when (is-of-class g |GPTR|)
+    (setq g (to-obj g)) )
+  (when (not (and (indexp g) 
+                  (= (idx-ndim g) 2)
+                  (is-of-class (idx-storage g) |FSTORAGE|) ))
+    (error 'to-idx2flt "Incorrect index type" g) )
+  g )
+
+(putp to-idx1flt 'dharg '(1 . dht-flt))
+(putp to-idx2flt 'dharg '(2 . dht-flt))
+
+(dhm-t to-idx1flt(source)
+  (when (<> 2 (length source))
+    (dhc-error "one arguments was expected" source) )
+  (let* ((dharg (getp (get-dhm-target source) 'dharg))
+         (xnode (dhc-parse-expr-t (cadr source))) 
+         (type ()) )
+    (setq type (new dhc-type 'dht-ptr
+                    (new dhc-type 'dht-idx (car dharg)
+                         (new dhc-type 'dht-srg
+                              (new dhc-type (cdr dharg) ) ) ) ))
+    (if (not (or (==> :xnode:type is-a-dc)
+                 (==> :xnode:type is-a-gptr)
+                 (==> :xnode:type is-an-idxptr) ) )
+        (dhc-error "A gptr or an idx is expected" source) )
+    (when (==> :xnode:type is-an-idxptr)
+      (dhc-unify-types :xnode:type type) )
+    (new t-node (list xnode) type) ) )
+
+(dhm-c to-idx1flt(source treetype retplace)
+  (sprintf "(struct idx*)(%s)"
+           (dhc-parse-expr-c (cadr source) 
+                             (cadr :treetype:tn-list) ()) ) )
+
+(dhm-t-declare to-idx1flt to-idx2flt)
+(dhm-c-declare to-idx1flt to-idx2flt)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -88,13 +143,13 @@
 (defmethod idx1-array set (i mat)
   ((-int-) i)
   ((-idx1- (-flt-)) mat)
-  (pt i (gptr (in-pool idx-pool (idx-clone mat)))))
+  (pt i (to-gptr (in-pool idx-pool (idx-clone mat)))))
 
 #? (==> <idx1-array> get <i>)
 (defmethod idx1-array get (i)
   ((-int-) i)
   (if ~(pt i) (error "Null pointer"))
-  (idx (idx1 (flt)) (pt i)))
+  (to-idx1flt (pt i)) )
 
 #? (==> <idx1-array> set-array <ar>)
 (defmethod idx1-array set-array (ar)
@@ -150,13 +205,13 @@
 (defmethod idx2-array set (i mat)
   ((-int-) i)
   ((-idx2- (-flt-)) mat)
-  (pt i (gptr (in-pool idx-pool (idx-clone mat)))))
+  (pt i (to-gptr (in-pool idx-pool (idx-clone mat)))))
 
 #? (==> <idx2-array> get <i>)
 (defmethod idx2-array get (i)
   ((-int-) i)
   (if ~(pt i) (error "Null pointer"))
-  (idx (idx2 (flt)) (pt i)))
+  (to-idx2flt (pt i)))
 
 #? (==> <idx2-array> set-array <ar>)
 (defmethod idx2-array set-array (ar)
