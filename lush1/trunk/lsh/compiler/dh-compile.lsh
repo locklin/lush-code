@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.30 2002-08-23 21:25:59 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.31 2002-08-26 21:58:35 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -768,9 +768,24 @@
     ;; Reconstruct
     (apply concat (reverse r)) ) )
 
+#? (dhc-make-c-filename <src>)
+;; Returns a suitable filename for the C file
+;; generated from the LSH file <src>
+(de dhc-make-c-filename(src)
+  (let ((dir (dirname src))
+        (base (basename src)) )
+    (when (not (dirp dir))
+      (error 'dhc-make-o-filename "Directory does not exist" dir) )
+    (setq dir (concat-fname dir "C"))
+    (when (not (dirp dir))
+      (mkdir dir) ) 
+    (setq base (regex-subst "\\.[+a-zA-Z0-9]+$" "" base))
+    (setq base (concat base "." (or (getconf "CEXT") "c")))
+    (concat-fname dir base) ) )
 
 #? (dhc-make-o-filename <src>)
 ;; Returns a suitable filename for the object file
+;; generated from the C or LSH file <src>
 (de dhc-make-o-filename(src)
   (let ((dir (dirname src))
         (base (basename src)) )
@@ -787,6 +802,27 @@
     (setq base (regex-subst "\\.[+a-zA-Z0-9]+$" "" base))
     (setq base (concat base "." (or (getconf "OBJEXT") "o")))
     (concat-fname dir base) ) )
+
+
+#? (dhc-make-get-dependencies [<snname>])
+;; Returns a list of files that are loaded directly 
+;; or indirectly when loading file <snname>.
+;; This function takes advantage of the information
+;; collected by function <libload>. 
+;; Argument <snname> defaults to the currenly loaded file.
+(de dhc-make-get-dependencies(&optional snname)
+  (when (not snname)
+    (setq snname file-being-loaded) )
+  (when (= snname "$stdin")
+    (error 'dhc-make-get-dependencies "Must specify a file name" ()) )
+  (when (is-of-class libload.data |HTABLE|)
+    (let ((dtable (htable))
+          (dfunc  (lambda(fn)
+                    (when (not (dtable fn))
+                      (dtable fn t)
+                      (mapcar dfunc (cdr (libload.data fn))) ) )) )
+      (dfunc (concat-fname snname))
+      (htable-keys dtable) ) ) )
 
 
 #? dhc-make-lushflags
@@ -927,19 +963,10 @@
     (let* ((cfname (concat fname "." (or (getconf "CEXT") "c")))
            (cmtime (alist-get 'mtime (fileinfo cfname))) 
            (mtime (alist-get 'mtime (fileinfo snname)))
-           (frec ()) )
-      ;; compute dependencies
-      (when (is-of-class libload.data |HTABLE|)
-        (let ((dtable (htable))
-              (dfunc  (lambda(fn)
-                        (when (not (dtable fn))
-                          (dtable fn t)
-                          (mapcar dfunc (cdr (libload.data fn))) ) )) )
-          (dfunc snname)
-          (setq frec (htable-keys dtable)) ) )
+           (frec (dhc-make-get-dependencies)) )
       ;; check dependencies
       (when snname
-        (when (or (not mtime) (not cmtime) (>= mtime cmtime))
+        (when (or (not mtime) (not cmtime) (> mtime cmtime))
           (setq snname ()) ) )
       (when snname
         (each ((dep frec))
@@ -949,6 +976,49 @@
   ;; compile
   (when (or (not snname) dhc-make-force)
     (dhc-make-c fname fsymblist) ) )
+
+
+#? (dhc-make-test <fname>)
+;; Test if both the C file named <fname> and the associated object file are
+;; up-to-date relative to the currenly loaded file and its dependencies.
+;; Returns either () or the name of the up-to-date object file.
+;; When argument <fname> is the empty list, a suitable filename is constructed
+;; from the currenly loaded file using the same rules as <dhc-make>.
+(de dhc-make-test(&optional fname)
+  ;; determine snname
+  (when (filep file-being-loaded)
+    (let* ((snname file-being-loaded)
+           (sndir (dirname snname)) 
+           (cdir ())
+           (odir ()) )
+      ;; determine cname
+      (when (not fname)
+        (setq cdir (concat-fname sndir "C"))
+        (let ((base (regex-subst "\\.[+a-zA-Z0-9]+$" "" (basename snname))))
+          (setq fname (concat-fname cdir (dhc-lisp-to-c-name base))) ) )
+      (when fname
+        (setq fname (regex-subst "\\.[+a-zA-Z0-9]+$" "" fname))
+        (when (= (dirname fname) ".")
+          (setq cdir (concat-fname sndir "C"))
+          (setq fname (concat-fname cdir fname)) ) )
+      ;; determine cfname and ofname
+      (let ((cfname (concat fname "." (or (getconf "CEXT") "c")))
+            (ofname (concat fname "." (or (getconf "OBJEXT") "o"))) )
+        (when (and cdir (getconf "host"))
+          (setq odir (concat-fname cdir (getconf "host"))) 
+          (setq ofname (concat-fname odir (basename ofname))) ) 
+        ;; make sure all these files exist
+        (when (and (filep cfname) (filep ofname))
+          ;; compute mtime of lsh and dependencies
+          (let ((cmtime (alist-get 'mtime (fileinfo cfname))))
+            (when (and cmtime (is-of-class libload.data |HTABLE|))
+              (each ((f (dhc-make-get-dependencies)))
+                (let ((mtime (alist-get 'mtime (fileinfo f))))
+                  (when (or (not mtime) (not cmtime) (> mtime cmtime))
+                    (setq cmtime ()) ) ) ) )
+            ;; make sure object file is up-to-date
+            (when cmtime
+              (dhc-make-o-maybe cfname ofname) ) ) ) ) ) ) )
 
 
 #? (dhc-make-all <fname> <fsymblist> <liblist>)
@@ -1013,7 +1083,7 @@
           (each ((lib liblist))
             (mod-load lib) ) 
           (when (not (module-executable-p m))
-            (error 'dhc-make-all "Module has undefined references" ()) ) ) )
+            (error 'dhc-make-all "Module has undefined references." ()) ) ) )
       ofname ) ) )
 
 
