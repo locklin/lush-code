@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ffmpeg.lsh,v 1.6 2004-02-04 15:58:19 leonb Exp $
+;;; $Id: ffmpeg.lsh,v 1.7 2004-02-04 18:54:25 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -36,8 +36,10 @@
 (libload "libc/libc")
 
 
+#? ** FFMPEG decoding interface.
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; INITIALIZATION
+;;; FUNCTIONS
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (de av-init()
@@ -51,10 +53,83 @@
   t
 )
 
+#? (av-open-input-file <filename>)
+;; .SEE AvInputFile.
+;; Open the multimedia file <filename> using the FFMPEG library
+;; and returns an instance of class <AvInputFile>.
+
+(de av-open-input-file(s)
+  ((-str-) s)
+  (let ((ai (new AvInputFile)))
+    (==> ai open s)
+    ai ) )
+
+#? (av-open-video-source <filename>)
+;; .SEE VideoSource.
+;; .SEE AvVideoSource.
+;; Open the multimedia file <filename> using the FFMPEG library
+;; and returns a <AvVideoSource> object connected to the first
+;; video stream in the file.
+
+(de av-open-video-source(s)
+  ((-str-) s)
+  (let ((ai (new AvInputFile)))
+    (==> ai open s)
+    (let ((vs 0)
+	  (ns (==> ai get-number-of-streams)))
+      ((-int-) vs ns)
+      (while (and (< vs ns) 
+		  (<> (==> ai get-stream-codec-type vs) @CODEC_TYPE_VIDEO))
+	(incr vs) )
+      (when (>= vs ns)
+	(error "No video stream in this file") )
+      (new AvVideoSource ai vs) ) ) )
+
+#? (av-open-audio-source <filename>)
+;; .SEE AudioSource.
+;; .SEE AvAudioSource.
+;; Open the multimedia file <filename> using the FFMPEG library
+;; and returns a <AvAudioSource> object connected to the first 
+;; audio stream in the file.
+
+(de av-open-audio-source(s)
+  ((-str-) s)
+  (let ((ai (new AvInputFile)))
+    (==> ai open s)
+    (let ((vs 0)
+	  (ns (==> ai get-number-of-streams)))
+      ((-int-) vs ns)
+      (while (and (< vs ns) 
+		  (<> (==> ai get-stream-codec-type vs) @CODEC_TYPE_AUDIO))
+	(incr vs) )
+      (when (>= vs ns)
+	(error "No video stream in this file") )
+      (new AvAudioSource ai vs) ) ) )
+
+	   
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; AVINPUTFILE
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? * AvInputFile.
+;;.SEE (av-open-input-file <filename>)
+;; Class <AvInputFile> is a handle for reading a multimedia file.
+;; It is best created using the utility function <av-open-input-file>.
+;; Each multimedia file contains one or more streams. 
+;; Each stream is either an audio stream or a video stream.
+;;
+;; This class defines several useful slots
+;;.IP
+;;  Slots <audio-streams> and <video-streams> contain the number
+;;  of streams of each type.
+;;.IP 
+;;  The geometry of the first video stream is stored in fields 
+;;  <frame-height>, <frame-width>, <frame-aspect-ratio>.
+;;.IP
+;;  The sampling rate and the number of channels of the 
+;;  first audio stream are stored in slots <audio-sample-rate>
+;;  and <audio-channels>.
 
 (defclass AvInputFile Object
   ((-gptr-) ic)
@@ -81,10 +156,16 @@
   ((-int-)  debug)
   )
 
+#? (new AvInputFile)
+;; Create a new empty instance of class <AvInputFile>.
+;; Calling method <open> associates this handle with
+;; a multimedia file.  Various FFMPEG options can be set
+;; by defining certain slots of this object before calling <open>.
+
 (defmethod AvInputFile AvInputFile()
   (setq ic (gptr ()))
   (setq gotpacket ())
-  (setq curpacket (malloc (to-int #{ sizeof(AVPacket) #})))
+  (setq curpacket (to-gptr #{ av_mallocz(sizeof(AVPacket)) #}))
   (setq sources (gptr-matrix 4))
   (setq image_format (gptr ())) 	;ffmpeg opt_image_format: -img
   (setq file_iformat (gptr ()))		;ffmpeg opt_format: -f
@@ -112,16 +193,23 @@
   (when curpacket
     (when gotpacket
       #{ av_free_packet((AVPacket*)$curpacket); #} )
-    (free curpacket) )
+    #{ av_free($curpacket); #} )
   (when ic
     #{ av_close_input_file((AVFormatContext*)$ic); #} 
     (setq ic (gptr ())) )
   () )
 
-(defmethod AvInputFile get-nb-streams()
+#? (==> <avinputfile> get-number-of-streams)
+;; Return the total number of streams in the multimedia file.
+
+(defmethod AvInputFile get-number-of-streams()
   (+ audio-streams video-streams) )
 
-;; Interesting return values are @CODEC_TYPE_VIDEO or @CODEC_TYPE_AUDIO.
+#? (==> <avinputfile> get-stream-codec-type <n>)
+;; Returns the type of the stream number <n>.
+;; The return value is one of the constants named <@CODEC_TYPE_XXX>.
+;; This includes <@CODEC_TYPE_VIDEO> or <@CODEC_TYPE_AUDIO>.
+
 (defmethod AvInputFile get-stream-codec-type(n)
   ((-int-) n)
   (when (or (< n 0) (>= n (+ audio-streams video-streams)))
@@ -129,7 +217,10 @@
   (to-int #{ ((AVFormatContext*)($this->ic))->streams[$n]
                            ->codec.codec_type #}) )
 
-;; Interesting return values are @CODEC_ID_XXX.
+#? (==> <avinputfile> get-stream-codec-type <n>)
+;; Returns the identifier of the codec for stream number <n>.
+;; The return value is one of the constants named <@CODEC_ID_XXX>.
+
 (defmethod AvInputFile get-stream-codec-id(n)
   ((-int-) n)
   (when (or (< n 0) (>= n (+ audio-streams video-streams)))
@@ -137,24 +228,42 @@
   (to-int #{ ((AVFormatContext*)($this->ic))->streams[$n]
                            ->codec.codec_id #}) )
 
+#? (==> <avinputfile> get-format-name)
+;; Returns a string describing the multimedia file format.
+
 (defmethod AvInputFile get-format-name()
   (if file_iformat
       (ptr-str (to-gptr #{ ((AVInputFormat*)($file_iformat))->name #} ))
     "<?>" ) )
+
+#? (==> <avinputfile> get-start-time)
+;; Returns the first presentation time stamp for the multimedia file.
+;; Presentation time stamps are real numbers expressed in seconds.
 
 (defmethod AvInputFile get-start-time()
   (if ic
       (to-real #{ (double)(((AVFormatContext*)($ic))->start_time)/AV_TIME_BASE #})
     0 ) )
 
+#? (==> <avinputfile> get-duration)
+;; Returns the duration of the multimedia file expressed in seconds.
+
 (defmethod AvInputFile get-duration()
   (if ic
       (to-real #{ (double)(((AVFormatContext*)($ic))->duration)/AV_TIME_BASE #})
     0 ) )
 
+
+#? (==> <avinputfile> open <filename>)
+;; Associate the empty <avinputfile> object with 
+;; the multimedia file named <filename>.
+;; This function checks the file format and the file codecs.
+;; It causes an error if the file cannot be decoded by the ffmpeg library.
+
 (defmethod AvInputFile open(s)
   ((-str-) s)
   (av-init)
+  (when ic (error "Already open"))
   (let ((ai this))
     #{{
         /* ------------------------------------------------- */
@@ -240,9 +349,12 @@
     }#} 
     )
   ;; resize source vector
-  (idx-g1resize sources (==> this get-nb-streams))
+  (idx-g1resize sources (==> this get-number-of-streams))
   this )
 
+#? (==> <avinputfile> pump)
+;; Method <pump> reads data from the multimedia file
+;; and distributes it to the various streams.
 
 (defmethod AvInputFile pump()
   ;; Get rid of current packet
@@ -284,7 +396,7 @@
 (defmethod AvPacketList put(p)
   ((-gptr-) p)
   #{{ 
-     AVPLElt *z = (AVPLElt*)malloc(sizeof(AVPLElt));
+     AVPLElt *z = (AVPLElt*)av_malloc(sizeof(AVPLElt));
      if (!z) run_time_error("Out of memory");
      z->next = (AVPLElt*)$head;
      z->prev = 0;
@@ -307,7 +419,7 @@
        else
          $head = 0;
        av_free_packet(&z->pkt);
-       free(z);
+       av_free(z);
     }#} 
     (incr count -1) )
   count )
@@ -322,14 +434,19 @@
   (while (> count 0)
     (==> this pop) ) )
 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; AVAUDIOSOURCE
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-;;; AVAUDIOSOURCE IS UNFINISHED AND NOT USABLE YET
-;;; AUDIOSOURCE STILL NEEDS TO BE DEFINED.
-
+#? * AvAudioSource.
+;;.SEE AudioSource.
+;; This subclass of <AudioSource> provides access to
+;; the audio streams of a multimedia file represented
+;; by an instance of <AvInputFile>.
+;;
+;; WARNING: This class is not yet usable.
 
 (defclass AvAudioSource AudioSource
   ((-obj- (AvInputFile)) ai)
@@ -340,6 +457,12 @@
   ((-int-)  audio_channels)
   ((-int-)  audio_sample_rate) )
 
+
+#? (new AvAudioSource <avinputfile> <n>)
+;; Creates a new <AvAudioSource> object for accessing
+;; stream number <n> in the multimedia file <avinputfile>.
+;; Stream number <n> must of course be an audio stream.
+
 (defmethod AvAudioSource AvAudioSource(avfile n)
   ((-obj- (AvInputFile)) avfile)
   ((-int-) n)
@@ -349,7 +472,7 @@
   (setq st (gptr ()))
   (setq audio_channels 1)
   (setq audio_sample_rate 44100)
-  (when (or (< n 0) (>= n (==> avfile get-nb-streams)))
+  (when (or (< n 0) (>= n (==> avfile get-number-of-streams)))
     (error "Illegal stream number") )
   (when (<> (==> avfile get-stream-codec-type n) @CODEC_TYPE_AUDIO)
     (error "Not an audio stream") )
@@ -384,14 +507,29 @@
 (defmethod AvAudioSource -destructor()
   (:ai:sources streamno (gptr ())) )
 
+#? (==> <avaudiosource> get-codec-name)
+;; Returns a string containing the name of the codec
+;; for this audio stream.
+
 (defmethod AvAudioSource get-codec-name()
   (ptr-str (to-gptr #{ ((AVStream*)($st))->codec.codec->name #})) )
+
+#? (==> <avaudiosource> get-codec-id)
+;; Returns the identifier of the codec for this audio stream.
+;; This function returns one of the <@CODEC_ID_XXX> constant.
 
 (defmethod AvAudioSource get-codec-id()
   (==> ai get-stream-codec-id streamno) )
 
+#? (==> <avaudiosource> get-start-time)
+;; Returns the first presentation time stamp for this audio stream.
+;; Presentation time stamps are real numbers expressed in seconds.
+
 (defmethod AvAudioSource get-start-time()
   (to-real #{ (double)(((AVStream*)($st))->start_time)/AV_TIME_BASE #}) )
+
+#? (==> <avaudiosource> get-duration)
+;; Returns the duration of this audio stream expressed in seconds.
 
 (defmethod AvAudioSource get-duration()
   (to-real #{ (double)(((AVStream*)($st))->duration)/AV_TIME_BASE #}) )
@@ -404,6 +542,15 @@
 ;;; AVVIDEOSOURCE
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+
+#? * AvVideoSource.
+;;.SEE VideoSource.
+;; This subclass of <VideoSource> provides access to
+;; the audio streams of a multimedia file represented
+;; by an instance of <AvInputFile>.
+;;
+;; The current frame geometry is available in slots 
+;; <frame-height>, <frame-width> and <frame-aspect-ratio>.
 
 (defclass AvVideoSource VideoSource
   ((-obj- (AvInputFile)) ai)
@@ -428,6 +575,11 @@
   )
 
 
+#? (new AvVideoSource <avinputfile> <n>)
+;; Creates a new <AvVideoSource> object for accessing
+;; stream number <n> in the multimedia file <avinputfile>.
+;; Stream number <n> must of course be a video stream.
+
 (defmethod AvVideoSource AvVideoSource(avfile n)
   ((-obj- (AvInputFile)) avfile)
   ((-int-) n)
@@ -437,8 +589,8 @@
   (setq st (gptr ()))
   ;; frame
   (setq gotcurframe ())
-  (setq curframe (malloc (to-int #{ sizeof(AVFrame) #})))
-  (setq pts (malloc (to-int #{ 4*sizeof(int64_t) #})))
+  (setq curframe (to-gptr #{ av_mallocz(sizeof(AVFrame)) #}))
+  (setq pts (to-gptr #{ av_mallocz(4*sizeof(int64_t)) #}))
   (when (not (and curframe pts))
     (error "Out of memory") )
   (setq curptr (gptr ()))
@@ -453,7 +605,7 @@
   (setq frame_rate 25)
   (setq frame_rate_base 1)
   ;; checks
-  (when (or (< n 0) (>= n (==> avfile get-nb-streams)))
+  (when (or (< n 0) (>= n (==> avfile get-number-of-streams)))
     (error "Illegal stream number") )
   (when (<> (==> avfile get-stream-codec-type n) @CODEC_TYPE_VIDEO)
     (error "Not a video stream") )
@@ -476,6 +628,7 @@
     $frame_pix_fmt = enc->pix_fmt;
     $frame_rate = st->r_frame_rate;
     $frame_rate_base = st->r_frame_rate_base;
+    $curpts = st->start_time/AV_TIME_BASE;
   }#}
   (:ai:sources streamno (gptr this))
   () )
@@ -488,37 +641,84 @@
 
 (defmethod AvVideoSource -destructor()
   (:ai:sources streamno (gptr ()))
-  (when curframe (free curframe))
-  (when pts (free pts))
+  (when curframe #{ av_free($curframe); #})
+  (when pts #{ av_free($pts); #})
   () )
+
+#? (==> <avvideosource> get-codec-name)
+;; Returns a string containing the name of the codec
+;; for this video stream.
 
 (defmethod AvVideoSource get-codec-name()
   (ptr-str (to-gptr #{ ((AVStream*)($st))->codec.codec->name #})) )
 
+#? (==> <avvideosource> get-codec-id)
+;; Returns the identifier of the codec for this video stream.
+;; This function returns one of the <@CODEC_ID_XXX> constant.
+
 (defmethod AvVideoSource get-codec-id()
   (==> ai get-stream-codec-id streamno) )
+
+#? (==> <avvideosource> get-start-time)
+;; Returns the first presentation time stamp for this video stream.
+;; Presentation time stamps are real numbers expressed in seconds.
 
 (defmethod AvVideoSource get-start-time()
   (to-real #{ (double)(((AVStream*)($st))->start_time)/AV_TIME_BASE #}) )
 
+#? (==> <avvideosource> get-duration)
+;; Returns the duration of this video stream expressed in seconds.
+
 (defmethod AvVideoSource get-duration()
   (to-real #{ (double)(((AVStream*)($st))->duration)/AV_TIME_BASE #}) )
+
+#? (==> <avvideosource> get-frame-rate)
+;; Returns the frame rate of this video stream 
+;; expressed in frames per seconds.
 
 (defmethod AvVideoSource get-frame-rate()
   (/ (to-real #{ (double)(((AVStream*)($st))->r_frame_rate) #})
      (to-real #{ (double)(((AVStream*)($st))->r_frame_rate_base) #}) ) )
 
+#? (==> <avvideosource> get-frame-period)
+;; Returns the delay between consecutive frames expressed in seconds.
+;; This is the inverse of the frame rate.
+
 (defmethod AvVideoSource get-frame-period()
   (/ (to-real #{ (double)(((AVStream*)($st))->r_frame_rate_base) #})
      (to-real #{ (double)(((AVStream*)($st))->r_frame_rate) #}) ) )
 
+#? (==> <avvideosource> get-number-of-frames)
+;; Returns the number of frames estimated from the frame rate
+;; and stream duration.  This is only an estimate because certain 
+;; files have variable frame rate, and because certain frames
+;; last more than one period.
+
 (defmethod AvVideoSource get-number-of-frames()
   (* (==> this get-duration) (==> this get-frame-rate)) )
 
+#? (==> <avvideosource> nextframe)
+;; Method <nextframe> obtains the next video frame.
+;; It returns <t> if a new frame can be accessed using
+;; the frame access methods <get-frame-xxx>.
+;; It returns <()> when reaching the end of the 
+;; video stream.  
+;;
+;; After initializing the video source, this method must 
+;; be called once in order to access the first video frame.
+
 (defmethod AvVideoSource nextframe()
   (let ((again t)
-	(start t)
-	(nopts t) )
+	(start t) )
+    ;; increment curpts
+    (when (>= curno 0)
+      (let ((period (==> this get-frame-period))) 
+	(incr curpts period)
+	(when gotcurframe
+	  (let ((rpt (to-int #{ ((AVFrame*)$curframe)->repeat_pict #})))
+	    (when (> rpt 0)
+	      (incr curpts (* period rpt 0.5)) ) ) ) ) )
+    ;; continue decoding
     (setq gotcurframe ())
     (while (and again (not gotcurframe))
       ;; pump data
@@ -555,35 +755,38 @@
 	         ipts = pts[2]; 
 	         pts[2] = pts[1]; 
 	      }
-	      if (ipts != AV_NOPTS_VALUE) {
-	         $nopts = 0;
-	         $curpts = (double) ipts * ai->pts_num / ai->pts_den;
-	      }
+	      if (ipts != AV_NOPTS_VALUE)
+	        $curpts = (double) ipts * ai->pts_num / ai->pts_den;
+printf("%lld %d %d\n", ipts, ai->pts_num, ai->pts_den);
+              $frame_height = st->codec.height;
+              $frame_width = st->codec.width;
+              $frame_aspect_ratio = st->codec.aspect_ratio;
+              $frame_pix_fmt = st->codec.pix_fmt;
 	    }
 	}#} ) ) 
     (when gotcurframe
-      #{{
-          AVStream *st = (AVStream*)$st;
-          AVCodecContext *enc = &st->codec;
-          $frame_height = enc->height;
-          $frame_width = enc->width;
-          $frame_aspect_ratio = enc->aspect_ratio;
-          $frame_pix_fmt = enc->pix_fmt;
-      }#}
-      (when nopts 
-	(if (< curno 0)
-	    (setq curpts (==> this get-start-time))
-	  (incr curpts (==> this get-frame-period)) ) )
       (incr curno) 
       t ) ) )
 
+#? (==> <avvideosource> get-frame-pts)
+;; Returns the presentation time stamp of the current frame.
+;; The presentation time stamp is a real number expressed in seconds.
+;; Calling this function before the first call to <nextframe>
+;; gives the starting time of the movie.
+
 (defmethod AvVideoSource get-frame-pts()
-  (when (not gotcurframe) (error "No current frame"))
   curpts )
+
+#? (==> <avvideosource> get-frame-number)
+;; Returns the presentation frame number of the current frame.
 
 (defmethod AvVideoSource get-frame-number()
   (when (not gotcurframe) (error "No current frame"))
   curno )
+
+#? (==> <avvideosource> get-frame-gray)
+;; Returns the gray level image associated with the current frame
+;; as a two dimensional matrix of unsigned bytes.
 
 (defmethod AvVideoSource get-frame-gray()
   (when (not gotcurframe) (error "No current frame"))
@@ -601,6 +804,12 @@
     }#}
     image ) )
 
+#? (==> <avvideosource> get-frame-rgba)
+;; Returns the RBGA image associated with the current frame
+;; as a three dimensional matrix of unsigned bytes.
+;; The last dimentsion contains four elements: three color 
+;; components (R, G, B) and one alpha channel (A).
+
 (defmethod AvVideoSource get-frame-rgba()
   (when (not gotcurframe) (error "No current frame"))
   (let ((image (ubyte-matrix-nc frame_height frame_width 4)))
@@ -616,6 +825,12 @@
            run_time_error("FFMPEG image type conversion not supported");
     }#}
     image ) )
+
+#? (==> <avvideosource> get-frame-yuv)
+;; Returns the YUV image associated with the current frame
+;; as a three dimensional matrix of unsigned bytes.
+;; The last dimentsion contains three elements, one
+;; per color component (Y, U, V).
 
 (defmethod AvVideoSource get-frame-yuv()
   (when (not gotcurframe) (error "No current frame"))
@@ -636,45 +851,6 @@
     (idx-transpose image '(1 2 0)) 
     image ) )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; HELPERS
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(de av-open-input-file(s)
-  ((-str-) s)
-  (let ((ai (new AvInputFile)))
-    (==> ai open s)
-    ai ) )
-
-(de av-open-video-source(s)
-  ((-str-) s)
-  (let ((ai (new AvInputFile)))
-    (==> ai open s)
-    (let ((vs 0)
-	  (ns (==> ai get-nb-streams)))
-      ((-int-) vs ns)
-      (while (and (< vs ns) 
-		  (<> (==> ai get-stream-codec-type vs) @CODEC_TYPE_VIDEO))
-	(incr vs) )
-      (when (>= vs ns)
-	(error "No video stream in this file") )
-      (new AvVideoSource ai vs) ) ) )
-
-(de av-open-audio-source(s)
-  ((-str-) s)
-  (let ((ai (new AvInputFile)))
-    (==> ai open s)
-    (let ((vs 0)
-	  (ns (==> ai get-nb-streams)))
-      ((-int-) vs ns)
-      (while (and (< vs ns) 
-		  (<> (==> ai get-stream-codec-type vs) @CODEC_TYPE_AUDIO))
-	(incr vs) )
-      (when (>= vs ns)
-	(error "No video stream in this file") )
-      (new AvAudioSource ai vs) ) ) )
-
-	   
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -689,37 +865,28 @@
 	   #include <ffmpeg/avcodec.h>
 	   #define assert(x) do{if(!(x))\
               run_time_error("Assertion failed: " #x);}while(0)
-	#}
-                
-        av-init
-
-        (AvInputFile AvInputFile 
-                     -destructor 
-                     get-format-name
-                     get-nb-streams
-                     get-stream-codec-type
-                     get-stream-codec-id
-                     get-start-time
-                     get-duration
-                     open pump )
-        
-        #{
            typedef struct AVPLElt_s {
              struct AVPLElt_s *prev;
              struct AVPLElt_s *next;
              AVPacket pkt;
            } AVPLElt;
-        #}
-
+	#}
+        av-init
+        (AvInputFile AvInputFile 
+                     -destructor 
+                     get-format-name
+                     get-number-of-streams
+                     get-stream-codec-type
+                     get-stream-codec-id
+                     get-start-time
+                     get-duration
+                     open pump )
         (AvPacketList AvPacketList
                       put pop peek -destructor )
-
-        
         (AvAudioSource AvAudioSource 
                        process -destructor
                        get-codec-name get-codec-id 
                        get-start-time get-duration )
-        
         (AvVideoSource AvVideoSource
                        process -destructor
                        get-codec-name get-codec-id 
@@ -727,11 +894,7 @@
                        get-frame-rate get-frame-period get-number-of-frames
 		       nextframe
 		       get-frame-pts get-frame-number
-		       get-frame-gray get-frame-rgba get-frame-yuv
-                       )
-        
+		       get-frame-gray get-frame-rgba get-frame-yuv )
         av-open-input-file 
         av-open-video-source 
-        av-open-audio-source
-        
-        ) ) 
+        av-open-audio-source ) )
