@@ -1,0 +1,59 @@
+;; A basic implementation of Conway's Game of Life using SDL
+;; Keir Mierle, Jan 2003.
+;; http://keir.mierle.com
+
+(de makewrappable (m) 
+  ((-idx2- (-ubyte-)) m) 
+  (let* ((real-height (idx-dim m 0))
+	 (real-width (idx-dim m 1)))
+    ((-int-) real-height real-width)
+
+    ;; Basically I'm faking wraping the rows / cols by having a matrix with
+    ;; 2 extra rows, and 2 extra columns, one on each side. This allows me to
+    ;; simply offset the idx, add, then re-shift the idx.
+    (idx-copy (select m 0 1) (select m 0 (- real-height 1)))
+    (idx-copy (select m 0 (- real-height 2)) (select m 0 0))
+    (idx-copy (select m 1 1) (select m 1 (- real-width 1)))
+    (idx-copy (select m 1 (- real-width 2)) (select m 1 0))))
+
+(de lifesim (m r)
+  ((-idx2- (-ubyte-)) m r) 
+  (let* ((real-height (idx-dim m 0))
+	 (real-width (idx-dim m 1))
+	 (h (- real-height 2))
+	 (w (- real-width 2)))
+    ((-int-) real-height real-width h w)
+
+    ;; Clear the accumulation matrix and copy around the columns to make it 'wrappable'
+    (idx-clear r)
+    (makewrappable m)
+
+    ;; Shift the matrix around and add them all up to count the number of neighbors.
+    (idx-add (narrow (narrow m 0 h 0) 1 w 0) 
+	     (narrow (narrow m 0 h 0) 1 w 1) r)
+    (idx-add (narrow (narrow m 0 h 0) 1 w 2) r r) 
+    (idx-add (narrow (narrow m 0 h 1) 1 w 2) r r) 
+    (idx-add (narrow (narrow m 0 h 2) 1 w 2) r r) 
+    (idx-add (narrow (narrow m 0 h 2) 1 w 1) r r) 
+    (idx-add (narrow (narrow m 0 h 2) 1 w 0) r r) 
+    (idx-add (narrow (narrow m 0 h 1) 1 w 0) r r) 
+
+    ;; life or death
+    (idx-bloop ((rrow r) 
+		(mrow (narrow (narrow m 0 (- real-height 2) 1) 1 (- real-width 2) 1)))
+      (idx-bloop ((neighbors rrow) (cellstatus mrow))
+	(if (or (and (= (cellstatus) 0) (= (neighbors) 3)) 
+		(and (= (cellstatus) 1) (or (= (neighbors) 2) (= (neighbors) 3))))
+	    (cellstatus 1) 
+	  (cellstatus 0))))))
+
+;; random initialization of the board
+(de randomize (m p)
+  ((-idx2- (-ubyte-)) m)
+  ((-double-) p)
+  (idx-bloop ((row m))
+    (idx-bloop ((col row))
+      (if (<= (rand) p) (col 1) (col 0)))))
+
+
+(dhc-make () makewrappable lifesim randomize)

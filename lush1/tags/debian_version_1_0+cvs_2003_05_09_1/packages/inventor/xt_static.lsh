@@ -1,0 +1,223 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "inventor/xt-config")
+
+
+
+#? *** xt_static
+
+;; dummy function that adds Inventor header files in C file
+(eval `(de |dummy_xt_static| () ,inventorxt-cpheader-cmd ()))
+
+#? * (|dummy_xt_static|)
+#? * (soxt-init-callback)
+#? * (soxt-init <appname>)
+#? * (soxt-getappcontext)
+#? * (soxt-getdisplay)
+#? * (soxt-gettoplevelwidget)
+#? * (soxt-show <widget>)
+#? * (soxt-hide <widget>)
+#? * (soxt-setwidgetsize <w> <size>)
+#? * (soxt-getshellwidget <w>)
+#? * (soxt-createsimpleerrordialog <widget> <dialogtitle> <errorstr1> <errorstr2>)
+#? * (soxt-getpopupargs <d> <scr> <args> <n>)
+#? * (soxt-registercolormapload <widget> <shell>)
+#? * (soxt-addcolormaptoshell <widget> <shell>)
+#? * (soxt-removecolormapfromshell <widget> <shell>)
+#? * (soxtcomponent-getcomponent <w>)
+#? * (soxtrenderarea-getdefaultredrawpriority)
+#? * (soxtspaceball-exists)
+
+;; ********************************************************
+
+
+(de SoXt_init_callback ( )
+  #{ {
+      XtAppContext context = SoXt::getAppContext ();
+      Display *dpy = SoXt::getDisplay ();
+      XEvent event;
+      while (XPending (dpy) || XtAppPending (context))
+	{
+	  XtInputMask mask = XtAppPending (context) & (~XtIMXEvent);
+	  if (mask)
+	    XtAppProcessEvent (context, mask);
+	  if (XPending (dpy))
+	    {
+	      SoXt::nextEvent (context, &event);
+	      if (wm_delete_window &&
+		  event.type == ClientMessage &&
+		  (Atom) event.xclient.data.l[0] == wm_delete_window)
+		continue;
+	      SoXt::dispatchEvent (&event);
+	    }
+	}
+  } #}
+  (to-int 20))
+
+(de SoXt_init (  appName )
+  (cpheader "static Atom wm_delete_window = 0;")
+  ((-str-) appName)
+  (let ((wid (gptr ())))
+    #{ {
+	Display *dpy;
+	$wid = SoXt::init ((const char *)$appName->data);
+	dpy = SoXt::getDisplay ();
+	wm_delete_window = XInternAtom (dpy, "WM_DELETE_WINDOW", False);
+	register_poll_functions (C_soxt_init_callback, 0, 0, 0, ConnectionNumber (dpy));
+    } #}
+    wid))
+    
+
+(de SoXt_getAppContext (  )
+
+  (gptr #{ SoXt::getAppContext()       #} ))     ;; XtAppContext -> gptr
+
+(de SoXt_getDisplay ( )
+
+  (gptr #{ SoXt::getDisplay()   #} ))        ;; Display * -> gptr
+
+(de SoXt_getTopLevelWidget ( )
+
+  (gptr #{ SoXt::getTopLevelWidget()  #} ))   ;; Widget -> gptr
+
+
+(de SoXt_show (  widget )
+  
+  ((-gptr- "Widget") widget)
+  #{ SoXt::show( $widget);  #} 
+  ())
+
+(de SoXt_hide (  widget )
+  
+  ((-gptr- "Widget") widget)
+  #{ SoXt::hide( $widget);  #} 
+  ())
+
+;;(de SoXt_encodeString (  s )
+;;  ((-char *-) s)
+;;  (XmString #{ SoXt::encodeString( $s)  #} ))
+
+;;(de SoXt_decodeString (  xs )
+;;  ((-XmString-) xs)
+;;  (char * #{ SoXt::decodeString( $xs)  #} ))
+
+(de SoXt_setWidgetSize (  w size )
+  
+  ((-gptr- "Widget") w)
+  ((-gptr- "const SbVec2s *") size)
+  #{ SoXt::setWidgetSize( $w ,*$size);  #} 
+  ())
+
+;;(de SoXt_getWidgetSize (  w )
+  
+;;  ((-gptr- "Widget") w)
+;;  (SbVec2s #{ SoXt::getWidgetSize( $w)  #} ))
+
+(de SoXt_getShellWidget (  w )
+  
+  ((-gptr- "Widget") w)
+  (gptr #{ SoXt::getShellWidget( $w)  #} ))      ;; Widget -> gptr
+
+(de SoXt_createSimpleErrorDialog (  widget dialogTitle errorStr1 errorStr2 )
+  
+  ((-gptr- "Widget") widget)
+  ((-str-) dialogTitle)
+  ((-str-) errorStr1)
+  ((-str-) errorStr2)
+    #{ SoXt::createSimpleErrorDialog( $widget ,(char *)$dialogTitle->data ,(char *)$errorStr1->data ,(char *)$errorStr2->data);  #} 
+  ())
+
+(de SoXt_getPopupArgs (  d scr args n )
+  
+  ((-gptr- "Display *") d)
+  ((-int-) scr)
+  ((-gptr- "ArgList") args)
+  ((-gptr- "int *") n)
+  #{ SoXt::getPopupArgs( $d ,$scr ,$args ,$n);  #} 
+  ())
+
+(de SoXt_registerColormapLoad (  widget shell )
+  
+  ((-gptr- "Widget") widget)
+  ((-gptr- "Widget") shell)
+  #{ SoXt::registerColormapLoad( $widget ,$shell);  #} 
+  ())
+
+(de SoXt_addColormapToShell (  widget shell )
+  
+  ((-gptr- "Widget") widget)
+  ((-gptr- "Widget") shell)
+  #{ SoXt::addColormapToShell( $widget ,$shell);  #} 
+  ())
+
+(de SoXt_removeColormapFromShell (  widget shell )
+  
+  ((-gptr- "Widget") widget)
+  ((-gptr- "Widget") shell)
+  #{ SoXt::removeColormapFromShell( $widget ,$shell);  #} 
+  ())
+
+
+(de SoXtComponent_getComponent (  w )
+  
+  ((-gptr- "Widget") w)         ;; Widget -> gptr
+  (gptr #{ SoXtComponent::getComponent( $w)  #} ))  ;; SoXtComponent * -> gptr
+
+
+(de SoXtRenderArea_getDefaultRedrawPriority ( )
+
+  (int #{ SoXtRenderArea::getDefaultRedrawPriority() #} ))  ;; uint32_t -> int
+
+(de SoXtSpaceball_exists ( )
+
+  (int #{ SoXtSpaceball::exists()  #} ))       ;; SbBool  -> int
+
+()
+
+;; ********************************************************
+
+(let ((dhc-make-lushflags inventorxt-lushflags))
+(dhc-make-with-c++ () ()
+  |dummy_xt_static|
+  soxt-init-callback
+  soxt-init
+  soxt-getappcontext
+  soxt-getdisplay
+  soxt-gettoplevelwidget
+  soxt-show
+  soxt-hide
+  soxt-setwidgetsize
+  soxt-getshellwidget
+  soxt-createsimpleerrordialog
+  soxt-getpopupargs
+  soxt-registercolormapload
+  soxt-addcolormaptoshell
+  soxt-removecolormapfromshell
+  soxtcomponent-getcomponent
+  soxtrenderarea-getdefaultredrawpriority
+  soxtspaceball-exists
+))
