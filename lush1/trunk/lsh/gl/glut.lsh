@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: glut.lsh,v 1.13 2002-08-13 17:32:28 leonb Exp $
+;;; $Id: glut.lsh,v 1.14 2002-08-13 18:12:04 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -245,16 +245,13 @@
   (cheader "#include <sys/time.h>")
   (cheader "jmp_buf glut_event_jmp;")
   (cheader "void glut_idle_jmp(void) { longjmp(glut_event_jmp, 1); }")
-  ;; This function is quite dependent on the internals GLUT-3.7. 
+  ;; This function is quite dependent on the internals of GLUT-3.7. 
   ;; But this is mostly for implementing timers.
   (cheader "extern Display *__glutDisplay;")
   (cheader "extern int __glutWindowListSize;")
   (cheader "extern void *__glutWindowWorkList;")
   (cheader "extern struct{void*next;struct timeval tv;}*__glutTimerList;")
-  ;; This is a hack to kill window delete events
   (cheader "extern Atom __glutWMDeleteWindow;")
-  (cheader "static Bool eventdelp(Display *dpy, XEvent *ev, XPointer arg)\n\
-{ return (ev->type==ClientMessage) && (ev->xclient.data.l[0]==__glutWMDeleteWindow); }")
   ;; Go
   (let ((ms (* 24 3600 1000)))
     ((-int-) ms)
@@ -262,13 +259,14 @@
        if (__glutDisplay && __glutWindowListSize) {
          do {
            do {
-             XEvent ev;
-             while(XCheckIfEvent(__glutDisplay,&ev,eventdelp,0)) /**/;
+             Atom saved = __glutWMDeleteWindow;
              if (! setjmp(glut_event_jmp) ) {
+               __glutWMDeleteWindow = (Atom)0; /* Otherwise Glut calls exit! */
                glutIdleFunc(glut_idle_jmp);
                glutMainLoop();
-               glutIdleFunc(0);
              } 
+             __glutWMDeleteWindow = saved;
+             glutIdleFunc(0);
            } while (__glutWindowWorkList);
            if (__glutTimerList) {
              struct timeval tv;
@@ -1145,7 +1143,7 @@
     ;; Compile using X11 flags.
     ;; Then initialize
     (let ((dhc-make-lushflags dhc-make-lushflags)
-          (libs (list opengl-libX11 opengl-libgl opengl-libglu opengl-libglut)) )
+          (libs (list opengl-libgl opengl-libglu opengl-libglut)) )
       (when (getconf "X_CFLAGS")
         (setq dhc-make-lushflags
               (concat dhc-make-lushflags
