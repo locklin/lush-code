@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;  $Id: brace.lsh,v 1.6 2002-10-14 07:30:51 profshadoko Exp $
+;;;;  $Id: brace.lsh,v 1.7 2002-10-15 05:46:18 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Functions and classes to handle brace lists.
@@ -1574,6 +1574,22 @@
   (setq returns 0)
   (incr cursor-pos (len s)))
 
+;; print string with appropriate escapes
+(de brace-latex.smart-printf (s) 
+  (setq s (regex-subst "\\\\" "@BCKS@" s)) 
+  (setq s (regex-subst "([_&#$])" "\\%0" s))
+  (setq s (regex-subst "@BCKS@" "$\\backslash$" s))
+  (setq s (regex-subst "\\^" "\\^{ }" s))
+  (setq s (regex-subst "%" "\\%%%%" s))
+  (setq s (regex-subst "%" "%%" s))
+  (setq s (regex-subst "<([^ >]+)>" "@@@%0@@@" s))
+  (setq s (regex-subst "@@@([^@]+)@@@" "{\\tt %0}" s))
+  (setq s (regex-subst ">" "$>$" s))
+  (setq s (regex-subst "<" "$<$" s))
+  (printf s)
+  (setq returns 0)
+  (incr cursor-pos (len s)))
+
 ;; print n spaces
 (de brace-latex.sp (n)
   (repeat n (printf " "))
@@ -1607,19 +1623,8 @@
 (de brace-latex.print-word (s)
   (when (> (+ cursor-pos (len s)) right-margin) 
     (printf "\n") (setq cursor-pos 0))
-  (setq s (regex-subst "\\\\" "\\\\" s))
-  (setq s (regex-subst "$" "\\$" s))
-  (setq s (regex-subst "_" "\\_" s))
-  (setq s (regex-subst "#" "\\#" s))
-  (setq s (regex-subst "&" "\\&" s))
-  (setq s (regex-subst "\\^" "\\^" s))
-  (setq s (regex-subst "%" "\\%%%%" s))
-  (setq s (regex-subst "%" "%%" s))
-  (setq s (regex-subst "<([^ >]+)>" "@@@%0@@@" s))
-  (setq s (regex-subst "@@@([^@]+)@@@" "{\\tt %0}" s))
-  (printf s) (printf " ")
-  (setq returns 0)
-  (incr cursor-pos (1+ (len s))))
+  (brace-latex.smart-printf s)
+  (printf " ") (incr cursor-pos 1))
 
 ;; print paragraph (any brace list really)
 (de brace-latex.parprint (p)
@@ -1661,16 +1666,16 @@
 	(3 (printf "\\subsection{\n"))
 	(4 (printf "\\subsubsection{\n"))
 	(t (printf "{\\bf\n")))
-      (brace-latex.print-word title)
+      (brace-latex.smart-printf title)
       (printf "}\n")
-      (when type (printf "Type: %s" type))
+      (when type (brace-latex.smart-printf (concat "Type: " type)))
       (when (and location (<> (right location 4) ".hlp"))
-	(printf "(%s)" location))
+	(brace-latex.smart-printf (concat "(" location ")")))
       (printf "\n"))
     (when author 
       (brace-latex.parprint (cons "Author(s): " author))
       (printf "\n"))
-    (when date (printf "%s\n" date))
+    (when date (brace-latex.smart-printf date) (printf "\n"))
     (when desc 
       (brace-latex.parprint (cons "Description: " desc))
       (printf "\n"))
@@ -1705,11 +1710,11 @@
 	       (brace-latex.parprint p)
 	       (brace-latex.printf "}")))
   (setq <b> (flambda p 
-	      (brace-latex.printf "{\\bf")
+	      (brace-latex.printf "{\\bf ")
 	      (brace-latex.parprint p)
 	      (brace-latex.printf "}")))
   (setq <i> (flambda p 
-	      (brace-latex.printf "{\\it")
+	      (brace-latex.printf "{\\it ")
 	      (brace-latex.parprint p)
 	      (brace-latex.printf "}")))
   (setq <u> (flambda p 
@@ -1745,14 +1750,14 @@
 	      (brace-latex.parprint p)
 	      (brace-latex.printf "}\n")))
   (setq <hlink> (flambda p 
-		  (brace-latex.printf "[hlink: ")
+		  (brace-latex.printf "[")
 		  (brace-latex.parprint p)
 		  (brace-latex.printf "]")))
   (setq <see> (flambda p 
 		(brace-latex.printf "\n\n")
 		(brace-latex.printf "See: ")
 		(brace-latex.parprint p)
-		(brace-latex.printf "]\n\n")))
+		(brace-latex.printf "\n\n")))
 
   (setq <if-latex> (flambda p (brace-latex.parprint p)))
   (setq <if-html> (flambda p ()))
