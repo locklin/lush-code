@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.11 2003-07-14 13:02:00 leonb Exp $
+ * $Id: nan.c,v 1.12 2003-07-14 14:44:36 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -44,6 +44,12 @@
 #include <signal.h>
 
 typedef RETSIGTYPE (*SIGHANDLERTYPE)();
+
+#ifdef __hppa__
+# ifdef linux
+#  define BROKEN_SIGFPE
+# endif
+#endif
 
 
 /*================
@@ -404,12 +410,6 @@ fpe_irq(void)
 }
 #endif
 
-static  RETSIGTYPE
-nop_irq(void)
-{
-}
-
-
 /* probe_fpe_irq -- signal handler for testing SIGFPE */
 
 static int fpe_flag;
@@ -422,15 +422,19 @@ probe_fpe_irq(void)
   _clearfp();
 #endif
   fpe_flag = 1;
+  /* Avoid incorrect restarts */
+  signal(SIGFPE, SIG_IGN);
 }
 
 static void 
 probe_fpe(void)
 {
+  signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
   fpe_isnan = isnanD(3.0 + getnanD());
 #ifdef __alpha__
-  __asm__ volatile ("trapb");
+  asm ("trapb");
 #endif
+  signal(SIGFPE, SIG_IGN);
 }
 
 /* set_fpe_irq -- set signal handler for FPU exceptions */
@@ -441,35 +445,30 @@ set_fpe_irq(void)
   /* Setup fpu exceptions */
   setup_fpu(TRUE,TRUE);
   /* Check NAN behavior */
+#ifdef BROKEN_SIGFPE
+  ieee_present = 0;
+#else
   while (ieee_present)
     {
+      signal(SIGFPE, SIG_IGN);
       /* Check whether "INV" exception must be masked */
       fpe_flag = 0;
-      signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
       probe_fpe();
       if (! fpe_flag) break;
       /* Check whether all exceptions must be masked */
       fpe_flag = 0;
-      signal(SIGFPE, (SIGHANDLERTYPE)nop_irq);
       setup_fpu(FALSE,TRUE);
-      signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
       probe_fpe();
       if (! fpe_flag) break;
       /* Check whether signal must be ignored */
       fpe_flag = 0;
-      signal(SIGFPE, (SIGHANDLERTYPE)nop_irq);
       setup_fpu(FALSE,FALSE);
-      signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
       probe_fpe();
       if (! fpe_flag) break;
-      /* Disable FPE signal at OS level.
-       * You would think that SIG_IGN would do it,
-       * but Linux forces sigfpe anyway.
-       */
       fpe_flag = 0;
-      signal(SIGFPE, (SIGHANDLERTYPE)nop_irq);
       return;
     }
+#endif
   /* We can now setup the real fpe handler */
   signal(SIGFPE, (SIGHANDLERTYPE)fpe_irq);
 #ifdef HAVE_IEEE_HANDLER
@@ -527,13 +526,14 @@ init_nan(void)
       ieee_present = ( sizeof(real)==8 && sizeof(int)==4 );
       set_fpe_irq();
       /* Check that NaN works as expected */
-      if (!isnanD(*(real*)ieee_nand + 3.0) ||
-	  !isnanD(*(real*)ieee_nand - 3.0e40) ||
-	  !isinfD(*(real*)ieee_inftyd - 3.0e40) )
-	{
-	  ieee_present = 0;
-	  set_fpe_irq();
-	}
+      if (ieee_present)
+        if (!isnanD(*(real*)ieee_nand + 3.0) ||
+            !isnanD(*(real*)ieee_nand - 3.0e40) ||
+            !isinfD(*(real*)ieee_inftyd - 3.0e40) )
+          {
+            ieee_present = 0;
+            set_fpe_irq();
+          }
     }
   /* Define functions */
   dx_define("nan"    , xnan    );
