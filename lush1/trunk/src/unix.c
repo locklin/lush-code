@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.8 2002-08-02 20:31:45 leonb Exp $
+ * $Id: unix.c,v 1.9 2002-08-02 21:13:19 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -358,8 +358,8 @@ set_irq(void)
 /* TRIGGERS                              */
 /* ------------------------------------- */     
 
-/* This is ported straight from TL3 because it 
-   works well and can be used to implement the new stuff */
+/* This is ported very directly from TL3 because it works 
+   well and was close to implement the new stuff */
 
 #ifdef BROKEN_EVERYTHING
 #define BROKEN_FASYNC
@@ -392,21 +392,20 @@ static int trigger_signal = -1;
 /* block_count -- asynchronous trigger blocking count */
 static int block_count = 0;
 
-/* trigger_fd -- file descriptor for trigger messages */
-static int trigger_fd = -1;
+/* trigger_fds -- file descriptor for trigger messages */
+#define MAX_TRIGGER_NFDS 32
+static int trigger_nfds = 0;
+static int trigger_fds[MAX_TRIGGER_NFDS];
 
 /* trigger_handle -- function called when trigger is run */
-static void (*trigger_handler)(int);
-
-/* trigger_handle -- function called after trigger is run by GETLINE */
-static void (*trigger_process)(void);
+static void (*trigger_handler)(void);
 
 /* trigger_irq -- signal handler for trigger */
 static void 
 trigger_irq(void)
 {
   if (trigger_handler)
-    (*trigger_handler)(0);
+    (*trigger_handler)();
   if (trigger_signal < 0)
     return;
   /* reset trigger signal */
@@ -431,7 +430,7 @@ unblock_async_trigger(void)
 {
   if (++block_count == 0)
     {
-      if (trigger_signal >= 0)
+      if (trigger_signal >= 0 && trigger_nfds >= 0)
 	{
 #ifdef POSIXSIGNAL
 	  sigset_t sset;
@@ -454,7 +453,8 @@ static void
 block_async_trigger(void)
 {
   if (--block_count == -1)
-    if (trigger_signal >= 0)
+    {
+      if (trigger_signal >= 0 && trigger_nfds >= 0)
       {
 #ifdef SYSVSIGNAL
 	signal(trigger_signal,SIG_IGN);
@@ -469,23 +469,22 @@ block_async_trigger(void)
 	}
 #endif
 #endif /* SYSVSIGNAL */
-
 #ifdef POSIXSIGNAL
 	sigset_t sset;
 	sigemptyset(&sset);
 	sigaddset(&sset,trigger_signal);
 	sigprocmask(SIG_BLOCK,&sset,NULL);
 #endif /* POSIXSIGNAL */
-
 #ifdef BSDSIGNAL
 	sigblock(sigmask(trigger_signal));
 #endif /* BSDSIGNAL */
       }
+    }
 }
 
 /* setup_signal_once -- called once to set the trigger signal */
 static void
-setup_signal_once(int fd)
+setup_signal_once(void)
 {
 #ifdef POSIXSIGNAL
   sigset_t sset;
@@ -527,131 +526,155 @@ setup_signal_once(int fd)
 #endif
 }
 
+/* unset_trigger_signal */
+static void
+unset_trigger_signal(void)
+{
+  int i;
+  for (i=0; i<trigger_nfds; i++)
+    {
+      int fd = trigger_fds[i];
+      int flag = 0;
+      switch(trigger_mode)
+        {
+#ifdef FASYNC
+        case MODE_FASYNC:
+          flag = fcntl(fd, F_GETFL, 0);
+          fcntl(fd, F_SETFL, flag & ~FASYNC);
+          break;
+#endif
+#ifdef FIOASYNC
+        case MODE_FIOASYNC:
+          flag = 0;
+          ioctl(fd, FIOASYNC, &flag);
+          break;
+#endif
+#ifdef I_SETSIG
+        case MODE_SETSIG:
+          ioctl(fd, I_GETSIG, &flag);
+          ioctl(fd,I_SETSIG, flag & ~S_INPUT);
+          break;
+#endif
+        default:
+          break;
+        }
+    }
+}
 
 /* set_trigger_signal -- detects appropriate mode and sets signalling */
 static void
-setup_trigger_signal(int fd)
+setup_trigger_signal()
 {
-  int pid, flag;
-  pid = 0;
-  flag = 0;
-  switch (trigger_mode)
+  int i;
+  for (i=0; i<trigger_nfds; i++)
     {
-    case MODE_UNKNOWN:
+      int fd = trigger_fds[i];
+      int pid = 0;
+      int flag = 0;
+
+      switch (trigger_mode)
+        {
+        case MODE_UNKNOWN:
 #ifndef BROKEN_FIOASYNC
 #ifdef FIOASYNC
 #ifdef FIOSETOWN
-      flag = 1;
-      pid = getpid();
-      if (ioctl(fd, FIOSETOWN, &pid) != -1)
-	if (ioctl(fd, FIOASYNC, &flag) != -1)
-	  {
-	    trigger_mode = MODE_FIOASYNC;
-	    trigger_signal = SIGIO;
-	    setup_signal_once(fd);
-	    break;
-	  }
+          flag = 1;
+          pid = getpid();
+          if (ioctl(fd, FIOSETOWN, &pid) != -1)
+            if (ioctl(fd, FIOASYNC, &flag) != -1)
+              {
+                trigger_mode = MODE_FIOASYNC;
+                trigger_signal = SIGIO;
+                setup_signal_once();
+                break;
+              }
 #endif
 #endif
 #endif /* !BROKEN_FIOASYNC */
 #ifndef BROKEN_FASYNC
 #ifdef FASYNC
 #ifdef F_SETOWN
-      pid = getpid();
-      if (fcntl(fd, F_SETOWN, pid) != -1)
-	if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | FASYNC) != -1)
-	  {
-	    trigger_mode = MODE_FASYNC;
-	    trigger_signal = SIGIO;
-	    setup_signal_once(fd);
-	    break;
-	  }
+          pid = getpid();
+          if (fcntl(fd, F_SETOWN, pid) != -1)
+            if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | FASYNC) != -1)
+              {
+                trigger_mode = MODE_FASYNC;
+                trigger_signal = SIGIO;
+                setup_signal_once();
+                break;
+              }
 #endif
 #endif
 #endif /* !BROKEN_FASYNC */
 #ifndef BROKEN_SETSIG
 #ifdef I_SETSIG
 #ifdef I_GETSIG
-      flag = 0;
-      ioctl(fd, I_GETSIG, &flag);
-      if (ioctl(fd,I_SETSIG, flag|S_INPUT) != -1)
-      {
-        trigger_mode = MODE_SETSIG;
-        trigger_signal = SIGPOLL;
-        setup_signal_once(fd);
-        break;
-      }
+          flag = 0;
+          ioctl(fd, I_GETSIG, &flag);
+          if (ioctl(fd,I_SETSIG, flag|S_INPUT) != -1)
+            {
+              trigger_mode = MODE_SETSIG;
+              trigger_signal = SIGPOLL;
+              setup_signal_once();
+              break;
+            }
 #endif
 #endif
 #endif /* !BROKEN_SETSIG */
 #ifndef BROKEN_TIMER
 #ifdef ITIMER_REAL
-      trigger_mode = MODE_ITIMER;
-      trigger_signal = SIGALRM;
-      setup_signal_once(fd);
-      break;
+          trigger_mode = MODE_ITIMER;
+          trigger_signal = SIGALRM;
+          setup_signal_once();
+          break;
 #endif
 #endif /* !BROKEN_TIMER */
 #ifndef BROKEN_ALARM
-      trigger_mode = MODE_ALARM;
-      trigger_signal = SIGALRM;
-      setup_signal_once(fd);
+          trigger_mode = MODE_ALARM;
+          trigger_signal = SIGALRM;
+          setup_signal_once();
 #endif /* !BROKEN_ALARM */
-      break;
-
+          break;
+          
 #ifndef BROKEN_FASYNC
 #ifdef FASYNC
 #ifdef F_SETOWN
-    case MODE_FASYNC:
-      pid = getpid();
-      fcntl(fd, F_SETOWN, pid);
-      fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | FASYNC);
-      break;
+        case MODE_FASYNC:
+          pid = getpid();
+          fcntl(fd, F_SETOWN, pid);
+          fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | FASYNC);
+          break;
 #endif
 #endif
 #endif /* !BROKEN_FASYNC */
-      
+          
 #ifndef BROKEN_FIOASYNC
 #ifdef FIOASYNC
 #ifdef FIOSETOWN
-    case MODE_FIOASYNC:
-      flag = 1;
-      pid = getpid();
-      ioctl(fd, FIOSETOWN, &pid);
-      ioctl(fd, FIOASYNC, &flag);
-      break;
+        case MODE_FIOASYNC:
+          flag = 1;
+          pid = getpid();
+          ioctl(fd, FIOSETOWN, &pid);
+          ioctl(fd, FIOASYNC, &flag);
+          break;
 #endif
 #endif
 #endif /* !BROKEN_FIOASYNC */
-
+          
 #ifndef BROKEN_SETSIG
 #ifdef I_GETSIG
 #ifdef I_SETSIG
-    case MODE_SETSIG:
-      ioctl(fd, I_GETSIG, &flag);
-      ioctl(fd,I_SETSIG, flag|S_INPUT);
-      break;
+        case MODE_SETSIG:
+          ioctl(fd, I_GETSIG, &flag);
+          ioctl(fd,I_SETSIG, flag|S_INPUT);
+          break;
 #endif
 #endif
 #endif /* !BROKEN_SETSIG */
-    default:
-      break;
+        default:
+          break;
+        }
     }
-}
-
-
-/* set_trigger -- setup trigger system */
-static void 
-set_trigger(int fd, void (*trigger)(int), void (*process)(void))
-{
-  if (trigger_fd >= 0)
-    error(NIL, "internal error: trigger already set", NIL);
-  trigger_fd = fd;
-  trigger_handler = trigger;
-  trigger_process = process;
-  block_async_trigger();
-  setup_trigger_signal(fd);
-  unblock_async_trigger();
 }
 
 
@@ -673,9 +696,21 @@ os_unblock_async_poll(void)
 }
 
 void 
-os_setup_async_poll(int*fds, int nfds, void(*apoll)(void))
+os_setup_async_poll(int* fds, int nfds, void(*apoll)(void))
 {
-  /* Nothing yet */
+  block_async_trigger();
+  trigger_handler = 0;
+  unset_trigger_signal();
+  if (apoll && nfds>0)
+    {
+      int i;
+      trigger_handler = apoll;
+      for (i=0; i<nfds && i<MAX_TRIGGER_NFDS; i++)
+        trigger_fds[i] = fds[i];
+      trigger_nfds = i;
+      setup_trigger_signal();
+    }
+  unblock_async_trigger();
 }
 
 void 
@@ -719,7 +754,7 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
   tv.tv_usec = (ms%1000)*1000;
   block_async_poll();
   select(maxfd+1, &set, 0, 0, &tv);
-  block_async_poll();
+  unblock_async_poll();
   return FD_ISSET(0,&set);
 }
 

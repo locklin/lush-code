@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.3 2002-08-02 20:35:30 leonb Exp $
+ * $Id: event.c,v 1.4 2002-08-02 21:13:19 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -510,8 +510,9 @@ unregister_event_source(void *handle)
    events by calling event_add().
    
    Function apoll() might be called anytime to let the
-   source check its event queue.  This function should
-   never call event_add() but can set internal data
+   source check its event queue.  This function is called
+   from signal handlers and should not do much.
+   It cannot call event_add() but can set internal data
    structures within the source.
 
    Function bwait() is called on all sources whenever
