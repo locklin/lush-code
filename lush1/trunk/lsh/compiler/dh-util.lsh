@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.19 2002-07-23 19:25:04 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.20 2002-07-24 15:09:41 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -460,10 +460,11 @@
     (let* ((ctype (dhu-type type))
            (cname (dhu-name ctype))
            (vtbl (sprintf "Vt_%s_R%s" cname (dhu-hash ctype))) )
-      (dhc-add-c-externs
-       (dhc-class-to-struct-decl (dhu-type type)) )
-      (dhc-add-c-externs 
-       (sprintf "extern struct VClass_%s %s;" cname vtbl) )
+      (when (dhu-class ctype)
+        (dhc-add-c-externs 
+         (sprintf "extern struct VClass_%s %s;" cname vtbl) )
+        (dhc-add-c-externs
+         (dhc-class-to-struct-decl (dhu-type type)) ) )
       (dhc-add-c-declarations 
        (concat (dhc-type-to-c-decl type) (sprintf " %s_Struct;" name)))
       (dhc-add-c-declarations 
@@ -510,10 +511,11 @@
     (let* ((ctype (dhu-type type))
            (cname (dhu-name ctype))
            (vtbl (sprintf "Vt_%s_R%s" cname (dhu-hash ctype))) )
-      (dhc-add-c-externs
-       (dhc-class-to-struct-decl (dhu-type type)) )
-      (dhc-add-c-externs 
-       (sprintf "extern struct VClass_%s %s;" cname vtbl) )
+      (when (dhu-class ctype)
+        (dhc-add-c-externs 
+         (sprintf "extern struct VClass_%s %s;" cname vtbl) )
+        (dhc-add-c-externs
+         (dhc-class-to-struct-decl (dhu-type type)) ) )
       (dhc-add-c-declarations 
        (sprintf "%s *%s;" (dhc-type-to-c-decl type) name))
       (dhc-add-c-externs 
@@ -1552,9 +1554,13 @@
         (c-info-t ())
         (dhc-stub ()))
     (cond
-     ((classp cl) (setq clname (classname cl)))
-     ((symbolp cl) (setq clname cl) (setq cl (eval `:,clname)))
-     (t (error 'dhc-class-type-stub "expecting symbol or class" cl)) )
+     ((classp cl) 
+      (setq clname (classname cl)))
+     ((symbolp cl) 
+      (setq clname cl) 
+      (setq cl (eval `:,clname)))
+     (t 
+      (error 'dhc-class-type-stub "expecting symbol or class" cl)) )
     
     (cond
      ;; first search global symbol table
@@ -1581,9 +1587,13 @@
   ;; Works with pre-compiled classes and classes being currently compiled.
   (let ((clname ()))
     (cond
-     ((classp cl) (setq clname (classname cl)))
-     ((symbolp cl) (setq clname cl) (setq cl (eval `:,clname)))
-     (t (error 'dhc-class-type-stub "expecting symbol or class" cl)) )
+     ((classp cl) 
+      (setq clname (classname cl)))
+     ((symbolp cl) 
+      (setq clname cl) 
+      (setq cl (eval `:,clname)) )
+     (t 
+      (error 'dhc-class-type-stub "expecting symbol or class" cl)) )
     
     (let* ((class-symbol (dhc-search-symtable clname global-table))
 	   (class-type (when class-symbol :class-symbol:type)) 
@@ -1592,8 +1602,12 @@
           ;; found in global symbol table
           class-type
         ;; search an already compiled class
-        (setq class-type (dhc-class-type-stub clname))
+        (when (not (classp cl))
+          (dhc-error "Not a valid class name" clname) )
         (setq c-info-t (classinfo-t cl))
+        (when (not c-info-t)
+          (dhc-error "Not a compiled class" clname) )
+        (setq class-type (dhc-class-type-stub clname))
         ;; store it into the global table
         (setq class-symbol (new dhc-symbol clname 0))
         (setq :class-symbol:type class-type)
@@ -1738,18 +1752,21 @@
             (classdoc (sprintf "Kc_%s_R%s" 
                                (dhu-name cltype) 
                                (dhu-hash cltype))) )
-       (dhc-add-c-metaexterns (sprintf "extern dhclassdoc_t %s;" classdoc))
-       (dhc-add-c-externs (dhc-class-to-struct-decl cltype)) 
+       (when (dhu-class cltype)
+         (dhc-add-c-metaexterns 
+          (sprintf "extern dhclassdoc_t %s;" classdoc))
+         (dhc-add-c-externs 
+          (dhc-class-to-struct-decl cltype)) )
        ;; What if this wasn't a class?
        (list (sprintf "DH_OBJ(%s)," classdoc)) ) )
     ;; function
     (func 
      (each ((temps arg2))
        (when (= (car temps) 'obj)
-         (let ((cltype (apply dhc-d-to-class-type temps))
-               (classdoc (sprintf "Kc_%s_R%s" 
-                                  (dhu-name cltype) 
-                                  (dhu-hash cltype))) )
+         (let* ((cltype (apply dhc-d-to-class-type temps))
+                (classdoc (sprintf "Kc_%s_R%s" 
+                                   (dhu-name cltype) 
+                                   (dhu-hash cltype))) )
            (dhc-add-c-metaexterns
             (sprintf "extern dhclassdoc_t %s;" classdoc) ) ) ) )
      (append 

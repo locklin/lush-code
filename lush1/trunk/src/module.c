@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.20 2002-07-23 18:58:34 leonb Exp $
+ * $Id: module.c,v 1.21 2002-07-24 15:09:44 leonb Exp $
  **********************************************************************/
 
 
@@ -730,6 +730,8 @@ module_load(char *filename, at *hook)
   dlopen_handle_t handle = 0;
   /* Check that file exists */
   filename = concat_fname(NULL, filename);
+  ans = new_string(filename);
+  filename = SADD(ans->Object);
   if (! filep(filename))
     error(NIL,"file not found",new_string(filename));
   /* Check if the file extension indicates a DLL */
@@ -766,12 +768,13 @@ module_load(char *filename, at *hook)
   m->prev = 0;
   m->next = 0;
   m->handle = handle;
-  m->filename = strdup(filename);
+  m->filename = filename = strdup(filename);
   m->initname = 0;
   m->initaddr = 0;
   m->defs = 0;
   m->hook = hook;
   m->backptr = 0;
+  UNLOCK(ans);
   ans = new_extern(&module_class, m);
   m->backptr = ans;
   LOCK(hook);

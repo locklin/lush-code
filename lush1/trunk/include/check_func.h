@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.4 2002-07-19 22:03:51 leonb Exp $
+ * $Id: check_func.h,v 1.5 2002-07-24 15:09:41 leonb Exp $
  **********************************************************************/
 
 #ifndef CHECK_FUNC_H
@@ -115,6 +115,13 @@ extern LUSHAPI char *rterr_bad_dimensions;
   RTERR_GEN(test,rterr_range)
 #define RTERR_SRG_OVERFLOW \
   run_time_error(rterr_srg_of);
+
+
+/* ---------------------------------------- */
+/* CHECKING OBJECTS                         */
+/* ---------------------------------------- */
+
+LUSHAPI void check_obj_class(void *obj, void *classvtable);
 
 
 /* ---------------------------------------- */
@@ -252,8 +259,6 @@ LUSHAPI void srg_free(struct srg *);
 	if ((i2)->ndim != 2 || (i2)->dim[0] != dim0 || (i2)->dim[1] != dim1) \
             run_time_error(rterr_bad_dimensions); \
     }
-
-/******************************************************************************/
 
 #define Mcheck_main(i1) \
     Mis_sized(i1);

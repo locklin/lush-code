@@ -25,18 +25,16 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.c,v 1.2 2002-07-06 02:07:47 leonb Exp $
+ * $Id: check_func.c,v 1.3 2002-07-24 15:09:44 leonb Exp $
  **********************************************************************/
 
 /* Functions that check the dimensions of index parameters */
-
-#define CHECK_DHDOCS
 
 #include "header.h"
 #include "idxmac.h"
 #include "idxops.h"
 #include "check_func.h"
-
+#include "dh.h"
 
 
 /******************************************************************************
@@ -116,178 +114,185 @@ void print_dh_trace_stack(void)
 }
 
 
+
 /******************************************************************************
  *
- *  SRG allocation
+ *  Object class membership test
  *
-******************************************************************************/
+ *****************************************************************************/
 
-/*
- * srg_resize : this function is called from Msrg_resize.
- * ( warning: srg_resize assumes that new_size > sr->size )
- */
+void 
+check_obj_class(void *obj, void *classvtable)
+{
+  if (! obj)
+    {
+      run_time_error("Casting a null gptr as an object");
+    }
+#ifndef NOLISP
+  else
+    {
+      void *vtable = *(void**)obj;
+      while (vtable != classvtable)
+        {
+          dhclassdoc_t *cdoc;
+          cdoc = *(dhclassdoc_t**)vtable;
+          if (! cdoc)
+            run_time_error("Found uninitialized virtual table");
+          cdoc = cdoc->lispdata.ksuper;
+          if (! cdoc)
+            run_time_error("Illegal object cast");
+          vtable = cdoc->lispdata.vtable;
+          if (! vtable)
+            run_time_error("Found uninitialized classdoc");
+        }
+    }
+#endif
+}
+
+
+/******************************************************************************
+ *
+ *  Storage allocation
+ *
+ *****************************************************************************/
+
 #ifndef NOLISP
 
 void
 srg_resize(struct srg *sr, int new_size, char *file, int line) 
 {
-    if(sr->flags & STS_MALLOC)  { 
-        char *malloc_ptr; 
-        int st_size = storage_type_size[sr->type] * new_size; 
-        if (sr->size != 0) {
-            if (st_size==0) {
-                lush_free(sr->data, file, line); 
-                sr->data = 0;
-            } else {
-		malloc_ptr = (char *) lush_realloc(sr->data, st_size, file, line); 
-		if(malloc_ptr == 0) 
-		    error(NIL, rterr_out_of_memory, NIL); 
-		sr->data = malloc_ptr; 
-            } 
-        } else { 
-            if (st_size != 0) {
-                malloc_ptr = (char *) lush_malloc(st_size, file, line); 
-                if(malloc_ptr == 0) 
-		    error(NIL, rterr_out_of_memory, NIL); 
-                sr->data = malloc_ptr; 
-            } 
-        } 
-        sr->size = new_size; 
-        sr->flags &= ~STF_UNSIZED;
-    } else {
-        error(NIL, rterr_cannot_realloc, NIL); 
-    }
+  if(sr->flags & STS_MALLOC)  { 
+    char *malloc_ptr; 
+    int st_size = storage_type_size[sr->type] * new_size; 
+    if (sr->size != 0) {
+      if (st_size==0) {
+        lush_free(sr->data, file, line); 
+        sr->data = 0;
+      } else {
+        malloc_ptr = (char *) lush_realloc(sr->data, st_size, file, line); 
+        if(malloc_ptr == 0) 
+          error(NIL, rterr_out_of_memory, NIL); 
+        sr->data = malloc_ptr; 
+      } 
+    } else { 
+      if (st_size != 0) {
+        malloc_ptr = (char *) lush_malloc(st_size, file, line); 
+        if(malloc_ptr == 0) 
+          error(NIL, rterr_out_of_memory, NIL); 
+        sr->data = malloc_ptr; 
+      } 
+    } 
+    sr->size = new_size; 
+    sr->flags &= ~STF_UNSIZED;
+  } else {
+    error(NIL, rterr_cannot_realloc, NIL); 
+  }
 }
 
 #endif /* NOLISP */
 
-/* Same as above, except that it calls run_time_error instead of error */
 void
 srg_resize_compiled(struct srg *sr, int new_size, char *file, int line) 
 {
-    if(sr->flags & STS_MALLOC)  { 
-        char *malloc_ptr; 
-        int st_size = storage_type_size[sr->type] * new_size; 
-        if (sr->size != 0) {
-            if (st_size==0) {
-                lush_free(sr->data, file, line); 
-                sr->data = 0;
-            } else {
-		malloc_ptr = (char *) lush_realloc(sr->data, st_size, file, line); 
-		if(malloc_ptr == 0) 
-                    run_time_error(rterr_out_of_memory); 
-		sr->data = malloc_ptr; 
-            } 
-        } else { 
-            if (st_size != 0) {
-                malloc_ptr = (char *) lush_malloc(st_size, file, line); 
-                if(malloc_ptr == 0) 
-		    run_time_error(rterr_out_of_memory); 
-                sr->data = malloc_ptr; 
-            } 
-        } 
-        sr->size = new_size; 
-        sr->flags &= ~STF_UNSIZED;
-    } else 
-        run_time_error(rterr_cannot_realloc); 
+  if(sr->flags & STS_MALLOC)  { 
+    char *malloc_ptr; 
+    int st_size = storage_type_size[sr->type] * new_size; 
+    if (sr->size != 0) {
+      if (st_size==0) {
+        lush_free(sr->data, file, line); 
+        sr->data = 0;
+      } else {
+        malloc_ptr = (char *) lush_realloc(sr->data, st_size, file, line); 
+        if(malloc_ptr == 0) 
+          run_time_error(rterr_out_of_memory); 
+        sr->data = malloc_ptr; 
+      } 
+    } else { 
+      if (st_size != 0) {
+        malloc_ptr = (char *) lush_malloc(st_size, file, line); 
+        if(malloc_ptr == 0) 
+          run_time_error(rterr_out_of_memory); 
+        sr->data = malloc_ptr; 
+      } 
+    } 
+    sr->size = new_size; 
+    sr->flags &= ~STF_UNSIZED;
+  } else 
+    run_time_error(rterr_cannot_realloc); 
 }
-
-
-/* 
- * srg_free : this function is not called from Msrg_free.
- * (it is used when registering a destructor in a pool)
- */
 
 void
 srg_free(struct srg *sr)
 {
-    if (sr->flags & STS_MALLOC)
-        if ( sr->size && sr->data )
-        {
-            free(sr->data);
-            sr->data = 0;
-            sr->size = 0;
-        }
+  if (sr->flags & STS_MALLOC)
+    if ( sr->size && sr->data )
+      {
+        free(sr->data);
+        sr->data = 0;
+        sr->size = 0;
+      }
 }
+
 
 /******************************************************************************
  *
- *  Check functions
+ *  Matrix check functions
  *
-******************************************************************************/
+ *****************************************************************************/
 
 
-
-#undef CHECK_DHDOCS
-
-/* check if arg1 is dimensioned.  This cover all the cases: 
-   check_m0in check_m1in check_m2in ...
-   check_m0out check_m1out check_m2out ...
-   */
-
-/* check if first arg is dimensioned, and if total number of elements
-   of 2nd arg is same as first arg.
-   if 2nd arg unsized, give it the same structure as first arg
-*/
 void 
 check_main_maout(struct idx *i1, struct idx *i2)
 {
-    Mcheck_main_maout(i1, i2);
+  Mcheck_main_maout(i1, i2);
 }
 
 void 
 check_main_main_maout(struct idx *i0, struct idx *i1, struct idx *i2)
 {
-    Mcheck_main_main_maout(i0, i1, i2);
+  Mcheck_main_main_maout(i0, i1, i2);
 }
 
-/* check if 1st arg is dimensioned (ma), and second is m0 */
 void 
 check_main_m0out(struct idx *i1, struct idx *i2)
 {
-    Mcheck_main_m0out(i1, i2);
+  Mcheck_main_m0out(i1, i2);
 }
 
-/* check if 1st and 2nd arg have same global size (ma), and second is m0 */
 void 
 check_main_main_m0out(struct idx *i0, struct idx *i1, struct idx *i2)
 {
-    Mcheck_main_main_m0out(i0, i1, i2);
+  Mcheck_main_main_m0out(i0, i1, i2);
 }
 
-/* check if first arg is dimensioned, and if total number of elements
-   of 3rd arg is same as first arg.
-   if 3rd arg unsized, give it the same structure as first arg
-   2nd arg must be an M0.
-*/
 void 
 check_main_m0in_maout(struct idx *i0, struct idx *i1, struct idx *i2)
 {
-    Mcheck_main_m0in_maout(i0, i1, i2);
+  Mcheck_main_m0in_maout(i0, i1, i2);
 }
 
 void 
 check_main_main_maout_dot21(struct idx *i0, struct idx *i1, struct idx *i2)
 {
-    Mcheck_main_main_maout_dot21(i0, i1, i2);
+  Mcheck_main_main_maout_dot21(i0, i1, i2);
 }
 
 void 
 check_main_main_maout_dot42(struct idx *i0, struct idx *i1, struct idx *i2)
 {
-    Mcheck_main_main_maout_dot42(i0, i1, i2);
+  Mcheck_main_main_maout_dot42(i0, i1, i2);
 }
 
 void 
 check_m1in_m1in_m2out(struct idx *i0, struct idx *i1, struct idx *i2)
 {
-    Mcheck_m1in_m1in_m2out(i0, i1, i2);
+  Mcheck_m1in_m1in_m2out(i0, i1, i2);
 }
 
 void 
 check_m2in_m2in_m4out(struct idx *i0, struct idx *i1, struct idx *i2)
 {
-    Mcheck_m2in_m2in_m4out(i0, i1, i2);
+  Mcheck_m2in_m2in_m4out(i0, i1, i2);
 }
 
 
