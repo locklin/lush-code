@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.11 2004-01-18 05:35:31 leonb Exp $
+ * $Id: io.c,v 1.12 2004-10-25 21:50:43 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -722,10 +722,20 @@ rl_string(register char *s)
 	*d++ = (s[1]) & (0x1f);
 	s += 2;
 	
-      } else if (*s == '+' && s[1]) {	/* high bit */
-	*d++ = (s[1]) | (0x80);
+      } else if (*s == '+' && s[1]) {	/* high bit latin1*/
+#if HAVE_WCHAR_T
+	wchar_t wc = s[1] | 0x80;
+	char buffer[MB_LEN_MAX];
+	int m = wcrtomb(buffer, wc, NULL);
+	if (m > 0)
+	  {
+	    memcpy(d, buffer, m);
+	    d += m;
+	  }
+	else
+#endif	
+	  *d++ = (s[1]) | (0x80);
 	s += 2;
-	
       } else if (*s == '\n') {	/* end of line */
 	s++;
 	
@@ -1372,7 +1382,6 @@ convert(register char *s, register at *list, register char *end)
       UNLOCK(q);
       return s;
     }
-  
  exit_convert:
   *s = 0;
   strcpy(s, " ... ");

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.24 2004-10-25 20:41:30 leonb Exp $
+ * $Id: string.c,v 1.25 2004-10-25 21:50:43 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -147,7 +147,7 @@ string_name(at *p)
 {
   char *s = ((struct string *) (p->Object))->start;
   char *name = string_buffer;
-#ifdef HAVE_WCHAR_T
+#if HAVE_WCHAR_T
   int n = strlen(s);
   mbstate_t ps;
   memset(&ps, 0, sizeof(mbstate_t));
@@ -157,31 +157,35 @@ string_name(at *p)
       char *ind;
       int c = *(unsigned char*)s;
       wchar_t wc = 0;
-      int m = (int)mbrtowc(&wc, s, n, &ps);
+      int m;
       if (name>=string_buffer+STRING_BUFFER-10)
 	break;
-      if (m == 0)
+      if (c == 0)
 	break;
       if ((ind = strchr(special_string, c)))
 	{
 	  *name++ = '\\';
 	  *name++ = aspect_string[ind - special_string];
+	  s += 1;
+	  continue;
 	} 
-      else if (m < 0)
+      m = (int)mbrtowc(&wc, s, n, &ps);
+      if (m <= 0)
 	{
 	  *name++ = '\\';
 	  *name++ = 'x';
 	  *name++ = digit_string[(c >> 4) & 15];
 	  *name++ = digit_string[c & 15];
 	  memset(&ps, 0, sizeof(mbstate_t));
-	  m = 1;
+	  s += 1;
+	  continue;
 	}
-      else if (iswprint(wc))
+      if (iswprint(wc))
 	{
 	  memcpy(name, s, m);
 	  name += m;
 	}
-      else if (c<=' ')
+      else if (m==1 && c<=' ')
 	{
 	  *name++ = '\\';
 	  *name++ = '^';
@@ -811,51 +815,164 @@ DX(xstrsubst)
 /*------------------------ */
 
 
+
 DX(xupcase)
 {
-  char *s,*r,c;
   at *rr;
-
+  char *s;
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-  rr = new_string_bylen(strlen(s));
-  r = SADD(rr->Object);
-  while ((c = *s++)) 
-    *r++ = toupper((unsigned char)c);
-  *r = 0;
+#if HAVE_WCHAR_T
+  {
+    char buffer[MB_LEN_MAX];
+    struct large_string ls;
+    mbstate_t ps1;
+    mbstate_t ps2;
+    int n = strlen(s);
+    memset(&ps1, 0, sizeof(mbstate_t));
+    memset(&ps2, 0, sizeof(mbstate_t));
+    large_string_init(&ls);
+    for(;;)
+      {
+	wchar_t wc = 0;
+	int m = (int)mbrtowc(&wc, s, n, &ps1);
+	if (m == 0)
+	  break;
+	if (m > 0)
+	  {
+	    int d = wcrtomb(buffer, towupper(wc), &ps2);
+	    if (d <= 0)
+	      large_string_add(&ls, s, m);
+	    else
+	      large_string_add(&ls, buffer, d);
+	    s += m;
+	    n -= m;
+	  }
+	else
+	  {
+	    memset(&ps1, 0, sizeof(mbstate_t));	 
+	    memset(&ps2, 0, sizeof(mbstate_t));	 
+	    large_string_add(&ls, s, 1);
+	    s += 1;
+	    n -= 1;
+	  }
+      }
+    rr = large_string_collect(&ls);
+  }
+#else
+ {
+   char c, *r;
+   rr = new_string_bylen(strlen(s));
+   r = SADD(rr->Object);
+   while ((c = *s++)) 
+     *r++ = toupper((unsigned char)c);
+   *r = 0;
+ }
+#endif
   return rr;
 }
 
 DX(xupcase1)
 {
-  char *s,*r, c;
+  char *s;
   at *rr;
-
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-  rr = new_string_bylen(strlen(s));
-  r = SADD(rr->Object);
-  strcpy(r,s);
-  if ((c = *r))
-    *r =  toupper((unsigned char)c);
+#if HAVE_WCHAR_T
+  {
+    char buffer[MB_LEN_MAX];
+    struct large_string ls;
+    int n = strlen(s);
+    int m;
+    wchar_t wc;
+    mbstate_t ps1;
+    mbstate_t ps2;
+    memset(&ps1, 0, sizeof(mbstate_t));
+    memset(&ps2, 0, sizeof(mbstate_t));
+    large_string_init(&ls);
+    m = (int)mbrtowc(&wc, s, n, &ps1);
+    if (m > 0)
+      {
+	int d = wcrtomb(buffer, towupper(wc), &ps2);
+	if (d > 0)
+	  {
+	    large_string_add(&ls, buffer, d);
+	    s += m;
+	    n -= m;
+	  }
+      }
+    large_string_add(&ls, s, n);
+    rr = large_string_collect(&ls);
+  }
+#else
+  {
+    char *rr, c;
+    rr = new_string_bylen(strlen(s));
+    r = SADD(rr->Object);
+    strcpy(r,s);
+    if ((c = *r))
+      *r =  toupper((unsigned char)c);
+  }
+#endif
   return rr;
 }
 
 DX(xdowncase)
 {
-  char *s,*r,c;
   at *rr;
-  
+  char *s;
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-  rr = new_string_bylen(strlen(s));
-  r = SADD(rr->Object);
-  while ((c = *s++))
-    *r++ = tolower((unsigned char)c);
-  *r = 0;
+#if HAVE_WCHAR_T
+  {
+    char buffer[MB_LEN_MAX];
+    struct large_string ls;
+    mbstate_t ps1;
+    mbstate_t ps2;
+    int n = strlen(s);
+    memset(&ps1, 0, sizeof(mbstate_t));
+    memset(&ps2, 0, sizeof(mbstate_t));
+    large_string_init(&ls);
+    for(;;)
+      {
+	wchar_t wc = 0;
+	int m = (int)mbrtowc(&wc, s, n, &ps1);
+	if (m == 0)
+	  break;
+	if (m > 0)
+	  {
+	    int d = wcrtomb(buffer, towlower(wc), &ps2);
+	    if (d <= 0)
+	      large_string_add(&ls, s, m);
+	    else
+	      large_string_add(&ls, buffer, d);
+	    s += m;
+	    n -= m;
+	  }
+	else
+	  {
+	    memset(&ps1, 0, sizeof(mbstate_t));	 
+	    memset(&ps2, 0, sizeof(mbstate_t));	 
+	    large_string_add(&ls, s, 1);
+	    s += 1;
+	    n -= 1;
+	  }
+      }
+    rr = large_string_collect(&ls);
+  }
+#else
+  {
+    char c, *r;
+    rr = new_string_bylen(strlen(s));
+    r = SADD(rr->Object);
+    while ((c = *s++)) 
+      *r++ = tolower((unsigned char)c);
+    *r = 0;
+  }
+#endif
   return rr;
 }
 
@@ -882,7 +999,7 @@ DX(xstr_chr)
   ARG_EVAL(1);
   i = AINTEGER(1);
   if (i<0 || i>255)
-    error(NIL,"Ascii code out of range",APOINTER(1));
+    error(NIL,"Out of range",APOINTER(1));
   s[0]=i;
   s[1]=0;
   return new_string(s);
@@ -896,11 +1013,33 @@ DX(xisprint)
   s = (unsigned char*) ASTRING(1);
   if (!s || !*s)
     return NIL;
+#if HAVE_WCHAR_T
+  {
+    int n = strlen(s);
+    mbstate_t ps;
+    memset(&ps, 0, sizeof(mbstate_t));
+    for(;;)
+      {
+	wchar_t wc = 0;
+	int m = (int)mbrtowc(&wc, s, n, &ps);
+	if (m == 0)
+	  break;
+	if (m < 0)
+	  return NIL;
+	if (! iswprint(wc))
+	  return NIL;
+	s += m;
+	n -= m;
+      }
+  }
+#else
   while (*s) {
-    if ( ((*s)&0x7f)<0x20 || ((*s)&0x7f)==0x7f )
+    int c = *(unsigned char*)s;
+    if (! (isascii(c) && isprint(c)))
       return NIL;
     s++;
   }
+#endif
   return true();
 }
 

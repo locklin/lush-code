@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: define.h,v 1.13 2004-07-23 21:05:13 leonb Exp $
+ * $Id: define.h,v 1.14 2004-10-25 21:50:42 leonb Exp $
  **********************************************************************/
 
 #ifndef DEFINE_H
@@ -49,7 +49,6 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <math.h>
-#include <string.h>
 
 /* untyped pointer */
 typedef void* gptr;
@@ -179,6 +178,29 @@ typedef void* gptr;
 # endif
 # define NEED_TOUPPER
 # define NEED_TOLOWER
+#endif
+
+#ifdef HAVE_WCHAR_H
+# include <wchar.h>
+# include <limits.h>
+# ifdef HAVE_WCTYPE_H
+#  include <wctype.h>
+# endif
+# ifndef HAVE_WINT_T
+#  define wint_t int
+# endif
+# ifndef HAVE_MBSTATE_T
+#  define mbstate_t int
+# endif
+# ifndef HAVE_MBRTOWC
+#  define mbrtowc(p,s,n,ps) mbtowc(p,s,n)
+# endif
+# ifndef HAVE_WCRTOMB
+#  define wcrtomb(s,w,ps) wctomb(s,w)
+# endif
+# ifndef HAVE_MBRLEN
+#  define mbrlen(s,n,ps) mblen(s,n)
+# endif
 #endif
 
 #ifndef HAVE_SIGSETJMP
