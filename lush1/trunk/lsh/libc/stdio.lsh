@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: stdio.lsh,v 1.1 2002-08-19 07:01:28 profshadoko Exp $
+;;; $Id: stdio.lsh,v 1.2 2002-08-19 19:45:50 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? *** C-Style Input / Output
@@ -72,11 +72,11 @@
   (cheader "#define STRING_DATA(s) (s->data)") ;; this definition in case string repres. changes.
   #{ 
   if(!$file)
-  printf("%s", (char *)($s->data))	; 
+    printf("%s", (char *)($s->data)); 
   else 
   {
-  fprintf((FILE *)$file, "%s", (char *)($s->data)) ; 
-  fflush((FILE *)$file)			;
+    fprintf((FILE *)$file, "%s", (char *)($s->data)); 
+    fflush((FILE *)$file);
   }
   #}
     () )
@@ -355,13 +355,13 @@
 (de fread-short (file)
   ((-gptr- "FILE *") file)	; the file pointer returned by a fopen
   (cheader "#include <stdio.h>\n")
+  (cheader "static int endiantest = 1;")
+  (cheader "#define little_endian_p (*(char*)&endiantest)")
   (let ((val 0))
     ((-short-) val)
     #{ 
-    fread((char *)&$val, sizeof(short), 1, (FILE *)$file) ;
-    #if __BYTE_ORDER == __LITTLE_ENDIAN
-    C_reverse2(&$val, 1)		;
-    #endif
+      fread((char *)&$val, sizeof(short), 1, (FILE *)$file) ;
+      if (little_endian_p) C_reverse_n(&$val, sizeof(short), 1);
     #}
   val ))
 
@@ -379,18 +379,13 @@
 (de fwrite-short (file val)
   ((-gptr- "FILE *") file)	; the file pointer returned by a fopen
   ((-short-) val)
-
   (cheader "#include <stdio.h>\n")
-  #{ 
-  #if __BYTE_ORDER == __LITTLE_ENDIAN
-  C_reverse2(&$val, 1)			;
-  #endif
-  fwrite((char *)&$val, sizeof(short), 1, (FILE *)$file) ;
-  #if __BYTE_ORDER == __LITTLE_ENDIAN
-  C_reverse2(&$val, 1)			;
-  #endif
-  #}
-    () )
+  #{{ 
+    short s = $val;
+    if (little_endian_p) C_reverse_n(&s, sizeof(short), 1);
+    fwrite((char *)&s, sizeof(short), 1, (FILE *)$file);
+  }#}
+  () )
 
 #? (fread-int <file-pointer>)
 ;;.VP
@@ -402,15 +397,12 @@
 ;;.SEE Compilable file I/O
 (de fread-int (file)
   ((-gptr- "FILE *") file)	; the file pointer returned by a fopen
-
   (cheader "#include <stdio.h>\n")
   (let ((val 0))
     ((-int-) val)
     #{ 
-    fread((char *)&$val, sizeof(int), 1, (FILE *)$file)	;
-    #if __BYTE_ORDER == __LITTLE_ENDIAN
-    C_reverse4(&$val, 1)		;
-    #endif
+      fread((char *)&$val, sizeof(int), 1, (FILE *)$file);
+      if (little_endian_p) C_reverse_n(&$val, sizeof(int), 1);
     #} 
   val ))
 
@@ -429,16 +421,12 @@
   ((-gptr- "FILE *") file)	; the file pointer returned by a fopen
   ((-int-) val)		  ; contains the int to be written to the file
   (cheader "#include <stdio.h>\n")
-  #{
-  #if __BYTE_ORDER == __LITTLE_ENDIAN
-  C_reverse4(&$val, 1)			;
-  #endif
-  fwrite((char *)&$val, sizeof(int), 1, (FILE *)$file) ;
-  #if __BYTE_ORDER == __LITTLE_ENDIAN
-  C_reverse4(&$val, 1)			;
-  #endif
-  #} 
-    () )
+  #{{
+     int s = $val;
+     if (little_endian_p) C_reverse_n(&s, sizeof(int), 1);
+     fwrite((char *)&s, sizeof(int), 1, (FILE *)$file) ;
+  }#} 
+  () )
 
 #? (fread-flt <file-pointer>)
 ;;.VP
@@ -454,10 +442,8 @@
   (let ((val 0))
     ((-float-) val)
     #{ 
-    fread(&$val, sizeof(flt), 1, (FILE *)$file)	;
-    #if __BYTE_ORDER == __LITTLE_ENDIAN
-    C_reverse4(&$val, 1)		;
-    #endif
+      fread(&$val, sizeof(flt), 1, (FILE *)$file)	;
+      if (little_endian_p) C_reverse_n(&$val, sizeof(flt), 1);
     #} 
   val ))
 
@@ -475,15 +461,12 @@
 (de fwrite-flt (file val)
   ((-gptr- "FILE *") file)	; the file pointer returned by a fopen
   ((-float-) val)
-
   (cheader "#include <stdio.h>\n")
-  #{ 
-  float fl=$val				; 
-  #if __BYTE_ORDER == __LITTLE_ENDIAN
-  C_reverse4(&fl, 1)			;
-  #endif
-  fwrite((char *)&fl, sizeof(float), 1, (FILE *)$file) ; 
-  #}
+  #{{ 
+    float fl=$val; 
+    if (little_endian_p) C_reverse_n(&$val, sizeof(flt), 1);
+    fwrite((char *)&fl, sizeof(flt), 1, (FILE *)$file) ; 
+  }#}
     () )
 
 #? (fread-real <file-pointer>)
@@ -501,10 +484,8 @@
   (let ((val 0))
     ((-real-) val)
     #{ 
-    fread(&$val, sizeof(double), 1, (FILE *)$file) ;
-    #if __BYTE_ORDER == __LITTLE_ENDIAN
-    C_reverse8(&$val, 1)		;
-    #endif
+      fread(&$val, sizeof(real), 1, (FILE *)$file) ;
+      if (little_endian_p) C_reverse_n(&$val, sizeof(real), 1);
     #} 
   val ))
 
@@ -523,113 +504,62 @@
   ((-gptr- "FILE *") file)	; the file pointer returned by a fopen
   ((-real-) val)
   (cheader "#include <stdio.h>\n")
-  #{ 
-  double fl=$val			; 
-  #if __BYTE_ORDER == __LITTLE_ENDIAN
-  C_reverse8(&fl, 1)			;
-  #endif
-  fwrite((char *)&fl, sizeof(double), 1, (FILE *)$file)	; 
-  #} 
-    () )
+  #{{ 
+    real fl=$val; 
+    if (little_endian_p) C_reverse_n(&$val, sizeof(real), 1);
+    fwrite((char *)&fl, sizeof(real), 1, (FILE *)$file)	; 
+  }#} 
+  () )
 
 
-
-
-#? (reverse8 <ptr> <n>)
+#? (reverse_n <ptr> <sz> <n>)
 ;;.VP
 ;; ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
-;; ((-int-) n)    ;; number of long-words to be reversed
+;; ((-int-) sz)   ;; size of each item to reverse
+;; ((-int-) n)    ;; number of items to reverse
 ;;
 ;; RETURNS: ()
 ;; CREATED: Pascal Vincent 04/17/96
 ;; COMPILABLE: Yes
 ;;
-;; DESCRIPTION: Reverses order of bytes in 64-bit words
+;; DESCRIPTION: Reverses order of bytes in <n> items of size <sz>
 ;;              starting at memory location <ptr>
 ;;              This is a tool for writing/reading file formats that are portable
 ;;              across systems with processors that represent long-words 
 ;;              differently in memory (Sparc vs Intel-Pentium for ex.)
 ;;              It can be called from inline-C as C_reverse8(ptr,n);
-;;.SEE (reverse4 <ptr> <n>)
-;;.SEE (reverse2 <ptr> <n>)
-(de reverse8 (ptr n)
-  ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
-  ((-int-) n) ;; number of long-words to be reversed
-  #{ 
-  char *mptr = (char *) $ptr		;
-  char tmp				;
-  while($n--)
-  {
-  tmp = mptr[0]			       ; mptr[0]=mptr[7]; mptr[7]=tmp;
-  tmp = mptr[1]			       ; mptr[1]=mptr[6]; mptr[6]=tmp;
-  tmp = mptr[2]			       ; mptr[2]=mptr[5]; mptr[5]=tmp;
-  tmp = mptr[3]			       ; mptr[3]=mptr[4]; mptr[4]=tmp;
-  mptr+=8				;
-  }
-  #} 
-    () )
 
-#? (reverse4 <ptr> <n>)
-;;.VP
-;; ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
-;; ((-int-) n)    ;; number of double-long-words to be reversed
-;;
-;; RETURNS: ()
-;; CREATED: Pascal Vincent 04/17/96
-;; COMPILABLE: Yes
-;;
-;; DESCRIPTION: Reverses order of bytes in 32-bit words
-;;              starting at memory location <ptr>
-;;              This is a tool for writing/reading file formats that are portable
-;;              across systems with processors that represent long-words 
-;;              differently in memory (Sparc vs Intel-Pentium for ex.)
-;;              It can be called from inline-C as C_reverse4(ptr,n);
-;;.SEE (reverse8 <ptr> <n>)
-;;.SEE (reverse2 <ptr> <n>)
-(de reverse4 (ptr n)
+(de reverse_n (ptr size n)
   ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
-  ((-int-) n) ;; number of long-words to be reversed
-  #{ 
-  char *mptr = (char *) $ptr		;
-  char tmp				;
-  while($n--)
-  {
-  tmp = mptr[0]			       ; mptr[0]=mptr[3]; mptr[3]=tmp;
-  tmp = mptr[1]			       ; mptr[1]=mptr[2]; mptr[2]=tmp;
-  mptr+=4				;
-  }
-  #} 
-    () )
-
-#? (reverse2 <ptr> <n>)
-;;.VP
-;; ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
-;; ((-int-) n)    ;; number of long-words to be reversed
-;;
-;; RETURNS: ()
-;; CREATED: Pascal Vincent 04/17/96
-;; COMPILABLE: Yes
-;;
-;; DESCRIPTION: Reverses order of bytes in 16-bit words
-;;              starting at memory location <ptr>
-;;              This is a tool for writing/reading file formats that are portable
-;;              across systems with processors that represent long-words 
-;;              differently in memory (Sparc vs Intel-Pentium for ex.)
-;;              It can be called from inline-C as C_reverse2(ptr,n);
-;;.SEE (reverse8 <ptr> <n>)
-;;.SEE (reverse4 <ptr> <n>)
-(de reverse2 (ptr n)
-  ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
-  ((-int-) n) ;; number of words to be reversed
-  #{ 
-    char *mptr = (char *)$ptr;
-    char tmp;
-    while($n--) {
-      tmp = mptr[0] ; mptr[0]=mptr[1]; mptr[1]=tmp;
-      mptr+=2;
-    }
-  #} 
+  ((-int-) size n) ;; number of long-words to be reversed
+  #{{ 
+     char *mptr = (char *)$ptr;
+     while($n--)
+       {
+         char tmp;
+         char *uptr = mptr + $size;
+         if ($size >= 2)
+          { tmp = mptr[0]; mptr[0]=uptr[-1]; uptr[-1]=tmp; }
+         if ($size >= 4) 
+          { tmp = mptr[1]; mptr[1]=uptr[-2]; uptr[-2]=tmp; }
+         if ($size >= 6) 
+          { tmp = mptr[2]; mptr[2]=uptr[-3]; uptr[-3]=tmp; }
+         if ($size >= 8) 
+          { tmp = mptr[3]; mptr[3]=uptr[-4]; uptr[-4]=tmp; }
+         mptr = uptr;
+       }
+  }#}
   () )
+
+(de reverse8 (ptr n)
+  ((-gptr-) ptr) ((-int-) n)
+  (reverse_n ptr 8 n) )
+(de reverse4 (ptr n)
+  ((-gptr-) ptr) ((-int-) n)
+  (reverse_n ptr 4 n) )
+(de reverse2 (ptr n)
+  ((-gptr-) ptr) ((-int-) n)
+  (reverse_n ptr 2 n) )
 
 
 #? (fscan-int <file-pointer>)
@@ -675,16 +605,15 @@
 (de fscan-str (fp)
   ((-gptr- "FILE *") fp)
   (let*((result ""))
-    #{ {
-    char buffer[1024]			;
-    int size				;
-    fscanf($fp,"%s",buffer)		;
-    size=strlen(buffer)			;
-    Msrg_resize($result,size+1)		;
-    strcpy(STRING_DATA($result),buffer)	;
-    }
-  #}
-      result))
+    #{{
+      char buffer[1024];
+      int size;
+      fscanf($fp,"%s",buffer);
+      size=strlen(buffer);
+      Msrg_resize($result,size+1);
+      strcpy(STRING_DATA($result),buffer);
+    }#}
+    result))
        
 #? (fgets <file-pointer> <max-size>)
 ;;.VP
@@ -699,17 +628,16 @@
   ((-gptr- "FILE *") fp)
   ((-int-) maxsize)
   (let*((result ""))
-  #{ {
-    char *buffer=malloc($maxsize)	;
-    int size				;
-    fgets(buffer,$maxsize,$fp)		;
-    size=strlen(buffer)			;
-    Msrg_resize($result,size+1)		;
-    strcpy(STRING_DATA($result),buffer)	;
-    free(buffer)			;
-    }
-  #}
-      result))
+    #{{
+      char *buffer=malloc($maxsize);
+      int size;
+      fgets(buffer,$maxsize,$fp);
+      size=strlen(buffer);
+      Msrg_resize($result,size+1);
+      strcpy(STRING_DATA($result),buffer);
+      free(buffer);
+    }#}
+    result))
 
 
 
@@ -725,10 +653,10 @@
   (let ((ans -1))
     ((-int-) ans)
     #{{
-    struct stat buf			;
-    if (stat($fname->data, &buf)>=0)
-    if (S_ISREG(buf.st_mode))
-    $ans = buf.st_size			;
+      struct stat buf;
+      if (stat($fname->data, &buf)>=0)
+      if (S_ISREG(buf.st_mode))
+      $ans = buf.st_size;
     }#}
       ans ) )
 
@@ -758,25 +686,23 @@
   ((-gptr- "FILE *") f)
   (when (not f) (error "file is not opened"))
   #{{
-  FILE *ff = $f				;
-  int c					;
+  FILE *ff = $f;
+  int c;
   for (	;;) {
-  c = getc(ff)				;
-  while (c==' ' || c=='\n' || c=='\t' || c=='\r') c = getc(ff) ;
-  if (c!=$start) break			;
-  while (c != '\n')  c = getc(ff)	;
+    c = getc(ff);
+    while (c==' ' || c=='\n' || c=='\t' || c=='\r') c = getc(ff);
+    if (c!=$start) break;
+    while (c != '\n')  c = getc(ff);
   }
-  ungetc(c,ff)				;
+  ungetc(c,ff) ;
   }#}
-  ()
-))
+  () )
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (dhc-make ()
-          reverse2
-          reverse4
-          reverse8
+          reverse_n
           stdout
           fwrite-str fprints
           fopen
@@ -817,8 +743,12 @@
 
           rewind
           skip-comments
+          reverse2
+          reverse4
+          reverse8
+
 	  )
 
 ;; for compatibility
-(setq getc fgetc)
-(setq putc fputc)
+(defvar getc fgetc)
+(defvar putc fputc)
