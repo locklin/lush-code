@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.17 2003-02-14 21:45:03 leonb Exp $
+ * $Id: dldbfd.c,v 1.18 2003-02-17 15:49:31 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -77,13 +77,13 @@
 /* MISSING PROTOTYPES (watch) */
 
 
-#ifdef SEC_LINK_DUPLICATES_SAME_CONTENTS  /* try detecting version 2.8 */
-#define bfd_alloc_by_size_t bfd_alloc
+#ifndef SEC_LINK_DUPLICATES_SAME_CONTENTS  /* bfd<=2.7 */
+# define bfd_alloc bfd_alloc_by_size
+# define bfd_size_type size_t
 #endif
 
-void *bfd_alloc_by_size_t(bfd *abfd, size_t wanted);
+void *bfd_alloc(bfd *abfd, bfd_size_type wanted);
 unsigned int bfd_log2 (bfd_vma x);
-
 
 
 /* ---------------------------------------- */
@@ -235,7 +235,7 @@ xmalloc(size_t n)
 static void *
 xballoc(bfd *abfd, size_t n)
 {
-    void *ans = (void*)bfd_alloc_by_size_t(abfd, n);
+    void *ans = (void*)bfd_alloc(abfd, n);
     if (!ans)
         THROW(bfd_errmsg(bfd_error_no_memory));
     return ans;
