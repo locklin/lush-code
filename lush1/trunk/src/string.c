@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.4 2002-07-02 20:47:46 leonb Exp $
+ * $Id: string.c,v 1.5 2002-07-29 21:02:22 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -352,8 +352,8 @@ DX(xstr_concat)
 /*------------------------ */
 
 
-static int 
-str_index(char *s1, register char *s2, register int start)
+int 
+str_index(char *s1, char *s2, int start)
 {
   register int indx;
   register char *sa, *sb;
@@ -472,7 +472,7 @@ str_val_float(char *s)
       goto fin;
     return NEW_NUMBER(atof(h));
   }
-fin:
+ fin:
   return NIL;
 }
 

@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.26 2002-07-29 14:58:42 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.27 2002-07-29 21:02:22 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -383,24 +383,28 @@
 	  ((==> type is-a-srg)   "struct srg")
 	  ((==> type is-a-flt)   "flt")
 	  ((==> type is-a-real)  "real")
-	  ((==> type is-an-obj)  (sprintf "struct CClass_%s"
-                                          (dhu-name (dhu-type type))))
 	  ((==> type is-an-int)  "int")
 	  ((==> type is-a-short) "short")
 	  ((==> type is-a-byte)  "char")
 	  ((==> type is-a-ubyte) "unsigned char")
 	  ((==> type is-a-bool)  "char")
-	  ((==> type is-a-gptr)  (or (dhu-name type) "gptr"))
-	  ((==> type is-a-ptr)   (concat (dhc-type-to-c-decl (dhu-type type)) "*"))
-	  (t (dhc-error "Unknown Type"))))
+	  ((==> type is-a-gptr)  
+           (or (dhu-name type) "gptr"))
+	  ((==> type is-an-obj)  
+           (sprintf "struct CClass_%s" (dhu-name (dhu-type type))))
+	  ((==> type is-a-ptr)  
+           (concat (dhc-type-to-c-decl (dhu-type type)) "*"))
+	  (t 
+           (dhc-error "Unknown Type") ) ) )
 
 (de dhc-arg-format (type)
   (cond  
    ((==> type is-a-ptr)
-    (cond ((==> (unode-val :type:u-type) is-an-idx) "dh_idx_ptr")
-          ((==> (unode-val :type:u-type) is-a-srg)  "dh_srg_ptr")
-          ((==> (unode-val :type:u-type) is-an-obj) "dh_obj_ptr")
-          (t (dhc-error "Argument pointer type is unknown"))))
+    (cond 
+     ((==> (unode-val :type:u-type) is-an-idx) "dh_idx_ptr")
+     ((==> (unode-val :type:u-type) is-a-srg)  "dh_srg_ptr")
+     ((==> (unode-val :type:u-type) is-an-obj) "dh_obj_ptr")
+     (t (dhc-error "Argument pointer type is unknown")) ) )
    ((==> type is-a-flt)    "dh_flt")
    ((==> type is-a-short)  "dh_short")
    ((==> type is-a-byte)   "dh_char")
@@ -777,8 +781,6 @@
     (when (or (= (car desc) 'obj)
               (= (car desc) 'class) )
       (setq desc (list (car desc) (cadr desc))) )
-    (when (and (==> this is-a-srg) (<> (car desc) 'srg))
-      (setq desc (cons 'srg desc)) )
     (printf "<TYPE::%l>" desc) ) )
 
 #? (==> <dhc-type> hashcode)
@@ -837,36 +839,23 @@
       ;; pointers
       (dht-ptr 
        (add (==> (unode-val u-type) type-to-desc)))
-      ;; strings
-      (dht-str 
-       ())
       ;; arrays
       (dht-idx 
        (add (named (left (pname (unode-val u-access)) 1)))
        (add (unode-val u-ndim))
-       (add (==> (unode-val u-type) type-to-desc)))
+       (add (==> (unode-val u-type) type-to-desc)) )
       ;; storage
       (dht-srg 
-       (cond 
-        ((null (unode-val u-extra))
-         (add (named (left (pname (unode-val u-access)) 1)))
-         (add (==> (unode-val u-type) type-to-desc)))
-        ;; Following can happen only in temps!!!
-        ((member (unode-val :(unode-val u-extra):u-tclass)
-                 '(dht-str dht-list) )
-         (setq desc (==> (unode-val u-extra) type-to-desc)) )
-        (t (error "Unknown storage type"))))
+       (add (named (left (pname (unode-val u-access)) 1)))
+       (add (==> (unode-val u-type) type-to-desc)) )
       ;; functions
       (dht-func 
-       (add (all ((u (unode-val u-extra)))
-              (==> u type-to-desc)))
-       (add (all ((u (unode-val u-temps)))
-              (==> u type-to-desc)))
-       (add (==> (unode-val u-type) type-to-desc)))
+       (add (all ((u (unode-val u-extra))) (==> u type-to-desc)))
+       (add (all ((u (unode-val u-temps))) (==> u type-to-desc)))
+       (add (==> (unode-val u-type) type-to-desc)) )
       ;; gptr
       (dht-gptr
-       (when (unode-val u-name)
-         (add (unode-val u-name)) ) )
+       (when (unode-val u-name) (add (unode-val u-name))) )
       ;; lists
       (dht-list 
        (setq desc (nconc desc (all ((u (unode-val u-extra)))
@@ -882,18 +871,14 @@
               (cl (unode-val :cltype:u-class)) )
          (add (if cl (classname cl) (unode-val :cltype:u-name))) 
          (add cltype) ) )
+      ;; quasi-simple
+      ((dht-str dht-dhm)
+       ())
+      ;; simple
       (t
-       (cond
-        ;; simple type
-        ((member tclass dhc-simple-types)
-         (when (and (unode-val u-name) (= tclass 'dht-gptr))
-           (add (unode-val u-name)) ) )
-        ;; dhm type
-        ((= tclass 'dht-dhm)
-         () )
-        ;; unknown
-        (t 
-         (dhc-error "not a know type") ) ) ) )
+       (when (not (member tclass dhc-simple-types))
+         (dhc-error "not a know type") ) ) )
+    ;; return
     desc ) )
 
 
@@ -903,111 +888,120 @@
 
 ;; Type testing syntax: (==> <obj> is-a-***)
 
-(de dhc-is-of-type (c)
-  (let ((tclass (unode-val u-tclass)))
-    (if (listp c)
-        (member tclass c)
-	(= tclass c))))
-
-(defmethod dhc-type is-an-idx()          ; return the number of dims
-  (if (dhc-is-of-type 'dht-idx)
+(defmethod dhc-type is-an-idx()         ; return the number of dims
+  (if (= (unode-val u-tclass) 'dht-idx)
       (unode-val u-ndim)))
 
-(defmethod dhc-type is-a-list()          ; return the number of elements
-  (if (dhc-is-of-type 'dht-list)
+(defmethod dhc-type is-a-list()         ; return the number of elements
+  (if (= (unode-val u-tclass) 'dht-list)
       (unode-val u-ndim)))
+
+(defmethod dhc-type is-a-str()          ; return t
+  (if (= (unode-val u-tclass) 'dht-str)
+      t ) )
 
 (defmethod dhc-type is-a-srg()		; return the dhc-type of the elements
-  (if (dhc-is-of-type 'dht-srg)
+  (if (member (unode-val u-tclass) '(dht-srg dht-str dht-list))
       (unode-val u-type)))
 
+(defmethod dhc-type is-a-true-srg()     ; return the dhc-type of the elements
+  (if (= (unode-val u-tclass) 'dht-srg)
+      (unode-val u-type)))
+
+(defmethod dhc-type is-a-ptr()          ; return pointed to type
+  (if (= (unode-val u-tclass) 'dht-ptr)
+      (unode-val u-type) ) )
+
 (defmethod dhc-type is-a-class()        ; return the name
-  (if (dhc-is-of-type 'dht-class)
+  (if (= (unode-val u-tclass) 'dht-class)
       (unode-val u-name)))
 
 (defmethod dhc-type is-a-func()         ; return the name
-  (if (dhc-is-of-type 'dht-func)
+  (if (= (unode-val u-tclass) 'dht-func)
       (unode-val u-name)))
 
-(defmethod dhc-type is-an-obj()        ; return number of slots
-  (if (dhc-is-of-type 'dht-obj)
+(defmethod dhc-type is-an-obj()         ; return number of slots
+  (if (= (unode-val u-tclass) 'dht-obj)
       (unode-val u-ndim)))
 
-(defmethod dhc-type is-an-idxptr()
-  (if (dhc-is-of-type 'dht-ptr)
-      (==> (unode-val u-type) is-an-idx)))  ; return the number of dims
+(defmethod dhc-type is-an-idxptr()      ; return number of dims
+  (if (= (unode-val u-tclass) 'dht-ptr)
+      (==> (unode-val u-type) is-an-idx)))
 
-(defmethod dhc-type is-an-objptr()
-  (if (dhc-is-of-type 'dht-ptr)
-      (==> (unode-val u-type) is-an-obj)))  ; return the number of slots
+(defmethod dhc-type is-an-objptr()      ; return the number of slots
+  (if (= (unode-val u-tclass) 'dht-ptr)
+      (==> (unode-val u-type) is-an-obj)))
 
-(defmethod dhc-type is-a-srgptr()
-  (if (dhc-is-of-type 'dht-ptr)
-      (==> (unode-val u-type) is-a-srg)))  ; return the type of srg
+(defmethod dhc-type is-a-srgptr()       ; return the type of srg
+  (if (= (unode-val u-tclass) 'dht-ptr)
+      (==> (unode-val u-type) is-a-true-srg)))
+
+(defmethod dhc-type is-a-strptr()       ; return t
+  (if (= (unode-val u-tclass) 'dht-ptr)
+      (==> (unode-val u-type) is-a-str))) 
+
+(defmethod dhc-type is-a-listptr()      ; return the number of elements
+  (if (= (unode-val u-tclass) 'dht-ptr)
+      (==> (unode-val u-type) is-a-list)))
 
 (defmethod dhc-type get-element-type ()
-  (cond ((==> this is-a-ptr)
-	 (==> (unode-val u-type) get-element-type))
-	((==> this is-an-idx)
-	 (==> (unode-val u-type) get-element-type))
-	((==> this is-a-srg)
-	 (unode-val :(unode-val u-type):u-tclass))))
-  
+  (cond 
+   ((==> this is-a-ptr)
+    (==> (unode-val u-type) get-element-type))
+   ((==> this is-an-idx)
+    (==> (unode-val u-type) get-element-type))
+   ((==> this is-a-srg)
+    (unode-val :(unode-val u-type):u-tclass))))
+
 (defmethod dhc-type get-element-decl ()
-  (cond ((==> this is-a-ptr)
-	 (==> (unode-val u-type) get-element-decl))
-	((==> this is-an-idx)
-	 (==> (unode-val u-type) get-element-decl))
-	((==> this is-a-srg)
-	 (dhc-type-to-c-decl (unode-val u-type)))))
+  (cond 
+   ((==> this is-a-ptr)
+    (==> (unode-val u-type) get-element-decl))
+   ((==> this is-an-idx)
+    (==> (unode-val u-type) get-element-decl))
+   ((==> this is-a-srg)
+    (dhc-type-to-c-decl (unode-val u-type)))))
   
 ;; simple types
 
 (defmethod dhc-type is-of-type (l)  
-  (dhc-is-of-type l))
+  (let ((tclass (unode-val u-tclass)))
+    (if (consp l) (member tclass l) (= tclass l)) ) )
 (defmethod dhc-type is-a-flt()
-  (dhc-is-of-type 'dht-flt))
+  (= (unode-val u-tclass) 'dht-flt))
 (defmethod dhc-type is-a-real()
-  (dhc-is-of-type '(dht-real dht-number))) ;; This is how number become real
+  (member (unode-val u-tclass) '(dht-real dht-number)))
 (defmethod dhc-type is-a-bool()
-  (dhc-is-of-type '(dht-bool dht-nil)))
+  (member (unode-val u-tclass) '(dht-bool dht-nil)))
 (defmethod dhc-type is-a-nil()
-  (dhc-is-of-type 'dht-nil))
+  (= (unode-val u-tclass) 'dht-nil))
 (defmethod dhc-type is-a-func()
-  (dhc-is-of-type 'dht-func))
+  (= (unode-val u-tclass) 'dht-func))
 (defmethod dhc-type is-an-int()
-  (dhc-is-of-type '(dht-int)))
+  (= (unode-val u-tclass) 'dht-int))
 (defmethod dhc-type is-a-short()
-  (dhc-is-of-type '(dht-short)))
+  (= (unode-val u-tclass) 'dht-short)))
 (defmethod dhc-type is-a-byte()
-  (dhc-is-of-type '(dht-byte)))
+  (= (unode-val u-tclass) 'dht-byte)))
 (defmethod dhc-type is-a-ubyte()
-  (dhc-is-of-type '(dht-ubyte)))
+  (= (unode-val u-tclass) 'dht-ubyte))
 (defmethod dhc-type is-an-integer()
-  (dhc-is-of-type dhc-int-types))
+  (member (unode-val u-tclass) dhc-int-types))
 (defmethod dhc-type is-a-dhm()
-  (dhc-is-of-type 'dht-dhm))
-(defmethod dhc-type is-a-str()
-  (dhc-is-of-type '(dht-str)))
-(defmethod dhc-type is-a-ptr()
-  (dhc-is-of-type '(dht-ptr dht-str dht-list)))
-
-(defmethod dhc-type is-a-complex()
-  (dhc-is-of-type dhc-complex-types))
+  (= (unode-val u-tclass) 'dht-dhm))
 (defmethod dhc-type is-a-simple()
-  (dhc-is-of-type dhc-simple-types))
-
+  (member (unode-val u-tclass) dhc-simple-types))
 (defmethod dhc-type is-an-unk()
   (= (unode-val u-tclass) 'dht-unk))
 (defmethod dhc-type is-a-dc()
   (= (unode-val u-tclass) 'dht-dc))
 (defmethod dhc-type is-a-gptr()
   (= (unode-val u-tclass) 'dht-gptr))
-
 (defmethod dhc-type is-a-number()
-    (dhc-is-of-type dhc-number-types))
+  (member (unode-val u-tclass) dhc-number-types))
+
 (defmethod dhc-type knownp() 
-  ~(member (unode-val u-tclass) '(dht-unk)))
+  (<> (unode-val u-tclass) 'dht-unk) )
 
 
 ;;; ------------------------------------------------------------------------
@@ -1062,13 +1056,9 @@
               (new dhc-type (unode-val u-tclass)
                    (==> (unode-val u-type) copy delta-dim)))
              ;; srg type
-             ((==> this is-a-srg)
-              (let ((srg (new dhc-type (unode-val u-tclass)
-                              (==> (unode-val u-type) copy delta-dim))))
-                (if (unode-val u-extra)
-                    (setq :srg:u-extra 
-                          (new-unode (==> (unode-val u-extra) copy))))
-                srg))
+             ((==> this is-a-true-srg)
+              (new dhc-type (unode-val u-tclass)
+                   (==> (unode-val u-type) copy delta-dim)))
              ;; func type
              ((==> this is-a-func)
               (new dhc-type (unode-val u-tclass)
@@ -1079,10 +1069,14 @@
                    (==> (unode-val u-type) copy)))
              (t
               (error () "type copy not implemented yet" ())))))
-    (setq :ty:u-access (new-unode (unode-val u-access)))
+    ;; initialize bump afresh
     (setq :ty:u-bump (new-unode lex-level))
+    ;; copy access
+    (setq :ty:u-access (new-unode (unode-val u-access)))
+    ;; unify hash
     (unode-unify u-hash :ty:u-hash (lambda(a b) ()))
     ty))
+
 
 #? (==> <dhc-type> access [<v>])
 ;; set or return the access type of a type.  
@@ -1106,23 +1100,23 @@
      (each ((u (unode-val u-temps)))
        (==> (cdr u) recurse func)))
     (dht-list
-     (==> (unode-val u-type) recurse func)
      (each ((u (unode-val u-extra)))
        (==>  u recurse func)) )
-    (dht-str 
-     (==> (unode-val u-type) recurse func))
     (dht-ptr 
      (==> (unode-val u-type) recurse func))
     (dht-idx 
      (==> (unode-val u-type) recurse func))
+    (dht-str
+     ())
     (dht-srg 
      ())
     (dht-class 
      ())
     (dht-func 
      ())
-    (t (when (not (==> this is-a-simple))
-         (error "recurse: unknown type") ) ) ) )
+    (t 
+     (when (not (==> this is-a-simple))
+       (error "recurse: unknown type") ) ) ) )
 
 ;; If a type is returned update its lexical level.
 ;; It will propagate to all the subfields, 
@@ -1135,78 +1129,58 @@
                                   (new-unode lex)
 				  dhc-combine-u-bump)))))
 
-;; returns a list of the interesting types (the "substructures")
-(de dhc-get-substruct-types (ty)
-  (let ((sub-list ())
-        (first t)
-        (mylam (lambda (x)
-                 (if first
-                     (setq first ()) ;; if not first level
-                   (when (==> x is-of-type '(dht-srg dht-idx))
-                     (setq sub-list (cons x sub-list)))))))
-    (when (==> ty is-of-type 'dht-ptr)
-      (setq ty (unode-val :ty:u-type))) ; skip this level
-    (==> ty recurse mylam)
-    sub-list))
-
-
 ;; Keep a track of all the different types found in 
 ;; a function prototype and unifies all identical types.
 (de dhc-unify-all-dh (args temps return)
-    (let ((entrypoint ())
-	  (returnpoint ()) 
-	  (alist ()) )
-      (each ((ty args))
-        (setq entrypoint (nconc entrypoint (dhc-gather-types ty t)))
-        (setq returnpoint (nconc returnpoint (dhc-gather-types ty ()))) )
-      (each ((ty temps))
-        (setq entrypoint (nconc entrypoint (dhc-gather-types ty t))) )
-      (let ((ty return))
-	(setq returnpoint (nconc returnpoint (dhc-gather-types ty t))) )
-      (setq entrypoint (dhc-remove-eqdup entrypoint))
-      (setq returnpoint (dhc-remove-eqdup returnpoint))
-      ;; build alist
-      (each ((point returnpoint))
-        (let* ((key (dhc-type-key point))
-               (typ (dhc-alist-get key alist)) )
-          (if (not typ)
-              (setq alist (dhc-alist-add key alist point))
-            (unode-unify :point:u-bump :typ:u-bump
-                         dhc-combine-u-bump ) ) ) )
-      ;; match return points
-      (each ((point entrypoint))
-        (let ((key ())
-              (typ ()) )
-          (cond
-           ((==> point is-an-obj)
-            ;; it's an object: look superclass return points
-            (let ((classtyp (dhu-type point)))
-              (while (setq key (==> classtyp is-a-class))
-                (setq classtyp (dhu-type classtyp))
-                (when (setq typ (dhc-alist-get key alist))
-                  (dhc-unify-types typ point) ) ) ) )
-           (t
-            ;; not an object: match exact type
-            (setq key (dhc-type-key point))
-            (when (setq typ (dhc-alist-get key alist))
-              (dhc-unify-types typ point) ) ) ) ) )
-      t ) )
+  (let ((entrypoint ())
+        (returnpoint ()) 
+        (alist ()) )
+    (each ((ty args))
+      (setq entrypoint (nconc entrypoint (dhc-gather-types ty t)))
+      (setq returnpoint (nconc returnpoint (dhc-gather-types ty ()))) )
+    (each ((ty temps))
+      (setq entrypoint (nconc entrypoint (dhc-gather-types ty t))) )
+    (let ((ty return))
+      (setq returnpoint (nconc returnpoint (dhc-gather-types ty t))) )
+    (setq entrypoint (dhc-remove-eqdup entrypoint))
+    (setq returnpoint (dhc-remove-eqdup returnpoint))
+    ;; build alist
+    (each ((point returnpoint))
+      (let* ((key (dhc-type-key point))
+             (typ (dhc-alist-get key alist)) )
+        (if (not typ)
+            (setq alist (dhc-alist-add key alist point))
+          (unode-unify :point:u-bump :typ:u-bump
+                       dhc-combine-u-bump ) ) ) )
+    ;; match return points
+    (each ((point entrypoint))
+      (let ((key ())
+            (typ ()) )
+        (cond
+         ((==> point is-an-obj)
+          ;; it's an object: look superclass return points
+          (let ((classtyp (dhu-type point)))
+            (while (setq key (==> classtyp is-a-class))
+              (setq classtyp (dhu-type classtyp))
+              (when (setq typ (dhc-alist-get key alist))
+                (dhc-unify-types typ point) ) ) ) )
+         (t
+          ;; not an object: match exact type
+          (setq key (dhc-type-key point))
+          (when (setq typ (dhc-alist-get key alist))
+            (dhc-unify-types typ point) ) ) ) ) )
+    t ) )
 
 (de dhc-type-key(ty)
   (cond
+   ((==> ty is-a-str)
+    (list 'str) )
+   ((==> ty is-a-list)
+    (cons 'lst (mapcar dhc-type-key (dhu-extra ty))))
    ((==> ty is-a-srg) 
-    (let ((extra (dhu-extra ty)))
-      (cond
-       ((not extra) 
-        (list 'srg (dhc-type-key (dhu-type ty))) )
-       ((==> extra is-a-str)
-        (quote str))
-       ((==> extra is-a-list) 
-        (cons 'lst (all ((aty (dhu-extra extra))) 
-                     (dhc-type-key aty) )) ) ) ) )
+    (list 'srg (dhc-type-key (dhu-type ty))) )
    ((==> ty is-an-idx)
-    (list 'idx (dhu-ndim ty) 
-          (dhc-type-key (dhu-type (dhu-type ty)))) )
+    (list 'idx (dhu-ndim ty) (dhc-type-key (dhu-type (dhu-type ty)))) )
    ((==> ty is-an-obj)
     (dhu-name (dhu-type ty)) )
    ((==> ty is-a-ptr)
@@ -1222,7 +1196,6 @@
      ((==> ty is-a-simple) 
       ans )
      ((==> ty is-a-ptr)
-      ;; also handles list and str which propagate the srg
       (setq ans (nconc ans (dhc-gather-types (dhu-type ty) allp)))
       ans )
      ((==> ty is-an-idx)
@@ -1230,37 +1203,23 @@
         (setq ans (nconc1 ans ty))
         (setq ans (nconc1 ans (dhu-type ty))) )
       ans )
-     ((==> ty is-a-srg)
+     ((==> ty is-a-str)
       (when allp (setq ans (nconc1 ans ty)))
-      (let ((extra (dhu-extra ty)))
-        (cond
-         ;; if a regular srg
-         ((not extra)
-          ans )
-         ;; if a string srg
-         ((==> extra is-a-str)
-          ans )
-         ;; if a list srg
-         ((==> extra is-a-list)
-          (each ((aty (dhu-extra extra)))
-            (setq ans (nconc ans (dhc-gather-types aty allp))) )
-          ans )
-         (t
-          (error "unrecognized extra field in storage") ) ) ) )
+      ans )
+     ((==> ty is-a-list)
+      (when allp (setq ans (nconc1 ans ty)))
+      (each ((aty (dhu-extra ty)))
+        (setq ans (nconc ans (dhc-gather-types aty allp))) ) )
+     ((==> ty is-a-srg)
+      (when allp (setq ans (nconc1 ans ty))) )
      ((==> ty is-an-obj)
       (when allp (setq ans (nconc1 ans ty)))
       (let ((nallp (or allp (= (dhu-access ty) 'write))))
         (each ((aslot (dhu-temps ty)))
-          (setq ans(nconc ans (dhc-gather-types (cdr aslot) nallp))) ) 
+          (setq ans (nconc ans (dhc-gather-types (cdr aslot) nallp))) ) 
         ans ) )
      (t
       (error "unknown type") ) ) ) )
-
-
-;; get or set the type of an array (by default it should be flt).
-(defmethod dhc-type type (&optional v)
-  (if v (dhc-unify-types u-type v)
-    u-type))
 
 ;;; ------------------------------------------------------------------------
 
@@ -1298,47 +1257,37 @@
      (setq u-type (new-unode a1)))
     ;; storage type
     (dht-srg
-     (setq u-type (new-unode (if a1 a1 (new dhc-type 'dht-flt)))))
+     (setq u-type (new-unode (if a1 a1 (new dhc-type 'dht-flt)))) )
     ;; list type
     (dht-list
-     (let ((srg (new dhc-type 'dht-srg (new dhc-type 'dht-ubyte))))
-       (when (not a1)
-         (error 'dhc-type "dht-list must have a type" tc) )
-       (setq u-extra (new-unode a1))
-       (when a2
-         (error 'dhc-type "extra argument in (new dhc-type 'dht-list") )
-       (setq u-type (new-unode srg))
-       (setq u-ndim (new-unode (length a1)))
-       (setq :srg:u-extra (new-unode this)) ) )
+     (when (not a1)
+       (error 'dhc-type "missing list arguments" ()) )
+     (setq u-type (new-unode (new dhc-type 'dht-ubyte)))
+     (setq u-extra (new-unode a1))
+     (setq u-ndim (new-unode (length a1))) )
+    ;; string type
+    (dht-str
+     (setq u-type (new-unode (new dhc-type 'dht-ubyte))) )
     ;; class type
     (dht-class
-     (setq u-name (new-unode (if a1 a1
-                               (error 'dhc-type
-                                      "dht-class must have a name"))))
-     (setq u-type (new-unode
-                   (if a2 a2
-                     (error 'dhc-type
-                            "dht-class must have a superclass"
-                            tc))))
+     (when (not a1)
+       (error 'dhc-type "dht-class must have a name" ()) )
+     (when (not a2)
+       (error 'dhc-type "dht-class must have a superclass" ()) )
+     (setq u-name (new-unode a1))            ; name
+     (setq u-type (new-unode a2))            ; superclass type
      (setq u-temps (new-unode (if a3 a3)))   ; slots
      (setq u-extra (new-unode (if a4 a4)))   ; methods
      (setq u-ndim (new-unode (length a3)))   ; number of slots
      (setq u-class (new-unode (if (classp a5) a5))) ) ; lisp class
     ;; object type
     (dht-obj
-     (setq u-type (new-unode
-                   (if a1 a1
-                     (error 'dhc-type "dht-obj must have a class type"
-                            tc))))
+     (when (not a1)
+       (error 'dhc-type "dht-obj must have a class type" ()) )
+     (setq u-type (new-unode a1))            ; class
      (setq u-temps (new-unode (if a2 a2)))   ; slot
      (setq u-extra (new-unode (if a3 a3)))   ; methods
      (setq u-ndim (new-unode (length a2))))  ; number of slots
-    ;; string type
-    (dht-str
-     (when a1 (error "why argument when creating type string"))
-     (let ((srg (new dhc-type 'dht-srg (new dhc-type 'dht-ubyte))))
-       (setq u-type (new-unode srg))
-       (setq :srg:u-extra (new-unode this)) ) )
     ;; function type
     (dht-func
      (setq u-extra (new-unode a1))
@@ -1346,14 +1295,17 @@
      (setq u-type (new-unode a3)))
     ;; unknown type
     (dht-unk 
-     (if (or a1 a2 a3) (dhc-error "no args expected")))
+     (when (or a1 a2 a3) 
+       (dhc-internal-error "no args expected")))
     ;; gptr type
     (dht-gptr 
      (when a1 (setq u-name (new-unode a1)))
-     (if (or a2 a3) (dhc-error "at most one arg expected")) )
+     (when (or a2 a3)
+       (dhc-internal-error "at most one arg expected")) )
     ;; simple types
-    (t (if (member tc dhc-simple-types) ()
-         (dhc-internal-error "new dhc-type: Unknown type class"))))
+    (t 
+     (when (not (member tc dhc-simple-types))
+       (dhc-internal-error "new dhc-type: Unknown type class"))))
   (setq u-tclass (new-unode tc))
   (setq u-access (new-unode 'read))
   (setq u-bump (new-unode lex-level)) )
@@ -1486,22 +1438,24 @@
     (dhc-unify-t (unode-val :t1:u-type)
                  (unode-val :t2:u-type)))
    ;; ptr type
-   ((or (= tclass 'dht-ptr) 
-        (= tclass 'dht-str))
+   ((= tclass 'dht-ptr) 
+    (dhc-unify-t (unode-val :t1:u-type)
+                 (unode-val :t2:u-type)))
+   ;; str type
+   ((= tclass 'dht-str)
+    (dhc-unify-t (unode-val :t1:u-type)
+                 (unode-val :t2:u-type)) )
+   ;; list type
+   ((= tclass 'dht-list)
+    (each ((u1 (unode-val :t1:u-extra))
+           (u2 (unode-val :t2:u-extra)))
+      (dhc-unify-t u1 u2))
     (dhc-unify-t (unode-val :t1:u-type)
                  (unode-val :t2:u-type)))
    ;; srg type
    ((= tclass 'dht-srg)
     (dhc-unify-t (unode-val :t1:u-type)
-                 (unode-val :t2:u-type))
-    ;; only in temporaries:
-    (let ((nt1 (unode-val :t1:u-extra))
-          (nt2 (unode-val :t2:u-extra)))
-      (if (and nt1 nt2)
-          (when (<> (unode-uid :nt1:u-tclass) (unode-uid :nt2:u-tclass))
-            (dhc-unify-t nt1 nt2) )
-        (if (or nt1 nt2)
-            (dhc-unif-error ": special purpose storage mismatch") ) ) ) )
+                 (unode-val :t2:u-type)) )
    ;; obj type
    ((= tclass 'dht-obj)
     (dhc-obj-subclass-check t1 t2)
@@ -1518,13 +1472,6 @@
                                      dhc-combine-u-bump )) )
         (setq u2 (cdr u2)) ) )
     () )
-   ;; list type
-   ((= tclass 'dht-list)
-    (each ((u1 (unode-val :t1:u-extra))
-           (u2 (unode-val :t2:u-extra)))
-      (dhc-unify-t u1 u2))
-    (dhc-unify-t (unode-val :t1:u-type)
-                 (unode-val :t2:u-type)))
    ;; take care of u-extra 
    ((<> (unode-uid :t1:u-extra) 
         (unode-uid :t2:u-extra)) ; optimization
@@ -1556,14 +1503,13 @@
 ;; Argument <desc> is a type description
 ;; similar to those returned by <dhinfo-t> and <classinfo-t>.
 (de dhc-desc-to-type (desc)
-  (let ((tclass (car desc))
-        (e-message (if e-message e-message "")))
+  (let* ((tclass (car desc))
+         (e-message (concat (or e-message "") (sprintf "%l: " tclass))) )
     (cond 
      ;; complex types
      ((member tclass '(idx obj func srg ptr str class))
       (let (((tclass &optional arg1 arg2 arg3 arg4) desc)
             (new-type ()))
-        (setq e-message (concat e-message (sprintf "%l: " tclass)))
         (setq new-type 
               (selectq tclass
                 (srg 
@@ -1592,16 +1538,15 @@
                  (new dhc-type 'dht-func
                       (mapcar dhc-desc-to-type arg1)
                       (mapcar dhc-desc-to-type arg2)
-                      (dhc-desc-to-type arg3)))))
+                      (dhc-desc-to-type arg3))) ) )
         (if (or (= tclass 'idx) (= tclass 'srg))
             (==> new-type access (if (= arg1 'r) 'read 'write)))
         (if (= tclass 'obj)
             (==> new-type access 'write))
-        new-type))
+        new-type ) )
      ;; list type
      ((= tclass 'list)
-      (new dhc-type 'dht-list
-           (mapcar dhc-desc-to-type (cdr desc))))
+      (new dhc-type 'dht-list (mapcar dhc-desc-to-type (cdr desc))) )
      ;; gptr
      ((= tclass 'gptr)
       (new dhc-type 'dht-gptr (cadr desc)) )
@@ -1761,24 +1706,27 @@
 (de dhc-d-to-doc (desc)
   (let ((tclass (car desc)))
     (cond 
-     ;; complex types
-     ((member tclass '(idx obj func srg ptr))
-      (apply dhc-d-to-doc-complex desc))
-     ((= tclass 'list)
-      (dhc-d-to-doc-complex tclass (cdr desc)) )
+     ;; special
      ((= tclass 'str)
       (list "DH_STR,"))
+     ((= tclass 'number)
+      (list "DH_REAL,"))
      ((= tclass 'gptr)
       (if (cdr desc)
           (list (sprintf "DH_GPTR(%l)," (cadr desc)))
         (list "DH_GPTR(0),") ) )
+     ((= tclass 'list)
+      (append (list (sprintf "DH_LIST(%d)," (length (cdr desc))))
+              (apply append (mapcar dhc-d-to-doc (cdr desc)))
+              (list "DH_END_LIST,")))
+     ;; complex types
+     ((member tclass '(idx obj func srg ptr list))
+      (apply dhc-d-to-doc-complex desc))
      ;; simple types
      ((member (dht-long tclass) dhc-simple-types)
-      (list (sprintf "DH_%s," 
-                     (if (= tclass 'number)
-                         "REAL"
-                       (upcase (pname tclass))))))
-     (t (dhc-unif-error "unrecognized type descriptor" desc)))))
+      (list (sprintf "DH_%s," (upcase (pname tclass)))) )
+     (t 
+      (dhc-unif-error "unrecognized type descriptor" desc)))))
 
 (de dhc-d-to-doc-access(v)
     (if (= v 'r) "DHT_READ" "DHT_WRITE"))
@@ -1811,11 +1759,6 @@
                            (dhc-d-to-doc-access arg1) 
                            ")," ))
              (dhc-d-to-doc arg2)))
-    ;; list
-    (list 
-     (append (list (sprintf "DH_LIST(%d)," (length arg1)))
-             (apply append (mapcar dhc-d-to-doc arg1))
-             (list "DH_END_LIST,")))
     ;; object
     (obj
      ;; parse all possibilities for desc
@@ -2609,13 +2552,6 @@
 ;;; PARSING A PROGN
 ;;; ------------------------------------------------------------------------
 
-(de dhc-parse-list-t(source)
-  (if (consp source)
-      (let ((rtype (mapcar (lambda (x) (new dhc-type 'dht-unk)) source)))
-        (mapcar (lambda (so ty) (dhc-parse-expr-t so ty))
-                source rtype))
-    ()))
-
 ;; parse a list of expression and return the last one
 (de dhc-parse-progn-t(source)
   (if (consp source)
@@ -2810,29 +2746,24 @@
 ;;; ------------------------------------------------------------------------
 
 (de dhc-parse-string-t (source)
-  (let* ((rettype (new dhc-type 'dht-str))
-         (srg-type (dhu-type rettype))
-         (symbol-srg (new dhc-symbol 
-                          (named (sprintf "%d_srg" tmpnames-seed)) lex-level))
+  (let* ((str-type (new dhc-type 'dht-str))
+         (rettype (new dhc-type 'dht-ptr str-type))
+         (str-symb (new dhc-symbol 
+                        (named (sprintf "%d_srg" tmpnames-seed)) lex-level))
          (tn (new t-node () rettype source)))
-    (setq :srg-type:u-extra (new-unode rettype))
     (incr tmpnames-seed)
-    (dhc-unify-types :symbol-srg:type srg-type)
-    (setq bump-list (append bump-list (list symbol-srg)))
-    (setq :tn:transfer symbol-srg)
+    (dhc-unify-types :str-symb:type str-type)
+    (setq bump-list (append bump-list (list str-symb)))
+    (setq :tn:transfer str-symb)
     tn))
 
-
 (de dhc-parse-string-c (source treetype retplace)
-  (let ((constant-name (sprintf "constant_%d_%d" lex-level tmpnames-seed))
-        (srg-symb :treetype:transfer)
-        (temp-str source))
-    (setq temp-str (dhc-printf-to-c temp-str))
-    (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen(\"%s\")+1);"
-                                   :srg-symb:c-name temp-str))
-    (dhc-add-c-statements (sprintf "strcpy((%s)->data,\"%s\");"
-                                   :srg-symb:c-name temp-str))
-    :srg-symb:c-name))
+  (let ((str-symb :treetype:transfer))
+    (dhc-add-c-statements (sprintf "Msrg_resize(%s, %d+1);"
+                                   :str-symb:c-name (len source)))
+    (dhc-add-c-statements (sprintf "strcpy((%s)->data,%l);"
+                                   :str-symb:c-name source))
+    :str-symb:c-name))
 
 
 ;;; ------------------------------------------------------------------------

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.32 2002-07-20 02:22:32 leonb Exp $
+ * $Id: header.h,v 1.33 2002-07-29 21:02:13 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -516,6 +516,7 @@ struct string {
 TLAPI at *new_string(char *s);
 TLAPI at *new_safe_string(char *s);
 TLAPI at *new_string_bylen(int n);
+TLAPI int str_index(char *s1, char *s2, int start);
 TLAPI at *str_val(char *s);
 TLAPI char *str_number(double x);
 TLAPI char *str_number_hex(double x);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.11 2002-07-26 20:53:03 leonb Exp $
+ * $Id: dh.c,v 1.12 2002-07-29 21:02:22 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -465,8 +465,6 @@ dhinfo_record(dhrecord *drec)
       return cons(named("real"),NIL);
     case DHT_NIL: 
       return cons(named("bool"),NIL);
-    case DHT_STR: 
-      return cons(named("str"),NIL);
 
     case DHT_GPTR:
       p = NIL;
@@ -474,10 +472,15 @@ dhinfo_record(dhrecord *drec)
         p = cons(new_string(strclean(drec->name)),NIL);
       return cons(named("gptr"), p);
       
+    case DHT_STR: 
+      p = cons(named("str"),NIL);
+      return cons(named("ptr"), cons(p, NIL));
+      
     case DHT_LIST:
       p = dhinfo_chain(drec+1, drec->ndim, dhinfo_record);
-      return cons(named("list"), p);
-
+      p = cons(named("list"), p);
+      return cons(named("ptr"), cons(p, NIL));
+      
     case DHT_OBJ: 
       cdoc = drec->arg;
       p = cons( named("obj"),
@@ -492,7 +495,7 @@ dhinfo_record(dhrecord *drec)
                     cons(dhinfo_record(drec+1), 
                          NIL) ) );
       return cons(named("ptr"), cons(p, NIL));
-
+      
     case DHT_IDX:
       drec1 = drec + 1;
       p = cons(named("srg"), 
