@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.19 2003-02-19 19:13:06 leonb Exp $
+ * $Id: dldbfd.c,v 1.20 2003-02-21 22:20:04 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -84,6 +84,10 @@
 
 void *bfd_alloc(bfd *abfd, bfd_size_type wanted);
 unsigned int bfd_log2 (bfd_vma x);
+
+/* Conversion between bfd_vma and pointers */
+#define vmaptr(x) ((void*)(size_t)(x))
+#define ptrvma(x) ((bfd_vma)(x))
 
 
 /* ---------------------------------------- */
@@ -255,7 +259,7 @@ is_bfd_symbol_defined(asymbol *sym)
 {
     /* Iterate over indirect symbols */
     while ((sym->flags & BSF_INDIRECT) || bfd_is_ind_section(sym->section))
-        sym = (asymbol*)(sym->value);
+      sym = (asymbol*)vmaptr(sym->value);
     /* Check that symbol is indeed defined */
     return (!bfd_is_und_section(sym->section) &&
             !bfd_is_com_section(sym->section) &&
@@ -270,7 +274,7 @@ value_of_bfd_symbol(asymbol *sym)
 {
     /* Iterate over indirect symbols */
     while ((sym->flags & BSF_INDIRECT) || bfd_is_ind_section(sym->section))
-        sym = (asymbol*)(sym->value);
+        sym = (asymbol*)vmaptr(sym->value);
     /* Check that symbol is indeed defined */
     ASSERT(!bfd_is_com_section(sym->section) &&
            !bfd_is_und_section(sym->section) &&
@@ -589,7 +593,7 @@ int dld_undefined_sym_count = 0;
 typedef struct symbol_entry {
     struct bfd_hash_entry root;
     module_entry *defined_by;
-    void *definition;
+    bfd_vma definition;
     short flags;
     short refcount;
 } symbol_entry;
@@ -609,10 +613,10 @@ value_of_symbol(symbol_entry *hsym)
 {
     ASSERT(hsym->flags & DLDF_DEFD);
     if (hsym->flags & DLDF_INDIRECT)
-        return value_of_symbol((symbol_entry*)hsym->definition);
+        return value_of_symbol((symbol_entry*)vmaptr(hsym->definition));
     if (hsym->flags & DLDF_BFD)
-        return value_of_bfd_symbol((asymbol*)hsym->definition);
-    return (bfd_vma)(hsym->definition);
+        return value_of_bfd_symbol((asymbol*)vmaptr(hsym->definition));
+    return hsym->definition;
 }
 
 
@@ -735,7 +739,7 @@ handle_common_symbols(module_entry *ent)
                 {
                     asymbol *csym;
                     if (!(hsym->flags & DLDF_BFD) ||
-                        !(csym = hsym->definition) ||
+                        !(csym = vmaptr(hsym->definition)) ||
                         !(csym->flags & BSF_OLD_COMMON) )
                     {
                         sprintf(error_buffer,
@@ -1480,7 +1484,7 @@ insert_module_symbols(module_entry *module)
                 if (addr)
                   {
                     hsym->flags |= DLDF_DEFD;
-                    hsym->definition = addr;
+                    hsym->definition = ptrvma(addr);
                   }
               }
 #endif
@@ -1506,7 +1510,7 @@ insert_module_symbols(module_entry *module)
             {
                 /* Regular BFD symbol */
                 hsym->flags |= (DLDF_DEFD|DLDF_BFD);
-                hsym->definition = sym;
+                hsym->definition = ptrvma(sym);
                 if ((sym->flags & BSF_FUNCTION) || 
                     (sym->section->flags & SEC_CODE) )
                     hsym->flags |= DLDF_FUNCTION;
@@ -1527,7 +1531,7 @@ insert_module_symbols(module_entry *module)
                 }
                 hsym->flags |= (DLDF_DEFD|DLDF_INDIRECT);
                 isym = insert_symbol(drop_leading_char(module->abfd,sym->name));
-                hsym->definition = isym;
+                hsym->definition = ptrvma(isym);
             }
         }
     }
@@ -2397,7 +2401,7 @@ define_symbol_of_main_program(const char *exec)
 		  continue;
                 /* Fill symbol entry in global hash table */
                 hsym->flags = DLDF_DEFD;
-                hsym->definition = (void*)value_of_bfd_symbol(sym);
+                hsym->definition = value_of_bfd_symbol(sym);
                 if ((sym->flags & BSF_FUNCTION) ||
                     (sym->section->flags & SEC_CODE))
                     hsym->flags |= DLDF_FUNCTION;
@@ -2531,7 +2535,7 @@ dld_dlopen(char *path, int mode)
                           dld_undefined_sym_count -= 1;
                         hsym->flags &= DLDF_REFD;
                         hsym->flags |= DLDF_DEFD;
-                        hsym->definition = addr;
+                        hsym->definition = ptrvma(addr);
                         if ((sym->flags & BSF_FUNCTION)
                             || (sym->section->flags & SEC_CODE) )
                           hsym->flags |= DLDF_FUNCTION;
@@ -2686,7 +2690,7 @@ dld_get_symbol (const char *id)
         if (hsym && (hsym->flags & DLDF_DEFD))
           {
             while (hsym->flags & DLDF_INDIRECT)
-              hsym = (symbol_entry*)(hsym->definition);
+              hsym = (symbol_entry*)vmaptr(hsym->definition);
             if ( !(hsym->flags & DLDF_FUNCTION))
               ret = (void*)value_of_symbol(hsym);
           }
@@ -2714,7 +2718,7 @@ dld_get_func (const char *id)
         if (hsym && (hsym->flags & DLDF_DEFD))
         {
             while (hsym->flags & DLDF_INDIRECT)
-                hsym = (symbol_entry*)(hsym->definition);
+                hsym = (symbol_entry*)vmaptr(hsym->definition);
             if (hsym->flags & DLDF_FUNCTION)
                 ret = (void*)value_of_symbol(hsym);
         }
@@ -2890,7 +2894,7 @@ dld_function_executable_p (const char *id)
         if (!hsym || !(hsym->flags & DLDF_DEFD))
             THROW("Undefined symbol");
         while (hsym->flags & DLDF_INDIRECT)
-            hsym = (symbol_entry*)(hsym->definition);
+            hsym = (symbol_entry*)vmaptr(hsym->definition);
         if (!(hsym->flags & DLDF_FUNCTION))
             THROW("Symbol does not point to a function");
         ret = 1;
@@ -2956,7 +2960,7 @@ dld_define_sym (const char *id, size_t size)
         hsym = insert_symbol(id);
         if (hsym->flags & DLDF_DEFD)
             THROW("Cannot redefine an already defined symbol");
-        hsym->definition = xmalloc(size);
+        hsym->definition = ptrvma(xmalloc(size));
         hsym->flags |= (DLDF_DEFD|DLDF_ALLOC);
         /* Adjust undefined symbol count if symbol was undefined */
         if (hsym->flags & DLDF_REFD)
@@ -2992,7 +2996,7 @@ dld_remove_defined_symbol (const char *id)
         if (hsym && (hsym->flags & DLDF_DEFD))
         {
             if (hsym->flags & DLDF_ALLOC)
-                free(hsym->definition);
+                free(vmaptr(hsym->definition));
             hsym->flags &= ~(DLDF_BFD|DLDF_INDIRECT|DLDF_DEFD);
             hsym->flags &= ~(DLDF_FUNCTION|DLDF_ALLOC|DLDF_INDIRECT);
             hsym->definition = 0;
