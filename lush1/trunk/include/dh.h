@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.15 2002-07-30 15:04:04 leonb Exp $
+ * $Id: dh.h,v 1.16 2002-10-10 15:47:37 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -62,8 +62,12 @@ extern "C" {
 
 #ifdef __cplusplus
 #define extern_c extern "C"
+#define staticref_c extern
+#define staticdef_c 
 #else
 #define extern_c extern
+#define staticref_c static
+#define staticdef_c static
 #endif
 
 
@@ -242,11 +246,11 @@ struct dhdoc_s
 #ifndef NOLISP
 
 #define DHDOC(Kname,Xname,Cnamestr,Mnamestr,Ktest) \
-  static dhrecord name2(K,Kname)[]; \
+  staticref_c dhrecord name2(K,Kname)[]; \
   extern_c dhdoc_t Kname; \
   dhdoc_t Kname = { name2(K,Kname), \
     { Cnamestr, Mnamestr, Xname, enclose_in_string(Kname), Ktest } }; \
-  static dhrecord name2(K,Kname)[]
+  staticdef_c dhrecord name2(K,Kname)[]
 
 #define DH(Xname) \
   static dharg Xname(dharg *a)
@@ -306,13 +310,13 @@ struct dhclassdoc_s
 #ifndef NOLISP
 
 #define DHCLASSDOC(Kname,superKname,Cname,LnameStr,Vname,nmet) \
-  static dhrecord name2(K,Kname)[]; \
+  staticref_c dhrecord name2(K,Kname)[]; \
   extern_c dhclassdoc_t Kname; \
   dhclassdoc_t Kname = { name2(K,Kname), \
    { superKname, LnameStr, enclose_in_string(Cname), \
      enclose_in_string(VnameStr), enclose_in_string(Kname), \
      sizeof(struct name2(CClass_,Cname)), nmet, &Vname } }; \
-  static dhrecord name2(K,Kname)[]
+  staticdef_c dhrecord name2(K,Kname)[]
 
 #endif
 
