@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.11 2003-07-01 19:11:57 leonb Exp $
+ * $Id: graphics.h,v 1.12 2004-11-19 21:21:41 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -51,6 +51,7 @@ struct window {
   at *driverdata;
   int color;
   short clipx, clipy, clipw, cliph;
+  int dash0, dash1;
 };
 
 
@@ -144,7 +145,8 @@ struct gdriver {
   void (*fill_arc) (wptr, int, int, uint, int, int);
   /**** routines added for lush ****/
   void (*get_image) (wptr, uint*, int, int, uint, uint);
-  int (*get_mask)(wptr, uint*, uint*, uint*);
+  int  (*get_mask)(wptr, uint*, uint*, uint*);
+  void (*set_dash)(wptr, int, int);
 };
 
 #undef uint

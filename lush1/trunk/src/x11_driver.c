@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.11 2003-11-10 16:48:22 leonb Exp $
+ * $Id: x11_driver.c,v 1.12 2004-11-19 21:21:49 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -108,6 +108,8 @@ static struct X_window {
   int x1, y1, x2, y2;
   int resizestate, xdown, ydown;
   int hilitestate, okhilite, xhilite, yhilite, whilite, hhilite;
+  char dashes[2];
+  int  dashpos;
 } xwind[MAXWIN];
 
 
@@ -1127,6 +1129,18 @@ x11_draw_line(struct window *linfo, int x1, int y1, int x2, int y2)
   struct X_window *info = (struct X_window*)linfo;
   XDrawLine(xdef.dpy, info->backwin, info->gc, x1, y1, x2, y2);
   grow_rect(info, x1, y1, x2, y2);
+  /* adjust dash starting point */
+  if (info->dashes[0]>0 && info->dashes[1]>0)
+    {
+      int dx = abs(x2-x1);
+      int dy = abs(y2-y1);
+      int z = info->dashes[0] + info->dashes[1];
+      if (dx > dy)
+	info->dashpos = (info->dashpos + dx) % z;
+      else
+	info->dashpos = (info->dashpos + dy) % z;
+      XSetDashes(xdef.dpy, info->gc, info->dashpos, info->dashes, 2);
+    }
 }
 
 static void 
@@ -1439,6 +1453,29 @@ x11_clip(struct window *linfo, int x, int y, unsigned int w, unsigned int h)
   }
 }
 
+static void
+x11_set_dash(struct window *linfo, int d0, int d1)
+{
+  struct X_window *info = (struct X_window*)linfo;
+  if (d0>0 && d1>0)
+    {
+      info->dashes[0] = (d0<128) ? d0 : 127;
+      info->dashes[1] = (d1<128) ? d1 : 127;
+      info->dashpos = 0;
+      XSetDashes(xdef.dpy, info->gc, info->dashpos, info->dashes, 2);
+      XSetLineAttributes(xdef.dpy, info->gc, 0, 
+			 LineOnOffDash, CapButt, JoinMiter);
+    }
+  else
+    {
+      info->dashes[0] = 0;
+      info->dashes[1] = 0;
+      info->dashpos = 0;
+      XSetLineAttributes(xdef.dpy, info->gc, 0, 
+			 LineSolid, CapButt, JoinMiter);
+    }
+}
+
 void
 x11_get_image(struct window *linfo, unsigned int *image, 
               int x, int y, unsigned int w, unsigned int h)
@@ -1515,6 +1552,7 @@ struct gdriver x11_driver = {
   /* import from sn3.2*/
   x11_get_image,
   x11_get_mask,
+  x11_set_dash,
 };
 
 
@@ -1588,6 +1626,8 @@ x11_window(int x, int y, unsigned int w, unsigned int h, char *name)
   info->lwin.eventhandler = 0;
   info->lwin.clipw = 0;
   info->lwin.cliph = 0;
+  info->lwin.dash0 = 0;
+  info->lwin.dash1 = 0;
 
   ans = new_extern(&window_class, info);
   info->lwin.backptr = ans;

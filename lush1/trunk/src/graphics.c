@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.11 2003-07-01 19:12:03 leonb Exp $
+ * $Id: graphics.c,v 1.12 2004-11-19 21:21:49 leonb Exp $
  **********************************************************************/
 
 
@@ -516,6 +516,44 @@ DX(xclip)
   return NIL;
 }
 
+
+DX(xlinestyle)
+{
+  struct window *win;
+  int d0, d1;
+  ALL_ARGS_EVAL;
+  win = current_window();
+  
+  if (arg_number>=1)
+    {
+      d0 = d1 = 0;
+      if (arg_number==2)
+	{
+	  d0 = AINTEGER(1);
+	  d1 = AINTEGER(2);
+	}
+      else if (arg_number==1)
+	{
+	  if (APOINTER(1))
+	    d0 = d1 = AINTEGER(1);
+	}
+      else
+	ARG_NUMBER(-1);
+      if (win->gdriver->set_dash)
+	{
+	  (*win->gdriver->begin) (win);
+	  (*win->gdriver->set_dash) (win, d0, d1);
+	  (*win->gdriver->end) (win);
+	  win->dash0 = d0;
+	  win->dash1 = d1;
+	}
+    }
+  if (win->dash0 && win->dash1)
+    return cons(NEW_NUMBER(win->dash0),
+		cons(NEW_NUMBER(win->dash1),
+		     NIL));
+  return NIL;
+}
 
 DX(xcolor)
 {
@@ -1991,6 +2029,7 @@ DY(ygsave)
   int  oldcolor;
   at   *oldfont;
   short oldx,oldy,oldw,oldh;
+  int oldd0, oldd1;
   struct window *win;
   struct context mycontext;
   int errorflag=0;
@@ -2005,6 +2044,8 @@ DY(ygsave)
   oldy = win->clipy;
   oldw = win->clipw;
   oldh = win->cliph;
+  oldd0 = win->dash0;
+  oldd1 = win->dash1;
   LOCK(oldfont);
   
   context_push(&mycontext);
@@ -2048,8 +2089,17 @@ DY(ygsave)
 	  win->clipw = oldw;
 	  win->cliph = oldh;
 	}
+
+      if (oldd0!=win->dash0 || oldd1!=win->dash1)
+	if (win->gdriver->set_dash) {
+	  (*win->gdriver->begin) (win);
+	  (*win->gdriver->set_dash) (win, oldd0, oldd1);
+	  (*win->gdriver->end) (win);
+	  win->dash0 = oldd0;
+	  win->dash1 = oldd1;
+	}
+      
     }
-  
   if (errorflag)
     siglongjmp(context->error_jump, -1L);
   return ans;
@@ -2161,7 +2211,9 @@ init_graphics(void)
   dx_define("gray-draw-matrix",xgray_draw_matrix);
   dx_define("color-draw-matrix",xcolor_draw_matrix);
   dx_define("rgb-draw-matrix",xrgb_draw_matrix);  
+  /* LUSH */
   dx_define("rgb-grab-matrix",xrgb_grab_matrix);  
+  dx_define("linestyle",xlinestyle);
   /* OGRE SPEEDUP */
   dx_define("point-in-rect",xpoint_in_rect);
   dx_define("rect-in-rect",xrect_in_rect);

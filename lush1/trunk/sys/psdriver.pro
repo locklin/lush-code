@@ -48,67 +48,76 @@
   } if
 } bind def
 
+/strokeflag false def
+/strokecheck { 
+  strokeflag { stroke } if /strokeflag false def 
+} bind def
+
 /BEGINPAGE {
   gsave translate scale } bind def
-/ENDPAGE {
+/ENDPAGE { strokecheck
   grestore showpage } bind def
-/SF {
+/SF { strokecheck
   dup /default eq 
   { pop pop /Courier findfont recodefont 11 scalefont setfont }
   { findfont recodefont exch scalefont setfont } ifelse } bind def
-/SC {
+/SC { strokecheck
   setrgbcolor } bind def
-/SCFG { 
+/SCFG { strokecheck
   0 setgray } bind def
-/SCBG {
+/SCBG { strokecheck
   1 setgray } bind def
-/SCGRAY { 
+/SCGRAY { strokecheck
   0.5 setgray } bind def
+/SL { strokecheck
+  [] 0 setdash } bind def
+/SLD { strokecheck
+  mark 3 1 roll ] 0 setdash } bind def
 /DL {
-  newpath moveto lineto stroke } bind def
-/DR {
+  moveto lineto /strokeflag true def } bind def
+/DR { strokecheck
   newpath moveto exch dup 0 rlineto exch
   0 exch rlineto neg 0 rlineto
   closepath stroke } bind def
-/FR {
+/FR { strokecheck
   newpath moveto exch dup 0 rlineto exch
   0 exch rlineto neg 0 rlineto
   closepath fill } bind def
-/DC {
+/DC { strokecheck
   newpath 0 360 arc stroke } bind def
-/FC {
+/FC { strokecheck
   newpath 0 360 arc fill } bind def
-/DA {
+/DA { strokecheck
   newpath neg exch neg arc stroke } bind def
-/FA {
+/FA { strokecheck
   newpath 4 index 4 index moveto  neg exch neg arc closepath fill } bind def
 /backstr 2 string def backstr 1 8 put
-/DT {
+/DT { strokecheck
   moveto gsave 1 -1 scale show grestore } bind def
-/CLIP {
+/CLIP { strokecheck
   initclip newpath moveto exch dup 0 rlineto exch
   0 exch rlineto neg 0 rlineto
   closepath clip newpath } bind def
-/PSTART {
+/PSTART { strokecheck
   newpath moveto } bind def
-/FP {
+/FP { 
   lineto } bind def
 /PEND {
   lineto closepath fill } bind def
-/PM {
+/PM { strokecheck
   gsave	translate scale
   8 [ 1 0 0 1 0 0 ] 
   2 index 2 mul string /picstr exch def
   { currentfile picstr readhexstring pop } image
   grestore } bind def
-/CPM {
+/CPM { strokecheck
   gsave translate scale
   [ 1 0 0 1 0 0 ]
   3 index 3 mul string /picstr exch def
   { currentfile picstr readhexstring pop }
   false 3 colorimage
   grestore } bind def
-/HM {
+/HM { strokecheck
   gsave	translate gsave 2 copy
     4 index mul exch 5 index mul exch scale
    newpath 0 0 moveto 1 0 rlineto 0 1 rlineto -1 0 rlineto
