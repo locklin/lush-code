@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.6 2002-05-06 20:09:47 leonb Exp $
+ * $Id: oostruct.c,v 1.7 2002-05-07 14:56:53 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -90,6 +90,11 @@ zombie_eval(at *p)
   return NIL;
 }
 
+static at *
+zombie_listeval(at *p, at *q)
+{
+  error("eval","Not a function (maybe a deleted or unlinked function.)",q->Car);
+}
 
 class zombie_class =
 {
@@ -97,7 +102,7 @@ class zombie_class =
   zombie_action,
   zombie_name,
   zombie_eval,
-  generic_listeval,
+  zombie_listeval,
 };
 
 
