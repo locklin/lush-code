@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.38 2004-07-15 19:14:32 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.39 2004-07-16 14:13:48 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -122,15 +122,18 @@ AC_CHECK_LIB(dl,dlopen)
 AC_CHECK_LIB(dld,shl_load)
 AC_CHECK_LIB(util,openpty)
 
+# NSModule API
+require_bfd=yes
+AC_CHECK_FUNCS(NSLinkModule,[require_bfd=no])
+
 # bfd
 AC_ARG_WITH(bfd,
     AC_HELP_STRING([--without-bfd],
         [Compile Lush without the BFD library.]),
-    [require_bfd=$withval],[require_bfd=yes])
+    [require_bfd=$withval])
 
 if test x$require_bfd = xno ; then
     BFD_YES='#'
-    AC_MSG_WARN([Compiling Lush without BFD])
 else
     BFD_YES=''
     has_bfd=yes

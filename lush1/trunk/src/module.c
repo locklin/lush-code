@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.41 2004-07-15 22:33:52 leonb Exp $
+ * $Id: module.c,v 1.42 2004-07-16 14:13:56 leonb Exp $
  **********************************************************************/
 
 
@@ -35,11 +35,11 @@
 /* ------- DLDBFD/NSBUNDLE HEADERS ------- */
 
 #if HAVE_LIBBFD
-# include "dldbfd.h"
 # define DLDBFD 1
-#elif HAVE_MACH_O_DYLD_H
-# include <mach-o/dyld.h>
+# include "dldbfd.h"
+#elif HAVE_NSLINKMODULE
 # define NSBUNDLE 1
+# include <mach-o/dyld.h>
 #endif
 
 /* ------- DLOPEN HEADERS ------- */
