@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.28 2003-07-11 15:56:24 leonb Exp $
+ * $Id: lisp_c.c,v 1.29 2004-02-04 20:48:07 leonb Exp $
  **********************************************************************/
 
 
@@ -48,6 +48,7 @@ static void at_to_dharg();
 
 /* Flags */
 static int dont_track_cside = 0;
+static int dont_warn_zombie = 0;
 static int dont_warn = 0;
 
 
@@ -1874,6 +1875,11 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           arg->dh_srg_ptr = at_obj->Gptr;
           return;
         }
+      if ((at_obj->flags & X_ZOMBIE) && dont_warn_zombie) 
+	{
+	  arg->dh_srg_ptr = 0;
+	  return;
+	}
       if (!storagep(at_obj))
         lisp2c_error("STORAGE expected",errctx,at_obj);
       /* check type and access */
@@ -1901,6 +1907,11 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           arg->dh_idx_ptr = at_obj->Gptr;
           return;
         }
+      if ((at_obj->flags & X_ZOMBIE) && dont_warn_zombie) 
+	{
+	  arg->dh_idx_ptr = 0;
+	  return;
+	}
       if(! EXTERNP(at_obj, &index_class))
         lisp2c_error("IDX expected",errctx,at_obj);
       /* check type and access */
@@ -1935,7 +1946,7 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
         }
       if (at_obj->flags & X_ZOMBIE)
         {
-          if (!dont_track_cside)
+          if (!dont_track_cside && !dont_warn_zombie)
             lisp2c_warning("(in): found ZOMBIE instead of OBJ", errctx);
           arg->dh_obj_ptr = 0;
           return;
@@ -1968,6 +1979,11 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           arg->dh_srg_ptr = at_obj->Gptr;
           return;
         }
+      if ((at_obj->flags & X_ZOMBIE) && dont_warn_zombie) 
+	{
+	  arg->dh_srg_ptr = 0;
+	  return;
+	}
       if (! EXTERNP(at_obj, &string_class))
         lisp2c_error("STRING expected",errctx,at_obj);
       n = lside_create_str(at_obj);
@@ -2209,8 +2225,10 @@ update_c_from_lisp(avlnode *n)
         int k,j,sl,nsl;
         
         if (object==0)
-          /* happens during call to the destructor */
           return;
+	if (n->litem->flags & C_GARBAGE)
+	  dont_warn_zombie = 1;
+
         cdoc = n->cmoreinfo;
         if (cdoc==0)
           error(NIL,"lisp_c internal: corrupted class information",NIL);
@@ -2353,8 +2371,10 @@ update_lisp_from_c(avlnode *n)
         at *orig, *new;
             
         if (object==0)
-          /* happens during call to the destructor */
           return;
+	if (n->litem->flags & C_GARBAGE)
+	  dont_warn_zombie = 1;
+
         cdoc = n->cmoreinfo;
         if (cdoc==0)
           error(NIL,"lisp_c internal: corrupted class information",NIL);
@@ -2608,6 +2628,7 @@ dh_listeval(at *p, at *q)
     error(NIL, "(lisp_c) a function dhdoc was expected", NIL);
   if (CONSP(cfunc->name))
     check_primitive(cfunc->name);
+  dont_warn_zombie = 0;
   
   /* Count the arguments */
   nargs = drec->ndim;
@@ -2695,6 +2716,7 @@ dh_listeval(at *p, at *q)
   for (i=0; i<nargs; i++)
     UNLOCK(atgs[i]);
   /* return */
+  dont_warn_zombie = 0;
   if (errflag)
     error(NIL,"Run-time error in compiled code",NIL);
   return atfuncret;
