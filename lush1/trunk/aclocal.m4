@@ -39,6 +39,30 @@ AC_DEFUN([AC_DEFINE_INSTALL_PATHS],[
   exec_prefix="${save_exec_prefix}"
 ])
 
+
+dnl -------------------------------------------------------
+dnl @synopsis AC_CC_COMPLEX
+dnl Define HAVE_COMPLEX if the compiler knows complex numbers
+dnl -------------------------------------------------------
+
+AC_DEFUN([AC_CC_COMPLEX],
+[AC_CACHE_CHECK(whether the compiler supports complex numbers,
+ac_cv_cc_complex,
+[AC_LANG_SAVE
+ AC_LANG_C
+ AC_TRY_COMPILE([
+#include <complex.h>
+],[ complex double x = 4 * I; complex float y; y = x * x; return 0;],
+ ac_cv_cc_complex=yes, ac_cv_cc_complex=no)
+ AC_LANG_RESTORE
+])
+if test "$ac_cv_cc_complex" = yes; then
+  AC_DEFINE(HAVE_COMPLEX,1,
+        [Define to 1 if the compiler supports complex numbers])
+fi
+])
+
+
 dnl -------------------------------------------------------
 dnl @synopsis AC_CHECK_CC_OPT(OPTION, 
 dnl                           ACTION-IF-OKAY,

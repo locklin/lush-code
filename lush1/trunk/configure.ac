@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.34 2003-07-01 19:07:00 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.35 2003-12-12 02:13:13 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -69,6 +69,7 @@ fi
 AC_PROG_MAKE_SET
 
 AC_PROG_CC
+AC_CC_COMPLEX
 AC_CC_OPTIMIZE
 AC_SUBST(GCC)
 AC_PROG_CXX
