@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.5 2002-05-06 16:17:30 leonb Exp $
+ * $Id: module.c,v 1.6 2002-05-06 20:09:47 leonb Exp $
  **********************************************************************/
 
 
@@ -300,6 +300,7 @@ static int dynlink_initialized = 0;
 static void 
 dynlink_error(at *p)
 {
+  char *err;
   char buffer[80];
   strcpy(buffer,"Dynamic linking error");
 #ifdef DLDBFD
@@ -310,10 +311,11 @@ dynlink_error(at *p)
     }
 #endif  
 #ifdef DLOPEN
-  if (dlerror())
+  err = dlerror();
+  if (err)
     {
       strcpy(buffer,"dlopen error: ");
-      strcat(buffer, dlerror());
+      strcat(buffer, err);
     }
 #endif
   error(NIL, buffer, p);
@@ -338,6 +340,18 @@ dynlink_init(void)
       dynlink_initialized = 1;
     }
 }
+
+static void
+dynlink_hook(struct module *m, char *hookname)
+{
+  at *hook = named(hookname);
+  at *ans = send_message(NIL, m->backptr, hook, NIL);
+  UNLOCK(hook);
+  UNLOCK(ans);
+}
+
+
+
 
 
 

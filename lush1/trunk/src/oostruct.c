@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.5 2002-05-04 02:40:11 leonb Exp $
+ * $Id: oostruct.c,v 1.6 2002-05-06 20:09:47 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -42,7 +42,9 @@ static at *at_mexpand;
 static at *at_this;
 static at *at_destroy;
 static at *at_unknown;
-static at *getmethod(class *cl, at *prop);
+
+static struct hashelem *getmethod(class *cl, at *prop);
+static at *call_method(at *obj, struct hashelem *hx, at *args);
 static void send_delete(at *p);
 
 
@@ -619,24 +621,24 @@ new_oostruct(at *cl)
 
 DY(ynew)
 {
-  at *q,*k,*f,*ans;
+  at *q, *p, *ans;
+  struct hashelem *hx;
   class *cl;
-
+  
   ifn ( CONSP(ARG_LIST) )
     error(NIL,"some argument expected",NIL);
-
+  
   q = eval(ARG_LIST->Car);
   ans = new_oostruct(q);
   cl = q->Object;
+  
+  p = 0;
+  if ((hx = getmethod(cl, cl->classname)))
+    p = call_method(ans, hx, ARG_LIST->Cdr);
+  else if (ARG_LIST->Cdr)
+    error(NIL,"Class constructor expects no arguments",NIL);
 
-  if ((f = getmethod(cl, cl->classname))) {
-    k = eval_a_list(ARG_LIST->Cdr);
-    f = letslot(ans,f,k,-1);
-    UNLOCK(f);
-    UNLOCK(k);
-  } else if (ARG_LIST->Cdr)
-    error(NIL,"no arg expected (no constructor!)",q);
-
+  UNLOCK(p);
   UNLOCK(q);
   return ans;
 }
@@ -885,21 +887,6 @@ DX(xputmethod)
   return atname;
 }
 
-static at *
-getmethod(class *cl, at *prop)
-{
-  /* WARNING: RETURN UNLOCKED */        
-  register at *list, *q;
-  list = cl->methods;
-  while (CONSP(list)) {
-    q = list->Car;
-    if (q->Car == prop) 
-      return q->Cdr;
-    list = list->Cdr;
-  }
-  return NIL;
-}
-
 #define HASH(q,size) ((unsigned long)(q) % (size-1) )
 
 static void 
@@ -962,11 +949,9 @@ update_hashtable(class *cl)
   cl->hashok = 1;
 }
 
-
 static struct hashelem *
-getmethod_quick(class *cl, at *prop)
+getmethod(class *cl, at *prop)
 {
-/* WARNING: RETURN UNLOCKED */
   struct hashelem *hx;
   if (! cl->hashok)
     update_hashtable(cl);
@@ -982,15 +967,12 @@ getmethod_quick(class *cl, at *prop)
   return NIL;
 }
 
-
-
-/* WARNING: RETURN LOCKED */
 at *
 checksend(class *cl, at *prop)
 {
   struct hashelem *hx;
   at *ans;
-  if ((hx = getmethod_quick(cl,prop))) {
+  if ((hx = getmethod(cl,prop))) {
     ans = hx->function;
     LOCK(ans);
     return ans;
@@ -1009,80 +991,6 @@ DX(xchecksend)
       && (classat->Class == &class_class))
     error(NIL, "not a class", classat);
   return checksend(classat->Object,APOINTER(2));
-}
-
-
-
-/* ---------------- DELETE ---------------- */
-
-
-static void
-send_delete(at *p)
-{
-  register class *cl;
-  register struct oostruct *s;
-  register at *f;
-
-  ifn (p && (p->flags & X_OOSTRUCT) )
-    return;
-
-  cl = p->Class;
-  s = p->Object;
-
-  while (cl) {
-    if ((f = getmethod(cl,at_destroy))) {
-      f = letslot(p,f,NIL,cl->slotssofar);
-      UNLOCK(f);
-    }
-    cl = cl->super;
-  }
-}
-
-
-
-void 
-delete_at(at *p)
-{
-  if (!p || (p->flags & X_ZOMBIE) || (p->flags & C_GARBAGE)) {
-    /* already deleted, or being deleted */
-    return;
-    
-  } else if(p->flags & X_OOSTRUCT) {
-    struct oostruct *s = p->Object;
-    p->count++;
-    p->flags |= C_GARBAGE;
-    send_delete(p);
-    p->count--;
-    UNLOCK(s->class);
-   
-  } else if (p->flags & C_EXTERN) {
-    if (p->Class->dontdelete)
-      error(NIL,"Cannot delete this object",p);
-    (*p->Class->self_dispose)(p);
-    p->Object = NIL;
-    
-  } else if (p->flags & C_NUMBER) {
-    p->Object = NIL;
-
-  } else if (p->flags & C_CONS) {
-    UNLOCK(p->Car);
-    UNLOCK(p->Cdr);
-    p->Object = NIL;
-  }
-
-  p->Class = &zombie_class;
-  p->flags = C_EXTERN | X_ZOMBIE;
-}
-
-
-DX(xdelete)
-{
-  at *p;
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  p = APOINTER(1);
-  delete_at(p);
-  return NIL;
 }
 
 
@@ -1135,104 +1043,98 @@ call_method(at *obj, struct hashelem *hx, at *args)
     }
 }
 
+at *
+send_message(at *classname, at *obj, at *method, at *args)
+{
+  class *c;
+  struct hashelem *hx;
+  /* validate object */
+  if (! obj)
+    error(NIL,"cannot send a message to nil",NIL);
+  else if (obj->flags & C_EXTERN)
+    c = obj->Class;
+  else if (obj->flags & C_NUMBER)
+    c = &number_class;
+  else if (obj->flags & C_GPTR)
+    c = &gptr_class;
+  else
+    error(NIL,"cannot send a message to this object",NIL);
+  /* find superclass */
+  if (classname)
+    {
+      while (c && c->classname != classname)
+        c = c->super;
+      if (! c)
+        error(NIL,"cannot find superclass", classname);
+    }   
+  /* send */
+  if ((hx = getmethod(c, method))) 
+    return call_method(obj, hx, args);
+  /* send -unknown */
+  if ((hx = getmethod(c, at_unknown))) 
+    {
+      at *ans;
+      at *arg = cons(method, cons(args, NIL));
+      LOCK(method);
+      LOCK(args);
+      ans = call_method(obj, hx, arg);
+      UNLOCK(arg);
+      return ans;
+    }
+  /* fail */
+  if (classname && classname->Class != &symbol_class)
+    error(NIL, "Not a valid class name", classname);
+  if (! EXTERNP(method, &symbol_class))
+    error(NIL, "Not a valid method name", method);
+  error(NIL,"undefined method for this object",obj);
+}
 
 DY(ysend)
 {
-  register at *q, *symbol, *obj;
-  struct hashelem *hx;
-  class *cl;
-  at *args, *ans;
+  at *q, *classname, *method, *obj, *args, *ans;
   /* args */
   q = ARG_LIST;
   ifn (CONSP(q) && CONSP(q->Cdr))
     error(NIL, "arguments expected", NIL);
+  /* Get arguments */
   obj = (*argeval_ptr)(q->Car);
-  if ( obj && (obj->flags & C_EXTERN))
-    cl = obj->Class;
-  else if (obj && (obj->flags & C_NUMBER))
-    cl = &number_class;
-  else if (obj && (obj->flags & C_GPTR))
-    cl = &gptr_class;
-  else
-    error(NIL,"can't send a message to",obj);
-  /* supersend */
-  symbol = q->Cdr->Car;
-  if (CONSP(symbol)) 
+  method = q->Cdr->Car;
+  args = q->Cdr->Cdr;
+  /* Superclass call */
+  classname = 0;
+  if (CONSP(method))
     {
-      ans = symbol->Car;
-      symbol = symbol->Cdr;
-      while (cl && cl->classname != ans)
-        cl = cl->super;
-      if (! cl)
-        error(NIL,"cannot find superclass",ans);
+      classname = method->Car;
+      method = method->Cdr;
     }
-  /* send */
-  if ((hx = getmethod_quick(cl,symbol))) 
-    return call_method(obj, hx, q->Cdr->Cdr);
-  /* send -unknown */
-  if ((hx = getmethod_quick(cl,at_unknown))) 
-    {
-      LOCK(q->Cdr->Car);
-      args = cons(q->Cdr->Car, new_cons(q->Cdr->Cdr, NIL));
-      ans = call_method(obj, hx, args);
-      UNLOCK(args);
-      return ans;
-    }
-  /* fail */
-  error(NIL,"unimplemented message",obj);
+  /* Send */
+  ans = send_message(classname, obj, method, args);
+  UNLOCK(obj);
+  return ans;
 }
-
 
 DX(xapplysend)
 {
-  register at *symbol, *obj, *args;
-  struct hashelem *hx;
-  class *cl;
-  at *ans;
-
+  at *classname, *method, *obj, *args, *ans;
+  
   ARG_NUMBER(3);
   ALL_ARGS_EVAL;
-  
   obj = APOINTER(1);
-  if ( obj && (obj->flags & C_EXTERN))
-    cl = obj->Class;
-  else if (obj && (obj->flags & C_NUMBER))
-    cl = &number_class;
-  else if (obj && (obj->flags & C_GPTR))
-    cl = &gptr_class;
-  else
-    error(NIL,"can't send a message to",obj);
-  
-  symbol = APOINTER(2);
-  if (CONSP(symbol)) {
-    ans = symbol->Car;
-    symbol = symbol->Cdr;
-    while (cl && cl->classname != ans)
-      cl = cl->super;
-    ifn(cl)
-      error(NIL,"cannot find superclass",ans);
-  }
-  
+  method = APOINTER(2);
   args = APOINTER(3);
+  /* Superclass call */
+  classname = 0;
+  if (CONSP(method))
+    {
+      classname = method->Car;
+      method = method->Cdr;
+    }
   /* Send */
   argeval_ptr = eval_nothing;
-  if ((hx = getmethod_quick(cl,symbol))) 
-    return call_method(obj, hx, args);
-  /* Send -unknown */
-  symbol = APOINTER(2);
-  if ((hx = getmethod_quick(cl,at_unknown))) 
-    {
-      LOCK(symbol);
-      args = cons(symbol, new_cons(args, NIL));
-      ans = call_method(obj, hx, args);
-      UNLOCK(args);
-      return ans;
-    }
-  /* fail */
-  error(NIL,"unimplemented message",obj);
+  ans = send_message(classname, obj, method, args);
+  argeval_ptr = eval_std;
+  return ans;
 }
-
-
 
 DX(xsender)
 {
@@ -1245,6 +1147,78 @@ DX(xsender)
   p = *(symb->next->valueptr);
   LOCK(p);
   return p;
+}
+
+
+
+
+/* ---------------- DELETE ---------------- */
+
+
+static void
+send_delete(at *p)
+{
+  at *f = NIL;
+  register class *cl;
+  if (! (p && (p->flags & X_OOSTRUCT)))
+    return;
+  cl = p->Class;
+  while (cl)
+    {
+      struct hashelem *hx = getmethod(cl, at_destroy);
+      cl = cl->super;
+      if (! hx)
+        break;
+      else if (hx->function == f)
+        continue;
+      f = call_method(p, hx, NIL);
+      UNLOCK(f);
+      f = hx->function;
+    }
+}
+
+void 
+delete_at(at *p)
+{
+  if (!p || (p->flags & X_ZOMBIE) || (p->flags & C_GARBAGE)) {
+    /* already deleted, or being deleted */
+    return;
+    
+  } else if(p->flags & X_OOSTRUCT) {
+    struct oostruct *s = p->Object;
+    p->count++;
+    p->flags |= C_GARBAGE;
+    send_delete(p);
+    p->count--;
+    UNLOCK(s->class);
+   
+  } else if (p->flags & C_EXTERN) {
+    if (p->Class->dontdelete)
+      error(NIL,"Cannot delete this object",p);
+    (*p->Class->self_dispose)(p);
+    p->Object = NIL;
+    
+  } else if (p->flags & C_NUMBER) {
+    p->Object = NIL;
+
+  } else if (p->flags & C_CONS) {
+    UNLOCK(p->Car);
+    UNLOCK(p->Cdr);
+    p->Object = NIL;
+  }
+
+  p->Class = &zombie_class;
+  p->flags = C_EXTERN | X_ZOMBIE;
+}
+
+DX(xdelete)
+{
+  at *p;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  delete_at(p);
+  return NIL;
 }
 
 
@@ -1291,15 +1265,11 @@ DX(xclassof)
   return classof(APOINTER(1));
 }
 
-
-
-
 int 
 is_of_class(at *p, struct class *cl)
 {
   struct class *c;
-
-  ifn (p)
+  if (!p)
     return 0;
   else if (p->flags & C_NUMBER)
     c = &number_class;
@@ -1309,7 +1279,6 @@ is_of_class(at *p, struct class *cl)
     c = p->Class;
   else
     return 0;
-
   while (c && c != cl)
     c = c->super;
   if (c == cl)

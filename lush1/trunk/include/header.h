@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.15 2002-05-06 19:15:58 leonb Exp $
+ * $Id: header.h,v 1.16 2002-05-06 20:09:39 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -718,6 +718,7 @@ TLAPI void putmethod(class *cl, at *name, at *fun);
 TLAPI at *new_oostruct(at *cl);
 TLAPI at *letslot(at *obj, at *f, at *q, int howmuch);
 TLAPI at *checksend(class *cl, at *prop);
+TLAPI at *send_message(at *classname, at *obj, at *method, at *args);
 TLAPI at *classof(at *p);
 TLAPI int is_of_class(at *p, class *cl);
 TLAPI void delete_at(at *p);
