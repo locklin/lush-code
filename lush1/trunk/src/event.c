@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.10 2002-08-14 15:22:08 leonb Exp $
+ * $Id: event.c,v 1.11 2002-08-15 18:18:15 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -608,6 +608,7 @@ event_wait(int console)
 {
   at *hndl = 0;
   int cinput = 0;
+  int toggle = 1;
   block_async_poll();
   for (;;)
     {
@@ -618,13 +619,20 @@ event_wait(int console)
       ms1 = call_spoll();
       if ((hndl = ev_peek()))
         break;
-      ms2 = timer_fire();
-      if ((hndl = ev_peek()))
-        break;
       /* Check for console input */
       hndl = NIL;
       if (console && cinput)
         break;
+      /* Check timer every other time */
+      ms2 = 0;
+      if (console)
+        toggle ^= 1;
+      if (toggle || !console)
+        {
+          ms2 = timer_fire();
+          if ((hndl = ev_peek()))
+            break;
+        }
       /* Really wait */
       n = 0;
       for (src=sources; src; src=src->next)
