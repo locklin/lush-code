@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.11 2002-05-07 18:39:39 leonb Exp $
+ * $Id: module.c,v 1.12 2002-05-07 19:11:45 leonb Exp $
  **********************************************************************/
 
 
@@ -403,7 +403,7 @@ dynlink_init(void)
 static void
 dynlink_hook(struct module *m, char *hookname)
 {
-  if (m->hook)
+  if (m->hook && error_doc.ready_to_an_error)
     {
       at *arg = cons(named(hookname), new_cons(m->backptr, NIL));
       at *ans = apply(m->hook, arg);
