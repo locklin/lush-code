@@ -1,0 +1,321 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: linalgebra.lsh,v 1.2 2002-12-20 07:32:43 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gsl/gsl-config")
+(libload "gsl/gsl-idx")
+(libload "gsl/eigen")
+(libload "gsl/linalg")
+(libload "gsl/permutation")
+(libload "libidx/idx-sort")
+
+;; dummy function that adds GSL C header files in C file
+(eval `(de dummy_linalgebra () ,gsl-cpheader-cmd ()))
+
+
+#? *** Linear Algebra
+;; This provides such things as linear system solving, matrix 
+;; inverse, eigenvalues of symmetric matrices, and singular
+;; value decomposition for real and complex matrices.
+
+#? (eigen-symm <m>)
+;; Compute eigenvalues of symmetric real matrix <m>.  A vector of
+;; sorted eigenvalues is returned. The input matrix is destroyed.  to
+;; call non-destructively, do {<c> (eigen-symm (idx-copy m))}.
+(de eigen-symm (m)
+  ((-idx2- (-double-)) m)
+  (let ((v (double-matrix (idx-dim m 0)))
+	(p (gsl_eigen_symm_alloc (idx-dim m 0))))
+    (idx2gsl (gsl-eigen-symm m v p))
+    (gsl_eigen_symm_free p)
+    (idx-d1sortdown v)
+    v))
+
+#? (eigen-symmv <m>)
+;; Compute eigenvectors and eigenvalues of symmetric matrix <m>.  The
+;; eigenvectors are written into <m> (each column is an eigenvector).
+;; The eigenvalues are returned in an idx1.  Eigenvalues and
+;; eigenvectors are sorted in descending order.
+(de eigen-symmv (m)
+  ((-idx2- (-double-)) m)
+  (let ((v (double-matrix (idx-dim m 0)))
+	(ev (double-matrix (idx-dim m 0) (idx-dim m 1)))
+	(p (gsl_eigen_symmv_alloc (idx-dim m 0))))
+    (idx2gsl (gsl-eigen-symmv m v ev p))
+    (idx2gsl (gsl_eigen_symmv_sort v ev 1))
+    (gsl_eigen_symmv_free p)
+    (idx-copy ev m)
+    v))
+
+#? (eigen-herm <m>)
+;; Compute eigenvalues of Hermitian complex matrix <m>
+;; (NxMx2 matrix). Vector of sorted eigenvalues is returned. 
+;; Input matrix is destroyed.
+;; to call non-destructively, do {<c> (eigen-herm (idx-copy m))}.
+(de eigen-herm (m)
+  ((-idx3- (-double-)) m)
+  (let ((v (double-matrix (idx-dim m 0)))
+	(p (gsl_eigen_herm_alloc (idx-dim m 0))))
+    (idx2gsl (gsl-eigen-herm m v p))
+    (gsl_eigen_herm_free p)
+    (idx-d1sortdown v)
+    v))
+
+#? (eigen-hermv <m>)
+;; Compute eigenvalues and eigenvectors of Hermitian complex matrix <m>.
+;; The vector of eigenvalues is returned. The input matrix is filled
+;; with eigenvectors on exit (each column is an eigenvector).
+(de eigen-hermv (m)
+  ((-idx3- (-double-)) m)
+  (let ((v (double-matrix (idx-dim m 0)))
+	(ev (double-matrix (idx-dim m 0) (idx-dim m 1) (idx-dim m 2)))
+	(p (gsl_eigen_hermv_alloc (idx-dim m 0))))
+    (idx2gsl (gsl-eigen-hermv m v ev p))
+    (idx2gsl (gsl_eigen_hermv_sort v ev 1))
+    (gsl_eigen_hermv_free p)
+    (idx-copy ev m)
+    v))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (svd <A> <V> <S>)
+;; [from the GSL manual]: This function factorizes the M-by-N matrix A
+;; into the singular value decomposition A = U S V^T. On output the
+;; matrix A is replaced by U. The diagonal elements of the singular value
+;; matrix S are stored in the vector S. The singular values are
+;; non-negative and form a non-increasing sequence from S_1 to S_N. The
+;; matrix V contains the elements of V in untransposed form. To form the
+;; product U S V^T it is necessary to take the transpose of V. 
+;; This routine uses the Golub-Reinsch SVD algorithm. Example:
+;; {<code>
+;;   (setq a [[1 2][3 4][5 6]])
+;;   (setq v (double-matrix 2 2))
+;;   (setq s (double-matrix 2))
+;;   (svd a v s)
+;; </code>}
+(de svd (a v s)
+  ((-idx2- (-double-)) a v)
+  ((-idx1- (-double-)) s)
+  (let ((n (idx-dim a 1)))
+    (when (< (idx-dim a 0) n)
+      (error "must have M>=N for SVD of MxN matrix"))
+    (when (or (<> n (idx-dim v 0))
+	      (<> n (idx-dim v 1))
+	      (<> n (idx-dim s 0)))
+      (error "incompatible matrix sizes for SVD")))
+  (let ((w (double-matrix (idx-dim a 1))))
+    (idx2gsl (gsl_linalg_SV_decomp a v s w)))))
+
+#? (solve-hh <a> <b>)
+;; This function solves the system A x = b in-place using Householder
+;; transformations. On input <b> should contain the right-hand side,
+;; which is replaced by the solution on output. The matrix <a> is destroyed
+;; by the Householder transformations. Example:
+;; {<code>
+;; (setq a [[1 2][3 4]])
+;; = [[ 1.00  2.00 ]
+;;    [ 3.00  4.00 ]]
+;; ? (setq b [4 4])
+;; = [ 4.00  4.00 ]
+;; ? (lin-solve a b)
+;; = 0
+;; ? b
+;; = [-4.00  4.00 ]
+;; </code>}
+(de solve-hh (a b)
+  ((-idx2- (-double-)) a)
+  ((-idx1- (-double-)) b)
+  (idx2gsl (gsl_linalg_HH_svx a b)))
+
+
+#? (solve-lu <a> <b>)
+;; This function solves the system A*x=b using LU decomposition.
+;; the result is put in <b> on output. Matrix <a> is also 
+;; destroyed in the process.
+(de solve-lu (a b)
+  ((-idx2- (-double-)) a)
+  ((-idx1- (-double-)) b)
+  (let ((permut (gsl_permutation_alloc (idx-dim a 0)))
+	(signum (int-matrix))
+	(a-gsl (gsl-matrix-double-idx-ptr a))
+	(b-gsl (gsl-vector-double-idx-ptr b)))
+  (gsl_linalg_LU_decomp a-gsl permut (idx-ptr signum))
+  (gsl_linalg_LU_svx a-gsl permut b-gsl)
+  (gsl_permutation_free permut)
+  (free a-gsl) (free b-gsl)) 0)
+
+#? (solve-lu-complex <a> <b>)
+;; This function solves the complex system A*x=b using LU decomposition.
+;; the result is put in <b> on output. Matrix <a> is also 
+;; destroyed in the process.
+(de solve-lu-complex (a b)
+  ((-idx3- (-double-)) a)
+  ((-idx2- (-double-)) b)
+  (let ((permut (gsl_permutation_alloc (idx-dim a 0)))
+	(signum (int-matrix))
+	(a-gsl (gsl-matrix-complex-double-idx-ptr a))
+	(b-gsl (gsl-vector-complex-double-idx-ptr b)))
+  (gsl_linalg_complex_LU_decomp a-gsl permut (idx-ptr signum))
+  (gsl_linalg_complex_LU_svx a-gsl permut b-gsl)
+  (gsl_permutation_free permut)
+  (free a-gsl) (free b-gsl)) 0)
+
+
+#? (solve-sv <a> <b>)
+;; [adapted from the GSL manual]: This function solves the linear system 
+;; A*x=b using singular value decomposition. 
+;; the result is put in <b> on output. Matrix <a> is also 
+;; destroyed in the process. Only non-zero singular
+;; values are used in computing the solution. The parts of the
+;; solution corresponding to singular values of zero are ignored. In
+;; the over-determined case where A has more rows than columns the
+;; system is solved in the least squares sense, returning the solution x
+;; which minimizes the square norm of (A*x-b).
+(de solve-sv (a b)
+  ((-idx2- (-double-)) a)
+  ((-idx1- (-double-)) b)
+  (let ((n (idx-dim a 1)))
+    (when (< (idx-dim a 0) n)
+      (error "must have M>=N for SVD of MxN matrix"))
+    (when (<> n (idx-dim b 0))
+      (error "incompatible vector/matrix sizes for SVD solver"))
+    (let* ((v (double-matrix-nc n n))
+	   (s (double-matrix-nc n))
+	   (w (double-matrix-nc n))
+	   (x (double-matrix-nc n))
+	   (a-gsl (gsl-matrix-double-idx-ptr a))
+	   (b-gsl (gsl-vector-double-idx-ptr b))
+	   (x-gsl (gsl-vector-double-idx-ptr x))
+	   (s-gsl (gsl-vector-double-idx-ptr s))
+	   (v-gsl (gsl-matrix-double-idx-ptr v))
+	   (w-gsl (gsl-vector-double-idx-ptr w)))
+      (gsl_linalg_SV_decomp a-gsl v-gsl s-gsl w-gsl)
+      (gsl_linalg_SV_solve a-gsl v-gsl s-gsl b-gsl x-gsl)
+      (idx-copy x b)
+      (free a-gsl) (free b-gsl) (free x-gsl) (free v-gsl) (free w-gsl)) 0))
+    
+
+#? (inverse-lu <a> <i>)
+;; This function computes the inverse of a matrix <a> using LU
+;; decomposition, storing the result in the matrix <i>. The
+;; inverse is computed by solving the system A*x=b for each column
+;; of the identity matrix. It is preferable to avoid direct
+;; computation of the inverse whenever possible.
+(de inverse-lu (a i)
+  ((-idx2- (-double-)) a i)
+  (when (<> (idx-dim a 0) (idx-dim a 1))
+    (error "matrix is not square"))
+  (when (or (<> (idx-dim a 0) (idx-dim i 0))
+	    (<> (idx-dim a 1) (idx-dim i 1)))
+    (error "matrix and its inverse have different sizes"))
+  (let ((permut (gsl_permutation_alloc (idx-dim a 0)))
+	(signum (int-matrix))
+	(a-gsl (gsl-matrix-double-idx-ptr a))
+	(i-gsl (gsl-matrix-double-idx-ptr i)))
+    (gsl_linalg_LU_decomp a-gsl permut (idx-ptr signum))
+    (gsl_linalg_LU_invert a-gsl permut i-gsl)
+    (gsl_permutation_free permut)
+    (free a-gsl) (free i-gsl)) 0)
+
+
+#? (determinant <a>)
+;; compute the determinant of a matrix <a> using LU decomposition.
+;; Matrix <a> is destroyed in the process.
+(de determinant (a)
+  ((-idx2- (-double-)) a)
+  (when (<> (idx-dim a 0) (idx-dim a 1))
+    (error "matrix is not square"))
+  (let ((permut (gsl_permutation_alloc (idx-dim a 0)))
+	(signum (int-matrix))
+	(a-gsl (gsl-matrix-double-idx-ptr a)))
+    (gsl_linalg_LU_decomp a-gsl permut (idx-ptr signum))
+    (prog1 
+	(gsl_linalg_LU_det a-gsl (signum))
+      (gsl_permutation_free permut)
+      (free a-gsl))))
+
+#? (determinant-log <a>)
+;; compute the log of the absolute value of the determinant of
+;; real matrix <a> using LU decomposition. This function should be
+;; used when the regular determinant function would cause an overflow
+;; or underflow. Matrix <a> is destroyed in the process.
+(de determinant-log (a)
+  ((-idx2- (-double-)) a)
+  (when (<> (idx-dim a 0) (idx-dim a 1))
+    (error "matrix is not square"))
+  (let ((permut (gsl_permutation_alloc (idx-dim a 0)))
+	(signum (int-matrix))
+	(a-gsl (gsl-matrix-double-idx-ptr a)))
+    (gsl_linalg_LU_decomp a-gsl permut (idx-ptr signum))
+    (prog1 
+	(gsl_linalg_LU_lndet a-gsl)
+      (gsl_permutation_free permut)
+      (free a-gsl))))
+
+#? (determinant-sign <a>)
+;; compute the sign the determinant of
+;; real matrix <a> using LU decomposition. 
+;; Matrix <a> is destroyed in the process.
+(de determinant-sign (a)
+  ((-idx2- (-double-)) a)
+  (when (<> (idx-dim a 0) (idx-dim a 1))
+    (error "matrix is not square"))
+  (let ((permut (gsl_permutation_alloc (idx-dim a 0)))
+	(signum (int-matrix))
+	(a-gsl (gsl-matrix-double-idx-ptr a)))
+    (gsl_linalg_LU_decomp a-gsl permut (idx-ptr signum))
+    (prog1 
+	(gsl_linalg_LU_sgndet a-gsl (signum))
+      (gsl_permutation_free permut)
+      (free a-gsl))))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make 
+ ()
+ dummy_linalgebra
+
+ eigen-symm
+ eigen-symmv
+ eigen-herm
+ eigen-hermv
+ svd
+ solve-hh
+ solve-lu
+ solve-lu-complex
+ solve-sv
+ inverse-lu
+ determinant
+ determinant-log
+ determinant-sign
+ )
