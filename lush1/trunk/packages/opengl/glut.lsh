@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: glut.lsh,v 1.7 2004-01-18 05:15:52 leonb Exp $
+;;; $Id: glut.lsh,v 1.8 2004-04-29 15:43:46 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -43,7 +43,6 @@
 (progn
   ;; Extracted from glut-3.7 by cparse
   (defconstant "GLUT_API_VERSION" 3)
-  (defconstant "GLUT_XLIB_IMPLEMENTATION" 13)
   (defconstant "GLUT_RGB" 0)
   (defconstant "GLUT_RGBA" 0)
   (defconstant "GLUT_INDEX" 1)
@@ -232,6 +231,14 @@
   (let ((ms (* 24 3600 1000)))
     ((-int-) ms)
     #{
+      #ifdef FREEGLUT
+       if (__glutDisplay && glutGet(GLUT_INIT_STATE)) {
+         glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE,GLUT_ACTION_CONTINUE_EXECUTION);
+         glutMainLoopEvent();
+         /* Too hard to walk timers. */
+         $ms = 500;
+       }
+      #else
        if (__glutDisplay && __glutWindowListSize) {
          do {
            do {
@@ -252,6 +259,7 @@
            }
          } while ($ms < 0);
        }
+      #endif
      #}
     ms ) )
 
@@ -944,23 +952,29 @@
           #{
              #include <X11/Xlib.h>
              #include <X11/Xutil.h>
-             #include <GL/glut.h>
              #include <sys/time.h>
+             #include <GL/glut.h>
+	     #ifdef FREEGLUT
+	     # include <GL/freeglut_ext.h>
+	     #endif
           #}
           ;; Helpers
           #{
              jmp_buf glut_event_jmp;
              void glut_idle_jmp(void) { 
                 longjmp(glut_event_jmp, 1); }
-
-             extern Atom __glutWMDeleteWindow;
-             extern Display *__glutDisplay;
-             extern int __glutWindowListSize;
-             extern void *__glutWindowWorkList;
-             extern struct {
-               void *next;
-               struct timeval tv;} *__glutTimerList;
-
+             #ifdef FREEGLUT
+               extern struct { Display *dpy; /*...*/ } fgDisplay;
+	     # define __glutDisplay fgDisplay.dpy
+             #else
+               extern Atom __glutWMDeleteWindow;
+               extern Display *__glutDisplay;
+               extern int __glutWindowListSize;
+               extern void *__glutWindowWorkList;
+               extern struct {
+                 void *next;
+                 struct timeval tv;} *__glutTimerList;
+             #endif
              static at *glhandlers = 0;
              static at *glhandle = 0;
           #}
