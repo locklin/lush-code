@@ -21,8 +21,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? * base-db
-;; This is the base class used by the workbench/trainer 
-;; objects as training and test databases.
+;; This is the base class used by the trainer classes
+;; as training and test databases.
 ;; real databases can be derived from this class.
 ;; and override just the get-input, get-label, get-info
 ;; and size methods. The other methods rarely need to be
@@ -44,13 +44,13 @@
 ;; size, get-input, get-label. The other default methods
 ;; will work fine in most cases.
 
-#? (==> <base-db> get-input <n>)
+#? (==> <base-db> get-input <n> [<dest>])
 ;; returns <n>-th item
-(defmethod base-db get-input (n) ())
+(defmethod base-db get-input (n &optional dest) ())
 
-#? (==> <base-db> get-label <n>)
+#? (==> <base-db> get-label <n> [<dest>])
 ;; returns the <n>-th label.
-(defmethod base-db get-label (n) ()) 
+(defmethod base-db get-label (n &optional dest) ()) 
 
 #? (==> <base-db> get-info <n>)
 ;; returns extra information about <n>-th item
@@ -80,14 +80,16 @@
       (error "database item number out of bound")
     (setq current i)))
 
-#? (==> <base-db> get-input-current)
+#? (==> <base-db> get-input-current [<dest>])
 ;; returns current item as a rawchar
-(defmethod base-db get-input-current () (==> this get-input current))
+(defmethod base-db get-input-current (&optional dest) 
+  (==> this get-input current dest))
 
-#? (==> <base-db> get-label-current)
+#? (==> <base-db> get-label-current [<dest>])
 ;; returns labels (ASCII codes) of <n>-th item
 ;; in an idx1 of ints.
-(defmethod base-db get-label-current () (==> this get-label current))
+(defmethod base-db get-label-current (&optional dest) 
+  (==> this get-label current dest))
 
 #? (==> <base-db> get-info-current)
 ;; returns extra information about current item
@@ -97,15 +99,15 @@
 ;; these methods are provided as a convenience but are
 ;; not required by the interface with the learning library
 
-#? (==> <base-db> filter <func>)
+#? (==> db-filter <db> <func>)
 ;; return a matrix with the indices of all the patterns
 ;; for which (func <label>) returns non-nil
-(defmethod base-db filter (func)
-  (let* ((s (==> this size))
+(de db-filter (db func)
+  (let* ((s (==> db size))
 	 (m (int-matrix s))
 	 (n 0))
     (for (i 0 (1- s))
-	 (when (func (==> this get-label i)) 
+	 (when (func (==> db get-label i)) 
 	   (m n i) (incr n)))
     (narrow m 0 n 0)))
 
@@ -133,9 +135,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; these methods are obsolete and need updating.
 
-(defmethod base-db display (n x y zoom &optional labelvec2str)
-  (let* ((rc (==> this get-input n))
-         (labelvec (==> this get-label n))
+(de db-display (db n x y zoom &optional labelvec2str)
+  (let* ((rc (==> db get-input n))
+         (labelvec (==> db get-label n))
          (st (labelvec2str labelvec))
          (dims (rect-text 0 0 "000")))
     (graphics-batch
@@ -144,14 +146,14 @@
      (list (+ x (* zoom (idx-dim rc 1)))
            (+ y 2 (* zoom (idx-dim rc 0)))))))
 
-(defmethod base-db display-page (from zoom)
+(de db-display-page (db from zoom)
   (let* ((winw (xsize)) (winh (ysize))
          (lmargin 10) (xx lmargin) (yy 10)
          (goon t)
           (maxdeltay 0))
     (cls)
     (while goon
-      (let (( (nx ny) (==> this display from xx yy zoom)))
+      (let (( (nx ny) (==> db display from xx yy zoom)))
         (setq maxdeltay (max maxdeltay (- ny yy)))
         (if (> (+ nx (- nx xx) 8) winw)
             (progn
@@ -160,7 +162,7 @@
               (setq yy (+ yy maxdeltay 4)))
           (setq xx (+ nx 4))))
       (incr from)
-      (when (= from (==> this size)) (setq goon ()))
+      (when (= from (==> db size)) (setq goon ()))
       )
     from))
 
@@ -191,15 +193,21 @@
 ;; reutnrs the size of the database
 (defmethod idx-db size () (idx-dim inputs 0))
 
-#? (==> <idx-db> get-input <n>)
-;; returns <n>-th item
-(defmethod idx-db get-input (n) (idx-copy (select inputs 0 n)))
+#? (==> <idx-db> get-input <n> [<dest>])
+;; returns <n>-th item, or copies it into the x
+;; slot of <dest>.
+(defmethod idx-db get-input (n &optional dest)
+  (if dest
+        (idx-copy (select inputs 0 n) :dest:x)
+    (idx-copy (select inputs 0 n))))
 
-
-#? (==> <idx-db> get-label <n>)
+#? (==> <idx-db> get-label <n> [<dest>])
 ;; returns labels (ASCII codes) of <n>-th item
 ;; in an idx1 of ints.
-(defmethod idx-db get-label (n) (idx-copy (select labels 0 n)))
+(defmethod idx-db get-label (n &optional dest) 
+  (if dest
+      (idx-copy (select labels 0 n) dest)
+    (idx-copy (select labels 0 n))))
 
 (defmethod idx-db get-info (n) ())
 
@@ -227,20 +235,20 @@
 
 (defmethod multi-db make-size-table ()
   (let ((p 0))
-    (for (i 0 (1- (idx-dim base-array 0)))
+   (for (i 0 (1- (idx-dim base-array 0)))
       (size-matrix i p)
       (incr p (==> (base-array i) size)))
     (setq size p)))
 
 (defmethod multi-db size () size)
 
-(defmethod multi-db get-input (i)
+(defmethod multi-db get-input (i &optional dest)
   (let ((n (idx-i1bsearch size-matrix i)))
-    (==> (base-array n) get-input (- i (size-matrix n)))))
+    (==> (base-array n) get-input (- i (size-matrix n)) dest)))
 
-(defmethod multi-db get-label (i)
+(defmethod multi-db get-label (i &optional dest)
   (let ((n (idx-i1bsearch size-matrix i)))
-    (==> (base-array n) get-label (- i (size-matrix n)))))
+    (==> (base-array n) get-label (- i (size-matrix n)) dest)))
 
 (defmethod multi-db get-info (i)
   (let ((n (idx-i1bsearch size-matrix i)))
@@ -273,13 +281,13 @@
 
 (defmethod narrow-db size () size)
 
-(defmethod narrow-db get-input (n)
+(defmethod narrow-db get-input (n &optional dest)
   ;; ((-int-) n)
-  (==> base get-input (+ offset n)))
+  (==> base get-input (+ offset n) dest))
 
-(defmethod narrow-db get-label (n)
+(defmethod narrow-db get-label (n &optional dest)
   ;; ((-int-) n)
-  (==> base get-label (+ offset n)))
+  (==> base get-label (+ offset n) dest))
 
 (defmethod narrow-db get-info (n)
   (==> base get-info (+ offset n)))
@@ -307,11 +315,11 @@
 
 (defmethod permute-db size () (idx-dim map 0))
 
-(defmethod permute-db get-input (n)
-  (==> base get-input (map n)))
+(defmethod permute-db get-input (n &optional dest)
+  (==> base get-input (map n) dest))
 
-(defmethod permute-db get-label (n)
-  (==> base get-label (map n)))
+(defmethod permute-db get-label (n &optional dest)
+  (==> base get-label (map n) dest))
 
 (defmethod permute-db get-info (n)
   (==> base get-info (map n)))

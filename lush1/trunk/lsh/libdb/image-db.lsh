@@ -19,7 +19,7 @@
 ;;.P
 ;; This is not a subclass of base-db, but it implements the interface
 ;; and can be used as a base db for a narrow-db or perturb-db
-;; as well as fed directly to a tranier/workbench.
+;; as well as fed directly to a trainer object.
 (defclass image-db object
   ((-int-) current)
   ((-idx1- (-ubyte-)) images) ;; [n-pixels-per-image*n-images*depth] 
@@ -155,24 +155,31 @@
 ;; reutnrs the size of the database
 (defmethod image-db size () (let ((z (idx-dim starts 0))) ((-int-) z) z))
 
-#? (==> <image-db> get-input <n>)
-;; returns <n>-th item as a [n-rows,n-columns,3] RBG ubyte image
-(defmethod image-db get-input (n)
+#? (==> <image-db> get-input <n> <dest>)
+;; copies <n>-th item as a [n-rows,n-columns,3] RBG 
+;; ubyte image into the x slot of <dest>. <dest> must be
+;; an <idx3-state> or a subclass thereof.
+;; It is resized if necessary.
+(defmethod image-db get-input (n dest)
   ((-int-) n)
+  ((-obj- (idx3-state)) dest)
   (let* ((ni (sizes n 0))
          (nj (sizes n 1))
          (nk (sizes n 2))
          (np (* ni nj nk))
          (start (starts n))
          (flat-image (narrow images 0 np start))
-         (image (redim flat-image ni nj nk))
-         )
+         (image (redim flat-image ni nj nk)))
     (idx-changeoffset image start)
-    image))
+    (==> dest resize ni nj nk)
+    (idx-copy image :dest:x)))
 
-#? (==> <image-db> get-label <n>)
+#? (==> <image-db> get-label <n> <dest>)
 ;; returns labels  of <n>-th example as an int.
-(defmethod image-db get-label (n) ((-int-) n) (classes n))
+(defmethod image-db get-label (n dest) 
+  ((-int-) n) 
+  ((-idx0- (-int-)) dest)
+  (dest (classes n)))
 
 (defmethod image-db get-info (n) ((-int-) n) ())
 
@@ -195,13 +202,17 @@
   (when (>= current (==> this size)) (setq current 0))
   current)
 
-#? (==> <image-db> get-input-current)
+#? (==> <image-db> get-input-current <dest>)
 ;; get current pattern.
-(defmethod image-db get-input-current () (==> this get-input current))
+(defmethod image-db get-input-current (dest) 
+  ((-obj- (idx3-state)) dest)
+  (==> this get-input current dest))
 
 #? (==> <image-db> get-label-current)
 ;; get current label.
-(defmethod image-db get-label-current () (==> this get-label current))
+(defmethod image-db get-label-current (dest) 
+  ((-idx0- (-int-)) dest)
+  (==> this get-label current dest))
 
 #? (==> <image-db> get-info-current)
 ;; get current info.
