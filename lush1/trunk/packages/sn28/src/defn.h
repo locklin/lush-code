@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: defn.h,v 1.2 2003-12-14 02:58:05 leonb Exp $
+ * $Id: defn.h,v 1.3 2003-12-14 02:59:07 leonb Exp $
  **********************************************************************/
 
 /******************************************************************
@@ -42,21 +42,6 @@
 
 #include "header.h"
 
-/* -------------- COMPAT.H ------------------ */
-
-
-#ifdef Fadd
-#define Fadd(x,y) ((x)+(y))
-#endif
-#ifdef Fsub
-#define Fsub(x,y) ((x)-(y))
-#endif
-#ifdef Fmul
-#define Fmul(x,y) ((x)*(y))
-#endif
-#ifdef Fdiv
-#define Fdiv(x,y) ((x)/(y))
-#endif
 
 
 /* ------------- NETWORK.H ------------------ */
@@ -239,6 +224,19 @@ extern struct nlf *nlf,*dnlf,*ddnlf;
 #define FltHalf   Fhalf
 #define Flt1      Fone
 #define Flt2      Ftwo
+
+#ifndef Fadd
+#define Fadd(x,y) ((x)+(y))
+#endif
+#ifndef Fsub
+#define Fsub(x,y) ((x)-(y))
+#endif
+#ifndef Fmul
+#define Fmul(x,y) ((x)*(y))
+#endif
+#ifndef Fdiv
+#define Fdiv(x,y) ((x)/(y))
+#endif
 
 extern flt theta, alpha, decay;
 #ifdef NEWTON
