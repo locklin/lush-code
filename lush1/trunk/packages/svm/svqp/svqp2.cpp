@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.7 2004-09-30 21:06:26 leonb Exp $
+ * $Id: svqp2.cpp,v 1.8 2004-09-30 21:17:16 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -261,12 +261,17 @@ SVQP2::cache_fini()
 long
 SVQP2::cache_clean()
 {
-  while ((curcachesize > maxcachesize) && 
-	 (lru->prev != lru) )
+  if (curcachesize > maxcachesize)
     {
-      Arow *p = lru->prev;
-      curcachesize += p->resize(0);
-      p->refile(0);
+      if (! hitcache)
+	info("@","@ Reached maxcachesize (%ld MB)\n",(maxcachesize>>20));
+      hitcache = true;
+      while ((curcachesize > maxcachesize) && (lru->prev != lru))
+	{
+	  Arow *p = lru->prev;
+	  curcachesize += p->resize(0);
+	  p->refile(0);
+	}
     }
   return curcachesize;
 }
@@ -382,6 +387,7 @@ SVQP2::SVQP2(int n)
   curcachesize = 0;
   maxcachesize = 256*1024*1024;
   vdots = 0;
+  hitcache = false;
   // init cache
   lru = 0;
   rows = new Arow* [n];
