@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: cluster.lsh,v 1.3 2005-02-20 22:12:37 leonb Exp $
+;;; $Id: cluster.lsh,v 1.4 2005-02-21 15:53:52 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -149,7 +149,7 @@
   (setq slaves ())
   ;; poll output files for lushslave information
   (let ((connections ())
-	(attempts 10))
+	(attempts 8))
     (each ((machine machines))
       (for (i 1 connect)
 	   (let ((name (sprintf "%s-%d" machine i)))
@@ -169,14 +169,15 @@
 			    "LUSHSLAVE[ \t]*([^ \t\n\r]+)[ \t]*([0-9]+)([ \t].*)?"
 			    (read-string) )) ) )
 	    (if data
-		(let* ((slave (new remotelush (car data) (val (cadr data)))))
-		  (setq :slave:name (basename ofile))
-		  (==> slave exec 
-		       `(progn (chdir ,currentdir) 
-			       (printf "LUSHSLAVE PID=%d\n" (getpid)) ) )
-		  (putp slave 'ofile (open-read ofile))
-		  (setq slaves (nconc1 slaves slave)) )
-	      (setq remaining (cons name remaining)) ) ) )
+		(let* ((slave (new remotelush (car data) (- (val (cadr data))))))
+		  (when :slave:info
+		    (setq :slave:name (basename ofile))
+		    (==> slave exec 
+			 `(progn (chdir ,currentdir) 
+				 (printf "LUSHSLAVE PID=%d\n" (getpid)) ) )
+		    (putp slave 'ofile (open-read ofile))
+		    (setq slaves (nconc1 slaves slave)) 
+		    (setq remaining (cons name remaining)) ) ) ) ) )
 	(setq connections (reverse remaining)) ) )
     ;; remove invalid connections
     (each ((name connections))
@@ -332,7 +333,12 @@
 ;; Especially when <forceful> is set to true.
 
 (demethod ClusterSession break(&optional forceful)
-  (setq pending ())
+  ;; Dequeue jobs
+  (let ((jobs pending))
+    (setq pending ())
+    (each ((job jobs))
+      (setq :job:slave ())
+      (setq :job:error "Dequeued") ) )
   (==> this schedule)
   (each ((slave slaves))
     (when (not :slave:status)
