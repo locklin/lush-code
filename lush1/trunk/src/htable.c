@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.11 2003-01-11 05:26:55 leonb Exp $
+ * $Id: htable.c,v 1.12 2003-02-28 18:39:23 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -575,7 +575,7 @@ DX(xhashcode)
   ARG_EVAL(1);
   x = hash_value(APOINTER(1));
   if (! format[0])
-    sprintf(format,"%%0%dlx", 2*sizeof(unsigned long));
+    sprintf(format,"%%0%dlx", (int)(2*sizeof(unsigned long)));
   sprintf(buffer,format, x);
   return new_string(buffer);
 }

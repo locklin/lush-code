@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.10 2002-12-09 13:01:11 leonb Exp $
+ * $Id: allocate.c,v 1.11 2003-02-28 18:39:21 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -478,7 +478,7 @@ void *lush_malloc(int x, char *file, int line)
 {
     void *z = malloc(x);
     if (malloc_file)
-	fprintf(malloc_file,"%x\tmalloc\t%d\t%s:%d\n",(unsigned int)z,x,file,line);
+	fprintf(malloc_file,"%p\tmalloc\t%d\t%s:%d\n",z,x,file,line);
     if (!z)
       error (NIL, "Memory exhausted", NIL);
     return z;
@@ -489,7 +489,7 @@ void *lush_calloc(int x,int y,char *file,int line)
 {
     void *z = calloc(x,y);
     if (malloc_file)
-	fprintf(malloc_file,"%x\tcalloc\t%d\t%s:%d\n",(unsigned int)z,x*y,file,line);
+	fprintf(malloc_file,"%p\tcalloc\t%d\t%s:%d\n",z,x*y,file,line);
     if (!z)
       error (NIL, "Memory exhausted", NIL);
     return z;
@@ -499,8 +499,8 @@ void *lush_realloc(void *x,int y,char *file,int line)
 {
     void *z = (void*)realloc(x,y);
     if (malloc_file) {
-	fprintf(malloc_file,"%x\trefree\t%d\t%s:%d\n",(unsigned int)x,y,file,line);
-	fprintf(malloc_file,"%x\trealloc\t%d\t%s:%d\n",(unsigned int)z,y,file,line);
+	fprintf(malloc_file,"%p\trefree\t%d\t%s:%d\n",x,y,file,line);
+	fprintf(malloc_file,"%p\trealloc\t%d\t%s:%d\n",z,y,file,line);
     }
     if (!z)
       error (NIL, "Memory exhausted", NIL);
@@ -512,7 +512,7 @@ void lush_free(void *x,char *file,int line)
 {
     free(x);
     if (malloc_file)
-	fprintf(malloc_file,"%x\tfree\t%d\t%s:%d\n",(unsigned int)x,0,file,line);
+	fprintf(malloc_file,"%p\tfree\t%d\t%s:%d\n",x,0,file,line);
 }
 
 void lush_cfree(void *x,char *file,int line)
