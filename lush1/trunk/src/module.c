@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.48 2004-07-19 21:41:51 leonb Exp $
+ * $Id: module.c,v 1.49 2004-07-19 23:20:18 leonb Exp $
  **********************************************************************/
 
 
@@ -131,13 +131,15 @@ nsbundle_init()
 	  {
 	    long addr = 0;
 	    char sname[64];
-	    fscanf(f,"%lx %c %60s%", &addr, sname, sname);
-	    if (addr && !strcmp(sname,"__dyld_image_count"))
-	      slide = (char*)addr - (char*)dyld_image_count;
-	    else if (addr && !strcmp(sname,"_clear_undefined_list"))
-	      nsbundle_clear_undefined_list = (void*)addr;
-	    else if (addr && !strcmp(sname,"_return_on_error"))
-	      nsbundle_return_on_error = (void*)addr;
+	    if (fscanf(f,"%lx %c %60s", &addr, sname, sname) == 3)
+	      {
+		if (!strcmp(sname,"__dyld_image_count"))
+		  slide = (char*)addr - (char*)dyld_image_count;
+		else if (!strcmp(sname,"_clear_undefined_list"))
+		  nsbundle_clear_undefined_list = (void*)addr;
+		else if (!strcmp(sname,"_return_on_error"))
+		  nsbundle_return_on_error = (void*)addr;
+	      }
 	    while (!feof(f))
 	      if (fgetc(f) == '\n')
 		break;
@@ -146,7 +148,7 @@ nsbundle_init()
 	  = (void*)(slide + (char*)nsbundle_clear_undefined_list);
 	nsbundle_return_on_error 
 	  = (void*)(slide + (char*)nsbundle_return_on_error);
-	fclose(f);
+	pclose(f);
       }
   }
 #endif
