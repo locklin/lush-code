@@ -1,0 +1,331 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 
+
+#? *** Tutorial: Writing Games with Lush and SDL.
+.AUTHOR Yann LeCun
+
+Lush provides a simple way to write 2D real-time
+games using the SDL library (Simple Directmedia Layer).
+What follows is a gentle tutorial on how to do that.
+
+#? ** A Simple Lunar Lander
+
+As a case study, we will describe how to write the
+core of a simple Lunar Lander game. The amazing thing
+is that the whole game will fit in less than a page of
+Lisp code.
+.P
+The code described in this section is available
+in [lushdir]/packages/sdl/demos/tutorial.lsh
+.P
+First, make a working directory, say "game" 
+and cd to it.
+
+#? Creating the Ship and Background Images
+
+Before we start writing code, we need to create images 
+for the ship and the background. This can be done with
+The Gimp. Start The Gimp, and open a new drawing with
+a transparent background. Paint your object
+(or modify an existing digital picture), and
+save the image as a PNG file. The advantage of
+using the PNG format is that it is relatively
+compact, uses lossless compression, and supports
+an alpha channel for transparency.
+.P
+For the time being, instead of creating your own art,
+you can simply copy the files lem.png and moon.png 
+from the directory [lushdir]/packages/sdl/demos 
+into your working directory.
+
+#? * First Implementation of Lander
+
+#? Getting started 
+
+Start your favorite text editor (say emacs), 
+and open a new program file, say lander.lsh.
+.P
+At the top of the file, we put the following line:
+.CODE
+  (libload "sdl/libsdl")
+.P
+which will load the SDL library.
+.P
+Next we need to define a function that will
+run our game:
+.CODE
+  (de lander1 ()
+
+
+#? initializing SDL
+
+The first line of our function MUST be this:
+.CODE
+    (sdl-initialize)
+.P
+This will initialize the SDL subsystem. It's OK
+to call this function multiple times (it only 
+initialize SDL once).
+.P
+
+#? opening the SDL screen
+
+Opening an SDL screen is done as follows:
+.CODE
+    (setq scr (new sdl-screen 640 480 "Lander"))
+.P
+now the variable "scr" contains the screen object.
+
+#? creating the background and ship sprites
+
+First, we create a new sprite on the screen "scr"
+and give it the ID 0. Sprites are composed of one
+of several frames that can be loaded with images.
+We can load the image file "moon.png" into frame
+0, and set the hot-point at coordinates 0 0,
+(which is the upper-left corner). The hot point 
+is the "handle" by which the sprite is "held".
+When we move the sprite to coordinate (x,y),
+we move its handle to (x,y). Here, we will move
+this sprite to (0,0).
+.CODE
+    ;; create background sprite
+    (setq bgd (new sdl-sprite scr 0))
+    ;; load moon image into frame 0 of bgd sprite
+    (==> bgd load-frame "moon.png" 0 0 0)
+    ;; move sprite to 0 0
+    (==> bgd move 0 0)
+.P
+The move method does not actually draw anything
+on the screen, it merely sets the internal
+coordinate variables of the sprite to (0,0).
+.P
+Now let's create the ship sprite and create two
+variables to hold its position:
+.CODE
+    ;; create ship sprite
+    (setq ship (new sdl-sprite scr 1))     
+    ;; load lem image into frame 0 of ship sprite
+    (==> ship load-frame "lem.png" 0 0 0)
+    ;; set position of ship
+    (setq x 10) (setq y 20)
+.P
+
+#? creating the event handler
+
+We are going to need to grab inputs from the keyboard.
+To do so, we create an "sdl-event" object, and
+create a integer vector with 3 elements to hold
+the result of grabbing the events:
+.CODE
+    (setq event (new sdl-event))
+    (setq xyk (int-matrix 3))
+.P
+
+#? the main loop
+
+The main loop of our game will look something like this:
+.PRE
+    - clear the screen
+    - draw the background sprite
+    - read the keyboard
+    - move the ship sprite according to the keys pressed
+    - draw the ship sprite at its new location
+    - repeat the above step until the user quits
+.P
+The SDL screen opened through the sdl-screen object
+is double buffered. What that means is that all the
+drawing command do not directly happen on the visible
+screen, but happen in an invisible video buffer.
+When all the objects have been drawn, we swap the
+visible buffer and the invisible buffer: the buffer
+we just drew into is now visible, and the previously
+visible buffer is now available for drawing into.
+This technique avoids the "flickering" that happens
+on the screen when objects are drawn one by one in 
+sequence. Flipping the buffers is performed by
+calling the "flip" method of the sdl-screen.
+Here the code of our main loop:
+.CODE
+    (while (not stop)
+      (==> scr clear)                 ; fill image with black
+      (==> bgd draw)                  ; draw moon ground
+      (==> event get-arrows xyk)      ; read keyboard
+      (when (= (xyk 2) SDLK_q) (setq stop t)) ; stop when q is pressed
+      (setq x (+ x (* 10 (xyk 0))))   ; compute new X coordinate
+      (setq y (+ y (* 10 (xyk 1))))   ; compute new Y coordinate
+      (==> ship move x y)             ; move ship sprite to new position
+      (==> ship draw)                 ; draw ship in back buffer
+      (==> scr flip)                  ; flip screen buffers
+      )                               ; loop
+.P
+The "get-arrow" method fills the three elements of the "xyk" 
+vector as follows:
+.PRE
+  (xyk 0): -1 if left arrow pressed, +1 if right arrow pressed, 0 otherwise
+  (xyk 1): -1 if up arrow pressed, +1 if down arrow pressed, 0 otherwise
+  (xyk 2): key symbol of any other key that is pressed simultaneously.
+.P
+So, the expression "(setq x (+ x (* 10 (xyk 0))))" will move the ship
+by 10 pixels to the left or right when the left or right arrow keys
+are pressed.
+.P
+The expression "(when (= (xyk 2) SDLK_q) (setq stop t))" tests if
+the "q" key was pressed, and sets the "stop" variable to true
+if it was pressed. The "while" loop tests the "stop" variable and
+exits if it is true (i.e. if the "q" has been pressed).
+
+#? Putting it all together
+
+Here is the complete code:
+.CODE
+(de lander1 ()
+    ;; initialize the SDL subsystem. DONT FORGET THIS!!!
+    (sdl-initialize)
+    ;; open SDL screen
+    (setq scr (new sdl-screen 640 480 "Lander")) 
+    ;; create background sprite
+    (setq bgd (new sdl-sprite scr 0))
+    (==> bgd load-frame "moon.png" 0 0 0)
+    (==> bgd move 0 0)
+    ;; create lem sprite
+    (setq ship (new sdl-sprite scr 1))     
+    (==> ship load-frame "lem.png" 0 0 0)
+    ;; set position of ship
+    (setq x 10) (setq y 20)
+    ;; create event object
+    (setq event (new sdl-event))
+    (setq xyk (int-matrix 3))
+
+    (while (not stop)
+      (==> scr clear)                 ; fill image with black
+      (==> bgd draw)                  ; draw moon ground
+      (==> event get-arrows xyk)      ; read keyboard
+      (when (= (xyk 2) SDLK_q) (setq stop t)) ; stop when q is pressed
+      (setq x (+ x (* 10 (xyk 0))))   ; compute new X coordinate
+      (setq y (+ y (* 10 (xyk 1))))   ; compute new Y coordinate
+      (==> ship move x y)             ; move ship sprite to position
+      (==> ship draw)                 ; draw ship
+      (==> scr flip)                  ; flip screens
+      ))
+.P
+
+This code has three major problems:
+.LI
+It's not a real Lunar Lander game, since the ship does
+not obey Newtonian mechanics.
+.LI
+It's written in a terribly un-clean style: the code
+uses lots of global variables, which is universally
+recognized as bad practice.
+.LI
+nothing prevents the ship from getting off the screen.
+.P
+
+#? * Second Implementation of Lander
+
+The new implementation replaces all the global variables
+by local variables created using the "let*" construct.
+Local variables created with "let*" (or "let") disappear
+after the "let*" evaluation completes. 
+.P
+The new implementation also obeys Newtonian mechanics
+with (gravity, intertia an such). This is done very simply
+with the following sequence of operations:
+.PRE
+   - read the keyboard arrows and determine the engines thrusts
+   - compute accelerations from thrust: 
+     - X-acceleration <- X-thrust / ship's mass
+     - Y-acceleration <- Y-thrust / ship's mass + gravity
+   - compute new velocity from acceleration
+     - X-velocity <- X-velocity + X-acceleration * deltat
+     - Y-velocity <- Y-velocity + Y-acceleration * deltat
+   - compute new position from velocity
+     - X-position <- X-position + X-velocity * deltat
+     - Y-position <- Y-position + Y-velocity * deltat
+.P
+The <deltat> variable is the expected time it takes to go around 
+the main loop of the game. In other words, if going around
+the loop takes 0.05 seconds (20 frames per second), <deltat> should 
+be 0.05. For example, if the X-velocity is 40 pixels per second and 
+going around the loop takes 0.05 seconds, then the X-position 
+should be incremented by 40*0.05 = 2 pixels each time we go 
+around the loop, hence the formula above. How do we know how long it 
+takes to go around the loop? Fortunately, the "flip" method of 
+sdl-screen sets the the <deltat> slot of the <sdl-screen> object to the 
+number of seconds since the last call to flip. So as long as we do
+one screen flip per cycle around the loop, we can simply set
+our <deltat> to the screen's <deltat>.
+The position update code is now:
+.CODE
+        [get keyboard input into xyk here]
+        (setq ax (* mass-inv side-thrust (xyk 0))) ; update X-acceleration 
+        (setq ay (+ grav (* mass-inv main-thrust (xyk 1)))) ; update Y-accel
+        (setq vx (+ vx (* ax deltat)))  ; update X-velocity
+        (setq vy (+ vy (* ay deltat)))  ; update Y-velocity
+        (setq x  (+ x (* vx deltat)))   ; update X-position
+        (setq y  (+ y (* vy deltat)))   ; update Y-position
+        [draw stuff and flip screen buffers here]
+        (setq deltat :scr:deltat)       ; get time between screen flips
+.P
+Next, we need some code to bounce the ship around or have it
+wrap around the screen when it goes off the boundaries.
+Here is the code below. We are assuming that the variable
+"ground" contains the value 360 or so (near the bottom of the screen):
+.CODE
+        (when (< x -80) (setq x (+ 640 (- x -80)))) ; wrap around left side
+        (when (> x 640) (setq x (+ -80 (- x 640)))) ; wrap around right side
+        (when (> y ground)              ; bounce on ground
+          (setq vy (* -0.5 vy)) 
+          (setq vx (* 0.25 vx)) 
+          (setq y ground))
+.P
+Here is the new complete code:
+.CODE
+(de lander2 ()
+    ;; initialize the SDL subsystem. DONT FORGET THIS!!!
+    (sdl-initialize)
+    (let* ((scr (new sdl-screen 640 480 "Lander")) ; open screen
+           (bgd (new sdl-sprite scr 0))     ; create background sprite
+           (ship (new sdl-sprite scr 1))     ; create lem sprite
+           ;; set position, velocity, acceleration of ship
+           (x 10) (y 20) (vx 4) (vy 0) (ax 0) (ay 0)
+           ;; set mass, inverse mass, and deltat of ship
+           (mass 1) (mass-inv (/ 1 mass)) (deltat 0.01)
+           (side-thrust 200)            ; set side engine thrust
+           (main-thrust 400)            ; set main engine thrust
+           (grav 200)                   ; set gravity coefficient in pixels/s/s
+           (stop ())
+           (event (new sdl-event))
+           (xyk (int-matrix 3))
+           (ground 360))
+      (==> bgd load-frame "moon.png" 0 0 0)
+      (==> bgd move 0 0)
+      (==> ship load-frame "lem.png" 0 0 0)
+      (while (not stop)
+        (==> scr clear)                 ; fill image with black
+        (==> bgd draw)                  ; draw moon ground
+        (==> event get-arrows xyk)      ; read keyboard
+        (when (= (xyk 2) SDLK_q) (setq stop t)) ; stop when q is pressed
+        (setq ax (* mass-inv side-thrust (xyk 0))) ; update acceleration 
+        (setq ay (+ grav (* mass-inv main-thrust (xyk 1)))) ; update acceleration 
+        (setq vx (+ vx (* ax deltat)))  ; update velocity
+        (setq vy (+ vy (* ay deltat)))  ; update velocity
+        (setq x  (+ x (* vx deltat)))   ; update position
+        (setq y  (+ y (* vy deltat)))   ; update position
+        (when (< x -80) (setq x (+ 640 (- x -80)))) ; wrap around left side
+        (when (> x 640) (setq x (+ -80 (- x 640)))) ; wrap around right side
+        (when (> y ground)              ; bounce on ground
+          (setq vy (* -0.5 vy)) 
+          (setq vx (* 0.25 vx)) 
+          (setq y ground))
+        (==> ship move x y)              ; move ship sprite to position
+        (==> ship draw)                  ; draw ship
+        (==> scr flip)                  ; flip screens
+        (setq deltat :scr:deltat)       ; update deltat to time between screen flips
+        )))
+.P
+
+Next, we will explore how to make the ship rotate.
+[to be continued...].
+
