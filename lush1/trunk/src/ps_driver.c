@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: ps_driver.c,v 1.3 2002-08-07 15:20:39 leonb Exp $
+ * $Id: ps_driver.c,v 1.4 2002-10-18 23:38:19 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -86,6 +86,7 @@ ps_new_window(int x, int y, unsigned int w, unsigned int h, char *name)
     error(NIL,"too many PS windows",NIL);
   if (w ==0 || h == 0)
     w = h = 512;
+  memset(info, 0, sizeof(*info));
   info->filename = malloc(strlen(name)+1);
   info->w = w;
   info->h = h;
@@ -591,7 +592,6 @@ ps_window(int x, int y, int w, int h, char *name)
   struct M_window *info;
   at *ans;
   info = ps_new_window(x,y,w,h,name);
-  memset(info, 0, sizeof(*info));
   ans = new_extern( &window_class, info );
   info->lwin.used       = 1;
   info->lwin.font       = new_safe_string(FONT_STD);
