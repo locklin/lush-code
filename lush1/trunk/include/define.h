@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: define.h,v 1.6 2002-10-10 14:56:04 leonb Exp $
+ * $Id: define.h,v 1.7 2003-01-10 20:23:33 leonb Exp $
  **********************************************************************/
 
 #ifndef DEFINE_H
@@ -241,8 +241,6 @@ typedef void* gptr;
 #define STRING_BUFFER (int)4096	/* string operations buffer size */
 #define LINE_BUFFER   (int)1024	/* line buffer length */
 #define FILELEN       (int)1024	/* file names length */
-#define PATHLEN       (int)4096	/* path buffer length */
-#define PATHNUMBER    (int)64	/* path items number */
 #define DZ_STACK_SIZE (int)1000 /* stack size for DZs */
 
 /* ---------------------------------- */
