@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fltlib.h,v 1.2 2003-09-26 03:54:56 profshadoko Exp $
+ * $Id: fltlib.h,v 1.3 2004-01-11 19:13:29 leonb Exp $
  **********************************************************************/
 
 #ifndef FLTLIB_H
@@ -158,10 +158,39 @@ LUSHAPI real Drand(void);
 LUSHAPI real Dgauss(void);
 LUSHAPI void Dseed(int x);
 
-
 /* ------------------------------------------------------- */
 
 #ifdef __cplusplus
 }
-#endif
-#endif
+#else
+# ifdef HAVE_COMPLEX
+#  include <complex.h>
+typedef complex double complexreal;
+extern LUSHAPI complexreal Ci;
+LUSHAPI real Carg(complexreal z);
+LUSHAPI real Cabs(complexreal z);
+#  define Creal(z)  (creal(z))
+#  define Cimag(z)  (cimag(z))
+#  define Cnew(r,i) ((r)+Ci*(i))
+#  define Cadd(x,y) ((x)+(y))
+#  define Csub(x,y) ((x)-(y))
+#  define Cmul(x,y) ((x)*(y))
+#  define Cdiv(x,y) ((x)/(y))
+#  define Cconj(z)  (conj(z))
+# else  /* HAVE_COMPLEX */
+struct complexreal_s { double r,i; };
+typedef struct complexreal_s complexreal;
+extern LUSHAPI complexreal Ci;
+LUSHAPI real Carg(complexreal z);
+LUSHAPI real Cabs(complexreal z);
+#  define Creal(z)  ((z).r)
+#  define Cimag(z)  ((z).i)
+LUSHAPI complexreal Cnew(real, real);
+LUSHAPI complexreal Cadd(complexreal, complexreal);
+LUSHAPI complexreal Csub(complexreal, complexreal);
+LUSHAPI complexreal Cmul(complexreal, complexreal);
+LUSHAPI complexreal Cdiv(complexreal, complexreal);
+LUSHAPI complexreal Cconj(complexreal z);
+# endif  /* HAVE_COMPLEX */
+#endif  /* __cplusplus */
+#endif /* FLTLIB_H */

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.55 2003-09-26 03:54:56 profshadoko Exp $
+ * $Id: header.h,v 1.56 2004-01-11 19:13:29 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -718,6 +718,14 @@ TLAPI real solve(real x1, real x2, real (*f) (real));
 TLAPI at *makelist(int n, at *v);
 TLAPI int comp_test(at *p, at *q);
 TLAPI int eq_test (at *p, at *q);
+
+
+/* ARITH.H ----------------------------------------------------- */
+
+extern LUSHAPI class complex_class;
+LUSHAPI at *new_complex(complexreal z);
+LUSHAPI int complexp(at*);
+LUSHAPI complexreal get_complex(at*);
 
 
 /* OOSTRUCT.H ----------------------------------------------------- */
