@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.10 2003-07-11 13:03:45 leonb Exp $
+ * $Id: nan.c,v 1.11 2003-07-14 13:02:00 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -413,6 +413,7 @@ nop_irq(void)
 /* probe_fpe_irq -- signal handler for testing SIGFPE */
 
 static int fpe_flag;
+static int fpe_isnan;
 
 static RETSIGTYPE
 probe_fpe_irq(void)
@@ -423,6 +424,14 @@ probe_fpe_irq(void)
   fpe_flag = 1;
 }
 
+static void 
+probe_fpe(void)
+{
+  fpe_isnan = isnanD(3.0 + getnanD());
+#ifdef __alpha__
+  __asm__ volatile ("trapb");
+#endif
+}
 
 /* set_fpe_irq -- set signal handler for FPU exceptions */
 
@@ -437,21 +446,21 @@ set_fpe_irq(void)
       /* Check whether "INV" exception must be masked */
       fpe_flag = 0;
       signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
-      isnanD(3.0 + getnanD());
+      probe_fpe();
       if (! fpe_flag) break;
       /* Check whether all exceptions must be masked */
       fpe_flag = 0;
       signal(SIGFPE, (SIGHANDLERTYPE)nop_irq);
       setup_fpu(FALSE,TRUE);
       signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
-      isnanD(3.0 + getnanD());
+      probe_fpe();
       if (! fpe_flag) break;
       /* Check whether signal must be ignored */
       fpe_flag = 0;
       signal(SIGFPE, (SIGHANDLERTYPE)nop_irq);
       setup_fpu(FALSE,FALSE);
       signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
-      isnanD(3.0 + getnanD());
+      probe_fpe();
       if (! fpe_flag) break;
       /* Disable FPE signal at OS level.
        * You would think that SIG_IGN would do it,
