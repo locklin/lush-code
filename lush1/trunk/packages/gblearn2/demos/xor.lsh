@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: xor.lsh,v 1.1 2002-11-26 17:24:37 profshadoko Exp $
+;;; $Id: xor.lsh,v 1.2 2002-12-18 05:42:40 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -58,13 +58,14 @@
 ;; 0    : the initial number of parameters in the param 
 ;;        (this should probably be always 0)
 ;; 0.1  : the global learning rate
+;; 0.0  : the inertia (a.k.a. "momentum term")
 ;; 0.02 : the running average constant for the diag hessian calculation
 ;; 0.02 : the term added to the diag hessian in the denominator of the individual
 ;;        learning rates (to prevent them from blowing up if 2nd deriv is 0).
 ;; 1000 : the size of the param to preallocate. Making this number large enough
 ;;        to old all the parameters prevents memory fragmentation due to 
 ;;        reallocation when real parameters are allocated within the param.
-(setq theparam (new idx1-ddparam 0 0.1 0.02 0.02 1000))
+(setq theparam (new idx1-ddparam 0 1000))
 
 ;; create the learning machine.
 ;; net-ff is a one hidden layer fully connected neural network.
@@ -82,7 +83,7 @@
 (setq thenet
       (new idx3-supervised-module
 	   (new net-ff 2 2 2 1 1 theparam)
-	   (new edist-cost labels 1 1 [f [1 -1][-1 1]])
+	   (new edist-cost labels 1 1 [f [1.5 -1.5][-1.5 1.5]])
 	   (new max-classer labels)))
 
 (setq thetrainer
@@ -110,10 +111,21 @@
 ;; and set individual espilons
 (==> thetrainer compute-diaghessian traindb 100 0.02 0.02)
 
-;; do 32 training iterations with learning rate eta=0.01
-(repeat 20
-  (repeat 50 (==> thetrainer train-dsource traindb 0.003 trainmeter))
-  (==> thetrainer test-dsource traindb trainmeter)
-  (==> trainmeter display))
+;; train until 100 percent correct for max of 1000 epochs
+(de doit (eta inertia)
+  (let ((correct 0) (i 0) (n 10))
+    (while (and (< correct 100) (< i 100))
+      (repeat n (==> thetrainer train traindb trainmeter eta inertia))
+      (==> thetrainer test traindb trainmeter)
+      (==> trainmeter display)
+      (incr i)
+      (setq correct (nth 3 (==> trainmeter info))))
+    (if (= correct 100) 
+	(printf "converged in %d epochs\n" (* n i))
+      (printf "*** did not converge\n"))
+    (* i n)))
+
+(doit 0.01 0.9)
+
 
 
