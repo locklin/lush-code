@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ffmpeg.lsh,v 1.4 2004-02-03 16:30:30 leonb Exp $
+;;; $Id: ffmpeg.lsh,v 1.5 2004-02-03 22:25:36 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -32,6 +32,7 @@
 (libload "ffmpeg-config")
 (libload "ffmpeg-enum")
 (libload "libidx/idx-macros")
+(libload "libidx/idx-ubyte")
 (libload "libc/libc")
 
 
@@ -415,7 +416,8 @@
   ((-gptr-) curptr)
   ((-int-)  curlen)
   ((-real-) curpts)
-  ((-real-) pktpts)
+  ((-int-)  curno)
+  ((-gptr-) pts)
   ;; information...
   ((-int-)  frame_height)
   ((-int-)  frame_width)
@@ -436,10 +438,13 @@
   ;; frame
   (setq gotcurframe ())
   (setq curframe (malloc (to-int #{ sizeof(AVFrame) #})))
-  (when (not curframe)
+  (setq pts (malloc (to-int #{ 4*sizeof(int64_t) #})))
+  (when (not (and curframe pts))
     (error "Out of memory") )
   (setq curptr (gptr ()))
   (setq curlen 0)
+  (setq curpts -1)
+  (setq curno -1)
   ;; information
   (setq frame_height 128)
   (setq frame_width 160)
@@ -456,16 +461,15 @@
   (when (not st) 
     (error "Stream not found") ) 
   #{{
+    int64_t *pts = (int64_t*)$pts;
     AVStream *st = (AVStream*)($st);
-    AVCodec *codec = avcodec_find_decoder(st->codec.codec_id);
+    AVCodecContext *enc = &st->codec;
+    AVCodec *codec = avcodec_find_decoder(enc->codec_id);
     if (!codec)
        run_time_error("FFMPEG error: unsupported codec");
     if (avcodec_open(&st->codec, codec) < 0) 
        run_time_error("FFMPEG error: error while opening codec");
-  }#}
-  #{{
-    AVStream *st = (AVStream*)($st);
-    AVCodecContext *enc = &st->codec;
+    pts[0] = pts[1] = pts[2] = pts[3] = AV_NOPTS_VALUE;
     $frame_height = enc->height;
     $frame_width = enc->width;
     $frame_aspect_ratio = enc->aspect_ratio;
@@ -474,8 +478,6 @@
     $frame_rate_base = st->r_frame_rate_base;
   }#}
   (:ai:sources streamno (gptr this))
-  (setq pktpts 0)
-  (setq curpts 0)
   () )
 
 (defmethod AvVideoSource process()
@@ -486,8 +488,8 @@
 
 (defmethod AvVideoSource -destructor()
   (:ai:sources streamno (gptr ()))
-  (when curframe
-    #{ free($curframe); #} ) 
+  (when curframe (free curframe))
+  (when pts (free pts))
   () )
 
 (defmethod AvVideoSource get-codec-name()
@@ -511,19 +513,14 @@
      (to-real #{ (double)(((AVStream*)($st))->r_frame_rate) #}) ) )
 
 (defmethod AvVideoSource get-number-of-frames()
-  (let ((nframes 0))
-    ((-int-) nframes)
-    #{{
-      AVStream *st = (AVStream*)($st);
-      $nframes = st->duration * st->r_frame_rate 
-                    / AV_TIME_BASE / st->r_frame_rate_base;
-    }#}
-    nframes ) )
+  (* (==> this get-duration) (==> this get-frame-rate)) )
 
 (defmethod AvVideoSource nextframe()
-  (let ((again t))
+  (let ((again t)
+	(start t)
+	(nopts t) )
     (setq gotcurframe ())
-    (while again
+    (while (and again (not gotcurframe))
       ;; pump data
       (when (<= curlen 0)
 	(==> data pop)
@@ -532,39 +529,112 @@
 	(let ((pkt (==> data peek)))
 	  (when pkt
 	    #{{
-	        AVStream *st = (AVStream*)$st;
+                int64_t *pts = (int64_t*)$pts;
 	        AVPacket *pkt = (AVPacket*)$pkt;
-	        $curlen = pkt->len;
+	        $curlen = pkt->size;
 	        $curptr = (gptr) pkt->data;
-	        if (pkt->pts != AV_NOPTS_VALUE)
-	           $pktpts = (double) pkt->pts * st->ic->pts_num / st->ic->pts_den;
+	        if ($start) { pts[1] = pkt->pts; $start=0; }
 	    }#} ) ) )
       ;; call decoder
       (when (> curlen 0)
 	#{{
-	    AVStream *st = (AVStream*)$st;
+            int64_t *pts = (int64_t*)$pts;
+            AVStream *st = (AVStream*)$st;
 	    AVFrame *curframe = (AVFrame*)$curframe;
+	    AVFormatContext *ai = (AVFormatContext*)$ai;
 	    int gotpic = 0;
-	    int ret= avcodec_decode_video(st->codec, curframe, &gotpic, $curptr, $curlen);
+	    int ret = avcodec_decode_video(&st->codec, curframe, &gotpic, $curptr, $curlen);
 	    if (ret < 0) run_time_error("FFMPEG returned an error code while decoding");
-	    $curptr = (gptr)((const char*)$curptr) + ret);
+	    $curptr = (gptr) (((const char*)$curptr) + ret);
 	    $curlen = $curlen - ret;
 	    if (gotpic) {
-	      if (curframe->pts != AV_NOPTS_VALUE) {
-	         $curpts = (double) curframe->pts * st->ic->pts_num / st->ic->pts_den;
-	      } else if ($pktpts > 0) {
-	         $curpts = $pktpts;
-	         $pktpts = 0;
-	      } else {
-	         $curpts += (double) st->r_frame_rate_base / st->r_frame_rate;
-	      }  
+	      int64_t ipts;
 	      $gotcurframe = 1;
-	}
-	}#} )
-      (when gotcurframe
-	(setq again ()) ) ) ) )
+	      ipts = pts[1];
+	      if (st->codec.has_b_frames && curframe->pict_type != FF_B_TYPE) {
+	         ipts = pts[2]; 
+	         pts[2] = pts[1]; 
+	      }
+	      if (ipts != AV_NOPTS_VALUE) {
+	         $nopts = 0;
+	         $curpts = (double) ipts * ai->pts_num / ai->pts_den;
+	      }
+	    }
+	}#} ) ) 
+    (when gotcurframe
+      #{{
+          AVStream *st = (AVStream*)$st;
+          AVCodecContext *enc = &st->codec;
+          $frame_height = enc->height;
+          $frame_width = enc->width;
+          $frame_aspect_ratio = enc->aspect_ratio;
+          $frame_pix_fmt = enc->pix_fmt;
+      }#}
+      (when nopts 
+	(if (< curno 0)
+	    (setq curpts (==> this get-start-time))
+	  (incr curpts (==> this get-frame-period)) ) )
+      (incr curno) 
+      t ) ) )
 
-    gotcurframe ) )
+(defmethod AvVideoSource get-frame-pts()
+  (when (not gotcurframe) (error "No current frame"))
+  curpts )
+
+(defmethod AvVideoSource get-frame-number()
+  (when (not gotcurframe) (error "No current frame"))
+  curno )
+
+(defmethod AvVideoSource get-frame-gray()
+  (when (not gotcurframe) (error "No current frame"))
+  (let ((image (ubyte-matrix-nc frame_height frame_width)))
+    #{{
+        AVPicture pic;
+        AVPicture *curframe = (AVPicture*)$curframe;
+        pic.data[0] = IDX_PTR($image, unsigned char);
+        pic.data[1] = pic.data[2] = 0;
+        pic.linesize[0] = $image->mod[0];
+        pic.linesize[1] = pic.linesize[2] = 0;
+        if (img_convert(&pic, PIX_FMT_GRAY8, curframe, 
+                        $frame_pix_fmt, $frame_width, $frame_height) < 0)
+           run_time_error("FFMPEG image type conversion not supported");
+    }#}
+    image ) )
+
+(defmethod AvVideoSource get-frame-rgba()
+  (when (not gotcurframe) (error "No current frame"))
+  (let ((image (ubyte-matrix-nc frame_height frame_width 4)))
+    #{{
+        AVPicture pic;
+        AVPicture *curframe = (AVPicture*)$curframe;
+        pic.data[0] = IDX_PTR($image, unsigned char);
+        pic.data[1] = pic.data[2] = 0;
+        pic.linesize[0] = $image->mod[0];
+        pic.linesize[1] = pic.linesize[2] = 0;
+        if (img_convert(&pic, PIX_FMT_RGBA32, curframe, 
+                        $frame_pix_fmt, $frame_width, $frame_height) < 0)
+           run_time_error("FFMPEG image type conversion not supported");
+    }#}
+    image ) )
+
+(defmethod AvVideoSource get-frame-yuv()
+  (when (not gotcurframe) (error "No current frame"))
+  (let ((image (ubyte-matrix-nc frame_height frame_width 3)))
+    #{{
+        AVPicture pic;
+        AVPicture *curframe = (AVPicture*)$curframe;
+        pic.data[0] = IDX_PTR($image, unsigned char);
+        pic.data[1] = pic.data[0] + 1;
+        pic.data[2] = pic.data[0] + 2;
+        pic.linesize[0] = $image->mod[0];
+        pic.linesize[1] = $image->mod[0];
+        pic.linesize[2] = $image->mod[0];
+        if (img_convert(&pic, PIX_FMT_YUV444P, curframe, 
+                        $frame_pix_fmt, $frame_width, $frame_height) < 0)
+           run_time_error("FFMPEG image type conversion not supported");
+    }#}
+    image ) )
+
     
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -656,6 +726,9 @@
                        get-codec-name get-codec-id 
                        get-start-time get-duration
                        get-frame-rate get-frame-period get-number-of-frames
+		       nextframe
+		       get-frame-pts get-frame-number
+		       get-frame-gray get-frame-rgba get-frame-yuv
                        )
         
         av-open-input-file 
