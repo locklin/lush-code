@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.36 2004-02-13 22:31:16 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.37 2004-03-02 21:55:37 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -30,7 +30,7 @@ AC_ARG_WITH(extra-libraries,
             AC_MSG_ERROR([Cannot stat directory $withval])
           fi ] )
 
-
+# Always look into a "gnu" directory.
 curwd=`pwd`
 if test -d $curwd/gnu/include ; then
    CPPFLAGS="$CPPFLAGS -I$curwd/gnu/include"
@@ -38,6 +38,16 @@ fi
 if test -d $curwd/gnu/lib ; then
    LDFLAGS="$LDFLAGS -L$curwd/gnu/lib"
 fi
+
+# Check for fink on macs.
+case "$host" in
+  *-darwin* | *-macos10*)
+     if test -d /sw ; then
+       CPPFLAGS="$CPPFLAGS -I/sw/include"
+       LDFLAGS="$LDFLAGS -L/sw/lib"
+     fi
+  ;;
+esac
 
 
 # ----------------------------------------
