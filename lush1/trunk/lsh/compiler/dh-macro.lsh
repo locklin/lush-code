@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-macro.lsh,v 1.38 2003-09-26 03:54:56 profshadoko Exp $
+;;; $Id: dh-macro.lsh,v 1.39 2003-10-08 21:43:51 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1195,30 +1195,40 @@
 ;; if argument is an int, but fop is defined, cast int to real and return real
 
 (de generate-monadic (symb dop fop iop)
+  ;; generate the dhm-t
   (eval `(dhm-t ,symb (source)
            (if (<> (length source) 2)
                (dhc-error "one argument expected"))
-           (let ((treetype (dhc-parse-expr-t (cadr source))))
-             ,(if (and (null iop) fop)
-                  '(new t-node (list treetype) (new dhc-type 'dht-real))
-                '(new t-node (list treetype) :treetype:type)))))
+           (let* ((arg-treetype (dhc-parse-expr-t (cadr source)))
+                  (arg-type :arg-treetype:type)
+                  (ret-type arg-type))
+             (when (or ,@(when (not iop) '((==> arg-type is-an-int)))
+                       ,@(when (not fop) '((==> arg-type is-an-flt))) )
+               (setq ret-type (new dhc-type 'dht-real)) )
+             (new t-node (list arg-treetype) ret-type) ) ))
+  ;; generate the dhm-c
   (eval `(dhm-c ,symb (source treetype retplace)
-           (let* ((treetype (cadr :treetype:tn-list))
-                  (source (cadr source))
-                  (rettype :treetype:type)
-                  (rez (dhc-parse-expr-c source treetype ())))
+           (let* ((ret-type :treetype:type)
+                  (arg-source (cadr source))
+                  (arg-treetype (cadr :treetype:tn-list))
+                  (arg-type :arg-treetype:type)
+                  (ret-decl (dhc-type-to-c-decl ret-type))
+                  (arg-decl (dhc-type-to-c-decl arg-type)) 
+                  (rez (dhc-parse-expr-c arg-source arg-treetype ())))
+             (when (<> ret-decl arg-decl)
+               (setq rez (sprintf "(%s)(%s)" ret-decl rez)) )
              (cond
-              ((and (==> rettype is-a-flt) ,fop)
+              ((and (==> ret-type is-a-flt) ,fop)
                (sprintf ,fop rez))
-              ((and (==> rettype is-a-real) ,dop)
+              ((and (==> ret-type is-a-real) ,dop)
                (sprintf ,dop rez))
-              ((and (==> rettype is-an-int) ,iop)
+              ((and (==> ret-type is-an-int) ,iop)
                (sprintf ,iop rez))
-              ((and (==> rettype is-an-int) ,dop ,(null iop))
-               (sprintf ,dop rez))
-              (t (dhc-error "no function for that type")))))))
+              (t 
+               (dhc-error "no function for that type") ) ) ) )) )
 
-(generate-monadic 'sgn "Dsgn(%s)" "Fsgn(%s)" "((%s<0)?-1:1)")
+
+(generate-monadic 'sgn "Dsgn(%s)" "Fsgn(%s)" "((%s)<0)?-1:1)")
 (generate-monadic 'abs "Dabs(%s)" "Fabs(%s)" "abs(%s)")
 (generate-monadic 'sqrt "Dsqrt(%s)" "Fsqrt(%s)" ())
 (generate-monadic '0-x-1 "Dpiece(%s)" "Fpiece(%s)" ())
@@ -1244,10 +1254,10 @@
 (generate-monadic 'qexpmx "DQexpmx(%s)" "FQexpmx(%s)" ())
 (generate-monadic 'qdexpmx "DQDexpmx(%s)" "FQDexpmx(%s)" ())
 (generate-monadic 'qexpmx2 "DQexpmx2(%s)" "FQexpmx2(%s)" ())
-(generate-monadic '1+ "(%s+1)" "(%s+1)" "(%s+1)")
-(generate-monadic '1- "(%s-1)" "(%s-1)" "(%s-1)")
-(generate-monadic '2/ "(%s/2)" "(%s/2)" "(%s/2)")
-(generate-monadic '2* "(%s*2)" "(%s*2)" "(%s*2)")
+(generate-monadic '1+ "((%s)+1)" "((%s)+1)" "((%s)+1)")
+(generate-monadic '1- "((%s)-1)" "((%s)-1)" "((%s)-1)")
+(generate-monadic '2* "((%s)*2)" "((%s)*2)" "((%s)*2)")
+(generate-monadic '2/ "((%s)/2)" "((%s)/2)" "((%s)/2)")
 
 (dhm-t seed(source)
   (if (<> (length source) 2)
