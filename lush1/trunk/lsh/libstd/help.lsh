@@ -27,7 +27,7 @@
 ;;;;    The help subsystem...
 ;;;;	Yann LeCun 2002
 ;;;;
-;;;;  $Id: help.lsh,v 1.3 2002-08-31 04:53:00 profshadoko Exp $
+;;;;  $Id: help.lsh,v 1.4 2002-09-05 21:21:28 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -76,37 +76,69 @@
 ;;; ----------------------------------------
 #? ^A <topic>
 ;; This macro character calls command <apropos>.
-
 ;; (dmc |^A| (list 'apropos (read-string)))
 
 ;;; ----------------------------------------
-#? (apropos <topic>)
+#? (apropos <topic> [<force>])
 ;; This command displays some help text for a given subject <topic>.
 ;;
 ;; If several help entries match string <topic>, the list of the
 ;; titles of the matching entries is displayed. The user can then
 ;; select one entry using its number and proceed.
+;; 
+;; hitting the enter key or entering "q" or "quit"
+;; returns to the regular Lush prompt
 ;;
-;; The text for this entry is then formatted and displayed.  using a
-;; pager program.  References to related entries are also displayed A
-;; prompt is then displayed.
-;;.IP
-;; Entering <v> redisplays the current entry.
-;;.IP
-;; Entering <u> jumps to the section entry for this entry.
-;;.IP
-;; Entering <n> or <p> jumps to the next or previous entries 
-;; in this section of the manual.
-;;.IP
-;; Entering a number jumps to the numbered subentry or related entry
-;; attached to this entry.
-;;.IP
-;; Entering <s> displays the initial list of entries matching your query.
-;;.IP
-;; Entering <q> or just typing <CR> quits the help system.
-
-
-(de apropos(topic) (error "not implemented yet"))
+;; If the optional boolean parameter <force> is
+;; non-nil, the Lush manual is re-read from
+;; the help files.
+(de apropos(topic &optional force) 
+  (let ((hp (read-help-book force)))
+    (if (= "" topic) 
+      (printf "Empty search topic. Type (helptool) to browse the documentation.\n")
+    (let* ((filter 
+	    (eval 
+	     `(lambda (c)
+		(let ((s (==> c getkey)) (r ())) 
+		  (while (and s (not r)) 
+		    (when (regex-seek ,topic (cleanup-regex (car s))) (setq r t))
+		    (setq s (cdr s))) r))))
+	   (rez (new ltree-node 
+		     (sprintf "Search Results for: %s" topic) ()()))
+	   )
+      (filter-flat-ltree-from-tree :hp:root rez filter)
+      (==> rez open)
+      (let* ((ch (==> rez getchildren))
+	     (nch (length ch)))
+	(cond 
+	 ((= 0 nch) (printf "no match found\n"))
+	 ((= 1 nch) 
+	  (==> *ldoc-text* render (==> (==> (car ch) getdata) getdata)))
+	 (t
+	  (when
+	      (if (<= nch 50) t
+		(printf "%d matches, show anyway (y/n) [n]" nch)
+		(flush)
+		(let ((choice (read-string)))
+		  (when (member choice '("y" "Y")) t)))
+	    (ltree-pretty rez)
+	    (let ((done ()) (choice ()))
+	      (while (not done)
+		(printf "choice")
+		(flush)
+		(setq choice (read-string))
+		(cond
+		 ((member choice '(() "" "q" "Q" "n" "N" "quit")) (setq done t))
+		 ((and (setq choice (val choice))
+		       (>= choice 1)
+		       (<= choice (length ch)))
+		  (setq done t)
+		  (==> *ldoc-text* 
+		       render 
+		       (==> (==> (nth ch choice) getdata) getdata)))
+		 (t (printf "invalid choice, try again\n")))))))
+	 ))
+      (delete rez)))))
 
 
 ;;; ========================================
@@ -197,33 +229,38 @@
 ;; Directives can be inserted in the text that follows the entry title
 ;; Some directive provide additional information for indexing the entry:
 ;;.PRE
-;;  the topic filename    ;;.FILE help.lsh
-;;  the topic type        ;;.TYPE  DE
-;;  the short description ;;.DESC this function does blah and blah
-;;  related entries       ;;.SEE (apropos <topic>)
+;;  the topic filename                 .FILE help.lsh
+;;  the topic type                     .TYPE DE
+;;  the short description              .DESC this function does blah and blah
+;;  hyperlink to other entries or URL  .HLINK blah
+;;  related entries                    .SEE blah
+;;  author                             .AUTHOR blah
+;;  date                               .DATE blah
 ;;.PP
 ;; Some directives provide formatting instructions
 ;; pertaining to the next paragraph
 ;;.VP
-;;  ordinary paragraph      ;;.P
-;;  list entry              ;;.LI
-;;  pre-formatted paragraph ;;.PRE
-;;  online doc only         ;;.IFHLP
-;;  paper manual only       ;;.IFTEX
+;;  ordinary paragraph      .P
+;;  list entry              .LI
+;;  pre-formatted paragraph .PRE
+;;  code snippet            .CODE
+;;  online doc only         .IFHLP
+;;  paper manual only       .IFTEX
+;;  ascii console manual    .IFTXT
 ;;.PP
 ;; Directive .EX lets you run a lisp expression and display
 ;; it as an example during when the user looks the corresponding
 ;; entry. You should make sure that this operation carries no side
 ;; effect.
 ;;.PRE
-;;  running an example    ;;.EX (lush expression)
+;;  running an example      .EX (lush expression)
 ;;.P
 ;; Directive IMG lets you include a picture (in any format).
 ;; The name of the file should be given by the <figure=<name>>
 ;; parameter. Further optional parameters are <height=<height>>
 ;; and  <width=<width>>. Both express a number of pixels.
 ;;.VP
-;;   ;;.IMG toto.png
+;;       .IMG toto.png
 ;;.PP
 ;; Certain conventions have been established:
 ;; Angle brackets delimitate the arguments of a function as well
@@ -653,7 +690,15 @@
   (when (and file-being-loaded (<> file-being-loaded "$stdin"))
     (let ((e (parse-help-entry))) ())))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defvar *help-book* ())
 
-
+;; return the current help book, reading it from the documentation
+;; files if necessary. Passing a non-nil <force>, forces
+;; re-reading of the help book.
+(de read-help-book (force)
+  (when (or force (not *help-book*))
+    (setq *help-book* (new help-book "lush-manual.hlp" "Lush Manual")))
+  *help-book*)
 
