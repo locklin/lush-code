@@ -220,13 +220,13 @@ gs1( lasvm_t *self, int i, double epsgr)
   if (g < 0)
     {
       step = self->alpha[i] - self->cmin[i];
-      if (g > -epsgr)
+      if (self->gmax - g < epsgr)
         return 0;
     }
   else
     {
       step = self->cmax[i] - self->alpha[i];
-      if (g < epsgr)
+      if (g - self->gmin < epsgr)
         return 0;
     }
   /* Determine curvature */
