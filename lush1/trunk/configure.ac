@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.43 2004-10-25 16:55:49 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.44 2004-10-26 22:11:56 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -264,9 +264,8 @@ AC_TYPE_OFF_T
 AC_TYPE_SIZE_T
 AC_TYPE_PID_T
 AC_TYPE_SIGNAL
-
-AC_CHECK_TYPES(wchar_t)
 AC_CHECK_TYPES(long long int)
+AC_CHECK_TYPES(wchar_t,,,[#include "stddef.h"])
 AC_CHECK_TYPES(wint_t,,,[#include "wchar.h"])
 AC_CHECK_TYPES(mbstate_t,,,[#include "wchar.h"])
 
