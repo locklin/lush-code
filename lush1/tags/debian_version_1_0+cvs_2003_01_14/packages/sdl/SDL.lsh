@@ -1,0 +1,190 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Lush/SN interface to SDL.
+;; This requires that Lush be linked with libpthread!!!
+;;
+;; /*
+;;     SDL - Simple DirectMedia Layer
+;;     Copyright (C) 1997, 1998, 1999, 2000, 2001  Sam Lantinga
+;; 
+;;     This library is free software; you can redistribute it and/or
+;;     modify it under the terms of the GNU Library General Public
+;;     License as published by the Free Software Foundation; either
+;;     version 2 of the License, or (at your option) any later version.
+;; 
+;;     This library is distributed in the hope that it will be useful,
+;;     but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+;;     Library General Public License for more details.
+;; 
+;;     You should have received a copy of the GNU Library General Public
+;;     License along with this library; if not, write to the Free
+;;     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+;; 
+;;     Sam Lantinga
+;;     slouken@devolution.com
+;; */
+
+(libload "sdl/sdl-config")
+
+;; this doesn't work
+;; (dm sdlheader (c a) (concat  "#include " SDLsn_location "/include/SDL/" a))
+;; dummy function to load the header
+(de SDL_dummy () (cpheader  "#include <SDL/SDL.h>") ())
+
+(df rem l ())
+
+(df sdladdfuncs l (setq *sdlfuncs* (append *sdlfuncs* l)))
+(setq *sdlfuncs* ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(when (not libsdl-loaded)
+  (mod-dlopen (concat SDL_location SDL_lib))
+  (mod-dlopen (concat SDL_location SDL_lib_image))
+  ;; (mod-load (concat SDL_location "/lib/libSDL.a"))
+  (setq libsdl-loaded t))
+
+;; #ifdef SAVE_RCSID
+;; static char rcsid =
+;;  "@(#) $Id: SDL.lsh,v 1.1 2002-08-19 07:04:08 profshadoko Exp $";
+;; #endif
+;; 
+;; /* Main include header for the SDL library */
+;; 
+
+;; #include "begin_code.h"
+;; /* Set up for C function definitions, even when using C++ */
+;; #ifdef __cplusplus
+;; extern "C" {
+;; #endif
+;; 
+;; /* As of version 0.5, SDL is loaded dynamically into the application */
+;; 
+;; /* These are the flags which may be passed to SDL_Init() -- you should
+;;    specify the subsystems which you will be using in your application.
+;; */
+(libload "libc/constants")
+
+(defconstant "SDL_INIT_TIMER"	0x00000001)
+(defconstant "SDL_INIT_AUDIO"	0x00000010)
+(defconstant "SDL_INIT_VIDEO"	0x00000020)
+(defconstant "SDL_INIT_CDROM"	0x00000100)
+(defconstant "SDL_INIT_JOYSTICK"    0x00000200)
+(defconstant "SDL_INIT_NOPARACHUTE" 0x00100000)	; /* don't catch fatal signals */
+(defconstant "SDL_INIT_EVENTTHREAD" 0x01000000)	; /* Not supported on all OS's */)
+(defconstant "SDL_INIT_EVERYTHING" 0x0000FFFF)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; types
+(setq SDL_bool -bool-)
+(setq Uint8 -ubyte-)
+(setq Sint8 -byte-)
+(setq Uint16 -short-)
+(setq Sint16 -short-)
+(setq Uint32 -int-)
+(setq Sint32 -int-)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (SDL_Init <flags>)
+;;.PRE
+;; /* This function loads the SDL dynamically linked library and initializes 
+;;  * the subsystems specified by 'flags' (and those satisfying dependencies)
+;;  * Unless the SDL_INIT_NOPARACHUTE flag is set, it will install cleanup
+;;  * signal handlers for some commonly ignored fatal signals (like SIGSEGV)
+;;  */
+;; extern DECLSPEC int SDL_Init(Uint32 flags);
+;; Flags are:
+;; SDL_INIT_TIMER	 0x00000001
+;; SDL_INIT_AUDIO	 0x00000010
+;; SDL_INIT_VIDEO	 0x00000020
+;; SDL_INIT_CDROM	 0x00000100
+;; SDL_INIT_JOYSTICK	 0x00000200
+;; SDL_INIT_NOPARACHUTE	 0x00100000  /* don't catch fatal signals */
+;; SDL_INIT_EVENTTHREAD  0x01000000) /* Not supported on all OS's */)
+;; SDL_INIT_EVERYTHING   0x0000FFFF
+(de SDL_Init (flags)
+    ((Uint32)  flags)
+    (int #{ SDL_Init($flags) #}))
+
+
+#? (SDL_InitSubSystem <flags>)
+;;.PRE
+;; /* This function initializes specific SDL subsystems */
+;; extern DECLSPEC int SDL_InitSubSystem(Uint32 flags);
+(de SDL_InitSubSystem(flags)
+  ((Uint32) flags)
+  (int #{ SDL_InitSubSystem($flags) #}))
+
+#? (SDL_QuitSubSystem <flags>)
+;;.PRE
+;; /* This function cleans up specific SDL subsystems */
+;; extern DECLSPEC void SDL_QuitSubSystem(Uint32 flags);
+(de SDL_QuitSubSystem(flags)
+  ((Uint32) flags)
+  #{ SDL_QuitSubSystem($flags) #} ())
+
+#? (SDL_WasInit <flags>)
+;;.PRE
+;; /* This function returns mask of the specified subsystems which have
+;;    been initialized.
+;;    If 'flags' is 0, it returns a mask of all initialized subsystems.
+;; */
+;; extern DECLSPEC Uint32 SDL_WasInit(Uint32 flags);
+(de SDL_WasInit(flags)
+  ((Uint32) flags)
+  #{ SDL_WasInit($flags) #} ())
+
+#? (SDL_Quit)
+;;.PRE
+;; /* This function cleans up all initialized subsystems and unloads the
+;;  * dynamically linked library.  You should call it upon all exit conditions.
+;;  */
+;; extern DECLSPEC void SDL_Quit(void);
+(de SDL_Quit() #{ SDL_Quit() #} ())
+
+;; /* Ends C function definitions when using C++ */
+;; #ifdef __cplusplus
+;; }
+;; #endif
+;; #include "close_code.h"
+;; 
+;; #endif /* _SDL_H */
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(sdladdfuncs SDL_dummy SDL_Init SDL_InitSubSystem 
+	      SDL_QuitSubSystem SDL_WasInit SDL_Quit)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(load (concat SDLsn_location "/SDL_active"))
+(load (concat SDLsn_location "/SDL_audio"))
+(load (concat SDLsn_location "/SDL_byteorder"))
+(load (concat SDLsn_location "/SDL_cdrom"))
+(load (concat SDLsn_location "/SDL_copying"))
+(load (concat SDLsn_location "/SDL_endian"))
+(load (concat SDLsn_location "/SDL_error"))
+(load (concat SDLsn_location "/SDL_events"))
+(load (concat SDLsn_location "/SDL_getenv"))
+(load (concat SDLsn_location "/SDL_joystick"))
+(load (concat SDLsn_location "/SDL_keyboard"))
+(load (concat SDLsn_location "/SDL_keysym"))
+(load (concat SDLsn_location "/SDL_main"))
+(load (concat SDLsn_location "/SDL_mouse"))
+(load (concat SDLsn_location "/SDL_mutex"))
+(load (concat SDLsn_location "/SDL_quit"))
+(load (concat SDLsn_location "/SDL_rwops"))
+(load (concat SDLsn_location "/SDL_syswm"))
+(load (concat SDLsn_location "/SDL_thread"))
+(load (concat SDLsn_location "/SDL_timer"))
+(load (concat SDLsn_location "/SDL_types"))
+(load (concat SDLsn_location "/SDL_version"))
+(load (concat SDLsn_location "/SDL_video"))
+
+;; not technically part of SDL proper
+(load (concat SDLsn_location "/SDL_image"))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(eval (cons 'dhc-make (cons () *sdlfuncs*))))
+)
