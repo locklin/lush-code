@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.43 2004-10-22 14:55:47 leonb Exp $
+ * $Id: dldbfd.c,v 1.44 2004-10-22 21:51:24 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2714,15 +2714,21 @@ dld_dlopen(char *path, int mode)
             ASSERT(!(p->flags & SEC_RELOC));
         /* Iterate over symbols */
         for (i=0; i<symbol_count; i++)
-        {
-            sym = symbols[i];
+	  {
+	    sym = symbols[i];
             if (! (sym->name && sym->name[0]))
               continue;
             if (! (sym->flags & (BSF_LOCAL|BSF_SECTION_SYM|
                                  BSF_DEBUGGING|BSF_WARNING)))
               {
                 const char *name = drop_leading_char(abfd,sym->name);
-                void *addr = dlsym(handle, name);
+                void *addr = 0;
+		if (global_dlopen_handle)
+		  addr = dlsym(global_dlopen_handle, name);
+		if (global_dlopen_handle && !addr)
+		  addr = dlsym(global_dlopen_handle, sym->name);
+		if (!addr)
+		  addr = dlsym(handle, name);
                 if (!addr && name!=sym->name)
                   addr = dlsym(handle, sym->name);
                 if (addr)
