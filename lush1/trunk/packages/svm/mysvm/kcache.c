@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.c,v 1.1 2004-08-30 22:07:28 leonb Exp $
+ * $Id: kcache.c,v 1.2 2004-09-14 19:11:56 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -288,12 +288,12 @@ double
 mysvm_kcache_query(mysvm_kcache_t *this, int i, int j)
 {
   int l = this->l;
-  /* check cache */
+  ASSERT(i>=0);
+  ASSERT(j>=0);
   if (i<l && j<l)
     {
+      /* check cache */
       row_t *r = this->row[i];
-      ASSERT(i>=0);
-      ASSERT(j>=0);
       if ((r = this->row[i]))
 	{
 	  int p = this->i2r[j];
@@ -336,11 +336,11 @@ mysvm_kcache_query_row(mysvm_kcache_t *this, int i, int len)
   row_t *nr;
   int q;
   int p;
-
-
+  
   ASSERT(i>=0);
   ASSERT(len>0);
-  xminsize(this, max(i,len));
+  if (i >= this->l || len>= this->l)
+    xminsize(this, max(i,len));
   r = this->row[i];
   /* Fast path */
   if (r)

@@ -24,13 +24,11 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.h,v 1.1 2004-08-30 22:07:28 leonb Exp $
+ * $Id: kcache.h,v 1.2 2004-09-14 19:11:57 leonb Exp $
  **********************************************************************/
 
 #ifndef KCACHE_H
 #define KCACHE_H
-
-#include "kernel.h"
 
 #ifdef __cplusplus__
 extern "C" { 
@@ -38,6 +36,26 @@ extern "C" {
 }
 #endif
 #endif
+
+
+/* ------------------------------------- */
+/* GENERIC KERNEL TYPE */
+
+
+/* --- mysvm_kernel_t
+   This is the type for user defined symmetric kernel functions.
+   It returns the Gram matrix element at position <i>,<j>. 
+   Argument <closure> represents arbitrary additional information.
+*/
+#ifndef MYSVM_KERNEL_T_DEFINED
+#define MYSVM_KERNEL_T_DEFINED
+typedef double (*mysvm_kernel_t)(int i, int j, void* closure);
+#endif
+
+
+
+/* ------------------------------------- */
+/* CACHE FOR KERNEL VALUES */
 
 
 /* --- mysvm_kcache_t

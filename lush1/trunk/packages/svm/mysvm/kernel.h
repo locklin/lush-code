@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kernel.h,v 1.2 2004-08-30 23:24:30 leonb Exp $
+ * $Id: kernel.h,v 1.3 2004-09-14 19:11:57 leonb Exp $
  **********************************************************************/
 
 #ifndef KERNEL_H
@@ -43,9 +43,9 @@ extern "C" {
 #endif
 
 
+
 /* ------------------------------------- */
 /* GENERIC KERNEL TYPE */
-
 
 
 /* --- mysvm_kernel_t
@@ -53,9 +53,10 @@ extern "C" {
    It returns the Gram matrix element at position <i>,<j>. 
    Argument <closure> represents arbitrary additional information.
 */
+#ifndef MYSVM_KERNEL_T_DEFINED
+#define MYSVM_KERNEL_T_DEFINED
 typedef double (*mysvm_kernel_t)(int i, int j, void* closure);
-
-
+#endif
 
 
 
@@ -81,6 +82,7 @@ double mysvm_vectorproblem_rbf_kernel(int i, int j, void *problem);
 
 /* ------------------------------------- */
 /* MORE USEFUL KERNELS */
+
 
 typedef struct mysvm_sparsevectorproblem_s 
 {
