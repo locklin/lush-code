@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.7 2002-07-19 03:29:19 leonb Exp $
+ * $Id: allocate.c,v 1.8 2002-07-19 18:42:19 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -114,15 +114,18 @@ static finalizer *finalizers[HASHTABLESIZE];
 void 
 add_finalizer(at *q, void (*func)(at*,void*), void *arg)
 {
-  unsigned int h;
-  finalizer *f = allocate(&finalizer_alloc);
-  h = hash_pointer(q) % HASHTABLESIZE;
-  f->next = finalizers[h];
-  f->target = q;
-  f->func = func;
-  f->arg = arg;
-  finalizers[h] = f;
-  q->flags |= C_FINALIZER;
+  if (q)
+    {
+      unsigned int h;
+      finalizer *f = allocate(&finalizer_alloc);
+      h = hash_pointer(q) % HASHTABLESIZE;
+      f->next = finalizers[h];
+      f->target = q;
+      f->func = func;
+      f->arg = arg;
+      finalizers[h] = f;
+      q->flags |= C_FINALIZER;
+    }
 }
 
 void
