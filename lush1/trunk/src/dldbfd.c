@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.40 2004-10-20 22:11:51 leonb Exp $
+ * $Id: dldbfd.c,v 1.41 2004-10-21 20:23:25 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -474,6 +474,7 @@ create_module_entry(bfd *abfd, module_entry **here, int archivep)
     memset(new, 0, sizeof(module_entry));
     new->filename = abfd->filename;
     new->abfd = abfd;
+    new->exec = 0;
     
     /* Load extra information from object files */
     if (!archivep)
@@ -1274,10 +1275,10 @@ mipself_fix_relocs(module_entry *ent,
     }
 }
 
-/* mipself_special -- special processing for mips elf */
+/* handle_mipself -- special processing for mips elf */
 
 static void
-mipself_special(module_entry *ent)
+handle_mipself_code(module_entry *ent)
 {
   /* MIPSELF case */
   if (bfd_get_flavour(ent->abfd) == bfd_target_elf_flavour &&
@@ -1305,24 +1306,167 @@ mipself_special(module_entry *ent)
    
 #endif
 
-/* ---------------------------------------- */
-/* SPECIAL PROCESSING FOR ... */
-
-
 
 /* ---------------------------------------- */
-/* HANDLE ALL SPECIAL CASES */
+/* REWRITES */
 
 
-/* handle_special_rewrites -- calls all special case routines */
+/* perform_rewrites -- calls all special case routines */
 
 static void
-handle_special_rewrites(module_entry *ent)
+perform_rewrites(module_entry *ent)
 {
+  handle_common_symbols(ent);
 #ifdef __mips__
-  mipself_special(ent);
+  handle_mipself_code(ent);
 #endif
 }
+
+
+/* ---------------------------------------- */
+/* MEMORY ALLOCATOR IN LOW MEMORY 
+   This is useful with x86-64.
+   It uses the MAP_32BIT thing (linux) */
+
+#ifdef HAVE_MMAP
+# ifdef MAP_32BIT
+#  ifdef MAP_ANONYMOUS
+
+#define A_ALIGN(x)   (((x)+0xF)&~0xF)
+#define A_CHUNKSIZE  (0x400000)
+
+typedef struct a_arena_s {
+  struct a_arena_s *next;
+  size_t size;
+} a_arena_t;
+
+static a_arena_t *arenas = 0;
+
+static void *
+a_chunk(size_t sz)
+{
+  static int fd = -1;
+  int prot = PROT_READ|PROT_WRITE|PROT_EXEC;
+  int flag = MAP_PRIVATE;
+#ifdef MAP_32BIT
+  flag |= MAP_32BIT;
+#endif
+#ifdef MAP_ANONYMOUS
+  flag |= MAP_ANONYMOUS | MAP_SHARED;
+  flag &= ~MAP_PRIVATE;
+#else
+  if (fd < 0)
+    fd = open("/dev/zero", O_RDWR);
+  if (fd < 0)
+    return NULL;
+#endif
+  return mmap(0, sz, prot, flag, fd, 0);
+}
+
+static void*
+dld_allocate(size_t s, int perm)
+{
+  a_arena_t *a, **ap;
+  /* round s */
+  s = A_ALIGN(s) + A_ALIGN(sizeof(a_arena_t));
+  /* search */
+  ap = &arenas;
+  while ((a = *ap) && (a->size < s))
+    ap = &(a->next);
+  if (!a)
+    {
+      /* get a new chunk */
+      size_t cs = A_CHUNKSIZE;
+      while (cs < s)
+	cs += A_CHUNKSIZE;
+      a = a_chunk(cs);
+      if (!a)
+        THROW(bfd_errmsg(bfd_error_no_memory));
+      ap = &arenas;
+      while(*ap && a>=*ap)
+	ap = &((*ap)->next);
+      a->size = cs;
+      a->next = *ap;
+      *ap = a;
+    }
+  if (a->size < s + A_ALIGN(sizeof(a_arena_t)))
+    s = a->size;
+  if (s < a->size)
+    {
+      if (perm)
+	{
+	  a_arena_t *b = a;
+	  b->size = a->size - s;
+	  a = (a_arena_t*)((char*)b + b->size);
+	  a->size = s;
+	  a->next = b->next;
+	  b->next = a;
+	  ap = &(b->next);
+	}
+      else
+	{
+	  a_arena_t *b = (a_arena_t*)((char*)a + s);
+	  b->next = a->next;
+	  b->size = a->size - s;
+	  a->size = s;
+	  a->next = b;
+	}
+    }
+  *ap = a->next;
+  a->next = (a_arena_t*)((char*)a + A_ALIGN(sizeof(a_arena_t)));
+  return a->next;
+}
+
+static void
+dld_deallocate(void *x)
+{
+  a_arena_t *a, **ap;
+  a = (a_arena_t*)((char*)x - A_ALIGN(sizeof(a_arena_t)));
+  if (a->next != x)
+    THROW(bfd_errmsg(bfd_error_no_memory));
+  /* insert */
+  ap = &arenas;
+  while (*ap && a>=*ap)
+    ap = &((*ap)->next); 
+  a->next = *ap;
+  *ap = a;
+  /* compact */
+  a = arenas;
+  while (a)
+    {
+      while ((void*)a + a->size == (void*)a->next)
+	{
+	  a->size += a->next->size;
+	  a->next = a->next->next;
+	}
+      a = a->next;
+    }
+}
+
+#   define DLD_ALLOCATE_DEFINED
+#  endif
+# endif
+#endif
+
+
+/* ---------------------------------------- */
+/* DEFAULT MEMORY ALLOCATOR */
+
+#ifndef DLD_ALLOCATE_DEFINED
+
+static void * 
+dld_allocate(size_t s, int perm)
+{
+  return xmalloc(s);
+}
+
+static void
+dld_deallocate(void *x)
+{
+  if (x) free(x);
+}
+
+#endif
 
 
 /* ---------------------------------------- */
@@ -1350,7 +1494,7 @@ allocate_memory_for_object(module_entry *ent)
 	  offset += dldbfd_section_size(p);
         }
     /* Allocate memory for all these sections */
-    ent->exec = xballoc(abfd, (size_t)offset);
+    ent->exec = dld_allocate((size_t)offset, 0);
     memset(ent->exec, 0, (size_t)offset);
     /* Update all vma in the sections */
     for (p=abfd->sections; p; p=p->next)
@@ -1737,6 +1881,7 @@ apply_relocations(module_entry *module, int externalp)
                     if (! is_bfd_symbol_defined(bsym))
                         continue;
                     value = value_of_bfd_symbol(bsym);
+		    hsym = 0;
                 }
                 
                 /* Prepare relocation info */
@@ -1754,30 +1899,35 @@ apply_relocations(module_entry *module, int externalp)
                 status = bfd_perform_relocation(abfd, &dummy_reloc, 
                                                 (bfd_byte*)vmaptr(p->vma), 
                                                 p, NULL, &dummy_string );
+		/* Create trampoline and retry */
+		if (externalp && status == bfd_reloc_overflow)
+		  if ((hsym->flags & DLDF_DEFD) && !( hsym->flags & DLDF_ALLOC))
+		    {
+		      bfd_byte *data = vmaptr(p->vma);
+		      void **stub = 0;
 #ifdef __x86_64__
-		/* Attempt to fix amd64 overflow problems */
-		if (externalp && (hsym->flags & DLDF_DEFD) && !( hsym->flags & DLDF_ALLOC))
-		  {
-		    bfd_byte *data = vmaptr(p->vma);
-		    if (data[reloc->address-1]==0xe8)
-		      {
-			void **stub = xmalloc(2*sizeof(void*));
-			stub[0] = vmaptr(0x0225ff);
-			stub[1] = vmaptr(value);
-			hsym->definition = ptrvma(stub);
-			hsym->flags |= DLDF_ALLOC;
-			value = value_of_symbol(hsym);
-			dummy_reloc = *reloc;
-			dummy_reloc.sym_ptr_ptr = &dummy_symbol_ptr;
-			dummy_symbol.value = value;
-			bfd_get_section_contents(abfd, p, data + reloc->address, reloc->address, 
-						 bfd_get_reloc_size(reloc->howto) );
-			status = bfd_perform_relocation(abfd, &dummy_reloc, 
-							(bfd_byte*)vmaptr(p->vma), 
-							p, NULL, &dummy_string );
-		      }
-		  }
+		      if (data[reloc->address-1]==0xe8)
+			{
+			  stub = dld_allocate(2*sizeof(void*), 1);
+			  stub[0] = vmaptr(0x0225ff);
+			  stub[1] = vmaptr(value);
+			}
 #endif
+		      if (stub)
+			{
+			  hsym->definition = ptrvma(stub);
+			  hsym->flags |= DLDF_ALLOC;
+			  value = value_of_symbol(hsym);
+			  dummy_reloc = *reloc;
+			  dummy_reloc.sym_ptr_ptr = &dummy_symbol_ptr;
+			  dummy_symbol.value = value;
+			  bfd_get_section_contents(abfd, p, data + reloc->address, reloc->address, 
+						   bfd_get_reloc_size(reloc->howto) );
+			  status = bfd_perform_relocation(abfd, &dummy_reloc, 
+							  (bfd_byte*)vmaptr(p->vma), 
+							  p, NULL, &dummy_string );
+			}
+		    }
                 /* Analyze return code */
                 switch (status)
                 {
@@ -2031,6 +2181,8 @@ remove_module_entry(module_entry *module, module_entry **chain)
         compute_all_executable_flags(dld_modules);        
     }
     /* Erase bfd and free memory */
+    dld_deallocate(module->exec);
+    module->exec = 0;
     bfd_close(module->abfd);
 }
 
@@ -2155,9 +2307,8 @@ arlink_traverse(struct bfd_hash_entry *gsym, void *gcookie)
             ASSERT(!armodule->archive_flag);
             element->archive_pass = -1;
             /* Update global symbol table */
-            handle_common_symbols(armodule);
+	    perform_rewrites(armodule);
             check_multiple_definitions(armodule);
-	    handle_special_rewrites(armodule);
             allocate_memory_for_object(armodule);
             load_object_file_data(armodule);
             apply_relocations(armodule,FALSE);
@@ -2344,9 +2495,8 @@ dld_link (const char *oname)
         }
         else
         {
-            handle_common_symbols(module);
+	    perform_rewrites(module);
             check_multiple_definitions(module);
-            handle_special_rewrites(module);
             allocate_memory_for_object(module);
             load_object_file_data(module);
             apply_relocations(module,FALSE);
@@ -3010,7 +3160,7 @@ dld_define_sym (const char *id, size_t size)
         hsym = insert_symbol(id);
         if (hsym->flags & DLDF_DEFD)
             THROW("Cannot redefine an already defined symbol");
-        hsym->definition = ptrvma(xmalloc(size));
+        hsym->definition = ptrvma(dld_allocate(size, 1));
         hsym->flags |= (DLDF_DEFD|DLDF_ALLOC);
         /* Adjust undefined symbol count if symbol was undefined */
         if (hsym->flags & DLDF_REFD)
@@ -3046,15 +3196,15 @@ dld_remove_defined_symbol (const char *id)
         if (hsym && (hsym->flags & DLDF_DEFD))
         {
             if (hsym->flags & DLDF_ALLOC)
-                free(vmaptr(hsym->definition));
-            hsym->flags &= ~(DLDF_BFD|DLDF_INDIRECT|DLDF_DEFD);
+                dld_deallocate(vmaptr(hsym->definition));
             hsym->flags &= ~(DLDF_FUNCTION|DLDF_ALLOC|DLDF_INDIRECT);
+            hsym->flags &= ~(DLDF_BFD|DLDF_INDIRECT|DLDF_DEFD);
             hsym->definition = 0;
             hsym->defined_by = 0;
             if (hsym->refcount > 0) 
-                dld_undefined_sym_count += 1;
+	      dld_undefined_sym_count += 1;
             else
-                hsym->flags &= ~DLDF_REFD;
+	      hsym->flags &= ~DLDF_REFD;
         }
     }
     CATCH(n)
