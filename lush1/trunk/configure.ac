@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.23 2003-02-08 13:48:26 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.24 2003-02-14 15:48:30 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -115,6 +115,25 @@ will not work and Lush will be seriously crippled.
     fi
 fi
 AC_SUBST(BFD_YES)
+
+# static bfd
+if test x$has_bfd = xyes ; then
+    AC_ARG_WITH(static-bfd,
+        AC_HELP_STRING([--without-static-bfd],
+            [Do not try linking bfd statically.]),
+        [static_bfd=$withval],[static_bfd=yes])
+
+    if test x$static_bfd = xyes ; then
+        AC_MSG_CHECKING([whether bfd works with option -Bstatic.])
+        saved_LIBS=$LIBS
+        LIBS=`echo $LIBS | sed -e 's/-lbfd\( -liberty\)*/-Wl,-Bstatic & -Wl,-Bdynamic/'`
+        AC_TRY_LINK([#include "bfd.h"],[ bfd_init();],,[static_bfd=no]);
+        AC_MSG_RESULT($static_bfd)
+        if test $static_bfd = xno ; then
+            LIBS=$saved_LIBS
+        fi
+    fi
+fi
 
 
 # x11
