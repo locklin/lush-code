@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.17 2003-02-09 02:53:29 leonb Exp $
+ * $Id: string.c,v 1.18 2003-02-10 13:48:35 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1434,6 +1434,8 @@ DX(xregex_subst)
   do {
     if (! regex_seek(buffer,datstart,dat,regptr,reglen,10,&start,&end))
       start = end = dat + strlen(dat);
+    if (end <= dat)
+      start = end = dat + 1;
     if (dat < start) {
       s1 = dat;
       large_string_add(&ls, s1, start-s1);
