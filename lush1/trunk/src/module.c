@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.55 2004-07-26 17:30:44 leonb Exp $
+ * $Id: module.c,v 1.56 2004-07-26 17:32:13 leonb Exp $
  **********************************************************************/
 
 
@@ -939,7 +939,6 @@ update_exec_flag(struct module *m)
     m->flags |= MODULE_EXEC;
   if (m->defs && newstate != oldstate)
     {
-   printf(">upd %s\n",m->filename);
       /* Refresh function/class pointers */
       at *p = m->defs;
       while (p) {
@@ -958,7 +957,6 @@ update_exec_flag(struct module *m)
 	    }
 	  } else if (EXTERNP(q, &class_class)) {
 	    struct class *cl = q->Object;
-	    printf("%s %p\n",cl->kname, cl->classdoc);
 	    if (! newstate)
 	      cl->classdoc = 0;
 	    else if (cl->kname && !cl->classdoc) {
@@ -966,7 +964,6 @@ update_exec_flag(struct module *m)
 	      ((dhclassdoc_t**)(kdata->lispdata.vtable))[0] = kdata;
 	      cl->classdoc = kdata;
 	    }
-	    printf("%s %p\n",cl->kname, cl->classdoc);
 	  }
 	}
 	p = p->Cdr;
@@ -974,7 +971,6 @@ update_exec_flag(struct module *m)
       /* Refresh init function pointer */
       if (newstate && m->initname)
 	m->initaddr = dynlink_symbol(m, m->initname, 1, 0);
-   printf("<upd %s\n",m->filename);
     }
   /* Call hook */
   dynlink_hook(m, "exec");
