@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: cluster.lsh,v 1.7 2005-02-22 22:26:50 leonb Exp $
+;;; $Id: cluster.lsh,v 1.8 2005-02-23 15:59:25 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -143,17 +143,48 @@
   (setq machines (or machines cluster-default))
   (setq currentdir (relative-fname (getenv "HOME") (chdir)))
   (setq sessiondir (concat-fname (sprintf "CLUSTERSESSION-%s" sessname)))
-  (sys (sprintf "test -d %s && rm -rf %s" sessiondir sessiondir))
-  (sys (sprintf "mkdir %s" sessiondir))
   (setq slaves ())
-  ;; poll output files for lushslave information
-  (let ((connections ())
-	(attempts 8))
+  (let ((slavelist ()))
     (each ((machine machines))
       (for (i 1 connect)
-	   (let ((name (sprintf "%s-%d" machine i)))
-	     (cluster-connect machine (concat-fname sessiondir name)) 
-	     (setq connections (cons name connections)) ) ) )
+	   (setq slavelist (nconc1 slavelist 
+				   (list machine
+					 (sprintf "%s-%d" machine i) ) )) ) ) 
+    (==> this restart slavelist) ) )
+       
+
+#? (==> <session> restart)
+;; Restart all slaves afresh.
+(demethod ClusterSession restart(&optional slavelist)
+  ;; collect slave list
+  (when (not slavelist)
+    (each ((slave slaves))
+      (let ((machine (when :slave:info (car :slave:info)))
+	    (name :slave:name))
+	(when (and machine name)
+	  (setq slavelist (nconc1 slavelist (list machine name))) ) ) ) )
+  ;; cleanup pending jobs
+  (let ((jobs pending))
+    (setq pending ())
+    (each ((job jobs))
+      (setq :job:slave ())
+      (setq :job:error "Dequeued") ) )
+  ;; cleanup slaves
+  (each ((slave slaves))
+    (when :slave:info
+      (cluster-kill (car :slave:info) "TERM" (caddr :slave:info)) )
+    (delete :slave:fout)
+    (delete :slave:fin) )
+  (each ((slave slaves))
+    (when :slave:info
+      (cluster-kill (car :slave:info) "TERM" (caddr :slave:info))))
+  (setq slaves ())
+  ;; proceeed
+  (let ((connections ())
+	(attempts 8))
+    (each (((machine name) slavelist))
+      (cluster-connect machine (concat-fname sessiondir name)) 
+      (setq connections (cons name connections)) )
     (setq connections (reverse connections))
     (while (and connections (> attempts 0))
       (sleep 1)
@@ -186,6 +217,7 @@
   (==> this status)
   (when (not slaves)
     (error '==> "No available cpu" ()) ) )
+
 
 #? (==> <clustersession> status)
 ;; Indicates which slaves are running,
