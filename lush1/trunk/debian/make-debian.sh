@@ -1,5 +1,5 @@
 #!/bin/bash -e
 
-bdeb.sh -Slush #-bp $*
+bdeb.sh -Slush -bp $*
 
 exit 0
