@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.10 2002-05-10 23:29:25 leonb Exp $
+ * $Id: binary.c,v 1.11 2002-07-02 19:56:38 leonb Exp $
  **********************************************************************/
 
 
@@ -52,7 +52,7 @@ enum binarytokens {
   TOK_DM,
   TOK_CFUNC,
   TOK_CCLASS,
-  TOK_COBJECT,  
+  TOK_COBJECT,
 };
 
 
@@ -922,7 +922,9 @@ local_write(at *p)
       return 0;
     }
   
-  if (p->Class == &dx_class || p->Class == &dy_class)
+  if (p->Class == &dx_class || 
+      p->Class == &dy_class ||
+      p->Class == &dh_class  )
     {
       write_card8(TOK_CFUNC);
       return 0;

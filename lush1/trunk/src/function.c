@@ -24,29 +24,21 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.8 2002-05-10 23:29:25 leonb Exp $
+ * $Id: function.c,v 1.9 2002-07-02 19:56:38 leonb Exp $
  **********************************************************************/
 
 
 #include "header.h"
 
-static at *at_optional, *at_rest;
-static void parse_optional_stuff(at *formal_list, at *real_list);
-
-
-static struct alloc_root cfunc_alloc = {
-  NULL, NULL, sizeof(struct cfunction), 200 
-};
-
-static struct alloc_root lfunc_alloc = {
-  NULL, NULL, sizeof(struct lfunction), 200 
-};
-
 
 /* General cfunc routines -----------------------------	 */
 
 
-static void 
+struct alloc_root cfunc_alloc = {
+  NULL, NULL, sizeof(struct cfunction), 200 
+};
+
+void 
 cfunc_dispose(at *p)
 {
   struct cfunction *func = p->Object;
@@ -54,14 +46,14 @@ cfunc_dispose(at *p)
   deallocate(&cfunc_alloc, (struct empty_alloc *) func);
 }
 
-static void 
+void 
 cfunc_action(at *p, void (*action) (at *p))
 {
   struct cfunction *func = p->Object;
   (*action) (func->name);
 }
 
-static char *
+char *
 cfunc_name(at *p)
 {
   struct cfunction *func = p->Object;
@@ -96,6 +88,17 @@ cfunc_name(at *p)
 /* General lfunc routines -----------------------------	 */
 
 
+static at *at_optional, *at_rest;
+
+
+static void parse_optional_stuff(at *formal_list, at *real_list);
+
+
+static struct alloc_root lfunc_alloc = {
+  NULL, NULL, sizeof(struct lfunction), 200 
+};
+
+
 static void 
 lfunc_dispose(at *p)
 {
@@ -104,6 +107,7 @@ lfunc_dispose(at *p)
   UNLOCK(func->evaluable_list);
   deallocate(&lfunc_alloc, (struct empty_alloc *) func);
 }
+
 
 static void 
 lfunc_action(at *p, void (*action) (at *p))

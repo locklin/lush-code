@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.5 2002-07-01 21:56:52 leonb Exp $
+ * $Id: dh.h,v 1.6 2002-07-02 19:56:36 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -103,6 +103,8 @@ enum dht_type {
     DHT_LAST        /* TAG */
 };
 
+extern LUSHAPI int storage_to_dht[];
+extern LUSHAPI int dht_to_storage[];
 
 /* dhrecord --- 
  * The basic data structure for metainformation in compiled code.
@@ -274,7 +276,8 @@ struct dhclassdoc_s
   dhrecord *argdata;            /* points to the metainformation records */
   struct {
     dhclassdoc_t *ksuper;       /* dhclassdoc for the superclass */
-    char *name;                 /* string with the class name (prepend CClass_ or VClass_) */
+    char *lname;                /* string with the lisp class name */
+    char *cname;                /* string with the c class name (prepend CClass_ or VClass_) */
     char *v_name;               /* string with the name of the vtable (V_name_Rxxxxxxxx) */
     char *k_name;               /* string with the name of the classdoc (K_name_Rxxxxxxxx) */
     int nmethods;               /* number of methods */
@@ -289,11 +292,11 @@ struct dhclassdoc_s
 
 #ifndef NOLISP
 
-#define DHCLASSDOC(Kname,superKname,nameStr,VnameStr,nmet,vtable) \
+#define DHCLASSDOC(Kname,superKname,LnameStr,CnameStr,VnameStr,nmet,vtable) \
   static dhrecord name2(K,Kname)[]; \
   static dhdoc_t* name2(M,Kname)[(nmet ? nmet : 1)]; \
   dhclassdoc_t Kname = { name2(K,Kname), \
-   { NIL, superKname, nameStr, VnameStr, enclose_in_string(Kname), \
+   { superKname, LnameStr, CnameStr, VnameStr, enclose_in_string(Kname), \
      nmet, name2(M,Kname), vtable } }; \
   static dhrecord name2(K,Kname)[] = 
 

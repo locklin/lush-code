@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.3 2002-06-27 20:49:57 leonb Exp $
+ * $Id: lisp_c.c,v 1.4 2002-07-02 19:56:38 leonb Exp $
  **********************************************************************/
 
 
@@ -38,6 +38,7 @@ void run_time_error(char *s) { error(NIL,"s",NIL); }
 void lside_dld_partial(gptr g) {}
 void lside_destroy_item(gptr g) {}
 void init_lisp_c(void) {} 
+at * dh_listeval(at *p, at *q) { return NIL; }
 #else
 
 extern int storage_to_dht[];
