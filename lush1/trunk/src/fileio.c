@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.20 2003-05-27 21:49:50 leonb Exp $
+ * $Id: fileio.c,v 1.21 2004-05-12 21:13:36 leonb Exp $
  **********************************************************************/
 
 
@@ -341,8 +341,8 @@ lockfile(char *filename)
     char hname[80];
     char *user;
     gethostname(hname,79);
-    ifn (user=getenv("USER"))
-      ifn (user=getenv("LOGNAME"))
+    if (! (user=getenv("USER")))
+      if (! (user=getenv("LOGNAME")))
         user="<unknown>";  
     sprintf(string_buffer,"created by %s@%s (pid=%d)\non %s", 
 	    user, hname, (int)getpid(), ctime(&tl));
@@ -354,10 +354,10 @@ lockfile(char *filename)
     char user[80];
     char computer[80];
     size = sizeof(user);
-    ifn (GetUserName(user,&size))
+    if (! (GetUserName(user,&size)))
       strcpy(user,"<unknown>");
     size = sizeof(computer);
-    ifn (GetComputerName(computer,&size))
+    if (! (GetComputerName(computer,&size)))
       strcpy(computer,"<unknown>");
     sprintf(string_buffer,"created by %s@%s on %s", 
 	    user, computer, time(&tl));
@@ -533,6 +533,16 @@ DX(xfileinfo)
 /* --------- FILENAME MANIPULATION --------- */
 
 
+/** strcpyif **/
+
+static char *
+strcpyif(char *d, const char *s)
+{
+  if (d != s)
+    return strcpy(d,s);
+  return d;
+}
+
 /** dirname **/
 
 char *
@@ -650,7 +660,7 @@ basename(char *fname, char *suffix)
     suffix += 1;
   if (suffix[0]==0)
     return fname;
-  strcpy(string_buffer,fname);
+  strcpyif(string_buffer,fname);
   sl = strlen(suffix);
   s = string_buffer + strlen(string_buffer);
   if (s > string_buffer + sl) {
@@ -668,7 +678,7 @@ basename(char *fname, char *suffix)
   char *s = fname;
   /* Special cases */
   if (fname[0] && fname[1]==':') {
-    strcpy(string_buffer,fname);
+    strcpyif(string_buffer,fname);
     if (fname[2]==0)
       return string_buffer;
     string_buffer[2] = '\\'; 
@@ -726,11 +736,11 @@ concat_fname(char *from, char *fname)
 #ifdef UNIX
   char *s;
   if (fname && fname[0]=='/') 
-    strcpy(string_buffer,"/");
+    strcpyif(string_buffer,"/");
   else if (from)
-    strcpy(string_buffer,concat_fname(NULL,from));
+    strcpyif(string_buffer,concat_fname(NULL,from));
   else
-    strcpy(string_buffer,cwd(NULL));
+    strcpyif(string_buffer,cwd(NULL));
   s = string_buffer + strlen(string_buffer);
   for (;;) {
     while (fname && fname[0]=='/')
@@ -774,9 +784,9 @@ concat_fname(char *from, char *fname)
   char  drv[4];
   /* Handle base */
   if (from)
-    strcpy(string_buffer, concat_fname(NULL,from));
+    strcpyif(string_buffer, concat_fname(NULL,from));
   else
-    strcpy(string_buffer, cwd(NULL));
+    strcpyif(string_buffer, cwd(NULL));
   s = string_buffer;
   if (fname==0)
     return s;
@@ -820,7 +830,7 @@ concat_fname(char *from, char *fname)
       if (fname[1]=='.')
         if (fname[2]=='/' || fname[2]=='\\' || fname[2]==0) {
 	  fname += 2;
-	  strcpy(string_buffer, dirname(string_buffer));
+	  strcpyif(string_buffer, dirname(string_buffer));
 	  s = string_buffer;
 	  continue;
       }
@@ -860,7 +870,7 @@ relative_fname(char *from, char *fname)
   fromlen = strlen(from);
   if (fromlen > FILELEN-1)
     return 0;
-  strcpy(file_name, from);
+  strcpyif(file_name, from);
   from = file_name;
   fname = concat_fname(NULL,fname);
 #ifdef UNIX
@@ -1021,7 +1031,7 @@ search_lushdir(char *progname)
       char *s1, *s2;
       s1 = getenv("PATH");
       for (;;) {
-	ifn (s1 && *s1)
+	if (! (s1 && *s1))
 	  return 0;
 	s2 = file_name;
 	while (*s1 && *s1!=':')
@@ -1398,10 +1408,10 @@ attempt_open_read(char *s, char *suffixes)
   /*** spaces in name ***/
   while (isspace((int)(unsigned char)*s))
     s += 1;
-  strcpy(file_name, s);
+  strcpyif(file_name, s);
   
   /*** stdin ***/
-  ifn(strcmp(s, "$stdin"))
+  if (! strcmp(s, "$stdin"))
     return stdin;
 
   /*** pipes ***/
@@ -1430,7 +1440,7 @@ open_read(char *s, char *suffixes)
   FILE *f;
   
   f = attempt_open_read(s,suffixes);
-  ifn (f) {
+  if (! f) {
     test_file_error(NIL);
     error(NIL,"Cannot open file",new_string(s));
   }
@@ -1454,14 +1464,14 @@ attempt_open_write(char *s, char *suffixes)
 
   while (isspace((int)(unsigned char)*s))
     s += 1;
-  strcpy(file_name, s);
+  strcpyif(file_name, s);
 
   /*** stdout ***/
-  ifn(strcmp(s, "$stdout"))
+  if (! strcmp(s, "$stdout"))
     return stdout;
 
   /*** stderr ***/
-  ifn(strcmp(s, "$stderr"))
+  if (! strcmp(s, "$stderr"))
     return stderr;
 
   /*** demo check ***/
@@ -1500,7 +1510,7 @@ open_write(char *s, char *suffixes)
   FILE *f;
   
   f = attempt_open_write(s,suffixes);
-  ifn (f) {
+  if (! f) {
     test_file_error(NIL);
     error(NIL,"Cannot open file",new_string(s));
   }
@@ -1525,9 +1535,9 @@ attempt_open_append(char *s, char *suffixes)
   strcpy(file_name, s);
 
   /*** stdout ***/
-  ifn(strcmp(s, "$stdout"))
+  if (!strcmp(s, "$stdout"))
     return stdout;
-  ifn(strcmp(s, "$stderr"))
+  if (!strcmp(s, "$stderr"))
     return stderr;
   
   /*** demo check ***/
@@ -1564,7 +1574,7 @@ open_append(char *s, char *suffixes)
   FILE *f;
   
   f = attempt_open_append(s,suffixes);
-  ifn (f) {
+  if (! f) {
     test_file_error(NIL);
     error(NIL,"Cannot open file",new_string(s));
   }
@@ -1695,7 +1705,7 @@ set_script(char *s)
 
 DX(xscript)
 {
-  ifn(arg_number) {
+  if (!arg_number) {
     set_script(NIL);
     return NIL;
   }
@@ -1797,7 +1807,7 @@ DY(yreading)
   at *answer, *fdesc;
   FILE *f;
 
-  ifn(CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr))
+  if (! (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr)))
     error(NIL, "syntax error", NIL);
 
   fdesc = eval(ARG_LIST->Car);
@@ -1842,7 +1852,7 @@ DY(ywriting)
   at *answer, *fdesc;
   FILE *f;
 
-  ifn(CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr))
+  if (! (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr)))
     error(NIL, "syntax error", NIL);
 
   fdesc = eval(ARG_LIST->Car);
@@ -1893,7 +1903,7 @@ DX(xread8)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   fdesc = APOINTER(1);
-  ifn (fdesc && (fdesc->flags&C_EXTERN) && (fdesc->Class==&file_R_class)) 
+  if (! (fdesc && (fdesc->flags&C_EXTERN) && (fdesc->Class==&file_R_class)))
     error(NIL, "read file descriptor expected", fdesc);
   f = fdesc->Object;
   return (NEW_NUMBER(fgetc(f)));
@@ -1915,7 +1925,7 @@ DX(xwrite8)
   fdesc = APOINTER(1);
   x = AINTEGER(2);
 
-  ifn (fdesc && (fdesc->flags&C_EXTERN) && (fdesc->Class==&file_W_class)) 
+  if (! (fdesc && (fdesc->flags&C_EXTERN) && (fdesc->Class==&file_W_class)))
     error(NIL, "write file descriptor expected", fdesc);
   f = fdesc->Object;
   return (NEW_NUMBER(fputc(x,f)));
@@ -1934,7 +1944,7 @@ DX(xfsize)
     p = OPEN_READ(ASTRING(1), NULL);
   } else {
     p = APOINTER(1);
-    ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_R_class)) 
+    if (! (p && (p->flags & C_EXTERN) && (p->Class == &file_R_class)))
       error(NIL, "not a string or read descriptor", p);
     LOCK(p);
   }
