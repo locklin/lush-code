@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.20 2002-05-09 15:23:43 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.21 2002-05-09 18:22:08 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -619,48 +619,48 @@
 
 (defvar libload.data (htable))
 
+(de libload.check(fname)
+  (let ((frec (libload.data fname))
+        (ok t) )
+    (when (consp frec)
+      (let ((mtime (alist-get 'mtime (fileinfo fname))))
+        (when (and (is-of-class (car frec) |DATE|)
+                   (is-of-class mtime |DATE|)
+                   (< mtime (car frec)) )
+          (setq ok ())
+          (each ((d (cdr frec)))
+            (when (libload.check d)
+              (setq ok t) ) ) ) ) )
+    (when ok
+      (libload.data fname ())
+      t ) ) )
+
 (de libload(s &optional (c ""))
   (let ((fname (filepath s)))
     (when (not fname)
-      (error "File not found" s) )
-    ;; record dependencies
+      (error 'libload "File not found" s) )
+    ;; record dependency
     (when (stringp file-being-loaded)
       (let ((frec (libload.data file-being-loaded)))
         (when (and (consp frec)
                    (not (member fname (cdr frec))))
           (rplacd frec (cons fname (cdr frec))) ) ) )
     ;; check time and recursive dependencies
-    (let ((frec (libload.data fname))
-          (mtime (alist-get 'mtime (fileinfo fname)))
-          (file-being-loaded ())
-          (ok t) )
-      (when (and (consp frec) 
-                 (is-of-class (car frec) |DATE|)
-                 (is-of-class mtime |DATE|)
-                 (< mtime (car frec)) )
-        (setq ok ())
-        (each ((d (cdr frec)))
-          (when (libload d) 
-            (setq ok t) ) ) )
-      (when (not ok)
-        (setq fname ()) ) )
-    ;; load as needed
-    (when fname
-      (libload.data fname (cons (now) ()))
-      (load fname)
+    (when (libload.check fname)
       (when startup (printf " [%s]%s\n" (basename fname) c))
-      fname ) ) )
+      (libload.data fname (cons (now) ()))
+      (load fname) ) ) )
 
 (dm autoload(autoload l . s)
   (let  ((f  (eval `(mlambda f
-                       (set (car f) ())
-                       (libload ,l " (autoload)")
-		      f) )))
+                      (set (car f) ())
+                      (libload ,l " (autoload)")
+                      f) )))
     `(progn ,@(all ((i s)) `(setq ,i ,f))) ) )
 
-(lock-symbol |^L| libload.data libload autoload addpath)
-
-
+(lock-symbol addpath |^L| 
+             libload.data libload.check libload 
+             autoload )
 
 
 
