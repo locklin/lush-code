@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: v4l.lsh,v 1.4 2002-10-28 19:55:45 profshadoko Exp $
+;;; $Id: v4l.lsh,v 1.5 2002-11-20 08:33:35 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -121,7 +121,7 @@
 ;;     (setq screen (new-window))
 ;;     (while t
 ;;       ;; grab frame
-;;       (==> vdev grab-into-rgb bg)
+;;       (==> vdev grab-into-rgbx bg)
 ;;       ;; display frame
 ;;       (rgb-draw-matrix 10 10 bg))))
 (defclass v4ldevice object
@@ -134,6 +134,7 @@
   ((-int-) nframe)			; number of frames in buffer
   ((-gptr-) buffer)			; frame buffer
   ((-int-) buffersize)			; size thereof
+  ((-int-) currentformat)               ; automatically determined format
   ;; parameters and capabilities
   ((-int-) cap_channels cap_audios)
   ((-int-) cap_maxwidth cap_maxheight)
@@ -180,44 +181,50 @@
   (when mbuffer #{ free($mbuffer); #})
   ())
 
+
 #? (==> <v4ldevice> set-format <f> <w> <h>)
 ;; set the video format/palette (VIDEO_PALETTE_RGB24,
 ;; VIDEO_PALETTE_RGB32, VIDEO_PALETTE_YUV422 etc...),
-;; the width and the height of the image
-;; to be grabbed.  This is a rarely called low-level method 
-;; since the various grab-into-xxx methods set the size
-;; and video palette. Returns 0 on success and -1 on error
+;; and the width and the height of the image
+;; to be grabbed.  Returns 0 on success and -1 if the format
+;; requested is not supported by the device. This is a rarely 
+;; called low-level method  since the various grab-into-rgb
+;; and grab-into-rgba determine the appropriate format 
+;; automatically, and all the grab-xxx-into-xxx methods
+;; set their format.
 (defmethod v4ldevice set-format (f w h)
+  ((-int-) f w h)
   ((-int-) f w h)
   (if (or (> w cap_maxwidth) (> h cap_maxheight)
 	  (< w cap_minwidth) (< h cap_minheight)
 	  (< f 1) (> f 16))
       -1				; error
-      (let ((retcode 0))
-	((-int-) retcode)
-        #{{ int changedp=0;  
-	    int depths[]={-1,1,-1,2,3,4,2,2,2,2,-1,-1,-1,-1,-1,-1,-1};
-            if (($f != $mmapinfo->format)||
-		($w != $mmapinfo->width) ||
-		($h != $mmapinfo->height)) {
-	      $changep = 1;
-	      $mmapinfo->format = $f
-	      $mmapinfo->width = $width = $w;
-	      $mmapinfo->height = $height = $h;
-	      /* now grab a couple of frames to clear
-  	         the buffer from inapropriately formated frames */
-	      for ( $frame=0; 
-		    $frame<$nframe; 
-		    $frame) {
-		$mmapinfo->frame = $frame;
-		$retcode += ioctl($fd,VIDIOCMCAPTURE,$mmapinfo);
-		$retcode += ioctl($fd, VIDIOCSYNC, &($frame));
-		}
-	      $mmapinfo->frame = $frame = 0;
-	    }
-	  } 
-        #}
-	retocde)))
+   (let ((retcode 0))
+     ((-int-) retcode)
+     #{{ int changedp=0;  
+ 	int code;
+ 	/* int depths[]={-1,1,-1,2,3,4,2,2,2,2,-1,-1,-1,-1,-1,-1,-1}; */
+         if (($f != $mmapinfo->format)||
+             ($w != $mmapinfo->width) ||
+ 	    ($h != $mmapinfo->height)) {
+ 	  changedp = 1;
+ 	  $mmapinfo->format = $f;
+ 	  $mmapinfo->width = $width = $w;
+ 	  $mmapinfo->height = $height = $h;
+ 	  /* now grab a couple of frames to clear
+   	     the buffer from inapropriately formated frames */
+           for ( $frame=0; 
+ 	        $frame<$nframe; 
+ 		$frame++) {
+ 	    $mmapinfo->frame = $frame;
+ 	    $retcode = ioctl($fd,VIDIOCMCAPTURE,$mmapinfo);
+             code = ioctl($fd, VIDIOCSYNC, &($frame));
+ 	    }
+ 	  $mmapinfo->frame = $frame = 0;
+ 	  }
+       }
+     #}
+     retcode)))
 
 #? (new v4ldevice <devname> <n> <c> <w> <h>)
 ;; opens a new v4ldevice for video grabbing.
@@ -245,7 +252,7 @@
   (setq tuner (gptr #{ malloc(sizeof(struct video_tuner)) #}))
   (setq capture (gptr #{ malloc(sizeof(struct video_capture)) #}))
   (setq picture (gptr #{ malloc(sizeof(struct video_picture)) #}))
-  (setq mmapinfo (gptr #{ malloc(sizeof(struct video_mmap)) #}))
+  (setq mmapinfo (gptr #{ calloc(sizeof(struct video_mmap),1) #}))
   (setq mbuffer (gptr #{ malloc(sizeof(struct video_mbuf)) #}))
   (let ((retcode 0))
     ((-int-) retcode)
@@ -352,24 +359,107 @@
 (defmethod v4ldevice -destructor ()
   (==> this cleanup))
 
-
 #? (==> <v4ldevice> grab-into-rgb <img>)
 ;; grab an image from the v4l device into a
-;; preexisting image (a ubyte-matrix of size heightxwidthx3.
+;; preexisting image (a ubyte-matrix of size 
+;; heightxwidthxdepth, where depth must be at least 3).
 ;; Consecutive elements in the last dimension are
-;; interpreted as RGB values. This uses the recommended
-;; sequence of calls.
+;; interpreted as RGB values. Only those elements are modified.
+;; If the video image format has not been previously set,
+;; this method automatically determines which format is
+;; supported by the current device (among RGB24, RGB32 and YUV420P).
+;; This allows to support videocards and webcams transparently
+;; with having to worry about which formats are supported.
+;; Some webcams (like the Logitech Quickcam 3000 pro) only
+;; support YUV420 and YUV420P.
 (defmethod v4ldevice grab-into-rgb (img)
   ((-idx3- (-ubyte-)) img)
   (when (or (<> (idx-dim img 0) height)
 	    (<> (idx-dim img 1) width)
-	    (<> (idx-dim img 2) 3))
-      (error "wrong size for image matrix"))
+	    (< (idx-dim img 2) 3))
+    (error "wrong size for RGBX image matrix"))
+  (let* ((fmt (to-int #{ $mmapinfo->format #}))
+	 (newfmt fmt))
+    ((-int-) fmt newfmt)
+    (when (= 0 fmt)
+      (cond 
+       ((= 0 (==> this set-format @@VIDEO_PALETTE_RGB24 width height)) 
+	(setq newfmt @@VIDEO_PALETTE_RGB24))
+       ((= 0 (==> this set-format @@VIDEO_PALETTE_RGB32 width height)) 
+	(setq newfmt @@VIDEO_PALETTE_RGB32))
+       ((= 0 (==> this set-format @@VIDEO_PALETTE_YUV420P width height)) 
+	(setq newfmt @@VIDEO_PALETTE_YUV420P))
+       (t (error "device cannot grab images of desired size in any format supported by v4ldevice"))))
+    (selectq newfmt
+      (@@VIDEO_PALETTE_RGB24 (==> this grab-rgb24-into-rgbx img))
+      (@@VIDEO_PALETTE_RGB32 (==> this grab-rgb32-into-rgbx img))
+      (@@VIDEO_PALETTE_YUV420P (==> this grab-yuv420p-into-rgbx img))
+      (t (error "image format is not supported by v4ldevice") -1))))
+
+#? (==> <v4ldevice> grab-into-rgbx <img>)
+;; same as <grab-into-rgb>.
+(defmethod v4ldevice grab-into-rgbx (img)
+  ((-idx3- (-ubyte-)) img)
+  (==> this grab-into-rgb img))
+
+#? (==> <v4ldevice> grab-into-rgba <img> <alpha>)
+;; grab an image from the v4l device into a
+;; preexisting image (a ubyte-matrix of size 
+;; heightxwidthxdepth, where depth must be at least 3).
+;; Consecutive elements in the last dimension are
+;; interpreted as RGBA values. Only those 4 elements are modified.
+;; The A components are filled with <alpha>.
+;; If the video image format has not been previously set,
+;; this method automatically determines which format is
+;; supported by the current device (among RGB24, RGB32 and YUV420P).
+;; This allows to support videocards and webcams transparently
+;; with having to worry about which formats are supported.
+;; Some webcams (like the Logitech Quickcam 3000 pro) only
+;; support YUV420 and YUV420P.
+(defmethod v4ldevice grab-into-rgba (img alpha)
+  ((-idx3- (-ubyte-)) img)
+  ((-int-) alpha)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (< (idx-dim img 2) 4))
+    (error "wrong size for RGBA image matrix"))
+  (let* ((fmt (to-int #{ $mmapinfo->format #}))
+	 (newfmt fmt))
+    ((-int-) fmt newfmt)
+    (when (= 0 fmt)
+      (cond 
+       ((= 0 (==> this set-format @@VIDEO_PALETTE_RGB24 width height)) 
+	(setq newfmt @@VIDEO_PALETTE_RGB24))
+       ((= 0 (==> this set-format @@VIDEO_PALETTE_RGB32 width height)) 
+	(setq newfmt @@VIDEO_PALETTE_RGB32))
+       ((= 0 (==> this set-format @@VIDEO_PALETTE_YUV420P width height)) 
+	(setq newfmt @@VIDEO_PALETTE_YUV420P))
+       (t (error "device cannot grab images of desired size in any format supported by v4ldevice"))))
+    (selectq newfmt
+      (@@VIDEO_PALETTE_RGB24 (==> this grab-rgb24-into-rgbx img))
+      (@@VIDEO_PALETTE_RGB32 (==> this grab-rgb32-into-rgbx img))
+      (@@VIDEO_PALETTE_YUV420P (==> this grab-yuv420p-into-rgbx img))
+      (t (error "image format is not supported by v4ldevice") -1))))
+
+    
+#? (==> <v4ldevice> grab-rgb24-into-rgbx <img>)
+;; grab an image from the v4l device in RGB24 format into a
+;; preexisting image (a ubyte-matrix of size heightxwidthxdepth,
+;; where depth must be at least 3).
+;; Consecutive elements in the last dimension are
+;; interpreted as RGB values. Only those elements are modified.
+(defmethod v4ldevice grab-rgb24-into-rgbx (img)
+  ((-idx3- (-ubyte-)) img)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (< (idx-dim img 2) 3))
+      (error "wrong size for RGBX image matrix"))
   (let ((retcode 0))
     ((-int-) retcode)
     #{{
-        int i,j, lastframe;
+        int i,j, lastframe, code;
         unsigned char *imgptr, *bufptr;
+        int mod1 = $img->mod[1];
 	lastframe = $frame;
 
 	/* compute next frame number */
@@ -382,40 +472,42 @@
         $mmapinfo->frame = $frame;
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
-
-	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
 	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
           for (j=0; j<$width; j++) {
-	     *(imgptr++) = bufptr[2];
-	     *(imgptr++) = bufptr[1];
-	     *(imgptr++) = bufptr[0];
+	     imgptr[0] = bufptr[2];
+	     imgptr[1] = bufptr[1];
+	     imgptr[2] = bufptr[0];
 	     bufptr+=3;
+             imgptr += mod1;
 	  }
 	}
 
      } #}
-     frame))
+    (if (<> retcode 0) -1 frame)))
 
-#? (==> <v4ldevice> grab-into-rgb32 <img>)
-;; grab an image from the v4l device into a
-;; preexisting image (a ubyte-matrix of size heightxwidthx3.
+#? (==> <v4ldevice> grab-rgb32-into-rgbx <img>)
+;; grab an image from the v4l device in RGB32 format into a
+;; preexisting image (a ubyte-matrix of size heightxwidthxdepth,
+;; where depth must be at least 3).
 ;; Consecutive elements in the last dimension are
-;; interpreted as RGB values. This uses the recommended
-;; sequence of calls.
-(defmethod v4ldevice grab-into-rgb32 (img)
+;; interpreted as RGB values. Only those elements are modified.
+(defmethod v4ldevice grab-rgb32-into-rgbx (img)
   ((-idx3- (-ubyte-)) img)
   (when (or (<> (idx-dim img 0) height)
 	    (<> (idx-dim img 1) width)
-	    (<> (idx-dim img 2) 3))
-      (error "wrong size for image matrix"))
+	    (< (idx-dim img 2) 3))
+      (error "wrong size for RGBX image matrix"))
   (let ((retcode 0))
     ((-int-) retcode)
     #{{
-        int i,j, lastframe;
+        int i,j, lastframe, code;
         unsigned char *imgptr, *bufptr;
+        int mod1 = $img->mod[1];
 	lastframe = $frame;
 
 	/* compute next frame number */
@@ -428,39 +520,50 @@
         $mmapinfo->frame = $frame;
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
-
-	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
 	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
           for (j=0; j<$width; j++) {
-	     *(imgptr++) = bufptr[2];
-	     *(imgptr++) = bufptr[1];
-	     *(imgptr++) = bufptr[0];
-	     bufptr+=3;
+	     imgptr[0] = bufptr[2];
+	     imgptr[1] = bufptr[1];
+	     imgptr[2] = bufptr[0];
+	     bufptr+=4;
+             imgptr += mod1;
 	  }
 	}
 
      } #}
-     frame))
+    (if (<> retcode 0) -1 frame)))
 
-;; grab an image from the v4l device into a
-;; preexisting image (a ubyte-matrix of size heightxwidthx3.
-;; Consecutive elements in the last dimension are
-;; interpreted as RGB values. This uses an unorthodox
-;; sequence of ioctl calls.
-(defmethod v4ldevice grab-into-rgb-old (img)
+
+#? (==> <v4ldevice> grab-rgb24-into-rgba <img> <alpha>)
+;; grab an image from the v4l device in RGB32 format into a
+;; preexisting image (a ubyte-matrix of size heightxwidthxdepth
+;; with depth equal to at least 4), Consecutive elements in the 
+;; last dimension are interpreted as RGBA values. 
+;; The A values are filled with <alpha>.
+(defmethod v4ldevice grab-rgb24-into-rgba (img alpha)
   ((-idx3- (-ubyte-)) img)
+  ((-int-) alpha)
   (when (or (<> (idx-dim img 0) height)
 	    (<> (idx-dim img 1) width)
-	    (<> (idx-dim img 2) 3))
-      (error "wrong size for image matrix"))
+	    (<> (idx-dim img 2) 4))
+      (error "wrong size for RGBA image matrix"))
   (let ((retcode 0))
     ((-int-) retcode)
     #{{
-        int i,j,k;
+        int i,j, lastframe;
+        int code;
         unsigned char *imgptr, *bufptr;
+        int mod1 = $img->mod[1];
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
 
         $mmapinfo->format = VIDEO_PALETTE_RGB24;
         $mmapinfo->width = $width;
@@ -468,27 +571,286 @@
         $mmapinfo->frame = $frame;
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	     imgptr[0] = bufptr[2];
+	     imgptr[1] = bufptr[1];
+	     imgptr[2] = bufptr[0];
+             imgptr[3] = $alpha;
+	     bufptr+=3;
+             imgptr += mod1;
+	  }
+	}
+
+     } #}
+    (if (<> retcode 0) -1 frame)))
+
+#? (==> <v4ldevice> grab-rgb32-into-rgba <img> <alpha>)
+;; grab an image from the v4l device in RGB32 format into a
+;; preexisting image (a ubyte-matrix of size heightxwidthxdepth
+;; with depth equal to at least 4), Consecutive elements in the 
+;; last dimension are interpreted as RGBA values. 
+;; The A values are filled with <alpha>.
+(defmethod v4ldevice grab-rgb32-into-rgba (img alpha)
+  ((-idx3- (-ubyte-)) img)
+  ((-int-) alpha)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 4))
+      (error "wrong size for RGBA image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j, lastframe;
+        int code;
+        unsigned char *imgptr, *bufptr;
+        int mod1 = $img->mod[1];
+	lastframe = $frame;
 
 	/* compute next frame number */
 	$frame++; 
 	if ($frame >= $nframe) $frame = 0;
 
-	$retcode = ioctl($fd, VIDIOCSYNC, &($frame));
-	/* printf("retcode = %d, mmapinfo->frame = %d\n",$retcode,$mmapinfo->frame); */
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[$frame];
+        $mmapinfo->format = VIDEO_PALETTE_RGB32;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
           for (j=0; j<$width; j++) {
-	     *(imgptr++) = bufptr[2];
-	     *(imgptr++) = bufptr[1];
-	     *(imgptr++) = bufptr[0];
-	     bufptr+=3;
+	     imgptr[0] = bufptr[2];
+	     imgptr[1] = bufptr[1];
+	     imgptr[2] = bufptr[0];
+             imgptr[3] = $alpha;
+	     bufptr+=4;
+             imgptr += mod1;
 	  }
 	}
 
      } #}
-     frame))
+    (if (<> retcode 0) -1 frame)))
+
+#? (==> <v4ldevice> grab-yuv422-into-yuv422 <img>)
+;; grab an image from the v4l device in YUV422 format into a
+;; preexisting image (a ubyte-matrix of size heightxwidthx2.
+;; Consecutive elements are interpreted as YUYVYUYV.....
+;; according to the YUV422 definition.
+;; so {<c> (img y x 0)} is the luminance component
+;; of pixel (x,y).
+(defmethod v4ldevice grab-yuv422-into-yuv422 (img)
+  ((-idx3- (-ubyte-)) img)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 2)
+	    (not (contiguousp img)))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int lastframe, code;
+        unsigned char *imgptr, *bufptr;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_YUV422;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[$frame];
+	imgptr = IDX_PTR($img, unsigned char);
+	memcpy(imgptr,bufptr,$width*$height*2);
+
+     } #}
+    (if (<> retcode 0) -1 frame)))
+
+
+#? (==> <v4ldevice> grab-yuv420p-into-rgbx <img>)
+;; grab an image from the v4l device in YUV420P (planar) format 
+;; into a preexisting image (a ubyte-matrix of size 
+;; heightxwidthxdepth with depth at least equal to 3).
+;; Consecutive elements are interpreted as RGB components.
+;; This mode is useful for certain webcam that do not
+;; support RGB grabbing (e.g. Logitech Quickam 3000 Pro).
+(defmethod v4ldevice grab-yuv420p-into-rgbx (img)
+  ((-idx3- (-ubyte-)) img)
+  (cheader "#define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x))")
+
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (< (idx-dim img 2) 3))
+      (error "wrong size for RGBX image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j,lastframe,code;
+        unsigned char *imgptr, *bufptr;
+	register float y,u,v,p;
+	int y_pos, cb_pos, cr_pos;
+	int even;
+        int mod1 = $img->mod[1];
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_YUV420P;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	even=1;
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+               // if (i==200) { printf("new: %d %d %d\n",i,j,(int)(imgptr));}
+	       y_pos=i*$width+j;
+	       y =  1.1643835*((float)(bufptr[y_pos])-16.0);
+	       cb_pos=$width*$height + (i/2)*$width/2 + j/2;
+	       cr_pos=$width*$height*5/4 +(i/2)*$width/2 + j/2;
+	       u =  1.1339285*((float)(bufptr[cb_pos])-128.0);
+	       v =  1.1339285*((float)(bufptr[cr_pos])-128.0);
+	       p = y + 1.402*v; 
+	       imgptr[0] = RGBSATURATE(p);
+	       p = y - 0.344*u - 0.714*v;
+	       imgptr[1] = RGBSATURATE(p);
+	       p = y + 1.772*u;
+	       imgptr[2] = RGBSATURATE(p);
+	       even = 1 - even;
+               imgptr += mod1;
+	  }
+	}
+     } #}
+    (if (<> retcode 0) -1 frame)))
+
+#? (==> <v4ldevice> grab-yuv420p-into-rgba <img> <alpha>)
+;; grab an image from the v4l device in YUV420P (planar) format 
+;; into a preexisting image (a ubyte-matrix of size 
+;; heightxwidthxdepth with depth at least equal to 4).
+;; Consecutive elements are interpreted as RGBA components.
+;; the A components are filled with <alpha>.
+;; This mode is useful for certain webcam that do not
+;; support RGB grabbing (e.g. Logitech Quickam 3000 Pro).
+(defmethod v4ldevice grab-yuv420p-into-rgba (img alpha)
+  ((-idx3- (-ubyte-)) img)
+  ((-int-) alpha)
+  (cheader "#define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x))")
+
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (< (idx-dim img 2) 4))
+      (error "wrong size for RGBX image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j,lastframe,code;
+        unsigned char *imgptr, *bufptr;
+	register float y,u,v,p;
+	int y_pos, cb_pos, cr_pos;
+	int even;
+        int mod1 = $img->mod[1];
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_YUV420P;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	even=1;
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	       y_pos=i*$width+j;
+	       y =  1.1643835*((float)(bufptr[y_pos])-16.0);
+	       cb_pos=$width*$height + (i/2)*$width/2 + j/2;
+	       cr_pos=$width*$height*5/4 +(i/2)*$width/2 + j/2;
+	       u =  1.1339285*((float)(bufptr[cb_pos])-128.0);
+	       v =  1.1339285*((float)(bufptr[cr_pos])-128.0);
+	       p = y + 1.402*v; 
+	       imgptr[0] = RGBSATURATE(p);
+	       p = y - 0.344*u - 0.714*v;
+	       imgptr[1] = RGBSATURATE(p);
+	       p = y + 1.772*u;
+	       imgptr[2] = RGBSATURATE(p);
+	       even = 1 - even;
+               imgptr[3] = $alpha;
+               imgptr += mod1;
+	  }
+	}
+     } #}
+    (if (<> retcode 0) -1 frame)))
+
+#? (==> <v4ldevice> grab-grey-into-y <img>)
+;; grab an image from the v4l device in GREY (monocrhome) format 
+;; into a preexisting image (a ubyte-matrix of size heightxwidth.
+(defmethod v4ldevice grab-grey-into-y (img)
+  ((-idx2- (-ubyte-)) img)
+  (cheader "#define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x))")
+
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (not (contiguousp img)))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int lastframe,code;
+        unsigned char *imgptr, *bufptr;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_GREY;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+        memcpy(imgptr,bufptr,$width*$height);
+     } #}
+    (if (<> retcode 0) -1 frame)))
+
 
 #? (==> <v4ldevice> record-into-rgb <movie> <s>)
 ;; record successive frames from the v4l device into a
@@ -517,257 +879,26 @@
 	    (==> this grab-into-rgb f)
 	    (rgb-draw-matrix x y f z z)) f))
 
-
-#? (==> <v4ldevice> grab-into-rgba <img> <alpha>)
-;; grab an image from the v4l device into a
-;; preexisting image (a ubyte-matrix of size heightxwidthx4.
-;; Consecutive elements in the last dimension are
-;; interpreted as RGBA values. The <alpha> paramter
-;; is used to fill the A values.
-(defmethod v4ldevice grab-into-rgba (img alpha)
-  ((-idx3- (-ubyte-)) img)
-  ((-int-) alpha)
-  (when (or (<> (idx-dim img 0) height)
-	    (<> (idx-dim img 1) width)
-	    (<> (idx-dim img 2) 4))
-      (error "wrong size for image matrix"))
-  (let ((retcode 0))
-    ((-int-) retcode)
-    #{{
-        int i,j, lastframe;
-        unsigned char *imgptr, *bufptr;
-	lastframe = $frame;
-
-	/* compute next frame number */
-	$frame++; 
-	if ($frame >= $nframe) $frame = 0;
-
-        $mmapinfo->format = VIDEO_PALETTE_RGB32;
-        $mmapinfo->width = $width;
-        $mmapinfo->height = $height;
-        $mmapinfo->frame = $frame;
-
-	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
-
-	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
-	imgptr = IDX_PTR($img, unsigned char);
-
-	for (i=0; i<$height; i++) {
-          for (j=0; j<$width; j++) {
-	     *(imgptr++) = bufptr[2];
-	     *(imgptr++) = bufptr[1];
-	     *(imgptr++) = bufptr[0];
-	     *(imgptr++) = $alpha;
-	     bufptr+=4;
-	  }
-	}
-
-     } #}
-     frame))
-
-;; grab an image from the v4l device into a
-;; preexisting image (a ubyte-matrix of size heightxwidthx4.
-;; Consecutive elements in the last dimension are
-;; interpreted as RGBA values. The <alpha> paramter
-;; is used to fill the A values. This uses an unorthodox
-;; sequence of ioctl calls.
-(defmethod v4ldevice grab-into-rgba-old (img alpha)
-  ((-idx3- (-ubyte-)) img)
-  ((-int-) alpha)
-  (when (or (<> (idx-dim img 0) height)
-	    (<> (idx-dim img 1) width)
-	    (<> (idx-dim img 2) 4))
-      (error "wrong size for image matrix"))
-  (let ((retcode 0))
-    ((-int-) retcode)
-    #{{
-        int i,j,k;
-        unsigned char *imgptr, *bufptr;
-
-        $mmapinfo->format = VIDEO_PALETTE_RGB32;
-        $mmapinfo->width = $width;
-        $mmapinfo->height = $height;
-        $mmapinfo->frame = $frame;
-
-        $retcode = ioctl($fd,VIDIOCMCAPTURE,$mmapinfo);
-
-	/* compute next frame number */
-	$frame++; 
-	if ($frame >= $nframe) $frame = 0;
-
-	$retcode = ioctl($fd, VIDIOCSYNC, &($frame));
-	/* printf("retcode = %d, mmapinfo->frame = %d\n",$retcode,$mmapinfo->frame); */
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[$frame];
-	imgptr = IDX_PTR($img, unsigned char);
-
-	for (i=0; i<$height; i++) {
-          for (j=0; j<$width; j++) {
-	     *(imgptr++) = bufptr[2];
-	     *(imgptr++) = bufptr[1];
-	     *(imgptr++) = bufptr[0];
-	     *(imgptr++) = $alpha;
-	     bufptr+=4;
-	  }
-	}
-
-     } #}
-     frame))
-
-
-#? (==> <v4ldevice> grab-into-yuv422 <img>)
-;; grab an image from the v4l device into a
-;; preexisting image (a ubyte-matrix of size heightxwidthx2.
-;; Consecutive elements are interpreted as YUYVYUYV.....
-(defmethod v4ldevice grab-into-yuv422 (img)
-  ((-idx3- (-ubyte-)) img)
-  (when (or (<> (idx-dim img 0) height)
-	    (<> (idx-dim img 1) width)
-	    (<> (idx-dim img 2) 2))
-      (error "wrong size for image matrix"))
-  (let ((retcode 0))
-    ((-int-) retcode)
-    #{{
-        int lastframe;
-        unsigned char *imgptr, *bufptr;
-	lastframe = $frame;
-
-	/* compute next frame number */
-	$frame++; 
-	if ($frame >= $nframe) $frame = 0;
-
-        $mmapinfo->format = VIDEO_PALETTE_YUV422;
-        $mmapinfo->width = $width;
-        $mmapinfo->height = $height;
-        $mmapinfo->frame = $frame;
-
-	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
-
-	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
-	imgptr = IDX_PTR($img, unsigned char);
-
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[$frame];
-	imgptr = IDX_PTR($img, unsigned char);
-	memcpy(imgptr,bufptr,$width*$height*2);
-
-     } #}
-     frame))
-
-;; this is for webcams
-(defmethod v4ldevice grab-into-rgba-from-yuv420p (img alpha)
-  ((-idx3- (-ubyte-)) img)
-  ((-int-) alpha)
-  (cheader "#define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x))")
-
-  (when (or (<> (idx-dim img 0) height)
-	    (<> (idx-dim img 1) width)
-	    (<> (idx-dim img 2) 4))
-      (error "wrong size for image matrix"))
-  (let ((retcode 0))
-    ((-int-) retcode)
-    #{{
-        int i,j,lastframe;
-        unsigned char *imgptr, *bufptr;
-	register float y,u,v,p;
-	int y_pos, cb_pos, cr_pos;
-	int even;
-
-
-	/* compute next frame number */
-	$frame++; 
-	if ($frame >= $nframe) $frame = 0;
-
-        $mmapinfo->format = VIDEO_PALETTE_YUV420P;
-        $mmapinfo->width = $width;
-        $mmapinfo->height = $height;
-        $mmapinfo->frame = $frame;
-
-	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
-
-	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
-	imgptr = IDX_PTR($img, unsigned char);
-
-	even=1;
-	for (i=0; i<$height; i++) {
-          for (j=0; j<$width; j++) {
-
-	       y_pos=i*$width+j;
-	       y =  1.1643835*((float)(bufptr[y_pos])-16.0);
-	       //if (even)
-	       //{
-	       cb_pos=$width*$height + (i/2)*$width/2 + j/2;
-	       cr_pos=$width*$height*5/4 +(i/2)*$width/2 + j/2;
-	       u =  1.1339285*((float)(bufptr[cb_pos])-128.0);
-	       v =  1.1339285*((float)(bufptr[cr_pos])-128.0);
-	      // }
-	       p = y + 1.402*v; 
-	       *(imgptr++) = RGBSATURATE(p);
-	   
-	       p = y - 0.344*u - 0.714*v;
-	       *(imgptr++) = RGBSATURATE(p);
-	    
-	       p = y + 1.772*u;
-	       *(imgptr++) = RGBSATURATE(p);
-	       even = 1 - even;
-	    
-	       *(imgptr++) = $alpha;
-	  }
-	}
-     } #}
-     frame))
-
-;; this is for webcams: grab B&W image
-(defmethod v4ldevice grab-into-y (img)
-  ((-idx2- (-ubyte-)) img)
-  (cheader "#define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x))")
-
-  (when (or (<> (idx-dim img 0) height)
-	    (<> (idx-dim img 1) width))
-      (error "wrong size for image matrix"))
-  (let ((retcode 0))
-    ((-int-) retcode)
-    #{{
-        int lastframe;
-        unsigned char *imgptr, *bufptr;
-
-	/* compute next frame number */
-	$frame++; 
-	if ($frame >= $nframe) $frame = 0;
-
-        $mmapinfo->format = VIDEO_PALETTE_GREY;
-        $mmapinfo->width = $width;
-        $mmapinfo->height = $height;
-        $mmapinfo->frame = $frame;
-
-	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
-
-	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
-	imgptr = IDX_PTR($img, unsigned char);
-        memcpy(imgptr,bufptr,$width*$height);
-     } #}
-     frame))
-
-#? (==> <v4ldevice> grab-acc-rgb <img>)
-;; grab an image from the v4l device and accumulate
-;; the result into a preexisting image 
-;; (an int-matrix of size <height>x<width>x<3>
-;; where <height> and <width> are the dimensions of the <v4ldevice>).
+#? (==> <v4ldevice> grab-rgb24-acc-rgbx <img>)
+;; grab an image from the v4l device in RGB24 format 
+;; and accumulate the result into a preexisting image 
+;; (an int-matrix of size <height>x<width>x<depth>
+;; where <height> and <width> are the dimensions of the <v4ldevice>)
+;; and <depth> must be at least 3.
 ;; Consecutive elements in the last dimension are
 ;; interpreted as RGB values. 
-(defmethod v4ldevice grab-acc-rgb (img)
-  ((-idx3- (-int-)) img)
+(defmethod v4ldevice grab-rgb24-acc-rgbx (img)
+  ((-idx3- (-ubyte-)) img)
   (when (or (<> (idx-dim img 0) height)
 	    (<> (idx-dim img 1) width)
-	    (<> (idx-dim img 2) 3))
-      (error "wrong size for image matrix"))
+	    (< (idx-dim img 2) 3))
+      (error "wrong size for RGBX image matrix"))
   (let ((retcode 0))
     ((-int-) retcode)
     #{{
-        int i,j, lastframe;
+        int i,j, lastframe, code;
         unsigned char *imgptr, *bufptr;
+        int mod1 = $img->mod[1];
 	lastframe = $frame;
 
 	/* compute next frame number */
@@ -780,41 +911,47 @@
         $mmapinfo->frame = $frame;
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
-
-	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
 	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
           for (j=0; j<$width; j++) {
-	     *(imgptr++) += bufptr[2];
-	     *(imgptr++) += bufptr[1];
-	     *(imgptr++) += bufptr[0];
+	     imgptr[0] += bufptr[2];
+	     imgptr[1] += bufptr[1];
+	     imgptr[2] += bufptr[0];
 	     bufptr+=3;
+             imgptr += mod1;
 	  }
 	}
 
      } #}
-     frame))
+    (if (<> retcode 0) -1 frame)))
 
-#? (==> <v4ldevice> grab-acc-rgba <img>)
+
+#? (==> <v4ldevice> grab-rgb24-acc-rgba <img> <alpha>)
 ;; grab an image from the v4l device and accumulate the result
-;; into a preexisting image (an int-matrix of size <height>x<width>x<4>
-;; where <height> and <width> are the dimensions of the <v4ldevice>).
+;; into a preexisting image (an int-matrix of size 
+;; <height>x<width>x<depth> where <height> and <width> are the 
+;; dimensions of the <v4ldevice>, and with depth equal to at least 4).
 ;; Consecutive elements in the last dimension are
 ;; interpreted as RGBA values. The alpha channel
-;; is left untouched.
-(defmethod v4ldevice grab-acc-rgba (img)
-  ((-idx3- (-int-)) img)
+;; is filled with value <alpha>.
+(defmethod v4ldevice grab-rgb24-acc-rgba (img alpha)
+  ((-idx3- (-ubyte-)) img)
+  ((-int-) alpha)
   (when (or (<> (idx-dim img 0) height)
 	    (<> (idx-dim img 1) width)
 	    (<> (idx-dim img 2) 4))
-      (error "wrong size for image matrix"))
+      (error "wrong size for RGBA image matrix"))
   (let ((retcode 0))
     ((-int-) retcode)
     #{{
         int i,j, lastframe;
+        int code;
         unsigned char *imgptr, *bufptr;
+        int mod1 = $img->mod[1];
 	lastframe = $frame;
 
 	/* compute next frame number */
@@ -827,36 +964,48 @@
         $mmapinfo->frame = $frame;
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
-
-	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
 	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
           for (j=0; j<$width; j++) {
-	     *(imgptr++) += bufptr[2];
-	     *(imgptr++) += bufptr[1];
-	     *(imgptr++) += bufptr[0];
-	     imgptr++;
-	     bufptr+=4;
+	     imgptr[0] += bufptr[2];
+	     imgptr[1] += bufptr[1];
+	     imgptr[2] += bufptr[0];
+             imgptr[3] = $alpha;
+	     bufptr+=3;
+             imgptr += mod1;
 	  }
 	}
+
      } #}
-     frame))
+    (if (<> retcode 0) -1 frame)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (dhc-make () v4l_dummy 
 	  (v4ldevice 
-	   cleanup v4ldevice -destructor
-	   adjust tune
+	   cleanup 
+	   set-format 
+	   v4ldevice 
+	   adjust 
+	   tune 
+	   -destructor 
+	   grab-rgb24-into-rgbx 
+	   grab-rgb32-into-rgbx 
+	   grab-rgb24-into-rgba 
+	   grab-rgb32-into-rgba 
+	   grab-yuv422-into-yuv422 
+	   grab-yuv420p-into-rgbx 
+	   grab-yuv420p-into-rgba 
+	   grab-grey-into-y 
 	   grab-into-rgb
-	   grab-into-rgb32
-	   record-into-rgb
-	   grab-into-rgba
-	   grab-into-yuv422
-	   grab-into-rgba-from-yuv420p
-	   grab-into-y
-	   grab-acc-rgb
-	   grab-acc-rgba
+	   grab-into-rgbx 
+	   grab-into-rgba 
+	   record-into-rgb 
+	   grab-rgb24-acc-rgbx
+	   grab-rgb24-acc-rgba
 	   ))
+
