@@ -1,4 +1,4 @@
-perl=perl561
+perl=perl
 gtml=./gtml
 outdir=../html
 
