@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.19 2004-04-16 14:28:04 leonb Exp $
+ * $Id: dh.h,v 1.20 2004-10-23 01:23:55 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -212,8 +212,8 @@ typedef union
   char          dh_char;
   unsigned char dh_uchar;
   short         dh_short;
-  int           dh_ord;
-  int           dh_int;
+  intg          dh_ord;
+  intg          dh_int;
   int           dh_bool;
   flt           dh_flt;
   real          dh_real;
@@ -338,3 +338,11 @@ struct dhclassdoc_s
 }
 #endif
 #endif
+
+
+/* -------------------------------------------------------------
+   Local Variables:
+   c-font-lock-extra-types: (
+     "FILE" "\\sw+_t" "at" "gptr" "real" "flt" "intg" )
+   End:
+   ------------------------------------------------------------- */

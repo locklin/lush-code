@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.9 2004-04-16 14:28:03 leonb Exp $
+ * $Id: check_func.h,v 1.10 2004-10-23 01:23:55 leonb Exp $
  **********************************************************************/
 
 #ifndef CHECK_FUNC_H
@@ -127,8 +127,8 @@ LUSHAPI int  test_obj_class(void *obj, void *classvtable);
 /* ---------------------------------------- */
 
 
-LUSHAPI void srg_resize_compiled(struct srg* ,int ,char *, int);
-LUSHAPI void srg_resize(struct srg *, int , char *, int );
+LUSHAPI void srg_resize_compiled(struct srg* ,intg ,char *, int);
+LUSHAPI void srg_resize(struct srg *, intg , char *, int );
 LUSHAPI void srg_free(struct srg *);
 
 #define Mis_sized(i1) \
@@ -157,21 +157,21 @@ LUSHAPI void srg_free(struct srg *);
 	    run_time_error(rterr_not_same_dim);}
 
 #define Msrg_resize(sr, new_size) \
-   if((sr)->size < (int)(new_size)) \
+   if((sr)->size < (intg)(new_size)) \
       srg_resize_compiled(sr, new_size, __FILE__, __LINE__);
 
 #define Midx_checksize0(i1) { \
-    int siz = (i1)->offset + 1; \
+    intg siz = (i1)->offset + 1; \
     Msrg_resize((i1)->srg, siz) \
 }
 
 #define Midx_checksize1(i1) { \
-    int siz = 1 + (i1)->offset + ((i1)->dim[0] - 1) * (i1)->mod[0]; \
+    intg siz = 1 + (i1)->offset + ((i1)->dim[0] - 1) * (i1)->mod[0]; \
     Msrg_resize((i1)->srg, siz) \
 }
 
 #define Midx_checksize(i1) { \
-    int j, siz=(i1)->offset+1; \
+    int j; intg siz=(i1)->offset+1; \
     for(j=0; j<(i1)->ndim; j++) \
 	siz += ((i1)->dim[j] - 1) * (i1)->mod[j]; \
     Msrg_resize((i1)->srg, siz); \
@@ -217,7 +217,7 @@ LUSHAPI void srg_free(struct srg *);
 #define Msize_or_check(i1, i2) \
     Mis_sized(i1) \
     if ((i2)->flags & IDF_UNSIZED) { \
-	int j, m=1; \
+	int j; intg m=1; \
 	for (j=(i2)->ndim-1; j>=0; --j) { \
 	  (i2)->dim[j]=(i1)->dim[j]; \
 	  (i2)->mod[j]=m; \
@@ -368,3 +368,10 @@ LUSHAPI void check_m2in_m2in_m4out(struct idx *i0,
 }
 #endif
 #endif
+
+/* -------------------------------------------------------------
+   Local Variables:
+   c-font-lock-extra-types: (
+     "FILE" "\\sw+_t" "at" "gptr" "real" "flt" "intg" )
+   End:
+   ------------------------------------------------------------- */
