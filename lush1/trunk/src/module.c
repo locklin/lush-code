@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.47 2004-07-19 19:48:17 leonb Exp $
+ * $Id: module.c,v 1.48 2004-07-19 21:41:51 leonb Exp $
  **********************************************************************/
 
 
@@ -121,27 +121,26 @@ nsbundle_init()
 #if DYLD_NASTY_HACK
   {
     /* Use 'nm' to locate symbols inside dyld... */
-    FILE *f = popen("nm /usr/lib/dyld","r");
+    int slide = 0;
     void *dyld_image_count = 0;
-    int slide;
+    FILE *f = popen("nm /usr/lib/dyld","r");
     _dyld_func_lookup("__dyld_image_count", (void*)&dyld_image_count);
     if (f && dyld_image_count)
       {
-	long addr;
-	char type;
-	char sname[64];
-	while (!feof(f))
+	while (! feof(f))
 	  {
-	    fscanf(f,"%lx %c %60s", &addr, &type, sname);
-	    while (!feof(f))
-	      if (getc(f)=='\n')
-		break;
-	    if (!strcmp(sname,"__dyld_image_count"))
+	    long addr = 0;
+	    char sname[64];
+	    fscanf(f,"%lx %c %60s%", &addr, sname, sname);
+	    if (addr && !strcmp(sname,"__dyld_image_count"))
 	      slide = (char*)addr - (char*)dyld_image_count;
-	    else if (!strcmp(sname,"_clear_undefined_list"))
+	    else if (addr && !strcmp(sname,"_clear_undefined_list"))
 	      nsbundle_clear_undefined_list = (void*)addr;
-	    else if (!strcmp(sname,"_return_on_error"))
+	    else if (addr && !strcmp(sname,"_return_on_error"))
 	      nsbundle_return_on_error = (void*)addr;
+	    while (!feof(f))
+	      if (fgetc(f) == '\n')
+		break;
 	  }
 	nsbundle_clear_undefined_list 
 	  = (void*)(slide + (char*)nsbundle_clear_undefined_list);
