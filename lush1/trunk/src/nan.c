@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.2 2002-10-31 20:51:59 leonb Exp $
+ * $Id: nan.c,v 1.3 2002-11-01 05:09:13 profshadoko Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -222,12 +222,12 @@ DX(xnot_nan)
 static int
 setup_fpu(int doINV, int doOFL)
 {
-  fpe_inv = doINV;
-  fpe_ofl = doOFL;
 
   /* SysVr4 defines fpsetmask() */
 #ifdef HAVE_FPSETMASK
   int mask = 0;
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
 #ifdef FP_X_INV
   if (doINV) mask |= FP_X_INV;
 #endif
@@ -243,6 +243,8 @@ setup_fpu(int doINV, int doOFL)
   /* GLIBC __setfpucw() emulates i387 */
 #ifdef HAVE_FPU_CONTROL_H 
   int mask = 0;
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
 #ifdef _FPU_DEFAULT
   mask = _FPU_DEFAULT;
 #endif
