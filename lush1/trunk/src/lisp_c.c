@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.7 2002-07-05 14:57:08 leonb Exp $
+ * $Id: lisp_c.c,v 1.8 2002-07-05 15:19:13 leonb Exp $
  **********************************************************************/
 
 
@@ -2426,38 +2426,6 @@ update_lisp_from_c(avlnode *n)
    ----------------------------------------- */
 
 
-
-/* cclass_instance -- builds an object for a compiled class */
-
-static at *
-cclass_instance(at *atcl)
-{
-  at *atobj;
-  class *cl;
-  avlnode *n;
-  dhclassdoc_t *dhdoc;
-  struct oostruct *object;
-  
-  if (! EXTERNP(atcl, &class_class))
-    error(NIL,"Not a class",atcl);    
-  cl = atcl->Object;
-  if (! (dhdoc = cl->classdoc))
-    error(NIL,"Not a compiled class",atcl);
-  if (CONSP(cl->priminame))
-    check_primitive(cl->priminame);
-  /* Build the object */
-  n = alloc_obj(dhdoc);
-  atobj = new_oostruct(atcl);
-  object = atobj->Object;
-  /* Update avlnode */
-  object->cptr = n->citem;
-  n->litem = atobj;
-  avlchain_set(n, &dummy_upds);
-  return atobj;
-}
-
-
-
 /* build_at_temporary -- build an AT using the temporary style of dhrecord */
 
 static void
@@ -2776,11 +2744,11 @@ DX(xobj)
     {
       return p;
     }
-  else if (p->ctype==XT_OBJECT)
+  else if (p->flags & X_OOSTRUCT)
     {
       LOCK(p);
     }
-  else if (p->ctype==XT_GPTR)
+  else if (p->flags & C_GPTR)
     {
       /* search object */
       if (! (n = avl_find(p->Gptr)))
@@ -2790,7 +2758,7 @@ DX(xobj)
       p = make_lisp_from_c(n, p->Gptr);
       UNLOCK(delayed_kill_list);
     }
-  else if (p->ctype==XT_NUMBER)
+  else if (p->flags & C_NUMBER)
     {
       void *px = (void*)(unsigned long)(p->Number);
       /* search object */
@@ -2810,7 +2778,7 @@ DX(xobj)
   if (cl)
     {
       class *clm;
-      if (p->ctype != XT_OBJECT)
+      if (!( p->flags & X_OOSTRUCT))
         error(NIL,"GPTR does not point to an object",APOINTER(2));
       clm = p->Class;
       while (clm && (clm != cl))
