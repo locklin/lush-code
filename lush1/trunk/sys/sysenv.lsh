@@ -24,34 +24,43 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.92 2003-01-15 00:08:49 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.93 2003-02-04 14:47:12 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 
 ;;; --------- Miscellaneous macro-chars ---------
 
-(dmc |'|                                   ;; the QUOTE macro
-     (list (quote quote) (read)))
+(dmc |'| (list (quote quote) (read)))
 
-(dmc |~|                                   ;; the NULL macro
-     (list 'null (read)))
+(dmc |~| (list 'null (read)))
 
-(dmc |:|                                   ;; the SCOPE macro
+(dmc |:| 
      (when (= (skip-char) ":")
-           (error 'load "Names beginning by :: are reserved" ()) )
+       (error 'load "Names beginning by :: are reserved" ()) )
      (let ((ans (list 'scope (read))))
        (while (= (skip-char "") ":")
 	 (read-string 1)
 	 (setq ans (nconc1 ans (read))) )
        ans ) )
 
-(dmc |^!|                                  ;; the SYS macro
-     (list 'sys (read_string)))
+(dmc |^!| (list 'sys (read_string)))
 
-(dmc |#!|                                  ;; the SCRIPT macro
-     (read-string)
-     () )
+(dmc |#!|
+     (if (= (read-string "~ !\t\n\e") "/usr/bin/lush")
+         ;; compatibility for #!/usr/bin/lush.
+         (read-string)
+       ;; multiline comment.
+       (let ((again t))
+         (while again
+           (let ((c1 (read-string 1))
+                 (c2 (skip-char "\e")) )
+             (when (or (= c1 "\e") (= c2 "\e"))
+               (error 'load "Unterminated multiline comment") )
+             (when (and (= c1 "!") (= c2 "#"))
+               (setq again ()) ) ) )
+         (read-string 1) ) )
+     () ) 
 
 (lock_symbol |'| |~| |:| |#!| |^!|)
 
