@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.9 2002-07-02 19:56:38 leonb Exp $
+ * $Id: function.c,v 1.10 2002-07-15 18:42:11 leonb Exp $
  **********************************************************************/
 
 
@@ -740,7 +740,7 @@ all_args_eval(at **arg_array, int i)
 void 
 init_function(void)
 {
-  if (! (dx_stack = malloc(sizeof(at *) * DXSTACKSIZE)))
+  if (! (dx_stack = malloc(sizeof(at *) * (DXSTACKSIZE+8))))
     abort("Not enough memory");
 
   class_define("DX",&dx_class );
