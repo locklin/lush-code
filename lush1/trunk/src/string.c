@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.5 2002-07-29 21:02:22 leonb Exp $
+ * $Id: string.c,v 1.6 2002-08-19 14:40:30 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1449,8 +1449,11 @@ extern char *print_buffer;
 static char *
 gbcopy(register char *gb, register char *s)
 {
-  while (*s && gb < gprint_buffer + GPRINT_BUFFER - 1)
-    *gb++ = *s++;
+  int l = strlen(s);
+  if (gb + l >=  gprint_buffer + GPRINT_BUFFER - 1)
+    error(NIL,"Overflow in sprintf buffer (use concat)", NIL);
+  strcpy(gb, s);
+  gb += l;
   *gb = 0;
   return gb;
 }
