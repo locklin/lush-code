@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.12 2002-08-07 20:01:50 leonb Exp $
+ * $Id: unix.c,v 1.13 2002-08-07 20:03:32 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1349,9 +1349,6 @@ filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
     test_file_error(NULL);
   if (! (*pfr = fdopen(slave, "r")))
     test_file_error(NULL);
-  /* Do not buffer master */
-  setbuf(*pfw, 0);
-  setbuf(*pft, 0);
 #else
   error(NIL,"filteropenpty is not supported on this system",NIL);
 #endif
