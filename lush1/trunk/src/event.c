@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.18 2003-03-05 20:32:43 leonb Exp $
+ * $Id: event.c,v 1.19 2003-03-18 18:16:11 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -643,7 +643,7 @@ process_pending_events(void)
   int timer_fired = 0;
   call_spoll();
   hndl = ev_peek();
-  while (hndl)
+  for(;;)
     {
       while (hndl)
         {
@@ -676,8 +676,9 @@ process_pending_events(void)
           hndl = ev_peek();
         }
       /* Check for timer events */
-      if (! timer_fired)
-        timer_fire();
+      if (timer_fired)
+        break;
+      timer_fire();
       timer_fired = 1;
       hndl = ev_peek();
     }
@@ -935,20 +936,7 @@ DX(xsleep)
   ALL_ARGS_EVAL;
   ARG_NUMBER(1);
   delay = (int)(1000 * AREAL(1));
-  /* Setup timer with dummy handler */
-  handler = cons(NIL,NIL);
-  timer_add(handler, delay, 0);
-  /* Loop until getting this event */
-  q = NIL;
-  while (! q)
-    {
-      q = event_wait(FALSE);
-      UNLOCK(q);
-      q = NIL;
-      q = event_get(handler, TRUE);
-    }
-  UNLOCK(q);
-  UNLOCK(handler);
+  os_wait(0, NULL, FALSE, delay);
   q = APOINTER(1);
   LOCK(q);
   return q;
