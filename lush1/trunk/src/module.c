@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.40 2004-07-15 22:28:21 leonb Exp $
+ * $Id: module.c,v 1.41 2004-07-15 22:33:52 leonb Exp $
  **********************************************************************/
 
 
@@ -538,7 +538,12 @@ update_exec_flag(struct module *m)
     }
 #endif
 #if NSBUNDLE 
-  /* NSBUNDLE: implement me */
+  if (m->flags & MODULE_O)
+    {
+      newstate = FALSE;
+      if (m->initname && m->bundle.nsmodule)
+	newstate = TRUE;
+    }
 #endif
   m->flags &= ~MODULE_EXEC;
   if (newstate)
