@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ogre.lsh,v 1.6 2002-08-15 18:18:15 leonb Exp $
+;;; $Id: ogre.lsh,v 1.7 2002-08-15 18:38:36 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -372,20 +372,21 @@
 	(let (((c x y . rest) event))
 	  (==> this propagate-event x y event) ) ) ) ) )
 
-
 (defmethod VisualObject read-event()
-  (let ((ev (checkevent))
-	(w t))
+  (let ((ev (checkevent)))
     (while (not ev)
-      (while (checkevent w) 
-        () )
-      (when :ogre-task
-        (==> :ogre-task handle () ) )
-      (setq w (waitevent))
-      (setq ev (checkevent)) )
-    ev) )
-
-
+      (let ((handler (waitevent)))
+        (cond
+         ((setq ev (checkevent)) 
+          t )
+         ((and (not (is-of-class handler WindowObject))
+               (check==> (classof handler) 'handle) )
+          (while (= handler (checkevent ()))
+            (==> handler handle (checkevent handler)) ) )
+         (t
+          (while (= handler (checkevent ()))
+            (checkevent handler) ) ) ) ) )
+    ev ) )
 
 
 ;; FONCTIONS DE DESSIN
@@ -1558,23 +1559,29 @@
 (defmethod Requester popuphard arg
   (let ((lock (new requesterlock this)))
     (apply ==> (list this 'popup . arg))
-    (when :ogre-task 
-      (==> :ogre-task handle ()))
+    (when :ogre-task (==> :ogre-task handle ()))
     (beep)
     (when (and window ogre-configure)
       (ogre-configure t () () () ()) )
     (while itscontainer
       (let ((handler (waitevent)))
-	(if (= handler support)
-	    (while (= handler (checkevent ()))
-	      (==> support manage-event (checkevent handler)) )
+	(cond
+         ((= handler support)
+          (while (= handler (checkevent ()))
+            (==> support manage-event (checkevent handler)) ) )
+         ((not (is-of-class handler WindowObject))
+          (if (not (check==> (classof handler) 'handle))
+              (while (= handler (checkevent ()))
+                (checkevent handler) )
+            (while (= handler (checkevent ()))
+              (==> handler handle (checkevent handler)) ) ) )
+         (t
 	  (beep)
 	  (when (and window ogre-configure)
 	    (ogre-configure t () () () ()) )
 	  (while (= handler (checkevent ()))
-	    (checkevent handler) ) ) )
-      (when :ogre-task
-        (==> :ogre-task handle ()) ) ) ) )
+	    (checkevent handler) ) ) ) )
+      (when :ogre-task (==> :ogre-task handle ())) ) ) )
 
 ;;; REQUESTERLOCK
 ;;  utilise par POPUPLOCK!
