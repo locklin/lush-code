@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.9 2002-08-07 15:20:34 leonb Exp $
+ * $Id: graphics.h,v 1.10 2003-02-14 17:01:07 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -106,22 +106,6 @@ struct event {
 
 
 /* ---------------------------------------- */
-/* GRAPHIC FUNCTIONS                        */
-/* ---------------------------------------- */
-
-LUSHAPI int  rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy);
-
-LUSHAPI void rgb_draw_matrix(int x, int y, at *p, int sx, int sy);
-
-LUSHAPI int  color_draw_idx(int x, int y, struct idx *idx, real minv, real maxv, 
-                            int apartx, int aparty, int *colors);
-
-LUSHAPI void color_draw_matrix(int x, int y, at *p, real minv, real maxv, 
-                               int apartx, int aparty, int *colors);
-
-
-
-/* ---------------------------------------- */
 /* DRIVERS                                  */
 /* ---------------------------------------- */
 
@@ -165,6 +149,24 @@ struct gdriver {
 
 #undef uint
 #undef wptr
+
+/* ---------------------------------------- */
+/* GRAPHIC FUNCTIONS                        */
+/* ---------------------------------------- */
+
+LUSHAPI int  gray_draw_idx(int x, int y, 
+                           struct idx *idx, real minv, real maxv, 
+                           int apartx, int aparty);
+LUSHAPI int  color_draw_idx(int x, int y, 
+                            struct idx *idx, real minv, real maxv, 
+                            int apartx, int aparty, unsigned int *colors);
+
+LUSHAPI int  rgb_draw_idx(int x, int y, 
+                          struct idx *idx, int sx, int sy);
+
+LUSHAPI int  rgb_grab_idx(int x, int y, 
+                          struct idx *idx);
+
 
 
 

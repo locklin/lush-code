@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.9 2002-11-06 16:30:49 leonb Exp $
+ * $Id: graphics.c,v 1.10 2003-02-14 17:01:35 leonb Exp $
  **********************************************************************/
 
 
@@ -692,117 +692,9 @@ DX(xgraphics_sync)
 
 /* static structure for pixel_map, hinton_map, get_image... */
 
-static int *image = NULL;
+static unsigned int *image = NULL;
 static unsigned int imagesize = 0;
 
-
-/* ------------------------------------ */
-/* GET_IMAGE                            */
-/* ------------------------------------ */     
-
-
-
-/* get a rectangular pixel area from the backstore into a matrix */
-void 
-get_image(int x, int y, at *p)
-{
-  struct window *win;
-  struct index *ind;
-  struct idx idx;
-  int d1, d2, m1, m2;
-
-  win = current_window();
-
-  if (win->gdriver->get_image == NULL) {
-      error(NIL,"get-image is not supported for this type of window",NIL);}
-
-  if (!indexp(p))
-    error(NIL, "not an index", p);
-
-  ind = p->Object;
-  index_write_idx(ind,&idx);
-
-  if (idx.ndim == 1) {
-    d1 = idx.dim[0];
-    m1 = idx.mod[0];
-    d2 = 1;
-    m2 = 0;
-  } else if (idx.ndim == 2) {
-    d1 = idx.dim[1];
-    m1 = idx.mod[1];
-    d2 = idx.dim[0];
-    m2 = idx.mod[0];
-  } else
-    error(NIL, "1D or 2D index expected", p);
-
-  {
-      int *im;
-      
-      if (imagesize < sizeof(int) * d1 * d2) {
-	if (imagesize)
-	  free(image);
-	imagesize = 0;
-	image = malloc(sizeof(int) * d1 * d2);
-	ifn (image) {
-	  index_rls_idx(ind,&idx);
-	  error(NIL, "not enough memory", NIL);
-	}
-	imagesize = sizeof(int) * d1 * d2;
-      }
-      im = image;
-      
-      (win->gdriver->begin) (win);
-      (win->gdriver->get_image) (win, image, x, y, d1, d2);
-      (win->gdriver->end) (win);
-
-      if (idx.srg->type == ST_F) 
-	{			/* fast routine for flts.. */
-	  int i, j;
-	  flt *data;
-	  int off1, off2;
-	  
-	  data = IDX_DATA_PTR(&idx);
-	  off2 = 0;
-	  
-	  for (j = 0; j < d2; j++, off2 += m2) {
-	    off1 = off2;
-	    for (i = 0; i < d1; i++, off1 += m1) {
-	      data[off1] = *im++ ;
-	    }
-	  }
-	} 
-      else
-	{
-	  /* generic routine */
-	  int i,j;
-	  int off1, off2;
-	  void (*setf)(gptr,int,flt);
-	  gptr data;
-	  
-	  data = IDX_DATA_PTR(&idx);
-	  setf = storage_type_setf[idx.srg->type];
-	  off2 = 0;
-	  
-	  for (j = 0; j < d2; j++, off2 += m2) {
-	    off1 = off2;
-	    for (i = 0; i < d1; i++, off1 += m1) {
-	      (*setf)(data,off1,*im++);
-	    }
-	  }
-	}
-      
-  }
-  index_rls_idx(ind,&idx);
-}
-
-DX(xget_image)
-{
-  ARG_NUMBER(3);
-  ALL_ARGS_EVAL;
-
-  get_image(AINTEGER(1),AINTEGER(2),APOINTER(3));
-  return NIL;
-}
 
 
 /* ------------------------------------ */
@@ -869,7 +761,7 @@ draw_list(int xx, int y, register at *l, int ncol,
   register struct window *win;
   register int x, size, len, nlin, ap2;
   register double v;
-  register int *im;
+  register unsigned int *im;
   void (*setcolor)(struct window *, int);
   void (*fill_rect)(struct window *, int, int, unsigned int, unsigned int);
   
@@ -973,9 +865,9 @@ DX(xdraw_list)
 
 /* allocate the gray levels or the colors */
 
-static int colors[64];
+static unsigned int colors[64];
 
-static int *
+static unsigned int *
 allocate_grays(void)
 {
   struct window *win;
@@ -993,7 +885,7 @@ allocate_grays(void)
 }
 
 /* fill the color table with 64 colors taken from a int-matrix */
-static int *
+static unsigned int *
 colors_from_int_matrix(at *p)
 {
   struct index *ind;
@@ -1006,7 +898,7 @@ colors_from_int_matrix(at *p)
   return colors;
 }
 
-static int *
+static unsigned int *
 allocate_cube(int *cube)
 {
   struct window *win;
@@ -1035,7 +927,7 @@ color_draw_list(int xx, int y, register at *l, int ncol,
 {
   register struct window *win;
   register int x, len, nlin;
-  register int *im;
+  register unsigned int *im;
   register int v;
   void (*setcolor)(struct window *, int);
   void (*fill_rect)(struct window *, int, int, unsigned int, unsigned int);
@@ -1141,11 +1033,10 @@ DX(xcolor_draw_list)
   return NIL;
 }
 
-
 int 
 color_draw_idx(int x, int y, struct idx *idx, 
                real minv, real maxv, int apartx, int aparty, 
-               int *colors)
+               unsigned int *colors)
 {
   struct window *win;
 
@@ -1170,14 +1061,16 @@ color_draw_idx(int x, int y, struct idx *idx,
   } else
       return 3;
 
-  if (colors && 
-      win->gdriver->pixel_map &&
+  if (!colors)
+    colors = allocate_grays();
+
+  if (colors && win->gdriver->pixel_map &&
       (*win->gdriver->pixel_map) (win, NIL, x, y, d1, d2, apartx, aparty)) 
     {
 
       /* VIA THE PIXEL MAP ROUTINE */
       
-      int *im;
+      unsigned int *im;
       
       if (imagesize < sizeof(int) * d1 * d2) {
 	if (imagesize)
@@ -1303,7 +1196,14 @@ color_draw_idx(int x, int y, struct idx *idx,
   return 0;
 }
 
-void 
+int 
+gray_draw_idx(int x, int y, struct idx *idx, 
+              real minv, real maxv, int apartx, int aparty)
+{
+  return color_draw_idx(x, y, idx, minv, maxv, apartx, aparty, 0);
+}
+
+static void 
 color_draw_matrix(int x, int y, at *p, 
                       real minv, real maxv, int apartx, int aparty, 
                       int *colors)
@@ -1339,33 +1239,6 @@ color_draw_matrix(int x, int y, at *p,
         }
 }
 
-
-DX(xgray_draw_matrix)
-{
-  int apartx, aparty;
-  at *p;
-  
-  ALL_ARGS_EVAL;
-  if (arg_number == 5) {
-    apartx = aparty = 1;
-  } else {
-    ARG_NUMBER(7);
-    apartx = AINTEGER(6);
-    aparty = AINTEGER(7);
-  }
-  
-  p = APOINTER(3);
-  if (!matrixp(p))
-    error(NIL, "not a matrix", p);
-  
-  color_draw_matrix(AINTEGER(1), AINTEGER(2), p,
-		    AREAL(4), AREAL(5),
-		    apartx, aparty, 
-		    allocate_grays() );
-  return NIL;
-}
-
-
 DX(xcolor_draw_matrix)
 {
   int apartx, aparty;
@@ -1393,6 +1266,32 @@ DX(xcolor_draw_matrix)
   return NIL;
 }
 
+DX(xgray_draw_matrix)
+{
+  int apartx, aparty;
+  at *p;
+  
+  ALL_ARGS_EVAL;
+  if (arg_number == 5) {
+    apartx = aparty = 1;
+  } else {
+    ARG_NUMBER(7);
+    apartx = AINTEGER(6);
+    aparty = AINTEGER(7);
+  }
+  
+  p = APOINTER(3);
+  if (!matrixp(p))
+    error(NIL, "not a matrix", p);
+  
+  color_draw_matrix(AINTEGER(1), AINTEGER(2), p,
+		    AREAL(4), AREAL(5),
+		    apartx, aparty, 0);
+  return NIL;
+}
+
+
+
 
 /* -------------------------------------------- */
 /*     RGB DRAW MATRIX                          */
@@ -1408,11 +1307,10 @@ rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
 
   /* Check window characteristics */
   win = current_window_no_error();
-  if(win==NULL)
-      return 1;
-  if (!win->gdriver->pixel_map) {
-      return 2;
-  }
+  if (! win)
+    return 1;
+  if (! win->gdriver->pixel_map)
+    return 2;
 
   /* Check matrix characteristics */
   if (idx->ndim == 3) {
@@ -1442,7 +1340,7 @@ rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
       unsigned char *im;
       flt (*getf)(gptr,int);
       gptr data;
-      int cube[64];
+      unsigned int cube[64];
       /* Allocate color cube */
       if (!allocate_cube(cube)) {
           return 5;
@@ -1654,7 +1552,7 @@ rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
 }
 
 
-void
+static void
 rgb_draw_matrix(int x, int y, at *p, int sx, int sy)
 {
     struct index *ind;
@@ -1713,6 +1611,131 @@ DX(xrgb_draw_matrix)
   p = APOINTER(3);
   rgb_draw_matrix(x,y,p,sx,sy);
   return NIL;
+}
+
+
+
+/* -------------------------------------------- */
+/*     RGB GRAB MATRIX                          */
+/* -------------------------------------------- */
+
+
+
+int 
+rgb_grab_idx(int x, int y, struct idx *idx)
+{
+  struct window *win;
+  int d1, d2, m1, m2, m3;
+  int i, j, off1, off2;
+  unsigned int red_mask, green_mask, blue_mask;
+  unsigned int *im;
+  void (*setf)(gptr,int,flt);
+  gptr data;
+  
+  win = current_window_no_error();
+  if(win==NULL)
+    return 1;
+  if (! win->gdriver->pixel_map)
+    return 2;
+  if (! win->gdriver->get_mask)
+    return 21;
+  if (win->gdriver->get_mask)
+    if (! (*win->gdriver->get_mask)(win, &red_mask, &green_mask, &blue_mask))
+      return 22;
+
+  if (idx->ndim == 3) {
+    m3 = idx->mod[2];
+    if (idx->dim[2] < 3) 
+      return 3;
+  } else if (idx->ndim == 2) {
+    m3 = 0;
+  } else
+    return 4;
+  d1 = idx->dim[1];
+  m1 = idx->mod[1];
+  d2 = idx->dim[0];
+  m2 = idx->mod[0];
+
+  if (imagesize < sizeof(int) * d1 * d2) {
+    if (imagesize)
+      free(image);
+    imagesize = 0;
+    image = malloc(sizeof(int) * d1 * d2);
+    if (! image) 
+      return 7;
+    imagesize = sizeof(int) * d1 * d2;
+  }
+  im = image;
+  (win->gdriver->begin) (win);
+  (win->gdriver->get_image) (win, im, x, y, d1, d2);
+  (win->gdriver->end) (win);
+  data = IDX_DATA_PTR(idx);
+  setf = storage_type_setf[idx->srg->type];
+  off2 = 0;
+  for (j = 0; j < d2; j++, off2 += m2) {
+    off1 = off2;
+    for (i = 0; i < d1; i++, off1 += m1) {
+      unsigned int p = *im++;
+      flt r = (255 * (p & red_mask)) / (double)red_mask;
+      flt g = (255 * (p & green_mask)) / (double)green_mask;
+      flt b = (255 * (p & blue_mask)) / (double)blue_mask;
+      if (idx->ndim>=3)
+        {
+          (*setf)(data, off1, r);
+          (*setf)(data, off1+m3, g);
+          (*setf)(data, off1+m3+m3, b);
+        }
+      else
+        {
+          (*setf)(data, off1, (5*r+9*g+2*b)/16.0 );
+        }
+    }
+  }
+  return 0;
+}
+
+static void
+rgb_grab_matrix(int x, int y, at *p)
+{
+  struct index *ind;
+  struct idx idx;
+  int error_flag;
+  struct window *win;
+  
+  if (!indexp(p))
+    error(NIL, "not an index", p);
+  ind = p->Object;
+  index_read_idx(ind,&idx);
+  error_flag = rgb_grab_idx(x, y, &idx);
+  index_rls_idx(ind,&idx);
+  if(error_flag)
+    switch(error_flag) {
+    case 1:
+      win = current_window(); /* will be an error */
+    case 2:
+      error(NIL,"Graphic driver does not support get-image",NIL);
+    case 21:
+      error(NIL,"Graphic driver does not support get-mask",NIL);
+    case 22:
+      error(NIL,"This function only works on truecolor displays",NIL);
+    case 3:
+      error(NIL,"Last dimension shouls be three (or more)",p);
+    case 4:
+      error(NIL,"2D or 3D index expected",p);
+    case 7:
+      error(NIL, "not enough memory", NIL);
+    }
+}
+
+DX(xrgb_grab_matrix)
+{
+  at *p;
+  ALL_ARGS_EVAL;
+  ARG_NUMBER(3);
+  p = APOINTER(3);
+  rgb_grab_matrix(AINTEGER(1),AINTEGER(2),p);
+  LOCK(p);
+  return p;
 }
 
 
@@ -2138,7 +2161,7 @@ init_graphics(void)
   dx_define("gray-draw-matrix",xgray_draw_matrix);
   dx_define("color-draw-matrix",xcolor_draw_matrix);
   dx_define("rgb-draw-matrix",xrgb_draw_matrix);  
-  dx_define("xget-image",xget_image);  
+  dx_define("rgb-grab-matrix",xrgb_grab_matrix);  
   /* OGRE SPEEDUP */
   dx_define("point-in-rect",xpoint_in_rect);
   dx_define("rect-in-rect",xrect_in_rect);
