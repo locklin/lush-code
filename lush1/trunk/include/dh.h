@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.1 2002-06-25 15:58:25 leonb Exp $
+ * $Id: dh.h,v 1.2 2002-06-27 19:43:13 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -64,26 +64,11 @@ extern "C" {
 #endif
 
 
-/* DHRECORDS ------------------------------------------- */
+/* ----------------------------------------------- */
+/* DHRECORDS                                       */
+/* ----------------------------------------------- */
 
-/* dhrecord --- 
- * The basic data structure for metainformation in compiled code.
- * Note: this is not a union because union can't be initialized 
- */
 
-typedef struct s_dhrecord 
-{
-  enum dht_type op;	    /* Type of the record */
-  short access;             /* Type of access */
-  short ndim;		    /* Number of dimensions(idx)/fields(object) */
-  char *name;               /* field name (used also in FUNC for end of
-                               args, and in DH_CLASS to hold K_class)*/
-  long hashcode;            /* to put hash code.  In DH_NAME struct, also 
-                               holds the slot offset (which is updated in 
-			       next-record) */
-  struct s_dhrecord *end;   /* point on the next dhrecord.  This is updated
-                               in next record */
-} dhrecord;
 
 /* Values for the "access" field */
 #define DHT_READ 0
@@ -126,6 +111,24 @@ enum dht_type {
     DHT_LAST        /* TAG */
 };
 
+
+/* dhrecord --- 
+ * The basic data structure for metainformation in compiled code.
+ * Note: this is not a union because union can't be initialized 
+ */
+typedef struct s_dhrecord 
+{
+  enum dht_type op;	    /* Type of the record */
+  short access;             /* Type of access */
+  short ndim;		    /* Number of dimensions(idx)/fields(object) */
+  char *name;               /* field name (used also in FUNC for end of
+                               args, and in DH_CLASS to hold K_class)*/
+  long hashcode;            /* to put hash code.  In DH_NAME struct, also 
+                               holds the slot offset (which is updated in 
+			       next-record) */
+  struct s_dhrecord *end;   /* point on the next dhrecord.  This is updated
+                               in next record */
+} dhrecord;
 
 /* Macros for constructing dhrecords */
 
@@ -200,7 +203,9 @@ enum dht_type {
 
 
 
-/* DHFUNCTIONS ------------------------------------------- */
+/* ----------------------------------------------- */
+/* DHFUNCTIONS                                     */
+/* ----------------------------------------------- */
 
 
 /* dharg ---
@@ -303,7 +308,9 @@ typedef struct dhconstraint
 
 
 
-/* DHCLASSES --------------------------------------------- */
+/* ----------------------------------------------- */
+/* DHCLASSES                                       */
+/* ----------------------------------------------- */
 
 
 /* dhclassconstraint ---
@@ -321,7 +328,7 @@ typedef struct dhclassconstraint
     char *name; 
     struct dhclassconstraint *super;
     char *supername;
-    method_ptr *method_table;
+    void *method_table;
     char *method_table_name;
     dhconstraint **DH_method_table;
     char *DH_method_table_name;
@@ -350,19 +357,20 @@ typedef struct dhclassconstraint
  *            )
  * {
  *     DH_CLASS(2),
- *     DH_CLASS(2),
- *     DH_NAME("slot_1"),
- *     DH_INT,
- *     DH_NAME("slot_2"),
- *     DH_REAL,
- *     DH_METHODS(2),
- *     DH_FUNC(0),
- *     DH_RETURN,
- *     DH_BOOL,
- *     DH_FUNC(0),
- *     DH_RETURN,
- *     DH_BOOL,
- *     DH_END_FUNC,
+ *      DH_NAME("slot_1"),
+ *       DH_INT,
+ *      DH_NAME("slot_2"),
+ *       DH_REAL,
+ *      DH_METHODS(2),
+ *       DH_FUNC(0),
+ *        DH_RETURN,
+ *         DH_BOOL,
+ *       DH_END_FUNC,
+ *       DH_FUNC(0),
+ *        DH_RETURN,
+ *         DH_BOOL,
+ *       DH_END_FUNC,
+ *      DH_END_METHODS,
  *     DH_END_CLASS,
  *     DH_NIL
  * };
@@ -402,7 +410,9 @@ typedef struct dhclassconstraint
 #endif /* !NOLISP */
 
 
-/* END --------------------------------------------------- */
+/* ----------------------------------------------- */
+/* END                                             */
+/* ----------------------------------------------- */
 
 #ifdef __cplusplus
 }

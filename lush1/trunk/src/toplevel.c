@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.5 2002-05-06 20:09:47 leonb Exp $
+ * $Id: toplevel.c,v 1.6 2002-06-27 19:43:17 leonb Exp $
  **********************************************************************/
 
 
@@ -79,6 +79,7 @@ extern void init_idx1 (void);
 extern void init_idx2 (void);
 extern void init_idx3 (void);
 extern void init_idx4 (void);
+extern void init_lisp_c (void);
 extern void init_graphics (void);
 extern void init_PSdriver (void);
 #ifndef NOGRAPHICS
@@ -178,6 +179,7 @@ init_lush(char *program_name)
   init_idx2();
   init_idx3();
   init_idx4();
+  init_lisp_c();
   init_dump();
 #ifdef UNIX
   init_user();
