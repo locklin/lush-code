@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.47 2003-01-14 16:39:51 leonb Exp $
+ * $Id: header.h,v 1.48 2003-01-14 19:24:09 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -633,6 +633,7 @@ TLAPI int filep(char *s);
 TLAPI char *dirname(char *fname);
 TLAPI char *basename(char *fname, char *suffix);
 TLAPI char *concat_fname(char *from, char *fname);
+TLAPI char *relative_fname(char *from, char *fname);
 TLAPI void clean_tmp_files(void);
 TLAPI char *tmpname(char *s, char *suffix);
 TLAPI char *search_file(char *s, char *suffixes);

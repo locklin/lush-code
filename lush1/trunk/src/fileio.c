@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.13 2003-01-14 16:41:23 leonb Exp $
+ * $Id: fileio.c,v 1.14 2003-01-14 19:24:56 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -784,7 +784,7 @@ concat_fname(char *from, char *fname)
     } else {					    /* Case "/abcd" */
       if (s[0]==0 || s[1]!=':')
 	s[0] = _getdrive() + 'A' - 1;
-      s[1]=':'; s[2]= 0;
+      s[1]=':'; s[2]='\\'; s[3]=0;
     }
   } else if (fname[0] && fname[1]==':') {
     if (fname[2]!='/' && fname[2]!='\\') {	    /* Case "x:abcd"   */
@@ -845,6 +845,59 @@ DX(xconcat_fname)
   ARG_NUMBER(2);
   return new_string(concat_fname(ASTRING(1),ASTRING(2)));
 }
+
+
+/** relative_fname **/
+
+char *
+relative_fname(char *from, char *fname)
+{
+  int fromlen;
+  from = concat_fname(NULL,from);
+  fromlen = strlen(from);
+  if (fromlen > FILELEN-1)
+    return 0;
+  strcpy(file_name, from);
+  from = file_name;
+  fname = concat_fname(NULL,fname);
+#ifdef UNIX
+  if (fromlen>0 && !strncmp(from, fname, fromlen))
+    {
+      if ( fname[fromlen]==0 )
+        return ".";
+      if (fname[fromlen]=='/')
+        return fname + fromlen + 1;
+      if (fname[fromlen-1]=='/')
+        return fname + fromlen;
+    }
+#endif
+#ifdef WIN32
+  if (fromlen>3 && !strncmp(from, fname, fromlen))
+    {
+      if ( fname[fromlen]==0 )
+        return ".";
+      if (fname[fromlen]=='/' || fname[fromlen]=='\\')
+        return fname + fromlen + 1;
+      if (fname[fromlen-1]=='/' || fname[fromlen-1]=='\\')
+        return fname + fromlen;
+    }
+#endif
+  return 0;
+}
+
+DX(xrelative_fname)
+{
+  char *s;
+  ARG_NUMBER(2);
+  ARG_EVAL(1);
+  ARG_EVAL(2);
+  s = relative_fname(ASTRING(1), ASTRING(2));
+  if (s)
+    return new_string(s);
+  return NIL;
+}
+
+
 
 
 /* -------------- TMP FILES ------------- */
@@ -1932,6 +1985,7 @@ init_fileio(char *program_name)
   dx_define("basename",xbasename);
   dx_define("dirname", xdirname);
   dx_define("concat-fname", xconcat_fname);
+  dx_define("relative-fname", xrelative_fname);
   dx_define("tmpname", xtmpname);
   dx_define("filepath", xfilepath);
   dx_define("script", xscript);
