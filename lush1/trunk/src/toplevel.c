@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.28 2004-07-19 19:47:05 leonb Exp $
+ * $Id: toplevel.c,v 1.29 2005-02-08 16:45:29 leonb Exp $
  **********************************************************************/
 
 
@@ -85,6 +85,7 @@ extern void init_lisp_c (void);
 extern void init_event (void);
 extern void init_graphics (void);
 extern void init_ps_driver (void);
+extern void init_lisp_driver (void);
 extern void init_comdraw_driver (void);
 #ifndef NOGRAPHICS
 #ifdef UNIX
@@ -194,6 +195,7 @@ init_lush(char *program_name)
 #ifndef NOGRAPHICS
   init_graphics();
   init_ps_driver();
+  init_lisp_driver();
   init_comdraw_driver();
 #ifdef UNIX
 #ifndef X_DISPLAY_MISSING

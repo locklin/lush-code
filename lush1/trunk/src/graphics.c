@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.13 2004-11-22 19:54:18 leonb Exp $
+ * $Id: graphics.c,v 1.14 2005-02-08 16:45:21 leonb Exp $
  **********************************************************************/
 
 
@@ -48,9 +48,11 @@ window_dispose(at *p)
   if (win->eventhandler)
     unprotect(p);
   UNLOCK(win->eventhandler);
-  UNLOCK(win->driverdata);
+  win->eventhandler = NIL;
   if (win->gdriver->close)
     (*win->gdriver->close) (win);
+  UNLOCK(win->driverdata);
+  win->driverdata = NIL;
   win->used = 0;
 }
 
@@ -60,7 +62,7 @@ window_action(at *p, void (*action)(at *))
   register struct window *win;
   
   win = p->Object;
-  (*action) (win->font);
+  (*action)(win->font);
   (*action)(win->eventhandler);
   (*action)(win->driverdata);
 }
@@ -373,14 +375,15 @@ DX(xrect_text)
   x1 = AINTEGER(1);
   y1 = AINTEGER(2);
   s = ASTRING(3);
-  
-  if (win->gdriver->rect_text) {
-    (*win->gdriver->begin) (win);
-    (*win->gdriver->rect_text) (win, x1, y1, s, &x1, &y1, &w, &h);
-    (*win->gdriver->end) (win);
-  } else
+  w = h = 0;
+  if (win->gdriver->rect_text) 
+    {
+      (*win->gdriver->begin) (win);
+      (*win->gdriver->rect_text) (win, x1, y1, s, &x1, &y1, &w, &h);
+      (*win->gdriver->end) (win);
+    } 
+  if (w == 0 || h == 0)
     return NIL;
-  
   return cons(NEW_NUMBER(x1),
 	      cons(NEW_NUMBER(y1),
 		   cons(NEW_NUMBER(w),
