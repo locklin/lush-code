@@ -12,22 +12,21 @@
 #import <setjmp.h>
 #import <Cocoa/Cocoa.h>
 
-@interface SDLMain : NSObject
-@end
+/* Portions of CPS.h */
+typedef struct CPSProcessSerNum { UInt32 lo; UInt32 hi; } CPSProcessSerNum;
+extern OSErr CPSGetCurrentProcess( CPSProcessSerNum *psn);
+extern OSErr CPSSetFrontProcess( CPSProcessSerNum *psn);
+extern OSErr CPSEnableForegroundOperation( CPSProcessSerNum *psn, 
+					   UInt32, UInt32, UInt32, UInt32);
 
+/* Misc */
 static int gInitialized;
 static sigjmp_buf gBackToWork;
-
-/* An internal Apple class used to setup Apple menus */
-@interface NSAppleMenuController:NSObject {}
-- (void)controlMenu:(NSMenu *)aMenu;
-@end
 
 @interface SDLApplication : NSApplication
 @end
 
 @implementation SDLApplication
-/* Invoked from the Quit menu item */
 - (void)terminate:(id)sender
 {
     /* Post a SDL_QUIT event */
@@ -37,7 +36,19 @@ static sigjmp_buf gBackToWork;
 }
 @end
 
+@interface SDLMain : NSObject
+@end
+
 @implementation SDLMain
+- (void) applicationDidFinishLaunching: (NSNotification *) note
+{
+    siglongjmp(gBackToWork,1);
+}
+@end
+
+@interface NSAppleMenuController:NSObject {}
+- (void)controlMenu:(NSMenu *)aMenu;
+@end
 
 void setupAppleMenu(void)
 {
@@ -48,7 +59,7 @@ void setupAppleMenu(void)
     appleMenuController = [[NSAppleMenuController alloc] init];
     appleMenu = [[NSMenu alloc] initWithTitle:@""];
     appleMenuItem = [[NSMenuItem alloc] initWithTitle:@"" 
-	action:nil keyEquivalent:@""];
+					action:nil keyEquivalent:@""];
     [appleMenuItem setSubmenu:appleMenu];
     [[NSApp mainMenu] addItem:appleMenuItem];
     [appleMenuController controlMenu:appleMenu];
@@ -57,52 +68,29 @@ void setupAppleMenu(void)
     [appleMenuItem release];
 }
 
-/* Create a window menu */
 void setupWindowMenu(void)
 {
-    NSMenu		*windowMenu;
+    NSMenu	*windowMenu;
     NSMenuItem	*windowMenuItem;
     NSMenuItem	*menuItem;
-
-
     windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
-    
-    /* "Minimize" item */
     menuItem = [[NSMenuItem alloc] initWithTitle:@"Minimize" 
 				   action:@selector(performMiniaturize:) 
 				   keyEquivalent:@"m"];
     [windowMenu addItem:menuItem];
     [menuItem release];
-    
-    /* Put menu into the menubar */
     windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"Window" 
-					 action:nil 
-					 keyEquivalent:@""];
+					 action:nil keyEquivalent:@""];
     [windowMenuItem setSubmenu:windowMenu];
     [[NSApp mainMenu] addItem:windowMenuItem];
-    
-    /* Tell the application object that this is now the window menu */
     [NSApp setWindowsMenu:windowMenu];
-
-    /* Finally give up our references to the objects */
     [windowMenu release];
     [windowMenuItem release];
 }
 
-
-
-/* Called when the internal event loop has just started running */
-- (void) applicationDidFinishLaunching: (NSNotification *) note
-{
-    /* Hand off to main application code */
-    siglongjmp(gBackToWork,1);
-}
-@end
-
-
-/* Replacement for NSApplicationMain */
 void SDLmain (void)
 {
+  CPSProcessSerNum PSN;
   NSAutoreleasePool *pool;
   SDLMain *sdlMain;
   if (!gInitialized)
@@ -112,14 +100,23 @@ void SDLmain (void)
 	return;
       pool = [[NSAutoreleasePool alloc] init];
       [SDLApplication sharedApplication];
+      /* Tell the dock about us */
+      if (!CPSGetCurrentProcess(&PSN))
+	if (!CPSEnableForegroundOperation(&PSN,0x03,0x3C,0x2C,0x1103))
+	  if (!CPSSetFrontProcess(&PSN))
+	    [SDLApplication sharedApplication];
+#if THIS_DOES_NOTHING_I_CAN_SEE
       [NSApp setMainMenu:[[NSMenu alloc] init]];
       setupAppleMenu();
       setupWindowMenu();
+#endif
       sdlMain = [[SDLMain alloc] init];
       [NSApp setDelegate:sdlMain];
+#if THIS_DOES_NOT_WORK
       [NSApp run];
       [sdlMain release];
       [pool release];
       gInitialized = 0;
+#endif
     }
 }
