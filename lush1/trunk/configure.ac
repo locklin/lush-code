@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.31 2003-04-14 12:50:51 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.32 2003-06-26 15:38:57 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -37,6 +37,28 @@ if test -d $curwd/gnu/include ; then
 fi
 if test -d $curwd/gnu/lib ; then
    LDFLAGS="$LDFLAGS -L$curwd/gnu/lib"
+fi
+
+
+# ----------------------------------------
+# Overrides
+# ----------------------------------------
+
+ac_have_mpi=no
+AC_ARG_WITH(mpi,
+            AC_HELP_STRING([--with-mpi],
+                       [Force compilation with MPI]),
+        [ if test $withval != no ; then
+            ac_have_mpi=yes
+          fi ] )
+if test $ac_have_mpi = yes ; then
+  AC_PATH_PROG(CC, mpicc, none)
+  AC_PATH_PROG(CXX, mpiCC, none)
+  AC_PATH_PROG(F77, mpif77, none)
+  if test $CC = none || test $CXX = none || test $F77 = none ; then
+    AC_MSG_ERROR([Cannot locate MPI compiler drivers])
+  fi
+  AC_DEFINE(HAVE_MPI,1,[Define if compiling with MPI.])
 fi
 
 
@@ -194,6 +216,7 @@ AC_PATH_PTHREAD
 # readline
 AC_CHECK_LIB(curses,tputs)
 AC_CHECK_LIB(readline,readline)
+
 
 
 # ----------------------------------------
