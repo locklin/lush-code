@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.27 2003-02-19 19:12:32 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.28 2003-03-04 18:41:02 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -255,6 +255,9 @@ fi
 case "$host" in
     *-linux*)
         CC_EXP_FLAG='-Wl,-export-dynamic'
+        ;;
+    *-darwin* | *-macos10* | *-rhapsody*)
+        SOEXT=dylib
         ;;
     *-freebsd2*)
         CC_PIC_FLAG='-fPIC'
