@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.3 2004-09-20 19:50:47 leonb Exp $
+ * $Id: svqp2.h,v 1.4 2004-09-28 14:33:01 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -74,17 +74,20 @@ public:
 
   const int n;
   
-  // MANDATORY INPUT: A
+  // MANDATORY INPUT: AFUNCTION, ACLOSURE, APERM
   // Matrix A is represented by several variables.
   // Element A[i][j] is accessed as
   //    (*Afunction)(Aperm[i], Aperm[j], Aclosure);
+  // Array Aperm[] initially contains 1...n but can be changed.
+  // Cache space is not wasted when the same integer appears twice.
   
   double (*Afunction)(int, int, void *);
   void    *Aclosure;
   int     *Aperm;
   
   // MANDATORY INPUT: B, CMIN, CMAX
-
+  // Space is already allocated for these vectors.
+  // The initial value, 0, must be replaced.
   double  *b;
   double  *cmin;
   double  *cmax;
@@ -104,7 +107,7 @@ public:
   // OPTIONAL INPUT: VERBOSITY
   // Set this to 0 for quiet operation.
   // Set this to 2 for very verbose operation.
-  // Set this to 3 to enable SLOW debugging code.
+  // Set this to 3 to enable more debugging code.
 
   int      verbosity;
 
@@ -119,7 +122,7 @@ public:
 
   // OPTIONAL INPUT: MAXCACHESIZE
   // Size in bytes of the cache of kernel values.
-  // Default: 128M.
+  // Default: 256M.
   
   long     maxcachesize;
 
