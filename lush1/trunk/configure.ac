@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.16 2002-12-09 13:01:00 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.17 2002-12-11 08:05:36 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -61,7 +61,18 @@ AC_PATH_PROG(CP, cp)
 AC_PATH_PROG(RM, rm)
 AC_PATH_PROG(AR, ar)
 AC_PATH_PROG(TOUCH, touch)
+
 AC_PATH_PROG(INDENT, indent)
+if test -x $INDENT ; then
+  AC_MSG_CHECKING([if $INDENT accepts GNU options])
+  if $INDENT -gnu </dev/null 2>/dev/null ; then 
+    AC_MSG_RESULT(yes)
+  else 
+    AC_MSG_RESULT(no)
+    unset INDENT
+  fi
+fi
+
 INSTALL='${top_srcdir}/config/install-sh -c' 
 AC_SUBST(INSTALL)
 

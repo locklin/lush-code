@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.11 2002-10-10 16:14:11 leonb Exp $
+ * $Id: dldbfd.c,v 1.12 2002-12-11 08:06:07 leonb Exp $
  **********************************************************************/
 
 
@@ -2469,7 +2469,7 @@ dld_dlopen(char *path, int mode)
     abfd = bfd_openr(path,"default");
     /* Perform DLOPEN */
     handle = dlopen(path, mode);
-    err = dlerror();
+    err = (char*)dlerror();
     TRY
     {
         /* Check BFD and HANDLE */
@@ -2500,7 +2500,8 @@ dld_dlopen(char *path, int mode)
             sym = symbols[i];
             if (! (sym->name && sym->name[0]))
               continue;
-            if (! (sym->flags & (BSF_LOCAL|BSF_SECTION_SYM|BSF_DEBUGGING|BSF_WARNING)))
+            if (! (sym->flags & (BSF_LOCAL|BSF_SECTION_SYM|
+                                 BSF_DEBUGGING|BSF_WARNING)))
               {
                 const char *name = drop_leading_char(abfd,sym->name);
                 void *addr = dlsym(handle, /*sym->*/name);

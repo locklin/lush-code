@@ -47,7 +47,6 @@
 # include <termios.h>
 #endif
 
-
 /**************************************************************/
 
 #if defined(HAVE_TERMIOS_H) && defined(HAVE_OPENPTY)
@@ -405,7 +404,8 @@ runcommandReadout(struct C_window* info, char* command,
 
 /* computes the code for each point for the do_line_clip function. */
 static short 
-compute_code (int x, int y, short clipx1, short clipy1, short clipx2, short clipy2)
+compute_code (int x, int y, short clipx1, short clipy1, 
+              short clipx2, short clipy2)
 {
   short code = 0x0;
   if (y > (clipy2)) 
@@ -562,20 +562,23 @@ comdraw_end(struct window *linfo)
 	  pop(S);
 	  info->group_cnt++;
 	  push(S,info->group_cnt);
-	  sprintf(command,"lushng%d=growgroup(c%d c%d)\n",info->group_cnt, image, image);    
+	  sprintf(command,"lushng%d=growgroup(c%d c%d)\n",
+                  info->group_cnt, image, image);    
 	  linecnt++;
 	}
       }
     else 
       {
-	sprintf(command,"lushng%d=growgroup(lushng%d c%d)\n",info->group_cnt, group2, image);    
+	sprintf(command,"lushng%d=growgroup(lushng%d c%d)\n",
+                info->group_cnt, group2, image);    
 	linecnt++;
       }
   }
   else 
     {
       group2 = read_top(S);
-      sprintf(command,"lushng%d=growgroup(lushng%d lushng%d)\n",group2, group2, group1);    
+      sprintf(command,"lushng%d=growgroup(lushng%d lushng%d)\n",
+              group2, group2, group1);    
       linecnt++;
     }
   if (info->command_type != 2){
@@ -756,7 +759,8 @@ comdraw_draw_line(struct window *linfo,
   if (do_line_clip(&x1, &y1, &x2, &y2, info)) {
     begin(info);
     command[0] = 0;
-    sprintf(command,"c%d=line(%d,nrows-(%d),%d,nrows-(%d))\nselect(:clear)\n",
+    sprintf(command,"c%d=line(%d,nrows-(%d),%d,nrows-(%d))\n"
+            "select(:clear)\n",
 	    info->compview_no,x1, (y1+1), x2, (y2+1));
     runcommand(info, command,2);
   }
@@ -779,7 +783,8 @@ comdraw_draw_rect(struct window *linfo,
 #endif
   begin(info);
   command[0] = 0;
-  sprintf(command,"c%d=rect(%d,nrows-(%d),%d,nrows-(%d))\nselect(:clear)\n",
+  sprintf(command,"c%d=rect(%d,nrows-(%d),%d,nrows-(%d))\n"
+          "select(:clear)\n",
 	  info->compview_no,x1, (y1+1), x1+w-1, (y1+h));
   runcommand(info,command,2);
 }
@@ -982,13 +987,15 @@ comdraw_fill_polygon(struct window *linfo,short (*points)[2], unsigned int n)
 #endif
   begin(info);
 
-  sprintf(command,"lushtmp=%d,nrows-(%d)",points[0][0],(points[0][1]+1));
+  sprintf(command,"lushtmp=%d,nrows-(%d)",
+          points[0][0],(points[0][1]+1));
   for (i=1; i<n; i++){
     if (strlen(command)>=MAX_INPUT_SIZE-(11+2*NO_OF_DIGITS_INT)){
       sprintf(&command[strlen(command)],"\n");
       runcommand(info, command,1); 
       command[0] = 0;
-      sprintf(command,"lushtmp=lushtmp,%d,nrows-(%d)",points[i][0],(points[i][1]+1));
+      sprintf(command,"lushtmp=lushtmp,%d,nrows-(%d)",
+              points[i][0],(points[i][1]+1));
     }
     else
       sprintf(&command[strlen(command)],",%d,nrows-(%d)",
@@ -999,7 +1006,8 @@ comdraw_fill_polygon(struct window *linfo,short (*points)[2], unsigned int n)
   runcommand(info,command,1); 
   
   command[0] = 0;
-  sprintf(command,"c%d=polygon(lushtmp)\npattern(2)\nselect(:clear)\npattern(1)\n",
+  sprintf(command,"c%d=polygon(lushtmp)\npattern(2)\n"
+          "select(:clear)\npattern(1)\n",
 	  info->compview_no);
   runcommand(info,command,2); 
 } 
@@ -1065,7 +1073,8 @@ static void comdraw_rect_text(struct window *linfo,
   runcommand(info, command,1); 
   
   command[0] = 0;
-  sprintf(command,"lushtmp2=text(%d,nrows-(%d) lushtmp)\nmbr(lushtmp2 :scrn)\ndelete(lushtmp2)\n",x,(y+1));
+  sprintf(command,"lushtmp2=text(%d,nrows-(%d) lushtmp)\n"
+          "mbr(lushtmp2 :scrn)\ndelete(lushtmp2)\n",x,(y+1));
   runcommandReadout(info,command,rbuffer,3);
   bufptr = rbuffer;
   number[0] = 0;
@@ -1115,7 +1124,8 @@ comdraw_gspecial(struct window *linfo,char *s)
 /****************************************************************/
 
 static void 
-comdraw_clip(struct window *linfo, int x, int y, unsigned int w, unsigned int h)
+comdraw_clip(struct window *linfo, int x, int y, 
+             unsigned int w, unsigned int h)
 {
   struct C_window *info = (struct C_window*)linfo;
   if (! info->lwin.used)
@@ -1177,7 +1187,8 @@ comdraw_pixel_map(struct window *linfo,
 	else{
 	  sprintf(&line[strlen(line)],"%d",data[index]);
 	  sprintf(command,"pokeline(c%d %d %d %d list(%s))\n", 
-		  info->compview_no, pointcnt, (h-1-hcnt), (wcnt-pointcnt+1), line);
+		  info->compview_no, pointcnt, (h-1-hcnt),
+                  (wcnt-pointcnt+1), line);
 	  runcommand(info, command,1);
 	  pointcnt = wcnt+1;
 	  line[0]= 0;
@@ -1185,7 +1196,8 @@ comdraw_pixel_map(struct window *linfo,
       }  
       sprintf(&line[strlen(line)],"%d",data[index+1]);
       sprintf(command,"pokeline(c%d %d %d %d list(%s))\n", 
-	      info->compview_no, pointcnt, (h-1-hcnt), (wcnt-pointcnt+1), line);
+	      info->compview_no, pointcnt, (h-1-hcnt),
+              (wcnt-pointcnt+1), line);
       runcommand(info, command,1);
     }
   }
@@ -1221,7 +1233,8 @@ comdraw_pixel_map(struct window *linfo,
 	else{
 	  sprintf(&line[strlen(line)],"%d",data2[index]);
 	  sprintf(command,"pokeline(c%d %d %d %d list(%s))\n", 
-		  info->compview_no, pointcnt, (h-1-hcnt), (wcnt-pointcnt+1), line);
+		  info->compview_no, pointcnt,
+                  (h-1-hcnt), (wcnt-pointcnt+1), line);
 	  runcommand(info, command,1);
 	  pointcnt = wcnt+1;
 	  line[0] = 0;
@@ -1229,7 +1242,8 @@ comdraw_pixel_map(struct window *linfo,
       }
       sprintf(&line[strlen(line)],"%d",data2[index+1]);
       sprintf(command,"pokeline(c%d %d %d %d list(%s))\n", 
-	      info->compview_no, pointcnt, (sy_h-1-hcnt), (wcnt-pointcnt+1), line);
+	      info->compview_no, pointcnt, (sy_h-1-hcnt),
+              (wcnt-pointcnt+1), line);
       runcommand(info, command,1); 
     }
   }
@@ -1262,27 +1276,30 @@ static void comdraw_draw_arc(struct window *linfo,
   
   begin(info);
   for(cnt=0;cnt<nofpoints;cnt++){
-    point[cnt].x = (int)round(x1+r*cos(DEGTORAD(from)+cnt*precision));
-    point[cnt].y = (int)round(y1-r*sin(DEGTORAD(from)+cnt*precision));
+    point[cnt].x = (int)floor(x1+r*cos(DEGTORAD(from)+cnt*precision)+0.5);
+    point[cnt].y = (int)floor(y1-r*sin(DEGTORAD(from)+cnt*precision)+0.5);
   }
-  point[nofpoints].x = (int)round(x1+r*cos(DEGTORAD(to)));
-  point[nofpoints].y = (int)round(y1-r*sin(DEGTORAD(to)));
+  point[nofpoints].x = (int)floor(x1+r*cos(DEGTORAD(to))+0.5);
+  point[nofpoints].y = (int)floor(y1-r*sin(DEGTORAD(to))+0.5);
   sprintf(command,"lushtmp=%d,nrows-(%d)",point[0].x,(point[0].y+1));
   for (cnt=1; cnt<nofpoints+1; cnt++){
     if (strlen(command)>=MAX_INPUT_SIZE-(11+2*NO_OF_DIGITS_INT)){
       sprintf(&command[strlen(command)],"\n");
       runcommand(info, command,1); 
       command[0] = 0;
-      sprintf(command,"lushtmp=lushtmp,%d,nrows-(%d)",point[cnt].x,(point[cnt].y+1));
+      sprintf(command,"lushtmp=lushtmp,%d,nrows-(%d)",
+              point[cnt].x,(point[cnt].y+1));
     }
     else{
-      sprintf(&command[strlen(command)],",%d,nrows-(%d)",point[cnt].x,(point[cnt].y+1));
+      sprintf(&command[strlen(command)],",%d,nrows-(%d)",
+              point[cnt].x,(point[cnt].y+1));
     } 
   }  
   sprintf(&command[strlen(command)],"\n");
   runcommand(info, command,1);
   command[0] = 0;
-  sprintf(command,"c%d=multiline(lushtmp)\nselect(:clear)\n",info->compview_no);
+  sprintf(command,"c%d=multiline(lushtmp)\nselect(:clear)\n",
+          info->compview_no);
   runcommand(info, command,2);    
 
 }
@@ -1311,18 +1328,19 @@ comdraw_fill_arc(struct window *linfo,
 #endif
   begin(info);
   for(cnt=0;cnt<nofpoints;cnt++){
-    point[cnt].x = (int)round(x1+r*cos(DEGTORAD(from)+cnt*precision));
-    point[cnt].y = (int)round(y1-r*sin(DEGTORAD(from)+cnt*precision));
+    point[cnt].x = (int)floor(x1+r*cos(DEGTORAD(from)+cnt*precision+0.5));
+    point[cnt].y = (int)floor(y1-r*sin(DEGTORAD(from)+cnt*precision+0.5));
   }
-  point[nofpoints].x = (int)round(x1+r*cos(DEGTORAD(to)));
-  point[nofpoints].y = (int)round(y1-r*sin(DEGTORAD(to)));
+  point[nofpoints].x = (int)floor(x1+r*cos(DEGTORAD(to))+0.5);
+  point[nofpoints].y = (int)floor(y1-r*sin(DEGTORAD(to))+0.5);
   sprintf(command,"lushtmp=%d,nrows-(%d)",x1,(y1+1));
   for (cnt=0; cnt<nofpoints+1; cnt++){
     if (strlen(command)>=MAX_INPUT_SIZE-(11+2*NO_OF_DIGITS_INT)){
       sprintf(&command[strlen(command)],"\n");
       runcommand(info, command,1); 
       command[0] = 0;
-      sprintf(command,"lushtmp=lushtmp,%d,nrows-(%d)",point[cnt].x,(point[cnt].y+1));
+      sprintf(command,"lushtmp=lushtmp,%d,nrows-(%d)",
+              point[cnt].x,(point[cnt].y+1));
     }
     else
       sprintf(&command[strlen(command)],",%d,nrows-(%d)",
@@ -1331,7 +1349,8 @@ comdraw_fill_arc(struct window *linfo,
   sprintf(&command[strlen(command)],"\n");
   runcommand(info, command,1); 
   command[0] = 0;
-  sprintf(command,"c%d=polygon(lushtmp)\npattern(2)\nselect(:clear)\npattern(1)\n",
+  sprintf(command,"c%d=polygon(lushtmp)\npattern(2)\n"
+          "select(:clear)\npattern(1)\n",
 	  info->compview_no);
   runcommand(info, command,2);   
 }
@@ -1426,10 +1445,12 @@ DX(xcomdraw_window)
       ans = comdraw_window(0, 0, AINTEGER(1), AINTEGER(2), ASTRING(3));
       break;   
     case 4:
-      ans = comdraw_window(AINTEGER(1), AINTEGER(2), AINTEGER(3), AINTEGER(4),name);
+      ans = comdraw_window(AINTEGER(1), AINTEGER(2), AINTEGER(3), 
+                           AINTEGER(4),name);
       break;
     case 5:
-      ans = comdraw_window(AINTEGER(1), AINTEGER(2), AINTEGER(3), AINTEGER(4), ASTRING(5));
+      ans = comdraw_window(AINTEGER(1), AINTEGER(2), AINTEGER(3), 
+                           AINTEGER(4), ASTRING(5));
       break;
     default:
       ARG_NUMBER(-1);
