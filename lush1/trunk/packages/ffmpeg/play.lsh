@@ -24,11 +24,48 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: play.lsh,v 1.1 2004-02-04 20:48:52 leonb Exp $
+;;; $Id: play.lsh,v 1.2 2004-02-04 21:16:57 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 (libload "ffmpeg")
+
+;;; ----------------------------------------
+
+#? ** Lush Video Player
+;; Function <av-play> provides a simple video player.
+
+;;; ----------------------------------------
+
+#? (av-play <filename> [<mag> [<speedup> [<osd>]]])
+;; Play the video file <filename>.
+;; Argument <mag> is a display maginification.
+;; Argument <speedup> changes the play rate.
+;; Setting argument <osd> to <t> prints the time stamp 
+;; on the upper left corner of the window.
+
+(de av-play(filename &optional (mag 1) (fast 1) (osd ()))
+  (let* ((window ())
+	 (image ())
+	 (timer (new AvTimer))
+	 (src (av-open-video-source filename))
+	 (w :src:frame-width)
+	 (h :src:frame-height)
+	 (pts (==> src get-frame-pts)) 
+	 (oldpts pts) )
+    (new-window 0 0 (* mag w) (* mag h) "Lush video player")
+    (when osd (when font-18 (font-18)) (color-rgb 0 0.7 0))
+    (while (==> src nextframe)
+      (setq pts (==> src get-frame-pts))
+      (setq image (==> src get-frame-rgba))
+      (==> timer sleep (/ (- pts oldpts) fast))
+      (rgb-draw-matrix 0 0 image mag mag)
+      (when osd (gprintf 5 20 "%08.3f" pts))
+      (setq oldpts pts) )
+    window ) )
+
+
+;;; ----------------------------------------
 
 
 (defclass AvTimer Object
@@ -52,25 +89,4 @@
     ;; otherwise use function <sleep>
     (sleep delay) )
   () )
-
-
-
-(de av-play(filename &optional (mag 1) (fast 1))
-  (let* ((window ())
-	 (image ())
-	 (timer (new AvTimer))
-	 (src (av-open-video-source filename))
-	 (w :src:frame-width)
-	 (h :src:frame-height)
-	 (pts (==> src get-frame-pts)) 
-	 (oldpts pts) )
-    (new-window 0 0 (* mag w) (* mag h) "Lush video player")
-    (while (==> src nextframe)
-      (setq pts (==> src get-frame-pts))
-      (setq image (==> src get-frame-rgba))
-      (==> timer sleep (/ (- pts oldpts) fast))
-      (rgb-draw-matrix 0 0 image mag mag)
-      (setq oldpts pts) ) ) )
-
-
 
