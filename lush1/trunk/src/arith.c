@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: arith.c,v 1.3 2004-04-19 03:39:58 leonb Exp $
+ * $Id: arith.c,v 1.4 2004-10-20 16:06:30 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -96,18 +96,18 @@ complex_compare(at *p, at *q, int order)
 static unsigned long
 complex_hash(at *p)
 {
+  union { real r; long l[2]; } u[2];
   complexreal *c = p->Object;
   unsigned long x = 0x1011;
-  real r[2];
-  r[0] = Creal(*c);
-  r[1] = Cimag(*c);
-  x ^= ((unsigned long*)&r[0])[0];
+  u[0].r = Creal(*c);
+  u[1].r = Cimag(*c);
+  x ^= u[0].l[0];
   x = (x<<1)|((long)x<0 ? 0 : 1);
-  x ^= ((unsigned long*)&r[1])[0];
+  x ^= u[1].l[0];
   if (sizeof(real) >= 2*sizeof(unsigned long)) {
-    x ^= ((unsigned long*)&r[0])[1];
+    x ^= u[0].l[1];
     x = (x<<1)|((long)x<0 ? 0 : 1);
-    x ^= ((unsigned long*)&r[1])[1];
+    x ^= u[1].l[1];
   }
   return x;
 }
