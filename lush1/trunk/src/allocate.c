@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.5 2002-06-29 20:05:32 leonb Exp $
+ * $Id: allocate.c,v 1.6 2002-07-01 01:22:15 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -130,18 +130,30 @@ run_finalizers(at *q)
 {
   unsigned int h = hash_pointer(q) % HASHTABLESIZE;
   finalizer **fp = & finalizers[h];
-  q->flags &= ~ C_FINALIZER;
+  finalizer *todo = 0;
+  /* collect */
   while (*fp)
     {
       finalizer *f = *fp;
-      if (f->target == q)
+      if (f->target != q)
+        {
+          fp = &f->next;
+        }
+      else
         {
           *fp = f->next;
-          (*f->func)(q, f->arg);
-          deallocate(&finalizer_alloc, (struct empty_alloc*)f);
-          continue;
+          f->next = todo;
+          todo = f;
         }
-      fp = &f->next;
+    }
+  /* execute */
+  q->flags &= ~ C_FINALIZER;
+  while (todo)
+    {
+      finalizer *f = todo;
+      todo = f->next;
+      (*f->func)(q, f->arg);
+      deallocate(&finalizer_alloc, (struct empty_alloc*)f);
     }
 }
 
@@ -360,18 +372,19 @@ garbage(int flag)
           at *q;
           struct symbol *symb;
           q = hn->named;
-          if ( !q ) 
+          if (q == 0)
             {
               kill_name(hn);
             } 
-          else if (q->count==1) 
+          else if (q->count==1)
             {
               symb = (struct symbol*)(q->Object);
-              if (!symb->nopurge)
-                if ( symb->valueptr==0 ||
-                     *(symb->valueptr)==0 ||
-                     ((*(symb->valueptr))->flags & X_ZOMBIE) )
-                  kill_name(hn);
+              if (! symb->nopurge)
+                if (! (q->flags & C_FINALIZER))
+                  if ( !symb->valueptr ||
+                       !*(symb->valueptr) ||
+                       ((*(symb->valueptr))->flags & X_ZOMBIE) )
+                    kill_name(hn);
             }
         }
       

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.6 2002-05-08 22:09:00 leonb Exp $
+ * $Id: htable.c,v 1.7 2002-07-01 01:22:15 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -49,6 +49,7 @@ struct hashtable
   int   size;
   int   nelems;
   int   pointerhashp;
+  int   keylockp;
   int   rehashp;
   struct hashelt **table;
 };
@@ -78,17 +79,18 @@ htable_dispose(at *p)
   struct hashelt *n, *m;
   struct hashtable *htable = p->Object;
   for (i=0; i<htable->size; i++)
-  {
-    n=htable->table[i];
-    while(n)
     {
-      m = n->next;
-      UNLOCK(n->key);
-      UNLOCK(n->value);
-      deallocate(&alloc_hashelt,(void*)n);
-      n = m;
+      n=htable->table[i];
+      while(n)
+        {
+          m = n->next;
+          if (htable->keylockp)
+            UNLOCK(n->key);
+          UNLOCK(n->value);
+          deallocate(&alloc_hashelt,(void*)n);
+          n = m;
+        }
     }
-  }
   free(htable->table);
   free(htable);
   p->Object = NIL;
@@ -103,10 +105,11 @@ htable_action(at *p, void (*action)(at *))
   struct hashtable *htable = p->Object;
   for (i=0; i<htable->size; i++)
     for (n=htable->table[i]; n; n=n->next)
-    {
-      (*action)(n->key);
-      (*action)(n->value);
-    }
+      {
+        if (htable->keylockp)
+          (*action)(n->key);
+        (*action)(n->value);
+      }
 }
 
 
@@ -119,18 +122,18 @@ htable_listeval(at *p, at *q)
     error(NIL,"One or two arguments expected",q);
   q = eval_a_list(q);
   if (q->Cdr)
-  {
-    htable_set(p,q->Car,q->Cdr->Car);
-    LOCK(p);
-    UNLOCK(q);
-    return p;
-  }
+    {
+      htable_set(p,q->Car,q->Cdr->Car);
+      LOCK(p);
+      UNLOCK(q);
+      return p;
+    }
   else
-  {
-    p = htable_get(p,q->Car);
-    UNLOCK(q);
-    return p;
-  }
+    {
+      p = htable_get(p,q->Car);
+      UNLOCK(q);
+      return p;
+    }
 }
 
 
@@ -138,41 +141,42 @@ static void
 htable_serialize(at **pp, int code)
 {
   if (code == SRZ_READ)
-  {
-    int nelems, i;
-    struct hashelt *n;
-    struct hashtable *htable;
-    serialize_int(&i, code);
-    serialize_int(&nelems, code);
-    (*pp) = new_htable(nelems, i);
-    htable = (*pp)->Object;
-    htable->rehashp = 1;
-    for (i=0; i<nelems; i++)
     {
-      n = allocate(&alloc_hashelt);
-      n->hash = 0;
-      n->next = htable->table[0];
-      serialize_atstar(&n->key, code);
-      serialize_atstar(&n->value, code);
-      htable->table[0] = n;
-      htable->nelems++;
+      int nelems, i;
+      struct hashelt *n;
+      struct hashtable *htable;
+      serialize_int(&i, code);
+      serialize_int(&nelems, code);
+      (*pp) = new_htable(nelems, i);
+      htable = (*pp)->Object;
+      htable->rehashp = 1;
+      htable->keylockp = 1;
+      for (i=0; i<nelems; i++)
+        {
+          n = allocate(&alloc_hashelt);
+          n->hash = 0;
+          n->next = htable->table[0];
+          serialize_atstar(&n->key, code);
+          serialize_atstar(&n->value, code);
+          htable->table[0] = n;
+          htable->nelems++;
+        }
     }
-  }
   else
-  {
-    int i;
-    struct hashelt *n;
-    struct hashtable *htable = (*pp)->Object;
-    i = htable->pointerhashp;
-    serialize_int(&i, code);
-    i = htable->nelems;
-    serialize_int(&i, code);
-    for (i=0; i<htable->size; i++)
-      for (n=htable->table[i]; n; n=n->next) {
-        serialize_atstar(&n->key, code);
-        serialize_atstar(&n->value, code);
-      }
-  }
+    {
+      int i;
+      struct hashelt *n;
+      struct hashtable *htable = (*pp)->Object;
+      i = htable->pointerhashp;
+      serialize_int(&i, code);
+      i = htable->nelems;
+      serialize_int(&i, code);
+      for (i=0; i<htable->size; i++)
+        for (n=htable->table[i]; n; n=n->next) {
+          serialize_atstar(&n->key, code);
+          serialize_atstar(&n->value, code);
+        }
+    }
 }
 
 
@@ -214,11 +218,11 @@ htable_hash(at *p)
   struct hashtable *htable = p->Object;
   for (i=0; i<htable->size; i++)
     for (n=htable->table[i]; n; n=n->next)
-    {
-      unsigned long y = hash_value(n->key);
-      y = (y<<6) ^ hash_value(n->value);
-      x ^= y;  /* hash code is order independent */
-    }
+      {
+        unsigned long y = hash_value(n->key);
+        y = (y<<6) ^ hash_value(n->value);
+        x ^= y;  /* hash code is order independent */
+      }
   return x;
 }
 
@@ -326,17 +330,17 @@ htable_resize(struct hashtable *htable, int newsize)
     newtable[i] = 0;
   /* relocate hashelt */
   for (i=0; i<htable->size; i++)
-  {
-    n = htable->table[i];
-    while (n)
     {
-      m = n->next;
-      j = n->hash % newsize;
-      n->next = newtable[j];
-      newtable[j] = n;
-      n = m;
+      n = htable->table[i];
+      while (n)
+        {
+          m = n->next;
+          j = n->hash % newsize;
+          n->next = newtable[j];
+          newtable[j] = n;
+          n = m;
+        }
     }
-  }
   /* free and replace */
   free(htable->table);
   htable->table = newtable;
@@ -345,6 +349,33 @@ htable_resize(struct hashtable *htable, int newsize)
 
 
 
+/* hashelt_finalizer -- helper for pointerhashp case */
+
+static void
+hashelt_finalize(at *k, void *table)
+{
+  struct hashtable *htable = table;
+  struct hashelt **np, *n;
+  unsigned long hash;
+  
+  hash = hash_pointer(k);
+  np = &(htable->table[hash % htable->size]);
+  while (*np)
+    {
+      n = *np;
+      if (n->key != k)
+        {
+          np = &(n->next);
+        }
+      else
+        {
+          *np = n->next;
+          UNLOCK(n->value);
+          deallocate(&alloc_hashelt,(struct empty_alloc*)n);
+          htable->nelems -= 1;
+        }
+    }
+}
 
 /* htable_rehash -- rehash an existing hash table */
 
@@ -355,17 +386,28 @@ htable_rehash(struct hashtable *htable)
   int pointerhashp;
   struct hashelt *n, **np;
   pointerhashp = htable->pointerhashp;
+  /* turn off keylockp when pointerhashp is true */
+  if (pointerhashp && htable->keylockp)
+    {
+      at *p = NIL;
+      for (i=0; i<htable->size; i++)
+        for (n=htable->table[i]; n; n=n->next)
+          {
+            p = cons(n->key, p); /* steal lock */
+            add_finalizer(p, hashelt_finalize, htable);
+          }
+      htable->keylockp = 0;
+      UNLOCK(p);
+    }
   /* recompute hash numbers */
   for (i=0; i<htable->size; i++)
     {
       np = &htable->table[i];
       while ((n = *np))
         {
-          /* zap entries whose key is a zombie */
+          /* zap zombies */
           if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
-               (n->value && (n->value->flags & X_ZOMBIE)) ||
-               /* also zap entries that we will never use anymore */
-               (pointerhashp && n->key && n->key->count==1) )
+               (n->value && (n->value->flags & X_ZOMBIE)) )
             {
               *np = n->next;
               UNLOCK(n->key);
@@ -423,23 +465,12 @@ htable_set(at *ht, at *key, at *value)
   np = &(htable->table[hash % htable->size]);
   while ((n = *np))
     {
-      /* schedule rehash when finding useless entries */
-      if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
-           (n->value && (n->value->flags & X_ZOMBIE)) ||
-           (pointerhashp && n->key && n->key->count==1) )
-        {
-          htable->rehashp = TRUE;
-          np = &(n->next);
-          continue;
-        }
-      /* check */
       if (key == n->key)
         break;
       if (!pointerhashp)
         if (hash == n->hash)
           if (eq_test(key, n->key))
             break;
-      /* next */
       np = &(n->next);
     }
   /* change */
@@ -454,8 +485,11 @@ htable_set(at *ht, at *key, at *value)
       while (2 * htable->size < 3 * htable->nelems)
         htable_resize(htable, 2 * htable->size - 1);
       n = allocate(&alloc_hashelt);
+      if (!htable->keylockp)
+        add_finalizer(key, hashelt_finalize, htable);
+      else
+        LOCK(key);
       LOCK(value);
-      LOCK(key);
       n->hash = hash;
       n->value = value;
       n->key = key;
@@ -467,7 +501,8 @@ htable_set(at *ht, at *key, at *value)
   else if (n)
     {
       *np = n->next;
-      UNLOCK(n->key);
+      if (htable->keylockp)
+        UNLOCK(n->key);
       UNLOCK(n->value);
       deallocate(&alloc_hashelt,(void*)n);
       htable->nelems -= 1;
@@ -501,23 +536,12 @@ htable_get(at *ht, at *key)
   np = &htable->table[hash % htable->size];
   while ((n = *np))
     {
-      /* schedule rehash when finding useless entries */
-      if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
-           (n->value && (n->value->flags & X_ZOMBIE)) ||
-           (pointerhashp && n->key && n->key->count==1) )
-        {
-          htable->rehashp = TRUE;
-          np = &(n->next);
-          continue;
-        }
-      /* check */
       if (key == n->key)
         break;
       if (!pointerhashp)
         if (hash == n->hash)
           if (eq_test(key, n->key))
             break;
-      /* next */
       np = &(n->next);
     }
   if (n)
@@ -557,6 +581,7 @@ new_htable(int nelems, int pointerhashp)
   htable->nelems = 0;
   htable->size = size;
   htable->pointerhashp = pointerhashp;
+  htable->keylockp = !pointerhashp;
   htable->rehashp = FALSE;
   htable->table = table;
   return new_extern(&htable_class,htable);
