@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.18 2003-02-17 15:49:31 leonb Exp $
+ * $Id: dldbfd.c,v 1.19 2003-02-19 19:13:06 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2391,9 +2391,11 @@ define_symbol_of_main_program(const char *exec)
                 /* Continue if symbol is undefined (should not happen) */
                 if (!is_bfd_symbol_defined(sym))
                     continue;
-                /* Insert entry into global hash table */
+                /* Continue if symbol is already defined (cygwin) */
                 hsym = insert_symbol(drop_leading_char(abfd,sym->name));
-                ASSERT(! (hsym->flags & DLDF_DEFD));
+                if (hsym->flags & DLDF_DEFD)
+		  continue;
+                /* Fill symbol entry in global hash table */
                 hsym->flags = DLDF_DEFD;
                 hsym->definition = (void*)value_of_bfd_symbol(sym);
                 if ((sym->flags & BSF_FUNCTION) ||

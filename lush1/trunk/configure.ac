@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.26 2003-02-14 21:44:33 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.27 2003-02-19 19:12:32 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -101,8 +101,62 @@ else
     AC_CHECK_LIB(iberty, xmalloc)
     AC_CHECK_HEADER(bfd.h,,has_bfd=no)
     AC_CHECK_LIB(bfd, bfd_init,,[has_bfd=no])
-    if test x$has_bfd = xno ; then
-        AC_MSG_ERROR([Unable to locate BFD development files.
+fi
+AC_SUBST(BFD_YES)
+
+# Check if it compiles
+if test x$has_bfd = xyes ; then
+    n_LIBS=$LIBS
+    has_intl=
+    AC_CHECK_LIB(intl, dcgettext, [has_intl=yes],[has_intl=no])
+    i_LIBS=`echo $n_LIBS | sed -e 's/-liberty/& -lintl/'`
+    sn_LIBS=`echo $n_LIBS | sed -e 's/-lbfd\( -liberty\)*/-Wl,-Bstatic & -Wl,-Bdynamic/'`
+    si_LIBS=`echo $i_LIBS | sed -e 's/-lbfd\( -liberty\)*/-Wl,-Bstatic & -Wl,-Bdynamic/'`
+    LIBS=$sn_LIBS
+    AC_MSG_CHECKING([whether bfd works with -Bstatic])
+    AC_TRY_LINK([#include "bfd.h"],
+                [bfd_openr("junk1","default"); ],
+		[okay_bfd=yes],[okay_bfd=no]);
+    AC_MSG_RESULT($okay_bfd)
+    if test x$okay_bfd = xno ; then
+	if test x$has_intl = xyes ; then
+	    LIBS=$si_LIBS
+	    AC_MSG_CHECKING([whether bfd works with -Bstatic and -lintl])
+	    AC_TRY_LINK([#include "bfd.h"],
+		    [bfd_openr("junk1","default"); ],
+		    [okay_bfd=yes],[okay_bfd=no]);
+	    AC_MSG_RESULT($okay_bfd)
+	fi
+	if test x$okay_bfd = xno ; then
+	    LIBS=$n_LIBS
+	    AC_MSG_CHECKING([whether bfd works alone])
+	    AC_TRY_LINK([#include "bfd.h"],
+		    [bfd_openr("junk1","default"); ],
+		    [okay_bfd=yes],[okay_bfd=no]);
+	    AC_MSG_RESULT($okay_bfd)
+	    if test x$okay_bfd = xno ; then
+		if test x$has_intl = xyes ; then
+		    LIBS=$i_LIBS
+		    AC_MSG_CHECKING([whether bfd works with -lintl])
+		    AC_TRY_LINK([#include "bfd.h"],
+			    [bfd_openr("junk1","default"); ],
+			    [okay_bfd=yes],
+			    [okay_bfd=no]);
+		    AC_MSG_RESULT($okay_bfd)
+		fi
+		if test x$okay_bfd = xno ; then
+		    LIBS=$n_LIBS
+		fi
+	    fi
+	fi
+    fi
+    if test x$okay_bfd = xno ; then
+	has_bfd=no
+    fi
+fi
+
+if test x$has_bfd = xno ; then
+    AC_MSG_ERROR([Unable to locate BFD development files.
 -------------------------------------------------------------
 We were unable to locate required GNU binutils files.
 - Some Linux distributions do not install these by default.
@@ -112,41 +166,22 @@ You can configure Lush to run without these files by using
 option "--without-bfd".  The dynamic loader/linker/compiler 
 will not work and Lush will be seriously crippled.
 -----------------------------------------------------------------])
-    fi
 fi
-AC_SUBST(BFD_YES)
-
-# static bfd
-if test x$has_bfd = xyes ; then
-    AC_ARG_WITH(static-bfd,
-        AC_HELP_STRING([--without-static-bfd],
-            [Do not try linking bfd statically.]),
-        [static_bfd=$withval],[static_bfd=yes])
-
-    if test x$static_bfd = xyes ; then
-        AC_MSG_CHECKING([whether bfd works with option -Bstatic.])
-        saved_LIBS=$LIBS
-        LIBS=`echo $LIBS | sed -e 's/-lbfd\( -liberty\)*/-Wl,-Bstatic & -Wl,-Bdynamic/'`
-        AC_TRY_LINK([#include "bfd.h"],[ bfd_init();],,[static_bfd=no]);
-        AC_MSG_RESULT($static_bfd)
-        if test $static_bfd = xno ; then
-            LIBS=$saved_LIBS
-        fi
-    fi
-fi
-
 
 # x11
 AC_PATH_X
 AC_PATH_XTRA
 X_LIBS=
+X_CFLAGS=
 test -n "$x_libraries" && X_LIBS="-L$x_libraries"
+test -n "$x_includes" && X_CFLAGS="-I$x_includes"
 X_YES='#'
 if test "${no_x-no}" != yes ; then 
   X_LIBS="$X_LIBS $X_PRE_LIBS -lX11 $X_EXTRA_LIBS"
   X_YES=''
 fi
 AC_SUBST(X_LIBS)
+AC_SUBST(X_CFLAGS)
 AC_SUBST(X_YES)
 
 # threads
@@ -252,15 +287,8 @@ AC_SUBST(CC_EXP_FLAG)
 AC_SUBST(CC_PIC_FLAG)
 AC_SUBST(MAKESO)
 
-if test x$EXEEXT = xexe ; then
-    SOEXT=dll
-    DEFS="$DEFS -DWIN32"
-    UNIX_YES='#'
-    WIN32_YES=''
-else
-    UNIX_YES=''
-    WIN32_YES='#'
-fi
+UNIX_YES=''
+WIN32_YES='#'
 AC_SUBST(UNIX_YES)
 AC_SUBST(WIN32_YES)
 
