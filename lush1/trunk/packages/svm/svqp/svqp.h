@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.h,v 1.1 2004-02-17 19:47:48 leonb Exp $
+ * $Id: svqp.h,v 1.2 2004-05-10 21:27:41 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -197,6 +197,8 @@ public:
   svreal epskt;
   // maxst -- maximal gradient step value
   svreal maxst;
+  // verbosity -- how talkative we are
+  int verbosity;
   // run() -- compute optimum, return -1 or number of iterations
   int run(void);
 
@@ -225,6 +227,7 @@ private:
   void   project_with_linear_constraint(void);
   void   project_without_linear_constraint(void);
   svbool adjust_clamped_variables(void);
+  void   info(int level, const char *format, ...);
 };
 
 

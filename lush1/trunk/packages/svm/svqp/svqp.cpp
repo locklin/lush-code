@@ -26,10 +26,16 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.2 2004-03-26 00:06:44 leonb Exp $
+ * $Id: svqp.cpp,v 1.3 2004-05-10 21:27:41 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
+
+#define VERBOSE
+#ifdef VERBOSE
+# include <stdarg.h>
+# include <stdio.h>
+#endif
 
 //////////////////////////////////////
 ///
@@ -149,6 +155,22 @@ QuadraticProgram::compute_Ax(const svreal *x, svreal *y)
 // ================================================================
 
 
+void 
+ConvexProgram::info(int level, const char *fmt, ...)
+{
+#ifdef VERBOSE
+  if (level <= verbosity)
+    {
+      va_list ap;
+      va_start(ap, fmt);
+      vfprintf(stdout, fmt, ap);
+      va_end(ap);
+      fflush(stdout);
+    }
+#endif
+}
+
+
 #define CLAMPNO  0
 #define CLAMPMIN 1
 #define CLAMPMAX 2
@@ -175,6 +197,7 @@ ConvexProgram::ConvexProgram(int n)
   epskt   = (svreal)1E-20;
   maxst   = (svreal)1E+10;
   nactive = n;
+  verbosity = 1;
 }
 
 ConvexProgram::~ConvexProgram()
@@ -315,6 +338,7 @@ ConvexProgram::run(void)
     if (x[i]<cmin[i] || x[i]>cmax[i])
       {
         err = "Initial x vector is not feasible";
+	info(1,"? %s\n", err);
         return -1;
       }
   // averaged w for detecting instabilities
@@ -334,8 +358,12 @@ ConvexProgram::run(void)
       if (w<avgw && iterations>n+n)
         {
           err = "Numerical instability (EPSGR is too small)";
+	  info(1,"? %s\n", err);
           return -1;
         }
+      if (iterations % 50 == 50)
+	info(2, "\nIteration %d: w=%e g=%e\n", iterations, w, gnorm);
+
       // project gradient and compute clamp status
       if (sumflag)
         project_with_linear_constraint();
@@ -345,6 +373,7 @@ ConvexProgram::run(void)
       gnorm = dot(g,g,n);
       if (gnorm<epsgr)
         {
+	  info(1,"\n");
           if (! ktflag)
             break;
           // Reexamine clamping status
@@ -358,6 +387,7 @@ ConvexProgram::run(void)
       // compute search direction
       if (restartp)
         {
+	  info(1,"+");
           // Just copy gradient into search direction
           itercg = 0;
           for (i=0; i<n; i++)
@@ -368,6 +398,7 @@ ConvexProgram::run(void)
         }
       else
         {
+	  info(1,".");
           // Self restarting Hestenes Stiefel
           for (i=0; i<n; i++)
             gsav[i] = g[i] - gsav[i];
@@ -408,6 +439,7 @@ ConvexProgram::run(void)
       else if (step >= maxst)
         {
           err = "Function is not convex (negative curvature)";
+	  info(1,"? %s\n", err);
           return -1;
         }
       // perform update

@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: svqp.lsh,v 1.1 2004-02-17 20:18:54 leonb Exp $
+;;; $Id: svqp.lsh,v 1.2 2004-05-10 21:27:14 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "libc/make")
@@ -41,6 +41,19 @@
 ;; that are relevant to Support Vector Machines.  It does
 ;; not perform any chunking but is intended for being used
 ;; on each chunk (and supports features for this purpose.)
+
+
+
+;; ----------------------------------------
+
+;; Compile and load the svqp c++ code.
+
+(let* ((cmd (regex-subst "\\$CC" "$CXX" dhc-make-command))
+       (dir (concat-fname (dirname file-being-loaded) "svqp"))
+       (lm (new lushmake dir)) )
+  (==> lm rule "svqp.o" '("svqp.cpp" "svqp.h") cmd)
+  (==> lm make)
+  (==> lm load) )
 
 
 ;; ----------------------------------------
@@ -316,6 +329,22 @@
   #{ ((ConvexProgramExt*)$cppobj)->maxst = $e; #}
   e )
 
+#? (==> <convexprogram> get-verbosity )
+;; Gets the value of the maximum gradient step.
+
+(defmethod ConvexProgram get-verbosity()
+  (to-int #{ ((ConvexProgramExt*)$cppobj)->verbosity #} ) )
+
+#? (==> <convexprogram> set-verbosity <n>)
+;; Sets the verbosity level. Zero means silent.
+
+(defmethod ConvexProgram set-verbosity(n)
+  ((-int-) n)
+  #{ ((ConvexProgramExt*)$cppobj)->verbosity = $n; #}
+  n )
+
+
+
 #? (==> <convexprogram> run )
 ;; Run the optimizer on the QP problem.
 ;; Returns the number of iterations performed in the process.
@@ -434,18 +463,11 @@
 
 ;; ----------------------------------------
 
-;; Compile and load the svqp c++ code.
-
-(let ((cmd (regex-subst "\\$CC" "$CXX" dhc-make-command))
-      (lm (new lushmake (concat-fname (dirname file-being-loaded) "svqp"))) )
-  (==> lm rule "svqp.o" '("svqp.cpp" "svqp.h") cmd)
-  (==> lm make)
-  (==> lm load) 
-
 ;; Compile and load the svqp lush interface.
-  
-  (let ((dhc-make-lushflags (concat dhc-make-lushflags " -I" :lm:srcdir)))
-    (dhc-make-with-c++ () () 
+
+(let* ((dir (concat-fname (dirname file-being-loaded) "svqp"))
+       (dhc-make-lushflags (concat dhc-make-lushflags " -I" dir)) )
+  (dhc-make-with-c++ () () 
       #{
 	       #include "svqp.h" 
 	       struct ConvexProgramExt : public ConvexProgram 
@@ -468,6 +490,7 @@
 			   get-epsgr set-epsgr
 			   get-epskt set-epskt
 			   get-maxst set-maxst
+			   get-verbosity set-verbosity
 			   run )
 
 	    #{ 
@@ -518,5 +541,5 @@
 			   compute-ax compute-gx compute-ggx)
 
 	    (SimpleQuadraticProgram SimpleQuadraticProgram 
-				    compute-ax) ) ) )
+				    compute-ax) ) )
 
