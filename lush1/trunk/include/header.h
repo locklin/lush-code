@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.22 2002-05-09 15:23:43 leonb Exp $
+ * $Id: header.h,v 1.23 2002-06-25 15:58:25 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -1206,7 +1206,6 @@ TLAPI at *load_matrix(FILE *f);
 /*
  * DH are C functions working on matrices and numbers.
  * They may be compiled using 'dh-compile'.
- * 
  */
 
 extern LUSHAPI class dh_class;
