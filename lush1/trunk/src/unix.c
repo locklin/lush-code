@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.47 2004-04-02 15:35:01 leonb Exp $
+ * $Id: unix.c,v 1.48 2004-07-16 22:19:03 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -246,43 +246,37 @@ break_irq(void)
 void 
 lastchance(char *s)
 {
-  static char reason[40];
+  static int already = 0;
   at *q;
   /* Test for recursive call */
-  if (!s || !*s)
-    s = "Unknown reason";
-  if (strncmp(s,reason,38) == 0)
+  if (!already) 
     {
-      abort(reason);
-      _exit(100);
-    }
-  if (reason[0]==0)
-    strncpy(reason,s,38);
-  /* Signal problem */
-  argeval_ptr = eval_ptr = eval_std;
-  error_doc.ready_to_an_error = FALSE;
-  fprintf(stderr, "\n\007**** GASP: Severe error : %s\n", s);
-  q = eval(named("toplevel"));
-  if (isatty(0) && EXTERNP(q,&de_class))
-    {
-      fprintf(stderr,"**** GASP: Trying to recover\n");
-      fprintf(stderr,"**** GASP: You should save your work immediatly\n\n");
-      /* Sanitize IO */
-      break_attempt = 0;      
-      block_async_poll();
-      context->input_file = stdin;
-      context->output_file = stdout;
-      context->input_tab = 0;
-      context->output_tab = 0;
-      /* Go toplevel */
+      /* Signal problem */
+      argeval_ptr = eval_ptr = eval_std;
       error_doc.ready_to_an_error = FALSE;
-      apply(q,NIL);
-    }
-  else
-    {
-      time_t clock;
-      time(&clock);
-      fprintf(stderr,"**** GASP: %s", ctime(&clock));
+      fprintf(stderr, "\n\007**** GASP: Severe error : %s\n", s);
+      q = eval(named("toplevel"));
+      if (isatty(0) && EXTERNP(q,&de_class))
+	{
+	  fprintf(stderr,"**** GASP: Trying to recover\n");
+	  fprintf(stderr,"**** GASP: You should save your work immediatly\n\n");
+	  /* Sanitize IO */
+	  break_attempt = 0;      
+	  block_async_poll();
+	  context->input_file = stdin;
+	  context->output_file = stdout;
+	  context->input_tab = 0;
+	  context->output_tab = 0;
+	  /* Go toplevel */
+	  error_doc.ready_to_an_error = FALSE;
+	  apply(q,NIL);
+	}
+      else
+	{
+	  time_t clock;
+	  time(&clock);
+	  fprintf(stderr,"**** GASP: %s", ctime(&clock));
+	}
     }
   abort("gasp handler");
 }
