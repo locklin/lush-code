@@ -24,14 +24,78 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.1 2002-05-01 17:30:43 leonb Exp $
+ * $Id: module.c,v 1.2 2002-05-01 18:32:46 leonb Exp $
  **********************************************************************/
 
 
+#include "header.h"
 
 
 /* --------- XXX_DEFINE FUNCTIONS --------- */
 
+
+class *rootclasslist = 0;
+
+void 
+class_define(char *name, class *cl)
+{
+  at *symb;
+  at *classat;
+  symb = new_symbol(name);
+  classat = new_extern(&class_class,cl);
+  cl->classname = symb;
+  cl->backptr = classat;
+  cl->goaway = 0;
+  cl->dontdelete = 0;
+  cl->slotssofar = 0;
+  cl->super = 0;
+  cl->atsuper = NIL;
+  cl->nextclass = rootclasslist;
+  rootclasslist = cl;
+  if (((struct symbol *) (symb->Object))->mode == SYMBOL_LOCKED) {
+    fprintf(stderr, "init: attempt to redefine symbol '%s'\n", name);
+  } else {
+    var_set(symb, classat);
+    ((struct symbol *) (symb->Object))->mode = SYMBOL_LOCKED;
+  }
+  UNLOCK(classat);
+}
+
+void 
+dx_define(char *name, at *(*addr) (int, at **))
+{
+  at *func, *symb;
+
+  func = new_dx(addr);
+  symb = new_symbol(name);
+  if (((struct symbol *) (symb->Object))->mode == SYMBOL_LOCKED) {
+    fprintf(stderr, "init: attempt to redefine symbol '%s'\n", name);
+  } else {
+    var_set(symb, func);
+    ((struct symbol *) (symb->Object))->mode = SYMBOL_LOCKED;
+    ((struct function*) (func->Object))->evaluable_list = symb;
+  }
+  UNLOCK(func);
+  UNLOCK(symb)
+}
+
+void 
+dy_define(char *name, at *(*addr) (at *))
+{
+  at *func, *symb;
+
+  func = new_dy(addr);
+  symb = new_symbol(name);
+  if (((struct symbol *) (symb->Object))->mode == SYMBOL_LOCKED) {
+    fprintf(stderr, "init: attempt to redefine symbol '%s'\n", name);
+  } else {
+    var_set(symb, func);
+    ((struct symbol *) (symb->Object))->mode = SYMBOL_LOCKED;
+    ((struct function*) (func->Object))->evaluable_list = symb;
+  }
+  UNLOCK(func);
+  UNLOCK(symb)
+}
 
 
 

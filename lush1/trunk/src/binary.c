@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.5 2002-04-26 23:21:00 leonb Exp $
+ * $Id: binary.c,v 1.6 2002-05-01 18:32:46 leonb Exp $
  **********************************************************************/
 
 
@@ -1073,7 +1073,7 @@ local_bread_class(at **pp)
       || local_bread(&key, NIL) 
       || local_bread(&def, NIL) )
     error(NIL,"Corrupted file (unresolved critical class component!)",NIL);
-  *pp = defclass(name,super,key,def);
+  *pp = new_ooclass(name,super,key,def);
   cl = (*pp)->Object;
   local_bread(&cl->methods, NIL);
 }

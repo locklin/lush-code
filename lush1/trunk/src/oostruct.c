@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.3 2002-04-29 22:25:03 leonb Exp $
+ * $Id: oostruct.c,v 1.4 2002-05-01 18:32:46 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -36,7 +36,6 @@
 extern struct alloc_root symbol_alloc;
 
 int in_object_scope = 0;
-class *rootclasslist = 0;
 
 static at *at_progn;
 static at *at_mexpand;
@@ -444,9 +443,7 @@ DX(xsubclasses)
   ARG_EVAL(1);
   q = APOINTER(1);
   
-  if (q == NIL) {
-    cl = rootclasslist;
-  } else if (EXTERNP(q, &class_class)) {
+  if (EXTERNP(q, &class_class)) {
     cl = q->Object;
     cl = cl->subclasses;
   } else
@@ -481,51 +478,22 @@ DX(xclassname)
 
 /* ------------- CLASS DEFINITION -------------- */
 
-void 
-class_define(char *name, class *cl)
-{
-  at *symb;
-  at *classat;
-  symb = new_symbol(name);
-  classat = new_extern(&class_class,cl);
-  cl->classname = symb;
-  cl->backptr = classat;
-  cl->goaway = 0;
-  cl->dontdelete = 0;
-  cl->slotssofar = 0;
-  cl->super = 0L;
-  cl->atsuper = NIL;
-  cl->nextclass = rootclasslist;
-  rootclasslist = cl;
-  if (((struct symbol *) (symb->Object))->mode == SYMBOL_LOCKED) {
-    fprintf(stderr, "init: attempt to redefine symbol '%s'\n", name);
-  } else {
-    var_set(symb, classat);
-    ((struct symbol *) (symb->Object))->mode = SYMBOL_LOCKED;
-  }
-  UNLOCK(classat);
-}
-
-
-
 
 at *
-defclass(at *classname, at *superclass, at *keylist, at *defaults)
+new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
 {
-  static void clear_hashok(struct class *cl);
-
   class *cl,*super;
   at *p,*q;
   int i;
   
-  ifn (classname && (classname->flags & X_SYMBOL))
+  ifn (EXTERNP(classname, &symbol_class))
     error(NIL,"not a symbol",classname);
-
+  
   p = keylist;
   q = defaults;
   i = 0;
   while (CONSP(p) && CONSP(q)) {
-    ifn (p->Car && (p->Car->flags & X_SYMBOL))
+    ifn (EXTERNP(p->Car, &symbol_class))
       error(NIL,"not a symbol",p->Car);
     p = p->Cdr;
     q = q->Cdr;
@@ -535,12 +503,9 @@ defclass(at *classname, at *superclass, at *keylist, at *defaults)
     error(NIL,"slot list and default list have different lengths",NIL);
   
   /* builds the new class */
-  
-  ifn (superclass && (superclass->flags & C_EXTERN)
-       && (superclass->Class == &class_class))
+  ifn (EXTERNP(superclass, &class_class))
     error(NIL,"not a class",superclass);
   super = superclass->Object;
-  
   cl = malloc(sizeof(struct class));
   *cl = object_class;
   cl->slotssofar = super->slotssofar+i;
@@ -564,7 +529,7 @@ defclass(at *classname, at *superclass, at *keylist, at *defaults)
   LOCK(keylist);
   cl->defaults = defaults;
   LOCK(defaults);
-
+  
   /* Initialize the methods and hash table */
   cl->methods = NIL;
   cl->hashtable = 0L;
@@ -578,42 +543,27 @@ defclass(at *classname, at *superclass, at *keylist, at *defaults)
   return p;
 }
 
-
-DX(xdefclass)
+DX(xmakeclass)
 {
-  at *cl,*p;
-  at *keylist,*defaults;
-  int i;
-
-  if (arg_number < 2)
-    ARG_NUMBER(-1);
-  ARG_EVAL(2);
-
-  keylist = NIL;
-  defaults = NIL;
-
-  for(i=3;i<=arg_number;i++) {
-    p = APOINTER(i);
-    if (CONSP(p) && CONSP(p->Cdr) && !p->Cdr->Cdr) {
-      LOCK(p->Car);
-      keylist = cons(p->Car,keylist);
-      defaults = cons(eval(p->Cdr->Car),defaults);
-    } else if (p && (p->flags & X_SYMBOL)) {
-      LOCK(p);
-      keylist = cons(p,keylist);
-      defaults = cons(NIL,defaults);
-    } else
-      error(NIL,"symbol or (symbol value) expected",p);
-  }
-    
-  cl = APOINTER(1);
-  p = defclass(cl,APOINTER(2),keylist,defaults);
-  var_set(cl,p);
-  UNLOCK(p);
-  LOCK(cl);
-  UNLOCK(defaults);
-  UNLOCK(keylist);
-  return cl;
+  at *classname = NIL;
+  at *superclass = NIL;
+  at *keylist = NIL;
+  at *defaults = NIL;
+  
+  ALL_ARGS_EVAL;
+  switch (arg_number)
+    {
+    case 4:
+      defaults = APOINTER(4);
+      keylist = APOINTER(3);
+    case 2:
+      superclass = APOINTER(2);
+      classname = APOINTER(1);
+      break;
+    default:
+      ARG_NUMBER(4);
+    }
+  return new_ooclass(classname, superclass, keylist, defaults);
 }
 
 
@@ -1404,7 +1354,7 @@ init_oostruct(void)
   dx_define("classname",xclassname);
   dx_define("classof",xclassof);
   dx_define("is_of_class",xis_of_class);
-  dx_define("defclass",xdefclass);
+  dx_define("makeclass",xmakeclass);
   dy_define("new",ynew);
   dx_define("delete",xdelete);
   dy_define("letslot",yletslot);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: function.c,v 1.2 2002-05-01 18:32:46 leonb Exp $
  **********************************************************************/
 
 
@@ -338,23 +338,6 @@ new_dx(at *(*addr) (int, at **))
   return p;
 }
 
-void 
-dx_define(char *name, at *(*addr) (int, at **))
-{
-  at *func, *symb;
-
-  func = new_dx(addr);
-  symb = new_symbol(name);
-  if (((struct symbol *) (symb->Object))->mode == SYMBOL_LOCKED) {
-    fprintf(stderr, "init: attempt to redefine symbol '%s'\n", name);
-  } else {
-    var_set(symb, func);
-    ((struct symbol *) (symb->Object))->mode = SYMBOL_LOCKED;
-    ((struct function*) (func->Object))->evaluable_list = symb;
-  }
-  UNLOCK(func);
-  UNLOCK(symb)
-}
 
 /* DY class -------------------------------------------	 */
 
@@ -402,23 +385,6 @@ new_dy(at *(*addr) (at *))
   return p;
 }
 
-void 
-dy_define(char *name, at *(*addr) (at *))
-{
-  at *func, *symb;
-
-  func = new_dy(addr);
-  symb = new_symbol(name);
-  if (((struct symbol *) (symb->Object))->mode == SYMBOL_LOCKED) {
-    fprintf(stderr, "init: attempt to redefine symbol '%s'\n", name);
-  } else {
-    var_set(symb, func);
-    ((struct symbol *) (symb->Object))->mode = SYMBOL_LOCKED;
-    ((struct function*) (func->Object))->evaluable_list = symb;
-  }
-  UNLOCK(func);
-  UNLOCK(symb)
-}
 
 /* DE class -------------------------------------------	 */
 
@@ -824,8 +790,8 @@ all_args_eval(at **arg_array, int i)
 void 
 init_function(void)
 {
-  ifn(dx_stack = malloc(sizeof(at *) * DXSTACKSIZE))
-  abort("Not enough memory");
+  if (! (dx_stack = malloc(sizeof(at *) * DXSTACKSIZE)))
+    abort("Not enough memory");
 
   class_define("DX",&dx_class );
   class_define("DY",&dy_class );

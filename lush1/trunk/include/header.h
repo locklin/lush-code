@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.9 2002-04-29 22:25:02 leonb Exp $
+ * $Id: header.h,v 1.10 2002-05-01 18:32:43 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -555,8 +555,6 @@ TLAPI at *new_dx(at *(*addr) (int, at **));
 TLAPI at *new_dy(at *(*addr) (at *));
 TLAPI at *funcdef(at *f);
 TLAPI at *eval_a_list(at *p);
-TLAPI void dx_define(char *name, at *(*addr) (int, at **));
-TLAPI void dy_define(char *name, at *(*addr) (at *));
 TLAPI gptr need_error(int i, int j, at **arg_array_ptr);
 TLAPI void arg_eval(at **arg_array, int i);
 TLAPI void all_args_eval(at **arg_array, int i);
@@ -712,8 +710,7 @@ struct oostruct {
   struct oostructitem { at *symb, *val; } slots[1];
 };
 
-TLAPI void class_define(char *name, class *cl);
-TLAPI at *defclass(at *classname, at *superclass, at *keylist, at *defaults);
+TLAPI at *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults);
 TLAPI void putmethod(class *cl, at *name, at *fun);
 TLAPI at *new_oostruct(at *cl);
 TLAPI at *letslot(at *obj, at *f, at *q, int howmuch);
@@ -723,6 +720,13 @@ TLAPI int is_of_class(at *p, class *cl);
 TLAPI void delete_at(at *p);
 TLAPI at *getslot(at*, at*);
 TLAPI void setslot(at**, at*, at*);
+
+
+/* MODULE.H --------------------------------------------------- */
+
+TLAPI void class_define(char *name, class *cl);
+TLAPI void dx_define(char *name, at *(*addr) (int, at **));
+TLAPI void dy_define(char *name, at *(*addr) (at *));
 
 
 /* DATE.H ----------------------------------------------------- */
