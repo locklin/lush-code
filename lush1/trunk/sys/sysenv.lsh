@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.11 2002-05-03 16:08:08 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.12 2002-05-03 18:05:21 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -454,6 +454,35 @@
              hset hset-and hset-or)
 
 
+;;; --------- Packages ---------
+
+(dm private(f . args)
+  (error 'private "Must be used inside a package" ()) )
+
+(dm package(f packagename . expressions)
+  (let ((rename  (lambda(expr)
+                   (let ((ret ()))
+                     (while (consp expr)
+                       (setq ret (nconc1 ret (package.rename (car expr))))
+                       (setq expr (cdr expr)) )
+                     (when expr
+                       (setq expr (or (package.hide expr) expr))
+                       (setq ret (nconc ret expr)) )
+                     ret ) ) )
+        (private     (mlambda(f . args)
+                             `(mapc (lambda(arg)
+                                      (let ((newarg (named (concat package.name (pname arg)))))
+                                        (package.hide arg newarg) ) )
+                                    ',args ) )) )
+    `(let ((package.hide     (htable 17 t))
+           (package.name    ,(concat (pname packagename) ".")) 
+           (package.rename  ,rename)
+           (private         ,private) )
+       ,@(all ((expr expressions))
+           `(eval (package.rename ',expr)) )
+       ',packagename ) ) )
+
+(lock-symbol package private)
 
 ;;; -------- Statistics on lists of numbers ---------
 
