@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.12 2002-10-29 23:07:47 leonb Exp $
+ * $Id: event.c,v 1.13 2002-11-01 15:59:31 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -177,8 +177,6 @@ event_peek(void)
 /* event_get --
    Return the next event associated with the specified handler.
    The event is removed from the queue if <remove> is non zero.
-   Argument pdesc optionally provides a location
-   for storing the additionnal description string pointer.
 */
 at * 
 event_get(void *handler, int remove)
@@ -941,6 +939,38 @@ DX(xkill_timer)
   return NIL;
 }
 
+/* Sleep for specified time (seconds) */
+DX(xsleep)
+{
+  at *q;
+  at *handler;
+  int delay;
+
+  ALL_ARGS_EVAL;
+  ARG_NUMBER(1);
+  delay = (int)(1000 * AREAL(1));
+  /* Setup timer with dummy handler */
+  handler = cons(NIL,NIL);
+  timer_add(handler, delay, 0);
+  /* Loop until getting this event */
+  q = NIL;
+  while (! q)
+    {
+      q = event_wait(FALSE);
+      UNLOCK(q);
+      q = NIL;
+      q = event_get(handler, TRUE);
+    }
+  UNLOCK(q);
+  UNLOCK(handler);
+  q = APOINTER(1);
+  LOCK(q);
+  return q;
+}
+
+
+
+
 
 /* ------------------------------------ */
 /* INITIALISATION                       */
@@ -964,4 +994,5 @@ init_event(void)
   /* TIMER FUNCTIONS */
   dx_define("create-timer", xcreate_timer);
   dx_define("kill-timer", xkill_timer);
+  dx_define("sleep", xsleep);
 }
