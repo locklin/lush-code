@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.3 2002-04-26 19:56:25 leonb Exp $
+ * $Id: storage.c,v 1.4 2002-04-29 19:34:08 leonb Exp $
  **********************************************************************/
 
 
@@ -115,7 +115,7 @@ static flt GPTR_getf(gptr pt, int off)
 #define Generic_getf(Prefix,Type)   					     \
 static flt name2(Prefix,_getf)(gptr pt, int off)        		     \
 {   									     \
-  return (flt)(((Type*)pt)[off]);   							     \
+  return (flt)(((Type*)pt)[off]);  					     \
 }
 
 Generic_getf(F, flt)
@@ -171,7 +171,7 @@ static void GPTR_setf(gptr pt, int off, flt x)
 #define Generic_setf(Prefix,Type)   					     \
 static void name2(Prefix,_setf)(gptr pt, int off, flt x)		     \
 {   									     \
-  ((Type *)pt)[off] = x;   							     \
+  ((Type *)pt)[off] = x; 						     \
 }
     
 Generic_setf(F, flt)
@@ -196,6 +196,113 @@ void (*storage_type_setf[ST_LAST])(gptr, int, flt) = {
   GPTR_setf,
 };
 
+
+/* --- the getr functions --- */
+
+
+static real AT_getr(gptr pt, int off)
+{
+  at *p;
+  p = ((at **)pt)[off];
+  ifn (p && NUMBERP(p))
+    error(NIL,"the accessed element is not a number",NIL);
+  return p->Number;
+}
+
+static real P_getr(gptr pt, int off)
+{
+  int b;
+  b = ((char *)pt)[off];
+  return (real)b / 16.0;
+}
+
+static real GPTR_getr(gptr pt, int off)
+{
+  error(NIL,"the accessed element is not a number",NIL);
+}
+
+
+#define Generic_getr(Prefix,Type)   					     \
+static real name2(Prefix,_getr)(gptr pt, int off)        		     \
+{   									     \
+  return (real)(((Type*)pt)[off]);   					     \
+}
+
+Generic_getr(F, flt)
+Generic_getr(D, real)
+Generic_getr(I32, long)
+Generic_getr(I16, short)
+Generic_getr(I8, char)
+Generic_getr(U8, unsigned char)
+
+#undef Generic_getr
+
+real (*storage_type_getr[ST_LAST])(gptr, int) = {
+  AT_getr,
+  P_getr,
+  F_getr,
+  D_getr,
+  I32_getr,
+  I16_getr,
+  I8_getr,
+  U8_getr,
+  GPTR_getr,
+};
+
+
+/* --- the setr functions --- */
+
+
+static void AT_setr(gptr pt, int off, real x)
+{
+  at *p;
+  p = ((at **)pt)[off];
+  UNLOCK(p);
+  ((at **)pt)[off] = NEW_NUMBER(x);
+}
+
+static void P_setr(gptr pt, int off, real x)
+{
+  if (x > 8.0-1.0/16.0)
+    ((char *)pt)[off] = 127;
+  else if (x < -8.0)
+    ((char *)pt)[off] = -128;
+  else
+    ((char *)pt)[off] = x*16.0;
+}
+
+static void GPTR_setr(gptr pt, int off, real x)
+{
+  error(NIL,"gptr arrays do not contain numbers",NIL);
+}
+
+#define Generic_setr(Prefix,Type)   					     \
+static void name2(Prefix,_setr)(gptr pt, int off, real x)		     \
+{   									     \
+  ((Type *)pt)[off] = x;   						     \
+}
+    
+Generic_setr(F, flt)
+Generic_setr(D, real)
+Generic_setr(I32, long)
+Generic_setr(I16, short)
+Generic_setr(I8, char)
+Generic_setr(U8, unsigned char)
+
+#undef Generic_setr
+
+
+void (*storage_type_setr[ST_LAST])(gptr, int, real) = {
+  AT_setr,
+  P_setr,
+  F_setr,
+  D_setr,
+  I32_setr,
+  I16_setr,
+  I8_setr,
+  U8_setr,
+  GPTR_setr,
+};
 
 
 
@@ -408,10 +515,8 @@ Generic_class(GPTR);
  *  Here are the GETAT/SETAT functions 
  *  for the malloc and mmap type storages.
  * 
- *  The default function uses SETF/GETF
- *  The AT storage have special functions
- *  The D and I32 storage have too, because FLTs
- *  have not enough dynamic to represent them all.
+ *  The default function uses SETR/GETF
+ *  The AT and GPTR storage have special functions
  */
 
 
@@ -429,28 +534,10 @@ AT_getat(struct storage *st, int off)
 }
 
 static at* 
-D_getat(struct storage *st, int off)
-{
-  real *pt;
-  pt = st->srg.data;
-  return NEW_NUMBER( pt[off] );
-}
-
-
-static at* 
-I32_getat(struct storage *st, int off)
-{
-  long *pt;
-  pt = st->srg.data;
-  return NEW_NUMBER( pt[off] );
-}
-
-
-static at* 
 N_getat(struct storage *st, int off)
 {
-  flt (*get)(gptr,int);
-  get = storage_type_getf[st->srg.type];
+  real (*get)(gptr,int);
+  get = storage_type_getr[st->srg.type];
   return NEW_NUMBER( (*get)(st->srg.data,off) );
 }
 
@@ -483,40 +570,15 @@ AT_setat(struct storage *st, int off, at *x)
 }
 
 static void 
-D_setat(struct storage *st, int off, at *x)
-{
-  real *pt;
-  pt = st->srg.data;
-  if (st->srg.flags & STF_RDONLY)
-    error(NIL,"read only storage",NIL);
-  ifn (NUMBERP(x))
-    error(NIL,"not a number",x);
-  pt[off] = x->Number;
-}
-
-
-static void 
-I32_setat(struct storage *st, int off, at *x)
-{
-  long *pt;
-  pt = st->srg.data;
-  if (st->srg.flags & STF_RDONLY)
-    error(NIL,"read only storage",NIL);
-  ifn (NUMBERP(x))
-    error(NIL,"not a number",x);
-  pt[off] = (long)(x->Number);
-}
-
-static void 
 N_setat(struct storage *st, int off, at *x)
 {
-  void (*set)(gptr,int,flt);
+  void (*set)(gptr,int,real);
   if (st->srg.flags & STF_RDONLY)
     error(NIL,"read only storage",NIL);
   ifn (NUMBERP(x))
     error(NIL,"not a number",x);
-  set = storage_type_setf[st->srg.type];
-  (*set)(st->srg.data, off, (flt)x->Number);
+  set = storage_type_setr[st->srg.type];
+  (*set)(st->srg.data, off, x->Number);
 }
 
 
@@ -647,8 +709,8 @@ DX( name3(xnew_,Prefix,_storage) )  	 				     \
 Generic_new_storage(AT, AT, at*)
 Generic_new_storage(P, N, char)
 Generic_new_storage(F, N, flt)
-Generic_new_storage(D, D, real)
-Generic_new_storage(I32, I32, long)
+Generic_new_storage(D, N, real)
+Generic_new_storage(I32, N, long)
 Generic_new_storage(I16, N, short)
 Generic_new_storage(I8, N, char)
 Generic_new_storage(U8, N, unsigned char)
