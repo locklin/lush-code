@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.6 2002-05-03 18:46:36 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.7 2002-07-10 15:41:42 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -81,6 +81,7 @@ fi
 AC_SUBST(X_LIBS)
 AC_SUBST(X_YES)
 
+AC_PATH_PTHREAD
 
 
 # ----------------------------------------
