@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: calls.c,v 1.3 2002-06-27 20:49:57 leonb Exp $
+ * $Id: calls.c,v 1.4 2002-08-13 16:21:18 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -316,32 +316,32 @@ DX(xmodi)
 
 DX(xbitand)
 {
-  int x1, x2;
-  ARG_NUMBER(2);
+  int i;
+  int x = ~0;
   ALL_ARGS_EVAL;
-  x1 = AINTEGER(1);
-  x2 = AINTEGER(2);
-  return NEW_NUMBER(x1 & x2);
+  for (i=1; i<=arg_number; i++)
+    x &= AINTEGER(i);
+  return NEW_NUMBER(x);
 }
 
 DX(xbitor)
 {
-  int x1, x2;
-  ARG_NUMBER(2);
+  int i;
+  int x = 0;
   ALL_ARGS_EVAL;
-  x1 = AINTEGER(1);
-  x2 = AINTEGER(2);
-  return NEW_NUMBER(x1 | x2);
+  for (i=1; i<=arg_number; i++)
+    x |= AINTEGER(i);
+  return NEW_NUMBER(x);
 }
 
 DX(xbitxor)
 {
-  int x1, x2;
-  ARG_NUMBER(2);
+  int i;
+  int x = 0;
   ALL_ARGS_EVAL;
-  x1 = AINTEGER(1);
-  x2 = AINTEGER(2);
-  return NEW_NUMBER(x1 ^ x2);
+  for (i=1; i<=arg_number; i++)
+    x ^= AINTEGER(i);
+  return NEW_NUMBER(x);
 }
 
 DX(xbitshl)
