@@ -30,40 +30,283 @@ Numerous examples of compiled functions with and without
 in-line C-code are available in the libraries (in directories
 lsh and packages). 
 
+#? ** Using libload and dhc-make.
+
+Lush contains powerful functions that implement
+capabilities similar to make.  Properly using these
+functions ensures that the Lush interpreter contains
+the most recent version of all functions, and that
+all functions dependent on new versions are recompiled.
+
+Just follows the following four rules:
+.LI
+Every Lush file should use function <libload>
+to load all required files (i.e. files defining functions
+or classes required by this lush file).
+.LI
+The compilation of Lush function and classes should
+be performed by inserting one or several <dhc-make> 
+expressions at the end of the lush file that 
+defines them.
+.LI
+You should identify the main Lush file of your project,
+that is to say the file that directly or indirectly loads
+all the Lush files of your project.  This is usually the file
+with the higher level functions.  It is sometimes convenient
+to create a Lush file for the sole purpose of being
+the main Lush file.
+.LI
+When you want to load the most recent version of all 
+your project files, you just need to load the main Lush
+file using either <libload> or the macro-character <|^L|>.
+This will load all modified files, reload all files that depends
+on modified files, and recompile all functions and classes that
+need recompilation, either because they have been modified,
+or because they depend on modified classes or functions.
+.SEE (libload <libname> [<opt>])
+.SEE (dhc-make <fname> <fspec1>...<fspecN>)
 
 #? *** Compilation Functions
 
 #? ** High-Level Compilation Functions
 
-#? (dhc-make <fname> <f1> [<f2> ...[<fn>]])
-[under construction]
-This is the most comonly-used compilation function.
-The first argument is the name of a file in which
-the C code will be written. If this argument is nil,
-the C code will be written in <directory-of-current-file/C/current-file.c>
-where <current-file.lsh> is the file from which
-the dhc-make is loaded and <directory-of-current-file>
-is the directory in which it sits.
-Each of the following arguments (<f1>...<fn>) can be either 
-the name of a Lisp function to be compiled, or a list
-composed of a class name, and the methods of the class
-to be compiled.
+#? (dhc-make <fname> <fspec1>...<fspecN>)
+.TYPE DM
+.FILE lsh/compiler/dh-compile.lsh
+
+Function <dhc-make> controls the compilation of classes 
+and functions specified by the <fspecs> arguments.
+
+Although this function can be used from the command line, it 
+mostly is used within a Lush file to control the compilation of 
+classes and functions defined in this file.  We will assume now
+that <dhc-make> is invoked from a Lush file.
+
+The first argument <fname> is either the empty list or a string representing
+filenames of the C and object files output by the Lush compiler.  
+.LI
+Passing the empty list instructs <dhc-make> to generate a suitable
+filename derived from the name of the Lush file containing the <dhc-make>
+command.  Generated C files will be created in a subdirectory <"C">
+of the directory contaning the Lush file.  Generated object files
+will be created in a subdirectory of <"C"> whose platform dependent
+name is provided by expression <(getconf "host")>.
+.LI
+Passing a string specifies a particular base name.  Function <dhc-make> adds
+the suitable suffixes for C files or object files, replacing any other suffix
+possibly present in <fname>.  Argument <fname> may specify a directory for
+both the C and object files.  Otherwise the C and object files
+will be generated as explained above.
+.PP
+
+Each of the following arguments <fspec> is either a function name or a list
+composed of a class name and method names.   The following example, for
+instance, first compiles function <foo>, then compiles methods <rectangle> 
+and <area> of class <rectangle>, and finally compiles function <bar>.
+.VP
+        (dhc-make () 
+                  foo 
+                  (rectangle rectangle area)
+                  bar )
+.PP
+The order of the <fspec> arguments is important because no function, class or
+method can be compiled before compiling all functions, classes, or methods it
+references.  This order can be different from the function and class
+definition order in the Lush file.
+
+Before starting the compilation, function <dhc-make> tests 
+whether the target files already exist and are up-to-date:
+
+The C file will be generated if any of the 
+following conditions is true.
+.LI
+no such C file exists,
+.LI
+the Lush file is more recent than the existing C file,
+.LI
+the Lush file depends on another Lush file which is more recent than the
+existing C file.  These dependencies are those collected by 
+function <libload>.
+.PP
+The object file will be generated if any of the 
+following conditions is true:
+.LI
+no such object file exists,
+.LI 
+the C file is more recent than the existing object file,
+as happen, for instance, when the C file was regenerated 
+during this invocation of <dhc-make>.
+.PP
+Finally <dhc-make> performs a <mod-load> of the object file
+and checks that the compiled functions are now executable.
+It returns the name of the object file.
+
+.PP
+Note: Function <dhc-make> can also be invoked from the command line.  
+When this is the case, it always generates fresh C and object files, 
+and derives their names from the last <fspec> argument.
+
+#? (dhc-make-with-libs <fname> <libs> <fspec1>...<fspecN>)
+.TYPE DM
+.FILE lsh/compiler/dh-compile.lsh
+.SEE (dhc-make <fname> <fspec1>...<fspecN>)
+
+This function is similar to <dhc-make> but takes 
+an additional argument <libs> to handle cases where the compiled 
+functions depend on external C libraries. 
+This argument can take two values:
+.LI
+Argument <libs> may be a list of library names.
+Function <dhc-make-with-libs> works like <dhc-make> 
+but also loads all the specified libraries after
+loading the compiled functions, and before checking
+whether the compiled functions are executable.
+.LI
+Argument <libs> may be the symbol <t>.
+Function <dhc-make-with-libs> then works like <dhc-make> but does not cause an
+error if the compiled functions are not executable because they contain
+unresolved references.  The caller is expected to load additional modules
+using <mod-load> in order to satisfy these unresolved references.
+
+#? (dhc-make-with-c++ <fname> <libs> <fspec1>...<fspecN>)
+.TYPE DM
+.FILE lsh/compiler/dh-compile.lsh
+.SEE (dhc-make <fname> <fspec1>...<fspecN>)
+.SEE (cinline <format> <var1>...<varn>)
+
+This function is similar to <dhc-make-with-libs> but uses the C++ 
+compiler instead of the C compiler to generate the object file.
+This makes no difference except that one can use C++ constructs 
+when inlining C code with <cinline>.  This is particularly handy
+when interfacing external C++ libraries.
 
 
-#? (dhc-make-all <fname> <fsymblist> <liblist>)
-[under construction]
+#? (dhc-make-all <fname> <fspeclist> <libs>)
+.TYPE DE
+.FILE lsh/compiler/dh-compile.lsh
+.SEE (dhc-make <fname> <fspec1>...<fspecN>)
+.SEE (dhc-make-with-libs <fname> <libs> <fspec1>...<fspecN>)
 
-#? (dhc-make-with-libs <fname> <library-list> <f1> [<f2> ...[<fn>]])
-[under construction]
+This is the elementary function called by <dhc-make>, 
+<dhc-make-with-libs> and <dhc-make-with-c++>.
 
-#? (dhc-make-with-c++ <fname> <library-list> <f1> [<f2> ...[<fn>]])
-Same as <dhc-make-with-libs> but compiles with
-the c++ compiler instead of the c compiler.
-Note that the dynamic loader is not currently able
-to execute static initializers possibly present
-in the generated code.  The lush compiler obviously
-does not generate such construct.  On the other hand
-everything can happen when using inlined C++ code.
+Argument <fspeclist> is a list containing the <fspec1>...<fspecN> arguments of
+function <dhc-make>.  Argument <fname> is similar to the <fname> argument of
+functions <dhc-make> or <dhc-make-with-libs>.  Argument <libs> is similar to
+the <libs> argument of function <dhc-make-with-libs>.
+
+#? **  Customizing the Behavior of dhc-make.
+The following variables control the behavior of <dhc-make>.
+
+#? dhc-make-force
+.TYPE VAR
+.FILE lsh/compiler/dh-compile.lsh
+
+Setting this variable to a non null value
+forces the recompilation of all files,
+even when they have not been modified.
+
+The following example, for instance,
+forces the compilation of functions <foo> and <bar>.
+.VP
+(let ((dhc-make-force t))
+   (dhc-make () (foo bar)) )
+
+#? dhc-make-lushflags
+.TYPE VAR
+.FILE lsh/compiler/dh-compile.lsh
+
+This variable contains a string containing the 
+compilation flags for invoking the C or C++ compiler.  
+The following example, for instance,
+insert additional options <"-w -DMMX"> for the C compiler:
+.VP
+ (let ((dhc-make-lushflags (concat dhc-make-lushflags " -w -DMMX")))
+    (dhc-make () (foo bar)) )
+.PP
+The initial value is derived from the Makefile variable <LUSHFLAGS>.
+It might reference other predefined varibales prefixed with character <$>.
+These variables are expanded using <dhc-substitute-env>.
+
+#? dhc-make-command
+.TYPE VAR
+.FILE lsh/compiler/dh-compile.lsh
+
+This variable is a string containing the command for generating object files.  
+Variables prefixed with <$> will be expanded using <dhc-substitute-env>.
+Four additional variables are defined:
+.IP <$LUSHFLAGS>
+Compilation flags defined by <dhc-make-lushflags> 
+or by the optional argument of <dhc-make-o>.
+.IP <$INCS>
+The flag specifying the location of the Lush include files.
+.IP <$SRC>
+The pathname of the source file.
+.IP <$OBJ>
+The pathname of the object file.
+
+
+#? dhc-make-overrides
+.TYPE VAR
+.FILE lsh/compiler/dh-compile.lsh
+
+This variable contains an a-list of additional variable definitions
+for interpreting <dhc-make-lushflags> and <dhc-make-commands>.
+Definitions provided in <dhc-make-overrides> take precedence
+over the defaults provided by Lush.
+
+The following example, for instance, invokes
+the C++ compiler instead of the C compiler:
+.VP
+(let ((dhc-make-overrides 
+         (cons (cons "CC" (dhc-substitute-env "$CXX")) dhc-make-overrides) ))
+  (dhc-make () (foo bar)) )
+
+
+#? ** Querying File Dependencies
+
+The following functions can be used to determine
+whether <dhc-make> will invoke the compiler.
+
+#? (dhc-make-get-dependencies [<lushfile>])
+
+Returns the list of Lush files on which file <lushfile> is dependent.
+These are the files directly or indirectly loaded using <libload>.
+When argument <lushfile> is not provided, <file-being-loaded> 
+is assumed.
+
+#? (dhc-make-test <fname>)
+
+This function tests whether a subsequent invocation of <dhc-make> with the
+same <fname> argument needs to generate a new version of the C file.  When
+there is no need to generate a new C file, function <dhc-make-test> makes sure
+that the object file is up-to-date and returns the name of the object file.
+Otherwise it returns the empty list.
+
+This function is useful to avoid processing long files
+when we are only interested in precompiled functions.
+See <"packages/lapack/lapack-s.lsh"> for an example.
+
+
+#? ** Low-Level Compilation Functions.
+Most users will rarely use the functions described in this section,
+but they come in handy in certain cases.
+
+#? (dhc-make-o-filename <src>)
+Returns a suitable filename for the object file
+
+#? (dhc-generate-c <filename> '([<func1> [<funcn>]]))
+Translate lisp functions and classes <func1>...<funcn> to C code
+and produces a source file suitable for a file named <filename>.
+Argument <filename> should be provided without the ".c" suffix
+and must be a legal C identifier as it is used for the initialization
+function in the C code.
+
+#? (dhc-substitute-env <str> [<htable>])
+Returns a copy of string <str> after substituting all
+environment variables.  Substitution values are
+searched in <htable> when available, then passed
+to functions <getconf> and <getenv>.
 
 #? (dhc-make-c <fname> <fsymblist>)
 Compile functions or classes <fsymblist>
@@ -88,62 +331,6 @@ loaded from <snname> using <libload>.
 #? (dhc-make-o-maybe <src-file> [<obj-file> [<cflags>]])
 Same as <dhc-make-o> but only recompiles if
 source file is newer than object file
-
-#? dhc-make-force
-.TYPE VAR
-Setting this variable to a non null value
-forces the recompilation of all files,
-even when they have not been modified.
-
-
-
-#? ** Low-Level Compilation Functions
-Most users will rarely use the functions described in this section,
-but they come in handy in certain cases.
-
-
-#? dhc-make-command
-.TYPE VAR
-Compilation command used by dhc-make-o.
-Variables prefixed with <$> will be expanded using <dhc-substitute-env>.
-Four additional variables are defined:
-.IP <$LUSHFLAGS>
-Compilation flags defined by <dhc-make-lushflags> or by the 
-optional argument of <dhc-make-o>.
-.IP <$INCS>
- The flag specifying the location of the Lush include files.
-.IP <$SRC>
- The pathname of the source file.
-.IP <$OBJ>
- The pathname of the object file.
-
-#? dhc-make-lushflags
-.TYPE VAR
-Compilation flags used by <dhc-make-o>.
-This is similar to the variable LUSHFLAGS in the makefiles.
-Variables prefixed with <$> will be expanded using <dhc-substitute-env>.
-
-#? dhc-make-overrides
-.TYPE VAR
-This variable contains an a-list of variable
-definitions for overriding those usually 
-derived from <getconf> and <getenv>.
-
-#? (dhc-make-o-filename <src>)
-Returns a suitable filename for the object file
-
-#? (dhc-generate-c <filename> '([<func1> [<funcn>]]))
-Translate lisp functions and classes <func1>...<funcn> to C code
-and produces a source file suitable for a file named <filename>.
-Argument <filename> should be provided without the ".c" suffix
-and must be a legal C identifier as it is used for the initialization
-function in the C code.
-
-#? (dhc-substitute-env <str> [<htable>])
-Returns a copy of string <str> after substituting all
-environment variables.  Substitution values are
-searched in <htable> when available, then passed
-to functions <getconf> and <getenv>.
 
 
 #? *** Design Philosophy
@@ -263,6 +450,49 @@ Example:
 .P
 The C type of <myclass-pointer> will be <"struct CClass_myclass *">.
 
+#? ((-obj- (<class>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+being instances of the class <class>.
+
+#? ((-idx0- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx0 (scalars) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? ((-idx1- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx1 (vector) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? ((-idx2- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx2 (matrix) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? ((-idx3- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx3 (3-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? ((-idx4- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx4 (4-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? ((-idx5- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx5 (5-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? ((-idx6- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx6 (6-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? ((-idx7- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx7 (7-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
 
 
 #? ** Type Conversions
@@ -410,19 +640,23 @@ Same as <cpheader>, but inserts the lines
 after the Lush header files instead of before.
 
 #? (ccall <string>)
-call a C function.
+call a C function. This is somewhat obsolete.
+Most users will prefer the hash-brace construct.
 
 #? (cinline <format> <var1>...<varn>)
 Insert C code in the C file generated
-by the compiler.
-
+by the compiler. This is rarely used.
+Most users will prefer the hash-brace construct.
 
 
 #? ** Compiler Directives
 
 #? (ifcompiled <compiled-expr> <interpreted-expr>)
+This allows to execute different codes in interpreted
+mode and in compiled mode. 
 
 #? (ifdef <symb> <expr1> <expr2>)
+[under construction]
 
 #? #@<expr>
 .TYPE DMC
@@ -440,6 +674,7 @@ This will eventually become a tutorial on how to
 use the <pool> class defined in <libstd/dynamic.lsh>.
 The reference manual for <dynamic.lsh> is available 
 in the standard library section of this manual.
+.SEE Dynamic Allocation with Pools.
 
 #? *** Interfacing Existing C/C++/FORTRAN Libraries to Lush
 [under construction]
