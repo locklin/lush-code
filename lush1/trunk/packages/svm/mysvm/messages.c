@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: messages.c,v 1.1 2004-08-30 22:07:28 leonb Exp $
+ * $Id: messages.c,v 1.2 2004-08-30 23:24:30 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -103,6 +103,6 @@ mysvm_debug(const char *fmt, ...)
 void 
 mysvm_assertfail(const char *file,int line)
 {
-  mysvm_error("Assertion failed: %d:%d\n", file, line);
+  mysvm_error("Assertion failed: %s:%d\n", file, line);
 }
 

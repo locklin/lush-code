@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.h,v 1.1 2004-08-30 22:07:28 leonb Exp $
+ * $Id: vector.h,v 1.2 2004-08-30 23:24:30 leonb Exp $
  **********************************************************************/
 
 #ifndef VECTOR_H
@@ -55,8 +55,6 @@ mysvm_vector_t *mysvm_vector_create(int size);
 void mysvm_vector_destroy(mysvm_vector_t *v);
 
 double mysvm_vector_dot_product(mysvm_vector_t *v1, mysvm_vector_t *v2);
-
-double mysvm_vector_l2_distance(mysvm_vector_t *v1, mysvm_vector_t *v2);
 
 
 /* ------------------------------------- */
@@ -89,10 +87,6 @@ mysvm_sparsevector_t *mysvm_sparsevector_combine(mysvm_sparsevector_t *v1, doubl
 
 double mysvm_sparsevector_dot_product(mysvm_sparsevector_t *v1, 
 				      mysvm_sparsevector_t *v2);
-
-double mysvm_sparsevector_l2_distance(mysvm_sparsevector_t *v1, 
-				      mysvm_sparsevector_t *v2);
-
 
 #ifdef __cplusplus__
 }

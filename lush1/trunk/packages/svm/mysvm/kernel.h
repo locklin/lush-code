@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kernel.h,v 1.1 2004-08-30 22:07:28 leonb Exp $
+ * $Id: kernel.h,v 1.2 2004-08-30 23:24:30 leonb Exp $
  **********************************************************************/
 
 #ifndef KERNEL_H
@@ -69,7 +69,8 @@ typedef struct mysvm_vectorproblem_s
   int n;			/* dimension of examples */
   mysvm_vector_t **x;		/* x[0]...x[l-1] */
   double *y;			/* category */
-  double rbfgamma;		/* for rbf kernel only */
+  double *xnorm;		/* for rbf kernel: l2-norm of the x[i] */
+  double rbfgamma;		/* for rbf kernel: gamma */
 } mysvm_vectorproblem_t;
 
 
@@ -87,7 +88,8 @@ typedef struct mysvm_sparsevectorproblem_s
   int n;			/* dimension of examples */
   mysvm_sparsevector_t **x;	/* x[0]...x[l-1] */
   double *y;			/* category */
-  double rbfgamma;		/* for rbf kernel only */
+  double *xnorm;		/* for rbf kernel: l2-norm of the x[i] */
+  double rbfgamma;		/* for rbf kernel: gamma */
 } mysvm_sparsevectorproblem_t;
 
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.c,v 1.1 2004-08-30 22:07:28 leonb Exp $
+ * $Id: vector.c,v 1.2 2004-08-30 23:24:30 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -87,22 +87,6 @@ mysvm_vector_dot_product(mysvm_vector_t *v1, mysvm_vector_t *v2)
 }
 
 
-double 
-mysvm_vector_l2_distance(mysvm_vector_t *v1, mysvm_vector_t *v2)
-{
-  int i;
-  int n = min(v1->size, v2->size);
-  double sum = 0;
-  for (i=0; i<n; i++)
-    {
-      double dif = v1->data[i] - v2->data[i];
-      sum += dif * dif;
-    }
-  return sum;
-}
-
-
-
 
 /* ------------------------------------- */
 /* SPARSE VECTORS */
@@ -141,10 +125,10 @@ double
 mysvm_sparsevector_get(mysvm_sparsevector_t *v, int index)
 {
   mysvm_sparsevector_pair_t *p = v->pairs;
-  ASSERT(index>=0 && index<v->size);
+  ASSERT(index>=0);
   while (p && p->index < index)
     p = p->next;
-  if (p->index == index)
+  if (p && p->index == index)
     return p->data;
   return 0;
 }
@@ -179,7 +163,7 @@ mysvm_sparsevector_set(mysvm_sparsevector_t *v, int index, double data)
       while ( (p=*pp) && (p->index<index) )
 	pp = &(p->next);
       ASSERT(p);
-      if (p->index==index)
+      if (p && p->index == index)
 	{
 	  p->data = data;
 	  return;
@@ -258,27 +242,4 @@ mysvm_sparsevector_dot_product(mysvm_sparsevector_t *v1,
   return sum;
 }
 
-double 
-mysvm_sparsevector_l2_distance(mysvm_sparsevector_t *v1, 
-			       mysvm_sparsevector_t *v2)
-{
-  double sum = 0;
-  mysvm_sparsevector_pair_t *p1 = v1->pairs;
-  mysvm_sparsevector_pair_t *p2 = v2->pairs;
-  while (p1 && p2)
-    {
-      if (p1->index < p2->index)
-	p1 = p1->next;
-      else if (p1->index > p2->index)
-	p2 = p2->next;
-      else
-	{
-	  double dif = p1->data - p2->data;
-	  sum += dif * dif;
-	  p1 = p1->next;
-	  p2 = p2->next;
-	}
-    }
-  return sum;
-}
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kernel.c,v 1.1 2004-08-30 22:07:28 leonb Exp $
+ * $Id: kernel.c,v 1.2 2004-08-30 23:24:30 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -53,12 +53,12 @@ mysvm_vectorproblem_lin_kernel(int i, int j, void *problem)
 double 
 mysvm_vectorproblem_rbf_kernel(int i, int j, void *problem)
 {
-  double dist;
+  double d;
   mysvm_vectorproblem_t *p = problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
-  dist = mysvm_vector_l2_distance(p->x[i], p->x[j]);
-  return exp( - p->rbfgamma * dist );
+  d = mysvm_vector_dot_product(p->x[i], p->x[j]);
+  return exp( - p->rbfgamma * ( p->xnorm[i] + p->xnorm[j] - 2 * d ));
 }
 
 
@@ -75,11 +75,11 @@ mysvm_sparsevectorproblem_lin_kernel(int i, int j, void *problem)
 double 
 mysvm_sparsevectorproblem_rbf_kernel(int i, int j, void *problem)
 {
-  double dist;
+  double d;
   mysvm_sparsevectorproblem_t *p = problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
-  dist = mysvm_sparsevector_l2_distance(p->x[i], p->x[j]);
-  return exp( - p->rbfgamma * dist );
+  d = mysvm_sparsevector_dot_product(p->x[i], p->x[j]);
+  return exp( - p->rbfgamma * ( p->xnorm[i] + p->xnorm[j] - 2 * d ));
 }
 
