@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: symbol.c,v 1.6 2002-11-06 16:30:50 leonb Exp $
+ * $Id: symbol.c,v 1.7 2002-11-06 22:02:36 leonb Exp $
  **********************************************************************/
 
 
@@ -138,8 +138,49 @@ DX(xnamed)
 {
   ARG_NUMBER(1);
   ALL_ARGS_EVAL;
-  return new_symbol(ASTRING(1));
+  return named(ASTRING(1));
 }
+
+/*
+ * namedclean(s) applies standard name canonicalization
+ * (lowercase, some _ become -)
+ */
+
+at *
+namedclean(char *n)
+{
+  at *ans;
+  char *s, *d;
+  if (! (d = strdup(n)))
+    error(NIL,"Out of memory",NIL);
+  if (*d == '|')
+    {
+      for (s=d+1; *s; s++)
+        s[-1] = *s;
+      s[-1] = 0;
+      if (s>d+1 && s[-2] == '|')
+        s[-2] = 0;
+    }
+  else
+    {
+      for (s=d; *s; s++)
+        if (s>d && *s=='_')
+          *s = '-';
+        else
+          *s = tolower(*s);
+    }
+  ans = new_symbol(d);
+  free(d);
+  return ans;
+}
+
+DX(xnamedclean)
+{
+  ARG_NUMBER(1);
+  ALL_ARGS_EVAL;
+  return namedclean(ASTRING(1));
+}
+
 
 /*
  * nameof(p) returns the name of the SYMBOL p
@@ -158,11 +199,20 @@ nameof(at *p)
   return NIL;
 }
 
+DX(xnameof)
+{
+  char *s;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  if (! (s = nameof(APOINTER(1))))
+    error(NIL,"Not a symbol", APOINTER(1));
+  return new_string(s);
+}
 
-/*
- * (symblist) (oblist) Returns the sorted list of all the currently defined
- * symbols
+/*  (symblist) (oblist) 
+ *  Returns the sorted list of all the currently defined symbols 
  */
+
 at *
 symblist(void)
 {
@@ -669,7 +719,9 @@ init_symbol(void)
   class_define("SYMB",&symbol_class );
   symbol_class.dontdelete = TRUE;
 
+  dx_define("namedclean", xnamedclean);
   dx_define("named", xnamed);
+  dx_define("nameof", xnameof);
   dx_define("symblist", xsymblist);
   dx_define("oblist", xoblist);
   dx_define("set", xset);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.42 2002-08-27 21:44:43 leonb Exp $
+ * $Id: header.h,v 1.43 2002-11-06 22:02:09 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -408,6 +408,7 @@ struct symbol {			/* each symbol is an external AT which */
 
 TLAPI at *new_symbol(char *s);
 TLAPI at *named(char *s);
+TLAPI at *namedclean(char *s);
 TLAPI char *nameof(at *p);
 TLAPI void symbol_push (at *p, at *q);
 TLAPI void symbol_pop (at *p);
