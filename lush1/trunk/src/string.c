@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.21 2003-07-01 18:41:14 leonb Exp $
+ * $Id: string.c,v 1.22 2004-09-18 23:57:53 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -146,23 +146,23 @@ static char *
 string_name(at *p)
 {
   char *s, *ind, *name;
-  unsigned char c;
+  int c;
   
   s = ((struct string *) (p->Object))->start;
   name = string_buffer;
 
   *name++ = '\"';  /*"*/
-  while ((c = *s)) {
+  while ((c = *(unsigned char*)s)) {
     if (name<string_buffer+STRING_BUFFER-10) {
       if ((ind = strchr(special_string, c))) {
 	*name++ = '\\';
 	*name++ = aspect_string[ind - special_string];
-      } else if (isprint(toascii((unsigned char)c))) {
+      } else if (isascii(c) && isprint(c)) {
 	*name++ = c;
       } else if (c<=' ') {
 	*name++ = '\\';
 	*name++ = '^';
-	*name++ = c | 0x40;
+	*name++ = (char)(c | 0x40);
       } else {
 	*name++ = '\\';
 	*name++ = 'x';

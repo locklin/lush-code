@@ -24,44 +24,20 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: svqpsvm.lsh,v 1.7 2004-09-16 21:04:48 leonb Exp $
+;;; $Id: svqpsvm.lsh,v 1.8 2004-09-18 23:57:38 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 (libload "libidx/idx-macros")
 (libload "libidx/idx-ubyte")
-(libload "svqp")
-(libload "kernel")
+(libload "libc/make")
+(libload "svm/kernel")
 
 ;; ----------------------------------------
 
 #? *** SvqpSVM
-;; This is a simple SVM implemented with the SVQP optimizer.
-;; This is slower than LibSVM in general for several reasons:
-;; - kernel values are not cached
-;; - no shrinking
-;; However, conjugate gradient scales much better during
-;; the final training phases. Using SVQP becomes more effective
-;; when searching high accuracy solutions.
-
-(defclass SVMProgram QuadraticProgram
-  ((-idx1- (-int-)) x)
-  ((-obj- (SVMKernel)) kernel) )
-
-(defmethod SVMProgram SVMProgram(xx kk)
-  ((-idx1- (-int-)) xx)
-  ((-obj- (SVMKernel)) kk) 
-  (setq x xx)
-  (setq kernel kk)
-  (==> this QuadraticProgram (idx-dim xx 0)) )
-
-(defmethod SVMProgram compute-arow(i r)
-  ((-int-) i)
-  ((-idx1- (-double-)) r)
-  (setq i (x i))
-  (idx-bloop ((x1 x)(r1 r))
-    (r1 (==> kernel call i (x1))) )
-  () )
+;; This is a simple SVM implemented with the SVQP2 optimizer.
+;; SVQP2 is much faster than SVQP and slightly faster than LibSVM.
 
 (defclass SvqpSVM Object
   ;; data
@@ -71,18 +47,22 @@
   ;; result
   ((-idx1- (-double-)) alpha)
   ((-double-) b)
+  ((-double-) w)
   ((-int-) nsv)
   ;; parameters
-  ((-double-) epsgr)			;see svqp
-  ((-double-) epskt)			;see svqp
-  ((-double-) maxst)			;see svqp
-  ((-bool-)   sumflag)			;see svqp
+  ((-double-) epsgr)			;see svqp2.h
+  ((-double-) epskt)			;see svqp2.h
+  ((-double-) maxst)			;see svqp2.h
+  ((-bool-)   sumflag)			;see svqp2.h
   ((-double-) Cp)			;C for positive examples
   ((-double-) Cn)			;C for negative examples
-  ((-bool-)   verbose) 
-  ((-int-)    verbosity) )
+  ((-int-)    maxcachesize)		;see svqp2.h
+  ((-int-)    verbosity)		;see svqp2.h
+  ((-bool-)   verbose)			;flag
+  ;; stuff
+  ((-gptr-)   svqp) )
 
-(defmethod  SvqpSVM SvqpSVM(ik n)
+(defmethod SvqpSVM SvqpSVM(ik n)
   ((-obj- (SVMKernel)) ik)
   ((-int-) n)
   (setq kernel ik)
@@ -90,17 +70,25 @@
   (setq y (double-matrix n))
   (setq alpha (double-matrix n))
   (setq b 0)
+  (setq w 0)
   (setq nsv 0)
   (setq Cp 1)
   (setq Cn 1)
-  (setq verbose t)
+  (setq maxcachesize (* 200 1024 1024))
   (setq verbosity 1)
-  (setq epsgr 1e-8)
+  (setq verbose t)
+  (setq epsgr 1e-3)
   (setq epskt 1e-20)
   (setq maxst 1e+9)
   (setq sumflag t)
+  (setq svqp (gptr ()))
   () )
 
+(defmethod SvqpSVM -destructor()
+  #{ SVQP2 *svqp = (SVQP2*)$svqp; delete svqp; #}
+  (setq svqp (gptr ())) )
+
+  
 (defmethod SvqpSVM set-xy(lx ly)
   (let ((l1 (len lx))
         (l2 (len ly)) )
@@ -112,7 +100,11 @@
     (y () ly) )
   t )
 
-(defmethod SvqpSVM get-nSV()
+(defmethod SvqpSVM call(i j)
+  ((-int-) i j)
+  (==> kernel call (x i) (x j)) )
+
+(defmethod SvqpSVM get-nsv()
   (when (<= nsv 0)
     (error "Must call method 'run' first") )
   nsv )
@@ -161,50 +153,67 @@
 	(/ sf nf)
       (2/ (+ lb ub)) ) ) )
 
+
 (defmethod SvqpSVM run-with-alpha()
   (when (<> (idx-dim x 0) (idx-dim y 0))
     (error "Matrix x and y have different sizes") )
   (when (or (< Cn 0) (< Cp 0))
     (error "Negative Cp and/or Cn") )
-
   (let* ((n (idx-dim x 0))
-	 (pgm (new SVMProgram x kernel))
 	 (bv (double-matrix n))
 	 (cmin (double-matrix n))
 	 (cmax (double-matrix n)) )
-    ;; init
+    ((-int-) n)
+    (idx-d1resize alpha n)
+    (idx-clear alpha)
     (idx-bloop ((y1 y)(b1 bv)(cmin1 cmin)(cmax1 cmax))
       (let ((f (> (y1) 0)))
 	(b1      (if f +1 -1))
 	(cmin1   (if f 0 (- Cn)))
 	(cmax1   (if f Cp 0)) ) )
-    ;; prepare
-    (==> pgm set-x alpha)
-    (==> pgm set-b bv)
-    (==> pgm set-cmin cmin)
-    (==> pgm set-cmax cmax)
-    (==> pgm set-sumflag sumflag)
-    (==> pgm set-ktflag t)
-    (==> pgm set-maxst maxst)
-    (==> pgm set-epsgr epsgr)
-    (==> pgm set-epskt epskt)
-    (==> pgm set-verbosity (if verbose verbosity 0))
-    ;; run
-    (when (< (==> pgm run) 0)
-      (printf "svqp error: %s\n" (==> pgm get-error))
-      (error "svqp error") )
-    ;; retrieve nsv
-    (setq b 0)
-    (setq nsv 0)
-    (idx-copy (==> pgm get-x) alpha)
-    (idx-bloop ((alpha1 alpha))
-      (when (<> (alpha1) 0)
-	(incr nsv) ) )
-    ;; compute-b
-    (if sumflag
-	(==> this compute-b)
-      (setq b 0) )
-    nsv ) )
+    #{{
+       SVQP2 *svqp = (SVQP2*)$svqp; 
+       delete svqp;
+       svqp = new SVQP2($n);
+       $svqp = (gptr)svqp;
+       svqp->Afunction = unikernel;
+       svqp->Aclosure = $kernel;
+       svqp->sumflag = (($sumflag) ? true : false);
+       svqp->verbosity = (int)$(if verbose verbosity 0);
+       svqp->epskt = $epskt;
+       svqp->epsgr = $epsgr;
+       svqp->maxst = $maxst;
+       svqp->maxcachesize = $maxcachesize;
+    }#}
+    ;; Fill vectors
+    (cinline-idx1loop x "int" "p" "i"
+		      #{ ((SVQP2*)$svqp)->Aperm[i] = *p; #} )
+    (cinline-idx1loop alpha "double" "p" "i"
+		      #{ ((SVQP2*)$svqp)->x[i] = *p; #} )
+    (cinline-idx1loop bv "double" "p" "i"
+		      #{ ((SVQP2*)$svqp)->b[i] = *p; #} )
+    (cinline-idx1loop cmin "double" "p" "i"
+		      #{ ((SVQP2*)$svqp)->cmin[i] = *p; #} )
+    (cinline-idx1loop cmax "double" "p" "i"
+		      #{ ((SVQP2*)$svqp)->cmax[i] = *p; #} ) 
+    () )
+  ;; Run
+  (let ((status (to-int #{ ((SVQP2*)$svqp)->run() #} )))
+    (when (>= status 0)
+      #{ SVQP2 *svqp = (SVQP2*)$svqp;
+         $b = - (svqp->gmin + svqp->gmax) / 2;
+         $w = svqp->w;   
+      #}
+      (cinline-idx1loop alpha "double" "p" "i"
+			#{ *p = ((SVQP2*)$svqp)->x[i]; #} )
+      (setq nsv 0)
+      (idx-bloop ((alpha1 alpha))
+	(when (<> (alpha1) 0)
+	  (incr nsv) ) ) )
+    ;; Cleanup
+    #{ SVQP2 *svqp = (SVQP2*)$svqp; delete svqp; #}
+    (setq svqp (gptr ()))
+    status ) )
 
 (defmethod SvqpSVM run()
   (idx-clear alpha)
@@ -248,8 +257,26 @@
   (==> this load-expansion lexp)
   (==> this run-with-alpha) )
 
+
 ;; ----------------------------------------
 
-(dhc-make ()
-	  (svmprogram svmprogram compute-arow)
-	  (svqpsvm svqpsvm get-nsv get-expansion compute-b run-with-alpha) )
+(let* ((cmd (regex-subst "\\$CC" "$CXX" dhc-make-command))
+       (dir (concat-fname (dirname file-being-loaded) "svqp"))
+       (lm (new lushmake dir)) )
+  (==> lm rule "svqp2.o" '("svqp2.cpp" "svqp2.h") cmd)
+  (==> lm make)
+  (==> lm load) )
+
+(let* ((dir (concat-fname (dirname file-being-loaded) "svqp"))
+       (dhc-make-lushflags (concat dhc-make-lushflags " -I" dir)) )
+  (dhc-make-with-c++ () () 
+      #{ #include "svqp2.h" 
+      #}
+      #{ static double unikernel(int i, int j, void *closure) {
+           CClass_svmkernel * k = (CClass_svmkernel*)(closure);
+           return (*k->Vtbl->M_call)(k, i, j); }
+      #}
+       (svqpsvm svqpsvm -destructor call
+		get-nsv get-expansion 
+		compute-b run-with-alpha ) ) )
+
