@@ -30,26 +30,27 @@ Numerous examples of compiled functions with and without
 in-line C-code are available in the libraries (in directories
 lsh and packages). 
 
-#? ** Using libload and dhc-make.
+#? *** Using libload and dhc-make.
 
-Lush contains powerful functions that implement
+Lush contains convenient functions that implement
 capabilities similar to make.  Properly using these
-functions ensures that the Lush interpreter contains
-the most recent version of all functions, and that
-all functions dependent on new versions are recompiled.
+functions ensures that the Lush interpreter loads
+the most recent version of the functions as necessary, 
+and that all functions are judiciously recompiled when
+functions they call have been redefined.
 
-Just follows the following four rules:
+Users shoudl just follow the following four rules:
 .LI
-Every Lush file should use function <libload>
+Every Lush file should use the function <libload>
 to load all required files (i.e. files defining functions
 or classes required by this lush file).
 .LI
 The compilation of Lush function and classes should
-be performed by inserting one or several <dhc-make> 
-expressions at the end of the lush file that 
-defines them.
+be performed by inserting one or several calls
+to <dhc-make> at the end of the lush file that 
+defines those functions and classes.
 .LI
-You should identify the main Lush file of your project,
+Users should identify the main Lush file of the project,
 that is to say the file that directly or indirectly loads
 all the Lush files of your project.  This is usually the file
 with the higher level functions.  It is sometimes convenient
@@ -428,14 +429,25 @@ cannot be determined without expansion.
 
 #? *** CLush-specific functions and constructs
 
-#? ** Type Declarations
+#? ** Numerical Type Declarations
 
 #? ((-double-) <var1> ... <varn>)
+declare double precision floating point variables.
+
 #? ((-float-) <var1> ... <varn>)
+declare single precision floating point variables.
+
 #? ((-int-) <var1> ... <varn>)
+declare integer variables (32 bits).
+
 #? ((-short-) <var1> ... <varn>)
+declare short  integer variables (16 bits).
+
 #? ((-byte-) <var1> ... <varn>)
+declare signed byte variables (8 bits).
+
 #? ((-ubyte-) <var1> ... <varn>)
+declare unsigned byte variables (8 bits).
 
 #? ((-gptr- [<spec>]) <var1> ... <varn>)
 This declares the symbols <var1>...<varn> as C-style pointers.
@@ -443,8 +455,8 @@ In the absence of a <spec> the pointers will be equivalent to
 universal pointers (<void *>). An optional string <spec> can
 be specified to explicitely declare the C type of the pointer.
 Examples:
-.PRE
-  ((-gptr- "int *") interger-pointer)
+.CODE
+  ((-gptr- "int *") integer-pointer)
   ((-gptr- "FILE *") file-pointer)
 
   (cpheader "<my_header_file.h>")
@@ -454,7 +466,7 @@ Argument <spec> may also be a list containing a Lisp
 class name. This will define the type of the variable as
 a pointer to the C version of that class.
 Example:
-.VP
+.CODE
   ((-gptr- (myclass)) myclass-pointer)
 .P
 The C type of <myclass-pointer> will be <"struct CClass_myclass *">.
@@ -503,6 +515,48 @@ This syntax declares the variables  <var1>...<varN> as
 idx7 (7-tensor) of type <type>, where <type> is one 
 of the Lush numerical types (-ubyte-, -double-, -float-, etc).
 
+#? ** Class Declaration and Compilation
+
+Classes can be compiled with some restrictions. In short:
+{<ul>
+ {<li> The types of all the slots of a compiled class must be declared.}
+ {<li> It is preferrable to include the constructor in the list
+       of methods being compiled.}
+ {<li> The constructor of a compiled class {<b> must} set initialize
+       all the slots with an object of the type declared in the class
+       definition.}
+ {<li> The parent class of a compiled class must be compiled
+       prior to the class}
+ {<li> Methods defined in a subclass that overload a method
+       of the parent class must have the {<b> same prototype}
+       as the method they overload (i.e. the same arguments
+       with the same type, the same return type, and the same 
+       temporary variables).}
+}
+
+Here is an example of compiled class declaration syntax
+(taken from <packages/gblearning/modules.lsh>):
+{<code>
+(defclass mle-cost sn-module
+  ((-obj- (logadd-layer)) logadder)
+  ((-obj- (idx1-ddstate)) logadded-dist)
+  ((-idx1- (-int-)) label2classindex))
+</code>}
+Essentially, the type of each slot must be declared 
+using the same syntax as parameters of a function.
+
+Compiling a class with <dhc-make> and its variants is done
+by passing a list whose first element is the class name
+and the remaining elements are the methods to be compiled.
+Here is an example:
+{<code>
+  (dhc-make ()
+    (sn-module)
+    (mle-cost mle-cost fprop bprop bbprop))
+</code>}
+It is not required to compile all the methods of a class.
+A compiled class can have a mixture of compiled and 
+non-compiled methods.
 
 #? ** Type Conversions
 Functions are provided to convert objects from one type to another.
@@ -539,23 +593,24 @@ Casts <arg> into a double precision number (deprecated name for to-double).
 
 #? (to-gptr <arg>)  
 Casts <arg> into a GPTR.
-.P
+
 In interpreted mode <to-gptr> simply returns a gptr containing
 the address the C object associated with the object passed as argument
 (which can be an index, storage, string, a compiled function, or any object).
-.P 
+
 This function may not be used to convert an integer (or
 other numerical types) to a gptr, but merely to obtain
 the address of an object.
-.P
+
 In compiled mode, it is useful to know that a gptr does not 
 carry enough information to allow the compiler to
 determine when the corresponding object must be released. 
 The following function is a sure looser:
-.VP
+{<code>
    (de never-do-this()
        (gptr (new myclass)) )
-.PP
+</code>}
+
 The compiler cannot understand that the object created by <new> is returned
 as a Gptr and may be used outside this function. The object is freed
 before returning, making the gptr useless. To prevent this, the object
@@ -566,21 +621,19 @@ should be allocated in a <pool> using <in-pool> from
 Casts <arg> into an object of class <class>.
 Argument <arg> must be a gptr or an object.
 Argument <class> is mandatory in compiled mode.
-.IP 
-When argument <arg> is an object, 
-this function checks that the object class
-is a subclass of <class> and returns the 
-unmodified object. 
-.IP
-When this function is called in interpreted mode with a gptr argument, the
-lisp-to-c interface retrieves and returns the lisp object associated with the
-C object pointed to by the GPTR.  It also checks that the object class is
-indeed a subclass of <class>.
-.IP
-When this function is called in compiled mode with a GPTR argument, the
-compiler converts the GPTR into a pointer to an object of the specified class.
-Class membership is checked at run time.
-
+{<ul>
+ {<li> When argument <arg> is an object, 
+  this function checks that the object class
+  is a subclass of <class> and returns the 
+  unmodified object.}
+ {<li> When this function is called in interpreted mode with a gptr argument, 
+  the lisp-to-c interface retrieves and returns the lisp object associated 
+  with the C object pointed to by the GPTR.  It also checks that the object 
+  class is indeed a subclass of <class>.}
+ {<li> When this function is called in compiled mode with a GPTR argument, the
+  compiler converts the GPTR into a pointer to an object of the specified 
+  class. Class membership is checked at run time.}
+}
 
 
 #? ** inline C code
@@ -594,41 +647,43 @@ The macro character pair <#{ c-code #}> allows easy embedding of C
 code inside a Lisp function. The embedded C code is delimited 
 by <#{> and <#}>. Functions containing hash-brace segments 
 cannot be executed by the interpreter and must be compiled.
-.P
+
 Any C code can be written within a hash-brace construct.
 Lisp expressions and variables can be evaluated and refered
 to in the Lisp code by preceding them with a dollar sign.
-.LI
-$<legal-c-identifier> refers to the lisp variable of the same name
-.LI
-${<legal-lisp-variable>} refers to the lisp variable (the braces
- are required if the lisp variable name is not a legal C name,
- e.g. if it contains dashes).
-.LI
-$(<lisp expression>) refers to the result returned be the lisp expression.
-.P
+{<ul>
+ {<li> <$legal-c-identifier> refers to the lisp variable of the same name}
+ {<li> <$legal-lisp-variable> refers to the lisp variable (the braces
+   are required if the lisp variable name is not a legal C name,
+   e.g. if it contains dashes).}
+ {<li> <($lisp expression)> refers to the result returned be the lisp 
+  expression.}
+}
+
 Examples:
-.PRE
+{<code>
  [under construction]
  [insert juicy hash-brace examples here]
-.P
+</code>}
 The hash-brace macro calls the lower-level compiler macro <cinline>.
-.P
+
 Example:
-.PRE
+{<code>
  (de add-to-integer( intg arg )
    ((-int-) intg arg)
    #{ $intg += $arg; #}
    intg )
-.P
+</code>}
+
 expands to:
-.PRE
+{<code>
  (de add-to-integer (intg arg)
    ((-int-) intg arg)
    (cinline " %s += %s; " intg arg)
    intg )
-.P
-.SEE (cinline <format> [<arg1> [<arg2> ... [<argn>]]])
+</code>}
+
+{<see> (cinline <format> [<arg1> [<arg2> ... [<argn>]]]) }
 
 
 #? * C Directives and Macros
@@ -638,9 +693,10 @@ This directive can be used to insert a line
 in the C file generated by the CLush compiler.
 This is primarily used to include header files
 or to define macros. Examples:
-.PRE
+{<code>
   (cpheader "#include <stdio.h>")
-.P
+</code>}
+
 The lines are inserted at the beginning of the
 C file, before all the Lush header files.
 
@@ -649,24 +705,25 @@ Same as <cpheader>, but inserts the lines
 after the Lush header files instead of before.
 
 #? (find-c-include <name>)
-.TYPE DE
-.FILE sysenv.lsh
+{<type> DE}
+{<location> sysenv.lsh}
 Returns the pathname of a C include file named <name>.
 Include files are searched in the directories
 specified by variable <c-include-path>
 which is initialized by <"lushenv.lsh">.
-.EX (find-c-include "stdio.h")
-.P
+{<ex> (find-c-include "stdio.h")}
+
 Here is an example of how to use <find-c-include> to 
 precompute an include file:
-.CODE
+{<code>
   (libload "libc/constants")
   (defconstant qqq (sprintf "#include \"%s\"" (find-c-include "stdio.h")))
   = "qqq"
   ? (de asd () (cpheader @qqq) #{ printf("asd\n") #} ())
   = asd
   ? (dhc-make "junk" asd)
-.P
+</code>}
+
 
 #? (ccall <string>)
 call a C function. This is somewhat obsolete.
@@ -688,13 +745,13 @@ mode and in compiled mode.
 [under construction]
 
 #? #@<expr>
-.TYPE DMC
+{<type> DMC}
 Expressions prefixed by #@ are not evaluated
 unless <dhc-debug-flag> is set to <t>.
 This can be used to insert debugging code.
 
 #? dhc-debug-flag
-.TYPE VAR
+{<type> VAR}
 Turns on execution of code prefixed with |#@|
 
 #? ** Dynamic Allocation in Compiled Code
@@ -777,7 +834,7 @@ with this object.
 You can redirect the output of this command using function <writing>.
 
 Example:
-.VP
+.CODE
 ? (lisp-c-map)
 = 12
 ? (lisp-c-map ())
