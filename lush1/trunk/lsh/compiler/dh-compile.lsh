@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.7 2002-07-20 22:03:27 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.8 2002-07-22 22:42:05 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -131,7 +131,6 @@
                            (list (cons funcname sym)))) ) ) ) )
       ;; CLASS
       ((classp func)
-       (printf "Parsing class %s ...\n" (car lname) (cdr lname))
        (setq treetype-list
              (cons (dhc-compile-class-t funcname cname func)
                    treetype-list ) ) )
@@ -410,8 +409,10 @@
 ;;; PARSING A CLASS
 ;;; ------------------------------------------------------------------------
 
-(de dhc-compile-class-t (fname cname source cls)
-    (let* ((method-list (cdr fname))
+(de dhc-compile-class-t (fname cname cls)
+    (let* ((dhc-debug-stack (cons `(defclass ,fname ...) dhc-debug-stack))
+           (slot-dhc-types ())
+           (method-list (cdr fname))
 	   (fname (car fname))
 	   (cname (car cname))
            (tslots (getp cls 'slots))
@@ -425,17 +426,17 @@
         (error 'dhc-compile-class-t "class has already been compiled" fname))
       (when (<> (length tslots) (length (slots cls)))
         (if (not tslots)
-            (error 'dhc-compile-class-t "class slots are not typed" fname)
-          (error 'dhc-compile-class-t "slots definition are garbled" fname) ) )
-      (if  (or (not (classinfo-t sup-cls))
-               (not (dhc-search-symtable (classname sup-cls) global-table)) )
+            (dhc-error "class slots are not typed" fname)
+          (dhc-error "slots definition are garbled" fname) ) )
+      (if  (and (not (classinfo-t sup-cls))
+                (not (dhc-search-symtable (classname sup-cls) global-table)) )
           (dhc-error "the superclass must be compiled first" sup-name))
       (setq sup-type (dhc-class-to-dhc-type sup-cls))
       ;; Slot types
       (each ((slot tslots))
         (if (and (listp slot) (listp (car slot)))
             (verify-type-decl-format (car slot))
-          (error 'dhc-compile-class-t "slots types are garbled" tslots)))
+          (dhc-error "slots types are garbled" tslots)))
       (each ((slot-decl tslots))
         (each ((slot (cdr slot-decl)))
           (setq slot-dhc-types
@@ -453,7 +454,7 @@
       (setq class-type (new dhc-type 'dht-class cname 
                             sup-type slot-dhc-types ()))
       (let ((sym (new dhc-symbol fname 0)))
-	(dhc-unify-types class-type :sym:type)
+	(setq :sym:type class-type)
 	(setq :sym:c-name cname)
 	(setq global-table (append global-table
 				   (list (cons fname sym)))))
@@ -461,8 +462,7 @@
       (each ((method method-list))
         (printf "Parsing method %l in class %l ...\n" method fname)
         (when (not (member method (methods cls)))
-          (error 'dhc-compile-class-t
-                 (sprintf "not a method of class %l" fname) method ) )
+          (dhc-error "unknown method for this class" method ) )
         
         (if (= method fname)
             ;; CONSTRUCTOR
@@ -481,12 +481,10 @@
               (let ((tnode ())
                     (methodname (dhc-lisp-to-c-name (pname method)))
                     (source (funcdef (check==> cls method))) )
-                (when (not (is-of-class funcdef |DE|))
-                  (error 'dhc-compile-class-t
-                         "Cannot compile method not defined with demethod"
-                         (list fname method) ) )
+                (when (<> (car source) 'lambda)
+                  (dhc-error "Cannot compile method not defined with demethod" method) )
                 (setq source `(lambda(this ,@(cadr source))
-                                ((-obj- (,fname)) this)
+                                (declare (-obj- (,fname)) this)
                                 ,@(dhc-pp-all (cddr source)) ))
                 (setq tnode (dhc-parse-expr-t source))
                 (setq :tnode:source source)
@@ -514,7 +512,7 @@
                 (slot-list (dhu-temps (dhc-obj-type-from-class cls))))
             (each ((slot slot-list))
               (let ((sym (new dhc-symbol (car slot) 0)))
-                (dhc-unify-types (new dhc-type 'dht-unk) :sym:type)
+                (dhc-unify-types (cdr slot) :sym:type)
                 (setq :sym:c-name 
                       (concat "L1_this->" 
                               (dhc-lisp-to-c-name (pname (car slot)))) )
@@ -524,12 +522,10 @@
             (let ((tnode ())
                   (methodname (dhc-lisp-to-c-name (pname method)))
                   (source (funcdef (check==> cls method))) )
-              (when (not (is-of-class funcdef |DE|))
-                (error 'dhc-compile-class-t
-                       "Cannot compile method not defined with demethod"
-                       (list fname method) ) )
+              (when (<> (car source) 'lambda)
+                (dhc-error "Cannot compile method not defined with demethod" method) )
               (setq source `(lambda(this ,@(cadr source))
-                              ((-obj- (,fname)) this)
+                              (declare (-obj- (,fname)) this)
                               ,@(dhc-pp-all (cddr source)) ))
               (setq tnode (dhc-parse-expr-t source))
               (setq :tnode:source source)
@@ -589,27 +585,29 @@
          (kcsupername ())
          (kcname (sprintf "Kc_%s_R%s" cname (dhu-hash class-dhc-type)))
          (vtname (sprintf "Vt_%s_R%s" cname (dhu-hash class-dhc-type))) )
-    
+    ;; find superclass record
     (let ((stype (dhu-type class-dhc-type)))
       (setq kcsupername 
-            (sprintf "Kc_%s_R%s" (dhu-name stype) (dhu-hash stype))) )
-    (dhc-add-c-externs 
-     (dhc-class-to-vtable-decl class-dhc-type))
+            (if (= (dhu-class stype) :object)
+                "Kc_object"
+              (sprintf "Kc_%s_R%s" (dhu-name stype) (dhu-hash stype))) ) )
     (dhc-add-c-externs 
      (dhc-class-to-struct-decl class-dhc-type))
     (dhc-add-c-externs 
+     (dhc-class-to-vtable-decl class-dhc-type))
+    (dhc-add-c-externs 
      (sprintf "extern struct VClass_%s %s;" cname vtname))
     (dhc-add-c-metaexterns 
-     (sprintf "extern struct dhclassdoc_t %s;" kcsupername))
+     (sprintf "extern dhclassdoc_t %s;" kcsupername))
     (dhc-add-c-metaexterns 
-     (sprintf "extern struct dhclassdoc_t %s;" kcname))
+     (sprintf "extern dhclassdoc_t %s;" kcname))
     (dhc-add-initialization
-     (list (sprintf " dhclass_define(%l, &%s);" fname kcname)) )
+     (list (sprintf " dhclass_define(%l, &%s);" (pname fname) kcname)) )
     ;; generate methods
     (each ((treetype (cadr treetype)))
       (let* ((method (car treetype))
              (method-cname (dhc-lisp-to-c-name (pname method)))
-             (method-fullname (concat "C_" method-cname "_C_" cname))
+             (method-fullname (concat method-cname "_C_" cname))
              (method-tn (cdr treetype)) )
         (printf "Generating C for method %l in class %l ...\n" method fname)
         (dhc-add-program
@@ -617,7 +615,7 @@
           (list  "" "/*" 
                  (sprintf " * METHOD FUNCTION %l (class %l)" method  fname) 
                  " */")
-          (dhc-generate-compiled-func method-fullname
+          (dhc-generate-compiled-func (concat "C_" method-fullname)
                                       :method-tn:source method-tn ) ) )
         (dhc-add-metaprogram
          (append 
@@ -632,15 +630,15 @@
                                         :method-tn:type) ) )
         (dhc-add-initialization
          (list (sprintf " dhmethod_define(&%s, %l, &K_%s_R%s);"
-                        kcname method method-fullname 
+                        kcname (pname method) method-fullname 
                         (dhu-hash :method-tn:type) )) ) ) )
     ;; generate vtable
     (dhc-add-program
      (append (list  "" "/*" (sprintf " * CLASS %l VTABLE" fname) " */")
-             (list  (sprintf "struct VClass_%s %s =" cname vtname) "{" )
+             (list  (sprintf "struct VClass_%s %s =" cname vtname) "{" "(dhclassdoc_t*)0," )
              (all ((method method-list))
                (let ((method-type (cdr method))
-                     (method-cname (dhc-lisp-to-c-name (pname method)))
+                     (method-cname (dhc-lisp-to-c-name (car method)))
                      (method-fullname ())
                      (clname ()))
                  ;; retrieve class name
@@ -651,31 +649,33 @@
                             "internal error : expecting class type") )
                    (setq clname (dhu-name cltype)) )
                  (setq method-fullname
-                       (sprintf "C_%s_%s" method-cname clname) )   
+                       (sprintf "C_%s_C_%s" method-cname clname) )   
                  (dhc-add-c-externs
                   (sprintf "extern %s;" 
                            (dhc-compose-prototype method-type 
                                                   method-fullname)) )
                  (sprintf "&%s," method-fullname) ) )
-             "};" ) )
+             (list "};") ) )
     ;; generate dhclassdoc
     (dhc-add-metaprogram
      (append (list  "" "/*" (sprintf " * CLASS %l DHCLASSDOC" fname) " */")
-             (list (sprintf "DHCLASSDOC(%s, %s, %s, %l, %s, 0) ="
-                            kcname kcsupername cname fname vtname )
+             (list (sprintf "DHCLASSDOC(%s, &%s, %s, %l, %s, 0) ="
+                            kcname kcsupername cname (pname fname) vtname )
                    "{" 
-                   (sprintf "DH_CLASS(%d, %s)"
+                   (sprintf "DH_CLASS(%d, %s),"
                             (length (dhu-temps class-dhc-type)) kcname) )
-             (all ((slot (dhu-temps class-dhc-type)))
-               (cons (sprintf "DH_NAME(%l,%s,%s)," 
-                              (car slot) cname (car slot) )
-                     (dhc-d-to-doc (==> (cadr slot) type-to-desc)) ) )
+             (flatten
+              (all ((slot (dhu-temps class-dhc-type)))
+                (let ((slot-cname (dhc-lisp-to-c-name (pname (car slot)))))
+                  (cons (sprintf "DH_NAME(%l,%s,%s)," 
+                                 slot-cname cname slot-cname )
+                        (dhc-d-to-doc (==> (cdr slot) type-to-desc)) ) ) ) )
              (list (sprintf "DH_END_CLASS,"))
              (all ((treetype (cadr treetype)))
                (let* ((method (car treetype))
                       (method-cname (dhc-lisp-to-c-name (pname method)))
                       (method-tn (cdr treetype)) )
-                 (sprintf "DH_METHOD(%l,&K_%s_C_%s_R%s),"
+                 (sprintf "DH_METHOD(%l,K_%s_C_%s_R%s),"
                           method-cname method-cname cname
                           (dhu-hash :method-tn:type) ) ) )
              (list "DH_NIL" "};") ) ) 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.6 2002-07-12 21:56:58 leonb Exp $
+ * $Id: dh.c,v 1.7 2002-07-22 22:42:11 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -275,17 +275,23 @@ make_dhclass(dhclassdoc_t *kdata)
   at **klwhere;
   class *cl;
   dhrecord *drec;
-  
+
   if (kdata && !kdata->lispdata.atclass)
     {
       /* Make sure superclass is okay */
       if (kdata->lispdata.ksuper)
         make_dhclass(kdata->lispdata.ksuper);
+      /* fixup classdoc pointer in vtable */
+      ((dhclassdoc_t**)(kdata->lispdata.vtable))[0] = kdata;
       /* update next record pointer in dhdoc */
       if (kdata->argdata->op != DHT_CLASS)
         error(NIL,"Malformed CLASSDOC: "
               "Expecting a class record", NIL);
       next_record(kdata->argdata);
+      for (drec = kdata->argdata->end;
+           drec && drec->op == DHT_METHOD;
+           drec = drec->end)
+        next_record(drec);
       /* create field lists */
       keylist = defaults = NIL;
       klwhere = &keylist;

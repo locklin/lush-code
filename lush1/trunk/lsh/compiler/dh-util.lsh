@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.16 2002-07-22 17:48:33 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.17 2002-07-22 22:42:05 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -448,8 +448,6 @@
            (cname (dhu-name ctype))
            (vtbl (sprintf "Vt_%s_R%s" cname (dhu-hash ctype))) )
       (dhc-add-c-externs
-       (dhc-class-to-vtable-decl (dhu-type type)) )
-      (dhc-add-c-externs
        (dhc-class-to-struct-decl (dhu-type type)) )
       (dhc-add-c-externs 
        (sprintf "extern struct VClass_%s %s;" cname vtbl) )
@@ -499,8 +497,6 @@
     (let* ((ctype (dhu-type type))
            (cname (dhu-name ctype))
            (vtbl (sprintf "Vt_%s_R%s" cname (dhu-hash ctype))) )
-      (dhc-add-c-externs
-       (dhc-class-to-vtable-decl (dhu-type type)) )
       (dhc-add-c-externs
        (dhc-class-to-struct-decl (dhu-type type)) )
       (dhc-add-c-externs 
@@ -634,10 +630,10 @@
 ;;; ------------------------------------------------------------------------
 
 
-#? dhc-source
+#? dhc-debug-stack
 ;;.TYPE VAR
 ;; Variable containing the source causing the error
-(defvar dhc-source ())
+(defvar dhc-debug-stack ())
 
 
 #? (dhc-error <string> [<arg>])
@@ -813,7 +809,7 @@
               (let* ((cltype (unode-val u-type))
                      (cl (unode-val :cltype:u-class)) )
                 (add (if cl (classname cl) (unode-val :cltype:u-name))) 
-                (add this) ) ) ) )
+                (add cltype) ) ) ) )
 	  ;; simple type
 	  ((member tclass dhc-simple-types)
 	   (when (and (unode-val u-name) (= tclass 'dht-gptr)) ;LYB
@@ -1431,7 +1427,7 @@
         (dhc-unify-t (cdr (car u1)) (cdr (car u2)))
         (setq u1 (cdr u1))
         (setq u2 (cdr u2)) )
-      ;; Remaining slots live as much as the object itself
+      ;; Remaining slots live as long as the object itself
       (while u2
         (==> (cdar u2) recurse 
              (lambda(x) (unode-unify :x:u-bump :t1:u-bump
@@ -1588,7 +1584,7 @@
         ;; store it into the global table
         (setq class-symbol (new dhc-symbol clname 0))
         (setq :class-symbol:type class-type)
-        (setq global-table (append global-table (list (cons fname class-symbol))))
+        (setq global-table (append global-table (list (cons clname class-symbol))))
         ;; add the methods 
         (unode-unify 
          :class-type:u-extra
@@ -1691,7 +1687,7 @@
 
 (de dhc-d-to-class-type (tclass arg1 &optional arg2)
   (cond
-   ((is-of-type arg2 dhc-type)
+   ((is-of-class arg2 dhc-type)
     arg2 )
    ((classp arg2)
     (dhc-class-to-dhc-type arg2) )
@@ -1730,7 +1726,6 @@
                                (dhu-name cltype) 
                                (dhu-hash cltype))) )
        (dhc-add-c-metaexterns (sprintf "extern dhclassdoc_t %s;" classdoc))
-       (dhc-add-c-externs (dhc-class-to-vtable-decl cltype))         
        (dhc-add-c-externs (dhc-class-to-struct-decl cltype)) 
        ;; What if this wasn't a class?
        (list (sprintf "DH_OBJ(%s)," classdoc)) ) )
@@ -2339,11 +2334,9 @@
 (setq dhc-declaration-mode ())
 
 (de dhc-parse-expr-t(source &optional ig)
-  
-  (setq dhc-debug-stack (cons source dhc-debug-stack))
-  
   ;; okay.
-  (let* ((ignore ig) ;; ignore is a global for the dhm-t
+  (let* ((dhc-debug-stack (cons source dhc-debug-stack))
+         (ignore ig) ;; ignore is a global for the dhm-t
          (tnout
           ;; Dispatch to specific parsing routines
           (cond
@@ -2416,7 +2409,6 @@
                 (dhc-error "Not a compilable function" (car source)) ) )))
            (t 
             (dhc-error "cannot compile this expression" source))) ) )
-    (setq dhc-debug-stack (cdr dhc-debug-stack))
     (setq :tnout:ignore ig)
     tnout ) )
 
@@ -2433,68 +2425,68 @@
   (dhc-parse-expr-t source ignore))
 
 (de dhc-parse-expr-c(source treetype retplace)
-  ;; sanity checks
-  (if (not (is-of-class treetype t-node))
+  (let ((dhc-debug-stack (cons source dhc-debug-stack)))
+    ;; sanity checks
+    (if (not (is-of-class treetype t-node))
+        (dhc-internal-error 
+         (sprintf "treetype must be a t-node: %l" treetype)))
+    (when (if (atomp source)
+              (or :treetype:tn-list
+                  (and (not :treetype:source)
+                       (not (==> :treetype:type is-a-bool))
+                       (not (==> :treetype:type is-a-nil))) )
+            (or (not (listp :treetype:tn-list))
+                (<> (length :treetype:tn-list) (length source)) ) )
       (dhc-internal-error 
-       (sprintf "treetype must be a t-node: %l" treetype)))
-  (when (if (atomp source)
-            (or :treetype:tn-list
-                (and (not :treetype:source)
-                     (not (==> :treetype:type is-a-bool))
-                     (not (==> :treetype:type is-a-nil))) )
-          (or (not (listp :treetype:tn-list))
-              (<> (length :treetype:tn-list) (length source)) ) )
-    (dhc-internal-error 
-     (sprintf "treetype structure does not match source: %l" treetype)) )
-
-  ;; generate code
-  (let ((returned-expr 
-         ;; Dispatch to specific parsing routines
-         (cond
-          ;; Case of an empty list
-          ((not source) "0")
-          ;; Case of a number
-          ((numberp source)
-           (dhc-parse-number-c source treetype retplace))
-          ;; Case of a constant matrix
-          ((matrixp source)
-           (dhc-parse-matrix-c source treetype retplace))
-          ;; Case of a string constant
-          ((stringp source)
-           (dhc-parse-string-c source treetype retplace))
-          ;; Case of a variable
-          ((symbolp source)
-           (if (<> source t)
-               (dhc-parse-variable-c source treetype retplace)
-             "1"))
-          ;; Other
-          ((consp source)
-           (let ((funct (car source))
-                 (funct-t (car :treetype:tn-list)))
-             (cond
-              ;; Is that a DHM ?
-              ((and (not (dhc-search-symtable (car source) symbol-table))
-                    (==> :funct-t:type is-a-dhm))
-               (let ((dhm-running (car source))
-                     (dhm (get-dhm-c (car source))) )
-                 (when (not dhm)
-                   (error 'dhc-parse-expr-c "No dhm-c for function" (car source)) )
-                 (dhm source treetype retplace)))
-              ;; Is it an idx?
-              ((==> :funct-t:type is-an-idxptr)
-               (dhc-parse-idx-c source treetype retplace))
-              ;; is it a function or macro
-              ;; i.e.: "(idx-m2dotm2 a b c)"
-              ((==> :funct-t:type is-a-func)
-               (dhc-parse-dh-c source treetype retplace))
-              ;; Error
-              (t
-               (dhc-error "Not a compilable function" (car source)) ) ))))))
-    ;; If retplace is there, it is always used!      
-    (if (not (and retplace (<> returned-expr retplace)))
-	returned-expr
-      (dhc-add-c-statements (sprintf "%s = %s;" retplace returned-expr))
-      retplace ) ) )
+       (sprintf "treetype structure does not match source: %l" treetype)) )
+    ;; generate code
+    (let ((returned-expr 
+           ;; Dispatch to specific parsing routines
+           (cond
+            ;; Case of an empty list
+            ((not source) "0")
+            ;; Case of a number
+            ((numberp source)
+             (dhc-parse-number-c source treetype retplace))
+            ;; Case of a constant matrix
+            ((matrixp source)
+             (dhc-parse-matrix-c source treetype retplace))
+            ;; Case of a string constant
+            ((stringp source)
+             (dhc-parse-string-c source treetype retplace))
+            ;; Case of a variable
+            ((symbolp source)
+             (if (<> source t)
+                 (dhc-parse-variable-c source treetype retplace)
+               "1"))
+            ;; Other
+            ((consp source)
+             (let ((funct (car source))
+                   (funct-t (car :treetype:tn-list)))
+               (cond
+                ;; Is that a DHM ?
+                ((and (not (dhc-search-symtable (car source) symbol-table))
+                      (==> :funct-t:type is-a-dhm))
+                 (let ((dhm-running (car source))
+                       (dhm (get-dhm-c (car source))) )
+                   (when (not dhm)
+                     (error 'dhc-parse-expr-c "No dhm-c for function" (car source)) )
+                   (dhm source treetype retplace)))
+                ;; Is it an idx?
+                ((==> :funct-t:type is-an-idxptr)
+                 (dhc-parse-idx-c source treetype retplace))
+                ;; is it a function or macro
+                ;; i.e.: "(idx-m2dotm2 a b c)"
+                ((==> :funct-t:type is-a-func)
+                 (dhc-parse-dh-c source treetype retplace))
+                ;; Error
+                (t
+                 (dhc-error "Not a compilable function" (car source)) ) ))))))
+      ;; If retplace is there, it is always used!      
+      (if (not (and retplace (<> returned-expr retplace)))
+          returned-expr
+        (dhc-add-c-statements (sprintf "%s = %s;" retplace returned-expr))
+        retplace ) ) ) )
 
 
 ;; Utility used for parsing args that will be used multiple times
