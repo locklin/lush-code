@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.8 2004-09-30 21:17:16 leonb Exp $
+ * $Id: svqp2.cpp,v 1.9 2004-10-05 07:28:02 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -207,6 +207,7 @@ SVQP2::cache_init()
 {
   cache_fini();
   curcachesize = 0;
+  hitcache = false;
   lru = new Arow(0);
   lru->next = lru;
   lru->prev = lru;
@@ -386,8 +387,8 @@ SVQP2::SVQP2(int n)
   pivot = imem + n;
   curcachesize = 0;
   maxcachesize = 256*1024*1024;
-  vdots = 0;
   hitcache = false;
+  vdots = 0;
   // init cache
   lru = 0;
   rows = new Arow* [n];
@@ -648,6 +649,7 @@ SVQP2::run(void)
   double gn = maxst;
   // prepare
   cache_init();
+  vdots = 0;
   iter = 0;
   l = 0;
   // loop
