@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.3 2002-05-06 18:44:50 leonb Exp $
+ * $Id: htable.c,v 1.4 2002-05-07 14:51:33 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -405,6 +405,8 @@ htable_set(at *ht, at *key, at *value)
     error(NIL,"not a hash table", ht);
   if ( value && (value->flags & X_ZOMBIE))
     value = NIL;
+  if ( key && (key->flags & X_ZOMBIE))
+    return;
   /* check hash table */
   htable = ht->Object;
   if (htable->rehashp)
@@ -419,15 +421,11 @@ htable_set(at *ht, at *key, at *value)
   np = &(htable->table[hash % htable->size]);
   while ((n = *np))
     {
-      /* zap entries with zombies */
+      /* schedule rehash when finding zombies */
       if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
            (n->value && (n->value->flags & X_ZOMBIE)) )
         {
-          *np = n->next;
-          UNLOCK(n->key);
-          UNLOCK(n->value);
-          deallocate(&alloc_hashelt,(void*)n);
-          htable->nelems -= 1;
+          htable->rehashp = TRUE;
           continue;
         }
       /* check */
@@ -499,15 +497,11 @@ htable_get(at *ht, at *key)
   np = &htable->table[hash % htable->size];
   while ((n = *np))
     {
-      /* zap entries whose key is a zombie */
+      /* schedule rehash when finding zombies */
       if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
            (n->value && (n->value->flags & X_ZOMBIE)) )
         {
-          *np = n->next;
-          UNLOCK(n->key);
-          UNLOCK(n->value);
-          deallocate(&alloc_hashelt,(void*)n);
-          htable->nelems -= 1;
+          htable->rehashp = TRUE;
           continue;
         }
       /* check */
