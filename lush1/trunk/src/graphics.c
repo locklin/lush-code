@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.14 2005-02-08 16:45:21 leonb Exp $
+ * $Id: graphics.c,v 1.15 2005-02-08 18:02:35 leonb Exp $
  **********************************************************************/
 
 
@@ -49,10 +49,10 @@ window_dispose(at *p)
     unprotect(p);
   UNLOCK(win->eventhandler);
   win->eventhandler = NIL;
-  if (win->gdriver->close)
-    (*win->gdriver->close) (win);
   UNLOCK(win->driverdata);
   win->driverdata = NIL;
+  if (win->gdriver->close)
+    (*win->gdriver->close) (win);
   win->used = 0;
 }
 
