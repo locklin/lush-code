@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.50 2003-03-20 21:02:07 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.51 2003-09-02 17:57:12 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -87,13 +87,16 @@
          (tmpnames-seed 0)
          (static-counter 0)
          (dhc-debug-stack ())
+         (fsymb-special '(progn cinline))
          (lname-list (all ((x fsymb-list))
-                       (if (consp x) (mapcar nameof x) (nameof x))))
+                       (cond ((not (consp x)) (nameof x))
+                             ((not (member (car x) fsymb-special)) (mapcar nameof x))) ))
          (cname-list (all ((x lname-list))
-                       (if (consp x) (mapcar dhc-lisp-to-c-name x)
-                         (dhc-lisp-to-c-name x))))
+                       (when x (if (consp x) (mapcar dhc-lisp-to-c-name x)
+                                 (dhc-lisp-to-c-name x) )) ))
          (func-list  (all ((x fsymb-list))
-                       (if (consp x) (eval `:,(car x)) (eval `:,x))) )
+                       (when x (if (consp x) (eval `:,(car x)) 
+                                 (eval `:,x) )) ))
          (treetype-list ())
          (source-list ())
          (symbol-table ())          ;; local symbol table
@@ -107,6 +110,9 @@
      (when (not func)
        (error 'dhc-generate-c "Symbol is undefined" funcname))
      (cond 
+      ;; CINLINE
+      ((and (consp funcname) (member (car funcname) fsymb-special))
+       (setq treetype-list (cons () treetype-list)) )
       ;; FUNCTION
       ((functionp func)
        (when (and (is-of-class func |DH|)
@@ -144,6 +150,16 @@
 	  (func func-list)
 	  (treetype (reverse treetype-list)))
      (cond
+      ;; CINLINE
+      ((and (consp funcname) (member (car funcname) fsymb-special))
+       (each ((l (if (= (car funcname) 'progn) (cdr funcname) (list funcname))))
+         (cond
+          ((<> (car l) 'cinline)
+           (error 'dhc-generate-c "Illegal dhc-make argument" l) )
+          ((cddr l)
+           (error 'dhc-generate-c "Illegal '$' in dhc-make c-macro" (cddr l)) )
+          (t
+           (dhc-add-program (cadr l)) ) ) ) )
       ;; FUNCTION
       ((functionp func)
        (when (is-of-class func |DH|)
@@ -559,7 +575,7 @@
                     (when (<> (length (dhu-temps sup-class-meth))
                               (length (dhu-temps :tnode:type)))
                       (printf "\n*** compiler: A superclass defines method <%l> with a" method)
-                      (dhc-error "different number of hidden arguments for bumped temporaries.\n") )
+                      (dhc-error "different number of hidden arguments.\n") )
                     (each ((temp-sup (cdr (dhu-temps sup-class-meth)))
                            (temp-sub (cdr (dhu-temps :tnode:type))))
                       (let ((tsup (==> temp-sup copy))
@@ -1023,8 +1039,9 @@
     (each ((symb fsymblist))
       (when (not (or (symbolp symb)
                      (and (consp symb) (symbolp (car symb))
-                          (classp (eval `:,(car symb))) ) ) )
-        (error 'dhc-make-c "Not a symbol or a class list" symb) ) )
+                          (or (classp (eval `:,(car symb)))  
+                              (member (car symb) '(cinline cheader cpheader progn)) ) ) ))
+        (error 'dhc-make-c "Illegal argument" symb) ) )
     (setq strlist 
           (dhc-generate-c (or fname "stdout") fsymblist))
     (writing (if (and (stringp indent) (<> indent ""))
