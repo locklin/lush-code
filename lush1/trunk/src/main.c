@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.2 2003-01-10 21:40:27 leonb Exp $
+ * $Id: main.c,v 1.3 2003-01-10 22:32:50 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -55,7 +55,7 @@ main(int argc, char **argv)
               "   Copyright (C) 1991-2001 AT&T Corp.\n"
               "This program is free software; it is distributed under the terms\n"
               "of the GNU Public Licence (GPL) with ABSOLUTELY NO WARRANTY.\n"
-              "Type `(helptool)' for details.\n\n");
+              "Type `(helptool)' for details.\n");
     } 
   /* Start */
   FMODE_BINARY(stderr);

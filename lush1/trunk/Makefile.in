@@ -24,7 +24,7 @@
 #;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-#;;; $Id: Makefile.in,v 1.11 2002-10-10 16:34:44 leonb Exp $
+#;;; $Id: Makefile.in,v 1.12 2003-01-10 22:32:05 leonb Exp $
 #;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 @SET_MAKE@
@@ -34,6 +34,7 @@ srcdir = @srcdir@
 top_srcdir = @top_srcdir@
 top_builddir = .
 mybindir = ./bin
+mysysdir = ./sys
 
 prefix = @prefix@
 exec_prefix = @exec_prefix@
@@ -43,6 +44,7 @@ libdir = @libdir@
 mandir = @mandir@
 
 MV = @MV@
+RM = @RM@
 LN_S = @LN_S@
 INSTALL = @INSTALL@
 
@@ -51,6 +53,13 @@ INSTALL = @INSTALL@
 SUBDIRS=src
 
 world: all
+
+all depend clean: FORCE
+	for d in ${SUBDIRS} ; \
+	  do ( cd $$d && ${MAKE} $@ ) || exit ; done
+	${MAKE} post-$@
+
+${mybindir}/lush: FORCE
 	@test -d ${mybindir} || mkdir ${mybindir}
 	@test -r ${mybindir}/lush~3 && \
 	  ${MV} ${mybindir}/lush~3 ${mybindir}/lush~4 || true
@@ -61,6 +70,13 @@ world: all
 	@test -r ${mybindir}/lush && \
           ${MV} ${mybindir}/lush ${mybindir}/lush~1 || true
 	${INSTALL} -m 755 src/lush ${mybindir}
+
+${mysysdir}/stdenv.dump: FORCE
+	${mybindir}/lush @sysenv stdenv -- ${mysysdir}/stdenv.dump
+
+dump: ${mysysdir}/stdenv.dump 
+
+post-all: ${mybindir}/lush ${mysysdir}/stdenv.dump
 	@echo "-------------------------------------------------------"
 	@echo "Congratulations: the compilation was successful!"
 	@echo ""
@@ -72,9 +88,11 @@ world: all
 	@echo "system wide installation by typing 'make install'"
 	@echo "-------------------------------------------------------"
 
-all depend clean: FORCE
-	for d in ${SUBDIRS} ; \
-	  do ( cd $$d && ${MAKE} $@ ) || exit ; done
+post-depend:
+	@echo Done.
+
+post-clean:
+	-${RM} 2>/dev/null ${mysysdir}/stdenv.dump
 
 
 INSTALLDIRS =  etc include src sys lsh packages
@@ -104,7 +122,7 @@ install-sub: FORCE
 install-nolink: install-sub
 	@echo "-- Install done."
 
-install: install-sub
+install: all install-sub
 	-@if test ${bindir} != /usr/bin ; then \
 	    echo "-- Trying to setup a link in the standard lush location." ; \
 	    echo "-- You could have avoided this step with 'make install-nolink'." ; \

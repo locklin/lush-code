@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.18 2003-01-10 21:40:27 leonb Exp $
+ * $Id: toplevel.c,v 1.19 2003-01-10 22:32:51 leonb Exp $
  **********************************************************************/
 
 
@@ -274,8 +274,8 @@ start_lisp(int argc, char **argv, int quietflag)
 	  error_doc.ready_to_an_error = FALSE;
           if (! quiet)
             {
-              FMODE_TEXT(stderr);
-              fprintf(stderr,"... loading dump file \"%s\".\n",r);
+              FMODE_TEXT(stdout);
+              fprintf(stdout,"+[%s]\n",r);
               FMODE_BINARY(stderr);
             }
 	  undump(r);
@@ -286,8 +286,8 @@ start_lisp(int argc, char **argv, int quietflag)
 	  error_doc.ready_to_an_error = TRUE;
           if (! quiet) 
             {
-              FMODE_TEXT(stderr);
-              fprintf(stderr,"... loading startup file \"%s\".\n",r);
+              FMODE_TEXT(stdout);
+              fprintf(stdout,"+[%s]\n",r);
               FMODE_BINARY(stderr);
             }
 	  toplevel(r, NIL, NIL);
