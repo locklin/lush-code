@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.56 2004-01-19 18:48:41 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.57 2004-04-14 14:27:52 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -825,6 +825,21 @@
     ;; Reconstruct
     (apply concat (reverse r)) ) )
 
+#? (dhc-generate-include-flags [<includepath>])
+;; Generate include flags for the compilation command
+;; taking into account all the directories specified
+;; in list <includepath>.  This list defaults to the 
+;; value of variable <c-include-path>.
+(de dhc-generate-include-flags(&optional include-path)
+  (let ((dirs (list (concat-fname lushdir "include")))
+	(stddirs (list "/usr/include" "/usr/local/include")) 
+	(flags ()) )
+    (each ((d (or include-path c-include-path)))
+      (when (and (dirp d) (not (member d dirs)) (not (member d stddirs)))
+	(setq dirs (cons d dirs)) ) )
+    (each ((d dirs))
+      (setq flags (cons "-I" (cons d (when flags (cons " " flags))))) )
+    (apply concat flags) ) )
 
 #? varlushdir
 ;;.TYPE VAR
@@ -930,13 +945,18 @@
 ;;  optional argument of <dhc-make-o>.
 ;;.IP <$LUSHDIR>
 ;;  The lush main directory.
+;;.IP <$INCS>
+;;  Flags specifying all the include directories specified by
+;;  variable <c-include-path>. With this option, the C compiler
+;;  can locate all include files that can be located using 
+;;  function <find-c-include>.
 ;;.IP <$SRC>
 ;;  The pathname of the source file.
 ;;.IP <$OBJ>
 ;;  The pathname of the object file.
 (when (not (stringp dhc-make-command))
   (defvar dhc-make-command
-    "$CC $DEFS $LUSHFLAGS -I$LUSHDIR/include -c $SRC -o $OBJ" ) )
+    "$CC $DEFS $LUSHFLAGS $INCS -c $SRC -o $OBJ" ) )
 
 
 #? dhc-make-overrides
@@ -985,13 +1005,14 @@
     (setq obj (dhc-make-o-filename src)) )
   (let ((cmd ()) (vars (htable)))
     ;; Define additional variables.
-    (each (((var . def) dhc-make-overrides)) (vars var def))
     (setq lushflags (or lushflags dhc-make-lushflags))
     (vars "LUSHFLAGS" (dhc-substitute-env lushflags vars))
+    (vars "INCS" (dhc-generate-include-flags))
+    (each (((var . def) dhc-make-overrides)) (vars var def))
     (vars "SRC" (dhc-substitute-env src vars))
     (vars "OBJ" (dhc-substitute-env obj vars))
+    ;; Substitute and execute.
     (setq cmd (dhc-substitute-env dhc-make-command vars))
-    ;; Print and execute.
     (printf "%s\n" cmd)
     (let ((retcode (sys cmd)))
       (when (<> retcode 0)
