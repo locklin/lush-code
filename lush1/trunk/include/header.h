@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.16 2002-05-06 20:09:39 leonb Exp $
+ * $Id: header.h,v 1.17 2002-05-06 21:29:07 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -48,7 +48,7 @@ extern "C" {
 
 /* VERSION.H --------------------------------------------------- */
 
-#define TLOPEN_MAJOR  31
+#define TLOPEN_MAJOR  40
 #define TLOPEN_MINOR  10
 
 
@@ -735,6 +735,8 @@ TLAPI void dx_define(char *name, at *(*addr) (int, at **));
 TLAPI void dy_define(char *name, at *(*addr) (at *));
 
 LUSHAPI at *find_primitive(at *module, at *name);
+LUSHAPI at *module_load(char *filename);
+LUSHAPI void module_unload(at *atmodule);
 
 
 /* DATE.H ----------------------------------------------------- */
