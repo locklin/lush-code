@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-macro.lsh,v 1.2 2002-07-19 03:29:19 leonb Exp $
+;;; $Id: dh-macro.lsh,v 1.3 2002-07-19 21:45:07 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -34,26 +34,6 @@
 ;;;                  D   H   M       S   E   C   T   I   O  N
 ;;; ------------------------------------------------------------------------
 ;;; ------------------------------------------------------------------------
-
-;; Table of content
-;;     dhm for type declaration and conversions
-;;     dhm for parsing special structures (progn print error setq for ...)
-;;     dhm for parsing tests
-;;     dhm for parsing conditional structures
-;;     dhm for parsing numbers
-;;     dhm for changing dimensions on idx(s)
-;;     dhm for parsing matrices
-;;     dhm for parsing let and let*
-;;     dhm for parsing idx loops
-;;     dhm for parsing special idx operation (unfold select ...)
-;;     dhm for parsing sn2 operation (m*m m+m ...)
-;;     dhm for parsing 'ma' operation (maclear macopy ...)
-;;     dhm for parsing printf
-;;     dhm for parsing misc sn3.1 stuff
-;;     dhm for parsing string ops
-;;     dhm for parsing object ops
-;;     dhm for parsing list ops
-;;     dhm for parsing graphics ops
 
 
 (libload "dh-util")
@@ -66,87 +46,94 @@
 
 (when dhc-debug-flag
   (when (is-of-class |*PROPERTIES| |HTABLE|)
-    (|*PROPERTIES| 'dhm-t ())
-    (|*PROPERTIES| 'dhm-c ())
-    (|*PROPERTIES| 'dhm-p ()) ) )
+    (let ((lambda-t (get-dhm-t lambda))
+          (lambda-c (get-dhm-c lambda)) )
+      (|*PROPERTIES| 'dhm-t ())
+      (|*PROPERTIES| 'dhm-c ())
+      (|*PROPERTIES| 'dhm-p ()) 
+      (putp lambda 'dhm-t lambda-t)
+      (putp lambda 'dhm-c lambda-c) ) ) )
 
 
 ;;; ------------------------------------------------------------------------
 ;;; DHM FOR TYPE DECLARATIONS AND CONVERSIONS
 ;;; ------------------------------------------------------------------------
 
+(defvar dhc-type-to-dht-alist
+  (append (mapfor (i 0 15)
+            (list (eval `:,(named (sprintf "-idx%d-" i))) 'dht-idx i) )
+          (list (list -bool-   'dht-bool)
+                (list -ubyte-  'dht-ubyte)
+                (list -byte-   'dht-byte)
+                (list -int-    'dht-int)
+                (list -short-  'dht-short)
+                (list -flt-    'dht-flt)
+                (list -real-   'dht-real)  
+                (list -str-    'dht-str)
+                (list -obj-    'dht-obj)
+                (list -list-   'dht-list)
+                (list -gptr-   'dht-gptr) ) ) )
 
 (de dhc-format-to-t-node(source)
-    
-    (let ((type-to-dhc-alist '((-bool-   . dht-bool)
-			       (-ubyte-  . dht-ubyte)  (-byte-   . dht-byte)
-                               (-int-    . dht-int)    (-short-  . dht-short)
-                               (-flt-    . dht-flt)    (-float-  . dht-flt)   
-                               (-real-   . dht-real)   (-double- . dht-real)
-                               (-str-    . dht-str)
-			       (-gptr-   . dht-gptr)  ))
-	  (resultant ()))
-      
-      (selectq (car source)
-        ;; SIMPLE
-        ((-bool- -int- -flt- -float- -real- -double- 
-          -str- -ord- -ubyte- -byte- -short-) 
-         (setq resultant
-               (new t-node () 
-                    (new dhc-type 
-                         (last (assoc (car source) type-to-dhc-alist)))
-                    (car source)))
-         (new t-node (list resultant)
-              (==> :resultant:type copy) ()))
-        ;; GPTR
-        (-gptr-
-         (setq resultant
-               (new t-node () 
-                    (new dhc-type 
-                         (last (assoc (car source) type-to-dhc-alist))
-                         (cond
-                          ((stringp (cadr source))
-                           (cadr source) )
-                          ((cadr source)
-                           (sprintf "struct CClass_%s*"
-                                    (dhc-lisp-to-c-name (pname (caadr source))) ) ) ) )
-                    (car source)))
-         (new t-node (list resultant)
-              (==> :resultant:type copy) ()))
-        ;; IDX
-        ((-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7- -idx8-
-	  -idx9- -idx10- -idx11- -idx12- -idx13- -idx14- -idx15-) 
-         (let* ((idxs  '(-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7- -idx8- 
-                         -idx9- -idx10- -idx11- -idx12- -idx13- -idx14- -idx15-))
-                (ndim (- (length idxs) (length (member (car source) idxs))))
-                (type-t-node (dhc-format-to-t-node (cadr source)))
-                (idx-type (new dhc-type 'dht-ptr
-                               (new dhc-type 'dht-idx ndim
-                                    (new dhc-type 'dht-srg
-                                         (==> :type-t-node:type copy))))))
-	  (new t-node (list (new t-node () (==> idx-type copy) (car source))
-			    type-t-node) (==> idx-type copy) ())))
-        ;; LIST
-        (-list-
-         (let* ((types-t-nodes (all ((arg (cdr source))) (dhc-format-to-t-node arg)))
-                (types (all ((tn types-t-nodes)) :tn:type))
-                (list-type (new dhc-type 'dht-list types)))
-           (new t-node (cons (new t-node () (==> list-type copy) (car source))
-                             types-t-nodes) (==> list-type copy) ())))
-        ;; OBJECT
-        (-obj-
-         (new t-node ()
-              (new dhc-type 'dht-ptr
-                   (dhc-obj-type-from-class 
-                    (dhc-lisp-to-c-name (pname (caadr source)))) source)))
-        ;; ERROR 
-        (t 
-         (dhc-error "declaration type not implemented" (car source)) ) ) ) )
+  (let* ((target (get-dhm-target source))
+         (dhassoc (assoc target dhc-type-to-dht-alist))
+         (dhtype (when dhassoc (cadr dhassoc)))
+         (resultant ()) )
+    (when (not dhtype)
+      (dhc-error "Unrecognized type specifier" source) )
+    (cond
+     ;; SIMPLE
+     ((member dhtype dhc-simple-types)
+      (setq resultant
+            (new t-node () 
+                 (new dhc-type dhtype)
+                 (car source)))
+      (new t-node (list resultant)
+           (==> :resultant:type copy) ()))
+     ;; GPTR
+     ((= dhtype 'dht-gptr)
+      (setq resultant
+            (new t-node () 
+                 (new dhc-type dhtype
+                      (cond
+                       ((stringp (cadr source))
+                        (cadr source) )
+                       ((cadr source)
+                        (sprintf "struct CClass_%s*"
+                                 (dhc-lisp-to-c-name (pname (caadr source))) ) ) ) )
+                 (car source)))
+      (new t-node (list resultant)
+           (==> :resultant:type copy) ()))
+     ;; IDX
+     ((= dhtype 'dht-idx)
+      (let* ((ndim (caddr dhassoc))
+             (type-t-node (dhc-format-to-t-node (cadr source)))
+             (idx-type (new dhc-type 'dht-ptr
+                            (new dhc-type 'dht-idx ndim
+                                 (new dhc-type 'dht-srg
+                                      (==> :type-t-node:type copy))))))
+        (new t-node (list (new t-node () (==> idx-type copy) (car source))
+                          type-t-node) (==> idx-type copy) ())))
+     ;; LIST
+     ((= dhtype 'dht-list)
+      (let* ((types-t-nodes (all ((arg (cdr source))) (dhc-format-to-t-node arg)))
+             (types (all ((tn types-t-nodes)) :tn:type))
+             (list-type (new dhc-type 'dht-list types)))
+        (new t-node (cons (new t-node () (==> list-type copy) (car source))
+                          types-t-nodes) (==> list-type copy) ())))
+     ;; OBJECT
+     ((= dhtype 'dht-obj)
+      (new t-node ()
+           (new dhc-type 'dht-ptr
+                (dhc-obj-type-from-class 
+                 (dhc-lisp-to-c-name (pname (caadr source)))) source)))
+     ;; ERROR 
+     (t 
+      (dhc-error "declaration type not implemented" (car source)) ) ) ) )
 
 
 (dhm-t declare(source)
-  (let ((fn (car source))
-        (format (cadr source))
+  (let ((format (cadr source))
         (args (cddr source))
         (args-t-nodes ())
         (format-t-node ())
@@ -164,7 +151,6 @@
                 (dhc-unify-types :rn:type (==> format-dhc-type copy))))
     (new t-node (cons format-t-node (all ((a :args-t-nodes:tn-list)) a))
          (==> format-dhc-type copy) source)))
-
 
 (dhm-c declare (source treetype retplace)
        (dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace) )
@@ -208,7 +194,7 @@
 (dhm-t to-real(source)
   (dhc-cast-t source 'dht-real (cons 'dht-dc dhc-number-types)))
 (dhm-c to-real(source treetype retplace)
-  (dhc-cast-c source 'real treetype retplace))
+  (dhc-cast-c source "real" treetype retplace))
 
 (dhm-t to-bool(source)
   (dhc-cast-t source 'dht-bool (cons 'dht-dc dhc-number-types)))
@@ -224,10 +210,10 @@
           "))" ) )
 
 (dhm-t to-gptr(source)
-  (dhc-cast-t source dht-gptr '(dht-gptr dht-ptr dht-nil dht-func dht-dc)) )
+  (dhc-cast-t source 'dht-gptr '(dht-gptr dht-ptr dht-nil dht-func dht-dc)) )
 
 (dhm-c to-gptr(source treetype retplace)
-  (let ((argtype (car :treetype:tn-list):type))
+  (let ((argtype :(cadr :treetype:tn-list):type))
     (if (<> (dhu-tclass argtype) 'dht-func)
         ;; simple cast
         (dhc-cast-c source "gptr" treetype retplace)
@@ -246,7 +232,6 @@
         (dhc-add-c-externs
          (sprintf "extern %s;" (dhc-compose-prototype argtype cfunc)) )
         (sprintf "(gptr)&(%s)" cfunc) ) ) ) )
-
 
 
 
@@ -392,7 +377,7 @@
         (setq ret (dhc-parse-expr-for-multi-use-c 
                    (last source) (last :treetype:tn-list) retplace))
         (dhc-print-c ret (last :treetype:tn-list)))
-      (when (= (car source) 'print)
+      (when (= (get-dhm-target source) :print)
         (dhc-add-c-statements "printf(\"\\n\");"))
       ret)))
 
@@ -486,6 +471,27 @@
      (dhc-add-c-statements "}")
      retplace )))
 
+(dhm-t-declare progn protect unprotect)
+
+(dhm-c protect(source treetype retplace)
+       (let ((dhc-unprotect ()))
+	 (dhc-parse-progn-c (cdr source)
+			    (cdr :treetype:tn-list) retplace)))
+
+(dhm-c unprotect(source treetype retplace)
+       (let ((dhc-unprotect t))
+	 (dhc-parse-progn-c (cdr source)
+			    (cdr :treetype:tn-list) retplace)))
+
+(dhm-t breakp(source)
+  (when (<> 1 (length source))
+    (dhc-error "breakp takes no arguments!"))
+  (new t-node () (new dhc-type 'dht_nil)))
+
+(dhm-c breakp(source treetype retplace)
+  (dhc-add-c-statements 
+   "if(break_attempt) run_time_error(\"breakp in compiled code\");")
+  "0")
 
 
 ;;; ------------------------------------------------------------------------
@@ -802,7 +808,6 @@
 ;; NOTE 'if' can produce empty 'then' and 'else' blocks if ignore is set
 ;; (progn (if t 1 2) 3)
 ;; this is true in sn3.0, if the user codes it...
-;; 
 (dhm-c if(source treetype retplace)
   (when (and ~retplace ~:treetype:ignore)
     (setq retplace (dhc-declare-temp-var :treetype:type)))
@@ -813,17 +818,16 @@
       (dhc-add-c-statements (sprintf "%s = 0;" retplace)))
     (let ((testc (dhc-parse-expr-c testso testtn () )))
       (dhc-add-c-statements (concat " if (" testc ") { " )))
-    (when (= (car source) 'if)
+    (when (= (get-dhm-target source) :if)
       (dhc-parse-expr-c (car bodyso) (car bodytn) retplace)
       (setq bodyso (cdr bodyso))
       (setq bodytn (cdr bodytn))
       (when (> (length bodyso) 0)
         (dhc-add-c-statements " } else { ")))
-	    (when (> (length bodyso) 0)
-              (dhc-parse-progn-c bodyso bodytn retplace))
-	    (dhc-add-c-statements " } ")
-            retplace))
-
+    (when (> (length bodyso) 0)
+      (dhc-parse-progn-c bodyso bodytn retplace))
+    (dhc-add-c-statements " } ")
+    retplace ) )
 
 (dhm-t when(source)
   (when (< (length source) 3)
@@ -907,6 +911,85 @@
                                            label1)
                                   "}"))
     ret))
+
+
+
+;;; ------------------------------------------------------------------------
+;;; DHM for parsing LET and LET* ...
+;;; ------------------------------------------------------------------------
+
+(de dhc-let-declare-var-t(dcl)
+    (when ~(and (consp dcl) (consp (cdr dcl)) (null (cddr dcl)))
+	  (dhc-error "Syntax error" dcl) )
+    (when ~(symbolp (car dcl))
+	  (dhc-error "Not a symbol" (car dcl)))
+    
+    (let* ((sym (new dhc-symbol (car dcl) lex-level))
+	   (ini (cadr dcl))
+	   (node (dhc-parse-expr-t ini))
+	   (symb-ini ())
+	   (treetype (new t-node
+			  (list (new t-node () :sym:type (car dcl) sym)
+				node)
+			  (new dhc-type 'dht-unk))))
+
+      (dhc-assign-unify :sym:type :node:type)
+      (setq :sym:type:u-access :node:type:u-access)
+
+      ;; For name replacement.  It set no-declare to the alternate name
+      (when (symbolp ini)
+	    (setq symb-ini (dhc-search-symtable ini symbol-table))
+	    (if symb-ini
+		(setq :sym:no-declare symb-ini)))
+
+      (setq bump-list (append bump-list (list sym)))
+      (setq :treetype:ignore t)
+      (setq new-symbol-table 
+	    (dhc-add-to-symtable new-symbol-table sym))
+      treetype))
+
+(dhm-t let(source)
+       (when ~(cddr source)
+	     (dhc-error "'let syntax error"))
+       (let ((tn ())
+	     (ret ()))
+	 (dhc-push-scope-t 
+	  (setq tn (new t-node (all ((dcl (cadr source)))
+                                 (dhc-let-declare-var-t dcl))
+			(new dhc-type 'dht-unk)))
+	  (setq symbol-table new-symbol-table)
+	  (setq ret (dhc-parse-progn-t (cddr source)))
+	  (setq :ret:tn-list (cons tn :ret:tn-list))
+	  ret)))
+
+(dhm-c let(source treetype retplace)
+  (dhc-push-scope-c 
+   treetype retplace
+   (all ((decl (cadr source)) 
+         (decl-type :(cadr :treetype:tn-list):tn-list))
+     (dhc-parse-expr-c (cadr decl) (cadr :decl-type:tn-list)
+                       :(car :decl-type:tn-list):symbol:c-name))
+   (dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace)))
+
+(dhm-t let*(source)
+  (when ~(cddr source)
+        (dhc-error "'let syntax error"))
+  (let ((tn ())
+        (ret ()))
+    (setq ret (dhc-push-scope-t 
+               (setq tn (new t-node 
+                             (all ((dcl (cadr source)))
+                               (prog1
+                                   (dhc-let-declare-var-t dcl)
+                                 (setq symbol-table new-symbol-table)))
+                             (new dhc-type 'dht-unk)))
+               (dhc-parse-progn-t (cddr source))))
+    (setq :ret:tn-list (cons tn :ret:tn-list))
+    ret))
+
+(dhm-c-declare let let*)
+
+
 
 
 
@@ -1034,12 +1117,11 @@
 	  "))"))
 
 (dhm-t max(source)
-       (when (<> 3 (length source)) (dhc-error "two arguments expected"))
-       (dhc-parse-replacement-source-t
-	source
-        `(let ((a ,(cadr source)) (b ,(caddr source)))
-	      (if (,(if (= (car source) 'max) '> '<) a b) a b))))
-
+  (when (<> 3 (length source)) (dhc-error "two arguments expected"))
+  (dhc-parse-replacement-source-t
+   source
+   `(let ((a ,(cadr source)) (b ,(caddr source)))
+      (if (,(if (= (get-dhm-target source) :max) '> '<) a b) a b))))
 
 (dhm-t-declare max min)
 
@@ -1048,37 +1130,32 @@
 ;;; -----------------
 
 
-
 ;; if argument is an int, but fop is defined, cast int to real and return real
 
 (de generate-monadic (symb fop iop)
-    (eval `(dhm-t ,symb (source)
-		  (if (<> (length source) 2)
-		      (dhc-error "one argument expected"))
-		  (let ((treetype (dhc-parse-expr-t (cadr source))))
-                    ,(if (and (null iop) fop)
-                         '(new t-node (list treetype) (new dhc-type 'dht-real))
-                       '(new t-node (list treetype) :treetype:type)))))
-    (eval `(dhm-c ,symb (source treetype retplace)
-		  (let* ((treetype (cadr :treetype:tn-list))
-			 (source (cadr source))
-			 (rettype :treetype:type)
-			 (rez (dhc-parse-expr-c source treetype ())))
-		    (cond
-			   ((and (==> rettype is-a-flt) ,fop)
-			    (sprintf ,fop rez))
-			   ((and (==> rettype is-a-real) ,fop)
-			    (sprintf ,fop rez))
-			   ((and (==> rettype is-an-int) ,iop)
-			    (sprintf ,iop rez))
-			   ((and (==> rettype is-an-int) ,fop ,(null iop))
-			    (sprintf ,fop rez))
-			   (t (dhc-error "no function for that type")))))))
+  (eval `(dhm-t ,symb (source)
+           (if (<> (length source) 2)
+               (dhc-error "one argument expected"))
+           (let ((treetype (dhc-parse-expr-t (cadr source))))
+             ,(if (and (null iop) fop)
+                  '(new t-node (list treetype) (new dhc-type 'dht-real))
+                '(new t-node (list treetype) :treetype:type)))))
+  (eval `(dhm-c ,symb (source treetype retplace)
+           (let* ((treetype (cadr :treetype:tn-list))
+                  (source (cadr source))
+                  (rettype :treetype:type)
+                  (rez (dhc-parse-expr-c source treetype ())))
+             (cond
+              ((and (==> rettype is-a-flt) ,fop)
+               (sprintf ,fop rez))
+              ((and (==> rettype is-a-real) ,fop)
+               (sprintf ,fop rez))
+              ((and (==> rettype is-an-int) ,iop)
+               (sprintf ,iop rez))
+              ((and (==> rettype is-an-int) ,fop ,(null iop))
+               (sprintf ,fop rez))
+              (t (dhc-error "no function for that type")))))))
 
-
-
-
-; (generate-monadic 'floor "Ffloor(%s)" "(%s)")
 (generate-monadic 'sgn "Fsgn(%s)" "((%s<0)?-1:1)")
 (generate-monadic 'abs "Fabs(%s)" "abs(%s)")
 (generate-monadic 'sqrt "Fsqrt(%s)" ())
@@ -1105,107 +1182,97 @@
 (generate-monadic 'qexpmx "FQexpmx(%s)" ())
 (generate-monadic 'qdexpmx "FQDexpmx(%s)" ())
 (generate-monadic 'qexpmx2 "FQexpmx2(%s)" ())
-
 (generate-monadic '1+ "(%s+1)" "(%s+1)")
 (generate-monadic '1- "(%s-1)" "(%s-1)")
 (generate-monadic '2/ "(%s/2)" "(%s/2)")
 (generate-monadic '2* "(%s*2)" "(%s*2)")
 
-
 (dhm-t seed(source)
-       (if (<> (length source) 2)
-           (dhc-error "one argument expected"))
-       (let ((treetype (dhc-parse-expr-t (cadr source))))
-         (new t-node (list treetype) (new dhc-type 'dht-real)) ))
+  (if (<> (length source) 2)
+      (dhc-error "one argument expected"))
+  (let ((treetype (dhc-parse-expr-t (cadr source))))
+    (new t-node (list treetype) (new dhc-type 'dht-real)) ))
 
 (dhm-c seed (source treetype retplace)
-       (let* ((treetype (cadr :treetype:tn-list))
-              (source (cadr source))
-              (rettype :treetype:type)
-              (rez (dhc-parse-expr-c source treetype ())) )
-         (dhc-add-c-statements
-          (sprintf "Fseed(%s);" rez))
-         "0"))
-
+  (let* ((treetype (cadr :treetype:tn-list))
+         (source (cadr source))
+         (rettype :treetype:type)
+         (rez (dhc-parse-expr-c source treetype ())) )
+    (dhc-add-c-statements
+     (sprintf "Fseed(%s);" rez))
+    "0"))
 
 (dhm-t gauss(source)
-       (when (> (length source) 3)
-             (dhc-error "Takes zero, one, or two arguments" (car source)))
-       (setq source (cdr source))
-       (let ((tns (all ((arg source)) (dhc-parse-expr-t arg))))
-            (each ((tn tns))
-                  (when ~(==> :tn:type is-a-number)
-                        (dhc-error "not a numerical expression")))
-            (new t-node tns (new dhc-type 'dht-flt)))
-)
+  (when (> (length source) 3)
+    (dhc-error "Takes zero, one, or two arguments" (car source)))
+  (setq source (cdr source))
+  (let ((tns (all ((arg source)) (dhc-parse-expr-t arg))))
+    (each ((tn tns))
+      (when ~(==> :tn:type is-a-number)
+            (dhc-error "not a numerical expression")))
+    (new t-node tns (new dhc-type 'dht-flt))) )
 
 (dhm-c gauss(source treetype retplace)
-       ;; if ignored still do Fgauss() because of state machine properties
-       ;;  but skip the spreading
-       (if :treetype:ignore
-	   (progn (dhc-add-c-statements "Fgauss(); /* state advance */" ) "")
-           (when ~retplace
-	         (setq retplace (dhc-declare-temp-var :treetype:type "_gauss")))
-           (dhc-add-c-statements
-	     (sprintf "%s = %s;" retplace
-               (selectq (length (cdr source))
-                 (0 "Fgauss()")
-                 (1 (sprintf "((%s) * Fgauss())"
-                             (dhc-parse-expr-c (cadr source)
-                                               (cadr :treetype:tn-list) ())))
-                 (2 (sprintf "((%s) * Fgauss() + (%s))"
-                             (dhc-parse-expr-c (caddr source)
-                                               (caddr :treetype:tn-list) ())
-                             (dhc-parse-expr-c (cadr source)
-                                               (cadr :treetype:tn-list) ())))
-               )))
-           retplace))
-
+  (if :treetype:ignore
+      (progn (dhc-add-c-statements "Fgauss(); /* state advance */" ) "")
+    (when ~retplace
+      (setq retplace (dhc-declare-temp-var :treetype:type "_gauss")))
+    (dhc-add-c-statements
+     (sprintf "%s = %s;" retplace
+              (selectq (length (cdr source))
+                (0 "Fgauss()")
+                (1 (sprintf "((%s) * Fgauss())"
+                            (dhc-parse-expr-c (cadr source)
+                                              (cadr :treetype:tn-list) ())))
+                (2 (sprintf "((%s) * Fgauss() + (%s))"
+                            (dhc-parse-expr-c (caddr source)
+                                              (caddr :treetype:tn-list) ())
+                            (dhc-parse-expr-c (cadr source)
+                                              (cadr :treetype:tn-list) ())))
+                )))
+    retplace))
 
 (dhm-t-declare gauss rand)
 
 (dhm-c rand(source treetype retplace)
-       ;; if ignored still do Frand() because of state machine properties
-       ;;  but skip the spreading
-       (if :treetype:ignore
-	   (progn (dhc-add-c-statements "Frand(); /* state advance */" ) "")
-           (when ~retplace
-	         (setq retplace (dhc-declare-temp-var :treetype:type "_rand")))
-           (dhc-add-c-statements
-	     (sprintf "%s = %s;" retplace
-               (selectq (length (cdr source))
-                 (0 "Frand()")
-                 (1 (let ((a1 (dhc-parse-expr-for-multi-use-c
-			       (cadr source) (cadr :treetype:tn-list) ())))
-                         (sprintf "((%s) * 2 * Frand() - (%s))" a1 a1)))
-                 (2 (let ((a1 (dhc-parse-expr-for-multi-use-c
-			       (cadr source) (cadr :treetype:tn-list) ()))
-                          (rettype :treetype:type))
-                         (sprintf "(((%s) - (%s)) * Frand() + (%s))"
-                                  (dhc-parse-expr-c (caddr source)
-                                                    (caddr :treetype:tn-list) ())
-                                  a1 a1)))
-              )))
-	   retplace))
-
+  ;; if ignored still do Frand() because of state machine properties
+  ;;  but skip the spreading
+  (if :treetype:ignore
+      (progn (dhc-add-c-statements "Frand(); /* state advance */" ) "")
+    (when ~retplace
+      (setq retplace (dhc-declare-temp-var :treetype:type "_rand")))
+    (dhc-add-c-statements
+     (sprintf "%s = %s;" retplace
+              (selectq (length (cdr source))
+                (0 "Frand()")
+                (1 (let ((a1 (dhc-parse-expr-for-multi-use-c
+                              (cadr source) (cadr :treetype:tn-list) ())))
+                     (sprintf "((%s) * 2 * Frand() - (%s))" a1 a1)))
+                (2 (let ((a1 (dhc-parse-expr-for-multi-use-c
+                              (cadr source) (cadr :treetype:tn-list) ()))
+                         (rettype :treetype:type))
+                     (sprintf "(((%s) - (%s)) * Frand() + (%s))"
+                              (dhc-parse-expr-c (caddr source)
+                                                (caddr :treetype:tn-list) ())
+                              a1 a1)))
+                )))
+    retplace))
 
 (dhm-t incr(source)
-       (when (or (> (length source) 3) (< (length source) 2))
-             (dhc-error "incr takes one or two arguments"))
-       (let (((incrsymb symbo &optional incrval) source))
-	    (dhc-parse-replacement-source-t
-	      source
-	      (list 'setq symbo (list '+ symbo (if incrval incrval 1))))))
-
-
-
+  (when (or (> (length source) 3) (< (length source) 2))
+    (dhc-error "incr takes one or two arguments"))
+  (let (((incrsymb symbo &optional incrval) source))
+    (dhc-parse-replacement-source-t
+     source
+     (list 'setq symbo (list '+ symbo (if incrval incrval 1))))))
 
 
 
 
 ;;; ------------------------------------------------------------------------
-;;; DHM for changing dimensions on idx-es
+;;; DHM for querying/changing dimensions on idx.
 ;;; ------------------------------------------------------------------------
+
 
 (dhm-t idx-ndim(source)
   (when (<> 2 (length source))
@@ -1238,7 +1305,7 @@
         (dim (dhc-parse-expr-for-multi-use-c 
               (caddr source) (caddr :treetype:tn-list) ()))
         (ndim (==> :(cadr :treetype:tn-list):type is-an-idxptr))
-        (memb (if (= (car source) 'idx-modulo) "mod" "dim")))
+        (memb (if (= (get-dhm-target source) :idx-modulo) "mod" "dim")))
     (if ~(numberp (caddr source))
       (if ~dhc-unprotect 
           (dhc-add-c-statements
@@ -1299,7 +1366,7 @@
       (when ~retplace
         (setq retplace (dhc-declare-temp-var :treetype:type)))
       (dhc-add-c-statements
-	    ;; EXTRACTS ELEMENT SIZE FROM SRG
+       ;; EXTRACTS ELEMENT SIZE FROM SRG
        (sprintf "(%s) = sizeof(%s);"
                 retplace (==> mattype get-element-decl))
        "{int i;\n"
@@ -1309,15 +1376,15 @@
       retplace)))
 
 (dhm-t idx-storage(source)
-       (when (<> 2 (length source))
-         (dhc-error "two arguments expected"))
-       (let* ((tn (dhc-parse-expr-t (cadr source)))
-	      (idx-type :tn:type))
-	 (if ~(==> idx-type is-an-idxptr)
-	   (dhc-error "not an idx" (cadr source)))
-	 (new t-node (list tn) (new dhc-type 'dht-ptr
-				    (unode-val :(unode-val 
-						 :idx-type:u-type):u-type)))))
+  (when (<> 2 (length source))
+    (dhc-error "two arguments expected"))
+  (let* ((tn (dhc-parse-expr-t (cadr source)))
+         (idx-type :tn:type))
+    (if ~(==> idx-type is-an-idxptr)
+      (dhc-error "not an idx" (cadr source)))
+    (new t-node (list tn) (new dhc-type 'dht-ptr
+                               (unode-val :(unode-val 
+                                            :idx-type:u-type):u-type)))))
 
 (dhm-c idx-storage(source treetype retplace)
   (let* ((mattn (cadr :treetype:tn-list))
@@ -1329,12 +1396,12 @@
     (dhc-error "two arguments expected"))
   (let* ((tn (dhc-parse-expr-t (cadr source)))
          (dim-list (caddr source))
-	      (symbol-idx (new dhc-symbol
-			       (named
-				(sprintf "%d_new_idx"(dhc-postincr tmpnames-seed)))
-			       lex-level))
-	      (ndim 0) (dim-tn ()) (rettype ()) (ret-tn ())
-	      (srg-type (==> :tn:type is-a-srgptr)))
+         (symbol-idx (new dhc-symbol
+                          (named
+                           (sprintf "%d_new_idx"(dhc-postincr tmpnames-seed)))
+                          lex-level))
+         (ndim 0) (dim-tn ()) (rettype ()) (ret-tn ())
+         (srg-type (==> :tn:type is-a-srgptr)))
     (if ~srg-type
         (dhc-error "not a storage" (cadr source)))
     (if ~(listp dim-list)
@@ -1344,7 +1411,6 @@
       (dhc-error 
        "lists are not fully implemented yet.  Use (list 3 4) or '(3 4))"
        dim-list))
-    
     (setq dim-tn
           (if (= (car dim-list) 'list)
               (let ((tnl (all ((so (cdr dim-list))) 
@@ -1372,11 +1438,9 @@
                                 (new t-node tnl
                                      (new dhc-type 'dht-unk)))
                    (new dhc-type 'dht-unk)))))
-    
     (setq rettype (new dhc-type 'dht-ptr 
                        (new dhc-type 'dht-idx ndim 
                             (unode-val :tn:type:u-type))))
-    
     (dhc-unify-types :symbol-idx:type (unode-val :rettype:u-type))
     (setq ret-tn (new t-node (list tn dim-tn) rettype))
     (setq bump-list (append bump-list (list symbol-idx)))
@@ -1408,18 +1472,16 @@
     (dhc-add-c-statements (sprintf "Midx_update_mod_from_dim(%s);" idx))
     idx))
 
-;; The following dhms are for changing dim, mod and offset in the idx
-
 (dhm-t idx-changedim(source)
-  (when (<> (if (= (car source) 'idx-changeoffset) 3 4) (length source))
+  (when (<> (if (= (get-dhm-target source) :idx-changeoffset) 3 4) (length source))
     (dhc-error "three arguments expected"))
   (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
          (ndim (==> :(car tnl):type is-an-idxptr))
          (tn ()))
-    (if (<> (car source) 'idx-changeoffset)
+    (if (<> (get-dhm-target source) :idx-changeoffset)
         (if (numberp (caddr source))
             (if (or (< (caddr source) 0) (>= (caddr source) ndim))
-                (dhc-error "Illegal dimension for idx") (cadr source))))
+                (dhc-error "illegal dimension for idx") (cadr source))))
     (when ~ndim (dhc-error "first argument must be an idx"))
     (all ((tn (cdr tnl)))
       (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
@@ -1427,31 +1489,29 @@
 
 (dhm-c idx-changedim(source treetype retplace)
   (let* ((mattn (cadr :treetype:tn-list))
-         (lname (car source))
+         (lname (get-dhm-target source))
          (mat (dhc-parse-expr-for-multi-use-c (cadr source) mattn ()))
-         (faccess (concat "Midx_" (mid (pname lname) 11)
+         (faccess (concat "Midx_" (mid (pname lname) 16)
                           (sprintf "(%s" mat)))
          (cnames (all ((so (cddr source)) (tn (cddr :treetype:tn-list)))
                    (concat "((int)"
                            (dhc-parse-expr-for-multi-use-c so tn ())
                            ")")))
          (ndim (==> :mattn:type is-an-idxptr))
-         (el-decl (==> :mattn:type get-element-decl))
-         )
-    (if (<> lname 'idx-changeoffset)
+         (el-decl (==> :mattn:type get-element-decl)) )
+    (if (<> lname :idx-changeoffset)
         (setq faccess (concat faccess "," (car cnames) ")"))
       (setq faccess (concat faccess ")")))
-    
     (if dhc-unprotect
         (dhc-add-c-statements (concat faccess " = " (last cnames) ";"))
-      (if (<> (car source) 'idx-changeoffset)
+      (if (<> (get-dhm-target source) :idx-changeoffset)
           (if ~(numberp (caddr source))
             (dhc-add-c-statements
              (sprintf "RTERR_DIM(%s < 0 || %s >= %d);"
                       (car cnames) (car cnames) ndim))))
       (dhc-add-c-statements 
        (sprintf "{ int old_val=%s, min_size, max_size;" faccess)
-       (if (= (car source) 'idx-changedim)
+       (if (= (get-dhm-target source) :idx-changedim)
            (sprintf "RTERR_RANGE(%s < 0);" (cadr cnames)))
        (concat faccess " = " (last cnames) ";")
        (sprintf "SRG_BOUNDS(%s,%d,min_size, max_size);" mat ndim)
@@ -1463,30 +1523,33 @@
 (dhm-t-declare idx-changedim idx-changemod idx-changeoffset)
 (dhm-c-declare idx-changedim idx-changemod idx-changeoffset)
 
+
+
 ;;; ------------------------------------------------------------------------
-;;; DHM for parsing MATRIX (matrix copy-matrix clone-matrix copy-any-matrix)
+;;; DHM for matrix creation and cloning functions
 ;;; ------------------------------------------------------------------------
 
-(setq dhc-type-to-matrix-name 
-      '((dht-ubyte ubyte-matrix-nc ubyte-matrix)
-	(dht-byte byte-matrix-nc byte-matrix)
-	(dht-int int-matrix-nc int-matrix)
-	(dht-short short-matrix-nc short-matrix)
-	(dht-flt float-matrix-nc float-matrix)
-	(dht-real double-matrix-nc double-matrix)
-	(dht-gptr gptr-matrix-nc gptr-matrix) ) )
+(defvar dhc-type-to-matrix-name 
+  '((dht-ubyte ubyte-matrix-nc ubyte-matrix)
+    (dht-byte byte-matrix-nc byte-matrix)
+    (dht-int int-matrix-nc int-matrix)
+    (dht-short short-matrix-nc short-matrix)
+    (dht-flt float-matrix-nc float-matrix)
+    (dht-real double-matrix-nc double-matrix)
+    (dht-gptr gptr-matrix-nc gptr-matrix) ) )
 
-(setq dhc-type-to-matrix 
-      (mapcar (lambda ((x y z)) (cons x (list y z)))
-	      dhc-type-to-matrix-name))
-(setq dhc-matrix-to-type
-      (apply nconc (mapcar (lambda ((x y z)) (list (cons y x) (cons z x)))
-			   dhc-type-to-matrix-name)))
+(defvar dhc-type-to-matrix 
+  (mapcar (lambda ((x y z)) (cons x (eval `(list :,y :,z))))
+          dhc-type-to-matrix-name ) )
+(defvar dhc-matrix-to-type
+  (apply append
+         (mapcar (lambda ((x y z)) (eval `(list (cons :,y x) (cons :,z x))))
+                 dhc-type-to-matrix-name ) ) )
 
 (dhm-t float-matrix-nc(source)
   (let* ((arglist (cdr source))
          (types (all ((x arglist)) (dhc-parse-expr-t x)))
-         (mtype (cdr (assoc (car source) dhc-matrix-to-type)))
+         (mtype (cdr (assoc (get-dhm-target source) dhc-matrix-to-type)))
          (srg-type (new dhc-type 'dht-srg (new dhc-type mtype)))
          (idx-type (new dhc-type 'dht-idx (length arglist) srg-type))
          (rettype (new dhc-type 'dht-ptr idx-type))
@@ -1508,9 +1571,9 @@
     tn))
 
 (dhm-t-declare float-matrix-nc ubyte-matrix-nc byte-matrix-nc short-matrix-nc 
-	       int-matrix-nc float-matrix-nc double-matrix-nc gptr-matrix-nc
-	       matrix ubyte-matrix byte-matrix short-matrix
-	       int-matrix float-matrix double-matrix gptr-matrix )
+	       int-matrix-nc double-matrix-nc gptr-matrix-nc
+	       ubyte-matrix byte-matrix short-matrix int-matrix 
+               float-matrix double-matrix gptr-matrix )
 
 (dhm-c float-matrix-nc(source treetype retplace)
   (let (((idx-symb srg-symb) :treetype:transfer)
@@ -1534,23 +1597,22 @@
                                             (i (range 0 (1- ndim))))
                                         (dhc-parse-expr-c so ty ()))
                                       ","))))
-    (if (member (car source) '(matrix ubyte-matrix byte-matrix 
-                                      short-matrix int-matrix 
-                                      float-matrix 
-                                      double-matrix gptr-matrix))
+    (if (member (get-dhm-target source)
+                (list ubyte-matrix byte-matrix short-matrix int-matrix 
+                      float-matrix double-matrix gptr-matrix ) )
         (dhc-add-c-statements (sprintf "Midx_maclear(%s, %s);"
                                        :idx-symb:c-name
                                        (dhc-type-to-c-decl srg-type))))
     (sprintf "%s" :idx-symb:c-name)))
 
 (dhm-c-declare float-matrix-nc ubyte-matrix-nc byte-matrix-nc short-matrix-nc 
-	       int-matrix-nc float-matrix-nc double-matrix-nc gptr-matrix-nc
-	       ubyte-matrix byte-matrix short-matrix
-	       int-matrix float-matrix double-matrix gptr-matrix )
+	       int-matrix-nc double-matrix-nc gptr-matrix-nc
+	       ubyte-matrix byte-matrix short-matrix int-matrix 
+               float-matrix double-matrix gptr-matrix )
 
 (dhm-t idx-clone(source)
   (when (<> 2 (length source))
-             (dhc-error "one argument expected"))
+    (dhc-error "one argument expected"))
   (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
          (ndim (==> :(car tnl):type is-an-idxptr))
          (rettype (==> :(car tnl):type copy))
@@ -1589,20 +1651,728 @@
     (when ~(==> :mat:type is-an-idxptr)
           (dhc-error "argument must be an idx"))
     (setq newsrc (cons (cadr (assoc (==> :mat:type get-element-type)
-                                    dhc-type-to-matrix))
+                                    dhc-type-to-matrix-name))
                        newsrc))
     (dhc-parse-replacement-source-t source newsrc)))
 
 (dhm-t copy-matrix(source)
   (let (((func mat &optional to-mat more) source))
-    (when more (dhc-error "one or two arguments expected"))
-    (dhc-parse-replacement-source-t
-     source
-     `(let* ((dh-temp1 ,mat)
-             (dh-temp2 ,(if to-mat to-mat '(clone-matrix dh-temp1))))
-        (idx-copy dh-temp1 dh-temp2)
-        dh-temp2))))
+    (if more
+        (dhc-error "one or two arguments expected")
+      (if (not to-mat)
+          (dhc-parse-replacement-source-t 
+           source `(let ((m ,mat)) (copy-matrix m (clone-matrix m))) )
+        (let ((tn-in (dhc-parse-expr-t mat))
+              (tn-out (dhc-parse-expr-t to-mat)))
+          (when (not (==> :tn-in:type is-an-idxptr))
+            (dhc-error "Not a matrix" mat) )
+          (when (not (==> :tn-out:type is-an-idxptr))
+            (dhc-error "Not a matrix" to-mat) )
+          (==> (unode-val :(unode-val :tn-out:type:u-type):u-type)
+               access 'write)
+          (new t-node (list tn-in tn-out) :tn-out:type () ()) ) ) ) ) )
 
+(dhm-c copy-matrix(source treetype retplace)
+  (let* ((idx-type-in :(cadr :treetype:tn-list):type)
+         (idx-type-out :(caddr :treetype:tn-list):type)
+         (srg-type-in (new dhc-type (==> idx-type-in get-element-type)))
+         (srg-type-out (new dhc-type (==> idx-type-out get-element-type)))
+         (c1 (dhc-parse-expr-c (cadr source)(cadr :treetype:tn-list)()))
+         (ret-string (dhc-parse-expr-c (last source)
+                                       (last :treetype:tn-list)
+                                       ())))
+    (if ~dhc-unprotect
+        (dhc-add-c-statements
+         (sprintf "check_main_maout(%s,%s);" c1 ret-string)))
+    (dhc-add-c-statements
+     (sprintf "Midx_macopy(%s,%s,%s,%s);"
+              c1 ret-string
+              (dhc-type-to-c-decl srg-type-in)
+              (dhc-type-to-c-decl srg-type-out)))
+    ret-string ) )
+
+
+
+;;; ------------------------------------------------------------------------
+;;; DHM for index manipulations (unfold, select, narrow, etc...)
+;;; ------------------------------------------------------------------------
+
+
+;;; WEIRD: We have UNFOLD but not IDX-UNFOLD!
+(dhm-t unfold(source)
+  (when (<> 5 (length source))
+    (dhc-error "four arguments expected"))
+  (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
+         (ndim (==> :(car tnl):type is-an-idxptr))
+         (rettype (==> :(car tnl):type copy 1))
+         (symbol-idx (new dhc-symbol
+                          (named
+                           (sprintf "%d_unfold" (dhc-postincr tmpnames-seed)))
+                          lex-level))
+         (tn (new t-node tnl rettype)) )
+    (when ~ndim (dhc-error "first argument must be an idx"))
+    (when (numberp (caddr source))
+      (if (or (< (caddr source) 0) (>= (caddr source) ndim))
+          (dhc-error "Illegal dimension for idx") (cadr source))
+      (if (>= (1+ (caddr source)) 8)
+          (dhc-error "Too many dimensions") (cadr source)))
+    (if (and (numberp (nth 3 source)) (numberp (nth 4 source)))
+        (if (or (< (nth 3 source) 1) (< (nth 4 source) 1))
+            (dhc-error "Illegal dimension ksize or step"
+                       (cdddr source))))
+    (all ((tn (cdr tnl)))
+      (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+    (dhc-unify-types :symbol-idx:type (unode-val :rettype:u-type))
+    (setq bump-list (append bump-list (list symbol-idx)))
+    (dhc-unify-types (unode-val :symbol-idx:type:u-type)
+                     (unode-val :(unode-val 
+                                  :(car tnl):type:u-type):u-type))
+    (setq :tn:transfer symbol-idx)
+    tn))
+
+(dhm-c unfold(source treetype retplace)
+  (let* ((idx-symb :treetype:transfer)
+         (mattn (cadr :treetype:tn-list))
+         (cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                   (dhc-parse-expr-for-multi-use-c so tn ())))
+         (idx :idx-symb:c-name)
+         (mat (nth 0 cnames))
+         (d (concat "((int)" (nth 1 cnames) ")"))
+         (sz (concat "((int)" (nth 2 cnames) ")"))
+         (st (concat "((int)" (nth 3 cnames) ")"))
+         (ndim (==> :mattn:type is-an-idxptr))
+         (el-decl (==> :mattn:type get-element-decl))
+         (temp (dhc-declare-temp-var (new dhc-type 'dht_int))) )
+    (dhc-add-c-statements
+     (sprintf "Midx_clone%d(%s, %s);"
+              (dhu-ndim (dhu-type :mattn:type))
+              idx mat))
+    (when ~dhc-unprotect
+      (if ~(numberp (caddr source))
+        (dhc-add-c-statements
+         (sprintf "RTERR_DIM(%s < 0 || %s >= %d);"
+                  d d ndim)))
+      (if (or ~(numberp (nth 3 source)) 
+              ~(numberp (nth 4 source)))
+          (dhc-add-c-statements
+           (sprintf "RTERR_GEN((%s<1 || %s<1), %s);"
+                    sz st
+                    "\"illegal 'size' or 'step'\""))))
+    (dhc-add-c-statements
+     (sprintf "%s = 1+ ((%s)->dim[%s]-%s)/%s;"
+              temp idx d sz st))
+    (when ~dhc-unprotect
+      (dhc-add-c-statements
+       (sprintf 
+        "RTERR_GEN((%s<=0 || (%s)->dim[%s]!=%s*(%s-1)+%s), %s);"
+        temp idx d st temp sz
+        "\"Index dimension does not match size and step\""))
+      (if ~(numberp (caddr source))
+        (dhc-add-c-statements
+         (sprintf "RTERR_GEN((%d +1 >= MAXDIMS), %s);"
+                  ndim
+                  "\"Too many dimensions\""))))
+    (dhc-add-c-statements
+     (sprintf "Midx_unfold(%s,%s,%s,%s,%s);"
+              idx d sz st el-decl))
+    idx))
+
+;;; WEIRD: We have SELECT but not IDX-SELECT!
+(dhm-t select(source)
+  (when (<> 4 (length source))
+    (dhc-error "three arguments expected"))
+       (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
+	      (ndim (==> :(car tnl):type is-an-idxptr))
+	      (rettype (==> :(car tnl):type copy -1))
+	      (symbol-idx (new dhc-symbol
+			       (named
+				(sprintf "%d_select" (dhc-postincr tmpnames-seed)))
+			       lex-level))
+	      (tn (new t-node tnl rettype)) )
+         (when ~ndim (dhc-error "first argument must be an idx"))
+         (when (numberp (caddr source))
+           (if (or (< (caddr source) 0) (>= (caddr source) ndim))
+               (dhc-error "Illegal dimension for idx") (cadr source)))
+         (if (numberp (nth 3 source))
+             (if (< (nth 3 source) 0)
+                 (dhc-error "Illigal dimension selection") (cadr source)))
+         (all ((tn (cdr tnl)))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (dhc-unify-types :symbol-idx:type (unode-val :rettype:u-type))
+         (setq bump-list (append bump-list (list symbol-idx)))
+         (dhc-unify-types (unode-val :symbol-idx:type:u-type)
+                          (unode-val :(unode-val 
+                                       :(car tnl):type:u-type):u-type))
+         (setq :tn:transfer symbol-idx)
+         tn))
+
+(dhm-c select(source treetype retplace)
+  (let* ((idx-symb :treetype:transfer)
+         (mattn (cadr :treetype:tn-list))
+         (cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                   (dhc-parse-expr-for-multi-use-c so tn ())))
+         (idx :idx-symb:c-name)
+         (mat (nth 0 cnames))
+         (d (concat "((int)" (nth 1 cnames) ")"))
+         (x (concat "((int)" (nth 2 cnames) ")"))
+         (ndim (==> :mattn:type is-an-idxptr))
+         (el-decl (==> :mattn:type get-element-decl)) )
+    (when ~dhc-unprotect
+      (if ~(numberp (caddr source))
+        (dhc-add-c-statements
+         (sprintf "RTERR_DIM(%s < 0 || %s >= %d);"
+                  d d ndim)))
+      (if ~(numberp (nth 3 source))
+        (dhc-add-c-statements
+         (sprintf "RTERR_GEN((%s<0), %s);"
+                  x
+                  "\"illegal parameter\"")))
+      (dhc-add-c-statements
+       (sprintf "RTERR_GEN((%s >= (%s)->dim[%s]), %s);"
+                x mat d
+                "\"specified subscript is too large\"")))
+    (dhc-add-c-statements
+     (sprintf "Midx_select(%s,%s,%s,%s,%s);"
+              idx mat d x el-decl))
+    idx))
+
+;; WEIRD: We have DIAGONAL but not IDX-DIAGONAL!
+(dhm-t diagonal(source)
+  (when (<> 3 (length source))
+    (dhc-error "two arguments expected"))
+  (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
+         (ndim (==> :(car tnl):type is-an-idxptr))
+         (targ ())
+         (rettype ())
+         (symbol-idx (new dhc-symbol
+                          (named
+                           (sprintf "%d_diag" (dhc-postincr tmpnames-seed)))
+                          lex-level))
+         (tn ()) )
+    (when ~ndim (dhc-error "first argument must be an idx"))
+    (when (or ~(numberp (caddr source))
+              (< (caddr source) 2)
+              (> (caddr source) ndim))
+      (dhc-error "2nd arg must be a compile time constant integer 2 <= d <= ndim"))
+    (dhc-unify-types :(cadr tnl):type (new dhc-type 'dht_number))
+    ;; creates a matrix with "d-1 dims less than the original"
+    (setq targ (- ndim (1- (caddr source))))
+    (setq rettype (==> :(car tnl):type copy (- targ ndim)))
+    (setq tn (new t-node tnl rettype))
+    (dhc-unify-types :symbol-idx:type (unode-val :rettype:u-type))
+    (setq bump-list (append bump-list (list symbol-idx)))
+    (dhc-unify-types (unode-val :symbol-idx:type:u-type)
+                     (unode-val :(unode-val 
+                                  :(car tnl):type:u-type):u-type))
+    (setq :tn:transfer symbol-idx)
+    tn))
+
+(dhm-c diagonal(source treetype retplace)
+  (let* ((idx-symb :treetype:transfer)
+         (mattn (cadr :treetype:tn-list))
+         (cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                   (dhc-parse-expr-for-multi-use-c so tn ())))
+         (idx :idx-symb:c-name)
+         (mat (nth 0 cnames))
+         (d (nth 1 cnames))
+         (ndim (==> :mattn:type is-an-idxptr))
+         (el-decl (==> :mattn:type get-element-decl)) )
+    (dhc-add-c-statements
+     (sprintf "Midx_clone%d(%s, %s);"
+              (dhu-ndim (dhu-type :mattn:type))
+              idx mat))
+    (dhc-add-c-statements
+     (concat
+      (sprintf "{ int i,m,n; m = %d - %s; n = (%s)->dim[m];"
+               ndim d idx)
+      (sprintf " for (i=1;i<(int)%s;i++)" d)
+      (if ~dhc-unprotect
+          (sprintf "   RTERR_GEN(((%s)->dim[m+i] != n), %s);" idx
+                   "\"The last dimensions should have the same size\"")
+        "")
+      "}"))
+    (dhc-add-c-statements
+     (sprintf "Midx_diagonal(%s,(int)%s,%s);"
+              idx d el-decl))
+    idx))
+
+;; We have IDX-NARROW and NARROW is a macro.
+(dhm-t idx-narrow(source)
+  (when (<> 5 (length source))
+    (dhc-error "four arguments expected"))
+  (let* ((tnl (all ((so (cdr source)))
+                (dhc-parse-expr-t so)))
+         (ndim (==> :(car tnl):type is-an-idxptr))
+         (tn :(car tnl):type) )
+    (if ~ndim
+        (dhc-error "first argument must be an idx"))
+    (when (numberp (caddr source))
+      (if (or (< (caddr source) 0) (>= (caddr source) ndim))
+          (dhc-error "Illegal dimension for idx") (cadr source)))
+    (if (and (numberp (nth 3 source)) (numberp (nth 4 source)))
+        (if (or (< (nth 3 source) 1) (< (nth 4 source) 0))
+            (dhc-error "Illegal dimension size or offset"
+                       (cdddr source))))
+    (all ((tn (cdr tnl)))
+      (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+    (new t-node tnl (new dhc-type 'dht-bool))))
+
+(dhm-c idx-narrow(source treetype retplace)
+  (let* ((idxtn (cadr :treetype:tn-list))
+         (cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                   (dhc-parse-expr-for-multi-use-c so tn ())))
+         (mat (nth 0 cnames))
+         (d (concat "((int)" (nth 1 cnames) ")")) 
+         (sz (concat "((int)" (nth 2 cnames) ")"))
+         (st (concat "((int)" (nth 3 cnames) ")"))
+         (ndim (==> :idxtn:type is-an-idxptr))
+         (el-decl (==> :idxtn:type get-element-decl)) )
+    (when ~dhc-unprotect
+      (if ~(numberp (caddr source))
+        (dhc-add-c-statements
+         (sprintf "RTERR_DIM(%s < 0 || %s >= %d);"
+                  d d ndim)))
+      (if (or ~(numberp (nth 3 source)) ~(numberp (nth 4 source)))
+          (dhc-add-c-statements
+           (sprintf "RTERR_GEN((%s<1 || %s<0), %s);"
+                    sz st
+                    "\"illegal 'size' or 'offset'\"")))
+      (dhc-add-c-statements
+       (sprintf "RTERR_GEN((%s+%s > (%s)->dim[%s]), %s);"
+                st sz mat d
+                "\"specified interval is too large\"")))
+    (dhc-add-c-statements
+     (sprintf "Midx_narrow(%s,%s,%s,%s,%s);"
+              mat d sz st el-decl))
+    "0"))
+
+;; handles quoted list for idx-transclone
+;;   (idx-transclone a '(1 2 3 0))
+;;   could be expanded to handle (idx-transclone a (list 1 2 3 0))
+;;   but would need runtime permtable check
+(de dhc-parse-permlist-t (source ndim)
+  (let ((x (car source))
+        (lst (cdr source))
+        (tnl ())
+        (tn ())
+        (tn2 ())
+        (got-these (matrix ndim)) )
+    (when (or ~(consp source) (<> x 'quote))
+      (dhc-error "permutation list syntax error" source))
+    (when (or (<> 1 (length lst)) ~(consp (car lst)))
+      (dhc-error "permutation list syntax error" source))
+    (setq lst (car lst))
+    (when (<> ndim (length lst))
+      (dhc-error "wrong # of dims in permlist" lst))
+    (setq tnl (all ((so lst))
+                (when (or ~(numberp so)
+                          (<> so (int so))
+                          (< so 0) (>= so ndim)
+                          (0<> (got-these so)))
+                  (dhc-error "bad permutation list" lst))
+                (got-these so 1)
+                (dhc-parse-number-t so)))
+    (setq tn (new t-node tnl (new dhc-type 'dht-dhm) lst))
+    (setq :tn:tn-list tnl)
+    (setq tnl (list tn))
+    (setq tn2 (new t-node tnl (new dhc-type 'dht-dhm) source))
+    tn2))
+
+(de dhc-parse-permlist-c (source treetype rettype)
+  (let ((plist (all ((so (cadr source)) (ty :(car :treetype:tn-list):tn-list))
+                 (dhc-parse-expr-for-multi-use-c so ty ()))))
+    (dhc-add-c-statements
+     "static int permlist[] = {"
+     (dhc-insert-op plist ", ")
+     "};")
+    "permlist"))
+
+(dhm-t idx-transclone(source)
+  (when (<> 3 (length source))
+    (dhc-error "two arguments expected"))
+  (let* ((mat (dhc-parse-expr-t (cadr source)))
+         (ndim (==> :mat:type is-an-idxptr))
+         (bogus (when ~ndim (dhc-error "first argument must be an idx")))
+         (tnl (list mat
+                    (dhc-parse-permlist-t (caddr source) ndim)))
+         (rettype (==> :(car tnl):type copy))
+         (symbol-idx (new dhc-symbol
+                          (named
+                           (sprintf "%d_tclone" (dhc-postincr tmpnames-seed)))
+                          lex-level))
+         (tn (new t-node tnl rettype)))
+    (dhc-unify-types :symbol-idx:type (unode-val :rettype:u-type))
+    ;; cause the storage to be bumped if idx is returned
+    (dhc-unify-types (unode-val :(unode-val :(car tnl):type:u-type):u-type)
+                     (unode-val :(unode-val :rettype:u-type):u-type))
+    (setq bump-list (append bump-list (list symbol-idx)))
+    (setq :tn:transfer symbol-idx)
+    tn))
+
+(dhm-c idx-transclone(source treetype retplace)
+  (let* ((idx-symb :treetype:transfer)
+         (mattn (cadr :treetype:tn-list))
+         (mat (dhc-parse-expr-for-multi-use-c (cadr source) mattn ()))
+         (plist ()))
+    (dhc-add-c-statements "{")
+    (setq plist (dhc-parse-permlist-c (caddr source)
+                                      (caddr :treetype:tn-list) ()))
+    (dhc-add-c-statements
+     (sprintf "Midx_transclone(%s, %s, %s, %s);"
+              :idx-symb:c-name mat plist
+              (==> :mattn:type get-element-decl))
+     "}")
+    :idx-symb:c-name))
+
+;; Same as SUB-INDEX !
+(dhm-t submatrix(source)
+  (let (((func mat . dims) source)
+        (expr ())
+        (cur ())
+        (taken-dim 0))
+    (setq expr mat)
+    (for (i 0 (1- (length dims)))
+         (setq cur (nth i dims))
+         (cond ((null cur))
+               ((and (listp cur) (= (car cur) 'list) (= (length cur) 3))
+                (setq expr `(narrow 
+                             ,expr ,(- i taken-dim) 
+                             (1+ (- ,(caddr cur)
+                                    ,(cadr cur)))
+                             ,(cadr cur)) ))
+               ((and (listp cur) (= (car cur) 'quote))
+                (setq cur (cadr cur))
+                (if (not (and (numberp (car cur)) (numberp (cadr cur))
+                              (null (cddr cur))))
+                    (dhc-error "submatrix: bad argument" cur))
+                (setq expr `(narrow 
+                             ,expr ,(- i taken-dim) 
+                             (1+ (- ,(cadr cur) ,(car cur)))
+                             ,(car cur))))
+               (t
+                (setq expr (list 'select expr
+                                 (- i taken-dim) cur))
+                (incr taken-dim))))
+    (dhc-parse-replacement-source-t source expr) ) )
+
+
+
+
+
+;;; ------------------------------------------------------------------------
+;;; DHM FOR PARSING IDX LOOPS
+;;; ------------------------------------------------------------------------
+
+(de dhc-idxloop-declare-var-t(dcl)
+  (when ~(and (consp dcl) (consp (cdr dcl)) (null (cddr dcl)))
+        (dhc-error "Syntax error" dcl) )
+  (when ~(symbolp (car dcl))
+        (dhc-error "Not a symbol" (car dcl)))
+  (let* ((sym (new dhc-symbol (car dcl) lex-level))
+         (ini (cadr dcl))
+         (node (dhc-parse-expr-t ini))
+         (ndim (==> :node:type is-an-idxptr)))
+    (when ~ndim
+      (dhc-error (sprintf "Not an index: %l" ini)))
+    (when (= 0 ndim)
+      (dhc-error "Can't loop over a 0D matrix."))
+    (let* ((ptr-type (==> :node:type copy -1))
+           (treetype (new t-node
+                          (list (new t-node () :sym:type (car dcl) sym)
+                                node)
+                          (new dhc-type 'dht-unk))))
+      (dhc-assign-unify :sym:type ptr-type)
+      ;; loop var is not returnable!
+      ;; (setq bump-list (append bump-list (list sym)))
+      (setq :treetype:ignore t)
+      (setq new-symbol-table 
+            (dhc-add-to-symtable new-symbol-table sym))
+      treetype)))
+
+(dhm-t idx-bloop(source)
+  (when ~(cddr source)
+        (dhc-error "idx-[be]loop syntax error"))
+  (when (> (length (cadr source)) 12)
+    (dhc-error "Cannot loop on more than 12 indexes"))
+  (let ((li ())
+        (tn ())
+        (ret ())
+        (ignore t)					;; changed-returning 0
+        (tmp ()))
+    (dhc-push-scope-t
+     (setq li (all ((dcl (cadr source)))
+                (dhc-idxloop-declare-var-t dcl)))
+     (setq symbol-table new-symbol-table)
+     (setq tn (new t-node li (new dhc-type 'dht-unk)))
+     (setq ret (dhc-parse-progn-t (cddr source)))
+     (setq :ret:tn-list (cons tn :ret:tn-list))
+     (setq :ret:type :(cadr :(last li):tn-list):type)
+     ret)))
+
+;; lays down a run-time check that the dim dimensions of
+;; the elements in tnlist are equal
+;; if dim < 0, take it as a delta from ndim
+(de dhc-rt-dim-check (namelist tnlist dim)
+  (when (> (length tnlist) 1)
+    (let* ((arglist ())
+           (getdim (lambda (ty d)
+                     (if (>= d 0) d (+ (==> ty is-an-idxptr) d))))
+           (arg1str (sprintf "(%s)->dim[%d]"
+                             (car namelist)
+                             (getdim :(car tnlist):type dim) ))
+           (arglist (all ((tn (cdr tnlist)) (nm (cdr namelist)))
+                      (sprintf "%s != (%s)->dim[%d]"
+                               arg1str nm
+                               (getdim :tn:type dim)))) )
+      (setq arglist (dhc-insert-op arglist " || "))
+      (if ~dhc-unprotect
+          (dhc-add-c-statements (sprintf "RTERR_LOOPDIM(%s);" arglist))) )))
+
+(dhm-c idx-bloop(source treetype retplace)
+  (let ((arglist "")
+        (el-types ())
+        (ini-names ())
+        (ini-tnl ())
+        (ret-expr ())
+        (str (if  (= (get-dhm-target source) :idx-bloop) "b" "e"))
+        (check-dim (if (= str "b") 0 -1)) )
+    (dhc-push-scope-c
+     treetype retplace
+     (each ((decl (cadr source))
+            (decltype :(cadr :treetype:tn-list):tn-list))
+       (let* ((sym-tn (car :decltype:tn-list))
+              (ini-tn (cadr :decltype:tn-list))
+              (sym :(car :decltype:tn-list):symbol )
+              (ini (dhc-parse-expr-for-multi-use-c
+                    (cadr decl) ini-tn ())))
+         (setq arglist (concat arglist :sym:c-name ", " ini ","))
+         ;; HACK for bloop speed up -- see idxmac.h
+         (setq :sym:c-name (concat "&" :sym:c-name))
+         ;; collect element types
+         (setq el-types (cons (==> :sym-tn:type get-element-type) el-types))
+         ;; collect ini names an types for rt dim check
+         (setq ini-names (cons ini ini-names))
+         (setq ini-tnl (cons ini-tn ini-tnl))
+         (setq ret-expr ini)))
+     ;; rt check of loop dims 
+     (dhc-rt-dim-check ini-names ini-tnl check-dim)
+     ;; extracts element size from srg!
+     (setq arglist (concat arglist (dhc-type-to-c-decl
+                                    (new dhc-type (car el-types)))))
+     (dhc-add-c-statements
+      (sprintf "Midx_begin_%sloop%d(%s)"
+               str
+               (length (cadr source)) arglist))
+     (dhc-parse-progn-c (cddr source)
+                        (cddr :treetype:tn-list) ())
+     (dhc-add-c-statements
+      (sprintf "Midx_end_%sloop%d(%s);"
+               str
+               (length (cadr source)) arglist))
+     ret-expr)))
+
+(dhm-t-declare idx-bloop idx-eloop)
+(dhm-c-declare idx-bloop idx-eloop)
+
+
+
+
+;;; ------------------------------------------------------------------------
+;;; DHM for parsing TL3/SN2 matrix operations
+;;; ------------------------------------------------------------------------
+
+;;; These are defined in compat.lsh
+
+(when (functionp m*m)
+  (dhm-t m*m(source)
+    (let (((func a b &optional c) source)
+          (atype ())
+          (btype ())
+          (ndima ())
+          (ndimb ())
+          (expr ()))
+      (setq atype :(dhc-parse-expr-t a):type)
+      (setq btype :(dhc-parse-expr-t b):type)
+      (setq ndima (==> atype is-an-idxptr))
+      (setq ndimb (==> btype is-an-idxptr))
+      (if (and (<> ndima 1) (<> ndima 2))
+          (dhc-error "m*m: idx must be of dimension 1 or 2" a))
+      (if (and (<> ndimb 1) (<> ndimb 2))
+          (dhc-error "m*m: idx must be of dimension 1 or 2" b))
+      (setq expr 
+            (if (= ndima 1)
+                (if (= ndimb 1)
+                    (if (= 1 (car :btype:u-extra))
+                        (if c 
+                            (if (symbolp c)
+                                `(let ((-dh-b (matrix-nc)))
+                                   (idx-dotm0 ,a (-dh-b (,b 0)) ,c)
+                                   ,c)
+                              `(let ((-dh-b (matrix-nc))
+                                     (-dh-c ,c))
+                                 (idx-dotm0 ,a (-dh-b (,b 0)) -dh-c)
+                                 -dh-c))
+                          `(let* ((-dh-b (matrix-nc))
+                                  (-dh-a ,a)
+                                  (-dh-c (clone-matrix -dh-a)))
+                             (idx-dotm0 -dh-a (-dh-b (,b 0)) -dh-c)
+                             -dh-c))
+                      (dhc-error "m*m: idx 2 must have 1 element"))
+                  (if (= 1 (car :btype:u-extra))
+                      (if c
+                          (if (symbolp c)
+                              `(progn (idx-extm1 ,a (select ,b 0 0) ,c) ,c)
+                            `(let ((-dh-c ,c))
+                               (idx-m1extm1 ,a (select ,b 0 0) -dh-c)
+                               -dh-c))
+                        `(let ((-dh-c (matrix-nc ,(car :atype:u-extra)
+                                                 ,(cadr :btype:u-extra))))
+                           (idx-m1extm1 ,a (select ,b 0 0) -dh-c)
+                           -dh-c))
+                    (dhc-error "m*m: idx 2 have bad dimensions")))
+              (if (= 1 ndimb)
+                  (if c
+                      (if (symbolp c)
+                          `(progn (idx-m2dotm1 ,a ,b ,c) ,c)
+                        `(let ((-dh-c ,c)) (idx-m2dotm1 ,a ,b -dh-c) -dh-c))
+                    `(let* ((-dh-a ,a)
+                            (-dh-c (matrix-nc (idx-dim -dh-a 0))))
+                       (idx-m2dotm1 -dh-a ,b -dh-c) -dh-c))
+                (if c
+                    (if (symbolp c)
+                        `(progn (idx-eloop ((-dh-x ,b) (-dh-y ,c))
+                                  (idx-m2dotm1 ,a -dh-x -dh-y))
+                                ,c)
+                      `(let ((-dh-c ,c))
+                         (idx-eloop ((-dh-x ,b) (-dh-y -dh-c)) 
+                           (idx-m2dotm1 ,a -dh-x -dh-y))
+                         -dh-c))
+                  `(let* ((-dh-a ,a)
+                          (-dh-b ,b)
+                          (-dh-c (matrix-nc (idx-dim -dh-a 0) (idx-dim -dh-b 1))))
+                     (idx-eloop ((-dh-x -dh-b) (-dh-y -dh-c)) 
+                       (idx-m2dotm1 -dh-a -dh-x -dh-y))
+                     -dh-c)))))
+      (dhc-parse-replacement-source-t source expr) ) ) )
+
+(when (functionp m+m)
+  (dhm-t m+m(source)
+    (let (((func a b &optional c) source))
+      (dhc-parse-replacement-source-t
+       source
+       (if c
+           (if (symbolp c)
+               `(progn (idx-add ,a ,b ,c) ,c)
+             `(let ((-dh-c ,c))
+                (progn (idx-add ,a ,b -dh-c) -dh-c)))
+         (if (symbolp b)
+             `(let ((-dh-c (clone-matrix ,b)))
+                (idx-add ,a ,b -dh-c) -dh-c)
+           (if (symbolp a)
+               `(let ((-dh-c (clone-matrix ,a)))
+                  (idx-add ,a ,b -dh-c) -dh-c)
+             `(let* ((-dh-b ,b)
+                     (-dh-c (clone-matrix -dh-b)))
+                (idx-add ,a -dh-b -dh-c) -dh-c))))) ) ) )
+
+(when (functionp mxm)
+  (dhm-t mxm(source)
+    (let (((func a b &optional c) source))
+      (dhc-parse-replacement-source-t
+       source
+       (if c
+           (if (symbolp c)
+               `(progn (idx-mul ,a ,b ,c) ,c)
+             `(let ((-dh-c ,c))
+                (progn (idx-mul ,a ,b -dh-c) -dh-c)))
+         (if (symbolp b)
+             `(let ((-dh-c (clone-matrix ,b)))
+                (idx-mul ,a ,b -dh-c) -dh-c)
+           (if (symbolp a)
+               `(let ((-dh-c (clone-matrix ,a)))
+                  (idx-mul ,a ,b -dh-c) -dh-c)
+             `(let* ((-dh-b ,b)
+                     (-dh-c (clone-matrix -dh-b)))
+                (idx-mul ,a -dh-b -dh-c) -dh-c))))) ) ) )
+		       
+(when (functionp m-m)
+  (dhm-t m-m(source)
+    (let (((func a b &optional c) source))
+      (dhc-parse-replacement-source-t
+       source
+       (if c
+           (if (symbolp c)
+               `(progn (idx-sub ,a ,b ,c) ,c)
+             `(let ((-dh-c ,c))
+                (progn (idx-sub ,a ,b -dh-c) -dh-c)))
+         (if (symbolp b)
+             `(let ((-dh-c (clone-matrix ,b)))
+                (idx-sub ,a ,b -dh-c) -dh-c)
+           (if (symbolp a)
+               `(let ((-dh-c (clone-matrix ,a)))
+                  (idx-sub ,a ,b -dh-c) -dh-c)
+             `(let* ((-dh-b ,b)
+                     (-dh-c (clone-matrix -dh-b)))
+                (idx-sub ,a -dh-b -dh-c) -dh-c))))) )) )
+
+(when (functionp m*c)
+  (dhm-t m*c(source)
+    (let (((func a b &optional c) source))
+      (dhc-parse-replacement-source-t
+       source
+       (if c
+           (if (symbolp c)
+               `(let ((-dh-d (matrix)))
+                  (-dh-d ,b)
+                  (idx-dotm0 ,a -dh-d ,c) ,c)
+             `(let ((-dh-d (matrix)) (-dh-c ,c))
+                (-dh-d ,b)
+                (idx-dotm0 ,a -dh-d -dh-c) -dh-c))
+         (if (symbolp a)
+             `(let ((-dh-d (matrix)) (-dh-c (clone-matrix ,a)))
+                (-dh-d ,b)
+                (idx-dotm0 ,a -dh-d -dh-c) -dh-c)
+           `(let* ((-dh-d (matrix)) (-dh-a ,a)
+                   (-dh-c (clone-matrix -dh-a)))
+              (-dh-d ,b)
+              (idx-dotm0 -dh-a -dh-d -dh-c) -dh-c))) ) ) ) )
+
+(when (functionp m+c)
+  (dhm-t m+c(source)
+    (let (((func a b &optional c) source))
+      (dhc-parse-replacement-source-t
+       source
+       (if c
+           (if (symbolp c)
+               `(let ((-dh-d (matrix)))
+                  (-dh-d ,b)
+                  (idx-addm0 ,a -dh-d ,c) ,c)
+             `(let ((-dh-d (matrix)) (-dh-c ,c))
+                (-dh-d ,b)
+                (idx-addm0 ,a -dh-d -dh-c) -dh-c))
+         (if (symbolp a)
+             `(let ((-dh-d (matrix)) (-dh-c (clone-matrix ,a)))
+                (-dh-d ,b)
+                (idx-addm0 ,a -dh-d -dh-c) -dh-c)
+           `(let* ((-dh-d (matrix)) (-dh-a ,a)
+                   (-dh-c (clone-matrix -dh-a)))
+              (-dh-d ,b)
+            (idx-addm0 -dh-a -dh-d -dh-c) -dh-c))))) ))
+
+(when (functionp transpose)
+  (dhm-t transpose(source)
+    (when (<> (length source) 2)
+      (dhc-error "one argument expected"))
+    (let* ((a (cadr source))
+           (ndimin (==> :(dhc-parse-expr-t a):type is-an-idxptr)))
+      (dhc-parse-replacement-source-t
+       source
+       (selectq ndimin
+         (1 `(let ((m (copy-matrix ,a)))
+               (unfold m 0 (idx-dim m 0) 1)))
+         (2 `(let ((m2 (copy-matrix ,a)))
+               (idx-transclone m2 '(1 0))))
+         (t (dhc-error "Two dimensioned matrix expected" a)) )) ) ) )
 
 
 
@@ -1622,875 +2392,14 @@
 (while (<> (skip-char) "\e")
   (read-string) )
 
-(dhm-t copy-any-matrix(source)
-  (when (and (<> 2 (length source)) (<> 3 (length source)))
-    (dhc-error "copy-any-matrix: one or two arguments expected"))
-  (let (((func from-mat &optional to-mat rest) source))
-    (if to-mat
-        (let* ((tnl (all ((so (cdr source)))
-                      (dhc-parse-expr-t so)))
-               (ndim (==> :(car tnl):type is-an-idxptr))
-               (tn :(cadr tnl):type))
-          (all ((tn tnl))
-            (when ~(==> :tn:type is-an-idxptr)
-                  (dhc-error "arguments must be idxs")))
-          (when (<> (==> :(car tnl):type get-element-type)
-                    (==> :(cadr tnl):type get-element-type))
-            (dhc-error 
-             "argument matrices must have same element type"))
-          (new t-node tnl tn))
-      ;; else
-      (dhc-parse-replacement-source-t
-       source
-       `(let ((to-mat (clone-matrix ,from-mat)))
-          (copy-any-matrix ,from-mat to-mat))))))
-
-(dhm-c copy-any-matrix(source treetype retplace)
-  (let (((func f-mat t-mat) source)
-        ((func-tn f-tn t-tn) :treetype:tn-list))
-    (setq f-mat (dhc-parse-expr-for-multi-use-c f-mat f-tn ()))
-    (setq t-mat (dhc-parse-expr-for-multi-use-c t-mat t-tn ()))
-    (dhc-add-c-statements 
-     (sprintf "Midx_macopy(%s, %s, %s, %s);"
-              f-mat t-mat (==> :f-tn:type get-element-decl)
-              (==> :t-tn:type get-element-decl)))
-    t-mat))
-
-
-
-;; handles quoted list for idx-transclone
-;;   (idx-transclone a '(1 2 3 0))
-;;   could be expanded to handle (idx-transclone a (list 1 2 3 0))
-;;   but would need runtime permtable check
-;; 
-(de dhc-parse-permlist-t (source ndim)
-    (let ((x (car source))
-	  (lst (cdr source))
-	  (tnl ())
-	  (tn ())
-	  (tn2 ())
-	  (got-these (matrix ndim))
-	  )
-         (when (or ~(consp source) (<> x 'quote))
-	       (dhc-error "permutation list syntax error" source))
-	 (when (or (<> 1 (length lst)) ~(consp (car lst)))
-	       (dhc-error "permutation list syntax error" source))
-	 (setq lst (car lst))
-	 (when (<> ndim (length lst))
-	       (dhc-error "wrong # of dims in permlist" lst))
-	 (setq tnl (all ((so lst))
-			(when (or ~(numberp so)
-				  (<> so (int so))
-				  (< so 0) (>= so ndim)
-				  (0<> (got-these so)))
-	             	      (dhc-error "bad permutation list" lst))
-			(got-these so 1)
-			(dhc-parse-number-t so)))
-	 (setq tn (new t-node tnl (new dhc-type 'dht-dhm) lst))
-	 (setq :tn:tn-list tnl)
-	 (setq tnl (list tn))
-	 (setq tn2 (new t-node tnl (new dhc-type 'dht-dhm) source))
-	 tn2))
-
-(de dhc-parse-permlist-c (source treetype rettype)
-    (let ((plist (all ((so (cadr source)) (ty :(car :treetype:tn-list):tn-list))
-		      (dhc-parse-expr-for-multi-use-c so ty ()))))
-         (dhc-add-c-statements
-          "static int permlist[] = {"
-          (dhc-insert-op plist ", ")
-          "};")
-         "permlist"))
-      
-
-(dhm-t idx-transclone(source)
-       (when (<> 3 (length source))
-             (dhc-error "two arguments expected"))
-       (let* ((mat (dhc-parse-expr-t (cadr source)))
-              (ndim (==> :mat:type is-an-idxptr))
-	      (bogus (when ~ndim (dhc-error "first argument must be an idx")))
-	      (tnl (list mat
-			 (dhc-parse-permlist-t (caddr source) ndim)))
-              (rettype (==> :(car tnl):type copy))
-              (symbol-idx (new dhc-symbol
-                               (named
-                                (sprintf "%d_tclone" (dhc-postincr tmpnames-seed)))
-                               lex-level))
-              (tn (new t-node tnl rettype)))
-	 
-	 (dhc-unify-types :symbol-idx:type (unode-val :rettype:u-type))
-	 ;; cause the storage to be bumped if idx is returned
-	 (dhc-unify-types (unode-val :(unode-val :(car tnl):type:u-type):u-type)
-			  (unode-val :(unode-val :rettype:u-type):u-type))
-	 (setq bump-list (append bump-list (list symbol-idx)))
-	 (setq :tn:transfer symbol-idx)
-	 
-	 tn))
-
-(dhm-c idx-transclone(source treetype retplace)
-       (let* ((idx-symb :treetype:transfer)
-	      (mattn (cadr :treetype:tn-list))
-	      (mat (dhc-parse-expr-for-multi-use-c (cadr source) mattn ()))
-	      (plist ()))
-
-	     (dhc-add-c-statements "{")
-	     (setq plist (dhc-parse-permlist-c (caddr source)
-					       (caddr :treetype:tn-list) ()))
-	     (dhc-add-c-statements
-	      (sprintf "Midx_transclone(%s, %s, %s, %s);"
-		       :idx-symb:c-name mat plist
-		       (==> :mattn:type get-element-decl))
-	      "}")
-	     :idx-symb:c-name))
-
-
-(dhm-t submatrix(source)
-     (let (((func mat . dims) source)
-           (expr ())
-           (cur ())
-           (taken-dim 0))
-       (setq expr mat)
-       (for (i 0 (1- (length dims)))
-            (setq cur (nth i dims))
-            (cond ((null cur))
-                  ((and (listp cur) (= (car cur) 'list) (= (length cur) 3))
-                   (setq expr '(narrow 
-                                      ,expr ,(- i taken-dim) 
-                                      (1+ (- ,(caddr cur)
-					     ,(cadr cur)))
-                                      ,(cadr cur)) ))
-                  ((and (listp cur) (= (car cur) 'quote))
-                   (setq cur (cadr cur))
-                   (if (not (and (numberp (car cur)) (numberp (cadr cur))
-                                 (null (cddr cur))))
-                       (dhc-error "submatrix: bad argument" cur))
-                   (setq expr '(narrow 
-                                      ,expr ,(- i taken-dim) 
-                                      (1+ (- ,(cadr cur) ,(car cur)))
-                                      ,(car cur))))
-		  (t
-		   (setq expr (list 'select expr
-                                          (- i taken-dim) cur))
-                   (incr taken-dim))))
-       (dhc-parse-replacement-source-t source expr)
-       ))
-
-
-;;; ------------------------------------------------------------------------
-;;; DHM for parsing LET and LET* ...
-;;; ------------------------------------------------------------------------
-
-(de dhc-let-declare-var-t(dcl)
-    (when ~(and (consp dcl) (consp (cdr dcl)) (null (cddr dcl)))
-	  (dhc-error "Syntax error" dcl) )
-    (when ~(symbolp (car dcl))
-	  (dhc-error "Not a symbol" (car dcl)))
-    
-    (let* ((sym (new dhc-symbol (car dcl) lex-level))
-	   (ini (cadr dcl))
-	   (node (dhc-parse-expr-t ini))
-	   (symb-ini ())
-	   (treetype (new t-node
-			  (list (new t-node () :sym:type (car dcl) sym)
-				node)
-			  (new dhc-type 'dht-unk))))
-
-      (dhc-assign-unify :sym:type :node:type)
-      (setq :sym:type:u-access :node:type:u-access)
-
-      ;; For name replacement.  It set no-declare to the alternate name
-      (when (symbolp ini)
-	    (setq symb-ini (dhc-search-symtable ini symbol-table))
-	    (if symb-ini
-		(setq :sym:no-declare symb-ini)))
-
-      (setq bump-list (append bump-list (list sym)))
-      (setq :treetype:ignore t)
-      (setq new-symbol-table 
-	    (dhc-add-to-symtable new-symbol-table sym))
-      treetype))
-
-(dhm-t let(source)
-       (when ~(cddr source)
-	     (dhc-error "'let syntax error"))
-       (let ((tn ())
-	     (ret ()))
-	 (dhc-push-scope-t 
-	  (setq tn (new t-node (all ((dcl (cadr source)))
-				    (dhc-let-declare-var-t dcl))
-			(new dhc-type 'dht-unk)))
-	  (setq symbol-table new-symbol-table)
-	  (setq ret (dhc-parse-progn-t (cddr source)))
-	  (setq :ret:tn-list (cons tn :ret:tn-list))
-	  ret)))
-
-(dhm-c let(source treetype retplace)
-       (dhc-push-scope-c 
-	treetype retplace
-	(all ((decl (cadr source)) 
-	      (decl-type :(cadr :treetype:tn-list):tn-list))
-	     (dhc-parse-expr-c (cadr decl) (cadr :decl-type:tn-list)
-			       :(car :decl-type:tn-list):symbol:c-name))
-	(dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace)))
-
-(dhm-t let*(source)
-       (when ~(cddr source)
-	     (dhc-error "'let syntax error"))
-       (let ((tn ())
-	     (ret ()))
-	 (setq ret (dhc-push-scope-t 
-		    (setq tn (new t-node 
-				  (all ((dcl (cadr source)))
-				       (prog1
-					   (dhc-let-declare-var-t dcl)
-					 (setq symbol-table new-symbol-table)))
-				  (new dhc-type 'dht-unk)))
-		    (dhc-parse-progn-t (cddr source))))
-	 (setq :ret:tn-list (cons tn :ret:tn-list))
-	 ret))
-
-(dhm-c-declare let let*)
-
-
-;;; ------------------------------------------------------------------------
-;;; DHM FOR PARSING IDX LOOPS
-;;; ------------------------------------------------------------------------
-
-(de dhc-idxloop-declare-var-t(dcl)
-    (when ~(and (consp dcl) (consp (cdr dcl)) (null (cddr dcl)))
-	  (dhc-error "Syntax error" dcl) )
-    (when ~(symbolp (car dcl))
-	  (dhc-error "Not a symbol" (car dcl)))
-    
-    (let* ((sym (new dhc-symbol (car dcl) lex-level))
-	   (ini (cadr dcl))
-	   (node (dhc-parse-expr-t ini))
-	   (ndim (==> :node:type is-an-idxptr)))
-          (when ~ndim
-	        (dhc-error (sprintf "Not an index: %l" ini)))
-          (when (= 0 ndim)
-	        (dhc-error "Can't loop over a 0D matrix."))
-
-	  (let* ((ptr-type (==> :node:type copy -1))
-
-	         (treetype (new t-node
-			        (list (new t-node () :sym:type (car dcl) sym)
-				      node)
-			        (new dhc-type 'dht-unk))))
-
-	    (dhc-assign-unify :sym:type ptr-type)
-
-	    ;; loop var is not returnable!
-                ;; (setq bump-list (append bump-list (list sym)))
-	    (setq :treetype:ignore t)
-	    (setq new-symbol-table 
-		  (dhc-add-to-symtable new-symbol-table sym))
-	    treetype)))
-
-(dhm-t idx-bloop(source)
-       (when ~(cddr source)
-	     (dhc-error "idx-[be]loop syntax error"))
-       (when (> (length (cadr source)) 12)
-	     (dhc-error "Cannot loop on more than 12 indexes"))
-       (let ((li ())
-	     (tn ())
-	     (ret ())
-	     (ignore t)					;; changed-returning 0
-	     (tmp ()))
-	 (dhc-push-scope-t
-	  (setq li (all ((dcl (cadr source)))
-			(dhc-idxloop-declare-var-t dcl)))
-	  (setq symbol-table new-symbol-table)
-	  (setq tn (new t-node li (new dhc-type 'dht-unk)))
-	  (setq ret (dhc-parse-progn-t (cddr source)))
-	  (setq :ret:tn-list (cons tn :ret:tn-list))
-	  (setq :ret:type :(cadr :(last li):tn-list):type)
-	  ret)))
-
-;; lays down a run-time check that the dim dimensions of
-;;  the elements in tnlist are equal
-;; if dim < 0, take it as a delta from ndim
-(de dhc-rt-dim-check (namelist tnlist dim)
-    (when (> (length tnlist) 1)
-	  (let* ((arglist ())
-		 (getdim (lambda (ty d)
-				 (if (>= d 0) d (+ (==> ty is-an-idxptr) d))))
-		 (arg1str (sprintf "(%s)->dim[%d]"
-				   (car namelist)
-				   (getdim :(car tnlist):type dim)
-				   ))
-	         ;; a1->dim[0] != aN->dim[0]
-	         (arglist (all ((tn (cdr tnlist)) (nm (cdr namelist)))
-		               (sprintf "%s != (%s)->dim[%d]"
-			                arg1str nm
-					(getdim :tn:type dim))))
-		 )
-               (setq arglist (dhc-insert-op arglist " || "))
-	       (if ~dhc-unprotect
-		   (dhc-add-c-statements (sprintf "RTERR_LOOPDIM(%s);" arglist)))
-	       )))
-
-(dhm-c idx-bloop(source treetype retplace)
-       (let ((arglist "")
-	     (el-types ())
-	     (ini-names ())
-	     (ini-tnl ())
-	     (ret-expr ())
-	     (check-dim (if (= (car source) 'idx-bloop) 0 -1))
-	     (str (if (= (car source) 'idx-bloop) "b" "e")))
-
-
-	 (dhc-push-scope-c
-	  treetype retplace
-	  
-	  (each ((decl (cadr source))
-	         (decltype :(cadr :treetype:tn-list):tn-list))
-	        (let* ((sym-tn (car :decltype:tn-list))
-		       (ini-tn (cadr :decltype:tn-list))
-		       (sym :(car :decltype:tn-list):symbol )
-		       (ini (dhc-parse-expr-for-multi-use-c
-			     (cadr decl) ini-tn ())))
-		  
-		  (setq arglist (concat arglist :sym:c-name ", " ini ","))
-		  
-		  ;; HACK for bloop speed up -- see idxmac.h
-		  (setq :sym:c-name (concat "&" :sym:c-name))
-		  
-		  ;; collect element types
-		  (setq el-types (cons (==> :sym-tn:type get-element-type)
-				       el-types))
-		  
-		  ;; collect ini names an types for rt dim check
-		  (setq ini-names (cons ini ini-names))
-		  (setq ini-tnl (cons ini-tn ini-tnl))
-		  (setq ret-expr ini)))
-
-	  ;; rt check of loop dims 
-	  (dhc-rt-dim-check ini-names ini-tnl check-dim)
-	  
-	  ;; extracts element size from srg!
-	  (setq arglist (concat arglist (dhc-type-to-c-decl
-					 (new dhc-type (car el-types)))))
-	  
-	  (dhc-add-c-statements
-	   (sprintf "Midx_begin_%sloop%d(%s)"
-		    str
-		    (length (cadr source)) arglist))
-          (dhc-parse-progn-c (cddr source)
-			     (cddr :treetype:tn-list) ())
-	  
-	  (dhc-add-c-statements
-	   (sprintf "Midx_end_%sloop%d(%s);"
-		    str
-	            (length (cadr source)) arglist))
-          ret-expr)))
-
-(dhm-t-declare idx-bloop idx-eloop)
-(dhm-c-declare idx-bloop idx-eloop)
-
-
-
-;;; ------------------------------------------------------------------------
-;;; DHM FOR PARSING SPECIAL IDX OPERATIONS
-;;; ------------------------------------------------------------------------
-
-(dhm-t unfold(source)
-       (when (<> 5 (length source))
-	     (dhc-error "four arguments expected"))
-       (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
-	      (ndim (==> :(car tnl):type is-an-idxptr))
-	      (rettype (==> :(car tnl):type copy 1))
-	      (symbol-idx (new dhc-symbol
-			       (named
-				(sprintf "%d_unfold" (dhc-postincr tmpnames-seed)))
-			       lex-level))
-	      (tn (new t-node tnl rettype))
-	      )
-	 (when ~ndim (dhc-error "first argument must be an idx"))
-
-	 (when (numberp (caddr source))
-	     (if (or (< (caddr source) 0) (>= (caddr source) ndim))
-		 (dhc-error "Illegal dimension for idx") (cadr source))
-	     (if (>= (1+ (caddr source)) 8)
-		 (dhc-error "Too many dimensions") (cadr source)))
-
-	 (if (and (numberp (nth 3 source)) (numberp (nth 4 source)))
-	     (if (or (< (nth 3 source) 1) (< (nth 4 source) 1))
-		 (dhc-error "Illegal dimension ksize or step"
-			    (cdddr source))))
-	 
-	 (all ((tn (cdr tnl)))
-	      (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
-	 
-	 (dhc-unify-types :symbol-idx:type (unode-val :rettype:u-type))
-	 (setq bump-list (append bump-list (list symbol-idx)))
-	 (dhc-unify-types (unode-val :symbol-idx:type:u-type)
-			  (unode-val :(unode-val 
-				       :(car tnl):type:u-type):u-type))
-	 (setq :tn:transfer symbol-idx)
-	 
-	 tn))
-
-(dhm-c unfold(source treetype retplace)
-       (let* ((idx-symb :treetype:transfer)
-	      (mattn (cadr :treetype:tn-list))
-	      (cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
-			   (dhc-parse-expr-for-multi-use-c so tn ())))
-	      (idx :idx-symb:c-name)
-	      (mat (nth 0 cnames))
-	      (d (concat "((int)" (nth 1 cnames) ")"))
-	      (sz (concat "((int)" (nth 2 cnames) ")"))
-	      (st (concat "((int)" (nth 3 cnames) ")"))
-	      (ndim (==> :mattn:type is-an-idxptr))
-	      (el-decl (==> :mattn:type get-element-decl))
-	      (temp (dhc-declare-temp-var (new dhc-type 'dht_int)))
-	      )
-
-	     (dhc-add-c-statements
-	      (sprintf "Midx_clone%d(%s, %s);"
-		       (dhu-ndim (dhu-type :mattn:type))
-		       idx mat))
-	     (when ~dhc-unprotect
-		   (if ~(numberp (caddr source))
-		     (dhc-add-c-statements
-		      (sprintf "RTERR_DIM(%s < 0 || %s >= %d);"
-			       d d ndim)))
-
-		   (if (or ~(numberp (nth 3 source)) 
-			   ~(numberp (nth 4 source)))
-		       (dhc-add-c-statements
-			(sprintf "RTERR_GEN((%s<1 || %s<1), %s);"
-				 sz st
-				 "\"illegal 'size' or 'step'\""))))
-
-	     (dhc-add-c-statements
-	      (sprintf "%s = 1+ ((%s)->dim[%s]-%s)/%s;"
-		       temp idx d sz st))
-
-	     (when ~dhc-unprotect
-		   (dhc-add-c-statements
-		    (sprintf 
-		     "RTERR_GEN((%s<=0 || (%s)->dim[%s]!=%s*(%s-1)+%s), %s);"
-		     temp idx d st temp sz
-		     "\"Index dimension does not match size and step\""))
-		   
-		   (if ~(numberp (caddr source))
-		     (dhc-add-c-statements
-		      (sprintf "RTERR_GEN((%d +1 >= MAXDIMS), %s);"
-			       ndim
-			       "\"Too many dimensions\""))))
-
-	     (dhc-add-c-statements
-	      (sprintf "Midx_unfold(%s,%s,%s,%s,%s);"
-		       idx d sz st el-decl))
-	     idx))
-
-
-(dhm-t select(source)
-       (when (<> 4 (length source))
-	     (dhc-error "three arguments expected"))
-       (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
-	      (ndim (==> :(car tnl):type is-an-idxptr))
-	      (rettype (==> :(car tnl):type copy -1))
-	      (symbol-idx (new dhc-symbol
-			       (named
-				(sprintf "%d_select" (dhc-postincr tmpnames-seed)))
-			       lex-level))
-	      (tn (new t-node tnl rettype))
-	      )
-	 
-	     (when ~ndim (dhc-error "first argument must be an idx"))
-	     (when (numberp (caddr source))
-		   (if (or (< (caddr source) 0) (>= (caddr source) ndim))
-		       (dhc-error "Illegal dimension for idx") (cadr source)))
-
-	     (if (numberp (nth 3 source))
-		 (if (< (nth 3 source) 0)
-		     (dhc-error "Illigal dimension selection") (cadr source)))
-
-	     (all ((tn (cdr tnl)))
-		  (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
-
-	     (dhc-unify-types :symbol-idx:type (unode-val :rettype:u-type))
-	     (setq bump-list (append bump-list (list symbol-idx)))
-	     (dhc-unify-types (unode-val :symbol-idx:type:u-type)
-			      (unode-val :(unode-val 
-					   :(car tnl):type:u-type):u-type))
-	     (setq :tn:transfer symbol-idx)
-             tn))
-
-(dhm-c select(source treetype retplace)
-       (let* ((idx-symb :treetype:transfer)
-	      (mattn (cadr :treetype:tn-list))
-	      (cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
-			   (dhc-parse-expr-for-multi-use-c so tn ())))
-	      (idx :idx-symb:c-name)
-	      (mat (nth 0 cnames))
-	      (d (concat "((int)" (nth 1 cnames) ")"))
-	      (x (concat "((int)" (nth 2 cnames) ")"))
-	      (ndim (==> :mattn:type is-an-idxptr))
-	      (el-decl (==> :mattn:type get-element-decl))
-	      )
-	 
-	     (when ~dhc-unprotect
-		   (if ~(numberp (caddr source))
-		     (dhc-add-c-statements
-		      (sprintf "RTERR_DIM(%s < 0 || %s >= %d);"
-			       d d ndim)))
-		   
-		   (if ~(numberp (nth 3 source))
-		     (dhc-add-c-statements
-		      (sprintf "RTERR_GEN((%s<0), %s);"
-			       x
-			       "\"illegal parameter\"")))
-
-		   (dhc-add-c-statements
-		    (sprintf "RTERR_GEN((%s >= (%s)->dim[%s]), %s);"
-			     x mat d
-			     "\"specified subscript is too large\"")))
-
-	     (dhc-add-c-statements
-	      (sprintf "Midx_select(%s,%s,%s,%s,%s);"
-		       idx mat d x el-decl))
-	     idx))
-
-
-(dhm-t diagonal(source)
-       (when (<> 3 (length source))
-	     (dhc-error "two arguments expected"))
-       (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
-	      (ndim (==> :(car tnl):type is-an-idxptr))
-	      (targ ())
-	      (rettype ())
-	      (symbol-idx (new dhc-symbol
-			       (named
-				(sprintf "%d_diag" (dhc-postincr tmpnames-seed)))
-			       lex-level))
-	      (tn ())
-	      )
-
-	     (when ~ndim (dhc-error "first argument must be an idx"))
-	     (when (or ~(numberp (caddr source))
-		       (< (caddr source) 2)
-		       (> (caddr source) ndim))
-		   (dhc-error "2nd arg must be a compile time constant integer 2 <= d <= ndim"))
-	     (dhc-unify-types :(cadr tnl):type (new dhc-type 'dht_number))
-
-	     ;; creates a matrix with "d-1 dims less than the original"
-	     (setq targ (- ndim (1- (caddr source))))
-	     (setq rettype (==> :(car tnl):type copy (- targ ndim)))
-	     (setq tn (new t-node tnl rettype))
-
-	     (dhc-unify-types :symbol-idx:type (unode-val :rettype:u-type))
-	     (setq bump-list (append bump-list (list symbol-idx)))
-	     (dhc-unify-types (unode-val :symbol-idx:type:u-type)
-			      (unode-val :(unode-val 
-					   :(car tnl):type:u-type):u-type))
-	     (setq :tn:transfer symbol-idx)
-             tn))
-
-(dhm-c diagonal(source treetype retplace)
-       (let* ((idx-symb :treetype:transfer)
-              (mattn (cadr :treetype:tn-list))
-	      (cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
-			   (dhc-parse-expr-for-multi-use-c so tn ())))
-	      (idx :idx-symb:c-name)
-	      (mat (nth 0 cnames))
-	      (d (nth 1 cnames))
-	      (ndim (==> :mattn:type is-an-idxptr))
-	      (el-decl (==> :mattn:type get-element-decl))
-	      )
-
-	     (dhc-add-c-statements
-	      (sprintf "Midx_clone%d(%s, %s);"
-		       (dhu-ndim (dhu-type :mattn:type))
-		       idx mat))
-
-	     (dhc-add-c-statements
-	      (concat
-	       (sprintf "{ int i,m,n; m = %d - %s; n = (%s)->dim[m];"
-			ndim d idx)
-	       (sprintf " for (i=1;i<(int)%s;i++)" d)
-	       (if ~dhc-unprotect
-		   (sprintf "   RTERR_GEN(((%s)->dim[m+i] != n), %s);" idx
-			    "\"The last dimensions should have the same size\"")
-		 "")
-	       "}"))
-
-	     (dhc-add-c-statements
-	      (sprintf "Midx_diagonal(%s,(int)%s,%s);"
-		       idx d el-decl))
-	     idx))
-
-
-(dhm-t idx-narrow(source)
-       (when (<> 5 (length source))
-	     (dhc-error "four arguments expected"))
-       (let* ((tnl (all ((so (cdr source)))
-			(dhc-parse-expr-t so)))
-	      (ndim (==> :(car tnl):type is-an-idxptr))
-	      (tn :(car tnl):type)
-	      )
-	     (if ~ndim
-		 (dhc-error "first argument must be an idx"))
-	     (when (numberp (caddr source))
-                   (if (or (< (caddr source) 0) (>= (caddr source) ndim))
-                       (dhc-error "Illegal dimension for idx") (cadr source)))
-	     (if (and (numberp (nth 3 source)) (numberp (nth 4 source)))
-		 (if (or (< (nth 3 source) 1) (< (nth 4 source) 0))
-		     (dhc-error "Illegal dimension size or offset"
-				(cdddr source))))
-	     (all ((tn (cdr tnl)))
-		  (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
-             (new t-node tnl (new dhc-type 'dht-bool))))
-
-(dhm-c idx-narrow(source treetype retplace)
-       (let* ((idxtn (cadr :treetype:tn-list))
-	      (cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
-			   (dhc-parse-expr-for-multi-use-c so tn ())))
-	      (mat (nth 0 cnames))
-	      (d (concat "((int)" (nth 1 cnames) ")")) 
-	      (sz (concat "((int)" (nth 2 cnames) ")"))
-	      (st (concat "((int)" (nth 3 cnames) ")"))
-	      (ndim (==> :idxtn:type is-an-idxptr))
-	      (el-decl (==> :idxtn:type get-element-decl))
-	      )
-
-	 (when ~dhc-unprotect
-	       (if ~(numberp (caddr source))
-		 (dhc-add-c-statements
-		  (sprintf "RTERR_DIM(%s < 0 || %s >= %d);"
-			   d d ndim)))
-	       
-	       (if (or ~(numberp (nth 3 source)) ~(numberp (nth 4 source)))
-		   (dhc-add-c-statements
-		    (sprintf "RTERR_GEN((%s<1 || %s<0), %s);"
-			     sz st
-			     "\"illegal 'size' or 'offset'\"")))
-	       
-	       (dhc-add-c-statements
-		(sprintf "RTERR_GEN((%s+%s > (%s)->dim[%s]), %s);"
-			 st sz mat d
-			 "\"specified interval is too large\"")))
-	 
-	 (dhc-add-c-statements
-	  (sprintf "Midx_narrow(%s,%s,%s,%s,%s);"
-		   mat d sz st el-decl))
-	 "0"))
-
-
-;;; ------------------------------------------------------------------------
-;;; DHM FOR PARSING SN2 OPERATIONS
-;;; ------------------------------------------------------------------------
-
-(dhm-t m*m(source)
-     (let (((func a b &optional c) source)
-	   ; (atype (new dhc-type))
-	   ; (btype (new dhc-type))
-	   (atype ())
-	   (btype ())
-	   (ndima ())
-	   (ndimb ())
-	   ; (expra ()) (exprb ())
-	   (expr ()))
-       ; (dhc-parse-types a atype ())
-       ; (dhc-parse-types b btype ())
-       ; (setq ndima (unode-val :atype:u-arg))
-       ; (setq ndimb (unode-val :btype:u-arg))
-       (setq atype :(dhc-parse-expr-t a):type)
-       (setq btype :(dhc-parse-expr-t b):type)
-       (setq ndima (==> atype is-an-idxptr))
-       (setq ndimb (==> btype is-an-idxptr))
-       (if (and (<> ndima 1) (<> ndima 2))
-	   (dhc-error "m*m: idx must be of dimension 1 or 2" a))
-       (if (and (<> ndimb 1) (<> ndimb 2))
-	   (dhc-error "m*m: idx must be of dimension 1 or 2" b))
-       (setq expr 
-	     (if (= ndima 1)
-		 (if (= ndimb 1)
-		     (if (= 1 (car :btype:u-extra))
-			 (if c 
-			     (if (symbolp c)
-				 '(let ((-dh-b (matrix-nc)))
-				    (idx-m1dotm0 ,a (-dh-b (,b 0)) ,c)
-				    ,c)
-			       '(let ((-dh-b (matrix-nc))
-				      (-dh-c ,c))
-				  (idx-m1dotm0 ,a (-dh-b (,b 0)) -dh-c)
-				  -dh-c))
-			   '(let* ((-dh-b (matrix-nc))
-				   (-dh-a ,a)
-				   (-dh-c (clone-matrix -dh-a)))
-			      (idx-m1dotm0 -dh-a (-dh-b (,b 0)) -dh-c)
-			      -dh-c))
-		       (dhc-error "m*m: idx 2 must have 1 element"))
-		   (if (= 1 (car :btype:u-extra))
-		       (if c
-			   (if (symbolp c)
-			       '(progn (idx-m1extm1 ,a (select ,b 0 0) ,c) ,c)
-			     '(let ((-dh-c ,c))
-				(idx-m1extm1 ,a (select ,b 0 0) -dh-c)
-				-dh-c))
-			 '(let ((-dh-c (matrix-nc ,(car :atype:u-extra)
-						  ,(cadr :btype:u-extra))))
-			    (idx-m1extm1 ,a (select ,b 0 0) -dh-c)
-			    -dh-c))
-		     (dhc-error "m*m: idx 2 have bad dimensions")))
-	       (if (= 1 ndimb)
-		   (if c
-		       (if (symbolp c)
-			   '(progn (idx-m2dotm1 ,a ,b ,c) ,c)
-			 '(let ((-dh-c ,c)) (idx-m2dotm1 ,a ,b -dh-c) -dh-c))
-		     '(let* ((-dh-a ,a)
-			     (-dh-c (matrix-nc (idx-dim -dh-a 0))))
-			(idx-m2dotm1 -dh-a ,b -dh-c) -dh-c))
-		 (if c
-		     (if (symbolp c)
-			 '(progn (idx-eloop ((-dh-x ,b) (-dh-y ,c))
-					    (idx-m2dotm1 ,a -dh-x -dh-y))
-				 ,c)
-		       '(let ((-dh-c ,c))
-			  (idx-eloop ((-dh-x ,b) (-dh-y -dh-c)) 
-				     (idx-m2dotm1 ,a -dh-x -dh-y))
-			  -dh-c))
-		   '(let* ((-dh-a ,a)
-                           (-dh-b ,b)
-                           (-dh-c (matrix-nc (idx-dim -dh-a 0) (idx-dim -dh-b 1))))
-		      (idx-eloop ((-dh-x -dh-b) (-dh-y -dh-c)) 
-				 (idx-m2dotm1 -dh-a -dh-x -dh-y))
-		      -dh-c)))))
-       (dhc-parse-replacement-source-t source expr)))
-
-
-
-(dhm-t m+m(source)
-     (let (((func a b &optional c) source))
-          (dhc-parse-replacement-source-t
-		       source
-		       (if c
-			   (if (symbolp c)
-			       '(progn (idx-maadd ,a ,b ,c) ,c)
-			     '(let ((-dh-c ,c))
-				(progn (idx-maadd ,a ,b -dh-c) -dh-c)))
-			 (if (symbolp b)
-			     '(let ((-dh-c (clone-matrix ,b)))
-				(idx-maadd ,a ,b -dh-c) -dh-c)
-			   (if (symbolp a)
-			       '(let ((-dh-c (clone-matrix ,a)))
-				  (idx-maadd ,a ,b -dh-c) -dh-c)
-			     '(let* ((-dh-b ,b)
-				     (-dh-c (clone-matrix -dh-b)))
-				(idx-maadd ,a -dh-b -dh-c) -dh-c)))))
-	  ))
-
-(dhm-t mxm(source)
-     (let (((func a b &optional c) source))
-          (dhc-parse-replacement-source-t
-		       source
-		       (if c
-			   (if (symbolp c)
-			       '(progn (idx-mamul ,a ,b ,c) ,c)
-			     '(let ((-dh-c ,c))
-				(progn (idx-mamul ,a ,b -dh-c) -dh-c)))
-			 (if (symbolp b)
-			     '(let ((-dh-c (clone-matrix ,b)))
-				(idx-mamul ,a ,b -dh-c) -dh-c)
-			   (if (symbolp a)
-			       '(let ((-dh-c (clone-matrix ,a)))
-				  (idx-mamul ,a ,b -dh-c) -dh-c)
-			     '(let* ((-dh-b ,b)
-				     (-dh-c (clone-matrix -dh-b)))
-				(idx-mamul ,a -dh-b -dh-c) -dh-c)))))
-	  ))
-		       
-
-(dhm-t m-m(source)
-     (let (((func a b &optional c) source))
-          (dhc-parse-replacement-source-t
-		       source
-		       (if c
-			   (if (symbolp c)
-			       '(progn (idx-masub ,a ,b ,c) ,c)
-			     '(let ((-dh-c ,c))
-				(progn (idx-masub ,a ,b -dh-c) -dh-c)))
-			 (if (symbolp b)
-			     '(let ((-dh-c (clone-matrix ,b)))
-				(idx-masub ,a ,b -dh-c) -dh-c)
-			   (if (symbolp a)
-			       '(let ((-dh-c (clone-matrix ,a)))
-				  (idx-masub ,a ,b -dh-c) -dh-c)
-			     '(let* ((-dh-b ,b)
-				     (-dh-c (clone-matrix -dh-b)))
-				(idx-masub ,a -dh-b -dh-c) -dh-c)))))
-	  ))
-
-
-(dhm-t m*c(source)
-     (let (((func a b &optional c) source))
-          (dhc-parse-replacement-source-t
-		       source
-		       (if c
-			   (if (symbolp c)
-			       '(let ((-dh-d (matrix)))
-                                  (-dh-d ,b)
-			          (idx-madotm0 ,a -dh-d ,c) ,c)
-			     '(let ((-dh-d (matrix)) (-dh-c ,c))
-				(-dh-d ,b)
-				(idx-madotm0 ,a -dh-d -dh-c) -dh-c))
-			 (if (symbolp a)
-			     '(let ((-dh-d (matrix)) (-dh-c (clone-matrix ,a)))
-                                (-dh-d ,b)
-				(idx-madotm0 ,a -dh-d -dh-c) -dh-c)
-			   '(let* ((-dh-d (matrix)) (-dh-a ,a)
-				   (-dh-c (clone-matrix -dh-a)))
-			      (-dh-d ,b)
-			      (idx-madotm0 -dh-a -dh-d -dh-c) -dh-c)))))
-	  ))
-
-
-(dhm-t m+c(source)
-     (let (((func a b &optional c) source))
-          (dhc-parse-replacement-source-t
-		       source
-		       (if c
-			   (if (symbolp c)
-			       '(let ((-dh-d (matrix)))
-                                  (-dh-d ,b)
-			          (idx-maaddm0 ,a -dh-d ,c) ,c)
-			     '(let ((-dh-d (matrix)) (-dh-c ,c))
-				(-dh-d ,b)
-				(idx-maaddm0 ,a -dh-d -dh-c) -dh-c))
-			 (if (symbolp a)
-			     '(let ((-dh-d (matrix)) (-dh-c (clone-matrix ,a)))
-                                (-dh-d ,b)
-				(idx-maaddm0 ,a -dh-d -dh-c) -dh-c)
-			   '(let* ((-dh-d (matrix)) (-dh-a ,a)
-				   (-dh-c (clone-matrix -dh-a)))
-			      (-dh-d ,b)
-			      (idx-maaddm0 -dh-a -dh-d -dh-c) -dh-c)))))
-	  ))
-
-
-(dhm-t transpose(source)
-     (when (<> (length source) 2)
-	   (dhc-error "one argument expected"))
-     (let* ((a (cadr source))
-            (ndimin (==> :(dhc-parse-expr-t a):type is-an-idxptr)))
-       (dhc-parse-replacement-source-t
-	source
-	(selectq ndimin
-		 (1 '(let ((m (copy-matrix ,a)))
-		       (unfold m 0 (idx-dim m 0) 1)))
-		 (2 '(let ((m2 (copy-matrix ,a)))
-		       (idx-transclone m2 '(1 0))))
-		 (t (dhc-error "Two dimensioned matrix expected" a))
-		 ))
-))
 
 ;;; ------------------------------------------------------------------------
 ;;; DHM FOR PARSING 'MA' OPERATIONS
 ;;; ------------------------------------------------------------------------
+
+;; ------------------------------
 ;; MA with one argument!
-;;
+
 (dhm-t idx-clear(source)
        (when (<> (length source) 2)
              (dhc-error "one argument expected"))
@@ -2524,18 +2433,18 @@
 		   (dhc-type-to-c-decl srg-type)))
 	 ret-string))
 
-;;-----------------------------------------------------------------------------
-;; MA with two arguments of same size
+
+;; ------------------------------
+;; MA with two same size args
+
 (dhm-t idx-copy(source)
        (when (and (<> (length source) 3) (<> (length source) 2))
 	     (dhc-error 
 	      "This function has one (in) or two (in out) arguments"))
-       
        (let* ((in (cadr source))
 	      (name (car source))
 	      (tn-in (dhc-parse-expr-t in))
 	      (ndimin (==> :tn-in:type is-an-idxptr)))
-
 	 (if ~ndimin (dhc-error "not a matrix" in))
 	 (if (= (length source) 3)
 	     (let* ((out (caddr source))
@@ -2543,61 +2452,59 @@
 		    (ndimout (==> :tn-out:type is-an-idxptr)))
 	       (if ~ndimout (dhc-error "not a matrix" out))
 	       (when (<> ndimin ndimout)
-		     (dhc-error 
-		      "Matrices have different numbers of dimensions"))
+                 (dhc-error 
+                  "Matrices have different numbers of dimensions"))
 	       (==> (unode-val :(unode-val :tn-out:type:u-type):u-type)
 		    access 'write)
 	       ;; because automatic redimensioning
 	       (==> (unode-val :tn-out:type:u-type)
 		    access 'write)
-
 	       (if (< ndimin 3)
 		   (new t-node (list tn-in tn-out) :tn-out:type () ())
 		 (dhc-parse-replacement-source-t
 		  source
-		  (let ((yo '(,name in out)))
+		  (let ((yo `(,name in out)))
 		    (while (> ndimin 3)
-		      (setq yo '(idx-bloop ((in in)(out out)) ,yo))
+		      (setq yo `(idx-bloop ((in in)(out out)) ,yo))
 		      (incr ndimin -1))
-		    (setq yo '(idx-bloop ((in ,in)(out ,out))
-					 ,yo))
+		    (setq yo `(idx-bloop ((in ,in)(out ,out)) ,yo))
 		    yo))))
 	   (if (< ndimin 3)
 	       (dhc-parse-replacement-source-t 
 		source
-		'(let* ((in ,in))
+		`(let* ((in ,in))
 		   (,name in (clone-matrix in))))
 	     (dhc-parse-replacement-source-t
 	      source
-	      (let ((yo '(,name in out)))
+	      (let ((yo `(,name in out)))
 		(while (> ndimin 3)
-		  (setq yo '(idx-bloop ((in in)(out out)) ,yo))
+		  (setq yo `(idx-bloop ((in in)(out out)) ,yo))
 		  (incr ndimin -1))
-		(setq yo '(let* ((in ,in) (out (clone-matrix in)))
+		(setq yo `(let* ((in ,in) (out (clone-matrix in)))
 			    (idx-bloop ((in in)(out out)) ,yo)))
 		yo))))))
 
 
 (dhm-c idx-copy(source treetype retplace)
-       (let* ((idx-type-in :(cadr :treetype:tn-list):type)
-	      (cname (mid (pname (car source)) 5))
-	      (idx-type-out :(caddr :treetype:tn-list):type)
-	      (ndim (==> idx-type-in is-an-idxptr))
-	      (srg-type-in (new dhc-type (==> idx-type-in get-element-type)))
-	      (srg-type-out (new dhc-type (==> idx-type-out get-element-type)))
-	      (c1 (dhc-parse-expr-c (cadr source)(cadr :treetype:tn-list)()))
-	      (ret-string (dhc-parse-expr-c (last source)
-				     (last :treetype:tn-list)
-				     ())))
-	 (if ~dhc-unprotect
-	     (dhc-add-c-statements
-	      (sprintf "check_main_maout(%s,%s);" c1 ret-string)))
-	 (dhc-add-c-statements
-	  (sprintf "Midx_m%d%s(%s,%s,%s,%s);"
-		   ndim cname c1 ret-string
-		   (dhc-type-to-c-decl srg-type-in)
-		   (dhc-type-to-c-decl srg-type-out)))
-	 ret-string))
+  (let* ((idx-type-in :(cadr :treetype:tn-list):type)
+         (cname (mid (pname (car source)) 5))
+         (idx-type-out :(caddr :treetype:tn-list):type)
+         (ndim (==> idx-type-in is-an-idxptr))
+         (srg-type-in (new dhc-type (==> idx-type-in get-element-type)))
+         (srg-type-out (new dhc-type (==> idx-type-out get-element-type)))
+         (c1 (dhc-parse-expr-c (cadr source)(cadr :treetype:tn-list)()))
+         (ret-string (dhc-parse-expr-c (last source)
+                                       (last :treetype:tn-list)
+                                       ())))
+    (if ~dhc-unprotect
+        (dhc-add-c-statements
+         (sprintf "check_main_maout(%s,%s);" c1 ret-string)))
+    (dhc-add-c-statements
+     (sprintf "Midx_m%d%s(%s,%s,%s,%s);"
+              ndim cname c1 ret-string
+              (dhc-type-to-c-decl srg-type-in)
+              (dhc-type-to-c-decl srg-type-out)))
+    ret-string))
 
 (dhm-t-declare idx-copy idx-minus idx-abs idx-sqrt idx-qtanh idx-qdtanh
 	       idx-stdsigmoid idx-dstdsigmoid idx-expmx idx-dexpmx idx-sin
@@ -2606,8 +2513,10 @@
 	       idx-stdsigmoid idx-dstdsigmoid idx-expmx idx-dexpmx idx-sin
 	       idx-cos idx-atan idx-log idx-exp)
 
-;;-----------------------------------------------------------------------------
-;; MA with two arguments, with the last one of dim 0
+;; ------------------------------
+;; MA with two arguments, 
+;; last one of dim 0
+
 (dhm-t idx-sum(source)
        (when (and (<> (length source) 3) (<> (length source) 2))
 	     (dhc-error 
@@ -2696,200 +2605,200 @@
 (dhm-c-declare idx-sum idx-sup idx-inf idx-sumacc 
                idx-supacc idx-infacc idx-sumsqr idx-sumsqracc)
 
-;;-----------------------------------------------------------------------------
+;; ------------------------------
+;; MA with three same size args
 
 (dhm-t idx-add(source)
-       (when (and (<> (length source) 4) (<> (length source) 3))
-	     (dhc-error 
-	      "This function has 2 (in) or 3 (in in out) arguments"))
-       
-       (let* ((in1 (cadr source))
-	      (in2 (caddr source))
-	      (name (car source))
-	      (tn-in1 (dhc-parse-expr-t in1))
-	      (tn-in2 (dhc-parse-expr-t in2))
-	      (ndimin1 (==> :tn-in1:type is-an-idxptr))
-	      (ndimin2 (==> :tn-in2:type is-an-idxptr)))
-	 
-	 (if ~ndimin1 (dhc-error "not a matrix" in1))
-	 (if ~ndimin2 (dhc-error "not a matrix" in2))
-	 (when (<> ndimin1 ndimin2)
-	       (dhc-error 
-		"Input matrices have different numbers of dimensions"))
-	 (if (= (length source) 4)
-	     (let* ((out (caddr (cdr source)))
-		    (tn-out (dhc-parse-expr-t out))
+  (when (and (<> (length source) 4) (<> (length source) 3))
+    (dhc-error 
+     "This function has 2 (in) or 3 (in in out) arguments"))
+  (let* ((in1 (cadr source))
+         (in2 (caddr source))
+         (name (car source))
+         (tn-in1 (dhc-parse-expr-t in1))
+         (tn-in2 (dhc-parse-expr-t in2))
+         (ndimin1 (==> :tn-in1:type is-an-idxptr))
+         (ndimin2 (==> :tn-in2:type is-an-idxptr)))
+    (if ~ndimin1 (dhc-error "not a matrix" in1))
+    (if ~ndimin2 (dhc-error "not a matrix" in2))
+    (when (<> ndimin1 ndimin2)
+      (dhc-error 
+       "Input matrices have different numbers of dimensions"))
+    (if (= (length source) 4)
+        (let* ((out (caddr (cdr source)))
+               (tn-out (dhc-parse-expr-t out))
 		    (ndimout (==> :tn-out:type is-an-idxptr)))
-	       (if ~ndimout (dhc-error "not a matrix" out))
-	       (when (<> ndimin1 ndimout)
-		     (dhc-error 
-		      "Matrices have different numbers of dimensions"))
-	       (==> (unode-val :(unode-val :tn-out:type:u-type):u-type)
-		    access 'write)
-	       ;; because automatic redimensioning
-	       (==> (unode-val :tn-out:type:u-type)
-		    access 'write)
-	       (if (< ndimin1 3)
-		   (new t-node (list tn-in1 tn-in2 tn-out) :tn-out:type () ())
-		 (dhc-parse-replacement-source-t
-		  source
-		  (let ((yo '(,name in1 in2 out)))
+          (if ~ndimout (dhc-error "not a matrix" out))
+          (when (<> ndimin1 ndimout)
+            (dhc-error 
+             "Matrices have different numbers of dimensions"))
+          (==> (unode-val :(unode-val :tn-out:type:u-type):u-type)
+               access 'write)
+          ;; because automatic redimensioning
+          (==> (unode-val :tn-out:type:u-type)
+               access 'write)
+          (if (< ndimin1 3)
+              (new t-node (list tn-in1 tn-in2 tn-out) :tn-out:type () ())
+            (dhc-parse-replacement-source-t
+             source
+             (let ((yo '(,name in1 in2 out)))
 		    (while (> ndimin1 3)
 		      (setq yo '(idx-bloop ((in1 in1)(in2 in2)(out out)) ,yo))
 		      (incr ndimin1 -1))
 		    (setq yo '(idx-bloop ((in1 ,in1)(in2 ,in2)(out ,out))
-					 ,yo))
+                                ,yo))
 		    yo))))
-	   (if (< ndimin1 3)
-	       (dhc-parse-replacement-source-t 
-		source
-		'(let ((tEmP_m1AT ,in1))
-		   (,name tEmP_m1AT ,in2 (clone-matrix tEmP_m1AT))))
-	     (dhc-parse-replacement-source-t
-	      source
-	      (let ((yo '(,name tEmP_m1AT in2 tEmP_m3AT)))
-		(while (> ndimin1 3)
-		  (setq yo '(idx-bloop ((tEmP_m1AT tEmP_m1AT)
-					(in2 in2)(tEmP_m3AT tEmP_m3AT))
-				       ,yo))
-		  (incr ndimin1 -1))
-		;; beware of in1 or out appearing in2 (why strange names)
-		(setq yo '(let* ((tEmP_m1AT ,in1)
-				 (tEmP_m3AT (clone-matrix tEmP_m1AT)))
-			    (idx-bloop ((tEmP_m1AT tEmP_m1AT)
-					(in2 ,in2)
-					(tEmP_m3AT tEmP_m3AT)) ,yo)))
-		yo))))))
-
+      (if (< ndimin1 3)
+          (dhc-parse-replacement-source-t 
+           source
+           '(let ((tEmP_m1AT ,in1))
+              (,name tEmP_m1AT ,in2 (clone-matrix tEmP_m1AT))))
+        (dhc-parse-replacement-source-t
+         source
+         (let ((yo '(,name tEmP_m1AT in2 tEmP_m3AT)))
+           (while (> ndimin1 3)
+             (setq yo '(idx-bloop ((tEmP_m1AT tEmP_m1AT)
+                                   (in2 in2)(tEmP_m3AT tEmP_m3AT))
+                         ,yo))
+             (incr ndimin1 -1))
+           ;; beware of in1 or out appearing in2 (why strange names)
+           (setq yo '(let* ((tEmP_m1AT ,in1)
+                            (tEmP_m3AT (clone-matrix tEmP_m1AT)))
+                       (idx-bloop ((tEmP_m1AT tEmP_m1AT)
+                                   (in2 ,in2)
+                                   (tEmP_m3AT tEmP_m3AT)) ,yo)))
+           yo))))))
 
 (dhm-c idx-add(source treetype retplace)
-       (let* ((idx-type-in1 :(cadr :treetype:tn-list):type)
-	      (idx-type-in2 :(caddr :treetype:tn-list):type)
-	      (cname (mid (pname (car source)) 5))
-	      (idx-type-out :(caddr (cdr :treetype:tn-list)):type)
-	      (ndim (==> idx-type-in1 is-an-idxptr))
-	      (srg-type-in1 (new dhc-type (==> idx-type-in1 get-element-type)))
-	      (srg-type-in2 (new dhc-type (==> idx-type-in2 get-element-type)))
-	      (srg-type-out (new dhc-type (==> idx-type-out get-element-type)))
-	      (c1 (dhc-parse-expr-c (cadr source)(cadr :treetype:tn-list)()))
-	      (c2 (dhc-parse-expr-c (caddr source)(caddr :treetype:tn-list)()))
-	      (ret-string (dhc-parse-expr-c (last source)
-					    (last :treetype:tn-list)
-					    ())))
-	 (if ~dhc-unprotect
-	     (dhc-add-c-statements
-	      (sprintf "check_main_main_maout(%s,%s,%s);" c1 c2 ret-string)))
-	 (dhc-add-c-statements
-	  (sprintf "Midx_m%d%s(%s,%s,%s,%s,%s,%s);"
-		   ndim cname c1 c2 ret-string
-		   (dhc-type-to-c-decl srg-type-in1)
-		   (dhc-type-to-c-decl srg-type-in2)
-		   (dhc-type-to-c-decl srg-type-out)))
-	 ret-string))
+  (let* ((idx-type-in1 :(cadr :treetype:tn-list):type)
+         (idx-type-in2 :(caddr :treetype:tn-list):type)
+         (cname (mid (pname (car source)) 5))
+         (idx-type-out :(caddr (cdr :treetype:tn-list)):type)
+         (ndim (==> idx-type-in1 is-an-idxptr))
+         (srg-type-in1 (new dhc-type (==> idx-type-in1 get-element-type)))
+         (srg-type-in2 (new dhc-type (==> idx-type-in2 get-element-type)))
+         (srg-type-out (new dhc-type (==> idx-type-out get-element-type)))
+         (c1 (dhc-parse-expr-c (cadr source)(cadr :treetype:tn-list)()))
+         (c2 (dhc-parse-expr-c (caddr source)(caddr :treetype:tn-list)()))
+         (ret-string (dhc-parse-expr-c (last source)
+                                       (last :treetype:tn-list)
+                                       ())))
+    (if ~dhc-unprotect
+        (dhc-add-c-statements
+         (sprintf "check_main_main_maout(%s,%s,%s);" c1 c2 ret-string)))
+    (dhc-add-c-statements
+     (sprintf "Midx_m%d%s(%s,%s,%s,%s,%s,%s);"
+              ndim cname c1 c2 ret-string
+              (dhc-type-to-c-decl srg-type-in1)
+              (dhc-type-to-c-decl srg-type-in2)
+              (dhc-type-to-c-decl srg-type-out)))
+    ret-string))
 
 (dhm-t-declare idx-add idx-sub idx-mul idx-div)
 (dhm-c-declare idx-add idx-sub idx-mul idx-div)
 
-;;-----------------------------------------------------------------------------
-;; MA with 3 arguments, with the last one of dim 0
-(dhm-t idx-dot(source)
-       (when (and (<> (length source) 3) (<> (length source) 4))
-	     (dhc-error 
-	      "This function has two (in in) or three (in in out) arguments"))
-       
-       (let* ((in1 (cadr source))
-              (in2 (caddr source))
-              (name (car source))
-	      (inner-name (if (= (right (pname name) 3) "acc") name
-			    (named (concat (pname name) "acc"))))
-              (tn-in1 (dhc-parse-expr-t in1))
-              (tn-in2 (dhc-parse-expr-t in2))
-              (ndimin1 (==> :tn-in1:type is-an-idxptr))
-              (ndimin2 (==> :tn-in2:type is-an-idxptr))
-	      (mgen (caddr (assoc (==> :tn-in1:type get-element-type)
-				 dhc-type-to-matrix))))
-         
-	 (if ~ndimin1 (dhc-error "not a matrix" in1))
-	 (if ~ndimin2 (dhc-error "not a matrix" in2))
-         (when (<> ndimin1 ndimin2)
-               (dhc-error 
-                "Input matrices have different numbers of dimensions"))
-	 
-	 (if (= (length source) 4)
-	     (let* ((out (last source))
-		    (tn-out (dhc-parse-expr-t out))
-		    (ndimout (==> :tn-out:type is-an-idxptr)))
-	       (if ~ndimout (dhc-error "not a matrix" out))
-	       (when (<> 0 ndimout)
-		     (dhc-error 
-		      "Output matrix is not an idx0"))
-	       (==> (unode-val :(unode-val :tn-out:type:u-type):u-type)
-		    access 'write)
-	       (if (< ndimin1 3)
-		   ;; full args, idx1
-		   (new t-node (list tn-in1 tn-in2 tn-out) :tn-out:type () ())
-		 ;; full args, idx3
-		 (dhc-parse-replacement-source-t
-		  source
-		  (let ((yo '(,inner-name in1 in2 tEmP_m3AT)))
-		    (while (> ndimin1 3)
-		      (setq yo '(idx-bloop ((in1 in1)(in2 in2)) ,yo))
-		      (incr ndimin1 -1))
-		    (setq yo '(idx-bloop ((in1 ,in1)(in2 ,in2))
-					 ,yo))
-		    (setq yo '(let ((tEmP_m3AT ,(if (= inner-name name)
-					      out '(idx-clear ,out))))
-				,yo tEmP_m3AT))
-		    yo))))
-	   ;; small idx, missing arg
-	   (if (< ndimin1 3)
-	       (dhc-parse-replacement-source-t 
-		source
-		;; progn necessary or it generates 2 dhm cells in treetype
-		'(progn (,name ,in1 ,in2 (,mgen))))
-	     ;; idx3, missing arg
-	     (dhc-parse-replacement-source-t
-	      source
-	      (let ((yo '(,inner-name in1 in2 tEmP_m3AT)))
-		(while (> ndimin1 3)
-		  (setq yo '(idx-bloop ((in1 in1)(in2 in2)) ,yo))
-		  (incr ndimin1 -1))
-		(setq yo '(let* ((tEmP_m3AT (,mgen)))
-			    (idx-bloop ((in1 ,in1)(in2 ,in2)) ,yo) tEmP_m3AT))
-		yo))))))
-  
-(dhm-c idx-dot(source treetype retplace)
-       (let* ((idx-type-in1 :(cadr :treetype:tn-list):type)
-              (idx-type-in2 :(caddr :treetype:tn-list):type)
-	      (ndim (==> idx-type-in1 is-an-idxptr))
-	      (cname (selectq (car source)
-			      (idx-dot (sprintf "dotm%d" ndim))
-			      (idx-dotacc (sprintf "dotm%dacc" ndim))
-			      (t (mid (pname (car source)) 5))))
-	      (idx-type-out :(last :treetype:tn-list):type)
-	      (srg-type-in1 (new dhc-type (==> idx-type-in1 get-element-type)))
-	      (srg-type-in2 (new dhc-type (==> idx-type-in2 get-element-type)))
-	      (srg-type-out (new dhc-type (==> idx-type-out get-element-type)))
-	      (c1 (dhc-parse-expr-c (cadr source)(cadr :treetype:tn-list)()))
-	      (c2 (dhc-parse-expr-c (caddr source)(caddr :treetype:tn-list)()))
-	      (ret-string (dhc-parse-expr-c (last source) 
-				     (last :treetype:tn-list) ())))
+;; ------------------------------
+;; MA with 3 arguments,
+;; last one of dim 0
 
-	 (if ~dhc-unprotect
-	     (dhc-add-c-statements
-	      (sprintf "check_main_main_m0out(%s,%s,%s);" c1 c2 ret-string)))
-	 (dhc-add-c-statements
-	  (sprintf "Midx_m%d%s(%s,%s,%s,%s,%s,%s);"
-		   ndim cname c1 c2 ret-string
-		   (dhc-type-to-c-decl srg-type-in1)
-		   (dhc-type-to-c-decl srg-type-in2)
-		   (dhc-type-to-c-decl srg-type-out)))
-	 ret-string))
+(dhm-t idx-dot(source)
+  (when (and (<> (length source) 3) (<> (length source) 4))
+    (dhc-error 
+     "This function has two (in in) or three (in in out) arguments"))
+  (let* ((in1 (cadr source))
+         (in2 (caddr source))
+         (name (car source))
+         (inner-name (if (= (right (pname name) 3) "acc") name
+                       (named (concat (pname name) "acc"))))
+         (tn-in1 (dhc-parse-expr-t in1))
+         (tn-in2 (dhc-parse-expr-t in2))
+         (ndimin1 (==> :tn-in1:type is-an-idxptr))
+         (ndimin2 (==> :tn-in2:type is-an-idxptr))
+         (mgen (caddr (assoc (==> :tn-in1:type get-element-type)
+                             dhc-type-to-matrix))))
+    (if ~ndimin1 (dhc-error "not a matrix" in1))
+    (if ~ndimin2 (dhc-error "not a matrix" in2))
+    (when (<> ndimin1 ndimin2)
+      (dhc-error 
+       "Input matrices have different numbers of dimensions"))
+    (if (= (length source) 4)
+        (let* ((out (last source))
+               (tn-out (dhc-parse-expr-t out))
+               (ndimout (==> :tn-out:type is-an-idxptr)))
+          (if ~ndimout (dhc-error "not a matrix" out))
+          (when (<> 0 ndimout)
+            (dhc-error 
+             "Output matrix is not an idx0"))
+          (==> (unode-val :(unode-val :tn-out:type:u-type):u-type)
+               access 'write)
+          (if (< ndimin1 3)
+              ;; full args, idx1
+              (new t-node (list tn-in1 tn-in2 tn-out) :tn-out:type () ())
+            ;; full args, idx3
+            (dhc-parse-replacement-source-t
+             source
+             (let ((yo '(,inner-name in1 in2 tEmP_m3AT)))
+               (while (> ndimin1 3)
+                 (setq yo '(idx-bloop ((in1 in1)(in2 in2)) ,yo))
+                 (incr ndimin1 -1))
+               (setq yo '(idx-bloop ((in1 ,in1)(in2 ,in2))
+                           ,yo))
+               (setq yo '(let ((tEmP_m3AT ,(if (= inner-name name)
+                                               out '(idx-clear ,out))))
+                           ,yo tEmP_m3AT))
+               yo))))
+      ;; small idx, missing arg
+      (if (< ndimin1 3)
+          (dhc-parse-replacement-source-t 
+           source
+           ;; progn necessary or it generates 2 dhm cells in treetype
+           '(progn (,name ,in1 ,in2 (,mgen))))
+        ;; idx3, missing arg
+        (dhc-parse-replacement-source-t
+         source
+         (let ((yo '(,inner-name in1 in2 tEmP_m3AT)))
+           (while (> ndimin1 3)
+             (setq yo '(idx-bloop ((in1 in1)(in2 in2)) ,yo))
+             (incr ndimin1 -1))
+           (setq yo '(let* ((tEmP_m3AT (,mgen)))
+                       (idx-bloop ((in1 ,in1)(in2 ,in2)) ,yo) tEmP_m3AT))
+           yo))))))
+
+(dhm-c idx-dot(source treetype retplace)
+  (let* ((idx-type-in1 :(cadr :treetype:tn-list):type)
+         (idx-type-in2 :(caddr :treetype:tn-list):type)
+         (ndim (==> idx-type-in1 is-an-idxptr))
+         (cname (selectq (car source)
+                  (idx-dot (sprintf "dotm%d" ndim))
+                  (idx-dotacc (sprintf "dotm%dacc" ndim))
+                  (t (mid (pname (car source)) 5))))
+         (idx-type-out :(last :treetype:tn-list):type)
+         (srg-type-in1 (new dhc-type (==> idx-type-in1 get-element-type)))
+         (srg-type-in2 (new dhc-type (==> idx-type-in2 get-element-type)))
+         (srg-type-out (new dhc-type (==> idx-type-out get-element-type)))
+         (c1 (dhc-parse-expr-c (cadr source)(cadr :treetype:tn-list)()))
+         (c2 (dhc-parse-expr-c (caddr source)(caddr :treetype:tn-list)()))
+         (ret-string (dhc-parse-expr-c (last source) 
+                                       (last :treetype:tn-list) ())))
+    
+    (if ~dhc-unprotect
+        (dhc-add-c-statements
+         (sprintf "check_main_main_m0out(%s,%s,%s);" c1 c2 ret-string)))
+    (dhc-add-c-statements
+     (sprintf "Midx_m%d%s(%s,%s,%s,%s,%s,%s);"
+              ndim cname c1 c2 ret-string
+              (dhc-type-to-c-decl srg-type-in1)
+              (dhc-type-to-c-decl srg-type-in2)
+              (dhc-type-to-c-decl srg-type-out)))
+    ret-string))
 
 (dhm-t-declare idx-dot idx-dotacc idx-sqrdist idx-sqrdistacc)
 (dhm-c-declare idx-dot idx-dotacc idx-sqrdist idx-sqrdistacc)
 
-;;-----------------------------------------------------------------------------
+
+;; ------------------------------
+;; MA with three args,
+;; second one of dim 0
 
 (dhm-t idx-dotm0(source)
        (when (and (<> (length source) 4) (<> (length source) 3))
@@ -2981,8 +2890,9 @@
 (dhm-t-declare idx-dotm0 idx-dotm0acc idx-addm0 idx-addm0acc)
 (dhm-c-declare idx-dotm0 idx-dotm0acc idx-addm0 idx-addm0acc)
 
-;;-----------------------------------------------------------------------------
-;; 
+;; ------------------------------
+;; Matrix * Vector
+
 (dhm-t idx-m2dotm1(source)
        (when (and (<> (length source) 3) (<> (length source) 4))
 	     (dhc-error 
@@ -3048,8 +2958,10 @@
 (dhm-t-declare idx-m2dotm1 idx-m2dotm1acc)
 (dhm-c-declare idx-m2dotm1 idx-m2dotm1acc)
 
-;;-----------------------------------------------------------------------------
 
+
+;; ------------------------------
+;; Tensor4 * Tensor2
 
 (dhm-t idx-m4dotm2(source)
        (when (and (<> (length source) 3) (<> (length source) 4))
@@ -3117,8 +3029,11 @@
 (dhm-t-declare idx-m4dotm2 idx-m4dotm2acc)
 (dhm-c-declare idx-m4dotm2 idx-m4dotm2acc)
 
-;;-----------------------------------------------------------------------------
-;; 
+
+
+;; ------------------------------
+;; External product
+
 (dhm-t idx-m1extm1(source)
        (when (and (<> (length source) 3) (<> (length source) 4))
 	     (dhc-error 
@@ -3207,128 +3122,91 @@
 ;;; ------------------------------------------------------------------------
 
 
-
 (de dhc-match-string-types (source arg-tnodes)
-
-    (let*  ((arg-types
-	     (all ((ty arg-tnodes))
-		  (unode-val :ty:type:u-tclass)))
-	    (str-type ())
-	    (search (lambda (pos) 
-		      (regex-seek
-		       "((%)(-)?([0-9])*(\\.)?([0-9])*([a-z]|[A-Z]|\\ ))|(%%)"
-		       source (+ (car pos) (cadr pos)))))
-	    (pos '(0 0)) (i 0) (num-args (length arg-types)))
-      
-      (while (and pos (< i num-args))
-	(setq pos (search pos))
-	(when (consp pos)
-	      (setq str-type (mid source (car pos) (cadr pos)))
-	      (if ~(selectq
-		    (right str-type 1)
-		    ("d"
-		     (member (car arg-types) '(dht-number dht-int dht-byte
-							  dht-ubyte)))
-		    (("f" "e" "g")
-		     (member (car arg-types) '(dht-number dht-flt dht-double)))
-		    (("x" "X")
-		     (member (car arg-types) '(dht-number dht-int 
-							  dht-byte dht-ubyte)))
-		    ("s"
-		     (member (car arg-types) '(dht-str)))
-		    ("%" t)
-		    (t (dhc-error
-			(concat "unknown type \" " str-type "\"") source)))
-		(dhc-error (concat "type mismatch: \"" 
-				   source "\" -> "  str-type)
-			   (car arg-types)))
-	      (when (<> "%" (right str-type 1))
-		    (setq arg-types (cdr arg-types))
-		    (setq i (+ 1 i)))))
-      (if (or (<> i num-args)
-	      (and pos
-		   (setq pos (search pos))
-		   (<> "%%" (mid source (car pos) (cadr pos)))))
-	  (dhc-error 
-	   "number of arguments disagrees with number in format string"
-		     source))
-))
+  (let*  ((arg-types
+           (all ((ty arg-tnodes))
+             (unode-val :ty:type:u-tclass)))
+          (str-type ())
+          (search (lambda (pos) 
+                    (regex-seek
+                     "((%)(-)?([0-9])*(\\.)?([0-9])*([a-z]|[A-Z]|\\ ))|(%%)"
+                     source (+ (car pos) (cadr pos)))))
+          (pos '(0 0)) (i 0) (num-args (length arg-types)))
+    (while (and pos (< i num-args))
+      (setq pos (search pos))
+      (when (consp pos)
+        (setq str-type (mid source (car pos) (cadr pos)))
+        (if ~(selectq
+                 (right str-type 1)
+               ("d"
+                (member (car arg-types) '(dht-number dht-int dht-byte
+                                                     dht-ubyte)))
+               (("f" "e" "g")
+                (member (car arg-types) '(dht-number dht-flt dht-double)))
+               (("x" "X")
+                (member (car arg-types) '(dht-number dht-int 
+                                                     dht-byte dht-ubyte)))
+               ("s"
+                (member (car arg-types) '(dht-str)))
+               ("%" t)
+               (t (dhc-error
+                   (concat "unknown type \" " str-type "\"") source)))
+          (dhc-error (concat "type mismatch: \"" 
+                             source "\" -> "  str-type)
+                     (car arg-types)))
+        (when (<> "%" (right str-type 1))
+          (setq arg-types (cdr arg-types))
+          (setq i (+ 1 i)))))
+    (if (or (<> i num-args)
+            (and pos
+                 (setq pos (search pos))
+                 (<> "%%" (mid source (car pos) (cadr pos)))))
+        (dhc-error 
+         "number of arguments disagrees with number in format string"
+         source)) ))
 
 (dhm-t printf(source)
-       (when (> 2 (length source))
-	     (dhc-error "at least one argument expected"))
-       
-       (let* ((tns (all ((tn (cdr source)))
-			(if ~(stringp tn)
-			  (dhc-parse-expr-t tn)
-			  (new t-node () (new dhc-type 'dht-str) tn ())))))
-	 (when ~(==> :(car tns):type is-a-str)
-	       (dhc-error "first argument must be an string"))
-	 (if (stringp (cadr source))
-	     (dhc-match-string-types :(car tns):source (cdr tns)))
-	 
-	 (new t-node tns (new dhc-type 'dht-bool))))
+  (when (> 2 (length source))
+    (dhc-error "at least one argument expected"))
+  (let* ((tns (all ((tn (cdr source)))
+                (if ~(stringp tn)
+                  (dhc-parse-expr-t tn)
+                  (new t-node () (new dhc-type 'dht-str) tn ())))))
+    (when ~(==> :(car tns):type is-a-str)
+          (dhc-error "first argument must be an string"))
+    (if (stringp (cadr source))
+        (dhc-match-string-types :(car tns):source (cdr tns)))
+    (new t-node tns (new dhc-type 'dht-bool))))
 
 (dhm-c printf(source treetype retplace)
-       (let ((arg-source (cdr source))
-	     (arg-names 
-	      (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
-		   (if ~(stringp nm)
-		     (dhc-parse-expr-c nm nmt ())
-		     nm)))
-	     (data ())
-	     (arg-types
-	      (all ((ty (cdr :treetype:tn-list)))
-		   (unode-val :ty:type:u-tclass))))
-	 
-	 (if ~(stringp (car arg-source))
-	   (setq data (sprintf "printf((char *)((%s)->data)"
-			       (car arg-names)))
-	   (setq data (sprintf "printf(\"%s\"" (dhc-printf-to-c
-						(car arg-source)))))
-	 (each ((thearg (cdr arg-names))
-		(theargsource (cdr arg-source))
-		(thetype (cdr arg-types)))
-	       (if (= thetype 'dht-str)
-		   (if ~(stringp theargsource)
-		     (setq data (concat data ",(char *)((" thearg ")->data)"))
-		     (setq data (concat data "," "\""
-					(dhc-printf-to-c theargsource)
-					"\"")))
-		 (setq data (concat data "," thearg))))
-	 
-	 (dhc-add-c-statements  (concat  data ");")))
-       "0")
-
-
-
-
-;;; ------------------------------------------------------------------------
-;;; DHM FOR PARSING MISC SN3.1 STUFF
-;;; ------------------------------------------------------------------------
-
-
-(dhm-t-declare progn protect unprotect)
-
-(dhm-c protect(source treetype retplace)
-       (let ((dhc-unprotect ()))
-	 (dhc-parse-progn-c (cdr source)
-			    (cdr :treetype:tn-list) retplace)))
-
-(dhm-c unprotect(source treetype retplace)
-       (let ((dhc-unprotect t))
-	 (dhc-parse-progn-c (cdr source)
-			    (cdr :treetype:tn-list) retplace)))
-
-(dhm-t breakp(source)
-  (when (<> 1 (length source))
-    (dhc-error "breakp takes no arguments!"))
-  (new t-node () (new dhc-type 'dht_nil)))
-
-(dhm-c breakp(source treetype retplace)
-  (dhc-add-c-statements 
-   "if(break_attempt) run_time_error(\"breakp in compiled code\");")
+  (let ((arg-source (cdr source))
+        (arg-names 
+         (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
+           (if ~(stringp nm)
+             (dhc-parse-expr-c nm nmt ())
+             nm)))
+        (data ())
+        (arg-types
+         (all ((ty (cdr :treetype:tn-list)))
+           (unode-val :ty:type:u-tclass))))
+    (if ~(stringp (car arg-source))
+      (setq data (sprintf "printf((char *)((%s)->data)"
+                          (car arg-names)))
+      (setq data (sprintf "printf(\"%s\"" (dhc-printf-to-c
+                                           (car arg-source)))))
+    (each ((thearg (cdr arg-names))
+           (theargsource (cdr arg-source))
+           (thetype (cdr arg-types)))
+      (if (= thetype 'dht-str)
+          (if ~(stringp theargsource)
+            (setq data (concat data ",(char *)((" thearg ")->data)"))
+            (setq data (concat data "," "\""
+                               (dhc-printf-to-c theargsource)
+                               "\"")))
+        (setq data (concat data "," thearg))))
+    (dhc-add-c-statements  (concat  data ");")))
   "0")
+
 
 
 

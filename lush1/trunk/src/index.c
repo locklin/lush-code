@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.13 2002-07-19 03:29:19 leonb Exp $
+ * $Id: index.c,v 1.14 2002-07-19 21:45:07 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -3162,6 +3162,7 @@ void init_index()
   dx_define("idx-bound", xindex_bound);
   dx_define("idx-dim", xindex_dim);
   dx_define("idx-modulo", xindex_mod);
+  dx_define("bound",xoldbound);
 
   /* creation */
   dx_define("new_index", xnew_index);
@@ -3226,10 +3227,4 @@ void init_index()
   dx_define("idx-is-sized", xindex_is_sized);
   dx_define("idx-same-size", xindex_same_size);
   dx_define("idx-size-or-check", xindex_size_or_check);
-
-  /* compatibility */
-  dx_define("matrix",xFmatrix);
-  dx_define("array",xATmatrix);
-  dx_define("submatrix",xsubindex);
-  dx_define("bound",xoldbound);
 }

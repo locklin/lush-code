@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.12 2002-07-19 03:29:19 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.13 2002-07-19 21:45:07 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -569,9 +569,9 @@
        ;; bump return value
        (==> :|_Treetype|:type bump-level (1- lex-level))
        (setq |_Split| 
-             (split-list bump-list 
-                         (lambda (x) (< (==> :x:type bump-level)
-                                        lex-level))))
+             (dhc-split-list bump-list 
+                             (lambda (x) (< (==> :x:type bump-level)
+                                            lex-level))))
        (setq :|_Treetype|:symbol (cadr |_Split|))
        (setq |_Split| (car |_Split|)))
      (setq bump-list (append bump-list |_Split|))
@@ -643,7 +643,7 @@
 #? (dhc-error <string> [<arg>])
 ;; Called when we get a syntax error in the source
 (de dhc-error(string &optional argument)
-  (printf "\n*** compiler : %s" string)
+  (printf "\n*** compiler : %s%s" (upcase (left string 1)) (mid string 2))
   (when argument (printf " : %l" argument))
   (printf "\n")
   (printf "*** in:   %s\n" (left (pname (car dhc-debug-stack)) 72))
@@ -728,25 +728,22 @@
             ; for gptr: optional name of pointer C type
 )			
 
-(setq dhc-simple-types '(dht-dc dht-unk dht-int dht-flt dht-bool dht-nil
-                         dht-short dht-byte dht-ubyte
-		         dht-real dht-number
-			 dht-dhm dht-gptr))
-
-(setq dhc-complex-types '(dht-idx dht-srg dht-obj dht-class
-			  dht-func dht-ptr dht-str dht-list))
-
-;; order is important in following list because it determins priority
-;; in computing the type of expresssion like int+flt, int*real, etc...
-
-(setq dhc-int-types 
-      '(dht-int dht-short dht-byte dht-ubyte))
-
-(setq dhc-number-types 
-      (append dhc-int-types '(dht-number dht-flt dht-real)) )
-
-(setq dhc-all-types 
-      (append dhc-simple-types dhc-complex-types))
+;; order is important in following lists 
+;; because it determine numeric promotions
+(defvar dhc-simple-types 
+  '(dht-dc dht-unk dht-int dht-flt dht-bool dht-nil
+    dht-short dht-byte dht-ubyte
+    dht-real dht-number
+    dht-dhm dht-gptr))
+(defvar dhc-complex-types 
+  '(dht-idx dht-srg dht-obj dht-class
+    dht-func dht-ptr dht-str dht-list))
+(defvar dhc-int-types 
+  '(dht-int dht-short dht-byte dht-ubyte))
+(defvar dhc-number-types 
+  (append dhc-int-types '(dht-number dht-flt dht-real)) )
+(defvar dhc-all-types 
+  (append dhc-simple-types dhc-complex-types))
 
 ;;; ------------------------------------------------------------------------
 
@@ -1753,7 +1750,7 @@
       (when arg2 
         (apply append 
                (list (list (sprintf "DH_TEMPS(%d)," (length arg2)))
-                     (mapcar dhc-d-to-doc-temp arg2)
+                     (flatten (mapcar dhc-d-to-doc-temp arg2))
                      (list "DH_END_TEMPS,") ) ) )
       (cons "DH_RETURN," (dhc-d-to-doc arg3))
       (list "DH_END_FUNC,") ) ) ) )
@@ -2111,6 +2108,7 @@
          (printf "*** Redefining dhm-t for %l\n" ',name))
      (if (or (is-of-class func |DE|)
              (is-of-class func |DF|)
+             (is-of-class func |DM|)
              (is-of-class func |DX|)
              (is-of-class func |DY|)
              (is-of-class func |DZ|) )
@@ -2131,10 +2129,12 @@
            (printf "*** Redefining dhm-t for %l\n" name))
        (if (or (is-of-class func |DE|)
                (is-of-class func |DF|)
+               (is-of-class func |DM|)
                (is-of-class func |DX|)
                (is-of-class func |DY|) 
                (is-of-class func |DZ|) )
-           (putp func 'dhm-t dhm) ) )
+           (putp func 'dhm-t dhm)
+         (error 'dhm-t "Not a valid target for a dhm-t" name) ) )
      ',copies) )
 
 
@@ -2183,7 +2183,8 @@
                (is-of-class func |DX|)
                (is-of-class func |DY|) 
                (is-of-class func |DZ|) )
-           (putp func 'dhm-c dhm) ) )
+           (putp func 'dhm-c dhm) 
+         (error 'dhm-c "Not a valid target for a dhm-c" name) ) )
      ',copies) )
 
 
@@ -2202,7 +2203,16 @@
   (getp symb 'dhm-c) )
 
 
-
+#? (get-dhm-target <source>)
+;; This function can be called within a dhm
+;; to return the function object for which the dhm applies
+(de get-dhm-target(source)
+  (when (consp source)
+    (setq source (car source)) )
+  (when (symbolp source)
+    (setq source (eval `:,source)) )
+  source )
+   
 
 
 ;;; ------------------------------------------------------------------------
