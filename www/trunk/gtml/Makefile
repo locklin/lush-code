@@ -1,4 +1,4 @@
-
+perl=perl561
 gtml=./gtml
 outdir=../html
 
@@ -28,7 +28,7 @@ clean: FORCE
 	-rm 2>/dev/null ${HTML}
 
 ${HTML}:
-	$(gtml) $<
+	${perl} $(gtml) $<
 
 ${outdir}/index.html: index.gtml latest-news frontpage-faq
 ${outdir}/news.html: news.gtml latest-news older-news
