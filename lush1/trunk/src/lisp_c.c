@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.23 2003-01-28 18:00:40 leonb Exp $
+ * $Id: lisp_c.c,v 1.24 2003-02-28 18:55:22 leonb Exp $
  **********************************************************************/
 
 
@@ -792,11 +792,11 @@ static void
 avl_pnode(avlnode *n)
 {
   if (n->belong == BELONG_C)
-    sprintf(string_buffer,"C %#8x ", (unsigned int)(n->citem));
+    sprintf(string_buffer,"C %p ", (n->citem));
   else if (n->belong == BELONG_LISP)
-    sprintf(string_buffer,"L %#8x ", (unsigned int)(n->citem));
+    sprintf(string_buffer,"L %p ", (n->citem));
   else
-    sprintf(string_buffer,"? %#8x ", (unsigned int)(n->citem));
+    sprintf(string_buffer,"? %p ", (n->citem));
   print_string(string_buffer);
 
   if (n->cinfo == CINFO_IDX)
@@ -2232,7 +2232,7 @@ update_c_from_lisp(avlnode *n)
                   error(NIL,"lisp_c internal : object slot mismatch",n->litem);
                 /* copy field described by current record */
                 at_to_dharg(object->slots[j].val,&tmparg,drec+1,n->litem);
-                pos = (char*)cptr + (unsigned int)(drec->arg);
+                pos = (char*)cptr + (unsigned long)(drec->arg);
                 dharg_to_address(&tmparg, pos, drec+1);
                 /* next record */
                 drec = drec->end;
@@ -2376,7 +2376,7 @@ update_lisp_from_c(avlnode *n)
                 if (symb->name->name[0] != drec->name[0])
                   error(NIL,"lisp_c internal : object slot mismatch",n->litem);
                 /* copy field described by current record */
-                pos = (char*)cptr + (unsigned int)(drec->arg);
+                pos = (char*)cptr + (unsigned long)(drec->arg);
                 address_to_dharg(&tmparg, pos, drec+1);
                 orig = object->slots[j].val;
                 new = dharg_to_at(&tmparg, drec+1, n->litem);

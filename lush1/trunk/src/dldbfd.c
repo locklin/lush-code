@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.22 2003-02-22 16:46:57 leonb Exp $
+ * $Id: dldbfd.c,v 1.23 2003-02-28 18:55:22 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -87,8 +87,8 @@ unsigned int bfd_log2 (bfd_vma x);
 
 /* Conversion between bfd_vma and pointers.
  * These casts remove warnings with 64 bit enabled bfd. */
-#define vmaptr(x) ((void*)(size_t)(x))
-#define ptrvma(x) ((bfd_vma)(size_t)(x))
+#define vmaptr(x) ((void*)(unsigned long)(x))
+#define ptrvma(x) ((bfd_vma)(unsigned long)(x))
 
 
 /* ---------------------------------------- */
