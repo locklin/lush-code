@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.33 2002-08-30 19:33:00 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.34 2002-09-05 18:35:58 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -768,6 +768,42 @@
     ;; Reconstruct
     (apply concat (reverse r)) ) )
 
+
+#? varlushdir
+;;.TYPE VAR
+;;.FILE lushenv.lsh
+;; This variable is defined by <"lushenv.sn"> when the owner of the lush
+;; directory is different from the owner of the lush process.  Compiled versions
+;; of the system lush files will be created in a shadow directory tree located
+;; under the <varlushdir> directory.
+
+#? (dhc-make-cdir <cdir> [<create>])
+;; This function returns <cdir> when <varlushdir> is the empty list.  When
+;; <varlushdir> is the name of an existing directory, this function checks if
+;; <cdir> is a subdirectory of the Lush directory <lushdir>.  If this is the
+;; case, it returns the name of a subdirectory under <varlushdir> with the
+;; same name.  When argument <create> it <t>, function <dhc-make-cdir> creates
+;; all the requitred directories under <varlushdir>.
+(de dhc-make-cdir(cdir &optional create)
+  (when (and :varlushdir (dirp :varlushdir))
+    (let ((dir (concat-fname cdir)) (n ()) (l ()))
+      (while (and (<> dir lushdir) (<> dir (setq n (dirname dir))))
+        (setq l (cons (basename dir) l))
+        (setq dir n) )
+      (when (= dir lushdir)
+        (setq cdir :varlushdir)
+        (while l
+          (setq cdir (concat-fname cdir (car l)))
+          (setq l (cdr l)) 
+          (when (and create (not (dirp cdir)))
+            (printf "*** Warning: Creating %s\n" cdir)
+            (mkdir cdir) ) ) ) ) )
+  (when (and create (not (dirp cdir)))
+    (printf "*** Warning: Creating %s\n" cdir)
+    (mkdir cdir) )
+  cdir )
+
+
 #? (dhc-make-c-filename <src>)
 ;; Returns a suitable filename for the C file
 ;; generated from the LSH file <src>
@@ -776,9 +812,7 @@
         (base (basename src)) )
     (when (not (dirp dir))
       (error 'dhc-make-o-filename "Directory does not exist" dir) )
-    (setq dir (concat-fname dir "C"))
-    (when (not (dirp dir))
-      (mkdir dir) ) 
+    (setq dir (dhc-make-cdir (concat-fname dir "C") t))
     (setq base (regex-subst "\\.[+a-zA-Z0-9]+$" "" base))
     (setq base (concat base "." (or (getconf "CEXT") "c")))
     (concat-fname dir base) ) )
@@ -792,12 +826,11 @@
     (when (not (dirp dir))
       (error 'dhc-make-o-filename "Directory does not exist" dir) )
     (when (<> (basename dir) "C")
-      (setq dir (concat-fname dir "C"))
-      (when (not (dirp dir))
-        (mkdir dir) ) )
+      (setq dir (dhc-make-cdir (concat-fname dir "C") t)) )
     (when (getconf "host")
       (setq dir (concat-fname dir (getconf "host")))
       (when (not (dirp dir)) 
+        (printf "*** Warning: Creating %s\n" dir)
         (mkdir dir) ) )
     (setq base (regex-subst "\\.[+a-zA-Z0-9]+$" "" base))
     (setq base (concat base "." (or (getconf "OBJEXT") "o")))
@@ -871,6 +904,7 @@
 (when (not dhc-make-force)
   (defvar dhc-make-force
     () ) )
+
 
 
 #? (dhc-make-o <src-file> [<obj-file> [<lushflags>]])
@@ -993,13 +1027,13 @@
            (odir ()) )
       ;; determine cname
       (when (not fname)
-        (setq cdir (concat-fname sndir "C"))
+        (setq cdir (dhc-make-cdir (concat-fname sndir "C")))
         (let ((base (regex-subst "\\.[+a-zA-Z0-9]+$" "" (basename snname))))
           (setq fname (concat-fname cdir (dhc-lisp-to-c-name base))) ) )
       (when fname
         (setq fname (regex-subst "\\.[+a-zA-Z0-9]+$" "" fname))
         (when (= (dirname fname) ".")
-          (setq cdir (concat-fname sndir "C"))
+          (setq cdir (dhc-make-cdir (concat-fname sndir "C")))
           (setq fname (concat-fname cdir fname)) ) )
       ;; determine cfname and ofname
       (let ((cfname (concat fname "." (or (getconf "CEXT") "c")))
@@ -1047,23 +1081,21 @@
     ;; determine fname
     (if fname
         (setq fname (regex-subst "\\.[+a-zA-Z0-9]+$" "" fname))
-      (setq cdir (concat-fname sndir "C"))
+      (setq cdir (dhc-make-cdir (concat-fname sndir "C") t))
       (let ((base (regex-subst "\\.[+a-zA-Z0-9]+$" "" (basename snname))))
         (setq fname (concat-fname cdir (dhc-lisp-to-c-name base))) ) )
     (when (= (dirname fname) ".")
-      (setq cdir (concat-fname sndir "C"))
+      (setq cdir (dhc-make-cdir (concat-fname sndir "C") t))
       (setq fname (concat-fname cdir fname)) )
     ;; determine cfname and ofname
     (let ((cfname (concat fname "." (or (getconf "CEXT") "c")))
           (ofname (concat fname "." (or (getconf "OBJEXT") "o"))) )
       (when (and cdir (getconf "host"))
         (setq odir (concat-fname cdir (getconf "host"))) 
-        (setq ofname (concat-fname odir (basename ofname))) )
-      ;; make sure directories exist
-      (when (and cdir (not (dirp cdir)))
-        (mkdir cdir) )
-      (when (and odir (not (dirp odir)))
-        (mkdir odir) ) 
+        (setq ofname (concat-fname odir (basename ofname)))
+        (when (and odir (not (dirp odir)))
+          (printf "*** Warning: Creating %s\n" odir)
+          (mkdir odir) ) )
       ;; generate
       (dhc-make-c-maybe (if (not force) snname) fname fsymblist)
       (dhc-make-o-maybe cfname ofname)

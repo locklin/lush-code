@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lushenv.lsh,v 1.10 2002-08-27 22:02:37 leonb Exp $
+;;; $Id: lushenv.lsh,v 1.11 2002-09-05 18:35:58 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Defines the standard Lush environment and autoload functions
@@ -127,17 +127,26 @@
 ;; ------------------------------------------------------------
 ;; Process LUSHRC file on UNIX systems (must be last section)
 
-(when (not wintl3p)
-  (let ((homedirectory (getenv "HOME")))
-    (when (<> homedirectory "")
-      (let ((lushrc (concat-fname homedirectory ".lushrc")))
-	(when (not (filep lushrc))
-	  (let ((f (open-write lushrc)))
-	    (when f
-	      (writing f
-		(printf ";;; Sample LUSHRC file.\n")
-                (printf ";;; Customize at will!\n") ))))
-	(when (filep lushrc)
-	  (libload lushrc) ) ) ) ) )
+;; Location of compiled versions of installed lsh files.
+(defvar varlushdir ())
 
-      
+(when (and getpid (not wintl3p))
+  ;; Check for .lush directory
+  (let ((home (getenv "HOME")))
+    (when (<> home "")
+      (let* ((mylushdir (concat-fname home ".lush"))
+             (mylushrc (concat-fname mylushdir "lushrc.lsh")) )
+        (when (not (dirp mylushdir))
+          (printf "*** First time user: Creating directory %s\n" mylushdir) 
+          (mkdir mylushdir) )
+        (when (not (filep mylushrc))
+          (printf "*** First time user: Creating initial file %s\n" mylushrc)
+          (writing mylushrc
+            (printf ";;; Customize this LUSHRC file as you see fit.\n") ) )
+        ;; Make a decision regarding varlushdir
+        (let ((owner (alist-get 'uid (fileinfo lushdir))))
+          (when (and getuid owner (<> (getuid) owner))
+            (setq varlushdir mylushdir) ) )
+        (lock-symbol varlushdir)
+        ;; Load lushrc
+        (libload mylushrc) ) ) ) )
