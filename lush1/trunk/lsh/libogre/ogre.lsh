@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ogre.lsh,v 1.15 2002-10-19 00:00:45 leonb Exp $
+;;; $Id: ogre.lsh,v 1.16 2002-10-19 01:30:06 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -606,9 +606,9 @@
 
 (defmethod Control activate(k)
   (let ((oldactivated activated))
-    (setq activated (not (not k)))
+    (setq activated (setq k (not (not k))))
     (if k
-	(when (and itscontainer ~oldactivated)
+	(when (and itscontainer (not oldactivated))
 	  (==> itscontainer activate this) )
       (when itscontainer
 	(==> itscontainer activate ()) ) )
@@ -741,24 +741,22 @@
    (t this) ) )
 
 (defmethod Container activate(k)
-  (if k
-      ;; case1: activation
-      (let ((oldactivated (==> this isactivated)))
-        (when (and k (not (and (is-of-class k VisualObject)
-                               (= this :k:itscontainer) )))
-          (setq k t) )
-        (setq activated k)
-        (when oldactivated
-          (==> oldactivated activate ()) )
-	;; Set the activation state
-        (setq activated k)
-	(when itscontainer
-	  (==> itscontainer activate this) ) )
-    
-    ;; case2: desactivation
-    (setq activated ())
-    (when itscontainer
-      (==> itscontainer activate ()) ) ) )
+  (let ((oldactivated activated))
+    ;; normalize k
+    (when (or (not (is-of-class k VisualObject))
+              (<> this :k:itscontainer) )
+      (setq k (not (not k))) )
+    ;; deactivate activated child
+    (when (and (is-of-class activated VisualObject) 
+               (not (== k activated)) )
+      (let ((leaf (==> activated isactivated)))
+        (when leaf (==> leaf activate ())) ) )
+    ;; perform activation
+    (if (setq activated k)
+        (when (and itscontainer (not oldactivated))
+          (==> itscontainer activate this) )
+      (when itscontainer
+        (==> itscontainer activate ()) ) ) ) )
 
 
 ;; EVENEMENTS
@@ -939,12 +937,12 @@
   (let (((x y w h) rect)
 	(active (==> what isactivated)))
     (when active
-      (==> what activate ()) )
+      (==> active activate ()) )
     (==> what moverel x y)
     (setq contents (nconc1 contents (cons what :what:rect)))
     (==> what setcontainer this)
     (when active 
-      (==> what activate active))
+      (==> active activate t))
     (when window
       (==> what realize window) ) ) )
 
@@ -953,7 +951,7 @@
   (if (= this :what:itscontainer)
       (let ((newcontents ())
 	    ((myx myy myw myh) rect) )
-	(when (==> what isactivated)
+	(when (== activated what)
 	  (==> this activate ()) )
 	(each ((i contents))
 	  (when (<> what (car i))
@@ -1948,9 +1946,8 @@
     'ignored ) )
 
 (defmethod EditString activate(d)
-  (when (and ~d window)
-    (==> this execute) )
-  (==> this (Control . activate) d) )
+  (==> this (Control . activate) d)
+  (when (and ~d window) (==> this execute)) )
 
 (defmethod EditString record-history()
   (when (<> data "")
@@ -3786,7 +3783,7 @@
   (==> this (Container . repair) rect) )
 
 
-(defclass Viewer Form
+(defclass Viewer Container
   inside
   view
   hpos
