@@ -27,7 +27,7 @@
 ;;;;    The help subsystem...
 ;;;;	Yann LeCun 2002
 ;;;;
-;;;;  $Id: help.lsh,v 1.8 2002-10-09 06:43:40 profshadoko Exp $
+;;;;  $Id: help.lsh,v 1.9 2002-10-14 07:30:51 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "libstd/ldoc")
@@ -325,8 +325,8 @@
   root
   files)
 
-(defmethod help-book  help-book (f title)
-  (setq root (new help-node title "" () ()))
+(defmethod help-book help-book (f title &optional (start-page ""))
+  (setq root (new help-node title start-page () ()))
   (setq files (list (list f root)))
   (let* ((help-code  (read-help-headers f 0))
 	 (current-file f)
@@ -343,20 +343,27 @@
 
 (defmethod help-book make-ltree () (make-ltree-from-tree root))
 
-(de help-filename-from-path (s) (concat (hashcode s) ".html"))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; some utilities for HTML/LaTeX rendering
 
-(de all-the-same-filep (c)
+(de help-node-all-the-same-filep (c)
   (let ((x :(car c):file) (r t))
     (each ((z c)) (when (<> :z:file x) (setq r ()))) r))
 
-(de all-childless (c)
+(de help-node-all-childless (c)
   (let ((r t))
     (each ((z c)) (when (==> z getchildren) (setq r ())))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; HTML rendering of a help-book
+
+(de help-htmlfile-from-path (s) (concat (hashcode s) ".html"))
 
 ;; render the body of a help node <r> to HTML
 ;; and render the children nodes recursively.
 (de help-tree-render-html-body (r d num)
-  (let* ((f (open-append (concat-fname d (help-filename-from-path :r:file)))))
+  (let* ((f (open-append (concat-fname d (help-htmlfile-from-path :r:file)))))
     (writing f 
       (==> (==> r getdata) render-html f 
 	   (merge-words (mapcar pname num) ".")))
@@ -367,7 +374,7 @@
 	(incr n)))))
 
 (de help-tree-render-html-index (r d num)
-  (let* ((fname (help-filename-from-path :r:file))
+  (let* ((fname (help-htmlfile-from-path :r:file))
 	 (n (merge-words (mapcar pname num) "."))
 	 (children (==> r getchildren))
 	 (nchildren (length children))
@@ -410,6 +417,34 @@
       (printf "</body></html>\n")))
   (printf "printing bodies\n")
   (help-tree-render-html-body root d ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; LateX rendering of a help-book
+
+(de help-latexfile-from-path (s) (concat (hashcode s) ".tex"))
+
+;; render the body of a help node <r> to LATEX
+;; and render the children nodes recursively.
+(de help-tree-render-latex-body (r num)
+  (==> (==> r getdata) render-latex num)
+  (let ((children (==> r getchildren))
+	(n 0))
+    (each ((hn children))
+      (help-tree-render-latex-body hn (append num (list n)))
+      (incr n))))
+
+(defmethod help-book render-latex (latex-dir title)
+  (let ((index-file (concat-fname latex-dir "lush-manual.tex")))
+    (writing index-file
+      (printf "\\documentclass{book}\n")
+      (printf "\\begin{document}\n")
+      (printf "\\title{Lush: Reference Manual}\n")
+      (printf "\\author{L\\'eon Bottou, Yann LeCun}\n")
+      (printf "\\maketitle\n")
+      (printf "\\tableofcontents\n\n")
+      (help-tree-render-latex-body root ())
+      (printf "\\end{document}\n"))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -481,7 +516,9 @@
 ;; re-reading of the help book.
 (de read-lush-manual (&optional force)
   (when (or force (not *lush-manual*))
-    (setq *lush-manual* (new help-book "lush-manual.hlp" "Lush Manual")))
+    (setq *lush-manual* 
+	  (new help-book "lush-manual.hlp" "Lush Manual" 
+	       (concat-fname lushdir "lsh/manual/helptool-shortcuts.hlp"))))
   *lush-manual*)
 
 ;; with no argument: make the html manual in the lush/html directory
@@ -490,11 +527,25 @@
 	(d (if dr 
 	       dr 
 	     (if (not b)
-		 (concat-fname lushdir "html")
+		 (concat-fname lushdir (concat-fname "doc" "html"))
 	       (error "can't write document other than lush manual in default dir")))))
     (printf "making HTML manual in %s (be patient...)\n" d)
     (sys (sprintf "rm %s/*.html" d))
     (==> book render-html d "Lush Manual - Table of Content")
+    (printf "done\n")))
+
+;; with no argument: make the html manual in the lush/html directory
+(de make-latex-manual (&optional b dr)
+  (let ((book (if b b (new help-book "lush-manual-latex.hlp" "Lush Manual")))
+	(latex-dir 
+	 (if dr 
+	     dr 
+	   (if (not b)
+	       (concat-fname lushdir "doc/latex")
+	     (error "can't write document other than lush manual in default dir")))))
+    (printf "making LaTeX manual in %s (be patient...)\n" latex-dir)
+    (sys (sprintf "rm %s/*.tex" latex-dir))
+    (==> book render-latex latex-dir "Lush Manual")
     (printf "done\n")))
 
 

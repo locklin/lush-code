@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;  $Id: brace.lsh,v 1.5 2002-10-09 06:43:39 profshadoko Exp $
+;;;;  $Id: brace.lsh,v 1.6 2002-10-14 07:30:51 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Functions and classes to handle brace lists.
@@ -31,6 +31,20 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; utilities
 
+(defvar brace.lush-keywords
+  '("(cond" "(if" "(when" "(for" "(each" "(all"
+    "(while" "(let" "(let*" "(progn" "(prog1" 
+    "(let-filter" "(reading" "(writing" "(selectq"
+    "(do-while" "(mapwhile" "(mapfor" "(repeat"
+    "(idx-eloop" "(idx-bloop" "(idx-gloop"
+    "(ifdef" "(ifcompiled"
+    "(lambda" "(flambda" "(mlambda" 
+    "(on-error" "(on-break"
+    "(de" "(df" "(dmc" "(dmd" "(dz" "(dm" "(dhm-p" "(dhm-t" "(dhm-c" "(defun"
+    "(demethod" "(dfmethod" "(dmmethod"
+    ))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (de list-get-strings (l)
   (let ((r ()))
     (each ((x l)) (if (stringp x) (setq r (cons x r))))
@@ -39,6 +53,21 @@
 (de first-string (l)
   (while (and l (not (stringp (car l)))) (setq l (cdr l)))
   (car l))
+
+;; string literal: turns a brace into a single string.
+;; allows to type a brace expression to build a
+;; complicated string with non-escaped characters.
+(df <lit> p 
+  (let ((r "")) 
+    (each ((x p))
+      (cond 
+       ((stringp x) (setq r (concat r x)))
+       ((and (numberp x) (>= x 1)) (repeat x (setq r (concat r " "))))
+       ((and (numberp x) (= x -1)) (setq r (concat r "\n")))
+       ((and (numberp x) (= x -2)) (setq r (concat r "\t")))
+       (t (error "illegal object in literal brace"))))
+    r))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -422,11 +451,14 @@
 (defvar brace.meta-tags
   '(<author> <symbol> <location> <keywords> <date> <desc> <title> <type>))
 
+(defvar brace.global-tags '(<lit>))
+
 ;; collect all the legal tags
 (defvar brace.tags 
-  (let ((tags (mapcar pname (append (slots brace-renderer) brace.meta-tags))))
+  (let ((tags (mapcar pname 
+		      (append (slots brace-renderer) 
+			      brace.meta-tags brace.global-tags))))
     (append tags (mapcar upcase tags))))
-
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -563,17 +595,17 @@
 	       (brace-text.parskip)
 	       (brace-text.printf "### ")
 	       (brace-text.parprint p)
-	       (brace-text.parksip)))
+	       (brace-text.parskip)))
   (setq <h2> (flambda p 
 	       (brace-text.parskip)
 	       (brace-text.printf "## ")
 	       (brace-text.parprint p)
-	       (brace-text.parksip)))
+	       (brace-text.parskip)))
   (setq <h3> (flambda p 
 	       (brace-text.parskip)
 	       (brace-text.printf "# ")
 	       (brace-text.parprint p)
-	       (brace-text.parksip)))
+	       (brace-text.parskip)))
   (setq <hlink> (flambda p 
 		  (brace-text.print-word "[HLINK:")
 		  (brace-text.parprint p)
@@ -734,18 +766,34 @@
 	       (f (make-font-name n2 b2 i2 s2)))
 	  (setq font-stack (cons (list n2 b2 i2 s2) font-stack))
 	  (font f)
+	  (setq line-height (* 1.25 (last (rect-text 0 0 "pd0"))))
+	  (setq space-width 
+		(* (if (= n2 "Times") 1.25 1)
+		   (- (caddr (rect-text 0 0 "0 0"))
+		      (caddr (rect-text 0 0 "00")))))
 	  (nconc1 gcode `(font ,f))))
     (when (not (and name boldp italicp size))
       (error "font stack is empty, cannot modify font"))
     (let* ((f (make-font-name name boldp italicp size)))
       (setq font-stack (cons (list name boldp italicp size) font-stack))
       (font f)
+      (setq line-height (* 1.25 (last (rect-text 0 0 "pd0"))))
+      (setq space-width 
+	    (* (if (= name "Times") 1.25 1)
+	       (- (caddr (rect-text 0 0 "0 0"))
+		  (caddr (rect-text 0 0 "00")))))
       (nconc1 gcode `(font ,f)))))
 
 (de brace-ogre.pop-font ()
   (setq font-stack (cdr font-stack))
-  (let* ((f (apply make-font-name (car font-stack))))
+  (let* ((f (apply make-font-name (car font-stack)))
+	 (name (caar font-stack)))
     (font f)
+    (setq line-height (* 1.25 (last (rect-text 0 0 "pd0"))))
+    (setq space-width 
+	  (* (if (= name "Times") 1.25 1)
+	     (- (caddr (rect-text 0 0 "0 0"))
+		(caddr (rect-text 0 0 "00")))))
     (nconc1 gcode `(font ,f))))
 
 (de brace-ogre.push-color (c)
@@ -772,6 +820,49 @@
 	 ((member x '(</code> </pre> </CODE> </PRE>)) (setq stop t))
 	 ((stringp x) (brace-ogre.printf x))
 	 ((= x -1) (brace-ogre.cr))
+	 ((= x -2) (brace-ogre.sp 7))
+	 ((and (numberp x) (>= x 1)) (brace-ogre.sp x)))
+	(setq p (cdr p))))
+    (brace-ogre.parprint p)))
+
+;; print pre-formatted text
+(de brace-ogre.codeprint (p)
+  (let ((stop ()) (comment ()) (c-code ()))
+    (while (and p (not stop))
+      (let ((x (car p)))
+	(cond
+	 ((member x '(</code> </pre> </CODE> </PRE>))
+	  (when comment (setq comment ()) (brace-ogre.pop-color))
+	  (when c-code (setq c-code ()) (brace-ogre.pop-color))
+	  (setq stop t))
+	 ((stringp x) 
+	  (if (and (member x brace.lush-keywords)
+		   (not comment)
+		   (not c-code))
+	      (progn
+		(brace-ogre.push-font () t () ())
+		(brace-ogre.printf x)
+		(brace-ogre.pop-font))
+	    (when (and (not comment)
+		       (not c-code)
+		       (or (regex-match "#\\?" x)
+			   (regex-match "[;]+" x)))
+	      (setq comment t) (brace-ogre.push-color '(0.8 0 0)))
+	    (when (and (not comment)
+		       (not c-code)
+		       (regex-match "#{" x))
+	      (setq c-code t) (brace-ogre.push-color '(0 0.7 0)))
+	    (if (and c-code (not comment) 
+		     (or (regex-seek "#}" x)
+			 (and (= x "#") (regex-seek "^}" (cadr p)))))
+		(progn
+		  (setq c-code ()) 
+		  (brace-ogre.printf x) 
+		  (brace-ogre.pop-color))
+	      (brace-ogre.printf x))))
+	 ((= x -1) 
+	  (when comment (setq comment ()) (brace-ogre.pop-color))
+	  (brace-ogre.cr))
 	 ((= x -2) (brace-ogre.sp 7))
 	 ((and (numberp x) (>= x 1)) (brace-ogre.sp x)))
 	(setq p (cdr p))))
@@ -839,7 +930,7 @@
   (setq <code> (flambda p 
 		 (brace-ogre.push-color code-color)
 		 (brace-ogre.push-font "Courier" 0 0 12)
-		 (brace-ogre.preprint p)
+		 (brace-ogre.codeprint p)
 		 (brace-ogre.pop-font)
 		 (brace-ogre.pop-color)()))
   (setq <li> (flambda p 
@@ -880,19 +971,28 @@
   (setq <div> (flambda p (brace-ogre.parprint p) ()))
   (setq <h1> (flambda p 
 	       (brace-ogre.parskip)
-	       (brace-ogre.printf "### ")
+	       (brace-ogre.push-color '(0.9 0.1 0.5))
+	       (brace-ogre.push-font "Helvetica" 1 0 18)
 	       (brace-ogre.parprint p)
-	       (brace-ogre.parksip)()))
+	       (brace-ogre.pop-font)
+	       (brace-ogre.parskip)
+	       (brace-ogre.pop-color) ()))
   (setq <h2> (flambda p 
 	       (brace-ogre.parskip)
-	       (brace-ogre.printf "## ")
+	       (brace-ogre.push-color '(0.9 0.1 0.5))
+	       (brace-ogre.push-font "Helvetica" 1 0 14)
 	       (brace-ogre.parprint p)
-	       (brace-ogre.parksip)()))
+	       (brace-ogre.pop-font)
+	       (brace-ogre.parskip)
+	       (brace-ogre.pop-color) ()))
   (setq <h3> (flambda p 
 	       (brace-ogre.parskip)
-	       (brace-ogre.printf "# ")
+	       (brace-ogre.push-color '(0.9 0.1 0.5))
+	       (brace-ogre.push-font "Helvetica" 1 0 12)
 	       (brace-ogre.parprint p)
-	       (brace-ogre.parksip) ()))
+	       (brace-ogre.pop-font)
+	       (brace-ogre.parskip)
+	       (brace-ogre.pop-color) ()))
   (setq <hlink> (flambda p 
 		  (brace-ogre.print-word "[HLINK:")
 		  (brace-ogre.parprint p)
@@ -923,11 +1023,7 @@
   (setq px 0) (setq py 0)
   (gsave
    (brace-ogre.push-color text-color)
-   (brace-ogre.push-font "Courier" 0 0 12)
-   (setq line-height (+ 4 (last (rect-text 0 0 "0"))))
-   (setq space-width 
-	 (- (caddr (rect-text 0 0 "0 0"))
-	    (caddr (rect-text 0 0 "00"))))
+   (brace-ogre.push-font "Times" 0 0 14)
    (==> this (brace-renderer . render) doc)
    (list (list w (+ py line-height)) gcode)))
 
@@ -1494,7 +1590,7 @@
 
 ;; unconditional carriage return
 (de brace-latex.cr ()
-  (printf "\\\\\n")
+  (printf "\n")
   (incr returns)
   (repeat left-margin (printf " "))
   (setq cursor-pos left-margin))
@@ -1513,9 +1609,14 @@
     (printf "\n") (setq cursor-pos 0))
   (setq s (regex-subst "\\\\" "\\\\" s))
   (setq s (regex-subst "$" "\\$" s))
+  (setq s (regex-subst "_" "\\_" s))
+  (setq s (regex-subst "#" "\\#" s))
+  (setq s (regex-subst "&" "\\&" s))
+  (setq s (regex-subst "\\^" "\\^" s))
   (setq s (regex-subst "%" "\\%%%%" s))
-  (setq s (regex-subst "<" "{\\tt " s))
-  (setq s (regex-subst ">" "}" s))
+  (setq s (regex-subst "%" "%%" s))
+  (setq s (regex-subst "<([^ >]+)>" "@@@%0@@@" s))
+  (setq s (regex-subst "@@@([^@]+)@@@" "{\\tt %0}" s))
   (printf s) (printf " ")
   (setq returns 0)
   (incr cursor-pos (1+ (len s))))
@@ -1554,24 +1655,29 @@
   (let (((author symbol location keywords date desc title type) p))
     (when title
       (printf "\n")
-      (printf "\\subsection{\n")
+      (selectq (length section-number)
+	(1 (printf "\\chapter{\n"))
+	(2 (printf "\\section{\n"))
+	(3 (printf "\\subsection{\n"))
+	(4 (printf "\\subsubsection{\n"))
+	(t (printf "{\\bf\n")))
       (brace-latex.print-word title)
       (printf "}\n")
-      (if type (printf "[%s] " type))
+      (when type (printf "Type: %s" type))
       (when (and location (<> (right location 4) ".hlp"))
 	(printf "(%s)" location))
-      (printf "\\\\\n"))
+      (printf "\n"))
     (when author 
       (brace-latex.parprint (cons "Author(s): " author))
-      (brace-latex.br))
+      (printf "\n"))
     (when date (printf "%s\n" date))
     (when desc 
       (brace-latex.parprint (cons "Description: " desc))
-      (brace-latex.br))
+      (printf "\n"))
     (when keywords
       (brace-latex.parprint (cons "Keywords: " keywords))
-      (brace-latex.br))
-    (brace-latex.cr)))
+      (printf "\n"))
+    (printf "\n")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defclass brace-latex brace-renderer
@@ -1608,6 +1714,10 @@
 	      (brace-latex.printf "}")))
   (setq <u> (flambda p 
 	      (brace-latex.parprint p)))
+  (setq <c> (flambda p 
+	       (brace-latex.printf "{\\tt ")
+	       (brace-latex.parprint p)
+	       (brace-latex.printf "}")))
   (setq <font> (flambda p (brace-latex.parprint p)))
   (setq <center> (flambda p 
 		   (brace-latex.printf "\\begin{center}\n")
@@ -1652,7 +1762,7 @@
   (setq <meta> (flambda p (brace-latex.meta p)))
   )
 
-(defmethod brace-latex render (doc)
+(defmethod brace-latex render (doc section-number)
   (setq cursor-pos 0)
   (setq returns 0)
   (setq left-margin 0)
