@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.9 2004-10-05 07:28:02 leonb Exp $
+ * $Id: svqp2.cpp,v 1.10 2004-10-18 21:15:50 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -426,12 +426,25 @@ SVQP2::shrink()
       if ((gi < gmin) && (x[i] > cmin[i]))
 	gmin = gi;
     }
-  for (int i=0; i<l; i++)
+  if (sumflag)
     {
-      double gi = g[i];
-      if (((gi >= gmax) && (x[i] >= cmax[i]-epskt)) ||
-	  ((gi <= gmin) && (x[i] <= cmin[i]+epskt)) )
-	swap(i--, --l);
+      for (int i=0; i<l; i++)
+        {
+          double gi = g[i];
+          if (((gi >= gmax) && (x[i] >= cmax[i]-epskt)) ||
+              ((gi <= gmin) && (x[i] <= cmin[i]+epskt)) )
+            swap(i--, --l);
+        }
+    }
+  else
+    {
+      for (int i=0; i<l; i++)
+        {
+          double gi = g[i];
+          if (((gi >= 0) && (x[i] >= cmax[i]-epskt)) ||
+              ((gi <= 0) && (x[i] <= cmin[i]+epskt)) )
+            swap(i--, --l);
+        }
     }
 }
 
