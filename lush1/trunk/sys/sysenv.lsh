@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.22 2002-05-09 21:42:38 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.23 2002-05-14 09:03:44 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -600,25 +600,10 @@
 	     
 ;;; --------- Path functions ---------
 
-(de addpath(dir)
-    (setq dir (concat-fname dir))
-    (let ((oldpath (path))
-	  (newpath (list dir)) )
-      (while oldpath
-	(when (<> dir (car oldpath))
-	      (setq newpath (nconc1 newpath (car oldpath))) )
-	(setq oldpath (cdr oldpath)) )
-      (apply path newpath) ) )
-
-(dmc |^L| (let ((_f_ (read_string)))
-	    (if (= _f_ "")
-		(setq _f_ (or last-loaded-file edit-buffer))
-	      (setq last-loaded-file _f_) )
-	    `(load ,_f_) ))
-
 (defvar libload.data (htable))
 
-(de libload.check(fname)
+(de libload.check(fname seen)
+  (seen fname t)
   (let ((frec (libload.data fname))
         (ok t) )
     (when (consp frec)
@@ -628,8 +613,9 @@
                    (< mtime (car frec)) )
           (setq ok ())
           (each ((d (cdr frec)))
-            (when (libload.check d)
-              (setq ok t) ) ) ) ) )
+            (when (not (seen d))
+              (when (libload.check d seen)
+                (setq ok t) ) ) ) ) ) )
     (when ok
       (libload.data fname ())
       t ) ) )
@@ -645,7 +631,7 @@
                    (not (member fname (cdr frec))))
           (rplacd frec (cons fname (cdr frec))) ) ) )
     ;; check time and recursive dependencies
-    (when (libload.check fname)
+    (when (libload.check fname (htable))
       (when startup (printf " [%s]%s\n" (basename fname) c))
       (libload.data fname (cons (now) ()))
       (load fname) ) ) )
@@ -657,9 +643,28 @@
                       f) )))
     `(progn ,@(all ((i s)) `(setq ,i ,f))) ) )
 
-(lock-symbol addpath |^L| 
-             libload.data libload.check libload 
-             autoload )
+
+(defvar last-loaded-file ())
+
+(dmc |^L| 
+     (let ((_f_ (read_string)))
+       (if (= _f_ "")
+           (setq _f_ (or last-loaded-file edit-buffer))
+         (setq last-loaded-file _f_) )
+       `(libload ,_f_) ))
+
+(de addpath(dir)
+  (setq dir (concat-fname dir))
+  (let ((oldpath (path))
+        (newpath (list dir)) )
+    (while oldpath
+      (when (<> dir (car oldpath))
+        (setq newpath (nconc1 newpath (car oldpath))) )
+      (setq oldpath (cdr oldpath)) )
+    (apply path newpath) ) )
+
+(lock-symbol libload.data libload.check libload 
+             autoload |^L| addpath )
 
 
 
@@ -955,7 +960,7 @@
 ;;; --------- Edition Functions ---------
 
 (defvar edit-call ())
-(defvar edit_buffer (tmpname () "lush"))
+(defvar edit-buffer (tmpname () "lsh"))
 
 (cond
  ((not wintl3p)
