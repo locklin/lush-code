@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.16 2002-11-01 15:48:12 leonb Exp $
+ * $Id: unix.c,v 1.17 2002-11-04 17:59:07 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -100,6 +100,10 @@
 #endif
 #ifdef HAVE_PTY_H
 # include <pty.h>
+#endif
+#ifdef HAVE_READLINE_READLINE_H
+# include <readline/readline.h>
+# include <readline/history.h>
 #endif
 
 /* Lush header files */
@@ -754,8 +758,104 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
   return FD_ISSET(0,&set);
 }
 
+
 /* console_getline -- 
    gets a line on the console (and process events) */
+
+#if HAVE_LIBREADLINE
+
+
+static int
+console_getc(FILE *f)
+{
+  if (f != stdin)
+    return rl_getc(f);
+  fflush(stdout);
+  rl_deprep_terminal();
+  process_pending_events();
+  rl_prep_terminal(1);
+  for(;;)
+    {
+      at *handler = event_wait(TRUE);
+      rl_deprep_terminal();
+      process_pending_events();
+      rl_prep_terminal(1);
+      if (! handler) break;
+      UNLOCK(handler);
+    }
+  if (break_attempt)
+    return EOF;
+  return rl_getc(f);
+}
+
+static void
+console_init(void)
+{
+  /* handle events anyway */
+  rl_getc_function = console_getc;
+  /* matching parenthesis */
+#if RL_READLINE_VERSION > 0x401
+#if RL_READLINE_VERSION > 0x402
+  rl_set_paren_blink_timeout(250000);
+#endif
+  rl_bind_key (')', rl_insert_close);
+  rl_bind_key (']', rl_insert_close);
+  rl_bind_key ('}', rl_insert_close);
+#endif
+  /* no completion for now */
+  rl_bind_key ('\t', rl_insert);
+}
+
+void
+console_getline(char *prompt, char *buf, int size)
+{
+  char *line;
+  char *s;
+  
+  buf[0] = 0;
+  line = readline(prompt);
+  if (line)
+    {
+      /* Hack to allow very long lines */
+      if (buf == line_buffer)
+        {
+          int l = strlen(line) + 4;
+          if (l < LINE_BUFFER)
+            l = LINE_BUFFER;
+          if ((s = malloc(l)))
+            {
+              free(line_buffer);
+              line_pos = line_buffer = buf = s;
+              size = l-2;
+            }
+        }
+      /* Standard routine */
+      strncpy(buf, line, size);
+      buf[size-1] = 0;
+      buf[size-2] = 0;
+      strcat(buf,"\n");
+      s = line;
+      while (*s==' ' || *s=='\t')
+        s += 1;
+      if (*s)
+        add_history(line);
+      free(line);
+    }
+  else
+    {
+      buf[0] = (char)EOF;
+      buf[1] = 0;
+      
+    }
+}
+
+#else /* !HAVE_LIBREADLINE */
+
+static void
+console_init(void)
+{
+}
+
 void
 console_getline(char *prompt, char *buf, int size)
 {
@@ -776,7 +876,7 @@ console_getline(char *prompt, char *buf, int size)
   fgets(buf,size-2,stdin);
 }
 
-
+#endif
 
 
 /* ---------------------------------------- */
@@ -1431,6 +1531,7 @@ void
 init_unix(void)
 {
   set_irq();
+  console_init();
   Fseed(time(NULL));
   dx_define("getpid", xgetpid);
   dx_define("getuid", xgetuid);

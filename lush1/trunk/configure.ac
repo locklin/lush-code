@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.12 2002-11-01 22:01:59 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.13 2002-11-04 17:58:40 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -59,17 +59,20 @@ AC_SUBST(INSTALL)
 # Libraries
 # ----------------------------------------
 
+# misc
 AC_CHECK_LIB(m,sqrt)
 AC_CHECK_LIB(dl,dlopen)
 AC_CHECK_LIB(dld,shl_load)
 AC_CHECK_LIB(util,openpty)
 
+# bfd
 AC_CHECK_LIB(iberty, xmalloc)
 AC_CHECK_LIB(bfd, bfd_init,,[ac_has_bfd=no])
 BFD_YES=''
 test x$ac_has_bfd = xno && BFD_YES='#'
 AC_SUBST(BFD_YES)
 
+# x11
 AC_PATH_X
 AC_PATH_XTRA
 X_LIBS=
@@ -82,7 +85,14 @@ fi
 AC_SUBST(X_LIBS)
 AC_SUBST(X_YES)
 
+# threads
 AC_PATH_PTHREAD
+
+# readline
+AC_CHECK_LIB(curses,tputs)
+AC_CHECK_LIB(readline,readline)
+
+
 
 
 # ----------------------------------------
@@ -97,7 +107,7 @@ AC_CHECK_HEADERS(memory.h string.h strings.h)
 AC_CHECK_HEADERS(unistd.h sys/mman.h pty.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/ttold.h)
-AC_CHECK_HEADERS(sys/time.h sys/timeb.h bfd.h)
+AC_CHECK_HEADERS(sys/time.h sys/timeb.h readline/readline.h bfd.h)
 
 # ----------------------------------------
 # Types

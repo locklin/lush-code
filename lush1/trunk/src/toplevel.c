@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.12 2002-08-07 15:20:39 leonb Exp $
+ * $Id: toplevel.c,v 1.13 2002-11-04 17:59:07 leonb Exp $
  **********************************************************************/
 
 
@@ -529,8 +529,9 @@ toplevel(char *in, char *out, char *new_prompt)
       prompt_string = new_prompt;
     else
       prompt_string = 0;
-    
     TOPLEVEL_MACHINE;
+    if (next_char()==(char)EOF)
+      exit_flag = 1;
     q1 = read_list();
     if (q1) {
       error_doc.debug_tab = 0;
