@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.9 2002-08-07 16:50:22 leonb Exp $
+ * $Id: event.c,v 1.10 2002-08-14 15:22:08 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -648,6 +648,7 @@ process_pending_events(void)
 {
   at *hndl;
   at *event;
+  int timer_fired = 0;
   call_spoll();
   hndl = ev_peek();
   while (hndl)
@@ -683,7 +684,9 @@ process_pending_events(void)
           hndl = ev_peek();
         }
       /* Check for timer events */
-      timer_fire();
+      if (! timer_fired)
+        timer_fire();
+      timer_fired = 1;
       hndl = ev_peek();
     }
 }
