@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.10 2002-07-08 19:08:10 leonb Exp $
+ * $Id: lisp_c.c,v 1.11 2002-07-08 19:24:31 leonb Exp $
  **********************************************************************/
 
 
@@ -2808,28 +2808,80 @@ DX(xto_obj)
 }
 
 
+
+
+DX(xdhgptr)
+{
+#if DLDBFD
+  at *p;
+  struct cfunction *cfunc;
+  dhdoc_t *dhdoc;
+
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &dh_class))
+    error(NIL,"Not a DH function", p);
+  cfunc = p->Object;
+  if (CONSP(cfunc->name))
+    check_primitive(cfunc->name);
+  dhdoc = (dhdoc_t*)(cfunc->info);
+  if (! dhdoc)
+    error(NIL,"Internal error: dhdoc unvailable",NIL);
+  return NEW_GPTR(dld_get_func(dhdoc->lispdata.c_name));
+#else
+  error(NIL,"This function requires dldbfd",NIL);
+#endif
+}
+
+
+
 /* (to-gptr <obj>) */
 DX(xto_gptr)
 {
   at *p;
-  avlnode *n;
+  avlnode *n = 0;
     
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
   if (p==0)
-    return NIL;
+    {
+      return NIL;
+    }
   else if (EXTERNP(p, &index_class))
-    n = lside_create_idx(p);
+    {
+      n = lside_create_idx(p);
+      return NEW_GPTR(n->citem);
+    }      
   else if (p && (p->flags & X_OOSTRUCT))
-    n = lside_create_obj(p);
+    {
+      n = lside_create_obj(p);
+      return NEW_GPTR(n->citem);
+    }      
   else if (storagep(p))
-    n = lside_create_srg(p);
+    {
+      n = lside_create_srg(p);
+      return NEW_GPTR(n->citem);
+    }      
   else if (EXTERNP(p, &string_class))
-    n = lside_create_str(p);
-  else
-    error(NIL,"Cannot make a compiled version of this lisp object",p);
-  return NEW_GPTR(n->citem);
+    {
+      n = lside_create_str(p);
+      return NEW_GPTR(n->citem);
+    }      
+#if DLDBFD
+  else if (EXTERNP(p, &dh_class))
+    {
+      struct cfunction *cfunc;
+      dhdoc_t *dhdoc;
+      cfunc = p->Object;
+      if (CONSP(cfunc->name))
+        check_primitive(cfunc->name);
+      if (( dhdoc = (dhdoc_t*)(cfunc->info) ))
+        return NEW_GPTR(dld_get_func(dhdoc->lispdata.c_name));
+    }
+#endif
+  error(NIL,"Cannot make a compiled version of this lisp object",p);
 }
 
 

@@ -24,16 +24,11 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.3 2002-07-05 14:57:08 leonb Exp $
+ * $Id: dh.c,v 1.4 2002-07-08 19:24:31 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
 #include "dh.h"
-
-#if HAVE_LIBBFD
-# define DLDBFD 1
-# include "dldbfd.h"
-#endif
 
 
 /* ---------------------------------------------
@@ -574,31 +569,6 @@ DX(xdhinfo_c)
 }
 
 
-DX(xdhgptr)
-{
-#if DLDBFD
-  at *p;
-  struct cfunction *cfunc;
-  dhdoc_t *dhdoc;
-
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  p = APOINTER(1);
-  if (! EXTERNP(p, &dh_class))
-    error(NIL,"Not a DH function", p);
-  cfunc = p->Object;
-  if (CONSP(cfunc->name))
-    check_primitive(cfunc->name);
-  dhdoc = (dhdoc_t*)(cfunc->info);
-  if (! dhdoc)
-    error(NIL,"Internal error: dhdoc unvailable",NIL);
-  return NEW_GPTR(dld_get_func(dhdoc->lispdata.c_name));
-#else
-  error(NIL,"This function requires dldbfd",NIL);
-#endif
-}
-
-
 DX(xclassinfo_t)
 {
   at *p;
@@ -685,7 +655,6 @@ init_dh(void)
   class_define("DH", &dh_class);
   dx_define("dhinfo-t",xdhinfo_t);
   dx_define("dhinfo-c",xdhinfo_c);
-  dx_define("dhgptr", xdhgptr);
   dx_define("classinfo-t",xclassinfo_t);
   dx_define("classinfo-c",xclassinfo_c);
 }
