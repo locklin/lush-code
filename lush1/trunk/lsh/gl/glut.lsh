@@ -1,0 +1,102 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: glut.lsh,v 1.1 2002-08-06 20:17:46 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "dh-compile")
+(libload "opengl-config")
+
+
+
+(de glut-process-pending-events()
+  (cpheader "#include <X11/Xlib.h>")
+  (cheader  "#include <GL/glut.h>")
+  (cheader  "#include <sys/time.h>")
+  (cheader  "jmp_buf glut_event_jmp;")
+  (cheader  "void glut_idle_jmp(void) { longjmp(glut_event_jmp, 1); }")
+  ;; Internal glut stuff
+  (cheader  "extern Display *__glutDisplay;")
+  (cheader  "extern int __glutWindowListSize;")
+  (cheader  "extern void *__glutWindowWorkList;")
+  (cheader  "extern struct { void *next; struct timeval tv; } *__glutTimerList;")
+  ;; Go
+  (let ((ms (* 24 3600 1000)))
+    ((-int-) ms)
+    #{
+       if (__glutDisplay && __glutWindowListSize) {
+         do {
+           do {
+             if (! setjmp(glut_event_jmp) ) {
+               glutIdleFunc(glut_idle_jmp);
+               glutMainLoop();
+               glutIdleFunc(0);
+             } 
+           } while (__glutWindowWorkList);
+           if (__glutTimerList) {
+             struct timeval tv;
+             gettimeofday(&tv, 0);
+             $ms = ((int)__glutTimerList->tv.tv_sec - (int)tv.tv_sec)*1000 
+                 + ((int)__glutTimerList->tv.tv_usec - (int)tv.tv_usec)/1000;
+           }
+         } while ($ms < 0);
+       }
+     #}
+    ms ) )
+
+
+(de glut-init-sub()
+  (let ((flag ()))
+    ((-bool-) flag)
+    #{
+       if (! __glutDisplay) {
+         glutInit(0, NULL);
+         register_event_source( C_glut_process_pending_events, 0, 0, 0,
+                                ConnectionNumber(__glutDisplay) );
+         $flag = 1;
+       }
+    #}
+   flag ) )
+
+
+(de glut-init()
+  (when (glut-init-sub)
+    (module-never-unload (mod-search "glut.o")) ) )
+
+
+(let ((dhc-make-lushflags dhc-make-lushflags))
+  (when (getconf "X_CFLAGS")
+    (setq dhc-make-lushflags
+          (concat dhc-make-lushflags
+                  " " (getconf "X_CFLAGS")) ) )
+  
+  (dhc-make-with-libs () (list opengl-libgl opengl-libglu opengl-libglut)
+                      glut-process-pending-events 
+                      glut-init-sub ) )
+
+
+
