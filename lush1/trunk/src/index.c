@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.21 2003-03-18 00:45:03 leonb Exp $
+ * $Id: index.c,v 1.22 2003-05-05 14:57:52 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -2487,7 +2487,7 @@ map_matrix(FILE *f)
 
   /* Header */
   load_matrix_header(f,&ndim, &magic, &swapflag, dim);
-  if (swapflag)
+  if (swapflag && magic!=BYTE_MATRIX && magic!=SHORT8_MATRIX)
     error(NIL,"Can't map this byteswapped matrix",NIL);
   /* Create storage */
   switch(magic)
