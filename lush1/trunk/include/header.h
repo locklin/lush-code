@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.1 2002-04-16 19:47:03 leonb Exp $
+ * $Id: header.h,v 1.2 2002-04-18 20:17:09 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -322,9 +322,13 @@ TLAPI void garbage(int flag);
 TLAPI void protect(at *q);
 TLAPI void unprotect(at *q);
 
-/* tl compatible alloc funcs */
-TLAPI gptr tl_malloc (size_t);
-TLAPI gptr tl_realloc (gptr, size_t);
+/* allocation functions */
+LUSHAPI void *lush_malloc(int,char*,int);
+LUSHAPI void *lush_calloc(int,int,char*,int);
+LUSHAPI void *lush_realloc(gptr,int,char*,int);
+LUSHAPI void lush_free(gptr,char*,int);
+LUSHAPI void lush_cfree(gptr,char*,int);
+LUSHAPI void set_malloc_file(char*);
 
 /* malloc debug file (from sn3.2) */
 #define malloc(x)    lush_malloc(x,__FILE__,__LINE__)
@@ -333,13 +337,9 @@ TLAPI gptr tl_realloc (gptr, size_t);
 #define free(x)      lush_free(x,__FILE__,__LINE__)
 #define cfree(x)     lush_cfree(x,__FILE__,__LINE__)
 
-LUSHAPI void *lush_malloc(int,char*,int);
-LUSHAPI void *lush_calloc(int,int,char*,int);
-LUSHAPI void *lush_realloc(void*,int,char*,int);
-LUSHAPI void lush_free(void*,char*,int);
-LUSHAPI void lush_cfree(void*,char*,int);
-LUSHAPI void set_malloc_file(char*);
-
+/* tl compatible malloc functions */
+#define tl_malloc(x)    lush_malloc(x,__FILE__,__LINE__)
+#define tl_realloc(x,y) lush_realloc(x,y,__FILE__,__LINE__)
 
 /*
  * Following, a very general iterator. A loop on all the used elements of a
@@ -559,13 +559,7 @@ TLAPI gptr need_error(int i, int j, at **arg_array_ptr);
 TLAPI void arg_eval(at **arg_array, int i);
 TLAPI void all_args_eval(at **arg_array, int i);
 
-/* This is used by the DLD stuff */
-
-#ifndef NODLD
-extern int doing_dynlink;
-#endif
-
-/* This is the interface header builder:   See  pp.c */
+/* This is the interface header builder */
 
 #define DX(Xname)  static at *Xname(int arg_number, at **arg_array)
 #define DY(Yname)  static at *Yname(at *ARG_LIST)
@@ -1046,7 +1040,7 @@ LUSHAPI void storage_remote(void);
 LUSHAPI void storage_clear(at *p);
 LUSHAPI int storage_load(at*, at*);
 LUSHAPI void storage_save(at*, at*);
-LUSHAPI void init_storage(void);
+
 
 /* INDEX.H ---------------------------------------------- */
 
@@ -1106,15 +1100,14 @@ LUSHAPI at *new_index(at*);
 LUSHAPI void index_dimension(at*,int,int[]);
 LUSHAPI void index_undimension(at*);
 LUSHAPI void index_from_index(at*,at*,int*,int*);
-
 LUSHAPI struct index *easy_index_check(at*,int,int[]);
 LUSHAPI real easy_index_get(struct index*, int*);
 LUSHAPI void easy_index_set(struct index*, int*, real);
-
 LUSHAPI char *not_a_nrvector(at*);
 LUSHAPI char *not_a_nrmatrix(at*);
 LUSHAPI flt *make_nrvector(at*,int,int*);
 LUSHAPI flt **make_nrmatrix(at*,int,int,int*,int*);
+LUSHAPI void copy_matrix(at *, at *);
 
 LUSHAPI at *AT_matrix(int,int*);	/* Simultaneous creation       */
 LUSHAPI at *F_matrix(int,int*);	/* of an index and its storage */
@@ -1130,7 +1123,6 @@ LUSHAPI at *GPTR_matrix(int,int*);
 LUSHAPI void index_read_idx(struct index *, struct idx *);
 LUSHAPI void index_write_idx(struct index *, struct idx *);
 LUSHAPI void index_rls_idx(struct index *, struct idx *);
-
 
 /* Other functions */
 LUSHAPI at *load_matrix(at*);
@@ -1286,18 +1278,10 @@ LUSHAPI void save_ascii_matrix(at*,at*);
 
 /* CHECK_FUNC.H ---------------------------------------------- */
 
-LUSHAPI void check_main_maout(struct idx *, struct idx *);
-LUSHAPI void check_main_main_maout(struct idx *, struct idx *, struct idx *);
-LUSHAPI void check_main_m0out(struct idx *, struct idx *);
-LUSHAPI void check_main_main_m0out(struct idx *, struct idx *, struct idx *);
-LUSHAPI void check_main_m0in_maout(struct idx *, struct idx *, struct idx *);
-LUSHAPI void check_main_main_maout_dot21(struct idx *, struct idx *, struct idx *);
-LUSHAPI void check_main_main_maout_dot42(struct idx *, struct idx *, struct idx *);
-LUSHAPI void check_m1in_m1in_m2out(struct idx *, struct idx *, struct idx *);
-LUSHAPI void check_m2in_m2in_m4out(struct idx *, struct idx *, struct idx *);
-LUSHAPI void is_sized(struct idx *);
-LUSHAPI void Csame_size(struct idx *, struct idx *);
-LUSHAPI void size_or_check(struct idx *, struct idx *);
+#ifndef CHECK_FUNC_H
+#include "check_func.h"
+#endif
+
 
 /* DH.H -------------------------------------------------- */
 
@@ -1312,8 +1296,8 @@ extern LUSHAPI class cclass_class;
 
 /* LISP_C.H ---------------------------------------------- */
 
-extern LUSHAPI void lside_dld_partial(void*);
-extern LUSHAPI void lside_destroy_item(void*);
+extern LUSHAPI void lside_dld_partial(gptr);
+extern LUSHAPI void lside_destroy_item(gptr);
 
 /* CPLUSPLUS --------------------------------------------------- */
 

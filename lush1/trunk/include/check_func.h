@@ -24,9 +24,23 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.1 2002-04-16 19:47:02 leonb Exp $
+ * $Id: check_func.h,v 1.2 2002-04-18 20:17:09 leonb Exp $
  **********************************************************************/
 
+#ifndef CHECK_FUNC_H
+#define CHECK_FUNC_H
+
+
+#ifndef LUSHAPI
+#define LUSHAPI
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#ifndef __cplusplus
+}
+#endif
+#endif
 
 
 /* ---------------------------------------- */
@@ -34,14 +48,15 @@
 /* ---------------------------------------- */
 
 
-extern struct dh_trace_stack {
+struct dh_trace_stack {
     char *info;
     struct dh_trace_stack *next;
-} *dh_trace_root;
+};
 
+extern LUSHAPI struct dh_trace_stack *dh_trace_root;
 
-extern void print_dh_recent(int,FILE*);
-extern void print_dh_trace_stack(void);
+LUSHAPI void print_dh_recent(int,FILE*);
+LUSHAPI void print_dh_trace_stack(void);
 
 #define TRACE_PUSH(s) \
  struct dh_trace_stack _trace; _trace.info = s; \
@@ -70,15 +85,15 @@ extern void print_dh_trace_stack(void);
 /* CHECKING MATRICES                        */
 /* ---------------------------------------- */
 
-extern char *UNSIZED_MATRIX;
-extern char *NOT_SAME_DIM;
-extern char *OUT_OF_MEMORY;
-extern char *CANNOT_REALLOC;
-extern char *BAD_DIMENSIONS;
+extern LUSHAPI char *UNSIZED_MATRIX;
+extern LUSHAPI char *NOT_SAME_DIM;
+extern LUSHAPI char *OUT_OF_MEMORY;
+extern LUSHAPI char *CANNOT_REALLOC;
+extern LUSHAPI char *BAD_DIMENSIONS;
 
-void srg_resize_compiled(struct srg* ,int ,char *, int);
-void srg_resize(struct srg *, int , char *, int );
-void srg_free(struct srg *);
+LUSHAPI void srg_resize_compiled(struct srg* ,int ,char *, int);
+LUSHAPI void srg_resize(struct srg *, int , char *, int );
+LUSHAPI void srg_free(struct srg *);
 
 #define Mis_sized(i1) \
     if((i1)->flags & IDF_UNSIZED) \
@@ -291,5 +306,22 @@ if((sr)->size < new_size) \
 /* Mcheck_m1in_m0in_m1out, Mcheck_m2in_m0in_m2out --> Mcheck_main_m0in_maout */
 /* Mcheck_m1in_m1in_m1out, Mcheck_m2in_m2in_m2out --> Mcheck_main_main_maout */
 
+LUSHAPI void check_main_maout(struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_maout(struct idx *i0, struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_m0out(struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_m0out(struct idx *i0, struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_m0in_maout(struct idx *i0, struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_maout_dot21(struct idx *i0, struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_maout_dot42(struct idx *i0, struct idx *i1, struct idx *i2);
+LUSHAPI void check_m1in_m1in_m2out(struct idx *i0, struct idx *i1, struct idx *i2);
+LUSHAPI void check_m2in_m2in_m4out(struct idx *i0, struct idx *i1, struct idx *i2);
 
 
+/* ---------------------------------------- */
+/* THE END                                  */
+/* ---------------------------------------- */
+
+#ifdef __cplusplus
+}
+#endif
+#endif
