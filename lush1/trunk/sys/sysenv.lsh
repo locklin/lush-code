@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.24 2002-07-01 01:15:11 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.25 2002-07-08 17:59:02 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -56,6 +56,7 @@
 (lock_symbol |'| |~| |!| |:| |#!|)
 
 
+
 ;;; --------- Defining variables ---------
 
 (dm defvar(f name value)
@@ -66,7 +67,9 @@
 (defvar nil ())
 (lock_symbol not nil)
 
-;;; --------- toplevel, break, and debug  ---------
+
+
+;;; --------- Toplevel, Break, and Debug  ---------
 
 (de startup argv
     ;; no command line argument: set default library to lushenv-path
@@ -453,6 +456,8 @@
              hset hset-and hset-or)
 
 
+
+
 ;;; --------- Packages ---------
 
 (dm private(f . args)
@@ -486,6 +491,8 @@
 
 (lock-symbol package private)
 
+
+
 ;;; -------- Statistics on lists of numbers ---------
 
 (de y_estimate((a b r) x)
@@ -512,6 +519,8 @@
 (lock_symbol x_estimate y_estimate
              mean_sup_dist mean_abs_dist mean_sqr_dist 
              mean_hamming_dist  mean_quadrant_dist )
+
+
 
 
 ;;;; --------- Arrays & Matrix utilities ---------
@@ -868,15 +877,22 @@
 
 (de pretty-method(class method)
   (let* ((j (check==> class method))
-         (cj (classof j)) )
+         (dj (funcdef j)) )
     (pretty-print
      (cond
-      ((= cj |DE|) 
-       `(demethod ,(classname class) ,method ,@(cdr (funcdef j))))
-      ((= cj |DF|) 
-       `(dfmethod ,(classname class) ,method ,@(cdr (funcdef j))))
-      ((= cj |DM|) 
-       `(dmmethod ,(classname class) ,method ,@(cdr (funcdef j))))
+      ((is-of-class j |DE|) 
+       `(demethod ,(classname class) ,method ,@(cdr dj)) )
+      ((is-of-class j |DF|) 
+       `(dfmethod ,(classname class) ,method ,@(cdr dj)) )
+      ((is-of-class j |DM|) 
+       `(dmmethod ,(classname class) ,method ,@(cdr dj)) ) 
+      ((and (is-of-class j |DH|) 
+            (setq dj (getp class 'source))
+            (member method (methods dj))
+            (setq dj (check==> dj method))
+            (is-of-class dj |DE|)
+            (setq dj (funcdef dj)) )
+       `(demethod ,(classname class) ,method ,@(cdr dj)) )
       (t 
        `(putmethod ,(classname class) ',method ',j)) ) ) ) )
 
@@ -905,7 +921,7 @@
       (cond
        ;; compiled from source
        ((and c (setq x (getp e 'source)))
-        (printf ";; compiled from:\n")
+        (printf ";; Source code for %l.\n" e)
         (pretty-print x this) )
        ;; custom funcdef
        ((and c (check==> c 'funcdef))
@@ -1033,16 +1049,27 @@
 
 (de module.hook(what m)
   (cond
+   ;; On init.
    ((= what 'init)
     (each ((pair (module-defs m)))
       (cond
+       ;; global
        ((symbolp (cdr pair))
-        (eval (list setq (list 'scope (cdr pair)) (car pair))) )
+        (let ((old (eval (list 'scope (cdr pair)))))
+          (when (and old (getp old 'precious))
+            (putp (car pair) 'saved old)
+            (when (setq old (funcdef old))
+              (putp (car pair) 'source old) ) ) )
+        (eval `(setq :,(cdr pair) ',(car pair))) ) 
+       ;; method
        ((and (consp (cdr pair)) (classp (cadr pair)) (symbolp (cddr pair)))
         (putmethod (cadr pair) (cddr pair) (car pair)) ) ) ) )
-   ((= what 'unload)
-    () ) )
-  t )
+   ;; On unload.
+   ((= what 'unlink)
+    (each ((pair (module-defs m)))
+      (when (symbolp (cdr pair))
+        (eval `(setq :,(cdr pair) ',(getp (car pair) 'saved))) ) ) ) ) )
+
 
 (de mod-search(name)
   (let ((found ())
