@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.2 2004-09-19 20:17:54 leonb Exp $
+ * $Id: svqp2.cpp,v 1.3 2004-09-19 20:23:44 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -646,17 +646,13 @@ SVQP2::run(void)
   // loop
   for(;;)
     {
+      // incorporate
       unshrink(n);
       gn = max(0.0, gmax-gmin);
       info("*","* it:%d l:%d |g|:%f w:%f\n", iter, l, gn, w);
       // test termination
       if (gn < epsgr)
-	{
-	  if (l < n)
-	    continue;
-	  else
-	    break;
-	}
+	break;
       // minimize
       bool checkshrink = true;
       for(;;)
@@ -667,6 +663,7 @@ SVQP2::run(void)
 	    status = iterate_gs(checkshrink);
 	  if (status <= RESULT_FIN)
 	    break;
+	  // shrink
 	  int ol = l;
 	  checkshrink = false;
 	  shrink();	  
