@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.5 2002-11-01 15:27:41 leonb Exp $
+ * $Id: nan.c,v 1.6 2002-11-01 22:02:24 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -34,6 +34,9 @@
 #endif
 #ifdef HAVE_FPU_CONTROL_H
 #include <fpu_control.h>
+#endif
+#ifdef HAVE_FENV_H
+#include <fenv.h>
 #endif
 #ifdef WIN32
 #include <float.h>
@@ -223,8 +226,23 @@ static int
 setup_fpu(int doINV, int doOFL)
 {
 
+#if defined(WIN32)
+
+  /* Win32 uses _controlfp() */
+
+  unsigned int mask = _controlfp(0,0);
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
+  if (doINV) mask&=(~_EM_INVALID); else mask|=(_EM_INVALID);
+  if (doOFL) mask&=(~_EM_OVERFLOW); else mask|=(_EM_OVERFLOW);
+  if (doOFL) mask&=(~_EM_ZERODIVIDE); else mask|=(_EM_ZERODIVIDE);
+  _controlfp(mask, _MCW_EM);
+  return 1;
+
+#elif defined(HAVE_FPSETMASK)
+
   /* SysVr4 defines fpsetmask() */
-#ifdef HAVE_FPSETMASK
+
   int mask = 0;
   fpe_inv = doINV;
   fpe_ofl = doOFL;
@@ -239,33 +257,53 @@ setup_fpu(int doINV, int doOFL)
 #endif
   fpsetmask( mask );
   return 1;
-#endif
-  /* GLIBC __setfpucw() emulates i387 */
-#ifdef HAVE_FPU_CONTROL_H 
-  int mask = 0;
+
+#elif defined(HAVE_FENV_H) && defined(HAVE_FEENABLEEXCEPT)
+
+  /* GLIBC-2.2 model */
+
+  int mask1 = 0;
+  int mask2 = 0;
   fpe_inv = doINV;
   fpe_ofl = doOFL;
 
+#ifdef FE_INVALID
+  if (doINV) 
+    mask1 |= FE_INVALID;
+  else
+    mask2 |= FE_INVALID;    
+#endif
+#ifdef FE_DIVBYZERO
+  if (doOFL) 
+    mask1 |= FE_DIVBYZERO;
+  else
+    mask2 |= FE_DIVBYZERO;    
+#endif
+#ifdef FE_OVERFLOW
+  if (doOFL) 
+    mask1 |= FE_OVERFLOW;
+  else
+    mask2 |= FE_OVERFLOW;    
+#endif
+  feenableexcept(mask1);
+  fedisableexcept(mask2);
+  return 1;
+
+#elif defined(HAVE_FPU_CONTROL_H)
+
+  /* Older GLIBC */
+  
+  int mask = 0;
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
+  
 #ifdef _FPU_DEFAULT
   mask = _FPU_DEFAULT;
 #endif
+  
+#define DO(c,f) mask=((c)?(mask|(f)):(mask&~(f)));
 
-#define DO(condition,flag) if (condition) mask&=(~(flag)); else mask|=(~(flag))
-
-  /* i386, alpha */
 #if defined(__i386__) || defined(__alpha__)
-#ifdef _FPU_MASK_IM
-  DO(doINV, _FPU_MASK_IM);
-#endif
-#ifdef _FPU_MASK_OM
-  DO(doOFL, _FPU_MASK_OM);
-#endif
-#ifdef _FPU_MASK_ZM
-  DO(doOFL, _FPU_MASK_ZM);
-#endif
-#endif
-  /* ppc, sparc, arm */
-#if defined(__ppc__) || defined(__sparc__) || defined(__arm__)
 #ifdef _FPU_MASK_IM
   DO(!doINV, _FPU_MASK_IM);
 #endif
@@ -275,52 +313,47 @@ setup_fpu(int doINV, int doOFL)
 #ifdef _FPU_MASK_ZM
   DO(!doOFL, _FPU_MASK_ZM);
 #endif
+#else
+#ifdef _FPU_MASK_IM
+  DO(doINV, _FPU_MASK_IM);
 #endif
-  /* mips */
-#if defined(__mips__)
+#ifdef _FPU_MASK_OM
+  DO(doOFL, _FPU_MASK_OM);
+#endif
+#ifdef _FPU_MASK_ZM
+  DO(doOFL, _FPU_MASK_ZM);
+#endif
 #ifdef _FPU_MASK_V
-  DO(!doINV, _FPU_MASK_V);
+  DO(doINV, _FPU_MASK_V);
 #endif
 #ifdef _FPU_MASK_O
-  DO(!doOFL, _FPU_MASK_O);
+  DO(doOFL, _FPU_MASK_O);
 #endif
 #ifdef _FPU_MASK_Z
-  DO(!doOFL, _FPU_MASK_Z);
+  DO(doOFL, _FPU_MASK_Z);
 #endif
-#endif
-  /* m68k */
-#if defined(__m68k__)
 #ifdef _FPU_MASK_OPERR
-  DO(!doINV, _FPU_MASK_OPERR);
+  DO(doINV, _FPU_MASK_OPERR);
 #endif
 #ifdef _FPU_MASK_OVFL
-  DO(!doOFL, _FPU_MASK_OPERR);
+  DO(doOFL, _FPU_MASK_OPERR);
 #endif
 #ifdef _FPU_MASK_DZ
-  DO(!doOFL, _FPU_MASK_DZ);
+  DO(doOFL, _FPU_MASK_DZ);
 #endif
 #endif
-#undef DO
   /* continue */
-#ifdef HAVE___SETFPUCW
+#if defined(HAVE___SETFPUCW)
   __setfpucw( mask );
   return 1;
 #elif defined(_FPU_SETCW)
   _FPU_SETCW( mask );
   return 1;
+#undef DO
 #endif
+
 #endif
-  /* Win32 uses _controlfp() */
-#ifdef WIN32
-  unsigned int mask = _controlfp(0,0);
-  fpe_inv = doINV;
-  fpe_ofl = doOFL;
-  if (doINV) mask&=(~_EM_INVALID); else mask|=(_EM_INVALID);
-  if (doOFL) mask&=(~_EM_OVERFLOW); else mask|=(_EM_OVERFLOW);
-  if (doOFL) mask&=(~_EM_ZERODIVIDE); else mask|=(_EM_ZERODIVIDE);
-  _controlfp(mask, _MCW_EM);
-  return 1;
-#endif
+
   /* Default */
   return 0;
 }
