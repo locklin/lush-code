@@ -1,0 +1,10 @@
+<A class=tabs href="[[PROJECT]]/">Project Page</A>&nbsp;|&nbsp;
+<A class=tabs href="[[SF]]/forum/?group_id=34223">Forums</A>&nbsp;|&nbsp;
+<A class=tabs href="[[SF]]/tracker/?group_id=34223">Tracker</A>&nbsp;|&nbsp;
+<A class=tabs href="[[SF]]/tracker/?group_id=34223&atid=406583">Bugs</A>&nbsp;|&nbsp;
+<A class=tabs href="[[SF]]/tracker/?group_id=34223&atid=406584">Support</A>&nbsp;|&nbsp;
+<A class=tabs href="[[SF]]/tracker/?group_id=34223&atid=406585">Patches</A>&nbsp;|&nbsp;
+<A class=tabs href="[[SF]]/pm/?group_id=34223">Tasks</A>&nbsp;|&nbsp;
+<A class=tabs href="[[SF]]/news/?group_id=34223">News</A>&nbsp;|&nbsp;
+<A class=tabs href="[[SF]]/cvs/?group_id=34223">CVS</A>&nbsp;|&nbsp;
+<A class=tabs href="[[SF]]/project/showfiles.php?group_id=34223">Files</A>&nbsp;|&nbsp;
