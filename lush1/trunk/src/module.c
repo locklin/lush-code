@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.12 2002-05-07 19:11:45 leonb Exp $
+ * $Id: module.c,v 1.13 2002-05-08 19:52:47 leonb Exp $
  **********************************************************************/
 
 
@@ -272,6 +272,23 @@ DX(xmodule_filename)
   return NIL;
 }
 
+DX(xmodule_init_function)
+{
+  at *p;
+  struct module *m;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &module_class))
+    error(NIL,"Not a module", p);
+  m = p->Object;
+  if (m->initname)
+    return new_string(m->initname);
+  if (m == &root)
+    return new_safe_string("init_lush");
+  return NIL;
+}
+
 DX(xmodule_executable_p)
 {
   at *p;
@@ -332,7 +349,7 @@ at *
 find_primitive(at *module, at *name)
 {
   at *p = root.defs;
-
+  
   if (module) {
     if (! EXTERNP(module, &module_class))
       error(NIL,"Not a module descriptor", module);
@@ -341,9 +358,9 @@ find_primitive(at *module, at *name)
   while (CONSP(p))
     {
       if (CONSP(p->Car))
-        if (p->Car->Car == name)
+        if (eq_test(p->Car->Cdr,name))
           {
-            p = p->Car->Cdr;
+            p = p->Car->Car;
             LOCK(p);
             return p;
           }
@@ -537,28 +554,116 @@ check_primitive(at *prim)
 /* --------- MODULE_UNLOAD --------- */
 
 
+DX(xmodule_depends)
+{
+  at *p;
+  struct module *m, *mc;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &module_class))
+    error(NIL,"Not a module",p);
+  m = p->Object;
+  p = NIL;
+  if (m == &root)
+    return NIL;
+  /* Simulate unlink */
+  if (dld_simulate_unlink_by_file(m->filename) < 0)
+    dynlink_error(NIL);
+  for (mc = root.next; mc != &root; mc = mc->next)
+    if (mc->initname && mc->defs)
+      if (! dld_function_executable_p(mc->initname))
+        {
+          LOCK(mc->backptr);
+          p = cons(mc->backptr, p);
+        }
+  /* Reset everything as it should be */
+  dld_simulate_unlink_by_file(0);
+  /* Return */
+  return p;
+}
+
+
+static void
+cleanup_module(struct module *m)
+{
+  at *p;
+  at *classes = 0;
+  struct module *mc;
+  
+  extern void delete_at_special(at *, int);
+  extern struct alloc_root at_alloc;
+  
+  /* 1 --- No cleanup when not ready for errors */
+  if (! error_doc.ready_to_an_error)
+    return;
+  
+  /* 2 --- Collect impacted classes */
+  if (dld_simulate_unlink_by_file(m->filename) < 0)
+    dynlink_error(NIL);
+  for (mc = root.next; mc != &root; mc = mc->next)
+    if (mc->initname && mc->defs && (mc->flags & MODULE_CLASS))
+      if (! dld_function_executable_p(mc->initname))
+        {
+          /* This module defines classes that become non executable.
+             Collect impacted classes. */
+          p = mc->defs;
+          while (CONSP(p))
+            {
+              if (CONSP(p->Car)) {
+                at *q = p->Car->Car;
+                if (q && !(q->flags & X_FUNCTION)) {
+                  LOCK(q);
+                  classes = cons(q, classes);
+                }
+              }
+              p = p->Cdr;
+            }
+        }
+  dld_simulate_unlink_by_file(0);
+  
+  /* 3 --- Zap instances of impacted classes */
+  p = classes;
+  while (CONSP(p))
+    {
+      at *q = p->Car;
+      if (EXTERNP(q, &class_class))
+        {
+          struct at *x;
+          struct chunk_header *i;
+          class *cl = q->Object;
+          fprintf(stderr,"*** WARNING: destroying all instances of %s\n", pname(q));
+          iter_on(&at_alloc, i, x) 
+            if (EXTERNP(x, cl))
+              delete_at(x);
+        }
+      p = p->Cdr;
+    }
+  UNLOCK(classes);
+  
+  /* 4 --- Zap primitives defined by this module. */
+  if (m->defs)
+    for (p = m->defs; CONSP(p); p = p->Cdr)
+      if (CONSP(p->Car))
+        delete_at_special(p->Car->Car, FALSE);
+  UNLOCK(m->defs);
+  m->defs = NIL;
+}
+
 
 static char *
 module_maybe_unload(struct module *m)
 {
-  at *p;
-
   if (m == &root)
     return "Cannot unload root module";
   if (! (m->flags & MODULE_DLD))
     return "Cannot unload module of this type";
-  if (m->flags & MODULE_CLASS)
-    return "Cannot unload a module defining a primitive class";
   if (m->flags & MODULE_STICKY)
     return "Cannot unload this module";
   /* Advertize */
   dynlink_hook(m, "unlink");
-  if (m->defs)
-    for (p = m->defs; CONSP(p); p = p->Cdr)
-      if (CONSP(p->Car))
-        delete_at(p->Car->Cdr);
-  UNLOCK(m->defs);
-  m->defs = NIL;
+  /* Cleanup definitions */
+  cleanup_module(m);
   /* Unload module */
 #if DLOPEN
   if (m->flags & MODULE_SO)
@@ -602,7 +707,13 @@ DX(xmodule_unload)
 
 
 
+
+
+
+
 /* --------- MODULE_LOAD --------- */
+
+
 
 
 at *
@@ -818,7 +929,7 @@ module_def(at *name, at *val)
   if (! EXTERNP(name, &symbol_class))
     error("module.c/module_def",
           "internal error (symbol expected)",name);
-  current->defs = cons(new_cons(name,val),current->defs);
+  current->defs = cons(new_cons(val, name),current->defs);
   /* Root definitions are also written into symbols */
   if (current == &root)
     {
@@ -837,9 +948,6 @@ class_define(char *name, class *cl)
   at *symb;
   at *classat;
   
-  if (current->flags & MODULE_DLD)
-    error(NIL,"Cannot (yet) define a primitive class in a dld/bfd module",NIL);
-
   symb = new_symbol(name);
   classat = new_extern(&class_class,cl);
   cl->classname = symb;
@@ -852,7 +960,7 @@ class_define(char *name, class *cl)
   cl->atsuper = NIL;
   cl->nextclass = NIL;
   module_def(symb, classat);
-  current->flags |= MODULE_CLASS | MODULE_STICKY;
+  current->flags |= MODULE_CLASS;
   UNLOCK(classat);
 }
 
@@ -911,11 +1019,13 @@ init_module(char *progname)
   dx_define("module-list", xmodule_list);
   dx_define("module-filename", xmodule_filename);
   dx_define("module-defs", xmodule_defs);
+  dx_define("module-initname", xmodule_init_function);
   dx_define("module-executable-p", xmodule_executable_p);
   dx_define("module-unloadable-p", xmodule_unloadable_p);
   dx_define("module-load", xmodule_load);
   dx_define("module-unload", xmodule_unload);
-
+  dx_define("module-depends", xmodule_depends);
+  
   /* SN3 functions */
   dx_define("mod-create-reference", xmod_create_reference);
   dx_define("mod-compatibility-flag", xmod_compatibility_flag);

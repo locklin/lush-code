@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.h,v 1.2 2002-05-01 15:23:00 leonb Exp $
+ * $Id: dldbfd.h,v 1.3 2002-05-08 19:52:47 leonb Exp $
  **********************************************************************/
 
 /* DLD-4.0 -- DYNAMIC LINK/UNLINK EDITOR FOR C
@@ -94,6 +94,7 @@ extern const char *dld_errno;
 extern int dld_undefined_sym_count;
 extern int dld_compatibility_flag;
 
+/* See the DLD-3.2.3 doc for these ones */
 int dld_init (const char *);
 int dld_link (const char *);
 void *dld_get_symbol (const char *);
@@ -108,7 +109,16 @@ int dld_create_reference (const char *);
 int dld_define_sym (const char *, size_t);
 void dld_remove_defined_symbol (const char *);
 void dld_perror (const char *);
-void *dld_dlopen(char *path, int mode); /* NEW */ 
+
+
+/* New: load a shared library */
+void *dld_dlopen(char *path, int mode); 
+
+/* New: simulate the effect of unloading the specified
+   module by recomputing all executability flag.
+   Use argument zero to recompute executability flags
+   as they should be. */
+int dld_simulate_unlink_by_file(const char *);
 
 
 

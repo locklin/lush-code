@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.16 2002-05-07 19:28:57 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.17 2002-05-08 19:52:47 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1002,11 +1002,12 @@
 (de module.hook(what m)
   (when (= what 'init)
     (each ((pair (module-defs m)))
-      (when (atomp (cdr pair))
-        (eval (list setq (list 'scope (car pair)) (cdr pair))) ) ) ) )
+      (when (symbolp (cdr pair))
+        (eval (list setq (list 'scope (cdr pair)) (car pair))) ) ) ) )
 
 (de module.search(name)
   (let ((found ())
+        (n (concat-fname name))
         (l (module-list)))
     (each ((m l))
       (when (= name (module-filename m))
@@ -1029,12 +1030,17 @@
   (let ((tb (tab)))
     (printf ";; module %l\n" (module-filename this))
     (tab tb)
-    (printf ";; %s" (if (module-executable-p this) "executable" "partially linked"))
-    (printf ", %s" (if (module-unloadable-p this) "unloadable" "sticky"))
-    (let ((l (length (module-defs this))))
-      (if (= l 0) 
-          (printf ", not initialized\n")
-      (printf ", defines %d primitive(s)\n" l) ) ) ) )
+    (printf ";; %s" (if (module-unloadable-p this) "unloadable" "sticky"))
+    (if (not (module-initname this))
+        (printf ", not initializable")
+      (if (module-executable-p this) 
+          (printf ", executable")
+        (printf ", partially linked") )
+      (let ((l (length (module-defs this))))
+        (if (= l 0) 
+            (printf ", not initialized")
+          (printf ", defines %d primitive(s)" l) ) ) )
+    (printf "\n") ) )
 
 (de mod-status()
   (each ((m (module-list)))
@@ -1044,12 +1050,14 @@
   (let ((m (module.search name)))
     (when m
       (let ((d (module-defs m))
+            (i (module-initname m))
             (x (module-executable-p m)) )
         (cons (cond
-               ((not d) "State: unknown")
+               ((not i) "State: not initializable")
+               ((not d) "State: initializable")
                (x "State: initialized, executable")
                (t "State: initialized, partially linked") )
-              (mapcar car (module-defs m)) ) ) ) ) )
+              (mapcar cdr (module-defs m)) ) ) ) ) )
 
 (de mod-load(name)
   (let ((hook (lambda args (and module.hook (apply module.hook args)))))

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.8 2002-05-07 15:13:22 leonb Exp $
+ * $Id: oostruct.c,v 1.9 2002-05-08 19:52:47 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1198,7 +1198,7 @@ send_delete(at *p)
 }
 
 void 
-delete_at(at *p)
+delete_at_special(at *p, int flag)
 {
   if (!p || (p->flags & X_ZOMBIE) || (p->flags & C_GARBAGE)) {
     /* already deleted, or being deleted */
@@ -1211,9 +1211,9 @@ delete_at(at *p)
     send_delete(p);
     p->count--;
     UNLOCK(s->class);
-   
+    
   } else if (p->flags & C_EXTERN) {
-    if (p->Class->dontdelete)
+    if (flag && p->Class->dontdelete)
       error(NIL,"Cannot delete this object",p);
     (*p->Class->self_dispose)(p);
     p->Object = NIL;
@@ -1229,6 +1229,12 @@ delete_at(at *p)
 
   p->Class = &zombie_class;
   p->flags = C_EXTERN | X_ZOMBIE;
+}
+
+void 
+delete_at(at *p)
+{
+  delete_at_special(p, TRUE);
 }
 
 DX(xdelete)

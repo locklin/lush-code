@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.6 2002-05-07 15:53:40 leonb Exp $
+ * $Id: dldbfd.c,v 1.7 2002-05-08 19:52:47 leonb Exp $
  **********************************************************************/
 
 
@@ -2808,6 +2808,38 @@ dld_unlink_by_symbol (const char *id, int hard)
 
 /* ---------------------------------------- */
 /* CHECK EXECUTABILITY */
+
+
+int 
+dld_simulate_unlink_by_file(const char *oname)
+{
+  TRY
+    {
+      module_entry *module=0;
+      if (oname)
+        for (module=dld_modules; module; module=module->next)
+          if (! strcmp(module->filename, oname))
+            break;
+      if (oname && !module)
+        THROW("Module not found");
+      clear_all_executable_flags(dld_modules);
+      if (module) {
+        module_entry *sub;
+        module->executable_flag = 0;
+        if (module->archive_flag)
+          for (sub = module->mods; sub; sub = sub->next)
+            module->executable_flag = 0;
+      }
+      compute_all_executable_flags(dld_modules);        
+    }
+  CATCH(n)
+    {
+      dld_errno = n;
+      return -1;
+    }
+  END_CATCH;
+  return 0;
+}
 
 
 int
