@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.30 2005-02-19 18:05:17 leonb Exp $
+ * $Id: toplevel.c,v 1.31 2005-02-19 18:10:07 leonb Exp $
  **********************************************************************/
 
 
@@ -890,13 +890,10 @@ DX(xquiet)
   ALL_ARGS_EVAL;
   if (arg_number>0)
     {
+      extern int line_flush_stdout;
       ARG_NUMBER(1);
       quiet = ((APOINTER(1)) ? TRUE : FALSE);
-      if (! quiet)
-	{
-	  extern int line_flush_stdout; /* IO.C */
-	  line_flush_stdout = TRUE;
-	}
+      line_flush_stdout = ! quiet;
     }
   return ((quiet) ? true() : NIL);
 }
