@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.4 2002-08-06 18:02:06 leonb Exp $
+ * $Id: x11_driver.c,v 1.5 2002-08-07 15:20:39 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -275,8 +275,8 @@ x11_init(void)
 
   /* Miscellaneous */
   Xinitialised = TRUE;
-  register_event_source(handle_sync_events, handle_async_events,
-                        x11_bwait, x11_ewait, ConnectionNumber(xdef.dpy));
+  register_poll_functions(handle_sync_events, handle_async_events,
+                          x11_bwait, x11_ewait, ConnectionNumber(xdef.dpy));
 }
 
 static void 
@@ -323,12 +323,13 @@ x11_make_window(int x, int y, int w, int h, char *name)
 
   info = NIL;
   for (i = 0; i < MAXWIN; i++)
-    ifn(xwind[i].lwin.used) {
+    if (! xwind[i].lwin.used) {
       info = &xwind[i];
       break;
     }
-  ifn(info)
+  if (! info)
     error(NIL, "too many X11 windows", NIL);
+  memset(info, 0, sizeof(*info));
 
   if (x == 0 && y == 0) {
     hints.x = xdef.x + 20 * i;
@@ -1788,7 +1789,7 @@ DX(xx11_clip_to_text)
 
 
 void
-init_X11driver(void)
+init_x11_driver(void)
 {
   display = var_define("display");
   dx_define("x11_window", xx11_window);

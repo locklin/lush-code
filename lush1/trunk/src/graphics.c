@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.4 2002-08-02 20:31:45 leonb Exp $
+ * $Id: graphics.c,v 1.5 2002-08-07 15:20:39 leonb Exp $
  **********************************************************************/
 
 
@@ -48,6 +48,7 @@ window_dispose(at *p)
   if (win->eventhandler)
     unprotect(p);
   UNLOCK(win->eventhandler);
+  UNLOCK(win->driverdata);
   if (win->gdriver->close)
     (*win->gdriver->close) (win);
   win->used = 0;
@@ -61,6 +62,7 @@ window_action(at *p, void (*action)(at *))
   win = p->Object;
   (*action) (win->font);
   (*action)(win->eventhandler);
+  (*action)(win->driverdata);
 }
 
 static char *

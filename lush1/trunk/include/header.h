@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.37 2002-08-06 18:02:05 leonb Exp $
+ * $Id: header.h,v 1.38 2002-08-07 15:20:34 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -1241,11 +1241,11 @@ LUSHAPI void cside_destroy_range(void *from, void *to);
 /* Event sources */
 LUSHAPI void  block_async_poll(void);
 LUSHAPI void  unblock_async_poll(void);
-LUSHAPI void  unregister_event_source(void *handle);
-LUSHAPI void *register_event_source(int  (*spoll)(void), 
-                                    void (*apoll)(void),
-                                    void (*bwait)(void), 
-                                    void (*ewait)(void), int fd );
+LUSHAPI void  unregister_poll_functions(void *handle);
+LUSHAPI void *register_poll_functions(int  (*spoll)(void), 
+                                      void (*apoll)(void),
+                                      void (*bwait)(void), 
+                                      void (*ewait)(void), int fd );
 
 /* Event queues */ 
 LUSHAPI void *timer_add(at *handler, int delay, int period);

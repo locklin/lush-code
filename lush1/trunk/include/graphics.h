@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.8 2002-08-06 18:02:05 leonb Exp $
+ * $Id: graphics.h,v 1.9 2002-08-07 15:20:34 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -48,6 +48,7 @@ struct window {
   struct gdriver *gdriver;
   at *font;
   at *eventhandler;
+  at *driverdata;
   int color;
   short clipx, clipy, clipw, cliph;
 };

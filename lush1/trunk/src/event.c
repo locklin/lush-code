@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.7 2002-08-06 18:02:05 leonb Exp $
+ * $Id: event.c,v 1.8 2002-08-07 15:20:39 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -408,14 +408,14 @@ timer_fire(void)
 
 
 /* ------------------------------------ */
-/* EVENT SOURCE                         */
+/* POLL FUNCTIONS                       */
 /* ------------------------------------ */     
 
 
 
-struct event_source 
+struct poll_functions 
 {
-  struct event_source *next;
+  struct poll_functions *next;
   int fd;
   int  (*spoll)(void);
   void (*apoll)(void);
@@ -423,7 +423,7 @@ struct event_source
   void (*ewait)(void);
 };
 
-static struct event_source *sources = 0;
+static struct poll_functions *sources = 0;
 static int async_block = 0;
 static int waiting = 0;
 
@@ -431,7 +431,7 @@ static int
 call_spoll(void)
 {
   int timeout = 24*3600*1000;
-  struct event_source *src;
+  struct poll_functions *src;
   for (src=sources; src; src=src->next)
     if (src->spoll)
       {
@@ -445,7 +445,7 @@ call_spoll(void)
 static void
 call_apoll(void)
 {
-  struct event_source *src;
+  struct poll_functions *src;
   if (async_block > 0) return;
   for (src=sources; src; src=src->next)
     if (src->apoll && src->fd>0)
@@ -455,7 +455,7 @@ call_apoll(void)
 static void
 call_bwait(void)
 {
-  struct event_source *src;  
+  struct poll_functions *src;  
   if (waiting) return;
   for (src=sources; src; src=src->next)
     if (src->bwait)
@@ -466,7 +466,7 @@ call_bwait(void)
 static void
 call_ewait(void)
 {
-  struct event_source *src;
+  struct poll_functions *src;
   if (!waiting) return;
   for (src=sources; src; src=src->next)
     if (src->ewait)
@@ -478,9 +478,9 @@ call_ewait(void)
 static int sourcefds[MAXFDS];
 
 static void
-source_setup(void)
+async_poll_setup(void)
 {
-  struct event_source *src;
+  struct poll_functions *src;
   int n = 0;
   for (src=sources; src; src=src->next)
     if (src->apoll && src->fd>0 && n<MAXFDS)
@@ -489,26 +489,26 @@ source_setup(void)
 }
 
 
-/* unregister_event_source --
+/* unregister_poll_functions --
    Unregistes a previously registered event source.
    Argument handle is the handle returned by the
    registering function below.
 */
 void
-unregister_event_source(void *handle)
+unregister_poll_functions(void *handle)
 {
-  struct event_source **p = &sources;
-  struct event_source *src;
+  struct poll_functions **p = &sources;
+  struct poll_functions *src;
   while ((src = *p) && ((void*)src!=handle))
     p = &src->next;
   if (!src)
     return;
   *p = src->next;
   free(src);
-  source_setup();
+  async_poll_setup();
 }
 
-/* register_event_source --
+/* register_poll_functions --
    Modules that produce events must register an event source.
    All arguments are optional.
    
@@ -535,15 +535,15 @@ unregister_event_source(void *handle)
 */
 
 void *
-register_event_source(int  (*spoll)(void),
-                      void (*apoll)(void),
-                      void (*bwait)(void),
-                      void (*ewait)(void),
-                      int fd )
+register_poll_functions(int  (*spoll)(void),
+                        void (*apoll)(void),
+                        void (*bwait)(void),
+                        void (*ewait)(void),
+                        int fd )
      
 {
-  struct event_source *src;
-  src = malloc(sizeof(struct event_source));
+  struct poll_functions *src;
+  src = malloc(sizeof(struct poll_functions));
   if (! src)
     error(NIL,"Out of memory", NIL);
   src->next = sources;
@@ -553,7 +553,7 @@ register_event_source(int  (*spoll)(void),
   src->bwait = bwait;
   src->ewait = ewait;
   sources = src;
-  source_setup();
+  async_poll_setup();
   return src;
 }
 
@@ -612,7 +612,7 @@ event_wait(int console)
   for (;;)
     {
       int n, ms1, ms2;
-      struct event_source *src;
+      struct poll_functions *src;
       if ((hndl = ev_peek()))
         break;
       ms1 = call_spoll();

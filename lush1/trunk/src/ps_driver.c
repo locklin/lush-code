@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: ps_driver.c,v 1.2 2002-04-30 20:03:16 leonb Exp $
+ * $Id: ps_driver.c,v 1.3 2002-08-07 15:20:39 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -591,15 +591,13 @@ ps_window(int x, int y, int w, int h, char *name)
   struct M_window *info;
   at *ans;
   info = ps_new_window(x,y,w,h,name);
+  memset(info, 0, sizeof(*info));
   ans = new_extern( &window_class, info );
   info->lwin.used       = 1;
   info->lwin.font       = new_safe_string(FONT_STD);
   info->lwin.color      = COLOR_FG;
   info->lwin.gdriver    = &ps_driver;
-  info->lwin.clipw      = 0;
-  info->lwin.cliph      = 0;
   info->lwin.backptr    = ans;
-  info->lwin.eventhandler = NIL;
   return ans;
 }
 
@@ -648,7 +646,7 @@ DX(xps_window)
 
 
 void
-init_PSdriver(void)
+init_ps_driver(void)
 {
   dx_define("ps_window",xps_window);
 }

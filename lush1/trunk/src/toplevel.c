@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.11 2002-08-02 20:31:45 leonb Exp $
+ * $Id: toplevel.c,v 1.12 2002-08-07 15:20:39 leonb Exp $
  **********************************************************************/
 
 
@@ -83,15 +83,15 @@ extern void init_dh (void);
 extern void init_lisp_c (void);
 extern void init_event (void);
 extern void init_graphics (void);
-extern void init_PSdriver (void);
+extern void init_ps_driver (void);
 #ifndef NOGRAPHICS
 #ifdef UNIX
 #ifndef X_DISPLAY_MISSING
-extern void init_X11driver (void);
+extern void init_x11_driver (void);
 #endif
 #endif
 #ifdef WIN32
-extern void init_WINdriver(void);
+extern void init_win_driver(void);
 #endif
 #endif
 #ifdef WIN32
@@ -190,14 +190,14 @@ init_lush(char *program_name)
 #endif
 #ifndef NOGRAPHICS
   init_graphics();
-  init_PSdriver();
+  init_ps_driver();
 #ifdef UNIX
 #ifndef X_DISPLAY_MISSING
-  init_X11driver();
+  init_x11_driver();
 #endif
 #endif
 #ifdef WIN32
-  init_WINdriver();
+  init_win_driver();
 #endif
 #endif
   /* Very simple way to define version :-) */
