@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.40 2002-08-13 15:28:24 leonb Exp $
+ * $Id: header.h,v 1.41 2002-08-27 21:02:54 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -525,6 +525,17 @@ extern TLAPI char null_string[];
 extern TLAPI char digit_string[];
 extern TLAPI char special_string[];
 extern TLAPI char aspect_string[];
+
+struct large_string {
+  char *p;
+  char buffer[1024];
+  at *backup;
+  at **where;
+};
+
+LUSHAPI void large_string_init(struct large_string *ls);
+LUSHAPI void large_string_add(struct large_string *ls, char *s, int len);
+LUSHAPI at * large_string_collect(struct large_string *ls);
 
 
 /* FUNCTION.H -------------------------------------------------- */

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.7 2002-08-27 20:46:55 leonb Exp $
+ * $Id: string.c,v 1.8 2002-08-27 21:02:54 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -43,7 +43,7 @@ char special_string[] = "\"\\\n\r\b\t\f\377";
 char aspect_string[] = "\"\\nrbtfe";
 char *string_buffer;
 
-static char *toolong = "String too long";
+static char *toolong = "String is too long";
 static char *badarg = "Argument out of range";
 
 /*
@@ -225,15 +225,7 @@ class string_class =
 
 /* helpers to construct large strings -----------------	 */
 
-
-struct large_string {
-  char *p;
-  char buffer[1024];
-  at *backup;
-  at **where;
-};
-
-static void
+void
 large_string_init(struct large_string *ls)
 {
   ls->backup = NIL;
@@ -241,7 +233,7 @@ large_string_init(struct large_string *ls)
   ls->p = ls->buffer;
 }
 
-static void
+void
 large_string_add(struct large_string *ls, char *s, int len)
 {
   if (len < 0)
@@ -269,7 +261,7 @@ large_string_add(struct large_string *ls, char *s, int len)
     }
 }
 
-static at*
+at *
 large_string_collect(struct large_string *ls)
 {
   char *r;
@@ -668,114 +660,89 @@ DX(xstr_len)
 /*------------------------ */
 
 
-static char *
+static at*
 str_del(char *s, int n, int l)
 {
-  register char *t;
-
-  if (n < 1)
-    error(NIL, badarg, NEW_NUMBER(n));
-  if (l < 0)
-    error(NIL, badarg, NEW_NUMBER(l));
-
-  t = string_buffer;
-  while (*s && --n>0)  {
-    if (t>string_buffer+STRING_BUFFER-10)
-      error(NIL,toolong,NIL);
-    *t++ = *s++;
-  }
-  while (*s && l-->0)
-    s++;
-  while (*s) {
-    if (t>string_buffer+STRING_BUFFER-10)
-      error(NIL,toolong,NIL);
-    else
-      *t++ = *s++;
-  }
-  *t=0;
-  return string_buffer;
+  struct large_string ls;
+  int len = strlen(s);
+  if (n > len)
+    n = len;
+  if (l< 0 || n+l > len)
+    l = len - n;
+  
+  large_string_init(&ls);
+  large_string_add(&ls, s, n);
+  large_string_add(&ls, s+n+l, -1);
+  return large_string_collect(&ls);
 }
+
 DX(xstr_del)
 {
-  register int l;
-
+  int l = -1;
   ALL_ARGS_EVAL;
-  if (arg_number == 2)
-    l = 32767;
-  else {
-    ARG_NUMBER(3);
-    l = AINTEGER(3);
-  }
-  return new_string(str_del(ASTRING(1), AINTEGER(2), l));
+  if (arg_number != 2)
+    {
+      ARG_NUMBER(3);
+      l = AINTEGER(3);
+    }
+  return str_del(ASTRING(1), AINTEGER(2), l);
 }
 
 /*------------------------ */
 
-static char *
+static at *
 str_ins(char *s, int pos, char *what)
 {
-  char *t = string_buffer;
-
-  if (pos<0)
-    error(NIL,badarg,NEW_NUMBER(pos));
-
-  while (*s && pos-->0) {
-    if (t>string_buffer+STRING_BUFFER-10)
-      error(NIL,toolong,NIL);
-    *t++ = *s++;
-  }
-  while (*what) {
-    if (t>string_buffer+STRING_BUFFER-10)
-      error(NIL,toolong,NIL);
-    *t++ = *what++;
-  }
-  while (*s) {
-    if (t>string_buffer+STRING_BUFFER-10)
-      error(NIL,toolong,NIL);
-    *t++ = *s++;
-  }
-  *t=0;
-  return string_buffer;
+  struct large_string ls;
+  int len = strlen(s);
+  if (pos > len)
+    pos = len;
+  large_string_init(&ls);
+  large_string_add(&ls, s, pos);
+  large_string_add(&ls, what, -1);
+  large_string_add(&ls, s + pos, -1);
+  return large_string_collect(&ls);
 }
+
 DX(xstr_ins)
 {
   ARG_NUMBER(3);
   ALL_ARGS_EVAL;
-  return new_string( str_ins(ASTRING(1),AINTEGER(2),ASTRING(3)));
+  return str_ins(ASTRING(1),AINTEGER(2),ASTRING(3));
 }
 
 
 
 /*------------------------ */
 
-static char *
+static at *
 str_subst(char *s, char *s1, char *s2)
 {
-  char *t = string_buffer;
+  struct large_string ls;
   int len1 = strlen(s1);
   int len2 = strlen(s2);
-  
-  while(*s) {
-    if ((*s==*s1) && (!strncmp(s,s1,len1)) ) {
-      if (t>string_buffer+STRING_BUFFER-10-len2)
-	error(NIL,toolong,NIL);
-      strcpy(t,s2);
-      t += len2;
-      s += len1;
-    } else {
-      if (t>string_buffer+STRING_BUFFER-10)
-	error(NIL,toolong,NIL);
-      *t++ = *s++;
+  char *last = s;
+  large_string_init(&ls);
+  while(*s) 
+    {
+      if ((*s == *s1) && (!strncmp(s,s1,len1)) ) {
+        large_string_add(&ls, last, s - last);
+        large_string_add(&ls, s2, len2);
+        s += len1;
+        last = s;
+      } else
+        s += 1;
     }
-  }
-  *t = 0;
-  return string_buffer;
+  if (s > last)
+    large_string_add(&ls, last, s - last);
+  return large_string_collect(&ls);
 }
+
 DX(xstrsubst)
 {
   ARG_NUMBER(3);
   ALL_ARGS_EVAL;
-  return new_string( str_subst(ASTRING(1),ASTRING(2),ASTRING(3)) );
+  return str_subst(ASTRING(1),ASTRING(2),ASTRING(3));
 }
 
 /*------------------------ */
