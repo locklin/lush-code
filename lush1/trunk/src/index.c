@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.12 2002-07-06 02:07:47 leonb Exp $
+ * $Id: index.c,v 1.13 2002-07-19 03:29:19 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -960,28 +960,70 @@ DX(xnew_index)
 
 
 
-
-#define Generic_matrix(Prefix) 						     \
-at *name2(Prefix,_matrix)(int ndim, int *dim)				     \
-{ 									     \
-  at *atst,*ans; 							     \
-  atst = name3(new_,Prefix,_storage)();   				     \
-  ans = new_index(atst);						     \
-  if (ndim >= 0) index_dimension(ans,ndim,dim);				     \
-  UNLOCK(atst); 							     \
-  return ans; 								     \
-} 									     \
-DX(name3(x,Prefix,matrix)) 						     \
-{ 									     \
-  int i;								     \
-  int dim[MAXDIMS]; 							     \
-  ALL_ARGS_EVAL;							     \
-  for(i=0;i<arg_number;i++) 						     \
-    dim[i]=AINTEGER(i+1); 						     \
-  return name2(Prefix,_matrix)(arg_number,dim); 			     \
+static at *
+generic_matrix(at *atst, int ndim, int *dim)
+{
+  at *ans = new_index(atst);
+  if (ndim >= 0)
+    index_dimension(ans, ndim, dim);
+  UNLOCK(atst); /* hack */
+  return ans;
 }
 
-Generic_matrix(AT);
+static at *
+xgeneric_matrix(at *atst, int arg_number, at **arg_array)
+{
+  int i;
+  int dim[MAXDIMS];
+  ALL_ARGS_EVAL;
+  for(i=0;i<arg_number;i++)
+    dim[i] = AINTEGER(i+1);
+  return generic_matrix(atst, arg_number, dim);  
+}
+
+static at *
+generic_matrix_nc(at *atst, int ndim, int *dim)
+{
+  at *ans = new_index(atst);
+  if (ndim >= 0)
+    {
+      int i;
+      int size = 1;
+      for (i=0; i<ndim; i++)
+        size *= dim[i];
+      storage_malloc(atst, size, 0);
+      index_dimension(ans, ndim, dim);
+    }
+  UNLOCK(atst); /* hack */
+  return ans;
+}
+
+static at *
+xgeneric_matrix_nc(at *atst, int arg_number, at **arg_array)
+{
+  int i;
+  int dim[MAXDIMS];
+  ALL_ARGS_EVAL;
+  for(i=0;i<arg_number;i++)
+    dim[i] = AINTEGER(i+1);
+  return generic_matrix_nc(atst, arg_number, dim);  
+}
+
+#define Generic_matrix_nnc(Prefix) \
+at *name2(Prefix,_matrix)(int ndim, int *dim) \
+{ return generic_matrix(name3(new_,Prefix,_storage)(), \
+                        ndim, dim ); } \
+DX(name3(x,Prefix,matrix)) \
+{ return xgeneric_matrix(name3(new_,Prefix,_storage)(), \
+                         arg_number, arg_array ); } 
+
+#define Generic_matrix(Prefix) \
+Generic_matrix_nnc(Prefix) \
+DX(name3(x,Prefix,matrix_nc)) \
+{ return xgeneric_matrix_nc(name3(new_,Prefix,_storage)(), \
+                         arg_number, arg_array ); } 
+
+Generic_matrix_nnc(AT);
 Generic_matrix(P);
 Generic_matrix(F); 
 Generic_matrix(D);
@@ -992,7 +1034,7 @@ Generic_matrix(U8);
 Generic_matrix(GPTR);
 
 #undef Generic_matrix
-
+#undef Generic_matrix1
 
 
 
@@ -3109,11 +3151,9 @@ void init_index()
   class_define("INDEX",&index_class);
 
   /* info */
-
   dx_define("indexp", xindexp);
   dx_define("matrixp", xmatrixp);
   dx_define("arrayp", xarrayp);
-
   dx_define("idx-storage", xindex_storage);
   dx_define("idx-size", xindex_size);
   dx_define("idx-nelements", xindex_nelements);
@@ -3124,31 +3164,34 @@ void init_index()
   dx_define("idx-modulo", xindex_mod);
 
   /* creation */
-
   dx_define("new_index", xnew_index);
   dx_define("sub_index", xsubindex);
-  
-  dx_define("at_matrix", xATmatrix);
-  dx_define("p_matrix", xPmatrix);
-  dx_define("f_matrix", xFmatrix);
-  dx_define("d_matrix", xDmatrix);
-  dx_define("i32_matrix", xI32matrix);
-  dx_define("i16_matrix", xI16matrix);
-  dx_define("i8_matrix", xI8matrix);
-  dx_define("u8_matrix", xU8matrix);
+  dx_define("atom_matrix", xATmatrix);
+  dx_define("packed_matrix", xPmatrix);
+  dx_define("float_matrix", xFmatrix);
+  dx_define("double_matrix", xDmatrix);
+  dx_define("int_matrix", xI32matrix);
+  dx_define("short_matrix", xI16matrix);
+  dx_define("byte_matrix", xI8matrix);
+  dx_define("ubyte_matrix", xU8matrix);
   dx_define("gptr_matrix", xGPTRmatrix);
+  dx_define("packed_matrix_nc", xPmatrix_nc);
+  dx_define("float_matrix_nc", xFmatrix_nc);
+  dx_define("double_matrix_nc", xDmatrix_nc);
+  dx_define("int_matrix_nc", xI32matrix_nc);
+  dx_define("short_matrix_nc", xI16matrix_nc);
+  dx_define("byte_matrix_nc", xI8matrix_nc);
+  dx_define("ubyte_matrix_nc", xU8matrix_nc);
+  dx_define("gptr_matrix_nc", xGPTRmatrix_nc);
 
   /* nr */
-  
   dx_define("nrvectorp", xnrvectorp);
   dx_define("nrmatrixp", xnrmatrixp);
 
   /* copy */
-
   dx_define("copy_matrix", xcopy_matrix);
 
   /* matrix files */
-
   dx_define("save_matrix", xsave_matrix);
   dx_define("save_ascii_matrix", xsave_ascii_matrix);
   dx_define("export_raw_matrix", xexport_raw_matrix);
@@ -3161,7 +3204,6 @@ void init_index()
 #endif
 
   /* structure functions */
-
   dx_define("idx-redim", xindex_redim);
   dx_define("idx-undim", xindex_undim);
   dx_define("idx-unfold", xindex_unfold);
@@ -3170,34 +3212,23 @@ void init_index()
   dx_define("idx-select", xindex_select);
   dx_define("idx-transpose", xindex_transpose);
   dx_define("idx-transpose2", xindex_transpose2);
-  
   dx_define("idx-clone", xindex_clone);
   dx_define("idx-transclone", xindex_transclone);
-
   dx_define("idx-changedim",xindex_change_dim);
   dx_define("idx-changemod",xindex_change_mod);
   dx_define("idx-changeoffset",xindex_change_offset);
 
   /* loops */
-
   dy_define("idx-eloop", yeloop);
   dy_define("idx-bloop", ybloop);
 
   /* checks */
-
   dx_define("idx-is-sized", xindex_is_sized);
   dx_define("idx-same-size", xindex_same_size);
   dx_define("idx-size-or-check", xindex_size_or_check);
 
   /* compatibility */
-
   dx_define("matrix",xFmatrix);
-  dx_define("pmatrix",xPmatrix);
-  dx_define("bmatrix",xU8matrix);
-  dx_define("smatrix",xI16matrix);
-  dx_define("imatrix",xI32matrix);
-  dx_define("dmatrix",xDmatrix);
-  dx_define("fmatrix",xFmatrix);
   dx_define("array",xATmatrix);
   dx_define("submatrix",xsubindex);
   dx_define("bound",xoldbound);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.30 2002-07-10 19:27:19 leonb Exp $
+ * $Id: header.h,v 1.31 2002-07-19 03:29:17 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -344,6 +344,7 @@ TLAPI void protect(at *q);
 TLAPI void unprotect(at *q);
 LUSHAPI void add_finalizer(at *q, void(*)(at*,void*), void*);
 LUSHAPI void run_finalizers(at *q);
+LUSHAPI void del_finalizers(void*);
 TLAPI void garbage(int flag);
 
 /* Allocation functions */

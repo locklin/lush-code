@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.6 2002-07-01 01:22:15 leonb Exp $
+ * $Id: allocate.c,v 1.7 2002-07-19 03:29:19 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -111,7 +111,7 @@ static struct alloc_root finalizer_alloc = {
 
 static finalizer *finalizers[HASHTABLESIZE];
 
-LUSHAPI void 
+void 
 add_finalizer(at *q, void (*func)(at*,void*), void *arg)
 {
   unsigned int h;
@@ -125,7 +125,28 @@ add_finalizer(at *q, void (*func)(at*,void*), void *arg)
   q->flags |= C_FINALIZER;
 }
 
-LUSHAPI void 
+void
+del_finalizers(void *arg)
+{
+  int h;
+  for (h=0; h<HASHTABLESIZE; h++)
+    {
+      finalizer *f;
+      finalizer **pf = &finalizers[h];
+      while ((f = *pf))
+        {
+          if (f->arg == arg)
+            {
+              *pf = f->next;
+              deallocate(&finalizer_alloc, (struct empty_alloc*)f);
+            }
+          else
+            pf = &(f->next);
+        }
+    }
+}
+
+void 
 run_finalizers(at *q)
 {
   unsigned int h = hash_pointer(q) % HASHTABLESIZE;

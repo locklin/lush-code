@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.42 2002-07-17 20:02:31 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.43 2002-07-19 03:29:19 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -534,34 +534,6 @@
 
 
 
-;;; -------- Statistics on lists of numbers ---------
-
-(de y_estimate((a b r) x)
-    (+ (* x a) b) )
-
-(de x_estimate((a b r) y)
-    (/ (- y b) a) )
-
-(dm mean_sup_dist (f r1 . r2)
-    `(let ((r ,r1)) (/ (sup_dist r ,@r2) (length r))) )
-
-(dm mean_abs_dist (f r1 . r2)
-    `(let ((r ,r1)) (/ (abs_dist r ,@r2) (length r))) )
-
-(dm mean_sqr_dist (f r1 . r2)
-    `(let ((r ,r1)) (/ (sqr_dist r ,@r2) (length r))) )
-
-(dm mean_hamming_dist (f r1 . r2)
-    `(let ((r ,r1)) (/ (hamming_dist r ,@r2) (length r))) )
-
-(dm mean_quadrant_dist (f r1 . r2)
-    `(let ((r ,r1)) (/ (quadrant_dist r ,@r2) (length r))) )
-
-(lock_symbol x_estimate y_estimate
-             mean_sup_dist mean_abs_dist mean_sqr_dist 
-             mean_hamming_dist  mean_quadrant_dist )
-
-
 
 
 ;;;; --------- Arrays & Matrix utilities ---------
@@ -575,44 +547,67 @@
     flag ) )
 
 (de clone-matrix (mat)
-    (let* ((size (apply * (bound mat)))
-	   (sto (new-f-storage)))
-      (storage-malloc-nc sto size)
-      (new-index sto (bound mat))))
+  (let* ((size (apply * (bound mat)))
+         (sto (new-f-storage)))
+    (storage-malloc-nc sto size)
+    (new-index sto (bound mat))))
 
 (dmd redim (idx . l)
-  `(new-index (idx-storage ,idx) ,(cons 'list l)) )
+  `(new-index (idx-storage ,idx) 
+              ,(cons 'list l) ) )
+
+(dmd unfold (idx n k s)
+  `(let ((m (idx-clone ,idx))
+         (n ,n) (k ,k) (s ,s) )
+     (idx-unfold m n k s)
+     m ) )
+
+(dmd select (idx d n)
+  `(let ((m ,(idx-clone idx))
+         (d ,d) (n ,n))
+     (idx-select m d n)
+     m ))
+
+(dmd diagonal(a n)
+  `(let ((m (idx-clone a))
+         (n ,n))
+     (idx-diagonal m n)
+     m ))
+
+(dmd narrow (idx d n o)
+  `(let ((m (idx-clone ,idx))
+         (d ,d) (n ,n) (o ,o))
+     (idx-narrow m d n o)
+     m ) )
 
 (de index-print(this)
-    (let ((begin "[")
-	  (end "]"))
-      (when (arrayp this)
-	    (setq begin "{")
-	    (setq end "}"))
-      
-      (if (or (not (idx-ndim this)) (0= (idx-ndim this)))
-	  (printf "%s" (pname this))
-	
-	(printf begin)
-	(let ((tabnow (tab))
-	      (len (idx-bound this 0)) )
-	  (if (= 1 (idx-ndim this))
-	      (if (not (member (classof (idx-storage this))
-			       (list |ATSTORAGE| |GPTRSTORAGE|) ) )
-                  (for (i 0 len)
-                       (printf "%5.2f " (this i))) 
-		(printf " ")
-		(for (i 0 len)
-		     (prin (this i))
-		     (printf " ")) )
-	    (for (i 0 len)
-		 (index-print (new-index this 
-					 (cons 0 (cdr (idx-dim this)))
-					 (list i) ))
-		 (when (< i len)
-		       (print)
-		       (tab tabnow) ) ) ) )
-	(printf end) ) ) )
+  (let ((begin "[")
+        (end "]"))
+    (when (arrayp this)
+      (setq begin "{")
+      (setq end "}"))
+    (if (or (not (idx-ndim this)) (0= (idx-ndim this)))
+        (printf "%s" (pname this))
+      (printf begin)
+      (let ((tabnow (tab))
+            (len (idx-bound this 0)) )
+        (if (= 1 (idx-ndim this))
+            (if (not (member (classof (idx-storage this))
+                             (list |ATSTORAGE| |GPTRSTORAGE|) ) )
+                (for (i 0 len)
+                     (printf "%5.2f " (this i))) 
+              (printf " ")
+              (for (i 0 len)
+                   (prin (this i))
+                   (printf " ")) )
+          (for (i 0 len)
+               (index-print (new-index this 
+                                       (cons 0 (cdr (idx-dim this)))
+                                       (list i) ))
+               (when (< i len)
+                 (print)
+                 (tab tabnow) ) ) ) )
+      (printf end) ) ) )
 
 (demethod |INDEX| print()
   (if (and (matrixp this)
@@ -621,19 +616,19 @@
     (printf "%s" (pname this)) ) )
 
 (de list-to-index(l matrix)
-    (if (= (car l) 'quote)
-	;; this is a list of literal
-	(let ((m (matrix (1- (length l)))))
-	  (m () (cdr l)) )
-      ;; this is a list of matrices
-      (let ((m (apply matrix (cons (length l) (idx-dim (car l))))))
-	(for (i 0 (idx-bound m 0))
-	     (copy-matrix (car l)
-			  (new-index m
-				     (cons 0 (cdr (idx-dim m)))
-				     (list i) ) ) 
-	     (setq l (cdr l)) )
-	m ) ) )
+  (if (= (car l) 'quote)
+      ;; this is a list of literal
+      (let ((m (matrix (1- (length l)))))
+        (m () (cdr l)) )
+    ;; this is a list of matrices
+    (let ((m (apply matrix (cons (length l) (idx-dim (car l))))))
+      (for (i 0 (idx-bound m 0))
+           (copy-matrix (car l)
+                        (new-index m
+                                   (cons 0 (cdr (idx-dim m)))
+                                   (list i) ) ) 
+           (setq l (cdr l)) )
+      m ) ) )
 
 (dmc |]| (error 'read "extra ']' found"))
 
@@ -642,25 +637,25 @@
 (dmc |[| 
      (on-error (error 'list-to-index "Illegal matrix syntax")
        (let ((l (when (<> (skip-char) "[") (list 'quote)))
-             (|]| (lambda() (setq m (list-to-index l f-matrix))))
+             (|]| (lambda() (setq m (list-to-index l matrix))))
              (m ()) )
          (while ~m
            (setq l (nconc1 l (read))) )
          m ) ) )
 
 (dmc |{| 
-     (on-error (error 'list-to-index "Illegal matrix syntax")
+     (on-error (error 'list-to-index "Illegal array syntax")
        (let ((l (when (<> (skip-char) "{") (list 'quote)))
-             (|}| (lambda() (setq m (list-to-index l at-matrix))))
+             (|}| (lambda() (setq m (list-to-index l array))))
              (m ()) )
          (while ~m
            (setq l (nconc1 l (read))) )
          m ) ) )
 
-(lock_symbol contiguep clone-matrix redim
+(lock_symbol contiguep clone-matrix 
+             redim unfold select diagonal narrow
              index-print list-to-index 
              |[| |]| |{| |}|)
-
 
 
 
@@ -1326,12 +1321,12 @@
 
 ;;; --------- Misc compiler support ---------
 
-(df breakp () ())
-
-(df protect |Args| (apply progn |Args|))
-
-(df unprotect |Args| (apply progn |Args|))
-
+(df breakp () 
+  () )
+(dm protect (fn . args)
+  (cons 'progn args) )
+(dm unprotect (fn . args)
+  (cons 'progn args) )
 (de ccall args
   (error 'ccall "only works in compiled functions" ()) )
 (df cinline args
@@ -1453,90 +1448,6 @@
 	       (setq help-root (cons hroot help-root)) ) ) )
      (skip-char "~\n\r")
      () )
-
-
-
-
-
-;;; --------- Standard Aliases -----------
-
-;; non-clearing matrix creation functions
-(de f-matrix-nc    args (apply f-matrix args))
-(de d-matrix-nc    args (apply d-matrix args))
-(de i32-matrix-nc  args (apply i32-matrix args))
-(de i16-matrix-nc  args (apply i16-matrix args))
-(de i8-matrix-nc   args (apply i8-matrix args))
-(de u8-matrix-nc   args (apply u8-matrix args))
-(de gptr-matrix-nc args (apply gptr-matrix args))
-(lock-symbol f-matrix-nc d-matrix-nc i32-matrix-nc 
-             i16-matrix-nc i8-matrix-nc u8-matrix-nc 
-             gptr-matrix-nc )
-
-
-;; backward compatibility with SN3.2 (C names)
-(defvar float-matrix f-matrix)
-(defvar double-matrix d-matrix)
-(defvar int-matrix i32-matrix)
-(defvar short-matrix i16-matrix)
-(defvar byte-matrix i8-matrix)
-(defvar ubyte-matrix u8-matrix)
-(defvar float-matrix-nc f-matrix-nc)
-(defvar double-matrix-nc d-matrix-nc)
-(defvar int-matrix-nc i32-matrix-nc)
-(defvar short-matrix-nc i16-matrix-nc)
-(defvar byte-matrix-nc i8-matrix-nc)
-(defvar ubyte-matrix-nc u8-matrix-nc)
-(defvar packed-matrix p-matrix)
-(defvar atom-matrix at-matrix)
-(defvar float-storage new-f-storage)
-(defvar double-storage new-d-storage)
-(defvar int-storage new-i32-storage)
-(defvar short-storage new-i16-storage)
-(defvar byte-storage new-i8-storage)
-(defvar ubyte-storage new-u8-storage)
-(defvar gptr-storage new-gptr-storage)
-(defvar packed-storage new-p-storage)
-(defvar atom-storage new-at-storage)
-(lock-symbol float-matrix double-matrix int-matrix 
-             short-matrix byte-matrix ubyte-matrix 
-             float-matrix-nc double-matrix-nc int-matrix-nc 
-             short-matrix-nc byte-matrix-nc ubyte-matrix-nc
-             packed-matrix atom-matrix float-storage 
-             double-storage int-storage short-storage 
-             byte-storage ubyte-storage gptr-storage
-             packed-storage atom-storage )
-
-;; backward compatibility with SN3 (cast)
-(defvar to-float  to-flt)
-(defvar to-double to-real)
-(defvar flt       to-flt)
-(defvar float     to-float)
-(defvar real      to-real)
-(defvar double    to-double)
-(defvar bool      to-bool)
-(defvar gptr      to-gptr)
-(defvar number    to-number)
-(defvar obj       to-obj)
-(defvar obj-super to-obj)
-(lock-symbol to-float to-double float double
-             flt real bool gptr obj obj-super)
-
-;; backward compatibility with SN3 (misc)
-(defvar mload libload)
-(defvar map-pmatrix map-matrix)
-(defvar save-flt-matrix save-matrix)
-(defvar save-packed-matrix save-matrix)
-
-;; backward compatibility with SN1, SN2
-(dm dim(f v . l) `(defvar v (matrix ,@l)))
-
-;; backward compatibility with SN1ATT
-(defvar defun de)
-(defvar += incr)
-(defvar << setq)
-(defvar diff-lists diff-listes)
-(defvar add-lists add-listes)
-
 
 
 

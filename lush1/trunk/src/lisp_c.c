@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.12 2002-07-17 18:34:55 leonb Exp $
+ * $Id: lisp_c.c,v 1.13 2002-07-19 03:29:19 leonb Exp $
  **********************************************************************/
 
 
@@ -2814,34 +2814,6 @@ DX(xto_obj)
   /* return */
   return p;
 }
-
-
-
-
-DX(xdhgptr)
-{
-#if DLDBFD
-  at *p;
-  struct cfunction *cfunc;
-  dhdoc_t *dhdoc;
-
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  p = APOINTER(1);
-  if (! EXTERNP(p, &dh_class))
-    error(NIL,"Not a DH function", p);
-  cfunc = p->Object;
-  if (CONSP(cfunc->name))
-    check_primitive(cfunc->name);
-  dhdoc = (dhdoc_t*)(cfunc->info);
-  if (! dhdoc)
-    error(NIL,"Internal error: dhdoc unvailable",NIL);
-  return NEW_GPTR(dld_get_func(dhdoc->lispdata.c_name));
-#else
-  error(NIL,"This function requires dldbfd",NIL);
-#endif
-}
-
 
 
 /* (to-gptr <obj>) */

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.6 2002-05-07 18:22:17 leonb Exp $
+ * $Id: storage.c,v 1.7 2002-07-19 03:29:19 leonb Exp $
  **********************************************************************/
 
 
@@ -1358,15 +1358,15 @@ void init_storage()
   class_define("U8STORAGE",&U8_storage_class);
   class_define("GPTRSTORAGE",&GPTR_storage_class);
 
-  dx_define("new_at_storage",xnew_AT_storage);
-  dx_define("new_p_storage",xnew_P_storage);
-  dx_define("new_f_storage",xnew_F_storage);
-  dx_define("new_d_storage",xnew_D_storage);
-  dx_define("new_i32_storage",xnew_I32_storage);
-  dx_define("new_i16_storage",xnew_I16_storage);
-  dx_define("new_i8_storage",xnew_I8_storage);
-  dx_define("new_u8_storage",xnew_U8_storage);
-  dx_define("new_gptr_storage",xnew_GPTR_storage);
+  dx_define("atom_storage",xnew_AT_storage);
+  dx_define("packed_storage",xnew_P_storage);
+  dx_define("float_storage",xnew_F_storage);
+  dx_define("double_storage",xnew_D_storage);
+  dx_define("int_storage",xnew_I32_storage);
+  dx_define("short_storage",xnew_I16_storage);
+  dx_define("byte_storage",xnew_I8_storage);
+  dx_define("ubyte_storage",xnew_U8_storage);
+  dx_define("gptr_storage",xnew_GPTR_storage);
 
   dx_define("storage_malloc",xstorage_malloc);
   dx_define("storage_malloc_nc",xstorage_malloc_nc);
