@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.2 2002-04-29 22:21:58 leonb Exp $
+ * $Id: oostruct.c,v 1.3 2002-04-29 22:25:03 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -867,10 +867,16 @@ DY(yletslot)
 /* ---------------- METHODS --------------- */
 
 
-static void
+void
 putmethod(class *cl, at *name, at *value)
 {
   register at **last, *list, *q;
+
+  if (! EXTERNP(name, &symbol_class))
+    error(NIL,"Not a symbol", name);
+  if (value && !(value->flags & X_FUNCTION))
+    error(NIL,"Not a function", value);
+  
   clear_hashok(cl);
   last = &(cl->methods);
   list = *last;
@@ -919,11 +925,7 @@ DX(xputmethod)
   if (! EXTERNP(atclass, &class_class))
     error(NIL,"Not a class", atclass);
   atname = APOINTER(2);
-  if (! EXTERNP(atname, &symbol_class))
-    error(NIL,"Not a symbol", atname);
   atfun = APOINTER(3);
-  if (atfun && !(atfun->flags & X_FUNCTION))
-    error(NIL,"Not a function", atfun);
   putmethod(atclass->Object, atname, atfun);
   LOCK(atname);
   return atname;

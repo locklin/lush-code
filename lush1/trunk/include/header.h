@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.8 2002-04-29 21:57:29 leonb Exp $
+ * $Id: header.h,v 1.9 2002-04-29 22:25:02 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -714,6 +714,7 @@ struct oostruct {
 
 TLAPI void class_define(char *name, class *cl);
 TLAPI at *defclass(at *classname, at *superclass, at *keylist, at *defaults);
+TLAPI void putmethod(class *cl, at *name, at *fun);
 TLAPI at *new_oostruct(at *cl);
 TLAPI at *letslot(at *obj, at *f, at *q, int howmuch);
 TLAPI at *checksend(class *cl, at *prop);
