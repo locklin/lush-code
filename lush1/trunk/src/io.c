@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.4 2002-08-26 23:13:54 leonb Exp $
+ * $Id: io.c,v 1.5 2002-08-27 21:44:45 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -321,7 +321,6 @@ next_char(void)
 }
 
 
-
 /* --------- FLUSH FUNCTIONS --------- */
 
 /*
@@ -447,7 +446,6 @@ make_testchar_map(char *s, char *buf)
               while (old < ((unsigned char*)s)[1])
                 buf[old++] = yes;
               old = -1;
-              s += 1;
             } 
           else 
             {
@@ -470,8 +468,8 @@ skip_char(char *s)
   char c, map[256];
   make_testchar_map(s, map);
   map[255] = FALSE;
+  map['\r'] |= map['\n'];
   
-  c = EOF;
   if (context->input_file==stdin && prompt_string)
     {
       /* Standard implementation */
@@ -480,7 +478,7 @@ skip_char(char *s)
     }
   else
     {
-      /* Go faster */
+      /* Go as fast as we can */
       c = EOF;
       if (context->input_file)
         {
@@ -538,50 +536,66 @@ DX(xskip_char)
 }
 
 
-/*
- * read_string(s) reads a string whose characters match 's
- */
-char *
+static at *
 read_string(char *s)
 {
-  char *bpos, map[256];
+  char map[256];
+  struct large_string ls;
   make_testchar_map(s, map);
-  bpos = string_buffer;
-  while (map[(unsigned char)next_char()]) {
-    if (bpos < string_buffer + STRING_BUFFER - 1) {
-      if ((*bpos++ = read_char()) == (char) EOF)
-	break;
-    } else
-      error("read", "too long string", NIL);
-  }
-  *bpos = 0;
-  return string_buffer;
+  map[255] = FALSE;
+  map['\r'] |= map['\n'];
+
+  large_string_init(&ls);
+#ifdef HAVE_FLOCKFILE
+  flockfile(context->input_file);
+#endif
+  while (map[(unsigned char)next_char()]) 
+    {
+      char c = read_char();
+      large_string_add(&ls, &c, 1);
+    }
+#ifdef HAVE_FLOCKFILE
+  funlockfile(context->input_file);
+#endif
+  return large_string_collect(&ls);
 }
+
+
+static at *
+read_string_n(int n)
+{
+  int i;
+  struct large_string ls;
+
+  large_string_init(&ls);
+#ifdef HAVE_FLOCKFILE
+  flockfile(context->input_file);
+#endif
+  for (i=0; i<n; i++) 
+    {
+      char c = read_char();
+      if (c == (char)EOF) break;
+      large_string_add(&ls, &c, 1);
+    }
+#ifdef HAVE_FLOCKFILE
+  funlockfile(context->input_file);
+#endif
+  return large_string_collect(&ls);
+}
+
 
 DX(xread_string)
 {
-  register char *s;
-  register int i;
-
-  s = "~\n\r\377";
-  if (arg_number) {
-    ARG_NUMBER(1);
-    ARG_EVAL(1);
-    if (ISNUMBER(1)) {
-      s = string_buffer;
-      i = AINTEGER(1);
-      if (i < 0 || i > STRING_BUFFER - 1)
-	error("read", "out of range", APOINTER(1));
-
-      while (i-- > 0)
-	if ((*s++ = read_char()) == (char) EOF)
-	  break;
-      *s = 0;
-      return new_string(string_buffer);
-    } else
+  char *s = "~\n\r\377";
+  if (arg_number) 
+    {
+      ARG_NUMBER(1);
+      ARG_EVAL(1);
+      if (ISNUMBER(1))
+        return read_string_n(AINTEGER(1));
       s = ASTRING(1);
-  }
-  return new_string(read_string(s));
+    }
+  return read_string(s);
 }
 
 
@@ -679,7 +693,7 @@ read_list(void)
   word = read_word();
   c = word[1] ? 0 : word[0];
   if (c == ';') {		/* COMMENT			 */
-    read_string("~\n\r\377");
+    skip_char("~\n\r\377");
     goto read_list;
   }
   if (c == ')') {		/* EXTRA RIGHT PARENTHESIS	 */
@@ -836,7 +850,7 @@ read_again:
       return answer;
 
     case ';':
-      read_string("~\n\r\377");
+      skip_char("~\n\r\377");
       goto read_again2;
       
     case '.':
@@ -850,7 +864,7 @@ read_again:
       case ')':
 	goto err_read1;
       case ';':
-	read_string("~\n\r\377");
+	skip_char("~\n\r\377");
 	s = read_word();
 	goto read_again3;
       default:
