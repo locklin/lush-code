@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.46 2004-07-19 19:47:05 leonb Exp $
+ * $Id: module.c,v 1.47 2004-07-19 19:48:17 leonb Exp $
  **********************************************************************/
 
 
@@ -300,11 +300,11 @@ nsbundle_update(void)
        bundle != &nsbundle_head; 
        bundle=bundle->next)
     nsbundle_exec(bundle);
-  /* try unloading [THIS DOES NOT WORK RIGHT WITH CROSS DEPENDENCIES] */
+  /* try unloading */
   nsbundle_handlers.undefined = nsbundle_undef_unload;
   NSInstallLinkEditErrorHandlers(&nsbundle_handlers);
   nsbundle_undef_unload(NULL);
-  /* try loading [THIS WORKS RIGHT WITH CROSS DEPENDENCIES] */
+  /* try loading */
   nsbundle_handlers.undefined = nsbundle_undef_load;
   NSInstallLinkEditErrorHandlers(&nsbundle_handlers);
   nsbundle_undef_load(NULL);
