@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ogre.lsh,v 1.3 2002-08-02 20:31:45 leonb Exp $
+;;; $Id: ogre.lsh,v 1.4 2002-08-03 13:08:49 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -338,10 +338,14 @@
 ;;   locale d'evenements.
 
 (defmethod VisualObject propagate-event(x y event)
-  (apply==> this (car event) (cdr event)) )
+  (if (check==> (classof this) (car event))
+      (apply==> this (car event) (cdr event)) 
+    'ignored ) )
 
 (defmethod VisualObject propagate-activated(event)
-  (apply==> this (car event) (cdr event)) )
+  (if (check==> (classof this) (car event))
+      (apply==> this (car event) (cdr event)) 
+    'ignored ) )
 
 (defmethod VisualObject manage-event(event)
   (let ((type (car event)))
@@ -766,7 +770,10 @@
     `ignored) )
 
 (defmethod Container propagate-event(x y event)
-  (when (= 'ignored (apply==> this (car event) (cdr event)))
+  (when (= (if (check==> (classof this) (car event))
+               (apply==> this (car event) (cdr event))
+             'ignored )
+           'ignored )
     ;; Access object below the mouse
     (let ((target ()))
       (each ((i contents))
@@ -1077,6 +1084,9 @@
 (defmethod WindowObject back r
   () )
 
+(defmethod WindowObject handle(event)
+  (==> this manage-event event) )
+
 (defmethod WindowObject realize(w)
   ;; ONLY FOR WINDOWOBJECT
   (when window
@@ -1109,13 +1119,11 @@
   (delete this) )
 
 ;; palette
-
 (defmethod WindowObject palette(p)
   (setq color-palette p)
   (==> this expose) )
 
-;; redessin
-
+;; redrawing
 (defmethod WindowObject expose(&optional rec)
   (cond
     ((not rec)
@@ -1169,8 +1177,6 @@
 ;; PROPAGATE-EVENT
 ;; SETMODAL
 ;; GETMODAL
-;;   s'il y a un modalobject, un windowobject
-;;   redirige les evenements vers lui
 
 (defmethod WindowObject propagate-activated(event)
   (eval 
@@ -1190,16 +1196,13 @@
 (defmethod WindowObject getmodal()
   modalobject)
 
-;; REMOVE
-;;   doit faire attention au modalobject!
-
+;; remove
 (defmethod WindowObject remove(what)
   (when (= what modalobject)
     (setq modalobject ()) )
   (==> this (Form . remove) what) )
 
-;; constructeur 
-
+;; constructor
 (defmethod WindowObject WindowObject(x y w h title . contenu)
   (setq thiswindowobject this)
   (setq color-palette :color-palette)
@@ -1218,7 +1221,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; AUTOWINDOWOBJECT
-;;;   un windowobject qui calcule sa taille
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1241,30 +1243,26 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
-;;; EVENT HOOK
+;;; OGRE IDLE TASKS
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 (defclass OgreTasks object
+  timerid
   damagedwindows )
 
 (defmethod OgreTasks damaged-window(w)
+  (when (not timerid)
+    (setq timerid (create-timer this 0)) )
   (when (not (member w damagedwindows))
     (setq damagedwindows (cons w damagedwindows)) ) )
 
-(defmethod OgreTasks do-event(handler event)
-  (let ((break-hook (or :ogre-break-hook :break-hook))
-	(debug-hook (or :ogre-debug-hook :debug-hook)))
-    (when (and (atomp handler) (check==> (classof handler) 'manage-event))
-      (while event
-        (==> handler manage-event event)
-        (setq event (checkevent handler)) ) ) ) )
-
-(defmethod OgreTasks do-idle()
+(defmethod OgreTasks handle(event)
   (let ((break-hook (or :ogre-break-hook :break-hook))
 	(debug-hook (or :ogre-debug-hook :debug-hook)))
     (let ((winlist damagedwindows))
+      (setq timerid ())
       (setq damagedwindows ())
       (each ((w winlist))
 	(when w (==> w repair-damaged)) ) ) ) )
@@ -1302,12 +1300,6 @@
   ;;
   (when ~:ogre-task
     (setq :ogre-task (new OgreTasks)) )
-  (de event-hook(handler event)
-    (when :ogre-task
-      (==> :ogre-task do-event handler event) ) )
-  (de idle-hook()
-    (when :ogre-task  
-      (==> :ogre-task do-idle) ) ) 
   t)
 
 

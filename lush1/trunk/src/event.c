@@ -24,14 +24,13 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.4 2002-08-02 21:13:19 leonb Exp $
+ * $Id: event.c,v 1.5 2002-08-03 13:08:50 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
 #include "graphics.h"
 
-static at *at_event_hook;
-static at *at_idle_hook;
+static at *at_handle;
 static at *head;
 static at *tail;
 
@@ -325,6 +324,8 @@ timer_add(at *handler, int delay, int period)
     error(NIL,"Illegal timer delay",NEW_NUMBER(delay));
   if (period < 0)
     error(NIL,"Illegal timer interval",NEW_NUMBER(period));
+  if (period > 0 && period < 20)
+    period = 20;
   if (handler && delay>=0)
     {
       add_finalizer(handler, ti_finalize, 0);
@@ -613,14 +614,6 @@ event_wait(int console)
       ms = timer_fire();
       if ((hndl = ev_peek()))
         break;
-      /* Call idle hook */
-      call_hook(at_idle_hook, NIL);
-      call_spoll();
-      if ((hndl = ev_peek()))
-        break;
-      ms = timer_fire();
-      if ((hndl = ev_peek()))
-        break;
       /* Check for console input */
       hndl = NIL;
       if (console && cinput)
@@ -647,36 +640,44 @@ event_wait(int console)
 void 
 process_pending_events(void)
 {
-  at *event;
   at *hndl;
+  at *event;
   call_spoll();
   hndl = ev_peek();
   while (hndl)
     {
-      /* Call event-hook */
       while (hndl)
         {
+          /* Call the handler method <handle> */
           LOCK(hndl);
           event = event_get(hndl, TRUE);
           if (CONSP(event))
             {
-              at *args = cons(hndl, cons(event, NIL));
-              LOCK(event);
-              call_hook(at_event_hook, args);
-              UNLOCK(args);
-            }
-          else
-            {
-              UNLOCK(hndl);
-              hndl = NIL;
+              at *cl = classof(hndl);
+              if (EXTERNP(cl, &class_class))
+                {
+                  at *m = checksend(cl->Object, at_handle);
+                  if (m)
+                    {
+                      at *args = new_cons(event,NIL);
+                      UNLOCK(m);
+                      argeval_ptr = eval_nothing;
+                      m = send_message(NIL,hndl,at_handle,args);
+                      argeval_ptr = eval_std;
+                      UNLOCK(args);
+                    }
+                  UNLOCK(m);
+                }
+              UNLOCK(cl);
             }
           UNLOCK(event);
+          UNLOCK(hndl);
+          /* Check for more events */
           call_spoll();
           hndl = ev_peek();
         }
-      /* Call idle-hook */
-      call_hook(at_idle_hook, NIL);
-      call_spoll();
+      /* Check for timer events */
+      timer_fire();
       hndl = ev_peek();
     }
 }
@@ -824,32 +825,25 @@ DX(xseteventhandler)
 /* Send events */
 DX(xsendevent)
 {
-  at *handler;
-  at *event;
+  at *p1, *p2;
+  ARG_NUMBER(2);
   ALL_ARGS_EVAL;
-  if (arg_number == 1)
+  p1 = APOINTER(1);
+  p2 = APOINTER(2);
+  if (NUMBERP(p1) && NUMBERP(p2))
     {
-      event = APOINTER(1);
-      handler = current_window_handler();
-      LOCK(event);
+      /* Old syntax */
+      at *event = cons(named("sendevent"), cons(p1, cons(p2, NIL)));
+      at *handler = current_window_handler();
+      event_add(handler, event);
+      UNLOCK(handler);
+      UNLOCK(event);
     }
-  else
+  else if (p1 && p2)
     {
-      ARG_NUMBER(2);
-      event = APOINTER(1);
-      handler = APOINTER(2);
-      LOCK(event);
-      LOCK(handler);
-      if (NUMBERP(event) && NUMBERP(handler))
-        {
-          /* Old syntax */
-          event = cons(named("sendevent"), cons(event, cons(handler, NIL)));
-          handler = current_window_handler();
-        }
+      /* New syntax */
+      event_add(p1, p2);
     }
-  event_add(handler, event);
-  UNLOCK(event);
-  UNLOCK(handler);
   return NIL;
 }
 
@@ -937,10 +931,8 @@ init_event(void)
   /* EVENT QUEUE */
   head = tail = cons(NIL,NIL);
   protect(head);
-  /* EVENT HOOKS */
-  at_event_hook = var_define("event-hook");
-  at_idle_hook = var_define("idle-hook");
   /* EVENTS FUNCTION */
+  at_handle = var_define("handle");
   dx_define("set_event_handler",xseteventhandler);
   dx_define("process_pending_events",xprocess_pending_events);
   dx_define("sendevent",xsendevent);
