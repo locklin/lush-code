@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: libsdl.lsh,v 1.9 2002-11-26 17:24:37 profshadoko Exp $
+;;; $Id: libsdl.lsh,v 1.10 2002-12-10 02:18:55 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -75,8 +75,17 @@
 	  (error "Unable to init SDL")
 	(setq *sdl-initialized* t))))
 
-
-;; object-based interface to SDL_Event
+#? (sdl-terminate)
+;; This shuts down the SDL subsystem.
+;; <sdl-initialize> must be called before any
+;; new SDL call can be performed again.
+;; A call to <sdl-terminate> will close any
+;; open SDL screen. In fact, calling <sdl-terminate>
+;; is the only way to close an SDL screen.
+(de sdl-terminate () 
+  (when *sdl-initialized* 
+    (SDL_Quit)
+    (setq *sdl-initialized* ())))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -87,6 +96,9 @@
 ;; It maintains a timer that measures the time between
 ;; screen flips. This allows to do time-accurate
 ;; real-time physical simulation.
+;; An SDL Screens is not closed when the corresponding 
+;; <sdl-screen> object is freed. Closing a screen can be
+;; done with a call to <(sdl-terminate)>.
 (defclass sdl-screen object 
   ((-gptr- "SDL_Surface *") p)
   ((-idx3- (-int-)) collision)
@@ -143,7 +155,9 @@
 ;; shown on the screen until the next call to flip.
 (defmethod sdl-screen clear () (SDL_FillRect p (gptr ()) 0))
 
-(defmethod sdl-screen delete () (SDL_FreeSurface p) ())
+(defmethod sdl-screen free () (when p (SDL_FreeSurface p) ()))
+
+(defmethod sdl-screen -destructor ()  ())
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -174,7 +188,9 @@
     (setq ticks newticks))
   ticks)
 
-(defmethod sdlgl-screen delete () (SDL_FreeSurface p) ())
+(defmethod sdlgl-screen free () (when p (SDL_FreeSurface p) ()))
+
+(defmethod sdlgl-screen -destructor () (==> this free))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? ** sdlidx-screen
@@ -227,9 +243,11 @@
     (setq ticks 0)
     (setq deltat (/ 1 60))))
 
-(defmethod sdlidx-screen delete ()
-  (SDL_freesurface p)
-  (SDL_freesurface screen) ())
+(defmethod sdlidx-screen free ()
+  (when p (SDL_freesurface p))
+  (when screen (SDL_freesurface screen)) ())
+
+(defmethod sdlidx-screen -destructor () (==> this free))
 
 #? (==> <sdlidx-screen> flip)
 ;; Update screen with content of the IDX back buffer.
@@ -277,9 +295,11 @@
 ;; return vertical mouse motion of an sdl-event.
 (defmethod sdl-event motion-y () (int #{ $e->motion.y #}))
 
-#? (delete <sdle>)
+#? (==> <sdle> free)
 ;; sdl-event destructor
-(defmethod sdl-event delete () (free e))
+(defmethod sdl-event free () (when e (free e)))
+
+(defmethod sdl-event -destructor () (==> this free))
 
 #? (==> <sdl-event> get-arrows <xyk>)
 ;; xyk is an idx1 of ints of size 3.
@@ -616,12 +636,13 @@
     (idx-clear collided)
     (sdl-test-collision id (idmask frame) (gptr ()) :win:collision rect collided)) ())
 
-(defmethod sdl-sprite delete ()
-  (free rect)
+(defmethod sdl-sprite free ()
+  (when rect (free rect))
   (idx-bloop ((s p) (i idmask))
 	     (when (s) (SDL_FreeSurface (s)) (s (gptr ())))
              (when (i) (free (i)) (i (gptr ())))) ())
 
+(defmethod sdl-sprite -destructor () (==> this free))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; collision
@@ -831,7 +852,9 @@
        ((SDL_Rect *)$p)->w =$w; ((SDL_Rect *)$p)->h =$h; #} 
        ())
 
-(defmethod sdl-rect delete () #{ free(((SDL_Rect *)$p)) #} ())
+(defmethod sdl-rect free () (when p #{ free(((SDL_Rect *)$p)) #} ()))
+
+(defmethod sdl-rect -destructor () (==> this free))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? ** SDL_Surface
@@ -1282,20 +1305,20 @@
 	  sdl-event-motion-y
 
           (sdl-event sdl-event type key-keysym-sym button-x button-y 
-           motion-x motion-y delete get-arrows get-keys)
+           motion-x motion-y free get-arrows get-keys)
 
           rle-encode-alpha
 
-	  (sdl-rect sdl-rect set delete)
+	  (sdl-rect sdl-rect set free)
           
-          (sdl-screen sdl-screen flip clear delete)
-          (sdlgl-screen sdlgl-screen flip delete)
-	  (sdlidx-screen sdlidx-screen delete flip)
+          (sdl-screen sdl-screen flip clear free)
+          (sdlgl-screen sdlgl-screen flip free)
+	  (sdlidx-screen sdlidx-screen free flip)
 
           (sdl-sprite set-hotpoint get-hotpoint sdl-sprite 
 	   get-width get-height alloc-frame make-frame load-frame
            make-frame-idx set-frame get-frame move moverel 
-	   draw drawc test-collision delete)
+	   draw drawc test-collision free)
 
           collided
 
