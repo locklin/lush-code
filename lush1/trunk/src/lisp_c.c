@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.18 2002-08-13 15:28:30 leonb Exp $
+ * $Id: lisp_c.c,v 1.19 2002-08-13 15:57:01 leonb Exp $
  **********************************************************************/
 
 
@@ -2217,6 +2217,7 @@ update_c_from_lisp(avlnode *n)
           }
         if (sl > object->size)
           error(NIL,"lisp_c internal: class slot mismatch",n->litem);
+        sl = object->size;
         while (--k>=0)
           {
             super=class_list[k];
@@ -2361,6 +2362,7 @@ update_lisp_from_c(avlnode *n)
           }
         if (sl > object->size)
           error(NIL,"lisp_c internal: class slot mismatch",n->litem);
+        sl = object->size;
         while (--k>=0)
           {
             super=class_list[k];
