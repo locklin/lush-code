@@ -1,0 +1,574 @@
+
+#? **** Libaudiofile: The Audiofile Library
+
+The purpose of the Audio File Library is to provide transparency to
+the programmer of file formats and data formats.
+
+#? *** Basics
+Audio files contain a sequence of amplitudes sampled at a particular
+rate, called the sampling frequency.  The method by which sounds can
+be acquired or generated in this manner is referred to as pulse-code
+modulation (PCM).  The representation of these amplitudes varies from
+one file format to another.  Common representations for these data are
+two's complement integers, unsigned integers, and floating-point
+numbers.
+
+For uncompressed audio, a track within an audio file consists of a
+sequence of frames, each of which contains a number of samples equal to
+the number of channels in the track.  For example, in a stereo track,
+every frame contains two samples.
+
+To read from a file containing audio data, the following sequence of
+function calls are typically used:
+{<code>
+ afOpenFile
+ afReadFrames
+ afCloseFile
+</code>}
+
+To write to a file, a similar sequence of commands is typically
+employed:
+{<code>
+afNewFileSetup
+afOpenFile
+afWriteFrames
+afCloseFile
+</code>}
+
+Data format transparency is achieved in the Audio File Library by
+providing the data in a virtual format.  The virtual format consists of
+a virtual byte order and a virtual sample format.  Virtual byte order
+is by default set to the host byte order and does not depend on the
+native byte order of the file format being used.  Virtual sample format
+is by default in an uncompressed format.
+
+The current Audio File Library does not support the concept of a virtual
+sampling rate, but this may be supported in the future.
+
+At the present, the Audio File Library supports only CCITT G.711
+mu-law/A-law compression.
+
+#? *** Programming Paradigm
+
+An audio file is manipulated through the AFfilehandle opaque data
+type.  Calls to the library are made with this file handle as an
+argument.  When opening a file for writing, another opaque data
+structure called AFfilsetup is used.  This structure is then passed to
+calls which set various file parameters which are set at the time the
+file is created, such as its file type and data format; such
+properties cannot be modified for an existing file.
+ 
+#? *** Main Functions
+
+Calls available through the library include the following:
+{<ul>
+ {<li> afNewFileSetup - create a file setup structure}
+ {<li> afFreeFileSetup - free a file setup structure}
+ {<li> afOpenFile - create a file handle structure given a file name and
+	optionally a file setup}
+ {<li> afCloseFile - close an open audio file}
+ {<li> afSyncFile - update an audio file which has been opened for writing}
+ {<li> afSetVirtual(ByteOrder,Channels,PCMMapping,SampleFormat) - set virtual
+	format for audio data within a specified track}
+ {<li> afInit(ByteOrder,Channels,Rate,SampleFormat) - set parameters of an
+	AFfilesetup structure which will be used to open an audio file for
+	writing}
+ {<li> afQuery - query regarding the capabilities of the Audio File Library}
+ {<li> afQueryLong}
+ {<li> afQueryPointer}
+ {<li> afQueryDouble}
+ {<li> afSetLoop* - set loop parameters}
+ {<li> afGetLoop* - get loop parameters}
+ {<li> afSetMark* - set mark parameters}
+ {<li> afGetMark* - get mark parameters}
+ {<li> afSetInst* - set instrument parameters}
+ {<li> afGetInst* - get instrument parameters}
+ {<li> afGetAESChannelData - get AES channel data for a given audio file}
+ {<li> afSetAESChannelData - set AES channel data for a given audio file}
+ {<li> afInitAESChannelData - specify that storage space is to be allocated
+	for AES channel status data in a given audio file}
+ {<li> afInitAESChannelDataTo - specify whether storage space is to be allocated
+	for AES channel status data in a given audio file}
+}
+
+#? afReadFrames
+afReadFrames reads sample frames from a given audio track in an audio file.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+int afReadFrames (const AFfilehandle file, int track, void *samples,
+	const int count)
+</code>}
+
+{<h3> PARAMETERS}
+
+file is the AFfilehandle structure for the audio file from which audio
+sample data will be read.
+
+track is the track number within the audio file referred to by file.
+track should be set to the default value of AF_DEFAULT_TRACK at the
+present time.
+
+samples is a pointer to a buffer capable of storing count frames read
+from the file referred to by file.
+
+count is the number of sample frames to be read from the track
+specified by track within the file specified by file.
+
+{<h3> RETURN VALUE}
+
+afReadFrames returns the number of frames successfully read from file into the
+array referred to by samples.
+
+{<h3> ERRORS}
+
+Possible errors include
+(old school):
+AF_BAD_READ
+AF_BAD_FILEHANDLE
+AF_BAD_LSEEK
+AF_BAD_TRACKID (the track parameter differs from AF_DEFAULT_TRACK)
+AF_BAD_AIFF_SSND
+
+(new school--unsupported):
+AF_ERR_BAD_READ
+AF_ERR_BAD_LSEEK
+
+{<see> afWriteFrames}
+
+#? afWriteFrames
+afWriteFrames writes the sample frames pointed to by samples to the
+audio file represented by file.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+
+int afWriteFrames(AFfilehandle file, int track, void *samples,
+	AFframecount frameCount);
+</code>}
+
+{<h3> PARAMETERS}
+
+file is a valid file handle.
+
+track is always use AF_DEFAULT_TRACK for now.
+
+samples is a pointer to the array of sample frames to be written to the file.
+frameCount is the number of frames from samples to be written.
+
+{<h3> ERRORS}
+
+afWriteFrames can return these possible errors:
+AF_BAD_WRITE
+AF_BAD_LSEEK
+AF_BAD_TRACKID
+
+{<see> afReadFrames}
+
+#? afGetTrackBytes
+
+afGetFrameCount, afGetTrackBytes, afGetDataOffset - get the total sample
+frame count, length of audio track in bytes, offset of the audio track for a
+specified audio track in a specified AFfilehandle structure
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+AFframecount afGetFrameCount (AFfilehandle file, int track);
+AFfileoffset afGetTrackBytes (AFfilehandle file, int track);
+AFfileoffset afGetDataOffset (AFfilehandle file, int track);
+</code>}
+
+{<h3> PARAMETERS}
+
+file is an AFfilehandle that has been created by a previous call to
+afOpenFile.
+
+track is an integer which specifies an audio track within file.  All
+supported file formats contain exactly one audio track per file, so the
+constant AF_DEFAULT_TRACK should always be used.
+
+{<h3> DESCRIPTION}
+
+afGetFrameCount returns the total number of sample frames contained
+within the specified track of the specified file.
+
+Each sample frame of audio consists of a fixed number of samples (equal to
+the number of audio channels in the file, equal to the value returned by
+afGetChannels for the particular track and file).  For monaural data, a
+sample frame consists of one audio sample.  For stereophonic data, a sample
+frame consists of a stereo pair.
+
+afGetTrackBytes returns the total number of bytes of raw audio data
+(i.e., prior to decompression) in track.  This is useful for determining
+raw file seek points, etc.
+
+afGetDataOffset returns the offset in bytes of the start of the audio
+data contained within the specified track of the specified file.
+
+{<h3> RETURN VALUE}
+
+afGetFrameCount returns the total number of sample frames in track.
+afGetTrackBytes() returns the total number of bytes of audio data in
+track.  afGetDataOffset() returns the offset in bytes to the beginning
+of the audio data in track.
+
+If an error occurs, -1 is returned by all of these routines.
+
+#? afCloseFile
+
+afCloseFile closes an open audio file, updating the file if it was
+opened for writing.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+
+int afCloseFile (AFfilehandle file);
+</code>}
+
+{<h3> RETURN VALUE}
+afCloseFile returns 0 if the file was closed properly and -1 if an
+error occurred while closing the file.
+
+{<h3> ERRORS}
+afCloseFile can generate these possible errors:
+AF_BAD_FILEHANDLE
+AF_BAD_LSEEK
+AF_BAD_WRITE
+
+
+
+
+#? afGetFrameSize
+afGetFrameSize returns the frame size in bytes for a specified audio
+track.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+float afGetFrameSize (AFfilehandle file, int track, int expand3to4);
+</code>}
+
+{<h3> PARAMETERS}
+file is a valid AFfilehandle.
+
+track is an integer which refers to a specific audio track in the
+file.  At present no supported audio file format allows for more than
+one audio track within a file, so track should always be
+AF_DEFAULT_TRACK.
+
+If expand3to4 is a non-zero value, then 3-byte frames will be treated
+as taking up 4 bytes in memory.  This is useful for calculating how
+much memory will be needed to store audio data suitable for playback
+since 24-bit audio data is typically aligned on 32-bit boundaries.  (At
+least that's how it's done on SGI systems; I know of no other computer
+system that has support for 24-bit audio.)
+
+{<h3> DESCRIPTION}
+afGetFrameSize returns the number of bytes in a frame in the given
+track of the specified file.
+
+A sample frame consists of one or more samples.  For a monaural track,
+a sample frame will always contain one sample.  For a stereophonic
+track, a sample frame will always contain two samples, one for the left
+channel and one for the right channel.
+
+The parameter expand3to4 is ignored unless the specified audio track
+contains 24-bit sampled audio data.
+
+
+#? afNewFileSetup
+afNewFileSetup creates and initializes a new AFfilesetup structure.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+AFfilesetup afNewFileSetup(void);
+</code>}
+
+{<h3> RETURN VALUE}
+
+afNewFileSetup returns, upon success, a valid AFfilesetup structure.
+
+Upon failure, afNewFileSetup returns a null AFfilesetup
+(AF_NULL_FILESETUP).  This case should only occur when no memory is
+available.
+
+{<h3> DESCRIPTION}
+
+The opaque AFfilesetup structure returned by afNewFileSetup can be
+used to specify parameters for a file to be opened for writing by
+afOpenFile.
+
+{<see> afOpenFile}
+
+
+#? afOpenFile
+afOpenFile opens a specified audio file and creates a file handle
+structure which is used for subsequent calls to the Audio File
+Library.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+AFfilehandle afOpenFile(const char *path, const char *mode,
+	const AFfilesetup seutp);
+</code>}
+
+{<h3> PARAMETERS}
+path is the path to the file to be opened.
+mode specifies a mode for opening the file (typically "r" or "w").
+setup is ignored unless the mode specifies writing.
+
+{<h3> RETURN VALUE}
+afOpenFile returns, upon success, a valid AFfilehandle which can be
+used in subsequent calls to the Audio File Library for reading or
+writing.
+
+Upon failure, afOpenFile returns a null file handle
+(AF_NULL_FILEHANDLE).
+
+afCloseFile is used to close the file when it is no longer needed.
+
+{<h3> ERRORS}
+afOpenFile can produce the following errors:
+AF_BAD_OPEN (open failed)
+AF_BAD_READ (read failed)
+AF_BAD_WRITE (write failed)
+AF_BAD_LSEEK (lseek failed)
+AF_BAD_MALLOC (memory allocation failed)
+AF_BAD_FILEFMT (unrecognized file format)
+
+{<see> afCloseFile}
+{<see> afNewFileSetup}
+{<see> afInitFileFormat}
+{<see> afReadFrames}
+{<see> afWriteFrames}
+
+#? afQuery
+afQuery queries the capabilities of the Audio File Library.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+AUpvlist afQuery (int querytype, int arg1, int arg2, int arg3, int arg4);
+long afQueryLong (int querytype, int arg1, int arg2, int arg3, int arg4);
+double afQueryDouble (int querytype, int arg1, int arg2, int arg3, int arg4);
+void *afQueryPointer (int querytype, int arg1, int arg2, int arg3, int arg4);
+</code>}
+
+{<h3> PARAMETERS}
+querytype can be one of the following:
+AF_QUERYTYPE_FILEFMT
+AF_QUERYTYPE_INST
+AF_QUERYTYPE_INSTPARAM
+AF_QUERYTYPE_COMPRESSION
+AF_QUERYTYPE_COMPRESSIONPARAM
+AF_QUERYTYPE_MISC
+AF_QUERYTYPE_MARK
+AF_QUERYTYPE_LOOP
+
+For AF_QUERYTYPE_FILEFMT, the following selectors are valid values for arg1:
+
+AF_QUERY_LABEL - Request a short label string for the format (e.g., "aiff").
+
+AF_QUERY_NAME - Request a short name for the format (e.g., "MS RIFF WAVE").
+
+AF_QUERY_DESC - Request a descriptive name for the format (e.g., "Audio
+Interchange File Format").
+
+AF_QUERY_IMPLEMENTED - Request a boolean value indicating whether the
+format is implemented for reading and writing in the Audio File Library.
+
+AF_QUERY_ID_COUNT - Request the total number of formats implemented.
+
+AF_QUERY_IDS - Request an integer array of the id token values of all
+implemented file formats.
+
+AF_QUERY_COMPRESSION_TYPES - Used with the selector AF_QUERY_VALUE_COUNT
+in arg2, this will return a long integer containing the number of
+compression schemes available for use within the format specified in arg3.
+Used with selector AF_QUERY_VALUES, it returns a pointer to an integer
+array containing the compression id values of the compression schemes
+supported by the format specified in arg3.
+
+AF_QUERY_SAMPLE_FORMATS - Used with the selector AF_QUERY_DEFAULT in arg2,
+this will return the default sample format for the file format specified in
+arg3.
+
+AF_QUERY_SAMPLE_SIZES - Used with selector AF_QUERY_DEFAULT in arg2, this
+will return the default sample width for the file format specified in arg3.
+
+
+{<h3> ERRORS}
+afQuery can produce the following errors:
+AF_BAD_QUERYTYPE - The query type is unsupported.
+AF_BAD_QUERY - The arguments to the query are bad.
+
+
+#? afReadMisc
+afReadMisc, afWriteMisc, afSeekMisc
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+int afReadMisc (const AFfilehandle file, int miscid, void *buffer, int nbytes);
+int afWriteMisc (const AFfilehandle file, int miscid, void *buffer, int nbytes);
+int afSeekMisc (const AFfilehandle file, int chunkid, int offbytes);
+</code>}
+
+{<h3> RETURN VALUE}
+
+afReadMisc returns the number of bytes read from the specified
+miscellaneous chunk into the buffer referred to by buffer.
+
+afWriteMisc returns the number of bytes written to the specified
+miscellaneous chunk from the buffer referred to by buffer.
+
+afSeekMisc returns the new location of the logical file pointer as
+measured as an offset in bytes from the beginning of the miscellaneous
+chunk's data area.
+
+{<h3> ERROR VALUES}
+afReadMisc, afWriteMisc, and afSeekMisc can return the following error
+codes:
+AF_BAD_READ
+AF_BAD_WRITE
+AF_BAD_MISCSEEK
+AF_BAD_MISCID
+AF_BAD_TRACKID
+AF_BAD_FILEHANDLE
+
+
+#? afSeekFrame
+afSeekFrame moves the logical file pointer for a specified audio track
+to a desired sample frame location.
+
+afTellFrame retrieves current value of a file read or write pointer.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+AFframecount afSeekFrame (const AFfilehandle file, int track,
+	AFframecount frameoffset);
+AFframecount afTellFrame (const AFfilehandle file, int track);
+</code>}
+
+{<h3> PARAMETERS}
+
+file is an AFfilehandle structure which has been created by
+afOpenFile.
+
+track is an integer which refers to an audio track within a file.  The
+constant AF_DEFAULT_TRACK should always be used for this parameter
+since no currently supported file formats support more than one track
+per file.
+
+frameoffset is an offset measured in sample frames.  This value must be
+greater than or equal to zero and strictly less than the number of
+sample frames contained within the specified audio track.  If
+frameoffset is -1, afSeekFrame() will return the current frame.
+
+{<h3> RETURN VALUE}
+
+On successful completion, the value returned from afSeekFrame and
+afTellFrame is the current file pointer location as measured in sample
+frames from the start of the audio track.
+
+{<h3> ERROR VALUES}
+
+The following errors could be generated by afSeekFrame or afTellFrame:
+AF_BAD_LSEEK
+
+
+
+#? afSetErrorHandler
+afSetErrorHandler allows an alternate error handling routine to be
+specified.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+AFerrfunc afSetErrorHandler (AFerrfunc errorFunction);
+</code>}
+
+{<h3> PARAMETERS}
+
+errorFunction is a pointer to an error handling function which has the
+following prototype: void error (long, char *, ...);
+
+{<h3> RETURN VALUE}
+
+The value returned from afSetErrorHandler is a pointer to the previous
+error handling function.
+
+{<h3> DESCRIPTION}
+
+The afSetErrorHandler() library function allows the user to override
+the default error handling function.
+
+The arguments are a long indicating an error code and a string (which
+may have printf-style formatting) followed by a variable argument list
+which contains any arguments for the format string.
+
+
+#? afSetVirtualByteOrder
+The functions afSetVirtualSampleFormat, afSetVirtualByteOrder,
+afSetVirtualChannels, afSetVirtualPCMMapping set the virtual data
+format for a particular track of an audio file.
+
+{<h3> C SYNOPSIS}
+{<code>
+#include <audiofile.h>
+int afSetVirtualSampleFormat (AFfilehandle file, int track,
+	int sampleFormat, int sampleWidth);
+int afSetVirtualByteOrder (AFfilehandle file, int track,
+	int byteOrder);
+int afSetVirtualChannels (AFfilehandle file, int track, int channels);
+int afSetVirtualRate (AFfilehandle file, int track, double rate);
+int afSetVirtualPCMMapping (AFfilehandle file, int track,
+	double slope, double intercept, double minclip, double maxclip);
+</code>}
+
+{<h3> PARAMETERS}
+
+{<ul>
+ {<li> file is an AFfilehandle which refers to an open audio file and is
+  usually created by afOpenFile.}
+ {<li> track is an integer which identifies a particular track in an open
+  audio file.  The only valid track is AF_DEFAULT_TRACK for all
+  currently supported file formats.}
+ {<li> sampleFormat is an integer which denotes a virtual sample format.
+  Valid values are AF_SAMPFMT_TWOSCOMP, AF_SAMPFMT_UNSIGNED,
+  AF_SAMPFMT_FLOAT, and AF_SAMPFMT_DOUBLE.  Note that this
+  implementation of the Audio File Library only supports the two's
+  complement sample format at present.}
+ {<li> sampleWidth is a positive integer which specifies the number of bits in a
+  virtual sample.}
+ {<li> channels is a positive integer which specifies the number of
+  interleaved audio channels in the given audio track.}
+ {<li> byteOrder is an integer which specifies the virtual byte order of
+  samples in the given audio track.  byteOrder can be either
+  AF_BYTEORDER_BIGENDIAN or AF_BYTEORDER_LITTLEENDIAN.}
+ {<li> slope and intercept are double-precision floating point values which
+  indicate the audio data sample slope and zero-crossing value,
+  respectively, for the given sample format.}
+ {<li> minclip and maxclip are double-precision floating point values
+  which indicates the minimum or maximum sample values to be returned.
+  Any values less than minclip will be set to minclip, and any values
+  greater than maxclip will be set to maxclip.}
+}
+
+{<h3> RETURN VALUE}
+
+These functions return 0 for success and -1 for failure.
+
+{<h3> BUGS}
+
+At present, afSetVirtualRate is not implemented.
+
+
+#? *** << audiofile/audiofile.lsh
