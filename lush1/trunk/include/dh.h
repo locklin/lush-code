@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.4 2002-07-01 21:22:08 leonb Exp $
+ * $Id: dh.h,v 1.5 2002-07-01 21:56:52 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -217,13 +217,13 @@ typedef union
 
 struct dhdoc_s
 {
-  dhrecord *argdata;            /* Points to the metainformation records */
+  dhrecord *argdata;            /* points to the metainformation records */
   struct {
-    char *c_name;		/* The C name of this DH         */
-    char *m_name;		/* The macro for this DH, or NIL */
-    dharg (*call)();		/* The DH call, defined by DH    */
-    char *k_name;
-    dhdoc_t *dhtest;
+    char *c_name;		/* string with the C_name */
+    char *m_name;		/* string with the M_name or nil */
+    dharg (*call)();		/* pointer to the X_name function */
+    char *k_name;               /* string with the K_name_Rxxxxxxxx */
+    dhdoc_t *dhtest;            /* pointer to the dhdoc for the test function */ 
   } lispdata;
 };
 
@@ -271,16 +271,19 @@ struct dhdoc_s
 
 struct dhclassdoc_s
 {
-  dhrecord *argdata;
+  dhrecord *argdata;            /* points to the metainformation records */
   struct {
-    at *atsuper;
-    dhclassdoc_t *ksuper;
-    char *name;
-    char *v_name;
-    char *k_name;
-    int nmethods;
-    dhdoc_t **ktable;
-    void *vtable;
+    dhclassdoc_t *ksuper;       /* dhclassdoc for the superclass */
+    char *name;                 /* string with the class name (prepend CClass_ or VClass_) */
+    char *v_name;               /* string with the name of the vtable (V_name_Rxxxxxxxx) */
+    char *k_name;               /* string with the name of the classdoc (K_name_Rxxxxxxxx) */
+    int nmethods;               /* number of methods */
+    dhdoc_t **ktable;           /* table of dhdocs for the methods */
+    void *vtable;               /* pointer to the vtable */
+#ifndef NOLISP
+    at *atclass;                /* lisp object for this class */
+    char atlocked;              /* set when lisp object is temporarily overlocked */
+#endif
   } lispdata;
 };
 
