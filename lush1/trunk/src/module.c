@@ -24,20 +24,19 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.35 2003-07-01 18:41:14 leonb Exp $
+ * $Id: module.c,v 1.36 2003-07-11 15:56:24 leonb Exp $
  **********************************************************************/
 
 
 
 #include "header.h"
 #include "dh.h"
-
+#include "dldbfd.h"
 
 /* ------ DLOPEN, BFD, ETC. -------- */
 
 #if HAVE_LIBBFD
 # define DLDBFD 1
-# include "dldbfd.h"
 #endif
 
 #if HAVE_DLFCN_H
@@ -461,10 +460,19 @@ update_init_flag(struct module *m)
       int *majptr, *minptr, maj, min;
       strcpy(string_buffer, "majver_");
       strcat(string_buffer, m->initname + 5);
+      majptr = minptr = 0;
+#if DLDBFD
       majptr = (int*) dld_get_symbol(string_buffer);
+#elif DLOPEN
+      majptr = (int*) dlsym(m->handle, string_buffer);
+#endif
       strcpy(string_buffer, "minver_");
       strcat(string_buffer, m->initname + 5);
+#if DLDBFD
       minptr = (int*) dld_get_symbol(string_buffer);
+#elif DLOPEN
+      minptr = (int*) dlsym(m->handle, string_buffer);
+#endif
       maj = ((majptr) ? *majptr : TLOPEN_MAJOR);
       min = ((minptr) ? *minptr : TLOPEN_MINOR);
       status = -2;
@@ -552,7 +560,7 @@ DX(xmodule_never_unload)
 DX(xmodule_depends)
 {
   at *p;
-  struct module *m, *mc;
+  struct module *m;
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
@@ -562,18 +570,23 @@ DX(xmodule_depends)
   p = NIL;
   if (m == &root)
     return NIL;
-  /* Simulate unlink */
-  if (dld_simulate_unlink_by_file(m->filename) < 0)
-    dynlink_error(NIL);
-  for (mc = root.next; mc != &root; mc = mc->next)
-    if (mc->initname && mc->defs)
-      if (! dld_function_executable_p(mc->initname))
-        {
-          LOCK(mc->backptr);
-          p = cons(mc->backptr, p);
-        }
-  /* Reset everything as it should be */
-  dld_simulate_unlink_by_file(0);
+#if DLDBFD
+  {
+    struct module *mc = 0;
+    /* Simulate unlink */
+    if (dld_simulate_unlink_by_file(m->filename) < 0)
+      dynlink_error(NIL);
+    for (mc = root.next; mc != &root; mc = mc->next)
+      if (mc->initname && mc->defs)
+        if (! dld_function_executable_p(mc->initname))
+          {
+            LOCK(mc->backptr);
+            p = cons(mc->backptr, p);
+          }
+    /* Reset everything as it should be */
+    dld_simulate_unlink_by_file(0);
+  }
+#endif
   /* Return */
   return p;
 }
@@ -584,7 +597,6 @@ cleanup_module(struct module *m)
 {
   at *p;
   at *classes = 0;
-  struct module *mc;
   
   extern void delete_at_special(at *, int);
   
@@ -593,28 +605,33 @@ cleanup_module(struct module *m)
     return;
   
   /* 2 --- Collect impacted classes */
-  if (dld_simulate_unlink_by_file(m->filename) < 0)
-    dynlink_error(NIL);
-  for (mc = root.next; mc != &root; mc = mc->next)
-    if (mc->initname && mc->defs && (mc->flags & MODULE_CLASS))
-      if (! dld_function_executable_p(mc->initname))
-        {
-          /* This module defines classes that become non executable.
-             Collect impacted classes. */
-          p = mc->defs;
-          while (CONSP(p))
-            {
-              if (CONSP(p->Car)) {
-                at *q = p->Car->Car;
-                if (q && !(q->flags & X_FUNCTION)) {
-                  LOCK(q);
-                  classes = cons(q, classes);
-                }
-              }
+#if DLFBFD
+ {
+   struct module *mc;
+   if (dld_simulate_unlink_by_file(m->filename) < 0)
+     dynlink_error(NIL);
+   for (mc = root.next; mc != &root; mc = mc->next)
+     if (mc->initname && mc->defs && (mc->flags & MODULE_CLASS))
+       if (! dld_function_executable_p(mc->initname))
+         {
+           /* This module defines classes that become non executable.
+              Collect impacted classes. */
+           p = mc->defs;
+           while (CONSP(p))
+             {
+               if (CONSP(p->Car)) {
+                 at *q = p->Car->Car;
+                 if (q && !(q->flags & X_FUNCTION)) {
+                   LOCK(q);
+                   classes = cons(q, classes);
+                 }
+               }
               p = p->Cdr;
-            }
-        }
-  dld_simulate_unlink_by_file(0);
+             }
+         }
+   dld_simulate_unlink_by_file(0);
+ }
+#endif
   
   /* 3 --- Zap instances of impacted classes */
   p = classes;
@@ -750,7 +767,7 @@ module_load(char *filename, at *hook)
   int len;
   at *ans;
   struct module *m;
-  int dlopen;
+  int dlopenp;
   dlopen_handle_t handle = 0;
   /* Check that file exists */
   filename = concat_fname(NULL, filename);
@@ -759,7 +776,7 @@ module_load(char *filename, at *hook)
   if (! filep(filename))
     error(NIL,"file not found",new_string(filename));
   /* Check if the file extension indicates a DLL */
-  dlopen = 0;
+  dlopenp = 0;
   l = filename + strlen(filename);
   while (l>filename && isdigit(l[-1]))
     {
@@ -772,7 +789,7 @@ module_load(char *filename, at *hook)
     {
       len = strlen(EXT_DLL);
       if (len>0 && l>filename+len && !strncmp(EXT_DLL, l-len, len))
-        dlopen = 1;
+        dlopenp = 1;
     }
   /* Initialize */
   dynlink_init();
@@ -805,7 +822,7 @@ module_load(char *filename, at *hook)
   if (! m->filename) 
     error(NIL,"out of memory", NIL);
   /* Load the file */
-  if (dlopen)
+  if (dlopenp)
     {
 #if DLDBFD && DLOPEN
       if (! (handle = dld_dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
@@ -832,7 +849,7 @@ module_load(char *filename, at *hook)
     }
   /* Search init function */
 #if DLOPEN
-  if (dlopen)
+  if (dlopenp)
     {
       strcpy(string_buffer, "init_user_dll");
       m->initaddr = dlsym(handle, string_buffer);
@@ -891,14 +908,15 @@ DX(xmodule_load)
 
 DX(xmod_create_reference)
 {
+#ifdef DLDBFD
   int i;
   ALL_ARGS_EVAL;
-#ifdef DLDBFD
   dynlink_init();
   for (i=1; i<=arg_number; i++)
     dld_create_reference(ASTRING(1));
   return NEW_NUMBER(dld_undefined_sym_count);
 #else
+  ALL_ARGS_EVAL;
   return NIL;
 #endif
 }
@@ -918,8 +936,8 @@ DX(xmod_compatibility_flag)
 DX(xmod_undefined)
 {
   at *p = NIL;
-  at **where = &p;
 #ifdef DLDBFD
+  at **where = &p;
   if (dynlink_initialized)
     {
       int i;
