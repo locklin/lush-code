@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.7 2002-05-08 20:18:42 leonb Exp $
+ * $Id: function.c,v 1.8 2002-05-10 23:29:25 leonb Exp $
  **********************************************************************/
 
 
@@ -72,10 +72,9 @@ cfunc_name(at *p)
     {
       name = name->Cdr;
     }
-  if (CONSP(name) && EXTERNP(name->Car, &class_class)) 
+  if (CONSP(name) && EXTERNP(name->Car, &symbol_class)) 
     {
-      class *cl = name->Car->Object;
-      clname = cl->classname;
+      clname = name->Car;
       name = name->Cdr;
     }
   if (EXTERNP(name, &symbol_class))

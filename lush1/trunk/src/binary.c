@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.9 2002-05-07 18:22:17 leonb Exp $
+ * $Id: binary.c,v 1.10 2002-05-10 23:29:25 leonb Exp $
  **********************************************************************/
 
 
@@ -1150,13 +1150,6 @@ local_bread_primitive(at **pp)
     error(NIL,"Cannot find primitive", q);
   UNLOCK(q);
   *pp = p;
-  /* Primitive classes can have methods */
-  if (EXTERNP(p, &class_class))
-    {
-      class *cl = p->Object;
-      local_bread(&cl->methods, NIL);
-      cl->hashok = 0;
-    }
 }
 
 
@@ -1299,7 +1292,11 @@ local_bread(at **pp, int opt)
       
     case TOK_CCLASS:
       {
+        class *cl;
 	local_bread_primitive(pp);
+        cl = (*pp)->Object;
+        local_bread(&cl->methods, opt);
+        cl->hashok = 0;
 	return 0;
       }
       

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.14 2002-05-08 20:18:42 leonb Exp $
+ * $Id: module.c,v 1.15 2002-05-10 23:29:25 leonb Exp $
  **********************************************************************/
 
 
@@ -338,37 +338,6 @@ DX(xmodule_defs)
     }
   return ans;
 }
-
-
-
-/* --------- LOCATE PRIMITIVES --------- */
-
-
-
-at *
-find_primitive(at *module, at *name)
-{
-  at *p = root.defs;
-  
-  if (module) {
-    if (! EXTERNP(module, &module_class))
-      error(NIL,"Not a module descriptor", module);
-    p = ((struct module*)(module->Object))->defs;
-  }
-  while (CONSP(p))
-    {
-      if (CONSP(p->Car))
-        if (eq_test(p->Car->Cdr,name))
-          {
-            p = p->Car->Car;
-            LOCK(p);
-            return p;
-          }
-      p = p->Cdr;
-    }
-  return NIL;
-}
-
 
 
 
@@ -911,11 +880,79 @@ DX(xmod_undefined)
 
 
 
+/* --------- LOCATE PRIMITIVES --------- */
+
+
+
+at *
+find_primitive(at *module, at *name)
+{
+  at *q = 0;
+  at *p = root.defs;
+  at *clname = 0;
+
+  /* Missing MODULE means root. */
+  if (module) 
+    {
+      if (! EXTERNP(module, &module_class))
+        error(NIL,"Not a module descriptor", module);
+      p = ((struct module*)(module->Object))->defs;
+    }
+  /* Name can be NAME or (CLASSNAME . NAME) */
+  if (CONSP(name))
+    {
+      clname = name->Car;
+      name = name->Cdr;
+    }
+  /* Iterate over module definitions */
+  while (CONSP(p))
+    {
+      q = p->Car;
+      if (CONSP(q))
+        {
+          if (clname)
+            {
+              /* Looking for a method:
+                 - names must match, 
+                 - clname must match class. */
+              if ( CONSP(q->Cdr) &&
+                   q->Cdr->Cdr == name &&
+                   EXTERNP(q->Cdr->Car,&class_class) &&
+                   ((class*)(q->Cdr->Car->Object))->classname == clname )
+                break;
+            } 
+          else
+            {
+              /* Looking for a function: 
+                 - names must match. */
+              if (name == q->Cdr)
+                break;
+            }
+        }
+      p = p->Cdr;
+      q = 0;
+    }
+  if (q)
+    {
+      LOCK(q->Car);
+      return q->Car;
+    }
+  return NIL;
+}
+
+
+
 /* --------- XXX_DEFINE FUNCTIONS --------- */
+
+
+
 
 static at *
 module_priminame(at *name)
 {
+  /* NAME for root module.
+   * (MODULE . NAME) for other modules. 
+   */ 
   if (current != &root)
     return new_cons(current->backptr, name);
   LOCK(name);
@@ -945,7 +982,10 @@ module_def(at *name, at *val)
 static at *
 module_method_priminame(class *cl, at *name)
 {
-  at *n = new_cons(cl->backptr, name);
+  /* (CLASSNAME . NAME) for root module.
+   * (MODULE CLASSNAME . NAME) for other modules. 
+   */ 
+  at *n = new_cons(cl->classname, name);
   if (current == &root)
     return n;
   LOCK(current->backptr);
