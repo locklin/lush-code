@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.35 2004-09-09 18:50:57 leonb Exp $
+ * $Id: dldbfd.c,v 1.36 2004-09-09 18:54:08 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2488,6 +2488,7 @@ define_symbol_of_main_program(const char *exec)
 void 
 __pure_virtual(void) 
 { 
+  extern void run_time_error();
   run_time_error("Pure virtual function called"); 
 }
 #endif
