@@ -1,0 +1,91 @@
+
+<html><head></head>
+<body>
+
+<h1>Lunar Lander in 60 lines of Lush</h1>
+
+<PRE>
+(libload "libc/constants")
+(libload "sdl/libsdl")
+(setq pi/180 (/ 3.1415927 180))
+
+;; a simple Lunar Lander game in less than 60 lines of Lush
+(de lander ()
+  ;; initialize the SDL subsystem. DONT FORGET THIS!!!
+  (sdl-initialize)
+  (let* ((scr (new sdl-screen 640 480 "Lander")) ; open screen
+        (bgd (new sdl-sprite scr 0))       ; create background sprite
+        (ship (new sdl-sprite scr 1))       ; create lem sprite
+        (flame (new sdl-sprite scr 1))       ; create flame sprite
+        (shadow (new sdl-sprite scr 3)) ; create shadow sprite
+        ;; set position, velocity, acceleration of ship
+        (x 200) (y 100) (vx 4) (vy 0) (ax 0) (ay 0)
+        ;; angle of ship
+        (theta 0)
+        ;; set mass, inverse mass, and deltat of ship
+        (mass 1) (mass-inv (/ 1 mass)) (deltat 0.01)
+        (main-thrust 400)              ; set main engine thrust
+        (grav 200)              ; set gravity coefficient in pixels/s/s
+        (stop ())
+        (event (new sdl-event))
+        (xyk (int-matrix 3))
+        (ground 360))
+    (==&gt; bgd load-frame "moon.png" 0 0 0)
+    (==&gt; bgd move 0 0)
+    ;; put the handle at the center of the sprite (40,35)
+    (==&gt; ship load-frame "lem.png" 0 40 35)
+    (==&gt; flame load-frame "lem-flame.png" 0 40 35)
+    (==&gt; shadow load-frame "lem-shadow.png" 0 40 -6)
+    ;; fill up frames with rotated lems
+    (let ((i 1))
+      ;; make an image every 10 degrees from 10 to 350
+      (for (angle 10 350 10)
+          ;; take frame 0, rotate by angle, scale by 1, 
+          ;; and copy into frame i
+          (==&gt; ship rotscale-frame 0 i angle 1)
+          ;; same for flame
+          (==&gt; flame rotscale-frame 0 i angle 1)
+          (incr i)))
+    (while (not stop)
+      (==&gt; scr clear)                     ; fill image with black
+      (==&gt; bgd draw)                     ; draw moon ground
+      (==&gt; event get-arrows xyk)       ; read keyboard
+      (when (= (xyk 2) @@SDLK_q) (setq stop t))       ; stop when q is pressed
+      ;; update the angle from the left-right arrow keys
+      (setq theta (+ theta (xyk 0)))
+      ;; bring the angle back to the 0-360 interval
+      (while (&gt;= theta 36) (setq theta (- theta 36)))
+      (while (&lt; theta 0) (setq theta (+ theta 36)))
+      ;; set frame of ship and flame to one matching the angle
+      (==&gt; ship set-frame (int theta))
+      (==&gt; flame set-frame (int theta))
+      ;; compute x acceleration
+      (setq ax (* mass-inv main-thrust (xyk 1) (sin (* pi/180 -10 theta)))) 
+      ;; compute y acceleration
+      (setq ay (+ grav (* mass-inv main-thrust 
+                       (xyk 1) (cos (* pi/180 10 theta)))))
+      (setq vx (+ vx (* ax deltat)))       ; update velocity
+      (setq vy (+ vy (* ay deltat)))       ; update velocity
+      (setq x  (+ x (* vx deltat)))       ; update position
+      (setq y  (+ y (* vy deltat)))       ; update position
+      (when (&lt; x -40) (setq x (+ 640 (- x -40)))) ; wrap around left side
+      (when (&gt; x 680) (setq x (+ -40 (- x 640)))) ; wrap around right side
+      (when (&gt; y ground)              ; bounce on ground
+       (setq vy (* -0.5 vy)) 
+       (setq vx (* 0.25 vx)) 
+       (setq theta 0)
+       (setq y ground))
+      (==&gt; shadow move x 360)              ; move shadow sprite to position
+      (==&gt; flame move x y)              ; move flame sprite to position
+      (==&gt; ship move x y)              ; move ship sprite to position
+      ;; now draw sprites in the right order, bottom sprite first
+      (==&gt; shadow draw)                     ; draw shadow
+      (when (&lt;&gt; 0 (xyk 1)) (==&gt; flame draw)) ; draw flame if engine is on
+      (==&gt; ship draw)                     ; draw ship
+      (==&gt; scr flip)                     ; flip screens
+      (setq deltat :scr:deltat)))) ; update deltat to time between screen flips
+
+</PRE>
+
+</body>
+</html>
