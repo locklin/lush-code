@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.52 2004-07-21 15:52:20 leonb Exp $
+ * $Id: module.c,v 1.53 2004-07-21 16:12:25 leonb Exp $
  **********************************************************************/
 
 
@@ -1237,9 +1237,9 @@ module_load(char *filename, at *hook)
   /* Check if the file extension indicates a DLL */
   dlopenp = 0;
   l = filename + strlen(filename);
-  while (l>filename && isdigit(l[-1]))
+  while (l>filename && isdigit((unsigned int)l[-1]))
     {
-      while (l>filename && isdigit(l[-1]))
+      while (l>filename && isdigit((unsigned int)l[-1]))
         l -= 1;
       if (l>filename && l[-1]=='.')
         l -= 1;
