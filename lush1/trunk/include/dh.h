@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.13 2002-07-29 16:08:27 leonb Exp $
+ * $Id: dh.h,v 1.14 2002-07-29 18:00:38 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -39,13 +39,6 @@
 #include "idxops.h"
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#ifndef __cplusplus
-}
-#endif
-#endif
-
 #ifndef NOLISP
 #ifndef HEADER_H
 /* Should be replaced by minimal definitions:
@@ -54,6 +47,18 @@ extern "C" {
 #include "header.h"
 #endif
 #endif
+
+
+/* ----------------------------------------------- */
+/* C++                                             */
+/* ----------------------------------------------- */
+
+#ifdef __cplusplus
+#define extern_c extern "C"
+#else
+#define extern_c /**/
+#endif
+
 
 /* ----------------------------------------------- */
 /* DHRECORDS                                       */
@@ -236,7 +241,7 @@ struct dhdoc_s
   static dhrecord name2(K,Kname)[]
 
 #define DH(Xname) \
-  dharg Xname(dharg *a)
+  static dharg Xname(dharg *a)
 
 #endif /* !NOLISP */
 
@@ -308,7 +313,4 @@ struct dhclassdoc_s
 /* END                                             */
 /* ----------------------------------------------- */
 
-#ifdef __cplusplus
-}
-#endif
 #endif

@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.19 2002-07-29 17:27:03 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.20 2002-07-29 18:00:42 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -231,7 +231,7 @@
 (de dhc-generate-init-call( filename )
   (append
    (list  "/*" " * INIT FUNCTION" " */" )
-   (list (sprintf "void init_%s(void)" filename)
+   (list (sprintf "extern_c void init_%s(void)" filename)
          "{" )
    initialization-calls
    (list "}"
@@ -328,7 +328,8 @@
                 (new dhc-type 'dht-ptr arg)
               arg ) ) )
     ;; build prototype
-    (concat (dhc-type-to-c-decl rettype) 
+    (concat "extern_c "
+            (dhc-type-to-c-decl rettype) 
             " " c-name "("
             (dhc-insert-op 
              (all ((symb-name (append arg-list temp-list))
@@ -917,19 +918,8 @@
     (dhc-make-c fname fsymblist) ) )
 
 
-#? (dhc-make <fname> <f1> [<f2> ...[<fn>]])
-;; Document this!
-(dm dhc-make(fn fname . fsymblist) 
-  `(dhc-make-all ,fname ',fsymblist ()) )
-
-
-#? (dhc-make-with-libs <fname> <library-list> <f1> [<f2> ...[<fn>]])
-;; Document this
-(dm dhc-make-with-libs(fn fname liblist . fsymblist)
-  `(dhc-make-all ,fname ',fsymblist ,liblist) )
-
-
-;; Does the real job
+#? (dhc-make-all <fname> <fsymblist> <liblist>)
+;; Document this.
 (de dhc-make-all (fname fsymblist liblist)
   (let* ((force ())
          (snname ())
@@ -992,4 +982,33 @@
           (when (not (module-executable-p m))
             (error 'dhc-make-all "Module has undefined references" ()) ) ) )
       ofname ) ) )
+
+
+#? (dhc-make <fname> <f1> [<f2> ...[<fn>]])
+;; Document this.
+(dm dhc-make(fn fname . fsymblist) 
+  `(dhc-make-all ,fname ',fsymblist ()) )
+
+#? (dhc-make-with-libs <fname> <library-list> <f1> [<f2> ...[<fn>]])
+;; Document this.
+(dm dhc-make-with-libs(fn fname liblist . fsymblist)
+  `(dhc-make-all ,fname ',fsymblist ,liblist) )
+
+#? (dhc-make-with-c++ <fname> <library-list> <f1> [<f2> ...[<fn>]])
+;; Same as <dhc-make-with-libs> but compiles with
+;; the c++ compiler instead of the c compiler.
+;;
+;; Note that the dynamic loader is not currently able
+;; to execute static initializers possibly present
+;; in the generated code.  The lush compiler obviously
+;; does not generate such construct.  On the other hand
+;; everything can happen when using inlined C++ code.
+
+(dm dhc-make-with-c++(fn fname liblist . fsymblist)
+  (let ((cxx (or (alist-get "CXX" dhc-make-overrides)
+                 (getconf "CXX") (getenv "CXX"))))
+    (when (or (not cxx) (= cxx ""))
+      (error 'dhc-make-with-c++ "Could not find a C++ compiler" ()) )
+    `(let ((dhc-make-overrides (alist-add "CC" ,cxx dhc-make-overrides)))
+       (dhc-make-all ,fname ',fsymblist ,liblist) ) ) )
 
