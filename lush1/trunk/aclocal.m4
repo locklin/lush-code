@@ -9,7 +9,7 @@ AC_DEFUN(AC_CHECK_CC_OPT,[
  opt="$1"
  AC_MSG_CHECKING([if $CC accepts $opt])
  echo 'void f(){}' > conftest.c
- if test -z "`${CC} ${CFLAGS} ${OPTS} $opt -c conftest.cc 2>&1`"; then
+ if test -z "`${CC} ${CFLAGS} ${OPTS} $opt -c conftest.c 2>&1`"; then
     AC_MSG_RESULT(yes)
     rm conftest.*
     $2
