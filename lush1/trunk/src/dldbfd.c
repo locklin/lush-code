@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.10 2002-09-06 19:24:18 leonb Exp $
+ * $Id: dldbfd.c,v 1.11 2002-10-10 16:14:11 leonb Exp $
  **********************************************************************/
 
 
@@ -74,7 +74,6 @@ typedef void* dlopen_handle_t;
 #endif
 
 #if DLOPEN
-#define RTLD_SPECIAL -1
 #ifndef RTLD_LAZY
 #define RTLD_LAZY 1
 #endif
@@ -601,6 +600,11 @@ init_symbol_entry(struct bfd_hash_entry *entry,
 
 static struct bfd_hash_table global_symbol_table;
 
+
+/* global_dlopen_handle -- dlopen handle to main executable */
+#ifdef DLOPEN
+static dlopen_handle_t *global_dlopen_handle = 0;
+#endif
 
 /* init_global_symbol_table -- initializes the global symbol table */
 
@@ -1427,9 +1431,21 @@ insert_module_symbols(module_entry *module)
             /* process undefined symbol */
             name = drop_leading_char(module->abfd,sym->name);
             hsym = insert_symbol(name);
+            /* new symbol may be defined by shared libs */
+#ifdef DLOPEN
+            if (!(hsym->flags & (DLDF_DEFD|DLDF_REFD)) && global_dlopen_handle)
+              {
+                void *addr = dlsym(global_dlopen_handle, name);
+                if (addr)
+                  {
+                    hsym->flags |= DLDF_DEFD;
+                    hsym->definition = addr;
+                  }
+              }
+#endif
             if (! (hsym->flags & DLDF_DEFD))
-                if (! (hsym->flags & DLDF_REFD))
-                    dld_undefined_sym_count += 1;
+              if (! (hsym->flags & DLDF_REFD))
+                dld_undefined_sym_count += 1;
             hsym->flags |= DLDF_REFD;
             hsym->refcount += 1;
         }
@@ -1549,37 +1565,37 @@ remove_module_symbols(module_entry *module)
 static void
 resolve_module_symbols(module_entry *module)
 {
-    int i;
-    bfd *abfd;
-    asymbol *bsym;
-    symbol_entry *hsym;
-    
-    abfd = module->abfd;
-    module->undefined_symbol_count = 0;
-    for (i=0; i<module->symbol_count; i++)
+  int i;
+  bfd *abfd;
+  asymbol *bsym;
+  symbol_entry *hsym;
+  
+  abfd = module->abfd;
+  module->undefined_symbol_count = 0;
+  for (i=0; i<module->symbol_count; i++)
     {
-        bsym = module->symbols[i];
-        if (bsym->flags & BSF_LOCAL)
-            continue;
-        if (!bsym->name || !bsym->name[0])
-            continue;
-        if (bfd_is_und_section(bsym->section))
+      bsym = module->symbols[i];
+      if (bsym->flags & BSF_LOCAL)
+        continue;
+      if (!bsym->name || !bsym->name[0])
+        continue;
+      if (bfd_is_und_section(bsym->section))
         {
-            hsym = lookup_symbol(drop_leading_char(abfd,bsym->name));
-            ASSERT(hsym);
-            bsym->value = 0;
-            if (hsym->flags & DLDF_DEFD)
+          hsym = lookup_symbol(drop_leading_char(abfd,bsym->name));
+          ASSERT(hsym);
+          bsym->value = 0;
+          if (hsym->flags & DLDF_DEFD)
             {
-                bsym->value = (symvalue)hsym;
-                if (hsym->defined_by)
+              bsym->value = (symvalue)hsym;
+              if (hsym->defined_by)
                 {
-                    insert_entry_into_list(&module->useds, hsym->defined_by);
-                    insert_entry_into_list(&hsym->defined_by->users, module);
+                  insert_entry_into_list(&module->useds, hsym->defined_by);
+                  insert_entry_into_list(&hsym->defined_by->users, module);
                 }
             }
-            else
+          else
             {
-                module->undefined_symbol_count += 1;
+              module->undefined_symbol_count += 1;
             }
         }
     }
@@ -2384,16 +2400,9 @@ dld_init (const char *exec)
         /* load symbol table of current program */
         init_global_symbol_table();
         define_symbol_of_main_program(exec);
-        /* load common dynamical libraries */
 #if DLOPEN
-        if (dld_check_file("/lib/libc.so.6"))
-          dld_dlopen("/lib/libc.so.6", RTLD_SPECIAL);
-        else if (dld_check_file("/usr/lib/libc.so"))
-          dld_dlopen("/usr/lib/libc.so", RTLD_SPECIAL);
-        if (dld_check_file("/lib/libm.so.6"))
-          dld_dlopen("/lib/libm.so.6", RTLD_SPECIAL);
-        else if (dld_check_file("/usr/lib/libm.so"))
-          dld_dlopen("/usr/lib/libm.so", RTLD_SPECIAL);
+        /* initialize global dlopen handle */
+        global_dlopen_handle = dlopen(0, RTLD_LAZY);
 #endif
     }
     CATCH(n)
@@ -2459,12 +2468,8 @@ dld_dlopen(char *path, int mode)
     /* Obtain BFD for the library */
     abfd = bfd_openr(path,"default");
     /* Perform DLOPEN */
-    if (mode == RTLD_SPECIAL)
-      handle = dlopen(0, RTLD_LAZY);
-    else
-      handle = dlopen(path, mode);
+    handle = dlopen(path, mode);
     err = dlerror();
-
     TRY
     {
         /* Check BFD and HANDLE */
