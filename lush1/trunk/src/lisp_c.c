@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.9 2002-07-07 02:02:59 leonb Exp $
+ * $Id: lisp_c.c,v 1.10 2002-07-08 19:08:10 leonb Exp $
  **********************************************************************/
 
 
@@ -1292,32 +1292,6 @@ lside_mark_unlinked(void *cdoc)
   return count;
 }
 
-
-
-/* (gptr <obj>) -- casts an object to a gptr */
-
-DX(xgptr)
-{
-  at *p;
-  avlnode *n;
-    
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  p = APOINTER(1);
-  if (p==0)
-    return NIL;
-  else if (EXTERNP(p, &index_class))
-    n = lside_create_idx(p);
-  else if (p && (p->flags & X_OOSTRUCT))
-    n = lside_create_obj(p);
-  else if (storagep(p))
-    n = lside_create_srg(p);
-  else if (EXTERNP(p, &string_class))
-    n = lside_create_str(p);
-  else
-    error(NIL,"Cannot create compiled version of this lisp object",p);
-  return NEW_GPTR(n->citem);
-}
 
 
 /* -------------------------------------------------
@@ -2709,19 +2683,74 @@ dh_listeval(at *p, at *q)
 }
 
 
+/* lisp-c-no-warnings -- revert to old mode */
+
+DY(ylisp_c_no_warnings)
+{
+  at *ans;
+  int sav_dont_warn = dont_warn;
+  struct context mycontext;
+  context_push(&mycontext);
+  if (setjmp(context->error_jump)) 
+    {
+      context_pop();
+      dont_warn = sav_dont_warn;
+      longjmp(context->error_jump, -1L);
+    }
+  dont_warn = 1;
+  ans = progn(ARG_LIST);
+  dont_warn = sav_dont_warn;
+  context_pop();
+  return ans;
+}
 
 
 
+/* -----------------------------------------
+   INTERPRETED CASTS
+   ----------------------------------------- */
 
 
-/* (obj [<class>] <gptr>) -- cast a gptr into a lisp object */
+/* (to-int <arg>) */
+DX(xto_int)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return NEW_NUMBER( AINTEGER(1) );
+}
 
-DX(xobj)
+/* (to-flt <arg>) */
+DX(xto_flt)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return NEW_NUMBER( Ftor( AFLT(1) ) );
+}
+
+/* (to-real <arg>) */
+DX(xto_real)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return NEW_NUMBER( AREAL(1) );
+}
+
+/* (to-bool <arg>) */
+DX(xto_bool)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  if (APOINTER(1))
+    return true();
+  return NIL;
+}
+
+/* (to-obj [<class>] <gptr>)  */
+DX(xto_obj)
 {
   class *cl = NULL;
   at *p = NULL;
   avlnode *n;
-
   /* parse arguments */
   ALL_ARGS_EVAL;
   switch (arg_number)
@@ -2757,18 +2786,6 @@ DX(xobj)
       p = make_lisp_from_c(n, p->Gptr);
       UNLOCK(delayed_kill_list);
     }
-  else if (p->flags & C_NUMBER)
-    {
-      void *px = (void*)(unsigned long)(p->Number);
-      /* search object */
-      if (! (n = avl_find(px)))
-        error(NIL,"No object located at this address",
-              NEW_GPTR((unsigned long)px) );
-      /* make lisp object */
-      delayed_kill_list = 0;
-      p = make_lisp_from_c(n,px);
-      UNLOCK(delayed_kill_list);
-    }
   else 
     {
       error(NIL,"Expecting GPTR or OBJECT",p);
@@ -2791,27 +2808,28 @@ DX(xobj)
 }
 
 
-
-
-/* lisp-c-no-warnings -- revert to old mode */
-
-DY(ylisp_c_no_warnings)
+/* (to-gptr <obj>) */
+DX(xto_gptr)
 {
-  at *ans;
-  int sav_dont_warn = dont_warn;
-  struct context mycontext;
-  context_push(&mycontext);
-  if (setjmp(context->error_jump)) 
-    {
-      context_pop();
-      dont_warn = sav_dont_warn;
-      longjmp(context->error_jump, -1L);
-    }
-  dont_warn = 1;
-  ans = progn(ARG_LIST);
-  dont_warn = sav_dont_warn;
-  context_pop();
-  return ans;
+  at *p;
+  avlnode *n;
+    
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (p==0)
+    return NIL;
+  else if (EXTERNP(p, &index_class))
+    n = lside_create_idx(p);
+  else if (p && (p->flags & X_OOSTRUCT))
+    n = lside_create_obj(p);
+  else if (storagep(p))
+    n = lside_create_srg(p);
+  else if (EXTERNP(p, &string_class))
+    n = lside_create_str(p);
+  else
+    error(NIL,"Cannot make a compiled version of this lisp object",p);
+  return NEW_GPTR(n->citem);
 }
 
 
@@ -2829,7 +2847,11 @@ init_lisp_c(void)
   dx_define("lisp-c-map", xlisp_c_map);
   dx_define("lisp-c-dont-track-cside", xlisp_c_dont_track_cside);
   dy_define("lisp-c-no-warnings", ylisp_c_no_warnings);
-  dx_define("gptr", xgptr);
-  dx_define("obj", xobj);
+  dx_define("to-int", xto_int);
+  dx_define("to-flt", xto_flt);
+  dx_define("to-real", xto_real);
+  dx_define("to-bool", xto_bool);
+  dx_define("to-gptr", xto_gptr);
+  dx_define("to-obj", xto_obj);
 }
 
