@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.38 2002-08-07 15:20:34 leonb Exp $
+ * $Id: header.h,v 1.39 2002-08-07 20:01:50 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -87,6 +87,7 @@ void init_user(void);
 int  init_user_dll(int major, int minor);
 /* replacement functions */
 TLAPI void  filteropen(const char *cmd, FILE **pfw, FILE **pfr);
+TLAPI void  filteropenpty(const char *cmd, FILE **pfw, FILE **pfr);
 TLAPI FILE* unix_popen(const char *cmd, const char *mode);
 TLAPI int   unix_pclose(FILE *f);
 /* cygwin */

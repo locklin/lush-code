@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.11 2002-08-06 18:02:05 leonb Exp $
+ * $Id: unix.c,v 1.12 2002-08-07 20:01:50 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -64,7 +64,6 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-
 #ifdef TIME_WITH_SYS_TIME
 # include <sys/time.h>
 # include <time.h>
@@ -75,35 +74,32 @@
 #  include <time.h>
 # endif
 #endif
-
 #ifdef HAVE_SYS_TIMEB_H
 # include <sys/timeb.h>
 #endif
-
 #if HAVE_SYS_WAIT_H
-#include <sys/wait.h>
+# include <sys/wait.h>
 #endif
 #ifndef WEXITSTATUS
-#define WEXITSTATUS(s) ((unsigned)(s)>>8)
+# define WEXITSTATUS(s) ((unsigned)(s)>>8)
 #endif
 #ifndef WIFEXITED
-#define WIFEXITED(s) (((s)&255)==0)
+# define WIFEXITED(s) (((s)&255)==0)
 #endif
-
 #ifdef HAVE_STROPTS_H
-#include <stropts.h>
+# include <stropts.h>
 #endif
-
 #ifdef HAVE_SYS_STROPTS_H
-#include <sys/stropts.h>
+# include <sys/stropts.h>
 #endif
-
 #ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
+# include <sys/select.h>
 #endif
-
 #ifdef HAVE_SYS_TTOLD_H
-#include <sys/ttold.h>
+# include <sys/ttold.h>
+#endif
+#ifdef HAVE_PTY_H
+# include <pty.h>
 #endif
 
 /* Lush header files */
@@ -1189,16 +1185,11 @@ unix_pclose(FILE *f)
 }
 
 
-/*
- * filteropen
- * a VERY useful function...
- */
-
 void
 filteropen(const char *cmd, FILE **pfw, FILE **pfr)
 {
   extern char *string_buffer;
-  int fd_up[2], fd_dn[2];
+  int i, fd_up[2], fd_dn[2];
   pid_t pid;
   
   sprintf(string_buffer,"exec %s",cmd);
@@ -1261,8 +1252,10 @@ filteropen(const char *cmd, FILE **pfw, FILE **pfr)
   if (kidpidalloc(fd_dn[0]))
     kidpid[fd_dn[0]] = pid;
 #endif
-  *pfw = fdopen(fd_up[1], "w");
-  *pfr = fdopen(fd_dn[0], "r");
+  if (! (*pfw = fdopen(fd_up[1], "w")))
+    test_file_error(NULL);
+  if (! (*pfr = fdopen(fd_dn[0], "r")))
+    test_file_error(NULL);
 }
 
 
@@ -1295,6 +1288,107 @@ DX(xfilteropen)
     var_set(p2,f2);
   return cons(f2,f1);
 }
+
+void
+filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
+{
+#if HAVE_OPENPTY
+  extern char *string_buffer;
+  int i, master, slave;
+  pid_t pid;
+  
+  sprintf(string_buffer,"exec %s",cmd);
+  if (openpty(&master, &slave, 0, 0, 0) < 0)
+    test_file_error(NULL);
+#ifdef HAVE_VFORK
+  pid = vfork();
+#else
+  pid = fork();
+#endif
+  if (pid < 0)
+    {
+      close(master);
+      close(slave);
+      test_file_error(NULL);
+    }
+  else if (pid == 0) 
+    {
+      /* Child process */
+      close(master);
+      if (dup2(slave, fileno(stdin)) < 0)
+        _exit(127);
+      if (dup2(slave, fileno(stdout)) < 0)
+        _exit(127);
+      if (slave != fileno(stdin) && slave != fileno(stdout))
+        close(slave);
+#ifdef HAVE_SETPGRP
+#ifdef SETPGRP_VOID
+      setpgrp();
+#else
+      setpgrp(0,0);
+#endif
+#endif
+#ifdef NEED_POPEN
+      for (i=0; i<kidpidsize; i++)
+        if (kidpid[i])
+          close(i);
+#endif
+      execl("/bin/sh", "sh", "-c", string_buffer, 0);
+      _exit(127);
+    }
+  /* Parent process */ 
+  close(slave);
+  slave = dup(master);
+#ifdef NEED_POPEN
+  if (kidpidalloc(master))
+    kidpid[master] = pid;
+  if (kidpidalloc(slave))
+    kidpid[slave] = pid;
+#endif
+  if (! (*pfw = fdopen(master, "w")))
+    test_file_error(NULL);
+  if (! (*pfr = fdopen(slave, "r")))
+    test_file_error(NULL);
+  /* Do not buffer master */
+  setbuf(*pfw, 0);
+  setbuf(*pft, 0);
+#else
+  error(NIL,"filteropenpty is not supported on this system",NIL);
+#endif
+}
+
+DX(xfilteropenpty) 
+{
+  char* cmd;
+  FILE* str_up;
+  FILE* str_dn;
+  at *p1,*p2, *f1, *f2;
+  
+  ALL_ARGS_EVAL;
+  if (arg_number==3) {
+    p1 = APOINTER(2);
+    ifn (EXTERNP(p1, &symbol_class))
+      error(NIL,"not a symbol",p1);
+    p2 = APOINTER(3);
+    ifn (EXTERNP(p2, &symbol_class))
+      error(NIL,"not a symbol",p2);
+  } else {
+    p1 = p2 = NIL;
+    ARG_NUMBER(1);
+  }
+  cmd = ASTRING(1);
+  filteropenpty(cmd, &str_up, &str_dn);
+  f1 = new_extern(&file_R_class, str_dn);
+  f2 = new_extern(&file_W_class, str_up);
+  if (p1)
+    var_set(p1,f1);
+  if (p2)
+    var_set(p2,f2);
+  return cons(f2,f1);
+}
+
+
+
 
 
 DX(xsocketopen)
@@ -1372,6 +1466,7 @@ init_unix(void)
   dx_define("getenv", xgetenv);
   dx_define("getconf", xgetconf);
   dx_define("filteropen", xfilteropen);
+  dx_define("filteropenpty", xfilteropenpty);
   dx_define("socketopen", xsocketopen);
 }
 
