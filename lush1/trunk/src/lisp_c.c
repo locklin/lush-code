@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.16 2002-07-29 14:58:45 leonb Exp $
+ * $Id: lisp_c.c,v 1.17 2002-07-29 15:38:04 leonb Exp $
  **********************************************************************/
 
 
@@ -956,6 +956,7 @@ alloc_srg(int type)
     error(NIL,"lisp_c internal: cannot add element to item map",NIL);
   n->cinfo = CINFO_SRG;
   n->belong = BELONG_LISP;
+  n->cmoreinfo = 0;
   return n;
 }
 
@@ -980,6 +981,7 @@ alloc_idx(int ndim)
     error(NIL,"lisp_c internal: cannot add element to item map",NIL);
   n->cinfo = CINFO_IDX;
   n->belong = BELONG_LISP;
+  n->cmoreinfo = 0;
   return n;
 }
 
@@ -1028,24 +1030,15 @@ static avlnode *
 alloc_list(int ndim)
 {
   /* LIST size is known from the LIST type.
-   * We allocate everything in a single memory block 
-   * We should not call srg_free to destroy it. 
-     */
-  avlnode *n;
-  int i = (sizeof(struct srg)+sizeof(dharg)-1)/sizeof(dharg);
-  struct srg *srg = malloc((ndim+i)*sizeof(dharg));
-  if (!srg) 
-    error(NIL,"Out of memory",NIL);
-  srg->type = ST_U8;
-  srg->data = ((dharg*)(srg)) + i;
-  srg->size = ndim * sizeof(dharg);
-  srg->flags = 0;
-  n = avl_add(srg);
-  if (n==0)
-    error(NIL,"lisp_c internal: cannot add element to item map",NIL);
-  n->belong = BELONG_LISP;
+   * Space for this copy is allocated using srg_resize. 
+   * We must free it with srg_free. 
+   */ 
+  struct srg *s;
+  avlnode *n = alloc_srg(ST_U8);
   n->cinfo = CINFO_LIST;
-  n->cmoreinfo = 0;  /* need to be updated later */
+  s = n->citem;
+  srg_resize(s,ndim*sizeof(dharg),__FILE__,__LINE__);
+  memset(s->data, 0, ndim*sizeof(dharg));
   return n;
 }
 
@@ -1638,6 +1631,7 @@ make_lisp_from_c(avlnode *n, void *px)
          * They do not last between DH calls.
          */
         int i;
+        int ndim;
         at *p = NIL;
         at **where = &p;
         struct srg *srg = n->citem;
@@ -1646,11 +1640,12 @@ make_lisp_from_c(avlnode *n, void *px)
         if (drec==0 || drec->op!=DHT_LIST)
           error(NIL,"lisp_c internal: "
                 "untyped list made it to make-lisp-from-c",NIL);
-        if (drec->ndim != srg->size)
+        ndim = drec->ndim;
+        if (ndim * sizeof(dharg) != srg->size)
           error(NIL,"lisp_c internal: "
                 "list changed size",NIL);
         drec++;
-        for (i=0; i<srg->size; i++)
+        for (i=0; i<ndim; i++)
           {
             *where = cons(dharg_to_at(arg,drec,NIL),NIL);
             arg += 1;
@@ -1981,7 +1976,7 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
         lisp2c_error("LIST expected", errctx, at_obj);
       if(length(at_obj) != drec->ndim)
         lisp2c_error("LIST length do not match",errctx,at_obj);
-      /* create D storage for the list */
+      /* create storage for the list */
       n = alloc_list(drec->ndim);
       n->cmoreinfo = drec;
       srg = n->citem;
@@ -2436,7 +2431,7 @@ build_at_temporary(dhrecord *drec, dharg *arg)
     case DHT_LIST:
       {
         avlnode *n = alloc_list(drec->ndim);
-        n->cmoreinfo = 0; /* TEMPs have strange DHDOCs */
+        n->cmoreinfo = 0;
         arg->dh_srg_ptr = n->citem;
         avlchain_set(n, &dummy_tmps);
         break;
@@ -2514,6 +2509,7 @@ wipe_out_temps(void)
       switch(n->cinfo)
         {
         case CINFO_STR:
+        case CINFO_LIST:
         case CINFO_SRG:
           srg_free(cptr);
           break;
@@ -2530,6 +2526,7 @@ wipe_out_temps(void)
 #endif
             }
           break;
+          
         }
       avlchain_set(n, 0);
       avl_del(cptr);
