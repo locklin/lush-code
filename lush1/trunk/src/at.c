@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: at.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: at.c,v 1.2 2002-05-01 19:02:05 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -157,7 +157,8 @@ new_number(double x)
  * This macro includes the conversion of x to a real.
  */
 
-at * new_gptr(gptr x)
+at * 
+new_gptr(gptr x)
 {
   register at *new;
 
@@ -250,9 +251,7 @@ new_extern(TLclass *cl, void *obj)
 
 
 
-/*
- * car(q) cdr(q) caar(q) cadr(q) cdar(q) cddr(q) Some classics
- */
+/* ----- misc list operations ------ */
 
 at *
 car(at *q)
@@ -362,11 +361,6 @@ DX(xcddr)
   return cddr(ALIST(1));
 }
 
-
-/*
- * rplaca(q,p) rplacd(q,p) displace(q,p)
- */
-
 at *
 rplaca(at *q, at *p)
 {
@@ -436,11 +430,6 @@ DX(xdisplace)
   ALL_ARGS_EVAL;
   return displace(APOINTER(1), APOINTER(2));
 }
-
-
-/*
- * listp consp atomp numberp ... NB: 'null' et 'not' are synonyms.
- */
 
 DX(xlistp)
 {
@@ -541,13 +530,6 @@ DX(xnull)
 }
 
 
-
-/*
- * length(p) returns the list length
- * 
- * rlength(p) idem, but scans also sublistes
- */
-
 int 
 length(at *p)
 {
@@ -571,7 +553,6 @@ DX(xlength)
   ARG_EVAL(1);
   return NEW_NUMBER(length(ALIST(1)));
 }
-
 
 
 at *
@@ -606,6 +587,7 @@ DX(xlast)
   return last(ALIST(1));
 }
 
+
 at *
 lastcdr(register at *list)
 {
@@ -632,6 +614,7 @@ DX(xlastcdr)
   ARG_EVAL(1);
   return lastcdr(ALIST(1));
 }
+
 
 at *
 member(at *elem, register at *list)
@@ -660,7 +643,6 @@ DX(xmember)
   ALL_ARGS_EVAL;
   return member(APOINTER(1), ALIST(2));
 }
-
 
 
 at *
@@ -709,39 +691,29 @@ DX(xappend)
 
 
 at *
-list_nfirst(register int n, register at *l1)
+nfirst(int n, at *l)
 {
   at *answer = NIL;
   register at **where = &answer;
-  int le = 0;
-
-  if( n < 0 ) {
-    le = length( l1 );
-    if ( le < 0 ) {
-      error(NIL,"Cannot compute the length of a circular list",NIL);
+  while ( CONSP(l) && n-- > 0) 
+    {
+      *where = new_cons(l->Car, NIL);
+      where = &((*where)->Cdr);
+      l = l->Cdr;
     }
-    n += le;
-  }
-
-  while ( l1 && (n-- >0) ) {
-    if( ! CONSP(l1) ) {
-      error(NIL,"Nil-terminated list expected",NIL);
+  if (l && n > 0) 
+    {
+      LOCK(l);
+      *where = l;
     }
-    *where = new_cons(l1->Car, NIL);
-    where = &((*where)->Cdr);
-    l1 = l1->Cdr;
-    }
-
-  *where = NIL;
   return answer;
 }
 
-DX(xlist_nfirst)
+DX(xnfirst)
 {
   ARG_NUMBER(2);
   ALL_ARGS_EVAL;
-
-  return list_nfirst( AINTEGER(1), APOINTER(2) );
+  return nfirst( AINTEGER(1), APOINTER(2) );
 }
 
 
@@ -770,6 +742,7 @@ DX(xnth)
     return nth(ALIST(2), AINTEGER(1));
 }
 
+
 at *
 nthcdr(register at *l, register int n)
 {
@@ -793,6 +766,7 @@ DX(xnthcdr)
   else
     return nthcdr(ALIST(2), AINTEGER(1));
 }
+
 
 at *
 reverse(register at *l)
@@ -865,6 +839,7 @@ DX(xflatten)
   return flatten(APOINTER(1));
 }
 
+
 at *
 assoc(at *k, at *l)
 {
@@ -895,7 +870,121 @@ DX(xassoc)
 }
 
 
-/* RETURNS THE AMOUNT OF USED ATs	 */
+/* ----- unodes ------ */
+
+
+static at *
+new_unode(at *doc)
+{
+  return new_cons(NIL,doc);
+}
+
+static at *			
+unode_dive(at *p)
+{
+  /* Warning: Return Unlocked AT* */
+  at *q = p;
+  while (CONSP(q) && q->Car)
+    q = q->Car;
+  ifn (CONSP(q))
+    error(NIL,"Not a valid unode",p);
+  return q;
+}
+
+static at *
+unode_val(at *p)
+{
+  p = unode_dive(p);
+  p = p->Cdr;
+  LOCK(p);
+  return p;
+}
+
+static at *
+unode_eq(at *p1, at *p2)
+{
+  at *q1, *q2;
+  q1 = unode_dive(p1);
+  q2 = unode_dive(p2);
+  if ( q1 != q2 )
+    return NIL;
+  LOCK(q1);
+  return q1;
+}
+
+static at *
+unode_unify(at *p1, at *p2, at *combine)
+{
+  at *q1, *q2;
+  at *node;
+  at *doc;
+  q1 = unode_dive(p1);
+  q2 = unode_dive(p2);
+  if ( q1 == q2 )
+    return NIL;
+  if (combine) {
+    LOCK(q1->Cdr);
+    LOCK(q2->Cdr);
+    node = cons(q1->Cdr,cons(q2->Cdr,NIL));
+    doc = apply(combine,node);
+    UNLOCK(node);
+  } else
+    doc = NIL;
+  node = new_unode(doc);
+  UNLOCK(doc);
+  LOCK(node);
+  LOCK(node);
+  q1->Car = node;
+  q2->Car = node;
+  return node;
+}
+
+DX(xnew_unode)
+{
+  ALL_ARGS_EVAL;
+  if (arg_number==0)
+    return new_unode(NIL);
+  ARG_NUMBER(1);
+  return new_unode(APOINTER(1));
+}
+
+DX(xunode_uid)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return NEW_NUMBER((long)unode_dive(APOINTER(1)));
+}
+
+DX(xunode_val)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return unode_val(APOINTER(1));
+}
+
+DX(xunode_eq)
+{
+  ARG_NUMBER(2);
+  ALL_ARGS_EVAL;
+  return unode_eq(APOINTER(1),APOINTER(2));
+}
+
+DX(xunode_unify)
+{
+  at *doc;
+  ALL_ARGS_EVAL;
+  if (arg_number==2)
+    doc = NIL;
+  else {
+    ARG_NUMBER(3);
+    doc = APOINTER(3);
+  }
+  return unode_unify(APOINTER(1),APOINTER(2),doc);
+}
+
+
+
+/* ------- refcount info ------- */
 
 int 
 used(void)
@@ -920,7 +1009,7 @@ DX(xused)
 }
 
 
-/* RETURN THE COUNTER OF AN OBJECT */
+/* Return the counter of an object */
 
 DX(xcounter)
 {
@@ -933,7 +1022,11 @@ DX(xcounter)
   return NIL;
 }
 
-/* EXTERN AT CLASS DEFAULT DEFINITIONS	 */
+
+
+
+
+/* ----- default class definition ------ */
 
 void 
 generic_dispose(at *p)
@@ -1006,6 +1099,8 @@ generic_listeval(at *p, at *q)
 void 
 init_at(void)
 {
+  dy_define("compute-bump", ycompute_bump);
+
   dx_define("cons", xcons);
   dx_define("car", xcar);
   dx_define("cdr", xcdr);
@@ -1027,14 +1122,20 @@ init_at(void)
   dx_define("lastcdr", xlastcdr);
   dx_define("member", xmember);
   dx_define("append", xappend);
-  dx_define("nfirst", xlist_nfirst);
+  dx_define("nfirst", xnfirst);
   dx_define("nth", xnth);
   dx_define("nthcdr", xnthcdr);
   dx_define("reverse", xreverse);
   dx_define("flatten", xflatten);
   dx_define("assoc", xassoc);
+  dx_define("new_unode", xnew_unode);
+  dx_define("unode_val", xunode_val);
+  dx_define("unode_uid", xunode_uid);	
+  dx_define("unode_eq", xunode_eq);
+  dx_define("unode_unify", xunode_unify);
+
   dx_define("used", xused);
   dx_define("COUNT",xcounter);
-  dy_define("compute-bump", ycompute_bump);
+
 }
 

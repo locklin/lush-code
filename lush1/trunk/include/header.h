@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.10 2002-05-01 18:32:43 leonb Exp $
+ * $Id: header.h,v 1.11 2002-05-01 19:02:01 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -252,6 +252,7 @@ TLAPI at *rplacd(at *q, at *p);
 TLAPI at *displace(at *q, at *p);
 TLAPI int length(at *p);
 TLAPI at *member(at *elem, at *list);
+TLAPI at *nfirst(int n, at *l);
 TLAPI at *nth(at *l, int n);
 TLAPI at *nthcdr(at *l, int n);
 TLAPI at *last(at *list);
