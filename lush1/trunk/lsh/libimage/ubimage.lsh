@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ubimage.lsh,v 1.2 2002-08-30 07:50:11 profshadoko Exp $
+;;; $Id: ubimage.lsh,v 1.3 2003-01-24 07:45:13 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? *** Greyscale Images of ubytes.
@@ -146,6 +146,69 @@
     ())
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (ubim-resize <im> <width> <height> <mode>)
+;; resize a greyscale image to any size using bilinear interpolation
+;; Appropriate local averaging (smoothing) is performed for scaling 
+;; factors smaller than 0.5. If one of the desired dimensions is
+;; 0, an aspect-ratio-preserving scaling is performed on
+;; the basis of the other dimension. When both <width> and <height>
+;; are non zero, the last parameter, <mode> determines how they are
+;; interpreted.
+;;
+;;.LI 
+;; if either <width> or <height> is zero, <mode> is ignored.
+;;.LI 
+;; mode=0: fit the image into a <width> by <height> frame while preserving the aspect ratio
+;;.LI 
+;; mode=1: scale the image to <width> by <height> possibly changing the aspect ratio
+;;.LI 
+;; mode=2: <width> and <height> are interpreted as scaling ratios
+;;.P
+;; The sizes of the output image are rounded to nearest integers
+;; smaller than the computed sizes, or to 1, whichever is largest.
+(de ubim-resize (im w h mode)
+    ((-idx2- (-ubyte-)) im)
+    ((-double-) w h mode)
+    (let* ((imw (idx-dim im 1))
+	   (imh (idx-dim im 0))
+	   (rw 0)
+	   (rh 0))
+      ;; determine actual size of output image
+      (cond 
+       ((or (= 0 w) (= 0 h))
+	(if (= 0 w) 
+	    (if (= 0 h) 
+		(error "desired width and height cannot be both zero")
+	      (setq w (max 1 (int (* imw (/ h imh))))))
+	  (setq h (max 1 (int (* imh (/ w imw)))))))
+       ((= mode 0)
+	(let* ((r (min (/ w imw) (/ h imh))))
+	  (setq w (max 1 (int (* r imw))))
+	  (setq h (max 1 (int (* r imh))))))
+       ((= mode 1) (setq w (max 1 (int w))) (setq h (max 1 (int h))))
+       ((= mode 2) 
+	(setq w (max 1 (int (* w imw))))
+	(setq h (max 1 (int (* h imh)))))
+       (t (error "illegal mode or desired dimensions")))
+      ;; compute closest integer subsampling ratio
+      (setq rw (div imw w))
+      (setq rh (div imh h))
+      ;; subsample by integer ratio if necessary
+      (when (or (<> 0 rh) (<> 0 rw))
+	(setq im (ubim-subsample im rh rw))
+	(setq imw (idx-dim im 1))
+	(setq imh (idx-dim im 0)))
+      ;; resample from subsampled image with bilinear interpolation
+      (let ((rez (ubyte-matrix h w))
+	    (bg 0)
+	    ;; the 0.5 thingies are necessary because warp-bilin interprets 
+	    ;; integer coordinates as beiing at the center of each pixel.
+	    (x1 -0.5) (y1 -0.5) (x3 (- imw 0.5)) (y3 (- imh 0.5))
+	    (p1 -0.5) (q1 -0.5) (p3 (- w 0.5)) (q3 (- h 0.5)))
+	(ubim-warp-quad im rez bg 1 x1 y1 x3 y1 x3 y3 x1 y3 p1 q1 p3 q3)
+	rez)))
+
 
 #? (ubim-subsample <in> <nlin> <ncol>)
 ;; subsamples image <in> with integer ratios <nlin> (vertical) <ncol>
@@ -506,4 +569,6 @@
             ubimage2fltimage fltimage2ubimage
             ubim-subsample ubim-invert ubim-zoom
             ubim-interpolate-bilin ubim-warp ubim-warp-fast
-            ubim-warp-quad  ) )
+            ubim-warp-quad  
+	    ubim-resize) )
+
