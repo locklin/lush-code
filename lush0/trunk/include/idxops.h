@@ -217,7 +217,6 @@
 #define Midx_masum(i1, i2, Type1, Type2) \
 { register Type1 *c1; \
   Type2 *c2, f=0; \
-  register int k; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   begin_idx_aloop1((i1), k) { \
@@ -229,7 +228,6 @@
 #define Midx_masup(i1, i2, Type1, Type2) \
 { register Type1 *c1; \
   Type2 *c2, f; \
-  register int k; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = c1[0]; \
@@ -242,7 +240,6 @@
 #define Midx_mainf(i1, i2, Type1, Type2) \
 { register Type1 *c1; \
   Type2 *c2, f; \
-  register int k; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = c1[0]; \
@@ -363,7 +360,6 @@
 #define Midx_masumacc(i1, i2, Type1, Type2) \
 { register Type1 *c1; \
   Type2 *c2, f; \
-  register int k; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -376,7 +372,6 @@
 #define Midx_masupacc(i1, i2, Type1, Type2) \
 { register Type1 *c1; \
   Type2 *c2, f; \
-  register int k; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -389,7 +384,6 @@
 #define Midx_mainfacc(i1, i2, Type1, Type2) \
 { register Type1 *c1; \
   Type2 *c2, f; \
-  register int k; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -443,7 +437,6 @@
 #define Midx_masumsqr(i1, i2, Type1, Type2) \
 { register Type1 *c1; \
   Type2 *c2, f=0; \
-  register int k; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   begin_idx_aloop1((i1), k) { \
@@ -494,7 +487,6 @@
 #define Midx_masumsqracc(i1, i2, Type1, Type2) \
 { register Type1 *c1; \
   Type2 *c2, f; \
-  register int k; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
