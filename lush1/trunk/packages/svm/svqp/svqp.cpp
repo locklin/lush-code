@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.9 2004-09-15 21:07:02 leonb Exp $
+ * $Id: svqp.cpp,v 1.10 2004-09-16 18:11:33 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -454,12 +454,14 @@ QuadraticProgram::perform_coordinate_descent(void)
 	      gmax = gx;
 	      gmaxidx = i;
 	    }
-	  else if (gx<gmin && x[i]<cmax[i]-epskt)
+	  if (gx<gmin && x[i]<cmax[i]-epskt)
 	    {
 	      gmin = gx;
 	      gminidx = i;
 	    }
 	}
+      if (gmax - gmin < epsgr)
+	break;
       if (sumflag)
 	{
 	  int j;
