@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.13 2002-07-19 03:29:19 leonb Exp $
+ * $Id: lisp_c.c,v 1.14 2002-07-22 16:14:07 leonb Exp $
  **********************************************************************/
 
 
@@ -595,7 +595,7 @@ _avl_del(avlnode* par, avlnode **tp)
       else                      /* replace item & find someone deletable */
         {
           avlnode* p = avl_pred(t);
-          _avlnode_copy(t, p);
+          _avlnode_copy(p, t);
           _already_found = 1;
           comp = -1;            /* fall through below to left */
         }
