@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.50 2004-07-16 22:26:58 leonb Exp $
+ * $Id: unix.c,v 1.51 2004-09-29 23:28:34 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -358,10 +358,10 @@ set_irq(void)
   goodsignal(SIGXFSZ, SIG_IGN);
 #endif
 #ifdef SIGVTALRM
-  goodsignal(SIGVTALRM,  gasp_irq);
+  /* default */
 #endif
 #ifdef SIGPROF
-  goodsignal(SIGPROF,  gasp_irq);
+  /* default */
 #endif
 #ifdef SIGLOST
   goodsignal(SIGLOST, gasp_irq);
