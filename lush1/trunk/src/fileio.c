@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: fileio.c,v 1.2 2002-04-24 21:00:47 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -1831,7 +1831,7 @@ init_fileio(char *program_name)
   lushdir = var_define("lushdir");
   tldir = var_define("tl3dir");
   q = new_string(s);
-  var_set(tldir, q);
+  var_set(lushdir, q);
   var_set(tldir, q);
   UNLOCK(q);
 
