@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.3 2002-08-02 20:31:45 leonb Exp $
+ * $Id: x11_driver.c,v 1.4 2002-08-06 18:02:06 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -134,7 +134,7 @@ extern struct gdriver x11_driver;
 #define disable()  block_async_poll()
 
 static void setcursor(int flag);
-static void handle_sync_events(void);
+static int  handle_sync_events(void);
 static void handle_async_events(void);
 
 
@@ -586,7 +586,7 @@ handle_async_events(void)
     }
 }
 
-static void
+static int
 handle_sync_events(void)
 {
   register int i;
@@ -756,6 +756,7 @@ handle_sync_events(void)
 #endif
 	}
     }
+  return 0;
 }
 
 

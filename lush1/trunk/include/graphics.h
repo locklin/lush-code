@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.7 2002-08-05 20:17:22 leonb Exp $
+ * $Id: graphics.h,v 1.8 2002-08-06 18:02:05 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -92,34 +92,8 @@ struct event {
   char *desc;
 };
 
-/* Standard events */
-
-#define EVENT_NONE        (-1L)
-#define EVENT_ASCII_MIN   (0L)
 #define ASCII_TO_EVENT(i) ((int)(unsigned)i)
 #define EVENT_TO_ASCII(i) ((char)i)
-#define EVENT_ASCII_MAX   (255L)
-
-#define EVENT_MOUSE_DOWN  (1001L)
-#define EVENT_MOUSE_UP    (1002L)
-#define EVENT_MOUSE_DRAG  (1003L)
-
-#define EVENT_ARROW_UP    (1011L)
-#define EVENT_ARROW_RIGHT (1012L)
-#define EVENT_ARROW_DOWN  (1013L)
-#define EVENT_ARROW_LEFT  (1014L)
-#define EVENT_FKEY        (1015L)
-
-#define EVENT_RESIZE      (2001L)
-#define EVENT_HELP        (2002L)
-#define EVENT_DELETE      (2003L)
-#define EVENT_SENDEVENT   (2004L)
-
-#define EVENT_ALARM       (3001L)
-
-#define EVENT_EXPOSE      (4001L)
-#define EVENT_GLEXPOSE    (4002L)
-
 
 /* Hilites */
 

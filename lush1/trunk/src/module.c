@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.21 2002-07-24 15:09:44 leonb Exp $
+ * $Id: module.c,v 1.22 2002-08-06 18:02:05 leonb Exp $
  **********************************************************************/
 
 
@@ -523,6 +523,22 @@ check_primitive(at *prim)
 
 
 /* --------- MODULE_UNLOAD --------- */
+
+
+DX(xmodule_never_unload)
+{
+  at *p;
+  struct module *m;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &module_class))
+    error(NIL,"Not a module",p);
+  m = p->Object;
+  m->flags |= MODULE_STICKY;
+  LOCK(p);
+  return p;
+}
 
 
 DX(xmodule_depends)
@@ -1216,6 +1232,7 @@ init_module(char *progname)
   dx_define("module-load", xmodule_load);
   dx_define("module-unload", xmodule_unload);
   dx_define("module-depends", xmodule_depends);
+  dx_define("module-never-unload", xmodule_never_unload);
   
   /* SN3 functions */
   dx_define("mod-create-reference", xmod_create_reference);

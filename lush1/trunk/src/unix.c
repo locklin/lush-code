@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.10 2002-08-02 21:20:47 leonb Exp $
+ * $Id: unix.c,v 1.11 2002-08-06 18:02:05 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1194,36 +1194,20 @@ unix_pclose(FILE *f)
  * a VERY useful function...
  */
 
-DX(xfilteropen) 
+void
+filteropen(const char *cmd, FILE **pfw, FILE **pfr)
 {
-  char* cmd;
   extern char *string_buffer;
-  FILE* str_up;
-  FILE* str_dn;
   int fd_up[2], fd_dn[2];
   pid_t pid;
-  at *p1,*p2, *f1, *f2;
   
-  ALL_ARGS_EVAL;
-  if (arg_number==3) {
-    p1 = APOINTER(2);
-    ifn (EXTERNP(p1, &symbol_class))
-      error(NIL,"not a symbol",p1);
-    p2 = APOINTER(3);
-    ifn (EXTERNP(p2, &symbol_class))
-      error(NIL,"not a symbol",p2);
-  } else {
-    p1 = p2 = NIL;
-    ARG_NUMBER(1);
-  }
-  cmd = ASTRING(1);
   sprintf(string_buffer,"exec %s",cmd);
   if (pipe(fd_up) < 0) 
-    error(NIL,"pipe failed",NIL);
+    test_file_error(NULL);
   if (pipe(fd_dn) < 0) {
     close(fd_up[0]);
     close(fd_up[1]);
-    error(NIL,"pipe failed",NIL);
+    test_file_error(NULL);
   }
 #ifdef HAVE_VFORK
   pid = vfork();
@@ -1277,8 +1261,32 @@ DX(xfilteropen)
   if (kidpidalloc(fd_dn[0]))
     kidpid[fd_dn[0]] = pid;
 #endif
-  str_up = fdopen(fd_up[1], "w");
-  str_dn = fdopen(fd_dn[0], "r");
+  *pfw = fdopen(fd_up[1], "w");
+  *pfr = fdopen(fd_dn[0], "r");
+}
+
+
+DX(xfilteropen) 
+{
+  char* cmd;
+  FILE* str_up;
+  FILE* str_dn;
+  at *p1,*p2, *f1, *f2;
+  
+  ALL_ARGS_EVAL;
+  if (arg_number==3) {
+    p1 = APOINTER(2);
+    ifn (EXTERNP(p1, &symbol_class))
+      error(NIL,"not a symbol",p1);
+    p2 = APOINTER(3);
+    ifn (EXTERNP(p2, &symbol_class))
+      error(NIL,"not a symbol",p2);
+  } else {
+    p1 = p2 = NIL;
+    ARG_NUMBER(1);
+  }
+  cmd = ASTRING(1);
+  filteropen(cmd, &str_up, &str_dn);
   f1 = new_extern(&file_R_class, str_dn);
   f2 = new_extern(&file_W_class, str_up);
   if (p1)

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.6 2002-08-05 20:17:22 leonb Exp $
+ * $Id: event.c,v 1.7 2002-08-06 18:02:05 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -417,7 +417,7 @@ struct event_source
 {
   struct event_source *next;
   int fd;
-  void (*spoll)(void);
+  int  (*spoll)(void);
   void (*apoll)(void);
   void (*bwait)(void);
   void (*ewait)(void);
@@ -427,13 +427,19 @@ static struct event_source *sources = 0;
 static int async_block = 0;
 static int waiting = 0;
 
-static void
+static int
 call_spoll(void)
 {
+  int timeout = 24*3600*1000;
   struct event_source *src;
   for (src=sources; src; src=src->next)
     if (src->spoll)
-      (*src->spoll)();
+      {
+        int ms = (*src->spoll)();
+        if (ms>0 && ms<timeout)
+          ms = timeout;
+      }
+  return timeout;
 }
 
 static void
@@ -508,7 +514,8 @@ unregister_event_source(void *handle)
    
    Function spoll() is called whenever lush checks the
    event queue for events. This function may file new
-   events by calling event_add().
+   events by calling event_add().  It returns the maximum
+   number of milliseconds to wait before calling it again.
    
    Function apoll() might be called anytime to let the
    source check its event queue.  This function is called
@@ -528,7 +535,7 @@ unregister_event_source(void *handle)
 */
 
 void *
-register_event_source(void (*spoll)(void),
+register_event_source(int  (*spoll)(void),
                       void (*apoll)(void),
                       void (*bwait)(void),
                       void (*ewait)(void),
@@ -604,14 +611,14 @@ event_wait(int console)
   block_async_poll();
   for (;;)
     {
-      int n, ms;
+      int n, ms1, ms2;
       struct event_source *src;
       if ((hndl = ev_peek()))
         break;
-      call_spoll();
+      ms1 = call_spoll();
       if ((hndl = ev_peek()))
         break;
-      ms = timer_fire();
+      ms2 = timer_fire();
       if ((hndl = ev_peek()))
         break;
       /* Check for console input */
@@ -623,10 +630,9 @@ event_wait(int console)
       for (src=sources; src; src=src->next)
         if (src->fd>0 && n<MAXFDS)
           sourcefds[n++] = src->fd;
-        else
-          ms = 250;
       call_bwait();
-      cinput = os_wait(n, sourcefds, console, ms);
+      cinput = os_wait(n, sourcefds, console, 
+                       (ms1<ms2) ? ms1 : ms2 );
     }
   unblock_async_poll();
   LOCK(hndl);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.36 2002-08-02 20:31:42 leonb Exp $
+ * $Id: header.h,v 1.37 2002-08-06 18:02:05 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -79,14 +79,16 @@ typedef struct dhdoc_s dhdoc_t;
 #ifdef UNIX
 /* interruptions */
 extern TLAPI int break_attempt;
+TLAPI void lastchance(char *s) no_return;
 /* console management */
 void console_getline(char *prompt, char *buf, int size);
 /* openTL entry points */
 void init_user(void);
 int  init_user_dll(int major, int minor);
 /* replacement functions */
-TLAPI FILE* unix_popen(const char *, const char *);
-TLAPI int   unix_pclose(FILE *);
+TLAPI void  filteropen(const char *cmd, FILE **pfw, FILE **pfr);
+TLAPI FILE* unix_popen(const char *cmd, const char *mode);
+TLAPI int   unix_pclose(FILE *f);
 /* cygwin */
 # ifdef __CYGWIN32__
 TLAPI void cygwin_fmode_text(FILE *f);
@@ -1235,8 +1237,17 @@ LUSHAPI void cside_destroy_range(void *from, void *to);
 
 /* EVENT.H ----------------------------------------------------- */
 
+
+/* Event sources */
 LUSHAPI void  block_async_poll(void);
 LUSHAPI void  unblock_async_poll(void);
+LUSHAPI void  unregister_event_source(void *handle);
+LUSHAPI void *register_event_source(int  (*spoll)(void), 
+                                    void (*apoll)(void),
+                                    void (*bwait)(void), 
+                                    void (*ewait)(void), int fd );
+
+/* Event queues */ 
 LUSHAPI void *timer_add(at *handler, int delay, int period);
 LUSHAPI void  timer_del(void *handle);
 LUSHAPI int   timer_fire(void);
@@ -1245,13 +1256,29 @@ LUSHAPI at   *event_peek(void);
 LUSHAPI at   *event_get(void *handler, int remove);
 LUSHAPI at   *event_wait(int console);
 LUSHAPI void  process_pending_events(void);
-LUSHAPI void  unregister_event_source(void *handle);
-LUSHAPI void  enqueue_event(at*, int, int, int, int, int);
-LUSHAPI void  enqueue_eventdesc(at*, int, int, int, int, int, char*);
-LUSHAPI void *register_event_source(void (*spoll)(void), 
-                                    void (*apoll)(void),
-                                    void (*bwait)(void), 
-                                    void (*ewait)(void), int fd );
+
+/* Compatible event queue functions */
+LUSHAPI void  enqueue_event(at*, int event, int, int, int, int);
+LUSHAPI void  enqueue_eventdesc(at*, int event, int, int, int, int, char*);
+#define EVENT_NONE        (-1L)
+#define EVENT_ASCII_MIN   (0L)
+#define EVENT_ASCII_MAX   (255L)
+#define EVENT_MOUSE_DOWN  (1001L)
+#define EVENT_MOUSE_UP    (1002L)
+#define EVENT_MOUSE_DRAG  (1003L)
+#define EVENT_ARROW_UP    (1011L)
+#define EVENT_ARROW_RIGHT (1012L)
+#define EVENT_ARROW_DOWN  (1013L)
+#define EVENT_ARROW_LEFT  (1014L)
+#define EVENT_FKEY        (1015L)
+#define EVENT_RESIZE      (2001L)
+#define EVENT_HELP        (2002L)
+#define EVENT_DELETE      (2003L)
+#define EVENT_SENDEVENT   (2004L)
+#define EVENT_ALARM       (3001L)
+#define EVENT_EXPOSE      (4001L)
+#define EVENT_GLEXPOSE    (4002L)
+
 
 
 /* CPLUSPLUS --------------------------------------------------- */
