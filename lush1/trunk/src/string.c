@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.18 2003-02-10 13:48:35 leonb Exp $
+ * $Id: string.c,v 1.19 2003-02-28 18:57:35 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -636,7 +636,7 @@ char *
 str_gptr(x)
 gptr x;
 {
-    sprintf(string_buffer, "#$%X", (unsigned int)(x));
+    sprintf(string_buffer, "#$%X", (unsigned long)(x));
     return string_buffer;
 }
 
