@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fltlib.h,v 1.1 2002-04-16 19:47:02 leonb Exp $
+ * $Id: fltlib.h,v 1.2 2003-09-26 03:54:56 profshadoko Exp $
  **********************************************************************/
 
 #ifndef FLTLIB_H
@@ -65,10 +65,7 @@ extern "C" {
 #define Ftod(x) ((double)(x))
 #define rtoF(x) ((flt)(x))
 #define dtoF(x) ((flt)(x))
-#define Fadd(x,y) ((x)+(y))
-#define Fsub(x,y) ((x)-(y))
-#define Fmul(x,y) ((x)*(y))
-#define Fdiv(x,y) ((x)/(y))
+
 
 /* Standard Math routines */
 #define Fsqrt(x)	((flt)sqrt((double)x))
@@ -139,6 +136,27 @@ LUSHAPI flt Fdspline(flt x, int size, flt *parm);
 LUSHAPI flt Frand(void);
 LUSHAPI flt Fgauss(void);
 LUSHAPI void Fseed(int x);
+
+/* Rational approximation of TANH, SIGMOIDS */
+/* Declarations for EXP(-|X|), EXP(-X2)     */
+LUSHAPI real DQtanh(real x);
+LUSHAPI real DQDtanh(real x);
+LUSHAPI real DQstdsigmoid(real x);
+LUSHAPI real DQDstdsigmoid(real x);
+LUSHAPI real DQexpmx(real x);
+LUSHAPI real DQDexpmx(real x);
+LUSHAPI real DQexpmx2(real x);
+LUSHAPI real DQDexpmx2(real x);
+
+/* Spline interpolation */
+LUSHAPI void Dsplinit(int size, real *parm);
+LUSHAPI real Dspline(real x, int size, real *parm);
+LUSHAPI real Ddspline(real x, int size, real *parm);
+
+/* Random functions */
+LUSHAPI real Drand(void);
+LUSHAPI real Dgauss(void);
+LUSHAPI void Dseed(int x);
 
 
 /* ------------------------------------------------------- */

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.54 2003-06-26 15:55:02 leonb Exp $
+ * $Id: header.h,v 1.55 2003-09-26 03:54:56 profshadoko Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -830,11 +830,11 @@ union dz_inst {
     short op;
     short arg;
   } code;
-  flt constant;
+  real constant;
 };
 
 struct dz_cell {
-  flt (*call)(flt x0, ...);
+  real (*call)(real x0, ...);
   int num_arg;
   int program_size;
   int required_stack;
@@ -843,9 +843,9 @@ struct dz_cell {
 
 extern LUSHAPI class dz_class;
 extern LUSHAPI int dz_trace;
-extern LUSHAPI flt dz_stack[DZ_STACK_SIZE];
-LUSHAPI flt dz_execute(flt x, struct dz_cell *dz);
-LUSHAPI void dz_define(char *name, char *opcode, flt (*cfun)(flt));
+extern LUSHAPI real dz_stack[DZ_STACK_SIZE];
+LUSHAPI real dz_execute(real x, struct dz_cell *dz);
+LUSHAPI void dz_define(char *name, char *opcode, real (*cfun)(real));
 
 
 /* STORAGE.H --------------------------------------------------- */

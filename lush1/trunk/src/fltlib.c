@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fltlib.c,v 1.3 2002-05-04 02:40:11 leonb Exp $
+ * $Id: fltlib.c,v 1.4 2003-09-26 03:54:46 profshadoko Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -109,6 +109,61 @@ FQDtanh(flt x)
 #undef A3
 
 
+
+#define A0   ((real)1.0)
+#define A1   ((real)0.125)
+#define A2   ((real)0.0078125)
+#define A3   ((real)0.000325520833333)
+
+real
+DQtanh(real x)
+{
+  register real y;
+
+  if (x >= Dzero) 
+    if (x < (real)13) 
+      y = A0+x*(A1+x*(A2+x*(A3)));
+    else 
+      return Done;
+  else
+    if (x > -(real)13) 
+      y = A0-x*(A1-x*(A2-x*(A3)));
+    else 
+      return Dminus;
+  
+  y *= y;
+  y *= y;
+  y *= y;
+  y *= y;
+  return (y-Done)/(y+Done);
+} 
+
+real
+DQDtanh(real x)
+{
+  if (x < Dzero)
+    x = -x;
+  if (x < (real)13) 
+    {
+      register real y;
+      y = A0+x*(A1+x*(A2+x*(A3)));
+      y *= y;
+      y *= y;
+      y *= y;
+      y *= y;
+      y = (y-Done)/(y+Done);
+      return Done-y*y;
+    }
+  else
+    return Dzero;
+}
+
+#undef A0
+#undef A1
+#undef A2
+#undef A3
+
+
 /* 
  * FQstdsigmoid(x)
  * FQDstdsigmoid(x)
@@ -165,6 +220,70 @@ FQDstdsigmoid(flt x)
     }
   else
     return Fzero;
+}
+
+#undef A0
+#undef A1
+#undef A2
+#undef A3
+
+
+/* 
+ * DQstdsigmoid(x)
+ * DQDstdsigmoid(x)
+ * The same formulas for computing 1.71593428 tanh (0.66666666 x)
+ */
+
+#define PR  ((real)0.66666666)
+#define PO  ((real)1.71593428)
+
+#define A0   ((real)(1.0))
+#define A1   ((real)(0.125*PR))
+#define A2   ((real)(0.0078125*PR*PR))
+#define A3   ((real)(0.000325520833333*PR*PR*PR))
+
+real
+DQstdsigmoid(real x)
+{
+  register real y;
+
+  if (x >= Dzero) 
+    if (x < (real)13) 
+      y = A0+x*(A1+x*(A2+x*(A3)));
+    else 
+      return PO;
+  else
+    if (x > -(real)13) 
+      y = A0-x*(A1-x*(A2-x*(A3)));
+    else 
+      return -PO;
+  
+  y *= y;
+  y *= y;
+  y *= y;
+  y *= y;
+  return (x > Dzero) ? PO*(y-Done)/(y+Done) : PO*(Done-y)/(y+Done);
+}
+
+
+real
+DQDstdsigmoid(real x)
+{
+  if (x < Dzero)
+    x = -x;
+  if (x < (real)13) 
+    {
+      register real y;
+      y = A0+x*(A1+x*(A2+x*(A3)));
+      y *= y;
+      y *= y;
+      y *= y;
+      y *= y;
+      y = (y-Done)/(y+Done);
+      return PR*PO - PR*PO*y*y;
+    }
+  else
+    return Dzero;
 }
 
 #undef A0
@@ -260,6 +379,68 @@ flt
 FQDexpmx2(flt x)
 {
   return 2*x*FQexpmx(x*x);
+}
+
+#undef A0
+#undef A1
+#undef A2
+#undef A3
+#undef A4
+
+/* real/double version */
+ 
+#define A0   ((real)1.0)
+#define A1   ((real)0.125)
+#define A2   ((real)0.0078125)
+#define A3   ((real)0.00032552083)
+#define A4   ((real)1.0172526e-5) 
+
+real
+DQexpmx(real x)
+{
+  x = Dabs(x);
+  if (x < (real)13) 
+    {
+      register real y;
+      y = A0+x*(A1+x*(A2+x*(A3+x*A4)));
+      y *= y;
+      y *= y;
+      y *= y;
+      y = 1/y;
+      return y;
+    }
+  else
+    return Dzero;
+}
+
+real
+DQDexpmx(real x)
+{
+  register real y;
+  y = Dabs(x);
+  if (y < (real)13) 
+    {
+      y = A0+y*(A1+y*(A2+y*(A3+y*A4)));
+      y *= y;
+      y *= y;
+      y *= y;
+      y = 1/y;
+      return (x<Dzero)?(-y):(y);
+    }
+  else
+    return Dzero;
+}
+
+real
+DQexpmx2(real x)
+{
+  return DQexpmx(x*x);
+}
+
+real
+DQDexpmx2(real x)
+{
+  return 2*x*DQexpmx(x*x);
 }
 
 #undef A0
@@ -393,6 +574,131 @@ Fdspline(flt xx, int size, flt *parm)
     }
 }
 
+/*
+ * Same but for double precision (real)
+ * Dsplinit(n,real[3n]):   initialize a cubic spline interpolation.
+ * Dspline(x,n,real[3n]):  interpolate in x.
+ * Ddspline(x,n,real[3n]): derivative of the interpolation.
+ */
+
+void
+Dsplinit(int size, real *parm)
+{
+  real *x  = parm;
+  real *y  = parm+size;
+  real *y2 = parm+size+size;
+  real *k  = (real*)alloca(sizeof(real)*size);
+  real sig,p,q;
+  int i;
+  
+  y2[0] = y2[size-1] = k[0] = Dzero;
+  
+#ifndef NOLISP
+  for(i=1;i<size;i++)
+    if (x[i-1] >= x[i])
+      error(NIL,"Unordered X values in the spline",NIL);
+#endif
+  
+  for( i=1; i < size-1; i++) 
+    {
+      sig = (x[i]-x[i-1]) / (x[i+1]-x[i-1]);
+      p = sig*y2[i-1] + Dtwo;
+      q = (y[i+1]-y[i])/(x[i+1]-x[i]) - (y[i]-y[i-1])/(x[i]-x[i-1]);
+      y2[i] = (sig-1) / p;
+      k[i] = ( (real)(6.0)*q/(x[i+1]-x[i-1]) - sig*k[i-1] ) / p;
+    }
+  for( i=size-2; i>=0; i-- ) 
+    {
+      y2[i] = y2[i]*y2[i+1]+k[i];
+    }
+}
+
+
+real
+Dspline(real xx, int size, real *parm)
+{
+  real *x  = parm;
+  real *y  = parm+size;
+  real *y2 = parm+size+size;
+  
+  int k,klo,khi;
+  real a,b,h;
+
+  klo = 0;
+  khi = size-1;
+
+  while( khi-klo > 1 ) {
+    k = (khi+klo)>>1;
+    if (x[k]>xx)
+      khi = k;
+    else
+      klo = k;
+  }
+
+  h = x[khi]-x[klo];
+	
+  if (klo==0 && xx<x[klo]) 
+    {
+      real d = (y[khi]-y[klo])/h - h/(real)(6.0)*(2*y2[klo]+y2[khi]);
+      return y[klo] + (xx-x[klo])*d;
+    }
+  else if (khi==size-1 && xx>x[khi])
+    {
+      real d = (y[khi]-y[klo])/h + h/(real)(6.0)*(y2[klo]+2*y2[khi]);
+      return y[khi] + (xx-x[khi])*d;
+    }
+  else
+    {
+      a = (x[khi]-xx)/h;
+      b = (xx-x[klo])/h;
+      h = h*h/(real)(6.0);
+      return a*y[klo] + b*y[khi] + h*( (a*a*a-a)*y2[klo] + (b*b*b-b)*y2[khi] );
+    }
+}
+
+
+real
+Ddspline(real xx, int size, real *parm)
+{
+  real *x  = parm;
+  real *y  = parm+size;
+  real *y2 = parm+size+size;
+  
+  int k,klo,khi;
+  real a,b,h;
+
+  klo = 0;
+  khi = size-1;
+
+  while( khi-klo > 1 ) {
+    k = (khi+klo)>>1;
+    if (x[k]>xx)
+      khi = k;
+    else
+      klo = k;
+  }
+
+  h = x[khi]-x[klo];
+
+
+  if (klo==0 && xx<x[klo]) 
+    {
+      return (y[khi]-y[klo])/h - h/(real)(6.0)*(2*y2[klo]+y2[khi]);
+    }
+  else if (khi==size-1 && xx>x[khi])
+    {
+      return (y[khi]-y[klo])/h + h/(real)(6.0)*(y2[klo]+2*y2[khi]);  
+    }
+  else
+    {
+      a = (x[khi]-xx)/h;
+      a = (real)(3.0)*a*a - Done;
+      b = (xx-x[klo])/h;
+      b = (real)(3.0)*b*b - Done;
+      return (y[khi]-y[klo])/h + (b*y2[khi]-a*y2[klo])*h/(real)(6.0);
+    }
+}
+
 
 
 /*
@@ -482,6 +788,53 @@ Fgauss(void)
   }
   ma[inext] = (mj * 84589 + 45989) & MMASK;
   return (flt)(sum * FAC2);
+}
+
+
+/* should probably be rewritten to fill up all the bits */
+void Dseed(int x) { Fseed(x); }
+
+real 
+Drand(void)
+{
+  register int mj;
+
+  if (++inext == 56)
+    inext = 1;
+  if (++inextp == 56)
+    inextp = 1;
+  mj = ((ma[inext] - ma[inextp]) * 84589 + 45989) & MMASK;
+  ma[inext] = mj;
+  return (real)(mj * FAC);
+}
+
+
+real 
+Dgauss(void)
+{
+  /*
+   * Now a quick and dirty way to build
+   * a quasi-normal random number.
+   */
+  register int i;
+  register int mj, sum;
+  mj = 0;
+  sum = 0;
+  for (i = 12; i; i--) {
+    if (++inext == 56)
+      inext = 1;
+    if (++inextp == 56)
+      inextp = 1;
+    mj = (ma[inext] - ma[inextp]) & MMASK;
+    ma[inext] = mj;
+    if (mj & 0x00800000L)
+      mj |= 0xff000000L;
+    else
+      mj &= 0x00ffffffL;
+    sum += mj;
+  }
+  ma[inext] = (mj * 84589 + 45989) & MMASK;
+  return (real)(sum * FAC2);
 }
 
 #undef MMASK

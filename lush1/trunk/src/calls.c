@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: calls.c,v 1.6 2002-10-31 20:59:42 leonb Exp $
+ * $Id: calls.c,v 1.7 2003-09-26 03:54:45 profshadoko Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -509,7 +509,7 @@ DX(xseed)
 {
   ARG_NUMBER(1);
   ARG_EVAL(1);
-  Fseed((int)AREAL(1));
+  Dseed((int)AREAL(1));
   return NIL;
 }
 
@@ -526,11 +526,11 @@ DX(xrand)
     lo = -hi;
   } else {
     ARG_NUMBER(2);
-    lo = AFLT(1);
-    hi = AFLT(2);
+    lo = AREAL(1);
+    hi = AREAL(2);
   }
 
-  rand = Ftor(Frand());
+  rand = Drand();
   return NEW_NUMBER((hi - lo) * rand + lo);
 }
 
@@ -548,11 +548,11 @@ DX(xgauss)
     sdev = AREAL(1);
   } else {
     ARG_NUMBER(2);
-    mean = AFLT(1);
-    sdev = AFLT(2);
+    mean = AREAL(1);
+    sdev = AREAL(2);
   }
 
-  rand = Ftor(Fgauss());
+  rand = Dgauss();
   return NEW_NUMBER(sdev * rand + mean);
 }
 

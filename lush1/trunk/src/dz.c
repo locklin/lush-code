@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dz.c,v 1.6 2003-07-01 18:41:14 leonb Exp $
+ * $Id: dz.c,v 1.7 2003-09-26 03:54:46 profshadoko Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -38,7 +38,7 @@
 
 /* Don't malloc that! */
 int dz_trace=0;
-flt dz_stack[DZ_STACK_SIZE];
+real dz_stack[DZ_STACK_SIZE];
 typedef union dz_inst inst;
 
 /* The first `dz_offname` characters of an opcode describe 
@@ -207,7 +207,7 @@ trace_inst(int ad, inst *pc)
 
 
 static void
-print_stack(int pc, flt *sp, flt x)
+print_stack(int pc, real *sp, real x)
 {
   printf("%04d: S=[%7.3f",pc,x);
   while (sp>dz_stack)
@@ -216,20 +216,20 @@ print_stack(int pc, flt *sp, flt x)
 }
 
 static void
-print_reg(int pc, flt x)
+print_reg(int pc, real x)
 {
   printf("%04d: X=%7.3f\n",pc,x);
 }
 
 
-flt 
-dz_execute(flt top, struct dz_cell *dz)
+real 
+dz_execute(real top, struct dz_cell *dz)
 {
 
-  register flt x;
+  register real x;
   register inst *pc;
-  register flt *sp;
-  register flt y;
+  register real *sp;
+  register real y;
   register int arg,op;
   
   x = top;
@@ -292,56 +292,56 @@ dz_execute(flt top, struct dz_cell *dz)
   case op: prog; break
     MONADIC(OP_MINUS, x = -x );
     MONADIC(OP_INVERT, x = 1/x );
-    MONADIC(OP_ADD1, x += Fone );
-    MONADIC(OP_SUB1, x -= Fone );
-    MONADIC(OP_MUL2, x *= Ftwo );
-    MONADIC(OP_DIV2, x /= Ftwo );
-    MONADIC(OP_SGN, x = Fsgn(x) );
-    MONADIC(OP_ABS, x = Fabs(x) );
-    MONADIC(OP_INT, x = Ffloor(x) );
-    MONADIC(OP_SQRT, x = Fsqrt(x) );
-    MONADIC(OP_PIECE, x = Fpiece(x) );
-    MONADIC(OP_RECT, x = Frect(x) );
-    MONADIC(OP_SIN, x = Fsin(x) );
-    MONADIC(OP_COS, x = Fcos(x) );
-    MONADIC(OP_TAN, x = Ftan(x) );
-    MONADIC(OP_ASIN, x = Fasin(x) );
-    MONADIC(OP_ACOS, x = Facos(x) );
-    MONADIC(OP_ATAN, x = Fatan(x) );
-    MONADIC(OP_EXP, x = Fexp(x) );
-    MONADIC(OP_EXPM1, x = Fexpm1(x) );
-    MONADIC(OP_LOG, x = Flog(x) );
-    MONADIC(OP_LOG1P, x = Flog1p(x) );
-    MONADIC(OP_TANH, x = Ftanh(x) );
-    MONADIC(OP_COSH, x = Fcosh(x) );
-    MONADIC(OP_SINH, x = Fsinh(x) );
-    MONADIC(OP_ATANH, x = Fatanh(x) );
-    MONADIC(OP_QTANH, x = FQtanh(x) );
-    MONADIC(OP_QDTANH, x = FQDtanh(x) );
-    MONADIC(OP_QSTDSIGMOID, x = FQstdsigmoid(x) );
-    MONADIC(OP_QDSTDSIGMOID, x = FQDstdsigmoid(x) );
-    MONADIC(OP_QEXPMX, x = FQexpmx(x) );
-    MONADIC(OP_QDEXPMX, x = FQDexpmx(x) );
-    MONADIC(OP_QEXPMX2, x = FQexpmx2(x) );
-    MONADIC(OP_QDEXPMX2, x = FQDexpmx2(x) );
+    MONADIC(OP_ADD1, x += Done );
+    MONADIC(OP_SUB1, x -= Done );
+    MONADIC(OP_MUL2, x *= Dtwo );
+    MONADIC(OP_DIV2, x /= Dtwo );
+    MONADIC(OP_SGN, x = Dsgn(x) );
+    MONADIC(OP_ABS, x = Dabs(x) );
+    MONADIC(OP_INT, x = Dfloor(x) );
+    MONADIC(OP_SQRT, x = Dsqrt(x) );
+    MONADIC(OP_PIECE, x = Dpiece(x) );
+    MONADIC(OP_RECT, x = Drect(x) );
+    MONADIC(OP_SIN, x = Dsin(x) );
+    MONADIC(OP_COS, x = Dcos(x) );
+    MONADIC(OP_TAN, x = Dtan(x) );
+    MONADIC(OP_ASIN, x = Dasin(x) );
+    MONADIC(OP_ACOS, x = Dacos(x) );
+    MONADIC(OP_ATAN, x = Datan(x) );
+    MONADIC(OP_EXP, x = Dexp(x) );
+    MONADIC(OP_EXPM1, x = Dexpm1(x) );
+    MONADIC(OP_LOG, x = Dlog(x) );
+    MONADIC(OP_LOG1P, x = Dlog1p(x) );
+    MONADIC(OP_TANH, x = Dtanh(x) );
+    MONADIC(OP_COSH, x = Dcosh(x) );
+    MONADIC(OP_SINH, x = Dsinh(x) );
+    MONADIC(OP_ATANH, x = Datanh(x) );
+    MONADIC(OP_QTANH, x = DQtanh(x) );
+    MONADIC(OP_QDTANH, x = DQDtanh(x) );
+    MONADIC(OP_QSTDSIGMOID, x = DQstdsigmoid(x) );
+    MONADIC(OP_QDSTDSIGMOID, x = DQDstdsigmoid(x) );
+    MONADIC(OP_QEXPMX, x = DQexpmx(x) );
+    MONADIC(OP_QDEXPMX, x = DQDexpmx(x) );
+    MONADIC(OP_QEXPMX2, x = DQexpmx2(x) );
+    MONADIC(OP_QDEXPMX2, x = DQDexpmx2(x) );
 #undef MONADIC
     
     /* Special */
   case OP_RAND:
     *sp++ = x;
-    x = Frand();
+    x = Drand();
     break;
   case OP_GAUSS:
     *sp++ = x;
-    x = Fgauss();
+    x = Dgauss();
   case OP_SPLINE_n:
     arg = pc[-1].code.arg;
-    x = Fspline(x,arg/3,(flt*)pc);
+    x = Dspline(x,arg/3,(real*)pc);
     pc += arg;
     break;
   case OP_DSPLINE_n:
     arg = pc[-1].code.arg;
-    x = Fdspline(x,arg/3,(flt*)pc);
+    x = Ddspline(x,arg/3,(real*)pc);
     pc += arg;
     break;
 
@@ -356,9 +356,9 @@ dz_execute(flt top, struct dz_cell *dz)
     DIADIC(OP_DIV_i, OP_DIV_r, OP_DIV, x/=y );
     DIADIC(OP_MAX_i, OP_MAX_r, OP_MAX, if (y>x) x=y );
     DIADIC(OP_MIN_i, OP_MIN_r, OP_MIN, if (y<x) x=y );
-    DIADIC(OP_DIVI_i, OP_DIVI_r, OP_DIVI, x = (flt)((int)x/(int)y) );
-    DIADIC(OP_MODI_i, OP_MODI_r, OP_MODI, x = (flt)((int)x%(int)y) );
-    DIADIC(OP_POWER_i, OP_POWER_r, OP_POWER, x = Fexp(y*Flog(x)) );
+    DIADIC(OP_DIVI_i, OP_DIVI_r, OP_DIVI, x = (real)((int)x/(int)y) );
+    DIADIC(OP_MODI_i, OP_MODI_r, OP_MODI, x = (real)((int)x%(int)y) );
+    DIADIC(OP_POWER_i, OP_POWER_r, OP_POWER, x = Dexp(y*Dlog(x)) );
 #undef DIADIC
       
     /* Branches */
@@ -412,16 +412,16 @@ dz_execute(flt top, struct dz_cell *dz)
 /* --------- THE DZ FAST ACCESS FUNCTIONS ----- */
 
 
-static flt 
-dz_exec_2(flt x0, flt x1, 
+static real 
+dz_exec_2(real x0, real x1, 
           struct dz_cell *dz)
 {
   dz_stack[0]=x0;
   return dz_execute(x1,dz);
 }
 
-static flt 
-dz_exec_3(flt x0, flt x1, flt x2, 
+static real 
+dz_exec_3(real x0, real x1, real x2, 
           struct dz_cell *dz)
 {
   dz_stack[0]=x0;
@@ -429,8 +429,8 @@ dz_exec_3(flt x0, flt x1, flt x2,
   return dz_execute(x2,dz);
 }
 
-static flt 
-dz_exec_4(flt x0, flt x1, flt x2, flt x3, 
+static real 
+dz_exec_4(real x0, real x1, real x2, real x3, 
           struct dz_cell *dz)
 {
   dz_stack[0]=x0;
@@ -439,9 +439,9 @@ dz_exec_4(flt x0, flt x1, flt x2, flt x3,
   return dz_execute(x3,dz);
 }
 
-static flt 
-dz_exec_5(flt x0, flt x1, flt x2, flt x3, 
-          flt x4, 
+static real 
+dz_exec_5(real x0, real x1, real x2, real x3, 
+          real x4, 
           struct dz_cell *dz)
 {
   dz_stack[0]=x0;
@@ -451,9 +451,9 @@ dz_exec_5(flt x0, flt x1, flt x2, flt x3,
   return dz_execute(x4,dz);
 }
 
-static flt 
-dz_exec_6(flt x0, flt x1, flt x2, flt x3, 
-          flt x4, flt x5, 
+static real 
+dz_exec_6(real x0, real x1, real x2, real x3, 
+          real x4, real x5, 
           struct dz_cell *dz)
 {
   dz_stack[0]=x0;
@@ -465,9 +465,9 @@ dz_exec_6(flt x0, flt x1, flt x2, flt x3,
 }
 
 
-static flt 
-dz_exec_7(flt x0, flt x1, flt x2, flt x3, 
-          flt x4, flt x5, flt x6, 
+static real 
+dz_exec_7(real x0, real x1, real x2, real x3, 
+          real x4, real x5, real x6, 
           struct dz_cell *dz)
 {
   dz_stack[0]=x0;
@@ -479,9 +479,9 @@ dz_exec_7(flt x0, flt x1, flt x2, flt x3,
   return dz_execute(x6,dz);
 }
 
-static flt 
-dz_exec_8(flt x0, flt x1, flt x2, flt x3, 
-          flt x4, flt x5, flt x6, flt x7, 
+static real 
+dz_exec_8(real x0, real x1, real x2, real x3, 
+          real x4, real x5, real x6, real x7, 
           struct dz_cell *dz)
 {
   dz_stack[0]=x0;
@@ -494,13 +494,13 @@ dz_exec_8(flt x0, flt x1, flt x2, flt x3,
   return dz_execute(x7,dz);
 }
 
-static flt
+static real
 dz_error()
 {
   error("C error","C call to a dz with more than 8 arguments",NIL);
 }
 
-typedef flt (*dz_call_t)(flt, ...);
+typedef real (*dz_call_t)(real, ...);
 
 static dz_call_t dz_call[] = {
   (dz_call_t) dz_error,
@@ -963,7 +963,7 @@ DX(xdz_load)
 
 
 void 
-dz_define(char *name, char *opcode, flt (*cfun)(flt))
+dz_define(char *name, char *opcode, real (*cfun)(real))
 {
   at *symb,*func;
   struct dz_cell *dz;
@@ -1020,7 +1020,7 @@ dz_listeval(at *p, at *q)
       error(NIL, "Not enough arguments", q);
     if (! (qq && NUMBERP(qq->Car)))
       error(NIL,"Not a number", q->Car);
-    dz_stack[i] = (flt)(qq->Car->Number);
+    dz_stack[i] = (real)(qq->Car->Number);
     qq = qq->Cdr;
   }
   if (qq)
@@ -1060,7 +1060,7 @@ dz_serialize(at **pp, int code)
       if (ncst > 0) 
         {
           ncst++;
-          serialize_flt(&pc->constant, code);
+          serialize_real(&pc->constant, code);
         }
       else
         {
@@ -1141,7 +1141,7 @@ gen_inst(union dz_inst **pc_p)
       int i;
       at *p;
       struct index *ind;
-      p = F_matrix(1,&arg);
+      p = D_matrix(1,&arg);
       ind = p->Object;
       for(i=0;i<arg;i++) {
 	easy_index_set(ind,&i,(real)((*pc_p)->constant));
@@ -1220,8 +1220,8 @@ lisp_spline(int arg_number, at *arg_array[], char *op)
   struct index *ind;
   int dim[2];
   int i,n;
-  flt *wspace;
-  flt *x,*y;
+  real *wspace;
+  real *x,*y;
 
   at *ans;
   struct dz_cell *dz;
@@ -1234,7 +1234,7 @@ lisp_spline(int arg_number, at *arg_array[], char *op)
   dim[1] = 2;
   ind = easy_index_check(APOINTER(1),2,dim);
   n = dim[0];
-  wspace = (flt*)alloca( sizeof(flt) * 3 * n );
+  wspace = (real*)alloca( sizeof(real) * 3 * n );
   ifn (wspace)
     error(NIL,"Not enough memory",NIL);
   
@@ -1247,7 +1247,7 @@ lisp_spline(int arg_number, at *arg_array[], char *op)
     dim[1]=1;
     *y++ = easy_index_get(ind,dim);
   }
-  Fsplinit(n,wspace);
+  Dsplinit(n,wspace);
   
   ans = dz_new(1, 1, 3*n+1);
   dz = ans->Object;
@@ -1315,10 +1315,10 @@ init_dz(void)
     dz_define("cosh", "COSH", NULL);
     dz_define("sinh", "SINH", NULL);
 
-    dz_define("qtanh", "QTANH", FQtanh);
-    dz_define("qdtanh", "QDTANH", FQDtanh);
-    dz_define("qstdsigmoid", "QSTDSIGMOID", FQstdsigmoid);
-    dz_define("qdstdsigmoid", "QDSTDSIGMOID", FQDstdsigmoid);
+    dz_define("qtanh", "QTANH", DQtanh);
+    dz_define("qdtanh", "QDTANH", DQDtanh);
+    dz_define("qstdsigmoid", "QSTDSIGMOID", DQstdsigmoid);
+    dz_define("qdstdsigmoid", "QDSTDSIGMOID", DQDstdsigmoid);
 
 #ifdef SLOW_EXPONENTIAL
 #define P(x) x
@@ -1326,10 +1326,10 @@ init_dz(void)
 #define P(x) NULL
 #endif
 
-    dz_define("qexpmx", "QEXPMX", P(FQexpmx));
-    dz_define("qdexpmx", "QDEXPMX", P(FQDexpmx));
-    dz_define("qexpmx2", "QEXPMX2", P(FQexpmx2));
-    dz_define("qdexpmx2", "QDEXPMX2", P(FQDexpmx2));
+    dz_define("qexpmx", "QEXPMX", P(DQexpmx));
+    dz_define("qdexpmx", "QDEXPMX", P(DQDexpmx));
+    dz_define("qexpmx2", "QEXPMX2", P(DQexpmx2));
+    dz_define("qdexpmx2", "QDEXPMX2", P(DQDexpmx2));
 
 #undef P
 }
