@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.6 2002-06-24 18:51:12 leonb Exp $
+ * $Id: fileio.c,v 1.7 2002-07-31 00:21:33 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -1270,7 +1270,7 @@ search_file(char *ss, char *suffixes)
 
 DX(xfilepath)
 {
-  char *suf = ".lshc|.lsh|.lshc|.lsh|";
+  char *suf = ".lshc|.snc|.tlc|.lsh|.sn|.tl|";
   char *ans;
   ALL_ARGS_EVAL;
   if (arg_number!=1)

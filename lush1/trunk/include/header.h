@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.33 2002-07-29 21:02:13 leonb Exp $
+ * $Id: header.h,v 1.34 2002-07-31 00:21:30 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -1242,6 +1242,7 @@ extern LUSHAPI int  lside_check_ownership(void *cptr);
 extern LUSHAPI void cside_create_idx(void *cptr);
 extern LUSHAPI void cside_create_srg(void *cptr);
 extern LUSHAPI void cside_create_obj(void *cptr, dhclassdoc_t *);
+extern LUSHAPI void cside_destroy_range(void *from, void *to);
 
 
 
