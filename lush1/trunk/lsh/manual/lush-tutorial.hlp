@@ -613,22 +613,30 @@ program <"tutu.lsh"> that uses some of those functions.  The beginning of
 {<code>
   #? *** My Cool Signal Processing Application
   ;; this is my really cool dsp application.
-  
-  (load "/home/yann/lsh/dsp")
-  .....
-</code>}
-
-(the <.lsh> extension is automatically added if required).  However, if
-<"tutu.lsh"> is loaded by other programs that also load <"dsp.lsh">
-on their own, <"dsp.lsh"> will be loaded several times.  This can be
-alleviated by using the function <libload> which loads a file only if it
-has not been loaded before.
-{<code>
-  #? *** My Cool Signal Processing Application
-  ;; this is my really cool dsp application.
-  
   (libload "/home/yann/lsh/dsp")
   .....
+</code>}
+(the <.lsh> extension is automatically added if required).  
+
+The function <libload> has an interesting features: it remembers which
+files were already libloaded and loads them only once into the
+interpreter (subsequent calls to libload with a previously libloaded
+file will have no effect).  There is an exception to this behavior:
+<libload> keeps track of the tree of dependencies between Lush program
+files, and also keeps track of the times of last modification of each
+file. When a file is loaded with <libload>, all the files on which
+this file depends are also loaded, but only if they have been modified
+since last time they were libloaded. Here is a possible scenario: 
+file A libloads files B and C. File A is libloaded, as a result file
+B and C are libloaded. File B is modified. File A is libloaded again,
+as a result B is re-libloaded, and A is re-libloaded. C is not re-libloaded
+since it was previously libloaded and was not modified. This behavior
+is recursive (it applies to all files directly or inderectly libloaded by A).
+
+In certain cases, the lower-level function <load> may be 
+preferable. <load> simply loads a file:
+{<code>
+  ? (load "/home/yann/lsh/dsp")
 </code>}
 
 Putting absolute path names in a program is generally a bad idea since
@@ -646,13 +654,6 @@ now, loading <"dsp.lsh"> only requires:
 {<code>
   (libload "dsp")
 </code>}
-
-The function <libload> has another important feature: it keep track of 
-the tree of dependencies between Lush program files. It also keeps
-track of the times of last modification of each file: when a file
-is loaded with <libload>, all the files on which this file depends
-are also loaded, but only if they have been modified since last
-time they were libloaded.
 
 #? *** Calling C functions from Lush
 
@@ -1148,12 +1149,12 @@ as demonstrated in the libary file <lush/lsh/libidx/idx-convol.lsh>.
 
 #? ** Simple Linear Algebra
 
-Lush provides a full interface to the Gnu Scientific Library as
-well as to BLAS and LAPACK, which contain all the linear algebra
-anyone could wish for. Using those functions directly may be a bit 
-complicated, so lush provides a library with simple forms of the 
-most common functions. This library can be loaded with 
-{<c> (libload "gsl/libgsl")}. It contains the following functions:
+Lush provides a full interface to the Gnu Scientific Library as well
+as to BLAS and LAPACK, which contain all the linear algebra anyone
+could wish for. Using those functions directly may be a bit
+complicated, so lush provides a library with simple forms of the most
+common functions. This library can be loaded with {<c> (libload "libnum/linalgebra")}. 
+It contains the following functions:
 {<ul>
  {<li> {<c> (eigen-symm m)}: eigenvalues of real symmetric matrix}
  {<li> {<c> (eigen-symmv m)}: eigenvalues and eigenvectors of 
@@ -1173,6 +1174,39 @@ most common functions. This library can be loaded with
  {<li> {<c> (determinant-log a)}: log determinant }
  {<li> {<c> (determinant-sign a)}: sign of determinant }
 }
+
+#? *** Complex Numbers
+
+Complex numbers in Lush are represented as (and totally equivalent to)
+vectors of doubles with 2 elements. Lush's complex numbers library is
+not automatically loaded at startup and should be loaded with: 
+{<code>
+  (libload "libnum/libcomplex")
+</code>}
+Creating a complex number is done just like creating a vector of 2 doubles,
+or using the macro <new-complex>, which is equivalent to {<c> (double-matrix 2)}:
+{<code>
+  (setq z [3 4])            ; complex literal [real-part imaginary-part]
+  (setq z (new-complex))    ; allocation of complex [0 0]
+</code>}
+Complex vectors and matrices can be created with <complex-matrix>:
+{<code>
+  (setq z (complex-matrix 3 3))
+</code>}
+which is exactly equivalent to:
+{<code>
+  (setq z (double-matrix 3 3 2))
+</code>}
+Several complex arithmetics and functions are provided. The function names all begin
+with the letter <c>. Complex dyadic functions include <c+, c-, c*, c/, c**, clogb>
+(addition, subtraction, multiplication, division, power, complex log with complex base).
+All commonunary operations on complex are also provided, including conjugate, inverse,
+square root, exponential, log, and trigonometric functions. More details can be
+obtained in the packages/libnum section of the Lush manual ({<hlink> "libnum: Numerical Library"}).
+
+The meory layout of complex vectors and matrices so defined are compatible with the 
+LAPACK and GSL functions that take double complex vectors and matrices as arguments.
+
 
 #? *** Object-Oriented Lush Programming
 
@@ -1482,15 +1516,162 @@ Now, here is a slightly more sophisticated example:
      image-viewer))
 </code>}
 
-#? *** Programming Games with SDL
+#? *** Using the Simple Directmedia Layer interface (SDL)
 
 Lush includes an interface to the well-known SDL library
-(Simple Directmedia Layer), and a set of higher-level
-classes, such as screens and sprites, that allow rapid 
-development of graphic-intensive interactive applications 
-such as real-time 2D games. A quick tutorial is available
-in the Tutorial section of the Lush manual.
-{<see> SDL: Simple DirectMedia Layer}
+(Simple Directmedia Layer), which has platform-independent 
+functions for 2D graphics, timers, low-level keyboard, mouse,
+and joystick input, sound playing, direct read from CDROM,
+and many others features.
+
+Lush provides a high-level interface to some of those functions in
+<sdl/libsdl>. It includes higher-level classes, such as screens and
+sprites, with pixel-accurate collision detection. This allows rapid
+development of graphic-intensive interactive applications such as
+real-time 2D games.
+
+A tutorial on writing simple games with SDL is available in the
+Tutorial section of the Lush manual. A full documentation of the SDL
+interface is available at {<hlink> "SDL: Simple DirectMedia Layer"}
+
+The present section is a quick introduction to the <libsdl> library.
+Before you start, make sure SDL and all its development libraries
+and header files are installed on your system. If you are on Linux,
+those things are available as packages with your distro.
+
+Loading and initializing the <libsdl> library is performed with:
+{<code>
+  (libload "sdl/libsdl")
+  (sdl-initialize)
+</code>}
+Next, we can open an SDL screen. <libsdl> provides three kinds of SDL screen classes.
+{<ul>
+ {<li> The first kind, <sdl-screen> is prefered if you intend to draw on the screen
+  using <libsdl>'s sprite class, or using SDL's low-level drawing functions.}
+ {<li> The second  kind, <sdlgl-screen> is prefered if you intend draw 3D graphics
+  using OpenGL.}
+ {<li> The third kind, <sdlidx-screen> is prefered if you want to draw your images into
+  a regular Lush matrix, and quickly update an SDL screen with the content of that matrix.}
+}
+
+#? sdlidx-screen class: Mapping the content of an IDX to an SDL screen
+
+Let's start by describing the <sdlidx-screen> class.  Opening an
+<sdlidx-screen> is done by first allocating a <ubyte-matrix> of size
+HxWx4, and then creating an <sdlidx-screen> with this matrix as
+argument. This will open an SDL screen of width W and height H:
+{<code>
+  (setq depth 3)
+  (setq m (ubyte-matrix 480 640 depth))
+  (setq screen (new sdlidx-screen m "my title"))
+</code>}
+If the <depth> parameter is 3, each element of matrix <m> is a
+component of an RGB pixel.  So for example {<c> (m y x 0)} is the R
+component of pixel (x,y) (from the top left of the screen).  If the
+<depth> parameter is 4, each element of <m> is a component of an RGBA
+pixel. The A component is the Alpha channel (transparency). An alpha
+value of 255 is opaque, while 128 is half transparent. The matrix <m>
+can be seen as the "back buffer" of a double-buffered screen. Changing
+values in <m> will not immediately change the corresponding pixel on
+the screen. Once the desired RGBA image has been written in <m>,
+slapping it on the screen can be done with {<c> (==> screen flip)}. If
+the screen was opened with <depth>=4, the image displayed will be an
+alpha-blended mixture of the previously displayed image and the
+content of <m>. Here is a complete example:
+{<code>
+  (libload "sdl/libsdl")
+  (libload "libimage/image-io")
+  (libload "libimage/rgbaimage")
+  (sdl-initialize)
+  (setq m (ubyte-matrix 480 640 3))
+  (setq screen (new sdlidx-screen m "my picture"))
+  (setq photo (rgbaim-resize (image-read-rgba "mypicture.jpg") 640 480 0))
+  (idx-copy (narrow photo 2 3 0) m)
+  (==> screen flip)
+</code>}
+Subsequent calls to {<c> (==> screen flip)} will refresh the screen
+with the content of <m>.  Note that SDL screens (unlike regular Lush
+graphic windows) are not automatically refreshed when uncovered from
+behind other windows. That is why SDL screens should be used only for
+animated graphics and games. Refresh rates on SDL screens are likely
+to be faster than with regular Lush graphic windows.
+
+#? sdl-screen class: doubled buffered animations
+
+The <sdl-screen> class is intended for double-buffered animations
+using sprites (movable screen objects). This situation is primarily
+encountered when writing video games and other interactive multimedia
+applications.
+
+Opening an <sdl-screen> is simply done with {<c> (setq screen (new
+sdl-screen 800 600 "the title"))}.  Drawing into an <sdl-screen> is
+made very simple by the <sdl-sprite> class (as explained below), but
+low-level SDL drawing can be performed by creating <SDL_surface>
+objects and calling <SDL_BlitSurface> on the <p> slot of the
+<sdl-screen>.
+
+#? sdl-sprite: movable animated objects
+
+Interactive multimedia applications often involve drawing movable
+objects on the screen.  This can be performed using Lush's sdl-sprite
+class, defined also in <sdl/libsdl>.  Creating a sprite for drawing on
+the sdl-screen <screen>, and loading an image into it is done as
+follows: 
+{<code>
+  (setq sprite (new sdl-sprite screen 1))
+  (==> sprite load-frame "mysprite.png" 0 0 0)
+</code>}
+This creates a new <sdl-sprite> with id number 1 on screen <screen>,
+and loads frame 0 of this sprite with the image in file "mysprite.png"
+(the image can be in any format accepted by the SDL-image library
+dstributed with SDL). The three numerical arguments (all zeros in the
+example) are the frame number to be loaded, and the coordinates of the
+"handle" or "hot-point" of the sprite relative to the top-left corner.
+
+Sprites can be moved around and drawn on the screen with:
+{<code>
+  (==> sprite move x y)
+  (==> sprite draw)
+  (==> screen flip)
+</code>}
+All drawing operations occur in the back buffer (not on the visible
+screen) until the call to {<c> (==> screen flip)}.
+
+The main loop of a typical application will look something like this:
+{<code>
+  (while (not stop)
+    [get user input, update coordinates, and such]
+    (==> screen clear)
+    (==> sprite1 move x1 y1)
+    (==> sprite2 move x2 y2)
+    (==> sprite1 draw)
+    (==> sprite2 draw)
+    (==> screen flip))
+</code>}
+Sprites can have multiple frames. Switching between frames provides a
+mechanism for animating sprites.  More details on how to write such
+applications (including reading keyboard events, animation and such)
+are given in the tutorial {<hlink> "Tutorial: Writing Games with Lush
+and SDL."}. The code for that tutorial is available at
+{<c> ,(concat lushdir "/packages/sdl/demos/tutorial.lsh")}.
+
+
+
+#? sdlgl-screen class: OpenGL 3D graphics in SDL screens
+
+The <sdlgl-screen> class is designed to allow OpenGL 3D graphics in an
+SDL screen. OpenGL graphics can be done in such an SDL screen, or can
+be done directly in GLUT windows. The <sdlgl-screen> should be used
+when SDL functionalities are used. Opening an <sdlgl-screen> can be
+done just like opening an <sdl-screen>:
+{<code>
+  (setq screen (new sdlgl-screen 640 480 "my title"))
+</code>}
+An example of use of <sdlgl-screen> is available at
+{<c> ,(concat lushdir "/packages/sdl/demos/sdlgl-demos-01.lsh")}.
+
+
+#? *** Using OpenGL
 
 Lush is also interfaced to OpenGL, and OpenRM which 
 allows the development of 3D graphic applications.
