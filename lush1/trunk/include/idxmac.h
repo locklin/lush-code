@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxmac.h,v 1.2 2002-07-06 02:07:47 leonb Exp $
+ * $Id: idxmac.h,v 1.3 2002-08-19 17:53:03 leonb Exp $
  **********************************************************************/
 
 #ifndef IDXMAC_H
@@ -257,8 +257,7 @@ struct srg *newi = & name2(_srg_,newi)
 /* Define new index newi as a clone of index i */
 
 #define Midx_short_clone(newi, i) \
-{ int j; \
-  newi->flags = (i)->flags; \
+{ newi->flags = (i)->flags; \
   newi->ndim = (i)->ndim; \
   newi->offset = (i)->offset; \
   newi->srg = (i)->srg; 
