@@ -1,0 +1,625 @@
+$Id: objects.hlp,v 1.1.1.1 2002-04-16 17:37:30 leonb Exp $
+#? *** Objects.
+
+All atoms are stored as pairs (class, instance). The ``class'' component
+provides informations about the general properties of that kind of atom. The
+``instance'' component contains the properties of this specific atom in
+particular.  Classes themselves are unnamed atoms, stored as value of
+certain symbols. For example, classes are instances of the class <class>,
+i.e.  of the class stored as value of the symbol <class>.
+
+#? ** Object Terminology.
+
+A class defines two major kind of informations:
+.IP
+An atom can contain storage for one or several lisp objects. Such
+storage areas are called ``slots'', and have symbolic names. A class
+defines the number of slots allocated in a new atom as well as their
+names. This slot information is statically defined by the <defclass>
+function during the class definition.
+.IP
+Atoms can receive messages sent with the function ==>. Messages are
+identified by a symbol called the message selector. A class defines
+the possible message selectors and the functions to execute when it
+receives such messages. These ``methods'' are dynamically defined with
+the <putmethod> function.
+.PP
+Predefined classes associated to standard TLisp objects however often
+have hidden properties. A symbol, for example, has some storage for
+its value; this storage is not a slot. A symbol also returns its value
+when it is evaluated; this behavior is not a method.
+
+#? ** Inheritance.
+
+New classes defined with the <defclass> function always are subclasses
+of another class. This latter superclass, may again have its own
+superclasses.
+.IP
+``A class inherits the slots of its superclasses''.  When a new object
+is created, space is allocated for the slots defined by its class, and
+also for the slots defined by all its superclasses.
+.IP
+``A class inherits the methods of its superclasses''.  When an object
+receives a message with a given selector, it searches the methods
+defined by its class for the selector. If no method is found that
+matches the selector, it searches the methods of its superclass, the
+methods of the superclass of its superclass, and so on. When it
+reaches a matching method, it executes the associated function like an
+instance of the class that defines the matching method.
+.PP
+
+#? ** Predefined Classes
+
+Here is a compact list of the main predefined classes. Most of them
+are named by uppercase symbols, which ought to be surrounded with bars
+for avoiding the usual lowercase conversion.
+.IP 
+<object>: The root class of most user defined classes.
+.IP 
+<class>: Classes actually are lisp objects, instance of the <class>
+class. Class <class> thus is an instance of itself !
+.IP
+<|NUMBER|>: The class of the numbers.  
+.IP
+<|LIST|>: The class of the pairs used for building lists.
+.IP
+<|SYMB|>: The class of the symbols.
+.IP
+<|STRING|>: The class of the strings.
+.IP
+<|DE|> <|DF|> <|DM|> <|DX|> <|DY|>: The classes of the functions.
+.IP
+etc...
+.PP
+Hidden properties of complex predefined classes are also inherited.
+For example, <setq> shall work on any instance of a subclass of
+class <|SYMB|>.  
+
+All the user defined classes must be direct or indirect
+subclasses of the class <object>. This <object> class defines a
+vanilla lisp object with no hidden properties. Instances of subclasses
+of the class <object> are easily created with the function <new>.
+
+
+
+
+#? ** Defining a Class.
+
+#? (defclass <name> <superclass> <s1> ... <sn>)
+
+Defines a subclass of class <superclass> with slots <s1>...<sn>.
+The class is stored into symbol <name>, which is returned.  
+Slot specifications <s1>...<sn> can be symbols or lists <(symbol
+default)> which indicate initial values assigned to the slots of a new
+object.
+
+Example:
+.VP
+ ;;; Creates a class <rect> with two slots <width> and <height>
+ ? (defclass rect object
+       width height )
+ = rect
+ ;;; Creates a subclass of <rect>,
+ ;;; with a an additional slot <name> slot with default value <"noname">
+ ? (defclass namedrect rect
+       (name "noname") )
+ = namedrect
+.PP
+
+#? (classname <c>)
+
+Returns the name of class <c>, that is to say the symbol whose value was set
+by function <defclass>.
+
+Example:
+.VP
+? (classname rect)
+= rect
+.PP
+
+#? (slots <c>)
+Returns the list of the slots defined for class <c>.
+
+Example:
+.VP
+? (slots rect)
+= (width height)
+? (slots namedrect)
+= ((name "noname"))
+.PP
+
+#? (methods <c>)
+Returns the list of all method names defined in class <c>.
+
+#? (super <c>)
+Returns the superclass of class <c>, or the empty list if <c> has no
+superclass.
+
+Example:
+.VP
+ ? (super rect)
+ = ::class:object
+ ? (classname (super namedrect))
+ = rect
+.PP
+
+#? (subclasses <c>)
+
+Returns the list of all subclasses of class <c>. When argument <c> is the
+empty list, function <subclasses> returns the list of root classes, i.e.
+classes without superclass.
+
+Example:
+.EX (subclasses object)
+
+#? (rsubclasses <c>)
+.FILE miscenv.sn
+Returns the recursive list of all subclasses of class <c>. When argument <c> is the
+empty list, function <subclasses> returns the recursive list of all classes.
+
+Example:
+.VP
+? (rsubclasses button)
+((::class:stdbutton (::class:tinybutton))
+ (::class:checkbox (::class:radiobutton)) (::class:filereqbutton)
+ (::class:c-iconbutton) (::class:c-logo) )
+= ()
+.PP
+
+
+#? ** Creating Objects.
+
+#? (new <class> ... <args> ...)
+.TYPE DY
+
+Creates a new instance of a subclass <class> of the class <object>.
+
+If no constructor method is defined, no arguments are allowed. If a
+constructor method is defined for class <class>, a construction message is
+sent to the new object, with arguments <args>.
+
+Example:
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Creates instances of classes <rect> and <namedrect>
+ ? (setq r (new rect))
+ = ::rect:06fa0
+ ? (setq nr (new namedrect))
+ = ::namedrect:06fe8
+.PP
+
+This function works only for creating instances of subclass of the
+class <object>. It is not possible to directly create instances of
+subclasses of other predefined classes.
+
+
+
+#? (delete <x>)
+Deletes the TLisp object <x>.
+
+The operation of this function is somewhat tricky because all other
+references to object <x> must be converted to references to the empty list.  
+
+First of all, if destructor methods are defined, destruction messages are
+sent. Object <x> is then converted to an instance of the class <|ZOMBIE|>.
+During its normal operation, the interpreter recognizes these zombies and
+always replaces a reference to a zombie by a reference to the empty list.
+
+
+#? (classof <x>)
+Returns the class of an object <x>.
+
+Example:
+.EX (classof (new object))
+
+#? (is-of-class <x> <class>)
+
+Tests if the class of object <x> of any of its superclass is equal to
+class <class>.
+
+Example:
+.VP
+ ? (is-of-class nr rect)
+ = t
+
+
+#? ** Accessing Slots.
+
+There are various ways to read or change the values stored in the slots
+of an object. Changing the value stored in a slot changes the object
+in a way comparable to <rplaca> and <rplacd> in the case of lists.
+This change will be reflected through all pointers referring to 
+this same object.
+.SEE (== <n1> <n2>)
+
+
+#? :<obj>:<slot1>...:<slotn>
+.TYPE DMC
+.FILE sysenv.sn
+.SEE (scope <obj> <slot1> ... <slotn>)
+.SEE (scope <symb>)
+This macro character is expanded as a call to the <scope> function.
+
+#? (scope <obj> <slot1> ... <slotn>)
+.SEE :<obj>:<slot1>...:<slotn>
+.SEE (scope <symb>)
+
+The simplest method for setting or getting the slots of an object is
+called the ``scope macro''. The syntax <:obj:slot> refers to the slot
+slot of object obj.  Actually, the scope macro character converts
+expression <:obj:slot> into a list <(scope obj slot)>.
+
+When this list is evaluated, the <scope> function returns the value of
+slot <slot> of object <obj>. Moreover, most functions that affect the
+value of a symbol recognize such a list as a reference to slot <slot>
+of object <obj>.
+
+Nested scope macros are allowed: <:obj:slot_1:slot2> refers to
+slot <slot2> of the object contained in slot <slot1> of object <obj>.
+
+Example:
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Objects <r> and <nr> are defined as examples for <new>
+ ? (setq :nr:name "myrectangle")
+ = "myrectangle"
+ ? (setq :nr:width  8 
+         :nr:height 6 )
+ = 6
+ ? (print :nr:width :nr:height :nr:name)
+ 8 6 "myrectangle"
+ = "myrectangle"
+.PP
+
+#? (scope <symb>)
+.SEE (scope <obj> <slot1> ... <slotn>)
+.SEE :<obj>:<slot1>...:<slotn>
+
+The scope macro has another important use, the ``unary scope macro''.
+Expression <:symb> is converted into list <(scope symb)> which refers
+to the global value of symbol <symb>.
+
+Example:
+.VP
+? (setq x 3)
+= 3
+? (let ((x 8))
+    (print :x)
+    (setq :x 6)
+    (print x) )
+3
+8
+= 8
+? x
+= 6
+.PP
+
+
+#? (letslot <obj> <l1> ... <ln>)
+.SEE (scope <obj> <slot1> ... <slotn>)
+.SEE this
+
+Calls function <progn> on <l1>...<ln> within the scope of object
+<obj>, and returns the last result.  Within the object scope, each
+slot of the object, either defined by its class or inherited from its
+superclasses, can be directly accessed as value of its symbolic slot
+name.
+
+Example:
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Objects <r> and <nr> are defined as examples for <new>
+ ? (setq width ())
+ = ()
+ ? (letslot r
+        (setq width 4)
+        (setq height 5) )
+ = 5
+ ? width
+ = ()
+ ? (letslot r (* width height))
+ = 20
+.PP
+
+Within an object scope, the symbol <this> always refers to object
+itself.  The behavior of the others symbols remains unaffected, with
+the following restriction:
+
+
+The function <setq> causes an error if you create a new global
+variables from an object scope. This feature prevents many obscure
+bugs in TLisp programs, that may occur if you mistype the name of a
+slot.  However, the warning is not issued if you explicitely address a
+global variable by using the unary scope macro.
+
+Good practice actually consists in explicitely create all global
+variables with the unary scope macro before using them, as the
+<"graphenv.sn"> does.
+
+
+
+#? ** Defining Methods.
+
+#? (defmethod <class> <symb> <args> . <body>)
+.TYPE DM
+.FILE sysenv.sn
+.SEE Argument List.
+.SEE (==> <obj> <symb> ... <args> ... )
+
+Defines a method named <symb> for class <class>.  Argument <symb> must
+be a symbol, and is not evaluated.  Argument <args> must be a valid
+argument list.
+
+When an instance of class <class> receives a message whose selector is
+<symb>, the body <body> of the method is executed with a call to function
+<progn>.  During this execution, the slots defined by <class> and its
+superclasses are bound to their symbolic names, as in <letslot>, and the
+arguments of the message are evaluated and bound to the symbols in argument
+list <args>.
+
+Example:
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Objects <r> and <nr> are defined as examples for <new>
+ ;;
+ ;; This is a method for computing the surface of a rect.
+ ? (defmethod rect surface()
+        (* width height) )
+ = surface
+ ;; a method for printing  n times the name of a namedrect
+ ? (defmethod namedrect showname(n)
+        (repeat n (print name)) )
+ = showname
+.PP
+
+#? (pretty-method <class> <symb>)
+.TYPE DE
+.FILE sysenv.sn
+
+Prints a nicely indented definition of method <symb> of class <class>.
+
+
+#? ** Sending Messages.
+
+#? (==> <obj> <symb> ... <args> ... )
+
+Sends a message whose selector is <symb> to object <obj>, with
+arguments <args>.
+
+Example
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Objects <r> and <nr> are defined as examples for <new>
+ ;; Method <surface> is defined as an example for <defmethod>
+ ;;
+ ;; Send a surface message to rect <r>
+ ? (==> r surface)
+ = 20
+ ;; Send a showname message to namedrect <nr>
+ ? (==> nr showname 2)
+ "myrectangle"
+ "myrectangle"
+ = "myrectangle"
+ ;; Send a surface message to namedrect <nr>
+ ;; The method is inherited from superclass <rect>
+ ? (==> nr surface)
+ = 48
+.PP
+
+When an object receives a message, the method is executed in the
+object scope defined by the class that owns the method: If the method
+is defined by a superclass, only the slots of that superclass and of
+its superclasses are directly referred by their names.
+
+When no method <symbol> is defined in the class or superclasses, the
+kernel searches a method named <-unknown> and executes this method
+with two arguments: the initial method name <symb> and the list of the
+evaluated arguments <args>. There is an error if method <-unknown> is
+not defined.
+
+
+#? (==> <obj> (<class> . <symb>) ... <args> ... )
+
+This construction is known as a ``cast-and-send''. A message with selector
+<symb> and arguments <args> is sent to the object <obj>, considered as an
+instance of class <class>. Methods indeed are searched in class <class> and
+its superclasses, instead of the class of <obj> and its superclasses.
+
+Argument <class> is evaluated and must return a superclass of the class of
+<obj>. Argument <symb> is not evaluated and must be a valid method selector
+for class <class>.
+
+Example:
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Objects <r> and <nr> are defined as examples for <new>
+ ;; Method <surface> is defined as an example for <defmethod>
+ ;;
+ ;; Override surface method of class rect
+ ? (defmethod namedrect surface()
+        ;; prints the name by sending a showname message
+        (==> this showname 1)
+        ;; returns 1+ the result of the surface method of class rect
+        (1+ (==> this (rect . surface))) )
+ = surface
+ ? (==> nr surface)
+ "myrectangle"
+ = 49
+ ;; Still call the surface method of class rect
+ ? (==> nr (rect . surface))
+ = 48
+.PP
+
+#? this
+.SEE (letslot <obj> <l1> ... <ln>)
+.SEE (==> <obj> <symb> ... <args> ... )
+
+While TLisp is executing a method, you can use symbol <this> to refer
+to the object receiving the message.
+
+#? (check==> <class> <symb>)
+
+Searches class <class> and its superclasses for a method whose
+selector is <symb>.  If a matching method exists, this function
+returns the method as a DF function.
+
+Example:
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Objects <r> and <nr> are defined as examples for <new>
+ ;; Method <surface> is defined as an example for <defmethod>
+ ;;
+ ;; There is no method yoyo in rect
+ ? (check==> rect 'yoyo)
+ = ()
+ ;; there is a method surface in rect
+ ? (check==> rect 'surface)
+ = DF:0604c
+.PP
+
+
+#? (apply==> <obj> <symbol> <args>)
+
+Sends message <symbol> to object <obj> with the list <args> as
+arguments.
+
+
+#? ** Constructors and Destructors.
+.SEE (new <class> ... <args> ...)
+.SEE (delete <x>)
+
+Constructors are specific methods whose selector is the name of their class,
+as returned by the function <classname>.  Constructors are useful for easily
+initializing an object during its creation.
+
+Whenever a new object is created with the <new> function, a construction
+message is sent to the new object. The optional arguments of the <new>
+function are sent as arguments to the construction message.
+
+Example:
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Method <surface> is defined as an example for <defmethod>
+ ;;
+ ;; Define a constructor for class rect
+ ? (defmethod rect rect(w h)
+        (setq width w)
+        (setq height h) )
+ = rect
+ ;; creates a new rectangle
+ ? (setq r (new rect 8 9))
+ = ::rect:06fb8
+ ;; sends a surface message
+ ? (==> r surface)
+ = 72
+.PP
+
+The function <new> only calls a constructor when it is defined by the class
+of the newly created object. Constructors however can call the constructor
+method of their superclass.
+
+Example:
+.VP
+ ;; defines a constructor for class namedrect
+ ? (defmethod namedrect namedrect(w h n)
+        ;; explicitely calls the constructor of class rect.
+        (==> this rect w h)
+        (setq name n) )
+.PP
+
+
+Destructors are specific methods whose selector is <-destructor>.
+When an object is deleted, all the destructors of its class and
+superclasses are successively called.  Deletion occurs when the
+function <delete> is called on an object, or when the garbage
+collection mechanism proves that an object will no longer be accessed.
+
+Note: Only objects created with function <new> receive destruction
+messages. Numbers, strings, symbols, usually do not receive such
+messages.
+
+Example:
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Objects <r> and <nr> are defined as examples for <new>
+ ;; Method <surface> is defined as an example for <defmethod>
+ ;;
+ ;; Defines a destructor for the rect class
+ ? (defmethod rect -destructor()
+       (printf "rect destructor on %l\n" this) )
+ = -destructor
+ ;; Defines a destructor for the namedrect class
+ ? (defmethod namedrect -destructor()
+       (printf "namedrect destructor on %l (%s)\n" this name) )
+ = -destructor
+ ;; deletes objects r and nr
+ ? (delete r)
+ rect destructor on ::rect:06fb8
+ = ()
+ ? r
+ = ()
+ ? (delete nr)
+ namedrect destructor on ::namedrect:06fe8 (myrectangle)
+ rect destructor on ::namedrect:06fe8
+ = ()
+ ? nr
+ = ()
+.PP
+Destructors allow objects to perform some housekeeping before they disappear.
+
+
+#? ** Predefined Methods.
+
+
+#? (==> <obj> pname)
+.TYPE MSG
+.SEE (pname <l>)
+
+The function <pname> returns a string that describes a lisp object.  When
+executing this function, TLisp searches the object for a method <pname>
+before applying the hardcoded defaults. Overriding method <pname> let you
+redefine how TLisp prints certain objects.
+
+Example:
+.VP
+ ;; Classes <rect>, <namedrect>, are defined as examples for <defclass>
+ ;; Objects <r> and <nr> are defined as examples for <new>
+ ;; Method <surface> is defined as an example for <defmethod>
+ ;;
+ ;; defines a pname function for the rect class
+ ? (defmethod rect pname()
+      (sprintf "<rectangle %d by %d>" width height) )
+ = pname
+ ? (new rect 8 6)
+ = <rectangle 8 by 6>
+.PP
+
+#? (==> <obj> print)
+.TYPE MSG
+.SEE (prin <l1> ... <ln>)
+
+When TLisp prints an object with function <prin> or <print>, it searches
+a method <print> before applying hardcoded defaults based on function
+<pname>.
+
+It is a good idea to override method <print> instead of method <pname> when
+large amounts of text are necessary (in the case of matrices, for example).
+
+
+#? (==> <obj> pprint)
+.TYPE MSG
+.SEE (pprin <l1> ... <ln>)
+
+When TLisp prints an atom with function <pprin> or <pprint>, it searches a
+method <pprint> before applying the hardcoded defaults.
+
+#? (==> <obj> pretty)
+.TYPE MSG
+.SEE (pretty <f>)
+
+Function <pretty> displays an object by sending them a message <pretty>. The
+default method <pretty> defined by class <object> displays the slots of the
+object.  Specific <pretty> method also are defined for functions, symbols,
+classes, etc ...
+
+
