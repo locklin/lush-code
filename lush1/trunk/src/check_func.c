@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.c,v 1.5 2004-04-16 14:28:24 leonb Exp $
+ * $Id: check_func.c,v 1.6 2004-04-16 14:42:58 leonb Exp $
  **********************************************************************/
 
 /* Functions that check the dimensions of index parameters */
@@ -165,41 +165,6 @@ check_obj_class(void *obj, void *classvtable)
  *
  *****************************************************************************/
 
-#ifndef NOLISP
-
-void
-srg_resize(struct srg *sr, int new_size, char *file, int line) 
-{
-  if(sr->flags & STS_MALLOC)  { 
-    char *malloc_ptr; 
-    int st_size = storage_type_size[sr->type] * new_size; 
-    if (sr->size != 0) {
-      if (st_size==0) {
-        lush_free(sr->data, file, line); 
-        sr->data = 0;
-      } else {
-        malloc_ptr = (char *) lush_realloc(sr->data, st_size, file, line); 
-        if(malloc_ptr == 0) 
-          error(NIL, rterr_out_of_memory, NIL); 
-        sr->data = malloc_ptr; 
-      } 
-    } else { 
-      if (st_size != 0) {
-        malloc_ptr = (char *) lush_malloc(st_size, file, line); 
-        if(malloc_ptr == 0) 
-          error(NIL, rterr_out_of_memory, NIL); 
-        sr->data = malloc_ptr; 
-      } 
-    } 
-    sr->size = new_size; 
-    sr->flags &= ~STF_UNSIZED;
-  } else {
-    error(NIL, rterr_cannot_realloc, NIL); 
-  }
-}
-
-#endif /* NOLISP */
-
 void
 srg_resize_compiled(struct srg *sr, int new_size, char *file, int line) 
 {
@@ -228,6 +193,41 @@ srg_resize_compiled(struct srg *sr, int new_size, char *file, int line)
     sr->flags &= ~STF_UNSIZED;
   } else 
     run_time_error(rterr_cannot_realloc); 
+}
+
+void
+srg_resize(struct srg *sr, int new_size, char *file, int line) 
+{
+#ifndef NOLISP
+  if(sr->flags & STS_MALLOC) { 
+    char *malloc_ptr; 
+    int st_size = storage_type_size[sr->type] * new_size; 
+    if (sr->size != 0) {
+      if (st_size==0) {
+	lush_free(sr->data, file, line); 
+	sr->data = 0;
+      } else {
+        malloc_ptr = (char *) lush_realloc(sr->data, st_size, file, line); 
+        if(malloc_ptr == 0) 
+          error(NIL, rterr_out_of_memory, NIL); 
+        sr->data = malloc_ptr; 
+      } 
+    } else { 
+      if (st_size != 0) {
+        malloc_ptr = (char *) lush_malloc(st_size, file, line); 
+        if(malloc_ptr == 0) 
+          error(NIL, rterr_out_of_memory, NIL); 
+        sr->data = malloc_ptr; 
+      } 
+    } 
+    sr->size = new_size; 
+    sr->flags &= ~STF_UNSIZED;
+  } else {
+    error(NIL, rterr_cannot_realloc, NIL); 
+  }
+#else
+  srg_resize_compiled(sr, new_size, file, line);
+#endif
 }
 
 void
