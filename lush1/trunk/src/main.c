@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.5 2003-06-26 15:55:02 leonb Exp $
+ * $Id: main.c,v 1.6 2003-06-26 16:50:29 profshadoko Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -37,10 +37,10 @@ char **lush_argv;
 LUSHAPI int
 main(int argc, char **argv)
 {
-  lush_argc = argc;
-  lush_argv = argv;
   /* Define quiet mode. */
   int quiet = FALSE;
+  lush_argc = argc;
+  lush_argv = argv;
   if (argc>1 && argv[1][0]!='@')
     quiet = TRUE;
   else if (argc>2)
