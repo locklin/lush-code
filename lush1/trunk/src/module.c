@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.60 2004-08-02 16:37:32 leonb Exp $
+ * $Id: module.c,v 1.61 2004-08-02 19:13:44 leonb Exp $
  **********************************************************************/
 
 
@@ -848,41 +848,53 @@ cleanup_module(struct module *m)
 #endif
   
   /* 3 --- Zap instances of impacted classes */
-  p = classes;
-  while (CONSP(p))
+  for (p = classes; CONSP(p); p=p->Cdr)
     {
       at *q = p->Car;
       if (EXTERNP(q, &class_class))
         {
-          int n;
+          int n = 0;
           class *cl = q->Object;
-          /* Mark cside objects as unlinked */
+	  begin_iter_at(x) 
+	    {
+	      if (EXTERNP(x, cl))
+		{
+		  void *cptr = 0;
+		  if (cl->goaway) 
+		    {
+		      struct oostruct *s = x->Object;
+		      cptr = s->cptr;
+		      s->cptr = 0;
+		    }
+		  if (cptr)
+		    lside_destroy_item(cptr);
+		  else
+		    delete_at(x);
+		  n += 1;
+		}
+	    }
+	  end_iter_at(x);
+	  if (n > 0)
+	    fprintf(stderr,"*** WARNING: "
+		    "destroyed %d compiled instances of class %s\n", n, pname(q));
+	}
+    }
+  for (p = classes; CONSP(p); p=p->Cdr)
+    {
+      at *q = p->Car;
+      if (EXTERNP(q, &class_class))
+        {
+          class *cl = q->Object;
           if (cl->classdoc)
             {
-              n = lside_mark_unlinked(cl->classdoc);
+              int n = lside_mark_unlinked(cl->classdoc);
+	      cl->classdoc = 0;
               if (n > 0)
                 fprintf(stderr,"*** WARNING: "
-                        "marked %d instances of class %s as unlinked\n", 
+                        "marked %d compiled instances of class %s as unlinked\n", 
                         n, pname(q));
             }
-          if (cl->goaway)
-            {
-              n = 0;
-              begin_iter_at(x) 
-                {
-                  if (EXTERNP(x, cl)) 
-                    {
-                      delete_at(x);
-                      n += 1;
-                    }
-                }
-              end_iter_at(x);
-              if (n > 0)
-                fprintf(stderr,"*** WARNING: "
-                        "destroyed %d instances of class %s\n", n, pname(q));
-            }
         }
-      p = p->Cdr;
     }
   UNLOCK(classes);
   
@@ -892,16 +904,8 @@ cleanup_module(struct module *m)
       if (CONSP(p->Car))
         {
           at *q = p->Car->Car;
-          if (EXTERNP(q, &class_class))
-            {
-              class *cl = q->Object;
-              if (cl->goaway)
-                delete_at_special(q, FALSE);
-            }
-          else
-            {
-              delete_at(q);
-            }
+          if (q && q->Class != &class_class)
+	    delete_at(q);
         }
   UNLOCK(m->defs);
   m->defs = NIL;

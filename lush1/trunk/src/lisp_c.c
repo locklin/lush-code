@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.33 2004-07-20 18:59:01 leonb Exp $
+ * $Id: lisp_c.c,v 1.34 2004-08-02 19:13:44 leonb Exp $
  **********************************************************************/
 
 
@@ -1251,9 +1251,10 @@ lside_destroy_item(void *cptr)
               free(n->citem);
               avl_del(cptr);
               return;
+	    default:
+	      error(NIL,"lisp_c internal : corrupted data structure",NIL);
             }
         }
-      error(NIL,"lisp_c internal : corrupted data structure",NIL);
     }
 }
 
@@ -1381,10 +1382,10 @@ cside_destroy_node(avlnode *n)
   /* There is no need to free this object.
    * This is the reponsibility of the compiled code who effectively
    * owns this object and told us that the object was being deleted.
-     */
+   */
   if (n->belong != BELONG_C) 
     return;
-  /* delete lisp object as well */
+  /* Delete lisp object as well */
   if (n->litem)
     {
       avlchain_set(n, 0);
@@ -1392,7 +1393,6 @@ cside_destroy_node(avlnode *n)
         {
         case CINFO_SRG:
           ((struct storage *)(n->litem->Object))->cptr = 0;
-          /* Do not transmute SRG (they are trusted by indexes) */
           update_lisp_from_c(n);
           break;
         case CINFO_OBJ:
@@ -1408,6 +1408,25 @@ cside_destroy_node(avlnode *n)
           transmute_object_into_gptr(n->litem, n->citem);
           break;
         }
+    }
+  /* Apply destructors */
+  if (n->citem)
+    {
+      switch (n->cinfo)
+        {
+        case CINFO_SRG:
+	  srg_free(n->citem);
+          break;
+	case CINFO_OBJ:
+	  if (n->cmoreinfo)
+	    {
+	      dhclassdoc_t *cdoc = n->cmoreinfo;
+	      struct VClass_object *vtbl = cdoc->lispdata.vtable;
+	      if (vtbl && vtbl->Cdoc == cdoc && vtbl->Cdestroy)
+		(*vtbl->Cdestroy)(n->citem);
+	    }
+	  break;
+	}
     }
   /* delete avl map entry */
   avl_del(n->citem);
