@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.6 2002-08-19 14:40:30 leonb Exp $
+ * $Id: string.c,v 1.7 2002-08-27 20:46:55 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -221,6 +221,82 @@ class string_class =
   string_compare,
   string_hash
 };
+
+
+/* helpers to construct large strings -----------------	 */
+
+
+struct large_string {
+  char *p;
+  char buffer[1024];
+  at *backup;
+  at **where;
+};
+
+static void
+large_string_init(struct large_string *ls)
+{
+  ls->backup = NIL;
+  ls->where = &ls->backup;
+  ls->p = ls->buffer;
+}
+
+static void
+large_string_add(struct large_string *ls, char *s, int len)
+{
+  if (len < 0)
+    len = strlen(s);
+  if (ls->p > ls->buffer)
+    if (ls->p + len > ls->buffer + sizeof(ls->buffer) - 1)
+      {
+        *ls->p = 0;
+        *ls->where = cons(new_string(ls->buffer), NIL);
+        ls->where = &((*ls->where)->Cdr);
+        ls->p = ls->buffer;
+      }
+  if (len > sizeof(ls->buffer) - 1)
+    {
+      at *p = new_string_bylen(len);
+      memcpy(SADD(p->Object), s, len);
+      *ls->where = cons(p, NIL);
+      ls->where = &((*ls->where)->Cdr);
+      ls->p = ls->buffer;
+    }
+  else 
+    {
+      memcpy(ls->p, s, len);
+      ls->p += len;
+    }
+}
+
+static at*
+large_string_collect(struct large_string *ls)
+{
+  char *r;
+  at *p, *q;
+  int len;
+  *ls->p = 0;
+  len = strlen(ls->buffer);
+  for (p = ls->backup; p; p = p->Cdr)
+    len += strlen(SADD(p->Car->Object));
+  q = new_string_bylen(len);
+  r = SADD(q->Object);
+  for (p = ls->backup; p; p = p->Cdr) 
+    {
+      strcpy(r, SADD(p->Car->Object));
+      r += strlen(r);
+    }
+  strcpy(r, ls->buffer);
+  UNLOCK(ls->backup);
+  ls->backup = NIL;
+  ls->where = &ls->backup;
+  ls->p = ls->buffer;
+  return q;
+}
+
+
+
+
 
 
 /* operations on strings ------------------------------	 */
@@ -715,31 +791,15 @@ DX(xupcase)
   s = ASTRING(1);
   rr = new_string_bylen(strlen(s));
   r = SADD(rr->Object);
-  while ((c = *s++)) {
+  while ((c = *s++)) 
     *r++ = toupper((unsigned char)c);
-  }
   *r = 0;
   return rr;
 }
 
 DX(xupcase1)
 {
-  char *r;
-  at *rr;
-
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  rr = new_safe_string(strdup(ASTRING(1)));
-  r = SADD(rr->Object);
-  if (*r) {
-    *r = toupper((unsigned char)*r);
-  }
-  return rr;
-}
-
-DX(xdowncase)
-{
-  char *s,*r,c;
+  char *s,*r, c;
   at *rr;
 
   ARG_NUMBER(1);
@@ -747,9 +807,24 @@ DX(xdowncase)
   s = ASTRING(1);
   rr = new_string_bylen(strlen(s));
   r = SADD(rr->Object);
-  while ((c = *s++)) {
+  strcpy(r,s);
+  if ((c = *r))
+    *r =  toupper((unsigned char)c);
+  return rr;
+}
+
+DX(xdowncase)
+{
+  char *s,*r,c;
+  at *rr;
+  
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  s = ASTRING(1);
+  rr = new_string_bylen(strlen(s));
+  r = SADD(rr->Object);
+  while ((c = *s++))
     *r++ = tolower((unsigned char)c);
-  }
   *r = 0;
   return rr;
 }
@@ -1440,150 +1515,140 @@ DX(xregex_subst)
   SPRINTF.C (C) LYB 1991
 ************************************************************************/
 
-
-
-#define GPRINT_BUFFER 1024
-static char *gprint_buffer;
 extern char *print_buffer;
-
-static char *
-gbcopy(register char *gb, register char *s)
-{
-  int l = strlen(s);
-  if (gb + l >=  gprint_buffer + GPRINT_BUFFER - 1)
-    error(NIL,"Overflow in sprintf buffer (use concat)", NIL);
-  strcpy(gb, s);
-  gb += l;
-  *gb = 0;
-  return gb;
-}
 
 DX(xsprintf)
 {
-  register char *fmt, *buf, *gbuf, c;
-  register int i, ok;
+  struct large_string ls;
+  char *fmt, *buf, c;
+  int i, n, ok;
 
   if (arg_number < 1)
     error(NIL, "At least one argument expected", NIL);
 
   ALL_ARGS_EVAL;
   fmt = ASTRING(1);
-
+  large_string_init(&ls);
   i = 1;
-  gbuf = gprint_buffer;
-  forever
-  {
-    if (*fmt == 0)
-      break;
-    buf = print_buffer;
-    while (*fmt != 0 && *fmt != '%')
-      *buf++ = *fmt++;
-    *buf = 0;
-    gbuf = gbcopy(gbuf, print_buffer);
-
-    if (*fmt == 0)
-      break;
-    buf = print_buffer;
-    ok = 0;
-    c = 0;
-
-    *buf++ = *fmt++;		/* copy  '%' */
-    while (ok < 9) {
-      c = *buf++ = *fmt++;
-
-      switch (c) {
-	case 0:
-	  goto err_printf0;
-	case '-':
-	  if (ok >= 1)
-	    goto err_printf0;
-	  else
-	    ok = 1;
-	  break;
-	case '.':
-	  if (ok >= 5)
-	    goto err_printf0;
-	  else
-	    ok = 5;
-	  break;
-	case '%':
-	case 'l':
-	case 'p':
-	  if (ok >= 1)
-	    goto err_printf0;
-	  else
-	    ok = 10;
-	  break;
-	case 'd':
-	case 's':
-	  if (ok >= 5)
-	    goto err_printf0;
-	  else if (ok)
-	    ok = 10;
-	  else
-	    ok = 9;
-	  break;
-	case 'f':
-	case 'g':
-	case 'e':
-	  if (ok)
-	    ok = 10;
-	  else
-	    ok = 9;
-	  break;
-	default:
-	  if (!isdigit((unsigned char)c))
-	    goto err_printf0;
-	  if (ok <= 4)
-	    ok = 4;
-	  else if (ok <= 8)
-	    ok = 8;
-	  else
-	    goto err_printf0;
+  n = 0;
+  for(;;)
+    {
+      /* Copy plain string */
+      if (*fmt == 0)
+        break;
+      buf = fmt;
+      while (*fmt != 0 && *fmt != '%')
+        fmt += 1;
+      large_string_add(&ls, buf, fmt-buf);
+      if (*fmt == 0)
+        break;
+      /* Copy format */
+      buf = print_buffer;
+      ok = 0;
+      c = 0;
+      
+      *buf++ = *fmt++;		/* copy  '%' */
+      while (ok < 9) {
+        c = *buf++ = *fmt++;
+        switch (c) 
+          {
+          case 0:
+            goto err_printf0;
+          case '-':
+            if (ok >= 1)
+              goto err_printf0;
+            else
+              ok = 1;
+            break;
+          case '.':
+            if (ok >= 5)
+              goto err_printf0;
+            else
+              ok = 5;
+            break;
+          case '%':
+          case 'l':
+          case 'p':
+            if (ok >= 1)
+              goto err_printf0;
+            else
+              ok = 10;
+            break;
+          case 'd':
+          case 's':
+            if (ok >= 5)
+              goto err_printf0;
+            else if (ok)
+              ok = 10;
+            else
+              ok = 9;
+            break;
+          case 'f':
+          case 'g':
+          case 'e':
+            if (ok)
+              ok = 10;
+            else
+              ok = 9;
+            break;
+          default:
+            if (!isdigit((unsigned char)c))
+              goto err_printf0;
+            n = (n * 10) + (c - '0');
+            if (ok <= 4)
+              ok = 4;
+            else if (ok <= 8)
+              ok = 8;
+            else
+              goto err_printf0;
+          }
       }
+      
+      *buf = 0;
+      if (c != '%' && ++i > arg_number)
+        goto err_printf1;
+      if (c == 'l' || c == 'p')
+        {
+          large_string_add(&ls, pname(APOINTER(i)), -1);
+        }
+      else if (c == 'd') 
+        {
+          *buf++ = 0;
+          if (ok == 9) {
+            large_string_add(&ls, str_number((real) AINTEGER(i)), -1);
+          } else {
+            sprintf(buf, print_buffer, AINTEGER(i));
+            large_string_add(&ls, buf, -1);
+          }
+        } 
+      else if (c == 's') 
+        {
+          *buf++ = 0;
+          if (ok == 9) {
+            large_string_add(&ls, ASTRING(i), -1);
+          } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+            error(NIL,toolong,NIL);
+          } else {
+            sprintf(buf, print_buffer, ASTRING(i));
+            large_string_add(&ls, buf, -1);
+          }
+        } 
+      else if (c == 'e' || c == 'f' || c == 'g') 
+        {
+          *buf++ = 0;
+          if (ok == 9) {
+            large_string_add(&ls, str_number(AREAL(i)), -1);
+          } else {
+            sprintf(buf, print_buffer, AREAL(i));
+            large_string_add(&ls, buf, -1);
+          }
+        }
+      if (c == '%')
+        large_string_add(&ls, "%", 1);
     }
-
-    *buf = 0;
-    if (c != '%' && ++i > arg_number)
-      goto err_printf1;
-
-    if (c == 'l' || c == 'p')
-      gbuf = gbcopy(gbuf, pname(APOINTER(i)));
-
-    else if (c == 'd') {
-      *buf++ = 0;
-      if (ok == 9) {
-	gbuf = gbcopy(gbuf, str_number((real) AINTEGER(i)));
-      } else {
-	sprintf(buf, print_buffer, AINTEGER(i));
-	gbuf = gbcopy(gbuf, buf);
-      }
-    } else if (c == 's') {
-      *buf++ = 0;
-      if (ok == 9) {
-	gbuf = gbcopy(gbuf, ASTRING(i));
-      } else {
-	sprintf(buf, print_buffer, ASTRING(i));
-	gbuf = gbcopy(gbuf, buf);
-      }
-    } else if (c == 'e' || c == 'f' || c == 'g') {
-      *buf++ = 0;
-      if (ok == 9) {
-	gbuf = gbcopy(gbuf, str_number(AREAL(i)));
-      } else {
-	sprintf(buf, print_buffer, AREAL(i));
-	gbuf = gbcopy(gbuf, buf);
-      }
-    };
-
-    if (c == '%')
-      gbuf = gbcopy(gbuf, "%");
-  };
-
   if (i < arg_number)
     goto err_printf1;
-
-  return new_string(gprint_buffer);
+  return large_string_collect(&ls);
 
  err_printf0:
   error(NIL, "bad format string", NIL);
@@ -1604,8 +1669,6 @@ DX(xsprintf)
 void 
 init_string(void)
 {
-  ifn(gprint_buffer = malloc(GPRINT_BUFFER))
-  abort("Not enough memory");
   ifn(string_buffer = malloc(STRING_BUFFER))
     abort("Not enough memory");
 
