@@ -1,4 +1,4 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; LUSH Lisp Universal Shell
 ;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: glut.lsh,v 1.5 2003-01-29 08:02:53 leonb Exp $
+;;; $Id: glut.lsh,v 1.6 2003-09-03 23:08:52 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -227,20 +227,8 @@
 
 
 (de glutint-poll()
-  (cheader "#include <X11/Xlib.h>")
-  (cheader "#include <X11/Xutil.h>")
-  (cheader "#include <GL/glut.h>")
-  (cheader "#include <sys/time.h>")
-  (cheader "jmp_buf glut_event_jmp;")
-  (cheader "void glut_idle_jmp(void) { longjmp(glut_event_jmp, 1); }")
   ;; This function is quite dependent on the internals of GLUT-3.7. 
   ;; But this is mostly for implementing timers.
-  (cheader "extern Display *__glutDisplay;")
-  (cheader "extern int __glutWindowListSize;")
-  (cheader "extern void *__glutWindowWorkList;")
-  (cheader "extern struct{void*next;struct timeval tv;}*__glutTimerList;")
-  (cheader "extern Atom __glutWMDeleteWindow;")
-  ;; Go
   (let ((ms (* 24 3600 1000)))
     ((-int-) ms)
     #{
@@ -270,8 +258,6 @@
 (de glutint-init()
   (let ((flag ()))
     ((-bool-) flag)
-    (cheader "static at *glhandlers = 0;")
-    (cheader "static at *glhandle = 0;")
     #{
        if (! __glutDisplay) {
          char *argv[2];
@@ -776,88 +762,28 @@
 ;; <pasvmotion> is true.
 (defmethod GlutWindow set-callbacks(pasvmotion)
   ((-bool-) pasvmotion)
-  ;; Sending messages
-  (cheader "\nstatic void glutsend(char *name, at *args)\n\
-{ if (EXTERNP(glhandlers, &htable_class)) {\n\
-    at *w = NEW_NUMBER(glutGetWindow());\n\
-    at *h = htable_get(glhandlers, w); UNLOCK(w);\n\
-    if (h && (h->flags & C_EXTERN)) {\n\
-      at *m = checksend(h->Class, glhandle);\n\
-      if (m) { args = cons(named(name),args);\n\
-        argeval_ptr = eval_nothing;\n\
-        w = send_message(NIL,h,glhandle,args);\n\
-        argeval_ptr = eval_std; UNLOCK(w); }\n\
-      UNLOCK(m); }\n\
-    UNLOCK(h); }\n\
-  UNLOCK(args); }\n")
-  ;; Building arguments
-  (cheader "static at *make1i(int x)\n\
- { return cons(NEW_NUMBER(x),NIL); }")
-  (cheader "static at *make2i(int x, int y)\n\
- { return cons(NEW_NUMBER(x),make1i(y)); }")
-  (cheader "static at *make3i(int x, int y, int z)\n\
- { return cons(NEW_NUMBER(x),make2i(y,z)); }")
-  (cheader "static at *make4i(int x, int y, int z, int k)\n\
- { return cons(NEW_NUMBER(x),make3i(y,z,k)); }")
-  ;; Callbacks
-  (cheader "static void gDisplay(void)\n\
- { glutsend(\"glut-display\",NIL);}")
-  (cheader "static void gReshape(int w, int h)\n\
- { glutsend(\"glut-reshape\", make2i(w,h));}")
-  (cheader "static void gKeyboard(unsigned char key, int x, int y)\n\
- { glutsend(\"glut-keyboard\", make3i(key,x,y));}")
-  (cheader "static void gMouse(int btn, int state, int x, int y)\n\
- { glutsend(\"glut-mouse\", make4i(btn,state,x,y));}")
-  (cheader "static void gMotion(int x, int y)\n\
- { glutsend(\"glut-motion\", make2i(x,y));}")
-  (cheader "static void gPassiveMotion(int x, int y)\n\
- { glutsend(\"glut-passive-motion\", make2i(x,y));}")
-  (cheader "static void gEntry(int state)\n\
- { glutsend(\"glut-entry\", make1i(state));}")
-  (cheader "static void gVisibility(int state)\n\
- { glutsend(\"glut-visibility\", make1i(state));}")
-  (cheader "static void gMenuState(int state)\n\
- { glutsend(\"glut-menu-state\", make1i(state));}")
-  (cheader "static void gSpecial(int key, int x, int y)\n\
- { glutsend(\"glut-special\", make3i(key,x,y));}")
-  (cheader "static void gSpaceballMotion(int x, int y, int z)\n\
- { glutsend(\"glut-spaceball-motion\", make3i(x,y,z));}")
-  (cheader "static void gSpaceballRotate(int x, int y, int z)\n\
- { glutsend(\"glut-spaceball-rotate\", make3i(x,y,z));}")
-  (cheader "static void gSpaceballButton(int btn, int state)\n\
- { glutsend(\"glut-spaceball-button\", make2i(btn,state));}")
-  (cheader "static void gButtonBox(int btn, int state)\n\
- { glutsend(\"glut-button-box\", make2i(btn,state));}")
-  (cheader "static void gDials(int dial, int val)\n\
- { glutsend(\"glut-dials\", make2i(dial,val));}")
-  (cheader "static void gTabletMotion(int x, int y)\n\
- { glutsend(\"glut-tablet-motion\", make2i(x,y));}")
-  (cheader "static void gTabletButton(int btn, int state, int x, int y)\n\
- { glutsend(\"glut-tablet-button\", make4i(btn,state,x,y));}")
-  (cheader "static void gMenuStatus(int status, int x, int y)\n\
- { glutsend(\"glut-menu-status\", make3i(status,x,y));}")
-  (cheader "static void gOverlayDisplay(void)\n\
- { glutsend(\"glut-overlay-display\",NIL);}")
+  ;; See code inlined in dhc-make...
   #{
-  glutDisplayFunc(gDisplay);
-  glutReshapeFunc(gReshape);
-  glutKeyboardFunc(gKeyboard);
-  glutMouseFunc(gMouse);
-  glutMotionFunc(gMotion);
-  glutPassiveMotionFunc($pasvmotion ? gPassiveMotion : 0);
-  glutEntryFunc(gEntry);
-  glutVisibilityFunc(gVisibility);
-  glutMenuStateFunc(gMenuState);
-  glutSpecialFunc(gSpecial);
-  glutSpaceballButtonFunc(gSpaceballButton);
-  glutSpaceballMotionFunc(gSpaceballMotion);
-  glutSpaceballRotateFunc(gSpaceballRotate);
-  glutButtonBoxFunc(gButtonBox);
-  glutDialsFunc(gDials);
-  glutTabletButtonFunc(gTabletButton);
-  glutTabletMotionFunc(gTabletMotion);
-  glutMenuStatusFunc(gMenuStatus);
-  if (glutLayerGet(GLUT_HAS_OVERLAY)) glutOverlayDisplayFunc(gOverlayDisplay);
+    glutDisplayFunc(gDisplay);
+    glutReshapeFunc(gReshape);
+    glutKeyboardFunc(gKeyboard);
+    glutMouseFunc(gMouse);
+    glutMotionFunc(gMotion);
+    glutPassiveMotionFunc($pasvmotion ? gPassiveMotion : 0);
+    glutEntryFunc(gEntry);
+    glutVisibilityFunc(gVisibility);
+    glutMenuStateFunc(gMenuState);
+    glutSpecialFunc(gSpecial);
+    glutSpaceballButtonFunc(gSpaceballButton);
+    glutSpaceballMotionFunc(gSpaceballMotion);
+    glutSpaceballRotateFunc(gSpaceballRotate);
+    glutButtonBoxFunc(gButtonBox);
+    glutDialsFunc(gDials);
+    glutTabletButtonFunc(gTabletButton);
+    glutTabletMotionFunc(gTabletMotion);
+    glutMenuStatusFunc(gMenuStatus);
+    if (glutLayerGet(GLUT_HAS_OVERLAY)) 
+      glutOverlayDisplayFunc(gOverlayDisplay);
   #}
   () )
 
@@ -1003,7 +929,6 @@
 ;; MAKE
 ;; ----------------------------------------
 
-
 (let ((m (mod-search "glut.o")))
   (if (and m (module-executable-p m))
       ;; Attempt to reload glut.o
@@ -1014,37 +939,162 @@
     ;; Compile
     (let ((dhc-make-lushflags (concat dhc-make-lushflags opengl-cflags)))
       (dhc-make-with-libs () libs
-                          ;; Utilities
-                          glutint-poll glutint-init glutint-check glutint-font
-                          ;; Glut API
-                          glut-init-display-mode glut-init-window-size glut-init-window-position 
-                          glut-main-loop glut-create-window glut-create-sub-window
-                          glut-get-window glut-set-window glut-destroy-window glut-post-redisplay
-                          glut-swap-buffers glut-set-window-title glut-set-icon-title
-                          glut-position-window glut-reshape-window glut-pop-window glut-push-window
-                          glut-iconify-window glut-show-window glut-hide-window glut-full-screen
-                          glut-set-cursor glut-establish-overlay glut-remove-overlay glut-use-layer
-                          glut-post-overlay-redisplay glut-show-overlay glut-hide-overlay
-                          glut-create-menu glut-destroy-menu glut-get-menu glut-set-menu
-                          glut-add-menu-entry glut-add-sub-menu glut-change-to-menu-entry
-                          glut-change-to-sub-menu glut-remove-menu-item glut-attach-menu
-                          glut-detach-menu glut-display-func glut-reshape-func glut-keyboard-func
-                          glut-mouse-func glut-motion-func glut-passive-motion-func glut-entry-func
-                          glut-visibility-func glut-idle-func glut-timer-func glut-menu-state-func
-                          glut-special-func glut-spaceball-motion-func glut-spaceball-rotate-func
-                          glut-spaceball-button-func glut-button-box-func glut-dials-func
-                          glut-tablet-motion-func glut-tablet-button-func glut-menu-status-func
-                          glut-overlay-display-func glut-set-color glut-get-color glut-copy-colormap
-                          glut-get glut-device-get glut-layer-get glut-extension-supported
-                          glut-get-modifiers glut-bitmap-character glut-bitmap-width
-                          glut-stroke-character glut-stroke-width glut-wire-sphere glut-solid-sphere
-                          glut-wire-cone glut-solid-cone glut-wire-cube glut-solid-cube glut-wire-torus
-                          glut-solid-torus glut-wire-teapot glut-solid-teapot glut-wire-dodecahedron
-                          glut-solid-dodecahedron glut-wire-octahedron glut-solid-octahedron
-                          glut-wire-tetrahedron glut-solid-tetrahedron glut-wire-icosahedron
-                          glut-solid-icosahedron
-                          ;; Glut window
-                          (GlutWindow glutwindow set-callbacks destroy create -destructor) ) 
+          ;; Headers
+          #{
+             #include <X11/Xlib.h>
+             #include <X11/Xutil.h>
+             #include <GL/glut.h>
+             #include <sys/time.h>
+          #}
+          ;; Helpers
+          #{
+             jmp_buf glut_event_jmp;
+             void glut_idle_jmp(void) { 
+                longjmp(glut_event_jmp, 1); }
+
+             extern Atom __glutWMDeleteWindow;
+             extern Display *__glutDisplay;
+             extern int __glutWindowListSize;
+             extern void *__glutWindowWorkList;
+             extern struct {
+               void *next;
+               struct timeval tv;} *__glutTimerList;
+
+             static at *glhandlers = 0;
+             static at *glhandle = 0;
+          #}
+          ;; Utilities
+          glutint-poll glutint-init glutint-check glutint-font
+          ;; Glut API
+          glut-init-display-mode
+          glut-init-window-size
+          glut-init-window-position glut-main-loop
+          glut-create-window
+          glut-create-sub-window glut-get-window
+          glut-set-window glut-destroy-window
+          glut-post-redisplay glut-swap-buffers
+          glut-set-window-title
+          glut-set-icon-title glut-position-window
+          glut-reshape-window glut-pop-window
+          glut-push-window glut-iconify-window
+          glut-show-window glut-hide-window
+          glut-full-screen glut-set-cursor
+          glut-establish-overlay
+          glut-remove-overlay glut-use-layer
+          glut-post-overlay-redisplay
+          glut-show-overlay glut-hide-overlay
+          glut-create-menu glut-destroy-menu
+          glut-get-menu glut-set-menu
+          glut-add-menu-entry glut-add-sub-menu
+          glut-change-to-menu-entry
+          glut-change-to-sub-menu
+          glut-remove-menu-item glut-attach-menu
+          glut-detach-menu glut-display-func
+          glut-reshape-func glut-keyboard-func
+          glut-mouse-func glut-motion-func
+          glut-passive-motion-func glut-entry-func
+          glut-visibility-func glut-idle-func
+          glut-timer-func glut-menu-state-func
+          glut-special-func
+          glut-spaceball-motion-func
+          glut-spaceball-rotate-func
+          glut-spaceball-button-func
+          glut-button-box-func glut-dials-func
+          glut-tablet-motion-func
+          glut-tablet-button-func
+          glut-menu-status-func
+          glut-overlay-display-func glut-set-color
+          glut-get-color glut-copy-colormap
+          glut-get glut-device-get glut-layer-get
+          glut-extension-supported
+          glut-get-modifiers glut-bitmap-character
+          glut-bitmap-width glut-stroke-character
+          glut-stroke-width glut-wire-sphere
+          glut-solid-sphere glut-wire-cone
+          glut-solid-cone glut-wire-cube
+          glut-solid-cube glut-wire-torus
+          glut-solid-torus glut-wire-teapot
+          glut-solid-teapot glut-wire-dodecahedron
+          glut-solid-dodecahedron
+          glut-wire-octahedron
+          glut-solid-octahedron
+          glut-wire-tetrahedron
+          glut-solid-tetrahedron
+          glut-wire-icosahedron
+          glut-solid-icosahedron
+          ;; Glut window support
+          #{
+             static void glutsend(char *name, at *args)
+             { 
+               if (EXTERNP(glhandlers, &htable_class)) {
+                 at *w = NEW_NUMBER(glutGetWindow());
+                 at *h = htable_get(glhandlers, w); 
+                 UNLOCK(w);
+                 if (h && (h->flags & C_EXTERN)) {
+                   at *m = checksend(h->Class, glhandle);
+                   if (m) { 
+                     args = cons(named(name),args);
+                     argeval_ptr = eval_nothing;
+                     w = send_message(NIL,h,glhandle,args);
+                     argeval_ptr = eval_std; UNLOCK(w); 
+                   }
+                   UNLOCK(m); 
+                 }
+                 UNLOCK(h); 
+               }
+               UNLOCK(args); 
+             }
+             static at *make1i(int x)
+               { return cons(NEW_NUMBER(x),NIL);}
+             static at *make2i(int x, int y)
+               { return cons(NEW_NUMBER(x),make1i(y));}
+             static at *make3i(int x, int y, int z)
+               { return cons(NEW_NUMBER(x),make2i(y,z));}
+             static at *make4i(int x, int y, int z, int k)
+               { return cons(NEW_NUMBER(x),make3i(y,z,k));}
+             // Callbacks
+             static void gDisplay(void)
+               { glutsend("glut-display",NIL);}
+             static void gReshape(int w, int h)
+               { glutsend("glut-reshape", make2i(w,h));}
+             static void gKeyboard(unsigned char key, int x, int y)
+               { glutsend("glut-keyboard", make3i(key,x,y));}
+             static void gMouse(int btn, int state, int x, int y)
+               { glutsend("glut-mouse", make4i(btn,state,x,y));}
+             static void gMotion(int x, int y)
+               { glutsend("glut-motion", make2i(x,y));}
+             static void gPassiveMotion(int x, int y)
+               { glutsend("glut-passive-motion", make2i(x,y));}
+             static void gEntry(int state)
+               { glutsend("glut-entry", make1i(state));}
+             static void gVisibility(int state)
+               { glutsend("glut-visibility", make1i(state));}
+             static void gMenuState(int state)
+               { glutsend("glut-menu-state", make1i(state));}
+             static void gSpecial(int key, int x, int y)
+               { glutsend("glut-special", make3i(key,x,y));}
+             static void gSpaceballMotion(int x, int y, int z)
+               { glutsend("glut-spaceball-motion", make3i(x,y,z));}
+             static void gSpaceballRotate(int x, int y, int z)
+               { glutsend("glut-spaceball-rotate", make3i(x,y,z));}
+             static void gSpaceballButton(int btn, int state)
+               { glutsend("glut-spaceball-button", make2i(btn,state));}
+             static void gButtonBox(int btn, int state)
+               { glutsend("glut-button-box", make2i(btn,state));}
+             static void gDials(int dial, int val)
+               { glutsend("glut-dials", make2i(dial,val));}
+             static void gTabletMotion(int x, int y)
+               { glutsend("glut-tablet-motion", make2i(x,y));}
+             static void gTabletButton(int btn, int state, int x, int y)
+               { glutsend("glut-tablet-button", make4i(btn,state,x,y));}
+             static void gMenuStatus(int status, int x, int y)
+               { glutsend("glut-menu-status", make3i(status,x,y));}
+             static void gOverlayDisplay(void)
+               { glutsend("glut-overlay-display",NIL);}
+          #}
+          ;; Glut window
+          (GlutWindow glutwindow set-callbacks 
+                      destroy create -destructor) ) 
       ;; Init
       (module-never-unload (mod-search "glut.o"))
       (glutint-init) ) ) )
