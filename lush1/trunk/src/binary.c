@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.3 2002-04-26 14:34:18 leonb Exp $
+ * $Id: binary.c,v 1.4 2002-04-26 20:02:37 leonb Exp $
  **********************************************************************/
 
 
@@ -546,6 +546,20 @@ swap_buffer(void *bb, int n, int m)
 
 /*** The serialization stuff ***/
 
+FILE *
+serialization_file_descriptor(int code)
+{
+  switch (code)
+    {
+    case SRZ_READ:
+      return fin;
+    case SRZ_WRITE:
+      return fout;
+    default:
+      return NULL;
+    }
+}
+
 void
 serialize_char(char *data, int code)
 {
@@ -878,6 +892,8 @@ local_write(at *p)
       in_bwrite += save_matrix_len(p);
       if (arr->st->srg.type == ST_GPTR)
         error(NIL,"Cannot save a gptr matrix",p);
+      if (arr->st->srg.type == ST_GPTR)
+        error(NIL,"Cannot save a lisp array",p);
       save_matrix(p, fout);
       return 1;
     }
@@ -1095,6 +1111,7 @@ local_bread_array(at **pp)
   } 
   *pp = AT_matrix(ndim,dim);
   ind = (*pp)->Object;
+  if (ndim < 0) return;
   index_write_idx(ind, &id);
   pp = IDX_DATA_PTR(&id);
   for (i=0; i<size; i++)
