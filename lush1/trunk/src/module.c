@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.59 2004-07-30 20:37:36 leonb Exp $
+ * $Id: module.c,v 1.60 2004-08-02 16:37:32 leonb Exp $
  **********************************************************************/
 
 
@@ -840,7 +840,7 @@ cleanup_module(struct module *m)
     nsbundle_exec_all();
     for (mc = root.next; mc != &root; mc = mc->next)
       if (mc->initname && mc->defs)
-	if (mc->bundle.executable <= 0)
+	if (mc == m || mc->bundle.executable <= 0)
 	  cleanup_defs(&classes, mc);
     nsbundle_symmark(&m->bundle, &m->bundle);
     nsbundle_exec_all();
@@ -865,7 +865,7 @@ cleanup_module(struct module *m)
                         "marked %d instances of class %s as unlinked\n", 
                         n, pname(q));
             }
-          if (! cl->goaway)
+          if (cl->goaway)
             {
               n = 0;
               begin_iter_at(x) 
@@ -895,7 +895,7 @@ cleanup_module(struct module *m)
           if (EXTERNP(q, &class_class))
             {
               class *cl = q->Object;
-              if (! cl->goaway)
+              if (cl->goaway)
                 delete_at_special(q, FALSE);
             }
           else
@@ -964,6 +964,8 @@ update_exec_flag(struct module *m)
 	      dhclassdoc_t *kdata = dynlink_symbol(m, cl->kname, 0, 0);
 	      if (kdata && kdata->lispdata.vtable)
 		((dhclassdoc_t**)(kdata->lispdata.vtable))[0] = kdata;
+	      if (kdata)
+		kdata->lispdata.atclass = q;
 	      cl->classdoc = kdata;
 	    }
 	  }
