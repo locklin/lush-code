@@ -638,5 +638,5 @@ void lasvm_init( lasvm_t *self, int l,
           self->g[i] = s;
         }
     }
-  self->l = k;
+  self->l = self->s = k;
 }
