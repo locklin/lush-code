@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.39 2004-10-15 19:43:29 leonb Exp $
+ * $Id: dldbfd.c,v 1.40 2004-10-20 22:11:51 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -843,9 +843,12 @@ handle_common_symbols(module_entry *ent)
 
 #ifdef __mips__
 
-/* These subroutines alter the relocation code
- * and generate the GOT table that BFD
- * does not handle properly.
+/* ELF MIPS use the pic model by default.
+ * Most of BFD relocation code does not deal with PIC stuff properly.
+ * So we need to reimplement minimal support for GOT.
+ * The following code:
+ * - patches the howtos for PIC related relocs.
+ * - appends a .got section to each object module.
  */
 
 /* mipself_old_{lo16,hi16}_reloc --
@@ -1303,40 +1306,21 @@ mipself_special(module_entry *ent)
 #endif
 
 /* ---------------------------------------- */
-/* SPECIAL PROCESSING FOR MACH-O */
+/* SPECIAL PROCESSING FOR ... */
 
-#ifdef __MACH__
-
-
-/* mipself_special -- special processing for mips elf */
-
-static void
-mach_o_special(module_entry *ent)
-{
-  /* MACH-O case */
-  if (bfd_get_flavour(ent->abfd) == bfd_target_mach_o_flavour)
-    {
-      /**/
-    }
-}
-
-#endif
 
 
 /* ---------------------------------------- */
 /* HANDLE ALL SPECIAL CASES */
 
 
-/* handle_special_cases -- calls all special case routines */
+/* handle_special_rewrites -- calls all special case routines */
 
 static void
-handle_special_cases(module_entry *ent)
+handle_special_rewrites(module_entry *ent)
 {
 #ifdef __mips__
   mipself_special(ent);
-#endif
-#ifdef __MACH__
-  mach_o_special(ent);
 #endif
 }
 
@@ -1344,23 +1328,6 @@ handle_special_cases(module_entry *ent)
 /* ---------------------------------------- */
 /* ALLOCATE AND LOAD DATA */
 
-
-/* dld_alloc_segment -- dummy function for debugger support */
-
-void
-dld_alloc_segment(const char *filename, 
-                 const char *segname, 
-                 bfd_vma address)
-{
-  /* Place a breakpoint on this function
-   * to know when and where a segment is loaded
-   * from within a debugger 
-   */
-#ifdef DEBUG
-  printf("+++ DLDBFD Allocation  | 0x%08lx | %12s | %s\n",
-         (unsigned long) address, segname, filename );
-#endif
-}
 
 /* allocate_memory_for_object -- assigns addresses to the various sections */
 
@@ -1375,26 +1342,21 @@ allocate_memory_for_object(module_entry *ent)
     offset = 0;
     abfd = ent->abfd;
     for (p=abfd->sections; p; p=p->next)
-        if (p->flags & SEC_ALLOC)
+      if (p->flags & SEC_ALLOC)
         {
-            mask = (1L << p->alignment_power) - 1L;
-            offset = (offset + mask) & ~mask;
-            p->vma = offset;
-            offset += dldbfd_section_size(p);
+	  mask = (1L << p->alignment_power) - 1L;
+	  offset = (offset + mask) & ~mask;
+	  p->vma = offset;
+	  offset += dldbfd_section_size(p);
         }
     /* Allocate memory for all these sections */
     ent->exec = xballoc(abfd, (size_t)offset);
     memset(ent->exec, 0, (size_t)offset);
     /* Update all vma in the sections */
     for (p=abfd->sections; p; p=p->next)
-        if (p->flags & SEC_ALLOC)
-          {
-            p->vma = p->vma + ptrvma(ent->exec);
-            dld_alloc_segment(ent->filename, p->name, p->vma);
-          }
+      if (p->flags & SEC_ALLOC)
+	p->vma = p->vma + ptrvma(ent->exec);
 }
-
-
 
 
 /* load_object_file_data -- loads the object file in core */
@@ -1793,13 +1755,11 @@ apply_relocations(module_entry *module, int externalp)
                                                 (bfd_byte*)vmaptr(p->vma), 
                                                 p, NULL, &dummy_string );
 #ifdef __x86_64__
-		/* Quick and dirty fix for amd64 overflow problems */
-		if ( (hsym->flags & DLDF_DEFD) &&
-		     !( hsym->flags & DLDF_ALLOC) && 
-		     (data[reloc->address-1]==0xe8) )
+		/* Attempt to fix amd64 overflow problems */
+		if (externalp && (hsym->flags & DLDF_DEFD) && !( hsym->flags & DLDF_ALLOC))
 		  {
 		    bfd_byte *data = vmaptr(p->vma);
-		    if ( data[reloc->address - 1] == 0xe8 && hsym->flags == (DLDF_DEFD|DLDF_REFD))
+		    if (data[reloc->address-1]==0xe8)
 		      {
 			void **stub = xmalloc(2*sizeof(void*));
 			stub[0] = vmaptr(0x0225ff);
@@ -2197,7 +2157,7 @@ arlink_traverse(struct bfd_hash_entry *gsym, void *gcookie)
             /* Update global symbol table */
             handle_common_symbols(armodule);
             check_multiple_definitions(armodule);
-	    handle_special_cases(armodule);
+	    handle_special_rewrites(armodule);
             allocate_memory_for_object(armodule);
             load_object_file_data(armodule);
             apply_relocations(armodule,FALSE);
@@ -2386,7 +2346,7 @@ dld_link (const char *oname)
         {
             handle_common_symbols(module);
             check_multiple_definitions(module);
-            handle_special_cases(module);
+            handle_special_rewrites(module);
             allocate_memory_for_object(module);
             load_object_file_data(module);
             apply_relocations(module,FALSE);
