@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.20 2003-01-14 16:37:24 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.21 2003-01-26 20:05:02 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -151,6 +151,7 @@ AC_CHECK_HEADERS(unistd.h sys/mman.h termios.h pty.h util.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/ttold.h)
 AC_CHECK_HEADERS(sys/time.h sys/timeb.h readline/readline.h bfd.h)
+AC_SYS_LARGEFILE
 
 # ----------------------------------------
 # Types
@@ -173,7 +174,7 @@ AC_CHECK_FUNCS(feenableexcept ieee_handler fpsetmask __setfpucw)
 AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp waitpid openpty)
 AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
-AC_CHECK_FUNCS(setenv putenv)
+AC_CHECK_FUNCS(setenv putenv fseeko ftello)
 
 
 # ----------------------------------------

@@ -24,17 +24,31 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: define.h,v 1.8 2003-01-11 05:09:41 leonb Exp $
+ * $Id: define.h,v 1.9 2003-01-26 20:05:31 leonb Exp $
  **********************************************************************/
 
 #ifndef DEFINE_H
 #define DEFINE_H
 
-/* --------- GENERAL PURPOSE DEFINITIONS ---------- */
-
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
+#ifdef HAVE_CONFIG_H
+# include "config.h"
+# ifndef UNIX
+#  define UNIX
+# endif
+# ifndef _GNU_SOURCE
+#  define _GNU_SOURCE
+# endif
 #endif
+
+#ifdef WIN32
+# define HAVE_STRFTIME 1
+# define STDC_HEADERS  1  
+# define HAVE_STRCHR   1
+# define HAVE_MEMCPY   1
+# define HAVE_STRERROR 1
+#endif
+
+/* --------- GENERAL PURPOSE DEFINITIONS ---------- */
 
 #include <setjmp.h>
 #include <stdlib.h>
@@ -102,14 +116,6 @@ typedef void* gptr;
 /* This is not up-to-date */
 #endif
 
-#ifndef WIN32
-# ifndef AMIGA
-#  ifndef MAC
-#   define UNIX
-#  endif
-# endif
-#endif
-
 #ifdef UNIX
 # define INIT_MACHINE      init_unix()
 # define TOPLEVEL_MACHINE  toplevel_unix()
@@ -151,18 +157,6 @@ typedef void* gptr;
 #endif
 
 /* --------- AUTOCONF --------- */
-
-#ifdef WIN32
-# define HAVE_STRFTIME 1
-# define STDC_HEADERS  1  
-# define HAVE_STRCHR   1
-# define HAVE_MEMCPY   1
-# define HAVE_STRERROR 1
-#endif
-
-#ifdef UNIX
-# include "config.h"
-#endif
 
 #if STDC_HEADERS
 # include <string.h>

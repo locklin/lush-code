@@ -108,7 +108,7 @@ static struct C_window {
 static stack_ptr 
 init_stack(void)
 {
-  stack_ptr node = malloc(sizeof(stack_node));                                    
+  stack_ptr node = malloc(sizeof(stack_node));
   node->link = NIL;
   return node;
 }

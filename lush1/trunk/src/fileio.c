@@ -24,8 +24,11 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.16 2003-01-15 16:32:36 leonb Exp $
+ * $Id: fileio.c,v 1.17 2003-01-26 20:05:39 leonb Exp $
  **********************************************************************/
+
+
+#include "header.h"
 
 #include <errno.h>
 
@@ -42,8 +45,6 @@
 # define R_OK 04
 # define W_OK 02
 #endif
-
-#include "header.h"
 
 #ifdef UNIX
 # include <sys/types.h>
@@ -1611,17 +1612,27 @@ write4(FILE *f, unsigned int l)
 /* file_size returns the remaining length of the file
  * It causes an error when the file is not exhaustable
  */
-long
+off_t
 file_size(FILE *f)
 {
-  long e, x;
-  x=ftell(f);
-  if(fseek(f,0L,SEEK_END))
+  off_t e, x;
+#if HAVE_FSEEKO
+  x = ftello(f);
+  if (fseeko(f,(off_t)0,SEEK_END))
     error(NIL,"Non exhaustable file (pipe or terminal ?)",NIL);
-  e=ftell(f);
-  if(fseek(f,x,SEEK_SET))
+  e = ftello(f);
+  if (fseek(f,(off_t)x,SEEK_SET))
     error(NIL,"Non rewindable file (pipe or terminal ?)",NIL);
   return e - x;
+#else
+  x = (off_t)ftell(f);
+  if(fseek(f,(long)0,SEEK_END))
+    error(NIL,"Non exhaustable file (pipe or terminal ?)",NIL);
+  e = (off_t)ftell(f);
+  if(fseek(f, (long)x,SEEK_SET))
+    error(NIL,"Non rewindable file (pipe or terminal ?)",NIL);
+  return e - x;
+#endif
 }
 
 

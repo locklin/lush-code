@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.48 2003-01-14 19:24:09 leonb Exp $
+ * $Id: header.h,v 1.49 2003-01-26 20:05:32 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -648,7 +648,7 @@ TLAPI void file_close(FILE *f);
 TLAPI void set_script(char *s);
 TLAPI int read4(FILE *f);
 TLAPI int write4(FILE *f, unsigned int l);
-TLAPI long file_size(FILE *f);
+TLAPI off_t file_size(FILE *f);
 #ifndef HAVE_STRERROR
 TLAPI char *strerror(int errno);
 #endif

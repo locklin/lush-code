@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.3 2003-01-10 22:32:50 leonb Exp $
+ * $Id: main.c,v 1.4 2003-01-26 20:05:39 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -48,12 +48,12 @@ main(int argc, char **argv)
 #endif
               "\n");
       fprintf(stderr,
-              "   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.\n"
-              " Includes parts of TL3\n"
+              "   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T, NECI.\n"
+              " Includes parts of TL3:\n"
               "   Copyright (C) 1987-1999 Leon Bottou and Neuristique.\n"
               " Includes selected parts of SN3.2:\n"
               "   Copyright (C) 1991-2001 AT&T Corp.\n"
-              "This program is free software; it is distributed under the terms\n"
+              "This program is free software distributed under the terms\n"
               "of the GNU Public Licence (GPL) with ABSOLUTELY NO WARRANTY.\n"
               "Type `(helptool)' for details.\n");
     } 
