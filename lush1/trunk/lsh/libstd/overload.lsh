@@ -1,0 +1,159 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: overload.lsh,v 1.1 2003-03-06 04:13:12 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+#? *** Overloading compiled functions
+;; Bla bla.
+
+
+
+
+;; This function converts type descriptors
+;; returned by function dhinfo-t into type declarations.
+;; Why so many representations?
+(de overload.typedecl(desc)
+  (while (and (consp desc) (= (car desc) 'ptr))
+    (setq desc (cadr desc)) )
+  (selectq (car desc)
+    ;; Simple types
+    (gptr '(-gptr-))
+    (bool '(-bool-))
+    (ubyte '(-ubyte- ))
+    (byte '(-byte- ))
+    (short '(-short- ))
+    (int '(-int- ))
+    (flt '(-flt- ))
+    (real '(-real-))
+    (str '(-str- ))
+    (list (cons '-list- (mapcar overload.typedecl (cdr desc))))
+    (obj (list '-obj- (list (nth 1 desc))))
+    (idx 
+     (let* ((ndim (nth 2 desc))
+            (base (nth 3 desc)) )
+       (when (<> (car base) 'srg)
+         (error 'overload "Illegal type descriptor" desc) )
+       (list (named (sprintf "-idx%d-" ndim))
+             (overload.typedecl (nth 2 base)) ) ) )
+    (t
+     (error 'overload "Unsupported type descriptor" desc) ) ) )
+
+
+;; This is the workhose of interpreted overloaded calls
+(de overload.sub(dhlist . args)
+  (let ((found ())
+        (nargs (length args)))
+    (while (not found)
+      (when (not (consp dhlist))
+        (error 'overload "No DH function matches these arguments" ()) )
+      (let* ((name (car dhlist))
+             (func (eval `:,name))
+             (info ()) )
+        (setq dhlist (cdr dhlist))
+        (when (is-of-class func |DH|)
+          (setq info (dhinfo-t func)) )
+        (when (not info)
+          (error 'overload "Not a compiled DH function" name) )
+        (setq info (mapcar overload.typedecl (cadr info)))
+        (when (= (length info) nargs)
+          (let ((okay t))
+            (each ((d info)
+                   (a args))
+              (when okay
+                (let ((p (getp (eval `:,(car d)) 'type-syntax)))
+                  (setq p (p 'overload d))
+                  (when (not (p a))
+                    (setq okay ()) ) ) ) )
+            (when okay
+              (setq found func) ) ) ) ) )
+    (apply found args) ) )
+
+
+#? (overload (<dh1>...<dhn>) <...args...>)
+;; Apply the first of the DH functions <dh1>...<dhn>
+;; whose prototype matches the type of the 
+;; arguments <...args...>
+
+(dm overload(fn dhlist . args)
+  (list overload.sub (list 'quote dhlist) . args) )
+
+
+
+;; dhm-p
+(dhm-p overload(source)
+  (if (and (consp source) (consp (cdr source)))
+      (cons (car source) (cons (cadr source) (dhc-pp-all (cddr source))))
+    source ) )
+
+
+;; compare types (ugly)
+(de overload.typecheck(ot1 ot2)
+  (setq ot1 (==> ot1 copy))
+  (setq ot2 (==> ot2 copy))
+  (let ((dhc-unif-error-flag t)
+        (dhc-unif-error (lambda args (setq dhc-unif-error-flag ()))) )
+    (dhc-unify-types ot1 ot2)
+    dhc-unif-error-flag ) )
+
+;; dhm-t
+(dhm-t overload(source)
+  (let* ((fs (cadr source))
+         (as (cddr source)) 
+         (ftypes ())
+         (anodes ()) 
+         (found-name ()) )
+    ;; Check
+    (each ((f fs))
+      (when (not (symbolp f))
+        (dhc-error "A list of function names was expected" fs) ) )
+    (setq fnodes (all ((f fs)) (dhc-parse-expr-t f)) )
+    (setq anodes (all ((a as)) (dhc-parse-expr-t a)) )
+    ;; Search function
+    (while (not found-name)
+      (when (not (consp fs))
+        (dhc-error "No DH function matches these arguments") )
+      (let* ((f (car fs))
+             (fnode (car fnodes))
+             (ftype :fnode:type)
+             (ptypes (dhu-extra ftype)) )
+        (setq fs (cdr fs))
+        (setq fnodes (cdr fnodes))
+        (when (= (length ptypes) (length anodes))
+          (let ((okay t))
+            (each ((ptype ptypes)
+                   (anode anodes))
+              (when (and okay (not (overload.typecheck ptype :anode:type)))
+                (setq okay ()) ) ) 
+            (when okay
+              (setq found-name f) ) ) ) ) )
+    ;; Select
+    (dhc-parse-replacement-source-t 
+     source (cons found-name (cddr source))) ) )
+
+
