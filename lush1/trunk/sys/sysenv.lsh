@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.47 2002-07-22 16:17:13 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.48 2002-07-22 17:48:40 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1231,11 +1231,21 @@
 (each ((fn (append '(-bool- -ubyte- -byte- -short- -int- )
                    '(-flt- -real- -obj- -gptr- -str- -list-)
                    (mapfor (i 0 15) (named (sprintf "-idx%d-" i))) )))
-  (eval `(dm ,fn fn (mlambda args (cons 'declare args)))) 
-  (eval `(lock-symbol ,fn)) )
+  (eval 
+   `(dm ,fn (fn . args)
+      (if (not (symbolp (car args)))
+          (mlambda args (cons 'declare args))
+        (printf "*** Warning: old style declaration : %l\n" (cons fn args))
+        (list 'declare 
+              '(,fn ,@(when (regex-match "-idx[0-9]+-" (pname fn))
+                        '((-flt-)) ))
+                . args) ) ) )
+  (eval 
+   `(lock-symbol ,fn)) )
+
 (defvar -float- -flt-)
 (lock-symbol -float-)
-(defvar -double -real-)
+(defvar -double- -real-)
 (lock-symbol -double-)
 
 
@@ -1429,7 +1439,7 @@
           (setq again ()) )
          ((= item ";")
           (setq stmt (apply concat (nconc1 stmt item)))
-          (setq pgm (nconc1 pgm '(cinline `stmt `@expr)))
+          (setq pgm (nconc1 pgm `(cinline ,stmt ,@expr)))
           (setq stmt ())
           (setq expr ()) )
          ((not (stringp item))
@@ -1441,7 +1451,7 @@
           (setq stmt (nconc1 stmt item)) ) ) ) )
     (when stmt
       (setq stmt (apply concat stmt))
-      (setq pgm (nconc1 pgm '(cinline `stmt `@expr))) )
+      (setq pgm (nconc1 pgm `(cinline ,stmt ,@expr))) )
     (list (if (cdr pgm) (cons 'progn pgm) (car pgm))) ) )
 
 (lock-symbol breakp protect unprotect 
