@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.28 2003-03-04 17:20:22 leonb Exp $
+ * $Id: module.c,v 1.29 2003-03-04 18:15:58 leonb Exp $
  **********************************************************************/
 
 
@@ -768,7 +768,7 @@ module_load(char *filename, at *hook)
   if (l[0]==0 || l[0]=='.')
     {
       len = strlen(EXT_DLL);
-      if (!strncmp(EXT_DLL, l-len, len))
+      if (len>0 && !strncmp(EXT_DLL, l-len, len))
         dlopen = 1;
     }
   /* Initialize */
@@ -804,7 +804,7 @@ module_load(char *filename, at *hook)
   /* Load the file */
   if (dlopen)
     {
-#if DLDBFD
+#if DLDBFD && DLOPEN
       if (! (handle = dld_dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
         dynlink_error(new_string(m->filename));
 #elif DLOPEN
