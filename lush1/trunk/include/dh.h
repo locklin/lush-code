@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.10 2002-07-15 23:22:41 leonb Exp $
+ * $Id: dh.h,v 1.11 2002-07-20 22:01:57 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -151,7 +151,7 @@ typedef struct s_dhrecord
 #define DH_SRG(k) \
         {DHT_SRG,k}
 #define DH_OBJ(kclass) \
-        {DHT_OBJ,0,0,0,&kclass}
+        {DHT_OBJ,0,0,0,(void*)&kclass}
 #define DH_TEMPS(n) \
         {DHT_TEMPS,0,n}
 #define DH_END_TEMPS \
@@ -160,16 +160,16 @@ typedef struct s_dhrecord
         {DHT_RETURN}
 
 #define DH_CLASS(n, cl) \
-        {DHT_CLASS,0,n,0,&cl}
+        {DHT_CLASS,0,n,0,(void*)&cl}
 #define DH_END_CLASS \
         {DHT_END_CLASS}
 #define DH_NAME(s,cl,sl) \
-        {DHT_NAME, 0, 0, s, &(((struct name2(CClass_,cl)*)0)->sl)}
+        {DHT_NAME,0,0,s,(void*)&(((struct name2(CClass_,cl)*)0)->sl)}
 #define DH_METHOD(s,kname) \
-        {DHT_METHOD, 0, 0, s, kname}
+        {DHT_METHOD,0,0,s,(void*)&kname}
 
 #define DH_REFER(kname) \
-        {DHT_REFER,0,0,kname}
+        {DHT_REFER,0,0,0,(void*)&kname}
 
 /* ----------------------------------------------- */
 /* DHFUNCTIONS                                     */

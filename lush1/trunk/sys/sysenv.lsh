@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.45 2002-07-19 21:45:08 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.46 2002-07-20 22:02:03 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -397,16 +397,16 @@
        ',name) ) )
 
 (dm defmethod(f class name . body)
-    `(putmethod ,class ',name (lambda ,@body)) )
+  `(putmethod ,class ',name (lambda ,@body)) )
 
 (dm demethod(f class name . body)
-    `(putmethod ,class ',name (lambda ,@body)) )
+  `(putmethod ,class ',name (lambda ,@body)) )
 
 (dm dfmethod(f class name . body)
-    `(putmethod ,class ',name (flambda ,@body)) )
+  `(putmethod ,class ',name (flambda ,@body)) )
 
 (dm dmmethod(f class name . body)
-    `(putmethod ,class ',name (mlambda ,@body)) )
+  `(putmethod ,class ',name (mlambda ,@body)) )
 
 (dmd mapfor ((var lo hi . step) . body)
      `(let ((|MAP| ()))
@@ -1113,27 +1113,40 @@
 
 (de module.hook(what m)
   (cond
-   ;; On init.
+   ;; ON INITIALIZATION
    ((= what 'init)
     (each ((pair (module-defs m)))
       (cond
-       ;; global
+       ;; global definition
        ((symbolp (cdr pair))
-        (let ((old (eval (list 'scope (cdr pair)))))
+        (let ((old (eval `:,(cdr pair))))
+          ;; - save old definition when precious is set
+(print (cdr pair) old)
           (when (and old (getp old 'precious))
             (putp (car pair) 'saved old)
+            ;; - functions: save source
             (when (setq old (funcdef old))
-              (putp (car pair) 'source old) ) ) )
+              (putp (car pair) 'source old) ) 
+            ;; - classes: copy methods
+            (when (and (classp old) (classp (car pair)))
+              (each ((m (methods old)))
+                (putmethod (car pair) m (check==> old m)) ) ) ) )
+        ;; - perform definition
         (eval `(setq :,(cdr pair) ',(car pair))) ) 
-       ;; method
-       ((and (consp (cdr pair)) (classp (cadr pair)) (symbolp (cddr pair)))
-        (putmethod (cadr pair) (cddr pair) (car pair)) ) ) ) )
-   ;; On unload.
+       ;; method definiton
+       ((consp (cdr pair))
+        ;; - perform definition
+        (when (and (classp (cadr pair)) (symbolp (cddr pair)))
+          (putmethod (cadr pair) (cddr pair) (car pair)) ) ) ) ) )
+   ;; ON UNLOAD.
    ((= what 'unlink)
     (each ((pair (module-defs m)))
-      (when (and (symbolp (cdr pair)) 
-                 (== (car pair) (eval `:,(cdr pair))) )
-        (eval `(setq :,(cdr pair) ',(getp (car pair) 'saved))) ) ) ) ) )
+      ;; undo global definitions
+      (when (symbolp (cdr pair))
+        (let ((old (eval `:,(cdr pair))))
+          (when (== (car pair) old)
+            (setq old (getp old 'saved))
+            (eval `(setq :,(cdr pair) ',old)) ) ) ) ) ) ) )
 
 (de mod-search(name)
   (let ((found ())
