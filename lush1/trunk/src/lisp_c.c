@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.11 2002-07-08 19:24:31 leonb Exp $
+ * $Id: lisp_c.c,v 1.12 2002-07-17 18:34:55 leonb Exp $
  **********************************************************************/
 
 
@@ -2735,6 +2735,14 @@ DX(xto_real)
   return NEW_NUMBER( AREAL(1) );
 }
 
+/* (to-number <arg>) */
+DX(xto_number)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return NEW_NUMBER( AREAL(1) );
+}
+
 /* (to-bool <arg>) */
 DX(xto_bool)
 {
@@ -2902,6 +2910,7 @@ init_lisp_c(void)
   dx_define("to-int", xto_int);
   dx_define("to-flt", xto_flt);
   dx_define("to-real", xto_real);
+  dx_define("to-number", xto_number);
   dx_define("to-bool", xto_bool);
   dx_define("to-gptr", xto_gptr);
   dx_define("to-obj", xto_obj);
