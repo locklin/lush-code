@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.14 2002-05-07 00:25:36 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.15 2002-05-07 19:19:55 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -822,12 +822,15 @@
   (pprint f) )
 
 (de pretty-slots(this)
-    (let ((cl (classof this)))
+    (let ((tb (tab))
+          (cl (classof this)))
       (while cl
+        (tab tb)
 	(printf ";; from class %l:\n" (classname cl))
 	(each ((i (slots cl)))
 	      (if (consp i)
 		  (setq i (car i)))
+              (tab tb)
 	      (printf ";;\t%l=%l\n" i (apply letslot (list this i))) )
 	(setq cl (super cl)) ) ) )
 
@@ -847,7 +850,7 @@
 
 (demethod object pretty()
   ;; default pretty function
-  (printf "%l ; lisp object with:\n" this)
+  (printf "%l " this)
   (pretty-slots this) )
 
 (demethod class pretty()
@@ -991,6 +994,76 @@
 
 (lock_symbol |^S| symbols )
 
+
+
+
+;;; --------- Modules ---------
+
+(de module.hook(what m)
+  (when (= what 'init)
+    (each ((pair (module-defs m)))
+      (eval (list setq (list 'scope (car pair)) (cdr pair))) ) ) )
+
+(de module.search(name)
+  (let ((found ())
+        (l (module-list)))
+    (each ((m l))
+      (when (= name (module-filename m))
+        (setq found m) ) )
+    (when (not found)
+      (setq name (basename name))
+      (each ((m l))
+        (when (= name (basename (module-filename m)))
+          (setq found (cons m found)) ) )
+      (if (and found (not (cdr found)))
+          (setq found (car found))
+        (setq found ()) ) )
+    found ) )
+
+(de mod-list()
+  (mapcar module-filename (module-list)) )
+
+(demethod |MODULE| pretty()
+  (printf "%l " this)
+  (let ((tb (tab)))
+    (printf ";; module %l\n" (module-filename this))
+    (tab tb)
+    (printf ";; %s" (if (module-executable-p this) "executable" "partially linked"))
+    (printf ", %s" (if (module-unloadable-p this) "unloadable" "sticky"))
+    (let ((l (length (module-defs this))))
+      (if (= l 0) 
+          (printf ", not initialized\n")
+      (printf ", defines %d primitive(s)\n" l) ) ) ) )
+
+(de mod-status()
+  (each ((m (module-list)))
+    (==> m pretty) ) )
+
+(de mod-inquire(name)
+  (let ((m (module.search name)))
+    (when m
+      (let ((d (module-defs m))
+            (x (module-executable-p m)) )
+        (cons (cond
+               ((not d) "State: unknown")
+               (x "State: initialized, executable")
+               (t "State: initialized, partially linked") )
+              (mapcar car (module-defs m)) ) ) ) ) )
+
+(de mod-load(name)
+  (let ((hook (lambda args (and module.hook (apply module.hook args)))))
+    (module-filename (module-load name hook)) ) )
+
+(de mod-unload(name)
+  (let ((m (module.search name)))
+    (when (not m)
+      (error 'mod-unload "Unknown module name" name) )
+    (module-unload m) ) )
+
+(defvar mod-dlopen mod-load)
+
+(lock-symbol module.search module.hook
+             mod-list mod-status mod-inquire mod-load mod-unload )
 
 
 
