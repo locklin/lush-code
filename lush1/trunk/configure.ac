@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.41 2004-07-21 16:12:46 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.42 2004-09-10 14:25:03 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -89,7 +89,7 @@ AC_PROG_CXX
 AC_PROG_F77
 AC_PROG_CPP
 
-
+AC_PROG_INSTALL
 AC_PROG_RANLIB
 AC_PROG_LN_S
 AC_PATH_PROG(MV, mv)
@@ -109,8 +109,6 @@ if test -x $INDENT ; then
   fi
 fi
 
-INSTALL='${top_srcdir}/config/install-sh -c' 
-AC_SUBST(INSTALL)
 
 # ----------------------------------------
 # Libraries
