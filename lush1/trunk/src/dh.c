@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.8 2002-07-23 18:58:34 leonb Exp $
+ * $Id: dh.c,v 1.9 2002-07-23 19:25:08 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -512,7 +512,7 @@ dhinfo_record(dhrecord *drec)
       
     case DHT_NAME:
       p = dhinfo_record(drec+1);
-      return cons(new_string(strclean(drec->name)), cons(p,NIL));
+      return cons(named(strclean(drec->name)), cons(p,NIL));
 
     case DHT_METHOD:
       p = dhinfo_record( ((dhdoc_t*)(drec->arg))->argdata );
