@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.5 2004-09-30 21:24:35 leonb Exp $
+ * $Id: svqp2.h,v 1.6 2004-11-02 16:41:51 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -140,7 +140,7 @@ public:
   // OUTPUT: GMIN, GMAX, W
   // - W is the optimal value of the objective function
   // - GMIN, GMAX are the active gradient bounds.
-  //   The SVM threshold is (GMIN+GMAX)/2...
+  //   The SVM threshold is -(GMIN+GMAX)/2...
   
   double   gmin;
   double   gmax;
