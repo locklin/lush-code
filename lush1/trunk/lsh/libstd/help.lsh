@@ -27,7 +27,7 @@
 ;;;;    The help subsystem...
 ;;;;	Yann LeCun 2002
 ;;;;
-;;;;  $Id: help.lsh,v 1.10 2002-10-15 05:46:18 profshadoko Exp $
+;;;;  $Id: help.lsh,v 1.11 2002-10-17 21:51:38 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "libstd/ldoc")
@@ -373,7 +373,9 @@
 	(help-tree-render-html-body hn d (append num (list n)))
 	(incr n)))))
 
-(de help-tree-render-html-index (r d num)
+;; target is an optional target frame name for the 
+;; hyperlinked index entries.
+(de help-tree-render-html-index (r d num &optional target)
   (let* ((fname (help-htmlfile-from-path :r:file))
 	 (n (merge-words (mapcar pname num) "."))
 	 (children (==> r getchildren))
@@ -386,10 +388,14 @@
 	 (i 0))
     (selectq (length num)
       (0 (error "shouldn't have zero length section number"))
-      (1 (printf "<p><h1>%s: <a href=\"%s#%s\">%s</a></h1>\n" 
-		 n fname n (cleanup-brackets-for-html :r:name)))
-      (t (printf "<li><b>%s</b>: <a href=\"%s#%s\">%s</a>"
-		 n fname n (cleanup-brackets-for-html :r:name))
+      (1 (printf "<p><h1>%s: <a href=\"%s#%s\" %s>%s</a></h1>\n" 
+		 n fname n 
+		 (if target (sprintf "target=\"%s\"" target) "")
+		 (cleanup-brackets-for-html :r:name)))
+      (t (printf "<li><b>%s</b>: <a href=\"%s#%s\" %s>%s</a>"
+		 n fname n 
+		 (if target (sprintf "target=\"%s\"" target) "")
+		 (cleanup-brackets-for-html :r:name))
 	 (when (<> nchildren 0) (printf " (%d)" nchildren))
 	 (printf "\n")))
     (when 
@@ -399,12 +405,13 @@
 	 (t  t))
       (printf "<ul>\n")
       (each ((hn keepers))
-	(help-tree-render-html-index hn d (append num (list i)))
+	(help-tree-render-html-index hn d (append num (list i)) target)
 	(incr i))
       (printf "</ul>\n"))))
 
 (defmethod help-book render-html (d title)
   (printf "printing index\n")
+  ;; print regular no-frame index
   (let ((index-file (concat-fname d "index.html")))
     (writing index-file
       (printf "<html><head></head><body>\n")
@@ -413,6 +420,30 @@
 	     (n 0))
 	(each ((hn children))
 	  (help-tree-render-html-index hn d (list n))
+	  (incr n)))
+      (printf "</body></html>\n")))
+  ;; print frameset
+  (writing (concat-fname d "frameset.html")
+    (printf 
+      "<html><head><TITLE>Lush Reference Manual</TITLE>\n\
+       <meta name=\"keywords\" content=\"Lush, Lisp, machine learning,\n\
+        neural nets, computer vision, image processing, statistics,\n\
+        LeCun, Bottou, Manual, Documentation, Matlab, S+, DjVu\">\n\
+        <meta name=\"description\" content=\"Lush: the programming language\n\
+        for researchers. Documentation\"></head>\n\
+        <frameset rows = \"35%%, 65%%\">\n\
+        <frame src =\"index-frame.html\"></frame>\n\
+        <frame name=\"docpane\" src =\"f0288067.html\"></frame>\n\
+        </frameset></html>\n"))
+  ;; print index with target frame 
+  (let ((index-file (concat-fname d "index-frame.html")))
+    (writing index-file
+      (printf "<html><head></head><body>\n")
+      (printf "<h1>%s</h1>\n" title)
+      (let* ((children (==> root getchildren))
+	     (n 0))
+	(each ((hn children))
+	  (help-tree-render-html-index hn d (list n) "docpane")
 	  (incr n)))
       (printf "</body></html>\n")))
   (printf "printing bodies\n")

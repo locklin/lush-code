@@ -6,7 +6,9 @@ outdir=../html
 HTML= \
     ${outdir}/index.html \
     ${outdir}/credits.html \
+    ${outdir}/news.html \
     ${outdir}/links.html \
+    ${outdir}/doc.html \
     ${outdir}/screenshots.html \
 
 INC= \
@@ -27,8 +29,10 @@ ${HTML}:
 	$(gtml) $<
 
 ${outdir}/index.html: index.gtml
+${outdir}/news.html: news.gtml latest-news older-news
 ${outdir}/credits.html: credits.gtml
 ${outdir}/links.html: links.gtml
+${outdir}/doc.html: doc.gtml
 ${outdir}/screenshots.html: screenshots.gtml
 
 
