@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.51 2003-05-20 16:04:29 leonb Exp $
+ * $Id: header.h,v 1.52 2003-05-20 16:06:59 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -1247,9 +1247,9 @@ LUSHAPI void cside_create_obj(void *cptr, dhclassdoc_t *);
 LUSHAPI void cside_destroy_range(void *from, void *to);
 LUSHAPI at * cside_find_litem(void *cptr);
 
-LUSHAPI int     run_time_error_flag;
-LUSHAPI jmp_buf run_time_error_jump;
-LUSHAPI void    run_time_error(char *s);
+extern LUSHAPI int run_time_error_flag;
+extern LUSHAPI jmp_buf run_time_error_jump;
+LUSHAPI void run_time_error(char *s);
 
 
 /* EVENT.H ----------------------------------------------------- */
