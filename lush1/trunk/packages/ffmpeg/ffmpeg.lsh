@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ffmpeg.lsh,v 1.1 2004-01-20 23:06:22 leonb Exp $
+;;; $Id: ffmpeg.lsh,v 1.2 2004-01-20 23:58:31 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -66,7 +66,7 @@
   ((-int-)  audio_sample_rate)
   ((-int-)  frame_height)
   ((-int-)  frame_width)
-  ((-int-)  frame_aspect_ratio)
+  ((-real-) frame_aspect_ratio)
   ((-int-)  frame_pix_fmt)
   ((-int-)  frame_rate)
   ((-int-)  frame_rate_base) 
@@ -136,12 +136,12 @@
 
 (defmethod AvInputFile get-start-time()
   (if ic
-      (to-real #{ (double)(((AVFormatContext*)($ic))->start_time) #})
+      (to-real #{ (double)(((AVFormatContext*)($ic))->start_time)/AV_TIME_BASE #})
     0 ) )
 
 (defmethod AvInputFile get-duration()
   (if ic
-      (to-real #{ (double)(((AVFormatContext*)($ic))->duration) #})
+      (to-real #{ (double)(((AVFormatContext*)($ic))->duration)/AV_TIME_BASE #})
     0 ) )
 
 (defmethod AvInputFile open(s)
@@ -244,7 +244,10 @@
 (defclass AvAudioSource AudioSource
   ((-obj- (AvInputFile)) ai)
   ((-int-) streamno)
-  ((-gptr-) st) )
+  ((-gptr-) st) 
+  ;; information
+  ((-int-)  audio_channels)
+  ((-int-)  audio_sample_rate) )
 
 (defmethod AvAudioSource AvAudioSource(avfile n)
   ((-obj- (AvInputFile)) avfile)
@@ -252,6 +255,8 @@
   (setq ai avfile)
   (setq streamno n)
   (setq st (gptr ()))
+  (setq audio_channels 1)
+  (setq audio_sample_rate 44100)
   (when (or (< n 0) (>= n (==> avfile get-nb-streams)))
     (error "Illegal stream number") )
   (when (<> (==> avfile get-stream-codec-type n) @CODEC_TYPE_AUDIO)
@@ -267,19 +272,25 @@
     if (avcodec_open(&st->codec, codec) < 0) 
        run_time_error("FFMPEG error: error while opening codec");
   }#}
+  #{{
+    AVStream *st = (AVStream*)($st);
+    AVCodecContext *enc = &st->codec;
+    $audio_channels = enc->channels;
+    $audio_sample_rate = enc->sample_rate;
+  }#}
   () )
 
 (defmethod AvAudioSource get-codec-name()
-  (let ((g (gptr ())))
-    #{{
-      AVStream *st = (AVStream*)($st);
-      $g = (gptr) st->codec.codec->name;
-    }#}
-    (ptr-str g) ) )
+  (ptr-str (to-gptr #{ ((AVStream*)($st))->codec.codec->name #})) )
 
 (defmethod AvAudioSource get-codec-id()
   (==> ai get-stream-codec-id streamno) )
 
+(defmethod AvAudioSource get-start-time()
+  (to-real #{ (double)(((AVStream*)($st))->start_time)/AV_TIME_BASE #}) )
+
+(defmethod AvAudioSource get-duration()
+  (to-real #{ (double)(((AVStream*)($st))->duration)/AV_TIME_BASE #}) )
 
         ;;; AVAUDIOSOURCE IS UNFINISHED AND NOT USABLE YET
 	;;; AUDIOSOURCE STILL NEEDS TO BE DEFINED.
@@ -295,7 +306,16 @@
 (defclass AvVideoSource VideoSource
   ((-obj- (AvInputFile)) ai)
   ((-int-) streamno)
-  ((-gptr-) st) )
+  ((-gptr-) st)
+  ;; information...
+  ((-int-)  frame_height)
+  ((-int-)  frame_width)
+  ((-real-) frame_aspect_ratio)
+  ((-int-)  frame_pix_fmt)
+  ((-int-)  frame_rate)
+  ((-int-)  frame_rate_base) 
+  )
+
 
 (defmethod AvVideoSource AvVideoSource(avfile n)
   ((-obj- (AvInputFile)) avfile)
@@ -303,6 +323,12 @@
   (setq ai avfile)
   (setq streamno n)
   (setq st (gptr ()))
+  (setq frame_height 128)
+  (setq frame_width 160)
+  (setq frame_aspect_ratio 0)
+  (setq frame_pix_fmt @PIX_FMT_YUV420P)
+  (setq frame_rate 25)
+  (setq frame_rate_base 1)
   (when (or (< n 0) (>= n (==> avfile get-nb-streams)))
     (error "Illegal stream number") )
   (when (<> (==> avfile get-stream-codec-type n) @CODEC_TYPE_VIDEO)
@@ -318,21 +344,48 @@
     if (avcodec_open(&st->codec, codec) < 0) 
        run_time_error("FFMPEG error: error while opening codec");
   }#}
+  #{{
+    AVStream *st = (AVStream*)($st);
+    AVCodecContext *enc = &st->codec;
+    $frame_height = enc->height;
+    $frame_width = enc->width;
+    $frame_aspect_ratio = enc->aspect_ratio;
+    $frame_pix_fmt = enc->pix_fmt;
+    $frame_rate = st->r_frame_rate;
+    $frame_rate_base = st->r_frame_rate_base;
+  }#}
   () )
 
 (defmethod AvVideoSource get-codec-name()
-  (let ((g (gptr ())))
-    #{{
-      AVStream *st = (AVStream*)($st);
-      $g = (gptr) st->codec.codec->name;
-    }#}
-    (ptr-str g) ) )
+  (ptr-str (to-gptr #{ ((AVStream*)($st))->codec.codec->name #})) )
 
 (defmethod AvVideoSource get-codec-id()
   (==> ai get-stream-codec-id streamno) )
 
+(defmethod AvVideoSource get-start-time()
+  (to-real #{ (double)(((AVStream*)($st))->start_time)/AV_TIME_BASE #}) )
 
+(defmethod AvVideoSource get-duration()
+  (to-real #{ (double)(((AVStream*)($st))->duration)/AV_TIME_BASE #}) )
 
+(defmethod AvVideoSource get-frame-rate()
+  (/ (to-real #{ (double)(((AVStream*)($st))->r_frame_rate) #})
+     (to-real #{ (double)(((AVStream*)($st))->r_frame_rate_base) #}) ) )
+
+(defmethod AvVideoSource get-frame-period()
+  (/ (to-real #{ (double)(((AVStream*)($st))->r_frame_rate_base) #})
+     (to-real #{ (double)(((AVStream*)($st))->r_frame_rate) #}) ) )
+
+(defmethod AvVideoSource get-number-of-frames()
+  (let ((nframes 0))
+    ((-int-) nframes)
+    #{{
+      AVStream *st = (AVStream*)($st);
+      $nframes = st->duration * st->r_frame_rate 
+                    / AV_TIME_BASE / st->r_frame_rate_base;
+    }#}
+    nframes ) )
+    
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; HELPERS
@@ -399,11 +452,19 @@
 
 		      (AvAudioSource AvAudioSource
 				     get-codec-name
-				     get-codec-id )
+				     get-codec-id 
+				     get-start-time
+				     get-duration )
 
 		      (AvVideoSource AvVideoSource
 				     get-codec-name
-				     get-codec-id )
+				     get-codec-id 
+				     get-start-time
+				     get-duration
+				     get-frame-rate
+				     get-frame-period
+				     get-number-of-frames
+				     )
 
 		      av-open-input-file 
 		      av-open-video-source 
