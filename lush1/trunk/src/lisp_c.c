@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.29 2004-02-04 20:48:07 leonb Exp $
+ * $Id: lisp_c.c,v 1.30 2004-02-07 01:04:43 leonb Exp $
  **********************************************************************/
 
 
@@ -2543,7 +2543,7 @@ wipe_out_temps(void)
   while (dummy_tmps.chnxt != &dummy_tmps)
     {
       void *cptr;
-      dhclassdoc_t *cdoc;
+      void (*cdestroy)(gptr);
       avlnode *n = dummy_tmps.chnxt;
 
       if (n->belong!=BELONG_LISP  || n->litem!=0)
@@ -2557,19 +2557,9 @@ wipe_out_temps(void)
           srg_free(cptr);
           break;
         case CINFO_OBJ:
-          /* this horrible hack is used for freeing temporary pools */
-          cdoc = n->cmoreinfo;
-          if (!strcmp("pool", cdoc->lispdata.cname))
-            {
-#if DLDBFD
-              void (*func)() = (void(*)()) dld_get_func("C_free_C_pool");
-              if (func) (*func)(cptr);
-#elif 0
-              C_free_C_pool(cptr);
-#endif
-            }
+          if ((cdestroy = ((struct CClass_object*)cptr)->Vtbl->Cdestroy))
+            (*cdestroy)(cptr); /* call destructor */
           break;
-          
         }
       avlchain_set(n, 0);
       avl_del(cptr);
