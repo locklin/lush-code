@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.52 2003-09-02 19:09:45 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.53 2004-01-08 15:05:06 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -333,7 +333,7 @@
         (setq the-struct (concat the-struct "\n"
                                  (dhc-type-to-c-decl (cdr slot))
                                  " " 
-                                 (dhc-lisp-to-c-name 
+                                 (dhc-lisp-to-c-slot-name 
                                   (if (consp (car slot))  ;; why?
                                       (nameof (caar slot))
                                     (nameof (car slot)))) ";"))))
@@ -1887,33 +1887,40 @@
 
 ;; Make a C name with a Lisp name
 
-(setq dhc-valid-c-identifier
-      "[A-Za-z0-9_]+" )			; We always prepend something, so
-					; it does not need to start with a letter
+(defvar dhc-valid-c-identifier
+      "[A-Za-z0-9_]+" )
 
-(setq dhc-lisp-to-c-translations	; Add your own...
-      '(
-	("@" 	"At")			; A capital letter ensures that
-	("%" 	"Percent")		; no homonym exist
-	("/" 	"Over")
-	("&" 	"Et")
-	("-" 	"_")			; '-' and '_' are identical
-	("<>" 	"Ne")
-	(">=" 	"Le")
-	("<=" 	"Ge")
-	("=" 	"Eq")
-	(">" 	"Lt")
-	("<" 	"Gt")
-	("^\\|" 	"")             ; Quote
-	("\\|$" 	"")             ; Quote
-	("\\*\\*" 	"Power")
-	("\\*" 		"Times")
-	("\\+" 		"Plus")
-	("\\$"	 	"Dollar")
-	("\\^" 		"Caret")
-	("\\."    	"X")
-	("\\?"		"Qmark") ) )
+(defvar dhc-lisp-to-c-translations	; Add your own...
+  '(("@"       "At")		; A capital letter ensures that
+    ("%"       "Percent")	; no homonym exist
+    ("/"       "Over")
+    ("&"       "Et")
+    ("-"       "_")		; '-' and '_' are identical
+    ("<>"      "Ne")
+    (">="      "Le")
+    ("<="      "Ge")
+    ("="       "Eq")
+    (">"       "Lt")
+    ("<"       "Gt")
+    ("^\\|"    "")             ; Quote
+    ("\\|$"    "")             ; Quote
+    ("\\*\\*"  "Power")
+    ("\\*"     "Times")
+    ("\\+"     "Plus")
+    ("\\$"     "Dollar")
+    ("\\^"     "Caret")
+    ("\\."     "X")
+    ("\\?"     "Qmark") ) )
 
+(defvar dhc-reserved-c-identifiers 
+  (hset '("auto" "break" "case" "char" "const" "continue" "default" "do" "double"
+	  "else" "enum" "extern" "float" "for" "goto" "if" "int" "long" "register"
+	  "return" "short" "signed" "sizeof" "static" "struct" "switch" "typedef"
+	  "union" "unsigned" "void" "volatile" "while" "asm" "bool" "catch" "class"
+	  "const_cast" "delete" "dynamic_cast" "explicit" "false" "friend" "inline"
+	  "mutable" "namespace" "new" "operator" "private" "protected" "public"
+	  "reinterpret_cast" "static_cast" "template" "this" "throw" "true"
+	  "try" "typeid" "typename" "virtual" "using" "wchar_t") ) )
 
 (de dhc-lisp-to-c-name(name)
   (let ((newname (downcase name))
@@ -1928,6 +1935,17 @@
       ;; Advance to the next translation
       (setq translations (cdr translations)) ) 
     newname ) )
+
+(de dhc-lisp-to-c-slot-name(name)
+  ;; Best would have been to simply prepend S_ in front
+  ;; of all slot names.  But doing this now would break
+  ;; a lot of C-inline code.  So we just add S_ if there
+  ;; is a big problem.
+  (let ((cname (dhc-lisp-to-c-name name)))
+    (when (or (not (regex-match "[A-Za-z].*" cname))
+	      (dhc-reserved-c-identifiers cname) )
+      (setq cname (concat "Z" cname))  )
+    cname ) )
 
 (de dhc-printf-to-c(stri)
   ;; Vastly simplified
