@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: libsvm.lsh,v 1.6 2004-08-17 20:53:32 leonb Exp $
+;;; $Id: libsvm.lsh,v 1.7 2004-08-18 20:07:46 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -232,6 +232,16 @@
     #{ svm_get_labels((svm_model*)$model, IDX_PTR($m,int)); #}
     m ) )
 
+(defmethod LibSVM get-nsv()
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
+	 (m (int-matrix nc)))
+    ((-int-) nc)
+    (cinline-idx1loop m "int" "p" "s"
+       #{ *p = ((svm_model*)$model)->nSV[s]; #} )
+    m ) )
+
 (defmethod LibSVM get-sv()
   (when (not model)
     (error "Must call 'run' first") )
@@ -297,6 +307,81 @@
 
 ;; ----------------------------------------
 
+
+(defmethod LibSVM get-expansion-n(n)
+  ((-int-) n)
+  (when (or (= svm-type @ONE_CLASS)
+	    (= svm-type @EPSILON_SVR)
+	    (= svm-type @NU_SVR) )
+    (error "Use get-expansion with one-class-svm or sv-regressions") )
+  (let ((nsv (==> this get-nsv))
+	(posclass 0)
+	(negclass 0)
+	(si 0)
+	(sj 0)
+	(ci 0)
+	(cj 0) )
+    ((-int-) posclass negclass si sj ci cj)
+    ;; search partition
+    (let ((start (int-matrix nr-class)))
+      (start 0 0)
+      (for (i 1 (1- nr-class))
+	   ((-int-) i)
+	   (start i (+ (start (1- i)) (nsv (1- i)))) )
+      (let ((p 0)
+	    (a (1- nr-class)))
+	((-int-) p a)
+	(while (and (> a 0) (>= n (+ p a)))
+	  (incr p a)
+	  (incr a -1) 
+	  (incr posclass) )
+	(setq negclass (+ 1 posclass (- n p))) )
+      (when (or (>= posclass nr-class) (>= negclass nr-class))
+	(error "Invalid argument to get-expansion-n") )
+      (setq si (start posclass))
+      (setq sj (start negclass))
+      (setq ci (nsv posclass))
+      (setq cj (nsv negclass)) )
+    ;; build
+    (let* ((sv (==> this get-sv))
+	   (alpha (==> this get-alpha))
+	   (alpha1 (select alpha 0 (1- negclass)))
+	   (alpha2 (select alpha 0 posclass))
+	   (rho (==> this get-rho))
+	   (esv (int-matrix (+ ci cj)))
+	   (ealpha (double-matrix (+ ci cj))) )
+      (for (k 0 (1- ci))
+	   ((-int-) k)
+	   (esv    k (sv (+ si k)))
+	   (ealpha k (alpha1 (+ si k))) )
+      (for (k 0 (1- cj))
+	   ((-int-) k)
+	   (esv    (+ ci k) (sv (+ sj k)))
+	   (ealpha (+ ci k) (alpha2 (+ sj k))) )
+      ;; create
+      (let ((r (new SVMExpansion kernel esv ealpha))
+	    (l (==> this get-labels)) )
+	(setq :r:b (rho n))
+	(setq :r:positive-class (l posclass))
+	(setq :r:negative-class (l negclass))
+	r ) ) ) )
+
+(defmethod LibSVM get-expansion()
+  (when (<> nr-class 2)
+    (error "Use get-expansion-n for multiclass c-svm or nu-svm"))
+  (let ((r (new SVMExpansion kernel (==> this get-sv)
+		(select (==> this get-alpha) 0 0) )))
+    (setq :r:b ((==> this get-rho) 0))
+    (let ((l (==> this get-labels)))
+      (setq :r:positive-class (l 0))
+      (setq :r:negative-class (l 1)) )
+    r ) )
+
+
+
+
+;; ----------------------------------------
+
 (let ((cmd (regex-subst "\\$CC" "$CXX" dhc-make-command))
       (lm (new lushmake (concat-fname (dirname file-being-loaded) "libsvm"))) )
   (==> lm rule "svm.o" '("svm.cpp" "svm.h") cmd)
@@ -316,8 +401,9 @@
 	   }
 	 #}
          (LibSVM LibSVM cleanup -destructor run
-                 get-labels get-sv get-alpha get-rho
-                 predict-values predict call-kernel)
+                 get-labels get-nsv get-sv get-alpha get-rho
+                 predict-values predict call-kernel
+		 get-expansion-n get-expansion)
          
          ) ) )
 
