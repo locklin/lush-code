@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.3 2002-11-01 05:09:13 profshadoko Exp $
+ * $Id: nan.c,v 1.4 2002-11-01 14:51:02 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -277,6 +277,8 @@ setup_fpu(int doINV, int doOFL)
   /* Win32 uses _controlfp() */
 #ifdef WIN32
   unsigned int mask = _controlfp(0,0);
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
   if (doINV) mask&=(~_EM_INVALID); else mask|=(_EM_INVALID);
   if (doOFL) mask&=(~_EM_OVERFLOW); else mask|=(_EM_OVERFLOW);
   if (doOFL) mask&=(~_EM_ZERODIVIDE); else mask|=(_EM_ZERODIVIDE);
