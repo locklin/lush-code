@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.30 2002-07-09 21:24:00 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.31 2002-07-09 22:09:13 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -358,20 +358,38 @@
     key ) )
 
 (dm defclass(f name super . body)
-    (let ((k ())
-          (d ()) )
-      (each ((slot body))
-        (cond
-         ((symbolp slot)  
-          (setq k (cons slot k))
-          (setq d (cons () d)) )
-         ((and (consp slot) (symbolp (car slot)) (null (cddr slot)))
-          (setq k (cons (car slot) k))
-          (setq d (cons (cadr slot) d)) )
-         (t
-          (error 'defclass "Illegal slot specification" slot) ) ) )
-      `(progn (setq ,name (makeclass ',name ,super ',k (list ,@d))) 
-              ',name) ) )
+  (let ((p 0)
+        (k ())
+        (d ()) )
+    (each ((slot body))
+      (cond
+       ;; compiled SN3 syntax
+       ((and verify-type-decl-format
+             (consp slot) (consp (car slot))
+             (verify-type-decl-format (car slot)) )
+        (each ((s (cdr slot)))
+          (when (not (symbolp s))
+            (error 'defclass "Not a symbol" s) )
+          (setq k (cons s k))
+          (setq d (cons () d))
+          (incr p) ) )
+       ;; standard TL3 syntax
+       ((symbolp slot)  
+        (setq k (cons slot k))
+        (setq d (cons () d)) )
+       ((and (consp slot) (symbolp (car slot)) (null (cddr slot)))
+        (setq k (cons (car slot) k))
+        (setq d (cons (cadr slot) d)) )
+       (t
+        (error 'defclass "Illegal slot specification" slot) ) ) )
+    ;; check compiled syntax
+    (when (and (> p 0) (<> (length k) p))
+      (error 'defclass "Typed and untyped slots are mixed" ()) )
+    ;; generate
+    `(let ((c (makeclass ',name ,super ',k (list ,@d))))
+       (when ,(> p 0) (putp c 'slots ',body))
+       (setq ,name c)
+       ',name) ) )
 
 (dm defmethod(f class name . body)
     `(putmethod ,class ',name (lambda ,@body)) )
@@ -916,10 +934,11 @@
 
 (demethod class pretty()
   (printf "(defclass %l %l" (classname this) (classname (super this)))
-  (each ((i (slots this)))
-    (if (listp i)
-        (printf "\n  (%l '%l)" (car i) (cadr i))
-      (printf "\n   %l" i) ) )
+  (let ((s (getp this 'slots)))
+    (each ((i (or s (slots this))))
+      (if (and (not s) (listp i))
+          (printf "\n  (%l '%l)" (car i) (cadr i))
+        (printf "\n  %l" i) ) ) )
   (printf " )\n")
   (each ((i (methods this)))
     (print)
