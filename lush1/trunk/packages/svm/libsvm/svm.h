@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svm.h,v 1.1 2004-02-17 19:47:47 leonb Exp $
+ * $Id: svm.h,v 1.2 2004-02-17 20:46:40 leonb Exp $
  **********************************************************************/
 
 #ifndef SVM_H
@@ -133,6 +133,7 @@ struct svm_model
 				// 0 if svm_model is created by svm_train
 };
 
+void svm_set_verbosity(int);
 struct svm_model *svm_train(const struct svm_problem *prob, const struct svm_parameter *param);
 void svm_destroy_model(struct svm_model *model);
 int svm_get_nr_class(const struct svm_model *model);

@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svm.cpp,v 1.1 2004-02-17 19:47:47 leonb Exp $
+ * $Id: svm.cpp,v 1.2 2004-02-17 20:46:31 leonb Exp $
  **********************************************************************/
 
 // ---------------------------------------------------------------------
@@ -121,11 +121,19 @@ void *xrealloc(void *q, int n)
 	return p;
 }
 
+static int verbose = 0;
+
+void svm_set_verbosity(int v)
+{
+	verbose = v;
+}
+
 void info(char *fmt,...)
 {
 	va_list ap;
 	va_start(ap,fmt);
-	vprintf(fmt,ap);
+	if (verbose)
+		vprintf(fmt,ap);
 	va_end(ap);
 }
 void info_flush()
