@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: euclid.c,v 1.1 2003-03-18 18:17:16 leonb Exp $
+ * $Id: euclid.c,v 1.2 2003-03-18 19:40:30 leonb Exp $
  **********************************************************************/
 
 /******************************************************************
@@ -267,8 +267,8 @@ updN_nn_sqbacksum(neurone *n)
   val = n->Nsum;
   if (n->FSaval != NIL) {
     for ( s=n->FSaval; s!=NIL; s=s->NSamont ) {
-      prod = Fsub( val, s->Sval);
-      prod = Fmul( Fmul(prod,prod), s->Naval->Nggrad );
+      flt x = Fsub( val, s->Sval);
+      prod = Fmul( Fmul(x,x), s->Naval->Nggrad );
       sum  = Fadd( sum, Fsub( Fmul(Ftwo,prod), s->Naval->Ngrad) );
     }
     n->Nsqbacksum=Fmul( Ftwo, sum);
@@ -285,8 +285,9 @@ mean_sqminusw_input(neurone *n)
   Fclr(sum);
   Fclr(nbre);
   for ( s=n->FSamont; s!=NIL; s=s->NSaval ) {
-    sum  = Fadd( sum, Fsqr(Fsub(s->Sval,s->Namont->Nval)));
-    nbre= Fadd(nbre,Flt1);
+    flt x = Fsub(s->Sval,s->Namont->Nval);
+    sum = Fadd( sum, Fmul(x,x) );
+    nbre = Fadd(nbre,Flt1);
   };
   if (nbre>Flt0) 
     return Fdiv(sum,nbre);

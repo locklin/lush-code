@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: gbp.c,v 1.1 2003-03-18 18:17:17 leonb Exp $
+ * $Id: gbp.c,v 1.2 2003-03-18 19:40:31 leonb Exp $
  **********************************************************************/
 
 
@@ -492,7 +492,8 @@ mean_sq_input(neurone *n)
   Fclr(sum);
   Fclr(nbre);
   for ( s=n->FSamont; s!=NIL; s=s->NSaval ) {
-    sum  = Fadd( sum, Fmul(s->Namont->Nval,s->Namont->Nval));
+    flt x = s->Namont->Nval;
+    sum  = Fadd( sum, Fmul(x,x) );
     nbre=Fadd(nbre,Flt1);
   };
   if (nbre>Flt0) 
@@ -508,36 +509,36 @@ mean_sq_input(neurone *n)
 static void 
 updN_sqbacksum(neurone *n)
 {
-#ifndef NONEURTYPE
-  synapse *s = n->FSaval;
-  n->Nsqbacksum = Fzero;
-  while (s)
-    {
-      neurtype *taval = s->Naval->type;
-      if (taval && taval->updN_sqbacksum_term)
-	s = (*taval->updN_sqbacksum_term)(n, s);
-      else {
-	flt sum, prod;
-	Fclr(sum);
-	for (; s && s->Naval->type==taval; s=s->NSamont ) {
-	  prod = Fmul( Fmul(s->Sval,s->Sval), s->Naval->Nggrad );
-	  sum  = Fadd( sum,prod );
-	}
-	n->Nsqbacksum = Fadd(n->Nsqbacksum, sum);
-      }
-    }
-#else
-  synapse *s;
-  flt sum , prod;
-  Fclr(sum);
   if (n->FSaval != NIL) {
+#ifndef NONEURTYPE
+    synapse *s = n->FSaval;
+    n->Nsqbacksum = Fzero;
+    while (s)
+      {
+        neurtype *taval = s->Naval->type;
+        if (taval && taval->updN_sqbacksum_term)
+          s = (*taval->updN_sqbacksum_term)(n, s);
+        else {
+          flt sum, prod;
+          Fclr(sum);
+          for (; s && s->Naval->type==taval; s=s->NSamont ) {
+            prod = Fmul( Fmul(s->Sval,s->Sval), s->Naval->Nggrad );
+            sum  = Fadd( sum,prod );
+          }
+          n->Nsqbacksum = Fadd(n->Nsqbacksum, sum);
+        }
+      }
+#else
+    synapse *s;
+    flt sum , prod;
+    Fclr(sum);
     for ( s=n->FSaval; s!=NIL; s=s->NSamont ) {
       prod = Fmul( Fmul(s->Sval,s->Sval), s->Naval->Nggrad );
       sum  = Fadd( sum,prod );
     }
     n->Nsqbacksum=sum;
-  }
 #endif
+  }
 }
 
 /* compute the instantaneous 
@@ -600,9 +601,9 @@ updN_sigma(neurone *n)
       gammaggrad=Fmul(mygamma, n->Nggrad);
       for ( s=n->FSamont; s!=NIL; s=s->NSaval) 
 	{
+          flt x = s->Namont->Nval;
 	  s->Ssigma = Fadd(Fmul(oneminusgamma, s->Ssigma),
-			   Fmul(Fmul(s->Namont->Nval,s->Namont->Nval),
-				gammaggrad ) );
+			   Fmul(gammaggrad, Fmul(x,x)) );
 	}
 #else
       n->Nsigma = Fadd(Fmul( Fsub(Flt1, mygamma), n->Nsigma),
