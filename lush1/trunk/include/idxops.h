@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxops.h,v 1.4 2003-05-21 21:52:32 leonb Exp $
+ * $Id: idxops.h,v 1.5 2004-10-22 19:50:30 leonb Exp $
  **********************************************************************/
 
 #ifndef IDXOPS_H
@@ -38,9 +38,9 @@
 #define Midx_m0clear(i1, Type)  *IDX_PTR(i1, Type) = 0
 
 #define Midx_m1clear(i1, Type) \
-{ register Type *c1; \
-  register int i, jmax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0]; \
+{ Type *c1; \
+  intg i, jmax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
   c1 = IDX_PTR((i1), Type); \
   for (i=0; i<jmax; i++){ \
       *c1 = 0; \
@@ -49,10 +49,9 @@
 }
 
 #define Midx_m2clear(i1, Type) \
-{ register Type *c1, *c1_0; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i1_m1 = (i1)->mod[1]; \
+{ Type *c1, *c1_0; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0], i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type); \
   for (i=0; i<imax; i++){ \
       c1 = c1_0; \
@@ -66,7 +65,7 @@
 
 #define Midx_maclear(i, Type) \
 { \
-  register Type *fp; \
+  Type *fp; \
   fp = IDX_PTR(i, Type); \
   begin_idx_aloop1((i), k) { \
       fp[k] = 0; \
@@ -79,11 +78,11 @@
    *IDX_PTR(i2, Type1) = *IDX_PTR(i1, Type2)
 
 #define Midx_m1copy(i1,i2, Type1, Type2) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i2_m0 = (i2)->mod[0]; \
+{ Type1 *c1; \
+  Type2 *c2; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
+  intg i2_m0 = (i2)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   for (i=0; i<imax; i++){ \
@@ -94,15 +93,15 @@
 }
 
 #define Midx_m2copy(i1,i2, Type1, Type2) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type1 *c1_0; \
   Type2 *c2_0; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i2_m0 = (i2)->mod[0], \
-               i1_m1 = (i1)->mod[1], \
-               i2_m1 = (i2)->mod[1]; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0]; \
+  intg i2_m0 = (i2)->mod[0]; \
+  intg i1_m1 = (i1)->mod[1]; \
+  intg i2_m1 = (i2)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2_0 = IDX_PTR((i2), Type2); \
   for (i=0; i<imax; i++){ \
@@ -119,8 +118,8 @@
 
 #define Midx_macopy(i1, i2, Type1, Type2) \
 { \
-  register Type1 *fp1;\
-  register Type2 *fp2; \
+  Type1 *fp1;\
+  Type2 *fp2; \
   fp1 = IDX_PTR(i1, Type1); \
   fp2 = IDX_PTR(i2, Type2); \
   begin_idx_aloop2((i1), (i2), k1, k2) { \
@@ -132,10 +131,10 @@
 /*                       result in a 0D vector */
 
 #define Midx_m1sum(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0]; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c1; \
@@ -148,10 +147,10 @@
 }
 
 #define Midx_m1sup(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0]; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c1; \
@@ -164,10 +163,10 @@
 }
 
 #define Midx_m1inf(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0]; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c1; \
@@ -180,11 +179,10 @@
 }
 
 #define Midx_m2sum(i1, i2, Type1, Type2) \
-{ register Type1 *c1, *c1_0; \
+{ Type1 *c1, *c1_0; \
   Type2 *c2, f=0; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i1_m1 = (i1)->mod[1]; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0], i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   for (i=0; i<imax; i++){ \
@@ -199,11 +197,10 @@
 }
 
 #define Midx_m2sup(i1, i2, Type1, Type2) \
-{ register Type1 *c1, *c1_0; \
+{ Type1 *c1, *c1_0; \
   Type2 *c2, f; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i1_m1 = (i1)->mod[1]; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0], i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c1_0; \
@@ -219,11 +216,10 @@
 }
 
 #define Midx_m2inf(i1, i2, Type1, Type2) \
-{ register Type1 *c1, *c1_0; \
+{ Type1 *c1, *c1_0; \
   Type2 *c2, f; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i1_m1 = (i1)->mod[1]; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0], i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c1_0; \
@@ -239,7 +235,7 @@
 }
 
 #define Midx_masum(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f=0; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -250,7 +246,7 @@
 }
 
 #define Midx_masup(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -262,7 +258,7 @@
 }
 
 #define Midx_mainf(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -277,10 +273,10 @@
 /*                       accumulate result in a 0D vector */
 
 #define Midx_m1sumacc(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0]; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -292,10 +288,10 @@
 }
 
 #define Midx_m1supacc(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0]; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -307,10 +303,10 @@
 }
 
 #define Midx_m1infacc(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0]; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -322,10 +318,10 @@
 }
 
 #define Midx_m2sumacc(i1, i2, Type1, Type2) \
-{ register Type1 *c1, *c1_0; \
+{ Type1 *c1, *c1_0; \
   Type2 *c2, f; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0], \
                i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -342,11 +338,10 @@
 }
 
 #define Midx_m2supacc(i1, i2, Type1, Type2) \
-{ register Type1 *c1, *c1_0; \
+{ Type1 *c1, *c1_0; \
   Type2 *c2, f; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i1_m1 = (i1)->mod[1]; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0], i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -362,11 +357,10 @@
 }
 
 #define Midx_m2infacc(i1, i2, Type1, Type2) \
-{ register Type1 *c1, *c1_0; \
+{ Type1 *c1, *c1_0; \
   Type2 *c2, f; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i1_m1 = (i1)->mod[1]; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0], i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -382,7 +376,7 @@
 }
 
 #define Midx_masumacc(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -394,7 +388,7 @@
 }
 
 #define Midx_masupacc(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -406,7 +400,7 @@
 }
 
 #define Midx_mainfacc(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -423,10 +417,10 @@
 /* sum all squared terms of a 1D vector */ 
 /* result in a 0D vector */ 
 #define Midx_m1sumsqr(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0]; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = (*c1)*(*c1); \
@@ -439,12 +433,11 @@
 }
 
 #define Midx_m2sumsqr(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type1 *c1_0; \
   Type2 *c2, f=0; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i1_m1 = (i1)->mod[1]; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0], i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   for (i=0; i<imax; i++){ \
@@ -459,7 +452,7 @@
 }
 
 #define Midx_masumsqr(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f=0; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -473,10 +466,10 @@
 /*              accumulate result in a 0D vector */
 
 #define Midx_m1sumsqracc(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f=0; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0]; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -488,12 +481,11 @@
 }
 
 #define Midx_m2sumsqracc(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type1 *c1_0; \
   Type2 *c2, f; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i1_m1 = (i1)->mod[1]; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m0 = (i1)->mod[0], i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   f = *c2; \
@@ -509,7 +501,7 @@
 }
 
 #define Midx_masumsqracc(i1, i2, Type1, Type2) \
-{ register Type1 *c1; \
+{ Type1 *c1; \
   Type2 *c2, f; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -527,8 +519,8 @@
 
 /* compute dot product M0 x M0 to M0 */ 
 #define Midx_m0dotm0(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type3 *d1; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -544,10 +536,10 @@
   d1 = IDX_PTR((o1), Type3); \
   if((i1)->mod[0]==1) {\
       if((i2)->mod[0]==1) {\
-	  register Type1 *c1; \
-	  register Type2 *c2; \
-	  register Type3 f;\
-	  register int i, j;\
+	  Type1 *c1; \
+	  Type2 *c2; \
+	  Type3 f;\
+	  intg i, j;\
 	  j = (i1)->dim[0]; \
 	  c1 = IDX_PTR((i1), Type1); \
 	  c2 = IDX_PTR((i2), Type2); \
@@ -556,10 +548,10 @@
 	      f += (*c1++)*(*c2++); \
 	  *d1 = f; \
       } else {\
-	  register Type1 *c1; \
-	  register Type2 *c2; \
-	  register Type3 f;\
-	  register int i, j, c2_m0;\
+	  Type1 *c1; \
+	  Type2 *c2; \
+	  Type3 f;\
+	  intg i, j, c2_m0;\
 	  j = (i1)->dim[0]; \
 	  c1 = IDX_PTR((i1), Type1); \
 	  c2 = IDX_PTR((i2), Type2); \
@@ -573,10 +565,10 @@
       } \
   } else { \
       if((i2)->mod[0]==1) {\
-	  register Type1 *c1;\
-	  register Type2 *c2;\
-	  register Type3 f;\
-	  register int i, j, c1_m0;\
+	  Type1 *c1;\
+	  Type2 *c2;\
+	  Type3 f;\
+	  intg i, j, c1_m0;\
 	  j = (i1)->dim[0]; \
 	  c1 = IDX_PTR((i1), Type1); \
 	  c2 = IDX_PTR((i2), Type2); \
@@ -588,10 +580,10 @@
 	  }\
 	  *d1 = f; \
       } else {\
-	  register Type1 *c1;\
-	  register Type2 *c2;\
-	  register Type3 f;\
-	  register int i, j, c1_m0, c2_m0;\
+	  Type1 *c1;\
+	  Type2 *c2;\
+	  Type3 f;\
+	  intg i, j, c1_m0, c2_m0;\
 	  j = (i1)->dim[0]; \
 	  c1 = IDX_PTR((i1), Type1); \
 	  c2 = IDX_PTR((i2), Type2); \
@@ -609,18 +601,16 @@
 }
 
 #define Midx_m2dotm2(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type1 *c1_0; \
   Type2 *c2_0; \
   Type3 f=0; \
-  register int j, imax = (i1)->dim[0], jmax = (i2)->dim[1]; \
-  register int c1_m1 = (i1)->mod[1],   \
-               c2_m1 = (i2)->mod[1];   \
-  int  c1_m0 = (i1)->mod[0],   \
-       c2_m0 = (i2)->mod[0];   \
+  intg j, imax = (i1)->dim[0], jmax = (i2)->dim[1]; \
+  intg c1_m1 = (i1)->mod[1], c2_m1 = (i2)->mod[1]; \
+  intg  c1_m0 = (i1)->mod[0], c2_m0 = (i2)->mod[0]; \
   Type3 *d1; \
-  int i;    \
+  intg i;    \
   c1_0 = IDX_PTR((i1), Type1); \
   c2_0 = IDX_PTR((i2), Type2); \
   d1 = IDX_PTR((o1), Type3); \
@@ -639,8 +629,8 @@
 }
 
 #define Midx_madotma(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type3 *d1, f=0; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -656,8 +646,8 @@
 
 /* compute dot product M0 x M0 accumulated into M0 */ 
 #define Midx_m0dotm0acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type3 *d1; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -667,12 +657,11 @@
 
 /* compute dot product M1 x M1 accumulated into M0 */ 
 #define Midx_m1dotm1acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
-  register int c1_m0 = (i1)->mod[0],   \
-               c2_m0 = (i2)->mod[0];   \
+{ Type1 *c1; \
+  Type2 *c2; \
+  intg c1_m0 = (i1)->mod[0], c2_m0 = (i2)->mod[0]; \
   Type3 *d1, f; \
-  register int i, imax = (i1)->dim[0]; \
+  intg i, imax = (i1)->dim[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   d1 = IDX_PTR((o1), Type3); \
@@ -687,15 +676,13 @@
 
 /* compute dot product M1 x M1 accumulated into M0 */ 
 #define Midx_m2dotm2acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type1 *c1_0; \
   Type2 *c2_0; \
-  register int j, imax = (i1)->dim[0], jmax = (i2)->dim[1]; \
-  register int c1_m0 = (i1)->mod[0],   \
-               c2_m0 = (i2)->mod[0];   \
-  int          c1_m1 = (i1)->mod[1],   \
-               c2_m1 = (i2)->mod[1];   \
+  intg j, imax = (i1)->dim[0], jmax = (i2)->dim[1]; \
+  intg c1_m0 = (i1)->mod[0], c2_m0 = (i2)->mod[0]; \
+  intg c1_m1 = (i1)->mod[1], c2_m1 = (i2)->mod[1]; \
   Type3 *d1, f; \
   int i;    \
   c1_0 = IDX_PTR((i1), Type1); \
@@ -717,8 +704,8 @@
 }
 
 #define Midx_madotmaacc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type3 *d1, f; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -734,8 +721,8 @@
 /*                       result in a 0D vector */
 
 #define Midx_m0sqrdist(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type3 *d1, f; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -745,12 +732,11 @@
 }
 
 #define Midx_m1sqrdist(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
-  register int c1_m0 = (i1)->mod[0],   \
-               c2_m0 = (i2)->mod[0];   \
+{ Type1 *c1; \
+  Type2 *c2; \
+  intg c1_m0 = (i1)->mod[0], c2_m0 = (i2)->mod[0]; \
   Type3 *d1, f, g; \
-  register int i, imax = (i1)->dim[0]; \
+  intg i, imax = (i1)->dim[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   d1 = IDX_PTR((o1), Type3); \
@@ -768,17 +754,15 @@
 }
 
 #define Midx_m2sqrdist(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type1 *c1_0; \
   Type2 *c2_0; \
-  register int c1_m0 = (i1)->mod[0],   \
-               c2_m0 = (i2)->mod[0],   \
-	       c1_m1 = (i1)->mod[1],   \
-               c2_m1 = (i2)->mod[1];   \
+  intg c1_m0 = (i1)->mod[0], c2_m0 = (i2)->mod[0]; \
+  intg c1_m1 = (i1)->mod[1], c2_m1 = (i2)->mod[1]; \
   Type3 *d1, f, g; \
-  int i;    \
-  register int j, imax = (i1)->dim[0], jmax = (i2)->dim[1]; \
+  intg i; \
+  intg j, imax = (i1)->dim[0], jmax = (i2)->dim[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2_0 = IDX_PTR((i2), Type2); \
   d1 = IDX_PTR((o1), Type3); \
@@ -799,8 +783,8 @@
 }
 
 #define Midx_masqrdist(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type3 *d1, f=0, g; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -816,8 +800,8 @@
 /*                       accumulate result in a 0D vector */
 
 #define Midx_m0sqrdistacc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type3 *d1, f; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -828,12 +812,11 @@
 
 /* compute square distance M1 x M1 accumulated into M0 */ 
 #define Midx_m1sqrdistacc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
-  register int c1_m0 = (i1)->mod[0],   \
-               c2_m0 = (i2)->mod[0];   \
+{ Type1 *c1; \
+  Type2 *c2; \
+  intg c1_m0 = (i1)->mod[0], c2_m0 = (i2)->mod[0]; \
   Type3 *d1, f, g; \
-  register int i, imax = (i1)->dim[0]; \
+  intg i, imax = (i1)->dim[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   d1 = IDX_PTR((o1), Type3); \
@@ -849,17 +832,14 @@
 
 /* compute square distance M2 x M2 accumulated into M0 */ 
 #define Midx_m2sqrdistacc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type1 *c1_0; \
   Type2 *c2_0; \
-  register int c1_m0 = (i1)->mod[0],   \
-               c2_m0 = (i2)->mod[0],   \
-	       c1_m1 = (i1)->mod[1],   \
-               c2_m1 = (i2)->mod[1];   \
+  intg c1_m0 = (i1)->mod[0], c2_m0 = (i2)->mod[0];   \
+  intg c1_m1 = (i1)->mod[1], c2_m1 = (i2)->mod[1];   \
   Type3 *d1, f, g; \
-  int i;    \
-  register int j, imax = (i1)->dim[0], jmax = (i2)->dim[1]; \
+  intg i, j, imax = (i1)->dim[0], jmax = (i2)->dim[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2_0 = IDX_PTR((i2), Type2); \
   d1 = IDX_PTR((o1), Type3); \
@@ -880,8 +860,8 @@
 }
 
 #define Midx_masqrdistacc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type3 *d1, f, g; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
@@ -897,12 +877,11 @@
 /* ========= multiplication by scalars (m0) ============================== */
 
 #define Midx_m1dotm0(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
-  register int c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int i, imax = (o1)->dim[0]; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg i, imax = (o1)->dim[0]; \
   c1 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR((o1), Type3); \
@@ -914,17 +893,15 @@
 }
 
 #define Midx_m2dotm0(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
-  register int c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
   Type1 *c1_0; \
   Type3 *d1_0; \
-  int          c1_m1 = (i1)->mod[1], \
-               d1_m1 = (o1)->mod[1]; \
-  int i; \
+  intg c1_m1 = (i1)->mod[1], d1_m1 = (o1)->mod[1]; \
+  intg i; \
   c1_0 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -943,9 +920,9 @@
 
 #define Midx_madotm0(i1, i2, o1, Type1, Type2, Type3) \
 { \
-  register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
+  Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
   c1 = IDX_PTR(i1, Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR(o1, Type3); \
@@ -958,12 +935,11 @@
 /* ========= multiplication by scalars (m0) with accumulation ====== */
 
 #define Midx_m1dotm0acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
-  register int c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int i, imax = (o1)->dim[0]; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg i, imax = (o1)->dim[0]; \
   c1 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR((o1), Type3); \
@@ -975,17 +951,15 @@
 }
 
 #define Midx_m2dotm0acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
-  register int c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int j, jmax = (o1)->dim[1]; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg j, jmax = (o1)->dim[1]; \
   Type1 *c1_0; \
   Type3 *d1_0; \
-  int          c1_m1 = (i1)->mod[1], \
-               d1_m1 = (o1)->mod[1]; \
-  int i, imax = (o1)->dim[0]; \
+  intg c1_m1 = (i1)->mod[1], d1_m1 = (o1)->mod[1]; \
+  intg i, imax = (o1)->dim[0]; \
   c1_0 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -1004,9 +978,9 @@
 
 #define Midx_madotm0acc(i1, i2, o1, Type1, Type2, Type3) \
 { \
-  register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
+  Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
   c1 = IDX_PTR(i1, Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR(o1, Type3); \
@@ -1019,9 +993,9 @@
 /* ========= addition with a scalar (m0) ============================== */
 
 #define Midx_m0addm0(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
   c1 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR((o1), Type3); \
@@ -1029,12 +1003,11 @@
 }
 
 #define Midx_m1addm0(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
-  register int c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int i, imax = (o1)->dim[0]; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
+  intg 2c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg i, imax = (o1)->dim[0]; \
   c1 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR((o1), Type3); \
@@ -1046,17 +1019,15 @@
 }
 
 #define Midx_m2addm0(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
-  register int c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int j, jmax = (o1)->dim[1]; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg j, jmax = (o1)->dim[1]; \
   Type1 *c1_0; \
   Type3 *d1_0; \
-  int          c1_m1 = (i1)->mod[1], \
-               d1_m1 = (o1)->mod[1]; \
-  int i, imax = (o1)->dim[0]; \
+  intg c1_m1 = (i1)->mod[1], d1_m1 = (o1)->mod[1]; \
+  intg i, imax = (o1)->dim[0]; \
   c1_0 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -1074,9 +1045,9 @@
 }
 
 #define Midx_maaddm0(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
   c1 = IDX_PTR(i1, Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR(o1, Type3); \
@@ -1089,9 +1060,9 @@
 /* ========= additions with scalars (m0) with accumulation ====== */
 
 #define Midx_m0addm0acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
   c1 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR((o1), Type3); \
@@ -1099,12 +1070,11 @@
 }
 
 #define Midx_m1addm0acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
-  register int c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int i, imax = (o1)->dim[0]; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg i, imax = (o1)->dim[0]; \
   c1 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR((o1), Type3); \
@@ -1116,17 +1086,15 @@
 }
 
 #define Midx_m2addm0acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
-  register int c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int j, jmax = (o1)->dim[1]; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg j, jmax = (o1)->dim[1]; \
   Type1 *c1_0; \
   Type3 *d1_0; \
-  int          c1_m1 = (i1)->mod[1], \
-               d1_m1 = (o1)->mod[1]; \
-  int i, imax = (o1)->dim[0]; \
+  intg c1_m1 = (i1)->mod[1], d1_m1 = (o1)->mod[1]; \
+  intg i, imax = (o1)->dim[0]; \
   c1_0 = IDX_PTR((i1), Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -1144,9 +1112,9 @@
 }
 
 #define Midx_maaddm0acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 f; \
-  register Type3 *d1; \
+{ Type1 *c1; \
+  Type2 f; \
+  Type3 *d1; \
   c1 = IDX_PTR(i1, Type1); \
   f = *(IDX_PTR((i2), Type2)); \
   d1 = IDX_PTR(o1, Type3); \
@@ -1161,17 +1129,15 @@
 /* multiply M2 by M1, result in M1 */
 /* matrix - vector product */
 #define Midx_m2dotm1(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type1 *c1_0; \
   Type2 *ker; \
-  register int c1_m1 = (i1)->mod[1],   \
-               c2_m0 = (i2)->mod[0];   \
-  register int j, jmax = (i2)->dim[0]; \
-  int          c1_m0 = (i1)->mod[0],   \
-               d1_m0 = (o1)->mod[0];   \
+  intg c1_m1 = (i1)->mod[1], c2_m0 = (i2)->mod[0]; \
+  intg j, jmax = (i2)->dim[0]; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
   Type3 *d1, f; \
-  int i, imax = (o1)->dim[0]; \
+  intg i, imax = (o1)->dim[0]; \
   c1_0 = IDX_PTR((i1), Type1); \
   ker = IDX_PTR((i2), Type2); \
   d1 = IDX_PTR((o1), Type3); \
@@ -1196,21 +1162,17 @@
 
 /* multiply M4 by M2, result in M2 */
 #define Midx_m4dotm2(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1, *c1_2; \
-  register Type2 *c2, *c2_0; \
+{ Type1 *c1, *c1_2; \
+  Type2 *c2, *c2_0; \
   Type1 *c1_0, *c1_1; \
   Type2 *ker; \
-  register int c1_m2 = (i1)->mod[2],   \
-               c2_m0 = (i2)->mod[0],   \
-               c1_m3 = (i1)->mod[3],   \
-               c2_m1 = (i2)->mod[1];   \
-  register int k,l, kmax = (i2)->dim[0], lmax = (i2)->dim[1]; \
+  intg c1_m2 = (i1)->mod[2], c2_m0 = (i2)->mod[0]; \
+  intg c1_m3 = (i1)->mod[3], c2_m1 = (i2)->mod[1]; \
+  intg k,l, kmax = (i2)->dim[0], lmax = (i2)->dim[1]; \
   Type3 *d1_0, *d1, f; \
-  int          c1_m0 = (i1)->mod[0],   \
-               d1_m0 = (o1)->mod[0],   \
-               c1_m1 = (i1)->mod[1],   \
-               d1_m1 = (o1)->mod[1];   \
-  int i,j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg c1_m1 = (i1)->mod[1], d1_m1 = (o1)->mod[1]; \
+  intg i,j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   ker = IDX_PTR((i2), Type2); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -1246,17 +1208,15 @@
 
 /* multiply M2 by M1, result in M1 */
 #define Midx_m2dotm1acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type1  *c1_0; \
   Type2  *ker; \
-  register int c1_m1 = (i1)->mod[1],   \
-               c2_m0 = (i2)->mod[0];   \
-  register int j, jmax = (i2)->dim[0]; \
-  int          c1_m0 = (i1)->mod[0],   \
-               d1_m0 = (o1)->mod[0];   \
+  intg c1_m1 = (i1)->mod[1], c2_m0 = (i2)->mod[0]; \
+  intg j, jmax = (i2)->dim[0]; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
   Type3 *d1, f; \
-  int i, imax = (o1)->dim[0]; \
+  intg i, imax = (o1)->dim[0]; \
   c1_0 = IDX_PTR((i1), Type1); \
   ker = IDX_PTR((i2), Type2); \
   d1 = IDX_PTR((o1), Type3); \
@@ -1277,21 +1237,17 @@
 
 /* multiply M4 by M2, result in M2 */
 #define Midx_m4dotm2acc(i1, i2, o1, Type1, Type2, Type3) \
-{ register Type1 *c1, *c1_2; \
-  register Type2 *c2, *c2_0; \
+{ Type1 *c1, *c1_2; \
+  Type2 *c2, *c2_0; \
   Type1 *c1_0, *c1_1; \
   Type2 *ker; \
-  register int c1_m2 = (i1)->mod[2],   \
-               c2_m0 = (i2)->mod[0],   \
-               c1_m3 = (i1)->mod[3],   \
-               c2_m1 = (i2)->mod[1];   \
-  register int k,l, kmax = (i2)->dim[0], lmax = (i2)->dim[1]; \
+  intg c1_m2 = (i1)->mod[2], c2_m0 = (i2)->mod[0]; \
+  intg c1_m3 = (i1)->mod[3], c2_m1 = (i2)->mod[1]; \
+  int k,l, kmax = (i2)->dim[0], lmax = (i2)->dim[1]; \
   Type3 *d1_0, *d1, f; \
-  int          c1_m0 = (i1)->mod[0],   \
-               d1_m0 = (o1)->mod[0],   \
-               c1_m1 = (i1)->mod[1],   \
-               d1_m1 = (o1)->mod[1];   \
-  int i,j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg c1_m1 = (i1)->mod[1], d1_m1 = (o1)->mod[1]; \
+  intg i,j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   ker = IDX_PTR((i2), Type2); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -1327,17 +1283,15 @@
 
 #define Midx_m1extm1(i1, i2, o1, Type1, Type2, Type3) \
 { \
-  register Type2 *c2; \
-  register Type3 *d1; \
+  Type2 *c2; \
+  Type3 *d1; \
   Type1 *c1; \
   Type2 *c2_0; \
   Type3 *d1_0; \
-  register int c2_m0 = (i2)->mod[0], \
-               d1_m1 = (o1)->mod[1]; \
-  int          c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int j, jmax = (o1)->dim[1]; \
-  int i, imax = (o1)->dim[0]; \
+  intg c2_m0 = (i2)->mod[0], d1_m1 = (o1)->mod[1]; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg j, jmax = (o1)->dim[1]; \
+  intg i, imax = (o1)->dim[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2_0 = IDX_PTR((i2), Type2); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -1356,21 +1310,17 @@
 
 #define Midx_m2extm2(i1, i2, o1, Type1, Type2, Type3) \
 { \
-  register Type2 *c2_0, *c2_1; \
-  register Type3 *d1_2, *d1_3; \
+  Type2 *c2_0, *c2_1; \
+  Type3 *d1_2, *d1_3; \
   Type3  *d1_0, *d1_1; \
   Type1  *c1_0, *c1_1; \
   Type2  *ker; \
-  register int c2_m0 = (i2)->mod[0], \
-               c2_m1 = (i2)->mod[1], \
-               d1_m2 = (o1)->mod[2], \
-               d1_m3 = (o1)->mod[3]; \
-  int          c1_m0 = (i1)->mod[0], \
-               c1_m1 = (i1)->mod[1], \
-               d1_m0 = (o1)->mod[0], \
-               d1_m1 = (o1)->mod[1]; \
-  register int k,l, lmax = (o1)->dim[3], kmax = (o1)->dim[2]; \
-  int i,j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
+  intg c2_m0 = (i2)->mod[0], c2_m1 = (i2)->mod[1]; \
+  intg d1_m2 = (o1)->mod[2], d1_m3 = (o1)->mod[3]; \
+  intg c1_m0 = (i1)->mod[0], c1_m1 = (i1)->mod[1]; \
+  intg d1_m0 = (o1)->mod[0], d1_m1 = (o1)->mod[1]; \
+  intg k,l, lmax = (o1)->dim[3], kmax = (o1)->dim[2]; \
+  intg i,j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   ker = IDX_PTR((i2), Type2); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -1404,17 +1354,15 @@
 
 #define Midx_m1extm1acc(i1, i2, o1, Type1, Type2, Type3) \
 { \
-  register Type2 *c2; \
-  register Type3 *d1; \
+  Type2 *c2; \
+  Type3 *d1; \
   Type1 *c1; \
   Type2 *c2_0; \
   Type3 *d1_0; \
-  register int c2_m0 = (i2)->mod[0], \
-               d1_m1 = (o1)->mod[1]; \
-  int          c1_m0 = (i1)->mod[0], \
-               d1_m0 = (o1)->mod[0]; \
-  register int j, jmax = (o1)->dim[1]; \
-  int i, imax = (o1)->dim[0]; \
+  intg c2_m0 = (i2)->mod[0], d1_m1 = (o1)->mod[1]; \
+  intg c1_m0 = (i1)->mod[0], d1_m0 = (o1)->mod[0]; \
+  intg j, jmax = (o1)->dim[1]; \
+  intg i, imax = (o1)->dim[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2_0 = IDX_PTR((i2), Type2); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -1433,21 +1381,17 @@
 
 #define Midx_m2extm2acc(i1, i2, o1, Type1, Type2, Type3) \
 { \
-  register Type2 *c2_0, *c2_1; \
-  register Type3 *d1_2, *d1_3; \
+  Type2 *c2_0, *c2_1; \
+  Type3 *d1_2, *d1_3; \
   Type1  *c1_0, *c1_1; \
   Type2  *ker; \
   Type3  *d1_0, *d1_1; \
-  register int c2_m0 = (i2)->mod[0], \
-               c2_m1 = (i2)->mod[1], \
-               d1_m2 = (o1)->mod[2], \
-               d1_m3 = (o1)->mod[3]; \
-  int          c1_m0 = (i1)->mod[0], \
-               c1_m1 = (i1)->mod[1], \
-               d1_m0 = (o1)->mod[0], \
-               d1_m1 = (o1)->mod[1]; \
-  register int k,l, kmax = (o1)->dim[2], lmax = (o1)->dim[3]; \
-  int i,j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
+  intg c2_m0 = (i2)->mod[0], c2_m1 = (i2)->mod[1]; \
+  intg d1_m2 = (o1)->mod[2], d1_m3 = (o1)->mod[3]; \
+  intg c1_m0 = (i1)->mod[0], c1_m1 = (i1)->mod[1]; \
+  intg d1_m0 = (o1)->mod[0], d1_m1 = (o1)->mod[1]; \
+  intg k,l, kmax = (o1)->dim[2], lmax = (o1)->dim[3]; \
+  intg i,j, imax = (o1)->dim[0], jmax = (o1)->dim[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   ker = IDX_PTR((i2), Type2); \
   d1_0 = IDX_PTR((o1), Type3); \
@@ -1482,13 +1426,11 @@
               (*IDX_PTR(i1, Type1)) OP (*IDX_PTR(i2, Type2)); }
 
 #define Midx_m1TOP(i0, i1,i2, Type1, Type2, Type3, OP) \
-{ register Type1 *c0; \
-  register Type2 *c1; \
-  register Type3 *c2; \
-  register int i, imax = (i2)->dim[0]; \
-  register int i0_m0 = (i0)->mod[0], \
-               i1_m0 = (i1)->mod[0], \
-               i2_m0 = (i2)->mod[0]; \
+{ Type1 *c0; \
+  Type2 *c1; \
+  Type3 *c2; \
+  intg i, imax = (i2)->dim[0]; \
+  intg i0_m0 = (i0)->mod[0], i1_m0 = (i1)->mod[0], i2_m0 = (i2)->mod[0]; \
   c0 = IDX_PTR((i0), Type1); \
   c1 = IDX_PTR((i1), Type2); \
   c2 = IDX_PTR((i2), Type3); \
@@ -1505,19 +1447,15 @@
 }
 
 #define Midx_m2TOP(i0,i1,i2, Type1, Type2, Type3, OP) \
-{ register Type1 *c0; \
-  register Type2 *c1; \
-  register Type3 *c2; \
+{ Type1 *c0; \
+  Type2 *c1; \
+  Type3 *c2; \
   Type1 *c0_0; \
   Type2 *c1_0; \
   Type3 *c2_0; \
-  register int i, j, imax = (i2)->dim[0], jmax = (i1)->dim[1]; \
-  register int i0_m0 = (i0)->mod[0], \
-               i1_m0 = (i1)->mod[0], \
-               i2_m0 = (i2)->mod[0], \
-               i0_m1 = (i0)->mod[1], \
-               i1_m1 = (i1)->mod[1], \
-               i2_m1 = (i2)->mod[1]; \
+  intg i, j, imax = (i2)->dim[0], jmax = (i1)->dim[1]; \
+  intg i0_m0 = (i0)->mod[0], i1_m0 = (i1)->mod[0], i2_m0 = (i2)->mod[0]; \
+  intg i0_m1 = (i0)->mod[1], i1_m1 = (i1)->mod[1], i2_m1 = (i2)->mod[1]; \
   c0_0 = IDX_PTR((i0), Type1); \
   c1_0 = IDX_PTR((i1), Type2); \
   c2_0 = IDX_PTR((i2), Type3); \
@@ -1541,9 +1479,9 @@
 
 #define Midx_maTOP(i0, i1, i2, Type1, Type2, Type3, OP) \
 { \
-  register Type1 *fp0; \
-  register Type2 *fp1; \
-  register Type3 *fp2; \
+  Type1 *fp0; \
+  Type2 *fp1; \
+  Type3 *fp2; \
   fp0 = IDX_PTR(i0, Type1); \
   fp1 = IDX_PTR(i1, Type2); \
   fp2 = IDX_PTR(i2, Type3); \
@@ -1575,19 +1513,18 @@
 /* ============= scalar operations on m0, m1, m2, ma ======== */
 
 #define m0fop(i1,i2, Type1, Type2, OPER) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   *c2 = OPER(*c1); \
 }
 
 #define m1fop(i1,i2, Type1, Type2, OPER) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
-  register int i, imax = (i1)->dim[0]; \
-  register int i1_m0 = (i1)->mod[0], \
-               i2_m0 = (i2)->mod[0]; \
+{ Type1 *c1; \
+  Type2 *c2; \
+  intg i, imax = (i1)->dim[0]; \
+  intg i1_m0 = (i1)->mod[0], i2_m0 = (i2)->mod[0]; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   for (i=0; i<imax; i++){ \
@@ -1598,15 +1535,13 @@
 }
 
 #define m2fop(i1,i2, Type1, Type2, OPER) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   Type1 *c1_0; \
   Type2 *c2_0; \
-  register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
-  register int i1_m1 = (i1)->mod[1],   \
-               i2_m1 = (i2)->mod[1];   \
-  int          i1_m0 = (i1)->mod[0],   \
-               i2_m0 = (i2)->mod[0];   \
+  intg i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
+  intg i1_m1 = (i1)->mod[1], i2_m1 = (i2)->mod[1]; \
+  intg i1_m0 = (i1)->mod[0], i2_m0 = (i2)->mod[0]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2_0 = IDX_PTR((i2), Type2); \
   for (i=0; i<imax; i++){ \
@@ -1623,8 +1558,8 @@
 }
 
 #define mafop(i1,i2, Type1, Type2, OPER) \
-{ register Type1 *c1; \
-  register Type2 *c2; \
+{ Type1 *c1; \
+  Type2 *c2; \
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   begin_idx_aloop2( (i1), (i2), k, l) { \
@@ -1715,11 +1650,10 @@
 
 #define Midx_m1permute(i1, per, o1, Type) \
 { \
-  register Type *c1, *d1; \
-  register long *c2; \
-  register int i, imax = (o1)->dim[0]; \
-  register int per_m0 = (per)->mod[0], \
-               o1_m0 = (o1)->mod[0]; \
+  Type *c1, *d1; \
+  long *c2; \
+  intg i, imax = (o1)->dim[0]; \
+  intg per_m0 = (per)->mod[0], o1_m0 = (o1)->mod[0]; \
   c1 = IDX_PTR((i1), Type); \
   c2 = IDX_PTR((per), long); \
   d1 = IDX_PTR((o1), Type); \
@@ -1732,16 +1666,14 @@
 
 #define Midx_m2permute(i1, per, o1, Type) \
 { \
-  register Type *c1, *d1; \
+  Type *c1, *d1; \
   Type *d1_0; \
-  register long *c2; \
+  long *c2; \
   long  *c2_0; \
-  int i, imax = (o1)->dim[0]; \
-  int          per_m1 = (per)->mod[1], \
-               o1_m1 = (o1)->mod[1];   \
-  register int per_m0 = (per)->mod[0], \
-               o1_m0 = (o1)->mod[0];   \
-  register int j, jmax = (o1)->dim[1]; \
+  intg i, imax = (o1)->dim[0]; \
+  intg per_m1 = (per)->mod[1], o1_m1 = (o1)->mod[1]; \
+  intg per_m0 = (per)->mod[0], o1_m0 = (o1)->mod[0]; \
+  intg j, jmax = (o1)->dim[1]; \
   c1   = IDX_PTR((i1), Type); \
   c2_0 = IDX_PTR((per), long); \
   d1_0 = IDX_PTR((o1), Type); \
@@ -1762,3 +1694,10 @@
 /* END OF IDXOPS_H */
 #endif
 
+
+/* -------------------------------------------------------------
+   Local Variables:
+   c-font-lock-extra-types: (
+     "FILE" "\\sw+_t" "at" "gptr" "real" "flt" "intg" "Type[0-9]*")
+   End:
+   ------------------------------------------------------------- */

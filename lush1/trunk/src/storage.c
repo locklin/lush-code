@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.11 2003-05-27 21:49:50 leonb Exp $
+ * $Id: storage.c,v 1.12 2004-10-22 19:50:36 leonb Exp $
  **********************************************************************/
 
 
@@ -960,7 +960,7 @@ DX(xstorage_realloc_nc)
 #ifdef HAVE_MMAP
 
 void 
-storage_mmap(at *atp, FILE *f, int offset)
+storage_mmap(at *atp, FILE *f, size_t offset)
 {
   struct storage *st;
   size_t len;

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxmac.h,v 1.5 2004-02-04 15:34:26 leonb Exp $
+ * $Id: idxmac.h,v 1.6 2004-10-22 19:50:30 leonb Exp $
  **********************************************************************/
 
 #ifndef IDXMAC_H
@@ -53,12 +53,12 @@
  */
 #define Midx_offset(i) ((i)->offset)
 
-/* expect min and max to have been defined has int */
+/* expect min and max to have been defined has intg */
 #define SRG_BOUNDS(idx, ndim, min, max)  \
 min = (idx)->offset; \
 max = (idx)->offset; \
 { \
-    int i; \
+    intg i; \
     for(i=0;i<ndim;i++) \
         if((idx)->mod[i]<0) \
             min += ((idx)->dim[i]-1) * (idx)->mod[i]; \
@@ -88,7 +88,7 @@ max = (idx)->offset; \
 
 #define Midx_update_mod_from_dim(i0) \
 { \
-    int i,siz=1; \
+    int i; intg siz=1; \
     for(i=(i0)->ndim - 1 ;i>= 0;i--) { \
 	(i0)->mod[i] = siz; \
 	siz *= (i0)->dim[i]; \
@@ -187,7 +187,7 @@ max = (idx)->offset; \
 
 #define Midx_select(newi, i, dd, nn, Type) \
 { \
-  register int j, temp = ((i)->ndim)-1; \
+  int j, temp = ((i)->ndim)-1; \
   (newi)->flags = (i)->flags; \
   (newi)->offset = (i)->offset + nn*((i)->mod[dd]); \
   (newi)->ndim = temp; \
@@ -206,7 +206,7 @@ max = (idx)->offset; \
  */
 #define Midx_transpose(i, p, Type) \
 { \
-  int tmp[MAXDIMS]; \
+  intg tmp[MAXDIMS]; \
   register int j; \
   for (j=0; j<(i)->ndim; j++) { tmp[j] = (i)->dim[j]; } \
   for (j=0; j<(i)->ndim; j++) { (i)->dim[j] = tmp[p[j]] ; } \
@@ -218,7 +218,7 @@ max = (idx)->offset; \
  */
 #define Midx_transpose2(i, d0, d1, Type) \
 { \
-  register int b; \
+  register intg b; \
   b = (i)->dim[d0]; (i)->dim[d0]=(i)->dim[d1]; (i)->dim[d1]=b; \
   b = (i)->mod[d0]; (i)->mod[d0]=(i)->mod[d1]; (i)->mod[d1]=b; \
 } 
@@ -344,27 +344,27 @@ struct srg *newi = & name2(_srg_,newi)
     var = 1; if(1 != (idx)->mod[2] || (idx)->dim[2] != (idx)->mod[1] || \
     (idx)->dim[1]*(idx)->dim[2] != (idx)->mod[0]) var = 0;
 #define Midx_contiguep4(idx, var) \
-{   int size = 1, i; var = 1\
+{   intg size = 1; int i; var = 1\
     for(i=3;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (%s)->dim[i]; }}
 #define Midx_contiguep5(idx, var) \
-{   int size = 1, i; var = 1\
+{   intg size = 1; int i; var = 1\
     for(i=4;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (%s)->dim[i]; }}
 #define Midx_contiguep6(idx, var) \
-{   int size = 1, i; var = 1\
+{   intg size = 1; int i; var = 1\
     for(i=5;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (%s)->dim[i]; }}
 #define Midx_contiguep7(idx, var) \
-{   int size = 1, i; var = 1\
+{   intg size = 1; int i; var = 1\
     for(i=6;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (%s)->dim[i]; }}
 #define Midx_contiguep8(idx, var) \
-{   int size = 1, i; var = 1\
+{   intg size = 1; int i; var = 1\
     for(i=7;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (%s)->dim[i]; }}
@@ -376,10 +376,10 @@ struct srg *newi = & name2(_srg_,newi)
  */
 
 #define Midxlow_binit(a1) \
-  int _i, _sz = (a1)->dim[0]
+  intg _i, _sz = (a1)->dim[0]
 
 #define Midxlow_einit(a1) \
-  int _i, _sz = (a1)->dim[(a1)->ndim - 1]
+  intg _i, _sz = (a1)->dim[(a1)->ndim - 1]
 
 /* BREAKING CONVENTION to save indirection overhead in bloops.
  *   'anl' token will represent a struct idx, not a pointer.
@@ -388,7 +388,7 @@ struct srg *newi = & name2(_srg_,newi)
  */
 #define Midxlow_declare(an, anl) \
   struct idx anl; \
-  int name2(anl,_Inc)
+  intg name2(anl,_Inc)
 
 #define Midxlow_bclone(an, anl) \
   (&anl)->flags = (an)->flags; \
@@ -414,18 +414,6 @@ struct srg *newi = & name2(_srg_,newi)
 
 #define Midxlow_advance(an, anl, Type) \
   (&anl)->offset += name2(anl,_Inc)  
-
-
-
-/* Replication gnu-emacs kbd macro:
- * Copies the current line, replicates the previous loop,
- * adding a new looping variable named according to the 
- * current yank buffer.
- *
-(fset 'next-macro "xsea	ba	_begin_xsea	for	wxsea	ba	_begin_ffff_bxsearch-fo	Typexsea	ba	, l,,xsearch-fo	clone  Midxlow_declare(,l); \\xsearch-for	loop  Midx_low_clone(,l); \\bbwxsea	forw	_end_f_ùbxsearch-fo	Typexsea	back	, l,,}  M<idxlow_advance(,l,Type;); \\")
- *
- */
-
 
 
 
@@ -1146,7 +1134,9 @@ struct srg *newi = & name2(_srg_,newi)
 #endif 
 
 
-
-
-
-
+/* -------------------------------------------------------------
+   Local Variables:
+   c-font-lock-extra-types: (
+     "FILE" "\\sw+_t" "at" "gptr" "real" "flt" "intg" )
+   End:
+   ------------------------------------------------------------- */

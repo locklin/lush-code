@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.61 2004-07-26 17:30:43 leonb Exp $
+ * $Id: header.h,v 1.62 2004-10-22 19:50:30 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -75,6 +75,21 @@ typedef struct dhdoc_s dhdoc_t;
 /* From main */
 extern LUSHAPI int lush_argc;
 extern LUSHAPI char** lush_argv;
+
+
+/* Large integers:
+   Lush storages and matrices on 64 bit platforms
+   are limited by the size of integers (often 32 bits).
+   We are fixing this in two steps:
+   1- Replace all relevant occurences of 'int' by 'intg'.
+   2- Change the definition of intx from 'int' to 'long'.
+*/
+
+#ifdef INTG_IS_LONG
+typedef long intg;
+#else
+typedef int intg;
+#endif
 
 
 /* OS.H ---------------------------------------------------------- */
@@ -609,7 +624,7 @@ TLAPI void all_args_eval(at **arg_array, int i);
 #define APOINTER(i)     ( arg_array[i] )
 #define AREAL(i)        ( ISNUMBER(i) ? APOINTER(i)->Number:(long)DX_ERROR(1,i))
 #define AGPTR(i)        ( ISGPTR(i) ? APOINTER(i)->Gptr:(gptr)DX_ERROR(9,i))
-#define AINTEGER(i)     ( (int) AREAL(i) )
+#define AINTEGER(i)     ( (intg) AREAL(i) )
 #define AFLT(i)         ( rtoF(AREAL(i)) )
 #define ALIST(i)        ( ISLIST(i) ? APOINTER(i):(at*)DX_ERROR(2,i) )
 #define ACONS(i)        ( ISCONS(i) ? APOINTER(i):(at*)DX_ERROR(3,i) )
@@ -887,10 +902,10 @@ enum storage_type {
 };
 
 extern LUSHAPI int storage_type_size[ST_LAST];
-extern LUSHAPI flt (*storage_type_getf[ST_LAST])(gptr, int);
-extern LUSHAPI void (*storage_type_setf[ST_LAST])(gptr, int, flt);
-extern LUSHAPI real (*storage_type_getr[ST_LAST])(gptr, int);
-extern LUSHAPI void (*storage_type_setr[ST_LAST])(gptr, int, real);
+extern LUSHAPI flt (*storage_type_getf[ST_LAST])(gptr, intg);
+extern LUSHAPI void (*storage_type_setf[ST_LAST])(gptr, intg, flt);
+extern LUSHAPI real (*storage_type_getr[ST_LAST])(gptr, intg);
+extern LUSHAPI void (*storage_type_setr[ST_LAST])(gptr, intg, real);
 
 /* 
  * General purpose flags (STF)
@@ -916,7 +931,7 @@ struct srg {
     short flags;
     unsigned char type;
     unsigned char pad;
-    int size;
+    intg size;
     gptr data;
 };
 
@@ -926,8 +941,8 @@ struct storage {
   void (*read_srg)(struct storage *);	
   void (*write_srg)(struct storage *);	
   void (*rls_srg)(struct storage *);	
-  at*  (*getat)(struct storage *,int);
-  void (*setat)(struct storage *,int,at*);
+  at*  (*getat)(struct storage *,intg);
+  void (*setat)(struct storage *,intg, at*);
   at *atst;          /* pointer on the at storage */
   struct srg *cptr;  /* srg structure for the C side (lisp_c) */
   
@@ -979,9 +994,9 @@ LUSHAPI at *new_GPTR_storage(void);
 LUSHAPI at *new_storage(int,int);
 LUSHAPI at *new_storage_nc(int,int);
 
-LUSHAPI void storage_malloc(at*, int, int);
-LUSHAPI void storage_realloc(at*, int, int );
-LUSHAPI void storage_mmap(at*, FILE*, int);
+LUSHAPI void storage_malloc(at*, intg, int);
+LUSHAPI void storage_realloc(at*, intg, int );
+LUSHAPI void storage_mmap(at*, FILE*, size_t);
 LUSHAPI int storagep(at*);
 LUSHAPI void storage_clear(at *p);
 LUSHAPI int storage_load(at*, FILE*);
@@ -1007,9 +1022,9 @@ extern LUSHAPI class index_class;
 struct idx {	
     short ndim;
     short flags;
-    int offset;	
-    int *dim;
-    int *mod;
+    intg offset;	
+    intg *dim;
+    intg *mod;
     struct srg *srg;
 };
 
@@ -1024,9 +1039,9 @@ struct index {
   /*   index structures! */
 
   short ndim;			
-  int offset;			/* in element size */
-  int dim[MAXDIMS];		
-  int mod[MAXDIMS];		
+  intg offset;			/* in element size */
+  intg dim[MAXDIMS];		
+  intg mod[MAXDIMS];		
   
   at *atst;			/* a lisp handle to the storage object */
   struct storage *st;		/* a pointer to the storage */
@@ -1043,27 +1058,27 @@ LUSHAPI int indexp(at*);
 LUSHAPI int matrixp(at*); 
 LUSHAPI int arrayp(at*);
 LUSHAPI at *new_index(at*);
-LUSHAPI void index_dimension(at*,int,int[]);
+LUSHAPI void index_dimension(at*,int,intg[]);
 LUSHAPI void index_undimension(at*);
-LUSHAPI void index_from_index(at*,at*,int*,int*);
-LUSHAPI struct index *easy_index_check(at*,int,int[]);
-LUSHAPI real easy_index_get(struct index*, int*);
-LUSHAPI void easy_index_set(struct index*, int*, real);
+LUSHAPI void index_from_index(at*,at*,intg*,intg*);
+LUSHAPI struct index *easy_index_check(at*,int,intg[]);
+LUSHAPI real easy_index_get(struct index*, intg*);
+LUSHAPI void easy_index_set(struct index*, intg*, real);
 LUSHAPI char *not_a_nrvector(at*);
 LUSHAPI char *not_a_nrmatrix(at*);
-LUSHAPI flt *make_nrvector(at*,int,int*);
-LUSHAPI flt **make_nrmatrix(at*,int,int,int*,int*);
+LUSHAPI flt *make_nrvector(at*,intg,intg*);
+LUSHAPI flt **make_nrmatrix(at*,intg,intg,intg*,intg*);
 LUSHAPI at *copy_matrix(at *, at *);
 
-LUSHAPI at *AT_matrix(int,int*);	/* Simultaneous creation       */
-LUSHAPI at *F_matrix(int,int*);	/* of an index and its storage */
-LUSHAPI at *D_matrix(int,int*);
-LUSHAPI at *P_matrix(int,int*);
-LUSHAPI at *I32_matrix(int,int*);
-LUSHAPI at *I16_matrix(int,int*);
-LUSHAPI at *I8_matrix(int,int*);
-LUSHAPI at *U8_matrix(int,int*);
-LUSHAPI at *GPTR_matrix(int,int*);
+LUSHAPI at *AT_matrix(int,intg*);	/* Simultaneous creation       */
+LUSHAPI at *F_matrix(int,intg*);	/* of an index and its storage */
+LUSHAPI at *D_matrix(int,intg*);
+LUSHAPI at *P_matrix(int,intg*);
+LUSHAPI at *I32_matrix(int,intg*);
+LUSHAPI at *I16_matrix(int,intg*);
+LUSHAPI at *I8_matrix(int,intg*);
+LUSHAPI at *U8_matrix(int,intg*);
+LUSHAPI at *GPTR_matrix(int,intg*);
 
 /* Functions related to <struct idx> objects */
 
@@ -1084,14 +1099,14 @@ TLAPI at *load_matrix(FILE *f);
 
 /* 
  * Loops over all elements of idx <idx>
- * The variable <ptr> must be a pointer
- * referencing the first element of <idx>.
+ * The variable <ptr> is an offset
+ * referencing each element of <idx>.
  * It is incremented by the loop, over all the idx.
  */
 
 #define begin_idx_aloop1(idx,ptr) { 					     \
-  int _d_[MAXDIMS], _j_; 						     \
-  int ptr = 0;								     \
+  intg _d_[MAXDIMS], _j_; 						     \
+  intg ptr = 0;								     \
   for (_j_=0;_j_<(idx)->ndim; _j_++ ) 					     \
     _d_[_j_]=0; 							     \
   _j_ = (idx)->ndim; 							     \
@@ -1115,17 +1130,17 @@ TLAPI at *load_matrix(FILE *f);
 
 /* 
  * Independently loops over all elements of both idxs <idx1> and <idx2>
- * The variables <ptr1> and <ptr2> must be pointers
- * referencing the first element of <idx1> and <idx2>.
+ * The variables <ptr1> and <ptr2> are offsets
+ * referencing the element of <idx1> and <idx2>.
  * Idxs <idx1> and <idx2> don't need to have the same structure,
  * but they must have the same number of elements.
  */
 
 #define begin_idx_aloop2(idx1, idx2, ptr1, ptr2) { 			     \
-  int _d1_[MAXDIMS], _j1_; 						     \
-  int _d2_[MAXDIMS], _j2_;						     \
-  int ptr1 = 0;							     	     \
-  int ptr2 = 0;								     \
+  intg _d1_[MAXDIMS], _j1_; 						     \
+  intg _d2_[MAXDIMS], _j2_;						     \
+  intg ptr1 = 0;							     \
+  intg ptr2 = 0;							     \
   for (_j1_=0;_j1_<(idx1)->ndim; _j1_++ ) 				     \
     _d1_[_j1_]=0; 							     \
   for (_j2_=0;_j2_<(idx2)->ndim; _j2_++ ) 				     \
@@ -1164,19 +1179,19 @@ TLAPI at *load_matrix(FILE *f);
 
 /* 
  * Independently loops over all elements of both idxs <idx0>,<idx1> and <idx2>
- * The variables <ptr0><ptr1> and <ptr2> must be pointers
- * referencing the first element of <idx0><idx1> and <idx2>.
+ * The variables <ptr0><ptr1> and <ptr2> are offsets
+ * referencing the elements of <idx0><idx1> and <idx2>.
  * Idxs <idx0><idx1> and <idx2> don't need to have the same structure,
  * but they must have the same number of elements.
  */
 
 #define begin_idx_aloop3(idx0, idx1, idx2, ptr0, ptr1, ptr2) { 	             \
-  int _d0_[MAXDIMS], _j0_; 						     \
-  int _d1_[MAXDIMS], _j1_; 						     \
-  int _d2_[MAXDIMS], _j2_;						     \
-  int ptr0 = 0;							     	     \
-  int ptr1 = 0;							     	     \
-  int ptr2 = 0;								     \
+  intg _d0_[MAXDIMS], _j0_; 						     \
+  intg _d1_[MAXDIMS], _j1_; 						     \
+  intg _d2_[MAXDIMS], _j2_;						     \
+  intg ptr0 = 0;						     	     \
+  intg ptr1 = 0;						     	     \
+  intg ptr2 = 0;							     \
   for (_j0_=0;_j0_<(idx0)->ndim; _j0_++ ) 				     \
     _d0_[_j0_]=0; 							     \
   for (_j1_=0;_j1_<(idx1)->ndim; _j1_++ ) 				     \
@@ -1330,3 +1345,11 @@ LUSHAPI void  enqueue_eventdesc(at*, int event, int, int, int, int, char*);
 
 
 #endif /* HEADER_H */
+
+
+/* -------------------------------------------------------------
+   Local Variables:
+   c-font-lock-extra-types: (
+     "FILE" "\\sw+_t" "at" "gptr" "real" "flt" "intg" )
+   End:
+   ------------------------------------------------------------- */
