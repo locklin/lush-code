@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.2 2003-09-04 00:18:40 leonb Exp $
+ * $Id: svqp.cpp,v 1.3 2003-09-04 00:22:03 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -314,7 +314,7 @@ ConvexProgram::run(void)
   for (i=0; i<n; i++)
     if (x[i]<cmin[i] || x[i]>cmax[i])
       {
-        err = "initial x vector is not feasible";
+        err = "Initial x vector is not feasible";
         return -1;
       }
   // averaged w for detecting instabilities
