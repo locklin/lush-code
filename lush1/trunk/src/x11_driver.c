@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.2 2002-04-24 20:55:38 leonb Exp $
+ * $Id: x11_driver.c,v 1.3 2002-08-02 20:31:45 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -130,41 +130,12 @@ static unsigned short bitmap[][16] = {
 static Pixmap gray_stipple[8];
 extern struct gdriver x11_driver;
 
-
-
-/* ============================  TRIGGER */
-
-/* From UNIX.C */
-void block_async_trigger(void);
-void unblock_async_trigger(void);
-
-#define enable()   unblock_async_trigger()
-#define disable()  block_async_trigger()
+#define enable()   unblock_async_poll()
+#define disable()  block_async_poll()
 
 static void setcursor(int flag);
 static void handle_sync_events(void);
 static void handle_async_events(void);
-
-static void
-x11_trigger(int op)
-{
-  switch (op)
-    {
-    case OP_SYNC:
-      handle_sync_events();
-      return;
-    case OP_ASYNC:
-      handle_async_events();
-      return;
-    case OP_END_WAIT:
-      setcursor(0);
-      return;
-    case OP_BEGIN_WAIT:
-      setcursor(1);
-      return;
-    }
-}
-
 
 
 
@@ -199,6 +170,18 @@ x11_handler(Display *display, XErrorEvent *myerr)
     XGetErrorText(display, myerr->error_code, msg, 80);
     fprintf(stderr,"*** Xlib error %d : %s\n", myerr->error_code, msg);
   }
+}
+
+static void
+x11_bwait(void)
+{
+  setcursor(1);
+}
+
+static void
+x11_ewait(void)
+{
+  setcursor(0);
 }
 
 static void 
@@ -291,8 +274,9 @@ x11_init(void)
   XSetErrorHandler((void*)x11_handler);
 
   /* Miscellaneous */
-  set_trigger(ConnectionNumber(xdef.dpy), x11_trigger, process_pending_events);
   Xinitialised = TRUE;
+  register_event_source(handle_sync_events, handle_async_events,
+                        x11_bwait, x11_ewait, ConnectionNumber(xdef.dpy));
 }
 
 static void 

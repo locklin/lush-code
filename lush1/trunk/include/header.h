@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.35 2002-07-31 16:57:24 leonb Exp $
+ * $Id: header.h,v 1.36 2002-08-02 20:31:42 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -61,7 +61,7 @@ extern "C" {
 #define forever         for(;;)
 #define until(s)        while(!(s))
 
-#if defined(__GNUC__) && (__GNUC__ > 1 ) && (__GNUC_MINOR__ > 5) /* Arno */
+#if defined(__GNUC__)
 #define no_return __attribute__((__noreturn__))
 #endif
 #ifndef no_return
@@ -79,15 +79,9 @@ typedef struct dhdoc_s dhdoc_t;
 #ifdef UNIX
 /* interruptions */
 extern TLAPI int break_attempt;
-/* event management */
-enum triggerops { OP_BEGIN_WAIT, OP_END_WAIT, OP_ASYNC, OP_SYNC };
-void set_trigger(int fd, void (*trigger)(int op), void (*process)(void)); 
-void lastchance(char *s) no_return;
-void call_sync_trigger(void);
-void wait_trigger(void);
 /* console management */
 void console_getline(char *prompt, char *buf, int size);
-/* open entry points */
+/* openTL entry points */
 void init_user(void);
 int  init_user_dll(int major, int minor);
 /* replacement functions */
@@ -95,11 +89,10 @@ TLAPI FILE* unix_popen(const char *, const char *);
 TLAPI int   unix_pclose(FILE *);
 /* cygwin */
 # ifdef __CYGWIN32__
-TLAPI void  cygwin_fmode_text(FILE *f);
-TLAPI void  cygwin_fmode_binary(FILE *f);
+TLAPI void cygwin_fmode_text(FILE *f);
+TLAPI void cygwin_fmode_binary(FILE *f);
 # endif
 #endif
-
 
 #ifdef WIN32
 /* interruptions */
@@ -115,12 +108,6 @@ TLAPI int   win32_pclose(FILE *);
 TLAPI void  win32_fmode_text(FILE *f);
 TLAPI void  win32_fmode_binary(FILE *f);
 TLAPI int   win32_waitproc(void *wproc);
-/* event management */
-TLAPI void set_trigger(void (*trigger)(void), void (*process)(void)); 
-TLAPI void block_async_trigger(void);
-TLAPI void unblock_async_trigger(void);
-TLAPI void call_sync_trigger(void);
-TLAPI void wait_trigger(void);
 /* console management */
 TLAPI void console_getline(char *prompt, char *buf, int size);
 /* openTL entry points */
@@ -1235,15 +1222,36 @@ LUSHAPI at *new_dhclass(at *name, dhclassdoc_t *kdata);
 
 /* LISP_C.H ---------------------------------------------- */
 
-extern LUSHAPI int  lside_mark_unlinked(gptr);
-extern LUSHAPI void lside_destroy_item(gptr);
-extern LUSHAPI int  lside_check_ownership(void *cptr);
+LUSHAPI int  lside_mark_unlinked(gptr);
+LUSHAPI void lside_destroy_item(gptr);
+LUSHAPI int  lside_check_ownership(void *cptr);
 
-extern LUSHAPI void cside_create_idx(void *cptr);
-extern LUSHAPI void cside_create_srg(void *cptr);
-extern LUSHAPI void cside_create_obj(void *cptr, dhclassdoc_t *);
-extern LUSHAPI void cside_destroy_range(void *from, void *to);
+LUSHAPI void cside_create_idx(void *cptr);
+LUSHAPI void cside_create_srg(void *cptr);
+LUSHAPI void cside_create_obj(void *cptr, dhclassdoc_t *);
+LUSHAPI void cside_destroy_range(void *from, void *to);
 
+
+
+/* EVENT.H ----------------------------------------------------- */
+
+LUSHAPI void  block_async_poll(void);
+LUSHAPI void  unblock_async_poll(void);
+LUSHAPI void *timer_add(at *handler, int delay, int period);
+LUSHAPI void  timer_del(void *handle);
+LUSHAPI int   timer_fire(void);
+LUSHAPI void  event_add(at *handler, at *event);
+LUSHAPI at   *event_peek(void);
+LUSHAPI at   *event_get(void *handler, int remove);
+LUSHAPI at   *event_wait(int console);
+LUSHAPI void  process_pending_events(void);
+LUSHAPI void  unregister_event_source(void *handle);
+LUSHAPI void  enqueue_event(at*, int, int, int, int, int);
+LUSHAPI void  enqueue_eventdesc(at*, int, int, int, int, int, char*);
+LUSHAPI void *register_event_source(void (*spoll)(void), 
+                                    void (*apoll)(void),
+                                    void (*bwait)(void), 
+                                    void (*ewait)(void), int fd );
 
 
 /* CPLUSPLUS --------------------------------------------------- */

@@ -24,265 +24,14 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.3 2002-04-30 21:22:12 leonb Exp $
+ * $Id: graphics.c,v 1.4 2002-08-02 20:31:45 leonb Exp $
  **********************************************************************/
 
 
 #include "header.h"
 #include "graphics.h"
 
-static at *window;
-static at *at_event;
-static at *at_idle;
-
-
-/* ------------------------------------ */
-/* EVENT MANAGEMENT                     */
-/* ------------------------------------ */     
-
-
-static struct event *event_buffer;
-static int event_put, event_get;
-
-#define EVBUFMASK 0xff
-#define EVBUFSIZE 256
-
-static int   evshift;
-static int   evctrl;
-static char *evdesc = NULL;
-
-
-
-static at * 
-event_to_list(int event, int xdown, int ydown, int xup, int yup, char *desc)
-{
-  if (event == EVENT_NONE)
-    return NIL;
-  
-  
-  /* events that do not update evshift and evcontrol */
-
-  evdesc = desc;
-  if (event == EVENT_MOUSE_UP) 
-    return (cons(named("mouse_up"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown),
-			   cons(NEW_NUMBER(xup),
-				cons(NEW_NUMBER(yup), NIL))))));
-    
-  if (event == EVENT_MOUSE_DRAG) 
-    return (cons(named("mouse_drag"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown),
-			   cons(NEW_NUMBER(xup),
-				cons(NEW_NUMBER(yup), NIL))))));
-
-  if (event == EVENT_RESIZE)
-    return (cons(named("resize"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-
-  if (event == EVENT_DELETE) 
-    return (cons(named("delete"),NIL));
-    
-  if (event == EVENT_SENDEVENT)
-    return (cons(named("sendevent"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown),NIL))));
-
-  if (event >= EVENT_ASCII_MIN && event <= EVENT_ASCII_MAX) {
-    static char keyevent[2];
-    keyevent[0] = EVENT_TO_ASCII(event);
-    keyevent[1] = 0;
-    evdesc = keyevent;
-    return (cons(new_string(keyevent),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  }
-  
-  if (event == EVENT_ALARM) 
-    return (cons(named("alarm"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  
-  if (event == EVENT_GLEXPOSE)
-    return cons(named("glexpose"),
-                cons(NEW_NUMBER(xdown),
-                     cons(NEW_NUMBER(ydown),
-                          cons(NEW_NUMBER(xup),
-                               cons(NEW_NUMBER(yup), NIL))) ) );
-  
-  /* events that update evshift and evcontrol */
-
-  evshift = (xup ? 1 : 0);
-  evctrl =  (yup ? 1 : 0);
-  if (event == EVENT_MOUSE_DOWN)
-    return (cons(named("mouse_down"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-    
-  if (event == EVENT_HELP)
-    return (cons(named("help"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-
-  if (event == EVENT_ARROW_UP)
-    return (cons(named("arrow_up"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-    
-  if (event == EVENT_ARROW_RIGHT)
-    return (cons(named("arrow_right"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-    
-  if (event == EVENT_ARROW_DOWN)
-    return (cons(named("arrow_down"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-    
-  if (event == EVENT_ARROW_LEFT)
-    return (cons(named("arrow_left"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-    
-  if (event == EVENT_FKEY)
-    return (cons(named("fkey"),
-                 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  
-  /* default */
-
-  evshift = evctrl = 0;
-  return (cons(NEW_NUMBER(event),
-               cons(NEW_NUMBER(xdown),
-                    cons(NEW_NUMBER(ydown), NIL))));
-}
-
-
-
-
-void 
-process_pending_events(void)
-{
-  int old_event_get;
-  at *q;
-  
-again:
-  call_sync_trigger();
-  while (event_get != event_put) 
-    {
-      old_event_get = event_get;
-      /* CALLS EVENT-HOOK */
-      q = var_get(at_event);
-      if (! (q && (q->flags&X_FUNCTION))) {
-	UNLOCK(q);
-      } else {
-	UNLOCK(q);
-	q = apply(at_event,NIL);
-	UNLOCK(q);
-      }
-      if (old_event_get == event_get) 
-	return;
-    }
-  call_sync_trigger();
-  if (event_get != event_put) 
-    goto again;
-  
-  /* CALLS IDLE-HOOK */
-  q = var_get(at_idle);
-  if (! (q && (q->flags&X_FUNCTION))) {
-    UNLOCK(q);
-  } else {
-    UNLOCK(q);
-    q = apply(at_idle,NIL);
-    UNLOCK(q);
-  }
-  call_sync_trigger();
-  if (event_get != event_put) 
-    goto again;
-}
-
-
-
-void
-enqueue_event(at *handler, int event, 
-              int xd, int yd, int xu, int yu)
-{
-  enqueue_eventdesc(handler,event,xd,yd,xu,yu,NULL);
-}
-
-
-
-void
-enqueue_eventdesc(at *handler, int event, 
-                  int xd, int yd, int xu, int yu, char *desc)
-{
-  int last_event_put;
-  int new_event_put;
-  struct event *ev;
-  
-  last_event_put = (event_put-1)&EVBUFMASK;
-  ev = &event_buffer[last_event_put];
-  
-  if (   last_event_put != event_get
-      && event_put != event_get
-      && event == EVENT_MOUSE_DRAG
-      && ev->code == EVENT_MOUSE_DRAG
-      && ev->handler == handler ) 
-    {
-      ev = &event_buffer[last_event_put];
-      new_event_put = event_put;
-    }
-  else
-    {
-      ev = &event_buffer[event_put];
-      new_event_put = (event_put+1)&EVBUFMASK;
-    }
-  
-  if (new_event_put == event_get) /* no room */
-    return;
-  event_put = new_event_put;
-  ev->handler = handler;
-  ev->code = event;
-  ev->xd = xd;
-  ev->yd = yd;
-  ev->xu = xu;
-  ev->yu = yu;
-  ev->desc = desc;
-}
-
-
-
-static void
-remove_one_event(int ev)
-{
-  int next_ev;
-  
-  while (ev!=event_get) {
-    next_ev = (ev-1)&EVBUFMASK;
-    event_buffer[ev] = event_buffer[next_ev];
-    ev = next_ev;
-  }
-  event_get = (event_get+1)&EVBUFMASK;
-}
-
-
-static void
-remove_events(at *h)
-{
-  int ev;
-  
-  ev = event_get;
-  while (ev != event_put) {
-    if (event_buffer[ev].handler==h)
-      remove_one_event(ev);
-    ev = (ev+1)&EVBUFMASK;
-  }
-}
-
-
-
+static at *at_window;
 
 
 /* ------------------------------------ */
@@ -296,10 +45,8 @@ window_dispose(at *p)
   
   win = p->Object;
   UNLOCK(win->font);
-  if (win->eventhandler) {
-    remove_events(win->eventhandler);
+  if (win->eventhandler)
     unprotect(p);
-  }
   UNLOCK(win->eventhandler);
   if (win->gdriver->close)
     (*win->gdriver->close) (win);
@@ -341,20 +88,15 @@ class window_class = {
 /* UTILITIES                            */
 /* ------------------------------------ */     
 
-static at *window;
-
 struct window *
 current_window(void)
 {
   register at *w;
   register struct window *ww;
-  
-  w = var_get(window);
-  if (EXTERNP(w,&window_class))
-    ww = w->Object;
-  else
+  w = var_get(at_window);
+  if (!EXTERNP(w,&window_class))
     error("window", "symbol value is not a window", w);
-  
+  ww = w->Object;
   UNLOCK(w);
   return ww;
 }
@@ -364,200 +106,12 @@ struct window *
 current_window_no_error(void)
 {
   register at *w;
-
-  w = var_get(window);
-
-  UNLOCK(w);
-  if (EXTERNP(w,&window_class)) {
-    return w->Object;
-  } else {
-      return NIL;
-  }
-}
-
-
-/* ------------------------------------ */
-/* EVENT USER FUNCTIONS                 */
-/* ------------------------------------ */     
-
-
-/* Set the event recipient? */
-
-DX(xseteventhandler)
-{
-  register struct window *win;
-  register at *w,*p,*q;
-  
-  ARG_NUMBER(2);
-  ALL_ARGS_EVAL;
-  
-  w = APOINTER(1);
+  register struct window *ww = 0;
+  w = var_get(at_window);
   if (EXTERNP(w,&window_class))
-    win = w->Object;
-  else
-    error("window", "symbol value is not a window", w);
-  
-  if ((p = win->eventhandler)) {
-    win->eventhandler = NIL;
-    remove_events(p);
-    /* interactive windows shall not dissappear on gc call */
-    unprotect(w);
-  }
-  q = APOINTER(2);
-  if ((win->eventhandler = q)) {
-    protect(w);
-  }
-  LOCK(q);
-  return p;
-}
-
-/* Calls event hook ... */
-
-DX(xprocess_pending_events)
-{
-  ARG_NUMBER(0);
-  process_pending_events();
-  return NIL;
-}
-
-
-/* Event subs */
-
-
-DX(xsendevent)
-{
-  struct window *win;
-  int x,y;
-  
-  ARG_NUMBER(2);
-  ALL_ARGS_EVAL;
-  x = AINTEGER(1);
-  y = AINTEGER(2);
-  win = current_window();
-  (*win->gdriver->begin) (win);
-  (*win->gdriver->end) (win);
-  if (!win->eventhandler)
-    error(NIL,"No event handler associated to the current window",NIL);
-  enqueue_event(win->eventhandler,EVENT_SENDEVENT,x,y,x,y);
-  return NIL;
-}
-
-
-
-DX(xtestevent)
-{
-  register struct window *win;
-  at *check;
-  struct event *p;
-  int ev;
-  
-  ARG_NUMBER(0);
-  win = current_window();
-  check = win->eventhandler;           
-  if (check)
-    {
-      call_sync_trigger();
-      ev = event_get;
-      while (ev != event_put) 
-	{
-	  p = &event_buffer[ev];
-	  if (p->handler == check)
-	    return event_to_list(p->code,p->xd,p->yd,p->xu,p->yu,p->desc);
-	  ev = (ev+1)&EVBUFMASK;
-	}
-    }
-  return NIL;
-}
-
-
-DX(xcheckevent)
-{
-  at *check;
-  if (arg_number==0) 
-    {				/* (checkevent) return EVENT for this WINDOW */
-      struct window *win = current_window();	
-      check = win->eventhandler;           
-      if (!check)
-	return NIL;
-    }
-  else 
-    {				/* (checkevent handler) returns EVENT */
-      ARG_NUMBER(1);
-      ARG_EVAL(1);
-      check = APOINTER(1);	
-    }
-  call_sync_trigger();
-  if (!check) 
-    {				/* (checkevent ()) return HANDLER */
-      if (event_get != event_put)
-	check = event_buffer[event_get].handler;
-      LOCK(check);
-      return check;
-    }
-  else 
-    {
-      int ev = event_get;
-      int event = EVENT_NONE;
-      int xdown = 0, ydown = 0, xup = 0, yup = 0;
-      char *desc = NULL;
-      while (ev != event_put) {
-	struct event *p = &event_buffer[ev];
-	if (p->handler == check) {
-	  event = p->code;
-	  xdown = p->xd;
-	  xup   = p->xu;
-	  ydown = p->yd;
-	  yup   = p->yu;
-          desc  = p->desc;
-	  remove_one_event(ev);
-	  break;
-	}
-	ev = (ev+1)&EVBUFMASK;
-      }
-      return event_to_list(event,xdown,ydown,xup,yup,desc);
-    }
-}
-
-
-DX(xwaitevent)
-{
-  at *q;
-  ARG_NUMBER(0);
-  call_sync_trigger();
-  if (event_get == event_put)
-    {
-      q = var_get(at_idle); 	/* CALLS IDLE_HOOK */
-      if (! (q && (q->flags&X_FUNCTION))) {
-	UNLOCK(q);
-      } else {
-	UNLOCK(q);
-	q = apply(at_idle,NIL);
-	UNLOCK(q);
-      }
-      while(event_get == event_put) {
-	wait_trigger();
-	call_sync_trigger();
-#if defined(UNIX) || defined(WIN32)
-	if (break_attempt)
-	  break;
-#endif
-      }
-      CHECK_MACHINE("on");
-    }
-  q = event_buffer[event_get].handler;
-  LOCK(q);
-  return q;
-}
-
-
-
-DX(xeventinfo)
-{
-  ARG_NUMBER(0);
-  return cons(new_string(evdesc ? evdesc : "None"),
-              cons((evshift ? true() : NIL),
-                   cons((evctrl ? true() : NIL),
-                        NIL )));
+    ww = w->Object;
+  UNLOCK(w);
+  return ww;
 }
 
 
@@ -565,9 +119,6 @@ DX(xeventinfo)
 /* DRIVER FUNCTIONS (RELEASE 1)         */
 /* ------------------------------------ */     
 
-
-
-/* What is the current driver? */
 
 DX(xgdriver)
 {
@@ -577,9 +128,6 @@ DX(xgdriver)
   win = current_window();
   return new_safe_string(win->gdriver->name);
 }
-
-/* User functions: minimal set */
-
 
 DX(xxsize)
 {
@@ -2550,26 +2098,9 @@ DX(xaddclip)
 void 
 init_graphics(void)
 {
-  event_buffer = malloc( sizeof(struct event)*EVBUFSIZE );
-  event_put = event_get = 0;
-  if  (! event_buffer)
-    error(NIL,"Memory exhausted",NIL);
-
+  /* WINDOW */
   class_define("WINDOW",&window_class );
-  
-  window = var_define("window");
-  at_event  = var_define("event-hook");
-  at_idle  = var_define("idle-hook");
-
-  /* EVENTS */
-  dx_define("set_event_handler",xseteventhandler);
-  dx_define("process_pending_events",xprocess_pending_events);
-  dx_define("sendevent",xsendevent);
-  dx_define("testevent",xtestevent);
-  dx_define("checkevent",xcheckevent);
-  dx_define("waitevent",xwaitevent);
-  dx_define("eventinfo",xeventinfo);
-	
+  at_window = var_define("window");
   /* RELEASE 1 */
   dx_define("gdriver",xgdriver);
   dx_define("xsize",xxsize);
@@ -2583,7 +2114,6 @@ init_graphics(void)
   dx_define("fill_circle",xfill_circle);
   dx_define("draw_text",xdraw_text);
   dx_define("rect_text",xrect_text);
-	
   /* RELEASE 2 */
   dx_define("fill_polygon",xfill_polygon);
   dx_define("gspecial",xgspecial);
@@ -2591,15 +2121,12 @@ init_graphics(void)
   dx_define("clip",xclip);
   dx_define("color",xcolor);
   dx_define("alloccolor",xalloccolor);
-	
   /* RELEASE 3 */
   dx_define("draw_arc",xdraw_arc);
   dx_define("fill_arc",xfill_arc);
-	
   /* BATCHING */
   dy_define("graphics_batch",ygraphics_batch);
   dx_define("graphics_sync",xgraphics_sync);
-	
   /* COMPLEX COMMANDS */
   dx_define("draw_value",xdraw_value);
   dx_define("draw_list",xdraw_list);
@@ -2610,7 +2137,6 @@ init_graphics(void)
   /* dx_define("draw_pixel_matrix",xdraw_pixel_matrix); */
   dx_define("rgb_draw_matrix",xrgb_draw_matrix);  
   dx_define("xget_image",xget_image);  
-
   /* OGRE SPEEDUP */
   dx_define("point_in_rect",xpoint_in_rect);
   dx_define("rect_in_rect",xrect_in_rect);

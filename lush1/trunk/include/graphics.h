@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.5 2002-04-30 21:42:57 leonb Exp $
+ * $Id: graphics.h,v 1.6 2002-08-02 20:31:42 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -78,6 +78,7 @@ struct window {
 
 extern LUSHAPI TLclass window_class;
 LUSHAPI struct window *current_window(void);
+LUSHAPI struct window *current_window_no_error(void);
 
 
 /* ---------------------------------------- */
@@ -117,6 +118,7 @@ struct event {
 #define EVENT_ALARM       (3001L)
 
 #define EVENT_GLEXPOSE    (4001L)
+#define EVENT_EXPOSE      (4001L)
 
 
 /* Hilites */
@@ -126,12 +128,6 @@ struct event {
 #define HILITE_VECTOR     (2)
 #define HILITE_RECT       (3)
 
-
-/* Functions */
-
-LUSHAPI void enqueue_event(at*, int, int, int, int, int);
-LUSHAPI void enqueue_eventdesc(at*, int, int, int, int, int, char*);
-LUSHAPI void process_pending_events(void);
 
 
 /* ---------------------------------------- */

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.7 2002-07-20 02:22:36 leonb Exp $
+ * $Id: unix.c,v 1.8 2002-08-02 20:31:45 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -74,6 +74,10 @@
 # else
 #  include <time.h>
 # endif
+#endif
+
+#ifdef HAVE_SYS_TIMEB_H
+# include <sys/timeb.h>
 #endif
 
 #if HAVE_SYS_WAIT_H
@@ -222,7 +226,6 @@ lastchance(char *s)
 {
   at *q;
   static char reason[40];
-  void block_async_trigger(void);
   /* Test for recursive call */
   if (!s || !*s)
     s = "Unknown reason";
@@ -244,7 +247,7 @@ lastchance(char *s)
       fprintf(stderr,"**** GASP: You should save your work immediatly\n\n");
       /* Sanitize IO */
       break_attempt = 0;      
-      block_async_trigger();
+      block_async_poll();
       context->input_file = stdin;
       context->output_file = stdout;
       context->input_tab = 0;
@@ -352,8 +355,11 @@ set_irq(void)
 
 
 /* ------------------------------------- */
-/* RUNTIME CONFIGURATION OF EVENT SIGNAL */
+/* TRIGGERS                              */
 /* ------------------------------------- */     
+
+/* This is ported straight from TL3 because it 
+   works well and can be used to implement the new stuff */
 
 #ifdef BROKEN_EVERYTHING
 #define BROKEN_FASYNC
@@ -381,34 +387,26 @@ static enum {
 
 
 /* trigger_signal -- signal used by the trigger system */
-
 static int trigger_signal = -1;
 
 /* block_count -- asynchronous trigger blocking count */
-
 static int block_count = 0;
 
 /* trigger_fd -- file descriptor for trigger messages */
-
 static int trigger_fd = -1;
 
 /* trigger_handle -- function called when trigger is run */
-
 static void (*trigger_handler)(int);
 
 /* trigger_handle -- function called after trigger is run by GETLINE */
-
 static void (*trigger_process)(void);
 
-
-
 /* trigger_irq -- signal handler for trigger */
-     
 static void 
 trigger_irq(void)
 {
   if (trigger_handler)
-    (*trigger_handler)(OP_ASYNC);
+    (*trigger_handler)(0);
   if (trigger_signal < 0)
     return;
   /* reset trigger signal */
@@ -427,16 +425,12 @@ trigger_irq(void)
 #endif
 }
 
-
 /* unblock_async_trigger -- stops blocking asynchronous trigger */
-
-void
+static void
 unblock_async_trigger(void)
 {
   if (++block_count == 0)
     {
-      if (trigger_handler)
-	(*trigger_handler)(OP_END_WAIT);
       if (trigger_signal >= 0)
 	{
 #ifdef POSIXSIGNAL
@@ -455,10 +449,8 @@ unblock_async_trigger(void)
     }
 }
 
-
 /* block_async_trigger -- blocks asynchronous trigger */
-
-void
+static void
 block_async_trigger(void)
 {
   if (--block_count == -1)
@@ -491,9 +483,7 @@ block_async_trigger(void)
       }
 }
 
-
 /* setup_signal_once -- called once to set the trigger signal */
-
 static void
 setup_signal_once(int fd)
 {
@@ -518,7 +508,6 @@ setup_signal_once(int fd)
   if (sigaction(trigger_signal, &sact, NULL) < 0)
     error(NIL,"internal error: sigaction failed",NIL);
 #endif /* POSIXSIGNAL */
-
 #ifdef BSDSIGNAL
   struct sigvec sv;
   sv.sv_handler = (void*)trigger_irq;
@@ -540,8 +529,7 @@ setup_signal_once(int fd)
 
 
 /* set_trigger_signal -- detects appropriate mode and sets signalling */
-
-void
+static void
 setup_trigger_signal(int fd)
 {
   int pid, flag;
@@ -646,66 +634,14 @@ setup_trigger_signal(int fd)
 #endif
 #endif
 #endif /* !BROKEN_SETSIG */
-
     default:
       break;
     }
 }
 
 
-/* call_sync_trigger -- calls trigger synchronously */
-
-void
-call_sync_trigger(void)
-{
-  block_async_trigger();
-  if (trigger_handler)
-    (*trigger_handler)(OP_SYNC);
-  unblock_async_trigger();
-}
-
-
-/* wait_trigger -- waits for a reason call the trigger */
-
-void 
-wait_trigger(void)
-{
-  fd_set set;
-  int max = 32;
-  FD_ZERO(&set);
-  if (trigger_fd >= 0)
-    FD_SET(trigger_fd, &set);
-  block_async_trigger();
-  if (trigger_handler)
-    (*trigger_handler)(OP_BEGIN_WAIT);
-  select(max,&set,0,&set,0);
-  unblock_async_trigger();
-}
-
-
-/* wait_trigger -- waits for the trigger or until input is present */
-
-int
-wait_trigger_or_input(void)
-{
-  fd_set set;
-  int max = 32;
-  FD_ZERO(&set);
-  FD_SET(0, &set);  
-  if (trigger_fd >= 0)
-    FD_SET(trigger_fd, &set);
-  block_async_trigger();
-  if (trigger_handler && block_count<0)
-    (*trigger_handler)(OP_BEGIN_WAIT);
-  select(max,&set,0,0,0);
-  unblock_async_trigger();
-  return FD_ISSET(0,&set);
-}
-
-
 /* set_trigger -- setup trigger system */
-
-void 
+static void 
 set_trigger(int fd, void (*trigger)(int), void (*process)(void))
 {
   if (trigger_fd >= 0)
@@ -719,31 +655,95 @@ set_trigger(int fd, void (*trigger)(int), void (*process)(void))
 }
 
 
-/* console_getline -- gets a line on the console (and process events) */
 
+/* ------------------------------------- */
+/* EVENT SUPPORT ROUTINES                */
+/* ------------------------------------- */     
+
+void 
+os_block_async_poll(void)
+{
+  block_async_trigger();
+}
+
+void 
+os_unblock_async_poll(void)
+{
+  unblock_async_trigger();
+}
+
+void 
+os_setup_async_poll(int*fds, int nfds, void(*apoll)(void))
+{
+  /* Nothing yet */
+}
+
+void 
+os_curtime(int *sec, int *msec)
+{
+#if defined(HAVE_GETTIMEOFDAY)
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  *sec = tv.tv_sec;
+  *msec = tv.tv_usec / 1000;
+#elif define(HAVE_FTIME)
+  struct timeb tb;
+  ftime(&tb);
+  *sec = (int)tb.time;
+  *msec = (int)tb.millitm;
+#else
+  time_t tm;
+  time(&tm);
+  *sec = (int)tm;
+  *msec = 0;
+#endif
+}
+
+int  
+os_wait(int nfds, int* fds, int console, unsigned long ms)
+{
+  int i;
+  int maxfd = 0;
+  fd_set set;
+  struct timeval tv;
+  FD_ZERO(&set);
+  for (i=0; i<nfds; i++) {
+    int fd = fds[i];
+    FD_SET(fd, &set);
+    if (fd > maxfd)
+      maxfd = fd;
+  }
+  if (console)
+    FD_SET(0, &set);
+  tv.tv_sec = ms/1000;
+  tv.tv_usec = (ms%1000)*1000;
+  block_async_poll();
+  select(maxfd+1, &set, 0, 0, &tv);
+  block_async_poll();
+  return FD_ISSET(0,&set);
+}
+
+/* console_getline -- 
+   gets a line on the console (and process events) */
 void
 console_getline(char *prompt, char *buf, int size)
 {
-  int ok = 0;
   fputs(prompt,stdout);
   fflush(stdout);
-  if (trigger_process)
-    (*trigger_process)();
-  while (!ok)
+  process_pending_events();
+  for(;;)
     {
-      block_async_trigger();
-      ok = wait_trigger_or_input();
-      unblock_async_trigger();
-      if (trigger_process)
-	(*trigger_process)();
-    }      
+      at *handler = event_wait(TRUE);
+      process_pending_events();
+      if (! handler) break;
+      UNLOCK(handler);
+    }
   if (break_attempt)
     return;
   if (feof(stdin))
     return;
   fgets(buf,size-2,stdin);
 }
-
 
 
 

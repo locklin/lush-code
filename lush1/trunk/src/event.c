@@ -24,22 +24,22 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.1 2002-08-02 15:08:49 leonb Exp $
+ * $Id: event.c,v 1.2 2002-08-02 20:31:45 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
 #include "graphics.h"
 
-static at *at_event;
-static at *at_idle;
+static at *at_event_hook;
+static at *at_idle_hook;
 static at *head;
 static at *tail;
 
 /* From UNIX.C */
 extern void os_block_async_poll(void);
 extern void os_unblock_async_poll(void);
-extern void os_setup_async_poll(int*fds, int nfds, void(*f)(void));
-extern int  os_wait(int* fds, int nfds, int console, unsigned long ms);
+extern void os_setup_async_poll(int*fds, int nfds, void(*apoll)(void));
+extern int  os_wait(int nfds, int* fds, int console, unsigned long ms);
 extern void os_curtime(int *sec, int *msec);
 
 
@@ -57,7 +57,7 @@ ev_hndl(at *q)
   return 0;
 }
 
-static void *
+static void
 ev_remove(at *pp, at *p)
 {
   if (pp->Cdr != p)
@@ -70,7 +70,7 @@ ev_remove(at *pp, at *p)
 }
 
 static void
-ev_finalizer(at *handler, void *arg)
+ev_finalize(at *handler, void *arg)
 {
   at *pp = head;
   if (CONSP(pp))
@@ -88,63 +88,38 @@ ev_finalizer(at *handler, void *arg)
     }
 }
 
-
 void
-ev_add(at *handler, at *event, 
-       const char *desc, int mods)
+ev_add(at *handler, at *event, const char *desc, int mods)
 {
   if (handler && event)
     {
-      at *d = ((desc)?cons(new_gptr(desc),NEW_NUMBER(mods)):NIL);
-      at *p = cons(new_gptr(handler),cons(d,event));
+      at *p;
+      at *d = NIL;
+      if (mods == (unsigned char)mods)
+        d = NEW_NUMBER(mods);
+      if (desc && d)
+        d = cons(new_gptr((gptr)desc), d);
+      else if (desc)
+        d = new_gptr((gptr)desc);
       LOCK(event);
-      add_finalizer(handler, event_finalizer, 0);
+      p = cons(new_gptr(handler),cons(d,event));
+      add_finalizer(handler, ev_finalize, 0);
       tail->Cdr = cons(p,NIL);
       tail = tail->Cdr;
     }
 }
 
-static const char *evdesc = 0;
-static const int evmods = 0;
-
-void
-ev_parsedesc(at *desc)
-{
-  if (CONSP(desc))
-    { 
-      if (GPTRP(desc->Car))
-        evdesc = (const char *)(desc->Csr->Gptr);
-      if (NUMBERP(desc->Cdr))
-        evmods = (int)(desc->Cdr->Number);
-    }
-}
-
-
-/* event_add --
-   Add a new event targeted to a specific handler.
-*/
-void
-event_add(at *handler, at *event)
-{
-  ev_add(handler, event, NULL, 0);
-}
-
-/* event_peek --
-   Return null when the queue is empty.
-   Otherwise return the handler associated 
-   with the next available event.
-*/
-void *
-event_peek(void)
+static void *
+ev_peek(void)
 {
   at *pp = head;
+  void *hndl;
   if (CONSP(pp))
     {
       while (CONSP(pp->Cdr))
         {
           at *p = pp->Cdr;
-          void *hdnl = ev_hdnl(p->Car);
-          if (hdnl)
+          if ((hndl = ev_hndl(p->Car)))
             return hndl;
           ev_remove(pp, p);
         }
@@ -158,6 +133,47 @@ event_peek(void)
   return 0;
 }
 
+static const char *evdesc = 0;
+static int evmods = 0;
+
+void
+ev_parsedesc(at *desc)
+{
+  if (CONSP(desc)) {
+    ev_parsedesc(desc->Car);
+    ev_parsedesc(desc->Cdr);
+  } else if (GPTRP(desc))
+    evdesc = (const char *)(desc->Gptr);
+  else if (NUMBERP(desc))
+    evmods = (unsigned char)(desc->Number);
+}
+
+
+/* event_add --
+   Add a new event targeted to a specific handler.
+*/
+void
+event_add(at *handler, at *event)
+{
+  if (! handler)
+    error(NIL,"Illegal null event handler",NIL);
+  if (! CONSP(event))
+    error(NIL,"Illegal event expression (list expected)", event);
+  ev_add(handler, event, NULL, -1);
+}
+
+/* event_peek --
+   Return null when the queue is empty.
+   Otherwise return the handler associated 
+   with the next available event.
+*/
+at *
+event_peek(void)
+{
+  at *handler = ev_peek();
+  LOCK(handler);
+  return handler;
+}
 
 /* event_get --
    Return the next event associated with the specified handler.
@@ -184,7 +200,7 @@ event_get(void *handler, int remove)
                 ev_remove(pp, p);
               return event;
             }
-          if (hdnl == 0)
+          if (hndl == 0)
             {
               ev_remove(pp, p);
               continue;
@@ -235,9 +251,9 @@ evtime_cmp(evtime_t *t1, evtime_t *t2)
     return -1;
   if (t1->sec > t2->sec)
     return +1;
-  if (t1->usec < t2->usec)
+  if (t1->msec < t2->msec)
     return -1;
-  if (t1->usec > t2->usec)
+  if (t1->msec > t2->msec)
     return +1;
   return 0;
 }
@@ -246,11 +262,11 @@ static void
 evtime_add(evtime_t *t1, evtime_t *t2, evtime_t *r)
 {
   r->sec = t1->sec + t2->sec;
-  r->usec = t1->usec + t2->usec;
-  while (r->usec > 1000)
+  r->msec = t1->msec + t2->msec;
+  while (r->msec > 1000)
     {
       r->sec += 1;
-      r->usec -= 1000;
+      r->msec -= 1000;
     }
 }
 
@@ -258,16 +274,16 @@ static void
 evtime_sub(evtime_t *t1, evtime_t *t2, evtime_t *r)
 {
   r->sec = t1->sec - t2->sec - 1;
-  r->usec = t1->usec + 1000 - t2->usec;
-  while (r->usec > 1000)
+  r->msec = t1->msec + 1000 - t2->msec;
+  while (r->msec > 1000)
     {
       r->sec += 1;
-      r->usec -= 1000;
+      r->msec -= 1000;
     }
 }
 
 static void
-ti_finalizer(at *handler, void *arg)
+ti_finalize(at *handler, void *arg)
 {
   struct event_timer **p = &timers;
   struct event_timer *t;
@@ -303,14 +319,15 @@ timer_add(at *handler, int delay, int period)
 {
   struct event_timer *ti;
   evtime_t now, add;
-  if (delay < 0 && period > 0)
-    {
-      int n = (period-delay)/period;
-      delay += period * n;
-    }
+  if (! handler)
+    error(NIL,"Illegal null event handler",NIL);
+  if (delay < 0)
+    error(NIL,"Illegal timer delay",NEW_NUMBER(delay));
+  if (period < 0)
+    error(NIL,"Illegal timer interval",NEW_NUMBER(period));
   if (handler && delay>=0)
     {
-      add_finalizer(handler, ti_finalizer, 0);
+      add_finalizer(handler, ti_finalize, 0);
       if (! (ti = malloc(sizeof(struct event_timer))))
         error(NIL,"Out of memory", NIL);
       evtime_now(&now);
@@ -358,10 +375,10 @@ timer_fire(void)
   evtime_now(&now);
   while (timers && evtime_cmp(&now,&timers->date)>=0)
     {
-      struct timer_event *ti = timers;
-      p = cons(named("timer"), cons(new_gptr(ti), NIL));
+      struct event_timer *ti = timers;
+      at *p = cons(named("timer"), cons(new_gptr(ti), NIL));
       timers = ti->next;
-      event_add(ti->handler, p, "Timer");
+      event_add(ti->handler, p);
       UNLOCK(p);
       if (ti->period.sec>0 || ti->period.msec>0)
         {
@@ -373,16 +390,15 @@ timer_fire(void)
       else
         {
           /* One shot timer */
-          unprotect(t->info);
-          free(t);
+          free(ti);
         }
     }
   if (timers)
     {
-      evtime diff;
+      evtime_t diff;
       evtime_sub(&timers->date, &now, &diff);
       if (diff.sec < 24*3600)
-        return diff.sec * 1000 + diff.usec;
+        return diff.sec * 1000 + diff.msec;
     }
   return 24*3600*1000;
 }
@@ -451,18 +467,18 @@ call_ewait(void)
   waiting = 0;
 }
 
-#define MAXFDS 16
+#define MAXFDS 32
 static int sourcefds[MAXFDS];
 
 static void
 source_setup(void)
 {
-  int n = 0;;
+  struct event_source *src;
+  int n = 0;
   for (src=sources; src; src=src->next)
     if (src->apoll && src->fd>0 && n<MAXFDS)
       sourcefds[n++] = src->fd;
-  os_setup_async_poll(fds, n, call_apoll);
-  free(fds);
+  os_setup_async_poll(sourcefds, n, call_apoll);
 }
 
 
@@ -529,6 +545,7 @@ register_event_source(void (*spoll)(void),
   src->ewait = ewait;
   sources = src;
   source_setup();
+  return src;
 }
 
 
@@ -540,7 +557,7 @@ void
 block_async_poll(void)
 {
   if (! async_block++)
-    os_block_async_poll(void);
+    os_block_async_poll();
 }
 
 void
@@ -548,37 +565,66 @@ unblock_async_poll(void)
 {
   call_ewait();
   if (! --async_block)
-    os_unblock_async_poll(void);    
+    os_unblock_async_poll();    
 }
 
 
 /* ------------------------------------ */
-/* WAITING                              */
+/* PROCESSING EVENTS                    */
 /* ------------------------------------ */     
 
+static void
+call_hook(at *hook, at *args)
+{
+  if (EXTERNP(hook, &symbol_class))
+    {
+      at *ans = NIL;
+      at *fun = var_get(hook);
+      if (fun && error_doc.ready_to_an_error)
+        if (fun->flags & X_FUNCTION)
+          ans = apply(hook, args);
+      UNLOCK(fun);
+      UNLOCK(ans);
+    }
+}
 
-/* wait_for_event --
+
+/* event_wait --
    Waits until events become available.
    Returns handler of first available event.
    Also wait for console input if <console> is true.
 */
 at *
-wait_for_event(int console)
+event_wait(int console)
 {
   at *hndl = 0;
+  int cinput = 0;
   block_async_poll();
   for (;;)
     {
       int n, ms;
-      if ((hndl = event_peek()))
+      struct event_source *src;
+      if ((hndl = ev_peek()))
         break;
       call_spoll();
-      if ((hndl = event_peek()))
+      if ((hndl = ev_peek()))
         break;
       ms = timer_fire();
-      if ((hndl = event_peek()))
+      if ((hndl = ev_peek()))
         break;
-      /* We should really wait */
+      /* Call idle hook */
+      call_hook(at_idle_hook, NIL);
+      call_spoll();
+      if ((hndl = ev_peek()))
+        break;
+      ms = timer_fire();
+      if ((hndl = ev_peek()))
+        break;
+      /* Check for console input */
+      hndl = NIL;
+      if (console && cinput)
+        break;
+      /* Really wait */
       n = 0;
       for (src=sources; src; src=src->next)
         if (src->fd>0 && n<MAXFDS)
@@ -586,177 +632,139 @@ wait_for_event(int console)
         else
           ms = 250;
       call_bwait();
-      ms = os_wait(n, sourcefds, console, ms);
-      hndl = NIL;
-      if (console && ms)
-        break;
+      cinput = os_wait(n, sourcefds, console, ms);
     }
   unblock_async_poll();
   LOCK(hndl);
   return hndl;
 }
 
-
-*********************************************************
-
-
-/* ------------------------------------ */
-/* COMPATIBILIY FOR EVENT_ADD           */
-/* ------------------------------------ */     
-
-
-void
-enqueue_event(at *handler, int event, 
-              int xd, int yd, int xu, int yu)
+/* process_pending_events --
+   Process currently pending events
+   by calling event-hook and event-idle
+   until no events are left. */
+void 
+process_pending_events(void)
 {
-  enqueue_eventdesc(handler,event,xd,yd,xu,yu,NULL);
+  at *event;
+  at *hndl;
+  call_spoll();
+  hndl = ev_peek();
+  while (hndl)
+    {
+      /* Call event-hook */
+      while (hndl)
+        {
+          LOCK(hndl);
+          event = event_get(hndl, TRUE);
+          if (CONSP(event))
+            {
+              at *args = cons(hndl, cons(event, NIL));
+              LOCK(event);
+              call_hook(at_event_hook, args);
+              UNLOCK(args);
+            }
+          else
+            {
+              UNLOCK(hndl);
+              hndl = NIL;
+            }
+          call_spoll();
+          hndl = ev_peek();
+        }
+      /* Call idle-hook */
+      call_hook(at_idle_hook, NIL);
+      call_spoll();
+      hndl = ev_peek();
+    }
 }
 
 
+
+
+
+/* ------------------------------------ */
+/* COMPATIBILIY FOR GRAPHICS STUFF      */
+/* ------------------------------------ */     
+
+
+static at *
+two_integers(int i1, int i2)
+{
+  return cons(NEW_NUMBER(i1), cons(NEW_NUMBER(i2), NIL));
+}
+
+static at *
+four_integers(int i1, int i2, int i3, int i4)
+{
+  return cons(NEW_NUMBER(i1), cons(NEW_NUMBER(i2), two_integers(i3, i4)));
+} 
+
+static at * 
+event_to_list(int event, int xd, int yd, int xu, int yu, int *pmods)
+{
+  *pmods = -1;
+  /* events that do not update evshift and evcontrol */
+  if (event == EVENT_MOUSE_UP) 
+    return cons(named("mouse_up"), four_integers(xd,yd,xu,yu));
+  if (event == EVENT_MOUSE_DRAG) 
+    return cons(named("mouse_drag"), four_integers(xd,yd,xu,yu));
+  if (event == EVENT_RESIZE)
+    return cons(named("resize"), two_integers(xd,yd));
+  if (event == EVENT_DELETE) 
+    return cons(named("delete"),NIL);
+  if (event == EVENT_SENDEVENT)
+    return cons(named("sendevent"), two_integers(xd,yd));
+  if (event == EVENT_EXPOSE)
+    return cons(named("expose"), two_integers(xd,yd));
+  if (event >= EVENT_ASCII_MIN && event <= EVENT_ASCII_MAX) 
+    {
+      char keyevent[2];
+      keyevent[0] = EVENT_TO_ASCII(event);
+      keyevent[1] = 0;
+      return cons(new_string(keyevent), two_integers(xd,yd));
+    }
+  /* events that update evshift and evcontrol */
+  *pmods = 0;
+  if (xu) 
+    *pmods |= 1;  /* shift */
+  if (yu) 
+    *pmods |= 2;  /* ctrl  */
+  if (event == EVENT_MOUSE_DOWN)
+    return cons(named("mouse_down"), two_integers(xd,yd)); 
+  if (event == EVENT_HELP)
+    return cons(named("help"), two_integers(xd,yd)); 
+  if (event == EVENT_ARROW_UP)
+    return cons(named("arrow_up"), two_integers(xd,yd)); 
+  if (event == EVENT_ARROW_RIGHT)
+    return cons(named("arrow_right"), two_integers(xd,yd)); 
+  if (event == EVENT_ARROW_DOWN)
+    return cons(named("arrow_down"), two_integers(xd,yd)); 
+  if (event == EVENT_ARROW_LEFT)
+    return cons(named("arrow_left"), two_integers(xd,yd)); 
+  if (event == EVENT_FKEY)
+    return cons(named("fkey"), two_integers(xd,yd)); 
+  /* default */
+  return NIL;
+}
 
 void
 enqueue_eventdesc(at *handler, int event, 
                   int xd, int yd, int xu, int yu, char *desc)
 {
-  int last_event_put;
-  int new_event_put;
-  struct event *ev;
-  
-  last_event_put = (event_put-1)&EVBUFMASK;
-  ev = &event_buffer[last_event_put];
-  
-  if (   last_event_put != event_get
-      && event_put != event_get
-      && event == EVENT_MOUSE_DRAG
-      && ev->code == EVENT_MOUSE_DRAG
-      && ev->handler == handler ) 
-    {
-      ev = &event_buffer[last_event_put];
-      new_event_put = event_put;
-    }
-  else
-    {
-      ev = &event_buffer[event_put];
-      new_event_put = (event_put+1)&EVBUFMASK;
-    }
-  
-  if (new_event_put == event_get) /* no room */
-    return;
-  event_put = new_event_put;
-  ev->handler = handler;
-  ev->code = event;
-  ev->xd = xd;
-  ev->yd = yd;
-  ev->xu = xu;
-  ev->yu = yu;
-  ev->desc = desc;
+  int mods = -1;
+  at *ev = event_to_list(event, xd, yd, xu, yu, &mods);
+  if (!ev) return;
+  ev_add(handler, ev, desc, mods);
+  UNLOCK(ev);
 }
 
-
-
-static at * 
-event_to_list(int event, int xdown, int ydown, int xup, int yup, char *desc)
+void
+enqueue_event(at *handler, int event, 
+              int xd, int yd, int xu, int yu)
 {
-  if (event == EVENT_NONE)
-    return NIL;
-  /* events that do not update evshift and evcontrol */
-  evdesc = desc;
-  if (event == EVENT_MOUSE_UP) 
-    return (cons(named("mouse_up"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown),
-			   cons(NEW_NUMBER(xup),
-				cons(NEW_NUMBER(yup), NIL))))));
-  if (event == EVENT_MOUSE_DRAG) 
-    return (cons(named("mouse_drag"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown),
-			   cons(NEW_NUMBER(xup),
-				cons(NEW_NUMBER(yup), NIL))))));
-  if (event == EVENT_RESIZE)
-    return (cons(named("resize"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  if (event == EVENT_DELETE) 
-    return (cons(named("delete"),NIL));
-  if (event == EVENT_SENDEVENT)
-    return (cons(named("sendevent"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown),NIL))));
-  if (event >= EVENT_ASCII_MIN && event <= EVENT_ASCII_MAX) {
-    static char keyevent[2];
-    keyevent[0] = EVENT_TO_ASCII(event);
-    keyevent[1] = 0;
-    evdesc = keyevent;
-    return (cons(new_string(keyevent),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  }
-  if (event == EVENT_ALARM) 
-    return (cons(named("alarm"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  if (event == EVENT_EXPOSE)
-    return cons(named("expose"),
-                cons(NEW_NUMBER(xdown),
-                     cons(NEW_NUMBER(ydown),
-                          cons(NEW_NUMBER(xup),
-                               cons(NEW_NUMBER(yup), NIL))) ) );
-  /* events that update evshift and evcontrol */
-  evshift = (xup ? 1 : 0);
-  evctrl =  (yup ? 1 : 0);
-  if (event == EVENT_MOUSE_DOWN)
-    return (cons(named("mouse_down"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  if (event == EVENT_HELP)
-    return (cons(named("help"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  if (event == EVENT_ARROW_UP)
-    return (cons(named("arrow_up"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  if (event == EVENT_ARROW_RIGHT)
-    return (cons(named("arrow_right"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  if (event == EVENT_ARROW_DOWN)
-    return (cons(named("arrow_down"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  if (event == EVENT_ARROW_LEFT)
-    return (cons(named("arrow_left"),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  if (event == EVENT_FKEY)
-    return (cons(named("fkey"),
-                 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
-  evshift = evctrl = 0;
-  return (cons(NEW_NUMBER(event),
-               cons(NEW_NUMBER(xdown),
-                    cons(NEW_NUMBER(ydown), NIL))));
+  enqueue_eventdesc(handler, event, xd, yd, xu, yu, NULL);
 }
-
-
-
-
-
-***********************************************************************
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -765,59 +773,20 @@ event_to_list(int event, int xdown, int ydown, int xup, int yup, char *desc)
 /* ------------------------------------ */     
 
 
-
-
-void 
-process_pending_events(void)
+static at *
+current_window_handler(void)
 {
-  int old_event_get;
-  at *q;
-  
-again:
-  call_sync_trigger();
-  while (event_get != event_put) 
-    {
-      old_event_get = event_get;
-      /* CALLS EVENT-HOOK */
-      q = var_get(at_event);
-      if (! (q && (q->flags&X_FUNCTION))) {
-	UNLOCK(q);
-      } else {
-	UNLOCK(q);
-	q = apply(at_event,NIL);
-	UNLOCK(q);
-      }
-      if (old_event_get == event_get) 
-	return;
-    }
-  call_sync_trigger();
-  if (event_get != event_put) 
-    goto again;
-  
-  /* CALLS IDLE-HOOK */
-  q = var_get(at_idle);
-  if (! (q && (q->flags&X_FUNCTION))) {
-    UNLOCK(q);
-  } else {
-    UNLOCK(q);
-    q = apply(at_idle,NIL);
-    UNLOCK(q);
-  }
-  call_sync_trigger();
-  if (event_get != event_put) 
-    goto again;
+  struct window *win = current_window();
+  (*win->gdriver->begin) (win);
+  (*win->gdriver->end) (win);
+  if (!win->eventhandler)
+    error(NIL,"No event handler for the current window",NIL);
+  LOCK(win->eventhandler);
+  return win->eventhandler;
 }
 
 
-
-/* ------------------------------------ */
-/* EVENT USER FUNCTIONS                 */
-/* ------------------------------------ */     
-
-
-
-/* Calls event hook ... */
-
+/* Call event hooks */
 DX(xprocess_pending_events)
 {
   ARG_NUMBER(0);
@@ -825,152 +794,140 @@ DX(xprocess_pending_events)
   return NIL;
 }
 
-
-/* Event subs */
-
-
-DX(xsendevent)
+/* Set the event handler for a window */
+DX(xseteventhandler)
 {
   struct window *win;
-  int x,y;
-  
+  at *w,*p,*q;
   ARG_NUMBER(2);
   ALL_ARGS_EVAL;
-  x = AINTEGER(1);
-  y = AINTEGER(2);
-  win = current_window();
-  (*win->gdriver->begin) (win);
-  (*win->gdriver->end) (win);
-  if (!win->eventhandler)
-    error(NIL,"No event handler associated to the current window",NIL);
-  enqueue_event(win->eventhandler,EVENT_SENDEVENT,x,y,x,y);
+  w = APOINTER(1);
+  q = APOINTER(2);
+  if (!EXTERNP(w,&window_class))
+    error(NIL, "not a window", w);
+  win = w->Object;
+  if ((p = win->eventhandler)) 
+    {
+      win->eventhandler = NIL;
+      unprotect(w);
+    }
+  if ((win->eventhandler = q))
+    {
+      LOCK(q);
+      protect(w);
+    }
+  return p;
+}
+
+/* Send events */
+DX(xsendevent)
+{
+  at *handler;
+  at *event;
+  ALL_ARGS_EVAL;
+  if (arg_number == 1)
+    {
+      event = APOINTER(1);
+      handler = current_window_handler();
+      LOCK(event);
+    }
+  else
+    {
+      ARG_NUMBER(2);
+      event = APOINTER(1);
+      handler = APOINTER(2);
+      LOCK(event);
+      LOCK(handler);
+      if (NUMBERP(event) && NUMBERP(handler))
+        {
+          /* Old syntax */
+          event = cons(named("sendevent"), cons(event, cons(handler, NIL)));
+          handler = current_window_handler();
+        }
+    }
+  event_add(handler, event);
+  UNLOCK(event);
+  UNLOCK(handler);
   return NIL;
 }
 
 
+static at *
+test_event_sub(int arg_number, at **arg_array, int remove)
+{
+  /* Validate parameters */
+  at *r = NIL;
+  at *handler = NIL;
+  if (arg_number == 0)
+    handler = current_window_handler();
+  else if (arg_number == 1) {
+    ARG_EVAL(1);
+    handler = APOINTER(1);
+    LOCK(handler);
+  } else 
+    ARG_NUMBER(-1);
+  /* Perform */
+  call_spoll();
+  if (handler)
+    r = event_get(handler, remove);
+  else
+    r = event_peek();
+  UNLOCK(handler);
+  return r;
+}
 
+/* Test presence of events */
 DX(xtestevent)
 {
-  register struct window *win;
-  at *check;
-  struct event *p;
-  int ev;
-  
-  ARG_NUMBER(0);
-  win = current_window();
-  check = win->eventhandler;           
-  if (check)
-    {
-      call_sync_trigger();
-      ev = event_get;
-      while (ev != event_put) 
-	{
-	  p = &event_buffer[ev];
-	  if (p->handler == check)
-	    return event_to_list(p->code,p->xd,p->yd,p->xu,p->yu,p->desc);
-	  ev = (ev+1)&EVBUFMASK;
-	}
-    }
-  return NIL;
+  return test_event_sub(arg_number, arg_array, FALSE);
 }
 
-
+/* Get events */
 DX(xcheckevent)
 {
-  at *check;
-  if (arg_number==0) 
-    {				/* (checkevent) return EVENT for this WINDOW */
-      struct window *win = current_window();	
-      check = win->eventhandler;           
-      if (!check)
-	return NIL;
-    }
-  else 
-    {				/* (checkevent handler) returns EVENT */
-      ARG_NUMBER(1);
-      ARG_EVAL(1);
-      check = APOINTER(1);	
-    }
-  call_sync_trigger();
-  if (!check) 
-    {				/* (checkevent ()) return HANDLER */
-      if (event_get != event_put)
-	check = event_buffer[event_get].handler;
-      LOCK(check);
-      return check;
-    }
-  else 
-    {
-      int ev = event_get;
-      int event = EVENT_NONE;
-      int xdown = 0, ydown = 0, xup = 0, yup = 0;
-      char *desc = NULL;
-      while (ev != event_put) {
-	struct event *p = &event_buffer[ev];
-	if (p->handler == check) {
-	  event = p->code;
-	  xdown = p->xd;
-	  xup   = p->xu;
-	  ydown = p->yd;
-	  yup   = p->yu;
-          desc  = p->desc;
-	  remove_one_event(ev);
-	  break;
-	}
-	ev = (ev+1)&EVBUFMASK;
-      }
-      return event_to_list(event,xdown,ydown,xup,yup,desc);
-    }
+  return test_event_sub(arg_number, arg_array, TRUE);
 }
 
-
-DX(xwaitevent)
-{
-  at *q;
-  ARG_NUMBER(0);
-  call_sync_trigger();
-  if (event_get == event_put)
-    {
-      q = var_get(at_idle); 	/* CALLS IDLE_HOOK */
-      if (! (q && (q->flags&X_FUNCTION))) {
-	UNLOCK(q);
-      } else {
-	UNLOCK(q);
-	q = apply(at_idle,NIL);
-	UNLOCK(q);
-      }
-      while(event_get == event_put) {
-	wait_trigger();
-	call_sync_trigger();
-#if defined(UNIX) || defined(WIN32)
-	if (break_attempt)
-	  break;
-#endif
-      }
-      CHECK_MACHINE("on");
-    }
-  q = event_buffer[event_get].handler;
-  LOCK(q);
-  return q;
-}
-
-
-
+/* Get event info */
 DX(xeventinfo)
 {
   ARG_NUMBER(0);
-  return cons(new_string(evdesc ? evdesc : "None"),
-              cons((evshift ? true() : NIL),
-                   cons((evctrl ? true() : NIL),
-                        NIL )));
+  return cons(new_string((char*)((evdesc) ? evdesc : "n/a")),
+              cons( ((evmods & 1) ? true() : NIL),
+                    cons( ((evmods & 2) ? true() : NIL), 
+                          NIL ) ) );
 }
 
+/* Wait for events */
+DX(xwaitevent)
+{
+  ARG_NUMBER(0);
+  return event_wait(FALSE);
+}
+
+/* Create a timer */
+DX(xcreate_timer)
+{
+  ALL_ARGS_EVAL;
+  if (arg_number == 2)
+    return new_gptr(timer_add(APOINTER(1),AINTEGER(2),0));
+  ARG_NUMBER(3);
+  return new_gptr(timer_add(APOINTER(1),AINTEGER(2),AINTEGER(3)));  
+}
+
+/* Destroy a timer */
+DX(xkill_timer)
+{
+  ALL_ARGS_EVAL;
+  ARG_NUMBER(1);
+  timer_del(AGPTR(1));
+  return NIL;
+}
 
 
 /* ------------------------------------ */
 /* INITIALISATION                       */
 /* ------------------------------------ */     
-
 
 void 
 init_event(void)
@@ -979,14 +936,17 @@ init_event(void)
   head = tail = cons(NIL,NIL);
   protect(head);
   /* EVENT HOOKS */
-  at_event  = var_define("event-hook");
-  at_idle  = var_define("idle-hook");
+  at_event_hook = var_define("event-hook");
+  at_idle_hook = var_define("idle-hook");
   /* EVENTS FUNCTION */
+  dx_define("set_event_handler",xseteventhandler);
   dx_define("process_pending_events",xprocess_pending_events);
   dx_define("sendevent",xsendevent);
   dx_define("testevent",xtestevent);
   dx_define("checkevent",xcheckevent);
   dx_define("waitevent",xwaitevent);
   dx_define("eventinfo",xeventinfo);
-	
+  /* TIMER FUNCTIONS */
+  dx_define("create-timer", xcreate_timer);
+  dx_define("kill-timer", xkill_timer);
 }
