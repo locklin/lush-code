@@ -48,38 +48,38 @@ At startup time, Lush locates the executable file and
 goes up in the directory hierarchy until it finds a suitable
 initialization file.
 {<ul>
- {<li> If there is a file named <"sys/sysenv.dump">
-  Lush loads this binary dump file (created with function <dump>) and
-  proceed with the startup procedure. }
- {<li> If there is a file named <"sysenv.lshc"> or <"sysenv.lsh"> in directory
-  <"sys">, Lush loads this text or binary lisp file and proceed with the 
-  startup procedure. Lush refuses to start without one of the above files.}
+ {<li> If there is a file named <"sys/stdenv.dump">,
+       Lush loads this binary dump file (created with function <dump>) and
+       proceed with the startup procedure. }
+ {<li> If there is a file named <"sys/stdenv.lshc"> 
+       or <"sys/stdenv.lsh">, Lush loads this text or binary 
+       lisp file and proceed with the startup procedure. Lush refuses 
+       to start without one of the above files.}
 }
 
 Lush then calls the lisp function <startup> with the Lush command line
-argument as arguments. This function is defined in the system file loaded
-above. In the standard sysenv file, this procedure loads the files given as
-argument to the Lush command.  If no files are specified, file <"lushenv.lsh">
-is searched and loaded. This file loads default environment (including a file
-<".lush/lushrc.lsh"> in the user's home directory of Unix systems.).
-<"lushenv.lsh"> is searched in the following directories: <"local">,
-<"packages">, and <"lsh">.
+argument as arguments. The startup function provided by the 
+standard <"stdenv"> file first searches and loads a 
+file named <".lush/lushrc.lsh"> in your home directory.
 
-Lush then calls function <toplevel>, which is currently defined in
-the Lush language by the <"sysenv.lsh"> file. This function sets up 
-some debugging code, and waits for user commands.
+{<ul>
+ {<li> If no arguments were passed to the Lush interpreter,
+       the function <startup> exits. Lush then calls
+       function <toplevel>. This function 
+       sets up some debugging code, and 
+       interactively waits for user commands.
 
-The toplevel function continuously prints a question mark prompt,
-reads a lisp expresion, evaluates this object and prints the result on
-the standard output. This process is repeated until you enter an end
-of file character. The global variable result always contains the last
-result printed by toplevel.
+       The toplevel function continuously prints a question mark prompt,
+       reads a lisp expresion, evaluates this object and prints the result on
+       the standard output. This process is repeated until you enter an end
+       of file character. The global variable <result> always contains the last
+       result printed by <toplevel>.
 
-If the outermost list has not been completed when you enter a carriage
-return, toplevel prompts you for rest of the list, by displaying a few
-spaces instead of displaying a question mark prompt.
+       If the outermost list has not been completed when you enter a carriage
+       return, toplevel prompts you for rest of the list, by displaying a few
+       spaces instead of displaying a question mark prompt.
 
-Example: Starting Lush
+       Example: Starting Lush
 {<code>
   % lush/bin/lush
   LUSH Lisp Universal Shell (compiled on Aug 14 2002)
@@ -91,40 +91,27 @@ Example: Starting Lush
   This program is free software; it is distributed under the terms
   of the GNU Public Licence (GPL) with ABSOLUTELY NO WARRANTY.
   Type `(helptool)' for details.
-  
-  ... loading startup file "/home/yann/lush/sys/sysenv.lsh".
-  ... loading library file "/home/yann/lush/lsh/lushenv.lsh"
-   [compat.lsh]
-   [graphenv.lsh]
+  +[/home/yann/lush/sys/stdenv.dump]
    [.lushrc]
   ? 
-</code>} 
-The startup process can be customized by specifying a magic first argument on
-the command line.  The magic first argument starts with character <"@">,
-optionally followed by a second character <"@">, or followed by a
-filename,
-{<ul>
- {<li> The optional filename indicates an alternate initialization file that
-  will be loaded instead of the default <"sys/sysenv.lsh">.
-  This file might be a binary dump file (<".dump">) or a lisp file 
-  (<".lshc"> or <".lsh">).  
-  This file must define suitable <startup> and <toplevel> functions. 
-  How these functions are defined determines the rest of the startup sequence.
-  This allows to take complete control of Lush's startup sequence.}
- {<li> The second character <"@"> indicates that Lush must start in script mode.
-  Lush will not display the usual banners.  It will silently load the 
-  <"sysenv"> initialization file, call the <startup> function, and exit.   
-  The default startup function in <"sysenv"> detects when Lush is called
-  in this mode. When that happens, it stores the command line arguments in 
-  variable <argv> and loads the file indicated as second command line 
-  argument.  This is suitable for writing Lush scripts just like we write 
-  shell scripts:
-  {<code>
-  #!/usr/bin/lush @@
+</code>} }
+
+ {<li> If one or more arguments are passed to the Lush interpreter,
+       the <startup> function defines a variable <argv> containing
+       the specified arguments, runs the lush file specified
+       by the first argument, and exits.  This is suitable for 
+       writing Lush scripts just like we write shell scripts:
+{<code>
+  #!/usr/bin/lush
   (printf "Capitalizing the arguments:\n")
   (each ((arg argv)) (printf "%s %s\n" arg (upcase arg)))
-  </code>}}
-}
+  </code>} } }
+
+The startup process can be customized by specifying a magic first 
+argument on the command line.  The magic first argument starts with 
+character <"@"> followed by the name of an alternate 
+initialization file which will be loaded instead of 
+the default <"sys/stdenv.dump"> or <"sys/stdenv.lsh"> file.
 
 
 #? *** The Lush Reader.
@@ -374,72 +361,6 @@ function when clicked upon:
        (new stdbutton "coucou" print-coucou))
 </code>}
 
-#? *** Lush Runtime.
-
-Using function <dump>, it is possible to create a binary image of the
-lisp structures contained in a Lush process. Such binary dump files
-are useful for distributing Lush based programs without providing an
-extensive list of Lush library files.
-
-Lush indeeds undumps file <"sysenv.dump"> before even searching for the
-regular startup library <"sysenv.lsh">. You can also request Lush to load a
-specific dump file by typing <"@<filename>"> as the first command line
-argument to the Lush program.
-
-It is then useful to redefine functions <startup> and <toplevel> in
-order to redefine the startup sequence and the interactive loop.  The
-following function dumps a binary file for a typical Ogre application:
-{<code>
-(de dump-cold(s)
-    ;; save functions <toplevel> and <startup>.
-    (unlock-symbol toplevel)
-    (unlock-symbol startup)
-    (setq old-toplevel toplevel)
-    (setq old-startup startup)
-
-    ;; Redefining <startup> gives you a chance
-    ;; to initalize your application and parse the
-    ;; command line arguments
-    (de startup argv
-        ;; Disable <CTRL-C>
-        (unlock-symbol break-hook)
-        (setq break-hook (lambda() t))
-        ;; Initialize the OGRE library
-        (ogre)
-        ;; Parse arguments and create the main window.
-        (init-my-application argv) )
-    
-    ;; Redefining <toplevel> gives you a chance to
-    ;; alter the user interaction loop. This function
-    ;; is reentered whenever an error occurs.
-    ;; The default <toplevel> waits for lisp commands.
-    ;; The following function just accepts OGRE events.
-    (de toplevel()
-        (process-pending-events)
-        (while my-application-mainwindow
-          (waitevent)
-          (process-pending-events) )
-        (exit 0) )
-    
-    ;; We can then dump a binary file.
-    (dump s) 
-    
-    ;; And restore the previous status.
-    (setq toplevel old-toplevel)
-    (setq startup old-startup)
-    (lock-symbol toplevel)
-    (lock-symbol startup) )
-
-</code>}
-Redefining function toplevel prevents the user to enter 
-Lush commands and gives total control to your program.  
-The above example, for instance, restricts user interaction
-to graphics interfaces. The user cannot enter lisp expressions.
-
-{<see> Lush Startup.}
-{<see> (dump <fname> [<exec>])}
-{<see> (startup <...argv...>)}
-{<see> (toplevel)}
 
 
 
