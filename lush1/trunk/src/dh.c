@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.4 2002-07-08 19:24:31 leonb Exp $
+ * $Id: dh.c,v 1.5 2002-07-12 14:30:02 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -452,10 +452,12 @@ dhinfo_record(dhrecord *drec)
 
     case DHT_OBJ: 
       cdoc = drec->arg;
-      p = new_string(strclean(cdoc->lispdata.lname));
-      p = cons(named("obj"), cons(p,NIL));
+      p = cons( named("obj"),
+                cons( named(strclean(cdoc->lispdata.lname)), 
+                      new_cons(cdoc->lispdata.atclass, 
+                               NIL ) ) );
       return cons(named("ptr"), cons(p, NIL));
-
+      
     case DHT_SRG: 
       p = cons(named("srg"), 
                cons(named((drec[1].access == DHT_READ) ? "r" : "w"),
