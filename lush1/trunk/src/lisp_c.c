@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.24 2003-02-28 18:55:22 leonb Exp $
+ * $Id: lisp_c.c,v 1.25 2003-05-13 14:38:33 leonb Exp $
  **********************************************************************/
 
 
@@ -1931,6 +1931,13 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           if (!dont_track_cside)
             lisp2c_warning("(in): found GPTR instead of OBJ", errctx);
           arg->dh_obj_ptr = at_obj->Gptr;
+          return;
+        }
+      if (at_obj->flags & X_ZOMBIE)
+        {
+          if (!dont_track_cside)
+            lisp2c_warning("(in): found ZOMBIE instead of OBJ", errctx);
+          arg->dh_obj_ptr = 0;
           return;
         }
       if (! (at_obj->flags & X_OOSTRUCT))
