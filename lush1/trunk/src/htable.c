@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.4 2002-05-07 14:51:33 leonb Exp $
+ * $Id: htable.c,v 1.5 2002-05-08 22:05:03 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -363,7 +363,9 @@ htable_rehash(struct hashtable *htable)
         {
           /* zap entries whose key is a zombie */
           if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
-               (n->value && (n->value->flags & X_ZOMBIE)) )
+               (n->value && (n->value->flags & X_ZOMBIE)) ||
+               /* also zap entries that we will never use anymore */
+               (pointerhashp && n->key && n->key->count==1) )
             {
               *np = n->next;
               UNLOCK(n->key);
@@ -421,9 +423,10 @@ htable_set(at *ht, at *key, at *value)
   np = &(htable->table[hash % htable->size]);
   while ((n = *np))
     {
-      /* schedule rehash when finding zombies */
+      /* schedule rehash when finding useless entries */
       if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
-           (n->value && (n->value->flags & X_ZOMBIE)) )
+           (n->value && (n->value->flags & X_ZOMBIE)) ||
+           (pointerhashp && n->key && n->key->count==1) )
         {
           htable->rehashp = TRUE;
           continue;
@@ -497,9 +500,10 @@ htable_get(at *ht, at *key)
   np = &htable->table[hash % htable->size];
   while ((n = *np))
     {
-      /* schedule rehash when finding zombies */
+      /* schedule rehash when finding useless entries */
       if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
-           (n->value && (n->value->flags & X_ZOMBIE)) )
+           (n->value && (n->value->flags & X_ZOMBIE)) ||
+           (pointerhashp && n->key && n->key->count==1) )
         {
           htable->rehashp = TRUE;
           continue;
