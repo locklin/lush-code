@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fltlib.c,v 1.4 2003-09-26 03:54:46 profshadoko Exp $
+ * $Id: fltlib.c,v 1.5 2003-10-17 18:06:24 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -172,7 +172,6 @@ DQDtanh(real x)
 
 #define PR  ((flt)0.66666666)
 #define PO  ((flt)1.71593428)
-
 #define A0   ((flt)(1.0))
 #define A1   ((flt)(0.125*PR))
 #define A2   ((flt)(0.0078125*PR*PR))
@@ -222,6 +221,8 @@ FQDstdsigmoid(flt x)
     return Fzero;
 }
 
+#undef PR
+#undef PO
 #undef A0
 #undef A1
 #undef A2
@@ -236,7 +237,6 @@ FQDstdsigmoid(flt x)
 
 #define PR  ((real)0.66666666)
 #define PO  ((real)1.71593428)
-
 #define A0   ((real)(1.0))
 #define A1   ((real)(0.125*PR))
 #define A2   ((real)(0.0078125*PR*PR))
@@ -286,6 +286,8 @@ DQDstdsigmoid(real x)
     return Dzero;
 }
 
+#undef PR
+#undef PO
 #undef A0
 #undef A1
 #undef A2
