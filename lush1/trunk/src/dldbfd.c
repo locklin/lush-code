@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.36 2004-09-09 18:54:08 leonb Exp $
+ * $Id: dldbfd.c,v 1.37 2004-10-12 22:15:28 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1792,6 +1792,30 @@ apply_relocations(module_entry *module, int externalp)
                 status = bfd_perform_relocation(abfd, &dummy_reloc, 
                                                 (bfd_byte*)vmaptr(p->vma), 
                                                 p, NULL, &dummy_string );
+#ifdef __x86_64__
+		/* Quick and dirty fix for amd64 overflow problems */
+		if (status==bfd_reloc_overflow && externalp)
+		  {
+		    bfd_byte *data = vmaptr(p->vma);
+		    if ( data[reloc->address - 1] == 0xe8 && hsym->flags == (DLDF_DEFD|DLDF_REFD))
+		      {
+			void **stub = xmalloc(2*sizeof(void*));
+			stub[0] = vmaptr(0x0225ff);
+			stub[1] = vmaptr(value);
+			hsym->definition = ptrvma(stub);
+			hsym->flags |= DLDF_ALLOC;
+			value = value_of_symbol(hsym);
+			dummy_reloc = *reloc;
+			dummy_reloc.sym_ptr_ptr = &dummy_symbol_ptr;
+			dummy_symbol.value = value;
+			bfd_get_section_contents(abfd, p, data + reloc->address, reloc->address, 
+						 bfd_get_reloc_size(reloc->howto) );
+			status = bfd_perform_relocation(abfd, &dummy_reloc, 
+							(bfd_byte*)vmaptr(p->vma), 
+							p, NULL, &dummy_string );
+		      }
+		  }
+#endif
                 /* Analyze return code */
                 switch (status)
                 {
