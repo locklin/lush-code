@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.25 2003-01-14 20:13:13 leonb Exp $
+ * $Id: module.c,v 1.26 2003-02-21 23:04:41 leonb Exp $
  **********************************************************************/
 
 
@@ -364,14 +364,15 @@ dynlink_error(at *p)
     {
       strcpy(buffer,"dld/bfd error\n*** ");
       strcat(buffer, dld_errno);
+      error(NIL, buffer, p);
     }
 #endif  
 #ifdef DLOPEN
-  err = dlerror();
-  if (err)
+  if ((err = dlerror()))
     {
       strcpy(buffer,"dlopen error\n*** ");
       strcat(buffer, err);
+      error(NIL, buffer, p);
     }
 #endif
   error(NIL, buffer, p);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.20 2003-02-21 22:20:04 leonb Exp $
+ * $Id: dldbfd.c,v 1.21 2003-02-21 23:04:39 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1425,27 +1425,30 @@ check_multiple_definitions(module_entry *module)
             continue;
         if (sym->flags & (BSF_GLOBAL|BSF_INDIRECT))
         {
-            if (! (sym->flags & BSF_WEAK)) /* partial support */
-            {
-                name = drop_leading_char(module->abfd,sym->name);
-                hsym = lookup_symbol(name);
-                if (hsym && (hsym->flags & DLDF_DEFD))
-                {
-                    module_entry *defby = hsym->defined_by;
-                    const char *defby_name = "main program";
-                    if (defby && !defby->archive_flag)
-                    {
-                        char *s;
-                        defby_name = defby->filename;
-                        s = strrchr(defby_name, '/');
-                        if (s && s[1])
-                            defby_name = s+1;
-                    }
-                    sprintf(error_buffer,"Symbol '%s' already defined by %s", 
-                            name, defby_name );
-                    THROW(error_buffer);
-                }
-            }
+            if (sym->flags & BSF_WEAK)
+              continue;
+#ifdef SEC_LINK_ONCE
+            if (sym->section->flags & SEC_LINK_ONCE)
+              continue;
+#endif
+            name = drop_leading_char(module->abfd,sym->name);
+            hsym = lookup_symbol(name);
+            if (hsym && (hsym->flags & DLDF_DEFD))
+              {
+                module_entry *defby = hsym->defined_by;
+                const char *defby_name = "main program";
+                if (defby && !defby->archive_flag)
+                  {
+                    char *s;
+                    defby_name = defby->filename;
+                    s = strrchr(defby_name, '/');
+                    if (s && s[1])
+                      defby_name = s+1;
+                  }
+                sprintf(error_buffer,"Symbol '%s' already defined by %s", 
+                        name, defby_name );
+                THROW(error_buffer);
+              }
         }
     }
 }
