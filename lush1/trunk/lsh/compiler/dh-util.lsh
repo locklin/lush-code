@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.22 2002-07-25 21:31:00 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.23 2002-07-26 20:52:58 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -157,6 +157,7 @@
 ;; Utilities which are specific to the compiler
 ;;------------------------------------------------------------------------------
 
+
 (de dhu-tclass (u) (unode-val :u:u-tclass))
 (de dhu-temps (u) (unode-val :u:u-temps))
 (de dhu-extra (u) (unode-val :u:u-extra))
@@ -166,12 +167,7 @@
 (de dhu-access (u) (unode-val :u:u-access))
 (de dhu-name (u) (unode-val :u:u-name))
 (de dhu-class (u) (unode-val :u:u-class))
-
-
-;; compute/retrieve hash code
-(de dhu-hash (u)
-  ;; FIXME
-  "0" )
+(de dhu-hash (u) (==> u hashcode))
 
 ;; put or remove the "dht-" part of the name of a symbol
 (de dht-short (symb)
@@ -474,10 +470,10 @@
    ((==> type is-an-obj)
     (let* ((ctype (dhu-type type))
            (cname (dhu-name ctype))
-           (vtbl (sprintf "Vt_%s_R%s" cname (dhu-hash ctype))) )
+           (kname (sprintf "Kc_%s_R%s" cname (dhu-type ctype))) )
       (when (dhu-class ctype)
         (dhc-add-c-externs 
-         (sprintf "extern struct VClass_%s %s;" cname vtbl) )
+         (sprintf "extern struct VClass_%s Vt_%s;" cname cname) )
         (dhc-add-c-externs
          (dhc-class-to-struct-decl (dhu-type type)) ) )
       (dhc-add-c-declarations 
@@ -485,7 +481,7 @@
       (dhc-add-c-declarations 
        (sprintf "%s *%s= &%s_Struct;" (dhc-type-to-c-decl type) name name))
       (dhc-add-c-statements 
-       (sprintf "%s->Vtbl = &%s;" name vtbl) )
+       (sprintf "%s->Vtbl = &Vt_%s;" name cname) )
       ;; HORRIBLE HACK FOR POOLS -- WE SHOULD SUPPORT DESTRUCTORS
       (when (= "pool" cname)
         (dhc-add-c-statements 
@@ -525,19 +521,20 @@
    ((==> type is-an-obj)
     (let* ((ctype (dhu-type type))
            (cname (dhu-name ctype))
-           (vtbl (sprintf "Vt_%s_R%s" cname (dhu-hash ctype))) )
+           (kname (sprintf "Kc_%s_R%s" cname (dhu-type ctype))) )
       (when (dhu-class ctype)
-        (dhc-add-c-externs 
-         (sprintf "extern struct VClass_%s %s;" cname vtbl) )
+        (dhc-add-c-depends kname)
         (dhc-add-c-externs
-         (dhc-class-to-struct-decl (dhu-type type)) ) )
+         (dhc-class-to-struct-decl (dhu-type type)) )
+        (dhc-add-c-externs 
+         (sprintf "extern struct VClass_%s Vt_%s;" cname cname) ) )
       (dhc-add-c-declarations 
        (sprintf "%s *%s;" (dhc-type-to-c-decl type) name))
       (dhc-add-c-externs 
        "extern gptr C_allocobj_C_pool(struct CClass_pool*, int, gptr);")
       (dhc-add-c-statements 
-       (sprintf "%s = C_allocobj_C_pool(%s,sizeof(%s),%s);"
-                name obst (dhc-type-to-c-decl type) vtbl ) ) ) )
+       (sprintf "%s = C_allocobj_C_pool(%s,sizeof(%s),&Vt_%s);"
+                name obst (dhc-type-to-c-decl type) cname ) ) ) )
    
    ((==> type is-a-srg) 
     (dhc-add-c-declarations 
@@ -749,9 +746,10 @@
   ;; Memory access fields
   u-bump    ; lexical level (start with ())
   u-access  ; 'read if the object is read only, 'write otherwise
-
   u-name    ; for class: name of class
             ; for gptr: optional name of pointer C type
+  ;; Cached hash code
+  u-hash
 )			
 
 ;; order is important in following lists 
@@ -782,6 +780,50 @@
     (when (and (==> this is-a-srg) (<> (car desc) 'srg))
       (setq desc (cons 'srg desc)) )
     (printf "<TYPE::%l>" desc) ) )
+
+#? (==> <dhc-type> hashcode)
+;; returns a hashcode for a type.
+;; only to be called after the type is fully unified.
+(defmethod dhc-type hashcode()
+  (let ((tclass (unode-val u-tclass))
+        (hash (unode-val u-hash)) )
+    (when (not (stringp (unode-val u-hash)))
+      (cond
+       ((not (functionp hashcode))
+        (setq hash "0") )
+       ((member tclass '(dht-ptr dht-obj dht-idx dht-srg))
+        (setq hash 
+              (hashcode (list tclass 
+                              (==> (unode-val u-type) hashcode) )) ) )
+       ((= tclass 'dht-list)
+        (setq hash
+              (hashcode
+               (list 'dht-list
+                     (all ((u (unode-val u-extra))) (==> u hashcode)) ) ) ) )
+       ((= tclass 'dht-func)
+        (setq hash 
+              (hashcode
+               (list 'dht-func
+                     (all ((u (unode-val u-extra))) (==> u hashcode))
+                     (all ((u (unode-val u-temps))) (==> u hashcode))
+                     (==> (unode-val u-type) hashcode) ) )) )
+       ((= tclass 'dht-class)
+        (setq hash
+              (hashcode
+               (list 'dht-class
+                     (unode-val u-name)
+                     (==> (unode-val u-type) hashcode) 
+                     (all (((nam . typ) (unode-val u-temps))) 
+                       (list nam (==> typ hashcode)) )
+                     (all (((nam . typ) (unode-val u-extra))) 
+                       (list nam (==> typ hashcode)) ) ) ) ) )
+       (t
+        (setq hash (hashcode tclass)) ) )
+      ;; setup hash
+      (unode-unify u-hash (new-unode hash) (lambda(a b) b)) )
+    hash ) )
+
+
 
 ;; convert type to description.  
 ;; This function depend on the <unode-to-int>
@@ -844,7 +886,7 @@
        (cond
         ;; simple type
         ((member tclass dhc-simple-types)
-         (when (and (unode-val u-name) (= tclass 'dht-gptr)) ;LYB
+         (when (and (unode-val u-name) (= tclass 'dht-gptr))
            (add (unode-val u-name)) ) )
         ;; dhm type
         ((= tclass 'dht-dhm)
@@ -1039,6 +1081,7 @@
               (error () "type copy not implemented yet" ())))))
     (setq :ty:u-access (new-unode (unode-val u-access)))
     (setq :ty:u-bump (new-unode lex-level))
+    (unode-unify u-hash :ty:u-hash (lambda(a b) ()))
     ty))
 
 #? (==> <dhc-type> access [<v>])
@@ -1389,6 +1432,7 @@
      (when (and (<> class1 'dht-dc)
 	        (<> class2 'dht-dc))
        (unode-unify :t1:u-bump :t2:u-bump dhc-combine-u-bump)
+       (unode-unify :t1:u-hash :t2:u-hash (lambda(a b) ()))
        ;; The following ensures that a type comming from a scope above but only 
        ;; typed at a scope below still has the correct bumping information 
        ;; (ex: an argument which only sees (-idx- arg) inside a let).
@@ -1406,28 +1450,26 @@
        ;; unify all unodes (all slots).
        (when (or (= class1 'dht-unk)
                  (= class2 'dht-unk))
-         (unode-unify :t1:u-tclass :t2:u-tclass
-                      dhc-combine-tclass)
+         (unode-unify :t1:u-tclass :t2:u-tclass dhc-combine-tclass)
          (each ((s (slots dhc-type)))
            (unode-unify (apply scope (list t1 s)) 
-                        (apply scope (list t2 s)) or)))
-       (unode-unify :t1:u-tclass :t2:u-tclass
-                    dhc-combine-tclass)
+                        (apply scope (list t2 s)) or))) 
+       (unode-unify :t1:u-tclass :t2:u-tclass dhc-combine-tclass)
        (setq tclass (unode-val :t1:u-tclass))
        
-      (let ((e-message (concat e-message (sprintf "%l " tclass))))
-	(cond 
-	 ;; simple types
-	 ((member tclass dhc-simple-types) ())
-	 ;; complex types
-	 ((member tclass dhc-complex-types)
-	  (dhc-unify-complex-type t1 t2))
-	 (t 
-          (dhc-unif-error "don't know how to unify")))))) )
+       (let ((e-message (concat e-message (sprintf "%l " tclass))))
+         (cond 
+          ;; simple types
+          ((member tclass dhc-simple-types) ())
+          ;; complex types
+          ((member tclass dhc-complex-types)
+           (dhc-unify-complex-type t1 t2))
+          (t 
+           (dhc-unif-error "don't know how to unify")))))) )
 
 (de dhc-add-message (mess . l)
-    (let ((e-message (concat e-message mess)))
-      (apply progn l)))
+  (let ((e-message (concat e-message mess)))
+    (apply progn l)))
 
 (de dhc-unify-complex-type (t1 t2)
   ;; take care of u-access, u-bump 
@@ -1449,7 +1491,15 @@
    ;; srg type
    ((= tclass 'dht-srg)
     (dhc-unify-t (unode-val :t1:u-type)
-                 (unode-val :t2:u-type)))
+                 (unode-val :t2:u-type))
+    ;; only in temporaries:
+    (let ((nt1 (unode-val :t1:u-extra))
+          (nt2 (unode-val :t2:u-extra)))
+      (if (and nt1 nt2)
+          (when (<> (unode-uid :nt1:u-tclass) (unode-uid :nt2:u-tclass))
+            (dhc-unify-t nt1 nt2) )
+        (if (or nt1 nt2)
+            (dhc-unif-error ": special purpose storage mismatch") ) ) ) )
    ;; obj type
    ((= tclass 'dht-obj)
     (dhc-obj-subclass-check t1 t2)
@@ -1496,9 +1546,6 @@
                           (dhc-unify-t (unode-val :t1:u-type)
                                        (unode-val :t2:u-type))))))
     (unode-unify :t1:u-extra :t2:u-extra or)
-    ;; QUESTIONS:
-    ;; - what about u-temps ?
-    ;; - what about u-class ?
     () ) ) )
 
 
@@ -1523,7 +1570,8 @@
                 (str 
                  (new dhc-type 'dht-str))
                 (idx 
-                 (new dhc-type 'dht-idx arg2
+                 (new dhc-type 'dht-idx 
+                      arg2
                       (dhc-desc-to-type arg3)))
                 (ptr 
                  (new dhc-type 'dht-ptr
@@ -2845,6 +2893,14 @@
   (let ((output ())
         (args (dhu-extra functype))
         (tmps (dhu-temps functype)) )
+    ;; check externs
+    (each ((arg (append args tmps)))
+      (when (==> arg is-an-objptr)
+        (setq arg (dhu-type arg)) )
+      (when (==> arg is-an-obj)
+        (setq arg (dhu-type arg))
+        (when (dhu-class arg)
+          (dhc-add-c-externs (sprintf "struct CClass_%s;" (dhu-name arg))) ) ) )
     ;; build arg type list
     (setq output
           (append

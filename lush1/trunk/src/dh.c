@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.10 2002-07-25 01:14:48 leonb Exp $
+ * $Id: dh.c,v 1.11 2002-07-26 20:53:03 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -388,16 +388,17 @@ dhinfo_record_templist(dhrecord *drec)
     case DHT_LIST:
       p = NIL;
       for (i=0; i<drec->ndim; i++)
-        p = cons(named("unk"),p);
+        p = cons(cons(named("unk"),NIL),p);
       return cons(named("list"), p);
     case DHT_SRG:
-      p = named("unk");
+      p = cons(named("unk"), NIL);
       p = cons(named("srg"), cons(named("w"), cons(p, NIL)));
       return cons(named("ptr"), cons(p, NIL));
     case DHT_IDX:
-      p = named("unk");
+      p = cons(named("unk"), NIL);
       p = cons(named("srg"), cons(named("w"), cons(p, NIL)));
-      p = cons(named("idx"), cons(named("w"), cons(p, NIL)));
+      p = cons(NEW_NUMBER(drec->ndim), cons(p, NIL));
+      p = cons(named("idx"), cons(named("w"), p));
       return cons(named("ptr"), cons(p, NIL));
     default:
       return dhinfo_record(drec);

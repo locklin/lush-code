@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.8 2002-07-19 03:29:19 leonb Exp $
+ * $Id: htable.c,v 1.9 2002-07-26 20:53:03 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -278,12 +278,14 @@ again:
     }
   else if (p->flags & C_NUMBER)
     {
+      x ^= 0x1010;
       x ^= ((unsigned long*)&p->Number)[0];
       if (sizeof(real) >= 2*sizeof(unsigned long))
         x ^= ((unsigned long*)&p->Number)[1];
     }
   else if (p->flags & C_CONS)
     {
+      x ^= 0x2020;
       if (recur_push_ok(&elt, &hash_value, p->Car))
         {
           x ^= hash_value(p->Car);
@@ -300,6 +302,7 @@ again:
     }
   else if ((p->flags & C_EXTERN) && (p->Class->hash))
     {
+      x ^= 0x3030;
       if (recur_push_ok(&elt, &hash_value, p))
         {
           x ^= (*p->Class->hash)(p);
@@ -308,6 +311,7 @@ again:
     }
   else if (p->flags & C_GPTR)
     {
+      x ^= 0x4040;
       x ^= (unsigned long)(p->Gptr);
     }
   else
@@ -558,10 +562,23 @@ htable_get(at *ht, at *key)
 
 
 
-
 /* HASHTABLE OPERATIONS */
 
+/* hashcode */
 
+DX(xhashcode)
+{
+  static char format[8];
+  char buffer[24];
+  unsigned long x;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  x = hash_value(APOINTER(1));
+  if (! format[0])
+    sprintf(format,"%%0%dlx", 2*sizeof(unsigned long));
+  sprintf(buffer,format, x);
+  return new_string(buffer);
+}
 
 
 /* new_htable -- hashtable creation */
@@ -751,6 +768,7 @@ DX(xhtable_info)
 void init_htable(void)
 {
   class_define("HTABLE",&htable_class);
+  dx_define("hashcode",xhashcode);
   dx_define("htable",xnew_htable);
   dx_define("htable_alist",xhtable_alist);
   dx_define("htable_keys", xhtable_keys);
