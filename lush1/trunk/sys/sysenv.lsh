@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.54 2002-08-02 22:21:31 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.55 2002-08-19 14:21:04 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -546,7 +546,7 @@
 
 (lock-symbol matrix array submatrix)
 
-(de contiguep (m)
+(de contiguousp (m)
   (let ((flag t)(size 1))
     (for (i (1- (idx-ndim m)) 0 -1)
          (if (<> size (idx-modulo m i))
@@ -587,6 +587,34 @@
          (d ,d) (n ,n) (o ,o))
      (idx-narrow m d n o)
      m ) )
+
+(dmd idx-gloop (vars . body)
+  (let* ((arglist ())
+         (letlist ())
+         (sellist ())
+         (lvar ()))
+    (each ((x vars)) 
+      (selectq (length x)
+        (3
+         ;; a permutation syntax
+         (let* ((z (uniq-symbol)))
+           (setq arglist (cons (list z (cadr x)) arglist))
+           (setq letlist
+                 (cons (list (car x) (list 'select (last x) 0 (list z)))
+                       letlist))))
+        (1   (setq lvar (car x)))
+        (2   (setq arglist (cons x arglist)))
+        (t   (error "bad gloop construct"))))
+    (if lvar
+        `(let* (( ,lvar 0))
+           (-int- ,lvar)
+           ,(list 'idx-bloop arglist 
+                  (cons 'let 
+                        (cons letlist 
+                              (append sellist body 
+                                      (list (list 'setq lvar (list '+ lvar '1))) ) ) ) ) )
+      (list 'idx-bloop arglist 
+            (cons 'let (cons letlist (append sellist body))) ) ) ) )
 
 (de index-print(this)
   (let ((begin "[")
@@ -660,8 +688,8 @@
            (setq l (nconc1 l (read))) )
          m ) ) )
 
-(lock_symbol contiguep clone-matrix 
-             redim unfold select diagonal narrow
+(lock_symbol contiguousp clone-matrix 
+             redim unfold select diagonal narrow idx-gloop
              index-print list-to-index 
              |[| |]| |{| |}|)
 
