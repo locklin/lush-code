@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.15 2002-11-01 05:11:04 profshadoko Exp $
+ * $Id: unix.c,v 1.16 2002-11-01 15:48:12 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -923,28 +923,6 @@ DX(xlocaltime)
 }
 
 
-/* sleep -- waits specified number of seconds */
-
-DX(xsleep)
-{
-  unsigned long t;
-
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  t = (unsigned long)(AREAL(1)*1000000);
-  while (t>0) {
-    if (t>1000000) { 
-      usleep((unsigned long)(1000000)); t -= 1000000;
-    } else { 
-      usleep((unsigned long)(t));
-      t=0;
-    }
-    CHECK_MACHINE("on");
-  }
-  return NEW_NUMBER(t);
-}
-
-
 /* beep -- emits alert sound */
 
 DX(xbeep)
@@ -1463,7 +1441,6 @@ init_unix(void)
   dy_define("time", ytime);
   dx_define("ctime", xctime);
   dx_define("localtime", xlocaltime);
-  dx_define("sleep", xsleep);
   dx_define("beep", xbeep);
   dx_define("getenv", xgetenv);
   dx_define("getconf", xgetconf);
