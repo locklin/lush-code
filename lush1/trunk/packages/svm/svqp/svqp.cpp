@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.4 2004-05-10 21:29:04 leonb Exp $
+ * $Id: svqp.cpp,v 1.5 2004-05-10 21:42:57 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -361,9 +361,9 @@ ConvexProgram::run(void)
 	  info(1,"? %s\n", err);
           return -1;
         }
-      if (iterations % 50 == 50)
-	info(2, "\nIteration %d: w=%e g=%e active=%d\n", 
-	     iterations, w, gnorm, nactive);
+      if (iterations % 50 == 49)
+	info(1, "\nSVQP iteration %d: w=%e g=%e active=%d\n", 
+	     iterations+1, w, gnorm, nactive);
       // project gradient and compute clamp status
       if (sumflag)
         project_with_linear_constraint();
