@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dump.c,v 1.4 2002-12-12 08:24:06 leonb Exp $
+ * $Id: dump.c,v 1.5 2003-01-10 19:52:17 leonb Exp $
  **********************************************************************/
 
 
@@ -34,12 +34,10 @@
  *  + 4 bytes of magic number
  *  + 4 bytes of version number
  *  + 256 bytes of character map (marking macro chars)
- *  + 1 big list containing
- *      - either individual atoms needed for the rest
- *      - or pairs (symbol . value)
- *  The file search path is currently missing from dump files.
- *  The correct fix would be to maintain the execution path in
- *  symbol |*PATH*| instead of the current hacks in fileio.c.
+ *  + 1 big list containing either
+ *      - pairs (symbol . value) defining a variable.
+ *      - symbols that must be locked.
+ *      - modules that must be loaded.
  */
 
 #define DUMPMAGIC  0x44454d50
@@ -120,23 +118,19 @@ dump(char *s)
   at **where;
   at *sym, *val;
   struct symbol *symb;
-  
   /* Header */
   atf = OPEN_WRITE(s,"dump");
   f = atf->Object;
   write32(f, DUMPMAGIC);
   write32(f, DUMPVERSION);
-
   /* The macro character map */
   fwrite(char_map,1,256,f);
   if (ferror(f))
     test_file_error(f);
-
   /* Building the big list */
   ans = NIL;
   where = &ans;
-
-  /* 1-- the modules */
+  /* 1- the modules */
   p = q = module_list();
   while (CONSP(q)) {
     *where = new_cons(q->Car, NIL);
@@ -144,8 +138,7 @@ dump(char *s)
     q = q->Cdr;
   }
   UNLOCK(p);
-  
-  /* 2- all symbols */
+  /* 2- the globals */
   iter_hash_name(j, hn)
     if (EXTERNP(hn->named, &symbol_class))
       {
@@ -153,13 +146,19 @@ dump(char *s)
 	symb = sym->Object;
 	while (symb->next)
 	  symb = symb->next;
-	if (symb->valueptr) {
-	  val = *(symb->valueptr);
-          *where = cons( new_cons(sym,val), NIL);
-          where = &((*where)->Cdr);
-        }
+	if (symb->valueptr)
+          {
+            val = *(symb->valueptr);
+            *where = cons( new_cons(sym,val), NIL);
+            where = &((*where)->Cdr);
+            /* locked? */
+            if (symb->mode == SYMBOL_LOCKED)
+              {
+                *where = new_cons(sym,NIL);
+                where = &((*where)->Cdr);
+              }
+          }
       }
-  
   /* Write the big list */
   bwrite(ans, f, TRUE);
   UNLOCK(ans);
@@ -267,7 +266,14 @@ undump(char *s)
             error(NIL,"Corrupted dump file (4)",NIL);
           var_SET(sym,val);
         }
+      else if (EXTERNP(p->Car,&symbol_class))
+        {
+          var_lock(p->Car);
+        }
+      val = p;
       p = p->Cdr;
+      val->Cdr = NIL;
+      UNLOCK(val);
     }
   UNLOCK(p);
 
