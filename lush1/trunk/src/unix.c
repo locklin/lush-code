@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.13 2002-08-07 20:03:32 leonb Exp $
+ * $Id: unix.c,v 1.14 2002-09-05 15:05:06 profshadoko Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -864,9 +864,9 @@ DY(ytime)
     newtime = buffer.tms_utime;
     UNLOCK(q);
 #ifdef CLK_TCK
-    return NEW_NUMBER((newtime - oldtime) / (CLK_TCK));
+    return NEW_NUMBER((newtime - oldtime) / (double)(CLK_TCK));
 #else
-    return NEW_NUMBER((newtime - oldtime) / 60.0);
+    return NEW_NUMBER((newtime - oldtime) / (double)60.0);
 #endif
   }
 }
