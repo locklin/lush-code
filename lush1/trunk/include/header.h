@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.62 2004-10-22 19:50:30 leonb Exp $
+ * $Id: header.h,v 1.63 2005-01-06 02:09:38 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -876,15 +876,15 @@ LUSHAPI void dz_define(char *name, char *opcode, real (*cfun)(real));
 
 /* STORAGE.H --------------------------------------------------- */
 
-extern LUSHAPI class  AT_storage_class;
-extern LUSHAPI class   P_storage_class;
-extern LUSHAPI class   F_storage_class;
-extern LUSHAPI class   D_storage_class;
-extern LUSHAPI class I32_storage_class;
-extern LUSHAPI class I16_storage_class;
-extern LUSHAPI class  I8_storage_class;
-extern LUSHAPI class  U8_storage_class;
-extern LUSHAPI class PTR_storage_class;
+extern LUSHAPI class   AT_storage_class;
+extern LUSHAPI class    P_storage_class;
+extern LUSHAPI class    F_storage_class;
+extern LUSHAPI class    D_storage_class;
+extern LUSHAPI class  I32_storage_class;
+extern LUSHAPI class  I16_storage_class;
+extern LUSHAPI class   I8_storage_class;
+extern LUSHAPI class   U8_storage_class;
+extern LUSHAPI class GPTR_storage_class;
 
 /* 
  * The field 'type' of a storage defines the type
