@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxops.h,v 1.1 2002-04-16 19:47:03 leonb Exp $
+ * $Id: idxops.h,v 1.2 2002-08-16 18:40:56 leonb Exp $
  **********************************************************************/
 
 #ifndef IDXOPS_H
@@ -202,12 +202,13 @@
 
 #define Midx_m2sup(i1, i2, Type1, Type2) \
 { register Type1 *c1, *c1_0; \
-  Type2 *c2, f=0; \
+  Type2 *c2, f; \
   register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
   register int i1_m0 = (i1)->mod[0], \
                i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
+  f = *c1_0; \
   for (i=0; i<imax; i++){ \
       c1 =c1_0; \
       for (j=0; j<jmax; j++){  \
@@ -221,12 +222,13 @@
 
 #define Midx_m2inf(i1, i2, Type1, Type2) \
 { register Type1 *c1, *c1_0; \
-  Type2 *c2, f=0; \
+  Type2 *c2, f; \
   register int i, j, imax = (i1)->dim[0], jmax = (i1)->dim[1]; \
   register int i1_m0 = (i1)->mod[0], \
                i1_m1 = (i1)->mod[1]; \
   c1_0 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
+  f = *c1_0; \
   for (i=0; i<imax; i++){ \
       c1 =c1_0; \
       for (j=0; j<jmax; j++){  \
