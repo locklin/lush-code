@@ -1,0 +1,221 @@
+(mload "hcluster/hcluster")
+(mload "hcluster/cluster_funcs.sn")
+;; This file is testing hiearchical clustering and k-means.
+
+;;------------------------------------------------------------------------------
+#? (test-cluster <size> <p>)
+;;
+;; Perform a 2D test of clustering (hierachical with <p> splits, and k-means 
+;; with <p> clusters.  <size> is the number of patterns to be clustered.
+;;
+;; For example, try: (test-cluster 100 10)
+;;
+(de test-cluster (size p)
+
+    (setq a (matrix size 2))
+
+    (for (i 0 (1- size))
+      (a i 0 (* (rand 0 1) 500))
+      (a i 1 (* (rand 0 1) 500)))
+
+    (let ((window window))
+      (if (null tree-window) 
+          (setq tree-window (new-window)))
+      (if (null clus-window) 
+          (setq clus-window (new-window))))
+      
+    ;; compute p clusters with kmeans
+    (setq clus (new n-clusters a p))
+    (let ((window clus-window))
+      (==> clus display))
+
+    ;; compute hierachical clusters with kmeans
+    (setq tree (new cluster-tree a))
+    (let ((window tree-window))
+      (==> tree display 1)
+      (for (k 1 (1- p) 1)
+        (==> tree add-cluster)
+        (==> tree display k)
+        ))
+
+    ;; stats
+    (let ((tree-var (flatten (visit-tree :tree:top get-variance (lambda (x) ()))))
+          (clus-var (:clus:variance ())))
+      (printf "k-means     : MAX: %10.0f  AV: %10.0f \n" 
+              (apply max clus-var)
+              (/ (sum clus-var) p))
+      (printf "Cluster tree: MAX: %10.0f  AV: %10.0f \n" 
+              (apply max tree-var)
+              (/ (sum tree-var) p))
+      )
+)
+
+;;------------------------------------------------------------------------------
+#? (new cluster-tree <sample-mat>)
+;;
+;; Create a cluster tree for the sample-matrix <sample-mat>.  In this case, 
+;; sample-mat is a 2D matrix of <n-pattern> sample of <pattern-size> size. 
+;; Each call (==> tree add-cluster <n>) add n cluster to the tree.
+;; Each call (==> tree display <p>) display (in the current window) the clusters
+;;
+(defclass cluster-tree object
+  ((-int-) n-pattern)		;; size of each vector
+  ((-int-) sample-size)
+  ((-idx2- (-float-)) sample-idx) 	;; original sample vector (lisp)
+  ((-idx1- (-gptr-)) samples)   ;; pointer to C representation of samples
+  ((-gptr-) top)		;; Tree cluster top
+  allocated-clusters		;; list of C clusters allocated thus far (for
+  				;;     garbage collection
+)
+
+;; Constructor
+(defmethod cluster-tree cluster-tree (sample-mat)
+  (setq sample-idx sample-mat)
+  (setq n-pattern (idx-dim sample-mat 0))
+  (setq sample-size (idx-dim sample-mat 1))
+  (setq samples (sample-to-c sample-mat))
+
+  (let ((temp-cluster (new-sample sample-size))
+        (cluster-center (new-sample sample-size))
+        (sample-weights ((float-matrix-nc n-pattern) () 1)))
+    (setq allocated-clusters (list cluster-center))
+    (setq top (top-cluster samples sample-weights
+                           cluster-center temp-cluster
+                           (init-cluster-ptr)
+                           (distance-ptr) (clear-ptr) 
+                           (accumulate-ptr) (normalize-ptr) 1))
+    (free-sample temp-cluster)))
+
+;; Desctructor
+(defmethod cluster-tree -destructor ()
+  (free-samples samples)
+;  (cluster-delete top (free-sample-ptr))
+
+  (cluster-delete top)
+  (each ((c allocated-clusters)) (free-sample c))
+)
+
+;; Add clusters
+(defmethod cluster-tree add-cluster (&optional (p 1))
+  (let ((temp-cluster1 (new-sample sample-size))
+        (temp-cluster2 (new-sample sample-size))
+        (cluster-center1 ())
+        (cluster-center2 ())
+        (variance 0))
+                     
+    (for (i 1 p)
+      (setq cluster-center1 (new-sample sample-size))
+      (setq cluster-center2 (new-sample sample-size))
+      (setq allocated-clusters (append allocated-clusters
+                                       (list cluster-center1 cluster-center2)))
+      (setq variance (cluster-build 
+                      top cluster-center1 cluster-center2 
+                      temp-cluster1 temp-cluster2
+                      (init-cluster-ptr) (distance-ptr) (clear-ptr) 
+                      (accumulate-ptr) (normalize-ptr) 1)))
+    (free-sample temp-cluster1)
+    (free-sample temp-cluster2)
+    variance))
+
+;; Display
+(defmethod cluster-tree display (p)
+    (let* ((n (get-n top))
+           (clu-ptr (gptr-matrix-nc p))
+           (clu-ind (int-matrix-nc n))
+           (max-clu (find-cluster-slice top clu-ptr clu-ind p))
+           (b (matrix-nc p sample-size))
+           (red (alloccolor 1 0 0))
+           (black (alloccolor 0 0 0)))
+      
+      (for (j 0 (1- max-clu) 1)
+        (get-sample (get-cluster (clu-ptr j)) (submatrix b j ())))
+      
+      (graphics-batch        
+       (cls)
+       (color red)
+       (for (i 0 (1- max-clu) 1)
+         (fill-circle (b i 0) (b i 1) 5))
+       (for (i 0 (1- n))
+         (draw-line (sample-idx i 0) (sample-idx i 1)
+                    (b (clu-ind i) 0) (b (clu-ind i) 1)))
+       (color black)
+       (for (i 0 (1- n))
+         (fill-circle (sample-idx i 0) (sample-idx i 1) 3))
+
+       )))
+
+;;------------------------------------------------------------------------------
+#? (new n-clusters <sample-mat> <p>)
+;;
+;; Create a set of <p> clusters from <sample-mat>.
+;; sample-mat is a 2D matrix of <n-pattern> sample of <pattern-size> size. 
+;; The call (==> clu display) displays (in the current window) the clusters
+;;
+(defclass n-clusters object 
+  ((-int-) p)
+  ((-int-) n-pattern)		;; size of each vector
+  ((-int-) sample-size)
+  ((-idx2- (-float-)) sample-idx) 	;; original sample vector (lisp)
+  ((-idx1- (-gptr-)) samples)   ;; pointer to C representation of samples
+  ((-idx1- (-int-)) labels)	;; n-pattern int-matrix for index of clusters
+
+  ((-idx1- (-gptr-)) clusters)	;; pointr to C representation to the p clusters.
+  ((-idx1- (-float-)) variance) ;; variance of each cluster
+  ((-idx1- (-float-)) weights)  ;; weights of each cluster
+)
+
+;; Constructor
+(defmethod n-clusters n-clusters (sample-mat pp)
+  (setq p pp)
+  (setq sample-idx sample-mat)
+  (setq n-pattern (idx-dim sample-mat 0))
+  (setq labels (int-matrix-nc n-pattern))
+  (setq sample-size (idx-dim sample-mat 1))
+  (setq samples (sample-to-c sample-mat))
+  (setq clusters (new-samples p sample-size))
+  (setq variance (matrix-nc p))
+  (setq weights (matrix-nc p))
+  
+  (let ((temp-clusters (new-samples p sample-size))
+        (sample-weights ((float-matrix-nc n-pattern) () 1))
+        (label (int-matrix p))) ;; initialize clusters to samples
+    
+    (for (i 0 (1- p))
+      (label i i)
+      (copy-sample (samples i) (clusters i)))
+    
+    (k-means (distance-ptr) (clear-ptr) (accumulate-ptr) (normalize-ptr)
+             n-pattern samples
+             sample-weights labels
+             p clusters temp-clusters
+             label weights variance 1)
+    (free-samples temp-clusters))
+  )
+
+;; Destructor
+(defmethod n-clusters -destructor ()
+  (free-samples samples)
+  (free-samples clusters))
+
+;; Display
+(defmethod n-clusters display ()
+    (let* ((b (matrix-nc p sample-size))
+           (red (alloccolor 1 0 0))
+           (black (alloccolor 0 0 0)))
+
+      (for (j 0 (1- p))
+        (get-sample (clusters j) (submatrix b j ())))
+      
+      (graphics-batch        
+       (cls)
+       (color red)
+       (for (i 0 (1- p))
+         (fill-circle (b i 0) (b i 1) 5))
+       (for (i 0 (1- n-pattern))
+         (draw-line (sample-idx i 0) (sample-idx i 1)
+                    (b (labels i) 0) (b (labels i) 1)))
+       (color black)
+       (for (i 0 (1- n-pattern))
+         (fill-circle (sample-idx i 0) (sample-idx i 1) 3))
+
+       )))

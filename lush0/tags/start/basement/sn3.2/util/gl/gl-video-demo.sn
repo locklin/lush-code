@@ -1,0 +1,38 @@
+
+(mload "idx-macros")
+(mload "video/video-sgi")
+(mload "gl/gl")
+
+(de gl-video-demo (zoom)
+    (setq vin (new video-sgi))
+    (==> vin begin zoom 0 0 0 0 1 10 1)
+    (let* ((si (==> vin sizey))
+           (sj (==> vin sizex))
+           (z (ubyte-matrix si sj 4))
+           (last (ubyte-matrix si sj 4))
+           (m (ubyte-matrix si sj 4)))
+      (gl-prefsize sj si)
+      (setq win (gl-winopen "asd"))
+      (gl-rgbmode)
+      (gl-snpixmode)
+      (gl-gconfig)
+      (while t
+        (gl-video-loop vin m last z)
+        (let ((tt last)) (setq last m) (setq m tt)))))
+
+(de gl-video-loop (vin m last z)
+    ((-obj- (video-sgi)) vin)
+    ((-idx3- (-ubyte-)) m last z)
+    (==> vin grabto m)
+    (cinline-idx2loop3 m "unsigned char" last "unsigned char" z "unsigned char"
+                       "m" "last" "z" "i" "j"
+                       #{
+                       z[3] = ((int)(m[3]) + 256 - (int)(last[3]))>>1 ;
+                       z[2] = ((int)(m[2]) + 256 - (int)(last[2]))>>1 ;
+                       z[1] = ((int)(m[1]) + 256 - (int)(last[1]))>>1 ;
+                       #} )
+    (gl-draw-matrix 0 0 z) ())
+
+(dhc-make () gl-video-loop)
+
+(gl-video-demo 2)

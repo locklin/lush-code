@@ -1,0 +1,130 @@
+
+(dm dim(f v . l)
+    `(setq ,v (matrix ,@l)) )
+
+(dm pdim(f v . l)
+    `(setq ,v (pmatrix ,@l)) )
+
+(dm ddim(f v . l)
+    `(setq ,v (dmatrix ,@l)) )
+
+(dm sdim(f v . l)
+    `(setq ,v (smatrix ,@l)) )
+
+(dm idim(f v . l)
+    `(setq ,v (imatrix ,@l)) )
+
+(dm bdim(f v . l)
+    `(setq ,v (bmatrix ,@l)) )
+
+
+(de matrix_print (l)
+    (printf "[")
+    (selectq (bound l 0)
+	     (1
+	      (for (i 0 (bound l 1))
+		   (printf "%5.2f " (l i)) ) )
+	     (2
+	      (let ((pos (tab))
+		    (end (bound l 1)) )
+		(for (i 0 end)
+		     (matrix_print (submatrix l i ()))
+		     (when (< i end)
+			   (printf "\n")
+			   (tab pos) ) ) ) )
+	     (t
+	      (let ((pos (tab))
+		    (end (bound l 1))
+		    (nd  (bound l 0)) )
+		(for (i 0 end)
+		     (matrix_print (apply submatrix 
+					  `(,l ,i ,@(makelist (1- nd) ())) ))
+		     (when (< i end)
+			   (for (i 2 nd 1)
+				(printf "\n") )
+			   (tab pos) ) ) ) ) )
+    (printf "]") )
+
+
+(de matrix_read () 
+   (let ((f ())(l ()))
+     (while ~(index (skip_char) "]()\e")
+      (setq f (nconc1 f
+	        (if (= (skip_char) "[")
+		  (progn
+		    (read_string 1)
+		    (setq l ())
+		    (while ~(index (skip_char) "][()\e")
+		      (let ((r (read))) 
+			(if (numberp r) 
+			    (setq l (nconc1 l r))
+			  (error 'read "not a number" r) ) ) )
+		    (when (= (skip_char) "[")
+			  (error 'read "Too many nested '['") )
+		    (when (= (skip_char) "]")
+			  (read_string 1) 
+			  l ) )
+		  (progn
+		    (let ((r (read))) 
+		      (if (numberp r) 
+			  r
+			  (error 'read "not a number" r) ) ) ) ) ) ) )
+     (selectq (read_string 1)
+       ("\e" 
+	(error 'read "EOF found") ) 
+       ("("
+	(error 'read "'(' found in a matrix") )
+       (")" 
+	(error 'read "Extra ')' found") )
+       (t
+	(if l
+	    (let ((d (sup (all ((l f))(if (listp l)(length l) 0)))))
+	      (setq d (matrix (length f) d)) 
+	      (matrix_print_mode d t) 
+	      (d () () f) )
+	  (let ((d (length f))) 
+	    (setq d (matrix d)) 
+	    (matrix_print_mode d t) 
+	    (d () f) ) ) ) )  ) )
+
+
+     
+(dmc |]| (error 'read "extra ']' found"))
+(dmc |[| (matrix_read))
+
+(defmethod |MAT| print()
+  (if (matrix-print-mode this)
+      (matrix-print this)
+    (printf "%s" (pname this)) ) )
+
+(defmethod |PMAT| print()
+  (if (matrix-print-mode this)
+      (matrix-print this)
+    (printf "%s" (pname this)) ) )
+
+(defmethod |DMAT| print()
+  (if (matrix-print-mode this)
+      (matrix-print this)
+    (printf "%s" (pname this)) ) )
+
+(defmethod |IMAT| print()
+  (if (matrix-print-mode this)
+      (matrix-print this)
+    (printf "%s" (pname this)) ) )
+
+(defmethod |BMAT| print()
+  (if (matrix-print-mode this)
+      (matrix-print this)
+    (printf "%s" (pname this)) ) )
+
+
+(lock_symbol dim pdim ddim idim matrix_print matrix_read |[| |]|)
+            
+
+;; compatibility only
+(de save-packed-matrix(mat file)
+    	(let ((pm (apply pmatrix (bound mat))))
+	  (copy-matrix mat pm)
+	  (save-matrix pm file) ) )
+
+

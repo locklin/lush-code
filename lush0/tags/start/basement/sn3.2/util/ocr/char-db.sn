@@ -1,0 +1,429 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; class definitions and specification for databases of 
+;; characters and words.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "rawchar")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; utilities
+
+#? (fill-trans-params <trans-param> <siz> <xt> <yt> <scal> <compr> <sk>)
+;; fill a matrix of transformation parameters for use in
+;; a normchar-db. <trans-param> is a n idx2 of flts which will contain
+;; the transformation parameters on output.
+;; <siz> is the size of the original database to be distorted (int)
+;; <xt>: images will be translated horizontally by a random amount between -<xt> and <xt>
+;; <yt>: same for vertical translation
+;; <scal>: images will be scaled by a random factor between 1-<scal> and 1+<scal>
+;; <compr>: images will be compressed by a random amount between 1-<compr> and 1+<compr>
+;; <sk>: images will be skewed a random angle whose tangent is between -<sk> , <sk>
+(de fill-trans-params (trans-param siz xt yt scal compr sk)
+    ((-idx2- (-flt-)) trans-param)
+    ((-int-) siz)
+    ((-flt-) xt yt scal compr sk)
+    (let ((p 0))
+      ((-int-) p)
+      (idx-bloop ((prm trans-param))
+	(prm 0 p)
+	(prm 1 (rand (- xt) xt))
+	(prm 2 (rand (- yt) yt))
+	(prm 3 (1+ (rand (- scal) scal)))
+	(prm 4 (1+ (rand (- compr) compr)))
+	(prm 5 (rand (- sk) sk))
+	(incr p)
+	(when (= p siz) (setq p 0)))))
+
+(de permute-db-shuffle (map)
+    ((-idx1- (-int-)) map)
+    (let ((n (idx-dim map 0)))
+      (-int- n)
+      (for (i 0 (- n 2))
+	   (let ((j (int (rand i (- n 0.01))))
+		 (v (map i)))
+	     (-int- j v)
+	     (map i (map j))
+	     (map j v))))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? char-db
+;; this is an attempt to unify the various types of databases
+;; that we have lying around into a single format so that,
+;; as long as we conform to this format, we can build training
+;; code that will work, visualization tools, and new databases.
+;;
+;; So here is the idea. Objects are char-db compatible if they 
+;; understand the following methods:
+;;.PP
+;; (==> <db> get-inp <n>): returns the <n>th character or
+;;   word in the database as a "rawchar" object.
+;;   this object contains the image of the character or 
+;;   word, and its baseline and coreheight in pixels, and its skew 
+;;   angle. these images can have variable size.
+;;.PP
+;; (==> <db> get-des <n>): returns an idx1 of int
+;;   whose elements are the ASCII codes of the characters in
+;;   the word.
+;;.PP
+;; (==> <db> size): returns the total number of elements
+;;   in the database
+;; (==> <db> next): advance current pointer to the next pattern.
+;; (==> <db> seek <n>): asvance current pointer to <n>-th pattern.
+;;.PP
+;; optionally: a message (==> <db> get-info i) returns
+;; additional information such as whether the characters are
+;; machine print, hand print, mixed.....
+;; the resolution, point size, font.......
+;;.PP
+;; the calls (==> <db> get <n> 'input), (==> <db> get <n> 'desired)
+;; (==> <db> get <n> 'info) are provided to provide compatibility
+;; with previous patrice-style databases.
+;;.PP
+;; Special types of char-db compatible classes are provided for 
+;; normalizing, distorting, and combining, the content of existing 
+;; char-db compatible objects.
+(defclass char-db object 
+  ((-int-) current))
+
+#? (==> <char-db> seek <i>) 
+;; set pointer to <i>-th item
+(defmethod char-db seek (i) 
+  ((-int-) i)
+  (setq current i))
+
+#? (==> <char-db> tell <i>) 
+;; set pointer to <i>-th item
+(defmethod char-db tell () current)
+
+#? (==> <char-db> size)
+;; reutnrs the size of the database
+(defmethod char-db size () (let ((z 0)) (-int- z) z))
+
+#? (==> <char-db> get-inp <n>)
+;; returns <n>-th item as a rawchar
+(defmethod char-db get-inp (n)
+  ((-int-) n)
+  (let* ((m (short-matrix 5 5)))
+  (new rawchar m 5 5 0)))
+
+#? (==> <char-db> get-inp <n>)
+;; returns labels (ASCII codes) of <n>-th item
+;; in an idx1 of ints.
+(defmethod char-db get-des (n) 
+  ((-int-) n) 
+  (let ((m (int-matrix 1))) (m n) m))
+
+(defmethod char-db get-info (n) ())
+
+;; non-compilable functions provided for compatibility with
+;; patrice's db
+
+#? (==> <char-db> next)
+;; move pointer to next item
+(defmethod char-db next ()
+  (incr current)
+  (when (>= current (==> this size)) (setq current 0))
+  current)
+
+(defmethod char-db get (n what)
+  (selectq what
+	   (input (==> this get-inp n))
+	   (desired (==> this get-des n))
+	   (info (==> this get-info n))))
+
+#? (==> <char-db> get-current <what>)
+;; get current item. if <what> is equal to 'input,
+;; the input item is returned (most likely a rawchar),
+;; if it is equal to 'desired, the label is returned
+;; (most likely an ASCII code), if it is 'info
+;; extra information on the item is returned
+;; (format is not standardized).
+(defmethod char-db get-current (what) (==> this get current what))
+
+(defmethod char-db display (n x y zoom)
+  (let* ((rc (==> this get-inp n))
+         (labelvec (==> this get-des n))
+         ;(st (str label))
+         (st (labelvec2str labelvec))
+         (dims (rect-text 0 0 "000"))
+         (lh (nth 3 dims))
+         (lw (nth 2 dims)))
+    (graphics-batch
+     (draw-text x (+ y lh) st)
+     (==> rc display x (+ y lh 2) zoom)
+     (list (+ x (max lw (* zoom (idx-dim :rc:image 1))))
+           (+ y lh 2 (* zoom (idx-dim :rc:image 0)))))))
+
+(defmethod char-db display-page (from zoom)
+  (let* ((winw (xsize)) (winh (ysize))
+         (lmargin 10) (xx lmargin) (yy 10)
+         (goon t)
+          (maxdeltay 0))
+    (cls)
+    (while goon
+      (let (( (nx ny) (==> this display from xx yy zoom)))
+        (setq maxdeltay (max maxdeltay (- ny yy)))
+        (if (> (+ nx (- nx xx) 8) winw)
+            (progn
+              (setq xx lmargin)
+              (when (> (+ yy (* 2 (- ny yy)) 8) winh) (setq goon ()))
+              (setq yy (+ yy maxdeltay 4)))
+          (setq xx (+ nx 4))))
+      (incr from)
+      (when (= from (==> this size)) (setq goon ()))
+      )
+    from))
+
+;; return a matrix with the indices of all the patterns
+;; for which (func <label>) returns non-nil
+(defmethod char-db filter (func)
+  (let* ((s (==> this size))
+	 (m (int-matrix s))
+	 (n 0))
+    (for (i 0 (1- s))
+	 (when (func (==> this get-des i)) 
+	   (m n i) (incr n)))
+    (narrow m 0 n 0)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? multi-db
+;; concatenaation of multiple char-db
+;; like a concat-db in Patrice's library, but this one does not assume the 
+;; members are db, it just assumes they have methods get and size, so it will
+;; work with compiled char-db compatible objects.
+(defclass multi-db char-db
+  base-array
+  size-matrix
+  size)
+
+#? (new multi-db <base-list>)
+;; make a new char-db compatible object by concatenating
+;; all the char-db compatible objects in list <base-list>.
+(defmethod multi-db multi-db (base-list)
+  (let* ((n-base (length base-list)))
+    (setq base-array (array n-base))
+    (base-array () base-list)
+    (setq size-matrix (int-matrix n-base)))
+  (==> this make-size-table)
+  (setq current 0))
+
+(defmethod multi-db make-size-table ()
+  (let ((p 0))
+    (for (i 0 (1- (idx-dim base-array 0)))
+      (size-matrix i p)
+      (incr p (==> (base-array i) size)))
+    (setq size p)))
+
+(defmethod multi-db size () size)
+
+(defmethod multi-db get-inp (i)
+  ((-int-) i)
+  (let ((n (idx-i1bsearch size-matrix i)))
+    (==> (base-array n) get-inp (- i (size-matrix n)))))
+
+(defmethod multi-db get-des (i)
+  ((-int-) i)
+  (let ((n (idx-i1bsearch size-matrix i)))
+    (==> (base-array n) get-des (- i (size-matrix n)))))
+
+(defmethod multi-db get-info (i)
+  (let ((n (idx-i1bsearch size-matrix i)))
+    (==> (base-array n) get-info (- i (size-matrix n)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? narrow-db
+;; essentally the same as sub-db, but does not check
+;; that what is passed is a db
+(defclass narrow-db char-db
+  base
+  offset
+  size)
+
+;; (defclass narrow-db char-db
+;;   ((-obj- (char-db)) base)
+;;   ((-int-) offset)
+;;   ((-int-) size))
+
+#? (new narrow-db <base-list>)
+;; make a new char-db compatible object by taking
+;; a range of items from the db passed as argument
+(defmethod narrow-db narrow-db (b siz off)
+  ;; ((-obj- (char-db)) b)
+  ;; ((-int-) siz off)
+  (when (> (+ siz off) (==> b size)) (error "illegal range for narrow-db"))
+  (when (or (< off 0) (< siz 0)) 
+    (error "offset and size of narrow-db must be positive"))
+  (setq base b)
+  (setq offset off)
+  (setq size siz)
+  (setq current 0))
+
+(defmethod narrow-db size () size)
+
+(defmethod narrow-db get-inp (n)
+  ;; ((-int-) n)
+  (==> base get-inp (+ offset n)))
+
+(defmethod narrow-db get-des (n)
+  ((-int-) n)
+  (==> base get-des (+ offset n)))
+
+(defmethod narrow-db get-info (n)
+  (==> base get-info (+ offset n)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? permute-db
+;; like map-db
+(defclass permute-db char-db
+  base
+  map)
+
+(defmethod permute-db permute-db (b)
+  (setq base b)
+  (setq map (int-matrix (==> base size)))
+  (idx-i1fill-with-index map)
+  ())
+
+(defmethod permute-db size () (idx-dim map 0))
+
+(defmethod permute-db get-inp (n)
+  (==> base get-inp (map n)))
+
+(defmethod permute-db get-des (n)
+  (==> base get-des (map n)))
+
+(defmethod permute-db get-info (n)
+  (==> base get-info (map n)))
+
+(defmethod permute-db shuffle ()
+  (permute-db-shuffle map))
+
+(defmethod permute-db set-map (m) 
+  (setq map m)
+  (setq current 0))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? prepro-db
+;; a char-db which hosts an object that
+;; can transform rawchars into rawchars.
+(defclass prepro-db char-db
+  base 
+  prepro)
+
+#? (new prepro-db <base> <prepro>)
+;; makes a new prepro-db, <base> must be a char-db
+;; and <prepro> a module that operates on rawchars.
+;; <prepro> must understand the method fprop with 2 arguments,
+;; an input rawchar and an output rawchar. fprop should appropriately
+;; resize the output rawchar.
+(defmethod prepro-db prepro-db (b pp)
+  (setq base b)
+  (setq prepro pp))
+
+(defmethod prepro-db size () (==> base size))
+
+(defmethod prepro-db get-inp (n)
+  (let ((rez (new rawchar (short-matrix 5 5) 5 5 0)))
+    (==> prepro fprop (==> base get-inp n) rez)
+    rez))
+
+(defmethod prepro-db get-des (n)
+  (==> base get-des n))
+
+(defmethod prepro-db get-info (n)
+  (==> base get-info n))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? normchar-db
+;; a normchar-db is a char-db compatible object that builds
+;; size-normalized, and possibly distorted characters from
+;; another char-db compatible object.
+(defclass normchar-db char-db
+  base
+  twiddler
+  trans-params
+  n-fold)
+
+;; (defclass normchar-db char-db
+;;   ((-obj- (char-db)) base)
+;;   ((-obj- (rawchar-twiddle)) twiddler)
+;;   ((-obj- (rawchar)) thechar)
+;;   ((-idx2- (-flt-)) trans-params)
+;;   ((-bool-) n-fold))
+
+#? (new normchar-db <pdb> <h> <w> <bl> <ch> <n-fold> <xt> <yt> <scal> <compr> <sk>)
+;; build a new normchar-db from a char-db compatible db <pdb>.
+;; <h> is the total height of the output images
+;; <w> is the total width of the output images
+;; <bl> is the desired baseline position in the outut images
+;; <ch> is the desired core height in the ouput images
+;; <n-fold> is an integer, is it is 0, no deformation is applied to the
+;; rawchar images in <pdb>, and the remaining arguments are ignored. 
+;; If it is non 0, the database <pdb> is replicated
+;; <n-fold> times, with each copy containing different distortions of the original
+;; images. The following arguments determine the size of the random distortions
+;; applied to each pattern. 
+;; <xt>: images will be translated horizontally by a random amount between -<xt> and <xt>
+;; <yt>: same for vertical translation
+;; <scal>: images will be scaled by a random factor between 1-<scal> and 1+<scal>
+;; <compr>: images will be compressed by a random amount between 1-<compr> and 1+<compr>
+;; <sk>: images will be skewed a random angle whose tangent is between -<sk> , <sk>
+(defmethod normchar-db normchar-db (pdb h w bl ch nf xt yt scal compr sk)
+  ;; ((-obj- (char-db)) pdb)
+  ;; ((-int-) nf)
+  ;; ((-flt-) h w bl ch xt yt scal compr sk)
+  (setq base pdb)
+  (setq n-fold nf)
+  (setq current 0)
+  (let* ((siz (==> base size)))
+    ((-int-) siz)
+    (if (= n-fold 0)
+	(progn
+	  (setq twiddler (new rawchar-normal h w bl ch 1))
+	  (setq trans-params (matrix 1 1)))
+      (setq twiddler (new rawchar-twiddle h w bl ch 1))
+      (setq trans-params (matrix (* n-fold siz) 6))
+      (fill-trans-params trans-params siz xt yt scal compr sk)))
+  ())
+
+(defmethod normchar-db size ()
+  (if (<> 0 n-fold) (idx-dim trans-params 0) (==> base size)))
+
+(defmethod normchar-db get-inp (n)
+  ;; ((-int-) n)
+  (if (= 0 n-fold)
+      (let ((rc (==> base get-inp n))
+            (thechar (new rawchar (short-matrix-nc 1 1) 1 1 0)))
+	(==> twiddler fprop rc thechar)
+	thechar)
+    (let ((rc (==> base get-inp (trans-params n 0)))
+          (thechar (new rawchar (short-matrix-nc 1 1) 1 1 0))
+	  (tp (select trans-params 0 n)))
+      (==> twiddler fprop rc thechar (tp 1) (tp 2) (tp 3) (tp 4) (tp 5))
+      thechar)))
+
+(defmethod normchar-db get-des (n)
+  ((-int-) n)
+  (if (= 0 n-fold)
+      (==> base get-des n)
+    (==> base get-des (trans-params n 0))))
+
+(defmethod normchar-db get-info (n) ())
+
+;; example of use
+;; (setq bb (new normchar-db (new narrow-db corinna-training 100 0) 
+;;               32 32 23 12 6 1 1 .1 .1 .1)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "char_db" 
+	  (char-db seek tell size get-inp get-des)
+	  permute-db-shuffle
+	  fill-trans-params)

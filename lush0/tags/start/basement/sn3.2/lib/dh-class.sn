@@ -1,0 +1,380 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; ------------------------------------------------------------------------
+;;;          O B J E C T   C O M P I L A T I O N   S U P P O R T
+;;; ------------------------------------------------------------------------
+
+(mload "dh-macro")
+
+;;--------------------------------------------------------------
+
+(dhm-t letslot(source)
+       (when (> 1 (length source))
+	     (dhc-error "one or more arguments expected"))
+       (let* ((obj-tnode (dhc-parse-expr-t (cadr source)))
+	      (prog-tnode ())
+	      (symbol-table symbol-table)
+	      (object-c-name ()))
+	 
+	 (when ~(==> :obj-tnode:type is-an-objptr)
+	       (dhc-error "first argument must be an object"))
+	 (setq object-c-name :obj-tnode:symbol:c-name)
+	 (each ((slot (unode-val :(unode-val :obj-tnode:type:u-type):u-temps)))
+           (let ((sym (new dhc-symbol (car slot) 0)))
+             (dhc-unify-types (cdr slot) :sym:type)
+             (setq :sym:c-name (concat object-c-name "->"
+                                       (dhc-lisp-to-c-name
+                                        (pname (car slot)))))
+             (setq symbol-table (append symbol-table
+                                        (list (cons (car slot) sym))))))
+	 (setq prog-tnode (dhc-parse-progn-t (cddr source)))
+	 (setq :prog-tnode:tn-list (cons obj-tnode :prog-tnode:tn-list))
+	 prog-tnode))
+
+(dhm-c letslot(source treetype retplace)
+       (let ((ret (dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace)))
+         (let* ((ctype (dhu-type (dhu-type :(cadr :treetype:tn-list):type)))
+                (cname (dhu-name ctype))
+                (kclass (concat "K_Class_" cname))
+                (cclass (class-cclass (eval (named cname)))) )
+           (when cclass
+             (add-c-externs (dhc-class-to-struct-decl ctype))
+             (add-c-externs (sprintf "extern dhclassconstraint %s;" kclass))
+             (add-c-depends "CLASS" kclass (last (classinfo-c cclass))) ) )
+	 ret ) )
+
+(dhm-t scope(source)
+       (when (> 3 (length source))
+         (dhc-error "two or more arguments expected"))
+       (let* ((symb-tnode (dhc-parse-expr-t (cadr source)))
+	      (slot-list (cddr source))
+	      (tn-list (list symb-tnode))
+	      (class-type ())
+	      (object-slots ())
+	      (slot-info ())
+	      (ret-type ()))
+	 (when (null  (==> :symb-tnode:type is-an-objptr))
+           (dhc-error "first argument must be an object"))
+	 (setq ret-type :symb-tnode:type)
+	 (do-while (consp slot-list)
+           (if (null (==> ret-type is-an-objptr))
+               (dhc-error "slot is not an object" (car slot-info)) )
+           (setq object-slots (unode-val :(dhu-type ret-type):u-temps))
+           (nconc1 tn-list (new t-node () ret-type (car slot-list)))
+           (when (not (setq slot-info (assoc (car slot-list) object-slots)))
+             (dhc-error 
+              (sprintf "%l is not a valid slot of" (car slot-list))
+			  (cadr source)))
+           (setq ret-type (cdr slot-info))
+           (setq slot-list (cdr slot-list)) )
+	 (if (==> ret-type is-a-simple)
+	     (new t-node tn-list ret-type ())
+	   (if (not (==> ret-type is-a-ptr))
+	       (error "scope returned type that wasn't a simple or a ptr")
+	     (new t-node tn-list ret-type ()))) ) )
+
+(dhm-c scope(source treetype retplace)
+       (let* ((tn-list (cdr :treetype:tn-list))
+	      (cname-src (dhc-parse-expr-c (cadr source) (car tn-list) ()))
+	      (return-type :treetype:type)
+	      (slot-list (cddr source))
+	      (result ()))
+	 (setq result (sprintf "%s" cname-src))
+	 (each  ((slot slot-list)
+		 (tn (cdr tn-list)) )
+           (let* ((ctype (dhu-type (dhu-type :tn:type)))
+                  (cname (dhu-name ctype))
+                  (kclass (concat "K_Class_" cname))
+                  (cclass (class-cclass (eval (named cname)))) )
+             (when cclass
+               (add-c-externs (dhc-class-to-struct-decl ctype))
+               (add-c-externs (sprintf "extern dhclassconstraint %s;" kclass))
+               (add-c-depends "CLASS" kclass (last (classinfo-c cclass))) ) )
+           (setq result 
+                 (concat result (sprintf "->%s" (dhc-lisp-to-c-name  (pname slot)))) ) )
+         result ) )
+
+(dhm-t ==>(source)
+       (when (> 3 (length source))
+         (dhc-error "two or more arguments expected"))
+       (let* ((obj-tnode (dhc-parse-expr-t (cadr source)))
+	      (method-name (caddr source))
+	      (args (if (consp (nthcdr 3 source))
+			(all ((arg (nthcdr 3 source)))
+			     (dhc-parse-expr-t arg))))
+	      (class-name ())
+	      (class-info-t ())
+	      (sup-class ())
+	      (class-method ()))
+         
+	 (when ~(==> :obj-tnode:type is-an-objptr)
+	       (dhc-error "first argument must be an object" (cadr source)))
+	 
+	 (setq class-name
+	       (unode-val :(unode-val
+			    :(unode-val 
+			      :obj-tnode:type:u-type):u-type):u-name))
+	 (when (consp method-name)
+           (setq class-name (car method-name))
+           (setq method-name (cdr method-name)))
+         
+	 (when ~(classp (eval (named class-name)))
+	       (dhc-error "not a class" class-name))
+
+	 (setq class-method
+	       (assoc (dhc-lisp-to-c-name (pname method-name))
+		      (dhc-methods-of-class class-name)))
+	 (when (null class-method)
+           (dhc-error 
+            (sprintf "currently no such method in %s"
+                     class-name) method-name))
+	 
+	 (when (<> (length source)
+		   (+ 2 (length (cadr (cdr class-method)))))
+           (dhc-error 
+            (sprintf "%s takes %d argument(s)" (car class-method)
+                     (1- (length (cadr (cdr class-method))))) source))
+	 ;; the following was derived from the dhc-parse-dh-t
+	 (let* ((func-type (dhc-desc-to-type (cdr class-method)))
+		(func-temps (unode-val :func-type:u-temps))
+		(ty-alist ())
+		(return-type (unode-val :func-type:u-type))
+		(func-arg (unode-val :func-type:u-extra))
+		(tnl (cons obj-tnode args))
+		(calling-types (all ((tynl tnl)) :tynl:type))
+		(return-node ()))
+	   
+           ;;;; UNIFY RETURNABLES ;;;;
+           
+	   (each ((ty func-arg)
+		  (da calling-types))    
+             (dhc-unify-types ty da))
+	   
+	   (setq ty-alist (dhc-unify-all-dh calling-types func-temps return-type))
+	   (setq tnl (append (list obj-tnode)
+			(list (new t-node () func-type (caddr source)))
+			(cdr tnl)))
+	   (setq return-node (new t-node tnl return-type))
+	   (setq :return-node:transfer 
+		 (all ((ty func-temps))
+                   (let ((sym (new dhc-symbol 
+                                   (named (sprintf "%d_met_%s" 
+                                                   (postincr tmpnames-seed)
+                                                   (pname (dht-short 
+                                                           (dhu-tclass ty)))))
+                                   lex-level)))
+                     (while (==> ty is-a-ptr) (setq ty (dhu-type ty)))
+                     (dhc-unify-types ty :sym:type)
+                     sym)))
+	   (setq bump-list (append bump-list :return-node:transfer))
+	   
+	   return-node)))
+
+(dhm-c ==>(source treetype retplace)
+       (let* ((this (cadr :treetype:tn-list))
+	      (method-name (dhc-lisp-to-c-name (pname (caddr source))))
+	      (this-class (unode-val 
+			   :(unode-val 
+			     :(unode-val :this:type:u-type):u-type):u-name))
+	      (class-method-list (dhc-methods-of-class this-class))
+	      (method-index 0)
+	      (dh-info-c ())
+	      (symbol (dhc-search-symtable (named this-class) global-table))
+	      (args (dhc-parse-expr-c (cadr source) this ())))
+         
+	 (add-c-externs (dhc-class-to-struct-decl (dhu-type (dhu-type :this:type))))
+	 (setq args
+	       (append (list args)
+		       (all ((so (nthcdr 3 source))
+			     (tt (nthcdr 3 :treetype:tn-list)))
+                         (dhc-parse-expr-c so tt ()))))
+	 (setq args
+	       (append (list (car args))  ;; first arg is never a number
+		       (all ((arg (cdr args))
+			     (ty (nthcdr 3 :treetype:tn-list)))
+                         (if (==> :ty:type is-a-number)
+                             (concat "(" (dhc-type-to-c-decl :ty:type) ") "
+                                     arg)
+                           arg))))
+         
+	 ;; get the index into the method table.  1st method is index 0
+	 (let ((class-method-list class-method-list))
+	   (while (<> method-name (car (car class-method-list)))
+	     (setq method-index (1+ method-index))
+	     (setq class-method-list (cdr class-method-list))
+	     (when (null class-method-list)
+               (error (sprintf
+                       "%s %s" "dhm-c ==> failure. "  
+                       "Couldn't find a method which should exist")))))
+	 
+         (let ((cclass (class-cclass (eval (named this-class)))))
+           (cond
+            (cclass
+             (setq dh-info-c
+                   (cons (car args)
+                         (cdr (dhinfo-c (nth method-index
+                                             (nth 4 (classinfo-c cclass)) ))) ) ) )
+            (symbol
+	     (setq dh-info-c 
+                   (list (car args)  "" "" ""
+                         (concat "K_Class_" this-class "_" method-name)
+                         0 ) ) )
+            (t
+             (dhc-error "class is not compiled and not in symbol table"
+                        this-class ) ) ) )
+         
+	 (let (((cfunc mfunc ctest mtest kfunc dkey) dh-info-c)
+               (auxargs (all ((sym :treetype:transfer)) :sym:c-name)) )
+	   (setq cfunc (sprintf "%s->Methods[%d]" cfunc method-index))
+	   (setq args (insert-op (append args auxargs) ", "))
+	   (when (<> ctest "")
+             (add-c-statements (concat (if (<> mtest "") mtest ctest) 
+                                       "(" args ");" ) ) )
+	   ;; Avoid returning inline because of side affects
+	   (if (<> mfunc "")
+	       ;; if there's a macro, add-c it and return "0"
+	       (progn (add-c-statements (concat mfunc "(" args ", BASETYPE);")) "0")
+	     
+	     ;; unless ignored, a c function needs a retplace
+	     (if ~:treetype:ignore
+		 (progn
+		   (when ~retplace
+                     (setq retplace (dhc-declare-temp-var :treetype:type)))
+		   (setq cfunc (sprintf "%s = ((%s (*)()) %s)" retplace
+					(dhc-type-to-c-decl :treetype:type)
+					cfunc)))
+	       (setq cfunc (sprintf "((%s (*)()) %s)"
+                                    (dhc-type-to-c-decl :treetype:type)
+                                    cfunc)))
+             ;; add depends
+             (when (<> dkey 0)
+               (let* ((kclass (concat "K_Class_" this-class))
+                      (cclass (class-cclass (eval (named this-class)))) 
+                      (ckey (last (classinfo-c cclass))) )
+                 (add-c-externs (sprintf "extern dhclassconstraint %s;" kclass))
+                 (add-c-depends "CLASS" kclass ckey)
+                 (add-c-externs (sprintf "extern dhconstraint %s;" kfunc))
+                 (add-c-depends "DH" kfunc dkey) ) )
+	     ;; add-c the c function and return retplace
+	     (add-c-statements
+	      (concat "/* method called: " method-name " */")
+	      (concat cfunc "(" args ");"))
+	     retplace ) ) ) )
+
+
+(dhm-t new(source)
+       (let* ((class-name (cadr source))
+	      (class-type (dhc-class-to-dhc-type (dhc-lisp-to-c-name
+						  (pname class-name))))
+	      (class-methods (unode-val :class-type:u-extra))
+	      (args (cddr source)))
+	 
+	 (if (assoc class-name class-methods)  ;; constructor exists
+	     (dhc-parse-replacement-source-t
+	      source
+	      (list 'let '((_x_ (new-empty `class-name)))
+		    (append '(==>) '(_x_) (list class-name) args)
+		    '_x_))
+	   (when (<> 0 (length args))
+		 (dhc-error 
+		  "new should have no args besides class since no constructor"
+		  source))
+	   (dhc-parse-replacement-source-t
+	    source
+	    '(new-empty `class-name)))))
+
+(dhm-t new-empty(source)
+       (when (<> 1 (length (cdr source)))
+	     (dhc-error "expected only one argument" source))
+
+       (let* ((class-name (cadr source))
+	      (class-type (dhc-class-to-dhc-type 
+			   (dhc-lisp-to-c-name 
+			    (pname class-name))))
+	      (tnl ())
+	      (obj-type (dhc-obj-type-from-class 
+			 (dhc-lisp-to-c-name (pname class-name))))
+	      (symb-obj (new dhc-symbol
+			     (named (sprintf "%d_obj" tmpnames-seed))
+			     lex-level)))
+
+	 (setq tnl (list (new t-node () class-type class-name)))
+	 (setq tnl (new t-node tnl (new dhc-type 'dht-ptr obj-type) ()))
+	 (incr tmpnames-seed)
+	 (dhc-unify-types :symb-obj:type obj-type)
+	 (setq bump-list (append bump-list (list symb-obj)))
+	 (setq :tnl:transfer (list symb-obj))
+	 tnl))
+
+(dhm-c new-empty(source treetype retplace)
+       (let ((obj-sym (car :treetype:transfer)))
+         (let* ((ctype (dhu-type (dhu-type :treetype:type)))
+                (cname (dhu-name ctype))
+                (kclass (concat "K_Class_" cname))
+                (cclass (class-cclass (eval (named cname)))) )
+           (when cclass
+             (add-c-externs (dhc-class-to-struct-decl ctype))
+             (add-c-externs (sprintf "extern dhclassconstraint %s;" kclass))
+             (add-c-depends "CLASS" kclass (last (classinfo-c cclass))) ) )
+	 :obj-sym:c-name ) )
+
+(dhm-t obj-super(source)
+       (if (<> (length source) 3)
+	   (dhc-error "takes 2 args (class and obj)" (car source)))
+       (let* ((class-name (cadr source))
+	      (s-name (pname class-name))
+	      (class-type (dhc-class-to-dhc-type (dhc-lisp-to-c-name s-name)))
+	      (obj-tn (dhc-parse-expr-t (caddr source)))
+	      (objptr-type :obj-tn:type)
+	      (obj-type (dhu-type objptr-type))
+	      (obc ())
+	      (new-obj-type ()))
+
+	 (if (<> (dhu-tclass class-type) 'dht-class)
+	     (dhc-error "Argument 1 must be a class" (cadr source)))
+	 (if ~(==> objptr-type is-an-objptr)
+	   (dhc-error "Argument 2 must be an object" (caddr source)))
+
+	 (setq obc (dhu-type obj-type))
+	 (while (and (<> s-name (dhu-name obc))
+		     (<> 'dht-nil (dhu-tclass obc)))
+	   (setq obc (dhu-type obc)))
+	 (when (= 'dht-nil (dhu-tclass obc))
+	       (dhc-unif-error
+		(sprintf "object's class not a subclass of %s" s-name)))
+	 (setq new-obj-type (dhc-obj-type-from-class s-name))
+	 (dhc-unify-types new-obj-type obj-type)
+	 (new t-node (list (new t-node () class-type class-name) obj-tn)
+	      (new dhc-type 'dht-ptr new-obj-type))))
+
+(dhm-c obj-super(source treetype retplace)
+       (sprintf "((%s) %s)" (dhc-type-to-c-decl :treetype:type)
+		(dhc-parse-expr-c (last source) 
+				  (last :treetype:tn-list) ())))
+
+;;******************************************************************************
+
+(setq dh-class t)

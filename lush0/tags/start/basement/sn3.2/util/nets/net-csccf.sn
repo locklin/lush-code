@@ -1,0 +1,122 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; standard LeNet2/LeNet5 class
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "libnets")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass net-csccf idx3-module
+  ((-obj- (c-layer)) c0-module)
+  ((-obj- (idx3-ddstate)) c0-state)
+  ((-obj- (s-layer)) s0-module)
+  ((-obj- (idx3-ddstate)) s0-state)
+  ((-obj- (c-layer)) c1-module )
+  ((-obj- (idx3-ddstate)) c1-state)
+  ((-obj- (c-layer)) c2-module)
+  ((-obj- (idx3-ddstate)) c2-state)
+  ((-obj- (f-layer)) f-module))
+
+#? (new net-csccf <ini> <inj> <ki0> <kj0> <tbl0> <si0> <sj0> <ki1> <kj1> <tbl1> <ki2> <kj2> <tbl2> <outthick> <prm>)
+;; makes a new net-csccf module.
+;; <ini> <inj>: expected max size of input for preallocation of internal states
+;; <ki0> <kj0>: kernel size for first convolutional layer
+;; <tbl0>: table of connections between input anf feature maps for first layer
+;; <si0> <sj0>: subsampling for first layer
+;; <ki1> <kj1> <tbl1>: kernel and table for next layer
+;; <ki2> <kj2> <tbl2>: same for last convolution layer
+;; <outthick>: number of outputs.
+;; <prm> an idx1-ddparam in which the parameters will be allocated.
+(defmethod net-csccf net-csccf 
+  (
+   ini inj
+   ki0 kj0 tbl0 si0 sj0
+   ki1 kj1 tbl1 
+   ki2 kj2 tbl2
+   outthick
+   prm)
+  ((-obj- (idx1-ddparam)) prm)
+  ((-int-)  ini inj
+	    ki0 kj0 si0 sj0
+	    ki1 kj1 
+	    ki2 kj2 outthick)
+  ((-idx2- (-int-)) tbl0 tbl1 tbl2)
+  (let* ((thick0 (1+ (idx-i1max (select tbl0 1 1))))
+	 (c0-sizi (1+ (- ini ki0)))
+	 (c0-sizj (1+ (- inj kj0)))
+	 (s0-sizi (/ c0-sizi si0))
+	 (s0-sizj (/ c0-sizj sj0))
+	 (thick1 (1+ (idx-i1max (select tbl1 1 1))))
+	 (c1-sizi (1+ (- s0-sizi ki1)))
+	 (c1-sizj (1+ (- s0-sizj kj1)))
+	 (s1-sizi c1-sizi)
+	 (s1-sizj c1-sizj)
+	 (thick2 (1+ (idx-i1max (select tbl2 1 1))))
+	 (c2-sizi (1+ (- s1-sizi ki2)))
+	 (c2-sizj (1+ (- s1-sizj kj2))))
+	 
+    (setq c0-module 
+	  (new c-layer ki0 kj0 1 1 tbl0 thick0 
+	       c0-sizi c0-sizj (new idx3-squasher) prm))
+    (setq c0-state (new idx3-ddstate thick0 c0-sizi c0-sizj))
+    (setq s0-module 
+	  (new s-layer si0 sj0 thick0 s0-sizi s0-sizj (new idx3-squasher) prm))
+    (setq s0-state (new idx3-ddstate thick0 s0-sizi s0-sizj))
+    (setq c1-module 
+	  (new c-layer ki1 kj1 1 1 tbl1 thick1 
+	       c1-sizi c1-sizj (new idx3-squasher) prm))
+    (setq c1-state (new idx3-ddstate thick1 c1-sizi c1-sizj))
+    (setq c2-module 
+	  (new c-layer ki2 kj2 1 1 tbl2 thick2
+	       c2-sizi c2-sizj (new idx3-squasher) prm))
+    (setq c2-state (new idx3-ddstate thick2 c2-sizi c2-sizj))
+    (setq f-module
+	  (new f-layer thick2 outthick c2-sizi c2-sizj 
+	       (new idx3-squasher) prm))
+    )
+  ())
+
+(defmethod net-csccf forget (v p)
+  (-flt- v p)
+  (==> c0-module forget v p)
+  (==> s0-module forget v p)
+  (==> c1-module forget v p)
+  (==> c2-module forget v p)  
+  (==> f-module forget v p)
+  ())
+
+(defmethod net-csccf fprop (in out)
+  ((-obj- (idx3-state)) in)
+  ((-obj- (idx3-state)) out)
+  (==> c0-module fprop in c0-state)
+  (==> s0-module fprop c0-state s0-state)
+  (==> c1-module fprop s0-state c1-state)
+  (==> c2-module fprop c1-state c2-state)
+  (==> f-module  fprop c2-state out)
+  ())
+
+(defmethod net-csccf bprop (in out)
+  ((-obj- (idx3-dstate)) in)
+  ((-obj- (idx3-dstate)) out)
+  (==> f-module  bprop c2-state out)
+  (==> c2-module bprop c1-state c2-state)
+  (==> c1-module bprop s0-state c1-state)
+  (==> s0-module bprop c0-state s0-state)
+  (==> c0-module bprop in c0-state)
+  ())
+
+(defmethod net-csccf bbprop (in out)
+  ((-obj- (idx3-ddstate)) in)
+  ((-obj- (idx3-ddstate)) out)
+  (==> f-module  bbprop c2-state out)
+  (==> c2-module bbprop c1-state c2-state)
+  (==> c1-module bbprop s0-state c1-state)
+  (==> s0-module bbprop c0-state s0-state)
+  (==> c0-module bbprop in c0-state)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "net-csccf" (net-csccf net-csccf forget fprop bprop bbprop))

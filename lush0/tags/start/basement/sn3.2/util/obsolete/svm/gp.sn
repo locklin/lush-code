@@ -1,0 +1,383 @@
+
+(mload "dh-compile")
+
+(cc-load "svm/gp2.c")
+
+
+(mload "db")
+;; (mload "libidx")
+
+
+#? (gptool)
+;; An interactive tool for looking at 2-dimensional examples.
+(autoload "gptool" gptool)
+(setq gp2-size 400)
+
+
+#? gp2-one
+;; Minimal output for the positive examples of a generalized portrait.
+;; The default value is <1>.
+(setq gp2-one   1)
+
+#? gp2-k
+;; Maximal output for the negative examples of a generalized portrait.
+;; The default value is <-1>.
+(setq gp2-k     -1)
+
+#? gp2-margin
+;; In the outer loops, patterns violating the constraints by more
+;; than <gp2-margin> are reintroduced in the working set. 
+;; The default value is <0.01>.
+(setq gp2-margin 0.01)
+
+#? gp2-eps
+;; The inner loops exits when the norm of the gradient on the working
+;; set becomes smaller than this quantity. The default value is <0.01>.
+(setq gp2-eps 0.01)
+
+#? gp2-rho
+;; The inner loops fails when the conjugate lagrangian becomes so high
+;; that it can be proved that a separation of <gp2-rho> in the output
+;; space does not exist. The default value is <0.01>.
+(setq gp2-rho 0.01)
+
+#? gp2-batch
+;; This is the number of examples added in the working set
+;; during each iteration of the outer loop. The default value is <10>.
+(setq gp2-batch 10)
+
+#? gp2-alpha
+;; This is the initial value of the lagrange coefficient used
+;; for initializing the working set the first time.
+;; The default value, <0>, is fine!
+(setq gp2-alpha 0)
+
+#? gp2-prune-p
+;; This flag enables the pruning algorithm when no separation
+;; can be found. Watch out that this algorithm is sometimes poor.
+;; The default value is <t>.
+(setq gp2-prune-p t)
+
+#? gp2-prune-list-p
+;; This flag enables the creation of a list of the pruned patterns.
+;; The default value is the empty list (false).
+(setq gp2-prune-list-p ())
+
+#? gp2-prune-list
+;; This is the list of the pruned patterns (vectors).
+(setq gp2-prune-list ())
+
+
+;;;;;;;;; FILL GP2
+
+
+#? (save-gp2 <gp> <filename>)
+;; Save the gp2 object <gp> into file <filename>.
+
+(de save-gp2(gp file)
+    (when (stringp file)
+	  (setq file (open-write file "gp")))
+    (gp2-write gp file) )
+
+
+#? (load-gp2 <filename> [<maxsize>])
+;; Loads a gp2 object from file <filename>.
+;; The optional argument <minsize> specifies a new 
+;; maximum size for adding support points.
+
+(de load-gp2(file &optional (maxsize 0))
+    (let ((gp (new-gp2 2 2 "dot1")))
+      (when (stringp file)
+	    (setq file (open-read file "gp")))
+      (gp2-read gp file maxsize)
+      gp ) )
+
+
+
+
+#? (gp2-refill <gp> <dbase> <max-in> <max-on> <pol> <alpha> <test>)
+;; Add patterns into a gp2 object.
+;;
+;; This function repeatitively gets the current object in <dbase>, 
+;; calls function <test> on it, adds it in the gp2 object <gp> if
+;; the test is positive and advance the database pointer to the next
+;; pattern.
+;;
+;; Patterns are added with polarity <pol> and coefficient <alpha>.
+;; Argument <max-in> is the maximum number of patterns to add,
+;; argument <max-on> is the maximum number of patterns to sweep
+;; on.
+;;
+;; This function returns a non nil result if patterns have been
+;; actually added. 
+
+(de gp2-refill(gp dbase max-in max-on pol alpha test)
+    
+    (let ((pat ())
+	  (in 0)
+	  (on 0) )
+      
+      (while (and (< in max-in)
+		  (< on max-on))
+	(setq pat (==> dbase get-current))
+	(when (test pat)
+	      (gp2-grow gp pat pol alpha (==> dbase get-index))
+	      (incr in) )
+	(==> dbase next)
+	(incr on) )
+
+      ;; return success test
+      (> in 0) ) )
+
+
+;;;;;;;;; PRUNING CODE
+
+
+#? (gp2-prune-worst <gp> <db0> <db1>)
+;;.SEE gp2-prune-list-p
+;;.SEE gp2-prune-list
+;; Finds the most constraining pattern in the working set.
+;; Remove it from the working set stored in the GP2 object <gp>,
+;; and from database <db0> or <db1> according to its polarity.
+;;
+;; The notion of a ``most constraining'' pattern pruning algorithm 
+;; is meaningful when a separation surface exists. 
+;; After a successful execution of <gp2-1k-learn> or <gp2-opt-learn>,
+;; pruning a few patterns and retraining might improve the results.
+;;
+;; This function is also used, as a heuristic, when no separation
+;; surface exist. Such a situation is detected when the maximized
+;; function becomes too large (often larger than 10^9!).
+;; It is amazing that <gp2-prune-worst> often prunes a reasonable
+;; pattern after such a divergence. Don't rely too much on it...
+
+(de gp2-prune-worst(gp m0 m1)
+    (let ((alphas (gp2-get-alpha gp))
+	  (indexes (gp2-get-index gp))
+	  (polarities (gp2-get-polarity gp))
+	  (dpt (gp2-get-dpt gp))
+	  (bad -1)
+	  (maxi -1) )
+      
+      (for (i 0 (1- (gp2-get-size gp)))
+	   (let ((x (alphas i)))
+	     (setq x (* x x (dpt i i)))
+	     (when (> x maxi)
+		   (setq maxi x)
+		   (setq bad i) ) ) )
+      
+      (gp2-shrink gp bad)
+      
+      (let* ((m (if (< (polarities bad) 0.5) m0 m1))
+	     (i (indexes bad))
+	     (j (==> m find-index i)) )
+	(when gp2-prune-list-p
+	      (setq gp2-prune-list 
+		    (cons (==> m get j) gp2-prune-list) ) )
+	(==> m remove j) ) ) )
+
+
+;;;;;;;;; GPORTRAIT 1 K
+
+
+#? (gp2-1k-learn <gp> <db0> <db1>)
+;;.SEE Generalized portrait.  Optimal HyperSurface.
+;;.SEE gp2-one
+;;.SEE gp2-k
+;;.SEE gp2-margin
+;;.SEE gp2-eps
+;;.SEE gp2-rho
+;;.SEE gp2-batch
+;;.SEE gp2-alpha
+;;.SEE (gp2-refill <gp> <dbase> <max-in> <max-on> <pol> <alpha> <test>)
+;;.SEE gp2-prune-p
+;;.SEE (gp2-prune-worst <gp> <db0> <db1>)
+;;
+;; Computes a ``generalized portrait'':
+;;
+;; Arguments <db0> and <db1> are databases of vectors. Their
+;; sizes must match the value specified during the creation of
+;; the GP2 object <gp>.
+;;
+;; This function computes a set of support points and Lagrange
+;; coefficients for separating the patterns of databases <db0> 
+;; and <db1>. The decision function is a linear combination of 
+;; inner products, as defined during the creation of the GP2 object.
+;;.IP
+;; Running the potential function on patterns of database 
+;; <db0> will return a result larger than the content
+;; of variable <gp2-one>.
+;;.IP
+;; Running the potential function on patterns of database 
+;; <db1> will return a result smaller than the content
+;; of variable <gp2-k>.
+;;.PP
+;; When the separation surface is found, this function 
+;; returns a threshold to use with <gp2-run>. 
+;; This threshold is always the mean of <gp2-one> and <gp2-k>.
+;;
+;; If no separation surface can be found, this function returns 
+;; the empty list, unless <gp2-prune-p> is non nil. 
+;; If the <gp2-prune-p> flag is non nil and no separation surface is
+;; found, the function <gp2-prune-worst> is called for excluding
+;; one example from the training set, and the algorithm is restarted.
+
+(de gp2-1k-learn(gp db0 db1)
+    
+    (let* ((ok 0)
+	   (thres (2/ (+ gp2-one gp2-k)))
+	   (m0 (new map-db db0))
+	   (m1 (new map-db db1)) 
+	   (m0size (==> m0 size))
+	   (m1size (==> m1 size))
+	   (m0batch (min m0size gp2-batch))
+	   (m1batch (min m1size gp2-batch)) )
+      
+      (==> m0 seek 0)
+      (==> m1 seek 0)
+      
+      ;; empty the gp2 object
+      (gp2-reset gp)
+      (setq gp2-prune-list ())
+      
+      ;; fill it with a few patterns of each class
+      (gp2-refill gp m0 m0batch m0size 0 gp2-alpha
+		  (lambda(c) t) )
+      (gp2-refill gp m1 m1batch m1size 1 gp2-alpha
+		  (lambda(c) t) )
+      
+      ;; run conjloop and refill
+      (do-while (and (>= ok 0)
+		     (let ((n1 (gp2-refill gp m0 m0batch m0size 0 0
+					   (lambda(c)
+					     (< (gp2-run gp c) 
+						(- gp2-one gp2-margin) )) ) )
+			   (n2 (gp2-refill gp m1 m1batch m1size 1 0
+					   (lambda(c) 
+					     (> (gp2-run gp c) 
+						(+ gp2-k gp2-margin) )) ) ) )
+		       (or n1 n2) ) )
+		
+		(while (and (< (setq ok (gp2-conjloop gp gp2-one gp2-k gp2-rho gp2-eps)) 0)
+			    gp2-prune-p )
+		  ;; if problem, prune
+		  (gp2-prune-worst gp m0 m1)
+		  (setq m0size (==> m0 size))
+		  (setq m1size (==> m1 size))
+		  (setq m0batch (min m0size gp2-batch))
+		  (setq m1batch (min m1size gp2-batch))
+		  (gp2-reset gp)
+		  (gp2-refill gp m0 m0batch m0size 0 gp2-alpha (lambda(c) t))
+		  (gp2-refill gp m1 m1batch m1size 1 gp2-alpha (lambda(c) t)) ) )
+      
+      ;; return threshold
+      (when (>= ok 0) 
+	    thres ) ) )
+	    
+
+
+
+
+
+;;;;;;;;; OPTIMAL HYPER STUFF
+
+
+
+#? (gp2-opt-learn <gp> <db0> <db1>)
+;;.SEE Generalized portrait.  Optimal HyperSurface.
+;;.SEE gp2-margin
+;;.SEE gp2-eps
+;;.SEE gp2-rho
+;;.SEE gp2-batch
+;;.SEE gp2-alpha
+;;.SEE (gp2-refill <gp> <dbase> <max-in> <max-on> <pol> <alpha> <test>)
+;;.SEE gp2-prune-p
+;;.SEE (gp2-prune-worst <gp> <db0> <db1>)
+;;
+;; Computes an ``optimal hypersurface''.
+;;
+;; Arguments <db0> and <db1> are databases of vectors. Their
+;; sizes must match the value specified during the creation of
+;; the GP2 object <gp>.
+;;
+;; This function computes a set of support points and Lagrange
+;; coefficients for separating the patterns of databases <db0> 
+;; and <db1>. The decision function is a linear combination of 
+;; inner products, as defined during the creation of the GP2 object.
+;;
+;; When the separation surface is found, this function 
+;; returns a threshold value <thres> such that
+;;.IP
+;; Running the potential function on patterns of database 
+;; <db0> will return a result larger than <thres> plus one.
+;;.IP
+;; Running the potential function on patterns of database 
+;; <db1> must return a result smaller than <thres> minus one.
+;;.PP
+;; If no separation surface can be found, this function returns 
+;; the empty list, unless <gp2-prune-p> is non nil. 
+;; If the <gp2-prune-p> flag is non nil and no separation surface is
+;; found, the function <gp2-prune-worst> is called for excluding
+;; one example from the training set, and the algorithm is restarted.
+
+(de gp2-opt-learn(gp db0 db1)
+    
+    (let* ((ok 0)
+	   (thres ())
+	   (m0 (new map-db db0))
+	   (m1 (new map-db db1)) 
+	   (m0size (==> m0 size))
+	   (m1size (==> m1 size))
+	   (m0batch (min m0size gp2-batch))
+	   (m1batch (min m1size gp2-batch)) )
+      
+      (==> m0 seek 0)
+      (==> m1 seek 0)
+      
+      ;; empty the gp2 object
+      (gp2-reset gp)
+      (setq gp2-prune-list ())
+      
+      ;; fill it with a few patterns of each class
+      (gp2-refill gp m0 m0batch m0size 0 
+		  (/ gp2-alpha m0batch)
+		  (lambda(c) t) )
+      (gp2-refill gp m1 m1batch m1size 1 
+		  (/ gp2-alpha m1batch)
+		  (lambda(c) t) )
+      
+      ;; run conjloop and refill
+      (do-while (and (>= ok 0)
+		     (let ((n1 (gp2-refill gp m0 m0batch m0size 0 0
+					   (lambda(c) 
+					     (< (gp2-run gp c) 
+						(- (1+ thres) gp2-margin) )) ) )
+			   (n2 (gp2-refill gp m1 m1batch m1size 1 0
+					   (lambda(c) 
+					     (> (gp2-run gp c) 
+						(+ (1- thres) gp2-margin) )) ) ) )
+		       (or n1 n2) ) )
+		
+		;; inner loop
+		(while (and (< (setq ok (gp2-ophyperloop gp gp2-rho gp2-eps)) 0)
+			    gp2-prune-p )
+		  (gp2-prune-worst gp m0 m1)
+		  (setq m0size (==> m0 size))
+		  (setq m1size (==> m1 size))
+		  (setq m0batch (min m0size gp2-batch))
+		  (setq m1batch (min m1size gp2-batch))
+		  (gp2-reset gp)
+		  (gp2-refill gp m0 m0batch m0size 0 gp2-alpha (lambda(c) t))
+		  (gp2-refill gp m1 m1batch m1size 1 gp2-alpha (lambda(c) t)) )
+		
+		;; compute threshold
+		(when (>= ok 0)
+		      (setq thres (gp2-threshold gp)) ) )
+      
+      ;; return threshold
+      (when (>= ok 0)
+	    thres ) ) )
+
+
+
+

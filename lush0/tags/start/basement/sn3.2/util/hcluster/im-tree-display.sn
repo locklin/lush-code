@@ -1,0 +1,343 @@
+(ogre)
+(mload "c-arrays")
+
+;;------------------------------------------------------------------------------
+#? (new tree-display <w> <h>
+;; Creates a visual object which contains all the information to draw 
+;; cluster-tree.  This information is computed and stored (in node-list) when
+;; the method set-data is called.  The method fast-repaint has been compiled
+;; for speed (at most a factor 2).
+;;
+(defclass tree-display visualobject
+
+  ;; node-list is a list of nodes, each corresponding to a square to print
+  ;; Composition of a node: ((node mat p1 p2 prune) x y w h)
+  ;; where node is a gptr pointing to the selected node, mat is an idx2 
+  ;; representing the cluster center, p1 and p2 are coordinates of parent,
+  ;; prune (1 or 0) is 1 if the tree is is pruned, x y w h is the box.
+  node-list
+  node-selected
+  pruning
+
+  ;; The following slots are used only for a compiled fast-repaint
+  ((-idx1- (-gptr-)) nodes)
+  ((-obj- (idx2-array)) mats)
+  ((-idx1- (-int-)) p1x p1y p2x p2y)
+  ((-idx2- (-int-)) rects)
+)
+
+(defmethod tree-display tree-display (w h)
+  (==> this (visualobject . visualobject) w h))
+
+(defmethod tree-display backpaint()
+  (cls) )
+
+(defmethod tree-display repaint ()
+  (let (((myx myy myw myh) rect) 
+        (rect-clip (clip)) )
+    (each ((((node mat p1 p2 node-prune) x y w h) node-list))
+      (incr x myx)
+      (incr y myy)
+      (when (collide-rect rect-clip (list x y w h))
+        (when (and node-selected (= node node-selected))
+          (color-rgb 1 0 0) )
+        (fill-rect x y w h)
+        (color color-fg)
+        (idx-bloop ((mat mat))
+          (idx-bloop ((mat mat))
+            (if (= -1 (mat)) (mat 0))))
+        (rgb-draw-matrix (1+ x) (1+ y) mat) )
+      (when (or p1 p2)
+        (let ((lx (+ x (div w 2)))
+              (ly (+ y h)) )
+          (when p1
+            (draw-line lx ly (+ myx (car p1)) (+ myy (cadr p1))))
+          (when p2
+            (draw-line lx ly (+ myx (car p2)) (+ myy (cadr p2)))) 
+          t ) ) ) ) )
+
+;; superseed previous definition of repaint
+(defmethod tree-display repaint ()
+  (let (((myx myy myw myh) rect))
+    (fast-repaint myx myy myw myh nodes node-selected mats p1x p1y p2x p2y
+                  rects)))
+
+(de fast-repaint (myx myy myw myh nodes node-selected mats p1x p1y p2x p2y
+                      rects)
+    ((-int-) myx myy myw myh)
+    ((-idx1- (-gptr-)) nodes)
+    ((-gptr-) node-selected)
+    ((-obj- (idx2-array)) mats)
+    ((-idx1- (-int-)) p1x p1y p2x p2y)
+    ((-idx2- (-int-)) rects)
+
+  (let ((rect-clip (clip))
+        (i 0))
+    ((-int-) i)
+    (idx-bloop ((node nodes) (p1x p1x) (p1y p1y) (p2x p2x) (p2y p2y)
+                (rect rects))
+
+      (let ((x (+ (rect 0) myx))
+            (y (+ (rect 1) myy))
+            (w (rect 2))
+            (h (rect 3))
+            (mat (==> mats get i)))
+        (-int- x y w h)
+
+        (when (collide-rect rect-clip (list x y w h))
+          (gsave
+           (when (and (bool #{ $node_selected!=0 #}) 
+                      (bool #{ ($(node)==$node_selected) #}))
+             (color (alloccolor 1 0 0) ))
+           (fill-rect x y w h))
+          (rgb-draw-matrix (1+ x) (1+ y) mat))
+
+        (when (or (<> (p1x) -1) (<> (p1y) -1))
+          (when (collide-rect rect-clip (list (int (+ myx (min (p1x) (p2x)))) (+ y h)
+                                              (int (- (p2x) (p1x)))
+                                              (int (- (+ myy (p1y)) (+ y h)))))
+            
+            (let ((lx (+ x (div w 2)))
+                  (ly (+ y h)) )
+              (when (<> -1 (p1x))
+                (draw-line lx ly (+ myx (p1x)) (+ myy (p1y))))
+              (when (<> -1 (p2x))
+                (draw-line lx ly (+ myx (p2x)) (+ myy (p2y))))
+              ))))
+      (incr i)))
+    t)
+
+(defmethod tree-display mouse-down(x y)
+  (let (((myx myy myw myh) rect)
+        (sel ()) )
+    (incr x (- myx))
+    (incr y (- myy))
+    (each ((no node-list))
+      (when (point-in-rect x y (cdr no))
+        (setq sel no) ) )
+    (when sel
+      (==> this select-node (caar sel))) ) )
+
+
+(defmethod tree-display select-node (node)
+  (setq node-selected node)
+  (when node
+    (let ((lnode (new cluster-access node)))
+      (==> thiswindowobject node-message
+           (sprintf "Size %2d Stdev %5.0f" (==> lnode n)
+                    (sqrt (==> lnode variance))))))
+  (==> this expose))
+
+
+(defmethod tree-display set-data (node &optional
+                                       (x 5) (y 5) (crop-x 30) (crop-y 30))
+  (setq node-list ())
+  (==> this initialize-tree node x y crop-x crop-y)
+
+  ;; This let is only to be able to call fast-repaint (compiled)
+  (let ((n (length node-list)))
+    (setq nodes (gptr-matrix-nc n))
+    (setq mats (new idx2-array n))
+    (setq p1x (int-matrix-nc n))
+    (setq p1y (int-matrix-nc n))
+    (setq p2x (int-matrix-nc n))
+    (setq p2y (int-matrix-nc n))
+    (setq rects (int-matrix-nc n 4))
+    (each ((((node mat p1 p2 prune) x y w h) node-list) (i (range 0 (1- n))))
+      (nodes i node)
+      (idx-bloop ((mat mat))
+        (idx-bloop ((mat mat))
+          (if (= -1 (mat)) (mat 0))))
+      (==> mats set i mat)
+      (p1x i (if (car p1) (car p1) -1))
+      (p1y i (if (cadr p1) (cadr p1) -1))
+      (p2x i (if (car p2) (car p2) -1))
+      (p2y i (if (cadr p2) (cadr p2) -1))
+      (rects i () (list x y w h))))
+
+  (let ((maxx 500)
+        (maxy 500) )
+    (each (((info x y w h) node-list))
+      (setq maxx (max maxx (+ x w)))
+      (setq maxy (max maxy (+ y h))) )
+    (==> this resize maxx maxy)
+    (==> this expose) ) )
+
+
+;; on return (list displace prune y-size)
+(defmethod tree-display initialize-tree (node x y crop-x crop-y)
+  (let* ((incx 5)
+         (incy 5)
+         (node-access (new cluster-access node))
+         (mat (euc-center-get-pat (==> node-access cluster)))
+         (x-size (min crop-x (idx-dim mat 0)))
+         (y-size (min crop-y (idx-dim mat 1)))
+         (cropped-mat (submatrix mat (list 0 (1- x-size)) (list 0 (1- y-size))))
+         (prune (= 1 (==> node-access n)))
+         (child1 (==> node-access child1))
+         (child1-return ())
+         (child2-return ())
+         (tdinfo ())
+         (tdrect ()) )
+
+    ;; Fill instructions for drawing
+    (idx-m2addm0 (idx-minus cropped-mat) ((matrix) 255) cropped-mat)
+    (setq tdrect 
+          (list (1- x) (1- y) 
+                (+ (idx-dim cropped-mat 1) 2)
+                (+ (idx-dim cropped-mat 0) 2) ) )
+    (setq tdinfo (list node cropped-mat))
+
+    (if (null child1)
+        ;; no children
+        (progn
+          (nconc1 tdinfo ())
+          (nconc1 tdinfo ())
+          (nconc1 tdinfo prune)
+          (if (and pruning prune)
+              (list (+ x incx) 0 prune)
+            (setq node-list (cons (cons tdinfo tdrect) node-list))
+            (list (+ x y-size incx) y-size prune)))
+
+      ;; two children
+      (setq child1-return (==> this initialize-tree child1
+                               x (+ y crop-y incy) crop-x crop-y))
+      (if (and pruning (last child1-return))
+          (setq child1-return (list x 0 (last child1-return))))
+      (nconc1 tdinfo
+              (list (+ x (/ (cadr child1-return) 2)) (+ y -1 crop-y incy)))
+
+      (setq child2-return 
+            (==> this initialize-tree (==> node-access child2)
+                 (car child1-return) (+ y crop-y incy) crop-x crop-y))
+      (if (and pruning (last child2-return))
+          (setq child2-return (list (car child1-return)
+                                    0 (last child2-return))))
+      (nconc1 tdinfo
+              (list (+ (car child1-return) (/ (cadr child2-return) 2))
+                    (+ y -1 crop-y incy)))
+      
+      (setq prune (and (last child1-return) (last child2-return)))
+      (nconc1 tdinfo prune)
+      (if ~(and pruning prune)
+        (setq node-list (cons (cons tdinfo tdrect) node-list)))
+      (list (car child2-return) y-size prune))))
+
+(defmethod tree-display prune (flag)
+  (setq pruning flag))
+
+;;------------------------------------------------------------------------------
+#? (new tree-window <cluster-tree>)
+;;
+;; Create a window to display a cluster-tree of 2D images (of floats).
+;; Several buttions are provided to split nodes, and display stuff.
+;;
+(defclass tree-window windowobject
+  the-top
+  the-file-menu
+  the-grow-button
+  grow-requester-button
+  grow-requester
+  iter-number
+  the-split-button
+  node-info-string
+  global-info-string
+  the-prune
+  the-viewer
+  the-tree-display 
+  tree
+
+  pos-x pos-y crop-x crop-y)
+
+(defmethod tree-window tree-window(atree &optional
+                                         (x 5) (y 5) (cx 30) (cy 30))
+  (setq tree atree)
+  (setq pos-x x)
+  (setq pos-y y)
+  (setq crop-x cx)
+  (setq crop-y cy)
+  (setq the-top
+        (new row
+             (setq the-file-menu
+                   (new stdbutton
+                        "Quit" (lambda (c) (==> thiswindowobject delete))) )
+             (setq grow-requester-button
+                   (new stdbutton "Grow n"
+                        (lambda(c) (==> grow-requester popup)) ) )
+             (setq the-grow-button
+                   (new stdbutton "Grow"
+                        (lambda(c) (==> thiswindowobject grow-action 1)) ) )
+             (setq global-info-string
+                   (new string ""))
+             (setq the-split-button
+                   (new stdbutton "Split-node"
+                        (lambda(c) (==> thiswindowobject split-action 1)) ) )
+             (setq node-info-string
+                   (new string "Please select a node") )
+             (setq the-prune
+                   (new checkbox "Prune" 
+                        (lambda (c) 
+                          (==> the-tree-display prune (==> c getdata))
+                          (==> the-tree-display set-data :tree:top
+                               pos-x pos-y crop-x crop-y))))
+             ) )
+
+  (==> the-prune setdata ())
+  (setq grow-requester (new requester this
+                            (new column
+                                 (setq iter-number (new editnumber 5 1))
+                                 (new stdbutton "grow"
+                                      (lambda (d) 
+                                        (==> thiswindowobject grow-action
+                                             (==> iter-number getdata))
+                                        (==> thisrequester popdown))))))
+
+  (==> this global-message)
+  (setq the-tree-display  (new tree-display 500 500))
+  (setq the-viewer (new viewer 400 400 the-tree-display t t))
+  (setq :the-viewer:vscroll:drag-callback :the-viewer:vscroll:call)
+  (setq :the-viewer:hscroll:drag-callback :the-viewer:hscroll:call)
+  (==> this windowobject 0 0 500 500 "Essai" the-top the-viewer)
+  (==> the-tree-display set-data :tree:top pos-x pos-y crop-x crop-y)
+  the-tree-display )
+
+(defmethod tree-window manage-geometry()
+  (let (((x y w h) rect)
+        ((mx my mw mh) :the-top:rect))
+    (==> the-top geometry 0 0 w mh)
+    (==> the-viewer geometry 0 mh w (max 30 (- h mh)))))
+
+(defmethod tree-window grow-action(p)
+  (==> tree add-cluster p)
+  (==> this global-message)
+  (==> the-tree-display select-node (==> tree max-variance-node))
+  ;; Redisplay
+  (==> the-tree-display set-data :tree:top pos-x pos-y crop-x crop-y))
+
+(defmethod tree-window split-action(p)
+  (if :the-tree-display:node-selected
+      (==> tree split-cluster :the-tree-display:node-selected))
+  (==> this global-message)
+  (==> the-tree-display select-node
+       (==> tree variance-node :the-tree-display:node-selected))
+  ;; Redisplay
+  (==> the-tree-display set-data :tree:top pos-x pos-y crop-x crop-y))
+
+(defmethod tree-window node-message(s)
+  (==> node-info-string settext s) )
+
+(defmethod tree-window global-message()
+  (==> global-info-string settext 
+       (sprintf "N=%d, Max stdev=%5.0f" (==> (new cluster-access :tree:top)
+                                             current-split)
+                (sqrt (==> (new cluster-access (==> tree max-variance-node))
+                           variance)))))
+
+;;------------------------------------------------------------------------------
+
+
+;; Essai
+;;(setq yw (new tree-window tree))
+;;(setq yy :yw:the-tree-display)
+
+(dhc-make () fast-repaint)

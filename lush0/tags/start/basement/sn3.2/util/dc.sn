@@ -1,0 +1,298 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a package for simply interfacing C or C++ functions to SN3
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+
+;; returns the multiple of <y> immediately larger or equal to <x>
+(de mod-round (x y)
+  (let ((r (mod x y)))
+    (if (= 0 r) x (+ (- x r) y))))
+
+(de cclassp (ex)
+  (and ex (or (= cclass (classof ex)) (is-of-class (classof ex) cclass))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a few utilities from the C library
+
+
+(de c-malloc (size)
+  (-int- size)
+  (gptr (ccall "malloc" size)))
+
+(de c-free (p)
+  (-gptr- p)
+  (cinline "free(%s);" p)
+  () )
+
+(de ptr+ (p n)
+  (-gptr- p) (-int- n)
+  (gptr (cinline "(gptr)((char*)(%s) + (%s))" p n)))
+
+#? (c-memcpy <s1> <s2> <n>)
+;; like UNIX memcpy,  copies <n> bytes from memory area <s2> to <s1>.
+;; It returns <s1>. <s1> and <s2> must be pointers.
+(de c-memcpy (s1 s2 n)
+  (-gptr- s1 s2)
+  (-int- n)
+  (gptr (ccall "memcpy" s1 s2 n))
+)
+
+(de peek-char (s) (-gptr- s) (flt (cinline "*(char *)(%s)" s)))
+(de poke-char (s v) (-gptr- s) (-flt- v) (flt (cinline "*(char *)(%s) = (char)%s" s v)))
+
+(de peek-uchar (s) (-gptr- s) (flt (cinline "*(unsigned char *)(%s)" s)))
+(de poke-uchar (s v) (-gptr- s) (-flt- v) 
+    (flt (cinline "*(unsigned char *)(%s) = (unsigned char)%s" s v)))
+
+(de peek-short (s) (-gptr- s) (flt (cinline "*(short *)(%s)" s)))
+(de poke-short (s v) (-gptr- s) (-flt- v) (flt (cinline "*(short *)(%s) = (short)%s" s v)))
+
+(de peek-int (s) (-gptr- s) (flt (cinline "*(int *)(%s)" s)))
+(de poke-int (s v) (-gptr- s) (-flt- v) (flt (cinline "*(int *)(%s) = (int)%s" s v)))
+
+(de peek-ptr (s) (-gptr- s) (gptr (cinline "*(gptr *)(%s)" s)))
+(de poke-ptr (s v) (-gptr- s) (-gptr- v) (gptr (cinline "*(gptr *)(%s) = (gptr)%s" s v)))
+
+(de peek-float (s) (-gptr- s) (flt (cinline "*(float *)(%s)" s)))
+(de poke-float (s v) (-gptr- s) (-flt- v) (flt (cinline "*(float *)(%s) = (float)%s" s v)))
+
+(de peek-double (s) (-gptr- s) (flt (cinline "*(double *)(%s)" s)))
+(de poke-double (s v) (-gptr- s) (-flt- v) (flt (cinline "*(double *)(%s) = (double)%s" s v)))
+
+(dhc-make "dc" 
+  c-malloc
+  c-free
+  ptr+
+  c-memcpy
+  peek-char
+  poke-char
+  peek-uchar
+  poke-uchar
+  peek-short
+  poke-short
+  peek-int
+  poke-int
+  peek-ptr
+  poke-ptr
+  peek-float
+  poke-float
+  peek-double
+  poke-double
+)
+
+(de cstruct-getfunc (s) 
+    (let* ((cl :s:c-class)
+	   (r (cnew cl)))
+      (c-memcpy r s :cl:size) r))
+
+(de cstruct-setfunc (s r) 
+    (let* ((cl :s:c-class)) (c-memcpy s r :cl:size) r))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? cclass
+;; a lisp class for C structures
+(defclass cclass object
+  size			      ; size in bytes
+  alignment		      ; modulo for alignment
+  cparent                     ; points to parent
+  cslots                      ; contains slot names with type and offsets
+  cmethods                    ; unused yet
+  setfunc                     ; functions for setting and getting
+  getfunc                     ; a slot of the object
+)
+
+;; constructor for C class.
+;; this is only called by defcclass.
+;; args are: the parent class, and a list of slot names and their class
+;; ((classname slotname)......)
+;; this is transformed into a list of pairs (slotname offset class) [where
+;; the class is evaluated] stored into the cslot field.
+;; If the parent class is nil, a root class is created whose size is the first
+;; argument following the nil, and whose alignment modulo is the next argument.
+;; default aligment is 4 (32 bit word).
+;;
+;; a note on C struct for developpers: the size of a struct is not its REAL size, but 
+;; the multiple of its alignment modulo nearest to (and larger than) its real size. 
+;; e.g. a struct [ double; float; } will occupy 16 bytes. This kind of padding also
+;; occurs when the struc is inside another struct, i.e. struct { struct { double; float;}; float}
+;; occupies 24 bytes!
+(defmethod cclass cclass (par sslt)
+ (if ~par
+   ;; for creating a root class
+   (let* ((ali (cadr sslt))
+	  (siz (car sslt)))
+     (when (not (and (numberp siz) (numberp ali))) 
+	   (error 'defcclass "size or modulo argments are not numbers" nil))
+     (setq cparent ())
+     (setq size (mod-round siz ali))
+     (setq alignment ali)
+     (setq getfunc (eval (caddr sslt)))
+     (setq setfunc (eval (caddr (cdr sslt)))))
+  (when (not (cclassp par))
+	(error 'defcclass "invalid parent cclass" par))
+  (setq cparent par)
+  (let* ((offset (==> par sizeof))
+	 ;; build a list of evaluated slot types
+	 (eslots (all (( (x y) sslt))
+		      (let* ((ex (eval x)))
+			(when (not (cclassp ex))
+			      (error 'defcclass "invalid slot type" x))
+			ex)))
+	 ;; now compute alignment
+	 (ali (max (==> par alignment) (sup (all ((x eslots)) (==> x alignment)))))
+	)
+    ;; now compute slot offsets and total size
+    (setq cslots   
+	  (append (all ((ex eslots) ( (x y) sslt))
+		       (let* ((s (==> ex sizeof))
+			      (a (==> ex alignment))
+			      (o (mod-round offset a))
+			      (r (list y o ex)))
+			(setq offset (+ o s))
+			r))
+		  :par:cslots))
+    (setq alignment ali)
+    (setq size (mod-round offset alignment))
+    (setq getfunc cstruct-getfunc)
+    (setq setfunc cstruct-setfunc)))
+ (setq cmethods ())
+)
+
+#? (==> <cclass> sizeof)
+;; returns the size in bytes of a cclass
+(defmethod cclass sizeof () size)
+
+#? (==> <cclass> alignment)
+;; returns the alignment in bytes of a cclass
+(defmethod cclass alignment () alignment)
+
+#? (defcclass <ccname> <parent> (<ctype> <symb>) [(<ctype> <symb>)....])
+;; define a new C-compatible struct and assign it to (non-evaluated)
+;; symbol <ccname>. <parent> is the parent class of the new cclass, which 
+;; must be a cclass itself. The lists (<stype> <symb>) define slots:
+;; <ctype> must be a cclass which defines the slot type, and <symb> is the
+;; slot name. ;; The standard root class is calle cstruc.
+;; Other root classes include must basic C types: cshort, cfloat, cdouble
+;; cchar, cflt, cint, creal, cptr (pointer) as well as the SN3 matrix
+;; structure cindex.
+;; pointers should be used VERY carefully: pointing to an abject that is
+;; subject to garbage collection or reallocation can end up in disasters.
+;; New root classes can be created by passing nil as the parent class, and by
+;; giving the size in bytes, and the alignement modulo instead of the list of slots.
+;; instances are created with the function newc.
+(df defcclass (sc par . sslt) (set sc (new cclass (eval par) sslt)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; functions for accessing cstruct slots
+;; (always return a cstruct too).
+
+
+
+
+
+;; functions to read and write primitive cstruct into and from lisp objects.
+
+;; return cstruct <p> into a lisp object.
+;; the type of <p> must correspond to an existing lisp type.
+(de cget (p) (:p:c-class:getfunc p))
+
+;; copies lisp object <v> into cstruct <p>.
+(de cset (p v) (:p:c-class:setfunc p v))
+
+;; get and set on arrays, at position n [NO BOUND CHECKING!]
+(de aget (p n) (:p:c-class:getfunc
+         (cnew :p:c-class (ptr+ (peek-ptr p) (* n :p:c-class:size)))))
+(de aset (p n v) (:p:c-class:setfunc
+         (cnew :p:c-class (ptr+ (peek-ptr p) (* n :p:c-class:size))) v))
+
+;; return offset and class of slots in list <sslts> of class <ccls>
+(de cslot (ccls off slt . slts)
+  (let* ((s (assoc slt :ccls:cslots)))
+    (when ~s (error "invalid slot"))
+    (setq s (cdr s))
+    (if ~slts
+	(list (+ off (car s)) (cadr s))
+      ;; was not last slot
+      (apply ccscope (cons (cadr s) (cons (car s) slts))))))
+
+(df cscope (obj slts)
+  (setq obj (eval obj))
+  (let ((p (cslot :obj:c-class 0 slts)))
+    (cnew (cadr p) (ptr+ obj (car p)))))
+
+(dmc |@|
+  (let ((ans (list 'cscope (read))))
+    (while (= (skip_char "") ":")
+      (read_string 1)
+      (setq ans (nconc1 ans (read))) )
+    ans ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; instances
+
+#? cinstance
+;; a subclass of |GPTR| that is the class of all instances
+;; of C-compatible structures
+(defclass cinstance |GPTR| c-class)
+
+;; cinstance constructor, never called directly
+;; except be newc
+(defmethod cinstance cinstance (cc) (setq c-class cc))
+
+#? (cnew <cc> [<addr>])
+;; if <addr> is absent, allocate a new instance of cclass <cc>
+;; if <addr> is present (it must be a GPTR), it as cast
+;; to an instance of <cc> and returned.
+;; instances of cclass (C compatible structures) are
+;; a subclass of GPTR
+(de cnew (cc &optional addr)
+  (let ((r (if addr addr (c-malloc (==> cc sizeof)))))
+    (cast r cinstance cc)))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; primitive cclasses, this is machine dependent
+
+(defcclass cchar () 1 1 peek-char poke-char)
+(defcclass cshort () 2 2 peek-short poke-short)
+(defcclass cint () 4 4 peek-int poke-int)
+(defcclass cflt () 4 4 peek-float poke-float)
+(defcclass cfloat () 4 4 peek-float poke-float)
+(defcclass cdouble () 8 8 peek-double poke-double)
+(defcclass creal () 8 8 peek-double poke-double)
+(defcclass cptr () 4 4 peek-ptr poke-ptr)
+(defcclass cstruct () 0 1)
+
+;; basic classes of pointer to type, can be used with aget and aset
+(defcclass pchar () 1 1 peek-char poke-char)
+(defcclass pshort () 2 2 peek-short poke-short)
+(defcclass pint () 4 4 peek-int poke-int)
+(defcclass pflt () 4 4 peek-float poke-float)
+(defcclass pfloat () 4 4 peek-float poke-float)
+(defcclass pdouble () 8 8 peek-double poke-double)
+(defcclass preal () 8 8 peek-double poke-double)
+(defcclass pptr () 4 4 peek-ptr poke-ptr)
+(defcclass pstruct () 0 1)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; index class
+;; this is only useful if you want to make arrays of these.
+
+(defcclass cidx cstruct
+  (cshort type)
+  (cshort ndim)
+  (cptr   dim)
+  (cptr   mod)
+  (cptr  data)
+  (cint  d0) (cint  d1) (cint  d2) (cint  d3) (cint  d4) (cint  d5) (cint  d6) (cint  d7) 
+  (cint  m0) (cint  m1) (cint  m2) (cint  m3) (cint  m4) (cint  m5) (cint  m6) (cint  m7) 
+)
+
+(setq :cidx:getfunc peek-idx
+      :cidx:setfunc poke-idx)
+
+

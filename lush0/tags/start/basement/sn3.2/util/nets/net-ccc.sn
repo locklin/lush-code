@@ -1,0 +1,100 @@
+#? File "net-ccc.sn"
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Convolutional network with 3 convolutional layers.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "libnets")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass net-ccc idx3-module
+  ((-obj- (c-layer)) c0-module)
+  ((-obj- (idx3-ddstate)) c0-state)
+  ((-obj- (c-layer)) c1-module )
+  ((-obj- (idx3-ddstate)) c1-state)
+  ((-obj- (c-layer)) c2-module)
+)
+
+
+#? (new net-ccc <ini> <inj> <ki0> <kj0> <tbl0> <ki1> <kj1> <tbl1> <ki2> <kj2> <tbl2> <prm>)
+;; makes a new net-ccc module.
+;; <ini> <inj>: expected max size of input for preallocation of internal states
+;; <ki0> <kj0>: kernel size for first convolutional layer
+;; <tbl0>: table of connections between input anf feature maps for first layer
+;; <ki1> <kj1> <tbl1>: kernel and table for next layer
+;; <ki2> <kj2> <tbl2>: same for last convolution layer
+;; <prm> an idx1-ddparam in which the parameters will be allocated.
+(defmethod net-ccc net-ccc 
+  (
+   ini inj
+   ki0 kj0 tbl0 
+   ki1 kj1 tbl1 
+   ki2 kj2 tbl2
+   prm)
+  ((-obj- (idx1-ddparam)) prm)
+  ((-int-)  ini inj
+	    ki0 kj0 
+	    ki1 kj1 
+	    ki2 kj2)
+  ((-idx2- (-int-)) tbl0 tbl1 tbl2)
+  (let* ((thick0 (1+ (idx-i1max (select tbl0 1 1))))
+	 (c0-sizi (1+ (- ini ki0)))
+	 (c0-sizj (1+ (- inj kj0)))
+	 (thick1 (1+ (idx-i1max (select tbl1 1 1))))
+	 (c1-sizi (1+ (- c0-sizi ki1)))
+	 (c1-sizj (1+ (- c0-sizj kj1)))
+	 (thick2 (1+ (idx-i1max (select tbl2 1 1))))
+	 (c2-sizi (1+ (- c1-sizi ki2)))
+	 (c2-sizj (1+ (- c1-sizj kj2))))
+	 
+    (setq c0-module 
+	  (new c-layer ki0 kj0 1 1 tbl0 thick0 
+	       c0-sizi c0-sizj (new idx3-squasher) prm))
+    (setq c0-state (new idx3-ddstate thick0 c0-sizi c0-sizj))
+    (setq c1-module 
+	  (new c-layer ki1 kj1 1 1 tbl1 thick1 
+	       c1-sizi c1-sizj (new idx3-squasher) prm))
+    (setq c1-state (new idx3-ddstate thick1 c1-sizi c1-sizj))
+    (setq c2-module 
+	  (new c-layer ki2 kj2 1 1 tbl2 thick2
+	       c2-sizi c2-sizj (new idx3-squasher) prm))
+    )
+  ())
+
+(defmethod net-ccc forget (v p)
+  (-flt- v p)
+  (==> c0-module forget v p)
+  (==> c1-module forget v p)
+  (==> c2-module forget v p)  
+  ())
+
+(defmethod net-ccc fprop (in out)
+  ((-obj- (idx3-state)) in)
+  ((-obj- (idx3-state)) out)
+  (==> c0-module fprop in c0-state)
+  (==> c1-module fprop c0-state c1-state)
+  (==> c2-module fprop c1-state out)
+  ())
+
+(defmethod net-ccc bprop (in out)
+  ((-obj- (idx3-dstate)) in)
+  ((-obj- (idx3-dstate)) out)
+  (==> c2-module bprop c1-state out)
+  (==> c1-module bprop c0-state c1-state)
+  (==> c0-module bprop in c0-state)
+  ())
+
+(defmethod net-ccc bbprop (in out)
+  ((-obj- (idx3-ddstate)) in)
+  ((-obj- (idx3-ddstate)) out)
+  (==> c2-module bbprop c1-state out)
+  (==> c1-module bbprop c0-state c1-state)
+  (==> c0-module bbprop in c0-state)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "net-ccc" (net-ccc net-ccc forget fprop bprop bbprop))
+

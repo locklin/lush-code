@@ -1,0 +1,614 @@
+
+(mload "ogre")
+
+(de x11-clip-to-text () ())
+(de x11-text-to-clip (x) ())
+(de isprint (l) t)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; EDITTEXT: un editeur de texte
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (new EditText <w> <h> [<default>])
+;; Creates a new edittext object (i.e. a text editor with both a
+;; vertical and horizontal scrollbar). Argument <w> is the number of
+;; visible columns. Argument <h> is the number of visible lines.
+;;
+;; All messages <setdata>, <getdata>, <read-file> and <write-file>
+;; are forwarded to the underlying <TextPane> object.
+;;
+;;.SEE (new TextPane <w> <h> [<def> <editp> <vs> <hs>])
+
+
+(defclass EditText Form
+  hscroller
+  vscroller
+  text )
+
+
+(defmethod EditText EditText(w h &optional (def ""))
+  (setq vscroller (new VScrollbar 0 ()))
+  (setq hscroller (new HScrollbar 0 ()))
+  (setq text (new Textpane w h def t vscroller hscroller))
+
+  (let ((vs (lambda(c) (==> :thisform:text vscroll (==> c getdata))))
+	(hs (lambda(c) (==> :thisform:text hscroll (==> c getdata)))) )
+    (==> vscroller setcall vs)
+    (==> vscroller setdrag vs)
+    (==> hscroller setcall hs)
+    (==> hscroller setdrag hs) )
+  (==> this Form text vscroller hscroller) )
+
+(defmethod EditText compute-geometry()
+  (when window
+	(let (((x1 y1 w1 h1) :hscroller:rect)
+	      ((x1 y2 w2 h2) :vscroller:rect)
+	      ((x y w h) :text:rect))
+	  (==> this resize (+ w w2 1) (+ h h1 1)) ) )
+  rect )
+
+(defmethod EditText geometry(x y w h)
+  (when window
+	(let (((x1 y1 w1 h1) :hscroller:rect)
+	      ((x1 y2 w2 h2) :vscroller:rect))
+	  (setq w (max w (2* w2)))
+	  (setq h (max h (2* h1)))
+	  (setq changing-geometry t)
+	  (setq w (- w (mod (1+ w) 2)))  ;; removes dirty effect on BW screen
+	  (setq h (- h (mod h 2)))
+	  (==> text geometry x y (- (1+ w) w2) (- (1+ h) h1))
+	  (==> hscroller geometry x (+ y (- h h1)) (- w w2) h1)
+	  (==> vscroller geometry (+ x (- w w2)) y w2 (- h h1))
+	  (setq changing-geometry ()))
+	(each ((i contents)) (rplacd i :(car i):rect)) )
+  (==> this (VisualObject . geometry) x y w h) )
+    
+
+(defmethod EditText hasdata()
+  this )
+
+(defmethod EditText getdata()
+  (==> text getdata) )
+
+(defmethod EditText setdata(d)
+  (==> text setdata d) )
+
+(defmethod EditText gotoxy(pos &optional (line 0))
+  (==> text gotoxy pos line) )
+
+(defmethod EditText read-file(d)
+  (==> text read-file d) )
+
+(defmethod EditText write-file(d)
+  (==> text write-file d) )
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; TEXTPANE: le texte sans scrollbars
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; ----------------------------------------
+#? TextpaneKeymap
+;;.TYPE VAR 
+;; This A-list contains the associations between key actions and
+;; actions in a <TextPane> object.
+
+
+(setq TextpaneKeymap
+      '(("\n" 	execute)
+	("\r"	execute)
+	("\b" 	backspace)
+	("\x7f"	backspace)
+	("\x01"	begin-of-line)
+	("\x02"	arrow-left)
+	("\x04" delete-char)
+	("\x05"	end-of-line)
+	("\x06"	arrow-right)
+	("\x0b"	kill)
+	("\x0e"	arrow-down)
+	("\x10"	arrow-up)
+	("\x16" page-down)
+	("\x19"	yank) 
+	("\x1b" metakey "\x1b") 
+	("\x1b<" begin-of-text)
+	("\x1b>" end-of-text)
+	("\x1bv" page-up)
+	) )
+	
+;; ----------------------------------------
+#? (new TextPane <w> <h> [<def> <editp> <vs> <hs>])
+;; Returns a new <TextPane> object (a subclass of <Control>) which is
+;; a multiline text editor. 
+;;.IP
+;; Argument <w> is the number of visible columns.
+;;.IP
+;; Argument <h> is the number of visible lines. 
+;;.IP
+;; Argument <def> specifies a default contents as a string
+;; or a list of strings. Single strings are searched for TAB
+;; and NL characters and splitted into multiple strings (one per line).
+;;.IP
+;; Flag <editp> tells if the string is editable or just viewable.
+;;.IP
+;; If scrollbars are attached to the text pane, you must pass them
+;; as arguments <vs> and <hs>. The text pane will then synchronize
+;; the scrollbars with the actual contents of the text pane area.
+;;
+;;.SEE (==> <TextPane> getdata)
+;;.SEE (==> <TextPane> setdata <arg>)
+;;.SEE (==> <TextPane> read-file <fname>)
+;;.SEE (==> <TextPane> write-file <fname>)
+
+(defclass Textpane Control
+  width height
+  cw lh
+  data
+  (sline 0)
+  (spos 0)
+  (cline 0)
+  (cpos  0)
+  (tcols 0)
+  (tlines 1)
+  metakey
+  editable
+  gatherkill
+  vscroller 
+  hscroller
+  modified )
+
+
+(defmethod Textpane Textpane(w h &optional def editp vs hs)
+  (setq data (list ""))
+  (setq width w)
+  (setq height h)
+  (setq editable editp)
+  (setq activated editp)
+  (==> this setdata def)
+  (setq vscroller vs)
+  (setq hscroller hs) 
+  (==> this control w h ()) )
+
+
+(defmethod Textpane compute-geometry()
+  (when window 
+	(gsave 
+	 (font-8f)
+	 (setq lh (+ 6 (text-height "0")))
+	 (setq cw (- (text-width "00") (text-width "0"))) )
+	(==> this resize (+ 8 (* cw width)) (+ 8 (* lh height)))
+	rect ) )
+
+(defmethod Textpane geometry(x y w h)
+  (when window
+	(setq width (div (- w 8) cw))
+	(setq height (div (- h 8) lh))
+	(==> this advertize) )
+  (==> this (Control . geometry) x y w h) )
+
+
+(defmethod Textpane backpaint-bw()
+  (let (((x y w h) rect))
+    (cls)
+    (when disabled (color color-gray))
+    (draw-rect x y (1- w) (1- h)) )
+    (if (and () activated (not disabled)) 
+	(draw-rect (+ x 2) (+ y 2) (- w 5) (- h 5)) ) )
+
+(defmethod Textpane repaint-bw()
+  (font-8f)
+  (let (((x y w h) rect))
+    (addclip (list (+ x 2) (+ y 2) (- w 4) (- h 4)))
+    (when disabled (color color-gray))
+    (let ((d (nthcdr sline data))
+	  (c (- cline sline)) )
+      (for (i 1 height)
+	   (when d
+		 (draw-text (+ x 4) (+ y (* lh i)) (mid (car d) (1+ spos)))
+		 (when (and (0= c) activated ~disabled)
+		       (gsave
+			(when (not editable)
+			      (color color-gray) )
+			(let ((xr (+ x 2 (* cw (- cpos spos))))
+			      (yr (+ y 5 (* lh i))) )
+			  (fill-polygon xr yr (+ xr 3) (- yr 5) (+ xr 6) yr) ) ) )
+		 (setq c (1- c))
+		 (setq d (cdr d)) ) ) ) ) )
+
+
+
+(defmethod Textpane backpaint-color()
+  (let (((x y w h) rect))
+    (fill-down-rect x y w h (when (not disabled) color-bg)) ) )
+
+(defmethod Textpane repaint-color()
+  (font-8f)
+  (let (((x y w h) rect))
+    (addclip (list (+ x 2) (+ y 2) (- w 4) (- h 4)))
+    (if disabled (setcolor palette-disabled))
+    (let ((d (nthcdr sline data))
+	  (c (- cline sline)) )
+      (for (i 1 height)
+	   (when d
+		 (draw-text (+ x 4) (+ y (* lh i)) (mid (car d) (1+ spos)))
+		 (when (and (0= c) activated ~disabled)
+		       (gsave
+			(when (not editable)
+			      (setcolor palette-down) )
+			(let ((xr (+ x 2 (* cw (- cpos spos))))
+			      (yr (+ y 5 (* lh i))) )
+			  (fill-polygon xr yr (+ xr 3) (- yr 5) (+ xr 6) yr) ) ) )
+		 (setq c (1- c))
+		 (setq d (cdr d)) ) ) ) ) )
+
+
+;; ----------------------------------------
+#? (==> <TextPane> setdata <arg>)
+;; Sets the text in a TextPane. Argument <arg> specifies a default
+;; contents as a string or a list of strings. Single strings are
+;; searched for TAB and NL characters and splitted into multiple
+;; strings (one per line).
+
+(defmethod Textpane setdata(d)
+  (cond
+   ((consp d)
+    (setq data (append d ())))
+   ((stringp d)
+    (let ((pos ())
+	  (lst ()) )
+      (while (setq pos (index "\n" d))
+	(setq lst (nconc1 lst (left d (1- pos))))
+	(setq d (mid d (1+ pos))) )
+      (setq data (nconc1 lst d)) ) ) )
+  (let ((pos ())
+	(d data)
+	(l ()) )
+    (while d
+      (setq l (car d))
+      (while (setq pos (index "\t" l))
+	(let ((nextpos (1+ (* 8 (div (+ pos 7) 8)))))
+	  (setq l (strins (strdel l pos 1) (1- pos) 
+			  (left "         " (- nextpos pos)) ) ) ) )
+      (rplaca d l)
+      (setq d (cdr d)) ) )
+  (setq sline 0 spos 0 cline 0 cpos 0)
+  (setq modified ())
+  (==> this advertize) )
+
+
+;; ----------------------------------------
+#? (==> <TextPane> read-file <fname>)
+;; Reads the text file <fname> into a text pane.
+
+(defmethod Textpane read-file(fname)
+  (let ((ok t)
+	(l ())
+	(d ()))
+    (reading fname
+	     (while (and ok (<> "\e" (skip-char "\e")))
+	       (setq l (read-string "~\n"))
+	       (read-string 1)
+	       (when (and (not (isprint l)) (not (= l ""))
+			  (not (isprint (regex-subst "\t" " " l))) )
+		     (setq ok ()) )
+	       (setq d (cons l d)) ) )
+    (==> this setdata (if ok (reverse d) "<<< not a text file >>>")) ) )
+
+
+;; ----------------------------------------
+#? (==> <TextPane> write-file <fname>)
+;; Writes the contents of a text pane into file <fname>.
+
+(defmethod Textpane write-file(fname)
+  (writing fname
+	   (each ((s data))
+		 (printf "%s\n" s) ) )
+  (setq modified ()) )
+
+;; ----------------------------------------
+#? (==> <TextPane> getdata)
+;; Returns the text from a text pane, as a list of strings.
+
+(defmethod Textpane getdata()
+  data )
+
+
+;; ----------------------------------------
+;; Elementary actions
+
+(defmethod Textpane vscroll(s)
+  (setq sline (max 0 (min (- tlines (1- height)) s)))
+  (when vscroller (==> vscroller setdata sline))
+  (==> this expose) )
+
+(defmethod Textpane hscroll(s)
+  (setq spos (max 0 (min (- tcols (1- width)) s)))
+  (when hscroller (==> hscroller setdata spos))
+  (==> this expose) )
+
+(defmethod Textpane join_line(cl)
+  (let* ((p (nthcdr cl data))
+	 (h (len (car p)))
+	 (l (concat (car p) (cadr p))) )
+    (rplaca p l)
+    (rplacd p (cddr p))
+    (==> this advertize)
+    (setq modified t)
+    h ) )
+
+(defmethod Textpane insert_line(cl cp)
+  (let* ((p (nthcdr cl data))
+	 (l (car p)) )
+    (rplacd p (cons (mid l (1+ cp)) (cdr p)))
+    (rplaca p (left (car p) cp))
+    (==> this advertize) 
+    (setq modified t) ) )
+
+
+(defmethod Textpane advertize()
+  (setq tlines (length data))
+  (setq tcols (sup (all ((i data)) (len i))))
+  (when vscroller 
+	(==> vscroller setrange 0 (max 0 (- tlines height)))
+	(==> vscroller setdata cline) )
+  (when hscroller 
+	(==> hscroller setrange 0 (max 0 (- tcols width))) 
+	(==> hscroller setdata cpos) )
+  (==> this check) )
+
+
+(defmethod Textpane check()
+  (when (or (> sline cline)
+	    (< sline (- cline (1- height))) )
+	(==> this vscroll (- cline (div height 2))) )
+  (when (or (> spos cpos)
+	    (< spos (- cpos (1- width))) )
+	(==> this hscroll (- cpos (div width 2))) )
+  (==> this expose) )
+
+
+(defmethod Textpane fastcheck()
+  (when (or (> spos cpos)
+	    (< spos (- cpos (1- width))) )
+	(==> this hscroll (- cpos (div width 2))) )
+  (let (((x y w h) rect))
+    (==> this expose (list x (+ y (* lh (- cline sline))) (- w 2) (+ lh 5))) ) )
+
+
+(defmethod Textpane gotoxy(pos &optional (line 0))
+  (let ((d (nthcdr line data))
+	(m 0))
+    (while (and d (> pos (setq m (len (car d)))))
+      (incr line)
+      (setq d (cdr d))
+      (setq pos (- pos (1+ m))) )
+    (setq cpos (min pos m))
+    (setq cline line) )
+  (==> this check) )
+
+
+
+;; ----------------------------------------
+;; EVENEMENTS
+;;  click = activation
+;;  keypress = edition
+
+
+(defmethod Textpane keypress(c x y)
+  (if (or disabled ~activated)
+      'ignored
+    (when metakey (setq c (concat metakey c)))
+    (let ((keymap (assoc c TextpaneKeymap)))
+      (if (or keymap metakey)
+	  (progn
+	    (setq metakey ())
+	    (if keymap
+		(apply ==> (cons this (cdr keymap))) ) )
+	(if (and c (isprint c))
+	    (==> this insert c) ) ) )
+    (when (> (len (nth cline data)) tcols)
+	  (==> this advertize) ) ) )
+
+(defmethod Textpane mouse-up(x y x1 y1)
+  (when (not disabled)
+	(when (point-in-rect x1 y1 rect)
+	      (let (((x y w h) rect))
+		(setq x1 (- x1 (+ x 2)))
+		(setq y1 (- y1 (+ y 4)))
+		
+		(setq cline (min (1- tlines)
+				 (+ sline (div y1 lh)) ))
+		(setq cpos (min (len (nth cline data))
+				(+ spos (div x1 cw)) )) )
+	      (==> this expose)
+	      (==> this activate t) ) ) )
+
+
+;; ----------------------------------------
+;; Editing Actions
+
+
+(defmethod Textpane execute()
+  (when editable
+	(==> this insert-line cline cpos)
+	(setq cline (1+ cline))
+	(setq cpos 0) 
+	(setq gatherkill ())
+	(==> this check) ) )
+
+(defmethod Textpane arrow-left args
+  (if (or disabled ~activated)
+      'ignored
+    (setq gatherkill ())
+    (cond
+     ((> cpos 0)
+      (setq cpos (1- cpos))
+      (==> this fastcheck) )
+     ((> cline 0)
+      (setq cpos width)
+      (==> this arrow-up) ) ) ) )
+
+(defmethod Textpane arrow-up args
+  (if (or disabled ~activated)
+      'ignored
+    (setq gatherkill ())
+    (when (> cline 0) 
+	  (setq cline (1- cline))
+	  (setq cpos (min cpos (len (nth cline data)))) 
+	  (==> this check) ) ) )
+
+(defmethod Textpane arrow-right args
+  (if (or disabled ~activated)
+      'ignored
+    (setq gatherkill ())
+    (cond
+     ((< cpos (len (nth cline data)))
+      (setq cpos (1+ cpos))
+      (==> this fastcheck) )
+     ((< cline (1- tlines))
+      (setq cpos 0)
+      (==> this arrow-down) ) ) ) )
+
+(defmethod Textpane arrow-down args
+  (if (or disabled ~activated)
+      'ignored
+    (setq gatherkill ())
+    (when (< cline (1- tlines ))
+	  (setq cline (1+ cline))
+	  (setq cpos (min cpos (len (nth cline data))))
+	  (==> this check) ) ) )
+
+(defmethod Textpane page-up args
+  (setq gatherkill ())
+  (setq cline (max 0 (- cline height)))
+  (setq cpos (min cpos (len (nth cline data))))
+  (==> this check) )
+
+(defmethod Textpane page-down args
+  (setq gatherkill ())
+  (setq cline (min (1- tlines) (+ cline height)))
+  (setq cpos (min cpos (len (nth cline data))))
+  (==> this check) )
+
+
+(defmethod Textpane backspace args
+  (when editable
+	(setq gatherkill ())
+	(cond
+	 ((> cpos 0)
+	  (let ((p (nthcdr cline data)))
+	    (setq modified t)
+	    (rplaca p (strdel (car p) cpos 1))
+	    (setq cpos (1- cpos))
+	    (==> this fastcheck) ) )
+	 ((> cline 0)
+	  (setq cline (1- cline))
+	  (setq cpos (==> this join-line cline)) ) ) ) )
+  
+(defmethod Textpane delete-char args
+  (when editable
+	(setq gatherkill ())
+	(cond
+	 ((< cpos (len (nth cline data)))
+	  (let ((p (nthcdr cline data)))
+	    (setq modified t)
+	    (rplaca p (strdel (car p) (1+ cpos) 1))
+	    (==> this fastcheck) ) )
+	 ((< cline (1- tlines))
+	  (setq cpos (==> this join-line cline)) ) ) ) )
+
+
+(defmethod Textpane begin-of-text args
+  (setq cline 0)
+  (==> this begin-of-line) )
+
+(defmethod Textpane begin-of-line args
+  (setq gatherkill ())
+  (setq cpos 0)
+  (==> this check) )
+
+(defmethod Textpane end-of-text args
+  (setq cline (1- (length data)))
+  (==> this end-of-line) )
+ 
+(defmethod Textpane end-of-line args
+  (setq gatherkill ())
+  (setq cpos (len (nth cline data)))
+  (==> this check) )
+
+(defmethod Textpane kill args
+  (when editable
+	(let ((p (nthcdr cline data)))
+	  ;; (when (<> (x11-clip-to-text) EditStringKillBuffer)
+	  ;;	(setq gatherkill ()) )
+	  (when (not gatherkill)
+		(setq EditStringKillBuffer "")
+		(setq gatherkill t) )
+	  (cond
+	   ((> (len (car p)) cpos)
+	    (setq EditStringKillBuffer 
+		  (concat EditStringKillBuffer (mid (car p) (1+ cpos))))
+	    (x11-text-to-clip EditStringKillBuffer)
+	    (setq modified t)
+	    (rplaca p (left (car p) cpos)) 
+	    (==> this check) )
+	   ((< cline (1- tlines))
+	    (setq EditStringKillBuffer (concat EditStringKillBuffer "\n"))
+	    (x11-text-to-clip EditStringKillBuffer)
+	    (setq cpos (==> this join-line cline))) ) ) ) )
+
+  
+(defmethod Textpane yank args
+  (when editable
+	(setq gatherkill ())
+	(setq modified t)
+	;; (setq EditStringKillBuffer (or (x11-clip-to-text) ""))
+	(let ((d EditStringKillBuffer)
+	      (pos ())
+	      (lst ()) 
+	      (l ()) )
+	  (while (setq pos (index "\n" d))
+	    (setq lst (nconc1 lst (left d (1- pos))))
+	    (setq d (mid d (1+ pos))) )
+	  (setq lst (nconc1 lst d))
+	  (setq d lst)
+	  (while d
+	    (setq l (car d))
+	    (while (setq pos (index "\t" l))
+	      (let ((nextpos (1+ (* 8 (div (+ pos 7) 8)))))
+		(setq l (strins (strdel l pos 1) (1- pos) 
+				(left "         " (- nextpos pos)) ) ) ) )
+	    (rplaca d l)
+	    (setq d (cdr d)) )
+	  (setq d lst)
+	  (while d
+	    (setq l (car d))
+	    (setq d (cdr d))
+	    (==> this insert l)
+	    (when d
+		  (==> this execute) ) ) )
+	(==> this check) ) )
+
+
+(defmethod Textpane insert(c &optional nocheck)
+  (when editable
+	(setq gatherkill ())
+	(setq modified t)
+	(let* ((p (nthcdr cline data)))
+	  (rplaca p (strins (car p) cpos c))
+	  (incr cpos (len c))
+	  (if ~nocheck
+	      (==> this fastcheck) ) ) ) )
+
+(defmethod Textpane metakey(c)
+  (setq metakey c) )
+
+

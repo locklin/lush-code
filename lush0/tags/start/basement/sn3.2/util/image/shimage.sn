@@ -1,0 +1,397 @@
+;/**********************************************************************
+;        Copyright (c) 1995  AT&T --- All Rights Reserved
+;        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF AT&T.
+;        The copyright notice above does not evidence any
+;        actual or intended publication of this work.
+;**********************************************************************/
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; linear coordinate transform using bilinear interpolation.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "cmacro")
+(mload "idx-macros")
+(mload "image/image-transform")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? shimage
+;; a shimage is an idx2 of shorts intended to store image.
+;; the pixel values are interpreted as fixed point integers,
+;; with the upper byte being the integer part, and the lower byte
+;; being the fractional part.
+
+
+#? (shimage2flt <in> <out>)
+;;.VP
+;; ((-idx2- (-short-)) in):
+;; ((-idx2- (-flt-)) out):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Converts shimage <in> into idx2 of flt <out>.
+;; Values are scaled down by 1/256.
+(de shimage2flt (in out)
+    ((-idx2- (-short-)) in)
+    ((-idx2- (-flt-)) out)
+
+    (idx-bloop ((in in) (out out))
+      (cinline-idx1loop2 in "short" out "flt" "ip" "op" "i"
+                         (cinline "*op = ((flt)(*ip))*0.00390625")))
+    ())
+
+
+#? (flt2shimage <in> <out>)
+;;.VP
+;; ((-idx2- (-short-)) out):
+;; ((-idx2- (-flt-)) in):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: None
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; converts flt idx2 <in> to an shimage <out>.
+;; a pixel values are scaled up by 256.
+(de flt2shimage (in out)
+    ((-idx2- (-short-)) out)
+    ((-idx2- (-flt-)) in)
+
+    (idx-bloop ((in in) (out out))
+      (cinline-idx1loop2 in "flt" out "short" "ip" "op" "i"
+                         (cinline "*op = (short)((*ip)*256)")))
+    ())
+
+
+#? (shimage2fltimage <in> <out> <bkgd> <ink>)
+;;.VP
+;; ((-idx2- (-short-)) in):
+;; ((-idx2- (-flt-)) out):
+;; ((-flt-) bkgd ink):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: C. Burges
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Generalization of Yann's shimage2flt for arbitrary ink and background.
+;; Converts shimage <in> into idx2 of flt <out>.
+(de shimage2fltimage (in out bkgd ink)
+    ((-idx2- (-short-)) in)
+    ((-idx2- (-flt-)) out)
+    ((-flt-) bkgd ink)
+
+    (if (= bkgd ink)
+        (error "shimage2fltimage: background must differ from ink"))
+
+    (let* ((b bkgd)
+           (a (/ (- ink bkgd) 256)))
+      ((-flt-) a b)
+      (idx-bloop ((in in) (out out))
+        (cinline-idx1loop2 in "short" out "flt" "ip" "op" "i"
+                           (cinline "*op = (flt)(*ip)* %s+%s" a b))))
+    ())
+
+
+#? (fltimage2shimage <in> <out> <bkgd> <ink>)
+;;.VP
+;; ((-idx2- (-flt-)) in):
+;; ((-idx2- (-short-)) out):
+;; ((-flt-) bkgd ink):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: C. Burges
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Generalization of Yann's flt2shimage for arbitrary ink and background.
+;; Converts flt idx2 <in> to a shimage <out>.
+(de fltimage2shimage (in out bkgd ink)
+    ((-idx2- (-flt-)) in)
+    ((-idx2- (-short-)) out)
+    ((-flt-) bkgd ink)
+
+    (if (= bkgd ink)
+        (error "fltimage2shimage: background must differ from ink"))
+
+    (let* ((a (/ 256 (- ink bkgd)))
+           (b (* a (- bkgd))))
+      ((-flt-) a b)
+      (idx-bloop ((in in) (out out))
+        (cinline-idx1loop2 in "flt" out "short" "ip" "op" "i"
+                           (cinline "*op = (short)((*ip)* %s+%s)" a b))))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (shim-interpolate-bilin <background> <pin> <indimi> <indimj> <inmodi> <inmodj> <ppi> <ppj>)
+;;.VP
+;; (-gptr- pin):
+;; (-int-  background indimi indimj inmodi inmodj ppi ppj):
+;;
+;; RETURNS: (-short-)
+;; SIDE EFFECTS: None
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; returns a bilinearly interpolated pixel value for coordinate
+;; <ppi> <ppj>. The image data is pointed to by <pin>, with 
+;; <indimi> <indimj> <inmodi> <inmodj> being the dimensions and modulos.
+;; This function clips automatically if <ppi> <ppj> are outside of the
+;; bounds by assuming the outside values are equal to <background>.
+;; pixel values are shorts, while coordinates are 32 bit fixed point
+;; with 16 bit integer part and 16 bit fractional part.
+;; The function does not use floating point arithmetics.
+(de shim-interpolate-bilin (background pin indimi indimj inmodi inmodj ppi ppj)
+ (-gptr- pin)
+ (-int-  background indimi indimj inmodi inmodj ppi ppj)
+
+ (let ((out 0))
+  (-short- out)
+  #{{
+	 int li0, lj0;
+	 register int li1, lj1;
+	 int deltai, ndeltai;
+	 int deltaj, ndeltaj;
+	 register short *pin00;
+	 register int v00, v01, v10, v11;
+	 li0 = $ppi >> 16;
+	 li1 = li0+1;
+	 deltai = $ppi & 0x0000ffff;
+	 ndeltai = 0x00010000 - deltai;
+	 lj0 = $ppj  >> 16;
+	 lj1 = lj0+1;
+	 deltaj = $ppj & 0x0000ffff;
+	 ndeltaj = 0x00010000 - deltaj;
+	 pin00 = (short*)($pin)+$inmodi*li0+$inmodj*lj0;
+   #} #{
+         if ((li1>0)&&(li1<$indimi)) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = *(pin00); 
+		 v01 = *(pin00+$inmodj); 
+		 v11 = *(pin00+$inmodi+$inmodj); 
+		 v10 = *(pin00+$inmodi);
+	     } else if (lj1==0) { 
+		 v00 = $background;
+		 v01 = *(pin00+$inmodj); 
+		 v11 = *(pin00+$inmodi+$inmodj);
+		 v10 = $background;
+	     } else if (lj1==$indimj) {
+		 v00 = *(pin00); 
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = *(pin00+$inmodi); 
+	     } else {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     }
+    #} #{
+	 } else if (li1==0) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = *(pin00+$inmodi+$inmodj); 
+		 v10 = *(pin00+$inmodi);
+	     } else if (lj1==0) { 
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = *(pin00+$inmodi+$inmodj);
+		 v10 = $background;
+	     } else if (lj1==$indimj) {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = *(pin00+$inmodi); 
+	     } else {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     }
+    #} #{
+	 } else if (li1==$indimi) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = *(pin00); 
+		 v01 = *(pin00+$inmodj); 
+		 v11 = $background;
+		 v10 = $background;
+	     } else if (lj1==0) { 
+		 v00 = $background;
+		 v01 = *(pin00+$inmodj); 
+		 v11 = $background;
+		 v10 = $background;
+	     } else if (lj1==$indimj) {
+		 v00 = *(pin00); 
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     } else {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     }
+    #} #{
+         } else {
+	     v00 = $background;
+	     v01 = $background;
+	     v11 = $background;
+	     v10 = $background;
+	 }
+	 $out = (ndeltaj * (( v10*deltai + v00*ndeltai )>>16) +
+	         deltaj  * (( v11*deltai + v01*ndeltai )>>16))>>16;
+     }
+
+  #} out))
+
+
+#? (shim-warp <in> <out> <background> <pi> <pj>)
+;;.VP
+;; ((-int-) background):
+;; ((-idx2- (-short-)) in out):
+;; ((-idx2- (-int-)) pi pj):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out> 
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Warps an image using <pi> and <pj> as tabulated coordinate transforms.
+;; <in> and <out> are idx2 of shorts. <background> is the value assumed outside
+;; of the input image. <pi> and <pj> are tabulated coordinates which can
+;; be filled up using compute-bilin-transform or similar functions.
+;; Pixel values are antialiased using bilinear interpolation.
+(de shim-warp (in out background pi pj)
+    ((-int-) background)
+    ((-idx2- (-short-)) in out)
+    ((-idx2- (-int-)) pi pj)
+
+    (let ((ni (idx-dim in 0))
+          (nj (idx-dim in 1))
+          (pin (gptr (cinline "IDX_PTR(%s, short)" in)))
+          (indimi (idx-dim in 0))
+          (indimj (idx-dim in 1))
+          (inmodi (idx-modulo in 0))
+          (inmodj (idx-modulo in 1)))
+      (-gptr- pin)
+      (-int-  indimi indimj inmodi inmodj)
+      (idx-bloop ((lout out) (lpi pi) (lpj pj))
+        (idx-bloop ((llout lout) (llpi lpi) (llpj lpj))
+          (let ((ppi (llpi)) (ppj (llpj)))
+            (-int- ppi ppj)
+            (llout (shim-interpolate-bilin background pin indimi indimj inmodi inmodj ppi ppj))))))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; fast version, not interpolation.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (shim-warp-fast <in> <out> <background> <pi> <pj>)
+;;.VP
+;; ((-int-) background):
+;; ((-idx2- (-short-)) in out):
+;; ((-idx2- (-int-)) pi pj):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Warps an image using <pi> and <pj> as tabulated coordinate transforms.
+;; <in> and <out> are idx2 of shorts. <background> is the value assumed outside
+;; of the input image. <pi> and <pj> are tabulated coordinates which can
+;; be filled up using compute-bilin-transform or similar functions.
+;; This is essentially identical to warp-shimage, except no antialiasing
+;; is performed (it goes a lot faster, but is not nearly as nice).
+(de shim-warp-fast (in out background pi pj)
+    ((-int-) background)
+    ((-idx2- (-short-)) in out)
+    ((-idx2- (-int-)) pi pj)
+
+    (unprotect
+      (let ((ni (idx-dim in 0))
+            (nj (idx-dim in 1))
+            (pin (gptr (cinline "IDX_PTR(%s, short)" in)))
+            (indimi (idx-dim in 0))
+            (indimj (idx-dim in 1))
+            (inmodi (idx-modulo in 0))
+            (inmodj (idx-modulo in 1)))
+        (-gptr- pin)
+        (-int-  indimi indimj inmodi inmodj)
+        (idx-bloop ((lout out) (lpi pi) (lpj pj))
+          (idx-bloop ((llout lout) (llpi lpi) (llpj lpj))
+            (let ((ppi (llpi)) (ppj (llpj)))
+              (-int- ppi ppj)
+  	    (let ((resu 0))
+  	      (-short- resu)
+                #{{
+  		     register int li, lj;
+  		     li = ($ppi+0x7f) >> 16;
+  		     lj = ($ppj+0x7f) >> 16;
+  		     if ((li>=0)&&(li<$indimi)&&(lj>=0)&&(lj<$indimj)) {
+  			 $resu = *((short*)($pin)+$inmodi*li+$inmodj*lj);
+		     } else {
+			 $resu = $background;
+		     }
+  		   }
+                 #} 
+  	         (llout resu)))))))
+      ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; top-level function
+
+
+#? (shim-warp-bilin <in> <out> <background> <mode> <x1> <y1> <x2> <y2> <x3> <y3> <x4> <y4> <p1> <q1> <p3> <q3>)
+;;.VP
+;; ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3):
+;; ((-int-) background mode):
+;; ((-idx2- (-short-)) in out):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; transforms shimage <in> (idx2 of short) mapping quadrilateral <x1> <y1> <x2>
+;; <y2> <x3> <y3> <x4> (points are numbered clockwise starting from upper left)
+;; to rectangle whose upper left and lower right points are <p1><q1>, <p3><q3>.
+;; result is put in <out> (idx2 of short).  Clipping is automatically performed.
+;; pixels outside of the bounds of <in> are assumed to have the value
+;; <background>.  <mode>=0: no antialiasing, <mode>=1: antialiasing with
+;; bilinear interpolation (2 times slower).  execution time on sparc 10 is about
+;; 5 ms in mode 0 and 10 ms in mode 1 for a 32x32 target image.
+(de shim-warp-bilin (in out background mode x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    ((-int-) background mode)
+    ((-idx2- (-short-)) in out)
+
+    (let* ((outi (idx-dim out 0))
+	   (outj (idx-dim out 1))
+	   (dispi (int-matrix-nc outi outj))
+	   (dispj (int-matrix-nc outi outj)))
+      (compute-bilin-transform dispi dispj x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+      (if (= 0 mode)
+	  (shim-warp-fast in out background dispi dispj)
+	(shim-warp in out background dispi dispj)))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; On SUNOS, the following code needs GCC or -O1
+
+(dhc-make "shimage" 
+          shimage2flt flt2shimage 
+          shimage2fltimage fltimage2shimage
+          shim-interpolate-bilin shim-warp shim-warp-fast
+          shim-warp-bilin ) 
+

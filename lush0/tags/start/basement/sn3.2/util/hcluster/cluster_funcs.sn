@@ -1,0 +1,317 @@
+(mload "cmacro")
+(mload "libidx")
+(mload "dh-compile")
+(cc-load "cluster_funcs_user.c")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;  Functions to create, delete and display samples
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;------------------------------------------------------------------------------
+#?  (sample_to_c <sample-mat>)
+;;  Take a PxN matrix of float <sample-mat> (where n is a number of sample 
+;;  pattern and s is the vector size, and return an matrix of gptrs.  Each
+;;  points to a C structure 'struct sample_type' containing a copy of the 
+;;  corresponding sample
+;;
+;;  Memory can be freed by free_samples.
+;;
+(de sample_to_c (sample-mat)
+  ((-idx2- (-float-)) sample-mat)
+
+  (let* ((n-pattern (idx-dim sample-mat 0))
+         (pattern-size (idx-dim sample-mat 1))
+         (ptr (gptr-matrix n-pattern)))
+    (-int- pattern-size)
+
+    (c-include "cluster_funcs_user.h")
+    (cinline-idx1loop2 ptr "struct sample_type *" sample-mat "float"
+                       "c_sample" "sample" "i"
+    #{{
+        int j;
+        float sum = 0, *sample_ptr;
+        int sample_mod = $sample_mat->mod[1];
+
+        *c_sample = (struct sample_type *) new_sample($pattern_size);
+        sample_ptr = sample;
+
+        for(j=0;j<$pattern_size;j++) {
+            float temp = *sample_ptr;
+            (*c_sample)->pattern[j] = temp;
+            sum += temp*temp;
+            sample_ptr += sample_mod;
+        }
+
+        (*c_sample)->norm = sum;
+    }#})
+    ptr))
+
+;;------------------------------------------------------------------------------
+#?  (new-sample size)
+;;  return a pointer to a newly allocated sample (or cluster)
+;;  memory can be freed by free_sample
+;;
+(de new-sample (pattern-size)
+    ((-int-) pattern-size)
+
+    (c-include "cluster_funcs_user.h")
+    (gptr #{ new_sample($pattern_size) #}))
+
+;;------------------------------------------------------------------------------
+#?  (new-samples n size)
+;;  return a matrix of gptr pointing on samples (or clusters)
+;;  memory can be freed by free_samples (defined below)
+;;
+(de new-samples (n-pattern pattern-size)
+    ((-int-) n-pattern pattern-size)
+
+    (let* ((ptr (gptr-matrix n-pattern)))
+      
+      (c-include "cluster_funcs_user.h")
+      (cinline-idx1loop ptr "struct sample_type *" "c_sample" "i"
+      #{
+          *c_sample = new_sample($pattern_size);
+      #})
+    ptr))
+
+;;------------------------------------------------------------------------------
+#?  (free_samples <c-sample-mat>)
+;;  free what was allocated by sample_to_c or new_samples
+;;
+(de free_sample (c_sample)
+    ((-gptr- "struct sample_type *") c_sample)
+
+    (c-include "cluster_funcs_user.h")
+    #{ free_sample($c_sample); #}
+    ())
+
+;;------------------------------------------------------------------------------
+#?  (free_samples <c-sample-mat>)
+;;  free what was allocated by sample_to_c or new_samples
+;;
+(de free_samples (c-sample-mat)
+    ((-idx1- (-gptr-)) c-sample-mat)
+
+    (c-include "cluster_funcs_user.h")
+    (cinline-idx1loop c-sample-mat "struct sample_type *" "c_sample" "i"
+    #{
+        free_sample(*c_sample);
+    #})
+    ())
+
+;;------------------------------------------------------------------------------
+#? (display-sample <sample>)
+;; display one sample (given a gptr)
+;;
+(de display-sample (sample)
+    ((-gptr- "struct sample_type *") sample)
+
+    (c-include "cluster_funcs_user.h")
+
+    #{{
+        int i;
+        
+        printf("size = %d\n", $sample->size);
+        for(i=0;i<$sample->size;i++) 
+            printf("%6.2f ", $sample->pattern[i]);
+
+        printf("norm = %f\n", $sample->norm);
+    }#}
+    ())
+
+;;------------------------------------------------------------------------------
+#? (copy-sample <sample1> <sample2>)
+;; copy samle1 into sample2
+;;
+(de copy-sample (sample1 sample2)
+    ((-gptr- "struct sample_type *") sample1 sample2)
+
+    (c-include "cluster_funcs_user.h")
+
+    #{{
+        float *p1 = $sample1->pattern;
+        float *p2 = $sample2->pattern;
+        int i;
+        
+        for(i=0;i< $sample1->size;i++)
+            *p2++ = *p1++;
+
+        $sample2->norm = $sample1->norm;
+
+    }#}
+    ())
+
+;;------------------------------------------------------------------------------
+#? (-sample <sample1> <sample2>)
+;; copy samle1 into sample2
+;;
+(de get-sample (sample lsample)
+    ((-gptr- "struct sample_type *") sample)
+    ((-idx1- (-float-)) lsample)
+
+    (c-include "cluster_funcs_user.h")
+
+    (cinline-idx1loop lsample "float" "l_sample" "i"
+    #{
+        *l_sample = $sample->pattern[i];
+    #})
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;   FUNCTIONS WITH POINTERS
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;------------------------------------------------------------------------------
+#? (distance <sample> <sample>)
+;; compute the distance between two samples or two clusters
+;;
+(de distance (sample cluster)
+    ((-gptr- "struct sample_type *") sample cluster)
+    (c-include "cluster_funcs_user.h")
+
+    (flt #{ distance($sample, $cluster) #})
+)
+
+;;------------------------------------------------------------------------------
+#? (distance-ptr)
+;; return a pointer (a gptr) to the distance function
+;;
+(de distance_ptr () (gptr #{ distance #}))
+
+;;------------------------------------------------------------------------------
+#? (clear <cluster>)
+;; compute the distance between two samples or two clusters
+;;
+(de clear (sample)
+    ((-gptr- "struct sample_type *") sample)
+    (c-include "cluster_funcs_user.h")
+     
+    #{ clear($sample) #}
+    sample)
+
+;;------------------------------------------------------------------------------
+#? (clear-ptr)
+;; return a pointer (a gptr) to the distance function
+;;
+(de clear_ptr () (gptr #{ clear #}))
+
+;;------------------------------------------------------------------------------
+#? (accumulate <sample> <float> <cluster>)
+;; add a <sample>*<weigh>t in <cluster> (which could be of sample type).
+;;
+(de accumulate (sample weight cluster)
+    ((-gptr- "struct sample_type *") sample cluster)
+    ((-float-) weight)
+    (c-include "cluster_funcs_user.h")
+     
+    #{ accumulate($sample, $weight, $cluster) #}
+    ())
+
+;;------------------------------------------------------------------------------
+#? (accumulate-ptr)
+;; return a pointer (a gptr) to the distance function
+;;
+(de accumulate_ptr () (gptr #{ accumulate #}))
+
+;;------------------------------------------------------------------------------
+#? (normalize <sample> <cluster> <float>)
+;; take sum_cluster, and divide it by weight_sum.  Then copy it
+;; into cluster.  If this operation changes the value of cluster,
+;; returns 1, othewise returns 0.
+;;
+(de normalize (sample cluster weight)
+    ((-gptr- "struct sample_type *") sample cluster)
+    ((-float-) weight)
+    (c-include "cluster_funcs_user.h")
+     
+    (int #{ normalize($sample, $cluster, $weight) #}
+    ))
+
+;;------------------------------------------------------------------------------
+#? (distance <sample> <sample>)
+;; compute the distance between two samples or two clusters
+;;
+(de init_cluster (sample sample-weight cluster)
+    ((-idx1- (-gptr-)) sample cluster)
+    ((-idx1- (-float-)) sample-weight)
+    (c-include "cluster_funcs_user.h")
+
+    #{ 
+        init_cluster(IDX_PTR($sample, void *), IDX_PTR($sample_weight, float),
+                            $(idx-dim sample 0), IDX_PTR($cluster, void *),
+                            $(idx-dim cluster 0));
+    #}
+    ()
+)
+
+;;------------------------------------------------------------------------------
+#? (init-cluster-ptr)
+;; return a pointer (a gptr) to the distance function
+;;
+(de init_cluster_ptr () (gptr #{ init_cluster #}))
+
+;;------------------------------------------------------------------------------
+#? (normalize-ptr)
+;; return a pointer (a gptr) to the distance function.
+;;
+(de normalize_ptr () (gptr #{ normalize #}))
+
+
+;;------------------------------------------------------------------------------
+#? (new-sample-ptr)
+;; return a pointer (a gptr) to the new_sample function.
+;;
+(de new_sample_ptr () (gptr #{ new_sample #}))
+
+;;------------------------------------------------------------------------------
+#? (free_cluster_ptr)
+;; return a pointer (a gptr) to the free_clusters function.
+;;
+(de free_sample_ptr () (gptr #{ free_sample #}))
+
+;;------------------------------------------------------------------------------
+#? (test-c-interface)
+;; Test some of the functions defined above.
+;;
+(de test-c-interface ()
+    (setq a (matrix 10 5))
+    (for (i 0 (1- (idx-dim a 0)))
+      (for (j 0 (1- (idx-dim a 1)))
+        (a i j (int (rand 0 9)))))
+
+    (setq uu (sample-to-c a))
+    
+    (printf "LISP MODE ***********\n")
+    (printf "%l\n" (a 3 ()))
+    (printf "%l\n" (a 8 ()))
+    (print ((idx-sqrdist (submatrix a 3 ()) (submatrix a 8 ()))))
+
+    (printf "\nC MODE ***********\n")
+    (display-sample (uu 3))
+    (display-sample (uu 8))
+    (print (distance (uu 3) (uu 8)))
+
+    (free_samples uu)
+)
+
+;;------------------------------------------------------------------------------
+
+(dhc-make () 
+          sample_to_c new_sample new_samples free_sample free_samples
+          display-sample copy-sample get-sample
+          distance distance-ptr
+          clear clear-ptr
+          accumulate accumulate-ptr
+          normalize normalize-ptr
+          init-cluster init_cluster-ptr
+          new_sample_ptr free_sample_ptr
+)
+
+
+
+
+

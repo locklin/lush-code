@@ -1,0 +1,670 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; ------------------------------------------------------------------------
+;;;          S T R I N G   C O M P I L A T I O N   S U P P O R T
+;;; ------------------------------------------------------------------------
+
+(if ~dh-macro (load "dh-macro"))
+
+;;--------------------------------------------------------------ASC
+(dhm-t asc(source)
+       (when (<> 2 (length source))
+	     (dhc-error "one argument expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source))))
+	 (when ~(==> :tn:type is-a-str)
+	       (dhc-error "argument must be an string"))
+	 (new t-node (list tn) (new dhc-type 'dht-ubyte))))
+
+(dhm-c asc(source treetype retplace)
+       (let ((exp (dhc-parse-expr-c (cadr source)
+				    (cadr :treetype:tn-list) ())))
+	 (if ~dhc-unprotect
+	     (add-c-statements 
+	      (sprintf "RTERR_EMPTYSTR(!(strlen(%s->data)));" exp)))
+	 (sprintf "(*((%s *)%s->data))" 
+		  (dhc-type-to-c-decl :treetype:type) exp)))
+
+;;--------------------------------------------------------------CHR
+(dhm-t chr(source)
+       (when (<> 2 (length source))
+	     (dhc-error "one argument expected"))
+       (let* ((ta (dhc-parse-expr-t (cadr source)))
+	      (na (==> :ta:type is-a-number))
+	      (rettype (new dhc-type 'dht-str))
+	      (srg-type (dhu-type rettype))
+	      (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+							  tmpnames-seed))
+			       lex-level))
+	      (tret (new t-node (list ta) rettype ())))
+	 
+	 (if ~na
+	     (dhc-error "argument must be a number")
+	   (setq :srg-type:u-extra (new-unode rettype))
+	   (incr tmpnames-seed)
+	   (dhc-unify-types :symbol-srg:type srg-type)
+	   (setq bump-list (append bump-list (list symbol-srg)))
+	   (setq :tret:transfer (list symbol-srg))
+	   tret)))
+
+(dhm-c chr(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (val (dhc-parse-expr-c (cadr source)
+				     (cadr :treetype:tn-list) ())))
+	 (if ~dhc-unprotect
+	     (add-c-statements
+	      (sprintf "RTERR_RANGE(((int)%s<0)||((int)%s>255));" val val)))
+	 
+	 (add-c-statements (sprintf "Msrg_resize(%s, 2);" :srg-symb:c-name))
+	 (add-c-statements 
+	  (sprintf "((char *)(%s->data))[0]=(int)%s;"
+		   :srg-symb:c-name val))
+	 (add-c-statements 
+	  (sprintf "((char *)(%s->data))[1]='\\0';"
+		   :srg-symb:c-name))
+	 (sprintf "%s" :srg-symb:c-name)))
+
+;;--------------------------------------------------------------CONCAT
+(dhm-t concat(source)
+       (when (> 2 (length source))
+	     (dhc-error "one or more arguments expected"))
+       (let* ((tns (all ((tn (cdr source)))
+			(dhc-parse-expr-t tn)))
+	      (rettype (new dhc-type 'dht-str))
+	      (srg-type (dhu-type rettype))
+	      (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+							  tmpnames-seed))
+			       lex-level))
+	      (tret (new t-node tns rettype ())))
+
+	 (each ((na tns))
+	       (if (null (==> :na:type is-a-str))
+		   (dhc-error "arguments must all be strings")))
+	 (setq :srg-type:u-extra (new-unode rettype))
+	 (incr tmpnames-seed)
+	 (dhc-unify-types :symbol-srg:type srg-type)
+	 (setq bump-list (append bump-list (list symbol-srg)))
+	 (setq :tret:transfer (list symbol-srg))
+	 tret))
+
+(dhm-c concat(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (string-names 
+	       (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
+		    (dhc-parse-expr-c nm nmt ())))
+	      )
+	 
+	 (add-c-statements (sprintf "Msrg_resize(%s, "
+				    :srg-symb:c-name))
+	 (each ((thestr string-names))
+	       (add-c-statements (sprintf "strlen(%s->data)+"
+					  thestr)))
+	 (add-c-statements (sprintf "1);" ))
+	 
+	 (add-c-statements (sprintf "strcpy(%s->data,%s->data);"
+				    :srg-symb:c-name (car string-names)))
+	 (each ((thestr (cdr string-names)))
+	       (add-c-statements (sprintf "strcat(%s->data,%s->data);"
+					  :srg-symb:c-name thestr)))
+	 (sprintf "%s" :srg-symb:c-name)))
+
+;;--------------------------------------------------------------DOWNCASE
+(dhm-t downcase(source)
+       (when (<> 2 (length source))
+	     (dhc-error "one argument expected"))
+       (let* ((ta (dhc-parse-expr-t (cadr source)))
+	      (na (==> :ta:type is-a-str))
+	      (rettype (new dhc-type 'dht-str))
+	      (srg-type (dhu-type rettype))
+	      (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+							  tmpnames-seed))
+			       lex-level))
+	      (tret (new t-node (list ta) rettype ())))
+	 
+	 (if ~na
+	     (dhc-error "argument must be a string")
+	   (setq :srg-type:u-extra (new-unode rettype))
+	   (incr tmpnames-seed)
+	   (dhc-unify-types :symbol-srg:type srg-type)
+	   (setq bump-list (append bump-list (list  symbol-srg)))
+	   (setq :tret:transfer (list symbol-srg))
+	   tret)))
+
+(dhm-c downcase(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (thestr (dhc-parse-expr-c (cadr source)
+					(cadr :treetype:tn-list) ())))
+
+	 (add-c-statements (sprintf "Msrg_resize(%s, strlen(%s->data)+1);"
+				    :srg-symb:c-name thestr))
+
+	 (add-c-statements (sprintf "{\nint ctr;\nctr=0;" )) 
+
+	 (add-c-statements (sprintf "while (ctr<strlen(%s->data))" thestr))
+
+	 (add-c-statements (sprintf "{" ))
+	 (add-c-statements
+	  (sprintf 
+	   "((char *)(%s->data))[ctr]=tolower(((char *)(%s->data))[ctr]);"
+		   :srg-symb:c-name   thestr ))
+	 (add-c-statements (sprintf "ctr++;"))
+
+	 (add-c-statements (sprintf "}\n}" ))
+
+	 (add-c-statements
+	  (sprintf "((char *)(%s->data))[strlen(%s->data)]='\\0';"
+		   :srg-symb:c-name thestr))
+
+	 (sprintf "%s" :srg-symb:c-name)))
+
+;;--------------------------------------------------------------INDEX
+(dhm-t index(source)
+       (when (and (<> 3 (length source)) (<> 4 (length source)))
+	     (dhc-error "two or three arguments expected"))
+       (let* ((tns (all ((tn (cdr source)))
+			(dhc-parse-expr-t tn))))
+	 (if (null (==> :(car tns):type is-a-str))
+	     (dhc-error "first argument must be a string"))
+	 (if (null (==> :(cadr tns):type is-a-str))
+	     (dhc-error "second argument must be a string"))
+	 (if ~(null (caddr tns))
+	   (if (null (==> :(caddr tns):type is-a-number))
+	       (dhc-error "third optional argument must be a number")))
+	 
+	 (new t-node tns (new dhc-type 'dht-number))))
+
+(dhm-c index(source treetype retplace)
+       (let* ((var-names 
+	       (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
+		    (dhc-parse-expr-c nm nmt ())))
+	      (r (car var-names))
+	      (s (cadr var-names))
+	      (n (caddr var-names))
+	      )
+	 
+	 (add-c-externs (sprintf "extern int str_index();"))
+
+	 (if (null n)   ; n present?
+	     (sprintf "(%s) str_index(%s->data,%s->data,1)"
+		      (dhc-type-to-c-decl :treetype:type) r s)
+	   (if ~dhc-unprotect 
+	       (add-c-statements
+		(sprintf "RTERR_RANGE((int)%s<1);" n)))
+	   (sprintf "(%s) str_index(%s->data,%s->data,%s)"
+		    (dhc-type-to-c-decl :treetype:type) r s n))))
+	 
+
+;;--------------------------------------------------------------LEN
+(dhm-t len(source)
+       (when (<> 2 (length source))
+	     (dhc-error "one argument expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source)))
+	      (n (==> :tn:type is-a-str)))
+	     (if ~n
+		 (dhc-error "argument must be an string")
+	         (new t-node (list tn) (new dhc-type 'dht-int)))))
+
+(dhm-c len(source treetype retplace)
+       (let ((exp (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ())))
+	 (sprintf "(strlen(%s->data))" exp)))
+
+
+;;--------------------------------------------------------------LEFT
+(dhm-t left(source)
+       (when (<> 3 (length source))
+	     (dhc-error "two arguments expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source)))
+	      (tm (dhc-parse-expr-t (caddr source)))
+	      (n (==> :tn:type is-a-str))
+	      (m (==> :tm:type is-a-number))
+	      (rettype (new dhc-type 'dht-str))
+	      (srg-type (dhu-type rettype))
+	      (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+							  tmpnames-seed))
+			       lex-level))
+	      (tret (new t-node (list tn tm) rettype ())))
+	 
+	 (if ~m
+	     (dhc-error "second argument must be a number"))
+	 (if ~n
+	     (dhc-error "first argument must be an string"))
+	 
+	 (setq :srg-type:u-extra (new-unode rettype))
+	 (incr tmpnames-seed)
+	 (dhc-unify-types :symbol-srg:type srg-type)
+	 (setq bump-list (append bump-list (list symbol-srg)))
+	 (setq :tret:transfer (list symbol-srg))
+	 tret))
+
+
+(dhm-c left(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (valstr (dhc-parse-expr-c (cadr source)
+					(cadr :treetype:tn-list) ()))
+	      (val (dhc-parse-expr-c (caddr source)
+				     (caddr :treetype:tn-list) ())))
+	 
+	 (if ~dhc-unprotect 
+	     (add-c-statements
+	      (sprintf "RTERR_RANGE((int)%s<0);" val)))
+	 
+	 (add-c-statements (sprintf "Msrg_resize(%s, strlen(%s->data)+1);"
+				    :srg-symb:c-name valstr))
+         (add-c-externs "char *memccpy();")
+	 (add-c-statements 
+	  (sprintf "if (memccpy(%s->data,%s->data,'\\0',(int) %s)==NULL)"
+		   :srg-symb:c-name valstr val))
+	 (add-c-statements (sprintf "((char *)(%s->data))[(int) %s]='\\0';"
+				    :srg-symb:c-name val))
+	 (sprintf "%s" :srg-symb:c-name)))
+
+;;--------------------------------------------------------------MID
+(dhm-t mid(source)
+       (when (and (<> 3 (length source)) (<> 4 (length source)))
+	     (dhc-error "two or three arguments expected"))
+       (let* ((tns (all ((tn (cdr source)))
+			(dhc-parse-expr-t tn)))
+	      (rettype (new dhc-type 'dht-str))
+	      (srg-type (dhu-type rettype))
+	      (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+							  tmpnames-seed))
+			       lex-level))
+	      (tret (new t-node tns rettype ())))
+
+	 (if (null (==> :(car tns):type is-a-str))
+	     (dhc-error "first argument must be a string"))
+	 (if (null (==> :(cadr tns):type is-a-number))
+	     (dhc-error "second argument must be a number"))
+	 (if ~(null (caddr tns))
+	   (if (null (==> :(caddr tns):type is-a-number))
+	       (dhc-error "third optional argument must be a number")))
+	 
+	 (setq :srg-type:u-extra (new-unode rettype))
+	 (incr tmpnames-seed)
+	 (dhc-unify-types :symbol-srg:type srg-type)
+	 (setq bump-list (append bump-list (list symbol-srg)))
+	 (setq :tret:transfer (list symbol-srg))
+	 tret))
+
+(dhm-c mid(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (var-names 
+	       (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
+		    (dhc-parse-expr-c nm nmt ())))
+	      (thestr (car var-names))
+	      (n (cadr var-names))
+	      (l (caddr var-names))
+	      )
+
+	 (when ~dhc-unprotect
+	     (add-c-statements
+	      (sprintf "RTERR_RANGE((int)%s<1);" n))
+	 
+	     (if ~(null l)   ; l present?
+	       (add-c-statements
+		(sprintf "RTERR_RANGE((int)%s<0);" l))))
+	 
+	 (add-c-statements (sprintf "Msrg_resize(%s,1);"
+				    :srg-symb:c-name))
+	 (add-c-statements (sprintf "((char *)(%s->data))[0]='\\0';"
+				    :srg-symb:c-name))
+	 
+	 (if (null l)
+	   (add-c-statements (sprintf "if (%s<=strlen(%s->data))" n thestr))
+	   (add-c-statements (sprintf "if ((%s!=0)&&(%s<=strlen(%s->data)))"
+				      l n thestr)))
+
+	 (add-c-statements (sprintf "{"))
+	 (add-c-statements (sprintf "Msrg_resize(%s,strlen(%s->data)-%s+2);"
+				    :srg-symb:c-name thestr n))
+	 (if (null l)
+	     (add-c-statements 
+	      (sprintf "strcpy(%s->data,((char *)(%s->data)+%s-1));"
+					:srg-symb:c-name thestr n))
+	   
+	   (add-c-statements 
+	    (sprintf
+	     "if (memccpy(%s->data,((char *)(%s->data)+%s-1),'\\0',%s)==NULL)"
+	     :srg-symb:c-name thestr n l))
+	   
+	   (add-c-statements 
+	    (sprintf "((char *)(%s->data))[%s]='\\0';"
+		     :srg-symb:c-name l)))
+	 
+	 (add-c-statements (sprintf "}"))
+	 (sprintf "%s" :srg-symb:c-name)))
+
+
+;;--------------------------------------------------------------RIGHT
+(dhm-t-declare left right)
+
+(dhm-c right(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (valstr (dhc-parse-expr-c (cadr source)
+					(cadr :treetype:tn-list) ()))
+	      (val (dhc-parse-expr-c (caddr source)
+				     (caddr :treetype:tn-list) ())))
+
+	 (if ~dhc-unprotect
+	     (add-c-statements
+	      (sprintf "RTERR_RANGE((int)%s<0);" val)))
+	 
+	 (add-c-statements (sprintf "Msrg_resize(%s, strlen(%s->data)+1);"
+				    :srg-symb:c-name valstr))
+	 (add-c-statements 
+	  (sprintf "strcpy(%s->data,(char *)((char *)(%s->data)+"
+		   :srg-symb:c-name valstr))
+	 (add-c-statements 
+	  (sprintf "(int)((strlen(%s->data)>%s)?(strlen(%s->data)-%s):0)));"
+		   valstr val valstr val))
+	 (sprintf "%s" :srg-symb:c-name)))
+
+;;--------------------------------------------------------------SPRINTF
+(dhm-t sprintf(source)
+       (when (> 2 (length source))
+	     (dhc-error "at least one argument expected"))
+       
+       (let* ((tns (all ((tn (cdr source)))
+			(if ~(stringp tn)
+			  (dhc-parse-expr-t tn)
+			  (new t-node () (new dhc-type 'dht-str) tn ()))))
+	      (rettype (new dhc-type 'dht-str))
+	      (srg-type (dhu-type rettype))
+	      (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+							  tmpnames-seed))
+			       lex-level))
+	      (tret (new t-node tns rettype ())))
+	 
+	 (when ~(==> :(car tns):type is-a-str)
+	       (dhc-error "first argument must be an string"))
+	 
+	 (if (stringp (cadr source))
+	     (dhc-match-string-types :(car tns):source (cdr tns)))
+	 (setq :srg-type:u-extra (new-unode rettype))
+	 (incr tmpnames-seed)
+	 (dhc-unify-types :symbol-srg:type srg-type)
+	 (setq bump-list (append bump-list (list symbol-srg)))
+	 (setq :tret:transfer (list symbol-srg))
+	 tret))
+
+(dhm-c sprintf(source treetype retplace)
+       (let ((arg-source (cdr source))
+	     (arg-names 
+	      (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
+		   (if ~(stringp nm)
+		     (dhc-parse-expr-c nm nmt ())
+		     nm)))
+	     (srg-symb (car :treetype:transfer))
+	     (data ())
+	     (arg-types
+	      (all ((ty (cdr :treetype:tn-list)))
+		   (unode-val :ty:type:u-tclass))))
+	 (add-c-statements "{\nchar tempstr[1100]; int templen;")
+	 (if ~(stringp (car arg-source))
+	   (setq data (sprintf "sprintf(tempstr,(char *)((%s)->data)"
+			       (car arg-names)))
+	   (setq data (sprintf "sprintf(tempstr,\"%s\"" 
+			       (dhc-printf-to-c (car arg-source)))))
+	 
+	 (each ((theargsource (cdr arg-source))
+		(thearg (cdr arg-names))
+		(thetype (cdr arg-types)))
+	       (if (= thetype 'dht-str)
+		   (if ~(stringp theargsource)
+		     (setq data (concat data ",(char *)((" thearg ")->data)"))
+		     (setq data (concat data "," "\""
+					(dhc-printf-to-c theargsource)
+					"\"")))
+		 (setq data (concat data "," thearg))))
+	 
+	 (add-c-statements  (concat  data ");"))
+	 (add-c-statements  "tempstr[sizeof(tempstr)-1] = 0;")
+         (add-c-statements  "templen = strlen(tempstr);")
+	 (add-c-statements  "if (templen >= sizeof(tempstr)-1)")
+         (add-c-statements  "run_time_error(\"sprintf buffer full\");")
+	 (add-c-statements (sprintf "Msrg_resize(%s, templen+1);" :srg-symb:c-name))
+	 (add-c-statements (sprintf "strcpy(%s->data,tempstr);\n}" :srg-symb:c-name))
+	 (sprintf "%s" :srg-symb:c-name)))
+
+
+;;--------------------------------------------------------------STR
+(dhm-t str(source)
+       (when (<> 2 (length source))
+	     (dhc-error "one argument expected"))
+       (let* ((ta (dhc-parse-expr-t (cadr source)))
+	      (na (==> :ta:type is-a-number))
+	      (rettype (new dhc-type 'dht-str))
+	      (srg-type (dhu-type rettype))
+	      (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+							  tmpnames-seed))
+			       lex-level))
+	      (tret (new t-node (list ta) rettype ())))
+	 
+	 (if ~na
+	     (dhc-error "argument must be a number")
+	   (setq :srg-type:u-extra (new-unode rettype))
+	   (incr tmpnames-seed)
+	   (dhc-unify-types :symbol-srg:type srg-type)
+	   (setq bump-list (append bump-list (list symbol-srg)))
+	   (setq :tret:transfer (list symbol-srg))
+	   tret)))
+
+(dhm-c str(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (val (dhc-parse-expr-c (cadr source)
+				     (cadr :treetype:tn-list) ())))
+	 (add-c-statements (sprintf "{\nchar tmpchar[STRING_BUFFER];"))
+	 
+	 (add-c-statements (sprintf "sprintf(tmpchar,\"%%g\",(double)%s);" val))
+	 
+	 (add-c-statements (sprintf "Msrg_resize(%s, strlen(tmpchar));"
+				    :srg-symb:c-name))
+	 (add-c-statements (sprintf "strcpy(%s->data,tmpchar);"
+				    :srg-symb:c-name))
+	 (add-c-statements (sprintf "}"))
+	 (sprintf "%s" :srg-symb:c-name)))
+
+;;--------------------------------------------------------------STRDEL
+(dhm-t strdel(source)
+       (when (<> 4 (length source))
+	     (dhc-error "three arguments expected"))
+       (let* ((ta (dhc-parse-expr-t (cadr source)))
+	      (tb (dhc-parse-expr-t (caddr source)))
+	      (tc (dhc-parse-expr-t (caddr (cdr source))))
+	      
+	      (na (==> :ta:type is-a-str))
+	      (nb (==> :tb:type is-a-number))
+	      (nc (==> :tc:type is-a-number))
+	      (rettype (new dhc-type 'dht-str))
+	      (srg-type (dhu-type rettype))
+	      (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+							  tmpnames-seed))
+			       lex-level))
+	      (tret (new t-node (list ta tb tc) rettype ())))
+	 (if ~na
+	     (dhc-error "first argument must be a string"))
+	 (if ~nb
+	     (dhc-error "second argument must be a number"))
+	 (if ~nc
+	     (dhc-error "third argument must be a number")
+	   (incr tmpnames-seed)
+	   (setq :srg-type:u-extra (new-unode rettype))
+	   (dhc-unify-types :symbol-srg:type srg-type)
+	   (setq bump-list (append bump-list (list symbol-srg)))
+	   (setq :tret:transfer (list symbol-srg))
+	   tret)))
+
+(dhm-c strdel(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (valstr (dhc-parse-expr-c (cadr source)
+					(cadr :treetype:tn-list) ()))
+	      (n (dhc-parse-expr-c (caddr source)
+				   (caddr :treetype:tn-list) ()))
+	      (l (dhc-parse-expr-c (caddr (cdr source))
+				   (caddr (cdr :treetype:tn-list)) ())))
+	 
+	 (when ~dhc-unprotect
+	       (add-c-statements
+		(sprintf "RTERR_RANGE((int)%s<1);" n))
+	       
+	       (add-c-statements
+		(sprintf "RTERR_RANGE((int)%s<0);" l)))
+	 
+	 (add-c-statements (sprintf "Msrg_resize(%s, strlen(%s->data)+1);"
+				    :srg-symb:c-name valstr))
+	 (add-c-statements
+	  (sprintf "memccpy(%s->data,%s->data,'\\0',(int)(%s-1));"
+		   :srg-symb:c-name valstr n))
+	 (add-c-statements (sprintf "((char *)(%s->data))[(int)(%s-1)]='\\0';"
+				    :srg-symb:c-name n))
+	 (add-c-statements 
+	  (sprintf "if ((%s+%s-1)<strlen(%s->data))" n l valstr))
+
+	 (add-c-statements 
+	  (sprintf "strcat(%s->data,(char *)((char *)%s->data+%s+%s-1));"
+		   :srg-symb:c-name valstr n l))
+	 
+	 (sprintf "%s" :srg-symb:c-name)))
+       
+       
+
+       
+;;--------------------------------------------------------------STRINS
+(dhm-t strins(source)
+       (when (<> 4 (length source))
+	     (dhc-error "three arguments expected"))
+       (let* ((ta (dhc-parse-expr-t (cadr source)))
+	      (tb (dhc-parse-expr-t (caddr source)))
+	      (tc (dhc-parse-expr-t (caddr (cdr source))))
+	      
+	      (na (==> :ta:type is-a-str))
+	      (nb (==> :tb:type is-a-number))
+	      (nc (==> :tc:type is-a-str))
+	      (rettype (new dhc-type 'dht-str))
+	      (srg-type (dhu-type rettype))
+	      (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+							  tmpnames-seed))
+			       lex-level))
+	      (tret (new t-node (list ta tb tc) rettype ())))
+	 (if ~na
+	     (dhc-error "first argument must be a string"))
+	 (if ~nb
+	     (dhc-error "second argument must be a number"))
+	 (if ~nc
+	     (dhc-error "third argument must be a string")
+	   (setq :srg-type:u-extra (new-unode rettype))
+	   (incr tmpnames-seed)
+	   (dhc-unify-types :symbol-srg:type srg-type)
+	   (setq bump-list (append bump-list (list symbol-srg)))
+	   (setq :tret:transfer (list symbol-srg))
+	   tret)))
+
+(dhm-c strins(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (stra (dhc-parse-expr-c (cadr source)
+					(cadr :treetype:tn-list) ()))
+	      (n (dhc-parse-expr-c (caddr source)
+				   (caddr :treetype:tn-list) ()))
+	      (strb (dhc-parse-expr-c (caddr (cdr source))
+				   (caddr (cdr :treetype:tn-list)) ())))
+
+	 (if ~dhc-unprotect
+	     (add-c-statements
+	      (sprintf "RTERR_RANGE((int)%s<0);" n)))
+	 
+	 (add-c-statements 
+	  (sprintf "Msrg_resize(%s, strlen(%s->data)+strlen(%s->data)+1);"
+				    :srg-symb:c-name stra strb))
+	 (add-c-statements
+	  (sprintf "memccpy(%s->data,%s->data,'\\0',(int)(%s));"
+		   :srg-symb:c-name stra n))
+	 (add-c-statements (sprintf "((char *)(%s->data))[(int)(%s)]='\\0';"
+				    :srg-symb:c-name n))
+	 (add-c-statements
+	  (sprintf "strcat(%s->data,%s->data);"
+		   :srg-symb:c-name strb))
+
+	 (add-c-statements 
+	  (sprintf "if (((int)%s)<strlen(%s->data))" n stra))
+	 
+	 (add-c-statements 
+	  (sprintf "         strcat(%s->data,(char *)((char *)%s->data+%s));"
+		   :srg-symb:c-name stra n))
+	 
+	 (sprintf "%s" :srg-symb:c-name)))
+              
+;;--------------------------------------------------------------UPCASE
+(dhm-t-declare downcase upcase)
+
+(dhm-c upcase(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (thestr (dhc-parse-expr-c (cadr source)
+					(cadr :treetype:tn-list) ())))
+
+	 (add-c-statements (sprintf "Msrg_resize(%s, strlen(%s->data)+1);"
+				    :srg-symb:c-name thestr))
+
+	 (add-c-statements (sprintf "{\nint ctr;\nctr=0;" )) 
+
+	 (add-c-statements (sprintf "while (ctr<strlen(%s->data))" thestr))
+
+	 (add-c-statements (sprintf "{" ))
+	 (add-c-statements
+	  (sprintf 
+	   "((char *)(%s->data))[ctr]=toupper(((char *)(%s->data))[ctr]);"
+		   :srg-symb:c-name   thestr ))
+	 (add-c-statements (sprintf "ctr++;"))
+
+	 (add-c-statements (sprintf "}\n}" ))
+
+	 (add-c-statements
+	  (sprintf "((char *)(%s->data))[strlen(%s->data)]='\\0';"
+		   :srg-symb:c-name thestr))
+
+	 (sprintf "%s" :srg-symb:c-name)))
+
+;;--------------------------------------------------------------VAL
+(dhm-t val(source)
+       (when (<> 2 (length source))
+	     (dhc-error "one argument expected"))
+       (let* ((ta (dhc-parse-expr-t (cadr source)))
+	      (na (==> :ta:type is-a-str)))
+	 (if ~na
+	     (dhc-error "argument must be an string")
+	   (new t-node (list ta) (new dhc-type 'dht-number)))))
+
+
+(dhm-c val(source treetype retplace)
+       (let* ((valstr (dhc-parse-expr-c (cadr source)
+					(cadr :treetype:tn-list) ())))
+
+	 (sprintf "atof((char *)(%s->data))" valstr)))
+       
+
+
+(setq dh-string t)
+
+; mdh 9/94
+

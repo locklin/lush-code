@@ -1,0 +1,2027 @@
+(mload "cmacro.sn")
+(mload "file-std.sn")
+
+#? File "idx-io.sn"
+;; Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+;;.VP
+;; Author: Pascal Vincent (04/05/96)
+;;
+;; These routines are based on the C-like Compilable file I/O routines.
+;; They use their own matrix file format, different from the old SN matrix formats.
+;;
+;;.SEE (fread-idx1-ubyte <file-pointer> <m>)
+;;.SEE (fwrite-idx1-ubyte <file-pointer> <m>)
+;;.SEE (fread-idx2-ubyte <file-pointer> <m>)
+;;.SEE (fwrite-idx2-ubyte <file-pointer> <m>)
+;;.SEE (fread-idx3-ubyte <file-pointer> <m>)
+;;.SEE (fwrite-idx3-ubyte <file-pointer> <m>)
+;;.SEE (fread-idx4-ubyte <file-pointer> <m>)
+;;.SEE (fwrite-idx4-ubyte <file-pointer> <m>)
+;;.SEE (fread-idx1-byte <file-pointer> <m>)
+;;.SEE (fwrite-idx1-byte <file-pointer> <m>)
+;;.SEE (fread-idx2-byte <file-pointer> <m>)
+;;.SEE (fwrite-idx2-byte <file-pointer> <m>)
+;;.SEE (fread-idx3-byte <file-pointer> <m>)
+;;.SEE (fwrite-idx3-byte <file-pointer> <m>)
+;;.SEE (fread-idx1-int <file-pointer> <m>)
+;;.SEE (fwrite-idx1-int <file-pointer> <m>)
+;;.SEE (fread-idx2-int <file-pointer> <m>)
+;;.SEE (fwrite-idx2-int <file-pointer> <m>)
+;;.SEE (fread-idx3-int <file-pointer> <m>)
+;;.SEE (fwrite-idx3-int <file-pointer> <m>)
+;;.SEE (fread-idx1-flt <file-pointer> <m>)
+;;.SEE (fwrite-idx1-flt <file-pointer> <m>)
+;;.SEE (fread-idx2-flt <file-pointer> <m>)
+;;.SEE (fwrite-idx2-flt <file-pointer> <m>)
+;;.SEE (fread-idx3-flt <file-pointer> <m>)
+;;.SEE (fwrite-idx3-flt <file-pointer> <m>)
+;;.SEE (fread-idx1-real <file-pointer> <m>)
+;;.SEE (fwrite-idx1-real <file-pointer> <m>)
+;;.SEE (fread-idx2-real <file-pointer> <m>)
+;;.SEE (fwrite-idx2-real <file-pointer> <m>)
+;;.SEE (fread-idx3-real <file-pointer> <m>)
+;;.SEE (fwrite-idx3-real <file-pointer> <m>)
+;;.SEE Compilable file I/O
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+;;.SEE New matrix file format
+
+#? Compilable loading and saving routines for matrixes idx1, idx2, idx3
+;;.VP
+;; Author: Pascal Vincent (04/05/96)
+;; These routines that take a file-name as argument are based on the lower 
+;; level routines read-idx... and write-idx... that take a file-pointer as argument. 
+;; They use their own matrix file format, different from the old SN matrix formats.
+;; Modified: Patrick Haffner 10-10-97, replace "w" with "wb" and "r" with "rb"
+;;
+;;.SEE (load-idx1-ubyte <filename> <m>)
+;;.SEE (save-idx1-ubyte <filename> <m>)
+;;.SEE (load-idx2-ubyte <filename> <m>)
+;;.SEE (save-idx2-ubyte <filename> <m>)
+;;.SEE (load-idx3-ubyte <filename> <m>)
+;;.SEE (save-idx3-ubyte <filename> <m>)
+;;.SEE (load-idx4-ubyte <filename> <m>)
+;;.SEE (save-idx4-ubyte <filename> <m>)
+;;.SEE (load-idx1-byte <filename> <m>)
+;;.SEE (save-idx1-byte <filename> <m>)
+;;.SEE (load-idx2-byte <filename> <m>)
+;;.SEE (save-idx2-byte <filename> <m>)
+;;.SEE (load-idx3-byte <filename> <m>)
+;;.SEE (save-idx3-byte <filename> <m>)
+;;.SEE (load-idx1-short <filename> <m>)
+;;.SEE (save-idx1-short <filename> <m>)
+;;.SEE (load-idx2-short <filename> <m>)
+;;.SEE (save-idx2-short <filename> <m>)
+;;.SEE (load-idx3-short <filename> <m>)
+;;.SEE (save-idx3-short <filename> <m>)
+;;.SEE (load-idx1-int <filename> <m>)
+;;.SEE (save-idx1-int <filename> <m>)
+;;.SEE (load-idx2-int <filename> <m>)
+;;.SEE (save-idx2-int <filename> <m>)
+;;.SEE (load-idx3-int <filename> <m>)
+;;.SEE (save-idx3-int <filename> <m>)
+;;.SEE (load-idx1-flt <filename> <m>)
+;;.SEE (save-idx1-flt <filename> <m>)
+;;.SEE (load-idx2-flt <filename> <m>)
+;;.SEE (save-idx2-flt <filename> <m>)
+;;.SEE (load-idx3-flt <filename> <m>)
+;;.SEE (save-idx3-flt <filename> <m>)
+;;.SEE (load-idx1-real <filename> <m>)
+;;.SEE (save-idx1-real <filename> <m>)
+;;.SEE (load-idx2-real <filename> <m>)
+;;.SEE (save-idx2-real <filename> <m>)
+;;.SEE (load-idx3-real <filename> <m>)
+;;.SEE (save-idx3-real <filename> <m>)
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+;;.SEE New matrix file format
+
+
+#? New matrix file format
+;;.VP
+;; Author: Pascal Vincent (04/05/96)
+;; This format is the one used by compilable routines write-idx... save-idx... read-idx... load-idx...
+;; It is different from the older SN matrix formats (that supported only float matrixes)
+;;
+;; The format is as follows:
+;; - A long word (4 bytes) coding the matrix type (see detail below)
+;; - A long word (4 bytes) for EACH dimension of the matrix (thus for an idx2 it will be 2 long-words, 
+;;   the first one for the height, the second one for the width of the matrix)
+;; - A (possibly reversed) memory-dump of the elements of the matrix 
+;;   (short: 2 bytes, int: 4 bytes, flt: 4 bytes real: 8 bytes)
+;;
+;; The matrix types are encoded in the following way (hexadecimal representation):
+;;    - idx1 of ubyte: 00 00 08 01
+;;    - idx2 of ubyte: 00 00 08 02
+;;    - idx3 of ubyte: 00 00 08 03
+;;    - idx1 of byte:  00 00 09 01
+;;    - idx2 of byte:  00 00 09 02
+;;    - idx3 of byte:  00 00 09 03
+;;    - idx1 of short: 00 00 0B 01
+;;    - idx2 of short: 00 00 0B 02
+;;    - idx3 of short: 00 00 0B 03
+;;    - idx1 of int:   00 00 0C 01
+;;    - idx2 of int:   00 00 0C 02
+;;    - idx3 of int:   00 00 0C 03
+;;    - idx1 of flt:   00 00 0D 01
+;;    - idx2 of flt:   00 00 0D 02
+;;    - idx3 of flt:   00 00 0D 03
+;;    - idx1 of real:  00 00 0E 01
+;;    - idx2 of real:  00 00 0E 02
+;;    - idx3 of real:  00 00 0E 03
+;;
+;; The long-words and the elements of the matrix MUST correspond to the byte order and coding
+;; of the Sparc stations (classical big-endian, and IEEE standard floating point representation)
+;; If the system is not a Sparc, then the functions that write
+;; or load these matrixes reverse the bytes if necessary to keep the file format 
+;; consistant between systems.
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+;;.SEE (reverse2 <ptr> <n>)
+;;.SEE (reverse4 <ptr> <n>)
+;;.SEE (reverse8 <ptr> <n>)
+
+#? (fread-idx1-ubyte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-ubyte-)) m) ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer> 
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx1-ubyte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-ubyte-)) m) ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0801)
+        (printf "$$ ERROR in fread-idx1-ubyte: bad file-format $$\n")
+      (idx-u1resize m (fread-int file))
+      #{ fread((char *)IDX_PTR($m,unsigned char), sizeof(unsigned char), $m->dim[0], (FILE *)$file); #}
+      () )
+    () )
+
+#? (fwrite-idx1-ubyte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-ubyte-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx1-ubyte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-ubyte-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0801) ; File format code for idx1-ubyte
+    (fwrite-int file (idx-dim m 0))
+    (idx-bloop ((val m))
+      (fwrite-ubyte file (val)))
+    () )
+
+#? (fread-idx2-ubyte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-ubyte-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx2-ubyte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-ubyte-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0802)
+        (printf "$$ ERROR in fread-idx2-ubyte: bad file-format $$\n")
+      (idx-u2resize m (fread-int file) (fread-int file))
+      #{ fread((char *)IDX_PTR($m,unsigned char), sizeof(unsigned char), $m->dim[0] * $m->dim[1], (FILE *)$file); #}
+      () )
+    () )
+
+
+#? (fwrite-idx2-ubyte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-ubyte-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx2-ubyte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-ubyte-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0802) ; File format code for idx2-ubyte
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (idx-bloop ((line m))
+      (idx-bloop ((val line))
+        (fwrite-ubyte file (val))))
+    () )
+
+#? (fread-idx3-ubyte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-ubyte-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx3-ubyte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-ubyte-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0803)
+        (printf "$$ ERROR in fread-idx3-ubyte: bad file-format $$\n")
+      (idx-u3resize m (fread-int file) (fread-int file) (fread-int file))
+      #{ fread((char *)IDX_PTR($m,unsigned char), sizeof(unsigned char), $m->dim[0] * $m->dim[1] * $m->dim[2], (FILE *)$file); #}
+      () )
+    () )
+
+#? (fwrite-idx3-ubyte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-ubyte-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx3-ubyte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-ubyte-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0803) ; File format code for idx3-ubyte
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (fwrite-int file (idx-dim m 2))
+    (idx-bloop ((m2 m))
+      (idx-bloop ((line m2))
+        (idx-bloop ((val line))
+          (fwrite-ubyte file (val)))))
+    () )
+
+#? (fwrite-idx4-ubyte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx4- (-ubyte-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Yoshua Bengio 05 Feb 98
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx4-ubyte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx4- (-ubyte-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0804) ; File format code for idx4-ubyte
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (fwrite-int file (idx-dim m 2))
+    (fwrite-int file (idx-dim m 3))
+    (idx-bloop ((m1 m))
+      (idx-bloop ((m2 m1))
+        (idx-bloop ((line m2))
+          (idx-bloop ((val line))
+            (fwrite-ubyte file (val))))))
+    () )
+
+
+#? (fread-idx4-ubyte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx4- (-ubyte-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Yoshua Bengio 05 Feb 98
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx4-ubyte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx4- (-ubyte-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0804)
+        (printf "$$ ERROR in fread-idx4-ubyte: bad file-format $$\n")
+      (idx-u4resize m (fread-int file) (fread-int file) 
+                    (fread-int file) (fread-int file))
+      #{ fread((char *)IDX_PTR($m,unsigned char), sizeof(unsigned char), $m->dim[0] * $m->dim[1] * $m->dim[2] * $m->dim[3], (FILE *)$file); #}
+      () )
+    () )
+
+
+
+#? (fread-idx1-byte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-byte-)) m) ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer> 
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx1-byte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-byte-)) m) ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0901)
+        (printf "$$ ERROR in fread-idx1-byte: bad file-format $$\n")
+      (idx-b1resize m (fread-int file))
+      #{ fread((char *)IDX_PTR($m,char), sizeof(char), $m->dim[0], (FILE *)$file); #}
+      () )
+    () )
+
+#? (fwrite-idx1-byte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-byte-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx1-byte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-byte-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0901) ; File format code for idx1-byte
+    (fwrite-int file (idx-dim m 0))
+    (idx-bloop ((val m))
+      (fwrite-byte file (val)))
+    () )
+
+#? (fread-idx2-byte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-byte-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx2-byte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-byte-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0902)
+        (printf "$$ ERROR in fread-idx2-byte: bad file-format $$\n")
+      (idx-b2resize m (fread-int file) (fread-int file))
+      #{ fread((char *)IDX_PTR($m,char), sizeof(char), $m->dim[0] * $m->dim[1], (FILE *)$file); #}
+      () )
+    () )
+
+
+#? (fwrite-idx2-byte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-byte-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx2-byte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-byte-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0902) ; File format code for idx2-byte
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (idx-bloop ((line m))
+      (idx-bloop ((val line))
+        (fwrite-byte file (val))))
+    () )
+
+#? (fread-idx3-byte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-byte-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx3-byte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-byte-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0903)
+        (printf "$$ ERROR in fread-idx3-byte: bad file-format $$\n")
+      (idx-b3resize m (fread-int file) (fread-int file) (fread-int file))
+      #{ fread((char *)IDX_PTR($m,char), sizeof(char), $m->dim[0] * $m->dim[1] * $m->dim[2], (FILE *)$file); #}
+      () )
+    () )
+
+#? (fwrite-idx3-byte <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-byte-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx3-byte (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-byte-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0903) ; File format code for idx3-byte
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (fwrite-int file (idx-dim m 2))
+    (idx-bloop ((m2 m))
+      (idx-bloop ((line m2))
+        (idx-bloop ((val line))
+          (fwrite-byte file (val)))))
+    () )
+
+
+#? (fread-idx1-short <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-short-)) m) ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer> 
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx1-short (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-short-)) m) ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0B01)
+        (printf "$$ ERROR in fread-idx1-short: bad file-format $$\n")
+      (idx-s1resize m (fread-int file))
+      #{ 
+        fread((char *)IDX_PTR($m,short), sizeof(short), $m->dim[0], (FILE *)$file); 
+        #ifdef SOLARIS86
+        C_reverse2(IDX_PTR($m,short), $m->dim[0]);
+        #endif
+      #}
+      () )
+    () )
+
+#? (fwrite-idx1-short <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-short-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx1-short (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-short-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0B01) ; File format code for idx1-short
+    (fwrite-int file (idx-dim m 0))
+    (idx-bloop ((val m))
+      (fwrite-short file (val)))
+    () )
+
+#? (fread-idx2-short <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-short-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx2-short (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-short-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0B02)
+        (printf "$$ ERROR in fread-idx2-short: bad file-format $$\n")
+      (idx-s2resize m (fread-int file) (fread-int file))
+      #{ 
+        fread((char *)IDX_PTR($m,short), sizeof(short), $m->dim[0] * $m->dim[1], (FILE *)$file);
+        #ifdef SOLARIS86
+        C_reverse2(IDX_PTR($m,short), $m->dim[0] * $m->dim[1]);
+        #endif
+      #}
+      () )
+    () )
+
+
+#? (fwrite-idx2-short <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-short-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx2-short (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-short-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0B02) ; File format code for idx2-short
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (idx-bloop ((line m))
+      (idx-bloop ((val line))
+        (fwrite-short file (val))))
+    () )
+
+#? (fread-idx3-short <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-short-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx3-short (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-short-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0B03)
+        (printf "$$ ERROR in fread-idx3-short: bad file-format $$\n")
+      (idx-s3resize m (fread-int file) (fread-int file) (fread-int file))
+      #{ 
+        fread((char *)IDX_PTR($m,short), sizeof(short), $m->dim[0] * $m->dim[1] * $m->dim[2], (FILE *)$file);
+        #ifdef SOLARIS86
+        C_reverse2(IDX_PTR($m,short), $m->dim[0] * $m->dim[1] * $m->dim[2]);
+        #endif
+      #}
+      () )
+    () )
+
+#? (fwrite-idx3-short <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-short-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx3-short (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-short-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0B03) ; File format code for idx3-short
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (fwrite-int file (idx-dim m 2))
+    (idx-bloop ((m2 m))
+      (idx-bloop ((line m2))
+        (idx-bloop ((val line))
+          (fwrite-short file (val)))))
+    () )
+
+#? (fread-idx1-int <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-int-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx1-int (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-int-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0C01)
+        (printf "$$ ERROR in fread-idx1-int: bad file-format $$\n")
+      (idx-i1resize m (fread-int file))
+      #{ 
+      fread((char *)IDX_PTR($m,int), sizeof(int), $m->dim[0], (FILE *)$file); 
+       #ifdef SOLARIS86
+       C_reverse4(IDX_PTR($m,short), $m->dim[0]) ;
+       #endif
+       #})
+    () )
+
+#? (fwrite-idx1-int <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-int-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx1-int (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-int-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0C01) ; File format code for idx1-int
+    (fwrite-int file (idx-dim m 0))
+    (idx-bloop ((val m))
+      (fwrite-int file (val)))
+    () )
+
+#? (fread-idx2-int <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-int-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx2-int (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-int-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0C02)
+        (printf "$$ ERROR in fread-idx2-int: bad file-format $$\n")
+      (idx-i2resize m (fread-int file) (fread-int file))
+      #{ 
+      fread((char *)IDX_PTR($m,int), sizeof(int), $m->dim[0] * $m->dim[1], (FILE *)$file); 
+       #ifdef SOLARIS86
+       C_reverse4(IDX_PTR($m,short), $m->dim[0] * $m->dim[1]) ;
+       #endif
+       #})
+    () )
+
+#? (fwrite-idx2-int <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-int-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx2-int (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-int-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0C02) ; File format code for idx2-int
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (idx-bloop ((line m))
+      (idx-bloop ((val line))
+        (fwrite-int file (val))))
+    () )
+
+#? (fread-idx3-int <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-int-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx3-int (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-int-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0C03)
+        (printf "$$ ERROR in fread-idx3-int: bad file-format $$\n")
+      (idx-i3resize m (fread-int file) (fread-int file) (fread-int file))
+      #{ 
+      fread((char *)IDX_PTR($m,int), sizeof(int), $m->dim[0] * $m->dim[1] * $m->dim[2], (FILE *)$file); 
+       #ifdef SOLARIS86
+       C_reverse4(IDX_PTR($m,short), $m->dim[0] * $m->dim[1] * $m->dim[2]) ;
+       #endif
+       #})
+    () )
+
+#? (fwrite-idx3-int <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-int-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx3-int (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-int-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0C03) ; File format code for idx3-int
+    (fwrite-int file (idx-dim m 0)) 
+    (fwrite-int file (idx-dim m 1))
+    (fwrite-int file (idx-dim m 2))
+    (idx-bloop ((m2 m))
+      (idx-bloop ((line m2))
+        (idx-bloop ((val line))
+          (fwrite-int file (val)))))
+    () )
+
+#? (fread-idx1-flt <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-flt-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx1-flt (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-flt-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0D01)
+        (printf "$$ ERROR in fread-idx1-flt: bad file-format $$\n")
+      (idx-m1resize m (fread-int file))
+      #{ 
+      fread((char *)IDX_PTR($m,flt), sizeof(flt), $m->dim[0], (FILE *)$file); 
+       #ifdef SOLARIS86
+       C_reverse4(IDX_PTR($m,short), $m->dim[0]) ;
+       #endif
+       #})
+    () )
+
+#? (fwrite-idx1-flt <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-flt-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx1-flt (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-flt-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0D01) ; File format code for idx1-flt
+    (fwrite-int file (idx-dim m 0))
+    (idx-bloop ((val m))
+      (fwrite-flt file (val)))
+    () )
+
+#? (fread-idx2-flt <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-flt-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx2-flt (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-flt-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0D02)
+        (printf "$$ ERROR in fread-idx2-flt: bad file-format $$\n")
+      (idx-m2resize m (fread-int file) (fread-int file))
+      #{ 
+      fread((char *)IDX_PTR($m,flt), sizeof(flt), $m->dim[0] * $m->dim[1], (FILE *)$file); 
+       #ifdef SOLARIS86
+       C_reverse4(IDX_PTR($m,short), $m->dim[0] * $m->dim[1]) ;
+       #endif
+       #})
+    () )
+
+#? (fwrite-idx2-flt <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-flt-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx2-flt (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-flt-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0D02) ; File format code for idx2-flt
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (idx-bloop ((line m))
+      (idx-bloop ((val line))
+        (fwrite-flt file (val))))
+    () )
+
+#? (fread-idx3-flt <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-flt-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx3-flt (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-flt-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0D03)
+        (printf "$$ ERROR in fread-idx3-flt: bad file-format $$\n")
+      (idx-m3resize m (fread-int file) (fread-int file) (fread-int file))
+      #{ 
+      fread((char *)IDX_PTR($m,flt), sizeof(flt), $m->dim[0] * $m->dim[1] * $m->dim[2], (FILE *)$file); 
+       #ifdef SOLARIS86
+       C_reverse4(IDX_PTR($m,short), $m->dim[0] * $m->dim[1] * $m->dim[2]) ;
+       #endif
+       #})
+    () )
+
+#? (fwrite-idx3-flt <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-flt-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx3-flt (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-flt-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0D03) ; File format code for idx3-flt
+    (fwrite-int file (idx-dim m 0)) 
+    (fwrite-int file (idx-dim m 1))
+    (fwrite-int file (idx-dim m 2))
+    (idx-bloop ((m2 m))
+      (idx-bloop ((line m2))
+        (idx-bloop ((val line))
+          (fwrite-flt file (val)))))
+    () )
+
+#? (fread-idx1-real <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-real-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx1-real (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-real-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0E01)
+        (printf "$$ ERROR in fread-idx1-real: bad file-format $$\n")
+      (idx-d1resize m (fread-int file))
+      #{ 
+      fread((char *)IDX_PTR($m,double), sizeof(double), $m->dim[0], (FILE *)$file); 
+       #ifdef SOLARIS86
+       C_reverse8(IDX_PTR($m,short), $m->dim[0]) ;
+       #endif
+       #})
+    () )
+
+#? (fwrite-idx1-real <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx1- (-real-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx1-real (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx1- (-real-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0E01) ; File format code for idx1-real
+    (fwrite-int file (idx-dim m 0))
+    (idx-bloop ((val m))
+      (fwrite-real file (val)))
+    () )
+
+#? (fread-idx2-real <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-real-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx2-real (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-real-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0E02)
+        (printf "$$ ERROR in fread-idx2-real: bad file-format $$\n")
+      (idx-d2resize m (fread-int file) (fread-int file))
+      #{ 
+      fread((char *)IDX_PTR($m,double), sizeof(double), $m->dim[0] * $m->dim[1], (FILE *)$file); 
+       #ifdef SOLARIS86
+       C_reverse8(IDX_PTR($m,short), $m->dim[0] * $m->dim[1]) ;
+       #endif
+       #})
+    () )
+
+#? (fwrite-idx2-real <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx2- (-real-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx2-real (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx2- (-real-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0E02) ; File format code for idx2-real
+    (fwrite-int file (idx-dim m 0))
+    (fwrite-int file (idx-dim m 1))
+    (idx-bloop ((line m))
+      (idx-bloop ((val line))
+        (fwrite-real file (val))))
+    () )
+
+#? (fread-idx3-real <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-real-)) m)  ; the matrix to be read from the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: reads matrix <m> from file <file-pointer>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fread-idx3-real (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-real-)) m)  ; the matrix to be read from the file
+
+    (if (<> (fread-int file) 0x0E03)
+        (printf "$$ ERROR in fread-idx3-real: bad file-format $$\n")
+      (idx-d3resize m (fread-int file) (fread-int file) (fread-int file))
+      #{ 
+      fread((char *)IDX_PTR($m,double), sizeof(double), $m->dim[0] * $m->dim[1] * $m->dim[2], (FILE *)$file); 
+       #ifdef SOLARIS86
+       C_reverse8(IDX_PTR($m,short), $m->dim[0] * $m->dim[1] * $m->dim[2]) ;
+       #endif
+       #})
+    () )
+
+#? (fwrite-idx3-real <file-pointer> <m>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-idx3- (-real-)) m)  ; the matrix to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes matrix <m> to file <file-pointer>
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+(de fwrite-idx3-real (file m)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-idx3- (-real-)) m)  ; the matrix to be written to the file
+
+    (fwrite-int file 0x0E03) ; File format code for idx3-real
+    (fwrite-int file (idx-dim m 0)) 
+    (fwrite-int file (idx-dim m 1))
+    (fwrite-int file (idx-dim m 2))
+    (idx-bloop ((m2 m))
+      (idx-bloop ((line m2))
+        (idx-bloop ((val line))
+          (fwrite-real file (val)))))
+    () )
+
+#? (save-idx1-ubyte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-ubyte-)) m)  
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx1-ubyte (filename m)
+    ((-str-) filename)
+    ((-idx1- (-ubyte-)) m)  ; the matrix to be read from the file
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx1-ubyte file m)
+      (fclose file)))
+    () )
+
+#? (load-idx1-ubyte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-ubyte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx1-ubyte (filename m)
+    ((-str-) filename)
+    ((-idx1- (-ubyte-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx1-ubyte file m)
+      (fclose file)))
+    () )
+
+#? (save-idx2-ubyte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-ubyte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx2-ubyte (filename m)
+    ((-str-) filename)
+    ((-idx2- (-ubyte-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx2-ubyte file m)
+      (fclose file)))
+    () )
+
+#? (load-idx2-ubyte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-ubyte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx2-ubyte (filename m)
+    ((-str-) filename)
+    ((-idx2- (-ubyte-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+          (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+        (fread-idx2-ubyte file m)
+        (fclose file)))
+    () )
+
+#? (save-idx3-ubyte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-ubyte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx3-ubyte (filename m)
+    ((-str-) filename)
+    ((-idx3- (-ubyte-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx3-ubyte file m)
+      (fclose file)))
+    () )
+
+#? (load-idx3-ubyte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-ubyte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx3-ubyte (filename m)
+    ((-str-) filename)
+    ((-idx3- (-ubyte-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx3-ubyte file m)
+      (fclose file)))
+    () )
+
+#? (save-idx4-ubyte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx4- (-ubyte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Yoshua Bengio,  5 Feb 98
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx4-ubyte (filename m)
+    ((-str-) filename)
+    ((-idx4- (-ubyte-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx4-ubyte file m)
+      (fclose file)))
+    () )
+
+#? (load-idx4-ubyte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx4- (-ubyte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Yoshua Bengio, 5 Feb 98
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx4-ubyte (filename m)
+    ((-str-) filename)
+    ((-idx4- (-ubyte-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx4-ubyte file m)
+      (fclose file)))
+    () )
+
+#? (save-idx1-byte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-byte-)) m)  
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx1-byte (filename m)
+    ((-str-) filename)
+    ((-idx1- (-byte-)) m)  ; the matrix to be read from the file
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx1-byte file m)
+      (fclose file)))
+    () )
+
+#? (load-idx1-byte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-byte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx1-byte (filename m)
+    ((-str-) filename)
+    ((-idx1- (-byte-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx1-byte file m)
+      (fclose file)))
+    () )
+
+#? (save-idx2-byte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-byte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx2-byte (filename m)
+    ((-str-) filename)
+    ((-idx2- (-byte-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx2-byte file m)
+      (fclose file)))
+    () )
+
+#? (load-idx2-byte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-byte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx2-byte (filename m)
+    ((-str-) filename)
+    ((-idx2- (-byte-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+          (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+        (fread-idx2-byte file m)
+        (fclose file)))
+    () )
+
+#? (save-idx3-byte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-byte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx3-byte (filename m)
+    ((-str-) filename)
+    ((-idx3- (-byte-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx3-byte file m)
+      (fclose file)))
+    () )
+
+#? (load-idx3-byte <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-byte-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx3-byte (filename m)
+    ((-str-) filename)
+    ((-idx3- (-byte-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx3-byte file m)
+      (fclose file)))
+    () )
+
+#? (save-idx1-short <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-short-)) m)  
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx1-short (filename m)
+    ((-str-) filename)
+    ((-idx1- (-short-)) m)  ; the matrix to be read from the file
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx1-short file m)
+      (fclose file)))
+    () )
+
+#? (load-idx1-short <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-short-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx1-short (filename m)
+    ((-str-) filename)
+    ((-idx1- (-short-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx1-short file m)
+      (fclose file)))
+    () )
+
+#? (save-idx2-short <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-short-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx2-short (filename m)
+    ((-str-) filename)
+    ((-idx2- (-short-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx2-short file m)
+      (fclose file)))
+    () )
+
+#? (load-idx2-short <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-short-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx2-short (filename m)
+    ((-str-) filename)
+    ((-idx2- (-short-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx2-short file m)
+      (fclose file)))
+    () )
+
+#? (save-idx3-short <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-short-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx3-short (filename m)
+    ((-str-) filename)
+    ((-idx3- (-short-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx3-short file m)
+      (fclose file)))
+    () )
+
+#? (load-idx3-short <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-short-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx3-short (filename m)
+    ((-str-) filename)
+    ((-idx3- (-short-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx3-short file m)
+      (fclose file)))
+    () )
+
+#? (save-idx1-int <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-int-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx1-int (filename m)
+    ((-str-) filename)
+    ((-idx1- (-int-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx1-int file m)
+      (fclose file)))
+    () )
+
+#? (load-idx1-int <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-int-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx1-int (filename m)
+    ((-str-) filename)
+    ((-idx1- (-int-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx1-int file m)
+      (fclose file)))
+    () )
+
+#? (save-idx2-int <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-int-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx2-int (filename m)
+    ((-str-) filename)
+    ((-idx2- (-int-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx2-int file m)
+      (fclose file)))
+    () )
+
+#? (load-idx2-int <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-int-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx2-int (filename m)
+    ((-str-) filename)
+    ((-idx2- (-int-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx2-int file m)
+      (fclose file)))
+    () )
+
+#? (save-idx3-int <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-int-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx3-int (filename m)
+    ((-str-) filename)
+    ((-idx3- (-int-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx3-int file m)
+      (fclose file)))
+    () )
+
+#? (load-idx3-int <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-int-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx3-int (filename m)
+    ((-str-) filename)
+    ((-idx3- (-int-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx3-int file m)
+      (fclose file)))
+    () )
+
+#? (save-idx1-flt <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-flt-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx1-flt (filename m)
+    ((-str-) filename)
+    ((-idx1- (-flt-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx1-flt file m)
+      (fclose file)))
+    () )
+
+#? (load-idx1-flt <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-flt-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx1-flt (filename m)
+    ((-str-) filename)
+    ((-idx1- (-flt-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx1-flt file m)
+      (fclose file)))
+    () )
+
+#? (save-idx2-flt <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-flt-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx2-flt (filename m)
+    ((-str-) filename)
+    ((-idx2- (-flt-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx2-flt file m)
+      (fclose file)))
+    () )
+
+#? (load-idx2-flt <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-flt-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx2-flt (filename m)
+    ((-str-) filename)
+    ((-idx2- (-flt-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx2-flt file m)
+      (fclose file)))
+    () )
+
+#? (save-idx3-flt <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-flt-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx3-flt (filename m)
+    ((-str-) filename)
+    ((-idx3- (-flt-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx3-flt file m)
+      (fclose file)))
+    () )
+
+#? (load-idx3-flt <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-flt-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx3-flt (filename m)
+    ((-str-) filename)
+    ((-idx3- (-flt-)) m)
+    
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+          (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+        (fread-idx3-flt file m)
+        (fclose file)))
+    () )
+
+#? (save-idx1-real <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-real-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx1-real (filename m)
+    ((-str-) filename)
+    ((-idx1- (-real-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx1-real file m)
+      (fclose file)))
+    () )
+
+#? (load-idx1-real <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx1- (-real-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx1-real (filename m)
+    ((-str-) filename)
+    ((-idx1- (-real-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx1-real file m)
+      (fclose file)))
+    () )
+
+#? (save-idx2-real <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-real-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx2-real (filename m)
+    ((-str-) filename)
+    ((-idx2- (-real-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx2-real file m)
+      (fclose file)))
+    () )
+
+#? (load-idx2-real <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx2- (-real-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx2-real (filename m)
+    ((-str-) filename)
+    ((-idx2- (-real-)) m)
+
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+      (fread-idx2-real file m)
+      (fclose file)))
+    () )
+
+#? (save-idx3-real <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-real-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: saves matrix <m> to file <filename>
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de save-idx3-real (filename m)
+    ((-str-) filename)
+    ((-idx3- (-real-)) m)
+
+    (let ((file (fopen filename "wb")))
+      (if (= file (gptr ()))
+        (printf "## ERROR: Could not open file %s for writing ##\n" filename)
+      (fwrite-idx3-real file m)
+      (fclose file)))
+    () )
+
+#? (load-idx3-real <filename> <m>)
+;;.VP
+;; ((-str-) filename):
+;; ((-idx3- (-real-)) m):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: loads matrix <m> from file <filename>
+;;           <m> is "resized" to fit the size of the matrix in the file
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+(de load-idx3-real (filename m)
+    ((-str-) filename)
+    ((-idx3- (-real-)) m)
+    
+    (let ((file (fopen filename "rb")))
+      (if (= file (gptr ()))
+          (printf "## ERROR: Could not open file %s for reading ##\n" filename)
+        (fread-idx3-real file m)
+        (fclose file)))
+    () )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make ()
+          fread-idx1-ubyte
+          fwrite-idx1-ubyte
+          fread-idx2-ubyte
+          fwrite-idx2-ubyte
+          fread-idx3-ubyte
+          fwrite-idx3-ubyte
+          fread-idx4-ubyte
+          fwrite-idx4-ubyte
+
+          fread-idx1-byte
+          fwrite-idx1-byte
+          fread-idx2-byte
+          fwrite-idx2-byte
+          fread-idx3-byte
+          fwrite-idx3-byte
+
+          fread-idx1-short
+          fwrite-idx1-short
+          fread-idx2-short
+          fwrite-idx2-short
+          fread-idx3-short
+          fwrite-idx3-short
+          
+          fread-idx1-int
+          fwrite-idx1-int
+          fread-idx2-int
+          fwrite-idx2-int
+          fread-idx3-int
+          fwrite-idx3-int
+          
+          fread-idx1-flt
+          fwrite-idx1-flt
+          fread-idx2-flt
+          fwrite-idx2-flt
+          fread-idx3-flt
+          fwrite-idx3-flt          
+
+          fread-idx1-real
+          fwrite-idx1-real
+          fread-idx2-real
+          fwrite-idx2-real
+          fread-idx3-real
+          fwrite-idx3-real          
+
+          load-idx1-ubyte
+          save-idx1-ubyte
+          load-idx2-ubyte
+          save-idx2-ubyte
+          load-idx3-ubyte
+          save-idx3-ubyte
+          load-idx4-ubyte
+          save-idx4-ubyte
+
+          load-idx1-byte
+          save-idx1-byte
+          load-idx2-byte
+          save-idx2-byte
+          load-idx3-byte
+          save-idx3-byte
+
+          load-idx1-short
+          save-idx1-short
+          load-idx2-short
+          save-idx2-short
+          load-idx3-short
+          save-idx3-short
+
+          load-idx1-int
+          save-idx1-int
+          load-idx2-int
+          save-idx2-int
+          load-idx3-int
+          save-idx3-int
+
+          load-idx1-flt
+          save-idx1-flt
+          load-idx2-flt
+          save-idx2-flt
+          load-idx3-flt
+          save-idx3-flt
+
+          load-idx1-real
+          save-idx1-real
+          load-idx2-real
+          save-idx2-real
+          load-idx3-real
+          save-idx3-real
+
+          )
+
+

@@ -1,0 +1,1737 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; ------------------------------------------------------------------------
+;;; ------------------------------------------------------------------------
+;;; ------------------------------------------------------------------------
+;;;                 D   H   -   C   O   M   P   I   L   E   R
+;;; ------------------------------------------------------------------------
+;;; ------------------------------------------------------------------------
+;;; ------------------------------------------------------------------------
+
+
+;; SKELETON:
+;;    Leon Bottou 	1992
+;;
+;; FINISHED
+;;    Yann LeCun	1992  (hopefully) (yeah)
+;;
+;; modified by Patrice Simard.
+;; modified 96/04, P.Vincent and P.Haffner
+;;.SEE (cfile-compile-and-load <c-file> <compile-command>)
+;;.SEE (cc-load <c-file> [<cc-options>])
+;;.SEE (gcc-load <c-file> [<cc-options>])
+;;.SEE (g++-load <c++-file> [<options>])
+;;.SEE (c-include <include-file>)
+
+#? dh-compile
+;;.SEE (help-to-comments <hinfo>)
+;;.SEE (dhc-gen-comments <f> <&optional (c "")>)
+;;.SEE (dhc-pp <body>)
+;;.SEE (dhc-make-o <src-file> <obj-file> [<cflags>])
+;;.SEE (dhc-makeo <src-file> <obj-file> [<cflags>])
+;;.SEE (dhc-make-c <filename> '([<func1> [<funcn>]]))
+;;.SEE (cfile-compile-and-load <c-file> <compile-command>)
+;;.SEE (cc-load <c-file> [<cc-options>])
+;;.SEE (g++-load <c++-file> [<options>])
+;;.SEE (c-include <include-file>)
+;;.SEE (dhc-make <fname> <f1> [<f2> ...[<fn>]])
+;;.SEE (dhc-make-old <fname> <f1> [<f2> ...[<fn>]])
+;;.SEE (dhc-load <oname> <fsymb-list>)
+;;.SEE (dhc-cc <fname> <fsymbs>)
+;;.SEE (dhc-uncompile <dhc-make-style-funclist>)
+;;.SEE (dhc-recompile <dhc-make-style-funclist>)
+
+
+;;; ------------------------------------------------------------------------
+;;; NAMING CONVENTIONS
+;;; ------------------------------------------------------------------------
+;;
+;; All names beginning by "dhc", and "dhm" are reserved
+
+
+(mload "dh-util"))
+(mload "dh-macro"))
+(mload (concat sn3-dir "lib/help"))
+(printf "[%s]\n" file-being-loaded)
+;;.SEE (mod-grep <match-string>)
+;;.SEE (mod-grep-unload <match-string>)
+;;.SEE (file-existsp <filename>)
+;;.SEE (file-name <f>)
+;;.SEE (findfile <filename>)
+;;.SEE (cfile-compile-and-load <c-file> <compile-command>)
+;;.SEE (cc-load <c-file> [<cc-options>])
+;;.SEE (g++-load <c++-file> [<options>])
+;
+
+;;; ------------------------------------------------------------------------
+;;; ------------------------------------------------------------------------
+;;;          C O D E    G E N E R A T I O N     U T I L I T I E S
+;;; ------------------------------------------------------------------------
+;;; ------------------------------------------------------------------------
+
+
+
+
+;;; ------------------------------------------------------------------------
+;;; PATCHING AN ALREADY GENERATED C CODE
+;;; ------------------------------------------------------------------------
+
+
+;; This function apply a patch to a list of statements
+;; from and to are arguments comparable to those of regex-subst.
+
+;; This is a bit crude, but works because we use it
+;; only for symbols of the form L%d_%s...
+
+;; YES, THIS IS A HACK.
+
+
+(de dhc-backpatch(c-statements from to)
+    (while c-statements
+      (rplaca c-statements (regex-subst from to (car c-statements)))
+      (setq c-statements (cdr c-statements)) ) )
+
+
+;;; ------------------------------------------------------------------------
+;;; GENERATION OF COMMENTS FROM ONLINE HELP
+;;; ------------------------------------------------------------------------
+
+#? (help-to-comments <hinfo>)
+;; takes a HelpInfo
+;; returns a list of strings
+(de help-to-comments (hinfo)
+    (let ((out (new-u8-storage))
+	  (ol (list "/*")))
+	 (writing out (==> hinfo display))
+	 (reading out (while (<> (read-string 1) "\e")
+		             (nconc1 ol (regex-subst "[*]/" "* /"
+						     (read-string "~\n\e")))))
+	 (nconc1 ol "*/") ))
+
+
+#? (dhc-gen-comments <f> <&optional (c "")>)
+;; Given function <f> and optional class <c>,
+;; returns the online help information as a list
+;; of strings representing a comment block.
+;; 
+(de dhc-gen-comments (f &optional (c ""))
+    (let* ((f (downcase f))
+           (c (downcase c))
+	   (selected ())
+	   (r (if (= c "")
+		  (concat "[(]" f "[ \t)].*")
+		  (if (= f c)
+		      (concat "[(]new[ \t]+" c "[ \t)].*")
+		      (concat "[(]==>[ \t]+[<]?" c "[>]?[ \t]+" f "[ \t)].*"))))
+	   )
+	  (each ((rec online-help-topics))
+		(when (regex-match r (downcase (car rec)))
+		      (setq selected (cons (or (caddr rec) (new HelpInfo rec))
+					   selected))))
+	  ;; should just be one...
+	  (when (> (length selected) 1)
+		(printf "More than one online-help comment for %s %s\n" f c))
+	  (apply 'append (all ((hinfo selected))
+			      (help-to-comments hinfo)))
+	  ))
+
+
+;;; ------------------------------------------------------------------------
+;;; GENERATION OF C CLASS COMPONENTS
+;;; ------------------------------------------------------------------------
+
+(de dhc-compile-class-t (fname cname source)
+
+    (let* ((method-list (cdr fname))
+	   (fname (car fname))
+	   (cname (car cname))
+	   (tslots (class-source (eval fname)))
+	   (treetype ())
+	   (class-type ())
+	   (slot-dhc-types ())
+	   (method-type ())
+	   (all-methods ())
+	   (constructor-treetype ())
+	   (sup-name ()))
+      
+      (when  (class-cclass (eval fname))
+	     (dhc-error "class has already been compiled" fname))
+
+      (each ((slot tslots))
+	    (when (or ~(listp slot) ~(listp (car slot))
+		      ~(verify-type-decl-format (car slot)))
+		  (dhc-error "class not fully typed" tslots)))
+
+      (setq sup-name (pname (classname (super (eval fname)))))
+
+      (if  (or (null (eval (named sup-name)))           ; super compiled?
+	       (and 
+		(null (class-cclass (eval (named sup-name))))
+		(null (dhc-search-symtable (named sup-name) global-table))))
+	  (dhc-error "the superclass must be compiled first" sup-name))
+
+      (each ((slot-decl tslots))
+	    (each ((slot (cdr slot-decl)))
+		  (setq slot-dhc-types
+			(append slot-dhc-types
+				(list (cons slot
+					    :(dhc-format-to-t-node
+					      (car slot-decl)):type))))))
+
+      (let ((ans ()))
+	(each ((i  (mapcar car slot-dhc-types)))
+	      (if (null (member i ans))
+		  (setq ans (nconc1 ans i))
+		(dhc-error "duplicate slot name found" i))))
+
+      (setq class-type
+	    (new dhc-type 'dht-class (dhc-lisp-to-c-name cname)
+		 (dhc-class-to-dhc-type  sup-name)
+		 slot-dhc-types method-dhc-types))
+      
+      (let ((sym (new dhc-symbol fname 0)))
+	(dhc-unify-types class-type :sym:type)
+	(setq :sym:c-name cname)
+	(setq global-table (append global-table
+				   (list (cons fname sym)))))
+
+      ;; deal with methods
+      (each ((method method-list))
+	    (printf "Compiling method %l ...\n" method)
+	    (if	(= method fname)
+		(if ~(member method (methods (eval fname)))
+		  (dhc-error 
+		   (sprintf "%s not a method of " (pname method)) fname)
+		  (let ((symbol-table symbol-table)
+			(slot-list
+			 (unode-val
+			  :(dhc-obj-type-from-class cname):u-temps)))
+		    (each ((slot slot-list))
+			  (let ((sym (new dhc-symbol (car slot) 0)))
+			    (dhc-unify-types (new dhc-type 'dht-unk)
+					     :sym:type)
+			    (setq :sym:c-name (concat "L1_this->" 
+						      (dhc-lisp-to-c-name
+						       (pname (car slot)))))
+			    (setq symbol-table (append 
+						symbol-table
+						(list (cons (car slot) sym))))))
+		    (let ((tnode ())
+			  (ignore ()) ;; global for parse-replacement-source-t
+			  (source (funcdef (check==> (eval fname) method))))
+		      (setq tnode 
+			    (dhc-parse-replacement-source-t
+			     source
+			     (cons 'lambda 
+				   (cons (cons 'this (cadr source))
+					 (cons '((-obj- (`fname)) this)
+					       (cddr source))))))
+      
+		      ;; Problem here: If a function is called to initialize
+		      ;;   the slots, it cannot be detected, so it will give
+		      ;;   an error.
+		      ;;
+		      ;;(unode-val 
+		      ;; :(unode-val 
+		      ;; :(car :(cadr :tnode:tn-list):tn-list):
+		      ;; type:u-type):u-temps)
+		      ;;
+
+		      (setq :tnode:source source)
+		      (setq treetype (append treetype
+					     (list (cons method tnode))))
+		      
+		      (each ((slot slot-list))
+			    (if (and (= 'dht-unk
+					(unode-val
+					 :(dhc-search-symtable 
+					   (car slot)
+					   symbol-table):type:u-tclass))
+				     
+				     ~(==> (cdr slot) is-a-simple))
+				(dhc-error 
+				 "slot with complex type was not initiailized in constructor"
+				 (car slot)))
+			    ;; Got this far, so unify with what it should be
+			    (dhc-unify-types (cdr slot) 
+					     :(dhc-search-symtable
+					       (car slot) symbol-table):type))
+		      (unode-unify :class-type:u-extra
+				   (new-unode
+				    (append (unode-val :class-type:u-extra)
+					    (list (cons method :tnode:type))))
+				   (lambda (a b) b)))))
+
+	      (when ~(member method (methods (eval fname)))
+		    (dhc-error 
+		     (sprintf "%s not a method of " (pname method)) fname))
+	      
+	      ;; configure symbol table to support "this" constructs
+	      (let* ((slot-list 
+		      (unode-val :(dhc-obj-type-from-class cname):u-temps))
+		     (symbol-table symbol-table)
+		     (tnode ())
+		     (ignore ()) ;; global for parse-replacement-source-t
+		     (source (funcdef (check==> (eval fname) method))))
+		
+		(each ((slot slot-list))
+		      (let ((sym (new dhc-symbol (car slot) 0)))
+			(dhc-unify-types (cdr slot) :sym:type)
+			(setq :sym:c-name (concat "L1_this->" 
+						  (dhc-lisp-to-c-name
+						   (pname (car slot)))))
+			(setq symbol-table (append 
+					    symbol-table
+					    (list (cons (car slot) sym))))))
+		(setq tnode 
+		      (dhc-parse-replacement-source-t
+		       source
+		       (cons 'lambda 
+			     (cons (cons 'this (cadr source))
+				   (cons '((-obj- (`fname)) this)
+					 (cddr source))))))
+
+                ;; Check type of method of subclass is defined in superclass
+                (let* ((sup-class-meth (dhc-alist-get method 
+                                                      (dhu-extra 
+                                                       (dhc-class-to-dhc-type
+                                                        sup-name)))))
+                  (when sup-class-meth
+                    ;; Unify arguments
+                    (each ((args-sup (cdr (dhu-extra sup-class-meth)))
+                           (args-sub (cdr (dhu-extra :tnode:type))))
+                      ;; The order of the unification statement is critical!
+                      (dhc-unify-types args-sub args-sup))
+                    ;; Unify return
+                    (dhc-unify-types (dhu-type sup-class-meth)
+                                     (dhu-type :tnode:type))
+                    ;; Unify temps
+                    (if (<> (length (dhu-temps sup-class-meth))
+                            (length (dhu-temps :tnode:type)))
+                        (dhc-error 
+                         "# of temps in method of class and subclass differs"))
+                    (each ((temp-sup (cdr (dhu-temps sup-class-meth)))
+                           (temp-sub (cdr (dhu-temps :tnode:type))))
+                      (let ((tsup (==> temp-sup copy))
+                            (tsub (==> temp-sub copy)))
+                        (dhc-unify-types tsup tsub)
+                        (dhc-unify-types tsub tsup)))
+                    ))
+                
+		(setq :tnode:source source)
+		(setq treetype (append treetype (list (cons method tnode))))
+		(dhc-add-method-to-class-type class-type method :tnode:type) ) ) )
+      ;; Fini
+      (list class-type treetype)))
+
+(de dhc-compile-class-c(fname cname source treetype)
+    (let* ((class-dhc-type (car treetype))
+	  (fname (car fname))
+	  (cname (car cname))
+	  (c-interface ())
+	  (lisp-method-name ())
+	  (c-depends ())
+	  (c-method ())
+	  (c-dhdoc ())
+	  (method-list (dhc-methods-of-class cname))
+	  (c-function ()))
+
+;      (add-c-externs (dhc-class-to-struct-decl class-dhc-type))
+
+      (add-c-externs (sprintf "extern dhclassconstraint K_Class_%s;"
+			      (unode-val 
+			       :(unode-val :class-dhc-type:u-type):u-name)))
+;      (add-c-externs (sprintf "extern (*T_Class_%s[])();"
+      (add-c-externs (sprintf "extern method_ptr T_Class_%s[];"
+			      (unode-val :class-dhc-type:u-name)))
+      (add-c-externs (dhc-class-to-struct-decl
+		      (dhc-class-to-dhc-type
+		       (unode-val :class-dhc-type:u-name))))
+      
+      (each ((treetype (cadr treetype)))
+	    (setq c-function
+		  (append c-function
+			  (dhc-gen-comments (pname (car treetype))
+					    (pname fname))
+			  (dhc-comp-func-c
+			   (concat "CClass_" cname "_" 
+				   (dhc-lisp-to-c-name (pname (car treetype))))
+			   :(cdr treetype):source (cdr treetype)))))
+      
+      ;; Compute dh interface
+      (setq c-interface (list "" 
+			      (sprintf "extern dhclassconstraint K_Class_%s;"
+				       cname) ))
+
+    (each ((treetype (cadr treetype)))
+	    (setq c-interface
+		  (append c-interface
+			  (dhc-generate-interface-func
+			   (concat cname "_" 
+				   (dhc-lisp-to-c-name (pname (car treetype))))
+			   (cdr treetype) "Class")
+			  (dhc-generate-dhdoc-info-func
+			   (concat cname "_" 
+				   (dhc-lisp-to-c-name (pname (car treetype))))
+			   :(cdr treetype):type "Class")
+			  )))
+
+      (setq lisp-method-name
+	    (list "" (sprintf "char *Lisp_methods_%s[] =" cname) "{"))
+
+      (setq c-interface
+	    (append c-interface
+		    (list (sprintf "dhconstraint *DH_Class_%s[] ="
+				   cname) "{")))
+
+      ;; Compute method tables
+      (setq c-method
+	    (list (sprintf "method_ptr T_Class_%s[] =" cname)
+		  "{"
+		  "#ifndef NOLISP"
+		  (concat "(method_ptr)&K_Class_" cname ",")
+		  "#else"
+		  "(method_ptr) 0,"
+		  "#endif"
+		  ))
+
+      (each ((method method-list))
+	    (let ((nm (cadr (cadr (caadr (cdr method))))))
+	      (when (= (left nm 8) "K_Class_")
+		(setq nm (mid nm 9)) )
+	      (when (class-cclass (apply scope (list (named nm))))
+		(add-c-externs
+		 (sprintf "extern %s CClass_%s_%s();"
+			  (dhc-type-to-c-decl
+			   (dhc-desc-to-type (last (cdr method))))
+			  nm (dhc-lisp-to-c-name (car method)))) 
+		(add-c-externs
+		 (sprintf "extern dhconstraint KClass_%s_%s;"
+			  nm (dhc-lisp-to-c-name (car method)))) )
+	      (setq c-method
+		    (append c-method
+			    (list
+			     (sprintf "(method_ptr)CClass_%s_%s,"
+				      ;; class if from the type of 'this'
+				      nm (car method)))))
+	      (setq c-interface
+		    (append c-interface
+			    (list
+			     (sprintf "&KClass_%s_%s,"
+				      ;; class if from the type of 'this'
+				      nm (car method)))))
+	      
+	      (setq lisp-method-name
+		    (append lisp-method-name
+			    (list (concat "\"" (car method) "\","))))
+	      ))
+
+      (setq c-method (append c-method
+			     (list "NULL" "};")))
+      (setq c-interface (append c-interface
+				(list "NULL" "};")))
+
+      (setq c-interface (append c-interface
+				lisp-method-name (list "NULL" "};" "")))
+      
+      ;; Compute dhdoc
+      (setq c-dhdoc 
+	    (dhc-generate-dhdoc-info-class cname treetype
+					   (length method-list)))
+      
+      (append '( "" "" "/*" " * C_FUNCTION" " */" )
+	      c-function
+	      '( "" "" "/*" " * X_FUNCTION" " */" )
+	      '( "#ifndef NOLISP" ) c-interface '( "#endif" )
+	      '( "" "" "/*" " * METHOD_TABLE" " */" )
+	      c-method 
+	      '( "" "" "/*" " * K_RECORD" " */" )
+	      '( "#ifndef NOLISP" ) c-dhdoc '( "#endif" ) ) ) )
+
+
+(de dhc-generate-dhdoc-info-class (cname treetype nummethods)
+    (let ((c-dhdoc ()))
+      (setq
+       c-dhdoc
+       (list
+	(sprintf
+	 (concat "CCLASSDOC (K_Class_%s,K_Class_%s,T_Class_%s+1,"
+		 "DH_Class_%s,%d,Lisp_methods_%s,struct CClass_%s)")
+	 cname  (unode-val :(unode-val :(car treetype):u-type):u-name)
+	 cname cname
+	 nummethods cname cname)
+	"{"))
+      ;; First, the class info
+      (let ((the-class (car treetype)))
+	(setq c-dhdoc (append c-dhdoc
+		       (list
+			(sprintf "DH_CLASS(%d,K_Class_%s)," 
+				 (unode-val :the-class:u-ndim)
+				 cname))))
+	(each ((slot (unode-val :the-class:u-temps)))
+	      (setq c-dhdoc
+		    (append c-dhdoc
+			    (list
+			     (let ((na (dhc-lisp-to-c-name
+					(if (consp (car slot))
+					    (pname  (caar slot))
+					  (pname  (car slot))))))
+			       (sprintf "DH_NAME(\"%s\",K_Class_%s,%s)," 
+					na cname na)))
+			    (dhc-d-to-doc 
+			     (==> (cdr slot) type-to-desc))))))
+      (setq c-dhdoc (append c-dhdoc (list "DH_END_CLASS,")))
+      ;; Second, the class dependences with the superclass
+      (let* ((cname (unode-val :(unode-val :(car treetype):u-type):u-name))
+             (cclass (class-cclass (eval (named cname))))
+             (ckey ()) )
+        (when (and cclass (<> "object" cname))
+          (setq ckey (last (classinfo-c cclass)))
+          (setq c-dhdoc 
+                (append c-dhdoc
+                        (list "DH_DEPENDS(1),"
+                              (sprintf "CLASS_REFER(&K_Class_%s,0X%s)," cname ckey)
+                              "DH_END_DEPENDS,") ) ) ) )
+      ;; Third the epilogue
+      (setq c-dhdoc (append c-dhdoc (list "DH_NIL" "};"))) 
+      c-dhdoc))
+
+
+;;; ------------------------------------------------------------------------
+;;; GENERATION OF C METHODS
+;;; ------------------------------------------------------------------------
+
+(de dhc-compile-method (cla me cname)
+    ())
+
+;;; ------------------------------------------------------------------------
+;;; GENERATION OF CONSTANTS
+;;; ------------------------------------------------------------------------
+
+(de dhc-generate-idx(c-name args)
+    ;; Generate DHDOC
+    ()
+)
+
+
+
+
+
+;;; ------------------------------------------------------------------------
+;;; GENERATION OF C FUNCTION COMPONENTS
+;;     dhc-generate-prologue		generate C code for header with args
+;;     dhc-compile-func-t               parse type of function (find errors)
+;;     dhc-compile-func-c               gerenate C code for body of function
+;;     dhc-generate-interface-func	generate C code DH calling function
+;;     dhc-generate-dhdoc-info-func     generate thd DHDOC for function
+;;; ------------------------------------------------------------------------
+
+;; Generate the head of the C_blah function.
+
+(de dhc-update-pointer-decl (name type)
+    (let ((arg (sprintf "P%s" name)))
+      (setq dcl (nconc1 dcl (concat (dhc-type-to-c-decl type)
+				    " *" arg ";")))
+      ;; back patch the code
+      (dhc-backpatch  c-statements 
+		      (sprintf "\\&\\(%s\\)" name)
+		      (sprintf "%s" arg) )
+      (dhc-backpatch  c-statements 
+		      (sprintf "([^A-Za-z0-9_])%s([^A-Za-z0-9_])" name)
+		      (sprintf "%%0(*%s)%%1" arg))
+      arg))
+
+
+
+(de dhc-generate-prologue(c-name treetype)
+    (let* ((functype :treetype:type)
+	   (rettype (unode-val :functype:u-type))
+
+	   ;; all passed temporaries should be pointers!!!
+	   (temp-list :(cadr :treetype:tn-list):symbol)
+	   (temp-list-type (all ((x temp-list))
+				(new dhc-type 'dht-ptr :x:type)))
+	   (arg-list (all ((x :(cadr :treetype:tn-list):tn-list))
+			  :x:symbol))
+	   (arg-list-type (all ((x arg-list)) :x:type))
+	   (pro ())
+	   (dcl ()))
+      (setq pro (concat (dhc-type-to-c-decl rettype) " "
+			c-name "("))
+      (setq pro (concat pro (insert-op (all ((x (append arg-list temp-list))) 
+					    :x:c-name)
+				       ", ") ")"))
+      
+      (each ((symb-name (append arg-list temp-list))
+	     (symb-type (append arg-list-type temp-list-type)))
+	    (if (==> symb-type is-an-unk)
+		(dhc-error "Unknown symbol" :symb-name:lisp-name))
+	    (setq dcl (nconc1 dcl (concat (dhc-type-to-c-decl symb-type) " "
+					  :symb-name:c-name ";"))))
+      (cons pro dcl)))
+
+;; This is the main entry point of the compiler
+;; It is called by the <dh-compile> function.
+
+;; <cname> is a suitabe C identifier
+;; <arguments> are the formal arguments
+
+	
+(de dhc-compile-func-c (cname source treetype)
+    (let ((c-interface ())
+	  (c-depends ())
+	  (c-dhdoc ())
+	  (c-function ()))
+
+      (setq c-function
+	    (append (dhc-gen-comments lname)
+	            (dhc-comp-func-c (concat "C_" cname) source treetype)))
+
+      ;; Compute dh interface
+      (setq c-interface
+	    (dhc-generate-interface-func cname treetype))
+      
+      ;; Compute dhdoc
+      (setq c-dhdoc
+	    (dhc-generate-dhdoc-info-func cname :treetype:type))
+      
+      (append '( "" "" "/*" " * C_FUNCTION" " */" )
+	      c-function
+	      '( "" "" "/*" " * X_FUNCTION" " */" )
+	      '( "#ifndef NOLISP" ) c-interface '( "#endif" )
+	      '( "" "" "/*" " * K_RECORD" " */" )
+	      '( "#ifndef NOLISP" ) c-dhdoc '( "#endif" ) )))
+
+
+;;----------------------------------------------------------------------------
+
+;; Generate the DH call (the X_blah function - X is the default prefix)
+
+(de dhc-generate-interface-func(c-name treetype &optional (prefix ""))
+
+    (let ((pro (sprintf "DH(X%s_%s)" prefix c-name))
+          (call (list "ret." (dhc-arg-format (unode-val (scope :treetype:type
+                                                               u-type)))
+		      " = "
+		      (if (==>
+			     (unode-val :treetype:type:u-type) is-an-objptr)
+			  "(int *)" "")
+		      (sprintf " C%s_" prefix)
+		      c-name "("))
+          ((lam args . body-treetype) :treetype:tn-list)
+          (arg-list ())
+          (num 0) )
+
+      ;; take care arguments and temporaries
+      (each ((sym (all ((x :args:tn-list)) :x:symbol)))
+            (let ((format (concat "a[%d]." (dhc-arg-format :sym:type))))
+              (setq arg-list (nconc1 arg-list (sprintf format (incr num))))))
+      (each ((sym :(cadr :treetype:tn-list):symbol))
+            (let ((format (concat "a[%d]." (dhc-arg-format (new dhc-type 'dht-ptr 
+								:sym:type)))))
+              (setq arg-list (nconc1 arg-list (sprintf format (incr num))))))
+
+      (setq call (nconc1 call (insert-op arg-list ", ")))
+      (list pro "{" "dharg ret;" (concat (apply concat call) ");") 
+            "return ret;" "}")))
+
+(de dhc-generate-dhdoc-info-func(c-name functype &optional (prefix ""))
+    (let* ((desc (==> functype type-to-desc))
+	   (c-depends (remove-dup c-depends))
+	   (depends-len (length c-depends)))
+      (append
+       (list (sprintf "DHDOC(K%s_%s, X%s_%s, \"C%s_%s\", NULL, NULL)"
+		      prefix c-name prefix c-name prefix c-name)
+	     "{")
+       (dhc-d-to-doc desc)
+       (when (<> 0 depends-len)
+	     (append 
+	      (list (sprintf "DH_DEPENDS(%d)," depends-len))
+	      (all (((type name key) c-depends))
+		   (sprintf "%s_REFER(&%s,0X%s)," 
+			    type name key))
+	      (list "DH_END_DEPENDS,")))
+       (list "DH_NIL" "};"))))
+
+;;; ------------------------------------------------------------------------
+;;; GENERATION OF C FILE COMPONENTS
+;;; ------------------------------------------------------------------------
+
+
+;; Make the file header
+
+(de dhc-generate-file-header(filename)
+    (append 
+     (list
+      ""
+      "/* Copyright (c) 1998  AT&T --- All Rights Reserved"
+      " * The copyright notice above does not evidence any"
+      " * actual or intended publication of this work."
+      " *"
+      " * WARNING:"
+      " * This code has been automatically generated"
+      " * by the DH compiler. Exercise care while"
+      " * modifying it."
+      " */")
+
+     (if c-pheader
+	 (append (list "/*** PREEMPTIVE HEADERS (user defined) ***/")
+		 (remove-dup c-pheader)
+		 (list "" ""))
+       (list ""))
+
+     (list
+      (if C-MACROS-INCLUDE "#include \"c-macros.h\"" "")
+      "#include \"header.h\""
+      "#include \"dh.h\""
+      "#include \"idxmac.h\""
+      "#include \"idxops.h\""
+      "#include \"runtime_err.h\""
+      "#include \"check_func.h\""
+      "")
+
+     (if c-header
+	 (append (list "/*** HEADERS (user defined) ***/")
+		 (remove-dup c-header)
+		 (list "" ""))
+       (list ""))
+
+     (if external-symbols
+	 (append (list "/*** EXTERNAL SYMBOLS ***/")
+		 (remove-dup external-symbols)
+		 (list "" ""))
+       (list ""))
+))
+
+
+;;; ------------------------------------------------------------------------
+
+;; Make an initialisation routine
+
+(de dhc-generate-init-call( filename 
+			    list-of-fsymb-names
+			    list-of-lisp-names
+			    list-of-c-names )
+    (append
+     (list
+      ""
+      ""
+      ""
+      "#ifndef NOLISP"
+      "/*"
+      " * INIT FUNCTION"
+      " */"
+      (sprintf "void init_%s()" filename)
+      "{" )
+     (all ((lname list-of-lisp-names)
+	   (fname list-of-fsymb-names)
+	   (cname list-of-c-names))
+
+	  (if (consp fname)
+	      (sprintf "  cclass_define(\"%s\",&K_Class_%s);"
+		       (car cname)  (car cname))
+	    (sprintf "  dh_define(\"%s\", &K_%s);" lname cname) ))
+     (list
+      "}" 
+      ""
+      (sprintf "int majver_%s = %d;" filename (major-version))
+      (sprintf "int minver_%s = %d;" filename (minor-version))
+      "#endif")
+     ) )
+
+
+
+;;; ------------------------------------------------------------------------
+;;; ------------------------------------------------------------------------
+;;;          C   O   N   T   R   O   L
+;;; ------------------------------------------------------------------------
+;;; ------------------------------------------------------------------------
+
+
+
+;;; ------------------------------------------------------------------------
+;;; PREPROCESSOR: expands macros (dmd and dm) before compilation
+
+#? (dhc-pp <body>)
+;; Macro preprocessor for the dhc compiler.
+;; return a version of lisp expression <body> where all the macros
+;; have been expanded. 
+(de dhc-pp(body)
+     (if ~(consp body)
+       body   ; body is an atom or empty list - just return it 
+       (let ((body (append body ())))
+	 
+	 (cond
+	  ((= 'mlambda (car body))
+	   body)
+	  
+	  ((listp (car body))    ; body is a list w/ first element also a list
+	   (cond                  ; -> what type of list is it?
+	    ((= 'mlambda (car (car body)))   ; car is an mlambda expr
+	     (let ((exp (append body ())))
+	       (setq exp (eval (list 'macro-expand exp)))
+	       (if (<> exp body)
+		   (dhc-pp exp)  exp)))
+	    
+	    ((= 'lambda (car (car body)))    ; car is a lambda expr 
+	     (cons (car body)                ; -> expand args
+		   (all ((arg (cdr body)))
+			(dhc-pp arg))))
+	    
+	    (t (let ((exp ()))           ; just another list -> expand car
+		 (setq exp (dhc-pp (car body)))
+		 (setq exp (append (list exp) (cdr body)))
+		 (if (<> exp body)
+		     (dhc-pp exp)
+		   (cons (car exp)
+			 (all ((arg (cdr exp)))
+			      (dhc-pp arg))))))))
+	  
+	  (~(listp (car body))    ; body is a list w/ first element not a list
+	    (cond
+	     ((dhmacrop (car body))            ; macro (DM)
+	      (let ((exp (append body ())))
+		(setq exp (eval (list 'macro-expand exp)))
+		(if (<> exp body)
+		    (dhc-pp exp) exp)))
+	     
+	     ((dhdep (car body))                ; a DH, DHE, DE, or DYC
+	      (cons (car body)
+		    (all ((arg (cdr body)))
+			 (dhc-pp arg))))
+	     
+	     (t 
+		(if ~(dhdfcp (car body))
+		  (cons (car body)
+			(all ((arg (cdr body)))
+			     (dhc-pp arg)))
+		  body))))
+	  
+	  (t (error 'dhc-pp "IPE! How did we get here?" body))))))
+
+
+(de dhmacrop (f) 
+    (let ((r (if (symbolp f) (eval f) f))) 
+      (when r (when (= |DM| (classof r)) r))))
+
+(de dhdfcp (f) 
+    (let ((r (if (symbolp f) (eval f) f))) 
+      (when r (when (= |DFC| (classof r)) r))))
+
+(de dhdep (f) 
+    (let ((r (if (symbolp f) (eval f) f))) 
+      (when r (if (or
+		   (= (classof r) |DEC|)
+		   (= (classof r) |DH|)
+		   (= (classof r) |DXC|)
+		   (= (classof r) |DHE|)
+		   (= (classof r) |DYC|)
+                   (and (dhdfcp r)
+                        (or (= r in-stack)
+                            (= r in-pool) ) ) )
+		  r))))
+
+; this may be obsolete
+(de dhc-expand-macro (macro call) (eval (list 'macro-expand call)))
+
+;;; ------------------------------------------------------------------------
+;;; MAIN CONTROL ROUTINE
+;;; ------------------------------------------------------------------------
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(when (not |DHE|) 
+      (defclass |DHE| |DH| source file)
+      (defclass |Hclass| class source file)
+      (defclass |CINDEX| |INDEX| source file)
+
+      ;; these will be more thought of later...
+      (defclass |OBJECT| object source file)
+      (defclass |INT| |NUMBER|)
+      (defclass |CINT| |INT|)
+      (defclass |FLT| |NUMBER|)
+      (defclass |CFLT| |FLT|)
+;      (defclass |CREAL| |REAL|)
+)
+ 
+
+(defmethod |DHE| pretty () 
+  (printf ";;*** %l, INSTANCE OF %l\n" this (classof this))
+  (printf ";; file=") (print file)
+  (printf ";; source =\n")
+  (==> source pretty)
+)
+
+(defmethod |DE| get-source () this)
+
+(defmethod |DHE| get-source () source)
+
+(defmethod |DEM| get-source () 
+  source)
+
+(defmethod |DEM| pretty () 
+  (printf ";;*** %l, INSTANCE OF %l\n" this (classof this))
+  (printf ";; file=") (print file)
+  (printf ";; source =\n")
+  (==> source pretty)
+)
+
+
+(defmethod |Cclass| pretty () 
+  (printf ";;*** %l, INSTANCE OF %l\n" this (classof this))
+  (printf ";; file=") (print file)
+  (printf ";; source =\n")
+  (==> source pretty)
+)
+
+(defmethod |class| get-source () this)
+
+(defmethod |Cclass| get-source () source)
+
+(defmethod |CINDEX| pretty () 
+  (printf ";;*** %l, INSTANCE OF %l\n" this (classof this))
+  (printf ";; file=") (print file)
+  (printf ";; source =\n")
+  (==> source pretty)
+)
+
+(defmethod |INDEX| get-source () this)
+
+(defmethod |CINDEX| get-source () source)
+
+
+
+
+;;; ------------------------------------------------------------------------
+;;; USER FUNCTIONS
+;;; ------------------------------------------------------------------------
+
+(setq dhc-pretty-c "indent \
+   -npro -bap -bad -nbc -bl -cli0 -d0 -eei \
+   -i2 -lp -nip -di1 -pcs -psl -sc -sob -st \
+")
+
+(setq dhc-cname (getenv "SN31_CC"))
+(if (= dhc-cname "") 
+    (setq dhc-cname
+          (selectq :operating-system 
+            (solaris   "gcc")
+            (solaris86 "gcc")
+            (sgi       "cc")
+            (t         "cc") ) ) )
+
+(setq dhc-cflags (getenv "SN31_CFLAGS"))
+(if (= dhc-cflags "") 
+    (setq dhc-cflags 
+          (if (= dhc-cname "gcc")
+              (selectq :operating-system 
+                (solaris86  "-O2 -m486 -ffast-math")
+                (sgi        "-O2 -mcpu=r4400 -ffast-math")
+                (t          "-O2 -ffast-math") )
+            (selectq :operating-system 
+              (sunos     "-fsingle -O4")
+              (sgi       "-O -float")
+              (t         "-O") ) ) ) )
+
+#? (dhc-make-o <src-file> <obj-file> [<cflags>])
+;; compile C source file <src-file> generated by the dh compiler 
+;; into object file <obj-file>.
+;; <cflags> is an optional string containing cc options.
+;; if no <cflag> is provided, the value of the variable dhc-cflags is used.
+;; the initial value for dhc-cflags is "-O4".
+(de dhc-make-o (src obj &optional cflags)
+    (when ~dhc-include (setq dhc-include "."))
+    (sys (print (concat dhc-cname 
+                        " -I" sn3-dir 
+                        "include -I" dhc-include  " -c -D" 
+                        (upcase (pname :operating-system)) " "
+                        (if cflags cflags dhc-cflags ) " -o " obj " " src))))
+
+#? (dhc-makeo <src-file> <obj-file> [<cflags>])
+;; compile C source file <src-file> generated by the dh compiler
+;; into object file <obj-file>, if <src-file> is more recent than
+;; <obj-file>.  <cflags> is an optional string containing cc options.
+;; if no <cflag> is provided, the value of the variable dhc-cflags is used.
+;; the initial value for dhc-cflags is "-O4".
+(de dhc-makeo (src obj &optional cflags)
+        (if (file-newerp src obj) (dhc-make-o src obj cflags)))
+
+#? (dhc-make-c <filename> '([<func1> [<funcn>]]))
+;; translate lisp functions <func> to C, put C source into file <filename>, 
+;; The function must be symbols that evaluate to lambda expressions.
+;; <filename> (without its suffix) must be a legal C identifier, as it is used
+;; for the init_<filename> function in the C code.
+(de dhc-make-c (filename fsymb-list)
+ (let* ((fname (base-name filename))
+        (ifcompiled (mlambda(fdf then . else) then))
+        (C-COMPILE t)
+	(program-header ())
+	(program ())
+	(external-symbols ())
+	(c-header ())
+	(c-pheader ())
+	(lex-level 0)
+	(tmpnames-seed 0)
+	(static-counter 0)
+	(dhc-debug-stack ())
+        (lname-list (all ((x fsymb-list))
+			 (if (consp x) (mapcar pname x) (pname x))))
+        (cname-list (all ((x lname-list))
+			 (if (consp x) (mapcar dhc-lisp-to-c-name x)
+			   (dhc-lisp-to-c-name x))))
+	(func-list  (all ((x fsymb-list))
+			 (if (consp x) (eval (car x)) (eval x))))
+	(treetype-list ())
+	(source-list ())
+	(symbol-table ())    ;; local symbol table
+	(global-table ()) )  ;; gobal symbol table
+
+   ;; Parsing type information
+   (each ((funcname fsymb-list) 
+	  (lname lname-list) 
+	  (cname cname-list)
+	  (func func-list))
+	 
+	 (when ~func 
+	       (dhc-error "Symbol is undefined" funcname))
+	       
+	 (cond ((= (classof func) |DE|)
+		(let (((key arg . body) (funcdef (==> func get-source)) ))
+
+		  (printf "Preprocessing %s...\n" lname)
+                  (setq body (all ((x body)) (dhc-pp x)))
+		  (printf "...Done\n")
+		  
+		  (printf "Parsing types for %s...\n" lname)
+
+		  ;; Also protect the source from source replacement
+		  ;;   but give the altered source to the 2nd pass.
+		  ;; 
+		  (let ((source (dhc-copy-source-tree
+				 (cons 'lambda (cons arg body)))))
+		    (setq source-list (dhc-alist-add func source-list source))
+		    (setq treetype-list (cons (dhc-parse-expr-t source)
+					      treetype-list)))
+		  
+		  
+		  ;; Make the new compiled function visible for subsequent function
+		  (let ((sym (new dhc-symbol funcname 0)))
+		    (dhc-unify-types :(car treetype-list):type :sym:type)
+		    (setq :sym:c-name cname)
+		    (setq global-table (append global-table
+					       (list (cons funcname sym)))))
+		  
+		  (printf "...Done\n")
+		  ))
+
+	       ((= (classof func) class)
+		(printf "Compiling class %s with methods %l...\n" (car lname) 
+			(cdr lname))
+		(setq treetype-list
+		      (cons (dhc-compile-class-t funcname cname func)
+			    treetype-list))
+		(printf "...Done\n"))
+
+	       ((listp func)
+		(let (((cla . method-list) func))
+		  (if (= (classof cla) class)
+		      (dhc-error "class must be compiled before method"))
+		  (if (<> (classof cla) |Cclass|)
+		      (dhc-error "Not a symbol or a class.method list"))
+		  (each ((me method-list)
+			 (cname (all ((x method-list)) (dhc-lisp-to-c-name x))))
+			(dhc-compile-method cla me cname))))
+
+	       ((= (classof func) |INDEX|)
+		  (printf "Compiling %s...\n" lname)
+		  (setq treetype-list (cons (dhc-compile-index-t funcname cname func)
+					    treetype-list))
+		  (printf "...Done\n"))
+
+	       ((= (classof func) |DHE|)
+		(error 'dhc-make-c "Function has already been compiled" func))
+	       (t 
+		(error 'dhc-make-c "don't know how to compile" func))))
+
+   ;; generating code
+   (each ((funcname fsymb-list) 
+	  (lname lname-list) 
+	  (cname cname-list) 
+	  (func func-list)
+	  (treetype (reverse treetype-list)))
+
+	 (cond ((= (classof func) |DE|)
+		(let ((source (dhc-alist-get func source-list)))
+		  
+		  (printf "Generating C code %s...\n" lname)
+		  (add-program (dhc-compile-func-c cname 
+						   source treetype))
+		  (printf "...Done\n")
+		  ))
+	       ((= (classof func) class)
+		(printf "Generating C code for class %s...\n" (car lname))
+		(add-program (dhc-compile-class-c funcname
+						  cname func treetype))
+		(printf "...Done\n"))
+	       ((= (classof func) |INDEX|)
+		(printf "Generating C code %s...\n" lname)
+		(setq
+		 (add-program (dhc-compile-index-c funcname cname 
+						   func treetype))
+		 (printf "...Done\n")))))
+   
+   (setq program-header (dhc-generate-file-header fname))
+   (add-program
+    (dhc-generate-init-call fname fsymb-list lname-list cname-list))
+   ;; remove everything from the global table
+   (each (((name . type) global-table))
+     (delete type) )
+   ;; output the result
+   (writing  (concat "| " dhc-pretty-c " > " filename)
+     (each ((i (append program-header program))) (printf "%s\n" i) ))
+   )
+ )
+
+
+
+
+#? (cfile-compile-and-load <c-file> <compile-command>)
+;;.VP
+;; ((-str-) c-file) Name of a C-code file
+;; ((-str-) compile-command) Command to use for the compilation
+;; CREATED: Pascal Vincent 04/11/96
+;; COMPILABLE: No
+;; RETURNS: ()
+;;
+;; DESCRIPTION: Looks for the given c-file, compiles it if necessary, 
+;;              and mod-loads the resulting .o files
+;;              This way of processing gives a support for portability across
+;;              systems, since the .o files are generated and then mod-loaded from
+;;              a subdirectory corresponding to the current system (ex: OBJS/SUNOS)
+;;              It should be used for native C code rather than the older method (that consisted 
+;;              in compiling the .c file outside of SN and mod-loading the resulting .o file)
+;;              However it should not be used to compile SN-generated C. This is the role of dhc-make.
+;;
+;; The c-file is looked for in:
+;;         - the directory of the file-being-loaded
+;;         - the current directory
+;;         - the SN path
+;;
+;; All subsequent operations take place in the directory of the found c-file
+;; 
+;; The corresponding .o file is determined from the c-file and considered to be
+;; in subdirectory OBJS/name-of-the-operating-system
+;;
+;; If the .c file is more recent than the .o file, then it gets recompiled with command
+;;  <compile-command> OBJS/name-of-the-operating-system/o-file c-file
+;;
+;; The .o file is then mod-loaded (a mod-unload is called beforehand if necessary)
+;; 
+;; EXAMPLE: Suppose there is a file animate.c in directory /home/mickey/CC/ and that this
+;;          directory is in the SN path (it was for ex. added with addpath)
+;;          A call to (cfile-compile-and-load "mouse.c" "cc -c -o") under Sun OS will:
+;;             - compare last modification dates of /home/mickey/CC/mouse.c 
+;;               with /home/mickey/CC/OBJS/SUNOS/mouse.o
+;;             - if a recompilation is necessary, it will issue command:
+;;                 cd /home/mickey/CC; cc -c -o OBJS/SUNOS/mouse.o mouse.c
+;;             - it then mod-loads /home/mickey/CC/OBJS/SUNOS/mouse.o
+;;
+;;.SEE (g++-load <c++-file> [<options>])
+;;.SEE (cc-load <c-file> [<cc-options>])
+;;.SEE (c-include <include-file>)
+(de cfile-compile-and-load (cfilename compilecommand)
+    ((-str-) cfilename compilecommand)
+    (let ((abscfile (findfile cfilename))
+          (cfile "")
+          (sourcedir "")
+          (ofile "")
+          (absofile "")
+          )
+      (when ~abscfile
+        (error (concat "Error: couldn't find file " cfilename)))
+
+      (printf "[%s]\n" abscfile)
+
+      (setq sourcedir (dir-name abscfile))
+      (setq cfile (file-name abscfile))
+
+      (mkdir (concat sourcedir "OBJS/")) ;; creates the dir if it does not already exist
+      (mkdir (concat sourcedir "OBJS/" :os-string)) ;; creates the dir if it does not already exist
+      (setq ofile (concat "OBJS/" :os-string "/" (change-suffix cfile ".o")))
+      (setq absofile (concat sourcedir ofile))
+
+      (when (file-newerp abscfile absofile)
+        (printf "In %s --> %s %s %s\n" sourcedir compilecommand ofile cfile)
+          (when (<> 0 (sys (sprintf "cd %s; %s %s %s\n" sourcedir compilecommand ofile cfile)))
+            (error "Error during C compilation")))
+
+      ;; load or reload object file
+      (when (member absofile (mod-list))
+        (mod-unload absofile))
+      (mod-load absofile))
+    () )
+
+#? (cc-load <c-file> [<cc-options>])
+;;.VP
+;; ((-str-) c-file) Name of a C-code file
+;; ((-str-) cc-options) Additional options to be passed on the compile command-line
+;;
+;; CREATED: Pascal Vincent 04/11/96
+;; COMPILABLE: No
+;; RETURNS: ()
+;;
+;; DESCRIPTION: Looks for the given c-file, compiles it if necessary, 
+;;              and mod-loads the resulting .o files
+;;
+;; This function should be called instead of a mod-load of a .o file
+;; for using C-written code (i.e. when the .c source file is available)
+;; but NOT for SN-generated C (this is the role of dhc-make) 
+;; The method offers several advantages:
+;;    - it looks for the .c file in several places: 
+;;         + the directory of the file-being-loaded
+;;         + the current directory
+;;         + the SN path
+;;    - it automatically recompiles the .c file if it was changed
+;;    - it offers support for cross-architecture portability: 
+;;         + the .o files are generated to and mod-loaded from the sub directory 
+;;           OBJS/name_of_operating_system of the directory where the .c file was found
+;;         + the compiler is called with option -Dname_of_operating_system, so one could
+;;           for example use a #ifdef SUNOS to do system-specific operations
+;;
+;;.SEE (g++-load <c++-file> [<options>])
+;;.SEE (cfile-compile-and-load <c-file> <compile-command>)
+;;.SEE (c-include <include-file>)
+(de cc-load (cfilename &optional optlist)
+    ((-str-) cfilename)
+    (when (not (stringp optlist))
+      (setq optlist ""))
+    (cfile-compile-and-load cfilename (sprintf "%s -I%sinclude -Iinclude %s -c -D%s %s -o " dhc-cname sn3-dir optlist :os-string dhc-cflags))
+    () )
+
+#? (gcc-load <c-file> [<cc-options>])
+;;.VP
+;; ((-str-) c-file) Name of a C-code file
+;; ((-str-) cc-options) Additional options to be passed on the compile command-line
+;;
+;; CREATED: Pascal Vincent 04/11/96
+;; COMPILABLE: No
+;; RETURNS: ()
+;;
+;; DESCRIPTION: same as cc-load but systematically uses the gnu gcc compiler
+;;
+;;.SEE (cc-load <c-file> [<cc-options>])
+;;.SEE (c-include <include-file>)
+(de gcc-load (cfilename &optional optlist)
+    ((-str-) cfilename)  
+    
+    (when (not (stringp optlist))
+      (setq optlist ""))
+    (if (= operating-system 'solaris86)
+        (cfile-compile-and-load cfilename (sprintf "gcc -c -D%s -I%sinclude -I../include %s -O2 -ffast-math -m486 -o " :os-string sn3-dir optlist))
+      (cfile-compile-and-load cfilename (sprintf "gcc -c -D%s -I%sinclude -I../include %s -O2 -ffast-math -o " :os-string sn3-dir optlist)))
+    () )
+
+#? (g++-load <c++-file> [<options>])
+;;.VP
+;; ((-str-) c++-file) Name of a C++-code file
+;; ((-str-) options) Additional options to be passed on the compile command-line
+;;
+;; CREATED: Yoshua Bengio 08/13/96
+;; COMPILABLE: No
+;; RETURNS: ()
+;;
+;; DESCRIPTION: same as cc-load but systematically uses the gnu g++ compiler
+;;
+;;.SEE (gcc-load <c-file> [<cc-options>])
+;;.SEE (cc-load <c-file> [<cc-options>])
+;;.SEE (c-include <include-file>)
+(de g++-load (cfilename &optional optlist)
+    ((-str-) cfilename)
+    (when (not (stringp optlist))
+      (setq optlist ""))
+    (if (= operating-system 'solaris86)
+        (cfile-compile-and-load cfilename (sprintf "g++ -c -D%s -I%sinclude -Iinclude %s -O2 -ffast-math -m486 -o " :os-string sn3-dir optlist))
+      (cfile-compile-and-load cfilename (sprintf "g++ -c -D%s -I%sinclude -Iinclude %s -O2 -ffast-math -o " :os-string sn3-dir optlist)))
+    () )
+
+#? (c-include <include-file>)
+;;.VP
+;; MACRO
+;; CREATED: Pascal Vincent 04/18/96
+;; DESCRIPTION: This macro is an interface to macro cheader, allowing to 
+;;              add personal includes in the header of the SN-generated C file.
+;;              The difference between (cheader "#include \"myheader.h\"")
+;;              and (c-include "myheader.h") is that, in the latter,
+;;              it is searched for file myheader.h in several places (see findfile)
+;;              Thus if for example myheader.h is in /usr/ocr/C-Source and /usr/ocr/C-Source
+;;              is part of the SN path, then call (c-include "myheader.h") will be expanded into
+;;              (cheader "#include \"/usr/ocr/C-Source/myheader.h\"")
+;; NOTICE: one should not use c-include to include standard-includes (such as <stdio.h>)
+;;         use (cheader "#include <the-std-include.h>") instead.
+;;
+;;.SEE (cheader <s1> [...<sn>])
+;;.SEE (findfile <filename>)   
+(dm c-include (junk filename)
+    ((-str-) filename)
+    (list 'cheader (concat "#include \"" (findfile filename) "\"\n")))
+
+
+#? (dhc-make <fname> <f1> [<f2> ...[<fn>]])
+;;.VP
+;; translate functions <f1>...<fn> to C into file <fname>.c, compile 
+;; <fname>.c to <fname>.o and load it.
+;; If dhc-make is called from within a file being loaded (say f.sn), the time and
+;; date of last modification of f.sn is compared to that of <fname>.c and
+;; <fname>.o. If <fname>.o is more recent, it is loaded without recompilation.
+;; If the .o is older or does not exist, the .c is recompiled.
+;; of course, if the .c is older or does not exist it is regenerated.
+;; If <fname> is nil, or the empty string, the name of the current file 
+;; being loaded is used, after transformation to a legal C identifier (this
+;; is necessary because 
+;; if the file being loaded is stdin and no filename is given, the code is written
+;; in a file whose name is a C-ified version of the last argument <fn>).
+;;
+;; MODIFIED: Pascal Vincent 04/10/96 
+;;    If a directory C exists, generated .c files are put inside
+;;    If a directory OBJS exists, .o files are put in directory OBJS/name_of_operating_system
+
+(df dhc-make ( fname . fsymb-list) 
+  (setq fname (eval fname))
+  (let* ((forceit ())
+         (snname (if (= "$stdin" file-being-loaded) 
+                     (progn (setq forceit t) 
+                            (if (consp (last fsymb-list))
+                                (pname (car (last fsymb-list)))
+                              (pname (last fsymb-list))))
+                   file-being-loaded))
+         (snname-dir (dir-name snname))
+         (snname-base (base-name snname))
+         ;; name of C file must be a legal C symbol
+         (cname (concat
+                 (dhc-lisp-to-c-name 
+                  (if (and fname (<> "" fname)) 
+                      fname 
+                    snname-base))
+                 ".c"))
+         (oname  (change-suffix cname ".o"))
+         (src-list (all ((sym fsymb-list))
+                     (if (consp sym)  (eval (car sym)) (eval sym))))
+         )
+    (if (not (dir-existsp (concat snname-dir "C")))
+        (setq cname (concat snname-dir cname))
+      (setq cname (concat snname-dir "C/" cname)))
+
+    (if (and (= :operating-system 'sunos) (not (dir-existsp (concat snname-dir "OBJS"))) )
+        (setq oname (concat snname-dir oname))
+      (mkdir (concat snname-dir "OBJS")) ;; creates it if it does not already exist
+      (mkdir (concat snname-dir "OBJS/" :os-string))  ;; creates it if it does not already exist 
+      (setq oname (concat snname-dir "OBJS/" :os-string "/" oname)))
+    
+    ;; Look if .o is ancient or does not exist
+    (if (not (file-existsp (concat sn3-dir "src/OBJS/" 
+                                   :os-string "/touch-to-recompile")))
+	(error (sprintf "A file named touch-to-recompile must exist in %ssrc/OBJS/%s"
+			sn3-dir :os-string)))
+    (when (and (not forceit) (file-existsp oname))
+      (when (file-newerp (concat sn3-dir "src/OBJS/" :os-string 
+                                 "/touch-to-recompile") cname)
+	(setq forceit t) ) )
+    (when (or forceit (file-newerp snname cname))
+      ;; generate C file
+      (dhc-make-c cname fsymb-list) )
+    (when (or forceit (file-newerp cname oname))
+      ;; generate object file
+      (when (<> (dhc-make-o cname oname) 0)
+	(error "Error during C compilation") ) )	
+    ;; load object file
+    (dhc-load oname fsymb-list) ) )
+
+
+(ifdef sta-dir 
+(df dhc-make ( fname . fsymb-list) 
+  (setq fname (eval fname))
+  (let* ((forceit ())
+         (snname (if (= "$stdin" file-being-loaded) 
+                     (progn (setq forceit t) 
+                            (if (consp (last fsymb-list))
+                                (pname (car (last fsymb-list)))
+                              (pname (last fsymb-list))))
+                   file-being-loaded))
+         (snname-dir (dir-name snname))
+         (snname-base (base-name snname))
+         ;; name of C file must be a legal C symbol
+         (cname (concat
+                 (dhc-lisp-to-c-name 
+                  (if (and fname (<> "" fname)) 
+                      fname 
+                    snname-base))
+                 ".c"))
+         (oname  (change-suffix cname ".o"))
+         (src-list (all ((sym fsymb-list))
+                     (if (consp sym)  (eval (car sym)) (eval sym))))
+         )
+    
+    (mkdir (concat sta-dir "C")) ;; creates it if it does not already exist
+    (setq cname (concat sta-dir "C/" cname))
+    
+    (mkdir (concat sta-dir "OBJS")) ;; creates it if it does not already exist
+    (mkdir (concat sta-dir "OBJS/" :os-string))  ;; creates it if it does not already exist 
+    (setq oname (concat sta-dir "OBJS/" :os-string "/" oname))
+    
+    ;; Look if .o is ancient or does not exist
+    (if (not (file-existsp (concat sn3-dir "src/OBJS/" 
+                                   :os-string "/touch-to-recompile")))
+	(error (sprintf "A file named touch-to-recompile must exist in %ssrc/OBJS/%s"
+			sn3-dir :os-string)))
+    (when (and (not forceit) (file-existsp oname))
+      (when (file-newerp (concat sn3-dir "src/OBJS/" :os-string 
+                                 "/touch-to-recompile") cname)
+	(setq forceit t) ) )
+    (when (or forceit (file-newerp snname cname))
+      ;; generate C file
+      (dhc-make-c cname fsymb-list) )
+    (when (or forceit (file-newerp cname oname))
+      ;; generate object file
+      (when (<> (dhc-make-o cname oname) 0)
+	(error "Error during C compilation") ) )	
+    ;; load object file
+    (dhc-load oname fsymb-list) ) )
+
+)
+
+
+
+#? (dhc-make-with-libs <fname> <library-list> <f1> [<f2> ...[<fn>]])
+;; Like dhc-make but loads dynamically the libraries in the given <library-list>
+;; after loading the compiled objects of <f1>, <f2>, ...
+;; The function is created by replacing in dhc-make the last call
+;; to (dhc-load oname fsymb-list) by (dhc-load oname fsymb-list libs).
+;; Each library must be given by a string with its object name (and path,
+;; if it is not local or on SN's standard path).
+;;.SEE (dhc-make <fname> <f1> [<f2> ...[<fn>]])
+(setq dhc-make-with-libs
+  (let*((dhc-make-def (funcdef dhc-make)))
+     (eval '(flambda (fname libs . fsymb-list)
+             `(caddr dhc-make-def)
+             `(reverse (cons '(dhc-load oname fsymb-list (eval libs))
+                             (cdr (reverse (nth dhc-make-def 4)))))))))
+
+
+#? (dhc-make-old <fname> <f1> [<f2> ...[<fn>]])
+;;OLD DHC-MAKE FUNCTION, REPLACED 95/04.
+;; translate functions <f1>...<fn> to C into file <fname>.c, compile 
+;; <fname>.c to <fname>.o and load it.
+;; If dhc-make is called from within a file being loaded (say f.sn), the time and
+;; date of last modification of f.sn is compared to that of <fname>.c and
+;; <fname>.o. If <fname>.o is more recent, it is loaded without recompilation.
+;; If the .o is older or does not exist, the .c is recompiled.
+;; of course, if the .c is older or does not exist it is regenerated.
+;; If <fname> is nil, or the empty string, the name of the current file 
+;; being loaded is used, after transformation to a legal C identifier (this
+;; is necessary because 
+;; if the file being loaded is stdin and no filename is given, the code is written
+;; in a file whose name is a C-ified version of the last argument <fn>).
+
+(df dhc-make-old ( fname . fsymb-list) 
+  (setq fname (eval fname))
+  (let* ((forceit ())
+	 (snname (if (= "$stdin" file-being-loaded) 
+		     (progn (setq forceit t) 
+			    (if (consp (last fsymb-list))
+				(pname (car (last fsymb-list)))
+			      (pname (last fsymb-list))))
+		   file-being-loaded))
+	 (snname-dir (dir-name snname))
+	 (snname-base (base-name snname))
+	 ;; name of C file must be a legal C symbol
+	 (cname  (concat snname-dir 
+			 (dhc-lisp-to-c-name 
+			  (if (and fname (<> "" fname)) fname snname-base))
+			 ".c"))
+	 (oname  (change-suffix cname ".o"))
+	 (src-list (all ((sym fsymb-list))
+			(if (consp sym)  (eval (car sym)) (eval sym))))
+	)
+    ;; Adjust oname to use OBJS directory
+    (when (or (<> :operating-system 'sunos)
+              (dir-existsp (concat snname-dir "OBJS")) )
+      (when (not (dir-existsp (concat snname-dir "OBJS")))
+        (sys (sprintf "mkdir %sOBJS" snname-dir)) )
+      (when (not (dir-existsp (concat snname-dir "OBJS/" :os-string)))
+        (sys (sprintf "mkdir %sOBJS/%s" snname-dir :os-string)) )
+      (setq oname (concat snname-dir "OBJS/" :os-string "/" 
+                          (base-name oname) ".o") ) )
+    ;; Look if .o is ancient or does not exist
+    (if (not (file-existp (concat sn3-dir "src/OBJS/" 
+                                  :os-string "/touch-to-recompile")))
+	(error (sprintf "A file named touch-to-recompile must exist in %ssrc/OBJS/%s"
+			sn3-dir :os-string)))
+    (when (and (not forceit) (file-existp oname))
+      (when (file-newerp (concat sn3-dir "src/OBJS/" :os-string 
+                                 "/touch-to-recompile") cname)
+	(setq forceit t) ) )
+    (when (or forceit (file-newerp snname cname))
+      ;; generate C file
+      (dhc-make-c cname fsymb-list) )
+    (when (or forceit (file-newerp cname oname))
+      ;; generate object file
+      (when (<> (dhc-make-o cname oname) 0)
+	(error "Error during C compilation") ) )	
+    ;; load object file
+    (dhc-load oname fsymb-list) ) )
+
+
+#? (dhc-load <oname> <fsymb-list>)
+;; Similar to mod-load, but check that the loaded function name correspond to 
+;; fsymb-list and convert those into DHE.
+;;
+(de dhc-load (oname fsymb-list &optional libs)
+    (if ~(listp fsymb-list)
+        (error 'dhc-load "A list of symbol was expected"))
+    
+    ;; now load compiled funcs and cast them to DHE
+    (let* ((src-list (all ((fsy fsymb-list))
+                       (if ~(listp fsy)
+                           (eval fsy)
+                         (if ~(classp (eval (car fsy)))
+                           (error 'dhc-load
+                                  (sprintf "Not a class: %l" (car fsy))))
+                         (cons (eval (car fsy))
+                               (all ((fs (cdr fsy)))
+                                 (check==> (eval (car fsy)) fs))))))
+	   (src-list-old src-list)
+	   (fsymb-list-old fsymb-list)
+	   (rerror (lambda (s . l) 
+		     (each ((fsym fsymb-list-old) (src src-list-old))
+			   (if ~(listp fsym)
+			     (set fsym src)
+			     (set (car fsym) (car src))
+			     (each ((fs (cdr fsym)) (sr (cdr src)))
+                               (putmethod (eval (car fsym)) fs sr))))
+		     (error 'dhc-load (apply sprintf (cons s l)))))
+           (fname (mod-load oname))
+           (fsymbs (reverse (cdr (mod-inquire fname))))
+	   (fsymbs-old fsymbs)
+           (lsymb ())
+           (fsymb ())
+           (passed-symb ()))
+      
+      (when libs
+        (each ((lib libs))
+          (mod-load lib))
+        (setq fsymbs (reverse (cdr (mod-inquire fname))))
+        (setq fsymbs-old fsymbs))
+      (when (= "State: uninitialized" (car (mod-inquire fname)))
+        (rerror (concat "Module %s was loaded but not initialized\n"
+                        "The following symbol were undefined: %s")
+                oname (insert-op (mod-undefined oname) ", ")))
+      
+      (while src-list
+        (setq lsymb (car fsymb-list))      ;; symbol passed from lisp
+        (setq func (car src-list))   ;; the symbol above evaluated
+        (setq fsymb (car fsymbs))    ;; the symbol from the loaded file
+        
+        (if (listp func)
+            (let ((temp ())
+                  (new-class (eval (car lsymb)))
+                  (old-class (car func)))
+              (when (<> (car lsymb) fsymb)
+		    (rerror "Symbol and loaded class name differ: %l <> %l"
+			    (car lsymb) fsymb))
+              (when (< (length fsymbs) (length lsymb))
+		    (rerror "Not enough methods in file loaded: %l <> %l"
+			    (cdr lsymb) (cdr fsymbs)))
+              (setq fsymbs (cdr fsymbs))
+              
+              (for (i 1 (1- (length lsymb)) 1)
+                (setq temp (cons (car fsymbs) temp))
+                (setq fsymbs (cdr fsymbs)))
+              (setq temp (reverse temp))
+              (let* ((shift (+ 10 (len (pname (car lsymb)))))
+                     (te-name (all ((te temp))
+                                (named (left (mid (pname te) shift)
+                                             (- (len (pname te)) shift)))))
+		     (ste-name ())
+		     (slsymb ()))
+		(setq ste-name (merge-sort te-name 
+					   (lambda (a b) 
+					     (< (pname a) (pname b)))))
+		(setq slsymb (merge-sort (cdr lsymb)
+					 (lambda (a b) 
+					   (< (pname a) (pname b)))))
+                (when (<> slsymb ste-name)
+                  (rerror "Loaded methods and symbol differ: %l <> %l"
+                          (cdr lsymb) te-name)))
+	      
+              (class-cclass old-class (class-cclass new-class))
+              
+	      ;; Transfer the lisp methods of the old class to the new class
+	      (each ((old-lisp-met (methods old-class)))
+                (when ~(member old-lisp-met (methods new-class))
+                      (putmethod new-class old-lisp-met 
+                                 (check==> old-class old-lisp-met))))
+              
+              (let ((old-met ())
+                    (new-met ()))
+                (each ((me (cdr lsymb)))
+                  (setq old-met (check==> old-class me))
+                  (setq new-met (check==> new-class me))
+                  (if (= (classof old-met) |DEM|)
+                      (if (null :old-met:source)
+                          (rerror (concat "method %l was already loaded"
+                                          "as a DEM with no source")
+                                  me)
+                        (setq :new-met:source :old-met:source))
+                    (setq :new-met:source old-met))
+                  (setq :new-met:file fname)
+                  (putmethod old-class me new-met)))
+              
+              (setq src-list (cdr src-list))
+              (setq func (cdr func))
+	      (setq fsymb-list (cdr fsymb-list)))
+          
+	  ;; It is not a class, it is a function
+	  (if (= (classof func) |DH|)
+	      (rerror "function %l was already loaded as a DH (no source)"
+		      fsymb))
+	  (if (= (classof func) class)
+	      (rerror (concat "Bad format for loading classes:\n        "
+			      "       Expecting (... (cl [m1...]) ...): %l")
+		      fsymb))
+	  (if (and (<> (classof func) |DE|) (<> (classof func) |DHE|))
+	      (rerror "Don't know how to compile the type of %l: %s"
+		      fsymb (pname (eval fsymb))))
+
+	  (cast (eval fsymb) |DHE|) ;; (eval fsymb) is either a DE or a DH
+	  (setq :(eval fsymb):source (==> func get-source))
+          (setq :(eval fsymb):file fname)
+          (setq src-list (cdr src-list))
+          (setq fsymbs (cdr fsymbs))
+          (setq fsymb-list (cdr fsymb-list))))
+      
+      fsymbs-old))
+
+#? (dhc-cc <fname> <fsymbs>)
+;; Compile and load the functions in the <fsymbs> list of symbols.
+;; <fname> is a file name, using unix convention, relative to the current
+;; directory (absolute path name are allowed.
+(de dhc-cc (fname symblist)
+    (dhc-make-c (concat fname ".c") symblist)
+    (dhc-make-o (concat fname ".c") (concat fname ".o"))
+    (dhc-load (concat fname ".o") symblist))
+
+
+
+
+
+#? (dhc-uncompile <dhc-make-style-funclist>)
+;; Restores the lisp definition of functions.  Calling the function from the
+;; interpreter will now use the lisp version of the function. Compiled
+;; functions will still use the compiled version. The compiled function
+;; is still available by appending <"-compiled"> to its name.
+
+(df dhc-uncompile __funcs
+    (all ((__fs __funcs))
+
+      (cond
+       ((symbolp __fs)
+        (let ((__ff (eval __fs)))
+          (when (or (not __ff) (not (is-of-class __ff |DHE|)))
+            (error 'dhc-uncompile "Cannot uncompile" __fs) )
+          (set (named (sprintf "%l-compiled" __fs)) __ff)
+          (set __fs (eval :__ff:source)) )
+        __fs )
+       
+       ((consp __fs)
+        (let* ((__fc (car __fs))
+               (__ff (eval __fc)) )
+          (when (or (not (classp __ff)) (not (class-cclass __ff)))
+            (error 'dhc-uncompile "Not a compiled class" __fs) )
+          (each ((meth (cdr __fs)))
+            (let ((func (check==> __ff meth)))
+              (when (not func)
+                (error 'dhc-uncompile "Unknown method" (list __fc meth)) )
+              (putmethod __ff (named (sprintf "%l-compiled" meth)) func)
+              (putmethod __ff meth (eval :func:source)) ) ) )
+        __fs )
+       
+         (t 
+          (error 'dhc-uncompile "Cannot uncompile" __fs) ) ) ) )
+
+
+#? (dhc-recompile <dhc-make-style-funclist>)
+;; Restore the compiled versions saved by <dhc-uncompile>.
+
+(df dhc-recompile __funcs
+    (all ((__fs1 __funcs))
+
+      (cond
+       ((symbolp __fs1)
+        (let* ((__fs (named (sprintf "%l-compiled" __fs1)))
+               (__ff (eval __fs)) )
+          (when (or (not __ff) (not (is-of-class __ff |DHE|)))
+            (error 'dhc-recompile "Cannot recompile" __fs1) )
+          (set __fs1 __ff)
+          (set __fs ()) )
+        __fs1 )
+       
+       ((consp __fs1)
+        (let* ((__fc (car __fs1))
+               (__ff (eval __fc)) )
+          (when (or (not (classp __ff)) (not (class-cclass __ff)))
+            (error 'dhc-recompile "Not a compiled class" __fs) )
+          (each ((meth1 (cdr __fs1)))
+            (let* ((meth (named (sprintf "%l-compiled" meth1)))
+                   (func (check==> __ff meth)))
+              (when (not func)
+                (error 'dhc-uncompile "Cannot recompile" (list __fc meth1)) )
+              (putmethod __ff meth1 func)
+              (putmethod __ff meth ()) ) ) ) 
+        __fs1)
+       
+         (t 
+          (error 'dhc-uncompile "Cannot uncompile" __fs) ) ) ) )
+
+
+
+
+
+
+;;; ----------------------------------------
+;;; YOSHUA'S HACKS TO GO AROUND DLD
+;;; ----------------------------------------
+    
+(load "no-dld")
+
+
+;;; ----------------------------------------
+;;; DH-COMPILE HAS BEEN LOADED
+;;; ----------------------------------------(
+
+(setq dh-compile t)
+
+

@@ -1,0 +1,128 @@
+
+
+#? color-quantize
+;; this file contains functions to find representative colors
+;; from a precomputed color histogram.
+;; these functions just find the colors, they do not actually 
+;; quantize the images. This is done in rgbaimage, and rgbafimage.
+
+
+(mload "idx-macros")
+(mload "idx-flt")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; a few ideas:
+;; hierarchical K-means clustering for colormaps
+;; recursive procedure that starts from a histogram
+;; of pixel colors in 32x32x32 space.
+;; arguments are the histogram, the label of the
+;; color category to be partitioned, the 2 labels for the
+;; two new color categories, and an assignement array
+;; the same size as the histogram which contains
+;; -1 for unused cells, and the label of the color
+;; category to which the cell is associated.
+;; it also take a palette.
+;; For speed, the procedure can precompute a index of apropriate
+;; cells, so not all cells need to be explored
+;; TWO procedures: initialize the prototypes, and
+;; perform K-means on them.
+;; prototypes can be initialized around the mean of the histogram
+;; distribution. It's probably best to put them around the
+;; diagonal.
+;; an assignement of each cell to each prototype is returned.
+;; (two arrays, one for each prototype, or maybe 
+;;  the original array with a bit added to the assignement)
+;; the second pass can take 
+;; PB: what distance between colors should we use
+;; IDEA: soft assign K-means
+;; IDEA: maybe the 32x32x32 table is not required. Just a (hashed) list of pixels
+;; would be better (we will do that later)
+
+
+#? (cqu-init-proto <ppal> <proto>)
+;; initialize prototypes for K-means.
+;; assumes that <ppal> contains the color values sorted by luminosity
+;; (as returned by rgbaim-histo32).
+;; puts the prototypes regularly spaced along a line between the darkest
+;; and lightest color.
+;; <ppal>: Nx3 matrix of floats containing a list of RGB color cells
+;; <proto>: Px3 matrix of floats, contains the initalized prototypes on output
+(de cqu-init-proto (ppal proto)
+    ((-idx2- (-flt-)) ppal proto)
+    (let ((dark (select ppal 0 0))
+	  (light (select ppal 0 (1- (idx-dim ppal 0))))
+	  (n (1- (idx-dim proto 0))))
+      (for (i 0 n)
+	(idx-m1lincomb light (/ i n) dark (- 1 (/ i n)) (select proto 0 i)))))
+
+#? (cqu-kmeans <ppal> <count> <assign> <split> <proto> <label> <weight> <variance>)
+;; performs a Kmeans algorithms on the
+;; color values contained in <ppal>.
+;; INPUT:
+;; <ppal>: Nx3 matrix of floats containing a list of RGB color present in the picture
+;; <count>: N matrix of floats, number of pixels with the corresponding RGB color
+;; <assign>: N matrix of floats containing the label of the prototype to which
+;;           the color cell is currently assigned.
+;; <split>: an int: only those color cells whose initial assigned label is
+;;          equal to <split> will be taken into account.
+;; <proto>: Px3 matrix of floats, contains initialized RGB prototypes
+;; <label>: P matrix of ints, contains labels for the prototypes
+;; OUTPUT:
+;; <proto>: contains the updated prototypes on output
+;; <assign>: the color cells whose assigned value was <split> will be assigned
+;;           the value in <label> correspinding to their closest prototype.
+;; <weight>:  P matrix of float, contains the number of pixels assigned to each prototype
+;; <variance>: P matrix of float, contains the variance associated with the prototypes
+(de cqu-kmeans (ppal count assign split proto label weight variance)
+    ((-idx2- (-flt-)) ppal proto)
+    ((-idx1- (-flt-)) count weight variance)
+    ((-idx1- (-int-)) assign label)
+    ((-int-) split)
+    (let ((bouge t) (newproto (matrix-nc (idx-dim proto 0) (idx-dim proto 1)))
+	  (table (int-matrix-nc (idx-dim ppal 0))))
+      ;; initialize indirection table for looping on chosen color cells
+      (let ((n 0) (i 0))
+	((-int-) n i)
+	(idx-bloop ((a assign)) (when (= split (a)) (table n i) (incr n)) (incr i))
+	(idx-i1resize table n))
+      ;; (printf "table size=%d\n" (idx-dim table 0))
+      (while bouge
+	(setq bouge ())
+	;; assign colors to prototypes
+	(idx-clear newproto)
+	(idx-clear variance)
+	(idx-clear weight)
+	;; (printf "iteration\n")
+	(idx-bloop ((k table))
+	  (let* ((c (select ppal 0 (k)))
+		 (r (c 0)) (g (c 1)) (b (c 2))
+		 (co (count (k)))
+		 (mindist 1e9) (cl 0))
+	    ((-flt-) r g b mindist)
+	    ((-int-) cl)
+	    (cinline-idx1loop proto "float" "p" "i"
+	      #{{ float dr, dg, db, d;
+	         dr = p[0] - $r;
+	         dg = p[1] - $g;
+	         db = p[2] - $b;
+		 d  = dr*dr + dg*dg + db*db;
+		 if (d<$mindist) { $cl=i; $mindist = d; }
+		 } #} )
+	    ;; #{ printf("\n") #}
+	    (assign (k) (label cl))
+	    (variance cl (+ (variance cl) (* co mindist)))
+	    (weight   cl (+ (weight   cl) co))
+	    (idx-m1dotcacc c co (select newproto 0 cl))))
+	(idx-bloop ((np newproto) (p proto) (w weight) (v variance))
+	  (when (<> 0 (w)) 
+	    (let ((z (/ (np 0) (w)))) (when (<> (p 0) z) (setq bouge t) (p 0 z)))
+	    (let ((z (/ (np 1) (w)))) (when (<> (p 1) z) (setq bouge t) (p 1 z)))
+	    (let ((z (/ (np 2) (w)))) (when (<> (p 2) z) (setq bouge t) (p 2 z)))
+	    (v (/ (v) (w)))))
+	())))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "color_quantize" cqu-init-proto cqu-kmeans)

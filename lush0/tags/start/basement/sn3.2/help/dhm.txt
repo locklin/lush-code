@@ -1,0 +1,94 @@
+
+------------------------------------------------------------------------------
+DHM
+
+The compiler has two passes, one pass which generate a type
+tree, and one pass which generate code.  
+
+Each function which is defined in lisp or in C can be made 
+compilable by writing 2 special functions called a dhm-t and
+a dhm-c respectively.  The dhm-t take the source and returns
+a tree containing all the type information.  The dhm-c
+has side effect in the variables:
+	c-declaration c-statements c-epilog
+
+For instance the function setq is a DX which can be made
+compilable by creating the two following DHM.
+
+
+	(dhm-t setq(source)
+	    (setq source (cdr source))
+	    (when ~(and (consp source) (consp (cdr source)) (not (cddr source)))
+	          (dhc-error "Setq takes two arguments" ) )
+	    (let* ((sym (dhc-check-symbol (car source)))
+	           (expr (dhc-parse-expr-t (cadr source))))
+	
+	      (assign-unify :sym:type :expr:type)
+	      (new t-node (list (new t-node () :sym:type (car source) sym)
+	                        expr)
+	           :sym:type)))
+	
+	(dhm-c setq(source treetype retplace)
+	       (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list)
+	                         (scope :(car :treetype:tn-list):symbol c-name)))
+
+What these function do is that they transform the DX into
+a DXC.  A DXC is a DX with 2 additional slots, dhm-t and dhm-c.
+You can access the functions above by typing: :setq:dhm-t and :setq:dhm-c
+(after dh-macro.sn has been loaded).  If we were to compile the
+expression '(setq b (+ 17 23)), the dhm-t would return a treetype
+of the form:
+
+	<<setq:(dhm)>,<b:(number)>,<<+:(dhm)>,<17:(number)>,<23:(number)>:(number)>:(number)>
+
+The dhm-t calls recursively dhc-parse-expr-c, which can in turn call
+other dhm.  The call to dhm-c would add the string "b = (17 + 23);"
+in the list c-statements.
+
+ARGUMENTS OF A DHM-T
+
+A dhm-t take a source as an argument (for example '(setq a (+ 3 4))) and
+returns a object of type t-node.  Do ^At-node for more information on 
+t-node.
+
+ARGUMENTS OF A DHM-C
+
+A dhm-c take 3 argument: source treetype retplace.  The argument
+source is the same as for the dhm-t.  The argument treetype is what
+the dhm-t did return for that source.  The argument retplace is either
+the empty list, or a string which is the name of a variable in which
+to put the result.  In the dhm-c for (setq <var> <expr>) for instance,
+the expression <expr> is parsed with retplace set to the C name for
+the variable <var>.  On exit, additional assignement is necessary.
+
+A dhm-c returns a string (describing a variable or an expression)
+containg the result at run time of the evaluation of the expression.
+(for expample for setq, the dhm-c returns the C name of the variable).
+
+One exception is if the slot ignore of the treetype is set to t, in
+that case the returned value is unpredictable and will not be used.
+For instance when compiling (progn (+ 3 4) (+ 5 6) 8), the result of
+(+ 3 4) is unpredictable and unused because the slot ignore is set for
+the corresponding treetype.  The whole expression will just return
+"8".
+
+------------------------------------------------------------------------------
+FILES
+
+dh-compile.sn:  file containing the utility which call the
+	lisp preprocessor, the C compiler, the dynamic loader, and 
+	everything related to file manipulation.
+
+dh-util.sn: file containing all the utilies the compiler may need.  
+	In other words, anything that is not related to files (that goes
+	into dh-compile.sn) and not a declaration of a dhm (that goes in
+	dh-macro.sn).
+
+dh-macro.sn: file containing all the definition of 
+
+old-dh-macro.sn: file containing the dhm of SN3 which have not yet
+	been adapted to the new version SN3.1
+
+odl-dh-util.sn: file containing the utiliteis of SN3 which have
+	not yet been adapted to SN3.1
+

@@ -1,0 +1,627 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "modules")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (same-class? <actual> <desired> [<dummies>])
+;; return 0 if <actual> equals -1, otherwise, return 1 if <actual>
+;; and <desired> are equal, -1 otherwise.
+(de same-class? (co cd . junk)
+  (if (= -1 co) 0 (if (= co cd) 1 -1)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? trainer
+;; a subclass of sn-module that can be used to conveniently train and
+;; test a learning machine with redefinable preprocessoe, cost function and
+;; postprocessor.
+;; most trainer methods take a database as argument, or at least
+;; an object that can understand the following three messsages:
+;;.VP
+;; (==> <db> next)
+;; (==> <db> get-current 'input)
+;; (==> <db> get-current 'desired)
+;; (==> <db> seek <n>)
+;;.PP
+;; slots are provided to store conversion function from what comes out of 
+;; the database to what goes into the machine.
+;; Methods are provided to test a machine and measure its performance, as well
+;; as train it. Three different main methods are provided:
+;; test, train, and train-bbprop.
+;; in the first method only an fprop is performed on the preprocessor, 
+;; the machine the post-processor and the cost function.
+;; the second does an fprop, a bprop, and a parameter update,
+;; the third one does an fprop, a bprop, a bbprop (for 2nd derivative)
+;; and an update-bbprop (to update the parameter's second derivatives).
+(defclass trainer object
+  ;; object that calculate things
+  preproc             ; a preprocessing module (no backprop called)
+  machine             ; a machine with one input state and one output state
+  param		      ; the adaptive parameters
+  cost		      ; a cost function module
+  postproc            ; a postproc module (transform a state into a clear
+                      ; answer, eg a class index)
+
+  ;; interface functions
+  present-pattern     ; functions that read a database output and put it
+  present-desired     ; into the input state, desired output state, and 
+                      ; desired postproc state
+
+  ;; storages and state
+  current-pointer     ; index of current pattern in database
+  raw-input           ; inputto the preprocessing module
+  machine-input       ; input state to the machine
+  machine-output      ; output state of the machine
+  machine-desired     ; desired output to the cost module
+  energy              ; current output of the cost module
+  postproc-output     ; output of the postproc
+  postproc-desired    ; desired output of the postproc
+  results             ; output of the meter
+)
+
+#? (new trainer <pre> <mchn> <prm> <post> <cst> <ppat> <pdes> <raw> <in> <out> <pout> <des>)
+;; create a new trainer where <mchn> is the learning machine. It must be
+;; an object that understands the methods fprop, bprop and optionally bbprop 
+;; each of which must take one input and one output as arguments.
+;; <prm> is a param (that can understand update and update-bbprop messages).
+;; <cst> is a cost module: a module with two inputs and one output.
+;; <pre> is a preprocessing module, and <post> is a postprocessing module 
+;; (including a classifier, or something similar not subject to updates 
+;; or backprops).
+;; <ppat> is a present-pattern function (see help), <pdes>: a present-desired 
+;; function (see help),
+;; <raw>, <in>, <out> and <des> are objects that will be used to store 
+;; the raw input, the machine input (or preprocessor output), the output
+;; and the desired states of the learning machine.
+;; <pout> is an object used to store the output of the postprocessor (probably,
+;; this is a class-state)
+;;.SEE trainer
+;;.SEE (present-pattern <from> <to>)
+;;.SEE (present-idx <from> <to> [<dummy>])
+;;.SEE (present-desired <from> <to> <actual>)
+;;.SEE (present-classindex <class-index> <to> [<extra>])
+(defmethod trainer trainer (pre mchn prm post cst ppat pdes 
+			    raw in out pout des)
+  (setq machine mchn param prm cost cst postproc post preproc pre)
+  (setq machine-output   out)
+  (setq machine-input   in)
+  (setq raw-input   raw)
+  (setq postproc-output pout)
+  (setq machine-desired des)
+  (setq energy (new idx0-ddstate))   ; energy is a scalar idx
+  (:energy:dx 1)                   ; minimize energy
+  (setq present-pattern ppat)
+  (setq present-desired pdes))
+ 
+;; here are the five low-level methods for using a trainer.
+;; does a forward prop, and produce an output.
+;; no desired output is necessary,
+;; this is "production" mode.
+(defmethod trainer use ()
+  (if (check==> (classof preproc) 'use)
+      (==> preproc use raw-input machine-input)
+    (==> preproc fprop raw-input machine-input)	)
+  (if (check==> (classof machine) 'use)  
+      (==> machine use machine-input machine-output)
+    (==> machine fprop machine-input machine-output) )
+  (if (check==> (classof postproc) 'use)    
+      (==> postproc use machine-output postproc-output)
+    (==> postproc fprop machine-output postproc-output) ) )
+
+;; does a forward prop, and compute
+;; the energy and the error.
+;; no training, this is the performance measure mode.
+(defmethod trainer fprop ()
+  (==> preproc fprop raw-input machine-input)
+  (==> machine fprop machine-input machine-output)
+  (==> cost fprop machine-output machine-desired energy)
+  (==> postproc fprop machine-output postproc-output) )
+
+(defmethod trainer bprop ()
+  (==> param clear-dx)
+  (==> cost bprop machine-output machine-desired energy)
+  (==> machine bprop machine-input machine-output))
+
+(defmethod trainer bbprop ()
+  (==> param clear-ddx)
+  (==> cost bbprop machine-output machine-desired energy)
+  (==> machine bbprop machine-input machine-output))
+
+(defmethod trainer update () (==> param update))
+
+(defmethod trainer update-bbprop () (==> param update-bbprop))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; next level up
+
+;; this is the basic testing mode. 
+;; forward prop only.
+(defmethod trainer test ()
+  (==> this fprop))
+
+;; this is the basic training mode. 
+;; forward prop, back prop and update
+(defmethod trainer train ()
+  (==> this fprop)
+  (==> this bprop)
+  (==> this update))
+
+;; training method with backprop of sensitivity factor (2nd derivatives)
+;; with a call to update-bbprop (this must be used for newton type algorithms,
+;; or obd)
+(defmethod trainer train-bbprop ()
+  (==> this fprop)
+  (==> this bprop)
+  (==> this bbprop)
+  (==> this update-bbprop))
+
+(defmethod trainer iterate (mode d-b meter n . rest)
+  (repeat n
+	  (setq current-pointer (==> d-b tell))
+	  ;; put current pattern from d-b into raw input
+	  (present-pattern (==> d-b get-current 'input) raw-input)    
+	  ;; put desired answer into machine-desired
+	  (setq postproc-desired  
+		(present-desired (==> d-b get-current 'desired) machine-desired))
+	  (apply ==> (cons this (cons mode rest)))
+	  ;; update performance meter
+	  (==> meter fprop  this)
+	  ;; get next pattern
+	  (==> d-b next)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (present-pattern <from> <to>)
+;; present pattern is a slot in the trainer class which is supposed to contain
+;; a user-defined function with two arguments.
+;; It provides a way for the network designer to interface a database to
+;; a particular learning machine, i.e. transform an input from whatever comes
+;; from the database to whatever the learning machine (or rather, the
+;; preprocessing module) understands.
+;; The first argument is an item from the database, and the secand argument
+;; is the input state of the preprocessing module (usually an sn-state)
+
+#? (present-desired <from> <to>)
+;; present-desired is a slot in the trainer class which is supposed to contain
+;; a user-defined function with two arguments.
+;; It provides a way for the network designer to interface a database to
+;; a particular learning machine, i.e. transform a desired output from whatever 
+;; comes from the database to whatever the learning machine understands.
+;; The first argument is an item from the "desired" slot of the database, 
+;; and the second argument is the desired state of the machine to be trained 
+;; (usually an sn-state).
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+#? sn-meter
+;; a class that is used to measure the performance
+;; of a learning machine. 
+;; sn-meters have at least three methods:
+;; clear, fprop and update.
+;; the update method must take six arguments (see the doc of the fprop 
+;; method for more details).
+;; most subclasses of sn-meter can be used as "recorders" as well as
+;; meters. If they are put in record mode, they keep a log of everything
+;; that happens.
+;;.SEE (==> <sn-meter> fprop <posto> <postd> <macho> <machd> <nrgy> <ptr>)
+(defclass sn-meter object)
+
+#? (==> <sn-meter> fprop <trainer>)
+;; updates <sn-meter> with data extracted from the trainer <trainer>
+
+#? (==> <sn-meter> clear)
+;; clears the content of <sn-meter>, and restart the measurement process.
+
+#? (==> <sn-meter> sprint-info)
+;; returns a string with most interesting info in <sn-meter>
+(defmethod sn-meter sprint-info () "")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defclass noop-meter sn-meter)
+
+(defmethod noop-meter clear () ())
+(defmethod noop-meter fprop p ())
+(defmethod noop-meter update () ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? classifier-meter
+;; a special sn-meter that can be used to measure the performance 
+;; of a classifier.
+(defclass classifier-meter sn-meter
+  ;; instantaneous slots
+  correctp				; a function that return 1 if the answer is considered correct,
+					; 0 if punt, -1 if wrong. 
+  energy
+  confidence
+
+  ;; global performance slots
+  size					; number of patterns seen so far
+  total-correct
+  total-error
+  total-punt
+  total-energy
+
+  ;; output storage for future records
+  pattern-indices			; matrix of pattern indices
+  actual-answers			; matrix of actual answers
+  desired-answers			; matrix of desired answers
+  ratings				; matrix of +1 (success), 0 (punt), -1 (failure)
+  confidences				; matrix of confidence levels
+  energies				; metrix of output energy
+  sorted-pointers			; sorted matrix of sequence numbers
+
+  sorted				; flag indicates if sorted-pointers have been sorted
+  )
+
+(defmethod classifier-meter clear ()
+  (setq total-correct 0
+	total-error 0
+	total-punt 0
+	total-energy 0
+	size 0
+	sorted ()))
+
+(defmethod classifier-meter classifier-meter (sz &optional cp)
+  (setq correctp (if cp cp same-class?)
+        pattern-indices (matrix sz)
+        actual-answers (matrix sz)
+        desired-answers (matrix sz)
+        ratings (matrix sz)
+        confidences (matrix sz)
+        energies (matrix sz)
+        sorted-pointers (matrix sz)
+	sorted ())
+  (==> this clear))
+
+(defmethod classifier-meter resize (sz)
+  (idx-redim  pattern-indices (list sz))
+  (idx-redim  actual-answers (list sz))
+  (idx-redim  desired-answers (list sz))
+  (idx-redim  ratings (list sz))
+  (idx-redim  confidences (list sz))
+  (idx-redim  energies (list sz))
+  (idx-redim  sorted-pointers (list sz)))
+
+;; record new data, update counts
+(defmethod classifier-meter fprop (tr)
+  (let* ((co :tr:postproc-output)
+	 (cd (:tr:postproc-desired))
+	 (mo :tr:machine-output)
+	 (en :tr:energy)
+	 (ptr :tr:current-pointer)
+	 (enx :en:x)
+	 (crrct (correctp :co:output-class cd)))
+    (setq energy (enx)
+	  confidence :co:confidence)
+    (incr total-energy energy)
+    (ratings size crrct)
+    (pattern-indices size ptr)
+    (actual-answers size :co:output-class)
+    (desired-answers size cd)
+    (confidences size :co:confidence)
+    (energies size (enx))
+    (selectq crrct
+	     (1  (incr total-correct))
+	     (0  (incr total-punt))
+	     (-1 (incr total-error)))
+    (incr size)
+    (when (>= size (idx-dim ratings 0))
+	  (==> this resize (+ 10000 (idx-dim ratings 0))))
+    crrct))
+
+(defmethod classifier-meter sprint-info ()
+  (sprintf "%10.6f %6.2f  %6.2f  %6.2f"
+	   (/ total-energy size) 
+	   (/ (* 100 total-correct) size)
+	   (/ (* 100 total-error) size)
+	   (/ (* 100 total-punt) size)))
+
+;; doesn't really do anything
+(defmethod classifier-meter update  ()  ())
+
+;; that should record the current global performance
+;; and clear the meter
+(defmethod classifier-meter update-cycle  ()  ())
+
+;; not working yet
+(defmethod classifier-meter punting-curve ()
+  (when ~sorted
+    (fill-with-index sorted-pointers)
+    (let ((z (matrix (idx-dim sorted-pointers 0))))
+      (idx-copy confidences z)
+      (nr-sort2-down z sorted-pointers)
+      (setq sorted t)))
+  (printf "punting-curve not complete yet\n")  )
+
+(defmethod classifier-meter raw-perf ()
+  (list (/ total-correct size) (/ total-punt size) (/ total-error size)))
+
+;; return a list with the indices of a the mistaken patterns
+(defmethod classifier-meter mug-book ()
+  (let ((r ()))
+    (for (i 0 (1- size))
+	 (if (= -1 (ratings i)) (setq r (cons (pattern-indices i) r))))
+    (reverse r)))
+
+(defmethod classifier-meter confusion-matrix ()
+  (let* ((actual (narrow actual-answers 0 size 0))
+         (desired (narrow desired-answers 0 size 0))
+         (nbcl (+ 1 (let*((m (matrix)))(idx-m1max desired m)(m))))
+         (cf (matrix nbcl nbcl)))
+    (idx-bloop ((act actual)(des desired))
+               (cf (act)(des) (+ (cf (act)(des)) 1)))
+    cf))
+    
+
+(defmethod classifier-meter average-energy () (/ total-energy size))
+
+(defmethod classifier-meter simple-display ()
+  (printf "[%6d] mse=%14.8f error-rate=%6.2f\n"
+	  size (/ total-energy size) (/ (* 100 total-error) size)))
+
+(defmethod classifier-meter get-info ()
+  (list
+   (/ total-energy size) 
+   (/ (* 100 total-correct) size)
+   (/ (* 100 total-error) size)
+   (/ (* 100 total-punt) size)))
+
+(defmethod classifier-meter save (s)
+  (write-binary s
+		(list
+		 energy confidence size
+		 total-correct total-error total-punt total-energy
+		 (submatrix pattern-indices (list 0 (1- size)))
+		 (submatrix actual-answers (list 0 (1- size)))
+		 (submatrix desired-answers (list 0 (1- size)))
+		 (submatrix ratings (list 0 (1- size)))
+		 (submatrix confidences (list 0 (1- size))))))
+
+(defmethod classifier-meter load (s)
+  (let ((l (read-binary s))
+	(symbs '(energy confidence size  total-correct total-error
+			total-punt total-energy pattern-indices actual-answers
+			desired-answers ratings confidences)))
+    (each ((s symbs) (v l)) (set s v))
+    (setq sorted-pointers (matrix size))
+    (setq sorted ())))
+
+(defmethod classifier-meter mistakes (a b)
+  (for (i a b)
+       (when (<> (actual-answers i) (desired-answers i))
+	     (printf "%6d [%s] [%s]\n"
+		     i (chr (actual-answers i)) (chr (desired-answers i))))))
+
+;; compute performance using cost matrix <cm>
+;; <cm> is an NxN matrix (N> than number of classes) with 1 where
+;; a mistake counts and 0 were it does not count
+;; row index is desired class, column index is actual output.
+(defmethod classifier-meter perf (cm)
+  (let ((cost 0))
+    (for (i 0 (1- size))
+      (incr cost (cm (desired-answers i) (actual-answers i))))
+    (/ cost size)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? small-classifier-meter
+;; a special sn-meter that can be used to measure the performance 
+;; of a classifier. Like classifier-meter but wastes less memory.
+;;
+(defclass small-classifier-meter sn-meter
+  ;; instantaneous slots
+  correctp				; a function that return 1 if the answer is considered correct,
+					; 0 if punt, -1 if wrong. 
+  energy
+  confidence
+
+  ;; global performance slots
+  size					; number of patterns seen so far
+  total-correct
+  total-error
+  total-punt
+  total-energy
+  )
+
+(defmethod small-classifier-meter clear ()
+  (setq total-correct 0
+	total-error 0
+	total-punt 0
+	total-energy 0
+	size 0))
+        
+(defmethod small-classifier-meter small-classifier-meter (sz &optional cp)
+  (setq correctp (if cp cp same-class?))
+  (==> this clear))
+
+(defmethod small-classifier-meter resize (sz)
+ ()
+)
+
+;; record new data, update counts
+(defmethod small-classifier-meter fprop (tr)
+  (let* ((co :tr:postproc-output)
+	 (cd (:tr:postproc-desired))
+	 (mo :tr:machine-output)
+	 (en :tr:energy)
+	 (ptr :tr:current-pointer)
+	 (enx :en:x)
+	 (crrct (correctp :co:output-class cd)))
+    (setq energy (enx)
+	  confidence :co:confidence)
+    (incr total-energy energy)
+    (selectq crrct
+	     (1  (incr total-correct))
+	     (0  (incr total-punt))
+	     (-1 (incr total-error)))
+    (incr size)
+    crrct))
+
+(defmethod small-classifier-meter sprint-info ()
+  (sprintf "%10.6f %6.2f  %6.2f  %6.2f"
+	   (/ total-energy size) 
+	   (/ (* 100 total-correct) size)
+	   (/ (* 100 total-error) size)
+	   (/ (* 100 total-punt) size)))
+
+;; doesn't really do anything
+(defmethod small-classifier-meter update  ()  ())
+
+;; that should record the current global performance
+;; and clear the meter
+(defmethod small-classifier-meter update-cycle  ()  ())
+
+(defmethod small-classifier-meter raw-perf ()
+  (list (/ total-correct size) (/ total-punt size) (/ total-error size)))
+
+(defmethod small-classifier-meter average-energy () (/ total-energy size))
+
+(defmethod small-classifier-meter simple-display ()
+  (printf "[%6d] mse=%14.8f error-rate=%6.2f\n"
+	  size (/ total-energy size) (/ (* 100 total-error) size)))
+
+(defmethod small-classifier-meter get-info ()
+  (list
+   (/ total-energy size) 
+   (/ (* 100 total-correct) size)
+   (/ (* 100 total-error) size)
+   (/ (* 100 total-punt) size)))
+
+(defmethod small-classifier-meter save (s)
+  (write-binary s
+		(list
+		 energy confidence size
+		 total-correct total-error total-punt total-energy
+                 )))
+
+(defmethod small-classifier-meter load (s)
+  (let ((l (read-binary s))
+	(symbs '(energy confidence size  total-correct total-error
+			total-punt total-energy)))
+    (each ((s symbs) (v l)) (set s v))
+    ))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? multi-classifier-meter
+;; a special sn-meter that can be used to measure the performance 
+;; of a classifier along multiple axes.
+;;.SEE (new multi-classifier-meter <list-of-correctp-functions>)
+;;
+(defclass multi-classifier-meter sn-meter
+  ;; instantaneous slots
+  correctps				; an array of functions that return 1 if
+                                        ; the answer is considered correct,
+					; 0 if punt, -1 if wrong. 
+  energy
+  confidence
+
+  ;; global performance slots
+  size					; number of patterns seen so far
+  total-corrects                        ; vector of correct, errors,
+  total-errors                          ; and punted for each of the
+  total-punts                           ; performance measurement functions.
+  total-energy
+  )
+
+(defmethod multi-classifier-meter clear ()
+  (idx-m1clear total-corrects)
+  (idx-m1clear total-errors)
+  (idx-m1clear total-punts)
+  (setq total-energy 0
+	size 0
+        ))
+
+#? (new multi-classifier-meter <list-of-correctp-functions>)
+;; Given a <list-of-correctp-functions>, return a new
+;; multi-classifier-meter. Each of these functions takes 
+;; two arguments (correct and desired class) and returns
+;; 1 if the answer is correct, 0 if punt, -1 if wrong.
+;;
+(defmethod multi-classifier-meter multi-classifier-meter (cp)
+  (setq correctps (list2array cp))
+  (let*((n (idx-dim correctps 0)))
+    (setq total-corrects (matrix n))
+    (setq total-errors (matrix n))
+    (setq total-punts (matrix n)))
+  (==> this clear))
+
+(defmethod multi-classifier-meter resize (sz)
+ ()
+)
+
+;; record new data, update counts
+(defmethod multi-classifier-meter fprop (tr)
+  (let* ((co :tr:postproc-output)
+	 (cd (:tr:postproc-desired))
+	 (mo :tr:machine-output)
+	 (en :tr:energy)
+	 (ptr :tr:current-pointer)
+	 (enx :en:x))
+    (setq energy (enx)
+	  confidence :co:confidence)
+    (incr total-energy energy)
+    (idx-bloop ((correctp correctps)(total-correct total-corrects)
+                (total-punt total-punts)(total-error total-errors))
+      (selectq ((correctp) :co:output-class cd)
+        (1  (total-correct (+ 1 (total-correct))))
+        (0  (total-punt (+ 1 (total-punt))))
+        (-1 (total-error (+ 1 (total-error))))))
+    (incr size)
+    ))
+
+(defmethod multi-classifier-meter sprint-info ()
+  (let*((res (sprintf "%10.6f " (/ total-energy size))))
+    (idx-bloop ((total-correct total-corrects)
+                (total-punt total-punts)(total-error total-errors))
+      (setq res 
+            (concat res
+                    (if (= 0 (total-punt)) 
+                        ;; assume no punting, report only error
+                        (sprintf "[%6.2f]" (/ (* 100 (total-error)) size))
+                      ;; else report everything
+                      (sprintf "[%6.2f  %6.2f  %6.2f]"
+                               (/ (* 100 (total-correct)) size)
+                               (/ (* 100 (total-error)) size)
+                               (/ (* 100 (total-punt)) size))))))
+    res))
+
+;; doesn't really do anything
+(defmethod multi-classifier-meter update  ()  ())
+
+;; that should record the current global performance
+;; and clear the meter
+(defmethod multi-classifier-meter update-cycle  ()  ())
+
+(defmethod multi-classifier-meter raw-perf ()
+  (all ((tc (total-corrects ()))(tp (total-punts ()))(te (total-errors ())))
+    (list (/ tc size) (/ tp size) (/ te size))))
+
+(defmethod multi-classifier-meter average-energy () (/ total-energy size))
+
+(defmethod multi-classifier-meter simple-display ()
+  (printf "[%6d] mse=%14.8f error-rates=" size (/ total-energy size) )
+  (idx-bloop ((total-error total-errors))
+    (printf " %6.2f" (/ (* 100 (total-error)) size)))
+  (printf "\n"))
+
+(defmethod multi-classifier-meter get-info ()
+  (cons
+   (/ total-energy size) 
+   (flatten (==> this raw-perf))))
+
+(defmethod multi-classifier-meter save (s)
+  (write-binary s
+		(list
+		 energy confidence size
+		 total-correct total-error total-punt total-energy
+                 )))
+
+(defmethod multi-classifier-meter load (s)
+  (let ((l (read-binary s))
+	(symbs '(energy confidence size  total-correct total-error
+			total-punt total-energy)))
+    (each ((s symbs) (v l)) (set s v))
+    ))
+
+

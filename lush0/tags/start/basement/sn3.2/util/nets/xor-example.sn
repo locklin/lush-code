@@ -1,0 +1,113 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a small example of how you might setup a 2-layer net to
+;; learn the infamous exclusive OR.
+
+;; load fully conneted net library
+(mload "net-ff")
+;; load trainer class
+(mload "trainer")
+;; load workbench class
+(mload "workbench")
+;; load patrice's db class
+(mload "db")
+
+;; create a "param" the will be inserted in the trainer
+;; an idx1-ddparam uses the diagonal Levenberg-Marquardt algorithm
+;; (diagonal hessian estimation, then regular stochastic gradient descent).
+;; the parameters are 
+;; REAL parameters will be allocated from within this param by passing to the
+;; constructor of the various adaptive modules
+;; 0    : the initial number of parameters in the param 
+;;        (this should probably be always 0)
+;; 0.1  : the global learning rate
+;; 0.02 : the running average constant for the diag hessian calculation
+;; 0.02 : the term added to the diag hessian in the denominator of the individual
+;;        learning rates (to prevent them from blowing up if 2nd deriv is 0).
+;; 1000 : the size of the param to preallocate. Making this number large enough
+;;        to old all the parameters prevents memory fragmentation due to 
+;;        reallocation when real parameters are allocated within the param.
+(setq theparam (new idx1-ddparam 0 0.1 0.02 0.02 1000))
+
+;; make a one hidden layer fully-connected net.
+;; this net is replicable (a la SDNN), therefore its inputs and outputs
+;; are 3-dimensional (idx3-ddstate), one dimension for the neuron, and
+;; two spatial dimensions. In this example the network is not replicated
+;; so the last two dimensions are 1.
+;; arguments:
+;; 2 2 2: sizes of input, hidden layer, and output
+;; 1 1 : initial size of spatial replication. net-ff can be turned into SDNN
+;;       with spatial replication, this says how much memory to preallocate
+;;       for the states (the actual size is determined by the size of the input,
+;;       and is automatically determined). These numbers are only necessary to 
+;;       prevent memory fragmentation.
+;; theparam: the param in which all the free parameters of the network 
+;;       will be allocated. bprop messages sent to the network compute
+;;       the gradients in the param. Update messages setn to the param
+;;       compute the new weights for the network.
+(setq thenet (new net-ff 2 2 2 1 1 theparam))
+
+;; now build the trainer. The trainer contains the network, the param,
+;; a preprocessor (here, the preprocessor module does nothing)
+;; a postprocessor (a classifier), and a cost module.
+;; It also contains intermediate states that store intermediate
+;; states between the various modules (raw-input, machine-input,
+;; machine-output, postproc-output, desired, energy).
+(let ((clss (int-matrix 2)))
+  (clss () '(0 1))
+  (setq thetrainer 
+	(new trainer
+	     (new id-module)		; preprocessor
+	     thenet			; the trainable machine
+	     theparam			; its adaptive parameters
+	     (new max-classer clss)	; the classifier
+	     (new edist-cost clss 1 1 [ [-1 1] [1 -1] ]) ; the cost module
+					; with prototypes. The matrix contains
+					; the output target vector for each class.
+	     (lambda (from to)		; the function that transforms patterns
+	       (==> to resize 2 1 1)	; from the database into things the
+					; network understands
+	       (idx-copy from (redim :to:x 2))) ;  transforms the desired answer
+	     (lambda (from to) (to (from))) ; from the db into something the cost
+					; module understands
+	     (new idx3-state 2 1 1)	; raw-input
+	     (new idx3-ddstate 2 1 1)	; machine-input
+	     (new idx3-ddstate 2 1 1)	; machine-output
+	     (new class-state 2)	; postproc-output
+	     (int-matrix))))		; desired-output
+
+; a XOR with two outputs
+(setq traindb 
+      (new object-db 
+	   (cons 'input   (new array-db [ [-1 -1] [-1  1] [ 1  1] [ 1 -1] ]))
+	   (cons 'desired (new array-db [   0       1       0       1   ]))))
+
+(setq testdb 
+      (new object-db 
+	   (cons 'input   (new array-db [ [-1 -1] [-1  1] [ 1  1] [ 1 -1] ]))
+	   (cons 'desired (new array-db [   0       1       0       1   ]))))
+
+;; a classifier-meter measures classification errors
+(setq trainmeter (new classifier-meter 4))
+(setq testmeter  (new classifier-meter 4))
+
+;; make a new workbench containing the trainer the databases and the meters
+(setq wk (new workbench 
+	      "junk.log"		; a log file
+	      thetrainer		; the trainer
+	      traindb			; training database
+	      testdb			; testing database
+	      trainmeter		; 
+	      testmeter))
+
+;; initialize the network weights
+;; this method does the right thing for fanin scaling
+;; weights are picked randomly between a / fanin^(1/b)
+;; where a and b are the arguments of forget.
+(==> thenet forget 1 2)
+
+;; estimate second derivative on 100 iterations, using gamma=0.02 and mu=0.02
+;; and set individual espilons
+(==> wk compute-diaghessian 100 0.02 0.02)
+
+;; do 32 training iterations with learning rate eta=0.01
+(==> wk train 32 0.01)

@@ -1,0 +1,338 @@
+#? Functions.
+.SEE Argument List.
+.SEE (lambda  <args> . <body>)
+.SEE (flambda  <args> . <body>)
+.SEE (mlambda  <args> . <body>)
+.SEE (macro-expand <macrocall>)
+.SEE (de <symb> <args> . <body>)
+.SEE (df  <symb args . body)
+.SEE (dm  <symb> <args> . <body>)
+.SEE (dmd  <symb> <args> . <body>)
+.SEE (dmc <symb> . <body>)
+.SEE (funcdef <n>)
+.SEE (pretty <f>)
+.SEE ^P <function>
+
+All TLisp functions are unnamed: They are usually stored as value of
+symbols, whose name is sometimes incorrectly referred as the function
+name. There are thus two equivalent ways to define, for instance, a
+function <square> that computes the square of its argument:
+.VP
+(setq square (lambda(x) (* x x)))
+.PP
+or
+.VP
+(de square(x) (* x x))
+.PP
+The evaluation of the list <(lambda...)> returns a function that
+<setq> stores into <square>. The function <de> is a shorthand for this
+manipulation.
+
+A function behaves as any atom does. Its class however defines how to
+evaluate a list whose first element evaluation returns that function.
+The evaluation of a list whose first element is a symbol, the value of
+which is a function, thus simply calls that function.  The evaluation
+of the following list then returns 25
+.VP
+ (square 5)
+.PP
+But the evaluation of the following list also returns 25 
+.VP
+ ((lambda(x) (* x x)) 5)
+.PP
+
+There are several kinds of functions in TLisp; briefly 
+described hereafter:
+.IP
+ DX functions are written in C, using the standard Lisp to C interface
+package. Most of the C functions are written as DX.
+.IP
+ DY functions are directly written in C. These functions are usually
+control structures, like <cond>, <progn>, etc...
+.IP
+ DE functions are written in Lisp. These functions evaluate their
+arguments before calling their body. Most Lisp functions are DE
+functions.
+.IP
+ DF functions are also written in Lisp. They do not however evaluate
+their arguments before giving control to the function body.
+.IP
+ DM functions are also known as ``Macros''. They are written in Lisp.
+Their argument list includes the function name itself, and its
+elements are not evaluated. The body of the function is supposed to
+return an evaluable list, known as the macro expansion. This list is
+then evaluated in the calling context, and gives the result of the
+function call.
+.IP
+ DMD functions are a refinement of DM functions.  Unlike the DM
+functions, their argument list does not include the function name. The
+result of the body evaluation replaces the calling form itself in the
+calling context. The evaluation process is then restarted.  This
+replacement process happens just once, because the code is physically
+replaced by the result of the macro expansion during the first call.
+.IP
+ DMC are known as ``Macro characters''. These are not real function.
+They are bound to a single character name and take no arguments. Once
+the TLisp reader reaches such a character, it calls the function body
+and substitutes the result to the macro-character.
+.IP
+ DZ are discussed in section "DZ.".
+.PP
+
+#? Argument List.
+
+A formal argument list is associated to each each lisp defined function.
+This argument list defines which symbols will be bound to the actual
+argument of the function, while evaluating its body.
+
+Valid formal argument lists may be a single symbol, a list of symbols, or
+something more complex like <(a b (c d) . f)>, or <(a b &optional c d)>.  
+
+If the formal argument list is a single symbol, it will be bound to
+the list of arguments when the function is called.  If the formal
+argument list is a list, its ``car'' will be matched against the
+``car'' of the actual arguments, and its ``cdr'' will be matched
+against the ``cdr'' of the actual arguments.
+
+Example:
+.VP
+? (de surface( (x1 y1) (x2 y2) )
+	(* (- x1 x1) (- y2 y2)) )
+= surface
+? (surface '(4 5) '(8 10))
+= 40
+.PP
+
+Moreover, two symbols <&optional> and <&rest> in argument lists have a
+special meaning, similar to the Common Lisp conventions. 
+
+Only symbols and lists composed of a symbol and a default value may
+follow the <&optional> symbol in the formal argument list.  These
+symbols are optional arguments. If they are omitted, they are bound to
+their default value, or the empty list.
+
+Example:
+.VP
+? (de printline(s &optional (indent 0) (terminate "."))
+	(tab indent)
+	(printf "%s%s\n" s terminate) )
+= printline
+? (printline "hello")
+hello.
+= ()
+? (printline "hello" 6)
+      hello.
+= ()
+? (printline "hello" 6 "@")
+      hello@
+= ()
+.PP
+
+Finally, the formal argument list may be terminated by <&rest>
+followed by another symbol. The list of all remaining actual arguments
+will be bound to that symbol.
+
+
+#? (lambda  <args> . <body>)
+.SEE Functions.
+.SEE Argument List.
+.SEE (de <symb> <args> . <body>) 
+Returns a function which evaluates its arguments (DE). 
+
+<args> is the argument list. Valid <args> may be a single symbol, a
+list of symbols, or something more complex like <(a b (c d) . f)>.  If
+<args> is a single symbol, it will be bound to the list of arguments
+when the function is called.  If it is a list, each element will be
+bound to each of the arguments. In any case, the argument list will
+match <args>.
+
+<body> is the function itself. Each list in <body> will be evaluated
+when the function is called. The result of the last evaluation will be
+returned by the function call.
+
+Example:
+.EX ((lambda (x) (* x x)) (+ 4 5))
+
+
+
+#? (flambda  <args> . <body>)
+.SEE Functions.
+.SEE Argument List.
+.SEE (lambda  <args> . <body>)
+.SEE (df <symb> <args> . <body>) 
+Returns a function which does not evaluate its arguments (DF).
+.EX ((flambda(x) (print x)) (+ 4 5))
+
+
+#? (mlambda  <args> . <body>)
+.SEE Functions.
+.SEE Argument List.
+.SEE (lambda  <args> . <body>)
+.SEE (dm <symb> <args> . <body>) 
+
+Returns a macro-function (DM). Macro functions works like (DF), but
+<args> parses the entire calling form instead of parsing the argument list.
+
+The <body> of a DM function actually computes the expression which
+will be evaluated. This expression can be found with the function
+<macro-expand>.
+
+#? (macro-expand <macrocall>) 
+.SEE (dm <symb> <args> . <body>) 
+Returns the ``expansion'' of a
+call to a DM function. 
+
+#? (de <symb> <args> . <body>) 
+.SEE Functions.
+.SEE Argument List.
+
+Creates a new function which evaluates its arguments
+(DE) and sets the symbol <symb> to this function.  
+
+<args> is the argument list. Valid <args> may be a single symbol, a
+list of symbols, or something more complex like <(a b (c d) . f)>.  If
+<args> is a single symbol, it will be bound to the list of arguments
+when the function is called.  If it is a list, each element will be
+bound to each of the arguments. In any case, the argument list will
+match <args>.
+
+<body> is the function itself. Each list in <body> will be evaluated
+when the function is called. The result of the last evaluation will be
+returned by the function call.
+
+Example: 
+.VP
+? (de square (x) (* x x)) 
+= square 
+? (square 9) 
+= 81 
+? (de first-arg l
+  	(car l) )
+= first-arg
+? (first-arg 'a 'b)
+= a
+? (first-arg 'prems 'deuse 'troise 'quatrz)
+= prems
+.PP
+
+#? (df  <symb args . body)
+.SEE Functions.
+.SEE Argument List.
+.SEE (de <symb> <args> . <body>) 
+Same as <de> but creates a function which does not evaluate its
+arguments (DF).
+
+#? (dm  <symb> <args> . <body>)
+.SEE Functions.
+.SEE Argument List.
+.SEE (de <symb> <args> . <body>) 
+Creates a macro-function (DM) called <symb>. 
+
+Macro functions works like (DF), but <args> parses the entire calling
+form instead of parsing the argument list.
+
+The <body> of a DM function actually computes the expression which
+will be evaluated. This expression can be found with the function
+<macro-expand>.
+
+Example:
+.VP
+? (dm ifn(f c . p) 
+      (list 'if (list 'not c) . p) )
+= ifn
+? (ifn (= 2 3) "yes" "no")
+= "yes"
+; How we can get the expanded macro?
+? (macro-expand (ifn (= 2 3) "yes" "no"))
+= ( if ( not ( = 2 3 ) ) "yes" "no" )
+.PP
+
+#? (dmd  <symb> <args> . <body>)
+.TYPE DM
+.FILE	sysenv.sn
+.SEE Functions.
+.SEE Argument List.
+.SEE (de <symb> <args> . <body>) 
+.SEE (dm <symb> <args> . <body>) 
+Creates a DMD function called <symb>. 
+
+DMD functions are a refinement of DM functions.  Unlike the DM
+functions, their argument list does not include the function name. The
+result of the body evaluation replaces the calling form itself in the
+calling context. The evaluation process is then restarted.  This
+replacement process happens just once, because the code is physically
+replaced by the result of the macro expansion during the first call.
+
+Example:
+.VP
+? (dmd ifn(c . p)
+       (list 'if (list 'not c) . p) )
+= ifn
+? (de if-test(n)
+       (ifn (= n 2) "yes" "no") )
+= if-test
+? (if-test 2)
+= "no"
+? (pretty if-test)
+(de if-test(n)
+   (if (not (= n 2)) "yes" "no") )
+= (if-test)
+.PP
+
+#? (dmc <symb> . <body>)
+.SEE Functions.
+
+Defines a macro-character <symb>. DMC are not really functions; they
+interact only with the Lisp reader. The symbol <symb> needs often be
+surrounded by bars |.
+
+There are three kinds of macro-characters:
+
+The first ones are single character macro-characters. When the TLisp
+reader encounters one of them, it immediately calls the associated DMC
+function and returns its result.
+
+Caret macro-characters have a two character name, whose first
+character is a caret <^>. They behave in fact exactly like single
+characters DMCs, but can be abbreviated by typing only the
+corresponding control character. However, it is always possible to
+type the caret, then the second character and thus to use this
+macro-characters from inside an editor.
+
+Hash macro-characters are also two character macro-characters, whose
+first character is a hash sign <#>. If their body returns (), nothing
+is read.  If it returns a one element list, this element is read. If
+it returns anything else, an error is signaled.
+
+For example, the macro character <^P>, that calls the <pretty>
+function is defined as:
+.VP
+? ^P|^P|
+(dmc |^P| (list 'pretty (read)))
+= (|^P|)
+.PP
+
+#? (funcdef <n>)
+Returns a list which defines the function <n>, or the function stored in
+the symbol <n>.
+
+#? (pretty <f>)
+.TYPE DM
+.FILE sysenv.sn
+Display a nicely indented definition of function <f>.
+
+Actually, <pretty> sends a pretty message to <f>. Each class defines
+how an instance of that class will be displayed.  In particular,
+functions are displayed by printing an indented version of the
+definition of the functions f1 to fn.  
+
+Example
+.EX (pretty addpath)
+
+The macro-character <^P> provides an easy access to this function.
+
+#? ^P <function>
+.TYPE DMC
+.FILE sysenv.sn
+.SEE (pretty <f>)
+Macro character for the function <pretty>.

@@ -1,0 +1,232 @@
+#? File "idx-int.sn"
+;; Utilities for matrices and tensors of ints
+;;.SEE (idx-i1concat <int-vec1> <int-vec2> ...)
+;;.SEE (random-permute <perm-vector>)
+;;.SEE (multinomial-sample <probabilities>)
+;;.SEE (element-in-set <int-element> <int-set>)
+;;.SEE (idx-i1max <m>)
+;;.SEE (idx-i1min <m>)
+;;.SEE (idx-i1fill-with-index <m>)
+;;.SEE (idx-i1fill <m> <c>)
+;;.SEE (idx-i2fill <m> <c>)
+;;.SEE (idx-i2addc <m1> <c> <m2>)
+
+(mload "idx-macros")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (idx-i2addc <m1> <c> <m2>)
+(de idx-i2addc (m1 c m2)
+    ((-idx2- (-int-)) m1 m2)
+    ((-int-) c)
+    (idx-bloop ((m1i m1)(m2i m2))
+	(idx-bloop ((m1ij m1i)(m2ij m2i))
+	    (m2ij (+ (m1ij) c))
+	)
+    )
+    ())
+
+#? (idx-i1concat <int-vec1> <int-vec2> ...)
+;; Concatenate the <int-vectors> in argument list and return
+;; new big vector.
+(de idx-i1concat vectors
+    (let*((n 0))
+      (each ((v vectors))
+            (incr n (idx-dim v 0)))
+      (let*((conc (int-matrix n))
+            (n 0))
+        (each ((v vectors))
+              (let*((l (idx-dim v 0)))
+                (idx-copy v (narrow conc 0 l n))
+                (incr n l)))
+        conc)))
+        
+#? (random-permute <perm-vector>)
+;; randomly permute the elements of the given <permutation-vector>
+;; (an integer vector)
+(de random-permute (perm-vector)
+    ((-idx1- (-int-)) perm-vector)
+    (let*((n (idx-dim perm-vector 0))
+          (maxr (- n 0.99999)))
+      (idx-gloop ((i)(pi perm-vector))
+                 (let*((j (int (rand i maxr)))
+                       (v (perm-vector j)))
+                   (perm-vector j (pi))
+                   (pi v)))
+       ()))
+
+#? (multinomial-sample <probabilities>)
+;; Given a vector of <probabilities> of length N summing to one for
+;; events 0 to N-1, return an integer i
+;; associated to these events with probability <probabilities>[i].
+;; The algorithm samples a uniform number between 0 and 1 and
+;; loops through the <probabilities> vector, so its running time
+;; is O(N).
+;;
+;; N.B.: if the sum S of the elements is < 1, then the value N-1
+;; will be sampled more frequently with extra probability 1 - S.
+;; if the sum S of the elements is > 1, then only the first M
+;; elements will be sampled, with M being such that it is the largest
+;; integer such that the sum of the <probabilities> from 0 to M-1
+;; is above 1.
+;;
+(de multinomial-sample (p)
+    (-idx1- p)
+    (let*((i 0)
+          (n (idx-dim p 0)))
+      (-int- i n)
+      #{
+        {
+          float u = Frand(); /* result in interval [0,1], which may include 1 */
+          int mod = $p->mod[0];
+          float *pi = IDX_PTR($p,flt);
+          float s = *pi;
+          int nm1 = $n - 1;
+          
+        ms_loop:
+          if (s >= u) goto ms_end;
+          $i++;
+          if ($i >= nm1) goto ms_end;
+          pi+=mod;
+          s += *pi;
+          goto ms_loop;
+        }
+        ms_end:
+      #}
+      i))
+
+#? (fast-multinomial-sample <cumulative-probabilities>)
+;; Given a vector of <cumulative-probabilities> of length N, monotonically
+;; increasing between 0 and 1, return an integer between 0 and N-1
+;; sampled from the corresponding distribution.
+;; The algorithm samples a uniform number between 0 and 1 and
+;; does a binary search in the cumulative probabilities, so
+;; its running time O(log(N)) whereas the running time of
+;; (multinomial-sample <probabilities>) is O(N). For this
+;; call to be really  fast, the computation of <cumulative-probabilities>
+;; from <probabilities> must be done ahead of time (because
+;; it takes O(N) time). It can be done with 
+;; (distribution2cumulative <probabilities> <cumulative-probabilities>).
+;;
+;;.SEE (multinomial-sample <probabilities>)
+;;.SEE (distribution2cumulative <probabilities> <cumulative-probabilities>)
+(de fast-multinomial-sample (cp)
+    (-idx1- cp)
+    (let*((i 0)
+          (n (idx-dim cp 0)))
+      (-int- i n)
+      #{
+        {
+          /* result in interval [0,1], which may include 1 */
+          float u = Frand(); 
+          int mod = $cp->mod[0];
+          float *cpp = IDX_PTR($cp,flt);
+          int mini=0, maxi=$n, middle=0.5*$n;
+          float middle_value;
+          while (mini < maxi-1) {
+            middle_value = cpp[middle*mod];
+            if (u < middle_value) {
+              maxi = middle;
+            } else {
+              mini = middle;
+            }
+            middle = 0.5 * (mini+maxi);
+          }
+          $i = middle;
+        }
+        ms_end:
+      #}
+      i))
+
+#? (distribution2cumulative <probabilities> <cumulative-probabilities>)
+;; Fill <cumulative-probabilities> by putting at the i-th position 
+;; the sum the numbers in <probabilities>
+;; from the beginning to the (i-1)-th position. Therefore, cp[0]=0
+;; and cp[N-1] may be < 1. This is P(value < i).
+(de distribution2cumulative (p cp)
+    (-idx1- p cp)
+    (let*((s 0))
+      (idx-bloop ((pi p)(cpi cp))
+        (cpi s)
+        (incr s (pi))
+        ))
+    ())
+
+#? (element-in-set <int-element> <int-set>)
+;; Return true iff <int-element> is in the <int-set> vector.
+(de element-in-set (e the-set)
+    (-int- e)
+    ((-idx1- (-int-)) the-set)
+    (let*((in-set ()))
+      (-bool- in-set)
+      (idx-bloop ((ei the-set))
+        (when (= (ei) e)
+          (setq in-set t)))
+      in-set))
+
+#? (idx-i1max <m>)
+;; returns largest element in <m>
+(de idx-i1max (m)  ((-idx1- (-int-)) m)
+    (let ((v (m 0)))
+      ((-int-) v)
+      (cinline-idx1loop m "int" "mp" "i"
+	(cinline "if ((*mp)>(%s)) { %s = *mp; }" v v))
+      v))
+
+
+#? (idx-i1min <m>)
+;; same as idx-m1min for vectors of integers
+(de idx-i1min (m)  ((-idx1- (-int-)) m)
+    (let ((v (m 0)))
+      ((-int-) v)
+      (cinline-idx1loop m "int" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" v v))
+      v))
+
+
+#? (idx-i1fill-with-index <m>)
+;; fill the elements of idx1 <m> with their index.
+(de idx-i1fill-with-index (m)  ((-idx1- (-int-)) m) 
+    (cinline-idx1loop m "int" "mp" "i" (cinline "*mp = (int)i")) ())
+
+#? (idx-i1fill <m> <c>)
+;;.VP
+;; ((-idx1- (-int-)) m):
+;; ((-int-) c):
+;;
+;; CREATED: P.Haffner, April 97
+;; DESCRIPTION: Fills 1D int matrix with constant <c>
+(de idx-i1fill (m c)
+  ((-idx1- (-int-)) m)
+  ((-int-) c)
+  (cidx-bloop ("i" ("mp" m)) 
+              #{*mp = $c; #}) ())
+
+#? (idx-i2fill <m> <c>)
+;;.VP
+;; ((-idx2- (-int-)) m)):
+;; ((-int-) c):
+;; CREATED: P.Haffner, April 97
+;; DESCRIPTION: Fills 2D int matrix with constant <c>
+(de idx-i2fill (m c)
+  ((-idx2- (-int-)) m)
+  ((-int-) c)
+  (cidx-bloop ("i" "j" ("mp" m)) 
+              #{*mp = $c; #}) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make ()
+           idx-i1max idx-i1min 
+          idx-i1fill
+          idx-i2fill
+          idx-i1fill-with-index
+	  idx-i2addc
+          random-permute
+          fast-multinomial-sample
+          multinomial-sample
+          distribution2cumulative
+          element-in-set
+          )

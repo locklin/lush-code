@@ -1,0 +1,335 @@
+#? File "idx-convol.sn"
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a library of 1D and 2D convolutions, back-convolutions, 
+;; subsampling, oversampling
+;;.SEE (fast-idx1convolacc <in> <kernel> <out> <ksize> <type>)
+;;.SEE (fast-idx1convol2acc <input> <kernel> <output>) 
+;;.SEE (fast-idx1convol3acc <input> <kernel> <output>
+;;.SEE (fast-idx1convol4acc <input> <kernel> <output>) 
+;;.SEE (fast-idx1convol5acc <input> <kernel> <output>) 
+;;.SEE (midx-m1convol <input> <kernel> <output>)
+;;.SEE (idx-m1convol <input> <kernel> <output>)
+;;.SEE (midx-m1backconvol <input> <kernel> <output>)
+;;.SEE (midx-m1backconvol <input> <kernel> <output>)
+;;.SEE (midx-m2convol <input> <kernel> <output>)
+;;.SEE (idx-m2convol <input> <kernel> <output>)
+;;.SEE (midx-m2convolacc <input> <kernel> <output>)
+;;.SEE (idx-m2convolacc <input> <kernel> <output>)
+;;.SEE (midx-m2backconvol <input> <kernel> <output>)
+;;.SEE (idx-m2backconvol <input> <kernel> <output>)
+;;.SEE (midx-m2backconvolacc <input> <kernel> <output>)
+;;.SEE (idx-m2backconvolacc <input> <kernel> <output>)
+;;.SEE (midx-m1subsample <input> <n> <output>)
+;;.SEE (idx-m1subsample <input> <n> <output>)
+;;.SEE (midx-m1oversample <input> <n> <output>)
+;;.SEE (idx-m1oversample <input> <n> <output>)
+;;.SEE (midx-m2subsample <input> <n> <output>)
+;;.SEE (idx-m2subsample <input> <n> <output>)
+;;.SEE (midx-m2oversample <input> <n> <output>)
+;;.SEE (idx-m2oversample <input> <n> <output>)
+
+(mload "cmacro")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; first a bunch of macros for generating fast loop-unrolled
+;; C-code for convolutions.
+
+#? (fast-idx1convolacc <in> <kernel> <out> <ksize> <type>)
+;; ultrafast 1D convolution (8 mega connections per sec on a Sparc 10)
+;; result is accumulated in output.
+;; <in> must be a CONTIGUOUS idx1, <kernel> an idx1, <out> a CONTIGUOUS idx1,
+;; <ksize> must be the size of the kernel, and <type> a string
+;; containing a valid C type, e.g. "float" (preferably the type
+;; of the objects in the 3 vectors).
+;; This macro is expanded at compile time into a bunch of "cinline"
+;; instructions. It unrolled loops with a circular register stack
+;; to minimize index calculations and memory access.
+;; THIS CODE DOES NOT DO ANY RUN-TIME CHECK FOR ARRAY SIZE, SO BE CAREFULL.
+;; input must be contiguous, kernel need not be
+;; this macro generate in-line C code with rotating registers and unrolled loops.
+(dmd fast-idx1convolacc (in kernel out ksize type)
+     (cons 'progn 
+	   (append
+	    '((cinline `(sprintf "{ %s *r, *p, *ker;" type)))
+	    (all ((x (range 0 (1- ksize))))
+		 '(cinline `(sprintf "  register %s w%d, x%d;" type x x)))
+	    '((cinline " register int i;")
+	      (cinline " int kmod, outdim, n, nmodk;")
+	      (cinline "kmod = (%s)->mod[0];" `kernel)
+	      (cinline "outdim = (%s)->dim[0];" `out)
+	      (cinline `(sprintf "n = outdim / %d;" ksize))
+	      (cinline `(sprintf "nmodk = outdim %%%% %d;" ksize))
+	      (cinline `(concat "  ker = IDX_PTR((%s)," type ");") `kernel)
+	      (cinline `(concat "  p   = IDX_PTR((%s)," type ");") `in)
+	      (cinline `(concat "  r   = IDX_PTR((%s)," type ");") `out))
+	    ;; initialize weights in registers
+	    (all ((x (range 0 (1- ksize))))
+		 '(cinline `(sprintf "  w%d = *ker; ker += kmod;" x)))
+	    ;; initialize inputs in registers
+	    (all ((x (range 0 (- ksize 2))))
+		 '(cinline `(sprintf "  x%d = *p++;" x)))
+	    '((cinline "for (i = 0; i<n; i++) {"))
+	    (let ((lx (range 0 (1- ksize)))
+		  (lw (range 0 (1- ksize)))
+		  (r ()))
+	      (repeat ksize
+		      (setq r (nconc1 r '(cinline `(sprintf "  x%d = *p++;" (last lx)))))
+		      (setq r (nconc1 
+			       r 
+			       '(cinline 
+				 `(concat 
+				   (sprintf "*r++ += w%d * x%d " (car lw) (car lx))
+				   (apply concat 
+					  (all ((w (cdr lw)) (x (cdr lx)))
+					       (sprintf " + w%d * x%d " w x)))
+				   ";"))))
+		      (setq lx (cdr (nconc1 lx (car lx)))))
+	      r)
+	    '((cinline "}"))
+	    ;; add the remainder of the convolutions
+	    (let ((lx (range 0 (1- ksize)))
+		  (lw (range 0 (1- ksize)))
+		  (r ()))
+	      (repeat (1- ksize)
+		      (setq r (nconc1 r '(cinline "if (nmodk-- == 0) goto end;")))
+		      (setq r (nconc1 r '(cinline `(sprintf "  x%d = *p++;" (last lx)))))
+		      (setq r (nconc1 
+			       r 
+			       '(cinline 
+				 `(concat 
+				   (sprintf "*r++ += w%d * x%d " (car lw) (car lx))
+				   (apply concat 
+					  (all ((w (cdr lw)) (x (cdr lx)))
+					       (sprintf " + w%d * x%d " w x)))
+				   ";"))))
+		      (setq lx (cdr (nconc1 lx (car lx)))))
+	      r)
+	    '((cinline "} end: ;")))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(de fast-idx1convol-check (input kernel output size)
+    (-idx1- input kernel output)
+    (-int- size)
+    (when (<> size (idx-dim kernel 0))
+	  (error "kernel has wrong size"))
+    (when (<> (- (idx-dim input 0) (idx-dim output 0)) (1- size))
+	  (error "inconsistant sizes for convolution"))
+    (when (or (not (contiguep input)) (not (contiguep output)))
+	  (error "input or output not contiguous"))
+    ())
+
+#? (fast-idx1convol2acc <input> <kernel> <output>) 
+;; super-fast 1D convolution with size 2 kernel
+;; (with unrolled loops and optimal register assignment)
+;; <input> and <output> must be contiguous idx1, <kernel> must be an idx1
+;; all containing floats.
+(de fast-idx1convol2acc (input kernel output) 
+    (-idx1- input kernel output)
+    (fast-idx1convol-check input kernel output 2)
+    (fast-idx1convolacc input kernel output 2 "flt") ())
+
+#? (fast-idx1convol3acc <input> <kernel> <output>
+;; super-fast 1D convolution with size 3 kernel.
+;; result is ACCUMULATED in the output
+;; (with unrolled loops and optimal register assignment)
+;; <input> and <output> must be contiguous idx1, <kernel> must be an idx1
+;; all containing floats.
+(de fast-idx1convol3acc (input kernel output) 
+    (-idx1- input kernel output)
+    (fast-idx1convol-check input kernel output 3)
+    (fast-idx1convolacc input kernel output 3 "flt") ())
+
+#? (fast-idx1convol4acc <input> <kernel> <output>) 
+;; super-fast 1D convolution with size 4 kernel
+;; result is ACCUMULATED in the output
+;; (with unrolled loops and optimal register assignment)
+;; <input> and <output> must be contiguous idx1, <kernel> must be an idx1
+;; all containing floats.
+(de fast-idx1convol4acc (input kernel output) 
+    (-idx1- input kernel output)
+    (fast-idx1convol-check input kernel output 4)
+    (fast-idx1convolacc input kernel output 4 "flt") ())
+
+#? (fast-idx1convol5acc <input> <kernel> <output>) 
+;; super-fast 1D convolution with size 5 kernel
+;; result is ACCUMULATED in the output
+;; (with unrolled loops and optimal register assignment)
+;; <input> and <output> must be contiguous idx1, <kernel> must be an idx1
+;; all containing floats.
+(de fast-idx1convol5acc (input kernel output) 
+    (-idx1- input kernel output)
+    (fast-idx1convol-check input kernel output 5)
+    (fast-idx1convolacc input kernel output 5 "flt") ())
+
+
+;; Nx5 convolution
+(de fast-idx2convol5acc (input kernel output) 
+    (-idx2- input kernel output)
+    (let ((input (idx-transclone (unfold input 0 (idx-dim kernel 0) 1) '(0 2 1))))
+      (idx-bloop ((output output) (input input))
+		 (idx-bloop ((input input) (kernel kernel))
+			    (fast-idx1convolacc input kernel output 5 "flt") ()))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; THESE ARE THE SLOW CONVOLUTIONS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (midx-m1convol <input> <kernel> <output>)
+;; macro for 1D convolution. all arguments are idx1.
+(dmd midx-m1convol (in kernel out)
+  '(progn 
+     (-idx1- `in `kernel `out)
+     (let ((uin (unfold `in 0 (idx-dim `kernel 0) 1)))
+       (idx-m2dotm1 uin `kernel `out))))
+
+#? (idx-m1convol <input> <kernel> <output>)
+;; compiled 1D convolution. all arguments are idx1.
+(de idx-m1convol (in kernel out) (midx-m1convol in kernel out))
+
+#? (midx-m1backconvol <input> <kernel> <output>)
+;; macro for 1D back convolution 
+(dmd midx-m1backconvol (out kernel in)
+  '(progn 
+     (-idx1- `in `kernel `out)
+     (idx-m1clear `in)
+     (let ((uin (unfold `in 0 (idx-dim `kernel 0) 1)))
+       (idx-m1extm1acc `out `kernel uin))))
+
+#? (midx-m1backconvol <input> <kernel> <output>)
+;; 1D back convolution
+(de idx-m1backconvol (out kernel in) (midx-m1backconvol out kernel in))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 
+#? (midx-m2convol <input> <kernel> <output>)
+;; macro for 2D convolution. all arguments are idx2.
+(dmd midx-m2convol (in kernel out)
+  '(progn 
+     (-idx2- `in `kernel `out)
+     (let* ((uin (unfold `in 0 (idx-dim `kernel 0) 1))
+	    (uuin (unfold uin 1 (idx-dim `kernel 1) 1)))
+       (idx-m4dotm2 uuin `kernel `out))))
+
+#? (idx-m2convol <input> <kernel> <output>)
+;; 2D convolution. all arguments are idx2.
+(de idx-m2convol (in kernel out) (midx-m2convol in kernel out))
+
+#? (midx-m2convolacc <input> <kernel> <output>)
+;; macro for 2D convolution with accumulation . all arguments are idx2.
+(dmd midx-m2convolacc (in kernel out)
+  '(progn 
+     (-idx2- `in `kernel `out)
+     (let* ((uin (unfold `in 0 (idx-dim `kernel 0) 1))
+	    (uuin (unfold uin 1 (idx-dim `kernel 1) 1)))
+       (idx-m4dotm2acc uuin `kernel `out))))
+
+#? (idx-m2convolacc <input> <kernel> <output>)
+;; 2D convolution with accumulation . all arguments are idx2.
+(de idx-m2convolacc (in kernel out) (midx-m2convolacc in kernel out))
+
+#? (midx-m2backconvol <input> <kernel> <output>)
+;; macro for 2D back-convolution. all arguments are idx2.
+(dmd midx-m2backconvol (out kernel in)
+  '(progn 
+     (-idx2- `in `kernel `out)
+     (idx-m2clear `in)
+     (let* ((uin (unfold `in 0 (idx-dim `kernel 0) 1))
+	    (uuin (unfold uin 1 (idx-dim `kernel 1) 1)))
+       (idx-m2extm2acc `out `kernel uuin))))
+
+#? (idx-m2backconvol <input> <kernel> <output>)
+;; 2D back-convolution. all arguments are idx2.
+(de idx-m2backconvol (out kernel in) (midx-m2backconvol out kernel in))
+
+#? (midx-m2backconvolacc <input> <kernel> <output>)
+;; macro for 2D back-convolution. all arguments are idx2.
+(dmd midx-m2backconvolacc (out kernel in)
+  '(progn 
+     (-idx2- `in `kernel `out)
+     (let* ((uin (unfold `in 0 (idx-dim `kernel 0) 1))
+	    (uuin (unfold uin 1 (idx-dim `kernel 1) 1)))
+       (idx-m2extm2acc `out `kernel uuin))))
+
+#? (idx-m2backconvolacc <input> <kernel> <output>)
+;; 2D back-convolution. all arguments are idx2.
+(de idx-m2backconvolacc (out kernel in) (midx-m2backconvolacc out kernel in))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (midx-m1subsample <input> <n> <output>)
+;; macro for subsampling and summing of size <n>
+(dmd midx-m1subsample (in n out)
+  '(progn 
+     (-idx1- `in `out)
+     (let ((uin (unfold `in 0 `n `n)))
+       (idx-m1clear `out)
+       (idx-eloop ((z uin))
+         (idx-m1add z `out `out)))))
+
+#? (idx-m1subsample <input> <n> <output>)
+;; subsampling and summing of size <n>
+(de idx-m1subsample (in n out) (-int- n) (midx-m1subsample in n out))
+
+#? (midx-m1oversample <input> <n> <output>)
+;; macro for oversampling of size <n>
+(dmd midx-m1oversample (out n in)
+  '(progn 
+     (-idx1- `in `out)
+     (let ((uin (unfold `in 0 `n `n)))
+       (idx-eloop ((z uin))
+         (idx-m1copy `out z)))))
+
+#? (idx-m1oversample <input> <n> <output>)
+;; oversampling of size <n>
+(de idx-m1oversample (out n in) (-int- n) (midx-m1oversample out n in))
+
+#? (midx-m2subsample <input> <n> <output>)
+;; macro for subsampling and summing of size <n>
+(dmd midx-m2subsample (in nlin ncol out)
+  '(progn 
+     (-idx2- `in `out)
+     (let* ((uin (unfold `in 0 `nlin `nlin))
+	    (uuin (unfold uin 1 `ncol `ncol)))
+       (idx-m2clear `out)
+       (idx-eloop ((z1 uuin))
+	 (idx-eloop ((z2 z1))
+	   (idx-m2add z2 `out `out))))))
+
+#? (idx-m2subsample <input> <n> <output>)
+;; subsampling and summing of size <n>
+(de idx-m2subsample (in nlin ncol out) 
+    (-int- nlin ncol)
+    (midx-m2subsample in nlin ncol out))
+
+#? (midx-m2oversample <input> <n> <output>)
+;; macro for oversampling of size <n>
+(dmd midx-m2oversample (out nlin ncol in)
+  '(progn 
+     (-idx2- `in `out)
+     (let* ((uin (unfold `in 0 `nlin `nlin))
+	    (uuin (unfold uin 1 `ncol `ncol)))
+       (idx-eloop ((z1 uuin))
+	 (idx-eloop ((z2 z1))
+	   (idx-m2copy `out z2))))))
+
+#? (idx-m2oversample <input> <n> <output>)
+;; oversampling of size <n>
+(de idx-m2oversample (out nlin ncol in) 
+    (-int- nlin ncol)
+    (midx-m2oversample out nlin ncol in))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make ()
+	  fast-idx1convol-check 
+	  fast-idx1convol2acc fast-idx1convol3acc 
+	  fast-idx1convol4acc fast-idx1convol5acc
+	  fast-idx2convol5acc 
+	  idx-m1convol idx-m1backconvol idx-m2convol idx-m2convolacc
+	  idx-m2backconvol idx-m2backconvolacc idx-m1subsample
+	  idx-m1oversample idx-m2subsample idx-m2oversample)
+

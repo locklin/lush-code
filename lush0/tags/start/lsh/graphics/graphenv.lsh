@@ -1,0 +1,1223 @@
+;;; Lush Lisp interpreter and development tools
+;;; Copyright (C) 1991-1999 Leon Bottou and Neuristique.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;    "graphenv.lsh"    (C) 87,88 Y. Le Cun & L. Y. Bottou
+;;;    Standard graphics environnement
+;;;    Standard window creation function
+;;;
+
+;;;  $Id: graphenv.lsh,v 0.1.1.1 2001-10-31 17:29:48 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(de new-window l
+  (when ~(stringp (last l))
+    (setq l (append l '("TL Graphics"))) )
+  (let ((default-window 
+	  (or gpr-window sun-window mac-window 
+	      wbm-window x11-window ) ))
+    (when (not default-window)
+      (error 'new-window "No default window driver" ()) )
+    (when (and getenv x11-window (<> "" (getenv "DISPLAY")))
+      (setq default-window x11-window) )
+    (setq window (apply default-window l)) ) )
+
+(de print-window (&optional (w 512) (h 512) destination)
+  (let ((default-window
+	  (or wpr-window ps-window) ))
+    (when (not default-window)
+      (error 'new-window "No default print driver" ()) )
+    (setq window
+	  (if destination
+	      (default-window w h destination)
+	    (default-window w h) ) )
+    (when (not window)
+      (error 'new-window "No printing device" ()) )
+    window ) )
+
+(lock-symbol new-window print-window)
+
+;;; ----------------------- A couple of color constants and functions
+
+(setq :color-fg   -1)
+(setq :color-bg   -2)
+(setq :color-gray -3) 
+(setq :color-grey -3)
+
+(de color-shade(c)    
+  ; 0<=c<=1  gray intensity
+  (color_rgb c c c) )
+
+(de color-rgb(r g b)  
+  (color (alloccolor r g b)))
+
+(lock-symbol color-fg color-bg color-gray color-grey)
+(lock-symbol color-shade color-rgb)
+
+(de colorp ()
+  ;; Get default window (like new-window)
+  (let ((default-window 
+	  (or gpr-window sun-window mac-window 
+	      wbm-window x11-window ps-window) ))
+    (when (and getenv x11-window (<> "" (getenv "DISPLAY")))
+      (setq default-window x11-window) )
+    ;; Test color
+    (cond
+      ;; Windows
+      ((= default-window wbm-window)
+       (and win-depth (> (win-depth) 2)) )
+      ;; X11
+      ((= default-window x11-window)
+       (if x11-depth
+	   (> (x11-depth) 2)
+	 (<> (reading "| xdpyinfo | grep planes" (read-string "~\e")) "") ) )
+      ;; Other
+      (t
+	() ) ) ) )
+
+(de color-std (x &optional kind)
+  (setq kind (apply color-stdmap kind))
+  (kind (* (- x (int x)) (bound kind 1))) )
+
+(de color-stdmap (&optional kind drv)
+  (let* ((cache    '((())))
+	 (color-set ())
+	 (acolor    (lambda (x) (apply alloccolor x))) )
+    (when ~kind (setq kind 'rainbow))
+    (when ~drv  (setq drv (gdriver)))
+    (setq color-set (named (sprintf "%s-%s" (pname kind) drv)))
+    (when ~(cdr (assoc color-set cache))
+      (nconc1 
+	cache
+	(cons color-set
+	      (selectq kind
+		(shade
+		  ((imatrix 64) ()
+		   (mapcar acolor
+			   (mapfor (i 0 1 (/ 63)) (list i i i)) ) ) )
+		(spread
+		  ((imatrix 7) ()
+		   (mapcar acolor
+			   '((0      0.8078 0.8196) ;; darkturquoise
+			     (1      0.6471 0     ) ;; orange
+			     (0.7294 0.3333 0.8275) ;; mediumorchid
+			     (0.1961 0.8039 0.1961) ;; limegreen
+			     (1      0.0784 0.5765) ;; deeppink
+			     (0      0      1     ) ;; blue
+			     (0.6471 0.1647 0.1647) ;; brown
+			     ) ) ) )
+		(rainbow
+		  ((imatrix 64) ()
+		   (let* ((f (lambda (x)
+			       (setq x (/ (acos (cos (* 6.2832 x))) 3.1416))
+			       (sqrt (min 1 (max 0 (- 2 (* 3 x))))) )))
+		     (mapcar acolor
+			     (mapfor (i 0 1 (/ 1 63))
+			       (list
+				 (f (- i (/ 0 6)))
+				 (f (- i (/ 2 6)))
+				 (f (- i (/ 4 6))) ) ) ) ) ) )
+		(t
+		  (error 'color-stdmap 
+			 "unrecognized standard colormap"
+			 kind ) ) ) ) ) )
+    (cdr (assoc color-set cache)) ) )
+
+
+;;; ---------------------- Text function
+
+(de gprintf (x y . l)
+  (draw-text x y (apply sprintf l)) )
+
+(de text-width(s)
+  (let ((r (rect-text 0 0 s)))
+    (if r
+	(nth 2 r)
+      (* (len s) 7) ) ) )
+
+(de text-height(s)
+  (let ((r (rect-text 0 0 s)))
+    (if r
+	(nth 3 r)
+      10 ) ) )
+
+(lock-symbol gprintf text-width text-height)
+
+
+;;; ---------------------- Rect and Points functions
+
+;;; rect = (x y w h)
+;;; points = (x1 y1 x2 y2 x3 y3 ... )
+
+(de window-rect()
+  (list 0 0 (xsize) (ysize)) )
+
+(de points-2-rect(points)
+  (let ((xlist ())
+	(ylist ()) )
+    (while points
+      (setq xlist (cons (car points) xlist))
+      (setq ylist (cons (cadr points) ylist))
+      (setq points (cddr points)) )
+    (let ((x (inf xlist))
+	  (y (inf ylist)) )
+      (list x y (1+ (- (sup xlist) x)) (1+ (- (sup ylist) y))) ) ) )
+
+(de rect-2-points(rect)
+  (let (((x y w h) rect))
+    (list x y (+ x w -1) (+ y h -1)) ) )
+
+(lock-symbol points-2-rect rect-2-points window-rect)
+
+;;; ---------------------- Selection function
+
+(setq :hilite-none   0)
+(setq :hilite-invert 1)
+(setq :hilite-line   2)
+(setq :hilite-rect   3)
+
+(lock-symbol hilite-none hilite-invert hilite-line hilite-rect)
+
+
+;;; ---------------------- The plotting package
+
+
+;;; plotting objects
+
+(setq :object-size 3)
+
+(de object-nil(x y) ())
+
+(de open-square(x y)
+  (let ((s (2* object-size)))
+    (draw-rect (- x object-size) (- y object-size) s s) ) )
+
+(de closed-square(x y)
+  (let ((s (2* object-size)))
+    (fill-rect (- x object-size) (- y object-size) s s) ) )
+
+(de open-circle(x y)
+  (draw-circle x y object-size) )
+
+(de closed-circle(x y)            
+  (fill-circle x y object-size) )
+
+(de open-up-triangle(x y)
+  (draw-line (- x object-size) (+ y object-size) 
+	     (+ x object-size) (+ y object-size))
+  (draw-line x (- y object-size) (- x object-size) (+ y object-size))
+  (draw-line x (- y object-size) (+ x object-size) (+ y object-size)) )
+
+(de open-down-triangle(x y)
+  (draw-line (- x object-size) (- y object-size) 
+	     (+ x object-size) (- y object-size))
+  (draw-line x (+ y object-size) (- x object-size) (- y object-size))
+  (draw-line x (+ y object-size) (+ x object-size) (- y object-size)) )
+
+(de closed-up-triangle(x y)
+  (fill-polygon (- x object-size) (+ y object-size)
+		(+ x object-size) (+ y object-size) 
+		x (- y object-size) ) )
+
+(de closed-down-triangle(x y)
+  (fill-polygon (- x object-size) (- y object-size)
+		(+ x object-size) (- y object-size) 
+		x (+ y object-size) ) )
+
+(de straight-cross(x y)
+  (draw-line x (- y object-size) x (+ y object-size))
+  (draw-line (- x object-size) y (+ x object-size) y) )
+
+(de oblique-cross(x y)
+  (draw-line (- x object-size) (- y object-size) 
+	     (+ x object-size) (+ y object-size))
+  (draw-line (- x object-size) (+ y object-size) 
+	     (+ x object-size) (- y object-size)) )
+
+
+
+
+(lock_symbol object-nil 
+             open-square closed-square 
+             open-circle closed-circle
+	     open-up-triangle open-down-triangle 
+	     closed-up-triangle closed-down-triangle
+	     straight-cross oblique-cross)
+
+
+;;; plot ports
+
+; A plot port is ((plt-x plt-y) window xscale xoffset yscale yoffset object)
+; plt-x and plt-y are the current coordinates
+; xscale, yscale, xoffset yoffset are the transformation values
+; The current port is stored in the global variable 'plot-port
+
+; Macro for unpacking the plot port information
+
+(dmd in-plot-port l
+  (list 'if '~(cadr plot-port)
+	'(delete plot-port)
+	(list 'rplaca 'plot-port
+	      (append
+		'(let (( ((plt-x plt-y) window xscale xoffset yscale yoffset object)
+			 plot-port )) )
+		l
+		'((list plt-x plt-y)) ) ) ) )
+
+; Creates a new port in the current window,
+; makes it current and returns it
+
+(de new-plot-port((bxmin bymin bxmax bymax)(xmin ymin xmax ymax) object)
+  (let* ((xscale (/ (- bxmax bxmin) (- xmax xmin)))
+	 (yscale (/ (- bymax bymin) (- ymax ymin)))
+	 (xoffset (- bxmin (* xmin xscale)))
+	 (yoffset (- bymin (* ymin yscale))) )
+    (list '(()()) window
+	  xscale xoffset
+	  yscale yoffset 
+	  object ) ) ) 
+
+; Copy a plot-port (for tracing two plots, simultaneously)
+
+(de copy-plot-port(plot-port . object)
+  (when object
+    (if (cdr object)
+	(error 'copy-plot-port "too many arguments" ())
+      (setq object (car object)) ) )
+  (let ((p (apply list plot-port)))
+    (rplaca p '(()()))
+    (when object (rplaca (lastcdr p) object))
+    p ) )
+
+
+(lock-symbol in-plot-port new-plot-port copy-plot-port)
+
+
+
+; Draw axes in the current port
+
+(de draw-axes ((bxmin bymin bxmax bymax)
+	       xlabel ylabel name
+	       &optional x2l y2l)
+  
+  (when ~x2l (setq x2l str))
+  (when ~y2l (setq y2l str))
+  (in-plot-port
+    (let* ((s 3)
+	   (bxmin1 (+ bxmin s))
+	   (bxmin0 (- bxmin s))
+	   (bymin1 (+ bymin s))
+	   (bymin0 (- bymin s))
+	   (oldfont (font)) )
+      (font "Helvetica-18")
+      (draw_text bxmin (- bymax 20) name)
+      (font "default")
+      (graphics_batch
+        (draw_line bxmin bymin bxmin bymax)
+        (draw_line bxmin bymin bxmax bymin)
+        (each ((x xlabel))
+	  (when (< (abs x) 1e-08)
+	    (setq x 0) )
+	  (let* ((bx (plt-rbx x))
+		 (v (x2l x))
+		 (l (text-width v))
+		 (h (+ 2 (text-height v))) )
+	    (draw_line bx bymin0 bx bymin1)
+	    (draw_text (- bx (2/ l)) (+ bymin1 h) v) ) )
+        (each ((y ylabel))
+	  (when (< (abs y) 1e-08)
+	    (setq y 0) )
+	  (let* ((by (plt-rby y))
+		 (v (y2l y))
+		 (l (+ 5 (text-width v))) )
+	    (draw_line bxmin0 by bxmin1 by)
+	    (draw_text (- bxmin0 l) by v) ) ) )
+      (font oldfont) )) )
+
+;; Returns a nice rectangle in the current window
+(de nice-brect()
+  (list 60 (- (ysize) 30) (- (xsize) 50) 40) )
+
+;; Returns a brect suitable for new-plot-port
+;; with a (x y w h) rectangle
+
+(de rect-2-ppbrect((x y w h))
+  (list x (+ y h) (+ x w) y) )
+
+;; Computes nice scale
+
+(de nice-scale (mini maxi &optional deltamin)
+  (when ~(numberp deltamin) (setq deltamin 0))
+  (let* ((d (abs (- maxi mini)))
+	 (logd (int (/ (log (/ d 3)) (log 10))))
+	 (step1 (** 10 logd))
+	 (ratio (/ deltamin step1))
+	 (step  (* step1 (max 1 (+ (int ratio) (if (= ratio (int ratio)) 0 1)))))
+	 (start (* step (int (/ (+ mini step) step))))
+	 )
+    (range start maxi step)
+    ) )
+
+;; Does all the work
+
+(de setup-axes(xmin ymin xmax ymax &optional xstep ystep (name "") object)
+  (let* ((brect (nice-brect))
+	 (rrect (list xmin ymin xmax ymax)) 
+	 (xlabel (if xstep (range xmin xmax xstep) (nice-scale xmin xmax)))
+	 (ylabel (if ystep (range ymin ymax ystep) (nice-scale ymin ymax))) )
+    (cls)
+    (prog1
+        (setq plot-port (new-plot-port brect rrect (or object open-square)))
+      (draw-axes brect xlabel ylabel name) ) ) )
+
+;; coord transformation from real space to pixel space
+(de plt-rbx (x) (+ xoffset (* xscale x)) )
+(de plt-rby (y) (+ yoffset (* yscale y)) )
+
+(lock-symbol draw-axes setup-axes plt-rbx plt-rby)
+
+;;; plotting functions
+
+;; classical move function
+(de plt-move (x y)
+  (in-plot-port
+    (setq plt-x x plt-y y) ) )
+
+;; clear last plotted point
+(de plt-clear()
+  (in-plot-port
+    (setq plt-x () plt-y ()) ) )
+
+;; classical draw function
+(de plt-draw (x y) 
+  (in-plot-port
+    (when plt-x
+      (draw-line (plt-rbx plt-x) (plt-rby plt-y) (plt-rbx x) (plt-rby y)) )
+    (setq plt-x x plt-y y) ) )
+
+;; plot an object at coord x y
+(de plt-plot (x y) 
+  (in-plot-port
+    (setq plt-x x plt-y y)
+    (if current-object
+        (current-object (plt-rbx x) (plt-rby y))
+      (object (plt-rbx x)(plt-rby y)) ) ) )
+
+;; plot a standard deviation bar vertically
+(de plt-sd (x y v)
+  (in-plot-port
+    (let ((real-x (plt-rbx x))
+	  (real-y (plt-rby y))
+	  (minus-v (plt-rby (- y v)))
+	  (plus-v (plt-rby (+ y v)))  )
+      (draw-line real-x minus-v real-x plus-v)
+      (draw-line (- real-x sd-bar-size) minus-v
+		 (+ real-x sd-bar-size) minus-v)
+      (draw-line (- real-x sd-bar-size) plus-v
+		 (+ real-x sd-bar-size) plus-v) ) ) )
+
+(setq sd-bar-size object-size)
+(lock-symbol plt-move plt-plot cond-plot plt-draw plt-sd)
+
+;;; -------------------- plotting listes
+
+; plot a graph taking the first list as abscissa,
+; the second as ordinates
+
+(de plot-lists (lx ly)
+  (plt-clear)
+  (each ((x lx)(y ly))
+    (plt-draw x y)
+    (plt-plot x y) ) )
+
+; same as before plus standard deviation bars
+
+(de plot-lists-sd (lx ly lv)
+  (plt-clear)
+  (each ((x lx)(y ly)(v lv)) 
+    (plt-draw x y)
+    (plt-plot x y)
+    (plt-sd   x y v) ) )
+
+; creates a plot-port and draw the axes, insuring
+; that the curve will fit in it. Then calls 'plot-lists'
+
+(de graph-scale(min max)
+  (let ((mult (** 10 (int (/ (log (/ (- max min) 2)) (log 10))))))
+    (setq min (* mult (int (/ min mult))))
+    (setq max (* mult (int (+ 0.99 (/ max mult)))))
+    (list min max mult) ) )
+
+(de graph-xy(lx ly name)
+  (let (((xmin xmax xstep) (graph-scale (inf lx) (sup lx)))
+	((ymin ymax ystep) (graph-scale (inf ly) (sup ly))) )
+    (let ((plot-port (setup-axes xmin ymin xmax ymax xstep ystep name)))
+      (plot-lists lx ly) ) ) )
+
+(de graph-xyv(lx ly lv name)
+  (let (((xmin xmax xstep) (graph-scale (inf lx) (sup lx)))
+	((ymin ymax ystep) (graph-scale (- (inf ly) (sup lv))
+					(- (sup ly) (sup lv)))) )
+    (let ((plot-port (setup-axes xmin ymin xmax ymax xstep ystep name)))
+      (plot-lists-sd lx ly lv) ) ) )
+
+(lock-symbol plot-lists plot-lists-sd graph-scale graph-xy graph-xyv) 
+
+
+;;; -------------------- drawing matrices
+
+(de draw-mat (m &optional x y)
+  (when ~window (new-window))
+  (when ~x (setq x 10))
+  (when ~y (setq y 10))
+  (let* ((a (mean-mat m))
+	 (d (sdev-mat m))
+	 )
+    (gray-draw-matrix x y m (- a (* 2 d)) (+ a (* 2 d)) 1 1)
+    ) )
+
+
+;; Not documented yet. Waiting for better implementation.
+(de draw-matrix-points (m &optional x0 y0 co pa)
+  (gsave
+    (let* ((x ())
+	   (y ())
+	   (p ())
+	   )
+      (when ~x0 (setq x0 0))
+      (when ~y0 (setq y0 0))
+      
+      (when font-8f (font-8f))
+      (when ~co (color-rgb 0 0 0))
+      (when ~pa (setq p open-circle))
+      
+      (for (i 0 (bound m 1))
+	(setq x (m i 0))
+	(setq y (m i 1))
+	(when co (color (co i)))
+	(when pa (setq p (pa i)))
+	
+	(if (stringp p)
+	    (gprintf (+ x0 x) (+ y0 y) p)
+	  (p (+ x0 x) (+ y0 y))
+	  ) ) ) ) )
+
+
+
+;;; ---------------------- Simple event functions
+
+
+;; A class for changing event handler temporarily
+
+
+
+(defclass EventHandler object
+  window
+  handler )
+
+(defmethod EventHandler eventhandler(w)
+  (setq window w)
+  (setq handler (set-event-handler w this)) )
+
+(defmethod EventHandler -destructor()
+  (when window (set-event-handler window handler)) )
+
+(defmethod EventHandler manage-event(event)
+  (when handler (==> handler manage-event event)))
+
+(defmethod EventHandler read-event()
+  (let ((h ()) (ev (checkevent this)))
+    (while (not ev)
+      (if (= this (setq h (waitevent)))
+	  (setq ev (checkevent this))
+	(while (checkevent h) ()) ) )
+    ev ) )
+
+
+
+
+(defclass EventLock object
+  handler )
+
+(defmethod EventLock eventlock(w)
+  (setq handler (new EventHandler w)) )
+
+(defmethod EventLock read-event()
+  (==> handler read-event) )
+
+(defmethod EventLock check-event()
+  (checkevent handler) )
+
+(defmethod EventLock -destructor()
+  (delete handler) )
+
+
+;; simple event functions
+
+(de get-click(&optional rect)
+  (let* ((h (new EventLock window))
+	 (event ())
+	 (answer ()) )
+    (while (not answer)
+      (setq event (==> h read-event))
+      (if (= (car event) 'mouse-down)
+	  (let (((type x y) event))
+	    (if (or (not rect) (point-in-rect x y rect))
+		(setq answer (list x y)) ) ) ) )
+    answer ) )
+
+
+(de get-vector(&optional rect)		
+  (let* ((h (new EventLock window))
+	 (event ())
+	 (answer ()) )
+    (while (not answer)
+      (setq event (==> h read-event))
+      (when (member (car event) '(mouse-drag mouse-up))
+	(let (((x1 y1 x2 y2) (cdr event))
+	      (r (points-2-rect (cdr event))) )
+	  (when rect (setq r (collide-rect rect r)))
+	  (when r
+	    (let (((x y w h) r))
+	      (if (<= x1 x2)
+		  (setq x1 x x2 (+ x w -1))
+		(setq x1 (+ x w -1) x2 x) )
+	      (if (<= y1 y2)
+		  (setq y1 y y2 (+ y h -1))
+		(setq y1 (+ y h -1) y2 y) )
+	      (if (= (car event) 'mouse-drag)
+		  (hilite hilite-line x1 y1 x2 y2)
+		(hilite hilite-none x1 y1 x2 y2)
+		(setq answer (list x1 y1 x2 y2)) ) ) ) ) ) )
+    answer ) )
+
+
+(de get-rect(&optional rect)		
+  (let* ((h (new EventLock window))
+	 (event ())
+	 (answer ()) )
+    (while (not answer)
+      (setq event (==> h read-event))
+      (when (member (car event) '(mouse-drag mouse-up))
+	(let ((r (points-2-rect (cdr event))))
+	  (when rect (setq r (collide-rect rect r)))
+	  (when r
+	    (let (((x y w h) r))
+	      (if (= (car event) 'mouse-drag)
+		  (hilite hilite-rect x y (+ x w) (+ y h)) 
+		(hilite hilite-none x y (+ x w) (+ y h))
+		(setq answer r) ) ) ) ) ) ) 
+    answer ) )
+
+
+;;; ---------------------- PostScript
+
+
+
+
+(de ps-play-reads()
+  ;; read a parenthezized PS string...
+  (let ((level 0)
+	(char "")
+	(line "") )
+    (read-string 1)
+    (while (>= level 0)
+      (setq line (concat line (read-string "~()\\")))
+      (setq char (skip-char ""))
+      (selectq char
+	("(" 
+	 (incr level 1) 
+	 (setq line (concat line (read-string 1))) )
+	(")"
+	 (incr level -1)
+	 (when (>= level 0)
+	   (setq line (concat line (read-string 1))) ) )
+	("\\"
+	 (read-string 1)
+	 (let ((ch 0)(c ()))
+	   (while (and (setq c (read-string 1)) (>= c "0") (<= c "8"))
+	     (setq ch (+ (* 8 ch) (val c))) )
+	   (when (and (> ch 0) (< ch 256))
+	     (setq line (concat line (chr ch))) )
+	   (setq line (concat line c)) ) ) ) )
+    line ) )
+
+(de ps-play-read8()
+  ;; read a byte in hexadecimal notation.
+  (skip-char)
+  (let ((c1 (read-string 1))
+	(c2 (read-string 1)) 
+	(hex "0123456789ABCDEF") )
+    (setq c1 (1- (index (upcase c1) hex)))
+    (setq c2 (1- (index (upcase c2) hex)))
+    (+ (* 16 c1) c2) ) )
+
+(de parse-bounding-box(bb) 
+    (let ((bbx () )
+	  (bby () )
+	  (bbx2 () )
+	  (bby2 () )
+	  (index 1)
+	  (pos () )
+	  (reg-number "(+|-)?[0-9]+(\\.[0-9]*)?")
+	  )
+      (setq pos (regex-seek reg-number bb index))
+      (if (not pos)
+	  (error 'ps-plot "Corrupted BoundingBox" filename)
+	(setq bbx (val (mid bb (car pos) (cadr pos))))
+	(setq index (+ (car pos) (cadr pos))) )
+      (setq pos (regex-seek reg-number bb index))
+      (if (not pos)
+	  (error 'ps-plot "Corrupted BoundingBox" filename)
+	(setq bby (val (mid bb (car pos) (cadr pos))))
+	(setq index (+ (car pos) (cadr pos))) )
+      (setq pos (regex-seek reg-number bb index))
+      (if (not pos)
+	  (error 'ps-plot "Corrupted BoundingBox" filename)
+	(setq bbx2 (val (mid bb (car pos) (cadr pos))))
+	(setq index (+ (car pos) (cadr pos))) )
+      (setq pos (regex-seek reg-number bb index))
+      (if (not pos)
+	  (error 'ps-plot "Corrupted BoundingBox" filename)
+	(setq bby2 (val (mid bb (car pos) (cadr pos)))) )
+      ;;(printf "Bounding Box is <%f %f %f %f> \n" bbx bby bbx2 bby2)
+      (list bbx bby bbx2 bby2)
+      ) )
+      
+
+(de ps-grab-command (el)
+    (nconc1 ps-command-list el) )
+
+(de ps-plot (filename x y w h &optional bb-overrule)
+    (let* ((ps-command-list '(progn))
+	   (scaled-ps-command-list () )
+	   (ps-scale-factor 1)
+	   (bb (ps-play-low-level filename ps-grab-command))
+	   (bpp (parse-bounding-box bb))
+	   (bbx (nth 0 bpp))
+	   (bby (nth 1 bpp)) 
+	   (bbx2 (nth 2 bpp))
+	   (bby2 (nth 3 bpp))
+	   )
+      (when (and (= bb "")(not bb-overrule))
+	(error 'ps-plot "No BoundingBox found nor supplied" filename) )
+      (when bb-overrule	(setq bb bb-overrule));;; determine which dimensions should be scaled
+      (when (not w) (setq w 0))
+      (when (not h) (setq h 0))
+;;; prevent for divisions by zero
+      (when (= 0 (- bbx2 bbx)) (incr bbx2))
+      (when (= 0 (- bby2 bby)) (incr bby2))
+;;; adapt command-list
+      (let ((w-scale (/ (* w ps-scale-factor) (- bbx2 bbx)))
+	    (h-scale (/ (* h ps-scale-factor) (- bby2 bby)))
+	    (x-offset x)
+	    (y-offset y)
+	    )
+	(if (not (= 0 w-scale))
+	    (if (= 0 h-scale)
+		(setq h-scale w-scale) )
+	  (if (not (= 0 h-scale))
+	      (setq w-scale h-scale)
+	    ;; both are 0
+	    (setq w-scale ps-scale-factor)  
+	    (setq h-scale w-scale) 
+	    )
+	  )
+	;;(printf "H-scale <%f> W-scale <%f>\n" h-scale w-scale)
+	(setq scaled-ps-command-list 
+	      (mapcar '(lambda (x) x) ps-command-list) ) ;;; yet another one
+	(let ((cl scaled-ps-command-list)
+	      (cmd () )
+	      )
+	  (while cl
+	    (setq cmd (car cl))
+	    (cond
+	     ((listp cmd)
+	      (selectq (car cmd)
+		;; roughly ordered in a-priori out of thumb occurence probability ...
+		(draw-line (if (cdr cmd) (rplaca cl (subst-draw-line cmd))))
+		(draw-rect (if (cdr cmd) (rplaca cl (subst-draw-rect cmd))))
+		(draw-text (if (cdr cmd) (rplaca cl (subst-draw-text cmd))))
+		(draw-arc (if (cdr cmd) (rplaca cl (subst-draw-arc cmd))))
+		(draw-circle (if (cdr cmd) (rplaca cl (subst-draw-circle cmd))))
+		(fill-rect (if (cdr cmd) (rplaca cl (subst-fill-rect cmd))))
+		(fill-circle (if (cdr cmd) (rplaca cl (subst-fill-circle cmd))))
+		(fill-arc (if (cdr cmd) (rplaca cl (subst-fill-arc cmd))))
+		(fill-polygon (if (cdr cmd) (rplaca cl (subst-fill-polygon cmd))))
+		(draw-list (if (cdr cmd) (rplaca cl (subst-draw-list cmd))))
+		(gray-draw-matrix (if (cdr cmd) (rplaca cl (subst-gray-draw-matrix cmd))))
+		(draw- (if (cdr cmd) (rplaca cl (subst-draw-rect cmd))))
+		(font (if (cdr cmd) (rplaca cl (subst-font cmd))))
+		(clip (if (cdr cmd) (rplaca cl (subst-clip cmd))))
+		;; just filter out
+		;; if we find a (clip ) command, we might place it there
+		(cls (rplaca cl t ))
+		)
+	      )
+	     )
+	    (setq cl (cdr cl))
+	    )
+	  )
+	)
+;;; eval'm
+      (eval scaled-ps-command-list)
+      ) )
+
+(de subst-clip (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (w (car (cdr (cddr cmd))))
+	  (h (car (cddr (cddr cmd))))
+	  )
+      `(clip ,(+ (* x w-scale) x-offset) ,(+ (* y h-scale) y-offset)
+	     ,(* w w-scale) ,(* h h-scale) )
+      )
+    )
+
+(de subst-font (cmd)
+    (let* ((fontname (cadr cmd))
+	   (good-sizes '(8 10 11 12 14 18 24))
+	   (smax (apply max good-sizes))
+	   (smin (apply min good-sizes))
+	   (size () )
+	   (pos () )
+	   (new-size () )
+	   )
+      (when (regex-match "default" fontname) 
+	;; Aargh; find out how to scale this one
+	;; first guess: let's suppose it is Courier-11 ...
+	(setq fontname "Courier-11") )
+      (when (regex-match "[a-zA-Z-]+[0-9]+$" fontname)
+	(setq pos (regex-seek "[0-9]+$" fontname))
+	(setq size (val (mid fontname (car pos) (cadr pos)))) 
+	(setq new-size (int (* size (min h-scale w-scale))))
+	(if (> new-size smax)
+	    (setq new-size smax)
+	  (progn
+	    (if (< new-size smin)
+		(setq new-size smin)
+	      (progn
+		(while (not (member new-size good-sizes))
+		  (setq new-size (- new-size 1)))
+		)
+	      )
+	    )
+	  )
+	(setq fontname (regex-subst "([a-zA-Z-]+)([0-9]+$)" 
+				    (sprintf "%%0%d" new-size) fontname) )
+	
+	)
+      `(font ,fontname)
+      )
+    )
+
+(de subst-draw-line (cmd)
+    (let ((x1 (car (cdr cmd)))
+	  (y1 (car (cddr cmd)))
+	  (x2 (car (cdr (cddr cmd))))
+	  (y2 (car (cddr (cddr cmd))))
+	  )
+      `(draw-line ,(+ (* x1 w-scale) x-offset) ,(+ (* y1 h-scale) y-offset)
+		  ,(+ (* x2 w-scale) x-offset) ,(+ (* y2 h-scale) y-offset) )
+      )
+    )
+
+(de subst-draw-rect (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (w (car (cdr (cddr cmd))))
+	  (h (car (cddr (cddr cmd))))
+	  )
+      `(draw-rect ,(+ (* x w-scale) x-offset) ,(+ (* y h-scale) y-offset)
+		  ,(* w w-scale) ,(* h h-scale) )
+      )
+    )
+
+(de subst-fill-rect (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (w (car (cdr (cddr cmd))))
+	  (h (car (cddr (cddr cmd))))
+	  )
+      `(fill-rect ,(+ (* x w-scale) x-offset) ,(+ (* y h-scale) y-offset)
+		  ,(* w w-scale) ,(* h h-scale) )
+      )
+    )
+
+(de subst-draw-text (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (s (car (cdr (cddr cmd))))
+	  )
+      `(draw-text ,(+ (* x w-scale) x-offset) ,(+ (* y h-scale) y-offset) ,s)
+      )
+    )
+
+(de subst-draw-circle (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (r (car (cdr (cddr cmd))))
+	  (w () )
+	  (h () )
+	  (rr () )
+	  )
+      ;; no draw-ellipse; approximate with draw-round-rect
+      (if (> w-scale h-scale)
+	  `(draw-round-rect ,(+ (* (- x r) w-scale) x-offset) ,(+ (* (- y r) h-scale) y-offset)
+			    ,(* 2 r w-scale) ,(* 2 r h-scale)
+			    ,(* r h-scale) )
+	`(draw-round-rect ,(+ (* (- x r) w-scale) x-offset) ,(+ (* (- y r) h-scale) y-offset)
+			  ,(* 2 r w-scale) ,(* 2 r h-scale)
+			  ,(* r w-scale) )
+	)
+      )
+    )
+
+(de subst-fill-circle (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (r (car (cdr (cddr cmd))))
+	  (w () )
+	  (h () )
+	  (rr () )
+	  )
+      ;; no draw-ellipse (yet); approximate with draw-round-rect
+      (if (> w-scale h-scale)
+	  `(fill-round-rect ,(+ (* (- x r) w-scale) x-offset) ,(+ (* (- y r) h-scale) y-offset)
+			    ,(* 2 r w-scale) ,(* 2 r h-scale)
+			    ,(* r h-scale) )
+	`(fill-round-rect ,(+ (* (- x r) w-scale) x-offset) ,(+ (* (- y r) h-scale) y-offset)
+			  ,(* 2 r w-scale) ,(* 2 r h-scale)
+			  ,(* r w-scale) )
+	)
+      )
+    )
+
+(de subst-draw-arc (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (r (car (cdr (cddr cmd))))
+	  (fromangle (nth 3 cmd))
+	  (toangle (nth 4 cmd))
+	  )
+      ;; rough approx
+      `(draw-arc ,(+ (* x w-scale) x-offset) ,(+ (* y h-scale) y-offset)
+		 ,(* r (/ (+ w-scale h-scale) 2))
+		 ,fromangle, toangle )
+      )
+    )
+
+(de subst-fill-arc (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (r (car (cdr (cddr cmd))))
+	  (fromangle (nth 3 cmd))
+	  (toangle (nth 4 cmd))
+	  )
+      ;; rough approx
+      `(fill-arc ,(+ (* x w-scale) x-offset) ,(+ (* y h-scale) y-offset)
+		 ,(* r (/ (+ w-scale h-scale) 2))
+		 ,fromangle, toangle )
+      )
+    )
+
+(de subst-draw-list (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (l (car (cdr (cddr cmd))))
+	  (ncol (car (cddr (cddr cmd))))
+	  (maxv (nth 4 cmd))
+	  (apart (nth 5 cmd))
+	  (maxs (nth 6 cmd))
+	  )
+      `(draw-list ,(+ (* x w-scale) x-offset) ,(+ (* y h-scale) y-offset) ,l ,ncol ,maxv
+		  ,(* apart w-scale) ,(* maxs h-scale) )
+      )
+    )
+
+(de subst-gray-draw-matrix (cmd)
+    (let ((x (car (cdr cmd)))
+	  (y (car (cddr cmd)))
+	  (mat (car (cdr (cddr cmd))))
+	  (minv (car (cddr (cddr cmd))))
+	  (maxv (nth 4 cmd))
+	  (apartx (nth 5 cmd))
+	  (aparty (nth 6 cmd))
+	  )
+      `(gray-draw-matrix ,(+ (* x w-scale) x-offset) ,(+ (* y h-scale) y-offset) ,mat ,minv ,maxv
+			 ,(* apartx w-scale) ,(* aparty h-scale) )
+      )
+    )
+
+(de subst-fill-polygon (cmd)
+    (let ((rest (cdr cmd))
+	  (new-rest () )
+	  )
+      (while (cddr rest)
+	(nconc1 new-rest (+ (* (car rest) w-scale) x-offset))
+	(setq rest (cdr rest))
+	(nconc1 new-rest (+ (* (car rest) h-scale) y-offset))
+	(setq rest (cdr rest))
+	)
+      `(fill-polygon ,new-rest)
+      )
+    )
+
+(de ps-play (filename &optional f)
+    (let ((ps-scale-factor 1)
+	  )
+      (ps-play-low-level filename f) 
+    ) )
+
+;;; This function now returns the file's BoundingBox
+;;; (if there is one)
+(de ps-play-low-level (filename &optional f x y w h bb)
+    ;; plays a PS file...
+
+    (setq f (or f eval))
+    (let ((fd (open-read filename "ps"))
+	  (char "")
+	  (stack ())
+	  (poly ())
+	  (line "")
+	  (bb "")
+	  (ok () )
+	  (end-of-prolog () )
+	  (reg-creator "(^%%Creator: sn)|(^%% Creator: ((SN2..)|(Lush)))")
+	  (reg-end-prolog "^%%EndProlog$")
+	  (reg-bb "^%%BoundingBox:.*" )
+	  )
+      (when ~fd
+	(error 'ps-play "file not found" filename) )
+      (reading fd
+	;; skip prolog, check whether it's a PSdriver file and
+	;; try to find it's BoundingBox
+	(while (not end-of-prolog)
+	  (cond ((regex-match reg-creator line) (setq ok t))
+		((regex-match reg-end-prolog line) (setq end-of-prolog t))
+		((regex-match reg-bb line)
+		 (setq bb (regex-subst
+			   "(^%%BoundingBox:[ \t]*)(+|-)?([0-9]+)(.*)"
+			   "%1%2%3" line))
+		 )
+		(t))
+	  (setq line (read-string))
+	  (when (and (= (skip-char) "\e") ok (not end-of-prolog))
+	    (error 'ps-play "Bad PSdriver file" filename))
+	  )
+	(when (not ok)
+	  (error 'ps-play "Sorry, <ps-play> yet only reads Lush or SN28 generated PostScript" filename))
+	
+	;;why?? (setq line (read-string)) 
+	)
+      
+      (reading fd
+      	       (while (<> (setq char (skip-char)) "\e")
+		 
+		 (selectq char
+			  ("/"
+			   (read-string 1)
+			   (setq line (read-string "~ \t\n\r")))
+			  ("("
+			   (setq line (ps-play-reads))
+			   (skip-char ")"))
+			  ("%"
+			   (skip-char "~\n\r")
+			   (setq line ()) )
+			  (t
+			   (setq line (read))))
+		 (cond
+		  ((not line)
+		   () )
+		  ((stringp line)
+		   (setq stack (cons line stack)))
+		  ((numberp line)
+		   (setq stack (cons line stack)))
+		  (t
+		   ;; now interpret PSdriver macros...
+		   (selectq line
+			    
+			    ;; initialisation and print
+			    ((showpage ENDPAGE)
+			     () )
+			    ((INI BEGINPAGE)
+			     (let (((s t u v . aux) stack)
+				   )
+			       (setq ps-scale-factor v)
+			       )
+			     (f `(cls)) )
+			    
+			    ;; set font
+			    (SF
+			     (let (((name size . aux) stack))
+			       (when (> size 0)
+				     (setq name (concat name "-" (str size))) )
+			       (f `(font ,name)) ) )
+			    
+			    ;; set color
+			    (SCFG
+			     (f `(color color-fg)) )
+			    (SCBG
+			     (f `(color color-bg)) )
+			    (SCGRAY
+			     (f `(color color-gray)) )
+			    (SC
+			     (let (((b g r . aux) stack))
+			       (f `(color-rgb ,r ,g ,b)) ) )
+			    
+			    ;; set clip
+			    (CLIP
+			     (let (((y x h w . aux) stack))
+			       (if (and (0= h) (0= w))
+				   (f `(clip ()))
+				 (f `(clip ,x ,y ,w ,h)) ) ) )
+			    
+			    ;; draw line
+			    (DL
+			     (let (((y1 x1 y0 x0 . aux) stack))
+			       (f `(draw-line ,x0 ,y0 ,x1 ,y1)) ) )
+			    
+			    ;; draw rect
+			    (DR
+			     (let (((y x h w . aux) stack))
+			       (f `(draw-rect ,x ,y ,w ,h)) ) )
+			    
+			    ;; fill rect
+			    (FR
+			     (let (((y x h w . aux) stack))
+			       (f `(fill-rect ,x ,y ,w ,h)) ) )
+			    
+			    ;; draw circle
+			    (DC
+			     (let (((r y x . aux) stack))
+			       (f `(draw-circle ,x ,y ,r)) ) )
+			    
+			    ;; fill circle
+			    (FC
+			     (let (((r y x . aux) stack))
+			       (f `(fill-circle ,x ,y ,r)) ) )
+
+			    ;; draw arc
+			    (DA
+			     (let (((to from r y x . aux) stack))
+			       (f `(draw-arc ,x ,y ,r ,from ,to)) ) )
+			    
+			    ;; fill arc
+			    (FA
+			     (let (((to from r y x . aux) stack))
+			       (f `(fill-arc ,x ,y ,r ,from ,to)) ) )
+			    
+			    ;; draw text
+			    (DT
+			     (let (((y x text . aux) stack))
+			       (f `(draw-text ,x ,y ,text)) ) )
+			    
+			    ;; polygons
+			    (PSTART
+			     (setq poly ())
+			     (let (((y x . aux) stack))
+			       (setq poly (nconc poly (list x y))) ) )
+			    (FP
+			     (let (((y x . aux) stack))
+			       (setq poly (nconc poly (list x y))) ) )
+			    (PEND
+			     (let (((y x . aux) stack))
+			       (setq poly (nconc poly (list x y))) )
+			     (f `(fill-polygon ,@poly)) )
+			    
+			    ;; pixel_map
+			    (PM
+			     (let (((y x apy apx h w . aux) stack))
+			       (setq poly (matrix h w))
+			       (for (i 0 (1- h))
+				    (for (j 0 (1- w))
+					 (poly i j (ps-play-read8)) ) )
+			       (skip-char "~\n\r")
+			       (f `(gray-draw-matrix ,x ,y ,poly 0 255 ,apx ,apy)) ) )
+			    
+			    ;; hinton_map
+			    (HM
+			     (let (((y x ap ap h w . aux) stack))
+			       (setq poly ())
+			       (for (i 0 (1- h))
+				    (for (j 0 (1- w))
+					 (let ((x (ps-play-read8)))
+					   (when (> x 127)
+						 (incr x -256) )
+					   (setq poly (nconc1 poly x)) ) ) )
+			       (skip-char "~\n\r")
+			       (f `(draw-list ,x ,y (quote ,poly) ,w ,ap ,ap ,ap) ) ) )
+			    
+		            ;; unrecognized stuff.
+			    (t
+			     
+			     (printf "ps-play: Unrecognized gspecial '%l %l'\n" 
+				     stack line) ) )
+		   
+		   (setq stack () )
+		   ) ) ) )
+      bb
+      ) )
+
+
+
+;;----------- driver features
+
+
+(de gdriver-feature (feat &optional opt &rest r)
+    (let* ((f (selectq feat
+		(clip-to-text (selectq (gdriver)
+				("X11" x11-clip-to-text)
+				("WBM" wbm-clip-to-text)
+				) )
+		(text-to-clip (selectq (gdriver)
+				("X11" x11-text-to-clip)
+				("WBM" wbm-text-to-clip)
+				) )
+		(fontname     (selectq (gdriver)
+				("X11" x11-fontname)
+				("WBM" ())
+				) )
+		(configure    (selectq (gdriver)
+				("X11" x11-configure)
+				("WBM" wbm-configure)
+				) )
+		(lookup-color (selectq (gdriver)
+				("X11" x11-lookup-color)
+				("WBM" ())
+				) )
+		(depth        (selectq (gdriver)
+				("X11" x11-depth)
+				("WBM" wbm-depth)
+				) )
+		))
+	   )
+      (selectq opt
+	(()     (when ~f (error 'ggs-feature
+				"Feature is not available in the current graphic system."
+				feat)))
+	(loose  (when ~f (setq f progn)))
+	(strict f)
+	(t      (error 'ggs-feature
+		       "Internal error: illegal option."
+		       opt))
+	)
+      f
+      ))

@@ -1,0 +1,143 @@
+#? File "cmacro.sn"
+;; This file implements macro characters <#{> and <#}> for easily
+;; inlining C code within SN3.1 functions.
+;;
+;; $Id: cmacro.sn,v 0.1.1.1 2001-10-31 17:34:38 profshadoko Exp $
+;;
+;; This following constructions allows for easily mixing C code and lisp code.
+;;.IP
+;; When declaring a GPTR object, you can specify a C type for the GPTR.
+;; This C type will then be used in the current function or module.
+;;.IP
+;; The #{ macro allows for inserting C code within a Lisp function.
+;; This is similar to cinline but easier to use because there is
+;; no need to deal with the syntax of printf strings.
+;;
+;;.SEE (-gptr- [<spec>])
+;;.SEE #{ <c-code> #}
+
+(printf "[%s]\n" file-being-loaded)
+
+
+
+#? (-gptr- [<spec>])
+;; The declaration of GPTRs has been expanded to specify an explicit C
+;; type. Argument <spec> may be a string defining a C pointer type to use
+;; instead of <"gptr">.  Argument <spec> may also be a list containing a class
+;; name and implying a specific C pointer type.
+;;
+;; Examples:
+;;.VP
+;;  DECLARATION           GENERATED C TYPE         COMMENT
+;;  (-gptr-)              gptr                     (i.e. void*)
+;;  (-gptr- "int*")       int*
+;;  (-gptr- (myclass))    struct CClass_myclass*
+
+
+
+
+#?  #{ <c-code> #}
+;; This macro allows for easily embedding C code inside a Lisp compilable
+;; function. The embedded C code is delimited by <#{> and <#}>. 
+;;
+;; The $ sign introduces lisp expression within C code:
+;;.IP
+;;  $<legal-c-identifier> actually refers to a lisp variable.
+;;.IP
+;;  ${<legal-lisp-variable>} refers to a lisp variable.
+;;.IP
+;;  $(<lisp expression>) refers to the result of a lisp expression.
+;;
+;;
+;; Example:
+;;.VP
+;;  (de add-to-integer( intg arg )
+;;    ((-int-) intg arg)
+;;    #{ $intg += $arg; #}
+;;    intg )
+;;.PP
+;; expands to:
+;;.VP
+;;  (de add-to-integer (intg arg)
+;;    ((-int-) intg arg)
+;;    (cinline " %s += %s; " intg arg)
+;;    intg )
+
+
+(de cmacro-read-c()
+    (let ((nextchar (skip-char " \t")))
+      (cond
+       ((= nextchar ";")
+        (read-string 1)
+        (if (not (index (skip-char " \t") "#\n")) "; " (skip-char) ";") )
+       ((= nextchar "$")
+        (cmacro-read-dollar) )
+       ((= nextchar "#")
+        (read-string 1)
+        (if (<> (skip-char "") "}") "#" (read-string 1) "#}") )
+       ((or (= nextchar "\"") (= nextchar "'"))
+        (cmacro-read-string (read-string 1)) )
+       ((= nextchar "\n")
+        (read-string 1) )
+       (t
+        (concat (read-string "~$;#'\"\n")) ) ) ) )
+
+(de cmacro-read-string(delim)
+    (let ((dat (list delim))
+          (str ())
+          (ok t))
+      (while ok
+        (setq str (read-string (concat "~\e\\" delim)))
+        (setq dat (nconc1 dat str))
+        (if (= (skip-char "") "\\")
+            (setq dat (nconc1 dat (read-string 2)))
+          (setq ok ()) ) )
+      (if (= (skip-char "") delim)
+          (setq dat (nconc1 dat (read-string 1))) )
+      (apply concat dat) ) )
+
+(de cmacro-read-dollar()
+    (read-string 1)
+    (let ((nextchar (skip-char "")))
+      (cond 
+       ((= nextchar "(")
+        (read) )
+       ((= nextchar "{")
+        (read-string 1)
+        (let ((data (read-string "~{}() ;'\"")))
+          (if (<> (read-string 1) "}") 
+              (error "Illegal $-expression in #{ ... #}")
+            (named data) ) ) )
+       ((and (>= (upcase nextchar) "A") (<= (upcase nextchar) "Z"))
+        (named (read-string "A-Za-z0-9_")) )
+       (t
+        (error "Illegal $-expression in #{ .... #}") ) ) ) )
+
+(dmc |#{|
+     (let ((again t)
+           (pgm  ())
+           (stmt ())
+           (expr ()) )
+       (while again
+         (let ((item (cmacro-read-c)))
+           (when (stringp item)
+             (setq item (regex-subst "%" "%%%%" item)) )
+           (cond
+            ((= item "#}")
+             (setq again ()) )
+            ((= item ";")
+             (setq stmt (apply concat (nconc1 stmt item)))
+             (setq pgm (nconc1 pgm '(cinline `stmt `@expr)))
+             (setq stmt ())
+             (setq expr ()) )
+            ((not (stringp item))
+             (setq stmt (nconc1 stmt "(%s)"))
+             (setq expr (nconc1 expr item)) )
+            ((= item "\e")
+             (error "unbalanced cmacro #{ #}") )
+            (t
+             (setq stmt (nconc1 stmt item)) ) ) ) )
+       (when stmt
+         (setq stmt (apply concat stmt))
+         (setq pgm (nconc1 pgm '(cinline `stmt `@expr))) )
+       (list (if (cdr pgm) (cons 'progn pgm) (car pgm))) ) )

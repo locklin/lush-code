@@ -1,0 +1,473 @@
+(mload "cmacro")
+(mload "libidx")
+(mload "dh-compile")
+(gcc-load "im_func.c")
+
+;;*****************************************************************************
+;;
+;;  This file contains the necessary tools to create C representation of 
+;;  2D images of float (of various sizes), compute euclidean distances between
+;;  them, compute their center of gravity, etc...  Each images aslo have 
+;;  a hot point (X and Y), so that when the distance between two images is
+;;  computed, their respective hot points are aligned first.  A background
+;;  value is assumed to computed the distance between pixels where the images
+;;  do not overlap.
+;;
+;;*****************************************************************************
+
+;;-----------------------------------------------------------------------------
+#?  (new-sample <mat> <hot-x> <hot-y> <background>)
+;;  return a pointer to a newly allocated sample (or cluster)
+;;  memory can be freed by free_sample.  <hot-x> and <hot-y> are int value
+;;  which indicates how to center two images on top of each other (superimpose
+;;  their hot spots).
+;;
+(de new-sample (mat hot-x hot-y background)
+    ((-idx2- (-flt-)) mat)
+    ((-int-) hot-x hot-y)
+    ((-float-) background)
+    
+    (if (or (<> (idx-offset mat) 0) ~(contiguep mat))
+        (error "matrix is not contiguous or has a non zero offset"))
+
+    (c-include "im_func.h")
+
+    (let ((ptr (gptr #{ 0 #})))
+      #{{
+      struct sample_type *p;
+      int i, j, x_size, y_size;
+      int size;
+    float *norm_line, *norm_b_line;
+
+      x_size = $(idx-dim mat 0);
+      y_size = $(idx-dim mat 1);
+      size = x_size * y_size;
+
+      p = (struct sample_type *) malloc(sizeof(struct sample_type));
+      p->x_size = x_size;
+      p->y_size = y_size;
+      p->hot_x = $hot_x;
+      p->hot_y = $hot_y;
+
+      p->pat = (float *) malloc(size * sizeof(float));
+      p->norm = (float *) malloc(size * sizeof(float));
+      p->norm_back = (float *) malloc(size * sizeof(float));
+      p->background = $background;
+
+      for(i=0;i<size;i++) 
+          p->pat[i] = IDX_PTR($mat,flt)[i];
+
+      update_integral(x_size, y_size, p->pat, p->norm, p->norm_back,
+                              $background);
+
+      $ptr = p;
+
+      }#}
+      ptr))
+
+;;-----------------------------------------------------------------------------
+#?  (grav-center <mat>)
+;;  return X center of gravity of <mat> (float).  To compute center of gravity
+;;  with respect of Y, call (grav-center (idx-transclone <mat> '(1 0))).
+;;.EX (grav-center (idx-transclone ((flt-matrix 1 4) ()() '(1 1 1 1))'(1 0)))
+;;
+(de grav-center (a)
+    ((-idx2- (-flt-)) a)
+
+    (let ((x-size 0)
+          (sum 0))
+      (idx-gloop ((a a) (i))
+        (idx-bloop ((a a))
+          (incr x-size (* i (a)))
+          (incr sum (a))))
+      (/ x-size sum)))
+
+;; put the center of gravity both in X and Y
+(de new-sample-grav (mat background)
+    ((-idx2- (-flt-)) mat)
+    ((-float-) background)
+    (new-sample mat (grav-center mat)
+                (grav-center (idx-transclone mat '(1 0))) background))
+
+;;------------------------------------------------------------------------------
+#?  (free_sample <gptr>)
+;;  free what was allocated by new_sample or new-empty-sample
+;;
+(de free_sample (c_sample)
+    ((-gptr- "struct sample_type *") c_sample)
+
+    (if (null c_sample)
+        (error "null pointer"))
+
+    #{ 
+        free($c_sample->norm_back);
+        free($c_sample->norm);
+        free($c_sample->pat);
+        free($c_sample);
+    #}
+    ())
+
+;;------------------------------------------------------------------------------
+#?  (sample-set-hot-point <sample> <x> <y>)
+;;  Set the hot point for the sample
+;;
+(de sample-set-hot-point (sample x y)
+    ((-gptr- "struct sample_type *") sample)
+    ((-int-) x y)
+
+    #{ 
+        $sample->hot_x = $x;
+        $sample->hot_y = $y;
+    #}
+    ()
+)
+
+;;------------------------------------------------------------------------------
+#?  (sample-get-hot-x <sample>)
+;;  get the x hot point for the sample <sample>
+;;
+(de sample-get-hot-x (sample)
+    ((-gptr- "struct sample_type *") sample)
+
+    (int #{ $sample->hot_x #}))
+
+;;------------------------------------------------------------------------------
+#?  (sample-get-hot-y <sample>)
+;;  get the y hot point for the sample <sample>
+;;
+(de sample-get-hot-y (sample)
+    ((-gptr- "struct sample_type *") sample)
+
+    (int #{ $sample->hot_y #}))
+
+;;------------------------------------------------------------------------------
+#?  (sample-set-hot-point <sample> <x> <y>)
+;;  Set the hot point for the sample
+;;
+(de sample-set-spare (sample x)
+    ((-gptr- "struct sample_type *") sample)
+    ((-int-) x)
+
+    #{ 
+    sample_set_spare($sample, $x);
+    #}
+    ()
+)
+
+(de sample-get-spare (sample)
+    ((-gptr- "struct sample_type *") sample)
+    (int #{ sample_get_spare($sample) #}))
+
+;;------------------------------------------------------------------------------
+#? (csample-to-lisp <ptr>)
+;; return a lisp object copy from a C representation of sample.
+;;
+(defclass lisp-sample object
+  ((-int-) x-size y-size hot-x hot-y)
+  ((-idx2- (-ubyte-)) pat)
+  ((-idx2- (-flt-)) norm norm_back)
+  ((-ubyte-) background)
+)
+
+(defmethod lisp-sample lisp-sample (xs ys)
+  ((-int-) xs ys)
+  (setq x-size xs)
+  (setq y-size ys)
+  (setq pat (ubyte-matrix xs ys))
+  (setq norm (float-matrix xs ys))
+  (setq norm_back (float-matrix xs ys)))
+
+(de csample-to-lisp (sample)
+    ((-gptr- "struct sample_type *") sample)
+
+    (let* ((lsample (new lisp-sample
+                         (int #{ $sample->x_size#})
+                         (int #{ $sample->y_size#})))
+           (pat :lsample:pat)
+           (norm :lsample:norm)
+           (norm_back :lsample:norm_back))
+
+      (setq :lsample:hot-x (int #{ $sample->hot_x#}))
+      (setq :lsample:hot-y (int #{ $sample->hot_y#}))
+      (setq :lsample:background (int (flt #{ $sample->background#})))
+
+      #{{
+          int i, size = $sample->x_size * $sample->y_size ;
+
+          for(i=0;i<size;i++) {
+              IDX_PTR($pat, unsigned char)[i] = $sample->pat[i];
+              IDX_PTR($norm,float)[i] = $sample->norm[i];
+              IDX_PTR($norm_back,float)[i] = $sample->norm_back[i];
+          }
+      }#}
+      lsample))
+
+(de get-x-size (sample)
+    ((-gptr- "struct sample_type *") sample)
+    (int #{ $sample->x_size#}))
+
+(de get-y-size (sample)
+    ((-gptr- "struct sample_type *") sample)
+    (int #{ $sample->y_size#}))
+
+;;******************************************************************************
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;  Functions to create, delete and display samples
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;------------------------------------------------------------------------------
+#?  (euc-new_center)
+;;  Allocate and return a new center
+;;
+(de euc-new-center (size)
+    ((-int-) size)
+    (gptr #{ euc_new_center($size) #}))
+
+(de euc-new-center-ptr ()
+    (gptr #{ euc_new_center #}))
+
+;;------------------------------------------------------------------------------
+#?  (euc-free_center <gptr>)
+;;  free what was allocated by euc-new-center
+;;
+(de euc-free_center (center)
+    ((-gptr- "struct euc_center_type *") center)
+    #{ euc_free_center($center) #}
+    ())
+
+(de euc-free-center-ptr ()
+    (gptr #{ euc_free_center #}))
+
+;;------------------------------------------------------------------------------
+#?  (euc-center-get-pat <gptr>)
+;;  return the pattern matrix
+;;
+(de euc-center-get-pat (center)
+    ((-gptr- "struct euc_center_type *") center)
+    
+    (if (null center)
+        (error "euc-center-get-pat: null pointer"))
+    
+    (let ((mat (matrix (int #{ $center->x_size #})
+                       (int #{ $center->y_size #}))))
+
+      (cinline-idx2loop mat "float" "ma" "i" "j"
+                        #{
+                        *ma = $center->pat[i * $center->y_size + j];
+                        #})
+      mat))
+
+;;------------------------------------------------------------------------------
+#? (euc-center-to-lisp <ptr>)
+;; return a lisp object copy from a C representation of euc_center.
+;;
+(defclass lisp-euc-center object
+  ((-int-) x-size y-size)
+  ((-idx2- (-ubyte-)) pat)
+  ((-idx2- (-flt-)) norm norm_back)
+)
+
+(defmethod lisp-euc-center lisp-euc-center (xs ys)
+  ((-int-) xs ys)
+  (setq x-size xs)
+  (setq y-size ys)
+  (setq pat (ubyte-matrix xs ys))
+  (setq norm (float-matrix xs ys))
+  (setq norm_back (float-matrix xs ys)))
+
+(de euc-center-to-lisp (euc_center)
+    ((-gptr- "struct euc_center_type *") euc_center)
+
+    (let* ((leuc_center (new lisp_euc_center
+                         (int #{ $euc_center->x_size#})
+                         (int #{ $euc_center->y_size#})))
+           (pat :leuc_center:pat)
+           (norm :leuc_center:norm)
+           (norm_back :leuc_center:norm_back))
+
+      #{{
+          int i, size = $euc_center->x_size * $euc_center->y_size ;
+
+          for(i=0;i<size;i++) {
+              IDX_PTR($pat, unsigned char)[i] = $euc_center->pat[i];
+              IDX_PTR($norm,float)[i] = $euc_center->norm[i];
+              IDX_PTR($norm_back,float)[i] = $euc_center->norm_back[i];
+          }
+      }#}
+      leuc_center))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;   FUNCTIONS WITH POINTERS.
+;;
+;;   The following functions are defined in C, and below is a lisp interface
+;;   to them.  (Note that the LISP inteface could be generated automatically,
+;;   but for now, you can just use the functions below as a model and replace
+;;   the prefix, sample_type and center_type by your own.
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;------------------------------------------------------------------------------
+#? (set_euc_distance_incs <incx> <incy>)
+;; 
+;;  calling set_euc_distance_range has a side effect on how euc_distance 
+;;  compute.  euc_distance position sample on all the positions in the 
+;;  rectangle (-incx,-incy) (incx, incy), to find the minimum euclidean 
+;;  distance.
+;;
+(de set_euc_distance_incs (incx incy)
+    ((-int-) incx incy)
+    #{ set_euc_distance_range($incx, $incy); #}
+    ())
+
+(de get_euc_distance_incx ()
+    (int #{ get_euc_distance_incx() #}))
+
+(de get_euc_distance_incy ()
+    (int #{ get_euc_distance_incy() #}))
+
+;;------------------------------------------------------------------------------
+#? (euc-distance <sample> <center>)
+;; compute the distance between two samples or two centers
+;;
+(de euc-distance (sample center)
+    ((-gptr- "struct sample_type *") sample)
+    ((-gptr- "struct euc_center_type *") center)
+    (if (or (null sample) (null center))
+        (error "euc-distance: null pointer"))
+
+    (flt #{ euc_distance($sample, $center) #})
+)
+
+;;------------------------------------------------------------------------------
+#? (euc-distance-ptr)
+;; return a pointer (a gptr) to the distance function
+;;
+(de euc-distance-ptr () (gptr #{ euc_distance #}))
+
+;;------------------------------------------------------------------------------
+#? (euc-clear <center>)
+;; Initialize <center>
+;;
+(de euc-clear (center)
+    ((-gptr- "struct euc_center_type *") center)
+    (if (null center)
+        (error "euc-clear: null pointer"))
+     
+    #{ euc_clear($center) #}
+    center)
+
+;;------------------------------------------------------------------------------
+#? (euc-clear-ptr)
+;; return a pointer (a gptr) to the euc-clear function
+;;
+(de euc-clear-ptr () (gptr #{ euc_clear #}))
+
+;;------------------------------------------------------------------------------
+#? (euc_accumulate <sample> <weight> <center>)
+;; Accumulate information about <sample>, weighted by <weight> into <center>.
+;;
+(de euc-accumulate (sample weight center)
+    ((-gptr- "struct sample_type *") sample)
+    ((-gptr- "struct euc_center_type *") center)
+    ((-float-) weight)
+
+    (if (or (null sample) (null center))
+        (error "euc-accumulate: null pointer"))
+    
+    #{ euc_accumulate($sample, $weight, $center) #}
+    ())
+
+;;------------------------------------------------------------------------------
+#? (euc-accumulate-ptr)
+;; return a pointer (a gptr) to the euc_accumulate function
+;;
+(de euc-accumulate-ptr () (gptr #{ euc_accumulate #}))
+
+;;------------------------------------------------------------------------------
+#? (set_euc_normalize_recompute <flag>)
+;;
+;;  Calling this function has a side effect on euc_normalize.  Normally, 
+;;  this function does not recompute the center of the cluster according to
+;;  the best possible positions of the clusters.  However a call to this 
+;;  function with flag=t will force just that.
+;;
+(de set_euc_normalize_recompute(flag)
+    ((-bool-) flag)
+    #{ set_euc_normalize_recompute($flag); #}
+    ())
+
+(de get_euc_normalize_recompute ()
+    (int #{ get_euc_normalize_recompute() #}))
+
+;;------------------------------------------------------------------------------
+#? (euc-normalize <sum_center> <center> <float>)
+;; take sum_center, and divide it by weight_sum.  Then copy it
+;; into center.  If this operation changes the value of center,
+;; returns 1, othewise returns 0.
+;;
+(de euc-normalize (sum_center center weight)
+    ((-gptr- "struct euc_center_type *") sum_center center)
+    ((-float-) weight)
+
+    (if (or (null sum_center) (null center))
+        (error "euc-accumulate: null pointer"))
+
+    (int #{ euc_normalize($sum_center, $center, $weight) #} ))
+
+;;------------------------------------------------------------------------------
+#? (euc-normalize-ptr)
+;; return a pointer (a gptr) to the euc_normalize function.
+;;
+(de euc-normalize_ptr () (gptr #{ euc_normalize #}))
+
+;;------------------------------------------------------------------------------
+#? (euc-init-center <sample> <sample-weight> <center>)
+;; Initialize the 1D matrix of center <center> (of gptr), using information
+;; about the 1D matrix of sample <sample> (of gptr), weighted by the matrix of
+;; float <sample-weight>.
+;;
+(de euc-init-center (sample sample-weight center)
+    ((-idx1- (-gptr-)) sample)
+    ((-idx1- (-gptr-)) center)
+    ((-idx1- (-float-)) sample-weight)
+
+    #{ 
+        euc_init_center(IDX_PTR($sample, void *), 
+                               IDX_PTR($sample_weight, float),
+                               $(idx-dim sample 0), IDX_PTR($center, void *),
+                               $(idx-dim center 0));
+    #}
+    ())
+
+;;------------------------------------------------------------------------------
+#? (euc-init-center-ptr)
+;; return a pointer (a gptr) to the euc_init_center function.
+;;
+(de euc-init-center-ptr () (gptr #{ euc_init_center #}))
+
+;;------------------------------------------------------------------------------
+
+(dhc-make () 
+          new_sample grav-center new-sample-grav free_sample
+          sample-set-hot-point sample-get-hot-x sample-get-hot-y
+          sample-set-spare sample-get-spare
+          (lisp-sample lisp-sample)
+          csample-to-lisp get-x-size get-y-size 
+
+          euc-new-center euc-free-center
+          euc-new-center-ptr euc-free-center-ptr
+          euc-center-get-pat
+          (lisp-euc-center lisp-euc-center) euc-center-to-lisp
+          set_euc_distance_incs get_euc_distance_incx get_euc_distance_incy
+          euc-distance euc-distance-ptr
+          euc-clear euc-clear-ptr
+          euc-accumulate euc-accumulate-ptr
+          set_euc_normalize_recompute get_euc_normalize_recompute
+          euc-normalize euc-normalize-ptr
+          euc-init-center euc-init_center-ptr
+)
+

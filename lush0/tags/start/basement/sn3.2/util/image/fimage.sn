@@ -1,0 +1,56 @@
+;; images of floats
+
+(mload "idx-macros")
+
+(de fim-subsample (in nlin ncol)
+    ((-idx2- (-flt-)) in)
+    ((-int-) nlin ncol)
+    (let* ((h (idx-dim in 0))
+           (w (idx-dim in 1))
+           (nh (int (/ h nlin)))
+           (nw (int (/ w ncol)))
+           (inp (narrow (narrow in 0 (* nlin nh) 0) 1 (* ncol nw) 0))
+           (out (matrix-nc nh nw)))
+      #{{
+      flt *_idx2loopc1, *pin;
+      flt *_idx2loopc2, *pout;
+      int i, _imax = ($out)->dim[0];
+      int j, _jmax = ($out)->dim[1];
+      int _imat1_m0 = ($inp)->mod[0];
+      int _imat1_m1 = ($inp)->mod[1];
+      int _imat2_m0 = ($out)->mod[0];
+      int _imat2_m1 = ($out)->mod[1];
+      int pin_incr = $ncol * _imat1_m1;
+      int norm = 1/($ncol * $nlin);
+      register int acc0;
+      register int k,l;
+      register flt *pinptr;
+      register int pinptr_incr = _imat1_m0 - $ncol* _imat1_m1;
+      _idx2loopc1 = IDX_PTR (($inp), flt);
+      _idx2loopc2 = IDX_PTR (($out), flt);
+      for (i = 0; i < _imax; i++) {
+        pin = _idx2loopc1;
+        pout = _idx2loopc2;
+        for (j = 0; j < _jmax; j++) {
+          acc0 =0;
+          pinptr = pin;
+          for (k=0; k<$nlin; k++) {
+            for (l=0; l<$ncol; l++) { 
+              acc0 += pinptr[0];
+              pinptr += _imat1_m1;
+              }
+            pinptr += pinptr_incr;
+            }
+          pout[0] = acc0*norm;
+          pin += pin_incr;
+          pout += _imat2_m1;
+	  }
+	  _idx2loopc1 += _imat1_m0 * $nlin;
+	  _idx2loopc2 += _imat2_m0;
+	}
+        } #}
+  out))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make () fim-subsample)
