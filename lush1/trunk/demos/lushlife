@@ -16,29 +16,29 @@ exec lush "$0" "$@"
  ((or (member "-h" argv)
       (member "--help" argv))
   (writing "$stderr" 
-   (render-brace-text 0 72
-   '{<p> Synopsis: ,,(basename (car argv)) [-h] [-p prob] {<br>}
-     A simple implementation of Conway's Game of Life.
-     {<ul>
-      {<li> "-h": show this message}
-      {<li> "-p prob": set the probability of an on cell to "prob"
-            for the random initialization. "prob" should be a real
-            number between 0 and 1 (the default value is 0.2)}}
-      While the program is running, press the "r" key
-      to restart from a random configuration, and
-      press "q" to quit.
-     }))
+	   (render-brace-text 0 72
+		'{<p> Synopsis: ,,(basename (or (car argv) "")) [-h] [-p prob] {<br>}
+		A simple implementation of Conway's Game of Life.
+		{<ul>
+		{<li> "-h": show this message}
+		{<li> "-p prob": set the probability of an on cell to "prob"
+		for the random initialization. "prob" should be a real
+		number between 0 and 1 (the default value is 0.2)}}
+		While the program is running, press the "r" key
+		to restart from a random configuration, and
+		press "q" to quit.
+		}))
   (exit 0))
  ((setq zz (member "-p" argv))
   (if (not (cadr zz))
-    (progn
-      (writing "$stderr" (printf "probability value missing\n"))
-      (exit 1))
-   (setq zz (val (cadr zz)))
-   (if (and zz (<= zz 1) (>= zz 0))
-      (setq prob zz) 
-    (writing "$stderr" (printf "illegal probability\n"))
-    (exit 1)))))
+      (progn
+	(writing "$stderr" (printf "probability value missing\n"))
+	(exit 1))
+    (setq zz (val (cadr zz)))
+    (if (and zz (<= zz 1) (>= zz 0))
+	(setq prob zz) 
+      (writing "$stderr" (printf "illegal probability\n"))
+      (exit 1))))) )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; run life
@@ -55,37 +55,31 @@ exec lush "$0" "$@"
 (setq CONST_255 (ubyte-matrix))
 (CONST_255 255)
 
-(de life () 
-  (sdl-initialize)
-  (let* 
-      ((display (ubyte-matrix HEIGHT WIDTH 3))
-       (accum (ubyte-matrix HEIGHT WIDTH))
-       (cells (ubyte-matrix (+ HEIGHT 2) (+ WIDTH 2)))
-       (scr (new sdlidx-screen display "Game of Life"))
-       (event (new sdl-event)) 
-       (xyk (int-matrix 3))
-       (stop ()))
+(de life ()
+    (new-window WIDTH HEIGHT)
+    (let* ((evlock (new EventLock window))
+	   (event ())
+	   (accum (ubyte-matrix HEIGHT WIDTH))
+	   (cells (ubyte-matrix (+ HEIGHT 2) (+ WIDTH 2)))
+	   (stop ()))
+      
+      ;; initialize cells
+      (randomize cells prob)
+      
+      (while (and window (not stop))
+	
+	;; Perform the simulation
+	(lifesim cells accum)
 
-    ;; initialize cells
-    (randomize cells prob)
-
-    (while (not stop) 
-
-      ;; Draw the cells matrix to the display matrix
-      (idx-copy (idx-dotm0 (narrow (narrow cells 0 HEIGHT 1) 1 WIDTH 1) CONST_255) 
-		(select display 2 1))
-
-      ;; Perform the simulation
-      (lifesim cells accum)
-		
-      ;; Check the keys for interesting keypresses and respond accordingly
-      (==> event get-arrows xyk) 
-      (selectq (xyk 2)
-	(@@SDLK_q (setq stop t))
-	(@@SDLK_r (randomize cells prob)))
-
-      ;; Flip the buffer
-      (==> scr flip) )))
+	;; Draw the cells matrix to the display matrix
+	(graphics-batch
+	 (rgb-draw-matrix 0 0 
+	   (idx-dotm0 (narrow (narrow cells 0 HEIGHT 1) 1 WIDTH 1) CONST_255)) )
+	
+	(while (setq event (==> evlock check-event))
+	  (cond
+	   ((= (car event) "q") (setq stop t))
+	   ((= (car event) "r") (randomize cells prob)) ) ) ) ) )
 
 (writing "$stderr" (printf "Press 'r' to restart. Press 'q' to quit\n"))
 (life)
