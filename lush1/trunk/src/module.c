@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.56 2004-07-26 17:32:13 leonb Exp $
+ * $Id: module.c,v 1.57 2004-07-26 17:36:22 leonb Exp $
  **********************************************************************/
 
 
@@ -961,7 +961,8 @@ update_exec_flag(struct module *m)
 	      cl->classdoc = 0;
 	    else if (cl->kname && !cl->classdoc) {
 	      dhclassdoc_t *kdata = dynlink_symbol(m, cl->kname, 0, 0);
-	      ((dhclassdoc_t**)(kdata->lispdata.vtable))[0] = kdata;
+	      if (kdata && kdata->lispdata.vtable)
+		((dhclassdoc_t**)(kdata->lispdata.vtable))[0] = kdata;
 	      cl->classdoc = kdata;
 	    }
 	  }
