@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.21 2003-02-21 23:04:39 leonb Exp $
+ * $Id: dldbfd.c,v 1.22 2003-02-22 16:46:57 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -85,9 +85,10 @@
 void *bfd_alloc(bfd *abfd, bfd_size_type wanted);
 unsigned int bfd_log2 (bfd_vma x);
 
-/* Conversion between bfd_vma and pointers */
+/* Conversion between bfd_vma and pointers.
+ * These casts remove warnings with 64 bit enabled bfd. */
 #define vmaptr(x) ((void*)(size_t)(x))
-#define ptrvma(x) ((bfd_vma)(x))
+#define ptrvma(x) ((bfd_vma)(size_t)(x))
 
 
 /* ---------------------------------------- */
@@ -878,7 +879,7 @@ mipself_new_hi16_reloc (bfd *abfd,
   /* Test if symbol is '_gp_disp' because it changes everything */
   if (!strcmp(symbol->name, "_gp_disp"))
     {
-      mipself_gpdisp_hiaddr = (bfd_vma)(data) + reloc_entry->address;
+      mipself_gpdisp_hiaddr = ptrvma(data) + reloc_entry->address;
       mipself_gpdisp_value = symbol->section->vma + symbol->value;
       /* Assume no addend for simplicity*/
       if (reloc_entry->addend)
@@ -906,15 +907,15 @@ mipself_new_lo16_reloc (bfd *abfd,
   if(!strcmp(symbol->name, "_gp_disp"))
     {
       int loinsn, hiinsn;
-      bfd_vma loaddr = (bfd_vma)(data) + reloc_entry->address;
+      bfd_vma loaddr = ptrvma(data) + reloc_entry->address;
       bfd_vma value = symbol->section->vma + symbol->value;
       ASSERT_BFD(value == mipself_gpdisp_value);
       /* Assume no addend for simplicity*/
       if (reloc_entry->addend)
         return bfd_reloc_notsupported;
       /* Get instructions */
-      loinsn = bfd_get_32(abfd, (bfd_byte*)loaddr);
-      hiinsn = bfd_get_32(abfd, (bfd_byte*)mipself_gpdisp_hiaddr);
+      loinsn = bfd_get_32(abfd, (bfd_byte*)vmaptr(loaddr));
+      hiinsn = bfd_get_32(abfd, (bfd_byte*)vmaptr(mipself_gpdisp_hiaddr));
       if ((loinsn & 0xffff) || (hiinsn & 0xffff))
         return bfd_reloc_notsupported;
       /* Patch instructions (taking care of sign extension on the low 16 bits) */
@@ -922,8 +923,8 @@ mipself_new_lo16_reloc (bfd *abfd,
       loinsn |= (value & 0xffff);
       value = (value>>16) + (loinsn&0x8000 ? 1 : 0); 
       hiinsn |= (value & 0xffff);
-      bfd_put_32 (abfd, hiinsn, (bfd_byte*)mipself_gpdisp_hiaddr);
-      bfd_put_32 (abfd, loinsn, (bfd_byte*)loaddr);
+      bfd_put_32 (abfd, hiinsn, (bfd_byte*)vmaptr(mipself_gpdisp_hiaddr));
+      bfd_put_32 (abfd, loinsn, (bfd_byte*)vmaptr(loaddr));
       return bfd_reloc_ok;
     }
   /* Regular procedure */
@@ -1373,7 +1374,7 @@ allocate_memory_for_object(module_entry *ent)
     for (p=abfd->sections; p; p=p->next)
         if (p->flags & SEC_ALLOC)
           {
-            p->vma = p->vma + (bfd_vma)(ent->exec);
+            p->vma = p->vma + ptrvma(ent->exec);
             dld_alloc_segment(ent->filename, p->name, p->vma);
           }
 }
@@ -1397,7 +1398,7 @@ load_object_file_data(module_entry *ent)
         {
             ASSERT(p->flags & SEC_ALLOC);
             size = p->_raw_size;
-            ok = bfd_get_section_contents(abfd, p, (void*)(p->vma), 0, size);
+            ok = bfd_get_section_contents(abfd, p, vmaptr(p->vma), 0, size);
             ASSERT_BFD(ok);
         }
 }
@@ -1523,7 +1524,7 @@ insert_module_symbols(module_entry *module)
                 /* Indirect symbol pointing to an undefined symbol */
                 while ((sym->flags & BSF_INDIRECT) 
                        || bfd_is_ind_section(sym->section) )
-                    sym = (asymbol*)(sym->value);
+                    sym = (asymbol*)vmaptr(sym->value);
                 if (sym == module->symbols[i] || 
                     !bfd_is_und_section(sym->section) ||
                     !sym->name || !sym->name[0] )
@@ -1634,7 +1635,7 @@ resolve_module_symbols(module_entry *module)
           bsym->value = 0;
           if (hsym->flags & DLDF_DEFD)
             {
-              bsym->value = (symvalue)hsym;
+              bsym->value = ptrvma(hsym);
               if (hsym->defined_by)
                 {
                   insert_entry_into_list(&module->useds, hsym->defined_by);
@@ -1723,7 +1724,7 @@ apply_relocations(module_entry *module, int externalp)
                     /* external relocations *only* are performed */
                     if (is_bfd_symbol_defined(bsym))
                         continue;
-                    hsym = (symbol_entry*)(bsym->value);
+                    hsym = (symbol_entry*)vmaptr(bsym->value);
                     ASSERT(hsym);
                     value = value_of_symbol(hsym);
                 }
@@ -1748,7 +1749,7 @@ apply_relocations(module_entry *module, int externalp)
                 dummy_symbol.udata.i = 0;
                 /* Perform relocation */
                 status = bfd_perform_relocation(abfd, &dummy_reloc, 
-                                                (bfd_byte*)p->vma, 
+                                                (bfd_byte*)vmaptr(p->vma), 
                                                 p, NULL, &dummy_string );
                 /* Analyze return code */
                 switch (status)
@@ -1802,11 +1803,11 @@ undo_relocations(module_entry *module)
                 if (is_bfd_symbol_defined(bsym))
                   continue;
                 /* Clear */
-                memset((void*)(p->vma + reloc->address), 0,
+                memset(vmaptr(p->vma + reloc->address), 0,
                        bfd_get_reloc_size(reloc->howto) );
                 /* Attempt to load initial data */
                 bfd_get_section_contents(abfd, p,
-                                         (void*)(p->vma + reloc->address), 
+                                         vmaptr(p->vma + reloc->address), 
                                          reloc->address, 
                                          bfd_get_reloc_size(reloc->howto) );
               }
@@ -1916,7 +1917,7 @@ compute_executable_flag(module_entry *module)
               /* Assume PAGESIZE is a power of two */
               start = (start) & ~(pagesize-1);
               end = (end + pagesize - 1) & ~(pagesize-1);
-              status = mprotect((void*)start, (size_t)end-start, 
+              status = mprotect(vmaptr(start), (size_t)end-start, 
                                 PROT_READ|PROT_WRITE|PROT_EXEC);
 #ifdef DEBUG
               printf("[%x,%x[ protected with status %d -- {%s:%s}\n", 
@@ -2394,7 +2395,7 @@ define_symbol_of_main_program(const char *exec)
                 /* Process indirect symbols */
                 while (bfd_is_ind_section(sym->section) 
                        || (sym->flags & BSF_INDIRECT) )
-                    sym = (asymbol*)(sym->value);
+                    sym = (asymbol*)vmaptr(sym->value);
                 /* Continue if symbol is undefined (should not happen) */
                 if (!is_bfd_symbol_defined(sym))
                     continue;
@@ -2695,7 +2696,7 @@ dld_get_symbol (const char *id)
             while (hsym->flags & DLDF_INDIRECT)
               hsym = (symbol_entry*)vmaptr(hsym->definition);
             if ( !(hsym->flags & DLDF_FUNCTION))
-              ret = (void*)value_of_symbol(hsym);
+              ret = vmaptr(value_of_symbol(hsym));
           }
       }
     CATCH(n)
@@ -2723,7 +2724,7 @@ dld_get_func (const char *id)
             while (hsym->flags & DLDF_INDIRECT)
                 hsym = (symbol_entry*)vmaptr(hsym->definition);
             if (hsym->flags & DLDF_FUNCTION)
-                ret = (void*)value_of_symbol(hsym);
+                ret = vmaptr(value_of_symbol(hsym));
         }
     }
     CATCH(n)
@@ -2747,7 +2748,7 @@ dld_get_bare_symbol (const char *id)
     {
         hsym = lookup_symbol(drop_leading_char(NULL,id));
         if (hsym && (hsym->flags & DLDF_DEFD))
-            ret = (void*)value_of_symbol(hsym);
+            ret = vmaptr(value_of_symbol(hsym));
     }
     CATCH(n)
     {
