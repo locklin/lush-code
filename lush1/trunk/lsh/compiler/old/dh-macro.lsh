@@ -27,103 +27,59 @@
 (mload "dh-util")
 
 (dhm-t lambda(source)
-       (let (((lamb arguments .  body) source)
-	     (symbol-table symbol-table)
-	     (bump-list ())
-	     (arg-list ())
-	     (arg-treetype ())
-	     (tmpnames-seed tmpnames-seed)
-	     (return-type (new dhc-type 'dht-unk))
-	     (treetype ()))
+  (let (((lamb arguments .  body) source)
+        (symbol-table symbol-table)
+        (bump-list ())
+        (arg-list ())
+        (arg-treetype ())
+        (tmpnames-seed tmpnames-seed)
+        (return-type (new dhc-type 'dht-unk))
+        (treetype ()))
 	 
 	 (setq arg-list (all ((arg arguments)) (dhc-add-symbol-table arg 1)))
 	 (setq arg-treetype (all ((symb arg-list) (arg arguments))
-				 (new t-node () :symb:type arg symb)))uy
+                              (new t-node () :symb:type arg symb)))uy
+                              (let ((split ()))
+                                (let ((new-symbol-table symbol-table)
+                                      (symbol-table symbol-table)
+                                      (lex-level (1+ lex-level))
+                                      (bump-list ()))
+                                  (setq treetype (dhc-parse-progn-t body))
+                                  
+                                  (dhc-assign-unify return-type :treetype:type)
+                                  ;; if number, unify the type (if return is an int we want an int)
+                                  (if (==> :treetype:type is-a-number)
+                                      (dhc-unify-types return-type :treetype:type))
+                                  
+                                  (let ((returnpoint (dhc-gather-types return-type t)))
+                                    (each ((arg arg-list))  
+                                      (setq returnpoint
+                                            (nconc returnpoint 
+                                                   (dhc-gather-types :arg:type ()))))
+                                    (each ((point returnpoint))
+                                      (==> point bump-level 0)) )
+                                  (setq split 
+                                        (dhc-split-list bump-list 
+                                                        (lambda (x) (< (==> :x:type bump-level)
+                                                                       lex-level))))
+                                  (setq :treetype:symbol (cadr split))
+                                  (setq split (car split)))
+                                (setq bump-list (append bump-list split)))
+                              
+                              (setq :treetype:type (new dhc-type 'dht-func
+                                                        (all ((symb arg-list)) :symb:type)
+                                                        (all ((symb bump-list)) 
+                                                          :symb:type)
+                                                        return-type))
+                              ;; The variables which are bumped out are stored in symbol of args.
+                              (setq :treetype:tn-list 
+                                    (cons (new t-node arg-treetype (new dhc-type 'dht-unk) 
+                                               () bump-list)
+                                          :treetype:tn-list))
+                              treetype))
 
-
-
-	 (let ((split ()))
-	   (let ((new-symbol-table symbol-table)
-		 (symbol-table symbol-table)
-		 (lex-level (1+ lex-level))
-		 (bump-list ()))
-	     (setq treetype (dhc-parse-progn-t body))
-	     
-	     (dhc-assign-unify return-type :treetype:type)
-	     ;; if number, unify the type (if return is an int we want an int)
-	     (if (==> :treetype:type is-a-number)
-		 (dhc-unify-types return-type :treetype:type))
-	     
-	     (let ((returnpoint (dhc-gather-types return-type t)))
-	       (each ((arg arg-list))  
-		 (setq returnpoint
-		       (nconc returnpoint 
-			      (dhc-gather-types :arg:type ()))))
-	       (each ((point returnpoint))
-		 (==> point bump-level 0)) )
-	     (setq split 
-		   (dhc-split-list bump-list 
-			       (lambda (x) (< (==> :x:type bump-level)
-					      lex-level))))
-	     (setq :treetype:symbol (cadr split))
-	     (setq split (car split)))
-	   (setq bump-list (append bump-list split)))
-	 
-	 (setq :treetype:type (new dhc-type 'dht-func
-				   (all ((symb arg-list)) :symb:type)
-				   (all ((symb bump-list)) 
-				     :symb:type)
-				   return-type))
-	 ;; The variables which are bumped out are stored in symbol of args.
-	 (setq :treetype:tn-list 
-	       (cons (new t-node arg-treetype (new dhc-type 'dht-unk) 
-			  () bump-list)
-		     :treetype:tn-list))
-	 treetype))
-
-;; This function is common to LAMBDA and DE declaration
-(de dhc-comp-func-c(cname source treetype)
-    
-    (let ((c-prologue ())	
-	  (c-declarations ())
-	  (c-statements ())
-	  (c-epilog ())
-	  (tmpnames-seed tmpnames-seed)
-	  (label-seed 0)
-	  ((lam args . body-treetype) :treetype:tn-list))
-      
-      (setq c-prologue 
-	    (dhc-generate-prologue cname treetype))
-      
-      ;; generate return statement
-      (let ((ret (dhc-bumped-block body-treetype ()
-				   (dhc-parse-progn-c (cddr source)
-						      body-treetype ()))))
-	(if (==> :(caddr :treetype:tn-list):type is-a-nil)
-	    (setq c-epilog (nconc1 c-epilog "return 0;"))
-	  (setq c-epilog (nconc1 c-epilog (sprintf "return %s;" ret))) ) )
-      
-      ;; Return program (as a list of lines)
-      (append c-prologue 
-	      (list "{" (sprintf "TRACE_PUSH(\"%s\");" cname) "{")
-	      c-declarations 
-	      c-statements 
-              (list (sprintf "TRACE_POP(\"%s\");" cname))
-	      c-epilog
-	      (list "}" "}") ) ) )
-      
 (dhm-c lambda(source treetype retplace)
-       (let ((lambda-name (sprintf "C_lambda%d" lambda-counter))
-	     (lambda-prefix ""))
-	 (incr lambda-counter)
-	 (if (= (unode-val (scope :treetype:type u-bump)) -1)
-	     (setq lambda-name (concat fname "_" lambda-name))
-	   (setq lambda-prefix "static "))
-	 (setq program (append program 
-			       (cons lambda-prefix 
-				     (dhc-comp-func-c lambda-name
-						      source treetype))))
-	 lambda-name))
+       (error 'lambda-dhm-c "This function should never be called" ()) )
 
 ;;; ------------------------------------------------------------------------
 ;;; DHM FOR TYPE DECLARATIONS AND CONVERSIONS

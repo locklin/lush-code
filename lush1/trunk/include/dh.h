@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.9 2002-07-06 02:07:47 leonb Exp $
+ * $Id: dh.h,v 1.10 2002-07-15 23:22:41 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -165,8 +165,8 @@ typedef struct s_dhrecord
         {DHT_END_CLASS}
 #define DH_NAME(s,cl,sl) \
         {DHT_NAME, 0, 0, s, &(((struct name2(CClass_,cl)*)0)->sl)}
-#define DH_METHOD(n,kname) \
-        {DHT_METHOD,0,n,kname}
+#define DH_METHOD(s,kname) \
+        {DHT_METHOD, 0, 0, s, kname}
 
 #define DH_REFER(kname) \
         {DHT_REFER,0,0,kname}

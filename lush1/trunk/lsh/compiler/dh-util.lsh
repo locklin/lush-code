@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.7 2002-07-15 19:07:03 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.8 2002-07-15 23:22:45 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -245,10 +245,23 @@
   (setq c-epilog (append c-epilog 
                          (dhc-add-strings 'dhc-add-c-epilog l))))
 
-;; Adds string <str> to the generated C file.
+;; Adds string <str> in the program section of 
+;; the generated C file.
 (de dhc-add-program l
-    (setq program (append program
+  (setq program (append program
                           (dhc-add-strings 'dhc-add-program l))))
+
+;; Adds string <str> in the metainformation 
+;; section of the generated C file.
+(de dhc-add-metaprogram l
+  (setq metaprogram (append metaprogram
+                            (dhc-add-strings 'dhc-add-metaprogram l))))
+
+;; Adds string <str> in the initialization function
+;; of the generated C file.
+(de dhc-add-initialization l
+  (setq initialization-calls (append initialization-calls
+                                     (dhc-add-strings 'dhc-add-initialization l))))
 
 
 #? (dhc-add-c-externs <str>)
@@ -257,6 +270,13 @@
 ;; declaring external symbols.
 (de dhc-add-c-externs (str)
   (setq external-symbols (append external-symbols (list str))))
+
+#? (dhc-add-c-metaexterns <str>)
+;; To be used in a <dhm-c> macro.
+;; Adds string <str> to the C code segment
+;; declaring external symbols used in meta information.
+(de dhc-add-c-metaexterns (str)
+  (setq external-metasymbols (append external-metasymbols (list str))))
 
 
 #? (dhc-add-c-header <str>)
@@ -286,8 +306,8 @@
     newsymb))
 
 ;; add dependencies to the current function
-(de dhc-add-c-depends (ty name)
-  (setq c-depends (append c-depends (list (list ty name)))))
+(de dhc-add-c-depends (name)
+  (setq c-depends (cons name c-depends)) )
 
 #? (dhc-class-to-struct-decl <type>)
 ;; Returns a string containing the C structure declaration
@@ -1712,7 +1732,7 @@
             (classdoc (sprintf "Kc_%s_R%08x" 
                                (dhu-name cltype) 
                                (dhu-hash cltype))) )
-       (dhc-add-c-externs (sprintf "extern dhclassdoc_t %s;" classdoc))
+       (dhc-add-c-metaexterns (sprintf "extern dhclassdoc_t %s;" classdoc))
        (dhc-add-c-externs (dhc-class-to-vtable-decl cltype))         
        (dhc-add-c-externs (dhc-class-to-struct-decl cltype)) 
        ;; What if this wasn't a class?
@@ -1725,7 +1745,7 @@
                (classdoc (sprintf "Kc_%s_R%08x" 
                                   (dhu-name cltype) 
                                   (dhu-hash cltype))) )
-           (dhc-add-c-externs
+           (dhc-add-c-metaexterns
             (sprintf "extern dhclassdoc_t %s;" classdoc) ) ) ) )
      (append 
       (list (sprintf "DH_FUNC(%d)," (length arg1)))
@@ -2771,8 +2791,8 @@
           (dhc-add-c-externs
            (sprintf "extern %s;"
                     (dhc-compose-prototype ftype cname) ) )
-          (dhc-add-c-depends "DH" kfunc)
-          (dhc-add-c-externs (sprintf "extern dhdoc_t %s;" kfunc)) )
+          (dhc-add-c-depends kfunc)
+          (dhc-add-c-metaexterns (sprintf "extern dhdoc_t %s;" kfunc)) )
         (when (and ~symbol (<> ctest "") (= mtest ""))
           (dhc-add-c-externs
            (sprintf "extern %s;"
