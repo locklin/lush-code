@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.8 2002-04-26 23:31:45 leonb Exp $
+ * $Id: index.c,v 1.9 2002-04-29 20:00:35 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -134,7 +134,7 @@ index_name(at *p)
       while (*s)
 	s++;
     }
-    if (ind->ndim > 0)
+    if (s[-1] == 'x')
       *--s = 0;
     sprintf(s,">");
   }
@@ -182,26 +182,186 @@ index_listeval(at *p, at *q)
 
 
 static int 
-index_compare(at *p, at *q, int n) 
+index_compare(at *p, at *q, int order) 
 { 
+  struct index *ind1 = p->Object;
+  struct index *ind2 = q->Object;
+  struct idx id1, id2;
+  int type1 = ind1->st->srg.type;
+  int type2 = ind2->st->srg.type;
+  real (*get1)(gptr,int) = *storage_type_getr[type1];
+  real (*get2)(gptr,int) = *storage_type_getr[type2];
+  gptr base1, base2;
+  real r1, r2;
+  int i;
+
+  /* simple */
+  if (order)
+    error(NIL,"Cannot rank matrices or arrays", NIL);
+  if (ind1->ndim != ind2->ndim)
+    return 1;
+  for (i=0; i<ind1->ndim; i++)
+    if (ind1->dim[i] != ind2->dim[i])
+      return 1;
+  if (type1 != type2)
+    if (type1 == ST_AT || type1 == ST_GPTR || 
+        type2 == ST_AT || type2 == ST_GPTR )
+      return 1;
+
+  /* iterate */
+  index_read_idx(ind1,&id1);
+  index_read_idx(ind2,&id2);
+  base1 = IDX_DATA_PTR(&id1);
+  base2 = IDX_DATA_PTR(&id2);
+  begin_idx_aloop2(&id1, &id2, off1, off2) 
+    {
+      switch (type1)
+        {
+        case ST_AT:
+          if (! eq_test( ((at**)base1)[off1], ((at**)base2)[off2] ))
+            goto fail;
+          break;
+        case ST_GPTR:
+          if ( ((gptr*)base1)[off1] !=  ((gptr*)base2)[off2] )
+            goto fail;
+          break;
+        default:
+          r1 = (*get1)(base1, off1);
+          r2 = (*get2)(base2, off2);
+          if (r1 == r2)
+            {
+#if defined(WIN32) && defined(_MSC_VER) && defined(_M_IX86)
+              float delta = (float)(r1 - r2);
+              if (! *(long*)&delta)  // Has to do with NaNs
+#endif
+                break;
+            }
+        fail:
+          index_rls_idx(ind1,&id1);
+          index_rls_idx(ind2,&id2);
+          return 1;
+        }
+    } end_idx_aloop2(&id1, &id2, off1, off2);
+  index_rls_idx(ind1,&id1);
+  index_rls_idx(ind2,&id2);
   return 0; 
 }
+
 
 static unsigned long 
 index_hash(at *p)
 { 
-  return 0; 
+  unsigned long x = 0;
+  struct index *ind = p->Object;
+  struct idx id;
+  int type = ind->st->srg.type;
+  real (*get)(gptr,int) = *storage_type_getr[type];
+  gptr base;
+  real r;
+  /* compute */
+  index_read_idx(ind,&id);
+  base = (char*) IDX_DATA_PTR(&id);
+  begin_idx_aloop1(&id, off) 
+    {
+      x = (x<<1) | ((long)x<0 ? 0:1);
+      switch (type)
+        {
+        case ST_AT:  
+          x ^= hash_value( ((at**)base) [off] );
+          break;
+        case ST_GPTR:
+          x ^= (unsigned long) ( ((gptr*)base) [off] );
+          break;
+        default:
+          r = (*get)(base, off);
+          x ^= ((unsigned long *)&r)[0];
+          if (sizeof(real) >= 2*sizeof(unsigned long))
+            x ^= ((unsigned long *)&r)[1];
+          break;
+        }
+    } end_idx_aloop1(&id, off);
+  index_rls_idx(ind,&id);
+  return x; 
 }
 
+
+/* Scoping functions 
+ * for accessing arrays and matrix using the following syntax:
+ *
+ *  :m:(i j)
+ *  (setq :m:(i j) 3)
+ */
+
 static at *
-index_getslot(at *p, at *q)
+index_getslot(at *obj, at *prop)
 { 
-  return NIL; 
+  int i;
+  at *p, *arg, *ans;
+  struct index *arr = obj->Object;
+  struct class *cl = obj->Class;
+  /* Checks */
+  p = prop->Car;
+  if (!LISTP(p))
+    error(NIL,"Subscript(s) expected with this object",obj);
+  for (i=0; i<arr->ndim; i++)
+    {
+      if (!CONSP(p))
+        error(NIL,"Not enough subscripts for array access",obj);
+      p = p->Cdr;
+    }
+  if (p)
+    error(NIL,"Too many subscripts for array access",obj);
+  /* Access */
+  arg = new_cons(obj,prop->Car);
+  ans = (*cl->list_eval)(obj,arg);
+  UNLOCK(arg);
+  if (prop->Cdr)
+    {
+      p = ans;
+      ans = getslot(p,prop->Cdr);
+      UNLOCK(p);
+    }
+  return ans;
 }
 
 static void 
-index_setslot(at *p, at *q, at *r)
-{ 
+index_setslot(at *obj, at *prop, at *val)
+{
+  int i;
+  at *p, *arg;
+  at **where;
+  struct index *arr = obj->Object;
+  struct class *cl = obj->Class;
+  /* Build listeval argument */
+  p = prop->Car;
+  if (!LISTP(p))
+    error(NIL,"Subscript(s) expected with this object",obj);
+  arg = new_cons(obj,NIL);
+  where = &(arg->Cdr);
+  for (i=0; i<arr->ndim; i++)
+    {
+      if (!CONSP(p)) 
+        error(NIL,"Not enough subscripts for array access",obj);
+      *where = new_cons(p->Car,NIL);
+      where = &((*where)->Cdr);
+      p = p->Cdr;
+    }
+  if (p)
+    error(NIL,"Too many subscripts for array access",obj);
+  /* Access */
+  if (prop->Cdr)
+    {
+      p = (*cl->list_eval)(obj,arg);
+      UNLOCK(arg);
+      setslot(&p, prop->Cdr, val);
+      UNLOCK(p);
+    }
+  else
+    {
+      *where = new_cons(val,NIL);
+      (*cl->list_eval)(obj,arg);
+      UNLOCK(arg);
+    }
 }
 
 /* ------------- THE CLASS ------------- */
