@@ -1,0 +1,156 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: make.lsh,v 1.1 2003-03-17 23:27:15 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "dh-compile.lsh")
+
+
+#? *** Controlling compilation with "make.lsh".
+;; Class <LushMake> provide a means to
+;; compile a set of C sources and load
+;; the resulting object files into lush.
+
+
+(defclass LushMake Object
+  objdir
+  srcdir
+  rules )
+
+#? (new LushMake [<srcdir> [<objdir>]])
+
+(defmethod LushMake lushmake(&optional d1 d2)
+  (setq rules (htable))
+  (setq srcdir (dirname file-being-loaded))
+  (when d1 (==> this setdirs d1 d2)) )
+
+
+#? (==> <lushmake> setdirs <srcdir> [<objdir>])
+
+(defmethod LushMake setdirs(srcd &optional objd create)
+  (when (not (dirp srcdir))
+    (error '==> "Source directory does not exist" dir) )
+  (setq srcdir srcd)
+  (setq objdir (dhc-make-cdir (or objd srcd) t))
+  (when (<> (basename objdir) "C")
+    (setq objdir (concat-fname objdir "C"))
+    (when (not (dirp objdir)) 
+      (printf "*** Warning: Creating %s\n" objdir)
+      (mkdir objdir) ) )
+  (when (getconf "host")
+    (setq objdir (concat-fname objdir (getconf "host")))
+    (when (not (dirp objdir)) 
+      (printf "*** Warning: Creating %s\n" objdir)
+      (mkdir objdir) ) ) )
+
+
+#? (==> <lushmake> rule <target> <deps> [<command>])
+
+(defmethod LushMake rule(target deps &optional command)
+  (when (not objdir) 
+    (==> this setdirs srcdir) )
+  (when (not command)
+    (setq command dhc-make-command) )
+  (setq target (concat-fname objdir target))
+  (setq deps (all ((dep deps)) (concat-fname srcdir dep)))
+  (rules target (list target deps command)) 
+  target )
+
+
+#? (==> <lushmake> rebuild <target>)
+
+(defmethod LushMake rebuild(target &optional done)
+  (when (not (rules target))
+    (error '==> "Do not know how to make" target) )
+  (when (or (not done) (not (done target)))
+    (let (((obj deps cmd) (rules target)))
+      (let ((flag t)
+            (objtime (alist-get 'mtime (fileinfo obj))) )
+        (when objtime
+          (setq flag dhc-make-force)
+          (each ((src deps))
+            (let ((srctime (alist-get 'mtime (fileinfo src))))
+              (when (not srctime)
+                (setq flag (or flag (==> this rebuild src))) )
+              (when (< objtime srctime)
+                (setq flag t) ) ) ) )
+        (when done (done target))
+        (when flag
+          ;; Call compilation command
+          (let ((lushflags ())
+                (vars (htable)) )
+            ;; Define additional variables.
+            (each (((var . def) dhc-make-overrides)) (vars var def))
+            (setq lushflags (dhc-substitute-env dhc-make-lushflags vars))
+            (vars "LUSHFLAGS" (concat lushflags " -I" srcdir))
+            (vars "SRC" (car deps))
+            (vars "OBJ" obj)
+            ;; Execute 
+            (setq cmd (dhc-substitute-env dhc-make-command vars))
+            (printf "%s\n" cmd)
+            (let ((retcode (sys cmd)))
+              (when (<> retcode 0)
+                (error 'dhc-make-o "Compiler returned error code" retcode) ) ) )
+            t ) ) ) ) )
+
+  
+#? (==> <lushmake> make [<...target...>])
+
+(defmethod LushMake make targets
+  (when (not targets)
+    (setq targets (htable-keys rules)) )
+  (let ((done (htable)))
+    (each ((target targets))
+      (==> this rebuild target done) ) )
+  t )
+
+
+#? (==> <lushmake> load [<...targets...>])
+
+(defmethod LushMake load targets
+  (when (not targets)
+    (setq targets (htable-keys rules)) )
+  (let ((done (htable)))
+    (each ((target targets))
+      (==> this rebuild target done) ) )
+  (let ((ext (concat "." (or (getconf "OBJEXT") "o"))))
+    (each ((obj targets))
+      (when (= (right obj (len ext)) ext)
+        (mod-load obj) ) ) ) 
+  t )
+
+
+        
+
+  
+
+    
+    
+  
+  
+  
