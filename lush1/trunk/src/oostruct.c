@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.7 2002-05-07 14:56:53 leonb Exp $
+ * $Id: oostruct.c,v 1.8 2002-05-07 15:13:22 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -417,11 +417,12 @@ DX(xmethods)
   cl = q->Object;
   q = cl->methods;
   while (CONSP(q)) {
-    if (CONSP(q->Car)) {
-      LOCK(q->Car->Car);
-      ans = cons(q->Car->Car,ans);
-      q = q->Cdr;
-    }
+    if (CONSP(q->Car)) 
+      if (q->Car->Cdr && !(q->Car->Cdr->flags & X_ZOMBIE)) {
+        LOCK(q->Car->Car);
+        ans = cons(q->Car->Car,ans);
+      }
+    q = q->Cdr;
   }
   return ans;
 }
@@ -901,7 +902,7 @@ update_hashtable(class *cl)
   int size;
   int hx;
   class *c;
-  at *p, *q;
+  at **pp, *p, *q;
   at *prop, *value;
 
   nclass = 0;
@@ -930,25 +931,36 @@ update_hashtable(class *cl)
   /* Grab the methods */
   c = cl;
   while (c) {
-    p = c->methods;
-    while (CONSP(p)) {
-      prop = p->Car->Car;
-      value = p->Car->Cdr;
-      p = p->Cdr;
-      hx = HASH(prop,size);
-      if ((q = cl->hashtable[hx].symbol))
-	if (q != prop) 
-	  if ((q = cl->hashtable[++hx].symbol))
-	    if (q != prop)
-	      goto restart;
-      ifn (q) {
-	LOCK(prop);
-	LOCK(value);
-	cl->hashtable[hx].symbol = prop;
-	cl->hashtable[hx].function = value;
-	cl->hashtable[hx].sofar = c->slotssofar;
+    pp = &c->methods;
+    while ( (p = *pp) && (p->flags & C_CONS) ) 
+      {
+        prop = p->Car->Car;
+        value = p->Car->Cdr;
+        if (value==0 || value->flags & X_ZOMBIE) 
+          {
+            *pp = p->Cdr;
+            p->Cdr = NIL;
+            UNLOCK(p);
+            continue;
+          }
+        pp = &(p->Cdr);
+        hx = HASH(prop,size);
+        if ((q = cl->hashtable[hx].symbol))
+          if (q != prop) 
+            if ((q = cl->hashtable[++hx].symbol))
+              if (q != prop)
+                if ((q = cl->hashtable[++hx].symbol))
+                  if (q != prop)
+                    goto restart;
+        if (! q) 
+          {
+            LOCK(prop);
+            LOCK(value);
+            cl->hashtable[hx].symbol = prop;
+            cl->hashtable[hx].function = value;
+            cl->hashtable[hx].sofar = c->slotssofar;
+          }
       }
-    }
     c = c->super;
   }
   cl->hashok = 1;
@@ -960,16 +972,19 @@ getmethod(class *cl, at *prop)
   struct hashelem *hx;
   if (! cl->hashok)
     update_hashtable(cl);
-  if (cl->hashtable) 
-  {
-    hx = cl->hashtable + HASH(prop, cl->hashsize);
-    if (hx->symbol==prop)
-      return hx;
-    hx++;
-    if (hx->symbol==prop)
-      return hx;
-  }
-  return NIL;
+  if (! cl->hashtable) 
+    return NIL;
+  hx = cl->hashtable + HASH(prop, cl->hashsize);
+  if (hx->symbol != prop)
+    if ( (++hx)->symbol != prop)
+      if ( (++hx)->symbol != prop)
+        return NIL;
+  if (hx->function && (hx->function->flags & X_ZOMBIE))
+    {
+      clear_hashok(cl);
+      return getmethod(cl, prop);
+    }
+  return hx;
 }
 
 at *
