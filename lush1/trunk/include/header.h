@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.4 2002-04-25 22:54:23 leonb Exp $
+ * $Id: header.h,v 1.5 2002-04-26 23:20:58 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -667,97 +667,7 @@ TLAPI void htable_set(at *htable, at *key, at *value);
 TLAPI at  *htable_get(at *htable, at *key);
 
 
-/* ARRAY.H --------------------------------------------------- */
-
-#ifdef LUSH_TODO
-
-extern TLAPI class array_class;
-extern TLAPI struct alloc_root array_alloc;
-
-TLAPI at *array(int nd, int *d);
-TLAPI int bound(at *p, int n);
-TLAPI int arrayp(at *p);
-TLAPI at *copy_any_matrix(at *p, at *q); 
-TLAPI at *submatrix(at *array, int *mind, int *maxd);
-TLAPI at *mtranspose(at *m, int n1, int n2);
-TLAPI at *transpose(at *m);
-TLAPI at *diagonal(at *m);
-TLAPI at *matrix_rotate(at *m, int n);
-TLAPI at *matrix_split_dim(at *m, int n, int j, int *t);
-TLAPI at *matrix_merge_dim(at *m, int n, int l);
-TLAPI at *munfold_dim(at *atm, int n, int dn, int st);
-TLAPI at *mrep_dim(at *atm, int n, int k);
-
-#endif
-
-
-
-/* MATRIX.H --------------------------------------------------- */
-
-#ifdef LUSH_TODO
-
-extern TLAPI class matrix_class, pmatrix_class;
-extern TLAPI class dmatrix_class, imatrix_class;
-extern TLAPI class bmatrix_class, smatrix_class;
-
-TLAPI at *matrix(int nd, int *d);
-TLAPI at *fmatrix(int nd, int *d);
-TLAPI at *pmatrix(int nd, int *d);
-TLAPI at *dmatrix(int nd, int *d);
-TLAPI at *imatrix(int nd, int *d);
-TLAPI at *bmatrix(int nd, int *d);
-TLAPI at *smatrix(int nd, int *d);
-TLAPI int matrixp(at *p);
-TLAPI real unpack(int b);
-TLAPI unsigned char pack(double x);
-TLAPI int array_elt_size (at *p);
-TLAPI void import_raw_matrix(at *p, FILE *f, int offset);
-TLAPI void import_text_matrix(at *p, FILE *f);
-TLAPI int save_matrix_len (at *p);
-TLAPI void save_matrix(at *p, FILE *f);
-TLAPI void export_matrix(at *p, FILE *f);
-TLAPI void save_ascii_matrix(at *p, FILE *f); 
-TLAPI void export_ascii_matrix(at *p, FILE *f); 
-TLAPI at *load_matrix(FILE *f);
-TLAPI at *map_matrix(FILE *f); 
-TLAPI float *get_std_vector(at *p, int n);
-TLAPI void  *get_std_matrix(at *p, int m, int n);
-TLAPI float *get_nr0_vector(at *p, int *psize);
-TLAPI float **get_nr0_matrix(at *p, int *ps0, int *ps1);
-TLAPI float *get_nr1_vector(at *p, int *psize);
-TLAPI float **get_nr1_matrix(at *p, int *ps0, int *ps1);
-TLAPI double *get_nr0_dvector(at *p, int *psize);
-TLAPI double **get_nr0_dmatrix(at *p, int *ps0, int *ps1);
-TLAPI double *get_nr1_dvector(at *p, int *psize);
-TLAPI double **get_nr1_dmatrix(at *p, int *ps0, int *ps1);
-TLAPI short *get_nr0_svector(at *p, int *psize);
-TLAPI short **get_nr0_smatrix(at *p, int *ps0, int *ps1);
-TLAPI short *get_nr1_svector(at *p, int *psize);
-TLAPI short **get_nr1_smatrix(at *p, int *ps0, int *ps1);
-TLAPI int *get_nr0_ivector(at *p, int *psize);
-TLAPI int **get_nr0_imatrix(at *p, int *ps0, int *ps1);
-TLAPI int *get_nr1_ivector(at *p, int *psize);
-TLAPI int **get_nr1_imatrix(at *p, int *ps0, int *ps1);
-TLAPI unsigned char *get_nr0_bvector(at *p, int *psize);
-TLAPI unsigned char **get_nr0_bmatrix(at *p, int *ps0, int *ps1);
-TLAPI unsigned char *get_nr1_bvector(at *p, int *psize);
-TLAPI unsigned char **get_nr1_bmatrix(at *p, int *ps0, int *ps1);
-
-#endif
-
-/* FMATOPS.H ---------------------------------------------------- */
-
-#ifdef LUSH_TODO
-
-TLAPI struct array *check_matrix(at *p, int *n, int *m);
-TLAPI struct array *answer_matrix(at **ans, int *n, int *m);
-TLAPI struct array *check_vector(at *p, int *n);
-TLAPI struct array *answer_vector(at **ans, int *n);
-
-#endif
-
 /* CLASSIFY.H --------------------------------------------------- */
-
 
 TLAPI real mean(at *l);
 TLAPI real sdev(at *l);
@@ -840,6 +750,7 @@ enum serialize_action {
 
 TLAPI int bwrite(at *p, FILE *f);
 TLAPI at *bread(FILE *f, at *opt);
+
 /* serialization functions */
 TLAPI void serialize_char(char *data, int code);
 TLAPI void serialize_short(short int *data, int code);
@@ -851,7 +762,7 @@ TLAPI void serialize_real(real *data, int code);
 TLAPI void serialize_float(float *data, int code);
 TLAPI void serialize_double(double *data, int code);
 TLAPI int  serialize_atstar(at **data, int code);
-
+TLAPI FILE *serialization_file_descriptor(int code);
 
 /* NAN.H -------------------------------------------------------- */
 
@@ -1110,6 +1021,33 @@ TLAPI void save_ascii_matrix(at *p, FILE *f);
 TLAPI void export_ascii_matrix(at *p, FILE *f);
 TLAPI at *load_matrix(FILE *f);
 
+
+/* Interfaces (SN/TL compatible) */
+#ifdef LUSH_TODO
+TLAPI float *get_std_vector(at *p, int n);
+TLAPI void  *get_std_matrix(at *p, int m, int n);
+TLAPI float *get_nr0_vector(at *p, int *psize);
+TLAPI float **get_nr0_matrix(at *p, int *ps0, int *ps1);
+TLAPI float *get_nr1_vector(at *p, int *psize);
+TLAPI float **get_nr1_matrix(at *p, int *ps0, int *ps1);
+TLAPI double *get_nr0_dvector(at *p, int *psize);
+TLAPI double **get_nr0_dmatrix(at *p, int *ps0, int *ps1);
+TLAPI double *get_nr1_dvector(at *p, int *psize);
+TLAPI double **get_nr1_dmatrix(at *p, int *ps0, int *ps1);
+TLAPI short *get_nr0_svector(at *p, int *psize);
+TLAPI short **get_nr0_smatrix(at *p, int *ps0, int *ps1);
+TLAPI short *get_nr1_svector(at *p, int *psize);
+TLAPI short **get_nr1_smatrix(at *p, int *ps0, int *ps1);
+TLAPI int *get_nr0_ivector(at *p, int *psize);
+TLAPI int **get_nr0_imatrix(at *p, int *ps0, int *ps1);
+TLAPI int *get_nr1_ivector(at *p, int *psize);
+TLAPI int **get_nr1_imatrix(at *p, int *ps0, int *ps1);
+TLAPI unsigned char *get_nr0_bvector(at *p, int *psize);
+TLAPI unsigned char **get_nr0_bmatrix(at *p, int *ps0, int *ps1);
+TLAPI unsigned char *get_nr1_bvector(at *p, int *psize);
+TLAPI unsigned char **get_nr1_bmatrix(at *p, int *ps0, int *ps1);
+#endif
+
 /* 
  * Loops over all elements of idx <idx>
  * The variable <ptr> must be a pointer
@@ -1254,6 +1192,8 @@ TLAPI at *load_matrix(FILE *f);
     } while (_j2_<(idx2)->ndim); 					     \
   } 									     \
 }
+
+
 
 
 /* CHECK_FUNC.H ---------------------------------------------- */

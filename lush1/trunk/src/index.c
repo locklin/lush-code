@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.6 2002-04-26 22:19:58 leonb Exp $
+ * $Id: index.c,v 1.7 2002-04-26 23:21:00 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -124,7 +124,7 @@ index_name(at *p)
   ind = p->Object;
   s = string_buffer;
   if (ind->flags & IDF_UNSIZED) {
-    sprintf(s, "::%s%d:<unsized>", nameof(p->Class->classname), ind->ndim);
+    sprintf(s, "::%s:<unsized>", nameof(p->Class->classname));
   } else {
     sprintf(s, "::%s%d:<", nameof(p->Class->classname), ind->ndim);
     while (*s)
@@ -134,7 +134,8 @@ index_name(at *p)
       while (*s)
 	s++;
     }
-    *--s = 0;
+    if (ind->ndim > 0)
+      *--s = 0;
     sprintf(s,">");
   }
   return string_buffer;
@@ -615,7 +616,7 @@ index_undimension(at *p)
       free(ind->nr1);
 
   ind->flags = IDF_UNSIZED;
-  /* ind->offset = 0; */
+  ind->ndim = -1;
   ind->nr0 = NULL;
   ind->nr1 = NULL;
 }
@@ -1593,7 +1594,7 @@ mode_check(at *p, int *size_p, int *elem_p)
   st = ind->st;
   type = st->srg.type;
   elsize = storage_type_size[type];
-  size = 1;
+  size = ((ind->ndim >= 0) ? 1 : 0);
   for (i=0; i<ind->ndim; i++) 
     size *= ind->dim[i];
   *size_p = size;
@@ -1650,10 +1651,12 @@ save_matrix_len(at *p)
   mode_check(p, &size, &elsize);
   ind = p->Object;
   ndim = ind->ndim;
-  if (ndim <= 3)
-    return elsize * size + 5*sizeof(int);
+  if (ind->flags & IDF_UNSIZED)
+    return 2 * sizeof(int);
+  else if (ndim==1 || ndim==2)
+    return elsize * size + 5 * sizeof(int);
   else
-    return elsize * size + (ndim+2)*sizeof(int);
+    return elsize * size + (ndim+2) * sizeof(int);
 }
 
 
@@ -1669,8 +1672,9 @@ format_save_matrix(at *p, FILE *f, int h)
   struct idx id;
   int magic, type, elsize;
   /* validation */  
+  if (! EXTERNP(p, &index_class))
+    error(NIL,"not an index",p);
   compatible_p();
-  check_sized_index(p);
   ind = p->Object;
   type = ind->st->srg.type;
   elsize = storage_type_size[type];
@@ -1691,21 +1695,28 @@ format_save_matrix(at *p, FILE *f, int h)
   FMODE_BINARY(f);
   if( h )
     {
+      /* magic, ndim, dimensions */
       int j;
+      int ndim = ((ind->flags & IDF_UNSIZED) ? -1 : ind->ndim);
       write4(f, magic);
-      write4(f, ind->ndim);
-      for (j = 0; j < ind->ndim; j++)
+      write4(f, ndim);
+      for (j = 0; j < ndim; j++)
 	write4(f, ind->dim[j]);
-      while (j++ < 3)
-	write4(f, 1);	/* SN1 compatibility */
+      /* sn1 compatibility */
+      if (ndim==1 || ndim==2)
+        while (j++ < 3)
+          write4(f, 1);
     }
   /* iterate */
-  index_read_idx(ind,&id);
-  begin_idx_aloop1(&id, off) {
-    char *p = (char*)(id.srg->data) + elsize * (id.offset + off);
-    fwrite(p, elsize, 1, f);
-  } end_idx_aloop1(&id, off);
-  index_rls_idx(ind,&id);
+  if (! (ind->flags & IDF_UNSIZED))
+    {
+      index_read_idx(ind,&id);
+      begin_idx_aloop1(&id, off) {
+        char *p = (char*)(id.srg->data) + elsize * (id.offset + off);
+        fwrite(p, elsize, 1, f);
+      } end_idx_aloop1(&id, off);
+      index_rls_idx(ind,&id);
+    }
   test_file_error(f);
 }
 
@@ -1774,8 +1785,11 @@ format_save_ascii_matrix(at *p, FILE *f, int h)
   gptr base;
   /* validation */  
   compatible_p();
-  check_sized_index(p);
+  if (! EXTERNP(p, &index_class))
+    error(NIL,"not an index",p);
   ind = p->Object;
+  if (ind->flags & IDF_UNSIZED)
+    error(NIL,"Ascii matrix format does not support unsized matrices",p);
   type = ind->st->srg.type;
   getf = storage_type_getf[type];
   /* header */
@@ -1872,19 +1886,21 @@ import_raw_matrix(at *p, FILE *f, int offset)
   int size, elsize, rsize;
   char *pntr;
   int contiguous;
+
   /* validate */
   mode_check(p, &size, &elsize);
   contiguous = contiguity_check(p);
   ind = p->Object;
-  switch(ind->st->srg.type)
-    {
-    case ST_AT:
-    case ST_GPTR:
-      error(NIL,"Cannot import a matric file into this storage",ind->atst);
-    }
+  if (ind->flags & IDF_UNSIZED)
+    return;
+  if (ind->st->srg.type == ST_AT ||
+      ind->st->srg.type == ST_GPTR )
+    error(NIL,"Cannot read data for this storage type",ind->atst);
+
   /* skip */
   if (fseek(f, offset, SEEK_CUR) < 0)
     test_file_error(NIL);
+
   /* read */
   index_write_idx(ind, &id);
   pntr = IDX_DATA_PTR(&id);
@@ -1955,12 +1971,11 @@ import_text_matrix(at *p, FILE *f)
   ind = p->Object;
   type = ind->st->srg.type;
   setf = storage_type_setf[type];
-  switch(type)
-    {
-    case ST_AT:
-    case ST_GPTR:
-      error(NIL,"Cannot import a matric file into this storage",ind->atst);
-    }
+  if (ind->flags & IDF_UNSIZED)
+    return;
+  if (ind->st->srg.type == ST_AT ||
+      ind->st->srg.type == ST_GPTR )
+    error(NIL,"Cannot read data for this storage type",ind->atst);
 
   /* load */
   index_write_idx(ind, &id);
@@ -2030,18 +2045,26 @@ load_matrix_header(FILE *f,
       ndim = read4(f);
       if (swapflag) 
         ndim = SWAP(ndim);
-      if (ndim < 1 || ndim > MAXDIMS) 
+      if (ndim == -1)
+        break;
+      if (ndim < 0 || ndim > MAXDIMS)
         goto trouble;
       for (i = 0; i < ndim; i++) {
         dim[i] = read4(f);
         if (swapflag)
           dim[i] = SWAP(dim[i]);
-        if (dim[i]<1)
+        if (dim[i] < 1)
           goto trouble;
       }
-      while (i++ < 3)
-        if (read4(f) != (swapflag ? SWAP(1) : 1)) 
-          goto trouble;
+      /* sn1 compatibility */
+      if (ndim == 1 || ndim == 2)
+        while (i++ < 3) {
+          dim[i] = read4(f);
+          if (swapflag)
+            dim[i] = SWAP(dim[i]);
+          if (dim[i] != 1)
+            goto trouble;
+        }
       break;
     case SWAP(ASCII_MATRIX):
       magic = SWAP(magic);
@@ -2049,7 +2072,7 @@ load_matrix_header(FILE *f,
     case ASCII_MATRIX:
       if (fscanf(f, " %d", &ndim) != 1) 
         goto trouble;
-      if (ndim < 1 || ndim > MAXDIMS) 
+      if (ndim < 0 || ndim > MAXDIMS) 
         goto trouble;
       for (i = 0; i < ndim; i++)
         if (fscanf(f, " %d ", &(dim[i])) != 1) 
@@ -2109,26 +2132,29 @@ load_matrix(FILE *f)
 	  "internal error: unhandled format",NIL);
   }
   /* Import */
-  if (magic==ASCII_MATRIX)
-    import_text_matrix(ans,f);
-  else
-    import_raw_matrix(ans,f,0);
-  /* Swap when needed */
-  if (swapflag) {
-    struct index *ind;
-    struct idx id;
-    int size, elsize;
-    char *pntr;
-    mode_check(ans, &size, &elsize);
-    if (elsize > 1) 
-      {
-        ind = ans->Object;
-        index_write_idx(ind, &id);
-        pntr = IDX_DATA_PTR(&id);
-        swap_buffer(pntr, size, elsize);
-        index_rls_idx(ind,&id);
+  if (ndim >= 0) 
+    {
+      if (magic==ASCII_MATRIX)
+        import_text_matrix(ans,f);
+      else
+        import_raw_matrix(ans,f,0);
+      /* Swap when needed */
+      if (swapflag) {
+        struct index *ind;
+        struct idx id;
+        int size, elsize;
+        char *pntr;
+        mode_check(ans, &size, &elsize);
+        if (elsize > 1) 
+          {
+            ind = ans->Object;
+            index_write_idx(ind, &id);
+            pntr = IDX_DATA_PTR(&id);
+            swap_buffer(pntr, size, elsize);
+            index_rls_idx(ind,&id);
+          }
       }
-  }
+    }
   return ans;
 }
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.4 2002-04-26 20:02:37 leonb Exp $
+ * $Id: binary.c,v 1.5 2002-04-26 23:21:00 leonb Exp $
  **********************************************************************/
 
 
@@ -296,16 +296,17 @@ sweep(at *p, int code)
     {
       struct index *ind = p->Object;
       if (ind->st->srg.type == ST_AT)
-        {
-          at** data;
-          struct idx id;
-          index_read_idx(ind, &id);
-          data = IDX_DATA_PTR(&id);
-          begin_idx_aloop1(&id, off) {
-            sweep(data[off], code);
-          } end_idx_aloop1(&id, off);
-          index_rls_idx(ind, &id);
-        }
+        if (! (ind->flags & IDF_UNSIZED))
+          {
+            at** data;
+            struct idx id;
+            index_read_idx(ind, &id);
+            data = IDX_DATA_PTR(&id);
+            begin_idx_aloop1(&id, off) {
+              sweep(data[off], code);
+            } end_idx_aloop1(&id, off);
+            index_rls_idx(ind, &id);
+          }
     }
   
   else if (   p->Class == &de_class
@@ -874,28 +875,34 @@ local_write(at *p)
       return 0;
     }
   
-  if (arrayp(p))
+  if (p->Class == &index_class)
     {
       int i;
       struct index *arr = p->Object;
-      write_card8(TOK_ARRAY);
-      write_card24(arr->ndim);
-      for (i=0; i<arr->ndim; i++)
-	write_card32(arr->dim[i]);
-      return 0;
-    }
-  
-  if (matrixp(p))
-    {
-      struct index *arr = p->Object;
-      write_card8(TOK_MATRIX);
-      in_bwrite += save_matrix_len(p);
-      if (arr->st->srg.type == ST_GPTR)
-        error(NIL,"Cannot save a gptr matrix",p);
-      if (arr->st->srg.type == ST_GPTR)
-        error(NIL,"Cannot save a lisp array",p);
-      save_matrix(p, fout);
-      return 1;
+      if (arr->st->srg.type == ST_AT)
+        {
+          /* THIS IS AN ARRAY */
+          int ndim = arr->ndim;
+          if (arr->flags & STF_UNSIZED)
+            ndim = 0xFFFFFF;
+          write_card8(TOK_ARRAY);
+          write_card24(ndim);
+          for (i=0; i<ndim; i++)
+            write_card32(arr->dim[i]);
+          return 0;
+        }
+      else
+        {
+          /* THIS IS A MATRIX */
+          write_card8(TOK_MATRIX);
+          in_bwrite += save_matrix_len(p);
+          if (arr->st->srg.type == ST_GPTR)
+            error(NIL,"Cannot save a gptr matrix",p);
+          if (arr->st->srg.type == ST_GPTR)
+            error(NIL,"Cannot save a lisp array",p);
+          save_matrix(p, fout);
+          return 1;
+        }
     }
   
   if (p->Class == &de_class)
@@ -1092,7 +1099,6 @@ local_bread_cclass(at **pp)
 }
 
 
-
 static void
 local_bread_array(at **pp)
 {
@@ -1102,23 +1108,30 @@ local_bread_array(at **pp)
   int i, size, ndim;
   
   ndim = read_card24();
-  size = 1;
-  if (ndim>MAXDIMS)
-    error(NIL,"corrupted binary file (too many dims in array)",NIL);
-  for (i=0; i<ndim; i++) {
-    dim[i] = read_card32();
-    size *= dim[i];
-  } 
-  *pp = AT_matrix(ndim,dim);
-  ind = (*pp)->Object;
-  if (ndim < 0) return;
-  index_write_idx(ind, &id);
-  pp = IDX_DATA_PTR(&id);
-  for (i=0; i<size; i++)
-    local_bread(pp++, NIL);
-  index_rls_idx(ind,&id);
+  if (ndim == 0xFFFFFF) 
+    {
+      /* THIS IS AN UNSIZED ARRAY */
+      at *atst = new_AT_storage();
+      *pp = new_index(atst);
+      UNLOCK(atst);
+    }
+  else if (ndim < MAXDIMS)
+    {
+      /* THIS IS A NORMAL ARRAY */
+      size = 1;
+      for (i=0; i<ndim; i++) 
+        size *= ( dim[i] = read_card32() );
+      *pp = AT_matrix(ndim,dim);
+      ind = (*pp)->Object;
+      index_write_idx(ind, &id);
+      pp = IDX_DATA_PTR(&id);
+      for (i=0; i<size; i++)
+        local_bread(pp++, NIL);
+      index_rls_idx(ind,&id);
+    }
+  else
+    error(NIL,"corrupted binary file",NIL);
 }
-
 
 
 static void 
