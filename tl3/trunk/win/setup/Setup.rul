@@ -1,0 +1,244 @@
+/*----------------------------------------------------------------------------*/
+/* WINTL3 INSTALLATION SCRIPT                                                 */
+/*----------------------------------------------------------------------------*/
+
+declare
+
+// Constant declarations.
+#define SPACE_REQUIRED_TL3      4200000
+#define APP_NAME                "WinTL3"
+#define PROGRAM_FOLDER_NAME     "WinTL3"
+#define APPBASE_PATH            "Program Files\\WinTL3\\WinTL3\\"
+#define COMPANY_NAME            "Neuristique"
+#define PRODUCT_NAME            "WinTL3"
+#define PRODUCT_VERSION         "1.6"
+#define DEINSTALL_KEY           "WinTL3DeinstKey"
+#define UNINSTALL_NAME          "WinTL3"
+#define PRODUCT_KEY             "wintl3.exe"
+#define WINTL3_KEY		"\\Software\\Neuristique\\WinTL3"
+#define MSDEVDIR5_KEY		"\\Software\\Microsoft\\DevStudio\\5.%d\\Directories"
+#define MSDEVDIR5_NAME		"ProductDir"
+
+
+        // Global variable declarations.
+        STRING  svFolder, svDir, szMsg, szFileSet, szTitle, svUninstLogFile;
+        STRING  svTarget, szProgram, szParam, szTemp, szAppPath;
+  	  STRING  svMsdev, svRegKey, svKey;
+        BOOL    bSpaceOk, bWinNT, bIsShellExplorer;
+	  BOOL    bOk, bTrouble;
+        NUMBER  nResult, nvType, nvSize, nvDx, nvDy, nVer;
+
+        // Function declarations.
+        prototype CheckString(STRING);
+
+program
+
+StartHere:
+        // Set up the installation screen.
+        Disable( BACKGROUND );
+        Enable( BITMAP256COLORS );
+        Enable( INDVFILESTATUS );
+        SetTitle( "Installing " + APP_NAME, 24, WHITE );
+        SetColor( BACKGROUND, BK_BLUE ); // Dark blue.
+        SetColor( STATUSBAR, BLUE );     // Bright blue.
+        SetTitle( "Setup", 0, BACKGROUNDCAPTION ); // Caption bar text.
+        Enable( BACKGROUND );
+        Enable( DIALOGCACHE );
+
+   // Test target system for proper configuration.
+        // Set installation info.
+        InstallationInfo( COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION, PRODUCT_KEY );
+        // Check screen resolution.
+        GetExtents( nvDx, nvDy );
+        if (nvDy < 480) then
+           MessageBox( "This program requires VGA or better resolution.", WARNING );
+           exit;
+        endif;
+        // Determine the target system's operating system.
+        GetSystemInfo( OS, nResult, szTemp );
+        bWinNT  = FALSE;
+        bIsShellExplorer = FALSE;
+	  if (nResult = IS_WIN32S) then
+	   MessageBox("This program requires Windows 95 or Windows NT", WARNING);
+	   exit;
+        endif;
+        if (nResult =  IS_WINDOWSNT) then
+           bWinNT = TRUE; // Running Windows NT.
+           // Check to see if NT is using EXPLORER Shell
+           if( QueryShellMgr( szTemp ) = 0 ) then
+               if( StrCompare( szTemp, "EXPLORER.EXE" ) = 0 ) then
+                   bIsShellExplorer = TRUE;
+               endif;
+           endif;
+        endif;
+
+   // Ask user for a destination location for the installation.
+   GetTargetDirectory:
+        svTarget = TARGETDISK ^ APPBASE_PATH;
+        szTitle = "Choose Destination Directory";
+        szMsg = "Setup will install WinTL3 in the following directory\n\n" +
+            "To install in this directory, click Next\n\n" +
+            "To install in a different directory, click Browse " +
+            "and select another directory.\n\n" +
+            "To exit the Setup program, click Cancel.";
+        Disable( BACKBUTTON );
+        nResult = AskDestPath(szTitle, szMsg, svTarget, 0);
+        Enable( BACKBUTTON );
+
+   // Perform space check of target drive.
+        bSpaceOk = TRUE;
+        nResult = SPACE_REQUIRED_TL3;
+        if (GetDiskSpace( svTarget ) < nResult) then
+           bSpaceOk = FALSE;
+           szMsg = "There is not enough space available on the disk\n" +
+                   "'" + svTarget + "' \n" +
+                   "Please free up some space or change the target " +
+                   "location to a different disk.";
+           MessageBox( szMsg, WARNING );
+           goto GetTargetDirectory;
+        endif;
+
+   // Set the App Paths key for the main program.
+        szAppPath = svTarget ^ "bin";
+        RegDBSetItem( REGDB_APPPATH, szAppPath );
+        szProgram = svTarget ^ "bin\\wintl3.exe";
+        RegDBSetItem( REGDB_APPPATH_DEFAULT, szProgram );
+
+   // Set files to transfer
+        szFileSet = "General";
+        TARGETDIR = svTarget;
+        // Define the file set.
+        FileSetBeginDefine( szFileSet );
+           SetStatusWindow( -1, "Copying program files..." );
+           CompressGet( "DATA.Z", "wintl3\\*.*", INCLUDE_SUBDIR );
+        TARGETDIR = WINSYSDIR;
+        CompressGet( "DATA.Z", "shared\\*.*", SHAREDFILE|COMP_UPDATE_VERSION);
+        FileSetEndDefine( szFileSet );
+
+   // Remove old TL3 library files
+     	  if (ExistsDir(svTarget) = EXISTS) then
+          DeleteDir(svTarget ^ "lib", ALLCONTENTS);
+          DeleteDir(svTarget ^ "libb", ALLCONTENTS);
+     	  endif;
+   
+   // Prepare InstallShield to record deinstallation information.
+     	  DeinstallStart( svTarget^"uninstall", svUninstLogFile, DEINSTALL_KEY, 0 );
+     	  RegDBSetItem( REGDB_UNINSTALL_NAME, UNINSTALL_NAME );
+
+   // Perform file transfer
+        // Set up progress indicator and information gauge.
+        Disable( DIALOGCACHE );
+        Enable( STATUSDLG );
+        StatusUpdate( ON, 180 );
+        SetStatusWindow( 0, "Copying program files..." );
+        nResult = FileSetPerformEz( szFileSet, 0 );
+        switch (nResult)
+        case FS_DONE: // Successful completion.
+        case FS_CREATEDIR: // Create directory error.
+             MessageBox( "Unable to create a directory under " + TARGETDIR + "."+
+                         "Please check write access to this directory.", SEVERE );
+             exit;
+        default: // Group all other errors under default label.
+             NumToStr( szTemp, nResult );
+             MessageBox( "General file transfer error."+
+                          "Please check your target location and try again."+
+                          "\n\n Error Number:"+szTemp +
+                          "\n Related File: "+ERRORFILENAME,
+                          SEVERE );
+             exit;
+        endswitch;
+        Delay( 1 );
+        Disable( STATUSDLG );
+
+   // Set TL3 and TLOpen information
+        RegDBSetDefaultRoot(HKEY_CURRENT_USER);
+        RegDBSetKeyValueEx(WINTL3_KEY^"TLOpen","Path",REGDB_STRING,svTarget,-1);
+
+   // Copy wizard into MSDEV directory
+        if (TRUE = TRUE) then
+          szMsg = "";
+          bOk = FALSE;
+          bTrouble = FALSE;
+          SRCDIR = svTarget ^ "open\\msvc";
+          RegDBSetDefaultRoot(HKEY_LOCAL_MACHINE);
+          for nVer=0 to 4
+            Sprintf(svRegKey,MSDEVDIR5_KEY,nVer);
+            nResult = RegDBGetKeyValueEx(svRegKey,MSDEVDIR5_NAME,nvType,svMsdev,nvSize);
+            if (nResult >= 0) then
+              TARGETDIR = svMsdev ^ "SharedIDE" ^ "Template";
+              nResult = -1;
+              Sprintf(szTemp, "MSVC 5.%d\n", nVer);
+              if (ExistsDir(TARGETDIR) = EXISTS) then
+                nResult = CopyFile("TLOpen.awx", "TLOpen.awx");
+              endif;
+              if (nResult < 0) then
+                szMsg = szMsg + "- Unable to copy 'TLOpen.awx' into " + szTemp;
+                bTrouble = TRUE;
+              else
+                szMsg = szMsg + "- Successfully installed wizard into " + szTemp;
+                bOk = TRUE;
+              endif;
+            endif;	
+          endfor;
+
+          if (bOk = FALSE) then
+            szMsg = "Setup was unable to locate Visual C++ 5.x on your system\n" +
+                    "The TL/Open wizard has not been installed.";
+            MessageBox(szMsg, WARNING);
+          endif;
+          if (bTrouble = TRUE) then
+            szMsg = "Setup encountered problems installing the TL/Open wizard\n" + szMsg;
+            MessageBox(szMsg, WARNING);
+          endif;
+          RegDBSetDefaultRoot(HKEY_CURRENT_USER);
+        endif;
+
+   // Create program folders and icons
+        SetStatusWindow( 95, "Creating Program Folder and Icons...." );
+        if (bWinNT && !bIsShellExplorer ) then
+           AppCommand( PROGMAN, CMD_RESTORE );
+        endif;
+        svFolder = PROGRAM_FOLDER_NAME;
+        CreateProgramFolder( svFolder );
+        Delay(1);
+        // WinTL3 
+        szProgram = svTarget ^ "bin\\wintl3.exe";
+        LongPathToQuote( szProgram, TRUE );
+        LongPathToShortPath( szProgram );
+        AddFolderIcon( svFolder, "WinTL3", szProgram, svTarget, 
+                       "", 0, "", REPLACE);
+    // Help
+        szProgram = svTarget ^ "bin\\wintl3.hlp";
+        LongPathToQuote( szProgram, TRUE );
+        LongPathToShortPath( szProgram );
+        AddFolderIcon( svFolder, "WinTL3 Help", szProgram, svTarget, 
+                       "", 0, "", REPLACE);
+    // Uninstall
+        if (bWinNT && !bIsShellExplorer ) then
+           szProgram = UNINST;
+           LongPathToShortPath( szProgram );
+           LongPathToShortPath( svUninstLogFile );
+           szProgram = szProgram + " -f" + svUninstLogFile;
+           AddFolderIcon( svFolder, "Uninstall WinTL3", szProgram, WINDIR,
+                          "", 0, "", REPLACE );
+        endif;
+        ShowProgramFolder( svFolder, SW_SHOW );
+        Delay(1);
+
+   // Announce setup complete and offer to reboot when needed.
+        SetStatusWindow( 100, "Installation complete." );
+        if (BATCH_INSTALL = TRUE) then
+          szMsg = "Some files could not be installed because they are " +
+                  "currently in use by other programs in the system.  " +
+                  "To allow proper operation of WinTL3, you should restart " +
+                  "the system at this time.";
+          CommitSharedFiles(0);
+          RebootDialog("Restart Windows", szMsg, SYS_BOOTMACHINE);
+        else
+          szMsg = "       Setup is complete.       ";
+          MessageBox( szMsg, INFORMATION );
+        endif;
+        exit;
+
+
+

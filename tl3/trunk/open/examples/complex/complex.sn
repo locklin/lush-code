@@ -1,0 +1,420 @@
+#? **** File "complex.sn".
+;; This file loads a TL/Open extension that extends
+;; the TLisp interpreter with complex numbers
+;;
+;; The first line of this file enables a test of the
+;; function implemented by the TL/Open extension file.
+;;
+;; The following lines locate the TL/Open module
+;; with suffix <".dll"> under Windows and <".so"> under Unix.
+;; This file is then loaded using function <mod-load>.
+
+
+;; --------- Enable/disable test code
+
+(setq test-p t)
+
+
+;; ---------- Enable/disable redefinition of basic operators
+
+(setq redefine-operators-p t)
+
+
+
+;; --------- Locate and load DLL
+
+(let* ((here (dirname file-being-loaded))
+       (base (basename file-being-loaded "sn")) )
+  ;; Search along path
+  (let ((oldpath (path)))
+    (path (concat-fname here)
+	  (concat-fname here "Debug")
+	  (concat-fname here "Release") 
+	  (concat-fname tl3dir "bin") )
+    (setq here (filepath base ".so|.sl|.dll"))
+    (apply path oldpath ) )
+  ;; Go
+  (when ~here 
+    (error 'mod-load "TL/Open extension not found" base) )
+  (when wintl3p 
+    (setq here (upcase here)) )
+  (when (not (member here (mod-list)))
+    (printf " [+%s]\n" base)
+    (mod-load here) ) )
+
+
+
+
+;; ---------- Document and test new function
+
+
+#? *** Complex Numbers.
+;; A complex number can be a regular TLisp number
+;; (when the imaginary part is null) or an instance of class
+;; <|COMPLEX|> (when the imaginary part is not null). 
+;;
+;; Complex numbers are printed as <"#{<re>,<im>}">.
+;; You can also directly type complex numbers
+;; thanks to macro character <#{>.
+
+
+
+
+
+#? ** Creating and Accessing Complex Numbers.
+;; The following functions provide ways to create
+;; complex numbers and perform simple operations
+;; (computing the conjugate, computing the norm,
+;; computing polar representation.
+
+#? (complex <re> <im>)
+;;.FILE complex.dll
+;; Returns a new complex number whose real part <re> and
+;; whose imaginary part <im>. 
+;;
+;; A complex number can be a regular TLisp number
+;; (when the imaginary part is null) or an instance of class
+;; <|COMPLEX|> (when the imaginary part is not null). 
+;; These instances are printed as <"#{<re>,<im>}">.
+;;
+;; As a consequence, regular TLisp numbers are accepted
+;; whereever a complex number is expected.
+;;
+;;.EX (complex 1 0)
+;;.EX (complex 0 1)
+
+
+#?  #{<re>,<im>}
+;;.SEE (complex <re> <im>)
+;; Macro character <#{> allows you to directly type
+;; a complex number just as they are printed.
+;;.EX #{2,3}
+
+(dmc |#{|
+  (let ((re ()) (im ()))
+    (skip-char " \t") ;; skip blank
+    (setq re (val (read-string "-+.0-9Ee")))
+    (when (not re)
+      (error "Illegal complex number (real part expected)") )
+    (skip-char " \t") ;; skip blank
+    (when (<> (read-string 1) ",")
+      (error "Illegal complex number (comma expected)") )
+    (skip-char " \t") ;; skip blank
+    (setq im (val (read-string "-+.0-9Ee")))
+    (when (not im)
+      (error "Illegal complex number (imaginary part expected)") )
+    (skip-char " \t") ;; skip blank
+    (when (<> (read-string 1) "}")
+      (error "Illegal complex number (right bracket expected)") )
+    ;; Must return a list like all macrochars starting with <#>.
+    (list (complex re im)) ) )
+
+(when test-p ;; ------------------ TEST
+  (when (or (<> #{2,3} (complex 2 3))
+	    (<> #{2.01,0} 2.01))
+    (error "Test of macro character <#{> failed\n") ) )
+
+
+#? (complexp <a>)
+;; Tests whether <a> is a complex number.
+;; Recall that a regular number is a special case
+;; of complex number.
+;;.EX (complexp #{1,2})
+
+(de complexp(a)
+  (or (numberp a) (is-of-class a |COMPLEX|)) )
+
+(when test-p  ;; ------------------ TEST
+  (when (or (not (complexp 3))
+	    (not (complexp (complex 1 2)))
+	    (complexp "hello") )
+    (error "Test of <complexp> failed") ) )
+
+
+#? (re <a>)
+;;.FILE complex.dll
+;; Returns the real part of complex number <a>.
+;;.EX (re (complex 1 2))
+
+#? (im <a>)
+;;.FILE complex.dll
+;; Returns the imaginary part of complex number <a>.
+;;.EX (im (complex 1 2))
+
+(when test-p ;; ------------------ TEST
+  (when (or (<> (re (complex 1 2)) 1)
+	    (<> (im (complex 1 2)) 2)
+	    (not (numberp (complex 1 0))) )
+    (error "Test of <complex> (or <re> or <im>) failed") ) )
+
+
+#? (cconj <a>)
+;; Returns the conjugate of complex number <a>.
+;;.EX (cconj #{1,1})
+(de cconj(a)
+  (complex (re a) (- (im a))) )
+
+#? (cnorm <a>)
+;;.FILE complex.dll
+;; Returns the norm of complex <a>.
+;;.EX (cnorm #{1,1})
+
+(when test-p  ;; ------------------ TEST
+  (when (or (<> (cconj 3) 3)
+	    (<> (cconj #{2,3}) #{2,-3}) 
+	    (<> (cnorm #{0,0}) 0)
+	    (<> (cnorm #{3,4}) 5) )
+    (error "Test of <conj> and <cnorm> failed") ) )
+
+
+#? (complex-to-polar <a>)
+;;.FILE complex.dll
+;; Returns a list <(r theta)> containing the norm
+;; and the argument of complex number <a>.
+;;.EX (complex-to-polar (complex (/ 1 2) (/ (sqrt 3) 2)))))
+
+
+#? (polar-to-complex <r> <theta>)
+;;.FILE complex.dll
+;; Returns a complex number whose norm is real <r>
+;; and whose argument is <theta>. 
+;;.EX (polar-to-complex 1 (/ 3.1415 3))
+
+
+
+
+#? ** Elementary Complex Number Operators
+;; The elementary arithmetic operations on complex
+;; numbers are provided as a series of functions
+;; (<complex+>, <complex->, <complex*>, etc.) that
+;; extend the the traditional operators.
+;;
+;; The complex operator functions are designed as a replacement
+;; for the traditional operator functions. They provide
+;; indeed the same functionalities on real numbers.
+;;
+;; When you load file <"complex.sn">, a TLisp code redefines 
+;; the traditional operator <+>, <->, <*>, </>, <1+>, <1->, <2*>, <2/>
+;; and <**> as their complex couterpart documented below. The old
+;; value of the standard operators is however saved as <real+>, <real->,
+;; etc.
+
+#? (complex+ <a1> ... <an>)
+;;.FILE complex.dll
+;; Adds complex numbers <a1> to <an>.
+;;.EX (complex+ 1 #{2,3}) 
+;; Note that file <"complex.sn"> redefines the regular
+;; function <+> as <complex+>. The old value of <+>
+;; is still available as <real+>.
+
+#? (complex* <a1> ... <an>)
+;;.FILE complex.dll
+;; Multiplies complex numbers <a1> to <an>.
+;;.EX (complex* #{0,1} #{0,1}) 
+;; Note that file <"complex.sn"> redefines the regular
+;; function <*> as <complex*>. The old value of <*>
+;; is still available as <real*>.
+
+#? (complex- [<a>] <b>)
+;;.FILE complex.dll
+;; Subtracts complex number <b> from complex number <a>.
+;; When argument <a> is omitted, this function returns the 
+;; opposite of <b>.
+;;.EX (complex- 1 #{2,3}) 
+;; Note that file <"complex.sn"> redefines the regular
+;; function <-> as <complex->. The old value of <->
+;; is still available as <real->.
+
+#? (complex/ [<a>] <b>)
+;;.FILE complex.dll
+;; Divides complex number <b> from complex number <a>.
+;; When argument <a> is omitted, this function returns the 
+;; inverse of <b>.
+;;.EX (complex/ 2 #{2,4}) 
+;; Note that file <"complex.sn"> redefines the regular
+;; function </> as <complex/>. The old value of </>
+;; is still available as <real/>.
+
+(when test-p  ;; ------------------ TEST
+  (when (or (<> (complex+ #{2,3} 1) (complex* 3 #{1,1}))
+	    (<> (complex* #{0,1} #{0,1} -1) 1)
+	    (<> (complex- #{2,3}) (complex- 0 #{2,3}))
+	    (<> (complex* #{3,2} (complex/ #{3,2})) 1)
+	    (<> (complex/ (complex* #{12,6} #{2,2}) #{12,6}) #{2,2}) )
+    (error "Test of complex operators (i) failed") ) )
+
+(when redefine-operators-p  ;; ---- REDEFINE OPERATORS
+  (when (not (or real+ real- real* real/))
+    (unlock-symbol + - * /)
+    (setq real+ +) (setq + complex+)
+    (setq real- -) (setq - complex-)
+    (setq real* *) (setq * complex*)
+    (setq real/ /) (setq / complex/)
+    (lock-symbol + - * / real+ real- real* real/) ) )
+
+
+
+#? (complex1+ <a>)
+;;.FILE complex.dll
+;; Adds 1 to complex number <a>.
+;;.EX (complex1+ #{2,3})
+;; Note that file <"complex.sn"> redefines the regular
+;; function <1+> as <complex1+>. The old value of <1+>
+;; is still available as <real1+>.
+
+#? (complex1- <a>)
+;;.FILE complex.dll
+;; Subtracts 1 to complex number <a>.
+;;.EX (complex1- #{2,3})
+;; Note that file <"complex.sn"> redefines the regular
+;; function <1-> as <complex1->. The old value of <1->
+;; is still available as <real1->.
+
+#? (complex2* <a>)
+;;.FILE complex.dll
+;; Multiplies complex number <a> by 2.
+;;.EX (complex2* #{2,3})
+;; Note that file <"complex.sn"> redefines the regular
+;; function <2*> as <complex2*>. The old value of <2*>
+;; is still available as <real2*>.
+
+#? (complex2/ <a>)
+;;.FILE complex.dll
+;; Divides complex number <a> by 2.
+;;.EX (complex2/ #{2,3})
+;; Note that file <"complex.sn"> redefines the regular
+;; function <2/> as <complex2/>. The old value of <2/>
+;; is still available as <real2/>.
+
+(when test-p  ;; ------------------ TEST
+  (when (or (<> (complex1+ #{2,3}) #{3,3})
+	    (<> (complex1- #{0,1}) #{-1,1})
+	    (<> (complex2* #{2,3}) #{4,6})
+	    (<> (complex2/ #{4,8}) #{2,4}) )
+    (error "Test of complex operators (ii) failed") ) )
+
+(when redefine-operators-p  ;; ---- REDEFINE OPERATORS
+  (when (not (or real1+ real1- real2* real2/))
+    (unlock-symbol 1+ 1- 2* 2/)
+    (setq real1+ 1+) (setq 1+ complex1+)
+    (setq real1- 1-) (setq 1- complex1-)
+    (setq real2* 2*) (setq 2* complex2*)
+    (setq real2/ 2/) (setq 2/ complex2/)
+    (lock-symbol 1+ 1- 2* 2/ real1+ real1- real2* real2/) ) )
+
+
+#? (complex** <a> <b>)
+;; Returns complex number <a> to the complex power <b>.
+;;.EX (complex** -1 (/ 3))
+;; Note that file <"complex.sn"> redefines the regular
+;; function <**> as <complex**>. The old value of <**>
+;; is still available as <real**>.
+
+(de complex**(a b)
+  ;; CEXP and CLOG are documented later in this file.
+  (if (= a 0) 0 (cexp (complex* b (clog a)))) )
+
+(when test-p  ;; ------------------ TEST
+  (when (> (cnorm (- (complex** #{2,3} 0.5) (csqrt #{2,3}))) 1e-10)
+    (error "Test of <complex**> failed") ) )
+
+(when redefine-operators-p  ;; ---- REDEFINE OPERATORS
+  (when (not (or real**))
+    (unlock-symbol **)
+    (setq real** **) (setq ** complex**)
+    (lock-symbol ** real**) ) )
+
+
+
+
+#? ** Mathematical Complex Functions.
+;; The following functions implement complex exponential
+;; and trigonometric functions. Their names are formed
+;; by prepending letter <c> to the name of their real
+;; counterpart. 
+
+#? (csqrt <a>)
+;;.FILE complex.dll
+;; Returns the complex square root of complex number <a>.
+;;.EX (csqrt -1)
+
+#? (cexp <a>)
+;;.FILE complex.dll
+;; Returns the complex exponential of complex number <a>.
+;;.EX (cexp (complex 0 (atan 1)))
+
+#? (clog <a>)
+;;.FILE complex.dll
+;; Returns the complex logarithm of complex number <a>.
+;;.EX (clog (complex 0 1))))
+
+(when test-p  ;; ------------------ TEST
+  (when (or (> (cnorm (- (* (csqrt #{3,4})(csqrt #{3,4})) #{3,4})) 1e-12)
+	    (> (cnorm (- (cexp (clog #{3,4})) #{3,4})) 1e-12)
+	    (> (cnorm (- (clog (cexp #{2,1})) #{2,1})) 1e-12) )
+    (error "Test of <csqrt>, <cexp>, <clog> failed\n") ) )
+
+
+;; The following definitions are not
+;; taken if we select not to redefine the 
+;; traditional operators.
+
+#? (ccosh <a>)
+;; Hyperbolic cosinus of complex number <a>.
+(when redefine-operators-p
+  (de ccosh(x)
+    (2/ (+ (cexp x) (cexp (- x)))) ) )
+
+#? (csinh <a>)
+;; Hyperbolic sinus of complex number <a>.
+(when redefine-operators-p
+  (de csinh(x)
+    (2/ (- (cexp x) (cexp (- x)))) ) )
+
+#? (ctanh <a>)
+;; Hyperbolic tangent of complex number <a>.
+(when redefine-operators-p
+  (de ctanh(a)
+    (let* ((ap (cexp a))
+	   (am (cexp (- a))) )
+      (/ (- ap am) (+ ap am)) ) ) )
+
+#? (catanh <a>)
+;; Hyperbolic arc tangent of complex number <a>.
+(when redefine-operators-p
+  (de catanh(a)
+    (clog (csqrt (/ (+ 1 a) (- 1 a)))) ) )
+
+#? (ccos <a>)
+;; Cosinus of complex number <a>.
+(when redefine-operators-p
+  (de ccos(a)
+    ;; Note fast multiplication by I
+    (ccosh (complex (- (im a)) (re a))) ) )
+
+#? (csin <a>)
+;; Sinus of complex number <a>.
+(when redefine-operators-p
+  (de csin(a)
+    ;; Note fast multiplication and division by I
+    (let ((s (csinh (complex (- (im a)) (re a)))))
+      (complex (im s) (- (re s))) ) ) )
+
+#? (ctan <a>)
+;; Tangent of complex number <a>.
+(when redefine-operators-p
+  (de ctan(a)
+    ;; Note fast multiplication and division by I
+    (let ((s (ctanh (complex (- (im a)) (re a)))))
+      (complex (im s) (- (re s))) ) ) )
+
+#? (catan <a>)
+;; Arg tangent of complex number <a>.
+(when redefine-operators-p
+  (de catan(a)
+    ;; Note fast multiplication and division by I
+    (let ((s (catanh (complex (- (im a)) (re a)))))
+      (complex (im s) (- (re s))) ) ) )
+
+
+
