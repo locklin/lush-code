@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: check_func.c,v 1.2 2002-07-06 02:07:47 leonb Exp $
  **********************************************************************/
 
 /* Functions that check the dimensions of index parameters */
@@ -36,6 +36,29 @@
 #include "idxmac.h"
 #include "idxops.h"
 #include "check_func.h"
+
+
+
+/******************************************************************************
+ *
+ *  Error messages
+ *
+ ******************************************************************************/
+
+
+
+char *rterr_bound = "indices are out of bound";
+char *rterr_rtype = "invalid return type: for loop must be executed once";
+char *rterr_dim = "dimension is out of bounds";
+char *rterr_loopdim = "looping dimensions are different";
+char *rterr_emptystr = "empty string";
+char *rterr_range = "range error";
+char *rterr_srg_of = "change in idx could cause srg overflow";
+char *rterr_unsized_matrix = "matrix has not been sized";
+char *rterr_not_same_dim = "matrix must have same dimensions";
+char *rterr_out_of_memory = "out of memory (reallocating storage)";
+char *rterr_cannot_realloc = "cannot reallocate storage";
+char *rterr_bad_dimensions = "arguments have the wrong dimensions";
 
 
 
@@ -118,21 +141,21 @@ srg_resize(struct srg *sr, int new_size, char *file, int line)
             } else {
 		malloc_ptr = (char *) lush_realloc(sr->data, st_size, file, line); 
 		if(malloc_ptr == 0) 
-		    error(NIL, OUT_OF_MEMORY, NIL); 
+		    error(NIL, rterr_out_of_memory, NIL); 
 		sr->data = malloc_ptr; 
             } 
         } else { 
             if (st_size != 0) {
                 malloc_ptr = (char *) lush_malloc(st_size, file, line); 
                 if(malloc_ptr == 0) 
-		    error(NIL, OUT_OF_MEMORY, NIL); 
+		    error(NIL, rterr_out_of_memory, NIL); 
                 sr->data = malloc_ptr; 
             } 
         } 
         sr->size = new_size; 
         sr->flags &= ~STF_UNSIZED;
     } else {
-        error(NIL, CANNOT_REALLOC, NIL); 
+        error(NIL, rterr_cannot_realloc, NIL); 
     }
 }
 
@@ -152,21 +175,21 @@ srg_resize_compiled(struct srg *sr, int new_size, char *file, int line)
             } else {
 		malloc_ptr = (char *) lush_realloc(sr->data, st_size, file, line); 
 		if(malloc_ptr == 0) 
-		    run_time_error(OUT_OF_MEMORY); 
+                    run_time_error(rterr_out_of_memory); 
 		sr->data = malloc_ptr; 
             } 
         } else { 
             if (st_size != 0) {
                 malloc_ptr = (char *) lush_malloc(st_size, file, line); 
                 if(malloc_ptr == 0) 
-		    run_time_error(OUT_OF_MEMORY); 
+		    run_time_error(rterr_out_of_memory); 
                 sr->data = malloc_ptr; 
             } 
         } 
         sr->size = new_size; 
         sr->flags &= ~STF_UNSIZED;
     } else 
-        run_time_error(CANNOT_REALLOC); 
+        run_time_error(rterr_cannot_realloc); 
 }
 
 
@@ -194,11 +217,6 @@ srg_free(struct srg *sr)
 ******************************************************************************/
 
 
-char *UNSIZED_MATRIX = "matrix has not been sized";
-char *NOT_SAME_DIM = "matrix must have same dimensions";
-char *OUT_OF_MEMORY = "out of memory (reallocating storage)";
-char *CANNOT_REALLOC = "cannot reallocate storage";
-char *BAD_DIMENSIONS = "arguments have the wrong dimensions";
 
 #undef CHECK_DHDOCS
 

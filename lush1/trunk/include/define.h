@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: define.h,v 1.3 2002-06-27 20:49:55 leonb Exp $
+ * $Id: define.h,v 1.4 2002-07-06 02:07:47 leonb Exp $
  **********************************************************************/
 
 #ifndef DEFINE_H
@@ -47,8 +47,8 @@ typedef void* gptr;
 
 /* boolean constants */
 #ifndef TRUE
-#define TRUE 1
-#define FALSE 0
+# define TRUE 1
+# define FALSE 0
 #endif
 
 /* --------- UNFORTUNATE NAMES -------- */
@@ -63,37 +63,37 @@ typedef void* gptr;
 /* --------- MACHINE DEPENDANT STUFF -------- */
 
 #ifdef WIN32
-#define main             lushmain
-#define exit             win32_exit
-#define isatty           win32_isatty
-#define popen            win32_popen
-#define pclose           win32_pclose
-#define FMODE_TEXT(f)    win32_fmode_text(f);
-#define FMODE_BINARY(f)  win32_fmode_binary(f);
-#define INIT_MACHINE     init_win32()
-#define TOPLEVEL_MACHINE break_attempt=0
-#define CHECK_MACHINE(s) if (break_attempt) win32_user_break(s)
-#define DLLEXPORT        __declspec(dllexport)
-#define DLLIMPORT        __declspec(dllimport)
-#if !defined(TLAPI)
-#if defined(TL3DLL)
-#define TLAPI DLLEXPORT
-#else  /* !defined TL3DLL && !defined(_CONSOLE) */
-#define TLAPI DLLIMPORT
-#endif /* !defined(TL3DLL) */
-#endif /* !defined(TLAPI) */
-#if defined (_MSC_VER) && (_MSC_VER == 1100)
-#pragma optimize("p",on)
-#pragma warning(disable: 4056)
-#endif /* VC50 */
+# define main             lushmain
+# define exit             win32_exit
+# define isatty           win32_isatty
+# define popen            win32_popen
+# define pclose           win32_pclose
+# define FMODE_TEXT(f)    win32_fmode_text(f);
+# define FMODE_BINARY(f)  win32_fmode_binary(f);
+# define INIT_MACHINE     init_win32()
+# define TOPLEVEL_MACHINE break_attempt=0
+# define CHECK_MACHINE(s) if (break_attempt) win32_user_break(s)
+# define DLLEXPORT        __declspec(dllexport)
+# define DLLIMPORT        __declspec(dllimport)
+# if ! defined(TLAPI)
+#  if defined(TL3DLL)
+#   define TLAPI DLLEXPORT
+#  else  /* !defined TL3DLL && !defined(_CONSOLE) */
+#   define TLAPI DLLIMPORT
+#  endif /* !defined(TL3DLL) */
+# endif /* !defined(TLAPI) */
+# if defined (_MSC_VER) && (_MSC_VER == 1100)
+#  pragma optimize("p",on)
+#  pragma warning(disable: 4056)
+# endif /* VC50 */
 #endif /* WIN32 */
 
 #ifdef AMIGA
 /* This is not up-to-date */
-#define INIT_MACHINE      init_amiga()
-#define CHECK_MACHINE(s)  check_amiga("Break "s)
-#define putc(c,stream)    aputc(c,stream)
-#define getc(stream)      agetc(stream)
+# define INIT_MACHINE      init_amiga()
+# define CHECK_MACHINE(s)  check_amiga("Break "s)
+# define putc(c,stream)    aputc(c,stream)
+# define getc(stream)      agetc(stream)
 #endif
 
 #ifdef MAC
@@ -101,61 +101,61 @@ typedef void* gptr;
 #endif
 
 #ifndef WIN32
-#ifndef AMIGA
-#ifndef MAC
-#define UNIX
-#endif
-#endif
+# ifndef AMIGA
+#  ifndef MAC
+#   define UNIX
+#  endif
+# endif
 #endif
 
 #ifdef UNIX
-#define INIT_MACHINE      init_unix()
-#define TOPLEVEL_MACHINE  break_attempt=0
-#define CHECK_MACHINE(s)  if (break_attempt) user_break(s)
-#ifdef HAVE_WAITPID
-#define NEED_POPEN
-#endif
-#define popen             unix_popen
-#define pclose            unix_pclose
+# define INIT_MACHINE      init_unix()
+# define TOPLEVEL_MACHINE  break_attempt=0
+# define CHECK_MACHINE(s)  if (break_attempt) user_break(s)
+# ifdef HAVE_WAITPID
+#  define NEED_POPEN
+# endif
+# define popen             unix_popen
+# define pclose            unix_pclose
 #endif
 
 #ifndef TLAPI
-#define TLAPI            /**/
+# define TLAPI            /**/
 #endif
 #ifndef LUSHAPI
-#define LUSHAPI TLAPI
+# define LUSHAPI TLAPI
 #endif
 #ifndef INIT_MACHINE
-#define INIT_MACHINE     /**/
+# define INIT_MACHINE     /**/
 #endif
 #ifndef FINI_MACHINE
-#define FINI_MACHINE     /**/
+# define FINI_MACHINE     /**/
 #endif
 #ifndef TOPLEVEL_MACHINE
-#define TOPLEVEL_MACHINE /**/
+# define TOPLEVEL_MACHINE /**/
 #endif
 #ifndef CHECK_MACHINE
-#define CHECK_MACHINE    /**/
+# define CHECK_MACHINE    /**/
 #endif
 #ifndef FMODE_TEXT
-#define FMODE_TEXT(f)    /**/
+# define FMODE_TEXT(f)    /**/
 #endif
 #ifndef FMODE_BINARY
-#define FMODE_BINARY(f)  /**/
+# define FMODE_BINARY(f)  /**/
 #endif
 
 /* --------- AUTOCONF --------- */
 
 #ifdef WIN32
-#define HAVE_STRFTIME 1
-#define STDC_HEADERS  1  
-#define HAVE_STRCHR   1
-#define HAVE_MEMCPY   1
-#define HAVE_STRERROR 1
+# define HAVE_STRFTIME 1
+# define STDC_HEADERS  1  
+# define HAVE_STRCHR   1
+# define HAVE_MEMCPY   1
+# define HAVE_STRERROR 1
 #endif
 
 #ifdef UNIX
-#include "config.h"
+# include "config.h"
 #endif
 
 #if STDC_HEADERS
@@ -180,26 +180,26 @@ typedef void* gptr;
 #endif
 
 #ifndef STDC_HEADERS
-#ifdef toupper
-#undef toupper
-#endif
-#ifdef tolower
-#undef tolower
-#endif
-#define NEED_TOUPPER
-#define NEED_TOLOWER
+# ifdef toupper
+#  undef toupper
+# endif
+# ifdef tolower
+#  undef tolower
+# endif
+# define NEED_TOUPPER
+# define NEED_TOLOWER
 #endif
 
 #ifndef HAVE_SIGSETJMP
-#ifndef sigsetjmp
-#ifndef siglongjmp
-#ifndef sigjmp_buf
-#define sigjmp_buf jmp_buf
-#define sigsetjmp(env, arg) setjmp(env)
-#define siglongjmp(env, arg) longjmp(env,arg)
-#endif
-#endif
-#endif
+# ifndef sigsetjmp
+#  ifndef siglongjmp
+#   ifndef sigjmp_buf
+#    define sigjmp_buf jmp_buf
+#    define sigsetjmp(env, arg) setjmp(env)
+#    define siglongjmp(env, arg) longjmp(env,arg)
+#   endif
+#  endif
+# endif
 #endif
 
 /* --------- GENERIC NAMES --------------- */
@@ -209,32 +209,21 @@ typedef void* gptr;
  */
 
 #ifdef __STDC__			/* Defined by ANSI compilers */
-/* ANSI C method */
-#define name2(a,b)      _name2(a,b)
-#define _name2(a,b)     a##b
-#define name3(a,b,c)    _name3(a,b,c)
-#define _name3(a,b,c)   a##b##c
+# define name2(a,b)      _name2(a,b)
+# define _name2(a,b)     a##b
+# define name3(a,b,c)    _name3(a,b,c)
+# define _name3(a,b,c)   a##b##c
 #else
-#ifdef __BSDCPP__		/* Specified in the Makefile */
-/* Berkeley CPP method */
-#define name2(a,b)      a\
-b
-#define name3(a,b,c)    a\
-b\
-c
-#else				/* Most common case */
-/* Null comment method */
-#define name2(a,b)      a/**/b
-#define name3(a,b,c)    a/**/b/**/c
-#endif
+# define name2(a,b)      a/**/b
+# define name3(a,b,c)    a/**/b/**/c
 #endif
 
-/* return the variable in a string 
-   (account for the difference between Ansi and K&R cpp) */
+/* return the variable in a string */
 #ifdef __STDC__
-#define enclose_in_string(a) #a
+# define enclos2_in_string(a) #a
+# define enclose_in_string(a) enclos2_in_string(a)
 #else
-#define enclose_in_string(a) "a"
+# define enclose_in_string(a) "a"
 #endif
 
 /* --------- LISP CONSTANTS --------- */

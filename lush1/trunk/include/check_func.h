@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.2 2002-04-18 20:17:09 leonb Exp $
+ * $Id: check_func.h,v 1.3 2002-07-06 02:07:47 leonb Exp $
  **********************************************************************/
 
 #ifndef CHECK_FUNC_H
@@ -80,16 +80,47 @@ LUSHAPI void print_dh_trace_stack(void);
 #endif
 
 
+/* ---------------------------------------- */
+/* RUNTIME ERRORS                           */
+/* ---------------------------------------- */
+
+LUSHAPI void run_time_error(char *);
+
+extern LUSHAPI char *rterr_bound;
+extern LUSHAPI char *rterr_rtype;
+extern LUSHAPI char *rterr_dim;
+extern LUSHAPI char *rterr_loopdim;
+extern LUSHAPI char *rterr_emptystr;
+extern LUSHAPI char *rterr_range;
+extern LUSHAPI char *rterr_srg_of;
+extern LUSHAPI char *rterr_unsized_matrix;
+extern LUSHAPI char *rterr_not_same_dim;
+extern LUSHAPI char *rterr_out_of_memory;
+extern LUSHAPI char *rterr_cannot_realloc;
+extern LUSHAPI char *rterr_bad_dimensions;
+
+#define RTERR_GEN(test,errstr) \
+  if (test) { run_time_error(errstr); }
+#define RTERR_BOUND(test) \
+  RTERR_GEN(test,rterr_bound)
+#define RTERR_RTYPE(test) \
+  RTERR_GEN(test,rterr_rtype)
+#define RTERR_DIM(test) \
+  RTERR_GEN(test,rterr_dim)
+#define RTERR_LOOPDIM(test) \
+  RTERR_GEN(test,rterr_loopdim)
+#define RTERR_EMPTYSTR(test) \
+  RTERR_GEN(test,rterr_emptystr)
+#define RTERR_RANGE(test) \
+  RTERR_GEN(test,rterr_range)
+#define RTERR_SRG_OVERFLOW \
+  run_time_error(rterr_srg_of);
+
 
 /* ---------------------------------------- */
 /* CHECKING MATRICES                        */
 /* ---------------------------------------- */
 
-extern LUSHAPI char *UNSIZED_MATRIX;
-extern LUSHAPI char *NOT_SAME_DIM;
-extern LUSHAPI char *OUT_OF_MEMORY;
-extern LUSHAPI char *CANNOT_REALLOC;
-extern LUSHAPI char *BAD_DIMENSIONS;
 
 LUSHAPI void srg_resize_compiled(struct srg* ,int ,char *, int);
 LUSHAPI void srg_resize(struct srg *, int , char *, int );
@@ -97,28 +128,28 @@ LUSHAPI void srg_free(struct srg *);
 
 #define Mis_sized(i1) \
     if((i1)->flags & IDF_UNSIZED) \
-        run_time_error(UNSIZED_MATRIX); 
+        run_time_error(rterr_unsized_matrix); 
 
 #define Mis_sized_is_sized(i1, i2) \
     if(((i1)->flags & IDF_UNSIZED) || ((i2)->flags & IDF_UNSIZED)) \
-        run_time_error(UNSIZED_MATRIX); 
+        run_time_error(rterr_unsized_matrix); 
 
 #define Msame_size1(i1,i2) \
     Mis_sized_is_sized(i1, i2) \
     if((i1)->dim[0] != (i2)->dim[0]) \
-        run_time_error(NOT_SAME_DIM);
+        run_time_error(rterr_not_same_dim);
 
 #define Msame_size2(i1,i2) \
     Mis_sized_is_sized(i1, i2) \
     if(((i1)->dim[0] != (i2)->dim[0]) || ((i1)->dim[1] != (i2)->dim[1])) \
-	    run_time_error(NOT_SAME_DIM);
+	    run_time_error(rterr_not_same_dim);
 
 #define Msame_size(i1,i2) \
     Mis_sized_is_sized(i1, i2) \
     { int j; \
     for(j=0; j<(i1)->ndim; j++) \
 	if((i1)->dim[j] != (i2)->dim[j]) \
-	    run_time_error(NOT_SAME_DIM);}
+	    run_time_error(rterr_not_same_dim);}
 
 #define Msrg_resize(sr, new_size) \
 if((sr)->size < new_size) \
@@ -163,7 +194,7 @@ if((sr)->size < new_size) \
         (i2)->flags &= ~IDF_UNSIZED; \
     } else \
         if ((i1)->dim[0] != (i2)->dim[0]) \
-            run_time_error(BAD_DIMENSIONS); 
+            run_time_error(rterr_bad_dimensions); 
  
 #define Msize_or_check2(i1, i2) \
     Mis_sized(i1) \
@@ -176,7 +207,7 @@ if((sr)->size < new_size) \
         (i2)->flags &= ~IDF_UNSIZED; \
     } else \
         if (((i1)->dim[0]!=(i2)->dim[0]) || ((i1)->dim[1]!=(i2)->dim[1])) \
-            run_time_error(BAD_DIMENSIONS); 
+            run_time_error(rterr_bad_dimensions); 
 
 #define Msize_or_check(i1, i2) \
     Mis_sized(i1) \
@@ -196,7 +227,7 @@ if((sr)->size < new_size) \
         for (j=0; j< (i2)->ndim; j++) \
             s2 *= (i2)->dim[j]; \
         if (s1 != s2) \
-            run_time_error(BAD_DIMENSIONS); \
+            run_time_error(rterr_bad_dimensions); \
     }
 
 #define Msize_or_check_1D(dim0, i2) \
@@ -207,7 +238,7 @@ if((sr)->size < new_size) \
         (i2)->flags &= ~IDF_UNSIZED; \
     } else {  /* both are dimensioned, then check */ \
 	if ((i2)->ndim != 1 || (i2)->dim[0] != dim0) \
-            run_time_error(BAD_DIMENSIONS); \
+            run_time_error(rterr_bad_dimensions); \
     }
 
 #define Msize_or_check_2D(dim0, dim1, i2) \
@@ -220,7 +251,7 @@ if((sr)->size < new_size) \
         (i2)->flags &= ~IDF_UNSIZED; \
     } else {  /* both are dimensioned, then check */ \
 	if ((i2)->ndim != 2 || (i2)->dim[0] != dim0 || (i2)->dim[1] != dim1) \
-            run_time_error(BAD_DIMENSIONS); \
+            run_time_error(rterr_bad_dimensions); \
     }
 
 /******************************************************************************/
@@ -281,7 +312,7 @@ if((sr)->size < new_size) \
         (i2)->flags &= ~IDF_UNSIZED; \
     } else \
         if (((i0)->dim[0]!=(i2)->dim[0]) || ((i1)->dim[0]!=(i2)->dim[1])) \
-            run_time_error(BAD_DIMENSIONS); 
+            run_time_error(rterr_bad_dimensions); 
 
 #define Mcheck_m2in_m2in_m4out(i0, i1, i2) \
     Mis_sized_is_sized(i0, i1); \
@@ -299,7 +330,7 @@ if((sr)->size < new_size) \
     } else \
         if (((i0)->dim[0]!=(i2)->dim[0]) || ((i0)->dim[1]!=(i2)->dim[1]) || \
             ((i1)->dim[0]!=(i2)->dim[2]) || ((i1)->dim[1]!=(i2)->dim[3])) \
-            run_time_error(BAD_DIMENSIONS); 
+            run_time_error(rterr_bad_dimensions); 
 
 /* Mcheck_m1in_m0out, Mcheck_m2in_m0out --> Mcheck_main_m0out */
 /* Mcheck_m1in_m1out, Mcheck_m2in_m2out --> Mcheck_main_maout */
@@ -307,14 +338,21 @@ if((sr)->size < new_size) \
 /* Mcheck_m1in_m1in_m1out, Mcheck_m2in_m2in_m2out --> Mcheck_main_main_maout */
 
 LUSHAPI void check_main_maout(struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_maout(struct idx *i0, struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_maout(struct idx *i0, 
+                                   struct idx *i1, struct idx *i2);
 LUSHAPI void check_main_m0out(struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_m0out(struct idx *i0, struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_m0in_maout(struct idx *i0, struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_maout_dot21(struct idx *i0, struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_maout_dot42(struct idx *i0, struct idx *i1, struct idx *i2);
-LUSHAPI void check_m1in_m1in_m2out(struct idx *i0, struct idx *i1, struct idx *i2);
-LUSHAPI void check_m2in_m2in_m4out(struct idx *i0, struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_m0out(struct idx *i0, 
+                                   struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_m0in_maout(struct idx *i0, 
+                                   struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_maout_dot21(struct idx *i0, 
+                                         struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_maout_dot42(struct idx *i0, 
+                                         struct idx *i1, struct idx *i2);
+LUSHAPI void check_m1in_m1in_m2out(struct idx *i0, 
+                                   struct idx *i1, struct idx *i2);
+LUSHAPI void check_m2in_m2in_m4out(struct idx *i0, 
+                                   struct idx *i1, struct idx *i2);
 
 
 /* ---------------------------------------- */

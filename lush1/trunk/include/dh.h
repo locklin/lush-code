@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.8 2002-07-05 14:57:05 leonb Exp $
+ * $Id: dh.h,v 1.9 2002-07-06 02:07:47 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -231,7 +231,7 @@ struct dhdoc_s
 
 #define DHDOC(Kname,Xname,Cnamestr,Mnamestr,Ktest) \
   static dhrecord name2(K,Kname)[];\
-  dhconstraint Kname = { name2(K,Kname), \
+  dhdoc_t Kname = { name2(K,Kname), \
     { Cnamestr, Mnamestr, Xname, enclose_in_string(Kname), Ktest } }; \
   static dhrecord name2(K,Kname)[]
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.11 2002-05-07 18:22:17 leonb Exp $
+ * $Id: index.c,v 1.12 2002-07-06 02:07:47 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -3007,7 +3007,7 @@ static void
 index_is_sized(struct idx *i1)
 { 
   if((i1)->flags & IDF_UNSIZED)
-    error(NIL, UNSIZED_MATRIX, NIL); 
+    error(NIL, rterr_unsized_matrix, NIL); 
 }
 
 DX(xindex_is_sized)
@@ -3027,9 +3027,9 @@ static void
 index_same_size(struct idx *i1, struct idx *i2)
 { 
   if(((i1)->flags & IDF_UNSIZED) || ((i2)->flags & IDF_UNSIZED))
-    error(NIL, UNSIZED_MATRIX, NIL); 
+    error(NIL, rterr_unsized_matrix, NIL); 
   if((i1)->dim[0] != (i2)->dim[0])
-    error(NIL, NOT_SAME_DIM, NIL);
+    error(NIL, rterr_not_same_dim, NIL);
 }
 
 DX(xindex_same_size)
@@ -3077,7 +3077,7 @@ index_size_or_check(struct idx *i1, struct idx *i2)
       for (j=0; j< (i2)->ndim; j++)
         s2 *= (i2)->dim[j];
       if (s1 != s2)
-        error(NIL,BAD_DIMENSIONS,NIL);
+        error(NIL,rterr_bad_dimensions,NIL);
     }
 }
 

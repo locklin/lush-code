@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.28 2002-07-02 20:47:41 leonb Exp $
+ * $Id: header.h,v 1.29 2002-07-06 02:07:47 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -328,7 +328,8 @@ TLAPI void deallocate(struct alloc_root *ar, struct empty_alloc *elem);
 /* Loop on all lisp objects
  * Usage: begin_iter_at(varname) { ... } end_iter_at(varname)
  */
-TLAPI struct alloc_root at_alloc;
+extern TLAPI struct alloc_root at_alloc;
+
 #define begin_iter_at(vname) \
   { struct chunk_header *ch_nk; at *vname; \
     for (ch_nk=at_alloc.chunklist; ch_nk; ch_nk=ch_nk->next ) \
