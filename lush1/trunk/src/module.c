@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.57 2004-07-26 17:36:22 leonb Exp $
+ * $Id: module.c,v 1.58 2004-07-30 20:06:53 leonb Exp $
  **********************************************************************/
 
 
@@ -316,6 +316,9 @@ nsbundle_update(void)
   nsbundle_handlers.undefined = nsbundle_undef_load;
   NSInstallLinkEditErrorHandlers(&nsbundle_handlers);
   nsbundle_undef_load(NULL);
+  /* reset handlers */
+  nsbundle_handlers.undefined = 0;
+  NSInstallLinkEditErrorHandlers(&nsbundle_handlers);
   return 0;
 }
 
@@ -330,8 +333,6 @@ nsbundle_unload(nsbundle_t *bundle)
     bundle->next->prev = bundle->prev;
   nsbundle_error = 0;
   nsbundle_update();
-  nsbundle_handlers.undefined = 0;
-  NSInstallLinkEditErrorHandlers(&nsbundle_handlers);
   if (bundle->nsmodule)
     NSUnLinkModule(bundle->nsmodule, NSUNLINKMODULE_OPTION_NONE);
   if (bundle->nsimage)
