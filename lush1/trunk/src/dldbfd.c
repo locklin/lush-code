@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.25 2003-03-04 23:27:16 leonb Exp $
+ * $Id: dldbfd.c,v 1.26 2003-04-14 12:51:44 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -42,21 +42,25 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <setjmp.h>
+
 #if HAVE_UNISTD_H
 # include <unistd.h>
 #endif
 #if HAVE_SYS_MMAN_H
 # include <sys/mman.h>
 #endif
+#if HAVE_LIMITS_H
+# include <limits.h>
+#endif
 
 #include <bfd.h>
 #include "dldbfd.h"
 
 #ifndef TRUE
-#define TRUE 1
+# define TRUE 1
 #endif
 #ifndef FALSE
-#define FALSE 0
+# define FALSE 0
 #endif
 
 /* ---------------------------------------- */
@@ -186,19 +190,21 @@ THROW(const char *n)
   for(;;) /*noreturn*/;
 }
 
-#define TRY do { __ex_except __ex_new; __ex_except *__ex_old = __ex_main;\
-              if (!setjmp(__ex_new.jmp)) { __ex_main = &__ex_new;
+#define TRY do { __ex_except __ex_new; \
+  __ex_except *__ex_old = __ex_main; \
+  if (!setjmp(__ex_new.jmp)) { __ex_main = &__ex_new;
 
 #define CATCH(n) __ex_main = __ex_old; } else { \
-              const char *n = __ex_msg; __ex_main = __ex_old; 
+  const char *n = __ex_msg; __ex_main = __ex_old; 
 
 #define END_CATCH } } while(0)
 
 #define MKSTR_(d) #d
 #define MKSTR(d) MKSTR_(d)
-#define ASSERT(expr) if (!(expr)) THROW("Assertion failed: " __FILE__ ":" MKSTR(__LINE__))
-#define ASSERT_BFD(expr) if (!(expr)) THROW(bfd_errmsg(bfd_get_error()))
-
+#define ASSERT(expr) if (!(expr)) \
+  THROW("Assertion failed: " __FILE__ ":" MKSTR(__LINE__))
+#define ASSERT_BFD(expr) if (!(expr)) \
+  THROW(bfd_errmsg(bfd_get_error()))
 
 
 /* error_buffer -- for intermediate strings */
@@ -395,8 +401,8 @@ typedef struct module_entry {
     asymbol **symbols;          /* canonical symbols */
     /* DLD stuff */
     int undefined_symbol_count; /* number of undefined symbols in this file */
-    module_list *useds;         /* files defining symbols referenced by this file */
-    module_list *users;         /* files referencing symbols defined by this file */
+    module_list *useds;         /* files defining symbols ref'd by this file */
+    module_list *users;         /* files referencing symbols def'd by this file */
     void *exec;                 /* area for executable program */
     struct module_entry *mods;  /* for archives */
     signed char executable_flag;/* >0 if module is executable */
@@ -426,7 +432,8 @@ create_module_entry(bfd *abfd, module_entry **here, int archivep)
 #ifndef NO_BFD_VERSION_ANALYSIS
     {
       const struct bfd_target *tgt = abfd->xvec;
-      if (tgt->alternative_target && tgt->alternative_target->alternative_target != tgt)
+      if (tgt->alternative_target && 
+          tgt->alternative_target->alternative_target != tgt)
         THROW("Snafu in bfd target. Possible mismatch between libbfd and bfd.h");
       for (p=abfd->sections; p; p=p->next)
         if (p->owner != abfd)
@@ -1674,6 +1681,32 @@ resolve_newly_defined_symbols(module_entry *chain)
 /* PERFORM RELOCATION */
 
 
+/* update_i_cache -- update the instruction cache,
+   either by clearing the relevant cache lines,
+   or by synchronizing with the data cache */
+
+static void
+update_i_cache(bfd_vma s, bfd_size_type l)
+{
+#ifdef __PPC__
+  /* PPC has split i-cache and d-cache */
+# ifndef CACHELINESIZE
+#  define CACHELINESIZE 16
+# endif
+  char *start = vmaptr(s & ~(CACHELINESIZE-1));
+  char *end = vmaptr((s+l+CACHELINESIZE-1) & ~(CACHELINESIZE-1));
+  char *p;  
+# ifdef __GNUC__
+  for (p = start; p < end; p += CACHELINESIZE)
+    { __asm__ __volatile__ ("dcbf 0,%0" : : "r" ((long)p) ); }
+  __asm__ __volatile__ ("sync");
+# else
+#  error "GCC-dependent code here."
+# endif
+#endif /* __PPC__ */
+}
+
+
 
 /* apply_relocations -- perform relocation on a fully linked module */
 
@@ -1766,11 +1799,13 @@ apply_relocations(module_entry *module, int externalp)
                 default:
                   THROW("Corrupted relocation table");
                 }
-            }
+              }
+            /* Update I-cache */
+            update_i_cache(p->vma, bfd_section_size(abfd, p));
         }
     /* Mark module as relocated */
     if (externalp)
-        module->relocated_flag = TRUE;
+      module->relocated_flag = TRUE;
 }
 
 
