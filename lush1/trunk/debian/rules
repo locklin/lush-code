@@ -1,0 +1,115 @@
+#!/usr/bin/make -f
+# Sample debian/rules that uses debhelper.
+# GNU copyright 1997 to 1999 by Joey Hess.
+
+# Uncomment this to turn on verbose mode.
+# export DH_VERBOSE=1
+
+# This is the debhelper compatibility version to use.
+export DH_COMPAT=4
+
+pkg		:= lush
+pkg-lib		:= lush-library
+
+prefix		:= debian/$(pkg)
+prefix-lib	:= debian/$(pkg-lib)
+
+DESTDIR		:= `pwd`/$(prefix)
+
+lush-files	:= usr/lib/$(pkg)
+lib-files	:= usr/lib/$(pkg)
+abs-lib-files	:= $(prefix-lib)/$(lib-files)
+
+
+configure: configure-stamp
+configure-stamp:
+	dh_testdir
+	# Add here commands to configure the package.
+	#./configure --prefix=$(DESTDIR)/usr --srcdir=`pwd`
+	./configure --prefix=$(DESTDIR)/usr
+	touch configure-stamp
+
+build: build-stamp
+
+build-stamp: configure-stamp 
+	dh_testdir
+	# Add here commands to compile the package.
+	$(MAKE) all
+	touch build-stamp
+
+clean:
+	dh_testdir
+	dh_testroot
+	rm -f build-stamp configure-stamp
+	# Add here commands to clean up after the build process.
+	-$(MAKE) clean
+	find . -type f -and -name \*~ -or -name .\*~ -exec rm -f {} \;
+	rm -f debian/lush.postinst.* debian/lush.prerm.*
+	dh_clean
+
+install: build
+	dh_testdir
+	dh_testroot
+	dh_clean -k
+	dh_installdirs
+	dh_installdirs -p $(pkg-lib) $(lib-files) # for user packages
+	dh_install -p $(pkg-lib) $(filter-out bin debian aclocal.m4 config build-stamp COPYING COPYRIGHT README NOTES 0-CVS-INFO 1-THIS-SUBTREE-IS-FROZEN 2-DO-NOT-CHANGE-ANYTHING PORTING STATUS,$(wildcard *)) $(lib-files)
+	rm -f `find $(abs-lib-files) -type f -name "Makefile.in" -or -name "config.*" -or -name "configure*"`
+	rm -rf `find $(abs-lib-files) -type d -name CVS`  
+	rm -f `find $(abs-lib-files)/src -name "*.o"`
+	# Remove duplicate license files
+	rm -f $(abs-lib-files)/basement/hlp-old/copying.hlp 
+	rm -f $(abs-lib-files)/basement/sn3.2/COPYING
+	rm -f $(abs-lib-files)/basement/sn3.2/src/COPYING
+	rm -f $(abs-lib-files)/basement/sn3.2/util/COPYING
+	rm -f $(abs-lib-files)/basement/sn3.2/util/sdl-1.2.1/SDL_copying.sn
+	# Filter relative interpreter path to absolute
+	sed "s/..\/src\/lush/\/usr\/lib\/lush\/bin\/lush/g" < $(abs-lib-files)/etc/tokenize > $(abs-lib-files)/etc/tokenize.new
+	mv  $(abs-lib-files)/etc/tokenize.new  $(abs-lib-files)/etc/tokenize
+	chmod +x $(abs-lib-files)/etc/tokenize
+	#
+	# Make lush binary package
+	dh_installdirs -p $(pkg) usr/lib/lush/bin
+	dh_install -p $(pkg) `find bin -type f -name lush` $(lush-files)/bin/.
+	rm -f $(abs-lib-files)/src/lush
+	# Link executable to /usr/bin/
+	dh_installdirs -p $(pkg) usr/bin
+	ln -sf ../lib/lush/bin/lush $(prefix)/usr/bin/lush
+
+# Build architecture-independent files here.
+binary-indep: build install
+
+
+# Build architecture-dependent files here.
+binary-arch: build install
+	dh_testdir
+	dh_testroot
+	dh_installdebconf	
+	dh_installdocs -A 
+#	dh_installexamples 
+	dh_installmenu
+#	dh_installlogrotate
+#	dh_installemacsen
+#	dh_installpam
+#	dh_installmime
+#	dh_installinit
+#	dh_installcron
+	dh_installman -p $(pkg) debian/lush.1
+#	dh_installinfo
+#	dh_undocumented
+	dh_installchangelogs -A
+#	dh_link
+	dh_strip -p $(pkg)
+	dh_compress -A
+	dh_fixperms
+	dh_makeshlibs
+	dh_installdeb
+#	dh_perl
+	dh_shlibdeps -A
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
+
+binary: binary-indep binary-arch
+.PHONY: build clean binary-indep binary-arch binary install configure
+
