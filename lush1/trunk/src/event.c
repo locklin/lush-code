@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.14 2002-11-06 16:30:49 leonb Exp $
+ * $Id: event.c,v 1.15 2002-11-06 21:09:42 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -726,9 +726,9 @@ event_to_list(int event, int xd, int yd, int xu, int yu, int *pmods)
   *pmods = -1;
   /* events that do not update evshift and evcontrol */
   if (event == EVENT_MOUSE_UP) 
-    return cons(named("mouse_up"), four_integers(xd,yd,xu,yu));
+    return cons(named("mouse-up"), four_integers(xd,yd,xu,yu));
   if (event == EVENT_MOUSE_DRAG) 
-    return cons(named("mouse_drag"), four_integers(xd,yd,xu,yu));
+    return cons(named("mouse-drag"), four_integers(xd,yd,xu,yu));
   if (event == EVENT_RESIZE)
     return cons(named("resize"), two_integers(xd,yd));
   if (event == EVENT_DELETE) 
@@ -753,17 +753,17 @@ event_to_list(int event, int xd, int yd, int xu, int yu, int *pmods)
   if (yu) 
     *pmods |= 2;  /* ctrl  */
   if (event == EVENT_MOUSE_DOWN)
-    return cons(named("mouse_down"), two_integers(xd,yd)); 
+    return cons(named("mouse-down"), two_integers(xd,yd)); 
   if (event == EVENT_HELP)
     return cons(named("help"), two_integers(xd,yd)); 
   if (event == EVENT_ARROW_UP)
-    return cons(named("arrow_up"), two_integers(xd,yd)); 
+    return cons(named("arrow-up"), two_integers(xd,yd)); 
   if (event == EVENT_ARROW_RIGHT)
-    return cons(named("arrow_right"), two_integers(xd,yd)); 
+    return cons(named("arrow-right"), two_integers(xd,yd)); 
   if (event == EVENT_ARROW_DOWN)
-    return cons(named("arrow_down"), two_integers(xd,yd)); 
+    return cons(named("arrow-down"), two_integers(xd,yd)); 
   if (event == EVENT_ARROW_LEFT)
-    return cons(named("arrow_left"), two_integers(xd,yd)); 
+    return cons(named("arrow-left"), two_integers(xd,yd)); 
   if (event == EVENT_FKEY)
     return cons(named("fkey"), two_integers(xd,yd)); 
   /* default */
