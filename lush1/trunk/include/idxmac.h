@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxmac.h,v 1.3 2002-08-19 17:53:03 leonb Exp $
+ * $Id: idxmac.h,v 1.4 2003-05-22 20:49:15 leonb Exp $
  **********************************************************************/
 
 #ifndef IDXMAC_H
@@ -303,7 +303,7 @@ struct srg *newi = & name2(_srg_,newi)
  */
 #define Midx_transclone(newi, i, p, Type) \
 { int j; \
-/*  newi.type = (i).type;*/ \
+  /* newi.type = (i).type;*/ \
   newi->flags = (i)->flags; \
   newi->ndim = (i)->ndim; \
   newi->offset = (i)->offset; \
@@ -313,6 +313,25 @@ struct srg *newi = & name2(_srg_,newi)
     (newi)->mod[j] = (i)->mod[p[j]]; \
   } \
 }
+
+/* Define new index newi as a diagonalized clone of index i
+ */
+
+#define Midx_diagclone(newi, i, d, Type) \
+{ int j; \
+  /* newi.type = (i).type;*/ \
+  newi->flags = (i)->flags; \
+  newi->ndim = (i)->ndim-d+1; \
+  newi->offset = (i)->offset; \
+  newi->srg = (i)->srg; \
+  for (j=0;j<(newi)->ndim;j++) \
+    (newi)->dim[j] = (i)->dim[j]; \
+  for (j=0;j<(newi)->ndim;j++) \
+    (newi)->mod[j] = (i)->mod[j]; \
+  while (j<(i)->ndim) \
+    (newi)->mod[(newi)->ndim-1] += (i)->mod[j++]; \
+}
+
 
 /* Print error message 'message' if idx is not contiguous (a submatrix) */
 
