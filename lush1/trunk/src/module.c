@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.62 2004-08-02 22:08:32 leonb Exp $
+ * $Id: module.c,v 1.63 2004-08-10 15:25:44 leonb Exp $
  **********************************************************************/
 
 
@@ -150,6 +150,11 @@ nsbundle_init(void)
 	  = (void*)(slide + (char*)nsbundle_return_on_error);
 	pclose(f);
       }
+    if (! (nsbundle_clear_undefined_list && nsbundle_return_on_error))
+      fprintf(stderr,
+	      "*** Dynamic loader warning:\n"
+	      "    The DYLD_NASTY_HACK no longer works (lush/src/module.c)\n"
+	      "    New version of OSX?  Good or bad news?\n");
   }
 #endif
   return 0;
