@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: shell.lsh,v 1.1 2002-08-30 03:13:55 profshadoko Exp $
+;;; $Id: shell.lsh,v 1.2 2002-08-30 15:29:00 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? *** Shell Commands
@@ -38,8 +38,8 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; private utilities
-(de not-hidden-file-p (x) (not (regex-match "^\\.[^/].*" x)))
-(de file-after-p (a b) (> (downcase a) (downcase b)))
+(de shell.not-hidden-file-p (x) (not (regex-match "^\\.[^/].*" x)))
+(de shell.file-after-p (a b) (> (downcase a) (downcase b)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? ** String List Utilities
@@ -54,16 +54,18 @@
 #? (split-words <s>)
 ;; split a string of words (space-separated strings)
 ;; into a list or those words. 
-;; KNOWN BUG: tabs are not seen as spaces.
 (de split-words (s)
-  (all ((x (regex-split "[^ ]+ " (concat s " ")))) (stripr x)))
+  (regex-split "[^\t ]+" s) )
 
 #? (merge-words <l>)
 ;; turns a list of strings into a single
 ;; string composed of the concatenation of
 ;; the elements of <l> interspesed with spaces.
-(de merge-words (s)
-  (apply concat (all ((x s)) (concat x " "))))
+(de merge-words (l)
+  (let ((n (when l (list (car l)))))
+    (each ((s (cdr l)))
+      (setq n (cons s (cons " " n))) ) 
+    (apply concat (reverse n)) ) )
 
 #? (read-lines <f>)
 ;; read file <f> and return a list of strings,
@@ -78,11 +80,12 @@
 #? (write-lines <l>)
 ;; write each string in list <l>
 ;; as a line.
-(de write-lines(l) (each ((x l)) (printf "%s\n" x)))
+(de write-lines(l)
+  (each ((x l)) (printf "%s\n" x)))
 
 #? #P<expr>
 ;; equivalent to (write-lines <expr>)
-(dmc |#P| (write-lines (eval (read))))
+(dmc |#P| `((write-lines ,(read))) )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -143,8 +146,8 @@
 
 #? shell-tmpdir
 ;; directory used by the function sh to
-;; store temporary files ("/tmp" by default).
-(defvar shell-tmpdir "/tmp")
+;; store temporary files.
+(defvar shell-tmpdir (dirname (tmpname)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? ** Directories
@@ -202,8 +205,8 @@
   (when (not s) (setq s (list (pwd))))
   (apply append 
 	 (all ((x s)) 
-	   (sort-list (filter not-hidden-file-p 
-			      (cdr (cdr (files x)))) file-after-p))))
+	   (sort-list (filter shell.not-hidden-file-p 
+			      (cdr (cdr (files x)))) shell.file-after-p))))
 
 #? (ls-a <d1> <d2> ... <dn>)
 ;; return a list of all the files in <d1>
@@ -215,7 +218,7 @@
   (when (not s) (setq s (list (pwd))))
   (apply append 
 	 (all ((x s)) 
-	   (sort-list (cdr (cdr (files x))) file-after-p))))
+	   (sort-list (cdr (cdr (files x))) shell.file-after-p))))
 
 #? (sh <cmd> [<l>])
 ;; run shell command <cmd> and return the
