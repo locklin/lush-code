@@ -1,0 +1,72 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: libc.lsh,v 1.1 2002-08-07 21:17:27 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Libc interface
+;; this provides an interface to several commonly used
+;; functions from the standard C library.
+
+#? @<var>
+;; allows the inclusion of symbolic constants in compiled code.
+;; The value of the variable at the time of parsing
+; is inserted into the code.
+(dmc |@| (eval (read)))
+
+#? (malloc <n>)
+;; malloc <n> bytes of memory and return a gptr to it.
+(de malloc (n) ((-int-) n) (gptr #{ malloc($n) #}))
+
+#? (free <p>)
+;; free malloc'ed memory area pointed to by gptr <p>.
+(de free (p) ((-gptr-) p) #{ free($p) #} ())
+
+#? (testbit <v> <b>)
+;; test if bit <b> of integer <v> is on.
+;; <b> must be between 0 and 31.
+(de testbit (v b)
+    ((-int-) v b)
+    (int #{ (int)($v & (1<<$b)) #}))
+
+#? (icfor (<i> <begin> <end> <step>) <l1> [<l2>...])
+;; a C-like for loop with integer loop variable.
+;; This is a macro that can only be called in compiled code.
+;; <i> is a lisp symbol used as a loop variable, <begin> <end> and <step>
+;; must be numerical expression. They are all converted to int.
+(dmd icfor (args . l)
+     (let (( (i beg end stp) args))
+       `(let ((,i ,beg))
+          (cinline "for (; %s<(int)(%s); %s+=(int)(%s)) {" ,i ,end ,i ,stp)
+          ,@l
+          (cinline "}")
+          () ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () malloc free testbit)
+
+
