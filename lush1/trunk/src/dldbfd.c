@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.33 2004-03-03 00:54:52 leonb Exp $
+ * $Id: dldbfd.c,v 1.34 2004-03-10 21:19:08 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2471,6 +2471,19 @@ define_symbol_of_main_program(const char *exec)
     }
     END_CATCH;
 }
+
+
+
+/* Some g++ versions need this symbol. */
+
+#if defined(__GNUC__) && (__GNUC__ < 3)
+void 
+__pure_virtual(void) 
+{ 
+  run_time_error("Pure virtual function called"); 
+}
+#endif
+
 
 
 /* dld_init -- initializes DLD/BFD */
