@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.5 2002-08-03 13:08:50 leonb Exp $
+ * $Id: event.c,v 1.6 2002-08-05 20:17:22 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -720,6 +720,8 @@ event_to_list(int event, int xd, int yd, int xu, int yu, int *pmods)
     return cons(named("sendevent"), two_integers(xd,yd));
   if (event == EVENT_EXPOSE)
     return cons(named("expose"), two_integers(xd,yd));
+  if (event == EVENT_GLEXPOSE)
+    return cons(named("glexpose"), two_integers(xd,yd));
   if (event >= EVENT_ASCII_MIN && event <= EVENT_ASCII_MAX) 
     {
       char keyevent[2];

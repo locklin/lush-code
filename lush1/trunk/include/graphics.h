@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.6 2002-08-02 20:31:42 leonb Exp $
+ * $Id: graphics.h,v 1.7 2002-08-05 20:17:22 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -117,8 +117,8 @@ struct event {
 
 #define EVENT_ALARM       (3001L)
 
-#define EVENT_GLEXPOSE    (4001L)
 #define EVENT_EXPOSE      (4001L)
+#define EVENT_GLEXPOSE    (4002L)
 
 
 /* Hilites */
