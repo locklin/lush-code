@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.33 2003-04-25 14:57:25 leonb Exp $
+ * $Id: module.c,v 1.34 2003-04-25 15:04:36 leonb Exp $
  **********************************************************************/
 
 
@@ -808,10 +808,10 @@ module_load(char *filename, at *hook)
   if (dlopen)
     {
 #if DLDBFD && DLOPEN
-      if (! (handle = dld_dlopen(m->filename, RTLD_LAZY|RTLD_GLOBAL)))
+      if (! (handle = dld_dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
         dynlink_error(new_string(m->filename));
 #elif DLOPEN
-      if (! (handle = dlopen(m->filename, RTLD_LAZY|RTLD_GLOBAL)))
+      if (! (handle = dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
         dynlink_error(new_string(m->filename));
 #else
       error(NIL,"Dynlinking this file is not supported (need dlopen)", 
