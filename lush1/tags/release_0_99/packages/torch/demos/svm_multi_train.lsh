@@ -1,0 +1,54 @@
+;; by Fu Jie Huang, May 2003
+;; this script is similar with the example program in Torch3:
+;; $Torch3/examples/discriminatives/svm_multi.cc (the train mode)
+
+;; the train_data contains 1000 samples of MNIST digits (28x28) in ascii:
+;; it's copied from the $Torch3/examples/discriminatives/data/
+;; the trained SVM model is written into a file called "model"
+
+(libload "torch/torch")
+
+(setq stdv        1650)
+(setq n_classes   10)
+(setq accuracy    0.01)
+(setq iter_shrink 100)
+(setq model_fn    "model")
+(setq data_fn     "train_data.gz")
+(setq c_cst       100)
+(setq cache_size  50)
+
+(setq rng (new torch_Random))
+(==> rng seed)
+
+(setq the-kernel  (new torch_GaussianKernel () (/ 1.0 (* stdv stdv))))
+(setq svm-array (array 10))
+
+(for (i 0 9)
+     (svm-array i (new  torch_SVMClassification ()  :the-kernel:p  (gptr ()) (gptr ())))
+     (==> (svm-array i) setROption "C" c_cst)
+     (==> (svm-array i) setROption "cache size" cache_size))
+
+(setq mat-data (new torch_MatDataSet    () data_fn  -1 1 () -1 ()))
+(setq the-output  (new torch_DiskXFile  () model_fn "w"))
+
+(setq the-labels   (new torch_Sequence () n_classes 1))
+(for (i 0 (1- n_classes))
+     (setq the-trainer  (new torch_QCTrainer ()  (scope (svm-array i) p)))
+     (==> the-trainer   setROption "end accuracy" accuracy)
+     (==> the-trainer   setIOption "iter shrink" iter_shrink)       
+
+     (for (j 0 (1- n_classes))
+	  (==>  the-labels  frames_setval  j 0 -1))
+     (==> the-labels frames_setval i 0 1)
+     (setq the-data  (new torch_ClassFormatDataSet ()  :mat-data:p  :the-labels:p))
+
+     (==> the-trainer  train :the-data:p  ())
+     
+     (==> (svm-array i) saveXFile :the-output:p)
+     (delete the-trainer)
+     (delete the-data)
+)
+
+
+
+
