@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: gb-params.lsh,v 1.4 2003-05-05 14:18:27 leonb Exp $
+;;; $Id: gb-params.lsh,v 1.5 2003-11-14 16:26:32 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -62,23 +62,39 @@
 
 #? ** idx1-param
 ;; a gb-param whose slots are idx1.
-;; no learning algorithm is defined.
+;; This is an abstract class (useful classes
+;; are subclasses thereof). no learning algorithm is defined.
 ;; Only the x slot is present.
 ;; This class is useful for fixed (non adaptive) parameters.
 (defclass idx1-param gb-param ((-idx1- (-gbtype-)) x))
 
+#? (==> <idx1-param> resize <s>)
+;; resize idx1-param to <s> elements.
 (defmethod idx1-param resize (s) ((-int-) s) (midx-m1resize x s) ())
 
+#? (new idx1-param <s> <sts>)
+;; create a new idx1-param. <s> is the size, 
+;; and <sts> is the initially allocated size.
 (defmethod idx1-param idx1-param (s sts) 
   ((-int-) s sts) 
   (setq x (gbtype-matrix sts))
   (==> this resize s)
   ())
 
+#? (==> <idx1-param> load <s>)
+;; load the values of <idx1-param> from a 
+;; the matrix file <s>, which must be an
+;; idx1 of floats. The number of elements
+;; in the file <s> must match the size of <idx1-param>.
 (defmethod idx1-param load (s) (idx-copy (load-matrix s) x) ())
 
+#? (==> <idx1-param> save <s>)
+;; save the slot <x> of the <idx1-param> in file <s>.
+;; This can be subsequently recovered with the load method.
 (defmethod idx1-param save (s) (save-matrix x s) ())
 
+#? (==> <idx1-param> size)
+;; return the number of elements of <idx1-param>.
 (defmethod idx1-param size () (idx-dim x 0))
 
 (defmethod idx1-param get () (idx-copy x))
@@ -351,7 +367,12 @@
   (==> this resize s) 
   ())
 
+#? (==> <idx1-ddparam> clear-ddx)
+;; set all the <ddx> vector slot to zero.
 (defmethod idx1-ddparam clear-ddx () (idx-clear ddx)())
+
+#? (==> <idx1-ddparam> clear-ddeltas)
+;; set all the <ddeltas> vector slot to zero.
 (defmethod idx1-ddparam clear-ddeltas () (idx-clear ddeltas)())
 
 #? (==> <idx1-ddparam> update-ddeltas <knew> <kold>)
@@ -411,6 +432,24 @@
   (idx-f1addc ddeltas mu epsilons)
   (idx-f1inv epsilons epsilons) ())
 
+#? * Allocating an idx-state within an idx1-ddparam
+;; It is often useful to have access to the parameters 
+;; of a trainable module in two different ways.
+;; The first access method is through a slot in the
+;; module object (e.g. the slot kernel in a convolutional
+;; layer [a.k.a. c-layer]). This slot is generally an
+;; idxN-ddstate with an x slot (value), dx slot (gradient),
+;; and ddx slot (second derivatives). The second access
+;; method is through an idx1-ddparam that collects all
+;; the trainable parameters of a learning machine.
+;; The functions described here provide a way of allocating
+;; multiple idxN-ddstate instances within a single
+;; idx1-ddparam. As the modules of a learning machine are
+;; created, their paramter states are allocated within
+;; a single idx1-ddparam which collects all the parameters.
+
+#? (==> <idx1-ddparam> alloc-idx0-ddstate)
+;; Allocate an idx0-ddstate in <idx1-ddparam>
 (defmethod idx1-ddparam alloc-idx0-ddstate ()
   (let* ((statesize 1)
 	 (s (new-empty idx0-ddstate))
@@ -422,6 +461,8 @@
     (setq :s:ddx (new-index-offset (idx-storage ddx) () oldsize))
     s))
 
+#? (==> <idx1-ddparam> alloc-idx1-ddstate <d0>)
+;; Allocate an idx1-ddstate of size <d0> <idx1-ddparam>
 (defmethod idx1-ddparam alloc-idx1-ddstate (d0)
   ((-int-) d0)
   (let* ((statesize d0)
@@ -434,6 +475,8 @@
     (setq :s:ddx (new-index-offset (idx-storage ddx) (list d0) oldsize))
     s))
 
+#? (==> <idx1-ddparam> alloc-idx2-ddstate <d0> <d1>)
+;; Allocate an idx2-ddstate of size <d0>,<d1> <idx1-ddparam>
 (defmethod idx1-ddparam alloc-idx2-ddstate (d0 d1)
   ((-int-) d0 d1)
   (let* ((statesize (* d0 d1))
@@ -446,6 +489,8 @@
     (setq :s:ddx (new-index-offset (idx-storage ddx) (list d0 d1) oldsize))
     s))
 
+#? (==> <idx1-ddparam> alloc-idx3-ddstate <d0> <d1> <d2>)
+;; Allocate an idx3-ddstate of size <d0>,<d1>,<d2> <idx1-ddparam>
 (defmethod idx1-ddparam alloc-idx3-ddstate (d0 d1 d2)
   ((-int-) d0 d1 d2)
   (let* ((statesize (* d0 d1 d2))
@@ -458,6 +503,8 @@
     (setq :s:ddx (new-index-offset (idx-storage ddx) (list d0 d1 d2) oldsize))
     s))
 
+#? (==> <idx1-ddparam> alloc-idx4-ddstate <d0> <d1> <d2> <d3>)
+;; Allocate an idx4-ddstate of size <d0>,<d1>,<d2>,<d3> <idx1-ddparam>
 (defmethod idx1-ddparam alloc-idx4-ddstate (d0 d1 d2 d3)
   ((-int-) d0 d1 d2 d3)
   (let* ((statesize (* d0 d1 d2 d3))
