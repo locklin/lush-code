@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.28 2002-08-22 14:03:17 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.29 2002-08-22 19:28:07 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -96,8 +96,8 @@
                        (if (consp x) (eval `:,(car x)) (eval `:,x))) )
          (treetype-list ())
          (source-list ())
-         (symbol-table ())    ;; local symbol table
-         (global-table ()) )  ;; gobal symbol table
+         (symbol-table ())          ;; local symbol table
+         (global-table (htable)) )  ;; gobal symbol table
     
     ;; FIRST PASS (MACRO+TYPES)
    (each ((funcname fsymb-list) 
@@ -127,9 +127,7 @@
            (let ((sym (new dhc-symbol funcname 0)))
              (dhc-unify-types :(car treetype-list):type :sym:type)
              (setq :sym:c-name cname)
-             (setq global-table 
-                   (append global-table 
-                           (list (cons funcname sym)))) ) ) ) )
+             (dhc-add-global-table sym) ) ) ) )
       ;; CLASS
       ((classp func)
        (setq treetype-list
@@ -190,8 +188,12 @@
    ;; CLEANUPS
    (each ((type treetype-list))
      (delete type) )
-   (each (((name . type) global-table))
-     (delete type) )
+   (let ((global-alist global-table))
+     (when (is-of-class global-alist |HTABLE|)
+       (setq global-alist (htable-alist global-alist)) )
+     (each (((name . symb) global-alist))
+       (delete symb) ) )
+   
    program ) )
 
 
@@ -476,8 +478,7 @@
       (let ((sym (new dhc-symbol fname 0)))
 	(dhc-unify-types class-type :sym:type)
 	(setq :sym:c-name cname)
-	(setq global-table (append global-table
-				   (list (cons fname sym)))))
+	(dhc-add-global-table sym) )
       ;; Process methods
       (each ((method method-list))
         (printf "Parsing method %l in class %l ...\n" method fname)
