@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.8 2002-05-07 00:25:51 leonb Exp $
+ * $Id: module.c,v 1.9 2002-05-07 00:33:45 leonb Exp $
  **********************************************************************/
 
 
@@ -482,7 +482,7 @@ check_primitive(at *prim)
       if (check_executability)
         check_exec(TRUE);
       if (! (m->flags & MODULE_EXEC))
-        error(NIL,"Attempting to execute a partially linked function", prim);
+        error(NIL,"Partially linked function", prim->Cdr);
     }
 }
 
