@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.11 2002-08-15 18:18:15 leonb Exp $
+ * $Id: event.c,v 1.12 2002-10-29 23:07:47 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -432,6 +432,7 @@ call_spoll(void)
 {
   int timeout = 24*3600*1000;
   struct poll_functions *src;
+  block_async_poll();
   for (src=sources; src; src=src->next)
     if (src->spoll)
       {
@@ -439,6 +440,7 @@ call_spoll(void)
         if (ms>0 && ms<timeout)
           timeout = ms;
       }
+  unblock_async_poll();
   return timeout;
 }
 
