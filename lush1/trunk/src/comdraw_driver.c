@@ -843,6 +843,8 @@ comdraw_draw_text(struct window *linfo, int x, int y, char *s)
   
   if (! info->lwin.used)
     return;
+  if (! s || !*s)
+    return;
 #if DEBUG
   fprintf(stdout,"draw_text...\n");
 #endif
@@ -995,9 +997,16 @@ static void comdraw_rect_text(struct window *linfo,
   int coord[4];
   int ysize;
   char *t;
-  *xptr=*yptr=*wptr=*hptr=0;
   
-  command[0] = 0;
+ *xptr = *yptr = *wptr = *hptr = 0;
+  
+  if (! s || !*s)
+    {
+      *xptr = x;
+      *yptr = y;
+      return;
+    }
+  
   rbuffer[0] = 0;
   if (! info->lwin.used)
     return;
