@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: db.lsh,v 1.5 2004-04-16 21:54:31 leonb Exp $
+;;; $Id: db.lsh,v 1.6 2004-04-19 20:06:24 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -32,51 +32,111 @@
 (libload "idx-float.lsh")
 (libload "dynamic.lsh")
 
+
 ;;; ------------------------------
+
+#? *** Datasets.
+;; This library is not an interface to database package, but defines an
+;; abstract framework for accessing, handling, and maintaining datasets for
+;; learning algorithms. This abstraction is defined by the main class <db>. 
+;;
+;; Class <db> represents a collection of records suitable 
+;; for representing a typical machine learning dataset.
+;; It defines two sets of access functions:
+;;.IP
+;;  Compilable access functions represents all data item with two parts: the
+;;  input part <x> and the output part <y>.  Both parts are represented as
+;;  vectors of numbers of variable length.  These vectors can be obtained as
+;;  vectors of floats, ints, or unsigned bytes.
+;;.IP
+;;  Non compilable access functions further extend this model.  Each dataset
+;;  can define various keys associated with a Lush function that formats parts
+;;  of the <x> or <y> vectors and generate a Lush object of any type.  This is
+;;  not used in performance critical code, but allows for image browsers,
+;;  table displays, etc.
 
 
 (defclass db object)
+
+
+#? ** Essential access functions (compilable)
+;;  Essential access functions represents all data item with an
+;;  input part <x> and an output part <y>.  Both parts are 
+;;  represented as vectors of numbers of variable length.
+;;  Client code can reformat these vectors as multidimensional
+;;  objects as appropriate.
   
+#? (==> <db> size)
+;; Returns the number of items in <db>.
 (defmethod db size() 
   (error "This method must be defined by a subclass")
   (int 0) )
 
+#? (==> <db> getx <n> <p>)
+;; Returns the input part of datum number <n>
+;; into the vector of floats <p>.  This function
+;; resizes vector <p> according to the dataset content.
 (defmethod db getx(n p)
   ((-int-) n) 
   ((-idx1- (-float-)) p)
   (error "This method must be defined by a subclass")
   p )
 
+#? (==> <db> gety <n> <p>)
+;; Returns the output part of datum number <n>
+;; into the vector of floats <p>.  This function
+;; resizes vector <p> according to the dataset content.
 (defmethod db gety(n p) 
   ((-int-) n) 
   ((-idx1- (-float-)) p)
   (error "This method must be defined by a subclass")
   p )
 
+#? (==> <db> getx-int <n> <p>)
+;; Returns the input part of datum number <n>
+;; into the vector of integers <p>.  This function
+;; resizes vector <p> according to the dataset content.
 (defmethod db getx-int(n p)
   ((-int-) n) 
   ((-idx1- (-int-)) p)
   (error "This method must be defined by a subclass")
   p )
 
+#? (==> <db> gety-int <n> <p>)
+;; Returns the output part of datum number <n>
+;; into the vector of integers <p>.  This function
+;; resizes vector <p> according to the dataset content.
 (defmethod db gety-int(n p) 
   ((-int-) n) 
   ((-idx1- (-int-)) p)
   (error "This method must be defined by a subclass")
   p )
 
+#? (==> <db> getx-ubyte <n> <p>)
+;; Returns the input part of datum number <n>
+;; into the vector of unsigned bytes <p>.  This function
+;; resizes vector <p> according to the dataset content.
 (defmethod db getx-ubyte(n p)
   ((-int-) n) 
   ((-idx1- (-ubyte-)) p)
   (error "This method must be defined by a subclass")
   p )
 
+#? (==> <db> gety-int <n> <p>)
+;; Returns the output part of datum number <n>
+;; into the vector of unsigned bytes <p>.  This function
+;; resizes vector <p> according to the dataset content.
 (defmethod db gety-ubyte(n p) 
   ((-int-) n) 
   ((-idx1- (-ubyte-)) p)
   (error "This method must be defined by a subclass")
   p )
 
+#? (==> <db> get-label <n>)
+;; Returns an integer label associated with datum number <n>>
+;; This method usually returns the first element of the output
+;; part of the datum. Specific datasets might define it 
+;; differently
 (defmethod db get-label(n)
   ((-int-) n) 
   (let ((y (int-matrix 1)))
@@ -91,13 +151,29 @@
 
 ;;; ------------------------------
 
+#? ** High-level access functions (non compilable).
+;; Each dataset can define various keys associated 
+;; with a Lush function that uses the essential access
+;; function and format an arbitrary lisp object.
+
 (defmethod db info(property)
   (getp this property) )
 
+#? (==> <db> keys)
+;; Returns the list of keys defined by this dataset
+;; or inherited from a parent dataset.
 (defmethod db keys()
   (let ((h (==> this info 'access)))
     (when (is-of-class h |HTABLE|)
       (htable-keys h) ) ) )
+
+#? (==> <db> get <n> <key>)
+;; Access the dataset item number <n> and extract 
+;; the lush object specified by symbol <key>.
+;; Symbol <key> must be provided unquoted.
+;;.VP
+;;   (==> db-stereo get 234 image-left)
+;;   (==> dn-stereo get 234 image-right)
 
 (dmmethod db get(get n key)
   (when (not (symbolp key))
@@ -107,6 +183,33 @@
 	 (x (cdr f)) )
     (when f (list (car f) this n . x)) ) )
 
+#? (==> <db> set-key <key> <func> <..extraargs..>)
+;; Defines a new key and access function for database <db>.
+;; Argument <key> is a quoted symbol representing the key name.
+;; Argument <func> is a Lush function that extracts a dataset
+;; item and formats it as an arbitrary lisp object.
+;; This function takes as argument the dataset instance, 
+;; the datum number, and all extra arguments <...extraargs..>.
+;;.VP
+;;  (let ((f (lambda(this n i)
+;;	     (let ((f (float-matrix 1)))
+;;	       (==> this getx n f) (f i) ) )))
+;;    (==> db-forest-all set-key 'elevation f 0)
+;;    (==> db-forest-all set-key 'aspect f 1)
+;;    (==> db-forest-all set-key 'slope f 2)
+;;    ... )
+;;
+;;  (==> db-stereo set-key 'image-left
+;;      (lambda(this n)
+;;        (let ((f (ubyte-matrix 1))
+;;              (i (ubyte-matrix 40 40)) )
+;;	       (==> this getx-ubyte n f)
+;;             (copy-any-matrix (narrow f 0 1600 0) i)) ) )
+;;.PP
+;; Keys defined on a dataset are inherited by datasets
+;; derived from this dataset using the <db-subset> and 
+;; <db-transform> classes.  This holds as long
+;; as method <set-key> is not called on a derived set.
 (defmethod db set-key(key func . extra)
   (when (not (symbolp key)) 
     (error '==> "not a symbol" key))
@@ -118,6 +221,10 @@
     (h key (cons func extra))
     key ) )
 
+#? (==> <db> set-key-alias <key> <alias>)
+;; Defines key symbol <key> as another name for symbol <alias>
+;;.VP
+;;  (==> db-stereo set-key-alias 'image-mono 'image-left)
 (defmethod db set-key-alias(key alias)
   (when (not (symbolp key)) 
     (error '==> "not a symbol" key))
@@ -130,9 +237,14 @@
     (h key f)
     key ) )
 
+#? (==> <db> dataset)
+;; Returns a friendly name for the dataset.
 (defmethod db dataset()
-  (==> this info 'dataset) )
-
+  (or (==> this info 'dataset) "unknown") )
+      
+#? (==> <db> set-dataset <name>)
+;; Sets a friendly name for the dataset.
+;; Argument <name> must be a string.
 (defmethod db set-dataset(name)
   (when (not (stringp name)) 
     (error '==> "not a string" name))
@@ -141,7 +253,15 @@
 
 
 ;;; ------------------------------
-    
+
+#? ** Extracting subsets from a dataset: db-subset.
+;; Class <db-subset> is specialized subclass of <db>
+;; whose purpose it to represent a subset or a re-ordering
+;; of an existing dataset.  Three functions, 
+;; <db-shuffle>, <db-narrow> and <db-select>
+;; provide the main functionality.
+
+
 (defclass db-subset db
   ((-obj- (db)) base)
   ((-idx1- (-int-)) map) )
@@ -190,10 +310,22 @@
   ((-int-) n) 
   (==> base get-label (map n)) )
 
+(defmethod db-subset select(m)
+  ((-idx1- (-int-)) m)
+  (let* ((n (idx-dim m 0))
+	 (p (int-matrix n)))
+    (for (i 0 (1- n))
+	 (p i (map (m i))) )
+    (new db-subset base p) ) )
+
 (defmethod db-subset info(property)
   (or (getp this property) 
       (==> base info property) ) )
 
+#? (db-shuffle <d>)
+;; Creates a new dataset (instance of <db-subset>)
+;; derived from dataset <d> by randomly shuffling
+;; the data items.
 (de db-shuffle(d)
   ((-obj- (db)) d)
   (let* ((n (==> d size))
@@ -210,6 +342,10 @@
     ;; create subset
     (new db-subset d m) ) )
 
+#? (db-narrow <d> <size> <start>)
+;; Creates a new dataset (instance of <db-subset>)
+;; derived from dataset <d> by selecting the <size>
+;; data items numbered from <start> to <start>+<size>-1.
 (de db-narrow(d size start)
   ((-obj- (db)) d)
   ((-int-) size start)
@@ -224,33 +360,124 @@
       (idx-i1addc m start m) )
     (new db-subset d m) ) )
 
+#? (db-remap <d> <map>)
+;; Creates a new dataset (instance of <db-subset>)
+;; derived from dataset <d> and containing the data 
+;; items specified by the integer vector <map>.
+(de db-remap(d map)
+  ((-obj- (db)) d)
+  ((-idx1- (-int-)) map)
+  (if (is-of-class d db-subset)
+      (let ((dd (to-obj db-subset d)))
+	(==> dd select map) )
+    (new db-subset d map) ) )
+
+#? (db-select <d> <predicate>)
+;; Creates a new dataset (instance of <db-subset>)
+;; derived from dataset <d> and containing the data 
+;; items for which function <predicate> returns true.
+;; Function predicates takes two arguments: the dataset
+;; and the data item number.
 (de db-select(d predicate)
   ((-obj- (db)) d)
   (let ((okay ()))
     (for (i 0 (1- (==> d size)))
-	 (let ((x (float-matrix 1))
-	       (y (float-matrix 1)) )
-	   (==> d getx i x)
-	   (==> d gety i y)
-	   (when (predicate x y)
-	     (setq okay (cons i okay)) ) ) )
+	 (when (predicate d i)
+	   (setq okay (cons i okay)) ) )
     (let ((m (int-matrix (length okay))))
       (m () (reverse okay))
-      (if (check==> (classof d) 'select)
+      (if (is-of-class check==> (classof d) 'select)
 	  (==> d select m)
 	(new db-subset d m) ) ) ) )
 
-(defmethod db-subset select(m)
-  ((-idx1- (-int-)) m)
-  (let* ((n (idx-dim m 0))
-	 (p (int-matrix n)))
-    (for (i 0 (1- n))
-	 (p i (map (m i))) )
-    (new db-subset base p) ) )
 
 
 
 ;;; ------------------------------
+
+#? ** From matrices to datasets: db-XYmatrix.
+;; Sixteen classes provide a way to easily define datasets 
+;; when the input vectors and output vectors are available
+;; in the form of two dimensional matrices whose rows
+;; correspond to each data item.
+;; 
+;; These classes are named <db-XYmatrix> where
+;; letters <X> and <Y> represent the type of the
+;; underlying matrix elements:
+;;.IP <f>
+;; for a <float-matrix>,
+;;.IP <i>
+;; for a <int-matrix>,
+;;.IP <s>
+;; for a <short-matrix>, and,
+;;.IP <b>
+;; for a <ubyte-matrix>.
+
+
+#? (new db-ffmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the float matrix <x>,
+;; and whose output part comes from the rows of the float matrix <y>.
+#? (new db-fimatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the float matrix <x>,
+;; and whose output part comes from the rows of the int matrix <y>.
+#? (new db-fsmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the float matrix <x>,
+;; and whose output part comes from the rows of the short matrix <y>.
+#? (new db-fbmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the float matrix <x>,
+;; and whose output part comes from the rows of the ubyte matrix <y>.
+#? (new db-ifmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the int matrix <x>,
+;; and whose output part comes from the rows of the   float matrix <y>.
+#? (new db-iimatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the int matrix <x>,
+;; and whose output part comes from the rows of the   int matrix <y>.
+#? (new db-ismatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the int matrix <x>,
+;; and whose output part comes from the rows of the   short matrix <y>.
+#? (new db-ibmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the int matrix <x>,
+;; and whose output part comes from the rows of the   ubyte matrix <y>.
+#? (new db-sfmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the short matrix <x>,
+;; and whose output part comes from the rows of the float matrix <y>.
+#? (new db-simatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the short matrix <x>,
+;; and whose output part comes from the rows of the int matrix <y>.
+#? (new db-ssmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the short matrix <x>,
+;; and whose output part comes from the rows of the short matrix <y>.
+#? (new db-sbmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the short matrix <x>,
+;; and whose output part comes from the rows of the ubyte matrix <y>.
+#? (new db-bfmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the ubyte matrix <x>,
+;; and whose output part comes from the rows of the float matrix <y>.
+#? (new db-bimatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the ubyte matrix <x>,
+;; and whose output part comes from the rows of the int matrix <y>.
+#? (new db-bsmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the ubyte matrix <x>,
+;; and whose output part comes from the rows of the short matrix <y>.
+#? (new db-bbmatrix <x> <y>)
+;; Creates a new dataset with data items
+;; whose input part comes from the rows of the ubyte matrix <x>,
+;; and whose output part comes from the rows of the ubyte matrix <y>.
 
 (defvar db-matrix-fsymblist ())
 
@@ -343,6 +570,115 @@
 
 ;;; ------------------------------
 
+#? ** Obtaining statistics.
+
+#? (db-get-x-statistics <d>)
+;; Returns a two-dimensional matrix describing the 
+;; statistics of the input vectors in dataset <d>.
+;; This function assumes that the input part vector have
+;; all the same size.  The resulting matrix contains
+;; five rows containing, for each coefficient of 
+;; the input vectors:
+;;.IP
+;; the minimal value,
+;;.IP
+;; the mean minus the standard deviation,
+;;.IP
+;; the mean value,
+;;.IP
+;; the mean plus the standard deviation, and,
+;;.IP
+;; the maximal value,
+(de db-get-x-statistics(d)
+  ((-obj- (db)) d)
+  (let ((f (float-matrix 5 1))
+	(n (==> d size)) )
+    (in-stack
+     (let ((s (float-matrix 1)))
+       (==> d getx 0 s)
+       (idx-f2resize f 5 (idx-dim s 0))
+       (let* ((minis (select f 0 0))
+	      (maxis (select f 0 4))
+	      (sums  (select f 0 2))
+	      (sum2s (select f 0 3)) 
+	      (tmps  (select f 0 1)) )
+	 (idx-copy s minis)
+	 (idx-copy s maxis)
+	 (for (i 0 (1- n))
+	      (==> d getx i s)
+	      (idx-bloop ((mi minis)(ma maxis)(ss s))
+		(mi (min (mi) (ss)))
+		(ma (max (ma) (ss))) )
+	      (idx-add s sums sums)
+	      (idx-f1mulacc s s sum2s))
+	 (idx-f1dotc sums (/ 1.0 n) sums)
+	 (idx-f1dotc sum2s (/ 1.0 n) sum2s)
+	 (idx-mul sums sums tmps)
+	 (idx-sub sum2s tmps sum2s)
+	 (idx-sqrt sum2s sum2s)
+	 (idx-sub sums sum2s (select f 0 1))
+	 (idx-add sums sum2s (select f 0 3)) ) ) )
+    f ) )
+
+#? (db-get-y-statistics <d>)
+;; Returns a two-dimensional matrix describing the 
+;; statistics of the output vectors in dataset <d>.
+;; This function assumes that the input part vector have
+;; all the same size.  The resulting matrix contains
+;; five rows containing, for each coefficient of 
+;; the output vectors:
+;;.IP
+;; the minimal value,
+;;.IP
+;; the mean minus the standard deviation,
+;;.IP
+;; the mean value,
+;;.IP
+;; the mean plus the standard deviation, and,
+;;.IP
+;; the maximal value,
+(de db-get-y-statistics(d)
+  ((-obj- (db)) d)
+  (let ((f (float-matrix 5 1))
+	(n (==> d size)) )
+    (in-stack
+     (let ((s (float-matrix 1)))
+       (==> d gety 0 s)
+       (idx-f2resize f 5 (idx-dim s 0))
+       (let* ((minis (select f 0 0))
+	      (maxis (select f 0 4))
+	      (sums  (select f 0 2))
+	      (sum2s (select f 0 3)) 
+	      (tmps  (select f 0 1)) )
+	 (idx-copy s minis)
+	 (idx-copy s maxis)
+	 (for (i 0 (1- n))
+	      (==> d gety i s)
+	      (idx-bloop ((mi minis)(ma maxis)(ss s))
+		(mi (min (mi) (ss)))
+		(ma (max (ma) (ss))) )
+	      (idx-add s sums sums)
+	      (idx-f1mulacc s s sum2s))
+	 (idx-f1dotc sums (/ 1.0 n) sums)
+	 (idx-f1dotc sum2s (/ 1.0 n) sum2s)
+	 (idx-mul sums sums tmps)
+	 (idx-sub sum2s tmps sum2s)
+	 (idx-sqrt sum2s sum2s)
+	 (idx-sub sums sum2s (select f 0 1))
+	 (idx-add sums sum2s (select f 0 3)) ) ) )
+    f ) )
+
+;;; ------------------------------
+
+#? ** Transforming data items on the fly.
+;; Four subclasses of <db> provide means to 
+;; transform data items on the fly.
+
+#? * db-transform.
+;; Class <db-transform> provide the basic mechanisms
+;; for creating a derived dataset for transforming
+;; data items on the fly.  Its single slot <base>
+;; points to the initial dataset.
 
 (defclass db-transform db
   ((-obj- (db)) base) )
@@ -395,6 +731,26 @@
 
 ;;; ------------------------------
 
+#? * db-norm.
+;; Class <db-norm> provides a base class for
+;; dataset subclasses that normalize data on the fly.
+;; This is the common subclass for classes 
+;; <db-normx> and <db-normy>.
+
+#? (new db-normx <d>)
+;; Creates a dataset that apply a separate bias and scale factor
+;; to each of the components of the data item input part.
+;; The initial biases are set to <0>, and the initial
+;; scale factors are set to <1>.  The resulting dataset
+;; only supports the floating point access methods <getx> and <gety>.
+
+#? (new db-normx <d>)
+;; Creates a dataset that apply a separate bias and scale factor
+;; to each of the components of the data item output part.
+;; The initial biases are set to <0>, and the initial
+;; scale factors are set to <1>. The resulting dataset
+;; only supports the floating point access methods <getx> and <gety>.
+
 (de db-norm-helper(x d n)
   ((-idx1- (-float-)) x)
   ((-float-) d)
@@ -408,8 +764,6 @@
 	 (idx-copy temp (narrow x 0 (idx-dim temp 0) 0)) )
        x ) ) )
 
-;; ---------
-
 (defclass db-norm db-transform
   ((-idx1- (-float-)) add)
   ((-idx1- (-float-)) mul) )
@@ -422,6 +776,22 @@
   (error "This class does nothing: use db-normx or db-normy")
   () )
 
+#? (==> <db-norm> get-statistics)
+;; Returns a two-dimensional matrix describing
+;; the statistics of the input vectors (class <db-normx>)
+;; or output vectors (class <db-normy>)
+;;.SEE (db-get-x-statistics <d>)
+;;.SEE (db-get-y-statistics <d>)
+(defmethod db-norm get-statistics()
+  (error "Must be defined by subclass of db-norm")
+  (float-matrix 5 1) )
+
+
+#? (==> <db-norm> set-coeff <i> <bias> <scale>)
+;; Sets the individual bias <bias> and scale <scale>
+;; that will be applied to the <i>-th component of the 
+;; input-part (class <db-normx>) or output part (class <db-normy>)
+;; of each data item.
 (defmethod db-norm set-coeff(i bias scale)
   ((-int-) i)
   ((-float-) bias scale)
@@ -432,71 +802,14 @@
   (mul i scale)
   i )
 
-;; ---------
-
-(de db-get-x-statistics(d)
-  ((-obj- (db)) d)
-  (let ((s (float-matrix 1)))
-    (==> d getx 0 s)
-    (let* ((m (idx-dim s 0))
-	   (n (==> d size))
-	   (f (float-matrix 5 m)) 
-	   (minis (select f 0 0))
-	   (maxis (select f 0 4))
-	   (sums  (select f 0 2))
-	   (sum2s (select f 0 3)) 
-	   (tmps  (select f 0 1)) )
-      (idx-copy s minis)
-      (idx-copy s maxis)
-      (for (i 0 (1- n))
-	   (==> d getx i s)
-	   (idx-bloop ((mi minis)(ma maxis)(ss s))
-	     (mi (min (mi) (ss)))
-	     (ma (max (ma) (ss))) )
-	   (idx-add s sums sums)
-	   (idx-f1mulacc s s sum2s))
-      (idx-f1dotc sums (/ 1.0 n) sums)
-      (idx-f1dotc sum2s (/ 1.0 n) sum2s)
-      (idx-mul sums sums tmps)
-      (idx-sub sum2s tmps sum2s)
-      (idx-sqrt sum2s sum2s)
-      (idx-sub sums sum2s (select f 0 1))
-      (idx-add sums sum2s (select f 0 3))
-      f ) ) )
-
-(de db-get-y-statistics(d)
-  ((-obj- (db)) d)
-  (let ((s (float-matrix 1)))
-    (==> d gety 0 s)
-    (let* ((m (idx-dim s 0))
-	   (n (==> d size))
-	   (f (float-matrix 5 m)) 
-	   (minis (select f 0 0))
-	   (maxis (select f 0 4))
-	   (sums  (select f 0 2))
-	   (sum2s (select f 0 3)) 
-	   (tmps  (select f 0 1)) )
-      (idx-copy s minis)
-      (idx-copy s maxis)
-      (for (i 0 (1- n))
-	   (==> d gety i s)
-	   (idx-bloop ((mi minis)(ma maxis)(ss s))
-	     (mi (min (mi) (ss)))
-	     (ma (max (ma) (ss))) )
-	   (idx-add s sums sums)
-	   (idx-f1mulacc s s sum2s))
-
-      (idx-f1dotc sums (/ 1.0 n) sums)
-      (idx-f1dotc sum2s (/ 1.0 n) sum2s)
-      (idx-mul sums sums tmps)
-      (idx-sub sum2s tmps sum2s)
-      (idx-sqrt sum2s sum2s)
-      (idx-sub sums sum2s (select f 0 1))
-      (idx-add sums sum2s (select f 0 3))
-      f ) ) )
-
-;; ---------
-
+#? (db-norm-min-max <d> <stat> <i> <nmin> <nmax>)
+;; Calls method <set-coeff> on dataset <d>
+;; and sets the bias and scale for the <i>-th component 
+;; of the input part (class <db-normx>) or output part
+;; (class <db-normy>).  Argument <stat> is the matrix
+;; returned by method <get-statistics>.
+;; After normalization, the component will have
+;; minimum value <nmin> and maximum value <nmax>.
 (de db-norm-min-max(d stat i nmin nmax)
   ((-obj- (db-norm)) d)
   ((-idx2- (-float-)) stat)
@@ -511,6 +824,14 @@
 	   (/ (- nmax nmin) (- omax omin)) ) ) )
   t )
 
+#? (db-norm-mean-sdev <d> <stat> <i> <nmean> <nsdev>)
+;; Calls method <set-coeff> on dataset <d>
+;; and sets the bias and scale for the <i>-th component 
+;; of the input part (class <db-normx>) or output part
+;; (class <db-normy>).  Argument <stat> is the matrix
+;; returned by method <get-statistics>.
+;; After normalization, the component will 
+;; have mean <nmean> and standard deviation <nsdev>.
 (de db-norm-mean-sdev(d stat i nmean nsdev)
   ((-obj- (db-norm)) d)
   ((-idx2- (-float-)) stat)
@@ -560,6 +881,9 @@
   (error "Cannot reliably normalize ubytes")
   p )
 
+(defmethod db-normx get-statistics()
+  (db-get-x-statistics this) )
+
 ;; ---------
 
 (defclass db-normy db-norm)
@@ -593,11 +917,14 @@
   (error "Cannot reliably normalize ubytes")
   p )
 
+(defmethod db-normy get-statistics()
+  (db-get-y-statistics this) )
 
 
 
 
 ;;; ------------------------------
+;;; COMPILE
 
 (dhc-make-all ()
 	      `(;; base
@@ -610,7 +937,7 @@
 			   getx-int gety-int 
 			   getx-ubyte gety-ubyte
 			   get-label select)
-		db-shuffle db-narrow
+		db-remap db-shuffle db-narrow
 		;; matrix
 		,@db-matrix-fsymblist
 		;; transform
@@ -620,10 +947,10 @@
 			      get-label)
 		;; norm
 		db-norm-helper
-		(db-norm set-coeff)
 		db-get-x-statistics db-get-y-statistics 
+		(db-norm set-coeff get-statistics)
 		db-norm-min-max db-norm-mean-sdev
-		(db-normx db-normx getx getx-int getx-ubyte)
-		(db-normy db-normy gety gety-int gety-ubyte)  
+		(db-normx db-normx getx getx-int getx-ubyte get-statistics)
+		(db-normy db-normy gety gety-int gety-ubyte get-statistics)  
 		;; fini
 		) () )
