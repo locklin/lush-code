@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.12 2003-01-10 21:40:26 leonb Exp $
+ * $Id: fileio.c,v 1.13 2003-01-14 16:41:23 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -90,6 +90,7 @@ static at *at_lushdir;
 static at *at_tl3dir;
 
 char file_name[FILELEN];
+char lushdir_name[FILELEN];
 
 /* --------- FILE OPERATIONS --------- */
 
@@ -1042,7 +1043,8 @@ search_lushdir(char *progname)
 	    {
 	      s = dirname(s);
 	      s = dirname(s);
-	      return s;
+              strcpy(lushdir_name, s);
+	      return lushdir_name;
 	    }
       }
   }
@@ -1899,6 +1901,9 @@ init_fileio(char *program_name)
   
   if (!(s=search_lushdir(program_name)))
     abort("Cannot locate library files");
+#ifdef UNIX
+  unix_setenv("LUSHDIR",s);
+#endif
   q = new_string(s);
   var_set(at_lushdir, q);
   var_set(at_tl3dir, q);

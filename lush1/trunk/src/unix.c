@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.32 2003-01-11 05:09:41 leonb Exp $
+ * $Id: unix.c,v 1.33 2003-01-14 16:41:27 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1263,6 +1263,52 @@ DY(ybground)
     _exit(0);
   }
   return NIL; /* Never reached; silences compiler */
+}
+
+
+
+/* ---------------------------------------- */
+/* ENVIRONMENT */
+/* ---------------------------------------- */
+
+
+int
+unix_setenv(const char *name, const char *value)
+{
+#ifdef HAVE_SETENV
+  return setenv(name, value, TRUE);
+#else 
+  char *s;
+  if (! (s = malloc(strlen(name)+strlen(value)+2)))
+    return ENOMEM;
+  strcpy(s,name);
+  strcat(s,"=");
+  strcat(s,value);
+#ifdef HAVE_PUTENV
+  return putenv(s);
+#else
+  {
+    static char **lastenv;
+    extern char **environ;
+    int envsize = 0;
+    char **newenv = 0;
+    while (environ[envsize])
+      envsize += 1;
+    if (! (newenv = malloc( (envsize+2)*sizeof(char*))))
+      return ENOMEM;
+    envsize = -1;
+    while(environ[++envsize])
+      newenv[envsize] = environ[envsize];
+    newenv[envsize] = s;
+    newenv[envsize+1] = 0;
+    environ = newenv;
+    if (environ == lastenv)
+      free(environ);
+    lastenv = environ;
+    return 0;
+  } 
+#endif
+#endif
 }
 
 

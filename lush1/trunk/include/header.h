@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.46 2003-01-11 05:09:41 leonb Exp $
+ * $Id: header.h,v 1.47 2003-01-14 16:39:51 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -91,6 +91,7 @@ TLAPI void  filteropen(const char *cmd, FILE **pfw, FILE **pfr);
 TLAPI void  filteropenpty(const char *cmd, FILE **pfw, FILE **pfr);
 TLAPI FILE* unix_popen(const char *cmd, const char *mode);
 TLAPI int   unix_pclose(FILE *f);
+TLAPI int   unix_setenv(const char *name, const char *value);
 /* cygwin */
 # ifdef __CYGWIN32__
 TLAPI void cygwin_fmode_text(FILE *f);
@@ -619,6 +620,7 @@ TLAPI void all_args_eval(at **arg_array, int i);
 /* FILEIO.H ------------------------------------------------- */
 
 extern TLAPI class file_R_class, file_W_class;
+extern TLAPI char lushdir_name[];
 extern TLAPI char file_name[];
 
 #define OPEN_READ(f,s)  new_extern(&file_R_class,open_read(f,s))
