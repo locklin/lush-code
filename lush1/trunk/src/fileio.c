@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.19 2003-02-08 13:48:42 leonb Exp $
+ * $Id: fileio.c,v 1.20 2003-05-27 21:49:50 leonb Exp $
  **********************************************************************/
 
 
@@ -1621,7 +1621,7 @@ file_size(FILE *f)
   if (fseeko(f,(off_t)0,SEEK_END))
     error(NIL,"Non exhaustable file (pipe or terminal ?)",NIL);
   e = ftello(f);
-  if (fseek(f,(off_t)x,SEEK_SET))
+  if (fseeko(f,(off_t)x,SEEK_SET))
     error(NIL,"Non rewindable file (pipe or terminal ?)",NIL);
   return e - x;
 #else

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.10 2003-01-12 02:57:09 leonb Exp $
+ * $Id: storage.c,v 1.11 2003-05-27 21:49:50 leonb Exp $
  **********************************************************************/
 
 
@@ -963,16 +963,25 @@ void
 storage_mmap(at *atp, FILE *f, int offset)
 {
   struct storage *st;
-  int len;
+  size_t len;
   gptr addr;
   gptr xtra;
   
   ifn (storagep(atp))
     error(NIL,"not a storage",atp);
   st = atp->Object;
+#if HAVE_FSEEKO
+  if (fseeko(f,(off_t)0,SEEK_END)==-1)
+    test_file_error(NIL);
+#else
   if (fseek(f,0,SEEK_END)==-1)
     test_file_error(NIL);
-  len = ftell(f);
+#endif
+#if HAVE_FTELLO
+  len = (size_t)ftello(f);
+#else
+  len = (size_t)ftell(f);
+#endif
   rewind(f);
   if (st->srg.type == ST_AT)
     error(NIL,"cannot map an AT storage",atp);
@@ -1085,16 +1094,14 @@ DX(xwritablep)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
-
+  
   if (storagep(p))
     st = p->Object;
-  /*
-  else if (INDEXP(p))
+  else if (indexp(p))
     st = ((struct index*)(p->Object))->st;
-  */
   else
     error(NIL,"neiher an index, nor a storage",p);
-
+  
   if (st->srg.flags & STF_RDONLY)
     return NIL;
   else
@@ -1111,12 +1118,8 @@ DX(xstorage_read_only)
 
   if (storagep(p))
     st = p->Object;
-  /* 
-  else if (indexp(p))
-    st = ((struct index*)(p->Object))->st;
-  */
   else
-    error(NIL,"neiher an index, nor a storage",p);
+    error(NIL,"not a storage",p);
   st->srg.flags |= STF_RDONLY;
   LOCK(p);
   return p;
@@ -1133,12 +1136,10 @@ DX(xstorage_size)
 
   if (storagep(p))
     st = p->Object;
-  /* 
   else if (indexp(p))
     st = ((struct index*)(p->Object))->st;
-  */
   else
-    error(NIL,"neiher an index, nor a storage",p);
+    error(NIL,"neither an index, nor a storage",p);
 
   return NEW_NUMBER(st->srg.size);
 }
@@ -1159,12 +1160,8 @@ void storage_clear(at *p)
 
   if (storagep(p))
     st = p->Object;
-  /* 
-  else if (indexp(p))
-    st = ((struct index*)(p->Object))->st;
-  */
   else
-    error(NIL,"neiher an index, nor a storage",p);
+    error(NIL,"not a storage",p);
 
   if (st->srg.type==ST_AT) 
     {
@@ -1232,6 +1229,17 @@ int storage_load(at *atp, FILE *f)
   if (st->srg.type==ST_AT)
     error(NIL,"cannot load a AT storage",atp);
   if (st->srg.flags & STF_UNSIZED) {
+
+#if HAVE_FSEEKO
+    off_t len;
+    off_t here;
+    here = ftello(f);
+    if (fseeko(f,0,SEEK_END)==-1)
+      test_file_error(NIL);
+    len = ftello(f);
+    if (fseeko(f,here,SEEK_SET)==-1)
+      test_file_error(NIL);
+#else
     int len;
     int here;
     here = ftell(f);
@@ -1240,8 +1248,9 @@ int storage_load(at *atp, FILE *f)
     len = ftell(f);
     if (fseek(f,here,SEEK_SET)==-1)
       test_file_error(NIL);
+#endif
     if (len==0) { return 0; }
-    storage_malloc(atp,len/storage_type_size[st->srg.type],0);
+    storage_malloc(atp,(size_t)len/storage_type_size[st->srg.type],0);
   }
   
   (*st->write_srg)(st);

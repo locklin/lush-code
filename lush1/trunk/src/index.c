@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.23 2003-05-05 15:09:11 leonb Exp $
+ * $Id: index.c,v 1.24 2003-05-27 21:49:50 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -2147,8 +2147,12 @@ import_raw_matrix(at *p, FILE *f, int offset)
     error(NIL,"Cannot read data for this storage type",ind->atst);
 
   /* skip */
-  if (fseek(f, offset, SEEK_CUR) < 0)
-    test_file_error(NIL);
+#if HAVE_FSEEKO
+  if (fseeko(f, (off_t)offset, SEEK_CUR) < 0)
+#else
+    if (fseek(f, offset, SEEK_CUR) < 0)
+#endif
+      test_file_error(NIL);
 
   /* read */
   index_write_idx(ind, &id);
@@ -2482,8 +2486,13 @@ at *
 map_matrix(FILE *f)
 {
   int ndim, dim[MAXDIMS];
-  int magic, swapflag, pos;
+  int magic, swapflag;
   at *atst, *ans;
+#ifdef HAVE_FTELLO
+  off_t pos;
+#else
+  int pos;
+#endif
 
   /* Header */
   load_matrix_header(f,&ndim, &magic, &swapflag, dim);
@@ -2503,7 +2512,11 @@ map_matrix(FILE *f)
       error(NIL, "cannot map an ascii matrix file", NIL);
     }
   /* Map storage */
+#ifdef HAVE_FTELLO
+  if ((pos = ftello(f)) < 0)
+#else
   if ((pos = ftell(f)) < 0)
+#endif
     error(NIL, "cannot seek through this file", NIL);
   storage_mmap(atst, f, pos);
   /* Create index */
