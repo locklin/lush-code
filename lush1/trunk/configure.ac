@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.7 2002-07-10 15:41:42 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.8 2002-07-12 22:42:28 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -51,6 +51,7 @@ AC_PATH_PROG(CP, cp)
 AC_PATH_PROG(RM, rm)
 AC_PATH_PROG(AR, ar)
 AC_PATH_PROG(TOUCH, touch)
+AC_PATH_PROG(INDENT, indent)
 INSTALL='${top_srcdir}/config/install-sh -c' 
 AC_SUBST(INSTALL)
 
