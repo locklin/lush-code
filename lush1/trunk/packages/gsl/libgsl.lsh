@@ -32,6 +32,7 @@
 (libload "gsl/eigen")
 (libload "gsl/linalg")
 (libload "gsl/permutation")
+(libload "libidx/idx-sort")
 
 ;; dummy function that adds GSL C header files in C file
 (eval `(de dummy_libgsl () ,gsl-cpheader-cmd ()))
@@ -45,13 +46,15 @@
 
 #? (eigen-symm <m>)
 ;; Compute eigenvalues of symmetric real matrix <m>.
-;; Vector of eigenvalues is returned. Input matrix is destroyed.
+;; Vector of sorted eigenvalues is returned. Input matrix is destroyed.
+;; to call non-destructively, do {<c> (eigen-symm (idx-copy m))}.
 (de eigen-symm (m)
   ((-idx2- (-double-)) m)
   (let ((v (double-matrix (idx-dim m 0)))
 	(p (gsl_eigen_symm_alloc (idx-dim m 0))))
     (idx2gsl (gsl-eigen-symm m v p))
     (gsl_eigen_symm_free p)
+    (idx-d1sortdown v)
     v))
 
 #? (eigen-symmv <m>)
@@ -67,6 +70,35 @@
     (idx2gsl (gsl-eigen-symmv m v ev p))
     (idx2gsl (gsl_eigen_symmv_sort v ev 1))
     (gsl_eigen_symmv_free p)
+    (idx-copy ev m)
+    v))
+
+#? (eigen-herm <m>)
+;; Compute eigenvalues of Hermitian complex matrix <m>
+;; (NxMx2 matrix). Vector of sorted eigenvalues is returned. 
+;; Input matrix is destroyed.
+;; to call non-destructively, do {<c> (eigen-herm (idx-copy m))}.
+(de eigen-herm (m)
+  ((-idx3- (-double-)) m)
+  (let ((v (double-matrix (idx-dim m 0)))
+	(p (gsl_eigen_herm_alloc (idx-dim m 0))))
+    (idx2gsl (gsl-eigen-herm m v p))
+    (gsl_eigen_herm_free p)
+    (idx-d1sortdown v)
+    v))
+
+#? (eigen-hermv <m>)
+;; Compute eigenvalues and eigenvectors of Hermitian complex matrix <m>.
+;; Vector of eigenvalues is returned. Input matrix is filled
+;; with eigenvectors on exit (each column is an eigenvector).
+(de eigen-hermv (m)
+  ((-idx3- (-double-)) m)
+  (let ((v (double-matrix (idx-dim m 0)))
+	(ev (double-matrix (idx-dim m 0) (idx-dim m 1) (idx-dim m 2)))
+	(p (gsl_eigen_hermv_alloc (idx-dim m 0))))
+    (idx2gsl (gsl-eigen-hermv m v ev p))
+    (idx2gsl (gsl_eigen_hermv_sort v ev 1))
+    (gsl_eigen_hermv_free p)
     (idx-copy ev m)
     v))
 
@@ -137,6 +169,23 @@
   (gsl_linalg_LU_svx a-gsl permut b-gsl)
   (gsl_permutation_free permut)
   (free a-gsl) (free b-gsl)) 0)
+
+#? (solve-lu-complex <a> <b>)
+;; This function solves the complex system A*x=b using LU decomposition.
+;; the result is put in <b> on output. Matrix <a> is also 
+;; destroyed in the process.
+(de solve-lu-complex (a b)
+  ((-idx3- (-double-)) a)
+  ((-idx2- (-double-)) b)
+  (let ((permut (gsl_permutation_alloc (idx-dim a 0)))
+	(signum (int-matrix))
+	(a-gsl (gsl-matrix-complex-double-idx-ptr a))
+	(b-gsl (gsl-vector-complex-double-idx-ptr b)))
+  (gsl_linalg_complex_LU_decomp a-gsl permut (idx-ptr signum))
+  (gsl_linalg_complex_LU_svx a-gsl permut b-gsl)
+  (gsl_permutation_free permut)
+  (free a-gsl) (free b-gsl)) 0)
+
 
 #? (solve-sv <a> <b>)
 ;; [adapted from the GSL manual]: This function solves the linear system 
@@ -252,9 +301,12 @@
  dummy_libgsl
  eigen-symm
  eigen-symmv
+ eigen-herm
+ eigen-hermv
  svd
  solve-hh
  solve-lu
+ solve-lu-complex
  solve-sv
  inverse-lu
  determinant
