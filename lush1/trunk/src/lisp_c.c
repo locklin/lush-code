@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.21 2002-08-19 15:46:37 leonb Exp $
+ * $Id: lisp_c.c,v 1.22 2002-08-19 15:59:46 leonb Exp $
  **********************************************************************/
 
 
@@ -2754,11 +2754,16 @@ DX(xto_number)
 /* (to-bool <arg>) */
 DX(xto_bool)
 {
+  at *p;
   ARG_NUMBER(1);
   ARG_EVAL(1);
-  if (APOINTER(1))
-    return true();
-  return NIL;
+  p = APOINTER(1);
+  if (! p)
+    return NIL;
+  if (p->flags & C_NUMBER)
+    if (p->Number == 0)
+      return NIL; /* compiled semantic */
+  return true();
 }
 
 /* (to-obj [<class>] <gptr|obj>)  */
