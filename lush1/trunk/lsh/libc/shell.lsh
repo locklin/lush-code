@@ -1,0 +1,236 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: shell.lsh,v 1.1 2002-08-30 03:13:55 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Shell Commands
+;; This set of functions is designed to facilitate the
+;; writing of "shell scripts" in Lush. It includes
+;; functions that are more or less equivalent to common 
+;; shell commands such as ls, cd, cp, mv, rm etc.
+;; Those commands manipulate and return lists of strings.
+;; Other functions are provided to manipulate those
+;; lists of strings.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; private utilities
+(de not-hidden-file-p (x) (not (regex-match "^\\.[^/].*" x)))
+(de file-after-p (a b) (> (downcase a) (downcase b)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** String List Utilities
+
+#? (glob <regex> <l>)
+;; Return a list of the elements of <l> that match
+;; the regular expression <regex>. <l> must be a list
+;; of strings, and <regex> a string containing a valid 
+;; Lush regular expression. 
+(de glob (patt l) (filter (lambda (x) (regex-match patt x)) l))
+
+#? (split-words <s>)
+;; split a string of words (space-separated strings)
+;; into a list or those words. 
+;; KNOWN BUG: tabs are not seen as spaces.
+(de split-words (s)
+  (all ((x (regex-split "[^ ]+ " (concat s " ")))) (stripr x)))
+
+#? (merge-words <l>)
+;; turns a list of strings into a single
+;; string composed of the concatenation of
+;; the elements of <l> interspesed with spaces.
+(de merge-words (s)
+  (apply concat (all ((x s)) (concat x " "))))
+
+#? (read-lines <f>)
+;; read file <f> and return a list of strings,
+;; each of which is a line of the file.
+(de read-lines(f)
+  (reading f
+    (let ((ans ()))
+      (while (<> (skip-char "\n\r\f") "\e")
+        (setq ans (cons (read-string) ans)))
+      (reverse ans))))
+
+#? (write-lines <l>)
+;; write each string in list <l>
+;; as a line.
+(de write-lines(l) (each ((x l)) (printf "%s\n" x)))
+
+#? #P<expr>
+;; equivalent to (write-lines <expr>)
+(dmc |#P| (write-lines (eval (read))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** File Information
+
+#? (file-type <f>)
+;; return the type of file <f> as an atom equal
+;; to 'reg for a regular file, 'dir for a directory,
+;; 'chr for character device, etc.
+(de file-type (f) (alist-get 'type (fileinfo f)))
+
+#? (file-size <f>)
+;; return the size of file <f> in bytes
+(de file-size (f) (alist-get 'size (fileinfo f)))
+
+#? (file-mode <f>)
+;; return the permissions of file <f> as an integer.
+(de file-mode (f) (alist-get 'mode (fileinfo f)))
+
+#? (file-uid <f>)
+;; return the userid of the owner of file <f>
+(de file-uid (f) (alist-get 'uid (fileinfo f)))
+
+#? (file-gid <f>)
+;; return the groupid of file <f>
+(de file-gid (f) (alist-get 'gid (fileinfo f)))
+
+(de date-to-ymdms (d) (date-to-string d "%Y %m %d %H %M %S"))
+
+#? (file-atime <f>)
+;; return the last access time of file <f> 
+;; as a string of the form "YYYY MM DD hh mm ss".
+;; The string can be turned into a list with split-words.
+(de file-atime (f) (date-to-ymdms (alist-get 'atime (fileinfo f))))
+
+#? (file-mtime <f>)
+;; return the last modification time of file <f> 
+;; as a string of the form "YYYY MM DD hh mm ss".
+;; The string can be turned into a list with split-words.
+(de file-mtime (f) (date-to-ymdms (alist-get 'mtime (fileinfo f))))
+
+#? (file-ctime <f>)
+;; return the creation time of file <f> 
+;; as a string of the form "YYYY MM DD hh mm ss".
+;; The string can be turned into a list with split-words.
+(de file-ctime (f) (date-to-ymdms (alist-get 'ctime (fileinfo f))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** Variables
+
+#? shell-home
+;; user home directory
+(defvar shell-home (getenv "HOME"))
+
+#? shell-dirstack
+;; directory stack manipulated by pushd and popd
+(defvar shell-dirstack ())
+
+#? shell-tmpdir
+;; directory used by the function sh to
+;; store temporary files ("/tmp" by default).
+(defvar shell-tmpdir "/tmp")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** Directories
+
+#? (pwd)
+;; return current directory (equivalent to (chdir)).
+(de pwd () (chdir))
+
+#? (cd [<d>])
+;; change current directory to <d>, or to 
+;; user home if <p> is not present.
+(de cd (&optional p) (if p (chdir p) (chdir shell-home)))
+
+#? (pushd <d>)
+;; Temporarily change current directory to <d>. 
+;; Returning to the previous directory can be done 
+;; with popd.
+(de pushd (p) 
+  (let ((cp (chdir))) 
+    (prog1 (chdir p) (setq shell-stack (cons cp shell-stack)))))
+
+#? (popd)
+;; return to the current directory 
+;; before the last pushd.
+(de popd () 
+  (if (not shell-stack)
+      (error "empty directory stack")
+    (let ((p (car shell-stack)))
+      (setq shell-stack (cdr shell-stack))
+      (chdir p))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Shell Commands
+
+#? (rm <f>)
+;; remove file <f> (be careful).
+(de rm (s) (unlink s))
+
+#? (cp <from> <to>)
+;; copy file <from> into file <to>
+(de cp (from to) (copyfile from to))
+
+#? (mv <from> <to>)
+;; move file from <from> to <to>.
+(de mv (from to) (rename from to))
+
+#? (ls <d1> <d2> ... <dn>)
+;; return a list of all the files in <d1>
+;; (in case-insensitive lexicographic order),
+;; followed by all the files in <d2>, etc...
+;; Invisible files (".", "..", ".xxx", etc) 
+;; are not included.
+(de ls s
+  (when (not s) (setq s (list (pwd))))
+  (apply append 
+	 (all ((x s)) 
+	   (sort-list (filter not-hidden-file-p 
+			      (cdr (cdr (files x)))) file-after-p))))
+
+#? (ls-a <d1> <d2> ... <dn>)
+;; return a list of all the files in <d1>
+;; (in case-insensitive lexicographic order),
+;; followed by all the files in <d2>, etc...
+;; Invisible files (".", "..", ".xxx", etc) 
+;; are included.
+(de ls-a s
+  (when (not s) (setq s (list (pwd))))
+  (apply append 
+	 (all ((x s)) 
+	   (sort-list (cdr (cdr (files x))) file-after-p))))
+
+#? (sh <cmd> [<l>])
+;; run shell command <cmd> and return the
+;; standard output as a list of strings 
+;; (one string per line). The optional argument
+;; <l> is a list of strings that will be written
+;; to a temporary file (one line per string)
+;; and fed to the standard input of command <cmd>
+(de sh (cmd &optional stdin) 
+  (if (not stdin)
+      (read-lines (concat "| " cmd))
+    (let ((tmp (tmpname shell-tmpdir)))
+      (writing tmp (each ((x stdin)) (printf "%s\n" x)))
+      (prog1 
+	  (read-lines (concat "| " cmd " <" tmp))
+	(rm tmp)))))
+
+
