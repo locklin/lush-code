@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.51 2004-07-20 18:51:06 leonb Exp $
+ * $Id: module.c,v 1.52 2004-07-21 15:52:20 leonb Exp $
  **********************************************************************/
 
 
@@ -98,7 +98,7 @@ typedef struct nsbundle_s {
 static const char *nsbundle_error;
 static nsbundle_t  nsbundle_head;
 static NSLinkEditErrorHandlers nsbundle_handlers;
-at *nsbundle_symtable;
+static at *nsbundle_symtable;
 
 
 #define DYLD_NASTY_HACK 1
@@ -106,8 +106,8 @@ at *nsbundle_symtable;
 /* INCREDIBLY NASTY HACK TO TAME NSUnLinkModule... */
 /* Some pointers to patch dyld data structures on the fly. */
 enum mybool {myfalse, mytrue};
-void (*nsbundle_clear_undefined_list)(enum mybool);
-enum mybool *nsbundle_return_on_error;
+static void (*nsbundle_clear_undefined_list)(enum mybool);
+static enum mybool *nsbundle_return_on_error;
 #endif
 
 static int
