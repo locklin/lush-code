@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.3 2002-04-24 20:55:38 leonb Exp $
+ * $Id: graphics.h,v 1.4 2002-04-30 21:22:08 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -114,6 +114,11 @@ struct event {
 #define EVENT_DELETE      (2003L)
 #define EVENT_SENDEVENT   (2004L)
 
+#define EVENT_ALARM       (3001L)
+
+#define EVENT_GLEXPOSE    (4001L)
+
+
 /* Hilites */
 
 #define HILITE_NONE       (0)
@@ -128,10 +133,11 @@ LUSHAPI void enqueue_event(at*, int, int, int, int, int);
 LUSHAPI void enqueue_eventdesc(at*, int, int, int, int, int, char*);
 LUSHAPI void process_pending_events(void);
 
-LUSHAPI int rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy);
+LUSHAPI int  rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy);
 LUSHAPI void rgb_draw_matrix(int x, int y, at *p, int sx, int sy);
-LUSHAPI int color_draw_idx(int x, int y, struct idx *idx, real minv, real maxv, 
-                           int apartx, int aparty, int *colors);
+
+LUSHAPI int  color_draw_idx(int x, int y, struct idx *idx, real minv, real maxv, 
+                            int apartx, int aparty, int *colors);
 LUSHAPI void color_draw_matrix(int x, int y, at *p, real minv, real maxv, 
                                int apartx, int aparty, int *colors);
 

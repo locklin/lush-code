@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.2 2002-04-25 22:54:27 leonb Exp $
+ * $Id: graphics.c,v 1.3 2002-04-30 21:22:12 leonb Exp $
  **********************************************************************/
 
 
@@ -99,8 +99,19 @@ event_to_list(int event, int xdown, int ydown, int xup, int yup, char *desc)
 		 cons(NEW_NUMBER(xdown),
 		      cons(NEW_NUMBER(ydown), NIL))));
   }
-
-
+  
+  if (event == EVENT_ALARM) 
+    return (cons(named("alarm"),
+		 cons(NEW_NUMBER(xdown),
+		      cons(NEW_NUMBER(ydown), NIL))));
+  
+  if (event == EVENT_GLEXPOSE)
+    return cons(named("glexpose"),
+                cons(NEW_NUMBER(xdown),
+                     cons(NEW_NUMBER(ydown),
+                          cons(NEW_NUMBER(xup),
+                               cons(NEW_NUMBER(yup), NIL))) ) );
+  
   /* events that update evshift and evcontrol */
 
   evshift = (xup ? 1 : 0);
@@ -139,11 +150,13 @@ event_to_list(int event, int xdown, int ydown, int xup, int yup, char *desc)
     return (cons(named("fkey"),
                  cons(NEW_NUMBER(xdown),
 		      cons(NEW_NUMBER(ydown), NIL))));
+  
+  /* default */
 
   evshift = evctrl = 0;
   return (cons(NEW_NUMBER(event),
-		 cons(NEW_NUMBER(xdown),
-		      cons(NEW_NUMBER(ydown), NIL))));
+               cons(NEW_NUMBER(xdown),
+                    cons(NEW_NUMBER(ydown), NIL))));
 }
 
 
