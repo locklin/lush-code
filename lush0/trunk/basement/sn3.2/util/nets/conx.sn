@@ -1,0 +1,204 @@
+;; CONX architecture
+;;
+;; and SUM-ARCH architecture
+;;
+
+(mload "modules")
+(mload "states")
+(printf "[%s]\n" file-being-loaded)
+
+#? File "conx.sn"
+;; An architecture that connects inputs to outputs (with exactly one
+;; input per output but maybe more than one output per input,
+;; i.e. a one to many map). The inputs and outputs are 
+;; bidimensional (i.e. sequences of vectors).
+;; It has no adjustable parameters. Instead it has internal non-adjustable parameters
+;; specifying the input/output connectivity.
+;;
+;;.SEE sn-module
+;;.SEE (new conx n-outputs)
+;;.SEE (==> <conx> fprop <parameters> <input> <output>)
+;;.SEE (==> <conx> bprop <parameters> <input> <output>)
+;;.SEE (==> <conx> output-dim <inputx>)
+;;.SEE (==> <conx> generate <parameters> <input> <output>)
+
+(defclass conx sn-module
+   n-outputs
+	n-inputs
+	indices
+)
+
+(defmethod conx undim () ())
+
+#? (new conx <n-outputs> <n-inputs> <indices>)
+;; Construct a conx architecture. The parameters are given
+;; when constructing the corresponding machine.
+;;.SEE machine
+;;.SEE sn-module
+;;.SEE conx
+(defmethod conx conx (n-outp n-inp ind)
+   (setq n-outputs n-outp n-inputs n-inp indices ind)
+)
+
+(defmethod conx save-structure (fdesc &optional option)
+   (write-binary fdesc (classname (classof this)))
+	(write-binary fdesc n-outputs)
+	(write-binary fdesc n-inputs)
+	(write-binary fdesc indices)
+)
+(defmethod conx load-structure (fdesc)
+	(setq n-outputs (read-binary fdesc))
+	(setq n-inputs (read-binary fdesc))
+	(setq indices (read-binary fdesc))
+)
+
+;#? (==> <conx> output-dim <inputx>)
+;(defmethod conx output-dim (inputx)
+;   (let*((seq-len (idx-dim inputx 1)))
+;      (list n-outputs seq-len)
+;   )
+;)
+
+
+#? (==> <conx> fprop <parameters> <input> <output>)
+;; Fprop method for a conx architecture. Just gather the
+;; inputs into the output vectors. Both the input and output
+;; are assumed to be sequences of vectors [i,t] (2D matrices).
+;;.SEE conx
+(defmethod conx fprop (input output)
+	(conx-fprop indices :input:x :output:x)
+)
+(de conx-fprop (parametersx inputx outputx)
+	(-idx2- inputx outputx)
+	(-idx1- parametersx)
+   (let*((p parametersx))
+      (idx-eloop ((x inputx)(y outputx))
+         (gather x p y)
+      )
+   )
+)
+
+#? (==> <conx> bprop <input> <output>)
+;; Bprop method for a conx architecture. Just scatter with accumulate the
+;; derivatives of the outputs into the derivative of the inputs. 
+;; Both the input and output
+;; are assumed to be sequences of vectors [i,t] (2D matrices).
+;;.SEE conx
+(defmethod conx bprop (input output)
+	(idx-redim :input:dx (list n-inputs (idx-dim :output:dx 1)))
+	(conx-bprop indices :input:dx :output:dx)
+)
+(de conx-bprop (parameters=x input=dx output=dx)
+	(-idx2- input=dx output=dx)
+	(-idx1- parameters=x)
+   (let*((p parameters=x))
+		(idx-m2clear input=dx)
+      (idx-eloop ((dx input=dx)(dy output=dx))
+         (scatter-acc dx p dy)
+      )
+   )
+)
+
+#? (==> <conx> generate <input> <output>)
+;; :output:x is a matrix whose columns have zeros and
+;; a single one. According to the permutation matrix <parameters>,
+;; a similar matrix :input:x is produced.
+(defmethod conx generate (input output)
+	(let*((inputx :input:x)
+			(outputx :output:x)
+			(seq-len (idx-dim outputx 1)))
+		(idx-redim inputx (list n-inputs seq-len))
+		(conx-generate indices inputx outputx)
+	)
+)
+(de conx-generate (parametersx inputx outputx)
+	(-idx1- parametersx)
+	(-idx2- inputx outputx)
+   (let*((p parametersx))
+		(idx-m2clear inputx)
+      (idx-eloop ((x inputx)(y outputx))
+         (scatter-acc x p y)
+      )
+   )
+	()
+)
+
+#? sum-arch
+;; An architecture that takes the sum of its inputs.
+;; The input is a 2D matrix whose first index is <n-inputs>
+;; and second index is variable (e.g. time).
+;; The output is zero-dimensional (an idx0).
+;; There are no parameters.
+;;
+;;.SEE sn-module
+;;.SEE (new sum-arch)
+;;.SEE (==> <sum-arch> fprop <parameters> <input> <output>)
+;;.SEE (==> <sum-arch> bprop <parameters> <input> <output>)
+;;.SEE (==> <sum-arch> output-dim <inputx>)
+;;.SEE (==> <sum-arch> generate <parameters> <input> <output>)
+
+(defclass sum-arch sn-module
+	n-inputs
+)
+
+#? (new sum-arch)
+;; Construct a sum-arch sn-module. 
+;;.SEE machine
+;;.SEE sn-module
+;;.SEE sum-arch
+(defmethod sum-arch sum-arch (n-inp)
+	(setq n-inputs n-inp)
+)
+
+#? (==> <sum-arch> output-dim <inputx>)
+(defmethod sum-arch output-dim (inputx)
+   ()
+)
+
+
+#? (==> <sum-arch> fprop <parameters> <input> <output>)
+;; Fprop method for a sum-arch architecture. Just add all the
+;; inputs. The input is assumed to be any matrix (except an idx0).
+;; The output is an idx0.
+;;.SEE sum-arch
+(defmethod sum-arch fprop (parameters input output)
+   (let*((x (idx-clone :input:x))
+			(x-dim (idx-dim x))
+			(n (apply '* x-dim)))
+		(idx-redim x (list n))
+		(idx-m1sum x :output:x)
+   )
+)
+
+#? (==> <sum-arch> bprop <parameters> <input> <output>)
+;; Bprop method for a sum-arch architecture. 
+;;.SEE prod
+(defmethod sum-arch bprop (parameters input output)
+   (let*((dx (idx-clone :input:dx))
+			(dims (idx-dim dx))
+			(n (apply '* dims)))
+		(idx-redim dx (list n))
+		(idx-m1dotm0 (ones-matrix n) :output:x dx)
+   )
+)
+#? (==> <sum-arch> generate <parameters> <input> <output>)
+;; Generate a 2-d sequence of inputs. A prior distribution
+;; on sequence length is chosen here to be uniform in {5,6,..10}.
+;; Ignore the output. For each time step, the input vector
+;; is a vector of 0's and a single 1, chosen uniformly.
+(defmethod sum-arch generate (parameters input output)
+	(let*((len (int (rand 5 11)))
+			(inputx (matrix n-inputs len)))
+		(idx-eloop ((inp inputx))
+			(inp (int (rand 0 (- n-inputs (-very-small-positive-number-)))) 1)
+		)
+		(setq :input:x inputx)
+	)
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+
+(dhc-make "conx" conx-fprop conx-bprop conx-generate)
+
+

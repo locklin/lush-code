@@ -1,0 +1,388 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? File "img-rw.sn"
+;; Routines to read and write IW4, JPEG, JB2 files
+;;.SEE (==> <iw4-c> write-read-rgbaim-msk <fname> <im> <val> <qual>)
+;;.SEE (==> <iw4-c> write-rgbaim-msk <fname> <im> <val> <qual>)
+;;.SEE (==> <iw4-c> write-dbg-rgbaim-msk <fname> <im> <val> <qual>)
+;;.SEE (==> <jpeg-c> write-read-rgbaim <fname> <im> <quality>)
+;;.SEE (==> <jpeg-c> write-rgbaim <fname> <im> <quality>)
+;;.SEE (==> <jpeg-c> read-rgbaim <fname>)
+;;.SEE (==> <jbig-c> write-and-read-ubim <fname> <im>)
+;;.SEE (==> jbig-c read-ubim <fname> <im>)
+;;.SEE (==> jbig-c write-ubim <fname> <im>)
+;;.SEE (==> jbig-c read-runs <fname> <runs> <img-dim>)
+;;.SEE (==> jbig-c write-runs <fname> <runs> <nlin> <ncol>)
+;;.SEE  (==> jbig-c encode-decode <fname> <filter-CCCs> <jbig-CCCs> <nlin> <ncol>)
+
+(mload "cmacro")
+(mload "image/tiff")
+(mload "image/pnm")
+(mload "image/pnm-rgba")
+(mload "image/rle")
+(mload "image/pbm")
+(mload "image/img-util")
+
+
+
+#? (sysc <s>)
+;;.VP
+;; (-str- s):
+;;
+;; CREATED: P Haffner, Oct 97
+;; DESCRIPTION:
+(de sysc (s)
+    (-str- s)
+
+    (let ((i #{ system($s->data); #}))
+        (-int- i)
+        i
+   )
+)
+
+
+(defclass iw4-c object
+  ((-str-) iw4-fppm)
+  ((-str-) iw4-fmsk)
+  )
+
+(defmethod iw4-c iw4-c()
+  (setq iw4-fppm "/tmp/iw4.ppm")
+  (setq iw4-fmsk "/tmp/iw4.msk")
+)
+
+#? (==> <iw4-c> write-read-rgbaim-msk <fname> <im> <val> <qual>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx3- (-ubyte-)) im):
+;;
+;; CREATED: P Haffner, Oct 97
+;; DESCRIPTION:
+(defmethod iw4-c write-read-rgbaim-msk (fname im val qual)
+    ((-str-) fname)
+    ((-idx3- (-ubyte-)) im)
+
+    (-int- val)
+    (-str- qual)
+
+    (pbm-write-ubim-val iw4-fmsk (select im 2 3) val)
+    (ppm-write-rgbim iw4-fppm im)
+    (sysc (sprintf "rm %s" fname)) 
+    (sysc (sprintf "c44 -mask %s %s %s %s" iw4-fmsk qual iw4-fppm fname)) 
+    ;;(sysc (sprintf "cp %s /tmp/m3.ppm" iw4-fppm)) 
+    (sysc (sprintf "d44 %s  %s" fname iw4-fppm))
+    (nt-pnm-read-rgbaim iw4-fppm im)
+    (sysc (sprintf "rm %s" iw4-fmsk)) 
+    (sysc (sprintf "rm %s" iw4-fppm)) 
+    ())
+
+
+#? (==> <iw4-c> write-rgbaim-msk <fname> <im> <val> <qual>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx3- (-ubyte-)) im):
+;; (-int- val):
+;; (-str- qual):
+;;
+;; CREATED: P Haffner, Oct 97
+;; DESCRIPTION:
+(defmethod iw4-c write-rgbaim-msk (fname im val qual)
+    ((-str-) fname)
+    ((-idx3- (-ubyte-)) im)
+    (-int- val)
+    (-str- qual)
+
+    (pbm-write-ubim-val iw4-fmsk (select im 2 3) val)
+    (ppm-write-rgbim iw4-fppm im)
+    (sysc (sprintf "rm %s" fname)) 
+    (sysc (sprintf "c44 -mask %s %s %s %s" iw4-fmsk qual iw4-fppm fname)) 
+    (sysc (sprintf "rm %s" iw4-fmsk)) 
+    (sysc (sprintf "rm %s" iw4-fppm)) 
+    ())
+
+
+#? (==> <iw4-c> write-dbg-rgbaim-msk <fname> <im> <val> <qual>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx3- (-ubyte-)) im):
+;; (-int- val):
+;; (-str- qual):
+;;
+;; CREATED: P Haffner, Oct 97
+;; DESCRIPTION:
+(defmethod iw4-c write-dbg-rgbaim-msk (fname im val qual)
+    ((-str-) fname)
+    ((-idx3- (-ubyte-)) im)
+    (-int- val)
+    (-str- qual)
+
+    (pbm-write-ubim-val (concat fname ".msk") (select im 2 3) val)
+    (ppm-write-rgbim  (concat fname ".ppm") im)
+    ())
+
+
+
+(defclass jpeg-c object
+  ((-str-) jpeg-ftmp)
+)
+
+(defmethod jpeg-c jpeg-c()
+  (setq jpeg-ftmp "/tmp/sn00")
+)
+
+#? (==> <jpeg-c> write-read-rgbaim <fname> <im> <quality>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx3- (-ubyte-)) im):
+;; ((-int-) quality):
+;;
+;; CREATED: P Haffner, Oct 97
+;; DESCRIPTION:
+(defmethod jpeg-c write-read-rgbaim (fname im quality)
+    ((-str-) fname)
+    ((-idx3- (-ubyte-)) im)
+    ((-int-) quality)
+
+    (ppm-write-rgbim jpeg-ftmp im)
+    (sysc (sprintf "cjpeg -quality %d %s > %s" quality jpeg-ftmp fname))
+    (sysc (sprintf "rm %s" jpeg-ftmp)) 
+    (sysc (sprintf "djpeg -pnm %s > %s" fname jpeg-ftmp))
+    (nt-pnm-read-rgbaim jpeg-ftmp im)
+    (sysc (sprintf "rm %s" jpeg-ftmp)) 
+    ())
+
+
+#? (==> <jpeg-c> write-rgbaim <fname> <im> <quality>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx3- (-ubyte-)) im):
+;; ((-int-) quality):
+;;
+;; CREATED: P.Haffner (from L. Bottou's non compilable code), Sept 97
+;; DESCRIPTION:
+(defmethod jpeg-c write-rgbaim (fname im quality)
+    ((-str-) fname)
+    ((-idx3- (-ubyte-)) im)
+    ((-int-) quality)
+
+    (ppm-write-rgbim jpeg-ftmp im)
+    (sysc (sprintf "cjpeg -quality %d %s > %s" quality jpeg-ftmp fname))
+    (sysc (sprintf "rm %s" jpeg-ftmp)) 
+    ())
+
+#? (==> <jpeg-c> read-rgbaim <fname>)
+;;.VP
+;; ((-str-) fname):
+;;
+;; CREATED: P.Haffner (from L. Bottou's non compilable code), Sept 97
+;; DESCRIPTION:
+(defmethod jpeg-c read-rgbaim (fname)
+    ((-str-) fname)
+
+    (sysc (sprintf "djpeg -pnm %s > %s" fname jpeg-ftmp))
+    (let ((im (pnm-read-rgbaim jpeg-ftmp)))
+      (sysc (sprintf "rm %s" jpeg-ftmp)) 
+      im) )
+
+
+(defclass jbig-c object
+  ((-str-) jbig-ftmp)
+  ((-str-) jbig-fpbm)
+  ((-str-) jbig-fjbd)
+  ((-str-) jbig-fjbr)
+  ((-str-) jbig-fjbe)
+)
+
+(defmethod jbig-c jbig-c()
+  (setq jbig-ftmp "/tmp/sn00")
+  (setq jbig-fpbm (concat jbig-ftmp ".pbm"))
+  (setq jbig-fjbd (concat jbig-ftmp ".d"))
+  (setq jbig-fjbr (concat jbig-ftmp ".r"))
+  (setq jbig-fjbe (concat jbig-ftmp ".q")) )
+)
+
+
+#? (==> <jbig-c> write-and-read-ubim <fname> <im>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx2- (-ubyte-)) im):
+;;
+;; CREATED: P.Haffner (from L. Bottou's non compilable code), Sept 97
+;; DESCRIPTION:
+(defmethod jbig-c write-and-read-ubim (fname im)
+    ((-str-) fname)
+    ((-idx2- (-ubyte-)) im)
+
+    (pbm-write-ubim jbig-fpbm im)
+    (sysc (sprintf "jb2 -e %s" jbig-ftmp))
+    (sysc (sprintf "jb2 -d %s" jbig-ftmp))
+    (sysc (sprintf "mv %s %s" jbig-fjbe fname))
+    (nt-pbm-read-ubim jbig-fjbd im 0 255)
+    (sysc (sprintf "rm %s.*" jbig-ftmp))
+    ())
+
+#? (==> jbig-c read-ubim <fname> <im>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx2- (-ubyte-)) im):
+;;
+;; CREATED: P.Haffner (from L. Bottou's non compilable code), Sept 97
+;; DESCRIPTION:
+(defmethod jbig-c read-ubim (fname im)
+    ((-str-) fname)
+    ((-idx2- (-ubyte-)) im)
+
+    (sysc (sprintf "cp %s %s.q" fname jbig-ftmp))
+    (sysc (sprintf "jb2 -d %s" jbig-ftmp))
+    (nt-pbm-read-ubim jbig-fjbr im 0 255)
+    (sysc (sprintf "rm %s.*" jbig-ftmp))
+    ())
+
+
+#? (==> jbig-c write-ubim <fname> <im>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx2- (-ubyte-)) im):
+;;
+;; CREATED: P.Haffner (from L. Bottou's non compilable code), Sept 97
+;; DESCRIPTION:
+(defmethod jbig-c write-ubim (fname im)
+    ((-str-) fname)
+    ((-idx2- (-ubyte-)) im)
+
+    (pbm-write-ubim jbig-fpbm im)
+    (sysc (sprintf "jb2 -e %s" jbig-ftmp))
+    (sysc (sprintf "mv %s %s" jbig-fjbe fname))
+    (sysc (sprintf "rm %s.*" jbig-ftmp)) )
+ 
+#? (==> jbig-c read-runs <fname> <runs> <img-dim>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx2- (-runs-)) runs):
+;; ((-obj- (img-dim-C)) img-dim):
+;;
+;; CREATED: P.Haffner, Sept 97
+;; DESCRIPTION:
+(defmethod jbig-c read-runs (fname runs img-dim)
+    ((-str-) fname)
+    ((-idx2- (-int-)) runs)
+    ((-obj- (img-dim-C)) img-dim)
+
+    (sysc (sprintf "cp %s %s.q" fname jbig-ftmp))
+    (sysc (sprintf "jb2 -r %s" jbig-ftmp))
+    (rle-read-runs jbig-fjbr runs img-dim)
+    (sysc (sprintf "rm %s.*" jbig-ftmp))
+    ())
+
+
+#? (==> jbig-c write-runs <fname> <runs> <nlin> <ncol>)
+;;.VP
+;; ((-str-) fname):
+;; ((-idx2- (-runs-)) runs):
+;; ((-int-) nlin ncol):
+;;
+;; CREATED: P.Haffner, Sept 97
+;; DESCRIPTION:
+(defmethod jbig-c write-runs (fname runs nlin ncol)
+    ((-str-) fname)
+    ((-idx2- (-int-)) runs)
+    ((-int-) nlin ncol)
+
+    (pbm-write-runs jbig-fpbm runs nlin ncol)
+    (sysc (sprintf "jb2 -e %s" jbig-ftmp))
+    (sysc (sprintf "mv %s %s" jbig-fjbe fname))
+    (sysc (sprintf "rm %s.*" jbig-ftmp)) )
+ 
+#? (==> jbig-c encode-decode <fname> <filter-CCCs> <jbig-CCCs> <nlin> <ncol>)
+;;.VP
+;; ((-str-) fname):
+;; ((-obj- (cc-color-C)) filter-CCCs):
+;; ((-obj- (cc-color-C)) jbig-CCCs):
+;; ((-int-) nlin ncol):
+;;
+;; CREATED: P.Haffner, Sept 97
+;; DESCRIPTION:
+(defmethod jbig-c encode-decode (fname jbig-CCCs nlin ncol)
+  ((-str-) fname)
+  ((-obj- (cc-color-C)) jbig-CCCs)
+  ((-int-) nlin ncol)
+
+  (let ((img-dim (int-matrix 2)))
+    (printf "%d runs before encoding\n" (idx-dim :jbig-CCCs:runs 0))
+    (==> this write-runs fname :jbig-CCCs:runs nlin ncol)
+    (==> this read-runs fname :jbig-CCCs:runs img-dim)
+    (==> jbig-CCCs single-cc (idx-dim :jbig-CCCs:runs 0))
+    (printf "%d runs after decoding\n" (idx-dim :jbig-CCCs:runs 0))
+    (when (or (<> (img-dim 0) nlin) (<> (img-dim 1) ncol))
+      (error "dimensions of decoded image differ from original"))
+    )
+  ())
+
+
+
+(de read-rgbaim (f)
+    (-str- f)
+    (when (= 0 (sysc (concat "test -f " f ".gz")))
+      (sysc (concat "gunzip " f)))
+    (selectq (right f 4)
+      (".tif" (tiff-read-rgba f 1))
+      ((".ppm" ".pgm" ".pbm" ".pnm") (pnm-read-rgbaim f))
+      (t
+       (printf "%s\n" (right f 4))
+       (error "unkown image suffix") 
+       (ubyte-matrix 0 0 0))
+      ))
+
+
+
+#? (rgbaim-diff-shift-and-cut <orig> <comp> <diff> <cut>)
+;;.VP
+;; ((-idx3- (-ubyte-)) orig comp diff):
+;; ((-int-) cut):
+;;
+;; CREATED: P.Haffner (from L. Bottou's non compilable code), Sept 97
+;; DESCRIPTION:
+(de rgbaim-diff-shift-and-cut (orig comp diff cut)
+    ((-idx3- (-ubyte-)) orig comp diff)
+    ((-int-) cut)
+
+    (cinline-idx2loop3 orig "unsigned char" 
+                       comp "unsigned char" 
+                       diff "unsigned char" "o" "c" "d" "i" "j"
+     #{{ register int r;
+        r = (int)(o[0]) - (int)(c[0]) + 128;
+        if (r > 128-$cut && r < 128+$cut) r = 128;
+        d[0] = (unsigned char)( (r>255) ? 255 : ( (r<0) ? 0 : r ));
+        r = (int)(o[1]) - (int)(c[1]) + 128;
+        if (r > 128-$cut && r < 128+$cut) r = 128;
+        d[1] = (unsigned char)( (r>255) ? 255 : ( (r<0) ? 0 : r ));
+        r = (int)(o[2]) - (int)(c[2]) + 128;
+        if (r > 128-$cut && r < 128+$cut) r = 128;
+        d[2] = (unsigned char)( (r>255) ? 255 : ( (r<0) ? 0 : r ));
+        r = (int)(o[3]) - (int)(c[3]) + 128;
+        if (r > 128-$cut && r < 128+$cut) r = 128;
+        d[3] = (unsigned char)( (r>255) ? 255 : ( (r<0) ? 0 : r ));
+     }#} ) ())
+
+
+(dhc-make ()
+          rgbaim-diff-shift-and-cut
+          sysc
+          read-rgbaim
+          (jbig-c jbig-c 
+                  write-and-read-ubim          
+                  write-ubim          
+                  read-ubim
+                  write-runs          
+                  read-runs
+                  ;;encode-decode
+          )          
+          (jpeg-c jpeg-c 
+                  write-rgbaim          
+                  read-rgbaim
+                  write-read-rgbaim
+          )
+          (iw4-c iw4-c 
+                  write-rgbaim-msk
+                  write-read-rgbaim-msk
+          )
+          )

@@ -1,0 +1,344 @@
+
+(mload "cmacro")
+(mload "dynamic")
+
+(printf "[%s]\n" file-being-loaded)
+
+(mod-create-reference "TIFFClose" "TIFFError" "TIFFFlush" "TIFFGetField" "TIFFOpen"
+  "TIFFPrintDirectory" "TIFFReadDirectory" "TIFFReadEncodedStrip"
+  "TIFFReadEncodedTile" "TIFFReadRGBAImage" "TIFFReadRawStrip" "TIFFReadRawTile"
+  "TIFFReadScanline" "TIFFReadTile" "TIFFSetDirectory" "TIFFSetField"
+  "TIFFWarning" "TIFFWriteDirectory" "TIFFWriteEncodedStrip"
+  "TIFFWriteEncodedTile" "TIFFWriteRawStrip" "TIFFWriteRawTile"
+  "TIFFWriteScanline")
+
+(cond
+ ((= :os-string "SGI")
+  (when (not (findfile "tiffio.h"))
+    (addpath (concat :sn3-dir "../include")))
+  (mod-dlopen (concat :sn3-dir "../M-SGI/lib/libtiff.so")) )
+
+ ((= :os-string "LINUX")
+  (when (not (findfile "tiffio.h"))
+    (addpath "/usr/include"))
+  (mod-dlopen "/usr/lib/libtiff.so.3") )
+
+ (t
+  (when (not (findfile "tiffio.h"))
+    (addpath (concat :sn3-dir "../include")))
+  (mod-load (concat :sn3-dir "../M-" :os_string "/lib/libtiff.a")) ) )
+
+
+;; needed this because old libtiff calls dtou() 
+;; (mod-load "/usr/lib/libc.a")
+
+;; need this because libtiff need eprintf()
+;(if (= :os-string "SGI")
+;    (mod-load (concat :sn3-dir "../M-" :os-string "/lib/libgcc.a"))
+;  (mod-load (concat :sn3-dir "/../misc/lib/" :os-string "/libgcc.a"))
+;)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; LOW-LEVEL FUNCTIONS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; these are provided for experimentation, and as a basis for
+;; reading TIFF files in their native format (RGB, palette, bilevel...).
+;; However, it is much easier to use tiff-read-rgba which transforms
+;; a TIFF file from any format into an SN matrix with RGBA components
+
+
+;; low-level tiff file open
+;; open a tiff file and return a TIFF file pointer
+(de tiff-open (file)
+    ((-str-) file)
+    (c-include "tiffio.h")
+    (let ((tif (gptr ())))
+      ;; open TIFF file and read header
+      (setq tif (gptr #{ (void *)TIFFOpen($file->data, "r") #}))
+      (when (= (gptr ()) tif) (error "can't open TIFF file"))
+      tif))
+
+(de tiff-error (err) 
+    ((-int-) err)
+    (selectq err
+      (0 "")
+      (1 "can't open TIFF file")
+      (2 "TIFF file is not in RGB format (wrong sample per pixel)")
+      (3 "TIFF file is not in RGB format (wrong photometric)")
+      (4 "TIFF file is not 24 bit RGB")
+      (5 "can't read compressed TIFF files")
+      (6 "TIFF file is not in PALETTE format (wrong photometric)")
+      (7 "TIFF file does not have 8 bit palette")
+      (8 "TIFF file is not bilevel (wrong photometric)")
+      (9 "TIFF file is not bilevel (not 1 bit per pixel)")
+      ))
+
+;; close a TIFF file
+(de tiff-close (tif)
+    ((-gptr-) tif)
+    #{ TIFFClose($tif); #} ())
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; High level function
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; there is a bunch of UNDEBUGGED low-level functions after that one,
+;; but you probably won't need them.
+;; (unless you want to read TIFF files and store them inmemory in their native format).
+
+
+#? (tiff-read-rgba <filename> <flip>)
+;; read a TIFF file in any format, and convert it to RGBA format into an SN matrix
+;; The returned matrix is Y by X by 4. 
+;; <filename> must be a string containing a valid TIFF filename.
+;; if the <flip> argument is 0, no data flipping is done therefore,
+;; slice 0 is the ALPHA channel (transparency), 
+;; slice 1 is the BLUE channel, 
+;; slice 2 is the GREEN channel, 
+;; slice 3 is the RED channel, 
+;; and the image is upside down.
+;; if the <flip> argument is non 0, the entire image is flipped
+;; slice 0 is the RED channel, 
+;; slice 1 is the GREEN channel, 
+;; slice 3 is the BLUE channel, 
+;; Slice 4 is the ALPHA channel (transparency), 
+;; and the image is more likely to be rightside up
+(de tiff-read-rgba (file flip)
+    ((-str-) file)
+    ((-int-) flip)
+    (let ((tif (tiff-open file)) (ncol 0) (nlin 0) (err 0) )
+      ((-int-) nlin ncol err)
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_IMAGEWIDTH, &$ncol) #}))
+      (when (<> err 1) (tiff-close tif) (error "can't read image width"))
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_IMAGELENGTH, &$nlin) #}))
+      (when (<> err 1) (tiff-close tif) (error "can't read image height"))
+      (let ((image (ubyte-matrix-nc nlin ncol 4)))
+	#{ TIFFReadRGBAImage($tif, $ncol, $nlin, (uint32*)(IDX_PTR($image, unsigned char)), 0); #}
+	;; now flip the image to get RGBA right side up instead of ABGR upsidedown
+	(when (<> 0 flip)
+ 	  #{{
+	    int i, j, s;
+	    unsigned char tmp0, tmp1, tmp2, tmp3, *upline, *downline;
+	    upline = IDX_PTR($image, unsigned char);
+	    s = $ncol*4;
+	    downline = upline + ($nlin-1)*s;
+	    for (i=0; i< ($nlin+1)/2 ; i++) {
+	      for (j=0; j< s; j+=4) {
+	        tmp0 = upline[j]; 
+		tmp1 = upline[j+1]; 
+		tmp2 = upline[j+2]; 
+		tmp3 = upline[j+3]; 
+		upline[j]   = downline[j+3]; downline[j+3]=tmp0;
+		upline[j+1] = downline[j+2]; downline[j+2]=tmp1;
+		upline[j+2] = downline[j+1]; downline[j+1]=tmp2;
+		upline[j+3] = downline[j];   downline[j]=tmp3;
+	        }
+	      upline += s; downline -= s; }}
+	#} )
+	(tiff-close tif)
+	image)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a few utilities
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (tiff-get-resolution <file>)
+;; returns a 2-vector with the X resolution and Y resolution of
+;; tiff image in file <file>.
+(de tiff-get-resolution (file)
+    ((-str-) file)
+    (let ((tif (tiff-open file)) (xres 0) (yres 0) (err 0) (res (matrix 2))
+          (resolution-unit 0))
+      (-short- resolution-unit)
+      ((-int-) err)
+      ((-flt-) xres yres)
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_XRESOLUTION, &$xres) #}))
+      (when (<> err 1) (tiff-close tif) (error "can't read X resolution"))
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_YRESOLUTION, &$yres) #}))
+      (when (<> err 1) (tiff-close tif) (error "can't read Y resolution"))
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_RESOLUTIONUNIT, &$resolution_unit) #}))
+      (when (= err 1) 
+      #{
+        #define InchPerMm 0.03937008
+        if ($resolution_unit == RESUNIT_CENTIMETER) /* then convert to dots per inch */
+        {
+           $xres = $xres * 0.1 / InchPerMm;
+           $yres = $yres * 0.1 / InchPerMm;
+        }
+      #})
+      (tiff-close tif)
+      (res 0 xres) (res 1 yres)
+      res))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; this is a bunch of low-level functions that I originally
+;; wrote, but ended up not using.
+;; They are UNDEBUGGED.
+
+;; returns 0 if TIFF file is in 24 bit RGB format,
+;; otherwise returns a positive number which tells what's wrong with the file.
+(de tiff-test-rgb24 (tif)
+    ((-gptr-) tif)
+    (let ((err 0) (spp 0) (phm 0) (compr 0) (bps (short-matrix 3)) (code 0))
+      ((-int-) err code)
+      ((-short-) spp phm compr)
+      ;; read number of samples per pixel.
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_SAMPLESPERPIXEL, &$spp) #}))
+      (when (or (<> err 1) (<> spp 3)) (setq code 2))
+      ;; read photometric interpretation
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_PHOTOMETRIC, &$phm) #}))
+      (when (or (<> err 1) (<> phm 2)) (setq code 3))
+      ;; read number of bits per sample
+      ;; this is commented out because it returns only one value
+      ;; (setq err 
+      ;;  (int #{ TIFFGetField((TIFF*)$tif,TIFFTAG_BITSPERSAMPLE,IDX_PTR($bps,short))#}))
+      ;; (when (or (<> err 1) (<> (bps 0) 8) (<> (bps 1) 8) (<> (bps 2) 8)) 
+      ;;   (setq code 4))
+      ;; read compression
+      ;; (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_COMPRESSION, &$compr) #}))
+      ;; (when (or (<> err 1) (<> compr 1)) (setq code 5))
+      code))
+
+;; returns 0 if the TIFF file is in 8 bit PALETTE format.
+;; returns a positive number that tells what's wrong otherwise
+(de tiff-test-pal8 (tif)
+    ((-gptr-) tif)
+    (let ((err 0) (phm 0) (compr 0) (bps 0) (code 0))
+      ((-int-) err code)
+      ((-short-) phm compr bps)
+      ;; read photometric interpretation
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_PHOTOMETRIC, &$phm) #}))
+      (when (or (<> err 1) (<> phm 3)) (setq code 6))
+      ;; read number of bits per sample
+      (setq err (int #{ TIFFGetField((TIFF*)$tif,TIFFTAG_BITSPERSAMPLE,&$bps) #}))
+      (when (or (<> err 1) (<> bps 8)) (setq code 7))
+      ;; read compression
+      ;; (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_COMPRESSION, &$compr) #}))
+      ;; (when (or (<> err 1) (<> compr 1)) (setq code 5))
+      code))
+
+(de tiff-test-bilevel (tif)
+    ((-gptr-) tif)
+    (let ((err 0) (phm 0) (compr 0) (bps 0) (code 0))
+      ((-int-) err code)
+      ((-short-) phm compr bps)
+      ;; read photometric interpretation
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_PHOTOMETRIC, &$phm) #}))
+      (when (or (<> err 1) (and (<> phm 0) (<> phm 1))) (setq code 8))
+      ;; read number of bits per sample
+      (setq err (int #{ TIFFGetField((TIFF*)$tif,TIFFTAG_BITSPERSAMPLE,&$bps) #}))
+      (when (or (<> err 1) (<> bps 1)) (setq code 9))
+      ;; read compression
+      ;; (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_COMPRESSION, &$compr) #}))
+      ;; (when (or (<> err 1) (<> compr 1)) (setq code 5))
+      code))
+
+;; read a 24 bit per pixel TIFF file into an SN matrix.
+;; the function tiff-test-rgb24 should be called before
+;; calling this function. If it returns 0, tiff-read-rgb24 can
+;; be called safely.
+(de tiff-read-rgb24 (tif)
+    ((-gptr-) tif)
+    ;; read lines
+    (let ((ncol 0) (nlin 0) (err 0) (slsize 0))
+      ((-int-) nlin ncol err slsize)
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_IMAGEWIDTH, &$ncol) #}))
+      (when (<> err 1) (error "can't read image width"))
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_IMAGELENGTH, &$nlin) #}))
+      (when (<> err 1) (error "can't read image height"))
+      (setq slsize (int #{ TIFFScanlineSize((TIFF *)$tif) #}))
+      (when (<> slsize (* 3 ncol)) 
+	(printf "*** warning: scanlinesize and image width are not consistent\n"))
+      (let* ((image (ubyte-matrix-nc nlin ncol 3)) (row 0))
+	((-int-) row)
+	(idx-bloop ((line image))
+	  (setq err #{ 
+	    TIFFReadScanline((TIFF *)$tif, IDX_PTR($line, unsigned char), ($row)++)
+	    #} )
+	  (when (<> err 1) (error "can't read scanline")))
+	image)))
+
+;; read an 8 bit per pixel palette-based TIFF file into an SN matrix.
+;; this returns the image
+;; reads palette into <pal>. <pal> must be an array of ubyte of size 256x3
+;; the function tiff-test-pal8 should be called before
+;; calling this function. If it returns 0, tiff-read-pal8 can
+;; be called safely.
+(de tiff-read-pal8 (tif pal)
+    ((-gptr-) tif)
+    ((-idx2- (-ubyte-)) pal)
+    (when (or (<> 256 (idx-dim pal 0)) (<> 3 (idx-dim pal 1)))
+      (error "palette array has wrong dimension"))
+    ;; read palette
+    #{{ 
+        int i; 
+	unsigned char *p;
+	unsigned short *rm, *gm, *bm;
+	p = IDX_PTR($pal, unsigned char);
+	TIFFGetField((TIFF *)$tif, TIFFTAG_COLORMAP, &rm, &gm, &bm);
+	for (i=0; i<256; i++) { *p++ = *rm++; *p++ = *gm++; *p++ = *bm++; }
+      }
+    #}
+    ;; read lines
+    (let ((ncol 0) (nlin 0) (err 0) (slsize 0))
+      ((-int-) nlin ncol err slsize)
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_IMAGEWIDTH, &$ncol) #}))
+      (when (<> err 1) (error "can't read image width"))
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_IMAGELENGTH, &$nlin) #}))
+      (when (<> err 1) (error "can't read image height"))
+      (setq slsize (int #{ TIFFScanlineSize((TIFF *)$tif) #}))
+      (when (<> slsize  ncol)
+	(printf "*** warning: scanlinesize and image width are not consistent\n"))
+      (let* ((image (ubyte-matrix-nc nlin ncol)) (row 0))
+	((-int-) row)
+	(idx-bloop ((line image))
+	  (setq err #{ 
+	    TIFFReadScanline((TIFF *)$tif, IDX_PTR($line, unsigned char), ($row)++)
+	    #} )
+	  (when (<> err 1) (error "can't read scanline")))
+	image)))
+
+
+;; read a bilevel TIFF file into an SN matrix.
+;; this returns the image with one byte per pixel.
+;; the function tiff-test-bilevel should be called before
+;; calling this function. If it returns 0, tiff-read-bilevel can
+;; be called safely.
+(de tiff-read-bilevel (tif)
+    ((-gptr-) tif)
+    ;; read lines
+    (let ((ncol 0) (nlin 0) (err 0) (slsize 0) (linebuf (gptr ())))
+      ((-int-) nlin ncol err slsize)
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_IMAGEWIDTH, &$ncol) #}))
+      (when (<> err 1) (error "can't read image width"))
+      (setq err (int #{ TIFFGetField((TIFF *)$tif, TIFFTAG_IMAGELENGTH, &$nlin) #}))
+      (when (<> err 1) (error "can't read image height"))
+      (setq slsize (int #{ TIFFScanlineSize((TIFF *)$tif) #}))
+      (setq linebuf #{ (void *)malloc($slsize) #})
+      (let* ((image (ubyte-matrix-nc nlin ncol)) (row 0))
+	((-int-) row)
+	(idx-bloop ((line image))
+	  (setq err #{ TIFFReadScanline((TIFF *)$tif, $linebuf, ($row)++) #} )
+	  (when (<> err 1) (error "can't read scanline")) 
+	  #{{
+	    unsigned char *p;
+	    int i;
+	    p = IDX_PTR($line, unsigned char);
+	    for (i=0; i<$ncol; i++) {
+	      *p++ = ( (((char *)$linebuf)[i >> 3] & (128 >> (i & 7))) == 0 ) ? 0 : 255;
+	      }
+	   } #} )
+	image )))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; we need gcc because tiffio.h has ANSI prototypes
+(let ((dhc-cname "gcc") (dhc-cflags "-O"))
+  (dhc-make "tiff" 
+	    tiff-open tiff-close tiff-read-rgba tiff-get-resolution))
+
+;; undebugged functions
+;;	  tiff-test-rgb24 tiff-read-rgb24
+;; 	  tiff-test-pal8 tiff-read-pal8
+;;	  tiff-test-bilevel tiff-read-bilevel

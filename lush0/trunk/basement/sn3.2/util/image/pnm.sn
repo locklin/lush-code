@@ -1,0 +1,466 @@
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; read and write PPM/PNM files
+
+#? pnm
+;;.VP
+;; Routines to read and write PNM BINARY files to and from IDX.
+;;
+;;                                           codes
+;;                      bits/pixel        ASCII   Binary
+;; -----------------------------------------------------
+;; Portable Bit Map        1       PBM     P1      P4
+;; Portable Gray Map       8       PGM     P2      P5
+;; Portable Pixel Map      24      PPM     P3      P6
+;;
+;;.SEE (pnm-read-rgbim <f>)
+;;.SEE (pnm-read-ubim <f>)
+;;.SEE (ppm-write-rgbim <f> <m>)
+;;.SEE (pgm-write-ubim <f> <m>)
+;;.SEE (pbm-read-ubim <f> <white> <black>)
+;;.SEE (pbm-write-ubim <f> <m>)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "cmacro")
+(mload "file-std")
+(mload "image/img-util")
+
+(dm FRED(f)  '0.299)
+(dm FGREEN(f) '0.587)
+(dm FBLUE(f) '0.114)
+
+
+
+#? (pnm-read-rgbim <f>)
+;;.VP
+;; ((-str-) f):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; DESCRIPTION:
+(de pnm-read-rgbim (f)
+    ((-str-) f)
+
+    (let ((u (ubyte-matrix-nc 1 1 3)))
+      (nt-pnm-read-rgbim f u)
+      u
+    ))
+
+
+#? (nt-pnm-read-rgbim <f> <out-im>)
+;;.VP
+;; ((-str-) f):
+;; ((-idx3- (-ubyte-)) out-im):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; read an image from a PNM/PPM file and saves it in <out-im>,
+;; an idx3 of ubytes (RGB image)
+;;.SEE pnm
+(de nt-pnm-read-rgbim (f out-im)
+    ((-str-) f)
+    ((-idx3- (-ubyte-)) out-im)
+
+    (let ((f (fopen f "rb")))
+      (when (not f) (error "couldn't open PNM file"))
+      (let ((head (fscan-str f)))
+        (when (and (<> "P6" head) (<> "P4" head) (<> "P5" head))
+          (fclose f) (error "not a valid binary PNM file"))
+        (skip-comments 35 f) ; skip lines staring with #
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (rgb-resize out-im)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ unsigned char v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 255 ;
+                  p[0]= p[1]= p[2]= v ;  
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+            (fclose f)))
+         ((= head "P5")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 )
+            (rgb-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{ p[0]=p[1]=p[2]=getc((FILE *)$f) ;
+                  #}
+                 )
+            (fclose f)))
+         ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (size (* nlin ncol))
+                 )
+            (-int- ncol nlin  size)
+            (rgb-resize out-im)
+            (fscan-int f)
+            (getc f)
+            #{
+            if ($size != fread (IDX_PTR($out_im, unsigned char), 3, (size_t) $size, (FILE *)$f))
+               run_time_error("not enough items read");
+               #}
+            (fclose f)))
+         )
+        head
+        )
+            ))
+
+
+
+
+#? (pnm-read-ubim <f>)
+;; read an image from a PNM/PPM file and returns
+;; an idx2 of ubytes (ubimage)
+;; RGB values are converted to luminosity if necessary
+;;.SEE (nt-pnm-read-ubim <f> <out-im>)
+;;.SEE pnm
+(de pnm-read-ubim (f)
+    ((-str-) f)
+    (nt-pnm-read-ubim f (ubyte-matrix-nc 1 1)))
+
+#? (pnm-dim <f>)
+;;.VP
+;; ((-str-) f):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; returns dimensions of image.
+(de pnm-dim (f)
+    ((-str-) f)
+
+    (let ((f (fopen f "rb"))
+          (dim-vec (int-matrix 2))
+          )
+      
+      (when (not f) (error "couldn't open PNM file"))
+      (let ((head (fscan-str f)))
+        (when (and (<> "P6" head) (<> "P4" head) (<> "P5" head))
+          (fclose f) (error "not a valid binary PNM file"))
+        (skip-comments 35 f) ; skip lines staring with #
+        (dim-vec 1 (fscan-int f))
+        (dim-vec 0 (fscan-int f))
+        )
+     (fclose f)
+     dim-vec))
+
+
+
+
+#? (nt-pnm-read-ubim <f> <out-im>)
+;;.VP
+;; ((-str-) f):
+;; ((-idx2- (-ubyte-)) out-im):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;;.SEE (pnm-read-ubim <f>)
+(de nt-pnm-read-ubim (f out-im)
+    ((-str-) f)
+    ((-idx2- (-ubyte-)) out-im)
+
+    (let ((f (fopen f "rb")))
+      (when (not f) (error "couldn't open PNM file"))
+      (let ((head (fscan-str f)))
+        (when (and (<> "P6" head) (<> "P4" head) (<> "P5" head))
+          (fclose f) (error "not a valid binary PNM file"))
+        (skip-comments 35 f) ; skip lines staring with #
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (ubim-resize out-im)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ unsigned char v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 255 ;
+                  *p = v;
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+            (fclose f) out-im))
+         ((= head "P5")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (ubim-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ *p=getc((FILE *)$f); }#}
+              )
+            (fclose f) out-im))
+         ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 )
+            (ubim-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{ *p = (unsigned char)(0.299 * (flt)(getc((FILE *)$f)) +
+                                      0.587 * (flt)(getc((FILE *)$f)) +
+                                      0.114 * (flt)(getc((FILE *)$f))) ; 
+              #}
+              )
+            (fclose f) out-im))))))
+
+
+
+#? (pnm-read-ubim64 <f>)
+;; read an image from a PNM/PPM file and returns
+;; an idx3 of ubytes (RGB image)
+;;.SEE pnm
+(de pnm-read-ubim64 (f)
+    ((-str-) f)
+    (let ((u (ubyte-matrix-nc 1 1)))
+      (nt-pnm-read-ubim64 f u)
+      u
+    ))
+
+
+#? (nt-pnm-read-ubim64 <f> <out-im>)
+;;.VP
+;; ((-str-) f):
+;; ((-idx2- (-ubyte-)) out-im):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; read and compute the varinace of an ubim
+(de nt-pnm-read-ubim64 (f out-im)
+    ((-str-) f)
+    ((-idx2- (-ubyte-)) out-im)
+
+    (let ((f (fopen f "rb")))
+      (when (not f) (error "couldn't open PNM file"))
+      (let ((head (fscan-str f)))
+        (when (and (<> "P6" head) (<> "P4" head) (<> "P5" head))
+          (fclose f) (error "not a valid binary PNM file"))
+        (skip-comments 35 f) ; skip lines staring with #
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (ubim-resize out-im)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ unsigned char v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 63 ;
+                  *p = v;
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+            (fclose f) out-im))
+         ((= head "P5")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (ubim-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ *p=getc((FILE *)$f)/4; }#}
+              )
+            (fclose f) out-im))
+          ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (rgbline (ubyte-matrix-nc ncol 3))
+                 (r (* (FRED) 2048))
+                 (g (* (FGREEN) 2048))
+                 (b (* (FBLUE) 2048))
+                 )
+            (-int- r g b)
+            (-int- ncol nlin)
+
+            (ubim-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cidx-bloop ("i" ("pout" out-im))
+                        #{
+                        int j;
+                        unsigned char *pin=IDX_PTR($rgbline, unsigned char);
+                        if ($ncol != fread (pin, 3, (size_t) $ncol, (FILE *)$f))
+                        run_time_error("not enough items read");
+                        for (j=0; j<$ncol; j++) {
+                             pout[j] = (($r*pin[0] + $g*pin[1] + $b*pin[2]))>>13;
+                             pin+=3;
+                             }
+                        #}
+                        )
+            (fclose f)))
+         )
+        head
+        )
+            )))
+
+#? (pnm-read-rgbim-sub2 <f>)
+;; read an image from a PNM/PPM file and returns
+;; an idx3 of ubytes (RGB image)
+;;.SEE pnm
+(de pnm-read-rgbim-sub2 (f)
+    ((-str-) f)
+    (let ((u (ubyte-matrix-nc 1 1 3)))
+      (nt-pnm-read-rgbim-sub2 f u)
+      u
+    ))
+
+
+#? (nt-pnm-read-rgbim-sub2 <f> <out-im>)
+;; read an image from a PNM/PPM file and saves it in <out-im>,
+;; an idx3 of ubytes (RGB image)
+;;.SEE pnm
+(de nt-pnm-read-rgbim-sub2 (f out-im)
+    ((-str-) f)
+    ((-idx3- (-ubyte-)) out-im)
+
+    (let ((f (fopen f "rb")))
+      (when (not f) (error "couldn't open PNM file"))
+      (let ((head (fscan-str f)))
+        (when (and (<> "P6" head) (<> "P4" head) (<> "P5" head))
+          (fclose f) (error "not a valid binary PNM file"))
+        (skip-comments 35 f) ; skip lines staring with #
+        (let* (
+               (ncol2 (fscan-int f))
+               (nlin2 (fscan-int f))
+               (ncol (2/ ncol2))
+               (nlin (2/ nlin2))
+               )
+          (-int- ncol nlin nlin2 ncol2)
+          (rgb-resize out-im)
+          (print ncol nlin)
+          (cond 
+           ((= head "P4")
+            (let* (
+                   (n 0) (c 0))
+              ((-int-) n c)
+              (getc f)
+              (error "to be programmed !")
+              (fclose f) 
+              ))
+
+           ((= head "P5")
+            (let ((dbl_line (ubyte-matrix-nc ncol2 1)))
+              (fscan-int f)
+              (getc f)
+              (cidx-bloop ("i" ("pout_im" out-im))
+                          #{
+#define STEP 1
+                          int j;
+                          unsigned char *pin=IDX_PTR($dbl_line, unsigned char);
+                          unsigned char *pin2=pin+STEP* $ncol2;
+                          unsigned char *pout=pout_im;
+                          if ($ncol2 != fread (pin, STEP, (size_t) $ncol2, (FILE *)$f))
+                          run_time_error("not enough items read");
+                          for (j=0; j<$ncol; j++) {
+                               pout[0]= pout[1]= pout[2]= (pin[0]+pin[0+STEP]+pin2[0]+pin2[0+STEP])/4;
+                               pout+= 3;
+                               pin+=2*STEP;
+                               pin2 +=2*STEP;
+                               }
+                               #}
+                               )
+             (fclose f) 
+            ))
+           ((= head "P6")
+            (let ((dbl_line (ubyte-matrix-nc ncol2 2 3)))
+              
+              (fscan-int f)
+              (getc f)
+              (cidx-bloop ("i" ("pout_im" out-im))
+                          #{
+#define STEP 3
+                          int j;
+                          unsigned char *pin=IDX_PTR($dbl_line, unsigned char);
+                          unsigned char *pin2=pin+STEP* $ncol2;
+                          unsigned char *pout=pout_im;
+                          if ($ncol2*2 != fread (pin, STEP, (size_t) $ncol2*2, (FILE *)$f)) {
+                            fprintf(stderr, "line %d\n", i);
+                            run_time_error("not enough items read");
+                            }
+                          for (j=0; j<$ncol; j++) {
+                               pout[0]= (pin[0]+pin[0+STEP]+pin2[0]+pin2[0+STEP])/4;
+                               pout[1]= (pin[1]+pin[1+STEP]+pin2[1]+pin2[1+STEP])/4;
+                               pout[2]= (pin[2]+pin[2+STEP]+pin2[2]+pin2[2+STEP])/4;
+                               pout+=STEP;
+                               pin+=2*STEP;
+                               pin2 +=2*STEP;
+                               }
+                               #}
+                               )
+                          (fclose f)))
+         )
+        head
+        )
+            )))
+
+
+#? (ppm-write-rgbim <f> <m>)
+;; writes RGB image <m> in file <f> as a PPM/PPM file.
+;; <m> is and idx3 of ubytes.
+;;.SEE pnm
+(de ppm-write-rgbim (f m)
+    ((-str-) f)
+    ((-idx3- (-ubyte-)) m)
+    (let ((f (fopen f "wb"))
+          (nlin (idx-dim m 0))
+          (ncol (idx-dim m 1)))
+      ((-int-) nlin ncol)
+      (when (not f) (error "couldn't open PPM file"))
+      #{ fprintf((FILE *)$f,"P6 %d %d 255\n",$ncol,$nlin); #}
+      (cinline-idx2loop m "unsigned char" "p" "i" "j"
+        #{ putc(p[0], (FILE *)$f); 
+           putc(p[1], (FILE *)$f); 
+           putc(p[2], (FILE *)$f); #}
+        )
+      (fclose f)
+      ()))
+
+
+
+#? (pgm-write-ubim <f> <m>)
+;; writes an ubimage <m> in file <f> as a PGM/PPM file.
+;; <m> is and idx2 of ubytes.
+;;.SEE pnm
+(de pgm-write-ubim (f m)
+    ((-str-) f)
+    ((-idx2- (-ubyte-)) m)
+    (let ((f (fopen f "wb"))
+          (nlin (idx-dim m 0))
+          (ncol (idx-dim m 1)))
+      ((-int-) nlin ncol)
+      (when (not f) (error "couldn't open PGM file"))
+      #{ fprintf((FILE *)$f,"P5 %d %d 255\n",$ncol,$nlin); #}
+      (cinline-idx2loop m "unsigned char" "p" "i" "j"
+        #{ putc(*p, (FILE *)$f); #}
+        )
+      (fclose f)
+      ()))
+
+
+(dhc-make "pnm" 
+          pnm-dim
+          ppm-write-rgbim pgm-write-ubim 
+          nt-pnm-read-rgbim-sub2 pnm-read-rgbim-sub2
+          nt-pnm-read-ubim pnm-read-ubim 
+          nt-pnm-read-rgbim pnm-read-rgbim 
+          nt-pnm-read-ubim64 pnm-read-ubim64 
+          )

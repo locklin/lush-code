@@ -1,0 +1,753 @@
+#? File "dynamic.sn"
+;; This file implements functions and compiler patches for handling dynamical
+;; structures within SN3.1. We provide a Pool class implementing an object
+;; stack, and a way to create objects on a given pool.
+;;
+;; $Id: dynamic.sn,v 0.1 2001-10-31 17:34:44 profshadoko Exp $
+;;
+;; The following functions are useful for dynamically allocating objects in
+;; SN3.1.  SN3.1 usually forbids to declare an object slot which is an object
+;; of the same class. This feature prevents recursivity and allows SN3.1 to
+;; use an efficient stack based allocation scheme.
+;;
+;; We go around this limitation by declaring such slots as GPTRs:
+;;.IP
+;; We provide a way to cast a GPTR into an object and vice-versa. 
+;;.IP
+;; An OBJ is never nil but a GPTR may be nil. You can test a GPTR with the usual
+;; constructions (<if>, <when>, <cond>). Null GPTRs are used to end recursive
+;; structures.
+;;.IP
+;; We provide functions for allocating objects or matrices in a pool. A pool
+;; is created using <(new Pool)>. Objects might be allocated on this pool
+;; using function <in-pool>. All the objects and matrices allocated on a pool
+;; can be freed at once by sending message <free> to the pool object.
+;;
+;;.SEE (gptr <object>)
+;;.SEE (obj [<class>] <expr>)
+;;.SEE (lisp-c-map [<arg>])
+;;.SEE (new Pool)
+;;.SEE (==> <pool> alloc <size>)
+;;.SEE (==> <pool> free)
+;;.SEE (in-pool <pool> <...prog...>)
+;;.SEE (in-stack <...prog...>)
+;;.SEE (pool-debug-file <fname>)
+
+(printf "[%s]\n" file-being-loaded)
+(mload "cmacro.sn")
+(mload "dh-compile")
+(mload "dh-class")
+
+#? (obj [<class>] <expr>)
+;; In compiled mode, this function casts expression <expr> to class
+;; <class>. Argument <class> *must* be provided in compiled mode.  The type of
+;; argument <expr> may be a GPTR or an OBJECT.  This function does not check
+;; that the expression is actually a pointer to an object of this class. See
+;; also the warnings about the cast of an object into a GPTR. This is bad but
+;; sometimes you just have no choice.
+;;
+;; In interpreted mode, this function behaves differently if we have a GPTR
+;; or an OBJECT. If the argument is a GPTR, this function retrieves the
+;; Lisp object associated to the compiled object pointed to by the GPTR. 
+;; If the argument <class> is present, it tests then that the object is
+;; an instance of a subclass of <class>. If the argument <expr> is not a GPTR,
+;; this function just checks the class.
+
+(dhm-t obj(source)
+       (when (<> 3 (length source))
+         (dhc-error "two arguments are expected in compiled mode" source) )
+       (let* ((cname (cadr source))
+	      (xnode (dhc-parse-expr-t (caddr source)))
+	      (ctype (dhc-class-to-dhc-type (dhc-lisp-to-c-name (pname cname))))
+	      (otype (dhc-obj-type-from-class (dhc-lisp-to-c-name (pname cname))))
+	      (ptype (new dhc-type 'dht-ptr otype)) )
+	 ;; This is the test
+	 (if (or (==> :xnode:type is-a-dc)
+		 (==> :xnode:type is-a-gptr)
+		 (==> :xnode:type is-an-objptr) )
+	     (new t-node (list (new t-node () ctype cname) xnode) ptype)
+	   (dhc-error "A gptr or an object is expected" source) ) ) )
+	     
+       
+(dhm-c obj(source treetype retplace)
+       (let* ((lname (pname (cadr source)))
+	      (cname  (dhc-lisp-to-c-name lname)) )
+	 
+	 (if dhc-unprotect
+	     ;; ignore null check
+	     (sprintf "(struct CClass_%s*)(%s)" cname
+		      (dhc-parse-expr-c (caddr source) (caddr :treetype:tn-list) ()) )
+	   ;; perform null check
+	   (when (not retplace)
+		 (setq retplace (sprintf "L%d_%d_obj" lex-level tmpnames-seed))
+		 (add-c-declarations (sprintf "struct CClass_%s *%s;" cname retplace))
+		 (incr tmpnames-seed) )
+	   (add-c-statements 
+	    (sprintf "%s = (struct CClass_%s*)(%s);"
+		     retplace cname
+		     (dhc-parse-expr-c (caddr source) (caddr :treetype:tn-list) ()) ))
+	   (add-c-statements 
+	    (sprintf "if (! %s) run_time_error(\"Null GPTR cast\");"
+		     retplace ) )
+	   retplace ) ) )
+
+#? (idx <type> <expr>)
+;; This function casts expression <expr> to <type>.
+;; The argument <expr> must be either an idx or a GPTR.   If it is an IDX
+;; a check is made, if it is a GPTR, a cast to the type specified in <type>
+;; is performed. The argument <type> is of the form (idxn (srgtype)) where 
+;; idxn can be one of idx0, idx1,...,idx15 and srgtype can be one of byte, 
+;; ubyte, short, int, flt, float, real, double, gptr. 
+;;
+;; For example: (idx (idx2 (flt)) expr) will cast <expr> to an idx2 of float.
+;;.SEE (obj [<class>] <expr>)
+;;
+(df idx (td ptr)
+    (let ((casted (obj (eval ptr)))
+          (idxdims '(idx0 idx1 idx2 idx3 idx4 idx5 idx6 idx7 idx8 idx9
+                          idx10 idx11 idx12 idx13 idx14 idx15))
+          (idxtyps '(int flt float real double ubyte byte short gptr))
+          (typ-cor '(|I32STORAGE| |FSTORAGE| |FSTORAGE| |DSTORAGE| |DSTORAGE|
+                     |U8STORAGE| |I8STORAGE| |I16STORAGE| |GPTRSTORAGE|)))
+      (if ~(matrixp casted)
+        (error 'idx "not an idx" casted))
+      (if (or ~(listp td) (listp (car td)) ~(listp (cadr td)) 
+              (listp (caadr td)))
+          (error "bad type syntax (ex: (idx2 (flt))):" td))
+      (if ~(member (car td) idxdims) 
+        (dhc-error "unknown idx (expecting idx0, idx1, ...):"  (car td)))
+      (if ~(member (caadr td) idxtyps)
+        (dhc-error "unknown idx type (expecting (int, flt, double, ...):" 
+                   (caadr td)))
+      (if ~(matrixp casted)
+        (error 'idx "not an idx" casted))
+      (if (<> (idx-ndim casted) (- (length idxdims) 
+                                   (length (member (car td) idxdims))))
+          (error 'idx "bad number of dimensions" casted))
+      (if (<> (classof (idx-storage casted))
+              (eval (nth (- (length idxtyps) 
+                            (length (member (caadr td)
+                                            idxtyps)))
+                         typ-cor)))
+          (error 'idx "bad storage type" casted))
+      casted))
+
+(dhm-t idx(source)
+       (when (<> 3 (length source))
+         (dhc-error "two arguments are expected in compiled mode" source) )
+
+       (let* ((td (cadr source))
+              (xnode (dhc-parse-expr-t (caddr source)))
+              (idxdims '(idx0 idx1 idx2 idx3 idx4 idx5 idx6 idx7 idx8 idx9
+                              idx10 idx11 idx12 idx13 idx14 idx15))
+              (idxtyps '(int flt float real double ubyte byte short gptr))
+              (typ-cor '(dht-int dht-flt dht-flt dht-real dht-real dht-ubyte
+                                 dht-byte dht-short dht-gptr))
+              (type ())
+              (tnode ())
+              )
+
+         (if (or ~(listp td) (listp (car td)) ~(listp (cadr td)) 
+                 (listp (caadr td)))
+             (dhc-error "bad type syntax (exp: (idx2 (flt))):" td))
+         (if ~(member (car td) idxdims) 
+           (dhc-error "unknown idx (expecting idx0, idx1, ...):"  (car td)))
+         (if ~(member (caadr td) idxtyps)
+           (dhc-error "unknown idx type (expecting (int, flt, double, ...):" 
+                      (caadr td)))
+
+         (setq type (new dhc-type 'dht-ptr
+                         (new dhc-type 'dht-idx 
+                              (- (length idxdims) 
+                                 (length (member (car td) idxdims)))
+                              (new dhc-type 'dht-srg
+                                   (new dhc-type 
+                                        (nth (- (length idxtyps) 
+                                                (length (member (caadr td)
+                                                                idxtyps)))
+                                             typ-cor))))))
+
+         (if (==> :xnode:type is-an-idxptr)
+             (dhc-unify-types :xnode:type type)) 
+         (setq tnode (dhc-make-t-node td))
+
+         ;; This is the test
+         (if (or (==> :xnode:type is-a-dc)
+                 (==> :xnode:type is-a-gptr)
+                 (==> :xnode:type is-an-idxptr) )
+             (new t-node (list tnode xnode) type)
+           (dhc-error "A gptr or an idx is expected" source) ) ) )
+       
+(dhm-c idx(source treetype retplace)
+       (if dhc-unprotect
+           ;; ignore null check
+           (sprintf "(struct idx*)(%s)"
+                    (dhc-parse-expr-c (caddr source) 
+                                      (caddr :treetype:tn-list) ()) )
+         ;; perform null check
+         (when (not retplace)
+           (setq retplace (sprintf "L%d_%d_idx" lex-level tmpnames-seed))
+           (add-c-declarations (sprintf "struct idx *%s;" retplace))
+           (incr tmpnames-seed) )
+         (add-c-statements 
+          (sprintf "%s = (struct idx*)(%s);"
+                   retplace
+                   (dhc-parse-expr-c (caddr source)
+                                     (caddr :treetype:tn-list) ()) ))
+         (add-c-statements 
+          (sprintf "if (! %s) run_time_error(\"Null GPTR cast\");"
+                   retplace ) )
+         retplace ) ) )
+
+
+#? (lisp-c-map [<arg>])
+;; This function displays the internal data structure of the interface between
+;; Lisp and Compiled code. The LISP-C interface maitains a sorted avl tree of
+;; all objects currently allocated. This table relates the address of the
+;; compiled structure, the type of the structure, the way the object was
+;; created and possibly the Lisp representation of this object.
+;;.IP
+;; <(lisp-c-map)> without argument returns the number of entries in the table.
+;;.IP
+;; <(lisp-c-map ())> prints all the table. You better check the size
+;; of the table before doing this.
+;;.IP
+;; <(lisp-c-map <expr>)> prints the table entry (if any) whose Lisp representation
+;; is associated to object (OBJ,SRG,IDX,STR) returned by <expr>.
+;;.IP
+;; <(lisp-c-map <number|gptr> prints the table entry (if any) whose Compiled
+;; representation is located at the specified address.
+;;.PP
+;; You can redirect the output of this command using function <writing>.
+;;
+;; Example:
+;;.VP
+;;? (lisp-c-map)
+;;= 12
+;;? (lisp-c-map ())
+;;   =                L 0x1e29b0 str              "A string for class c1"
+;;  <                 L 0x2f10a0 idx              ::INDEX1:<3>
+;; <                  L 0x2f12e0 obj:c2           ::c2:2f1330
+;;  =                 L 0x2f1370 idx              ::INDEX1:<3>
+;;=                   L 0x2f1c98 srg              ::FSTORAGE:static@2fe820
+;;   =                L 0x2f1e18 str              "A second string for class c1"
+;;  =                 L 0x2ff050 str              "A third string for class c1"
+;;   =                L 0x2ff068 obj:c1           ::c1:2f1b08
+;; =                  L 0x2ff080 idx              ::INDEX1:<3>
+;;   =                L 0x2ff0a8 srg              ::FSTORAGE:static@2fe82c
+;;  =                 L 0x31cb20 obj:c1           ::c1:1e2980
+;;   =                L 0x31cb38 srg              ::FSTORAGE:ram@1e2968:<3>
+;;= 12
+;;.PP
+;; The first character describes the position of the entry in the balanced
+;; tree.  The second character tells wether the object was created by LISP (L)
+;; or by compiled code (C) (e.g. Pool). Each entry displays then the address
+;; of the compiled object and the lisp representation of the object. An object
+;; created by C code may have no lisp representation until it is referenced by
+;; a represented object or until the proper GPTR is casted by function <obj>.
+
+
+#? (lisp-c-dont-track-cside)
+;; Downgrade the lisp_c code to sn31old style. 
+;; C objects managed by c code will now appear as GPTRs.
+;; There is no way to reevert this operation.
+
+
+#? (pool-debug-file <fname>)
+;; Records pool creation and free in specified file.
+;; Stops recording if <fname> is null string.
+
+(de pool-debug-file(fname)
+    (-str- fname)
+    (cheader "static FILE *pool_debug_file = NULL;")
+    #{
+       char *fname = (char *) $fname->data;
+       if (pool_debug_file)
+         fclose(pool_debug_file);
+       pool_debug_file = 0;
+       if (fname[0])
+         pool_debug_file = fopen(fname,"w");
+    #}
+    fname )
+
+
+#? (new Pool)
+;; Creates a new object for allocating memory by small pieces
+;; and deallocating these pieces as a whole. 
+;;.SEE (==> <pool> alloc <size>)
+;;.SEE (==> <pool> free)
+
+
+(dm pool-chunk-size(f)     4080)
+(dm pool-threshold-size(f) 2008)
+
+
+(defclass Pool object
+  ((-gptr-) slink)
+  ((-gptr-) glink)
+  ((-gptr-) destroychain)
+  ((-int-)  cursize)
+  ((-int-)  curpos) )
+
+(defmethod Pool pool()
+  (setq cursize 0)
+  (setq curpos 0)
+  (setq slink (gptr ())) 
+  (setq glink (gptr ()))
+  (setq destroychain (gptr ())) 
+  ;;; debugging code
+  #{
+#ifndef NOLISP
+     if (pool_debug_file) {
+       fprintf(pool_debug_file, "%x pool create ", $this);
+       print_dh_recent(4,pool_debug_file);
+       fflush(pool_debug_file);
+     }
+#endif
+  #}
+  (gptr ()) )
+
+
+#? (==> <pool> alloc <size>)
+;; Allocate <size> bytes of memory in the pool.
+;; Returns a GPTR.
+
+(defmethod Pool alloc(size)
+  ((-int-) size)
+  ;; Assumption: All objects can be legally aligned 
+  ;; on addesses multiple of the size of two pointers
+  ;; which should be a power of two.
+  #{
+     void **p;
+     if ($size > $(pool-threshold-size)) {
+       p = (void**)malloc(2*sizeof(void*) + $size); /* two ptrs + data */
+       if (!p) 
+         run_time_error("Out of memory");
+       p[0] = $this->glink;
+       p[1] = (void*)(unsigned long)(2*sizeof(void*) + $size);
+       $this->glink = (gptr) p;
+       p = &p[2]; /* after the two ptrs */
+     } else {
+       if ($this->curpos + $size > $this->cursize) {
+         $this->curpos = 2*sizeof(void*);
+	 $this->cursize = $(pool-chunk-size);
+	 p = (void**)malloc($this->cursize);
+	 if (!p) 
+           run_time_error("Out of memory");
+	 p[0] = $this->slink;
+         p[1] = (void*)(unsigned long)($(pool-chunk-size));
+	 $this->slink = (gptr) p;
+       }
+       p = (void**)((char*)($this->slink) + $this->curpos);
+       $this->curpos = $this->curpos + $size;
+       $this->curpos = ($this->curpos+2*sizeof(void*)-1) & ~(2*sizeof(void*)-1);
+     }
+  #}
+  (gptr #{ p #}) )
+
+
+
+#? (==> <pool> destroyhook <funcall> <argmt>)
+;; Registers a destructor called when the pool is freed.
+
+(defmethod Pool destroyhook(funcall argmt)
+  ((-gptr-) funcall)
+  ((-gptr-) argmt)
+  #{
+      void **p = (void **) CClass_pool_alloc($this, 3*sizeof(void**));
+      p[0] = $this->destroychain;
+      p[1] = $funcall;
+      p[2] = $argmt;
+      $this->destroychain = p;
+  #}
+  (int 0) )
+
+
+
+#? (==> <pool> free)
+;; Free at once all objects allocated in the pool.
+
+(defmethod Pool free()
+  #{
+     void **p, **np;
+#ifndef NOLISP
+     for (p= (void **)$this->slink; p; p=np) {
+       np = (void **) p[0];
+       cside_destroy_range(p, (char*)p + $(pool-chunk-size));
+     }
+     for (p= (void **)$this->glink; p; p=np) {
+       np = (void **) p[0];
+       cside_destroy_range(p, (char*)p + $(pool-threshold-size));
+     }
+#endif
+     for (p= (void **)$this->destroychain; p; p=np) {
+       if (p[1]) (* (void (*)()) (p[1]) )(p[2]);
+       np = (void **) p[0];
+     }
+     $this->destroychain = 0;
+     for (p= (void **)$this->glink; p; p=np) {
+       np = (void **) p[0];
+       free(p);
+     }
+     $this->glink = (gptr) 0;
+     for (p= (void **)$this->slink; p; p=np) {
+       np = (void **) p[0];
+       free(p);
+     }
+     $this->slink = (gptr) 0;
+     $this->curpos = $this->cursize = 0;
+  #}
+  ;;; debugging code
+  #{
+#ifndef NOLISP
+     if (pool_debug_file) {
+       fprintf(pool_debug_file, "%x pool free   ", $this);
+       print_dh_recent(4,pool_debug_file);
+       fflush(pool_debug_file);
+     }
+#endif
+  #}
+  () )
+
+
+;; This is used for allocating storages in <in-pool>.
+;; NEVER USE THIS METHOD DIRECTLY.
+
+(defmethod Pool allocsrg()
+  #{
+    int  CClass_pool_destroyhook ();
+    extern void srg_free();
+    struct srg *p = (struct srg *) CClass_pool_alloc($this, sizeof(struct srg) );
+    CClass_pool_destroyhook($this,srg_free,p);
+#ifndef NOLISP
+    cside_create_srg(p);
+#endif
+  #}
+  (gptr #{ p #}) )
+
+
+(defmethod Pool allocidx(n)
+  ((-int-) n)
+  #{
+    struct idx *x = (struct idx *) CClass_pool_alloc($this, sizeof(struct idx));
+    x->ndim = $n;
+    if ($n>0) {
+      x->dim = (int *) CClass_pool_alloc($this,$n*sizeof(int));
+      x->mod = (int *) CClass_pool_alloc($this,$n*sizeof(int));
+    }
+#ifndef NOLISP
+    cside_create_idx(x);
+#endif
+  #}
+  (gptr #{ x #}) )
+
+(defmethod Pool allocobj(size tclass)
+  ((-int-) size)
+  ((-gptr-) tclass)
+  #{
+   int  CClass_pool_destroyhook ();
+   void **p = (void **) CClass_pool_alloc($this, $size);
+    if ($tclass == T_Class_pool)
+      CClass_pool_destroyhook($this, CClass_pool_free, p);
+    p[0] = (void*)(((void**)$tclass) + 1);    /* set virtual table */
+#ifndef NOLISP
+    cside_create_obj(p, *((void**)$tclass));
+#endif
+  #}
+  (gptr #{ p #}) )
+  
+(defmethod Pool memuse()
+  (let ((srguse (int 0))
+        (induse (int 0))
+        (memuse (int 0)) )
+  #{{
+     void **p;
+     extern void srg_free();
+     for (p= (void **)$this->destroychain; p; p= (void **)p[0]) {
+       if (p[1] == srg_free) {
+         struct srg *sr = (struct srg *) p[2];
+         $srguse += storage_type_size[sr->type] * sr->size;
+       } else if (p[1] == CClass_pool_free) 
+         $induse = CClass_pool_memuse((struct CClass_pool *) p[2]);
+     }
+     for (p= (void **)$this->glink; p; p= (void **)p[0]) 
+       $memuse += (unsigned long)p[1];
+     for (p= (void **)$this->slink; p; p= (void **)p[0])
+       $memuse += (unsigned long)p[1];
+  }#}
+  (+ memuse induse srguse) ) )
+
+
+#? (create-pool)
+;; A convenient constructor function for C programmers. (No args, no temps.)
+;; Probably not useful from within the interpreter.
+;;.SEE (new Pool)
+(de create-pool ()
+  (let ((out (gptr ())))
+    ((-gptr-) out)
+    #{ {
+         struct CClass_pool* p = (struct CClass_pool*) malloc(sizeof(struct CClass_pool));
+         p->Methods = (method_ptr *) (((void **) T_Class_pool) + 1);
+         CClass_pool_pool (p);
+         $out = p;
+       }
+    #}
+    out))
+
+#? (destroy-pool <pool>)
+;; A convenient destructor function for C programmers.
+;; Probably not useful from within the interpreter.
+;;.SEE (new Pool)
+(de destroy-pool (p)
+  ((-obj- (Pool)) p)
+  #{
+     CClass_pool_free($p);
+     free($p);
+  #}
+  ())
+
+
+
+
+#? (simulate-pool-in <pool> <atptr>)
+;; This function protects lisp objects and manages them
+;; as if they were belonging to the pool. This is used
+;; in the lisp implementation of <in-pool>.
+
+(de simulate-pool-out(atptr)
+    ((-gptr-) atptr)
+    #{
+#ifndef NOLISP
+       int flag = 1;
+       at **where, *temp, *p = $atptr;
+       LOCK(p);
+       unprotect(p);
+       while (flag) {
+         flag = 0;
+         where = &p;
+         while (CONSP(*where)) {
+            if ((*where)->Car && (*where)->Car->count>1) {
+                where = &((*where)->Cdr);
+            } else {
+                flag = 1;
+                temp = *where;
+                *where = (*where)->Cdr;
+                temp->Cdr = NIL;
+                UNLOCK(temp);
+            }
+         }
+       }
+       if (p) {
+            printf("*** lisp_c warning: Found lisp reference to objects\n");
+            printf("***    allocated in a pool being currently destroyed.\007\n");
+            while (CONSP(p)) {
+              printf("*** %s\n", pname(p->Car));
+              p = p->Cdr;
+            }
+            p = $atptr;
+            UNLOCK(p);
+       }  
+#endif
+    #}
+    () )
+
+
+(de simulate-pool-in (apool atptr)
+    ((-obj- (Pool)) apool)
+    ((-gptr-) atptr)
+    #{
+#ifndef NOLISP
+       if ($atptr) {
+         protect($atptr);
+         CClass_pool_destroyhook($apool,C_simulate_pool_out,$atptr);
+       }
+#endif
+    #} 
+    () )
+
+
+;; Compile pools
+(dhc-make "dynamic" 
+          pool-debug-file
+          (Pool pool alloc free 
+                allocsrg allocidx allocobj 
+                destroyhook memuse )
+          create-pool 
+          destroy-pool 
+          simulate-pool-out
+          simulate-pool-in )
+
+
+;; This destructor is called by the interpreter only
+(defmethod Pool -destructor()
+  (lisp-c-no-warnings (==> this free)) )
+
+
+
+#? (in-pool <pool> <...prog...>)
+;; Evaluates expression <...prog...> and returns the last result.  Every
+;; object allocated during the evaluation of <...prog...> and ``bumped''
+;; outside the scope defined by <in-pool> will be allocated on pool
+;; <pool> instead of following the usual SN3.1 rules.
+;;
+;; This magic function allows a few useful constructions:
+;;.IP
+;; Allocating specific objects on a pool.
+;;.VP
+;;   (in-pool myobst (matrix 5 5))
+;;   (in-pool myobst (new myclass myarg))
+;;.IP
+;; Protecting against implicit allocation while working
+;; on the slots of an object located within a pool
+;;.VP
+;;   (defmethod myclass run()
+;;      ;; this object is allocated on pool 'some-obst
+;;      (in-pool some-obst
+;;         (setq some-slot (m+m some-slot some-other-slot)) ) ) )
+;;         ;; the matrix implicitely allocated by function 'm+m
+;;         ;; will be allocated on pool 'some-obst.
+;;         ;; This is safer than allocating it on the program stack
+;;         ;; because the object outlives the program stack.
+;;.PP
+;;
+;; WARNING: When you use <in-pool>, you must ensure yourself
+;; that you stop using objects created on the pool before
+;; freeing or destroying the pool. The SN3.1 compiler
+;; becomes as stupid as a C compiler when you bypass its
+;; allocation strategies.
+;;
+;; WARNING2: There are limitations to the interface code between lisp and
+;; compiled lisp. Objects allocated in a pool are often returned as GPTRs. It
+;; is very unsafe to store pointers to regular objects into objects allocated
+;; in a pool (including a pointer to the pool itself!).
+
+
+;; These functions use support function in DH-UTIL.SN:
+;; - dhc-declare-var-in-stack
+;; - dhc-declare-var-in-pool
+;; - dhc-declare-var
+;;
+;; We have located these functions in DH-UTIL.SN
+;; to help synchronizing them when the compiler evolves.
+
+
+(df in-pool(__pool__ . __args__)
+    (let ((ans (apply compute-bump __args__)))
+      (simulate-pool-in (eval __pool__) (atgptr (cdr ans)))
+      (car ans) ) )
+
+(dhm-t in-pool(source)
+       (when (not (cddr source))
+	 (dhc-error "syntax error") )
+       
+       ;; Check Pool argument
+       (let ((xnode ()) )
+	 (setq xnode (dhc-parse-expr-t (cadr source)))
+	 (when (or (not (==> :xnode:type is-an-objptr))
+		   (<> "pool" (dhu-name (dhu-type (dhu-type :xnode:type))) ))
+	   (dhc-error "Argument 1 must be a pool" source) )
+	 
+	 ;; Derived from DHC-PUSH-SCOPE-T
+	 (let ((treetype ())
+	       (lex-level (1+ lex-level))
+	       (bump-list ()) )
+	   
+	   ;; Handle return value (cf PUSH_SCOPT_T in DH-UTIL.SN)
+	   (setq treetype  (dhc-parse-progn-t (cddr source)))
+	   (setq :treetype:tn-list (cons xnode :treetype:tn-list))
+	   ;; If the value is copied in a temp, de-unify (so do not bump)
+	   (if (==> :treetype:type is-a-simple)
+	       (setq :treetype:type (==> :treetype:type copy)))
+	   (if (==> :treetype:type is-a-ptr)
+	       (setq :treetype:type 
+		     (new dhc-type (unode-val :treetype:type:u-tclass)
+			  (unode-val (if (= (dhu-tclass :treetype:type) 
+					    'dht-list)
+					 :treetype:type:u-extra
+				       :treetype:type:u-type)))))
+	   (==> :treetype:type bump-level (1- lex-level))
+	   
+	   ;; Store bump-list in treetype
+	   (setq :treetype:symbol bump-list) 
+	   treetype ) ) )
+
+(dhm-c in-pool(source treetype retplace)
+       (let* ((xnode (cadr :treetype:tn-list))
+	      (xexpr (dhc-parse-expr-c (cadr source) xnode ()))
+	      ;; Save DHC-DECLARE-VAR
+	      (old-dhc-declare-var dhc-declare-var)
+	      ;; Override DHC-DECLARE-VAR
+	      (dhc-declare-var 
+	       (eval '(lambda(name type) 
+			(dhc-declare-var-in-pool `xexpr name type) ) )) )
+	 
+	 (dhc-push-scope-c 
+	  treetype retplace
+	  ;; Restore DHC-DECLARE-VAR before generating C
+	  (let ((dhc-declare-var old-dhc-declare-var))
+	    (dhc-parse-progn-c (cddr source) 
+			       (cddr :treetype:tn-list) 
+			       retplace ) ) ) ) )
+       
+#? (in-stack <...prog...>)
+;; Evaluates expression <...prog...> and returns the last result.  Every
+;; object allocated during the evaluation of <...prog...> and ``bumped''
+;; outside the scope defined by <in-pool> will be allocated on the stack
+;; immediatly instead of following the usual SN3.1 rules.
+;;
+;; This means that no temporaries will be generated at all. It also means
+;; that no object or matrix allocated within the <in-stack> can be used
+;; outside. Beware of GASPS.
+
+(df in-stack __args__
+    (let ((ans (apply compute-bump __args__)))
+      (when (cdr ans)
+        (printf "*** in-stack warning: Garbage collector tells us that\n")
+        (printf "***     the following objects are used somewhere but would\n")
+        (printf "***     be destroyed when returning from 'in-stack'.\x07\n")
+        (each ((m (cdr ans))) (printf "*** %s\n" (pname m))) )
+      (car ans) ) )
+
+(dhm-t in-stack(source)
+       (when (not (cdr source))
+	     (dhc-error "syntax error") )
+       
+       ;; Derived from DHC-PUSH-SCOPE-T
+       (let ((treetype ())
+	     (lex-level (1+ lex-level))
+	     (bump-list ()) )
+	 
+	 ;; Handle return value (cf PUSH_SCOPT_T in DH-UTIL.SN)
+	 (setq treetype  (dhc-parse-progn-t (cdr source)))
+	 ;; If the value is copied in a temp, de-unify (so do not bump)
+	 (if (==> :treetype:type is-a-simple)
+	     (setq :treetype:type (==> :treetype:type copy)))
+	 (if (==> :treetype:type is-a-ptr)
+	     (setq :treetype:type 
+		   (new dhc-type (unode-val :treetype:type:u-tclass)
+			(unode-val (if (= (dhu-tclass :treetype:type) 
+					  'dht-list)
+				       :treetype:type:u-extra
+				     :treetype:type:u-type)))))
+	 (==> :treetype:type bump-level (1- lex-level))
+	 ;; Store bump-list in treetype
+	 (setq :treetype:symbol bump-list) 
+	 treetype ) )
+
+(dhm-c in-stack(source treetype retplace)
+       (let* (;; Save DHC-DECLARE-VAR
+	      (old-dhc-declare-var dhc-declare-var)
+	      ;; Override DHC-DECLARE-VAR
+	      (dhc-declare-var 
+	       (eval '(lambda(name type) 
+			(dhc-declare-var-in-stack name type) ) )) )
+	 (dhc-push-scope-c 
+	  treetype retplace
+	  ;; Restore DHC-DECLARE-VAR before generating C
+	  (let ((dhc-declare-var old-dhc-declare-var))
+	    (dhc-parse-progn-c (cdr source) 
+			       (cdr :treetype:tn-list) 
+			       retplace ) ) ) ) )
+
+
+

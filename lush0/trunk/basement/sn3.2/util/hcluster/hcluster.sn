@@ -1,0 +1,1056 @@
+(mload "cmacro")
+(mload "dh-compile")
+(mload "libidx")
+(gcc-load "cluster.c")
+
+;;*****************************************************************************
+#? Clustering.
+;; The clustering functions are <k-means> (for clustering n sample in p 
+;; clusters), <top-cluster> and <build-cluster> (for hierarchical clustering).
+;; <top-cluster> is an initalization routine while build-cluster is used to 
+;; incrementally cluster the data into a tree structure.  Since these functions
+;; work on any kind of data structure, the user is expected to provide pointers
+;; to functions to manipuate the data.  We assume that the data is made of C
+;; structures (let's calling sample_type) defined by the user, and that these C
+;; structures can be used to represent both the sample and the cluster center.
+;; Note that it is possible to have two different data structure for samples
+;; and cluster center, and in that case, some care must be taken in the
+;; in passing functions pointers (for instance, when dist is called by k_means,
+;; the first argument is a sample, the second is a cluster center).
+;; The user is expected to provide pointers to the following
+;; functions to manipulate this data (we assume that <sa>, <clu> and 
+;; <newclu> are pointers to sample_type):
+;;.VP
+;; The following files are problem specific: They contains the user definitions
+;; of what samples, cluster centers, and distances are.
+;;
+;;	euc_func.h
+;;          Definition of the C structures for an example where samples are
+;;          points in a N Dimensional plane.  For each particular application,
+;;          the user is expected to build a similar file.
+;;	euc_func.c
+;;          C functions for euc_func.h.
+;;	euc-cluster
+;;          Lisp interface to the C functions and structs defined above
+;;
+;;	euc-test.sn	Example of typical calls of the clustering
+;;			algorithms with structures defined above.
+;;			2D graphic illustrations.
+;;
+;;	For example: (mload "hcluster/hcluster") 
+;;      or:
+;;                   (mload "hcluster/test_cluster") 
+;;                   (test-tree (init-gauss 1000 3) 3)
+;;				
+;;.PP
+;; The user is expected to provide pointers to the following C
+;; functions to manipulate his data (we assume that <sa>, <clu> and 
+;; <newclu> are pointers to sample_type structures):
+;;.VP
+;;
+;;   dist(<sa>, <clu>) 
+;;       compute distance between samples <sa1> and <clu>.  Since this function
+;;       will be called many time by the clustering algorithm, it should be
+;;       reasonably efficient.
+;;
+;;.PP
+;;   The following three functions ("clear", "accumulate" and "normalize") 
+;;   work together and are used to compute the position of one cluster.
+;;   "clear" reset a cluster, "accumulate" iteratively add information about
+;;   each sample to that cluster, and "normalize" is called last to compute
+;;   the true position of the cluster (using all the information accumulated 
+;;   with "accumulate").  For example if the euclidean distance is used and 
+;;   each sample is a N dimensional vector, "clear" could set the cluster to 
+;;   the zero vector, "accumulate" could add each samples to the cluster, and
+;;   "normalize" could divide each component of the cluster by the number of
+;;   samples.
+;;.VP
+;;   clear(<clu>)
+;;       Clear a sample or a cluster center.
+;;
+;;   accumulate(<sa>, <weight>, <clu>)
+;;       Accumulate information about sample pointed to by <sa> and weighted
+;;       by <weight> (a float) into cluster <clu>.
+;;
+;;   normalize(<clu>, <newclu>, <weight_sum>)
+;;       <clu> is the unfinished cluster which has been passed to accumulate.
+;;       <newclu> is the normalized pattern.  <weight_sum> should be the sum 
+;;       of all the <weight>s passed to accumulate.  It's a float.  If <newclu>
+;;       is modified by the normalize call, the procedure should return 1,
+;;       otherwise 0.
+;;.PP
+;;   The following function is used to initalize the cluster centers as
+;;   a function of the samples.  The simplest way to do this is to copy
+;;   the first samples into the cluster centers.
+;;.VP
+;;   init_center(&<sa>, <sa_size>, &<clu>, <clu_size>)
+;;       Initialize the cluster as a function of the samples.  The first 
+;;       argument is a pointer to an array of pointers to sample_type 
+;;       structures.  The size of the array is given by <sa_size> (an int).
+;;       The third argument is a pointer to an array of pointer to sample_type,
+;;       representing the centers of clusters.  The array size is given in
+;;       <clu_size> (an int).
+;;   
+;;.SEE n-clusters.
+;;.SEE cluster-tree.
+;;.SEE (k-means <dist> <clear> <accumulate> <normalize> <n> <data> <sample-weight>
+;;.SEE (top-cluster <sample-index> <sample-weight> <cluster-center> <temp-cluster>
+;;.SEE (cluster-build <top_cluster> <clu-center1> <clu-center2> <temp-center1>
+;;.SEE (find-cluster-slice <top> <cluster-ptr> <sample-index> <n>)
+;;.SEE (cluster-delete <top-cluster> <free-sample-ptr>)
+;;.SEE (get-[field] <ptr>)
+;;.SEE (get-spare <ptr>)
+;;.SEE (set-spare <ptr> <value>)
+;;.SEE (visit-tree <top> <leaf-function> <node-function>)
+;;.SEE (cluster-to-lisp <ptr>)
+
+;;-----------------------------------------------------------------------------
+#? (k-means <dist> <clear> <accumulate> <normalize> <n> <data> <sample-weight>
+;;              <assign> <p> <cluster> <newcluster> <label> <weight> <variance>)
+;;
+;; Compute <p> clusters (in pointer array to cluster, <cluster>) from the
+;; given <p> samples (in pointer array to sample <data>), using the k-means
+;; algorithm.
+;;
+;; The arguments <dist> <clear> <accumulate> <normalize> are pointers to
+;; functions and are described in detail in the Clustering section. 
+;;.VP
+;; <sample-weight> is a <n> float-matrix representing the weighting of each
+;;     sample (input).
+;; <assign> is a <n> int-matrix containing the index of each cluster (output).
+;; <cluster> on input contains the initialized <p> cluster (matrix of gptr)
+;;     and on output contains the cluster computed by k-means.
+;; <newcluster> is a <n> gptr-matrix of pointer to extra clusters for 
+;;     temporary storage (input).
+;; <label> is a <p> int-matrix containing the labels for the clusters (input). 
+;; <weight> is a <p> float-matrix containing the weights of clusters (output)
+;; <variance> is a <p> float-matrix containing the variance associated with
+;;     each clusters (output).
+;; <norm_var_exp> only affect the computation of the variance on return,
+;;     not the position of the cluster center.  The variance is the sum of
+;;     all the distance between sample and corresponding cluster, SUM_D, 
+;;     divided by the sum of the sample-weights SUM_W.  In this case, we define
+;;     the variance to be SUM_D / SUM_W ** <norm_var_exp>. Note that if
+;;     <norm_var_exp> is 1, the normal variance is calculated, if <norm_var_exp>
+;;     is 0, no normalization is done, and for 0.5, square root is used.
+;;
+;;.SEE Clustering.
+;;
+(de k-means (dist clear accumulate normalize
+                  n data sample_weight assign p cluster newcluster
+                  label weight variance norm_var_exp)
+    ((-int-) n p)
+    ((-gptr-) dist clear accumulate normalize)
+    ((-idx1- (-gptr-)) data cluster newcluster)
+    ((-idx1- (-float-)) sample_weight weight variance)
+    ((-idx1- (-int-)) assign label)
+    ((-real-) norm_var_exp)
+
+    (c-include "cluster.h")
+    #{{
+        k_means((float (*)(void *, void *)) $dist,
+                (void (*)(void*)) $clear,
+                (void (*)(void *, float, void *)) $accumulate,
+                (char (*)(void *,  void *, float)) $normalize,
+                $n,
+                (void *) IDX_PTR($data, void *),
+                (float *) IDX_PTR($sample_weight, float),
+                (int *) IDX_PTR($assign, int),
+                $p,
+                (void *) IDX_PTR($cluster, void *),
+                (void *) IDX_PTR($newcluster, void *),
+                (int *) IDX_PTR($label, int),
+                (float *) IDX_PTR($weight, float),
+                (float *) IDX_PTR($variance, float),
+                $norm_var_exp);
+        }#}
+        ())
+
+;;-----------------------------------------------------------------------------
+#? (find-max-variance <cluster>)
+;; Return the node with maximum variance in the tree below <cluster>
+;;.SEE Clustering.
+;;.SEE (top-cluster <sample-index> <sample-weight> <cluster-center> <temp-cluster>
+;;.SEE (cluster-build <top_cluster> <clu-center1> <clu-center2> <temp-center1>
+;;.SEE (k-means <dist> <clear> <accumulate> <normalize> <n> <data> <sample-weight>
+;;.SEE (find-cluster-slice <top> <cluster-ptr> <sample-index> <n>)
+;;.SEE (cluster-delete <top-cluster> <free-sample-ptr>)
+;;.SEE (get-[field] <ptr>)
+;;.SEE (get-spare <ptr>)
+;;.SEE (set-spare <ptr> <value>)
+;;.SEE (visit-tree <top> <leaf-function> <node-function>)
+;;.SEE (cluster-to-lisp <ptr>)
+;;
+(de find-max-variance-node (node)
+    ((-gptr- "cluster_type *") node)
+    (c-include "cluster.h")
+    (if (null node)
+        (error "find-max-variance: null pointer"))
+    (gptr #{ find_max_variance_node($node) #}))
+
+;;-----------------------------------------------------------------------------
+#? (top-cluster <sample-index> <sample-weight> <cluster-center> <temp-cluster>
+;;              <init_center> <dist> <clear> <accumulate> <normalize> 
+;;              <norm_var_exp>)
+;;
+;;  Create the top cluster node of the tree for a hierarchical clustering.
+;;  It is possible to have several trees at a time with different data
+;;  structures.  The top node contains extra information about the tree
+;;  (how many node have been split and how many node in total, possibly
+;;  a sorted list of leaves by decreasing variance, etc.).
+;;
+;;  When top-cluster is called the center of all the sample in sample-index
+;;  is computed (one call to k-means is made).
+;;
+;;  <sample-index> is a idx1 of gptr pointing on all the sample
+;;  structures.  These are C strutctures.  See the Clustering section
+;;  for details. <sample-weight> is a float-matrix of same size as
+;;  <sample-index> containing the weighting of each sample.
+;;  <cluster-center> and <temp-cluster> are pointer to C cluster structures.
+;;  The functions <dist>,  <clear>, <accumulate>, and
+;;  <normalize> are pointers to C functions and are explained in
+;;  details in the section Clustering.  On return, a pointer to the top
+;;  of the tree of the hierarchical clustering is returned.  Call to 
+;;  cluster-build will build the tree one node at a time.
+;;  <norm_var_exp> only affect the computation of the variance (see k-means).
+;;  It does not affect the computation of cluster center, but it does affect
+;;  which cluster in the tree will be splitted next (see cluster-build) since
+;;  the cluster to be splitted is the cluster with maximum variance.
+;;
+;;.SEE Clustering.
+;;.SEE (cluster-build <top_cluster> <clu-center1> <clu-center2> <temp-center1>
+;;.SEE (k-means <dist> <clear> <accumulate> <normalize> <n> <data> <sample-weight>
+;;.SEE (find-cluster-slice <top> <cluster-ptr> <sample-index> <n>)
+;;.SEE (cluster-delete <top-cluster> <free-sample-ptr>)
+;;.SEE (get-[field] <ptr>)
+;;.SEE (get-spare <ptr>)
+;;.SEE (set-spare <ptr> <value>)
+;;.SEE (visit-tree <top> <leaf-function> <node-function>)
+;;.SEE (cluster-to-lisp <ptr>)
+;;
+(de top-cluster (sample-index sample-weight 
+                              cluster_center temp_cluster
+                              init_center
+                              dist clear accumulate normalize norm-var-exp)
+    ((-idx1- (-gptr-)) sample-index) 
+    ((-idx1- (-float-)) sample-weight)
+    ((-gptr- "void *") cluster_center)
+    ((-gptr- "void *") temp_cluster)
+    ((-gptr-) init_center dist clear accumulate normalize)
+    ((-real-) norm-var-exp)
+    
+    (c-include "cluster.h")
+
+    (let ((n (idx-dim sample-index 0)))
+      (-int- n)
+
+      (gptr #{
+            top_cluster(
+                        IDX_PTR($sample_index, void*),
+                        IDX_PTR($sample_weight, float),
+                        $n,
+                        $cluster_center, $temp_cluster,
+                        (void (*)(void**, float*, int, void**, int)) $init_center,
+                        (float (*) (void *, void *)) $dist, 
+                        (void (*) (void*)) $clear, 
+                        (void (*) (void *, float, void *)) $accumulate,
+                        (char (*) (void *,  void *, float)) $normalize,
+                        $norm_var_exp)
+            #})))
+
+;;-----------------------------------------------------------------------------
+#? (cluster-build <top_cluster> <clu-center1> <clu-center2> <temp-center1>
+;;                <temp-center2> <init_center>
+;;                <dist> <clear> <accumulate> <normalize> <norm-var-exp>)
+;;
+;; cluster-build builds a hierachical cluster tree, one node at a time, for each
+;; call, from <top_cluster>. <top_cluster> is computed and returned by the 
+;; function top-cluster.
+;; 
+;; Functions <init_center>, <dist>, <clear>,
+;; <accumulate>, and <normalize> are pointer to user provided functions, which
+;; are described in details in the Clustering section. <clu-center1> and
+;; <clu-center2> are two cluster centers space holder, they should be 
+;; allocated before each call to cluster-build.  <temp-center1> and 
+;; <temp-center2> are temporary space to accumulate cluster center information.
+;; They can be reused from one call to cluster-build to the next.
+;; All <clu-center1>, <clu-center2>, <temp-center1>, and <temp-center2> are
+;; C pointers to struct center_type, defined by the user.
+;; <norm_var_exp> only affect the computation of the variance (see k-means).
+;; It does not affect the computation of cluster center, but it does affect
+;; which cluster in the tree will be splitted since
+;; the cluster to be splitted is the cluster with maximum variance.  If 
+;; <norm_var_exp> is 0, no normalization is done, and therefore, at every
+;; call to cluster-build, the variance decreases.
+;;
+;;.VP
+;; A typical example (assuming <p> is the number of desired cluster):
+;;
+;;    (setq top (top-cluster samples sample-weights 
+;;                           clu-center temp-center
+;;                           (distance-ptr) (clear-ptr) (accumulate-ptr)
+;;                           (normalize-ptr)))
+;;
+;;    (setq temp-center1 (my-new-center))
+;;    (setq temp-center2 (my-new-center))
+;;    (for (i 1 p)
+;;	(setq clu-center1 (my-new-center))
+;;	(setq clu-center2 (my-new-center))
+;;      (setq center-list (cons clu-center1 (cons clu-center2 center-list)))
+;;      (cluster-build top clu-center1 clu-center2 temp-center1 temp-center2
+;;                     (init-center-ptr) (distance-ptr) (clear-ptr)
+;;                     (accumulate-ptr) (normalize-ptr)))
+;;
+;;    [Do your stuff]
+;;
+;;    ;; When all is done, garbage collect....
+;;    (my-free-center temp-center1)
+;;    (my-free-center temp-center2)
+;;    (each ((center center-list))
+;;      (my-free-center center)
+;;
+;;.SEE Clustering.
+;;.SEE (k-means <dist> <clear> <accumulate> <normalize> <n> <data> <sample-weight>
+;;.SEE (top-cluster <sample-index> <sample-weight> <cluster-center> <temp-cluster>
+;;.SEE (cluster-build <top_cluster> <clu-center1> <clu-center2> <temp-center1>
+;;.SEE (find-cluster-slice <top> <cluster-ptr> <sample-index> <n>)
+;;.SEE (cluster-delete <top-cluster> <free-sample-ptr>)
+;;.SEE (get-[field] <ptr>)
+;;.SEE (get-spare <ptr>)
+;;.SEE (set-spare <ptr> <value>)
+;;.SEE (visit-tree <top> <leaf-function> <node-function>)
+;;.SEE (cluster-to-lisp <ptr>)
+;;
+(de cluster-build (top_cluster 
+                   cluster_center1 cluster_center2 temp_cluster1 temp_cluster2
+                   init_center dist clear accumulate normalize norm-var-exp)
+    ((-gptr- "cluster_type *") top_cluster)
+    ((-gptr- "void *") cluster_center1 cluster_center2 
+     temp_cluster1 temp_cluster2)
+    ((-gptr-) init_center dist clear accumulate normalize)
+    ((-real-) norm-var-exp)
+
+    (c-include "cluster.h")
+
+    (flt
+     #{ hcluster_build($top_cluster, 
+                       $cluster_center1, $cluster_center2,
+                       $temp_cluster1, $temp_cluster2,
+                       (void (*)(void**, float*, int, void**, int)) $init_center,
+                       (float (*) (void *, void *)) $dist,
+                       (void (*) (void*)) $clear,
+                       (void (*) (void *, float, void *)) $accumulate,
+                       (char (*) (void *,  void *, float)) $normalize,
+                       $norm_var_exp)
+     #}))
+
+;;------------------------------------------------------------------------------
+#? (cluster-split <top_cluster> <cluster> <clu-center1> <clu-center2> 
+;;                <temp-center1> <temp-center2> <init_center>
+;;                <dist> <clear> <accumulate> <normalize> <norm-var-exp>)
+;;
+;; Same as cluster-build, except that <cluster> specifies which cluster to 
+;; split.
+;;.SEE Clustering.
+;;.SEE (k-means <dist> <clear> <accumulate> <normalize> <n> <data> <sample-weight>
+;;.SEE (top-cluster <sample-index> <sample-weight> <cluster-center> <temp-cluster>
+;;.SEE (cluster-build <top_cluster> <clu-center1> <clu-center2> <temp-center1>
+;;.SEE (find-cluster-slice <top> <cluster-ptr> <sample-index> <n>)
+;;.SEE (cluster-delete <top-cluster> <free-sample-ptr>)
+;;.SEE (get-[field] <ptr>)
+;;.SEE (get-spare <ptr>)
+;;.SEE (set-spare <ptr> <value>)
+;;.SEE (visit-tree <top> <leaf-function> <node-function>)
+;;.SEE (cluster-to-lisp <ptr>)
+;;
+(de cluster-split (top_cluster cluster
+                   cluster_center1 cluster_center2 temp_cluster1 temp_cluster2
+                   init_center dist clear accumulate normalize norm-var-exp)
+    ((-gptr- "cluster_type *") top_cluster cluster)
+    ((-gptr- "void *") cluster_center1 cluster_center2 
+     temp_cluster1 temp_cluster2)
+    ((-gptr-) init_center dist clear accumulate normalize)
+    ((-real-) norm-var-exp)
+
+    (c-include "cluster.h")
+
+    (flt
+     #{ cluster_split($top_cluster, $cluster,
+                       $cluster_center1, $cluster_center2,
+                       $temp_cluster1, $temp_cluster2,
+                       (void (*)(void**, float*, int, void**, int)) $init_center,
+                       (float (*) (void *, void *)) $dist,
+                       (void (*) (void*)) $clear,
+                       (void (*) (void *, float, void *)) $accumulate,
+                       (char (*) (void *,  void *, float)) $normalize,
+                       $norm_var_exp)
+     #}))
+
+;;------------------------------------------------------------------------------
+#? (cluster-delete <top-cluster> <free-sample-ptr>)
+;;
+;; Delete everything allocated by top-cluster and cluster-build.  The argument
+;; is a function to delete the cluster center.
+;;.SEE Clustering.
+;;.SEE (top-cluster <sample-index> <sample-weight> <cluster-center> <temp-cluster>
+;;.SEE (cluster-build <top_cluster> <clu-center1> <clu-center2> <temp-center1>
+;;
+(de cluster-delete (top-cluster free-sample-ptr)
+    ((-gptr- "cluster_type *") top_cluster)
+    ((-gptr-) free-sample-ptr)
+    #{ free_cluster_node($top_cluster, $free_sample_ptr); #}
+    ())
+
+;;-----------------------------------------------------------------------------
+#? (find-cluster-slice <top> <cluster-ptr> <sample-index> <n>)
+;;
+;; Return a slice of <n> cluster in the tree.
+;;
+;;.VP
+;;  On input:
+;;      <top> point to a tree a cluster as built with top-cluster and 
+;;          build-cluster.
+;;      <n> how many cluster of that tree are we interested in.  For all the
+;;          leaves in the tree, choose <n> very large.
+;;
+;;  On output:
+;;      returns the number of cluster asked for (<n>) or the total number of
+;;         leaves in the tree, which ever is smaller.
+;;      <cluster-ptr> is an array of gptr which points to the <n> cluster 
+;;         which are returned.  It is a slice in the tree
+;;      <sample-index> Contains the indexes of each cluster for each pattern.
+;;         For example if (<sample-index> 3) is equal to 5, that means that
+;;         sample 3 is in cluster 5, whose node is pointed to in 
+;;         (<cluster-ptr> 4), the fifth entry.
+;;
+;;.SEE Clustering.
+;;.SEE (top-cluster <sample-index> <sample-weight> <cluster-center> <temp-cluster>
+;;.SEE (cluster-build <top_cluster> <clu-center1> <clu-center2> <temp-center1>
+;;.SEE (cluster-delete <top-cluster> <free-sample-ptr>)
+;;
+(de find_cluster_slice (top cluster-ptr sample-index n)
+    ((-gptr- "cluster_type *") top)
+    ((-idx1- (-gptr-)) cluster-ptr)
+    ((-idx1- (-int-)) sample-index)
+    ((-int-) n)
+
+    (if (null top)
+        (error "arg1 is null"))
+    (if (> n (idx-dim cluster-ptr 0))
+        (error "dimensions of arg2 smaller than arg4"))
+    (if (< n 1)
+        (error "arg4 must be strictly positive"))
+    (if (> (int #{ $top->n #}) (idx-dim sample-index 0))
+        (error "dim of arg3 is too small (should be at least (==> arg1 n))"))
+
+    (int #{
+         find_cluster_slice($top, IDX_PTR($cluster_ptr, cluster_type *), $n,
+                                  IDX_PTR($sample_index, int), 0)
+         #}))
+
+;;-----------------------------------------------------------------------------
+#? (new cluster-access <gptr>)
+;;
+;; Return a an object based on cluster_type (see cluster.h), which allow 
+;; easy access of the following fields.  Each method name is derived from the
+;; field of the same name, and return a copy of the corresponding slot:
+;;
+;;.VP
+;;	split		When cluster was splitted
+;;	cluster		pointer to the cluster
+;;	variance	average distance between cluster and samples
+;;	n		how many sample in this cluster
+;;	sample-index	which samples this cluster is representing
+;;	sample-weight	weight for each of the sample
+;;	labels		indicates to which cluster each sample is going
+;;	weight		cluster weight
+;;	child1		sub cluster 1 
+;;	child2		sub cluster 2
+;;	label		cluster label
+;;	spare		to be used anyway you want
+;;	spare2		to be used anyway you want
+;;	spare3		to be used anyway you want
+;;	current-split 	only used by top cluster (how many node splitted)
+;;	current-label 	only used by top cluster (how many node allocated)
+;;
+;; Furthermore, 3 methods allow the user to access the following int fields:
+;;
+;;      set-spare       set spare field (==> <obj> set-spare <value>) to int
+;;      set-spare2      set spare2 field (==> <obj> set-spare2 <value>) to int
+;;      set-spare3      set spare3 field (==> <obj> set-spare3 <value>) to int
+;;
+;; Method pretty has been modified to show the C slots as if they were parts
+;; of the lisp class (in truth they are read from the C representation each 
+;; time pretty is called).
+;;
+;;.SEE (new lcluster-access <gptr>)
+;;
+(defclass cluster-access object
+  ((-gptr-) cluster-ptr)
+)
+
+(defmethod cluster-access cluster-access (ptr)
+    ((-gptr- "cluster_type *") ptr)
+    (c-include "cluster.h")
+    (if ~ptr (error "null pointer"))
+    (setq cluster-ptr ptr))
+
+(defmethod cluster-access split ()
+  (int #{ ((cluster_type *)$cluster_ptr)->split #}))
+(defmethod cluster-access cluster ()
+  (gptr #{ ((cluster_type *)$cluster_ptr)->cluster #}))
+(defmethod cluster-access variance ()
+  (flt #{ ((cluster_type *)$cluster_ptr)->variance #}))
+(defmethod cluster-access max-variance ()
+  (flt #{ ((cluster_type *)$cluster_ptr)->max_variance #}))
+(defmethod cluster-access n ()
+  (int #{ ((cluster_type *)$cluster_ptr)->n #}))
+(defmethod cluster-access sample-index ()
+    (let ((ind (gptr-matrix-nc (==> this n))))
+      (cinline-idx1loop ind "void *" "in" "i"
+          #{ *in = ((cluster_type *)$cluster_ptr)->sample_index[i]; #})
+          ind))
+(defmethod cluster-access sample-weight ()
+  (let ((weight (float-matrix-nc (==> this n))))
+    (cinline-idx1loop weight "float" "wei" "i"
+        #{ *wei = ((cluster_type *)$cluster_ptr)->sample_weight[i]; #})
+        weight))
+(defmethod cluster-access labels ()
+  (let ((labels (int-matrix-nc (==> this n))))
+    (cinline-idx1loop labels "int" "la" "i"
+        #{ *la = ((cluster_type *)$cluster_ptr)->labels[i]; #})
+        labels))
+(defmethod cluster-access weight ()
+  (flt #{ ((cluster_type *)$cluster_ptr)->weight #}))
+(defmethod cluster-access parent ()
+  (gptr #{ ((cluster_type *)$cluster_ptr)->parent #}))
+(defmethod cluster-access child1 ()
+  (gptr #{ ((cluster_type *)$cluster_ptr)->child1 #}))
+(defmethod cluster-access child2 ()
+  (gptr #{ ((cluster_type *)$cluster_ptr)->child2 #}))
+(defmethod cluster-access label ()
+  (int #{ ((cluster_type *)$cluster_ptr)->label #}))
+(defmethod cluster-access spare ()
+  (int #{ ((cluster_type *)$cluster_ptr)->spare #}))
+(defmethod cluster-access spare2 ()
+  (int #{ ((cluster_type *)$cluster_ptr)->spare2 #}))
+(defmethod cluster-access spare3 ()
+  (int #{ ((cluster_type *)$cluster_ptr)->spare3 #}))
+(defmethod cluster-access current-split ()
+  (int #{ ((cluster_type *)$cluster_ptr)->current_split#}))
+(defmethod cluster-access current-label ()
+  (int #{ ((cluster_type *)$cluster_ptr)->current_label #}))
+
+(defmethod cluster-access set-spare (value)
+  ((-int-) value)
+  (int #{ (((cluster_type *)$cluster_ptr)->spare = $value) #}))
+(defmethod cluster-access set-spare2 (value)
+  ((-int-) value)
+  (int #{ (((cluster_type *)$cluster_ptr)->spare2 = $value) #}))
+(defmethod cluster-access set-spare3 (value)
+  ((-int-) value)
+  (int #{ (((cluster_type *)$cluster_ptr)->spare3 = $value) #}))
+
+(defmethod cluster-access pretty ()
+  (printf ";;*** %l, INSTANCE OF %l\n" this (classof this))
+
+  (let ((cl (classof this)))
+    (while cl
+      (printf ";; FROM CLASS: %l\n" (classname cl))
+
+      (if (or (= cl cluster-access) (= cl lcluster-access))
+          (each ((sl '(split cluster variance max-variance n sample-index 
+                             sample-weight labels weight parent child1 
+                             child2 label spare spare2 
+                             spare3 current-split current-label)))
+            (printf ";;\t%l=%l\n" sl (eval '(==> this `sl))))
+        (each ((i (slots cl)))
+          (if (consp i)
+              (setq i (car i)))
+          (printf ";;\t%l=%l\n" i (apply letslot (list this i))) ))
+
+      (setq cl (super cl)) ) ) )
+
+(defmethod cluster-access lchild1 ()
+  (if (==> this child1)
+      (new cluster-access (==> this child1))
+    ()))
+(defmethod cluster-access lchild2 ()
+  (if (==> this child2)
+      (new cluster-access (==> this child2))
+    ()))
+
+;;-----------------------------------------------------------------------------
+#? (visit-tree <top> <leaf-function> <node-function>)
+;;
+;; Visit the tree <top> (of class lcluster-access) and return a list with the
+;; same tree structure, with the leaf evaluated with <leaf-function> (a 
+;; function of one argument of type lcluster-access) and the nodes evaluated 
+;; with <node-function> (a function of one argument of class lcluster-access).
+;;.VP
+;; For example: 
+;;     (visit-tree (new lcluster-access top)
+;;                 (lambda (x) (==> x n))
+;;                 (lambda (x) (==> x n)))
+;;
+;; Will display all the splits showing the proportions
+;;.SEE Clustering.
+;;.SEE (new lcluster-access <gptr>)
+;;
+(de visit-tree (top leaf-function node-function)
+    (if (<> (classof top) cluster-access)
+        (error "First argument must be of class lcluster-access"))
+    (if (null (==> top child1))
+        (leaf-function top)
+      (list (node-function top)
+            (visit-tree (==> top lchild1) leaf-function node-function)
+            (visit-tree (==> top lchild2) leaf-function node-function))))
+
+;;-----------------------------------------------------------------------------
+#? (cvisit-tree <top> <leaf-function> <node-function>)
+;;
+;; Visit the tree <top> (of class gptr) and return a list with the
+;; same tree structure, with the leaf evaluated with <leaf-function> (a gptr 
+;; pointing to a function of one argument of type gptr) and the nodes evaluated 
+;; with <node-function> (a gptr pointing to a function of one argument of class
+;; gptr).
+;;.VP
+;;.SEE Clustering.
+;;.SEE (new lcluster-access <gptr>)
+;;.SEE (visit-tree <top> <leaf-function> <node-function>)
+;;
+(de cvisit-tree (top leaf-function node-function)
+    ((-gptr- "struct cluster_type *") top)
+    ((-gptr-) leaf-function node-function)
+    
+    (c-include "cluster.h")
+    #{
+        if($top->child1) {
+            ((void (*)(struct cluster_type *)) $node_function)($top);
+            C_cvisit_tree($top->child1, $leaf_function, $node_function);
+            C_cvisit_tree($top->child2, $leaf_function, $node_function);
+        } else {
+            ((void (*)(struct cluster_type *)) $leaf_function)($top);
+        }
+    #}
+    ()
+)
+
+;;------------------------------------------------------------------------------
+#? cluster-tree.
+;; (new cluster-tree <sample-mat> <sample-size> <new-sample-ptr>
+;;                   <free-sample-ptr> <init-cluster-ptr> <distance-ptr> 
+;;                   <clear-ptr> <accumulate-ptr> <normalize-ptr> 
+;;                   <norm_var_exp>)
+;;
+;; Create a cluster tree for the gptr matrix of sample <sample-mat>.  Leaves are 
+;; added to the tree using the method add-cluster.  No assumptions are made 
+;; on the structure of the samples or the clusters, but it must be consistent
+;; witht the function which work/return/delete these structures.
+;;.VP
+;; <sample-mat> is a 1D gptr matrix, containing pointer to the C structures
+;;      used for samples.
+;; <sample-size> is the argument passed to each call to new-sample-ptr.
+;; 	For instance if new-sample-ptr allocate arrays of n floats, where
+;;      n is an argument to that function, <sample-size> should have the value n.
+;;      Also used in <init-cluster-ptr> to specify a size.
+;; <new-sample-ptr> is a pointer to a function which returns a pointer to
+;;      a structure which can hold cluster center.  This function will be called
+;;      with one argument (<sample-size>).
+;; <free-sample-ptr> is a pointer to a function which takes a pointer to
+;;      a cluster center structure (returned by <new-sample-ptr>).  This
+;;      function should free all the space allocated by <new-sample-ptr>.
+;; <init-cluster-ptr> Pointer to a function to Initialize the cluster centers.
+;;      (init_cluster_ptr) (&<sa>, <sa_size>, &<clu>, <sample-size>)
+;;      Initialize the cluster as a function of the samples.  The first 
+;;      argument is a pointer to an array of pointers to sample_type 
+;;      structures.  The size of the array is given by <sa_size> (an int).
+;;      The third argument is a pointer to an array of pointer to sample_type,
+;;      representing the centers of clusters.  The array size is given in
+;;      <sample-size> (an int).
+;; <distance-ptr> Pointer to a function to computer distance between sample
+;;      (first argument) and cluster (second argument).
+;; <clear-ptr> <accumulate-ptr> <normalize-ptr> Three pointers to functions
+;;      to computer cluster center.  "clear", "accumulate" and "normalize"
+;;      work together and are used to compute the position of one cluster.
+;;      "clear" reset a cluster, "accumulate" iteratively add information about
+;;      each sample to that cluster, and "normalize" is called last to compute
+;;      the true position of the cluster (using all the information accumulated 
+;;      with "accumulate").  For example if the euclidean distance is used and 
+;;      each sample is a N dimensional vector, "clear" could set the cluster to 
+;;      the zero vector, "accumulate" could add each samples to the cluster, and
+;;      "normalize" could divide each component of the cluster by the number of
+;;      samples.
+;; <norm_var_exp> only affect the computation of the variance on return,
+;;     not the position of the cluster center.  The variance is the sum of
+;;     all the distance between sample and corresponding cluster, SUM_D, 
+;;     divided by the sum of the sample-weights SUM_W.  In this case, we define
+;;     the variance to be SUM_D / SUM_W ** <norm_var_exp>. Note that if
+;;     <norm_var_exp> is 1, the normal variance is calculated, if <norm_var_exp>
+;;     is 0, no normalization is done, and for 0.5, square root is used.
+;;
+;;.SEE (==> cluster-tree add-cluster <n>)
+;;.SEE (==> cluster-tree slice-index <n>)
+;;.SEE (==> cluster-tree slice-ptr <n>)
+;;
+(defclass cluster-tree object
+  ((-idx1- (-gptr-)) samples)   ;; pointer to C representation of samples
+  ((-gptr-) top)		;; Tree cluster top
+  ((-int-) size)		;; size (argument to new-sample)
+  ((-gptr-) new-sample-ptr free-sample-ptr init-cluster-ptr distance-ptr 
+   clear-ptr accumulate-ptr normalize-ptr)
+  ((-double-) var-norm-exp)
+)
+
+;; Constructor
+(defmethod cluster-tree cluster-tree (sa si ns-ptr fr-ptr ic-ptr d-ptr c-ptr 
+                                         ac-ptr no-ptr po)
+  ((-idx1- (-gptr-)) sa)
+  ((-int-) si)
+  ((-gptr-) ns-ptr fr-ptr ic-ptr d-ptr c-ptr ac-ptr no-ptr)
+  ((-double-) po)
+
+  (c-include "cluster.h")
+
+  (setq samples sa)
+  (setq size si)
+  (setq new-sample-ptr ns-ptr)
+  (setq free-sample-ptr fr-ptr)
+  (setq init-cluster-ptr ic-ptr)
+  (setq distance-ptr d-ptr)
+  (setq clear-ptr c-ptr)
+  (setq accumulate-ptr ac-ptr)
+  (setq normalize-ptr no-ptr)
+  (setq var-norm-exp po)
+
+  (let ((temp-cluster (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size)#}))
+        (cluster-center (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size)#}))
+        (sample-weights (float-matrix-nc (idx-dim sa 0))))
+    (idx-bloop ((sw sample-weights))
+      (sw 1))
+
+    (setq top (top-cluster samples sample-weights
+                           cluster-center temp-cluster
+                           init-cluster-ptr
+                           distance-ptr clear-ptr
+                           accumulate-ptr normalize-ptr var-norm-exp))
+    #{ ((void (*)(void *)) $free_sample_ptr) ($temp_cluster) #}
+    t))
+
+;; Destructor
+(defmethod cluster-tree -destructor ()
+  (if top
+      (cluster-delete top free-sample-ptr))
+)
+
+------------------------------------------------------------------------------
+#? (==> cluster-tree add-cluster <n>)
+;; Add a clusters to the tree.  Take the leaf node with maximum variance and 
+;; split it in 2.  Repeat <n> time.  If <n> is bigger than the remaining 
+;; number of unsplitted samples, stop.
+;;.SEE cluster-tree.
+;;
+(defmethod cluster-tree add-cluster (p)
+  ((-int-) p)
+
+  (let ((temp-cluster1 (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size)#}))
+        (temp-cluster2 (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size)#}))
+        (cluster-center1 (gptr #{0#}))
+        (cluster-center2 (gptr #{0#}))
+        (variance 0))
+    ((-float-) variance)
+
+    (for (i 1 p)
+      (-int- i)
+      (breakp) ;; slight memory leak (temp-cluster1 and 2) when ^C is used.
+
+      (setq cluster-center1 
+            (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size) #}))
+      (setq cluster-center2
+            (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size) #}))
+      (setq variance (cluster-build 
+                      top cluster-center1 cluster-center2 
+                      temp-cluster1 temp-cluster2
+                      init-cluster-ptr distance-ptr clear-ptr
+                      accumulate-ptr normalize-ptr var-norm-exp)))
+    #{ ((void (*)(void *)) $free_sample_ptr) ($temp_cluster1) #}
+    #{ ((void (*)(void *)) $free_sample_ptr) ($temp_cluster2) #}
+    variance))
+
+------------------------------------------------------------------------------
+#? (==> cluster-tree split-cluster <clu>)
+;; Split a cluster in the tree (force).  Take a pointer to a cluster node
+;; <clu> (cluster_type *) and cause the cluster to be split with k-means.
+;;.SEE cluster-tree.
+;;
+(defmethod cluster-tree split-cluster (cluster)
+  ((-gptr-) cluster)
+
+  (let ((temp-cluster1 (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size)#}))
+        (temp-cluster2 (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size)#}))
+        (cluster-center1 (gptr #{0#}))
+        (cluster-center2 (gptr #{0#}))
+        (variance 0))
+    ((-float-) variance)
+
+    (setq cluster-center1 
+          (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size) #}))
+    (setq cluster-center2
+          (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size) #}))
+    (setq variance (cluster-split
+                    top cluster cluster-center1 cluster-center2 
+                    temp-cluster1 temp-cluster2
+                    init-cluster-ptr distance-ptr clear-ptr
+                    accumulate-ptr normalize-ptr var-norm-exp))
+    #{ ((void (*)(void *)) $free_sample_ptr) ($temp_cluster1) #}
+    #{ ((void (*)(void *)) $free_sample_ptr) ($temp_cluster2) #}
+    variance))
+
+(defmethod cluster-tree variance-node (cluster)
+  ((-gptr-) cluster)
+  (find-max-variance-node cluster))
+
+(defmethod cluster-tree max-variance-node ()
+  (find-max-variance-node top))
+
+;;-----------------------------------------------------------------------------
+#? (==> cluster-tree slice-ptr <n>)
+;; Return a slice of <n> cluster in the tree.
+;;.VP
+;;  On input:
+;;      <n> how many cluster of that tree are we interested in.  For all the
+;;          leaves in the tree, choose <n> very large.
+;;
+;;  On output:
+;;      returns a 1D array of size <n> or the total number of leaves in the 
+;;      tree, which ever is smaller, containing pointers (gptr) to the <n>
+;;      clusters.  The fields of each of the cluster structures can be access
+;;      converting the gptr to cluster-access object using:
+;;
+;;      (new cluster-access <gptr>)
+;;
+;;.SEE cluster-tree.
+;;.SEE (new cluster-access <gptr>)
+;;
+(defmethod cluster-tree slice-ptr (n)
+    ((-int-) n)
+
+    (setq n (min n (int #{ ((cluster_type *)$top)->current_split #})))
+    (let ((cluster-ptr (gptr-matrix-nc n))
+          (sample-index (int-matrix-nc (int #{ ((cluster_type *)$top)->n #})))
+          (n-cluster 0))
+      (-int- n-cluster)
+    
+      (if (< n 1)
+          (error "arg4 must be strictly positive"))
+      
+      (setq n-cluster (int #{
+         find_cluster_slice($top, IDX_PTR($cluster_ptr, cluster_type *), $n,
+                                  IDX_PTR($sample_index, int), 0)
+         #}))
+      cluster-ptr))
+
+;;------------------------------------------------------------------------------
+#? (==> cluster-tree slice-index <n>)
+;; Return a slice of <n> cluster in the tree.
+;;.VP
+;;  On input:
+;;      <n> how many cluster of that tree are we interested in.  For all the
+;;          leaves in the tree, choose <n> very large.
+;;
+;;  On output:
+;;      <sample-index> Contains the indexes of each cluster for each pattern.
+;;         For example if (<sample-index> 3) is equal to 5, that means that
+;;         sample 3 is in cluster 5, whose node is pointed to in 
+;;         (<cluster-ptr> 4), the fifth entry in <cluster-ptr), a matrix 
+;;         returned by the cluster-tree method <slip-ptr>.
+;;.SEE cluster-tree.
+;;
+(defmethod cluster-tree slice-index (n)
+    ((-int-) n)
+
+    (setq n (min n (int #{ ((cluster_type *)$top)->current_split #})))
+    (let ((cluster-ptr (gptr-matrix-nc n))
+          (sample-index (int-matrix-nc (int #{ ((cluster_type *)$top)->n #})))
+          (n-cluster 0))
+      (-int- n-cluster)
+    
+      (if (< n 1)
+          (error "arg4 must be strictly positive"))
+      
+      (setq n-cluster (int #{
+         find_cluster_slice($top, IDX_PTR($cluster_ptr, cluster_type *), $n,
+                                  IDX_PTR($sample_index, int), 0)
+         #}))
+      sample-index))
+
+;;******************************************************************************
+#? n-clusters.
+;; (new n-clusters <sample-mat> <sample-size> <p-cluster> <new-sample-ptr>
+;;      <free-sample-ptr> <init-cluster-ptr> <distance-ptr> <clear-ptr> 
+;;      <accumulate-ptr> <normalize-ptr> <norm_var_exp>)
+;;
+;; Compute <p-cluster> from the gptr-matrix of samples <sample-mat>. No
+;; assumptions are made on the structure of the samples or the clusters,
+;; but it must be consistent witht the function which work/return/delete 
+;; these structures.
+;;.VP
+;; <sample-mat> is a 1D gptr matrix, containing pointer to the C structures
+;;      used for samples.
+;; <sample-size> is the argument passed to each call to new-sample-ptr.
+;; 	For instance if new-sample-ptr allocate arrays of n floats, where
+;;      n is an argument to that function, <sample-size> should have the value n.
+;;      Also used in <init-cluster-ptr> to specify a size.
+;; <new-sample-ptr> is a pointer to a function which returns a pointer to
+;;      a structure which can hold cluster center.  This function will be called
+;;      with one argument (<sample-size>).
+;; <free-sample-ptr> is a pointer to a function which takes a pointer to
+;;      a cluster center structure (returned by <new-sample-ptr>).  This
+;;      function should free all the space allocated by <new-sample-ptr>.
+;; <init-cluster-ptr> Pointer to a function to Initialize the cluster centers.
+;;      (init_cluster_ptr) (&<sa>, <sa_size>, &<clu>, <sample-size>)
+;;      Initialize the cluster as a function of the samples.  The first 
+;;      argument is a pointer to an array of pointers to sample_type 
+;;      structures.  The size of the array is given by <sa_size> (an int).
+;;      The third argument is a pointer to an array of pointer to sample_type,
+;;      representing the centers of clusters.  The array size is given in
+;;      <sample-size> (an int).
+;; <distance-ptr> Pointer to a function to computer distance between sample
+;;      (first argument) and cluster (second argument).
+;; <clear-ptr> <accumulate-ptr> <normalize-ptr> Three pointers to functions
+;;      to computer cluster center.  "clear", "accumulate" and "normalize"
+;;      work together and are used to compute the position of one cluster.
+;;      "clear" reset a cluster, "accumulate" iteratively add information about
+;;      each sample to that cluster, and "normalize" is called last to compute
+;;      the true position of the cluster (using all the information accumulated 
+;;      with "accumulate").  For example if the euclidean distance is used and 
+;;      each sample is a N dimensional vector, "clear" could set the cluster to 
+;;      the zero vector, "accumulate" could add each samples to the cluster, and
+;;      "normalize" could divide each component of the cluster by the number of
+;;      samples.
+;; <norm_var_exp> only affect the computation of the variance on return,
+;;     not the position of the cluster center.  The variance is the sum of
+;;     all the distance between sample and corresponding cluster, SUM_D, 
+;;     divided by the sum of the sample-weights SUM_W.  In this case, we define
+;;     the variance to be SUM_D / SUM_W ** <norm_var_exp>. Note that if
+;;     <norm_var_exp> is 1, the normal variance is calculated, if <norm_var_exp>
+;;     is 0, no normalization is done, and for 0.5, square root is used.
+;;
+;;.SEE (==> n-cluster get-index)
+;;.SEE (==> n-cluster clusters)
+;;
+(defclass n-clusters object 
+  ((-int-) size)		;; size of each vector
+  ((-int-) n-pattern)		;; how man pattern there are
+  ((-int-) p)			;; number of prototypes
+  ((-idx1- (-gptr-)) samples)   ;; pointer to C representation of samples
+  ((-idx1- (-int-)) labels)	;; n-pattern int-matrix for index of clusters
+
+  ((-idx1- (-gptr-)) clusters)	;; pointr to C representation to the p clusters.
+  ((-idx1- (-float-)) variance) ;; variance of each cluster
+  ((-idx1- (-float-)) weights)  ;; weights of each cluster
+
+  ((-gptr-) new-sample-ptr free-sample-ptr init-cluster-ptr distance-ptr 
+   clear-ptr accumulate-ptr normalize-ptr)
+
+  ((-double-) var-norm-exp)
+)
+
+;; Constructor
+(defmethod n-clusters n-clusters (sa si pp ns-ptr fr-ptr ic-ptr d-ptr c-ptr 
+                                             ac-ptr no-ptr po)
+  ((-idx1- (-gptr-)) sa)
+  ((-int-) pp si)
+  ((-gptr-) ns-ptr fr-ptr ic-ptr d-ptr c-ptr ac-ptr no-ptr)
+  ((-double-) po)
+
+  (setq samples sa)
+  (setq size si)
+  (setq p pp)
+  (setq new-sample-ptr ns-ptr)
+  (setq free-sample-ptr fr-ptr)
+  (setq init-cluster-ptr ic-ptr)
+  (setq distance-ptr d-ptr)
+  (setq clear-ptr c-ptr)
+  (setq accumulate-ptr ac-ptr)
+  (setq normalize-ptr no-ptr)
+  (setq var-norm-exp po)
+
+  (setq n-pattern (idx-dim sa 0))
+  (setq labels (int-matrix-nc n-pattern))
+  (setq clusters (gptr-matrix-nc p))
+  (setq variance (float-matrix-nc p))
+  (setq weights (float-matrix-nc p))
+
+  (let ((sample-weights (float-matrix-nc (idx-dim sa 0)))
+        (temp-clusters (gptr-matrix-nc p))
+        (label (int-matrix-nc p)))
+
+    (idx-bloop ((clu clusters) (te temp-clusters))
+      (clu (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size)#}))
+      (te (gptr #{ ((void *(*)(int)) $new_sample_ptr) ($size)#})))
+    (idx-bloop ((sw sample-weights))
+      (sw 1))
+    (for (i 0 (1- p))
+      (label i i))
+
+    #{ ((void (*)(void **, float *, int, void **, int)) $init_cluster_ptr)
+    (IDX_PTR($samples,void*), IDX_PTR($sample_weights, float), 
+            $n_pattern, IDX_PTR($clusters, void*), $p); #}
+
+    (k-means distance-ptr clear-ptr accumulate-ptr normalize-ptr
+             n-pattern samples
+             sample-weights labels
+             p clusters temp-clusters
+             label weights variance var-norm-exp)
+
+    (idx-bloop ((te temp-clusters))
+      #{ ((void (*)(void *)) $free_sample_ptr) ($(te))#})
+
+    t))
+
+;; compiled part of the destructor
+(defmethod n-clusters c-destructor ()
+  (idx-bloop ((clu clusters))
+    #{ ((void (*)(void *)) $free_sample_ptr) ($(clu))#}))
+
+;; Destructor
+(defmethod n-clusters -destructor ()
+  (==> this c-destructor))
+
+;;-----------------------------------------------------------------------------
+#? (==> n-cluster clusters)
+;; Return an array of gptr pointing to the clusters.
+;;.SEE n-clusters.
+;;
+(defmethod n-clusters clusters ()
+  clusters)
+
+;;-----------------------------------------------------------------------------
+#? (==> n-cluster get-index)
+;; Return the indexes of each cluster for each pattern.  If <mat> is returned,
+;; for example, if (<mat> 3) is equal to 5, the third sample is in the fifth
+;; cluster.
+;;.SEE n-clusters.
+;;
+(defmethod n-clusters get-index ()
+  labels)
+
+;;-----------------------------------------------------------------------------
+
+(dhc-make () 
+          k-means top-cluster cluster_build cluster-split cluster-delete
+          find-cluster-slice find-max-variance-node
+          (cluster-access cluster-access split cluster variance max-variance n
+                          sample-index sample-weight labels weight parent 
+                          child1 child2 label spare
+                          spare2 spare3 current-split current-label
+                          set-spare set-spare2 set-spare3)
+          cvisit-tree
+          (cluster-tree cluster-tree add-cluster 
+                        split-cluster variance-node max-variance-node
+                        slice-ptr slice-index)
+          (n-clusters n-clusters c-destructor clusters get-index)
+          )
+          
+

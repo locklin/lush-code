@@ -1,0 +1,63 @@
+;; to create animated SN graphics under Xwindow
+
+#? xmovie
+;; an animation object that builds a bunch of miff files from
+;; SN graphic windows.
+;; once recorded, an animation can be played using the C program "animate".
+(defclass xmovie object
+  basename
+  current
+  length
+)
+
+
+#? (new xmovie <name>)
+;; create a new xmovie.
+;; the graphic files (each frame) will be saved in files <name>.xxxx.miff
+;; where xxxx is an integer representing the frame number.
+;; playing the movie outside of SN can be done 
+;; by typing in a shell: animate <name>.*.miff
+(defmethod xmovie xmovie (name)
+  (setq basename name current 0 length 0)
+)
+
+(de make-miff-name (bname n) (sprintf "%s.%04d.miff" bname n)))
+
+#? (==> <xmovie> record <win-name>)
+;; save the whole graphic window whose name is <win-name>
+;; as the next frame file.
+;; if you opened an SN graphic window with 
+;; (x11-window 0 0 300 300 "blah"), then <win-name> should be "(SN) blah"
+;; as it appears on the window drag bar.
+(defmethod xmovie record (win-name)
+  (sys (concat "import -window \"" win-name "\" " 
+	       (make-miff-name basename current)))
+  (incr current)
+  (setq length (max length current))
+)
+
+
+#? (==> <xmovie> rewind)
+;; reset the current frame number to 0
+;; recording will overwrite previously created frames
+(defmethod xmovie rewind () (setq current 0))
+
+(defmethod xmovie ff () (setq current length))
+
+(defmethod xmovie goto (n) (setq current (min length (max 0 n))))
+
+#? (==> <xmovie> play)
+;; play movie <xmovie> using the animate utility.
+(defmethod xmovie play ()
+  (sys (concat "animate " basename ".*.miff &")))
+
+
+(de load-xmovie (name)
+  (let ((r (new xmovie name)))
+    (setq basename name current 0 length 0)
+    (let ((s ()))
+      (reading (open-read (concat "|ls -1 " basename ".*.miff"))
+	       (while (<> skip-char "\e") (setq s (readstring)) (readstring 1))))
+    (setq length (val (mid s (1+ (index "." s)) 4)))
+    (setq current length)
+    r))

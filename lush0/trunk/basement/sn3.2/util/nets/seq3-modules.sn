@@ -1,0 +1,156 @@
+#? File "seq3-modules.sn"
+;;
+;; A set of idx3-modules executed in sequence (the output of one being
+;; the input of the next one). 
+
+
+(mload "libnets")
+(mload "dynamic")
+
+(printf "[%s]\n" file-being-loaded)
+
+#? seq3-modules
+;; A set of idx3-modules executed in sequence (the output of one being
+;; the input of the next one). 
+;;
+;;.SEE (new seq3-modules <pool> <modules-gptr-vector> <sizes>)
+;;
+(defclass seq3-modules idx3-module
+  ((-obj- (Pool)) apool)
+  ((-idx1- (-gptr-)) modules)
+  ((-idx1- (-gptr-)) next-states) ;; pointers to idx3-state's
+  ((-idx1- (-gptr-)) previous-states) ;; pointers to idx3-state's
+)
+
+#? (new seq3-modules <pool> <modules-gptr-vector> <sizes>)
+;; Construct a new seq3-modules module (it is itself an idx3-module)
+;; which will sequence the idx3-modules whose pointers are
+;; given in the <modules-gptr-vector> of length N. The <sizes> of the output
+;; idx3's of each of the internal modules is given in (N-1)x3 int-matrix <sizes>.
+;; The intermediate idx3-ddstates are allocated on the given <pool>.
+;;
+(defmethod seq3-modules seq3-modules (ap machs inter-sizes)
+  ((-idx1- (-gptr-)) machs)
+  ((-idx2- (-int-)) inter-sizes)
+  ((-obj- (Pool)) ap)
+  (setq modules machs)
+  (setq apool ap)
+  (let*((n-machs (idx-dim machs 0)))
+    (setq next-states (gptr-matrix n-machs))
+    (setq previous-states (gptr-matrix n-machs))
+    (==> this init inter-sizes)
+    ()))
+
+(defmethod seq3-modules init (inter-sizes)
+  ((-idx2- (-int-)) inter-sizes)
+  (let*((n-machs (idx-dim modules 0)))
+    (-int- n-machs)
+    (idx-gloop ((ii)(p-state (narrow previous-states 0 (- n-machs 1) 1))
+                (n-state (narrow next-states 0 (- n-machs 1) 0))
+                (i-size inter-sizes))
+        (let*((s (gptr (in-pool apool (new idx3-ddstate (i-size 0)(i-size 1)(i-size 2))))))
+          (p-state s)
+          (n-state s)))
+    ()))
+
+(defmethod seq3-modules fprop (inputs outputs)
+  ((-obj- (idx3-state)) inputs outputs)
+  (let*((p 0)
+	(n-machs (idx-dim modules 0)))
+    (-int- p)
+    (previous-states 0 (gptr inputs)) 
+    (next-states (- n-machs 1) (gptr outputs)) 
+    (idx-bloop ((mach modules)(p-state previous-states)(n-state next-states))
+      (==> (obj idx3-module (mach)) fprop 
+           (obj idx3-state (p-state)) 
+           (obj idx3-state (n-state)))
+      )
+    ()))
+
+(defmethod seq3-modules bprop (inputs outputs)
+  ((-obj- (idx3-dstate)) inputs outputs)
+  (let*((p 0)
+	(n-machs (idx-dim modules 0)))
+    (-int- p)
+    (previous-states 0 (gptr inputs)) 
+    (next-states (- n-machs 1) (gptr outputs)) 
+    (for (i (- n-machs 1) 0 -1)
+	(let*((mach (obj idx3-module (modules i)))
+	      (p-state (obj idx3-dstate (previous-states i)))
+	      (n-state (obj idx3-dstate (next-states i)))
+              )
+           (==> mach bprop p-state n-state) 
+	   ))
+    ()))
+
+(defmethod seq3-modules bbprop (inputs outputs)
+  ((-obj- (idx3-ddstate)) inputs outputs)
+  (let*((p 0)
+	(n-machs (idx-dim modules 0)))
+    (-int- p)
+    (previous-states 0 (gptr inputs)) 
+    (next-states (- n-machs 1) (gptr outputs)) 
+    (for (i (- n-machs 1) 0 -1)
+	(let*((mach (obj idx3-module (modules i)))
+	      (p-state (obj idx3-ddstate (previous-states i)))
+	      (n-state (obj idx3-ddstate (next-states i)))
+              )
+           (==> mach bbprop p-state n-state) 
+	   ))
+    ()))
+
+(defmethod seq3-modules forget (v p)
+  (-flt- v p)
+  (idx-bloop ((mach modules))
+    (==> (obj idx3-module (mach)) forget v p))
+  ())
+
+
+(de new-c-layer-on-pool (apool ki kj ri rj tbl thick si sj sqsh prm)
+    ((-obj- (Pool)) apool)
+    ((-obj- (idx1-ddparam)) prm)
+    ((-int-) ki kj ri rj thick si sj)
+    ((-idx2- (-int-)) tbl)
+    ((-obj- (idx3-module)) sqsh)
+    (in-pool apool (new c-layer ki kj ri rj tbl thick si sj sqsh prm)))
+
+(de new-s-layer-on-pool (apool ki kj thick si sj sqsh prm)
+    ((-obj- (Pool)) apool)
+    ((-obj- (idx1-ddparam)) prm)
+    ((-int-) ki kj thick si sj)
+    ((-obj- (idx3-module)) sqsh)
+    (in-pool apool (new s-layer ki kj thick si sj sqsh prm)))
+
+(de new-f-layer-on-pool (apool tin tout si sj sqsh prm)
+    ((-obj- (Pool)) apool)
+    ((-obj- (idx1-ddparam)) prm)
+    ((-int-) tin tout si sj)
+    ((-obj- (idx3-module)) sqsh)
+    (in-pool apool (new f-layer tin tout si sj sqsh prm)))
+
+(de new-idx3-squasher-on-pool (apool)
+    ((-obj- (Pool)) apool)
+    (in-pool apool (new idx3-squasher)))
+
+(de new-idx1-ddparam-on-pool (apool s e g m sts)
+    (-int- s)
+    (-flt- e)
+    (-flt- g)
+    (-flt- m)
+    (-int- sts)
+    ((-obj- (Pool)) apool)
+    (in-pool apool (new idx1-ddparam s e g m sts)))
+
+(dhc-make ()
+	  (seq3-modules init 
+                            seq3-modules 
+                            fprop 
+                            bprop 
+                            bbprop)
+          new-c-layer-on-pool
+          new-f-layer-on-pool
+          new-s-layer-on-pool
+          new-idx3-squasher-on-pool
+          new-idx1-ddparam-on-pool
+          )
+

@@ -1,0 +1,237 @@
+#? File "ccc-tdnn.sn"
+;;
+;; Build an FTDNN for speech recognition (with local connectivity
+;; in frequency), with 3 convolutional layers.
+;;
+
+(mload "net-ccc")
+
+(printf "[%s]\n" file-being-loaded)
+
+#? (build-ccc-tdnn <params> <freqs> <max-seq-len> <fk1> <fs1> <nh1> <tk1> <fk2> <fs2> <nh2> <tk2> <fk3> <fs3> <nh3> <tk3>)
+;; Build a Time-Delay Neural Network for data such as spectral sequences
+;; in which the features have a topology, choosing the connection tables
+;; to obtain local connections in feature space (as specified by 
+;; kernel size and stride for the frequency axis, for each of these layers).
+;; The input to the net is assumed to be Fx1xT where F is for example
+;; the number of frequency channels (spectral representation) and T is the 
+;; length of the sequence. Here, the network has 3 convolutional layers.
+;; The arguments are the following:
+;;.VP
+;; - <params> is a idx1-ddparam on which to allocate parameters for the layers.
+;; - <freqs> is the number of input frequency channels.
+;; - <max-seq-len> = maximum sequence length.
+;; - <fk1>,<fk2>,<fk3> = sizes of frequency kernels (= width of local freq. windows)
+;; - <fs1>,<fs2>,<fs3> = step sizes which separate the successive frequency windows
+;; - <nh1>,<nh2>,<nh3> = number of hidden units per frequency channel, for each layer
+;; - <tk1>,<tk2>,<tk3> = sizes of the temporal kernels, for each layer.
+(de build-ccc-tdnn 
+    (prm freqs max-seq-len fk1 fs1 nh1 tk1 fk2 fs2 nh2 tk2 fk3 fs3 nh3 tk3)
+    (-int- freqs max-seq-len)
+    ((-obj- (idx1-ddparam)) prm)
+    (-int- fk1 fs1 nh1 tk1 fk2 fs2 nh2 tk2 fk3 fs3 nh3 tk3)
+    (let*((n-freqs0 freqs)
+          (seq-len1 max-seq-len)
+          (seq-len2 (- seq-len1 (- tk1 1)))
+          (seq-len3 (- seq-len2 (- tk2 1)))
+	  (conx-table1 (int-matrix 1 2))
+	  (conx-table2 (int-matrix 1 2))
+	  (conx-table3 (int-matrix 1 2))
+	  (n-freqs1 (tdnn-add-c-layer n-freqs0 1 fk1 fs1 nh1 conx-table1))
+	  (n-freqs2 (tdnn-add-c-layer n-freqs1 nh1 fk2 fs2 nh2 conx-table2))
+	  (n-freqs3 (tdnn-add-c-layer n-freqs2 nh2 fk3 fs3 nh3 conx-table3))
+	  )
+	(when (or (< seq-len1 1)(< seq-len2 1)(< seq-len3 1))
+	     (error "too small max-seq-len building a tdnn"))
+        (let*((net
+               (new net-ccc 1 max-seq-len 1 tk1 conx-table1
+                    1 tk2 conx-table2
+                    1 tk3 conx-table3 prm)))
+          (==> net forget 1 2)
+          net
+          )
+        )
+    )
+
+
+(de tdnn-add-c-layer (n-prev-freqs n-prev-h freqs-kernel freqs-stride 
+                      n-h-per-freq conx-table)
+   (-int- n-prev-freqs n-prev-h freqs-kernel freqs-stride 
+                      n-h-per-freq)
+   ((-idx2- (-int-)) conx-table)
+   (let*((n-freqs (/ (- n-prev-freqs
+                        (- freqs-kernel freqs-stride))
+                     freqs-stride))
+         (n-h (* n-h-per-freq n-freqs)))
+      ;; check that strides and kernel sizes are consistent
+      (when (<> n-freqs (int n-freqs))
+	  (printf "The following constraint is not satisfied for c-layer\n")
+	  (printf "<n-prev-freqs> - (<freqs-kernel> - <freqs-stride>)\n")
+	  (printf "should be a multiple of <freqs-stride>.\n")
+	  (error "building a tdnn"))
+      ;; fill the connection table
+      (idx-i2resize conx-table (* n-h n-prev-h freqs-kernel) 2)
+      (let*((f 0)
+	    (c 0))
+	 (for (dest-f 0 (- n-freqs 1))
+	     (for (dest-h 0 (- n-h-per-freq 1))
+		 (let*((dest-u (+ dest-h (* dest-f n-h-per-freq))))
+		     (for (source-f f (+ f freqs-kernel -1))
+			 (for (source-h 0 (- n-prev-h 1))
+			     (let*((source-u (+ source-h (* source-f n-prev-h))))
+				 (conx-table c 0 source-u)
+				 (conx-table c 1 dest-u)
+				 (incr c)
+			     )
+			 )
+		     )
+		 )
+	     )
+	     (incr f freqs-stride)
+	 )
+      )
+      n-freqs))
+
+#? (tdnn-present-pattern <from> <to> <mean> <idev> <temporal-window-size>)
+;; <from> is a Txf source matrix,
+;; <to> is a fx1xT' destination state (T' = T + temporal-window-size - 1),
+;; <mean> is a f-vector to substract from source,
+;; <idev> is a f-vector to multiply by source.
+;; <temporal-window-size> is the length of the input of the 
+;; network yielding an output of length 1.
+(de tdnn-present-pattern (from to mean idev temporal-window-size)
+    (-idx2- from)
+    ((-obj- (idx3-ddstate)) to)
+    (-idx1- mean idev)
+    (-int- temporal-window-size)
+    (let*((n-pad-frames (- temporal-window-size 1))
+          (left (int (* 0.5 n-pad-frames)))
+          (right (- n-pad-frames left))
+          (raw-length (idx-dim from 0))
+          (first-frame (copy-matrix (select from 0 0)))
+          (last-frame (copy-matrix (select from 0 (- raw-length 1))))
+          (n-inputs (idx-dim from 1))
+          )
+      (==> to resize n-inputs 1 (+ n-pad-frames raw-length))
+      (idx-m1sub first-frame mean first-frame)
+      (idx-m1mul first-frame idev first-frame)
+      (idx-m1sub last-frame mean last-frame)
+      (idx-m1mul last-frame idev last-frame)
+      (when (> left 0)
+        (idx-eloop ((to-t (select (narrow :to:x 2 left 0) 1 0)))
+          (idx-m1copy first-frame to-t)))
+      (when (> right 0)
+        (idx-eloop ((to-t 
+                     (select 
+                      (narrow :to:x 2 right 
+                              (+ raw-length left)) 1 0)))
+          (idx-m1copy last-frame to-t)))
+      (let*((middle-frames (select (narrow :to:x 2 raw-length left) 1 0)))
+        (idx-eloop ((from-t (idx-transclone from '(1 0)))
+		    (to-t middle-frames))
+          (idx-m1sub from-t mean to-t)
+          (idx-m1mul to-t idev to-t)))
+      ()))
+
+#? norm-ftdnn
+;; Wrapper around ccc-tdnn which does input normalization
+;; and pads the input according to the network architecture.
+(defclass norm-ftdnn object
+  input-mean
+  input-idev
+  temporal-window
+  param
+  norm-input
+  machine
+  tk1 tk2 tk3
+  fk1 fk2 fk3
+  fs1 fs2 fs3
+)
+
+(defmethod norm-ftdnn norm-ftdnn (n-inputs nh1 nh2 n-outputs 
+                                           weight-file norm-file
+                                           &optional (-tk1 5)(-tk2 8)(-tk3 12)
+                                           (-fk1 6)(-fk2 3)(-fk3 3)
+                                           (-fs1 3)(-fs2 2)(-fs3 1)
+                                           (max-seq-len 2000))
+  (setq tk1 -tk1 tk2 -tk2 tk3 -tk3 fk1 -fk1 fk2 -fk2 fk3 -fk3
+        fs1 -fs1 fs2 -fs2 fs3 -fs3)
+  (let ((input-normalization (load-matrix norm-file)))
+    (setq input-mean (select input-normalization 1 0))
+    (setq input-idev (select input-normalization 1 1)))
+  (setq param (new idx1-ddparam 0 0.1 0.02 0.02 200000)) 
+
+  (when (<> n-inputs
+            (+ (* 
+                (+ (* 
+                    (+ (* 1 fs3) 
+                       (- fk3 fs3))
+                    fs2) 
+                   (- fk2 fs2))
+                fs1)
+               (- fk1 fs1)))
+    (error 'build-net 
+           "inconsistent n-inputs and freq. kernel sizes/steps"))
+  (setq machine
+        (build-ccc-tdnn 
+         param n-inputs max-seq-len
+         ;; following arguments are, for each layer: 
+         ;;   - size of frequency kernel (no sharing)
+         ;;   - stride of frequency kernel
+         ;;   - nb of hidden units per frequency band
+         ;;   - size of temporal kernel (shared)
+         fk1 fs1 nh1 tk1
+         fk2 fs2 nh2 tk2
+         fk3 fs3 n-outputs tk3
+         ))
+
+  ;; by default, so we can do ordinary gradient descent 
+  (idx-m1fill :param:epsilons 1) 
+
+  (setq temporal-window 
+        (+ (idx-dim :machine:c2-module:kernel:x 2) 
+           (- (idx-dim :machine:c1-module:kernel:x 2) 1)
+           (- (idx-dim :machine:c0-module:kernel:x 2) 1)))
+  ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  (setq norm-input (new idx3-ddstate n-inputs 1 max-seq-len))
+  (when weight-file (==> param load weight-file))
+  ())
+
+(defmethod norm-ftdnn n-connections (&optional (output-length 1))
+  (let*((n-inputs (idx-dim :norm-input:x 0))
+        (nf1 (/ (- n-inputs (- fk1 fs1)) fs1))
+        (nf2 (/ (- nf1 (- fk2 fs2)) fs2))
+        (nf3 (/ (- nf2 (- fk3 fs3)) fs3))
+        (nt3 output-length)
+        (nt2 (+ nt3 (- tk3 1)))
+        (nt1 (+ nt2 (- tk2 1)))
+        (nt0 (+ nt1 (- tk1 1)))
+        (n-outputs (idx-dim :machine:c2-module:sum:x 0)))
+    (+ (* nh1 nf1 nt1 tk1 fk1)(* nh1 nh2 nf2 nt2 fk2 tk2)
+       (* nh2 n-outputs nt3 nf3 fk3 tk3)))
+  )
+
+(defmethod norm-ftdnn fprop (in out)
+  (tdnn-present-pattern in norm-input input-mean input-idev temporal-window)
+  (==> machine fprop norm-input out))
+
+(defmethod norm-ftdnn bprop (in out)
+  ;; no gradient backpropagated in input state
+  (==> machine bprop norm-input out))
+
+(defmethod norm-ftdnn output-size ()
+  (list (idx-dim :machine:c2-module:sum:x 0) 1 (idx-dim :norm-input:x 2)))
+
+(defmethod norm-ftdnn update ()
+  (==> param update))
+
+(defmethod norm-ftdnn set-eta (eta)
+  (==> param set-eta eta))
+
+(defmethod norm-ftdnn save (filename)
+  (==> param save filename))
+
+(dhc-make ()
+          tdnn-present-pattern
+)

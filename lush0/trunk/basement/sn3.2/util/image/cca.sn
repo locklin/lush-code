@@ -1,0 +1,695 @@
+#? File "cca.sn"
+;; This file contains elementary routines for connected component (CC) analysis.
+;; The basic procedure consists in:
+;;.IP
+;;  Creating a new <CCAnalyzer> object for a given image
+;;.IP
+;;  Extracting the runs using method <run-analysis>. 
+;;.IP
+;;  Extracting the connected components using method <cc-analysis>.
+;;.PP
+;; There are a few other methods for performing various cleanup
+;; on the runs and on the CCs. There is also a method for reconstructing
+;; the image from the cleaned CCs. 
+;;.PP
+;; Another trick: There is a matrix named <ubcut> in the <CCAnalyzer> object.
+;; Every pixel set in this matrix will force the RUN and CC code to ignore
+;; connexity on certain pixels. For instance, you can force arbitrary cuts by
+;; setting the pixels of a 4-connex line in this matrix. This has to be done before
+;; the call to <run-analysis>.
+;;
+;; -- Leon Bottou 9/96
+
+
+(mload "idx-int")
+(mload "image/run-macros")
+
+
+#? (new CCAnalyzer <grayimage>)
+;; Class CCanalyzer holds all the information necessary
+;; for the connected component analysis of an image <grayimage>.
+;;.SEE (==> <ccanalizer> make-run)
+;;.SEE (==> <ccanalizer> make-ca)
+
+
+(defclass CCAnalyzer object
+  ((-idx2- (-ubyte-)) ubimg)            ; gray level image to analyze
+  ((-idx2- (-ubyte-)) ubcut)            ; binary image representing forced cuts
+  ((-idx2- (-int-))   runs)             ; runs sorted by y-x order
+  ((-bool-)           run-ok)           ; is the run matrix up to date
+  ((-idx2- (-int-))   ccdesc)           ; cc descriptors
+  ((-idx2- (-int-))   ccruns)           ; runs sorted by cc-y-x order
+  ((-bool-)           cc-ok)            ; are the cc matrix up to date
+  ((-bool-)           wpix-ok)          ; have the weight of the cc been computed
+)
+
+
+(defmethod CCAnalyzer CCAnalyzer(grayimage)
+  ((-idx2- (-ubyte-)) grayimage)
+  (setq ubimg  (copy-matrix grayimage))
+  (setq ubcut  (ubyte-matrix (1+ (idx-dim ubimg 0)) (1+ (idx-dim ubimg 1))))
+  (setq runs   (int-matrix-nc 512 4))
+  (setq run-ok ()) 
+  (setq ccruns (int-matrix-nc 512 4))
+  (setq ccdesc (int-matrix-nc 64 8))
+  (setq cc-ok ()) 
+  (setq wpix-ok ()) 
+)
+
+
+
+
+#? (==> <ccanalizer> run-analysis <threshold>)
+;; Computes a run length representation of the binary image
+;; obtained by thresholdind the gray image <ubmatrix2d>
+;; at threshold <thres>. The run information is stored 
+;; into slot <runs> of the <CCAnalizer> object.
+;;
+;; Each line of matrix <runs> is a 4-vector containing 
+;; the following information:
+;;.IP
+;;  At index <(RUN-Y)>: The Y coordinate of the run.
+;;.IP
+;;  At index <(RUN-X1)>: The X coordinate of the first pixel of the run.
+;;.IP
+;;  At index <(RUN-X2)>: The X coordinate of the last pixel of the run.
+;;.IP
+;;  At index <(RUN-ID)>: The ID of the blob this run belongs to.
+;;  The blob information is filled by the CA extraction code.
+;;.PP
+;; This function breaks runs on each non zero pixel of the image
+;; located in slot <ubcut> of <ccanalyzer>. The default value is all zeroes.
+;;.PP
+;; This function returns <t> on success.
+
+
+(defmethod CCAnalyzer run-analysis(thres)
+  ((-int-) thres)
+  (let ((id -1))
+    ((-int-) id)
+    (idx-gloop ((y) (imglin ubimg))
+      (let ((white t))
+        (idx-gloop ((x) (imgpix imglin))
+          (let ((pix (imgpix)) )
+            ((-int-) pix x y)
+            (when (and (not white)
+                       (or (<= pix thres)
+                           (and (> (ubcut y x) 0) (> (ubcut (1+ y) x) 0)) ) )
+              (setq white t)
+              (runs id (RUN-X2) (1- x)) )
+            (when (and white (> pix thres))
+              (if (>= (incr id) (idx-dim runs 0))
+                  (midx-i2resize1 runs (* id 2)) )
+              (setq white ()) 
+              (runs id (RUN-Y)  y)
+              (runs id (RUN-X1) x) 
+              (runs id (RUN-ID) 0) ) ) )
+        (when (not white)
+          (runs id (RUN-X2) (1- (idx-dim imglin 0))) ) ) )
+    (when (>= id 0)
+      (midx-i2resize1 runs (1+ id))
+      (setq run-ok t) ) ) )
+
+
+
+
+
+#? (==> <ccanalyzer> cc-analysis)
+;; Perform the connected component analysis of the image represented by the
+;; runs matrix contained in the <ccanalyzer> object. This algorithm usually
+;; considers 8-connexity. This is altered when the cut image <ubcuts> contains
+;; a non zero value indicating a forced cut.
+;;
+;; The results are stored in the cc descriptor matrix <ccdesc> of the object.
+;; Each line of this matrix represent a connected component (CC).
+;;.IP
+;; At index <(CC-NRUN)>: The number of runs in the CC.
+;;.IP
+;; At index <(CC-FRUN)>: The index of the first run of the CC in the CC ordered
+;; run matrix <ccruns> stored in the object.
+;;.IP
+;; At index <(CC-NPIX)>: The number of non background pixels in the CC.
+;;.IP
+;; At index <(CC-WPIX)>: The sum of the pixel values (gray level) of the CC. These
+;; values are initially zero. Use function <cc-measure-gray> to compute these values.
+;;.IP
+;; At indices <(CC-LEFT)>, <(CC-TOP)>, <(CC-RIGHT)> and <(CC-BOTTOM)>: The
+;; boundign box of the CC.
+;;.PP
+;; This function returns <t> on success.
+;; You may postprocess the returned CC with <cc-measure-gray>, <cc-remove-specs>,
+;; and other functions in this file.
+
+
+(defmethod CCAnalyzer cc-analysis()
+  (when (not run-ok)
+    (error "should call <run-analysis> before calling <cc-analysis>") )
+  (let ((bidmap (int-matrix 256))
+        (w (idx-dim ubcut 1)) 
+        (pidx 0)
+        (bid  0) )
+    ;; ** single pass ca analysis
+    (idx-bloop ((run runs))
+      (let ((y  (run (RUN-Y)))
+            (x1 (run (RUN-X1)))
+            (x2 (run (RUN-X2)))
+            (id bid) )
+        ((-int-) y w x1 x2 id)
+        ;; Handle forced cuts
+        (when (> (idx-dim ubcut 0) 2)
+          (incr x1 -1)
+          (while (and (> (ubcut y (1+ x1)) 0) (<= x1 x2))
+            (incr x1 1) )
+          (incr x2 1)
+          (while (and (> (ubcut y x2) 0) (<= x1 x2))
+            (incr x2 -1) )
+          )
+        ;; iterate over runs of previous line
+        (while (< (runs pidx (RUN-Y)) (1- y))
+          (incr pidx) )
+        (while (and (< (runs pidx (RUN-Y)) y)
+                    (<= (runs pidx (RUN-X1)) x2)
+                    (or (< (runs pidx (RUN-X2)) x1)
+                        ;; this code runs when previous run touches current run
+                        (let ((oid (runs pidx (RUN-ID))))
+                          ((-int-) oid)
+                          (while (< (bidmap oid) oid)
+                            (setq oid (bidmap oid)) )
+                          (if (= id bid)
+                              ;; first overlap
+                              (setq id oid)
+                            ;; new overlap
+                            (if (< id oid)
+                                (bidmap oid id)
+                              (bidmap id oid)
+                              (setq id oid) ) )
+                          ;; freshen previous run id
+                          (runs pidx (RUN-ID) id)
+                          ;; stop if previous run goes past current run
+                          (< (runs pidx (RUN-X2)) x2) ) ) )
+          (incr pidx) )
+        ;; create new entry in bidmap
+        (run (RUN-ID) id)
+        (when (= id bid)
+          (if (>= id (idx-dim bidmap 0))
+              (idx-i1resize bidmap (2* id)) )
+          (bidmap id id)
+          (incr bid) ) ) )
+
+    ;; ** update bidmap
+    (for (i 0 (1- bid))
+      (let ((oid i))
+        ((-int-) i oid)
+        (while (< (bidmap oid) oid)
+          (setq oid (bidmap oid)) )
+        (bidmap i oid) ) )
+    (let ((nid 0))
+      ((-int-) nid)
+      (for (i 0 (1- bid))
+        (let ((oid (bidmap i)))
+          ((-int-) i oid)
+          (if (< oid i)
+              (bidmap i (bidmap oid))
+            (bidmap oid nid)
+            (incr nid) ) ) )
+      ;; store number of CA in bid
+      (setq bid nid) )
+    ;; ** prepare ccdesc matrix
+    (midx-i2resize1 ccdesc bid)
+    (idx-bloop ((cainfo ccdesc)) 
+      (cainfo (CC-NRUN)   0)
+      (cainfo (CC-NPIX)   0)
+      (cainfo (CC-WPIX)   0)
+      (cainfo (CC-TOP)    (idx-dim ubimg 0))
+      (cainfo (CC-BOTTOM) 0)
+      (cainfo (CC-LEFT)   (idx-dim ubimg 1))
+      (cainfo (CC-RIGHT)  0) )
+    ;; ** fill ccdesc matrix and patch blob id in runs
+    (idx-bloop ((run runs))
+      (let ((id (run (RUN-ID))))
+        ((-int-) id)
+        (setq id (bidmap id))
+        (run (RUN-ID) id)
+        (let ((cainfo (select ccdesc 0 id)))
+          (cainfo (CC-NRUN) 
+                  (+ (cainfo (CC-NRUN)) 1))
+          (cainfo (CC-NPIX)
+                  (+ (cainfo (CC-NPIX)) (+ 1 (- (run (RUN-X2)) (run (RUN-X1))))))
+          (cainfo (CC-TOP)
+                  (min (cainfo (CC-TOP)) (run (RUN-Y))) )
+          (cainfo (CC-BOTTOM)
+                  (max (cainfo (CC-BOTTOM)) (run (RUN-Y))) )
+          (cainfo (CC-LEFT)
+                  (min (cainfo (CC-LEFT)) (run (RUN-X1))) )
+          (cainfo (CC-RIGHT)
+                  (max (cainfo (CC-RIGHT)) (run (RUN-X2))) ) ) ) )
+    ;; ** compute first and last runs in caruns
+    (let ((frun 0))
+      ((-int-) frun)
+      (idx-gloop ((id)(cainfo ccdesc))
+        (bidmap id frun)
+        (cainfo (CC-FRUN) frun)
+        (incr frun (cainfo (CC-NRUN))) ) 
+      (when (<> frun (idx-dim runs 0))
+        (error "internal error in CC analysis") ) )
+    ;; ** fill caruns
+    (midx-i2resize1 ccruns (idx-dim runs 0))
+    (idx-gloop ((i) (run runs))
+      (let* ((id (run (RUN-ID)))
+             (pos (bidmap id)))
+        ((-int-) id pos i)
+        (idx-copy run (select ccruns 0 pos))
+        (bidmap id (1+ pos)) ) )
+    ;; ** end
+    (setq cc-ok t) ) )
+
+
+
+
+;;; ----------------------------------------
+;;; CC BASED IMAGE CLEANUP METHODS
+
+
+
+#? (==> <ccanalyzer> remove-long-runs <maxlen>)
+;; This function removes the runs whose length is longer than <maxlen>.  Long
+;; runs are sometimes good indicator for underlines.  Note that nothing is
+;; changed in the image.  You must use <reconstruct-from-runs> or
+;; <reconstruct-from-cc> for that.
+
+(defmethod CCAnalyzer remove-long-runs(maxlen)
+  ((-int-) maxlen)
+  (when (not run-ok)
+    (error "should call <run-analysis> before calling <cc-analysis>") )
+  (let ((idrun 0))
+    ((-int-) idrun)
+    (idx-bloop ((run runs))
+      (when (< (- (run (RUN-X2)) (run (RUN-X1))) maxlen)
+        (idx-copy run (select runs 0 idrun))
+        (incr idrun) ) )
+    (idx-narrow runs 0 idrun 0)
+    idrun ) )
+
+ 
+
+
+#? (==> <ccanalyzer> reconstruct-from-runs)
+;; Reconstruct matrix <ubimg> from the run representation.
+;; This code saves the gray level information already present
+;; in <ubimg>. It just sets all pixels not included in a run to zero.
+
+(defmethod CCAnalyzer reconstruct-from-runs()
+  (when (not run-ok)
+    (error "should call <run-analysis> before calling <reconstruct-from-runs>") )
+  (let ((newimg (ubyte-matrix (idx-dim ubimg 0) (idx-dim ubimg 1))))
+    (idx-bloop ((run runs))
+      (let* ((runw (1+ (- (run (RUN-X2)) (run (RUN-X1)))))
+             (runp (run (RUN-X1)))
+             (runy (run (RUN-Y))) )
+        ((-int-) runw runp runy)
+        (idx-copy (narrow (select ubimg 0 runy) 0 runw runp)
+                  (narrow (select newimg 0 runy) 0 runw runp) ) ) )
+    (idx-copy newimg ubimg) ) )
+                    
+
+
+
+#? (==> <ccanalyzer> cc-measure-gray)
+;; Compute the average gray level of each CC and store it at index <(CC-WPIX)>
+;; of the CC descriptor matrix <ccdesc>.
+
+(defmethod CCAnalyzer cc-measure-gray()
+  (when (not run-ok)
+    (error "cc analysis should be performed before cc-measure-gray") )
+  (idx-bloop ((cc ccdesc))
+    (let ((acc (select cc 0 (CC-WPIX)))
+          (runs (narrow ccruns 0 (cc (CC-NRUN)) (cc (CC-FRUN)))) )
+      (acc 0)
+      (idx-bloop ((run runs))
+        (idx-sumacc (narrow (select ubimg 0 (run (RUN-Y))) 0 
+                            (1+ (- (run (RUN-X2)) (run (RUN-X1))))
+                            (run (RUN-X1)) )
+                    acc ) )
+      (setq wpix-ok t) ) ) )
+
+
+
+#? (==> <ccanalyzer> remove-small-cc <minpix> <mingray> <minweight>)
+;; Remove small connected components
+;;.IP
+;; whose size is less than <minpix> pixels,
+;;.IP
+;; or whose average gray level is less than <mingray>,
+;;.IP
+;; or whose summed gray level is less than <minweight>.
+;;.PP
+;; Note that nothing is changed in the image or the run matrix.
+;; You must use <reconstruct-from-cc> for that.
+
+(defmethod CCAnalyzer remove-small-cc(minpix mingray minweight)
+  ((-int-) minpix mingray minweight)
+  (when (not wpix-ok)
+    (error "should call <cc-measure-gray> before calling <remove-small-cc>") )
+  (let ((idcc 0))
+    ((-int-) idcc)
+    (idx-bloop ((cc ccdesc))
+      (when (and (>= (cc (CC-NPIX)) minpix)
+                 (>= (cc (CC-WPIX)) minweight)
+                 (>= (cc (CC-WPIX)) (* mingray (cc (CC-NPIX)))) )
+        (idx-copy cc (select ccdesc 0 idcc))
+        (incr idcc) ) )
+    (idx-narrow ccdesc 0 idcc 0) 
+    idcc ) )
+
+
+
+
+
+#? (==> <ccanalyzer> reconstruct-from-cc)
+;; Reconstruct matrix <ubimg> from the connected components in <ccdesc>.
+;; This code saves the gray level information already present
+;; in <ubimg>. It just sets all pixels not included in a run to zero.
+
+(defmethod CCAnalyzer reconstruct-from-cc()
+  (when (not cc-ok)
+    (error "should call <cc-analysis> before calling <reconstruct-from-cc>") )
+  (let ((newimg (ubyte-matrix (idx-dim ubimg 0) (idx-dim ubimg 1))))
+    (idx-bloop ((cc ccdesc))
+      (idx-bloop ((run (narrow ccruns 0 (cc (CC-NRUN)) (cc (CC-FRUN)))))
+        (let* ((runw (1+ (- (run (RUN-X2)) (run (RUN-X1)))))
+               (runp (run (RUN-X1)))
+               (runy (run (RUN-Y))) )
+          ((-int-) runw runp runy)
+          (idx-copy (narrow (select ubimg 0 runy) 0 runw runp)
+                    (narrow (select newimg 0 runy) 0 runw runp) ) ) ) )
+    (idx-copy newimg ubimg) ) )
+
+
+
+
+
+#? (==> <ccanalyzer> overlay-cc <ccid> <ccimg> <originx> <originy>)
+;; Overlays connected component <ccid> into ubyte matrix <ccimg>.  Matrix
+;; <ccimg> is assumed to have its top left corner at position <originx>
+;; <originy> in the intial image.  Connected components that do not fit matrix
+;; <ccimg> are silently clipped. Returns <t> when something was drawn.
+
+(defmethod CCAnalyzer overlay-cc(ccid ccimg origx origy)
+  ((-int-) ccid origx origy)
+  ((-idx2- (-ubyte-)) ccimg)
+  (when (not cc-ok)
+    (error "should call <cc-analysis> before calling <draw-cc>") )
+  (let ((cc (select ccdesc 0 ccid))
+        (ok ()) )
+    ((-bool-) ok)
+    (idx-bloop ((run (narrow ccruns 0 (cc (CC-NRUN)) (cc (CC-FRUN)))))
+      (let* ((runp (run (RUN-X1)))
+             (runw (1+ (- (run (RUN-X2)) runp)))
+             (runy (run (RUN-Y))) )
+        ((-int-) runw runp runy)
+        (when (and (>= runy origy) (< runy (+ origy (idx-dim ccimg 0))))
+          (when (< runp origx)
+            (setq runw (- runw (- origx runp)))
+            (setq runp origx) )
+          (when (> (+ runp runw) (+ origx (idx-dim ccimg 1)))
+            (setq runw (- (+ origx (idx-dim ccimg 1)) runp)) )
+          (when (> runw 0)
+            (setq ok t)
+            (idx-copy (narrow (select ubimg 0 runy) 0 runw runp)
+                      (narrow (select ccimg 0 (- runy origy)) 0 runw (- runp origx)) )))))
+    ok ) )
+
+
+
+
+
+#? (==> <ccanalyzer> draw-cc <x> <y>)
+;; Draws image at location <x> <y> by painting each connected
+;; component with a random color. Unfortunately, random colors
+;; are sometimes too close. [INTERPRETED ONLY]
+
+(defmethod CCAnalyzer draw-cc(x y)
+  (graphics-batch
+   (idx-bloop ((cc ccdesc))
+     (color-rgb (2/ (rand)) (2/ (rand)) (2/ (rand)))
+     (idx-bloop ((run (narrow ccruns 0 (cc (CC-NRUN)) (cc (CC-FRUN)))))
+       (draw-line (+ x (run (RUN-X1))) (+ y (run (RUN-Y)))
+                  (+ x (run (RUN-X2))) (+ y (run (RUN-Y))) ) ) ) ) )
+
+
+#? (==> <ccanalyzer> pick-cc <x> <y>)
+;; returns the index of the connected component that
+;; contains the point <x>,<y>, or -1 if no component
+;; contains the point.
+(defmethod ccanalyzer pick-cc (x y)
+  ((-int-) x y)
+  (if (not cc-ok) 
+      (error "cc analysis hasn't been done")
+    (let ((low 0) (high (1- (idx-dim runs 0))))
+      (while (< low high)
+        (let* ((milieu (div (+ low high) 2))
+               (milrun (select runs 0 milieu)))
+          ((-int-) milieu)
+          (cond 
+           ((< y (milrun (RUN-Y))) (setq high (1- milieu)))
+           ((> y (milrun (RUN-Y))) (setq low (1+ milieu)))
+           ((< x (milrun (RUN-X1))) (setq high (1- milieu)))
+           ((> x (milrun (RUN-X2))) (setq low (1+ milieu)))
+           (t (setq low milieu) (setq high milieu)))))
+      (let ((rez -1))
+        ((-int-) rez)
+        (when (= low high) 
+          (let ((r (select runs 0 low)))
+            (when (and (= y (r (RUN-Y))) 
+                       (>= x (r (RUN-X1)))
+                       (<= x (r (RUN-X2))))
+              (setq rez (r (RUN-ID))))))
+        rez))))
+
+#? (==> <ccanalyzer> image-height)
+;; returns height of image on which CCA is performed
+(defmethod CCAnalyzer image-height () (idx-dim ubimg 0))
+
+#? (==> <ccanalyzer> image-width)
+;; returns width of image on which CCA is performed
+(defmethod CCAnalyzer image-width () (idx-dim ubimg 1))
+
+#? (==> <ccanalyzer> run-histo <histo> <hosto> <offset>)
+;; compute histogram of runs.
+;; <histo> is an N by P matrix, and <hosto> an N vector.
+;; this method will accumulate the histogram of run lengths
+;; for each scan line between <offset> and <offset>+N-1.
+;; on output, elements i,j of histo will be incremented
+;; by the number of runs on line i-<offset> that are of length j.
+;; element i of <hosto> will incremented by the number of runs
+;; on scanline i-<offset> that are larger or equal to P.
+(defmethod CCAnalyzer run-histo (histo hosto offset)
+  ((-idx1- (-flt-)) hosto)
+  ((-idx2- (-flt-)) histo)
+  ((-int-) offset)
+  (when (not run-ok)
+    (error "should call <run-analysis> before calling <run-histo>") )
+  (let ((n (idx-dim histo 0))
+        (p (idx-dim histo 1)))
+    (idx-bloop ((r runs))
+      (let ((y (- (r (RUN-Y)) offset)))
+        (when (and (>= y 0) (< y n))
+          (let ((s (1+ (- (r (RUN-X2)) (r (RUN-X1))))))
+            (if (>= s p) 
+                (hosto y (1+ (hosto y)))
+              ;; (printf "(y=%d s=%d) " y s)
+              (histo y s (1+ (histo y s))))))))) ())
+
+
+#? (==> <ccanalyzer> bbox-histo <histo>)
+;; computes 2D histogram of bounding box heights
+;; and width and increment 2D matrix <histo> by it.
+;; Element i,j of <histo> will be incremented by the
+;; number of CC whose bounding box is of height i and
+;; of width j.
+(defmethod CCAnalyzer bbox-histo (histo)
+  ((-idx2- (-flt-)) histo)
+  (when (not cc-ok)
+    (error "should call <cc-analysis> before calling <bbox-histo>") )
+  (let ((maxh (idx-dim histo 0))
+        (maxw (idx-dim histo 1)))
+    ((-int-) maxh maxw)
+    (idx-bloop ((cc ccdesc))
+      (let ((h (1+ (- (cc (CC-BOTTOM)) (cc (CC-TOP)))))
+            (w (1+ (- (cc (CC-RIGHT)) (cc (CC-LEFT))))))
+        ((-int-) h w)
+        (when (and (< h maxh) (< w maxw))
+          (histo h w (1+ (histo h w))))))) ())
+
+#? (==> <ccanalyzer> ccbottoms <thres>)
+;; return a matrix with x and y of horixontal center
+;; of bottom of each CC. CCs whose number of black
+;; pixels are smaller than <thres> are ignored.
+(defmethod CCAnalyzer ccbottoms (thres)
+  ((-int-) thres)
+  (when (not run-ok)
+    (error "should call <cc-analysis> before calling <extract-ccbottoms>") )
+  (let ((xy (matrix-nc (idx-dim ccdesc 0) 2))
+        (n 0))
+    ((-int-) n)
+    (idx-bloop ((cc ccdesc))
+      (when (>= (cc (CC-NPIX)) thres)
+        (xy n 0 (* 0.5 (+ (cc (CC-LEFT)) (cc (CC-RIGHT)))))
+        (xy n 1 (cc (CC-BOTTOM)))
+        (incr n)))
+    (narrow xy 0 n 0)))
+
+
+#? (==> CCAnalyzer get-cc-fltim cc-id cc-fltim cc-com cc-off)
+;;.VP
+;;   ((-int-) cc-id) : index of the cc
+;;   ((-idx2- (-flt-)) cc-fltim) : image in float
+;;   ((-idx1- (-flt-)) cc-com) : center of mass,  in float [X,Y]
+;;   ((-idx1- (-int-)) cc-off) : offset [X,Y]
+;;
+;; ADDED: Patrick Haffner, July 97
+;;
+;;.VP
+;; Given the index of a CC, returns:
+;; 1) the corresponding gray level float image, dilated (WITH OFFSET)
+;; 2) the center of mass of the bitmap (WITHOUT OFFSET)
+;; 3) the offset used to align the float image to the upper right corner.
+;;
+;; WARNING: fltim expands all the edges of the bounding box
+;; by 1 pixel, UNLESS this cannot be done because we hit the
+;; global image border.
+
+(defmethod CCAnalyzer get-cc-fltim (cc-id cc-fltim cc-com cc-off)
+  ((-int-) cc-id) ;; index of the cc
+  ((-idx2- (-flt-)) cc-fltim) ;; image in float
+  ((-idx1- (-flt-)) cc-com) ;; center of mass,  in float [X,Y]
+  ((-idx1- (-int-)) cc-off) ;; offset [X,Y]
+   
+  (when (not cc-ok)
+    (error "should call <cc-analysis> before calling <reconstruct-from-cc>") )
+    
+  (let* (
+        (cc (select ccdesc 0 cc-id))
+        (runs (narrow ccruns 0 (cc (CC-NRUN)) (cc (CC-FRUN))))
+        (im-left 0)
+        (im-top 0)
+        (im-right (1- (idx-dim ubimg 1)))
+        (im-bottom (1- (idx-dim ubimg 0)))
+        (cca-top (1- (cc (CC-TOP))))
+        (cca-bottom (1+ (cc (CC-BOTTOM))))
+        (cca-left (1- (cc (CC-LEFT))))
+        (cca-right (1+ (cc (CC-RIGHT))))
+        (sum-x 0)
+        (sum-y 0)
+        )
+    (-int- im-left im-top im-right im-bottom)
+    (-int- cca-left cca-top cca-right cca-bottom)
+    
+    ;; boring stuff
+    (when (< cca-left im-left) (setq cca-left im-left))
+    (when (> cca-right im-right) (setq cca-right im-right))
+    (when (< cca-top im-top) (setq cca-top im-top))
+    (when (> cca-bottom im-bottom) (setq cca-bottom im-bottom))
+    
+    (midx-m1resize cc-com 2)
+    (idx-i1resize cc-off 2)
+    (midx-m2resize cc-fltim (1+ (- cca-bottom cca-top))
+                   (1+ (- cca-right cca-left)))
+    (idx-clear cc-fltim)
+
+    (idx-bloop ((run runs))
+      (let* (
+             (run-left (1- (run (RUN-X1))))
+             (run-right (1+ (run (RUN-X2))))
+             (runy (run (RUN-Y)))
+             (run-top (1- runy) )
+             (run-bottom (1+ runy) )
+             (run-pix (1- (- run-right run-left)))
+             )
+        ((-int-) run-left run-right run-top run-bottom runy run-pix )
+
+        (incr sum-y (* runy  run-pix))
+        (incr sum-x (* (2/ (flt (+ run-right run-left)))  run-pix))
+
+        (when (< run-left im-left) (setq run-left im-left))
+        (when (> run-right im-right) (setq run-right im-right))
+        (when (< run-top im-top) (setq run-top im-top))
+        (when (> run-bottom im-bottom) (setq run-bottom im-bottom))
+
+        (let (
+              (run-w (1+ (- run-right run-left)))
+              (run-h (1+ (- run-bottom run-top)))
+              )
+          (-int- run-w run-h)
+          (idx-copy 
+           (narrow (narrow ubimg 0 run-h run-top) 1 run-w run-left) 
+           (narrow (narrow cc-fltim 0 run-h (- run-top cca-top)) 1 run-w (- run-left cca-left))
+           )
+          )
+        ) ;let*
+      ) ;;bloop
+    (cc-com 0 (/ sum-x (cc (CC-NPIX))))
+    (cc-com 1 (/ sum-y (cc (CC-NPIX))))
+    (cc-off 0 cca-left)
+    (cc-off 1 cca-top)
+    ()
+    ) )
+                    
+
+;;; ----------------------------------------
+;;; COMPILE
+
+(dhc-make () (CCAnalyzer CCAnalyzer
+                         get-cc-fltim
+                         run-analysis
+                         cc-analysis 
+                         remove-long-runs
+                         reconstruct-from-runs
+                         cc-measure-gray
+                         remove-small-cc
+                         reconstruct-from-cc
+                         overlay-cc
+                         pick-cc
+                         image-width
+                         image-height
+                         run-histo
+                         bbox-histo
+                         ccbottoms) )
+
+
+
+
+;;; ----------------------------------------
+;;; TEST
+
+
+(de test-cc(&optional (from 0))
+    (when (not window) (new-window))
+    (for (i from (1- (==> lines-db size)))
+      (let* ((m (==> lines-db get i))
+             (w (new ccanalyzer m)) 
+             (x 10)
+             (y 20))
+        (graphics-batch
+         (cls)
+         (color color-fg)
+         (font "fixed") 
+         (gprintf 10 15 "%d" i)
+         (gray-draw-matrix x y m 255 -0 1 1)
+         (incr y (+ 10 (idx-dim m 0)))
+         (gray-draw-matrix x y m 20 -20 1 1)
+         (incr y (+ 10 (idx-dim m 0))) )
+        (when (==> w run-analysis 0)
+          (==> w cc-analysis)
+          (==> w cc-measure-gray)
+;          (==> w remove-small-cc 2 64 500)
+          (graphics-batch
+           (idx-bloop ((cc :w:ccdesc))
+             (color-rgb (2/ (rand)) (2/ (rand)) (2/ (rand)))
+             (idx-bloop ((run (narrow :w:ccruns 0 (cc (CC-NRUN)) (cc (CC-FRUN)))))
+               (draw-line (+ x (run (RUN-X1))) (+ y (run (RUN-Y)))
+                          (+ x (run (RUN-X2))) (+ y (run (RUN-Y)))  ) ) ) ) ) )
+      (when (ask "stop") (error "Stopped"))
+      ) )
+
+

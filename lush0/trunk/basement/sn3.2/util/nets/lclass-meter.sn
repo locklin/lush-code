@@ -1,0 +1,196 @@
+#? File "lclass-meter.sn"
+
+(mload "trainer")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? lclass-meter
+;; a special sn-meter that can be used to measure the performance 
+;; of a classifier.
+(defclass lclass-meter sn-meter
+  ;; instantaneous slots
+  correctp				; a function that return 1 if the answer is considered correct,
+					; 0 if punt, -1 if wrong. 
+  energy
+  confidence
+
+  ;; global performance slots
+  size					; number of patterns seen so far
+  total-correct
+  total-error
+  total-punt
+  total-energy
+
+  ;; output storage for future records
+  pattern-indices			; matrix of pattern indices
+  actual-answers			; matrix of actual answers
+  desired-answers			; matrix of desired answers
+  ratings				; matrix of +1 (success), 0 (punt), -1 (failure)
+  confidences				; matrix of confidence levels
+  energies				; metrix of output energy
+  sorted-pointers			; sorted matrix of sequence numbers
+
+  sorted				; flag indicates if sorted-pointers have been sorted
+  )
+
+(defmethod lclass-meter clear ()
+  (setq total-correct 0
+	total-error 0
+	total-punt 0
+	total-energy 0
+	size 0
+	sorted ()))
+
+(defmethod lclass-meter lclass-meter (sz &optional cp)
+  (setq correctp (if cp cp same-class?)
+        pattern-indices (matrix sz 3)
+        actual-answers (array sz)
+        desired-answers (array sz)
+        ratings (array sz)
+        confidences (array sz)
+        energies (matrix sz)
+        sorted-pointers (matrix sz)
+	sorted ())
+  (==> this clear))
+
+(defmethod lclass-meter resize (sz)
+  (idx-redim  pattern-indices (list sz 3))
+  (idx-redim  actual-answers (list sz))
+  (idx-redim  desired-answers (list sz))
+  (idx-redim  ratings (list sz))
+  (idx-redim  confidences (list sz))
+  (idx-redim  energies (list sz))
+  (idx-redim  sorted-pointers (list sz)))
+
+;; record new data, update counts
+(defmethod lclass-meter fprop (tr)
+  (let*((co :tr:postproc-output)
+        (ptr :tr:current-pointer)
+        (enx :tr:energy:x)
+        (image-size (* (idx-dim :co:output-class 0)
+                       (idx-dim :co:output-class 1)))
+        (i 0)
+        (j 0))
+    (setq energy (enx))
+    (incr total-energy energy)
+    ;; get rid of spatial dimensions
+    (idx-eloop ((cd :tr:postproc-desired)(output-class :co:output-class)
+                (conf :co:confidence)(mo :tr:machine-output:x))
+      (idx-eloop ((cd cd)(output-class output-class)
+                  (conf conf)(mo mo))
+        (let*((crrct (correctp (output-class) (cd))))
+          (setq confidence (conf))
+          (ratings size crrct)
+          (pattern-indices size 0 ptr)
+          (pattern-indices size 1 i)
+          (pattern-indices size 2 j)
+          (actual-answers size (output-class))
+          (desired-answers size (cd))
+          (confidences size confidence)
+          (energies size (enx)) ;; that's the global energy for the image
+          (selectq crrct
+            (1  (incr total-correct))
+            (0  (incr total-punt))
+            (-1 (incr total-error)))
+          (incr size)
+          (when (>= size (idx-dim ratings 0))
+            (==> this resize (+ 10000 (idx-dim ratings 0))))
+          )
+        (incr i))
+      (incr j))
+    ()))
+
+(defmethod lclass-meter sprint-info ()
+  (sprintf "%10.6f %6.2f  %6.2f  %6.2f"
+	   (/ total-energy size) 
+	   (/ (* 100 total-correct) size)
+	   (/ (* 100 total-error) size)
+	   (/ (* 100 total-punt) size)))
+
+;; doesn't really do anything
+(defmethod lclass-meter update  ()  ())
+
+;; that should record the current global performance
+;; and clear the meter
+(defmethod lclass-meter update-cycle  ()  ())
+
+;; not working yet
+(defmethod lclass-meter punting-curve ()
+  (when ~sorted
+    (fill-with-index sorted-pointers)
+    (let ((z (matrix (idx-dim sorted-pointers 0))))
+      (idx-copy confidences z)
+      (nr-sort2-down z sorted-pointers)
+      (setq sorted t)))
+  (printf "punting-curve not complete yet\n")  )
+
+(defmethod lclass-meter raw-perf ()
+  (list (/ total-correct size) (/ total-punt size) (/ total-error size)))
+
+;; return a list with the indices of a the mistaken patterns
+(defmethod lclass-meter mug-book ()
+  (let ((r ()))
+    (for (i 0 (1- size))
+	 (if (= -1 (ratings i)) (setq r (cons (pattern-indices i ()) r))))
+    (reverse r)))
+
+(defmethod lclass-meter confusion-matrix ()
+  (let* ((actual (narrow actual-answers 0 size 0))
+         (desired (narrow desired-answers 0 size 0))
+         (nbcl (+ 1 (let*((m (matrix)))(idx-m1max desired m)(m))))
+         (cf (matrix nbcl nbcl)))
+    (idx-bloop ((act actual)(des desired))
+               (cf (act)(des) (+ (cf (act)(des)) 1)))
+    cf))
+    
+
+(defmethod lclass-meter average-energy () (/ total-energy size))
+
+(defmethod lclass-meter simple-display ()
+  (printf "[%6d] mse=%14.8f error-rate=%6.2f\n"
+	  size (/ total-energy size) (/ (* 100 total-error) size)))
+
+(defmethod lclass-meter get-info ()
+  (list
+   (/ total-energy size) 
+   (/ (* 100 total-correct) size)
+   (/ (* 100 total-error) size)
+   (/ (* 100 total-punt) size)))
+
+(defmethod lclass-meter save (s)
+  (write-binary s
+		(list
+		 energy confidence size
+		 total-correct total-error total-punt total-energy
+		 (submatrix pattern-indices (list 0 (1- size)) ())
+		 (submatrix actual-answers (list 0 (1- size)))
+		 (submatrix desired-answers (list 0 (1- size)))
+		 (submatrix ratings (list 0 (1- size)))
+		 (submatrix confidences (list 0 (1- size))))))
+
+(defmethod lclass-meter load (s)
+  (let ((l (read-binary s))
+	(symbs '(energy confidence size  total-correct total-error
+			total-punt total-energy pattern-indices actual-answers
+			desired-answers ratings confidences)))
+    (each ((s symbs) (v l)) (set s v))
+    (setq sorted-pointers (matrix size))
+    (setq sorted ())))
+
+(defmethod lclass-meter mistakes (a b)
+  (for (i a b)
+       (when (<> (actual-answers i) (desired-answers i))
+	     (printf "%6d [%s] [%s]\n"
+		     i (chr (actual-answers i)) (chr (desired-answers i))))))
+
+;; compute performance using cost matrix <cm>
+;; <cm> is an NxN matrix (N> than number of classes) with 1 where
+;; a mistake counts and 0 were it does not count
+;; row index is desired class, column index is actual output.
+(defmethod lclass-meter perf (cm)
+  (let ((cost 0))
+    (for (i 0 (1- size))
+      (incr cost (cm (desired-answers i) (actual-answers i))))
+    (/ cost size)))
+

@@ -1,0 +1,136 @@
+#? File "tdnn.sn"
+;;
+;; Build a TDNN for speech recognition HMMs
+;;
+
+(mload "seq3-modules")
+(mload "libnets")
+
+(printf "[%s]\n" file-being-loaded)
+
+#? (build-ftdnn <apool> <params> <freqs> <max-seq-len> <layers-infos>)
+;; Build a Time-Delay Neural Network for data such as spectral sequences
+;; in which the features have a topology, choosing the connection tables
+;; to obtain local connections in feature space (as specified by 
+;; kernel size and stride for the frequency axis, for each of these layers).
+;; The input to the net is assumed to be Fx1xT where F is for example
+;; the number of frequency channels (spectral representation) and T is the 
+;; length of the sequence. The arguments are the following:
+;;.VP
+;; - <apool> is a Pool on which to allocate dynamic memory for the internal states and layers.
+;; - <params> is a idx1-ddparam on which to allocate parameters for the layers.
+;; - <freqs> is the number of input frequency channels.
+;; - <max-seq-len> = maximum sequence length.
+;; - <layers-infos> is a list whose elements are lists with the following structure:
+;;   - <layer-type> is a symbol giving the name of an idx3-module subclass
+;;     (e.g., c-layer, f-layer, s-layer, m-layer, etc...)
+;;   For a c-layer or a f-layer, the following remaining arguments are expected in the list:
+;;    - <freqs-kernel> = size of frequency "kernels" (= width of local freq. windows)
+;;    - <freqs-stride> = step size which separates the successive frequency windows
+;;    - <n-h-per-freq> is the number of hidden units per frequency channel
+;;    - <t-kernel> = size of the temporal kernel
+;;   For a s-layer, the following remaining arguments are expected in the list:
+;;    - <t-subsampling-rate> = temporal subsampling rate
+;;   For a m-layer, the following remaining arguments are expected in the list:
+;;    - <t-window-size> = size of temporal window used for smoothing
+(de build-ftdnn (apool prm freqs max-seq-len layers-infos)
+    ((-obj- (Pool)) apool)
+    (-int- freqs max-seq-len)
+    ((-obj- (idx1-ddparam)) prm)
+    (let*((n-layers (length layers-infos))
+          (layers (gptr-matrix n-layers))
+          (sizes (int-matrix n-layers 3))
+          (n-prev-freqs freqs)
+          (seq-len max-seq-len)
+          (ll -1)
+          (layers-list
+           (all ((layer-info layers-infos))
+             (incr ll)
+             (selectq (car layer-info)
+               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; fully connected and convolutional layer ;;;
+               ((f-layer c-layer)
+                (let(((freqs-kernel freqs-stride n-h-per-freq t-kernel)(cdr layer-info)))
+                  (let*((this-n-freqs (/ (- n-prev-freqs 
+                                            (- freqs-kernel freqs-stride))
+                                         freqs-stride))
+                        (n-h (* n-h-per-freq this-n-freqs))
+                        (conx-table 
+                         (in-pool apool (int-matrix (* n-h freqs-kernel) 2))))
+                    ;; check that strides and kernel sizes are consistent
+                    (when (<> this-n-freqs (int this-n-freqs))
+                      (printf "The following constraint is not satisfied at layer %d\n" l)
+                      (printf "<n-prev-freqs> - (<freqs-kernel> - <freqs-stride>)\n")
+                      (printf "should be a multiple of <freqs-stride>.\n")
+                      (error "building a tdnn"))
+                    ;; fill the connection table
+                    (let*((hif 0)
+                          (c 0)
+                          (s 0))
+                      (for (f 1 this-n-freqs)
+                        (for (i 1 n-h-per-freq)
+                          (let*((ss s))
+                            (for (k 1 freqs-kernel)
+                              (conx-table c 0 ss)
+                              (conx-table c 1 hif)
+                              (incr ss)
+                              (incr c)
+                              )
+                            (incr hif)
+                            )
+                          )
+                        (incr s freqs-stride)
+                        )
+                      )
+                    (setq seq-len (- seq-len (- t-kernel 1)))
+                    (when (< seq-len 1)
+                      (error "too small max-seq-len building a tdnn"))
+                    ;; build the module itself and return it
+                    (prog1
+                        (if (= (car layer-info) 'c-layer)
+                            (new-c-layer-on-pool apool
+                                 1 t-kernel 1 1 conx-table 
+                                 (* n-h-per-freq this-n-freqs) 1
+                                 seq-len (new-idx3-squasher-on-pool apool) prm)
+                          (when (<> t-kernel 1)
+                            (error "f-layer must have t-kernel = 1"))
+                          (new-f-layer-on-pool apool prev-n-h n-h 1 seq-len 
+                                               (new-idx3-squasher-on-pool apool) prm))
+                      (sizes l 0 n-h)
+                      (sizes l 1 1)
+                      (sizes l 2 seq-len)
+                      (setq n-prev-freqs this-n-freqs)
+                      (setq prev-n-h n-h)))))
+               (s-layer
+                (let*((t-subsampling-rate (cadr layer-info))
+                      (new-len (/ seq-len t-subsampling-rate)))
+                  (when (<> new-len (int new-len))
+                    (printf "The length constraint is not satisfied at subsampling layer %d\n" l)
+                    (error "building a tdnn"))
+                  (sizes ll 0 prev-n-h)
+                  (sizes ll 1 1)
+                  (sizes ll 2 new-len)
+                  (setq seq-len new-len)
+                  (new-s-layer-in-pool apool 1 t-subsampling-rate prev-n-h 
+                                       1 seq-len (new-idx3-squasher-in-pool apool) prm)))
+               (t
+                (printf "layer type = %l\n" (car layer-info))
+                (error "unknown layer type!\n"))
+               )
+             )
+           )
+          )
+      ;; convert the list to vector of pointers:
+      (setq ll 0)
+      (each ((layer layers-list))
+        (layers ll (gptr layer))
+        (incr ll))
+
+      ;; build the actual network:
+      (new seq3-modules apool layers (narrow sizes 0 (- n-layers 1) 0))
+      )
+    )
+
+
+;; This replicable tdnn is trained with a-priori chosen target codes.
+;; - <target-codes> is a (n_classes x n_out) matrix of n_classes target codes of size nout
+;; for the desired outputs of the network associated to each one of the classes.

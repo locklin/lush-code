@@ -1,0 +1,2562 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;  Datatabse Browser objects
+;;;
+;;;  Copyright (C) 1993 Neuristique SA
+;;;  $Id: o-dbrowser.lsh,v 0.1 2001-10-31 17:29:58 profshadoko Exp $
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? *** Browsers.
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; c-browser
+;; Browser for tables
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass c-browser windowObject
+  tdbr ;; this
+  readline
+  card ;; number of lines
+  mb   ;; menu bar
+  tb   ;; table browser
+  hsb  ;; horizontal scrollbar
+  vsb  ;; vertical scrollbar
+  cr   ;; choice requester
+  wr   ;; warning requester
+  ftr  ;; format requester
+  dd   ;; dataheader
+  opts ;; options
+  )
+
+
+(defmethod c-browser c-browser ((table n) &optional op )
+  (setq tdbr this)
+  (setq tb table)
+  (setq opts op)
+  (==> this make-readline)
+
+  (setq wr (new warningrequester this))
+  (setq cr (new choicerequester this))
+  (when ~mb
+    (setq mb (new row))
+    (==> mb insert
+	 (new menu (ml "View" "Vue")
+	      (ml "Copy"    "Copier")
+	      (lambda (x) (==> tdbr copy-action))
+	      (ml "Export..." "Exporter...")
+	      (lambda (x) (==> tdbr export-action))
+	      (ml "Close"    "Fermer")
+	      (lambda (x) (==> tdbr delete))
+	      ) ) )
+  (setq vsb (new vscrollbar (or card 0)
+		 (lambda(c) (==> :tdbr:tb scroll)) ))
+  (==> vsb setdrag  (lambda(c) (==> :tdbr:tb scroll)))
+  (setq hsb (new hscrollbar (length :tb:cwidth)
+		 (lambda(c) (==> :tdbr:tb scroll)) ))
+  (==> hsb setdrag  (lambda(c) (==> :tdbr:tb scroll)))
+  (setq :tb:hscroll hsb)
+  (setq :tb:vscroll vsb)
+  (when ~:tb:nump (==> tb setflag 'nump t))
+  (==> tb setflag 'selectcasep t)
+  ;; create the window
+  (let (((x y w h) :tb:rect))
+    (==> this windowObject 0 0 (+ w 30) (+ h 30)
+	 (or (alist-get 'title opts) "TL Browser")
+	 mb vsb tb hsb
+	 ) )
+  ;; adjust the components requiring some gdriver info
+  (when (assoc 'rowtitles opts) (==> tb setflag 'nump (alist-get 'rowtitles opts))
+	(let (((x y w h) :tb:rect))
+	  (when :tb:window (let ((window :tb:window)) (font-12b)))
+	  (==> tb resize (+ w (- (:tb:nump) :tb:pnum)) h)
+	  ) )
+  ()
+  )
+
+
+;; Class c-browser is a slave of its table. Other subclasses are not.
+(defmethod c-browser make-readline ()
+  (when ~readline (setq readline (eval `(lambda l (apply (scope ,tb getline) l)))))
+  )
+
+
+(defmethod c-browser manage-geometry()
+  (let (((x y w h) rect)
+	((xm ym wm hm) :mb:rect)
+	((xt yt wt ht) :tb:rect)
+	((xh yh wh hh) :hsb:rect)
+	((xv yv wv hv) :vsb:rect)
+	(pnum :tb:pnum)
+	(ptitle :tb:pheight) )
+    (==> mb geometry x y w hm)
+    (==> tb geometry x (+ y hm) (- w wv) (- h (+ hm hh)))
+    (==> hsb geometry (+ x pnum) (+ y h (- hh)) (- w (+ wv pnum)) hh)
+    (==> vsb geometry (+ x w (- wv)) (+ y hm ptitle) wv (- h (+ ptitle hh hm)))
+    ) )
+
+(defmethod c-browser mouse-up (x1 y1 x2 y2)
+  (if (null (and (point-in-rect x1 y1 :tb:rect) (point-in-rect x2 y2 :tb:rect)))
+      (==> this (windowobject . mouse-up) x1 y1 x2 y2)
+    (progn
+      (==> tb mouse-up x1 y1 x2 y2)
+      (let* ((c (==> this getcell)))
+	(when c
+	  ((gdriver-feature 'text-to-clip 'loose) c)
+	  ) ) ) ) )
+
+(defmethod c-browser getcell ()
+  (when (> card 0)
+    (let* ((n (max 0 (min (or :tb:selline card) (1- card))))
+	   (m (or :tb:selpos 0))
+	   )
+      (when (<> (list :tb:selline :tb:selpos) (list n m))
+	(==> tb select n m)
+	)
+      (nth m (readline n ""))
+      ) ) )
+
+(defmethod c-browser export-action ()
+  (when ~ftr
+    (setq ftr (new dbformatrequester-9601 this
+		   ""
+		   (cons "-" :tb:title)
+		   ()
+		   (range 1 (length :tb:title))
+		   )) )
+  (let* ((msg (ml "Export into (.txt):" "Exporter vers (.txt):")))
+    (==> ftr setfreqparm msg 'ask-oldfile (lambda (s) (regex-match ".*\\.txt" s)))
+    (==> ftr setmsg msg)
+    (when (==> ftr popuplock)
+      (let (((fn cs ls fl) (==> ftr getdata)))
+	(==> this export fn cs ls (mapcar 1- fl))
+	) ) ) )
+
+(defmethod c-browser export (fd &optional cs ls fields)
+  (let* ((lock (new requesterlock wr)))
+    (==> wr popup (ml "Exporting..." "En cours d'exportation..."))
+    ;;; define separators
+    (when ~cs (setq cs "\t"))
+    (when ~ls (setq ls "\n"))
+    ;;; define file descriptors
+    (let* ((pc (lambda (s) (printf "%s%s" cs s)))
+	   (pl (lambda (l)
+		 (when l
+		       (printf  "%s" (car l))
+		       (mapcar pc (cdr l))
+		       (printf "%s" ls)
+		       ) ))
+	   (fs (if (= fields t)
+		   progn
+		 (when (stringp (car fields))
+		   (setq fields (all ((x fields)) (lrank x :tb:title))) )
+		 (lambda (ld)
+		   (all ((i fields)) (if (>= i 0) (nth i ld) ""))
+		   ) ))
+	   (l ())
+	   )
+      (writing fd
+	       (pl (fs :tb:title))
+	       (for (n 0 (1- card))
+		    (pl (fs (readline n "")))
+		    )
+	       ) ) ) )
+
+(defmethod c-browser copy-action ()
+  (==> this copy)
+  )
+
+(defmethod c-browser copy (&optional cs ls (fields t))
+  (when ~cs (setq cs "\t"))
+  (when ~ls (setq ls "\n"))
+  (let* ((pl (lambda (l)
+	       (when l
+		 (apply concat (flatten (list (car l)
+					      (all ((s (cdr l))) (concat cs s))
+					      "\n"
+					      ))) ) ))
+	 (fs (if (= fields t)
+		 progn
+	       (when (stringp (car fields))
+		 (setq fields (all ((x fields)) (lrank x :tb:title))) )
+	       (lambda (ld)
+		 (all ((i fields)) (if (>= i 0) (nth i ld) ""))
+		 ) ))
+	 )
+    ((gdriver-feature 'text-to-clip 'loose)
+     (apply concat+ (mapfor (n 0 (1- card))
+		      (pl (fs (readline n ""))) )) )
+    ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; c-dhbrowser
+;; Browser for datahandler
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass c-dhbrowser c-browser
+  dh   ;; datahandler
+  gm   ;; datamenu
+  mgr  ;; multi-graph requester
+  msdr ;; multi-shift-dependancy requester
+  )
+
+
+;; op is an assoc.
+;; keys are symbols:
+;; - numcol
+;; - title
+;; - titles
+;; - widths
+;; - rowtitles
+;; - handler
+
+(defmethod c-dhbrowser c-dhbrowser (d &optional op)
+  (setq dh d)
+  (setq dd (==> dh dataheader op))
+  (setq card :dh:card)
+  (==> this (c-dhbrowser . make-readline) dh dd)
+
+  (setq opts op)
+  (let* ((ncol (==> dd numcol))
+	 (titles (alist-get 'titles opts))
+	 (widths (alist-get 'widths opts))
+	 (dtitles (==> dd titles))
+	 (dwidths (==> dd widths))
+	 )
+    (setq titles (mapfor (i 0 (1- ncol))
+		   (or (nth i titles) (nth i dtitles) (sprintf "X%d" i)) ))
+    (setq widths (mapfor (i 0 (1- ncol))
+		   (or (nth i widths) (nth i dwidths) 10) ))
+    (alist-add 'titles titles opts)
+    (alist-add 'widths widths opts)
+    ;; create the table
+    (setq tb (new c-table
+		  500 300
+		  widths
+		  titles
+		  (eval `(lambda l (apply (scope ,this readline) l)))
+		  ) )
+    ;; get the look and feel of a good c-browser fellow
+    (==> this c-browser (list tb card) opts)
+    ;; some more menu
+    (when ~(and (assoc 'processmenu opts) ~(alist-get 'processmenu opts))
+	  (==> this make-datamenu)
+	  (==> mb insert gm)
+	  )
+    ()
+    ) )
+
+
+(defmethod c-dhbrowser make-readline (&optional dha dhe)
+  (when ~dha (setq dha dh))
+  (when ~dhe (setq dhe dd))
+  (let* ((cvt-to-str (==> dhe make-cvt-to-str)))
+    (setq readline (eval `(lambda (n &optional nilval)
+			    (let* ((l (when (>= n 0) (==> ,dha read n))))
+			      (when (consp l)
+				(all ((x l)(cvt (quote ,cvt-to-str))) (cvt x nilval))
+				) ) ))) ) )
+
+
+(defmethod c-dhbrowser make-datamenu ()
+  (setq gm (eval `(new menu (ml "Processing" "Traitement")
+		       (ml "Curves..." "Courbes...")
+		       (lambda (c)
+			 (==> tdbr mgraph-action)
+			 )
+		       (ml "Statistics" "Statistiques")
+		       (lambda (c)
+			 (==> tdbr stat-action) )
+		       (ml "Correlations" "Correlations")
+		       (lambda (c)
+			 (==> tdbr corr-action) )
+		       ;; temporary inhibition for Lush
+		       ;;  (ml "Shift dependencies" "D\+ipendances glissantes")
+		       ;; (lambda (c)
+		       ;;   (==> tdbr shiftdep-action) )
+		       )
+		 )) )
+
+
+(defmethod c-dhbrowser getcell ()
+  (when (> card 0)
+    (let* ((n (max 0 (min (or :tb:selline card) (1- card))))
+	   (m (or :tb:selpos 0))
+	   )
+      (when (<> (list :tb:selline :tb:selpos) (list n m))
+	(==> tb select n m)
+	)
+      (nth m (readline n ""))
+      ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; menu actions ;;;;;;;;;;;;;;;;;;;;
+
+
+
+(defmethod c-dhbrowser mgraph-action ()
+
+  (on-error
+      (when (and tdbr :tdbr:cr) (==> :tdbr:cr popuphard (errname)))
+
+    (when ~mgr (setq mgr (new dhmgraph-requester dh :tb:title)))
+    (==> mgr popuplock)
+    ) )
+
+
+(defmethod c-dhbrowser shiftdep-action ()
+  (on-error
+      (when (and tdbr :tdbr:cr) (==> :tdbr:cr popuphard (errname)))
+
+   (when ~msdr (setq msdr (new dhshiftdep-requester dh :tb:title)))
+   (==> msdr popuplock)
+   ) )
+
+(defmethod c-dhbrowser stat-action ()
+
+  (on-error
+      (when (and tdbr :tdbr:cr) (==> :tdbr:cr popuphard (errname)))
+
+   (let ((nvar (length :this:tb:title))
+	 ;; temporary inhibition for Lush.f
+	 ;; (a    (array 3 (length :tb:title)))
+	 (a    (array 2 (length :tb:title)))
+	 )
+     ;; computation
+     (let* ((m  (==> dh getmatrix () t)) ;; copy of data
+	    (mc (matrix nvar nvar)) ;; covariance (correlation)
+	    (vm (matrix nvar))      ;; mean
+	    (vd (matrix nvar))      ;; deviation
+	    (md (matrix card nvar)) ;; blinking data
+	    )
+       ;; get a matrix from the datahandler
+       
+       ;; mean and sdev
+       (xy-stats m 0 vm mc)
+       (a 0 () (vm ()))
+       (msqrt (diagonal mc) vd)
+       (a 1 () (vd ()))
+       ;; WARNING: m is physicaly standardized
+       (m-m m (mrep-dim vm 0 card) m)
+       (m/m m (mrep-dim vd 0 card) m t)
+       (for (j 0 (1- nvar))
+	 (when (or (nanp (vd j)) (= 0 (vd j))) (m () j (nan))) )
+       ;; multi-correlation
+       (xy-stats m 1e-3 vm mc)
+       (for (j 0 (1- nvar))
+	 (copy-matrix m md)
+	 (md () j (nan))
+	 (for (i 0 (1- card))
+	   (xy-compl (submatrix md i ()) vm mc)
+	   )
+	 ;; error WARNING: computed on foot
+	 (m-m (submatrix m () j) (submatrix md () j) (submatrix md () j))
+	 ;; residual variance
+	 (when (and (>= (bound a 1) 2) (< 0 (xy-count md j)))
+	   (a 2 j (sqrt (max 0 (- 1 (xy-var md j))))))
+	 )
+       )
+     (new c-abrowser a
+	  (list (cons 'rowtitles 
+		      (list (ml "Mean" "Moyenne")
+			    (ml "Standard Deviation" "Ecart Type")
+			    ;; temporary inhibition for Lush.f
+			    ;; (ml "Multi-Correlation" "Multi-Corr\+ilation")
+			    ) )
+		(cons 'titles :tb:title)
+		(cons 'title (ml "Statistiques" "Statistiques"))
+		(cons 'processmenu ())
+		(cons 'widths :tb:cwidth)
+		) )
+     ) ) )
+
+
+(defmethod c-dhbrowser corr-action ()
+  
+  (on-error
+      (when (and tdbr :tdbr:cr) (==> :tdbr:cr popuphard (errname)))
+   
+   (let* ((nvar (length :this:tb:title)))
+     (let ((m  (==> dh getmatrix () t))
+	   (mc (matrix nvar nvar))
+	   (vm (matrix nvar))
+	   )
+       (xy-stdz m)
+       (mc () () (nan))
+       (xy-stats m 1e-10 vm mc)
+       (new c-abrowser mc
+	    (list (cons 'rowtitles   (append :tb:title ()))
+		  (cons 'titles      (append :tb:title ()))
+		  (cons 'title       (ml "Correlations" "Corr\+ilations"))
+		  (cons 'processmenu ())
+		  (cons 'widths      :tb:cwidth)
+		  ) )
+       ) ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; c-abrowser
+;; Browser for arrays
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass c-abrowser c-dhbrowser)
+
+
+(defmethod c-abrowser c-abrowser (a &optional op dhead &rest re)
+  (setq op (alist-add 'check t op))
+  (setq op (alist-add 'read t op))
+  (setq op (alist-add 'numcol(1+ (bound a (bound a 0))) op))
+  (let* ((dh (new (if (= 1 (bound a 0)) arraydatahandler array2datahandler)
+		  a op
+		  )))
+;    (new c-dhbrowser dh op)
+    (==> this c-dhbrowser dh op)
+    ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; c-dbrowser
+;; Abstract class
+;; Browser for relational database datahandlers
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? ** c-dbrowser
+;; Class dbrowser is an abstract class which implements worksheets
+;; for browsing databases through a datahandler provided by the user
+;; and using a c-table for displaying the data.
+;;
+;; Class dbrowser provides several general features of database worksheets.
+;;.IP
+;; datahandler refreshement,
+;;.IP
+;; methods for displaying data,
+;;.IP
+;; methods for exporting data,
+;;.IP
+;; interface with a grapher.
+
+(defclass c-dbrowser c-dhbrowser
+  rr   ;; refresh requester
+  ex   ;; number of exhausted; () means fully exhausted
+  ot   ;; ogretask
+  )
+
+
+#? (new c-dbrowser <d>)
+;; Creates a new instance of <c-dbrowser> using datahandler <d>.
+
+(defmethod c-dbrowser c-dbrowser (d &rest re)
+  (setq tdbr this)
+  (setq dh d)
+  (setq dd (==> dh dataheader))
+  (==> this make-readline dh)
+
+  (setq wr (new warningrequester this))
+  (setq cr (new choicerequester this))
+
+    (setq vsb (new vscrollbar (or card 0)
+		   (lambda(c) (==> :tdbr:tb scroll)) ))
+    (==> vsb setdrag  (lambda(c) (==> :tdbr:tb scroll)))
+    (setq hsb (new hscrollbar (==> dd numcol)
+		   (lambda(c) (==> :tdbr:tb scroll)) ))
+    (==> hsb setdrag  (lambda(c) (==> :tdbr:tb scroll)))
+    (setq mb (new row))
+    (==> this make-datamenu)
+    (setq tb (new c-table
+		  500 300
+		  (mapcar 1+ (==> dd widths))
+		  (==> dd titles)
+		  (eval `(lambda (n) ((scope ,this readline) n)))
+		  hsb vsb ))
+    (==> tb setflag 'nump t)
+    (==> tb setflag 'selectcasep t)
+    (setq browserlist (cons this browserlist))
+
+    (==> this bgexhaust)
+
+    )
+
+
+(defmethod c-dbrowser -destructor ()
+  ;; stop background loading
+  (==> this exhausted t)
+  ;; break explicitely datahandler unique link thus enforcing cursor freeing
+  (setq dh ())
+  ;; break explicitely circular links
+  (setq tb () vsb () hsb ())
+  ;; move this outside the browserlist
+  (setq browserlist (flatten (mapcar (lambda (x) (when (<> x this) x)) browserlist)))
+  )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; events interface ;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-dbrowser refreshrequest ()
+  (when ~rr
+	(setq
+	 rr
+	 (new requester this
+	      (new column
+		   (new string (ml "Refresh requested" "Demande de rafraichissement"))
+		   (new row
+			(new stdbutton (ml "Refresh" "Rafraichir")
+			     (lambda l
+			       (==> thisrequester popdown)
+			       (==> tdbr refresh)
+			       ) )
+			(new stdbutton (ml " Close " " Fermer ")
+			     (lambda l (==> tdbr delete))
+			     ) ) ) ) ) )
+  (==> dh disable)
+  (==> rr popup )
+  )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; low-level methods ;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-dbrowser refresh args
+  (apply==> dh 'rawrefresh args)
+  (let* ((lock (new requesterlock wr)))
+    (==> wr popup (ml "Scanning database..." "Examen de la base de donn\+ies..."))
+    (==> this bgexhaust)
+    )
+  (==> this redisplay)
+  )
+
+
+(defmethod c-dbrowser bgexhaust (&optional x)
+  (setq ex :dh:ex)
+  (setq card :dh:card)
+  (let* ((batchsize 200)
+	 )
+    (==> this exhaust
+	 (max batchsize
+	      (or x 0)
+	      (or (and tb :tb:selline ex (- (1+ :tb:selline) ex)) 0)
+	      (or (and tb :tb:lastline ex (- (1+ :tb:lastline) ex)) 0)
+	      ) )
+    (when ex
+	  (==> :ogre-task addtask
+	       (setq ot
+		     (eval `(lambda ()
+			      (when ,this (= , batchsize (==> ,this exhaust ,batchsize)))
+			      )) ) )
+	  ) ) )
+
+
+(defmethod c-dbrowser exhaust (&optional n)
+  (if ~ex
+      0
+    (let* ((lock ())
+	   )
+      (when (or ~n (> n 1000))
+	    (setq lock (new requesterlock wr))
+	    (==> wr popup (ml "Scanning database..." "Examen de la base de donn\+ies..."))
+	    )
+      (setq n (==> dh exhaust n))
+      (==> this redisplay)
+      )
+    n
+    ) )
+
+
+(defmethod c-dbrowser exhausted (&optional enforce)
+  (when (or enforce (and ex ~(setq ex :dh:ex)))
+    (setq ex ())                  ;; enforce if not yet ()
+    (when ot
+      (let* ((oo ot))
+	(setq ot ())                ;; set <ot> to null
+	(when :ogre-task
+	  (==> :ogre-task remtask oo) ;; before asking ogre-task to zap it
+	  ) ) ) ) )
+
+
+(defmethod c-dbrowser export l
+  (==> this exhaust)
+  (apply==> this '(c-browser . export) l)
+  )
+
+
+(defmethod c-dbrowser redisplay (&optional n m)
+  (==> this exhausted)
+  (when (<> (+ (or :vsb:knobv 1) (- :vsb:maxvalue :vsb:minvalue)) 
+	    (setq card :dh:card) )
+	(let ((visline :tb:visline))
+	  (==> vsb setrange 0 (+ card (if visline 1 -1)) visline) ) )
+  (when (numberp n)
+	(when (> n 0) (setq n (min n (max 0 (1- card)))))
+	(when (< n 0) (setq n (max 0 (+ card n))))
+	(==> tb setpos n (or m :tb:curpos))
+	)
+  (when (and :tb:selline (>= :tb:selline card))
+	(setq n t)
+	(==> tb select (max 0 (1- card)) :tb:selpos)
+	)
+  (when thiswindowobject (==> this expose))
+  (when (or ~ex n m) (==> tb refresh))
+  )
+
+
+;;; method catch-line
+;;; if n is in the current display, returns the empty list
+;;; if n is negative, do the job with (- card n) instead of n
+;;; if n is outisde the current display, returns the upper position of the display in which
+;;;    n is as near as possible of the center of the display
+
+(defmethod c-dbrowser catch-line (&optional n)
+  (cond (~n      (setq n (or :tb:selline :tb:curline)))
+	((< n 0) (setq n (+ card n)))
+	)
+  (when (and n (or (< n :tb:curline) (>= n (+ :tb:curline :tb:visline))))
+	(- n (min (/ :tb:visline 2) n))
+	) ) )
+
+(defmethod c-dbrowser stat-action l
+  (==> this exhaust)
+  (apply==> this '(c-dhbrowser . stat-action) l)
+  )
+
+(defmethod c-dbrowser corr-action l
+  (==> this exhaust)
+  (apply==> this '(c-dhbrowser . corr-action) l)
+  )
+
+(defmethod c-dbrowser error (&optional msg)
+  (when this
+	(==> this exhausted t)
+	;;  (==> this (windowobject . delete))
+	;;  (when main (==> main error (or msg (sql-errm))))
+	) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; c-rowdbrowser
+;; read-only c-dbrowser
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+#? ** c-rodbrowser
+;; Instances of class c-rodbrowser are read-only database browsers.
+
+
+(defclass c-rodbrowser c-dbrowser
+  )
+
+
+#? (new c-rodbrowser <txt> [<a>])
+;; Creates a new instance of <c-rodbrowser>.
+;; Argument <txt> is either a select SQL statement or a prepared SQL query.
+;; Optional argument a is a list of attributes for question mark completion.
+
+(defmethod  c-rodbrowser c-rodbrowser (txt &optional a)
+  (on-error
+      (when tdbr (==> tdbr error))
+
+   (setq tdbr this)
+   (==> this c-dbrowser (new sqldatahandler txt a))
+   (==> mb insert
+	(new menu (ml "View" "Vue")
+	     (ml "Refresh" "Rafraichir")
+	     (lambda (x) (==> tdbr refresh))
+	     (ml "Copy"    "Copier")
+	     (lambda (x) (==> tdbr copy-action))
+	     (ml "Export..." "Exporter...")
+	     (lambda (x) (==> tdbr export-action))
+	     (ml "Close"    "Fermer")
+	     (lambda (x) (==> tdbr delete))
+	     ) )
+   (==> mb insert gm)
+   (==> this windowObject 0 0 600 400
+	(let ((table (sqlp-select-to-table txt)))
+	  (if (and table (not (index "where" (downcase txt))))
+	      (sprintf (ml "Table: `%s'" "Table:  `%s'") table)
+	    (sprintf (ml "Query: `%s'" "Requ\+jte: '%s`")
+		     (let ((txt (regex-subst "[ \n\t\r]+" " " txt)))
+		       (if (> (len txt) 30) (concat (left txt 30) "...") txt) ) ) ) )
+	vsb hsb tb mb )
+   (setq tdbr this)
+   (when (> card 0) (==> tb select 0 0))
+   (==> this repair-damaged)
+   ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; general-purpose methods ;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-rodbrowser manage-geometry()
+  (let (((x y w h) rect)
+	((xm ym wm hm) :mb:rect)
+	((xt yt wt ht) :tb:rect)
+	((xh yh wh hh) :hsb:rect)
+	((xv yv wv hv) :vsb:rect)
+	(pnum :tb:pnum)
+	(ptitle :tb:pheight) )
+    (==> mb geometry x y w hm)
+    (==> tb geometry x (+ y hm) (- w wv) (- h (+ hm hh)))
+    (==> hsb geometry (+ x pnum) (+ y h (- hh)) (- w (+ wv pnum)) hh)
+    (==> vsb geometry (+ x w (- wv)) (+ y hm ptitle) wv (- h (+ ptitle hh hm)))
+    ) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; c-wadbrowser
+;; write append c-dbrowser
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? ** c-wadbrowser
+;; Instances of class c-wadbrowser are editable browsers.
+;;
+;; When the user wants to edit the database, he press button <edit>
+;; or activates item edit of menu <table>. Then the table is LOCKED until the
+;; browser ends or the user leaves this mode either by saving, restoring or refreshing.
+;;.IP
+;; While in edit mode the currently selected cell is displayed into an editstring.
+;; The user can change the value of the currently selected cell.
+;; Menu line provides commands such as delete and restore.
+;;
+;; All such changes are stored in a buffer. They are saved when a button save is pressed.
+;; Instead of changing these changes, it is possible to discard them by using item
+;; restore of menu file.
+
+(defclass c-wadbrowser c-dbrowser
+  vm   ;; viewmenu
+  lm   ;; linemenu
+  es   ;; edit string
+  eb   ;; edit/save button
+  esc  ;; editstring container
+  st   ;; state (() read-olny, 0 promotion, 1 edit not changed, 2 edit changed)
+  al   ;; assoc list of lists (symbol to text, text to symbol, symbol to lambda)
+  )
+
+
+#? (new c-wadbrowser <txt> [<a>])
+;; Creates a new instance of <c-wadbrowser>.
+;; Argument <txt> is either a select SQL statement or a prepared SQL query.
+;; Optional argument a is a list of attributes for question mark completion.
+;;
+;; The undelying structure used to handle data is an instance of class wadatahandler.
+;;
+;; WARNING:
+;; Due to SQL restrictions, the select statement should not refer to several tables.
+;;
+;;.SEE wadatahandler
+
+(defmethod c-wadbrowser c-wadbrowser (txt &optional a)
+  (on-error
+      (when tdbr (==> tdbr error))
+
+   (setq tdbr this)
+
+   (let* ((lst `(
+		 (edit     ,(ml "Edit"         "Editer"                )
+			   ,(lambda () (==> this edit))
+			   )
+		 (keep     ,(ml "Keep Editing" "Continuer l'\+idition" )
+			   ,(lambda () ())
+			   )
+		 (quit     ,(ml "Close"        "Fermer"                )
+			   ,(lambda () (==> this delete t))
+			   )
+		 (refresh  ,(ml "Refresh"      "Rafraichir"            )
+			   ,(lambda () (==> this refresh))
+			   )
+		 (restore  ,(ml "Restore"      "Restaurer"             )
+			   ,(lambda () (==> this restore))
+			   )
+		 (save     ,(ml "Save"         "Enregistrer"           )
+			   ,(lambda () (==> this save))
+			   )
+		 ))
+	  )
+     (setq al (list
+	       (all ((a lst)) (cons (car  a) (cadr  a)))
+	       (all ((a lst)) (cons (cadr a) (car   a)))
+	       (all ((a lst)) (cons (car  a) (caddr a)))
+	       ) )
+     )
+
+   ;;; main creation
+   (==> this c-dbrowser (new indexdatahandler (new sqlwadatahandler txt t a)))
+
+   (==> mb insert
+	(setq vm (new menu (ml "View" "Vue")
+		      (alist-get 'edit    (car al))
+		      (lambda (x) (==> tdbr edit-action))
+		      (alist-get 'refresh (car al))
+		      (lambda (x) (==> tdbr refresh-action))
+		      (alist-get 'restore (car al))
+		      (lambda (x) (==> tdbr restore-action))
+		      (alist-get 'save    (car al))
+		      (lambda (x) (==> tdbr save-action))
+		      (ml "Copy"    "Copier")
+		      (lambda (x) (==> tdbr copy-action))
+		      (ml "Export" "Exporter")
+		      (lambda (x) (==> tdbr export-action))
+		      (ml "Import" "Importer")
+		      (lambda (x) (==> tdbr import-action))
+		      (alist-get 'quit    (car al))
+		      (lambda (x) (==> tdbr delete))
+		      )) )
+   (==> mb insert
+	(setq lm (new menu (ml "Line" "Ligne")
+		      (ml "Append" "Ajouter")
+		      (lambda (x) (==> tdbr appendline))
+		      (ml "Restore" "Restaurer")
+		      (lambda (x) (==> tdbr restoreline))
+		      (ml "Delete" "Suprimer")
+		      (lambda (x) (==> tdbr deleteline))
+		      )) )
+   (==> mb insert gm)
+   (setq esc (new row
+		  (new c-iconbutton 'checked (lambda (x) (==> tdbr writecell)))
+		  (new c-iconbutton 'crossed (lambda (x) (==> tdbr editcell)))
+		  (setq es (new editstring 30))
+		  ))
+   (setq eb (new tinybutton "" (lambda (x)
+				 (==> tdbr do
+				      (alist-get :x:text (cadr al))
+				      ) )))
+   (==> this windowObject 0 0 600 400
+	(let ((table (sqlp-select-to-table txt)))
+	  (if (and table (not (index "where" (downcase txt))))
+	      (sprintf (ml "Table: `%s'" "Table:  `%s'") table)
+	    (sprintf (ml "Query: `%s'" "Requ\+jte: '%s`")
+		     (let ((txt (regex-subst "[ \n\t\r]+" " " txt)))
+		       (if (> (len txt) 30) (concat (left txt 30) "...") txt) ) ) ) )
+	vsb hsb tb esc eb mb )
+
+   ;;; position and editstring content
+   (when (> card 0) (==> tb select 0 0))
+   ;;; status and menu enabled items
+   (==> this set-state ())
+   (==> this repair-damaged)
+   ) )
+
+
+(defmethod c-wadbrowser -destructor ()
+  (==> this exhausted t)
+  (when st
+    (==> this endwork)
+    (==> this tokenrelease)
+    )
+  (==> this (c-dbrowser . -destructor))
+  )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; general-purpose methods ;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-wadbrowser manage-geometry()
+  (let (((x y w h) rect)
+	((xm ym wm hm) :mb:rect)
+	((xe ye we he) :esc:rect)
+	((xb yb wb hb) :eb:rect)
+	((xt yt wt ht) :tb:rect)
+	((xh yh wh hh) :hsb:rect)
+	((xv yv wv hv) :vsb:rect)
+	(pnum :tb:pnum)
+	(ptitle :tb:pheight)
+	(d 10) )
+    (==> mb  geometry x y w hm)
+    (==> esc geometry x (+ y hm d) we (max he hb))
+    (==> eb geometry  (+ x we 20) (+ y hm d) wb (max he hb))
+    (==> tb  geometry x (+ y hm he (* 2 d)) (- w wv) (- h (+ hm he hh (* 2 d))))
+    (==> hsb geometry (+ x pnum) (+ y h (- hh)) (- w (+ wv pnum)) hh)
+    (==> vsb geometry (+ x w (- wv)) (+ y hm (* 2 d) he ptitle)
+	 wv (- h (+ ptitle hh hm (* 2 d) he)) )
+    ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; events management ;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-wadbrowser keypress (c x y)
+  (cond
+   ((= c "\r")  (==> this arrow-down x y))
+   ((= c "\^[")	(==> this editcell))
+   (t (if (==> es isactivated)
+	  (==> this (windowobject . keypress) c x y)
+	(==> this editcell c t)
+	) ) ) )
+
+
+(defmethod c-wadbrowser arrow-left (x y)
+  (if ~st
+      (==> tb arrow-left x y)
+    (when ~(==> this writecell)
+	  (==> tb arrow-left x y)
+	  (==> this editcell)
+	  ) ) )
+
+
+(defmethod c-wadbrowser arrow-right (x y)
+  (if ~st
+      (==> tb arrow-right x y)
+    (when ~(==> this writecell)
+	  (==> tb arrow-right x y)
+	  (==> this editcell)
+	  ) ) )
+
+
+(defmethod c-wadbrowser arrow-up (x y)
+  (if ~st
+      (==> tb arrow-up x y)
+    (when ~(==> this writecell)
+	  (==> tb arrow-up x y)
+	  (==> this editcell)
+	  ) ) )
+
+
+(defmethod c-wadbrowser arrow-down (x y)
+  (if ~st
+      (==> tb arrow-down x y)
+    (if (or (<= card 0) (>= :tb:selline (1- card)))
+	(==> this appendline)
+      (when ~(==> this writecell)
+	    (==> tb arrow-down x y)
+	    (==> this editcell)
+	    ) ) ) )
+
+
+(defmethod c-wadbrowser mouse-up (x1 y1 x2 y2)
+  (if (null (and (point-in-rect x1 y1 :tb:rect) (point-in-rect x2 y2 :tb:rect)))
+      (==> this (windowobject . mouse-up) x1 y1 x2 y2)
+    (if ~st
+	(==> this (c-dbrowser . mouse-up) x1 y1 x2 y2)
+      (when ~(==> this writecell)
+	    (==> tb mouse-up x1 y1 x2 y2)
+	    (==> this editcell)
+	    ) ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; user actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-wadbrowser action (x)
+  ()
+  )
+
+
+(defmethod c-wadbrowser edit-action ()
+  (==> this edit)
+  )
+
+
+(defmethod c-wadbrowser refresh-action args
+  (==> this do (if (and (numberp st) (> st 0))
+		   '(refresh keep save)
+		 'refresh
+		 )
+       'refresh
+       ) )
+
+
+(defmethod c-wadbrowser restore-action ()
+  (==> this do (if (and (numberp st) (> st 0))
+		   '(restore keep save)
+		 'restore
+		 )
+       'restore
+       ) )
+
+
+(defmethod c-wadbrowser save-action ()
+  (when (and (numberp st) (> st 0))
+	(==> this do '(restore keep save)
+	     'save
+	     )
+	) )
+
+
+(defmethod c-wadbrowser import-action ()
+  (when ~ftr
+    (setq ftr (new dbformatrequester-9601 this
+		   ""
+		   (cons "-" :tb:title)
+		   ()
+		   (range 1 (length :tb:title))
+		   )) )
+  (let* ((msg (ml "Import (.txt):" "Importer (.txt):")))
+    (==> ftr setfreqparm msg 'no-newfile (lambda (s) (regex-match ".*\\.txt" s)))
+    (==> ftr setmsg msg)
+    (when (==> ftr popuplock)
+      (let (((fn cs ls fl) (==> ftr getdata)))
+	(==> this import fn cs ls (mapcar 1- fl))
+	) ) ) )
+
+
+(defmethod c-wadbrowser delete (&optional flag)
+  (if flag
+      (==> this (windowobject . delete))
+    (==> this do (if (and (numberp st) (> st 0))
+		     '(quit keep save)
+		   'quit
+		   )
+	 'quit
+	 ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; system actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-wadbrowser error (&optional msg)
+  (when this
+	(==> this tokenrelease)
+	(==> this (c-dbrowser . error) msg)
+	(when (and lm vm esc es eb)
+	      (==> this set-state ())
+	      )
+	) )
+
+
+(defmethod c-wadbrowser tokenrequest ()
+  (==> this do (if (> st 0) '(save keep restore) 'restore) 'restore)
+  (when st
+	(sprintf (ml "Request rejected by browser named\n%s editing"
+		     "Requete rejet\+ie par le tableur nomm\+i\n%s en cours d'\+idition"
+		     )
+		 (sqlp-select-to-table :dh:data:txt)
+		 ) ) )
+
+
+(defmethod c-wadbrowser refreshrequest ()
+  (cond
+   (~st
+    (==> this (c-dbrowser . refreshrequest))
+    )
+   ((< st 0)
+    )
+   (t
+    (==> this error "refreshrequest should not have been sent to a writting browser")
+    ) ) )
+
+
+(defmethod c-wadbrowser confirm (txt l &optional default)
+  (alist-get (==> cr popuphard txt
+		  (all ((i l))
+		       (alist-get i (car al)) ;; symbol to text
+		       )
+		  (alist-get default (car al))
+		  )
+	     (cadr al) ;; text to symbol
+	     )
+  )
+
+
+(defmethod c-wadbrowser do (s &optional default txt)
+  (when ~(atomp s)
+	(setq s (==> this confirm
+		     (or txt (ml "Edition end request"
+				 "Demande de fin d'\+idition" ))
+		     s
+		     default
+		     ))
+	)
+  (setq s (alist-get s (caddr al)))
+  (if s
+      (s) ;; effective excecution
+    (==> this error "c-dbrowser: unknown command for 'do'")
+    )
+  s
+  )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; table management ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-wadbrowser edit ()
+  (when ~st
+	(==> this set-state -1) ;; promotion
+	(cond (;; token refused
+	       ~(==> this tokenask)
+		(==> this set-state ())
+		)
+	      (;; transaction supported but refused
+	       (==> this beginwork)
+	       (==> this tokenrelease)
+	       (==> this set-state ())
+	       )
+	      (;; edit mode accepted
+	       t
+	       (==> this refresh)
+	       (==> this set-state 0) ;; edition (no changes yet)
+	       )
+	      ) ) )
+
+
+(defmethod c-wadbrowser restore ()
+  (when st
+    (when (> st 0)
+      (==> dh restore ())
+      )
+    (==> this endwork)
+    (==> this tokenrelease)
+    (==> this set-state ())
+    (==> this refresh)
+    (==> this redisplay)
+    (==> this makeaccess)
+    ) )
+
+
+(defmethod c-wadbrowser save ()
+  (on-error
+      (when tdbr (==> tdbr error))
+
+   (when (and st (> st 0))
+	 (let* ((res (==> dh save))) ;;; including refresh
+	   (==> this endwork res)
+	   (==> this tokenrelease)
+
+	   (==> this set-state ())
+	   (==> this refresh)
+	   (==> this redisplay)
+	   (==> this makeaccess)
+	   (when res
+		 (==> cr popuphard
+		      (sprintf "%s\n%s\n\"%s\""
+			       (ml "Unable to save. Data lost."
+				   "Enregistrement impossible. Donn\+ies perdues." )
+			       (ml "Database engines reports:"
+				   "Le moteur de bases de donn\+ies signale :" )
+			       (caddr (or (apply+ or (car res))
+					  (apply+ or (cadr res))
+					  (apply+ or(caddr res))
+					  ) )
+			       ) ) )
+
+	   ) ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; line management ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-wadbrowser restoreline (&optional n)
+  (when (and st (> st 0))
+	(when ~n (setq n :tb:selline))
+	(when (and (numberp n) (< n :dh:ic) (> n 0))
+	      (==> dh restore n)
+	      (==> tb refresh n)
+	      (==> this editcell)
+	      )
+	) )
+
+
+(defmethod c-wadbrowser deleteline (&optional n)
+  (when (and st (>= st 0))
+	(when ~n (setq n :tb:selline))
+	(when (numberp n)
+	      (==> dh delete n)
+	      (==> this incr-state 'deleteline)
+	      (==> this redisplay)
+	      (==> this makeaccess)
+	      (==> this editcell)
+	      ) ) )
+
+
+(defmethod c-wadbrowser appendline ll ()
+  (when (and st (>= st 0))
+	(when ex (==> this exhaust))
+	(when ~(and (> card 0) (==> this writecell))
+	      (when (or (<= card 0) ll (apply or (==> dh read (1- card))))
+		    (==> this incr-state 'appendline)
+		    (if ~ll
+			(==> dh append (makelist (length :tb:pwidth) ()))
+		      (while ll
+			(==> dh append (car ll))
+			(setq ll (cdr ll))
+			) )
+		    (==> this redisplay (==> this catch-line -1))
+		    (==> this makeaccess)
+		    )
+	      (when (<> (1- card) :tb:selline)
+		    (==> tb select (1- card) :tb:selpos)
+		    )
+	      (==> this editcell)
+	      ) ) )
+
+
+;;; returns a message on failure
+
+(defmethod c-wadbrowser writecell (&optional sel)
+  (when (and st (>= st 0) (==> es isactivated))
+    (let* ((n (if sel (car  sel) :tb:selline))
+	   (m (if sel (cadr sel) :tb:selpos)) )
+      (when (and (numberp n) (numberp m))
+	(let* ((s (==> es getdata))
+	       (l (append (readline n ""))) ;; string format
+	       )
+	  (when (and (stringp s) (<> s (nth m l)))
+	    (setq l (==> dh read n))  ;; original format
+	    (let* ((res ((==> dd make-cvt-from-str m) s)))
+	      (if (and ~res (<> s ""))
+		  (let* ((msg ((==> dd errf-cvt-from-str m) s)))
+		    (beep)
+		    (==> this redisplay (==> this catch-line))
+		    (==> this makeaccess)
+		    (==> cr popup msg)
+		    msg
+		    )
+		(setq s res)          ;; success
+		(when (= s "") (setq s ()))
+		(rplaca (nthcdr m l) s)
+		(==> dh write n l)
+		(==> this incr-state 'write)
+		(==> tb refresh n)
+		()
+		) ) ) ) ) )
+    ) )
+
+
+(defmethod c-wadbrowser editcell (&optional c flag)
+  (when (and st (> card 0))
+	(let* ((n (max 0 (min (or :tb:selline card) (1- card))))
+	       (m (or :tb:selpos 0))
+	       )
+	  (when (<> (list :tb:selline :tb:selpos) (list n m))
+		(==> tb select n m)
+		)
+	  (setq :es:regex (==> dd regex-cvt-from-str m))
+	  (let* ((x (or c (nth m (readline n)) ""))
+		 )
+	    (when (or ~flag (regex-match :es:regex x))
+		  (==> es setdata x)
+		  (==> es activate flag)
+		  ) ) ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; state management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-wadbrowser incr-state (whatfor)
+  (incr st)
+  (when (= st 1)
+	(==> this makeaccess)
+	)
+  )
+
+
+(defmethod c-wadbrowser set-state (newst)
+  (setq st newst)
+  (==> this makeaccess)
+  )
+
+
+(defmethod c-wadbrowser makeaccess ()
+
+  (==> lm enable ())
+  (==> vm enable ())
+  (==> esc enable)
+
+  (setq :eb:text (alist-get (cond (~st  'edit) ((> st 0) 'save) (t 'restore)) (car al)))
+  (==> eb compute-geometry)
+
+  (eval `(let* ,(let* ((l '(edit refresh restore save copy export import quit)))
+		  (all ((s l)(i (range 0 (1- (length l)))))
+		    (list s i)
+		    )
+		)
+	   (cond
+	    (~st      ;;; read only
+	     (==> vm disable restore save import)
+	     (==> lm disable ())
+	     (setq :es:regex ".*")
+	     (==> es setdata "")
+	     (==> esc disable)
+	     )
+	    ((< st 0) ;;; promotion
+	     (==> vm disable ())
+	     (==> lm disable ())
+	     (==> this editcell)
+	     )
+	    ((= st 0) ;;; edition without changes
+	     (==> vm disable edit refresh save)
+	     (==> lm disable 1) ;; restoreline
+	     (==> this editcell)
+	     )
+	    ((> st 0) ;;; edition with changes
+	     (==> vm disable edit refresh export)
+	     (==> this editcell)
+	     )
+	    ) ))
+	   (when (and lm (= card 0))
+	     (==> lm enable  1 2)
+	     (==> lm disable 1 2) ;; restore delete
+	     )
+	   )
+
+
+;;;;;;;;;;;;;;;;;;; transactions and token management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-wadbrowser tokenask ()
+  (let* ((msg (token-ask this)))
+    (when msg
+	  (==> cr popuplock msg) )
+    ~msg
+    ) )
+
+
+(defmethod c-wadbrowser tokenrelease ()
+  (when (= this :token-owner)
+	(token-release this (<= st 0))
+	t
+	) )
+
+
+(defmethod c-wadbrowser beginwork ()
+  (sql-begin)
+  (when (==> :dh:data lock)
+	(beep)
+	(==> cr popuphard (sql-errm))
+	(sql-errm)
+	) )
+
+
+(defmethod c-wadbrowser endwork (&optional status)
+  (when (or (==> :dh:data unlock)
+	    (if (and status (sql-capability "rollback"))
+		(sql-rollback)
+	      (sql-commit)
+	      ) )
+	(beep)
+	(==> cr popuphard (sql-errm))
+	(sql-errm)
+	) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; functionalities methods ;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod c-wadbrowser import (fd &optional cs ls (fields t))
+  (==> this exhaust)
+  (let* ((lock (new requesterlock wr)))
+    (==> wr popup (ml "Importing..." "En cours d'importation..."))
+    (when fields
+      (cond
+       ((= t fields)
+	(setq fields (range 0 (1- (length :tb:title))))
+	)
+       ((stringp (car fields))
+	(setq fields (all ((x fields)) (lrank x :tb:title))) )
+	) ) )
+    ;;; define separators
+    (when ~cs (setq cs "\t"))
+    (when ~ls (setq ls "\n"))
+    ;; go
+    (let* ((a   (reading fd (read-table cs ls)))
+	   (d   (==> dd make-cvt-from-str))
+	   (nf  (length fields))
+	   (nfd (==> dd numcol))
+	   (nfa (1+ (bound a 1)))
+	   (ty  ())
+	   (fun ())
+	   )
+      (each ((i fields)(j (range 0 (1- nf))))
+	(when (>= i 0)
+	  (a () j (mapcar (nth i d)
+			  (a () j)
+			  ))
+	  ) )
+
+      (when (<> fields (range 0 (1- nfd)))
+	(let* ((b (array (1+ (bound a 1)) (max nfd nf))))
+	  (each ((i fields)(j (range 0 (1- nf))))
+	    (when (>= i 0)
+	      (b () i (a () j))
+	      ) )
+	  (setq a b)
+	  ) )
+      (setq a (submatrix a () (list 0 (1- nfd))))
+      (apply==> this 'appendline (a () ()))
+      )
+    ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; editcstring
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defmethod editstring insertdata (s)
+  (==> this (control . setdata) (strins :this:data :this:caret s))
+  (incr caret (len s))
+  (==> this record-history)
+  )
+
+
+(defclass editcstring editstring
+  )
+
+
+(defmethod editcstring editcstring args
+  (apply==> this 'editstring args)
+  )
+
+
+(defmethod editcstring decode (s)
+  (setq s (regex-subst "\\\\n" "\n" s))   ;; '\' + 'n' replaced by a '\n' character
+  (setq s (regex-subst "\\\\t" "\t" s))   ;; '\' + 't' replaced by a '\t' character
+  
+  (setq s (regex-subst "\\\\\n" "\\n" s)) ;; '\' + '\n' replaced by '\' + 'n'
+  (setq s (regex-subst "\\\\\t" "\\t" s)) ;; '\' + '\t' replaced by '\' + 't'
+  
+  s
+  )
+
+
+(defmethod editcstring encode (s)
+  (let* ((c ()))
+    (apply concat
+	   (mapfor (i 1 (len s))
+		   (setq c (mid s i 1))
+		   (selectq c
+			    ("\n" "\\n")
+			    ("\t" "\\t")
+			    (t c)
+			    ) ) ) ) )
+
+
+(defmethod editcstring insertdata (s)
+  (==> this (editstring . insertdata) (==> this encode s))
+  )
+
+
+(defmethod editcstring setdata (s)
+  (==> this (editstring . setdata) (==> this encode s))
+  )
+
+
+(defmethod editcstring getdata ()
+  (==> this decode (==> this (editstring . getdata)))
+  )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; dbformatrequester
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass dbformatrequester yesnorequester
+  fm   ;;; format menu
+  csm  ;;; column separator menu
+  lsm  ;;; line   separator menu
+  cses ;;; column separator edist string
+  lses ;;; line   separator edist string
+  fms ;;; field multiple selector
+  data
+  )
+
+
+(defmethod dbformatrequester dbformatrequester (w &optional txt fields)
+
+  (setq cses (new editcstring 10))
+  (setq lses (new editcstring 10))
+  (setq fms (new selector 5 t fields))
+  (==> fms setdata fields)
+
+  (when ~txt (setq txt (ml "Using separators:" "Avec les s\+iparateurs :")))
+
+  (let* ((fa ())
+	 (sca ())
+	 (adddata (lambda (es c)
+		    (==> es insertdata c)
+		    ) )
+	 )
+
+    (setq fa '( (("\t" "\n")  "Worksheet" "Tableur")
+		(("|"  "|\n") "Database" "Base de Donn\+ies")
+		) )
+    (setq fa (all ((f fa)) (cons (apply ml (cdr f)) (car f))))
+	  
+    (setq sca
+	  '( ("\t"   "<Tabulation>"   "<Tabulation>"     )
+	     ("\n"   "<New line>"     "<Nouvelle ligne>" )
+	     ("|"    "'|'"            "'|'"               )
+	     ) )
+    (setq sca (all ((s sca)) (cons (apply ml (cdr s)) (car s))))
+
+    (setq fm
+	  (apply new (flatten (list menu
+				    (ml "Predefined" "Pr\+id\+ifinis")
+				    (all ((f fa))
+					 (cons (car f)
+					       (eval `(lambda (c)
+							(==> ,cses setdata ,(cadr  f))
+							(==> ,lses setdata ,(caddr f))
+							)) ) ) ))) )
+    (setq csm
+	  (apply new (flatten (list menu
+				    (ml "Characters" "Caract\+hres")
+				    (all ((ch sca))
+					 (cons (car ch)
+					       (eval `(lambda (c)
+							(,adddata ,cses ,(cdr ch))
+							)) ) ) ))) )
+    (setq lsm
+	  (apply new (flatten (list menu
+				    (ml "Characters" "Caract\+hres")
+				    (all ((ch sca))
+					 (cons (car ch)
+					       (eval `(lambda (c)
+							(,adddata ,lses ,(cdr ch))
+							)) ) ) ))) )
+    (==> this yesnorequester w
+	 (new column
+	      (new string (ml "Fields:" "Les champs :"))
+	      fms
+
+	      (new string txt)
+	      (new grid 3
+		   (new emptyspace 0)
+		   fm
+		   (new emptyspace 0)
+		   
+		   (new string (ml "Column" "Colonnes"))
+		   cses
+		   csm
+		   
+		   (new string (ml "Line" "Lignes"))
+		   lses
+		   lsm
+		   ) )
+	 ostring-ok ostring-cancel ()
+	 )
+    
+    (==> cses setdata (car  (cdar fa)))
+    (==> lses setdata (cadr (cdar fa)))
+    ) )
+
+(defmethod dbformatrequester arrow-up l
+  ()
+  )
+
+(defmethod dbformatrequester arrow-down l
+  ()
+  )
+
+(defmethod dbformatrequester getdata ()
+  (list
+   (==> cses getdata)
+   (==> lses getdata)
+   (if fms
+       (reverse (==> fms getdatanum))
+     t
+     )
+   ) )
+
+(defmethod dbformatrequester setdata (sd)
+  (list
+   (==> cses setdata (nth 0 sd))
+   (==> lses setdata (nth 1 sd))
+   (when fms
+	 (==> fms setdata (nth 2 sd))
+	 t
+	 )
+   ) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; dhmgraph-requester class
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass dhmgraph-requester yesnorequester
+  xmenu
+  yselector
+  etitle
+  )
+
+
+(defmethod dhmgraph-requester dhmgraph-requester (dhandler titles)
+  (==> this yesnorequester
+       tdbr
+       (new column
+	    (new grid 2
+		 (new string (ml "Draw:" "Dessiner :"))
+		 (setq yselector (new selector 5 t titles))
+		 (new string (ml "as a function of:" "en fonction de :"))
+		 (setq xmenu (new choicemenu (cons "1...n" titles)))
+		 (new string (ml "with title:" "sous le titre :"))
+		 (setq etitle (new editstring 20))
+		 )
+	    (new emptyspace 3)
+	    (new darkspace 3)
+	    (new emptyspace 3)
+	    )
+       (ml "Draw"   "Dessiner")
+       (ml "Cancel" "Annuler")
+       (eval `(lambda l
+		(on-error
+		    (when thisrequester (==> thisrequester popdown))
+		  
+		  (let* ((fl (cons (==> :thisrequester:xmenu     getdata)
+				   (==> :thisrequester:yselector getdata)
+				   ) ))
+		    (when (= (car fl) "1...n") (setq fl (cons t (cdr fl))))
+		    (open-dh-display ,dhandler
+				     fl
+				     (cons (lrank (car fl) (quote ,titles))
+					   (==> :thisrequester:yselector getdatanum) )
+				     (let* ((ti (==> etitle getdata)))
+				       (when (> (len (strip ti)) 0) ti) )
+				     ) ) ) ))
+       ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; dhcorr-requester class
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass dhshiftdep-requester yesnorequester
+  xmenu
+  yselector
+  fmenu
+  )
+
+
+(defmethod dhshiftdep-requester dhshiftdep-requester (dhandler &optional titles)
+  (let* ((ldep (list (list mvcov     (ml "correlations" "correlation"))
+		     (list mvkolsmir "kolmogorov")
+		     )))
+    (==> this yesnorequester
+	 tdbr
+	 (new column
+	      (new string
+		   (ml "Compute the shift dependancies"
+		       "Calculer les d\+ipendances glissantes" ))
+	      (new grid 2
+		   (new string (ml "of time serials:" "des s\+iries:"))
+		   (setq yselector (new selector 5 t titles))
+		   (new string (ml "with serial:" "avec la s\+irie :"))
+		   (setq xmenu (new choicemenu titles))
+		   (new string (ml "using as criterion:" "selon le critere de"))
+		   (prog1 (setq fmenu (new choicemenu (mapcar cadr ldep)))
+		     (==> fmenu setdata (cadar ldep)) )
+		   )
+	      (new emptyspace 3)
+	      (new darkspace 3)
+	      (new emptyspace 3)
+	      )
+	 (ml "Compute"   "Calculer")
+	 (ml "Cancel" "Annuler")
+	 (eval `(lambda l
+
+		  (on-error
+
+		      (when ,this (==> ,this popdown))
+
+		    (let* ((fn (cons (==> ,xmenu getdata) (==> ,yselector getdata)))
+			   (fl (cons (lrank (==> ,xmenu getdata) (quote ,titles))
+				     (==> ,yselector getdatanum) ))
+			   (dh ,dhandler)
+			   (m (==> dh getmatrix fl t))
+			   (n (bound m 1))
+			   (f (lrank (==> ,fmenu getdata) (quote ,(mapcar cadr ldep))))
+			   )
+		      (mstdv m m)
+		      (new c-abrowser
+			   (matrix-concat-columns
+			    ((matrix (1+ n)) () (range (- (div (1+ n) 2)) (div n 2)))
+			    (mvshiftapply (submatrix m () 0)
+					  (submatrix m () (list 1 (bound m 2)))
+					  (car (nth f (quote ,ldep)))
+					  ))
+			   (list (cons 'title (sprintf (ml "Shift dependencies with %s"
+							   "Dependances glissantes avec %s"
+							   ) (car fn) ))
+				 (cons 'widths (cons 6 (all ((i (cdr fl)))
+							 (nth i :tb:cwidth) )))
+				 (cons 'titles (cons (ml "D\+icalage" "Shift") (cdr fn)))
+				 ) )
+		      ) ) ))
+	 ) ) )
+
+
+(de mvshiftapply (x y f &optional ans)
+    (when ~ans (setq ans (any-matrix y)))
+    (let* ((n (bound y 1))       ;; upper subscript
+	   (k (int (2/ (1+ n)))) ;; half-dimension
+	   (xx ())
+	   )
+      (selectq (bound y 0)
+	(1 ;; 1D vector
+	 (for (i (- k) (- n k))
+	   (ans (+ i k) (f (submatrix x (list (max 0    i ) (+ n (min    i  0))))
+			   (submatrix y (list (max 0 (- i)) (+ n (min (- i) 0))))
+			   ))
+	   ) )
+	(2 ;; 2D matrix
+	 (for (i (- k) (- n k))
+	   (for (j 0 (bound ans 2))
+	     (ans (+ i k) j (f (submatrix x (list (max 0    i ) (+ n (min    i  0))))
+			       (submatrix y (list (max 0 (- i)) (+ n (min (- i) 0))) j)
+			       ))
+	     ) ) )
+	) )
+    ans )
+
+
+(de mvcor (x y)
+    (setq x (copy-matrix x))
+    (setq y (copy-matrix y))
+    (mstd x x)
+    (mstd y y)
+    (mcov x y)
+    )
+
+
+(de mvcov (x y)
+    (/ (dot_product x y) (1+ (bound x (bound x 0))))
+    )
+
+;; already in statenv
+(when ~mstdv
+    (de mstdv (m q &optional mv dv)
+	(when ~q (setq q m))
+	(let* ((vv (matrix (1+ (bound q 2)) 2)))
+	  (for (i 0 (bound q 2))
+	    (vv i () (mstd (submatrix m () i) (submatrix q () i)))
+	    )
+	  (if mv (copy-matrix (submatrix vv () 0) mv) (setq mv (submatrix vv () 0)))
+	  (if dv (copy-matrix (submatrix vv () 1) dv) (setq dv (submatrix vv () 1)))
+	  )
+	(list mv dv)
+	) )
+
+;; already in statenv
+(when ~mstd
+  (de mstd (m q)
+      (let* ((me (mean-mat m))
+	     (sd (sdev-mat m)) )
+	(m+c m (- me) q)
+	(if (0<> sd) (m*c q (/ sd) q) (q () 0))
+	(list me sd)
+	) ) )
+
+(de mvkolsmir (x y)
+    (let* ((m (matrix-concat-columns x y)))
+      (mstdv m m)
+      (setq m (xy-test m 0 1))
+      (* 4 (- (car m) (/ 0.87 (max 1e-20 (sqrt (cadr m))))))
+      ) )
+
+
+;; concats vectors (supposed to be one column) and matrices
+(de matrix-concat-columns l
+    (let* ((f (lambda (m) (if (= 1 (bound m 0)) 1 (1+ (bound m 2)))))
+	   (ans (matrix (car (bound (car l))) (apply + (mapcar f l))))
+	   (i 0)
+	   )
+      (each ((m l))
+	(copy-any-matrix m (submatrix ans () (list i (1- (incr i (f m))))))
+	)
+      ans ) )
+
+
+(de error-tlp-only (&rest r)
+    (error "This function is available in TL/Prevision only") )
+
+;; still in TL/Prevision
+(when ~xy-test (setq xy-tesxt error-tlp-only))
+
+;; somehaw redundant with <mco> of sn2.8.e
+(de mcorr (x y)
+    (let* ((m (matrix-concat-columns x y)))
+      (setq x (submatrix m () 0))
+      (setq y (submatrix m () 1))
+      (m+c x (- (mean-mat (submatrix m () 0))) x)
+      (m+c y (- (mean-mat (submatrix m () 1))) y)
+      (m*c x (/ (sqrt (xy-var m 0))) x)
+      (m*c y (/ (sqrt (xy-var m 1))) y)
+      (car (xy-covar m 0 1))
+      ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; open-dh-display
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (open-dh-display <dh> [<fieldnames> [<fieldpos> [<wintitle>]]])
+;; Function open-dh-display creates a graphical display data defined by
+;; fields listed into <xyf> from datahandler <dh>.
+;;
+;; Argument <dh> contains a datahandler.
+;;
+;; Optional argument <fieldnames> contains a list of field names with possible nils.
+;; Optional argument <fieldpos> contains a list of field names with possible nils.
+;; For each field, either its position or its name is assumed to be defined.
+;; When both are defined, the consistency is checked, generating possible adjustement.
+;; It is assumed that name information is prioritary.
+;; When a field name can not be found while the field position is unspecified
+;; an error occurs. Conventional fieldname t refer to a 1...n virtual field; it is
+;; only allowed for the first columns.
+;;
+;; Convenient scales and axes are defined.
+;; When several fields are used, curves are displayed
+;; with various colors when color is avalailable or various objet shapes otherwise.
+;;
+;; Conventionaly, a row number may be specified in <xyf> by a title "...n"
+;; and/or a () field number in <fi>.
+
+
+(de open-dh-display (dh  &optional fieldnames fieldpos ti)
+
+    ;;====== Check field numbers and/or field names
+    (let* ((allnames (==> (==> dh dataheader) titles))
+	   )
+      (when ~fieldpos   (setq fieldpos (makelist (length fieldnames ()))))
+      (when ~fieldnames (setq fieldnames (makelist (length fieldpos   ()))))
+
+      ;; fieldnames are prioritary facing fieldpos but may be ambiguous:
+      ;; - in SQL, columns may have been inserted in the table
+      ;; - in SQL, some joint queries lead to ambiguous column names
+      ;; - outside SQL columns names may be undefined in dh.
+      (let* ((gotfieldnames (all ((i fieldpos)) (when i (nth i allnames)))))
+	(setq fieldpos (all ((i fieldpos)
+			     (s fieldnames)
+			     (n gotfieldnames)
+			     (j (range 0 (1- (length fieldpos))))
+			     )
+			 (cond (~s i)
+			       (~i (or (lrank s allnames)
+				       (if (and (= j 0) (= s t))
+					   ()
+					 (error (sprintf
+						 (ml "Unable to find field '%s'."
+						     "Impossible de trouver le champ '%s'.")
+						 s  )) ) ))
+			       (~n i)
+			       ((<> s n) (or (lrank s allnames) i))
+			       (t  i)
+			       ) ))
+	(setq fieldnames (all ((i fieldpos)(s fieldnames))
+			   (or (if (= s t) "1...n" (when i (nth i allnames))) ))
+	) ) )
+
+    (when ~(cadr fieldpos)
+	  (error (ml "Grapher needs at least one key field and one value field"
+		     "Le grapheur requiert au moins un champ cl\+i et un champ de valeur"
+		     )) )
+    (when (<= :dh:card 1)
+	  (error (sprintf (ml "Current selection contains only %d record(s)"
+			      "La selection ne comporte que %d enregistrement(s)"
+			      ) :dh:card )) )
+
+    ;;====== Tool definition
+    (let* ((logic (==> dh logic))
+	   (arg0 ())
+	   )
+      (cond
+       ((member (nth 0 logic) (cons sqldatahandler (subclasses sqldatahandler)))
+	(setq arg0  (nth 1 logic))
+	(setq logic 'sqldatahandler)
+	)
+       (t
+	(setq logic ())
+	)
+       )
+      (when (and logic define-tool)
+	    (define-tool
+	      (ml "Graphic" "Graphique")
+	      (ml "Graphic display." "Visualisation graphique.")
+	      (selectq logic
+		       (sqldatahandler
+			`(open-query-display ,arg0 ',fieldnames ',fieldpos ,ti)
+			) )
+	      (sprintf "%s\n%s %s\n%s %s\n%s\n%s" ;;; 7 components
+		       (ml "Graphic display"
+			   "Visualisation graphique"
+			   )
+		       (if (cddr fieldnames)
+			   (ml "of fields" "des champs")
+			 (ml "of field" "du champ")
+			 )
+		       (apply concat (cdr (flatten (all ((yf (cdr fieldnames)))
+							(list ", " yf) ))))
+		       (ml "as a function of field" "en fonction du champ")
+		       (car fieldnames)
+		       (selectq logic
+				(sqldatahandler
+				 (ml "from query" "de la requ\+jte")
+				 ) )
+		       arg0
+		       )
+	      ) ) )
+
+    ;;====== GRAPH DEFINITION
+
+    (let* ((mat ())
+	   (indx ())
+	   (lmat ())
+	   )
+      (setq mat (copy-matrix
+		 (==> dh getmatrix (if (car fieldpos) fieldpos (cdr fieldpos)) t)
+		 ) )
+      (when (>= 0 (xy-count mat 0))
+	(error (sprintf (ml "Curves need at least two points for being of any interest"
+			    "Les courbes demandent au moins deux points pour etre int\+iressantes"
+			    ))) )
+
+      (setq mat (copy-matrix mat))
+      (setq lmat (mapfor (i 0 (bound mat 2)) (submatrix mat () i)))
+      (if (car fieldpos)
+	(apply msort lmat)
+	(setq lmat (cons () lmat))
+	)
+
+      (display-curve lmat
+		     (list (cons 'title  ti)
+			   (cons 'titles fieldnames)
+			   (cons 'types  (let* ((alltypes (==> (==> dh dataheader) types)))
+					   (all ((i fieldpos)) (when i (nth i alltypes))) ))
+			   ) )
+      ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; trigerlock class
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? trigerlock
+;; A trigerlock is an object whose main purpose is its destruction.
+;; At destruction time, it calls its callback function.
+;;
+;; WARNING: remember that destruction time is decided by the garbage collector.
+;; The only way to ensure the precise time of destruction is
+;; the supression of all references toward the object.
+;; Therefore, a trigerlock should not be cautiouslessly included in circular
+;; lists or other self-referent structures.
+
+(defclass trigerlock object
+  callback
+  )
+
+
+(defmethod trigerlock trigerlock (l)
+  (==> this setcall l)
+  )
+
+
+(defmethod trigerlock setcall (l)
+  (setq callback l)
+  )
+
+
+(defmethod trigerlock -destructor ()
+  (callback this)
+  )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; Outsiders
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (day-to-string <x> &optional <from> <to>)
+;; This function translates a number into a string, using day and dates conventions.
+;; Argument <x> is a number.
+;; Optional arguments <from> and <to> are symbols defining the date format.
+;;.SEE day-to-date
+;;.SEE date-to-string
+
+(de day-to-string (x &optional from to)
+    (if (and from to)
+	(date-to-string (date-extend (day-to-date x) from to))
+	(date-to-string (date-round (day-to-date x)))
+	) )
+
+#? (cvt-tl-num <x> [<nilval>])
+;; This function converts a lisp atom <x> into a number.
+;; Optional argument <nilval> defines the number representing <()>.
+
+(de cvt-tl-num (x &optional nilval)
+    (if (listp x)
+	(if x (error "atom expected") nilval)
+      (or (selectq (classname (classof x))
+	    (|NUMBER| x)
+	    (|DATE| (date-to-day x))
+	    (|STRING| (val x))
+	    )
+	  (when nilval (if (numberp nilval) nilval (nan)))
+	  ) ) )
+
+#? (cvt-tl-str <x> [<nilval]>)
+;; This function converts a lisp atom <x> into a string.
+;; Optional argument <nilval> defines the string representing <()>.
+
+(de cvt-tl-str (x &optional nilval)
+    (if (listp x)
+	(if x (error "atom expected") nilval)
+      (or
+       (selectq (classname (classof x))
+	 (|STRING| x)
+	 (|DATE| (date_to_string x))
+	 (|NUMBER| (pname x))
+	 )
+       (when nilval (if (stringp nilval) nilval ""))
+       ) ) )
+
+#? (cvt-tl-date <x> [<nilval>])
+;; This function converts a lisp atom <x> into a date.
+;; Optional argument <nilval> defines the date representing <()>.
+
+(de cvt-tl-date (x &optional nilval)
+    (if (listp x)
+	(if x (error "atom expected") nilval)
+      (or
+       (selectq (classname (classof x))
+	 (|DATE| x)
+	 (|NUMBER| (when (and (<= -25567 x )(<= x 21183))
+		     (day-to-date x) ))
+	 (|STRING| (or (string-to-date x 'year 'day)
+		       (string-to-date x 'year 'second)
+		       (string-to-date x 'hour 'second)
+		       ))
+	 )
+       nilval
+       ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(de objectp (x)
+    (when (is-of-class x object) x)
+    )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(de list-pswitch (l n m)
+    (let* ((x (nth n l))
+	   (y (nth m l)) )
+      (rplaca (nthcdr n l) y)
+      (rplaca (nthcdr m l) x)
+      )
+    l
+    )
+
+(de list-pselect (l cs)
+    (all ((c cs)) (nth c l)) )
+
+(de lrank (x ref)
+    (setq x (member x ref))
+    (when x (- (length ref) (length x)))
+    )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(de mdicho (m)
+    (let* ((n (bound m 1)))
+      (list (submatrix m (list 0 (2/ n)))
+	    (submatrix m (list (1+ (2/ n)) n))
+	    ) ) )
+
+(de concat+ l
+    (let* ((a (array (length l)))
+	   (f (lambda (a)
+		(if (< (bound a 1) 100)
+		    (apply concat (a ()))
+		  (apply concat (mapcar f (mdicho a)))
+		  ) ))
+	   )
+      (a () l)
+      (f a)
+      ) )
+
+(de apply+ (g l)
+    (if ~l
+	(g)
+      (let* ((a (array (length l)))
+	     (f (lambda (a)
+		  (if (< (bound a 1) 100)
+		      (apply g (a ()))
+		    (apply g (mapcar f (mdicho a)))
+		    ) ))
+	     )
+	(a () l)
+	(f a)
+	) ) )
+
+(de xy-stdz (m0)
+    (let* ((m ()))
+      (if (= 1 (bound m0 0))
+	  (setq m (copy-matrix (msplit-dim m0 0 '(() 1))))
+	(setq m m0)
+	)
+      (let* ((v ())
+	     (x ())
+	     )
+	(for (i 0 (bound m 2))
+	  (setq v (submatrix m () i))
+	  (m+c v (- (xy-mean m i)) v)
+	  (setq x (xy-var m i))
+	  (if (and (numberp x) ~(nanp x) (< 0 x))
+	      (m*c v (/ (sqrt x)) v)
+	    (v () (nan)) ) ) )
+	  
+      (if (= m m0) m (copy-any-matrix m m0))
+      ) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass selector-9601 row
+    lab
+    sel
+    lnum
+    )
+
+(defmethod selector-9601 selector-9601 (l &optional n (l0 t))
+  (when ~n (setq n 5))
+  (when (= l0 t) (setq l0 (range 0 (1- (length l)))))
+  (setq lnum l0)
+  (setq lab l)
+  (setq sel (new selector n progn (all ((i l0)) (nth i lab))))
+  (eval
+   `(==> this row
+	 sel
+	 (new column
+	      (new tinybutton (ml "Void" "Vider")
+		   (lambda l (==> ,this void-item)) )
+	      (new tinybutton (ml "List" "Lister")
+		   (lambda l (==> ,this list-item)) )
+	      (new tinybutton (ml "Delete" "Supprimer")
+		   (lambda l (==> ,this delete-item)) )
+	      (new tinybutton (ml "Before" "Avant")
+		   (lambda l (==> ,this before)) )
+	      (new tinybutton (ml "After"  "Apres")
+		   (lambda l (==> ,this after)) )
+	      )
+	 (new column
+	      (new string (ml "Insert" "Ins\+irer"))
+	      (new selector (- n 1)
+		   (list () (lambda (c) (==> ,this insert-item (==> this getdatanum))))
+		   l)
+	      )
+	 ) ) )
+
+(defmethod selector-9601 getdata ()
+  (all ((i lnum)) (nth i lab))
+  )
+
+(defmethod selector-9601 getdatanum ()
+  lnum
+  )
+
+(defmethod selector-9601 setdatanum (l)
+  (setq lnum l)
+  (==> this expose)
+  )
+
+(defmethod selector-9601 insert-item (m &optional n)
+  (when ~n (setq n (==> sel getdatanum)))
+  (when ~n (setq n (length lnum)))
+  (setq lnum (list-insert lnum n m))
+  (==> this update)
+  )
+
+(defmethod selector-9601 delete-item (&optional n)
+  (when ~n (setq n (==> sel getdatanum)))
+  (if (or ~n (< n 0) (>= n (length lnum)))
+      (beep)
+    (setq lnum (list-delete lnum n))
+    (==> this update)
+    ) )
+
+(defmethod selector-9601 before (&optional n)
+  (when ~n (setq n (==> sel getdatanum)))
+  (if (or ~n (= n 0))
+      (beep)
+    (setq lnum (list-pswitch lnum n (1- n)))
+    (==> sel setdata (1- n))
+    (==> this update)
+    ) )
+
+(defmethod selector-9601 after (&optional n)
+  (when ~n (setq n (==> sel getdatanum)))
+  (if (or ~n (>= n (1- (length lnum))))
+      (beep)
+    (setq lnum (list-pswitch lnum n (1+ n)))
+    (==> sel setdata (1+ n))
+    (==> this update)
+    ) )
+
+(defmethod selector-9601 void-item ()
+  (setq lnum ())
+  (==> this update)
+  )
+
+(defmethod selector-9601 list-item ()
+  (setq lnum (range 0 (1- (length lab))))
+  (==> this update)
+  )
+
+(defmethod selector-9601 update ()
+  (let* ((n (==> sel getdatanum))
+	 (m :sel:pos)
+	 )
+    (==> sel setitems (all ((i lnum)) (nth i lab)))
+    (when m (==> sel setpos m))
+    (when n (==> sel setdata n))
+    ) )
+
+; (new windowobject 0 0 200 200 "coucou" (new selector-9601 '("a" "B" "c")))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; dbformatrequester-9601
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass dbformatrequester-9601 yesnorequester
+  msgstr ;;; prompt
+  frb    ;;; filerequbutton
+  fnes   ;;; file name edit string
+  fms    ;;; field multiple selector
+  fm     ;;; format menu
+  csm    ;;; column separator menu
+  lsm    ;;; line   separator menu
+  cses   ;;; column separator edist string
+  lses   ;;; line   separator edist string
+  )
+
+
+(defmethod dbformatrequester-9601 dbformatrequester-9601 (w txt fields &optional freqparam (selparam t))
+
+  (setq msgstr (new string txt))
+  
+  (setq fnes (new editstring 20 "tmp.txt"))
+  (setq frb (new filereqbutton (cons txt freqparam) fnes))
+
+  (setq fms (new selector-9601 fields () selparam))
+
+  (setq cses (new editcstring 10))
+  (setq lses (new editcstring 10))
+
+  (let* ((fa ())
+	 (sca ())
+	 (adddata (lambda (es c)
+		    (==> es insertdata c)
+		    ) )
+	 )
+
+    (setq fa '( (("\t" "\n")  "Worksheet" "Tableur")
+		(("|"  "|\n") "Database" "Base de Donn\+ies")
+		) )
+    (setq fa (all ((f fa)) (cons (apply ml (cdr f)) (car f))))
+	  
+    (setq sca
+	  '( ("\t"   "<Tabulation>"   "<Tabulation>"     )
+	     ("\n"   "<New line>"     "<Nouvelle ligne>" )
+	     ("|"    "'|'"            "'|'"               )
+	     ) )
+    (setq sca (all ((s sca)) (cons (apply ml (cdr s)) (car s))))
+
+    (setq fm
+	  (apply new (flatten (list menu
+				    (ml "Predefined" "Pr\+id\+ifinis")
+				    (all ((f fa))
+					 (cons (car f)
+					       (eval `(lambda (c)
+							(==> ,cses setdata ,(cadr  f))
+							(==> ,lses setdata ,(caddr f))
+							)) ) ) ))) )
+    (setq csm
+	  (apply new (flatten (list menu
+				    "..."
+				    (all ((ch sca))
+					 (cons (car ch)
+					       (eval `(lambda (c)
+							(,adddata ,cses ,(cdr ch))
+							)) ) ) ))) )
+    (setq lsm
+	  (apply new (flatten (list menu
+				    "..."
+				    (all ((ch sca))
+					 (cons (car ch)
+					       (eval `(lambda (c)
+							(,adddata ,lses ,(cdr ch))
+							)) ) ) ))) )
+
+    (==> this yesnorequester w
+	 (new column
+	      (new row
+		   (new column
+			msgstr
+			(new row
+			     (new emptyspace 5)
+			     frb
+			     fnes
+			     )
+			(new emptyspace 3)
+			(new darkspace 3)
+			(new emptyspace 3)
+			
+			(new string (ml "Using separators" "En utilisant les s\+iparateurs"))
+			(new grid 3
+			     (new emptyspace 0)
+			     fm
+			     (new emptyspace 0)
+			     
+			     (new string (ml "Column" "Colonnes"))
+			     cses
+			     csm
+			     
+			     (new string (ml "Line" "Lignes"))
+			     lses
+			     lsm
+			     )
+			)
+		   (new emptyspace 3)
+		   (new darkspace 3)
+		   (new emptyspace 3)
+		   (new column
+			(new String (ml "Fields" "Les champs"))
+			fms
+			(new emptyspace 10)
+			)
+		   )
+	      (new emptyspace 3)
+	      (new darkspace 3)
+	      (new emptyspace 3)
+	      )
+	 ostring-ok ostring-cancel ()
+	 )
+    (==> cses setdata (car  (cdar fa)))
+    (==> lses setdata (cadr (cdar fa)))
+    ) )
+
+(defmethod dbformatrequester-9601 getdata ()
+  (list
+   (==> fnes getdata)
+   (==> cses getdata)
+   (==> lses getdata)
+   (if fms
+       (==> fms getdatanum)
+     t
+     )
+   ) )
+
+(defmethod dbformatrequester-9601 setdata (sd)
+  (let* ((i -1))
+   (==> fnes setdata (nth (incr i) sd))
+   (==> cses setdata (nth (incr i) sd))
+   (==> lses setdata (nth (incr i) sd))
+   (when fms
+	 (==> fms setdatanum (nth (incr i) sd))
+	 t
+	 )
+   ) )
+
+(defmethod dbformatrequester-9601 setfreqparm l ()
+  (apply==> :frb:the-filereq 'setparm l)
+  )
+
+(defmethod dbformatrequester-9601 setmsg (txt)
+  (==> msgstr settext txt)
+  )
+
+;;;;;;;;;; Global function
+
+
+
+(de browse (x &optional opts)
+    (let* ((ok ()))
+      (while ~ok
+	(cond ((or (arrayp x) (matrixp x))
+	       ;; OK
+	       (setq ok (new c-abrowser x opts))
+	       )
+	      ((listp x)
+	       (setq x (list-to-array x))
+	       )
+	      ((or (stringp x) (member (classname (classof x)) '(|FILE_RO|)))
+	       (setq x (reading x (read-table () () (when (stringp x) (lambda l ())))))
+	       )
+	      (t (error "unsupported data"))
+	      ) )
+      (list (scope ok window))
+      ) )
+;(lock-symbol browse)
+
+
+(de display-curve (data &optional opts)
+    ;; process data if needed
+    (let* ((ok ())
+	   (title  (alist-get 'title  opts))
+	   (titles (alist-get 'titles opts))
+	   (colors (alist-get 'colors opts))
+	   (marks  (alist-get 'marks  opts))
+	   (types  (alist-get 'types  opts))
+	   (bb     (alist-get 'rect   opts))
+	   (window ()) ;; Arno, Tue Oct  1 16:10:48 MET 1996
+	   )
+      
+      (while ~ok
+	(print data)
+	(cond ((matrixp data)
+	       (setq data (mapfor (i 0 (bound data 2))
+			    (copy-matrix (submatrix data () i))
+			    )) )
+	      ((arrayp data)
+	       (setq data (mapfor (i 0 (bound data 2))
+			    (copy-any-matrix (submatrix data () i)  (matrix (car (bound data))))
+			    )) )
+	      ((consp data)
+	       (if (or (matrixp (car data)) (matrixp (cadr data))
+		       (arrayp (car data)) (arrayp (cadr data)) )
+		   (setq ok t)
+		 (setq data (list-to-array data))
+		 ) )
+	      ((or (stringp data)
+		   (and (atomp data) (= (classname (classof data)) |FILE_RO|)) )
+	       (setq data (reading data (read-table)))
+	       )
+	      ((is-of-class data datahandler)
+	       (setq data (==> data getmatrix t))
+	       )
+	      (t (error "not supported yet"))
+	      ) )
+    
+      ;; go
+      (let* ((curve (new d-curve
+			 data
+			 (list (cons 'title  title)
+			       (cons 'titles titles)
+			       (cons 'types  types)
+			       (cons 'colors colors)
+			       (cons 'marks  marks)
+			       ) ))
+	     (thiswindowobject (new c-newgrapher title curve bb))
+	     (window :thiswindowobject:window)
+	     )
+	;; Now we can define colors. We could not do it before
+	;; since the window is required to reach the driver (TL bad feature).
+	(==> curve init-colors)
+	(list window)
+	) ) )
+;(lock-symbol display-curve)
+
+
+;;;;;;;;;; ADDS-ON FOR COMPATIBILITY BETWEEN TL/PREVISION and TL
+
+
+(when ~ml (de ml l (nth 0 l)))
+
+;; still in TL/Prevision
+(when ~x-inf
+  (setq x-inf inf-mat) )
+
+;; still in TL/Prevision
+(when ~x-sup
+  (setq x-sup sup-mat)
+  )
+
+(de ornan l
+    (or (apply or l) (nan)) )
+
+
+;; still in TL/Prevision
+(when ~sql-num2tl
+  (setq sql-num2tl progn)
+  )
+
+;; still in TL/Prevision
+(when ~xy-mean
+  (de xy-mean (m &optional i)
+      (mean-mat (if i (submatrix m () i) m)) )
+  )
+
+;; still in TL/Prevision
+(when ~xy-stats 
+  (de xy-stats (m l vm mc)
+      (vm () (mapfor (i 0 (bound m 2)) (xy-mean m i)))
+      (let* ((mm (m-m m (mrep-dim vm 0 (car (bound m))))))
+	(m*m (transpose mm) mm mc)
+	(m*c mc (/ (1+ (bound m 1))) mc)
+;	(for (i 0 (bound mc 1))
+;	  (let* ((y (mc i i)))
+;	    (mc i () (all ((x (mc i ()))) (/ x (sqrt y))))
+;	    (mc () i (all ((x (mc () i))) (/ x (sqrt y))))
+	    ) ) ) ) )
+
+;; still in TL/Prevision
+(when ~xy-compl
+  (de xy-compl (m v c)
+      () ))
+
+;; still in TL/Prevision
+(when ~xy-var
+  (de xy-var (m i)
+      (setq i (sdev-mat (submatrix m () i)))
+      (* i i) )
+  )
+
+
+
+;; still in TL/Prevision
+(when ~xy-count
+;;;  (de xy-count (m i)
+;;;      (setq m (xy-not-nan m i)) (if m (car (bound  m)) 0) )
+  (de xy-count (m i)
+      (when i (setq m (submatrix m () i)))
+      (- (apply * (bound m))
+	 (moccur m (nan))
+	 ) )
+  )
+
+;; still in TL/Prevision
+(when ~xy-not-nan
+  (de xy-not-nan (v &optional i)
+      (when i (setq v (submatrix v () i)))
+      (setq v (flatten (mapcar not-nan (v ()))))
+      (when v ((matrix (length v)) () v))
+      ) )
+

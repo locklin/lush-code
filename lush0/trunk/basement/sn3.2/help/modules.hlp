@@ -1,0 +1,311 @@
+#? Modules.
+.SEE (mod-load <filename>)
+.SEE (mod-unload <filename>)
+.SEE (mod-list)
+.SEE (mod-undefined)
+.SEE (mod-inquire <filename>)
+.SEE (mod-compatibility-flag <boolean>)
+.SEE (mod-create-reference <...strings...>)
+.SEE (mod-dlopen <sofilename>)
+.SEE debugging C / C++ code with gdb
+
+This section describes a set of function aiming at dynamically linking
+object files (commonly referred to as ``.o'' files) containing new C
+functions. Such object modules can define new Lisp functions, or
+provide support functions for other object modules.
+
+This option is available when SN3 is compiled with the switch ``-DDLD",
+and is currently limited to the BSD style object format, for it uses
+the GNU library ``DLD-3.2.3". This library is distributed by the Free
+Software Foundation, and should be installed in a ``dld'' subdirectory
+in the ``sn3'' directory.
+
+Here is an example of a file, named ``essai.c'', which defines a new
+lisp function written in C for computing the square of the hypotenuse
+of certain triangles.
+
+.VP
+   /* ------ Beginning of File "essai.c" ------ */
+
+   #include "header.h"
+
+   /* This is my function */
+
+   real hypotenuse(x,y)
+   real x,y;
+   {
+     real z = x*x + y*y; 
+     printf("hypot(%f,%f)=%f\n",x,y,z);
+     return z;
+   }
+   
+   
+   /* This is the interface */
+   
+   DX(xhypotenuse) {
+     ARG_NUMBER(2); 
+     ALL_ARGS_EVAL;
+     return NEW_NUMBER( hypotenuse(AREAL(1),AREAL(2)));
+   }
+   
+   
+   /* This is the initialization routine.                         */
+   /* Its name is composed by prepending "init_" to the file name */
+   
+   void init_essai()
+   {
+     dx_define("hypotenuse",xhypotenuse);
+   }
+
+   /* ------ End of File "essai.c" ------ */
+.PP 
+Integrating this function into SN can be achieved in two ways: 
+.IP
+Copying this file in the ``src'' directory of SN, adding ``essai.o'' to
+the list of objects in the ``Makefile", and typing ``make".  This will
+build a new version of SN3 which contains this new function.
+.IP
+Compiling this file and loading the resulting object file into SN3 at
+run-time. 
+.PP
+
+This latter solution is named Dynamic Linking of an external Module.
+Modules are loaded with the function <mod-load>, and unloaded with the
+function <mod-unload>. These functions allocate the necessary memory,
+relocate the machine code, and resolve the external references.
+
+The compilation is performed by the command:
+.VP
+  globina% cc -c -I/home/leonb/sn3/src essai.c
+.PP
+The resulting ``essai.o'' file can be loaded into SN3 with the command
+.VP
+  ? (mod-load "essai.o")
+  = "/home/user/subdir/essai.o"
+  ? (hypotenuse 3 4)
+  hypot(3.000000,4.000000)=25.000000
+  = 25
+.PP
+
+Modules can call any extern function or variable defined or used by
+SN, as well as extern functions and variable defined in other modules.
+In particuler, most functions of the C library are accessible, like
+<printf>.
+
+A function defined in a module however is not always executable.
+Indeed, its module might call an undefined function, or a function
+defined by another non executable module.
+
+In fact, four situations occur: 
+.IP 
+Initialized and executable modules are the only accessible modules.
+All functions referenced by these modules have been found, and the
+initialization routine (e.g.  <init_essai>) has been succesfully
+executed, creating descriptors for the new lisp functions defined in
+the modules.  At this point, all new lisp functions defined by such a
+module are accessible and work as expected.
+
+.IP
+Uninitialized modules reference some undefined functions, or some
+functions defined by a non executable module.  Therefore, the
+initialization function has not been executed, and the descriptors for
+the new lisp functions defined by such a module have not been created.
+
+.IP
+Modules may be initialized but non executable. Such a situation occurs
+when a module has been initialized and executable, but is no longer
+executable, because it uses some function or global variable which is
+no longer defined, because its module has been unloaded.
+
+.IP 
+Finally, certain modules do not define an initialization function.
+Such modules just define C functions used by other modules.
+We say that such a module is in a unknown state.
+.PP
+Note:
+
+The dynamic loading feature does not work if there is a directory
+named ``sn3'' in the current directory, or in command search path.  This
+is a bug of the DLD-3.2.3 library.
+
+
+#? (mod-list)
+.SEE Modules.
+This function returns the list of the currently loaded modules.
+
+Example:
+.VP
+   ? (mod-list)
+   = ("/home/leonb/test/essai.o" "/home/leonb/test/silly.o")
+.PP
+
+#? (mod-undefined)
+.SEE Modules.
+This function returns a list with the names of all undefined C
+functions and global variables in the current modules.  A underscore
+character is usually prepended to the C names of these functions or
+global variables.
+
+Example:
+.VP
+   ? (mod-undefined)
+   = ("_compute_squares" "_numbers_of_squares" "__R_to_D_list")
+.PP
+
+#? (mod-inquire <filename>)
+.SEE Modules.
+This function returns a list describing the status of a loaded module
+defined by the object file <filename>. The first element of this list
+is a string describing one of the four possible states of a module.
+
+When the initialization function has been called, the names of the new
+lisp functions are provided in the remaining part of this list.
+
+Example:
+.VP
+   ? (mod-inquire "essai.o")
+   = ("State: initialized, executable" hypotenuse)
+.PP
+
+#? (mod-load <filename>)
+.SEE Modules.
+This function adds an object module into SN3.
+
+This operations has four steps:
+.IP
+Unloading any previous version of module <filename>.
+.IP
+Loading and relocating the object file <filename> in memory.
+.IP
+Updating all references to symbols defined by this module, as well
+as all references of this module to symbols defined by other modules,
+or by SN3 itself.
+.IP
+Checking the executability of all loaded modules, calling the 
+initialization functions if a module becomes executable.
+.PP
+Several error messages may occur during this process.  In particular,
+it is forbidden (1) to load a module whose symbols are already defined by
+another module, (2) to load a module which defines a new class of lisp 
+objects
+
+The new version of the dynamical loader is now able to load and unload
+libraries with more reliablity. It only loads those library components which
+define symbols currently undefined. You may want to use functions
+<mod-create-reference> to create fake undefined symbols and load certain parts
+of the library before actually using them. You may also use function
+<mod-compatibility-flag> to replicate bugs of the old loader.
+
+.SEE (mod-create-reference <...strings...>)
+.SEE (mod-compatibility-flag <boolean>)
+
+
+#? (mod-create-reference <...strings...>)
+
+Creates a fake undefined symbol that will be considered when loading libraries
+(archive files like <"foo.a">). The loader indeed only loads the library
+components which define symbols currently undefined. You may want to use
+functions <mod-create-reference> to create fake undefined symbols and load
+certain parts of the library before actually using them.
+
+#? (mod-compatibility-flag <boolean>)
+
+The old loaded was based on the DLD-3.2.3 library. This library had
+significant bugs in the code checking the executability of a module. Some old
+code (e.g. the CAR toolbox) relies on this bug to load and initialize a module
+containing compiled SN functions without making sure that all modules called
+by this module are fully linked.
+
+The new loader implements these checks properly. This righful code
+may prevent you to load your old files. You can use function
+<mod-compatibility-flag> with a non nil argument to loosen the checks
+until the new system is almost as buggy as the old one.
+
+
+#? (mod-unload <filename>)
+.SEE Modules.
+This function removes an object module into SN3.
+
+This operations has three steps:
+.IP
+Marking all lisp functions defined by this module as unlinked.
+Calling such functions will cause an error in the future.
+.IP
+Relinquishing the memory utilized by the module.
+.IP
+Checking the executability of all loaded modules, and mark the lisp
+functions defined by a module as partially linked, if this modules is
+no longer executable.
+
+
+
+#? (mod-dlopen <sofilename>) 
+.SEE Modules.  
+.SEE Debugging C / C++ code with gdb
+
+This function loads the shared library <sofilename> using the system function
+<dlopen>. The symbols of this shared library are then available for normal
+dynamic linking.  There is no way to unload a shared library.
+
+Example:
+.VP
+? (mod-load "mymodule.o")
+= "mymodule.o"
+? (mod-undefined)
+= (sqrt)
+? (mod-dlopen "/usr/lib/libm.so")
+= t
+? (mod-undefined)
+= ()
+
+#? Debugging C / C++ code with gdb
+When using C or C++ code dynamically linked with SN,
+it is often useful to be able to use a debugger
+going within the C/C++ code while SN functions
+are being executed. A solution to this problem
+is possible using the gdb Gnu debugger and 
+shared library objects.
+.PP
+The following steps should be followed:
+.PP
+.IP * compile the C/C++ code with the -shared and -g options and 
+the gnu compiler, e.g.
+.VP
+  g++ -shared toto.cc -g -o toto.so
+.PP
+.IP * start sn3.1 from gdb, e.g.
+.VP
+  gdb /home/snwiz/sn3.1/bin/SGI/sn3.1
+.PP
+.IP * from the debugger, start SN by entering "run"
+.IP * load the shared object library from SN, e.g.
+.VP
+  (mod-dlopen "/mypath/toto.so")
+.PP
+.IP * some gcc or other symbols may be undefined, which
+requires loading appropriate libraries, e.g.
+.VP
+  (mod-load "/usr/lib/libgcc.a")
+.PP
+.IP * interrupt the debugger (e.g., with ^C or ^C^C from emacs)
+.PP
+.IP * load the symbol-table for the dynamically loaded shared object 
+in the debugger (this needs to be done only once), e.g.
+.VP
+  (gdb) sharedlibrary /home/yoshua/tmp/toto.so
+  Reading symbols from /home/yoshua/tmp/toto.so...done.
+.PP
+.IP * set your breakpoints (e.g., break functionname)
+.PP
+.IP * return to SN with the continue command
+.PP
+.IP * execute SN code that calls the C/C++ functions 
+that contain your breakpoints, and the debugger
+will break properly.
+.PP
+.IP * unfortunately, if you recompile your C/C++ code,
+you will have to exit the debugger and restart it
+in order for these changes to take effect.
+
+.SEE (mod-dlopen <sofilename>) 
+

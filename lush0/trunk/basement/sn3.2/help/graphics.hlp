@@ -1,0 +1,1218 @@
+#? Graphics.
+
+TLisp features a collection of graphics functions for creating
+windows, drawing figures, plotting curves, and handling graphical
+events.
+
+A window is a lisp object of class <|WINDOW|>.  Most graphical
+functions operates on a ``current window''. The ``current window''
+actually is nothing but the window stored in the symbol <window>.
+
+All TLisp graphical functions are handled by a ``graphic driver''
+associated to each window. Most graphic drivers convert each request
+into the system dependent commands for drawing something into a
+rectangular piece of your screen. Graphics drivers however might just
+create a file for sending to a printer, or send specific message to a
+lisp object...
+
+.SEE Graphic Drivers.
+.SEE Drawing.
+.SEE Plotting.
+.SEE Events.
+.SEE Graphical Utilities.
+
+#? Graphic Drivers.
+.SEE (new-window [[<x> <y>] <w> <h>] [<name>])
+.SEE (x11-window [[[<x> <y>] <w> <h>] <name>])
+.SEE (ps-window [[[<x> <y>] <w> <h>] <name>])
+.SEE (idraw-window [[[<x> <y>] <w> <h>] <name>])
+.SEE (lisp-window)
+
+All the graphics functions are executed through a device dependent
+graphics driver. It converts TLisp machine independent graphics
+functions into the device dependent graphics calls.
+
+Several graphics drivers have been implemented: 
+.IP
+The ``X11 driver'' works under the X windows system, version 11, which is
+now the industry standard. The X11R4 version of the driver also
+recognizes certain ICCM defined window manager protocols.
+.IP
+The ``SUN driver'' used to work under the Sunview(tm) windowing
+system.  Since Sunview is being progressively replaced by
+OpenWindows(tm), we prefer using the X11 driver which works
+just fine with OpenWindows.
+.IP
+The ``GPR driver'' used to work on Apollo(tm) workstations under their
+native environment. They have however a nice implementation of X11,
+and they support Motif(tm), another X11 based user interface.
+We prefer thus using the X11 driver.
+.IP
+The ``PS driver'' writes PostScript(tm) instructions into a file.
+This file then can be sent to a PostScript printer.
+.IP
+The ``Lisp driver'' converts TLisp graphics requests into messages sent
+to the window object. This is useful for easily implementing new drivers,
+like the IDraw driver.
+.IP
+The ``IDraw driver'' uses Bernhardt Boser's Remote Procedure Call
+protocol for drawing into the <idraw> program provided with
+Interviews(tm). It is then possible to edit and print the resulting
+figures.
+.PP
+Only a few drivers are implemented on each machine specific version of
+SN. The most common mixture combines the X11, PostScript, Lisp, and
+IDraw drivers.
+
+
+
+#? (new-window [[<x> <y>] <w> <h>] [<name>])
+.TYPE DX
+.SEE window
+.SEE (x11-window [[[<x> <y>] <w> <h>] <name>])
+.SEE (ps-window [[[<x> <y>] <w> <h>] <name>])
+.SEE (idraw-window [[[<x> <y>] <w> <h>] <name>])
+.SEE (lisp-window)
+
+This is the device independent function for creating a window.  It
+figures out which drivers are available, and call the appropriate
+function for creating a window. Most of the time, <new-window> calls
+<x11-window>.
+
+The <new-window> function creates a window named <name>, of size <w>
+and <h>, at position (<x>,<y>).  The window descriptor then is stored
+into the <window> variable and returned.
+
+Window descriptors are instances of the <|WINDOW|> class.  Windows are
+closed when they are no longer referenced by the lisp interpreter,
+when they are deleted with the <delete> function, or when the
+windowing system sends a deletion request.
+
+
+#? (x11-window  [[[<x> <y>] <w> <h>] <name>])
+.SEE (new-window [[<x> <y>] <w> <h>] [<name>])
+
+This function creates a window of size <w> and <h> at position <x> and
+<y> named <name> in a X window environment, using the X11 driver. The
+first time this function is called, it searches the variable <display>
+then the environment variable DISPLAY for the name of the X windows
+server to use.
+
+This driver automatically refreshs its windows when needed. It also
+supports double- bufferred animations with the <graphics-batch>
+function.
+
+Unlike <new-window>, this function does not store the newly created
+window in the variable <window>, and thus does not make this window
+current.
+
+#? (ps-window [[[<x> <y>] <w> <h>] <name>])
+.SEE (new-window [[<x> <y>] <w> <h>] [<name>])
+.SEE (gspecial <string>)
+
+This function creates a window descriptor, which actually writes
+PostScript instructions into a file, using the PS driver. There is one
+file per page, whose name is computed by concatenating name, a ``ps.''
+suffix, and the page number.
+
+Arguments <x> and <y> are ignored. Arguments <w> and <h> are used for
+scaling the graphics to the page size. Arbitrary text can be inserted
+into the PostScript files with the <gspecial> function.
+
+Unlike <new-window>, this function does not store the newly created
+window in the variable <window>, and thus does not make this window
+current.
+
+#? (idraw-window [[[<x> <y>] <w> <h>] <name>])
+.SEE (new-window [[<x> <y>] <w> <h>] [<name>])
+.SEE (lisp-window)
+.SEE (remote <fin> <fout> [<rtable>])
+
+This function calls a modified IDraw program which understand
+Bernhardt Boser's RPC protocol. It returns a window descriptor which
+actually sends messages to this modified IDraw program. This is a way
+of creating IDraw graphics from SN.
+
+Argument <x>, <y> and <name> are ignored. Arguments <w> and <h> are
+used to define the size of the drawing, and center it within the IDraw
+workspace.
+
+Unlike <new-window>, this function does not store the newly created
+window in the variable <window>, and thus does not make this window
+current.
+
+Note: There is currently no way to close an IDraw window.
+
+
+#? (lisp-window)
+.SEE (new-window [[<x> <y>] <w> <h>] [<name>])
+.SEE (idraw-window [[[<x> <y>] <w> <h>] <name>])
+
+This construction creates a window which converts graphics
+functions into messages sent to the window itself, using
+the Lisp driver.
+
+This function typically is used for creating instances of a subclass
+of class |WINDOW|. This subclass must define a set of conventional
+methods for handling the graphical requests.
+
+This Lisp driver is handy for easily creating new drivers.  The IDraw
+driver, for example, uses the Lisp driver. For more information, look
+at the definition of class <IDrawWindow> in the file <"graphenv.sn">.
+
+
+
+
+
+#? Drawing.
+The coordinate system of a window has its origin in the upper left
+hand corner.  Positive x and y coordinates go to the right and
+downwards.
+
+.SEE (gdriver)
+.SEE (xsize)
+.SEE (ysize)
+.SEE window
+.SEE (color [<c>])
+.SEE (alloccolor <r> <g> <b>)
+.SEE (color-shade <x>)
+.SEE (color-rgb  <r g b)
+.SEE (clip [<x> <y> <w> <h>])
+.SEE (addclip <rect>)
+.SEE (font  [<fontname>])
+.SEE (gsave <l_1> ...<l_n>)
+.SEE (cls)
+.SEE (draw-line  <x_1> <y_1> <x_2> <y_2>)
+.SEE (draw-rect <x> <y> <w> <h>)
+.SEE (draw-round-rect <x> <y> <w> <h> [<r>])
+.SEE (draw-circle  <x> <y> <r>)
+.SEE (fill-rect <x> <y> <w> <h> [<r>])
+.SEE (fill-round-rect  <x y w h [r])
+.SEE (fill-circle  <x y r)
+.SEE (fill-polygon <x_1> <y_1> ... <x_n> <y_n>)
+.SEE (draw-text <x> <y> <s>)
+.SEE (rect-text <x> <y> <s>)
+.SEE (text-width <s>)
+.SEE (text-height <s>)
+.SEE (draw-text <x> <y> <s>)
+.SEE (draw-value  <x> <y> <val> <maxv> <maxs>)
+.SEE (draw-list  <x> <y> <l> <ncol> <maxv> <apart> <maxs>)
+.SEE (gray-draw-list  <x> <y> <l> <ncol> <minv> <maxv> <apart>)
+.SEE (gray-draw-matrix  <x> <y> <mat> <minv> <maxv> <apartx> <aparty>)
+.SEE (rgb-draw-matrix <x> <y> <mat> <apartx> <aparty>)
+.SEE (graphics-batch  <l_1> ... <l_n>)
+.SEE (gspecial <string>)
+
+
+#? (gdriver)
+Returns the name of the graphic driver of the current window.
+
+#? (xsize)
+Returns the width of the current window.
+
+#? (ysize)
+Returns the height of the current window.
+
+#? window
+.TYPE VAR
+This variable <window> defines the current window. Most graphics
+functions refers implicitly to the window descriptor stored in this
+variable.
+
+#? (color [<c>])
+.SEE (alloccolor <r> <g> <b>)
+If <c> is specified, sets the current color to color number <c>.
+Function <color> always returns the current color.  
+
+Color numbers are obtained with <alloccolor>. A few predefined color
+numbers however are defined by the file <"graphenv.sn">:
+.IP
+<color-fg> or -1  for the system foreground color.
+.IP
+<color-bg> or -2  for the system background color.
+.IP
+<color-gray> or -3 for a 50 percent dithered gray level.
+
+#? color-fg
+.TYPE VAR
+.FILE graphenv.sn
+.SEE (color [<c>])
+System foreground color.
+
+#? color-bg
+.TYPE VAR
+.FILE graphenv.sn
+.SEE (color [<c>])
+System background color.
+
+#? color-gray
+.TYPE VAR
+.FILE graphenv.sn
+.SEE (color [<c>])
+A 50 percent dithered gray level.
+
+#? (alloccolor <r> <g> <b>)
+.SEE (color [<c>])
+.SEE (lookup-color <s>)
+Ask the driver for a color number defined by its three primitive
+values. Arguments <r>, <g>, <b> are reals between 0 and 1 that define
+the red, green and blue components of the desired color.
+
+Returns a color number suitable for using with the <color> function,
+or <color-gray> if the hardware is not able to display a that color.
+
+#? (color-shade <x>)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (color [<c>])
+.SEE (alloccolor <r> <g> <b>)
+This function calls <alloccolor> then <color> for setting a grayscale
+color. Argument <x> is a real between 0 and 1.  <color-shade> provides
+support for grayscale monitors. In addition, drivers often use
+dithering for filling circles or rectangles on black and white
+monitors .
+
+#? (color-rgb  <r g b)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (color [<c>])
+.SEE (alloccolor <r> <g> <b>)
+This function calls <alloccolor> then <color> for setting the current
+color according to its three primitive values. Arguments <r>, <g>, <b>
+are reals between 0 and 1. Of course, this function has a poor effect
+without a color screen.
+
+#? (clip [<x> <y> <w> <h>])
+When a clip rectangle has been set, graphics output is restricted to
+the inner part of the clip rectangle. the <clip> function allows for
+manipulating the clip rectangle.
+.IP
+<(clip x y w h)> sets a new clip rectangle whose top left corner is
+located at position (<x>, <y>), whose width is <w>, and whose height
+is <h>.
+.IP
+<(clip ())> cancels clipping and unset the clipping rectangle.
+.IP
+<(clip)> just returns the current clipping rectangle.
+.PP
+Function <(clip)> always returns the previous clip rectangle, as a
+list <(x y w h)>, or the empty list if no previous clipping rectangle
+was set.
+
+#? (addclip <rect>)
+Argument <rect> must be a list of the form <(x y w h)>, where <x>,
+<y>, <w>, and <h> are numbers.
+
+The function <addclip> sets the current clip rectangle to the
+intersection of the current clipping rectangle with a rectangle whose
+top left corner is located at position (<x>, <y>), whose width is <w>,
+and whose height is <h>.
+
+If this intersection is empty, the empty list is returned.  Otherwise,
+<addclip> returns the new clip rectangle.
+
+#? (font  [<fontname>])
+.SEE (draw-text <x> <y> <s>)
+.SEE (gprintf <x> <y> <fmt> ... <args> ...)
+.SEE (psfont-to-xfont <s>)
+This functions sets the font used for rendering characters in
+subsequent calls of <draw-text>. It always returns the current font
+name.
+
+Font names specify the family, the style, and the size of the font. 
+Naming conventions however change from system to system, as well
+as the fonts actually available.
+
+.IP
+Font <"default"> is recognized by all the drivers, and sets a reasonably
+small default font. Always using font <"default"> is the only guaranteed
+way to write fully portable programs.
+.IP
+Most drivers recognize PostScript font naming conventions.  PostScript
+font names are composed of a font family, an optional font style, and
+a font size, possibly separated by dashes.  Typical examples are
+<"Helvetica-18">, <"Times-Roman24">, <"Courier-Bold-12">.
+.IP
+Finally, all drivers understand specific font names.  For instance,
+the X11 driver recognizes all font names listed by the utility program
+<xlsfonts>. These font names are very long, but a star <*> can be used
+as a wildcard character. A typical example is
+<"-*-times-*medium-*r-*--18-*">.
+.PP
+A good compromise between fancy display and portable graphics consists
+in using PostScript font names, but to limit yourself to the basic
+PostScript families and styles, like <"Helvetica">, <"Times-Roman">,
+<"Courier">, etc..., of sizes 8, 10, 12, 18, or 24.
+
+An error may or may not occur when a driver does not recognize a font
+name. In the latter case, the actual font displayed is undefined.
+
+#? (gsave <l_1> ...<l_n>)
+The <gsave> function saves the graphics state of the current window,
+evaluates lists <l_1> to <l_n> with a call to <progn>, and restores
+the saved graphics state. Function <gsave> returns the result of the
+last evaluation.
+
+#? (cls)  
+Clears the current graphics window.
+
+#? (draw-line  <x_1> <y_1> <x_2> <y_2>)
+Draws a line from point (<x_1>,<y_1>) to the point (<x_2>,<y_2>) in
+the current window, with the current color.
+
+#? (draw-rect <x> <y> <w> <h>)
+Draws a hollow rectangle in the current window, with the current
+color.  Its top-left corner is located at coordinates (<x>,y); its
+width is <w>, and its height is <h>.
+
+#? (draw-round-rect <x> <y> <w> <h> [<r>])
+.SEE (draw-rect <x> <y> <w> <h>)
+Draws a hollow rectangle whith rounded corners of radius <r>.
+
+#? (draw-circle  <x> <y> <r>)
+Draws a hollow circle in the current window, with the current color.
+its center is located at position (<x>,<y>); its radius is <r>.
+
+
+#? (fill-rect <x> <y> <w> <h> [<r>])
+Fills a rectangle in the current window, with the current
+color.  Its top-left corner is located at coordinates (<x>,y); its
+width is <w>, and its height is <h>.
+
+
+#? (fill-round-rect  <x y w h [r])
+.SEE (fill-rect <x> <y> <w> <h>)
+Fills a rectangle whith rounded corners of radius <r>.
+
+
+#? (fill-circle  <x y r)
+Fills a circle in the current window, with the current color.
+its center is located at position (<x>,<y>); its radius is <r>.
+
+#? (fill-polygon <x_1> <y_1> ... <x_n> <y_n>)
+Fills the polygon defined by the points (<x_1>,<y_1>) to (<x_n>,<y_n>), 
+in the current window, with the current color.
+
+#? (draw-text <x> <y> <s>)
+.SEE (gprintf <x> <y> <fmt> ... <args> ...)
+Draws the text of the string <s> in the current window at position
+(<x>,<y>), using the current font and the current color.
+
+#? (rect-text <x> <y> <s>)
+.SEE (draw-text <x> <y> <s>)
+.SEE (text-width <s>)
+.SEE (text-height <s>)
+Returns a list <(x y w h)> describing the rectangle that would be
+affected by a call to <(draw-text x y s)>. 
+
+A few driver, including the PS driver, do not implement this function.
+In that case, <rect-text> returns the empty list.
+
+#? (text-width <s>)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (rect-text <x> <y> <s>)
+Returns the width of the text in string <s>, if it is printed with the
+current font. This function uses <rect-text> if it is available, or
+uses some crude heuristics.
+
+#? (text-height <s>)
+.TYPE DE
+.FILE graphenv.sn
+Returns the height of the text in string <s>, if it is printed with the
+current font. This function uses <rect-text> if it is available, or
+uses some crude heuristics.
+
+
+#? (gprintf <x> <y> <fmt> ... <args> ...)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (draw-text <x> <y> <s>)
+.SEE (text-width <s>)
+Behaves exactly like <printf>, but prints out the text on the current
+graphic window, with the current font and color, starting at location
+(<x>,<y>).
+
+
+#? (draw-value  <x> <y> <val> <maxv> <maxs>)
+.SEE (draw-list  <x> <y> <l> <ncol> <maxv> <apart> <maxs>)
+This function displays a real value as a white or black square.
+
+Arguments <x> and <y> are the coordinates of the center of the square.
+Argument <val> is the value to be displayed.  Argument <maxv> is the
+maximum absolute value for <val>.  Argument <maxs> is the maximum size
+of the square; i.e even when <val> is larger than <maxv>, a square of
+size <maxs> is drawn. (Note: The square will not be visible if it is
+drawn in the same color as the background).
+
+
+
+#? (draw-list  <x> <y> <l> <ncol> <maxv> <apart> <maxs>)
+.SEE (draw-value  <x> <y> <val> <maxv> <maxs>)
+.SEE (gray-draw-list  <x> <y> <l> <ncol> <minv> <maxv> <apart> [<cmap>])
+.SEE (gray-draw-matrix  <x> <y> <mat> <minv> <maxv> <apartx> <aparty> [<cmap>])
+
+High level drawing function to graphically represent a list of real
+numbers. A list of real numbers <l> will be represented as a series of
+black or white squares on a grey background (actual colors depend on
+the implementation).
+
+Arguments <x> and <y> are the coordinates of the top left edge of the
+background area.
+
+The squares are arranged in an array with <ncol> columns, the number
+of lines is then defined by the length of the list <l>.  The grey
+background is always rectangular, even if <ncol> is not a divisor of
+the length of <l>.
+
+As with <draw-value>, argument <maxv> is the maximum absolute value
+for the list elements.
+ 
+The size of the square is however bounded by <maxs>. 
+
+Argument <apart> defines the size of the space occupied by a single
+square, i.e, the centers of two neighboring squares will be apart
+pixels apart. It is generally suitable to choose a value for <apart>
+slightly greater than maxs so that no squares will overlap. For best
+results, the difference between <apart> and <maxs> should be an even
+number.
+
+Example:
+.VP
+ ; draw 6 values on 3 columns and 2 lines, in 50 pixel squares
+ (draw-list 50 50 '( 4 5 -10 
+                     0 4  16 ) 3 16 52 50)
+
+ ; draw the values in l on a single line
+ (draw-list 100 100 l (length l) 10 20 18)
+.PP
+
+
+#? (gray-draw-list  <x> <y> <l> <ncol> <minv> <maxv> <apart> [<cmap>]))
+.SEE (draw-list  <x> <y> <l> <ncol> <maxv> <apart> <maxs>)
+.SEE (gray-draw-matrix  <x> <y> <mat> <minv> <maxv> <apartx> <aparty> [<cmap>])
+.SEE (alloccolor <r> <g> <b>)
+
+High level drawing function to graphically represent a list of real
+numbers. A list of real numbers <l> will be represented as a series of
+gray squares whose gray level is related to the represented value.
+This function uses a clever dithering algorithm on black&white
+displays.
+
+Arguments <x> and <y> are the coordinates of the topleft edge of the
+first square (representing the first element in the list).  The
+squares are arranged in an array with <ncol> columns, the number of
+lines is defined by the length of the list <l>.  The values between
+<minv> and <maxv> will be displayed as gray levels.  A value of <minv>
+will be rendered as a black square. A value of <maxv> will be rendered
+as a white square.  <minv> can be defined to be greater than <maxv> in
+order to produce a reverse video effect.  The sizes of the squares are
+defined by the <apart> parameter.
+
+When an optional colormap <cmap> is provided, this function creates a
+colored output. Argument <cmap> must be a one-dimensional matrix of 64
+color numbers returned by <alloccolor>.  Values between <minv> and
+<maxv> are rendered using the ramp of colors specified by this matrix.
+
+
+#? (gray-draw-matrix  <x> <y> <mat> <minv> <maxv> <apartx> <aparty> [<cmap>])
+.SEE (draw-list  <x> <y> <l> <ncol> <maxv> <apart> <maxs>)
+.SEE (gray-draw-list  <x> <y> <l> <ncol> <minv> <maxv> <apart> [<cmap>])
+.SEE (alloccolor <r> <g> <b>)
+
+High level drawing function to graphically represent a 2D matrix <mat>
+as a series of gray rectangles whose gray level is related to the
+represented value. This function uses a clever dithering algorithm on
+black&white displays.
+
+Arguments <x> and <y> are the coordinates of the topleft edge of the
+first square (representing the first element in the list).  The values
+between <minv> and <maxv> will be displayed as gray levels.  A value
+of <minv> will be rendered as a black rectangle. A value of <maxv>
+will be rendered as a white rectangle.  <minv> can be defined to be
+greater than <maxv> in order to produce a reverse video effect.  The
+sizes of the rectangles are defined by the <apartx> and <aparty>
+parameter.
+
+When an optional colormap <cmap> is provided, this function creates a
+colored output. Argument <cmap> must be a one-dimensional matrix of 64
+color numbers returned by <alloccolor>.  Values between <minv> and
+<maxv> are rendered using the ramp of colors specified by this matrix.
+
+
+#? (rgb-draw-matrix <x> <y> <mat> [<apartx>] [<aparty>])
+
+Display a color image on the screen.
+
+Argument <mat> may be 
+.IP
+A 3D matrix whose last dimension is at least three.
+The three values adressed by this last dimension 
+represent the red, green and blue component of each pixel
+coded on a scale of 0 to 255.
+.IP
+A 2D matrix whose elements represent the gray intensity of each pixel
+coded on a scale of 0 to 255.
+.PP
+The left corner of the image will be displayed on location (<x>,<y>).
+The argument <apartx> and <aparty> specify zoom factors in each direction.
+.PP
+This routine operates faster if matrix <mat> is a UBYTE matrix.  Both true
+color displays and paletized displays are supported.  On a paletized display,
+we run a simple error diffusion algorithm that maps the image on a 64 colors
+color cube.
+
+
+#? (graphics-batch  <l_1> ... <l_n>)
+
+Most graphics drivers can work with an off-screen bitmap to update the
+screen after several graphics commands. The <graphics-batch> function
+provides a support for this double buffering abilities.  
+
+This function evaluates the lists <l_1> to <l_n>, but if a graphic
+instruction is executed, the screen update is delayed until the end of
+these evaluations, and is performed only once.
+
+
+#? (gspecial <string>)
+.SEE Graphic Drivers.
+.SEE (ps-window [[[<x> <y>] <w> <h>] <name>])
+This function sends a driver specific command.  The string <string>
+must be a command defined by the driver.  This function is ignored if
+the driver does not recognize the string <string>.
+
+Currently, only the PS driver uses this command. The string <string>
+is inserted in the PostScript(tm) file. In addition, special commands
+are recognized by this driver.
+.IP
+<"%%%PSDRIVER:COLOR8">:
+Ask the PS driver to produce files compatible with the QMS color
+printer, as well as a few other color printers. When a
+<gray-draw-matrix> or a <gray-draw-list> is issued, the PS driver
+shall write out a <colorimage> ColorScript(tm) command, using 3x8 bits
+per pixel.
+
+The resulting files usually are pretty large; printing them is usually
+very long (20mn). They provide the best color rendering. These file
+cannot be used on a standard LaserWriter(tm) printer.
+.IP
+<"%%%PSDRIVER:COLOR4">:
+Ask the PS driver to produce files compatible with the QMS color
+printer.  , as well as a few other color printers. When a
+<gray-draw-matrix> or a <gray-draw-list> is issued, the PS driver
+shall write out a <colorimage> PostScript command, using 3x4 bits per
+pixel.
+
+The resulting files usually are twice smaller than the above files,
+at the expense of the output quality.
+.IP
+<"%%%PSDRIVER:B&W">:
+Ask the PS driver to produce standard PostScript files, that may be
+used with any PostScript(tm) printer.
+.PP
+
+#? Plotting.
+
+The following functions provide an easy way to plot curves. The basic
+abstraction is the plot port data structure, a TLisp list which
+contains:
+.IP
+The position of the current point,
+.IP
+A pointer to the  graphics window,
+.IP
+Information for mapping real coordinates to pixel positions.
+.PP
+The plotting functions perform their drawing action in the current plot port, and the 
+function, <setup-axes> is provided for quickly initializing a plot port, making it 
+current, and drawing the axes.
+
+Currently, plot ports are implemented as lists rather than a user
+defined class. In fact, the <"graphenv.sn"> package has existed prior to
+the object extensions of TLisp. This silly implementation has been
+kept for preserving backward compatibility.  
+
+.SEE (new-plot-port <brect> <rect> <object>)
+.SEE (copy-plot-port  <p> [<object>])
+.SEE (draw-axes <brect> <xl> <yl> <name>)
+.SEE plot-port
+.SEE (setup-axes <x_1> <y_1> <x_2> <y_2> <x_st> <y_st> <s> [<object>])
+.SEE (plot-lists <l_x> <l_y>)
+.SEE (graph-xy <l_x> <l_y> <name>)
+.SEE (plot-lists-sd  <l_x> <l_y> <l_sd>)
+.SEE (graph-xyv  <lx> <ly> <l_sd> <name>)
+.SEE (plt-draw  <x y)
+.SEE (plt-plot  <x> <y>)
+.SEE (plt-sd  <x> <y> <sd>)
+.SEE (in-plot-port <l_1> ... <l_n>)
+
+
+
+
+
+#? (new-plot-port <brect> <rect> <object>) 
+.TYPE DE 
+.FILE graphenv.sn 
+.SEE (setup-axes <x_1> <y_1> <x_2> <y_2> <x_st> <y_st> <s> [<object>])
+.SEE (plt-plot  <x> <y>)
+Initialize a new plot port in the current window, and return it. 
+
+Argument <brect> is a list <(bxmin bymin bxmax bymax)> whose elements
+are the pixel coordinates of the target rectangle in the current
+window.
+
+Argument <rect> is a list (xmin ymin xmax ymax) whose elements are the
+extremal real coordinates.  No clipping is performed, except window
+clipping.
+
+Argument <object> is a function generally called by <plt-plot> for
+drawing a small object at the current pen location. A few predefined functions are 
+documented with <plt-plot>.
+
+
+#? (copy-plot-port  <p> [<object>])
+.TYPE DE
+.FILE graphenv.sn
+Returns a new plot port, with the same real to pixel coordinates and
+window data as the plot-port <p>, but with a different current point
+and a different object. This function allows the user to plot a second
+curve simultaneously, using the same axis system.
+
+#? (draw-axes  <brect> <xl> <yl> <name>)
+.TYPE DE
+.FILE graphenv.sn
+
+Draws axes on the leftmost and bottommost side of rectangle <brect>.  
+
+Argument <brect> is a list <(bxmin bymin bxmax bymax)> whose elements
+are the pixel coordinates of the target rectangle in the current
+window.  Arguments <xl> and <yl> are lists of labels' values for the
+<x> and <y> axis.  Argument <name> is a string that will be printed at
+the top of the <brect>
+
+
+#? plot-port
+.TYPE VAR
+.FILE graphenv.sn
+The current plot port is stored in this global variable.  Most of the
+plotting functions refers implicitly to the plot port stored in
+<plot-port>.
+
+#? (setup-axes <x_1> <y_1> <x_2> <y_2> <x_st> <y_st> <s> [<object>])
+.TYPE DE
+.FILE graphenv.sn
+.SEE (new-plot-port <brect> <rect> <object>) 
+.SEE (draw-axes  <brect> <xl> <yl> <name>)
+.SEE (plt-plot  <x> <y>)
+Calls both <new-plot-port> and <draw-axes>, for drawing a curve in the
+current window. Makes the resulting <plot-port> current. The curve
+will occupy the entire window.
+
+<setup-axes> is the simplest way to initialize the plotting package.
+
+Arguments <x_1> and <y_1> are the lower bounds of the actual
+coordinates; arguments <x_2> and <y_2> are the upper bounds of the
+actual coordinates. The axes will be labeled every <x_st> units
+horizontally and every <y_st> units vertically. Argument <s> is a
+string that will be printed at the top of the window. <object> is the
+default plot object used by <plt-plot>.
+
+#? (plot-lists <l_x> <l_y>)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (plt-plot <x> <y>)
+.SEE (plt-draw <x> <y>)
+.SEE (plot-lists-sd  <l_x> <l_y> <l_sd>)
+
+Plots a curve taking using in list <l_x> as abscissas and values in
+<l_y> as ordinates in the current plot port. This function uses uses
+<plt-draw> and <plt-plot> to draw a symbol at each data point.
+
+
+#? (graph-xy <l_x> <l_y> <name>) 
+.TYPE DE 
+.FILE graphenv.sn 
+.SEE (plot-lists <l_x> <l_y>) 
+.SEE (graph-xyv  <lx> <ly> <l_sd> <name>)
+Creates a convenient plot port in the current
+window, draws the axes, and calls the function <plot-lists>.
+
+#? (plot-lists-sd  <l_x> <l_y> <l_sd>)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (plt-plot <x> <y>)
+.SEE (plt-draw <x> <y>)
+.SEE (plt-sd <x> <y> <sd>)
+Plots a curve taking values in list <l_x> as abscissas and values in
+<l_y> as ordinates. Argument <l_sd> is a list of values that will be
+displayed as uncertainty bars around each data point.
+
+This function uses uses <plt-draw>, <plt-sd> and <plt-plot> to draw a
+symbol and an uncertainity bar at each data point.
+
+#? (graph-xyv  <lx> <ly> <l_sd> <name>)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (plot-lists-sd  <l_x> <l_y> <l_sd>)
+Creates a convenient plot port in the current window, draws the axes,
+and calls the function <plot-lists-sd>.
+
+
+
+#? (plt-clear)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (plt-draw <x> <y>)
+Clears the current point. 
+So the next <plt-draw> will not draw a line.
+
+#? (plt-move <x> <y>)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (plt-draw <x> <y>)
+Sets the current point to real coordinates <x> and <y>.
+
+#? (plt-draw  <x y)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (plt-move <x> <y>)
+.SEE (plt-clear)
+Draws a line from current point to actual coordinates <x> and <y>.
+Sets the current point to coordinates <x> and <y>.  Nothing is drawn
+if no current point was set.
+
+#? (plt-plot  <x> <y>)
+.TYPE DE
+.FILE graphenv.sn
+.SEE (new-plot-port <brect> <rect> <object>) 
+.SEE (setup-axes <x_1> <y_1> <x_2> <y_2> <x_st> <y_st> <s> [<object>])
+.SEE current-object
+.SEE object-size
+
+Moves the current point to the actual coordinates <x> and <y>, and
+draws a small symbol like those used for showing the data points on a
+curve.
+
+The shape of this symbol is defined by the argument <object> of
+<new-plot-port> or <setup-axes>. this argument must be a function that
+draws the object at the specified position. The following functions
+are predefined:
+.IP
+<object-nil> does nothing. It is useful if you want cancel the
+effect of <plt-plot>.
+.IP
+<open-square>, <closed-square>, <open-circle>, and <losed-circle>
+respectively draw a small hollow square, a small filled square, a
+small hollow circle or a small filled circle.
+.IP
+<open-up-triangle>, <closed-up-triangle>, <open-down-triangle>,
+<closed-down-triangle>, draw various king of small triangles.
+.IP
+<straight-cross> and <oblique-cross> draw small crosses.
+.PP
+
+All these predefined object functions use the global variable
+<object-size> for defining the size of the object drawn by <plt-plot>.
+The default object may be overridden by setting the variable 
+<current-object> to a new object function.
+
+#? (plt-sd  <x> <y> <sd>)
+.TYPE DE
+.FILE graphenv.sn
+Draws a standard deviation bar given by <sd> around point (<x>,<y>).
+The horizontal size of the bar is defined by the global variable
+<object-size>.
+
+
+#? (in-plot-port <l_1> ... <l_n>)
+.TYPE DMD
+.FILE graphenv.sn
+<in-plot-port> unpacks the current plot port info and stores it in
+local variables while executing <l_1> ... <l_n>.  You may then call
+the <(plt-rbx x)> and <(plt-rby y)> functions to compute the pixel
+coordinates of a real point (<x>,<y>).
+
+#? current-object
+.TYPE VAR
+.FILE graphenv.sn
+.SEE (plt-plot  <x> <y>)
+If <current-object> is equal to the empty list, the function <plt-plot>
+will draw the default object defined in the current port. However you
+can store a new object definition function in <current-object>. This
+function will then be called instead of the default one.
+
+#? object-size
+.TYPE VAR
+.FILE	graphenv.sn
+.SEE (plt-plot  <x> <y>)
+.SEE (plt-sd <x> <y> <sd>)
+This global variable controls the size of the drawings performed by
+<plt-plot> and <plt-sd>.
+
+
+#? Events.
+.SEE Ogre.
+
+A few functions can be used for handling mouse and keyboard events
+occurring on windows. TLisp controls a centralized event queue.
+
+As soon as an event handler has been defined for the window, using
+<set-event-handler>, all events occurring on this window are enqueued
+on the centralized event queue.  The functions <waitevent> and
+<checkevent> are used for removing events from the TLisp event queue.
+
+In addition, the function <event-hook> is called whenever new events
+are available on the queue, and the function <idle-hook> is called
+whenever the event queue is empty. These calls occur either
+asynchronously during a read on the TLisp input, or synchronously
+during the execution of the function <process-pending-events>.
+
+These automatic call allow the implementation of graphic interfaces,
+like those defined with the <"ogre.sn"> library.
+
+.SEE (set-event-handler <w> <h>)
+.SEE (checkevent [<h>])
+.SEE (waitevent)
+.SEE (hilite <mode> <x_1> <y_1> <x_2> <y_2>)
+.SEE (event-hook)
+.SEE (idle-hook)
+.SEE (process-pending-events)
+
+
+
+
+
+#? (set-event-handler <w> <h>)
+.SEE Ogre.
+Attach an event handler <h> to window  <w>.
+ 
+Once an event handler has been attached to a window, graphics events
+occuring on that window, like mouse or keyboard interaction, are
+recorded on the TLisp event queue, and flagged with the event handler.
+The event handler actually is a key for accessing events.
+
+Any non nil TLisp object is a legal event handler. When the
+<"ogre.sn"> library is running however, <manage-event> messages are
+automatically sent to the event handler by the <event-hook> function.
+It is thus unsafe to attach an event handler which is not an instance
+of a subclass of class <VisualObject>.
+
+#? (checkevent [<h>])
+.SEE (waitevent)
+
+The checkevent function returns the next available event associated to
+event handler <h>.  If <h> is omitted, the event handler of the
+current window is assumed.  If <h> is the empty list, the event
+handler associated to the next available event is returned. If no
+events are available on the TLisp event queue, checkevent returns the
+empty list.
+
+Events are encoded as lists, according to the following templates:
+.IP
+<(mouse-down x y)>:
+The mouse button has been depressed at position (<x>,<y>).
+.IP
+(mouse-drag x_1 y_1 x_2 y_2)>:
+The mouse button has been depressed at position (<x_1>,<y_1>).The
+mouse has then been moved to position (<x_2>,<y_2>). The mouse button
+still is depressed.
+.IP
+<(mouse-up x_1 y_1 x_2 y_2)>:
+The mouse button has been depressed at position (x_1,y-1). The mouse
+has then been moved to position (x_2,y_2), where the button has been
+released.
+.IP
+("c" x y)	
+The key associated to the single character string <"c"> has been hit,
+while the mouse pointer was located at position (<x>,<y>). These
+events often are referred as keypress events.
+.IP
+<(arrow-left x y)>, <(arrow-right x y)>,
+<(arrow-up x y)> or <(arrow-down x y)>:
+The left (respectively right, up and down) arrow has been hit, while
+the mouse pointer was located at position (<x>,<y>).
+.IP
+<(help x y)>:
+The keyboard dependent help key has been hit, while the mouse pointer
+was located at position (<x>,<y>).
+.IP
+<(resize w h)>
+The window has been resized by the user, and is now <w>x<h> pixels large.
+.IP
+<(delete)>:
+Windowing systems often provides a mean to delete a window. For
+example, X11 ICCM compliant window managers are able to send a
+WM_DELETE message to a client. If an event handler is attached to the
+window, a delete event is added to the event queue, and the window is
+not destroyed. A program thus gets a chance to display a confirmation
+dialog before deleting the window.
+.IP
+<(alarm <x> <y>)>:  [x11 driver only]
+This event is triggered once after a delay specified by function <alarm>.
+.IP
+<(glexpose <x> <y> <w> <h>)>: [x11 driver only]
+This event is triggered when an OpenGL subwindow (see <glsn-setup-window>)
+must be redrawn.
+.PP
+These few events give enough information for building graphics interfaces. The 
+<"ogre.sn"> class library is designed for that purpose. 
+
+#? (waitevent)
+If no events are available on the TLisp event queue, waitevent waits
+for user interaction, and returns the event handler associated to the
+first resulting event.
+
+If events are available on the event queue, waitevent immediatly
+returns the event handler associated to the first available event.
+
+
+#? (hilite <mode> <x_1> <y_1> <x_2> <y_2>)
+
+The <hilite> function is used for displaying transient drawings when the mouse button 
+is depressed. As soon as the mouse button is released, these transient drawings are 
+cleared, and the window is refreshed. 
+
+Four kinds of drawings are supported, whose names are defined by ``graphenv.sn'':
+.IP
+When <mode> is <hilite-invert>, the rectangle defined by the points
+(<x_1>,<y_1>) and (<x_2>,<y_2>) is inverted. The result however is
+poor on color displays.
+.IP
+When <mode> is <hilite-rect>, the rectangle defined by the points 
+(<x_1>,<y_1>) and (<x_2>,<y_2>) is outlined with a dashed line.
+.IP
+When <mode> is <hilite-line>, a dashed line is drawn from point 
+(<x_1>,<y_1>) to point (<x_2>,<y_2>).
+.IP
+When <mode> is <hilite-none>, any transient graphics are cleared, and
+the window is refreshed.
+.PP
+Transient drawings created with <hilite> are very efficient, and
+totally disappear when the mouse button is released. This function is
+useful for providing an echo to the user during a mouse drag
+operation. For example, <hilite> can display a rectangular outline
+while the user is dragging the mouse for selecting a part of an image.
+
+#? (event-hook)
+.TYPE DE
+.SEE (idle-hook)
+
+While TLisp is waiting for user commands on the standard input during
+the execution of a read call, the <event-hook> function is repetitively
+called until the event queue becomes empty. Whenever the event queue
+becomes empty, TLisp calls the <idle-hook> function once.
+
+Exercise care when defining or modifying those functions. An erroneous
+definition sometimes causes Tlisp to enter a deadly infinite loop.
+
+#? (idle-hook)
+.TYPE DE
+.SEE (event-hook)
+
+While TLisp is waiting for user commands on the standard input during
+the execution of a read call, the <event-hook> function is repetitively
+called until the event queue becomes empty. Whenever the event queue
+becomes empty, TLisp calls the <idle-hook> function once.
+
+Exercise care when defining or modifying those functions. An erroneous
+definition sometimes causes Tlisp to enter a deadly infinite loop.
+
+
+#? (process-pending-events)
+
+This function repetitively calls <event-hook>, until the event queue
+becomes empty. It calls then the <idle-hook> function once. If new
+events have occurred during the execution of <idle-hook>, the process
+is restarted.
+
+The <process-pending-events> function returns when no events are
+available on the event queue. Of course, <process-pending-events>
+immediatly returns if the <event-hook> and <idle-hook> functions are
+undefined.
+
+Long TLisp programs should sometimes call this function. Event driven
+interfaces thus remains active during the program execution.
+
+
+
+
+#? Open GL support under X11.
+.SEE (glsn-setup-window <x> <y> <w> <h> <dbf>)
+.SEE (glsn-demo <angle>)
+.SEE (glsn-usleep <microsecs>)
+
+On certain computes (mostly SGI) the X11 driver have a support for 
+rendering with OpenGL.
+
+#? (glsn-setup-window <x> <y> <w> <h> <dbf>)
+
+Creates or resizes a subwindow in the current SN window for OpenGL rendering.
+There is at most one OpenGL subwindow for each SN window.  Arguments <x> <y> <w>
+<h> are the window location and size.  Argument <dbf> is a flag requesting
+double-buffering.
+
+The OpenGL subwindow is automatically selected when entering a
+<graphics-batch> on the SN window. Buffers are swapped when exiting the
+<graphics-batch>.
+
+Unlike the X11 window, the OpenGL subwindow is not refreshed automatically.
+The parent window (the X11 window) receives a <(glexpose <x> <y> <w> <h>)>
+event whenever the Open GL window needs repainting.
+
+
+#? (glsn-usleep <microsecs>)
+
+Sleeps the specified amount of time (microseconds).
+
+
+
+#? (glsn-demo <angle>)
+
+Rotate the modelview matrix by <angle> degrees and 
+display s shaded polychromatic square.
+
+
+
+
+
+
+
+#? Graphical Utilities.
+
+A couple of TLisp functions perform elementary computations on
+rectangles. A rectangle is stored as a list <(x y w h)>. The first two
+elements <x> and <y> are the coordinates of its top left corner; <w>
+is its width, <h> its height.
+.SEE (rect-2-ppbrect <r>)
+.SEE (window-rect)
+.SEE (point-in-rect <x> <y> <r>)
+.SEE (rect-in-rect <r_1> <r_2>)
+.SEE (collide-rect <r_1> <r_2>)
+.SEE (bounding-rect <r_1> <r_2>)
+.SEE (get-click)
+.SEE (get-vector)
+.SEE (get-rect)
+.SEE (get-magnetic-rect <inrect> <sx> <sy> [[<okform>] <okstart>])
+
+
+
+
+
+
+#? (rect-2-ppbrect <r>)
+.TYPE DE
+.FILE graphenv.sn
+.SEE Graphical Utilities. 
+Returns rectangle <r> under a format suitable for using with <new-plot-port>.
+
+
+#? (window-rect)
+.TYPE DE
+.FILE graphenv.sn
+.SEE Graphical Utilities.
+Returns the boundaries of the current window as a rectangle.
+
+#? (point-in-rect <x> <y> <r>)
+.SEE Graphical Utilities.
+The point-in-rect function returns <t> if point (<x>,<y>) is located
+inside rectangle <r>.
+
+#? (rect-in-rect <r_1> <r_2>)
+.SEE Graphical Utilities.
+The <rect-in-rect> function returns <t> if rectangle <r_2> encloses
+rectangle <r_1>.
+
+#? (collide-rect <r_1> <r_2>)
+.SEE Graphical Utilities.
+Returns the intersection of <r_1> and <r_2>. If rectangle <r_1> and
+<r_2> do not intersect, <collide-rect> returns the empty list.
+
+#? (bounding-rect <r_1> <r_2>)
+.SEE Graphical Utilities.
+Returns the smallest rectangle that encloses both rectangles <r_1> and
+<r_2>.
+
+
+#? (lookup-color <s>)
+.SEE (color [<c>])
+>>>>>>> STILL NOT WORKING <<<<<<<<
+
+This function comes with the X11 driver. It returns a list <(r g b)>
+of values for the color named <s>.  Legal names are defined by the
+Xwindow server.  If the name <s> is not found, this function returns
+the empty list.
+
+>>>>>>> STILL NOT WORKING <<<<<<<<
+
+#? (psfont-to-xfont <s>)
+.SEE (font [<fontname>])
+
+This function comes with the X11 driver. It converts a legal
+PostScript(tm) font name, into a X11 font name.
+
+String <s> must be a legal PostScript font name, composed of a font
+family, an optional font style, and a font size, possibly separated by
+dashes, like <"Helvetica-18">, <"Times-Roman24">, <"Courier-Bold-12">.
+This function returns the corresponding font name under the X11.
+conventions.
+
+Example:
+.EX (when psfont-to-xfont (psfont-to-xfont "Times-Roman18"))
+
+
+
+
+#? (get-click)
+.FILE graphenv.sn
+.SEE (get-vector)
+.SEE (get-rect)
+.SEE (get-magnetic-rect <inrect> <sx> <sy> [[<okform>] <okstart>])
+
+Waits for a mouse click on the current window. 
+Returns a list <(x y)> giving the coordinates of the mouse
+during the mouse click.
+
+#? (get-vector)
+.FILE graphenv.sn
+.SEE (get-click)
+.SEE (get-rect)
+.SEE (get-magnetic-rect <inrect> <sx> <sy> [[<okform>] <okstart>])
+
+Waits for a mouse down on the current window.  Tracks the mouse moves
+with a dashed line, until the mouse button is released.  Returns a
+list <(x1 y1 x2 y2)> telling where the mouse button has been depressed
+and where it has been released.
+
+#? (get-rect)
+.FILE graphenv.sn
+.SEE (get-click)
+.SEE (get-vector)
+.SEE (get-magnetic-rect <inrect> <sx> <sy> [[<okform>] <okstart>])
+
+Waits for a mouse down on the current window.  Tracks the mouse moves
+with a dashed rectangle, until the mouse button is released.  Returns
+a list <(x y w h)> telling the location of the top left corner of the
+rectangle, its width and its height.
+
+
+#? (get-magnetic-rect <inrect> <sx> <sy> [[<okform>] <okstart>])
+.SEE (get-click)
+.SEE (get-vector)
+.SEE (get-rect)
+
+Waits for a mouse down on the current window.  Tracks the mouse moves
+with a dashed rectangle, until the mouse button is released.  Returns
+a list <(x y w h)> telling the location of the top left corner of the
+rectangle, its width and its height.
+
+In addition, the rectangle must fit in rectangle <inrect>, have a
+width multiple of <sx>, and have a height multiple of <sy>. If
+<inrect> is the empty list, the entire window is assumed.
+
+If flag <okform> is not the empty list, the form factor of the
+rectangle is constrained. The width and height of the rectangle 
+must be proportional to <sx> and <sy>.
+
+If flag <okstart> is not the empty list, the top left corner
+of the rectangle must be located on an invisible grid whose size
+is defined by <sx> and <sy>.

@@ -1,0 +1,158 @@
+(setq math-machine (reading "| hostname" (read-string)))
+; (setq math-mathine "dignity")
+
+;******************************************************************************
+;
+;	some usefull function using mathematica
+;
+
+;------------------------------------------------------------------------------
+#? (math-open [<s>])
+;; open a mathematica pipe and redirect mathematica output on file <s>
+;; (by default /tmp/math.out of the machine sn working on)
+;;
+(de math-open (&optional (filename "/tmp/math.out"))
+    (setq math 
+	  (open-write 
+	   (concat "| (rsh " math-machine " 'setenv DISPLAY " 
+		   (let ((s (getenv "DISPLAY")))
+		     (if (= (left s 4) "unix")
+			 (concat (reading "|hostname" (read-string))
+				 ":0.0")
+		       s))
+		   " ; setenv PRINTER qms; math') > " filename))))
+
+;------------------------------------------------------------------------------
+#? (mathps)
+;; Send the result of the last drawing commmand to the printer
+;;
+(de mathps ()
+    (if (null math) (math-open))
+    (writing math (printf "PSPrint[%%]\n")))
+
+;------------------------------------------------------------------------------
+#? (math3d <m> [<s>])
+;; make a 3D plot of two dimentional matrix <m>.  The string <s> can be used
+;; to change mathematica options.  For example:
+;;.VP
+;;   ? (math3d [[4 1 3 1][3 3 2 3][4 3 2 1][2 4 1 4]] 
+;;             "AxesLabel ->{\"X\",\"Y\",\"Z\"}")
+;;   = ()
+;;*** Other useful options:
+;;           PlotRange -> {{-5, 5},{-5,5},{-1,1}}
+;;           Ticks -> {{{25,\"0\"}},{{15,\"-1\"},{35,\"1\"}}, Automatic }
+;;.PP
+(de math3D l
+    (if (null  l)
+	(error "one argument at least expected"))
+    (let ((mat (car l))
+	  (s (cdr l)))
+    (if (null math) (math-open))
+    (if (or (< (bound mat 1) 3) (< (bound mat 2) 3))
+	(error 'math3D "rectangular matrix not 4x4 or more"))
+    ; (setq math (open-write "/tmp/output")) ; (debugging)
+
+    (writing math (printf "ListPlot3D[{")
+	     (printf (l-to-m (car (mat () ()))))
+	     ; mat is broken into small pieces because sn
+	     ; can't handle large strings!
+	     (mapc (lambda (x) 
+		     (printf ",")
+		     (printf (l-to-m x)))
+		   (cdr (mat () ())))
+	     (if (null s)
+		 (printf "}]\n")
+	       (printf "},%s]\n" (apply concat s))))))
+
+;------------------------------------------------------------------------------
+#? (math-contour <m> [<s>])
+;; make a contour plot of two dimentional matrix <m>.  The string <s> can be 
+;; used to change mathematica options.
+;;.VP
+;;   ? (math-contour [[4 1 3 1][3 3 2 3][4 3 2 1][2 4 1 4]] 
+;;                   "AxesLabel ->{\"X\",\"Y\",\"Z\"}")
+;;   = ()
+;;.PP
+;;
+(de math-contour l
+    (if (null  l)
+	(error "one argument at least expected"))
+    (let ((mat (car l))
+	  (s (cdr l)))
+    (if (null math) (math-open))
+    (if (or (< (bound mat 1) 3) (< (bound mat 2) 3))
+	(error 'math3D "rectangular matrix not 4x4 or more"))
+
+    (writing math (printf "ListContourPlot[{")
+	     (printf (l-to-m (car (mat () ()))))
+	     ; mat is broken into small pieces because sn
+	     ; can't handle large strings!
+	     (mapc (lambda (x) 
+		     (printf ",")
+		     (printf (l-to-m x)))
+		   (cdr (mat () ())))
+	     (if (null s)
+		 (printf "}]\n")
+	       (printf "},%s]\n" (car s))))))
+
+;------------------------------------------------------------------------------
+#? (l-to-m <list>)
+;;	Convert lists into mathematica format and print it to a file
+;;
+(de l-to-m (s)
+    (regex-subst "\\(" "{"
+		 (regex-subst "\\)" "}"
+			      (regex-subst " " "," (sprintf "%l" s)))))
+
+;------------------------------------------------------------------------------
+#? (l-to-m-file <list> <file>)
+;;	Convert lists into mathematica format and print it to a file
+;;
+(de l-to-m-file (s file)
+    (writing file (printf "%s"
+	  (regex-subst "\\(" "{"
+	       (regex-subst "\\)" "}"
+		    (regex-subst " " "," s))))))
+
+;------------------------------------------------------------------------------
+#? (mathfile <s>)
+;; print the last math display to a file <s> in ps format
+;;
+(de mathfile (string)
+    (let ((temp "/tmp/math-temp.ps"))
+      (writing math (printf "Display[\"%s\",%%]\n" 
+			    temp))
+      (sleep 10)
+      (sys (concat "rsh " 
+		   math-machine 
+		   " '/usr/staff/lib/math/Bin.sun4/Display/psfix <"
+		   temp
+		   "> " string "'"))))
+
+;------------------------------------------------------------------------------
+#? (math-example)
+;; print 3d graphics of the image of the digit "7"
+;;
+(de math-example ()
+    (math-open)
+    (let ((a [
+	     [-1.0 -1.0 -1.0 -1.0 -0.9 -0.6 -0.1 -0.4 -0.8 -0.9 -1.0 -1.0 -1.0 -1.0 -1.0]
+	     [-1.0 -1.0 -1.0 -1.0 -0.9 -0.6  0.0  0.0 -0.6 -0.9 -1.0 -1.0 -1.0 -1.0 -1.0]
+	     [-1.0 -1.0 -1.0 -1.0 -0.9 -0.8 -0.4 -0.0 -0.4 -0.8 -0.9 -1.0 -1.0 -1.0 -1.0]
+	     [-1.0 -1.0 -1.0 -1.0 -1.0 -0.9 -0.8 -0.3 -0.1 -0.6 -0.9 -1.0 -1.0 -1.0 -1.0]
+	     [-1.0 -1.0 -1.0 -1.0 -0.9 -0.9 -0.8 -0.4  0.1 -0.2 -0.8 -0.9 -0.9 -1.0 -1.0]
+	     [-1.0 -1.0 -1.0 -0.9 -0.8 -0.6 -0.5 -0.1  0.4  0.3 -0.2 -0.5 -0.8 -0.9 -0.9]
+	     [-1.0 -1.0 -1.0 -0.9 -0.7 -0.2 -0.0  0.1  0.4  0.5  0.3  0.0 -0.3 -0.6 -0.8]
+	     [-1.0 -1.0 -1.0 -0.9 -0.8 -0.6 -0.5 -0.4 -0.1  0.2  0.0  0.1  0.0 -0.2 -0.7]
+	     [-1.0 -1.0 -1.0 -1.0 -0.9 -0.9 -0.9 -0.9 -0.6 -0.1 -0.2 -0.4 -0.5 -0.6 -0.8]
+	     [-1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -0.9 -0.8 -0.4 -0.1 -0.6 -0.9 -0.9 -0.9]
+	     [-1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -0.9 -0.5 -0.0 -0.5 -0.9 -0.9 -0.9]
+	     [-1.0 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.8 -0.2  0.2 -0.1 -0.4 -0.6 -0.8]
+	     [-0.9 -0.8 -0.6 -0.5 -0.5 -0.5 -0.5 -0.5 -0.2  0.2  0.4  0.4  0.4  0.0 -0.6]
+	     [-0.9 -0.7 -0.2 -0.0 -0.0 -0.0 -0.0 -0.0  0.0  0.1 -0.0  0.2  0.3  0.0 -0.6]
+	     [-0.9 -0.8 -0.6 -0.5 -0.5 -0.5 -0.5 -0.5 -0.5 -0.6 -0.7 -0.6 -0.5 -0.6 -0.8]
+	     [-1.0 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9 -0.9]
+	     ]))
+      (math3d a)
+      (math-contour a))
+)

@@ -1,0 +1,172 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; DEBUGGING TYPES (systematically)
+;;
+;; 1- Debug (==> <type> prin)
+;; 2- Create one of each type class (dht-flt dht-ord dht-out dht-obj dht-func)
+;;    and verify that it did the right thing (print it).
+;;    Verify that invalid types generate useful errors
+;; 3- Check dhc-unify-types (most difficult and important).
+;;    There are 4 type of unification rule: 
+;;      "don't care" (check against all 5 class)
+;;      "identity"   (check against all 5 class)
+;;      "absorbtions" (check all rules)
+;;      "errors" (check a few and look at dhc-combine-class)
+;;      "recursion" objects within objects
+;; 4- generation of type from description
+;; 
+
+
+;; Step 1 and 2: This function create several types of all major classes
+(de create-type ()
+    (let ((name '(o1 o2 o3 o4 f1 f2 f3 f4 i1 i2 i3 i4 b1 b2 n1 n2 u1 u2 u3 u4))
+	  (type '(dht-ord dht-ord dht-ord dht-ord 
+	          dht-flt dht-flt dht-flt dht-flt 
+		  dht-int dht-int dht-int dht-int 
+		  dht-bool dht-bool dht-nil dht-nil 
+		  dht-unk dht-unk dht-unk dht-unk))) 
+      (mapcar (lambda (n v) (set n (new dhc-type v))) name type)
+      (setq o5 (new dhc-type 'dht-ord 77))
+      (setq o6 (new dhc-type 'dht-ord 666))
+
+      (setq ob1 (new dhc-type 'dht-obj
+		     (list (cons 'a o3) (cons 'b o1) (cons 'c i1) (cons 'd o4))))
+      (setq ob2 (new dhc-type 'dht-obj
+		     (list (cons 'c f1) (cons 'a i2) (cons 'b o2) (cons 'd i4))))
+      (setq ob3 (new dhc-type 'dht-obj 
+		     (list (cons 'a i1) (cons 'c i1) (cons 'd i3) (cons 'b o1))))
+      (setq ob4 (new dhc-type 'dht-obj
+		     (list (cons 'a b1) (cons 'c n1) (cons 'd ob1))))
+      (setq ob5 (new dhc-type 'dht-obj
+		     (list (cons 'a b1) (cons 'c u1) (cons 'd ob2))))
+      (setq ob6 (new dhc-type 'dht-obj
+		     (list (cons 'c n1) (cons 'a n1) (cons 'd ob3))))
+      (setq ob7 (new dhc-type 'dht-obj
+		     (list (cons 'a b1) (cons 'ccc n1) (cons 'd ob2))))
+
+      (setq id1 (new dhc-type 'dht-idx  (list o1 o2 o1 i3)))
+      (setq id2 (new dhc-type 'dht-idx (list o2 o4 o3 o4)))
+      (setq id3 (new dhc-type 'dht-idx (list i1 i2 f1 i3)))
+      (setq id4 (new dhc-type 'dht-idx (list i1 i2 f1)))
+      (setq id5 (new dhc-type 'dht-idx 3))
+      (setq id6 (new dhc-type 'dht-idx (list i1 i2 n1 i1) f2))
+      (setq id7 (new dhc-type 'dht-idx 4 b2))
+
+      (setq fu1 (new dhc-type 'dht-func (list ob4 o1 id2 i2) 4))
+      (setq fu2 (new dhc-type 'dht-func (list ob4 o4 id3 f1) 4))
+
+      ;; invalid types
+;      (new dhc-type 'dht-func)  ; no arguments
+;      (new dhc-type 'dht-obj)   ; no slots    
+;      note: dht-obj: duplicate slot is too expensive to detect at the
+;            creation of a type but it should be detected creating from lisp class.
+))
+
+;; Step 3
+(de check-unify ()
+
+;   dont'care 
+    (printf "unify: don't care \n\n")
+    (create-type)    
+    (dhc-unify-types ob1 u1)
+    (printf "ob1 %l\nunk1 %l\n\n" ob1 u1)
+    (dhc-unify-types fu1 u2)
+    (printf "fu1 %l\nu2 %l\n\n" fu1 u2)
+    (dhc-unify-types id7 u3)
+    (printf "id7 %l\nu3  %l\n\n" id7 u3)
+    (dhc-unify-types o1 u4)
+    (printf "o1  %l\nu4  %l\n\n" o1 u4)
+
+;   identity
+    (create-type)    
+    (printf "unify: identity\n\n")
+    (dhc-unify-types o1 o2)
+    (printf "o1  %l\no2  %l\n\n" o1 o2)
+;    (dhc-unify-types ob1 ob2)
+;    (printf "ob1 %l\nob2 %l\n\n" ob1 ob2)
+;    (dhc-unify-types id1 id2)
+;    (printf "id1 %l\nid2 %l\n\n" id1 id2)
+;    (dhc-unify-types fu1 fu2)
+;    (printf "fu1 %l\nfu2 %l\n\n" fu1 fu2)
+
+;   absorbtion
+    (create-type)    
+    (printf "unify: absorbtion\n\n")
+;    (dhc-unify-types o1 f1)
+;    (printf "o1  %l\nf1  %l\n\n" o1 f1)
+;    (dhc-unify-types i2 f2)
+;    (printf "i2  %l\nf2  %l\n\n" i2 f2)
+;    (dhc-unify-types id1 id2)
+;    (printf "id1 %l\nid2  %l\n\n" id1 id2)
+    (dhc-unify-types b1 n1)
+    (printf "b1 %l\nn1  %l\n\n" b1 n1)
+
+;   errors
+    (printf "unify: error\n\n")
+    (create-type)    
+;    (dhc-unify-types o1 n1)
+;    (dhc-unify-types f1 b1)
+;    (dhc-unify-types o1 id1)
+;    (dhc-unify-types id1 ob1)
+;    (dhc-unify-types fu1 id1)
+
+;    within a complex type
+;    (dhc-unify-types ob6 ob7)
+;    (dhc-unify-types ob3 ob4)
+;    (dhc-unify-types (new dhc-type 'dht-obj (list (cons 'a ob5) (cons 'b ob6)))
+;                     (new dhc-type 'dht-obj (list (cons 'a ob6) (cons 'b ob7))))
+;    (dhc-unify-types id5 id7)
+;    (dhc-unify-types id6 id7)
+
+)
+
+
+;; Step 3
+(de check-gener ()
+    (setq f1 (dhc-desc-to-type '(flt)))
+    (setq o1 (dhc-desc-to-type '(ord 0)))
+    (setq u1 (dhc-desc-to-type '(unk)))
+    (setq id1 (dhc-desc-to-type '(idx r l (flt) ((ord 0) (ord 1) (int) (ord 0)))))
+    (setq fu1 (dhc-desc-to-type '(func r l 4 ((ord 0) (idx r l (flt) ((ord 0))))
+				             ((plus 0 0 1) (equi 1 5) (equi 0 99)))))
+    (setq fu2 (dhc-desc-to-type '(func r l 2 ((idx r l (idx r l (flt) ((ord 12)))
+						   ((ord 5) (ord 6) (ord 5)))
+					      (func r l 4 ((ord 0) (idx r l (flt) ((ord 0))))
+						    ((plus 0 0 1) (equi 1 5) (equi 0 99))))
+				       ((equi 4 45) (plus 5 6 7)))))
+)
+
+;(de typize (l)
+;    (if (atomp l) 
+;	(cons l (new dhc-type 'dht-ign))
+;      (cons (mapcar typize l) (new dhc-type 'dht-ign))))
+    
+(de f1 (n)
+    (-ord- n)
+    (let ((a (matrix (+ n 5))))
+      (a 10)))
+

@@ -1,0 +1,650 @@
+#? File "pnm-stream.sn"
+;;.VP
+;; Routines to read and write PNM files from streams.
+;;.SEE (pnm-header <f>)
+;;.SEE (mmap-idx3-storage <f> <u> <d0> <d1> <d2>)
+;;.SEE (ppms-mmap-rgbim <f>)
+;;.SEE (pnms-mmap-anyim <f>)
+;;.SEE (pnms-read-rgbim <f>)
+;;.SEE (nt-pnms-read-rgbim <f> <out-im>)
+;;.SEE (pnms-read-anyim <f>)
+;;.SEE (nt-pnms-read-anyim <f> <out-im>)
+;;.SEE (pnms-read-ubim <f>)
+;;.SEE (nt-pnms-read-ubim <f> <out-im>)
+;;.SEE (pnms-read-ubim64 <f>)
+;;.SEE (nt-pnms-read-ubim64 <f> <out-im>)
+;;.SEE (nt-ppms-read-ubim64-split <f> <down-im> <up-im>)
+;;.SEE (pnms-read-rgbim-sub2 <f>)
+;;.SEE (nt-pnms-read-rgbim-sub2 <f> <out-im>)
+;;.SEE (pnms-dim <f>)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "cmacro")
+(mload "file-std")
+(mload "image/img-util")
+
+
+(dm FRED(f)  '0.299)
+(dm FGREEN(f) '0.587)
+(dm FBLUE(f) '0.114)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (pnm-header <f>)
+;;.VP
+;; ((-gptr-) f):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+(de pnm-header (f)
+    ((-gptr-) f)
+    
+    (when (not f) (error "couldn't open PNM file"))
+    (rewind f)
+    (let ((head (fscan-str f)))
+
+      (when (and (<> "P6" head) (<> "P4" head) (<> "P5" head))
+        (fclose f)       
+        #{ fprintf(stderr, "%s\n", $head->data); #}
+        (error " not a valid binary PNM file")
+        )
+      
+      (skip-comments 35 f) ; skip lines staring with #
+      head
+    ))
+
+#? (mmap-idx3-storage <f> <u> <d0> <d1> <d2>)
+;;.VP
+;; ((-gptr-) f):
+;; ((-idx3- (-ubyte-)) u):
+;; ((-int-) d0 d1 d2):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; Maps file f (at the current position given by FTELL) into idx3 u
+;; does not check that f size is OK.
+(de mmap-idx3-storage (f u d0 d1 d2)
+    ((-gptr-) f)
+    ((-idx3- (-ubyte-)) u)
+    ((-int-) d0 d1 d2)
+    
+    (let ((ok t))
+    (cheader "#include <sys/mman.h>")
+    
+    #{{
+    FILE *f=(FILE *) $f;
+    int size=$d0 * $d1 * $d2;
+    int offset=ftell(f);
+    rewind(f);
+    $u->srg->size=size;
+    $u->srg->data=mmap(0,size+offset, PROT_READ,MAP_SHARED,fileno(f),0);
+    if ($u->srg->data == MAP_FAILED) $ok=0;
+    $u->srg->data = (char*)$u->srg->data + offset;
+    $u->srg->flags = (STS_MMAP | STF_RDONLY) & ~STF_UNSIZED;
+    }#}
+    
+    (if ok 
+       (idx-u3resize u d0 d1 d2))
+    ok
+))
+
+#? (ppms-mmap-rgbim <f>)
+;;.VP
+;; ((-gptr-) f):
+;;
+;; CREATED: P.Haffner, Sept 97
+;; DESCRIPTION:
+(de ppms-mmap-rgbim (f)
+    ((-gptr-) f)
+
+    (let ((u (ubyte-matrix-nc 0 0 3))
+          (head (pnm-header f))
+          )
+      (if (<> head "P6")
+          (error "must mmap a PPM file")
+
+        (let* ((ncol (fscan-int f))
+               (nlin (fscan-int f))
+               )
+          (-int- ncol nlin)
+          (fscan-int f)
+          (getc f)
+          (when ~(mmap-idx3-storage f u  nlin ncol 3)
+                (print "Could not MMAP file, just load it")
+                (nt-pnms-read-rgbim f u))
+          ))
+      u
+      ))
+
+#? (pnms-mmap-anyim <f>)
+;;.VP
+;; ((-gptr-) f):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+(de pnms-mmap-anyim (f)
+    ((-gptr-) f)
+
+    (let ((u (ubyte-matrix-nc 0 0 3))
+          (head (pnm-header f))
+          )
+      (if (and (<> head "P5") (<> head "P6"))
+          (error "must mmap a PGM or PPM file")
+
+        (let* ((ncol (fscan-int f))
+               (nlin (fscan-int f))
+               (pix_size (if (= head "P5") 1  3))
+               )
+          (-int- ncol nlin pix_size)
+          (fscan-int f)
+          (getc f)
+          (when ~(mmap-idx3-storage f u  nlin ncol pix_size)
+                (print "Could not MMAP file, just load it")
+                (nt-pnms-read-anyim f u))
+          ))
+      u
+      ))
+
+#? (pnms-read-rgbim <f>)
+;;.VP
+;; ((-gptr-) f):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; DESCRIPTION:
+(de pnms-read-rgbim (f)
+    ((-gptr-) f)
+
+    (let ((u (ubyte-matrix-nc 1 1 3)))
+      (nt-pnms-read-rgbim f u)
+      u
+    ))
+
+
+#? (nt-pnms-read-rgbim <f> <out-im>)
+;;.VP
+;; ((-gptr-) f):
+;; ((-idx3- (-ubyte-)) out-im):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; read an image from a PNM/PPM file and saves it in <out-im>,
+;; an idx3 of ubytes (RGB image)
+;;.SEE pnm
+(de nt-pnms-read-rgbim (f out-im)
+    ((-gptr-) f)
+    ((-idx3- (-ubyte-)) out-im)
+
+    
+    (let ((head (pnm-header f)))
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (rgb-resize out-im)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ unsigned char v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 255 ;
+                  p[0]= p[1]= p[2]= v ;  
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+            ))
+         ((= head "P5")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 )
+            (rgb-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{ p[0]=p[1]=p[2]=getc((FILE *)$f) ;
+                  #}
+                 )
+            ))
+         ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (size (* nlin ncol))
+                 )
+            (-int- ncol nlin  size)
+            (rgb-resize out-im)
+            (fscan-int f)
+            (getc f)
+            #{
+            if ($size != fread (IDX_PTR($out_im, unsigned char), 3, (size_t) $size, (FILE *)$f))
+               run_time_error("not enough items read");
+               #}
+            ))
+         )
+        ()
+            ))
+
+
+#? (pnms-read-anyim <f>)
+;;.VP
+;; ((-gptr-) f):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; DESCRIPTION:
+(de pnms-read-anyim (f)
+    ((-gptr-) f)
+
+    (let ((u (ubyte-matrix-nc 1 1 1)))
+      (nt-pnms-read-anyim f u)
+      u
+    ))
+
+
+#? (nt-pnms-read-anyim <f> <out-im>)
+;;.VP
+;; ((-gptr-) f):
+;; ((-idx3- (-ubyte-)) out-im):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; read an image from a PNM/PPM file and saves it in <out-im>,
+;; an idx3 of ubytes (ANY image)
+;;.SEE pnm
+(de nt-pnms-read-anyim (f out-im)
+    ((-gptr-) f)
+    ((-idx3- (-ubyte-)) out-im)
+
+    
+    (let ((head (pnm-header f)))
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (anyim-resize out-im 1)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ unsigned char v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 255 ;
+                  p[0]=  v ;  
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+            ))
+         ((= head "P5")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 )
+            (anyim-resize out-im 1)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{ p[0]=getc((FILE *)$f) ;
+                  #}
+                 )
+            ))
+         ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (size (* nlin ncol))
+                 )
+            (-int- ncol nlin  size)
+            (rgb-resize out-im)
+            (fscan-int f)
+            (getc f)
+            #{
+            if ($size != fread (IDX_PTR($out_im, unsigned char), 3, (size_t) $size, (FILE *)$f))
+               run_time_error("not enough items read");
+               #}
+            ))
+         )
+        ()
+            ))
+
+
+
+
+#? (pnms-read-ubim <f>)
+;; read an image from a PNM/PPM file and returns
+;; an idx2 of ubytes (ubimage)
+;; RGB values are converted to luminosity if necessary
+;;.SEE (nt-pnms-read-ubim <f> <out-im>)
+;;.SEE pnm
+(de pnms-read-ubim (f)
+    ((-gptr-) f)
+    (nt-pnms-read-ubim f (ubyte-matrix-nc 1 1)))
+
+
+#? (nt-pnms-read-ubim <f> <out-im>)
+;;.VP
+;; ((-gptr-) f):
+;; ((-idx2- (-ubyte-)) out-im):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;;.SEE (pnms-read-ubim <f>)
+(de nt-pnms-read-ubim (f out-im)
+    ((-gptr-) f)
+    ((-idx2- (-ubyte-)) out-im)
+
+    
+      (let ((head (pnm-header f)))
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (ubim-resize out-im)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ unsigned char v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 255 ;
+                  *p = v;
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+             out-im))
+         ((= head "P5")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (ubim-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ *p=getc((FILE *)$f); }#}
+              )
+             out-im))
+         ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 )
+            (ubim-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{ *p = (unsigned char)(0.299 * (flt)(getc((FILE *)$f)) +
+                                      0.587 * (flt)(getc((FILE *)$f)) +
+                                      0.114 * (flt)(getc((FILE *)$f))) ; 
+              #}
+              )
+             out-im)))))
+
+
+
+#? (pnms-read-ubim64 <f>)
+;; read an image from a PNM file and returns
+;; an idx2 of ubytes (grey level image)
+;; Grey levels are renormalized from 0-255 to 0-63
+;;.SEE pnm
+(de pnms-read-ubim64 (f)
+    ((-gptr-) f)
+    (let ((u (ubyte-matrix-nc 1 1)))
+      (nt-pnms-read-ubim64 f u)
+      u
+    ))
+
+
+#? (nt-pnms-read-ubim64 <f> <out-im>)
+;;.VP
+;; ((-gptr-) f):
+;; ((-idx2- (-ubyte-)) out-im):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+(de nt-pnms-read-ubim64 (f out-im)
+    ((-gptr-) f)
+    ((-idx2- (-ubyte-)) out-im)
+
+    
+      (let ((head (pnm-header f)))
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (ubim-resize out-im)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ unsigned char v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 63 ;
+                  *p = v;
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+             out-im))
+         ((= head "P5")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (ubim-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+                              #{{ *p=getc((FILE *)$f)>>2; }#}
+                              )
+            out-im))
+         ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (rgbline (ubyte-matrix-nc ncol 3))
+                 (r (* (FRED) 2048))
+                 (g (* (FGREEN) 2048))
+                 (b (* (FBLUE) 2048))
+                 )
+            (-int- r g b)
+            (-int- ncol nlin)
+            
+            (ubim-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cidx-bloop ("i" ("pout" out-im))
+                        #{
+                        int j;
+                        unsigned char *pin=IDX_PTR($rgbline, unsigned char);
+                        if ($ncol != fread (pin, 3, (size_t) $ncol, (FILE *)$f))
+                        run_time_error("not enough items read");
+                        for (j=0; j<$ncol; j++) {
+                             pout[j] = (($r*pin[0] + $g*pin[1] + $b*pin[2]))>>13;
+                             pin+=3;
+                             }
+                        #}
+                        )
+                        ))
+          )
+         )))
+
+
+#? (nt-ppms-read-ubim64-split <f> <down-im> <up-im>)
+;;.VP
+;; ((-gptr-) f):
+;; ((-idx2- (-ubyte-)) up-im):
+;; ((-idx2- (-ubyte-)) down-im):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; low: light part of the image
+;; up: dark part of the image
+(de nt-ppms-read-ubim64-split (f low-im up-im)
+    ((-gptr-) f)
+    ((-idx2- (-ubyte-)) low-im)
+    ((-idx2- (-ubyte-)) up-im)
+
+    
+      (let ((head (pnm-header f)))
+         (if (<> head "P6")
+             (error "PPM file only")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (rgbline (ubyte-matrix-nc ncol 3))
+                 (r (* 2 (FRED) 2048))
+                 (g (* 2 (FGREEN) 2048))
+                 (b (* 2 (FBLUE) 2048))
+                 )
+            (-int- r g b)
+            (-int- ncol nlin)
+            
+            (ubim-resize low-im)
+            (ubim-resize up-im)
+            (fscan-int f)
+            (getc f)
+            (cidx-bloop ("i" ("pup" up-im) ("plow" low-im))
+                        #{
+                        int j;
+                        unsigned char *pin=IDX_PTR($rgbline, unsigned char);
+                        if ($ncol != fread (pin, 3, (size_t) $ncol, (FILE *)$f))
+                        run_time_error("not enough items read");
+                        for (j=0; j<$ncol; j++) {
+                             int out = (($r*pin[0] + $g*pin[1] + $b*pin[2]))>>13;
+                             if (out<64) 
+                             {plow[j]= 0; pup[j] = out;}
+                             else
+                             {plow[j]= out-64; pup[j] = 63;}
+                             pin+=3;
+                             }
+                        #}
+                        )
+                  )))
+()))
+
+#? (pnms-read-rgbim-sub2 <f>)
+;; read an image from a PNM/PPM file and returns
+;; an idx3 of ubytes (RGB image)
+;;.SEE pnm
+(de pnms-read-rgbim-sub2 (f)
+    ((-gptr-) f)
+    (let ((u (ubyte-matrix-nc 1 1 3)))
+      (nt-pnms-read-rgbim-sub2 f u)
+      u
+    ))
+
+
+#? (nt-pnms-read-rgbim-sub2 <f> <out-im>)
+;; read an image from a PNM/PPM file and saves it in <out-im>,
+;; an idx3 of ubytes (RGB image)
+;;.SEE pnm
+(de nt-pnms-read-rgbim-sub2 (f out-im)
+    ((-gptr-) f)
+    ((-idx3- (-ubyte-)) out-im)
+
+    
+      (let ((head (pnm-header f)))
+        (let* (
+               (ncol2 (fscan-int f))
+               (nlin2 (fscan-int f))
+               (ncol (2/ ncol2))
+               (nlin (2/ nlin2))
+               )
+          (-int- ncol nlin nlin2 ncol2)
+          (rgb-resize out-im)
+          (print ncol nlin)
+          (cond 
+           ((= head "P4")
+            (let* (
+                   (n 0) (c 0))
+              ((-int-) n c)
+              (getc f)
+              (error "to be programmed !")
+              (fclose f) 
+              ))
+
+           ((= head "P5")
+            (let ((dbl_line (ubyte-matrix-nc ncol2 1)))
+              (fscan-int f)
+              (getc f)
+              (cidx-bloop ("i" ("pout_im" out-im))
+                          #{
+#define STEP 1
+                          int j;
+                          unsigned char *pin=IDX_PTR($dbl_line, unsigned char);
+                          unsigned char *pin2=pin+STEP* $ncol2;
+                          unsigned char *pout=pout_im;
+                          if ($ncol2 != fread (pin, STEP, (size_t) $ncol2, (FILE *)$f))
+                          run_time_error("not enough items read");
+                          for (j=0; j<$ncol; j++) {
+                               pout[0]= pout[1]= pout[2]= (pin[0]+pin[0+STEP]+pin2[0]+pin2[0+STEP])/4;
+                               pout+= 3;
+                               pin+=2*STEP;
+                               pin2 +=2*STEP;
+                               }
+                               #}
+                               )
+              
+            ))
+           ((= head "P6")
+            (let ((dbl_line (ubyte-matrix-nc ncol2 2 3)))
+              
+              (fscan-int f)
+              (getc f)
+              (cidx-bloop ("i" ("pout_im" out-im))
+                          #{
+#define STEP 3
+                          int j;
+                          unsigned char *pin=IDX_PTR($dbl_line, unsigned char);
+                          unsigned char *pin2=pin+STEP* $ncol2;
+                          unsigned char *pout=pout_im;
+                          if ($ncol2*2 != fread (pin, STEP, (size_t) $ncol2*2, (FILE *)$f)) {
+                            fprintf(stderr, "line %d\n", i);
+                            run_time_error("not enough items read");
+                            }
+                          for (j=0; j<$ncol; j++) {
+                               pout[0]= (pin[0]+pin[0+STEP]+pin2[0]+pin2[0+STEP])/4;
+                               pout[1]= (pin[1]+pin[1+STEP]+pin2[1]+pin2[1+STEP])/4;
+                               pout[2]= (pin[2]+pin[2+STEP]+pin2[2]+pin2[2+STEP])/4;
+                               pout+=STEP;
+                               pin+=2*STEP;
+                               pin2 +=2*STEP;
+                               }
+                               #}
+                               )
+                          ))
+         )
+           )
+           ())))
+
+
+#? (pnms-dim <f>)
+;;.VP
+;; ((-gptr-) f):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; returns dimensions of image.
+(de pnms-dim (f)
+    ((-gptr-) f)
+
+      (pnm-header f)
+      (let* (
+             (d1 (fscan-int f))
+             (d0 (fscan-int f))
+             (dim-vec (new img-dim-C d0 d1)))
+        (-int- d0 d1)
+        (rewind f)   
+        dim-vec))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make ()
+          pnm-header
+          pnms-dim
+          nt-pnms-read-ubim pnms-read-ubim 
+          nt-pnms-read-rgbim-sub2 pnms-read-rgbim-sub2
+          nt-pnms-read-rgbim pnms-read-rgbim 
+          nt-pnms-read-anyim pnms-read-anyim 
+          nt-pnms-read-ubim64 pnms-read-ubim64 
+          mmap-idx3-storage
+          ppms-mmap-rgbim
+          pnms-mmap-anyim
+          nt-ppms-read-ubim64-split
+          )

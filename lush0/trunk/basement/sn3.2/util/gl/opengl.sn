@@ -1,0 +1,2048 @@
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; OpenGL interface
+;; This is done from the gl.h file that comes with the public
+;; domain OpenGL implementation valled Mesa
+;; It's got everything except extensions and SGI-specific stuff.
+;; Yann LeCun 1997.
+
+#? gl/opengl.sn
+;; opengl.sn is a complete interface between SN and the industry-standard
+;; 3D graphic library OpenGL. With opengl.sn all 309 OpenGL functions can 
+;; be called from SN, and all the predefined constants can be used.
+;; OpenGL windows are open within an SN window using glsn-setup-window.
+;; Another package gl/openglu.sn provides an interface
+;; with the higher-level OpenGLU functions including object tesselations, 
+;; NURBS, mipmap building, polygons....
+;; The SN equivalents to OpenGL functions have the same name as their C 
+;; counterparts. The arguments are also identical to the C version, except
+;; that structure pointers are generic pointers, and pointers to arrays
+;; of numbers are transformed into SN matrices with the corresponding type.
+;; So for example, the SN version of the function glPixelMapfv whose C 
+;; prototype is glPixelMapfv(int,int,float*) takes two ints and an idx1
+;; of floats as arguments. 
+;; The only exception to this rule is when the type of the numbers in the
+;; array is unspecified at compile time. In this case, the SN function
+;; takes a gptr (the C function takes a void*).
+;; The functions to which this exception applies are:
+;; glPolygonStipple, glGetPolygonStipple, glEdgeFlagv, glReadPixels,
+;; glDrawPixels, glTexImage1D, glTexImage2D, and glGetTexImage.
+;; 
+;; The functions implemented here are the ones that are present in
+;; the gl.h file distributed with the public domain implementation
+;; of OpenGL called Mesa.
+;; 
+;; no explicit documentation is provided for the functions. Developers
+;; are referred to the OpenGL manuals.
+;;
+;; type ^Agl for a complete list of implemented functions.
+;;
+;;.SEE gl/openglu.sn
+;;.SEE Open GL support under X11.
+;;.SEE (glsn-setup-window <x> <y> <w> <h> <dbf>)
+;;.SEE (glsn-usleep <microsecs>)
+;;.SEE (glsn-demo <angle>)
+
+
+(mload "cmacro")
+
+;; /* Boolean values */
+(setq GL_FALSE           0)
+(setq GL_TRUE            1)
+
+;; /* Data types */
+(setq GL_BYTE            0x1400)
+(setq GL_UNSIGNED_BYTE   0x1401)
+(setq GL_SHORT           0x1402)
+(setq GL_UNSIGNED_SHORT  0x1403)
+(setq GL_INT             0x1404)
+(setq GL_UNSIGNED_INT    0x1405)
+(setq GL_FLOAT           0x1406)
+(setq GL_2_BYTES         0x1407)
+(setq GL_3_BYTES         0x1408)
+(setq GL_4_BYTES         0x1409)
+
+;; /* Primitives */
+(setq GL_LINES		 0x0001)
+(setq GL_POINTS		 0x0000)
+(setq GL_LINE_STRIP	 0x0003)
+(setq GL_LINE_LOOP	 0x0002)
+(setq GL_TRIANGLES	 0x0004)
+(setq GL_TRIANGLE_STRIP	 0x0005)
+(setq GL_TRIANGLE_FAN	 0x0006)
+(setq GL_QUADS		 0x0007)
+(setq GL_QUAD_STRIP	 0x0008)
+(setq GL_POLYGON	 0x0009)
+(setq GL_EDGE_FLAG	 0x0B43)
+
+;; /* Matrix Mode */
+(setq GL_MATRIX_MODE	 0x0BA0)
+(setq GL_MODELVIEW	 0x1700)
+(setq GL_PROJECTION	 0x1701)
+(setq GL_TEXTURE	 0x1702)
+
+;;	/* Points */
+(setq GL_POINT_SMOOTH	 0x0B10)
+(setq GL_POINT_SIZE	 0x0B11)
+(setq GL_POINT_SIZE_GRANULARITY  0x0B13)
+(setq GL_POINT_SIZE_RANGE	 0x0B12)
+
+;;	/* Lines */
+(setq GL_LINE_SMOOTH	 0x0B20)
+(setq GL_LINE_STIPPLE	 0x0B24)
+(setq GL_LINE_STIPPLE_PATTERN	 0x0B25)
+(setq GL_LINE_STIPPLE_REPEAT	 0x0B26)
+(setq GL_LINE_WIDTH	 0x0B21)
+(setq GL_LINE_WIDTH_GRANULARITY 0x0B23)
+(setq GL_LINE_WIDTH_RANGE	 0x0B22)
+
+;;	/* Polygons */
+(setq GL_POINT		 0x1B00)
+(setq GL_LINE		 0x1B01)
+(setq GL_FILL		 0x1B02)
+(setq GL_CCW		 0x0901)
+(setq GL_CW		 0x0900)
+(setq GL_FRONT		 0x0404)
+(setq GL_BACK		 0x0405)
+(setq GL_CULL_FACE	 0x0B44)
+(setq GL_CULL_FACE_MODE	 0x0B45)
+(setq GL_POLYGON_SMOOTH	 0x0B41)
+(setq GL_POLYGON_STIPPLE 0x0B42)
+(setq GL_FRONT_FACE	 0x0B46)
+(setq GL_POLYGON_MODE	 0x0B40)
+
+;;	/* Display Lists */
+(setq GL_COMPILE	 0x1300)
+(setq GL_COMPILE_AND_EXECUTE	 0x1301)
+(setq GL_LIST_BASE	 0x0B32)
+(setq GL_LIST_INDEX	 0x0B33)
+(setq GL_LIST_MODE	 0x0B30)
+
+;;	/* Depth buffer */
+(setq GL_NEVER		 0x0200)
+(setq GL_LESS		 0x0201)
+(setq GL_GEQUAL		 0x0206)
+(setq GL_LEQUAL		 0x0203)
+(setq GL_GREATER	 0x0204)
+(setq GL_NOTEQUAL	 0x0205)
+(setq GL_EQUAL		 0x0202)
+(setq GL_ALWAYS		 0x0207)
+(setq GL_DEPTH_TEST	 0x0B71)
+(setq GL_DEPTH_BITS	 0x0D56)
+(setq GL_DEPTH_CLEAR_VALUE	 0x0B73)
+(setq GL_DEPTH_FUNC	 0x0B74)
+(setq GL_DEPTH_RANGE	 0x0B70)
+(setq GL_DEPTH_WRITEMASK 0x0B72)
+(setq GL_DEPTH_COMPONENT 0x1902)
+
+;;	/* Lighting */
+(setq GL_LIGHTING	 0x0B50)
+(setq GL_LIGHT0		 0x4000)
+(setq GL_LIGHT1		 0x4001)
+(setq GL_LIGHT2		 0x4002)
+(setq GL_LIGHT3		 0x4003)
+(setq GL_LIGHT4		 0x4004)
+(setq GL_LIGHT5		 0x4005)
+(setq GL_LIGHT6		 0x4006)
+(setq GL_LIGHT7		 0x4007)
+(setq GL_SPOT_EXPONENT	 0x1205)
+(setq GL_SPOT_CUTOFF	 0x1206)
+(setq GL_CONSTANT_ATTENUATION	 0x1207)
+(setq GL_LINEAR_ATTENUATION	 0x1208)
+(setq GL_QUADRATIC_ATTENUATION 0x1209)
+(setq GL_AMBIENT	 0x1200)
+(setq GL_DIFFUSE	 0x1201)
+(setq GL_SPECULAR	 0x1202)
+(setq GL_SHININESS	 0x1601)
+(setq GL_EMISSION	 0x1600)
+(setq GL_POSITION	 0x1203)
+(setq GL_SPOT_DIRECTION	 0x1204)
+(setq GL_AMBIENT_AND_DIFFUSE	 0x1602)
+(setq GL_COLOR_INDEXES	 0x1603)
+(setq GL_LIGHT_MODEL_TWO_SIDE	 0x0B52)
+(setq GL_LIGHT_MODEL_LOCAL_VIEWER 0x0B51)
+(setq GL_LIGHT_MODEL_AMBIENT	 0x0B53)
+(setq GL_FRONT_AND_BACK	 0x0408)
+(setq GL_SHADE_MODEL	 0x0B54)
+(setq GL_FLAT		 0x1D00)
+(setq GL_SMOOTH		 0x1D01)
+(setq GL_COLOR_MATERIAL	 0x0B57)
+(setq GL_COLOR_MATERIAL_FACE	 0x0B55)
+(setq GL_COLOR_MATERIAL_PARAMETER 0x0B56)
+(setq GL_NORMALIZE	 0x0BA1)
+
+;;	/* User clipping planes */
+(setq GL_CLIP_PLANE0	 0x3000)
+(setq GL_CLIP_PLANE1	 0x3001)
+(setq GL_CLIP_PLANE2	 0x3002)
+(setq GL_CLIP_PLANE3	 0x3003)
+(setq GL_CLIP_PLANE4	 0x3004)
+(setq GL_CLIP_PLANE5	 0x3005)
+
+;;	/* Accumulation buffer */
+(setq GL_ACCUM_RED_BITS	 0x0D58)
+(setq GL_ACCUM_GREEN_BITS	 0x0D59)
+(setq GL_ACCUM_BLUE_BITS	 0x0D5A)
+(setq GL_ACCUM_ALPHA_BITS	 0x0D5B)
+(setq GL_ACCUM_CLEAR_VALUE	 0x0B80)
+(setq GL_ACCUM		 0x0100)
+(setq GL_ADD		 0x0104)
+(setq GL_LOAD		 0x0101)
+(setq GL_MULT		 0x0103)
+(setq GL_RETURN		 0x0102)
+
+;;	/* Alpha testing */
+(setq GL_ALPHA_TEST	 0x0BC0)
+(setq GL_ALPHA_TEST_REF	 0x0BC2)
+(setq GL_ALPHA_TEST_FUNC 0x0BC1)
+
+;;	/* Blending */
+(setq GL_BLEND		 0x0BE2)
+(setq GL_BLEND_SRC	 0x0BE1)
+(setq GL_BLEND_DST	 0x0BE0)
+(setq GL_ZERO		 0)
+(setq GL_ONE		 1)
+(setq GL_SRC_COLOR	 0x0300)
+(setq GL_ONE_MINUS_SRC_COLOR	 0x0301)
+(setq GL_DST_COLOR	         0x0306)
+(setq GL_ONE_MINUS_DST_COLOR	 0x0307)
+(setq GL_SRC_ALPHA		 0x0302)
+(setq GL_ONE_MINUS_SRC_ALPHA	 0x0303)
+(setq GL_DST_ALPHA		 0x0304)
+(setq GL_ONE_MINUS_DST_ALPHA	 0x0305)
+(setq GL_SRC_ALPHA_SATURATE	 0x0308)
+
+;;	/* Render Mode */
+(setq GL_FEEDBACK	 0x1C01)
+(setq GL_RENDER		 0x1C00)
+(setq GL_SELECT		 0x1C02)
+
+;;	/* Feedback */
+(setq GL_2D		 0x0600)
+(setq GL_3D		 0x0601)
+(setq GL_3D_COLOR	 0x0602)
+(setq GL_3D_COLOR_TEXTURE	 0x0603)
+(setq GL_4D_COLOR_TEXTURE	 0x0604)
+(setq GL_POINT_TOKEN		 0x0701)
+(setq GL_LINE_TOKEN		 0x0702)
+(setq GL_LINE_RESET_TOKEN	 0x0707)
+(setq GL_POLYGON_TOKEN	         0x0703)
+(setq GL_BITMAP_TOKEN		 0x0704)
+(setq GL_DRAW_PIXEL_TOKEN	 0x0705)
+(setq GL_COPY_PIXEL_TOKEN	 0x0706)
+(setq GL_PASS_THROUGH_TOKEN	 0x0700)
+
+;;	/* Fog */
+(setq GL_FOG		 0x0B60)
+(setq GL_FOG_MODE	 0x0B65)
+(setq GL_FOG_DENSITY	 0x0B62)
+(setq GL_FOG_COLOR	 0x0B66)
+(setq GL_FOG_INDEX	 0x0B61)
+(setq GL_FOG_START	 0x0B63)
+(setq GL_FOG_END	 0x0B64)
+(setq GL_LINEAR		 0x2601)
+(setq GL_EXP		 0x0800)
+(setq GL_EXP2		 0x0801)
+
+;;	/* Logic Ops */
+(setq GL_LOGIC_OP	 0x0BF1)
+(setq GL_LOGIC_OP_MODE	 0x0BF0)
+(setq GL_CLEAR		 0x1500)
+(setq GL_SET		 0x150F)
+(setq GL_COPY		 0x1503)
+(setq GL_COPY_INVERTED	 0x150C)
+(setq GL_NOOP		 0x1505)
+(setq GL_INVERT		 0x150A)
+(setq GL_AND		 0x1501)
+(setq GL_NAND		 0x150E)
+(setq GL_OR		 0x1507)
+(setq GL_NOR		 0x1508)
+(setq GL_XOR		 0x1506)
+(setq GL_EQUIV		 0x1509)
+(setq GL_AND_REVERSE	 0x1502)
+(setq GL_AND_INVERTED	 0x1504)
+(setq GL_OR_REVERSE	 0x150B)
+(setq GL_OR_INVERTED	 0x150D)
+
+;;	/* Stencil */
+(setq GL_STENCIL_TEST	         0x0B90)
+(setq GL_STENCIL_WRITEMASK	 0x0B98)
+(setq GL_STENCIL_BITS		 0x0D57)
+(setq GL_STENCIL_FUNC		 0x0B92)
+(setq GL_STENCIL_VALUE_MASK	 0x0B93)
+(setq GL_STENCIL_REF		 0x0B97)
+(setq GL_STENCIL_FAIL		 0x0B94)
+(setq GL_STENCIL_PASS_DEPTH_PASS 0x0B96)
+(setq GL_STENCIL_PASS_DEPTH_FAIL 0x0B95)
+(setq GL_STENCIL_CLEAR_VALUE	 0x0B91)
+(setq GL_STENCIL_INDEX	         0x1901)
+(setq GL_KEEP			 0x1E00)
+(setq GL_REPLACE		 0x1E01)
+(setq GL_INCR			 0x1E02)
+(setq GL_DECR			 0x1E03)
+
+;;	/* Buffers, Pixel Drawing/Reading */
+(setq GL_NONE		 0)
+(setq GL_LEFT		 0x0406)
+(setq GL_RIGHT		 0x0407)
+(setq GL_FRONT		 0x0404)
+(setq GL_BACK		 0x0405)
+(setq GL_FRONT_AND_BACK	 0x0408)
+(setq GL_FRONT_LEFT	 0x0400)
+(setq GL_FRONT_RIGHT	 0x0401)
+(setq GL_BACK_LEFT	 0x0402)
+(setq GL_BACK_RIGHT	 0x0403)
+(setq GL_AUX0		 0x0409)
+(setq GL_AUX1		 0x040A)
+(setq GL_AUX2		 0x040B)
+(setq GL_AUX3		 0x040C)
+(setq GL_COLOR_INDEX	 0x1900)
+(setq GL_RED		 0x1903)
+(setq GL_GREEN		 0x1904)
+(setq GL_BLUE		 0x1905)
+(setq GL_ALPHA		 0x1906)
+(setq GL_LUMINANCE	 0x1909)
+(setq GL_LUMINANCE_ALPHA 0x190A)
+(setq GL_ALPHA_BITS	 0x0D55)
+(setq GL_RED_BITS	 0x0D52)
+(setq GL_GREEN_BITS	 0x0D53)
+(setq GL_BLUE_BITS	 0x0D54)
+(setq GL_INDEX_BITS	 0x0D51)
+(setq GL_SUBPIXEL_BITS	 0x0D50)
+(setq GL_AUX_BUFFERS	 0x0C00)
+(setq GL_READ_BUFFER	 0x0C02)
+(setq GL_DRAW_BUFFER	 0x0C01)
+(setq GL_DOUBLEBUFFER	 0x0C32)
+(setq GL_STEREO		 0x0C33)
+(setq GL_BITMAP		 0x1A00)
+(setq GL_COLOR		 0x1800)
+(setq GL_DEPTH		 0x1801)
+(setq GL_STENCIL	 0x1802)
+(setq GL_DITHER		 0x0BD0)
+(setq GL_RGB		 0x1907)
+(setq GL_RGBA		 0x1908)
+
+;;	/* Implementation limits */
+(setq GL_MAX_MODELVIEW_STACK_DEPTH 0x0D36)
+(setq GL_MAX_PROJECTION_STACK_DEPTH 0x0D38)
+(setq GL_MAX_TEXTURE_STACK_DEPTH 0x0D39)
+(setq GL_MAX_ATTRIB_STACK_DEPTH 0x0D35)
+(setq GL_MAX_NAME_STACK_DEPTH	 0x0D37)
+(setq GL_MAX_LIST_NESTING	 0x0B31)
+(setq GL_MAX_LIGHTS		 0x0D31)
+(setq GL_MAX_CLIP_PLANES	 0x0D32)
+(setq GL_MAX_VIEWPORT_DIMS	 0x0D3A)
+(setq GL_MAX_PIXEL_MAP_TABLE	 0x0D34)
+(setq GL_MAX_EVAL_ORDER	         0x0D30)
+(setq GL_MAX_TEXTURE_SIZE	 0x0D33)
+
+;;	/* Gets */
+(setq GL_ATTRIB_STACK_DEPTH	 0x0BB0)
+(setq GL_COLOR_CLEAR_VALUE	 0x0C22)
+(setq GL_COLOR_WRITEMASK	 0x0C23)
+(setq GL_CURRENT_INDEX	         0x0B01)
+(setq GL_CURRENT_COLOR	         0x0B00)
+(setq GL_CURRENT_NORMAL	         0x0B02)
+(setq GL_CURRENT_RASTER_COLOR	 0x0B04)
+(setq GL_CURRENT_RASTER_DISTANCE 0x0B09)
+(setq GL_CURRENT_RASTER_INDEX	 0x0B05)
+(setq GL_CURRENT_RASTER_POSITION 0x0B07)
+(setq GL_CURRENT_RASTER_TEXTURE_COORDS  0x0B06)
+(setq GL_CURRENT_RASTER_POSITION_VALID  0x0B08)
+(setq GL_CURRENT_TEXTURE_COORDS  0x0B03)
+(setq GL_INDEX_CLEAR_VALUE	 0x0C20)
+(setq GL_INDEX_MODE		 0x0C30)
+(setq GL_INDEX_WRITEMASK	 0x0C21)
+(setq GL_MODELVIEW_MATRIX	 0x0BA6)
+(setq GL_MODELVIEW_STACK_DEPTH   0x0BA3)
+(setq GL_NAME_STACK_DEPTH	 0x0D70)
+(setq GL_PROJECTION_MATRIX	 0x0BA7)
+(setq GL_PROJECTION_STACK_DEPTH  0x0BA4)
+(setq GL_RENDER_MODE		 0x0C40)
+(setq GL_RGBA_MODE		 0x0C31)
+(setq GL_TEXTURE_MATRIX	         0x0BA8)
+(setq GL_TEXTURE_STACK_DEPTH	 0x0BA5)
+(setq GL_VIEWPORT		 0x0BA2)
+
+
+;;	/* Evaluators */
+(setq GL_AUTO_NORMAL		 0x0D80)
+(setq GL_MAP1_COLOR_4		 0x0D90)
+(setq GL_MAP1_GRID_DOMAIN	 0x0DD0)
+(setq GL_MAP1_GRID_SEGMENTS	 0x0DD1)
+(setq GL_MAP1_INDEX		 0x0D91)
+(setq GL_MAP1_NORMAL		 0x0D92)
+(setq GL_MAP1_TEXTURE_COORD_1	 0x0D93)
+(setq GL_MAP1_TEXTURE_COORD_2	 0x0D94)
+(setq GL_MAP1_TEXTURE_COORD_3	 0x0D95)
+(setq GL_MAP1_TEXTURE_COORD_4	 0x0D96)
+(setq GL_MAP1_VERTEX_3	         0x0D97)
+(setq GL_MAP1_VERTEX_4	         0x0D98)
+(setq GL_MAP2_COLOR_4		 0x0DB0)
+(setq GL_MAP2_GRID_DOMAIN	 0x0DD2)
+(setq GL_MAP2_GRID_SEGMENTS	 0x0DD3)
+(setq GL_MAP2_INDEX		 0x0DB1)
+(setq GL_MAP2_NORMAL		 0x0DB2)
+(setq GL_MAP2_TEXTURE_COORD_1	 0x0DB3)
+(setq GL_MAP2_TEXTURE_COORD_2	 0x0DB4)
+(setq GL_MAP2_TEXTURE_COORD_3	 0x0DB5)
+(setq GL_MAP2_TEXTURE_COORD_4	 0x0DB6)
+(setq GL_MAP2_VERTEX_3	 0x0DB7)
+(setq GL_MAP2_VERTEX_4	 0x0DB8)
+(setq GL_COEFF		 0x0A00)
+(setq GL_DOMAIN		 0x0A02)
+(setq GL_ORDER		 0x0A01)
+
+;;	/* Hints */
+(setq GL_FOG_HINT		 0x0C54)
+(setq GL_LINE_SMOOTH_HINT	 0x0C52)
+(setq GL_PERSPECTIVE_CORRECTION_HINT 0x0C50)
+(setq GL_POINT_SMOOTH_HINT	 0x0C51)
+(setq GL_POLYGON_SMOOTH_HINT	 0x0C53)
+(setq GL_DONT_CARE		 0x1100)
+(setq GL_FASTEST		 0x1101)
+(setq GL_NICEST		         0x1102)
+
+;;	/* Scissor box */
+(setq GL_SCISSOR_TEST		 0x0C11)
+(setq GL_SCISSOR_BOX		 0x0C10)
+
+;;	/* Pixel Mode / Transfer */
+(setq GL_MAP_COLOR		 0x0D10)
+(setq GL_MAP_STENCIL		 0x0D11)
+(setq GL_INDEX_SHIFT		 0x0D12)
+(setq GL_INDEX_OFFSET		 0x0D13)
+(setq GL_RED_SCALE		 0x0D14)
+(setq GL_RED_BIAS		 0x0D15)
+(setq GL_GREEN_SCALE		 0x0D18)
+(setq GL_GREEN_BIAS		 0x0D19)
+(setq GL_BLUE_SCALE		 0x0D1A)
+(setq GL_BLUE_BIAS		 0x0D1B)
+(setq GL_ALPHA_SCALE		 0x0D1C)
+(setq GL_ALPHA_BIAS		 0x0D1D)
+(setq GL_DEPTH_SCALE		 0x0D1E)
+(setq GL_DEPTH_BIAS		 0x0D1F)
+(setq GL_PIXEL_MAP_S_TO_S_SIZE   0x0CB1)
+(setq GL_PIXEL_MAP_I_TO_I_SIZE   0x0CB0)
+(setq GL_PIXEL_MAP_I_TO_R_SIZE   0x0CB2)
+(setq GL_PIXEL_MAP_I_TO_G_SIZE   0x0CB3)
+(setq GL_PIXEL_MAP_I_TO_B_SIZE   0x0CB4)
+(setq GL_PIXEL_MAP_I_TO_A_SIZE   0x0CB5)
+(setq GL_PIXEL_MAP_R_TO_R_SIZE   0x0CB6)
+(setq GL_PIXEL_MAP_G_TO_G_SIZE   0x0CB7)
+(setq GL_PIXEL_MAP_B_TO_B_SIZE   0x0CB8)
+(setq GL_PIXEL_MAP_A_TO_A_SIZE   0x0CB9)
+(setq GL_PIXEL_MAP_S_TO_S	 0x0C71)
+(setq GL_PIXEL_MAP_I_TO_I	 0x0C70)
+(setq GL_PIXEL_MAP_I_TO_R	 0x0C72)
+(setq GL_PIXEL_MAP_I_TO_G	 0x0C73)
+(setq GL_PIXEL_MAP_I_TO_B	 0x0C74)
+(setq GL_PIXEL_MAP_I_TO_A	 0x0C75)
+(setq GL_PIXEL_MAP_R_TO_R	 0x0C76)
+(setq GL_PIXEL_MAP_G_TO_G	 0x0C77)
+(setq GL_PIXEL_MAP_B_TO_B	 0x0C78)
+(setq GL_PIXEL_MAP_A_TO_A	 0x0C79)
+(setq GL_PACK_ALIGNMENT	         0x0D05)
+(setq GL_PACK_LSB_FIRST	         0x0D01)
+(setq GL_PACK_ROW_LENGTH	 0x0D02)
+(setq GL_PACK_SKIP_PIXELS	 0x0D04)
+(setq GL_PACK_SKIP_ROWS	         0x0D03)
+(setq GL_PACK_SWAP_BYTES	 0x0D00)
+(setq GL_UNPACK_ALIGNMENT	 0x0CF5)
+(setq GL_UNPACK_LSB_FIRST	 0x0CF1)
+(setq GL_UNPACK_ROW_LENGTH	 0x0CF2)
+(setq GL_UNPACK_SKIP_PIXELS	 0x0CF4)
+(setq GL_UNPACK_SKIP_ROWS	 0x0CF3)
+(setq GL_UNPACK_SWAP_BYTES	 0x0CF0)
+(setq GL_ZOOM_X		         0x0D16)
+(setq GL_ZOOM_Y		         0x0D17)
+
+;;	/* Texture mapping */
+(setq GL_TEXTURE_ENV		 0x2300)
+(setq GL_TEXTURE_ENV_MODE	 0x2200)
+(setq GL_TEXTURE_1D		 0x0DE0)
+(setq GL_TEXTURE_2D		 0x0DE1)
+(setq GL_TEXTURE_WRAP_S	         0x2802)
+(setq GL_TEXTURE_WRAP_T	         0x2803)
+(setq GL_TEXTURE_MAG_FILTER	 0x2800)
+(setq GL_TEXTURE_MIN_FILTER	 0x2801)
+(setq GL_TEXTURE_ENV_COLOR	 0x2201)
+(setq GL_TEXTURE_GEN_S	         0x0C60)
+(setq GL_TEXTURE_GEN_T	         0x0C61)
+(setq GL_TEXTURE_GEN_MODE	 0x2500)
+(setq GL_TEXTURE_BORDER_COLOR	 0x1004)
+(setq GL_TEXTURE_WIDTH	         0x1000)
+(setq GL_TEXTURE_HEIGHT	         0x1001)
+(setq GL_TEXTURE_BORDER	         0x1005)
+(setq GL_TEXTURE_COMPONENTS	 0x1003)
+(setq GL_NEAREST_MIPMAP_NEAREST  0x2700)
+(setq GL_NEAREST_MIPMAP_LINEAR   0x2702)
+(setq GL_LINEAR_MIPMAP_NEAREST   0x2701)
+(setq GL_LINEAR_MIPMAP_LINEAR	 0x2703)
+(setq GL_OBJECT_LINEAR	         0x2401)
+(setq GL_OBJECT_PLANE		 0x2501)
+(setq GL_EYE_LINEAR		 0x2400)
+(setq GL_EYE_PLANE		 0x2502)
+(setq GL_SPHERE_MAP		 0x2402)
+(setq GL_DECAL		         0x2101)
+(setq GL_MODULATE		 0x2100)
+(setq GL_NEAREST		 0x2600)
+(setq GL_REPEAT		         0x2901)
+(setq GL_CLAMP		         0x2900)
+(setq GL_S			 0x2000)
+(setq GL_T			 0x2001)
+(setq GL_R			 0x2002)
+(setq GL_Q			 0x2003)
+(setq GL_TEXTURE_GEN_R	         0x0C62)
+(setq GL_TEXTURE_GEN_Q	         0x0C63)
+
+;;	/* Utility */
+(setq GL_VENDOR		         0x1F00)
+(setq GL_RENDERER		 0x1F01)
+(setq GL_VERSION		 0x1F02)
+(setq GL_EXTENSIONS		 0x1F03)
+
+;;	/* Errors */
+(setq GL_INVALID_VALUE	         0x0501)
+(setq GL_INVALID_ENUM		 0x0500)
+(setq GL_INVALID_OPERATION	 0x0502)
+(setq GL_STACK_OVERFLOW	         0x0503)
+(setq GL_STACK_UNDERFLOW	 0x0504)
+(setq GL_OUT_OF_MEMORY	         0x0505)
+
+;;	/* Extensions */
+(setq GL_CONSTANT_COLOR_EXT	 0x8001)
+(setq GL_ONE_MINUS_CONSTANT_COLOR_EXT 0x8002)
+(setq GL_CONSTANT_ALPHA_EXT	 0x8003)
+(setq GL_ONE_MINUS_CONSTANT_ALPHA_EXT 0x8004)
+(setq GL_BLEND_EQUATION_EXT	 0x8009)
+(setq GL_MIN_EXT		 0x8007)
+(setq GL_MAX_EXT		 0x8008)
+(setq GL_FUNC_ADD_EXT		 0x8006)
+(setq GL_FUNC_SUBTRACT_EXT	 0x800A)
+(setq GL_FUNC_REVERSE_SUBTRACT_EXT 0x800B)
+(setq GL_BLEND_COLOR_EXT	 0x8005)
+(setq GL_REPLACE_EXT		 0x8062)
+(setq        GL_POLYGON_OFFSET_EXT            0x8037)
+(setq        GL_POLYGON_OFFSET_FACTOR_EXT     0x8038)
+(setq        GL_POLYGON_OFFSET_BIAS_EXT       0x803)
+
+;; GLbitfield
+(setq GL_CURRENT_BIT		 0x00000001)
+(setq GL_POINT_BIT		 0x00000002)
+(setq GL_LINE_BIT		 0x00000004)
+(setq GL_POLYGON_BIT		 0x00000008)
+(setq GL_POLYGON_STIPPLE_BIT	 0x00000010)
+(setq GL_PIXEL_MODE_BIT	         0x00000020)
+(setq GL_LIGHTING_BIT		 0x00000040)
+(setq GL_FOG_BIT		 0x00000080)
+(setq GL_DEPTH_BUFFER_BIT	 0x00000100)
+(setq GL_ACCUM_BUFFER_BIT	 0x00000200)
+(setq GL_STENCIL_BUFFER_BIT	 0x00000400)
+(setq GL_VIEWPORT_BIT		 0x00000800)
+(setq GL_TRANSFORM_BIT	         0x00001000)
+(setq GL_ENABLE_BIT		 0x00002000)
+(setq GL_COLOR_BUFFER_BIT	 0x00004000)
+(setq GL_HINT_BIT		 0x00008000)
+(setq GL_EVAL_BIT		 0x00010000)
+(setq GL_LIST_BIT		 0x00020000)
+(setq GL_TEXTURE_BIT		 0x00040000)
+(setq GL_SCISSOR_BIT		 0x00080000)
+(setq GL_ALL_ATTRIB_BITS	 0x000fffff)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; types
+
+(setq GLboolean -bool-)
+(setq GLbyte -byte-)
+(setq GLshort -short-)
+(setq GLint -int-)
+(setq GLubyte -ubyte-)
+(setq GLushort -short-)
+(setq GLuint -int-)
+(setq GLsizei -int-)
+(setq GLfloat -float-)
+(setq GLclampf -float-)
+(setq GLdouble -double-)
+(setq GLclampd -double-)
+(setq GLenum -int-)
+(setq GLbitfield -int-)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+
+(de glClearIndex( c )
+    (cheader "#include <GL/gl.h>")
+    ((GLfloat) c)
+    #{ glClearIndex($c); #} ())
+
+(de glClearColor(red green blue alpha)
+    ((GLclampf) red)
+    ((GLclampf) green)
+    ((GLclampf) blue)
+    ((GLclampf) alpha)
+    #{ glClearColor($red, $green, $blue, $alpha); #} ())
+
+(de glClear( mask )
+    ((GLbitfield) mask)
+    #{ glClear($mask); #} ())
+
+(de glIndexMask( mask )
+    ((GLuint) mask)
+    #{ glIndexMask($mask); #} ())
+
+(de glColorMask( red green blue alpha)
+    ((GLboolean) red green blue alpha)
+    #{ glColorMask( $red, $green, $blue, $alpha ); #} ())
+
+(de glAlphaFunc( func ref )
+    ((GLenum) func)
+    ((GLclampf) ref)
+    #{ glAlphaFunc( $func, $ref ); #} ())
+
+(de glBlendFunc( sfactor dfactor )
+    ((GLenum) sfactor dfactor )
+    #{ glBlendFunc( $sfactor, $dfactor ); #} ())
+
+(de glLogicOp( opcode )
+    ((GLenum) opcode )
+    #{ glLogicOp( $opcode ); #} ())
+
+(de glCullFace( mode )
+    ((GLenum) mode )
+    #{ glCullFace( $mode ); #} ())
+
+(de glFrontFace( mode )
+    ((GLenum) mode )
+    #{ glFrontFace( $mode ); #} ())
+
+(de glPointSize( size )
+    ((GLfloat) size )
+    #{ glPointSize( $size ); #} ())
+
+(de glLineWidth( width )
+    ((GLfloat) width )
+    #{ glLineWidth( $width ); #} ())
+
+(de glLineStipple( factor pattern )
+    ((GLint) factor)
+    ((GLushort) pattern)
+    #{ glLineStipple( $factor, $pattern ); #} ())
+
+(de glPolygonMode( face mode )
+    ((GLenum) face mode )
+    #{ glPolygonMode( $face, $mode ); #} ())
+
+(de glPolygonStipple( mask )
+    ((-gptr-) mask)
+    #{ glPolygonStipple( $mask ); #} ())
+
+(de glGetPolygonStipple( mask )
+    ((-gptr-) mask)
+    #{ glGetPolygonStipple( $mask ); #} ())
+
+(de glEdgeFlag( flag )
+    ((GLboolean) flag )
+    #{ glEdgeFlag( $flag ); #} ())
+
+(de glEdgeFlagv( flag )
+    ((-gptr-) flag)
+    #{ glEdgeFlagv( $flag ); #} ())
+
+(de glScissor( x y width height)
+    ((GLint) x y)
+    ((GLsizei) width height)
+    #{ glScissor( $x, $y, $width, $height); #} ())
+
+(de glClipPlane( plane equation )
+    ((GLenum) plane)
+    ((-gptr- "GLdouble *") equation)
+    #{ glClipPlane( $plane, $equation ); #} ())
+
+(de glGetClipPlane( plane equation )
+    ((GLenum) plane)
+    ((-gptr- "GLdouble *") equation )
+    #{ glGetClipPlane( $plane, $equation ); #} ())
+
+(de glDrawBuffer( mode )
+    ((GLenum) mode )
+    #{ glDrawBuffer( $mode ); #} ())
+
+(de glReadBuffer( mode )
+    ((GLenum) mode )
+    #{ glReadBuffer( $mode ); #} ())
+
+(de glEnable( cap )
+    ((GLenum) cap)
+    #{ glEnable( $cap ); #} ())
+
+(de glDisable( cap )
+    ((GLenum) cap )
+    #{ glDisable( $cap ); #} ())
+
+(de glIsEnabled( cap )
+    ((GLenum) cap )
+    (bool #{ glIsEnabled( $cap ) #}))
+
+(de glGetBooleanv( pname params )
+    ((GLenum) pname)
+    ((-gptr- "GLboolean *") params )
+    #{ glGetBooleanv( $pname, $params ); #} ())
+
+(de glGetDoublev( pname params )
+    ((GLenum) pname)
+    ((-gptr- "GLdouble *") params)
+    #{ glGetDoublev( $pname, $params ); #} ())
+
+(de glGetFloatv( pname params )
+    ((GLenum) pname)
+    ((-gptr- "GLfloat *") params )
+    #{ glGetFloatv( $pname, $params ); #} ())
+
+(de glGetIntegerv( pname params )
+    ((GLenum) pname)
+    ((-gptr- "GLint *") params )
+    #{ glGetIntegerv( $pname, $params ); #} ())
+
+
+(de glPushAttrib( mask )
+    ((GLbitfield) mask )
+    #{ glPushAttrib( $mask ); #} ())
+
+(de glPopAttrib()
+    #{ glPopAttrib(); #} ())
+
+(de glRenderMode( mode )
+    ((GLenum) mode )
+    (int #{ glRenderMode( $mode ) #}))
+
+(de glGetError() (int #{ glGetError() #}))
+
+(de glGetString( name )
+    ((GLenum) name )
+    (gptr #{ glGetString( $name ) #}))
+
+(de glFinish() #{ glFinish(); #} ())
+
+(de glFlush() #{ glFlush(); #} ())
+
+(de glHint(target mode )
+    ((GLenum) target mode )
+    #{ glHint( $target, $mode ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Depth Buffer
+
+(de glClearDepth( depth )
+    ((GLclampd) depth )
+    #{ glClearDepth( $depth ); #} ())
+
+(de glDepthFunc( func )
+    ((GLenum) func )
+    #{ glDepthFunc( $func ); #} ())
+
+(de glDepthMask( flag )
+    ((GLboolean) flag )
+    #{ glDepthMask( $flag ); #} ())
+
+(de glDepthRange( near_val far_val )
+    ((GLclampd) near_val far_val )
+    #{ glDepthRange( $near_val, $far_val ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Accumulation Buffer
+
+(de glClearAccum( red green blue alpha)
+    ((GLfloat) red green blue alpha)
+    #{ glClearAccum( $red, $green, $blue, $alpha); #} ())
+
+(de glAccum( op value )
+    ((GLenum) op)
+    ((GLfloat) value)
+    #{ glAccum( $op, $value ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Transformation
+
+(de glMatrixMode( mode )
+    ((GLenum) mode )
+    #{ glMatrixMode( $mode ); #} ())
+
+(de glOrtho( left right bottom top near_val far_val )
+    ((GLdouble) left right bottom top near_val far_val )
+    #{ glOrtho( $left, $right, $bottom, $top, $near_val, $far_val); #} ())
+
+(de glFrustum( left right bottom top near_val far_val )
+    ((GLdouble) left right bottom top near_val far_val )
+    #{ glFrustum( $left, $right, $bottom, $top, $near_val, $far_val); #} ())
+
+(de glViewport( x y width height)
+    ((GLint) x y)
+    ((GLsizei) width height )
+    #{ glViewport( $x, $y, $width, $height ); #} ())
+
+(de glPushMatrix()
+    #{ glPushMatrix(); #} ())
+
+(de glPopMatrix()
+    #{ glPopMatrix(); #} ())
+
+(de glLoadIdentity()
+    #{ glLoadIdentity(); #} ())
+
+(de glLoadMatrixd( m )
+    ((-idx2- (-double-)) m)
+    #{ glLoadMatrixd( IDX_PTR($m,double) ); #} ())
+
+(de glLoadMatrixf( m )
+    ((-idx2- (-float-)) m)
+    #{ glLoadMatrixf( IDX_PTR($m,float) ); #} ())
+
+(de glMultMatrixd( m )
+    ((-idx2- (-double-)) m)
+    #{ glMultMatrixd( IDX_PTR($m,double) ); #} ())
+
+(de glMultMatrixf( m )
+    ((-idx2- (-float-)) m)
+    #{ glMultMatrixf( IDX_PTR($m,float) ); #} ())
+
+(de glRotated(angle x y z)
+    ((GLdouble) angle x y z)
+    #{ glRotated( $angle, $x, $y, $z ); #} ())
+
+(de glRotatef(angle x y z)
+    ((GLfloat) angle x y z)
+    #{ glRotatef( $angle, $x, $y, $z ); #} ())
+
+
+(de glScaled(x y z)
+    ((GLdouble) x y z)
+    #{ glScaled( $x, $y, $z); #} ())
+
+(de glScalef(x y z)
+    ((GLfloat) x y z)
+    #{ glScalef( $x, $y, $z); #} ())
+
+(de glTranslated(x y z)
+    ((GLdouble) x y z)
+    #{ glTranslated( $x, $y, $z); #} ())
+
+(de glTranslatef(x y z)
+    ((GLfloat) x y z)
+    #{ glTranslatef( $x, $y, $z); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Display Lists
+
+(de glIsList( list )
+    ((GLuint) list )
+    (bool #{ glIsList( $list ) #}))
+
+
+(de glDeleteLists( list range )
+    ((GLuint) list)
+    ((GLsizei) range )
+    #{ glDeleteLists( $list, $range ); #} ())
+
+
+(de glGenLists( range )
+    ((GLsizei) range )
+    (int #{ glGenLists( $range ) #}))
+
+
+(de glNewList( list mode )
+    ((GLuint) list)
+    ((GLenum) mode )
+    #{ glNewList( $list, $mode ); #} ())
+
+(de glEndList()
+    #{ glEndList(); #} ())
+
+(de glCallList( list )
+    ((GLuint) list )
+    #{ glCallList( $list ); #} ())
+
+(de glCallLists( n type lists )
+    ((GLsizei) n)
+    ((GLenum) type)
+    ((-gptr- "GLvoid *") lists)
+    #{ glCallLists( $n, $type, $lists ); #} ())
+
+(de glListBase( base )
+    ((GLuint) base )
+    #{ glListBase( $base ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Drawing Functions
+
+(de glBegin( mode )
+    ((GLenum) mode )
+    #{ glBegin( $mode ); #} ())
+
+(de glEnd()
+    #{ glEnd(); #} ())
+
+
+(de glVertex2d(x y)
+    ((GLdouble) x y)
+    #{ glVertex2d( $x, $y ); #} ())
+(de glVertex2f(x y)
+    ((GLfloat) x y)
+    #{ glVertex2f( $x, $y ); #} ())
+(de glVertex2i(x y)
+    ((GLint) x y)
+    #{ glVertex2i( $x, $y ); #} ())
+(de glVertex2s(x y)
+    ((GLshort) x y)
+    #{ glVertex2s( $x, $y ); #} ())
+
+(de glVertex3d(x y z)
+    ((GLdouble) x y z)
+    #{ glVertex3d( $x, $y, $z ); #} ())
+(de glVertex3f(x y z)
+    ((GLfloat) x y z)
+    #{ glVertex3f( $x, $y, $z ); #} ())
+(de glVertex3i(x y z)
+    ((GLint) x y z)
+    #{ glVertex3i( $x, $y, $z ); #} ())
+(de glVertex3s(x y z)
+    ((GLshort) x y z)
+    #{ glVertex3s( $x, $y, $z ); #} ())
+
+(de glVertex4d(x y z w)
+    ((GLdouble) x y z w)
+    #{ glVertex4d( $x, $y, $z, $w ); #} ())
+(de glVertex4f(x y z w)
+    ((GLfloat) x y z w)
+    #{ glVertex4f( $x, $y, $z, $w ); #} ())
+(de glVertex4i(x y z w)
+    ((GLint) x y z w)
+    #{ glVertex4i( $x, $y, $z, $w ); #} ())
+(de glVertex4s(x y z w)
+    ((GLshort) x y z w)
+    #{ glVertex4s( $x, $y, $z, $w ); #} ())
+
+(de glVertex2dv( v );
+    ((-idx1- (-double-)) v)
+    #{ glVertex2dv(  IDX_PTR($v,double) ); #} ())
+(de glVertex2fv( v );
+    ((-idx1- (-float-)) v)
+    #{ glVertex2fv(  IDX_PTR($v,float) ); #} ())
+(de glVertex2iv( v );
+    ((-idx1- (-int-)) v)
+    #{ glVertex2iv(  IDX_PTR($v,int) ); #} ())
+(de glVertex2sv( v );
+    ((-idx1- (-short-)) v)
+    #{ glVertex2sv(  IDX_PTR($v,short) ); #} ())
+
+(de glVertex3dv( v );
+    ((-idx1- (-double-)) v)
+    #{ glVertex3dv(  IDX_PTR($v,double) ); #} ())
+(de glVertex3fv( v );
+    ((-idx1- (-float-)) v)
+    #{ glVertex3fv(  IDX_PTR($v,float) ); #} ())
+(de glVertex3iv( v );
+    ((-idx1- (-int-)) v)
+    #{ glVertex3iv(  IDX_PTR($v,int) ); #} ())
+(de glVertex3sv( v );
+    ((-idx1- (-short-)) v)
+    #{ glVertex3sv(  IDX_PTR($v,short) ); #} ())
+
+(de glVertex4dv( v );
+    ((-idx1- (-double-)) v)
+    #{ glVertex4dv( IDX_PTR($v,double)); #} ())
+(de glVertex4fv( v );
+    ((-idx1- (-float-)) v)
+    #{ glVertex4fv(  IDX_PTR($v,float) ); #} ())
+(de glVertex4iv( v );
+    ((-idx1- (-int-)) v)
+    #{ glVertex4iv(  IDX_PTR($v,int) ); #} ())
+(de glVertex4sv( v );
+    ((-idx1- (-short-)) v)
+    #{ glVertex4sv(  IDX_PTR($v,short) ); #} ())
+
+
+
+(de glNormal3b( nx ny nz )
+    ((GLbyte) nx ny nz)
+    #{ glNormal3b( $nx, $ny, $nz) #} ())
+(de glNormal3d( nx ny nz )
+    ((GLdouble) nx ny nz)
+    #{ glNormal3d( $nx, $ny, $nz) #} ())
+(de glNormal3f( nx ny nz )
+    ((GLfloat) nx ny nz)
+    #{ glNormal3f( $nx, $ny, $nz) #} ())
+(de glNormal3i( nx ny nz )
+    ((GLint) nx ny nz)
+    #{ glNormal3i( $nx, $ny, $nz) #} ())
+(de glNormal3s( nx ny nz )
+    ((GLshort) nx ny nz)
+    #{ glNormal3s( $nx, $ny, $nz) #} ())
+
+(de glNormal3bv( v )
+    ((-idx1- (-byte-)) v)
+    #{ glNormal3bv( IDX_PTR($v,signed char) ); #} ())
+(de glNormal3dv( v )
+    ((-idx1- (-double-)) v)
+    #{ glNormal3dv(  IDX_PTR($v,double) ); #} ())
+(de glNormal3fv( v )
+    ((-idx1- (-float-)) v)
+    #{ glNormal3fv(  IDX_PTR($v,float) ); #} ())
+(de glNormal3iv( v )
+    ((-idx1- (-int-)) v)
+    #{ glNormal3iv(  IDX_PTR($v,int) ); #} ())
+(de glNormal3sv( v )
+    ((-idx1- (-short-)) v)
+    #{ glNormal3sv(  IDX_PTR($v,short) ); #} ())
+
+(de glIndexd(c) ((GLdouble) c) #{ glIndexd($c); #} ())
+(de glIndexf(c) ((GLfloat ) c) #{ glIndexf($c); #} ())
+(de glIndexi(c) ((GLint   ) c) #{ glIndexi($c); #} ())
+(de glIndexs(c) ((GLshort ) c) #{ glIndexs($c); #} ())
+
+(de glIndexdv(c) ((-idx1- (-double-)) c) #{ glIndexdv(IDX_PTR($c,double)); #} ())
+(de glIndexfv(c) ((-idx1- (-float-) ) c) #{ glIndexfv(IDX_PTR($c,float )); #} ())
+(de glIndexiv(c) ((-idx1- (-int-)   ) c) #{ glIndexiv(IDX_PTR($c,int   )); #} ())
+(de glIndexsv(c) ((-idx1- (-short-) ) c) #{ glIndexsv(IDX_PTR($c,short )); #} ())
+
+(de glColor3b(red green blue)
+    ((GLbyte) red green blue)
+    #{ glColor3b( $red, $green, $blue); #} ())
+(de glColor3d(red green blue)
+    ((GLdouble) red green blue)
+    #{ glColor3d( $red, $green, $blue); #} ())
+(de glColor3f(red green blue)
+    ((GLfloat) red green blue)
+    #{ glColor3f( $red, $green, $blue); #} ())
+(de glColor3i(red green blue)
+    ((GLint) red green blue)
+    #{ glColor3i( $red, $green, $blue); #} ())
+(de glColor3s(red green blue)
+    ((GLshort) red green blue)
+    #{ glColor3s( $red, $green, $blue); #} ())
+(de glColor3ub(red green blue)
+    ((GLubyte) red green blue)
+    #{ glColor3ub( $red, $green, $blue); #} ())
+(de glColor3ui(red green blue)
+    ((GLuint) red green blue)
+    #{ glColor3ui( $red, $green, $blue); #} ())
+(de glColor3us(red green blue)
+    ((GLushort) red green blue)
+    #{ glColor3us( $red, $green, $blue); #} ())
+
+(de glColor4b(red green blue alpha)
+    ((GLbyte) red green blue alpha)
+    #{ glColor4b( $red, $green, $blue, $alpha); #} ())
+(de glColor4d(red green blue alpha)
+    ((GLdouble) red green blue alpha)
+    #{ glColor4d( $red, $green, $blue, $alpha); #} ())
+(de glColor4f(red green blue alpha)
+    ((GLfloat) red green blue alpha)
+    #{ glColor4f( $red, $green, $blue, $alpha); #} ())
+(de glColor4i(red green blue alpha)
+    ((GLint) red green blue alpha)
+    #{ glColor4i( $red, $green, $blue, $alpha); #} ())
+(de glColor4s(red green blue alpha)
+    ((GLshort) red green blue alpha)
+    #{ glColor4s( $red, $green, $blue, $alpha); #} ())
+(de glColor4ub(red green blue alpha)
+    ((GLubyte) red green blue alpha)
+    #{ glColor4ub( $red, $green, $blue, $alpha); #} ())
+(de glColor4ui(red green blue alpha)
+    ((GLuint) red green blue alpha)
+    #{ glColor4ui( $red, $green, $blue, $alpha); #} ())
+(de glColor4us(red green blue alpha)
+    ((GLushort) red green blue alpha)
+    #{ glColor4us( $red, $green, $blue, $alpha); #} ())
+
+(de glColor3bv(v) ((-idx1- (-byte-)  ) v) #{ glColor3bv(IDX_PTR($v,signed char  )); #} ())
+(de glColor3dv(v) ((-idx1- (-double-)) v) #{ glColor3dv(IDX_PTR($v,double)); #} ())
+(de glColor3fv(v) ((-idx1- (-float-) ) v) #{ glColor3fv(IDX_PTR($v,float )); #} ())
+(de glColor3iv(v) ((-idx1- (-int-)   ) v) #{ glColor3iv(IDX_PTR($v,int   )); #} ())
+(de glColor3sv(v) ((-idx1- (-short-) ) v) #{ glColor3sv(IDX_PTR($v,short )); #} ())
+(de glColor3ubv(v) ((-idx1- (-ubyte-)  ) v) 
+    #{ glColor3ubv(IDX_PTR($v,unsigned char  )); #} ())
+(de glColor3uiv(v) ((-idx1- (-int-)   ) v) 
+    #{ glColor3uiv(IDX_PTR($v,unsigned int   )); #} ())
+(de glColor3usv(v) ((-idx1- (-short-) ) v) 
+    #{ glColor3usv(IDX_PTR($v,unsigned short )); #} ())
+
+(de glColor4bv(v) ((-idx1- (-byte-)  ) v) #{ glColor4bv(IDX_PTR($v,signed char  )); #} ())
+(de glColor4dv(v) ((-idx1- (-double-)) v) #{ glColor4dv(IDX_PTR($v,double)); #} ())
+(de glColor4fv(v) ((-idx1- (-float-) ) v) #{ glColor4fv(IDX_PTR($v,float )); #} ())
+(de glColor4iv(v) ((-idx1- (-int-)   ) v) #{ glColor4iv(IDX_PTR($v,int   )); #} ())
+(de glColor4sv(v) ((-idx1- (-short-) ) v) #{ glColor4sv(IDX_PTR($v,short )); #} ())
+(de glColor4ubv(v) ((-idx1- (-ubyte-)  ) v) 
+    #{ glColor4ubv(IDX_PTR($v,unsigned char  )); #} ())
+(de glColor4uiv(v) ((-idx1- (-int-)   ) v) 
+    #{ glColor4uiv(IDX_PTR($v,unsigned int   )); #} ())
+(de glColor4usv(v) ((-idx1- (-short-) ) v) 
+    #{ glColor4usv(IDX_PTR($v,unsigned short )); #} ())
+
+(de glTexCoord1d(s) ((GLdouble) s) #{ glTexCoord1d($s); #} ())
+(de glTexCoord1f(s) ((GLfloat)  s) #{ glTexCoord1f($s); #} ())
+(de glTexCoord1i(s) ((GLint)    s) #{ glTexCoord1i($s); #} ())
+(de glTexCoord1s(s) ((GLshort)  s) #{ glTexCoord1s($s); #} ())
+
+(de glTexCoord2d(s u) ((GLdouble) s u) #{ glTexCoord2d($s,$u); #} ())
+(de glTexCoord2f(s u) ((GLfloat)  s u) #{ glTexCoord2f($s,$u); #} ())
+(de glTexCoord2i(s u) ((GLint)    s u) #{ glTexCoord2i($s,$u); #} ())
+(de glTexCoord2s(s u) ((GLshort)  s u) #{ glTexCoord2s($s,$u); #} ())
+
+(de glTexCoord3d(s u r) ((GLdouble) s u r) #{ glTexCoord3d($s,$u,$r); #} ())
+(de glTexCoord3f(s u r) ((GLfloat)  s u r) #{ glTexCoord3f($s,$u,$r); #} ())
+(de glTexCoord3i(s u r) ((GLint)    s u r) #{ glTexCoord3i($s,$u,$r); #} ())
+(de glTexCoord3s(s u r) ((GLshort)  s u r) #{ glTexCoord3s($s,$u,$r); #} ())
+
+(de glTexCoord4d(s u r q) ((GLdouble) s u r q) #{ glTexCoord4d($s,$u,$r,$q); #} ())
+(de glTexCoord4f(s u r q) ((GLfloat)  s u r q) #{ glTexCoord4f($s,$u,$r,$q); #} ())
+(de glTexCoord4i(s u r q) ((GLint)    s u r q) #{ glTexCoord4i($s,$u,$r,$q); #} ())
+(de glTexCoord4s(s u r q) ((GLshort)  s u r q) #{ glTexCoord4s($s,$u,$r,$q); #} ())
+
+(de glTexCoord1dv(v) ((-idx1- (-double-)) v) #{ glTexCoord1dv(IDX_PTR($v,double)); #} ())
+(de glTexCoord1fv(v) ((-idx1- (-float-) ) v) #{ glTexCoord1fv(IDX_PTR($v,float)); #} ())
+(de glTexCoord1iv(v) ((-idx1- (-int-)   ) v) #{ glTexCoord1iv(IDX_PTR($v,int)); #} ())
+(de glTexCoord1sv(v) ((-idx1- (-short-) ) v) #{ glTexCoord1sv(IDX_PTR($v,short)); #} ())
+
+(de glTexCoord2dv(v) ((-idx1- (-double-)) v) #{ glTexCoord2dv(IDX_PTR($v,double)); #} ())
+(de glTexCoord2fv(v) ((-idx1- (-float-) ) v) #{ glTexCoord2fv(IDX_PTR($v,float)); #} ())
+(de glTexCoord2iv(v) ((-idx1- (-int-)   ) v) #{ glTexCoord2iv(IDX_PTR($v,int)); #} ())
+(de glTexCoord2sv(v) ((-idx1- (-short-) ) v) #{ glTexCoord2sv(IDX_PTR($v,short)); #} ())
+
+(de glTexCoord3dv(v) ((-idx1- (-double-)) v) #{ glTexCoord3dv(IDX_PTR($v,double)); #} ())
+(de glTexCoord3fv(v) ((-idx1- (-float-) ) v) #{ glTexCoord3fv(IDX_PTR($v,float)); #} ())
+(de glTexCoord3iv(v) ((-idx1- (-int-)   ) v) #{ glTexCoord3iv(IDX_PTR($v,int)); #} ())
+(de glTexCoord3sv(v) ((-idx1- (-short-) ) v) #{ glTexCoord3sv(IDX_PTR($v,short)); #} ())
+
+(de glTexCoord4dv(v) ((-idx1- (-double-)) v) #{ glTexCoord4dv(IDX_PTR($v,double)); #} ())
+(de glTexCoord4fv(v) ((-idx1- (-float-) ) v) #{ glTexCoord4fv(IDX_PTR($v,float)); #} ())
+(de glTexCoord4iv(v) ((-idx1- (-int-)   ) v) #{ glTexCoord4iv(IDX_PTR($v,int)); #} ())
+(de glTexCoord4sv(v) ((-idx1- (-short-) ) v) #{ glTexCoord4sv(IDX_PTR($v,short)); #} ())
+
+(de glRasterPos2d(x y) ((GLdouble) x y) #{ glRasterPos2d($x,$y); #} ())
+(de glRasterPos2f(x y) ((GLfloat)  x y) #{ glRasterPos2f($x,$y); #} ())
+(de glRasterPos2i(x y) ((GLint)    x y) #{ glRasterPos2i($x,$y); #} ())
+(de glRasterPos2s(x y) ((GLshort)  x y) #{ glRasterPos2s($x,$y); #} ())
+
+(de glRasterPos3d(x y z) ((GLdouble) x y z) #{ glRasterPos3d($x,$y,$z); #} ())
+(de glRasterPos3f(x y z) ((GLfloat)  x y z) #{ glRasterPos3f($x,$y,$z); #} ())
+(de glRasterPos3i(x y z) ((GLint)    x y z) #{ glRasterPos3i($x,$y,$z); #} ())
+(de glRasterPos3s(x y z) ((GLshort)  x y z) #{ glRasterPos3s($x,$y,$z); #} ())
+
+(de glRasterPos4d(x y z w)((GLdouble) x y z w) #{ glRasterPos4d($x,$y,$z,$w); #} ())
+(de glRasterPos4f(x y z w)((GLfloat)  x y z w) #{ glRasterPos4f($x,$y,$z,$w); #} ())
+(de glRasterPos4i(x y z w)((GLint)    x y z w) #{ glRasterPos4i($x,$y,$z,$w); #} ())
+(de glRasterPos4s(x y z w)((GLshort)  x y z w) #{ glRasterPos4s($x,$y,$z,$w); #} ())
+
+(de glRasterPos2dv(v) ((-idx1- (-double-)) v) 
+    #{ glRasterPos2dv(IDX_PTR($v,double)); #} ())
+(de glRasterPos2fv(v) ((-idx1- (-float-)) v) 
+    #{ glRasterPos2fv(IDX_PTR($v,float)); #} ())
+(de glRasterPos2iv(v) ((-idx1- (-int-)) v) 
+    #{ glRasterPos2iv(IDX_PTR($v,int)); #} ())
+(de glRasterPos2sv(v) ((-idx1- (-short-)) v) 
+    #{ glRasterPos2sv(IDX_PTR($v,short)); #} ())
+
+(de glRasterPos3dv(v) ((-idx1- (-double-)) v) 
+    #{ glRasterPos3dv(IDX_PTR($v,double)); #} ())
+(de glRasterPos3fv(v) ((-idx1- (-float-)) v) 
+    #{ glRasterPos3fv(IDX_PTR($v,float)); #} ())
+(de glRasterPos3iv(v) ((-idx1- (-int-)) v) 
+    #{ glRasterPos3iv(IDX_PTR($v,int)); #} ())
+(de glRasterPos3sv(v) ((-idx1- (-short-)) v) 
+    #{ glRasterPos3sv(IDX_PTR($v,short)); #} ())
+
+(de glRasterPos4dv(v) ((-idx1- (-double-)) v) 
+    #{ glRasterPos4dv(IDX_PTR($v,double)); #} ())
+(de glRasterPos4fv(v) ((-idx1- (-float-)) v) 
+    #{ glRasterPos4fv(IDX_PTR($v,float)); #} ())
+(de glRasterPos4iv(v) ((-idx1- (-int-)) v) 
+    #{ glRasterPos4iv(IDX_PTR($v,int)); #} ())
+(de glRasterPos4sv(v) ((-idx1- (-short-)) v) 
+    #{ glRasterPos4sv(IDX_PTR($v,short)); #} ())
+
+(de glRectd(x1 y1 x2 y2)((GLdouble) x1 y1 x2 y2) #{ glRectd($x1,$y1,$x2,$y2); #}())
+(de glRectf(x1 y1 x2 y2)((GLfloat)  x1 y1 x2 y2) #{ glRectf($x1,$y1,$x2,$y2); #}())
+(de glRecti(x1 y1 x2 y2)((GLint)    x1 y1 x2 y2) #{ glRecti($x1,$y1,$x2,$y2); #}())
+(de glRects(x1 y1 x2 y2)((GLshort)  x1 y1 x2 y2) #{ glRects($x1,$y1,$x2,$y2); #}())
+
+(de glRectdv(v1 v2)
+    ((-idx1- (-double-)) v1 v2) 
+    #{ glRectdv(IDX_PTR($v1,double),IDX_PTR($v2,double)); #}())
+(de glRectfv(v1 v2)
+    ((-idx1- (-float-))  v1 v2) 
+    #{ glRectfv(IDX_PTR($v1,float),IDX_PTR($v2,float)); #}())
+(de glRectiv(v1 v2)
+    ((-idx1- (-int-))    v1 v2) 
+    #{ glRectiv(IDX_PTR($v1,int),IDX_PTR($v2,int)); #}())
+(de glRectsv(v1 v2)
+    ((-idx1- (-short-))  v1 v2) 
+    #{ glRectsv(IDX_PTR($v1,short),IDX_PTR($v2,short)); #}())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Lighting
+
+(de glShadeModel(mode) ((GLenum) mode) #{ glShadeModel($mode); #} ())
+
+(de glLightf(light pname param)
+    ((GLenum) light pname)
+    ((GLfloat) param)
+    #{ glLightf($light,$pname,$param); #} ())
+(de glLighti(light pname param)
+    ((GLenum) light pname)
+    ((GLint) param)
+    #{ glLighti($light,$pname,$param); #} ())
+(de glLightfv(light pname param)
+    ((GLenum) light pname)
+    ((-idx1- (-float-)) param)
+    #{ glLightfv($light,$pname,IDX_PTR($param,float)); #} ())
+(de glLightiv(light pname param)
+    ((GLenum) light pname)
+    ((-idx1- (-int-)) param)
+    #{ glLightiv($light,$pname,IDX_PTR($param,int)); #} ())
+(de glGetLightfv(light pname param)
+    ((GLenum) light pname)
+    ((-idx1- (-float-)) param)
+    #{ glGetLightfv($light,$pname,IDX_PTR($param,float)); #} ())
+(de glGetLightiv(light pname param)
+    ((GLenum) light pname)
+    ((-idx1- (-int-)) param)
+    #{ glGetLightiv($light,$pname,IDX_PTR($param,int)); #} ())
+
+(de glLightModelf(pname param)
+    ((GLenum) pname)
+    ((GLfloat) param)
+    #{ glLightModelf($pname,$param); #} ())
+(de glLightModeli(pname param)
+    ((GLenum) pname)
+    ((GLint) param)
+    #{ glLightModeli($pname,$param); #} ())
+(de glLightModelfv(pname param)
+    ((GLenum) pname)
+    ((-idx1- (-float-)) param)
+    #{ glLightModelfv($pname,IDX_PTR($param,float)); #} ())
+(de glLightModeliv(pname param)
+    ((GLenum) pname)
+    ((-idx1- (-int-)) param)
+    #{ glLightModeliv($pname,IDX_PTR($param,int)); #} ())
+
+(de glMaterialf( face pname param )
+    ((GLenum) face pname)
+    ((GLfloat) param)
+    #{ glMaterialf( $face, $pname, $param ); #} ())
+(de glMateriali( face pname param )
+    ((GLenum) face pname)
+    ((GLint) param)
+    #{ glMateriali( $face, $pname, $param ); #} ())
+(de glMaterialfv( face pname param )
+    ((GLenum) face pname)
+    ((-idx1- (-float-)) param)
+    #{ glMaterialfv( $face, $pname, IDX_PTR($param,float) ); #} ())
+(de glMaterialiv( face pname param )
+    ((GLenum) face pname)
+    ((-idx1- (-int-)) param)
+    #{ glMaterialiv( $face, $pname, IDX_PTR($param,int) ); #} ())
+
+(de glGetMaterialfv( face pname param )
+    ((GLenum) face pname)
+    ((-idx1- (-float-)) param)
+    #{ glGetMaterialfv( $face, $pname, IDX_PTR($param,float) ); #} ())
+(de glGetMaterialiv( face pname param )
+    ((GLenum) face pname)
+    ((-idx1- (-int-)) param)
+    #{ glGetMaterialiv( $face, $pname, IDX_PTR($param,int) ); #} ())
+
+(de glColorMaterial( face mode )
+    ((GLenum) face mode )
+    #{ glColorMaterial( $face, $mode ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Raster functions
+
+(de glPixelZoom( xfactor yfactor )
+    ((GLfloat) xfactor yfactor )
+    #{ glPixelZoom( $xfactor, $yfactor ); #} ())
+
+
+(de glPixelStoref( pname param )
+    ((GLenum) pname)
+    ((GLfloat) param)
+    #{ glPixelStoref( $pname, $param ); #} ())
+(de glPixelStorei( pname param )
+    ((GLenum) pname)
+    ((GLint) param)
+    #{ glPixelStorei( $pname, $param ); #} ())
+
+(de glPixelTransferf( pname param )
+    ((GLenum) pname)
+    ((GLfloat) param)
+    #{ glPixelTransferf( $pname, $param ); #} ())
+(de glPixelTransferi( pname param )
+    ((GLenum) pname)
+    ((GLint) param)
+    #{ glPixelTransferi( $pname, $param ); #} ())
+
+(de glPixelMapfv( map mapsize values )
+    ((GLenum) map)
+    ((GLint) mapsize)
+    ((-idx1- (-float-)) values)
+    #{ glPixelMapfv( $map, $mapsize, IDX_PTR($values,float) ); #} ())
+(de glPixelMapuiv( map mapsize values )
+    ((GLenum) map)
+    ((GLint) mapsize)
+    ((-idx1- (-int-)) values)
+    #{ glPixelMapuiv( $map, $mapsize, IDX_PTR($values,unsigned int) ); #} ())
+(de glPixelMapusv( map mapsize values )
+    ((GLenum) map)
+    ((GLint) mapsize)
+    ((-idx1- (-short-)) values)
+    #{ glPixelMapusv( $map, $mapsize, IDX_PTR($values,unsigned short) ); #} ())
+
+
+(de glGetPixelMapfv( map values )
+    ((GLenum) map)
+    ((-idx1- (-float-)) values)
+    #{ glGetPixelMapfv( $map, IDX_PTR($values,float) ); #} ())
+(de glGetPixelMapuiv( map values )
+    ((GLenum) map)
+    ((-idx1- (-int-)) values)
+    #{ glGetPixelMapuiv( $map, IDX_PTR($values,unsigned int) ); #} ())
+(de glGetPixelMapusv( map values )
+    ((GLenum) map)
+    ((-idx1- (-int-)) values)
+    #{ glGetPixelMapusv( $map, IDX_PTR($values,unsigned short) ); #} ())
+
+(de glBitmap(width height xorig yorig xmove ymove bitmap )
+    ((GLsizei) width height)
+    ((GLfloat) xorig yorig xmove ymove)
+    ((-idx1- (-ubyte-)) bitmap)
+    #{ glBitmap( $width, $height, $xorig, $yorig, $xmove, $ymove, IDX_PTR($bitmap, unsigned char )); #} ())
+
+(de glReadPixels( x y width height format type pixels )
+    ((GLint) x y)
+    ((GLsizei) width height)
+    ((GLenum) format type)
+    ((-gptr-) pixels)
+    #{ glReadPixels( $x, $y, $width, $height, $format, $type, $pixels ); #} ())
+
+(de glDrawPixels( width height format type pixels )
+    ((GLsizei) width height)
+    ((GLenum) format type)
+    ((-gptr-) pixels)
+    #{ glDrawPixels( $width, $height, $format, $type, $pixels ); #} ())
+
+(de glCopyPixels( x y width height type )
+    ((GLint) x y)
+    ((GLsizei) width height)
+    ((GLenum) type)
+    #{ glCopyPixels( $x, $y, $width, $height, $type ); #} ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Stenciling
+
+(de glStencilFunc( func ref mask )
+    ((GLenum) func)
+    ((GLint) ref)
+    ((GLuint) mask)
+    #{ glStencilFunc(  $func, $ref, $mask ); #} ())
+
+(de glStencilMask( mask )
+    ((GLuint) mask )
+    #{ glStencilMask( $mask ); #} ())
+
+(de glStencilOp(  fail zfail zpass )
+    ((GLenum) fail zfail zpass )
+    #{ glStencilOp(  $fail, $zfail, $zpass ); #} ())
+
+(de glClearStencil( s )
+    ((GLint) s)
+    #{ glClearStencil( $s ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Texture mapping
+
+(de glTexGend( coord pname param )
+    ((GLenum) coord pname)
+    ((GLdouble) param)
+    #{ glTexGend( $coord, $pname, $param ); #} ())
+(de glTexGenf( coord pname param )
+    ((GLenum) coord pname)
+    ((GLfloat) param)
+    #{ glTexGenf( $coord, $pname, $param ); #} ())
+(de glTexGeni( coord pname param )
+    ((GLenum) coord pname)
+    ((GLint) param)
+    #{ glTexGeni( $coord, $pname, $param ); #} ())
+
+(de glTexGendv( coord pname param )
+    ((GLenum) coord pname)
+    ((-idx1- (-double-)) param)
+    #{ glTexGendv( $coord, $pname, IDX_PTR($param,double) ); #} ())
+(de glTexGenfv( coord pname param )
+    ((GLenum) coord pname)
+    ((-idx1- (-float-)) param)
+    #{ glTexGenfv( $coord, $pname, IDX_PTR($param,float) ); #} ())
+(de glTexGeniv( coord pname param )
+    ((GLenum) coord pname)
+    ((-idx1- (-int-)) param)
+    #{ glTexGeniv( $coord, $pname, IDX_PTR($param,int) ); #} ())
+
+(de glGetTexGendv( coord pname param )
+    ((GLenum) coord pname)
+    ((-idx1- (-double-)) param)
+    #{ glGetTexGendv( $coord, $pname, IDX_PTR($param,double) ); #} ())
+(de glGetTexGenfv( coord pname param )
+    ((GLenum) coord pname)
+    ((-idx1- (-float-)) param)
+    #{ glGetTexGenfv( $coord, $pname, IDX_PTR($param,float) ); #} ())
+(de glGetTexGeniv( coord pname param )
+    ((GLenum) coord pname)
+    ((-idx1- (-int-)) param)
+    #{ glGetTexGeniv( $coord, $pname, IDX_PTR($param,int) ); #} ())
+
+
+(de glTexEnvf( target pname param )
+    ((GLenum) target pname)
+    ((GLfloat) param)
+    #{ glTexEnvf( $target, $pname, $param ); #} ())
+(de glTexEnvi( target pname param )
+    ((GLenum) target pname)
+    ((GLint) param)
+    #{ glTexEnvi( $target, $pname, $param ); #} ())
+
+(de glTexEnvfv( target pname param )
+    ((GLenum) target pname)
+    ((-idx1- (-float-)) param)
+    #{ glTexEnvfv( $target, $pname, IDX_PTR($param,float) ); #} ())
+(de glTexEnviv( target pname param )
+    ((GLenum) target pname)
+    ((-idx1- (-int-)) param)
+    #{ glTexEnviv( $target, $pname, IDX_PTR($param,int) ); #} ())
+
+(de glGetTexEnvfv( target pname param )
+    ((GLenum) target pname)
+    ((-idx1- (-float-)) param)
+    #{ glGetTexEnvfv( $target, $pname, IDX_PTR($param,float) ); #} ())
+(de glGetTexEnviv( target pname param )
+    ((GLenum) target pname)
+    ((-idx1- (-int-)) param)
+    #{ glGetTexEnviv( $target, $pname, IDX_PTR($param,int) ); #} ())
+
+(de glTexParameterf( target pname param )
+    ((GLenum) target pname)
+    ((GLfloat) param)
+    #{ glTexParameterf( $target, $pname, $param ); #} ())
+(de glTexParameteri( target pname param )
+    ((GLenum) target pname)
+    ((GLint) param)
+    #{ glTexParameteri( $target, $pname, $param ); #} ())
+
+(de glTexParameterfv( target pname param )
+    ((GLenum) target pname)
+    ((-idx1- (-float-)) param)
+    #{ glTexParameterfv( $target, $pname, IDX_PTR($param,float) ); #} ())
+(de glTexParameteriv( target pname param )
+    ((GLenum) target pname)
+    ((-idx1- (-int-)) param)
+    #{ glTexParameteriv( $target, $pname, IDX_PTR($param,int) ); #} ())
+
+(de glGetTexParameterfv( target pname param )
+    ((GLenum) target pname)
+    ((-idx1- (-float-)) param)
+    #{ glGetTexParameterfv( $target, $pname, IDX_PTR($param,float) ); #} ())
+(de glGetTexParameteriv( target pname param )
+    ((GLenum) target pname)
+    ((-idx1- (-int-)) param)
+    #{ glGetTexParameteriv( $target, $pname, IDX_PTR($param,int) ); #} ())
+
+(de glGetTexLevelParameterfv( target level pname params )
+    ((GLenum) target pname)
+    ((GLint) level)
+    ((-idx1- (-float-)) params)
+    #{ glGetTexLevelParameterfv($target,$level,$pname,IDX_PTR($params,float)); #} ())
+(de glGetTexLevelParameteriv( target level pname params )
+    ((GLenum) target pname)
+    ((GLint) level)
+    ((-idx1- (-int-)) params)
+    #{ glGetTexLevelParameteriv($target,$level,$pname,IDX_PTR($params,int)); #} ())
+
+(de glTexImage1D( target level components width border format type pixels )
+    ((GLenum) target format type)
+    ((GLint) level components border)
+    ((GLsizei) width)
+    ((-gptr-) pixels)
+    #{ glTexImage1D( $target,$level,$components,$width,$border,$format,$type,$pixels ); #} ())
+(de glTexImage2D( target level components width height border format type pixels )
+    ((GLenum) target format type)
+    ((GLint) level components border)
+    ((GLsizei) width height)
+    ((-gptr-) pixels)
+    #{ glTexImage2D( $target,$level,$components,$width,$height,$border,$format,$type,$pixels ); #} ())
+(de glGetTexImage( target level format type pixels )
+    ((GLenum) target format type)
+    ((GLint) level )
+    ((-gptr-) pixels)
+    #{ glGetTexImage( $target,$level,$format,$type,$pixels ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Evaluators
+
+(de glMap1d( target u1 u2 stride order points )
+    ((GLenum) target)
+    ((GLdouble) u1 u2)
+    ((GLint) stride order)
+    ((-idx1- (-double-)) points)
+    #{ glMap1d( $target,$u1, $u2, $stride, $order, IDX_PTR($points,double) ); #} ())
+(de glMap1f( target u1 u2 stride order points )
+    ((GLenum) target)
+    ((GLfloat) u1 u2)
+    ((GLint) stride order)
+    ((-idx1- (-float-)) points)
+    #{ glMap1f( $target,$u1, $u2, $stride, $order, IDX_PTR($points,float) ); #} ())
+
+(de glMap2d( target u1 u2 ustride uorder v1 v2 vstride vorder points )
+    ((GLenum) target)
+    ((GLdouble) u1 u2 v1 v2)
+    ((GLint) ustride uorder vstride vorder)
+    ((-idx1- (-double-)) points)
+    #{ glMap2d( $target,$u1,$u2,$ustride,$uorder,$v1,$v2,$vstride,$vorder,IDX_PTR($points,double) ); #} ())
+(de glMap2f( target u1 u2 ustride uorder v1 v2 vstride vorder points )
+    ((GLenum) target)
+    ((GLfloat) u1 u2 v1 v2)
+    ((GLint) ustride uorder vstride vorder)
+    ((-idx1- (-float-)) points)
+    #{ glMap2f( $target,$u1,$u2,$ustride,$uorder,$v1,$v2,$vstride,$vorder,IDX_PTR($points,float) ); #} ())
+
+(de glGetMapdv( target query v )
+    ((GLenum) target query)
+    ((-idx1- (-double-)) v )
+    #{ glGetMapdv( $target, $query, IDX_PTR($v,double) ); #} ())
+(de glGetMapfv( target query v )
+    ((GLenum) target query)
+    ((-idx1- (-float-)) v )
+    #{ glGetMapfv( $target, $query, IDX_PTR($v,float) ); #} ())
+(de glGetMapiv( target query v )
+    ((GLenum) target query)
+    ((-idx1- (-int-)) v )
+    #{ glGetMapiv( $target, $query, IDX_PTR($v,int) ); #} ())
+
+(de glEvalCoord1d( u )
+    ((GLdouble) u )
+    #{ glEvalCoord1d( $u ); #} ())
+(de glEvalCoord1f( u )
+    ((GLfloat) u )
+    #{ glEvalCoord1f( $u ); #} ())
+
+(de glEvalCoord1dv( u )
+    ((-idx1- (-double-)) u )
+    #{ glEvalCoord1dv( IDX_PTR($u,double) ); #} ())
+(de glEvalCoord1fv( u )
+    ((-idx1- (-float-)) u )
+    #{ glEvalCoord1fv( IDX_PTR($u,float) ); #} ())
+
+(de glEvalCoord2d( u v)
+    ((GLdouble) u v)
+    #{ glEvalCoord2d( $u,$v ); #} ())
+(de glEvalCoord2f( u v)
+    ((GLfloat) u v)
+    #{ glEvalCoord2f( $u,$v ); #} ())
+
+(de glEvalCoord2dv( u )
+    ((-idx2- (-double-)) u )
+    #{ glEvalCoord2dv( IDX_PTR($u,double) ); #} ())
+(de glEvalCoord2fv( u )
+    ((-idx2- (-float-)) u )
+    #{ glEvalCoord2fv( IDX_PTR($u,float) ); #} ())
+
+(de glMapGrid1d( un u1 u2 )
+    ((GLint) un)
+    ((GLdouble) u1 u2 )
+    #{ glMapGrid1d( $un, $u1, $u2 ); #} ())
+(de glMapGrid1f( un u1 u2 )
+    ((GLint) un)
+    ((GLfloat) u1 u2 )
+    #{ glMapGrid1f( $un, $u1, $u2 ); #} ())
+
+(de glMapGrid2d( un u1 u2 vn v1 v2 )
+    ((GLint) un vn)
+    ((GLdouble) u1 u2 v1 v2)
+    #{ glMapGrid2d( $un, $u1, $u2, $vn, $v1, $v2 ); #} ())
+(de glMapGrid2f( un u1 u2 vn v1 v2 )
+    ((GLint) un vn)
+    ((GLfloat) u1 u2 v1 v2)
+    #{ glMapGrid2f( $un, $u1, $u2, $vn, $v1, $v2 ); #} ())
+
+(de glEvalPoint1( i )
+    ((GLint) i )
+    #{ glEvalPoint1( $i ); #} ())
+
+(de glEvalPoint2( i j )
+    ((GLint) i j)
+    #{ glEvalPoint2( $i, $j ); #} ())
+
+(de glEvalMesh1( mode i1 i2 )
+    ((GLenum) mode)
+    ((GLint) i1 i2 )
+    #{ glEvalMesh1( $mode, $i1, $i2 ); #} ())
+
+(de glEvalMesh2(  mode i1 i2 j1 j2 )
+    ((GLenum) mode)
+    ((GLint) i1 i2 j1 j2)
+    #{ glEvalMesh2( $mode, $i1, $i2, $j1, $j2 ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Fog
+
+(de glFogf( pname param )
+    ((GLenum) pname)
+    ((GLfloat) param )
+    #{ glFogf( $pname, $param ); #} ())
+(de glFogi( pname param )
+    ((GLenum) pname)
+    ((GLint) param )
+    #{ glFogi( $pname, $param ); #} ())
+
+(de glFogfv( pname param )
+    ((GLenum) pname)
+    ((-idx1- (-float-)) param )
+    #{ glFogfv( $pname, IDX_PTR($param,float) ); #} ())
+(de glFogiv( pname param )
+    ((GLenum) pname)
+    ((-idx1- (-int-)) param )
+    #{ glFogiv( $pname, IDX_PTR($param,int) ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Selection and Feedback
+
+(de glFeedbackBuffer(  size type buffer )
+    ((GLsizei) size)
+    ((GLenum) type)
+    ((-idx1- (-float-)) buffer)
+    #{ glFeedbackBuffer( $size, $type, IDX_PTR($buffer,float) ); #} ())
+
+(de glPassThrough( token )
+    ((GLfloat) token )
+    #{ glPassThrough( $token ); #} ())
+
+(de glSelectBuffer( size buffer )
+    ((GLsizei) size)
+    ((-idx1- (-int-)) buffer)
+    #{ glSelectBuffer( $size, IDX_PTR($buffer,unsigned int) ); #} ())
+
+(de glInitNames() #{ glInitNames(); #} ())
+
+(de glLoadName( name ) ((GLuint) name) #{ glLoadName( $name ); #} ())
+
+(de glPushName( name ) ((GLuint) name) #{ glPushName( $name ); #} ())
+
+(de glPopName() #{ glPopName(); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Extensions
+
+(de glBlendEquationEXT( mode )
+    ((GLenum) mode )
+    #{ glBlendEquationEXT( $mode ); #} ())
+
+(de glBlendColorEXT( red green blue alpha )
+    ((GLclampf) red green blue alpha)
+    #{ glBlendColorEXT( $red, $green, $blue, $alpha ); #} ())
+
+(de glPolygonOffsetEXT( factor bias )
+    ((GLfloat) factor bias)
+    #{ glPolygonOffsetEXT( $factor, $bias ); #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(setq glfunclist '("glClearIndex" "glClearColor" "glClear" "glIndexMask"
+   "glColorMask" "glAlphaFunc" "glBlendFunc" "glLogicOp" "glCullFace"
+   "glFrontFace" "glPointSize" "glLineWidth" "glLineStipple" "glPolygonMode"
+   "glPolygonStipple" "glGetPolygonStipple" "glEdgeFlag" "glEdgeFlagv"
+   "glScissor" "glClipPlane" "glGetClipPlane" "glDrawBuffer" "glReadBuffer"
+   "glEnable" "glDisable" "glIsEnabled" "glGetBooleanv" "glGetDoublev"
+   "glGetFloatv" "glGetIntegerv" "glPushAttrib" "glPopAttrib" "glRenderMode"
+   "glGetError" "glGetString" "glFinish" "glFlush" "glHint" "glClearDepth"
+   "glDepthFunc" "glDepthMask" "glDepthRange" "glClearAccum" "glAccum"
+   "glMatrixMode" "glOrtho" "glFrustum" "glViewport" "glPushMatrix"
+   "glPopMatrix" "glLoadIdentity" "glLoadMatrixd" "glLoadMatrixf"
+   "glMultMatrixd" "glMultMatrixf" "glRotated" "glRotatef" "glScaled"
+   "glScalef" "glTranslated" "glTranslatef" "glIsList" "glDeleteLists"
+   "glGenLists" "glNewList" "glEndList" "glCallList" "glCallLists"
+   "glListBase" "glBegin" "glEnd" "glVertex2d" "glVertex2f" "glVertex2i"
+   "glVertex2s" "glVertex3d" "glVertex3f" "glVertex3i" "glVertex3s"
+   "glVertex4d" "glVertex4f" "glVertex4i" "glVertex4s" "glVertex2dv"
+   "glVertex2fv" "glVertex2iv" "glVertex2sv" "glVertex3dv" "glVertex3fv"
+   "glVertex3iv" "glVertex3sv" "glVertex4dv" "glVertex4fv" "glVertex4iv"
+   "glVertex4sv" "glNormal3b" "glNormal3d" "glNormal3f" "glNormal3i"
+   "glNormal3s" "glNormal3bv" "glNormal3dv" "glNormal3fv" "glNormal3iv"
+   "glNormal3sv" "glIndexd" "glIndexf" "glIndexi" "glIndexs" "glIndexdv"
+   "glIndexfv" "glIndexiv" "glIndexsv" "glColor3b" "glColor3d" "glColor3f"
+   "glColor3i" "glColor3s" "glColor3ub" "glColor3ui" "glColor3us" "glColor4b"
+   "glColor4d" "glColor4f" "glColor4i" "glColor4s" "glColor4ub" "glColor4ui"
+   "glColor4us" "glColor3bv" "glColor3dv" "glColor3fv" "glColor3iv"
+   "glColor3sv" "glColor3ubv" "glColor3uiv" "glColor3usv" "glColor4bv"
+   "glColor4dv" "glColor4fv" "glColor4iv" "glColor4sv" "glColor4ubv"
+   "glColor4uiv" "glColor4usv" "glTexCoord1d" "glTexCoord1f" "glTexCoord1i"
+   "glTexCoord1s" "glTexCoord2d" "glTexCoord2f" "glTexCoord2i" "glTexCoord2s"
+   "glTexCoord3d" "glTexCoord3f" "glTexCoord3i" "glTexCoord3s" "glTexCoord4d"
+   "glTexCoord4f" "glTexCoord4i" "glTexCoord4s" "glTexCoord1dv"
+   "glTexCoord1fv" "glTexCoord1iv" "glTexCoord1sv" "glTexCoord2dv"
+   "glTexCoord2fv" "glTexCoord2iv" "glTexCoord2sv" "glTexCoord3dv"
+   "glTexCoord3fv" "glTexCoord3iv" "glTexCoord3sv" "glTexCoord4dv"
+   "glTexCoord4fv" "glTexCoord4iv" "glTexCoord4sv" "glRasterPos2d"
+   "glRasterPos2f" "glRasterPos2i" "glRasterPos2s" "glRasterPos3d"
+   "glRasterPos3f" "glRasterPos3i" "glRasterPos3s" "glRasterPos4d"
+   "glRasterPos4f" "glRasterPos4i" "glRasterPos4s" "glRasterPos2dv"
+   "glRasterPos2fv" "glRasterPos2iv" "glRasterPos2sv" "glRasterPos3dv"
+   "glRasterPos3fv" "glRasterPos3iv" "glRasterPos3sv" "glRasterPos4dv"
+   "glRasterPos4fv" "glRasterPos4iv" "glRasterPos4sv" "glRectd" "glRectf"
+   "glRecti" "glRects" "glRectdv" "glRectfv" "glRectiv" "glRectsv"
+   "glShadeModel" "glLightf" "glLighti" "glLightfv" "glLightiv" "glGetLightfv"
+   "glGetLightiv" "glLightModelf" "glLightModeli" "glLightModelfv"
+   "glLightModeliv" "glMaterialf" "glMateriali" "glMaterialfv" "glMaterialiv"
+   "glGetMaterialfv" "glGetMaterialiv" "glColorMaterial" "glPixelZoom"
+   "glPixelStoref" "glPixelStorei" "glPixelTransferf" "glPixelTransferi"
+   "glPixelMapfv" "glPixelMapuiv" "glPixelMapusv" "glGetPixelMapfv"
+   "glGetPixelMapuiv" "glGetPixelMapusv" "glBitmap" "glReadPixels"
+   "glDrawPixels" "glCopyPixels" "glStencilFunc" "glStencilMask" "glStencilOp"
+   "glClearStencil" "glTexGend" "glTexGenf" "glTexGeni" "glTexGendv"
+   "glTexGenfv" "glTexGeniv" "glGetTexGendv" "glGetTexGenfv" "glGetTexGeniv"
+   "glTexEnvf" "glTexEnvi" "glTexEnvfv" "glTexEnviv" "glGetTexEnvfv"
+   "glGetTexEnviv" "glTexParameterf" "glTexParameteri" "glTexParameterfv"
+   "glTexParameteriv" "glGetTexParameterfv" "glGetTexParameteriv"
+   "glGetTexLevelParameterfv" "glGetTexLevelParameteriv" "glTexImage1D"
+   "glTexImage2D" "glGetTexImage" "glMap1d" "glMap1f" "glMap2d" "glMap2f"
+   "glGetMapdv" "glGetMapfv" "glGetMapiv" "glEvalCoord1d" "glEvalCoord1f"
+   "glEvalCoord1dv" "glEvalCoord1fv" "glEvalCoord2d" "glEvalCoord2f"
+   "glEvalCoord2dv" "glEvalCoord2fv" "glMapGrid1d" "glMapGrid1f" "glMapGrid2d"
+   "glMapGrid2f" "glEvalPoint1" "glEvalPoint2" "glEvalMesh1" "glEvalMesh2"
+   "glFogf" "glFogi" "glFogfv" "glFogiv" "glFeedbackBuffer" "glPassThrough"
+   "glSelectBuffer" "glInitNames" "glLoadName" "glPushName" "glPopName"
+   "glBlendEquationEXT" "glBlendColorEXT" "glPolygonOffsetEXT"))
+
+;; (apply mod-create-reference glfunctlist)
+;; (mod-load "/home/snwiz/misc/Mesa-1.2.6/lib/libMesaGL.a")
+;;(eval (cons 'dhc-make (cons "opengl" (mapcar named (mapcar downcase glfunclist)))))
+
+(mload "dh-compile")
+
+(mod-dlopen "/usr/lib/libGLcore.so")
+(mod-dlopen "/usr/lib/libGL.so")
+
+(apply dhc-make
+       (cons "opengl" (mapcar named (mapcar downcase glfunclist))))
+
+
+#? (glClearIndex <c> )
+#? (glClearColor (<red> <green> <blue> <alpha>)
+#? (glClearColor <red> <green> <blue> <alpha>)
+#? (glClear <mask>)
+#? (glIndexMask <mask>)
+#? (glColorMask <red> <green> <blue> <alpha>)
+#? (glAlphaFunc <func> <ref>)
+#? (glBlendFunc <sfactor> <dfactor>)
+#? (glLogicOp <opcode>)
+#? (glCullFace <mode>)
+#? (glFrontFace <mode>)
+#? (glPointSize <size>)
+#? (glLineWidth <width>)
+#? (glLineStipple <factor> <pattern>)
+#? (glPolygonMode <face> <mode>)
+#? (glPolygonStipple <mask>)
+#? (glGetPolygonStipple <mask>)
+#? (glEdgeFlag <flag>)
+#? (glEdgeFlagv <flag>)
+#? (glScissor <x> <y> <width> <height>)
+#? (glClipPlane <plane> <equation>)
+#? (glGetClipPlane <plane> <equation>)
+#? (glDrawBuffer <mode>)
+#? (glReadBuffer <mode>)
+#? (glEnable <cap>)
+#? (glDisable <cap>)
+#? (glIsEnabled <cap>)
+#? (glGetBooleanv <pname> <params>)
+#? (glGetDoublev <pname> <params>)
+#? (glGetFloatv <pname> <params>)
+#? (glGetIntegerv <pname> <params>)
+#? (glPushAttrib <mask>)
+#? (glPopAttrib)
+#? (glRenderMode <mode>)
+#? (glGetError)
+#? (glGetString <name>)
+#? (glFinish)
+#? (glFlush)
+#? (glHint <target> <mode>)
+#? (glClearDepth <depth>)
+#? (glDepthFunc <func>)
+#? (glDepthMask <flag>)
+#? (glDepthRange <near_val> <far_val>)
+#? (glClearAccum <red> <green> <blue> <alpha>)
+#? (glAccum <op> <value>)
+#? (glMatrixMode <mode>)
+#? (glOrtho <left> <right> <bottom> <top> <near_val> <far_val>)
+#? (glFrustum <left> <right> <bottom> <top> <near_val> <far_val>)
+#? (glViewport <x> <y> <width> <height>)
+#? (glPushMatrix)
+#? (glPopMatrix)
+#? (glLoadIdentity)
+#? (glLoadMatrixd <m>)
+#? (glLoadMatrixf <m>)
+#? (glMultMatrixd <m>)
+#? (glMultMatrixf <m>)
+#? (glRotated <angle> <x> <y> <z>)
+#? (glRotatef <angle> <x> <y> <z>)
+#? (glScaled <x> <y> <z>)
+#? (glScalef <x> <y> <z>)
+#? (glTranslated <x> <y> <z>)
+#? (glTranslatef <x> <y> <z>)
+#? (glIsList <list>)
+#? (glDeleteLists <list> <range>)
+#? (glGenLists <range>)
+#? (glNewList <list> <mode>)
+#? (glEndList)
+#? (glCallList <list>)
+#? (glCallLists <n> <type> <lists>)
+#? (glListBase <base>)
+#? (glBegin <mode>)
+#? (glEnd)
+#? (glVertex2d <x> <y>)
+#? (glVertex2f <x> <y>)
+#? (glVertex2i <x> <y>)
+#? (glVertex2s <x> <y>)
+#? (glVertex3d <x> <y> <z>)
+#? (glVertex3f <x> <y> <z>)
+#? (glVertex3i <x> <y> <z>)
+#? (glVertex3s <x> <y> <z>)
+#? (glVertex4d <x> <y> <z> <w>)
+#? (glVertex4f <x> <y> <z> <w>)
+#? (glVertex4i <x> <y> <z> <w>)
+#? (glVertex4s <x> <y> <z> <w>)
+#? (glVertex2dv <v>);
+#? (glVertex2fv <v>);
+#? (glVertex2iv <v>);
+#? (glVertex2sv <v>);
+#? (glVertex3dv <v>);
+#? (glVertex3fv <v>);
+#? (glVertex3iv <v>);
+#? (glVertex3sv <v>);
+#? (glVertex4dv <v>);
+#? (glVertex4fv <v>);
+#? (glVertex4iv <v>);
+#? (glVertex4sv <v>);
+#? (glNormal3b <nx> <ny> <nz>)
+#? (glNormal3d <nx> <ny> <nz>)
+#? (glNormal3f <nx> <ny> <nz>)
+#? (glNormal3i <nx> <ny> <nz>)
+#? (glNormal3s <nx> <ny> <nz>)
+#? (glNormal3bv <v>)
+#? (glNormal3dv <v>)
+#? (glNormal3fv <v>)
+#? (glNormal3iv <v>)
+#? (glNormal3sv <v>)
+#? (glIndexd <c>)
+#? (glIndexf <c>)
+#? (glIndexi <c>)
+#? (glIndexs <c>)
+#? (glIndexdv <c>)
+#? (glIndexfv <c>)
+#? (glIndexiv <c>)
+#? (glIndexsv <c>)
+#? (glColor3b <red> <green> <blue>)
+#? (glColor3d <red> <green> <blue>)
+#? (glColor3f <red> <green> <blue>)
+#? (glColor3i <red> <green> <blue>)
+#? (glColor3s <red> <green> <blue>)
+#? (glColor3ub <red> <green> <blue>)
+#? (glColor3ui <red> <green> <blue>)
+#? (glColor3us <red> <green> <blue>)
+#? (glColor4b <red> <green> <blue> <alpha>)
+#? (glColor4d <red> <green> <blue> <alpha>)
+#? (glColor4f <red> <green> <blue> <alpha>)
+#? (glColor4i <red> <green> <blue> <alpha>)
+#? (glColor4s <red> <green> <blue> <alpha>)
+#? (glColor4ub <red> <green> <blue> <alpha>)
+#? (glColor4ui <red> <green> <blue> <alpha>)
+#? (glColor4us <red> <green> <blue> <alpha>)
+#? (glColor3bv <v>)
+#? (glColor3dv <v>)
+#? (glColor3fv <v>)
+#? (glColor3iv <v>)
+#? (glColor3sv <v>)
+#? (glColor3ubv <v>)
+#? (glColor3uiv <v>)
+#? (glColor3usv <v>)
+#? (glColor4bv <v>)
+#? (glColor4dv <v>)
+#? (glColor4fv <v>)
+#? (glColor4iv <v>)
+#? (glColor4sv <v>)
+#? (glColor4ubv <v>)
+#? (glColor4uiv <v>)
+#? (glColor4usv <v>)
+#? (glTexCoord1d <s>)
+#? (glTexCoord1f <s>)
+#? (glTexCoord1i <s>)
+#? (glTexCoord1s <s>)
+#? (glTexCoord2d <s> <u>)
+#? (glTexCoord2f <s> <u>)
+#? (glTexCoord2i <s> <u>)
+#? (glTexCoord2s <s> <u>)
+#? (glTexCoord3d <s> <u> <r>)
+#? (glTexCoord3f <s> <u> <r>)
+#? (glTexCoord3i <s> <u> <r>)
+#? (glTexCoord3s <s> <u> <r>)
+#? (glTexCoord4d <s> <u> <r> <q>)
+#? (glTexCoord4f <s> <u> <r> <q>)
+#? (glTexCoord4i <s> <u> <r> <q>)
+#? (glTexCoord4s <s> <u> <r> <q>)
+#? (glTexCoord1dv <v>)
+#? (glTexCoord1fv <v>)
+#? (glTexCoord1iv <v>)
+#? (glTexCoord1sv <v>)
+#? (glTexCoord2dv <v>)
+#? (glTexCoord2fv <v>)
+#? (glTexCoord2iv <v>)
+#? (glTexCoord2sv <v>)
+#? (glTexCoord3dv <v>)
+#? (glTexCoord3fv <v>)
+#? (glTexCoord3iv <v>)
+#? (glTexCoord3sv <v>)
+#? (glTexCoord4dv <v>)
+#? (glTexCoord4fv <v>)
+#? (glTexCoord4iv <v>)
+#? (glTexCoord4sv <v>)
+#? (glRasterPos2d <x> <y>)
+#? (glRasterPos2f <x> <y>)
+#? (glRasterPos2i <x> <y>)
+#? (glRasterPos2s <x> <y>)
+#? (glRasterPos3d <x> <y> <z>)
+#? (glRasterPos3f <x> <y> <z>)
+#? (glRasterPos3i <x> <y> <z>)
+#? (glRasterPos3s <x> <y> <z>)
+#? (glRasterPos4d <x> <y> <z> <w>)
+#? (glRasterPos4f <x> <y> <z> <w>)
+#? (glRasterPos4i <x> <y> <z> <w>)
+#? (glRasterPos4s <x> <y> <z> <w>)
+#? (glRasterPos2dv <v>)
+#? (glRasterPos2fv <v>)
+#? (glRasterPos2iv <v>)
+#? (glRasterPos2sv <v>)
+#? (glRasterPos3dv <v>)
+#? (glRasterPos3fv <v>)
+#? (glRasterPos3iv <v>)
+#? (glRasterPos3sv <v>)
+#? (glRasterPos4dv <v>)
+#? (glRasterPos4fv <v>)
+#? (glRasterPos4iv <v>)
+#? (glRasterPos4sv <v>)
+#? (glRectd <x1> <y1> <x2> <y2>)
+#? (glRectf <x1> <y1> <x2> <y2>)
+#? (glRecti <x1> <y1> <x2> <y2>)
+#? (glRects <x1> <y1> <x2> <y2>)
+#? (glRectdv <v1> <v2>)
+#? (glRectfv <v1> <v2>)
+#? (glRectiv <v1> <v2>)
+#? (glRectsv <v1> <v2>)
+#? (glShadeModel <mode>)
+#? (glLightf <light> <pname> <param>)
+#? (glLighti <light> <pname> <param>)
+#? (glLightfv <light> <pname> <param>)
+#? (glLightiv <light> <pname> <param>)
+#? (glGetLightfv <light> <pname> <param>)
+#? (glGetLightiv <light> <pname> <param>)
+#? (glLightModelf <pname> <param>)
+#? (glLightModeli <pname> <param>)
+#? (glLightModelfv <pname> <param>)
+#? (glLightModeliv <pname> <param>)
+#? (glMaterialf <face> <pname> <param>)
+#? (glMateriali <face> <pname> <param>)
+#? (glMaterialfv <face> <pname> <param>)
+#? (glMaterialiv <face> <pname> <param>)
+#? (glGetMaterialfv <face> <pname> <param>)
+#? (glGetMaterialiv <face> <pname> <param>)
+#? (glColorMaterial <face> <mode>)
+#? (glPixelZoom <xfactor> <yfactor>)
+#? (glPixelStoref <pname> <param>)
+#? (glPixelStorei <pname> <param>)
+#? (glPixelTransferf <pname> <param>)
+#? (glPixelTransferi <pname> <param>)
+#? (glPixelMapfv <map> <mapsize> <values>)
+#? (glPixelMapuiv <map> <mapsize> <values>)
+#? (glPixelMapusv <map> <mapsize> <values>)
+#? (glGetPixelMapfv <map> <values>)
+#? (glGetPixelMapuiv <map> <values>)
+#? (glGetPixelMapusv <map> <values>)
+#? (glBitmap <width> <height> <xorig> <yorig> <xmove> <ymove> <bitmap>)
+#? (glReadPixels <x> <y> <width> <height> <format> <type> <pixels>)
+#? (glDrawPixels <width> <height> <format> <type> <pixels>)
+#? (glCopyPixels <x> <y> <width> <height> <type>)
+#? (glStencilFunc <func> <ref> <mask>)
+#? (glStencilMask <mask>)
+#? (glStencilOp  <fail> <zfail> <zpass>)
+#? (glClearStencil <s>)
+#? (glTexGend <coord> <pname> <param>)
+#? (glTexGenf <coord> <pname> <param>)
+#? (glTexGeni <coord> <pname> <param>)
+#? (glTexGendv <coord> <pname> <param>)
+#? (glTexGenfv <coord> <pname> <param>)
+#? (glTexGeniv <coord> <pname> <param>)
+#? (glGetTexGendv <coord> <pname> <param>)
+#? (glGetTexGenfv <coord> <pname> <param>)
+#? (glGetTexGeniv <coord> <pname> <param>)
+#? (glTexEnvf <target> <pname> <param>)
+#? (glTexEnvi <target> <pname> <param>)
+#? (glTexEnvfv <target> <pname> <param>)
+#? (glTexEnviv <target> <pname> <param>)
+#? (glGetTexEnvfv <target> <pname> <param>)
+#? (glGetTexEnviv <target> <pname> <param>)
+#? (glTexParameterf <target> <pname> <param>)
+#? (glTexParameteri <target> <pname> <param>)
+#? (glTexParameterfv <target> <pname> <param>)
+#? (glTexParameteriv <target> <pname> <param>)
+#? (glGetTexParameterfv <target> <pname> <param>)
+#? (glGetTexParameteriv <target> <pname> <param>)
+#? (glGetTexLevelParameterfv <target> <level> <pname> <params>)
+#? (glGetTexLevelParameteriv <target> <level> <pname> <params>)
+#? (glTexImage1D <target> <level> <components> <width> <border> <format> <type> <pixels>)
+#? (glTexImage2D <target> <level> <components> <width> <height> <border> <format> <type> <pixels>)
+#? (glGetTexImage <target> <level> <format> <type> <pixels>)
+#? (glMap1d <target> <u1> <u2> <stride> <order> <points>)
+#? (glMap1f <target> <u1> <u2> <stride> <order> <points>)
+#? (glMap2d <target> <u1> <u2> <ustride> <uorder> <v1> <v2> <vstride> <vorder> <points>)
+#? (glMap2f <target> <u1> <u2> <ustride> <uorder> <v1> <v2> <vstride> <vorder> <points>)
+#? (glGetMapdv <target> <query> <v>)
+#? (glGetMapfv <target> <query> <v>)
+#? (glGetMapiv <target> <query> <v>)
+#? (glEvalCoord1d <u>)
+#? (glEvalCoord1f <u>)
+#? (glEvalCoord1dv <u>)
+#? (glEvalCoord1fv <u>)
+#? (glEvalCoord2d <u> <v>)
+#? (glEvalCoord2f <u> <v>)
+#? (glEvalCoord2dv <u>)
+#? (glEvalCoord2fv <u>)
+#? (glMapGrid1d <un> <u1> <u2>)
+#? (glMapGrid1f <un> <u1> <u2>)
+#? (glMapGrid2d <un> <u1> <u2> <vn> <v1> <v2>)
+#? (glMapGrid2f <un> <u1> <u2> <vn> <v1> <v2>)
+#? (glEvalPoint1 <i>)
+#? (glEvalPoint2 <i> <j>)
+#? (glEvalMesh1 <mode> <i1> <i2>)
+#? (glEvalMesh2  <mode> <i1> <i2> <j1> <j2>)
+#? (glFogf <pname> <param>)
+#? (glFogi <pname> <param>)
+#? (glFogfv <pname> <param>)
+#? (glFogiv <pname> <param>)
+#? (glFeedbackBuffer  <size> <type> <buffer>)
+#? (glPassThrough <token>)
+#? (glSelectBuffer <size> <buffer>)
+#? (glInitNames)
+#? (glLoadName <name>)
+#? (glPushName <name>)
+#? (glPopName)
+#? (glBlendEquationEXT <mode>)
+#? (glBlendColorEXT <red> <green> <blue> <alpha>)
+#? (glPolygonOffsetEXT <factor> <bias>)
+

@@ -1,0 +1,998 @@
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;  Browser objects
+;;;
+;;;  Copyright (C) 1993 Neuristique SA
+;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+
+;;; ----------------------------------------
+;;; THE TABLE OBJECT
+;;; ----------------------------------------
+
+
+
+;;; ----------------------------------------
+#? ** Table
+;; A table object is a spreadsheet like
+;; object which displays textual information laid out onto a two
+;; dimensional grid which is usually much larger than the object size.
+;; The table object can display the column names and/or the line
+;; numbers of the visible part of the grid.
+;;
+;; The user can select a line or a case of the table by clicking on it.
+;; The user can then move the selection using the arrow keys.
+;; All these action invoke the callback routine.
+;; The user can also click in the title area and change the width of
+;; the columns using the mouse. Each column width can be changed
+;; separately.
+
+
+(defclass c-table visualobject
+
+  ;; DATA
+  getline				;func to get line by number
+  getline2
+  callback				;on selection change
+  wcallback                             ;on column width change
+  
+  ;; SETTINGS
+  cwidth				;width of columns in characters
+  title					;title of columns
+  hscroll vscroll			;managed scrollbars
+  (linep t)				;display grid ?
+  (nump ())				;display numbers (or line name) ?
+  (selectp t)				;accept selection ?
+  (selectcasep ())			;accept selection of a single case ?
+  (resizep t)				;accept column resize ?
+  formatp                               ;accept column format ?
+  
+  ;; INTERNAL
+  frepaint				;fast repaint mode
+  pwidth				;width of columns in pixels
+  pheight				;height of lines in pixels
+  pbase					;baseline wrt top of rectangle
+  pnum					;space for numbers 
+  visline				;number of visible lines
+  (lastline 0)				;last visible line
+  filter                                ;data filter
+  
+  ;; POSITION
+  selline				;selected line
+  selpos				;selected case
+  (curpos 0)				;current position
+  (curline 0) )	
+
+
+
+
+;;; ----------------------------------------
+
+#? (new c-table <w> <h> <lsize> <ltitle> <getl> [<hs> <vs>])
+;;
+;; Creates a new table object. 
+;;
+;; Arguments <w> and <h> give the size of the table object in pixels.
+;; Argument <lsize> is a list containing the width of each column in
+;; characters.  Argument <ltitle> is a list of strings used as column
+;; names. If this list is the empty list, column names are not
+;; displayed.
+;;
+;; Argument <getl> is a function with one numeric argument indicating
+;; a line number. This function must return a list containing as many
+;; items as there are columns in the table. Only strings are fully
+;; supported.  This function must return the empty list when the
+;; linenumber is invalid (e.g. after the end of the table).
+;;
+;; Arguments <hs> and <vs> are optional slave scrollbars (or
+;; compatible objects).  Object <hs> controls which columns are
+;; visible. Object <vs> controls which lines are visible. Both objects
+;; communicate with the table by sending a message <scroll> when a
+;; change is requested. Reciprocally, the table sends these objects a
+;; message <setdata> whenever the visible part of the table changes as
+;; the effect of a table method.
+
+
+
+(defmethod c-table c-table(w h lsize ltitle getl &optional hs vs)
+  (setq getline getl)
+  (setq getline2 getline)
+  (setq hscroll hs)
+  (setq vscroll vs)
+  (setq cwidth (append lsize ()))
+  (setq title ltitle)
+  (==> this visualobject w h) ) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-table compute-pixels()
+  (font-8f)
+  (when (not pwidth)
+	(let ((w (- (text-width "00") (text-width "0"))))
+	  (setq pwidth (all ((c cwidth)) (+ 3 (* c w)))) ) )
+  (when (not pheight)
+	(setq pbase (div (* 5 (text-height "0")) 3))
+	(setq pheight (+ 3 (div (* 6 (text-height "0")) 3))) )
+  (if nump
+      (gsave
+       (font-12b)
+       (setq pnum (+ 6 (if (<> str nump) (+ 6 (nump)) (text-width "00000")))) )
+    (setq pnum 0) )
+  (if title
+      (setq visline (1- (div (last rect) pheight)))
+    (setq visline (div (last rect) pheight)) ) )
+
+
+(defmethod c-table compute-geometry()
+  (gsave
+   (==> this compute-pixels)
+   () ) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-table backpaint-bw()
+  (cls)
+  (let (((x y w h) rect))
+    (draw-rect x y (1- w) (1- h))) )
+
+
+(defmethod c-table repaint-bw()
+  (let (((xx yy ww hh) rect)
+	((cx cy cw ch) (clip))
+	(ev ()) )
+    
+    ;; PREPARATION
+    (when (= frepaint 'full)
+	  (setq frepaint ()) )
+    (==> this compute-pixels)
+    
+    ;; DECORATION
+    (when (and title (<= cy (+ yy pheight 1)))
+	  (font-12b)
+	  (let ((x xx)
+		(w 0)
+		(tt (nthcdr curpos title))
+		(pw (nthcdr curpos pwidth))
+		(s ())
+		(sw 0))
+	    (when nump
+		  (setq tt (cons () tt))
+		  (setq pw (cons pnum pw)) )
+	    (while (< x (+ xx ww))
+	      (setq w (min (or (car pw) 1e9) (- (+ xx ww) x)))
+	      (draw-rect x yy w pheight)
+	      (when (setq s (car tt))
+		    (setq sw (text-width s))
+		    (gsave 
+		     (addclip (list x yy (min (- w 3) (- (+ xx ww) x)) pheight))
+		     (draw-text (+ x (max 3 (div (- w sw) 2))) (+ yy pbase) s) ) )
+	      (incr x w)
+	      (setq pw (cdr pw))
+	      (setq tt (cdr tt)) ) ) ) 
+    
+    ;; MEAT
+    (let ((y (+ yy (if title pheight 0)))
+	  (line curline)
+	  (data ()))
+      (let ((disp (max 0 (1- (div (- cy y) pheight)))))
+	(incr line disp)
+	(incr y (* disp pheight)) )
+      (while (and ~ev (< y (+ cy ch)) (setq data (getline2 line)))
+	(setq ev (and frepaint (testevent)))
+	(let ((x xx)
+	      (cw (nthcdr curpos cwidth))
+	      (pw (nthcdr curpos pwidth))
+	      (dt (nthcdr curpos data)) 
+	      (pos curpos))
+	  (when nump
+		(font-12b)
+		(color color-fg)
+		(draw-rect x y pnum pheight)
+		(draw-text (+ x pnum -6 (- (text-width (nump line)))) 
+			   (+ y pbase) (nump line) )
+		(incr x pnum) )
+	  (font-8f)
+	  (while (and dt pw cw (< x (+ xx ww)))
+	    (let ((h (car dt))
+		  (l (car cw)))
+	      (color color-fg)
+	      (when (= line selline)
+		(when (or (not selpos) (= pos selpos))
+		  (fill-rect x y (car pw) pheight) ) )
+	      (cond ((stringp h)
+		     (color color-fg)
+		     (draw_text (+ x 2) (+ y pbase) (left h l))
+		     )
+		    (h
+		     (color color-fg)
+		     (draw_text (+ x 2) (+ y pbase) (left "***" l))
+		     )
+		    (t
+		     (color color-fg)
+		     (draw_text (+ x 2) (+ y pbase) (left "*****" l))
+		     ) )
+	      (incr x (car pw))
+	      (incr pos)
+	      (setq pw (cdr pw))
+	      (setq cw (cdr cw))
+	      (setq dt (cdr dt))
+	      (when linep
+		    (color color-gray)
+		    (draw-line x y x (+ y pheight)) ) ) ) )
+	(when frepaint (graphics-sync)) 
+	(incr y pheight)
+	(incr line) 
+	(when linep
+	      (color color-gray)
+	      (draw-line (+ xx pnum) y 
+			 (+ xx pnum (sum (nthcdr curpos pwidth))) y) ) )
+      (when (> (+ cy ch pheight) (+ yy hh))
+	    (setq lastline line) )
+      (setq frepaint ())
+      (cond
+       (ev 
+	(let ((r (collide-rect (list cx cy cw ch)
+			       (list xx y ww (- hh (- y yy))) )))
+	  (when r (==> this fastexpose r)) ) )
+       ((and nump (< y (+ yy hh)))
+	(color color-fg)
+	(draw-rect xx y pnum (- (+ yy hh) y)) ) ) ) ) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-table backpaint-color()
+  (cls) )
+
+(defmethod c-table repaint-color()
+  (let (((xx yy ww hh) rect)
+	((cx cy cw ch) (clip)) 
+	(ev ()) )
+
+    ;; PREPARATION
+    (when (= frepaint 'full)
+	  (setq frepaint ()) )
+    (==> this compute-pixels)
+    
+    ;; DECORATION
+    (when (and title (<= cy (+ yy pheight 1)))
+	  (font-12b)
+	  (let ((x xx)
+		(w 0)
+		(tt (nthcdr curpos title))
+		(pw (nthcdr curpos pwidth))
+		(s ())
+		(sw 0))
+	    (when nump
+		  (setq tt (cons () tt))
+		  (setq pw (cons pnum pw)) )
+	    (while (< x (+ xx ww))
+	      (setq w (min (or (car pw) 1e9) (- (+ xx ww) x)))
+	      (fill-up-rect x yy w pheight)
+	      (when (setq s (car tt))
+		    (setq sw (text-width s))
+		    (gsave 
+		     (color color-fg)
+		     (addclip (list x yy (min (- w 3) (- (+ xx ww) x)) pheight))
+		     (draw-text (+ x (max 3 (div (- w sw) 2))) (+ yy pbase) s) ) ) 
+	      (incr x w)
+	      (setq pw (cdr pw))
+	      (setq tt (cdr tt)) ) ) )
+
+    ;; MEAT
+    (let ((y (+ yy (if title pheight 0)))
+	  (line curline)
+	  (data ()))
+      (let ((disp (max 0 (1- (div (- cy y) pheight)))))
+	(incr line disp)
+	(incr y (* disp pheight)) )
+      (while (and ~ev (< y (+ cy ch)) (setq data (getline2 line)))
+	(setq ev (and frepaint (testevent)))
+	(let ((x xx)
+	      (cw (nthcdr curpos cwidth))
+	      (pw (nthcdr curpos pwidth))
+	      (dt (nthcdr curpos data))
+	      (pos curpos) )
+	  (color color-fg)
+	  (when nump
+		(font-12b)
+		(fill-up-rect x y pnum pheight)
+		(draw-text (+ x pnum -6 (- (text-width (nump line)))) 
+			   (+ y pbase) (nump line) )
+		(incr x pnum) )
+	  (font-8f)
+	  (while (and dt pw cw (< x (+ xx ww)))
+	    (let ((h (car dt))
+		  (l (car cw)) )
+	      (when (= line selline)
+		(when (or (not selpos) (= pos selpos))
+		  (setcolor palette-selected)
+		  (fill-rect x y (car pw) pheight) ) )
+	      (cond ((stringp h)
+		     (color color-fg)
+		     (draw_text (+ x 2) (+ y pbase) (left h l))
+		     )
+		    (h
+		     (color color-fg)
+		     (draw_text (+ x 2) (+ y pbase) (left "***" l))
+		     )
+		    (t
+		     (color color-fg)
+		     (draw_text (+ x 2) (+ y pbase) (left "*****" l))
+		     ) )
+	      (incr x (car pw))
+	      (incr pos)
+	      (setq pw (cdr pw))
+	      (setq cw (cdr cw))
+	      (setq dt (cdr dt))
+	      (when linep
+		    (setcolor palette-up)
+		    (draw-line x y x (+ y pheight)) ) ) ) )
+	(when frepaint (graphics-sync)) 
+	(incr y pheight)
+	(incr line) 
+	(when linep
+	      (setcolor palette-up)
+	      (draw-line (+ xx pnum) y 
+			 (+ xx pnum (sum (nthcdr curpos pwidth))) y) ) )
+      (when (> (+ cy ch pheight) (+ yy hh))
+	    (setq lastline line) )
+      (setq frepaint ())
+      (cond
+       (ev 
+	(let ((r (collide-rect (list cx cy cw ch)
+			       (list xx y ww (- hh (- y yy))) )))
+	  (when r (==> this fastexpose r)) ) )
+       ((and nump (< y (+ yy hh)))
+	(fill-up-rect xx y pnum (- (+ yy hh) y)) ) ) ) ) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-table mouse-down(x y)
+  (let (((xx yy ww hh) rect))
+    (when (and title resizep (< y (+ yy pheight)))
+	  ;; find column
+	  (incr xx pnum)
+	  (let ((pw (nthcdr curpos pwidth))
+		(cw (nthcdr curpos cwidth)))
+	    (while (and pw (or (< x xx) (> x (+ xx (car pw)))))
+	      (incr xx (car pw))
+	      (setq pw (cdr pw))
+	      (setq cw (cdr cw)) )
+	    (when pw
+		  ;; trace resize
+		  (hilite  hilite-rect xx yy (+ xx (car pw)) (+ yy pheight))
+		  (let ((ok 1)
+			(ow (div (- (car pw) 3) (car cw)))
+			(nw (car pw))
+			(ev ()))
+		    (while (and ok (setq ev (==> this read-event)))
+		      (when (member (car ev) '(mouse-up mouse-drag))
+			    (let (((evtype x1 y1 x2 y2) ev))
+			      (if (> x2 (+ xx nw)) 
+				  (setq ok 2) )
+			      (if (= ok 2) 
+				  (setq nw (+ 3 (* ow (max 1 (div (- x2 xx) ow))))) )
+			      (hilite hilite-rect xx yy (+ xx nw) (+ yy pheight))
+			      (when (= evtype 'mouse-up)
+				(setq ok ())
+				(when (and formatp (= x1 x2) (= y1 y2) )
+				  (==> this format-req (- (length pwidth) (length pw))
+				       x2 y2)
+				  ) ) ) ) )
+		    
+		    (when (<> nw (car pw))
+		      (rplaca cw (div (- nw 3) ow))
+		      (rplaca pw nw) 
+		      (==> this fastexpose)
+		      (when wcallback (wcallback this))
+		      ) ) ) ) ) ) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-table mouse-up(x1 y1 x2 y2)
+  (cond
+   (selectcasep
+    (let (((xx yy ww hh) rect))
+      (setq y1 (div (- y1 yy) pheight)) 
+      (setq y2 (div (- y2 yy) pheight))
+      (incr y1 (if title (1- curline) curline))
+      (incr y2 (if title (1- curline) curline))
+      (let ((c1 curpos)
+	    (c2 curpos)
+	    (h (+ xx pnum)))
+	(each ((w (nthcdr curpos pwidth)))
+	      (incr h w)
+	      (when (> x1 h) (incr c1))
+	      (when (> x2 h) (incr c2)) )
+	(when (and (= y1 y2) (= c1 c2) c1 (>= c1 curpos) (>= y1 curline))
+	      (if (< y1 lastline)
+		  (==> this select y1 c1)
+		(==> this select ()) )
+	      (if callback (callback this)) ) ) ) )
+   (selectp
+    ;; select lines only
+    (let (((xx yy ww hh) rect))
+      (setq y1 (div (- y1 yy) pheight)) 
+      (setq y2 (div (- y2 yy) pheight))
+      (incr y1 (if title (1- curline) curline))
+      (incr y2 (if title (1- curline) curline))
+      (when (and (= y1 y2) (>= y1 curline))
+	    (if (< y1 lastline)
+		(==> this select y1)
+	      (==> this select ()) )
+	    (if callback (callback this)) ) ) ) ) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-table arrow-left(x y)
+  (while (= (car (testevent)) 'arrow-left) (checkevent))
+  (when (and selline selpos)
+	(==> this select selline (max 0 (1- selpos)))
+	(if callback (callback this)) ) )
+
+(defmethod c-table arrow-right(x y)
+  (while (= (car (testevent)) 'arrow-right) (checkevent))
+  (when (and selline selpos)
+	(==> this select selline (min (1- (length cwidth)) (1+ selpos)))
+	(if callback (callback this)) ) )
+
+(defmethod c-table arrow-up(x y)
+  (when selline
+	(let ((adj 1))
+	  (while (and (= (car (testevent)) 'arrow-up))
+	    (checkevent)
+	    (incr adj) )
+	  (setq adj (min adj 8))
+	  (while (and (not (getline (- selline adj))) (> adj 0))
+	    (incr adj -1) )
+	  (==> this select (- selline adj) selpos)
+	  (if callback (callback this)) ) ) )
+
+(defmethod c-table arrow-down(x y)
+  (when selline
+	(let ((adj 1))
+	  (while (and (= (car (testevent)) 'arrow-down))
+	    (checkevent)
+	    (incr adj) )
+	  (setq adj (min adj 8))
+	  (while (and (not (getline (+ selline adj))) (> adj 0))
+	    (incr adj -1) )
+	  (==> this select (+ selline adj) selpos)
+	  (if callback (callback this)) ) ) )
+
+
+
+;;; ----------------------------------------
+
+#? (==> <c-table> select <vp> [<hp>])
+;; This method selects line <vp> and optionally case <hp> in the table object.
+
+(defmethod c-table select(n &optional m)
+  (let ((oldline selline)
+	(oldpos selpos)
+	(vp ())
+	(hp ()) )
+    (when (not n)
+	  (setq m ()) )
+    (when m
+	  (setq m (max 0 (min m (1- (length cwidth))))) )
+    (setq selline n)
+    (setq selpos m)
+    (when selline
+	  (when (< selline curline)
+		(setq vp selline) )
+	  (when (>= selline (+ curline visline))
+		(setq vp (- selline (1- visline))) ) 
+	  (when selpos
+		(when (< selpos curpos)
+		      (setq hp selpos) )
+		(let (((x y w h) rect)
+		      (p selpos))
+		  (setq w (- w (+ pnum (nth selpos pwidth))))
+		  (when (> w 0)
+			(while (and (> p 0) (> w 0))
+			  (incr p -1)
+			  (incr w (- (nth p pwidth))) )
+			(when (< w 0) 
+			      (incr p) ) )
+		  (if (< curpos p)
+		      (setq hp p) ) ) ) )
+    (cond 
+     ((not selline)
+      (when oldline (==> this refresh oldline oldpos)))
+     ((or vp hp)
+      (==> this setpos vp hp) )
+     ((<> selline oldline)
+      (if (not (and selpos oldpos))
+	  (==> this refresh selline) 
+	(==> this refresh selline selpos) 
+	(==> this refresh selline oldpos) )
+      (when oldline (==> this refresh oldline oldpos)) )
+     ((<> selpos oldpos)
+      (if (not (and selpos oldpos))
+	  (==> this refresh selline) 
+	(==> this refresh selline selpos) 
+	(==> this refresh selline oldpos) ) ) ) ) )
+
+
+
+
+;;; ----------------------------------------
+
+#? (==> <c-table> expose [rect])
+;; This is similar to <expose> but disallows repaint to terminate
+;; prematurely when an event is available.
+
+(defmethod c-table expose(&optional rect)
+  (==> this (visualobject . expose) rect)
+  (setq frepaint 'full) )
+
+
+;;; ----------------------------------------
+
+#? (==> <c-table> fastexpose [rect])
+;; This is similar to <expose> but allows repaint to terminate
+;; prematurely when an event is available.
+
+(defmethod c-table fastexpose(&optional rect)
+  (==> this (visualobject . expose) rect)
+  (if (<> frepaint 'full)
+      (setq frepaint 'fast) ) )
+
+;;; ----------------------------------------
+
+#? (==> <c-table> refresh [<n> [<m>]])
+;; This function refreshes the table display. This is useful when the
+;; function <getl> (specified at table creation time) can return
+;; different results for the same line number.  When argument <n> is
+;; specified, only line <n> is refreshed. When both arguments <n> and <m>
+;; are specified, only case <m> of line <n> is refreshed.
+
+(defmethod c-table refresh(&optional n m)
+  (cond
+   ((not n)
+    (==> this expose rect))
+   ((not m)
+    (when (and n (>= n curline) (< n lastline))
+	  (let (((xx yy ww hh) rect))
+	    (incr yy (* pheight (+ (- n curline) (if title 1 0))))
+	    (==> this expose (list xx yy ww pheight))) ) )
+   (t
+    (when (and n (>= n curline) (< n lastline) (>= m curpos))
+	  (let (((xx yy ww hh) rect))
+	    (incr yy (* pheight (+ (- n curline) (if title 1 0))))
+	    (incr xx pnum)
+	    (let ((wl (nthcdr curpos pwidth)))
+	      (while (> m curpos)
+		(incr xx (car wl))
+		(setq wl (cdr wl)) 
+		(incr m -1) )
+	      (==> this expose (list xx yy (car wl) pheight))) ) ) ) ) )
+
+;;; ----------------------------------------
+
+#? (==> <c-table> scroll)
+;; This method must be called by the scrollbar controlling the table
+;; whenever the table must update its visible area according to the
+;; data stored in the slave scrollbars specified when the table has
+;; been created.
+
+ 
+(defmethod c-table scroll(&optional vp hp)
+  (setq vp (or vp (when vscroll (==> vscroll getdata))))
+  (setq hp (or hp (when hscroll (==> hscroll getdata))))
+  (let ((oldline curline)
+	(oldpos curpos))
+    (when vp 
+	  (setq curline vp) )
+    (when hp 
+	  (setq curpos (max 0 (min (length cwidth) hp))) )
+    (let (((xx yy ww hh) rect))
+      (cond
+       ((<> oldpos curpos)
+	(==> this fastexpose (list xx yy ww hh)))
+       ((<> oldline curline)
+	(let* ((ptitle (if title pheight 0)))
+	  (==> this fastexpose (list xx (+ yy ptitle) ww (- hh ptitle))) ) ) ) ) ) ) 
+
+;;; ----------------------------------------
+#? (==> <c-table> setpos <vp> <hp>)
+;; This method moves the lines and columns in order to
+;; change which portion of the grid is visible. The first line
+;; displayed will be line <vp>. The first column displayed will
+;; be the <hp>-th column. 
+;;
+;; If <vp> (resp. <hp>) is the empty list <()>, the vertical position
+;; (resp. the horizontal position) is unchanged.
+
+
+(defmethod c-table setpos(vp hp)
+  (==> this scroll vp hp)
+  (when vscroll
+	(==> vscroll setdata curline) )
+  (when hscroll
+	(==> hscroll setdata curpos) ) )
+
+
+;;; ----------------------------------------
+
+#? (==> <c-table> settitle <ltitle>)
+;; Sets the column names. Argument <ltitle> is a list of strings used
+;; as column names. If this list is the empty list, column names are
+;; not displayed.
+
+(defmethod c-table settitle(ltitle)
+  (setq title ltitle)
+  (==> this expose) )
+
+;;; ----------------------------------------
+
+#? (==> <c-table> setdata <getl>)
+;; Sets the getline function.
+;; Argument <getl> is a function with one numeric argument indicating
+;; a line number. This function must return a list containing as many
+;; strings than columns in the table. This function must return the
+;; empty list when the linenumber is invalid (e.g. after the end of
+;; the table).
+
+(defmethod c-table setdata(getl)
+  (setq getline getl)
+  (setq getline2 getl)
+  (==> this setfilter () ())
+  (==> this refresh) )
+
+;;; ----------------------------------------
+
+#? (==> <c-table> setcall <callback>)
+;; Sets the callback function to <callback>. This fucntion is called
+;; when the user clicks on an table-item.
+
+(defmethod c-table setcall(call)
+  (setq callback call) )
+
+;;; ----------------------------------------
+
+#? (==> <c-table> setwcall <callback>)
+;; Sets the  callback function <callback> called when the
+;; user redefines the width of a column.
+
+(defmethod c-table setwcall (call)
+  (setq wcallback call) )
+
+
+;;; ----------------------------------------
+
+#? (==> <c-table> setwidth <lsize>)
+;; Sets the widths of the columns of the table. Argument <lsize> is a
+;; list containing the width of each column in characters.
+
+(defmethod c-table setwidth(lsize)
+  (setq cwidth lsize)
+  (setq pwidth ())
+  (==> this expose) )
+
+;;; ----------------------------------------
+
+#? (==> <c-table> setflag <flag> <value>)
+;; Sets flags controlling the behavior of the table.
+;; Argument <flag> must be one of the following symbols:
+;;.IP 
+;; <linep>: Grayed lines delimiting the table components are drawn
+;; when this flag is on (the default).
+;;.IP
+;; <nump> : Line numbers are displayed when this flag is on.
+;; (default to off.)
+;;.IP
+;; <selectp> : The user can select a line when this flag is on (the
+;; default).
+;;.IP
+;; <selectcasep> : The user can select a case when this flag is on 
+;; (defaults to off.).
+;;.IP
+;; <resizep> : The user can resize the columns when this flag is on
+;; and when column labels are displayed (the default).
+
+
+(defmethod c-table setflag(flag value)
+  (when (member flag '(linep nump selectp selectcasep resizep formatp))
+	(set flag value)
+	(when (= flag 'nump)
+	  (cond ((= value t) (setq nump str))
+		((consp nump)
+		 (setq nump (eval
+			     `(lambda (&optional n)
+				(if n
+				    (or (when (and (>= n 0) (< n ,(length value)))
+					  (let* ((a ,((array (length value)) () value)))
+					    (a n) ) )
+					"" )
+				  (let* ((a ,(array 1)))
+				    (or (a 0)
+					(progn
+					  (a 0 (+ 4 (sup (mapcar text-width
+								 (quote ,value)) )))
+					  (a 0) ) ) ) ) ))) )
+		) )
+	(when (member flag '(linep nump))
+	      (==> this expose) ) ) )
+
+
+;;; ----------------------------------------
+#? (==> <c-table> getselect)
+;; Returns the line number of the selected line and the selected position
+;; in the line. This function returns the empty list if nothing is selected.
+
+(defmethod c-table getselect()
+  (when selline
+	(list selline selpos) ) )
+
+
+(defmethod c-table format-req (i x y)
+  (let* ((m (new menu (ml "Format" "Format")
+		 (ml "Characters" "Caract\+hres")
+		 (eval `(lambda (c)
+			  (==> ,this setfilter ,i ())
+			  ))
+		 (ml "Numbers" "Nombres")
+		 (eval `(lambda (c)
+			  (==> ,this setfilter ,i
+			       (lambda (s) (cvt-tl-str (cvt-tl-num s))) )
+			  ))
+		 (ml "Dates"   "Dates")
+		 (eval `(lambda (c)
+			  (==> ,this setfilter ,i
+			       (lambda (s) (cvt-tl-str (cvt-tl-date (cvt-tl-num s)))) )
+			  ))
+		 )))
+    (==> m move (+ 3 x) y)
+    (==> thiswindowobject insert m)
+    (==> m mouse-down x y)
+    (==> thiswindowobject remove m)
+    ) )
+
+
+(defmethod c-table setfilter (i f)
+  (let* ((old-filter (append filter ())))
+    (cond ((and ~i ~f)
+	   (setq filter ())
+	   )
+	  ((and ~i (consp f))
+	   (setq filter f)
+	   )
+	  (~i
+	   (setq filter (makelist (length cwidth) f))
+	   )
+	  (t
+	   (when ~filter (==> this setfilter () progn))
+	   (rplaca (nthcdr i filter) (or f progn))
+	   (when (= filter (makelist (length cwidth) progn))
+	       (setq filter ()) )
+	   ) )
+    (when (<> filter old-filter)
+      (setq getline2 (if filter
+			 (lambda (i) (let* ((ls (getline i))(lf filter))
+				       (if ~lf ls
+					 (setq i ())
+					 (while (and ls lf)
+					   (setq i (cons ((car lf) (car ls)) i))
+					   (setq ls (cdr ls) lf (cdr lf))
+					   )
+					 (reverse i)
+					 ) ))
+		       getline ))
+      (==> this refresh)
+      (when wcallback (wcallback this))
+      ) ) )
+
+
+
+;;; ----------------------------------------
+;;; THE SCROLLTABLE OBJECT
+;;; ----------------------------------------
+
+
+;;; ----------------------------------------
+#? ** Scroll Table
+;;.SEE Table
+;; A scroll table displays the data contained in a list of lists
+;; as a table with two scrollbars. 
+;;
+;; A scroll table object redirects messages <select>, <refresh>,
+;; <setpos>, <settitle>, <setcall>, <setwidth> and <setflag>
+;; <getselect> to the underlying table object.
+;;
+;; A scroll table object implements messages <setline>, <getline>,
+;; <deleteline>, <insertline>, <setdata>, <getdata> for manipulating
+;; the underlying data.
+
+
+(defclass c-scrolltable form
+  data
+  table
+  hscroller
+  vscroller )
+
+
+
+;;; ----------------------------------------
+#? (new c-scrolltable <w> <h> <lsize> <ltitle> [<data>])
+;; Creates a new scroll table.
+;;
+;; Arguments <w> and <h> are the width and height of the entire
+;; scrolltable object. Arguments <lsize> and <ltitle> are similar to
+;; the constructor arguments of class <c-table>.  
+;;
+;;.SEE (new c-table <w> <h> <lsize> <ltitle> <getl> [<hs> <vs>])
+
+(defmethod c-scrolltable c-scrolltable(w h lsize ltitle &optional default)
+  (let ((scroll (lambda(c) (==> :thisform:table scroll)))
+	(getline (eval `(lambda (c) (nth c :,this:data)))))
+    (setq hscroller (new HScrollBar (1- (length lsize)) scroll))
+    (setq vscroller (new VScrollBar (1- (length default)) scroll))
+    (==> hscroller setdrag scroll)
+    (==> vscroller setdrag scroll)
+    (setq table (new c-table (- w 24) (- h 24) lsize ltitle 
+		     getline hscroller vscroller ))
+    (==> this form table hscroller vscroller) 
+    (==> this setdata default) ) )
+    
+    
+;;; ----------------------------------------
+
+(defmethod c-scrolltable compute-geometry()
+  (when window
+	(let (((x1 y1 w1 h1) :hscroller:rect)
+	      ((x1 y2 w2 h2) :vscroller:rect)
+	      ((x y w h) :table:rect))
+	  (==> this resize (+ w w2 1) (+ h h1 1)) ) )
+  rect )
+
+
+(defmethod c-scrolltable manage-geometry()
+  (let (((x y w h) rect)
+	((x1 y1 w1 h1) :hscroller:rect)
+	((x1 y2 w2 h2) :vscroller:rect))
+    (let ((tbw (max 0 (- w (+ 1 w2))))
+	  (tbh (max 0 (- h (+ 1 h1)))) 
+	  (pnum    (or :table:pnum 0))
+	  (pheight (if :table:title (or :table:pheight 0) 0)) )
+      (==> table geometry x y tbw tbh)
+      (when window (==> table compute-pixels))
+      (==> hscroller geometry (+ x pnum) (+ y (- h h1)) (max 0 (- tbw pnum)) h1)
+      (==> vscroller geometry (+ x (- w w2)) (+ y pheight) w2 (max 0 (- tbh pheight)))
+      (==> this advertize)
+      () ) ) )
+
+
+;;; ----------------------------------------
+
+
+(defmethod c-scrolltable select(n &optional m)
+  (==> table select n m) )
+
+(defmethod c-scrolltable getselect()
+  (==> table getselect) )
+
+(defmethod c-scrolltable refresh(&optional n)
+  (==> table refresh n) )
+
+(defmethod c-scrolltable setpos(vp hp)
+  (==> table setpos vp hp) )
+
+(defmethod c-scrolltable settitle(ltitle)
+  (==> table settitle ltitle)
+  (==> this change-geometry) )
+
+(defmethod c-scrolltable setcall(call)
+  (==> table setcall call) )
+
+(defmethod c-scrolltable setwidth(lsize)
+  (==> table setwidth lsize) )
+
+(defmethod c-scrolltable setflag (flag value)
+  (==> table setflag flag value)
+  (when (= flag 'nump)
+	(==> this repair-damaged)
+	(==> this change-geometry) ) )
+
+(defmethod c-scrolltable hasdata()
+  this )
+
+(defmethod c-scrolltable advertize()
+  (let ((visline :table:visline))
+    (==> vscroller setrange 0 (+ (length data) (if visline 1 -1)) visline)
+    (==> vscroller setdata :table:curline) )
+  (==> table scroll) )
+
+;;; ----------------------------------------
+#? (==> <c-scrolltable> setdata <data>)
+;; Changes the data in scroll table.  Argument <data> must be a list
+;; of lists whose length is equal to the number of columns of the
+;; table.
+
+(defmethod c-scrolltable setdata(newdata)
+  (each ((line newdata))
+	(when (<> (length line) (length :table:cwidth))
+	      (error "Bad data line" line) ) )
+  (setq data newdata)
+  (==> this advertize)
+  (==> table select ())
+  (==> table expose) )
+
+
+;;; ----------------------------------------
+#? (==> <c-scrolltable> getdata)
+;; Returns the data stored in table <c-scrolltable> as a list of
+;; lists whose length is equal to the number of columns of the
+;; table.
+
+(defmethod c-scrolltable getdata()
+  data)
+
+
+;;; ----------------------------------------
+#? (==> <c-scrolltable> getline <n>)
+;; Returns the <n>th line of data
+
+(defmethod c-scrolltable getline(n)
+  (nth n data) )
+
+;;; ----------------------------------------
+#? (==> <c-scrolltable> setline <n> <line>)
+;; Sets the <n>th line of data to a new value.
+
+(defmethod c-scrolltable setline(n line)
+  (when (<> (length line) (length :table:cwidth))
+	(error "Bad data line" line) )
+  (let ((h (nthcdr n data)))
+    (when h 
+	  (rplaca h line)
+	  (==> table refresh n) ) ) )
+
+
+;;; ----------------------------------------
+#? (==> <c-scrolltable> deleteline <n>)
+;; Deletes the <n>th line of data.
+
+(defmethod c-scrolltable deleteline(n)
+  (if (0= n)
+      (setq data (cdr data))
+    (let ((h (nthcdr (1- n) data)))
+      (when h (rplacd h (cddr h))) ) )
+  (when (and :table:selline (>= :table:selline n))
+	(if (> :table:selline 0)
+	    (==> table select (1- :table:selline) :table:selpos) 
+	  (==> table select ()) ) )
+  (==> this advertize)
+  (==> table expose) )
+
+
+;;; ----------------------------------------
+#? (==> <c-scrolltable> insertline <n> <line>)
+;; Inserts a new line before the <n>th line.
+
+(defmethod c-scrolltable insertline(n line)
+  (when (<> (length line) (length :table:cwidth))
+	(error "Bad data line" line) )
+  (setq n (max 0 (min (length data) n)))
+  (if (0= n)
+      (setq data (cons line data))
+    (let ((h (nthcdr (1- n) data)))
+      (when h (rplacd h (cons line (cdr h)))) ) )
+  (when (and :table:selline (>= :table:selline n))
+	(==> table select (1+ :table:selline) :table:selpos) )
+  (==> this advertize)
+  (==> table expose) )
+

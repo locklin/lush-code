@@ -1,0 +1,240 @@
+#? File "idx-ubyte.sn"
+;; Utilities for matrices and tensors of unsigned bytes
+;; [partially documented]
+
+(mload "cmacro")
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dm midx-u2resize1 (f m n0)
+  (list 'idx-u2resize m n0 (cons 'idx-dim (cons m '(1)))) )
+
+
+#? (idx-ub1add <m> <c>)
+;;.VP
+;; ((-idx1- (-ubyte-)) m):
+;; ((-int-) c):
+;;
+;; CREATED: P.Haffner, April 97
+;; DESCRIPTION: Adds 1D ubyte  matrix with constant <c>
+(de idx-ub1add (m c)
+  ((-idx1- (-ubyte-)) m)
+  ((-int-) c)
+
+  (cidx-bloop ("i" ("mp" m)) 
+              #{*mp += $c; #})
+  () )
+
+#? (idx-ub2add <m> <c>)
+;;.VP
+;; ((-idx2- (-ubyte-)) m):
+;; ((-int-) c):
+;;
+;; CREATED: P.Haffner, August 97
+;; DESCRIPTION: Adds 2D ubyte  matrix with constant <c>
+(de idx-ub2add (m c)
+  ((-idx2- (-ubyte-)) m)
+  ((-int-) c)
+
+  (cidx-bloop ("i" "j" ("mp" m)) 
+              #{*mp += $c; #})
+  () )
+
+#? (idx-ub2mul <m> <c>)
+;;.VP
+;; ((-idx2- (-ubyte-)) m):
+;; ((-int-) c):
+;;
+;; CREATED: P.Haffner, August 97
+;; DESCRIPTION: Multipliess 2D ubyte  matrix with constant <c>
+(de idx-ub2mul (m c)
+  ((-idx2- (-ubyte-)) m)
+  ((-int-) c)
+
+  (cidx-bloop ("i" "j" ("mp" m)) 
+              #{*mp *= $c; #})
+  () )
+
+#? (idx-ub2-i2mul <i2> <u2> <c>)
+;;.VP
+;; ((-idx2- (-ubyte-)) i2):
+;; ((-idx2- (-ubyte-)) u2):
+;; ((-int-) c):
+;;
+;; CREATED: P.Haffner, Sept 97
+;; DESCRIPTION:
+(de idx-ub2-i2mul (i2 c)
+  ((-idx2- (-int-)) i2)
+  ((-int-) c)
+
+  (let ((u2 (ubyte-matrix-nc (idx-dim i2 0) (idx-dim i2 1))))
+    (cidx-bloop ("i" "j" ("in" i2) ("out" u2)) 
+                #{int f= *in * $c; 
+                if (f>255) f=255;
+                if (f<0) f=0;
+                *out=f;
+                #})
+    u2)
+  )
+
+#? (idx-ub3mat-add <m1> <m2>)
+;;.VP
+;; ((-idx3- (-ubyte-)) m1 m2):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+(de idx-ub3mat-add (m1 m2)
+  ((-idx3- (-ubyte-)) m1 m2)
+
+  (let ((m12 (copy-matrix m1)))
+    (cidx-bloop ("i" "j" "k" ("p2" m2) ("p12" m12))
+                 #{int v= *p12 + *p2 -128;
+                 if (v<0) v=0;
+                 if (v>255) v=255;
+                 *p12=v;
+                 #})
+    m12))
+
+
+
+
+#? (idx-ub1fill <m> <c>)
+;;.VP
+;; ((-idx1- (-ubyte-)) m):
+;; ((-int-) c):
+;;
+;; CREATED: P.Haffner, April 97
+;; DESCRIPTION: Fills 1D ubyte  matrix with constant <c>
+(de idx-ub1fill (m c)
+  ((-idx1- (-ubyte-)) m)
+  ((-int-) c)
+
+  (cidx-bloop ("i" ("mp" m)) 
+              #{*mp = $c; #})
+  () )
+
+
+#? (idx-ub2fill <m> <c>)
+;;.VP
+;; ((-idx2- (-ubyte-)) m):
+;; ((-int-) c):
+;;
+;; CREATED: P.Haffner, April 97
+;; DESCRIPTION: Fills 2D ubyte matrix with constant <c>
+(de idx-ub2fill (m c)
+  ((-idx2- (-ubyte-)) m)
+  ((-int-) c)
+
+  (cidx-bloop ("i" "j" ("mp" m)) 
+              #{*mp = $c; #})
+  () )
+
+
+
+;;; ----------------------------------------
+;;; UTILITIES
+
+(de idx-ub-to-bits (ub)
+    ((-idx1- (-ubyte-)) ub)
+
+    (let ((bits 0))
+      ((-int-) bits)
+      (cidx-bloop ("i" ("ub" ub))
+                  #{ $bits <<= 1; $bits += (*ub>0); #}
+                  )
+      bits))
+
+
+(de idx-ub-from-bits (ub bits)
+    ((-idx1- (-ubyte-)) ub)
+    ((-int-) bits)
+
+    (let* ((l (idx-dim ub 0))
+           (m (** 2 (1- l))))
+      ((-int-) l m)
+
+      (when (>= l 32) (error "vector has more than 32 elements"))
+
+      (cidx-bloop ("i" ("ub" ub))
+                  #{ *ub = 255* (($bits & $m)>0) ; $bits <<= 1; #}
+                ))
+    ())
+    
+
+(de idx-i1indexmax (m)
+    ((-idx1- (-int-)) m)
+
+    (let (
+          (max (- 1e9))
+          (imax 0)
+          )
+      ((-int-) imax max)
+
+      (cidx-bloop ("i" ("m" m))
+         #{{ 
+         if ($max < *m) {$max = *m; $imax=i;}
+         }#}
+         )
+      imax))
+      
+#? (idx-m2opp <m>)  
+;;.VP
+;; ((-idx2- (-flt-)) m):
+;;
+;; CREATED: P.Haffner, June 97
+;; TEMPORARIES: ?
+;; DESCRIPTION: invert sign of elements
+(de idx-m2opp (m)  
+    ((-idx2- (-flt-)) m)
+
+    (cidx-bloop ("i" "j" ("p" m))
+                #{{ *p = - *p; }#}
+))
+
+(de idx-u2sub (ubim v)
+  ((-idx2- (-ubyte-)) ubim)
+  ((-int-) v)
+
+  (cidx-bloop ("i" "j" ("u" ubim))
+      #{{
+      int d = *u - $v;
+      *u = (d>0 ? d : 0);
+      }#}
+))
+
+(de idx-u2rev (ubim)
+  ((-idx2- (-ubyte-)) ubim)
+
+  (cidx-bloop ("i" "j" ("u" ubim))
+      #{{
+      *u ^= 255;
+      }#}
+))
+
+#? (idx-copy-inv <u1> <u2>)
+;;.VP
+;; ((-idx2- (-ubyte-)) u1 u2):
+;;
+;; CREATED: P.Haffner, August 97
+;; DESCRIPTION: same as idx-copy, with byte inversion.
+(de idx-copy-inv(u1 u2)
+    ((-idx2- (-ubyte-)) u1 u2)
+    (cidx-bloop ("i" "j" ("u1" u1) ("u2" u2))
+                #{ *u2=255-*u1; #}
+))
+
+
+(dhc-make () 
+          ;;idx-ub3mat-add
+          ;;idx-ub-to-bits idx-ub-from-bits
+          idx-ub1add
+          idx-ub2mul
+          idx-ub2-i2mul
+          idx-ub2add
+          idx-ub1fill idx-ub2fill
+          ;;ubvec-convol
+          ;;ubim-sepconvol
+          ;;idx-m2opp idx-u2sub idx-u2rev
+          ;;idx-copy-inv
+)

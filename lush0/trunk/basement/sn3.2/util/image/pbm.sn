@@ -1,0 +1,224 @@
+
+(mload "cmacro")
+(mload "file-std")
+(mload "idx-int")
+(mload "image/run-macros")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (pbm-write-runs <f> <runs>  <nlin> <ncol>)
+;;.VP
+;; ((-str-) f):
+;; ((-idx2- (-int-)) runs):
+;; ((-int-) nlin ncol):
+;;
+;; CREATED: P. Haffner, Oct 97
+;; DESCRIPTION:
+;; writes <runs> in file <f> as a PBM file.
+(de pbm-write-runs (fname runs  nlin ncol)
+    ((-str-) fname)
+    ((-idx2- (-int-)) runs)
+    ((-int-) nlin ncol)
+
+    (let ((f (fopen fname "wb")))
+      (when (not f) (error "couldn't open RLE file"))
+      
+      (let* (
+             (ncol8 (1+ (div (1- ncol) 8)))
+             (bim (ubyte-matrix  nlin ncol8))
+             (add-right (int-matrix 9))
+             (add-left (int-matrix 9))
+             (sum 0)
+             (fact 128)
+             )
+        (-int- ncol8) 
+        (-int- sum fact)
+        (idx-bloop ((ar add-left))
+          (ar sum)
+          (incr sum fact)
+          (setq fact (2/ fact)))
+        
+        (setq sum 0) (setq fact 1)
+        (idx-bloop ((ar add-right))
+          (ar sum)
+          (incr sum fact)
+          (setq fact (2* fact)))
+        
+        
+        (idx-bloop ((run runs))
+          (let* (
+                 (runy (run (RUN-Y)))
+                 (runx1 (run (RUN-X1)))
+                 (runx2 (run (RUN-X2)))
+                 )
+            (-int- runy runx1 runx2)
+            (if (or (< runy 0) (>= runy nlin)) 
+                (printf "pbm-write-runs(%s): runy out, renoved\n" fname) 
+
+              (when (< runx1 0) (printf "pbm-write-runs(%s): runx1<0, cropped\n" fname) (setq runx1 0))
+              (when (>= runx1 ncol) (printf "pbm-write-runs(%s): runx1<ncol, cropped\n" fname) (setq runx1 (1- ncol)))
+              
+              (let* (
+                     (x1 (1+ (div runx1 8)))
+                     (x2 (div runx2 8))
+                     (line (select bim 0 runy))
+                     (x2m (1+ (-  runx2  (* x2 8))))
+                     (x1m (-  (* x1 8)  runx1))
+                     (x2+ (add-left x2m))
+                     (x1+ (add-right x1m))
+                     )
+                (-int- x2 x1)
+                (-int- x2m x1m)
+                (-int- x2+ x1+)
+                
+                (if (< x2 x1)
+                    (line x2 (+ (line x2) x2+ x1+
+                                (- 255)))
+                  
+                  
+                  (when (> x2 x1)
+                    (cidx-bloop ("i" ("p" (narrow line 0 (- x2 x1) x1))) #{ *p=255;#}
+                                ))
+                  (let ((xx1 (1- x1))
+                        )
+                    ((-int-) xx1)
+                    (line xx1 (+ (line xx1) x1+))
+                    (line x2 (+ (line x2) x2+))
+                    ))))))
+        #{
+        fprintf((FILE *)$f,"P4 %d %d\n",$ncol,$nlin); 
+        #}
+        (cidx-bloop ("i" "j" ("p" bim))
+        #{ putc(*p, (FILE *)$f); #}
+        )
+
+      (fclose f)
+      ())))
+              
+                
+        
+
+#? (pbm-write-ubim <f> <m>)
+;; writes binary image <m> in file <f> as a PBM file.
+;; <m> is and idx2 of ubytes.
+(de pbm-write-ubim (f m)
+    ((-str-) f)
+    ((-idx2- (-ubyte-)) m)
+    (let ((f (fopen f "wb"))
+          (nlin (idx-dim m 0))
+          (ncol (idx-dim m 1)))
+      ((-int-) nlin ncol)
+      (when (not f) (error "couldn't open PNG file"))
+      #{{ 
+          int acc = 0;
+          int mask = 0x80;
+          fprintf((FILE *)$f,"P4 %d %d\n",$ncol,$nlin); 
+      #}
+      (cinline-idx2loop m "unsigned char" "p" "i" "j"
+                  #{ 
+                        if (*p) acc |= mask; /*|*/
+                        mask >>= 1;
+                        if (mask==0 || j+1==$ncol) 
+                        {
+                          putc(acc, (FILE *)$f); 
+                          acc=0;
+                          mask=0x80;
+                        }
+                  #} )
+      #{}#}
+      (fclose f)
+      () ) )
+
+#? (pbm-write-ubim-val <f> <m> <v>)
+;; writes binary image <m> in file <f> as a PBM file.
+;; <m> is and idx2 of ubytes.
+;; mask (value on) all values < v
+(de pbm-write-ubim-val (f m v)
+    ((-str-) f)
+    ((-idx2- (-ubyte-)) m)
+    ((-int-) v)
+
+    (let ((f (fopen f "wb"))
+          (nlin (idx-dim m 0))
+          (ncol (idx-dim m 1)))
+      ((-int-) nlin ncol)
+      (when (not f) (error "couldn't open PNG file"))
+      #{{ 
+          int acc = 0;
+          int mask = 0x80;
+          fprintf((FILE *)$f,"P4 %d %d\n",$ncol,$nlin); 
+      #}
+      (cinline-idx2loop m "unsigned char" "p" "i" "j"
+                  #{ 
+                        if (*p < $v) acc |= mask; /*|*/
+                        mask >>= 1;
+                        if (mask==0 || j+1==$ncol) 
+                        {
+                          putc(acc, (FILE *)$f); 
+                          acc=0;
+                          mask=0x80;
+                        }
+                  #} )
+      #{}#}
+      (fclose f)
+      () ) )
+
+
+#? (pbm-read-ubim <f> <white> <black>)
+;; read binary image <m> from PBM file <f>.
+;; code black as <black> and white as <white>
+(de pbm-read-ubim (f white black)
+    ((-str-) f)
+    ((-int-) white black)
+    (nt-pbm-read-ubim f (ubyte-matrix-nc 1 1) white black)
+)
+
+(de nt-pbm-read-ubim (f rez white black)
+    ((-str-) f)
+    ((-idx2- (-ubyte-)) rez)
+    ((-int-) white black)
+
+    (let ((f (fopen f "rb")))
+      (when (not f) (error "couldn't open PNG file"))
+      (let ((head (fscan-str f)))
+        (when (<> "P4" head)
+          (fclose f) (error "not a valid binary PNG file"))
+        #{{
+            FILE *ff = $f;
+            int c;
+            for (;;) {
+              c = getc(ff);
+              while (c==' ' || c=='\n' || c=='\t' || c=='\r') c = getc(ff);
+              if (c!='#') break;
+              while (c != '\n')  c = getc(ff);
+            }
+            ungetc(c,ff);
+            }#}
+        (let* ((ncol (fscan-int f))
+               (nlin (fscan-int f))
+               (n 0) (c 0))
+          ((-int-) n c)
+          (idx-u2resize rez nlin ncol)
+          (getc f)
+          (cinline-idx2loop rez "unsigned char" "p" "i" "j"
+              #{{ 
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  if ($c & 0x80)
+                    *p = $black;
+                  else
+                    *p = $white;
+                  $c <<= 1;
+                  $n = (($n==7) ? 0 : $n+1);
+               }#} )
+          (fclose f) rez) ) ) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "pbm"
+          pbm-write-ubim 
+          nt-pbm-read-ubim 
+          pbm-read-ubim 
+          pbm-write-runs
+          pbm-write-ubim-val
+          )

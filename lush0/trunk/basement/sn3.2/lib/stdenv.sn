@@ -1,0 +1,278 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;    "stdenv.sn"    (C) 87,88 Y. Le Cun & L. Y. Bottou
+;;;             Standard SN environment
+;;;
+;; modified 96/04, P.Vincent and P.Haffner
+#? stdenv
+;;.SEE (file-existp <f>)
+;;.SEE (file-newerp <f1> <f2>) 
+;;.SEE (change-suffix <string> <ext>)
+;;.SEE (base-name <f>)
+;;.SEE (dir-name <f>)
+;;.SEE (mod-grep <match-string>)
+;;.SEE (mod-grep-unload <match-string>)
+;;.SEE (file-existsp <filename>)
+;;.SEE (file-name <f>)
+;;.SEE (findfile <filename>)
+
+
+
+(setq :operating-system (named (downcase os-string)))
+
+;; operating systems on which dynamic loading (with dld) does work:
+(setq :dld-works (not (not mod-load)))
+
+
+;;; defines libraries and autoload functions
+
+(setq libraries '( "graphenv" "idxenv" ))
+
+(autoload "dz-compile" dz zlambda dz-compile)
+(autoload "ogre"  ogre)
+(autoload "dh-compile" dhc-make dhc-make-with-libs dhc-make-c dhc-make-o dhm
+	  dhc-load dhc-cc)
+
+;;; sets the path
+
+(addpath (concat sn2-dir "examples"))
+(addpath (concat sn2-dir "tools"))
+(addpath (concat sn2-dir "util"))
+(addpath (concat sn2-dir "util/nets"))
+(addpath (concat sn2-dir "util/graph"))
+(addpath (concat sn2-dir "util/ocr"))
+(addpath (concat sn2-dir "diag"))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; file utilities
+
+#? (file-existp <f>)
+;; return () if file <f> does not exist.
+;; BUGGY: BETTER USE FILE-EXISTSP
+(de file-existp (f) (open-read f))
+
+#? (file-newerp <f1> <f2>) 
+;; return t if file <f1> is newer than <f2>, or if <f2> does not exist.
+;; return nil otherwise, or if <f1> does not exist.
+(de file-newerp (f1 f2)
+    (or (not (file-existp f2))
+	(reading (sprintf "|find %s -newer %s -print" f1 f2)
+	  (= (read-string) f1) ) ) )
+
+#? (change-suffix <string> <ext>)
+;; transform a string of the type "blahblah.xxx" to "blahblah.<ext>".
+;; adds a suffix if <string> does not have one.
+(de change-suffix (s newext)
+  (let ((r (regex-subst "\\.([0-9]|[A-z])+$" newext s)))
+    (if (= r s) (concat r newext) r)))
+
+#? (base-name <f>)
+;; return the base name of filename <f>
+(de base-name (f)
+  (let ((n (len f)))
+     (while (and (> n 0) (<> "/" (mid f n 1))) (incr n -1))
+     (regex-subst "\\.([0-9]|[A-z])+$" "" (mid f (1+ n)))
+  )
+)
+
+#? (dir-name <f>)
+;; strip a path name of its last non-slashed string.
+;; handy for getting the directory in which a file resides.
+(de dir-name (f)
+  (let ((n (len f)))
+     (while (and (> n 0) (<> "/" (mid f n 1))) (incr n -1))
+     (left f n)
+  )
+)
+
+(de cfile(s)
+    (let ((cname (concat s ".c"))
+          (oname (concat s ".o")) 
+          (base (dir-name s)) )
+      (when (or (<> :operating-system 'sunos)
+                (dir-existsp (concat base "OBJS")) )
+        (when (not (dir-existsp (concat base "OBJS/" :os-string)))
+          (sys (sprintf "mkdir %sOBJS/%s" base :os-string)) )
+        (setq oname (concat base "OBJS/" :os-string "/" 
+                            (base-name oname) ".o")) )
+      (when (file-newerp cname oname)
+        (dhc-make-o cname oname) ) ) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
+
+
+;; dh-compile has been loaded successfully
+(when ~:dld-works
+
+(de compiled-method-is-inherited (class-name method-name)
+  (let*((found-it ())
+        (ccl (class-cclass (eval class-name))))
+    (when ccl
+      (each ((m (car (cdddr (classinfo-t ccl)))))
+       (let*((s (car m)))
+        (let(((n l)(regex-seek "_.*_" s)))
+          (let*((cname (mid s (+ 1 n) (- l 2)))
+                (mname (mid s (+ n l))))
+             (when (and (= (named mname) method-name)
+                        (<> (named cname) class-name))
+                (setq found-it t)))))))
+     found-it))
+
+  (unlock-symbol mod-load mod-list mod-unload 
+                 mod-undefined mod-status mod-inquire)
+  (de mod-load (o-f)
+     (setq :dyn-objects-list (cons o-f :dyn-objects-list)) "")
+  (de mod-list () ())
+  (de mod-unload args ())
+  (de mod-undefined args ())
+  (de mod-status args ())
+  (de mod-inquire args ())
+  (lock-symbol mod-load)
+  ;; avoid to re-define already statically linked functions
+  (setq interpreted-de de)
+  (unlock-symbol de)
+  (dmd de args
+     '(when ~(and (symbolp (quote `(car args)))(locked (quote `(car args))))
+         (apply interpreted-de (quote `args))))
+  (lock-symbol de)
+  ;; avoid to re-define already statically linked classes
+  (setq interpreted-defclass defclass)
+  (unlock-symbol defclass)
+  (dmd defclass args
+     (let*((clas-sym (car args)))
+       '(when ~(and `clas-sym ;; not nil
+                    (is-of-class `clas-sym class) ;; already a class
+                    (class-cclass `clas-sym))      ;; and it is compiled
+            (apply interpreted-defclass (quote `args)))))
+  (lock-symbol defclass)
+  ;; avoid to re-define already statically linked methods
+  (setq interpreted-demethod demethod)
+  (unlock-symbol demethod defmethod)
+  (dmd demethod args
+     (let*((clas-sym (car args))
+           (method-sym (cadr args)))
+        '(let*((method (check==> `clas-sym (quote `method-sym))))
+             (when ~(and method ;; method exists
+                         (is-of-class method |DEM|) ;; and is compiled
+                         ;; and is not inherited from a superclass
+                         (not (compiled-method-is-inherited
+                               (quote `clas-sym)(quote `method-sym))))
+                   (apply interpreted-demethod (quote `args))))))
+  (setq defmethod demethod)
+  (lock-symbol demethod defmethod)
+)
+
+;;; load libraries
+
+(each ((l libraries))
+      (mload l) )
+
+
+#? (mod-grep <match-string>)
+;;; Returns a list of currently-loaded object module names containing
+;;; the string <match-string>.
+(de mod-grep (match-string)
+	(let* ((out ()))
+	  (each ((mod (mod-list)))
+			(when (regex-match (concat ".*" match-string ".*") mod)
+				  (setq out (cons mod out)) ) )
+	  out ) )
+
+
+#? (mod-grep-unload <match-string>)
+;;;.VP
+;;; Finds currently loaded object modules matching <match-string>,
+;;; and interactively asks whether each should be unloaded.
+;;; Returns the list of modules unloaded.
+(de mod-grep-unload (match-string)
+	(let* ((out ()))
+	  (each ((mod (mod-list)))
+			(when (regex-match (concat ".*" match-string ".*") mod)
+				  (when (ask (concat "Unload " mod))
+						(mod-unload mod)
+						(setq out (cons mod out)) ) ) )
+	  out ) )
+
+
+
+#? (file-existsp <filename>)
+;;.VP
+;; ((-str-) filename):
+;;
+;; RETURNS: t if file exists, () otherwise
+;; CREATED: Pascal Vincent 04/11/96
+;; COMPILABLE: No
+;;
+;; DESCRIPTION: <filename> can be a whole path
+;; This function tells whether the given file REALLY exists THERE,
+;; contrary to function "file-existp" (without a s) that returns 
+;; a non null answer provided the file exists SOMEWHERE in the 
+;; SN path (probably an unforseen feature ... )
+(de file-existsp (filename)
+    ((-str-) filename)
+    (= 0 (sys (concat "test -f " filename))))
+
+
+#? (file-name <f>)
+;;.VP
+;; ((-str-) f):
+;;
+;; RETURNS: the file name at the end of path f
+;; CREATED: Pascal Vincent 04/11/96
+;; COMPILABLE: No
+(de file-name (f)
+    ((-str-) f)
+    (regex-subst "^[^ ]*/" "" f))
+
+#? (findfile <filename>)
+;;.VP
+;; ((-str-) filename)
+;;
+;; CREATED: Pascal Vincent 04/11/96
+;; COMPILABLE: No
+;;
+;; DESCRIPTION Looks for a file in: 
+;;    - the directory of the file-being-loaded
+;;    - the current directory
+;;    - the SN path
+;;
+;; RETURNS: Full path for the file if found. Otherwise ()
+(de findfile (filename)
+    ((-str-) filename)
+
+    (let ((extendedpath (cons "" (cons "./" (path))))
+          (found () ))
+      (when (<> "$stdin" file-being-loaded)
+        (setq extendedpath (cons (dir-name file-being-loaded) extendedpath)))
+      (while extendedpath
+        (let* ((directory (car extendedpath))
+               (file (concat directory filename)))
+          (when (file-existsp file)
+            (setq found file)
+            (setq extendedpath ())))
+        (setq extendedpath (cdr extendedpath)))
+      found))

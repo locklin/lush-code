@@ -1,0 +1,939 @@
+
+#? **** Lush: a quick tutorial
+
+#? *** Installing Lush on Unix
+
+get the tarball from http://sourceforge.net/projects/lush
+unpack it in a convenient place (say /usr/local or
+/home/youruserid). Then cd to <lush> and type <./configure>
+then <make>. If you want to install the Lush executable
+in your path, su to root, and type <make install>.
+
+#? *** starting Lush
+
+If the lush executable was installed in your path,
+you can start lush by simply typing <lush> at the
+Unix prompt. Otherwise you can make a symbolic link
+from anywhere in your path to where the lush
+executable resides (most likely /usr/local/lush/bin/lush
+or /wherever-you-installed-lush/bin/lush> )
+.VP
+amiga% lush
+Copyright (C) 1987-2001 Leon Bottou, Yann Le Cun
+                        Neuristique S.A., AT&T Corp.
+This program is free software; it is distributed under the terms
+of the GNU Public Licence (GPL) with ABSOLUTELY NO WARRANTY.
+Type `(helptool)' for details.
+
+... loading startup file "/usr/local/lush/sys/sysenv.lsh".
+... loading library file "/usr/local/lush/lsh/lushenv.lsh"
+ [.lushrc]
+? 
+.PP
+If you have <cle>, <fep>, or <emacs> installed on your system,
+it is highly recommended to use them to enjoy such niceties
+as command-line editing and history. See the section
+"setting things up" for details on how to do this.
+
+#? *** Getting Help
+
+Lush has an on-line help system. It can be invoked by typing
+<(helptool)> at the Lush prompt, which will popup a graphic
+browser with the manual. A non-graphic version of the on-line 
+help can be invoked by typing <^A> (which can be type either as 
+Control-A or as Caret and A) for general help, or <^Atopic> for 
+help on functions or concepts whose name include <topic>:
+.VP
+  ? ^Amax
+      1.  (draw-value <x> <y> <val> <maxv> <maxs>)
+      2.  (gray-draw-list <x> <y> <l> <ncol> <minv> <maxv> <apart> [<cmap>]))
+      3.  (max <l_1> ... <l_n>)
+      4.  (solve <min> <max> <f>)
+  Your choice? 3
+  
+  ___________________________________________________________________________
+  
+   (max <l_1> ... <l_n>)                                       DX
+  
+   Return the maximum element within <l_1> ...  <l_n>.  Arguments <l_i> may be
+  numbers or strings.
+  ___________________________________________________________________________
+  
+  Your choice? 
+.PP
+The list of symbols whose name contains a particular string can
+be listed using "^Ssymbolstring". 
+.PP
+
+#? *** Basic Syntax
+
+The Lush syntax is probably one of the simplest you will find in any
+programming languages. It is based on Lisp. Don't be scared away by
+te word "Lisp", Lush is probably on of the easiest to learn 
+language you will ever encounter. The big idea is that 
+every expression is a list enclosed in parentheses which, when
+"evaluated", returns a result. The first element of the list is the 
+function being called, and the other elements are its arguments.
+So instead of typing <sqrt(4)> like in C, you type <(sqrt 4)>.
+.PP
+Here is an example of how an expression typed at the Lush prompt is 
+evaluated and its result printed:
+.VP
+  ? (sqrt 4)
+  = 2
+.PP
+The list notation is also used for what we generally think of as infix
+operators,  which in Lush (and other Lisps) are just functions like 
+any other. Instead of writing <3+4>, we write <(+ 3 4)>:
+.VP
+  ? (+ 3 4)
+  = 7
+.PP
+Arguments of most functions are evaluated before the function is called,
+which allows nested expression:
+.VP
+  ? (sqrt (+ 3 4))
+  = 2.6458
+.PP
+Words like <sqrt> or <+> in the previous example are called symbols.
+Symbols can be assigned a value. The value of the symbol <sqrt> in the
+above example is a function that returns the square root of its argument.
+The value of a symbol can be assigned to any lisp object, and therefore
+is the basic mechanism for variables. Assigning a value to a symbol
+is generally performed with the function <setq>:
+.VP
+  ? (setq x 5)
+  = 5
+  ? (* x x)
+  = 25
+  ? (setq x "cou")
+  = "cou"
+  ? (setq x (concat x x))
+  = "coucou"
+.PP
+Variables can be set to any type of Lush object. In interpreted mode, the 
+types of the variables need not be declared, but they they must be 
+declared if the code is to be compiled (more on that later). 
+Variables can be assigned numbers, matrices and vectors, strings, lists, 
+functions, macros, classes, and several other predefined objects types
+(such as windows and files), as well as user-defined objects 
+(instances of user-defined classes).
+.PP
+
+#? *** Basic Types
+
+Lush has a small number of basic types, a number of not-so-basic
+built-in types, and a mechanism for creating new types (classes).
+The basic types include numbers (stored as 8-byte double-precision 
+floating point numbers), generic pointers, and list cells.
+The not-so-basic types include strings, symbols, six major types of 
+functions (called DE, DF, DM, DX, DY, and DZ), nine types of vector 
+storage structures (for storing bytes, unsigned bytes, shorts, ints, 
+floats, doubles, generic pointers, and lisp objects), one type
+of vector/matrix/tensor access structure, two types of file 
+descriptors, hash tables, graphic windows, classes, and dates.
+New types with slots and methods (a la C++) can also be defined
+by deriving from the base class <object>.
+.PP
+Some of the types can be entered as literals:
+.IP
+numbers: <(setq x -3.4e6)>)
+.IP
+strings: <(setq x "coucou")>)
+.IP
+symbols: <(setq x 'coucou)>
+.IP
+lists: <(setq x '(1 2 3))>
+.PP
+Numbers and strings have the interesting property that they
+evaluate to themselves, i.e. they return themselves when typed
+on the line or in an expression. On the other hand, symbols evaluate 
+to their assigned value, and lists evaluate to the result of applying 
+their first element (interpreted as a function) to the rest of the 
+elements (the arguments). That's why symbol and the list in the above
+example are preceded by a quote. The quote prevents what follows from
+being evaluated. Without the quote <coucou> would return its value
+(or the empty list <()> if it has no value), while <(1 2 3)> would
+produce an error because <1> is not a function.
+
+#? *** defining functions
+
+Functions can be defined in many ways, but the most common one is
+to use the <de> construct (similar to the <defun> construct in 
+most other Lisps). The general form is:
+.VP
+(de <name> (<arg1>.....<argn>) <body>)
+.PP
+Here is a specific example:
+.VP
+  ? (de square (x) (* x x))
+  = square
+  ? (square 4)
+  = 16
+.PP
+This definition should be interpreted as follows. <de> means "define
+function", it is followed by the function name "<square>", a list of
+formal argument variables <(x)>, and the body of the function 
+<(* x x)>, which means multiply <x> by itself and return the result.  
+The return value of the function is the value returned by the last 
+evaluation in the body.
+.PP
+The definition of a particualr function can be displayed 
+by typing <^Pfunctionname>:
+.VP
+  ? ^Psquare
+  (de square (x)
+    (* x x) )
+  = t
+.PP
+The directive "^P", like "^A" introduced earlier is a so-called
+macro-character. Macro-characters are special combinations of characters that
+are translated into function calls by the interpreter. Lush has several
+predefined macro-characters to reduce typing for several commonly used
+interactive functionalities. A particularly useful one is "^Lfilename"
+which loads a Lisp source file (more on this later).
+.PP
+
+#? Loops, conditionals, local variables, and such
+
+Lush provides traditional loop constructs such as <for>, <while>,
+<repeat>, an so on. Here is an example of how to compute the sum of the
+first 10 integers. [Naturally this is a very stupid way to compute the sum 
+of the first 10 integer since there is a closed form expression for it] (the
+function <incr> increments its first argument by the value of its
+second argument, or by 1 if the second argument is not present, and
+returns the result):
+.VP
+  ? (setq z 0)
+  = 0
+  ? (setq i 0)
+  = 0
+  ? (while (< i 10) (incr i) (incr z i)) 
+  = 55
+  ? z
+  = 55
+.PP
+Encapsulating the above code in a function requires the use of a local variable
+which can be done with the <let*> construct:
+.VP
+  ? ;; compute the sum of the first n integers
+  ? (de first-sum (n) 
+        (let* ((z 0) (i 0)) (while (< i 10) (incr i) (incr z i))))
+  = first-sum
+  ? (first-sum 10)
+  = 55
+.PP
+In Lush, the text that follows one or several semi-colons on a line is
+taken as comment and ignored by the interpreter.
+The <let*> construct is used as follows: 
+.VP
+  (let* ((<var1> <value1>) ... (<varN> <valueN>)) 
+        <body1> ... <bodyP>)
+.PP
+It returns the result of the evaluation of <bodyP>.
+This is similar to the following C construct:
+.VP
+  { <type1> <var1> = <value1>; 
+    ... 
+    <typeN> <varN> = <valueN>; 
+    <body1>
+    ....
+    return <bodyP>
+  }
+.PP
+
+#? *** Compiling Lush functions
+
+The <first-sum> function defined above can be compiled, but that
+requires specifying the type of the variables (so that the compiled code need
+not do inefficient run-time type checking). The compilable definition for
+<first-sum> is:
+.VP
+  ? ;; define the function
+  ? (de first-sum (n)
+        ((-int-) n)
+        (let* ((z 0) (i 0))
+	  ((-int-) z i)
+          (while (< i n) (incr i) (incr z i)))))
+  = first-sum
+.PP
+The lines <((-int-) n)> and <((-int-) z i)> declare the type of
+the argument <n> and the local variables <z>, and <i> as
+integers.  Before we compile the function, let's measure the number of CPU
+seconds required to compute the sum of the first 100000 integers in
+interpreted mode (this is on a 300MHz PII running Linux):
+.VP
+  ? (time (first-sum 100000))
+  = 0.5
+.PP
+We can compile the function by simply typing <(dhc-make "junk" first-sum)>.  
+Lush will translate the Lisp code into C and write the C source
+into the file "junk.c". The C compiler will then compile the code and generate
+the object file "OBJS/<os>/file.o", where <os> is the name of the architecture
+on which Lush is currently running (LINUX86, SGI, SOLARIS...). This allows to 
+maintain object files for different architectures in a single source 
+directory tree.  Then, Lush's dynamic loader will automagically load the 
+object code back into the interpreter.
+.VP
+  ? (dhc-make "junk" first-sum)
+  Preprocessing first-sum...
+  ...Done
+  Parsing types for first-sum...
+  ...Done
+  Generating C code first-sum...
+  ...Done
+  "cc -I/usr/local/lush/include -I. -c -DSGI -O -float -o OBJS/LINUX86/junk.o C/junk.c" 
+.PP
+Now let's see how many CPU seconds it takes to execute the compiled version of
+the code. We need to repeat the code 1000 times to get a meaningful figure:
+.VP
+  ? (time (repeat 1000 (first-sum 100000)))
+  = 1.01
+.PP
+The speedup is approximately 2000. Of course, it's not always that
+good, it is usually more in the 50-100 range, but it's usually just as
+fast as C.  An important point to remember is that the interpreter
+always treats numbers as double precision floating point, while
+numbers in compiled code a treated as specified by their type
+declaration.  Lush understands the following scalar types: <-ubyte-,
+-byte-, -short-, -int-, -float-, -double-, -bool-, -gptr->.  they
+correspond respectively to the C types <unsigned char, signed char,
+short, int, float, double, unsigned char, void*>.
+.PP
+Now let's look at the C code generated by Lush's Lisp to C compiler in
+<junk.c>:
+.VP
+  int 
+  C_first_sum (L1_n)
+  int L1_n;
+  {
+    TRACE_PUSH ("C_first_sum");
+    {
+      int L_Tmp0;
+  
+      {
+        int L2_1_z;
+        int L2_2_i;
+  
+        L2_1_z = 0;
+        L2_2_i = 0;
+        L_Tmp0 = 0;
+  /* While loop */
+        goto L_1;
+      L_0:
+        {
+  	L2_2_i = (L2_2_i + 1);
+  	L2_1_z = (L2_1_z + L2_2_i);
+  	L_Tmp0 = L2_1_z;
+        }
+  /* While loop test */
+      L_1:
+        {
+  	if ((L2_2_i < L1_n))
+  	  goto L_0;
+        }
+      }
+      TRACE_POP ("C_first_sum");
+      return L_Tmp0;
+    }
+  }
+.PP
+Pretty simple and straightforward code.
+.PP
+
+#? *** Writing Lush program files
+
+The normal way to write Lush code is to open a file, say "toto.lsh", in your
+favorite editor, and to write all the necessary function definitions and
+compilation instructions in it. The file can then be loaded into the
+interpreter with <(load "toto")>. For example, a Lush file for the above
+function would contain:
+.VP
+  ;; a function that computes the sum of the first n integers.
+  (de first-sum (n)
+      ((-int-) n)
+      (let* ((z 0) (i 0)) 
+        ((-int-) z i)
+        (while (< i n) (incr i) (incr z i))))
+  
+  ;; compile the function to toto.c and toto.o
+  ;; if the first arg is nil, the .c file has the same 
+  ;; base name as the file being loaded.
+  (dhc-make () toto)
+.PP
+When loading this file, Lush processes its content as if it were typed at the
+prompt. The compilation into C and object code will only be executed if the
+source file <toto.lsh> has been modified since the last compilation.
+The use of GNUemacs to edit Lush files is very strongly recommended as
+it has a special Lisp mode that flashes matching parentheses, highlights
+keywords and comments, and automatically indents Lisp expressions (using
+ALT-CTRL-Q). More details on how to setup Emacs are given in
+the "setting things up" section.
+
+#? *** On-line Documentation
+
+As we said earlier, Lush possesses an on-line help system. This system can be
+used by Lush users to document their own programs. Its use is strongly
+recommended. Documenting functions or other objects
+can be done with the ``#?'' macro-character. Here is what <toto.lsh> should
+have looked like in the first place:
+.VP
+  #? (first-sum <n>)
+  ;; computes the sum of the first <n> integers.
+  (de first-sum (n)
+      ((-int-) n)
+      (let* ((z 0) (i 0)) 
+        ((-int-) z i)
+        (while (< i n) (incr i) (incr z i))))
+  
+  ;; compile the function to toto.c and toto.o
+  (dhc-make "toto" toto)
+.PP
+The string after the "#?" is what will be searched when "^A" is invoked at
+the lisp prompt. Contiguous comment lines immediately following the "#?"
+line constitute the text of the help. After this file is loaded, the on-line
+help for <first-sum> can be displayed:
+.VP
+  ? ^Asum
+      1.  (first-sum <n>)
+      2.  (sum <l>)
+  Your choice? 1
+  
+  ______________________________________________________________________________
+  
+   (first-sum <n>)                                             DE    toto.lsh
+  
+   computes the sum of the first <n> integers.
+  ______________________________________________________________________________
+  
+  Your choice? 
+  = ()
+.PP
+
+#? *** Calling C functions from Lush
+
+The ability to freely mix Lisp and C code is one of the most
+interesting features of Lush.
+.PP
+Let's say you have written a C file called <tt>titi.c</tt> with the 
+following content:
+.VP
+  float sq(float x)
+  {
+    return x*x;
+  }
+.PP
+You have compiled the file and produced the object file <titi.o>.
+Calling <sq> from the Lush interpreter is as simple as the following.
+First, dynamically load the object file into Lush
+.VP
+  ? (mod-load "titi.o")
+.PP
+then, write a lisp function whose only purpose is to call <tt>sq</tt>.
+To be able to call C from Lush, we need to load the "cmacro" library.
+.VP
+  ? (mload "cmacro")
+  [/usr/local/lush/lsh/cmacro.lsh]
+  = "/usr/local/lush/lsh/cmacro.lsh"
+  ? (de square (x) ((-float-) x) 
+        (cheader "extern float sq(float);")
+        (float #{ sq( $x ) #} )
+.PP
+Here is what the above means: <(de square (x) ...)> means define a new Lisp
+function called <square> with a single argument <x>.
+<((-float-) x)> simply declares <x> as float.  <(float ....)> converts 
+its argument to float (like a cast in C).  The sequence
+<#{ .... #}> allows to insert C code within Lisp code.  Therefore
+<#{ sq( $x ) #}> simply calls the C function <sq> and returns
+the result.  Lisp variables can be inserted in in-line C code by prepending a
+Dollar sign, thus <$x> refers to the Lisp float variable <x>.  
+The <cheader> directive allows one to include a string in the "header"
+section of the C files generated by the Lisp to C compiler. We use it here
+to specify the type of the argument and the return value of <sq>.
+.PP
+We can now compile the above function using:
+.VP
+  ? (dhc-make "junk" sq)
+.PP
+Two file <junk.c> and <junk.o> will be generated with the C
+source and the object code for <square>.  Now <square> can be
+called from the Lisp interpreter:
+.VP
+  ? (square 5)
+  = 25
+.PP
+In the above example, the <float> casting function was used to
+tell the compiler what type the returned value has.  The following
+"cast" functions are available: <number, flt, float, int, real,
+double, bool, gptr>.  These functions cast their argument to the
+corresponding type.
+
+#? *** Mixing Lisp and inline C code
+
+If we do not have a ready-made C file for our function, we can use
+the inline C capability to write to function in C right in the Lisp
+function. Here is how we could write the <first-sum> function
+this way:
+.VP
+  (de first-sum (n)
+      ((-int-) n)
+      (let ((r 0))
+        ((-int-) r)
+        #{ { int z, i;
+             z=0; i=0;
+	     while ( i < $n ) { i++; z += i; };
+	     $r = z;
+	    }
+	 #}
+         r))
+  (dhc-make () first-sum)
+  Preprocessing first-sum...
+  ...Done
+  Parsing types for first-sum...
+  ...Done
+  Generating C code first-sum...
+  ...Done
+  "cc -I/usr/local/lush/include -I. -c -DLINUX86 -O -o OBJS/LINUX86/first_sum.o first_sum.c" 
+  = (first-sum)
+  ? (time (repeat 1000 (first-sum 100000)))
+  = 0.77
+.PP
+That's about 23 percent faster than the version written 
+entirely in Lisp and compiled.
+
+#? *** Multiple file programs and search path
+
+Sometimes, a Lisp program requires other Lisp files to be loaded in order to
+run. For example imagine that we have written a set of signal processing
+functions in the file <"/usr/yann/lsh/dsp.lsh">, and now we are writing a
+program <"tutu.lsh"> that uses some of those functions.  The beginning of
+<"tutu.lsh"> would look like the following
+.VP
+  #? File "tutu.lsh"
+  ;; my really cool dsp application
+  
+  (load "/usr/yann/lsh/dsp")
+  .....
+.PP
+(the <.lsh> extension is automatically added if required).  However, if
+<"tutu.lsh"> is loaded by other programs that also load <"dsp.lsh">
+on their own, <"dsp.lsh"> will be loaded several times.  This can be
+alleviated by using the function <libload> which loads a file only if it
+has not been loaded before.
+.VP
+  #? File "tutu.lsh"
+  ;; my really cool dsp application
+  
+  (libload "/usr/yann/lsh/dsp")
+  .....
+.PP
+Putting absolute path names in a program is generally a bad idea since
+programs have a pernicious tendency to move from time to time.  The solution
+is to rely on Lush's search path mechanism. When any loading directive is
+executed, Lush looks for the file in the current directory, and then in the
+search path. The default search path includes <lush/local, lush/packages,
+lush/lsh, and lush/sys>. The search path
+can be user-extended with the <addpath> function:
+.VP
+  (addpath "/usr/yann/lsh")
+.PP
+now, loading <"dsp.lsh"> only requires:
+.VP
+  (libload "dsp")
+.PP
+
+#? *** Setting things up
+
+To use Lush comfortably, most people rely on one of two following methods:
+running Lush within "cle" or "fep", or running it withing Emacs.
+.PP
+cle and fep are convenient Unix utility that add history and 
+command-line edition capabilities to any commend line-based program.
+To install cle on Unix, go to http://freshmeat.net and search for cle.
+.PP
+Most people will prefer to run Lush from within Emacs.  To make this
+convenient, a few lines should be included in your .emacs file so as
+to correctly format and indent Lush Lisp code, hilite the commands
+apropriately, and automatically turn on the Lisp mode whenever an
+Lush file is loaded. Such additions to the .emacs file are given in 
+the section "emacs configuration file".
+.PP
+Then, in your bin directory, make a symbolic link from "lisp"
+to the Lush executable:
+.VP
+amiga% ln -s /usr/local/lush/bin/lush /home/yann/bin/lisp
+.PP
+When in Emacs, type "ESC-X run-lisp" (or M-X run-lisp).
+This will start Lush in the directory of the current buffer file.
+.PP
+It is convenient to split the Emacs window into two. 
+The bottom window will be the Lush execution buffer (called
+"*inferior-lisp*) while the top window will contain the
+Lush source file being worked on.
+.PP
+Emacs provides nice commands for Lisp programming. Among them
+are C-M-e (Ctrl-Meta-e) to jump to the end of a function, 
+C-M-a to jump to the beginning, C-M-q to indent/format
+a function,and C-M-x to send the function or expression in 
+which the cursor is to the interpreter (assuming it is 
+running in the *inferior-lisp* buffer).
+
+#? *** Scalars, Vectors, Matrices, Tensors, and Storages
+
+Lush's piece de resistance is its matrix engine. Lush can operate
+on scalars, vectors, matrices, or high-dimensional tensors from
+0 to 8 dimensions. creating a tensor of <float> is done simply with:
+.VP
+  ? (setq m (matrix 10 8 4))   ; create 3D matrix
+  = ::INDEX3:<10x8x4>
+  ? (m 3 4 2 45.6)       ; set value of element (3,4,2) to 45.6
+  = ::INDEX3:<10x8x4>
+  ? (m 3 4 2)            ; get value of element (3,4,2).
+  = 45.6
+.PP
+Tensors of various basic types can be created with the functions
+listed below. Each function has two versions, the regular version 
+initializes all the elements to zero, while the version with <-nc> 
+at the end do not (no clear) and are a bit faster. All of these 
+functions take 0 to 8 integer arguments that are the sizes in 
+each dimension:
+.IP
+<double-matrix, double-matrix-nc, real-matrix, real-matrix-nc>: doubles
+.IP
+<float-matrix, float-matrix-nc, flt-matrix, flt-matrix-nc>: floats
+.IP
+<int-matrix, int-matrix-nc>: 32-bit ints
+.IP
+<short-matrix, short-matrix-nc>: 16-bit shorts
+.IP
+<byte-matrix, byte-matrix-nc>: 8-bit bytes
+.IP
+<ubyte-matrix, ubyte-matrix-nc>: 8-bit unsigned bytes
+.IP
+<gptr-matrix, gptr-matrix-nc>: generic pointers (void*)
+.PP
+A matrix with 0 dimension is called a scalar. It is different from
+a regular number in that it behaves like a pointer to a number.
+(the value of a scalar passed as argument to a function can be 
+modified by that function).
+.PP
+Matrices of floats can be entered literally using square brackets:
+.VP
+  (setq m [[0 2 3 4][5 6 7 8]])
+.PP
+Matrices are really composed of two separate entities:
+.IP
+the <storage> or <srg> which contains the following fields:
+a pointer to the actual data, an element type identifier (and the 
+size thereof), and flags that indicate if the data is writable or 
+not, if it is in RAM or memory-mapped from a file.
+.IP
+the <index> or <idx> points to a <srg> and contains the
+following fields: the number of dimensions of the tensor,
+the size in each dimension, the address increment from one element to
+the next in each dimension (called <modulo>), and the offset
+of the first tensor element in the <storage>. This structure
+allows multiple <idx> to point to the same <srg> thereby allowing
+the data to be accessed in multiple ways.
+.PP
+
+#? ** Storages
+
+<srg> and <idx> can be created independently of each other.
+So for example <(setq s (double-storage 8))> creates a new storage
+of doubles with 8 elements. The call <(double-storage)> returns
+an unsized storage. Creating an idx on a particular storage
+<s> can be done with <(new-index s '(3 4))>. This resizes the storage
+<s> to 12 elements (if it has less than that), and creates an idx
+of size (3,4) on this storage. Creating other idxes on the same
+storage allows to access the same piece of data in multiple ways.
+.PP
+Storage behave like 1D idx (vectors). Storages can be created, 
+allocated in memory, or memory-mapped to a file. Storage creation
+function are provided for the following types: doubles, floats, 
+ints, shorts, bytes, unsigned bytes, generic pointers, and lisp 
+object pointers.
+
+#? ** Manipulating Tensors and IDX
+
+Several functions are provided to create and 
+manipulate the "idx" structure and its various fields.
+.IP
+<(new-index s dimlist> creates a new idx on storage <s>. The
+dimensions of the idx are given in <dimlist>. The storage is resized
+if needed.
+.IP
+<(idx-clone m)> make a clone of idx <m> (a copy of <m>
+  that points to the same storage).
+.IP
+<(copy-matrix m [r])> returns a fresh copy of tensor <m>.
+ if <r> is present, <m> is copied into <r> with apropriate
+ type conversion if necessary.
+.IP
+<(idx-ndim m)> return number of dimensions.
+.IP
+<(idx-dim m n)> return size of n-th dimension.
+.IP
+<(idx-modulo m n)> return number of elements that separate two 
+  successive elements in the n-th dimension.
+.IP
+<(idx-offset m)> return offset of first element of <m> in storage.
+.IP
+<(idx-size m)> return size of memory are used by idx data in bytes.
+.IP
+<(idx-storage m)> return storage pointed t by <m>.
+.IP
+<(contiguep m)> returns true if the elements of <m> are
+  contiguous in memory.
+.PP
+
+#? ** tensor iterators
+
+Lush provides efficient iterators to cycle over dimensions of a tensor.
+It is almost always better to use those iterators, rather than a regular
+loop with regular access to array elements because the latter method causes
+an array bound checking at each access, while the former doesn't.
+The main idx iterator is <idx-bloop> whose synopsis is as follows:
+.VP
+  (idx-bloop ((s1 idx1) [ (s2 idx2) [...(sn idxn) ]]) body)
+.PP
+Each <si> will be an idx with one less dimension than the
+corresponding <idxi>, and will simulataneously loop over the
+successive "slices" of <idxi> for each possible value of the
+first index. In other words, applying function <myfunc> to each
+element of a vector <v1> and putting the result in the 
+corresponding element in <v2> can be done with:
+.VP
+  (idx-bloop ((x1 v1) (x2 v2)) (x2 (myfunc (x2))))
+.PP
+<x1> and <x2> are scalars (i.e. zero-dimensional tensors). 
+It should not be assumed that the multiple evaluations of the
+body are executed in sequence. They may be executed in parallel
+on some implementations of Lush.
+A similar function <idx-eloop> iterates on the last dimension
+of a tensor instead of the first dimension.
+For example, the matrix product operation <A*B -> C> can be written 
+as follows:
+.VP
+  (de idx-m2timesm2 (A B C) 
+     (idx-eloop ((Bj B)(Cj C)) (idx-m2dotm1 A Bj Cj)))
+.PP
+where <idx-m2dotm1> is the usual matrix-vector product. The <idx-eloop>
+construct simultaneously iterates over all columns of <B> and <C>.
+.PP
+Another idx iterator allows to easily write the innor loop of a
+tensor operation in C, while leaving all the bookkeeping to the
+Lisp:
+.VP
+ (cidx-bloop (i_1 [i_2...i_n] (c_1 l_1) [(c_1 l_1)...(c_m l_m)) p_1 [p_2...])
+.PP
+This is somewhat equivalent to <n> nested <idx-bloop>s, which will 
+simultaneously loop over the first <n> dimensions of idxs <l_1> to <l_m>.  
+The arguments <i_1> to <i_n> are strings containing names of C local 
+variables that will be set to the loop index in each of the <n> dimensions.
+At each iteration, the C variables provided in strings <c_1> to <c_m> will 
+point to the appropriate values in the idxs <l_1> to <l_m>.  
+For example, the following function will fill matrix a with cos(i+j).
+.VP
+    (de foo (a)
+       ((-idx2- (-flt-)) a)
+       (cidx-bloop ("i" "j" ("a" a)) #{ *a = cos(i+j); #}) a)
+.PP
+The return value is (like in idx-bloop) the last idx specified in the
+declaration (in the example above, the return value is superfluous).  
+
+#? ** idx manipulations
+
+Several functions are provided to conveniently manipulate
+the idx structure itself. These functions do not manipulate the
+actual data (and therefore are efficient), they merely derive
+new idx from existing idx to access the data in new ways.
+.PP
+<(narrow m n s [o])> returns a clone of idx <m> where the
+  size in the <n>-th dimension is reduced to <s> elements, 
+  offset by <o>. This can be used to select bands or 
+  rectangular areas in matrices.
+.VP
+  ? (setq m [[0 2 3 4][5 6 7 8]])
+  = [[ 0.00  2.00  3.00  4.00 ]
+     [ 5.00  6.00  7.00  8.00 ]]
+  ? (narrow m 1 2 1)
+  = [[ 2.00  3.00 ]
+     [ 6.00  7.00 ]]
+.PP
+<(select m n s)> return a clone of <m>, with the <n>-th
+dimension removed, and which is the <s>-th "slice" of <m>, 
+in the n-th dimension. For example, the 3rd column of matrix <m>
+in the above example (which is a vector) can be obtained with
+.VP
+  ? (select m 1 2)
+  = [ 3.00  7.00 ]
+.PP
+<(unfold m n ksize step)> returns an idx with an added dimension 
+at the end of <m> obtained by "unfolding" <n>-th dimension. More
+explicitely, successive rows in the last dimension will contain
+successive, possibly overlapping, subsets of size <ksize> of 
+consecutive elements in the <n>-th dimension. The separation
+between successive subsets is <step>. Here is an example:
+.VP
+  ? (setq m [0 1 2 3 4 5 6 7])
+  = [ 0.00  1.00  2.00  3.00  4.00  5.00  6.00  7.00 ]
+  ? (unfold m 0 3 1)
+  = [[ 0.00  1.00  2.00 ]
+     [ 1.00  2.00  3.00 ]
+     [ 2.00  3.00  4.00 ]
+     [ 3.00  4.00  5.00 ]
+     [ 4.00  5.00  6.00 ]
+     [ 5.00  6.00  7.00 ]]
+.PP
+No data is copied or replicated in the process, i.e., the
+three occurences of the number 2 in the above example
+actually come from a single memory location. The size of the 
+new dimension is <ksize>. If <dimn> is the size of the <n>-th 
+dimension of <m>, the size of the returned idx in the <n>-th 
+dimension is < (dimn-ksize)/step + 1 >. The values of <dimn>,
+<ksize>, and <step> must be such that the new size is an integer.
+.PP
+The unfold function essentially allow to reduce a discrete
+convolution to a matrix-vector product. Here is an example:
+.VP
+  ? (setq m [1 1 0 2 3 4 2 0])
+  = [ 1.00  1.00  0.00  2.00  3.00  4.00  2.00  0.00 ]
+  ? (setq kernel [-1 2 -1])
+  = [-1.00  2.00 -1.00 ]
+  ? (setq output (matrix 6))
+  = [ 0.00  0.00  0.00  0.00  0.00  0.00 ]
+  ? (idx-m2dotm1 (unfold m 0 3 1) kernel output)
+  = [ 1.00 -3.00  1.00  0.00  3.00  0.00 ]
+.PP
+A subsampled convolution can be implemented by unfolding
+with a <step> larger than 1:
+.VP
+  ? (setq m [0 1 2 3 4 5 6  7 8])
+  = [ 0.00  1.00  2.00  3.00  4.00  5.00  6.00  7.00  8.00 ]
+  ? (setq z (unfold m 0 3 2))
+  = [[ 0.00  1.00  2.00 ]
+     [ 2.00  3.00  4.00 ]
+     [ 4.00  5.00  6.00 ]
+     [ 6.00  7.00  8.00 ]]
+  ? (setq kernel [1 2 1])
+  = [ 1.00  2.00  1.00 ]
+  ? (idx-m2dotm1 z kernel output)
+  = [ 4.00 12.00 20.00 28.00 ]
+.PP
+<(idx-transclone m dimlist)> returns a clone of idx <m> where
+the dimensions have been permuted according to the list of dimension indices
+<dimlist>. For example <(idx-transclone m '(0 2 1))> permutes
+the second and third dimensions (again, no data is moved or copied
+by this operations).
+.PP
+A few functions are provided to physically hack an idx
+to change a dimension, a modulo, or the offset
+(repectiveley <(idx-changedim m n v), (idx-changemod m n v),
+(idx-changeoffset m n)> ).
+.PP
+
+#? ** simple tensor operations
+
+Lush has lots of functions that operate on tensors of all types. 
+These include component-wise unary operations (applying a function
+to all the elements of a tensor), such as <abs, atan, clear, copy,
+cos, sin, exp, log, minus, sqrt,....>. They all take the form
+.VP
+ (idx-XXX m [r])
+.PP
+where XXX is one of the above function, <m> is the input matrix
+(from 0 to 8 dimensions) and <r> is an optional result matrix
+which must have the same dimensions as <m>. If <r> is not present,
+the result is created and returned.
+.PP
+Also available are component-wise dyadic operations such as 
+<add, sub, mul, div>. They take the form
+.VP
+ (idx-XXX m1 m2 [r])
+.PP
+Next come dyadic operations where the second argument is a scalar,
+such as <(idx-addm0 m s [r])> which adds scalar <s> to each element 
+of tensor <m>, or <(idx-addm0acc m s r)> which does the same thing
+but accumulates the result in <r>, or <(idx-dotm0 m1 s [r])> which
+multiplies each element of <m> by scalar <s>.
+
+#? ** contracting operations with scalar result
+
+A number of functions are provided that take one or two
+input tensors and write the result in a scalar. Such functions
+include dot products, distances, sums of terms.
+They "contract" all the dimensions, i.e. the generalized dot product 
+of two tensors is the sum of all the products of corresponding 
+terms in the two tensors:
+.VP
+  (idx-dot m1 m2 [r])> 
+.PP
+Other such functions include <idx-inf> (smallest element), 
+<idx-sqrdist> (sum of square difference between two tensor),
+<idx-sum> (sum of all terms), <idx-sumsqr> (sum of squares),
+<idx-sup> (largest element)
+
+#? ** special inner and outer products
+
+There are several special functions that apply only
+to tensors of floats. They include <(idx-m1extm1 m1 m2 [r])> 
+(outer product of vectors), <(idx-m2dotm1 m v [r])> 
+(matrix-vector multiply), <(idx-m2extm2 m1 m2 [r])> 
+(outer product of matrices which gives a 4D tensor),
+<(idx-m4dotm2 m v [r])> (product of a 4D-tensor by a matrix).
+
+#? *** Introduction to objects
+
+Lush is an object-oriented laguage that allows users to 
+define hierarchies of classes with inheritance, slots, 
+and methods. Naturally, Lush has a number of built-in 
+classes such as numbers, list cells, strings, symbols, etc,
+but this section will concentrate on user-defined classes.
+.PP
+User defined classes are derived from the root class <object>
+with constructs like this:
+.VP
+  (defclass rectangle object width height)
+.PP
+This can be interpreted as: define the class <rectangle>
+as a subclass of <object> with two slots <width> and <height>.
+.PP
+A new instance of the class <rectangle> can be created with:
+.VP
+  (setq r (new rectangle))
+.PP
+By default, the slots are left unfilled (set to the empty list).
+Accessing slots of an object can be done with the macro-character "<:>"
+.VP
+  ? (setq :r:width 10)
+  = 10
+  ? (setq :r:height 3)
+  = 3
+  ? ^Pr
+  ;;*** ::rectangle:819fa08, INSTANCE OF ::class:rectangle
+  ;; FROM CLASS: rectangle
+  ;;      width=10
+  ;;      height=3
+  ;; FROM CLASS: object
+.PP
+Classes can be given methods (or member functions in the C++ semantics)
+defined as in the following example:
+.VP
+  (defmethod rectangle area () (* height width))
+.PP
+This defines the method <area> for the class <rectangle>
+which takes no argument, and returns the product of the
+<height> and <width>. This is essentially similar to 
+defining a function with <de>. Within the body of a method,
+the slots of the object are directly accessible by name. 
+The variable <this> is also set to the current instance.
+Calling the above method can be fone as follows:
+.VP
+  ? (==> r area)
+  = 30
+.PP
+
+
+#? *** Introduction to Lush Graphics
+

@@ -1,0 +1,224 @@
+#? File "audio-sgi"
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; SN objects to grab and play audio on the SGI 
+;; in stereo at 16 bits per sample.
+;; The sampling rate, playing rate, recording level and
+;; and playing volume cannot be set with these object.
+;; This must be done with the audiopanel.
+;;.SEE audioin-sgi
+;;.SEE audioout-sgi
+
+(mload "audio/sgi-al")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? audioin-sgi
+;; a simple object for grabbing audio on an SGI at
+;; 16 bits per sample in stereo. An audio frame
+;; is a pair of samples (one from each channel).
+;; To read audio, simply do:
+;;.VP
+;; ? (setq a (new audioin-sgi 100000 "junk"))
+;;.PP
+;; then repeatedly call:
+;;.VP
+;; ? (setq m (==> a readallframes))
+;;.PP
+;; The returned matrix <m> is an Nx2 idx2 of shorts that
+;; contains the latest samples (or the latest that were
+;; not dropped). Element (i,0) of <m> contains the i-th
+;; sample from the left channel, and element (i,1)
+;; from the right channel.
+;;.SEE (new audioin-sgi <bufsize> <name>)
+;;.SEE (delete <audioin-sgi>)
+;;.SEE (==> <audioin-sgi> buffersize)
+;;.SEE (==> <audioin-sgi> filledframes)
+;;.SEE (==> <audioin-sgi> fillableframes)
+;;.SEE (==> audioin-sgi readframes <buf>)
+;;.SEE (==> audioin-sgi readallframes)
+(defclass audioin-sgi object
+  ((-gptr- "ALport") port)
+  ((-gptr- "ALconfig") config)
+  ((-int-) bufsize)
+  ((-str-) name))
+
+#? (new audioin-sgi <bufsize> <name>)
+;; creates a new SGI audio input object.
+;; This object is preset to grab 16 bits per sample
+;; in stereo. The sampling rate and input level can be
+;; adjusted with the SGI application "audiopanel", and
+;; are currently not under SN control.
+;; <bufsize> is the number of samples allocated for the
+;; internal buffer. <name> (a string) is a port
+;; name for human consumption.
+;; The buffer should be large enough that it does not
+;; fill up between calls to readframes or readallframes,
+;; otherwise audio samples will be droped.
+;; Samples are stuffed in the buffer until it is full
+;; or until readframes or readallframes is called.
+(defmethod audioin-sgi audioin-sgi (bufsiz nam)
+  ((-int-) bufsiz)
+  ((-str-) nam)
+  (setq name nam)
+  (setq bufsize bufsiz)
+  (setq config (alNewConfig))
+  (when (< (alSetQueueSize config bufsize) 0)
+    (error "audioin-sgi: could not set buffer size"))
+  (alSetWidth config 2)                 ; set smaple to 16 bits
+  (alSetSampFmt config 1)               ; sample = signed short
+  (when (<> 0 (alSetChannels config 2))              ; stereo
+    (error "audioin-sgi: could not get 2 channels"))
+  (when (not (setq port (alOpenPort name "r" config)))
+    (error "audioin-sgi: could not open audio port"))
+  port)
+
+#? (delete <audioin-sgi>)
+;; destructor for <audioin-sgi>
+(defmethod audioin-sgi delete ()
+  (alFreeConfig config)
+  (alClosePort port))
+
+#? (==> <audioin-sgi> buffersize)
+;; returns the total size of the internal audio buffer.
+(defmethod audioin-sgi buffersize () bufsize)
+
+#? (==> <audioin-sgi> filledframes)
+;; returns the number of audio frames that have been sampled 
+;; into the internal buffer, and are therefore available for
+;; reading with readframes.
+(defmethod audioin-sgi filledframes () (alGetFilled port))
+
+#? (==> <audioin-sgi> fillableframes)
+;; returns the number of 
+;; returns the number of free frames in the buffer
+(defmethod audioin-sgi fillableframes () (alGetFillable port))
+
+#? (==> audioin-sgi readframes <buf>)
+;; reads audio frames into <buf>.
+;; <buf> must be an Nx2 idx2 of shorts.
+;; N stereo samples will be read from the audio input.
+;; The first column of <buf> contains samples from the
+;; left channel and the second column from the right channel.
+;; The execution blocks until N frames are available
+;; from the audio buffer, so it is advisable to call 
+;; the method <filledframes> to know how many frames 
+;; can be read.
+;; CAUTION: when the internal buffer is full, the incoming
+;; samples are dropped. Calls to readframes read the samples
+;; that were recorded before the buffer filled up (which
+;; may be a long time ago).
+(defmethod audioin-sgi readframes (buf)
+  ((-idx2- (-short-)) buf)
+  (when (> (idx-dim buf 0) bufsize)
+    (error "audioout-sgi: too many samples for audio buffer"))
+  (audio-read-sgi port buf (idx-dim buf 0)))
+
+
+#? (==> audioin-sgi readallframes)
+;; read all the available audio frames, and
+;; return an idx2 of shorts with the samples.
+;; The first column of <buf> contains samples from the
+;; laft channel and the second column from the right channel.
+;; This function does not block for more time than
+;; is required to get one single sample.
+;; The time between to successive calls to readallframes
+;; should be less than the time to fill up the internal
+;; audio buffer. Otherwise the most recent samples will
+;; be dropped. So if readallframes has not been called for
+;; a while, you must call it once (and ignore the result) 
+;; to empty the buffer of old data, and then call it another
+;; time to collect current audio samples.
+(defmethod audioin-sgi readallframes ()
+  (let* ((i (max 1 (alGetFilled port)))
+         (buf (short-matrix i 2)))
+    (audio-read-sgi port buf i)
+    buf))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; high level object for simple playing of stereo 16b/sample audio.
+
+#? audioout-sgi
+;; A simple object to play audio on an SGI 
+;; at 16 bits per sample in stereo. The sampling
+;; rate and volume are currently not under SN control
+;; and must be adjusted manually using audiopanel.
+;; To play audio, simply do:
+;;.VP
+;; ? (setq a (new audioout-sgi 100000 "junk"))
+;;.PP
+;; then call:
+;;.VP
+;; ? (==> a writeframes m)
+;;.PP
+;; where <m> is an Nx2 idx2 of shorts that contains the 
+;; samples to be enqueued. Element (i,0) of <m> must contain 
+;; the i-th sample for the left channel, and element (i,1)
+;; for the right channel. N must be smaller than the buffer 
+;; size (the first parameter of the constructor).
+;;.SEE (new audioout-sgi <bufsize> <name>)
+;;.SEE (delete audioout-sgi)
+;;.SEE (==> <audioout-sgi> buffersize)
+;;.SEE (==> <audioout-sgi> filledframes)
+;;.SEE (==> <audioout-sgi> fillableframes)
+;;.SEE (==> <audioout-sgi> writeframes <buf>)
+(defclass audioout-sgi object
+  ((-gptr- "ALport") port)
+  ((-gptr- "ALconfig") config)
+  ((-int-) bufsize)
+  ((-str-) name))
+
+#? (new audioout-sgi <bufsize> <name>)
+;; create an SGI audio output object.
+;; The audio buffer size is passed in <bufsize>.
+;; <name> is a string that contain an audio port
+;; name (for human consumption).
+(defmethod audioout-sgi audioout-sgi (bufsiz nam)
+  ((-int-) bufsiz)
+  ((-str-) nam)
+  (setq name nam)
+  (setq bufsize bufsiz)
+  (setq config (alNewConfig))
+  (when (< (alSetQueueSize config bufsize) 0)
+    (error "audioout-sgi: could not set buffer size"))
+  (alSetWidth config 2)                 ; set smaple to 16 bits
+  (alSetSampFmt config 1)               ; sample = signed short
+  (when (<> 0 (alSetChannels config 2))              ; stereo
+    (error "audioout-sgi: could not get 2 channels"))
+  (when (not (setq port (alOpenPort name "w" config)))
+    (error "audioout-sgi: could not open audio port"))
+  port)
+
+#? (delete audioout-sgi)
+;; audio output object destructor
+(defmethod audioout-sgi delete ()
+  (alFreeConfig config)
+  (alClosePort port))
+
+#? (==> <audioout-sgi> buffersize)
+;; returns the total size of the internal audio buffer.
+(defmethod audioout-sgi buffersize () bufsize)
+
+#? (==> <audioout-sgi> filledframes)
+;; returns the number of audio frames that have not
+;; yet been played.
+(defmethod audioout-sgi filledframes () (alGetFilled port))
+
+#? (==> <audioout-sgi> fillableframes)
+;; returns the maximum number of frames that can be written
+;; to the internal audio buffer (using writeframes).
+(defmethod audioout-sgi fillableframes () (alGetFillable port))
+
+#? (==> <audioout-sgi> writeframes <buf>)
+;; play the audio in <buf>. <buf> must be an Nx2 idx2 of
+;; shorts whose first column contains samples for the
+;; left channel and the second column for the right channel.
+;; N must be smaller than the size of the internal audio buffer.
+(defmethod audioout-sgi writeframes (buf)
+  ((-idx2- (-short-)) buf)  
+  (when (> (idx-dim buf 0) bufsize)
+    (error "audioout-sgi: too many samples for audio buffer"))
+  (audio-write-sgi port buf (idx-dim buf 0)))
+
+
+  

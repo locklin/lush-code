@@ -1,0 +1,483 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(printf "[%s]\n" file-being-loaded)
+
+;;------------------------------------------------------------------------------
+;; Additional help for idxes.
+#? Matrices.
+;;
+;;Matrices and vectors in SN3 are really structures that allow to access
+;;a contiguous region of memory.  In other words a matrix is a combination of an
+;;accessing structure (an INDEX) and a storage structure (a STORAGE).
+;;The <matrix> function for instance is equivalent to the lisp
+;;function defined by:
+;;
+;;.VP
+;;(de float-matrix dim-list
+;;  (let* ((siz (apply * dim-list))
+;;         (f-storage (new_f_storage siz)) )
+;;    (new_index f-storage dim-list) ) )
+;;
+;;.PP
+;;Most matrix functions (at the present time) only work with FSTORAGE 
+;;areas (such as m*m, m*c, etc...).
+;;
+;;.SEE Index.
+;;.SEE Storage.
+
+;;******************************************************************************
+#? Storage.
+;;.SEE Index.
+;;
+;;A storage is contiguous space in memory or on disk reserved for
+;;access.  There are 8 types of storages:
+;;.IP 
+;;ATSTORAGE (lisp objects), created with (new_at_storage <s>)
+;;.IP
+;;PSTORAGE (packed on 8 bits), created with (new_p_storage <s>)
+;;.IP
+;;FSTORAGE (floats), created with (new_f_storage <s>)
+;;.IP
+;;DSTORAGE (doubles), created with (new_d_storage <s>)
+;;.IP
+;;I32STORAGE (long integer), created with (new_i32_storage <s>)
+;;.IP
+;;I16STORAGE (shorts), created with (new_i16_storage <s>)
+;;.IP
+;;I8STORAGE (signed bytes), created with (new_i8_storage <s>)
+;;.IP
+;;U8STORAGE (unsigned bytes), created with (new_u8_storage <s>)
+;;.PP
+;;
+;;Storage are usually accessed using an index.  Only very simple access
+;;can be done on a storage without an index structure.  For instance:
+;;
+;;.VP
+;;? (setq reals (new_f_storage 10))
+;;= ::FSTORAGE:ram@1459d8:<10>
+;;? (reals 0 3.14159)
+;;= 3.14159
+;;? (reals 1)
+;;= 0
+;;.PP
+;;
+;;Storage can also be accessing disk.
+;;
+;;.SEE idx-storage
+;;.SEE storage_clear
+;;.SEE storage_load
+;;.SEE storage_malloc
+;;.SEE storage_malloc_nc
+;;.SEE storage_mmap
+;;.SEE storage_read_only
+;;.SEE storage_realloc
+;;.SEE storage_realloc_n
+;;.SEE storage_save
+;;.SEE storage_size
+;;.SEE storagep 
+
+;;***************************************************************************
+#? Index.
+;;.SEE Matrices.
+;;.SEE Storage.
+;;.SEE (new_index <storage> [<size-list>])
+;;.SEE (idx-redim <idx> <list-of-dim>)
+;;
+;;An index can be created on a storage with the function 
+;;
+;;.IP
+;;(new_index <storage> [<size-list>]) 
+;;
+;;.PP 
+;;Indexes can be of dimentions 0, 1,...,7 or undimentioned.  An
+;;index of dimension 0 is essentially a scalar but is accessed like a
+;;matrix.  For example:
+;;
+;;.VP
+;;? (setq a (new-f-storage 1))
+;;= ::FSTORAGE:ram@146b28:<1>
+;;? (setq b (new-index a ()))
+;;= ::INDEX:<>
+;;? (b)
+;;= 0
+;;? (b 3)
+;;= ::INDEX:<>
+;;? (b)
+;;= 3
+;;.PP 
+;;
+;;The same effect could have been obtained by (setq a (matrix)).  Index
+;;of dimension 1 to 7 are a straightforward extentions of sn2 matrices.
+;;Undimensioned index are new and serve the purpose of dynimical automatic
+;;resizing.
+;;
+
+#? (idx-redim <idx> <list-of-dim>)
+;;redimension <idx> to the dimensions in <list-of-dim>.
+
+#? (idx-ndim <idx>)
+;; return the number of dimension of <idx>
+
+#? (idx-dim <idx> <n>)
+;; return the size of dimension <n> of <idx>
+
+#? (idx-modulo <idx> <n>)
+;; return the modulo of dimension <n> of <idx>
+
+#? (idx-undim <idx>)
+;;make <idx> unsized (so it can be automatically resized by a DH)
+
+#? (idx-unfold <idx> <n> <ksize> <step>)
+;;add a dimension at the end of <idx> by unfolding <n>-th dimension.
+;;The size of the new dimension is <ksize>.  A subsampled convolution of
+;;kernel size <ksize> and stride <step> can be done by calling
+;;(idx-m2dotm1 <this-unfolded-idx> <kernel>).
+
+#? (idx-diagonal <idx> <d>)
+;;grabs the diagonal of the last <d> dimensions.  <idx> is transformed
+;;into an <idx> with d-1 dimensions less than the original.  example:
+;;diagonal of a 2D matrix: (idx-diagonal bzt 2). This turns bzt into a
+;;vector
+
+#? (idx-narrow <idx> <d> <size> <offset>)
+;;restricts the <d>-th dimension of <idx> to <size>, starting at index
+;;<offset>.
+
+#? (idx-select <idx> <d> <n>)
+;;delete <d>-th dimension of <idx>, thereby selecting the <n>-th row
+;;(column, or whatever).  example (idx-select <20x10-matrix> 0 4) make
+;;the argument access line number 4.
+
+#? (idx-transpose <idx> <perm-list>)
+;;permute the dimensions of <idx> using the list of int's <perm-list> as
+;;a permutation matrix.
+
+#? (idx-transpose2 <idx> <d1> <d2>)
+;;permute dimesnions <d1> and <d2>.
+
+#? (idx-clone <idx>)
+;;RETURNS a clone of <idx>
+
+#? (idx-transclone <idx> <perm-list>)
+;;same as idx-permute, but RETURNS a transposed clone of <idx>,
+
+#? (idx-changedim <idx> <d> <size>)
+;;change dimension <d> of <idx> to <size>.
+
+#? (idx-changemod <idx> <d> <size>)
+;;change modulo <d> of <idx> to <size>.
+
+#? (idx-changeoffset <idx> <d> <size>)
+;;change offset <d> of <idx> to <size>.
+
+
+#? (idx-eloop ((<symb1> <idx1>) [ (symb2> <idx2>) [...(<symbn> <idxn>) ]]) <body>)
+;;make each <symbi> be an idx that loops over the last dimension of its 
+;;corresponding <idxi>. Execute <body> for each value.
+
+#? (idx-bloop ((<symb1> <idx1>) [ (symb2> <idx2>) [...(<symbn> <idxn>) ]]) <body>)
+;;make each <symbi> be an idx that loops over the first dimension of its 
+;;corresponding <idxi>. Execute <body> for each value.
+;;
+;;
+
+;;*****************************************************************************
+;; Backward compatibility (function like idx-macopy become idx-copy)
+
+(de backcomp-maops (names)
+    (each ((name names))
+	  (let* ((pn (pname name))
+		 (new-name (named (concat "idx-" pn)))
+		 (code '(list 'progn (cons `(list 'quote new-name) 
+					   l) ())))
+	    (eval '(dmd `(named (concat "idx-m0" pn)) l `code))
+	    (eval '(dmd `(named (concat "idx-m1" pn)) l `code))
+	    (eval '(dmd `(named (concat "idx-m2" pn)) l `code))
+	    (eval '(dmd `(named (concat "idx-ma" pn)) l `code)))))
+
+(backcomp-maops
+ '(clear
+   copy sum sumacc sumsqrt sumsqrtacc sqrdist sqrdistacc
+   dotm0 dotm0acc addm0 addmoacc
+   add sub mul div
+   
+   minus abs sqrt qtanh qdtanh 
+   stdsigmoid dstdsigmoid expmx dexpmx 
+   sin cos atan log exp))
+
+(de backcomp-maopsma (names)
+    (each ((name names))
+	  (let* ((pn (pname name))
+		 (new-name (named (concat "idx-" pn)))
+		 (code '(list 'progn (cons `(list 'quote new-name) 
+					   l) ())))
+	    (eval '(dmd `(named (concat "idx-m0" pn "m0")) l `code))
+	    (eval '(dmd `(named (concat "idx-m1" pn "m1")) l `code))
+	    (eval '(dmd `(named (concat "idx-m2" pn "m2")) l `code))
+	    (eval '(dmd `(named (concat "idx-ma" pn "ma")) l `code)))))
+
+(backcomp-maopsma '(dot))
+
+(de backcomp-maopsmaacc (names)
+    (each ((name names))
+	  (let* ((pn (pname name))
+		 (new-name (named (concat "idx-" pn)))
+		 (code '(list 'progn (cons `(list 'quote new-name) 
+					   l) ())))
+	    (eval '(dmd `(named (concat "idx-m0" pn "m0acc")) l `code))
+	    (eval '(dmd `(named (concat "idx-m1" pn "m1acc")) l `code))
+	    (eval '(dmd `(named (concat "idx-m2" pn "m2acc")) l `code))
+	    (eval '(dmd `(named (concat "idx-ma" pn "maacc")) l `code)))))
+
+(backcomp-maopsmaacc '(dot))
+
+;;----------------------------------------------------------------------------
+;; DE function for which there is an dhm in dh-macro
+
+(setq new-short-storage new-i16-storage
+      new-byte-storage new-i8-storage
+      new-ubyte-storage new-u8-storage
+      new-int-storage new-i32-storage
+      new-float-storage new-f-storage
+      new-flt-storage new-f-storage
+      new-real-storage new-d-storage)
+
+#? (copy-any-matrix <mat-from> [<mat-to>])
+;; If <mat-to> is omitted return a new copy of <mat-from> (a new storage is 
+;; created and <mat-to> is copied in it).  If <mat-to> is present, the storage
+;; of <mat-from> is copied into the storage of <mat-to>.  Return <mat-to>.
+;;.SEE (matrix-nc [<s_1> ...])
+;;.SEE (matrix [<s_1> ...])
+;;
+(de copy-any-matrix (a &optional b)
+    (if (null b) 
+	(setq b (clone-matrix a))
+      (let ((old-a a))
+	(setq a (new-index (idx-storage a) (bound b)))
+	(idx-changeoffset a (idx-offset old-a))))
+    (idx-macopy a b)
+    b)
+
+#? (matrix-nc [<s_1> ...])
+;; Return an matrix (of float) of dimension <s_1>...  The matrix is not
+;; initialized.  Example: (matrix-nc 3 4)
+;;.SEE (matrix [<s_1> ...])
+;;
+
+(de create-matrix-nc (name new-storage)
+    (set name (apply lambda '(l
+			      (let* ((size (apply * l))
+				     (sto (`new-storage)))
+				(storage-malloc-nc sto size)
+				(new-index sto l))))))
+
+(create-matrix-nc 'flt-matrix-nc 'new-f-storage)
+(create-matrix-nc 'real-matrix-nc 'new-d-storage)
+(create-matrix-nc 'short-matrix-nc 'new-short-storage)
+(create-matrix-nc 'int-matrix-nc 'new-int-storage)
+(create-matrix-nc 'byte-matrix-nc 'new-byte-storage)
+(create-matrix-nc 'ubyte-matrix-nc 'new-ubyte-storage)
+(create-matrix-nc 'gptr-matrix-nc 'new-gptr-storage)
+(setq matrix-nc flt-matrix-nc
+      float-matrix-nc flt-matrix-nc
+      double-matrix-nc real-matrix-nc)
+
+(setq short-matrix i16-matrix 
+      ubyte-matrix u8-matrix
+      int-matrix i32-matrix
+      byte-matrix i8-matrix
+      float-matrix f-matrix
+      flt-matrix f-matrix
+      real-matrix d-matrix
+      double-matrix d-matrix)
+
+#? (unfold <idx> <n> <ksize> <step>)
+;; Return an idx with an added dimension at the end of <idx>
+;; obtained by unfolding <n>-th dimension.
+;; The size of the new dimension is <ksize>.  A subsampled convolution of
+;; kernel size <ksize> and stride <step> can be done by calling
+;; (idx-m2dotm1 <this-unfolded-idx> <kernel>).
+;;.VP
+;; ? (unfold [3 4 5 6 7] 0 5 1)
+;; = [[ 3.00  4.00  5.00  6.00  7.00 ]]
+;; ? (unfold [3 4] 0 1 1)      
+;; = [[ 3.00 ]
+;;    [ 4.00 ]]
+;; ? 
+(de unfold (idx n ksize step)
+     (let ((-dh-unfold (idx-clone idx)))
+	  (idx-unfold -dh-unfold n ksize step)
+	  -dh-unfold))
+
+#? (select <idx> <d> <n>)
+;; Retun a submatrix of <idx> where the <d> th dimension of <idx>
+;; is deleted , thereby selecting the <n> th row
+;; (column, or whatever).  Example (idx-select <20x10-matrix> 0 4) make
+;; the argument access line number 4.
+;;
+(de select (idx d n)
+    (let ((-dh-select (idx-clone idx)))
+	(idx-select -dh-select d n)
+	-dh-select))
+
+#? (diagonal <idx> <d>)
+;; grabs the diagonal of the last <d> dimensions.  <idx> is transformed into an
+;;<idx> with d-1 dimensions less than the original.  example: diagonal of a 2D
+;; matrix: (idx-diagonal bzt 2).  This turns bzt into a vector
+(de diagonal(a n)
+    (let ((-dh-diagonal (idx-clone a)))
+	 (idx-diagonal -dh-diagonal n)
+	 -dh-diagonal))
+
+#? (narrow <idx> <d> <size> <offset>)
+;; Retun a submatrix of <idx> where the <d> th dimension of <idx> 
+;; is restricted to <size>, starting at index <offset>.
+;;
+(dmd narrow (idx d n off)
+     '(let ((-dh-narrow (idx-clone `idx)))
+	(idx-narrow -dh-narrow `d `n `off)
+	-dh-narrow))
+
+;; This is a temporary solution to idx-m1extm1 and idx-m2extm2
+
+;;-----------------------------------------------------------------------------
+;; Old SN2 Matrix operations
+;;
+
+#? (dot-product <a> <b>)
+;; return the dot product of <a> and <b>
+(dmd dot-product (a b)
+     '(let ((r (matrix)))
+	(idx-m1dotm1 `a `b r)
+	(r)))
+
+(de m*m (a b &optional c)
+    (if (= (idx-ndim a) 1)
+	(if (= (idx-ndim b) 1)
+	    (if (= 1 (idx-dim b 0))
+		(if c (let ((-dh-b (matrix))
+			    (-dh-a a)
+			    (-dh-c c))
+			(-dh-b (b 0))
+			(idx-m1dotm0 -dh-a -dh-b -dh-c)
+			-dh-c)
+		  (let* ((-dh-b (matrix))
+			 (-dh-a a)
+			 (-dh-c (clone-matrix -dh-a)))
+		    (-dh-b (b 0))
+		    (idx-m1dotm0 -dh-a -dh-b -dh-c)
+		    -dh-c))
+	      (error "m*m: idx 2 must have 1 element"))
+	  (if (= 1 (idx-dim b 0))
+	      (if c
+		  (let* ((-dh-b (select b 0 0))
+			 (-dh-a a)
+			 (-dh-c c))
+		    (idx-m1extm1 -dh-a -dh-b -dh-c)
+		    -dh-c)
+		(let* ((-dh-b (select b 0 0))
+		       (-dh-a a)
+		       (-dh-c (matrix (idx-dim -dh-a 0) (idx-dim -dh-b 0))))
+		  (idx-m1extm1 -dh-a -dh-b -dh-c)
+		  -dh-c))
+	    (error "m*m: idx 2 have bad dimensions")))
+      (if (= 1 (idx-ndim b))
+	  (if c
+	      (let ((-dh-c c)) (idx-m2dotm1 a b -dh-c) -dh-c)
+	    (let* ((-dh-a a)
+		   (-dh-b b)
+		   (-dh-c (matrix (idx-dim -dh-a 0))))
+	      (idx-m2dotm1 a -dh-b -dh-c) -dh-c))
+	(if c
+	    (let ((-dh-c c))
+	      (idx-eloop ((-dh-x b) (-dh-y -dh-c)) 
+			 (idx-m2dotm1 a -dh-x -dh-y))
+	       -dh-c)
+	  (let* ((-dh-a a)
+		 (-dh-b b)
+		 (-dh-c (matrix (idx-dim -dh-a 0) (idx-dim -dh-b 1))))
+	    (idx-eloop ((-dh-x -dh-b) (-dh-y -dh-c)) 
+		       (idx-m2dotm1 -dh-a -dh-x -dh-y))
+	    -dh-c)))))
+
+
+(de m+m (a b &optional c)
+    (if ~c (setq c (clone-matrix b)))
+    (idx-maadd a b c)
+    c)
+
+(de mxm (a b &optional c)
+    (if ~c (setq c (clone-matrix b)))
+    (idx-mamul a b c)
+    c)
+
+(de m-m (a b &optional c)
+    (let ((b b))
+      (if ~c (setq c (clone-matrix b)))
+      (idx-masub a b c)
+      c))
+
+(de m*c (a b &optional c)
+    (if ~c (setq c (clone-matrix a)))
+    (let ((d (matrix)))
+      (d b)
+      (idx-madotm0 a d c)
+      c))
+
+(de m+c (a b &optional c)
+    (if ~c (setq c (clone-matrix a)))
+    (let ((d (matrix)))
+      (d b)
+      (idx-maaddm0 a d c)
+      c))
+
+(de transpose (m)
+    (selectq (idx-ndim m)
+             (1 (let ((m2 (idx-clone m)))
+                  (idx-unfold m2 0 (idx-dim m 0) 1)
+                  m2))
+             (2 (let ((m2 (idx-clone m)))
+                  (idx-transpose m2 '(1 0))
+                  m2))
+             (t (error 'transpose "Two dimensioned matrix expected" m))))
+
+
+;;-----------------------------------------------------------------------------
+
+(if dh-macro (load "dh-macro"))
+
+
+
+
+
+
+
+
+
+
+
+

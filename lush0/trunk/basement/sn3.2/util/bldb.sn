@@ -1,0 +1,472 @@
+;; bldb.sn
+;;
+;; Author: Yoshua Bengio
+;; Jan. 93
+;; Version 1.1
+;;
+(mload "db")
+#? bldb
+;; Definition of class bldb to interface with Boser Lisp DataBases 
+;; (using the facilities (DX functions) in gdbm_driver.c, i.e.,
+;; db_open, db_create, db_fetch, db_store, db_reorganize, db_delete)
+;;.P
+;; The methods are a subset of those available in Boser Lisp (a.k.a. nu-lisp).
+;; (The access through fields whose name corresponds to private slots of the
+;; object is not implemented in SN, partly because private fields don't exist
+;; in SN and partly because it seemed as simple to use the 'get and 'set
+;; syntax).
+;;
+;;.SEE (new bldb <filename> [<writeable> [<create>]])
+;;.SEE (==> <bldb> create-field <field-name> [<field-information>])
+;;.SEE (==> <bldb> comment <field-name> [<field-information>])
+;;.SEE (==> <bldb> first)
+;;.SEE (==> <bldb> goto <i>)
+;;.SEE (==> <bldb> next)
+;;.SEE (==> <bldb> previous)
+;;.SEE (==> <bldb> current)
+;;.SEE (==> <bldb> get <field-name>)
+;;.SEE (==> <bldb> set <field-name> <value>)
+;;.SEE (==> <bldb> size [<new-size>])
+;;.SEE (==> <bldb> name [<new-name>])
+;;.SEE (==> <bldb> class [<cls>])
+;;.SEE (==> <bldb> info [<file>])
+;;
+;; A subclass of the standard database class (defined in util/db.sn)
+;; is also defined, bl-db. This subclass is compatible with the 
+;; standard database commands. In addition to the default
+;; methods (seek, next, previous, tell, get, set, get-current, set-current, 
+;; and size), a method create-field is also defined to add new fields.
+;;
+;;.SEE database
+;;.SEE bl-db
+;;.SEE (new bl-db <filename> [<writeable> [<create>]])
+;;.SEE (==> <bl-db> seek [<i>])
+;;.SEE (==> <bl-db> next)
+;;.SEE (==> <bl-db> previous)
+;;.SEE (==> <bl-db> tell)
+;;.SEE (==> <bl-db> get <i> <field-name>)
+;;.SEE (==> <bl-db> set <i> <field-name> <value>)
+;;.SEE (==> <bl-db> get-current <field-name>)
+;;.SEE (==> <bl-db> set-current <field-name> <value>)
+;;.SEE (==> <bl-db> size)
+;;.SEE (==> <bl-db> create-field <field-name> [<field-information>])
+;;
+;; Another kind of database is also defined, sx-db. 
+;; This class is similar to bl-db except
+;; that it allows for representing sparse (hence the 's') cartesian products ('x')
+;; of several fields whose legal values are listed and updated when necessary.
+;; Hence one can do (==> <sx-db> get <alist>), where <alist> is an
+;; association list whose elements have the form (<key> . <value>), to get
+;; an element of the database. In general, that returns a LIST of elements
+;; that have been put with (==> <sx-db> set <alist> <datum>). The latter 
+;; method just ADDS the <datum> to the list previously stored under those
+;; key/values combinations (order in the <alist> doesn't matter). The
+;; method (==> <sx-db> delete <alist>) deletes whatever was stored
+;; under the <alist> key/values. (==> <sx-db> keys) returns a list
+;; of keys currently used in the db, in the form of an <alist> with
+;; elements (<key> . <list-of-key-values>).
+;;
+
+(defclass bldb object
+   d-b
+   fields
+   size
+   db_object
+   current
+)
+
+#? (new bldb <filename> [<writeable> [<create>]])
+;; Open or create a bldb database. If <writeable> then the user
+;; will be allowed to write in it. If <create> then an attempt
+;; will be made to create a new database. Both flags default to ().
+;;.SEE bldb
+(defmethod bldb bldb (filename &optional writeable create)
+   (if create
+      (progn
+         (setq d-b (db_create filename))
+         (when ~(numberp (db_fetch d-b '__size))
+            (db_store d-b '__size 0)
+            (db_store d-b '__object 'object)
+            (db_store d-b '__fields ())
+         )
+      )
+      (setq d-b (db_open filename (if writeable "w" "r")))
+   )
+   (if (not d-b)
+      (error 'bldb "opening database file"))
+   (setq current 0)
+   (setq size (db_fetch d-b '__size))
+   (setq db_object (db_fetch d-b '__object))
+   (setq fields (db_fetch d-b '__fields))
+   (if (or (not size)(and (> size 0)(not fields)))
+      (error 'bldb "database appears to have wrong format\n(does not have fields __size and __fields)"))
+)
+
+#? (==> <bldb> create-field <field-name> [<field-information>])
+;; Add an extra field to the database, named <field-name>
+;; usually a symbol but any lisp object should be fine. 
+;; <field-information> can also be anything, but is usually a string.
+;;.SEE bldb
+(defmethod bldb create-field (sym &optional inform)
+   (if ~sym
+      (error 'bldb "Database field name can't be ()!"))
+   (if fields
+   (idx-bloop ((field fields))
+            (when (= (car (field)) sym)
+               (error 'bldb "Database field already exists: " sym))))
+   (let*((new-dim (if fields (1+ (idx-dim fields 0)) 1))
+         (d (1- new-dim)))
+      (if fields
+         (setq fields (redim fields new-dim))
+         (setq fields (array 1))
+      )
+      (fields d (list sym () () inform))
+      (db_store d-b '__fields fields)
+   )
+   sym
+)
+
+#? (==> <bldb> comment <field-name> [<field-information>])
+;; Replace comments for a field of the database with <field-information>.
+;;.SEE bldb
+(defmethod bldb comment (sym &optional inform)
+   (if (and inform fields)
+   (idx-bloop ((field fields))
+      (when (= sym (car (field)))
+         (rplaca (lastcdr l) inform)
+         (db_store d-b '__fields fields)
+      )
+   ))
+   sym
+)
+
+#? (==> <bldb> first)
+;; Move current to record# 0.
+;;.SEE bldb
+(defmethod bldb first ()
+   (setq current 0)
+)
+
+#? (==> <bldb> goto <i>)
+;; Move current to record# <i>.
+;;.SEE bldb
+(defmethod bldb goto (i)
+   (when (or (< i 0) (>= i size))
+      (error 'bldb "goto outside record range: " i))
+   (setq current (int i))
+)
+
+#? (==> <bldb> next)
+;; Move to next record.
+;;.SEE bldb
+(defmethod bldb next ()
+   (incr current)
+   (when (>= current size) (setq current 0))
+   current
+)
+
+#? (==> <bldb> previous)
+;; Move to previous record.
+;;.SEE bldb
+(defmethod bldb previous ()
+   (decr current)
+   (when (< current 0) (setq current (1- size)))
+   current
+)
+
+#? (==> <bldb> current)
+;; Return (position) number of current record within the database.
+;;.SEE bldb
+(defmethod bldb current ()
+   current
+)
+
+
+#? (==> <bldb> get <field-name>)
+;; Return object stored under field <field-name> of current record.
+;;.SEE bldb
+
+;; should really be called get-current
+(defmethod bldb get (sym)
+   (db_fetch d-b (list current sym))
+)
+
+#? (==> <bldb> set <field-name> <value>)
+;; Store <value> under field <field-name> of current record.
+;;.SEE bldb
+(defmethod bldb set (sym data)
+   (let*((exists ()))
+      (if fields
+         (idx-bloop ((field fields))
+            (if (= sym (car (field))) (setq exists t))
+         )
+         (error 'bldb "Field not yet created: " sym)
+      )
+      (if exists
+         (db_store d-b (list current sym) data)
+         (error "database set: no field named " sym)
+      )
+   )
+)
+
+#? (==> <bldb> size [<new-size>])
+;; Get or set size (number of records in the database).
+;;.SEE bldb
+(defmethod bldb size (&optional new-size)
+   (when new-size (setq size (db_store d-b '__size (int new-size))))
+   size
+)
+
+#? (==> <bldb> info [<file>])
+;; Print information on the database. Default is to standard output.
+;; <file> can be a file name or a writeable file handle (FILE_WO).
+(defmethod bldb info (&optional f)
+   (when (not f) (setq f "$stdout"))
+   (writing f
+      (printf "Database %l for class %l\n" (==> this name) db_object)
+      (printf "  size: %d patterns, %d fields:\n"
+         size (idx-dim fields 0))
+      (if fields
+      (idx-bloop ((field fields))
+         (apply (lambda ((sym prot cach info))
+                  (printf "  FIELD %l" sym)
+                  (when info (printf ": %l" info))
+                  (when prot (printf "[protected]"))
+                  (when cach (printf "[cached]"))
+                  (printf "\n")
+                )
+            (list (field)))
+      ))
+   )
+)
+
+#? (==> <bldb> name [<new-name>])
+;; Get or set name of database.
+;;.SEE bldb
+(defmethod bldb name (&optional nom)
+   (when nom (db_store d-b '__name nom))
+   (db_fetch d-b '__name)
+)
+
+#? (==> <bldb> class [<cls>])
+;; Get or set class of database objects.
+;;.SEE bldb
+(defmethod bldb class (&optional cls)
+   (when cls (setq db_object (db_store d-b '__object cls)))
+   db_object
+)
+
+#? bl-db
+;; bl-db is a subclass of bldb whose methods are compatible with the
+;; database format defined in util/db (class db).
+;; Like bldb, it allows access to databases in the Boser Lisp
+;; format (based on the gdbm (Gnu Database Manager) package).
+;; In addition to the usual db
+;; methods (seek, next, previous, tell, get, set, get-current, set-current, size)
+;; the method create-field is defined.
+;; Note that the creator for <bl-db>
+;; requires a filename for the database.
+;; Fields must be defined with the create-field method. Memory is not
+;; reserved for each field of each record. Instead, only those 
+;; (record# , field-name) pairs (items) that are stored with the set 
+;; (or set-current) method are physically stored in the database.
+;; Direct access is performed, using a hash table 
+;; (managed from within gdbm package). 
+;;
+;;.SEE database
+;;.SEE bldb
+;;.SEE (new bl-db <filename> [<writeable> [<create>]])
+;;.SEE (==> <bl-db> seek [<i>])
+;;.SEE (==> <bl-db> next)
+;;.SEE (==> <bl-db> previous)
+;;.SEE (==> <bl-db> tell)
+;;.SEE (==> <bl-db> get <i> <field-name>)
+;;.SEE (==> <bl-db> set <i> <field-name> <value>)
+;;.SEE (==> <bl-db> get-current <field-name>)
+;;.SEE (==> <bl-db> set-current <field-name> <value>)
+;;.SEE (==> <bl-db> size)
+;;.SEE (==> <bl-db> create-field <field-name> [<field-information>])
+;;.SEE (==> <bldb> comment <field-name> [<field-information>])
+;;.SEE (==> <bldb> first)
+;;.SEE (==> <bldb> name [<new-name>])
+;;.SEE (==> <bldb> class [<cls>])
+;;.SEE (==> <bldb> info [<file>])
+
+(defclass bl-db bldb)   ; same slots, but some variations on the method names
+
+#? (new bl-db <filename> [<writeable> [<create>]])
+;; Create or open a Boser Lisp format database. <writeable> and <create>
+;; are flags (default = nil). bl-db is a subclass of bldb.
+;;.SEE bl-db
+(defmethod bl-db bl-db (filename &optional writeable create)
+   (==> this bldb filename writeable create)
+)
+
+#? (==> <bl-db> seek [<i>])
+;; Move current record to number # <i>.
+;;.SEE bl-db
+(putmethod bl-db 'seek (check==> bldb 'goto))
+
+#? (==> <bl-db> tell)
+;; Return position (number) of current record within the database.
+;;.SEE bl-db
+(putmethod bl-db 'tell (check==> bldb 'current))
+
+#? (==> <bl-db> next)
+;; Move to next record.
+;;.SEE bl-db
+
+#? (==> <bl-db> previous)
+;; Move to previous record.
+;;.SEE bl-db
+
+#? (==> <bl-db> get <i> <field-name>)
+;; Get object stored under field <field-name> of record number <i>.
+;;.SEE bl-db
+(defmethod bl-db get (i symb)
+   (db_fetch d-b (list i symb))
+)
+
+#? (==> <bl-db> set <i> <field-name> <value>)
+;; Set field <field-name> of record number <i> to <value>.
+;;.SEE bl-db
+(defmethod bl-db set (i sym val)
+   (let*((exists ()))
+      (if fields
+         (idx-bloop ((field fields))
+            (if (= sym (car (field))) (setq exists t))
+         )
+         (error 'bldb "Field not yet created: " sym)
+      )
+      (if exists
+         (db_store d-b (list i sym) val)
+         (error "database set: no field named " sym)
+      )
+   )
+)
+
+
+#? (==> <bl-db> get-current <field-name>)
+;; Get object stored under field <field-name> of current record.
+;;.SEE bl-db
+(putmethod bl-db 'get-current (check==> bldb 'get))
+
+#? (==> <bl-db> set-current <field-name> <value>)
+;; Set field <field-name> of current record to <value>.
+;;.SEE bl-db
+(putmethod bl-db 'set-current (check==> bldb 'set))
+
+#? (==> <bl-db> size)
+;; Return size of database (in number of records).
+;;.SEE bl-db
+
+#? (==> <bl-db> create-field <field-name> [<field-information>])
+;; Add an extra field to the database, named <field-name>
+;; usually a symbol but any lisp object should be fine. 
+;; <field-information> can also be anything, but is usually a string.
+;;.SEE bl-db
+
+;; Another kind of database is also defined, sx-db. 
+;; This class is similar to bl-db except
+;; that it allows for representing sparse (hence the 's') cartesian products ('x')
+;; of several fields whose legal values are listed and updated when necessary.
+;; Hence one can do (==> <sx-db> get <alist>), where <alist> is an
+;; association list whose elements have the form (<key> . <value>), to get
+;; an element of the database. In general, that returns a LIST of elements
+;; that have been put with (==> <sx-db> put <alist> <datum>). The latter 
+;; method just ADDS the <datum> to the list previously stored under those
+;; key/values combinations (order in the <alist> doesn't matter). The
+;; method (==> <sx-db> delete <alist>) deletes whatever was stored
+;; under the <alist> key/values. (==> <sx-db> all-keys) returns a list
+;; of keys currently used in the db, in the form of an <alist> with
+;; elements (<key> . <list-of-key-values>).
+;;
+(defclass sx-db object
+   d-b
+   keys
+	filename
+)
+(defmethod sx-db sx-db (fname &optional (writeable t) create)
+	(setq filename fname)
+	(if create
+		(progn
+			(setq d-b (db_create filename))
+			(when ~(= 'sx-db (db_fetch d-b '__database_type))
+				(db_store d-b '__database_type 'sx-db)
+			)
+		)
+		(setq d-b (db_open filename (if writeable "w" "r")))
+	)
+	(if ~d-b (error 'sx-db "opening database file" filename))
+	(setq keys (db_fetch d-b '__keys))
+)
+(defmethod sx-db all-keys ()
+	keys
+)
+(defmethod sx-db key-values (key)
+	(cdr (assoc key keys))
+)
+(defmethod sx-db keys-names ()
+	(all ((p keys)) (car p))
+)
+;; return an a-list with keys in reverse order of those in al-base
+;; If a key of <al> is not in <al-base> then it is not in the resulting a-list.
+(de order-alist (al-base al)
+	(let*((ol ()))
+		(each ((p al-base))
+			(let*((alp (assoc (car p) al)))
+				(if alp (setq ol (cons alp ol)))
+			)
+		)
+		ol
+	)
+)
+(defmethod sx-db get (key-val-alist)
+	(let*((all-keys-known t))
+		(each ((p key-val-alist))
+			(setq all-keys-known (and all-keys-known
+				 (assoc (car p) keys)))		; check if all keys of a-list are known by db
+		)	
+		(if all-keys-known (db_fetch d-b (order-alist keys key-val-alist))
+			)
+			;( ; (progn (print "key not found!") ()))
+		; otherwise return a ()
+	)
+)
+(defmethod sx-db put (key-val-alist datum)
+	(let*((changed-keys ()))
+		(each ((p key-val-alist))
+			(let*((matched-pair (assoc (car p) keys)))
+				(if ~matched-pair
+					; add this (key.val) pair to the keys a-list:
+					(setq keys (cons (cons (car p)(list (cdr p))) keys) changed-keys t)
+					; otherwise: check that this value is already a known value for that key:
+					(when ~(member (cdr p)(cdr matched-pair))
+						; add it the list of values if it's not:
+						(rplacd matched-pair (cons (cdr p)(cdr matched-pair)))
+						(setq changed-keys t))
+				)
+			)
+		)
+		(db_store d-b (order-alist keys key-val-alist) datum)
+		(if changed-keys (db_store d-b '__keys keys))
+	)
+)
+(defmethod sx-db delete (key-val-alist)
+	(let*((all-keys-known t))
+		(each ((p key-val-alist))
+			(setq all-keys-known (and all-keys-known
+				 (assoc (car p) keys)))		; check if all keys of a-list are known by db
+		)	
+		(if all-keys-known 
+			(let*((ol (order-alist keys key-val-alist)))
+				(if (db_fetch d-b ol)
+					(db_delete d-b ol)
+					(printf "sx-db delete ##Warning: key was not in the database! %l\n" ol)
+				)
+			)
+			(printf "sx-db delete ##Warning: some key not known to the database! %l\n" key-val-alist)
+		)
+	)
+)
+

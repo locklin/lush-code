@@ -1,0 +1,102 @@
+#? Remote.
+.SEE (filter <cmd> <fin> <fout>)
+.SEE (write-binary <file> <l_1> <l_n>)
+.SEE (read-binary <rtable>)
+.SEE (remote <fin> <fout> [<rtable>])
+.SEE (asynchronous-xcalls <rtable> [<boolean>])
+.SEE (==> <obj> <symb> ... <args> ... )
+
+Here is a brief documentation of the TLisp implementation of the
+Bernhardt Boser's Remote Procedure Call protocol.  
+
+This protocol involves a communication between a master process,
+TLisp, and a slave process, denoted as the ``Remote Process''.  Remote
+processes may define ``Remote Objects'', as well as functions on these
+remote objects, denoted as ``Remote Calls''.
+
+The communication takes place over two file descriptors, <fin>, a pipe
+from the remote process and <fout>, a pipe to the remote process.
+Such file descriptors are easily created with the function <filter>.
+
+On the Tlisp side, all remote objects are instances of ``Remote
+Classes'', which are subclasses of the predefined <|ROBJECT|> class.
+
+These remote classes may have ``Remote Methods'' as well as methods
+defined by the usual <demethod> functions. A remote method is an
+object of class <|RCALL|>, which is stored into the remote class with
+a <putmethod> call.
+
+All remote classes defined by a remote process are handled by a single
+object, the ``Remote Table'', which is an instance of class |RTABLE|.
+This object has one private slot for each remote class. These slots
+may be accessed as usual with the scope macro. 
+
+The remote table also store in its slot <t> a reference to the ``Base
+object'' The base object just is a distinguished remote object,
+usually used for calling remote functions that are not related to any
+remote object, like the calls for creating new remote objects.
+
+The protocol is composed of three main parts:
+.IP
+A ``Binary Protocol'' defines how remote objects are represented on
+the communication links, as well as a few kind of standard objects,
+like matrices, numbers, strings. This binary protocol is implemented
+by the functions <read-binary> and <write-binary>.
+.IP
+A ``Binding Protocol'' is used for initializing the connection.  As
+soon as the connection is established, the remote process sends a
+description of all the remote classes, all the possible remote calls,
+and sends a root object. This binding is implemented by the function 
+<remote>.
+.IP
+A ``RPC Protocol'' is used when lisp calls a remote function on a
+remote object. It defines how the call is initiated, how the arguments
+are transferred, and how the results are handled.  Remote Procedure
+Calls happen automatically when a |RCALL| method defined in the remote
+class is activated by a message sent with the usual function ==>.
+.PP
+In addition, a few special messages are exchanged when an error
+occurs, or when a remote object is inconditionally deleted by the
+remote process.  This part of the protocol currently is rather crude,
+but sufficient for simple applications.
+
+Two kind of Remote Procedure Calls are defined: During a synchronous
+RPC, the lisp side waits for the return value of the call.  During an
+asynchronous RPC, the lisp does not wait, and the return value is
+discarded.
+
+Asynchronous RPCs still are in a experimental state. They are faster
+than synchronous calls. They allow the simulataneous execution of
+several functions of a same program. They however provide terrible
+headaches to the programmer if anything is going wrong.  Function
+<asynchronous-xcalls> changes whether the remote calls are
+asynchronous or not.
+
+
+
+#? (remote <fin> <fout> [<rtable>])
+.SEE Remote.
+.SEE (filter <cmd> <fin> <fout>)
+.SEE (write-binary <file> <l_1> <l_n>)
+.SEE (read-binary <file>)
+.SEE (allslots <obj>)
+.SEE (addslots <obj> <s_1> ... <s_n>)
+
+This function implements the binding protocol of Bernhardt Boser's
+Remote Procedure Call protocol. This function links dynamically remote
+process accessed through <fin>, a pipe from the remote process, and
+<fout>, a pipe to the remote process.
+
+This function returns the base remote object, and stores the remote
+table into the optional symbol <rtable>. The remote table is useful
+for accessing the remote classes, which are stored into its slots.
+
+
+#? (asynchronous-xcalls <rtable> [<boolean>])
+.SEE Remote.
+Sets the mode of the subsequent Remote Procedure Calls.
+
+If <boolean> is not the empty list, any subsequent RPC shall be
+asynchronous.  Otherwise, any subsequent RPC shall be synchronous
+(this is the default). If this argument is not provided, this function
+just returns the current mode.

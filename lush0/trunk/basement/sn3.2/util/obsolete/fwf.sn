@@ -1,0 +1,239 @@
+#? File <"fwf.sn">
+;;
+;; File <"fwf.sn"> contains a generic interface for Steven's FWF code.  FWF
+;; stands for File Without Format. This is to be used in conjunction with
+;; <"file-io.sn"> for actually writing and reading the files.
+;;
+;; A fwf file is composed of a number of ``instances'' whose location in a
+;; file can be retrieved using a handle.  Objects are organized using
+;; ``classes''.
+;;
+;; Writing an FWF file consists in
+;;.IP 1.
+;; Registering one or several class names and obtaining the class handles.
+;; Class handles are simply positive numbers starting from zero.
+;;.IP 2.
+;; Registering one or several instances using the class handle. This operation
+;; allocates an area in the file with a predetermined size and returns an
+;; instance handle. Instance handles are simply positive numbers starting from
+;; zero.
+;;.IP 3
+;; Seeking to the allocated area and writing the data using the function
+;; provided by <"file-io.sn">.
+;;.PP
+;; There are two strategies for reading a FWF file.
+;;.IP
+;; The first strategy consists in reading the instance pointers from the
+;; instance number using <get-pointer>. The class handle of each object can be
+;; retrieved using <get-class>. The class name can be then retrieved using
+;; <class-name>.
+;;.IP
+;; The second strategy consists in reading the class names using <class-name>,
+;; obtaining the successive instance pointers for this class using
+;; <get-pointer-in-class>.
+;;
+;;.SEE (new fwf <filename> <writep>)
+;;.SEE (==> <fwf> close <comment>)
+;;.SEE (==> <fwf> register-class <classname>)
+;;.SEE (==> <fwf> get-registry <classname>)
+;;.SEE (==> <fwf> class-name <class-handle>)
+;;.SEE (==> <fwf> register-instance <class-handle> <instance-size>)
+;;.SEE (==> <fwf> get-pointer <instance-handle>)
+;;.SEE (==> <fwf> get-class <instance-handle>)
+;;.SEE (==> <fwf> get-pointer-in-class <class-handle> <instance-rank>)
+;;.SEE (==> <fwf> get-comments)
+
+
+
+;; Test if fwfmain or fwfsub have been loaded
+(let ((mods (all ((i (mod-list))) (base-name i))))
+  (when (and (not (member "fwfmain" mods))
+             (not (member "fwfsub" mods)) )
+    ;; Load if not already there
+    (when (not g++-load) (load "dh-compile"))
+    (g++-load "fwfsub.cc")
+    (mod-load (concat :sn3-dir "../M-" :os-string "/lib/libgcc.a")) ) )
+
+;;; ----------------------------------
+
+(mload "dynamic.sn")
+(mload "cmacro.sn")
+(mload "file-io.sn")
+
+;;; ----------------------------------
+
+
+#? (new fwf <filename> <writep>)
+;; Creates a new FWF object associated to file <filename>.  Boolean argument
+;; <writep> is <t> if the file is being written and <()> if the file is being
+;; read.
+;;
+;; The file pointer (used by the functions of <"file-io.sn">) can be accessed
+;; in slot <fp> of the FWF object. The file name and the direction of the FWF
+;; object can be accessed in slots <fname> and <writep> of the FWF object.
+
+(defclass fwf object
+  ((-gptr-) fwfp)
+  ((-gptr-) fp)
+  ((-str-)  fname) 
+  ((-bool-) writep) )
+
+
+(defmethod fwf fwf(filename writablep)
+  ((-str-) filename)
+  ((-bool-) writablep)
+  (setq fname filename)
+  (setq writep writablep)
+  (setq fwfp (if writep
+                 (gptr #{ new_fwf($fname->data, "wb") #})
+               (gptr #{ new_fwf($fname->data, "rb") #}) ))
+  (when (not fwfp)
+    (error "FWF creation failed") )
+  (setq fp (gptr #{ fwf_fp($fwfp) #}))
+  filename )
+
+
+#? (==> <fwf> close <comment>)
+;; FWF files must be closed explicitely.  This operation closes the FWF
+;; object.  If the FWF object was opened for writing, this function flushes
+;; the FWF directory and writes a comment string <comment>. This string will
+;; later be accessible using function <get-comment>.
+
+
+(defmethod fwf close(comment)
+  ((-str-) comment)
+  (when (not fwfp) (error "FWF has been already closed"))
+  #{ fwf_close($fwfp, $comment->data); #}
+  (setq fwfp (unprotect (gptr ())))
+  (setq fp (unprotect (gptr ())))
+  () )
+
+
+(defmethod fwf -destructor()
+  (when fwfp
+    (printf "*** Warning: FWF (%s) is being closed by GC.\n" fname)
+    (printf "*** You will be less lucky if you compile this!\n")
+    (==> this close "closed by GC") ) )
+
+
+
+#? (==> <fwf> register-class <classname>)
+;; Register a new class into a FWF opened for writing. Argument <classname>
+;; is a string specifying the name of a class. This function returns the class
+;; handle (a positive number starting from zero.)
+
+(defmethod fwf register-class(cname)
+  ((-str-) cname)
+  (when (not fwfp) (error "FWF has been closed"))
+  (when (not writep) (error "FWF has been opened for reading"))
+  (int #{ fwf_register_class($fwfp, $cname->data) #}) )
+
+#? (==> <fwf> get-registry <classname>)
+;; Returns a class handle for a class named <classname>.
+;; Returns <-1> if no such class exists in the FWF object.
+
+(defmethod fwf get-registry(cname)
+  ((-str-) cname)
+  (when (not fwfp) (error "FWF has been closed"))
+  (int #{ fwf_get_registry($fwfp, $cname->data) #}) )
+
+
+#? (==> <fwf> class-name <class-handle>)
+;; Returns a string describing the class name whose handle
+;; is the integer <class-handle>.
+
+(defmethod fwf class-name(chandle)
+  ((-int-) chandle)
+  (when (not fwfp) (error "FWF has been closed"))
+  (let ((ans ""))
+    #{ { char *cname = (char*)fwf_class_name($fwfp, $chandle);
+         if (!cname) run_time_error("Not a recognized class");
+         Msrg_resize($ans, strlen(cname));
+         strcpy($ans->data, cname);
+    } #} ans ) )
+
+
+#? (==> <fwf> register-instance <class-handle> <instance-size>)
+;; Registers a new instance of the class specified by the integer <class-handle>
+;; into a FWF opened for writing. This function allocates <size> bytes for in 
+;; the file and returns an instance handle (a positive number starting from zero.)
+
+(defmethod fwf register-instance(chandle size)
+  ((-int-) chandle size)
+  (when (not fwfp) (error "FWF has been closed"))
+  (when (not writep) (error "FWF has been opened for reading"))
+  (let ((ohandle 0))
+    ((-int-) ohandle)
+    #{ fwf_get_save_pointer($fwfp, &$ohandle, $chandle, $size); #}
+    ohandle ) )
+
+#? (==> <fwf> get-pointer <instance-handle>)
+;; Returns the absolute position in the file of the area allocated for
+;; the instance specified by the integer handle <instance-handle>.
+;; The proper procedure then consists in
+;;.IP
+;; Using <fseek> to position the file pointer (slot <fp> of the FWF object)
+;; to the instance area.
+;;.IP
+;; Using <fread-xxx> or <fwrite-xxx> to read or write the instance data.
+
+(defmethod fwf get-pointer(ohandle)
+  ((-int-) ohandle)
+  (when (not fwfp) (error "FWF has been closed"))
+  (int #{ fwf_get_load_pointer($fwfp, $ohandle) #}) )
+
+
+
+#? (==> <fwf> get-class <instance-handle>)
+;; Returns the class handle for the object specified by the integer
+;; <instance-handle>. The class name can be retrieved by sending message
+;; <class-name>.
+
+(defmethod fwf get-class(ohandle)
+  ((-int-) ohandle)
+  (when (not fwfp) (error "FWF has been closed"))
+  (let ((chandle 0))
+    ((-int-) chandle)
+    #{ { int *position; 
+         $chandle = fwf_get_info($fwfp, $ohandle); 
+    } #} chandle ) )
+
+
+#? (==> <fwf> get-pointer-in-class <class-handle> <instance-rank>)
+;; Returns a pointer associated to the area allocated for the
+;; <instance-rank>th instance registered for the class specified
+;; by integer <class-handle>. The proper procedure then consists in
+;;.IP
+;; Using <fseek> to position the file pointer (slot <fp> of the FWF object)
+;; to the instance area.
+;;.IP
+;; Using <fread-xxx> or <fwrite-xxx> to read or write the instance data.
+
+
+(defmethod fwf get-pointer-in-class(chandle nth)  ;; slow!
+  ((-int-) chandle nth)
+  (when (not fwfp) (error "FWF has been closed"))
+  (int #{ fwf_get_load_pointer_wrt_class($fwfp, $chandle, $nth) #}) )
+
+
+#? (==> <fwf> get-comments)
+;; Returns the comment string associated to the FWF during its creation.
+
+(defmethod fwf get-comments()
+  (let ((ans ""))
+    #{ { char *cname = (char*)fwf_get_comments($fwfp);
+         if (!cname) run_time_error("Null comment");
+         Msrg_resize($ans, strlen(cname));
+         strcpy($ans->data, cname);
+    } #} ans ) )
+  
+
+
+
+;;; ----------------------------------
+
+(dhc-make () (fwf fwf close
+                  register-class get-registry class-name
+                  register-instance get-pointer get-class
+                  get-pointer-in-class get-comments
+                  ) )

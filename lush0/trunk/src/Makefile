@@ -1,0 +1,153 @@
+# Generated automatically from Makefile.in by configure.
+
+SHELL=/bin/sh
+top=..
+srcdir=.
+exe=
+CC=gcc
+CFLAGS=-g -Wall -Wno-uninitialized -Wstrict-prototypes  -I/usr/X11R6/include -I../include -I${top}/include
+LDFLAGS= -Wl,-export-dynamic 
+LIBS= -L/usr/X11R6/lib  -lSM -lICE -lX11  -lm -ldl 
+PREDIR=../bin
+INSTALL=${top}/config/install-sh -c
+HOST=i686-pc-linux-gnu
+
+LUSHOBJS_COMMON= \
+        allocate.o at.o binary.o calls.o classify.o date.o dump.o \
+        eval.o fileio.o fltlib.o function.o graphics.o htable.o \
+        io.o main.o nan.o oostruct.o ps_driver.o string.o        \
+        symbol.o toplevel.o dz.o \
+	storage.o check_func.o index.o idx1.o idx2.o idx3.o idx4.o \
+	lisp_c.o
+LUSHOBJS_UNIX= unix.o user.o x11_driver.o
+LUSHOBJS_WIN32= win32.o win_driver.o
+LUSHOBJS=${LUSHOBJS_COMMON} ${LUSHOBJS_UNIX}
+LUSHEXE= lush${exe}
+
+all : ${LUSHEXE} ${PREDIR}/${LUSHEXE}
+
+${LUSHEXE}: ${LUSHOBJS}
+	${CC} ${LDFLAGS} -o $@ ${LUSHOBJS} ${LIBS}
+
+${PREDIR}/${LUSHEXE}: ${LUSHEXE}
+	@test -d ${PREDIR} || mkdir ${PREDIR}
+	@test -d ${PREDIR}/${HOST} || mkdir ${PREDIR}/${HOST}
+	${INSTALL} ${LUSHEXE} -m 0755 ${PREDIR}/${HOST}
+
+clean: 
+	-rm 2>/dev/null ${LUSHEXE} ${LUSHOBJS}
+
+distclean:
+	-rm 2>/dev/null Makefile ${LUSHEXE} ${LUSHOBJS}
+
+.PHONY: clean distclean all install
+
+# Dependencies
+
+allocate.o: allocate.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+at.o: at.c ${top}/include/header.h ${top}/include/define.h ../include/config.h \
+ ${top}/include/fltlib.h
+
+binary.o: binary.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+calls.o: calls.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+classify.o: classify.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+date.o: date.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+dump.o: dump.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+eval.o: eval.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+fileio.o: fileio.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+fltlib.o: fltlib.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+function.o: function.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+graphics.o: graphics.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h ${top}/include/graphics.h
+
+htable.o: htable.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+io.o: io.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+main.o: main.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+matrix.o: matrix.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+nan.o: nan.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+oostruct.o: oostruct.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+ps_driver.o: ps_driver.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h ${top}/include/graphics.h
+
+string.o: string.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+symbol.o: symbol.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+toplevel.o: toplevel.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+unix.o: unix.c ../include/config.h ../include/autoconf.h \
+ ${top}/include/header.h ${top}/include/define.h \
+ ${top}/include/fltlib.h
+
+user.o: user.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+dz.o: dz.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+storage.o: storage.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+index.o: index.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+check_func.o: check_func.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+idx1.o: idx1.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+idx2.o: idx2.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+idx3.o: idx3.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+idx4.o: idx4.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h
+
+lisp_c.o: lisp_c.c ${top}/include/header.h ${top}/include/define.h \
+ ../include/config.h ${top}/include/fltlib.h ${top}/include/dh.h \
+ ${top}/include/check_func.h \
+
+x11_driver.o: x11_driver.c ../include/config.h \
+ ${top}/include/header.h ${top}/include/define.h \
+ ${top}/include/fltlib.h ${top}/include/graphics.h
+
+
+

@@ -1,0 +1,1572 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;  Data handler objects
+;;;
+;;;  Copyright (C) 1993 Neuristique SA
+;;;  $Id: datahandler.lsh,v 0.1 2001-10-31 17:29:53 profshadoko Exp $
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; dathandler
+;;; an abstract class for data handling for SQL, matrixes and other tools
+
+;;; indices: they are all 0-based.
+;;; () is admited instead of simple indices
+;;; failures: method error should be called. It returns <this> when error flag is NIL.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? *** datahandler
+;; Abstract class datahandler implements a convenient, standard way for accessing data.
+;; There are various ways for storing data: lists, trees, arrays, files, databases...
+;; There are various way for organizing them: indexes, restrictions...
+;;
+;; The most inportant fields of datahandler are:
+;;.IP
+;; data, which store data themselves or another datahandler,
+;;.IP
+;; card, which is set to the number of records accessible with data,
+;;.IP
+;; flag, which contains options such as read-write authorization, range checks...
+;;.IP
+;; err, which stores the message of the last error
+;;
+;; Conventionaly, records of datahandler instances are usually indiced from 0 to card - 1.
+;; 
+;; Only few effective methods are owned by datahandler: check, logic and error.
+;;
+;; Other methods are abstract methods.
+;; They are redifined for each sub-class which supports them:
+;;.IP
+;; (read <n>) returns the list of attributes of record <n>.
+;; The sams convention as matrices subscripts apply to datahandlers:
+;; when <n> is nil, the list of all records is returned, and
+;; when <n> is a list of two subscripts, the list of records between those
+;; two subscripts is returned.
+;;.IP
+;; (write <n> item) overwrites record <n> with attributes <item>.
+;;.IP
+;; (append <item>) appends a new record <item>.
+;;.IP
+;; (delete <n>) deletes record <n>.
+;;.IP
+;; (refresh . <arg>) refreshes the datahandler. This method is especially usefull
+;; for handling shared files or database tables.
+;;.IP
+;; (exhaust . <arg>) ensures the datahandler has fetched all its data.
+;; This method is especially usefull
+;; for handling large files or database tables.
+
+(defclass datahandler object
+  data     ;; data storage (maybe another datahandler)
+  (card 0) ;; cardinal of adressable data (lastdata == card -1)
+  flag     ;; usually an alist
+  check    ;; Boolean
+  err      ;; Usually a list (txt obj)
+  ex       ;; number of exhausted; () means fully exhausted
+  dd       ;; dataheader
+  )
+
+(defmethod datahandler datahandler (&optional lf dhead)
+  (when ~flags (==> this setflag lf))
+  (when ~dd (==> this dataheader (or dhead lf)))
+  data
+  )
+
+(defmethod datahandler setflag (lf)
+  (each ((symb '(read append write delete error)))
+    (setq flag (cons (cons symb (or (alist-get symb lf)
+				    ~~(member symb lf)) )
+		     flag )) )
+  (when (or (member check lf) (alist-get 'check lf))
+    (setq check t) )
+  (each ((symb '(exhaust exhausted)))
+    (when (and ~(check==> (classof this) symb) ~(assoc symb flag))
+      (setq flag (cons (cons symb 'ignored) flag)) ) )  
+  )
+
+(defmethod datahandler -unknown (mes l)
+  (when check (==> this check mes))
+  (if (is-of-class data datahandler)
+      (eval `(==> data ,mes ,@l))
+    (when (<> 'ignored (cdr (assoc mes flag)))
+      (error (classname (classof this)) "unimplemented message" (car l))
+      ) ) )
+
+
+#? (==> <datahandler> check <mes> <n>)
+;; Method check returns nil if <n> is a valid subscript for the message <mes>.
+;; Conventionally, such subscripts are usually between 0 and 1 - card.
+;;
+(defmethod datahandler check (op &optional n &rest r)
+  (or (when (and op  ~(alist-get op flag))
+	(==> this error (sprintf "not a valid operation %l" op)) ) 
+      (when (and n ~(and (numberp n) (>= n 0) (< n card))
+		 ~(and (consp n) (>= (car n) 0) (< (car n) card)
+		       (>= (cadr n) 0) (< (cadr n) card) ) )
+	(==> this error "not a valid subscript") )
+      ) )
+
+
+#? (==> <datahandler> logic)
+;; Method logic returns a list of argument for function new.
+;; This enables the recreation of a similar datahandler in another context.
+;; This method is meaningfull for handling files, SQL select queries or other
+;; context little-dependant data handling operations.
+;; Some datahandler subclasses, such as indexdatahandler just propagate the
+;; logic message to the datahandler they refer to.
+
+(defmethod datahandler logic ()
+  (list (classof this) data)
+  )
+
+#? (==> <datahandler> dataheader [dhead])
+;; This method creates a data header for the current datahandler.
+;; Its argument may be a dataheader, a number (meaning no information
+;; but the number of fields), or an alist with some of the
+;; following keys:
+;;.IP
+;; 'numcol <numcol>
+;;
+;; where <numcol> is the number of expected columns. This is usefull for
+;; void datahandlers which are about to be filled.
+;;.IP
+;; 'title <title>
+;;
+;; where <title> is a string which will define the overall title associated to the data.
+;;.IP
+;; 'titles <titles>
+;;
+;; where <titles> is a list of strings (one per column of data)
+;; which will define the titles of the columns.
+;;.IP
+;; 'types <types>
+;;
+;; where <types> is a list of strings (one per column of data)
+;; which will define the type of each column. Nil values are allowed.
+;; The most usefull types are |NUMBER|, |DATE|, '(|DATE| year day), '(|DATE| year second),
+;; and '(|DATE| hour second).
+
+(defmethod datahandler dataheader (&optional dhead)
+  (if (and ~dhead dd)
+      dd
+    (cond ((consp dhead)
+	   (setq dd (new dataheader
+			 (or (alist-get 'numcol dhead) (and dd (==> dd numcol)) )
+			 (or (alist-get 'titles dhead) (and dd (==> dd titles)) )
+			 (or (alist-get 'types  dhead) (and dd (==> dd types )) )
+			 (or (alist-get 'widths dhead) (and dd (==> dd widths)) )
+			 ))
+	   )
+	  ((is-of-class dhead dataheader)
+	   (setq dd dhead)
+	   )
+	  ((is-of-class data datahandler)
+	   (setq dd (==> data dataheader))
+	   )
+	  (t
+	   (setq dd (new dataheader (or dhead (length (==> this read 0)))))
+	 )
+	  )
+    dd ) )
+
+
+#? (==> <datahandler> error <txt> &optional <obj>)
+;; Instances of datahandler call method error whenever a non-fatal error is detected.
+;;
+;; When symbol error is NOT a member of the flag list,
+;; it stores the error text into the object and returns the object.
+;; This enable to handle errors through stacks of datahandler
+;; (an indexdatahandler can refer to a sqlwadatahandler,
+;; which refers to an arraydatahandler).
+;;
+;; When symbol error is a member of the flag list, an effective error occurs.
+;;
+(defmethod datahandler error (txt &optional obj)
+  (when ~(stringp txt) (setq txt "datahandler unidentified error"))
+  (if  (alist-get 'error flag)
+      (error 'this txt obj)
+    (setq err (list txt obj))
+    this ) )
+
+(defmethod datahandler agregate (ag &optional fl)
+  (when (> card 0)
+    (let* ((f0 ()) ;; init value
+	   (f1 ()) ;; incr funct
+	   (f2 ()) ;; end funct
+	   )
+      (selectq ag
+	((mean avg)
+	 (setq f0 (list 0 0)
+	       f1 (lambda ((a n) x)
+		    (if x (list (+ a x) (1+ n)) (list a n)) )
+	       f2 (lambda ((x n)) (when (> n 0) (/ x n)))
+	       ) )
+	((sdev)
+	 (setq f0 (list 0 0 0)
+	       f1 (lambda ((a a2 n) x)
+		    (if x (list (+ x a) (+ (* x x) a2) (1+ n)) (list a a2 n)) )
+	       f2 (lambda ((x x2 n)) (when (> n 0) (sqrt (/ (- x2 (/ (* x x) n)) n))))
+	       ) )
+	(t
+	 (==> this error "datahandler: unknown agregate")
+	 )
+	)
+      (setq fl (cond (~fl (lambda (n) (==> this read n)))
+		     ((functionp fl) (eval `(lambda (n) (,fl (==> this read n)))))
+		     (t (==> this error "datahandler: unknown filter"))
+		     ))
+      (setq f0 (makelist (length (fl 0)) f0))
+      (for (i 0 (1- card))
+	(setq f0 (mapcar f1 f0  (fl i)))
+	)
+      (mapcar f2 f0)
+      ) ) )
+
+;; when defined lfil is a list of functions / nilval / nil means raw copy works on th column
+(defmethod datahandler getmatrix (&optional lcol lfil)
+  (==> this exhaust)
+  (let* ((nf (length (==> this read 0)))
+	 (ncol (if lcol (length lcol) nf))
+	 )
+    (when (and (> nf 0) (> card 0))
+      (let* ((k 0)
+	     (n 10000)
+	     (a (array n nf))
+	     (m (matrix card ncol))
+	     (o ())
+	     )
+	(while (< k card)
+	  ;; the last slice may be shorter than the first ones
+	  (when (> (+ k n) card)
+	    (setq n (- card k))
+	    (setq a (submatrix a (list 0 (1- n)) ()))
+	    )
+	  ;; take a new slice
+	  (setq o (submatrix m (list k (+ n k -1)) ()))
+	  ;; get data in the slice buffer
+	  (a () () (==> this read (list k (+ k n -1))))
+	  ;; apply filter on the good columns
+	  (when lfil
+	    (each ((j (or lcol (range 0 (1- ncol))))
+		   (f (if (consp lfil) lfil (makelist ncol lfil)))
+		   )
+	      (cond ((numberp f)   (setq f (eval `(lambda (x) (cvt-tl-num x ,f)))))
+		    ((= t f)       (setq f (eval `(lambda (x) (cvt-tl-num x ,(nan))))))
+		    )
+	      (a () j (mapcar (or f progn) (a () j)))
+	      ) )
+	  ;; and extract them
+	  (if lcol
+	      (matrix-columns a lcol o)
+	    (copy-matrix a o)
+	    )
+	  ;; next slice
+	  (incr k n)
+	  )
+	;; return the matrix
+	m
+	) ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; lambdadatahandler
+;;; datahandler for lambda expressions
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? lambdadatahandler
+;; Class lambdadatahandler allow to handle data through functions
+;; with the datahandler conventions.
+;; It supports methods read and write.
+;; The <f> argument must support the following notations:
+;; (<f> <n>) (<f> ()) (<f> (<n1> <n2>)) and  (<f> <n> <v>).
+
+(defclass lambdadatahandler datahandler
+  )
+
+(defmethod lambdadatahandler lambdadatahandler (f &optional lf dhead)
+  (setq data f)
+  (setq card (data))
+  (let* ((pf ()))
+    (when (setq pf (member 'delete lf))
+	  (rplaca pf ()) )
+    (when (setq pf (member 'append lf))
+	  (rplaca pf ()) )
+    )
+  (==> this datahandler lf dhead)
+  data
+  )
+
+(defmethod lambdadatahandler read (n)
+  (or (when check (==> this check 'read n))
+      (cond ((numberp n)
+	     (data n)
+	     )
+	    ((consp n)
+	     (mapfor (i (car n) (cadr n)) (data i))
+	     )
+	    (~n
+	     (mapfor (i 0 (1- card)) (data i))
+	     )
+	    (error "unexpected lambdadatahandler subscript")
+	    ) ) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; listdatahandler
+;;; a simple database implemented as a list
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? listdatahandler
+;; Class listdatahandler implements list-data handling with the datahandler conventions.
+;; It supports methods read, write append and delete.
+;; Method read and write are slower than for arrays.
+;; Method append is optimal.
+
+(defclass listdatahandler datahandler
+  ptr
+  )
+
+(defmethod listdatahandler listdatahandler (l &optional lf dhead)
+  (setq data (cons () l))
+  (setq ptr (lastcdr data))
+  (setq card (length (cdr data)))
+  (==> this datahandler lf dhead)
+  data
+  )
+
+(defmethod listdatahandler read (n)
+  (or (when check (==> this check 'read n))
+      (cond (~n          (append (cdr data) ()))
+	    ((numberp n) (nth n (cdr data)))
+	    ((consp n)   (nfirst (max 0 (1+ (- (cadr n) (car n))) (nthcdr (car n) (cdr data)))))
+	    (t (error "unexpected subscript in listdatahandler"))
+	) ) )
+
+(defmethod listdatahandler write (n item)
+  (or (when check (==> this check 'write n item))
+      (if ~n
+	  (progn (setq data (cons () (makelist card item)))
+		 (setq ptr (lastcdr data))
+		 ()
+		 )
+	(rplaca (nthcdr n (cdr data)) item)
+	()
+	) ) )
+
+(defmethod listdatahandler append (item)
+  (nconc1 ptr item)
+  (incr card)
+  (setq ptr (cdr ptr))
+  ()
+  )
+
+(defmethod listdatahandler delete (n)
+  (if (when check (==> this check 'delete n))
+      this
+    (if ~n (progn
+	     (setq data (list ()))
+	     (setq card 0)
+	     (setq ptr (lastcdr data))
+	     )
+      (let* ((p (nthcdr n data))) (rplacd p (cddr p)))
+      (incr card -1)
+      (when (= n card) (setq ptr (lastcdr data)))
+      ()
+      ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; arraydatahandler
+;;; a simple database implemented as an array
+
+;;; does not support neither delete nor append methods
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? arraydatahandler
+;; Class arraydatahandler implements 1D-array-data handling
+;; with the datahandler conventions.
+;; It supports methods read and write.
+;; Method read and write are slower than for arrays.
+;; Method read and write are optimal.
+;;
+;; In addition to standard methods, it supports method resize,
+;; which increase the size of the array.
+
+(each (((arraydatahandler da al) '( (array1datahandler   ()  array)
+				    (array2datahandler  (()) array)
+				    (matrix2datahandler (()) matrix)
+				    )))
+  (eval `(progn
+
+	  (defclass ,arraydatahandler datahandler
+	    )
+
+	  (defmethod ,arraydatahandler ,arraydatahandler (a &optional lf dhead)
+	    (if (numberp a)
+		(==> this resize t a)
+	      (setq data a)
+	      (setq card (car (bound data)))
+	      )
+	    (let* ((pf ()))
+	      (when (setq pf (member 'delete lf))
+		(rplaca pf ()) )
+	      (when (setq pf (member 'append lf))
+		(rplaca pf ()) )
+	      )
+	    (==> this datahandler lf (or dhead (if (= 2 (bound data)) (1+ (bound 2)))
+					 (length (==> this read 0)) ))
+	    data
+	    )
+
+	  (defmethod ,arraydatahandler read (n)
+	    (when ~(and check (==> this check 'read n))
+		  (when data (data n ,@da))
+		  ) )
+  
+	  (defmethod ,arraydatahandler write (n item)
+	    (when ~(when check (==> this check 'write n item))
+		  (data n ,@(append da '(item)))
+		  ()
+		  ) )
+
+	  (defmethod ,arraydatahandler resize (&optional flag n)
+	    (let* ((m (or (when ~data 0) (car (bound data))))
+		   )
+	      (when ~n (setq n card))
+	      (if (or (and ~data (> n 0)) (> n m))
+		  (progn
+		    (setq flag (if flag () data))
+		    (setq data (,al n ,@da))
+		    (when (and flag (>= m 1))
+		      (copy-any-matrix
+		       flag
+		       (submatrix data ,@(append da '((list 0 (1- m)))))
+		       ) )
+		    (when flag
+		      (data () ())
+		      )
+		    ) ) ) )
+	  ) ) )
+
+(setq arraydatahandler array1datahandler)
+
+
+(defmethod matrix2datahandler getmatrix (&optional lcol lfil)
+  (let* ((ans (matrix-columns data)))
+    (when lfil (each ((m (all ((i (0 (bound m 2)))) (submatrix m () i))))
+		 (m () (mapcar lfil (m ()))) ))
+    ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; sqldatahandler
+;;; read buffer for SQL database
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? sqldatahandler
+;; Class sqldatahandler implements read-only sql-database handling
+;; with the datahandler conventions.
+;; It supports method read.
+;; In addition to standard dtahandler method,
+;; it provides lock, unlock, dataheader, exhaust and refresh methods.
+
+(defclass sqldatahandler datahandler
+  txt ;; text of sql query (including question marks)
+  arg ;; argument of sql query
+  ok  ;; enable/disable flag
+  )
+
+(defmethod sqldatahandler sqldatahandler (s &optional a)
+  (==> this rawrefresh s a)
+  (when ~dd (==> this dataheader))
+  )
+
+(defmethod sqldatahandler refresh args
+  (apply==> this 'rawrefresh args)
+  (==> this exhaust)
+  ()
+  )
+
+(defmethod sqldatahandler rawrefresh (&optional s a)
+  ;;; arguments
+  (when s (setq txt s))
+  (when a (setq arg a))
+  
+  ;;; ready scroll cursor
+  (when (or ~data s)
+	(setq data (sql-declare txt 'scroll))
+	(sql-error)
+	)
+  (sql-open data arg)
+  (sql-error (named "sqldatahandler:rawrefresh"))
+  (setq ex (if (sql-fetch data 1 ()) 1 0))
+  (setq card ex)
+  (setq ok t)
+  ()
+  )
+
+(defmethod sqldatahandler disable ()
+  (setq ok ())
+  )
+
+(defmethod sqldatahandler exhaust (&optional m)
+  (let* ((n 0))
+    (when ex
+	  (when (> ex 0) (sql-fetch data ex ()))
+	  (setq n (sql-exhaust data m))
+	  (incr ex n)
+	  (setq card ex)
+	  (when (or (<= n 0) ~m (< n m))
+		(setq ex ())
+		)
+	  )
+    n
+    ) )
+
+(defmethod sqldatahandler read (n)
+  (or (when check (==> this check 'read n))
+      (when ok
+	(cond (~n          (mapfor (i 1 card) (sql-fetch data i ())))
+	      ((numberp n) (sql-fetch data (1+ n) ()))
+	      ((consp n)   (mapfor (i (car n) (cadr n)) (sql-fetch data (1+ i) ())))
+	      (t (error "unexpected subscript in sqldatahandler"))
+	      ) ) ) )
+
+(defmethod sqldatahandler dataheader ()
+  (setq dd (new sqldataheader (cdr (sql-describe data))))
+  dd
+  )
+
+(defmethod sqldatahandler lock ()
+  (when ~(sql-capability "repeatable-read")
+	(let ((tablename (sqlp-select-to-table txt))
+	      (lockcap   (sql-capability "table-lock"))
+	      )
+	  (when lockcap
+		(printf (ml "Locking table %s in share mode..."
+			    "Verrouillage de la table %s en mode partag\+i..."
+			    )
+			tablename
+			)
+		(flush)
+		(sql-exec (sprintf lockcap tablename))
+		(if (< (sql-errno) 0)
+		    (sql-errno)
+		  (printf (ml "\tlocked.\n" "\teffectu\+i.\n"))
+		  ()
+		  ) ) ) ) )
+
+(defmethod sqldatahandler unlock ()
+  (when ~(sql-capability "repeatable-read")
+	(let ((tablename (sqlp-select-to-table txt))
+	      (unlockcap (sql-capability "table-unlock"))
+	      )
+	  (when unlockcap
+		(printf (ml "Unlocking table %s..."
+			    "D\+iverrouillage de la table %s..."
+			    )
+			tablename
+			)
+		(flush)
+		(sql-exec (sprintf unlockcap tablename))
+		(if (< (sql-errno) 0)
+		    (sql-errno)
+		  (printf (ml "\tunlocked.\n" "\teffectu\+i.\n"))
+		  ()
+		  ) ) ) ) )
+
+(defmethod sqldatahandler logic ()
+  (list (classof this) txt arg)
+  )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; sqlwadatahandler
+;;; write / append buffer for SQL database
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? sqlwadatahandler
+;; Class sqlwadatahandler implements read-write-append-delete sql-database handling
+;; with the datahandler conventions.
+;; It supports methods read, write, append.
+;; In addition to standard datahandler and sqldatahandler methods,
+;; it provides save and restore methods.
+;; Although it does not support delete method, it is able to delete records
+;; into the database table, when asked through the save message.
+;; It is also able to delete append items.
+
+(defclass sqlwadatahandler sqldatahandler
+  ic      ;; initial cardinal
+  wb      ;; write  buffer (can be an arraydatahandler)
+  ab      ;; append buffer (can be a   listdatahandler)
+  )
+
+
+(defmethod sqlwadatahandler sqlwadatahandler (s lf &optional a)
+
+  (when (= t lf) (setq lf '(read write append delete)))
+  (==> this (datahandler . setflag) lf)
+
+  (if sql-rowidname
+      (setq s (regex-subst "^ *select" (concat "select " sql-rowidname ", ")
+			   (regex-subst "[ \t]+" " " (downcase s)) ))
+    (error "rowid semantic not supported by the database")
+    )
+  (==> this rawrefresh s a)
+
+  (==> this dataheader)
+
+  (when (alist-get 'append flag)
+	(setq ab (new listdatahandler () '(read write append delete) dd))
+	)
+  (when (alist-get 'write flag)
+	(setq wb (new arraydatahandler (or ic 0) '(read write) dd))
+	)
+  )
+
+(defmethod sqlwadatahandler rawrefresh args
+  (apply==> this '(sqldatahandler . rawrefresh) args)
+  (setq ic card)
+
+  (when wb
+    (==> wb resize t (next**2 (max 512 ic)))
+    (==> wb write () ()) )
+  (when ab (==> ab delete ()))
+  ()
+  )
+
+
+(defmethod sqlwadatahandler exhaust args
+  (if ~ex
+      0
+    (setq args (apply==> this '(sqldatahandler . exhaust) args))
+    (incr ic args)
+    (when (and wb (> card :wb:card))
+	  (==> wb resize () (max 512 (next**2 ic)))
+	  )
+    args
+    ) )
+
+
+(defmethod sqlwadatahandler read (n)
+  (when ok
+    (or (when check (==> this check 'read n))
+	(if (numberp n)
+	    ;; one item
+	    (if (and ab (>= n ic))
+		;; inserted item
+		(==> ab read (- n ic))     
+	      (or
+	       ;; updated  item
+	       (and wb (==> wb read n))
+	       ;; standard item
+	       (if sql-rowidname
+		   (cdr (sql-fetch data (1+ n) ()))
+		 (sql-fetch data (1+ n) ())
+		 ) ) )
+	  ;; several items
+	  (let* ((from (or (car n) 0))
+		 (to   (or (cadr n) (1- card))) )
+	    (nconc
+	     (when (< from ic)
+	       (mapcar or
+		       (==> wb read (list from (min to (1- ic))))
+		       (if sql-rowidname
+			   (mapcar cdr (mapfor (i (1+ from) (1+ to)) (sql-fetch data i ())))
+			 (mapfor (i (1+ from) (1+ to)) (sql-fetch data i ()))
+			 ) ) )
+	     (when (> to ic)
+	       (==> ab read (list ic to))
+	       ) ) ) ) ) ) )
+
+
+(defmethod sqlwadatahandler write (n item)
+  (or (when check (==> this check 'write n item))
+      (if (and ab (>= n ic))
+	  (==> ab write (- n ic) item)
+	(==> wb write n item)
+	) ) )
+
+
+(defmethod sqlwadatahandler append (item)
+  (when ~(==> ab append item)
+	(setq card (+ ic :ab:card))
+	()
+	) )
+
+
+(defmethod sqlwadatahandler delete (n)
+  (or (when check (==> this check 'delete n))
+      (if (==> ab delete (- n ic))
+	  (apply==> this 'error :ab:err)
+	(setq card (+ ic :ab:card))
+	()
+	) ) )
+
+
+(defmethod sqlwadatahandler restore (n)
+  (cond (~n
+	 (==> wb write () ())
+	 (==> ab delete ())
+	 (setq card ic)
+	 ()
+	 )
+	((< n ic)
+	 (==> wb write n ())
+	 ()
+	 )
+	(t
+	 (when check (==> this check 'read n))
+	 )
+	)
+  )
+
+
+(defmethod sqlwadatahandler rowid (n)
+  (if sql-rowidname
+      (cond ((numberp n) (car (sql-fetch data (1+ n) ())))
+	    ((consp n)   (all ((i n)) (car (sql-fetch data (1+ i) ()))))
+	    )
+    (error "rowid semantic not supported by this database")
+  ) )
+
+
+#? (sqlwadatahandler save <la> <ld> <lw>)
+;;
+;; This method takes a list of appended, deleted and overwritten records.
+;; It saves these records and discard other changes in the sqlwadatahandler buffers.
+;; It triggers the datahandler refresh request.
+;;
+;; The save method is database-dependant.
+;;
+;; Up to now, the implementation of save method relies on the absolute row identifier,
+;; which behaves like an extra, read-only field in database tables.
+;; Most database engines supporta absolute row identifier.
+;;
+;; It provides a safer way for updating data
+;; than the standard use of "update ... where ..." SQL statement,
+;; which leads to inconsistent results
+;; when the updating causes temporarily identical records.
+;;
+;; It provides a more standard way
+;; than "update ... where current of ..." SQL statement,
+;; which needs update cursors,
+;; for which dynamic handling is not always provided by database engines.
+
+(defmethod sqlwadatahandler save (la ld lw)
+  (if debugflag
+      (progn
+	(printf (ml "Saving:  insert%l delete%l update%l\n"
+		    "Sauvegarde de:  inserer%l suprimer%l modifier%l\n"
+		    )
+		la ld lw )
+	(when debugflag 
+	  (print la (==> this rowid la))
+	  (print ld (==> this rowid ld))
+	  (print lw (==> this rowid lw))
+	  ) )
+    (printf (ml "Saving..." "Sauvegarde en cours..."))
+    (flush)
+    )
+  (let* ((name   (sqlp-select-to-table txt))
+	 (fields (==> dd titles))
+	 (values ())
+	 (set-clause ())
+	 (ra ())
+	 (rd ())
+	 (rw ())
+	 )
+    (when (or la lw)
+	  (setq set-clause
+		(apply concat
+		       (cdr (flatten (all ((f fields))
+					  (list " , " f " = ? ") )))
+		       ) )
+
+	  (setq values
+		(apply concat
+		       (flatten (list " ( "
+				      " ? " 
+				      (makelist (1- (length fields)) " , ? ")
+				      " ) "
+				      )) ) )
+	  (setq fields
+		(apply concat
+		       (flatten (list " ( "
+				      (cdr (flatten (all ((f fields)) (list " , " f))))
+				      " ) "
+				      )) ) )
+	  )
+
+    ;;;;;;; deletions
+    (when ld
+	  (let* ((q (concat " delete from " name
+			    " where " sql-rowidname " = ? " )))
+	    (when debugflag (print q))
+	    (setq q (sql-prepare q))
+	    (setq rd
+		  (all ((d ld))
+		       (when debugflag (print (list (==> this rowid d))))
+		       (when
+			(sql-exec q (list (==> this rowid d)))
+			(list d (sql-errno) (sql-errm))
+			) ) ) ) )
+
+    ;;;;;;; substitutions
+    (when lw
+	  (let* ((q (concat " update " name
+			    " set " set-clause
+			    " where " sql-rowidname " = ? "
+			    )))
+	    (when debugflag (print q))
+	    (setq q (sql-prepare q))
+	    (setq rw
+		  (all ((w lw))
+		       (when debugflag (print (append (==> this read w) (list (==> this rowid w)))))
+		       (when
+			(sql-exec q (append (==> this read w) (list (==> this rowid w))))
+			(list w (sql-errno) (sql-errm))
+			) ) ) ) )
+
+    ;;;;;;; insertions
+    (when la
+	  (let* ((q (concat " insert into " name
+			    fields " values " values 
+			    )))
+	    (when debugflag (print q))
+	    (setq q (sql-prepare q))
+	    (setq ra
+		  (all ((a la))
+		       (when debugflag (print (==> this read a)))
+		       (when
+			(sql-exec q (==> this read a))
+			(list a (sql-errno) (sql-errm))
+			) ) ) ) )
+
+    (if (or (apply+ or ra) (apply+ or rd) (apply+ or rw))
+	(list ra rd rw) ;; return value meaning an error occured
+      (if debugflag
+	  (printf (ml "Saved.\n" "Sauvegarde effectu\+ie.\n"))
+	(printf (ml "\tsaved.\n" "\teffectu\+ie.\n")) )
+      (==> this rawrefresh)
+      ) ) )
+
+
+(defmethod sqlwadatahandler dataheader ()
+  (when ~dd
+    (setq dd (new sqldataheader (if sql-rowidname
+				    (cddr (sql-describe data))
+				  (cdr (sql-describe data)) )))
+    )
+  dd
+  )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; indexdatahandler
+;;; index mask
+;;; data is a slave datahandler
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? indexdatahandler
+;; Class indexdatahandler implements re-indexation.
+;; Instances of indexdatahandler do not handle data by themselves,
+;; instead, they refer to another datahandler.
+;;
+;; Class indexdatahandler implements method delete and delegates most other messages.
+;; Since it refers to another datahandler, deletion is only virtual.
+;; It supports many messages, including all those of sqlwadatahandler.
+
+(defclass indexdatahandler datahandler
+  ind    ;; index matrix
+  ic     ;; cardinal of remaining original data
+  lindex ;; a lambda is quicker than a message
+  st     ;; id of deleted and written rows
+  )
+
+
+(defmethod indexdatahandler indexdatahandler (dh)
+  ;;; index is allowed to refer to ic, not to card
+  (setq lindex
+	(lambda (n)
+	  (cond ( (or ~n ~ind)
+		  n )
+		( (consp n)
+		  (all ((i n)) (lindex i)) )
+		( (>= n ic)
+		  (+ n (- (ind ic) ic)) )
+		( t
+		  (ind n) )
+		) ) )
+  (setq data dh)
+  (setq flag :data:flag)
+  (==> this resize t)
+  )
+
+
+(defmethod indexdatahandler refresh args
+  (when (<> (car args) t) (apply==> data 'refresh args))
+  (==> this resize t)
+  )
+
+
+(defmethod indexdatahandler rawrefresh args
+  (apply==> data 'rawrefresh args)
+  (==> this resize t)
+  )
+
+
+(defmethod indexdatahandler resize (&optional flag size)
+
+  ;;; updates WARNING: lindex must be called before ic is updated
+  (setq ex :data:ex)
+  (setq card :data:card)
+  (if flag
+      (setq ic card)
+    (let* ((ndeleted (- (lindex card) card)))
+      (setq ic (- :data:ic ndeleted))
+      (incr card (- ndeleted))
+      ) )
+
+  ;;; compute size
+  (setq size (next**2 (max 512 (1+ :data:card) (or size 0))))
+
+  ;; if flag  then new index  else resize old index
+  (if (and ind (>= (car (bound ind)) size))
+      (when flag (==> this reindex))
+    (setq flag (if flag () ind))
+    (setq ind (matrix size))
+    (==> this reindex flag)
+    )
+  ()
+  )
+
+
+(defmethod indexdatahandler reindex (&optional oldind)
+
+  ;;; forget modifications when no old ind is provided
+  (when ~oldind
+	(setq st (list () ()))
+	(setq card :data:card)
+	(setq ex :data:ex)
+	)
+
+  (let* ((offset (if oldind (car (bound oldind)) 0))
+	 (offval (if (> offset 0) (1+ (oldind (1- offset))) 0))
+	 )
+    ;;; keep old index when olodind is set
+    (when (>= offset 1)
+	  (copy-any-matrix 
+	   oldind
+	   (submatrix ind (list 0 (1- offset)))
+	   ) )
+    ;;; build superior index
+    (when (<= offset (1- (car (bound ind))))
+	  (mind (submatrix ind (list offset (1- (car (bound ind))))) 
+		offval
+		) ) ) )
+
+
+(defmethod indexdatahandler exhaust args
+  (if ~ex
+      0
+    (setq args (apply==> data 'exhaust args))
+    (==> this resize)
+    args
+    ) )
+
+(defmethod indexdatahandler restore (n)
+  (==> data restore (when n (lindex n)))
+  (when ~n (==> this reindex))
+  )
+
+(defmethod indexdatahandler delete (n)
+  (or (when check (==> this check 'delete n))
+      (if (>= n ic)
+	  (==> data delete (lindex n)) ;; ab knows how to delete
+	(when ~ind (==> this resize))
+	(when ~(member (ind n) (car st))
+	      (rplaca st (cons (ind n) (car st))) )
+        ;;; WARNING: requires sequential computation
+	(copy-matrix (submatrix ind (list (1+ n) (- (car (bound ind)) 1)))
+		     (submatrix ind (list     n  (- (car (bound ind)) 2))) )
+	(incr ic -1)
+	()
+	)
+      ~(incr card -1)
+      ) )
+
+(defmethod indexdatahandler read (n)
+  (or (when check (==> this check 'read n))
+      (if (consp (setq n (lindex (or n (when (car st) (range 0 (1- card)))))))
+	  (all ((i n)) (==> data read i))
+	(==> data read n)
+	) ) )
+
+(defmethod indexdatahandler write (n item)
+  (or (==> this check 'write n item)
+      (==> data write (lindex n) item)
+      (when (and (< n ic) ~(member (ind n) (cadr st)))
+	    (rplaca (cdr st) (cons (ind n) (cadr st)))
+	    () )
+      ) )
+
+(defmethod indexdatahandler append (item)
+  (when ~(==> data append item)
+	(incr card)
+	()
+	) )
+
+(defmethod indexdatahandler status ()
+  (let (((ld lw) st)
+	(la (range (lindex ic) (1- (lindex card)) 1))
+	)
+    (setq lw (listsub lw ld))
+    (rplaca (cdr st) lw)
+    (list la ld lw)
+    ) )
+
+(defmethod indexdatahandler save ()
+  (let (((la ld lw) (==> this status)))
+    (or (==> data save la ld lw)
+	(progn
+	  (==> this resize t)
+	  ()
+	  ) ) ) )
+
+#? filterdatahandler
+;; This class enable to select columns and apply filter on each datum.
+
+(defclass filterdatahandler datahandler
+  rfilter
+  wfilter
+  )
+
+(defmethod filterdatahandler filterdatahandler (dh &optional rfi wfi)
+  (setq data dh)
+  (==> set-filter rfi wfi)
+  )
+
+(defmethod filterdatahandler set-filter (rfi wfi)
+  (setq rfilter rfi)
+  (setq wfilter wfi)
+  )
+
+(defmethod filterdatahandler read (n)
+  (let* ((l (==> data read n)))
+    (if (numberp n) (rfilter l) (mapcar lfilter l))
+    ) )
+
+(defmethod filterdatahandler append (item)
+  (==> data append n (wfilter item))
+  )
+
+(defmethod filterdatahandler write (n item)
+  (if (numberp n)
+      (==> data write n (wfilter item))
+    (==> data write n (mapcar wfilter item))
+    ) )
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? *** Data Headers: <dataheader>.
+;; Class <dataheader> describes the columns of some virtual table.
+;;
+;; Class <dataheader> aims at unifying the data descriptions
+;; used with datahandlers and other tools such as data base engines.
+;; This class supports several descrition flavours and provides
+;; several usefull methods for data conversion or data formating.
+
+(defclass dataheader object
+  title
+  type      ;; storage type
+  width     ;; 
+  )
+
+
+#? (new dataheader [ <numcol> [<titles> [<types> [<widths> [typeflags]]]]])
+;;
+;; This creates a dataheader.
+;;
+;; Argument <numcol> is the number of columns.
+;;
+;; Argument <titles> is a list of strings. Unspecified titles may be nil.
+;;
+;; Argument <types> specifies the type of data when they are non-nil.
+;; It may be Lush class or classnames among <|STRING|>, <|NUMBER|>,
+;; <|DATE|> or '(|DATE| <from> [<to>]). Unspecified types may be <()>.
+;; Specified <types> allow nil values for unspecified data.
+;;
+;; Optional argument <widths> is the list
+;; of typical length of data converted into strings.
+;;
+;; Optional argument <typeflags> provides further information
+;; on the type of data. The following conventions apply:
+;;.IP
+;; |DATE| types may be in association with a list of two date range flags
+;; (from 'year to 'second) which specifies the maximal extension of the |DATE| data.
+;;.IP
+;; |NUMBER| types may be in association with a list of two or three numbers,
+;; which specifies a range and a step, or a with a 'int symbol which specifies integer data.
+;;.IP
+;; |STRING| may be in association with a number, which is the maximal string length.
+;;.VP
+;; (new dataheader () '(|DATE| |NUMBER| (|DATE| year hour)))
+;;.PP
+
+(defmethod dataheader dataheader (&optional n na ty wi)
+  (setq title na)
+  (setq type  ty)
+  (setq width wi)
+  (==> this check n)
+  )
+
+
+#? (==> <dataheader> insert pos &optional na ty wi)
+;; This method inserts a new column.
+(defmethod dataheader insert (pos &optional na ty wi)
+  (setq title (list-insert title pos na))
+  (setq type  (list-insert type  pos ty))
+  (setq width (list-insert width pos wi))
+  )
+
+
+#? (==> <dataheader> columns <columns>)
+;; This method returns a new dataheader dealing only with the good columns.
+(defmethod dataheader columns (cols)
+  (new dataheader
+       (length c)
+       (all ((c cols)) (nth c title))
+       (all ((c cols)) (nth c type))
+       (all ((c cols)) (nth c width))
+       ) )
+
+
+;; private method
+(defmethod dataheader check (&optional n)
+  (let* ((desc (array 3 (or n (max (length title) (length type) (length width)))))
+	 )
+    (desc () () (list title type width))
+    (setq title    (desc 0 ()))
+    (setq type     (desc 1 ()))
+    (setq width    (desc 2 ()))
+    ) )
+
+
+#? (==> <dataheader> numcol)
+;; This method returns the number of columns documented in <dataheader>.
+
+(defmethod dataheader numcol ()
+  (length title) ;; check ensures all lists have the same length...
+  )
+
+
+#? (==> <dataheader> width [<column>])
+;; This method returns the width of column <column>.
+;; When <column> is nil or not given, the widths of all column
+;; is returned.
+
+(defmethod dataheader widths (&optional column)
+  (if column (nth column width) (append width ()))
+  )
+
+
+#? (==> <dataheader> title [<column>])
+;; This method returns the title of column <column>.
+;; When <column> is nil or not given, the titles of all column
+;; is returned.
+
+(defmethod dataheader titles (&optional column)
+  (if column (nth column title) (append title ()))
+  )
+
+
+#? (==> <dataheader> type [<column>])
+;; This method returns the type of column <column>.
+;; When <column> is nil or not given, the types of all column
+;; is returned.
+
+(defmethod dataheader types (&optional column)
+  (if column (nth column type) (append type ()))
+  )
+
+
+#? (==> <dataheader> make-cvt-to-num [<column>])
+;; This method returns a function
+;; for converting the data of column <column> into numbers.
+;;
+;; When data are ensured to be dates, ornan
+;; is returned.
+;;
+;; Conversion failures will return a Nan number.
+;;
+;; When <column> is nil or not given, the list of functions
+;; for all columns is returned.
+
+(defmethod dataheader make-cvt-to-num (&optional columns)
+  ((if (listp columns) progn car)
+   (all ((ty ((if (listp columns) progn list) (==> this types columns))))
+     (selectq (if (consp ty) (car ty) ty)
+       (|DATE|
+	(lambda (x) (if x (date-to-day x) (nan)))
+	)
+       (|NUMBER|
+	ornan
+	)
+       (|STRING|
+	(lambda (x) (or (val x) (nan)))
+	)
+       (t
+	cvt-tl-num
+	)
+       ) ) ) )
+
+
+#? (==> <dataheader> make-cvt-to-str [<columns>])
+;; This method returns a function
+;; for converting the data into strings.
+;;
+;; When data are ensured to be dates, or
+;; is returned.
+;;
+;; Conversion failures returns the optional argument
+;; <nilval> of which default value is "".
+;;
+;; When <column> is nil or not given, the list of functions
+;; for all columns is returned.
+
+(defmethod dataheader make-cvt-to-str (&optional columns)
+  ((if (listp columns) progn car)
+   (all ((ty ((if (listp columns) progn list) (==> this types columns))))
+     (selectq (if (consp ty) (car ty) ty)
+       (|DATE|
+	(lambda (x &optional (nilval "")) (if x (date-to-string x) nilval))
+	)
+       (|NUMBER|
+	(lambda (x &optional (nilval "")) (if x (pname x) nilval))
+	)
+       (|STRING|
+	or
+	)
+       (t
+	cvt-tl-str
+	)
+       ) ) ) )
+
+
+#? (==> <dataheader> make-cvt-to-date [<columns>])
+;; This method returns function
+;; for converting the data into dates.
+;;
+;; When data are ensured to be dates, or
+;; is returned.
+;;
+;; Conversion failure will return nil.
+;;
+;; When <columns> is nil or not given, the list of functions
+;; for all columns is returned.
+
+(defmethod dataheader make-cvt-to-date (&optional columns from to)
+  ((if (listp columns) progn car)
+   (all ((ty ((if (listp columns) progn list) (==> this types columns))))
+     (selectq (if (consp ty) (car ty) ty)
+       (|DATE|
+	(if (not (or from to (consp ty)))
+	    or
+	  (when (consp ty)
+	    (when ~from (setq from (cadr  ty)))
+	    (when ~to   (setq to   (caddr ty)))
+	    )
+	  (eval `(lambda (x &optional nilval)
+		   (if x (date-extend x ,(or from 'year) ,(or to second)) nilval) ))
+	  ) )
+       (|NUMBER|
+	(eval `(lambda (x &optional nilval)
+		 (if x (day-to-date (or from 'year) (or to 'second)) nilval) ))
+	)
+       (|STRING|
+	(eval `(lambda (x &optional nilval)
+		 (or (when x
+		       (or (string-to-date x (or from 'year) (or to 'day))
+			   (string-to-date x (or from 'year) (or to 'second))
+			   (string-to-date x (or from 'hour) (or to 'second))
+			   )
+		       nilval )) ))
+	)
+       (t
+	cvt-tl-date
+	)
+       ) ) ) )
+
+
+#? (==> <dataheader> make-cvt-from-num [<columns>])
+;; This method returns a list of functions
+;; for converting numbers into dataheader types.
+;;
+;; When data are ensured to be numbers, or
+;; is returned.
+;;
+;; Conversion failures will return nil or Nan.
+;;
+;; When <column> is nil or not given, the list of functions
+;; for all columns is returned.
+
+(defmethod dataheader make-cvt-from-num (&optional columns)
+  ((if (listp columns) progn car)
+   (all ((ty ((if (listp columns) progn list) (==> this types columns))))
+     (selectq (if (consp ty) (car ty) ty)
+       (|DATE|
+	(eval `(lambda (x &optional nilval)
+		 (if x (date-extend
+			(day-to-date x)
+			(quote ,(or (when (consp ty) (cadr ty)) 'year))
+			(quote ,(or (when (consp ty) (caddr ty)) 'second))
+			)
+		   nilval
+		   ) ))
+	)
+       (|NUMBER|
+	or
+	)
+       (|STRING|
+	(lambda (x &optional nilval) (if x (str x) nilval))
+	)
+       (t
+	or )
+       ) ) ) )
+
+
+#? (==> <dataheader> make-cvt-from-str [<columns>])
+;; This method returns a list of functions
+;; for converting strings into dataheader types.
+;;
+;; When data are ensured to be strings, or
+;; is returned.
+;;
+;; Conversion failures will return nil or Nan.
+;;
+;; When <columns> is nil or not given, the list of functions
+;; for all columns is returned.
+
+
+(defmethod dataheader make-cvt-from-str (&optional columns)
+  ((if (listp columns) progn car)
+   (all ((ty ((if (listp columns) progn list) (==> this types columns))))
+     (selectq (if (consp ty) (car ty) ty)
+       (|DATE|
+	(if (consp ty)
+	    (eval `(lambda (x &optional nilval)
+		     (if x (string-to-date
+			    x
+			    (quote ,(or (cadr  ty) 'year))
+			    (quote ,(or (caddr ty) 'second))
+			    )
+		       nilval
+		       ) ))
+	    (eval `(lambda (x &optional nilval)
+		     (if x (or (string-to-date x 'year 'day)
+			       (string-to-date x 'year 'second)
+			       )
+		       nilval
+		       ) ))
+	    )
+	)
+       (|NUMBER|
+	(eval `(lambda (x &optional nilval)
+		 (if x (val x) nilval) ))
+	)
+       (|STRING|
+	or
+	)
+       (t
+	or )
+       ) ) ) )
+
+
+#? (==> <dataheader> regex-cvt-from-str [<columns>])
+;; This method returns a list of regular expressions
+;; for restricting edit strings associated to dataheader types.
+;;
+;; When <columns> is nil or not given, the list of regular expressions
+;; for all columns is returned.
+(defmethod dataheader regex-cvt-from-str (&optional columns)
+  ((if (listp columns) progn car)
+   (all ((ty ((if (listp columns) progn list) (==> this types columns))))
+     (selectq (if (consp ty) (car ty) ty)
+       (|DATE|
+	(cond (~(consp ty)
+		"([-0-9]*)|([-0-9]*( [:0-9]*)?)"
+		)
+	      ((and (= 'year (cadr ty)) (= 'second (caddr ty)))
+		"([-0-9]*)|([-0-9]*( [:0-9]*)?)"
+		)
+	      ((and (= 'year (cadr ty)) (= 'day (caddr ty)))
+	       "([-0-9]*)"
+	       )
+	      ((and (= 'hour (cadr ty)) (= 'second (caddr ty)))
+	       "[:0-9]*"
+	       )
+	      )
+	)
+       (|NUMBER|
+	"[-+]?[0-9]*(\\.[0-9]*)?([Ee][-+]?[0-9]*)?"
+	)
+       (|STRING|
+	".*"
+	)
+       (t
+	or )
+       ) ) ) )
+
+#? (==> <dataheader> errf-cvt-from-str [<columns>])
+;; This method returns a list of functions
+;; for computing error messages after converstion failure from strings.
+;;
+;; When <columns> is nil or not given, the list of functions
+;; for all columns is returned.
+(defmethod dataheader errf-cvt-from-str (&optional columns)
+  ((if (listp columns) progn car)
+   (all ((ty ((if (listp columns) progn list) (==> this types columns))))
+     (selectq (if (consp ty) (car ty) ty)
+       (|DATE|
+	(cond (~(consp ty)
+	       (lambda(prompt)
+		 (sprintf "%s\n%s\n%s" prompt 
+			  (ml "Date expected with optional time"
+			      "Une date avec heure optionnelle est attendue" )
+			  (ml "(YYYY-MM-DD [HH:MM:SS])" 
+			      "(AAAA-MM-JJ [HH:MM:SS])" )
+			  ) ) )
+	      ((and (= 'year (cadr ty)) (= 'second (caddr 'ty)))
+	       (lambda(prompt)
+		 (sprintf "%s\n%s\n%s" prompt
+			  (ml "Date and time expected"
+			      "Une date avec heure is attendue" )
+			  (ml "(YYYY-MM-DD HH:MM:SS)" 
+			      "(AAAA-MM-JJ HH:MM:SS)" )
+			  ) ) )
+	      ((and (= 'year (cadr ty)) (= 'day (caddr 'ty)))
+	       (lambda(prompt)
+		 (sprintf "%s\n%s\n%s" prompt
+			  (ml "Date expected"
+			      "Une date est attendue" )
+			  (ml "(YYYY-MM-DD)" 
+			      "(AAAA-MM-JJ)" )
+			  ) ) )
+	      ((and (= 'hour (cadr ty)) (= 'second (caddr 'ty)))
+	       (lambda(prompt)
+		 (sprintf "%s\n%s\n%s" prompt 
+			  (ml "Time expected"
+			      "Une heure est attendue" )
+			  (ml "(HH:MM:SS)" 
+			      "(HH:MM:SS)" )
+			  ) ) )
+	      )
+	)
+       (|NUMBER|
+	"[-+]?[0-9]*(\\.[0-9]*)?([Ee][-+]?[0-9]*)?"
+	)
+       (|STRING|
+	".*"
+	)
+       (t
+	or )
+       ) ) ) )
+
+
+
+#? (new sqldataheader <sqldesc>)
+;; A sqldataheader is created from a sql query description <sqldesc>.
+;; Basically, it works like standard dataheaders. However, it uses the
+;; description conventions of the SQL columns argument <sqldesc>.
+
+(defclass sqldataheader dataheader
+  desc
+  )
+
+(defmethod sqldataheader sqldataheader (sqldesc)
+  (setq desc sqldesc)
+  (setq title    (all ((d desc)) (nth 0 d)))
+  (setq width    (all ((d desc)) (or (nth 1 d) 10)))
+  (setq type     (all ((d desc)) (sql-desc-to-tltype d)))
+  )
+
+(defmethod sqldataheader describe ()
+  desc
+  )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Junky Outsiders
+;;;
+
+(de listsub (la lb)
+    (let* ((l ()))
+      (each ((a la))
+	    (when ~(member a lb)
+		  (setq l (cons a l))
+		  ) )
+      (reverse l)
+      ) )
+
+(de sortedlistinter (la lb)
+    (let* ((l ())
+	   (ll ())
+	   )
+      (when (> (length la) lb)
+	    (setq l la) (setq la lb) (setq lb l) )
+      (each ((a la))
+	    (when (setq ll (member a lb))
+		  (setq l (cons a l))
+		  ) )
+      (sort-list l)
+      ) )
+
+(de mind (m &optional (x0 0) (s 1))
+    (if (< (car (bound m)) 2)
+	(m 0 x0)
+      (let* ((m0 (submatrix m (list 0 (- (car (bound m)) 2))))
+	     (m1 (submatrix m (list 1 (- (car (bound m)) 1))))
+	     )
+	(m*c m   0 m )
+	(m+c m1  s m1)
+	(m 0 x0)
+      ;;; WARNING: requires sequential computation
+	(m+m m0 m1 m1)
+	) )
+    m )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Outsiders
+;;;

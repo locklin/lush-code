@@ -1,0 +1,4168 @@
+#? **** Ogre.
+ 
+#? *** Introduction to Ogre.
+
+.SEE Graphics.
+.SEE Events.
+
+Lush provides all the necessary graphic primitives for programming a
+graphics interface.
+.IP
+Output primitives include functions for opening windows and functions
+for producing various elementary drawings. Lush supports multiple
+fonts, multiple windows and even multiple window systems.
+.IP
+Input functionalities are also present. Lush gathers all events in a
+common event queue. There are functions for inspecting this event
+queue (<checkevent> and <waitevent>). Hook functions are called when
+events are occuring while Lush is waiting for user commands
+(<event-hook> and <idle-hook>).
+.PP
+It is rather easy to build simple graphic interfaces using these
+primitives. For instance, the function <snpaint> implements a simple
+drawing program for drawing lines and rectangles using low level
+primitives.
+
+Graphic interfaces however become quickly complex. The class browser
+described in the last chapter of this document contains various
+features, like menus, buttons, requesters, selectors and scrollbars. A
+direct program would be overwhelmingly complex.
+
+This is why people have developped various toolkits which handle
+automatically a large part of this complexity. The Ogre library is
+such a toolkit entirely written using the Lush object oriented
+language. This manual describes how to build programs with this
+library.
+
+In the Ogre library, each component of a graphics interface, a button
+for example, is implemented as an object which is an instance of a
+subclass of class <VisualObject>.
+
+The class of such an object defines both the appeareance of the object
+and its response to user input. Defining a new type of object (e.g. a
+menu) is thus just a matter of defining a new subclass of
+<VisualObject>.
+
+There is a wide variety of such object classes:
+.IP
+Basic objects are the major components of an interface.
+For instance, buttons, strings or check boxes are visible
+and respond to user interaction.
+.IP
+Container objects are rectangular areas containing other objects
+and maintaining a certain layout. For instance there is a class
+<Column> which maintain several objects aligned in a column.
+.IP
+Window objects are special container object affected to a
+window on the screen. Every object inserted in a window object
+appears into the window and is eligible for receiving user events.
+.PP
+There are two programming levels with the Ogre library. At the
+simplest level, you just use the provided classes for defining your
+interface. At the second level, you define subclasses of the standard
+Ogre classes in order to create new kind of graphic components.
+
+#? *** Ogre Tutorial.
+
+Here is the transcript of a trivial call to the ogre library.
+You must first initialize the Ogre library by calling function
+<ogre>:
+.VP
+? (ogre)
+ [ogre.lsh] (autoload)
+= idle-hook
+.PP
+Let us then open a window <ww> containing a message string
+and a button arranged in a column named <cc>:
+.VP
+? (setq ww 
+    (new windowobject 0 0 400 300 "Essai"
+      (setq cc (new column (new string "Press button to beep")
+                           (new stdbutton "Beeper"
+                                    (lambda(c) (beep))) ) ) ) )
+
+= ::windowobject:e3100
+.PP
+When you click on the button, the callback function <(lambda(c)
+(beep))> is called and produces an audible beep. Let us add now a
+check box into the column:
+.VP
+? (==> cc insert (new checkbox "check me"  
+                   (lambda(c) 
+                        (printf "Check box state is %l\n" 
+                                  (==> c getdata))))))
+= ()
+.PP
+The callback function takes one argument. This argument is the check
+box object that we can query using method <getdata>. Let us add now an
+editable string named <ee> into the column:
+.VP
+? (==> cc insert (setq ee (new editstring 18 "hello")))  
+;; Argument 18 is the field width.
+= ()
+? (==> ee setdata "hello people")
+= ()
+? (==> ee getdata)
+= "hello people"
+.PP
+Again we can manipulate the state of the editable string using method
+<setdata> and <getdata>. You may have noticed that the button width
+has changed when we have inserted the editable string. The column
+indeed manage its contents in order to keep them properly aligned.
+We can indeed move and resize the column as a whole:
+.VP
+? (==> cc move 50 70)
+= (50 20 129 84)
+? (==> cc resize 250 120)
+= (50 20 250 100)
+.PP
+We can even add into the column a small object which lets
+you move the column with the mouse:
+.VP
+? (==> cc insert (new dragarea 50 20))
+= () 
+.PP
+Arguments <50> and <20> are the width and height of this object.
+Since the drag area is inserted into a column, its width is adjusted
+to the column width.
+
+Let us add a row with two exclusive buttons:
+.VP
+? (==> cc insert (new row (new radiobutton "choice1")
+                          (new radiobutton "choice2") ) )
+= ()
+.PP
+We can get (or set) the complete state of the column with a single
+message <getdata> (or <setdata>):
+.VP
+? (==> cc getdata)
+= (() "hello people" () t)
+? (==> cc setdata '(t "goodbye" t ()))
+= ()
+.PP
+The Ogre library provides many more complex object, as
+shown in the following example:
+.VP
+? (setq h (new filerequester ww))
+= ::filerequester:f3ef0
+? (==> h popup)
+= ::filerequester:f3ef0
+? (==> h getdata)
+= "/home/leon"
+.PP
+Let us add now a button for destoying the window.
+.VP
+? (==> ww insert (new stdbutton "Bye Bye." 
+                     (lambda(c) (==> thiswindowobject delete)) ) )
+= ()
+.PP
+This button ends the tutorial.
+
+
+#? *** The Ogre Class Library.
+
+
+All the objects must interact in order to be drawn at the proper
+location and with the proper ordering. Similarly, user events (e.g. a
+mouse click) must be dispateched towards the object located below the
+mouse.
+
+The kernel of the Ogre library ensures these interaction by defining
+how messages are propagated between the objects in a graphic
+interface.  
+
+
+#? ** Ogre Methods.
+
+Event dispatching is mostly performed by the <Container> class. A
+container dispatchs the events messages to its sons according to
+simple rules. Keyboard events are sent to the ``active'' object. All
+other events are sent to the object located under the mouse pointer.
+
+Repainting is managed asynchronously. When you want to redraw an
+object, you must send a message <expose> to this object to tell the
+Ogre system to schedule a repainting operation. When the system
+becomes idle, the Ogre library sends a <repaint> message to all
+objects to repaint with a proper ordering which ensures that the
+topmost objects are repainted last.
+
+Similarly, you never change the location of an object directly. You
+send message <move>, <resize> or <moveresize> which tell the Ogre
+system to relocate an object. The Ogre library then enforces all the
+rules of the container objects, performs a global recomputation of the
+location of all objects and places the objects by sending them a
+message <geometry>.
+
+In general, most operation on the Ogre objects are implemented using
+two messages. 
+.IP
+The request message (e.g. <expose>) is used by a program to tell the
+Ogre library that you wish to perform a certain operation.
+.IP
+The implementation message (e.g. <repaint>) is only called by Ogre
+to perform the operation and update all the other objects accordingly.
+.PP
+When you want to perform a certain operation, you must call the
+request message and not the implementation message. The Ogre library
+will call the implementation message for you at a proper time and with
+the proper order.
+
+When you define a new class of Ogre objects, you must define the
+implementation method only. The corresponding request message will be
+inherited from the superclass.
+
+Here is a list of the most useful message pairs:
+.IFTEX
+\begin{center}
+\begin{tabular}{|c|l|l|}
+\hline 
+Operation & Request & Implementation \\ 
+\hline \hline
+Drawing & \typo{expose} & \typo{repaint} \\
+        &               & \typo{repaint-bw} \\ 
+        &               & \typo{repaint-color} \\ 
+        &               & \typo{backpaint} \\ 
+        &               & \typo{backpaint-bw} \\ 
+        &               & \typo{backpaint-color} \\ 
+\hline
+Moving and resizing & \typo{move} & \typo{geometry} \\
+                     & \typo{moverel} & \typo{manage-geometry} \\
+                     & \typo{resize} & \typo{compute-geometry} \\
+                     & \typo{moveresize} & \\
+\hline
+Making an object visible & \typo{insert} & \typo{realize} \\
+                         & \typo{remove} & \\
+\hline
+\end{tabular}
+\end{center}
+.IFHLP
++-------------------+------------------+------------------+
+| Operation         | Request          | Implementation   |
++-------------------+------------------+------------------+
+| Drawing           | expose           | repaint          |
+|                   |                  | repaint-bw       |
+|                   |                  | repaint-color    |
+|                   |                  | backpaint        |
+|                   |                  | backpaint-bw     |
+|                   |                  | backpaint-color  |
++-------------------+------------------+------------------+
+| Moving            | move             | geometry         |
+|   and resizing    | moverel          | manage-geometry  |
+|                   | resize           | compute-geometry |
+|                   | moveresize       |                  |
++-------------------+------------------+------------------+
+| Making an         | insert           | realize          |
+|   object visible  | remove           |                  |
++-------------------+------------------+------------------+
+.PP
+
+#? ** Ogre Class Hierarchy.
+
+There are in fact two major kind of classes:
+.IP
+``User classes'' define the most useful graphics components. For
+instance, class <StdButton> defines a standard push button, class
+<Menu> manages popup menus and class <Requester> manages subwindows
+which pop up to request information from the user.
+.IP
+``Abstract classes'' are located on top of the class hierarchy. They
+define slots and request methods for managing these interactions in
+behalf of instances of their subclasses. Abstract classes are provided
+as a choice of superclasses for defining new classes of Ogre objects.
+.PP
+
+Here is a display of the current class hierarchy in the Ogre library.
+Classes displayed with a star are the abstract classes.
+
+.VP
+  visualobject *
+    control *
+      editstring
+        editnumber
+        editsecretstring
+      button *
+        stdbutton
+          tinybutton
+        checkbox
+          radiobutton
+        filereqbutton
+      menuitem
+      knob *
+        dragarea
+        sizearea
+      slider *
+        hslider
+        vslider
+        scrollbar *
+          hscrollbar
+          vscrollbar
+      textpane
+    container *
+      form *
+        windowobject *
+          autowindowobject *
+        requester
+          warningrequester
+          errorrequester
+          yesnorequester
+            filerequester
+            printrequester
+         viewer
+         selector
+         edittext
+       column
+         menupopup
+       row
+       grid
+       frame
+         framesize
+       viewerhole
+    emptyspace
+    darkspace
+    string
+    icon
+    menu
+      choicemenu
+.PP
+
+Here is the use of the main abstract classes:
+.IP
+Class <VisualObject> is the root of the Ogre class tree. It defines
+how objects are located and repainted. It also defines the default
+event processing messages.
+.IP
+Class <Control> is the subclass of the simplest interactive objects.
+Sunch objects may be enabled or disabled. They may call a callback 
+function when the user requests it.
+.IP
+Class <Button> defines common messages handled by an object
+responding to a single mouse click.
+.IP
+Class <Knob> defines common messages handled by an object
+which requests a geometry change of its container. For instance, 
+inserting a <DragArea> in a container allow the user to move
+the container by clicking on the dragarea object!
+.IP
+Class <Slider> and <Scrollbar> define the common methods for
+objects allowing the user enter a numerical value proportional
+to the location of a visible cursor.
+.IP
+Class <Container> is the superclass of all objects containing other
+objects. It defines methods used for dispatching the events to the
+proper objects as well as methods for enforcing a certain layout.
+.IP
+Class <Form> is a special container used for defining new objects
+composed of other objects. For instance, a <Viewer> is a <Form>
+containing two scrollbars and a container whose contents is moved
+according to the scrollbar position.
+.IP
+Class <WindowObject> is the most important class. It defines a
+container object attached to a graphic window on the screen. Every
+object inserted in a window object becomes visible and is eligible for
+receiving events.
+.PP
+
+
+
+#? *** Ogre Utility Functions.
+
+#? ** Initializing the Ogre library.
+
+
+#? (ogre)
+.TYPE DE
+.FILE ogre.lsh
+
+A single function named Ogre loads and initializes the library.  You
+must call this function on top of each file involved with a graphics
+interface. Function Ogre is often defined as an autoload function
+which loads the Ogre library and calls the actual Ogre function.
+
+This function initializes the library and sets up the event
+dispatcher. In particular, it creates the object <ogre-task> and defines
+the functions <event-hook> and <idle-hook>. If the library was already
+initialized, function Ogre returns immediatly.
+
+#? ogre-task
+.TYPE VAR
+.FILE ogre.lsh
+.SEE (event-hook)
+.SEE (idle-hook)
+.SEE (process-pending-events)
+
+The object located in variable <ogre-task> is set up by function
+<ogre>.  This object performs three central tasks in the Ogre library:
+.IP
+It records all operations requested by the user and delayed by the library.
+This is the case of most repainting requests.
+.IP
+It starts a repainting operation whenever function <idle-hook> is called.
+.IP
+It sends event messages to the proper window object whenever function
+<event-hook> is called.
+.PP
+
+When Lush is waiting for user commands on the standard input, the
+Ogre library manages events asynchronously. The user can thus either
+type lisp commands or activate graphic interfaces.
+
+When a Lush program is running, however, the Ogre library manages
+events when the function <process-pending-events> is called. It is a
+good practice to call this function a few times during long programs.
+
+#? ** Error handling in the Ogre library.
+.SEE Errors in Lush.
+.SEE (debug-hook)
+.SEE Interruptions in Lush.
+.SEE (break-hook)
+
+The Ogre library runs Lush functions whenever an event occurs. 
+
+An error condition occurs when these functions are incorrectly
+designed.  The error message is printed as usual, but you are not
+prompted for a debug toplevel.
+
+An interruption occurs if you type <Ctrl-C> in the Lush console.
+The break message is printed as usual, but you are not prompted
+for a break toplevel.
+
+If you wish to be prompted for these debugging utilities, you must
+redefine functions <ogre-debug-hook> and <ogre-break-hook>.  Here is a
+simple way to achieve this:
+.VP
+        (setq ogre-debug-hook nice-debug-hook)
+        (setq ogre-break-hook nice-break-hook)
+.PP
+
+
+#? ** Ogre Color Palette.
+
+Rendering a graphic interface strongly depends on the capabilities of your
+screen. 
+.IP
+A black and white screen is barely able to display a few levels of gray
+using special dithering patterns. Objects must be rendred using simple
+and visible graphics.
+.IP
+On the other hand, a color screen is able to render three dimensional
+looking objects using several colors for rendering the various shadow
+level.
+.PP
+Ogre provides a way to test if you are using a black and white or a
+color screen. It also provides several utility functions for displaying
+three dimensional looking objects.
+
+
+
+#? color-palette
+.TYPE VAR
+.FILE ogre.lsh
+.SEE (color [<c>])
+
+If you are using a black and white display, this variable contains the
+empty list. You can then select three colors using function <color>.
+.IP
+Color <color-fg> is the foreground color (usually black), 
+.IP
+Color <color-bg> is the background color (usually white)
+.IP
+Color <color-gray> is a 50% dithered gray shade used for rendering
+disabled objects.
+.PP
+If you are using a color display, this variable contains an array
+containing the color numbers used by Ogre for displaying an object.
+Several variables are used to name these colors:
+.VP
+palette-left                 (for rendering light)
+palette-right                (for rendering shadow)
+palette-up                   (for rendering raised objects)
+palette-down                 (for rendering depressed objects)     
+palette-disabled             (for rendering disabled texts)
+palette-selected             (for rendering selected objects)
+.PP
+
+#? (new-palette <r> <g> <b>)
+.TYPE DE
+.FILE ogre.lsh
+.SEE (alloccolor <r> <g> <b>)
+.SEE (==> <windowobject> palette <p>)
+
+This function creates a new palette array whose dominant color is
+defined by its RGB component <r>, <g> and <b>.
+
+You can then store the resulting array into variable <color-palette>
+for redefining the default palette. You can also pass the new palette to
+an existing window object using message <palette>.
+
+
+#? (getcolor <colname>)
+.TYPE DE
+.FILE ogre.lsh
+.SEE (color [<c>])
+
+This function returns the color number for the color named <n> in the
+current palette. Although any number can be passed as argument <n>, we
+suggest using one of the predefined symbols <palette-left>,
+<palette-right>, <palette-up>, <palette-down>, <palette-disabled> or
+<palette-selected> for specifying a color. The resulting color number
+can then be applied using function <color>.
+
+This function is equivalent to:
+.VP
+  (color-palette <colname>)
+.PP
+
+
+#? (setcolor <colname>)
+.TYPE DE
+.FILE ogre.lsh
+.SEE (color [<c>])
+
+This function sets the current color to the color named <n> in the
+current palette. Although any number can be passed as argument <n>, we
+suggest using one of the predefined symbols <palette-left>,
+<palette-right>, <palette-up>, <palette-down>, <palette-disabled> or
+<palette-selected> for specifying a color.
+
+This function is equivalent to:
+.VP
+  (color (getcolor <colname>))
+.PP
+
+
+#? (fill-background <x> <y> <w> <h>)
+.TYPE DE
+.FILE ogre.lsh
+.SEE (fill-rect <x> <y> <w> <h>)
+
+This function fills a rectangle with the background color <palette-up>
+of the current palette. The 3d rendering functions are designed for
+being called on such a background.
+
+#? (draw-up-rect <x> <y> <w> <h>)
+.TYPE DE
+.FILE ogre.lsh
+.SEE (draw-rect <x> <y> <w> <h>)
+
+This function draws the border of a rectangle using the colors defined
+in the current palette. The border only is drawn and appears as a slightly
+raised line.
+
+#? (draw-up-round-rect <x> <y> <w> <h>)
+.TYPE DE
+.FILE ogre.lsh
+.SEE (draw-round-rect <x> <y> <w> <h> [<r>])
+
+This function draws the border of a rectangle with round corners using
+the colors defined in the current palette. The border only is drawn
+and appears as a slightly raised line.
+
+#? (fill-up-rect <x> <y> <w> <h> [<c>])
+.TYPE DE
+.FILE ogre.lsh
+.SEE (fill-rect <x> <y> <w> <h>)
+
+This function fills a rectangle using color number <c> and draws a
+border in order to give the illusion of a rectangle located above the
+background.
+
+The default value for <c> is the color number indicated by
+<palette-up>.
+
+#? (fill-down-rect <x> <y> <w> <h> [<c>])
+.TYPE DE
+.FILE ogre.lsh
+.SEE (fill-rect <x> <y> <w> <h>)
+
+This function fills a rectangle with the color number <c> and draws a
+border in order to give the illusion of a rectangle located below the
+background.
+
+The default value for <c> is the color number indicated by
+<palette-down>.
+
+
+#? (fill-up-round-rect <x> <y> <w> <h> [<c>])
+.TYPE DE
+.FILE ogre.lsh
+.SEE (fill-round-rect <x> <y> <w> <h> [<r>])
+
+This function fills a rectangle with round corners using color number
+<c> and draws a border in order to give the illusion of a rectangle
+located above the background.
+
+The default value for <c> is the color number indicated by
+<palette-up>.
+
+
+#? (fill-down-round-rect <x> <y> <w> <h> [<c>])
+.TYPE DE
+.FILE ogre.lsh
+.SEE (fill-round-rect <x> <y> <w> <h> [<r>])
+
+This function fills a rectangle with round corners using the color
+number <c> and draws a border in order to give the illusion of a
+rectangle located below the background.
+
+The default value for <c> is the color number indicated by
+<palette-down>.
+
+#? (fill-up-circle <x> <y> <r> [<c>])
+.TYPE DE
+.FILE ogre.lsh
+.SEE (fill-circle <x> <y> <r>)
+
+
+This function fills a circle using color number <c> and draws a border
+in order to give the illusion of a circle located above the
+background.
+
+The default value for <c> is the color number indicated by
+<palette-up>.
+
+
+#? (fill-down-circle <x> <y> <r> [<c>])
+.TYPE DE
+.FILE ogre.lsh
+.SEE (fill-circle <x> <y> <r>)
+
+This function fills a circle using color number <c> and draws a border
+in order to give the illusion of a circle located below the
+background.
+
+The default value for <c> is the color number indicated by
+<palette-down>.
+
+
+#? ** Ogre Fonts.
+
+Font names used by the font function used to be device dependent. A
+couple of functions have been defined for selecting fonts in a device
+independent way.
+
+#? (font-18)
+.TYPE DE
+.FILE ogre.lsh
+Selects a 18 points font useful for drawing titles.
+
+#? (font-12b)
+.TYPE DE
+.FILE ogre.lsh
+Selects a 12 points bold font mostly used for button labels.
+
+#? (font-12)
+.TYPE DE
+.FILE ogre.lsh
+Selects a all-purpose 12 points font.
+
+#? (font-8f)
+.TYPE DE
+.FILE ogre.lsh
+Selects a fixed width 8 points font used for text input area.
+
+#? (font-8)
+.TYPE DE
+.FILE ogre.lsh
+Selects a small 8 points font.
+
+
+
+#? *** Visual Objects.
+
+Class <VisualObject> is the root of the Ogre class tree and defines the
+default appearance (nothing) and the default response to user input
+(nothing too) of a graphics interface component.
+
+Class <VisualObject> however defines most request messages which are
+inherited by the graphic components. It also defines the default
+implementation of most implementation messages.
+
+Four slots are defined by class <VisualObject>:
+.VP
+(defclass visualobject object
+  (rect (0 0 0 0))
+  oldrect
+  itscontainer
+  window )
+
+.IP
+Slot <window> is the descriptor of the window that contains the
+object. This slot is set as soon as a window is associated to the object.
+.IP
+Slot <itscontainer> is set when the object is inserted into a
+container. It indicates which container (the father) manages this
+object.
+.IP
+Slot <rect> is a list <(x y w h)> that indicates the rectangle
+associated to the object in the window coordinates.
+.IP
+Slot <oldrect> is a temporary storage used by method <moveresize> to
+store the last acknowledged geometry of an object. This slot is non
+null whenever a geometry change has been requested.
+
+#? (new VisualObject <w> <h>)
+.FILE ogre.lsh
+
+Creates and return a new instance of class <VisualObject>.  Arguments
+<w> and <h> are the width and the height of the object.
+
+This constructor is seldom used for creating new instances. Derived
+classes (e.g. <Control>) usually call this constructor method within
+their own constructor method in order to initialize the <VisualObject>
+part of their instances.
+
+
+#? ** VisualObject Request Messages.
+
+Class <VisualObject> defines request messages inherited by most other
+objects for performing two central tasks:
+.IP
+Repainting the graphic interface components
+.IP
+Changing the geometry of graphic interface components.
+.PP
+Unless you have a thorough knowledge of the internals of Ogre, you
+should neither redefine nor override these messages when defining a
+subclass of <VisualObject>.
+
+
+#? (==> <VisualObject> expose [<rect>])
+.FILE ogre.lsh
+
+Message <expose> tells the Ogre library that a visual object needs to
+be repainted.  Argument <rect> indicates with more accuracy which
+rectangle in the current window must be repainted. When argument
+<rect> is ommited, the entire object rectangle is considered.
+
+Exposure messages are propagated down until they reaches the window object.
+The clipped rectangle are then added to the damaged area list. Repainting is 
+usually performed when the event queue becomes empty.
+
+#? (==> <VisualObject> repair-damaged)
+.FILE ogre.lsh
+
+Message <repair-damaged> starts the repainting operation without
+delay.  When this message is sent to an Ogre object, the Ogre system
+immediatly repaints the damaged areas.
+
+
+#? (==> <VisualObject> moveresize <x> <y> <w> <h>)
+.FILE ogre.lsh
+
+Message <moveresize> ask the Ogre library to redefine the rectangle
+associated to an Ogre object. Arguments <x> and <y> are the
+coordinates of the topleft corner of the rectangle. Arguments <w> and
+<h> are respectively the width and the height of the rectangle.
+
+This request is then signaled to the object's container which gets a
+chance to redefine its own geometry and to enforce a particular
+layout.  When these recomputations are finished, the Ogre library
+effectively calls method <geometry> to relocate the objects.
+
+#? (==> <VisualObject> move <x> <y>)
+.FILE ogre.lsh
+
+Message <move> is used for changing the location of the topleft corner
+of the object's rectangle to coordinates <x> and <y>. It actually
+calls method <moveresize>.
+
+#? (==> <VisualObject> moverel <xr> <yr>)
+.FILE ogre.lsh
+
+Message <moverel> is used for adding <xr> and <yr> to the coordinates
+of the topleft corner of the object's rectangle. It actually calls
+method <moveresize>.
+
+#? (==> <VisualObject> resize <w> <h>)
+.FILE ogre.lsh
+
+Message <resize> is used for changing the width and height of the
+object's rectangle to <w> and <h>. It actually calls method
+<moveresize>.
+
+
+#? (==> <VisualObject> geometry <x> <y> <w> <h>)
+.SEE (==> <Container> manage-geometry)
+.FILE ogre.lsh
+
+Method <geometry> performs a geometry change on a given object.
+Unlike method <moveresize>, the change takes place immediatly with all
+the overhead of recomputing the global position of all objects.
+
+Method <geoemtry> is normally called by the method <manage-geometry>
+defined by the container objects for enforcing a particular layout.
+You may call this method directly (this is a backward compatibility
+requirement), although it is more efficient to use method
+<moveresize>.
+
+
+#? (==> <VisualObject> front <x> <y> <w> <h>)
+.SEE (==> <Container> manage-geometry)
+.FILE ogre.lsh
+
+Although the repainting process becomes inefficient, object rectangles
+may overlap. Methods <front> performs an immediate geometry change and
+places the object on top of the object stack.
+
+#? (==> <VisualObject> back <x> <y> <w> <h>)
+.SEE (==> <Container> manage-geometry)
+.FILE ogre.lsh
+
+Although the repainting process becomes inefficient, object rectangles
+may overlap. Methods <back> performs an immediate geometry change and
+places the object at the bottom of the object stack.
+
+
+
+#? ** VisualObject Implementation Methods.
+
+Implementation methods are overriden by each subclass of <VisualObject>
+in order to define the behavior of each type of object. Class <VisualObject>
+provides a default implementation for four types of implementation methods:
+.IP
+Method <realize> is called whenever an object is associated to or
+dissociated from a window. Redefining a realization method allows for
+precomputing font sizes and color numbers at once.
+.IP
+The geometry computation method is called whenever the geoemtry
+requirement of an object may have changed. This method defines the
+minimum size of a graphic object.
+.IP
+Repaint methods are called when the Ogre library detects that a part
+of the object rectangle has been damaged, either because method
+<expose> has been called or because the object has been moved or
+uncovered by another object.
+.IP
+Events methods are called whenever the user performs certain mouse of
+keyboard actions. They define what actions are performed in response
+to user events. Event messages are documented in the next section.
+
+
+#? (==> <VisualObject> realize <window>)
+.FILE ogre.lsh
+
+This method is called whenever an object is associated to a window 
+(realized) or dissociated from a window (unrealized).
+.IP
+An object is realized when it is inserted into a realized
+container. A window object is always realized.  When an object becomes
+realized, method <realize> is called with a valid window descriptor as
+argument <window>. Method <realize> then sets the slot <window>,
+compute the geometry requirement of the object and calls <expose> in
+order to paint the object.
+.IP
+An object is  unrealized when it is removed from its container.
+Method <realize> is then called with an empty list as argument.
+.PP
+The default definition of method <realize> is given below.
+.VP
+(defmethod visualobject realize (w)
+  (when (setq window w)
+    (==> this compute-geometry)
+    (==> itscontainer change-geometry) )
+  (==> this expose rect) )
+.PP
+Subclasses of <VisualObject> may override this default definition. The
+new definition however must call the superclass method <realize> in
+order to perform the essential tasks described above.
+
+Before overriding method <realize>, you should also consider
+overriding method <compute-geometry> instead of method <realize>.
+
+
+
+#? (==> <VisualObject> compute-geometry)
+.FILE ogre.lsh
+
+Method <compute-geometry> is called when the object is realized and
+when a change of the object state changes the geometry requirements
+of the object.
+
+This method must either return an empty list or compute the minimal
+size of the object's rectangle and enforce this minimal size by sending a
+message <resize> and return the new rectangle <rect>.
+
+The default method <compute-geometry> just returns the empty list.
+Class <String> for instance overrides this method to compute the size
+of the string text and resizes the string object to the correct size.
+
+
+
+#? (==> <VisualObject> backpaint)
+.FILE ogre.lsh
+
+Method <backpaint> is called by the Ogre library for repainting the
+background of an object. In the case of a container object, this
+method is called before repainting the contents of the object.
+
+The default method <backpaint> tests wether you have a black and white
+or a color display and calls method <backpaint-bw> or
+<backpaint-color> respectively. It is therefore advisable to override
+methods <backpaint-bw> and <backpaint-color> instead of <backpaint>.
+
+
+#? (==> <VisualObject> backpaint-bw)
+.FILE ogre.lsh
+
+Method <backpaint-bw> is called by the Ogre library for repainting the
+background of an object on a black and white display. In the case of a
+container object, this method is called before repainting the contents
+of the object.
+
+The default <backpaint-bw> method just clears the object's rectangle
+with the background color <color-bg>. This is suitable for most cases.
+
+
+#? (==> <VisualObject> backpaint-color)
+.FILE ogre.lsh
+
+Method <backpaint-bw> is called by the Ogre library for repainting the
+background of an object on a color display. In the case of a container
+object, this method is called before repainting the contents of the
+container object.
+
+The default <backpaint-color> method just clears the object's
+rectangle with the background color defined in the current palette.
+This is suitable for most cases.
+
+
+#? (==> <VisualObject> repaint)
+.FILE ogre.lsh
+
+Method <repaint> is called by the Ogre library for repainting the
+foreground of an object. In the case of a container object, this
+method is called after repainting the contents of the container
+object.
+
+The default method <repaint> tests wether you have a black and white
+or a color display and calls method <repaint-bw> or
+<repaint-color> respectively. It is therefore advisable to override
+methods <repaint-bw> and <repaint-color> instead of <repaint>.
+
+
+#? (==> <VisualObject> repaint-bw)
+.FILE ogre.lsh
+
+Method <repaint> is called by the Ogre library for repainting the
+foreground of an object on a black and white display. In the case of
+a container object, this method is called after repainting the
+contents of the container object.
+
+The default method <repaint-bw> does nothing.
+
+#? (==> <VisualObject> repaint-color)
+.FILE ogre.lsh
+
+Method <repaint> is called by the Ogre library for repainting the
+foreground of an object on a color display. In the case of a container
+object, this method is called after repainting the contents of the
+container object.
+
+The default method <repaint-color> does nothing.
+
+
+#? ** Event Methods.
+.SEE (==> <Control> activate <d>)
+.SEE Events.
+
+Whenever the user performs certain mouse of keyboard actions, the
+Lush kernel generates an event as explained in the preceding
+chapter.
+
+When the Ogre library detects an event in a window, it builds an
+ordered list of objects eligible for handling the event.  An event
+message is then send to the object with highest priority.  If the
+event method returns the symbol <ignored>, the library proceed with
+the next object in the ordered list. This process stops as soon as an
+object accepts the event (i.e. until an event message returns a value
+different from symbol <ignored>.)
+
+Starting with the highest priority, the objects eligible for
+receiving event messages are:
+.IP
+The toplevel container,
+.IP
+The chain of embedded containers (if any) managing the topmost object,
+.IP
+The topmost object located below the mouse cursor,
+.IP
+The current actived control object of the window.
+Activation is discussed later in section ``Control''.
+.PP
+Class <VisualObject> defines a default method for the event messages.
+These default methods just reject the event by returning symbol
+<ignored>.
+
+In practice, the default event rejection mechanism ensures that mouse
+events are handled by the object located below the mouse cursor and
+keyboard events are handled by the actived objects. It is however
+possible to change these settings by overriding the event methods of
+objects with a higher priority.
+
+
+#? (==> <VisualObject> mouse-down <x1> <y1>)
+.FILE ogre.lsh
+.SEE (eventinfo)
+
+Method <mouse-down> is called when the mouse button is depressed.
+Arguments <x1> and <y1> indicate the location of the mouse cursor in
+the current window when the mouse button has been depressed.
+
+You can use function <eventinfo> to find the name of the mouse
+button and the state of the shift and control keys. Names returned by 
+function <eventinfo> are quite machine dependent however.
+
+
+#? (==> <VisualObject> mouse-drag <x1> <y1> <x2> <y2>)
+.FILE ogre.lsh
+
+Method <mouse-drag> is called whenever the mouse is moved while the mouse
+button is depressed.  Arguments <x1> and <y1> indicate the location of
+the mouse cursor in the current window when the mouse button was first
+depressed. Arguments <x2> and <y2> indicate the coordinates of the
+mouse cursor after the move.
+
+#? (==> <VisualObject> mouse-up <x1> <y1> <x2> <y2>)
+.FILE ogre.lsh
+
+Method <mouse-up> is called when the mouse button is released.  Arguments
+<x1> and <y1> indicate the location of the mouse cursor in the current
+window when the mouse button was first depressed. Arguments <x2> and
+<y2> indicate the coordinates of the mouse cursor when the button was
+released.
+
+#? (==> <VisualObject> keypress <c> <x> <y>)
+.FILE ogre.lsh
+
+Method <keypress> is called whenever an ASCII key is hit. Argument <c>
+is a string which contains a single character for that key. Arguments
+<x> and <y> are the location of the mouse cursor when the key was hit.
+
+#? (==> <VisualObject> arrow-left <x> <y>)
+.FILE ogre.lsh
+.SEE (eventinfo)
+
+Method <arrow-left> is called whenever the user types the left arrow
+key. Arguments <x> and <y> are the location of the mouse cursor when
+the key was hit.
+
+You can use function <eventinfo> to find the exact name of the key
+and the state of the shift and control keys. Key names returned by 
+function <eventinfo> are quite machine dependent however.
+
+#? (==> <VisualObject> arrow-right <x> <y>)
+.FILE ogre.lsh
+.SEE (eventinfo)
+
+Method <arrow-right> is called whenever the user types the right arrow
+key. Arguments <x> and <y> are the location of the mouse cursor when
+the key was hit.
+
+You can use function <eventinfo> to find the exact name of the key
+and the state of the shift and control keys. Key names returned by 
+function <eventinfo> are quite machine dependent however.
+
+#? (==> <VisualObject> arrow-up <x> <y>)
+.FILE ogre.lsh
+.SEE (eventinfo)
+
+Method <arrow-up> is called whenever the user types the up arrow
+key. Arguments <x> and <y> are the location of the mouse cursor when
+the key was hit.
+
+You can use function <eventinfo> to find the exact name of the key
+and the state of the shift and control keys. Key names returned by 
+function <eventinfo> are quite machine dependent however.
+
+#? (==> <VisualObject> arrow-down <x> <y>)
+.FILE ogre.lsh
+.SEE (eventinfo)
+
+Method <arrow-down> is called whenever the user types the down arrow
+key. Arguments <x> and <y> are the location of the mouse cursor when
+the key was hit.
+
+You can use function <eventinfo> to find the exact name of the key
+and the state of the shift and control keys. Key names returned by 
+function <eventinfo> are quite machine dependent however.
+
+
+#? (==> <VisualObject> help <x> <y>)
+.FILE ogre.lsh
+.SEE (eventinfo)
+
+Method <help> is called whenever the user types the system dependent
+help key. Arguments <x> and <y> are the location of the mouse cursor
+when the key was hit.
+
+The help key under Windows is  function key F1.
+The help key under X11 can be configured using program <xmodmap>.
+
+You can use function <eventinfo> to find the exact name of the key
+and the state of the shift and control keys. Key names returned by 
+function <eventinfo> are quite machine dependent however.
+
+
+#? (==> <VisualObject> fkey <x> <y>)
+.FILE ogre.lsh
+.SEE (eventinfo)
+
+Method <fkey> is called whenever the user types a key which
+does not correspond to an ASCII character and yet cannot be processed
+as an arrow key or a help key. You must then use function <eventinfo>
+to analyze the keyname and process the event.
+
+Since key names returned by function <eventinfo> 
+are quite machine dependent, your event handling procedure 
+should use this name as a hint
+rather than expecting well defined values.
+
+Remark: All operating systems define certain hot keys for various
+purposes. Lush cannot override these assignments. Under Windows for 
+instance, keys F9, F10 and CTRL-F4 are directly processed by the 
+operating system and never passed to WinLush.
+
+
+#? (==> <VisualObject> size <w> <h>)
+.FILE ogre.lsh
+
+Method <size> is called whenever the geometry of an object
+changes in response to a user interaction or to a change in
+a related object.
+
+
+#? *** Control Objects.
+.SEE Visual Objects.
+.SEE Event Methods.
+
+Class <Control> is the abstract class for interactive graphics objects
+like buttons, check boxes, menu items, etc...
+
+Since class <Control> is a subclass of class <VisualObject>, all the
+properties and methods of class <VisualObject> also apply to class
+<Control>. In addition, class <Control> provides more support for
+defining the interactive graphics objects.
+.IP
+Class <Control> provides standard methods for enabling or disabling a
+control object.  Slot <disabled> contains a non nil value when a
+control is disabled.
+.IP
+Class <Control> provides standard methods for changing the activation
+status of a control object.
+.IP
+Class <Control> defines standard methods for changing the appearance
+of an object. Slot <text> contains whatever data represents the
+appearance of an object. 
+.IP
+Class <Control> defines standard methods for storing and handling the
+state resulting of user interaction. Slot <data> contains whatever
+data represent this state.
+.IP
+Class <Control> stores a callback function in slot <callback>. This function
+is called when the user performs certain action defined in by implementation
+of the specific control object.
+.PP
+
+#? (new Control <w> <h> <f>)
+.TYPE CLASS
+.FILE ogre.lsh
+.SEE Ogre Callbacks.
+
+Creates and return a new instance of class <Control>.  Arguments <w>
+and <h> are the width and the height of the control object. Argument
+<f> is the callback function for this control object.
+
+This constructor is seldom used for creating new instances. Derived
+classes (e.g. <Button>) usually call this constructor method within
+their own constructor method in order to initialize the <Control>
+part of their instances.
+
+
+
+#? ** Enabling or Disabling a Control Object.
+
+When disabled, the control object ignores all user interaction.  This
+is signalled by having the control rendered with a specific
+appearance. A disabled button on a black and white display is rendered
+with a dithering pattern. The label of disabled button on a color
+display is rendered with a light gray color instead of black.
+
+The enabled/disabled status of a control object is stored in
+the slot <disabled> defined by class <Control>.
+.IP 
+Slot <disabled> contains <()> if the object is enabled.
+.IP
+Slot <disabled> contains a number (the disable count) is the
+object is disabled.
+.PP
+
+Implementation methods usually test slot <disabled> before performing
+their task. Repainting methods must change the rendering colors
+according to the enabled/disabled status of the object is disabled.
+Event methods must ignore event messages when the object is disabled.
+
+Two request methods, <enable> and <disable>, are defined by class
+<Control> for changing the enabled/disabled status of an object:
+
+#? (==> <Control> disable)
+.FILE ogre.lsh
+
+If message <disable> is sent to an enabled control object, the object
+is disabled. If message <disable> is send to an already disabled
+control object, the object's disable count is increased.
+
+
+#? (==> <Control> enable)
+.FILE ogre.lsh
+
+When message <enable> is sent to a control object, the object's
+disable count is decreased by one. The object is enabled when this
+count reaches zero.
+
+The disabled count feature proves useful for disabling an object
+either permanently or temporarily:
+.IP
+For permanently enabling or disabling a control object whose state is
+unknown, enable it first and possibly disable it.
+.IP
+For temporarily disabling an object, just disable it. It will retrieve
+its previous state when you will enable it again.
+
+
+
+#? (new DisableLock <c1>...<cn>)
+.TYPE CLASS
+.FILE ogre.lsh
+
+It is often useful to disable a button during the execution of some
+Lush program and to restore its initial state. This task could be
+achieved by sending messages <disable> and <enable>. 
+
+If however an error occurs during the program execution, the button
+would remain disabled. The best way to solve this problem consists in
+creating a lock object defined by class <DisableLock>.
+
+If you wish to temporarily disable object <c1> to <cn>, proceed as follows:
+.VP
+(let ((lock (new DisableLock c1...cn)))
+        ;;; call your Lush program here
+        (......) )
+.PP
+
+When created, the lock object sends a message <disable> to the objects
+<c1> to <cn>.  The lock is destroyed when you leave the <let>
+instruction. The lock destructor then sends a messages <enable> to our
+objects <c1> to <cn>.
+
+If an error occurs during the execution of the Lush program, the lock
+is destroyed by the garbage collector and the objects retrived to
+their initial state.
+
+
+
+#? ** Activation of a Control Object.
+
+The active control object receives all the event messages that were
+not processed by the objects located below the mouse cursor. Only one
+object might be actived in a given window at a given instant.
+
+Activation is especially useful for redirecting keyboard events toward
+objects containing some editable text.  Having the keyboard events
+processed by the object located under the mouse often seems unnatural
+because the keyboard does not move physically like a mouse.
+
+The user activates such an editable object with a mouse click in the
+object rectangle. It is customary in Ogre that the editable objects
+ignore the keyboard events unless they are active.  Most keyboard
+events are then unconditionnally directed to the active object
+without regard to the position of the mouse cursor.
+
+On the other hand, it is often useful to implement accelerator keys
+for performing tasks usually achieved by menu items or buttons.
+Accelerator key events must be defined by the containers managing the
+related objects. This definition ensures that accelerator keys events
+are not sent to the active object but handled directly.
+
+The activation status of a control object is stored in slot
+<activated> (sic) defined by class <Control>. This slot contains a non
+nil value if the control object is active. Implementation methods of
+editable objects usually test slot <activated> before performing their
+task. Repainting methods must indicate the activation status of an
+object. Event methods must ignore event messages unless the object is
+actived.
+
+Two request methods are defined by class <Control> for testing or
+changing the activation status of an object. These methods ensure that
+one object only is actived in a given window.
+
+#? (==> <Control> activate <d>)
+.FILE ogre.lsh
+
+Changes the activation status of the target object to <d>.  If
+argument <d> is <()>, the target object is deactived.  If argument
+<d> is <t>, the target object is actived and the previous active
+object is desactived.
+
+
+
+#? ** Appearance of a Control Object.
+
+
+Class <Control> defines a slot named <text> which contains whatever
+data is useful for defining the appearance of a control object.  In
+most cases so far, this slot contains a single string which is either
+a button label or a checkbox caption.
+
+Two request methods are defined by class <Control> for obtaining and
+changing the contents of this slot:
+
+
+#? (==> <Control> settext <d>)
+.FILE ogre.lsh
+
+This request methods changes the contents of the slot <text> of the
+target object to the value given by argument <d>. 
+
+Since this change causes a general change in the object appearance,
+the object is sent a message <compute-geometry> for redefining its
+geometry requirements and a message <expose> for updating the display.
+Sending message <settext> sometimes triggers a global relocation of
+all objects in the window.
+
+#? (==> <Control> gettext)
+.FILE ogre.lsh
+
+This request method returns the contents of slot <text>. It is
+prefered to use this method rather than accessing directly the slot
+<text> because complex control objects may use other slots for
+controlling the appearance of the object.
+
+
+#? ** State of a Control Object.
+
+Class <Control> defines a slot named <data> which contains whatever
+data is useful for storing the state of a control object resulting
+from the user interaction. For instance, slot <data> of a check box
+contains a boolean value. Similarly, slot <data> of an editable string
+contains the current value of the string.
+
+Three methods <hasdata>, <setdata> and <getdata> are used for
+obtaining and changing the state of a control object.  These methods
+are more implementation method than request methods.  Several
+subclasses of <Control> override these methods in order to
+pre-process or post-process the state information.
+
+These methods are mostly useful because they provide an abstract way
+to save and restore the state of a collection of control objects. For
+instance, a container object can save or restore the state of all its
+descendants with a single message.
+
+
+#? (==> <Control> setdata <d>)
+.FILE ogre.lsh
+
+This method changes the state of a control object to <d>
+
+The default method sets the slot <data> of the target object to the
+value given by argument <d>.  Since this change usually changes the
+object appearance, the object is sent a message <expose> for updating
+the display.
+
+
+#? (==> <Control> getdata)
+.FILE ogre.lsh
+
+This method returns the state of a control object.
+
+The default method just returns the contents of slot <data>. It is
+prefered to use this method rather than accessing directly the slot
+<data> because complex control objects may use other slots for
+controlling the state of the object.
+
+
+#? (==> <Control> hasdata)
+.FILE ogre.lsh
+
+If an object contains some state information, this method returns the
+object itself.  If an object contains no state information, this
+method returns the empty list.
+
+Method <hasdata> is used to test if an object provides an adequate
+implementation for methods <setdata> and <getdata>. The default method
+<hasdata> indicated that there is some state information in the
+control object.  Certain subclasses, like push button, override this
+method in order to signal that they carry no state information.
+
+
+#? ** Ogre Callbacks.
+.SEE Window Objects.
+.SEE Popup Requesters.
+.SEE Forms.
+.SEE Menus.
+
+Each control object has a callback function. Callback functions are
+executed when certain event messages are received. For example, a push
+button executes the callback function when it is depressed.
+
+Callbacks functions are called with one argument which is the caller
+object. They are executed within the caller scope and therefore
+directly access the slots of the caller object. In addition certain
+local variables are set:
+.IP
+Variable <thiswindowobject> always refers to the toplevel container of
+the control object. See the discussion on class <WindowObject> for
+more information.
+.IP
+Variable <thisrequester> possibly refers to the closest requester
+containing the control object. See the discussion on class
+<Requester> for more information.
+.IP
+Variable <thisform> possibly refers to the closest form containing the
+control object. See the discussion on class <Form> for more
+information.
+.IP
+Variable <thismenu> possibly refers to the menu object containing the
+menu item which has launched the callback function. See the discussion
+on class <Menu> for more information.
+.PP
+Three methods are implemented by class <Control> for handling 
+callback functions.
+
+#? (==> <Control> setcall <f>)
+.FILE ogre.lsh
+
+Message <setcall> redefines the callback function of a target object
+to be function <f>. Trouble will surely occur if the argument <f> is
+not a function with one argument or an empty list.
+
+#? (==> <Control> execute)
+.FILE ogre.lsh
+
+Message <execute> starts the callback function with the object itself as
+argument. The object is disabled while the callback function is running.
+
+
+#? (==> <Control> trigger)
+.FILE ogre.lsh
+
+Message <trigger> asks the object to simulate an user action. When a
+push button receives a trigger message, for example, it is drawn as
+depressed, executes the callback function and is redrawn as usual.
+
+The default implementation defined by class <Control> just calls
+method <execute>. Subclasses of <Control> usually override method
+trigger by sending false event messages to the object.
+
+
+
+
+
+
+
+
+#? *** Container Objects.
+.SEE Visual Objects.
+
+Class <Container> is the abstract class for container objects.  A
+container object manages several objects called its sons.  Sons are
+only visible through the rectangle of the container. The container
+dispatches event messages, propagates repainting messages, controls
+the geometry of its sons and performs a couple of other critical
+tasks.
+
+Since class <Container> is a subclass of class <VisualObject>, all the
+properties and methods of class <VisualObject> also apply for class
+<Container>. Class <Container> however defines new slots and new
+methods for handling container objects.
+.IP
+Slot <contents> contains a list whose elements <(son x y w h)> point to the
+managed objects <son> and cache the coordinates for their rectangles.
+.IP
+Class <Container> defines private method for implementing the core of
+the Ogre library. These methods deal with the repainting process and
+the geometry management.
+.IP
+Class <Container> defines public request methods for handling several
+control objects as a whole.  Method <enable> and <disable> allow you
+to disable or enable all the control objects located in a container.
+Method <getdata> returns a list containing the states of all control
+objects located in the container. This list is built by sending
+messages <getdata> to the control objects. Method <setdata> takes such
+a list as argument and sets the state of all control objects located
+in the container.
+
+.PP
+Subclasses of <Container> are very frequently defined for defining
+structuring container whose sons are arranged according to a certain
+layout. Classes <Row> and <Column> are examples of such subclasses.
+
+
+#? (new Container <x> <y> <w> <h> <...contents...>)
+.FILE ogre.lsh
+
+Creates a new container object.  Arguments <x>, <y>, <w> and <h>
+describe the initial rectangle of the container object.  The arguments
+denoted as <...contents...> are graphical objects initially managed by
+the container object.
+
+This constructor is seldom used for creating new instances. Derived
+classes (e.g. <Row>) usually call this constructor method within their
+own constructor method in order to initialize the <Control> part of
+their instances.
+
+
+#? ** Repainting.
+
+When it is time to repaint the contents of a container, the container
+object receives a message <backpaint> for rendering its background.
+The objects managed by the container are then rendered on top of this
+background. Finally the container object receives a message <repaint>
+for drawing above the managed objects.
+
+During this operation, the clipping rectangle is the container
+object's rectangle.  Only the portion of the sons which overlap the
+container's rectangle are rendered.
+
+
+#? ** Inserting an Removing Objects.
+
+Three request method are implemented for inserting new objects into a
+container or removing inserted objects from a container.
+
+#? (==> <Container> insert <what>)
+.FILE ogre.lsh
+
+Inserts object <what> on top of the objects located in the container.
+
+When an object is inserted into a container, the coordinates of the
+topleft corner of the container's rectangle are added to the
+coordinates of the object's rectangle. Therefore, if the initial
+rectangle of an object is located at cordinates <(0, 0)>, the object
+appears on the topleft corner of the container.
+
+If there is a policy for the layout of the container, the new layout
+is computed and each object in the container is moved, resized and
+repainted.
+
+
+#? (==> <Container> remove <what>)
+.FILE ogre.lsh
+
+Removes object <what> from the container. 
+
+When an object removed from a container, the coordinates of the
+topleft corner of the container's rectangle are subtracted from the
+coordinates of the object's rectangle. Inserting the object again thus
+inserts the object at the same location with respect to the
+container's topleft corner.
+
+#? (==> <Container> removall)
+.FILE ogre.lsh
+
+Removes all objects managed by the container. 
+
+
+#? ** Geometry Management.
+
+Class <Container> implements the core of the geometry management
+system of the Ogre library. This system aims at providing containers
+with the opportunity of enforcing certain geometry policies on their
+sons.  For instance:
+.IP
+Class <Container> enforces a very weak policy. If you move an instance
+of class <Container>, the managed objects move with their container.
+.IP
+Class <Row> aligns the objects on a row and ensures that all objects
+have the same sufficient height,
+.IP
+Class <Column> aligns the objects on a row and ensures that all
+objects have the same sufficient width,
+.IP
+Class <Grid> aligns the objects on a grid with a predefined number of
+columns. Objects located in a same column have the same sufficient
+width and objects located in a same row have the same sufficient
+height.
+.PP
+These structuring containers make Ogre more attractive and easier to
+use than aksing the programmer to precompute the position of each
+object for all the interface configurations.  Yet, geometry management
+is the most difficult component of the Ogre library.
+
+Containers define the geometry policy using only two implementation
+methods, <compute-geometry> and <manage-geometry>.  Here are the steps
+involved in a geometry computation:
+.IP 1.
+An object managed by a container receives a geometry change 
+request (i.e. <moveresize>, <move> or <resize>).
+.IP 2.
+The container of this object receives a message <compute-geometry> in
+order to recompute its size requirements by looking at the slots
+<rect> of the managed objects. It might then call method <resize> in
+order to enforce its new minimal size.
+.IP 3.
+The final rectangle of the container is stored in slot <rect> of the
+container. The container then receives a message <manage-geometry> to
+get a chance to assign a final rectangle to all managed objects by
+sending them a message <geometry>.
+.PP
+
+The hidden part of the iceberg lies in the global computation of the
+object's location. If the container decides to change its geometry
+requirements during step 2, the container of the container then
+receives a message <compute-geometry> and gets a chance to participate
+to this geometry discussion. When this second container sets the first
+container's geometry, it calls the first container's method <geometry>
+which calls the first container's method <manage-geometry> and
+effectively performs step 3.
+
+Important Note: The geometry management system has been significantly
+revamped in Lush. It is now faster and skinnier. Old programs still
+work correctly unless they redefine method <geometry> of class
+<WindowObject>.
+
+
+#? (==> <Container> compute-geometry)
+.FILE ogre.lsh
+
+The implementation method <compute-geometry> is called when the
+container is realized and when a change in their object state changes
+the geometry requirements of the object.
+
+This method must compute the minimal size of the container on the
+basis of the information stored in the slots <rect> of the managed
+objects or cached in the list of managed objects stored in slot
+<contents> of the container.  This method may enforce a minimal size
+by sending a message <resize>.
+
+The default method <compute-geometry> just returns the empty list.
+
+Example: 
+
+Class <Row> defines the following method <compute-geometry> which
+computes the minimal size of a row:
+.VP
+(defmethod row compute-geometry ()
+  (when window
+    (let* ((height (sup (cons 0 (all (((son x y w h) contents)) h))))
+           (width (sum (all (((son x y w h) contents)) w))) )
+      (==> this resize (+ width (* hspace (length contents))) height)
+      rect ) ) )
+.PP
+
+
+#? (==> <Container> manage-geometry)
+.FILE ogre.lsh
+
+The implementation method <manage-geometry> is called when it is time to
+locate the sons of the container on the basis of the final rectangle
+assigned to the container.
+
+This method must compute the final rectangle of all the managed
+objects according to the container's rectangle (found in slot <rect>
+of the container) and according to the managed object initial
+rectangles (found in slot <rect> of the managed objects and cached in
+the list of managed objects located in slot <contents> of the
+container.)  Method <manage-geometry> then sends a message <geometry>
+to the managed objects in order to assign a final rectangle to these
+objects.
+
+The default method <manage-geometry> defined in class <Container> does
+nothing. A secondary mechanism just moves the managed objects in order
+to maintain their position with respect to the topleft corner of the
+container's rectangle.
+
+Example:
+
+Class <Row> defines the following method <manage-geometry> which arranges
+the managed objects in a row starting on the left of the container's
+rectangle.
+.VP
+(defmethod row manage-geometry ()
+  (let (((x y w h) rect))
+    (incr x (div hspace 2))
+    (each ((i contents))
+      (let ((w (nth 3 i)))  ;; get the object's width
+         (==> (car i) geometry x y w h)
+         (incr x (+ w hspace)) ) ) ) )
+.PP
+
+
+#? (new GeometryLock <c>)
+.FILE ogre.lsh
+
+A significant amount of time is spent in geometry management when many
+objects are inserted into a realized container. It is then advisable
+to postpone the geometry until all objects have been inserted.
+
+Such a task is accomplished by creating an object instance of class
+<GeometryLock> as follows:
+.VP
+(let ((lock (new GeometryLock c)))
+        ;;; insert your objects here into container c
+        (==> c insert ...) )
+.PP
+When created, the lock sets a flag in container <c> which suspend the
+usual geometry management. When the lock is destroyed, the flag is
+cleared and the geometry management is started once. If an error
+occurs during the object insertion, the lock is destroyed by the
+garbage collector and the container is left with an acceptable state.
+
+
+#? ** Control Management.
+
+Five request methods are defined by class <Container> for handling as
+a whole several control objects managed by a container or by its sons.
+
+#? (==> <Container> disable)
+.FILE ogre.lsh
+
+When a container receives a message <disable>, all the control objects
+managed by the container or by its sons receive a message <enable>.
+This is useful for controlling the enabled/disabled state of several
+control objects at once.
+.VP
+(defmethod container disable ()
+  (each ((i contents))
+    (==> (car i) disable) ) )
+.PP
+
+#? (==> <Container> enable)
+.FILE ogre.lsh
+
+When a container receives a message <enable>, all the control objects
+managed by the container or by its sons receive a message <enable>.
+This is useful for controlling the enabled/disabled state of several
+control objects at once.
+.VP
+(defmethod container enable ()
+  (each ((i contents))
+    (==> (car i) enable) ) )
+.PP
+
+#? (==> <Container> hasdata)
+.FILE ogre.lsh
+
+Method <hasdata> returns the list of stateful control objects managed by the
+container of by any of its sons. This is achived by concatenating the result
+of running method <hasdata> on all the objects managed by the container.
+.VP
+(defmethod container hasdata ()
+  (flatten (all ((i contents)) (==> (car i) hasdata))) )
+.PP
+
+#? (==> <Container> getdata)
+.FILE ogre.lsh
+Method <getdata> returns the list of states returned by all control
+objects managed by the container of by any of its sons.
+.VP
+(defmethod container getdata ()
+  (all ((i (==> this hasdata)))
+    (==> i getdata) ) )
+.PP
+
+#? (==> <Container> setdata <d>)
+.FILE ogre.lsh
+Method <getdata> sets the states of all control objects managed by the
+container of by any of its sons using list <d> which is usually
+returned by a call to method <getdata>.
+.VP
+(defmethod container setdata (d)
+  (each ((i (==> this hasdata))
+         (j d) )
+    (==> i setdata j) ) )
+.PP
+
+
+
+#? *** Container Flavors.
+
+This chapter presents various flavors of predefined containers.  Class
+<Form> define a container abstract class for implementing composite
+objects. Class <WindowObject> defines a toplevel container associated
+to a window on your screen. Structuring containers help organizing the
+layout of a graphic interface.
+
+#? ** Forms.
+.SEE Ogre Callbacks.
+
+Class <Form> is an abstract class used to group several cooperating
+objects into a single Ogre component. This component can then be
+inserted into a window or a requester.
+
+Class <Form> is a trivial subclass of class <Container>. Class <Form>
+adds three properties to standard containers.
+.IP
+Method <compute-geometry> makes a form object large enough to hold all
+its sons while keeping their initial relative positions.
+.IP
+Method <manage-geometry> places the sons of a form object at the
+center of the form object while keeping their relative position.
+.IP
+When Ogre calls the callback function of a descendant of a form object,
+it sets the temporary variable <thisform> to the form object.
+.PP
+These properties are handy for designing complex graphics objects
+composed of several components as subclasses of <Form>. Several
+classes, like class <WindowObject>, class <Requester> and class
+<Viewer>, are implemented as subclasses of <Form>.
+
+Moreover, a form object is sometimes considered as an extended control
+object. For instance, we can gather a slider and an editable numeric
+field into a form object and use this object like an usual control
+object. 
+
+This is achieved by defining a subclass of <Form> whose constructor
+builds the elements of the composite object and keeps a pointer to
+these object in some of its slots. This subclass then must define
+methods <hasdata>, <setdata>, <getdata>, <execute> and <setcall> like
+those of a control object.  Method <hasdata> usually returns <this>.
+The other methods are usually forwarded to the components of the
+composite object.
+
+#? (new Form  <...contents...>)
+.FILE ogre.lsh
+
+Creates a new form object managing objects <...contents...>.  There is
+no need to provide a default size for a form object since the form
+size is derived from the component sizes and location.
+
+
+#? ** Window Objects.
+.SEE Events.
+
+Class <WindowObject> is a subclass of class <Form> which implements
+the link between a physical window and its managed ogre objects.
+.IP
+The constructor of class <WindowObject> creates a window on
+the screen with the same size than the window object rectangle. It
+call then method <realize> to tell its sons that a physical window is
+now attached to the graphic interface.
+.IP
+Class <WindowObject> define methods for handling the window events 
+and redirecting event messages to the proper descendant objects.
+.IP
+Class <WindowObject> define slots and methods to manage the repainting process.
+The window object remembers which portions of the window has been
+damaged or exposed (using message <expose>) and sends repainting messages
+when appropriate.
+.IP
+Class <WindowObject> defines methods for synchronizing the window
+object rectangle and the physical window geometry. 
+.PP
+A window object is a toplevel container. Inserting a window
+object into another container is an almost certain cause of trouble.
+
+Whole graphics interface are often defined as subclasses of
+<WindowObject>. Such subclasses usually contain new slots for storing
+interface specific data. Callback functions then send messages to
+<thiswindowobject>. These messages then are executed within the
+interface scope.
+
+
+#? (new WindowObject <x> <y> <w> <h> <name> <...contents...>)
+.FILE ogre.lsh
+
+Creates a window object managing objects <...contents...>.
+
+When a window object is created, the constructor creates a window on
+the screen named <name> with width <w> and height <h>.  If both
+arguments <x> and <y> are <0>, the position of this window is defined
+by the default rule of your computer. If both arguments are positive,
+they define the position of the topleft corner of the window.
+
+Exemple:
+.VP
+;;; First of all, initialize Ogre !
+? (ogre)
+= idle-hook
+;;; create a window with a button
+? (setq win (new WindowObject 100 100 300 300 "Example"
+                        (setq b (new stdbutton "Hello"             ;; its name
+                                          (lambda(c) (beep)) )) )) ;; its callback
+= ::WindowObject:06f00
+;;; Now we remove the button b from win
+? (==> win remove b)
+.PP
+
+Note: The event handler of the newly created window is the
+corresponding Ogre window object.  You can thus interactively obtain
+the Ogre window object for a given window by typing <(setq w
+(waitevent))> and clicking into the corresponding window.
+
+#? (new AutoWindowObject <x> <y> <w> <h> <name> <contents>)
+.FILE ogre.lsh
+
+Lush provides an additional class named <AutoWindowObject>.  Unlike class
+<WindowObject>, class <AutoWindowObject> manages a single object <contents>
+and dynamically resizes the window to the size of the managed object.
+
+The constructor arguments <w> and <h> are only hints for sizing the window.
+They may be empty lists instead of numbers.  The size of the window is
+eventually given by the size of its contents.
+
+
+#? * WindowObject Request Methods.
+
+
+#? (==> <windowobject> palette <p>)
+.SEE Ogre Color Palette.
+.FILE ogre.lsh
+
+Message <palette> redefines the color palette used by Ogre for
+repaining the objects managed by the windowobject. This method sets
+slot <color-palette> of the window object and calls <expose> in order
+to repaint the window.
+
+Argument <p> can be the empty list (for black and white display) or a
+palette returned by function <new-palette> (for color display). The
+color palette selection is enforced even if you do not use an adequate
+screen.
+
+
+#? (==> <windowobject> setmodal <m>)
+.FILE ogre.lsh
+
+Message <setmodal> affects the redirection of event messages by
+defining a model object. When a modal object is defined, all events
+are redirected to this object. This is useful for implementing
+requesters that prevent the user to reach the other components of the
+interface.
+.IP
+When argument <m> is the empty list, message <setmodal>
+undefines the current modal object.
+.IP
+When argument <m> is one of the objects managed by the window
+object, message <setmodal> makes this object modal.
+
+#? (==> <windowobject> getmodal)
+.FILE ogre.lsh
+
+Returns the current modal object in the window object or the empty
+list if no modal object is defined.
+
+
+#? (==> <windowobject> read-event)
+.SEE Event Lists.
+.FILE ogre.lsh
+
+Method <read-event> returns the next available event in the window
+associated to the window object. Events are returned as standard Lush
+event lists. If no events are pending, method <read-event> blocks.
+
+
+#? (==> <windowobject> manage-event <event>)
+.SEE Event Lists.
+.FILE ogre.lsh
+
+Method <manage-event> processes a Lush event list <event> and sends a
+corresponding event message to the proper object in the window object.
+
+
+
+#? * WindowObject Implementation Methods.
+
+When defining a graphic interface as a subclass of class
+<WindowObject> you may override three methods:
+.IP
+Method <delete> is called when you destroy the window using a 
+the window manager feature (i.e. with the mouse).
+.IP
+Methods <compute-geometry> and <manage-geometry> work as usual.  They
+are however called in special cases allowing a dynamical change of the
+window size.
+
+
+#? (==> <windowobject> delete)
+.FILE ogre.lsh
+
+Method <delete> is called when the user deletes the onscreen window
+using the window manager features. In the same spirit, we suggest you
+to call method <delete> whenever you destroy a window object.
+
+The default method <delete> just deletes the window object. You may
+override this method, for instance, to pop up a confirmation dialog to
+the user.
+
+#? (==> <windowobject> manage-geometry)
+.FILE ogre.lsh
+
+Beside its normal use, method <manage-geometry> is also called when
+you resize the window with the mouse. The mouse action is actually
+converted into a <size> event which is processed using the usual
+geometry management functions.
+
+The default method <manage-geometry> does nothing.  Overriding the
+method <manage-geometry> in a window object is often useful for
+adjusting the size of the window object components to the onscreen
+window size.
+
+
+#? (==> <windowobject> compute-geometry)
+
+Method <compute-geometry> usually computes the minimal size of the
+object and enforces this geometry using method <resize>.  In the case
+of a window object, the actual size of the onscreen window is also
+adjusted.
+
+The default method <compute-geometry> does nothing. You may override
+this method to adjust automatically the size of the onscreen window to
+the mimial size of its contents.
+
+
+
+
+#? ** Structuring Containers
+.SEE Container Objects.
+
+Structuring containers are used for designing the layout of a graphics
+interface. They arrange their sons according to a certain policy.
+Ogre provides three class of structuring containers: class <Row>,
+class <Column> and class <Grid>.
+
+These containers inherit all the slots and methods of an ordinary
+container. They just define specific methods <compute-geometry> and
+<manage-geometry> to enforce their layout policy.
+
+In addition, two classes are provided for padding a row or a column
+with some space, class <EmptySpace> and class <DarkSpace>.
+
+
+#? (new Row <...contents...>)
+.FILE ogre.lsh
+.SEE (==> <Container> insert <what>)
+.SEE (==> <Container> remove <what>)
+.SEE Control Management.
+
+Returns a new row object managing the objects specified by
+<...contents...>.
+
+Class <Row> defines a structuring container which aligns its contents
+horizontally from left to right. The height of a row is determined by the managed
+object whose required height is largest.
+
+An empty space is inserted between the objects. This space is defined
+by slot <hspace> of the row object and defaults to <4> points.
+
+
+#? (new Column <...contents...>)
+.FILE ogre.lsh
+.SEE (==> <Container> insert <what>)
+.SEE (==> <Container> remove <what>)
+.SEE Control Management.
+
+Returns a new column object managing the objects specified by
+<...contents...>.
+
+Class <Column> defines a structuring container which aligns its
+contents vertically from top to bottom. The width of a column is
+determined by the managed object whose required width is largest.
+
+An empty space is inserted between the objects. This space is defined
+by slot <vspace> of the column object and defaults to <4> points.
+
+Example:
+.VP
+;; Creates a window with three buttons
+
+? (setq win 
+        (new WindowObject 100 100 300 300 "Essai"
+                (new Column
+                  (new StdButton "One" (lambda(d) (print 1)))
+                  (new StdButton "Two" (lambda(d) (print 2)))
+                  (new StdButton "Three" (lambda(d) (print 3))))))
+= ::WindowObject:06f00
+.PP
+
+
+#? (new Grid <cols> <...contents...>)
+.FILE ogre.lsh
+.SEE (==> <Container> insert <what>)
+.SEE (==> <Container> remove <what>)
+.SEE Control Management.
+
+Returns a new grid object with <cols> columns and managing
+the objects specified by <...contents...>.
+
+Class <Grid> defines a structuring container which aligns its contents
+in a grid with <cols> columns. The grid is filled left to right.  The
+width of each column is determined by the object of the column whose
+required width is largest. The height of each row is determined by the
+object of the row whose required height is largest.
+
+Empty spaces are inserted between rows and columns. These spaces are defined
+by slot <vspace> and <hspace> of the grid object and defaults to <4> points.
+
+
+#? (new EmptySpace <w> [<h>] )
+.TYPE CLASS
+.FILE ogre.lsh
+
+Extra spaces may be added into a structuring container by inserting an
+emptyspace object. Such an object has no response to user events and
+is uniformly filled with the background color.
+
+Class <EmptySpace> is a class of emptyspace objects. The constructor
+expression above returns a new emptyspace object of minimal width <w>
+and minimal height <h>. When argument <h> is omitted, a square
+minimal space is assumed. 
+
+Of course, the minimal geometry specifications interact with the
+geometry management of structuring conteners. It is seldom necessary
+to define all the sizes of an emptyspace object.
+
+Exemple:
+.VP
+;;; Creates a window with three buttons
+;;; with a 20 pixels space between button 2 and button 3
+? (setq win 
+        (new WindowObject 100 100 300 300 "Essai"
+                (new Column
+                  (new StdButton "One" (lambda(d) (print 1)))
+                  (new StdButton "Two" (lambda(d) (print 2)))
+                  (new EmptySpace 20)
+                  (new StdButton "Three" (lambda(d) (print 3))) )))
+= ::WindowObject:06f00
+.PP
+
+#? (new DarkSpace <w> [<h>] )
+.TYPE CLASS
+.FILE ogre.lsh
+
+Similarly you can insert a darkpace object into a structuring
+container.  On a black and white display, a darkspace is displayed as
+a black area.  On a color display, a darkspace is displayed as a
+raised area.
+
+Class <DarkSpace> is a class of emptyspace objects. The constructor
+expression above returns a new emptyspace object of minimal width <w>
+and minimal height <h>. When argument <h> is omitted, a square
+minimal space is assumed. 
+
+Of course, the minimal geometry specifications interact with the
+geometry management of structuring conteners. Specifying a single
+argument of <4>, for instance, will define a minimal width and height
+of 4 points. If such a darkspace object is inserted in a column, the
+width of object will be increased up to the column width, effectively
+displaying a 4 points thick line.
+
+Exemple:
+.VP
+;;; Creates a window with three buttons
+;;; with a 3 pixels line between button 2 and button 3
+? (setq win 
+        (new WindowObject 100 100 300 300 "Essai"
+                (new Column
+                  (new StdButton "One" (lambda(d) (print 1)))
+                  (new StdButton "Two" (lambda(d) (print 2)))
+                  (new DarkSpace 3)
+                  (new StdButton "Three" (lambda(d) (print 3))))))
+= ::WindowObject:06f00
+.PP
+
+
+
+
+#? *** Buttons.
+
+Buttons are small interactive area which can be used for triggering an
+action or storing boolean states. Ogre provides four class of buttons:
+.IP
+Class <StdButton> and <TinyButton> for push buttons,
+.IP
+Class <CheckBox> for boolean state buttons,
+.IP
+Class <RadioButton> for exclusive buttons.
+.PP
+All these classes are subclasses of <Control>. Buttons thus inherit
+all the slots and methods defined in class <Control>.
+
+#? ** Push Buttons.
+
+A push button invokes a specific action when the user clicks the mouse
+button while the pointer is located above the button image.  Two kinds
+of push buttons are defined by the Ogre library.
+
+
+#? (new StdButton  <label> <call>)
+.FILE ogre.lsh
+.SEE (font-12b)
+.SEE (==> <Control> settext <d>)
+.SEE (==> <Control> gettext)
+.SEE (==> <Control> setcall <f>)
+
+Class <StdButton> implements a standard push button.  The label of a
+standard push button is displayed using the font set by the function
+stored in slot <textfont>, which default to a 12 points bold font
+<font-12b>.
+
+The constructor expression returns a push button whose name is given
+by string <label>. This label may be changed by sending a message
+<settext>.  When the button is depressed, the callback function <call>
+is executed. The button remains disabled while the callback function
+has not returned.
+
+Example:
+.VP
+;;; A window with a 3 state label
+? (setq win 
+        (new WindowObject 100 100 300 300 "Essai"
+                (new StdButton "One"
+                        (lambda(caller)
+                                (==> caller settext
+                                        (selectq (==> caller gettext)
+                                                ("One" "Two")
+                                                ("Two" "Three")
+                                                (t     "One") ) ) ) ) ) )
+= :WindowObject:06f00
+.PP
+
+
+#? (new TinyButton <label> <call>)
+.FILE ogre.lsh
+.SEE (font-12b)
+.SEE (==> <Control> settext <d>)
+.SEE (==> <Control> gettext)
+.SEE (==> <Control> setcall <f>)
+
+Class <TinyButton> implements a push button with a reduced size.
+A tiny push button is slightly smaller than a standard push button
+because the label is written using a smaller font <font-12>.
+
+The constructor expression returns a push button whose name is given
+by string <label>. This label may be changed by sending a message
+<settext>. When the button is depressed, the callback function <call>
+is executed. The button remains disabled while the callback function
+has not returned.
+
+
+
+#? ** Check Boxes.
+
+A check box is composed of a small square button followed by a
+descriptive text. When the user clicks on the square or on the text,
+the state of the small square changes.
+
+Class <CheckBox> implements check box buttons.  Since class <CheckBox>
+is a subclass of class <Control>, all the slots and methods defined
+for control objects are inherited.
+
+#? (new CheckBox  <label> <call>)
+.TYPE CLASS
+.FILE ogre.lsh
+.SEE (==> <Control> settext <d>)
+.SEE (==> <Control> gettext)
+.SEE (==> <Control> setdata <d>)
+.SEE (==> <Control> getdata)
+.SEE (==> <Control> setcall <f>)
+
+Returns a new check box whose descriptive text is given by string
+<label>.  When a check box is depressed, its state changes and the
+callback function <call> is executed. 
+
+You can query or change the state of a check box (<t> or <()>)
+by sending messages <getdata> and <setdata>. The descriptive text
+can be modified using <settext>.
+
+Example:
+.VP
+;;; A window with a check box that controls 
+;;; the enable/disable state of a push button
+? (setq win 
+        (new WindowObject 100 100 300 300 "Essai"
+          (new column
+                (setq thebutton 
+                        (new StdButton "beep" 
+                                (lambda(c) (beep)) ))
+                (new CheckBox "Disable button"
+                                (lambda(c)
+                                        (if (==> c getdata)
+                                                (==> thebutton disable)
+                                          (==> thebutton enable) ) ) ) ) ) )
+.PP
+
+#? ** Exclusive Buttons.
+
+Exclusive button are two-state buttons which cooperate with the other
+buttons in the same container in order to ensure that at most one
+button is in a positive state.
+
+Class <RadioButton> implements exclusive buttons. Since class
+<RadioButton> is a subclass of class <CheckBox>, all the slots and
+methods defined for checkbox and control objects are inherited.
+
+
+#? (new RadioButton  <label> <call>)
+.FILE ogre.lsh
+.SEE (==> <Control> settext <d>)
+.SEE (==> <Control> gettext)
+.SEE (==> <Control> setdata <d>)
+.SEE (==> <Control> getdata)
+.SEE (==> <Control> setcall <f>)
+
+Returns a new check box whose descriptive text is given by string
+<label>. You can query or change the state of a check box (<t> or
+<()>) by sending messages <getdata> and <setdata>. The descriptive
+text can be modified using <settext>.
+
+You must insert a radiobutton in a container containing only
+radiobuttons.  Whenever the user clicks on a radiobutton, the state of
+all the other radiobuttons in the container becomes <()>, while the
+state of the clicked radiobutton becomes <t> and the callback function
+<call> is called.
+
+Example:
+.VP
+;;; A window with a three radio buttons 
+;;; building a three state choice
+? (setq win 
+        (new WindowObject 100 100 300 300 "Essai"
+                ;; create a common callback function
+                (let ((call (lambda(d) 
+                                        (printf "%s has been selected\n"
+                                                (==> d gettext) ) )))
+                          (new column
+                                (new radiobutton "choice 1" call) 
+                                (new radiobutton "choice 2" call) 
+                                (new radiobutton "choice 3" call) ) ) ) )
+.PP
+Remarks:
+.IP
+All radiobuttons in a same container are exclusive.        
+.IP
+A container of radiobuttons should not contain objects which are
+not instances of class <RadioButton>.
+
+
+#? ** File Requester Button.
+
+A file requester button is composed of a small square button
+which contains an icon. When the button is depressed,
+a file requester is poped up.
+
+A file requester button is usually associated with a string editor,
+which displays the file selected in the requester.
+
+.SEE File Requester.
+.SEE Editable Strings.
+
+
+#? (new FileReqButton <areqmsg> <aedstring>)
+
+Returns a new file requester button.
+Argument <areqmsg> is the introductory message of the requester
+associated with the button. Argument <aedstring> is the string editor
+associated with the button.
+
+
+#? *** Character String Objects.
+
+Ogre provides several classes for handling character string:
+.IP
+Class <String> provides a way to display fixed text.
+.IP
+Class <EditString> provides a way to display a text string that the
+user can edit using the mouse and the keyboard.
+.IP
+Class <EditNumber> provides a way to display a numerical text string
+that the user can edit using the mouse and the keyboard.
+.IP
+Class <EditSecretString> provides a way to display a secret text string
+that the user can edit using the mouse and the keyboard.
+.IP
+Classes <EditText> and <TextPane> implement a multiline text editor. 
+Class <TextPane> is the basic class for the editor or viewer. 
+Class <EditText> manages a text editor and two scrollbars.
+.PP
+
+
+#? ** Fixed Strings.
+
+Class <String> is used for creating a caption text which does not
+respond to user interaction. Such objects are useful for displaying
+explanatory text or short message. Class <String> is a subclass of
+class <VisualObject>. This is not a control object because it has no
+user interaction capabilities.
+
+
+#? (new String <text>)
+.FILE ogre.lsh
+.SEE (==> <Control> settext <d>)
+.SEE (==> <Control> gettext)
+
+Creates a new string object displaying text <text>.  The text
+displayed by a string object may be changed using <settext> like the
+text of a control object.
+.IP
+Argument <text> may be a string containing or not newline characters.
+When <text> contains newline characters, a multiline text is
+displayed.  
+.IP
+Argument <text> may also be a list of strings, one per line.
+.PP
+The text is displayed using a font set by the fonction stored
+in slot <textfont> of the string object. This font default
+to a standard 12 points font.
+
+
+
+#? ** Editable Strings.
+.SEE Regular Expressions.
+.SEE Activation of a Control Object.
+.SEE (==> <Control> setdata <d>)
+.SEE (==> <Control> getdata)
+.SEE (==> <Control> setcall <f>)
+
+An editable string is a single line text editor.
+
+An editable string object becomes actived when the user clicks the
+mouse button above its rectangle. Keypress and arrow events then are
+bound to editing functions according to a keymap stored in global
+variable <EditStringKeymap>.
+
+The text edited by an editable string is controlled by the value of
+the slot <regex> of the editable string. This slot contains a regular
+expression which must match the text at all times.  If an editing
+action results in a non-matching text, the action is discarded and a
+beep is emited.
+.IP
+Class <EditString> implements the editable strings.  Since class
+<EditString> is a subclass of class <Control>, all the slots and
+methods defined for control objects are inherited.
+.IP
+Class <EditNumber> implements an editable string intended
+for entering or displaying numbers.
+.IP
+Class <EditSecretString> implements an editable string intended for
+entering secret texts by displaying any character as an 'x'.
+.PP
+
+
+#? (new EditString  <minsize> [<defaulttext>])
+.FILE ogre.lsh
+
+Creates a new editable string displaying at least <minsize>
+characters.  The initial value of the text is specified by the
+optional string argument <defaulttext>.
+
+Example:
+.VP
+;;; A window with two editable strings
+? (setq win 
+        (new WindowObject 100 100 300 300 "Essai"
+                 (new grid 2
+                        (new string "First string:")
+                        (new editstring 16 "number one")
+                        (new string "Second string:")
+                        (new editstring 16 "number two") ) ) )
+.PP
+
+
+#? EditStringKeymap
+.TYPE VAR
+.FILE ogre.lsh
+
+The global variable <EditStringKeymap> contains the keymap for
+EditString objects as a list of key bindings. Every key binding has
+the form <(char action)> where <char> is a one character string and
+<action> is a symbol identifying a specific editing action.
+
+Every typed character is matched against the keymap. 
+.IP
+If a binding matches the typed character, message action with no
+argument is sent to the editable string.
+.IP
+If no binding matches, the character is inserted into the data string
+at the current cursor location. The cursor is then advanced by one
+position.
+.PP
+The default keymap is loosely modeled after the Emacs text editor:
+.VP
+(setq EditStringKeymap
+ '(     ("\n"          execute)         ;; <LineFeed>
+        ("\r"          execute)         ;; <Enter> or <Return>
+        ("\b"          backspace        ;; <ctrl-H> or <Backspace>
+        ("\x7f"        backspace)       ;; <Delete>
+        ("\^D"         delete-char)     ;; <Ctrl-D>
+        ("Delete"      delete-char)     ;; Key <Delete>
+        ("\^A"         begin-of-line)   ;; <Ctrl-A>
+        ("Home"        begin-of-line)   ;; Key <Home>
+        ("\^E"         end-of-line)     ;; <Ctrl-E>
+        ("End"         end-of-line)     ;; Key <End>
+        ("\^F"         arrow-right)     ;; <Ctrl-F> and <Right>
+        ("\^B"         arrow-left)      ;; <Ctrl-B> and <Left>
+        ("\^P"         arrow-up)        ;; <Ctrl-P> and <Up>
+        ("\^N"         arrow-down)      ;; <Ctrl-N> and <Down>
+        ("\^K"         kill)            ;; <Ctrl-K>
+        ("\^Y"         yank) ) )        ;; <Ctrl-Y>
+.PP
+
+The binding second elements, actions, are the names of methods defined
+by class <EditString> to perform the various editing tasks. The valid
+actions are:
+.IP
+Action <execute> calls the callback function. You can install a callback function
+using message <setcall> because an editable string is a control object.
+.IP
+Action <backspace> deletes the character preceding the cursor.
+.IP
+Action <delete-char> deletes the character located right after the cursor.
+.IP
+Action <begin-of-line> moves the to cursor the beginning of the line.
+.IP
+Action <end-of-line> moves the cursor to the end of the line.
+.IP
+Action <arrow-left> moves the cursor one character left.
+.IP
+Action <arrow-right> moves the cursor one character right.
+.IP
+Action <arrow-up> recalls the previous string in the history buffer.
+Editable strings maintain a buffer of the last 20 strings typed by the
+user.
+.IP
+Action <arrow-down> recalls the next string in the history buffer.
+.IP
+Action <kill> deletes the text between the cursor and the end of the
+string. This text is copied into the clipboard.
+.IP
+Action <yank> inserts text from the clipboard.
+The kill and yank actions implement in fact a 
+simple Copy/Paste mechanism between editable strings.
+
+
+#? ** Editable Numbers.
+.SEE Regular Expressions.
+.SEE (==> <Control> setdata <d>)
+.SEE (==> <Control> getdata)
+.SEE (==> <Control> setcall <f>)
+
+
+#? (new EditNumber  <minsize> [<defaultvalue>])
+.TYPE CLASS
+.FILE ogre.lsh
+
+Class <EditNumber> is a subclass of class <EditString> used for
+editing numeric fields.  It checks that the text is a valid number
+using a regumar expression stored in slot <regex> at construction
+time. In addition, the methods <setdata> and <getdata> have been
+modified to handle numbers instead of strings.
+
+Argument <minsize> is the minimal number of characters dislayed in the
+object.  The initial value of the number is specified by the optional
+number argument <defaultvalue>.
+
+When sent to an editable numeric string, message <setdata> requires
+a numerical argument. Similarly, message <getdata> returns a number or
+the empty list when no text has been entered.
+
+#? ** EditSecretString
+
+This subclass of <EditString> works exactly like <EditString>
+but always display the string character as a string of <"x">.
+
+
+#? ** Multiline Text Editor.
+.SEE (==> <Control> setdata <d>)
+.SEE (==> <Control> getdata)
+.SEE (==> <Control> setcall <f>)
+.SEE Forms.
+
+
+#? (new EditText <w> <h> [<default>])
+.FILE ogre.lsh
+Creates a new edittext object (i.e. a text editor with both a vertical
+and horizontal scrollbar). Argument <w> is the number of visible
+columns. Argument <h> is the number of visible lines.
+
+Class <EditText> is a subclass of <Forms> that defines 
+composite object containing a <TextPane> object and two 
+scroll bars. The text editor is actually implemented 
+by class <TextPane> described hereafter.
+
+Class <EditText> forwards messages <setdata>, <getdata>, 
+<read-file> and <write-file> to this 
+underlying <TextPane> object.
+.SEE (new TextPane <w> <h> [<def> <editp> <vs> <hs>])
+.SEE (==> <TextPane> getdata)
+.SEE (==> <TextPane> setdata <arg>)
+.SEE (==> <TextPane> read-file <fname>)
+.SEE (==> <TextPane> write-file <fname>)
+
+
+#? (new TextPane <w> <h> [<def> <editp> <vs> <hs>])
+.FILE ogre.lsh
+Creates a new <TextPane> object. Class <TextPane>
+is a subclass of <Control>. It implements a simple
+multi-line text editor.
+.IP
+Argument <w> is the number of visible columns.
+.IP
+Argument <h> is the number of visible lines. 
+.IP
+Argument <def> specifies a default contents as a string or a list of
+strings. Single strings are searched for TAB and NL characters and
+splitted into multiple strings (one per line).
+.IP
+Flag <editp> tells if the string is editable or just viewable.
+.IP
+If scrollbars are attached to the text pane, you must pass them as
+arguments <vs> and <hs>. The text pane will then synchronize the
+scrollbars with the actual contents of the text pane area.
+
+
+#? TextPaneKeymap
+.TYPE VAR 
+.FILE ogre.lsh
+
+This A-list contains the associations between key strokes and 
+editing methods executed by a <TextPane> object. 
+The default keymap is loosely based on the
+Emacs key bindings. 
+.VP
+(setq TextPaneKeymap
+ '(     ("\n"     execute)
+        ("\r"     execute)
+        ("\b"     backspace)
+        ("\x7f"   backspace)
+        ("\^A"    begin-of-line)
+        ("\^B"    arrow-left)
+        ("\^D"    delete-char)
+        ("\^E"    end-of-line)
+        ("\^F"    arrow-right)
+        ("\^K"    kill)
+        ("\^N"    arrow-down)
+        ("\^P"    arrow-up)
+        ("\^V"    page-down)
+        ("\^Y"    yank) 
+        ("Delete" delete-char)
+        ("C-Home" begin-of-text)
+        ("C-End"  end-of-text)
+        ("Home"   begin-of-line)
+        ("End"    end-of-line)
+        ("Prior"  page-up)
+        ("Next"   page-down)
+        ("\x1b"   metakey "\x1b")
+        ("\x1b<"  begin-of-text)
+        ("\x1b>"  end-of-text)
+        ("\x1bv"  page-up)
+  ) )
+.PP
+The first element of each association describes the
+keystroke or keystroke combination. This string can 
+contain an ASCII character, a string containing a keystroke
+combination, or a function key name. The leading character
+of keystroke combinations must be associated to method <metakey>.
+The function key names may be preceded by <"C-"> and <"S-">
+to indicate that the control or shift key must be depressed.
+
+The rest of the association specify which action should 
+be called when the corresponding keystroke is typed by the user.
+The following actions are supported:
+.IP
+Action <execute> calls the callback function. You can install a callback function
+using message <setcall> because an editable string is a control object.
+.IP
+Action <backspace> deletes the character preceding the cursor.
+.IP
+Action <delete-char> deletes the character located right after the cursor.
+.IP
+Action <begin-of-line> moves the to cursor the beginning of the line.
+.IP
+Action <end-of-line> moves the cursor to the end of the line.
+.IP
+Action <begin-of-text> moves the caret at the beginning of the text.
+.IP
+Action <end-of-text> moves the caret at the end of the text.
+.IP
+Action <arrow-left> moves the cursor one character left.
+.IP
+Action <arrow-right> moves the cursor one character right.
+.IP
+Action <arrow-up> moves the cursor one line up.
+.IP
+Action <arrow-down> moves the cursor one line down.
+.IP
+Action <page-up> moves the cursor one screen up.
+.IP
+Action <page-down> moves the cursor one screen down.
+.IP
+Action <kill> deletes the text between the cursor and 
+the end of the string. This text is copied into the clipboard.
+.IP
+Action <yank> inserts text from the clipboard.
+The kill and yank actions implement in fact a
+simple Copy/Paste mechanism between editable strings.
+.IP
+Action <metakey> is used to declare the prefix of a keystroke
+combination. The action argument will be combined with the next
+keystroke and the combined string will be searched in the keymap.
+
+
+#? (==> <TextPane> setdata <arg>)
+.FILE ogre.lsh
+Sets the text in a TextPane. Argument <arg> specifies a default
+contents as a string or a list of strings. Single strings are searched
+for TAB and NL characters and splitted into multiple strings (one per
+line).
+
+#? (==> <TextPane> getdata)
+.FILE ogre.lsh
+Returns a list of strings representing all
+lines of the text pane.
+
+#? (==> <TextPane> read-file <fname>)
+.FILE ogre.lsh
+Reads the contents of text file <fname> into the text pane.
+
+#? (==> <TextPane> write-file <fname>)
+.FILE ogre.lsh
+Writes the contents of the text pane into file <fname>.
+
+
+#? *** Icons.
+
+An icon is a simple object which displays a picture.
+
+#? (new icon <mat> &optional [<sx> [<sy> [<map>]]])
+
+Returns a new icon.
+
+Argument <mat> is a 2D matrix containing the data to
+be represented as rectangles using 64 gray levels.
+By default, the values lower than 0 will be black
+and the values beyond 1 will be white.
+
+Arguments <sx> and <sy> are the width and height of each rectangle.
+
+Argument <cmap> may be a 1D integer matrix defining 64 colors.
+When it is defined, its colors are used instead of gray levels.
+
+
+.SEE (gray-draw-matrix  <x> <y> <mat> <minv> <maxv> <apartx> <aparty>)
+.SEE (color-draw-matrix  <x> <y> <mat> <minv> <maxv> <apartx> <aparty> <cmap>)
+
+
+#? *** Menus.
+
+A menu is a popup column associated to a menu button. When the mouse
+is depressed on the menu button, a popup column appears and the user
+may drag the mouse over an item in the column. When the mouse button
+is released, the item is selected, its callback function is executed
+and the popup column disappears.
+
+Menus are implemented with three classes:
+.IP
+Class <Menu> defines the menu button. A menu button appears as a bold
+string preceded by a small upside down triangle. When the menu button
+is depressed, an instance of class <MenuPopup> is inserted into the
+menu button's window.
+.IP 
+Class <MenuPopup> is a subclass of class <Column>. It arranges the
+menu items and manages event messages by selecting the appropriate
+menu item.
+.IP
+Class <MenuItem> is a subclass of class <Control>. Menu items may
+receive <settext> messages for changing their label and <setdata>
+messages for setting slot <data>. When slot <data> is not the empty
+list, a check mark appears on the left of the menu item.
+.PP
+The constructor of class <Menu> sets up all these objects in a
+single call.
+
+
+#? ** Standard Menus.
+
+
+#? (new Menu <menuname> <label1> <call1> ... <labelN> <callN> )
+.FILE ogre.lsh
+
+Creates a menu button labelled <menuname> linked to a menu popup
+composed of items defined by the pairs <label1>,<call1> to <labelN>,
+<callN>. Argument <labeli> is the name of the <i>th menu item.
+Argument <calli> is the callback associated to the <i>th menu item.
+
+Example:
+.VP
+;;; A window with a menu composed of 3 items
+? (setq win 
+      (new WindowObject 100 100 300 300 "Essai"
+          (new menu "Test Menu"
+                ;; the first item toggles its check mark
+                "Toggle" 
+                (lambda(item) (==> item setdata (not (==> item getdata))))
+                ;; the second item activates the bell
+                "Bell"   
+                (lambda(item) (beep))
+                ;; the third one destroy this interface
+                ;; remenber that <thiswindowobject> always
+                ;; refer to the closest window object.
+                "Quit"     
+                (lambda(item) (==> thiswindowobject delete)) ) ) )
+.PP
+
+
+#? (==> <Menu> finditems <label>)
+.FILE ogre.lsh
+
+Message <finditems> returns the menu items matching argument <label>.
+.IP
+If <label> is the empty list <()>, message <finditems> returns a list
+containing all the menu items.
+.IP
+If <label> is a number, message <finditems> returns a list
+containing the <label>-th menu item.
+.IP
+If <label> is a string, message <finditems> returns a list of menu
+items whose label string is equal to <label>.
+
+
+#? (==> <Menu> disable <...labels...>)
+.FILE ogre.lsh
+.SEE (==> <Menu> finditems <label>)
+
+When a menu receives a message <disable>, it sends a message <disable>
+to all menu items identified by the arguments <...labels...>.
+Therefore, the corresponding menu items are disabled. 
+
+Each argument of message <disable> is interpreted like the argument
+<label> of message finditems. It can be the empty list, a number or a
+string.
+
+
+#? (==> <Menu> enable <...labels...>)
+.FILE ogre.lsh
+.SEE (==> <Menu> finditems <label>)
+
+When a menu receives a message <disable>, it sends a message <disable>
+to all menu items identified by the arguments <...labels...>.
+Therefore, the corresponding menu items are disabled. 
+
+Each argument of message <disable> is interpreted like the argument
+<label> of message finditems. It can be the empty list, a number or a
+string.
+
+
+
+#? (new MenuItem <label> <call>)
+.FILE ogre.lsh
+
+Creates a new menu item labelled <label>. Argument <call> indicates
+the callback function for this menu item. Menu items may be inserted
+into a menu popup by sending a message <insert> to the menu object.
+
+#? (==> <Menu> insert <menuitem>)
+.FILE ogre.lsh
+
+Message <insert> inserts a new menu item <menuitem> in the menu popup.
+
+#? (==> <Menu> remove <menuitem>)
+.FILE ogre.lsh
+
+Message <insert> removes new menu item <menuitem> from the menu popup.
+
+
+
+#? ** Choice Menus.
+
+
+This class implements a multiple choice item.  This object display
+a menu mark and the name of the currently selected item. When the
+user clicks on it, a menu popup is displayed and the user can
+select another item.
+
+Choice menus supports the methods of standard menus,
+in addition to their own methods.
+
+#? (new ChoiceMenu [<items> [<callback>]])
+Creates a new choice menu that lets the user choose among the items
+specified in list of strings <items>.  When argument <items> is
+unspecified, selection is impossible.
+
+#? (==> <choicemenu> setitems <items>)
+Changes the items that the user can select with the choice menu to
+be the strings of list <items>. As a side effect, the current
+selection is reset to the empty list.
+
+#? (==> <choicemenu> setdata <d>)
+Selects string <d> in the choice menu.
+
+#? (==> <choicemenu> getdata)
+Returns the string selected in the choice menu.
+
+#? (==> <choicemenu> setcall <callback>)
+Sets the callback function
+
+#? (==> <choicemenu> disable)
+Disables a choicemenu.
+
+#? (==> <choicemenu> enable)
+Enables a choicemenu.
+
+
+
+#? *** Popup Requesters.
+
+A requester is a prepared form containing a collection of graphical
+objects. When the requester receives a message <popup>, the form is
+displayed in the middle of the window and receives all event messages
+until it receives a message <popdown>.
+
+Requesters are useful for asking the user to provide additional
+information about an action trigerred by a button or a menu item.  The
+callback function of the button or menu item then just send a message
+<popup> to the requester which performs all the remaining tasks.
+
+.IP
+Class <Requester> implements the basic mechanism of a requester.
+.IP
+Class <ErrorRequester> and <WarningRequester> implement requesters
+specialized for displaying error messages.
+.IP
+Class <YesNoRequester> defines a requester with a standard state
+and two standard buttons for accepting or cancelling an action.
+These requesters are useful for entering extra information
+about an action  trigerred by a button or a menu item. 
+.IP 
+Class <PrintRequester> implements a standard requester
+for selecting a printer.
+.IP
+Class <FileRequester> implements a standard requester for
+entering a filename for reading or writing. 
+
+
+#? ** Requester.
+
+Class <Requester> is a subclass of <Form> which implements the basic
+mechanisms of a requester. When the requester receives a message
+<popup>, the requester is inserted into a predefined window object
+until reception of a message <popdown>.
+
+Example:
+.VP
+;;; A window with a button that pops a requester up.
+;;; The requester contains an editstring and two buttons.
+
+;;; 1- Create the window
+? (setq win 
+          (new WindowObject 100 100 300 300 "Essai"
+                (setq thebutton
+                        (new StdButton "Pop the requester up"
+                                (lambda(d) (==> therequester popup)) ))))
+= ::WindowObject:06f00
+
+;;; 2- Create the requester
+? (setq therequester
+        (new Requester win
+          (new Column
+                ;; The first button pops the requester down
+                ;; Variable <thisrequester> always refers to the closest
+                (new StdButton "Pop the requester down"
+                        (lambda(d)
+                          (==> thisrequester popdown)) )
+                ;; The second button changes the label of the popup button
+                (new EditString 8 "Pop it up again")
+                (new StdButton "Change label"
+                        (lambda(d)
+                          (==> thebutton settext
+                                ;; Collective <getdata> on the requester!
+                                (car (==> thisrequester getdata)))))))))
+= ::Requester:0702c
+.PP
+
+
+#? (new Requester <support> <...contents...>)
+.FILE ogre.lsh
+
+Creates a new requester containing objects <...contents...>.  This
+requester will be inserted into the window object containing object
+<support> upon recpetion of a message <popup>.
+
+
+#? (==> <Requester> popup)
+.FILE ogre.lsh
+
+When a requester receives message <popup>, it is inserted in the
+middle of the window object defined at requester creation time.
+
+All event messages are then directed to the requester.  Since no other
+component of the interface toplevel is active, it is advisable to
+insert a button whose action consists in sending message <popdown> to
+the requester itself.
+
+#? (==> <Requester> popdown)
+.FILE ogre.lsh
+
+A popped requester is removed from its window object when it receives
+a message <popdown>. The usual event dispatching is then restored.
+
+
+#? (==> <Requester> popuplock)
+.FILE ogre.lsh
+
+Message <popuplock> behaves very much like message <popup>.  Unlike
+message <popup>, message <popuplock> blocks until the requester
+receives a message <popdown>. When message <popuplock> returns, the
+window object state is normal again.
+
+Example:
+.VP
+;;; Pop up the requester defined above in this section and block:
+? (==> therequester popuplock)
+;;; Lush only returns when you activate the 'popdown' button
+= ()
+.PP
+
+#? (==> <Requester> popuphard)
+.FILE ogre.lsh
+
+Message <popuphard> is an even more drastic form of <popuplock>.  It
+pops up the requester and blocks until the requester is popped down
+like message <popuplock>.
+
+While message <popuphard> is active, no other window object accepts
+user events. If the user click in another Ogre window, the computer
+beeps and put the window containing the requester above all other
+window on the screen.
+
+Message <popuphard> is useful for requesting an information which
+requires immediate attention from the user.
+
+
+#? (==> <Requester> setsupport <win>)
+.FILE ogre.lsh 
+
+Message <setsupport> changes the support window of a requester.
+
+
+#? ** Warning Requester.
+
+Class <WarningRequester> is a subclass of <Requester>. A warning
+requester contains only a String object. The actual text of the string
+is defined when you pop the warning requester up.
+
+
+#? (new WarningRequester <support>)
+.FILE ogre.lsh
+
+Creates a new warning requester for displaying text in window object
+<support>.
+
+
+#? (==> <WarningRequester> popup <text>)
+.FILE ogre.lsh
+Message <popup> first sets the string's text to <text> and pops the
+requester up. The requester may be popped down by sending the usual
+message popdown. 
+
+Using a warning requester with messages <popup> and <popdown> allows
+for displaying messages indicating what is being computed.
+
+#? (==> <WarningRequester> popuplock <seconds> <text>)
+.FILE ogre.lsh
+Message <popuplock> first sets the string's text to <text> and pops
+the requester up during <seconds> seconds. When this delay is elapsed,
+the requester is popped down and method <popuplock> returns.
+
+Using a warning requester with popuplock allows for displaying a
+temporary warning message.
+
+
+#? ** Error Requester.
+
+Class <ErrorRequester> is a subclass of <Requester>. An error
+requester contains a String object and a button labelled <"Ok"> for
+popping the requester down.  The actual text of the string is defined
+when you pop the error requester up.
+
+Such a requester is very useful for signaling an error to the user.
+The user must depress the button <"Ok"> to remove the requester. This
+button actually sends a message <popdown> to the error requester.
+
+Example:
+.VP
+;;; Assuming window object <win> already exists:
+? (setq error-dialog (new ErrorRequester win))
+= ::ErrorRequester:07120
+? (==> error-dialog popup "Error message")
+= ()
+.PP
+
+#? (new ErrorRequester <support>)
+.FILE ogre.lsh
+
+Creates a new error requester for displaying error messages in window
+object <support>.
+
+#? (==> <WarningRequester> popup <text>)
+.FILE ogre.lsh
+
+Message <popup> first sets the string's text to <text> and pops the
+requester up. The user can pop the requester down by clicking on
+button <"Ok">.
+
+#? (==> <WarningRequester> popuplock <text>)
+.FILE ogre.lsh
+
+Message <popuplock> first sets the string's text to <text> and pops
+the requester up. The requester is popped down and method <popuplock>
+returns when the user depresses button <"Ok">.
+
+
+
+#? ** Yes/No Requester.
+
+Class <YesNoRequester> is a subclass of <Requester> for implementing
+yes/no requesters. A yes/no requester contains a user defined part, a
+positive button and a negative button.
+
+Like usual requesters, yes/no requesters are popped up when they receive a message
+<popup> or <popuplock>. Both the positive and the negative button pop the yes/no
+requester down.
+
+When you create the yes/no requester however, you specify a callback function.
+.IP
+When the positive button is depressed, the yes/no requester is popped
+down and the callback function is executed.
+.IP
+When the negative button is depressed, the yes/no requester object is
+popped down and the state of the user defined part of the requester is
+restored to the state recorded when the requester was popped up.  The
+callback function is not executed.
+.PP
+If you have popped up the requester using message <popuplock>, you can
+also test which button has been depressed by looking at the value
+returned by message <popupdown>. This value is the empty list if the
+negative button has been depressed.
+
+Slots <yesbutton> and <nobutton> of a yes/no requester contain the
+positive and negative buttons. These buttons may be programmatically
+actived by sending them a message <trigger>.
+
+
+
+#? (new YesNoRequester <support> <dialog> <yes> <no> <call>)
+.FILE ogre.lsh
+
+Creates a new yes/no requester for displaying on the window object of
+object <support>. 
+
+Argument <dialog> is the user defined part of the requester. String
+<yes> is the label of the positive button. String <no> is the label of
+the negative button. Argument <call> is a callback function or the
+empty list.
+
+Example:
+.VP
+;;; A button that pops up a yesnorequester
+;;; for changing its label...
+? (setq win 
+        (new WindowObject 100 100 400 200 "Essai"
+                (setq thebutton
+                        (new StdButton "Hello"
+                                (lambda(c) (==> theyesnoreq popup)) ))))
+= ::windowobject:07010
+? (setq theyesnoreq
+        (new YesNoRequester win
+                ;; The user defined part
+                (new Column
+                        (new String "Change button label")
+                        (new EditString 8 "new label") )
+                ;; The yes and no labels
+                " Ok " "Cancel"
+                ;; The callback
+                (lambda(caller)
+                        (==> thebutton settext
+                                (car (==> caller getdata)) ))))))))
+= ::yesnorequester:07040
+.PP
+
+
+#? (==> <YesNoRequester> settext <yes> <no> <default>)
+.FILE ogre.lsh
+
+The label of the positive and negative buttons can be changed by
+sending a message <settext> to the yes/no requester. String <yes>
+becomes the label of the positive button. String <no> becomes the
+label of the negative button.
+
+There is usually a default button indicated by a wider outline.
+ This button is triggered if the user hits the carriage return key.
+This default button is usually the positive one, but may be changed
+with argument <default> of message <settext>. 
+.IP
+If <default> is <'yes>, the positive button is the default,
+.IP
+if <default> is <'no>, the negative button becomes the default,
+.IP
+if default is the empty list, no default button is set.
+
+
+#? (==> <YesNoRequester> setcall <callback>)
+.FILE ogre.lsh
+
+Sets the callback function for the requester. Argument <callback> can
+be a function with one argument or the empty list.
+
+
+#? (==> <YesNoRequester> ask <yes> <no> <default>)
+.FILE ogre.lsh
+.SEE (==> <YesNoRequester> settext <yes> <no> <default>)
+.SEE (==> <Requester> popuphard)
+
+This message should be used with yes/no requesters whose user defined
+component is a single String object.
+
+When such a requester receives message <ask>, it first sets the text of
+the string object to <text> and the button labels to <yes> and <no>.
+The default button is indicated by argument <default>.
+
+The requester is then popped up using <popuphard>. The user can then
+press either the positive or the negative button. When the requester
+is popped down, message <ask> returns <t> or <()> according to the
+user answer.
+
+Example:
+.VP
+;;; Creates a confirmation dialog in an exiting win <win>.
+
+? (setq confirm-dialog 
+        (new YesNoRequester win
+                (new string "msg")         ; dummy message
+                "yes" "no"                 ; dummy labels
+                () )                       ; no callback
+= ::yesnorequester:070c0
+
+? (==> confirm-dialog ask 
+        "Should I really do that"          ; the message
+        "Proceed" "Please don't"           ; the button labels
+        'no )                              ; the default
+;;; Waiting for your answer...
+= t or ()
+.PP
+
+
+
+#? ** Print Requester.
+.SEE (print-window <w> <h> [<destination>])
+
+A print requester lets the user choose a valid destination
+for printing a graphics. Function <getdata> will return
+a string that can be used verbatim as the <destination> argument
+of function <print-window>.
+
+
+#? (new PrintRequester <w> [<callback>])
+.FILE ogre.lsh
+.SEE Yes/No Requester.
+
+Creates a new print requester for displaying in the window object <w>.
+The optional argument <callback> defines a callback function
+that will be called if the user presses button "Ok"
+(as usual with Yes/No Requesters.)
+
+
+#? (==> <PrintRequester> getdata)
+.FILE ogre.lsh
+.SEE (print-window <w> <h> [<destination>])
+Returns a string that can be used directly
+as argument <destination> of function <print-window>. 
+
+
+#? ** File Requester.
+
+A file requester lets the user choose a filename using a list of files
+existing in various directories.  The file requester contains a
+message string, a file selector, an editable filename string and two
+buttons labelled <"Ok"> and <"Cancel">.
+
+Starting from the current filename, the selector displays the contents
+of the directory. A first click on a selector item selects a file or
+directory and copies its name in the editable filename string.
+Alternatively, the user can type a filename in the filename field.
+The button <"Ok"> is disabled if the user types an invalid filename.
+
+This selection is validated by a second click, by pressing the enter
+key or by depressing the button <"Ok">.
+.IP
+If the selected item is a directory, the contents of this directory
+is displayed and the user can select again an item.
+.IP
+If the selected item is a file, the requester is popped down 
+and the callback function is executed.
+.PP
+
+Class <FileRequester> is a subclass of class <YesNoRequester> which
+implements the standard Ogre file requester.
+
+
+#? (new FileRequester <w> [<message> <flag> <filter> <callback>])
+.FILE ogre.lsh
+.SEE Yes/No Requester.
+Creates a new file requester for displaying in the window object <w>.
+The contents of the message string is indicated by the optional
+argument <message>. The callback function is indicated by the optional
+argument <callback> or may be set using message <setcall>.
+
+Special behavior are selected by argument <flag>:
+.IP
+When <flag> is  <'no-newfile>, it is forbidden to enter the name 
+of a non existent file.
+.IP
+When <flag> is <'ask-newfile>, validating the name of a non existent
+file pops up a confirmation requester. This is useful before creating
+a new file.
+.IP
+When <flag> is <'ask-oldfile>, validating the name of an existent
+file pops up a confirmation requester. This is useful before overwriting
+an existing file.
+
+Argument <filter> is a function with one argument for testing the
+filenames. It returns a non nil value if its argument is a valid file
+name for this file request.  For instance, this function might test an
+extension or examine the file header. Files rejected by the function
+<filter> are not displayed in the selector. If the user types such an
+invalid filename in the filename field, validation is prevented by
+disabling the button <"Ok">.
+
+
+#? (==> <FileRequester> setdata <fname>)
+.FILE ogre.lsh
+
+Sets the current file name of a <FileRequester> object to file or
+directory <fname>.
+
+#? (==> <FileRequester> getdata)
+.FILE ogre.lsh
+
+Gets the full current file name of a <FileRequester> object.
+
+#? (==> <FileRequester> getdir)
+.FILE ogre.lsh
+
+Gets the name of the directory displayed in the selector of a
+<FileRequester> object.
+
+#? (==> <FileRequester> getbase)
+.FILE ogre.lsh
+
+Returns the base name of the current filename selected in a
+<FileRequester> object. If the selected filename is a directory, this
+message returns the empty list.
+
+#? (==> <FileRequester> setparm <message> <flag> [<filter>])
+.FILE ogre.lsh
+
+Changes the parameters of a <FileRequester> object.
+
+#? (==> <FileRequester> ask <message> <flag> [<filter> [<fname>]])
+.FILE ogre.lsh
+
+Changes the parameters of a <FileRequester> object, sets the current
+filename to file or directory <fname>, pops up the requester and
+waits until the request is complete.
+.IP
+If the user validates a file name, a non nil value is returned. 
+The filename can be accessed by sending a <getdata> message.
+.IP
+If the user selects the Cancel button, the empty list is returned.
+
+#? (ogre-ask-file <winobj> <message> <flag> [<filter> [<fname>]])
+
+This function popups a default filerequester in window <win>.
+
+Other arguments are the same as for method <ask> of class <FileRequester>.
+
+.SEE (==> <FileRequester> ask <message> <flag> [<filter> [<fname>]])
+
+
+#? *** Movable and Resizable Objects.
+
+Class <DragArea> and <SizeArea> define objects used for moving or
+resizing their container.  Special container classes <Frame> and
+<FrameSize> define containers which may be moved and resized by the
+user.
+
+
+#? (new DragArea <w> <h>)
+.FILE ogre.lsh
+
+Creates a new dragging area with minimal width <w> and minimal height <h>.
+
+A dragging area appears as a rectangle with a gray outline. When you
+depress the mouse inside a dragging area, you can drag its container to
+another place. 
+
+Two slots affect the behavior of a dragging area:
+.IP
+The moved object always remains inside rectangle <constraintrect>.
+This rectangle defaults to the empty list <()> which means that the
+object remains confined within its container's rectangle.
+.IP
+Slot <magnet> should contain a list <(mx my)>. The moved object keeps
+aligned on an invisible grid whose columns are mx pixels wide and
+whose rows are my pixels high. It defaults to the empty list <()>
+which means that objects may be moved at any pixel position.
+
+
+
+#? (new SizeArea <w> <h>)
+.FILE ogre.lsh
+
+Creates a new sizing area with minimal width <w> and minimal height <h>.
+
+A sizing area appears as two overlapping gray squares. When you
+depress the mouse inside a sizing area, you can change the size of its
+container. Just drag the mouse until you touch a container boundary.
+This container boundary then follows the mouse until you release the
+mouse button.
+
+Two slots affect the behavior of a size area. 
+.IP
+The resized object always remains confined within the rectangle
+<constraintrect>. This rectangle defaults to the empty list <()> which
+means that the object remains confined within its container's
+rectangle.
+.IP
+Slot <formfactor> should contain a list <(fx fy)>. The width of
+resized object remains an integer multiple of <fx>, the height of the
+resized object remains an integer multiple of <fy>, and both
+coefficients are equal. Slot <formfactor> defaults to the empty list
+<()> which means that no form factor constraint apply.
+
+
+
+#? (new Frame <x> <y> <w> <h> <...contents...>)
+.FILE ogre.lsh
+
+Creates a new frame at location <x> and <y> with minimal width <w> and
+minimal height <h>. The frame initally manage objects <contents>.
+
+Class <Frame> is a subclass of class <Container>. A frame always
+contains a dragging area located in the background of the container. A
+frame thus is a container that the user can move.
+
+Example:
+.VP
+? (setq win (new windowobject 0 0 400 400 "Essai"
+                (new Frame 50 30 200 140 
+                        (new stdbutton "Beep" 
+                                (lambda(c) (beep)) ) ) ))
+.PP
+
+
+#? (new FrameSize <x> <y> <w> <h> <...contents...>)
+.FILE ogre.lsh
+
+Creates a new sizable frame at location <x> and <y> with minimal width
+<w> and minimal height <h>. The frame initally manage objects
+<contents>.
+
+Class <FrameSize> is a subclass of class <Frame>. A sizable frame
+always contains a dragging area located in the background of the
+container. A sizable frame also contains a small size area in its
+bottom right corner. A sizable frame thus is a container that the user
+can move and resize.
+
+Example:
+.VP
+? (setq win (new windowobject 0 0 400 400 "Essai"
+                (new FrameSize 50 30 200 140 
+                        (new stdbutton "Beep" 
+                                (lambda(c) (beep)) ) ) ))
+.PP
+
+
+
+#? *** Sliders and Scrollbars.
+
+Sliders and scrollbars are graphical objects for entering numerical
+values.
+.IP
+Sliders are rendered as symbolized potentiometers. Sliders are mostly
+used as a way to enter numerical values.
+.IP
+Scrollbars are rendered as a gray area with a white handle. Scrollbars
+are mostly used for controlling other objects.
+.PP
+The user can grab and move the handle with the mouse. The user might
+also maintain the mouse button depressed on either side of the handle.
+In this case, the handle moves slowly towards the mouse pointer.
+
+The standard callback function is called whenever the user releases
+the mouse button. An additional callback might be set up with message
+<setdrag>.  This callback is called whenever the user moves the
+handle.
+
+Sliders and scrollbars are implemented by a set of specialized
+subclasses of class <Control>.
+.VP
+Control                 abstract class for all controls
+  Slider                abstract class for all sliders and scrollbars
+    HSlider               horizontal sliders
+    VSlider               vertical sliders
+    Scrollbar           abstract class for all sliders and scrollbars
+      HScrollbar          horizontal scrollbars 
+      VScrollbar          vertical scrollbars
+.PP
+Example:
+Example:
+.VP
+? (setq win (new windowobject 100 100 400 200 "Sliders & Scrollbars"
+                (new row
+                  (new grid 2
+                   (new emptyspace 100 100) 
+                   (new vslider 0 100 ())
+                   (new hslider 0 100 ()) 
+                   (new emptyspace 10 10) )
+                  (new grid 2
+                   (new emptyspace 100 100) 
+                   (new vscrollbar 100 ())
+                   (new hscrollbar 100 ()) 
+                   (new emptyspace 10 10) ) ) ) )
+.PP
+
+
+#? ** Sliders.
+
+Sliders are used for entering numerical values using an analog handle.
+Horizontal sliders are implemented by class <HSlider>. Vertical
+sliders are implemented by class <VSlider>. Both class <HSlider> and
+<VSlider> are subclasses of class <Slider> which implement a number of
+useful methods.
+
+
+#? (new HSlider <mini> <maxi> [<callback>])
+.FILE ogre.lsh
+
+Returns a horizontal slider for entering integer values in the range
+<mini> to <maxi>. The callback function <callback> is called whenever
+the user releases the mouse button.
+
+
+#? (new VSlider <mini> <maxi> [<callback>])
+.FILE ogre.lsh
+
+Returns a vertical slider for entering integer values in the range
+<mini> to <maxi>. The callback function <callback> is called whenever
+the user releases the mouse button.
+
+
+#? (==> <Slider> setrange <mini> <maxi>)
+.FILE ogre.lsh
+.SEE (==> <Scrollbar> setrange <mini> <maxi> [<prop>])
+
+Message <setrange> redefines the minimal and maximal values allowed in
+a slider or a scrollbar.
+
+
+#? (==> <Slider> setstep <step>)
+.FILE ogre.lsh
+
+Message <setstep> redefines the possible increments of the values
+allowed in a slider or a scrollbar.
+
+The initial increment is always 1. This initial increment ensures that
+the slider or scrollbar is limited to integer values. Specifying the
+empty list as an increment means that any value in the legal range are
+allowed.
+
+#? (==> <Slider> setdrag <call>)
+.FILE ogre.lsh
+
+Message <setdrag> sets up a secondary callback function which is
+called whenever the handle moves. Installing such a callback function
+is useful for displaying echo to the user.
+
+
+#? ** Scrollbars.
+
+Scrollbars are a special kind of slider which are used for
+controling which information is displayed in other objects.
+
+Scrollbars are implemented by classes <HScrollbar> and <VScrollbar>
+which are indirect subclasses of class <Slider>. All the methods
+defined by class <Slider> are thus inherited by scrollbars.
+
+#? (new HScrollbar <maxi> [<callback>])
+.FILE ogre.lsh
+
+Returns a horizontal scrollbar for entering integer values in the
+range <0> to <maxi>. The callback function <callback> is called
+whenever the user releases the mouse button.
+
+
+#? (new VScrollbar <maxi> [<callback>])
+.FILE ogre.lsh
+
+Returns a vertical scrollbar for entering integer values in the range
+<mini> to <maxi>. The callback function <callback> is called whenever
+the user releases the mouse button.
+
+
+#? (==> <Scrollbar> setrange <mini> <maxi> [<prop>])
+.FILE ogre.lsh
+.SEE (==> <Slider> setrange <mini> <maxi>)
+
+Message <setrange> redefines the minimal and maximal values allowed in
+a scrollbar. When the optional argument <prop> is provided, the
+maximal value is reduced by <prop> and the value <prop> is used for
+defining the size of the knob. This is useful for scrolling lists of
+texts.
+
+
+
+#? *** Composite Objects.
+
+This chapter describes a few standard objects composed of several
+elementary objects. Although composite objects usually are subclasses
+of <Form>, they obey the protocols defined for class <Control>.
+
+#? ** Viewers.
+
+A viewer object display a rectangular portion of a particular object
+(the viewer's contents). The size of the visible part of this object
+depends on the viewer size. The user control which part of the object
+is visible by sending messages <setpos> or by using the optional
+scrollbars provided by the viewer.
+
+Class <Viewer> implements viewer objects.
+
+
+#? (new Viewer <w> <h> <contents> [<hp> <vp>])
+.FILE ogre.lsh
+
+Creates a new viewer on object <contents>. The viewer is <w> points
+wide and <h> points high. The optional argument <hp> (resp. <vp>) is a
+boolean value (<t> or <()>) controling whether an horizontal (resp.
+vertical) scrollbar is displayed or not.
+
+Example:
+.VP
+? (setq win (new WindowObject 0 0 400 200 "Essai"
+                (new Viewer 300 150 
+                        (new column (new stdbutton "One" ())
+                                    (new emptyspace 60 60)
+                                    (new stdbutton "Two" ())
+                                    (new stdbutton "Three" ())
+                                    (new stdbutton "Four" ()) )
+                         t t) ) )
+.PP
+
+
+
+#? (==> <Viewer> setpos <h> <v>)
+.FILE ogre.lsh
+
+Message <setpos> defines the visible portion of the contents of a
+viewer.  This portion is a rectangle whose top left corner is located
+<h> pixels to the right and <v> pixels below the top left corner of
+the contents of the Viewer object.
+
+#? (==> <Viewer> sethpos <h>)
+.FILE ogre.lsh
+
+Message <sethpos> just change the horizontal coordinate of the visible
+portion of the contents of a viewer.
+
+#? (==> <Viewer> setvpos <v>)
+.FILE ogre.lsh
+
+Message <setvpos> just change the vertical coordinate of the visible
+portion of the contents of a viewer.
+
+#? (==> <Viewer> setcontenu <object>)
+.FILE ogre.lsh
+
+Message <setcontenu> changes the object viewed through a Viewer
+object.  Argument <object> must be a valid graphic component.
+
+
+
+#? ** Selectors.
+
+
+A selector is an object which allow the user to select one or several
+strings within a list of strings.  Only a few strings are visible at a
+given time. A scrollbar located along the right side of the Selector
+object controls which strings are visible. Selected strings are
+hilighted.
+
+Class <Selector> implements a selector object.  The complete behavior
+of a selector is controlled by three slots of the selector object:
+<multiple>, <call1> and <call2>.
+.IP
+When slot <multiple> contains a non nil value, the user might select
+multiple items. In this case, message <getdata> sets and message
+<setdata> returns the list of the selected strings.
+.IP
+If slot <multiple> contains the empty list, one item at most can be
+selected at a given time. Message <getdata> sets and message <setdata>
+returns the selected string or the empty list.
+.PP
+Two callback functions are called when the user selects items.
+.IP
+Callback <call1> is called whenever the user selects an item by
+clicking the mouse button over an unselected string.
+.IP
+Callback <call2> is called whenever the user selects an item a second
+time by clicking the mouse button over a hilighted string.
+.PP
+
+#? (new Selector <nvisible> [<callback> [<items>]])
+.FILE ogre.lsh
+
+Creates a new selector able to display <nvisible> strings at once.
+
+Argument callback of the constructor controls the values of these
+flags.
+.IP
+If argument <callback> is <t>, the user might select multiple items.
+.IP
+If argument <callback> is a function,
+one item at most can be selected at a given time.
+The specified callback function
+is called whenever the user selects a new item. 
+.IP
+If argument <callback> is a non-nil list,
+one item at most can be selected at a given time.
+The list is assumed to be made of two functions or nil values.
+The first one is used whenever the user selects a new item. 
+The second one is used whenever the user selects again a selected item. 
+.PP
+Argument <items> optionally gives a list of strings initially
+displayed in the selector.
+
+
+#? (==> <Selector> getdata)
+.FILE ogre.lsh
+
+Message <getdata> returns the selected strings in a selector:
+.IP
+If slot <multiple> contains a non nil value, the user can select
+multiple items. In this case, message <getdata> returns the list of
+the selected strings.
+.IP
+If slot <multiple> contains the empty list, the user can select at
+most one item.  Message <getdata> then returns the selected string or
+the empty list if no string is selected.
+
+#? (==> <Selector> getdatanum)
+.FILE ogre.lsh
+
+Instead of returning the strings themselves, like message <getdata>,
+message <getdatanum> returns the order number of the selected strings
+in a selector:
+.IP
+If slot <multiple> contains a non nil value, the user can select
+multiple items. In this case, message <getdatanum> returns the list of
+the order numbers of selected strings.
+.IP
+If slot <multiple> contains the empty list, the user can select at
+most one item.  Message <getdata> then returns the order number of the
+selected string or the empty list if no string is selected.
+
+
+#? (==> <Selector> setdata <data>)
+.FILE ogre.lsh
+
+Message <setdata> sets which strings are selected in a selector.  The
+selected strings are displayed on a highlited background.
+.IP
+If slot <multiple> contains a non nil value, argument <data>
+must be a list of strings or a list of numbers indicating which
+items must be selected.
+.IP
+If slot <multiple> contains the empty list, argument data is the empty
+list (to desselect the selected item), a string or a number indicating
+which string must be selected.
+
+
+#? (==> <Selector> setpos <pos>)
+.FILE ogre.lsh
+
+Message <setpos> makes the <pos>-th string appear on top of the
+selector and updates the scrollbar in accordance.
+
+#? (==> <Selector> setitems <items>)
+.FILE ogre.lsh
+Message <setitems> redefines a new list of strings <items> displayed
+in a selector and clears the current selection.
+
+Since the minimal size of a selector depends on the width of the
+largest string in the item list, sending message <setitems> can
+trigger a geometry negociation and readjust the location of all
+interface components.
+
+
+#? *** A Complete Example.
+
+Whole graphics interface are often defined as subclasses of class
+<WindowObject>. Such subclasses usually contain new slots for storing
+interface specific data. Callback functions then send messages to
+<thiswindowobject>. These messages then are executed within the
+interface scope.
+
+#? ** The Class Browser ``classtool''.
+
+This section describes a complete application of the Ogre library.
+This application is nothing but the standard Tlisp class browser. This
+class browser is invoked by typing the command <(classtool)>.
+
+#? (classtool [<cl>])
+.TYPE DE
+.FILE classtool.lsh 
+
+Invokes the Lush class browser on class <cl>. The class browser
+displays the subclasses, superclasses, slots and methods of a class.
+Class <object> is assumed if no argument is specified.
+
+The class browser interface is composed of a menu and six selectors:
+.IP
+Selector ``Sub-Classes'' displays the names of the subclasses of class
+<cl>. A mouse click on one of these subclasses changes the current class
+to the selected class.
+.IP
+Selector ``Slots'' displays the names of all slots defined by class
+<cl>.
+.IP
+Selector ``Method'' displays the names of all method selectors defined
+for class <cl>.
+.IP
+Selector ``Super-Classes'' displays the names of the successive
+superclasses of <cl>. A mouse click on one of these subclasses changes
+the current class to the selected class.
+.IP
+Selector ``Inherited Slots'' displays the names of all slots defined
+by the successive superclasses of class <cl>. A mouse click on a
+method item prints the definition of the selected method.
+.IP
+Selector ``Inherited Methods'' displays the names of all methods
+inherited from the successive superclasses of class <cl>. A mouse
+click on a method item prints the definition of the selected method.
+.PP
+The top of the class browser contains a menu and an information
+string.  The information string displays the number of slots, the
+number of inherited slots, the number of methods and the number of
+inherited methods for the current class. The name of the menu is
+always the name of the current class, displayed in large characters.
+
+The menu itself contains four items:
+.IP
+Selecting item <"Show Class"> prints the definition of class <cl>.
+.IP
+Selecting item <"Show Subtree"> prints an indented list
+of the subclasses of class <cl>.
+.IP
+Selecting item <"Refresh"> reads again the information for class <cl>
+and reflects possible changes on the display.
+.IP
+Selecting item <"Select"> pops up a requester which lets the user
+enter the name of a class. The class browser jumps to the selected
+class when the user presses button <"Ok">. If the typed class name is
+not a valid class name, a message is displayed.
+
+
+#? ** The Program ``classtool''.
+
+Here is a review of the main components of the ``classtool'' program.
+You can look at the complete listing of this program in file:
+.VP
+     <lushdir>/lib/classtool.lsh
+.PP
+
+
+.IFHLP
+
+i) Initial definitions.
+-----------------------
+.IFTEX
+{\vspace{5mm} \bf i) Initial definitions.}
+.PP
+
+The first executable line of file <"classtool.lsh"> initializes the
+Ogre library by calling function <ogre>. This is necessary to ensure
+that the Ogre class library is properly loaded and initialized.
+.VP
+(ogre)
+.PP
+Then we define a subclass <c-classtool> of class <WindowObject>. This
+class contains several slots for referencing the major components of
+the interface.
+.VP
+(defclass c-classtool windowobject
+  the-menu                ;; the menu
+  the-string              ;; the information string
+  the-i-classes           ;; the superclass selector
+  the-i-slots             ;; the inherited slots selector
+  the-i-methods           ;; the inherited methods selector
+  the-classes             ;; the subclass selector
+  the-slots               ;; the slots selector
+  the-methods             ;; the method selector
+  the-error-requester     ;; a signaling requester
+  the-class-requester     ;; the requester
+  cl )                    ;; the current class
+.PP
+
+
+.IFHLP
+
+ii) Constructor Method.
+-----------------------
+.IFTEX
+{\vspace{5mm} \bf ii) Constructor Method.}
+.PP
+
+
+We define then the constructor of class <c-classtool>.  This
+constructor first calls the constructor of its superclass
+<WindowObject> and defines the contents of the window object. This
+very long call sets up the major components of the classtool
+interface.
+
+All the interface is a single column which contains:
+.IP
+A row implements the menu bar. The menu bar contains only one menu
+object (stored in slot <the-menu) and an information string (stored in
+slot <the-string>).
+
+The menu defines the five items documented above. The callback
+functions of the menu items do not perform very much. They merely send
+an appropriate action message to the interface itself (acceded through
+variable <thiswindowobject>) or pop up a suitable the requester.
+.VP
+         (setq the-menu
+             (new Menu "object"
+                "Show Class"    
+                (lambda(c) (==> thiswindowobject display-action))
+                "Show Subtree"    
+                (lambda(c) (==> thiswindowobject subtree-action))
+                "Refresh" 
+                (lambda(c) (==> thiswindowobject refresh-action))
+                "Select"  
+                (lambda(c) (==> the-class-requester popup))
+                "Quit"    
+                (lambda(c) (==> thiswindowobject delete)) ) )
+.IP
+A dark space object provides a clear separation between the menu bar
+and the rest of the interface. Although the minimal space allocated
+for the dark space 3 points wide, the column layout policy makes this
+space as wide as the column itself.
+.IP
+A grid with 3 columns contains all the other objects. It includes the
+selector titles (string objects) and the selector themselves which are
+stored in appropriate slots of the classtool object.  The callback
+functions of the selector do not perform much. They just send messages
+<classes-action> or <methods-action> to the classtool object itself.
+
+The grid also include three emptyspace object which specify a minimal
+size for the grid columns. This technique avoids troublesome geometry
+changes because it ensures that the selectors are already wide enough
+for displaying most names.
+
+The constructor of class <c-classtool> then adjust the font
+used in the menu title by directly poking into the object slot
+<textfont>.  It calls then method <compute-geometry> to ensure that
+the object size is adjusted for the new font.
+.VP
+  (setq :the-menu:textfont font-18)
+  (==> the-menu compute-geometry)
+.PP
+
+The constructor of class <c-classtool> then
+creates two requesters.
+.IP 
+The error requester <the-error-requester> is used 
+later for displaying error messages.
+.VP
+  (setq the-error-requester 
+        (new ErrorRequester this) )
+.IP
+The class requester is popped up when you select menu item <"select">
+for directly entering a class name. It defines a callback function
+which just sends a message <select-action> to the classtool object.
+
+We poke a new regular expression in the slot <regex> of the editable
+string in order to ensure that the text typed by the user is a valid
+symbol.
+.VP
+  (setq the-class-requester 
+        (new YesNoRequester this
+             (new column
+                  (new String "Type a class name")
+                  (new DarkSpace 3)
+                  (let ((x (new EditString 20)))
+                    (setq :x:regex "[A-Za-z]?[-_|A-Za-z0-9]*") x) )
+             " Ok " "Cancel"
+             (lambda(c) (==> thiswindowobject select-action)) ) ) )
+.PP
+
+
+
+.IFHLP
+
+iii) Method <setclass>.
+-----------------------
+.IFTEX
+{\vspace{5mm} \bf iii) Method ``setclass''.}
+.PP
+
+Method <setclass> is then defined. This method collects the class
+information for the selected class and updates the information
+displayed in the selectors.
+
+It first checks that its argument is a valid class and pops up the
+error requester if this check is negative. 
+.VP
+(defmethod c-classtool setclass(c)
+  (if (not (and c (classp c)))
+      (==> the-error-requester popup "This is not a valid class")
+.PP
+If the check is positive, method <setclass> displays a message
+<"working"> in the message string and force an immediate display
+update using message <repair-damaged>.
+.VP
+    (==> the-string settext "<<working>>")
+    (==> this repair-damaged)
+.PP
+The menu title is then changed to the class name using method
+<settext>.  Since the display update is delayed until all events are
+processed, this change becomes visible when all selectors are
+updated.
+
+Method <setclass> then collects the class information into six lists:
+the subclass list (<cc>), the slot list (<cs>), the method list
+(<cm>), the superclass list (<ic>), the inherited slot list (<is>) and
+the inherited method list (<im>).  We take a particular care of
+separating the various inherited classes by a dummy entry in the
+inherited lists.
+
+This information is then loaded into the selectors using method
+<setitems>.  The message string is then updated to the class
+statistics.
+.VP
+        (==> the-classes setitems cc)
+        (==> the-slots setitems cs)
+        (==> the-methods setitems (sort-list cm >))
+        (==> the-i-classes setitems ic)
+        (==> the-i-slots setitems is)
+        (==> the-i-methods setitems im)
+        (==> the-string settext 
+             (sprintf "  %l: %d+%d slots, %d+%d methods"
+                      cn (length cs) isc (length cm) imc) ) ) ) ) )
+.PP
+
+
+.IFHLP
+
+iv) Action methods.
+-------------------
+.IFTEX
+{\vspace{5mm} \bf iv) Action methods.}
+.PP
+
+We define then the various action methods which are called by the menu
+items, by the selectors, or by the class selection requester.
+
+Method <classes-action> is called when the user selects a class in the
+subclass or superclass requester. This method just sends a message
+<setclass> to switch to the new class.
+.VP
+(defmethod c-classtool classes-action(c)
+  (let ((cn (==> c getdata)))
+    (==> this setclass (apply scope (list (named cn)))) ) )
+.PP
+Method <methods-action> is called when the user selects a method in
+the method selector or the inherited method selector. Method
+<methods-action> first makes sure that the user did not select a dummy
+entry used for separating the classes in the inherited method
+selector.  It uses then function <pretty-method> to print the
+definition of the selected method.
+.VP
+(defmethod c-classtool methods-action(c)
+  (let ((m (==> c getdata))
+        (cl cl))
+    (when (<> (left m 5) "=====")
+          (setq m (named m))
+          (while (and cl ~(member m (methods cl)))
+            (setq cl (super cl)) )
+          (when cl
+                (==> this repair-damaged)
+                (==> c setdata ())
+                (print) 
+                (pretty-method cl m) ) ) ) )
+.PP
+Method <refresh-action> is called by the menu item <"Refresh">. It just
+calls method <setclass> on the current class (from slot <cl>) in order
+to reload the class information.
+.VP
+(defmethod c-classtool refresh-action()
+  (==> this setclass cl) )
+.PP
+Method <display-action> is called by the menu item <"Show Class">.
+It just prints the class definition when adequate.
+.VP
+(defmethod c-classtool display-action()
+  (if (not (super cl))
+      (beep)
+    (print)
+    (pprint (nconc (list 'defclass (classname cl) (classname (super cl))) 
+                   (slots cl) )) ) )
+.PP
+Method <subtree-action> is called by the menu item <"Show Subtree">.
+It just prints an indented list of the subclasses of the current
+class.
+.VP
+(defmethod c-classtool subtree-action()
+  (let ((subtree (lambda(cl tb)
+                   (tab tb)
+                   (print (classname cl))
+                   (each ((c (subclasses cl)))
+                         (subtree c (+ tb 2)) ) ) ))
+    (print)
+    (subtree cl 2) ) )
+.PP
+Method <select-action> is called when the class selection requester
+pops down. It gets the class name typed by the user (using <getdata>),
+normalize the name and calls method <setclass> again.
+.VP
+(defmethod c-classtool select-action()
+  (let ((cn (car (==> the-class-requester getdata))))
+    (if (regex-match "\\|.*\\|" cn)
+        (setq cn (regex-subst "^\\|(.*)\\|$" "%0" cn))
+      (setq cn (downcase cn)) )
+    (==> this setclass (apply scope (list (named cn)))) ) )
+.PP
+
+
+.IFHLP
+
+v) Miscellaneous.
+-----------------
+.IFTEX
+{\vspace{5mm} \bf v) Miscellaneous.}
+.PP
+
+We override then method <keypress> in order to define an accelerator
+key. Depressing the space bar pops up the class selection requester.
+All other keypress events are handled by the default method which just
+ignore these events.
+.VP
+(defmethod c-classtool keypress(c x y)
+  (selectq c
+    (" " (==> the-class-requester popup))
+    (t (==> this (windowobject . keypress) c x y)) ) )
+.PP
+   
+Finally the hook function <classtool> creates an instance of class
+<c-classtool> and sets the initial class displayed in the browser
+.VP
+(de classtool( &optional (cl object) )
+    (when (symbolp cl) 
+          (setq cl (eval cl)) )
+    (when (not (classp cl)) 
+          (error t "Not a class" cl) )
+    (let ((w (new c-classtool)))
+      (==> w setclass cl) ) )
+.PP
+In addition, an autoload function <classtool> is defined in file
+<"stdenv.lsh"> which loads file <"classtool.lsh"> and calls this
+function <classtool>. 

@@ -1,0 +1,873 @@
+#? File "file-std.sn"
+;; stdio interface functions
+;;.VP
+;; Author: Pascal Vincent (04/05/96)
+;; Modified: Yoshua Bengio (23/08/96)
+;; Modified: Yann LeCun (29/08/96)
+;; Modified: Patrick Haffner 10-10-97, replace "w" with "wb" and "r" with "rb"
+;;
+;; They are based on a set of routines that operate
+;; on so-called "file pointers" associated with an open file. 
+;; These are nothing but C-pointers of type FILE*
+;; The corresponding SN type is simply a (-gptr-)
+;; Such a pointer is typically returned by fopen.
+;;
+;;.SEE (stdout)
+;;.SEE (fopen <filename> <type>)
+;;.SEE (fclose <file-pointer>)
+;;.SEE (popen <filename> <type>)
+;;.SEE (pclose <file-pointer>)
+;;.SEE (ftell <file-pointer>)
+;;.SEE (fseek <file-pointer> <pos>)
+;;.SEE (fseek-from-current <file-pointer> <pos>)
+;;.SEE (fseek-from-end <file-pointer> <pos>)
+;;.SEE (fsize <file-pointer>)
+;;.SEE (fprintf <file-pointer> <args...>)
+;;.SEE (fwrite-str <file-pointer> <s>)
+;;.SEE (fgetc <file-pointer>)
+;;.SEE (fputc <file-pointer> <val>)
+;;.SEE (fread-ubyte <file-pointer>)
+;;.SEE (fwrite-ubyte <file-pointer> <val>)
+;;.SEE (fread-byte <file-pointer>)
+;;.SEE (fwrite-byte <file-pointer> <val>)
+;;.SEE (fread-short <file-pointer>)
+;;.SEE (fwrite-short <file-pointer> <val>)
+;;.SEE (fread-int <file-pointer>)
+;;.SEE (fwrite-int <file-pointer> <val>)
+;;.SEE (fread-flt <file-pointer>)
+;;.SEE (fwrite-flt <file-pointer> <val>)
+;;.SEE (fread-real <file-pointer>)
+;;.SEE (fwrite-real <file-pointer> <val>)
+;;.SEE (fscan-int <file-pointer>)
+;;.SEE (fscan-flt <file-pointer>)
+;;.SEE (fscan-str <file-pointer>)
+;;.SEE (fgets <file-pointer> <max-size>)
+;;.SEE (rewind  <f>)
+;;.SEE (skip-comments <start> <f>)
+;;.SEE Compilable routines for reading/writing matrixes idx1, idx2, idx3 from/to an open file 
+;;.SEE Compilable loading and saving routines for matrixes idx1, idx2, idx3
+
+(mload "cmacro.sn")
+(mload "idx-macros.sn")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (fprintf <file-pointer> <args...>)
+;;.VP
+;; ((-gptr-) file) ; the file pointer returned by a fopen
+;; 
+;; MACRO 
+;; DESCRIPTION: same as printf, but writes to a file rather than to standard output
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+(dm fprintf args
+    '(fwrite-str `(cadr args) `(cons 'sprintf (cddr args ))))
+          
+#? (fwrite-str <file-pointer> <s>)
+;;.VP
+;; ((-gptr-) file) ;; the file pointer returned by a fopen
+;; ((-str-) s)     ;; the string to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: writes string <s> to file <file-pointer>
+;;.SEE Compilable file I/O
+(de fwrite-str (file s)
+    ((-gptr-) file) ;; the file pointer returned by a fopen
+    ((-str-) s)     ;; the string to be written to the file
+    
+    (cheader "#include <stdio.h>\n")
+    (cheader "#define STRING_DATA(s) (s->data)") ;; this definition in case string repres. changes.
+    #{ 
+    if(!$file)
+       printf("%s", $s->data); 
+    else 
+       {
+         fprintf((FILE *)$file, "%s", $s->data); 
+         fflush((FILE *)$file);
+       }
+    #}
+    () )
+
+;; (fprints <file-pointer> <s>)
+;;.VP
+;; Same as fwrite-str
+;; (for compatibility with Patrick)
+;; .SEE (fwrite-str <file-pointer> <s>) 
+(de fprints (fw s)
+    ((-gptr- "FILE *") fw)
+    (-str- s)
+    (fwrite-str fw s))
+
+#? (stdout)
+;;.VP
+;; RETURNS: (-gptr-) the file pointer associated with the standard output
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;.SEE Compilable file I/O
+(de stdout ()
+    (cheader "#include <stdio.h>\n")
+    (gptr #{ stdout #}))
+
+#? (fopen <filename> <type>)
+;;.VP
+;; ((-str-) filename) ; the name (or path) of the file to be opened:
+;; ((-str-) type)     ; the opening type: "rb" for reading, "wb" for creating and writing, "a" for append, ...:
+;;
+;; RETURNS: (-gptr-) a file pointer to the open file (the pointer is null in case of failiure)
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: same as the C function fopen
+;;.SEE Compilable file I/O
+(de fopen (filename type)
+    ((-str-) filename) ; the name (or path) of the file to be opened
+    ((-str-) type)     ; the opening type: "rb" for reading, "wb" for creating and writing, "a" for append, ...
+    
+    (cheader "#include <stdio.h>\n")
+    (gptr #{ fopen($filename->data, $type->data) #}))
+
+#? (fclose <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: same as the C function fclose
+;;.SEE Compilable file I/O
+(de fclose (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+
+    (cheader "#include <stdio.h>\n")
+    #{ fclose((FILE *)$file) #}
+    () )
+
+#? (popen <filename> <type>)
+;;.VP
+;; ((-str-) filename) ; the name (or path) of the pipe to be opened:
+;; ((-str-) type)     ; the opening type: "rb" for reading, "wb" for creating and writing, "a" for append, ...:
+;;
+;; RETURNS: (-gptr-) a file pointer to the open pipe (the pointer is null in case of failiure)
+;; CREATED: Yann LeCun 08/29/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: same as the C function popen
+;;.SEE Compilable file I/O
+(de popen (filename type)
+    ((-str-) filename) ; the name (or path) of the file to be opened
+    ((-str-) type)     ; the opening type: "rb" for reading, "wb" for creating and writing    
+    (cheader "#include <stdio.h>\n")
+    (gptr #{ popen($filename->data, $type->data) #}))
+
+#? (pclose <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a popen
+;;
+;; RETURNS: ()
+;; CREATED: Yann LeCun 08/29/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: same as the C function pclose
+;;.SEE Compilable file I/O
+(de pclose (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+
+    (cheader "#include <stdio.h>\n")
+    #{ pclose((FILE *)$file) #}
+    () )
+
+#? (ftell <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: (-int-) the current position in the file, relative to the beginning
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: same as C function ftell
+;;.SEE Compilable file I/O
+(de ftell (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    (cheader "#include <stdio.h>\n")
+    (let ((result 0))
+      ((-int-) result)
+    #{ $result = ftell((FILE *)$file) #}
+    result ))
+
+#? (fseek <file-pointer> <pos>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-int-) pos)     ; an absolute position in the file:
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: moves to the given position in the file
+;;.SEE Compilable file I/O
+(de fseek (file pos)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-int-) pos)     ; an absolute position in the file
+
+    (cheader "#include <stdio.h>\n")
+    #{ fseek((FILE *)$file, (long)$pos, 0) #}
+    () )
+
+#? (fseek-from-end <file-pointer> <pos>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-int-) pos)     ; a position in the file relative to the end
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: moves to the given position in the file
+;;.SEE Compilable file I/O
+(de fseek-from-end (file pos)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-int-) pos)     ; a position in the file relative to the end
+
+    (cheader "#include <stdio.h>\n")
+    #{ fseek((FILE *)$file, (long)$pos, 2) #}
+    () )
+
+#? (fseek-from-current <file-pointer> <pos>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-int-) pos)     ; a position in the file relative to the current position:
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: moves to the given position in the file
+;;.SEE Compilable file I/O
+(de fseek-from-current (file pos)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-int-) pos)     ; a position in the file relative to the current position
+
+    (cheader "#include <stdio.h>\n")
+    #{ fseek((FILE *)$file, (long)$pos, 1) #}
+    () )
+    
+#? (fsize <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: (-int-) the size of the file
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;.SEE Compilable file I/O
+(de fsize (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+
+    (fseek-from-end file 0)
+    (ftell file))
+
+#? (fgetc <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: (-int-) The next byte read from the file
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Reads a byte (character) from the file (same as C function fgetc)
+;;.SEE Compilable file I/O
+(de fgetc (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    (cheader "#include <stdio.h>\n")
+    (let ((result 0))
+      ((-int-) result)
+      #{ $result=getc((FILE *)$file); #}
+      result ))
+
+#? (fputc <file-pointer> <val>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-int-) val)     ; contains the byte to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Writes a byte (character) to the file (same as C function fputc)
+;;.SEE Compilable file I/O
+(de fputc (file val)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-int-) val)     ; contains the byte to be written to the file
+
+    (cheader "#include <stdio.h>\n")
+    #{ putc((char)$val,(FILE *)$file); #}
+    () )
+
+#? (fread-ubyte <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: (-ubyte-) the next ubyte read from the file
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;.SEE Compilable file I/O
+(de fread-ubyte (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+
+    (cheader "#include <stdio.h>\n")
+    (let ((val 0))
+      ((-ubyte-) val)
+      #{ $val = (unsigned char) getc((FILE *)$file); #}
+      val ))
+
+#? (fwrite-ubyte <file-pointer> <val>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-ubyte-) val)     ; contains the ubyte to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Writes a ubyte to the given file
+;;.SEE Compilable file I/O
+(de fwrite-ubyte (file val)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-ubyte-) val)     ; contains the ubyte to be written to the file
+
+    (cheader "#include <stdio.h>\n")
+    #{ putc($val,(FILE *)$file); #}
+    () )
+
+#? (fread-byte <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: (-byte-) the next byte read from the file
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;.SEE Compilable file I/O
+(de fread-byte (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+
+    (cheader "#include <stdio.h>\n")
+    (let ((val 0))
+      ((-byte-) val)
+      #{ $val = (char) getc((FILE *)$file); #}
+      val ))
+
+#? (fwrite-byte <file-pointer> <val>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-byte-) val)     ; contains the byte to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Writes an byte (4 bytes on Sun-OS or Solaris) to the given file
+;;.SEE Compilable file I/O
+(de fwrite-byte (file val)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-byte-) val)     ; contains the byte to be written to the file
+
+    (cheader "#include <stdio.h>\n")
+    #{ putc($val,(FILE *)$file); #}
+    () )
+
+#? (fread-short <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: (-short-) the next short (2 bytes) read from the file
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;.SEE Compilable file I/O
+(de fread-short (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+
+    (cheader "#include <stdio.h>\n")
+    (let ((val 0))
+      ((-short-) val)
+      #{ 
+         fread((char *)&$val, sizeof(short), 1, (FILE *)$file);
+         #ifdef SOLARIS86
+         C_reverse2(&$val, 1);
+         #endif
+      #}
+      val ))
+
+#? (fwrite-short <file-pointer> <val>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-short-) val) 
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Writes a short (2 bytes) to the given file
+;;.SEE Compilable file I/O
+(de fwrite-short (file val)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-short-) val)
+
+    (cheader "#include <stdio.h>\n")
+
+     #{ 
+       #ifdef SOLARIS86
+       C_reverse2(&$val, 1);
+       #endif
+       fwrite((char *)&$val, sizeof(short), 1, (FILE *)$file);
+       #ifdef SOLARIS86
+       C_reverse2(&$val, 1);
+       #endif
+     #}
+    () )
+
+#? (fread-int <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: (-int-) the next int (4 bytes on Sun-OS or Solaris) read from the file
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;.SEE Compilable file I/O
+(de fread-int (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+
+    (cheader "#include <stdio.h>\n")
+    (let ((val 0))
+      ((-int-) val)
+      #{ 
+         fread((char *)&$val, sizeof(int), 1, (FILE *)$file);
+         #ifdef SOLARIS86
+         C_reverse4(&$val, 1);
+         #endif
+      #} 
+      val ))
+
+#? (fwrite-int <file-pointer> <val>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-int-) val)     ; contains the int to be written to the file
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Writes an int (4 bytes on Sun-OS or Solaris) to the given file
+;;.SEE Compilable file I/O
+(de fwrite-int (file val)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-int-) val)     ; contains the int to be written to the file
+
+    (cheader "#include <stdio.h>\n")
+
+       #{
+         #ifdef SOLARIS86
+         C_reverse4(&$val, 1);
+         #endif
+         fwrite((char *)&$val, sizeof(int), 1, (FILE *)$file);
+         #ifdef SOLARIS86
+         C_reverse4(&$val, 1);
+         #endif
+       #} 
+    () )
+
+#? (fread-flt <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: (-flt-) the next float (4 bytes) read from the file
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;.SEE Compilable file I/O
+(de fread-flt (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+
+    (cheader "#include <stdio.h>\n")
+    (let ((val 0))
+      ((-flt-) val)
+      #{ 
+        fread(&$val, sizeof(flt), 1, (FILE *)$file);
+        #ifdef SOLARIS86
+        C_reverse4(&$val, 1);
+        #endif
+      #} 
+      val ))
+
+#? (fwrite-flt <file-pointer> <val>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-flt-) val):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Writes a float (4 bytes) to the given file
+;;.SEE Compilable file I/O
+(de fwrite-flt (file val)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-flt-) val)
+
+    (cheader "#include <stdio.h>\n")
+     #{ 
+       float fl=$val; 
+       #ifdef SOLARIS86     
+       C_reverse4(&fl, 1);
+       #endif
+       fwrite((char *)&fl, sizeof(float), 1, (FILE *)$file); 
+     #}
+    () )
+
+#? (fread-real <file-pointer>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;;
+;; RETURNS: (-real-) the next real (8 bytes) read from the file
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;.SEE Compilable file I/O
+(de fread-real (file)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+
+    (cheader "#include <stdio.h>\n")
+    (let ((val 0))
+      ((-real-) val)
+      #{ 
+         fread(&$val, sizeof(double), 1, (FILE *)$file);
+         #ifdef SOLARIS86
+         C_reverse8(&$val, 1);
+         #endif
+      #} 
+      val ))
+
+#? (fwrite-real <file-pointer> <val>)
+;;.VP
+;; ((-gptr-) file)   ; the file pointer returned by a fopen
+;; ((-real-) val):
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/05/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Writes a real (8 bytes) to the given file
+;;.SEE Compilable file I/O
+(de fwrite-real (file val)
+    ((-gptr-) file)   ; the file pointer returned by a fopen
+    ((-real-) val)
+
+    (cheader "#include <stdio.h>\n")
+     #{ 
+     double fl=$val; 
+     #ifdef SOLARIS86     
+     C_reverse8(&fl, 1);
+     #endif
+     fwrite((char *)&fl, sizeof(double), 1, (FILE *)$file); 
+     #} 
+    () )
+
+
+
+
+#? (reverse8 <ptr> <n>)
+;;.VP
+;; ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
+;; ((-int-) n)    ;; number of long-words to be reversed
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/17/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Reverses order of bytes in 64-bit words
+;;              starting at memory location <ptr>
+;;              This is a tool for writing/reading file formats that are portable
+;;              across systems with processors that represent long-words 
+;;              differently in memory (Sparc vs Intel-Pentium for ex.)
+;;              It can be called from inline-C as C_reverse8(ptr,n);
+;;.SEE (reverse4 <ptr> <n>)
+;;.SEE (reverse2 <ptr> <n>)
+(de reverse8 (ptr n)
+    ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
+    ((-int-) n)    ;; number of long-words to be reversed
+
+    #{ 
+    char *mptr = (char *) $ptr;
+    char tmp;
+    while($n--)
+      {
+      tmp = mptr[0]; mptr[0]=mptr[7]; mptr[7]=tmp;
+      tmp = mptr[1]; mptr[1]=mptr[6]; mptr[6]=tmp;
+      tmp = mptr[2]; mptr[2]=mptr[5]; mptr[5]=tmp;
+      tmp = mptr[3]; mptr[3]=mptr[4]; mptr[4]=tmp;
+      mptr+=8;
+      }
+    #} 
+    () )
+
+#? (reverse4 <ptr> <n>)
+;;.VP
+;; ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
+;; ((-int-) n)    ;; number of double-long-words to be reversed
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/17/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Reverses order of bytes in 32-bit words
+;;              starting at memory location <ptr>
+;;              This is a tool for writing/reading file formats that are portable
+;;              across systems with processors that represent long-words 
+;;              differently in memory (Sparc vs Intel-Pentium for ex.)
+;;              It can be called from inline-C as C_reverse4(ptr,n);
+;;.SEE (reverse8 <ptr> <n>)
+;;.SEE (reverse2 <ptr> <n>)
+(de reverse4 (ptr n)
+    ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
+    ((-int-) n)    ;; number of long-words to be reversed
+
+    #{ 
+    char *mptr = (char *) $ptr;
+    char tmp;
+    while($n--)
+      {
+      tmp = mptr[0]; mptr[0]=mptr[3]; mptr[3]=tmp;
+      tmp = mptr[1]; mptr[1]=mptr[2]; mptr[2]=tmp;
+      mptr+=4;
+      }
+    #} 
+    () )
+
+#? (reverse2 <ptr> <n>)
+;;.VP
+;; ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
+;; ((-int-) n)    ;; number of long-words to be reversed
+;;
+;; RETURNS: ()
+;; CREATED: Pascal Vincent 04/17/96
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Reverses order of bytes in 16-bit words
+;;              starting at memory location <ptr>
+;;              This is a tool for writing/reading file formats that are portable
+;;              across systems with processors that represent long-words 
+;;              differently in memory (Sparc vs Intel-Pentium for ex.)
+;;              It can be called from inline-C as C_reverse2(ptr,n);
+;;.SEE (reverse8 <ptr> <n>)
+;;.SEE (reverse4 <ptr> <n>)
+(de reverse2 (ptr n)
+    ((-gptr-) ptr) ;; pointer to the block of memory that must be reversed
+    ((-int-) n)    ;; number of words to be reversed
+
+    #{ 
+    char *mptr = (char *) $ptr;
+    char tmp;
+    while($n--)
+      {
+      tmp = mptr[0]; mptr[0]=mptr[1]; mptr[1]=tmp;
+      mptr+=2;
+      }
+    #} 
+    () )
+
+
+#? (fscan-int <file-pointer>)
+;;.VP
+;; (-gptr- file-pointer) ;; the file poiner returned by fopen
+;;
+;; DESCRIPTION: Same as fscanf(file_pointer,"%d",&result) in C. 
+;; RETURNS: int
+;; CREATED: Yoshua Bengio 23 August 1996
+;;
+(de fscan-int (fp)
+    (-gptr- fp)
+    (let*((result 0))
+      (-int- result)
+      #{ fscanf($fp,"%d",&$result); #}
+      result))
+  
+
+#? (fscan-flt <file-pointer>)
+;;.VP
+;; (-gptr- file-pointer) ;; the file poiner returned by fopen
+;;
+;; DESCRIPTION: Same as fscanf(file_pointer,"%d",&result) in C. 
+;; RETURNS: float
+;; CREATED: Yoshua Bengio 23 August 1996
+;; 
+(de fscan-flt (fp)
+    (-gptr- fp)
+    (let*((result 0))
+      (-flt- result)
+      #{ fscanf($fp,"%f",&$result); #}
+      result))
+       
+#? (fscan-str <file-pointer>)
+;;.VP
+;; (-gptr- file-pointer) ;; the file poiner returned by fopen
+;;
+;; DESCRIPTION: same as fscanf(file_pointer,"%s",result). 
+;;              The result must hold in a string of size < 1024 bytes.
+;; RETURNS: string
+;; CREATED: Yoshua Bengio 23 August 1996
+;; 
+(de fscan-str (fp)
+    (-gptr- fp)
+    (let*((result ""))
+      #{ {
+           char buffer[1024];
+           int size;
+           fscanf($fp,"%s",buffer);
+           size=strlen(buffer);
+           Msrg_resize($result,size+1);
+           strcpy(STRING_DATA($result),buffer);
+         }
+      #}
+      result))
+       
+#? (fgets <file-pointer> <max-size>)
+;;.VP
+;; (-gptr- file-pointer) ;; the file poiner returned by fopen
+;; (-int- max-size)      ;; maximum allowed size of line in bytes
+;;
+;; DESCRIPTION: same as C's fgets(result,max_size,file_pointer). 
+;; RETURNS: string
+;; CREATED: Yoshua Bengio 23 August 1996
+;; 
+(de fgets (fp maxsize)
+    (-gptr- fp)
+    (-int- maxsize)
+    (let*((result ""))
+      #{ {
+           char *buffer=malloc($maxsize);
+           int size;
+           fgets(buffer,$maxsize,$fp);
+           size=strlen(buffer);
+           Msrg_resize($result,size+1);
+           strcpy(STRING_DATA($result),buffer);
+           free(buffer);
+         }
+      #}
+      result))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (file-size <file-name>)
+;; returns the size in byte of file <file-name>
+;; author: Leon Bottou.
+(de file-size(fname)
+    ((-str-) fname)
+    (cheader "#include <sys/types.h>")
+    (cheader "#include <sys/stat.h>")
+    (let ((ans -1))
+      ((-int-) ans)
+      #{{
+           struct stat buf;
+           if (stat($fname->data, &buf)>=0)
+             if (S_ISREG(buf.st_mode))
+               $ans = buf.st_size;
+      }#}
+      ans ) )
+
+
+#? (rewind  <f>)
+;;.VP
+;; ((-gptr-) f):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+(de rewind  (f)
+    ((-gptr-) f)
+
+    #{ rewind($f); #}
+    ())
+
+
+#? (skip-comments <start> <f>)
+;;.VP
+;; ((-char-) start):
+;; ((-gptr-) f):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; skip comments lines starting with <start>
+(de skip-comments (start f)
+    ((-ubyte-) start)
+    ((-gptr-) f)
+    
+    (when (not f) (error "file is not opened"))
+        #{{
+            FILE *ff = $f;
+            int c;
+            for (;;) {
+              c = getc(ff);
+              while (c==' ' || c=='\n' || c=='\t' || c=='\r') c = getc(ff);
+              if (c!=$start) break;
+              while (c != '\n')  c = getc(ff);
+            }
+            ungetc(c,ff);
+        }#}
+        ()
+))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make ()
+          reverse2
+          reverse4
+          reverse8
+          stdout
+          fwrite-str fprints
+          fopen
+          fclose
+          popen
+          pclose
+          ftell
+          fseek
+          fseek-from-current
+          fseek-from-end
+          fsize
+
+          fgetc
+          fputc
+
+          fread-ubyte
+          fwrite-ubyte
+
+          fread-byte
+          fwrite-byte
+
+          fread-short
+          fwrite-short
+
+          fread-int
+          fwrite-int
+
+          fread-flt
+          fwrite-flt
+
+          fread-real
+          fwrite-real
+          fscan-int
+          fscan-flt
+          fscan-str
+          fgets
+          
+          file-size
+
+          rewind
+          skip-comments
+)
+
+;; for compatibility
+(setq getc fgetc)
+(setq putc fputc)

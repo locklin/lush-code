@@ -1,0 +1,49 @@
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; XV interface
+
+#? xv
+;; an interface for sending images to XV
+;;.SEE (xv-rgbaim <m>)
+;;.SEE (xv-rgbafim <m>)
+
+(mload "file-std")
+
+#? (xv-rgbaim <m>)
+;; sends an RGBA image to XV for display
+;; uses PNG binary format.
+(de xv-rgbaim (m)
+    ((-idx3- (-ubyte-)) m)
+    (let ((f (popen "xv -" "w"))
+          (nlin (idx-dim m 0))
+          (ncol (idx-dim m 1)))
+      ((-int-) nlin ncol)
+      (when (not f) (error "couldn't open pipe to XV"))
+      #{ fprintf((FILE *)$f,"P6 %d %d 255\n",$ncol,$nlin); #}
+      (cinline-idx2loop m "unsigned char" "p" "i" "j"
+        #{ fputc(p[0], (FILE *)$f); fputc(p[1],(FILE *)$f); fputc(p[2],(FILE *)$f); #}
+        )
+      (pclose f)
+      ()))
+
+#? (xv-rgbafim <m>)
+;; sends an RGBA float image to XV for display
+(de xv-rgbafim (m)
+    ((-idx3- (-flt-)) m)
+    (let ((f (popen "xv -" "w"))
+          (nlin (idx-dim m 0))
+          (ncol (idx-dim m 1)))
+      ((-int-) nlin ncol)
+      (when (not f) (error "couldn't open pipe to XV"))
+      #{ fprintf((FILE *)$f,"P6 %d %d 255\n",$ncol,$nlin); #}
+      (cinline-idx2loop m "flt" "p" "i" "j"
+        #{ fputc(0xff & (int)(p[0]), (FILE *)$f); 
+           fputc(0xff & (int)(p[1]), (FILE *)$f); 
+           fputc(0xff & (int)(p[2]), (FILE *)$f); #}
+        )
+      (pclose f)
+      ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "xv" xv-rgbaim xv-rgbafim)

@@ -1,0 +1,471 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;
+;;;;    "help.sn"   The help subsystem...
+;;;;
+;;;;
+
+
+(printf "[%s]\n" file-being-loaded)
+
+
+
+#? Adding Help.
+;;
+;; Online help is extracted from comments in SN files.
+;; The macro <#?> gives the topic for the next comments.
+;; See the file <"sn2.6/lib/help.sn"> for examples
+;; of comments.
+;;.VP
+;;TYPICAL TOPICS
+;; #? result
+;; #? (car <list>)
+;; #? (+ <n_1> ... <n_n>)
+;; #? (new-window [[<x> <y>] <w> <h>] <name>)
+;; #? (new helpinfo <record>)
+;; #? (==> <helpinfo> tty-print)
+;; #? '<expr>
+;; #? Topic in Full.
+;;
+;;REFERENCE DIRECTIVES
+;; ;;.FILE  help.sn
+;; ;;.TYPE  DE
+;; ;;.SEE   (apropos <topic>)
+;; ;;.EX    (example)
+;;.PP
+;; The FILE and TYPE directive specify additional
+;; informations about the topic discussed.
+;; The SEE directive indicates a related topic!
+;;.VP
+;;TEXT COMMANDS
+;; ;;.PP     Ordinary paragraphs (default).
+;; ;;.IP     Indented (itemized) paragraphs
+;; ;;.TP     TeX (actually Latex) paragraphs.
+;; ;;.VP     Verbatim paragraphs.
+;;.PP
+;; Blank lines as well as .XX directives delimitate 
+;; paragraphs.
+;; In .PP mode, lines are reformatted, and angle brackets <xxx>
+;; delimitate arguments.
+;; In .TEX mode, all LaTex conventions apply. Initial semicolons
+;; however are mandatory. Arguments are formatted with the 
+;; \arg{xxx-in-math-mode} macro.
+;; 
+;;.SEE (apropos <topic>)
+;;.SEE online-help-topics
+;;.SEE (compile-help-files)
+;;.SEE (compile-help-manual)
+
+
+
+
+#? online-help-topics
+;;.TYPE VAR
+;; This variable contains a record for each topic 
+;; covered by the help subsystem. It is initially
+;; loaded from the binary file <"help/snhelp">,
+;; which has been created by the function <compile-help-files>.
+;; It is subsequently completed by calls to the #? macro.
+;;
+;; Each record is a list <(topic file [info])>
+
+
+(when helpinfo
+      ;; help.sn already has been loaded
+      ;; reset the list of the topics...
+      (setq :online-help-topics ()) )
+
+
+
+(defclass helpinfo object
+  synopsis
+  type 
+  file
+  see-also
+  lines )
+
+
+#? (new HelpInfo <record>)
+;; HelpInfo objects store the help text for a specific topic.
+;;
+;; Given <record>, a list <(topic file [helpinfo])>, this call
+;; creates a HelpInfo structure by reading comments in the 
+;; specified file.
+
+(defmethod HelpInfo HelpInfo(record)
+  (setq synopsis (car record))
+  (let* ((notfound t)
+	 (line ())
+	 (para ()) )
+    
+    (reading (cadr record)
+	     (while (and notfound (<> (skip-char) "\e"))
+	       (setq line (read-string "~\n\r"))
+	       (when (= "#?" (left line 2))
+		     (setq line 
+			   (regex-subst "^#\\?[\t ]+([^ \t])" "%0" line) )
+		     (setq line 
+			   (regex-subst "[\t ]+$" "" line) )
+		     (setq line 
+			   (regex-subst "[\t ]+([^ \t])" " %0" line) )
+		     (when (= line synopsis)
+			   (setq notfound ()) ) ) ) 
+	     (when ~notfound
+		   (setq synopsis line)
+		   (==> this read record)
+		   (rplacd (cdr record) (cons this ())) ) ) ) )
+	     
+
+#? (==> <helpinfo> read <record>)
+;; Reads the help information from the current file, at
+;; current position. This function usually is called by
+;; the constructor for class <HelpInfo>.
+;;.SEE (new HelpInfo <record>)
+
+(defmethod helpinfo read(record)
+  (setq type      () 
+	file      () 
+	lines     () 
+	see-also  () )
+  
+  ;; try to figure out the type from the synopsis
+  (cond
+   ((regex-match "\\(==> .*\\)" synopsis)
+    (setq type "MSG") )
+   ((regex-match "\\(new .*\\)" synopsis)
+    (setq type "CLASS") )
+   ((regex-match "\\([-a-zA-Z0-9+*/<>=]+ .*\\)" synopsis)
+    (let ((symb (regex-subst "\\(([-a-zA-Z0-9+*/<>=]+) .*\\)" 
+			     "%0"synopsis)))
+      (setq symb (eval (named symb)))
+      (when symb 
+	    (setq symb (pname (classname (classof symb))))
+	    (setq type (regex-subst "\\|(.*)\\|" "%0" symb)) ) ) ) )
+  
+  ;; try to figure out the file from the record
+  (let ((fname (cadr record)))
+    (when (stringp fname)
+	  (while (index "/" fname)
+	    (setq fname (mid fname (1+ (index "/" fname)))) )
+	  (if (= (right fname 3) ".sn")
+	      (setq file fname) ) ) )
+  
+  (let ((ok ())
+	(line ())
+	(para "")
+	(paratype 'pp)
+	(hlp (= ".hlp" (right (cadr record) 4))) )
+    
+    (while (progn
+	      ;; test for end-of-file
+	     (setq ok (<> (skip-char "") "\e"))
+	     
+	     ;; read a line
+	     (read-string 1)
+	     (setq line (read-string "~\n\r\e"))
+	     
+	      ;; test if it is finished
+	     (setq ok (and ok (if hlp
+				  (<> (left line 2) "#?")
+				(= (left line 1) ";") )))
+	     
+	     ;; remove leading semicolons
+	     (setq line (regex-subst "^;+($|[^;])" "%0" line))
+	     
+	     ;; if a paragraph is finished, store it
+	     (when (or ~ok 
+		       (= (left line 1) ".")
+		       (regex-match "[ \t]*" line) )
+		   (setq para (regex-subst "^[ \t\n]+([^ \t\n])" "%0" para) )
+		   (setq para (regex-subst "[ \t\n]+$" "" para) )
+		   (setq para (regex-subst "[ \t\n]+([^ \t\n])" " %0" para) ) 
+		   (setq para (regex-subst "\\. +([^ ])" ".  %0" para) )
+		   (when (<> para "")
+			  (setq lines (nconc1 lines (cons paratype para))) )
+		   (setq para "") )
+	     
+	     ;; return the boolean value for while
+	     ok )
+
+      (cond
+       ;; this is a special .XXX directive
+       ((= "." (left line 1))
+	(let ((f (regex-subst "^\\.([A-Z]+)([ \t].*)?$" "%0" line))
+	      (a (when (regex-match "^\\.([A-Z]+)[ \t]+([^ ].*)[ \t]*$" line)
+		       (regex-subst "^\\.([A-Z]+)[ \t]+([^ ].*)[ \t]*$" "%1" line)) ) )
+	  (selectq f
+		   (("T" "TYPE") 
+		    (setq type a) )
+		   (("F" "FILE") 
+		    (setq file a) )
+		   (("S" "SEE")  
+		    (setq a (regex-subst "[ \t\n]+([^ \t\n])" " %0" a))
+		    (setq see-also (nconc1 see-also a)) )
+		   ("EX" 
+		    (let ((fin ())(fout ()))
+		      (pipe 'fin 'fout)
+		      (writing fout (printf "%s))))))))\n" a))
+		      (setq a (reading fin (read))) )
+		    (setq lines (nconc1 lines (cons 'ex a))) )
+		   ("PP"
+		    (setq paratype 'pp) )
+		   ("IP"
+		    (when ~a (setq a "*"))
+		    (setq lines (nconc1 lines (cons 'it a)))
+		    (setq paratype 'ip) )
+		   ("VP" 
+		    (setq paratype 'vp) )
+		   ("TP" 
+		    (setq paratype 'tp) ) ) ) )
+       ;; this is an ordinary line
+       (t
+	;; remove the leading semicolons
+	(setq line (regex-subst "^;+([^;])" "%0" line))
+	(if (member paratype '(pp ip))
+	    (setq para (concat para "\n" line))
+	  (setq lines (nconc1 lines (cons paratype line))) ) ) ) ) ) )
+
+
+#? (==> <HelpInfo> display-paragraph <para>)
+;; Prints paragraph <para> with nice line breaks
+;; and goodies...
+
+(defmethod HelpInfo display-paragraph(para &optional (indent 0))
+  (let ((right-flush 78)
+	(idx 1) 
+	(newidx ())
+	(word ()) )
+    (tab indent)
+    (while (setq newidx (index " " para idx))
+      (setq word (mid para idx (- newidx idx)))
+      (setq idx (1+ newidx))
+      (if (< (+ (tab) (len word)) right-flush)
+	  (printf " %s" word)
+	(when (<> word "")
+	      (printf "\n")
+	      (tab indent)
+	      (printf "%s" word) ) ) )
+    (setq word (mid para idx))
+    (if (< (+ (tab) 1 (len word)) right-flush)
+	(printf " %s\n" word)
+      (printf "\n")
+      (tab indent) 
+      (printf "%s\n" word) ) ) )
+
+
+#? (==> <HelpInfo> display)
+;; Prints the help message stored in
+;; a HelpInfo structure.
+
+(defmethod HelpInfo display()
+  (let ((nlwaiting t))
+
+    (printf "\n")
+    (repeat 78 (printf "_"))
+
+    (printf "\n\n %s" synopsis)
+    (when type
+	  (tab 60) 
+	  (printf " %s" type))
+    (when file
+	  (tab 66)
+	  (printf " %s" file))
+    (printf "\n") 
+
+    (each (((paratype . para) lines))
+	  (when (<> nlwaiting paratype)
+		(printf "\n") )
+	  (selectq paratype
+		   (pp
+		    (==> this display-paragraph para)
+		    (setq nlwaiting ()) )
+		   (ip
+		    (==> this display-paragraph para 5)
+		    (setq nlwaiting ()) )
+		   (vp
+		    (printf "%s\n" para) 
+		    (setq nlwaiting paratype) )
+		   (tp
+		    (printf "%s\n" para) 
+		    (setq nlwaiting paratype) )
+		   (it
+		    (printf "  %s" para) 
+		    (setq nlwaiting 'ip) )
+		   (ex
+		    (printf "  ? ")
+		    (pprint para)
+		    (tab 2)
+		    (let ((result (eval para)))
+		      (tab 2)
+		      (printf "= ")
+		      (pprint result) )
+		    (setq nlwaiting paratype) ) ) )
+
+    (repeat 78 (printf "_"))
+    (printf "\n\n") ) )
+   
+
+#? (apropos <topic>)
+;; Give help about <topic>. 
+;; The macro character <|^A|> actually calls this function.
+;;.SEE Online Help Comments.
+
+(de apropos(topic)
+    (setq topic (regex-subst "^[ \t]+([^ \t])" "%0" topic) )
+    (setq topic (regex-subst "[ \t]+$" "" topic) )
+    (setq topic (regex-subst " +([^ \t])" " %0" topic) )
+    (setq topic (downcase topic))
+    (when (= topic "")
+	  (setq topic "---- help ----") )
+    (let ((selected ())
+	  (displayed ())
+	  (to-display ()) )
+      
+      (each ((record online-help-topics))
+	    (if (index topic 
+		       (regex-subst "([ \t])<[^ \n\r\t>]+>([ \t)])" "%0%1" 
+				    (downcase (car record)) ) )
+		(setq selected (nconc1 selected record)) ) )
+      
+      (when ~selected
+	    (printf "Nothing found!\n") )
+      (when (= (length selected) 1)
+	    (setq displayed t)
+	    (setq to-display 0) )
+      
+      (while selected
+	(while ~to-display
+	  (when ~displayed
+		(for (i 0 (1- (length selected)) 1)
+		     (printf "%5d.  %s\n" (1+ i) 
+			     (car (nth i selected))) )
+		(setq displayed t) )
+	  (printf "Your choice? ")
+	  (flush)
+	  (setq to-display (read-string))
+	  (cond
+	   ((= to-display "")
+	    (setq selected ())
+	    (setq to-display t))
+	   ((and (setq to-display (val to-display))
+		 (<= to-display (length selected))
+		 (>= to-display 1) )
+	    (setq to-display (1- (int to-display))) )
+	   (t
+	    (setq to-display ())
+	    (setq displayed ()) ) ) )
+	
+	(when selected
+	      (let* ((record (nth to-display selected))
+		     (hinfo (or (caddr record)
+				(new HelpInfo record) )) )
+		(==> hinfo display)
+		(setq to-display ())
+		
+		(each ((topic :hinfo:see-also))
+		      (when (setq record (assoc topic :online-help-topics))
+			    (setq to-display t)
+			    (when (not (assoc topic selected))
+				  (setq selected 
+					(nconc1 selected record)) ) ) )
+
+		(when to-display
+		      (printf "\nRelated topic(s):\n") 
+		      (setq to-display ()) )
+
+		(for (i 0 (1- (length selected)))
+		     (when (member (car (nth i selected))
+				   :hinfo:see-also )
+			   (printf "%5d.  %s\n" 
+				   (1+ i) (car (nth i selected))) ) )
+		
+		(if (= (length selected) 1)
+		    (setq selected ()) ) ) ) ) ) )
+
+
+
+#? (compile-help-files)
+;.SEE Online Help Comments.
+;.SEE online-help-topics
+; Help information for the C functions are stored in several
+; <".hlp"> files in the <"sn2.6/help"> directory.
+; Each entry in a <".hlp"> file is formatted like the usual
+; online help comments. Semicolons however are optional.
+;
+; This function reads all these <".hlp"> files, and
+; creates a binary file <"sn2.6/help/snhelp"> which contains
+; the initial contents of the variable <"online-help-topics">.
+
+
+(de compile-help-files() 
+    (printf "... Creating snhelp\n")
+    (let ((prog (list 'append))
+	  (topics ())
+	  (topic ()) )
+      (each ((file (let ((ans ()))	
+		     (reading (concat "|echo " sn2-dir "help/*.hlp")
+			      (while (<> "\e" (skip-char))
+				(setq ans (nconc1 ans (read-string "~ \t\n\r"))) ) ) ) ))
+	    (printf ".. Processing %s\n" file) 
+	    (setq topics ())
+	    (reading file
+		     (while (<> (skip-char "\n\r") "\e")
+		       (setq topic (read-string))
+		       (when (= "#?" (left topic 2))
+			     (setq topic (mid topic 3))
+			     (setq topic (regex_subst "^[ \t]+([^ \t])" "%0" topic))
+			     (setq topic (regex_subst "[ \t]+$" "" topic))
+			     (setq topic (regex_subst " +([^ \t])" " %0" topic))
+			     (setq topics (nconc1 topics topic)) ) ) )
+	    (nconc1 prog
+		    (list 'mapcar
+			  (list 'lambda '(topic) (list 'list 'topic file))
+			  (list 'quote topics) ) ) )
+      (write-binary (concat sn2-dir "help/snhelp") prog)
+      (printf "... Loading new snhelp\n")
+      (setq :online-help-topics (eval prog)) )
+    (printf "... Done\n") )
+
+
+
+;;; Now we load the snhelp database, if it exists.
+;;; If it does not exist, we call (compile-help-files)
+;;; to create it.
+
+
+(let ((snhelp (open-read (concat sn2-dir "help/snhelp"))))
+  (if snhelp
+      (setq :online-help-topics
+	    (nconc :online-help-topics
+		   (eval (read-binary snhelp)) ) )
+    (printf "*** Warning: This is the first call to the help subsystem\n")
+    (printf "***          Attempting to create the binary help file\n")
+    (compile-help-files) ) )
+
+
+
+
+
