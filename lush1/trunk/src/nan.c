@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.12 2003-07-14 14:44:36 leonb Exp $
+ * $Id: nan.c,v 1.13 2003-07-15 00:24:44 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -45,9 +45,14 @@
 
 typedef RETSIGTYPE (*SIGHANDLERTYPE)();
 
-#ifdef __hppa__
-# ifdef linux
+#ifdef linux
+# ifdef __hppa__          /* Checked (debian) 2003-07-14 */
 #  define BROKEN_SIGFPE
+# endif
+# ifdef __mips__          /* Guessed 2003-07-14 */
+#  if defined(MIPSEB) || defined(_MIPSEB)
+#   define BROKEN_SIGFPE
+#  endif
 # endif
 #endif
 
