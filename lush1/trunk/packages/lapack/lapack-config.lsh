@@ -1,0 +1,91 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: lapack-config.lsh,v 1.1 2002-08-22 14:34:13 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "dh-compile")
+
+(cond
+ ((stringp lapack-cflags) t)
+ ((progn (when (= "yes" (getconf "GCC")) (defvar lapack-cflags " -w "))))
+ (t (printf "WARNING: your C compiler is not GCC, you will see\n")
+    (printf "  lots of warnings while compiling the LAPACK/Lush interface\n")
+    (printf "  To suppress those warnings, do (defvar lapack-cflags \" -w \")\n")
+    (printf "  [or whatever your compiler's no-warning option is], before\n")
+    (printf "  loading this file (see %s for more details).\n" file-being-loaded)))
+    
+
+(cond
+ ;; lapack-lib was already defined
+ (lapack-liblapack t)
+ ;; look for lapack_XXX.a for manually installed LAPACK
+ ((progn 
+    (let* ((lib (find-static-library 
+		 "lapack" '(".a" "_LINUX.a" "_IRIX64.a" "_SUN4SOL2.a"))))
+      (when (and lib (filep lib)) (defvar lapack-liblapack (list lib))))))
+ ;; look for liblapack installed through packages
+ ((progn 
+    (let* ((lib (find-shared-library "liblapack")))
+      (when (and lib (filep lib)) (defvar lapack-liblapack (list lib))))))
+ ;; couldn't find it, complain loudly.
+ (t (printf "neither the liblapack shared library nor the\n")
+    (printf "lapack_XXXX.a static libraries could be found.\n")
+    (printf "You should install the liblapack and liblapack-devel\n")
+    (printf "packages from your operating system distribution.\n")
+    (printf "Alternatively, you can download, compile, and install LAPACK by hand.\n")
+    (printf "If you have installed LAPACK and still get this message, please do\n")
+    (printf "(defvar lapack-liblapack \"yourlapacklibrary\") before loading this file\n")      
+    (printf "(see %s for more details)\n" file-being-loaded)
+    (error "cannot configure LAPACK")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; find libf77.a. Libf77 is the FORTRAN library
+(cond
+ (lapack-libfortran t)
+ ;; look for static lib in standard locations
+ ((progn 
+    (let ((lib1 (find-static-library "libf77"))
+	  (lib2 (find-static-library "libG77")))
+      (when (and lib1 lib2 (filep lib1) (filep lib2)) 
+	(defvar lapack-libfortran (list lib1 lib2))))))
+ ((progn 
+    (let ((lib (find-static-library "libg2c")))
+      (when (and lib (filep lib)) (defvar lapack-libfortran (list lib))))))
+ ((progn 
+    (when (= "yes" (getconf "GCC"))
+      (let ((lib (reading (concat "| " (getconf "CC") " -print-file-name=libg2c.a")
+                            (read-string))))
+	(when (and lib (filep lib)) (defvar lapack-libfortran (list lib)))))))	 (t
+  (printf "The FORTRAN library (libg2c, libG77, or libF77) could not be found.\n")
+  (printf "Please do: (defval lapack-libfortran '(\"/yourlibdir/yourfortranlib.a\"))\n")
+  (printf "before loading this file\n")
+  (printf "(see %s for more details)\n" file-being-loaded)
+  (error "cannot configure LAPACK")))
+
+
+
