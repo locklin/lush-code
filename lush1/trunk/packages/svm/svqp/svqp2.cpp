@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.1 2004-09-18 23:57:53 leonb Exp $
+ * $Id: svqp2.cpp,v 1.2 2004-09-19 20:17:54 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -103,23 +103,19 @@ SVQP2::info(const char *s1, const char *s2, ...)
 {
   if (verbosity >= 0)
     {
-      int level = verbosity;
-      if (vdots >= 40)
-	level = max(2,level);
-      if (level==1 && *s1)
-	{
-	  vdots += 1;
-	  fprintf(stdout,"%s", s1);
-	  fflush(stdout);
-	}
-      else if (level>=2 && *s2)
+      const char *fmt = s1;
+      if (s2 && (verbosity>1 || vdots>=40 || !fmt))
+	fmt = s2;
+      if (fmt && fmt[0])
 	{
 	  va_list ap;
 	  va_start(ap, s2);
-	  vfprintf(stdout, s2, ap);
+	  vfprintf(stdout, fmt, ap);
 	  va_end(ap);
 	  fflush(stdout);
-	  vdots = 0;
+	  vdots += 1;
+	  if (fmt[1])
+	    vdots = 0;
 	}
     }
 }
@@ -433,28 +429,29 @@ SVQP2::shrink()
 
 
 void
-SVQP2::unshrink()
+SVQP2::unshrink(int s)
 {
-  // recompute gradients
-  if (l < n)
+  s = min(s,n);
+  if (l < s)
     {
-      for (int i=l; i<n; i++)
+      // recompute gradients
+      for (int i=l; i<s; i++)
 	g[i] = b[i];
-      for (int j=0; j<n; j++)
+      for (int j=0; j<s; j++)
 	{
 	  double xj = x[j];
 	  if (xj != 0)
 	    {
 	      cache_clean();
-	      float *arow = getrow(j, n, false);
-	      for (int i=l; i<n; i++)
+	      float *arow = getrow(j, s, false);
+	      for (int i=l; i<s; i++)
 		g[i] -= xj * arow[i];
 	    }
 	}
     }
   // compute bounds
-  l = n;
-  double s = 0;
+  l = s;
+  double sum = 0;
   gmax = ((sumflag) ? -maxst : 0);
   gmin = ((sumflag) ?  maxst : 0);
   for (int i=0; i<l; i++)
@@ -465,9 +462,9 @@ SVQP2::unshrink()
 	gmax = gi;
       if ((gi < gmin) && (x[i] > cmin[i]))
 	gmin = gi;
-      s += xi * (b[i] + g[i]);
+      sum += xi * (b[i] + g[i]);
     }
-  w = s / 2;
+  w = sum / 2;
 }
 
 
@@ -641,26 +638,33 @@ int
 SVQP2::run(void)
 {
   int status = 0;
+  double gn = maxst;
   // prepare
-  l = 0;
   cache_init();
-  unshrink();
-  double gn = max(0.0, gmax-gmin);
-  info("!","! it:%d l:%d |g|:%f w:%f\n", iter, l, gn, w);
+  iter = 0;
+  l = 0;
   // loop
-  while (gn >= epsgr)
+  for(;;)
     {
+      unshrink(n);
+      gn = max(0.0, gmax-gmin);
+      info("*","* it:%d l:%d |g|:%f w:%f\n", iter, l, gn, w);
+      // test termination
+      if (gn < epsgr)
+	{
+	  if (l < n)
+	    continue;
+	  else
+	    break;
+	}
+      // minimize
       bool checkshrink = true;
       for(;;)
 	{
 	  if (sumflag)
-	    {
-	      status = iterate_smo(checkshrink);
-	    }
+	    status = iterate_smo(checkshrink);
 	  else
-	    {
-	      status = iterate_gs(checkshrink);
-	    }
+	    status = iterate_gs(checkshrink);
 	  if (status <= RESULT_FIN)
 	    break;
 	  int ol = l;
@@ -676,15 +680,13 @@ SVQP2::run(void)
 	}
       if (status < 0)
 	break;
-      unshrink();
-      gn = max(0.0, gmax-gmin);
-      if (gn < epsgr) {	vdots=999; }
-      info("*","* it:%d l:%d |g|:%f w:%f\n", iter, l, gn, w);
     }
   // finish
   cache_fini();
   unswap();
   if (status < 0)
     return status;
+  if (vdots>0)
+    info(0," it:%d l:%d |g|:%f w:%f\n", iter, l, gn, w);
   return iter;
 }
