@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: svm.lsh,v 1.2 2004-02-09 22:50:06 leonb Exp $
+;;; $Id: svm.lsh,v 1.3 2004-02-09 23:36:12 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -276,27 +276,55 @@
   (when (not model)
     (error "Must call 'run' first") )
   (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
-	 (dec (int-matrix nc)))
+	 (m (int-matrix nc)))
     ((-int-) nc)
-    #{
-       svm_get_labels((svm_model*)$model, IDX_PTR($dec,int));
-    #}
-    dec ) )
+    #{ svm_get_labels((svm_model*)$model, IDX_PTR($m,int)); #}
+    m ) )
+
+(defmethod SVM get-sv()
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((sv (to-int #{ ((svm_model*)$model)->l #}))
+	 (m (int-matrix sv)) )
+    ((-int-) sv)
+    (cinline-idx1loop m "int" "p" "s"
+       #{ *p = ((svm_model*)$model)->SV[s]->idata; #} )
+    m ) )
+
+(defmethod SVM get-alpha()
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
+	 (sv (to-int #{ ((svm_model*)$model)->l #}))
+	 (m (double-matrix (1- nc) sv)) )
+    ((-int-) nc sv)
+    (cinline-idx2loop m "double" "p" "n" "s"
+       #{ *p = ((svm_model*)$model)->sv_coef[n][s]; #} )
+    m ) )
+
+(defmethod SVM get-rho()
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
+	 (m (double-matrix (int (2/ (* nc (1- nc)))))) )
+    (cinline-idx1loop m "double" "p" "i"
+       #{ *p = ((svm_model*)$model)->rho[i]; #} )
+    m ) )
 
 (defmethod SVM predict-values(xi)
   ((-int-) xi)
   (when (not model)
     (error "Must call 'run' first") )
   (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
-	 (dec (matrix (int (2/ (* nc (1- nc)))))) )
+	 (m (matrix (int (2/ (* nc (1- nc)))))) )
     ((-int-) nc)
     #{{
         svm_node node;
         node.idata = $xi;
         node.pdata = (void*) $kernel;
-        svm_predict_values((svm_model*)$model, &node, IDX_PTR($dec,double));
+        svm_predict_values((svm_model*)$model, &node, IDX_PTR($m,double));
     }#} 
-    dec ) )
+    m ) )
 
 (defmethod SVM predict(xi)
   ((-int-) xi)
@@ -339,6 +367,7 @@
 		         }
 		     #}
 		     (SVM SVM cleanup -destructor run
-			  get-labels predict-values predict)
+			  get-labels get-sv get-alpha get-rho
+			  predict-values predict)
 		     
 		     ) )
