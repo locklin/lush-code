@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.59 2004-02-09 20:59:51 leonb Exp $
+ * $Id: header.h,v 1.60 2004-07-20 18:51:00 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -557,6 +557,7 @@ struct cfunction {
   at *name;
   void *call;
   void *info;
+  char *kname;
 };
 
 struct lfunction {
@@ -772,7 +773,7 @@ LUSHAPI void dhclass_define(char *name, dhclassdoc_t *kclass);
 LUSHAPI void dh_define(char *name, dhdoc_t *kname);
 LUSHAPI void dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname);
 
-LUSHAPI void check_primitive(at *prim);
+LUSHAPI void check_primitive(at *prim, void *info);
 LUSHAPI at *find_primitive(at *module, at *name);
 LUSHAPI at *module_list(void);
 LUSHAPI at *module_load(char *filename, at *hook);

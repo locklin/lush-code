@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.31 2004-07-16 21:57:19 leonb Exp $
+ * $Id: lisp_c.c,v 1.32 2004-07-20 18:51:06 leonb Exp $
  **********************************************************************/
 
 
@@ -1151,7 +1151,7 @@ lside_create_obj(at *p)
         error(NIL,"This is not an instance of a compiled class",p);        
       /* get and check classdoc */
       if (CONSP(objcl->priminame))
-        check_primitive(objcl->priminame);
+        check_primitive(objcl->priminame, objcl->classdoc);
       classdoc = objcl->classdoc;
       /* allocate object */
       n = alloc_obj(classdoc);
@@ -2613,7 +2613,7 @@ dh_listeval(at *p, at *q)
   /* Find and check the DHDOC */
   cfunc = p->Object;
   if (CONSP(cfunc->name))
-    check_primitive(cfunc->name);
+    check_primitive(cfunc->name, cfunc->info);
   kname = cfunc->info;
   drec = kname->argdata;
   if(drec->op != DHT_FUNC)
@@ -2891,7 +2891,7 @@ DX(xto_gptr)
       dhdoc_t *dhdoc;
       cfunc = p->Object;
       if (CONSP(cfunc->name))
-        check_primitive(cfunc->name);
+        check_primitive(cfunc->name, cfunc->info);
       if (( dhdoc = (dhdoc_t*)(cfunc->info) ))
         return NEW_GPTR(dld_get_func(dhdoc->lispdata.c_name));
     }

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.15 2003-12-15 14:00:10 leonb Exp $
+ * $Id: function.c,v 1.16 2004-07-20 18:51:06 leonb Exp $
  **********************************************************************/
 
 
@@ -43,6 +43,8 @@ cfunc_dispose(at *p)
 {
   struct cfunction *func = p->Object;
   UNLOCK(func->name);
+  if (func->kname)
+    free(func->kname);
   deallocate(&cfunc_alloc, (struct empty_alloc *) func);
 }
 
@@ -280,7 +282,7 @@ dx_listeval(at *p, at *q)
   at *(*call)(int, at**) = (at*(*)()) cfunc->call;
 
   if (CONSP(cfunc->name))
-    check_primitive(cfunc->name);
+    check_primitive(cfunc->name, cfunc->info);
 
   cfunc = p->Object;
   arg_pos = spbuff = dx_sp;
@@ -330,6 +332,7 @@ new_dx(at *name, at *(*addr)(int, at **))
   cfunc->call = cfunc->info = addr;
   LOCK(name);
   cfunc->name = name;
+  cfunc->kname = 0;
   p = new_extern(&dx_class, cfunc);
   p->flags |= X_FUNCTION;
   return p;
@@ -345,7 +348,7 @@ dy_listeval(at *p, at *q)
   at *(*call)(at*) = (at*(*)()) cfunc->call;
   
   if (CONSP(cfunc->name))
-    check_primitive(cfunc->name);
+    check_primitive(cfunc->name, cfunc->info);
   
   q = (*call)(q->Cdr);
   if (q && (q->flags&X_ZOMBIE)) {
@@ -371,9 +374,10 @@ new_dy(at *name, at *(*addr)(at *))
   at *p;
   
   cfunc = allocate(&cfunc_alloc);
+  cfunc->call = cfunc->info = addr;
   LOCK(name);
   cfunc->name = name;
-  cfunc->call = cfunc->info = addr;
+  cfunc->kname = 0;
   p = new_extern(&dy_class, cfunc);
   p->flags |= X_FUNCTION;
   return p;

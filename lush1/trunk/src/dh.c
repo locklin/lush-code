@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.14 2004-04-16 14:28:24 leonb Exp $
+ * $Id: dh.c,v 1.15 2004-07-20 18:51:06 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -251,6 +251,7 @@ new_dh(at *name, dhdoc_t *kdata)
   cfunc = allocate(&cfunc_alloc);
   cfunc->call = kdata->lispdata.call;
   cfunc->info = kdata;
+  cfunc->kname = strdup(kdata->lispdata.k_name);
   LOCK(name);
   cfunc->name = name;
   p = new_extern(&dh_class, cfunc);
@@ -570,7 +571,7 @@ DX(xdhinfo_t)
     error(NIL,"Not a DH function", p);
   cfunc = p->Object;
   if (CONSP(cfunc->name))
-    check_primitive(cfunc->name);
+    check_primitive(cfunc->name, cfunc->info);
   dhdoc = (dhdoc_t*)(cfunc->info);
   if (! dhdoc)
     error(NIL,"Internal error: dhdoc unvailable",NIL);
@@ -593,7 +594,7 @@ DX(xdhinfo_c)
     error(NIL,"Not a DH function", p);
   cfunc = p->Object;
   if (CONSP(cfunc->name))
-    check_primitive(cfunc->name);
+    check_primitive(cfunc->name, cfunc->info);
   dhdoc = (dhdoc_t*)(cfunc->info);
   if (! dhdoc)
     error(NIL,"Internal error: dhdoc unvailable",NIL);
@@ -630,7 +631,7 @@ DX(xclassinfo_t)
     error(NIL,"not a class",p);
   cl = p->Object;
   if (CONSP(cl->priminame))
-    check_primitive(cl->priminame);
+    check_primitive(cl->priminame, cl->classdoc);
   if (!cl->classdoc)
     return NIL;
   return dhinfo_record(cl->classdoc->argdata);
@@ -651,7 +652,7 @@ DX(xclassinfo_c)
     error(NIL,"not a class",p);
   cl = p->Object;
   if (CONSP(cl->priminame))
-    check_primitive(cl->priminame);
+    check_primitive(cl->priminame, cl->classdoc);
   if (!(cdoc = cl->classdoc))
     error(NIL,"class is not compiled", p);
   cname = new_string(strclean(cdoc->lispdata.cname));

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.50 2004-07-20 00:05:40 leonb Exp $
+ * $Id: module.c,v 1.51 2004-07-20 18:51:06 leonb Exp $
  **********************************************************************/
 
 
@@ -111,7 +111,7 @@ enum mybool *nsbundle_return_on_error;
 #endif
 
 static int
-nsbundle_init()
+nsbundle_init(void)
 {
   nsbundle_head.prev = &nsbundle_head;
   nsbundle_head.next = &nsbundle_head;
@@ -232,6 +232,20 @@ nsbundle_exec(nsbundle_t *bundle)
 }
 
 static void
+nsbundle_exec_all(void)
+{
+  nsbundle_t *bundle;
+  for (bundle = nsbundle_head.next; 
+       bundle != &nsbundle_head; 
+       bundle=bundle->next)
+    bundle->executable = bundle->beingworked = 0;
+  for (bundle = nsbundle_head.next; 
+       bundle != &nsbundle_head; 
+       bundle=bundle->next)
+    nsbundle_exec(bundle);
+}
+
+static void
 nsbundle_undef_unload(const char *sname)
 {
   int okay = 0;
@@ -293,16 +307,7 @@ nsbundle_undef_load(const char *sname)
 static int
 nsbundle_update(void)
 {
-  nsbundle_t *bundle;
-  /* check executability */
-  for (bundle = nsbundle_head.next; 
-       bundle != &nsbundle_head; 
-       bundle=bundle->next)
-    bundle->executable = bundle->beingworked = 0;
-  for (bundle = nsbundle_head.next; 
-       bundle != &nsbundle_head; 
-       bundle=bundle->next)
-    nsbundle_exec(bundle);
+  nsbundle_exec_all();
   /* try unloading */
   nsbundle_handlers.undefined = nsbundle_undef_unload;
   NSInstallLinkEditErrorHandlers(&nsbundle_handlers);
@@ -766,12 +771,46 @@ dynlink_hook(struct module *m, char *hookname)
     }
 }
 
+static void*
+dynlink_symbol(struct module *m, char *sname, int func, int exist)
+{
+#if DLDBFD
+  if (func)
+    return dld_get_func(sname);
+  else
+    return dld_get_symbol(sname);
+#elif NSBUNDLE
+  return nsbundle_lookup(sname, exist);
+#elif DLOPEN
+  return dlsym(m->handle, sname);
+#endif
+  return 0;
+}
 
 
+/* --------- CLEANUP DANGLING PRIMITIVES AND OBJECTS --------- */
 
-/* --------- EXECUTABILITY CHECK --------- */
 
-
+static void
+cleanup_defs(at **pcls, struct module *mc, int clear)
+{
+  at *p = mc->defs;
+  while (CONSP(p))
+    {
+      if (CONSP(p->Car)) {
+	at *q = p->Car->Car;
+	if (q && (q->flags & X_FUNCTION)) {
+	  struct cfunction *cfunc = q->Object;
+	  if  (clear)
+	    cfunc->info = 0;
+	} else if (q) {
+	  LOCK(q);
+	  *pcls = cons(q, *pcls);
+	}
+      }
+      p = p->Cdr;
+    }
+}
 
 static void
 cleanup_module(struct module *m)
@@ -785,35 +824,30 @@ cleanup_module(struct module *m)
     return;
   
   /* 2 --- Collect impacted classes */
-#if DLFBFD
- {
-   struct module *mc;
-   if (dld_simulate_unlink_by_file(m->filename) < 0)
-     dynlink_error(NIL);
-   for (mc = root.next; mc != &root; mc = mc->next)
-     if (mc->initname && mc->defs && (mc->flags & MODULE_CLASS))
-       if (! dld_function_executable_p(mc->initname))
-         {
-           /* This module defines classes that become non executable.
-              Collect impacted classes. */
-           p = mc->defs;
-           while (CONSP(p))
-             {
-               if (CONSP(p->Car)) {
-                 at *q = p->Car->Car;
-                 if (q && !(q->flags & X_FUNCTION)) {
-                   LOCK(q);
-                   classes = cons(q, classes);
-                 }
-               }
-              p = p->Cdr;
-             }
-         }
-   dld_simulate_unlink_by_file(0);
- }
+#if DLDBFD
+  {
+    struct module *mc;
+    if (dld_simulate_unlink_by_file(m->filename) < 0)
+      dynlink_error(NIL);
+    for (mc = root.next; mc != &root; mc = mc->next)
+      if (mc->initname && mc->defs && (mc->flags & MODULE_CLASS))
+	if (! dld_function_executable_p(mc->initname))
+	  cleanup_defs(&classes, mc, 0);
+    dld_simulate_unlink_by_file(0);
+  }
 #endif
 #if NSBUNDLE
-  /* NSBUNDLE (implement me!) */
+  {
+    struct module *mc = 0;
+    nsbundle_symmark(&m->bundle, &nsbundle_head);
+    nsbundle_exec_all();
+    for (mc = root.next; mc != &root; mc = mc->next)
+      if (mc->initname && mc->defs)
+	if (mc->bundle.executable <= 0)
+	  cleanup_defs(&classes, mc, 1);
+    nsbundle_symmark(&m->bundle, &m->bundle);
+    nsbundle_exec_all();
+  }
 #endif
   
   /* 3 --- Zap instances of impacted classes */
@@ -829,6 +863,7 @@ cleanup_module(struct module *m)
           if (cl->classdoc)
             {
               n = lside_mark_unlinked(cl->classdoc);
+	      cl->classdoc = 0;
               if (n > 0)
                 fprintf(stderr,"*** WARNING: "
                         "marked %d instances of class %s as unlinked\n", 
@@ -878,6 +913,9 @@ cleanup_module(struct module *m)
 }
 
 
+/* --------- EXECUTABILITY CHECK --------- */
+
+
 static void
 update_exec_flag(struct module *m)
 {
@@ -905,7 +943,28 @@ update_exec_flag(struct module *m)
   if (newstate)
     m->flags |= MODULE_EXEC;
   if (m->defs && newstate != oldstate)
-    dynlink_hook(m, "exec");
+    {
+      /* Refresh function pointers */
+      at *p = m->defs;
+      if (CONSP(p->Car)) {
+	at *q = p->Car->Car;
+	if (q && (q->flags & X_FUNCTION)) {
+	  struct cfunction *cfunc = q->Object;
+	  if (!newstate) {
+	    cfunc->info = 0;
+	  } else if (q->Class==&dh_class && cfunc->kname) {
+	    cfunc->info = dynlink_symbol(m, cfunc->kname, 0, 0);
+	    cfunc->call = ((dhdoc_t*)cfunc->info)->lispdata.call;
+	  } else if (cfunc->kname) {
+	    cfunc->info = dynlink_symbol(m, cfunc->kname, 1, 0);
+	    cfunc->call = cfunc->info;
+	  }
+	}
+	q = q->Cdr;
+      }
+    }
+  /* Call hook */
+  dynlink_hook(m, "exec");
 }
 
 static void
@@ -922,17 +981,16 @@ update_init_flag(struct module *m)
   
   /* Simulate unlink if we already have definitions (nsbundle) */
 #if NSBUNDLE
-  if (m->defs)
-    {
-      dynlink_hook(m, "unlink");
-      cleanup_module(m);
-    }
-  m->initaddr = nsbundle_lookup(m->initname, 0);
-  if (! m->initaddr)
-    return;
+  if (m->defs) {
+    dynlink_hook(m, "unlink");
+    cleanup_module(m);
+  }
 #endif
   
-  /* Execute init function */
+  /* Call init function */
+  m->initaddr = dynlink_symbol(m, m->initname, 1, 0);
+  if (! m->initaddr)
+    return;
   if (! strcmp(m->initname, "init_user_dll"))
     {
       /* TL3 style init function */
@@ -947,23 +1005,10 @@ update_init_flag(struct module *m)
       int *majptr, *minptr, maj, min;
       strcpy(string_buffer, "majver_");
       strcat(string_buffer, m->initname + 5);
-      majptr = minptr = 0;
-#if DLDBFD
-      majptr = (int*) dld_get_symbol(string_buffer);
-#elif NSBUNDLE
-      majptr = (int*) nsbundle_lookup(string_buffer, 0);
-#elif DLOPEN
-      majptr = (int*) dlsym(m->handle, string_buffer);
-#endif
+      majptr = (int*)dynlink_symbol(m, string_buffer, 0, 0);
       strcpy(string_buffer, "minver_");
       strcat(string_buffer, m->initname + 5);
-#if DLDBFD
-      minptr = (int*) dld_get_symbol(string_buffer);
-#elif NSBUNDLE
-      minptr = (int*) nsbundle_lookup(string_buffer, 0);
-#elif DLOPEN
-      minptr = (int*) dlsym(m->handle, string_buffer);
-#endif
+      minptr = (int*)dynlink_symbol(m, string_buffer, 0, 0);
       maj = ((majptr) ? *majptr : TLOPEN_MAJOR);
       min = ((minptr) ? *minptr : TLOPEN_MINOR);
       status = -2;
@@ -1014,16 +1059,15 @@ check_exec(void)
 }
 
 void
-check_primitive(at *prim)
+check_primitive(at *prim, void *info)
 {
   if (CONSP(prim) && EXTERNP(prim->Car, &module_class))
     {
       struct module *m = prim->Car->Object;
       if (check_executability)
         check_exec();
-      if (! (m->flags & MODULE_EXEC))
-        error(NIL,"Function belongs to a partially linked module", 
-	      prim->Cdr);
+      if (!info || !(m->flags & MODULE_EXEC))
+        error(NIL,"Function belongs to a partially linked module", prim->Cdr);
     }
 }
 
@@ -1079,7 +1123,20 @@ DX(xmodule_depends)
   }
 #endif
 #if NSBUNDLE
-  /* NSBUNDLE (implement me!) */
+    struct module *mc = 0;
+    /* Simulate unlink */
+    nsbundle_symmark(&m->bundle, &nsbundle_head);
+    nsbundle_exec_all();
+    for (mc = root.next; mc != &root; mc = mc->next)
+      if (mc->initname && mc->defs)
+	if (mc->bundle.executable <= 0)
+          {
+            LOCK(mc->backptr);
+            p = cons(mc->backptr, p);
+          }
+    /* Reset everything as it should be */
+    nsbundle_symmark(&m->bundle, &m->bundle);
+    nsbundle_exec_all();
 #endif
   /* Return */
   return p;
@@ -1104,6 +1161,10 @@ module_maybe_unload(struct module *m)
   if (m->flags & MODULE_SO)
     if (dlclose(m->handle))
       dynlink_error(new_string(m->filename));
+# if NSBUNDLE
+      if (nsbundle_update() < 0)
+        dynlink_error(new_string(m->filename));
+# endif
 #endif
 #if DLDBFD
   if (m->flags & MODULE_O)
@@ -1273,17 +1334,10 @@ module_load(char *filename, at *hook)
 #endif
   if (! m->initaddr)
     {
-#if DLDBFD
       strcpy(string_buffer, "init_");
       strcat(string_buffer, basename(m->filename, 0));
       if ((l = strchr(string_buffer, '.'))) l[0] = 0;
-      m->initaddr = dld_get_func(string_buffer);
-#elif NSBUNDLE
-      strcpy(string_buffer, "init_");
-      strcat(string_buffer, basename(m->filename, 0));
-      if ((l = strchr(string_buffer, '.'))) l[0] = 0;
-      m->initaddr = nsbundle_lookup(string_buffer, 1);
-#endif
+      m->initaddr = dynlink_symbol(m, string_buffer, 1, 1);
     }
   if (m->initaddr)
     {
@@ -1383,8 +1437,7 @@ DX(xmod_undefined)
 	    {
 	      const char *sname = NSSymbolReferenceNameInObjectFileImage(nsimg, ns, NULL);
 	      nsbundle_t *def = nsbundle_hget(sname);
-	      if (def==&nsbundle_head || 
-		  (!def && !NSIsSymbolNameDefined(sname)))
+	      if (def==&nsbundle_head || (!def && !NSIsSymbolNameDefined(sname)))
 		{
 		  if (sname[0]=='_') sname += 1;
 		  *where = cons( new_string((char*)sname), NIL);
