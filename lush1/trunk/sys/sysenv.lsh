@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.89 2003-01-14 21:01:49 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.90 2003-01-14 22:53:08 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1360,27 +1360,32 @@
 ;; Types have no existence in the interpreter.
 ;; This is all compiler support...
 
-;; type macros
-(each ((fn (append '(-bool- -ubyte- -byte- -short- -int- )
-                   '(-flt- -real- -obj- -gptr- -str- -list-)
-                   (mapfor (i 0 15) (named (sprintf "-idx%d-" i))) )))
-  (eval 
-   `(dm ,fn (fn . args)
-      (if (not (symbolp (car args)))
-          (mlambda args (cons 'declare args))
-        (printf "*** Warning\007: old style declaration : %l\n"
-                (cons fn args))
-        (list 'declare 
-              '(,fn ,@(when (regex-match "-idx[0-9]+-" (pname fn))
-                        '((-flt-)) ))
-              . args) ) ) )
-  (eval 
-   `(lock-symbol ,fn)) )
+(dm declare.autoreplace args
+  (cons 'declare args) )
 
-;; important aliases
+(each ((fn '(-bool- -ubyte- -byte- -short- -int-
+             -flt- -real- -obj- -gptr- -str- -list-)))
+  (eval `(progn
+           (dm ,fn (fn . args)
+             (if (not (symbolp (car args)))
+                 declare.autoreplace
+               (printf "*** Warning\007: old style declaration : %l\n" (cons fn args))    
+               (list 'declare (list fn) . args) ) )
+           (lock-symbol ,fn) )) )
+
+(each ((fn (mapfor (i 0 15) (named (sprintf "-idx%d-" i)))))
+  (eval `(progn
+           (dm ,fn (fn . args)
+             (if (not (symbolp (car args)))
+                 declare.autoreplace
+               (printf "*** Warning\007: old style declaration : %l\n" (cons fn args))    
+               (list 'declare (list fn '(-flt-)) . args) ) )
+           (lock-symbol ,fn) )) )
+
 (defvar -float- -flt-)
 (defvar -double- -real-)
-(lock-symbol -float- -double-)
+
+(lock-symbol declare.autoreplace -float- -double- )
 
 ;; verify type syntax
 (defvar verify-type-decl-format.table (htable))
