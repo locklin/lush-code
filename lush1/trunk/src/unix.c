@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.14 2002-09-05 15:05:06 profshadoko Exp $
+ * $Id: unix.c,v 1.15 2002-11-01 05:11:04 profshadoko Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -927,13 +927,18 @@ DX(xlocaltime)
 
 DX(xsleep)
 {
-  int t, i;
+  unsigned long t;
 
   ARG_NUMBER(1);
   ARG_EVAL(1);
-  t = AINTEGER(1);
-  for (i = 0; i < t; i++) {
-    sleep(1);
+  t = (unsigned long)(AREAL(1)*1000000);
+  while (t>0) {
+    if (t>1000000) { 
+      usleep((unsigned long)(1000000)); t -= 1000000;
+    } else { 
+      usleep((unsigned long)(t));
+      t=0;
+    }
     CHECK_MACHINE("on");
   }
   return NEW_NUMBER(t);
