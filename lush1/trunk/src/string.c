@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.14 2002-10-02 19:02:40 leonb Exp $
+ * $Id: string.c,v 1.15 2002-10-02 19:05:28 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -43,7 +43,6 @@ char special_string[] = "\"\\\n\r\b\t\f\377";
 char aspect_string[] = "\"\\nrbtfe";
 char *string_buffer;
 
-static char *toolong = "String is too long";
 static char *badarg = "Argument out of range";
 
 /*
