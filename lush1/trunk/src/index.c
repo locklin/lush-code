@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.7 2002-04-26 23:21:00 leonb Exp $
+ * $Id: index.c,v 1.8 2002-04-26 23:31:45 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -1372,17 +1372,17 @@ make_nrmatrix(at *p, int ncl, int nrl, int *sizec_p, int *sizer_p)
   if (sizer_p)
     *sizer_p = ind->dim[1];
   
-  ifn (ind->flags & nrflag) {
-    if (! (ind->flags & nrflag)) {
+  if (! (ind->flags & nrflag)) 
+    {
       (*nr) = malloc( sizeof(flt**) * ind->dim[0] );
+      address = (flt*)(ind->st->srg.data) + ind->offset;
+      for (i=0;i<ind->dim[0];i++) 
+        {
+          (*nr)[i] = address - nrl;
+          address += ind->mod[0];
+        }
       ind->flags |= nrflag;
     }
-    address = (flt*)(ind->st->srg.data) + ind->offset;
-    for (i=0;i<ind->dim[0];i++) {
-      (*nr)[i] = address - nrl;
-      address += ind->mod[0];
-    }
-  }
   return (*nr) - ncl;
 }
 

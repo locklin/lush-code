@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.5 2002-04-26 23:20:58 leonb Exp $
+ * $Id: header.h,v 1.6 2002-04-26 23:31:44 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -1021,32 +1021,6 @@ TLAPI void save_ascii_matrix(at *p, FILE *f);
 TLAPI void export_ascii_matrix(at *p, FILE *f);
 TLAPI at *load_matrix(FILE *f);
 
-
-/* Interfaces (SN/TL compatible) */
-#ifdef LUSH_TODO
-TLAPI float *get_std_vector(at *p, int n);
-TLAPI void  *get_std_matrix(at *p, int m, int n);
-TLAPI float *get_nr0_vector(at *p, int *psize);
-TLAPI float **get_nr0_matrix(at *p, int *ps0, int *ps1);
-TLAPI float *get_nr1_vector(at *p, int *psize);
-TLAPI float **get_nr1_matrix(at *p, int *ps0, int *ps1);
-TLAPI double *get_nr0_dvector(at *p, int *psize);
-TLAPI double **get_nr0_dmatrix(at *p, int *ps0, int *ps1);
-TLAPI double *get_nr1_dvector(at *p, int *psize);
-TLAPI double **get_nr1_dmatrix(at *p, int *ps0, int *ps1);
-TLAPI short *get_nr0_svector(at *p, int *psize);
-TLAPI short **get_nr0_smatrix(at *p, int *ps0, int *ps1);
-TLAPI short *get_nr1_svector(at *p, int *psize);
-TLAPI short **get_nr1_smatrix(at *p, int *ps0, int *ps1);
-TLAPI int *get_nr0_ivector(at *p, int *psize);
-TLAPI int **get_nr0_imatrix(at *p, int *ps0, int *ps1);
-TLAPI int *get_nr1_ivector(at *p, int *psize);
-TLAPI int **get_nr1_imatrix(at *p, int *ps0, int *ps1);
-TLAPI unsigned char *get_nr0_bvector(at *p, int *psize);
-TLAPI unsigned char **get_nr0_bmatrix(at *p, int *ps0, int *ps1);
-TLAPI unsigned char *get_nr1_bvector(at *p, int *psize);
-TLAPI unsigned char **get_nr1_bmatrix(at *p, int *ps0, int *ps1);
-#endif
 
 /* 
  * Loops over all elements of idx <idx>
