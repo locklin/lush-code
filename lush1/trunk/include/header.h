@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.13 2002-05-03 18:24:13 leonb Exp $
+ * $Id: header.h,v 1.14 2002-05-04 02:40:08 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -207,7 +207,8 @@ typedef struct class {
   at*		 (*getslot)      (at*, at*);
   void           (*setslot)      (at*, at*, at*);
   /* class information */
-  at*              classname;
+  at*              classname;   /* class name */
+  at*              priminame;   /* class name for binary files */
   at*              backptr;
   short            slotssofar;    
   char             goaway;
@@ -222,9 +223,6 @@ typedef struct class {
   struct hashelem* hashtable;
   int              hashsize;
   int	    	   hashok;
-
-  at               *at_cclass;
-  at               *source;
 } class;
 
 
@@ -531,12 +529,17 @@ extern TLAPI char aspect_string[];
  * pointing to this structure:
  */
 
-struct function {
-  int used;			/* CFUNC                  LFUNC */
-  at *formal_arg_list;		/* backptr                arglist */
-  at *evaluable_list;		/* name                   body  */
-  void *c_function;		/* call/stub              0  */
-  void *c_info;		        /* call/call              0  */
+struct cfunction {
+  int used;
+  at *name;
+  void *call;
+  void *info;
+};
+
+struct lfunction {
+  int used;
+  at *formal_arg_list;
+  at *evaluable_list;
 };
 
 extern TLAPI class de_class;
@@ -551,8 +554,8 @@ extern TLAPI struct alloc_root function_alloc;
 TLAPI at *new_de(at *formal, at *evaluable);
 TLAPI at *new_df(at *formal, at *evaluable);
 TLAPI at *new_dm(at *formal, at *evaluable);
-TLAPI at *new_dx(at *(*addr) (int, at **));
-TLAPI at *new_dy(at *(*addr) (at *));
+TLAPI at *new_dx(at *name, at *(*addr)(int,at**));
+TLAPI at *new_dy(at *name, at *(*addr)(at *));
 TLAPI at *funcdef(at *f);
 TLAPI at *eval_a_list(at *p);
 TLAPI gptr need_error(int i, int j, at **arg_array_ptr);
@@ -729,6 +732,8 @@ extern LUSHAPI class module_class;
 TLAPI void class_define(char *name, class *cl);
 TLAPI void dx_define(char *name, at *(*addr) (int, at **));
 TLAPI void dy_define(char *name, at *(*addr) (at *));
+
+LUSHAPI at *find_primitive(at *module, at *name);
 
 
 /* DATE.H ----------------------------------------------------- */

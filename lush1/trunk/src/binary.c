@@ -24,17 +24,12 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.6 2002-05-01 18:32:46 leonb Exp $
+ * $Id: binary.c,v 1.7 2002-05-04 02:40:11 leonb Exp $
  **********************************************************************/
 
 
 
 #include "header.h"
-
-
-/* From OOSTRUCT.C */
-extern class *rootclasslist;
-
 
 
 #define BINARYSTART     (0x9f)
@@ -283,7 +278,7 @@ sweep(at *p, int code)
   else if (p->Class == &class_class)
     {
       class *s = p->Object;
-      sweep(s->classname, code);
+      sweep(s->priminame, code);
       if (s->atsuper) {
 	sweep(s->atsuper, code);
 	sweep(s->keylist, code);
@@ -313,7 +308,7 @@ sweep(at *p, int code)
 	   || p->Class == &df_class
 	   || p->Class == &dm_class )
     {
-      struct function *c = p->Object;
+      struct lfunction *c = p->Object;
       sweep(c->formal_arg_list, code);
       sweep(c->evaluable_list, code);
     }
@@ -321,8 +316,8 @@ sweep(at *p, int code)
   else if (   p->Class == &dx_class
 	   || p->Class == &dy_class )
     {
-      struct function *c = p->Object;
-      sweep(c->evaluable_list, code);
+      struct cfunction *c = p->Object;
+      sweep(c->name, code);
     }
   
   else if (   p->Class->serialize )
@@ -986,25 +981,29 @@ DX(xbwrite)
 
 /* Special routines for reading array and objects */
 
-
 static void 
 local_bread_cobject(at **pp)
 {
-  at *name;
-  at *cptr;
+  at *name, *cname, *cptr;
   class *cl; 
-
-  if (local_bread(&name, NIL))
-    error(NIL,"Corrupted file (unresolved class name!)",NIL);
-  ifn (EXTERNP(name,&symbol_class))
-    error(NIL,"Corrupted binary file (class name expected)",name);
-  cptr = var_get(name);
-  ifn (EXTERNP(cptr,&class_class))
-    error(NIL,"Corrupted binary file (class expected)",name);
-  UNLOCK(name);
+  
+  if (local_bread(&cname, NIL))
+    error(NIL,"Corrupted file (unresolved class)",NIL);
+  name = cname;
+  cptr = NIL;
+  if (CONSP(cname))
+    cptr = find_primitive(cname->Car, name = cname->Cdr);
+  if (! cptr)
+    cptr = find_primitive(NIL, name);
+  if (! EXTERNP(name, &symbol_class))
+    error(NIL,"Corrupted file (expecting class name)",NIL);
+  if (! EXTERNP(cptr,&class_class)) 
+    error(NIL,"Cannot find primitive class",name);
+  
   cl = cptr->Object;
-  ifn (cl->serialize)
-    error(NIL,"Serialization error (unknown serialization class)", name);
+  if (! cl->serialize)
+    error(NIL,"Serialization error (undefined serialization)",name);
+  UNLOCK(cname);
   *pp = 0;
   (*cl->serialize)(pp,SRZ_READ);
   UNLOCK(cptr);
@@ -1016,49 +1015,42 @@ local_bread_object(at **pp,  at *opt)
   int size,i,j;
   at *name, *cname, *cptr;
   struct oostruct *s;
-  char allow_incomplete = '\1';
   
-  if (opt) {
-    char *optname = pname(opt);
-    if (!strcmp(optname,"strict")) {
-      allow_incomplete = '\0';
-    } else {
-      error(NIL, "Usage: (bread ['strict])", opt);
-    }
-  }
   size = read_card24();
-  if (local_bread(&cname, NIL))
-    error(NIL,"Corrupted file (accessing class name)",NIL);
-  ifn (EXTERNP(cname,&symbol_class))
-    error(NIL,"Corrupted binary file (class name expected)",cname);
-  cptr = var_get(cname);
-  ifn (EXTERNP(cptr,&class_class))
-    error(NIL,"Corrupted binary file (class expected)",cname);
+
+  if (local_bread(&cptr, NIL))
+    error(NIL,"Corrupted file (unresolved class)",NIL);
+  cname = cptr;
+  if (EXTERNP(cname,&symbol_class))
+    cptr = var_get(cname);
+  if (! EXTERNP(cptr, &class_class))
+    error(NIL,"Corrupted binary file (class expected)",cname);    
+  if (cname == cptr) {
+    cname = ((struct class*)(cptr->Object))->classname;
+    LOCK(cname);
+  }
   
   *pp = new_oostruct(cptr);     /* create structure */
   s = (*pp)->Object;            /* access slots */
-  if (size > s->size) {
-    error(NIL,"Class definition was richer at save time",cname);
-  } else {
-    if ( (size < s->size) && !allow_incomplete) {
-      error(NIL,"Class definition enriched  since save time",NIL);
-    }
-  }
+  if (size > s->size) 
+    error(NIL,"Class definition has less slots than expected",cname);
+  else  if ( (size < s->size) && opt)
+    error(NIL,"Class definition has more slots than expected",cname);  
   for(i=j=0; i<size; i++,j++) 
-  {
-    if (local_bread(&name, NIL))
-      error(NIL,"Corrupted file (accessing slot name)",cname);
-    ifn (EXTERNP(name,&symbol_class))
-      error(NIL,"Corrupted binary file (slot name expected)",cname);
-    while (j<s->size && name!=s->slots[j].symb)
-      j += 1;
-    if (j>= s->size)
-      error(NIL,"Incompatible class definition",cname);
-    UNLOCK(name);
-    UNLOCK(s->slots[j].val);
-    s->slots[j].val = NIL;
-    local_bread(&(s->slots[j].val), NIL);
-  }
+    {
+      if (local_bread(&name, NIL))
+        error(NIL,"Corrupted file (accessing slot name)",cname);
+      ifn (EXTERNP(name,&symbol_class))
+        error(NIL,"Corrupted binary file (slot name expected)",cname);
+      while (j<s->size && name!=s->slots[j].symb)
+        j += 1;
+      if (j>= s->size)
+        error(NIL,"Incompatible class definition",cname);
+      UNLOCK(name);
+      UNLOCK(s->slots[j].val);
+      s->slots[j].val = NIL;
+      local_bread(&(s->slots[j].val), NIL);
+    }
   UNLOCK(cname);
   UNLOCK(cptr);
 }
@@ -1075,26 +1067,6 @@ local_bread_class(at **pp)
     error(NIL,"Corrupted file (unresolved critical class component!)",NIL);
   *pp = new_ooclass(name,super,key,def);
   cl = (*pp)->Object;
-  local_bread(&cl->methods, NIL);
-}
-
-
-static void
-local_bread_cclass(at **pp)
-{
-  at *q;
-  class *cl = rootclasslist;
-  
-  if (local_bread(&q, NIL))
-    error(NIL,"Corrupted file (unresolved symbol!)",NIL);
-  while (cl && cl->classname!=q)
-    cl = cl->nextclass;
-  if (!cl)
-    error(NIL,"Cannot read this class",q);
-  UNLOCK(q);
-  q = cl->backptr;
-  LOCK(q);
-  *pp = q;
   local_bread(&cl->methods, NIL);
 }
 
@@ -1137,7 +1109,7 @@ local_bread_array(at **pp)
 static void 
 local_bread_lfunction(at **pp, at *(*new) (at*, at*))
 {
-  struct function *f;
+  struct lfunction *f;
   *pp = (*new)(NIL,NIL);
   f = (*pp)->Object;
   local_bread( & f->formal_arg_list, NIL );
@@ -1146,25 +1118,28 @@ local_bread_lfunction(at **pp, at *(*new) (at*, at*))
 
 
 static void 
-local_bread_cfunction(at **pp)
+local_bread_primitive(at **pp)
 {
-  struct chunk_header *current_chunk; 
-  struct function *f;
-  at *q;
+  at *p, *q;
   if (local_bread(&q, NIL))
     error(NIL,"Corrupted file (unresolved symbol!)",NIL);
-  iter_on( &function_alloc, current_chunk, f ) { 
-    if (f->c_function)
-      if (q == f->evaluable_list) {
-	*pp = f->formal_arg_list;
-	LOCK(*pp);
-	UNLOCK(q);
-	return;
-      }
-  }
-  error(NIL,"Cannot find builtin function",q);
+  if (CONSP(q)) {
+    p = find_primitive(q->Car, q->Cdr);
+    if (! p)
+      p = find_primitive(NIL, q->Cdr);      
+  } else 
+    p = find_primitive(NIL,q);
+  if (! p)
+    error(NIL,"Cannot find primitive", q);
+  UNLOCK(q);
+  *pp = p;
+  /* Primitive classes can have methods */
+  if (EXTERNP(p, &class_class))
+    {
+      class *cl = p->Object;
+      local_bread(&cl->methods, NIL);
+    }
 }
-
 
 
 /* This is the basic reading routine */
@@ -1300,13 +1275,13 @@ local_bread(at **pp, at *opt)
       
     case TOK_CFUNC:
       {
-	local_bread_cfunction(pp);
+	local_bread_primitive(pp);
 	return 0;
       }
       
     case TOK_CCLASS:
       {
-	local_bread_cclass(pp);
+	local_bread_primitive(pp);
 	return 0;
       }
       

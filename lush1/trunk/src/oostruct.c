@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.4 2002-05-01 18:32:46 leonb Exp $
+ * $Id: oostruct.c,v 1.5 2002-05-04 02:40:11 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -306,6 +306,7 @@ class_dispose(at *q)
   UNLOCK(s->defaults);
   UNLOCK(s->atsuper);
   UNLOCK(s->classname);
+  UNLOCK(s->priminame);
   UNLOCK(s->methods);
   dispose_hashtable(s);
   if (s->goaway)
@@ -325,6 +326,7 @@ class_action(at *q, void (*action) (at *))
   (*action)(s->defaults);
   (*action)(s->atsuper);
   (*action)(s->classname);
+  (*action)(s->priminame);
   (*action)(s->methods);
   if (s->hashtable) 
     for (i=0; i<s->hashsize; i++)
@@ -514,6 +516,8 @@ new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
   
   /* Sets up classname */
   cl->classname = classname;
+  cl->priminame = classname;
+  LOCK(classname);
   LOCK(classname);
   
   /* Sets up lists */

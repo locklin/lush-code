@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.3 2002-05-03 18:24:15 leonb Exp $
+ * $Id: function.c,v 1.4 2002-05-04 02:40:11 leonb Exp $
  **********************************************************************/
 
 
@@ -34,11 +34,12 @@ static at *at_optional, *at_rest;
 static void parse_optional_stuff(at *formal_list, at *real_list);
 
 
-struct alloc_root function_alloc =
-{ NULL,
-  NULL,
-  sizeof(struct function),
-  200,
+static struct alloc_root cfunc_alloc = {
+  NULL, NULL, sizeof(struct cfunction), 200 
+};
+
+static struct alloc_root lfunc_alloc = {
+  NULL, NULL, sizeof(struct lfunction), 200 
 };
 
 
@@ -48,72 +49,52 @@ struct alloc_root function_alloc =
 static void 
 cfunc_dispose(at *p)
 {
-  struct function *func;
-
-  func = p->Object;
-  UNLOCK(func->evaluable_list);
-  deallocate(&function_alloc, (struct empty_alloc *) func);
+  struct cfunction *func = p->Object;
+  UNLOCK(func->name);
+  deallocate(&cfunc_alloc, (struct empty_alloc *) func);
 }
 
 static void 
 cfunc_action(at *p, void (*action) (at *p))
 {
-  struct function *func;
-  func = p->Object;
-  (*action) (func->evaluable_list);
-}
-
-
-static char *
-dx_name(at *p)
-{
-  struct function *func;
-  func = p->Object;
-  if (func->evaluable_list)
-    sprintf(string_buffer, "::DX:%s", nameof(func->evaluable_list));
-  else
-    sprintf(string_buffer, "::DX:%lx", (long)func);
-  return string_buffer;
+  struct cfunction *func = p->Object;
+  (*action) (func->name);
 }
 
 static char *
-dy_name(at *p)
+cfunc_name(at *p)
 {
-  struct function *func;
-  func = p->Object;
-  if (func->evaluable_list)
-    sprintf(string_buffer, "::DY:%s", nameof(func->evaluable_list));
-  else
-    sprintf(string_buffer, "::DY:%lx", (long)func);
+  struct cfunction *func = p->Object;
+  at *name = func->name;
+  if (CONSP(name))
+    name = name->Cdr;
+  if (! EXTERNP(name, &symbol_class))
+    return generic_name(p);
+  sprintf(string_buffer, "::%s:", nameof(p->Class->classname));
+  strcat(string_buffer, nameof(name));
   return string_buffer;
 }
-
-
 
 
 /* General lfunc routines -----------------------------	 */
 
+
 static void 
 lfunc_dispose(at *p)
 {
-  struct function *func;
-
-  func = p->Object;
+  struct lfunction *func = p->Object;
   UNLOCK(func->formal_arg_list);
   UNLOCK(func->evaluable_list);
-  deallocate(&function_alloc, (struct empty_alloc *) func);
+  deallocate(&lfunc_alloc, (struct empty_alloc *) func);
 }
 
 static void 
-lfunc_action(at *p, void (*action) (at *))
+lfunc_action(at *p, void (*action) (at *p))
 {
-  struct function *func;
-  func = p->Object;
+  struct lfunction *func = p->Object;
   (*action) (func->formal_arg_list);
   (*action) (func->evaluable_list);
 }
-
-
 
 
 static void
@@ -272,11 +253,10 @@ at **dx_sp;
 at *
 dx_listeval(at *p, at *q)
 {
-  at *answer;
-  at **arg_pos, **spbuff;
   int arg_num;
-  struct function *cfunc;
-  at *(*call) (int, at**);
+  at *answer, **arg_pos, **spbuff;
+  struct cfunction *cfunc = p->Object;
+  at *(*call)(int, at**) = cfunc->call;
 
   cfunc = p->Object;
   arg_pos = spbuff = dx_sp;
@@ -292,17 +272,14 @@ dx_listeval(at *p, at *q)
   }
   if (q)
     error("dx", "Bad argument list", NIL);
-
+  
   dx_sp = spbuff;
-  call = cfunc->c_function;
-  answer = (*call) (arg_num, arg_pos);
-
+  answer = call(arg_num, arg_pos);
   while (arg_pos < spbuff) {
     UNLOCK(*spbuff);
     spbuff--;
   }
   dx_sp = spbuff;
-
   if (answer && (answer->flags&X_ZOMBIE)) {
     UNLOCK(answer);
     return NIL;
@@ -310,31 +287,27 @@ dx_listeval(at *p, at *q)
     return answer;
 }
 
-
-
 class dx_class =
 {
   cfunc_dispose,
   cfunc_action,
-  dx_name,
+  cfunc_name,
   generic_eval,
   dx_listeval,
 };
 
-
 at *
-new_dx(at *(*addr) (int, at **))
+new_dx(at *name, at *(*addr)(int, at **))
 {
-  struct function *cfunc;
+  struct cfunction *cfunc;
   at *p;
-
-  cfunc = allocate(&function_alloc);
-  cfunc->c_function = cfunc->c_info = addr;
-  cfunc->formal_arg_list = NIL;
-  cfunc->evaluable_list = NIL;
+  
+  cfunc = allocate(&cfunc_alloc);
+  cfunc->call = cfunc->info = addr;
+  LOCK(name);
+  cfunc->name = name;
   p = new_extern(&dx_class, cfunc);
   p->flags |= X_FUNCTION;
-  cfunc->formal_arg_list = p;
   return p;
 }
 
@@ -344,13 +317,9 @@ new_dx(at *(*addr) (int, at **))
 at *
 dy_listeval(at *p, at *q)
 {
-  struct function *cfunc;
-  at *(*call) (at*);
-  
-  cfunc = p->Object;
-  call = cfunc->c_function;
-  q = (*call) (q->Cdr);
-
+  struct cfunction *cfunc = p->Object;
+  at *(*call)(at*) = cfunc->call;
+  q = (*call)(q->Cdr);
   if (q && (q->flags&X_ZOMBIE)) {
     UNLOCK(q);
     return NIL;
@@ -358,30 +327,27 @@ dy_listeval(at *p, at *q)
     return q;
 }
 
-
 class dy_class =
 {
   cfunc_dispose,
   cfunc_action,
-  dy_name,
+  cfunc_name,
   generic_eval,
   dy_listeval,
 };
 
-
 at *
-new_dy(at *(*addr) (at *))
+new_dy(at *name, at *(*addr)(at *))
 {
-  struct function *cfunc;
+  struct cfunction *cfunc;
   at *p;
-
-  cfunc = allocate(&function_alloc);
-  cfunc->formal_arg_list = NIL;
-  cfunc->evaluable_list = NIL;
-  cfunc->c_function = cfunc->c_info = addr;
+  
+  cfunc = allocate(&cfunc_alloc);
+  LOCK(name);
+  cfunc->name = name;
+  cfunc->call = cfunc->info = addr;
   p = new_extern(&dy_class, cfunc);
   p->flags |= X_FUNCTION;
-  cfunc->formal_arg_list = p;
   return p;
 }
 
@@ -391,7 +357,7 @@ new_dy(at *(*addr) (at *))
 at *
 de_listeval(at *p, at *q)
 {
-  struct function *lfunc;
+  struct lfunction *lfunc;
   at *answer;
 
   lfunc = p->Object;
@@ -417,11 +383,10 @@ class de_class =
 at *
 new_de(at *formal, at *evaluable)
 {
-  struct function *lfunc;
+  struct lfunction *lfunc;
   at *p;
 
-  lfunc = allocate(&function_alloc);
-  lfunc->c_function = lfunc->c_info = 0;
+  lfunc = allocate(&lfunc_alloc);
   lfunc->formal_arg_list = formal;
   LOCK(formal);
   lfunc->evaluable_list = evaluable;
@@ -434,7 +399,6 @@ new_de(at *formal, at *evaluable)
 DY(ylambda)
 {
   at *q;
-
   q = ARG_LIST;
   ifn(CONSP(q) && CONSP(q->Cdr))
     error("lambda", "illegal definition of function", NIL);
@@ -465,7 +429,7 @@ DY(yde)
 at *
 df_listeval(at *p, at *q)
 {
-  struct function *lfunc;
+  struct lfunction *lfunc;
   at *answer;
 
   lfunc = p->Object;
@@ -487,11 +451,10 @@ class df_class =
 at *
 new_df(at *formal, at *evaluable)
 {
-  struct function *lfunc;
+  struct lfunction *lfunc;
   at *p;
 
-  lfunc = allocate(&function_alloc);
-  lfunc->c_function = lfunc->c_info = 0;
+  lfunc = allocate(&lfunc_alloc);
   lfunc->formal_arg_list = formal;
   LOCK(formal);
   lfunc->evaluable_list = evaluable;
@@ -504,7 +467,6 @@ new_df(at *formal, at *evaluable)
 DY(yflambda)
 {
   at *q;
-
   q = ARG_LIST;
   ifn(CONSP(q) && CONSP(q->Cdr))
     error("flambda", "illegal definition of function", NIL);
@@ -535,8 +497,7 @@ DY(ydf)
 at *
 dm_listeval(at *p, at *q)
 {
-  struct function *lfunc;
-
+  struct lfunction *lfunc;
   lfunc = p->Object;
   push_args(lfunc->formal_arg_list, q);
   q = progn(lfunc->evaluable_list);
@@ -545,7 +506,6 @@ dm_listeval(at *p, at *q)
   UNLOCK(q);
   return p;
 }
-
 
 class dm_class =
 {
@@ -557,15 +517,13 @@ class dm_class =
 };
 
 
-
 at *
 new_dm(at *formal, at *evaluable)
 {
-  struct function *lfunc;
+  struct lfunction *lfunc;
   at *p;
 
-  lfunc = allocate(&function_alloc);
-  lfunc->c_function = lfunc->c_info = 0;
+  lfunc = allocate(&lfunc_alloc);
   lfunc->formal_arg_list = formal;
   LOCK(formal);
   lfunc->evaluable_list = evaluable;
@@ -578,7 +536,6 @@ new_dm(at *formal, at *evaluable)
 DY(ymlambda)
 {
   at *q;
-
   q = ARG_LIST;
   ifn(CONSP(q) && CONSP(q->Cdr))
     error("mlambda", "illegal definition of function", NIL);
@@ -606,7 +563,7 @@ DY(Ydm)
 at *
 dm_macro_expand(at *p, at *q)
 {
-  struct function *lfunc;
+  struct lfunction *lfunc;
   at *before_eval;
 
   ifn(p && (p->flags & C_EXTERN) && p->Class == &dm_class)
@@ -621,7 +578,6 @@ dm_macro_expand(at *p, at *q)
 DY(ymacro_expand)
 {
   at *p, *ans;
-
   ifn(CONSP(ARG_LIST) && CONSP(ARG_LIST->Car) && (!ARG_LIST->Cdr))
     error(NIL, "syntax error", NIL);
   p = eval(ARG_LIST->Car->Car);
@@ -643,54 +599,21 @@ DY(ymacro_expand)
 at *
 funcdef(at *f)
 {
-  struct function *func;
-  at *s;
-  
-  s = NIL;
-  
-  if (f && (f->flags & X_SYMBOL)) {
-    s = f;
-    f = var_get(s);
-    UNLOCK(f);
-  }
+  struct lfunction *func;
+  char *s = 0;
 
-  if (! (f && (f->flags & X_FUNCTION))) {
-    if (s) 
-      return NIL;
-    error(NIL, "neither a function nor a symbol", f);
-  }
-
+  if (EXTERNP(f, &de_class))
+    s = "lambda";
+  if (EXTERNP(f, &df_class))
+    s = "flambda";
+  if (EXTERNP(f, &dm_class))
+    s = "mlambda";
+  if (! s)
+    return NIL;
   func = f->Object;
-  if (f->Class == &dx_class || f->Class == &dy_class) {
-    LOCK(f);
-    return f;
-  } else {
-    at *q, *p;
-
-    q = new_cons(func->formal_arg_list, func->evaluable_list);
-
-    if (f->Class == &de_class) {
-      if (s) {
-	LOCK(s);
-	p = cons(named("de"), cons(s, q));
-      } else
-	p = cons(named("lambda"), q);
-    } else if (f->Class == &df_class) {
-      if (s) {
-	LOCK(s);
-	p = cons(named("df"), cons(s, q));
-      } else
-	p = cons(named("flambda"), q);
-    } else if (f->Class == &dm_class) {
-      if (s) {
-	LOCK(s);
-	p = cons(named("dm"), cons(s, q));
-      } else
-	p = cons(named("mlambda"), q);
-    } else
-      return NIL;
-    return p;
-  }
+  return cons(named(s),
+              new_cons(func->formal_arg_list, 
+                       func->evaluable_list) );
 }
 
 DX(xfuncdef)
@@ -704,11 +627,10 @@ DX(xfuncdef)
 DX(xfunctionp)
 {
   at *p;
-
+  
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
-
   if (p && (p->flags & X_FUNCTION)) {
     LOCK(p);
     return p;
@@ -722,7 +644,7 @@ DX(xfunctionp)
 
 static char need_arg_num[80];
 static char *need_errlist[] =
-{"bad argument number",
+{ "bad argument number",
   "not a number",
   "not a list",
   "empty list",
