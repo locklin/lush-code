@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.15 2003-01-27 08:57:30 leonb Exp $
+ * $Id: dldbfd.c,v 1.16 2003-02-14 18:12:00 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -42,14 +42,18 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <setjmp.h>
-#include <bfd.h>
-#include "dldbfd.h"
+#if HAVE_STDBOOL_H
+# include <stdbool.h>
+#endif
 #if HAVE_UNISTD_H
 # include <unistd.h>
 #endif
 #if HAVE_SYS_MMAN_H
 # include <sys/mman.h>
 #endif
+
+#include <bfd.h>
+#include "dldbfd.h"
 
 /* ---------------------------------------- */
 /* GCC OPTIMISATIONS */
