@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.107 2004-01-18 06:10:45 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.108 2004-02-18 20:46:46 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1575,22 +1575,34 @@
   (cons 'progn else) )
 
 (de cmacro.read-c()
-  (let ((nextchar (skip-char " \r\t")))
+  (let ((nextchar (skip-char "")))
     (cond
-     ((= nextchar ";")
-      (read-string 1)
-      (if (not (index (skip-char " \r\t") "#\n")) "; " (skip-char) ";") )
      ((= nextchar "$")
       (cmacro.read-dollar) )
      ((= nextchar "#")
       (read-string 1)
       (if (<> (skip-char "") "}") "#" (read-string 1) "#}") )
-     ((or (= nextchar "\"") (= nextchar "'"))
+     ((index nextchar " \t\n\r")
+      (read-string " \t\n\r") )
+     ((index nextchar "\"'")
       (cmacro.read-string (read-string 1)) )
-     ((= nextchar "\n")
-      (read-string 1) )
+     ((= nextchar "/")
+      (cmacro.read-comment))
      (t
-      (concat (read-string "~$;#'\"\n")) ) ) ) )
+      (read-string "~$#\"'/\e") ) ) ) )
+
+(de cmacro.read-comment()
+  (let ((c (read-string 1))
+	(cc (skip-char "")) )
+    (selectq cc
+      ("/" ;; c++ style comment
+       (setq c (concat c (read-string "~\n\r") "\n")) )
+      ("*" ;; c style comment
+       (while (and (<> cc "/") (<> cc "\e"))
+	 (setq c (concat c (read-string "~*\e") (read-string "*")))
+	 (setq cc (skip-char "")) )
+       (setq c (concat c (read-string 1))) ) )
+    c) )
 
 (de cmacro.read-string(delim)
   (let ((dat (list delim))
@@ -1625,9 +1637,8 @@
 
 (dmc |#{|
   (let ((again t)
-        (pgm  ())
-        (stmt ())
-        (expr ()) )
+        (expr ()) 
+        (stmt (list "")) )
     (while again
       (let ((item (cmacro.read-c)))
         (when (stringp item)
@@ -1635,27 +1646,21 @@
         (cond
          ((= item "#}")
           (setq again ()) )
-         ((= item ";")
-          (setq stmt (apply concat (nconc1 stmt item)))
-          (setq pgm (nconc1 pgm `(cinline ,stmt ,@expr)))
-          (setq stmt ())
-          (setq expr ()) )
-         ((not (stringp item))
-          (setq stmt (nconc1 stmt "(%s)"))
-          (setq expr (nconc1 expr item)) )
          ((= item "\e")
           (error "unbalanced cmacro #{ #}") )
-         (t
-          (setq stmt (nconc1 stmt item)) ) ) ) )
-    (when stmt
-      (setq stmt (apply concat stmt))
-      (setq pgm (nconc1 pgm `(cinline ,stmt ,@expr))) )
-    (list (if (cdr pgm) (cons 'progn pgm) (car pgm))) ) )
+	 ((stringp item)
+	  (setq stmt (nconc1 stmt item)) )
+	 (t
+	  (setq stmt (nconc1 stmt "(%s)"))
+	  (setq expr (nconc1 expr item)) ) ) ) )
+    (let ((l (lastcdr stmt)))
+      (rplaca l (regex-subst "[ \t\n\r]*$" "" (car l))) )
+    (list  `(cinline ,(apply concat stmt) ,@expr)) ) )
 
 (lock-symbol breakp protect unprotect 
              cinline ifdef ifcompiled
              cmacro.read-c cmacro.read-string 
-             cmacro.read-dollar |#{| )
+	     cmacro.read-comment cmacro.read-dollar |#{| )
 
 
 
