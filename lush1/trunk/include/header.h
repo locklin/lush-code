@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.57 2004-01-18 05:35:31 leonb Exp $
+ * $Id: header.h,v 1.58 2004-02-04 19:52:10 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -1280,6 +1280,7 @@ LUSHAPI void *register_poll_functions(int  (*spoll)(void),
 
 /* Event queues */ 
 LUSHAPI void *timer_add(at *handler, int delay, int period);
+LUSHAPI void *timer_abs(at *handler, real date);
 LUSHAPI void  timer_del(void *handle);
 LUSHAPI int   timer_fire(void);
 LUSHAPI void  event_add(at *handler, at *event);

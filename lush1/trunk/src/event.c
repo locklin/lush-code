@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.20 2003-03-18 20:48:15 leonb Exp $
+ * $Id: event.c,v 1.21 2004-02-04 19:52:17 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -305,6 +305,28 @@ ti_insert(struct event_timer *ti)
   *p = ti;
 }
 
+
+static void *
+timer_add_sub(at *handler, int sec, int msec, int period)
+{
+  struct event_timer *ti;
+  if (handler)
+    {
+      add_finalizer(handler, ti_finalize, 0);
+      if (! (ti = malloc(sizeof(struct event_timer))))
+        error(NIL,"Out of memory", NIL);
+      ti->date.sec = sec;
+      ti->date.msec = msec;
+      ti->period.sec = period/1000;
+      ti->period.msec = period%1000;
+      ti->handler = handler;
+      ti->next = 0;
+      ti_insert(ti);
+      return ti;
+    }
+  return 0;
+}
+
 /* timer_add --
    Add a timer targeted to the specified handler
    firing after delay milliseconds and every period
@@ -314,8 +336,8 @@ ti_insert(struct event_timer *ti)
 void *
 timer_add(at *handler, int delay, int period)
 {
-  struct event_timer *ti;
   evtime_t now, add;
+  evtime_now(&now);
   if (! handler)
     error(NIL,"Illegal null event handler",NIL);
   if (delay < 0)
@@ -324,23 +346,24 @@ timer_add(at *handler, int delay, int period)
     error(NIL,"Illegal timer interval",NEW_NUMBER(period));
   if (period > 0 && period < 20)
     period = 20;
-  if (handler && delay>=0)
-    {
-      add_finalizer(handler, ti_finalize, 0);
-      if (! (ti = malloc(sizeof(struct event_timer))))
-        error(NIL,"Out of memory", NIL);
-      evtime_now(&now);
-      add.sec = delay/1000;
-      add.msec = delay%1000;
-      evtime_add(&now, &add, &ti->date);
-      ti->period.sec = period/1000;
-      ti->period.msec = period%1000;
-      ti->handler = handler;
-      ti->next = 0;
-      ti_insert(ti);
-      return ti;
-    }
-  return 0;
+  add.sec = delay/1000;
+  add.msec = delay%1000;
+  evtime_add(&now, &add, &add);
+  return timer_add_sub(handler, add.sec, add.msec, period);
+}
+
+/* timer_abs --
+   Add a timer targeted to the specified handler
+   firing at the specified date.
+*/
+void *
+timer_abs(at *handler, real date)
+{
+  int sec = (int)date;
+  int msec = (date - sec) * 1000;
+  if (! handler)
+    error(NIL,"Illegal null event handler",NIL);
+  return timer_add_sub(handler, sec, msec, 0);
 }
 
 /* timer_del --
@@ -917,6 +940,14 @@ DX(xcreate_timer)
   return new_gptr(timer_add(APOINTER(1),AINTEGER(2),AINTEGER(3)));  
 }
 
+/* Create a timer to a specific date */
+DX(xcreate_timer_absolute)
+{
+  ALL_ARGS_EVAL;
+  ARG_NUMBER(2);
+  return new_gptr(timer_abs(APOINTER(1),AREAL(2)));
+}
+
 /* Destroy a timer */
 DX(xkill_timer)
 {
@@ -965,6 +996,7 @@ init_event(void)
   dx_define("eventinfo",xeventinfo);
   /* TIMER FUNCTIONS */
   dx_define("create-timer", xcreate_timer);
+  dx_define("create-timer-absolute", xcreate_timer_absolute);
   dx_define("kill-timer", xkill_timer);
   dx_define("sleep", xsleep);
 }
