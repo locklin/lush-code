@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.9 2002-05-08 19:52:47 leonb Exp $
+ * $Id: oostruct.c,v 1.10 2002-06-29 17:36:38 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1200,33 +1200,37 @@ send_delete(at *p)
 void 
 delete_at_special(at *p, int flag)
 {
-  if (!p || (p->flags & X_ZOMBIE) || (p->flags & C_GARBAGE)) {
-    /* already deleted, or being deleted */
+  if (!p || (p->flags & X_ZOMBIE) || (p->flags & C_GARBAGE)) 
     return;
-    
-  } else if(p->flags & X_OOSTRUCT) {
-    struct oostruct *s = p->Object;
-    p->count++;
-    p->flags |= C_GARBAGE;
-    send_delete(p);
-    p->count--;
-    UNLOCK(s->class);
-    
-  } else if (p->flags & C_EXTERN) {
-    if (flag && p->Class->dontdelete)
-      error(NIL,"Cannot delete this object",p);
-    (*p->Class->self_dispose)(p);
-    p->Object = NIL;
-    
-  } else if (p->flags & C_NUMBER) {
-    p->Object = NIL;
+  if (p->flags & C_FINALIZER)
+    run_finalizers(p);
 
-  } else if (p->flags & C_CONS) {
-    UNLOCK(p->Car);
-    UNLOCK(p->Cdr);
-    p->Object = NIL;
-  }
-
+  if(p->flags & X_OOSTRUCT) 
+    {
+      struct oostruct *s = p->Object;
+      p->count++;
+      p->flags |= C_GARBAGE;
+      send_delete(p);
+      p->count--;
+      UNLOCK(s->class);
+    } 
+  else if (p->flags & C_EXTERN) 
+    {
+      if (flag && p->Class->dontdelete)
+        error(NIL,"Cannot delete this object",p);
+      (*p->Class->self_dispose)(p);
+      p->Object = NIL;
+    } 
+  else if (p->flags & C_NUMBER) 
+    {
+      p->Object = NIL;
+    } 
+  else if (p->flags & C_CONS) 
+    {
+      UNLOCK(p->Car);
+      UNLOCK(p->Cdr);
+      p->Object = NIL;
+    }
   p->Class = &zombie_class;
   p->flags = C_EXTERN | X_ZOMBIE;
 }
