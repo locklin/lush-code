@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-macro.lsh,v 1.40 2004-01-08 15:05:06 leonb Exp $
+;;; $Id: dh-macro.lsh,v 1.41 2004-02-04 15:55:32 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1793,7 +1793,8 @@
 ;;; ------------------------------------------------------------------------
 
 
-;;; WEIRD: We have UNFOLD but not IDX-UNFOLD!
+;;; We have UNFOLD but not IDX-UNFOLD,
+;;; because idx-unfold would change the type of an idx.
 (dhm-t unfold(source)
   (when (<> 5 (length source))
     (dhc-error "four arguments expected"))
@@ -1872,7 +1873,8 @@
               idx d sz st el-decl))
     idx))
 
-;;; WEIRD: We have SELECT but not IDX-SELECT!
+;;; We have SELECT but not IDX-SELECT
+;;; because idx-select would change the type of an idx.
 (dhm-t select(source)
   (when (<> 4 (length source))
     (dhc-error "three arguments expected"))
@@ -1931,7 +1933,8 @@
               idx mat d x el-decl))
     idx))
 
-;; WEIRD: We have DIAGONAL but not IDX-DIAGONAL!
+;; We have DIAGONAL but not IDX-DIAGONAL
+;; because idx-diagonal would change the type of an idx.
 (dhm-t diagonal(source)
   (when (<> 3 (length source))
     (dhc-error "two arguments expected"))
@@ -2083,8 +2086,7 @@
   (let* ((mat (dhc-parse-expr-t (cadr source)))
          (ndim (==> :mat:type is-an-idxptr))
          (bogus (when ~ndim (dhc-error "first argument must be an idx")))
-         (tnl (list mat
-                    (dhc-parse-permlist-t (caddr source) ndim)))
+         (tnl (list mat (dhc-parse-permlist-t (caddr source) ndim)))
          (rettype (==> :(car tnl):type copy))
          (symbol-idx (new dhc-symbol
                           (named
@@ -2114,7 +2116,64 @@
      "}")
     :idx-symb:c-name))
 
-;; Same as SUB-INDEX !
+(dhm-t idx-transpose(source)
+  (when (<> 3 (length source))
+    (dhc-error "three arguments expected"))
+  (let* ((mat (dhc-parse-expr-t (cadr source)))
+         (ndim (==> :mat:type is-an-idxptr))
+         (bogus (when ~ndim (dhc-error "first argument must be an idx")))
+         (tnl (list mat (dhc-parse-permlist-t (caddr source) ndim))))
+    (new t-node tnl (new dhc-type 'dht-bool)) ) )
+
+(dhm-c idx-transpose(source treetype retplace)
+  (let* ((mattn (cadr :treetype:tn-list))
+         (mat (dhc-parse-expr-c (cadr source) mattn ()))
+         (plist ()))
+    (dhc-add-c-statements "{")
+    (setq plist (dhc-parse-permlist-c (caddr source)
+                                      (caddr :treetype:tn-list) ()))
+    (dhc-add-c-statements
+     (sprintf "Midx_transpose(%s, %s, %s);"
+              mat plist (==> :mattn:type get-element-decl) ) )
+    (dhc-add-c-statements "}")
+    "0" ) )
+
+(dhm-t idx-transpose2(source)
+  (when (<> 4 (length source))
+    (dhc-error "two arguments expected"))
+  (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
+	 (mat (car tnl))
+         (ndim (==> :mat:type is-an-idxptr)) )
+    (when (not ndim)
+      (dhc-error "first argument must be an idx"))
+    (each ((n (cddr source)))
+      (when (numberp n)
+	(if (or (< n 0) (>= n ndim))
+	    (dhc-error "Illegal dimension for idx" n) ) ) )
+    (all ((tn (cdr tnl)))
+      (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+    (new t-node tnl (new dhc-type 'dht-bool)) ) )
+
+(dhm-c idx-transpose2(source treetype retplace)
+  (let* ((cexps (all ((tn (cdr :treetype:tn-list))
+		      (so (cdr source)) )
+		  (dhc-parse-expr-c so tn ()) ))
+	 (mattn (cadr :treetype:tn-list))
+	 (mat (car cexps)) 
+	 (ndim (==> :mattn:type is-an-idxptr)) )
+    (when (not dhc-unprotect)
+      (each ((so (cddr source))
+	     (cexp (cdr cexps)) )
+	(when (not (numberp so))
+	  (dhc-add-c-statements
+	   (sprintf "RTERR_DIM(%s < 0 || %s >= %d);" 
+		    cexp cexp (==> :mattn:type is-an-idxptr) ) ) ) ) )
+    (dhc-add-c-statements    
+     (sprintf "Midx_transpose2(%s, %s, %s, %s);"
+              mat (cadr cexps) (caddr cexps) 
+	      (==> :mattn:type get-element-decl) ) )
+    "0" ) )
+
 (dhm-t submatrix(source)
   (let (((func mat . dims) source)
         (expr ())
