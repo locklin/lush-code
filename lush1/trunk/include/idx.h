@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idx.h,v 1.2 2002-07-01 21:20:36 leonb Exp $
+ * $Id: idx.h,v 1.3 2004-02-13 19:03:12 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -181,14 +181,16 @@
 #define Xidx_io0(FUNC_NAME, CHECK_FUNC) \
   DX(name2(Xidx_,FUNC_NAME)) \
   { \
-    at *p2, *atst; \
+    at *p2; \
     struct idx i1, i2; \
     struct index *ind1, *ind2; \
     ALL_ARGS_EVAL; \
     if (arg_number==1) { \
+       at *atst; \
        ind1 = AINDEX(1); \
        atst = new_storage_nc(ind1->st->srg.type, 1); \
        p2 = new_index(atst); \
+       UNLOCK(atst);\
        index_dimension(p2, 0, NULL); \
        ind2 = p2->Object; \
     } else { \
@@ -242,15 +244,17 @@
 #define Xidx_aiai0o(FUNC_NAME, CHECK_FUNC) \
   DX(name2(Xidx_,FUNC_NAME)) \
   { \
-    at *p3, *atst; \
+    at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
     ALL_ARGS_EVAL; \
     if (arg_number==2) { \
+       at *atst; \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
        atst = new_storage_nc(ind1->st->srg.type, 1); \
        p3 = new_index(atst); \
+       UNLOCK(atst); \
        index_dimension(p3, 0, NULL); \
        ind3 = p3->Object; \
     } else { \
@@ -406,17 +410,19 @@
 #define Xidx_1i1i2o(FUNC_NAME, CHECK_FUNC) \
   DX(name2(Xidx_,FUNC_NAME)) \
   { \
-    at *p3, *atst; \
+    at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
     int dim[2]; \
     ALL_ARGS_EVAL; \
     if (arg_number==2) { \
+       at *atst; \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
        if(ind1->ndim != 1 || ind2->ndim != 1) ERRBADARGS; \
        atst = new_storage_nc(ind1->st->srg.type, ind1->dim[0]*ind2->dim[0]); \
        p3 = new_index(atst); \
+       UNLOCK(atst); \
        dim[0] = ind1->dim[0]; \
        dim[1] = ind2->dim[0]; \
        index_dimension(p3, 2, dim); \
@@ -444,18 +450,20 @@
 #define Xidx_2i2i4o(FUNC_NAME, CHECK_FUNC) \
   DX(name2(Xidx_,FUNC_NAME)) \
   { \
-    at *p3, *atst; \
+    at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
     int dim[4]; \
     ALL_ARGS_EVAL; \
     if (arg_number==2) { \
+       at *atst; \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
        if(ind1->ndim != 2 || ind2->ndim != 2) ERRBADARGS; \
        atst = new_storage_nc(ind1->st->srg.type, \
 		   ind1->dim[0]*ind1->dim[1] * ind2->dim[0]*ind2->dim[1]); \
        p3 = new_index(atst); \
+       UNLOCK(atst); \
        dim[0] = ind1->dim[0]; \
        dim[1] = ind1->dim[1]; \
        dim[2] = ind2->dim[0]; \
