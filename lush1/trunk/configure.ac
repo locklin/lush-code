@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.1 2002-04-24 19:20:41 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.2 2002-04-24 20:55:36 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -19,9 +19,11 @@ AC_CANONICAL_HOST
 AC_PROG_MAKE_SET
 
 AC_PROG_CC
+AC_CC_OPTIMIZE
+AC_SUBST(GCC)
 AC_PROG_CXX
 AC_PROG_F77
-AC_CC_OPTIMIZE
+
 
 AC_PROG_RANLIB
 AC_PROG_LN_S
@@ -44,6 +46,7 @@ AC_CHECK_LIB(dld,shl_load)
 AC_PATH_X
 AC_PATH_XTRA
 X_LIBS=
+test -n "$x_libraries" && X_LIBS="-L$x_libraries"
 X_YES='#'
 X_NO=''
 if test "${no_x-no}" != yes ; then 
@@ -95,7 +98,7 @@ AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp)
 # ----------------------------------------
 
 LDCC=${CC}
-SOEXT='.so'
+SOEXT=so
 CC_EXP_FLAG=
 CC_PIC_FLAG=
 MAKESO=
@@ -122,7 +125,7 @@ case "$host" in
         MAKESO="$MAKESO -o"
         ;;
     *-hpux-*)
-        SOEXT='.sl'
+        SOEXT=sl
         test x$GCC != xyes && CC_PIC_FLAG='+Z'
         test x$GCC != xyes && CC_EXP_FLAG='-Wl,-E'
         test x$GCC != xyes && MAKESO='ld -b +s +b -E -o'
@@ -146,6 +149,18 @@ AC_SUBST(SOEXT)
 AC_SUBST(CC_EXP_FLAG)
 AC_SUBST(CC_PIC_FLAG)
 AC_SUBST(MAKESO)
+
+if test $EXEEXT = exe ; then
+    SOEXT=dll
+    DEFS="$DEFS -DWIN32"
+    UNIX_YES='#'
+    WIN32_YES=''
+else
+    UNIX_YES=''
+    WIN32_YES='#'
+fi
+AC_SUBST(UNIX_YES)
+AC_SUBST(WIN32_YES)
 
 # ----------------------------------------
 # Output

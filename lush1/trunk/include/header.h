@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.2 2002-04-18 20:17:09 leonb Exp $
+ * $Id: header.h,v 1.3 2002-04-24 20:55:38 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -179,6 +179,7 @@ typedef struct at {
 #define CONSP(x)        ((x)&&((x)->flags&C_CONS))
 #define LISTP(x)        (!(x)||((x)->flags&C_CONS))
 #define NUMBERP(x)	((x)&&((x)->flags&C_NUMBER))
+#define GPTRP(x)	((x)&&((x)->flags&C_GPTR))
 #define EXTERNP(x,cl)	((x)&&((x)->flags&C_EXTERN)&&((x)->Class==(cl)))
 
 extern TLAPI at *(*eval_ptr) (at*);
@@ -1107,7 +1108,7 @@ LUSHAPI char *not_a_nrvector(at*);
 LUSHAPI char *not_a_nrmatrix(at*);
 LUSHAPI flt *make_nrvector(at*,int,int*);
 LUSHAPI flt **make_nrmatrix(at*,int,int,int*,int*);
-LUSHAPI void copy_matrix(at *, at *);
+LUSHAPI at *copy_matrix(at *, at *);
 
 LUSHAPI at *AT_matrix(int,int*);	/* Simultaneous creation       */
 LUSHAPI at *F_matrix(int,int*);	/* of an index and its storage */

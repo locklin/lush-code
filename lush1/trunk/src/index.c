@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: index.c,v 1.2 2002-04-24 20:55:38 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -1477,7 +1477,7 @@ void copy_index(struct index *i1, struct index *i2)
 }
 
 
-static at *
+at *
 create_samesize_matrix(at *p1)
 {
   at *p2, *atst;
@@ -1515,7 +1515,7 @@ copy_matrix(at *p1, at *p2)
   i2 = p2->Object;
   if (i2->flags & IDF_UNSIZED)
     index_dimension(p2,i1->ndim,i1->dim);
-  copy_matrix(i1,i2);
+  copy_index(i1,i2);
   return p2;
 }
 
@@ -2533,7 +2533,7 @@ DX(xindex_is_sized)
     ARG_NUMBER(1);
     ind1 = AINDEX(1);
     index_read_idx(ind1, &i1);
-    is_sized(&i1);
+    index_is_sized(&i1);
     index_rls_idx(ind1, &i1);		
     return NIL;
 }
@@ -2608,7 +2608,7 @@ DX(xindex_size_or_check)
   
   index_read_idx(ind1, &i1);
   index_write_idx(ind2, &i2);
-  size_or_check(&i1,&i2);
+  index_size_or_check(&i1,&i2);
   index_rls_idx(ind1, &i1);		
   index_rls_idx(ind2, &i2);		
   return NIL;
