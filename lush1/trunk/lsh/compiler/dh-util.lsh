@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.8 2002-07-15 23:22:45 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.9 2002-07-16 19:32:15 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -72,8 +72,8 @@
 (de dhc-insert-op (l op)
   (let ((n (when l (list (car l)))))
     (each ((s (cdr l)))
-      (setq n (cons s (cons op l))) ) )
-  (apply concat (reverse n)) )
+      (setq n (cons s (cons op n))) )
+    (apply concat (reverse n)) ) )
 
 #? (dhc-nolast <l>)
 ;; Remove last element of list.
@@ -158,7 +158,7 @@
 ;; compute/retrieve hash code
 (de dhu-hash (u)
   ;; FIXME
-  0 )
+  "0" )
 
 ;; put or remove the "dht-" part of the name of a symbol
 (de dht-short (symb)
@@ -446,7 +446,7 @@
    ((==> type is-an-obj)
     (let* ((ctype (dhu-type type))
            (cname (dhu-name ctype))
-           (vtbl (sprintf "Vt_%s_R%08x" cname (dhu-hash ctype))) )
+           (vtbl (sprintf "Vt_%s_R%s" cname (dhu-hash ctype))) )
       (dhc-add-c-externs
        (dhc-class-to-vtable-decl (dhu-type type)) )
       (dhc-add-c-externs
@@ -498,7 +498,7 @@
    ((==> type is-an-obj)
     (let* ((ctype (dhu-type type))
            (cname (dhu-name ctype))
-           (vtbl (sprintf "Vt_%s_R%08x" cname (dhu-hash ctype))) )
+           (vtbl (sprintf "Vt_%s_R%s" cname (dhu-hash ctype))) )
       (dhc-add-c-externs
        (dhc-class-to-vtable-decl (dhu-type type)) )
       (dhc-add-c-externs
@@ -643,14 +643,14 @@
 #? (dhc-error <string> [<arg>])
 ;; Called when we get a syntax error in the source
 (de dhc-error(string &optional argument)
-  (printf "\n*** Error during compilation.  Source code stack:\n")
-  (printf "*** %s" string)
+  (printf "\n*** compiler : %s" string)
   (when argument (printf " : %l" argument))
   (printf "\n")
-  (printf "** in:   %s\n" (left (pname (car dhc-debug-stack)) 72))
+  (printf "*** in:   %s\n" (left (pname (car dhc-debug-stack)) 72))
   (each ((src (cdr dhc-debug-stack)))
-    (printf "** From: %s\n" (left (pname src) 70)))
-  (error 'dhc-error "Translation aborted" ()) )
+    (printf "*** from: %s\n" (left (pname src) 70)))
+  (let ((debug-hook (if dhc-debug-flag debug-hook :simple-debug-hook)))
+    (error 'dhc-error "Translation aborted" ()) ) )
 
 
 #? (dhc-check-symbol <source>)
@@ -1053,8 +1053,8 @@
      ())
     (dht-func 
      ())
-    (t (when (not (==> this is-a-simple)))
-       (error "recurse: unknown type") ) ) )
+    (t (when (not (==> this is-a-simple))
+         (error "recurse: unknown type") ) ) ) )
 
 ;; If a type is returned update its lexical level.
 ;; It will propagate to all the subfields, 
@@ -1729,7 +1729,7 @@
     (obj
      ;; parse all possibilities for desc
      (let* ((cltype (dhc-d-to-class-type tclass arg1 arg2))
-            (classdoc (sprintf "Kc_%s_R%08x" 
+            (classdoc (sprintf "Kc_%s_R%s" 
                                (dhu-name cltype) 
                                (dhu-hash cltype))) )
        (dhc-add-c-metaexterns (sprintf "extern dhclassdoc_t %s;" classdoc))
@@ -1742,7 +1742,7 @@
      (each ((temps arg2))
        (when (= (car temps) 'obj)
          (let ((cltype (apply dhc-d-to-class-type temps))
-               (classdoc (sprintf "Kc_%s_R%08x" 
+               (classdoc (sprintf "Kc_%s_R%s" 
                                   (dhu-name cltype) 
                                   (dhu-hash cltype))) )
            (dhc-add-c-metaexterns
@@ -1767,7 +1767,7 @@
               (apply concat (dhc-d-to-doc (caddr (last desc)))) )) )
       (obj 
        (let* ((cltype (apply dhc-d-to-class-type desc))
-              (classdoc (sprintf "Kc_%s_R%08x" 
+              (classdoc (sprintf "Kc_%s_R%s" 
                                  (dhu-name cltype)
                                  (dhu-hash cltype) )) )
          (list (sprintf "DH_OBJ(%s)," classdoc)) ) )
@@ -2175,13 +2175,17 @@
 
 #? (get-dhm-t <symb>)
 ;; Return the dhm-t for function <symb>
-(dm get-dhm-t (fn symb)
-  `(getp :,symb 'dhm-t) )
+(de get-dhm-t (symb)
+  (when (symbolp symb)
+    (setq symb (eval `:,symb)) )
+  (getp symb 'dhm-t) )
 
 #? (get-dhm-c <symb>)
 ;; Return the dhm-c for function <symb>
-(dm get-dhm-c (fn symb)
-  `(getp :,symb 'dhm-c) )
+(de get-dhm-c (symb)
+  (when (symbolp symb)
+    (setq symb (eval `:,symb)) )
+  (getp symb 'dhm-c) )
 
 
 
@@ -2226,15 +2230,16 @@
 
 #? (get-dhm-p <symb>)
 ;; Return the dhm-p for function <symb>
-(dm get-dhm-p (fn symb)
-  `(getp :,symb 'dhm-p) )
+(de get-dhm-p (symb)
+  (when (symbolp symb)
+    (setq symb (eval `:,symb)) )
+  (getp symb 'dhm-p) )
 
 
 #? (dhc-pp <body>)
 ;; Macro preprocessor for the dhc compiler.
 ;; return a version of lisp expression <body> with
 ;; all macros (both dm and dmd) expanded. 
-
 (de dhc-pp(body)
   (if (atomp body)
       body
@@ -2773,7 +2778,7 @@
            (if ~symbol 
                (dhinfo-c (eval `:,(car source)))
              (list (sprintf "C_%s" :symbol:c-name) "" "" ""
-                   (sprintf "K_%s_R%08x" :symbol:c-name 
+                   (sprintf "K_%s_R%s" :symbol:c-name 
                             (dhu-hash :symbol:type) ) ) ) )
           (args (all ((so (cdr source)) 
                       (tt (cdr :treetype:tn-list)))

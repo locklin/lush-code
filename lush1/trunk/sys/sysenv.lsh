@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.38 2002-07-10 18:56:07 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.39 2002-07-16 19:32:15 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -691,21 +691,27 @@
       (libload.data fname ())
       t ) ) )
 
-(de libload(s &optional (c ""))
+(de libload(s &optional opt)
   (let ((fname (filepath s)))
     (when (not fname)
       (error 'libload "File not found" s) )
+    (if (and opt (not (stringp opt)))
+        (libload.data fname ())
+      (setq opt "") )
     ;; record dependency
     (when (stringp file-being-loaded)
       (let ((frec (libload.data file-being-loaded)))
-        (when (and (consp frec)
-                   (not (member fname (cdr frec))))
+        (when (not frec)
+          (setq frec (cons t ()))
+          (libload.data file-being-loaded frec) )
+        (when (not (member fname (cdr frec)))
           (rplacd frec (cons fname (cdr frec))) ) ) )
     ;; check time and recursive dependencies
     (when (libload.check fname (htable))
-      (when startup (printf " [%s]%s\n" (basename fname) c))
-      (libload.data fname (cons (now) ()))
-      (load fname) ) ) )
+      (when startup (printf " [%s]%s\n" (basename fname) opt))
+      (libload.data fname (cons t ()))
+      (prog1 (load fname)
+        (rplaca (libload.data fname) (now)) ) ) ) )
 
 (dm autoload(autoload l . s)
   (let  ((f  (eval `(mlambda f
@@ -718,11 +724,11 @@
 (defvar last-loaded-file ())
 
 (dmc |^L| 
-     (let ((_f_ (read_string)))
-       (if (= _f_ "")
-           (setq _f_ (or last-loaded-file edit-buffer))
-         (setq last-loaded-file _f_) )
-       `(libload ,_f_) ))
+     (let ((f (read_string)))
+       (if (= f "") 
+           (setq f (or last-loaded-file edit-buffer))
+         (setq last-loaded-file f) )
+       `(libload ,f t) ))
 
 (de addpath(dir)
   (setq dir (concat-fname dir))
@@ -1122,7 +1128,8 @@
    ;; On unload.
    ((= what 'unlink)
     (each ((pair (module-defs m)))
-      (when (symbolp (cdr pair))
+      (when (and (symbolp (cdr pair)) 
+                 (== (car pair) (eval `:,(cdr pair))) )
         (eval `(setq :,(cdr pair) ',(getp (car pair) 'saved))) ) ) ) ) )
 
 (de mod-search(name)
