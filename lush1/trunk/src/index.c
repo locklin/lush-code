@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.17 2002-08-19 20:29:41 leonb Exp $
+ * $Id: index.c,v 1.18 2002-09-03 19:42:38 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -647,6 +647,22 @@ DX(xindex_mod)
   }
 }
 
+
+DX(xindex_ptr)
+{
+  struct index *ind;
+  struct storage *st;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  ind = AINDEX(1);
+  st = ind->st;
+  if (st->srg.flags & STF_RDONLY)
+    error(NIL,"Not an index on a writable storage",APOINTER(1));
+  if (! (st->srg.flags & STS_MALLOC))
+    error(NIL,"Not an index on a memory based storage",APOINTER(1));
+  return NEW_GPTR((gptr)(((char*)st->srg.data) 
+                         + ind->offset * storage_type_size[st->srg.type]));
+}
 
 
 DX(xoldbound)
@@ -1652,8 +1668,8 @@ void copy_index(struct index *i1, struct index *i2)
   case name2(ST_,Prefix): 						     \
     { 									     \
       Type *d1, *d2; 							     \
-      d1 = IDX_DATA_PTR(&idx1); 					             \
-      d2 = IDX_DATA_PTR(&idx2); 					             \
+      d1 = IDX_DATA_PTR(&idx1); 				             \
+      d2 = IDX_DATA_PTR(&idx2); 				             \
       begin_idx_aloop2(&idx1,&idx2,p1,p2) { 				     \
         d2[p2] = d1[p1]; 						     \
       } end_idx_aloop2(&idx1,&idx2,p1,p2); 				     \
@@ -3090,6 +3106,7 @@ void init_index()
   dx_define("idx-bound", xindex_bound);
   dx_define("idx-dim", xindex_dim);
   dx_define("idx-modulo", xindex_mod);
+  dx_define("idx-ptr", xindex_ptr);
   dx_define("bound",xoldbound);
 
   /* creation */
