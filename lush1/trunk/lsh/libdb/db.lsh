@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: db.lsh,v 1.3 2004-04-16 21:12:44 leonb Exp $
+;;; $Id: db.lsh,v 1.4 2004-04-16 21:49:13 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -392,6 +392,21 @@
 
 ;;; ------------------------------
 
+(de db-norm-helper(x d n)
+  ((-idx1- (-float-)) x)
+  ((-float-) d)
+  ((-int-) n)
+  (cond
+   ((= n (idx-dim x 0)) x)
+   ((< n (idx-dim x 0)) (narrow x 0 n 0))
+   (t  (let ((temp (copy-matrix x)))
+	 (idx-f1resize x n)
+	 (idx-f1fill x d)
+	 (idx-copy temp (narrow x 0 (idx-dim temp 0) 0)) )
+       x ) ) )
+
+;; ---------
+
 (defclass db-norm db-transform
   ((-idx1- (-float-)) add)
   ((-idx1- (-float-)) mul) )
@@ -408,8 +423,8 @@
   ((-int-) i)
   ((-float-) bias scale)
   (in-stack
-   (db-norm-helper add 0 i)
-   (db-norm-helper mul 1 i) )
+   (db-norm-helper add 0 (1+ i))
+   (db-norm-helper mul 1 (1+ i)) )
   (add i bias)
   (mul i scale)
   i )
@@ -484,38 +499,30 @@
   ((-idx2- (-float-)) stat)
   ((-int-) i)
   ((-float-) nmin nmax)
-  (let ((omin (stat i 0))
-	(omax (stat i 4)))
-    (==> d set-coeff i 
-	 (2/ (- (+ nmin nmax) (+ omin omax)))
-	 (/ (- nmax nmin) (- omax omin)) ) ) )
+  (let ((omin (stat 0 i))
+	(omax (stat 4 i)))
+    (if (<= omax omin)
+	(printf "Warning: no variance in coordinate %d\n" i)
+      (==> d set-coeff i 
+	   (2/ (- (+ nmin nmax) (+ omin omax)))
+	   (/ (- nmax nmin) (- omax omin)) ) ) )
+  t )
 
 (de db-norm-mean-sdev(d stat i nmean nsdev)
   ((-obj- (db-norm)) d)
   ((-idx2- (-float-)) stat)
   ((-int-) i)
   ((-float-) nmean nsdev)
-  (let* ((omean (stat i 2))
-	 (osdev (- (stat i 3) (stat i 2))) )
+  (let* ((omean (stat 2 i))
+	 (osdev (- (stat 3 i) (stat 2 i))) )
+    (when (<= osdev 0)
+	(printf "Warning: no variance in coordinate %d\n" i)
+	(setq nsdev 1)
+	(setq osdev 1) )
     (==> d set-coeff i 
-	 (- (/ (* nmean osdev) nsdev) omean) 
-	 (/ nsdev osdev) ) ) )
-
-
-;; ---------
-
-(de db-norm-helper(x d n)
-  ((-idx1- (-float-)) x)
-  ((-float-) d)
-  ((-int-) n)
-  (cond
-   ((= n (idx-dim x 0)) x)
-   ((< n (idx-dim x 0)) (narrow x 0 n 0))
-   (t  (let ((temp (copy-matrix x)))
-	 (idx-f1resize x n)
-	 (idx-f1fill x d)
-	 (idx-copy temp (narrow x 0 (idx-dim temp 0) 0)) )
-       x ) ) )
+	 (- (/ (* nmean osdev) nsdev) omean)
+	 (/ nsdev osdev) )  
+  t )
 
 ;; ---------
 
