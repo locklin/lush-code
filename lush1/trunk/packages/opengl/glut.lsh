@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: glut.lsh,v 1.10 2004-04-29 16:11:15 leonb Exp $
+;;; $Id: glut.lsh,v 1.11 2004-04-29 16:25:28 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -232,7 +232,7 @@
     ((-int-) ms)
     #{
       #ifdef FREEGLUT
-        if (__glutDisplay && glutGet(GLUT_INIT_STATE)) {
+        if (glutGet(GLUT_INIT_STATE)) {
           glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE,GLUT_ACTION_CONTINUE_EXECUTION);
           glutMainLoopEvent();
       # ifdef GLUT_TIME_TO_NEXT_TIMER
@@ -271,28 +271,50 @@
   (let ((flag ()))
     ((-bool-) flag)
     #{
-       if (! __glutDisplay) {
-         char *argv[2];
-         int argc = 1;
-         argv[0] = "lush";
-         argv[1] = 0;
-         glutInit(&argc, argv);
-         register_poll_functions( C_glutint_poll, 0, 0, 0,
-                                  ConnectionNumber(__glutDisplay) );
-         $flag = 1;
-       }
-       if (! glhandlers) {
-         glhandle = var_define("glhandle");
-         glhandlers = new_htable(7,FALSE);
-         protect(glhandlers);
-       }
+       #ifdef FREEGLUT
+         if (! glutGet(GLUT_INIT_STATE)) {
+       #else
+         if (! __glutDisplay) {
+       #endif
+           int cn;
+           char *argv[2];
+           int argc = 1;
+           argv[0] = "lush";
+           argv[1] = 0;
+           glutInit(&argc, argv);
+       #ifdef FREEGLUT
+       # ifdef GLUT_CONNECTION_NUMBER
+           cn = glutGet(GLUT_CONNECTION_NUMBER);
+       # else
+           cn = ConnectionNumber(fgDisplay.dpy);
+       #endif
+       #else
+           cn = ConnectionNumber(__glutDisplay);
+       #endif
+           register_poll_functions( C_glutint_poll, 0, 0, 0, cn );
+           $flag = 1;
+         }
+         if (! glhandlers) {
+           glhandle = var_define("glhandle");
+           glhandlers = new_htable(7,FALSE);
+           protect(glhandlers);
+         }
     #}
    flag ) )
 
 (de glutint-check()
-  (if (not (gptr #{ __glutDisplay #}))
+  (let ((flag ()))
+    ((-bool-) flag)
+    #{
+       #ifdef FREEGLUT
+         $flag = glutGet(GLUT_INIT_STATE);
+       #else
+         $flag = !! __glutDisplayl
+       #endif
+    #}
+    (when (not flag)
       (error "Glut is not initialized") )
-  () )
+  () ) )
 
 (de glutint-font(glutfont)
   ((-int-) glutfont)
@@ -964,20 +986,16 @@
           #}
           ;; Helpers
           #{
-             jmp_buf glut_event_jmp;
-             void glut_idle_jmp(void) { 
-                longjmp(glut_event_jmp, 1); }
              #ifdef FREEGLUT
                extern struct { Display *dpy; /*...*/ } fgDisplay;
-	     # define __glutDisplay fgDisplay.dpy
              #else
+               jmp_buf glut_event_jmp;
+               void glut_idle_jmp(void) { longjmp(glut_event_jmp, 1); }
                extern Atom __glutWMDeleteWindow;
                extern Display *__glutDisplay;
                extern int __glutWindowListSize;
                extern void *__glutWindowWorkList;
-               extern struct {
-                 void *next;
-                 struct timeval tv;} *__glutTimerList;
+               extern struct { void *next; struct timeval tv;} *__glutTimerList;
              #endif
              static at *glhandlers = 0;
              static at *glhandle = 0;
