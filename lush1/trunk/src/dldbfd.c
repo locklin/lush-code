@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.37 2004-10-12 22:15:28 leonb Exp $
+ * $Id: dldbfd.c,v 1.38 2004-10-15 14:54:36 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2448,7 +2448,11 @@ define_symbol_of_main_program(const char *exec)
             symbols = xballoc(abfd, storage_needed);
             symbol_count = bfd_canonicalize_dynamic_symtab(abfd, symbols);
           }
-        ASSERT_BFD(symbol_count>0);
+#if DLOPEN
+	if (! global_dlopen_handle)
+#endif
+	  if (symbol_count <= 0)
+	    THROW("Cannot read symbols of main program");
         /* Check that object is fully relocated */
         for (p=abfd->sections; p; p=p->next)
             ASSERT(!(p->flags & SEC_RELOC));
@@ -2481,15 +2485,15 @@ define_symbol_of_main_program(const char *exec)
 	    if (sym->name && sym->name[0] &&
 		!strcmp("__dso_handle",drop_leading_char(abfd,sym->name)) 
 		/* This is the __dso_handle thing for gcc >= 3 */ )
-	    {
+	      {
 	        if (!is_bfd_symbol_defined(sym)) 
-		    continue;
+		  continue;
                 hsym = insert_symbol("__dso_handle");
                 if (hsym->flags & DLDF_DEFD) 
-		    continue;
+		  continue;
 		hsym->flags = DLDF_DEFD;
 		hsym->definition = value_of_bfd_symbol(sym);
-	    }
+	      }
 #endif
         }
         /* Close everything */
@@ -2528,13 +2532,13 @@ dld_init (const char *exec)
     {
         bfd_init();
         bfd_set_error_program_name("*** DLD/BFD");
-        /* load symbol table of current program */
-        init_global_symbol_table();
-        define_symbol_of_main_program(exec);
 #if DLOPEN
         /* initialize global dlopen handle */
         global_dlopen_handle = dlopen(0, RTLD_LAZY);
 #endif
+        /* load symbol table of current program */
+        init_global_symbol_table();
+        define_symbol_of_main_program(exec);
     }
     CATCH(n)
     {
