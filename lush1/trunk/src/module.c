@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.45 2004-07-19 02:16:52 leonb Exp $
+ * $Id: module.c,v 1.46 2004-07-19 19:47:05 leonb Exp $
  **********************************************************************/
 
 
@@ -100,8 +100,11 @@ static nsbundle_t  nsbundle_head;
 static NSLinkEditErrorHandlers nsbundle_handlers;
 at *nsbundle_symtable;
 
+
 #define DYLD_NASTY_HACK 1
 #if DYLD_NASTY_HACK
+/* INCREDIBLY NASTY HACK TO TAME NSUnLinkModule... */
+/* Some pointers to patch dyld data structures on the fly. */
 enum mybool {myfalse, mytrue};
 void (*nsbundle_clear_undefined_list)(enum mybool);
 enum mybool *nsbundle_return_on_error;
@@ -115,34 +118,89 @@ nsbundle_init()
   nsbundle_symtable = new_htable(17,0);
   protect(nsbundle_symtable);
   UNLOCK(nsbundle_symtable);
+#if DYLD_NASTY_HACK
+  {
+    /* Use 'nm' to locate symbols inside dyld... */
+    FILE *f = popen("nm /usr/lib/dyld","r");
+    void *dyld_image_count = 0;
+    int slide;
+    _dyld_func_lookup("__dyld_image_count", (void*)&dyld_image_count);
+    if (f && dyld_image_count)
+      {
+	long addr;
+	char type;
+	char sname[64];
+	while (!feof(f))
+	  {
+	    fscanf(f,"%lx %c %60s", &addr, &type, sname);
+	    while (!feof(f))
+	      if (getc(f)=='\n')
+		break;
+	    if (!strcmp(sname,"__dyld_image_count"))
+	      slide = (char*)addr - (char*)dyld_image_count;
+	    else if (!strcmp(sname,"_clear_undefined_list"))
+	      nsbundle_clear_undefined_list = (void*)addr;
+	    else if (!strcmp(sname,"_return_on_error"))
+	      nsbundle_return_on_error = (void*)addr;
+	  }
+	nsbundle_clear_undefined_list 
+	  = (void*)(slide + (char*)nsbundle_clear_undefined_list);
+	nsbundle_return_on_error 
+	  = (void*)(slide + (char*)nsbundle_return_on_error);
+	fclose(f);
+      }
+  }
+#endif
   return 0;
 }
 
+static void
+nsbundle_hset(const char *sname, nsbundle_t *p)
+{
+  if (EXTERNP(nsbundle_symtable, &htable_class))
+    {
+      at *gsname = new_string((char*)sname);
+      at *gp = ((p) ? NEW_GPTR(p) : NIL);
+      htable_set(nsbundle_symtable, gsname, gp);
+      UNLOCK(gsname);
+      UNLOCK(gp);
+    }
+}
+
+static nsbundle_t *
+nsbundle_hget(const char *sname)
+{
+  void *addr = 0;
+  if (EXTERNP(nsbundle_symtable, &htable_class))
+    {
+      at *gsname = new_string((char*)sname);
+      at *gp = htable_get(nsbundle_symtable, gsname);
+      if (GPTRP(gp))
+	addr = gp->Gptr;
+      UNLOCK(gsname);
+      UNLOCK(gp);
+    }
+  return (nsbundle_t*)addr;
+}
+
 static int
-nsbundle_symmark(nsbundle_t *bundle, at *mark)
+nsbundle_symmark(nsbundle_t *bundle, nsbundle_t *mark)
 {
   NSObjectFileImage nsimg = bundle->nsimage;
   int ns = NSSymbolDefinitionCountInObjectFileImage(nsimg);
-  if (! EXTERNP(nsbundle_symtable, &htable_class))
-    return 0;
   while (--ns >= 0)
     {
       const char *sname = NSSymbolDefinitionNameInObjectFileImage(nsimg, ns);
-      at *atname = new_string((char*)sname);
-      at *atgp = htable_get(nsbundle_symtable, atname);
-      if (GPTRP(atgp) && GPTRP(mark) && atgp->Gptr!=mark->Gptr)
+      nsbundle_t *old = nsbundle_hget(sname);
+      if (old && mark && old!=&nsbundle_head && mark!=&nsbundle_head && old!=mark)
 	{
-	  static char buffer[512];
-	  sprintf(buffer,"duplicate definition of symbol '%s'", sname);
-	  nsbundle_error = buffer;
-	  UNLOCK(atname);
-	  UNLOCK(atgp);
-	  return -1;
+	    static char buffer[512];
+	    sprintf(buffer,"duplicate definition of symbol '%s'", sname);
+	    nsbundle_error = buffer;
+	    return -1;
 	}
-      if (!GPTRP(atgp) || atgp->Gptr==bundle)
-	htable_set(nsbundle_symtable, atname, mark);
-      UNLOCK(atname);
-      UNLOCK(atgp);
+      if (old==0 || old==&nsbundle_head || old==bundle)
+	nsbundle_hset(sname, mark);
     }
   return 0;
 }
@@ -158,14 +216,11 @@ nsbundle_exec(nsbundle_t *bundle)
       while (--ns >= 0)
 	{
 	  const char *sname = NSSymbolReferenceNameInObjectFileImage(nsimg, ns, NULL);
-	  at *atname = new_string((char*)sname);
-	  at *atgp = htable_get(nsbundle_symtable, atname);
-	  UNLOCK(atname);
-	  if (GPTRP(atgp))
-	    bundle->executable = nsbundle_exec((nsbundle_t*)(atgp->Gptr));
-	  else if (atgp || !NSIsSymbolNameDefined(sname))
+	  nsbundle_t *def = nsbundle_hget(sname);
+	  if (def && def!=&nsbundle_head)
+	    bundle->executable = nsbundle_exec(def);
+	  else if (def || !NSIsSymbolNameDefined(sname))
 	    bundle->executable = -1;
-	  UNLOCK(atgp);
 	  if (bundle->executable < 0)
 	    break;
 	}
@@ -178,14 +233,6 @@ nsbundle_undef_unload(const char *sname)
 {
   int okay = 0;
   nsbundle_t *bundle = 0;
-#if DYLD_NASTY_HACK
-  if (sname && nsbundle_clear_undefined_list && nsbundle_return_on_error)
-    {
-      (*nsbundle_clear_undefined_list)(myfalse);
-      *nsbundle_return_on_error = mytrue;
-      return;
-    }
-#endif
   for (bundle = nsbundle_head.next; 
        bundle != &nsbundle_head; 
        bundle=bundle->next)
@@ -200,8 +247,21 @@ nsbundle_undef_unload(const char *sname)
     }
   if (okay)
     return;
+#if DYLD_NASTY_HACK
+  /* Arriving here indicates that cctools have not been fixed.
+     Here is a nasty hack to convince dyld that we 
+     know what we are doing. */
+  if (sname && nsbundle_clear_undefined_list 
+      && nsbundle_return_on_error)
+    {
+      (*nsbundle_clear_undefined_list)(myfalse);
+      *nsbundle_return_on_error = mytrue;
+      return;
+    }
+#else
   nsbundle_handlers.undefined = 0;
   NSInstallLinkEditErrorHandlers(&nsbundle_handlers);
+#endif
 }
 
 static void
@@ -254,10 +314,8 @@ nsbundle_update(void)
 static int
 nsbundle_unload(nsbundle_t *bundle)
 {
-  at *gtrue = true();
   if (bundle->nsimage)
-    nsbundle_symmark(bundle, gtrue);
-  UNLOCK(gtrue);
+    nsbundle_symmark(bundle, &nsbundle_head);
   if (bundle->prev)
     bundle->prev->next = bundle->next;
   if (bundle->next)
@@ -269,9 +327,11 @@ nsbundle_unload(nsbundle_t *bundle)
   if (bundle->nsmodule)
     NSUnLinkModule(bundle->nsmodule, NSUNLINKMODULE_OPTION_NONE);
   if (bundle->nsimage)
-    nsbundle_symmark(bundle, NIL);
+    nsbundle_symmark(bundle, NULL);
   if (bundle->nsimage)
     NSDestroyObjectFileImage(bundle->nsimage);
+  if (bundle->name)
+    remove(bundle->name);
   if (bundle->name)
     free(bundle->name);
   memset(bundle, 0, sizeof(nsbundle_t));
@@ -291,10 +351,9 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
   bundle->prev->next = bundle;
   bundle->next->prev = bundle;
   nsbundle_error = "out of memory";
-  if ((cmd = malloc(fnamelen*2 + 128)) && 
-      (bundle->name = malloc(fnamelen + 8)) )
+  if ((cmd = malloc(fnamelen + 256)) && (bundle->name = malloc(256)))
     {
-      sprintf(bundle->name, "%s.bundle", fname);
+      strcpy(bundle->name, tmpname("/tmp","bundle"));
       sprintf(cmd, 
 	      "ld -bundle -flat_namespace -undefined suppress"
 	      " \"%s\" -lbundle1.o -lgcc -lSystem -o \"%s\"", 
@@ -303,14 +362,12 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
       if (system(cmd) == 0)
 	{
 	  NSObjectFileImageReturnCode ret;
-	  at *bgp = NEW_GPTR(bundle);
 	  nsbundle_error = "Cannot load bundle";
 	  ret = NSCreateObjectFileImageFromFile(bundle->name, &bundle->nsimage);
 	  if ((ret == NSObjectFileImageSuccess) &&
-	      (nsbundle_symmark(bundle, bgp) >= 0) &&
+	      (nsbundle_symmark(bundle, bundle) >= 0) &&
 	      (nsbundle_update() >= 0) )
 	    nsbundle_error = 0;
-	  UNLOCK(bgp);
 	}
     }
   if (cmd) 
@@ -345,12 +402,9 @@ nsbundle_lookup(const char *sname, int exist)
 	}
       else if (exist)
 	{
-	  at *atname = new_string((char*)usname);
-	  at *atgp = htable_get(nsbundle_symtable, atname);
-	  if (atgp)
+	  nsbundle_t *def = nsbundle_hget(usname);
+	  if (def && def!=&nsbundle_head)
 	    addr = (void*)(~0);
-	  UNLOCK(atname);
-	  UNLOCK(atgp);
 	}
       free(usname);
     }
@@ -1321,14 +1375,12 @@ DX(xmod_undefined)
 	  while (--ns >= 0)
 	    {
 	      const char *sname = NSSymbolReferenceNameInObjectFileImage(nsimg, ns, NULL);
-	      at *atname = new_string((char*)sname);
-	      at *atgp = htable_get(nsbundle_symtable, atname);
-	      UNLOCK(atname);
-	      if (!atgp && !NSIsSymbolNameDefined(sname)) {
-		*where = cons( new_string((char*)(sname+1)), NIL);
-		where = &((*where)->Cdr);
-	      }
-	      UNLOCK(atgp);
+	      nsbundle_t *bundle = nsbundle_hget(sname);
+	      if (bundle==&nsbundle_head || !(bundle || NSIsSymbolNameDefined(sname)))
+		{
+		  *where = cons( new_string((char*)(sname+1)), NIL);
+		  where = &((*where)->Cdr);
+		}
 	    }
 	}
 #endif

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.27 2004-07-16 22:26:58 leonb Exp $
+ * $Id: toplevel.c,v 1.28 2004-07-19 19:47:05 leonb Exp $
  **********************************************************************/
 
 
@@ -126,6 +126,7 @@ static void recur_doc_init(void);
 void
 abort(char *s)
 {
+  clean_tmp_files();
   FINI_MACHINE;
   FMODE_TEXT(stderr);
   fprintf(stderr,"\nLush Fatal Error: %s\n", s);
