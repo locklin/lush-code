@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.16 2002-11-06 16:30:50 leonb Exp $
+ * $Id: string.c,v 1.17 2003-02-09 02:53:29 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -909,10 +909,14 @@ static unsigned short *buf;
 #define RE_CARET    0x7000
 #define RE_DOLLAR   0x8000
 
-#define charset_zero(cset)     { int i; for(i=0;i<16;i++) (cset)[i]=0; }
-#define charset_toggle(cset)   { int i; for(i=0;i<16;i++) (cset)[i]^=0xffff; }
-#define charset_set(cset,i)    { (cset)[i/16] |= (1<<(i%16)); }
-#define charset_tst(cset,i)    ( (cset)[i/16] & (1<<(i%16)) )
+#define charset_zero(cset) \
+   { int i; for(i=0;i<16;i++) (cset)[i]=0; }
+#define charset_toggle(cset) \
+   { int i; for(i=0;i<16;i++) (cset)[i]^=0xffff; }
+#define charset_set(cset,i) \
+   { (cset)[((unsigned char)(i))/16] |= (1<<(((unsigned char)(i))%16)); }
+#define charset_tst(cset,i) \
+   ( (cset)[((unsigned char)(i))/16] & (1<<(((unsigned char)(i))%16)) )
 
 typedef struct bounds {
   unsigned short *beg, *end; } bounds;
