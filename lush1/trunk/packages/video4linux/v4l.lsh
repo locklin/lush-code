@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: v4l.lsh,v 1.3 2002-10-17 21:51:38 profshadoko Exp $
+;;; $Id: v4l.lsh,v 1.4 2002-10-28 19:55:45 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -399,6 +399,52 @@
      } #}
      frame))
 
+#? (==> <v4ldevice> grab-into-rgb32 <img>)
+;; grab an image from the v4l device into a
+;; preexisting image (a ubyte-matrix of size heightxwidthx3.
+;; Consecutive elements in the last dimension are
+;; interpreted as RGB values. This uses the recommended
+;; sequence of calls.
+(defmethod v4ldevice grab-into-rgb32 (img)
+  ((-idx3- (-ubyte-)) img)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 3))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j, lastframe;
+        unsigned char *imgptr, *bufptr;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_RGB32;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	     *(imgptr++) = bufptr[2];
+	     *(imgptr++) = bufptr[1];
+	     *(imgptr++) = bufptr[0];
+	     bufptr+=3;
+	  }
+	}
+
+     } #}
+     frame))
+
 ;; grab an image from the v4l device into a
 ;; preexisting image (a ubyte-matrix of size heightxwidthx3.
 ;; Consecutive elements in the last dimension are
@@ -608,6 +654,102 @@
      } #}
      frame))
 
+;; this is for webcams
+(defmethod v4ldevice grab-into-rgba-from-yuv420p (img alpha)
+  ((-idx3- (-ubyte-)) img)
+  ((-int-) alpha)
+  (cheader "#define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x))")
+
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 4))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j,lastframe;
+        unsigned char *imgptr, *bufptr;
+	register float y,u,v,p;
+	int y_pos, cb_pos, cr_pos;
+	int even;
+
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_YUV420P;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	even=1;
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+
+	       y_pos=i*$width+j;
+	       y =  1.1643835*((float)(bufptr[y_pos])-16.0);
+	       //if (even)
+	       //{
+	       cb_pos=$width*$height + (i/2)*$width/2 + j/2;
+	       cr_pos=$width*$height*5/4 +(i/2)*$width/2 + j/2;
+	       u =  1.1339285*((float)(bufptr[cb_pos])-128.0);
+	       v =  1.1339285*((float)(bufptr[cr_pos])-128.0);
+	      // }
+	       p = y + 1.402*v; 
+	       *(imgptr++) = RGBSATURATE(p);
+	   
+	       p = y - 0.344*u - 0.714*v;
+	       *(imgptr++) = RGBSATURATE(p);
+	    
+	       p = y + 1.772*u;
+	       *(imgptr++) = RGBSATURATE(p);
+	       even = 1 - even;
+	    
+	       *(imgptr++) = $alpha;
+	  }
+	}
+     } #}
+     frame))
+
+;; this is for webcams: grab B&W image
+(defmethod v4ldevice grab-into-y (img)
+  ((-idx2- (-ubyte-)) img)
+  (cheader "#define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x))")
+
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int lastframe;
+        unsigned char *imgptr, *bufptr;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_GREY;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+        memcpy(imgptr,bufptr,$width*$height);
+     } #}
+     frame))
+
 #? (==> <v4ldevice> grab-acc-rgb <img>)
 ;; grab an image from the v4l device and accumulate
 ;; the result into a preexisting image 
@@ -709,9 +851,12 @@
 	   cleanup v4ldevice -destructor
 	   adjust tune
 	   grab-into-rgb
+	   grab-into-rgb32
 	   record-into-rgb
 	   grab-into-rgba
 	   grab-into-yuv422
+	   grab-into-rgba-from-yuv420p
+	   grab-into-y
 	   grab-acc-rgb
 	   grab-acc-rgba
 	   ))

@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: libsdl.lsh,v 1.5 2002-10-14 07:30:51 profshadoko Exp $
+;;; $Id: libsdl.lsh,v 1.6 2002-10-28 19:55:45 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -657,6 +657,36 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defclass sdl-gl-screen sdl-screen)
+
+#? (new sdl-gl-screen <w> <h> <cap>)
+;; just like sdl-screen, except that OpenGL
+;; drawing is enabled. Always opens a 32 bit window.
+(defmethod sdl-gl-screen sdl-gl-screen (w h cap)
+  ((-int-) w h)
+  ((-str-) cap)
+  ;; see if we can open a 32 bit screen
+  (SDL_GL_SetAttribute @@SDL_GL_DOUBLEBUFFER 1)
+  (SDL_GL_SetAttribute @@SDL_GL_RED_SIZE 8)
+  (SDL_GL_SetAttribute @@SDL_GL_GREEN_SIZE 8)
+  (SDL_GL_SetAttribute @@SDL_GL_BLUE_SIZE 8)
+  (setq p (SDL_SetVideoMode w h 32 @@SDL_OPENGL))
+  (when (= (gptr ()) p) (error "could not open sdl-gl-screen"))
+  (SDL_WM_SetCaption cap cap)
+  (setq collision (int-matrix 1 1 1)) ;; dummy
+  (setq ticks 0)
+  (setq deltat (/ 1 60)))
+
+(defmethod sdl-gl-screen flip () 
+  (SDL_GL_SwapBuffers)
+  (let ((newticks (SDL_GetTicks)))
+    (when (<> 0 ticks) (setq deltat (/ (- newticks ticks) 1000)))
+    (setq ticks newticks))
+  ticks)
+
+(defmethod sdl-gl-screen delete () (SDL_FreeSurface p) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? ** sdlidx-screen
 ;; A subclass of sdl-screen that associates an SDL screen with 
 ;; an IDX of the same size. Whatever is contained in the IDX 
@@ -1110,6 +1140,7 @@
 	  (sdl-rect sdl-rect set delete)
           
           (sdl-screen sdl-screen flip clear delete)
+          (sdl-gl-screen sdl-gl-screen flip delete)
 	  (sdlidx-screen sdlidx-screen -delete flip)
 
           (sdl-sprite set-hotpoint get-hotpoint sdl-sprite 

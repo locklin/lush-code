@@ -12,6 +12,7 @@
 [[menubutton(History/Credits,[[HOME]]/credits.html)]]
 [[menubutton(Links/Contacts,[[HOME]]/links.html)]]
 [[menubutton(To Do List,[[HOME]]/todo.html)]]
-[[menuspace(10)]]
-[[menusep(50,<A href="http://sourceforge.net"> <IMG src="http://sourceforge.net/sflogo.php?group_id=32953" width="88" height="31" border="0" alt="SourceForge Logo"></A>)]]
+[[menuspace(4)]]
+[[menusep(45,<A href="http://sourceforge.net"><IMG src="http://sourceforge.net/sflogo.php?group_id=34223&amp;type=5" align=center width="138" height="41" border="0" alt="SourceForge Logo"></A>)]]
 </table>
+

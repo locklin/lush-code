@@ -24,8 +24,17 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: audiofile.lsh,v 1.1 2002-10-25 04:37:08 profshadoko Exp $
+;;; $Id: audiofile.lsh,v 1.2 2002-10-28 19:55:34 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** High-level audiofile function
+
+#? * (audiofile-read <f>)
+;; read a audio from file <f> and return
+;; the result in an IDX. The type of the idx
+;; (ubyte, short, int, float, double) depends 
+;; on the content of the audiofile.
+;; Reading a WAV file can also be done using SDL.
 
 #? *** Reading audio frames into IDXes.
 
@@ -1231,6 +1240,38 @@ defconstant 	"AF_QUERY_VALUES"             651)	;;/* array of those values */
 
 
 ;; ********************************************************
+
+(de audiofile-read (f)
+  (let ((fhandle (afOpenFile f "r" (gptr ()) ))
+	(sampfmt (int-matrix))
+	(sampwidth (int-matrix)))
+    (afGetRate fhandle @@AF_DEFAULT_TRACK)
+    (afGetTrackBytes fhandle @@AF_DEFAULT_TRACK)
+    (afGetByteOrder fhandle @@AF_DEFAULT_TRACK)
+    (afGetChannels fhandle @@AF_DEFAULT_TRACK)
+    (afGetSampleFormat  
+     fhandle @@AF_DEFAULT_TRACK (idx-ptr sampfmt) (idx-ptr sampwidth))
+    (afGetCompression fhandle  @@AF_DEFAULT_TRACK)
+    (afGetDataOffset  fhandle  @@AF_DEFAULT_TRACK)
+    (afGetFrameCount  fhandle  @@AF_DEFAULT_TRACK)
+    (let* ((count (afGetFrameCount fhandle @@AF_DEFAULT_TRACK))
+	   (data 
+	    (if (or (= (sampfmt) 402) (= (sampfmt) 401))
+		(cond
+		 ((= 8 (sampwidth)) (ubyte-matrix count))
+		 ((= 16 (sampwidth)) (short-matrix count))
+		 ((= 32 (sampwidth)) (int-matrix count))
+		 (t (error "can't deal with this audio sample format")))
+	      ;; float
+	      (cond
+	       ((= 32 (sampwidth)) (float-matrix count))
+	       ((= 64 (sampwidth)) (double-matrix count))
+	       (t (error "can't deal with this audio sample format"))))))
+      ;; read frame
+      (afReadFrames fhandle @@AF_DEFAULT_TRACK (idx-ptr data) count)
+      data)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (dhc-make ()
   afdummy
