@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.25 2004-01-18 05:35:31 leonb Exp $
+ * $Id: toplevel.c,v 1.26 2004-01-18 06:06:06 leonb Exp $
  **********************************************************************/
 
 
@@ -537,12 +537,17 @@ toplevel(char *in, char *out, char *prompts)
     s = ps1;
     while (*s && *s != d)
       s += 1;
-    if (*s) {
+    if (! *s) {
+      ps2 = "  ";
+      ps3 = ps1;
+    } else {
       *s++ = 0;
       ps2 = s;
       while (*s && *s != d)
         s += 1;
-      if (*s) {
+      if (! *s) {
+        ps3 = ps1;
+      } else {
         *s++ = 0;
         ps3 = s;
         while (*s && *s != d)
@@ -562,12 +567,12 @@ toplevel(char *in, char *out, char *prompts)
     while (skip_to_expr() == ')')
       read_char();
     /* Read */
-    prompt_string = ((ps1 && ps2) ? ps2 : ps1);
+    prompt_string = ps2;
     TOPLEVEL_MACHINE;
     q1 = read_list();
     if (q1) {
       /* Eval */
-      prompt_string = ((ps1 && ps3) ? ps3 : ps1);
+      prompt_string = ps3;
       error_doc.debug_tab = 0;
       TOPLEVEL_MACHINE;
       discard_flag = FALSE;
