@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.2 2004-12-10 00:33:09 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.3 2004-12-10 16:28:45 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -54,6 +54,19 @@
   (color color-fg) 
   (font-12) )
 
+
+#? (plot-range <lo> <hi> <step>)
+;; Returns the smallest list of consecutive multiples of <step>
+;; that contains the interval <lo>...<hi>.
+(de plot-range(lo hi step)
+  (mapfor (i (int (/ lo step)) (- (int (- (/ hi step)))))
+    (* i step) ) )
+
+#? (plot-nice-range <lo> <hi> [<len> [<logscale>])
+;; Returns a sequence of about <len> nice numbers that can be
+;; used as labels for representing the interval <lo>...<hi>. 
+;; Flag <logscale> suggests using a logarithmic progression
+;; instead of a linear one.
 (de plot-nice-range(lo hi &optional (len 10) (logscale ()))
   (when (<= hi lo)
     (setq hi (1+ lo)) )
@@ -65,8 +78,7 @@
 	  (while (> (* len s k) d)
 	    (setq step (* s k))
 	    (setq k (selectq k (1 0.5) (0.5 0.2)(0.2 0.1)(0.1 (setq s (/ s 10)) 1))) ) )
-	(mapfor (i (int (/ lo step)) (- (int (- (/ hi step)))))
-	  (* i step) ) )
+	(plot-range lo hi step) )
     ;; log scale (check)
     (when (<= hi 0)
       (setq lo 1 hi 10) )
@@ -100,10 +112,17 @@
   window attrwindow plotrect
   ;; curves
   curves
-  ;; user specifications
-  margintop marginbottom marginleft marginright
-  title xtitle ytitle xbounds ybounds xticks yticks xlog ylog
-  xlabels ylabels xgrid ygrid
+  ;; user specifications (nil means automatic)
+  margintop marginbottom 
+  marginleft marginright    ;; margins around the graph (points)
+  title 		    ;; title of the graph
+  xtitle ytitle 	    ;; legend for the axes
+  xbounds ybounds	    ;; list (min max) representing the bounds of each axis
+  xlog ylog                 ;; flag indicating logarithmic scale
+  xticks yticks             ;; interval between tick on each axis (or list values)
+  xlabels ylabels           ;; interval between labels on each axis (or list of values)
+  xgrid ygrid 		    ;; flag telling whether grid lines must be drawn
+  xlabel2str ylabel2str     ;; functions to convert labels values into displayable strings
   ;; computed values
   cmargintop cmarginbottom cmarginleft cmarginright crect
   cxmin cymin cxmax cymax rbx rby
@@ -165,7 +184,7 @@
      ((consp ylabels) 
       (setq cylabels ylabels))
      ((and cymin cymax (numberp ylabels))
-      (setq cylabels (range cymin cymax ylabels)))
+      (setq cylabels (plot-range cymin cymax ylabels)))
      ((and cymin cymax)
       (setq cylabels (plot-nice-range cymin cymax (/ ch (* 3 th)) ylog))) )
     (when (and cxlabels cxmin cxmax (not xbounds))
@@ -179,7 +198,7 @@
      ((consp xticks) 
       (setq cxticks xticks))
      ((and cxmin cxmax (numberp xticks))
-      (setq cxticks (range cxmin cxmax xticks)))
+      (setq cxticks (plot-range cxmin cxmax xticks)))
      ((and cxmin cxmax)
       (setq cxticks (plot-nice-range cxmin cxmax (/ cw 10) xlog)) ) )
     (cond
@@ -195,28 +214,39 @@
     (when (and cyticks cymin cymax (not ybounds))
       (setq cymin (min cymin (inf cyticks)))
       (setq cymax (max cymax (sup cyticks))) ) )
+  ;; safe bounds for log scale
+  (when xlog
+    (when (<= cxmin 0)
+      (setq cxmin (inf cxticks))
+      (when (<= cxmax cxmin)
+	(setq cxmax 10) ) ) )
+  (when ylog
+    (when (<= cymin 0)
+      (setq cymin (inf cyticks))
+      (when (<= cymax cymin)
+	(setq cymax 10) ) ) )
   ;; margins
-  (let ((w 0))
-    (each ((l cylabels))
-      (let ((s ()))
-	(cond
-	 ((numberp l) (setq s (str l)))
-	 ((consp l) (setq s (cadr l))) )
-	(when s
-	  (setq w (max w (==> this text-width s plot-context-labels))) ) ) )
-    (setq cmarginleft
-	  (max (or marginleft 0)
-	       (+ 20 w))) 
-    (setq cmarginright 
-	  (max (or marginright 0)
-	       20))
-    (setq cmarginbottom 
-	  (max (or marginbottom 0)
-	       (+ 20 (==> this text-height "0" plot-context-labels))))
-    (setq cmargintop 
-	  (max (or margintop 0)
-	       (if (not title) 20
-		 (+ 30 (==> this text-height title plot-context-title)) ) ) ) )
+  (setq cmarginleft (+ (or marginleft 0) 20))
+  (setq cmarginright (+ (or marginright 0) 20))
+  (setq cmarginbottom (+ (or marginbottom 0) 20))
+  (setq cmargintop (+ (or margintop 0) 20))
+  (when title				; room for title
+    (incr cmargintop 10)
+    (incr cmargintop (==> this text-height title plot-context-title)) )
+  (when cylabels			; room for left labels
+    (let ((w 0))	
+      (each ((l cylabels))
+	(let ((s ((or ylabel2str str) l)))
+	  (setq w (max w (==> this text-width s plot-context-labels))) ) )
+      (incr cmarginleft w) ) )
+  (when cxlabels			; room for bottom labels
+    (incr cmarginbottom (==> this text-height "0" plot-context-labels)) )
+  (when xtitle				; room for x axis legend
+    (incr cmarginbottom 
+	  (+ 10 (==> this text-height xtitle plot-context-labels))) )
+  (when ytitle				; room for y axis legend
+    (incr cmargintop
+	  (+ 10 (==> this text-height ytitle plot-context-labels))) )
   ;; rect
   (let (((x y w h) plotrect))
     (setq crect (list (+ x cmarginleft) (+ y cmargintop)
@@ -230,7 +260,7 @@
 	    (setq rbx `(+ ,cx 
 			  (* (- x ,cxmin) ,(/ cw (- cxmax cxmin))) ))
 	  (setq rbx `(+ ,cx 
-			(if (< x 0) 0 
+			(if (<= x 0) -20000
 			  (* (- (log x) ,(log cxmin))
 			     ,(/ cw (- (log cxmax) (log cxmin))) ) ))) ) ) )
   ;; rby
@@ -241,68 +271,100 @@
 	    (setq rby `(- ,(+ cy ch)
 			  (* (- y ,cymin) ,(/ ch (- cymax cymin))) ))
 	  (setq rby `(- ,(+ cy ch)
-			(if (< y 0) 0
+			(if (<= y 0) -20000
 			  (* (- (log y) ,(log cymin))
 			     ,(/ ch (- (log cymax) (log cymin))) ) ) )) ) ) )
   ;; clip rbx/rby
-  (setq rbx (eval `(lambda(x y) (max -16000 (min 16000 ,rbx)))))
-  (setq rby (eval `(lambda(x y) (max -16000 (min 16000 ,rby)))))
+  (setq rbx (eval `(lambda(x y) (max -20000 (min 20000 ,rbx)))))
+  (setq rby (eval `(lambda(x y) (max -20000 (min 20000 ,rby)))))
   t )
+
+
 
 (defmethod PlotPort execute()
   (==> this compute)
   (let (((px py pw ph) plotrect)
-	((cx cy cw ch) crect))
+	((cx cy cw ch) crect)
+	(ytop 0) (ybot 0) (xleft 0))
+    (setq ytop cy)
+    (setq ybot (+ cy ch))
+    (setq xleft cx)
     (gsave
      (when (addclip plotrect)
        (plot-context-axes)
+       (when (and cxmin cxmax cymin cymax)
+	 ;; draw labels
+	 (when cylabels			; y labels
+	   (plot-context-labels)
+	   (each ((l cylabels))
+	     (let ((s ((or ylabel2str str) l))
+		   (y (rby cxmin l)) )
+	       (let (((tx ty tw th) (==> this text-rect s)))
+		 (gprintf (- cx (+ 4 tw tx)) (- y (/ ty 3)) s)
+		 (setq xleft (min xleft (- cx (+ 4 tw))))
+		 (setq ytop (min ytop (+ y ty)))
+		 (when ygrid
+		   (gsave (plot-context-grid)
+			  (draw-line cx y (+ cx cw) y) ) ) ) ) ) )
+	 (when cxlabels			; x labels
+	   (plot-context-labels)
+	   (let ((nybot ybot))
+	     (each ((l cxlabels))
+	       (let ((s ((or xlabel2str str) l))
+		     (x (rbx l cymin)) )
+		 (let (((tx ty tw th) (==> this text-rect s)))
+		   (gprintf (- x (+ tx (2/ tw))) (+ ybot 6 (- ty)) s)
+		   (setq nybot (max nybot (+ ybot 6 th)))
+		   (when xgrid
+		     (gsave (plot-context-grid)
+			    (draw-line x cy x (+ cy ch)) ) ) ) ) )
+	     (setq ybot nybot) ) )
+	 ;; draw axis legend
+	 (when xtitle			; x axis legend
+	   (plot-context-labels)
+	   (let (((tx ty tw th) (==> this text-rect xtitle)))
+	     (gprintf (- (+ cx cw) (+ tw tx)) (+ ybot 6 (- ty)) xtitle)
+	     (incr ybot (+ 6 th)) ) )
+	 (when ytitle			; y axis legend
+	   (plot-context-labels)
+	   (let (((tx ty tw th) (==> this text-rect ytitle)))
+	     (gprintf (- (max xleft (- cx (2/ tw))) tx) (- ytop (+ 6 th ty)) ytitle)
+	     (setq ytop (- ytop (+ 6 th))) ) )
+	 ;; draw axis
+	 (graphics-batch
+	  (draw-line cx cy cx (+ cy ch))
+	  (draw-line cx (+ cy ch) (+ cx cw) (+ cy ch)) )
+	 ;; draw ticks
+	 (graphics-batch
+	  (each ((xtick cxticks))
+	    (let ((x (rbx xtick cymin))
+		  (y (+ cy ch)))
+	      (draw-line x (- y 1) x (+ y 1)) ) )
+	  (each ((xtick cxlabels))
+	    (let ((x (rbx xtick cymin))
+		  (y (+ cy ch)))
+	      (draw-line x (- y 2) x (+ y 2)) ) ) )
+	 (graphics-batch
+	  (each ((ytick cyticks))
+	    (let ((x cx)
+		  (y (rby cxmin ytick)))
+	      (draw-line (- x 1) y (+ x 1) y) ) )
+	  (each ((ytick cylabels))
+	    (let ((x cx)
+		  (y (rby cxmin ytick)))
+	      (draw-line (- x 2) y (+ x 2) y) ) ) )
+	 ;; draw all curves
+	 (each ((curve curves))
+	   (graphics-batch 
+	    (==> curve execute rbx rby this) ) ) )
        ;; draw title
        (when title
 	 (gsave
 	  (plot-context-title)
 	  (let (((tx ty tw th) (==> this text-rect title)))
-	    (gprintf (+ (- px tx) (2/ (- pw tw))) (+ py 18 (- ty)) title) ) ) )
-       (when (and cxmin cxmax cymin cymax)
-	 ;; draw labels
-	 (plot-context-labels)
-	 (each ((l cylabels))
-	   (let ((s ()) (y ()))
-	     (cond 
-	      ((numberp l) (setq y (rby cxmin l) s (str l)))
-	      ((consp l) (setq y (rby cxmin (car l)) s (cadr l))) )
-	     (when (and s y)
-	       (let (((tx ty tw th) (==> this text-rect s)))
-		 (gprintf (- cx (+ 4 tw tx)) (- y (/ ty 3)) s)
-		 (when ygrid
-		   (gsave (plot-context-grid)
-			  (draw-line cx y (+ cx cw) y) ) ) ) ) ) )
-	 (plot-context-labels)
-	 (each ((l cxlabels))
-	   (let ((s ()) (x ()))
-	     (cond 
-	      ((numberp l) (setq x (rbx l cymin) s (str l)))
-	      ((consp l) (setq x (rbx (car l) cymin) s (cadr l))) )
-	     (when (and s y)
-	       (let (((tx ty tw th) (==> this text-rect s)))
-		 (gprintf (- x (+ tx (2/ tw))) (+ cy ch 6 (- ty)) s)
-		 (when xgrid
-		   (gsave (plot-context-grid)
-			  (draw-line x cy x (+ cy ch)) ) ) ) ) ) )
-	 ;; draw axis
-	 (draw-line cx cy cx (+ cy ch))
-	 (draw-line cx (+ cy ch) (+ cx cw) (+ cy ch))
-	 ;; draw ticks
-	 (each ((xtick cxticks))
-	   (let ((x (rbx xtick cymin))
-		 (y (+ cy ch)))
-	     (draw-line x (- y 2) x (+ y 2)) ) )
-	 (each ((ytick cyticks))
-	   (let ((x cx)
-		 (y (rby cxmin ytick)))
-	     (draw-line (- x 2) y (+ x 2) y) ) )
-	 ;; draw all curves
-	 (each ((curve curves))
-	   (==> curve execute rbx rby this) ) ) ) ) ) )
+	    (gprintf (+ (- xleft tx) (2/ (- (+ cx cw (- xleft)) tw))) 
+		     (- ytop (+ 10 th ty)) title) ) ) ) ) ) ) )
+       
 
 
 
@@ -701,7 +763,8 @@
 	   (window :pw:window) )
       (when name (setq :pw:plot:title name))
       (==> pw add pc)
-      (plot-lists lx ly) ) )
+      (plot-lists lx ly)
+      pw ) )
   (de graph-xyv(lx ly lv &optional name)
     (let* ((pw (new PlotWindow))
 	   (pc (new PlotCompat))
@@ -709,6 +772,7 @@
 	   (window :pw:window) )
       (when name (setq :pw:plot:title name))
       (==> pw add pc)
-      (plot-lists-sd lx ly lv) ) )
+      (plot-lists-sd lx ly lv)
+      pw ) )
   
   () )
