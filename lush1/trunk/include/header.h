@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.25 2002-06-27 21:10:38 leonb Exp $
+ * $Id: header.h,v 1.26 2002-06-29 20:05:28 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -335,7 +335,7 @@ TLAPI struct alloc_root at_alloc;
 /* Garbage collection functions */
 TLAPI void protect(at *q);
 TLAPI void unprotect(at *q);
-LUSHAPI void add_finalizer(at *q, void(*)(at*), void *);
+LUSHAPI void add_finalizer(at *q, void(*)(at*,void*), void*);
 LUSHAPI void run_finalizers(at *q);
 TLAPI void garbage(int flag);
 

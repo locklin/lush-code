@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.4 2002-06-27 21:31:46 leonb Exp $
+ * $Id: allocate.c,v 1.5 2002-06-29 20:05:32 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -94,29 +94,56 @@ deallocate(struct alloc_root *ar, struct empty_alloc *elem)
 }
 
 
-
-
-
 /*
- * Register and execute finalizers [TODO]
+ * Finalizers
  */
 
-TLAPI void 
-add_finalizer(at *q, void (*func)(at*), void *args)
+typedef struct s_finalizer {
+  struct s_finalizer *next;
+  at *target;
+  void (*func)(at*,void*);
+  void *arg;
+} finalizer;
+
+static struct alloc_root finalizer_alloc = {
+  NIL, NIL, sizeof(at), 100
+};
+
+static finalizer *finalizers[HASHTABLESIZE];
+
+LUSHAPI void 
+add_finalizer(at *q, void (*func)(at*,void*), void *arg)
 {
+  unsigned int h;
+  finalizer *f = allocate(&finalizer_alloc);
+  h = hash_pointer(q) % HASHTABLESIZE;
+  f->next = finalizers[h];
+  f->target = q;
+  f->func = func;
+  f->arg = arg;
+  finalizers[h] = f;
+  q->flags |= C_FINALIZER;
 }
 
-TLAPI void 
+LUSHAPI void 
 run_finalizers(at *q)
 {
-  if (q) 
+  unsigned int h = hash_pointer(q) % HASHTABLESIZE;
+  finalizer **fp = & finalizers[h];
+  q->flags &= ~ C_FINALIZER;
+  while (*fp)
     {
-      q->flags &= ~ C_FINALIZER;
+      finalizer *f = *fp;
+      if (f->target == q)
+        {
+          *fp = f->next;
+          (*f->func)(q, f->arg);
+          deallocate(&finalizer_alloc, (struct empty_alloc*)f);
+          continue;
+        }
+      fp = &f->next;
     }
 }
-
-
-
 
 /*
  * Protected objects are stored in the protected list...
@@ -380,7 +407,9 @@ garbage(int flag)
 
 
 
-/* Malloc replacement */
+/*
+ * Malloc replacement 
+ */
 
 #undef malloc
 #undef calloc
