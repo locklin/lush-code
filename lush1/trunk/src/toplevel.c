@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.19 2003-01-10 22:32:51 leonb Exp $
+ * $Id: toplevel.c,v 1.20 2003-01-10 23:29:19 leonb Exp $
  **********************************************************************/
 
 
@@ -253,20 +253,17 @@ start_lisp(int argc, char **argv, int quietflag)
       /* Check @-argument */
       if (argc>1 && argv[1][0]=='@')
 	{
-	  argc--;
-	  argv++;
-          if (!argv[0][1] && argc>1)
-            {
-              /* Case 'lush @ xxxenv' */
-              argc--;
-              argv++;
-              s = argv[0];
-            }
-          else if (strcmp(&argv[0][1],"@"))
-            {
-              /* Case 'lush @xxxenv' but not 'lush @@' */
-              s = &argv[0][1];
-            }
+	  argc--; argv++;
+          if (!argv[0][1] && argc>1) {
+            /* Case 'lush @ xxxenv' */
+            argc--; argv++; s = argv[0];
+          } else if (strcmp(&argv[0][1],"@"))
+            /* Case 'lush @xxxenv' but not 'lush @@' */
+            s = &argv[0][1];
+          /* Current dir has priority */
+          r = concat_fname(NULL,s);
+          if (search_file(r,"|.dump|.lshc|.lsh"))
+            s = r;
         }
       /* Search a dump file */
       if ((r = search_file(s,"|.dump")) && isdump(r))
@@ -281,7 +278,7 @@ start_lisp(int argc, char **argv, int quietflag)
 	  undump(r);
 	}
       /* Search a lush file */
-      else if ((r = search_file(s,"|.lshc|.lsh|.lshc|.lsh")))
+      else if ((r = search_file(s,"|.lshc|.lsh")))
 	{
 	  error_doc.ready_to_an_error = TRUE;
           if (! quiet) 
