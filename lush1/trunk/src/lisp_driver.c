@@ -211,7 +211,7 @@ lisp_draw_text(wptr info, int x, int y, char *s)
   at *q = cons(NEW_NUMBER(x),
 	       cons(NEW_NUMBER(y),
 		    cons(new_string(s),NIL)));
-  at *p = send_message(NIL, info->driverdata,at_draw_text,q);
+  at *p = lisp_send(info,at_draw_text,q);
   UNLOCK(q);
   UNLOCK(p);
 }
