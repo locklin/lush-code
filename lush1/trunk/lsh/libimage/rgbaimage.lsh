@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: rgbaimage.lsh,v 1.1 2002-08-19 07:01:28 profshadoko Exp $
+;;; $Id: rgbaimage.lsh,v 1.2 2002-08-19 15:02:24 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? *** RGBA Images of ubytes
@@ -65,8 +65,15 @@
 (de rgbaim-enlarge (in nlin ncol)
     ((-idx3- (-ubyte-)) in)
     ((-int-) nlin ncol)
-    (if (and (= nlin 1) (= ncol 1))
-        (copy-matrix in)
+    (cheader "\
+#define BLK_COPY(nlin, ncol) {\\\n\
+  int k,l;\\\n\
+  int acc0=pin[0], acc1=pin[1], acc2=pin[2], acc3=pin[3];\\\n\
+  for (k=0; k<nlin; k++) {\\\n\
+    unsigned char *poutptr = pout+k*out_mod0;\\\n\
+    for (l=0; l<ncol; l++) {\\\n\
+    poutptr[0]=acc0 ; poutptr[1]=acc1 ; poutptr[2]=acc2 ; poutptr[3]=acc3 ;\\\n\
+    poutptr += out_mod1;  }}}\n")
     (let* ((h (idx-dim in 0))
            (w (idx-dim in 1))
            (nh (int (* h nlin)))
@@ -156,6 +163,16 @@
 (de rgbaim-subsample (in nlin ncol)
     ((-idx3- (-ubyte-)) in)
     ((-int-) nlin ncol)
+    (cheader "\
+#define BLK_AVRG(nlin, ncol) {\\\n\
+  int k,l; int norm = ncol * nlin;\\\n\
+  int acc0=0, acc1=0, acc2=0, acc3=0;\\\n\
+  for (k=0; k<nlin; k++) {\\\n\
+  register unsigned char *pinptr = pin+k*in_mod0;\\\n\
+  for (l=0; l<ncol; l++) {\\\n\
+  acc0 += pinptr[0];acc1 += pinptr[1];acc2 += pinptr[2];acc3 += pinptr[3];\\\n\
+  pinptr += in_mod1; }}\\\n\
+  pout[0] = acc0 / norm;pout[1] = acc1 / norm;pout[2] = acc2 / norm; pout[3]= acc3 / norm;}\n")
     
     (let* ((h (idx-dim in 0))
            (w (idx-dim in 1))
@@ -252,7 +269,6 @@
            (inp (narrow (narrow in 0 (* nlin nh) 0) 1 (* ncol nw) 0))
            (out (ubyte-matrix-nc (1+ nh) (1+ nw) 4)))
       ((-int-) h w nh nw)
-      (c-include "rgbaimage.h")
       #{{
       unsigned char *in_line, *pin;
       unsigned char *out_line, *pout;
