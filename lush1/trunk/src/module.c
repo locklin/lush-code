@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.23 2002-11-06 16:30:50 leonb Exp $
+ * $Id: module.c,v 1.24 2002-11-11 03:35:44 profshadoko Exp $
  **********************************************************************/
 
 
@@ -903,7 +903,7 @@ DX(xmod_compatibility_flag)
   dld_compatibility_flag = ( APOINTER(1) ? 1 : 0 );
   return (dld_compatibility_flag ? true() : NIL);
 #else
-  return NIL
+  return NIL;
 #endif
 }
 
