@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.23 2003-02-28 18:55:22 leonb Exp $
+ * $Id: dldbfd.c,v 1.24 2003-03-04 17:21:33 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2421,21 +2421,6 @@ define_symbol_of_main_program(const char *exec)
         THROW(n);
     }
     END_CATCH;
-}
-
-
-
-/* dld_check_file -- check presence of a file */
-
-static int
-dld_check_file(const char *name)
-{
-  struct stat st;
-  if (access(name, X_OK) == 0)
-    if (stat(name, &st) == 0)
-      if (S_ISREG(st.st_mode))
-        return 1;
-  return 0;
 }
 
 
