@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.16 2002-10-10 15:47:37 leonb Exp $
+ * $Id: dh.h,v 1.17 2003-01-11 07:18:58 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -314,7 +314,7 @@ struct dhclassdoc_s
   extern_c dhclassdoc_t Kname; \
   dhclassdoc_t Kname = { name2(K,Kname), \
    { superKname, LnameStr, enclose_in_string(Cname), \
-     enclose_in_string(VnameStr), enclose_in_string(Kname), \
+     enclose_in_string(Vname), enclose_in_string(Kname), \
      sizeof(struct name2(CClass_,Cname)), nmet, &Vname } }; \
   staticdef_c dhrecord name2(K,Kname)[]
 

@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.42 2002-11-06 23:37:43 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.43 2003-01-11 07:19:04 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -787,10 +787,14 @@
       (cond
        ((not (functionp hashcode))
         (setq hash "0") )
-       ((member tclass '(dht-ptr dht-obj dht-idx dht-srg))
+       ((member tclass '(dht-ptr dht-idx dht-srg))
         (setq hash 
               (hashcode (list tclass 
                               (==> (unode-val u-type) hashcode) )) ) )
+       ((= tclass 'dht-obj)
+        (setq hash
+              (hashcode (list tclass 
+                              (dhu-name (unode-val u-type))) ) ) )
        ((= tclass 'dht-list)
         (setq hash
               (hashcode
@@ -804,17 +808,20 @@
                      (all ((u (unode-val u-temps))) (==> u hashcode))
                      (==> (unode-val u-type) hashcode) ) )) )
        ((= tclass 'dht-class)
-        (setq hash
-              (hashcode
-               (list 'dht-class
-                     (unode-val u-name)
-                     (==> (unode-val u-type) hashcode) 
-                     (all (((nam . typ) (unode-val u-temps))) 
-                       (list nam (==> typ hashcode)) )
-                     (all (((nam . typ) (unode-val u-extra))) 
-                       (list nam (==> typ hashcode)) ) ) ) ) )
+        (let ((n (list 'dht-class
+                       (unode-val u-name)
+                       (==> (unode-val u-type) hashcode) 
+                       (all (((nam . typ) (unode-val u-temps))) 
+                         (list nam (==> typ hashcode)) )
+                       (all (((nam . typ) (unode-val u-extra))) 
+                         (list nam (==> typ hashcode)) ) )))
+          (setq hash (hashcode n)) ) )
+       ((= tclass 'dht-number)
+        (setq hash (hashcode 'dht-real)) )
+       ((= tclass 'dht-nil)
+        (setq hash (hashcode 'dht-bool)) )
        (t
-        (setq hash (hashcode tclass)) ) )
+        (setq hash (hashcode tclass))) )
       ;; setup hash
       (unode-unify u-hash (new-unode hash) (lambda(a b) b)) )
     hash ) )
@@ -863,7 +870,7 @@
       (dht-obj
        (let* ((cltype (unode-val u-type))
               (cl (unode-val :cltype:u-class)) )
-         (add (if cl (classname cl) (unode-val :cltype:u-name))) 
+         (add (if cl (classname cl) (unode-val :cltype:u-name)))
          (add cltype) ) )
       ;; quasi-simple
       ((dht-str dht-dhm)
@@ -1382,7 +1389,6 @@
      (when (and (<> class1 'dht-dc)
 	        (<> class2 'dht-dc))
        (unode-unify :t1:u-bump :t2:u-bump dhc-combine-u-bump)
-       (unode-unify :t1:u-hash :t2:u-hash (lambda(a b) ()))
        ;; The following ensures that a type coming from a scope above but only 
        ;; typed at a scope below still has the correct bumping information 
        ;; (ex: an argument which only sees (-idx- arg) inside a let).
