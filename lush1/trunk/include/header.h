@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.7 2002-04-29 19:25:03 leonb Exp $
+ * $Id: header.h,v 1.8 2002-04-29 21:57:29 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -186,7 +186,7 @@ extern TLAPI at *(*eval_ptr) (at*);
 extern TLAPI at *(*argeval_ptr) (at*);
 
 #define NEW_NUMBER(x)   new_number((real)(x))
-#define NEW_GPTR(x)   new_gptr((gptr)(x))
+#define NEW_GPTR(x)     new_gptr((gptr)(x))
 #define eval(q)         (*eval_ptr)(q)
 
 /*
@@ -278,6 +278,7 @@ TLAPI at *generic_listeval(at *p, at *q);
 
 TLAPI at *eval_std(at *p);
 TLAPI at *eval_debug(at *q);
+TLAPI at *eval_nothing(at *q);
 TLAPI at *apply(at *q, at *p);
 TLAPI at *progn(at *p);
 TLAPI at *prog1(at *p);
