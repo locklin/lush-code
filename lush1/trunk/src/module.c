@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.16 2002-06-24 18:51:12 leonb Exp $
+ * $Id: module.c,v 1.17 2002-06-27 21:10:40 leonb Exp $
  **********************************************************************/
 
 
@@ -561,7 +561,6 @@ cleanup_module(struct module *m)
   struct module *mc;
   
   extern void delete_at_special(at *, int);
-  extern struct alloc_root at_alloc;
   
   /* 1 --- No cleanup when not ready for errors */
   if (! error_doc.ready_to_an_error)
@@ -598,13 +597,14 @@ cleanup_module(struct module *m)
       at *q = p->Car;
       if (EXTERNP(q, &class_class))
         {
-          struct at *x;
-          struct chunk_header *i;
           class *cl = q->Object;
           fprintf(stderr,"*** WARNING: destroying all instances of %s\n", pname(q));
-          iter_on(&at_alloc, i, x) 
-            if (EXTERNP(x, cl))
-              delete_at(x);
+          begin_iter_at(x) 
+            {
+              if (EXTERNP(x, cl))
+                delete_at(x);
+            }
+          end_iter_at(x);
         }
       p = p->Cdr;
     }

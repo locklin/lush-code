@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: at.c,v 1.3 2002-06-27 20:49:57 leonb Exp $
+ * $Id: at.c,v 1.4 2002-06-27 21:10:40 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -997,7 +997,6 @@ DX(xunode_unify)
 int 
 used(void)
 {
-  register struct chunk_header *ch;
   register struct at *q;
   register int inuse;
 
@@ -1005,8 +1004,11 @@ used(void)
   q = named("result");
   var_set(q, NIL);
   UNLOCK(q);
-  iter_on(&at_alloc, ch, q)
-    inuse++;
+  begin_iter_at(p) 
+    { 
+      inuse++; 
+    } 
+  end_iter_at(p);
   return inuse;
 }
 

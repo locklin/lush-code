@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.24 2002-06-27 20:49:55 leonb Exp $
+ * $Id: header.h,v 1.25 2002-06-27 21:10:38 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -319,14 +319,18 @@ struct alloc_root {
 TLAPI gptr allocate(struct alloc_root *ar);
 TLAPI void deallocate(struct alloc_root *ar, struct empty_alloc *elem);
 
-/* Loop on all used elements handled by an alloc_root structure.
- * { struct chunk_header *current_chunk; struct xxxx *looping_var; 
- *   iter_on( &xxxx_alloc, current_chunk, looping_var ) { ... } }
+/* Loop on all lisp objects
+ * Usage: begin_iter_at(varname) { ... } end_iter_at(varname)
  */
-#define iter_on(base,i,elem) \
- for(i=(base)->chunklist; i; i = i->next ) \
- for(elem=i->begin;(gptr)elem<i->end;elem=(gptr)((char*)elem+(base)->elemsize)) \
- if ( ((struct empty_alloc *) elem) -> used )
+TLAPI struct alloc_root at_alloc;
+#define begin_iter_at(vname) \
+  { struct chunk_header *ch_nk; at *vname; \
+    for (ch_nk=at_alloc.chunklist; ch_nk; ch_nk=ch_nk->next ) \
+     for (vname=(at*)(ch_nk->begin); vname<(at*)(ch_nk->end); \
+          vname=(at*)((char*)(vname)+(at_alloc.elemsize)) ) \
+      if ( (vname)->count )
+#define end_iter_at(vname) \
+  }
 
 /* Garbage collection functions */
 TLAPI void protect(at *q);

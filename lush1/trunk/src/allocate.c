@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.2 2002-06-27 20:49:57 leonb Exp $
+ * $Id: allocate.c,v 1.3 2002-06-27 21:10:40 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -38,9 +38,6 @@
 
 /* From SYMBOL.C */
 void kill_name (struct hash_name *hn);
-
-/* From AT.C */
-extern struct alloc_root at_alloc;
 
 /* From OOSTRUCT.C */
 extern void oostruct_dispose(at *p);
@@ -239,134 +236,145 @@ symbol_popall(at *p)
 void 
 garbage(int flag)
 {
-  struct chunk_header *i;
-  struct at *p;
   struct hash_name **j, *hn;
 
-  if (flag) {
-
-    /*
-     * Flags every used cons as garbage
-     * Sets high counts to avoid possible problems
-     */
-    
-    iter_on(&at_alloc, i, p) {
-      p->count += 0x40000000;
-      p->flags |= C_GARBAGE;          
-    }
-
-    /*
-     * Pops all symbols 
-     */
-    
-    iter_hash_name(j, hn)
-      if (hn->named)
-	symbol_popall(hn->named);
-    
-    /*
-     * Unflag all named objects and protected symbols
-     * and their contents
-     */
-    
-    iter_hash_name(j, hn)
-      if (hn->named)
-	unflag(hn->named);
-    unflag(protected);
-    
-  /*
-   *  We want to call the destructors of
-   *  all garbage objects (C_GARBAGE=1).
-   *  We thus zombify them all.
-   */
-
-    iter_on(&at_alloc, i, p)
-      if ((p->flags & C_GARBAGE) && (p->flags & C_EXTERN)) {
-	if (p->flags & X_OOSTRUCT)
-	  oostruct_dispose(p); /* class may be gone already */
-	else
-	  (*p->Class->self_dispose)(p);
-	p->Class = &zombie_class;
-	p->Object = NIL;
-	p->flags  = C_EXTERN | C_GARBAGE | X_ZOMBIE;
-      }
-  
-  /*
-   * Now, we may rebuild the count fields:
-   * 1st: reset all count fields and flags
-   * 2nd: mark named symbols and protected objects
-   */
-  
-    iter_on(&at_alloc, i, p) {
-      p->count = 0;
-      p->flags &= ~(C_GARBAGE|C_MARK|C_MULTIPLE);
-    }
-    
-    iter_hash_name(j, hn)
-      if (hn->named)
-	mark(hn->named);
-    mark(protected);
-    
-    /*
-     * Now, we may rebuild the free list:
-     */
-    
-    at_alloc.freelist = NIL;
-    for (i = at_alloc.chunklist; i; i = i->next)
-      for (p = i->begin; (gptr) p < i->end; p++)
-	if (p->count==0) 
-          {
-            if (p->flags & C_FINALIZER)
-              run_finalizers(p);
-            deallocate(&at_alloc, (struct empty_alloc *) p);
-          }
-    
-    /*
-     * In addition, we remove non referenced
-     * unbound symbols whose NOPURGE flag is cleared.
-     */
-    
-    iter_hash_name(j, hn) {
-      at *q;
-      struct symbol *symb;
-      q = hn->named;
-      if ( !q ) 
+  if (flag) 
+    {
+      
+      /*
+       * Flags every used cons as garbage
+       * Sets high counts to avoid possible problems
+       */
+      begin_iter_at(p) 
         {
-          kill_name(hn);
+          p->count += 0x40000000;
+          p->flags |= C_GARBAGE;          
         } 
-      else if (q->count==1) 
+      end_iter_at(p);
+      
+      /*
+       * Pops all symbols 
+       */
+      iter_hash_name(j, hn)
+        if (hn->named)
+          symbol_popall(hn->named);
+      
+      /*
+       * Unflag all named objects and protected symbols
+       * and their contents
+       */
+      iter_hash_name(j, hn)
+        if (hn->named)
+          unflag(hn->named);
+      unflag(protected);
+      
+      /*
+       *  We want to call the destructors of
+       *  all garbage objects (C_GARBAGE=1).
+       *  We thus zombify them all.
+       */
+      begin_iter_at(p) 
         {
-          symb = (struct symbol*)(q->Object);
-          if (!symb->nopurge)
-            if ( symb->valueptr==0 ||
-                 *(symb->valueptr)==0 ||
-                 ((*(symb->valueptr))->flags & X_ZOMBIE) )
-              kill_name(hn);
+          if ((p->flags & C_GARBAGE) && (p->flags & C_EXTERN)) 
+            {
+              if (p->flags & X_OOSTRUCT)
+                oostruct_dispose(p); /* class may be gone already */
+              else
+                (*p->Class->self_dispose)(p);
+              p->Class = &zombie_class;
+              p->Object = NIL;
+              p->flags  = C_EXTERN | C_GARBAGE | X_ZOMBIE;
+            }
         }
-    }
-    
-  } else {
-
-    /* flag = 0: destroy all 
-     *  - dont call the oostruct destructors..
-     *  - dont call the finalizers..
-     *  - dont destroy classes
-     */
-
-    iter_on(&at_alloc, i, p)
-      p->count += 0x40000000;
-    
-    iter_on(&at_alloc, i, p)
-      if (    (p->flags & C_EXTERN)
-	  && !(p->flags & X_OOSTRUCT) 
-	  &&  (p->Class != &class_class) ) {
-	
-	(*p->Class->self_dispose)(p);
-	p->Class = &zombie_class;
-	p->Object = NIL;
-	p->flags  = C_EXTERN | C_GARBAGE | X_ZOMBIE;
+      end_iter_at(p);
+      
+      /*
+       * Now, we may rebuild the count fields:
+       * 1st: reset all count fields and flags
+       * 2nd: mark named symbols and protected objects
+       */
+      begin_iter_at(p) 
+        {
+          p->count = 0;
+          p->flags &= ~(C_GARBAGE|C_MARK|C_MULTIPLE);
+        }
+      end_iter_at(p);
+      iter_hash_name(j, hn)
+        if (hn->named)
+          mark(hn->named);
+      mark(protected);
+      
+      /*
+       * Now, we may rebuild the free list:
+       */
+      at_alloc.freelist = NIL;
+      {
+        at *p;
+        struct chunk_header *i; 
+        for (i = at_alloc.chunklist; i; i = i->next)
+          for (p = i->begin; (gptr) p < i->end; p++)
+            if (p->count==0) 
+              {
+                if (p->flags & C_FINALIZER)
+                  run_finalizers(p);
+                deallocate(&at_alloc, (struct empty_alloc *) p);
+              }
       }
-  }
+      
+      /*
+       * In addition, we remove non referenced
+       * unbound symbols whose NOPURGE flag is cleared.
+       */
+      iter_hash_name(j, hn) 
+        {
+          at *q;
+          struct symbol *symb;
+          q = hn->named;
+          if ( !q ) 
+            {
+              kill_name(hn);
+            } 
+          else if (q->count==1) 
+            {
+              symb = (struct symbol*)(q->Object);
+              if (!symb->nopurge)
+                if ( symb->valueptr==0 ||
+                     *(symb->valueptr)==0 ||
+                     ((*(symb->valueptr))->flags & X_ZOMBIE) )
+                  kill_name(hn);
+            }
+        }
+      
+    } 
+  else 
+    {
+      /* flag = 0: destroy all 
+       *  - dont call the oostruct destructors..
+       *  - dont call the finalizers..
+       *  - dont destroy classes
+       */
+      begin_iter_at(p) 
+        {
+          p->count += 0x40000000;
+        }
+      end_iter_at(p);
+      begin_iter_at(p) 
+        {
+          if ((p->flags & C_EXTERN)
+              && !(p->flags & X_OOSTRUCT) 
+              &&  (p->Class != &class_class) ) 
+            {
+              (*p->Class->self_dispose)(p);
+              p->Class = &zombie_class;
+              p->Object = NIL;
+              p->flags  = C_EXTERN | C_GARBAGE | X_ZOMBIE;
+            }
+        }
+      end_iter_at(p);
+    }
 }
+
+
 
 
 /* Malloc replacement */
