@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: define.h,v 1.4 2002-07-06 02:07:47 leonb Exp $
+ * $Id: define.h,v 1.5 2002-07-20 02:22:32 leonb Exp $
  **********************************************************************/
 
 #ifndef DEFINE_H
@@ -117,6 +117,10 @@ typedef void* gptr;
 # endif
 # define popen             unix_popen
 # define pclose            unix_pclose
+# ifdef __CYGWIN32__
+#  define FMODE_TEXT(f)    cygwin_fmode_text(f);
+#  define FMODE_BINARY(f)  cygwin_fmode_binary(f);
+# endif
 #endif
 
 #ifndef TLAPI

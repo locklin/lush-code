@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.31 2002-07-19 03:29:17 leonb Exp $
+ * $Id: header.h,v 1.32 2002-07-20 02:22:32 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -93,6 +93,11 @@ int  init_user_dll(int major, int minor);
 /* replacement functions */
 TLAPI FILE* unix_popen(const char *, const char *);
 TLAPI int   unix_pclose(FILE *);
+/* cygwin */
+# ifdef __CYGWIN32__
+TLAPI void  cygwin_fmode_text(FILE *f);
+TLAPI void  cygwin_fmode_binary(FILE *f);
+# endif
 #endif
 
 
