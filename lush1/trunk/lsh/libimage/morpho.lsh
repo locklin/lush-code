@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: morpho.lsh,v 1.1 2002-08-19 07:01:28 profshadoko Exp $
+;;; $Id: morpho.lsh,v 1.2 2002-09-23 01:25:25 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? *** Morphological Operations
@@ -35,18 +35,21 @@
 (libload "libidx/idx-macros")
 
 
-#? (ubim-internal-disttrans <im>)
+#? (ubim-internal-disttrans <im> <dist>)
 ;; Returns the internal distance transformation matrix of binary image <im>.
-;; The elements of the returned ubyte matrix contains the distance to the
+;; The elements of the output ubyte matrix <dist> contains the distance to the
 ;; closest background pixel in the image (background level is zero for this
-;; purpose). Distances are clipped to 255.
-
-(de ubim-internal-disttrans(im)
-    ((-idx2- (-ubyte-)) im)
+;; purpose). Distances are clipped to 255. The dimensions of <dist> must be 
+;; 2 larger than that of <im>. <dist> will be resized to the appropriate
+;; size if necessary. 
+(de ubim-internal-disttrans(im dist)
+    ((-idx2- (-ubyte-)) im dist)
     (let* ((width (idx-dim im 1))
-           (height (idx-dim im 0))
-           (dist (ubyte-matrix (+ 2 height) (+ 2 width))) )
+           (height (idx-dim im 0)))
       ((-int-) width height)
+      (when (or (<> (idx-dim dist 0) (+ 2 height))
+		(<> (idx-dim dist 1) (+ 2 width)))
+	(idx-u2resize dist (+ 2 height) (+ 2 width)))
       #{ {
         unsigned char *p, *q, *qup, lastqup, minim;
         int i, j, qm0, qm1, pm0, pm1;
@@ -89,24 +92,24 @@
           }
         } 
       } #} 
-      (idx-narrow dist 0 height 1)
-      (idx-narrow dist 1 width 1)
-      dist )  )
+      ()))
 
 
-
-#? (ubim-external-disttrans <im>)
-;; Returns the external distance transformation matrix of binary image <im>.
-;; The elements of the returned ubyte matrix contains the distance to the
+#? (ubim-external-disttrans <im> <dist>)
+;; computes the external distance transformation matrix of binary image <im>.
+;; The elements of the output ubyte matrix <dist> contains the distance to the
 ;; closest non-background pixel in the image (background level is zero for this
-;; purpose). Distances are clipped to 255.
-
-(de ubim-external-disttrans(im)
-    ((-idx2- (-ubyte-)) im)
+;; purpose). Distances are clipped to 255. The dimensions of <dist> must be 
+;; 2 larger than that of <im>. <dist> will be resized to the appropriate
+;; size if necessary. 
+(de ubim-external-disttrans(im dist)
+    ((-idx2- (-ubyte-)) im dist)
     (let* ((width (idx-dim im 1))
-           (height (idx-dim im 0))
-           (dist (ubyte-matrix (+ 2 height) (+ 2 width))) )
+           (height (idx-dim im 0)))
       ((-int-) width height)
+      (when (or (<> (idx-dim dist 0) (+ 2 height))
+		(<> (idx-dim dist 1) (+ 2 width)))
+	(idx-u2resize dist (+ 2 height) (+ 2 width)))
       #{ {
         unsigned char *p, *q, *qup, lastqup, minim;
         int i, j, qm0, qm1, pm0, pm1;
@@ -157,9 +160,7 @@
           }
         } 
       } #} 
-      (idx-narrow dist 0 height 1)
-      (idx-narrow dist 1 width 1)
-      dist )  )
+      ()))
 
 
 
@@ -194,14 +195,16 @@
 
 #? (ubim-erosion <im> <factor>)
 ;; Perform in place erosion of ubyte image <im> at distance <factor>.
-
 (de ubim-erosion(im factor)
     ((-idx2- (-ubyte-)) im)
     ((-int-) factor)
-    (let ((dist (ubim-internal-disttrans im)))
+    (let* ((w (idx-dim im 1))
+	   (h (idx-dim im 0))
+	   (dist (ubyte-matrix-nc (+ 2 h) (+ 2 w))))
+      (ubim-internal-disttrans im dist)
       (ubim-positive-threshold dist factor)
-      (idx-copy dist im) )
-    im )
+      (idx-copy (narrow (narrow dist 0 h 1) 1 w 1) im)
+      ()))
 
 
 #? (ubim-dilation <im> <factor>)
@@ -210,11 +213,13 @@
 (de ubim-dilation(im factor)
     ((-idx2- (-ubyte-)) im)
     ((-int-) factor)
-    (let ((dist (ubim-external-disttrans im)))
+    (let* ((w (idx-dim im 1))
+	   (h (idx-dim im 0))
+	   (dist (ubyte-matrix-nc (+ 2 h) (+ 2 w))))
+      (ubim-internal-disttrans im dist)
       (ubim-negative-threshold dist factor)
-      (idx-copy dist im) )
-    im )
-
+      (idx-copy (narrow (narrow dist 0 h 1) 1 w 1) im)
+      ()))
 
 
 #? (ubim-mask <im> <mask>)
@@ -225,7 +230,7 @@
     (idx-bloop ((imlin im)(msklin mask))
       (cinline-idx1loop2 imlin "unsigned char" msklin "unsigned char" 
                         "m1" "m2" "i1" "i2"
-                        #{ if (*m2==0) (*m1=0); #} ) ) )
+                        #{ if (*m2==0) (*m1=0); #} ) ) ())
 
 
 
