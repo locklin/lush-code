@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.11 2002-07-02 20:47:46 leonb Exp $
+ * $Id: oostruct.c,v 1.12 2002-07-03 18:25:00 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -521,6 +521,7 @@ new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
   super = superclass->Object;
   cl = malloc(sizeof(struct class));
   *cl = object_class;
+  cl->classdoc = 0;
   cl->slotssofar = super->slotssofar+i;
   cl->goaway = 1;
   cl->dontdelete = 0;

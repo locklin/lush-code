@@ -24,16 +24,10 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.6 2002-07-02 19:56:36 leonb Exp $
+ * $Id: dh.h,v 1.7 2002-07-03 18:24:54 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
-
-/* SWITCHES
- * -- BASETYPE: The type of the matrix elements.     Default: flt
- * -- ST_BASETYPE: The type of the idxs.             Default: ST_F
- * -- NOLISP: Do not compile the Lisp dependent parts
- */
 
 #ifndef DEFINE_H
 #include "define.h"
@@ -99,12 +93,13 @@ enum dht_type {
     DHT_NAME,       /* define the name/position of a field */
     DHT_METHOD,     /* define the name/constraint of a method */
     DHT_END_CLASS,  /* class terminator */
-    
+
+    DHT_REFER,      /* specify dependency */
+
     DHT_LAST        /* TAG */
 };
 
-extern LUSHAPI int storage_to_dht[];
-extern LUSHAPI int dht_to_storage[];
+
 
 /* dhrecord --- 
  * The basic data structure for metainformation in compiled code.
@@ -167,13 +162,14 @@ typedef struct s_dhrecord
 #define DH_CLASS(n, cl) \
         {DHT_CLASS,0,n,0,&cl}
 #define DH_END_CLASS \
-        {DHT_END_CLASS}#
+        {DHT_END_CLASS}
 #define DH_NAME(s,cl,sl) \
         {DHT_NAME, 0, 0, s, &(((struct name2(CClass_,cl)*)0)->sl)}
 #define DH_METHOD(n,kname) \
         {DHT_METHOD,0,n,kname}
 
-
+#define DH_REFER(kname) \
+        {DHT_REFER,0,0,kname}
 
 /* ----------------------------------------------- */
 /* DHFUNCTIONS                                     */
@@ -225,7 +221,7 @@ struct dhdoc_s
     char *m_name;		/* string with the M_name or nil */
     dharg (*call)();		/* pointer to the X_name function */
     char *k_name;               /* string with the K_name_Rxxxxxxxx */
-    dhdoc_t *dhtest;            /* pointer to the dhdoc for the test function */ 
+    dhdoc_t *dhtest;            /* pointer to the dhdoc for the testfunc */ 
   } lispdata;
 };
 
@@ -237,7 +233,7 @@ struct dhdoc_s
   static dhrecord name2(K,Kname)[];\
   dhconstraint Kname = { name2(K,Kname), \
     { Cnamestr, Mnamestr, Xname, enclose_in_string(Kname), Ktest } }; \
-  static dhrecord name2(K,Kname)[] =
+  static dhrecord name2(K,Kname)[]
 
 #define DH(Xname) \
   dharg Xname(dharg *a)
@@ -254,10 +250,10 @@ struct dhdoc_s
 /* Names associated with a class
  * -----------------------------
  *
- * struct CClass_name:  structure representing instances (macro DHCLASSDOC)
- * struct VClass_name:  structure representing vtable 
- * V_name_Rxxxxxxxx:    vtable for the class (VClass_name)
- * K_name_Rxxxxxxxx:    dhclassconstraint for the class
+ * struct Cclass_name:  structure representing instances (macro DHCLASSDOC)
+ * struct Vclass_name:  structure representing vtable 
+ * Vt_name_Rxxxxxxxx:   vtable for the class (VClass_name)
+ * Kc_name_Rxxxxxxxx:   dhclassdoc for the class
  *
  * C_methodname_C_name: compiled code for a method
  * K_methodname_C_name_Rxxxxxxxx: dhconstraint for a method (macro DHDOC)
@@ -277,30 +273,31 @@ struct dhclassdoc_s
   struct {
     dhclassdoc_t *ksuper;       /* dhclassdoc for the superclass */
     char *lname;                /* string with the lisp class name */
-    char *cname;                /* string with the c class name (prepend CClass_ or VClass_) */
-    char *v_name;               /* string with the name of the vtable (V_name_Rxxxxxxxx) */
-    char *k_name;               /* string with the name of the classdoc (K_name_Rxxxxxxxx) */
+    char *cname;                /* string with the c class name 
+                                   (prepend CClass_ or VClass_) */
+    char *v_name;               /* string with the name of the vtable 
+                                   (V_name_Rxxxxxxxx) */
+    char *k_name;               /* string with the name of the classdoc 
+                                   (K_name_Rxxxxxxxx) */
     int nmethods;               /* number of methods */
-    dhdoc_t **ktable;           /* table of dhdocs for the methods */
-    void *vtable;               /* pointer to the vtable */
 #ifndef NOLISP
     at *atclass;                /* lisp object for this class */
-    char atlocked;              /* set when lisp object is temporarily overlocked */
+    char atlocked;              /* lisp object temporarily overlocked */
 #endif
   } lispdata;
 };
 
 #ifndef NOLISP
 
-#define DHCLASSDOC(Kname,superKname,LnameStr,CnameStr,VnameStr,nmet,vtable) \
+#define DHCLASSDOC(Kname,superKname,LnameStr,CnameStr,VnameStr,nmet) \
   static dhrecord name2(K,Kname)[]; \
-  static dhdoc_t* name2(M,Kname)[(nmet ? nmet : 1)]; \
   dhclassdoc_t Kname = { name2(K,Kname), \
-   { superKname, LnameStr, CnameStr, VnameStr, enclose_in_string(Kname), \
-     nmet, name2(M,Kname), vtable } }; \
-  static dhrecord name2(K,Kname)[] = 
+   { superKname, LnameStr, CnameStr, VnameStr, \
+     enclose_in_string(Kname), nmet } }; \
+  static dhrecord name2(K,Kname)[]
 
 #endif
+
 
 
 /* ----------------------------------------------- */

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.18 2002-07-02 20:47:46 leonb Exp $
+ * $Id: module.c,v 1.19 2002-07-03 18:25:00 leonb Exp $
  **********************************************************************/
 
 
@@ -515,7 +515,8 @@ check_primitive(at *prim)
       if (check_executability)
         check_exec(TRUE);
       if (! (m->flags & MODULE_EXEC))
-        error(NIL,"Partially linked function", prim->Cdr);
+        error(NIL,"Function belongs to a partially linked module", 
+              prim->Cdr);
     }
 }
 
@@ -1142,10 +1143,20 @@ void
 dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname)
 {
   at *symb, *priminame, *func;
+  dhrecord *drec;
   class *cl;
+
   symb = new_symbol(name);
   if (! kclass->lispdata.atclass)
     error(NIL,"Internal: dhmethod_define called before dhclass_define", symb);
+  for (drec = kclass->argdata;
+       drec->op != DHT_END_CLASS && drec->op != DHT_NIL;
+       drec = drec->end)
+    if (drec->op == DHT_METHOD)
+      if (drec->arg == kname)
+        break;
+  if (drec->arg != kname)
+    error(NIL,"Internal: method is not listed in classdoc", symb);
   cl = kclass->lispdata.atclass->Object;
   priminame = module_method_priminame(cl, symb);
   func = new_dh(priminame, kname);

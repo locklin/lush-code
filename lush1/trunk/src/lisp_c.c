@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.5 2002-07-02 20:47:46 leonb Exp $
+ * $Id: lisp_c.c,v 1.6 2002-07-03 18:25:00 leonb Exp $
  **********************************************************************/
 
 
@@ -53,6 +53,36 @@ static at *dharg_to_at();
 static void at_to_dharg();
 static int dont_track_cside = 0;
 static int dont_warn = 0;
+
+
+int storage_to_dht[ST_LAST];
+int dht_to_storage[DHT_LAST];
+
+void
+init_storage_to_dht(void) 
+{
+  int i;
+  
+  for(i=0;i<ST_LAST;i++)
+    storage_to_dht[i] = -1;
+  for(i=0;i<DHT_LAST;i++)
+    dht_to_storage[i] = -1;
+  storage_to_dht[ST_F] = DHT_FLT;
+  storage_to_dht[ST_D] = DHT_REAL;
+  storage_to_dht[ST_I32] = DHT_INT;
+  storage_to_dht[ST_I16] = DHT_SHORT;
+  storage_to_dht[ST_I8] = DHT_BYTE;
+  storage_to_dht[ST_U8] = DHT_UBYTE;
+  storage_to_dht[ST_GPTR] = DHT_GPTR;
+  dht_to_storage[DHT_FLT] = ST_F;
+  dht_to_storage[DHT_REAL] = ST_D;
+  dht_to_storage[DHT_INT] = ST_I32;
+  dht_to_storage[DHT_BYTE] = ST_I8;
+  dht_to_storage[DHT_UBYTE] = ST_U8;
+  dht_to_storage[DHT_SHORT] = ST_I16;
+  dht_to_storage[DHT_GPTR] = ST_GPTR;
+}
+
 
 
 /* -----------------------------------------
