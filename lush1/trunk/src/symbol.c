@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: symbol.c,v 1.3 2002-05-06 18:42:43 leonb Exp $
+ * $Id: symbol.c,v 1.4 2002-06-27 20:49:57 leonb Exp $
  **********************************************************************/
 
 
@@ -39,8 +39,7 @@ static at *at_scope;
 
 
 /*
- * hash table for
- * the symbols' names
+ * hash table for the symbol names
  */
 
 struct hash_name *names[HASHTABLESIZE];
@@ -64,16 +63,15 @@ struct alloc_root hash_name_alloc =
 #ifdef LASTWORD
 
 /*
- * With LASTWORD option, Lush confuses '-' and '_'. So 'nlf-tanh' and
- * 'nlf_tanh' refer to the same symbol !
+ * With LASTWORD option, Lush confuses '-' and '_'.
  */
 
 static int
-mystrncmp(char *s, char *d, int n)
+mystrcmp(char *s, char *d)
 {
   unsigned char b, c;
-
-  while ((*s || *d) && (n-- > 0)) {
+  
+  while (*s || *d) {
     if ((b = *s++) == '-')
       b = '_';
     if ((c = *d++) == '-')
@@ -86,7 +84,7 @@ mystrncmp(char *s, char *d, int n)
 
 #else
 
-#define mystrncmp(s,d,n)   (int)strncmp(s,d,(int) m)
+#define mystrcmp(s,d)   (int)strcmp(s,d)
 
 #endif
 
@@ -100,7 +98,7 @@ search_by_name(unsigned char *s, int mode)
   {
     unsigned int hash;
     int i;
-
+    
     hash = 0;
     for (i = 0; i < 8; i++)
 #ifdef LASTWORD
@@ -109,35 +107,42 @@ search_by_name(unsigned char *s, int mode)
       else
 #endif
       if (s[i])
-	hash += s[i];
+        hash += s[i];
       else
 	break;
     hash %= HASHTABLESIZE;
     lasthn = names + hash;
   }
-
+  
   /* Search in list and operate */
   {
     struct hash_name *hn;
 
     hn = *lasthn;
-    while (hn && mystrncmp((char *) s, (char *) hn->name, (int) NAMELENGTH)) {
-      lasthn = &(hn->next);
-      hn = *lasthn;
-    }
-
-    if (!hn && mode == 1) {
-      hn = allocate(&hash_name_alloc);
-      hn->next = NIL;
-      hn->named = NIL;
-      strncpy((char *) hn->name, (char *) s, NAMELENGTH);
-      *lasthn = hn;
-    } else if (hn && mode == -1) {
-      UNLOCK(hn->named);
-      *lasthn = hn->next;
-      deallocate(&hash_name_alloc, (struct empty_alloc *) hn);
-      hn = NIL;
-    }
+    while (hn && mystrcmp((char*)s, (char*)hn->name)) 
+      {
+        lasthn = &(hn->next);
+        hn = *lasthn;
+      }
+    
+    if (!hn && mode == 1) 
+      {
+        hn = allocate(&hash_name_alloc);
+        hn->next = NIL;
+        hn->named = NIL;
+        hn->name = malloc(strlen((char*)s) + 1);
+        strcpy((char*)hn->name, (char*)s);
+        *lasthn = hn;
+      } 
+    else if (hn && mode == -1) 
+      {
+        UNLOCK(hn->named);
+        *lasthn = hn->next;
+        free(hn->name);
+        hn->name = 0;
+        deallocate(&hash_name_alloc, (struct empty_alloc *) hn);
+        hn = NIL;
+      }
     return hn;
   }
 }
@@ -183,16 +188,12 @@ char *
 nameof(at *p)
 {
   struct symbol *symb;
-  static char answer[NAMELENGTH + 1];
-
-  answer[0] = answer[NAMELENGTH] = 0;
-  if (p && (p->flags & X_SYMBOL)) {
-    symb = (struct symbol *) (p->Object);
-    if (symb->name) {
-      strncpy(answer, symb->name->name, NAMELENGTH);
-      return answer;
+  if (p && (p->flags & X_SYMBOL)) 
+    {
+      symb = (struct symbol *) (p->Object);
+      if (symb->name) 
+        return symb->name->name;
     }
-  }
   return NIL;
 }
 
@@ -206,14 +207,11 @@ symblist(void)
 {
   at *answer;
   at **where;
-
   struct hash_name **j, *hn;
-  char name[NAMELENGTH + 1];
-
+  
   answer = NIL;
-  name[NAMELENGTH] = 0;
   iter_hash_name(j, hn) {
-    strncpy(name, hn->name, NAMELENGTH);
+    char *name = hn->name;
     where = &answer;
     while (*where && strcmp(name, SADD((*where)->Car->Object)) > 0)
       where = &((*where)->Cdr);

@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.2 2002-06-27 19:43:17 leonb Exp $
+ * $Id: lisp_c.c,v 1.3 2002-06-27 20:49:57 leonb Exp $
  **********************************************************************/
 
 
@@ -1291,22 +1291,6 @@ DX(xgptr)
     error(NIL,"Cannot create compiled version of this lisp object",p);
   return NEW_GPTR(n->citem);
 }
-
-
-/* (atgptr <obj>) -- returns a GPTR to the lisp cell */
-
-DX(xatgptr)
-{
-  at *p;
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  p = APOINTER(1);
-  if (p)
-    return NEW_GPTR(p);
-  else
-    return NIL;
-}
-
 
 
 /* -------------------------------------------------
@@ -2860,7 +2844,6 @@ init_lisp_c(void)
   dx_define("lisp-c-dont-track-cside", xlisp_c_dont_track_cside);
   dy_define("lisp-c-no-warnings", ylisp_c_no_warnings);
   dx_define("gptr", xgptr);
-  dx_define("atgptr", xatgptr);
   dx_define("obj", xobj);
 }
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: define.h,v 1.2 2002-04-25 22:54:22 leonb Exp $
+ * $Id: define.h,v 1.3 2002-06-27 20:49:55 leonb Exp $
  **********************************************************************/
 
 #ifndef DEFINE_H
@@ -243,7 +243,6 @@ c
 #define MAXARGMAPC    (int)8	/* max number of listes in MAPCAR */
 #define CONSCHUNKSIZE (int)2048	/* minimal cons allocation unit */
 #define HASHTABLESIZE (int)1024	/* symbol hashtable size */
-#define NAMELENGTH    (int)40	/* symbol names length */
 #define STRING_BUFFER (int)4096	/* string operations buffer size */
 #define LINE_BUFFER   (int)1024	/* line buffer length */
 #define FILELEN       (int)1024	/* file names length */

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.6 2002-06-27 19:43:17 leonb Exp $
+ * $Id: toplevel.c,v 1.7 2002-06-27 20:49:58 leonb Exp $
  **********************************************************************/
 
 
@@ -626,7 +626,6 @@ DX(xexit)
 static char *
 error_text(void)
 {
-  char prefbuffer[NAMELENGTH + 1];
   extern char *print_buffer;
   char *prefix = error_doc.error_prefix;
   char *prefixsep = " : ";
@@ -640,12 +639,10 @@ error_text(void)
   if (!prefix &&
       CONSP(call) && CONSP(call->Car) && call->Car->Car && 
       (call->Car->Car->flags&X_SYMBOL) ) {
-    strcpy(prefbuffer, nameof(call->Car->Car));
-    prefix = prefbuffer;
+    prefix = nameof(call->Car->Car);
   }
   prefix = prefix ? prefix : "";
   text = text ? text : "";
-  
   if (!*prefix || !*text)
     prefixsep = "";
   if (!*text || !suffix)

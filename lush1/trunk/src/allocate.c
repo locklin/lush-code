@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: allocate.c,v 1.2 2002-06-27 20:49:57 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -94,6 +94,28 @@ deallocate(struct alloc_root *ar, struct empty_alloc *elem)
     elem->used = 0;
     ar->freelist = elem;
   }
+}
+
+
+
+
+
+/*
+ * Register and execute finalizers [TODO]
+ */
+
+TLAPI void 
+add_finalizer(at *q, void (*func)(at*), void *args)
+{
+}
+
+TLAPI void 
+run_finalizers(at *q)
+{
+  if (q) 
+    {
+      q->flags &= ~ C_FINALIZER;
+    }
 }
 
 
@@ -291,9 +313,12 @@ garbage(int flag)
     at_alloc.freelist = NIL;
     for (i = at_alloc.chunklist; i; i = i->next)
       for (p = i->begin; (gptr) p < i->end; p++)
-	if (p->count==0) {
-	  deallocate(&at_alloc, (struct empty_alloc *) p);
-	}
+	if (p->count==0) 
+          {
+            if (p->flags & C_FINALIZER)
+              run_finalizers(p);
+            deallocate(&at_alloc, (struct empty_alloc *) p);
+          }
     
     /*
      * In addition, we remove non referenced
@@ -304,22 +329,26 @@ garbage(int flag)
       at *q;
       struct symbol *symb;
       q = hn->named;
-      if ( !q ) {
-	kill_name(hn);
-      } else if (q->count==1) {
-	symb = (struct symbol*)(q->Object);
-	if (!symb->nopurge)
-	  if (   symb->valueptr==0 
-	      || *(symb->valueptr)==0
-	      || ((*(symb->valueptr))->flags & X_ZOMBIE) )
-	    kill_name(hn);
-      }
+      if ( !q ) 
+        {
+          kill_name(hn);
+        } 
+      else if (q->count==1) 
+        {
+          symb = (struct symbol*)(q->Object);
+          if (!symb->nopurge)
+            if ( symb->valueptr==0 ||
+                 *(symb->valueptr)==0 ||
+                 ((*(symb->valueptr))->flags & X_ZOMBIE) )
+              kill_name(hn);
+        }
     }
-
+    
   } else {
 
     /* flag = 0: destroy all 
      *  - dont call the oostruct destructors..
+     *  - dont call the finalizers..
      *  - dont destroy classes
      */
 

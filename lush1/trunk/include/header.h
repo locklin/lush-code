@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.23 2002-06-25 15:58:25 leonb Exp $
+ * $Id: header.h,v 1.24 2002-06-27 20:49:55 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -155,13 +155,14 @@ typedef struct at {
 
 /* flags */
 
-#define C_CONS          (1<<0)	/* It's a  CONS */
-#define C_EXTERN        (1<<1)	/* It's an EXTERNAL */
-#define C_NUMBER        (1<<2)	/* It's a  NUMBER */
-#define C_GPTR          (1<<3)
-#define C_GARBAGE       (1<<4)  /* To destroy... */
-#define C_MARK          (1<<5)
-#define C_MULTIPLE      (1<<6)
+#define C_CONS          (1<<0)	/* It is a  CONS */
+#define C_EXTERN        (1<<1)	/* It is an EXTERNAL */
+#define C_NUMBER        (1<<2)	/* It is a  NUMBER */
+#define C_GPTR          (1<<3)  /* It is a GPTR */
+#define C_FINALIZER     (1<<4)  /* Finalizers have been registered */
+#define C_GARBAGE       (1<<5)  /* Temp (gc) */
+#define C_MARK          (1<<6)  /* Temp (bwrite) */
+#define C_MULTIPLE      (1<<7)  /* Temp (bwrite) */
 
 /* specials flags improving the tests speed */
 
@@ -294,25 +295,21 @@ TLAPI at *rmapcar(at *f, at **listes, int arg_number);
 /* ALLOC.H ---------------------------------------------------- */
 
 
+/* Allocation of objects of identical size */
 
-struct empty_alloc {		/* skeleton structure used by the alloc
-				 * routines.  skeleton structure used by the
-				 * alloc routines. */
+struct empty_alloc {
   int used;
   struct empty_alloc *next;
 };
 
-struct chunk_header {		/* this structure describe each element
-				 * chunk.     this structure describe each
-				 * element chunk. */
+struct chunk_header {
   struct chunk_header *next;
   gptr begin;
   gptr end;
-  gptr pad;			/* too clever compiler may cause problems */
+  gptr pad; 
 };
 
-struct alloc_root {		  /* this structure contains the allocation
-				   * infos */
+struct alloc_root {
   struct empty_alloc *freelist;	  /* List of free elems */
   struct chunk_header *chunklist; /* List of active chunkes */
   int elemsize;			  /* Size of one elems */
@@ -321,11 +318,24 @@ struct alloc_root {		  /* this structure contains the allocation
 
 TLAPI gptr allocate(struct alloc_root *ar);
 TLAPI void deallocate(struct alloc_root *ar, struct empty_alloc *elem);
-TLAPI void garbage(int flag);
+
+/* Loop on all used elements handled by an alloc_root structure.
+ * { struct chunk_header *current_chunk; struct xxxx *looping_var; 
+ *   iter_on( &xxxx_alloc, current_chunk, looping_var ) { ... } }
+ */
+#define iter_on(base,i,elem) \
+ for(i=(base)->chunklist; i; i = i->next ) \
+ for(elem=i->begin;(gptr)elem<i->end;elem=(gptr)((char*)elem+(base)->elemsize)) \
+ if ( ((struct empty_alloc *) elem) -> used )
+
+/* Garbage collection functions */
 TLAPI void protect(at *q);
 TLAPI void unprotect(at *q);
+LUSHAPI void add_finalizer(at *q, void(*)(at*), void *);
+LUSHAPI void run_finalizers(at *q);
+TLAPI void garbage(int flag);
 
-/* allocation functions */
+/* Allocation functions */
 LUSHAPI void *lush_malloc(int,char*,int);
 LUSHAPI void *lush_calloc(int,int,char*,int);
 LUSHAPI void *lush_realloc(gptr,int,char*,int);
@@ -333,40 +343,25 @@ LUSHAPI void lush_free(gptr,char*,int);
 LUSHAPI void lush_cfree(gptr,char*,int);
 LUSHAPI void set_malloc_file(char*);
 
-/* malloc debug file (from sn3.2) */
+/* Malloc debug file (from sn3.2) */
 #define malloc(x)    lush_malloc(x,__FILE__,__LINE__)
 #define calloc(x,y)  lush_calloc(x,y,__FILE__,__LINE__)
 #define realloc(x,y) lush_realloc(x,y,__FILE__,__LINE__)
 #define free(x)      lush_free(x,__FILE__,__LINE__)
 #define cfree(x)     lush_cfree(x,__FILE__,__LINE__)
 
-/* tl compatible malloc functions */
+/* TL compatible malloc functions */
 #define tl_malloc(x)    lush_malloc(x,__FILE__,__LINE__)
 #define tl_realloc(x,y) lush_realloc(x,y,__FILE__,__LINE__)
 
-/*
- * Following, a very general iterator. A loop on all the used elements of a
- * ALLOC_BASE structure may be written just as
- * 
- * { struct chunk_header *current_chunk; 
- *   struct xxxx *looping_var; 
- *   iter_on( &xxxx_alloc, current_chunk, looping_var ) { ... }
- * }
- */
-
-#define iter_on(base,i,elem) \
- for(i=(base)->chunklist; i; i = i->next ) \
- for(elem=i->begin;(gptr)elem<i->end;elem=(gptr)((char*)elem+(base)->elemsize)) \
- if ( ((struct empty_alloc *) elem) -> used )
 
 
 /* SYMBOL.H ---------------------------------------------------- */
 
 
-struct hash_name {		/* this one contains the symbol's names this
-				 * one contains the symbol's names */
+struct hash_name { /* contains the symbol names and hash */
   short used;
-  char name[NAMELENGTH];
+  char *name;
   at *named;
   struct hash_name *next;
 

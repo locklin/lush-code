@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: calls.c,v 1.2 2002-04-29 18:40:29 leonb Exp $
+ * $Id: calls.c,v 1.3 2002-06-27 20:49:57 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -366,12 +366,7 @@ DX(xbitshr)
 
 
 
-/* --------- BINARY SIZE FUNCTIONS --------- */
-
-/*
- * sizeof ex: (sizeof 'flt)
- * only numerical types are supported till now
- */
+/* --------- WEIRD FUNCTIONS --------- */
 
 static int 
 tlsizeof(char *s)
@@ -405,6 +400,19 @@ DX(xsizeof)
   i = tlsizeof(ASTRING(1));
   return NEW_NUMBER(i);
 }
+
+DX(xatgptr)
+{
+  at *p;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (p)
+    return NEW_GPTR(p);
+  else
+    return NIL;
+}
+
 
 
 /* --------- MAKELIST FUNCTIONS --------- */
@@ -612,7 +620,6 @@ DX(xeqptr)
   else
     return NIL;
 }
-
 
 DX(xne)
 {
@@ -934,6 +941,7 @@ init_calls(void)
   dx_define("bitshl", xbitshl);
   dx_define("bitshr", xbitshr);
   dx_define("sizeof", xsizeof);
+  dx_define("atgptr", xatgptr);
   dx_define("makelist", xmakelist);
   dx_define("range", xrange);
   dx_define("seed", xseed);

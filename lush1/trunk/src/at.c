@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: at.c,v 1.2 2002-05-01 19:02:05 leonb Exp $
+ * $Id: at.c,v 1.3 2002-06-27 20:49:57 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -55,28 +55,36 @@ purge(at *q)
 
 purge_loop:
 
-  if (q->flags & C_CONS) {
-    if ((h = q->Car))
-      ifn(--(h->count))
-	purge(h);
-    h = q->Cdr;
+  if (q->flags & C_FINALIZER) 
+    run_finalizers(q);
 
-    ((struct empty_alloc *) q)->next = at_alloc.freelist;
-    at_alloc.freelist = (struct empty_alloc *) q;
-
-    if (h)			/* non recursive */
-      ifn(--(h->count)) {	/* purge loop */
-      q = h;
-      goto purge_loop;
-      }
-  } else if (q->flags & C_EXTERN) {
-    (*q->Class->self_dispose) (q);
-    ((struct empty_alloc *) q)->next = at_alloc.freelist;
-    at_alloc.freelist = (struct empty_alloc *) q;
-  } else {			/* NUMBER */
-    ((struct empty_alloc *) q)->next = at_alloc.freelist;
-    at_alloc.freelist = (struct empty_alloc *) q;
-  }
+  if (q->flags & C_CONS) 
+    {
+      if ((h = q->Car))
+        if (! (--(h->count)))
+          purge(h);
+      h = q->Cdr;
+      
+      ((struct empty_alloc *) q)->next = at_alloc.freelist;
+      at_alloc.freelist = (struct empty_alloc *) q;
+      
+      if (h && !(--(h->count))) 
+        { 
+          q = h;
+          goto purge_loop;
+        }
+    } 
+  else if (q->flags & C_EXTERN) 
+    {
+      (*q->Class->self_dispose) (q);
+      ((struct empty_alloc *) q)->next = at_alloc.freelist;
+      at_alloc.freelist = (struct empty_alloc *) q;
+    } 
+  else
+    {
+      ((struct empty_alloc *) q)->next = at_alloc.freelist;
+      at_alloc.freelist = (struct empty_alloc *) q;
+    }
 }
 
 
