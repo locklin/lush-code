@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.10 2002-12-09 13:06:31 leonb Exp $
+ * $Id: fileio.c,v 1.11 2003-01-10 20:22:42 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -85,8 +85,10 @@
 
 /* --------- VARIABLES --------- */
 
-static char path_buffer[PATHLEN];
-char *path[PATHNUMBER];
+static at *at_path;
+static at *at_lushdir;
+static at *at_tl3dir;
+
 char file_name[FILELEN];
 
 /* --------- FILE OPERATIONS --------- */
@@ -1056,56 +1058,6 @@ search_lushdir(char *progname)
 
 
 /*
- * A lisp interface to set and get the search path (path)
- * returns the list of the path directories, (path "d1" "d2" .. )
- * sets the search path.
- */
-DX(xpath)
-{
-  ALL_ARGS_EVAL;
-
-  if (arg_number > PATHNUMBER)
-    error("path", "too many directories in path", NIL);
-
-  if (arg_number) {
-    register char *s, *d;
-    register int i;
-    s = path_buffer;
-    for (i = 0; i < PATHNUMBER; i++)
-      path[i] = NIL;
-    for (i = 1; i <= arg_number; i++) {
-      d = concat_fname(NULL,ASTRING(i));
-      path[i - 1] = s;
-      while (*d) {
-	if (s < path_buffer + PATHLEN - 2)
-	  *s++ = *d++;
-	else {
-	  path[i - 1] = NIL;
-	  error("path", "too long path", NIL);
-	}
-      }
-      *s++ = '\0';
-    }
-  }
-  
-  {
-    register at **where;
-    register int i;
-    at *answer;
-    
-    answer = NIL;
-    where = &answer;
-    for (i = 0; i < PATHNUMBER && path[i]; i++) {
-      *where = cons(new_string(path[i]), NIL);
-      where = &((*where)->Cdr);
-    }
-    return answer;
-  }
-}
-
-
-
-/*
  * add_suffix
  * - adds a suffix to variable unless
  *   variable already contains a suffix.
@@ -1230,39 +1182,52 @@ test_suffixes(char *suffixes)
 char *
 search_file(char *ss, char *suffixes)
 {
-  int i;
   char *c;
-  static char s[FILELEN];
-
+  char s[FILELEN];
+  
   /* -- copy ss into static buffer */
   if (strlen(ss) > FILELEN - 1)
     error(NIL,"File name is too long",NIL);
   strcpy(s,ss);
   
-  /* -- search from cwd */
-  c = concat_fname(NULL,s);
-  if (strlen(c) > FILELEN - 1)
-    error(NIL,"File name is too long",NIL);
-  strcpy(file_name,c);
-  if (test_suffixes(suffixes))
-    return file_name;
-
-  /* -- prune when absolute pathname */
+  /* -- search along path */
+  c = 0;
 #ifdef UNIX
-  if (*s == '/')
-    return NIL;
+  if (*s != '/')
 #endif
-
-  /* -- examine path components */
-  for(i=0; i<PATHNUMBER && path[i]; i++) 
-  {
-    c = concat_fname(path[i],s);
-    if (strlen(c) > FILELEN - 1)
-      error(NIL,"File name is too long",NIL);
-    strcpy(file_name,c);
-    if (test_suffixes(suffixes))
-      return file_name;
-  }
+    if (EXTERNP(at_path, &symbol_class))
+      {
+        at *q = NIL;
+        struct symbol *symb = at_path->Object;
+	while (symb->next)
+	  symb = symb->next;
+        if (symb->valueptr)
+          q = *(symb->valueptr);
+        while (CONSP(q))
+          {
+            if (EXTERNP(q->Car,&string_class))
+              {
+                c = concat_fname(SADD(q->Car->Object), s);
+                if (strlen(c) > FILELEN - 1)
+                  error(NIL,"File name is too long",NIL);
+                strcpy(file_name,c);
+                if (test_suffixes(suffixes))
+                  return file_name;
+              }
+            q = q->Cdr;
+          }
+      }
+  /* -- absolute filename or broken path */
+  if (! c)
+    {
+      c = concat_fname(NULL,s);
+      if (strlen(c) > FILELEN - 1)
+        error(NIL,"File name is too long",NIL);
+      strcpy(file_name,c);
+      if (test_suffixes(suffixes))
+        return file_name;
+    }
+  /* -- fail */
   return NIL;
 }
 
@@ -1926,26 +1891,23 @@ init_fileio(char *program_name)
 {
   at *q;
   char *s;
-  at *tldir, *lushdir;
 
-  /** FIND THE INITIAL PATH */
+  /** SETUP PATH */
+  at_path = var_define("*PATH");
+  at_lushdir = var_define("lushdir");
+  at_tl3dir = var_define("tl3dir");
+  
   if (!(s=search_lushdir(program_name)))
     abort("Cannot locate library files");
-  lushdir = var_define("lushdir");
-  tldir = var_define("tl3dir");
   q = new_string(s);
-  var_set(lushdir, q);
-  var_set(tldir, q);
+  var_set(at_lushdir, q);
+  var_set(at_tl3dir, q);
+  var_lock(at_tl3dir);
   UNLOCK(q);
-
-  s = SADD(q->Object);
-  path[0] = 0;
-  if (s[1] || (s[0]!='.'))
-    {
-      path[0] = path_buffer;
-      strcpy(path[0], concat_fname(s,"sys/"));
-      path[1] = 0;
-    }
+  s = concat_fname(SADD(q->Object),"sys");
+  q = cons(new_string(s),NIL);
+  var_set(at_path, q);
+  UNLOCK(q);
   
   /* DECLARE THE FUNCTIONS */
 
@@ -1966,7 +1928,6 @@ init_fileio(char *program_name)
   dx_define("dirname", xdirname);
   dx_define("concat-fname", xconcat_fname);
   dx_define("tmpname", xtmpname);
-  dx_define("path", xpath);
   dx_define("filepath", xfilepath);
   dx_define("script", xscript);
   dx_define("open-read", xopen_read);
