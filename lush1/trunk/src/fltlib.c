@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fltlib.c,v 1.7 2004-03-16 15:52:18 profshadoko Exp $
+ * $Id: fltlib.c,v 1.8 2004-04-02 14:33:00 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -80,7 +80,7 @@ FQtanh(flt x)
   y *= y;
   y *= y;
   y *= y;
-  return (x > Fzero) ? (y-Fone)/(y+Fone) : (Fone-y)/(y+Fone);
+  return (y-Fone)/(y+Fone);
 } 
 
 flt
@@ -135,7 +135,7 @@ DQtanh(real x)
   y *= y;
   y *= y;
   y *= y;
-  return (x > Fzero) ? (y-Fone)/(y+Fone) : (Fone-y)/(y+Fone);
+  return (y-Done)/(y+Done);
 } 
 
 real
