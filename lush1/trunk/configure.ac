@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.37 2004-03-02 21:55:37 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.38 2004-07-15 19:14:32 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -42,7 +42,10 @@ fi
 # Check for fink on macs.
 case "$host" in
   *-darwin* | *-macos10*)
-     if test -d /sw ; then
+     if test -d /opt/local ; then
+       CPPFLAGS="$CPPFLAGS -I/opt/local/include"
+       LDFLAGS="$LDFLAGS -L/opt/local/lib"
+     elif test -d /sw ; then
        CPPFLAGS="$CPPFLAGS -I/sw/include"
        LDFLAGS="$LDFLAGS -L/sw/lib"
      fi
