@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: v4l.lsh,v 1.5 2002-11-20 08:33:35 profshadoko Exp $
+;;; $Id: v4l.lsh,v 1.6 2002-11-22 06:38:35 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -99,6 +99,9 @@
     (cpheader "#include <sys/mman.h>")
     (cpheader "#include <sys/ioctl.h>")
     (cpheader "#include <linux/videodev.h>")
+    ;; this is the number of byte per pixel for each video mode
+    (cpheader "static int depths[]={-1,1,2,2,3,4,2,2,2,2,2,2,2,2,2,2,2};")
+
     ())
 
 
@@ -135,6 +138,7 @@
   ((-gptr-) buffer)			; frame buffer
   ((-int-) buffersize)			; size thereof
   ((-int-) currentformat)               ; automatically determined format
+  ((-gptr-) framebuffer)
   ;; parameters and capabilities
   ((-int-) cap_channels cap_audios)
   ((-int-) cap_maxwidth cap_maxheight)
@@ -183,15 +187,18 @@
 
 
 #? (==> <v4ldevice> set-format <f> <w> <h>)
-;; set the video format/palette (VIDEO_PALETTE_RGB24,
-;; VIDEO_PALETTE_RGB32, VIDEO_PALETTE_YUV422 etc...),
+;; set the video format/palette (@@VIDEO_PALETTE_RGB24,
+;; @@VIDEO_PALETTE_RGB32, @@VIDEO_PALETTE_YUV422 etc...),
 ;; and the width and the height of the image
 ;; to be grabbed.  Returns 0 on success and -1 if the format
-;; requested is not supported by the device. This is a rarely 
-;; called low-level method  since the various grab-into-rgb
-;; and grab-into-rgba determine the appropriate format 
-;; automatically, and all the grab-xxx-into-xxx methods
-;; set their format.
+;; requested is not supported by the device. This method rarely 
+;; called directly, unless the low-level <grab> method is
+;; to be used. The various <grab-into-rgb>
+;; and <grab-into-rgba> determine the appropriate format 
+;; automatically, and all the <grab-xxx-into-xxx> methods
+;; set the desired before grabbing format, therefore 
+;; a prior call to <set-format> is unnecessary if these
+;; methods are used.
 (defmethod v4ldevice set-format (f w h)
   ((-int-) f w h)
   ((-int-) f w h)
@@ -202,8 +209,7 @@
    (let ((retcode 0))
      ((-int-) retcode)
      #{{ int changedp=0;  
- 	int code;
- 	/* int depths[]={-1,1,-1,2,3,4,2,2,2,2,-1,-1,-1,-1,-1,-1,-1}; */
+         int code;
          if (($f != $mmapinfo->format)||
              ($w != $mmapinfo->width) ||
  	    ($h != $mmapinfo->height)) {
@@ -211,6 +217,7 @@
  	  $mmapinfo->format = $f;
  	  $mmapinfo->width = $width = $w;
  	  $mmapinfo->height = $height = $h;
+          $depth = depths[$f];
  	  /* now grab a couple of frames to clear
    	     the buffer from inapropriately formated frames */
            for ( $frame=0; 
@@ -359,6 +366,7 @@
 (defmethod v4ldevice -destructor ()
   (==> this cleanup))
 
+
 #? (==> <v4ldevice> grab-into-rgb <img>)
 ;; grab an image from the v4l device into a
 ;; preexisting image (a ubyte-matrix of size 
@@ -470,11 +478,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
@@ -518,11 +527,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
@@ -569,11 +579,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
@@ -620,11 +631,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
@@ -670,14 +682,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
-	imgptr = IDX_PTR($img, unsigned char);
-
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[$frame];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 	memcpy(imgptr,bufptr,$width*$height*2);
 
@@ -719,11 +729,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	even=1;
@@ -785,11 +796,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	even=1;
@@ -841,11 +853,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
         memcpy(imgptr,bufptr,$width*$height);
      } #}
@@ -909,11 +922,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
@@ -962,11 +976,12 @@
         $mmapinfo->width = $width;
         $mmapinfo->height = $height;
         $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
 
 	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
 	code = ioctl($fd, VIDIOCSYNC, &lastframe);
         // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
-	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
 	imgptr = IDX_PTR($img, unsigned char);
 
 	for (i=0; i<$height; i++) {
@@ -983,6 +998,59 @@
      } #}
     (if (<> retcode 0) -1 frame)))
 
+#? (==> <v4ldevice> grab)
+;; low-level grab of an image from the v4l device.
+;; This is a low-level function that simply performs a 
+;; frame grab in the video format and image size
+;; (as set with set-format) with no format conversion.
+;; Most users will prefer to use the other grab methods
+;; which perform appropriate conversions and write their
+;; result into an idx. The present function simply provides
+;; a pointer to the frame buffer.
+;; The grabbed data can be accessed through the <framebuffer>
+;; slot of the <v4ldevice> (a gptr). The number of bytes
+;; in the grab frame is given by the product of the 
+;; <width>, <height>, and <depth> slots. The format
+;; depends on what parameter was passed to <set-format>
+;; prior to calling <grab>. Please note that the RGB24 and
+;; RGB32 formats of video4linux are really BGR formats
+;; from Lush's point of view.
+;; {<code>
+;;  (libload "video4linux/v4l")
+;;  (libload "libc/libc")
+;;  (new-window)
+;;  ;; these parameters are for Quickcam 3000 pro webcam
+;;  (setq v (new v4ldevice "/dev/video" "AUTO" 0 320 240))
+;;  (setq m (ubyte-matrix 240 320))
+;;  ;; set format to YUV420P (planar).
+;;  (==> v set-format @@VIDEO_PALETTE_YUV420P 320 240)
+;;  (==> v grab)
+;;  ;; copy the Y component into the matrix m
+;;  (memcpy (idx-ptr m) :v:framebuffer (* 240 320))
+;;  (rgb-draw-matrix 0 0 m)
+;; </code>}
+(defmethod v4ldevice grab ()
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int lastframe, code;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        if ($mmapinfo->format == 0) {
+         error(NIL,"video format was not set",NIL); }
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+	$framebuffer = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+
+     } #}
+    (if (<> retcode 0) -1 frame)))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (dhc-make () v4l_dummy 
@@ -993,6 +1061,7 @@
 	   adjust 
 	   tune 
 	   -destructor 
+	   grab
 	   grab-rgb24-into-rgbx 
 	   grab-rgb32-into-rgbx 
 	   grab-rgb24-into-rgba 
