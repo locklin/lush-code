@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.3 2002-04-29 20:53:07 leonb Exp $
+ * $Id: unix.c,v 1.4 2002-05-01 15:33:37 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1282,152 +1282,6 @@ DX(xsocketopen)
 }
 
 
-/* ---------------------------------------- */
-/* DYNAMIC LOADING                          */
-/* ---------------------------------------- */
-
-#ifdef HAVE_DLFCN_H
-#ifdef HAVE_DLOPEN
-#include <dlfcn.h>
-#define dlopen_handle_t void*
-#endif /* HAVE_LIBDL */
-#endif /* HAVE_DLFCN */
-
-#ifdef HAVE_DL_H
-#ifdef HAVE_LIBDLD
-#include <dl.h>
-#define HAVE_DLOPEN
-#define dlopen_handle_t shl_t 
-/* DLOPEN emulation under HP/UX */
-static dlopen_handle_t 
-dlopen(char *soname, int mode)
-{ 
-  return shl_load(soname,BIND_IMMEDIATE|BIND_NONFATAL|
-		  BIND_NOSTART|BIND_VERBOSE, 0L ); 
-}
-static void
-dlclose(dlopen_handle_t hndl)
-{ 
-  shl_unload(hndl); 
-}
-static void*
-dlsym(dlopen_handle_t hndl, char *sym)
-{ 
-  void *addr = 0;
-  if (shl_findsym(&hndl,sym,TYPE_PROCEDURE,&addr) >= 0)
-    return addr;
-  return 0;
-}
-static char*
-dlerror(void)
-{
-  return "Function shl_load() has failed";
-}
-#endif /* HAVE_DL */
-#endif /* HAVE_LIBDLD */
-
-#ifdef HAVE_DLOPEN
-
-static struct dlrecord {
-  struct dlrecord *next;
-  dlopen_handle_t handle;
-  char name[1];
-} *dlfirst;
-
-DX(xmod_list)
-{
-  at *ans = NULL;
-  at **where = &ans;
-  struct dlrecord *rec = dlfirst;
-  ARG_NUMBER(0);
-  while (rec)
-    {
-      *where = cons(new_string(rec->name), NIL);
-      where = &((*where)->Cdr);
-      rec = rec->next;
-    }
-  return ans;
-}
-
-DX(xmod_load)
-{
-  char *soname;
-  char *srname;
-  char buffer[80];
-  dlopen_handle_t handle;
-  int   mode;
-  int (*init)(int,int);
-  struct dlrecord *rec;
-  at *ans;
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  /* Search DLL */
-  soname = ASTRING(1);
-  srname = search_file(soname, "|.so|.sl");
-  if (srname)
-    srname = concat_fname(NULL,srname);
-  else
-    srname = soname;
-  /* Set DLOPEN mode */
-#ifdef RTLD_NOW
-  mode = RTLD_NOW;
-#else
-  mode = 1;
-#endif
-  /* Load DLL */
-  handle = dlopen(srname, mode);
-  if (!handle)
-  {
-    sprintf(buffer, "Dynamic linker error '%s'", dlerror());
-    error(NIL, buffer, APOINTER(1));
-  }
-  /* Check that DLL has not been loaded yet */
-  for (rec=dlfirst; rec; rec=rec->next)
-    if (handle==rec->handle || !strcmp(srname, rec->name))
-      break;
-  if (rec)
-  {
-    dlclose(handle);
-    error(NIL,"Module already loaded", APOINTER(1));
-  }
-  /* Find init symbol */
-  init = dlsym(handle, "init_user_dll");
-  soname = (char*)dlerror();
-  if (init != 0)
-  {
-    /* Calling init function */
-    switch ( (*init)(TLOPEN_MAJOR,TLOPEN_MINOR) )
-      {
-      case -1:
-	dlclose(handle);
-	error(NIL,"Module initialization failed", APOINTER(1));
-	break;
-      case -2:
-	dlclose(handle);
-	error(NIL,"Module is not compiled for this version of Lush",APOINTER(1));
-	break;
-      default:
-	break;
-      }
-  }
-  /* Prepare record */
-  rec = malloc(sizeof(struct dlrecord) + strlen(srname));
-  if (!rec)
-    {
-      dlclose(handle);
-      error(NIL,"Out of memory",NIL);
-    }
-  rec->next = dlfirst;
-  rec->handle = handle;
-  strcpy(rec->name, srname);
-  dlfirst = rec;
-  ans = new_string(srname);
-  return ans;
-}
-
-#endif /* HAVE_DLOPEN */
-
-
 
 /* ---------------------------------------- */
 /* INITIALIZATION CODE                      */
@@ -1453,10 +1307,5 @@ init_unix(void)
   dx_define("getconf", xgetconf);
   dx_define("filteropen", xfilteropen);
   dx_define("socketopen", xsocketopen);
-
-#ifdef HAVE_DLOPEN
-  dx_define("mod_list", xmod_list);
-  dx_define("mod_load", xmod_load);
-#endif
 }
 
