@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.28 2002-07-30 15:04:07 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.29 2002-07-30 17:40:30 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -638,7 +638,8 @@
      ;; allocate a temporary variable
      (when (and (or (==> :treetype:type is-a-simple)
                     (==> :treetype:type is-a-ptr))
-                ~:treetype:ignore (not retplace))
+                (not :treetype:ignore)
+                (not retplace) )
        (setq retplace (dhc-declare-temp-var :treetype:type)))
      (dhc-add-c-statements "{")
      (setq retexpr ,(append (list 'dhc-bumped-block 'treetype 'retplace)
@@ -1094,22 +1095,24 @@
 ;; (i.e. in an idx, recurse on the srg, but not on the type of the 
 ;; srg because that type is not a substructure).
 (defmethod dhc-type recurse (func)
-  (func this)
   (selectq (unode-val u-tclass)
     (dht-obj 
+     (func this)
      (each ((u (unode-val u-temps)))
        (==> (cdr u) recurse func)))
     (dht-list
+     (func this)
      (each ((u (unode-val u-extra)))
        (==>  u recurse func)) )
+    (dht-idx 
+     (func this)
+     (==> (unode-val u-type) recurse func))
     (dht-ptr 
      (==> (unode-val u-type) recurse func))
-    (dht-idx 
-     (==> (unode-val u-type) recurse func))
     (dht-str
-     ())
+     (func this) )
     (dht-srg 
-     ())
+     (func this) )
     (dht-class 
      ())
     (dht-func 
@@ -1387,7 +1390,7 @@
 	        (<> class2 'dht-dc))
        (unode-unify :t1:u-bump :t2:u-bump dhc-combine-u-bump)
        (unode-unify :t1:u-hash :t2:u-hash (lambda(a b) ()))
-       ;; The following ensures that a type comming from a scope above but only 
+       ;; The following ensures that a type coming from a scope above but only 
        ;; typed at a scope below still has the correct bumping information 
        ;; (ex: an argument which only sees (-idx- arg) inside a let).
        (if (= class1 'dht-unk)
