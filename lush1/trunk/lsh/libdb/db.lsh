@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: db.lsh,v 1.6 2004-04-19 20:06:24 leonb Exp $
+;;; $Id: db.lsh,v 1.7 2004-04-19 21:24:13 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -157,15 +157,20 @@
 ;; function and format an arbitrary lisp object.
 
 (defmethod db info(property)
-  (getp this property) )
+  (let ((h (getp this 'info)))
+    (when (is-of-class h |HTABLE|)
+      (h property) ) ) )
+
 
 #? (==> <db> keys)
 ;; Returns the list of keys defined by this dataset
 ;; or inherited from a parent dataset.
+
 (defmethod db keys()
   (let ((h (==> this info 'access)))
     (when (is-of-class h |HTABLE|)
       (htable-keys h) ) ) )
+
 
 #? (==> <db> get <n> <key>)
 ;; Access the dataset item number <n> and extract 
@@ -178,10 +183,10 @@
 (dmmethod db get(get n key)
   (when (not (symbolp key))
     (error '==> "not a symbol" key) )
-  (let* ((h (==> this info 'access))
-	 (f (when h (h key)))
+  (let* ((f (==> this info key))
 	 (x (cdr f)) )
-    (when f (list (car f) this n . x)) ) )
+    (when (and (consp f) (functionp (car f)))
+      (list (car f) this n . x)) ) )
 
 #? (==> <db> set-key <key> <func> <..extraargs..>)
 ;; Defines a new key and access function for database <db>.
@@ -208,48 +213,36 @@
 ;;.PP
 ;; Keys defined on a dataset are inherited by datasets
 ;; derived from this dataset using the <db-subset> and 
-;; <db-transform> classes.  This holds as long
-;; as method <set-key> is not called on a derived set.
+;; <db-transform> classes.
+
 (defmethod db set-key(key func . extra)
   (when (not (symbolp key)) 
     (error '==> "not a symbol" key))
   (when (not (functionp func)) 
     (error '==> "not a function" func) )
-  (let ((h (getp this 'access)))
+  (let ((h (getp this 'info)))
     (when (not (is-of-class h |HTABLE|))
-      (putp this 'access (setq h (htable))) )
+      (putp this 'info (setq h (htable))) )
     (h key (cons func extra))
     key ) )
+
 
 #? (==> <db> set-key-alias <key> <alias>)
 ;; Defines key symbol <key> as another name for symbol <alias>
 ;;.VP
 ;;  (==> db-stereo set-key-alias 'image-mono 'image-left)
+
 (defmethod db set-key-alias(key alias)
   (when (not (symbolp key)) 
     (error '==> "not a symbol" key))
   (when (not (symbolp alias)) 
     (error '==> "not a symbol" alias))
-  (let* ((h (getp this 'access))
+  (let* ((h (getp this 'info))
 	 (f (when h (h alias))) )
     (when (not f)
       (error '==> "aliased key is not defined" alias) )
     (h key f)
     key ) )
-
-#? (==> <db> dataset)
-;; Returns a friendly name for the dataset.
-(defmethod db dataset()
-  (or (==> this info 'dataset) "unknown") )
-      
-#? (==> <db> set-dataset <name>)
-;; Sets a friendly name for the dataset.
-;; Argument <name> must be a string.
-(defmethod db set-dataset(name)
-  (when (not (stringp name)) 
-    (error '==> "not a string" name))
-  (putp this 'dataset name) )
-
 
 
 ;;; ------------------------------
@@ -319,7 +312,7 @@
     (new db-subset base p) ) )
 
 (defmethod db-subset info(property)
-  (or (getp this property) 
+  (or (==> this (db . info) property)
       (==> base info property) ) )
 
 #? (db-shuffle <d>)
@@ -588,7 +581,8 @@
 ;;.IP
 ;; the mean plus the standard deviation, and,
 ;;.IP
-;; the maximal value,
+;; the maximal value.
+
 (de db-get-x-statistics(d)
   ((-obj- (db)) d)
   (let ((f (float-matrix 5 1))
@@ -604,6 +598,8 @@
 	      (tmps  (select f 0 1)) )
 	 (idx-copy s minis)
 	 (idx-copy s maxis)
+	 (idx-clear sums)
+	 (idx-clear sum2s)
 	 (for (i 0 (1- n))
 	      (==> d getx i s)
 	      (idx-bloop ((mi minis)(ma maxis)(ss s))
@@ -636,7 +632,8 @@
 ;;.IP
 ;; the mean plus the standard deviation, and,
 ;;.IP
-;; the maximal value,
+;; the maximal value.
+
 (de db-get-y-statistics(d)
   ((-obj- (db)) d)
   (let ((f (float-matrix 5 1))
@@ -652,6 +649,8 @@
 	      (tmps  (select f 0 1)) )
 	 (idx-copy s minis)
 	 (idx-copy s maxis)
+	 (idx-clear sums)
+	 (idx-clear sum2s)
 	 (for (i 0 (1- n))
 	      (==> d gety i s)
 	      (idx-bloop ((mi minis)(ma maxis)(ss s))
@@ -726,8 +725,55 @@
   (==> base get-label n) )
 
 (defmethod db-transform info(property)
-  (or (getp this property) 
+  (or (==> this (db . info) property)
       (==> base info property) ) )
+
+
+;;; ------------------------------
+
+#? * db-scale
+;; Class <db-scale> provides a way to linearly transform the input vectors
+;; using a common bias and scale factor. The resulting dataset only supports
+;; the floating point access methods <getx> and <gety>.
+
+(defclass db-scale db-transform
+  ((-float-) bias)
+  ((-float-) scale) )
+
+
+#? (new db-scale <d> <bias> <scale>)
+;; Returns a new dataset of class <db-scale>
+;; with bias <bias> and scale factor <scale>.
+(defmethod db-scale db-scale(d b s)
+  ((-obj- (db)) d) 
+  ((-float-) b s)
+  (setq base d)
+  (setq bias b)
+  (setq scale s) 
+  () )
+
+(defmethod db-scale getx(n p)
+  ((-int-) n) 
+  ((-idx1- (-float-)) p)
+  (==> base getx n p)
+  (idx-f1addc p bias p)
+  (idx-f1dotc p scale p)
+  p )
+
+(defmethod db-scale getx-int(n p)
+  ((-int-) n) 
+  ((-idx1- (-int-)) p)
+  (error "Cannot reliably scale integers")
+  p )
+
+(defmethod db-scale getx-ubyte(n p)
+  ((-int-) n) 
+  ((-idx1- (-ubyte-)) p)
+  (error "Cannot reliably scale ubytes")
+  p )
+
+
+
 
 ;;; ------------------------------
 
@@ -945,6 +991,8 @@
 			      getx-int gety-int 
 			      getx-ubyte gety-ubyte
 			      get-label)
+		;; scale
+		(db-scale db-scale getx getx-int getx-ubyte)
 		;; norm
 		db-norm-helper
 		db-get-x-statistics db-get-y-statistics 
