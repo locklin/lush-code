@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.17 2004-08-02 22:19:40 leonb Exp $
+ * $Id: dh.c,v 1.18 2004-08-30 21:24:11 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -631,10 +631,10 @@ DX(xclassinfo_t)
   if (! EXTERNP(p, &class_class))
     error(NIL,"not a class",p);
   cl = p->Object;
-  if (CONSP(cl->priminame))
-    check_primitive(cl->priminame, cl->classdoc);
   if (!cl->classdoc)
     return NIL;
+  if (CONSP(cl->priminame))
+    check_primitive(cl->priminame, cl->classdoc);
   return dhinfo_record(cl->classdoc->argdata);
 }
 
