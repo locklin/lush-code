@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.5 2002-07-24 15:09:41 leonb Exp $
+ * $Id: check_func.h,v 1.6 2002-07-30 15:04:04 leonb Exp $
  **********************************************************************/
 
 #ifndef CHECK_FUNC_H
@@ -159,7 +159,7 @@ LUSHAPI void srg_free(struct srg *);
 	    run_time_error(rterr_not_same_dim);}
 
 #define Msrg_resize(sr, new_size) \
-   if((sr)->size < new_size) \
+   if((sr)->size < (int)(new_size)) \
       srg_resize_compiled(sr, new_size, __FILE__, __LINE__);
 
 #define Midx_checksize0(i1) { \

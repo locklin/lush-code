@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.14 2002-07-29 18:00:38 leonb Exp $
+ * $Id: dh.h,v 1.15 2002-07-30 15:04:04 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -54,9 +54,16 @@
 /* ----------------------------------------------- */
 
 #ifdef __cplusplus
+extern "C" {
+#ifndef __cplusplus
+}
+#endif
+#endif
+
+#ifdef __cplusplus
 #define extern_c extern "C"
 #else
-#define extern_c /**/
+#define extern_c extern
 #endif
 
 
@@ -235,7 +242,8 @@ struct dhdoc_s
 #ifndef NOLISP
 
 #define DHDOC(Kname,Xname,Cnamestr,Mnamestr,Ktest) \
-  static dhrecord name2(K,Kname)[];\
+  static dhrecord name2(K,Kname)[]; \
+  extern_c dhdoc_t Kname; \
   dhdoc_t Kname = { name2(K,Kname), \
     { Cnamestr, Mnamestr, Xname, enclose_in_string(Kname), Ktest } }; \
   static dhrecord name2(K,Kname)[]
@@ -299,6 +307,7 @@ struct dhclassdoc_s
 
 #define DHCLASSDOC(Kname,superKname,Cname,LnameStr,Vname,nmet) \
   static dhrecord name2(K,Kname)[]; \
+  extern_c dhclassdoc_t Kname; \
   dhclassdoc_t Kname = { name2(K,Kname), \
    { superKname, LnameStr, enclose_in_string(Cname), \
      enclose_in_string(VnameStr), enclose_in_string(Kname), \
@@ -313,4 +322,7 @@ struct dhclassdoc_s
 /* END                                             */
 /* ----------------------------------------------- */
 
+#ifdef __cplusplus
+}
+#endif
 #endif
