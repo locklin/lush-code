@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.57 2002-08-19 22:49:29 profshadoko Exp $
+;;;  $Id: sysenv.lsh,v 1.58 2002-08-21 03:27:19 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -490,12 +490,36 @@
       (r key t) ) 
     r ) )
 
+(de list-insert (l pos x)
+  (if (= 0 pos)
+      (cons x l)
+    (let* ((w (nthcdr (1- pos) l)))
+      (if (not w)
+          (error "list too short")
+        (rplacd w (cons x (cdr w))) ) ) l ) )
+
+(de list-delete (l pos)
+  (if (= 0 pos)
+      (cdr l)
+    (let* ((w (nthcdr (1- pos) l)))
+      (if (not w)
+          (error "list too short")
+        (rplacd w (cddr w)) ) ) l ) )
+
+(de list-merge (l l2)
+  (when (and (not l) l2)
+    (setq l (list (car l2)))
+    (setq l2 (cdr l2)) )
+  (each ((i l2)) (when ~(member i l) (nconc1 l i))))
+
+
 (lock_symbol caddr cdddr cdadr caadr cadar cddar cdaar caaar
              nconc nconc1 classp dmd alist-get alist-add
              |*PROPERTIES| putp getp 
              defclass defmethod demethod dfmethod dmmethod
              mapfor mapwhile let-filter sort-list 
-             hset hset-and hset-or)
+             hset hset-and hset-or
+	     list-insert list-delete list-merge)
 
 
 
@@ -1106,8 +1130,93 @@
 
 (lock_symbol edit fedit |^E| |^F|)
 
+;;; --------- Strings/Regex ---------
 
 
+(de strip (s) (stripl (stripr s)))
+(lock-symbol strip)
+
+(de stripl (s) (regex-subst "^( )+" "" s) )
+(lock-symbol stripl)
+
+(de stripr (s) (regex-subst "( )+$" "" s) )
+(lock-symbol stripr)
+
+(de regex-rseek (r s &optional n gr)
+  (setq n (if (numberp n) (max (int n) 0) -1))
+  (let* ((x ())
+	 (i 1)
+	 (l '(())) )
+    
+    ;; find recursive occurences
+    (while (and (<> 0 n)
+		(setq x (regex-seek r s i))
+		)
+      (setq i (apply + x))
+      (setq l (cons x l))
+      (incr n -1)
+      )
+    (setq l (when (<= n 0) (cdr (reverse l))))
+    
+    ;; check garbage stuff conformity
+    (when (and l gr)
+      (let* ((ll l)
+	     (x 1) )
+	(while ll
+	  (when ~(regex-match gr (mid s x (- (caar ll) x)))
+		(setq l () ll ()) ;; failure
+		)
+	  (setq x (caar ll))
+	  (setq ll (cdr ll))
+	  )
+	(when (< n 0) ;; undefined n
+	  (when ~(regex-match gr (mid s (apply + (last l))))
+		(setq l () ll ()))))) ;; failure
+    ;; return value
+    l ))
+(lock-symbol regex-rseek)
+
+
+(de regex-skip (r s &optional n gr neg)
+  (when ~n (setq n 1))
+  (if (<= n 0)
+      s
+    (let* ((l (regex-rseek r s n gr)))
+      (when l (mid s (if neg (car (last l)) (apply + (last l))))))))
+(lock-symbol regex-skip)
+
+
+(de regex-split (r s &optional n gr neg)
+  (let* ((l (regex-rseek r s n gr)))
+    (if neg
+	(let* ((y 1))
+	  (nconc
+	   (all (((x i) l)) (prog1 (mid s y (- x y)) (setq y (+ x i))))
+	   (if n () (list (mid s y)))))
+      (all (((x i) l)) (mid s x i)))))
+(lock-symbol regex-split)
+
+
+(de regex-count (r s) (length (regex-rseek r s)) )
+(lock-symbol regex-count)
+
+
+(de regex-tail (r s &optional n gr neg)
+  (when ~n (setq n 1))
+  (let* ((i (regex-count r s)))
+    (when (>= i n)
+      (regex-skip r s (if neg (- i n) (1+ (- i n))) gr ~neg))))
+(lock-symbol regex-tail)
+
+
+(de regex-member (rl s)
+  (while (and rl s)
+    (if (regex-match rl)
+	(setq s ())
+      (setq rl (cdr rl))))
+  (car rl))
+
+(lock-symbol regex-member)
 
 
 
