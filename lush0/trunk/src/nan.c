@@ -20,7 +20,7 @@
   T-Lisp3: (C) Neuristique
   nan.c
   This file contains NaN functions.
-  $Id: nan.c,v 0.1 2001-10-31 17:30:56 profshadoko Exp $
+  $Id: nan.c,v 0.1.1.1 2001-10-31 17:30:56 profshadoko Exp $
 ********************************************************************** */
 
 /* LYB COMMENT:

@@ -20,7 +20,7 @@
   T-Lisp3: (C) LYB YLC 1988
   binary.c
   This file contains general lisp structure definitions
-  $Id: binary.c,v 0.1 2001-10-31 17:30:31 profshadoko Exp $
+  $Id: binary.c,v 0.1.1.1 2001-10-31 17:30:31 profshadoko Exp $
   ********************************************************************** */
 
 

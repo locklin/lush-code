@@ -30,7 +30,7 @@
 
 - macro chars   DMC
 
-$Id: io.c,v 0.1 2001-10-31 17:30:55 profshadoko Exp $
+$Id: io.c,v 0.1.1.1 2001-10-31 17:30:55 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

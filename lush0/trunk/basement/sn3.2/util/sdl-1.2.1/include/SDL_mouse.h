@@ -22,7 +22,7 @@
 
 #ifdef SAVE_RCSID
 static char rcsid =
- "@(#) $Id: SDL_mouse.h,v 0.1 2001-10-31 17:37:15 profshadoko Exp $";
+ "@(#) $Id: SDL_mouse.h,v 0.1.1.1 2001-10-31 17:37:15 profshadoko Exp $";
 #endif
 
 /* Include file for SDL mouse event handling */

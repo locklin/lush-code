@@ -21,7 +21,7 @@
 	T-Lisp3: (C) LYB YLC 1988
 	fltlib.c
 	definition of numeric type  'flt'
-	$Id: fltlib.c,v 0.1 2001-10-31 17:30:41 profshadoko Exp $
+	$Id: fltlib.c,v 0.1.1.1 2001-10-31 17:30:41 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

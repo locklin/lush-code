@@ -20,7 +20,7 @@
   T-Lisp3: (C) LYB 
   date.c
   This file contains functions for handling date/time
-  $Id: date.c,v 0.1 2001-10-31 17:30:34 profshadoko Exp $
+  $Id: date.c,v 0.1.1.1 2001-10-31 17:30:34 profshadoko Exp $
 ********************************************************************** */
 
 

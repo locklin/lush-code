@@ -23,7 +23,7 @@
         DZ functions use a virtual stack machine 
         with static code analysis.
         dz.c
-        $Id: dz.c,v 0.1 2001-10-31 17:30:37 profshadoko Exp $
+        $Id: dz.c,v 0.1.1.1 2001-10-31 17:30:37 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

@@ -21,7 +21,7 @@
 	function.c
 	1- LISP function   DE DF DM
 	2- C function  DX DY
-	$Id: function.c,v 0.1 2001-10-31 17:30:47 profshadoko Exp $
+	$Id: function.c,v 0.1.1.1 2001-10-31 17:30:47 profshadoko Exp $
 ********************************************************************** */
 
 

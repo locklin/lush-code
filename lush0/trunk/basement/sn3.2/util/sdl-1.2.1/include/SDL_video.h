@@ -22,7 +22,7 @@
 
 #ifdef SAVE_RCSID
 static char rcsid =
- "@(#) $Id: SDL_video.h,v 0.1 2001-10-31 17:37:20 profshadoko Exp $";
+ "@(#) $Id: SDL_video.h,v 0.1.1.1 2001-10-31 17:37:20 profshadoko Exp $";
 #endif
 
 /* Header file for access to the SDL raw framebuffer window */

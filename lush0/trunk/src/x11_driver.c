@@ -20,7 +20,7 @@
   T-Lisp3: LYB YLC 1/88
   X11driver.c
   Graphic driver for X11
-  $Id: x11_driver.c,v 0.1 2001-10-31 17:31:17 profshadoko Exp $
+  $Id: x11_driver.c,v 0.1.1.1 2001-10-31 17:31:17 profshadoko Exp $
   ********************************************************************** */
 
 #include "config.h"

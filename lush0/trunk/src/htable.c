@@ -20,7 +20,7 @@
   T-Lisp3: (C) LYB 
   htable.c
   This file contains functions for handling hash tables
-  $Id: htable.c,v 0.1 2001-10-31 17:30:52 profshadoko Exp $
+  $Id: htable.c,v 0.1.1.1 2001-10-31 17:30:52 profshadoko Exp $
 ********************************************************************** */
 
 /* --- INITIALISATION SECTION --- */

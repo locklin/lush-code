@@ -22,7 +22,7 @@
 
 #ifdef SAVE_RCSID
 static char rcsid =
- "@(#) $Id: SDL.h,v 0.1 2001-10-31 17:37:10 profshadoko Exp $";
+ "@(#) $Id: SDL.h,v 0.1.1.1 2001-10-31 17:37:10 profshadoko Exp $";
 #endif
 
 /* Main include header for the SDL library */

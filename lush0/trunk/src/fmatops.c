@@ -20,7 +20,7 @@
   T-Lisp3: (C) LYB YLC 1988
   matrix.c
   - array and matrix class definition
-  $Id: fmatops.c,v 0.1 2001-10-31 17:30:46 profshadoko Exp $
+  $Id: fmatops.c,v 0.1.1.1 2001-10-31 17:30:46 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

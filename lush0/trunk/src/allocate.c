@@ -25,7 +25,7 @@
   
   Contains also the garbage collector...
   
-  $Id: allocate.c,v 0.1 2001-10-31 17:30:28 profshadoko Exp $
+  $Id: allocate.c,v 0.1.1.1 2001-10-31 17:30:28 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

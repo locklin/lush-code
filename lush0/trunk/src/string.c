@@ -23,7 +23,7 @@
   string creation -->	NEW_STRING  NEW_SAFE_STRING
   string manipulation --> LEFT$ RIGHT$ MID$ CONCAT$ VAL$ STR$
   string test -->		STRINGP
-  $Id: string.c,v 0.1 2001-10-31 17:31:03 profshadoko Exp $
+  $Id: string.c,v 0.1.1.1 2001-10-31 17:31:03 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

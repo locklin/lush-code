@@ -24,7 +24,7 @@
 		MAPCAR MAPC RMAPCAR RMAPC
 		LIST QUOTE
 
-        $Id: eval.c,v 0.1 2001-10-31 17:30:38 profshadoko Exp $
+        $Id: eval.c,v 0.1.1.1 2001-10-31 17:30:38 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

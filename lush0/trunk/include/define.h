@@ -20,7 +20,7 @@
         T-Lisp3:    L.Y. Bottou   --   Y. LeCun
         define.h
         General Use definitions
-	$Id: define.h,v 0.1 2001-10-31 17:29:23 profshadoko Exp $
+	$Id: define.h,v 0.1.1.1 2001-10-31 17:29:23 profshadoko Exp $
 ********************************************************************** */
 
 #ifndef DEFINE_H

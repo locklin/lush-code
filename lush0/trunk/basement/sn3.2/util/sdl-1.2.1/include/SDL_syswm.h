@@ -22,7 +22,7 @@
 
 #ifdef SAVE_RCSID
 static char rcsid =
- "@(#) $Id: SDL_syswm.h,v 0.1 2001-10-31 17:37:16 profshadoko Exp $";
+ "@(#) $Id: SDL_syswm.h,v 0.1.1.1 2001-10-31 17:37:16 profshadoko Exp $";
 #endif
 
 /* Include file for SDL custom system window manager hooks */
