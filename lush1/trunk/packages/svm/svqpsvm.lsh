@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: svqpsvm.lsh,v 1.1 2004-08-24 19:26:21 leonb Exp $
+;;; $Id: svqpsvm.lsh,v 1.2 2004-08-24 20:14:29 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -37,7 +37,12 @@
 
 #? *** SvqpSVM
 ;; This is a simple SVM implemented with the SVQP optimizer.
-
+;; This is slower than LibSVM in general for several reasons:
+;; - kernel values are not cached
+;; - no shrinking
+;; However, conjugate gradient scales much better during
+;; the final training phases. Using SVQP becomes more effective
+;; when searching high accuracy solutions.
 
 (defclass SVMProgram QuadraticProgram
   ((-idx1- (-int-)) x)
@@ -53,8 +58,9 @@
 (defmethod SVMProgram compute-arow(i r)
   ((-int-) i)
   ((-idx1- (-double-)) r)
+  (setq i (x i))
   (idx-bloop ((x1 x)(r1 r))
-    (r (==> kernel call i (x1))) )
+    (r1 (==> kernel call i (x1))) )
   () )
 
 (defclass SvqpSVM Object
@@ -125,7 +131,7 @@
       (setq :lsvm:negative-class +1)
       lsvm ) ) ) 
 
-(defmethod SvqpSVM run()
+(defmethod SvqpSVM run-with-alpha()
   (when (<> (idx-dim x 0) (idx-dim y 0))
     (error "Matrix x and y have different sizes") )
   (when (or (< Cn 0) (< Cp 0))
@@ -142,7 +148,6 @@
 	(b1      (if f +1 -1))
 	(cmin1   (if f 0 (- Cn)))
 	(cmax1   (if f Cp 0)) ) )
-    (idx-clear alpha)
     ;; prepare
     (==> pgm set-x alpha)
     (==> pgm set-b bv)
@@ -159,13 +164,13 @@
       (printf "svqp error: %s\n" (==> pgm get-error))
       (error "svqp error") )
     ;; retrieve nsv
+    (setq b 0)
     (setq nsv 0)
+    (idx-copy (==> pgm get-x) alpha)
     (idx-bloop ((alpha1 alpha))
       (when (<> (alpha1) 0)
 	(incr nsv) ) )
-    ;; retrieve alpha
-    (setq b 0)
-    (idx-copy (==> pgm get-x) alpha)
+    ;; compute theshold
     (let ((lexp (==> this get-expansion))
 	  (lpos 0)(npos 0)
 	  (lneg 0)(nneg 0))
@@ -183,9 +188,39 @@
       (+ npos nneg) ) ) )
 
 
+(defmethod SvqpSVM run()
+  (idx-clear alpha)
+  (==> this run-with-alpha) )
+
+(defmethod SvqpSVM run-with-expansion(lexp)
+  ((-obj- (SVMExpansion)) lexp)
+  ;; compute reverse example table
+  (let ((n (idx-dim x 0))
+	(nsv 0)
+	(revx (htable)) )
+    (for (i 0 (1- n))
+	 (revx (x i) i) )
+    ;; collect alpha
+    (idx-clear alpha)
+    (idx-bloop ((s1 :lexp:sv)(a1 :lexp:alpha))
+      (let ((i (revx (s1))))
+	(when (and i (>= i 0) (< i n))
+	  (alpha i (a1))
+	  (incr nsv) ) ) )
+    ;; check sum
+    (when (<> nsv (idx-dim :lexp:sv 0))
+      (printf "*** Warning: nsv discrepancy %d != %d\n"
+	      nsv (idx-dim :lexp:sv 0)) )
+    (let ((sum ((idx-sum alpha))))
+      (when (> (abs sum) epsgr)
+	(printf "*** Warning: alpha sum is %l\n" sum)
+	;; TODO: code to project onto constraints
+	() ) ) )
+  ;; go
+  (==> this run-with-alpha) )
 
 ;; ----------------------------------------
 
 (dhc-make ()
 	  (svmprogram svmprogram compute-arow)
-	  (svqpsvm svqpsvm get-nsv get-expansion run) )
+	  (svqpsvm svqpsvm get-nsv get-expansion run-with-alpha) )
