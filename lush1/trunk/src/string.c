@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.23 2004-10-20 21:50:38 leonb Exp $
+ * $Id: string.c,v 1.24 2004-10-25 20:41:30 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -145,33 +145,97 @@ string_dispose(at *p)
 static char *
 string_name(at *p)
 {
-  char *s, *ind, *name;
-  int c;
-  
-  s = ((struct string *) (p->Object))->start;
-  name = string_buffer;
-
-  *name++ = '\"';  /*"*/
-  while ((c = *(unsigned char*)s)) {
-    if (name<string_buffer+STRING_BUFFER-10) {
-      if ((ind = strchr(special_string, c))) {
-	*name++ = '\\';
-	*name++ = aspect_string[ind - special_string];
-      } else if (isascii(c) && isprint(c)) {
-	*name++ = c;
-      } else if (c<=' ') {
-	*name++ = '\\';
-	*name++ = '^';
-	*name++ = (char)(c | 0x40);
-      } else {
-	*name++ = '\\';
-	*name++ = 'x';
-	*name++ = digit_string[(c >> 4) & 15];
-	*name++ = digit_string[c & 15];
-      }
+  char *s = ((struct string *) (p->Object))->start;
+  char *name = string_buffer;
+#ifdef HAVE_WCHAR_T
+  int n = strlen(s);
+  mbstate_t ps;
+  memset(&ps, 0, sizeof(mbstate_t));
+  *name++ = '\"'; 
+  for(;;)
+    {
+      char *ind;
+      int c = *(unsigned char*)s;
+      wchar_t wc = 0;
+      int m = (int)mbrtowc(&wc, s, n, &ps);
+      if (name>=string_buffer+STRING_BUFFER-10)
+	break;
+      if (m == 0)
+	break;
+      if ((ind = strchr(special_string, c)))
+	{
+	  *name++ = '\\';
+	  *name++ = aspect_string[ind - special_string];
+	} 
+      else if (m < 0)
+	{
+	  *name++ = '\\';
+	  *name++ = 'x';
+	  *name++ = digit_string[(c >> 4) & 15];
+	  *name++ = digit_string[c & 15];
+	  memset(&ps, 0, sizeof(mbstate_t));
+	  m = 1;
+	}
+      else if (iswprint(wc))
+	{
+	  memcpy(name, s, m);
+	  name += m;
+	}
+      else if (c<=' ')
+	{
+	  *name++ = '\\';
+	  *name++ = '^';
+	  *name++ = (char)(c | 0x40);
+	}
+      else
+	{
+	  int i;
+	  for (i=0; i<m; i++)
+	    if (name < string_buffer+STRING_BUFFER-10)
+	      {
+		c =  *(unsigned char*)(s+i);
+		*name++ = '\\';
+		*name++ = 'x';
+		*name++ = digit_string[(c >> 4) & 15];
+		*name++ = digit_string[c & 15];
+	      }
+	}
+      s += m;
+      n -= m;
     }
-    s++;
-  }
+#else
+  int c;
+  *name++ = '\"'; 
+  while ((c = *(unsigned char*)s)) 
+    {
+      char *ind;
+      if (name >= string_buffer+STRING_BUFFER-10)
+	break;
+      if ((ind = strchr(special_string, c))) 
+	{
+	  *name++ = '\\';
+	  *name++ = aspect_string[ind - special_string];
+	} 
+      else if (isascii(c) && isprint(c)) 
+	{
+	  *name++ = c;
+	} 
+      else if (c<=' ') 
+	{
+	  *name++ = '\\';
+	  *name++ = '^';
+	  *name++ = (char)(c | 0x40);
+	} 
+      else 
+	{
+	  *name++ = '\\';
+	  *name++ = 'x';
+	  *name++ = digit_string[(c >> 4) & 15];
+	  *name++ = digit_string[c & 15];
+	}
+      s++;
+    }
+#endif
   *name++ = '\"';  /*"*/
   *name++ = 0;
   return string_buffer;
