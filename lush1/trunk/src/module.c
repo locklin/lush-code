@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.24 2002-11-11 03:35:44 profshadoko Exp $
+ * $Id: module.c,v 1.25 2003-01-14 20:13:13 leonb Exp $
  **********************************************************************/
 
 
@@ -194,15 +194,17 @@ static void
 module_serialize(at **pp, int code)
 {
   char *fname = 0;
+  char *aname = 0;
   struct module *m = 0;
-  at *junk;
+  at *junk = 0;
   
   if (code != SRZ_READ)
     {
       m = (*pp)->Object;
       fname = "";
       if (m != &root)
-        fname = m->filename;
+        if (! (fname = relative_fname(lushdir_name, m->filename)))
+          fname = m->filename;
     }
   serialize_string(&fname, code, -1);
   if (code == SRZ_READ)
@@ -213,20 +215,23 @@ module_serialize(at **pp, int code)
         already:
           LOCK(m->backptr);
           *pp = m->backptr;
+          UNLOCK(junk);
           serialize_atstar(&junk, code); 
           UNLOCK(junk);
           return;
         }
+      junk = new_string(concat_fname(lushdir_name, fname));
+      aname = SADD(junk->Object);
       while ( (m = m->next) != &root)
-        if (!strcmp(fname, m->filename))
+        if (!strcmp(aname, m->filename))
           goto already;
-      (*pp) = module_load(fname, NIL);
+      (*pp) = module_load(aname, NIL);
       m = (*pp)->Object;
       free(fname);
-      fname = m->filename;
       check_exec();
     }
   serialize_atstar(&m->hook, code);  
+  UNLOCK(junk);
 }
 
 class module_class = {
