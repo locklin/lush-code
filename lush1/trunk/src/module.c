@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.36 2003-07-11 15:56:24 leonb Exp $
+ * $Id: module.c,v 1.37 2004-02-13 22:31:16 leonb Exp $
  **********************************************************************/
 
 
@@ -790,6 +790,8 @@ module_load(char *filename, at *hook)
       len = strlen(EXT_DLL);
       if (len>0 && l>filename+len && !strncmp(EXT_DLL, l-len, len))
         dlopenp = 1;
+      else if (l>filename-3 && !strncmp(".so", l-3, 3))
+	dlopenp = 1;
     }
   /* Initialize */
   dynlink_init();

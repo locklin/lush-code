@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.35 2003-12-12 02:13:13 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.36 2004-02-13 22:31:16 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -276,13 +276,9 @@ CC_PIC_FLAG=
 MAKESO=
 
 if test x${GCC} = xyes ; then
+    test x${GXX} = xyes && LDCC=${CXX}
     CC_PIC_FLAG='-fPIC'
     MAKESO="$LDCC -shared -o"
-    # Linking the main executable with g++ helps
-    # when dynlinking c++ object files.
-    if test x${GXX} = xyes ; then
-       LDCC=${CXX}
-    fi
 fi
 
 # Tested?
@@ -291,8 +287,8 @@ case "$host" in
         CC_EXP_FLAG='-Wl,-export-dynamic'
         ;;
     *-darwin* | *-macos10* | *-rhapsody*)
-        SOEXT=dylib
-        MAKESO="$LDCC -dynamiclib -o"
+        SOEXT=bundle
+        MAKESO="$LDCC -bundle -flat_namespace -undefined suppress -o"
         ;;
     *-freebsd2*)
         CC_PIC_FLAG='-fPIC'
