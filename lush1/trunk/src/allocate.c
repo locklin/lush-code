@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.14 2003-07-01 18:41:14 leonb Exp $
+ * $Id: allocate.c,v 1.15 2004-02-07 01:32:49 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -342,24 +342,35 @@ garbage(int flag)
        *  We want to call the destructors of
        *  all garbage objects (C_GARBAGE=1).
        *  We thus zombify them all.
+       *  But we start by the oostructs
+       *  because they can have weird destructors.
        */
       begin_iter_at(p) 
         {
           if (p->flags & C_GARBAGE)
+            if (p->flags & X_OOSTRUCT) 
+              {
+                int finalize = (p->flags & C_FINALIZER);
+                oostruct_dispose(p);
+                p->flags  = C_EXTERN | C_GARBAGE | X_ZOMBIE;
+                if (finalize)
+                  run_finalizers(p);
+              }
+        }
+      end_iter_at(p);
+      begin_iter_at(p) 
+        {
+          if (p->flags & C_GARBAGE)
             {
-              /* destructors */
+              int finalize = (p->flags & C_FINALIZER);
               if (p->flags & C_EXTERN)
                 {
-                  if (p->flags & X_OOSTRUCT)
-                    oostruct_dispose(p);
-                  else 
-                    (*p->Class->self_dispose)(p);
+                  (*p->Class->self_dispose)(p);
                   p->Class = &zombie_class;
                   p->Object = NIL;
                   p->flags  = C_EXTERN | C_GARBAGE | X_ZOMBIE;
                 }
-              /* finalizers */
-              if (p->flags & C_FINALIZER)
+              if (finalize)
                 run_finalizers(p);
             }
         }
