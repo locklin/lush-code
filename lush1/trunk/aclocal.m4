@@ -96,32 +96,41 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
         AC_HELP_STRING([--enable-debug],
                        [Compile with debugging options (default: no)]),
         [ac_debug=$enableval],[ac_debug=no])
-   OPTS=
-   AC_SUBST(OPTS)
-   saved_CFLAGS="$CFLAGS"
-   CFLAGS=
-   for opt in $saved_CFLAGS ; do
-     case $opt in
-       -O*) ;;
-       -g*) OPTS="$OPTS $opt" ;;
-       *) CFLAGS="$CFLAGS $opt" ;;
-     esac
-   done
-   if test x$ac_debug = xno ; then
-     OPTS=-DNO_DEBUG
-     AC_CHECK_CC_OPT([-Wall],[OPTS="$OPTS -Wall"])
-     AC_CHECK_CC_OPT([-O3],[OPTS="$OPTS -O3"],
-        [ AC_CHECK_CC_OPT([-O2], [OPTS="$OPTS -O2"] ) ] )
-     dnl AC_CHECK_CC_OPT([-funroll-loops], [OPTS="$OPTS -funroll-loops"])
-     dnl AC_CHECK_CC_OPT([-fomit-frame-pointer], [OPTS="$OPTS -fomit-frame-pointer"])
-     cpu=`uname -m 2>/dev/null`
-     test -n "${cpu}" || cpu=${host_cpu} 
-     case "${cpu}" in
-        i?86)
-           opt="-mcpu=${cpu}"
-           AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"])
-           ;;
-      esac
+   AC_ARG_VAR(OPTS, [Optimization flags for all compilers.])
+   if test x${OPTS+set} = xset ; then
+     saved_CFLAGS="$CFLAGS"
+     CFLAGS=
+     for opt in $saved_CFLAGS ; do
+       case $opt in
+         -O*|-g*) ;;
+         *) CFLAGS="$CFLAGS $opt" ;;
+       esac
+     done
+     AC_MSG_CHECKING([user provided debugging flags])
+     AC_MSG_RESULT($OPTS)
+   else 
+     saved_CFLAGS="$CFLAGS"
+     CFLAGS=
+     for opt in $saved_CFLAGS ; do
+       case $opt in
+         -O*) ;;
+         -g*) OPTS="$OPTS $opt" ;;
+         *) CFLAGS="$CFLAGS $opt" ;;
+       esac
+     done
+     if test x$ac_debug = xno ; then
+       OPTS=-DNO_DEBUG
+       AC_CHECK_CC_OPT([-Wall],[OPTS="$OPTS -Wall"])
+       AC_CHECK_CC_OPT([-O3],[OPTS="$OPTS -O3"],
+         [ AC_CHECK_CC_OPT([-O2], [OPTS="$OPTS -O2"] ) ] )
+       cpu=${host_cpu}
+       if test -n "${cpu}" ; then
+         opt="-march=${cpu}"
+         AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"],
+	  [ opt="-mcpu=${cpu}"
+            AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"]) ] )
+       fi
+     fi
    fi
 ])
 
