@@ -34,6 +34,8 @@
       ; (==> this advertize) 
       ) ) )
 
+(defmethod Scroller scroll-by (v) (==> this vscroll (+ vpos v)))
+
 (defmethod Scroller page-down ()
   (let (((x y w h) :view:rect)
 	(old-vpos vpos))
@@ -41,6 +43,13 @@
     ;; return true if moved, () if not moved
     (<> vpos old-vpos)))
   
+(defmethod Scroller page-up ()
+  (let (((x y w h) :view:rect)
+	(old-vpos vpos))
+    (==> this vscroll (- vpos (* 0.5 h)))
+    ;; return true if moved, () if not moved
+    (<> vpos old-vpos)))
+
 (defmethod Scroller vcenter (pv)
   (let (((xx yy ww hh) :inside:rect)
 	((x y w h) :view:rect) )
@@ -63,6 +72,25 @@
 	21 (if hscroll (1+ hh) hh) ) ) )
   (==> this setpos hpos vpos)
   (==> this advertize) )
+
+
+
+(defclass LdocScroller Scroller)
+
+(defmethod LdocScroller LdocScroller (w h contenu)
+  (==> this Scroller w h contenu))
+
+(defmethod LdocScroller arrow-up(x1 y1) 
+  (==> this vscroll (- vpos 12)))
+(defmethod LdocScroller arrow-down(x1 y1)
+  (==> this vscroll (+ vpos 12)))
+
+(defmethod LdocScroller keypress (c x y)
+  (selectq c
+    (" " (==> this page-down))
+    (("\b" "\x7f") (==> this page-up))
+    (("\r" "\n") (==> this arrow-down x y))))
+  
   
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -82,11 +110,12 @@
   tree					; root node of currently displayed ltree
   current-item				; item under cursor (highlighted)
   data					; content of selected item
-  enter-call				; call when enter key is pressed on an item
+  show-call				; call when enter key is pressed on an item
   open-call				; call when right arrow key is pressed
   close-call				; call when left arrow key is pressed
   move-call				; call shen up/down arrows are pressed
   space-call				; call shen space bar is pressed
+  backspace-call			; call shen space bar is pressed
 
   icon-open				; string for open item "-"
   icon-closed				; string for closed item "+"
@@ -103,13 +132,14 @@
 ;;; Constructor
 
 (defmethod Explorer explorer
-	   (ltree mw mh &optional ecall ocall ccall mcall scall)
+	   (ltree mw mh &optional ecall ocall ccall mcall scall bcall)
   (let ((noop (lambda (c) ())))
-    (setq enter-call (if (functionp ecall) ecall noop))
+    (setq show-call (if (functionp ecall) ecall noop))
     (setq open-call (if (functionp ocall) ocall noop))
     (setq close-call (if (functionp ccall) ccall noop))
     (setq move-call (if (functionp mcall) mcall noop))
-    (setq space-call (if (functionp scall) scall noop)))
+    (setq space-call (if (functionp scall) scall noop))
+    (setq backspace-call (if (functionp bcall) bcall noop)))
   (setq icon-open "- ")
   (setq icon-closed "+ ")
   (setq min-width mw)
@@ -187,9 +217,16 @@
 
 (defmethod Explorer keypress(c x y)
   (selectq c
-    (" " (when space-call 
-	   (when (not (space-call this))
-	     (==> this next-hit))))
+    (" " 
+     (if (<> current-item now-showing)
+	 ;; display doc of current node
+	 (==> this arrow-right x y)
+       ;; otherwise, scroll down 
+       (when space-call 
+	 (when (not (space-call this))
+	   ;; if at the bottom, flip to next node
+	   (==> this next-hit)))))
+    (("\b" "\x7f") (when backspace-call (backspace-call this)))
     ("c" (==> this close-all))
     ("\r" (==> this next-hit))))
 
@@ -212,7 +249,9 @@
     (==> this shrink-wrap)
     (==> this expose) 
     (when open-call (open-call this)))
-  (when enter-call (enter-call this)))
+  (when show-call 
+    (setq now-showing current-item)
+    (show-call this)))
 
 
 (defmethod Explorer arrow-down(x y)
@@ -236,7 +275,9 @@
 	(when (and tx (not (numberp tx))) 
 	  (let ((ctx (car tx)))
 	    (==> this set-current ctx)
-	    (when enter-call (enter-call this))	    
+	    (when show-call
+	      (setq now-showing current-item)
+	      (show-call this))
 	    (when (< (- x2 (+ x 2)) (* 2 charw (1+ (cdr tx))))
 		(if (==> ctx openp) 
 		    (progn
@@ -259,7 +300,9 @@
       (==> this shrink-wrap)
       (==> this expose) 
       (when move-call (move-call this))
-      (when enter-call (enter-call this)))))
+      (when show-call 
+	(setq now-showing current-item)
+	(show-call this)))))
 
 (defmethod Explorer close-all()
   (ltree-close-all tree)
@@ -296,6 +339,7 @@
   tree-explorer
   ldoc-scroller
   ldoc-pane
+  now-showing
   search-string
   closeall-btn
   findnext-btn
@@ -315,10 +359,12 @@
     (==> search-string setdata "")
     (==> tree-explorer setfilter (==> search-string getdata)))
 (de filter-func (c) ())
-(de enter-func (c) 
+(de show-func (c) 
     (let* ((curr (==> tree-explorer getdata))
 	   (hn (when curr (==> curr getdata))))
+      ;; (setq now-showing curr)
       (==> ldoc-pane setdata (==> hn getdata))
+      (==> ldoc-scroller vscroll 0)
       ;; (==> (==> hn getdata) render-brace)
       ;; (==> (==> hn getdata) render-html)
       ;; (==> (==> hn getdata) render-latex)
@@ -328,8 +374,9 @@
     (==> tree-explorer recenter tree-viewer))
 (de move-func (c) (==> tree-explorer recenter tree-viewer))
 (de space-func (c) (==> ldoc-scroller page-down))
+(de backspace-func (c) (==> ldoc-scroller page-up))
 
-;;(de move-func (c) (==> tree-explorer recenter tree-viewer) (enter-func c))
+;;(de move-func (c) (==> tree-explorer recenter tree-viewer) (show-func c))
 
 
 ;; intree must be the root node of an ltree, i.e. an object
@@ -341,10 +388,11 @@
   (==> tree open)
   (setq tree-explorer 
 	(new explorer tree w1 h1 
-	     enter-func open-func close-func move-func space-func))
+	     show-func open-func close-func move-func 
+	     space-func backspace-func))
   (setq tree-viewer (new scroller w1 h1 tree-explorer))
   (setq ldoc-scroller 
-	(new scroller w2 h2 
+	(new ldocscroller w2 h2 
 	     (setq ldoc-pane (new ldocpane (- w2 26) (- h2 12)))))
   (setq search-string (new editstring 24))
   (==> search-string setcall findnext-func)
