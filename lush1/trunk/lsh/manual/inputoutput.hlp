@@ -1,4 +1,186 @@
-$Id: inputoutput.hlp,v 1.3 2002-08-22 15:00:15 leonb Exp $
+$Id: inputoutput.hlp,v 1.4 2002-09-04 22:59:56 profshadoko Exp $
+
+#? *** Loading and Executing Lush Program Files.
+
+#? (load  <in> [<out> [<prompt>]])
+.SEE (open-write <s> [<suffix>])
+.SEE (open-read <s> [<suffix>])
+.SEE ^L <filename>
+
+This function is used for loading a Lush source or binary file. 
+
+This function starts a new toplevel with the file named <in> 
+as input file, and the file named <out> as the output file.  
+Strings <in> and <out> represent filenames according to the 
+general filename conventions explained with functions 
+<open-read> and <open-write>.
+
+Function <load> searches its input file <in> along the current 
+search path. It also tries various suffixes usually associated 
+with Lush program files (ie. <snc>, <sn>, <tlc>, <tl>). 
+
+Function <load> then enters a loop which reads a Lush expression
+on the input file, evaluates this expression, and prints the
+result on the output file. This loop terminates when
+an end-of-file condition is detected or when function <exit>
+is called. Function <load> returns the full filename of the 
+input file.  
+
+When the output file argument is omitted <out>, function <load>
+does not display the evaluation results. This is useful for silently
+loading a Lush program file. This file however can produce an output
+because it may contain calls to some printing function (eg. <print>.)
+
+When string <prompt> is provided, function <load> uses this string 
+as a prompt when it is waiting for a new expression on the input file.  
+
+#? ^L <filename>
+.SEE (load  <in> [<out> [<prompt>]])
+
+This macro-character expands into a call to function <load>.  If a
+filename <filename> is not provided, the last file name used with
+macro-character <^L> is used. This file name is saved in variable
+<last-loaded-file>.
+
+#? (libload <libname> [<opt>])
+.TYPE DE
+.FILE sysenv.lsh
+.SEE file-being-loaded
+.SEE (load <in> [<out> [<prompt>]])
+
+This is the primary function used to load a library or
+a Lush file into another Lush file or library.
+A typical Lush program file will begin with a bunch
+of <libload>. The difference between <load> and <libload>
+is that <libload> remembers when a particular file was previously
+libloaded, and only loads it once. Libload also keeps track
+of the dependencies between Lush program files (which file
+libloads which other file). This is the basis of the automatic
+and transparent on-demand compilation mechanism as described 
+in detail below. 
+
+<libload> first searches the file <libname>.  
+When <libload> is called from an existing Lush file, it first
+searches file <libname> relative to the location of the existing Lush file.
+If no such file exists, it uses function <filepath> to locate the file along
+the lush search path.
+
+<libload> then updates its internal database of dependencies between
+Lush files. When function <libload> is called from an existing Lush file, it
+records the fact that this Lush file depends on the Lush file <filename>.
+
+<libload> then tests whether it is necessary 
+to load the file. It is necessary to load the file if 
+.LI
+file <libname> has never been loaded,
+.LI
+file <libname> has been modified since the last time it was loaded,
+.LI
+file <libname> has not been modified since the last time it was loaded,
+but depends on a Lush file that has been modified since the last time it was
+loaded.
+.LI
+argument <opt> is non nil.
+.PP
+When this is the case, <libload> calls <load> to load the file,
+and stores a timestamp for the file in its internal database.
+Function <libload> always returns the full name of <libname>.
+
+
+#? file-being-loaded
+.TYPE VAR
+.SEE (load  <in> [<out> [<prompt>]])
+
+This variable is set when you load a Lush program file using
+function <load>. It contains the full name of the file being
+loaded.  It provides a way to know the full filename of
+the Lush program file in which this variable is checked.
+
+
+#? (find-file <dirlist> <filename> <extlist>)
+.TYPE DE
+.FILE sysenv.sn
+Finds the first file that exists fo the form
+<dir>/<file>.<ext> where <dir> is one of the
+directories in list <dirlist> and <ext> is
+one of the suffixes in <extlist>.
+
+Example:
+.VP
+ (find-file '("local" "lsh") "lushenv" '(".lshc" ".lsh"))
+.PP
+Note:
+This is somewhat similar with <filepath>
+but allow searching through any directory tree.
+
+#? (find-c-include <name>)
+.TYPE DE
+.FILE sysenv.lsh
+Returns the pathname of a C include file named <name>.
+Include files are searched in the directories
+specified by variable <c-include-path>
+is initialized by <"lushenv.lsh">.
+.EX (find-c-include "stdio.h")
+
+#? (find-shared-library <name> [<extlist>])
+.TYPE DE
+.FILE sysenv.lsh
+Returns the pathname of a shared library named <name>.
+Shared libraries are searched in the directories
+specified by variable <shared-include-path>
+is initialized by <"lushenv.lsh">.
+
+The optional argument <extlist> is a list of 
+possible filename extensions.  The default value
+is either null (when <name> already contains an extension)
+or the system dependent filename extension for shared 
+libraries.
+.EX (find-shared-library "libm")
+
+#? (find-static-library <name> [<extlist>])
+.TYPE DE
+.FILE sysenv.lsh
+Returns the pathname of a static library named <name>.
+Static libraries are searched in the directories
+specified by variable <static-include-path>
+is initialized by <"lushenv.lsh">.
+
+The optional argument <extlist> is a list of 
+possible filename extensions.  The default value
+is either null (when <name> already contains an extension)
+or the system dependent filename extension for static 
+libraries.
+.EX (find-static-library "libm")
+
+#? (find-shared-or-static-library <name> [<extlist>])
+.TYPE DE
+.FILE sysenv.lsh
+Returns the pathname of a library named <name>.  
+A shared library is first searched with the supplied extension list <extlist>.  
+Otherwise a static library is searched.
+.EX (find-shared-or-static-library "libm")
+
+#? (save <f> <s1> ... <sn>)
+.TYPE DM
+.FILE sysenv.lsh
+
+This function just saves indented definitions of the symbols <s1> to
+<sn> into the file named <f>. A suffix <".lsh"> is automatically added
+to <f> if it has no suffix.
+
+
+#? (autoload <f> <s1> ... <sn>)
+.TYPE DM
+.FILE sysenv.lsh
+
+Defines functions <s1> to <sn> with a code that first loads file <f>,
+and then restart the evaluation.
+
+The first time one of these functions is called, its definition is
+loaded from file <f>, and the execution continues.  Such autoloading
+functions often are defined by <"stdenv.lsh">. They avoid loading many
+files while allowing the user to call those functions at any time.
+
 #? *** Lisp-Style Input / Output.
 
 #? ** Input.
@@ -539,172 +721,6 @@ Example:
 
 
 
-#? ** Executing and Saving Lush Program Files.
-
-#? ^L <filename>
-.SEE (load  <in> [<out> [<prompt>]])
-
-This macro-character expands into a call to function <load>.  If a
-filename <filename> is not provided, the last file name used with
-macro-character <^L> is used. This file name is saved in variable
-<last-loaded-file>.
-
-
-#? (load  <in> [<out> [<prompt>]])
-.SEE (open-write <s> [<suffix>])
-.SEE (open-read <s> [<suffix>])
-.SEE ^L <filename>
-
-This function is used for loading a Lush source or binary file. 
-
-This function starts a new toplevel with the file named <in> 
-as input file, and the file named <out> as the output file.  
-Strings <in> and <out> represent filenames according to the 
-general filename conventions explained with functions 
-<open-read> and <open-write>.
-
-Function <load> searches its input file <in> along the current 
-search path. It also tries various suffixes usually associated 
-with Lush program files (ie. <snc>, <sn>, <tlc>, <tl>). 
-
-Function <load> then enters a loop which reads a Lush expression
-on the input file, evaluates this expression, and prints the
-result on the output file. This loop terminates when
-an end-of-file condition is detected or when function <exit>
-is called. Function <load> returns the full filename of the 
-input file.  
-
-When the output file argument is omitted <out>, function <load>
-does not display the evaluation results. This is useful for silently
-loading a Lush program file. This file however can produce an output
-because it may contain calls to some printing function (eg. <print>.)
-
-When string <prompt> is provided, function <load> uses this string 
-as a prompt when it is waiting for a new expression on the input file.  
-
-
-#? file-being-loaded
-.TYPE VAR
-.SEE (load  <in> [<out> [<prompt>]])
-
-This variable is set when you load a Lush program file using
-function <load>. It contains the full name of the file being
-loaded.  It provides a way to know the full filename of
-the Lush program file in which this variable is checked.
-
-
-#? (libload <libname> [<opt>])
-.SEE (load  <in> [<out> [<prompt>]])
-.FILE sysenv.lsh
-
-Function <libload> first searches the file <libname> relative 
-to the location of the file currently loaded.  If no such file 
-exists, it uses function <filepath> to locate the file along 
-the lush search path.
-
-Function <libload> loads the target lisp file <libname> 
-unless both conditions below are satisfied:
-.IP
-The lisp file <libname> has already been loaded 
-with <libload> and has not been modified since.
-.IP
-None of the lisp files that were loaded from <libname> 
-using <libload> have been modified either.
-.PP
-In other words, function <libload> provides a functionality 
-similar to the well known unix tool <"make">.
-This is achieved by recording the loading date of all
-files loaded using <libload> as well as the list
-of all files loaded using <libload> as a consequence
-of a first call to <libload>.
-.PP
-Passing <t> as the optional argument <opt> forces <libload> 
-to unconditionally load the specified file but not 
-its dependencies.
-
-#? (find-file <dirlist> <filename> <extlist>)
-.TYPE DE
-.FILE sysenv.sn
-Finds the first file that exists fo the form
-<dir>/<file>.<ext> where <dir> is one of the
-directories in list <dirlist> and <ext> is
-one of the suffixes in <extlist>.
-
-Example:
-.VP
- (find-file '("local" "lsh") "lushenv" '(".lshc" ".lsh"))
-.PP
-Note:
-This is somewhat similar with <filepath>
-but allow searching through any directory tree.
-
-#? (find-c-include <name>)
-.TYPE DE
-.FILE sysenv.lsh
-Returns the pathname of a C include file named <name>.
-Include files are searched in the directories
-specified by variable <c-include-path>
-is initialized by <"lushenv.lsh">.
-.EX (find-c-include "stdio.h")
-
-#? (find-shared-library <name> [<extlist>])
-.TYPE DE
-.FILE sysenv.lsh
-Returns the pathname of a shared library named <name>.
-Shared libraries are searched in the directories
-specified by variable <shared-include-path>
-is initialized by <"lushenv.lsh">.
-
-The optional argument <extlist> is a list of 
-possible filename extensions.  The default value
-is either null (when <name> already contains an extension)
-or the system dependent filename extension for shared 
-libraries.
-.EX (find-shared-library "libm")
-
-#? (find-static-library <name> [<extlist>])
-.TYPE DE
-.FILE sysenv.lsh
-Returns the pathname of a static library named <name>.
-Static libraries are searched in the directories
-specified by variable <static-include-path>
-is initialized by <"lushenv.lsh">.
-
-The optional argument <extlist> is a list of 
-possible filename extensions.  The default value
-is either null (when <name> already contains an extension)
-or the system dependent filename extension for static 
-libraries.
-.EX (find-static-library "libm")
-
-#? (find-shared-or-static-library <name> [<extlist>])
-.TYPE DE
-.FILE sysenv.lsh
-Returns the pathname of a library named <name>.  
-A shared library is first searched with the supplied extension list <extlist>.  
-Otherwise a static library is searched.
-.EX (find-shared-or-static-library "libm")
-
-#? (save <f> <s1> ... <sn>)
-.TYPE DM
-.FILE sysenv.lsh
-
-This function just saves indented definitions of the symbols <s1> to
-<sn> into the file named <f>. A suffix <".lsh"> is automatically added
-to <f> if it has no suffix.
-
-
-#? (autoload <f> <s1> ... <sn>)
-.TYPE DM
-.FILE sysenv.lsh
-
-Defines functions <s1> to <sn> with a code that first loads file <f>,
-and then restart the evaluation.
-
-The first time one of these functions is called, its definition is
-loaded from file <f>, and the execution continues.  Such autoloading
-functions often are defined by <"stdenv.lsh">. They avoid loading many
-files while allowing the user to call those functions at any time.
 
 #? ** Binary I/O.
 
