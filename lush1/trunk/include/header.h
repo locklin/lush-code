@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.53 2003-05-27 21:49:31 leonb Exp $
+ * $Id: header.h,v 1.54 2003-06-26 15:55:02 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -72,6 +72,10 @@ extern "C" {
 typedef struct dhclassdoc_s dhclassdoc_t;
 typedef struct dhdoc_s dhdoc_t;
 
+/* From main */
+extern LUSHAPI int lush_argc;
+extern LUSHAPI char** lush_argv;
+
 
 /* OS.H ---------------------------------------------------------- */
 
@@ -80,7 +84,9 @@ typedef struct dhdoc_s dhdoc_t;
 /* interruptions */
 extern TLAPI int break_attempt;
 TLAPI void lastchance(char *s) no_return;
-/* console management */
+/* unix hooks */
+void init_unix(void);
+void fini_unix(void);
 void toplevel_unix(void);
 void console_getline(char *prompt, char *buf, int size);
 /* openTL entry points */

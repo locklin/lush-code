@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.32 2003-06-26 15:38:57 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.33 2003-06-26 15:54:58 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -233,6 +233,11 @@ AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/ttold.h)
 AC_CHECK_HEADERS(sys/time.h sys/timeb.h readline/readline.h bfd.h)
 AC_SYS_LARGEFILE
+
+if test $ac_have_mpi = yes ; then
+  AC_CHECK_HEADERS(mpi.h)
+fi
+
 
 # ----------------------------------------
 # Types

@@ -24,14 +24,21 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.4 2003-01-26 20:05:39 leonb Exp $
+ * $Id: main.c,v 1.5 2003-06-26 15:55:02 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
 
+
+int lush_argc;
+char **lush_argv;
+
+
 LUSHAPI int
 main(int argc, char **argv)
 {
+  lush_argc = argc;
+  lush_argv = argv;
   /* Define quiet mode. */
   int quiet = FALSE;
   if (argc>1 && argv[1][0]!='@')

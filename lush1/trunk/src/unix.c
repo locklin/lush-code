@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.40 2003-06-21 17:21:10 leonb Exp $
+ * $Id: unix.c,v 1.41 2003-06-26 15:55:02 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -119,6 +119,12 @@
 #  define HAVE_CONFIG_H HAVE_LUSHCONF_H 
 # endif
 #endif
+#ifdef HAVE_MPI
+# ifdef HAVE_MPI_H
+#  include <mpi.h>
+# endif
+#endif
+
 
 /* Lush header files */
 #include "header.h"
@@ -1900,6 +1906,33 @@ DX(xsocketselect)
 }
 
 
+
+/* ---------------------------------------- */
+/* MPI                                      */
+/* ---------------------------------------- */
+
+#if HAVE_MPI
+static int mpi_initialized = 0;
+
+DX(xmpi_init)
+{
+  ARG_NUMBER(0);
+  MPI_Init(lush_argc, lush_argv);
+  mpi_initialized = 1;
+  return NIL;
+}
+
+DX(xmpi_finalize)
+{
+  ARG_NUMBER(0);
+  if (mpi_initalized)
+    MPI_Finalize();
+  mpi_initialized = 0;
+  return NIL;
+}
+#endif
+
+
 /* ---------------------------------------- */
 /* INITIALIZATION CODE                      */
 /* ---------------------------------------- */
@@ -1927,5 +1960,18 @@ init_unix(void)
   dx_define("socketopen", xsocketopen);
   dx_define("socketaccept", xsocketaccept);
   dx_define("socketselect", xsocketselect);
+#ifdef HAVE_MPI
+  dx_define("mpi-init", xmpi_init);
+  dx_define("mpi-finalize", xmpi_finalize);
+#endif
 }
 
+
+void
+fini_unix(void)
+{
+#ifdef HAVE_MPI
+  if (mpi_initalized)
+    MPI_Finalize();
+#endif  
+}
