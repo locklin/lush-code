@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.12 2002-08-30 15:43:30 leonb Exp $
+ * $Id: string.c,v 1.13 2002-08-30 15:46:28 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -665,12 +665,11 @@ str_del(char *s, int n, int l)
 {
   struct large_string ls;
   int len = strlen(s);
-  n = n-1;
+  n = (n>1) ? n-1 : 0;
   if (n > len)
     n = len;
   if (l< 0 || n+l > len)
     l = len - n;
-  
   large_string_init(&ls);
   large_string_add(&ls, s, n);
   large_string_add(&ls, s+n+l, -1);
