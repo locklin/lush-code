@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.42 2003-06-26 15:59:26 leonb Exp $
+ * $Id: unix.c,v 1.43 2003-07-01 18:41:14 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -125,7 +125,6 @@
 # endif
 #endif
 
-
 /* Lush header files */
 #include "header.h"
 #include "lushmake.h"
@@ -202,7 +201,7 @@ goodsignal(int sig, void *vec)
 #endif /* POSIXSIGNAL */
 #ifdef BSDSIGNAL
   struct sigvec act;
-  act.sv_handler = vec;
+  act.sv_handler = (void*) vec;
   sv.sv_mask = 0L;
   sv.sv_flags = 0L;
 #ifdef SV_BSDSIG
@@ -431,7 +430,7 @@ trigger_irq(void)
     return;
   /* reset trigger signal */
 #ifdef SYSVSIGNAL
-  signal(trigger_signal, trigger_irq);
+  signal(trigger_signal, (void*) trigger_irq);
 #endif
 #ifndef BROKEN_ALARM
   if (trigger_mode == MODE_ALARM)
@@ -857,8 +856,8 @@ symbol_generator(const char *text, int state)
       /* compare symbol names */
       if (text[0]=='|' || tolower(text[0])==h->name[0])
         {
-          a = text;
-          b = pname(h->named);
+          a = (const unsigned char*) text;
+          b = (unsigned char*) pname(h->named);
           i = 0;
           while (a[i])
             {
@@ -873,7 +872,7 @@ symbol_generator(const char *text, int state)
               i++;
             }
           if (! a[i])
-            return strdup(b);
+            return strdup((const char*) b);
         }
     }
   return 0;

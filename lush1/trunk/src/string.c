@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.20 2003-02-28 23:20:25 leonb Exp $
+ * $Id: string.c,v 1.21 2003-07-01 18:41:14 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -829,7 +829,7 @@ DX(xisprint)
   unsigned char *s;
   ARG_NUMBER(1);
   ARG_EVAL(1);
-  s = ASTRING(1);
+  s = (unsigned char*) ASTRING(1);
   if (!s || !*s)
     return NIL;
   while (*s) {
@@ -1237,8 +1237,8 @@ regex_compile(char *pattern,
   else 
     {
       bounds buf;
-      buf.beg = bufstart;
-      buf.end = bufend;
+      buf.beg = (unsigned short*) bufstart;
+      buf.end = (unsigned short*) bufend;
       if (strict) 
 	{
 	  *buf.beg++ = RE_CARET;
@@ -1262,7 +1262,7 @@ regex_exec(short int *buffer, char *string,
   for(c=0;c<nregs;c++)
     reglen[c] = 0;
   dat = datstart = string;
-  buf = buffer;
+  buf = (unsigned short*) buffer;
   return regex_execute(regptr,reglen,nregs);
 }
 
@@ -1278,7 +1278,7 @@ regex_seek(short int *buffer, char *string, char *seekstart,
     for(c=0;c<nregs;c++)
       reglen[c] = 0;
     dat = seekstart;
-    buf = buffer;
+    buf = (unsigned short*) buffer;
     if (regex_execute(regptr,reglen,nregs)) {
       *start = seekstart;
       *end = dat;

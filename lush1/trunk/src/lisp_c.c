@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.26 2003-05-20 16:05:07 leonb Exp $
+ * $Id: lisp_c.c,v 1.27 2003-07-01 18:41:14 leonb Exp $
  **********************************************************************/
 
 
@@ -2542,7 +2542,7 @@ wipe_out_temps(void)
           if (!strcmp("pool", cdoc->lispdata.cname))
             {
 #if DLDBFD
-              void (*func)() = (void*)dld_get_func("C_free_C_pool");
+              void (*func)() = (void(*)()) dld_get_func("C_free_C_pool");
               if (func) (*func)(cptr);
 #else
               C_free_C_pool(cptr);

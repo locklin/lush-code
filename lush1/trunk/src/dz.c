@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dz.c,v 1.5 2002-12-16 11:51:34 leonb Exp $
+ * $Id: dz.c,v 1.6 2003-07-01 18:41:14 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -495,21 +495,23 @@ dz_exec_8(flt x0, flt x1, flt x2, flt x3,
 }
 
 static flt
-dz_error(void)
+dz_error()
 {
   error("C error","C call to a dz with more than 8 arguments",NIL);
 }
 
-static void *dz_call[] = {
-  (void*)dz_error,
-  (void*)dz_execute,
-  (void*)dz_exec_2,
-  (void*)dz_exec_3,
-  (void*)dz_exec_4,
-  (void*)dz_exec_5,
-  (void*)dz_exec_6,
-  (void*)dz_exec_7,
-  (void*)dz_exec_8,
+typedef flt (*dz_call_t)(flt, ...);
+
+static dz_call_t dz_call[] = {
+  (dz_call_t) dz_error,
+  (dz_call_t) dz_execute,
+  (dz_call_t) dz_exec_2,
+  (dz_call_t) dz_exec_3,
+  (dz_call_t) dz_exec_4,
+  (dz_call_t) dz_exec_5,
+  (dz_call_t) dz_exec_6,
+  (dz_call_t) dz_exec_7,
+  (dz_call_t) dz_exec_8,
 };
 
 /* -----------------   DZ CREATION  -------------- */
@@ -970,7 +972,7 @@ dz_define(char *name, char *opcode, flt (*cfun)(flt))
   dz = func->Object;
   /* if a specific C function is provided, use it */
   if (cfun)
-    dz->call = (void*)cfun;
+    dz->call = (dz_call_t)cfun;
   op = find_opname(opcode);
   ifn (op && dz_opnames[op][0]=='o' && dz_opnames[op][0]=='o') {
     sprintf(string_buffer, "illegal opcode %s in %s", opcode, name);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.9 2003-03-06 19:02:17 leonb Exp $
+ * $Id: x11_driver.c,v 1.10 2003-07-01 18:41:14 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -163,7 +163,7 @@ search_display_name(void)
 
 static int badname = 1;
 
-static void
+static int
 x11_handler(Display *display, XErrorEvent *myerr)
 {
   char msg[80];
@@ -173,6 +173,7 @@ x11_handler(Display *display, XErrorEvent *myerr)
     XGetErrorText(display, myerr->error_code, msg, 80);
     fprintf(stderr,"*** Xlib error %d : %s\n", myerr->error_code, msg);
   }
+  return 0;
 }
 
 static void
@@ -274,7 +275,7 @@ x11_init(void)
   xdef.ccross = XCreateFontCursor(xdef.dpy, XC_crosshair);
   
   /* Error handler */
-  XSetErrorHandler((void*)x11_handler);
+  XSetErrorHandler(x11_handler);
 
   /* Miscellaneous */
   Xinitialised = TRUE;

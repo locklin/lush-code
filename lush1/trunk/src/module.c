@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.34 2003-04-25 15:04:36 leonb Exp $
+ * $Id: module.c,v 1.35 2003-07-01 18:41:14 leonb Exp $
  **********************************************************************/
 
 
@@ -450,7 +450,7 @@ update_init_flag(struct module *m)
   if (! strcmp(m->initname, "init_user_dll"))
     {
       /* TL3 style init function */
-      int (*call)(int, int) = m->initaddr;
+      int (*call)(int,int) = (int(*)(int,int)) m->initaddr;
       current = m;
       status = (*call)(TLOPEN_MAJOR, TLOPEN_MINOR);
       current = &root;
@@ -470,7 +470,7 @@ update_init_flag(struct module *m)
       status = -2;
       if (maj == TLOPEN_MAJOR && min >= TLOPEN_MINOR)
         {
-          void (*call)(void) = m->initaddr;
+          void (*call)(void) = (void(*)()) m->initaddr;
           current = m;
           (*call)();
           current = &root;
@@ -500,7 +500,7 @@ update_init_flag(struct module *m)
 }
 
 static void 
-check_exec()
+check_exec(void)
 {
   if (check_executability)
     {
@@ -521,7 +521,7 @@ check_primitive(at *prim)
     {
       struct module *m = prim->Car->Object;
       if (check_executability)
-        check_exec(TRUE);
+        check_exec();
       if (! (m->flags & MODULE_EXEC))
         error(NIL,"Function belongs to a partially linked module", 
               prim->Cdr);
@@ -726,7 +726,7 @@ DX(xmodule_unload)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   module_unload(APOINTER(1));
-  check_exec(TRUE);
+  check_exec();
   return NIL;
 }
 
@@ -876,7 +876,7 @@ DX(xmodule_load)
   if (hook && !(hook->flags & X_FUNCTION))
     error(NIL,"Not a function", hook);
   ans = module_load(ASTRING(1), hook);
-  check_exec(TRUE);
+  check_exec();
   return ans;
 }
 
