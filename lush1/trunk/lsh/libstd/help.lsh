@@ -27,9 +27,10 @@
 ;;;;    The help subsystem...
 ;;;;	Yann LeCun 2002
 ;;;;
-;;;;  $Id: help.lsh,v 1.5 2002-09-06 22:27:25 profshadoko Exp $
+;;;;  $Id: help.lsh,v 1.6 2002-10-01 22:27:38 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(libload "libstd/ldoc")
 
 ;;; ========================================
 ;;; Help on help
@@ -46,7 +47,7 @@
 ;; in a particular format in your source file. The help system will 
 ;; format your comments and insert them into the help database.
 ;;.IP
-;; Finally, the help system can produce a complete documentation
+;; Finally, the documentation system can produce a complete documentation
 ;; in HTML.
 
 
@@ -113,7 +114,8 @@
 	(cond 
 	 ((= 0 nch) (printf "no match found\n"))
 	 ((= 1 nch) 
-	  (==> *ldoc-text* render (==> (==> (car ch) getdata) getdata)))
+	  (==> (==> (==> (car ch) getdata) getdata) render-text)
+	  )
 	 (t
 	  (when
 	      (if (<= nch 50) t
@@ -133,9 +135,7 @@
 		       (>= choice 1)
 		       (<= choice (length ch)))
 		  (setq done t)
-		  (==> *ldoc-text* 
-		       render 
-		       (==> (==> (nth ch choice) getdata) getdata)))
+		  (==> (==> (==> (nth ch choice) getdata) getdata) render-text))
 		 (t (printf "invalid choice, try again\n")))))))
 	 ))
       (delete rez)))))
@@ -274,8 +274,6 @@
 ;; above.  Semicolons introducing comments however are unnecessary.
 
 
-(libload "ldoc/ldoc")
-
 (de help-tmp () 
     (if (stringp *help-tmp*) *help-tmp* (setq *help-tmp* (tmpname))))
 
@@ -320,13 +318,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; parse a brace-enclosed series of lisp expressions
-(de parse-help-brace()
-  (skip-char "{")
-  (let ((ans (list (read))))
-    (while (<> (skip_char " \t") "}")
-      (setq ans (nconc1 ans (read))) )
-    (skip-char "}")
-    ans ) )
+(de parse-help-brace() (read))
 
 ;; parse a single help entry line
 (de parse-help-entry ()
@@ -352,7 +344,8 @@
 	    (setq ans (list 'helpt-entry 'state lvl txt))
 	    (while (not (index (setq next (skip-char " \t")) "\n\r\f\e"))
 	      (when (= "{" next) 
-		(nconc1 ans (cons 'helpt-noentry (cons 'state (cons lvl (parse-help-brace))))))))
+		(nconc1 ans (cons 'helpt-noentry 
+				  (cons 'state (cons lvl (parse-help-brace))))))))
 	    (skip-char "\n\r\f")
 	  ans))))
 
@@ -421,9 +414,10 @@
   (each ((c (==> this getchildren))) (delete c)))
 
 (defmethod help-node getdata () 
-  (when (not data)
-    (setq data (new ldoc))
-    (==> data read-help name file))
+  (when (not data) (setq data (new ldoc)))
+  (let ((z (==> data read-when)))
+    (if (or (not z) (> (alist-get 'mtime (fileinfo file)) z))
+	(read-help-entry file data name)))
   data)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -478,7 +472,7 @@
 
 ;; turn a full filename into a short one
 ;; removing the prefix if it is the Lush directory
-(de shorten-filename (f) (regex-subst (concat "^" lushdir) "" f))
+(de shorten-filename (f) (regex-subst (concat "^" lushdir "/") "" f))
 
 ;; parse a single help entry line and return the entry name
 (de read-help-entry-name ()
@@ -492,185 +486,30 @@
 
 ;; look for help entry <lname> in file <lfile> 
 ;; and read it into the ldoc object.
-(defmethod ldoc read-help (lname lfile)
-  (let* ((fname lfile)
-	 (found ()))
+(de read-help-entry (fname theldoc lname)
     (if (not (filep fname))
-	(setq doc '(ldoc-p "<< help file not found >>"))
-      (reading fname
-	       (while (and (not found) (<> (skip-char "~#\e") "\e"))
-		 ;; does the line begin with #?
-		 (if (and (= (read-string 1) "#")
-			  (= (read-string 1) "?"))
-		     ;; yes, parse the rest of the line
-		     (let ((r (read-help-entry-name)))
-		       (when (= r lname)
-			 (setq title lname)
-			 (setq name lname)
-			 (setq file (shorten-filename lfile))
-			 (read-string 1)
-			 (==> this read-help-here)
-			 (setq found t) )))))
-      (when (not found)
-	(setq   
-	 doc '(ldoc-p "<< help entry not found >>")
-	 name lname
-	 keywords ()
-	 title lname
-	 hlinks ()
-	 description ()
-	 file lfile
-	 type ()
-	 author ()
-	 date ())))))
+	(==> theldoc set-file-not-found fname lname)
+      (let ((found ())
+	    ;; figure out the type of file (.lsh program or .hlp file)
+	    (file-type 
+	     (selectq (regex-subst ".*(\\.[a-z]+)$" "%0" fname)
+	       ((".lsh" ".tl" ".sn")  ".lsh")
+	       (t ".hlp"))))
+	(reading fname
+	  (while (and (not found) (<> (skip-char "~#\e") "\e"))
+	    ;; does the line begin with #?
+	    (if (and (= (read-string 1) "#")
+		     (= (read-string 1) "?"))
+		;; yes, parse the rest of the line
+		(let ((r (read-help-entry-name)))
+		  (when (= r lname)
+		    (setq found t)
+		    (skip-char "\n")
+		    (==> theldoc read-help-body 
+			 (shorten-filename fname) lname file-type))))))
+	(when (not found)
+	  (==> theldoc set-entry-not-found fname lname)))))
 
-;; read the body of a help text from the current
-;; point in the file (presumably right after the 
-;; the entry header line.
-(defmethod ldoc read-help-here()
-  (setq   
-   doc (list 'progn)
-   keywords ()
-   hlinks ()
-   description ()
-   type ()
-   author ()
-   date ())
-  ;; Try to figure out TYPE from ENTRY
-  (cond
-    ((= type t)
-     (setq type t) )
-    ((regex-match "\\(==> .*\\)" name)
-     (setq type "MSG") )
-    ((regex-match "\\(new .*\\)" name)
-     (setq type "CLASS") )
-    ((regex-match "\\([-a-zA-Z0-9+*/<>=]+( .*)?\\)" name)
-     (let ((symb (regex-subst "\\(([-a-zA-Z0-9+*/<>=]+)( .*)?\\)" "%0" name)))
-       (setq symb (apply scope (list (named symb))))
-       (when symb 
-	 (setq symb (pname (classname (classof symb))))
-	 (setq type (regex-subst "\\|(.*)\\|" "%0" symb)) ) ) ) )
-  ;; Go reading
-  (let ((line ())
-	(para "")
-	(paratype 'ldoc-p)
-	(regex (selectq (regex-subst ".*(\\.[a-z]+)$" "%0" file)
-		 (".lsh"  "^;+(.*)$")
-		 (".tl"  "^;+(.*)$")
-		 (".c"   "^ *\\*+(.*)$")
-		 (".hlp" "(.?|[^#].*|#[^?].*)")
-		 (t      "(.?|[^#].*|#[^?].*)")
-		 ) ) )
-    (while (let ((ok t))
-	     ;; Test
-	     (setq line ())
-	     (if (= (skip-char "") "\e")
-		 (setq ok ())
-	       (setq line (read-string "~\n\r\e"))
-	       (read-string 1)
-	       (if (regex-match regex line)
-		   (setq line (regex-subst regex "%0" line))
-		 (setq ok ()) ) )
-	     ;; Finished paragraph
-	     (when (or (not ok)
-		       (regex-match "\\.[A-Z]+.*" line)
-		       (regex-match "[ \t]*" line) )
-	       (setq para (regex-subst "[ \t\n]+" " " para))
-	       (setq para (regex-subst " $" "" para))
-	       (setq para (regex-subst "^ " "" para))
-	       (setq para (regex-subst "\\. " ".  " para))
-	       (when (<> para "")
-		 (setq doc (nconc1 doc (list paratype para))) 
-		 (setq para "") ) )
-	     ;; Return boolean for while
-	     ok )
-      (if (regex-match "\\.[A-Z]+.*" line)
-	  ;; This is a special .XXX directive
-	  (let ((f (regex-subst "^\\.([A-Z]+)[ \t]*(.*)$" "%0" line))
-		(a (regex-subst "^\\.([A-Z]+)[ \t]*(.*)$" "%1" line)) )
-	    (if (= a "") 
-		(setq a ()) 
-	      (setq a (regex-subst "[ \t]+$" "" a)))
-	    (selectq f
-	      ("TYPE"
-	       (when (and a (<> type t)) (setq type a)) )
-	      ("DESC"
-	       (when a (setq description a)))
-	      ("FILE"
-	       (when a (setq file a)) )
-	      ("HLINK"
-	       (when a 
-		 ;; add hyperlink to list
-		 (setq hlinks (nconc1 hlinks (list a)))
-		 ;; add hlink in text with index of hyperlink in hlink list
-		 (setq doc (nconc1 doc (list 'ldoc-hlink (1- (length hlinks)) a)))))
-	      ("SEE" 
-	       (when a 
-		 ;; same as HLINK but adds "see also" to text.
-		 ;; add hyperlink to list
-		 (setq hlinks (nconc1 hlinks (list a)))
-		 ;; add hlink in text with index of hyperlink in hlink list
-		 (setq doc 
-		       (nconc1 doc 
-			       (list 'ldoc-li "see also " 
-				     (list 'ldoc-hlink (1- (length hlinks)) a))))))
-	      (("AUTH" "AUTHOR")
-	       (when a (setq author a)))
-	      ("DATE"
-	       (when a (setq date a)))
-	      (("EX" "EXAMPLE")
-	       (when a
-		 (writing (help-tmp) (printf "%s))\n" a))
-		 (reading (help-tmp) (setq a (read)))
-		 (writing (help-tmp)
-			  (printf "? ")
-			  (pprint a)
-			  (let ((result (eval a)))
-			    (printf "= ")
-			    (pprint result) ))
-		 (reading (help-tmp) 
-			  (let ((ans (list 'ldoc-code)))
-			    (while (<> (skip-char "\n\r\f") "\e")
-			      (setq ans 
-				    (nconc1 ans 
-					    (regex-subst "%" "%%%%" 
-							 (read-string)))))
-			    (setq doc (nconc1 doc ans))))))
-	      (("PP" "P")
-	       (setq paratype 'ldoc-p) )
-	      (("IP" "LI")
-	       (when ~a (setq a "*"))
-	       (setq paratype 'ldoc-li))
-	      (("VP" "PRE")
-	       (setq paratype 'ldoc-pre) )
-	      ("CODE"
-	       (setq paratype 'ldoc-code) )
-	      (("IFHLP" "IFHELP" "IFOGRE")
-	       (setq paratype 'ldoc-if-ogre) )
-	      ("IFTEX"
-	       (setq paratype 'ldoc-if-latex) ) 
-	      ("IFTXT"
-	       (setq paratype 'ldoc-if-text) ) 
-	      (("IMG" "EPS")
-	       (if a
-		   (setq doc (nconc1 doc (list 'ldoc-p (list 'ldoc-center (cons 'ldoc-img a)))))
-		 (error () ".IMG/.EPS without a filename " 
-			(concat file ":" name))))
-	      (t 
-		(printf "Unknown help directive %s\n" f) ) ) )
-	;; This is an ordinary line
-	(setq line (regex-subst "%" "%%%%" line))
-	(if (member paratype '(ldoc-p ldoc-li))
-	    (setq para (concat para "\n" line))
-	  (setq doc (nconc1 doc 
-			    (if (consp paratype) 
-				(append paratype (list line))
-			      (list paratype line))) ) ) ))
-    ;; Check that something has been read
-    (when (not doc)
-      (setq doc '((ldoc-p ""))) )
-    (when (and line (= (left line 2) "#?"))
-      (mid line 3))))
 
 ;;; ========================================
 ;;; Help macro
