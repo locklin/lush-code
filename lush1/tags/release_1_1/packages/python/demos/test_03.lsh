@@ -1,0 +1,48 @@
+;; Fu Jie Huang  9/2002
+
+;; create your own tuple, load a function from an existing module
+;; and call the function on the tuple
+
+;; to emulate the python code: (with line number)
+;;  1. import addthem
+;;  2. x = addthem.addthree(2,3,4)
+;;  3. print x
+
+
+(libload "python/python")
+(Py_Initialize)
+(setq pdict (PyDict_New))
+(PyDict_SetItemString pdict "__builtins__" (PyEval_GetBuiltins))
+
+;; 1) create the tuple, it'll serve as the argument to a function
+;; in C, Py_BuildValue is usually used to create this tuple,
+;; but the Py_BuildValue is not well supported in Lush. therefore...
+(setq ptuple (PyTuple_New 3))
+(PyTuple_SetItem  ptuple 0 (PyInt_FromLong 2))
+(PyTuple_SetItem  ptuple 1 (PyInt_FromLong 3))
+(PyTuple_SetItem  ptuple 2 (PyInt_FromLong 4))
+
+
+;; 2) get the function
+;;   the new thing in this demo is that it shows how to load a module,
+;; and extract a specific function, then run it with a tuple as argument
+;;   the module file should be in the directory pointed by the 
+;; environment variable PYTHONPATH, if the module cann't be located, pmod 
+;; is nil, and the code will abort since there's no error handling here.
+(setq pmod (PyImport_ImportModule "addthem"))
+(setq pfunc (PyObject_GetAttrString pmod "addthree"))
+
+
+;; 3) run the function, with the tuple as its argument
+;; instead of PyRun_SimpleString/PyRun_String, we use PyEval_CallObject,
+;; which is a more direct way of calling the callable object (a function)
+(setq presult (PyEval_CallObject   pfunc  ptuple))
+;; you can also use PyObject_CallObject, or PyObject_Call:
+;; (setq presult (PyObject_CallObject pfunc ptuple))
+;; (setq presult (PyObject_Call       pfunc ptuple (gptr ())))
+
+
+
+(PyDict_SetItemString pdict "x" presult)
+(PyRun_String "print x" 257 pdict pdict)
+(Py_DECREF pdict)

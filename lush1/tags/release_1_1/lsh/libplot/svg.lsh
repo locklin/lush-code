@@ -1,0 +1,539 @@
+
+(libload "graphic-driver")
+(libload "libimage/image-io")
+
+(defvar plot-port ())
+
+#? *** Producing SVG graphics
+;; SVG (Scalable Vector Graphics) is a W3C standard
+;; for vector graphics. Lush can produce SVG graphics into 
+;; an SVG file that can be subsequently edited with 
+;; SVG-compatible drawing tools such as inkscape and 
+;; sodipodi on Linux.
+;; 
+;; Producing an SVG file from Lush graphic
+;; commands can be done by creating an instance
+;; of the <svg-window> object.
+;; The library file "libplot/svg.lsh" must be
+;; libloaded before <svg-window> can be used.
+;;
+;; The <svg-window> class behaves slightly differently
+;; from traditional Lush graphic windows. Creating
+;; an <svg-window> does not redefine all the graphic 
+;; commands as with other Lush graphic drivers.
+;;
+;; To draw into the SVG file, one must execute graphic
+;; commands within the scope of a call to the <eval> 
+;; method of the <svg-window> object.
+;; Here is an example:
+;; {<code>
+;;   (let ((zz (new svg-window "mydrawing.svg" 500 500)))
+;;     (==> zz eval 
+;;       ;; any standard Lush graphic call will go to the SVG file
+;;       (draw-rect 10 10 100 50)
+;;       (graphics-batch 
+;;         (color-rgb 1 0 0)
+;; 	   (draw-rect 20 20 80 30)
+;; 	   (color-rgb 0 0 1)
+;; 	   (fill-rect 30 30 60 10))
+;;       (color-rgb 0.3 0.3 .8)
+;;       (draw-text 130 50 "blah BLAH")
+;;       (fill-polygon 10 200 100 220 110 280 20 300)))
+;; </code>}
+;;
+;; Any graphic commands evaluated within the scope of the
+;; eval method go to the SVG file.
+;;
+;; Graphic commands evaluated within a <graphics-batch>
+;; generate graphics objects that are grouped together.
+;; 
+;; Bitmap images inserted in the SVG file through <rgb-draw-matrix>
+;; are saved in separate PNG files in the same directory as the 
+;; SVG file. If the SVG file name is "/mydir/myfile.svg", the
+;; image files will be "/mydir/myfile-XXXX.png", where
+;; XXXX is a 4-digit integer. 
+;;
+;; In addition to traditional Lush graphic command,
+;; <svg-window> understands a number of new methods
+;; for drawing objects. This includes manipulating
+;; coordinate transforms, stroke width, stroke styles,
+;; separate stroke color and fill color, opacity, etc.
+;;
+;; The coordinate unit is set to 0.25mm by default.
+;; This can be changed by passing an optional
+;; resolution argument to the constructor of svg-window
+;; which determines the number of units per millimeter.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; utilities
+(de rgb2hex (r g b)
+  (sprintf "#%s%s%s" 
+	   (if (= r 0) "00" (right (strhex (int (* r 255))) 2))
+	   (if (= g 0) "00" (right (strhex (int (* g 255))) 2))
+	   (if (= b 0) "00" (right (strhex (int (* b 255))) 2))))
+
+
+#? svg-window
+;; svg-window class.
+(defclass svg-window graphic-driver
+  svgwin-file
+  svgwin-image-basename
+  svgwin-image-path
+  svgwin-image-num
+  svgwin-statevars
+  svgwin-stack
+  svgwin-width
+  svgwin-height
+  svgwin-font-family
+  svgwin-font-style
+  svgwin-font-weight
+  svgwin-font-size
+  svgwin-stroke-width
+  svgwin-linestyle
+  svgwin-unit
+  svgwin-coeff
+
+  svgwin-stroke
+  svgwin-fill 
+  svgwin-fill-opacity 
+  svgwin-fill-rule 
+  svgwin-stroke-linecap
+  svgwin-stroke-linejoin
+  svgwin-stroke-opacity
+  svgwin-opacity
+
+  svgwin-open-groups
+  )
+
+#? (new svg-window <svg-file> <width> <height> [<resolution>])
+;; Create a new svg-window whose output is written to the
+;; file <svg-file>. The parameters <width> and <height> determine the 
+;; size of the drawing surface in pixel-like arbitrary units.
+;; The optional resolution argument determines the number of units
+;; per millimeter. The default value is 4, which means that
+;; an 800 unit window will occupy roughly 20.0cm (7.87 inches),
+;; which is roughly the usable width of an A4 or US Letter page.
+;; This is a little more than 100 units per inch.
+;; If you want 100 units per inch, set the resolution to 3.937.
+;;
+;; In general, if you want your drawing to have a precise width
+;; in millimeters, use:
+;; {<code> 
+;;  (setq z (new svg-window "drawing.svg" width height (/ width width-in-mm)))
+;; </code>}
+;; For an actual width in inches, use:
+;; {<code> 
+;;  (setq z (new svg-window "drawing.svg" width height (/ (* 25.4 width) width-in-inches)))
+;; </code>}
+(defmethod svg-window svg-window (f w h &optional (units-per-mm 4))
+  (setq svgwin-file (open-write f))
+  (setq svgwin-image-path (filename-chop-suffix f))
+  (setq svgwin-image-basename (filename-chop-suffix (basename f)))
+  (setq svgwin-image-num 0)
+  (setq svgwin-stack ())
+  (setq svgwin-width w)
+  (setq svgwin-height h)
+  (setq svgwin-font-family "Courier")
+  (setq svgwin-font-style "normal")
+  (setq svgwin-font-weight "bold")
+  (setq svgwin-font-size 12)
+  (setq svgwin-stroke-width 1)
+  (setq svgwin-linestyle "")
+  (setq svgwin-unit "")
+  (setq svgwin-coeff 1)
+
+  (setq svgwin-stroke "#000000")
+  (setq svgwin-fill "#000000")
+  (setq svgwin-fill-opacity 1.0)
+  (setq svgwin-fill-rule "evenodd")
+  (setq svgwin-stroke-linecap "butt")
+  (setq svgwin-stroke-linejoin "miter")
+  (setq svgwin-stroke-opacity 1.0)
+  (setq svgwin-opacity 1.0)
+
+  (setq svgwin-open-groups 0)
+
+  (setq svgwin-statevars 
+    '(svgwin-font-family svgwin-font-style svgwin-font-weight
+      svgwin-font-size svgwin-stroke-width svgwin-linestyle svgwin-unit
+      svgwin-coeff svgwin-stroke svgwin-fill svgwin-fill-opacity
+      svgwin-fill-rule svgwin-stroke-linecap svgwin-stroke-linejoin
+      svgwin-stroke-opacity svgwin-opacity ))
+
+  (==> this graphic-driver)
+
+  (writing svgwin-file 
+    (printf "<svg\n")
+    (printf " xmlns=\"http://www.w3.org/2000/svg\"\n")
+    (printf " xmlns:sodipodi=\"http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd\"\n")
+    (printf " xmlns:xml=\"http://www.w3.org/XML/1998/namespace\"\n")
+    (printf " xmlns:xlink=\"http://www.w3.org/1999/xlink\"\n")
+    (printf " xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\"\n")
+    (printf " xmlns:rdf=\"http://www.w3.Org/1999/02/22-rdf-syntax-ns#\"\n")
+    (printf " xmlns:cc=\"http://web.resource.org/cc/\"\n")
+    (printf " xmlns:dc=\"http://purl.org/dc/elements/1.1/\"\n")
+    (printf " inkscape:export-xdpi=\"101.60000\"\n")
+    (printf " inkscape:export-ydpi=\"101.60000\"\n")
+    (printf " width=\"%gmm\" height=\"%gmm\" viewBox=\"0 0 %g %g\" >\n" 
+	    (/ svgwin-width units-per-mm) (/ svgwin-height units-per-mm)
+	    svgwin-width svgwin-height)
+
+    (printf "<sodipodi:namedview id=\"base\" pagecolor=\"#ffffff\" ")
+    (printf "  inkscape:pageopacity=\"1.0\" showborder=\"false\" />\n")
+    )
+  )
+
+(defmethod svg-window error () (error "unsupported function in SVG driver"))
+
+(dfmethod svg-window -destructor ()
+  ;; automatically close all open groups
+  (while (> svgwin-open-groups 0) (==> this end-group))
+  ;; close file
+  (writing svgwin-file (printf "</svg>\n")))
+
+#? (==> <svg-window> eval <l1> <l2> <l3>)
+;; Evaluate expressions <l1> <l2> <l3> in the scope of the
+;; <svg-window> object. Any call to a standard Lush graphic
+;; function will be sent to the SVG file associated with
+;; the <svg-window> object.
+(dfmethod svg-window eval l (each ((__x__ l)) (eval __x__)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; printing/formatting utilities 
+
+;; make a string with the whole style definition
+;; If the argument <fill> is non nil, the shape is
+;; filled with the current fill color, if it is nil,
+;; that shape is not filled.
+(defmethod svg-window svg-style (fill)
+  (sprintf "fill:%s;fill-opacity:%g;fill-rule:%s;stroke:%s;stroke-width:%s;stroke-linecap:%s;stroke-linejoin:%s;stroke-opacity:%g;opacity:%g;%s"
+	   (if fill svgwin-fill "none") svgwin-fill-opacity 
+	   svgwin-fill-rule svgwin-stroke
+	   (==> this svg-valnoq svgwin-stroke-width)
+	   svgwin-stroke-linecap svgwin-stroke-linejoin
+	   svgwin-stroke-opacity svgwin-opacity
+	   svgwin-linestyle))
+
+;; print a numerical value with appropriate coordinate transform and surrounding quotes
+(defmethod svg-window svg-val (x) (sprintf "\"%g%s\"" (* svgwin-coeff x) svgwin-unit))
+
+;; same with no quotes
+(defmethod svg-window svg-valnoq (x) (sprintf "%g%s" (* svgwin-coeff x) svgwin-unit))
+
+(defmethod svg-window save-state ()
+  (setq svgwin-stack 
+	(cons (all ((__x__ svgwin-statevars)) (eval __x__)) svgwin-stack)))
+
+(defmethod svg-window restore-state ()
+  (all ((__v__ svgwin-statevars) (__x__ (car svgwin-stack))) (set __v__ __x__))
+  (setq svgwin-stack (cdr svgwin-state)))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; methods that are specific to the SVG driver
+
+#? * Drawing methods specific to svg-window
+;; These methods have no equivalent in traditional
+;; Lush graphic drivers.
+
+#? (==> <svg-window> fill-opacity <x>)
+;; Set the opacity of fill operations.
+(defmethod svg-window fill-opacity (x) 
+  (when (or (> x 1) (< x 0)) (error "opacity is outside [0,1]"))
+  (setq svgwin-fill-opacity x))
+
+#? (==> <svg-window> stroke-opacity <x>)
+;; Set the opacity of strokes.
+(defmethod svg-window stroke-opacity (x) 
+  (when (or (> x 1) (< x 0)) (error "opacity is outside [0,1]"))
+  (setq svgwin-stroke-opacity x))
+
+#? (==> <svg-window> opacity <x>)
+;; Set the general opacity.
+(defmethod svg-window opacity (x) 
+  (when (or (> x 1) (< x 0)) (error "opacity is outside [0,1]"))
+  (setq svgwin-opacity x))
+
+#? (==> <svg-window> stroke-width <x>)
+;; Set the stroke width.
+(defmethod svg-window stroke-width (x) 
+  (setq svgwin-stroke-width x))
+
+#? (==> <svg-window> stroke-color <x>)
+;; Set the color used for strokes and outlines.
+(defmethod svg-window stroke-color (r g b) 
+  (setq svgwin-stroke (rgb2hex r g b)))
+
+#? (==> <svg-window> fill-color <x>)
+;; Set the color used for filled shapes
+(defmethod svg-window fill-color (r g b) 
+  (setq svgwin-fill (rgb2hex r g b)))
+
+#? (==> <svg-window> start-group [<tx> <ty> <r> <sx> <sy>])
+;; Start a new group of drawing commands. The optional arguments
+;; can be used to specify a local coordinate transform.
+;; <tx> and <ty> are the horizontal and vertical translations,
+;; <r> a clockwise rotation angle in degrees, and <sx> and <sy> are scaling
+;; factors. The group is terminated by a call to the <end-group> method.
+;; This command can be handy for drawing rotated objects.
+;; For example, drawing a vertical text at coordinate 100 200
+;; can be done with:
+;; {<code> 
+;;  (==> my-svg-window start-group 100 200 -90 1 1) 
+;;  (draw-text 0 0 "blah blah")
+;;  (==> my-svg-window end-group)
+;; </code>}
+(defmethod svg-window start-group (&optional (tx 0) (ty 0) (r 0) (sx 1) (sy 1))
+  (writing svgwin-file 
+    (incr svgwin-open-groups)
+    (printf "<g transform=\"translate(%g,%g) rotate(%g) scale(%g,%g)\">\n"
+	    tx ty r sx sy)))
+
+#? (==> <svg-window> end-group)
+;; End a group started with <start-group>, possibly
+;; restoring the previous coordinate system.
+(defmethod svg-window end-group () 
+  (when (<= svgwin-open-groups 0) (error "no group to end"))
+  (incr svgwin-open-groups -1)
+  (writing svgwin-file (printf "</g>\n")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; methods corresponding to standard graphic driver functions.
+;; need to implement: gsave, clip,...
+
+#? * Standard graphic functions supported by svg-window
+;; The following gives the list of graphic functions
+;; that are supported by the svg-window class.
+;; Each of these methods can be called as a regular
+;; function call within the scope of the eval method.
+
+#? (==> <svg-window> gsave <l1> <l2> ... <ln>)
+(dfmethod svg-window gsave l
+  (==> this save-state)
+  (each ((__x__ l)) (eval __x__))
+  (==> this restore-state))
+
+
+#? (==> <svg-window> graphics-batch <l1> <l2> ... <ln>)
+(dfmethod svg-window graphics-batch l
+  (writing svgwin-file (printf "<g>\n"))
+  (each ((z l)) (eval z))
+  (writing svgwin-file (printf "</g>\n")))
+
+#? (==> <svg-window> cls)
+;; doesn't do anything.
+(defmethod svg-window cls () ())
+
+#? (==> <svg-window> color <x>)
+(defmethod svg-window color (x)
+  (selectq x
+    (-1 (==> this color-rgb 0.0 0.0 0.0))
+    (-2 (==> this color-rgb 1.0 1.0 1.0))
+    (-3 (==> this color-rgb 0.5 0.5 0.5))
+    (t (error "color unavailable, use color-rgb"))))
+
+#? (==> <svg-window> rect-text)
+;; approximate sizes
+(defmethod svg-window rect-text (x y s)
+  (let ((n (len s)))
+    (list x (- y (* 0.5 svgwin-font-size)) 
+	  (* 0.6 svgwin-font-size n) (* 0.6 svgwin-font-size))))
+
+#? (==> <svg-window> xsize)
+(defmethod svg-window xsize () svgwin-width)
+
+#? (==> <svg-window> ysize)
+(defmethod svg-window ysize () svgwin-height)
+
+#? (==> <svg-window> gspecial <s>)
+(defmethod svg-window gspecial (s) 
+  (writing svgwin-file (printf s)))
+
+#? (==> <svg-window> linestyle <s>)
+(defmethod svg-window linestyle (s)
+  (cond
+   ((numberp s)
+      (selectq s
+	(0 (setq svgwin-linestyle ""))
+	(1 (setq svgwin-linestyle "stroke-dasharray:1.25,7.5;stroke-dashoffset:0;"))
+	(2 (setq svgwin-linestyle "stroke-dasharray:7.5,7.5;stroke-dashoffset:0;"))
+	(3 (setq svgwin-linestyle "stroke-dasharray:10,2.5,1.25,2.5;stroke-dashoffset:0;"))
+	(t (error "unsupported linestyle"))))
+   (t (error "unsupported linestyle"))))
+
+
+#? (==> <svg-window> color-rgb <r> <g> <b>)
+(defmethod svg-window color-rgb (r g b)
+  (setq svgwin-stroke (rgb2hex r g b))
+  (setq svgwin-fill svgwin-stroke))
+
+#? (==> <svg-window> draw-line <x1> <y1> <x2> <y2>)
+(defmethod svg-window draw-line (x1 y1 x2 y2)
+  (writing svgwin-file
+    (printf "<line x1=%s y1=%s x2=%s y2=%s style=\"%s\" />\n"
+	    (==> this svg-val x1) (==> this svg-val y1) 
+	    (==> this svg-val x2) (==> this svg-val y2) 
+	    (==> this svg-style ()))))
+  
+#? #? (==> <svg-window> fill-polygon <x1> <y1> .... <xn> <yn>)
+(defmethod svg-window fill-polygon l
+  (writing svgwin-file
+    (printf "<path style=\"%s\" d=\"" (==> this svg-style t))
+    (printf "M %s,%s " (==> this svg-valnoq (car l)) (==> this svg-valnoq (cadr l)))
+    (setq l (cddr l))
+    (while l
+      (printf "L %s,%s " (==> this svg-valnoq (car l)) (==> this svg-valnoq (cadr l)))
+      (setq l (cddr l)))
+    (printf "z\" />\n")))
+
+#? (==> <svg-window> draw-rect <x> <y> <w> <h>)
+(defmethod svg-window draw-rect (x y w h)
+  (writing svgwin-file
+    (printf "<rect x=%s y=%s width=%s height=%s style=\"%s\" />\n"
+	    (==> this svg-val x) (==> this svg-val y) 
+	    (==> this svg-val w) (==> this svg-val h) 
+	    (==> this svg-style ()))))
+
+#? (==> <svg-window> fill-rect <x> <y> <w> <h>)
+(defmethod svg-window fill-rect (x y w h)
+  (writing svgwin-file
+    (printf "<rect x=%s y=%s width=%s height=%s style=\"%s\" />\n"
+	    (==> this svg-val x) (==> this svg-val y) 
+	    (==> this svg-val w) (==> this svg-val h) 
+	    (==> this svg-style t))))
+
+#? (==> <svg-window> draw-circle <x> <y> <r>)
+(defmethod svg-window draw-circle (x y r)
+  (writing svgwin-file
+    (printf "<circle cx=%s cy=%s r=%s style=\"%s\" />\n"
+	    (==> this svg-val x) (==> this svg-val y) 
+	    (==> this svg-val r) (==> this svg-style ()))))
+
+#? (==> <svg-window> fill-circle <x> <y> <r>)
+(defmethod svg-window fill-circle (x y r)
+  (writing svgwin-file
+    (printf "<circle cx=%s cy=%s r=%s style=\"%s\" />\n"
+	    (==> this svg-val x) (==> this svg-val y) 
+	    (==> this svg-val r) (==> this svg-style t))))
+
+#? (==> <svg-window> font [<s>])
+(defmethod svg-window font (&optional s)
+  (when s
+    (cond
+     ((= s "default") 
+      (setq svgwin-font-family "Courier")
+      (setq svgwin-font-style "normal")
+      (setq svgwin-font-weight "bold")
+      (setq svgwin-font-size 12))
+     (t 
+      (let ((z (regex-split "[^-]+" s) ))
+	(setq svgwin-font-family (car z))
+	(when (cadr z) (setq svgwin-font-style (cadr z)))
+	(when (caddr z) (setq svgwin-font-size (val (caddr z))))))))
+  (sprintf "%s-%s-%d"  svgwin-font-family svgwin-font-style svgwin-font-size))
+
+
+#? (==> <svg-window> draw-text <x> <y> <s>)
+(defmethod svg-window draw-text (x y s)
+  (writing svgwin-file
+    (printf "<text x=%s y=%s xml:space=\"preserve\" style=\"font-family:%s;font-weight:%s;font-style:%s;font-size:%s;fill:%s\" >\n"
+	    (==> this svg-val x) (==> this svg-val y) 
+	    svgwin-font-family svgwin-font-weight 
+	    svgwin-font-style (==> this svg-valnoq svgwin-font-size) svgwin-stroke)
+    (printf "%s" s)
+    (printf "</text>\n")))
+
+
+#? (==> <svg-window> rgb-draw-matrix <x> <y> <image> [<zx> <zy>])
+;; unlike with the x11 driver, the zoom factors can take
+;; any floating point value.
+(defmethod svg-window rgb-draw-matrix (x y image &optional (zx 1) (zy 1))
+  (let* ((imref (sprintf "%s-%04d.png" svgwin-image-basename svgwin-image-num))
+	 (impath (sprintf "%s-%04d.png" svgwin-image-path svgwin-image-num))
+	 (im (ubyte-matrix (idx-dim image 0) (idx-dim image 1) 3)))
+    (cond
+     ((= 2 (idx-ndim image))
+      (idx-copy image (select im 2 0))
+      (idx-copy image (select im 2 1))
+      (idx-copy image (select im 2 2)))
+     ((= 3 (idx-ndim image))
+      (idx-copy (select image 2 0) (select im 2 0))
+      (idx-copy (select image 2 1) (select im 2 1))
+      (idx-copy (select image 2 2) (select im 2 2)))
+     (t (error "illegal number of dimensions")))
+    (image-write-rgb (concat "PNG:" impath) im)
+    (incr svgwin-image-num)
+    (writing svgwin-file
+      (printf "<image xlink:href=\"%s\" sodipodi:absref=\"%s\" width=%s height=%s x=%s y=%s style=\"opacity:%g;\" />\n"
+	      imref imref
+	      (==> this svg-val (* zx (idx-dim im 1))) 
+	      (==> this svg-val (* zy (idx-dim im 0)))
+	      (==> this svg-val x) (==> this svg-val y)
+	      svgwin-opacity))))
+
+	    
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; example (svg-demo "/tmp/qwe.svg")
+
+#? * (svg-demo "myfile.svg")
+;; This is a simple demo code of the capabilitied
+;; SVG windows. Call this function, then edit myfile.svg
+;; with sodipodi or inkscape. 
+(de svg-demo (f)
+  (setq zz (new svg-window f 500 500))
+  (setq m (ubyte-matrix 100 200 3))
+  (idx-bloop ((m m)) (idx-bloop ((m m)) (idx-bloop ((m m)) (m (rand 0 255)))))
+  (==> zz eval 
+       ;; plain rectangle
+       (draw-rect 10 10 100 50)
+       ;; group
+       (graphics-batch 
+	(color-rgb 1 0 0)
+	;; dashed line
+	(linestyle 2)
+	(draw-rect 20 20 80 30)
+	;; solid line
+	(linestyle 0)
+	(color-rgb 0 0 1)
+	(fill-rect 30 30 60 10))
+       
+       (color-rgb 0.3 0.3 .8)
+       ;; normal text
+       (draw-text 130 50 "blah BLAH")
+       ;; image
+       (rgb-draw-matrix 30 70 m)
+       ;; filled polygon
+       (fill-polygon 10 200 100 220 110 280 20 300)
+       ;; filled circle
+       (==> zz stroke-color 0.8 0.3 .8)
+       (==> zz fill-color 0.3 0.8 .3)
+       (==> zz stroke-width 4)
+       (fill-circle 250 250 50)
+       ;; dotted line
+       (linestyle 1)
+       ;; circle
+       (draw-circle 250 250 70)
+       (linestyle 0)
+       ;; transparent 
+       (==> zz opacity 0.7)
+       (rgb-draw-matrix 120 240 m 1.5 1.5)
+       ;; coordinate transform
+       (==> zz start-group 120 240 -45 1 1)
+         (rgb-draw-matrix 0 0 m 1.3 0.4)
+	 (draw-text 0 -12 "slanted text")
+       (==> zz end-group)
+       ;; 
+       )
+  (delete zz))
+
+;; plot a curve
+(de svg-demo2 (f)
+  (setq zz (new svg-window f 500 500))
+  (==> zz eval 
+       (setup-axes 0 -1.2 20 1.2 2 0.2)
+       (let ((xx (range 0 20 0.4)))
+	 (plot-lists xx (all ((x xx)) (cos x)))))
+  (delete zz))
+

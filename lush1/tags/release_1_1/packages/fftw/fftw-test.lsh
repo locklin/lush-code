@@ -1,0 +1,152 @@
+
+(libload "fftw")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; simple power spectrum
+;; example:
+;; (fftw-demo-00 '((10 1 0) (20 0.5 0.5)))
+;; each element in the list is a frequency, amplitude and phase
+;; of a harmonic of the signal to be synthesized and FFTed.
+(de fftw-demo-00 (fl)
+  (libload "libplot/plotter")
+  (when (not window) (new-window 0 0 500 500 "FFT"))
+  (setq p1 (new plotter 0 0 500 250))
+  (setq p2 (new plotter 0 250 500 250))
+  (let* ((n 256)
+	 (in (matrix n))
+	 (out (matrix n)))
+    ;; fill up the signal vector
+    (each (((f a p) fl))
+      (let ((pr (* (/ 3.145927 180) p))
+	    (fr (/ (* f 2 3.1415927) n)))
+	(for (i 0 (1- n)) 
+	     (in i (+ (in i) (* a (sin (+ pr (* fr i)))))))))
+    ;; (==> p plotlists "signal-real" (range 0 (1- n)) ((select in 1 0) ()) (alloccolor 0 0 1))
+    ;; (==> p plotlists "signal-imag" (range 0 (1- n)) ((select in 1 1) ()) (alloccolor 1 0 0))
+    (idx1-power-spectrum in out)
+    (==> p1 plotlists "signal" (range 0 (1- n)) (in ()) (alloccolor 0.5 0.5 1))
+    (==> p2 plotlists "power spectrum" (range 0 (int (/ n 2))) (out (list 0 (int (/ n 2))))
+	 (alloccolor 1 0 0))
+    (==> p1 redisplay)
+    (==> p2 redisplay)
+    ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; simple 1D FFT
+(de fftw-demo-01 ()
+  (libload "libplot/plotter")
+  (setq p (new plotter 0 0 500 300))
+  (let* ((n 256)
+	 (in (matrix n 2))
+	 (in2 (matrix n 2))
+	 (out (matrix n 2)))
+    ;; fill up the signal vector
+    (for (i 0 (1- n)) 
+	 (in i 0 (+ (sin (* 0.3 i)) (cos (* 0.4 i)))))
+    ;; (==> p plotlists "signal-real" (range 0 (1- n)) ((select in 1 0) ()) (alloccolor 0 0 1))
+    ;; (==> p plotlists "signal-imag" (range 0 (1- n)) ((select in 1 1) ()) (alloccolor 1 0 0))
+    (fftw-dft-c2c-1d in out 1 t)
+    (==> p plotlists "fft-real" (range 0 (1- n)) ((select out 1 0) ()) (alloccolor 0 1 0))
+    (==> p plotlists "fft-imag" (range 0 (1- n)) ((select out 1 1) ()) (alloccolor 1 0 0))
+    (fftw-dft-c2c-1d out in2 -1 ())
+    (==> p plotlists "signal-real" (range 0 (1- n)) ((select in2 1 0) ()) (alloccolor 0 0 1))
+    ;; (==> p plotlists "power spectrum" (range 0 (1- n)) (ps ()) (alloccolor 0 0 0))
+    (==> p redisplay)) p)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; real-to-complex 1D FFT
+(de fftw-demo-02 ()
+  (libload "libplot/plotter")
+  (setq p (new plotter 0 0 500 300))
+  (let* ((n 256)
+	 (in (matrix n))
+	 (in2 (matrix n 2))
+	 (out (matrix n 2)))
+    (for (i 0 (1- n)) 
+	 (in i (+ (sin (* 0.3 i)) (cos (* 0.4 i)))))
+    ;; (==> p plotlists "signal-real" (range 0 (1- n)) ((select in 1 0) ()) (alloccolor 0 0 1))
+    ;; (==> p plotlists "signal-imag" (range 0 (1- n)) ((select in 1 1) ()) (alloccolor 1 0 0))
+    (fftw-dft-r2c-1d in out t)
+    (==> p plotlists "fft-real" (range 0 (1- n)) ((select out 1 0) ()) (alloccolor 0 1 0))
+    (==> p plotlists "fft-imag" (range 0 (1- n)) ((select out 1 1) ()) (alloccolor 1 0 0))
+    (fftw-dft-c2c-1d out in2 -1 ())
+    (==> p plotlists "signal-real" (range 0 (1- n)) ((select in2 1 0) ()) (alloccolor 0 0 1))
+    (==> p redisplay)) p)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; 2D complex-to-complex FFT of a character image
+(de fftw-demo-03 ()
+  (let* ((image (load-matrix "sample-image"))
+	 (n0 (idx-dim mnist-data 1))
+	 (n1 (idx-dim mnist-data 2))
+	 (in (matrix n0 n1 2))
+	 (out (matrix n0 n1 2))
+	 (in2 (matrix n0 n1 2)))
+    ;; open window
+    (when (not window) (new-window))
+    ;; copy image into double-matrix
+    (idx-copy image (select in 2 0))
+    ;; draw image
+    (rgb-draw-matrix 0 0 (select in 2 0) 4 4)
+    ;; compute FFT
+    (fftw-dft-c2c-2d in out 1 t)
+    (let ((vmin ((idx-inf out)))
+	  (vmax ((idx-sup out))))
+      ;; zero out high frequencies of transformed image
+      (idx-clear (narrow out 0 20 4))
+      (idx-clear (narrow out 1 20 4))
+      ;; display real and imaginary parts of transform
+      (gray-draw-matrix 0 (+ 4 (* n0 4)) (select out 2 0) vmin vmax 4 4)
+      (gray-draw-matrix (+ 4 (* n1 4)) (+ 4 (* n0 4)) (select out 2 1) vmin vmax 4 4))
+    ;; perform inverse FFT
+    (fftw-dft-c2c-2d out in2 -1 ())
+    (let ((vmin ((idx-inf in2)))
+	  (vmax ((idx-sup in2))))
+      ;; show real and imaginary parts of reconstructed image.
+      (gray-draw-matrix 0 (* 2 (+ 4 (* n0 4))) (select in2 2 0) vmin vmax 4 4)
+      (gray-draw-matrix (+ 4 (* n1 4)) (* 2 (+ 4 (* n0 4))) (select in2 2 1) vmin vmax 4 4))
+    ()))
+
+
+(de copy-ubyte2double (src dst)
+  ((-idx2- (-double-)) dst)
+  ((-gptr- "unsigned char *") src)
+  (let ((s (* (idx-dim dst 0) (idx-dim dst 1))))
+    ((-int-) s)
+    (cidx-bloop ("i" "j" ("dst" dst)) #{ *(dst) = (double)(*($src++)) #}) ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;		  
+;; real-time FFT from camera input
+(de fftw-demo04 (&optional (chan 0) (width 160) (height 120))
+  (libload "video4linux/v4l")
+  (let* ((vin (new v4ldevice "/dev/video" "AUTO" chan width height))
+	 (stop ())
+	 (s (* width height))
+	 (grabbed (matrix height width 2))
+	 (out (matrix height width 2))
+	 (filtered (matrix height width 2))
+	 (zoom 2))
+    (printf "set-format=%d\n" (==> vin set-format @VIDEO_PALETTE_YUV420P  width height))
+    (while (not stop)
+      (==> vin grab)
+      (copy-ubyte2double :vin:framebuffer (select grabbed 2 0))
+      (fftw-dft-c2c-2d grabbed out 1 t)
+      (graphics-batch 
+       (cls)
+       (rgb-draw-matrix 0 0 (select grabbed 2 0) zoom zoom)
+       (let ((vmin ((idx-inf out)))
+	     (vmax ((idx-sup out))))
+	 (gprintf 10 300 "%g %g" vmin vmax)
+	 (gray-draw-matrix 0 (* (1+ height) zoom)  (select out 2 0) 0 2 zoom zoom)
+	 (gray-draw-matrix (* (1+ width) zoom) (* (1+ height) zoom) 
+			   (select out 2 1) 0 2 zoom zoom))))))
+
+      
+      
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () copy-ubyte2double)
