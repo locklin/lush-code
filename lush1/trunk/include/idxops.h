@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxops.h,v 1.3 2003-05-21 21:44:58 leonb Exp $
+ * $Id: idxops.h,v 1.4 2003-05-21 21:52:32 leonb Exp $
  **********************************************************************/
 
 #ifndef IDXOPS_H
@@ -1018,6 +1018,16 @@
 
 /* ========= addition with a scalar (m0) ============================== */
 
+#define Midx_m0addm0(i1, i2, o1, Type1, Type2, Type3) \
+{ register Type1 *c1; \
+  register Type2 f; \
+  register Type3 *d1; \
+  c1 = IDX_PTR((i1), Type1); \
+  f = *(IDX_PTR((i2), Type2)); \
+  d1 = IDX_PTR((o1), Type3); \
+  *d1 = (*c1) + f; \
+}
+
 #define Midx_m1addm0(i1, i2, o1, Type1, Type2, Type3) \
 { register Type1 *c1; \
   register Type2 f; \
@@ -1077,6 +1087,16 @@
 
 
 /* ========= additions with scalars (m0) with accumulation ====== */
+
+#define Midx_m0addm0acc(i1, i2, o1, Type1, Type2, Type3) \
+{ register Type1 *c1; \
+  register Type2 f; \
+  register Type3 *d1; \
+  c1 = IDX_PTR((i1), Type1); \
+  f = *(IDX_PTR((i2), Type2)); \
+  d1 = IDX_PTR((o1), Type3); \
+  *d1 += (*c1) + f; \
+}
 
 #define Midx_m1addm0acc(i1, i2, o1, Type1, Type2, Type3) \
 { register Type1 *c1; \
