@@ -1,0 +1,117 @@
+(libload "opengl/glut")
+(libload "inventor/inventor")
+
+(SoDB_init)
+(setq modelpath "/home/jhuangfu/download/inventor/data/models/robots/")
+(defclass viewer-window glutwindow
+  ((-obj- (SoSeparator)) root)
+  ((-obj- (SbViewportRegion)) vp)
+  ((-obj- (SoPerspectiveCamera)) mycamera)
+  ((-obj- (SoRotationXYZ)) globalRotXYZ)
+  ((-obj- (SoTransform)) globalTrans)
+  ((-obj- (SoRotationXYZ)) duckRotXYZ)
+  ((-obj- (SoTransform)) initTrans)
+  ((-str-) filename)
+  ((-float-) theta))
+
+(defmethod viewer-window viewer-window ( file )
+  (setq root  (new soseparator ()))
+  (setq vp    (new sbviewportregion ()))
+  (setq mycamera (new SoPerspectiveCamera ()))
+  (setq filename file)
+  (setq theta 0.0)
+  (setq globalRotXYZ (new SoRotationXYZ ()))
+  (setq globalTrans (new SoTransform ()))
+  (setq duckRotXYZ (new SoRotationXYZ ()))
+  (setq initTrans (new SoTransform ()))
+
+  (glut-init-display-mode @(bitor @GLUT_RGB @GLUT_DOUBLE @GLUT_DEPTH @GLUT_MULTISAMPLE))
+  (==> this create 0 0 600 600 (concat "scene of a " file))
+  (==> vp  setWindowSize 600 600)
+  (==> root ref)
+  (==> this the-scene)
+  (glenable @GL_DEPTH_TEST)
+  (glclearcolor 0.132 0.542 0.132 1.0)
+  ))
+
+(defmethod viewer-window the-scene ()
+  (let ((mylight (new SoDirectionalLight ()))
+	(duck (new SoSeparator ()))
+	)
+
+    (==> root addChild :mycamera:p)
+    (==> root addChild :mylight:p)
+
+;;    (==> (==> globalRotXYZ getsf_axis) setvalue @SoRotationXYZ_X)
+;;    (==> (==> globalRotXYZ getsf_angle) setvalue (/ 3.14159 2))
+    (==> root addChild :globalRotXYZ:p)
+
+    (==> root addChild :globalTrans:p)
+    (let ((myinput (new SoInput ())))	
+      (==> (==> duckRotXYZ getsf_axis) setvalue @SoRotationXYZ_Y)
+      (==> duck addChild :duckRotXYZ:p)
+
+      (==> (==> initTrans getsf_scaleFactor) setvalue 2.0 2.0 2.0)
+      (==> duck addChild :initTrans:p)
+
+      (when (= 1 (==> myinput openFile (concat modelpath filename ".iv") 0))
+	(progn-without-fpe (==> duck addChild (SoDB_readAll :myinput:p))))
+      )
+    (==> root addChild :duck:p)
+    
+    (==> mycamera viewall_node :root:p :vp:p 1.0)
+    ))
+
+
+(defmethod viewer-window glut-display ( ) 
+  (let  ((myrenderer (new soglrenderaction () :vp:p)))
+    (glclear @(bitor @GL_COLOR_BUFFER_BIT @GL_DEPTH_BUFFER_BIT))
+    (==> myrenderer setsmoothing 1)
+    (==>  myrenderer apply_node :root:p)
+    (glut-swap-buffers)))
+
+(defmethod viewer-window glut-timer ()
+  (incr theta 0.02)
+
+  (==> (==> duckRotXYZ getsf_angle) setvalue theta)
+  (glut-post-redisplay))
+
+(de rotate-cb ()
+  (let ((angle :window:theta))
+    (incr angle 0.02)
+    (==> (==> :window:duckRotXYZ getsf_angle) setvalue angle)
+    (setq :window:theta angle))
+  (glut-post-redisplay))
+
+(de lookat (name)
+  (if window (delete window))
+  (if mytimer (delete mytimer))
+  (setq window (new viewer-window name))
+  (selectq name 
+	("duck" (progn (==> (==> :window:inittrans getsf_scalefactor) setvalue 3.0 3.0 3.0)
+		       (==> (==> :window:globaltrans getsf_translation) setvalue -0.5 2.0 -3.0)))
+	("jumpyMan" (progn (==> (==> :window:globalrotxyz getsf_angle) setvalue (/ 3.14159 2))
+			   (==> (==> :window:inittrans getsf_scalefactor) setvalue 4.0 4.0 4.0)
+			   (==> (==> :window:inittrans getsf_translation) setvalue 0.5 -1.5 0.0)))
+	("parkbench" (progn (==> (==> :window:inittrans getsf_scalefactor) setvalue 0.08 0.08 0.08)
+			    (==> (==> :window:globaltrans getsf_translation) setvalue 0.0 0.0 -3.0)))
+	("robotcop" (progn  
+		      (==> (==> :window:globaltrans getsf_translation) setvalue -400 0.0 0.0)
+		      (==> (==> :window:globalRotXYZ getsf_axis) setvalue @SoRotationXYZ_Z)
+		      (==> (==> :window:globalRotXYZ getsf_angle) setvalue (/ 3.14159 2))
+		      (==> (==> :window:inittrans getsf_translation) setvalue 0 0 0)
+			     ))
+	("spacestation" (progn
+			  (==> (==> :window:globalRotXYZ getsf_axis) setvalue @SoRotationXYZ_X)
+			  (==> (==> :window:globalRotXYZ getsf_angle) setvalue (/ -3.14159 4))
+			  (==> (==> :window:duckRotXYZ getsf_axis) setvalue @SoRotationXYZ_Z)))
+	("batter" (progn (==> (==> :window:inittrans getsf_scalefactor) setvalue 0.5 0.5 0.5)
+			 ))
+	(t ()))
+  (==> window glut-display))
+
+;;(de rotate ()
+;;  (setq mytimer (new timer 10 100 (lambda(c) (==> :window glut-timer)) )) )
+
+(de rotate ()
+  (setq mytimer (new timer 10 100 (lambda(c) (rotate-cb))) ))

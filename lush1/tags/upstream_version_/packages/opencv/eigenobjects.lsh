@@ -1,0 +1,243 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+
+
+
+#? *** eigenobjects
+
+;; dummy function that adds OpenCV C header files in C file
+(eval `(de dummy_eigenobjects () ,cv-cpheader-cmd ()))
+
+;; #? * (dummy_eigenobjects)
+;; #? * (cvcalccovarmatrixex <nobjects> <input> <ioflags> <iobufsize> <buffer> <userdata> <avg> <covarmatrix>)
+;; #? * (cvcalceigenobjects <nobjects> <input> <output> <ioflags> <iobufsize> <userdata> <calclimit> <avg> <eigvals>)
+;; #? * (cvcalcdecompcoeff <obj> <eigobj> <avg>)
+;; #? * (cveigendecomposite <obj> <neigobjs> <eiginput> <ioflags> <userdata> <avg> <coeffs>)
+;; #? * (cveigenprojection <eiginput> <neigobjs> <ioflags> <userdata> <coeffs> <avg> <proj>)
+
+;; ********************************************************
+
+;;  /****************************************************************************************\
+;;  *                              Eigen objects functions                                   *
+;;  \****************************************************************************************/
+
+#? (cvCalcCovarMatrixEx  <nobjects> <input> <ioflags> <iobufsize> <buffer> <userdata> <avg> <covarmatrix>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvCalcCovarMatrixEx
+;;  //    Purpose: The function calculates a covariance matrix for a group of input objects
+;;  //            (images, vectors, etc.).
+;;  //    Context:
+;;  //    Parameters:  nObjects    - number of source objects
+;;  //                 input       - pointer either to array of input objects
+;;  //                               or to read callback function(depending on ioFlags)
+;;  //                 ioFlags     - input/output flags(see Notes to
+;;  //                               cvCalcEigenObjects function)
+;;  //                 ioBufSize   - input/output buffer size
+;;  //                 userData    - pointer to the structure which contains all necessary
+;;  //                               data for the callback functions
+;;  //                 avg         - averaged object
+;;  //                 covarMatrix - covariance matrix(output parameter; must be allocated
+;;  //                               before call)
+;;  //
+;;  //    Notes:  See Notes to cvCalcEigenObjects function
+;;  //F*/
+;;  OPENCVAPI  void  cvCalcCovarMatrixEx( int nObjects, void* input, int ioFlags,
+;;                                        int ioBufSize, uchar* buffer, void* userData,
+;;                                        IplImage* avg, float* covarMatrix );
+
+(de cvCalcCovarMatrixEx (nobjects input ioflags iobufsize buffer userdata avg covarmatrix)
+    ((-int-) nobjects ioflags iobufsize)
+    ((-gptr-) input userdata)
+    ((-gptr- "uchar *") buffer)
+    ((-gptr- "IplImage *") avg)
+    ((-gptr- "float *") covarmatrix)
+    #{ cvCalcCovarMatrixEx($nobjects, $input, $ioflags, $iobufsize, $buffer, $userdata, $avg, $covarmatrix); #}
+    ())
+
+#? (cvCalcEigenObjects  <nobjects> <input> <output> <ioflags> <iobufsize> <userdata> <calclimit> <avg> <eigvals>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvCalcEigenObjects
+;;  //    Purpose: The function calculates an orthonormal eigen basis and a mean(averaged)
+;;  //             object for a group of input objects(images, vectors, etc.).
+;;  //    Context:
+;;  //    Parameters: nObjects  - number of source objects
+;;  //                input     - pointer either to array of input objects
+;;  //                            or to read callback function(depending on ioFlags)
+;;  //                output    - pointer either to output eigen objects
+;;  //                            or to write callback function(depending on ioFlags)
+;;  //                ioFlags   - input/output flags(see Notes)
+;;  //                ioBufSize - input/output buffer size
+;;  //                userData  - pointer to the structure which contains all necessary
+;;  //                            data for the callback functions
+;;  //                calcLimit - determines the calculation finish conditions
+;;  //                avg       - averaged object(has the same size as ROI)
+;;  //                eigVals   - pointer to corresponding eigen values(array of <nObjects>
+;;  //                            elements in descending order)
+;;  //
+;;  //    Notes: 1. input/output data(that is, input objects and eigen ones) may either
+;;  //              be allocated in the RAM or be read from/written to the HDD(or any
+;;  //              other device) by read/write callback functions. It depends on the
+;;  //              value of ioFlags paramater, which may be the following:
+;;  //                  CV_EIGOBJ_NO_CALLBACK, or 0;
+;;  //                  CV_EIGOBJ_INPUT_CALLBACK;
+;;  //                  CV_EIGOBJ_OUTPUT_CALLBACK;
+;;  //                  CV_EIGOBJ_BOTH_CALLBACK, or
+;;  //                            CV_EIGOBJ_INPUT_CALLBACK | CV_EIGOBJ_OUTPUT_CALLBACK.
+;;  //              The callback functions as well as the user data structure must be
+;;  //              developed by the user.
+;;  //
+;;  //           2. If ioBufSize = 0, or it's too large, the function dermines buffer size
+;;  //              itself.
+;;  //
+;;  //           3. Depending on calcLimit parameter, calculations are finished either if
+;;  //              eigenfaces number comes up to certain value or the relation of the
+;;  //              current eigenvalue and the largest one comes down to certain value
+;;  //             (or any of the above conditions takes place). The calcLimit->type value
+;;  //              must be CV_TERMCRIT_NUMB, CV_TERMCRIT_EPS or
+;;  //              CV_TERMCRIT_NUMB | CV_TERMCRIT_EPS. The function returns the real
+;;  //              values calcLimit->maxIter and calcLimit->epsilon.
+;;  //
+;;  //           4. eigVals may be equal to NULL(if you don't need eigen values in further).
+;;  //
+;;  //F*/
+;;  OPENCVAPI  void  cvCalcEigenObjects( int nObjects, void* input, void* output,
+;;                                      int ioFlags, int ioBufSize, void* userData,
+;;                                      CvTermCriteria* calcLimit, IplImage* avg,
+;;                                      float* eigVals );
+
+(de cvCalcEigenObjects (nobjects input output ioflags iobufsize userdata calclimit avg eigvals)
+    ((-int-) nobjects ioflags iobufsize)
+    ((-gptr-) input output userdata)
+    ((-gptr- "CvTermCriteria *") calclimit)
+    ((-gptr- "IplImage *") avg)
+    ((-gptr- "float *") eigvals)
+    #{  cvCalcEigenObjects($nobjects, $input, $output, $ioflags, $iobufsize, $userdata, $calclimit, $avg, $eigvals); #}
+    ())
+
+#? (cvCalcDecompCoeff <obj> <eigobj> <avg>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvCalcDecompCoeff
+;;  //    Purpose: The function calculates one decomposition coefficient of input object
+;;  //             using previously calculated eigen object and the mean(averaged) object
+;;  //    Context:
+;;  //    Parameters:  obj     - input object
+;;  //                 eigObj  - eigen object
+;;  //                 avg     - averaged object
+;;  //
+;;  //    Returns: decomposition coefficient value or large negative value(if error)
+;;  //
+;;  //    Notes:
+;;  //F*/
+;;  OPENCVAPI  double  cvCalcDecompCoeff( IplImage* obj, IplImage* eigObj, IplImage* avg );
+
+(de cvCalcDecompCoeff(obj eigobj avg)
+    ((-gptr- "IplImage *") obj eigobj avg)
+    (let ((s 0))
+      ((-double-) s)
+      #{ $s = cvCalcDecompCoeff($obj, $eigobj, $avg); #}
+      s))
+
+#? (cvEigenDecomposite <obj> <neigobjs> <eiginput> <ioflags> <userdata> <avg> <coeffs>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Names: cvEigenDecomposite
+;;  //    Purpose: The function calculates all decomposition coefficients for input object
+;;  //             using previously calculated eigen objects basis and the mean(averaged)
+;;  //             object
+;;  //
+;;  //    Parameters:  obj         - input object
+;;  //                 nEigObjs    - number of eigen objects
+;;  //                 eigInput    - pointer either to array of pointers to eigen objects
+;;  //                               or to read callback function(depending on ioFlags)
+;;  //                 ioFlags     - input/output flags
+;;  //                 userData    - pointer to the structure which contains all necessary
+;;  //                               data for the callback function
+;;  //                 avg         - averaged object
+;;  //                 coeffs      - calculated coefficients(output data)
+;;  //
+;;  //    Notes:   see notes to cvCalcEigenObjects function
+;;  //F*/
+;;  OPENCVAPI  void  cvEigenDecomposite( IplImage* obj, int nEigObjs, void* eigInput,
+;;                                      int ioFlags, void* userData, IplImage* avg,
+;;                                      float* coeffs );
+
+(de cvEigenDecomposite(obj neigobjs eiginput ioflags userdata avg coeffs)
+    ((-gptr- "IplImage *") obj avg)
+    ((-int-) neigobjs ioflags)
+    ((-gptr-) eiginput userdata)
+    ((-gptr- "float *") coeffs)
+    #{ cvEigenDecomposite($obj, $neigobjs, $eiginput, $ioflags, $userdata, $avg, $coeffs); #}
+    ())
+
+#? (cvEigenProjection <eiginput> <neigobjs> <ioflags> <userdata> <coeffs> <avg> <proj>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvEigenProjection
+;;  //    Purpose: The function calculates object projection to the eigen sub-space(restores
+;;  //             an object) using previously calculated eigen objects basis, mean(averaged)
+;;  //             object and decomposition coefficients of the restored object
+;;  //    Context:
+;;  //    Parameters:  nEigObjs    - number of eigen objects
+;;  //                 eigInput    - pointer either to array of pointers to eigen objects
+;;  //                               or to read callback function(depending on ioFlags)
+;;  //                 ioFlags     - input/output flags
+;;  //                 userData    - pointer to the structure which contains all necessary
+;;  //                               data for the callback function
+;;  //                 coeffs      - array of decomposition coefficients
+;;  //                 avg         - averaged object
+;;  //                 proj        - object projection(output data)
+;;  //
+;;  //    Notes:   see notes for cvCalcEigenObjects function
+;;  //F*/
+;;  OPENCVAPI  void  cvEigenProjection( void* eigInput, int nEigObjs, int ioFlags,
+;;                                     void* userData, float* coeffs, IplImage* avg,
+;;                                     IplImage* proj );
+
+(de cvEigenProjection(eiginput neigobjs ioflags userdata coeffs avg proj)
+    ((-gptr-) eiginput userdata)
+    ((-int-) neigobjs ioflags)
+    ((-gptr- "float *") coeffs)
+    ((-gptr- "IplImage *") avg proj)
+    #{ cvEigenProjection($eiginput, $neigobjs, $ioflags, $userdata, $coeffs, $avg, $proj); #}
+    ())
+;; ********************************************************
+
+(dhc-make ()
+  dummy_eigenobjects
+  cvcalccovarmatrixex
+  cvcalceigenobjects
+  cvcalcdecompcoeff
+  cveigendecomposite
+  cveigenprojection
+)
