@@ -1,0 +1,60 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a module that contains two idx3-modules connected in sequence
+;; makes it easy to define things like 2-layer fully connected nets
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "libnets")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass net-xxx idx3-module
+  ((-obj- (idx3-module)) module-1)
+  ((-obj- (idx3-ddstate)) state-1)
+  ((-obj- (idx3-module)) module-2)
+  ((-obj- (idx3-ddstate)) state-2)
+  ((-obj- (idx3-module)) module-3))
+
+
+(defmethod net-xxx net-xxx (mod1 thick1 si1 sj1 mod2 thick2 si2 sj2 mod3)
+  ((-obj- (idx3-module)) mod1 mod2 mod3)
+  (-int- thick1 si1 sj1)
+  (-int- thick2 si2 sj2)
+  (setq module-1 mod1)
+  (setq state-1 (new idx3-ddstate thick1 si1 sj1))
+  (setq module-2 mod2)
+  (setq state-2 (new idx3-ddstate thick2 si2 sj2))
+  (setq module-3 mod3)
+  ())
+
+(defmethod net-xxx fprop (in out)
+  ((-obj- (idx3-state)) in)
+  ((-obj- (idx3-state)) out)
+  (==> module-1 fprop in state-1)
+  (==> module-2 fprop state-1 state-2)
+  (==> module-3 fprop state-2 out)
+  ())
+
+(defmethod net-xxx bprop (in out)
+  ((-obj- (idx3-dstate)) in)
+  ((-obj- (idx3-dstate)) out)
+  (==> module-3 bprop state-2 out)
+  (==> module-2 bprop state-1 state-2)
+  (==> module-1 bprop in state-1)
+  ())
+
+(defmethod net-xxx bbprop (in out)
+  ((-obj- (idx3-ddstate)) in)
+  ((-obj- (idx3-ddstate)) out)
+  (==> module-3 bbprop state-2 out)
+  (==> module-2 bbprop state-1 state-2)
+  (==> module-1 bbprop in state-1)
+  ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "net-xxx"
+	  (net-xxx net-xxx fprop bprop bbprop)
+	  )

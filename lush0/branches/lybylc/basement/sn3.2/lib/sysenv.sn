@@ -1,0 +1,1617 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;    "sysenv.sn"    (C) 87,88 Y. Le Cun & L. Y. Bottou
+;;;             Standard lisp and system macros
+;;;
+
+
+;;;; --------- Usual functions ---------
+
+(dmc |'| (list (quote quote) (read)))	; Temporary
+
+(de nconc (f . l)
+  (cond
+    (f
+       (prog1 f
+	 (each ((i l))
+	       (setq f (lastcdr f))
+	       (rplacd f i) ) ) )
+    (l
+       (nconc . l) ) ) )
+
+(de nconc1(l s)
+  (if l
+      (rplacd (lastcdr l) (list s))
+      (setq l (list s)) )
+  l )
+
+(setq filter filteropen)
+
+(de caddr(l) (car (cddr l)))
+(de cdddr(l) (cdr (cddr l)))
+(de cdadr(l) (cdr (cadr l)))
+(de caadr(l) (car (cadr l)))
+(de cadar(l) (car (cdar l)))
+(de cddar(l) (cdr (cdar l)))
+(de cdaar(l) (cdr (caar l)))
+(de caaar(l) (car (caar l)))
+
+(lock_symbol nconc nconc1 filter)
+(lock_symbol caddr cdddr cdadr caadr cadar cddar cdaar caaar)
+
+(de prettyflags(l n) l)
+
+;;;; --------- The Quote and Backquote macros ---------
+
+(de backquote-macro()
+    (let ((|`| (lambda() 
+		 (error "Nested backquotes"))))
+      (if (<> (skip-char) "@")
+	  (cons '|`| (read))
+	(read-string 1)
+	(cons '|`@| (read)) ) ) )
+
+(de backquote-subst(l) 
+    (let ((na ())
+	  (nl ())
+	  (nq ()) )
+      
+      (while l
+	(when (consp l)
+	      (when (= (car l) '|`@|)
+		    (error 'read "Illegal `@ inside a quoted expression") )
+	      (when (= (car l) '|`|)
+		    (setq l (list (cons '|`@| (cdr l)))) ) )
+	(cond
+	 ((atomp l)
+	  (setq nq (nconc nq l)) 
+	  (setq l ()) )
+	 ((null (consp (car l)))
+	   (setq nq (nconc1 nq (car l))))
+	 ((= (caar l) '|`|)
+	  (setq nl (append nl 
+			   (all ((i nq)) 
+				(list 'quote i))
+			   (list (cdar l)) ))
+	  (setq nq ()) )
+	 ((= (caar l) '|`@|)
+	  (setq na (append na
+			   (when nl (list (cons 'list nl)))
+			   (when nq (list (list 'quote nq)))
+			   (list (cdar l)) ))
+	  (setq nl ())
+	  (setq nq ()) )
+	 (t
+	  (let ((m (backquote-subst (car l))))
+	    (if (and (consp m) (= (car m) 'quote))
+		(setq nq (nconc1 nq (cadr m)))
+	      (setq nl (nconc nl 
+			      (all ((i nq)) 
+				   (list 'quote i))
+			      (list m) ))
+	      (setq nq ()) ) ) ) )
+	
+	(setq l (cdr l)) )
+
+      (if (null na)
+	  (backquote-list nl nq)
+	(append 
+	 (list 'append)
+	 na
+	 (let ((m (backquote-list nl nq)))
+	   (when m (list m)) ) ) ) ) )
+
+(de backquote-list(nl nq)
+    (cond
+     ((null (or nl nq) )
+      ())
+     ((null nl)
+      (list 'quote nq))
+     ((null nq)
+      (cons 'list nl))
+     ((= (length nl) 1)
+      (list 'cons (car nl) (list 'quote nq)) )
+     ((= (length nl) 2)
+      (list 'cons (car nl) (list 'cons (cadr nl) (list 'quote nq))) )
+     (t
+      (list 'nconc (cons 'list nl) (list 'quote nq)) ) ) )
+     
+
+(dmc |'|
+     (backquote-subst
+      (let* ((|`| backquote-macro))
+	(read)) ) ) )
+
+(lock-symbol |'| backquote-subst backquote-list backquote-macro)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; new common-lisp compatible backquote macros
+
+(de backquote-macro2()
+    (let ((|,| (lambda() 
+		 (error "Nested comma in a backquoted expression"))))
+      (if (<> (skip-char) "@")
+	  (cons '|,| (read))
+	(read-string 1)
+	(cons '|,@| (read)) ) ) )
+
+(de backquote-subst2(l) 
+    (let ((na ())
+	  (nl ())
+	  (nq ()) )
+      
+      (while l
+	(when (consp l)
+	      (when (= (car l) '|,@|)
+		    (error 'read "Misplaced ,@ inside a backquote") )
+	      (when (= (car l) '|,|)
+		    (setq l (list (cons '|,@| (cdr l)))) ) )
+	(cond
+	 ((atomp l)
+	  (setq nq (nconc nq l)) 
+	  (setq l ()) )
+	 ((null (consp (car l)))
+	   (setq nq (nconc1 nq (car l))))
+	 ((= (caar l) '|,|)
+	  (setq nl (append nl 
+			   (all ((i nq)) 
+				(list 'quote i))
+			   (list (cdar l)) ))
+	  (setq nq ()) )
+	 ((= (caar l) '|,@|)
+	  (setq na (append na
+			   (when nl (list (cons 'list nl)))
+			   (when nq (list (list 'quote nq)))
+			   (list (cdar l)) ))
+	  (setq nl ())
+	  (setq nq ()) )
+	 (t
+	  (let ((m (backquote-subst2 (car l))))
+	    (if (and (consp m) (= (car m) 'quote))
+		(setq nq (nconc1 nq (cadr m)))
+	      (setq nl (nconc nl 
+			      (all ((i nq)) 
+				   (list 'quote i))
+			      (list m) ))
+	      (setq nq ()) ) ) ) )
+	
+	(setq l (cdr l)) )
+
+      (if (null na)
+	  (backquote-list2 nl nq)
+	(append 
+	 (list 'append)
+	 na
+	 (let ((m (backquote-list2 nl nq)))
+	   (when m (list m)) ) ) ) ) )
+
+(de backquote-list2 (nl nq)
+    (cond
+     ((null (or nl nq) )
+      ())
+     ((null nl)
+      (list 'quote nq))
+     ((null nq)
+      (cons 'list nl))
+     ((= (length nl) 1)
+      (list 'cons (car nl) (list 'quote nq)) )
+     ((= (length nl) 2)
+      (list 'cons (car nl) (list 'cons (cadr nl) (list 'quote nq))) )
+     (t
+      (list 'nconc (cons 'list nl) (list 'quote nq)) ) ) )
+     
+
+(dmc |,| 
+     (error 'read "Backquote outside quote") )
+
+(dmc |`|
+     (backquote-subst2
+      (let* ((|,| backquote-macro2))
+	(read) ) ) )
+
+(lock-symbol |`| |,| backquote-subst2 backquote-list2 backquote-macro2)
+
+
+;;;; --------- The SCOPE macro character ----------
+
+(dmc |:|
+     (when (= (skip-char) ":")
+	   (error 'load "Names beginning by :: are reserved" ()) )
+     (let ((ans (list 'scope (read))))
+       (while (= (skip-char "") ":")
+	 (read-string 1)
+	 (setq ans (nconc1 ans (read))) )
+       ans ) )
+
+
+(lock-symbol |:|)
+
+;;;; --------- Miscellaneous macro-chars & vars ----------
+
+
+(dmc |~|                                ;; the NULL macro
+     (list 'null (read)))
+
+(dmc |!|                                ;; the SYS macro
+     (list 'sys (read_string)))
+
+(setq not null)
+(setq nil ())
+
+(let ((lib (car (path))))
+  (setq sn3-dir (left lib (- (len lib) 4)))
+  (setq sn2-dir sn3-dir) )
+
+(lock_symbol  |~| |!| nil not sn2-dir sn3-dir)
+
+
+
+;;;; --------- toplevel, break, and debug  ---------
+
+(de toplevel()
+    (let ((break-hook (lambda() 
+			(print-error)
+			(beep)
+			(if (not (ask "Break toplevel"))
+			    (error "Stopped")
+			  (load "$stdin" "$stdout" "[Break] ? ")
+			  (if (ask "Resume execution")
+			      (printf "Resuming execution\n")
+			    (error "Stopped") ) ) ) )
+	  (debug-hook (lambda() 
+			(print-error)
+			(beep)
+			(when (ask "Debug toplevel")
+			      (load "$stdin" "$stdout" "[Debug] ? ") ) ) ) )
+      (load "$stdin" "$stdout" "? ") ) )
+
+
+(de break-hook()
+    (print-error)
+    (beep)
+    (error "Stopped") )
+
+(de debug-hook()
+    (print-error)
+    (beep) )
+
+(dm on-error(on-error l . p)
+    (list 'let (list (list 'debug-hook
+			   (list 'lambda () 
+				 (list 'setq 'debug-hook debug-hook)
+				 l (list debug-hook) ) )) . p) )
+
+(dm on-break(on-break l . p)
+    (list 'let (list (list 'break-hook
+			   (list 'lambda () 
+				 (list 'setq 'break-hook break-hook)
+				 l (list break-hook) ) )) . p) )
+
+
+
+
+(lock-symbol toplevel break-hook debug-hook on-error on-break)
+
+;;;; --------- mload --------------
+
+(setq :sn-loaded-files (list file-being-loaded))
+
+(de mload (s)
+    (when (not (regex-match ".*\\.sn" s))
+	  (setq s (concat s ".sn")) )
+    (let ((p (cons "." (path))))
+      (while p
+	 (let ((h (expand-filename (car p) s)))
+	   (setq p (cdr p))
+	   (when (open-read h "")
+		 (setq s h)
+		 (setq p ()) ) ) ) )
+    (when (not (member s :sn-loaded-files))
+	  (let ((rez (load s)))
+	    (setq :sn-loaded-files (cons s :sn-loaded-files))
+	    rez)))
+
+(de mload-reset () (setq :sn-loaded-files ()))
+
+(de mload-force (s)
+    (let ((rez (load s)))
+      (when (not (member rez :sn-loaded-files))
+	    (setq :sn-loaded-files (cons rez :sn-loaded-files)))
+      rez))
+
+;;;; --------- demethod dfmethod etc..  ---------
+
+(de classp(q)
+    (and q (= (classof q) class)) )
+
+(dm demethod(demethod class method . body)
+    (list 'putmethod class (list 'quote method)
+	  (apply lambda body) ) )
+
+(dm dfmethod(dfmethod class method . body)
+    (list 'putmethod class (list 'quote method)
+	  (apply flambda body) ) )
+
+(dm dmmethod(dfmethod class method args . body)
+    (list 'putmethod class (list 'quote method)
+	  (apply mlambda (cons (cons '|MSG| args) body)) ) )
+
+(setq defmethod demethod)
+
+(dm clearmethod(clearmethod class method)
+    (list 'putmethod class (list 'quote method) ()) )
+
+(de methoddef(class method)
+    (let* ((f (check==> class method)))
+      (when ~f
+	    (error 'getmethod "no method" method) )
+      (selectq (classname (classof f))
+	       (|DE|
+		(append (list 'demethod (classname class) method)
+			(cdr (funcdef f)) ) )
+	       (|DF|
+		(append (list 'dfmethod (classname class) method)
+			(cdr (funcdef f)) ) )
+	       (|DM|
+		(append (list 'dmmethod (classname class) method)
+			(cdr (funcdef f)) ) )
+	       (t f) ) ) )
+
+(lock-symbol classp demethod dfmethod dmmethod defmethod methoddef)
+
+
+;;;; --------- BoserLisp like Objects (ooof) ---------
+
+(dmmethod object new(f . l)
+	  (list 'new (classof this) . l) )
+
+(dmmethod class new l
+	  (list 'new this . l) )
+
+(defmethod object copy()
+  (let ((x (new-empty (classof this))))
+    (each ((i (allslots x)))
+	  (eval (list 'setq (list 'scope x i) (list 'scope this i))) ) 
+    x ) )
+
+(dmmethod object listeval(s . l)
+  (let ((message (eval s)))
+    (list 'let (list (list 'message (list 'quote message)))
+	  (list '==> this
+		(cond 
+		 (~message '|NIL|)
+		 ((symbolp message) message)
+		 (t (classname (classof message))) ) . l) ) ) )
+
+(dmmethod |ROBJECT| listeval(s . l)
+  (let ((message (eval s)))
+    (list 'let (list (list 'message (list 'quote message)))
+	  (list '==> this
+		(cond 
+		 (~message '|NIL|)
+		 ((symbolp message) message)
+		 (t (classname (classof message))) ) 
+		(list 'quote message) . l) ) ) )
+
+(dmmethod class listeval(s . l)
+	  (list '==> this (eval s) . l) )
+  
+
+;;;; --------- Sn file utilities ---------
+
+(de reload (s) (let ((defclass (flambda p ()))) (load s)))
+
+(dm autoload(autoload l . s)
+    (let ((f (eval '(mlambda f
+			     (set (car f) ())
+			     (printf " [%s] (autoload).\n" `l)
+			     (mload `l)
+			     f))))
+      '(progn `@(all ((i s)) '(setq `i `f)) `l) ))
+
+
+(de loadlib(s)
+    (printf " [%s]\n" s)
+    (load s) )
+
+(dm save(save f . l)
+     (when l
+	   ;; No debug output
+	   '(nodebug
+	     (writing (open-write `f "sn")
+		      `@(all ((i l))
+			     '(pretty `i) ) ) ) ) )
+
+(de to-binary(fin fout)
+    (reading fin
+	     (if (stringp fout)
+		 (setq fout (open-write fout)) )
+	     (while (<> "\e" (skip-char))
+	       (write-binary fout (read)) ) ) )
+
+(de to-ascii(fin fout)
+    (reading fin
+	     (writing fout
+		      (while (<> "\e" (skip-char))
+			(pprint (read))
+			(print) ) ) ) )
+
+(lock-symbol autoload loadlib save to-binary to-ascii)
+		     
+
+
+;;;; --------- Other macros ----------
+
+
+(dm dmd(f n a . p)
+    '(dm `n |DMD|
+	 (displace |DMD|
+		   (let ((`a (cdr |DMD|)))
+		     `@p) ) ) )
+
+(dmd mapfor ((var lo hi . step) . p)
+     '(all ((`var (range `lo `hi `@step)))
+	   `@p) )
+
+(lock-symbol dmd mapfor)
+
+;; Doesn't make sense in interpreted code.  Check if ^C has been pressed 
+;; in compiled code
+(de breakp () ())
+
+
+;;;; --------- Arrays & Matrix utilities ---------
+
+
+(dm dim(f v . l)
+  (list 'setq v (list 'f-matrix . l)) )
+
+(de index-print(this)
+    (let ((begin "[")
+	  (end "]"))
+      (when (arrayp this)
+	    (setq begin "{")
+	    (setq end "}"))
+
+      (if (0= (idx-ndim this))
+	  (printf "::INDEX:<>") 
+	
+	(printf begin)
+	(let ((tabnow (tab))
+	      (len (idx-bound this 0)) )
+	  (if (= 1 (idx-ndim this))
+	      (if (not (member (classof (idx-storage this))
+			       (list |ATSTORAGE| |GPTRSTORAGE|) ) )
+		  (for (i 0 len)
+		       (printf "%5.2f " (this i))) 
+		(printf " ")
+		(for (i 0 len)
+		     (prin (this i))
+		     (printf " ")) )
+	    (for (i 0 len)
+		 (index-print (new-index this 
+					 (cons 0 (cdr (idx-dim this)))
+					 (list i) ))
+		 (when (< i len)
+		       (print)
+		       (tab tabnow) ) ) ) )
+	(printf end) ) ) )
+
+(defmethod |INDEX| print()
+  (if (and (matrixp this)
+	   (< (apply * (idx-dim this)) 100))
+      (index-print this)
+    (printf "%s" (pname this)) ) )
+
+(de list-to-index(l matrix)
+    (if (= (car l) 'quote)
+	;; this is a list of literal
+	(let ((m (matrix (1- (length l)))))
+	  (m () (cdr l)) )
+      ;; this is a list of matrices
+      (let ((m (apply matrix (cons (length l) (idx-dim (car l))))))
+	(for (i 0 (idx-bound m 0))
+	     (copy-matrix (car l)
+			  (new-index m
+				     (cons 0 (cdr (idx-dim m)))
+				     (list i) ) ) 
+	     (setq l (cdr l)) )
+	m ) ) )
+
+(de list2array (l)
+    (let*((a (array (length l)))(i 0))
+      (each ((e l))(a i e)(incr i))
+      a))
+
+(dmc |]| (error 'read "extra ']' found"))
+
+(dmc |}| (error 'read "extra '}' found"))
+
+(dmc |[| 
+     (on-error (error 'list-to-index "Illegal matrix syntax")
+	       (let ((l (when (<> (skip-char) "[") 
+			      (list 'quote) ))
+		     (|]| (lambda() 
+			    (setq m (list-to-index l f-matrix)) ))
+		     (m ()) )
+		 (while ~m
+		   (setq l (nconc1 l (read))) )
+		 m ) ) )
+
+(dmc |{| 
+;     (on-error (error 'list-to-index "Illegal matrix syntax")
+	       (let ((l (when (<> (skip-char) "{") 
+			      (list 'quote) ))
+		     (|}| (lambda() 
+			    (setq m (list-to-index l at-matrix)) ))
+		     (m ()) )
+		 (while ~m
+		   (setq l (nconc1 l (read))) )
+		 m ) ) )
+
+
+(de map-matrix (s)
+    (let ((offset 20)
+	  (diml ()))
+      (let ((d (new-i32-storage)))
+	(storage-mmap d s)
+	(when (<> (d 0) 507333713)
+          (error (if (= (d 0) 1363950878)
+                     "File has been saved on a wrong endian cpu"
+                   "File has not been created by save-flt-matrix" )) )
+	(when (> (d 1) 3) (setq offset (+ 20 (* 4 (- (d 1) 3)))))
+	(setq diml (mapfor (i 1 (d 1)) (d (+ i 1))))
+      )
+      (let ((f (new-f-storage)))
+	(storage-mmap f s offset)
+	(new-index f diml)
+      )
+   )
+)
+
+(de map-pmatrix (s)
+    (let ((offset 20)
+           (diml ()) )
+      (let ((d (new_i32_storage)))
+	(storage_mmap d s)
+	(when (and (<> (d 0) 507333714)
+                   (<> (d 0) 1380728094) )
+          (error "File has not been created by save-packed-matrix") )
+	(when (> (d 1) 3)
+          (setq offset (+ 20 (* 4 (- (d 1) 3)))) )
+	(setq diml (mapfor (i 1 (d 1))
+			   (d (+ i 1)) )) )
+      (let ((f (new_p_storage)))
+	(storage_mmap f s offset)
+	(new_index f diml))))
+
+(lock_symbol dim index-print list-to-matrix |[| |]| |{| |}|
+	     map-matrix map-pmatrix)
+	     
+	
+	     
+;;;; -------- Performance evaluation utilities ---------
+
+(de y_estimate((a b r) x)
+    (+ (* x a) b) )
+(de x_estimate((a b r) y)
+    (/ (- y b) a) )
+(lock_symbol x_estimate y_estimate)
+
+(dm mean_sup_dist (f . r) 
+    '(/ (sup_dist `@r) (length `(car r))) )
+(dm mean_abs_dist(f . r)
+    '(/ (abs_dist `@r) (length `(car r))) )
+(dm mean_sqr_dist(f . r)
+    '(/ (sqr_dist `@r) (length `(car r))) )
+(dm mean_hamming_dist(f . r)
+    '(/ (hamming_dist `@r) (length `(car r))) )
+(dm mean_quadrant_dist(f . r)
+    '(/ (quadrant_dist `@r) (length `(car r))) )
+
+(lock_symbol mean_sup_dist mean_abs_dist mean_sqr_dist )
+(lock_symbol mean_hamming_dist  mean_quadrant_dist )
+
+
+;;;; --------- pprin, pprint ----------
+
+
+(de pprin--v(l tb)
+    (let ((nl ()))
+      (while (consp l)
+	(setq nl t)
+	(print)
+	(tab tb)
+	(pprin (car l))
+	(setq l (cdr l)) )
+      (when l
+	    (print)
+	    (setq nl t)
+	    (tab (+ tb 2))
+	    (printf ". ")
+	    (pprin l) )
+      (if nl
+	  (printf " )")
+	(printf ")") )
+      nl ) )
+    
+(de pprin--h(l tb)
+    (let ((ok t)
+	  (nl ()) )
+      (while (and ok (consp l))
+	(if (or (<= (tab) tb)
+		(< (+ (tab) (len (pname (car l)))) 72) )
+	    (printf " ")
+	  (print)
+	  (tab tb)
+	  (setq nl t) )
+	(if (not (pprin (car l)))
+	    (setq l (cdr l))
+	  (setq ok ())
+	  (setq nl t)
+	  (pprin--v (cdr l) tb) ) )
+      (when ok
+	    (when l
+		  (if (< (+ (tab) (len (pname l))) 70)
+		      (printf " . ")
+		    (print)
+		    (tab tb)
+		    (setq nl t)
+		    (printf ". ") )
+		  (pprin l) )
+	    (if nl
+		(printf " )")
+	      (printf ")") ) )
+      nl ) )
+
+
+(de pprin(l)
+    (let ((tb (tab)))
+      (cond
+       
+       ;; NIL
+       (~l
+	(prin l)
+	() )
+       
+       ;; a method 'pprint' is defined
+       ((check==> (classof l) 'pprint)
+	(==> l pprint) )
+       
+       ;; this is not a list
+       ((not (consp l))
+	(prin l)
+	() )
+       
+       ;; it starts with a CLASS-0 symbol
+       ((member (car l) '(progn prog1))
+	
+	(printf "(")
+	(pprin (car l))
+	(pprin--v (cdr l) (+ tb 2)) )
+
+       ;; it starts with a CLASS-1 symbol
+       ((and (member (car l) '(when while do-while dmc for mapfor repeat
+			       lambda flmabda mlambda zlambda hlambda ))
+	     (consp (cdr l)) )
+	(printf "(")
+	(pprin (car l))
+	(printf " ")
+	(pprin (cadr l))
+	(pprin--v (cddr l) (+ tb 2)) )
+       
+       ;; it starts with a IF symbol
+       ((and (= (car l) 'if)
+	     (consp (cdr l)) )
+	(printf "(")
+	(pprin (car l))
+	(printf " ")
+	(pprin (cadr l))
+	(setq l (cddr l))
+	(print)
+	(tab (+ tb 4))
+	(pprin (car l))
+	(pprin--v (cdr l) (+ tb 2)) )
+
+       ;; it starts with 'QUOTE
+       ((and (= (car l) 'quote) ~(cddr l))
+	(printf "'")
+	(pprin (cadr l)) )
+
+       ;; it starts with 'SCOPE
+       ((and (= (car l) 'scope) (consp (cdr l)) ~(cdr (lastcdr l)))
+	(while (setq l (cdr l))
+	  (printf ":")
+	  (pprin (car l)) ) )
+
+       ;; is starts with a CLASS-COND symbol
+       ((and (member (car l) '(cond selectq))
+	     (consp (cdr l)) )
+	(printf "(")
+	(pprin (car l))
+	(when (= (car l) 'selectq)
+	      (printf " ")
+	      (pprin (cadr l))
+	      (setq l (cdr l)) )
+	(while (consp (setq l (cdr l)))
+	  (print)
+	  (tab (+ tb 2))
+	  (if ~(consp (car l))
+	    (pprin l)
+	    (printf "(")
+	    (pprin (caar l))
+	    (pprin--v (cdar l) (+ tb 4)) ) )
+	(pprin--v l (+ tb 2)) )
+	  
+       
+       ;; it starts with a CLASS-LET symbol
+       ((and (member (car l) '(let let* all each idx-bloop idx-eloop))
+	     (consp (cdr l)) (consp (cadr l)) (consp (cddr l)) )
+	(printf "(")
+	(pprin (car l))
+	(printf " ")
+	(if ~(consp (cadr l))
+	  (pprin (cadr l))
+	  (printf "(")
+	  (let ((tb (tab)))
+	    (pprin (caadr l))
+	    (pprin--v (cdadr l) tb) ) )
+	(pprin--v (cddr l) (+ tb 2)) )
+
+       ;; it starts with a CLASS-3 symbol
+       ((and (member (car l) '(de df dm dz dh dmd defclass))
+	     (consp (cdr l)) (consp (cddr l)) ) 
+	(printf "(")		
+	(pprin (car l))
+	(printf " ")	
+	(pprin (cadr l))	
+	(printf " ")	
+	(pprin (caddr l))
+	(pprin--v (cdddr l) (+ tb 2)) )
+       
+       ;; it starts with a CLASS-4 symbol
+       ((and (member (car l) '(defmethod demethod dfmethod dmmethod))
+	     (consp (cdr l)) (consp (cddr l)) (consp (cdddr l)) ) 
+	(printf "(")
+	(pprin (car l))
+	(printf " ")
+	(pprin (cadr l))
+	(printf " ")
+	(pprin (caddr l))
+	(printf " ")
+	(pprin (cadr (cddr l)))
+	(pprin--v (cddr (cddr l)) (+ tb 2)) )
+       
+       ;; it starts with another symbol
+       ((symbolp (car l))
+	(printf "(")
+	(pprin (car l))
+	(pprin--h (cdr l) (1+ (tab))) )
+
+       ;; default
+       (t
+	(printf "(")
+	(pprin (car l))
+	(pprin--h (cdr l) (1+ tb)) ) ) ) )
+
+(de pprint(l)
+    (pprin l)
+    (print)
+    t )
+
+
+(lock-symbol pprin--h pprin--v pprin pprint)
+
+
+
+;;;; --------- Pretty printer ---------
+
+
+(de print-slots(this)
+    (let ((cl (classof this)))
+      (while cl
+	(printf ";; FROM CLASS: %l\n" (classname cl))
+	(each ((i (slots cl)))
+	      (if (consp i)
+		  (setq i (car i)))
+	      (printf ";;\t%l=%l\n" i (apply letslot (list this i))) )
+	(setq cl (super cl)) ) ) )
+
+(defmethod object pretty()
+  ;; default pretty function
+  (printf ";;*** %l, INSTANCE OF %l\n" this (classof this))
+  (print-slots this) )
+
+(demethod class pretty ()
+  (when (super this)
+    (printf "(defclass %l %l" (classname this) (classname (super this)))
+    (each ((i (slots this)))
+      (if (listp i)
+          (printf "\n  (%l '%l)" (car i) (cadr i))
+        (printf "\n   %l" i) ) )
+    (printf " )\n") )
+  (when (<> (slots this) (class_source this))
+    (printf "\n;; Types: %l\n" (class_source this)) )
+  (each ((i (methods this)))
+    (print)
+    (let ((f (methoddef this i)))
+      (if (and f (= (classof f) |DEM|))
+	  (progn
+	    (printf ";;*** %l, INSTANCE OF %l\n" (check==> this i) |DEM|)
+	    (printf ";; file=")
+	    (print :f:file)
+	    (printf ";; source =\n")
+	    (pprint (cons 'demethod (cons i (cdr (funcdef :f:source)))))
+	  )
+        (if (consp f)
+            (pprint (methoddef this i))
+          (printf ";; %l \t--> %l" i f) ) ) ))
+  (print) )
+
+(de pretty-method (cl m)
+  (pprint (methoddef cl m)))
+
+(defmethod |INDEX| pretty()
+  (index-print this)
+  (print) )
+
+(defmethod |LIST| pretty()
+  (pprint (list 'quote this)) )
+
+(defmethod |DE| pretty()
+  (pprint (funcdef this)) )
+
+(defmethod |DF| pretty()
+  (pprint (funcdef this)) )
+
+(defmethod |DM| pretty()
+  (pprint (funcdef this)) )
+
+(defmethod |RTABLE| pretty()
+  (printf ";;*** %l, INSTANCE OF |RTABLE| (Remote Connection)\n" this)
+  (printf ";; BASE OBJECT = %l\n" :this:t)
+  (printf ";; REMOTE CLASSES = \n")
+  (each ((i (allslots this)))
+	(when (<> i 't)
+	      (printf ";;\t%l\n" i) ) ) )
+
+(defmethod |SYMB| pretty()
+  (printf "'%l\n" this) )
+
+(defmethod |NUMBER| pretty()
+  (print this) )
+
+(defmethod |STRING| pretty()
+  (print this) )
+
+(defmethod |SYMB| pretty2()
+  ;; this function attempts to print the contents of a symbol!
+  (let ((e (eval this))
+	(l (funcdef this)))
+    (cond
+
+     ;; this is a Lisp function
+     ((and (functionp e) (consp l))
+      (cond
+       ((and (= (car l) 'dm) (= (caddr l) '|DMD|))
+	(let ((text (cdr (cdar(cddr(cadr(cddr l)))))))
+	  (pprint (list 'dmd (cadr l)
+			(caaar (cdadr (cdadr (cddr l))))
+			. text )) ))
+       ((and (= (car l) 'de) (= (caddr l) ()) (macrochp (cadr l)))
+	(let ((text (cdddr l)))
+	  (pprint (list 'dmc (cadr l) . text)) ) )
+       (t 
+	(pprint l) ) ) )
+
+     ;; this is an object, and it knows about 'pretty 
+     ((and e
+	   (setq l (classof e))
+	   (check==> l 'pretty) )
+      (==> e pretty) )
+
+     ;; default
+     (e
+      (printf ";;*** %l INSTANCE OF %l\n" e (classof e)) )
+     (t
+      (print ()) ) ) ) )
+
+(dm pretty(pretty f)
+    (nodebug
+     (if (and (symbolp f) 
+	      (or (<> f 'this) ~this) )
+	 '(nodebug (==> (quote `f) pretty2))
+       '(nodebug (==> `f pretty)) ) ) )
+
+(dmc |^P| (list 'pretty (read)))  
+
+(lock-symbol pretty |^P| )
+
+
+;;;; --------- Path functions ---------
+
+
+(de addpath(dir)
+    (setq dir (expand-filename dir))
+    (let ((newpath ()))
+      (each ((s (path)))
+	    (when (<> s dir)
+		  (setq newpath (nconc1 newpath s)) ) )
+      (apply path (cons dir newpath)) ) )
+
+(dmc |^L| (let ((_f_ (read_string)))
+	    (if (= _f_ "")
+		(setq _f_ (or last-loaded-file edit-buffer)) )
+	    (list 'setq 'last-loaded-file (list 'load _f_)) ) )
+
+(dmc |^X| (let ((_f_ (read_string)))
+	    (if (= _f_ "")
+		(setq _f_ (or last-loaded-file edit-buffer)) )
+	    (list 'setq 'last-loaded-file (list 'load _f_)) ) )
+
+(lock-symbol addpath |^L| |^X|)
+
+
+;;;; --------- Edition Functions ---------
+
+(when getenv
+   (setq edit-call (getenv "EDITOR")))
+(when (= edit-call "")
+   (setq edit_call "vi") )
+(when (= edit-call "dm")
+   (setq edit-call ()) )
+
+(setq edit_buffer 
+      (if (functionp tmpnam) 
+	  (tmpnam) 
+	"edit-buffer.sn" ) )
+
+(de edit(_s_)
+   (if edit_call
+      (sys (concat edit_call " " _s_)) 
+      (xdmc (concat "ce " _s_)) ) )
+                                
+
+(de fedit(_s_)
+   (if _s_ 
+        (eval (list 'save edit_buffer _s_)))
+   (edit edit_buffer)
+   (load edit_buffer) ) 
+
+(dmc |^E| (let ((_f_ (read_string)))
+	    (list 'edit (if (<> _f_ "") 
+			    _f_ 
+			  (or last-loaded-file edit-buffer))) ))
+
+(dmc |^F| (list 'fedit (let ((_f_ (read_string)))
+	 	         (if _f_
+			   (list 'quote (named _f_)) ) )))
+
+(lock_symbol edit fedit |^E| |^F|)
+
+;;;; --------------- return size of process ---------
+
+(de mem-size ()
+  (let* ((fin ())
+         (fout ()) 
+	 (pid (pname (getpid))))
+    (filter (concat "ps ux | grep " pid "| grep -v grep") 'fin 'fout)    
+    (reading fin (read_string 24) (val (read_string 5))))))
+
+;;;; --------- Simple Help functions ---------
+
+(de symbols p 
+   (if p 
+      (setq p (car p)) 
+      (setq p "") ) 
+   (let ((pos 0)) 
+        (each ((i (symblist))) 
+           (when (index p i) 
+              (printf "%s" (left i 17)) 
+              (setq pos (if (< pos 50) 
+                              (+ pos 19) 
+                              (printf "\n") 
+                              0 )) 
+              (tab pos) ) ) ) 
+   (print) )
+	
+(dmc |^S| (list 'symbols (read_string)))
+
+
+;;;; -------- Online documentation --------
+
+
+(setq :online-help-topics ())
+
+(dmc |#?|                                  ;; the DOC macro
+     (let ((topic (progn
+		    (skip-char " \t")
+		    (read-string "~\n\r") )))
+       (when (<> file-being-loaded "$stdin")
+	     ;; remove extra (leading, trailing, double) spaces.
+	     (setq topic (regex-subst "^[ \t]+([^ \t])" "%0" topic) )
+	     (setq topic (regex-subst "[ \t]+$" "" topic) )
+	     (setq topic (regex-subst " +([^ \t])" " %0" topic) )
+	     ;; record that.
+	     (let ((record (assoc topic :online-help-topics)))
+	       (when ~record
+		     (setq :online-help-topics
+			   (cons (setq record (list topic))
+				 :online-help-topics ) ) )
+	       (rplacd record (list file-being-loaded)) ) ) )
+     () )
+
+
+(dmc |^A| (list 'apropos (read_string)))
+(autoload (concat sn2-dir "lib/help.sn") apropos)
+
+;;; load macrochar
+
+(lock_symbol |#?| |^S| |^A| symbols )
+
+(de noerror-break ()
+    (print-error)
+    (beep)
+    (printf "\n")
+	 (load "$stdin" "$stdout" "[Break] ? ")
+	 (printf "Resuming execution\n")
+)
+
+;;; --------------- Type definitions ----------
+;;; ---------------     NOT CASTS    ----------
+;;; they take symbols only
+
+;;
+;; --- TYPE DEFINITIONS ---------------------------------------------------
+;;     (not casts)
+;;  
+;
+; creation of dm's (macros) for -flt-, -int-, etc (new and old style) ; mdh
+;
+(each ((fn '(-bool- -int- -flt- -float- -real- -double-
+	       -ord- -ubyte- -byte- -short- -str-)))
+      (eval
+       '(dm `fn (fn . args)
+	    (if (= 0 (length args))    ; new style format
+		(list 'mlambda '(fn . args)
+		      (quote (append (list 'declare (list (quote `fn))) args)))
+	      (each ((arg args))
+		    (when ~(symbolp arg)
+			  (error 'declare "expected a symbol" arg))
+		    (append (list 'declare (list (quote `fn))) args)))))
+      (eval (list 'lock-symbol fn)))
+
+;
+; creation of dm's for -list- -array- (new style only)  ; mdh
+;
+
+(dm -gptr- (fn . args)
+    (cond
+     ((= 0 (length args))
+      (list 'mlambda '(fn . args)
+	    '(append (list 'declare (list '-gptr-)) args) ))
+     ((and (= 1 (length args)) (stringp (car args)))
+      (list 'mlambda '(fn . args)
+	    '(append (list 'declare (list '-gptr- `(car args))) args) ) )
+     ((and (= 1 (length args)) (consp (car args)) (= 1 (length (car args))))
+      (list 'mlambda '(fn . args)
+	    '(append (list 'declare (list '-gptr- (quote `(car args)))) args) ) )
+     (t
+      (each ((arg args))
+	    (when (null (symbolp arg))
+		  (error 'declare "expected a symbol" arg) )
+	    (append (list 'declare (list '-gptr-)) args) ) ) ) )
+
+
+(dm -list- (fn . args)
+    (verify-type-decl-format (cons fn args))
+    (list 'mlambda '(f . args)     ; new style declaration method
+	  '(append (list (quote declare)
+			 (quote  `(cons fn args))) args)))
+
+(dm -array- (fn . args)
+    (verify-type-decl-format (cons fn args))
+    (list 'mlambda '(f . args)     ; new style declaration method
+	  '(append (list (quote declare)
+			 (quote  `(cons fn args))) args)))
+
+(lock-symbol -gptr- -list- -array-)
+
+;
+; creation of dm's for -idxN-'s (N in 0 .. 15) and -obj-  ; mdh
+;
+(each ((fn '(-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7-
+		    -idx8- -idx9- -idx10- -idx11- -idx12- -idx13-
+		    -idx14- -idx15-)))
+      (eval '(dm `fn (fn . body)
+		 (if (null body)
+		     (error fn "expected an argument" fn))
+		 (let ((format ())
+		       (args ()))
+		   (if (and ~(null (car body))
+			    (listp (car body))
+			    (= 1 (length (car body))))
+		       (setq format (append (list fn) body))   ; new style
+		     (if ~(listp (car body))                   ; oldstyle
+		       (progn
+			 (setq args body)
+			 (setq format (list fn '(-flt-))))
+		       (if (< 1 (length body))
+			   (error fn "too many arguments" body))
+		       (setq args (cdr (car body)))
+		       (setq format (list fn (list (car (car body)))))))
+		   (if (= 0 (length args))       ; new style decl method
+		       (list 'mlambda '(fn . args)
+			     '(append
+			       (list 'declare (quote `format)) args))
+		     (each ((arg args))
+			   (when ~(symbolp arg)
+				 (error fn "expected a symbol" arg)))
+		     (append
+			(list 'declare format) args)))))
+      (eval (list 'lock-symbol fn)))
+
+(dm -obj- (fn . args)
+    (verify-type-decl-format (cons fn args))
+    (list 'mlambda '(f . args)     ; new style declaration method
+	  '(append (list (quote declare)
+			 (quote  `(cons fn args))) args)))
+(lock-symbol -obj-)
+
+;#?  (verify-type-decl-format <source>)
+;; Returns true if <source> is an acceptable variable type declaration
+;; format.  An error message is generated if not.  <source> is a list
+;; of variable types.
+;; 
+;; For example, the following two expressions both return true since both are
+;; valid type declaration formats:
+;;
+;;  (verify-type-decl-format '(-list- (-flt-) (-int-)))
+;;
+;;  (verify-type-decl-format '(-idx2- (-int-)))
+(de verify-type-decl-format(source)                   ; mdh
+    (let ((idx-format-types '(-bool- -int- -flt- -float- -real- -double-
+				     -ord- -ubyte- -byte- -short- -gptr-)))
+      (if ~(listp source)
+	(error 'declare "expected a list containing a type declaration"
+	       source))
+      
+      (selectq (car source)
+       
+       ((-bool- -int- -flt- -float- -real- -double-
+		-ord- -ubyte- -byte- -short- -str-)    ;SIMPLE
+	(if (<> 1 (length source))
+	    (error 'declare "expected no additional type declarations" 
+		   (cdr source))))
+
+       ((-gptr-)
+	(when (<> 1 (length source))
+	      (if (or (<> 2 (length source))
+		      (and (not (stringp (cadr source)))
+			   (or (not (consp (cadr source)))
+			       (<> 1 (length (cadr source)))
+			       (not (symbolp (caadr source))) ) ) )
+		  (error 'declare "syntax error" source) ) ) )
+
+       ((-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7- -idx8-
+		-idx9- -idx10- -idx11- -idx12- -idx13- -idx14- -idx15-) ; IDX
+	(if ~(= 1 (length (cdr source)))
+	  (error 'declare "expected only one argument"  source))
+	(if ~(listp (cadr source))
+	  (error 'declare "expected a list as an argument" source))
+	(if (or ~(= 1 (length (cadr source)))
+		~(member (caadr source) idx-format-types))
+	    (error 'declare "invalid idx format type" (cdr source))))
+
+      (-list-                                                ; LIST
+       (each ((arg (cdr source)))
+	     (verify-type-decl-format arg)))
+      
+      (-array-                                               ; ARRAY
+       (if ~(= 1 (length (cdr source)))
+	 (error 'declare "expected only one argument"  source))
+       (if ~(listp (cadr source))
+	 (error 'declare "expected a list as an argument" source))
+       (verify-type-decl-format (cadr source)))
+					
+      (-obj-                                                  ; OBJ
+       (when ~(= 1 (length (cdr source)))
+	     (error 'declare "expected only one argument"  source))
+       (when ~(listp (cadr source))
+	     (error 'declare "expected a list as an argument" source))
+       )
+      (t (error 'declare "unknown declaration type" (car source))))
+      )
+    t)    
+
+
+
+(de verify-symbol-type(format symb)
+
+    (if ~(listp format)
+	(error 'declare "expected a list containing a type declaration"
+	       format))
+
+    ; theoretically, the format of the source has already been checked at this
+    ; point.  Perhaps a call to verify-type-decl-format would be in order.
+    ; (this should only be called from declare, which should have already
+    ; checked the format)
+    (selectq 
+     (car format)
+     
+     ((-int- -real- -double- -float- -flt- -ord- -ubyte- -byte- -short-)
+      (if ~(numberp symb)
+	(error 'declare "symbol is not numeric" symb)))
+
+     (-str-                                                ;STRING
+      (if ~(stringp symb) (error 'declare "symbol is not a string" symb)))
+
+     (-bool-                                                ;BOOLEAN
+      (if ~(boolp symb)	(error 'declare "symbol is not a boolean" symb)))
+
+     (-list-                                           ; LIST
+      (if ~(listp symb)	(error 'declare "symbol is not a list" symb))
+      (if (<> (length symb) (length (cdr format)))
+	  (error 'declare
+		 "number of elements in format and symbol do not match"
+		 (list format symb)))
+      (each ((arg (cdr format)) (sym symb))
+	    (verify-symbol-type arg sym)))
+
+     (-array-                                           ; ARRAY
+; NOTE: array verify method?
+      (printf "\n Warning:  Array type checking not available yet\n\n")
+      (if (<> (length symb) (length (cdr format)))
+	  (error 'declare
+		 "number of elements in format and symbol do not match"
+		 (list format symb)))
+      (each ((arg (cdr format)) (sym symb))
+	    (verify-symbol-type arg sym)))
+
+     (-obj-                                           ; OBJECT
+      (when ~(classp (classof symb))
+	    (error 'declare
+		   "symbols is not object of a class" symb))
+      (let ((oclass (classof symb))
+	    (cclass (eval (caadr format))))
+	(while (and ~(null oclass)
+		    (<> cclass oclass))
+	  (setq oclass (super oclass)))
+	(when (null oclass)
+	      (error 'declare
+		     "symbol is not a subclass of class" (caadr format)))))
+
+     (-gptr-                                           ; GPTR
+      ())
+
+     ((-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7- -idx8-
+	      -idx9- -idx10- -idx11- -idx12- -idx13- -idx14- -idx15-) ; IDX
+      (let ((idxs
+	     '(-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7- -idx8-
+		      -idx9- -idx10- -idx11- -idx12- -idx13- -idx14- -idx15-)))
+	(if ~(matrixp symb)
+	  (error 'declare "symbol is not an idx" symb))
+	(if (<> (idx-ndim symb)
+		(- (length idxs) (length (member (car format) idxs))) )
+	    (error 'declare "dimension of idx symbol is incorrect" symb))
+	(if (<> (classof (idx-storage symb))
+		(selectq (caadr format)
+			 (-int-             |I32STORAGE|)
+			 (-short-           |I16STORAGE|)
+			 (-byte-            |I8STORAGE|)
+			 (-ubyte-           |U8STORAGE|)
+			 ((-flt- -float-)   |FSTORAGE|)
+			 ((-real- -double-) |DSTORAGE|)
+			 (-gptr-            |GPTRSTORAGE|)
+			 (t (error 'declare "unknown type declaration"
+				   (caadr format)))))
+	    (error 'declare "storage type mismatch" 
+		   (list (cadr format) symb)))
+	))
+     
+     (t (error 'declare "IPE!  unknown type declaration in format" format)))
+
+)
+
+;
+;  declare  
+;
+(df declare(format . args)
+    (if (or ~(listp args)
+	    (= 0 (length args)))
+	(error 'declare "no arguments to declare" (cons format args)))
+
+;    (verify-type-decl-format format)  ; no longer needed?
+					; symbol check
+    (each ((arg args))
+	  (if ~(symbolp arg)
+	    (error 'declare "expected a symbol to be declared" arg))
+	  (verify-symbol-type format (eval arg))))
+
+(lock-symbol declare)
+
+;;; --------------- Casting functions ----------
+
+(de flt (arg)
+    (when ~(numberp arg) (error "not numeric"))
+    arg)
+(de float (arg)
+    (when ~(numberp arg) (error "not numeric"))
+    arg)
+(de real (arg)
+    (when ~(numberp arg) (error "not numeric"))
+    arg)
+(de double (arg)
+    (when ~(numberp arg) (error "not numeric"))
+    arg)
+
+(de bool (arg)
+    (and arg (<> arg 0)) )
+
+;; 'int' is defined in dz_lisp.c
+
+(lock_symbol flt real bool)
+
+
+
+;;; ------------------------------------------------------------------------
+;;; CLASS DEFINITION
+;;; ------------------------------------------------------------------------
+
+(when ~old-defclass
+  (unlock-symbol defclass)
+  (setq old-defclass defclass)
+  (lock-symbol old-defclass) )
+
+
+(defclass |DEM| |DE| source file)
+
+(de cclass-to-class (cclass)
+    ;; This function is called by mod-load (which itself can be called
+    ;; by dhc-load.  The handle to the newly loaded  C class is cclass.
+    (let (((cname csupername cslots cmethod-types m-names) 
+	   (classinfo-t cclass))
+          ((kname ksuper tablename dhtablename cmethods hashcode)
+           (classinfo-c cclass)))
+      (let* ((cslots-name (all ((cs cslots)) (named (car cs))))
+             (lisp-name (named (mid cname 9)))
+             (lisp-super-name (named (mid csupername 9))) )
+
+	;; This is needed when this is called by mod-load only (as 
+	;; opposed to mod-load from dhc-load.  In that case, the lisp class
+	;; may not exist and should be created.
+        (eval (append '(defclass `lisp-name `lisp-super-name)
+                      cslots-name))
+        (class-cclass (eval lisp-name) cclass)
+        (class-source (eval lisp-name) 
+		      (all ((cs cslots)) 
+                        (list (cdr cs) (named (car cs)))))
+        (each ((cmname m-names) 
+               (dh cmethods))
+          (eval  '(putmethod `lisp-name '`(named cmname )
+                             `(apply lambda 
+                                     '(l (eval (cons `dh 
+                                                     (cons this l)))))))
+          (cast (check==> (eval lisp-name) (named cmname)) |DEM|))
+        (eval lisp-name))))
+
+(lock-symbol cclass-to-class |DEM|)
+
+(setq dhc-valid-types
+      '(-bool- 
+        -gptr- 
+        -flt- -float- -double- -real-
+        -ubyte- -byte- -short- -int- -ord- 
+        -idx0- -idx1- -idx2- -idx3- 
+        -idx4- -idx5- -idx6- -idx7- 
+        -idx8- -idx9- -idx10- -idx11-
+        -idx12- -idx13- -idx14- -idx15- ) )
+
+(df defclass (name superclass . slots)
+    (let ((untyped-slot ()))
+      (each ((slot slots))
+        (if (and (listp slot) (listp (car slot))
+                 (verify-type-decl-format (car slot)))
+            (progn
+              (each ((s (cdr slot)))
+                (when ~(symbolp s)
+                      (error 'defclass "expected a symbol" s)))
+              (each ((s (cdr slot)))
+                (setq untyped-slot (cons s untyped-slot))))
+          (setq untyped-slot (cons slot untyped-slot))))
+      (setq untyped-slot (reverse untyped-slot))
+      (apply old-defclass 
+             (cons name (cons (eval superclass) untyped-slot)))
+      (class-source (eval name) slots)
+      name))
+
+(lock-symbol defclass)
+ 
+
+#? (obj-super <cl> <ob>)
+;; Cast object <ob> to one of its superclass <cl>.  This
+;; is useful for statement like (if (condition) a (obj-super cl-a b))
+;; where a is of class cl-a and b is of a subclass of cl-a.
+;;
+(de obj-super (cl ob)
+    (if ~(classp cl)
+      (error 'obj-super "Arg 1 must be a class" cl))
+    (let ((clob (classof ob)))
+      (while (<> cl clob)
+	(setq clob (super clob))
+	(if ~clob
+	    (error 'obj-super 
+		   (sprintf "object is not of class %l" cl)
+		   ob)))
+      ob))
+
+#? (protect <l_1> ... <l_m>)
+;; Does the same as progn in interpreted mode.  However the in
+;; compiled mode, it negates the effect of unprotect.
+;;
+(de protect l
+    (apply progn l))
+
+#? (unprotect <l_1> ... <l_m>)
+;; Does the same as progn in interpreted mode.  However the in
+;; compiled mode, it removes all the run time check in the 
+;; generate code.  This means that the whole SN can crash so
+;; use with caution.  To compile many file without any checking
+;; one can also do: 
+;;.VP
+;;   (let ((dhc-unprotect t))
+;;      (dhc-make "name" ...))
+;;      (dhc-make "name" ...)))
+;;.PP
+(de unprotect l
+    (apply progn l))
+
+
+#? (breakpoint [<new-breakpoint-value>])
+;;.SEE Interruptions.
+;;.SEE (set-counting-eval)
+;;.SEE (restore-eval)
+;;.SEE (eval-count)
+;; Read or set the eval counter breakpoint. When the eval function is set to 
+;; counting-eval by (set-counting-eval), (noerror-break) will be called if the
+;; breakpoint value equals eval-count, a count of the number of eval's while
+;; eval was set to counting-eval.
+
+#? (eval-count)
+;;.SEE Interruptions.
+;;.SEE (set-counting-eval)
+;;.SEE (restore-eval)
+;;.SEE (breakpoint)
+;; Returns the current value of the eval counter. This counter is incremented for
+;; each eval, when eval is set to counting-eval by (set-counting-eval). In counting-eval,
+;; if this counter reaches the value of the counter breakpoint (set with (breakpoint <value>)),
+;; then a break is performed.
+
+#? (set-counting-eval)
+;;.SEE Interruptions.
+;;.SEE (breakpoint)
+;;.SEE (restore-eval)
+;;.SEE (eval-count)
+;; Set the eval function a special version of eval that increments a counter
+;; at each evuation and breaks when that counter reaches the value (breakpoint).
+
+#? (restore-eval)
+;;.SEE Interruptions.
+;;.SEE (breakpoint)
+;;.SEE (set-counting-eval)
+;;.SEE (eval-count)
+;; Restores the eval function to its previous value, normally the standard eval function,
+;; which doesn't increment the eval counter and does not check for a breakpoint.
+
+#? (contiguep <m>)
+;; Returns true if matrix is congiguous (all its element are
+;; in a contiguous space in memory).  Return () otherwise.
+;; Function like select and submatrix may return non contiguous
+;; matrices.  Non contiguous matrix should not be "redim"-ed, or 
+;; passed as argument to numerical recipeed (or any function which
+;; call one of these.)
+;;
+;;.SEE (redim <idx> [<n_1>...])
+(de contiguep (m)
+    (let ((flag t)
+	  (size 1))
+      (for (i (1- (idx-ndim m)) 0 -1)
+	   (if (<> size (idx-modulo m i))
+	       (setq flag ())
+	     (setq size (* size (idx-dim m i)))))
+      flag))
+
+#? (clone-matrix <mat>)
+;; Return an uninitialized matrix with same dimentions as <mat>.
+;;.SEE (matrix-nc [<s_1> ...])
+;;.SEE (matrix [<s_1> ...])
+;;
+(de clone-matrix (mat)
+    (let* ((size (apply * (bound mat)))
+	   (sto (new-f-storage)))
+      (storage-malloc-nc sto size)
+      (new-index sto (bound mat))))
+
+#? (redim <idx> [<n_1>...])
+;; Retun an idx of same size than <idx> but with different 
+;; dimesions (as specified by <n_0>, <n_1>,...
+;;
+;;.SEE (contiguep <m>)
+(dmd redim (idx . l)
+     '(new-index (idx-storage `idx) 
+		 `(cons 'list l)))
+
+
+
+
+#? (alarm <handler> <n> <x> <y>)
+;; starts an alarm clock. An event of the form (alarm <x> <y>)
+;; will be sent to SN after <n> microseconds.
+;; the handler associated with this event is <handler>
+;; (this is what (checkevent ()) returns when an alarm event
+;; is next in line in the event queue).
+;; alarm returns the content of the timer prior to its
+;; initialisation to <n>
+;; When ogre is running, the event handler passed to alarm should
+;; be an object that has a manage-event method, otherwise the
+;; alarm event will be lost.
+;; A possibility is to pass a windowobject as the event handler.
+;; in this case <x> and <y> will be interpreted as coordinates,
+;; and the alarm event will be propagated to the ogre object
+;; at that coordinates.
+
+;; initialize external objects (if any)
+(when ext-init
+ (ext-init)
+)
+
+
+
+
+;;;; --------------- Object toplevel ------------------------
+
+
+#? (==> <object> toplevel)
+;; Runs a toplevel loop in the context of the specified object.
+;; You can then directly access the slots of the object
+;; and send a method using the macro-character <#&>.
+;; You mat exit by typing function <(exit)> or <ctrl-d> just like
+;; any other toplevel.
+
+(dmc |#&| (error "Macro-character #& cannot be used outside an object toplevel"))
+
+(defmethod object toplevel()
+  (let ((|#&| (eval `(lambda() (let ((expr (read))) 
+                                 (list (if (consp expr)
+                                           (cons '==> (cons ,this expr))
+                                         expr )) )))))
+    (letslot this
+             (load "$stdin" "$stdout" 
+                   (sprintf "[%s]? " (pname this)) ) ) ) )
+
+
+

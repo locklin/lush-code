@@ -1,0 +1,102 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a simple version of the old game airtaxi
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Yann LeCun 07/2001
+
+(mload "sdl/libsdl")
+
+(when (< (SDL_Init SDL_INIT_VIDEO) 0) (error "Unable to init SDL"))
+
+
+(de airtaxi ()
+    (let* ((scr (new screen 800 600 "Air Taxi"))
+           (bgd (new sprite scr 0))
+           (taxi (new sprite scr 1))
+           (fire (new sprite scr 2))
+           (base1 (new sprite scr 10))
+           (base2 (new sprite scr 11))
+           (base3 (new sprite scr 12))
+           (explose -1)
+           (stop ())
+           (x 140) (y 404) (vx 0) (vy 0) (ax 0) (ay 0)
+           ;; set mass, inverse mass, and deltat of lem
+           (mass 1) (mass-inv (/ 1 mass)) (deltat 0.06)
+           (side-thrust 200)            ; set side engine thrust
+           (main-thrust 400)            ; set main engine thrust
+           (grav 200)                   ; set gravity coefficient in pixels/s/s
+           (vxmax 1000)
+           (vymax 1000)
+           (event (new sdl-event))
+           (xyk (int-matrix 3)))
+      ;; init bg
+      (==> bgd load-frame "decor.png" 0 0 0)
+      (==> bgd move 0 0)
+      ;; init bases
+      (==> base1 load-frame "base.png" 0 0 0)
+      (==> base1 move 98 172)
+      (==> base2 load-frame "base.png" 0 0 0)
+      (==> base2 move 633 192)
+      (==> base3 load-frame "base.png" 0 0 0)
+      (==> base3 move 51 516)
+      ;; init taxi
+      (==> taxi load-frame "taxi-r.png" 0 40 36)
+      (==> taxi load-frame "taxi-l.png" 1 40 36)
+      (==> taxi set-frame 0)
+      (==> fire load-frame "fireball00.png" 4 70 88)
+      (==> fire load-frame "fireball01.png" 3 70 88)
+      (==> fire load-frame "fireball02.png" 2 70 88)
+      (==> fire load-frame "fireball03.png" 1 70 88)
+      (==> fire load-frame "fireball04.png" 0 70 88)
+      (while (not stop)
+        (==> scr clear)
+        (==> bgd drawc)
+        (==> base1 drawc)
+        (==> base2 drawc)
+        (==> base3 drawc)
+        (==> event get-arrows xyk)
+        (when (= (xyk 2) SDLK_q) (setq stop t)) ; stop when q is pressed
+        (when (> (xyk 0) 0.1) (==> taxi set-frame 0))
+        (when (< (xyk 0) -0.1) (==> taxi set-frame 1))
+        (cond
+         ((> explose 0) 
+          (==> fire move x y)
+          (==> fire set-frame (int explose))
+          (incr explose -0.5)
+          (==> fire draw))
+         ((= 0 explose)
+          (setq x 140 y 404 vx 0 vy 0 ax 0 ay 0)
+          (setq explose -1))
+         (t
+          (setq ax (* mass-inv side-thrust (xyk 0))) ; update acceleration 
+          (setq ay (+ grav (* mass-inv main-thrust (xyk 1)))) ; update acceleration 
+          (setq vx (+ vx (* ax deltat)))  ; update velocity
+          (setq vy (+ vy (* ay deltat)))  ; update velocity
+          (setq x  (+ x (* vx deltat)))   ; update position
+          (setq y  (+ y (* vy deltat)))   ; update position
+          (==> taxi move  x y)
+          (==> taxi drawc)
+          (when (<> 0 (collided taxi bgd))
+            (setq vx (* 0.3 (- vx)))
+            (setq vy (* 0.3 (- vy)))
+            (setq explose 4))
+          (when (<> 0 (collided taxi base1))
+            (setq y :base1:y)
+            (when (or (> (abs vx) vxmax) (> (abs vy) vymax)) (setq explose 4))
+            (setq vx (* 0.3 (- vx)))
+            (setq vy (* 0.3 (- vy))))
+          (when (<> 0 (collided taxi base2))
+            (setq y :base2:y)
+            (when (or (> (abs vx) vxmax) (> (abs vy) vymax)) (setq explose 4))
+            (setq vx (* 0.3 (- vx)))
+            (setq vy (* 0.3 (- vy))))
+          (when (<> 0 (collided taxi base3))
+            (setq y :base3:y)
+            (when (or (> (abs vx) vxmax) (> (abs vy) vymax)) (setq explose 4))
+            (setq vx (* 0.3 (- vx)))
+            (setq vy (* 0.3 (- vy))))))
+        (==> scr flip)
+        ;; (==> taxi set-deltat :scr:deltat)
+        )))
+
+
+

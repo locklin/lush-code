@@ -1,0 +1,56 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; replicable, one hidden layer, fully connected net
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "libnets")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass net-ff sn-module
+  ((-obj- (f-layer)) f0-module)
+  ((-obj- (idx3-ddstate)) f0-state)
+  ((-obj- (f-layer)) f1-module))
+
+(defmethod net-ff net-ff (thickin thick0 thick1 ini inj prm)
+  ((-obj- (idx1-ddparam)) prm)
+  ((-int-) ini inj thickin thick0 thick1)
+  (let ((f0-squash (new idx3-squasher))
+	(f1-squash (new idx3-squasher)))
+    (setq f0-module (new f-layer thickin thick0 ini inj f0-squash prm))
+    (setq f0-state (new idx3-ddstate thick0 ini inj))
+    (setq f1-module (new f-layer thick0 thick1 ini inj f1-squash prm))
+    () ) )
+
+(defmethod net-ff fprop (in out)
+  ((-obj- (idx3-state)) in)
+  ((-obj- (idx3-state)) out)
+  (==> f0-module fprop in f0-state)
+  (==> f1-module fprop f0-state out)
+  ())
+
+(defmethod net-ff bprop (in out)
+  ((-obj- (idx3-dstate)) in)
+  ((-obj- (idx3-dstate)) out)
+  (==> f1-module bprop f0-state out)
+  (==> f0-module bprop in f0-state)
+  ())
+
+(defmethod net-ff bbprop (in out)
+  ((-obj- (idx3-ddstate)) in)
+  ((-obj- (idx3-ddstate)) out)
+  (==> f1-module bbprop f0-state out)
+  (==> f0-module bbprop in f0-state)
+  ())
+
+(defmethod net-ff forget (z p)
+  ((-flt-) z p)
+  (==> f1-module forget z p)
+  (==> f0-module forget z p)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; (dhc-make "net-ff" (net-ff net-ff fprop bprop bbprop forget))
+;; constructor causes gasps because of bumping bug
+(dhc-make "net-ff" (net-ff net-ff fprop bprop bbprop forget))

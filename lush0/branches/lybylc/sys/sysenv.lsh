@@ -1,0 +1,1077 @@
+;;; Lush Lisp interpreter and development tools
+;;; Copyright (C) 1991-1999 Leon Bottou and Neuristique.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;
+;;;    "sysenv.lsh"    (C) 87,88 Y. Le Cun & L. Y. Bottou
+;;;             Standard lisp and system macros
+;;;
+;;;
+;;;  $Id: sysenv.lsh,v 0.1 2001-10-31 17:31:27 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;; --------- Miscellaneous macro-chars ---------
+
+(dmc |'|                                   ;; the QUOTE macro
+     (list (quote quote) (read)))
+
+(dmc |~|                                   ;; the NULL macro
+     (list 'null (read)))
+
+(dmc |!|                                   ;; the SYS macro
+     (list 'sys (read_string)))
+
+(dmc |:|                                   ;; the SCOPE macro
+     (when (= (skip-char) ":")
+	   (error 'load "Names beginning by :: are reserved" ()) )
+     (let ((ans (list 'scope (read))))
+       (while (= (skip-char "") ":")
+	 (read-string 1)
+	 (setq ans (nconc1 ans (read))) )
+       ans ) )
+
+(dmc |#!|                                  ;; the SCRIPT macro
+     (read-string)
+     () )
+
+(lock_symbol |'| |~| |!| |:| |#!|)
+
+
+
+
+;;; --------- Historical spelling mistakes  ---------
+
+(setq not null)
+(setq nil ())
+(lock_symbol not nil)
+
+;;; --------- toplevel, break, and debug  ---------
+
+(de startup argv
+    ;; no command line argument: set default library to lushenv-path
+    (when (not argv) (when lushenv-path (setq argv (list lushenv-path))))
+    (if (= (car argv) "@@")
+        ;; script mode
+        (progn
+          (setq startup ())
+          (setq argv (cdr argv))
+          (when argv (load (car argv))) )
+      ;; interactive mode
+      (each ((file argv))
+        (if (and mod-load (= (left file 1) "+"))
+            (progn
+              (printf "... loading extension file \"%s\"\n" file)
+              (mod-load (mid file 2)) )
+          (setq file (or (filepath file) file))
+          (printf "... loading library file \"%s\"\n" file)
+          (load file) ) ) )
+    (de startup argv
+        (when argv
+          (printf "... command line arguments: ")
+          (print argv) ) ) )
+
+(de toplevel()
+    (let ((break-hook :nice-break-hook)
+	  (debug-hook :nice-debug-hook) )
+      (if (isatty "$stdin")
+	  (load "$stdin" "$stdout" "? ")
+	(load "$stdin") ) ) )
+
+(setq debug-action ())
+(setq break-action ())
+
+(dm on-error (f p . l)
+  (cons 'let
+	(cons
+	  (list (list 'debug-action
+		      (list 'cons (list 'quote p) 'debug-action) ))
+	  l )) )
+
+(dm on-error-macro (n onem . r)
+    `(eval (cons 'on-error (cons ,onem (quote ,r))))
+    )
+
+(dm on-break(f p . l)
+  (cons 'let
+	(cons
+	  (list (list 'break-action
+		      (list 'cons (list 'quote p) 'break-action) ))
+	  l )) )
+
+(dm on-break-macro (n onbm . r)
+    `(eval (cons 'on-break (cons ,onem (quote ,r))))
+    )
+
+(de simple-break-hook()
+    (each ((action break-action)) (eval action))
+    (writing "$stderr" (printf "\n\x07*** %s\n" (errname))) 
+    t )
+
+(de simple-debug-hook()
+    (each ((action debug-action)) (eval action))
+    (writing "$stderr" (printf "\n\x07*** %s\n" (errname)))
+    t )
+
+(de nice-break-hook()
+    (each ((action break-action)) (eval action))
+    (writing "$stderr" (printf "\n\x07*** %s" (errname)))
+    (if (and (isatty "$stdin") (ask "Break toplevel"))
+	(progn
+	  (writing "$stderr" (where 7))
+	  (load "$stdin" "$stdout" "[Break] ? ")
+	  (not (ask "Resume execution")) )
+      t ) )
+
+(de nice-debug-hook()
+    (each ((action debug-action)) (eval action))
+    (writing "$stderr" (printf "\n\x07*** %s" (errname)))
+    (if (and (isatty "$stdin") (ask "Debug toplevel"))
+	(progn
+	  (writing "$stderr" (where 7))
+	  (load "$stdin" "$stdout" "[Debug] ? ") )
+      t ) )
+
+(setq break-hook simple-break-hook)
+(setq debug-hook simple-debug-hook)
+
+
+(lock-symbol toplevel 
+	     break-hook debug-hook
+	     nice-break-hook nice-debug-hook 
+	     break-action debug-action
+	     on-error on-break
+	     on-error-macro on-break-macro
+	     )
+
+
+
+
+
+
+;;; --------- Trace-Hook  ---------
+
+(de trace-hook(level line expr info)
+  (if (>= level 0)
+      (progn
+	;; Called before evaluation
+	(tab level)
+	(writing "$stderr" (printf "-> %s\n" line))
+	t )
+    (progn
+      (tab (- level))
+      (writing "$stderr" (printf "<- %s\n" line))
+      t ) ) )
+
+(lock-symbol trace-hook)
+
+
+
+
+
+
+;;; --------- Tokenise  ---------
+
+(de tokenize(fin &optional fout)
+    (when (not fout)
+      (setq fout (filepath fin ".lsh|.tl|"))
+      (when (or (not fout) (not (regex-match ".*\\.(sn|tl)" fout)))
+	(error 'tokenize "Cannot find library file named" fin) )
+      (setq fin fout)
+      (setq fout (concat fout "c")) )
+    (let ((tokens (list 'progn)))
+      (reading (open-read fin ".lsh|.tl|")
+	       (while (<> (skip-char) "\e")
+		 (if (= (skip-char) ";")
+		     (read-string)
+		   (nconc1 tokens (read)) ) ) )
+      (writing (open-write fout)
+	       (bwrite tokens) ) )  
+    fout)
+
+
+
+;;; --------- Backquote macro ---------
+
+(de backquote-macro()
+    (let ((|,| (lambda() 
+		 (error "Nested comma in a backquoted expression"))))
+      (if (<> (skip-char) "@")
+	  (cons '|,| (read))
+	(read-string 1)
+	(cons '|,@| (read)) ) ) )
+
+(de backquote-subst(l) 
+    (let ((na ())
+	  (nl ())
+	  (nq ()) )
+      
+      (while l
+	(when (consp l)
+	      (when (= (car l) '|,@|)
+		    (error 'read "Misplaced ,@ inside a backquote") )
+	      (when (= (car l) '|,|)
+		    (setq l (list (cons '|,@| (cdr l)))) ) )
+	(cond
+	 ((atomp l)
+	  (setq nq (nconc nq l)) 
+	  (setq l ()) )
+	 ((null (consp (car l)))
+	   (setq nq (nconc1 nq (car l))))
+	 ((= (caar l) '|,|)
+	  (setq nl (append nl 
+			   (all ((i nq)) 
+				(list 'quote i))
+			   (list (cdar l)) ))
+	  (setq nq ()) )
+	 ((= (caar l) '|,@|)
+	  (setq na (append na
+			   (when nl (list (cons 'list nl)))
+			   (when nq (list (list 'quote nq)))
+			   (list (cdar l)) ))
+	  (setq nl ())
+	  (setq nq ()) )
+	 (t
+	  (let ((m (backquote-subst (car l))))
+	    (if (and (consp m) (= (car m) 'quote))
+		(setq nq (nconc1 nq (cadr m)))
+	      (setq nl (nconc nl 
+			      (all ((i nq)) 
+				   (list 'quote i))
+			      (list m) ))
+	      (setq nq ()) ) ) ) )
+	
+	(setq l (cdr l)) )
+
+      (if (null na)
+	  (backquote-list nl nq)
+	(append 
+	 (list 'append)
+	 na
+	 (let ((m (backquote-list nl nq)))
+	   (when m (list m)) ) ) ) ) )
+
+(de backquote-list(nl nq)
+    (cond
+     ((null (or nl nq) )
+      ())
+     ((null nl)
+      (list 'quote nq))
+     ((null nq)
+      (cons 'list nl))
+     ((= (length nl) 1)
+      (list 'cons (car nl) (list 'quote nq)) )
+     ((= (length nl) 2)
+      (list 'cons (car nl) (list 'cons (cadr nl) (list 'quote nq))) )
+     (t
+      (list 'nconc (cons 'list nl) (list 'quote nq)) ) ) )
+     
+
+(dmc |,| 
+     (error 'read "Comma outside backquote") )
+
+(dmc |`|
+     (backquote-subst
+      (let* ((|,| backquote-macro))
+	(read) ) ) )
+
+(lock-symbol |`| |,| backquote-subst backquote-list backquote-macro)
+
+
+
+
+
+
+
+;;; --------- Usual functions ---------
+
+(de nconc (f . l)
+  (cond
+    (f
+       (prog1 f
+	 (each ((i l))
+	       (setq f (lastcdr f))
+	       (rplacd f i) ) ) )
+    (l
+       (nconc . l) ) ) )
+
+(de nconc1(l s)
+  (if l
+      (rplacd (lastcdr l) (list s))
+      (setq l (list s)) )
+  l )
+
+(de classp(q)
+    (= (classof q) class) )
+
+(dm dmd(f n a . p)
+     `(dm ,n |DMD| (displace |DMD| (let ((,a (cdr |DMD|))) ,@p))) )
+
+(dmd mapfor ((var lo hi . step) . p)
+     `(all ((,var (range ,lo ,hi ,@step))) ,@p) )
+
+(de caddr(l) (car (cddr l)))
+(de cdddr(l) (cdr (cddr l)))
+(de cdadr(l) (cdr (cadr l)))
+(de caadr(l) (car (cadr l)))
+(de cadar(l) (car (cdar l)))
+(de cddar(l) (cdr (cdar l)))
+(de cdaar(l) (cdr (caar l)))
+(de caaar(l) (car (caar l)))
+
+(de sort-list (l comp)
+    (if (cdr l)
+	(let* ((piv ())
+	       (pl ())
+	       (ll ())
+	       (rl ()) )
+	  ;; Choose pivot
+	  (let* ((n (length l))
+		 (p1 (car l))
+		 (lc (nthcdr (div n 2) l))
+		 (p3 (last lc)) )
+	    (setq piv (car lc))
+	    (if (comp p1 piv)
+		(setq piv p1 p1 piv) )
+	    (if (comp piv p3)
+		(setq piv p3 p3 piv) )
+	    (if (comp p1 piv)
+		(setq piv p1 p1 piv) ) )
+	  ;; Go pivoting for quicksort
+	  (each ((i l))
+		(cond 
+		 ((= i piv)
+		  (setq pl (cons i pl)) )
+		 ((comp i piv)
+		  (setq rl (cons i rl)) )
+		 (t 
+		  (setq ll (cons i ll)) ) ) )
+	  (nconc (sort-list ll comp) (nconc pl (sort-list rl comp))) )
+      l ) )
+
+(de hset(l)
+  (let ((r (htable)))
+    (each ((x l))
+      (r x t) )
+    r ) )
+
+(de hset-and(ht1 ht2)
+  (let ((r (htable)))
+    (when (< (htable-size ht2) (htable-size ht1))
+      (setq ht1 ht2 ht2 ht1) )
+    (each ((key (htable-keys ht1)))
+      (when (ht2 key)
+	(r key t) ) )
+    r ) )
+
+(de hset-or(ht1 ht2)
+  (let ((r (htable)))
+    (each ((key (htable-keys ht1)))
+      (r key t) )
+    (each ((key (htable-keys ht2)))
+      (r key t) ) 
+    r ) )
+
+(lock_symbol dmd mapfor nconc nconc1)
+(lock_symbol caddr cdddr cdadr caadr cadar cddar cdaar caaar)
+(lock_symbol sort-list hset hset-and hset-or)
+
+
+
+
+
+
+
+;;; -------- Performance evaluation utilities ---------
+
+(de y_estimate((a b r) x)
+    (+ (* x a) b) )
+
+(de x_estimate((a b r) y)
+    (/ (- y b) a) )
+
+(dm mean_sup_dist (f r1 . r2)
+    `(let ((r ,r1)) (/ (sup_dist r ,@r2) (length r))) )
+
+(dm mean_abs_dist (f r1 . r2)
+    `(let ((r ,r1)) (/ (abs_dist r ,@r2) (length r))) )
+
+(dm mean_sqr_dist (f r1 . r2)
+    `(let ((r ,r1)) (/ (sqr_dist r ,@r2) (length r))) )
+
+(dm mean_hamming_dist (f r1 . r2)
+    `(let ((r ,r1)) (/ (hamming_dist r ,@r2) (length r))) )
+
+(dm mean_quadrant_dist (f r1 . r2)
+    `(let ((r ,r1)) (/ (quadrant_dist r ,@r2) (length r))) )
+
+(lock_symbol x_estimate y_estimate)
+(lock_symbol mean_sup_dist mean_abs_dist mean_sqr_dist )
+(lock_symbol mean_hamming_dist  mean_quadrant_dist )
+
+(setq diff-lists diff-listes)
+(setq add-lists add-listes)
+(lock-symbol diff-lists add-lists)
+
+;;;; --------- Arrays & Matrix utilities ---------
+
+(de index-print(this)
+    (let ((begin "[")
+	  (end "]"))
+      (when (arrayp this)
+	    (setq begin "{")
+	    (setq end "}"))
+
+      (if (0= (idx-ndim this))
+	  (printf "::INDEX:<>") 
+	
+	(printf begin)
+	(let ((tabnow (tab))
+	      (len (idx-bound this 0)) )
+	  (if (= 1 (idx-ndim this))
+	      (if (not (member (classof (idx-storage this))
+			       (list |ATSTORAGE| |GPTRSTORAGE|) ) )
+		  (for (i 0 len)
+		       (printf "%5.2f " (this i))) 
+		(printf " ")
+		(for (i 0 len)
+		     (prin (this i))
+		     (printf " ")) )
+	    (for (i 0 len)
+		 (index-print (new-index this 
+					 (cons 0 (cdr (idx-dim this)))
+					 (list i) ))
+		 (when (< i len)
+		       (print)
+		       (tab tabnow) ) ) ) )
+	(printf end) ) ) )
+
+(defmethod |INDEX| print()
+  (if (and (matrixp this)
+	   (< (apply * (idx-dim this)) 100))
+      (index-print this)
+    (printf "%s" (pname this)) ) )
+
+(de list-to-index(l matrix)
+    (if (= (car l) 'quote)
+	;; this is a list of literal
+	(let ((m (matrix (1- (length l)))))
+	  (m () (cdr l)) )
+      ;; this is a list of matrices
+      (let ((m (apply matrix (cons (length l) (idx-dim (car l))))))
+	(for (i 0 (idx-bound m 0))
+	     (copy-matrix (car l)
+			  (new-index m
+				     (cons 0 (cdr (idx-dim m)))
+				     (list i) ) ) 
+	     (setq l (cdr l)) )
+	m ) ) )
+
+(de list2array (l)
+    (let*((a (array (length l)))(i 0))
+      (each ((e l))(a i e)(incr i))
+      a))
+
+(dmc |]| (error 'read "extra ']' found"))
+
+(dmc |}| (error 'read "extra '}' found"))
+
+(dmc |[| 
+     (on-error (error 'list-to-index "Illegal matrix syntax")
+	       (let ((l (when (<> (skip-char) "[") 
+			      (list 'quote) ))
+		     (|]| (lambda() 
+			    (setq m (list-to-index l f-matrix)) ))
+		     (m ()) )
+		 (while ~m
+		   (setq l (nconc1 l (read))) )
+		 m ) ) )
+
+(dmc |{| 
+;     (on-error (error 'list-to-index "Illegal matrix syntax")
+	       (let ((l (when (<> (skip-char) "{") 
+			      (list 'quote) ))
+		     (|}| (lambda() 
+			    (setq m (list-to-index l at-matrix)) ))
+		     (m ()) )
+		 (while ~m
+		   (setq l (nconc1 l (read))) )
+		 m ) ) )
+
+
+(de map-matrix (s)
+    (let ((offset 20)
+	  (diml ()))
+      (let ((d (new-i32-storage)))
+	(storage-mmap d s)
+	(when (<> (d 0) 507333713)
+          (error (if (= (d 0) 1363950878)
+                     "File has been saved on a wrong endian cpu"
+                   "File has not been created by save-flt-matrix" )) )
+	(when (> (d 1) 3) (setq offset (+ 20 (* 4 (- (d 1) 3)))))
+	(setq diml (mapfor (i 1 (d 1)) (d (+ i 1))))
+      )
+      (let ((f (new-f-storage)))
+	(storage-mmap f s offset)
+	(new-index f diml)
+      )
+   )
+)
+
+(de map-pmatrix (s)
+    (let ((offset 20)
+           (diml ()) )
+      (let ((d (new_i32_storage)))
+	(storage_mmap d s)
+	(when (and (<> (d 0) 507333714)
+                   (<> (d 0) 1380728094) )
+          (error "File has not been created by save-packed-matrix") )
+	(when (> (d 1) 3)
+          (setq offset (+ 20 (* 4 (- (d 1) 3)))) )
+	(setq diml (mapfor (i 1 (d 1))
+			   (d (+ i 1)) )) )
+      (let ((f (new_p_storage)))
+	(storage_mmap f s offset)
+	(new_index f diml))))
+
+(lock_symbol index-print list-to-matrix |[| |]| |{| |}|
+	     map-matrix map-pmatrix)
+	     
+	
+
+;;; --------- Path functions ---------
+
+(de addpath(dir)
+    (setq dir (concat-fname dir))
+    (let ((oldpath (path))
+	  (newpath (list dir)) )
+      (while oldpath
+	(when (<> dir (car oldpath))
+	      (setq newpath (nconc1 newpath (car oldpath))) )
+	(setq oldpath (cdr oldpath)) )
+      (apply path newpath) ) )
+
+(dmc |^L| (let ((_f_ (read_string)))
+	    (if (= _f_ "")
+		(setq _f_ (or last-loaded-file edit-buffer))
+	      (setq last-loaded-file _f_) )
+	    `(load ,_f_) ))
+
+(de libload(s &optional (c ""))
+  (when (not (setq s (filepath s)))
+    (error 'libload "File not found" ()) )
+  (let ((loaded '(())))  ;; self modifying code
+    (when (not (member (basename s) loaded))
+      (when startup (printf " [%s]%s\n" (basename s) c))
+      (nconc1 loaded (basename s))
+      (load s) ) ) )
+
+(dm autoload(autoload l . s)
+  (let  ((f  (eval `(mlambda f
+		      (set (car f) ())
+		      (libload ,l " (autoload)")
+		      f) )))
+    `(progn ,@(all ((i s)) `(setq ,i ,f))) ) )
+
+
+
+(lock-symbol addpath |^L| libload autoload)
+
+
+
+
+
+
+;;; --------- pprin, pprint ----------
+
+(de pprin--v(l tb)
+    (let ((nl ()))
+      (while (consp l)
+	(setq nl t)
+	(print)
+	(tab tb)
+	(pprin (car l))
+	(setq l (cdr l)) )
+      (when l
+	    (print)
+	    (setq nl t)
+	    (tab (+ tb 2))
+	    (printf ". ")
+	    (pprin l) )
+      (if nl
+	  (printf " )")
+	(printf ")") )
+      nl ) )
+    
+(de pprin--h(l tb)
+    (let ((ok t)
+	  (nl ()) )
+      (while (and ok (consp l))
+	(if (or (<= (tab) tb)
+		(< (+ (tab) (len (pname (car l)))) 78) )
+	    (printf " ")
+	  (print)
+	  (tab tb)
+	  (setq nl t) )
+	(if (not (pprin (car l)))
+	    (setq l (cdr l))
+	  (setq ok ())
+	  (setq nl t)
+	  (pprin--v (cdr l) tb) ) )
+      (when ok
+	    (when l
+		  (if (< (+ (tab) (len (pname l))) 76)
+		      (printf " . ")
+		    (print)
+		    (tab tb)
+		    (setq nl t)
+		    (printf ". ") )
+		  (pprin l) )
+	    (if nl
+		(printf " )")
+	      (printf ")") ) )
+      nl ) )
+
+
+(de pprin(l)
+    (let ((tb (tab)))
+      (cond
+       
+       ;; NIL
+       (~l
+	(prin l)
+	() )
+       
+       ;; a method 'pprint' is defined
+       ((and (classof l) (check==> (classof l) 'pprint))
+	(==> l pprint) )
+       
+       ;; this is not a list
+       ((not (consp l))
+	(prin l)
+	() )
+       
+       ;; starts with a C-0 symbol
+       ((member (car l) '(progn prog1 graphics-batch debug nodebug))
+	
+	(printf "(")
+	(pprin (car l))
+	(pprin--v (cdr l) (+ tb 2)) )
+
+       ;; starts with a C-1 symbol
+       ((and (member (car l) '(when while do-while dmc for mapfor repeat
+			       lambda flambda mlambda writing reading) )
+	     (consp (cdr l)) )
+	(printf "(")
+	(pprin (car l))
+	(printf " ")
+	(pprin (cadr l))
+	(pprin--v (cddr l) (+ tb 2)) )
+       
+       ;; starts with a IF symbol
+       ((and (= (car l) 'if)
+	     (consp (cdr l)) )
+	(printf "(")
+	(pprin (car l))
+	(printf " ")
+	(pprin (cadr l))
+	(setq l (cddr l))
+	(print)
+	(tab (+ tb 4))
+	(pprin (car l))
+	(pprin--v (cdr l) (+ tb 2)) )
+
+       ;; starts with 'QUOTE
+       ((and (= (car l) 'quote) ~(cddr l))
+	(printf "'")
+	(pprin (cadr l)) )
+
+       ;; starts with 'SCOPE
+       ((and (= (car l) 'scope) (consp (cdr l)) ~(cdr (lastcdr l)))
+	(while (setq l (cdr l))
+	  (printf ":")
+	  (pprin (car l)) ) )
+
+       ;; is starts with a C-COND symbol
+       ((and (member (car l) '(cond selectq))
+	     (consp (cdr l)) )
+	(printf "(")
+	(pprin (car l))
+	(when (= (car l) 'selectq)
+	      (printf " ")
+	      (pprin (cadr l))
+	      (setq l (cdr l)) )
+	(while (consp (setq l (cdr l)))
+	  (print)
+	  (tab (+ tb 2))
+	  (if ~(consp (car l))
+	    (pprin l)
+	    (printf "(")
+	    (pprin (caar l))
+	    (pprin--v (cdar l) (+ tb 4)) ) )
+	(pprin--v l (+ tb 2)) )
+	  
+       
+       ;; starts with a C-LET symbol
+       ((and (member (car l) '(let let* all each))
+	     (consp (cdr l)) (consp (cadr l)) (consp (cddr l)) )
+	(printf "(")
+	(pprin (car l))
+	(printf " ")
+	(if ~(consp (cadr l))
+	  (pprin (cadr l))
+	  (printf "(")
+	  (let ((tb (tab)))
+	    (pprin (caadr l))
+	    (pprin--v (cdadr l) tb) ) )
+	(pprin--v (cddr l) (+ tb 2)) )
+
+       ;; starts with a C-3 symbol
+       ((and (member (car l) '(de df dm dmd defclass))
+	     (consp (cdr l)) (consp (cddr l)) ) 
+	(printf "(")		
+	(pprin (car l))
+	(printf " ")	
+	(pprin (cadr l))	
+	(printf " ")	
+	(pprin (caddr l))
+	(pprin--v (cdddr l) (+ tb 2)) )
+       
+       ;; starts with a C-4 symbol
+       ((and (member (car l) '(defmethod))
+	     (consp (cdr l)) (consp (cddr l)) (consp (cdddr l)) ) 
+	(printf "(")
+	(pprin (car l))
+	(printf " ")
+	(pprin (cadr l))
+	(printf " ")
+	(pprin (caddr l))
+	(printf " ")
+	(pprin (cadr (cddr l)))
+	(pprin--v (cddr (cddr l)) (+ tb 2)) )
+       
+       ;; starts with another symbol
+       ((symbolp (car l))
+	(printf "(")
+	(pprin (car l))
+	(pprin--h (cdr l) (+ tb 2)) )
+
+       ;; default
+       (t
+	(printf "(")
+	(pprin (car l))
+	(pprin--h (cdr l) (1+ tb)) ) ) ) )
+
+(de pprint(l)
+    (pprin l)
+    (print)
+    t )
+
+
+(lock-symbol pprin--h pprin--v pprin pprint)
+
+
+
+
+
+;;; --------- Pretty printer ---------
+
+(de prettyflags(l n) l) ;; compatibility only
+
+(de pretty-print(f)
+    (when (listp f)
+   	  (cond
+    	   ((and (= (car f) 'dm) (= (caddr f) '|DMD|))
+            (let ((text (cdr (cdar(cddr(cadr(cddr f)))))))
+	      (pprint (list 'dmd (cadr f)
+                            (caaar (cdadr (cdadr (cddr f))))
+			    . text )) ))
+      	   ((and (= (car f) 'de) (= (caddr f) ()) (macrochp (cadr f)))
+            (let ((text (cdddr f)))
+              (pprint (list 'dmc (cadr f) . text)) ) )
+      	   (t 
+            (pprint f) ) ) )
+    () )
+
+(de pretty-slots(this)
+    (let ((cl (classof this)))
+      (while cl
+	(printf ";; FROM CLASS: %l\n" (classname cl))
+	(each ((i (slots cl)))
+	      (if (consp i)
+		  (setq i (car i)))
+	      (printf ";;\t%l=%l\n" i (apply letslot (list this i))) )
+	(setq cl (super cl)) ) ) )
+
+(de pretty-method(class method)
+    (let ((j (funcdef (check==> class method))))
+      (pretty-print 
+       `(defmethod ,(classname class) ,method ,@(cdr j)) ) ) )
+
+(defmethod object pretty()
+  ;; default pretty function
+  (printf ";;*** %l, INSTANCE OF %l\n" this (classof this))
+  (pretty-slots this) )
+
+(defmethod class pretty()
+  (printf "(defclass %l %l" (classname this) (classname (super this)))
+  (each ((i (slots this)))
+	(if (listp i)
+	    (printf "\n  (%l '%l)" (car i) (cadr i))
+	  (printf "\n   %l" i) ) )
+  (printf " )\n")
+  (each ((i (methods this)))
+	(print)
+	(pretty-method this i) ) )
+
+(defmethod |SYMB| pretty()
+  (printf "'%l\n" this) )
+
+(defmethod |SYMB| pretty2()
+  (let ((e (eval this))
+        (l (funcdef this)) )
+    (cond
+     ;; this is a function
+     ((consp l) 
+      (pretty-print l))
+     ;; this is an object, and it knows about 'pretty 
+     ((and (setq l (classof e))
+	   (check==> l 'pretty) )
+      (==> e pretty) )
+     ;; default
+     (t
+      (printf "(setq %l '%l)\n" this e) ) ) ) )
+
+(defmethod |DE| pretty()
+  (pretty-print (funcdef this)) )
+
+(defmethod |DF| pretty()
+  (pretty-print (funcdef this)) )
+
+(defmethod |DM| pretty()
+  (pretty-print (funcdef this)) )
+
+(defmethod |DX| pretty()
+  (printf "%l is a DX-type intrinsic function\n" this) )
+
+(defmethod |DY| pretty()
+  (printf "%l is a DY-type intrinsic function\n" this) )
+
+(when (classp |DZ|)
+  (defmethod |DZ| pretty()
+    (let (((num . prog) (dz-def this)))
+      (printf "(dz-load %l '( " num)
+      (let* ((tab-label (tab))
+             (tab-prog  (+ tab-label 8)))
+        (while prog
+          (tab (if (stringp (car prog))
+                   tab-label
+                 tab-prog))
+          (prin (car prog))
+          (if (setq prog (cdr prog))
+              (print)))
+        (printf ")\n") ) ) ) )
+
+(dm pretty(pretty f)
+    (nodebug
+     (if (and (symbolp f) 
+	      (or (<> f 'this) ~this) )
+	 `(nodebug (==> ',f pretty2))
+       `(nodebug (==> ,f pretty)) ) ) )
+
+(dmc |^P| `(pretty ,(read)))  
+
+(dm save(save f . l)
+  (when l
+    `(nodebug (writing (open-write ,f "sn")
+		,@(all ((i l)) (list 'pretty i)) ) ) ) )
+
+(lock-symbol pretty-slots pretty-method pretty-print pretty save |^P|)
+
+
+
+;;; --------- Edition Functions ---------
+
+(setq edit-call ())
+(setq edit_buffer (tmpname () "lush"))
+(cond
+  ((not winlushp)
+   ;; unix
+   (setq edit-call (getenv "EDITOR"))
+   (when (= edit-call "")
+     (setq edit_call "vi") ) 
+   (when (= edit-call "dm")
+     (setq edit-call ()) ) )
+  ((winlushp)
+   ;; windows GUI
+   (setq edit-call ()) )
+  (t
+    ; windows Console
+    (setq edit-call "edit") ) )
+
+(de edit(_s_)
+  (cond
+    (edit_call   (sys (concat edit_call " " _s_)))
+    (xdmc        (xdmc (concat "ce " _s_)))
+    (winedit     (winedit _s_)) ) )
+
+(de fedit(_s_)
+   (if _s_ 
+        (eval (list 'save edit_buffer _s_)))
+   (edit edit_buffer)
+   (when edit-call
+     (load edit_buffer) ) )
+
+(dmc |^E| `(edit ,(read-string)))
+
+(dmc |^F| `(fedit ',(named (read-string))))
+
+(lock_symbol edit fedit |^E| |^F|)
+                       
+
+
+
+
+
+
+;;; --------- List of symbols ---------
+
+(de symbols p 
+   (if p 
+      (setq p (car p)) 
+      (setq p "") ) 
+   (let ((pos 0)) 
+        (each ((i (symblist))) 
+           (when (index p i) 
+              (printf "%s" (left i 17)) 
+              (setq pos (if (< pos 50) 
+                              (+ pos 19) 
+                              (printf "\n") 
+                              0 )) 
+              (tab pos) ) ) ) 
+   (print) )
+	
+(dmc |^S| (list 'symbols (read_string)))
+(lock_symbol |^S| symbols )
+
+
+
+
+
+
+;;; --------- Online Help Support ---------
+
+(setq help-root ())
+
+(dmc |^A| (list 'apropos (read-string)))
+
+(dmc |#?|
+     (when (and file-being-loaded (<> file-being-loaded "$stdin"))
+	   (let ((hroot (assoc file-being-loaded help-root)))
+	     (if hroot
+		 (rplacd hroot ())
+	       (setq hroot (list file-being-loaded))
+	       (setq help-root (cons hroot help-root)) ) ) )
+     (skip-char "~\n\r")
+     () )
+
+;;; --------- standard aliases
+;;; some may find themselves more familiar with these names
+
+(setq defun de)
+(setq += incr)
+(setq << setq)
+
+(lock_symbol defun += <<)
+
+;;; consistent naming for storages and matrices
+
+(setq float-matrix f-matrix)
+(setq double-matrix d-matrix)
+(setq int-matrix i32-matrix)
+(setq short-matrix i16-matrix)
+(setq byte-matrix i8-matrix)
+(setq ubyte-matrix u8-matrix)
+(setq packed-matrix p-matrix)
+(setq atom-matrix at-matrix)
+
+(setq float-storage new-f-storage)
+(setq double-storage new-d-storage)
+(setq int-storage new-i32-storage)
+(setq short-storage new-i16-storage)
+(setq byte-storage new-i8-storage)
+(setq ubyte-storage new-u8-storage)
+(setq gptr-storage new-gptr-storage)
+(setq packed-storage new-p-storage)
+(setq atom-storage new-at-storage)
+
+(lock-symbol
+        float-matrix double-matrix int-matrix short-matrix 
+        byte-matrix ubyte-matrix packed-matrix atom-matrix
+
+        float-storage double-storage int-storage short-storage 
+        byte-storage ubyte-storage gptr-storage packed-storage 
+        atom-storage)
+
+;;; backward compatibility with TL3/sn2.5
+
+(dm dim(f v . l)
+  (list 'setq v (list 'f-matrix . l)) )
+
+(lock_symbol dim)
+
+;;; backward compat with sn3.2
+
+(setq mload libload)
+
+(lock_symbol mload)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; search for startup environment file
+;;
+;; find the first file that exists fo the form
+;; <dir>/<file>.<ext> where <dir> is on of the
+;; directories in list <dirlist> and <ext> is
+;; one of the suffixes in <extlist>.
+;; example: (find-file '("local" "lsh") "lushenv" '(".lshc" ".lsh"))
+;; this is somewhat redundant with the DX <filepath>,
+;; but we can't set the standard path here.
+(de find-file (dirlist file extlist)
+    (let ((keepgoing t) (e ()) (d ()) (f ()) (r ()))
+      (while (and keepgoing dirlist)
+        (setq d (car dirlist))
+        (setq e extlist)
+        (while (and keepgoing e)
+          (setq f (concat-fname d (concat file (car e))))
+          (when (filep f)
+            (setq r f) (setq keepgoing ()))
+          (setq e (cdr e)))
+        (setq dirlist (cdr dirlist)))
+      r))
+
+;;; --------- find the default lushenv.[dump,lshc,lsh] in
+;;; --------- curent dir, local, packages, and lsh and set 
+;;; --------- lushenv-path to it
+
+(setq lushenv-path 
+      (let* ((dlist (cons "." (all ((x '("local" "packages" "lsh"))) 
+                                (concat-fname lushdir x))))
+             (elist '(".dump" ".lshc" ".lsh")))
+        (find-file dlist "lushenv" elist)))
+

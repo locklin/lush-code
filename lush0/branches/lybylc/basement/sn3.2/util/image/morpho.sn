@@ -1,0 +1,221 @@
+#? File "morpho.sn"
+;; This file implements elementary morphological operations.
+;; 
+;; Leon Bottou 09/96
+
+(mload "idx-macros")
+
+
+
+
+#? (ubim-internal-disttrans <im>)
+;; Returns the internal distance transformation matrix of binary image <im>.
+;; The elements of the returned ubyte matrix contains the distance to the
+;; closest background pixel in the image (background level is zero for this
+;; purpose). Distances are clipped to 255.
+
+(de ubim-internal-disttrans(im)
+    ((-idx2- (-ubyte-)) im)
+    (let* ((width (idx-dim im 1))
+           (height (idx-dim im 0))
+           (dist (ubyte-matrix (+ 2 height) (+ 2 width))) )
+      ((-int-) width height)
+      #{ {
+        unsigned char *p, *q, *qup, lastqup, minim;
+        int i, j, qm0, qm1, pm0, pm1;
+        pm0 = $im->mod[0];
+        pm1 = $im->mod[1];
+        qm0 = $dist->mod[0];
+        qm1 = $dist->mod[1];
+        for (j=1; j<=$height; j++) {
+          p = IDX_PTR( $im, unsigned char) + (j-1)*pm0;
+          q = IDX_PTR( $dist, unsigned char) + j*qm0 + qm1;
+          qup = q - qm0 + qm1*((j-1)&1); 
+          minim= *(q - qm1);
+          lastqup= *(qup - qm1);
+          for (i=1; i<=$width; i++, q+=qm1, p+=pm1, qup+=qm1) {
+            if (*p == 0) {
+              *q=minim=0;
+              lastqup= *qup;
+            } else {
+              if ( lastqup<minim ) minim=lastqup;
+              if ( (lastqup= *qup)<minim ) minim=lastqup;
+              if (minim < 255) minim++;
+              *q = minim;
+            }
+          }
+        }
+        for (j=$height; j>0; j--) {
+          q  = IDX_PTR($dist, unsigned char) + j*qm0 + $width*qm1; 
+          qup= q + qm0 + (((j-1)&1)-1)*qm1; 
+          minim = *(q + qm1);
+          lastqup= *(qup + qm1);
+          for (i=$width; i>0; i--, q-=qm1, qup-=qm1) {
+            if (*q == 0) {
+              minim = 0; lastqup = *qup;
+            } else {
+              if (lastqup<minim ) minim=lastqup;
+              if ( (lastqup= *qup)<minim ) minim=lastqup;
+              if (minim < 255) minim++;
+              if ( minim<*q ) *q=minim; else minim= *q;
+            }
+          }
+        } 
+      } #} 
+      (idx-narrow dist 0 height 1)
+      (idx-narrow dist 1 width 1)
+      dist )  )
+
+
+
+#? (ubim-external-disttrans <im>)
+;; Returns the external distance transformation matrix of binary image <im>.
+;; The elements of the returned ubyte matrix contains the distance to the
+;; closest non-background pixel in the image (background level is zero for this
+;; purpose). Distances are clipped to 255.
+
+(de ubim-external-disttrans(im)
+    ((-idx2- (-ubyte-)) im)
+    (let* ((width (idx-dim im 1))
+           (height (idx-dim im 0))
+           (dist (ubyte-matrix (+ 2 height) (+ 2 width))) )
+      ((-int-) width height)
+      #{ {
+        unsigned char *p, *q, *qup, lastqup, minim;
+        int i, j, qm0, qm1, pm0, pm1;
+        pm0 = $im->mod[0];
+        pm1 = $im->mod[1];
+        qm0 = $dist->mod[0];
+        qm1 = $dist->mod[1];
+        q = IDX_PTR($dist, unsigned char);
+        qup = q + $width*qm1 + qm1;
+        for (i=0; i<$height+2; i++, q+=qm0, qup+=qm0)
+           *q = *qup = 255;
+        q = IDX_PTR($dist, unsigned char);
+        qup = q + $height*qm0 + qm0;
+        for (i=0; i<$width+2; i++, q+=qm1, qup+=qm1)
+           *q = *qup = 255;
+        for (j=1; j<=$height; j++) {
+          p = IDX_PTR( $im, unsigned char) + (j-1)*pm0;
+          q = IDX_PTR( $dist, unsigned char) + j*qm0 + qm1;
+          qup = q - qm0 + qm1*((j-1)&1); 
+          minim= *(q - qm1);
+          lastqup= *(qup - qm1);
+          for (i=1; i<=$width; i++, q+=qm1, p+=pm1, qup+=qm1) {
+            if (*p > 0) {
+              *q=minim=0;
+              lastqup= *qup;
+            } else {
+              if ( lastqup<minim ) minim=lastqup;
+              if ( (lastqup= *qup)<minim ) minim=lastqup;
+              if (minim < 255) minim++;
+              *q = minim;
+            }
+          }
+        }
+        for (j=$height; j>0; j--) {
+          q  = IDX_PTR($dist, unsigned char) + j*qm0 + $width*qm1; 
+          qup= q + qm0 + (((j-1)&1)-1)*qm1; 
+          minim = *(q + qm1);
+          lastqup= *(qup + qm1);
+          for (i=$width; i>0; i--, q-=qm1, qup-=qm1) {
+            if (*q == 0) {
+              minim = 0; lastqup = *qup;
+            } else {
+              if (lastqup<minim ) minim=lastqup;
+              if ( (lastqup= *qup)<minim ) minim=lastqup;
+              if (minim < 255) minim++;
+              if ( minim<*q ) *q=minim; else minim= *q;
+            }
+          }
+        } 
+      } #} 
+      (idx-narrow dist 0 height 1)
+      (idx-narrow dist 1 width 1)
+      dist )  )
+
+
+
+#? (ubim-positive-threshold <im> <thres>)
+;; Applies a threshold on ubyte image <im>.
+;; All values smaller than or equal to threshold are zeroed.
+;; Other values are set to 255.
+
+(de ubim-positive-threshold(im thres)
+    ((-idx2- (-ubyte-)) im)
+    ((-int-) thres)
+    (idx-bloop ((imlin im))
+      (cinline-idx1loop imlin "unsigned char" "mp" "i"
+                        #{ if (*mp <= $thres) *mp = 0; else *mp = 255; #} ) )
+    () )
+
+#? (ubim-negative-threshold <im> <thres>)
+;; Applies a threshold on ubyte image <im>.
+;; All values smaller than or equal to threshold are set to 255.
+;; Other values are set to 0
+
+(de ubim-negative-threshold(im thres)
+    ((-idx2- (-ubyte-)) im)
+    ((-int-) thres)
+    (idx-bloop ((imlin im))
+      (cinline-idx1loop imlin "unsigned char" "mp" "i"
+                        #{ if (*mp > $thres) *mp = 0; else *mp = 255; #} ) )
+    () )
+
+
+
+
+#? (ubim-erosion <im> <factor>)
+;; Perform in place erosion of ubyte image <im> at distance <factor>.
+
+(de ubim-erosion(im factor)
+    ((-idx2- (-ubyte-)) im)
+    ((-int-) factor)
+    (let ((dist (ubim-internal-disttrans im)))
+      (ubim-positive-threshold dist factor)
+      (idx-copy dist im) )
+    im )
+
+
+#? (ubim-dilation <im> <factor>)
+;; Perform in place dilation of ubyte image <im> at distance <factor>.
+
+(de ubim-dilation(im factor)
+    ((-idx2- (-ubyte-)) im)
+    ((-int-) factor)
+    (let ((dist (ubim-external-disttrans im)))
+      (ubim-negative-threshold dist factor)
+      (idx-copy dist im) )
+    im )
+
+
+
+#? (ubim-mask <im> <mask>)
+;; Sets to zero all bytes of ubyte image <im> whose corresponding
+;; pixel in <mask> is zero. This is a AND operation.
+
+
+(de ubim-mask(im mask)
+    ((-idx2- (-ubyte-)) im mask)
+    (idx-bloop ((imlin im)(msklin mask))
+      (cinline-idx1loop2 imlin "unsigned char" msklin "unsigned char" 
+                        "m1" "m2" "i1" "i2"
+                        #{ if (*m2==0) (*m1=0); #} ) ) )
+
+
+
+
+
+
+;;; ----------------------------------------
+;;; COMPILE
+
+(dhc-make () 
+          ubim-internal-disttrans
+          ubim-external-disttrans 
+          ubim-positive-threshold 
+          ubim-negative-threshold 
+          ubim-erosion
+          ubim-dilation
+          ubim-mask
+          )

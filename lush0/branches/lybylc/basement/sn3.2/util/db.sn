@@ -1,0 +1,1428 @@
+;==============================================================================
+;
+; 	DATABASE $Revision: 0.1 $
+;	Patrice Simard
+;
+;==============================================================================
+
+;==============================================================================
+#? database.
+;;.SEE (==> <db> seek [<i>])
+;;.SEE (==> <db> next)
+;;.SEE (==> <db> previous)
+;;.SEE (==> <db> tell)
+;;.SEE (==> <db> get-current [<a_1 ... [<a_n>]])
+;;.SEE (==> <db> set-current [<a_1 ... [<a_n>]] <v>)
+;;.SEE (==> <db> get <i> [<a_1 ... [<a_n>]])
+;;.SEE (==> <db> set <i> [<a_1 ... [<a_n>]] <v>)
+;;.SEE (==> <db> size)
+;;.SEE array-db
+;;.SEE list-db
+;;.SEE const-db
+;;.SEE function-db
+;;.SEE lazy-db
+;;.SEE lazy-matrix-db
+;;.SEE concat-db
+;;.SEE sub-db
+;;.SEE map-db
+;;.SEE snmap-db
+;;.SEE object-db
+;;.SEE display-db
+;;
+;;The class <db> is used to encapsulate the access of data by providing
+;;a few standardized procedures for accessing, reading, and writing the data.
+;;.PP
+;;For example consider the following three objects composed of three 
+;;elements each
+;;.VP
+;;  ? (setq object1 '(a "hello" [1 2]))
+;;  = (a "hello" [ 1.00  2.00 ])
+;;  ? (setq object2 '[[1 2 3] [4 5 6] [7 8 9]])
+;;  = [[ 1.00  2.00  3.00 ]
+;;     [ 4.00  5.00  6.00 ]
+;;     [ 7.00  8.00  9.00 ]]
+;;  ? (setq object3 (lambda (i) (m*c (submatrix object2 i ()) 10)))
+;;  = ::DE:cf698
+;;.PP
+;;Their second element can be accessed by the three different statements
+;;.VP
+;;  ? (nth 1 object1)
+;;  = "hello"
+;;  ? (submatrix object2 1 ())
+;;  = [ 4.00  5.00  6.00 ]
+;;  ? (object3 1)
+;;  = [40.00 50.00 60.00 ]
+;;.PP
+;;Statement to access the size or set an element of these ojbects 
+;;are even more different.  Consider using the database abstraction
+;;to access these objects instead.  Database creation is done using statements
+;;of the form:
+;;.VP
+;;  ? (setq base1 (new list-db object1))
+;;  = ::list-db:a9bb8
+;;  ? (setq base2 (new array-db object2))
+;;  = ::array-db:a9bd8
+;;  ? (setq base3 (new function-db (lambda (i) (m*c (==> base2 get i) 10))
+;;                               (lambda () (==> base2 size))))
+;;.PP
+;;Which result in accessing all the object with the identical statements:
+;;.VP
+;;  ? (==> base1 get 1)
+;;  = "hello"
+;;  ? (==> base2 get 1)
+;;  = [ 4.00  5.00  6.00 ]
+;;  ? (==> base3 get 1)
+;;  = [40.00 50.00 60.00 ]
+;;.PP
+;; Computing the size of each of these objects, or setting one of their three 
+;; elements can be done with all consistent statements.  The main advantage
+;; of such encapsulation is that the user can forget how the data was created
+;; when accessing it, and forget how the data will be access when creating it.
+;; Other usefull primitives allow databases to be combined or to be build from
+;; existing databases.
+;; Very few assumptions are made about the methods of access to provide the
+;; maximum generality.  The most general database type, the 'function-db'
+;; database, allow the user encapsulate new methods of access at the lisp
+;; level.  In all case, sequential and random access are provided.   The data
+;; typically consist in a large collection of item which can be accessed 
+;; individually.  Sequential access is provided through a offset in the 
+;; database which can either be advanced or resetted.  
+;;.PP
+;; Since the superclass <db> makes no assumption on the nature of the data
+;; to be accessed, it does not provide procedures to load, access or size 
+;; the data.  These procedures may be found in subclasses of superclass <db>
+;; Some of the most useful subclasses are:
+;;.IP
+;; The class <array-db> is used to access a collection of lisp objects
+;; which are stored in an array.
+;;.IP
+;; The class <sub-db> is used to access only a subset of a given
+;; database
+;;.IP
+;; The class <map-db> is used to remap a database (for example shuffle it).
+;;.IP
+;; The class <object-db> is used to access a collection of records 
+;; consisting of fields which can be accessed independently.  These fields
+;; are made out of other databases.
+;;.IP
+;; The class <function-db> is a subclass of <object-db> and is
+;; used to have a database return the result of a function (possibly depending
+;; of other databases).
+;;.PP
+;;
+(defclass db object
+  current        		; current pattern (integer)
+)
+
+;------------------------------------------------------------------------------
+#? (==> <db> seek [<i>])
+;;.SEE database.
+;; Set the offset of a database to value <i> or, if no argument are present,
+;; rewind the database to first pattern.
+;;.PP
+;; Example
+;;.VP
+;;  ? (setq help-db (new list-db '(abc "hello" 123 [9 8 7])))
+;;  = ::list-db:f7c98
+;;  ? (==> help-db seek 3)
+;;  = 3
+;;  ? (==> help-db get-current)
+;;  = [ 9.00  8.00  7.00 ]
+;;  ? (==> help-db seek)
+;;  = 0
+;;  ? (==> help-db get-current)
+;;  = abc
+;;
+(defmethod db seek l
+  (if l
+      (if (and (>= (car l) 0) (< (car l) (==> this size)))
+	  (setq current (car l))
+	(error '==> "illegal current pattern" (car l)))
+    (setq current 0))
+  current)
+
+;------------------------------------------------------------------------------
+#? (==> <db> next)
+;;.SEE database.
+;; Move the database offset to the next pattern (sequential access).  Returns
+;; to begining when it reaches the last item.
+;;.PP
+;; Example:
+;;.VP
+;;  ? (setq help-db (new list-db '(abc "hello" 123 [9 8 7])))
+;;  = ::list-db:f7c98
+;;  ? (==> help-db get-current)
+;;  = abc
+;;  ? (==> help-db next)
+;;  = 1
+;;  ? (==> help-db get-current)
+;;  = "hello"
+;;
+(defmethod db next () 
+  (incr current)
+  (if (>= current (==> this size))
+      (setq current 0))
+  current)
+
+;------------------------------------------------------------------------------
+#? (==> <db> previous)
+;;.SEE database.
+;; Move the database offset to the previous pattern (sequential access).  Goes
+;; to the last pattern when it reaches 0.
+;;.PP
+;; Example:
+;;.VP
+;;  ? (setq help-db (new list-db '(abc "hello" 123 [9 8 7])))
+;;  = ::list-db:f7c98
+;;  ? (==> help-db get-current)
+;;  = abc
+;;  ? (==> help-db previous)
+;;  = 3
+;;  ? (==> help-db get-current)
+;;  = [ 9.00  8.00  7.00 ]
+;;
+(defmethod db previous () 
+  (incr current -1)
+  (if (< current 0)
+      (setq current (1- (==> this size))))
+  current)
+
+;------------------------------------------------------------------------------
+#? (==> <db> tell)
+;;.SEE database.
+;; Return the offset in database.
+;;.PP
+;; Example:
+;;.VP
+;;  ? (setq help-db (new list-db '(abc "hello" 123 [9 8 7])))
+;;  = ::list-db:f7c98
+;;  ? (==> help-db tell)
+;;  = 0
+;;  ? (==> help-db next)
+;;  = 1
+;;  ? (==> help-db tell)
+;;  = 1
+;;
+(defmethod db tell () current)
+
+;------------------------------------------------------------------------------
+#? (==> <db> get-current [<a_1 ... [<a_n>])
+;;.SEE database.
+;; Return current data item.  This method might take arguments for specific
+;; subclasses of <db>.  For instance a key is required if <db> is an object
+;; of class <object-db>.
+;;.PP
+;; Example:
+;;.VP
+;;  ? (setq help-db (new list-db '(abc "hello" 123 [9 8 7])))
+;;  = ::list-db:f7c98
+;;  ? (==> help-db get-current)
+;;  = abc
+;;  ? (==> help-db seek 2)
+;;  = 2
+;;  ? (==> help-db get-current)
+;;  = 123
+;;
+(defmethod db get-current lget
+  (error '==> "method get-current is undefined") this)
+
+;------------------------------------------------------------------------------
+#? (==> <db> set-current [<a_1 ... [<a_n>]] <v>)
+;;.SEE database.
+;; Set current data item to <v>.  This method might take obtional arguments 
+;; for specific subclasses of <db>.  For instance a key is required if <db>
+;; is an object of class <object-db>.
+;;.PP
+;; Example:
+;;.VP
+;;  ? (setq my-list '(abc "hello" 123 [9 8 7]))
+;;  = (abc "hello" 123 [ 9.00  8.00  7.00 ])
+;;  ? (setq help-db (new list-db my-list))
+;;  = ::list-db:f7c98
+;;  ? (==> help-db get-current)
+;;  = abc
+;;  ? (==> help-db set-current "haha")
+;;  = "haha"
+;;  ? my-list
+;;  = ("haha" "hello" 123 [ 9.00  8.00  7.00 ])
+;;
+(defmethod db set-current lset
+  (error '==> "method get-current is undefined") this)
+
+;------------------------------------------------------------------------------
+#? (==> <db> get <i> [<a_1 ... [<a_n>]])
+;;.SEE database.
+;;.SEE get-current
+;; Return the <i> th item in database (Calls the method get-current).
+;; This method might take obtional arguments for specific subclasses of <db>.
+;; For instance a key is required if <db> is an object of class <object-db>.
+;;.PP
+;; Example:
+;;.VP
+;;  ? (setq help-db (new list-db '(abc "hello" 123 [9 8 7])))
+;;  = ::list-db:f7c98
+;;  ? (==> help-db get 2)
+;;  = 123
+;;
+(defmethod db get lget
+  (let ((old-current current))
+    (setq current (car lget))
+    (if (< current 0)
+	(error '==> "negative value" current))
+    (if (>= current (==> this size))
+	(error '==> "out of bound" current))
+    (prog1
+	(apply '==> (cons this (cons 'get-current (cdr lget))))
+        (setq current old-current))))
+
+;------------------------------------------------------------------------------
+#? (==> <db> set <i> [<a_1 ... [<a_n>]] <v>)
+;;.SEE database.
+;;.SEE set-current
+;; Set the <i> th item in database to value <v> (Calls the method set-current).
+;; This method might take obtional arguments for specific subclasses of <db>.
+;; For instance a key is required if <db> is an object of class <object-db>.
+;;.PP
+;; Example:
+;;.VP
+;;  ? (setq my-list '(abc "hello" 123 [9 8 7]))
+;;  = (abc "hello" 123 [ 9.00  8.00  7.00 ])
+;;  ? (setq help-db (new list-db my-list))
+;;  = ::list-db:f7c98
+;;  ? (==> help-db set 2 666)
+;;  = 666
+;;  ? my-list
+;;  = (abc "hello" 666 [ 9.00  8.00  7.00 ])
+;;
+(defmethod db set lset
+  (let ((old-current current))
+    (setq current (car lset))
+    (if (< current 0)
+	(error '==> "negative value" current))
+    (if (>= current (==> this size))
+	(error '==> "out of bound" current))
+    (prog1
+	(apply '==> (cons this (cons 'set-current (cdr lset))))
+        (setq current old-current))))
+
+;------------------------------------------------------------------------------
+#? (==> <db> size)
+;;.SEE database.
+;; Return size of database.
+;;.PP
+;; Example:
+;;.VP
+;;  ? (setq help-db (new list-db '(abc "hello" 123 [9 8 7])))
+;;  = ::list-db:f7c98
+;;  ? (==> help-db size)
+;;  = 4
+;;
+(defmethod db size () 
+  (error '==> "method size is undefined") this)
+
+;==============================================================================
+#? array-db
+;;.SEE database.
+;; (new <array-db> <m>)
+;;.PP
+;; The class <array-db> is a subclass of class <db> used to 
+;; access a collection of lisp objects stored in an array.  
+;; The argument <m> must be a matrix or an array.  
+;; If the dimention of <m> is more than 1, the items are 
+;; assumed to be indexed by the first dimension and to consist of submatrix 
+;; (or subarrays) of the remaining dimension.
+;;.PP
+;; Examples:
+;;.VP
+;;  ? (setq base1 (new array-db '{a b c d e}))
+;;  = ::array-db:a7d30
+;;  ? (==> base1 get 3)
+;;  = d
+;;  ?
+;;  ? (setq base2 (new array-db '[[1 2 3] [4 5 6] [7 8 9]]))
+;;  = ::array-db:a9bd8
+;;  ? (==> base2 get 1)
+;;  = [ 4.00  5.00  6.00 ]
+;;.PP
+;;
+(defclass array-db db
+  items				; array (or matrix) of item
+)
+
+(defmethod array-db array-db lm
+  (if lm (apply '==> (append (list this 'read) lm))))
+
+; Changes the array or matrix accessed by the database.
+; Uses of this method are discouraged since they are prone to side effects.
+(defmethod array-db read (m)
+  (if (indexp m) 
+      (setq items m)
+    (error 'read "not a matrix or an array" m))
+  (setq current 0)
+  t)
+
+(defmethod array-db get-current ()
+  (let ((r (idx-clone items)))
+    (idx-select r 0 current)
+    r
+  )
+)
+
+(defmethod array-db set-current (val)
+  (let ((r (idx-clone items)))
+    (idx-select r 0 current)
+    (if (r) (idx-macopy val r) (r (copy-matrix val)))
+  )
+)
+					      
+(defmethod array-db size ()
+  (1+ (bound items 1)))
+
+(defclass at-array-db array-db)
+
+(defmethod at-array-db at-array-db lm
+ (if lm (apply '==> (append (list this 'read) lm))))
+
+(defmethod at-array-db get-current ()
+	((select items 0 current)))
+
+(defmethod at-array-db set-current (val)
+	(let*((r (select items 0 current)))
+		(r val)))
+
+;------------------------------------------------------------------------------
+#? (==> <array-db> get-matrix)
+;; Return a matrix (or an array) with all the element of the database.
+;;.SEE (new <array-db> <m>)
+;;
+(defmethod array-db get-matrix ()
+  items)
+
+#? (==> <array-db> get-dimensions)
+;; Return the dimensions of the matrix in the database
+(defmethod array-db get-dimensions ()
+  (bound items))
+
+;==============================================================================
+#? list-db
+;;.SEE database.
+;;.SEE (==> <list-db> read <l>)
+;;.SEE (==> <list-db> add <elt> [<i>])
+;;.SEE (==> <list-db> remove [<i>])
+;; (new <list-db> [<l>])
+;;.PP
+;; The class <list-db> is a subclass of class <db> used to 
+;; access a collection of lisp objects stored in an list.  Argument <l>
+;; is the list to be accessed.
+;;.PP
+;; Example:
+;;.EX (==> (new list-db '(1 (2) (4 5) "hello")) get 2)
+;;.PP
+;;
+(defclass list-db db
+  items				; list of item
+)
+
+(defmethod list-db list-db lm
+  (if lm (apply '==> (append (list this 'read) lm))))
+
+;------------------------------------------------------------------------------
+#? (==> <list-db> read <l>)
+;; Changes the list accessed by the database.
+(defmethod list-db read (m)
+  (if (listp m) (setq items m)
+    (error 'read "not a matrix or an list" m))
+  (setq current 0)
+  t)
+
+;------------------------------------------------------------------------------
+#? (==> <list-db> add <elt> [<i>])
+;; Add element <elt> to the database at position <i>.
+;; If no position is specified, add at the current position.
+;; This method never changes the current position.
+(defmethod list-db add(e &optional i)
+  (when ~i (setq i current))
+  (let* ((nitems (cons () items))
+	 (it (nthcdr i nitems)))
+    (rplacd it (cons e (cdr it)))
+    (setq items (cdr nitems)) )
+  e )
+
+;------------------------------------------------------------------------------
+#? (==> <list-db> remove [<i>])
+;; Remove element <i> from the database
+;; If <i> is not specified, the current element is removed.
+;; This function resets the current position if it is larger
+;; than the base size.
+
+(defmethod list-db remove( &optional i)
+  (when ~i (setq i current))
+  (let* ((nitems (cons () items))
+	 (it (nthcdr i nitems)))
+    (rplacd it (cddr it))
+    (setq items (cdr nitems)) )
+  (if (>= current (==> this size))
+      (setq current 0)) )
+
+(defmethod list-db get-current ()
+  (nth current items))
+
+(defmethod list-db set-current (v)
+  (rplaca (nthcdr current items) v)
+  v)
+
+(defmethod list-db size ()
+  (length items))
+
+;==============================================================================
+#? const-db
+;;.SEE database.
+;; (new <const-db> <n> <v>)
+;;.PP
+;; The class <const-db> is a subclass of class <db> used to 
+;; create a constant database of size <n> in which each item is equal to <v>.
+;; Of course this is done in constant space.  This can be usefull in 
+;; combination with the class <concat-db> for padding a database without
+;; waisting storage.
+;;.EX (new const-db 1000000 '()) 
+;;
+(defclass const-db db
+  item				; item
+  size				; number of item
+)
+
+(defmethod const-db const-db (n v)
+  (if (numberp n)
+      (setq size n)
+    (error '==> "not a number" n))
+  (setq item v)
+  (setq current 0))
+
+; Changes the constant accessed by the database.  
+; Uses of this method are discouraged since they are prone to side effects.
+(defmethod const-db read (v)
+  (setq item v))
+
+(defmethod const-db get-current ()
+  item)
+
+(defmethod const-db size ()
+  size)
+
+;==============================================================================
+#? function-db
+;;.SEE database.
+;;.SEE lazy-db
+;; (new <function-db> <f> <fsize>)
+;;.PP	
+;; The class <function-db> is a subclass of class <db> and
+;; is used to compute an arbitrary function <f> in place of a database access.
+;; The function <f> is a substitude for the method get and must therefore 
+;; have an item number as first argument.  A second argument <fsize> for
+;; computing the size of this database must also be provided.  
+;;.PP
+;; Example: The following example create a database 
+;; of images named <image-base> from a matrix file "example.mat", and create
+;; another database named <smooth-base> which is the previous database 
+;; smoothed by a convolution with the matrix <kernel> (defined elsewhere).
+;;.VP
+;;  ? (setq image-base (new array-db (load-matrix "example.mat")))
+;;  = ::array-db:11f9c0
+;;  ? (setq smooth-base
+;;          (new function-db
+;;               (lambda (i) (convolve (==> image-base get i) kernel))
+;;               (lambda () (==> image-base size)) ))
+;;  = ::function-db:11f9e0
+;;.PP
+;; The queries (==> smooth-base get-current) or (==> smooth-base size)
+;; now return a smoothed version of the images of <image-base> and the size
+;; of <image-base>.
+;;
+(defclass function-db db
+  function			; function computed by database
+  function-size			; database
+)
+
+(defmethod function-db function-db (func func-size)
+  (setq function func)
+  (setq function-size func-size)
+  (setq current 0))
+
+; Change the function which defines the method 'get of this database.
+; Uses of this method are discouraged since they are prone to side effects.
+(defmethod function-db set-function lfunction
+  (if lfunction
+      (setq function (car lfunction))
+    function))
+
+; Change the function which defines the method 'size of this database.
+; Uses of this method are discouraged since they are prone to side effects.
+(defmethod function-db set-function-size lfunction-size
+  (if lfunction-size
+      (setq function-size (car lfunction-size))
+    function-size))
+
+(defmethod function-db get-current lget
+  (apply function (cons current lget)))
+
+(defmethod function-db size ()
+  (apply function-size ()))
+
+;==============================================================================
+#? lazy-db
+;;.SEE database.
+;;.SEE (==> <lazy-db> tabulate)
+;;.SEE (==> <lazy-db> untabulate)
+;; (new <lazy-db> <f> <n>)
+;;.PP	
+;; The class <function-db> is a subclass of class <db> and
+;; is used to compute an arbitrary function <f> in place of a database access.
+;; The function <f> is a substitude for the method get and must therefore 
+;; have an item number as first argument.  Unlike function-db,
+;; a lazy-db will not compute the function <f> for the same item twice.
+;; Instead the result is stored in memory the first time and retrieved on each
+;; subsequent call for that item.  The size of the database is specified by
+;; <n>.  Warning: The space used by lazy-dbs grow dynamically.  This
+;; can be a problem if <n> is large.
+;;.PP
+;; Example: The following example create a database 
+;; of images named <image-base> from a matrix file "example.mat", and create
+;; another database named <smooth-base> which is the previous database 
+;; smoothed by a convolution with the matrix <kernel> (defined elsewhere).
+;;.VP
+;;  ? (setq image-base (new array-db (load-matrix "example.mat")))
+;;  = ::array-db:11f9c0
+;;  ? (setq smooth-base
+;;          (new lazy-db
+;;               (lambda (i) (convolve (==> image-base get i) kernel))
+;;               (==> image-base size)) )
+;;  = ::lazy-db:11fa08
+;;.PP
+;; The queries (==> smooth-base get-current) or (==> smooth-base size)
+;; now return a smoothed version of the images of <image-base> and the size
+;; of <image-base>.  The convolution is only done during the first access
+;; of each item.
+;;.PP
+;;
+(defclass lazy-db db
+  function			; function computed by database
+  size				; size of tables for database
+  values			; table of precomputed values
+  flag				; flag identifying if computed.
+  all-tab			; true if every thing has been tabulated
+)
+
+(defmethod lazy-db lazy-db (func a-size)
+  (setq function func)
+  (if (numberp a-size)
+      (setq size a-size)
+    (error '==> "not a number" a-size))
+  (setq values (array size))
+  (setq flag (array size))
+  (setq current 0))
+
+; Change the function which defines the method 'get of this database.
+; Uses of this method are discouraged since they are prone to side effects.
+(defmethod lazy-db set-function lfunction
+  (when lfunction
+	(==> this untabulate)
+	(setq function (car lfunction)))
+  function)
+
+;------------------------------------------------------------------------------
+#? (==> <lazy-db> tabulate) 
+;;.SEE lazy-db
+;;.PP 
+;; tabulates the function of an object of class <lazy-db> for all items and
+;; erase the function.
+;;
+(defmethod lazy-db tabulate ()
+  (when ~all-tab
+	(for (i 0 (1- size))
+	     (==> this get i))
+	(setq all-tab t))
+  t)
+
+;------------------------------------------------------------------------------
+#? (==> <lazy-db> untabulate) 
+;;.SEE lazy-db
+;;.PP 
+;; Erase all tabulation that have been done.  Reclaim storage.
+;; 
+(defmethod lazy-db untabulate ()
+  (setq all-tab ())
+  (flag () ())
+  (values () ()))
+
+(defmethod lazy-db get-current lget
+  (if (flag current)
+      (values current)
+    (let ((val (apply function (cons current lget))))
+      (values current val)
+      (flag current t)
+      val)))
+
+(defmethod lazy-db size ()
+  size)
+
+;==============================================================================
+#? lazy-matrix-db
+;;.SEE database.
+;;.SEE (new <lazy-db> <f> <n>)
+;; (new <lazy-matrix-db> <f> <d_1> ... <d_n>)
+;;.PP	
+;; The class <lazy-matrix-db> is a subclass of class <lazy-db> and
+;; is used to compute an arbitrary function <f> in place of a database access.
+;; The function <f> is a substitude for the method get and must therefore 
+;; have an item number as first argument.  Unlike function-db,
+;; a lazy-matrix-db will not compute the function <f> for the same item twice.
+;; Instead the result is stored in memory the first time and retrieved on each
+;; subsequent call for that item.  
+;;.PP
+;; The size of the database is specified by <d_1>.  The remaining arguments
+;; indicates the dimentions of the matrix that the function <f> returns.
+;; If no remaining argument, <f> as assumed to return a scalar.
+;;.PP
+;; The difference between <lazy-db> and <lazy-matrix-db> is that in 
+;; <lazy-matrix-db> the function <f> must return a matrix (of always the 
+;; same size).  This is usefull for subsequently saving the matrix using
+;; save-matrix or load-matrix or in some case where the whole database need
+;; to be access as a matrix.  Unlike lazy-db, the space used by 
+;; lazy-matrix-dbs does not grow dynamically. The matrix is allocated when
+;; the first get is performed, that is, no space is allocated until the
+;; database is used.
+;;.PP
+
+;; Example: (see <lazy-db>).
+;;.PP
+;;
+(defclass lazy-matrix-db lazy-db
+  dimensions		; dimensions of elements
+  mat			; remember matrix
+)
+
+(defmethod lazy-matrix-db lazy-matrix-db (func siz . rest)
+  (==> this (lazy-db . lazy-db) func siz)
+  (if (not (listp rest))
+      (error '==> "bad argument" rest))
+  (if ~(apply and (mapcar 'numberp rest))
+    (error '==> "not a number" rest))
+  (setq dimensions rest))
+
+(defmethod lazy-matrix-db get-dimensions ()
+  dimensions)
+
+(defmethod lazy-matrix-db compute-matrix ()
+  (for (i 0 (1- (==> this size)))
+       (==> this get i)
+       (if dimensions
+	   (let ((submat (apply submatrix 
+				(append (list mat i) 
+					(makelist (length dimensions) ())))))
+	     (copy-matrix (values i) submat)
+	     (values i submat))
+	 (mat i (values i))))
+    mat)
+
+;------------------------------------------------------------------------------
+#? (==> <lazy-matrix-db> get-matrix)
+;; Return a matrix with all the element of the database.
+;; .SEE(new <lazy-matrix-db> <f> <d_1> ... <d_n>)
+(defmethod lazy-matrix-db get-matrix (&optional mat-provided)
+  (if mat (if mat-provided (copy-matrix mat mat-provided) mat)
+    (if mat-provided (setq mat mat-provided)
+      (setq mat (apply matrix (cons (==> this size) dimensions))))
+    (==> this compute-matrix)))
+
+;------------------------------------------------------------------------------
+
+(defclass lazy-pmatrix-db lazy-matrix-db)
+
+(defmethod lazy-pmatrix-db lazy-pmatrix-db l
+  (apply '==> (append (list this '(lazy-matrix-db . lazy-matrix-db)) l)))
+
+(defmethod lazy-pmatrix-db get-pmatrix (&optional mat-provided)
+  (if mat (if mat-provided (copy-matrix mat mat-provided) mat)
+    (if mat-provided (setq mat mat-provided)
+      (setq mat (apply pmatrix (cons size dimensions))))
+    (==> this compute-matrix)))
+
+(defmethod lazy-pmatrix-db get-current lget
+  (apply '==> (append (list this '(lazy-db . get-current)) lget))
+  (if dimensions
+      (values current (copy-matrix (values current)
+				   (apply pmatrix dimensions))))
+  (values current))
+
+(defmethod lazy-pmatrix-db get-matrix (&optional mat-provided)
+  (error '==> "Use get-pmatrix" ()))
+
+;==============================================================================
+#? sub-db
+;;.SEE (==> <sub-db> set-min [<i>])
+;;.SEE (==> <sub-db> set-max [<i>])
+;;.SEE database.
+;; (new <sub-db> <base> &optional <min> <max>)
+;;.PP
+;; The class <sub-db> is a subclass of class <db> restrict
+;; the access of a database <base> to items between offset <min> and <max>.
+;; Objects of class <sub-db> have two additional methods to set the
+;; bounds <min> and <max> of the database.
+;;.PP
+;; Example (assumes <base> is a valid database of 200 items or more):
+;;.VP
+;;   ? (setq subbase (new sub-db base 100 199))
+;;   = ::sub-db:11fa4 
+;;.PP
+;;
+(defclass sub-db db
+  base				; database to be mapped
+  mini				; min value of offset
+  maxi				; max value of offset
+  items				; usefull for if base is lazy-matrix-db
+  getbase			; usefull when getbase is called
+)
+
+(defmethod sub-db sub-db (a-base &optional (a-mini 0) a-maxi)
+  (setq items ())
+  (setq getbase ())
+  ; (if (not (is-of-class a-base db)) (error '==> "not a database" a-base))
+  (setq base a-base)
+  (setq current 0)
+  (==> this set-min a-mini)
+  (==> this set-max (if a-maxi a-maxi (1- (==> base size))))
+)
+
+;------------------------------------------------------------------------------
+#? (==> <sub-db> set-min [<i>])
+;;.SEE sub-db
+;; Set the lowest value for database offset
+;; or return it if no argument are present.
+(defmethod sub-db set-min lmini
+  (setq items ())
+  (setq getbase ())
+  (when lmini
+	(if (< (car lmini) 0)
+	    (error '==> "negative value for min" 
+		   (car lmini)))
+	(setq mini (car lmini))
+	(setq current 0)
+  mini))
+
+;------------------------------------------------------------------------------
+#? (==> <sub-db> set-max [<i>])
+;;.SEE sub-db
+;; Set the highest value for database offset
+;; or return it if no argument are present.
+;;
+(defmethod sub-db set-max lmaxi
+  (setq items ())
+  (setq getbase ())
+  (when lmaxi
+	(if (> (car lmaxi) (==> base size))
+	    (error '==> "max is bigger than database allow" 
+		   (car lmaxi)))
+	(setq maxi (car lmaxi))
+	(if (>= current (==> this size))
+	    (setq current (1- (==> this size)))))
+  maxi)
+
+(defmethod sub-db get-current lget
+  (apply '==> (append (list base 'get (+ mini current)) lget)))
+
+(defmethod sub-db size ()
+  (1+ (- maxi mini)))
+
+(defmethod sub-db get-keys ()
+  (apply '==> (list base 'get-keys)))
+
+(defmethod sub-db get-base (k)
+  (let ((pair (assoc k getbase)))
+    (if pair
+	(cdr pair)
+      (let ((val (new sub-db (apply '==> (list base 'get-base k)) 
+		      mini maxi)))
+	(setq getbase (cons (cons k val) getbase))
+	val))))
+
+(defmethod sub-db get-matrix ()
+  (if items items
+    (let* ((m (==> base get mini))
+	   (dimen (if (matrixp m) (bound m) ())))
+      (setq items (apply matrix (cons (==> this size) dimen)))
+      (for (i mini maxi)
+	   (if dimen
+	       (copy-matrix (==> base get i)
+			    (apply submatrix 
+				   (append (list items (- i mini))
+					   (makelist (length dimen) ()))))
+	     (items (- i mini) (==> base get i))))
+      items)))
+
+(defmethod sub-db get-pmatrix ()
+  (if items items
+    (let* ((m (==> base get mini))
+	   (dimen (if (matrixp m) (bound m) ())))
+      (setq items (apply pmatrix (cons (==> this size) dimen)))
+      (for (i mini maxi)
+	   (if dimen
+	       (copy-matrix (==> base get i)
+			    (apply submatrix 
+				   (append (list items (- i mini))
+					   (makelist (length dimen) ()))))
+	     (items (- i mini) (==> base get i))))
+      items)))
+
+;==============================================================================
+#? map-db
+;;.SEE (==> <db> select <test>)
+;;.SEE (==> <map-db> set-map [<m>]) 
+;;.SEE (==> <map-db> find-index <i>)
+;;.SEE (==> <map-db> get-index [<i>])
+;;.SEE (==> <map-db> remove [<i>])
+;;.SEE (==> <map-db> shuffle <m>)
+;;.SEE database.
+;; (new <map-db> <base> [<m>])
+;;.PP
+;; The class <map> is a subclass of class <db> allow databases to be remapped.
+;; Objects of that class have an extra indirection through a matrix <m> of 
+;; integer, to access the patterns.  If <m> is not specified, the identity
+;; mapping is used.  The size of the database is the size of <m>.  The 
+;; following is an example of two database beeing shuffled the same way.
+;;.VP
+;;  ? (setq db-patt (new array-db [1 4 23 5 3 5 76 8]))
+;;  = ::array-db:122000
+;;  ? (setq db-clas (new array-db {odd even odd odd odd odd even even}))
+;;  = ::array-db:ccd90
+;;  ? (setq shuf-patt (new map-db db-patt))
+;;  = ::map-db:ccdd8
+;;  ? (seed .87)
+;;  = ()
+;;  ? (==> shuf-patt shuffle)
+;;  = ::MATRIX:8
+;;  ? (setq shuf-clas (new map-db db-clas (==> shuf-patt set-map)))
+;;  = ::map-db:142f88
+;;  ?
+;;  ? (==> shuf-patt get 0)
+;;  = 4
+;;  ? (==> shuf-clas get 0)                                        
+;;  = even
+;;.PP
+;;
+(defclass map-db db
+  base				; database to be mapped
+  index				; array of indices
+  size				; meaningful size
+  items				; used if base is array-db or lazy-matrix-db
+  getbase			; usefull when getbase is called
+)
+
+(defmethod map-db map-db (b &optional map)
+  (if (and (not (is-of-class b db))(not (and bldb (is-of-class b bldb))))
+      (error '==> "not a database" b))
+  (setq base b)
+  (setq items ())
+  (setq getbase ())
+  (if map
+      (==> this set-map map)
+    (setq size (==> base size))
+    (setq index (matrix size))
+    (index () (range 0 (1- size))) )
+  (setq current 0) )
+
+;------------------------------------------------------------------------------
+#? (==> <db> select <test>)
+;;.SEE database.
+;;.SEE map-db
+;;
+;; Create a map containing only those elements of database
+;; wich fulfil some criterion. The criterion is expressed
+;; by a function <test>. When <(test db x)> returns <t>, the
+;; element number <x> is incorporated into the new map.
+
+(defmethod db select(test)
+  (setq items ())
+  (setq getbase ())
+  (let ((n ())
+	(m ()) )
+    (for (i 0 (1- (==> this size)))
+	 (when (test this i)
+	       (setq n (cons i n)) ) )
+    (when n
+	  (setq m (matrix (length n)))
+	  (m () (reverse n)) )
+    (new map-db this m) ) )
+
+;------------------------------------------------------------------------------
+#? (==> <map-db> set-map [<m>]) 
+;;.SEE map-db
+;; Set (or return if <m> is ommitted)  the mapping for accessing the elements 
+;; of the database  <map-db>.
+;;
+(defmethod map-db set-map lset-map
+  (setq items ())
+  (setq getbase ())
+  (if (null lset-map)
+      index
+    (let ((ind (car lset-map)))
+      (if (not (matrixp ind))
+	  (error '==> "not a matrix" ind))
+      (setq current 0)
+      (setq size (1+ (bound ind 1)))
+      (setq index ind))))
+
+;------------------------------------------------------------------------------
+#? (==> <map-db> shuffle)
+;;.SEE map-db
+;; Create a random mapping by shuffling the indices.
+;;
+(defmethod map-db shuffle ()
+  (setq items ())
+  (setq getbase ())
+  (let ((size (==> this size))
+	(ptr ())
+	(val ()))
+    (for (i 0 (- size 2))
+	 (setq ptr (int (rand i (- size 0.99))))
+	 (setq val (index ptr))
+	 (index ptr (index i))
+	 (index i val))))
+
+;------------------------------------------------------------------------------
+#? (==> <map-db> remove [<i>])
+;; Remove element <i> from the database
+;; If <i> is not specified, the current element is removed.
+;; This function resets the current position if it is larger
+;; than the base size.
+
+(defmethod map-db remove( &optional i)
+  (setq items ())
+  (setq getbase ())
+  (when ~i (setq i current))
+  (incr size -1)
+  (when (< i size)
+	(copy-matrix (submatrix index (list (1+ i) size))
+		     (submatrix index (list i (1- size))) ) )
+  (if (>= current (==> this size))
+      (setq current 0)) )
+
+
+;------------------------------------------------------------------------------
+#? (==> <map-db> find-index <i>)
+;; Find the element whose index is <i> in the base database.
+
+(defmethod map-db find-index(j)
+  (let ((i 0))
+    (while (and (< i size) (<> (index i) j))
+      (incr i) )
+    (when (>= i size)
+	(error '==> "Index not found" j) )
+    i ) )
+
+;------------------------------------------------------------------------------
+#? (==> <map-db> get-index [<i>])
+;; Find the bases's index of element <i> of this map.
+
+(defmethod map-db get-index(&optional j)
+  (when ~j (setq j current))
+  (index j) )
+
+
+;------------------------------------------------------------------------------
+(defmethod map-db get-current lget
+  (apply '==> (append (list base 'get (index current)) lget)))
+
+(defmethod map-db size ()
+  size )
+
+; this method transmit to database of class object-db
+(defmethod map-db get-keys ()
+  (apply '==> (list base 'get-keys)))
+
+; this method transmit to database of class object-db
+(defmethod map-db get-base (k)
+  (let ((pair (assoc k getbase)))
+    (if pair
+	(cdr pair)
+      (let ((val (new map-db (apply '==> (list base 'get-base k)) index)))
+	(setq getbase (cons (cons k val) getbase))
+	val))))
+
+; this method transmit to database of class lazy-matrix-db
+(defmethod map-db get-matrix ()
+  (if items items
+    (let* ((m (==> base get (index 0)))
+	   (dimen (if (matrixp m) (bound m) ())))
+      (setq items (apply matrix (cons size dimen)))
+      (for (i 0 (1- (==> this size)))
+	   (if dimen
+	       (copy-matrix (==> base get (index i))
+			    (apply submatrix 
+				   (append (list items i)
+					   (makelist (length dimen) ()))))
+	     (items i (==> base get (index i)))))
+      items)))
+
+(defmethod map-db get-pmatrix ()
+  (if items items
+    (let* ((m (==> base get (index 0)))
+	   (dimen (if (matrixp m) (bound m) ())))
+      (setq items (apply pmatrix (cons size dimen)))
+      (for (i 0 (1- (==> this size)))
+	   (if dimen
+	       (copy-matrix (==> base get (index i))
+			    (apply submatrix 
+				   (append (list items i)
+					   (makelist (length dimen) ()))))
+	     (items i (==> base get (index i)))))
+      items)))
+
+;==============================================================================
+#? snmap-db
+;;.SEE (==> <snmap-db> set-map <m_1> <m_2>)
+;;.SEE database.
+;; (new <snmap-db> [<m_1> <m_2>] <base_0> ... [<base_n>])
+;;.PP
+;; The class <map-db> is a subclass of class <db> which accomodate a mapping 
+;; of several databases.  Object of that class have an extra indirection to 
+;; access the patterns.  The use of this class is not recommanded except 
+;; for compatibility with SN pointer matrices.  At initialization two 
+;; one-dimentional arrays <m_1> and <m_2> (of same size) specify a new mapping
+;; of the resulting database.  When accessing element <i> of the new database,
+;; the ith element of <m_1> contains a number between 0 and <n> for the database 
+;; to be used while the ith element of <m_2> is the offset of the element to
+;; be retreived in database identified by <m_1>.  By default, the mapping 
+;; consist of an concatenation of all the databases.
+;; Example:
+;;.VP
+;;   ? (setq base0 (new list-db '(a b c d e)))
+;;   = ::list-db:f9538
+;;   ? (setq base1 (new array-db '[[1][2]]))
+;;   = ::array-db:f94e8
+;;   ? (setq base (new snmap-db [0 1 0 1 0 0 0] [0 0 1 1 2 3 4] base0 base1))
+;;   = ::snmap-db:f8ae8
+;;.PP
+;; The resulting database <base> has 6 items in the following order: a, [ 1.00 ],
+;; b, [ 2.00 ], c, d, and e.
+;;
+(defclass snmap-db db
+  base-array			; database to be mapped
+  n-base			; number of database
+  index				; array of indices
+  base-number                   ; array of base number
+)
+
+(defmethod snmap-db snmap-db base-list 
+  (if (null base-list)
+      (error '==> "need at list one db" ()))
+  (setq n-base (length base-list))
+  (when (and (matrixp (car base-list))
+	     (matrixp (cadr base-list)))
+	(setq n-base (- n-base 2))
+	(==> this set-map (car base-list) (cadr base-list))
+	(setq base-list (cddr base-list)))
+  (setq base-array (array n-base))
+  (base-array () (mapcar (lambda (x) (if (is-of-class x db) x 
+				       (error '==> "not a database" x)))
+			 base-list))
+  ; compute the index and the base number for each item
+  (when (null index)
+	(let ((size (apply + (mapcar (lambda (x) (==> x size)) 
+				     (base-array ())))))
+	  (setq index (matrix size))
+	  (setq base-number (matrix size)))
+	(let ((offset 0)
+	      (size ()))
+	  (for (i 0 (1- n-base))
+	       (setq size (==> (base-array i) size))
+	       (base-number (list offset (+ -1 offset size)) i)
+	       (index (list offset (+ -1 offset size)) (range 0 (1- size)))
+	       (setq offset (+ offset size))) ))
+  (setq current 0)
+  this)
+
+;------------------------------------------------------------------------------
+#? (==> <snmap-db> set-map <m_1> <m_2>)
+;;.SEE snmap-db
+;; Set the mapping for accessing 
+;; elements of the database.  <m_1> and <m_2> are two one-dimentional arrays
+;; used to specify the new mapping.  When accessing element <i> of the new
+;; database, the ith element of <m_1> contains a number between 0 and <n> for
+;; the database to be used while the ith element of <m_2> is the offset of the
+;; element to be retreived in database identified by <m_1>.
+;;
+(defmethod snmap-db set-map lset-map
+  (if (null lset-map)
+      (list index base-number)
+    (let ((bas (car lset-map))
+	  (ind (cadr lset-map)))
+      (if (<> (bound bas 1) (bound ind 1))
+	  (error '==> "wrong dimensions" bas)
+	(if (> (apply max ((submatrix bas (list 0 (min 100 (bound bas 1)))) ()))
+	       (1- n-base))
+	    (error '==> "base number array refers to non existent db's" t))
+	(setq index ind)
+	(setq base-number bas))))
+  t)
+
+(defmethod snmap-db get-current lget
+  (let ((base (base-array (base-number current))))
+    (apply '==> (append (list base 'get (index current)) lget))))
+
+(defmethod snmap-db size ()
+  (1+ (bound index 1)))
+
+(defmethod snmap-db get-keys ()
+  (mapcar (lambda (x)
+	    (apply '==> (list x 'get-keys)))
+	  (base-array ())))
+
+(defmethod snmap-db get-base (k)
+  (apply new (append (list 'snmap-db base-number index)
+		     (mapcar (lambda (x) (apply '==> (list x 'get-base k)))
+			     (base-array ())))))
+
+;==============================================================================
+#? concat-db
+;;.SEE database.
+;; (new <concat-db> <base_1> ... [<base_n>])
+;;.PP
+;; The class <concat-db> is a subclass of class <db> which 
+;; is used to concatenate several databases together.
+;; Example:
+;;.VP
+;;   ? (setq base0 (new list-db '(a b c)))
+;;   = ::list-db:f9538
+;;   ? (setq base1 (new array-db '[[1][2]]))
+;;   = ::array-db:f94e8
+;;   ? (setq base2 (new const-db 1000 "hello"))
+;;   = ::const-db:a9b00
+;;   ? (setq base (new concat-db base0 base1 base2))
+;;    [dz-compile] (autoload).
+;;   = ::concat-db:a9bd8
+;;.PP
+;; The resulting database <base> has 1005 items in the following order: 
+;; a, b, c, [ 1.00 ], [ 2.00 ], "hello", "hello", ... .  Unlike map-db or
+;; snmap-db, no tables are necessary to find which database must be 
+;; accessed in order to find the elements of <base>.  Instead, a function
+;; is compiled which computes which database the item to be fetch is in.
+;; In the above example, the creation of <base> takes less than 100 
+;; additional bytes.
+;;.PP
+;; WARNING:
+;; If you change the size of the underlying bases,
+;; you must call the ``undocumented'' method <make-size-table>.
+
+(defclass concat-db db
+  base-array			; database to be mapped
+  n-base			; number of database
+  size-matrix			; size of each of these matrix
+  size				; total size
+  getbase			; usefull when getbase is called
+)
+
+(defmethod concat-db concat-db base-list 
+  (if (null base-list)
+      (error '==> "need at list one db" ()))
+  (setq getbase ())
+  (setq n-base (length base-list))
+  (setq base-array (array n-base))
+  (base-array () (all ((base base-list))
+		      (if (is-of-class base db)
+			  base
+			(error '==> "not a database" base) ) ))
+  (setq size-matrix (matrix n-base))
+  (setq current 0)
+  (==> this make-size-table) )
+
+;;; This undocumented stuff should be called if the
+;;; size of the underlying bases are modified!
+(defmethod concat-db make-size-table()
+  (let ((current 0))
+    (for (i 0 (1- n-base))
+	 (size-matrix i current)
+	 (incr current (==> (base-array i) size)) )
+    (setq size current)) )
+  
+
+(defmethod concat-db get-current lget
+  (let ((n (bsearch-matrix size-matrix current)))
+    (apply '==> (append (list (base-array n) 'get 
+			      (- current (size-matrix n))) lget))))
+
+(defmethod concat-db size ()
+  size )
+
+(defmethod concat-db get-keys ()
+  (mapcar (lambda (x)
+	    (apply '==> (list x 'get-keys)))
+	  (base-array ())))
+
+(defmethod concat-db get-base (k)
+  (let ((pair (assoc k getbase)))
+    (if pair
+	(cdr pair)
+      (let ((val (apply new (append 
+   	     (list 'concat-db)
+	     (mapcar (lambda (x) (apply '==> (list x 'get-base k)))
+		     (base-array ()))))))
+	(setq getbase (cons (cons k val) getbase))
+	val))))
+
+(defmethod concat-db get-matrix ()
+  (let* ((m (==> (base-array 0) get 0))
+	 (dimen (if (matrixp m) (bound m) ()))
+	 (items (apply matrix (cons size dimen)))
+	 (cnt 0))
+    (for (i 0 (1- n-base))
+	 (copy-matrix 
+	  (==> (base-array i) get-matrix)
+	  (apply submatrix 
+		 (append (list items (list cnt 
+					   (+ (==> (base-array i) size)
+					      cnt -1)))
+			 (makelist (length dimen) ()))))
+	 (incr cnt (==> (base-array i) size)))
+    items))
+
+(defmethod concat-db get-pmatrix ()
+  (let* ((m (==> (base-array 0) get 0))
+	 (dimen (if (matrixp m) (bound m) ()))
+	 (items (apply pmatrix (cons size dimen)))
+	 (cnt 0))
+    (for (i 0 (1- n-base))
+	 (copy-matrix 
+	  (==> (base-array i) get-matrix)
+	  (apply submatrix 
+		 (append (list items (list cnt 
+					   (+ (==> (base-array i) size)
+					      cnt -1)))
+			 (makelist (length dimen) ()))))
+	 (incr cnt (==> (base-array i) size)))
+    items))
+      
+;==============================================================================
+#? object-db
+;;.SEE (==> <object-db> get-current <f> . <l>)
+;;.SEE (==> <object-db> set-field <l>)
+;;.SEE (==> <object-db> get-base <k>) 
+;;.SEE (==> <object-db> get-keys) 
+;;.SEE database.
+;; (new <object-db> [<l_1> ... [<l_n>]])
+;;.PP	
+;; The class <object-db> is a subclass of class <db> used to 
+;; access a collection of complex objects.  An object consists of one or 
+;; several fields identified by a name and containing a value.  At creation,
+;; the arguments <l_i> are dotted pairs of the form (<key> . <base>), where
+;; <key> is a symbol representing the name of a field and <base> is
+;; an object of type <db> from where the value of that field can be
+;; obtained.  The database associated with each field must all be of the same
+;; size.
+;;.PP
+;; Example:
+;;.VP
+;;   ? (setq base0 (new list-db '(a b c)))
+;;   = ::list-db:f9538
+;;   ? (setq base1 (new array-db '[ [1] [2] [3] ]))
+;;   = ::array-db:f94e8
+;;   ? (setq base2 (new const-db 3 "hello"))
+;;   = ::const-db:a9b00
+;;   ? (setq base (new object-db (cons 'letter base0) 
+;;                               (cons 'digit base1)
+;;                               (cons 'hello base2)))
+;;   = ::object-db:a8c40
+;;   ? (==> base get 0 ())
+;;   = (a [ 1.00 ] "hello")
+;;   ? (==> base get 1 'letter)
+;;   = b
+;;   ? (==> base get 1 'digit)
+;;   = [ 2.00 ]
+;;   ? (==> base get 2 'hello)
+;;   = "hello"
+;;
+(defclass object-db db
+  field-alist			; associative list of (key . base) pairs.
+  size				; size of database
+)
+
+(defmethod object-db object-db alist
+  (each ((i (reverse alist)))
+	(==> this set-field i))
+  (setq current 0))
+
+;------------------------------------------------------------------------------
+#? (==> <object-db> set-field <l>)
+;;.SEE object-db
+;; Add a new field or replace an old field in the database.  
+;; <l> must be a dotted pair of the form (<k> . <base>) where
+;; <k> is a symbol and <base> is an object of class <db>.  
+;;
+(defmethod object-db set-field (l)
+  (if (and (symbolp (car l)) (is-of-class (cdr l) db))
+      (let ((pair (assoc (car l) field-alist)))
+	(if pair
+	    (rplacd pair (cdr l))
+	  (setq field-alist (cons l field-alist)))
+	(if (and size (<> (==> (cdr l) size) size))
+	    (error '==> "wrong size" (cdr l)))
+	(setq size (==> (cdr l) size)))
+    (error '==> "not a (symbol . db) pair" l))
+  t)
+
+;------------------------------------------------------------------------------
+#? (==> <object-db> get-base <k>) 
+;;.SEE object-db
+;; Return the base corresponding to key <k>.
+;;
+(defmethod object-db get-base (key)
+   (let ((pair (assoc key field-alist)))
+      (when pair
+         (cdr pair) ) ) )
+
+;------------------------------------------------------------------------------
+#? (==> <object-db> get-keys) 
+;;.SEE object-db
+;; Return the list of all the names for the fields.
+;;
+(defmethod object-db get-keys ()
+  (mapcar (lambda (x) (car x)) field-alist))
+
+;------------------------------------------------------------------------------
+#? (==> <object-db> get-current <f> . <l>)
+;;.SEE object-db
+;; Return the value of field <f> for the current pattern.
+;; The value is obtained by sending a get to the database
+;; corresponnding to <f> with the arguments in list <l>.  If <f> is equal 
+;; to nil, all the fields are returned in a list.  
+;;.PP
+;; Example: (see in object-db help)
+;;
+(defmethod object-db get-current lget
+  (if (null lget) 
+      (error '==> "get-current in object-db needs an argument" ()))
+  (if (car lget)
+      (let ((base (cdr (assoc (car lget) field-alist))))
+	(apply '==> (append (list base 'get current) (cdr lget))))
+    (mapcar (lambda (x) 
+	      (let ((base (cdr (assoc x field-alist))))
+		(apply '==> (append (list base 'get current) (cdr lget)))))
+	    (==> this get-keys))))
+
+;------------------------------------------------------------------------------
+#? (==> <object-db> set-current <value> <f> . <l>)
+;;.SEE object-db
+;; Sets the value of field <f> for the current pattern to <value>.
+;; This is done by sending a set to the database
+;; corresponnding to <f> with the arguments in list <l>.  
+;;.PP
+;; Example: (see in object-db help)
+;;
+(defmethod object-db set-current lget
+  (if (or (null lget) (< (length lget) 2))
+      (error '==> "set-current in object-db needs at least 2 arguments" ()))
+  (let*((val (car lget))(base (cdr (assoc (cadr lget) field-alist))))
+	 (apply '==> (append (list base 'set current) (append (cddr lget) (list val))))))
+
+(defmethod object-db size () 
+  size)
+

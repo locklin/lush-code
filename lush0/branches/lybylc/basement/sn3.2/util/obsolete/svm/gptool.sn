@@ -1,0 +1,397 @@
+
+
+;; load libraries
+
+(ogre)
+(when ~gp2-size (load "gp"))
+
+;; debug
+
+(setq :gp2 ())
+
+;; scale
+
+(dz r-to-b(sx x)
+    (+ 100 sx (* 100 x)) )
+
+(dz b-to-r(sx x)
+    (* 0.01 (- x (+ 100 sx))) )
+
+
+;; visual
+
+(de draw-cross(x y r)
+    (draw-line (- x r) (- y r) (+ x r) (+ y r))
+    (draw-line (- x r) (+ y r) (+ x r) (- y r)) )
+
+
+;; define the view stuff
+ 
+(defclass gptool-viewarea visualobject
+  db0 db1				; database 0 & 1
+  prune-list				; pruned objects
+  gp					; gp object
+  algo					; algo ('gp1k or 'opt2)
+  thres					; threshold
+  clickmode				; class (0 or 1)
+  gpboundary				; boundary (matrix...)
+  (grain 6)				; the grain for the boundaries
+  (gray-display-p t)			; flag: make grays
+  cmap					; colormap...
+  )
+
+
+(defmethod gptool-viewarea gptool-viewarea(w h)
+  (setq gp (new-gp2 gp2-size 2 "dot1"))
+  (setq clickmode 1)
+  (setq algo 'opt)
+  (==> this reset) )
+
+
+(defmethod gptool-viewarea reset()
+  (setq db0 (new list-db ()))
+  (setq db1 (new list-db ()))
+  (gp2-reset gp)
+  (setq gpboundary ())
+  (setq prune-list ())
+  (==> this expose rect) )
+
+
+(defmethod gptool-viewarea set-algo( (a0 a1) )
+  (cond 
+   (a0 (setq algo '1k))
+   (a1 (setq algo 'opt)) ) )
+
+(defmethod gptool-viewarea set-inner( (name a0 a1 a2 a3) )
+  (setq gp (new-gp2 gp2-size 2 name a0 a1 a2 a3)) )
+
+(defmethod gptool-viewarea set-clickmode(n)
+  (setq clickmode n) )
+
+(defmethod gptool-viewarea set-display((n m))
+  (when (<> n gray-display-p)
+	(setq gray-display-p n)
+	(when (and gp (> (gp2-get-size gp) 0))
+	      (==> this make-boundary) )
+	(==> this expose rect) ) )
+
+(defmethod gptool-viewarea permute()
+  (setq db0 db1
+	db1 db0)
+  (==> this expose rect) )
+
+(defmethod gptool-viewarea compute()
+  (when message
+	(==> message settext "Computing...")
+	(==> this repair-damaged) )
+  (selectq algo
+	   (1k  (setq thres (gp2-1k-learn gp db0 db1)))
+	   (opt (setq thres (gp2-opt-learn gp db0 db1))) )
+  (when message
+	(setq gpboundary ())
+	(==> message settext "Finding boundaries...")
+	(==> this repair-damaged) )
+  (==> this make-boundary)
+  (==> this make-prune-list)
+  (when message
+	(==> message settext 
+	     (sprintf "# of supports = %d" (gp2-get-size gp) ))
+	(==> this repair-damaged) )
+
+  (==> this expose rect) )
+
+
+(defmethod gptool-viewarea make-boundary()
+  (setq gpboundary ())
+  (let ((grain2 (/ grain 2)))
+    (when (> (gp2-get-size gp) 0)
+	  (let (((x y w h) rect)
+		(i 0) (j 0) 
+		(pat (matrix 2)) )
+	    (setq gpboundary (matrix (1+ (/ h grain)) (1+ (/ w grain))))
+	    (for (y grain2 h grain)
+		 (setq j 0)
+		 (for (x grain2 w grain)
+		      (pat () (list (b-to-r 0 x)
+				    (b-to-r 0 y)) )
+		      (gpboundary i j
+				  (if gray-display-p
+				      (- (gp2-run gp pat) thres)
+				    (if (> (gp2-run gp pat) thres) -0.2 0) ) )
+		      (incr j) )
+		 (incr i) ) ) ) ) )
+  
+
+(defmethod gptool-viewarea make-prune-list()
+  (setq prune-list ())
+  (when (> (gp2-get-size gp) 0)
+	(let* ((db db0)
+	       (size (==> db size))
+	       (pat ()) )
+	  (for (i 0 (1- size))
+	       (setq pat (==> db get i))
+	       (when (<= (gp2-run gp pat) thres)
+		     (setq prune-list (cons pat prune-list)) ) ) )
+	(let* ((db db1)
+	       (size (==> db size))
+	       (pat ()) )
+	  (for (i 0 (1- size))
+	       (setq pat (==> db get i))
+	       (when (>= (gp2-run gp pat) thres)
+		     (setq prune-list (cons pat prune-list)) ) ) ) ) )
+  
+
+(defmethod gptool-viewarea mouse-up(x1 y1 x2 y2)
+  (let (((x y w h) rect))
+    (when (point-in-rect x2 y2 rect)
+	  (selectq clickmode
+		   (0 (==> db0 add 
+			   ((matrix 2) () 
+			    (list (b-to-r x x2)
+				  (b-to-r y y2)) ) 
+			   (==> db0 size) ))
+		   (1 (==> db1 add 
+			   ((matrix 2) ()
+			    (list (b-to-r x x2)
+				  (b-to-r y y2)) ) 
+			   (==> db1 size) )) ) ) )
+  (==> this expose rect) )
+
+
+
+#? gptool-print-color-p
+;; When this variable is set to <t>, the QMS printer is used.
+(setq gptool-print-color-p t)
+
+(defmethod gptool-viewarea print()
+  (let (((x y w h) rect))
+    (setq x 50)
+    (setq y 80)
+    
+    (let* ((x 50)
+	   (y 80)
+	   (window (ps-window w (+ y h) "/tmp/sngp"))) 
+      
+      (if gptool-print-color-p
+	  (gspecial "%%%PSDRIVER:COLOR8") )
+      
+      (when inner-requester
+	    (let (((n a0 a1 a2 a3) (==> inner-requester getdata)))
+	      (gprintf x (- y 30) 
+		       "Inner product is: %l %l %l %l %l, Algorithm is %l"
+		       n a0 a1 a2 a3 algo) ) )
+      (gprintf x (- y 10) "%d support points" (gp2-get-size gp))
+      
+      (when gpboundary 
+	    (let* ((cmap (matrix 64))
+		   (maxi (max 1 (idx-m2max gpboundary)))
+		   (mmaxi (- maxi)) )
+	      (for (i 31 0 -1)
+		   (let ((x (- 1 (/ (- 32 i) 64)) ))
+		     (cmap i (alloccolor 1 x x)) ) )
+	      (for (i 32 63)
+		   (let ((x (- 1 (/ (- i 32) 64))))
+		     (cmap i (alloccolor x x 1)) ) )
+	      (if ~gptool-print-color-p
+		  (setq mmaxi (* 6 mmaxi)) )
+	      (gray-draw-matrix x y gpboundary 
+				mmaxi maxi grain grain cmap) ) )
+      
+      (let* ((db db0)
+	     (s (==> db size)))
+	(for (i 0 (1- s))
+	     (let (((rx ry) ((==> db get i)())))
+	       (color color-bg)
+	       (fill-circle (r-to-b x rx) (r-to-b y ry) 4)
+	       (color color-fg)
+	       (draw-circle (r-to-b x rx) (r-to-b y ry) 4) ) ) )
+      (let* ((db db1)
+	     (s (==> db size)))
+	(for (i 0 (1- s))
+	     (let (((rx ry) ((==> db get i)())))
+	       (fill-circle (r-to-b x rx) (r-to-b y ry) 4) ) ) )
+      
+      (when (and gp (> (gp2-get-size gp) 0))
+	    (let* ((m (gp2-get-set gp))
+		   (n (bound m 1)) )
+	      (for (i 0 n)
+		   (let (((rx ry) (m i ())))
+		     (draw-circle (r-to-b x rx) (r-to-b y ry) 6) ) ) ) )
+      
+      (each ((i prune-list))
+	    (let (((rx ry) (i ())))
+	      (draw-cross (r-to-b x rx) (r-to-b y ry) 8) ) )
+      
+      (draw-rect x y w h) 
+      (delete window)
+      (sys (if gptool-print-color-p 
+               "lp -dlp6 /tmp/sngp.1"
+             "lp /tmp/sngp.1") ) ) ) ) )
+
+
+
+(defmethod gptool-viewarea repaint()
+  ;; debug code
+  (setq :gp2 gp)
+  (cls)
+  (let (((x y w h) rect))
+
+    (when gpboundary 
+	  (when ~cmap
+		(setq cmap (matrix 64))
+	      (for (i 31 0 -1)
+		   (let ((x (- 0.95 (/ (- 32 i) 64)) ))
+		     (cmap i (alloccolor 1 x x)) ) )
+	      (for (i 32 63)
+		   (let ((x (- 0.95 (/ (- i 32) 64))))
+		     (cmap i (alloccolor x x 1)) ) ) )
+	  
+	  (let ((maxi (max 1 (idx-m2max gpboundary))))
+            (setq maxi (* maxi 0.67))
+	    (gray-draw-matrix x y gpboundary 
+			      (- maxi) maxi grain grain cmap) ) )
+    
+    (let* ((db db0)
+	   (s (==> db size)))
+      (for (i 0 (1- s))
+	   (let (((rx ry) ((==> db get i)())))
+	     (color color-bg)
+	     (fill-circle (r-to-b x rx) (r-to-b y ry) 4)
+	     (color color-fg)
+	     (draw-circle (r-to-b x rx) (r-to-b y ry) 4) ) ) )
+    (let* ((db db1)
+	   (s (==> db size)))
+      (for (i 0 (1- s))
+	   (let (((rx ry) ((==> db get i)())))
+	     (fill-circle (r-to-b x rx) (r-to-b y ry) 4) ) ) )
+    
+    (when (and gp (> (gp2-get-size gp) 0)) 
+	  (let* ((m (gp2-get-set gp))
+		 (n (bound m 1)) )
+	    (for (i 0 n)
+		 (let (((rx ry) (m i ())))
+		   (draw-circle (r-to-b x rx) (r-to-b y ry) 6) ) ) ) )
+    
+    (each ((i prune-list))
+	  (let (((rx ry) (i ())))
+	    (draw-cross (r-to-b x rx) (r-to-b y ry) 8) ) ) ) )
+
+
+			  
+  
+
+
+;;; The tool
+
+
+(defclass gptool-window windowobject
+  message
+  viewarea
+  display-requester
+  inner-requester
+  algo-requester )
+
+(defmethod gptool-window gptool-window()
+
+  (setq algo-requester
+	(new yesnorequester this 
+	     (new column
+		  (new string "ALGORITHM SELECTION")
+		  (new column
+		       (new radiobutton "Generalized Portrait (1,k)" ())
+		       (new radiobutton "Optimal hyperplane II" ()) ) )
+	     " Ok " "Cancel"
+	     (lambda(c)
+	       (==> viewarea set-algo (==> thisrequester getdata)) ) ) )
+
+  (setq inner-requester
+	(new yesnorequester this
+	     (new column
+		  (new String "INNER PRODUCT SELECTION")
+		  (new grid 2
+		       (new string "Inner product name:")
+		       (new editstring 12 "dot1")
+		       (new string "Arg #1:")
+		       (new editnumber 12 0)
+		       (new string "Arg #2:")
+		       (new editnumber 12 0)
+		       (new string "Arg #3:")
+		       (new editnumber 12 0)
+		       (new string "Arg #4:")
+		       (new editnumber 12 0) ) )
+	     " Ok " "Cancel"
+	     (lambda(c)
+	       (==> viewarea set-inner (==> thisrequester getdata)) ) ) )
+
+  (setq display-requester
+	(new yesnorequester this
+	     (new column 
+		  (new String "DISPLAY MODE")
+		  (new column
+		       (new radiobutton "Shades" ())
+		       (new radiobutton "Boundary" ()) ) )
+	     " Ok " "Cancel"
+	     (lambda(c) 
+	       (==> viewarea set-display (==> thisrequester getdata)) ) ) )
+
+  (==> display-requester setdata '(t ()))
+
+  (==> this windowobject 0 0 400 400 "GPTool"
+       (new column
+	    (new column
+		 (new row
+		      (new menu "Settings"
+			   "Set Display"     
+			   (lambda(c)
+			     (==> display-requester popup) )
+			   "Set Algorithm"     
+			   (lambda(c)
+			     (==> algo-requester popup) )
+			   "Set Inner Product"
+			   (lambda(c)
+			     (==> inner-requester popup) )
+			   "Quit"
+			   (lambda(c) 
+			     (==> thiswindowobject delete)) )
+		      (new menu "Action"
+			   "Permute  classes"     
+			   (lambda(c)
+			     (==> viewarea permute) ) )
+		      (setq message
+			    (new string "Ready...") ) )
+		 (new row
+		      (new stdbutton 
+			   "Compute" 
+			   (lambda(c)
+			     (==> viewarea compute) ) )
+		      (new stdbutton 
+			   "Print" 
+			   (lambda(c)
+			     (==> viewarea print) ) )
+		      (new stdbutton
+			   "Reset"
+			   (lambda(c)
+			     (==> viewarea reset) ) )
+		      (new emptyspace 10 0)
+		      (new radiobutton "Class 0  "
+			   (lambda(c)
+			     (==> viewarea set-clickmode 0) ) )
+		      (new radiobutton "Class 1  "
+			   (lambda(c)
+			     (==> viewarea set-clickmode 1) ) ) ) )
+	    (setq viewarea
+		  (new gptool-viewarea 10 10) ) ) ) )
+
+
+(defmethod gptool-window manage-geometry()
+  (let (((x y w h) rect))
+    (let (((x1 y1 w1 h1) :viewarea:rect))
+      (==> (caar contents) geometry 0 0 w h)
+      (==> viewarea geometry x1 y1 (- w x1) (- h y1)) ) ) )
+
+
+;;;; make it
+
+(de gptool()
+    (setq winx (new gptool-window)) )
+

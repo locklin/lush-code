@@ -1,0 +1,331 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; states
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "idx-macros")
+(mload "idx-flt")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? sn-states
+;; states are the main objects used to store variables in or between modules.
+;;.SEE idx-state
+(defclass sn-state object)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (each-idx-slots <o> <s> <f1> [<f2>...[<fn>]])
+;; evaluates lists in <f> for all active idx slots of object <o>, 
+;; (as returned by (==> <o> idx-slots)) with
+;; <s> successively taking the values of the slots in question.
+(dmd each-idx-slots (o s . f)
+  (cons (list 'each '((`s (letslot `o (mapcar eval (==> `o idx-slots)))))) 
+	f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? idx-state
+;; an idx-state is a state that contains vector or matrix variables.
+;; 
+(defclass idx-state sn-state)
+
+#? (==> <idx-state> idx-slots)
+;; return the complete list of idx slots.
+(defmethod idx-state idx-slots () (allslots this))
+
+#? (new idx-state [<params>])
+;; create a new simple-state.
+;; if <params> is absent, the simple-state is left unsized.
+;; Otherwise <params> must be a list of integer (possibly empty), which 
+;; will be used to determine the size of the object.
+;; <params> has the same meaning as the 2nd parameter of the functions new-index.
+;;.SEE simple-state
+;;.SEE Index.
+(defmethod idx-state idx-state params
+  (each ((s (==> this idx-slots)))
+	(set s (apply new-index (cons (new-f-storage) params)))))
+
+#? (==> <idx-state> resize [<list-of-dims>])
+;; resize all the idx slots (as returned by idx-slots)
+;; <list-of-dims> is a list with p numbers specifying the
+;; size of the last p dimensions of each slot.
+;; If <list-of-dim> is absent, all the active slots are undimed. 
+;;.SEE (==> <idx-state> idx-slots)
+(defmethod idx-state redim params
+  (if (not params) 
+      (==> this undim)
+    (apply ==> (cons this (cons 'resize params)))))
+
+#? (==> <idx-state> undim)
+;; undim all the active idx slots of <idx-state>.
+(defmethod idx-state undim () 
+  (each-idx-slots this s (idx-undim s)))
+
+#? (==> idx-state clear)
+;; fill all the active idx slots with zeroes
+;;.SEE (==> <idx-state> idx-slots)
+(defmethod idx-state clear () 
+  (each-idx-slots this s (idx-clear s)))
+  
+#? (==> <idx-state> load <s>)
+;; fill slot x with content of file <s>
+(defmethod idx-state load (s)
+  (let ((m (load-matrix s))) (copy-matrix m x)))
+
+#? (==> <idx-state> save <s>
+;; save content of slot x into file <s>.
+(defmethod idx-state save (s) (==> x save s))
+
+#? (==> <idx-state> dump <s>
+;; save the entire object into file <s>
+(defmethod idx-state dump (s) (write-binary s this))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass idx0-state idx-state ((-idx0- (-flt-)) x))
+(defmethod idx0-state idx0-state () 
+  (setq x (matrix))
+  ())
+
+(defclass idx0-dstate idx0-state ((-idx0- (-flt-)) dx))
+(defmethod idx0-dstate idx0-dstate () 
+  (setq x (matrix))
+  (setq dx (matrix))
+  ())
+
+(defclass idx0-ddstate idx0-dstate ((-idx0- (-flt-)) ddx))
+(defmethod idx0-ddstate idx0-ddstate () 
+  (setq x (matrix))
+  (setq dx (matrix))
+  (setq ddx (matrix))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass idx1-state idx-state ((-idx1- (-flt-)) x))
+(defmethod idx1-state idx1-state (d0 ) 
+  (-int- d0 )
+  (setq x (matrix d0 ))
+  ())
+(defmethod idx1-state resize (d0 ) 
+  (-int- d0 )
+  (idx-m1resize x    d0)
+  ())
+
+
+(defclass idx1-dstate idx1-state ((-idx1- (-flt-)) dx))
+(defmethod idx1-dstate idx1-dstate (d0 ) 
+  (-int- d0 )
+  (setq x (matrix d0 ))
+  (setq dx (matrix d0 )))
+  ())
+(defmethod idx1-dstate resize (d0 ) 
+  (-int- d0)
+  (idx-m1resize x    d0)
+  (idx-m1resize dx   d0)
+  ())
+
+
+(defclass idx1-ddstate idx1-dstate ((-idx1- (-flt-)) ddx))
+(defmethod idx1-ddstate idx1-ddstate (d0 ) 
+  (-int- d0 )
+  (setq x (matrix d0 ))
+  (setq dx (matrix d0 ))
+  (setq ddx (matrix d0 ))
+  ())
+(defmethod idx1-ddstate resize (d0 ) 
+  (-int- d0)
+  (idx-m1resize x    d0)
+  (idx-m1resize dx   d0)
+  (idx-m1resize ddx  d0)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass idx2-state idx-state ((-idx2- (-flt-)) x))
+(defmethod idx2-state idx2-state (d0 d1 ) 
+  (-int- d0 d1 )
+  (setq x (matrix d0 d1 ))
+  ())
+(defmethod idx2-state resize (d0 d1 ) 
+  (-int- d0 d1)
+  (idx-m2resize x    d0 d1)
+  ())
+
+(defclass idx2-dstate idx2-state ((-idx2- (-flt-)) dx))
+(defmethod idx2-dstate idx2-dstate (d0 d1 ) 
+  (-int- d0 d1 )
+  (setq x (matrix d0 d1 ))
+  (setq dx (matrix d0 d1 ))
+  ())
+(defmethod idx2-dstate resize (d0 d1) 
+  (-int- d0 d1)
+  (idx-m2resize x    d0 d1)
+  (idx-m2resize dx   d0 d1)
+  ())
+
+(defclass idx2-ddstate idx2-dstate ((-idx2- (-flt-)) ddx))
+(defmethod idx2-ddstate idx2-ddstate (d0 d1 ) 
+  (-int- d0 d1 )
+  (setq x (matrix d0 d1 ))
+  (setq dx (matrix d0 d1 ))
+  (setq ddx (matrix d0 d1 ))
+  ())
+(defmethod idx2-ddstate resize (d0 d1) 
+  (-int- d0 d1)
+  (idx-m2resize x    d0 d1)
+  (idx-m2resize dx   d0 d1)
+  (idx-m2resize ddx  d0 d1)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass idx3-state idx-state ((-idx3- (-flt-)) x))
+(defmethod idx3-state idx3-state (d0 d1 d2 ) 
+  (-int- d0 d1 d2 )
+  (setq x (matrix d0 d1 d2 ))
+  ())
+(defmethod idx3-state resize (d0 d1 d2) 
+  (-int- d0 d1 d2)
+  (idx-m3resize x    d0 d1 d2)
+  ())
+
+(defclass idx3-dstate idx3-state ((-idx3- (-flt-)) dx))
+(defmethod idx3-dstate idx3-dstate (d0 d1 d2 ) 
+  (-int- d0 d1 d2 )
+  (setq x (matrix d0 d1 d2 ))
+  (setq dx (matrix d0 d1 d2 ))
+  ())
+(defmethod idx3-dstate resize (d0 d1 d2) 
+  (-int- d0 d1 d2)
+  (idx-m3resize x    d0 d1 d2)
+  (idx-m3resize dx   d0 d1 d2)
+  ())
+
+(defclass idx3-ddstate idx3-dstate ((-idx3- (-flt-)) ddx))
+(defmethod idx3-ddstate idx3-ddstate (d0 d1 d2 ) 
+  (-int- d0 d1 d2 )
+  (setq x (matrix d0 d1 d2 ))
+  (setq dx (matrix d0 d1 d2 ))
+  (setq ddx (matrix d0 d1 d2 ))
+  ())
+(defmethod idx3-ddstate resize (d0 d1 d2) 
+  (-int- d0 d1 d2)
+  (idx-m3resize x    d0 d1 d2)
+  (idx-m3resize dx   d0 d1 d2)
+  (idx-m3resize ddx  d0 d1 d2)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass idx4-state idx-state ((-idx4- (-flt-)) x))
+(defmethod idx4-state idx4-state (d0 d1 d2 d3) 
+  (-int- d0 d1 d2 d3)
+  (setq x (matrix d0 d1 d2 d3))
+  ())
+(defmethod idx4-state resize (d0 d1 d2 d3) 
+  (-int- d0 d1 d2 d3)
+  (idx-m4resize x    d0 d1 d2 d3)
+  ())
+
+(defclass idx4-dstate idx4-state ((-idx4- (-flt-)) dx))
+(defmethod idx4-dstate idx4-dstate (d0 d1 d2 d3) 
+  (-int- d0 d1 d2 d3)
+  (setq x (matrix d0 d1 d2 d3))
+  (setq dx (matrix d0 d1 d2 d3))
+  ())
+(defmethod idx4-dstate resize (d0 d1 d2 d3) 
+  (-int- d0 d1 d2 d3)
+  (idx-m4resize x    d0 d1 d2 d3)
+  (idx-m4resize dx   d0 d1 d2 d3)
+  ())
+
+(defclass idx4-ddstate idx4-dstate ((-idx4- (-flt-)) ddx))
+(defmethod idx4-ddstate idx4-ddstate (d0 d1 d2 d3) 
+  (-int- d0 d1 d2 d3)
+  (setq x (matrix d0 d1 d2 d3))
+  (setq dx (matrix d0 d1 d2 d3))
+  (setq ddx (matrix d0 d1 d2 d3))
+  ())
+(defmethod idx4-ddstate resize (d0 d1 d2 d3) 
+  (-int- d0 d1 d2 d3)
+  (idx-m4resize x    d0 d1 d2 d3)
+  (idx-m4resize dx   d0 d1 d2 d3)
+  (idx-m4resize ddx  d0 d1 d2 d3))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? class-state
+;; a special kind of state used to store the output of a classifier.
+;; class-state are generated by modules such as class-max, and used
+;; by meters such as classifier-meter. No backprop is possible through 
+;; a class-state.
+(defclass class-state sn-state
+  ((-int-) output-class)
+  ((-flt-) confidence)
+  ((-idx1- (-int-)) sorted-classes)
+  ((-idx1- (-flt-)) sorted-scores))
+
+(defmethod class-state class-state (n)
+  ((-int-) n)
+  (setq sorted-classes (int-matrix n))
+  (setq sorted-scores  (matrix n))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? lclass-state
+;; a special kind of state used to store the output of a spatial 
+;; classifier such as ledist-classer.
+(defclass lclass-state sn-state
+  ((-idx2- (-int-)) output-class)
+  ((-idx2- (-flt-)) confidence)
+  ((-idx3- (-int-)) sorted-classes)
+  ((-idx3- (-flt-)) sorted-scores))
+
+(defmethod lclass-state lclass-state (maxi maxj n)
+  ((-int-) n maxi maxj)
+  (setq output-class (int-matrix maxi maxj))
+  (setq confidence (matrix maxi maxj))
+  (setq sorted-classes (int-matrix n maxi maxj))
+  (setq sorted-scores  (matrix n maxi maxj))
+  ())
+
+(defmethod lclass-state resize (si sj)
+  ((-int-) si sj)
+  (idx-i2resize output-class si sj)
+  (idx-m2resize confidence si sj)
+  (idx-i3resize sorted-classes (idx-dim sorted-classes 0) si sj)
+  (idx-m3resize sorted-scores (idx-dim sorted-scores 0) si sj)
+)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make "states" 
+	  (sn-state)
+	  (idx-state)
+
+	  (idx0-state idx0-state)
+	  (idx0-dstate idx0-dstate)
+	  (idx0-ddstate idx0-ddstate)
+	  
+	  (idx1-state idx1-state resize)
+	  (idx1-dstate idx1-dstate resize)
+	  (idx1-ddstate idx1-ddstate resize)
+	  
+	  (idx2-state idx2-state resize)
+	  (idx2-dstate idx2-dstate resize)
+	  (idx2-ddstate idx2-ddstate resize)
+	  
+	  (idx3-state idx3-state resize)
+	  (idx3-dstate idx3-dstate resize)
+	  (idx3-ddstate idx3-ddstate resize)
+
+	  (idx4-state idx4-state resize)
+	  (idx4-dstate idx4-dstate resize)
+	  (idx4-ddstate idx4-ddstate resize)
+	  
+	  (class-state class-state)
+	  (lclass-state lclass-state resize))
+
+

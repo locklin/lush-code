@@ -1,0 +1,521 @@
+#? *** DZ.
+
+Lush contains a mechanism called ``DZ'' which allows to
+define very efficient numerical functions. This mechanism
+is based on a small stack machine, and on a DZ compiler.
+The DZ module is a remnant from an early attempt at compiling
+SN numerical to make it run faster. It was eventually superseded
+by the DH function (i.e functions compiled to C), but was kept around.
+
+New DZ functions are easily defined with the functions <dz>,
+<dz-compile> and <zlambda>.  They return an object from of class <DZ>
+which can be executed like a 'de' but which can only contain and
+return numerical expressions.  Except for the overhead associated to
+small DZ functions, typical DZ functions execute 15 to 20 time faster
+than their DE equivalent.
+
+Two important restrictions are enforced in <dz> function declaration:
+.IP
+If the DZ refer a symbol defined outside the DZ function, it is
+evaluated only once at compile time and must return either another
+previously created DZ function (in which case it is "inlined") or a
+number (which is then considered a constant).  In other word, inside a
+DZ function only static scoping is allowed.
+.IP
+Only numerical expression can be used by the small machine, that is
+functions that return list, string or matrix are not allowed.  Other
+functions like <if>, <for>, <let> are allowed provided they do not
+push a non numerical expression onto the stack.
+.PP
+
+#? ** Predefined DZs.
+A couple of useful DZ functions are predefined.
+
+#? (sgn <n>)
+Returns +1 if <n> is equal or greater than 0 , -1 otherwise.
+.EX (sgn -2)
+.EX (sgn 1.2)
+
+#? (abs <n>)
+Returns the absolute value of <n>.
+.EX (abs 123.3)
+.EX (abs -23.3)
+
+#? (int <n>)
+Returns the integral part of <n>.
+.EX (int -4.5)
+.EX (int 4.5)
+
+#? (sqrt <n>)
+Returns the square root of <n>
+.EX (sqrt 15)
+
+#? (0-x-1 <n>)
+This function implements a piecewise saturated linear function.
+It returns 0 if <n> is smaller than -1.
+It returns 1 if <n> is larger than +1.
+It returns <n> if <n> is in the -1 to +1 range.
+.EX (0-x-1 -2)
+.EX (0-x-1 0.7)
+.EX (0-x-1 1.3)
+
+#? (0-1-0 <n>)
+This function implements the indicator function of the -1 to +1 range.
+It returns 1 if <n> is in the -1 to +1 range.
+It returns 0 otherwise.
+.EX (0-1-0 -2)
+.EX (0-1-0 0.7)
+
+#? (sin <n>)
+Returns the sine of <n> radians.
+.EX (sin (/ 3.1415 3))
+
+#? (cos <n>)
+Returns the cosine of <n> radians.
+.EX (cos (/ 3.1415 3))
+
+#? (tan <n>)
+Returns the tangent of <n> radians.
+.EX (tan (/ 3.1415 3))
+
+#? (atan <n>)
+Returns the arc tangent of <n>, in radians.
+.EX (* 4 (atan 1))
+
+#? (exp <n>)
+Returns the exponential of <n>.
+.EX (exp 1)
+
+#? (exp-1 <n>)
+Returns the exponential of <n> minus 1.
+This function gives an accurate value of
+<exp(n)-1> even for small values of <n>.
+.EX (exp-1 0.5)
+
+#? (log <n>)
+Returns the natural logarithm of <n>.
+.EX (log 2)
+
+#? (log1+ <n>)
+Returns the natural logarithm of <n> plus 1.
+This function gives an accurate value of
+<log(1+n)> even for small values of <n>.
+.EX (log1+ 1)
+
+#? (sinh <n>)
+Returns the hyperbolic sine of <n>.
+.EX (sinh 1) 
+
+#? (cosh <n>)
+Returns the hyperbolic cosine of <n>.
+.EX (cosh 1)
+
+#? (tanh <n>)
+.SEE (qtanh <n>)
+Returns the hyperbolic tangent of <n>.
+.EX (tanh 1)
+
+
+#? (qtanh <n>)
+.SEE (tanh <n>)
+Returns a rational approximation of the hyperbolic 
+tangent of <n>. This function is orders of magnitude faster
+than <tanh>. Its acuracy however is quite low (about 0.00001.)
+.EX (qtanh 1)
+.IFTEX
+The formula of the approximation is:
+ \[    
+      \tanh(x) \approx \frac { P(x)^16-1 } { P(x)^16+1 }   
+ \]
+where
+ \[
+      P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+ \]
+.IFHLP
+The formula of the approximation is:
+  tanh(x) =~ ( P(x)^16 - 1) / ( P(x)^16 + 1)
+where
+  P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+.PP
+
+#? (qdtanh <n>)
+Returns a rational approximation of the derivative of the hyperbolic
+tangent of <n>. The accuracy of this function is quite low (about
+0.00001), but its computation time is very small.
+.EX (qdtanh 1)
+.IFTEX
+The formula of the approximation is:
+ \[
+      \frac{d}{dx} ( 1 - \tanh (x)^2 )
+  	\approx
+      1 - \left( \frac { P(x)^16-1 } { P(x)^16+1 } \right) ^2  
+ \]
+where
+ \[
+      P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+ \]
+.IFHLP
+The formula of the approximation is:
+  d/dx tanh(x) =~ 1 - [(P(x)^16-1)/(P(x)^16+1)]^2
+where
+  P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+.PP
+
+#? (qstdsigmoid <n>)
+.SEE (qtanh <n>)
+Returns the value of standard sigmoid at point <n>, computed with a
+rational approximation to the hyperbolic tangent. The standard sigmoid
+is defined as
+.IFTEX
+   \[ 1.7159 {\rm tanh} ( \frac{2}{3} x ) \]
+.IFHLP
+   1.7159 tanh ( 0.6666 x )
+.PP
+
+#? (qdstdsigmoid <n>)
+.SEE (qdtanh <n>)
+Returns the value of the derivative of standard sigmoid at point <n>,
+computed with a rational approximation to the hyperbolic tangent. The
+standard sigmoid is defined as
+.IFTEX
+   \[ 1.7159 {\rm tanh} ( \frac{2}{3} x ) \]
+.IFHLP
+   1.7159 tanh ( 0.6666 x )
+.PP
+
+#? (qexpmx <n>)
+Returns a rational approximation of the exponential of minus the
+absolute value of <n>. The accuracy of this function is quite low
+(about 0.00001), but its computation time may be smaller on certain
+computers.
+.EX (qexpmx 1)
+.IFTEX
+The formula of the approximation is:
+ \[
+      e^{-|x|}  \approx  \frac{ 1 }{ P(|x|)^8 }
+ \]
+where 
+ \[
+      P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+		+  0.000010172526 x^4
+ \]
+.IFHLP
+The formula of the approximation is:
+    exp(-x) =~ 1/P(|x|)^8
+where 
+    P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+             +  0.000010172526 x^4
+
+
+#? (qdexpmx <n>)
+Returns a rational approximation of the derivative of the exponential
+of minus the absolute value of <n>. The accuracy of this function is
+quite low (about 0.00001), but its computation time may be smaller on certain
+computers.
+.EX (qdexpmx 1)
+.IFTEX
+The formula of the approximation is:
+ \[
+      \frac{d}{dx} e^{-|x|}  \approx  - {\rm sgn}(x) \frac{ 1 }{ P(|x|)^8 }
+ \]
+where 
+ \[
+      P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+		+  0.000010172526 x^4
+ \]
+.IFHLP
+The formula of the approximation is:
+    d/dx exp(-x) =~  - sgn(x) / P(|x|)^8
+where 
+    P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+             +  0.000010172526 x^4
+
+
+#? (qexpmx2 <n>)
+Returns a rational approximation of the exponential of minus the
+square of <n>. The accuracy of this function is quite low
+(about 0.00001), but its computation time may be smaller on certain
+computers.
+.EX (qexpmx 1)
+.IFTEX
+The formula of the approximation is:
+ \[
+      e^{-x^2}  \approx  \frac{ 1 }{ P(x^2)^8 }
+ \]
+where 
+ \[
+      P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+		+  0.000010172526 x^4
+ \]
+.IFHLP
+The formula of the approximation is:
+    exp(-x) =~ 1/P(x^2)^8
+where 
+    P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+             +  0.000010172526 x^4
+
+#? (qdexpmx2 <n>)
+Returns a rational approximation of the exponential of minus the
+square of <n>. The accuracy of this function is quite low (about
+0.00001), but its computation time may be smaller on certain
+computers.
+.EX (qdexpmx 1)
+.IFTEX
+The formula of the approximation is:
+ \[
+      \frac{d}{dx} e^{-n^2}  \approx  - 2 x \frac{ 1 }{ P(n^2)^8 }
+ \]
+where 
+ \[
+      P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+		+  0.000010172526 x^4
+ \]
+.IFHLP
+The formula of the approximation is:
+    d/dx exp(-x) =~ -2 x / P(x^2)^8
+where 
+    P(x) = 1 + 0.125 x + 0.0078125 x^2 + 0.00032552083 x^3   
+             +  0.000010172526 x^4
+
+
+#? ** Compiling DZ.
+The following functions are useful to define DZ functions.
+
+#? (dz <name> <args> . <body>)
+Create a new function which evaluate its argument and which is similar
+to a <de> except that it works only on numerical expression and is much
+faster.  Sets the symbol <name> to this function.
+.PP
+<args> is the argument list, made of symbol names.
+.PP
+<body> is the function itself.  Each list in <body> will be evaluated when
+the function is called.  The result of the last evaluation will be returned by
+the function call.
+.PP
+Example:
+.VP
+? (dz fact (n)
+     (let ((res 1)) 
+	(for (i 2 n) 
+           (setq res (* i res))) 
+        res))
+= fact
+? (fact 5)
+= 120
+?
+.PP
+
+#? (zlambda <args> . <body>)
+Returns a function which evaluates its argument and is similiar to a
+<de> except that it works only on numerical expression, and is much
+faster than a <de>.
+.PP
+<args> is the argument list, made of symbol names.
+.PP
+<body> is the function itself.  Each list in <body> will be evaluated when
+the function is called.  The result of the last evaluation will be returned by
+the function call.
+.PP
+Example:
+.EX ((zlambda (x) (* x x)) (+ 4 5))
+
+#? (dz-compile <de-function>)
+Returns a function which evaluates its argument and is similiar to a
+DE except that it works only on numerical expression, and is much
+faster than a DE.
+.PP
+<de-function> is the <de> function to be compiled.
+
+#? (dz-load <n> <program>)
+This function returns a new DZ which takes <n> arguments.
+
+The list <program> describes which instruction will be executed by the
+stack machine. Each element in this list can be a label declarations
+or a stack machine instruction.
+.IP
+A label declaration is a string. If this string is used as argument of
+a branch opcode, the branch will jump at the label location. If this
+string is used as argument of a subsequent stack relative opcode,
+this opcode will refer to the current top of the stack.
+.IP
+A stack machine instruction is a list composed of an opcode string and
+of its arguments. A suffix in the opcode strings defines the opcode
+addressing mode, and thus defines what are the arguments.
+.PP
+Caution must be exercised when you are programming this machine:
+An incorrect program may hang SN3. Usually DZ programs are composed
+by the DZ compiler, which is assumed correct.
+
+#? (dz-spline <index>)
+.SEE (dz-dspline <index>)
+Generates a DZ function that computes a cubic spline interpolations of
+a set of <n> points specified by the <n> by <2> matrix <index>.
+Argument <index> thus must be a <n> by <2> index. Its first column
+contains the abscissa, its second column contains the ordinates of the
+points.
+
+The function <dz-spline> may be used for generating the derivative of
+this cubic spline interpolation.
+
+#? (dz-dspline <index>)
+.SEE (dz-spline <index>)
+Generates a DZ function that computes the derivative of a cubic spline
+interpolations of a set of <n> points specified by the <n> by <2>
+matrix <index>.  
+Argument <index> thus must be a <n> by <2> index. Its first column
+contains the abscissa, its second column contains the ordinates of the
+points.
+
+The function <dz-spline> may be used for generating the cubic spline
+itself.
+
+
+#? (dz-def <dz>)
+.SEE (dz-load <n_1> <n_2> <program>)
+.SEE DZ opcodes.
+This function returns the definition of the DZ function <dz>.  This
+definition is a list <(n . program)>, where <n> is the number of
+arguments of the DZ, and <program> is a list of stack machine
+instructions.
+
+#? (dz-trace <boolean>)
+It function sets or reset the trace mode for the stack machine
+In trace mode, each instruction is disassembled, and the stack is
+displayed after the execution of each instruction.  This function is
+mostly useful for designing and debugging the DZ compiler.
+
+This function does nothing if the trace mode has not been
+compiled. This is the usual setup, for efficiency reasons.
+
+
+#? ** DZ opcodes.
+.SEE (dz-load <n> <program>)
+
+A DZ program is a list which describes which instruction will be
+executed by the stack machine. Each element in this list can be a
+label declarations or a stack machine instruction.
+
+A label declaration is a string. If this string is used as argument of
+a branch opcode, the branch will jump at the label location. If this
+string is used as argument of a subsequent stack relative opcode,
+this opcode will refer to the current top of the stack.
+
+A stack machine instruction is a list composed of an opcode string and
+of its arguments. Opcodes fall into five broad categories:
+.IP
+Opcodes whose name ends with a ``#'' are ``immediate'' opcodes.
+They take one numeric argument. For example <("ADD#" 2.2)> adds
+2.2 to the top of the stack.
+.IP
+Opcodes whose name ends with a ``@'' are ``stack relative'' opcodes.
+They take one positive integer argument, which describes an element of
+the stack.  For example <("ADD@" 2)> adds the third topmost element of
+the stack to the top of the stack.
+
+If a label is given as operand of a stack relative opcode, it refers
+to the position of the top of the stack when the label has been
+defined. In addition, labels <"arg1">, <"arg2">, etc...  refer to the
+arguments of the DZ.
+.IP
+Opcodes whose name begins with ``BR'' are ``relative branches''. 
+If the branching condition is true, their integer argument is added
+to the program counter.
+
+If a label is given as operant of a relative branch, it jumps
+immediately after the label position in the program.
+.IP
+Two special opcodes, <"SPLINE"> and <"DSPLINE"> take a 1D matrix as
+operand. DZ using these opcodes usually are generated with the
+<dz-spline> and <dz-dspline> function.
+.IP
+The other opcodes do not have arguments. For example <"ADD"> adds
+the two topmost elements of the stack, and replace them on top of the
+stack by their sum.
+.PP
+Two other rules are enforced by the <dz-load> function:
+
+The arguments of a DZ are pushed on the stack when the execution
+starts. The execution stops when the last opcode has been executed.
+The result must be the only element on the stack. The opcode "POP@" is
+handy for removing the arguments of the DZ.
+
+It is forbidden to make loops whose iterations would add or remove
+elements to the stack. The size of the stack at each position of the
+program thus is determined statically.
+
+Here are a brief description of the opcodes.
+.VP
+Opcode       Stack Before -> Stack After         Notes
+
+ NOP                  * -> *
+ STACK                * -> *            prints the stack.
+ PRINT                * -> *            prints the top of the stack.
+ ERROR                * ->              produces a run time error.
+
+ POP                x * -> * 
+ DUP                x * -> x x *
+
+ PUSH# C              * -> C * 
+ PUSH@ R     x a1..aR * -> aR x a1..aR *
+ POP@ R      x a1..aR * -> x * 
+ SET@ R      x a1..aR * -> a1..aR-1 x *
+
+ MINUS              x * -> -x *
+ INVERT             x * -> 1/x *
+ ADD1               x * -> x+1 *
+ SUB1               x * -> x-1 *
+ MUL2               x * -> x*2 *
+ DIV2               x * -> x/2 *
+
+ RAND                 * -> r *          uniform random number in [0,1[
+ GAUSS                * -> r *          gaussian random number (m=0,s=1)
+ SPLINE N DATA      x * -> f(x) *       computes a spline interpolation
+ DSPLINE N DATA     x * -> f'(x) *      computes its derivative
+ 
+ ADD# C             x * -> x+C *
+ ADD@ R      x a1..aR * -> x+aR a1..aR *
+ ADD              x y * -> x+y *
+
+ SUB# C             x * -> x-C *
+ SUB@ R      x a1..aR * -> x-aR a1..aR *
+ SUB              x y * -> y-x *
+
+Idem for 
+   MUL, DIV, MIN, MAX, 
+   DIVI (integer division),
+   MODI (remainder), 
+   POWER (exponentiation)
+
+
+ SGN                x * -> sgn(x) *
+ ABS                x * -> abs(x) *
+
+Idem for the following functions, equivalent to their
+lowercase lisp counterpart:
+   INT SQRT PIECE RECT
+   SIN COS TAN ASIN ACOS ATAN 
+   EXP EXPM1 LOG LOG1P TANH COSH SINH 
+   QTANH QDTANH QSTDSIGMOID QDSTDSIGMOID 
+   QEXPMX QDEXPMX QEXPMX2 QDEXPMX2
+
+
+ BR L                 * -> *            inconditional relative branch
+ BREQ L             x * -> *            branch if x==0
+ BRNEQ L            x * -> *            branch if x!=0
+ BRGT L             x * -> *            branch if x>0
+ BRLT L             x * -> *            branch if x<0
+ BRGEQ L            x * -> *            branch if x>=0
+ BRLEQ L            x * -> *            branch if x<=0
+
+The following opcodes are handy for programming <for> loops, where
+<i> is the variable, <n> the limit and <s> the increment.
+
+ BEGFOR L       i n s * -> i n s *      check and branch
+                i n s * -> *            pop 3 if it does not branch
+
+ ENDFOR L       i n s * -> i+s n s *    increment, check and branch
+                i n s * -> *            pop 3 under if it does not branch
+
+
+
+

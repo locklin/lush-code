@@ -1,0 +1,53 @@
+#? file "profile.sn"
+;; very crude profiling tool.
+;; not documented yet
+
+(de krunch (s ext) (named (concat (pname s) ext)))
+
+(de profile (funclist)
+  (each ((x funclist))
+	(let*((clas ())(meth ())
+			(nam (if (atomp x)   ; it is not a method
+						x
+       				(setq clas (cadr x) meth (caddr x))
+       				(named (concat ":" (pname clas) ":" (pname meth)))))
+			(z (if (atomp x) (eval x)(eval '(check==> `clas meth)))))
+	  (set (krunch nam "-time") 0)
+     (set (krunch nam "-count") 0)
+	  (when (not  (eval (krunch nam "-orig")))
+	    (apply unlock-symbol (list nam))
+	    (set (krunch nam "-orig") z)
+       (eval (append (if (atomp x) '(set nam) '(putmethod `clas meth))
+           (list (eval 
+           '(flambda p (let ((__rr__ ()))
+				             (progn 
+					            (incr `(krunch nam "-count"))
+					            (incr `(krunch nam "-time")
+					              (time (setq __rr__ (eval (cons `z p)))))
+                           __rr__)))))))))))
+
+(de un-profile (funclist)
+	(each ((x funclist))
+		(let*((clas ())(meth ())
+				(nam (if (atomp x)   ; it is not a method
+						x
+       				(setq clas (cadr x) meth (caddr x))	; else it is a method
+       				(named (concat ":" (pname clas) ":" (pname meth)))))
+				(z (eval (krunch x "-orig"))))
+			(when (eval (krunch nam "-orig"))
+				(apply unlock-symbol (list nam))
+				(if (atomp x)
+					(set x z)
+					(eval '(putmethod `clas meth `z)))))))
+		
+(de print-profile (funclist)
+  (printf "SN3 lisp level profiler\n***********************\n\n")
+  (each ((x funclist))
+    (when (listp x)   ; it is a method
+       (let*((clas (cadr x))(meth (caddr x)))
+       	(setq x (named (concat ":" (pname clas) ":" (pname meth))))))
+    (let*((count (eval (krunch x "-count")))(tim (eval (krunch x "-time"))))
+      (printf "For function %s, %d calls, %l cpu time, average per call=%e\n"
+        (pname x) count tim (if (> count 0)(/ tim count)0)))
+  )
+)

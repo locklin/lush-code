@@ -1,0 +1,503 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; ------------------------------------------------------------------------
+;;;          L I S T   C O M P I L A T I O N   S U P P O R T
+;;; ------------------------------------------------------------------------
+
+(mload "dh-macro")
+
+
+(de dhc-list-access (var-name pos-list)
+    (when ~(consp pos-list)
+	  (setq pos-list (list pos-list)))
+    (if  (= 1 (length pos-list))
+	(concat "L_ACCESS(" var-name ", " (str (car pos-list)) ")")
+      (concat "L_ACCESS(*"
+	      (dhc-list-access var-name (cdr pos-list)) ", "
+	      (str (car pos-list)) ")")))
+
+(de dhc-list-or-nil (tnode)
+    (if (= 'dht-nil (unode-val :tnode:type:u-tclass))
+	'dht-nil
+      (if (==> :tnode:type is-a-list)
+	  'dht-list
+	())))
+      
+;--------------------------------------------------------------CAR
+(dhm-t car(source)
+       (when ~(= 1 (length (cdr source)))
+	     (dhc-error "one argument expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source))))
+	 (selectq (dhc-list-or-nil tn)
+	  (dht-nil  (new t-node (list tn) :tn:type))
+	  (dht-list (new t-node (list tn)
+			 (car (unode-val :tn:type:u-extra)) ()))
+	  (t        (dhc-error "argument must be a list"))
+	  
+	  )))
+	 
+(dhm-c car(source treetype retplace)
+       (let* ((exp (dhc-parse-expr-c (cadr source)
+				    (cadr :treetype:tn-list) ()))
+	      (return-type :treetype:type)
+	      (full-list (dhc-parse-expr-c (cadr source)
+					   (cadr :treetype:tn-list) ())))
+	 (cond
+	  ((==> return-type is-a-ptr)       ; List or other ptr structure?
+	   (sprintf "(%s)*%s" (dhc-type-to-c-decl return-type)
+		    (dhc-list-access full-list 0)))
+	  ((= 'dht-nil (unode-val :return-type:u-tclass))  ; null list?
+	   "0")
+	  (t (sprintf "*((%s *) %s)"         ; simple types
+		      (dhc-type-to-c-decl return-type)
+		      (dhc-list-access full-list 0))))))
+
+;;--------------------------------------------------------------CDR
+	
+(dhm-t cdr(source)
+       (when ~(= 1 (length (cdr source)))
+	     (dhc-error "one argument expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source)))
+	      (return-tnode ()) (srg-type ()) (symb-srg ()))
+	 (selectq 
+	  (dhc-list-or-nil tn)
+	  (dht-nil  (new t-node (list tn) (new dhc-type 'dht-nil) source))
+	  (dht-list
+	   (if (= 0 (1- (length (unode-val :tn:type:u-extra))))
+	       (new t-node (list tn) (new dhc-type 'dht-nil))
+	     (let* ((symb-srg (new dhc-symbol
+				   (named (sprintf "%d_srg" tmpnames-seed))
+				   lex-level))
+		    (list-type  (new dhc-type 'dht-list
+				     (cdr (unode-val :tn:type:u-extra)) ) )
+		    (srg-type (dhu-type list-type))
+		    (return-tnode (new t-node (list tn) list-type ())) )
+	       (incr tmpnames-seed)
+	       (dhc-unify-types :symb-srg:type srg-type)
+	       (setq bump-list (append bump-list (list symb-srg)))
+	       (setq :return-tnode:transfer (list symb-srg))
+	       return-tnode)))
+	  (t        (dhc-error "argument must be a list")))))
+
+	 
+(dhm-c cdr(source treetype retplace)
+       (let* ((srg-symb ()) (arg-name ()) (arg-type ())
+	      (return-type :treetype:type))
+
+	 (if (= 'dht-nil (unode-val :return-type:u-tclass))  ; null list?
+	     "0"
+	   (setq srg-symb (car :treetype:transfer))
+	   (setq arg-name
+		 (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ()))
+	   (setq arg-type :(cadr :treetype:tn-list):type)
+	   (add-c-statements
+	    (sprintf "Msrg_resize(%s,%d);"
+		     :srg-symb:c-name
+		     (length (unode-val
+			      :return-type:u-extra))))
+		     
+	   (each ((ty (cdr (unode-val :arg-type:u-extra)))
+		  (ctr (range 1 (length (unode-val
+					 :return-type:u-extra)))))
+		 (if (==> ty is-a-ptr)
+		     (add-c-statements
+		      (sprintf "(%s)*%s=(%s)*%s;"
+			       (dhc-type-to-c-decl ty)
+			       (dhc-list-access :srg-symb:c-name (1- ctr))
+			       (dhc-type-to-c-decl ty)
+			       (dhc-list-access arg-name ctr)))
+		   (add-c-statements
+		    (sprintf "*((%s *) %s)=*((%s *)%s);"
+			     (dhc-type-to-c-decl ty)
+			     (dhc-list-access :srg-symb:c-name (1- ctr))
+			     (dhc-type-to-c-decl ty)
+			     (dhc-list-access arg-name ctr)))))
+	   (sprintf "%s" :srg-symb:c-name))))
+
+;;--------------------------------------------------------------CONS
+(dhm-t cons(source)
+       (let* ((tns (all ((tn (cdr source))) (dhc-parse-expr-t tn)))
+	      (types (all ((ty tns)) :ty:type))
+	      (return-tnode ()) (srg-type ()) (symb-srg ()))
+	 (when (<> 2 (length tns))
+	       (dhc-error "two arguments expected"))
+	 (when (= 'dht-list (unode-val :(car types):u-tclass))
+	       (dhc-error "first argument must not be a list"))
+
+	 (when ~(dhc-list-or-nil (cadr tns))
+	       (dhc-error "second argument must be a list"))
+
+	 (setq symb-srg (new dhc-symbol
+			     (named (sprintf "%d_srg" tmpnames-seed))
+			     lex-level))
+	 (setq return-tnode (new t-node tns
+				 (new dhc-type 'dht-list
+				      (append 
+				       (list (car types))
+				       (unode-val :(car (cdr types)):u-extra) ) )
+				 () ) )
+	 (setq srg-type (dhu-type:return-tnode:type))
+	 (incr tmpnames-seed)
+	 (dhc-unify-types :symb-srg:type srg-type)
+	 (setq bump-list (append bump-list (list symb-srg)))
+	 (setq :return-tnode:transfer (list symb-srg))
+	 return-tnode)))
+
+(dhm-c cons(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (return-type :treetype:type)
+	      (arg-names 
+	       (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
+		    (dhc-parse-expr-c nm nmt ())))
+	      (arg-types (all ((nm (cdr :treetype:tn-list)))
+			      :nm:type)))
+
+	 (add-c-statements
+	  (sprintf "Msrg_resize(%s,%d);"
+		   :srg-symb:c-name
+		   (1+ (length (unode-val :(cadr arg-types):u-extra)))))
+
+	
+	 (add-c-statements       ; first is always a simple type
+	  (sprintf "*((%s *) %s)=%s;"
+		   (dhc-type-to-c-decl (car arg-types))
+		   (dhc-list-access :srg-symb:c-name 0)
+		   (car arg-names)))
+
+	 (each ((ty (unode-val :(cadr arg-types):u-extra))
+		(ctr (range 1 (length (unode-val :(cadr arg-types):u-extra)))))
+	       
+	       (if (==> ty is-a-ptr)     ; list or ptr type
+		   (add-c-statements
+		      (sprintf "(%s)*%s=(%s)*%s;"
+			       (dhc-type-to-c-decl ty)
+			       (dhc-list-access :srg-symb:c-name ctr)
+			       (dhc-type-to-c-decl ty)
+			       (dhc-list-access (cadr arg-names) (1- ctr))))
+		 (add-c-statements       ; simple type
+		  (sprintf "*((%s *) %s)=*((%s *)%s);"
+			   (dhc-type-to-c-decl ty)
+			   (dhc-list-access :srg-symb:c-name ctr)
+			   (dhc-type-to-c-decl ty)
+			   (dhc-list-access (cadr arg-names) (1- ctr))))))
+	 (sprintf "%s" :srg-symb:c-name)))
+
+
+;;--------------------------------------------------------------LAST
+(dhm-t last(source)
+       (when ~(= 1 (length (cdr source)))
+	     (dhc-error "one argument expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source))))
+	 (selectq 
+	  (dhc-list-or-nil tn)
+	  (dht-nil  (new t-node (list tn) :tn:type))
+	  (dht-list (new t-node (list tn)
+			 (last (unode-val :tn:type:u-extra))  ()))
+	  (t        (dhc-error "argument must be a list")))))
+
+
+(dhm-c last(source treetype retplace)
+       (let* ((exp (dhc-parse-expr-c (cadr source)
+				    (cadr :treetype:tn-list) ()))
+	      (return-type :treetype:type)
+	      (full-list (dhc-parse-expr-c (cadr source)
+					   (cadr :treetype:tn-list) ())))
+	 (cond
+	  ((==> return-type is-a-ptr)       ; List or other ptr structure?
+	     (sprintf "(%s)*%s"
+		      (dhc-type-to-c-decl return-type)
+		      (dhc-list-access
+		       full-list
+		       (1- (length
+			    (unode-val
+			     :(cadr :treetype:tn-list):type:u-extra))))))
+	  ((= 'dht-nil (unode-val :return-type:u-tclass))  ; null list?
+	   "0")
+	  (t (sprintf "*((%s *) %s)"          ; simple type     
+		      (dhc-type-to-c-decl return-type)
+		      (dhc-list-access
+		       full-list
+		       (1- (length
+			    (unode-val
+			     :(cadr :treetype:tn-list):type:u-extra))))))
+	  )))
+
+;--------------------------------------------------------------LENGTH
+(dhm-t length(source)
+       (when ~(= 1 (length (cdr source)))
+	     (dhc-error "one argument expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source))))
+	 (when ~(dhc-list-or-nil tn)
+	       (dhc-error "argument must be a list"))
+	 (new t-node (list tn)
+	      (new dhc-type 'dht-int) ())))
+ 
+(dhm-c length(source treetype retplace)
+       (let* ((exp (dhc-parse-expr-c (cadr source)
+				     (cadr :treetype:tn-list) ()))
+	      (return-type :treetype:type))
+	 (sprintf "%d" 
+		  (length
+		   (unode-val :(cadr :treetype:tn-list):type:u-extra)))))
+
+;;--------------------------------------------------------------LIST
+(dhm-t list(source)
+       (let* ((tns (all ((tn (cdr source))) (dhc-parse-expr-t tn)))
+	      (types (all ((ty tns)) :ty:type))
+	      (return-tnode ()) (srg-type ()) (symb-srg ()))
+	 (if ~(consp tns)
+	   (new t-node () (new dhc-type 'dht-nil) source)  ; nil? (no args?)
+	   
+	   (setq symb-srg (new dhc-symbol
+			       (named (sprintf "%d_srg" tmpnames-seed))
+			       lex-level))
+	   
+	   (setq return-tnode (new t-node tns (new dhc-type 'dht-list types) ()))
+	   (setq srg-type (dhu-type :return-tnode:type))
+	   (incr tmpnames-seed)
+	   (dhc-unify-types :symb-srg:type srg-type)
+	   (setq bump-list (append bump-list (list symb-srg)))
+	   (setq :return-tnode:transfer (list symb-srg))
+	   return-tnode)))
+	 
+(dhm-c list(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (return-type :treetype:type)
+	      (arg-names 
+	       (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
+		    (dhc-parse-expr-c nm nmt ())))
+	      (arg-types (all ((nm (cdr :treetype:tn-list)))
+			      :nm:type)))
+
+	 (if (= 'dht-nil (unode-val :return-type:u-tclass))  ; null list?
+	     "0"
+	   (add-c-statements (sprintf "Msrg_resize(%s,%d);"
+				      :srg-symb:c-name (length arg-names)))
+	   (each ((nm arg-names) (ty arg-types)
+		  (ctr (range 0 (1- (length arg-names)))))
+		 (if (==> ty is-a-ptr)     ; list or ptr type
+		     (add-c-statements
+		      (sprintf "(%s)*%s=%s;"
+			       (dhc-type-to-c-decl ty)
+			       (dhc-list-access :srg-symb:c-name ctr)
+			       nm))
+		   (add-c-statements       ; simple type
+		    (sprintf "*((%s *) %s)=%s;"
+			     (dhc-type-to-c-decl ty)
+			     (dhc-list-access :srg-symb:c-name ctr)
+			     nm))))
+	   (sprintf "%s" :srg-symb:c-name))))
+	 
+
+
+;--------------------------------------------------------------NTH
+(dhm-t nth(source)
+       (let* ((tns (all ((tn (cdr source))) (dhc-parse-expr-t tn)))
+	      (types (all ((ty tns)) :ty:type))
+	      (number ()) (nth-type ()))
+	 
+	 (when (<> 2 (length tns))
+	       (dhc-error "two arguments expected"))
+
+	 (when (<> 'dht-number (unode-val :(car types):u-tclass))
+	       (dhc-error "first argument must be an actual number"))
+
+	 (setq the-number :(car tns):source)
+
+	 (when ~(dhc-list-or-nil (cadr tns))
+	       (dhc-error "second argument must be a list"))
+
+	 (setq nth-type (nth the-number (unode-val :(cadr types):u-extra)))
+	 
+	 (if (null nth-type)
+	     (new t-node tns (new dhc-type 'dht-nil) ())
+	   (if (<> 'dht-list (unode-val :nth-type:u-tclass))
+	       (new t-node tns nth-type ())
+	     (new t-node tns (new dhc-type 'dht-list
+				  (unode-val :nth-type:u-extra)) ()))
+	   )))
+	 
+(dhm-c nth(source treetype retplace)
+       (let* ((arg-names 
+	       (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
+		    (dhc-parse-expr-c nm nmt ())))
+	      (arg-types (all ((nm (cdr :treetype:tn-list)))
+			      :nm:type))
+	      (return-type :treetype:type))
+	 
+	 (if (= 'dht-nil (unode-val :return-type:u-tclass))
+	     "0"
+	   (if (==> return-type is-a-ptr)
+	       (sprintf "(%s)*%s"
+			(dhc-type-to-c-decl return-type)
+			(dhc-list-access (cadr arg-names)
+					 (val (car arg-names))))
+	     (sprintf "*((%s *)%s)"
+		      (dhc-type-to-c-decl return-type)
+		      (dhc-list-access (cadr arg-names)
+				       (val (car arg-names))))))))
+
+;;--------------------------------------------------------------REVERSE
+	
+(dhm-t reverse(source)
+       (when ~(= 1 (length (cdr source)))
+	     (dhc-error "one argument expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source)))
+	      (return-tnode ()) (srg-type ()) (symb-srg ()))
+	 (selectq 
+	  (dhc-list-or-nil tn)
+	  (dht-nil  (new t-node (list tn) (new dhc-type 'dht-nil) source))
+	  (dht-list
+	   (let* ((srg-type ())
+		  (symb-srg (new dhc-symbol
+				 (named (sprintf "%d_srg" tmpnames-seed))
+				 lex-level))
+		  (return-tnode (new t-node (list tn)
+				     (new dhc-type 'dht-list
+					  (reverse
+					   (unode-val :tn:type:u-extra)) )
+				     () )) )
+	     (setq srg-type (dhu-type :return-tnode:type))
+	     (incr tmpnames-seed)
+	     (dhc-unify-types :symb-srg:type srg-type)
+	     (setq bump-list (append bump-list (list symb-srg)))
+	     (setq :return-tnode:transfer (list symb-srg))
+	     return-tnode))
+	  (t        (dhc-error "argument must be a list")))))
+
+	 
+(dhm-c reverse(source treetype retplace)
+       (let* ((srg-symb ()) (arg-name ()) (arg-type ()) (parm-list ())
+	      (return-type :treetype:type))
+
+	 (if (= 'dht-nil (unode-val :return-type:u-tclass))  ; null list?
+	     "0"
+	   (setq srg-symb (car :treetype:transfer))
+	   (setq arg-name
+		 (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ()))
+	   (setq arg-type :(cadr :treetype:tn-list):type)
+	   (add-c-statements
+	    (sprintf "Msrg_resize(%s,%d);"
+		     :srg-symb:c-name
+		     (length (unode-val
+			      :return-type:u-extra))))
+		     
+	   (let* ((ty (unode-val :arg-type:u-extra))
+		  (ctr (range 0 (1- (length (unode-val
+					     :return-type:u-extra)))))
+		  (rctr (reverse ctr)))
+
+	     (each ((ty ty) (ctr ctr) (rctr rctr))
+		   (if (==> ty is-a-ptr)
+		       (add-c-statements
+			(sprintf "(%s)*%s=(%s)*%s;"
+				 (dhc-type-to-c-decl ty)
+				 (dhc-list-access :srg-symb:c-name rctr)
+				 (dhc-type-to-c-decl ty)
+				 (dhc-list-access arg-name ctr)))
+		   (add-c-statements
+		    (sprintf "*((%s *) %s)=*((%s *)%s);"
+			     (dhc-type-to-c-decl ty)
+			     (dhc-list-access :srg-symb:c-name rctr)
+			     (dhc-type-to-c-decl ty)
+			     (dhc-list-access arg-name ctr))))))
+	   (sprintf "%s" :srg-symb:c-name))))
+
+
+	 
+
+
+
+;;--------------------------------------------------------------APPEND
+(dhm-t append(source)
+       (let* ((tns (all ((tn (cdr source))) (dhc-parse-expr-t tn)))
+	      (types (all ((ty tns)) :ty:type))
+	      (new-types ())
+	      (return-tnode ()) (srg-type ()) (symb-srg ()))
+	 (each ((tn tns))
+	       (when ~(dhc-list-or-nil tn)
+		     (dhc-error "arguments must be lists")))
+	 
+	 (each ((ty types))
+	       (setq new-types (append new-types (unode-val :ty:u-extra))))
+	 
+	 (if (null new-types)
+	     (new t-node tns (new dhc-type 'dht-nil))
+	   (setq symb-srg (new dhc-symbol
+			       (named (sprintf "%d_srg" tmpnames-seed))
+			       lex-level))
+	   (setq return-tnode (new t-node tns
+				   (new dhc-type 'dht-list
+					new-types) ()))
+	   (setq srg-type (dhu-type :return-tnode:type))
+	   (incr tmpnames-seed)
+	   (dhc-unify-types :symb-srg:type srg-type)
+	   (setq bump-list (append bump-list (list symb-srg)))
+	   (setq :return-tnode:transfer (list symb-srg))
+	   return-tnode)))
+
+(dhm-c append(source treetype retplace)
+       (let* ((srg-symb (car :treetype:transfer))
+	      (return-type :treetype:type)
+	      (ctr 0)
+	      (arg-names 
+	       (all ((nm (cdr source)) (nmt (cdr :treetype:tn-list)))
+		    (dhc-parse-expr-c nm nmt ())))
+	      (arg-types (all ((nm (cdr :treetype:tn-list)))
+			      :nm:type)))
+
+	 (if (= 'dht-nil (unode-val :return-type:u-tclass))  ; null list?
+	     "0"
+	   (add-c-statements
+	    (sprintf "Msrg_resize(%s,%d);"
+		     :srg-symb:c-name 
+		     (length (unode-val :return-type:u-extra))))
+	   
+	   (each ((nm arg-names) (arg-type arg-types))
+		 (when (<> 'dht-nil (unode-val :arg-type:u-tclass))
+		       (each ((ty (unode-val :arg-type:u-extra))
+			      (arg-ctr 
+			       (range 0
+				      (1- (length
+					   (unode-val :arg-type:u-extra))))))
+			     (if (==> ty is-a-ptr)     ; list or ptr type
+				 (add-c-statements
+				  (sprintf "(%s)*%s=(%s)*%s;"
+					   (dhc-type-to-c-decl ty)
+					   (dhc-list-access
+					    :srg-symb:c-name ctr)
+					   (dhc-type-to-c-decl ty)
+					   (dhc-list-access nm arg-ctr)))
+			       (add-c-statements       ; simple type
+				(sprintf "*((%s *) %s)=*((%s *) %s);"
+					 (dhc-type-to-c-decl ty)
+					 (dhc-list-access :srg-symb:c-name ctr)
+					 (dhc-type-to-c-decl ty)
+					 (dhc-list-access nm arg-ctr))))
+			     (setq ctr (1+ ctr)))))
+	   (sprintf "%s" :srg-symb:c-name))))
+
+(setq dh-list t)

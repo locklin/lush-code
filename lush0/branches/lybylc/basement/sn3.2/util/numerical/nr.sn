@@ -1,0 +1,174 @@
+
+
+(printf "[%s]\n" file-being-loaded)
+
+(mload "dh-compile")
+
+;;------------------------------------------------------------------------------
+;; NUMERICAL RECIPEE
+;; matrix functions for computing determinant, inverse, eigenvectors, etc..
+
+#? (nr-ludcmp <m> <p> <e>)
+;; replace square matrix <m> by its LU decomposition.  
+;; On return, <p> is a vector of permutation and <e> is 1 if
+;; number of permutation is even.
+;;.SEE (nr-lubksb <m> <p> <b>)
+
+#? (nr-lubksb <m> <p> <b>)
+;; Solve <A> . <x> = <b>.  The matrix <m> and the vector of permutation <p>
+;; are computed from matrix <m> using <nr-ludcmp>.  On return <b> contains <x>.
+;;.SEE (nr-ludcmp <m> <p> <e>)
+
+#? (nr-determinant <m>)
+;; determinant of m --- (Destructive)
+(dmd nr-determinant(m)
+     '(let* ((m `m)
+	     (idx (matrix (idx-dim m 0)))
+	     (d (matrix)))
+	(nr-ludcmp m idx d)
+	(for (i 0 (1- (-int- (idx-dim m 0))))
+	     (d (* (d) (m i i))) )
+	(d) ) )
+
+;; solution of m*x = b --- (Destructive)
+(dmd nr-solve(m b)
+     '(let* ((m `m)
+	     (b `b)
+	     (idx (matrix (idx-dim m 0)))
+	     (res (matrix)))
+	(nr-ludcmp m idx res)
+	(nr-lubksb m idx b)
+	b ) )
+
+;; inverse of matrix m --- (Destructive)
+(dmd nr-lubksbmat (a b c)
+     '(idx-eloop ((x `c))
+		 (nr-lubksb `a `b x)))
+
+(dmd nr-invert(m)
+     '(let* ((m `m)
+	     (sz (idx-dim m 0))
+	     (idx (matrix sz))
+	     (res (matrix sz sz)) 
+	     (boo (matrix)))
+        ((-int-) sz)
+	(nr-ludcmp m idx boo)
+	(for (i 0 (1- sz))
+          (res i i 1)
+          (nr-lubksb m idx (submatrix res i ())) )
+	(copy-matrix (transpose res) m) ) )
+
+(dmd nr-symdiag (m)
+     '(let* ((m `m)
+	     (n (idx-dim m 0))
+	     (d (matrix n))
+	     (e (matrix n)) )
+	(nr-tred2 m d e)
+	(nr-tqli d e m)
+	(cons m d) ) )
+
+#? (nr-sort2-down <a> <b>)
+;; like nr-sort2, but sorts in descending order.
+(dmd nr-sort2-down (a b)
+     '(let ((a `a)
+            (b `b))
+        (idx-minus a a)
+        (nr-sort2 a b)
+        (idx-minus a a)))
+
+; (lock-symbol nr-determinant nr-solve nr-invert nr-lubksbmat nr-symdiag)
+
+#? NR.
+;;
+;;Here are a few Numerical Recipes function currently
+;;interfaced to SN.
+;;
+;;WARNING: THIS PART OF THE HELP IS UNFINISHED. MOST FUNCTIONS ARE MISSING.
+;;
+;;.SEE (nr-svdcmp <a> <w> <v> [<clip>])
+;;.SEE (nr-svbksb u w v b x)
+;;
+;;
+
+#? (nr-svdcmp <a> <w> <v> [<clip>])
+;;.SEE (nr-svbksb u w v b x)
+;;
+;;Computes the singular value decomposition of a <m>x<n> matrix <a>.
+;;The premultiplication matrix is stored in <a>, the eigenvalues
+;;are stored in vector <w> of size <n>, and the transposed
+;;postmultiplication matrix is stored in the <n>x<n> matrix v.
+;;
+;;When the optional numeric argument <clip> is present, this function
+;;nullifies all eigenvalues smaller than <clip> times the maximal eigenvalue.
+;;A typical value for <clip> is <1e-6>. This is especially useful for using
+;;<nr-svbksb>: It removes equations that have probably been corrupted by
+;;numerical noise. 
+;;
+;;This function returns the empty list.
+;;
+;;
+;;
+#? (nr-svbksb u w v b x)
+;;.SEE (nr-svdcmp <a> <w> <v> [<clip>])
+;;
+;;Solves equation <a.x=b> for a vector <x>.
+;;
+;;The <m>x<n> matrix <a> is the product of the <m>x<n> matrix <u>, the
+;;diagonal matrix specified by the eigenvalues vector <w> of size <n> and the
+;;<n>x<n> matrix <v>. These matrices are returned by the function <nr-svdcmp>.
+;;
+;;The right hand side of the equation is specified by the vector <b> of size
+;;<m>. The result is stored into vector <x>, of size <n>.  This function
+;;returns the vector <x>.
+;;
+;;Solving a big system by using <nr-svdcmp> then <nr-svbksb> gives much better
+;;result than a brute force solution, if you remember to clip the smallest
+;;eigenvalues. This method is called "regularization of an ill-posed
+;;problem". It is however five times slower, at least, than the usual LU
+;;decomposition solving algorithm.
+;;
+;;A much faster regularization method works with positive symmetric matrices.
+;;Before using the usual LU decomposition solving method, you might add a
+;;small positive value (like <1e-6>) to the elements of the diagonal of the
+;;matrix.
+
+(de load-nr-single ()
+    (let ((base-name 
+	   (lambda (f)              
+	     (let ((n (len f)))
+	       (while (and (> n 0) (<> "/" (mid f n 1)))
+		 (incr n -1) )
+	       (regex_subst "\\.([0-9]|[A-z])+$"
+			    "" (mid f (1+ n))) ) )))
+      (each ((mod (mod-list)))
+	    (if (or (= "nr_some_double" (base-name mod))
+		    (= "nr_some" (base-name mod))
+		    (= "libnr" (base-name mod)) 
+		    (= "libnrd" (base-name mod)) )
+	  	(mod-unload mod) ) )
+      (cc-load (concat sn3-dir "/util/cfiles/nr_some.c") 
+               (concat "-I" sn3-dir "/util/cfiles"))
+      (mod-load (concat sn3-dir "../M-" os-string "/lib/libnr.a"))
+      (setq :use-nr-single t)))
+
+(de load-nr-double ()
+    (let ((base-name 
+	   (lambda (f)              
+	     (let ((n (len f)))
+	       (while (and (> n 0) (<> "/" (mid f n 1)))
+		 (incr n -1) )
+	       (regex_subst "\\.([0-9]|[A-z])+$"
+			    "" (mid f (1+ n))) ) )))
+      (each ((mod (mod-list)))
+        (if (or (= "nr_some_double" (base-name mod))
+                (= "nr_some" (base-name mod)) 
+                (= "libnr" (base-name mod)) 
+                (= "libnrd" (base-name mod)) )
+            (mod-unload mod) ) )
+      (cc-load (concat sn3-dir "/util/cfiles/nr_some_double.c") 
+               (concat "-I" sn3-dir "/util/cfiles"))
+      (mod-load (concat sn3-dir "../M-" os-string "/lib/libnrd.a"))
+      (setq :use-nr-double t)))
+
+(load-nr-single)
+

@@ -1,0 +1,1440 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; ------------------------------------------------------------------------
+;;;          G R A P H I C S   C O M P I L A T I O N   S U P P O R T
+;;; ------------------------------------------------------------------------
+
+(mload "dh-compile")
+(mload "dh-string")
+(mload "dh-list")
+
+;;-----------------------------------------------------------------------------
+;;
+;;    Functions which are compilable when this module is loaded are marked
+;;    with an x (from graphics.c)
+;;
+;;    xseteventhandler
+;;    xprocess_pending_events
+;;    xcheckevent
+;;    xwaitevent
+;; x  xgdriver
+;; x  xxsize
+;; x  xysize
+;; x  xcls
+;; x  xdraw_line
+;; x  xdraw_rect
+;; x  xdraw_circle
+;; x  xfill_rect
+;; x  xfill_circle
+;; x  xdraw_text
+;; x  xrect_text
+;; x  xfill_polygon
+;; x  xgspecial
+;; x  xhilite
+;; x  xclip
+;; x  xcolor
+;; x  xalloccolor
+;; x  xfont
+;;    xget_image
+;; x  xdraw_value
+;;    xdraw_list
+;;    xgray_draw_list
+;; x  xgray_draw_matrix
+;; x  xrgb_draw_matrix
+;; x  xpoint_in_rect
+;; x  xrect_in_rect
+;; x  xcollide_rect
+;; x  xbounding_rect
+;; x  xexpand_rect
+;; x  xdraw_round_rect
+;; x  xfill_round_rect
+;; x  xaddclip
+;; x  graphics_batch
+;; x  gsave
+;;
+;;-----------------------------------------------------------------------------
+
+(de dhc-new-str (tnode-list)
+    (let* ((rettype (new dhc-type 'dht-str))
+           (srg-type (dhu-type rettype))
+           (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
+                                                       tmpnames-seed))
+                            lex-level))
+           (tret (new t-node tnode-list rettype ())))
+      (setq :srg-type:u-extra (new-unode rettype))
+      (incr tmpnames-seed)
+      (dhc-unify-types :symbol-srg:type srg-type)
+      (setq bump-list (append bump-list (list symbol-srg)))
+      (setq :tret:transfer (list symbol-srg))
+      tret))
+
+(dhm-t gdriver(source)
+       (when (<> 1 (length source))
+         (dhc-error "gdriver takes no arguments!"))
+       (dhc-new-str ()))
+
+(dhm-c gdriver(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((srg-symb (car :treetype:transfer)))
+         
+         (add-c-statements
+          "{ struct window *win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          (sprintf "Msrg_resize(%s, 1+strlen(win->gdriver->name));"
+                   :srg-symb:c-name)
+          (sprintf "strcpy(%s->data, win->gdriver->name);"
+                   :srg-symb:c-name)
+          "}")
+         (sprintf "%s" :srg-symb:c-name)))
+
+(dhm-t xsize(source)
+       (when (<> 1 (length source))
+         (dhc-error "cls takes no arguments!"))
+       (new t-node () (new dhc-type 'dht_int)))
+
+(dhm-c xsize(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (add-c-statements 
+        "{register struct window *win;"
+        "int size;"
+        ""
+        "win = current_window_no_error();"
+        "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+        ""
+        "if (win->gdriver->xsize) {"
+        "    (*win->gdriver->begin) (win);"
+        "    size = (*win->gdriver->xsize) (win);"
+        "    (*win->gdriver->end) (win);"
+        "} else"
+        "    run_time_error(\"this driver does not support 'xsize'\");")
+    (if :treetype:ignore
+        "}"
+      (when ~retplace
+        (setq retplace (dhc-declare-temp-var :treetype:type)))
+      (add-c-statements (sprintf "%s = size;}" retplace)))
+    retplace)
+
+(dhm-t ysize(source)
+       (when (<> 1 (length source))
+         (dhc-error "cls takes no arguments!"))
+       (new t-node () (new dhc-type 'dht_int)))
+
+(dhm-c ysize(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (add-c-statements 
+        "{register struct window *win;"
+        "int size;"
+        ""
+        "win = current_window_no_error();"
+        "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+        ""
+        "if (win->gdriver->xsize) {"
+        "    (*win->gdriver->begin) (win);"
+        "    size = (*win->gdriver->ysize) (win);"
+        "    (*win->gdriver->end) (win);"
+        "} else"
+        "    run_time_error(\"this driver does not support 'ysize'\");")
+    (if :treetype:ignore
+        "}"
+      (when ~retplace
+        (setq retplace (dhc-declare-temp-var :treetype:type)))
+      (add-c-statements (sprintf "%s = size;}" retplace)))
+    retplace)
+
+(dhm-t cls(source)
+       (when (<> 1 (length source))
+         (dhc-error "cls takes no arguments!"))
+       (new t-node () (new dhc-type 'dht_nil)))
+
+(dhm-c cls(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (add-c-statements 
+        "{register struct window *win;"
+        "win = current_window_no_error();"
+        "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+        "if (win->gdriver->clear) {"
+        "    (*win->gdriver->begin) (win);"
+        "    (*win->gdriver->clear) (win);"
+        "    (*win->gdriver->end) (win);"
+        "} else"
+        "    run_time_error(\"this driver does not support 'cls'\");"
+        "}")
+       "0")
+
+
+(dhm-t draw-line (source)
+       (when (<> 5 (length source))
+             (dhc-error "four arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (new t-node tnl (new dhc-type 'dht-bool))))
+
+
+(dhm-c draw-line (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+
+       (add-c-statements
+        "{register struct window *win;"
+        "win = current_window_no_error();"
+        "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+        "if (win->gdriver->draw_line) {"
+        "    (*win->gdriver->begin) (win);"
+        (apply sprintf (cons (concat "(*win->gdriver->draw_line) (win, "
+                                     "(int)%s,(int)%s,(int)%s,(int)%s);")
+                             cnames))
+        "    (*win->gdriver->end) (win);"
+        "} else"
+        "    run_time_error(\"this driver does not support 'draw_line'\");"
+        "}")
+       "0"))
+
+(dhm-t draw-rect (source)
+       (when (<> 5 (length source))
+             (dhc-error "four arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (new t-node tnl (new dhc-type 'dht-bool))))
+  
+(dhm-c draw-rect (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+         
+         (add-c-statements
+          "{register struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (win->gdriver->draw_rect) {"
+          "(*win->gdriver->begin) (win);"
+          (apply sprintf (cons (concat "(*win->gdriver->draw_rect) (win, "
+                                       "(int)%s,(int)%s,(int)%s,(int)%s);")
+                               cnames))
+          "    (*win->gdriver->end) (win);"
+          "} else"
+          "    run_time_error(\"this driver does not support 'draw_rect'\");"
+          "}")
+         "0"))
+
+(dhm-t draw-circle (source)
+       (when (<> 4 (length source))
+             (dhc-error "3 arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (new t-node tnl (new dhc-type 'dht-bool))))
+  
+(dhm-c draw-circle (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+         
+         (add-c-statements
+          "{register struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (win->gdriver->draw_circle) {"
+          "(*win->gdriver->begin) (win);"
+          (apply sprintf (cons (concat "(*win->gdriver->draw_circle) (win, "
+                                       "(int)%s,(int)%s,(int)%s);")
+                               cnames))
+          "    (*win->gdriver->end) (win);"
+          "} else"
+          "    run_time_error(\"this driver does not support 'draw_circle'\");"
+          "}")
+         "0"))
+
+(dhm-t fill-rect (source)
+       (when (<> 5 (length source))
+             (dhc-error "four arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (new t-node tnl (new dhc-type 'dht-bool))))
+  
+(dhm-c fill-rect (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+         
+         (add-c-statements
+          "{register struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (win->gdriver->fill_rect) {"
+          "(*win->gdriver->begin) (win);"
+          (apply sprintf (cons (concat "(*win->gdriver->fill_rect) (win, "
+                                       "(int)%s,(int)%s,(int)%s,(int)%s);")
+                               cnames))
+          "    (*win->gdriver->end) (win);"
+          "} else"
+          "    run_time_error(\"this driver does not support 'fill_rect'\");"
+          "}")
+         "0"))
+
+(dhm-t fill-circle (source)
+       (when (<> 4 (length source))
+             (dhc-error "3 arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (new t-node tnl (new dhc-type 'dht-bool))))
+  
+(dhm-c fill-circle (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+         
+         (add-c-statements
+          "{register struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (win->gdriver->fill_circle) {"
+          "(*win->gdriver->begin) (win);"
+          (apply sprintf (cons (concat "(*win->gdriver->fill_circle) (win, "
+                                       "(int)%s,(int)%s,(int)%s);")
+                               cnames))
+          "    (*win->gdriver->end) (win);"
+          "} else"
+          "    run_time_error(\"this driver does not support 'fill_circle'\");"
+          "}")
+         "0"))
+
+(dhm-t draw-text (source)
+       (when (<> 4 (length source))
+             (dhc-error "3 arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+
+         (when ~(==> :(car tnl):type is-a-number)
+               (dhc-error "first argument must be a number"))
+         (when ~(==> :(cadr tnl):type is-a-number)
+               (dhc-error "second argument must be a number"))
+         (when ~(==> :(caddr tnl):type is-a-str)
+               (dhc-error "third argument must be an string"))
+
+         (new t-node tnl (new dhc-type 'dht-bool))))
+
+(dhm-c draw-text (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+       
+         (add-c-statements
+          "{ register struct window *win;"
+          
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (win->gdriver->draw_text) {"
+          "    (*win->gdriver->begin) (win);"
+          (sprintf "(*win->gdriver->draw_text) (win,(int)%s,(int)%s,%s->data);"
+                   (car cnames) (cadr cnames) (caddr cnames))
+          "    (*win->gdriver->end) (win);"
+          "} else"
+          "    run_time_error(\"this driver does not support 'draw-text'\");"
+          "}")
+         "0"))
+
+(dhm-t rect-text (source)
+       (when (<> 4 (length source))
+             (dhc-error "3 arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so)))
+              (num-list (mapfor (i 0 3) (new dhc-type 'dht-int)))
+              (return-tnode ()) (srg-type ()) (symb-srg ()))
+
+         (when ~(==> :(car tnl):type is-a-number)
+               (dhc-error "first argument must be a number"))
+         (when ~(==> :(cadr tnl):type is-a-number)
+               (dhc-error "second argument must be a number"))
+         (when ~(==> :(caddr tnl):type is-a-str)
+               (dhc-error "third argument must be an string"))
+
+         (setq symb-srg (new dhc-symbol
+                             (named (sprintf "%d_srg" tmpnames-seed))
+                             lex-level))
+
+         (setq return-tnode (new t-node tnl (new dhc-type 'dht-list num-list) ()))
+         (setq srg-type (dhu-type :return-tnode:type))
+         (incr tmpnames-seed)
+         (dhc-unify-types :symb-srg:type srg-type)
+         (setq bump-list (append bump-list (list symb-srg)))
+         (setq :return-tnode:transfer (list symb-srg))
+         return-tnode))
+
+(dhm-c rect-text (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ())))
+              (srg-symb (car :treetype:transfer))
+              (return-type :treetype:type))
+       
+         (add-c-statements
+          "{ register struct window *win;"
+          "int x1, y1, w, h;"
+          
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (win->gdriver->rect_text) {"
+          "    (*win->gdriver->begin) (win);"
+          "    (*win->gdriver->rect_text) "
+          (sprintf "    (win,(int)%s,(int)%s, %s->data, &x1, &y1, &w, &h);"
+                   (car cnames) (cadr cnames) (caddr cnames))
+          "    (*win->gdriver->end) (win);"
+
+          (sprintf "Msrg_resize(%s,4);" :srg-symb:c-name )
+          (sprintf "*((int *) %s)=x1;" (dhc-list-access :srg-symb:c-name 0))
+          (sprintf "*((int *) %s)=y1;" (dhc-list-access :srg-symb:c-name 1))
+          (sprintf "*((int *) %s)=w;" (dhc-list-access :srg-symb:c-name 2))
+          (sprintf "*((int *) %s)=h;" (dhc-list-access :srg-symb:c-name 3))
+
+          "} else"
+          "    run_time_error(\"this driver does not support 'rect-text'\");"
+          
+          "}")
+         (sprintf "%s" :srg-symb:c-name)))
+
+
+(dhm-t fill-polygon (source)
+       (if (<> (mod (length source) 2) 1)
+           (dhc-error "fill-polygon: uneven number of arguments"))
+       (let* ((args (cdr source))
+              (ns '(let ((dhc-fill-polygon-mat 
+                          (int-matrix-nc `(/ (length args) 2) 2))))))
+         
+         (for (i 0 (1- (/ (length args) 2)))
+           (nconc1 ns '(dhc-fill-polygon-mat `i 0 `(nth (* i 2) args)))
+           (nconc1 ns '(dhc-fill-polygon-mat `i 1 `(nth (1+ (* i 2)) args))))
+         (nconc1 ns '(fill-polygon-idx dhc-fill-polygon-mat))
+         (dhc-parse-replacement-source-t source ns)))
+
+(de fill-polygon-idx (mat)
+    ((-idx2- (-int-)) mat)
+    (apply fill-polygon (flatten (mat () ()))))
+
+(dhm-t fill-polygon-idx (source)
+       (when (<> 2 (length source))
+         (dhc-error "one argument expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source)))
+              (ndim (==> :tn:type is-an-idxptr)))
+         (if ~ndim
+             (dhc-error "first argument must be an idx"))
+         (if (<> ndim 2)
+             (dhc-error "idx must be of dimension 2 (n x 2)"))
+         (if (<> (==> :tn:type get-element-type) 'dht-int)
+             (dhc-error "idx must be of int"))
+         (new t-node (list tn) (new dhc-type 'dht-bool))))
+
+(dhm-c fill-polygon-idx(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let ((mat (dhc-parse-expr-c (cadr source)
+                                    (cadr :treetype:tn-list)
+                                    ())))
+         
+         (add-c-statements
+          "{register struct window *win;"
+          "int i;"
+          "short points[250][2];"
+          
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          (sprintf "if((%s)->dim[0]>=250) " mat)
+          "    run_time_error(\"idx's first dim must not exceed 250 points\");"
+          (sprintf "if((%s)->dim[1]!=2) " mat)
+          "    run_time_error(\"idx's second dim must be 2\");"
+          (sprintf "for (i = 0; i<(%s)->dim[0]; i++) {" mat)
+          (sprintf "points[i][0]=IDX_PTR(%s,int)[(%s)->mod[0]*i];" mat mat)
+          (sprintf "points[i][1]=IDX_PTR(%s,int)[(%s)->mod[0]*i+(%s)->mod[1]];"
+                   mat mat mat)
+          "}"
+          
+          "if (win->gdriver->fill_polygon) {"
+          "    (*win->gdriver->begin) (win);"
+          (sprintf "(*win->gdriver->fill_polygon) (win, points, (%s)->dim[0]);"
+                   mat)
+          "    (*win->gdriver->end) (win);"
+          "} else"
+          "    run_time_error(\"this driver does not support 'fill-polygon'\");"
+          "}")
+         
+         "0"))
+
+(dhm-t gspecial (source)
+       (when (<> 2 (length source))
+             (dhc-error "2 arguments expected"))
+       (let* ((tn (dhc-parse-expr-t (cadr source))))
+         (when ~(==> :tn:type is-a-str)
+               (dhc-error "third argument must be an string"))
+         (new t-node (list tn) (new dhc-type 'dht-bool))))
+
+(dhm-c gspecial (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (dhc-parse-expr-c (cadr source) 
+                                        (cadr :treetype:tn-list) ())))
+       
+         (add-c-statements
+          "{ register struct window *win;"
+          
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (win->gdriver->gspecial) {"
+          "    (*win->gdriver->begin) (win);"
+          (sprintf "    (*win->gdriver->gspecial) (win, %s->data);" cnames)
+          "    (*win->gdriver->end) (win);"
+          "}"
+          "}")
+         "0"))
+
+(dhm-t hilite (source)
+       (when (<> 6 (length source))
+             (dhc-error "four arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (new t-node tnl (new dhc-type 'dht-bool))))
+  
+(dhm-c hilite (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+         
+         (add-c-statements
+          "{register struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (win->gdriver->hilite) {"
+          "(*win->gdriver->begin) (win);"
+          (apply sprintf (cons (concat 
+                                "(*win->gdriver->hilite) (win, "
+                                "(int)%s,(int)%s,(int)%s,(int)%s,(int)%s);")
+                               cnames))
+          "    (*win->gdriver->end) (win);"
+          "} else"
+          "    run_time_error(\"this driver does not support 'hilite'\");"
+          "}")
+         "0"))
+
+(dhm-t clip (source)
+       (when (and (<> 5 (length source)) (<> 1 (length source)) 
+                  (<> 2 (length source)))
+         (dhc-error "0, 1, or 4 arguments expected"))
+
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so)))
+              (num-list (mapfor (i 0 3) (new dhc-type 'dht-int)))
+              (return-tnode ()) (srg-type ()) (symb-srg ()))
+
+         (when (= 5 (length source))
+           (each ((tn tnl))
+             (when ~(==> :tn:type is-a-number)
+                 (dhc-error "all arguments must be a number"))))
+
+         (when (= 2 (length source))
+           (when ~(==> :(car tnl):type is-a-nil)
+                 (dhc-error "If one argument is used, it must be ()")))
+
+         (setq symb-srg (new dhc-symbol
+                             (named (sprintf "%d_srg" tmpnames-seed))
+                             lex-level))
+
+         (setq return-tnode (new t-node tnl (new dhc-type 'dht-list num-list) ()))
+         (setq srg-type (dhu-type :return-tnode:type))
+         (incr tmpnames-seed)
+         (dhc-unify-types :symb-srg:type srg-type)
+         (setq bump-list (append bump-list (list symb-srg)))
+         (setq :return-tnode:transfer (list symb-srg))
+         return-tnode))
+
+(dhm-c clip (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ())))
+              (srg-symb (car :treetype:transfer))
+              (return-type :treetype:type))
+       
+         (add-c-statements
+          "{ register struct window *win;"
+          "int x, y, w, h;"
+          
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (win->gdriver->clip) {")
+
+
+         (if (= 1 (length (cdr source)))
+             (add-c-statements
+              "(*win->gdriver->begin) (win);"
+              "(*win->gdriver->clip) (win, 0, 0, 0, 0);"
+              "(*win->gdriver->end) (win);"
+              "win->clipw = win->cliph = 0;")
+           (if (= 4 (length (cdr source)))
+               (add-c-statements
+                "    (*win->gdriver->begin) (win);"
+                "    (*win->gdriver->clip) "
+                (apply sprintf (cons "(win, (int)%s,(int)%s,(int)%s,(int)%s);"
+                                     cnames))
+                "    (*win->gdriver->end) (win);"
+                (sprintf "win->clipx = (int)%s;" (nth 0 cnames))
+                (sprintf "win->clipy = (int)%s;" (nth 1 cnames))
+                (sprintf "win->clipw = (int)%s;" (nth 2 cnames))
+                (sprintf "win->cliph = (int)%s;" (nth 3 cnames)))))
+
+         ;; **** WARNING **** (behvior differs from interpreted)
+         ;; In compiled mode, always returns a cliping rectangle
+         ;; In intepreted mode, if h and w are zero, () is returned
+         ;;
+         (add-c-statements
+          (sprintf "Msrg_resize(%s,4);" :srg-symb:c-name )
+          (sprintf "*((int *) %s)=win->clipx;"
+                   (dhc-list-access :srg-symb:c-name 0))
+          (sprintf "*((int *) %s)=win->clipy;"
+                   (dhc-list-access :srg-symb:c-name 1))
+          (sprintf "*((int *) %s)=win->clipw;"
+                   (dhc-list-access :srg-symb:c-name 2))
+          (sprintf "*((int *) %s)=win->cliph;"
+                   (dhc-list-access :srg-symb:c-name 3))
+
+          "} else"
+          "    run_time_error(\"this driver does not support 'clip'\");"
+          
+          "}")
+         (sprintf "%s" :srg-symb:c-name)))
+
+
+(dhm-t color (source)
+       (when (and (<> 1 (length source)) 
+                  (<> 2 (length source)))
+         (dhc-error "0 or 1 arguments expected"))
+
+       (let* ((tn (dhc-parse-expr-t (cadr source)))
+              (ret-int (new dhc-type 'dht-int)))
+
+         (when (= 2 (length source))
+           (when ~(==> :tn:type is-an-int)
+                 (dhc-error "arguments must be int")))
+         (new t-node (if (cadr source) (list tn) ()) (new dhc-type 'dht-int))))
+
+(dhm-c color (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (add-c-statements 
+        "{struct window *win;"
+        "long c;"
+        "win = current_window_no_error();"
+        "if(win==NIL) run_time_error(\"symbol value is not a window\");")
+       
+       (if (= 2 (length source))
+           (let* ((cname (dhc-parse-expr-c (cadr source) 
+                                           (cadr :treetype:tn-list) ())))
+             (add-c-statements
+              (sprintf "c = %s;" cname)
+              "if (c != win->color) {"
+              "    (*win->gdriver->begin) (win);"
+              "    if (win->gdriver->setcolor)"
+              "        (*win->gdriver->setcolor) (win, c);"
+              "    else if (win->gdriver->OLDsetcolor)"
+              "        (void) (*win->gdriver->OLDsetcolor) (win, c);"
+              "    else {"
+              "        (*win->gdriver->end) (win);"
+              "        run_time_error("
+              "          \"this driver does not support 'set-color'\");"
+              "    }"
+              "    (*win->gdriver->end) (win);"
+              "    win->color = c;"
+              "}")))
+
+       (if :treetype:ignore
+           (progn (add-c-statements "}") "")
+         (when ~retplace
+           (setq retplace (dhc-declare-temp-var :treetype:type "_color")))
+         (add-c-statements
+          (sprintf "%s = win->color;}" retplace))
+         retplace))
+
+(dhm-t alloccolor (source)
+       (when (<> 4 (length source))
+         (dhc-error "4 arguments expected"))
+
+       (let* ((tnl (all ((so (cdr source)))
+                     (dhc-parse-expr-t so)))
+              (ret-int (new dhc-type 'dht-int)))
+
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_flt)))
+
+         (new t-node tnl (new dhc-type 'dht-int))))
+
+(dhm-c alloccolor (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+         
+         (add-c-statements 
+          "{struct window *win;"
+          "real r, g, b;"
+          "int color;"
+          
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          (sprintf "r = %s;" (car cnames))
+          (sprintf "g = %s;" (cadr cnames))
+          (sprintf "b = %s;" (caddr cnames))
+
+          "if (r < 0 || r > 1 || g < 0 || g > 1 || b < 0 || b > 1)"
+          "    run_time_error(\"illegal RGB values\");"
+ 
+          "(*win->gdriver->begin) (win);"
+  
+          "if (win->gdriver->alloccolor)"
+          "    color = (*win->gdriver->alloccolor) (win, r, g, b);"
+          "else if (win->gdriver->OLDsetcolor) {"
+          "    color = (*win->gdriver->OLDsetcolor) (win, COLOR_RGB(r, g, b));"
+          "    (void) (*win->gdriver->OLDsetcolor) (win, win->color);"
+          "} else {"
+          "    (*win->gdriver->end) (win);"
+          "    run_time_error(\"this driver does not support 'alloc-color'\");"
+          "}"
+          "(*win->gdriver->end) (win);")
+          
+          (if :treetype:ignore
+              (progn (add-c-statements "}") "")
+            (when ~retplace
+              (setq retplace (dhc-declare-temp-var :treetype:type "_color")))
+            (add-c-statements
+             (sprintf "%s = color;}" retplace))
+            retplace)))
+
+
+(dhm-t font (source)
+       (when (and (<> 1 (length source)) 
+                  (<> 2 (length source)))
+         (dhc-error "0 or 1 arguments expected"))
+
+       (if (= 2 (length source))
+           (let* ((tn (dhc-parse-expr-t (cadr source))))
+             (when ~(==> :tn:type is-a-str)
+                   (dhc-error "third argument must be an string"))
+             (dhc-new-str (list tn)))
+         (dhc-new-str ())))
+
+(dhm-c font(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((srg-symb (car :treetype:transfer)))
+         (add-c-statements
+          "{ struct window *win = current_window_no_error();")
+
+         (if (= 2 (length source))
+             (let* ((cname (dhc-parse-expr-c (cadr source)
+                                             (cadr :treetype:tn-list) ())))
+               (add-c-statements
+                "struct context mycontext;"
+                (sprintf "char *s = %s->data;" cname)
+                "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+                "if (win->gdriver->setfont) {"
+                "    context_push(&mycontext); /* can be interrupted */"
+                "    if (setjmp(context->error_jump)) {"
+                "        (*win->gdriver->end) (win);"
+                "        context_pop();"
+                "        longjmp(context->error_jump, -1);"
+                "    }"
+                "    (*win->gdriver->begin) (win);"
+                "    (*win->gdriver->setfont) (win, s);"
+                "    (*win->gdriver->end) (win);"
+                "    context_pop();"
+                "    UNLOCK(win->font);"
+                "    win->font = new_string(s);"
+                "} else"
+                "    run_time_error(\"this driver does not support 'font'\");"
+                ))
+           (add-c-statements
+            "if(win==NIL) run_time_error(\"symbol value is not a window\");"))
+         (add-c-statements
+          (sprintf "Msrg_resize(%s, 1+strlen(win->font));"
+                   :srg-symb:c-name)
+          (sprintf 
+           "strcpy(%s->data, ((struct string *) win->font->Object)->start);"
+           :srg-symb:c-name)
+          "}")
+
+         (sprintf "%s" :srg-symb:c-name)))
+
+(dhm-t draw-value (source)
+       (when (<> 6 (length source))
+             (dhc-error "five arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (new t-node tnl (new dhc-type 'dht-bool))))
+
+(dhm-c draw-value (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+         
+         (add-c-statements
+          "{register struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+          "if (!win->gdriver->fill_rect) "
+          "   run_time_error(\"this driver does not support 'fill_rect'\");"
+          "if (!win->gdriver->setcolor)"
+          "  if (!(void (*) ()) win->gdriver->OLDsetcolor)"
+          "   run_time_error(\"this driver does not support 'setcolor'\");"
+          (sprintf "if(%s==0) run_time_error(\"Max value is 0\");"
+                   (nth 3 cnames))
+          (apply sprintf 
+                 (cons "draw_value((int)%s,(int)%s,(real)%s,(real)%s,(int)%s);"
+                       cnames))
+          "}")
+         "0"))
+
+(dhm-t gray-draw-matrix (source)
+       (when (and (<> 6 (length source)) (<> 7 (length source)) 
+                  (<> 8 (length source)) (<> 9 (length source)))
+         (dhc-error "5, 6, 7, or 8 arguments expected"))
+       
+       (let* ((tnl (all ((so (cdr source)))
+                     (dhc-parse-expr-t so))))
+         
+         (when ~(==> :(nth 0 tnl):type is-a-number)
+               (dhc-error "Arg 1 must be number"))
+         (when ~(==> :(nth 1 tnl):type is-a-number)
+               (dhc-error "Arg 2 must be number"))
+         (when ~(==> :(nth 2 tnl):type is-an-idxptr)
+               (dhc-error "Arg 3 must be an idx"))
+         (when (<> 2 (==> :(nth 2 tnl):type is-an-idxptr))
+           (dhc-error "Arg 3 must be an idx2"))
+         (when ~(==> :(nth 3 tnl):type is-a-number)
+               (dhc-error "Arg 4 must be number"))
+         (when ~(==> :(nth 4 tnl):type is-a-number)
+               (dhc-error "Arg 5 must be number"))
+         (when (> (length source) 6)
+           (when ~(==> :(nth 5 tnl):type is-a-number)
+                 (dhc-error "Arg 6 must be number")))
+         (when (> (length source) 7)
+           (when ~(==> :(nth 6 tnl):type is-a-number)
+                 (dhc-error "Arg 7 must be number")))
+         (when (= (length source) 9)
+           (when ~(==> :(nth 7 tnl):type is-an-idxptr)
+                 (dhc-error "Arg 8 must be an idx"))
+           (when (<> 1 (==> :(nth 7 tnl):type is-an-idxptr))
+             (dhc-error "Arg 8 must be an idx1"))
+           (when (<> (==> :(nth 7 tnl):type get-element-type) 'dht-int)
+             (dhc-error "Arg 8 must be and idx1 of int")))
+
+         (new t-node tnl (new dhc-type 'dht-bool))))
+
+(dhm-c gray-draw-matrix(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let (((x y mat minv maxv . cnames)
+              (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                (dhc-parse-expr-c so tn ()))))
+         (add-c-statements 
+          "{ int error_flag;"
+          "int grays[64], *grayok, i;"
+          "struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");")
+         
+         (if (= (length source) 9)
+             (add-c-statements
+              "for(i=0;i<64;i++) \n"
+              (sprintf "grays[i] = IDX_PTR(%s,int)[(%s)->mod[0]*i];"
+                       (nth 2 cnames) (nth 2 cnames))
+              "grayok = grays;")
+           (add-c-statements
+            "grayok=allocate_grays(grays); /*no error from current_window */"))
+         
+         (add-c-statements
+          (concat 
+           (sprintf "error_flag = gray_draw_idx((int) %s, (int) %s," x y)
+           (sprintf "%s, (real) %s, (real) %s," mat minv maxv)
+           "(int)" (if (< (length source) 7) "1" (nth 0 cnames)) ","
+           "(int)" (if (< (length source) 8) "1" (nth 1 cnames)) ","
+           "grayok);")
+
+          "if(error_flag)"
+          "switch(error_flag) {"
+          "case 1:"
+          "    run_time_error(\"symbol value is not a window\");"
+          "case 2:"
+          "    run_time_error(\"Illegal scaling factor\");"
+          "case 3:"
+          "    run_time_error(\"Arg 3: 1D or 2D index expected\");"
+          "case 4:"
+          "    run_time_error(\"not enough memory\");"
+          "case 5:"
+          "    run_time_error(\"'fill-rect' unsupported\");"
+          "case 6:"
+          "    run_time_error(\"'setcolor' unsupported\");"
+          "}"
+          "}")
+         "0"))
+
+(dhm-t rgb-draw-matrix (source)
+       (when (and (<> 4 (length source)) (<> 5 (length source)) 
+                  (<> 6 (length source)))
+         (dhc-error "3, 4, or 5 arguments expected"))
+       
+       (let* ((tnl (all ((so (cdr source)))
+                     (dhc-parse-expr-t so))))
+         
+         (when ~(==> :(nth 0 tnl):type is-a-number)
+               (dhc-error "Arg 1 must be number"))
+         (when ~(==> :(nth 1 tnl):type is-a-number)
+               (dhc-error "Arg 2 must be number"))
+         (when ~(==> :(nth 2 tnl):type is-an-idxptr)
+               (dhc-error "Arg 3 must be an idx"))
+         (when (and (<> 2 (==> :(nth 2 tnl):type is-an-idxptr))
+                    (<> 3 (==> :(nth 2 tnl):type is-an-idxptr)))
+           (dhc-error "Arg 3 must be an idx2 or and idx3"))
+         (when (> (length source) 4)
+           (when ~(==> :(nth 3 tnl):type is-a-number)
+                 (dhc-error "Arg 4 must be number")))
+         (when (> (length source) 5)
+           (when ~(==> :(nth 4 tnl):type is-a-number)
+                 (dhc-error "Arg 5 must be number")))
+
+         (new t-node tnl (new dhc-type 'dht-bool))))
+
+(dhm-c rgb-draw-matrix(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let (((x y mat . cnames)
+              (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                (dhc-parse-expr-c so tn ()))))
+         (add-c-statements 
+          "{ int error_flag, sx, sy;"
+          "struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");")
+
+          (if (< (length source) 5) 
+              (add-c-statements "sx = 1;")
+            (add-c-statements
+             (sprintf "sx = %s;" (nth 0 cnames))
+             "if (sx<1)"
+             "    run_time_error(\"Illegal zoom factor\");"))
+          (if (< (length source) 6) 
+              (add-c-statements "sy = 1;")
+            (add-c-statements
+             (sprintf "sy = %s;" (nth 1 cnames))
+             "if (sy<1)"
+             "    run_time_error(\"Illegal zoom factor\");"))
+         
+          (add-c-statements
+           (sprintf "error_flag = rgb_draw_idx((int)%s, (int)%s, %s, sx, sy);"
+                    x y mat)
+           
+           "if(error_flag)"
+           "switch(error_flag) {"
+           "case 1:"
+           "    run_time_error(\"symbol value is not a window\");"
+           "case 2:"
+           "    run_time_error(\"Graphic driver does not support pixel-map\");"
+           "case 3:"
+           "    run_time_error(\"Last dimension shouls be three (or more)\");"
+           "case 4:"
+           "    run_time_error(\"2D or 3D index expected\");"
+           "case 5:"
+           "    run_time_error(\"cannot allocate enough colors\");"
+           "case 6:"
+           "    run_time_error(\"machine does not support dithering\");"
+           "case 7:"
+           "    run_time_error(\"not enough memory\");"
+           "case 8:"
+           "    run_time_error(\"Graphic driver does not support \""
+           "        \"alloccolor, setcolor or fill_rect\");"
+           "}"
+           "}")
+          "0"))
+
+
+(dhm-t point-in-rect (source)
+       (when (<> 4 (length source))
+             (dhc-error "3 arguments expected"))
+       (let (((x y li) (all ((so (cdr source)))
+                         (dhc-parse-expr-t so))))
+
+         (when ~(==> :x:type is-an-int)
+               (dhc-error "Arg 1 must be an int"))
+         (when ~(==> :y:type is-an-int)
+               (dhc-error "Arg 2 must be an int"))
+
+         (if ~(= (dhc-list-or-nil li) 'dht-list)
+           (dhc-error "Arg 3 must be a list"))
+         (if (<> 4 (length (unode-val :li:type:u-extra)))
+             (dhc-error "list in Arg 3 must have 4 element"))
+         (each ((ty (unode-val :li:type:u-extra)))
+           (if ~(==> ty is-an-int)
+             (dhc-error "each element in Arg 3 must be an int")))
+
+         (new t-node (list x y li) (new dhc-type 'dht-bool))))
+
+(de dhc-c-access-list (s ty-li)
+    (all ((ty ty-li) (i (range 0 (1- (length ty-li)))))
+      (sprintf "*((%s *)%s)" (dhc-type-to-c-decl ty)
+               (dhc-list-access s i))))
+
+(dhm-c point-in-rect (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+
+       (let (((x y li)
+              (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                (dhc-parse-expr-c so tn ())))
+             (t-li (unode-val :(last :treetype:tn-list):type:u-extra)))
+         (add-c-statements
+          (sprintf "{ int xx = %s, yy = %s;" x y)
+          (apply sprintf (cons "int x = %s, y = %s, w = %s, h = %s;"
+                               (dhc-c-access-list li t-li))))
+
+         (when ~:treetype:ignore
+           (when ~retplace
+             (setq retplace (dhc-declare-temp-var :treetype:type)))
+           (add-c-statements 
+            (sprintf "%s = (xx>=x&&yy>=y&&xx<x+w&&yy<y+h) ? 1 : 0;"
+                     retplace)))
+         (add-c-statements "}")
+         
+         retplace))
+
+(dhm-t rect-in-rect (source)
+       (when (<> 3 (length source))
+             (dhc-error "2 arguments expected"))
+       (let (((r1 r2) (all ((so (cdr source)))
+                         (dhc-parse-expr-t so))))
+
+         (if ~(= (dhc-list-or-nil r1) 'dht-list)
+           (dhc-error "Arg 1 must be a list"))
+         (if (<> 4 (length (unode-val :r1:type:u-extra)))
+             (dhc-error "list in Arg 1 must have 4 element"))
+         (each ((ty (unode-val :r1:type:u-extra)))
+           (if ~(==> ty is-an-int)
+             (dhc-error "each element in Arg 1 must be an int")))
+
+         (if ~(= (dhc-list-or-nil r2) 'dht-list)
+           (dhc-error "Arg 2 must be a list"))
+         (if (<> 4 (length (unode-val :r2:type:u-extra)))
+             (dhc-error "list in Arg 2 must have 4 element"))
+         (each ((ty (unode-val :r2:type:u-extra)))
+           (if ~(==> ty is-an-int)
+             (dhc-error "each element in Arg 2 must be an int")))
+
+         (new t-node (list r1 r2) (new dhc-type 'dht-bool))))
+
+(dhm-c rect-in-rect (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+
+       (let (((r1 r2)
+              (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                (dhc-parse-expr-c so tn ())))
+             (t-r1 (unode-val :(cadr :treetype:tn-list):type:u-extra))
+             (t-r2 (unode-val :(last :treetype:tn-list):type:u-extra)))
+
+         (add-c-statements
+          (apply sprintf (cons "{int xx = %s, yy = %s, ww = %s, hh = %s;"
+                               (dhc-c-access-list r1 t-r1)))
+          (apply sprintf (cons "int x = %s, y = %s, w = %s, h = %s;"
+                               (dhc-c-access-list r2 t-r2)))
+          "w += x;"
+          "h += y;"
+          "ww += xx-1;"
+          "hh += yy-1;")
+
+         (when ~:treetype:ignore
+           (when ~retplace
+             (setq retplace (dhc-declare-temp-var :treetype:type)))
+           (add-c-statements 
+            (sprintf 
+             "%s=(xx>=x&&yy>=y&&xx<w&&yy<h&&ww>=x&&hh>=y&&ww<w&&hh<h)?1:0;"
+             retplace)))
+         (add-c-statements "}")
+         
+         retplace))
+
+(dhm-t-declare rect-in-rect collide-rect)
+
+(dhm-c collide-rect(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       
+       (let (((r1 r2)
+              (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                (dhc-parse-expr-c so tn ())))
+             (t-r1 (unode-val :(cadr :treetype:tn-list):type:u-extra))
+             (t-r2 (unode-val :(last :treetype:tn-list):type:u-extra)))
+
+         (add-c-statements
+          (apply sprintf (cons "{int x1 = %s, y1 = %s, w1 = %s, h1 = %s;"
+                               (dhc-c-access-list r1 t-r1)))          
+          (apply sprintf (cons "int x2 = %s, y2 = %s, w2 = %s, h2 = %s;"
+                               (dhc-c-access-list r2 t-r2)))
+          "int x,y,w,h;"
+
+          "#define MAX(u,v) (((u)>(v))?(u):(v))"
+          "#define MIN(u,v) (((u)<(v))?(u):(v))"
+          
+          "x = MAX(x1,x2);"
+          "y = MAX(y1,y2);"
+          "w = MIN(x1+w1,x2+w2)-x;"
+          "h = MIN(y1+h1,y2+h2)-y;"
+  
+          "#undef MAX"
+          "#undef MIN")
+
+         (when ~:treetype:ignore
+           (when ~retplace
+             (setq retplace (dhc-declare-temp-var :treetype:type)))
+           (add-c-statements 
+            (sprintf "%s = (w>0 && h>0)?1:0;" retplace)))
+         (add-c-statements "}")
+         
+         retplace))
+
+(dhm-t bounding-rect (source)
+       (when (<> 3 (length source))
+             (dhc-error "2 arguments expected"))
+       (let (((r1 r2) (all ((so (cdr source)))
+                         (dhc-parse-expr-t so)))
+             (num-list (mapfor (i 0 3) (new dhc-type 'dht-int)))
+             (return-tnode ()) (srg-type ()) (symb-srg ()))
+
+         (if ~(= (dhc-list-or-nil r1) 'dht-list)
+           (dhc-error "Arg 1 must be a list"))
+         (if (<> 4 (length (unode-val :r1:type:u-extra)))
+             (dhc-error "list in Arg 1 must have 4 element"))
+         (each ((ty (unode-val :r1:type:u-extra)))
+           (if ~(==> ty is-an-int)
+             (dhc-error "each element in Arg 1 must be an int")))
+
+         (if ~(= (dhc-list-or-nil r2) 'dht-list)
+           (dhc-error "Arg 2 must be a list"))
+         (if (<> 4 (length (unode-val :r2:type:u-extra)))
+             (dhc-error "list in Arg 2 must have 4 element"))
+         (each ((ty (unode-val :r2:type:u-extra)))
+           (if ~(==> ty is-an-int)
+             (dhc-error "each element in Arg 2 must be an int")))
+
+         (setq symb-srg (new dhc-symbol
+                             (named (sprintf "%d_srg" tmpnames-seed))
+                             lex-level))
+         (setq return-tnode (new t-node (list r1 r2)
+                                 (new dhc-type 'dht-list num-list) ()))
+         (setq srg-type (dhu-type :return-tnode:type))
+         (incr tmpnames-seed)
+         (dhc-unify-types :symb-srg:type srg-type)
+         (setq bump-list (append bump-list (list symb-srg)))
+         (setq :return-tnode:transfer (list symb-srg))
+         return-tnode))
+
+(dhm-c bounding-rect (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       
+       (let (((r1 r2)
+              (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                (dhc-parse-expr-c so tn ())))
+             (t-r1 (unode-val :(cadr :treetype:tn-list):type:u-extra))
+             (t-r2 (unode-val :(last :treetype:tn-list):type:u-extra))
+             (srg-symb (car :treetype:transfer))
+             (return-type :treetype:type))
+
+         (add-c-statements
+          (apply sprintf (cons "{int x1 = %s, y1 = %s, w1 = %s, h1 = %s;"
+                               (dhc-c-access-list r1 t-r1)))
+          (apply sprintf (cons "int x2 = %s, y2 = %s, w2 = %s, h2 = %s;"
+                               (dhc-c-access-list r2 t-r2)))
+          "int x,y,w,h;"
+
+          "#define MAX(u,v) (((u)>(v))?(u):(v))"
+          "#define MIN(u,v) (((u)<(v))?(u):(v))"
+          
+          "x = MIN(x1,x2);"
+          "y = MIN(y1,y2);"
+          "w = MAX(x1+w1,x2+w2)-x;"
+          "h = MAX(y1+h1,y2+h2)-y;"
+  
+          "#undef MAX"
+          "#undef MIN"
+
+          (sprintf "Msrg_resize(%s,4);" :srg-symb:c-name )
+          (sprintf "*((int *) %s)=x;" (dhc-list-access :srg-symb:c-name 0))
+          (sprintf "*((int *) %s)=y;" (dhc-list-access :srg-symb:c-name 1))
+          (sprintf "*((int *) %s)=w;" (dhc-list-access :srg-symb:c-name 2))
+          (sprintf "*((int *) %s)=h;" (dhc-list-access :srg-symb:c-name 3))
+          
+          "}")
+
+         (sprintf "%s" :srg-symb:c-name)))
+
+(dhm-t expand-rect (source)
+       (when (<> 4 (length source))
+             (dhc-error "3 arguments expected"))
+       (let (((r1 x y) (all ((so (cdr source)))
+                         (dhc-parse-expr-t so)))
+             (num-list (mapfor (i 0 3) (new dhc-type 'dht-int)))
+             (return-tnode ()) (srg-type ()) (symb-srg ()))
+
+         (if ~(= (dhc-list-or-nil r1) 'dht-list)
+           (dhc-error "Arg 1 must be a list"))
+         (if (<> 4 (length (unode-val :r1:type:u-extra)))
+             (dhc-error "list in Arg 1 must have 4 element"))
+         (each ((ty (unode-val :r1:type:u-extra)))
+           (if ~(==> ty is-an-int)
+             (dhc-error "each element in Arg 1 must be an int")))
+
+         (setq symb-srg (new dhc-symbol
+                             (named (sprintf "%d_srg" tmpnames-seed))
+                             lex-level))
+         (setq return-tnode (new t-node (list r1 x y)
+                                 (new dhc-type 'dht-list num-list) ()))
+         (setq srg-type (dhu-type :return-tnode:type))
+         (incr tmpnames-seed)
+         (dhc-unify-types :symb-srg:type srg-type)
+         (setq bump-list (append bump-list (list symb-srg)))
+         (setq :return-tnode:transfer (list symb-srg))
+         return-tnode))
+
+(dhm-c expand-rect (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       
+       (let (((r1 x y)
+              (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                (dhc-parse-expr-c so tn ())))
+             (t-r1 (unode-val :(cadr :treetype:tn-list):type:u-extra))
+             (srg-symb (car :treetype:transfer))
+             (return-type :treetype:type))
+
+         (add-c-statements
+          (apply sprintf (cons "{int x = %s, y = %s, w = %s, h = %s;"
+                               (dhc-c-access-list r1 t-r1)))
+
+          (sprintf "Msrg_resize(%s,4);" :srg-symb:c-name)
+          (sprintf "*((int *) %s)=x-%s;"
+                   (dhc-list-access :srg-symb:c-name 0) x)
+          (sprintf "*((int *) %s)=y-%s;"
+                   (dhc-list-access :srg-symb:c-name 1) y)
+          (sprintf "*((int *) %s)=w+2*%s;"
+                   (dhc-list-access :srg-symb:c-name 2) x)
+          (sprintf "*((int *) %s)=h+2*%s;"
+                   (dhc-list-access :srg-symb:c-name 3) y)
+          
+          "}")
+
+         (sprintf "%s" :srg-symb:c-name)))
+
+(dhm-t draw-round-rect (source)
+       (when (and (<> 5 (length source)) (<> 6 (length source)))
+             (dhc-error "4 or 5 arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (new t-node tnl (new dhc-type 'dht-bool))))
+  
+(dhm-c draw-round-rect (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+
+         (add-c-statements
+          (apply 
+           sprintf 
+           (cons 
+            (if (= 5 (length source))
+                "{ int l=(int)%s,t=(int)%s,r=(int)%s,b=(int)%s,ra=3;"
+              "{ int l=(int)%s,t=(int)%s,r=(int)%s,b=(int)%s,ra=(int)%s;")
+            cnames))
+          "int error_flag;"
+          "struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+
+          "error_flag = draw_round_rect(win, l, t, t+b, l+r, ra);"
+          "if(error_flag)"
+          "    run_time_error(\"this driver does not support 'fill-polygon'\");"
+          "}")
+
+         "0"))
+
+(dhm-t fill-round-rect (source)
+       (when (and (<> 5 (length source)) (<> 6 (length source)))
+             (dhc-error "4 or 5 arguments expected"))
+       (let* ((tnl (all ((so (cdr source)))
+                        (dhc-parse-expr-t so))))
+         (all ((tn tnl))
+           (dhc-unify-types :tn:type (new dhc-type 'dht_number)))
+         (new t-node tnl (new dhc-type 'dht-bool))))
+  
+(dhm-c fill-round-rect (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (let* ((cnames (all ((so (cdr source)) (tn (cdr :treetype:tn-list)))
+                        (dhc-parse-expr-c so tn ()))))
+
+         (add-c-statements
+          (apply 
+           sprintf 
+           (cons 
+            (if (= 5 (length source))
+                "{ int l=(int)%s,t=(int)%s,r=(int)%s,b=(int)%s,ra=3;"
+              "{ int l=(int)%s,t=(int)%s,r=(int)%s,b=(int)%s,ra=(int)%s;")
+            cnames))
+          "int error_flag;"
+          "struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+
+          "error_flag = fill_round_rect(win, l, t, t+b, l+r, ra);"
+          "if(error_flag)"
+          "    run_time_error(\"this driver does not support 'fill-polygon'\");"
+          "}")
+
+         "0"))
+
+(dhm-t graphics-batch(source)
+       (dhc-parse-progn-t (cdr source)))
+
+(dhm-c graphics-batch(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (add-c-statements 
+        "{struct context mycontext;"
+        "struct window *win;"
+        "win = current_window_no_error();"
+        "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+        "context_push(&mycontext);"
+        "if (setjmp(context->error_jump)) {"
+        "    (*win->gdriver->end) (win);"
+        "    context_pop();"
+        "    run_time_error(\"bad window\");"
+        "}"
+        "(*win->gdriver->begin) (win);")
+
+       (let ((ans (dhc-parse-progn-c (cdr source) 
+                                     (cdr :treetype:tn-list) retplace)))
+         (add-c-statements 
+          "(*win->gdriver->end) (win);"
+          "context_pop();"
+          "}")
+         ans))
+
+
+(dhm-t gsave(source)
+       (if (= 1 (length source))
+           (dhc-error "syntax error"))
+       (dhc-parse-progn-t (cdr source)))
+
+(dhm-c gsave(source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       (add-c-statements 
+        "{ struct window *win;"
+        "long  oldcolor;"
+        "at   *oldfont;"
+        "short oldx,oldy,oldw,oldh;"
+
+        "win = current_window_no_error();"
+        "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+        
+        "oldcolor = win->color;"
+        "oldfont = win->font;"
+        "oldx = win->clipx;"
+        "oldy = win->clipy;"
+        "oldw = win->clipw;"
+        "oldh = win->cliph;"
+        "LOCK(oldfont);")
+
+       (let ((ans (dhc-parse-progn-c (cdr source) 
+                                     (cdr :treetype:tn-list) retplace)))
+         
+         (add-c-statements 
+          "gsave_restore(win,oldcolor,oldfont,oldx,oldy,oldw,oldh);"
+          "}")
+         ans))
+
+(dhm-t addclip (source)
+       (when (<> 2 (length source))
+             (dhc-error "2 arguments expected"))
+       (let ((r1 (dhc-parse-expr-t (cadr source)))
+             (num-list (mapfor (i 0 3) (new dhc-type 'dht-int)))
+             (return-tnode ()) (srg-type ()) (symb-srg ()))
+
+         (if ~(= (dhc-list-or-nil r1) 'dht-list)
+           (dhc-error "Arg 1 must be a list"))
+         (if (<> 4 (length (unode-val :r1:type:u-extra)))
+             (dhc-error "list in Arg 1 must have 4 element"))
+         (each ((ty (unode-val :r1:type:u-extra)))
+           (if ~(==> ty is-an-int)
+             (dhc-error "each element in Arg 1 must be an int")))
+
+         (setq symb-srg (new dhc-symbol
+                             (named (sprintf "%d_srg" tmpnames-seed))
+                             lex-level))
+         (setq return-tnode (new t-node (list r1)
+                                 (new dhc-type 'dht-list num-list) ()))
+         (setq srg-type (dhu-type :return-tnode:type))
+         (incr tmpnames-seed)
+         (dhc-unify-types :symb-srg:type srg-type)
+         (setq bump-list (append bump-list (list symb-srg)))
+         (setq :return-tnode:transfer (list symb-srg))
+         return-tnode))
+
+(dhm-c addclip (source treetype retplace)
+       (add-c-header "#include \"graphics.h\"")
+       
+       (let ((r1 (dhc-parse-expr-c (cadr source) 
+                                   (cadr :treetype:tn-list) ()))
+             (t-r1 (unode-val :(cadr :treetype:tn-list):type:u-extra))
+             (srg-symb (car :treetype:transfer))
+             (return-type :treetype:type))
+
+         (add-c-statements
+          (apply sprintf (cons "{int x1 = %s, y1 = %s, w1 = %s, h1 = %s;"
+                               (dhc-c-access-list r1 t-r1)))
+          "struct window *win;"
+          "win = current_window_no_error();"
+          "if(win==NIL) run_time_error(\"symbol value is not a window\");"
+
+          "add_clip(win,x1,y1,w1,h1);"
+          (sprintf "Msrg_resize(%s,4);" :srg-symb:c-name)
+          (sprintf "*((int *) %s)=win->clipx;"
+                   (dhc-list-access :srg-symb:c-name 0))
+          (sprintf "*((int *) %s)=win->clipy;"
+                   (dhc-list-access :srg-symb:c-name 1))
+          (sprintf "*((int *) %s)=win->clipw;"
+                   (dhc-list-access :srg-symb:c-name 2))
+          (sprintf "*((int *) %s)=win->cliph;"
+                   (dhc-list-access :srg-symb:c-name 3))
+          
+          "}")
+
+         (sprintf "%s" :srg-symb:c-name)))
+
+(setq dh-graphics t)

@@ -1,0 +1,199 @@
+
+^Ldz-compile
+
+(setq |DIAGNOSTIC| t)
+
+(de l-equal (l1 l2)
+    (not (flatten
+	  (mapcar (lambda (x y) (if (> 1e-3 (abs (- x y))) () 1))
+		  l1 l2))))
+
+(de diagno()
+    (let* ((f ())
+	  (cf ())
+          (arg1d '(-10 -1 0 1 10 3.29 -15.78))
+          (arg2da (append arg1d arg1d))
+          (arg2db (append arg1d (reverse arg1d)))
+          (arg3da (append arg2db arg2da (reverse arg2da) (reverse arg2db)))
+          (arg3db (append arg2da (reverse arg2db) (reverse arg2db) (reverse arg2da)))
+          (arg3dc (append arg2da arg2db arg2db (reverse arg2da)))
+	  (test1 ())
+	  (test1d ())
+	  (test2 ())
+	  (test2d ())
+	  (test3d ()))
+
+      (de test1 (l1 f)
+	  (printf "testing: ")
+	  (pprint (funcdef f))
+	  (let ((cf (dz-compile f)))
+	    (if (l-equal (mapcar f l1) (mapcar cf l1))
+		(printf "ok\n") (printf "***fail***\n"))))
+      
+      (de test1d (f)
+	  (printf "testing: ")
+	  (pprint (funcdef f))
+	  (let ((cf (dz-compile f)))
+	    (if (l-equal (mapcar f arg1d) (mapcar cf arg1d))
+		(printf "ok\n") (printf "***fail***\n"))))
+      
+      (de test2 (l1 l2 f)
+	  (printf "testing: ")
+	  (pprint (funcdef f))
+	  (let ((cf (dz-compile f)))
+	    (if (l-equal (mapcar f l1 l2) (mapcar cf l1 l2))
+		(printf "ok\n") (printf "***fail***\n"))))
+
+      (de test2d (f)
+	  (printf "testing: ")
+	  (pprint (funcdef f))
+	  (let ((cf (dz-compile f)))
+	    (if (l-equal (mapcar f arg2da arg2db) (mapcar cf arg2da arg2db))
+		(printf "ok\n") (printf "***fail***\n"))))
+      
+      (de test3d (f)
+	  (printf "testing: ")
+	  (pprint (funcdef f))
+	  (let ((cf (dz-compile f)))
+	    (if (l-equal (mapcar f arg3da arg3db arg3dc)
+			 (mapcar cf arg3da arg3db arg3dc))
+		(printf "ok\n") (printf "***fail***\n"))))
+
+
+      (test1d (lambda (x) (* 2 (+ x 5))))
+      (test1d (lambda (x) (- 2.34 x)))
+      (test1d (lambda (x) (- x)))
+      (test1d (lambda (x) (/ x 12.1)))
+      (test1d (lambda (x) (1+ (1+ (2* x)))))
+      (test1d (lambda (x) (int x)))
+      (test1d (lambda (x) (sqrt (log (1+ (abs x))))))
+      (test1d (lambda (x) (+ (* (cos x) (cos x)) (* (sin x) (sin x)))))
+      
+      (test2d (lambda (x y) (- x y)))
+
+      (test2 '(2 2 2 2 1) '(0 3 -3  .5 10) (lambda (x y) (** 2 y)))
+      (test2d (lambda (x y) (** 2 y)))          ; GASP, double fault
+	  
+      (test3d (lambda (x y z) (+ x y z)))
+      (test3d (lambda (x y z) (+ x y (+ x z z))))
+      (test3d (lambda (x y z) (* x y (max x z z))))
+      (test3d (lambda (x y z) (* (min x y z) (max x y z))))
+      (test3d (lambda (x y z) (+ x y) (+ y z) (+ x z)))
+
+      ; let
+      (test3d (lambda (x y z) (let ((a (* x x)))
+				a (* a x))))
+      (test2d (lambda (x y) (let ((y (* 2 x))
+				  (x (* 2 y)))
+			      (+ x y))))
+      (test3d (lambda (x y z) (let ((a (* x x))
+				    (b (* y y))
+				    (c (* z z)))
+				(+ a b c))))
+      (test3d (lambda (x y z) 
+		(let ((a (* x x))
+		      (z (* y y)))
+		  z)))
+      (test3d (lambda (x y z) 
+		(+ (let ((a (* x x))
+			 (y 3))
+		     (let ((z 12)(x 15)(y 24)) (setq a (+ x y a)))
+		     (let ((x (* 2 x)))
+		       (+ x y a)
+		       x)))))
+
+      ; let*
+      (test2d (lambda (x y) (let* ((y (* 2 x))
+				  (x (* 2 y)))
+			      (+ x y))))
+      (test3d (lambda (x y z) 
+		(+ (let* ((a (+ x x))
+			  (y (+ (let ((y (+ a a)) (z (+ y y)))
+				  (+ y z))
+				y)))
+		     (+ (let ((x y)
+			      (y z)
+			      (z a))
+			  (+ x y z a))
+			12))
+		   y z)))
+      
+      ; setq
+      (test3d (lambda (x y z) 
+		(+ (let* ((a (* x x))
+			 (y (+ (let ((y (- a z)) (z (+ y y)))
+				 (setq y (1- y))
+				 (+ y z))
+			       (setq y (* 2 y))
+			       y)))
+		     (setq a (* 2 a))
+		     (+ (let* ((x y)
+			      (y z)
+			      (z a)) (- x z))
+			(setq y (1- y))
+			(+ x y z a)))
+		     y z)))
+
+      
+	; if
+        (test2d (lambda (x y)
+		  (if (> x y) x (* 2 x))))
+        (test2d (lambda (x y)
+		  (if (= x y) (setq x (* x 2)))
+		  (if (= y 0) (setq y (+ x y y y)))
+		  (if (> x 3) (setq x (1- x)) (setq y (1- y)))
+		  (- x y)))
+        (test2d (lambda (x y)
+		  (if (> x y)
+		      (setq y (+ y y))
+		      (setq y (+ y y))
+		      (setq y (+ y y)))
+		  (+ x y)))
+        (test2d (lambda (x y)
+		  (if (and (> x .5)
+			   (> y -.1))
+		      (let ((x (* 2 x)))
+			(if (> x y) (- x y)
+			  (+ x y x y)))
+		       12)))
+
+	; when
+        (test2d (lambda (x y)
+		  (when (> x y) 
+			(setq x (* 2 x))
+			(setq y (1- y)))
+		  (- x y)))
+
+	; composition
+	(setq f1 (lambda (x) (* 2 x)))
+	(setq f1c (dz-compile f1))
+	(test1d (lambda (x) (f1c x)))
+	(setq f2 (lambda (x y z) (+ x (- y) (f1c z))))
+	(setq f2c (dz-compile f2))
+	(test3d (lambda (x y z) (+ (* 2 1.1 (f2c x y (- z 3)) .5 .1 .2)
+				   (f2c 2 3 (f1c z)))))
+
+	; progn
+	(test2d (lambda (x y) (progn (setq x (* 3 y)) (setq y (+ x y)) (* x y))))
+	; prog1
+	(test2d (lambda (x y) (prog1 (setq x (* 3 y)) (setq y (+ x y)) (* x y))))
+
+	; for
+	(test1 '(0 1 2 3 4) (lambda (x) (let ((res 1)) (for (i 1 x 1) (setq res (* x res))) res)))
+
+	; while
+	(test1 '(0 1 2 3 4) (lambda (x) (let ((res 1))
+					(while (> x 0)
+					  (setq res (* x res))
+					  (setq x (1- x)))
+					res)))
+	; do-while
+	(test1 '(0 1 2 3) (lambda (x) (let ((res 1))
+					(do-while (> x 0)
+					  (setq res (* x res))
+					  (setq x (1- x)))
+					res)))
+
+))
+
+

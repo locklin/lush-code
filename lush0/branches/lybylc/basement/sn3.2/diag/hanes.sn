@@ -1,0 +1,139 @@
+;;-----------------------------------------------------------------------
+(defclass  mark-1 object ((-int-) sl1))
+(defmethod mark-1 meth1 (a) (-int- a) (* 3 a))
+(defmethod mark-1 meth2 (a) (-int- a) (* 5 a))
+(defmethod mark-1 meth5 (a) (-int- a) (* 2 a))
+
+(defclass  mark-2 mark-1 ((-flt-) sl2))
+(defmethod mark-2 meth1 (a) (-int- a) (* 2 a))
+(defmethod mark-2 meth2 (a) (-int- a) (* 5 a))
+(defmethod mark-2 meth4 (a) (-int- a) (* 2 a))
+(defmethod mark-2 meth3 (a) ((-obj- (mark-1)) a) (==> a meth1 :a:sl1))
+
+;;-----------------------------------------------------------------------
+(printf "|||Checking Lisp-based slot inheritance...\n")
+(setq a (new mark-1))
+(setq :a:sl1 4)
+
+(setq b (new mark-2))
+(setq :b:sl1 8)
+(setq :b:sl2 9)
+
+(when (<> (* 2 :a:sl1) :b:sl1)
+      (error 'inheritance "inheritance of sl1 failed." b))
+
+(when (<> 9 :b:sl2)
+      (error 'assignment "assignment of sl2 for mark-2 failed." b))
+(printf "|||Done.\n")
+
+;;-----------------------------------------------------------------------
+(printf "|||Checking method inheritance in Lisp...\n")
+
+(when (<> (==> b meth2 :b:sl2) 45)
+      (error 'meth2 "Method inheritance of meth2 failed" (==> b meth2 :b:sl2)))
+(printf "|||Done.\n")
+;;-----------------------------------------------------------------------
+
+(printf "|||Checking ==> and virtual methods in Lisp...\n")
+(when (<> 12 (==> b meth3 a))
+      (error '==> "b meth3 a returned incorrect answer" (==> b meth3 a)))
+
+(when (<> 16 (==> b meth3 b))
+      (error '==> "b meth3 b returned incorrect answer" (==> b meth3 b)))
+(printf "|||Done.\n")
+;;-----------------------------------------------------------------------
+(printf "|||Checking slot setq side effects in Lisp...\n")
+(de foo (c) 
+    ((-obj- (mark-2)) c)
+    (setq :c:sl2 10))
+
+(foo b)
+(when (<> 10 :b:sl2)
+      (error 'foo "setq in a function did not change object slot" b))
+
+(printf "|||Done.\n")
+
+;;-----------------------------------------------------------------------
+(dhc-make "mark_1" (mark-1 meth1 meth5 meth2))
+(dhc-make "mark_2"  (mark-2 meth1 meth3 meth2 meth4))
+;;-----------------------------------------------------------------------
+(printf "|||Checking compiled slot inheritance...\n")
+(setq c (new mark-1))
+(setq :c:sl1 4)
+(setq d (new mark-2))
+(setq :d:sl1 8)
+(setq :d:sl2 9)
+(when (<> (* 2 :c:sl1) :d:sl1)
+      (error 'inheritance "inheritance of sl1 failed." b))
+(when (<> 9 :d:sl2)
+      (error 'assignment "assignment of sl2 for mark-2 failed." b))
+(printf "|||Done.\n")
+;;-----------------------------------------------------------------------
+(printf "|||Checking method inheritance in compiled code...\n")
+
+(when (<> (==> d meth2 :d:sl2) 45)
+      (error 'meth2 "Method inheritance of meth2 failed" (==> d meth2 :d:sl2)))
+(printf "|||Done.\n")
+;;-----------------------------------------------------------------------
+(printf "|||Checking ==> and virtual methods in compiled code...\n")
+(when (<> 12 (==> d meth3 c))
+      (error '==> "d meth3 c returned incorrect answer" (==> d meth3 c)))
+(when (<> 16 (==> d meth3 d))
+      (error '==> "d methd b returned incorrect answer" (==> d meth3 d)))
+(printf "|||Done.\n")
+;;-----------------------------------------------------------------------
+(printf "|||Checking slot setq side effects in Lisp...\n")
+(dhc-make "foo" foo)
+(foo d)
+(when (<> 10 :d:sl2)
+      (error 'foo "setq in a function did not change object slot" :d:sl2))
+(printf "|||Done.\n")
+;;-----------------------------------------------------------------------
+(printf "|||Checking constructor and side effects in Lisp...\n")
+(defclass  mark-3 mark-1 ((-int-) sl3))
+(defmethod mark-3 meth1 (a) (-int- a) (* 2 a))
+(defmethod mark-3 mark-3 (b) (-int- b)
+  (setq sl3 b)
+  (setq :this:sl1 42))
+
+(setq e (new mark-3 43))
+(when (or (<> :e:sl1 42)
+	  (<> :e:sl3 43))
+      (error 'mark-3 "constructor failed to set slots" e))
+(printf "|||Done.\n")
+
+;;-----------------------------------------------------------------------
+(printf "|||Checking constructor and side effects in compiled code...\n")
+
+(dhc-make "mark-3" (mark-3 meth1 mark-3))
+
+(setq f (new mark-3 43))
+(when (or (<> :f:sl1 42)
+	  (<> :f:sl3 43))
+      (error 'mark-3 "constructor failed to set slots of f correctly" f))
+(printf "|||Done.\n")
+;;-----------------------------------------------------------------------
+(printf "|||Checking objects as slot and new  in a constructor in Lisp...\n")
+(defclass  mark-4 mark-3
+  ((-int-) sl4)
+  ((-obj- (mark-3)) o3))
+
+(defmethod mark-4 meth1 (a) (-int- a) (* 2 a))
+(defmethod mark-4 mark-4 (b) (-int- b)
+  (setq sl4 (* 4 b))
+  (setq o3 (new mark-3 56)))
+
+(setq g (new mark-4 10))
+(when (or (<> :g:sl4 40) (<> :g:o3:sl3 56) (<> :g:o3:sl1 42))
+      (error 'g "slots did not get set properly in g" g))
+(printf "|||Done.\n")
+;;-----------------------------------------------------------------------
+(dhc-make "mark_4" (mark-4 mark-4 meth1))
+(setq h (new mark-4 10))
+(when (or (<> :h:sl4 40) (<> :h:o3:sl3 56) (<> :h:o3:sl1 42))
+      (error 'h "slots did not get set properly in h" h))
+(printf "|||Done.\n")
+
+;; how about a constructor which news an objet slot
+;; check slot of slot to make sure it worked.
+

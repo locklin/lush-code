@@ -1,0 +1,402 @@
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;  Requesters standard
+;;;
+;;;  Copyright (C) 1993 Neuristique SA
+;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+
+
+
+
+
+
+
+;;; ----------------------------------------
+;;; CLASS C-FILEREQUESTER
+;;; ----------------------------------------
+
+#? ** C-FileRequester
+;; Like a regular <FileRequester> but :
+;;.IP
+;; This requester stores the user data in slot <canceldata> when 
+;; button <cancel> is depressed.
+;;.IP
+;; This requester enforces a suffix on the file names.
+;;.IP
+;; If the filename is below the current directory or in the previous
+;; directory, this requester returns a filename relative to the
+;; current directory.
+;;.PP
+;;.SEE (new FileRequester <w> [<message> <flag> <filter> <callback>])
+
+(defclass c-filerequester FileRequester
+  canceldata 
+  dotsuffix )
+  
+
+(defmethod c-filerequester c-filerequester(w &optional suffix)
+  (when suffix (setq dotsuffix (concat "." suffix)))
+  (==> this filerequester w) )
+
+(defmethod c-filerequester check()
+  (setq filter (lambda(fname) 
+		 (or (not dotsuffix) 
+		     (= (right fname (len dotsuffix)) dotsuffix) ) ) )
+  (==> this (filerequester . check)) )
+
+(defmethod c-filerequester update-2 ()
+  (setq filter (lambda(fname) 
+		 (or (not dotsuffix)
+		     (= (right fname (len dotsuffix)) dotsuffix) ) ) )
+  (==> this (filerequester . update-2)) )
+
+(defmethod c-filerequester no_action ()
+  (setq canceldata (==> this getdata))
+  (==> this (FileRequester . no_action)) )
+
+(defmethod c-filerequester getdata()
+  (let ((filename (==> this (filerequester . getdata))))
+    (if filename
+	(let* ((cwd (concat (chdir) "/"))
+	       (cwdl (len cwd)) )
+	  (if (= (left filename cwdl) cwd)
+	      (concat "." (mid filename cwdl))
+	    (setq cwd (concat (dirname cwd) "/"))
+	    (setq cwdl (len cwd))
+	    (if (= (left filename cwdl) cwd)
+		(concat ".." (mid filename cwdl))
+	      filename) ) ) ) ) )
+
+
+;;; ----------------------------------------
+;;; CLASS C-SELECTREQUESTER
+;;; ----------------------------------------
+
+#? ** C-SelectRequester
+;; A select requester is a yesnorequester which displays a selector
+;; with multiple choices. The user can select one of the items and
+;; validate by double-clicking or pressing button <ok>.
+
+
+#? (new c-selectrequester <w> [<nlin>])
+;; Creates a yesnorequester with a string and a selector.  Argument
+;; <w> is the base window, argument <nlin> is the number of visible
+;; lines in the selector (default 5).
+
+(defclass c-selectrequester YesNoRequester
+  the-string
+  the-selector )
+
+(defmethod c-selectrequester c-selectrequester(w &optional (ncol 5))
+  (setq the-string (new String ""))
+  (setq the-selector (new Selector ncol))
+  (setq :the-selector:call1
+	(lambda(c) (==> :thisrequester:yesbutton enable)) )
+  (setq :the-selector:call2 
+	(lambda(c) (==> :thisrequester:yesbutton trigger)) )
+  (==> this yesnorequester w
+       (new column 
+	    the-string 
+	    (new DarkSpace 200 4)
+	    the-selector)
+       ostring-ok  ostring-cancel () )
+  (==> this yes_able) )
+  
+
+;; ----------------------------------------
+
+(defmethod c-selectrequester yes_action()
+  (if (==> the-selector getdatanum)
+      (==> this (YesNoRequester . yes_action)) 
+    (==> this yes_able) ) )
+
+(defmethod c-selectrequester yes_able()
+  (==> :thisrequester:yesbutton enable)
+  (if (not (==> the-selector getdatanum))
+      (==> :thisrequester:yesbutton disable) ) )
+
+
+;; ----------------------------------------
+#? (==> <c-selectrequester> setmessage <string>)
+;; Sets the text of the message string in a select requester.
+
+(defmethod c-selectrequester setmessage(s)
+  (==> the-string settext s) )
+
+;; ----------------------------------------
+#? (==> <c-selectrequester> setitems <list-of-strings>)
+;; Sets the list of items in the selector of a select requester
+
+(defmethod c-selectrequester setitems(itms)
+  (==> the-selector setitems itms) 
+  (==> this yes_able) )
+
+;; ----------------------------------------
+#? (==> <c-selectrequester> setdata <string-or-number>)
+;; Sets the selected item in the selector of a select requester
+
+(defmethod c-selectrequester setdata(d)
+  (==> the-selector setdata d) 
+  (==> this yes_able) )
+
+;; ----------------------------------------
+#? (==> <c-selectrequester> getdata)
+;; Gets the selected item in the selector of a select requester
+(defmethod c-selectrequester getdata()
+  (==> the-selector getdata) )
+
+;; ----------------------------------------
+#? (==> <c-selectrequester> getdatanum)
+;; Gets the rank of the selected item in the selector of a select requester
+(defmethod c-selectrequester getdatanum()
+  (==> the-selector getdatanum) )
+
+
+
+
+;;; ----------------------------------------
+;;; CLASS C-MULTIPLESELECTREQUESTER
+;;; ----------------------------------------
+
+
+#? ** C-MultipleSelectRequester  
+;; A multiple select requester is a yesnorequester which displays a selector
+;; with multiple choices. The user can select one or several items and
+;; validate by pressing button <ok>.
+;;.SEE C-SelectRequester  
+
+(defclass c-multipleselectrequester c-selectrequester)
+
+(defmethod c-multipleselectrequester c-multipleselectrequester(w &optional (ncol 5))
+  (==> this c-selectrequester w ncol)
+  (setq :the-selector:multiple t)
+  (setq :the-selector:call2 t) )
+  
+
+
+;;; ----------------------------------------
+;;; CLASS C-WORKINGREQUESTER
+;;; ----------------------------------------
+
+
+#? ** C-WorkingRequester
+;; A working requester displays a small text explaining what is
+;; happening and a <cancel> button. The program must send a message
+;; <working> from time to time.  this function updates the message
+;; string and generates an error if button <cancel> has been
+;; depressed.
+
+(defclass c-workingrequester requester
+  stringitem
+  cancelbutton )
+
+(defmethod c-workingrequester c-workingrequester(w)
+  (setq stringitem 
+	(new string "Working..."))
+  (setq cancelbutton 
+	(new stdbutton ostring-cancel
+	     (lambda(c) (error (ml "Operation aborted." 
+				   "Op\+iration annul\+ie."))) ))
+  (==> this requester w (new column stringitem (new row cancelbutton))) )
+
+(defmethod c-workingrequester working(&optional message)
+  (when message 
+	(==> stringitem settext message)
+	(==> this repair-damaged) )
+  (if (checkevent ())
+      (let ((h ()))
+	(while (setq h (checkevent ()))
+	  (if (= h support)
+	      (==> support manage-event (checkevent))
+	    (while (checkevent h) ())
+	    (x11-configure t () () () ()) ) ) 
+	(==> this repair-damaged) ) ) )
+
+
+
+
+;;; ----------------------------------------
+;;; CLASS C-ICONBUTTON
+;;; ----------------------------------------
+
+;;; ----------------------------------------
+#? ** c-iconbutton
+;; A small button 21x21 with a nice drawing
+
+(defclass c-iconbutton button
+  model )
+
+;;; ----------------------------------------
+#? (new c-iconbutton <model> <callback>)
+;; Creates a c-iconbutton with an image identified by parameter <model>.
+;; Model can be any symbol in the following list:
+;;.VP
+;;  <crossed>
+;;  <checked>
+
+(defmethod c-iconbutton c-iconbutton(modl callback)
+  (setq model modl)
+  (==> this button 21 21 callback) )
+
+;;; ----------------------------------------
+
+(defmethod c-iconbutton repaint-icon()
+  (let (((x y w h) rect))  
+    (selectq model
+	     (crossed
+	      (draw-line (+ x 3) (+ y 3) (+ x 17) (+ y 17))
+	      (draw-line (+ x 4) (+ y 3) (+ x 17) (+ y 16))
+	      (draw-line (+ x 3) (+ y 4) (+ x 16) (+ y 17))
+	      (draw-line (+ x 3) (+ y 16) (+ x 16) (+ y 3))
+	      (draw-line (+ x 3) (+ y 17) (+ x 17) (+ y 3))
+	      (draw-line (+ x 4) (+ y 17) (+ x 17) (+ y 4)) )
+	     (checked
+	      (draw-line (+ x 3) (+ y 8) (+ x 10) (+ y 15))
+	      (draw-line (+ x 3) (+ y 9) (+ x 10) (+ y 16))
+	      (draw-line (+ x 3) (+ y 10) (+ x 10) (+ y 17))
+	      (draw-line (+ x 10) (+ y 15) (+ x 16) (+ y 3))
+	      (draw-line (+ x 10) (+ y 16) (+ x 16) (+ y 3))
+	      (draw-line (+ x 10) (+ y 17) (+ x 17) (+ y 3)) ) ) ) )
+
+(defmethod c-iconbutton repaint-bw()
+  (let (((x y w h) rect))
+    (if disabled
+	(color color-gray) )
+    (if (not depressed)
+	(draw-rect x y (1- w) (1- h))
+      (fill-rect x y (1- w) (1- h))
+      (color color-bg) )
+    (==> this repaint-icon) ) )
+
+(defmethod c-iconbutton repaint-color()
+  (if depressed 
+      (apply fill-down-rect rect)
+    (apply fill-up-rect rect) )
+  (if disabled
+      (setcolor palette-disabled) )
+  (==> this repaint-icon) )
+
+
+
+;;; ----------------------------------------
+;;; CLASS CHOICEREQUESTER
+;;; ----------------------------------------
+
+#? *** choicerequester
+;; A choice requester looks like a simple requester,
+;; displaying a message and providing several buttons.
+;;
+;; However choicerequester instances are designed for changing easily
+;; their look at each popup.
+;;
+;; It waits until the user chooses a button.
+;; Then it returns the text of the selected button.
+
+(defclass choicerequester requester
+  buttonrow
+  text
+  result
+  )
+
+
+#? (new choicerequester <support>)
+;; Creates a new choicerequester associated to support <support>.
+
+(defmethod choicerequester choicerequester (support)
+  (==> this requester support
+       (new column
+	    (setq text (new string ""))
+	    (setq buttonrow (new row))
+	    )
+       ) )
+
+(defmethod choicerequester popdown (&optional s)
+  (setq result s)
+  (==> this (requester . popdown))
+  )
+
+
+(defmethod choicerequester setbuttons (&optional txt ls default)
+  (when (or txt ls default)
+	(==> buttonrow removall)
+	(==> text setdata (or txt ""))
+	(when ~ls
+	      (setq ls '("Ok"))
+	      (setq default (car ls))
+	      )
+	(let* ((b ()))
+	  (each ((s ls))
+		(==> buttonrow insert
+		     (setq b (new stdbutton s (eval `(lambda (c) (==> ,this popdown ,s)))))
+		     )
+		(when (= s default)
+		      (setq :b:default-ring t)
+		      (setq default ())
+		      ) ) ) ) )
+
+
+#? (==> <choicerequester> <popuplock> [<txt> [<ls> [<default>]]])
+;; Each time a choicerequester receives a popuplock message, it can change its content.
+;;
+;; Argument <txt> is a string which defines the text of the requester,
+;; Argument <ls> is a list of string, which defines the set of buttons of the requester.
+;; Argument default is a string, member of <ls>, which defines the default button.
+;;
+;;
+;; After a choicerequester has received a popuplock message, it waits
+;; until the user has cliked on a button
+;; (or, when a default is set, until the user has pressed <return>).
+;; The answer of the user is stored in slot result.
+
+(defmethod choicerequester popuplock args
+  (when args (apply==> this 'setbuttons args))
+  (==> this (requester . popuplock))
+  result
+  )
+
+
+#? (==> <choicerequester> <popuphard> [<txt> [<ls> [<default>]]])
+;; Each time a choicerequester popups, it can change its content.
+;;
+;; Argument <txt> is a string which defines the text of the requester,
+;; Argument <ls> is a list of string, which defines the set of buttons of the requester.
+;; Argument default is a string, member of <ls>, which defines the default button.
+;;
+;; After a choicerequester has received a popuphard message, it waits
+;; until the user has cliked on a button
+;; (or, when a default is set, until the user has pressed <return>).
+;; The answer of the user is stored in slot result.
+
+(defmethod choicerequester popuphard args
+  (when args (apply==> this 'setbuttons args))
+  (==> this (requester . popuphard))
+  result
+  )
+
+
+#? (==> <choicerequester> <popup> [<txt> [<ls> [<default>]]])
+;; Each time a choicerequester popups, it can change its content.
+;;
+;; Argument <txt> is a string which defines the text of the requester,
+;; Argument <ls> is a list of string, which defines the set of buttons of the requester.
+;; Argument default is a string, member of <ls>, which defines the default button.
+;;
+;; After a choicerequester has received a popup message,
+;; the Lush interpretor continues the execution,
+;; and the requester remains active
+;; until the user has cliked on a button
+;; (or, when a default is set, until the user has pressed <return>).
+;; The answer of the user is stored in slot result.
+
+(defmethod choicerequester popup args
+  (when args (apply==> this 'setbuttons args))
+  (==> this (requester . popup))
+  ()
+  )

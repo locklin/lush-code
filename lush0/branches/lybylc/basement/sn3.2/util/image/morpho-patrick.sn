@@ -1,0 +1,401 @@
+
+;; Attention au parametre que j'appelle (a tort) margin.
+;; 1 suffit pour la majorite des cas.
+;; Il FAUT ajouter cette marge de pixels blancs autour de l'image.
+;; (dans <dilero>, une adapatation de <runs-to-image> le fait automatiquement).
+;; 
+
+(mload "cmacro")
+(mload "idx-macros")
+(mload "idx-flt")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; byim: image of unsigned bytes (0 255)
+;; shim: image of shorts
+;; rgbaim: image with RGBA  components
+
+#? (byim-fillborder <shim> <c>)
+;; fill a one-pixel border of the shimage <shim> with value <c>.
+;; This function is useful for various morphological operations.
+(de byim-fillborder (im c)
+    (cheader "#ifndef UBYTE")
+    (cheader "#define UBYTE unsigned char")
+    (cheader "#endif")
+    ((-ubyte-) c)
+    ((-idx2- (-ubyte-)) im)
+    (let ((w (idx-dim im 1)) (h (idx-dim im 0)))
+      ((-int-) w h)
+      #{{ UBYTE *p, *q; 
+          int i, m0, m1;
+          m0 = ($im)->mod[0];
+          m1 = ($im)->mod[1];
+          p = IDX_PTR( $im, UBYTE );
+	  q = p + m0 * ($h-1);
+          for (i=0; i<$w-1; i++){ *p = *q = $c; p += m1; q += m1; }
+          p = IDX_PTR( $im, UBYTE );
+	  q = p + m1 * ($w-1);
+          for (i=0; i<$h-1; i++){ *p = *q = $c; p += m0; q += m0; }
+          *q = $c;
+       } #})
+     ())
+
+#? (shim-fillborder <shim> <c>)
+;; fill a one-pixel border of the shimage <shim> with value <c>.
+;; This function is useful for various morphological operations.
+(de shim-fillborder (im c)
+    ((-int-) c)
+    ((-idx2- (-short-)) im)
+    (let ((w (idx-dim im 1)) (h (idx-dim im 0)))
+      ((-int-) w h)
+      #{{ short *p, *q; 
+          int i, m0, m1;
+          m0 = ($im)->mod[0];
+          m1 = ($im)->mod[1];
+          p = IDX_PTR( $im, short );
+	  q = p + m0 * ($h-1);
+          for (i=0; i<$w-1; i++){ *p = *q = $c; p += m1; q += m1; }
+          p = IDX_PTR( $im, short );
+	  q = p + m1 * ($w-1);
+          for (i=0; i<$h-1; i++){ *p = *q = $c; p += m0; q += m0; }
+           *q = $c;
+      } #})
+     ())
+
+             
+             
+
+#? (shim-dilation <im> <margin>)
+;;.VP
+;; ((-idx2- (-short-)) im)  ;; image to be dilated:
+;; ((-int-) margin):
+;;
+;; RETURNS:
+;; CREATED: Y. LeCun, modified P.Haffner
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION:
+(de shim-dilation (im margin)
+    ((-idx2- (-short-)) im)  ;; image to be dilated
+    ((-int-) margin)
+
+    (let* ((width (+ 2 (idx-dim im 1))) 
+           (height (+ 2 (idx-dim im 0)))
+           (dist (short-matrix height width))
+           )      
+      ((-int-) width height)
+      (shim-fillborder dist (int 255))
+     #{{
+    int j,i;
+	int pm0 = $im->mod[0];
+	int pm1 = $im->mod[1];
+	int qm0 = $dist->mod[0];
+	int qm1 = $dist->mod[1];
+	for (j=1; j<$height-1; j++) {
+         short *p = IDX_PTR( $im, short) + (j-1)*pm0;
+         short *q = IDX_PTR( $dist, short) + j*qm0 + qm1;
+         short *qup = q - qm0 + qm1*((j-1)&1); 
+         short minim= *(q - qm1);
+         short lastqup= *(qup - qm1);
+         for (i=1; i<$width-1; i++, q+=qm1, p+=pm1, qup+=qm1) {
+              if (*p != 0) {
+                *q=minim=0;
+                lastqup= *qup;
+              } else {
+                if ( lastqup<minim ) minim=lastqup;
+                if ( (lastqup= *qup)<minim ) minim=lastqup;
+                if (minim < 255) minim++;
+                *q = minim;
+              }
+         }
+    }
+
+	for (j=$height-2; j>0; j--) {
+         short *q  = IDX_PTR($dist, short) + j*qm0 + ($width-2)*qm1; 
+         short *qup= IDX_PTR($dist, short) + (j+1)*qm0 + ($width-3+ ((j-1)&1))*qm1; 
+         short minim = *(q + qm1);
+         short lastqup= *(qup + qm1);
+         for (i=$width-2; i>0; i--, q-=qm1, qup-=qm1) {
+              if (*q == 0) {
+              minim = 0; lastqup = *qup;
+              } else {
+              if (lastqup<minim ) minim=lastqup;
+              if ( (lastqup= *qup)<minim ) minim=lastqup;
+              if (minim < 255) minim++;
+              if ( minim<*q ) *q=minim; else minim= *q;
+              }
+          }
+     }
+     for (j=0; j<$height-2; j++) {
+         short *p = IDX_PTR( $im, short) + j*pm0;
+         short *q = IDX_PTR( $dist, short) + (j+1)*qm0 + qm1;
+         for (i=0; i<$width-2; i++, p+=pm1, q+=qm1) {
+              if (*q<=$margin) *p=1;
+         }
+    }
+    }#} 
+      ) ())
+
+#? (shim-erosion <im> <oldim> <mode> <margin>)
+;;.VP
+;; ((-idx2- (-short-)) im)      ;; image to be eroded:
+;; ((-idx2- (-short-)) orig-im) ;; original image, only used in mode 2:
+;; ((-int-) mode):
+;; ((-int-) margin)  ;; erosion margin, typical values are 1 or 2:
+;;
+;; RETURNS:
+;; CREATED: Y. LeCun, modified P.Haffner
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION:
+;; erosions with hexagonal tesselation
+;; <dist> is an idx2 of shorts with dimensions identical to <im>+ border.
+;; It will contain the distance transform on output.
+;; <mode> shoul be 
+;;                 1 ==> erosion
+;;                 2 ==> erosion and hole restoration
+(de shim-erosion (im orig-im mode margin)
+    ((-idx2- (-short-)) im)      ;; image to be eroded
+    ((-idx2- (-short-)) orig-im) ;; original image, only used in mode 2
+    ((-int-) mode)
+    ((-int-) margin)  ;; erosion margin, typical values are 1 or 2
+
+    (let* ((width (+ 2 (idx-dim im 1))) 
+           (height (+ 2 (idx-dim im 0)))
+           ;; <dist> is an idx2 of shorts with dimensions identical to <im>+ border.
+           ;; Outer pixels are considered as border pixels
+           (dist (short-matrix height width))
+           )      
+      ((-int-) width height)
+
+      ;; erosion should start from the border: distance set to zero
+      (shim-fillborder dist 0)
+     #{{
+    int j,i;
+	int pm0 = $im->mod[0];
+	int pm1 = $im->mod[1];
+	int qm0 = $dist->mod[0];
+	int qm1 = $dist->mod[1];
+	for (j=1; j<$height-1; j++) {
+         short *p = IDX_PTR( $im, short) + (j-1)*pm0;
+         short *q = IDX_PTR( $dist, short) + j*qm0 + qm1;
+         short *qup = q - qm0 + qm1*((j-1)&1); 
+         short minim= *(q - qm1);
+         short lastqup= *(qup - qm1);
+         for (i=1; i<$width-1; i++, q+=qm1, p+=pm1, qup+=qm1) {
+              if (*p == 0) {
+                *q=minim=0;
+                lastqup= *qup;
+              } else {
+                if ( lastqup<minim ) minim=lastqup;
+                if ( (lastqup= *qup)<minim ) minim=lastqup;
+                if (minim < 255) minim++;
+                *q = minim;
+              }
+         }
+    }
+
+	for (j=$height-2; j>0; j--) {
+         short *q  = IDX_PTR($dist, short) + j*qm0 + ($width-2)*qm1; 
+         short *qup= IDX_PTR($dist, short) + (j+1)*qm0 + ($width-3+ ((j-1)&1))*qm1; 
+         short minim = *(q + qm1);
+         short lastqup= *(qup + qm1);
+         for (i=$width-2; i>0; i--, q-=qm1, qup-=qm1) {
+              if (*q == 0) {
+              minim = 0; lastqup = *qup;
+              } else {
+              if (lastqup<minim ) minim=lastqup;
+              if ( (lastqup= *qup)<minim ) minim=lastqup;
+              if (minim < 255) minim++;
+              if ( minim<*q ) *q=minim; else minim= *q;
+              }
+          }
+     }
+    /* to speed up the code, we replace the (*q<=$margin) condition by
+       (*q==1) if the margin is 1
+       (*q==1) || (*q==2) if the margin is 2
+       */
+    switch ($mode) {
+    case 1:
+    if ($margin ==1)
+    for (j=0; j<$height-2; j++) {
+         short *p = IDX_PTR( $im, short) + j*pm0;
+         short *q = IDX_PTR( $dist, short) + (j+1)*qm0 + qm1;
+         for (i=0; i<$width-2; i++, p+=pm1, q+=qm1) {
+              if (*q==1) *p=0;
+         }
+    }
+    else
+    for (j=0; j<$height-2; j++) {
+         short *p = IDX_PTR( $im, short) + j*pm0;
+         short *q = IDX_PTR( $dist, short) + (j+1)*qm0 + qm1;
+         for (i=0; i<$width-2; i++, p+=pm1, q+=qm1) {
+              if ((*q==1) || (*q==2)) *p=0;
+         }
+    }
+    break;
+    case 2:
+    if ($margin ==1)
+    for (j=0; j<$height-2; j++) {
+         short *p = IDX_PTR( $im, short) + j*pm0;
+         short *p0 = IDX_PTR( $orig_im, short) + j*pm0;
+         short *q = IDX_PTR( $dist, short) + (j+1)*qm0 + qm1;
+         for (i=0; i<$width-2; i++, p+=pm1, p0+=pm1, q+=qm1) {
+              if ((*q==1) ||
+                  ((*q>2) && (*p0==0))) *p=0;
+              
+         }}
+     else
+     for (j=0; j<$height-2; j++) {
+         short *p = IDX_PTR( $im, short) + j*pm0;
+         short *p0 = IDX_PTR( $orig_im, short) + j*pm0;
+         short *q = IDX_PTR( $dist, short) + (j+1)*qm0 + qm1;
+         for (i=0; i<$width-2; i++, p+=pm1, p0+=pm1, q+=qm1) {
+              if ((*q==1) || (*q==2) ||
+                  ((*q>3) && (*p0==0))) *p=0;
+              
+         }}
+     break;
+
+     }}
+     #} ) ())
+
+#? (idx-m2xor <m1> <m2>)
+;;.VP
+;; ((-idx2- (-short-)) m1 m2):
+;;
+;; RETURNS: (-idx2- (-short-)) m1x2
+;; CREATED: P.Haffner
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: performs a logical XOR betweem m1 and m2.
+;; m1x2 pixel is 0 when m1 and m2 pixels are equal, 0 otherwise.
+(de idx-m2xor (m1 m2)
+    ((-idx2- (-short-)) m1 m2)
+
+    (let* (
+          (d0 (idx-dim m1 0))
+          (d1 (idx-dim m1 1))
+          (m1x2 (short-matrix d0 d1))
+          )
+    (idx-bloop ((m1 m1) (m2 m2) (m1x2 m1x2))
+      (idx-bloop ((m1 m1) (m2 m2) (m1x2 m1x2))
+        (m1x2 (if (= (m1) (m2)) 0 1))))
+    m1x2))
+
+#? (dilero <runs> <margin>)
+;;.VP
+;; (-idx2- runs):
+;; (-int- margin):
+;;
+;; RETURNS: an -idx2- matrix of runs
+;; CREATED: P.Haffner
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION:
+;; morphological closing operator.
+;; successively applies dilation and erosion functions
+;; <margin> represents the extend of the initial dilation
+;; - 0 nothing happens
+;; - 1 using an hexagonal tesselation, all pixel next to  a black pixel becomes black.
+;; - 2 distance is extended to two pixels.
+;;
+(de dilero (runs margin)
+  (-idx2- runs)
+  (-int- margin)
+
+  (if (= 0 margin)
+      runs
+  (let* (
+         (xmin (- (int (idx-m1inf (select runs 1 1))) margin))  ;; most left pixel, shifted by margin
+         (xmax (+ (int (idx-m1sup (select runs 1 2))) margin))  ;; most right pixel, shifted by margin
+         (ymin (- (int (idx-m1inf (select runs 1 0))) margin))
+         (ymax (+ (int (idx-m1sup (select runs 1 0))) margin))
+         (height (+ 1 (- ymax ymin)))
+         (width (+ 1 (- xmax xmin)))
+         (image (short-matrix height width))
+         )
+    ((-int-) xmin xmax ymin ymax height width)
+    ;; runs-to-image, with an image containing only the ink, plus <margin> white pixels around.
+    (idx-bloop ((run runs))
+      (let* (
+             (y-rel (- (run 0) ymin))
+             (x-rel (- (run 1) xmin))
+             (x-mrel (- (run 2) xmin))
+             (subim (select image 0 y-rel))
+             )
+        ((-int-) y-rel x-rel x-mrel)
+        (for (i x-rel x-mrel)
+          (subim i 1))))
+
+    ;; dilation erosion modifies image in place
+    (let ((image0 (idx-copy image)))
+
+      ;;first, dilate image
+      (shim-dilation image margin)
+      ;; then erode image, however, restore original holes from image0 (if mode=2)
+      (shim-erosion image image0 2 margin)
+      ;; demo code
+      (ifdef demo-mor 
+        (let ((ink-val 1))
+          (cls)
+          (gray-draw-matrix 0 0 image0 ink-val 0)
+          (gray-draw-matrix 0  height image ink-val 0)
+          (gray-draw-matrix 0  (* 2 height) (idx-m2xor image0 image) ink-val 0)
+          ;;(pause "morpho OK?")
+          )))
+
+    ;; image to runs
+    (let* (
+           (new-runs (matrix (+ 500 (idx-dim runs 0)) 4))
+           (runid 0)
+           (rowid -1)
+           (prev-val 0)
+           (clim (- (idx-dim image 1) 1))
+           (max-numruns (idx-dim new-runs 0)) 
+           (thresh 0)
+           )
+      (idx-bloop ((row image))
+        (incr rowid)
+        (setq prev-val (- thresh 1))
+
+        ;; loop over all the pixels in a row
+        (idx-gloop ((colid) (pix row))
+          
+          ;; first, expand runs when necessary
+          (when (>= runid max-numruns)
+              (idx-m2resize new-runs (setq max-numruns (+ max-numruns 500)) 4))
+
+          (if (> (pix) thresh)
+              (progn
+                (when (<= prev-val thresh)
+                  (new-runs runid 0 (+ rowid ymin))
+                  (new-runs runid 1 (+ colid xmin)) )
+                )
+            (when (> prev-val thresh)
+              (new-runs runid 2 (- (+ colid xmin) 1))
+              (incr runid) ) )
+          
+          ;; reset previous value 
+          (setq prev-val (pix)) 
+          
+          ) ; idx-gloop
+
+        (when (>= runid max-numruns)
+            (idx-m2resize new-runs (setq max-numruns (+ max-numruns 500)) 4))
+        (when (> (row clim) thresh)
+          (new-runs runid 2 clim)
+          (incr runid) 
+          ) 
+        ) ;idx-bloop
+      (narrow new-runs 0 runid 0))
+))
+)
+
+(let ((dhc-cname "gcc") (dhc-cflags "-O4"))
+  (dhc-make () shim-fillborder shim-dilation shim-erosion idx-m2xor)
+)
+
+(ifdef demo-mor () (dhc-make "dilero" dilero)))
+
+

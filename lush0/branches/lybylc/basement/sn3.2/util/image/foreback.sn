@@ -1,0 +1,743 @@
+#? File "foreback.sn"
+;; Performs foreground/background color separation on a page.
+;;
+;; Procedure:
+;;.IP 
+;; Create a parameter structure with <new ForeBackParm>.
+;; Adjust parameters as needed.
+;;.IP
+;; Call function <rgbaim-grid-foreback> which returns a matrix containing
+;; two lores images with the foreground and background colors.
+;;.IP
+;; Call <rgbaim-grid-greyquant> to build the gray level image
+;; using the full resolution page and the lores color image.
+;;.IP
+;; Cleanup, Binarize, CCize and encode these images 
+;; (grey image, forground and background lores images)
+;; as needed.
+;;.IP
+;; You can reconstruct a color image from these using
+;; function <rgbaim-grid-colorize>.
+;;
+;;.SEE (new ForeBackParm <dpi>)
+;;.SEE (rgbaim-grid-foreback <rgbaim> <parms>)
+;;.SEE (rgbaim-grid-greyquant <rgbaim> <ubim> <colors> <gridx> <gridy>)
+;;.SEE (rgbaim-grid-colorize <rgbaim> <ubim> <colors> <gridx> <gridy>)
+
+
+
+;;; ----------------------------------------
+;;; INCLUDE
+
+
+(mload "dynamic.sn")
+(mload "cmacro.sn")
+(mload "idx-macros.sn")
+(mload "image/ubimage.sn")
+(mload "image/rgbaimage.sn")
+(mload "image/color-quantize.sn")
+
+
+
+
+
+
+
+;;; ----------------------------------------
+;;; COLOR CLUSTERING
+
+
+
+#? (rgbaim-init-lum2rgb16)
+;; build a table of 16x16x16 elements 
+;; containing RGB cell indices
+;; in ascending luminosity.
+
+(de rgbaim-init-lum2rgb16 ()
+    (cheader "#define NCOLCELL16 4096")
+    (cheader "static int lum2rgb16[NCOLCELL16], lum2rgb16init = 0;")
+    (let ((lum (matrix (* 16 16 16)))
+	  (ind (int-matrix (* 16 16 16)))
+	  (n 0))
+      ((-int-) n)
+      (for (r 0 15) 
+        (for (g 0 15) 
+          (for (b 0 15)
+            (ind n n)
+            (lum n (+ (* .299 r) (* .587 g) (* .114 b)))
+            (incr n) ) ) )
+      (idx-m1i1sortup lum ind)
+      #{{
+         int *pind, i;
+         pind = IDX_PTR($ind, int);
+	 for (i=0; i<NCOLCELL16; i++){ lum2rgb16[i] = pind[i]; }
+	 lum2rgb16init = 1;
+      }#}
+      ()))
+
+
+
+
+
+#? (rgbaim-histo16 <rgbaim> <ppal> <count>)
+;; compute histogram of image <rgbaim>.
+;; <ppal> must be a 4096 by 3 matrix which will contain the list of pixel
+;; values found. <count> must be a 4096 matrix which will contain
+;; the corresponding pixel counts.
+;; pixel colors are sorted by luminance.
+;; This function really computes a 4096 color palette by assigning each pixel
+;; to the cube it belongs to in the 16x16x16 RBG color cube.
+;; The color prototype assigned to each cube is the mean of the pixels 
+;; belonging to the cube.
+
+(de rgbaim-histo16 (rgbaim ppal count)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-flt-)) ppal)
+    ((-idx1- (-flt-)) count)
+    (let* ((ncolcell (* 16 16 16))
+	   (histo (matrix ncolcell 3))
+	   (hcount (matrix ncolcell))
+	   (phisto (gptr #{ IDX_PTR($histo,flt) #}))
+	   (phcount (gptr #{ IDX_PTR($hcount,flt) #})))
+      ;; loop over image pixels and compute histogram
+      ;; for each histogram cell in the 16x16x16 table we compute the
+      ;; average color value for the pixels (it's like a 4k color palette).
+      (cinline-idx2loop rgbaim "unsigned char" "p" "i" "j"
+			#{{ register flt *ph, *pc ;
+			int offset ;
+			offset = ((p[0]&0xf0)<<4) | (p[1]&0xf0) | (p[2]>>4) ;
+			ph = ((flt*)$phisto) + offset*3 ;
+			pc = ((flt*)$phcount) + offset ;
+			ph[0] += (flt)p[0];
+			ph[1] += (flt)p[1];
+			ph[2] += (flt)p[2];
+			*pc += 1 ; 
+			} #} )
+      ;; now compact the list of color cells and sort them by luminosity
+      ;; (using a precomputed table of cell index -> luminosity)
+      (when (= 0 (int #{ lum2rgb16init #})) (rgbaim-init-lum2rgb16))
+      (let ((ccount 0))
+	((-int-) ccount)
+	(for (i 0 (1- ncolcell))
+	  ((-int-) i)
+	  (let* ((c 0))
+	    ((-int-) c)
+            #{ $c = lum2rgb16[$i] #}
+	    (let ((cnt (hcount c)))
+              ((-flt-) cnt)
+              (when (> cnt 0)
+                (ppal ccount 0 (/ (histo c 0) cnt))
+                (ppal ccount 1 (/ (histo c 1) cnt))
+                (ppal ccount 2 (/ (histo c 2) cnt))
+                (count ccount cnt)
+                (incr ccount)))))
+	(idx-m2resize ppal ccount 3)
+	(idx-m1resize count ccount)) ()) )
+
+
+
+#? (rgbaim-im2pal <rgbaim> <ppal> <count>)
+;; builds a luminosity-sorted plaette of RGB components
+;; from an image (preferably small).
+;; Let N be the number of pixels in <rgbaim>.
+;; <ppal> must be an N by 3 matrix which will contain the list of pixel
+;; values found. <count> must be a N vector which will contain
+;; the corresponding pixel counts (i.e 1).
+;; pixel colors are approximately sorted by luminance.
+;;
+;; Copied verbatim from Yann files (LYB).
+
+(de rgbaim-im2pal (rgbaim ppal count)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-flt-)) ppal)
+    ((-idx1- (-flt-)) count)
+    (let* ((ncolcell (* (idx-dim rgbaim 0) (idx-dim rgbaim 1)))
+           (offset 0)
+           (dark 0) (bright 0) 
+           (darklum 256) (brightlum -1)
+           (phisto (gptr #{ IDX_PTR($ppal,flt) #}))
+           (phcount (gptr #{ IDX_PTR($count,flt) #})))
+      ((-int-) offset dark bright)
+      ((-flt-) darklum brightlum)
+      ;; loop over image pixels and compute histogram
+      (cinline-idx2loop rgbaim "unsigned char" "p" "i" "j"
+                        #{{ register flt *ph, *pc, lum ;
+                        ph = ((flt*)$phisto) + $offset*3 ;
+                        pc = ((flt*)$phcount) + $offset ;
+                        ph[0] = (flt)(p[0]);
+                        ph[1] = (flt)(p[1]);
+                        ph[2] = (flt)(p[2]);
+                        lum = 0.299 * ph[0] + 0.587 * ph[1] + 0.114 * ph[2];
+                        if (lum < $darklum) { $dark = $offset; $darklum = lum; }
+                        if (lum > $brightlum) { $bright = $offset; $brightlum = lum; }
+                        *pc = 1 ; 
+                        $offset += 1;
+                        } #} )
+      ;; now put darkest color first and lightest color last
+      (let ((s 0) (n (1- ncolcell)))
+        ((-flt-) s) ((-int-) n)
+        (setq s (ppal dark 0)) (ppal dark 0 (ppal 0 0)) (ppal 0 0 s)
+        (setq s (ppal dark 1)) (ppal dark 1 (ppal 0 1)) (ppal 0 1 s)
+        (setq s (ppal dark 2)) (ppal dark 2 (ppal 0 2)) (ppal 0 2 s)
+        (when (= bright 0) (setq bright dark))
+        (setq s (ppal bright 0)) (ppal bright 0 (ppal n 0)) (ppal n 0 s)
+        (setq s (ppal bright 1)) (ppal bright 1 (ppal n 1)) (ppal n 1 s)
+        (setq s (ppal bright 2)) (ppal bright 2 (ppal n 2)) (ppal n 2 s))
+      ;; resize to correct size
+      (idx-m2resize ppal ncolcell 3)
+      (idx-m1resize count ncolcell) 
+      () ) )
+
+  
+
+
+#? (rgbaim-bicolor-fast <rgbaim> <proto> <mix>)
+;; Fills the 2x4 flt matrix <proto> with the result
+;; of a two color clustering on image <rgbaim>.
+;;
+;; This function uses either the histogram method or
+;; the enumeration method (whichever is faster).
+;;
+;; This function provides initial prototypes when variable mix is
+;; <0>. Otherwise the current values in <proto> are used.  The current values
+;; of <proto> are also added to the sample after multiplying the
+;; counts by <mix>.
+
+(de rgbaim-bicolor-fast (rgbaim proto mix)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-flt-)) proto)
+    ((-flt-) mix)
+    
+    (let* ((n        (* (idx-dim rgbaim 0) (idx-dim rgbaim 1)))
+           (m        (if (< n 500) n 4096))
+           (ppal     (matrix (+ m 2) 3))
+           (count    (matrix (+ m 2)))
+           (label    (int-matrix 2))
+           (weight   (select proto 1 3))
+           (proto3   (narrow proto 1 3 0))
+           (variance (matrix 2)) )
+      ;; Call either pixel list or histogram
+      (if (= m 4096)
+          (rgbaim-histo16 rgbaim ppal count)
+        (rgbaim-im2pal rgbaim ppal count) )
+      ;; Perform kmeans
+      (setq m (idx-dim ppal 0))
+      (if (> mix 0)
+          (progn
+            ;; Add proto to database 
+            (idx-m2resize ppal (+ m 2) 3)
+            (idx-m1resize count (+ m 2))
+            (idx-copy (select proto3 0 0) (select ppal 0 m))
+            (idx-copy (select proto3 0 1) (select ppal 0 (+ m 1)))
+            (count m (* (weight 0) mix))
+            (count (+ 1 m) (* (weight 1) mix)) )
+        (progn
+          ;; Create new initial values
+          (idx-copy (select ppal 0 0) (select proto3 0 0))
+          (idx-copy (select ppal 0 (1- m)) (select proto3 0 1)) ) )
+      (let ((assign (int-matrix (idx-dim ppal 0))))
+        (cqu-kmeans ppal count assign 0 proto3 label weight variance) )
+      () ) )
+
+
+
+
+
+
+
+;;; ----------------------------------------
+;;; FOREBACKRES
+;;; Class describing foreback decision at a given resolution.
+;;; This is used internally for the hierarchical 
+;;; decomposition of the page.
+
+
+(defclass ForeBackGrid object
+  ((-int-)          height)
+  ((-int-)          width )
+  ((-int-)          gridx )
+  ((-int-)          gridy )
+  ((-idx4- (-flt-)) colors) )     ;; HxWx2x4
+
+
+(defmethod ForeBackGrid ForeBackGrid(rgbaim gpgrid agridx agridy mix)
+  ((-idx3- (-ubyte-)) rgbaim)
+  ((-gptr-) gpgrid)
+  ((-int-) agridx agridy)
+  ((-flt-) mix)
+
+  ;; Initialize slots
+  (setq gridx agridx)
+  (setq gridy agridy)
+  (setq width (div (+ (idx-dim rgbaim 1) gridx -1) gridx))
+  (setq height (div (+ (idx-dim rgbaim 0) gridy -1) gridy))
+  (setq colors (matrix height width 2 4))
+
+  (let ((zx 0) (zy 0) (rx 0) (ry 0))
+    ((-int-) zx zy rx ry)   
+    ;; Test context
+    (when gpgrid
+      (setq rx (div :(obj ForeBackGrid gpgrid):gridx gridx))
+      (setq ry (div :(obj ForeBackGrid gpgrid):gridy gridy)) )
+    ;; Loop on lines
+    (idx-gloop ((y)(collin colors))
+      (setq zy (* gridy y))
+      (when (>= (+ zy gridy) (idx-dim rgbaim 0))
+        (setq zy (- (idx-dim rgbaim 0) gridy)) ) 
+      ;; Loop on columns
+      (idx-gloop ((x)(colpix collin))
+        (setq zx (* gridx x))
+        (when (>= (+ zx gridx) (idx-dim rgbaim 1))
+          (setq zx (- (idx-dim rgbaim 1) gridx)) )
+        ;; Obtain initial values
+        (if gpgrid
+            ;; There are initial values
+            (let* ((ctx (obj ForeBackGrid gpgrid))
+                   (ctxpix (select (select :ctx:colors 0 (div y ry)) 0 (div x rx)))
+                   (subim (narrow (narrow rgbaim 0 gridy zy) 1 gridx zx)) )
+              (idx-copy ctxpix colpix)
+              (rgbaim-bicolor-fast subim colpix mix) )
+          ;; No initial values
+          (let* ((subim (narrow (narrow rgbaim 0 gridy zy) 1 gridx zx)))
+            (rgbaim-bicolor-fast subim colpix 0) ) ) ) ) 
+    () ) )
+
+
+(defmethod ForeBackGrid enhance-contrast(enhance)
+  ((-flt-) enhance)
+  ;; ENHANCE CONTRAST BY FIXED FACTOR
+  (setq enhance (* 0.5 enhance))
+  (idx-gloop ((y)(collin colors))
+    (idx-gloop ((x)(colpix collin))
+      #{{ 
+          float dr,dg,db,x1,x2;
+          float *c1 = IDX_PTR($colpix,float);
+          float *c2 = c1 + $colpix->mod[0]; 
+          dr = c2[0]-c1[0]; dg = c2[1]-c1[1]; db = c2[2]-c1[2];
+          /* ;; Perform foreground enhancement */
+          c1[0] -= dr * $enhance;
+          c1[1] -= dg * $enhance;
+          c1[2] -= db * $enhance;
+          c1[0] = (c1[0]<0 ? 0 : (c1[0]>255 ? 255 : c1[0]));
+          c1[1] = (c1[1]<0 ? 0 : (c1[1]>255 ? 255 : c1[1]));
+          c1[2] = (c1[2]<0 ? 0 : (c1[2]>255 ? 255 : c1[2]));
+          c2[0] += dr * $enhance;
+          c2[1] += dg * $enhance;
+          c2[2] += db * $enhance;
+          c2[0] = (c2[0]<0 ? 0 : (c2[0]>255 ? 255 : c2[0]));
+          c2[1] = (c2[1]<0 ? 0 : (c2[1]>255 ? 255 : c2[1]));
+          c2[2] = (c2[2]<0 ? 0 : (c2[2]>255 ? 255 : c2[2]));
+      }#} ) )
+  enhance )
+
+
+(defmethod ForeBackGrid hirez-contrast(hirez zoom parm)
+  ((-idx3- (-ubyte-)) hirez)
+  ((-int-) zoom)
+  ((-flt-) parm)
+  
+  ;; ADJUST CONTRAST USING HIREZ IMAGE
+  (let ((zx 0) (zy 0) (zw 0) (zh 0)
+        (zoomx (* gridx zoom))
+        (zoomy (* gridy zoom)) )
+    ((-int-) zx zy zw zh zoomx zoomy)   
+    ;; Loop on lines
+    (idx-gloop ((y)(collin colors))
+      (setq zy (* zoomy y))
+      (setq zh zoomy)
+      (when (> (+ zy zh) (idx-dim hirez 0))
+        (setq zh (- (idx-dim hirez 0) zy)) )
+      ;; Loop on columns
+      (idx-gloop ((x)(colpix collin))
+        (setq zx (* zoomx x))
+        (setq zw zoomx)
+        (when (> (+ zx zw) (idx-dim hirez 1))
+          (setq zw (- (idx-dim hirez 1) zx)) )
+        ;; Extract subimage
+        (let* ((rgbablk (narrow (narrow hirez 0 zh zy) 1 zw zx))
+               (ro (colpix 1 0)) 
+               (go (colpix 1 1)) 
+               (bo (colpix 1 2))
+               (rv (- (colpix 0 0) ro)) 
+               (gv (- (colpix 0 1) go)) 
+               (bv (- (colpix 0 2) bo))
+               (sqnorm 0) 
+               (minc 0)
+               (maxc 1)
+               (sumlo 0)
+               (sumhi 0)
+               (numlo 0)
+               (numhi 0) )
+          ;; normalize vector so that the projection gives apropriate numbers
+          (setq sqnorm (+ (* rv rv) (* gv gv) (* bv bv)))
+          (when (= 0 sqnorm) (error "prototypes are identical"))
+          (setq rv (/ rv sqnorm))
+          (setq gv (/ gv sqnorm))
+          (setq bv (/ bv sqnorm))
+          ;; project pixels on line and perform statistics
+          (cinline-idx2loop rgbablk "unsigned char" "p" "i" "j"
+                            #{{ register flt r,g,b, c;
+                                r = (flt)(p[0]); g=(flt)(p[1]); b=(flt)(p[2]);
+                                c = (r-$ro)*$rv + (g-$go)*$gv + (b-$bo)*$bv;
+                                if (c<$minc) $minc=c;
+                                if (c>$maxc) $maxc=c;
+                                if (c>0.5) { 
+                                  $sumhi += c; $numhi += 1;
+                                } else { 
+                                  $sumlo += c; $numlo += 1;
+                                } } #} )
+          ;; Correct colors
+          (when (and (> numhi 0) (> numlo 0))
+            (setq minc (+ (* parm minc) (* (- 1 parm) (/ sumlo numlo))))
+            (setq maxc (+ (* parm maxc) (* (- 1 parm) (/ sumhi numhi))))
+            #{{
+                float dr,dg,db,x1,x2;
+                float *c1 = IDX_PTR($colpix,float);
+                float *c2 = c1 + $colpix->mod[0]; 
+                dr = c1[0]-c2[0]; dg = c1[1]-c2[1]; db = c1[2]-c2[2];
+                c1[0] = $ro + $maxc*dr;
+                c1[1] = $go + $maxc*dg;
+                c1[2] = $bo + $maxc*db;
+                c1[0] = (c1[0]<0 ? 0 : (c1[0]>255 ? 255 : c1[0]));
+                c1[1] = (c1[1]<0 ? 0 : (c1[1]>255 ? 255 : c1[1]));
+                c1[2] = (c1[2]<0 ? 0 : (c1[2]>255 ? 255 : c1[2]));
+                c2[0] = $ro + $minc*dr;
+                c2[1] = $go + $minc*dg;
+                c2[2] = $bo + $minc*db;
+                c2[0] = (c2[0]<0 ? 0 : (c2[0]>255 ? 255 : c2[0]));
+                c2[1] = (c2[1]<0 ? 0 : (c2[1]>255 ? 255 : c2[1]));
+                c2[2] = (c2[2]<0 ? 0 : (c2[2]>255 ? 255 : c2[2]));
+            }#} ) ) ) ) 
+    () ) )
+      
+
+
+;;; ----------------------------------------
+;;; Computing foreground and background colors
+
+
+#? (new ForeBackParm <dpi>)
+;; Prepare a parameter vector for function <rgbaim-grid-foreback>.  Sets
+;; defaults for resolution <dpi> (e.g. 200 or 300).  This object contains the
+;; following slots (today):
+;;.IP
+;; Slot <zoom> contains the subsampling factor applied before searching for
+;; the foreground and background color. Subsampling addresses a speed isssue
+;; and also provides some robustness against textured background.
+;;.IP
+;; Slots <gridx> and <gridy> indicate the grid size for the last stage of the
+;; analysis. There will be one pixel in the foreground and background images
+;; for each square of size <gridy> <gridx> in the *subsampled* image.
+;;.IP
+;; Slot <redux> identifies the relative size of each pair of images computed
+;; during the successive steps of the multiscale analysis.  The last step
+;; returns the final foreground and background images.
+;;.IP
+;; Slot <enhance> indicates how much we enhance the foreground background
+;; contrast in order to alleviate the aliasing effects of subsampling. A
+;; positive value sets a fixed enhancement ratio (ie how much do we expand the
+;; distance between foreground and background colors). A negative value uses
+;; the high resolution image to compute a better foreground background
+;; contrast (value -1 uses extremal colors, a negative value close to zero
+;; uses the mean colors measured through foreground and background masks).
+;; This option requires an additional 3 seconds (r10k) for a 300dpi image.
+;;.IP
+;; Slot <mix> is a multiplier indicating how much we mix the foregroud/background
+;; colors returned by the previous hierarchical level.
+
+(defclass ForeBackParm object
+  ((-int-) zoom)                        ; subsampling factor applied before processing
+  ((-int-) redux)                       ; multiscale reduction factor
+  ((-int-) gridx gridy)                 ; grid size on subsampled image
+  ((-flt-) enhance)                     ; how much do we enhance contrast
+  ((-flt-) mix) )                       ; how we mix fg/bgcolors from higher levels.
+
+(defmethod ForeBackParm ForeBackParm(dpi)
+  ((-int-) dpi)
+  ;; Zoom
+  (if (< dpi 100)
+      (setq zoom 1)
+    (setq zoom (div dpi 100)) )
+  ;; Redux
+  (setq redux 4)
+  ;; Grid
+  (setq gridx 4)
+  (setq gridy 4)
+  ;; Enhance
+  (setq enhance -0.67)
+  ;; Threshold
+  (setq mix (/ 0.2 (* redux redux))) )
+
+              
+
+#? (rgbaim-grid-foreback <rgbaim> <parms>)
+;; Perform color separation on page <rgbaim> with parameters <parms>.  This
+;; function returns a matrix (HxWx2x4) containing two lores images
+;; representing the foreground <(select colors 2 0)> and background <(select
+;; colors 2 1)> colors of the page. Arguments <gridx> and <gridy> indicate the
+;; subsampling factors of these color images
+
+
+(de rgbaim-grid-analysis(rgbaim parms) ;; subroutine for the latter
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-obj- (ForeBackParm)) parms)
+    (let (
+          (rgbaims (rgbaim-subsample-med3  rgbaim))
+;;          (rgbaims (rgbaim-subsample rgbaim :parms:zoom :parms:zoom))
+          (apool (new Pool))
+          (old (gptr ()))
+          (mx :parms:gridx)
+          (my :parms:gridy) )
+      ;; check that subsampling did not remove pixels
+      (when (or (< (* :parms:zoom (idx-dim rgbaims 0)) (idx-dim rgbaim 0))
+                (< (* :parms:zoom (idx-dim rgbaims 1)) (idx-dim rgbaim 1)) )
+        (let* ((zoom :parms:zoom)
+               (nlin (idx-dim rgbaim 0))
+               (ncol (idx-dim rgbaim 1)) 
+               (nlins (idx-dim rgbaims 0))
+               (ncols (idx-dim rgbaims 1)) 
+               (nrgbaims (ubyte-matrix-nc (div (+ nlin zoom -1) zoom)
+                                          (div (+ ncol zoom -1) zoom) 4 )) )
+          ((-int-) zoom nlin ncol nlins ncols)
+          (idx-copy rgbaims (narrow (narrow nrgbaims 0 nlins 0) 1 ncols 0))
+          (when (> (idx-dim nrgbaims 0) nlins)
+            (idx-copy (select nrgbaims 0 (1- nlins)) (select nrgbaims 0 nlins)) )
+          (when (> (idx-dim nrgbaims 1) ncols)
+            (idx-copy (select nrgbaims 1 (1- ncols)) (select nrgbaims 1 ncols)) )
+          (setq rgbaims nrgbaims) ) )
+      ;; compute largest scale
+      (while (and (< (* mx :parms:redux) (idx-dim rgbaims 1))
+                  (< (* my :parms:redux) (idx-dim rgbaims 0)) )
+        (setq mx (* mx :parms:redux))
+        (setq my (* my :parms:redux)) )
+      ;; perform multiscale analysis
+      (while (or (> mx :parms:gridx) (> my :parms:gridy))
+        (let ((res (in-pool apool
+                            (new ForeBackGrid rgbaims old mx my 
+                                 :parms:mix  ) )))
+          (setq old (gptr res))
+          (setq mx (div mx :parms:redux))
+          (setq my (div my :parms:redux)) ) )
+      ;; last step of multiscale analysis
+      (new ForeBackGrid rgbaims old 
+           :parms:gridx :parms:gridy
+           :parms:mix ) ) )
+
+
+(de rgbaim-grid-foreback(rgbaim parms)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-obj- (ForeBackParm)) parms)
+    (let ((res (rgbaim-grid-analysis rgbaim parms)))
+      (when (> :parms:enhance 0)
+        (==> res enhance-contrast :parms:enhance) )
+      (when (< :parms:enhance 0)
+        (==> res hirez-contrast rgbaim :parms:zoom (- :parms:enhance)))
+      :res:colors ) )
+      
+      
+
+
+
+
+
+;;; ----------------------------------------
+;;; QUANTIZATION / COLORIZATION
+
+
+
+#? (rgbaim-grid-greyquant <rgbaim> <ubim> <colors> <gridx> <gridy>)
+;; Fills ubyte matrix <ubim> with gray levels computed by
+;; projecting the initial pixel color in <rgbaim> onto the color space segment
+;; defined by the foreground/background colors defined by <colors>.
+;; 
+;; Matrix colors (HxWx2x4) contains two lores images representing
+;; the foreground <(select colors 2 0)> and background <(select colors 2 1)>
+;; colors of the page. Arguments <gridx> and <gridy> indicate the subsampling
+;; factors of these color images.
+
+(de rgbaim-grid-greyquant (rgbaim ubim colors gridx gridy)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-ubyte-)) ubim)
+    ((-idx4- (-flt-)) colors)
+    ((-int-) gridx gridy)
+    (let ((zx 0) (zy 0) (zw 0) (zh 0))
+      ((-int-) zx zy zw zh)   
+      ;; Loop on lines
+      (idx-gloop ((y)(collin colors))
+        (setq zy (* gridy y))
+        (setq zh gridy)
+        (when (> (+ zy zh) (idx-dim rgbaim 0))
+          (setq zh (- (idx-dim rgbaim 0) zy)) )
+        ;; Loop on columns
+        (idx-gloop ((x)(colpix collin))
+          (setq zx (* gridx x))
+          (setq zw gridx)
+          (when (> (+ zx zw) (idx-dim rgbaim 1))
+            (setq zw (- (idx-dim rgbaim 1) zx)) )
+          (let ((rgbablk (narrow (narrow rgbaim 0 zh zy) 1 zw zx))
+                (ubblk (narrow (narrow ubim 0 zh zy) 1 zw zx)) )
+            (rgbaim-greyquant rgbablk ubblk colpix 0 0 0)
+            () ) ) ) ) )
+
+
+#? (rgbaim-grid-colorize <rgbaim> <ubim> <colors> <gridx> <gridy>)
+;; Fills ubyte matrix <rgbabim> with colors computed by
+;; interpolating the gray level pixel from <ubim> between the
+;; foreground and background colors defined by <colors>.
+;; 
+;; Matrix colors (HxWx2x4) contains two lores images representing
+;; the foreground <(select colors 2 0)> and background <(select colors 2 1)>
+;; colors of the page. Arguments <gridx> and <gridy> indicate the subsampling
+;; factors of these color images.
+
+(de rgbaim-grid-colorize  (rgbaim ubim colors gridx gridy)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-ubyte-)) ubim)
+    ((-idx4- (-flt-)) colors)
+    ((-int-) gridx gridy)
+    (let ((zx 0) (zy 0) (zw 0) (zh 0))
+      ((-int-) zx zy zw zh)   
+      ;; Loop on lines
+      (idx-gloop ((y)(collin colors))
+        (setq zy (* gridy y))
+        (setq zh gridy)
+        (when (>= (+ zy zh) (idx-dim rgbaim 0))
+          (setq zh (- (idx-dim rgbaim 0) zy)) )
+        (when (> zh 0)
+          ;; Loop on columns
+          (idx-gloop ((x)(colpix collin))
+            (setq zx (* gridx x))
+            (setq zw gridx)
+            (when (>= (+ zx zw) (idx-dim rgbaim 1))
+              (setq zw (- (idx-dim rgbaim 1) zx)) )
+            (when (> zw 0)
+              (let ((rgbablk (narrow (narrow rgbaim 0 zh zy) 1 zw zx))
+                    (ubblk (narrow (narrow ubim 0 zh zy) 1 zw zx)) )
+                #{{ /* open extra bracket */
+                    float *c1 = IDX_PTR($colpix, float);
+                    float *c2 = c1 + $colpix->mod[0];
+                    float dr = (c1[0]-c2[0]) / 255.0;
+                    float dg = (c1[1]-c2[1]) / 255.0;
+                    float db = (c1[2]-c2[2]) / 255.0;
+                #}
+                (cinline-idx2loop2 rgbablk "unsigned char" 
+                               ubblk "unsigned char" 
+                               "p" "s" "i" "j"
+                               #{{  float n = s[0];
+                                   p[0] = c2[0] + n * dr;
+                                   p[1] = c2[1] + n * dg;
+                                   p[2] = c2[2] + n * db;
+                               }#} )
+                #{ /* close extra bracket */ } #}
+                () ) ) ) ) ) ) )
+
+
+
+
+
+;;; ----------------------------------------
+;;; COMPILE
+
+
+(dhc-make ()
+          rgbaim-init-lum2rgb16 
+          rgbaim-histo16 
+          rgbaim-im2pal
+          rgbaim-bicolor-fast 
+          (ForeBackGrid ForeBackGrid enhance-contrast hirez-contrast) 
+          (ForeBackParm ForeBackParm)
+          rgbaim-grid-analysis
+          rgbaim-grid-foreback
+          rgbaim-grid-greyquant
+          rgbaim-grid-colorize )
+
+
+
+
+;;;;;;;;;;;;;;;;;;;; SKIP EVERYTHING AFTER NEXT LINE
+(skip-char "~\e"))
+;;;;;;;;;;;;;;;;;;;; SKIP EVERYTHING AFTER THIS LINE
+
+
+(de showrgba(rgbaim &optional name)
+    (when (not c-showrgba)
+      (ogre)
+      (mload "image/ogrimage.sn")
+      (defclass c-showrgba windowobject
+        theviewer)
+      (defmethod c-showrgba c-showrgba(rgbaim &optional name)
+        (==> this windowobject 0 0 512 512 (or name (pname rgbaim))
+             (setq theviewer (new viewer 512 512 (new ogrimage rgbaim) t t)) ) )
+      (defmethod c-showrgba manage-geometry()
+        (let (((x y w h) rect))
+          (==> theviewer geometry x y w h) ) ) )
+    (new c-showrgba rgbaim name) )
+
+
+
+(mload "image/cca")
+(mload "image/tiff.sn")
+
+
+
+(setq im1 (tiff-read-rgba "/usr/leonb/diglib/Data/Books/pharm1-300.tif" 1))
+(setq im4 (tiff-read-rgba "/usr/leonb/diglib/Data/Books/metric-300.tif" 1))
+(setq im5 (tiff-read-rgba "/usr/leonb/diglib/Data/Books/freehand-300.tif" 1))
+(setq m2 (tiff-read-rgba "/usr/leonb/diglib/Data/eric/m2.tif" 1))
+(setq m3 (tiff-read-rgba "/usr/leonb/diglib/Data/eric/m3.tif" 1))
+(setq m4 (tiff-read-rgba "/usr/leonb/diglib/Data/eric/m4.tif" 1))
+(setq m5 (tiff-read-rgba "/usr/leonb/diglib/Data/eric/m5.tif" 1))
+
+
+
+(de go(m &optional (dpi 300) (cutoff 0))
+
+    (when (not doc-window) (setq doc-window (new-window 800 1000 "Initial page")))
+    (when (not fb-window) (setq fb-window (new-window 600 400 "Foreground / Background")))
+    (when (not cdoc-window) (setq cdoc-window (new-window 800 1000 "Reconstructed page")))
+    (when (not gray-window) (setq gray-window (new-window 800 1000 "Gray quantization")))
+
+    (setq im m)
+    ;; FOREBACK ANALYSIS
+    (let ((parm (new forebackparm dpi)))
+      (setq zoom :parm:zoom)
+      (setq gridx (* zoom :parm:gridx))
+      (setq gridy (* zoom :parm:gridy))
+      (setq klip 0)
+      (when (> :parm:enhance 0)
+        (setq klip (/ :parm:enhance (+ 1 :parm:enhance))))
+      (let ((window doc-window)) (cls) 
+           (rgb-draw-matrix 0 0 (rgbaim-subsample im zoom zoom)))
+      (printf "Foreback      %6.1f\n"
+              (time (setq colors (rgbaim-grid-foreback im parm))) )
+      (let ((window fb-window)) (cls)
+           (rgb-draw-matrix 10 10 (select colors 2 0))
+           (rgb-draw-matrix (+ 20 (idx-dim colors 1)) 10 (select colors 2 1)) ) )
+    
+    ;; GRAY LEVEL
+    (setq ubim (ubyte-matrix (idx-dim im 0) (idx-dim im 1)))
+    (printf "Greyquant     %6.1f\n"
+            (time (rgbaim-grid-greyquant im ubim colors gridx gridy)) )
+    
+    ;; OPTIONAL CC ANALYSIS AND CLEANUP
+    (when (> cutoff 0)
+      (printf "CC Analysis   %6.1f\n" 
+              (time (progn (setq cc (new ccanalyzer ubim))
+                           (==> cc run-analysis cutoff)
+                           (==> cc cc-analysis) ) ) )
+      (printf "CC Cleanup    %6.1f\n"
+              (time (progn (==> cc cc-measure-gray)
+                           (==> cc remove-small-cc 4 128 1024)
+                           (==> cc reconstruct-from-cc) ) ) )
+      (setq ubim :cc:ubimg) )
+    (let ((window gray-window)) (cls)
+         (gray-draw-matrix 0 0 (ubim-subsample ubim zoom zoom) (- 255 klip) klip 1 1) )
+
+    ;; COLORIZATION
+    (setq cim (ubyte-matrix  (idx-dim im 0) (idx-dim im 1) 4))
+    (printf "Colorize      %6.1f\n"
+            (time (rgbaim-grid-colorize cim ubim colors gridx gridy)) )
+    (let ((window cdoc-window)) (cls)
+         (rgb-draw-matrix 0 0 (rgbaim-subsample cim zoom zoom)) )
+    
+    () )

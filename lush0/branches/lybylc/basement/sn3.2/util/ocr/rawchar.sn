@@ -1,0 +1,180 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "image/shimage")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? rawchar
+;; a rawchar object has at least the following 3 slots:
+;; image: an idx2 of shorts containing the image (a shimage).
+;;   Pixel values are assumed to be 0 for background, and 256 for 
+;;   black pixels with possible gray levels. 
+;;   Each image may contain one or several characters.
+;; baseline: the position of the baseline in the image (a float)
+;;   this is a line index in the image.
+;; coreheight: the estimated height of the character core (a float)
+;;   in pixels.
+;; skew: the tangent of the skew angle. 0 means vertical,
+;;   1 means 45 degrees to the left.
+(defclass rawchar object
+  ((-idx2- (-short-)) image)
+  ((-flt-) baseline)
+  ((-flt-) coreheight)
+  ((-flt-) skew))
+
+#? (new rawchar <m> <bl> <ch>)
+;; creates a new raw-char with image <m> (an idx2 of shorts),
+;; baseline <bl>, and coreheight <ch> (both floats).
+(defmethod rawchar rawchar (m bl ch sk)
+  ((-idx2- (-short-)) m)  
+  ((-flt-) bl ch sk)
+  (setq image m)
+  (setq baseline bl)
+  (setq coreheight ch)
+  (setq skew sk)
+  ())
+
+#? (==> <rawchar> display <x> <y> <zoom>)
+;; displays <rawchar> at position <x> <y> with zoom 
+;; factor <zoom> in current window.
+(defmethod rawchar display (x y zoom)
+  (gsave
+   (graphics-batch
+    (gray-draw-matrix x y image 276 -20 zoom zoom)
+    (color-rgb 1 0 1)
+    (let* ((bly (+ y (* zoom baseline)))
+	   (chy (- bly (* zoom coreheight)))
+	   (x+ (+ x (* zoom (idx-dim image 1)))))
+      (draw-line x bly x+ bly)
+      (draw-line x chy x+ chy)))))
+   
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; this normalizes a rawchar without deskewing.
+(defclass rawchar-normal object
+  ((-int-) height)
+  ((-int-) width)
+  ((-flt-) baseline)
+  ((-flt-) coreheight)
+  ((-int-) mode))
+
+;; typical use:
+;; (setq nn (new rawchar-normal 32 32 23 12 1))
+;; 
+(defmethod rawchar-normal rawchar-normal (h w bl ch md)
+  ((-int-) h w md)
+  ((-flt-) bl ch)
+  (setq height h)
+  (setq width w)
+  (setq baseline bl)
+  (setq coreheight ch)
+  (setq mode md)
+  ())
+
+(defmethod rawchar-normal fprop (in out)
+  ((-obj- (rawchar)) in out)
+  (idx-s2resize :out:image height width)
+  (let* ((outim :out:image)
+	 (inim :in:image)
+	 (ratio (/ coreheight :in:coreheight))
+	 (x1 -0.5)
+	 (y1 (- :in:baseline :in:coreheight))
+	 (x2 (+ 0.5 (1- (idx-dim inim 1))))
+	 (y2 y1)
+	 (x3 x2)
+	 (y3 :in:baseline)
+	 (x4 x1)
+	 (y4 y3)
+	 (out-center (* .5 (1- (idx-dim outim 1))))
+	 (p1 (- out-center (* 0.5 ratio (- x2 x1))))
+	 (p3 (+ out-center (* 0.5 ratio (- x2 x1))))
+	 (q1 (- baseline coreheight))
+	 (q3 baseline))
+    ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 out-center p1 q1 p3 q3)
+    (shim-warp-bilin :in:image outim 0 mode
+			x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    (setq :out:baseline baseline)
+    (setq :out:coreheight coreheight)
+    (setq :out:skew :in:skew))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; it's like a rawchar-normal, except that it 
+;; can distort the result at the same time.
+;; This is useful for generating databases of
+;; deformed patterns.
+(defclass rawchar-twiddle object
+  ((-int-) height)
+  ((-int-) width)
+  ((-flt-) baseline)
+  ((-flt-) coreheight)
+  ((-int-) mode))
+
+(defmethod rawchar-twiddle rawchar-twiddle (h w bl ch md)
+  ((-int-) h w md)
+  ((-flt-) bl ch)
+  (setq height h)
+  (setq width w)
+  (setq baseline bl)
+  (setq coreheight ch)
+  (setq mode md)
+  ())
+
+(defmethod rawchar-twiddle fprop (in out x-trans y-trans scaling compr sk)
+  ((-obj- (rawchar)) in out)
+  ((-flt-) x-trans y-trans scaling compr sk)
+  (idx-s2resize :out:image height width)
+  (let* ((outim :out:image)
+	 (inim :in:image)
+	 (ratio (/ coreheight :in:coreheight))
+	 (x1 -0.5)
+	 (y1 (- :in:baseline :in:coreheight))
+	 (x2 (+ 0.5 (1- (idx-dim inim 1))))
+	 (y2 y1)
+	 (x3 x2)
+	 (y3 :in:baseline)
+	 (x4 x1)
+	 (y4 y3)
+	 (out-center (* .5 (1- (idx-dim outim 1))))
+	 (p1 (- out-center (* 0.5 ratio (- x2 x1))))
+	 (p3 (+ out-center (* 0.5 ratio (- x2 x1))))
+	 (q1 (- baseline coreheight))
+	 (q3 baseline))
+    ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 out-center p1 q1 p3 q3)
+    ;; now apply distortion
+    ;; scaling and compression
+    (let ((xc (* .5 (+ x1 x3)))
+	  (yc y3)
+	  (xs (/ compr scaling))
+	  (ys (/ (* scaling compr))))
+      (setq x1 (+ xc (* xs (- x1 xc))))
+      (setq x2 (+ xc (* xs (- x2 xc))))
+      (setq x3 (+ xc (* xs (- x3 xc))))
+      (setq x4 (+ xc (* xs (- x4 xc))))
+      (setq y1 (+ yc (* ys (- y1 yc))))
+      (setq y2 (+ yc (* ys (- y2 yc))))
+      (setq y3 (+ yc (* ys (- y3 yc))))
+      (setq y4 (+ yc (* ys (- y4 yc)))))
+    ;; skew and translation
+    (let ((dx (* (- y4 y1) sk))
+	  (tx (- (/ x-trans ratio)))
+	  (ty (- (/ y-trans ratio))))
+      (incr x1 (+ tx dx)) (incr x2 (+ tx dx))
+      (incr x3 (- tx dx)) (incr x4 (- tx dx))
+      (incr y1 ty) (incr y2 ty) (incr y3 ty) (incr y4 ty))
+    (shim-warp-bilin :in:image outim 0 mode
+			x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    (setq :out:baseline baseline)
+    (setq :out:coreheight coreheight)
+    (setq :out:skew :in:skew))
+  ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make "rawchar" 
+	  (rawchar rawchar)
+	  (rawchar-normal rawchar-normal fprop)
+	  (rawchar-twiddle rawchar-twiddle fprop))

@@ -1,0 +1,512 @@
+;;; Lush Lisp interpreter and development tools
+;;; Copyright (C) 1991-1999 Leon Bottou and Neuristique.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;  'helptool'
+;;;  A Help Viewer
+;;;
+;;;  Copyright (C) 1994 Neuristique
+;;;
+
+;;;  $Id: helptool.lsh,v 0.1 2001-10-31 17:29:53 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;;; ----------------------------------------
+;;; Load whatever is necessary
+;;; ----------------------------------------
+
+
+
+(ogre)
+(when (not (classp helpnode))
+  (libload "help.lsh" " (autoload)") )
+
+
+
+;;; ----------------------------------------
+;;; Help panel
+;;; ----------------------------------------
+
+
+
+
+
+;;; ----------------------------------------
+(defclass c-help-pane VisualObject
+  data					; ( ... (line . tag) ... )
+  height				; number of lines
+  sy					; start of text
+  ch lh					; height of each line
+  sline					; start line
+  hicolor				; color for hyperlinks
+  ttcolor				; color for titles
+  scroller				; scrollbar
+  call )				; mouse callback
+
+
+;;; ----------------------------------------
+
+(defmethod c-help-pane c-help-pane(w h &optional sc callback)
+  (setq scroller sc)
+  (setq call callback)
+  (setq sline 0)
+  (setq height 0)
+  (==> sc setcall (eval `(lambda(c) (==> ,this seek (==> c getdata) () t))))
+  (==> sc setdrag (eval `(lambda(c) (==> ,this seek (==> c getdata) () t))))
+  (==> sc setstep 1)
+  (==> this visualobject w h) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-help-pane setdata(d)
+  (setq data d)
+  (setq sline (max 0 (min sline (- (length data) height))))
+  (when scroller
+    (==> scroller setrange 0 (length data) height)
+    (==> scroller setdata sline) )
+  (==> this expose) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-help-pane seek(pos &optional pge-p abs-p)
+  (if abs-p
+      (setq sline 0) )
+  (if pge-p
+      (setq pos (* pos (1+ (div height 2)))) )
+  (setq sline (max 0 (min (+ sline pos) (- (length data) height))))
+  (if scroller
+      (==> scroller setdata sline) )
+  (==> this expose) )
+
+
+;;; ----------------------------------------
+;;; repainting method
+
+(defmethod c-help-pane repaint-bw()
+  (let (((x y w h) rect))
+    (draw-rect x y (1- w) (1- h)) 
+    (==> this dotext (expand-rect rect -4 -4)) ) )
+
+(defmethod c-help-pane repaint-color()
+  (let (((x y w h) rect))
+    (fill-down-rect x y (1- w) (1- h) color-bg) 
+    (==> this dotext (expand-rect rect -4 -4)) ) )
+
+(defmethod c-help-pane dotext((x y w h))
+  (let* ((lines (nthcdr sline data))
+	 (line ()) )
+    (when (and color-palette (not hicolor))
+      (setq hicolor (alloccolor 1 0 0)) )
+    (when (and color-palette (not ttcolor))
+      (setq ttcolor (alloccolor 0 0 0.9)) )
+    (while (and lines (> h 0))
+      (setq line (car lines))
+      (setq lines (cdr lines))
+      (when line
+	(cond 
+	  ((= (cdr line) 'title) 
+	   (font-12b) 
+	   (if color-palette (color ttcolor)) )
+	  ((cdr line) 
+	   (font-12) 
+	   (if color-palette 
+	       (color (if (= (cdr line) 'here) ttcolor hicolor)) ) )
+	  (t 
+	    (font-8f) 
+	    (if color-palette (color color-fg)) ) )
+	(if (or (consp (cdr line)) (= (cdr line) 'here))
+	    (draw-line (+ x (text-width (regex-subst "( *)[^ ].*" "%0" (car line))))
+		       (+ y ch 2) 
+		       (+ x (text-width (car line))) 
+		       (+ y ch 2) ) ) 
+	(if (= (cdr line) 'eps)
+	    (let* ((node (car now))
+		   (eps-descr (nth (car line) :node:eps-files))
+		   (eps-file (car eps-descr))
+		   (w (cadr eps-descr))
+		   (h (caddr eps-descr))
+		   )
+	      (ps-plot eps-file x y w h)
+	      (clip () ))
+	  (draw-text x (+ y ch) (car line)) )
+	)
+      (incr y lh)
+      (incr h (- lh)) ) ) )
+
+(defmethod c-help-pane size(w h)
+  (let (((x y w h) (expand-rect rect -4 -4)))
+    (font-12)
+    (setq ch (text-height "0"))
+    (setq lh (+ 6 ch))
+    (setq sy y)
+    (setq height (div h lh))
+    (setq sline (max 0 (min sline (- (length data) height))))    
+    (when scroller 
+      (==> scroller setrange 0 (length data) height)
+      (==> scroller setdata sline) ) ) )
+
+;;; ----------------------------------------
+;;; event method
+
+(defmethod c-help-pane mouse-up(x1 y1 x2 y2)
+  (when (and lh sy call)
+    (let (((x y w h) rect))
+      (let* ((l1 (div (- y1 sy) lh))
+	     (l2 (div (- y2 sy) lh)))
+	(when (= l1 l2)
+	  (let ((tag (cdr (nth (+ sline l1) data))))
+	    (call tag)) ) ) ) ) )
+
+
+
+
+
+;;; ----------------------------------------
+;;; Help viewer
+;;; ----------------------------------------
+
+
+(defclass c-help-viewer WindowObject
+  the-popup
+  the-menubar
+  the-panel1
+  the-scroll1
+  the-panel2
+  the-scroll2
+  the-goto-menu
+  search                ; search result page
+  found                 ; found entries for topic
+  lastv	                ; last entry
+  now                   ; current entry
+  prev                  ; previous entry
+  next                  ; next entry
+  )
+
+
+;;; ----------------------------------------
+
+(defmethod c-help-viewer c-help-viewer(&optional topic)
+  (setq the-popup
+	(new yesnorequester this
+	  (new column
+	    (new string "Topic:")
+	    (new editstring 20) )
+	  "Search" "Cancel"
+	  (lambda(c)
+	    (==> thiswindowobject search (car (==> thisrequester getdata))) ) ) )
+  (setq the-menubar
+	(new row
+	  (new menu "Help"
+	    "Search..."   
+	    (lambda(c) (==> the-popup popup))
+	    "Last search" 
+	    (lambda(c) (==> thiswindowobject mksearch))
+	    "Last help"   
+	    (lambda(c) (==> thiswindowobject mkman))
+	    "Quit" 
+	    (lambda(c) (==> thiswindowobject delete) ) )
+	  (setq the-goto-menu
+		(new menu "Goto"
+		  "Up"       
+		  (lambda(c) (==> thiswindowobject keypress "u" 0 0))
+		  "Previous" 
+		  (lambda(c) (==> thiswindowobject keypress "p" 0 0))
+		  "Next"     
+		  (lambda(c) (==> thiswindowobject keypress "n" 0 0))
+		  "Last"     
+		  (lambda(c) (==> thiswindowobject keypress "l" 0 0)) ) ) ) )
+  (setq the-scroll1 (new vscrollbar 0))
+  (setq the-panel1 
+	(new c-help-pane 600 50 the-scroll1 
+	  (lambda(c) (==> thiswindowobject goto c)) ) )
+  (setq the-scroll2 (new vscrollbar 0))
+  (setq the-panel2 
+	(new c-help-pane 600 250 the-scroll2
+	  (lambda(c) (==> thiswindowobject goto c)) ))
+  (if (and winlushp (winlushp))
+      (==> this windowobject 10 10 550 400 "HelpTool"
+	the-menubar the-panel1 the-scroll1 the-panel2 the-scroll2 ) 
+    (==> this windowobject 0 0 550 550 "HelpTool"
+      the-menubar the-panel1 the-scroll1 the-panel2 the-scroll2 ) )
+  (each (((file . root) help-root))
+    (when (not root) 
+      (help-parse file) ) )
+  (if topic
+      (==> this search topic) 
+    (let ((now (cdr (assoc "helptool.hlp" help-root))))
+      (if now (==> this goto (list now))
+	(==> this search "") ) ) ) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-help-viewer manage-geometry()
+  (let (((x y w h) rect)
+	((xm ym wm hm) :the-menubar:rect)
+	((xs1 ys1 ws1 hs1) :the-scroll1:rect)
+	((xp1 yp1 wp1 hp1) :the-panel1:rect)
+	((xs2 ys2 ws2 hs2) :the-scroll2:rect)
+	((xp2 yp2 wp2 hp2) :the-scroll2:rect) )
+    
+    (let* ((ws (max ws1 ws1))
+	   (wp (- w (+ 5 ws)))
+	   (h1 (+ hm 2))
+	   (h2 (min 80 (max 20 (div (- h h1) 4))))
+	   (h3 (- h (+ h1 h2 4))) )
+      
+      (==> the-menubar geometry 0 0 w hm)
+      (==> the-panel1  geometry 2 h1 wp h2)
+      (==> the-scroll1 geometry (+ 3 wp) h1 ws h2)
+      (==> the-panel2  geometry 2 (+ h1 h2 2) wp h3)
+      (==> the-scroll2 geometry (+ 3 wp) (+ h1 h2 2) ws h3) ) ) )
+
+
+;;; ----------------------------------------
+
+(defmethod c-help-viewer format1(now prev next)
+  (if (cdr now)
+      (let ((data ())
+	    (prefix ""))
+	(for (i (1- (length now)) 1 -1)
+	  (let ((section (nthcdr i now)))
+	    (setq data (nconc1 data (cons (concat prefix :(car section):entry) 
+					  section)))
+	    (setq prefix (concat "  " prefix)) ) )
+	(setq data (nconc1 data (cons (concat prefix :(car now):entry) 
+				      'here )))
+	data ) 
+    (each (((file . root) help-root))
+      (when (not root) 
+	(help-parse file) ) )
+    (all (((file . root) help-root))
+      (cons (concat "[" :root:entry "]")
+	    (if (= :(car now):file file) 'here (list root)) ) ) ) )
+
+(defmethod c-help-viewer format2(now prev next)
+  (let ((node (car now))
+	(head ())
+	(data ())
+	(title 0)
+	(eps-index 0)
+	)
+    (when (not :node:lines)
+      (==> node read) )
+    (writing help-tmp
+      (==> node display t)
+      (printf "\n") ) 
+    (setq head (list () (cons :node:entry 'title)))
+    (when (or (stringp :node:type) (stringp :node:where))
+      (nconc1 head (list (sprintf "-- %s %s" 
+				  (if (stringp :node:type) :node:type "") 
+				  (if (stringp :node:where) :node:where "")))) )
+    (reading help-tmp
+      (while (<> "\e" (skip-char ""))
+	(let ((line (read-string)))
+	  (read-string 1)
+	  (cond
+	    ((< title 2)
+	     (skip-char "\n")
+	     (when (regex-match "-------*" line)
+	       (incr title) ) )
+	    ((regex-match "[ \t]*" line)
+	     (setq data (nconc1 data ())) )
+	    ((regex-match ".EPS" line)
+	     (setq data (nconc1 data  (cons (incr eps-index) 'eps)))
+	     )
+	    (t
+	      (let ((pos ()))
+		(while (setq pos (index "\t" line))
+		  (let ((nextpos (1+ (* 8 (div (+ pos 7) 8)))))
+		    (setq line (strins (strdel line pos 1) (1- pos) 
+				       (left "         " (- nextpos pos)) ) ) ) ) )
+	      (setq data (nconc1 data (list line))) ) ) ) ) )
+    (when :node:sons
+      (setq data (nconc1 data (list "Subtopics:")))
+      (each ((e :node:sons))
+	(nconc1 data (cons (concat "    " :e:entry) (cons e now))) ) )
+    (when :node:also
+      (let ((also ()))
+	(each ((topic :node:also))
+	  (setq also (nconc also (help-search topic))) )
+	(when also
+	  (setq data (nconc1 data (list "See also:")))
+	  (each ((e also))
+	    (nconc1 data (cons (concat "    " :(car e):entry) e)) ) ) ) )
+    (append head '(()) data)
+    ) )
+
+(defmethod c-help-viewer goto(nnow &optional (mkman t))
+  (when (and (consp nnow) (car nnow))
+    (setq lastv now)
+    (setq now nnow)
+    (setq prev ())
+    (setq next ())
+    (when (not (cdr now))
+      (let ((root (cdr (assoc :(car now):file help-root))))
+	(when root (setq now (list root))) ) )
+    (let* ((sons (if (cadr now) :(cadr now):sons (mapcar cdr help-root)))
+	   (m1 (cadr (member (car now) sons)))
+	   (m2 (cadr (member (car now) (reverse sons)))) )
+      (when m1 (setq next (cons m1 (cdr now))))
+      (when m2 (setq prev (cons m2 (cdr now)))) ) )
+  (when mkman
+    (==> this mkman) ) )
+
+(defmethod c-help-viewer space()
+  (let ((sline :the-panel2:sline))
+    (==> the-panel2 seek 1 t ())
+    (when (and (= sline :the-panel2:sline) (not search))
+      (if (consp :(car now):sons)
+	  (==> this goto (cons (car :(car now):sons) now) ())
+	(while (and (cdr now) (not next))
+	  (==> this goto (cdr now) ()) )
+	(when next
+	  (==> this goto next ()) ) )
+      (==> this mkman) ) ) )
+
+(defmethod c-help-viewer backspace()
+  (let ((sline :the-panel2:sline))
+    (==> the-panel2 seek -1 t ())
+    (when (and (= sline :the-panel2:sline) (not search))
+      (cond
+	((and (not prev) (cdr now))
+	 (==> this goto (cdr now))
+	 (==> the-panel2 seek 99999 () t) )
+	((consp prev)
+	 (let ((nx prev))
+	   (while :(car nx):sons
+	     (setq nx (cons (last :(car nx):sons) nx)) )
+	   (==> this goto nx) 
+	   (==> the-panel2 seek 99999 () t) ) ) ) ) ) )
+
+(defmethod c-help-viewer mkman()
+  (setq search ())
+  (==> the-goto-menu enable "Up" "Previous" "Next" "Last")
+  (when (not (cdr now)) (==> the-goto-menu disable "Up"))
+  (when (not prev) (==> the-goto-menu disable "Previous"))
+  (when (not next) (==> the-goto-menu disable "Next"))
+  (when (not lastv) (==> the-goto-menu disable "Last"))
+  (when now
+    (==> the-panel1 setdata (==> this format1 now prev next))
+    (if (cdr now)
+	(==> the-panel1 seek 99 () t)
+      (let ((l 0) (h help-root))
+	(while (and h (<> (cdar h) (car now))) 
+	  (setq h (cdr h)) (incr l) )
+	(==> the-panel1 seek (- l (div :the-panel1:height 2)) () t) ) )
+    (==> the-panel2 setdata (==> this format2 now prev next))
+    (==> the-panel2 seek 0 () t) ) )
+
+;;; ----------------------------------------
+
+(defmethod c-help-viewer search2()
+  (if (not found)
+      (list () '("<< No help entry matches your topic >>"))
+    (let ((data (list () '("Search list." . title)))
+	  (book ()) )
+      (each ((e found)) 
+	(let ((name (concat "      ":(car e):entry)))
+	  (when (<> (last e) book)
+	    (setq book (last e))
+	    (nconc1 data ())
+	    (nconc1 data (cons (sprintf "[%s]" :book:entry) book)) )
+	  (nconc1 data (cons name e)) ) )
+      data ) ) )
+
+(defmethod c-help-viewer mksearch()
+  (setq search t)
+  (==> the-panel2 setdata (==> this search2)) )
+
+;;; ----------------------------------------
+
+(defmethod c-help-viewer search(topic)
+  (each (((file . root) help-root))
+    (when (not root) 
+      (help-parse file) ) )
+  (if (regex-match "[ \t]*" topic)
+      (setq found (all (((file . root) help-root)) (list root)))
+    (setq found (help-match topic)) )
+  (==> this mksearch) )
+
+
+;;; ----------------------------------------
+;;; Event Methods
+
+(defmethod c-help-viewer arrow-up(x y)
+  (==> this fkey x y) )
+  
+(defmethod c-help-viewer arrow-down(x y)
+  (==> this fkey x y) )
+
+(defmethod c-help-viewer fkey(x y)
+  (when eventinfo
+    (selectq (car (eventinfo))
+      ("Home"    (==> the-panel2 seek 0 () t) )
+      ("End"     (==> the-panel2 seek 99999 () t) )
+      ("Up"      (==> the-panel2 seek -1 () ()))
+      ("Down"    (==> the-panel2 seek 1 () ()))
+      ("Prior"   (==> this backspace) )
+      ("Next"    (==> this space) ) ) ) )
+
+
+(defmethod c-help-viewer keypress(key x y)
+  (selectq key
+    ("s"
+     (==> thiswindowobject mksearch) )
+    ("m"
+     (==> thiswindowobject mkman) )
+    ("a"
+     (==> the-popup setdata '(""))
+     (==> the-popup popup) )
+    ("\^a"
+     (==> the-popup popup) )
+    ("f"
+     (==> the-panel2 seek 1 t ()) )
+    (" "
+     (==> this space) )
+    ("\b"
+     (==> this backspace) )
+    ("b"
+     (==> the-panel2 seek -1 t ()) )
+    ("l"
+     (when lastv (==> this goto lastv)) )
+    ("n"
+     (when next (==> this goto next)) )
+    ("p"
+     (when prev (==> thiswindowobject goto prev)) )
+    ("u"
+     (when (cdr now) (==> thiswindowobject goto (cdr now))) ) ) )
+
+
+
+;;; ----------------------------------------
+;;; Helptool function
+;;; ----------------------------------------
+
+
+(de helptool(&optional topic)
+  (when (and ~(assoc "helptool.hlp" help-root)
+	     (filep (concat-fname help-dir "helptool.hlp")) )
+    (setq help-root (cons (list "helptool.hlp") help-root)) )
+  (new c-help-viewer topic) )
+

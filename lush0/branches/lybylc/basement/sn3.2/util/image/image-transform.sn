@@ -1,0 +1,91 @@
+;/**********************************************************************
+;        Copyright (c) 1995  AT&T --- All Rights Reserved
+;        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF AT&T.
+;        The copyright notice above does not evidence any
+;        actual or intended publication of this work.
+;**********************************************************************/
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; bilinear linear coordinate transform
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "cmacro")
+(mload "idx-macros")
+
+#? image-transform
+;; compute displacement tables for 2D geometric transformations
+;; of images.
+;;.SEE (compute-bilin-transform <dispi> <dispj> <x1> <y1> <x2> <y2> <x3> <y3> <x4> <y4> <p1> <q1> <p3> <q3>)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (compute-bilin-transform <dispi> <dispj> <x1> <y1> <x2> <y2> <x3> <y3> <x4> <y4> <p1> <q1> <p3> <q3>)
+;;.VP
+;; ((-idx2- (-int-)) dispi):
+;; ((-idx2- (-int-)) dispj):
+;; ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <dispi> <dispj>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Tabulates a bilinear transformation that maps the quadrilateral defined
+;; by the <xi> <yi> to a rectangle whose upper left point is <p1> <q1> and
+;; lower right point is <p3> <q3>.
+;; <x1> <y1> is the upper left point on the quadrilateral, and the points
+;; are numbered clockwise.
+;; <dispi> and <dispj> must be idx2 of int. On output, element (i,j)
+;; of <dispi> and <dispj> will be filled respectively with the abscissa
+;; and ordinate of the point in the quadrilateral that maps to point (i,j).
+;; Values in these idx2 are interpreted as 32bit fixed point numbers
+;; with 16 bit integer part and 16 bit fractional part.
+;; <dispi> and <dispj> can subsequently be used as input to 
+;; warp-shimage, or warp-shimage-fast.
+;; This function makes minimal use of floating point arithmetics.
+(de compute-bilin-transform (dispi dispj x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    ((-idx2- (-int-)) dispi)
+    ((-idx2- (-int-)) dispj)
+    ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+
+    ;; compute transformation matrix from coordinates
+    ;; in target (rectangular) space to coordinates
+    ;; in original (irregular quadrilateral) image
+    ;; transformation matrix is in 16.16 fixed point format.
+    (let* ((k (/ 65536 (* (- p3 p1) (- q3 q1))))
+	   (x41 (- x4 x1))
+	   (x21 (- x2 x1))
+	   (x43 (- x4 x3))
+	   (x23 (- x2 x3))
+	   (mx0 (* k (+ (* q3 x21) (* q1 x43))))
+	   (mx1 (* k (+ (* p3 x41) (* p1 x23))))
+	   (mx2 (* (- k) (+ x41 x23)))
+	   (mx3 (* k (- (+ (* p3 q3 x1) (* p1 q1 x3)) 
+			(+ (* p1 q3 x2) (* p3 q1 x4)))))
+	   (y41 (- y4 y1))
+	   (y21 (- y2 y1))
+	   (y43 (- y4 y3))
+	   (y23 (- y2 y3))
+	   (my0 (* k (+ (* q3 y21) (* q1 y43))))
+	   (my1 (* k (+ (* p3 y41) (* p1 y23))))
+	   (my2 (* (- k) (+ y41 y23)))
+	   (my3 (* k (- (+ (* p3 q3 y1) (* p1 q1 y3)) 
+			 (+ (* p1 q3 y2) (* p3 q1 y4))))))
+      ((-flt-) k)
+      ((-flt-) x41 x21 x43 x23)
+      ((-int-) mx0 mx1 mx2 mx3)
+      ((-flt-) y41 y21 y43 y23)
+      ((-int-) my0 my1 my2 my3)
+      (cinline-idx2loop2 dispi "int" dispj "int" "di" "dj" "q" "p"
+	#{ 
+	*di = $my0*(p) + $my1*(q) + $my2*(p)*(q) + $my3;
+	*dj = $mx0*(p) + $mx1*(q) + $mx2*(p)*(q) + $mx3;
+	#}))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "image_transform" compute-bilin-transform)
+
+

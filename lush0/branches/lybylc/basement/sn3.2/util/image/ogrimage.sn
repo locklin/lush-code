@@ -1,0 +1,92 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; an Ogre object for displaying RGB images
+
+(mload "ogre")
+
+#? OgreImage
+;; pretty much like an ogre icon, but it contains
+;; a 24-bit RGBA image.
+;; this can efficiently be put in a Viewer with scrollbars.
+(defclass OgrImage VisualObject
+  (white 1)
+  (black 0)
+  (colmap ())
+  (scale-x 1)
+  (scale-y 1)
+  text
+  selected)
+
+(defmethod OgrImage OgrImage(&optional mat) (setq text mat))
+
+
+(defmethod OgrImage gettext() 
+  text
+)
+
+(defmethod OgrImage settext(mat)
+  (setq text mat)
+  (when window
+	(==> this compute-geometry)
+	(==> this expose rect) ) )
+
+;; (defmethod OgrImage setscale(sx sy)
+;;   (setq scale-x sx
+;; 	scale-y sy)
+;;   (when window
+;; 	(==> this compute-geometry)
+;; 	(==> this expose rect) ) )
+
+(defmethod OgrImage compute-geometry()
+  (if ~text
+      (==> this resize 10 10)
+    (let ((h (idx-dim text 0))
+          (w (idx-dim text 1)))
+      (setq h (* h scale-y))
+      (setq w (* w scale-x))
+      (==> this resize w h)
+      rect ) ) )
+
+(defmethod OgrImage repaint()
+  (when text
+	(let (((x y w h) rect)
+              ((cx cy cw ch) (clip)))
+          (rgb-draw-matrix 
+           cx cy (narrow (narrow text 1 cw (- cx x)) 0 ch (- cy y)) 
+           scale-x scale-y))))
+
+(defmethod OgrImage mouse-down(x y) ())
+
+(defmethod OgrImage mouse-drag(x1 y1 x2 y2)
+  (hilite hilite-rect x1 y1 x2 y2))
+
+(defmethod OgrImage mouse-up(x1 y1 x2 y2)
+  (hilite hilite-rect x1 y1 x2 y2)
+  (let (((x y w h) rect)
+        (sx (min x1 x2))
+        (sy (min y1 y2))
+        (sw (abs (- x1 x2)))
+        (sh (abs (- y1 y2))))
+    (setq selected (list (max 0 (- sx x)) (max 0 (- sy y)) sw sh))))
+
+(defmethod OgrImage get-selected ()
+  selected)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass ImageViewer viewer ogrim)
+
+(defmethod ImageViewer ImageViewer (w h m &optional drg)
+  (==> this Viewer w h (setq ogrim (new ogrimage m)) t t)
+  (when drg
+    (setq :hscroll:drag-callback :hscroll:call)
+    (setq :vscroll:drag-callback :vscroll:call))
+  ())
+
+(defmethod ImageViewer keypress (c x y)
+  (let (((x y w h) :view:rect))
+    (cond 
+     ((= c " ")  (==> this setvpos (+ vpos (* .9 h))))
+     ((= c "\b") (==> this setvpos (- vpos (* .9 h))))
+     (t ()))))
+
+(defmethod ImageViewer get-selected () (==> ogrim get-selected))

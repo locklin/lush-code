@@ -1,0 +1,60 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a very simple version of Lunar Lander
+;; Yann LeCun 07-2001
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "sdl/libsdl")
+
+(when (< (SDL_Init SDL_INIT_VIDEO) 0) (error "Unable to init SDL"))
+
+
+(de lander ()
+    (let* ((scr (new screen 800 600 "Lander")) ; open screen
+           (bgd (new sprite scr 0))     ; create background sprite
+           (lem (new sprite scr 1))     ; create lem sprite
+           (lems (new sprite scr 2))    ; create lem shadow sprite
+           ;; set position, velocity, acceleration of lem
+           (x 10) (y 20) (vx 4) (vy 0) (ax 0) (ay 0)
+           ;; set mass, inverse mass, and deltat of lem
+           (mass 1) (mass-inv (/ 1 mass)) (deltat 0.01)
+           (side-thrust 200)            ; set side engine thrust
+           (main-thrust 400)            ; set main engine thrust
+           (grav 200)                   ; set gravity coefficient in pixels/s/s
+           (stop ())
+           (event (new sdl-event))
+           (xyk (int-matrix 3))
+           (ground 510))
+      (==> bgd load-frame "moon-svga.png" 0 0 0)
+      (==> bgd move 0 406)
+      (==> lem load-frame "lem.png" 0 0 0)
+      (==> lems load-frame "lem-shadow.png" 0 0 0)
+      (while (not stop)
+        (==> scr clear)                 ; fill image with black
+        (==> bgd draw)                  ; draw moon ground
+        (==> event get-arrows xyk)      ; read keyboard
+        (when (= (xyk 2) SDLK_q) (setq stop t)) ; stop when q is pressed
+        (setq ax (* mass-inv side-thrust (xyk 0))) ; update acceleration 
+        (setq ay (+ grav (* mass-inv main-thrust (xyk 1)))) ; update acceleration 
+        (setq vx (+ vx (* ax deltat)))  ; update velocity
+        (setq vy (+ vy (* ay deltat)))  ; update velocity
+        (setq x  (+ x (* vx deltat)))   ; update position
+        (setq y  (+ y (* vy deltat)))   ; update position
+        (when (< x -80) (setq x (+ 800 (- x -80)))) ; wrap around left side
+        (when (> x 800) (setq x (+ -80 (- x 800)))) ; wrap around right side
+        (when (> y ground)              ; bounce on ground
+          (setq vy (* -0.5 vy)) 
+          (setq vx (* 0.25 vx)) 
+          (setq y ground))
+        (==> lem move x y)              ; move lem sprite to position
+        (==> lems move x (+ ground 40)) ; move shadow sprite to position
+        (==> lems draw)                 ; draw shadow
+        (==> lem draw)                  ; draw lem
+        (==> scr flip)                  ; flip screens
+        (setq deltat :scr:deltat)       ; update deltat to time between screen flips
+        )))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; start game
+
+(lander)
+

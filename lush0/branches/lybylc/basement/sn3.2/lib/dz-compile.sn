@@ -1,0 +1,688 @@
+;;; SN3.2 Lisp interpreter and development tools
+;;; Copyright (C) 1987-2001 Leon Bottou, Yann LeCun, and AT&T.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is part of the subset of SN3.2 that does not belong
+;;; to Neuristique (e.g. either belongs to Leon Bottou, 
+;;; Yann LeCun, or AT&T.
+;;; It is distributed with Lush with the purpose of serving
+;;; as a reserve of code to be ported to Lush.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;==============================================================================
+;
+;	Utilities
+;
+;==============================================================================
+
+;------------------------------------------------------------------------------
+;	mapcan
+;
+(de mapcan l
+    (apply append (apply mapcar l)))
+
+;------------------------------------------------------------------------------
+;	remove an element to a alist
+(de alist-get(key alist)
+    (let ((pair (assoc key alist)))
+      (when pair
+	    (cdr pair) ) ) )
+
+;******************************************************************************
+;
+;	Compiler for numerical expressions
+;
+;******************************************************************************
+
+;------------------------------------------------------------------------------
+;	dz
+;
+(df dz (|DZ_VAR| . |DZ_BODY|)
+    (set |DZ_VAR| (apply zlambda |DZ_BODY|))
+    |DZ_VAR|)
+
+;------------------------------------------------------------------------------
+;	dz-compile
+;
+(de dz-compile (|DE_FUNC|)
+    (apply 'zlambda (cdr (funcdef |DE_FUNC|))))
+
+;------------------------------------------------------------------------------
+;	zlambda
+;
+(df zlambda (|DZ_ARGS| . |DZ_BODY|)
+    (let ((|DZ_CLEAN| (lambda (|DZ_BODY|)
+			(cond ((symbolp |DZ_BODY|) 
+			       (let ((func (eval |DZ_BODY|)))
+				 (list (cons |DZ_BODY| func))))
+			      ((consp |DZ_BODY|) 
+			       (append (|DZ_CLEAN| (car |DZ_BODY|))
+				       (|DZ_CLEAN| (cdr |DZ_BODY|))))))))
+
+      (let* ((dz_names (|DZ_CLEAN| |DZ_BODY|))
+	     (num (length |DZ_ARGS|))
+	     (prog (==> (new dz-compile-class) 
+			compile |DZ_ARGS| |DZ_BODY| dz_names)))
+	(when |DIAGNOSTIC|
+	      (==> sin pretty-print num prog))
+	(dz-load num prog))))
+		 
+;==============================================================================
+;   compiler 
+;
+(defclass dz-compile-class object)
+
+;------------------------------------------------------------------------------
+;	generate new labels, starting with string
+;
+(defmethod dz-compile-class new-label (string)
+  (concat string (pname (incr label-counter))))
+
+;------------------------------------------------------------------------------
+;	peep hole optimizer
+;
+(defmethod dz-compile-class add-end (prog end)
+  (let ((expr (reverse (cdr (reverse prog))))
+	(end-prog (last prog)))
+    (cond ((and (consp end-prog) (= (car end-prog) "POP@")
+		    (consp end) (= (car end) "POP@"))
+	        (append expr (list (list "POP@" (+ (cadr end-prog) (cadr end))))))
+	  ((and (= end-prog '("MINUS")) (= end '("MINUS")))
+	       expr)
+	  (t (append prog (list end))))))
+
+;------------------------------------------------------------------------------
+;	compile
+;
+;	compile takes a DE as an argument and return a list of codes 
+;	(program) for the calculator.
+;
+;	top is the height of the stack as it will be when the program is 
+;	executed.  arg-list contains a list of dotted pair (x . n) where
+;	x is a symbol visible within the lexical scope, and n its position
+;	on the stack.  This information is usefull 
+;				       
+(defmethod dz-compile-class compile (args body dz-names)
+  (let* ((len (length args))
+	 (arg-list (mapcar (lambda (x y)
+			     (cons x (concat "arg" (pname y))))
+			   args (range 1 len))) 
+	 (label-counter 0))
+    (==> this add-end (==> this compile-list-expr body ())
+	 (list "POP@" len))))
+
+;------------------------------------------------------------------------------
+;	generate code for list of expression
+;
+(defmethod dz-compile-class compile-list-expr (list-expr do-pop)
+  (cond 
+   ((null list-expr) 
+    (when ~do-pop
+	  (error 'zlambda "empty list of expressions" node)))
+   (t 
+    (append 
+     (mapcan (lambda (x) 
+	       (==> this compile-expr x t))
+	     (reverse (cdr (reverse list-expr))))
+     (==> this compile-expr (last list-expr) do-pop)))))
+
+;------------------------------------------------------------------------------
+;	generate code for one expression
+;	this is the basic statement.  
+;	return a list of instructions which should push something on the stack
+;
+(defmethod dz-compile-class compile-expr (node do-pop)
+  (cond ((null node) 
+	 (error 'zlambda "null expression" node))
+	((numberp node) 
+	 (when ~do-pop
+	       (list (list "PUSH#" node))))
+	((symbolp node) 
+	 (when ~do-pop
+	       (let ((pos (alist-get node arg-list)))
+		 (if pos
+		     (list (list "PUSH@" pos))
+		   (let ((symbo (alist-get node dz-names)))
+		     (if (numberp symbo)
+			 (list (list "PUSH#" symbo))
+		       (error 'zlambda "symbol is not a number" node)))))))
+	((consp node) 
+	 (==> this compile-func (car node) (cdr node) do-pop) )
+	(t 
+	 (error 'zlambda "can't compile non numecical expression" node))))
+
+;------------------------------------------------------------------------------
+;	generate code for a function expression 
+;
+(defmethod dz-compile-class compile-func (func args do-pop)
+  (let ((len (length args)))
+    (selectq func
+     (progn    (==> this compile-list-expr args do-pop))
+     (prog1    (==> this compile-prog1 args do-pop))
+     (if       (==> this compile-if (car args) (cdr args) do-pop))
+     (when     (==> this compile-when (car args) (cdr args) do-pop))
+     (for      (==> this compile-for (car args) (cdr args) do-pop))
+     (while    (==> this compile-while (car args) (cdr args) do-pop))
+     (do-while (==> this compile-do-while (car args) (cdr args) do-pop))
+     (let      (==> this compile-let (car args) (cdr args) do-pop))
+     (let*     (==> this compile-let* (car args) (cdr args) do-pop))
+     (setq     (==> this compile-setq (car args) (cdr args) do-pop))
+     (print    (==> this compile-print args do-pop))
+     (-        (==> this compile-- len (car args) (cadr args) do-pop))
+     (/        (==> this compile-/ len (car args) (cadr args) do-pop))
+     (+        (==> this compile-nadic args "ADD" do-pop))
+     (*        (==> this compile-nadic args "MUL" do-pop))
+     (max      (==> this compile-nadic args "MAX" do-pop))
+     (min      (==> this compile-nadic args "MIN" do-pop))
+     (t (cond
+	 ((member func '(1+ 1- 2/ 2*))
+	  (==> this compile-spec1 func len args do-pop))
+	 ((member func '(** mod div))
+	  (==> this compile-spec2 func len args do-pop))
+	 (t (let ((dz-func (alist-get func dz-names)))
+	      (if (dzp dz-func)
+		  (==> this compile-dz func dz-func len args do-pop)
+		(error 'zlambda "not a valid function call in a DZ" node)))))))))
+
+;------------------------------------------------------------------------------
+;	generate code for the arguments
+;	returns a list of instruction which will compute all the args and 
+;	leave them on the stack in the order they were evaluated.
+;
+(defmethod dz-compile-class compile-arg (args)
+  (mapcan (lambda (x) (==> this compile-expr x ())) args))
+
+;------------------------------------------------------------------------------
+;	reorder argument to have complex list at the beginning
+;	return the same list of args in a different order.
+;
+(defmethod dz-compile-class reorder-arg (args)
+  (let ((simple ())
+	(complex ()) )
+    (each ((x args)) 
+	  (if (or (numberp x) (symbolp x))
+	      (setq simple (nconc1 simple x))
+	    (setq complex (nconc1 complex x)) ) )
+    (append complex simple)))
+
+;------------------------------------------------------------------------------
+;	generate code for nadic functions n
+;	return a list of instruction to compute the nadic function
+;
+(defmethod dz-compile-class compile-nadic (args func do-pop)
+  (if do-pop
+      (==> this compile-list-expr args t)
+    (let ((args (==> this reorder-arg args)))
+      (nconc (==> this compile-expr (car args) ())
+	     (mapcan (lambda (x)
+		       (cond ((numberp x) 
+			      (list (list (concat func "#") x)))
+			     ((symbolp x)
+			      (let ((label (alist-get x arg-list)))
+				(if ~label
+				    (let ((symbo (alist-get x dz-names)))
+				      (if (numberp symbo)
+					  (list (list (concat func "#") symbo))
+					(error 'zlambda "symbol is not a number" x)))
+				  (list (list (concat func "@") label)))))
+			     (t 
+			      (==> this add-end 
+				   (==> this compile-expr x ())
+				   (list func)))))
+		     (cdr args))))))
+
+;------------------------------------------------------------------------------
+;	generate code for print
+;
+(defmethod dz-compile-class compile-print (args do-pop)
+  (append (mapcan (lambda (x) (append (==> this compile-expr x ())
+				      (list (list "PRINT"))
+				      (list (list "POP"))))
+		  (reverse (cdr (reverse args))))
+	  (==> this compile-expr (last args) ())
+	  (list (list "PRINT"))
+	  (when do-pop
+		(list (list "POP")))))
+
+;------------------------------------------------------------------------------
+;	generate code for prog1
+;
+(defmethod dz-compile-class compile-prog1 (list-expr do-pop)
+  (if do-pop
+      (==> this compile-list-expr list-expr t)
+    (cond 
+     ((null list-expr) 
+      (error 'zlambda "empty list of expressions" node))
+     (t 
+      (append (==> this compile-expr (car list-expr) ())
+	      (==> this compile-list-expr (cdr list-expr) t))))))
+
+;------------------------------------------------------------------------------
+;	generate code for substraction (monadic and diadic)
+;
+(defmethod dz-compile-class compile-- (len arg1 arg2 do-pop)
+  (cond ((= len 1)
+	 (if do-pop
+	     (==> this compile-expr arg1 t)
+	   (==> this add-end 
+		(==> this compile-expr arg1 do-pop)
+		(list "MINUS"))))
+	((= len 2) 
+	 (if do-pop
+	     (==> this compile-list-expr (list arg1 arg2) t)
+	   (nconc (==> this compile-expr arg1 ())
+		  (cond ((numberp arg2) 
+			 (list (list "SUB#" arg2)))
+			((symbolp arg2)
+			      (let ((pos (alist-get arg2 arg-list)))
+				(if pos (list (list "SUB@" pos))
+				  (let ((symbo (alist-get arg2 dz-names)))
+				    (if (numberp symbo)
+					(list (list "SUB#" symbo))
+				      (error 'zlambda "symbol is not a number" 
+					     arg2))))))
+			(t (==> this add-end 
+				(==> this compile-expr arg2 ())
+				(list "SUB")))))))
+	(t (error 'zlambda "bad number of argument" node))))
+
+;------------------------------------------------------------------------------
+;	generate code for division (monadic and diadic)
+;
+(defmethod dz-compile-class compile-/ (len arg1 arg2 do-pop)
+  (cond ((= len 1)
+	 (if do-pop
+	     (==> this compile-expr arg1 t)
+	   (==> this add-end 
+		(==> this compile-expr arg1 do-pop)
+		(list "INVERT"))))
+	((= len 2) 
+	 (if do-pop
+	     (==> this compile-list-expr (list arg1 arg2) t)
+	   (nconc (==> this compile-expr arg1 ())
+		  (cond ((numberp arg2) 
+			 (list (list "DIV#" arg2)))
+			((symbolp arg2)
+			      (let ((pos (alist-get arg2 arg-list)))
+				(if pos (list (list "DIV@" pos))
+				  (let ((symbo (alist-get arg2 dz-names)))
+				    (if (numberp symbo)
+					(list (list "DIV#" symbo))
+				      (error 'zlambda "symbol is not a number" 
+					     arg2))))))
+			(t (==> this add-end 
+				(==> this compile-expr arg2 ())
+				(list "DIV")))))))
+	(t (error 'zlambda "bad number of argument" node))))
+
+;------------------------------------------------------------------------------
+;	generate code for special monadic
+;
+(defmethod dz-compile-class compile-spec1 (func len args do-pop)
+  (if (<> len 1) 
+      (error 'zlambda "bad number of argument" node))
+  (if do-pop
+      (==> this compile-expr (car args) t)
+    (nconc (==> this compile-expr (car args) ())
+	   (list (list (selectq func 
+				(1+ "ADD1") (1- "SUB1") 
+				(2* "MUL2") (2/ "DIV2")))))))
+
+;------------------------------------------------------------------------------
+;	generate code for special diadic
+;
+(defmethod dz-compile-class compile-spec2 (func len args do-pop)
+  (if (<> len 2) 
+      (error 'zlambda "bad number of argument" node))
+  (if dopop
+      (==> this compile-list-expr args t)
+    (append (==> this compile-expr (car args) ())
+	    (==> this compile-expr (cadr args) ())
+	    (list (list (selectq func 
+				 (** "POWER") (mod "MODI") (div "DIVI")))))))
+
+;------------------------------------------------------------------------------
+;	generate code for let
+;
+(defmethod dz-compile-class compile-let* (letexp body do-pop)
+
+  (let ((len (length letexp))
+	(varname (mapcar 'car letexp))
+	(varval (mapcar 'cadr letexp))
+	(arg-list arg-list)
+	(program ())
+	(label ()))
+    
+    (mapc (lambda (name val)
+	    (setq program (nconc program (==> this compile-expr val ())))
+	    (setq label (==> this new-label "let*-var"))
+	    (setq program (nconc1 program label))
+	    (setq arg-list (cons (cons name label) arg-list)))
+	  varname varval)
+    (setq program (append program (==> this compile-list-expr body do-pop)))
+    (if ~do-pop
+	(setq program (==> this add-end program (list "POP@" len)))
+      (if (> len 1)
+	  (setq program (==> this add-end program (list "POP@" (1- len)))))
+      (setq program (==> this add-end program (list "POP")))) 
+    program))
+
+;------------------------------------------------------------------------------
+;	generate code for let
+;
+(defmethod dz-compile-class compile-let (letexp body do-pop)
+  (let ((len (length letexp))
+	(new-arg-list arg-list)
+	(varname (mapcar 'car letexp))
+	(varval (mapcar 'cadr letexp))
+	(program ())
+	(label ()))
+    
+    (mapc (lambda (name val)
+	    (setq program (nconc program (==> this compile-expr val ())))
+	    (setq label (==> this new-label "let-var"))
+	    (setq program (nconc1 program label))
+	    (setq new-arg-list (cons (cons name label) new-arg-list)))
+	  varname varval)
+    (let ((arg-list new-arg-list))
+      (setq program (nconc program (==> this compile-list-expr body do-pop))))
+    (if ~do-pop
+	(setq program (==> this add-end program (list "POP@" len)))
+      (if (> len 1)
+	  (setq program (==> this add-end program (list "POP@" (1- len)))))
+      (setq program (==> this add-end program (list "POP")))) 
+    program))
+
+
+;------------------------------------------------------------------------------
+;	generate code for inline DZ
+;	put the inline code.  
+
+(defmethod dz-compile-class compile-dz (func dz-func len arg do-pop)
+  (let (((dz-len . program) (dz-def dz-func)))
+    (if (<> dz-len len)
+	(error 'zlambda "bad number of arguments for DZ" node))
+    (append (==> this compile-arg args) 
+	    program
+	    (when do-pop
+		  (list (list "POP"))))))
+
+;------------------------------------------------------------------------------
+;	generate code for setq
+;
+(defmethod dz-compile-class compile-setq (symbol expr do-pop)
+  (if (not (null (cdr expr)))
+      (error 'zlambda "only 2 arguments allowed for setq in DZs" node))
+  (let ((pos (alist-get (car args) arg-list)))
+    (if ~pos
+	(error 'zlambda "unknown symbol" node)
+      (append (==> this compile-expr (car expr) ())
+	      (if ~do-pop
+		  (list (list "DUP")))
+	      (list (list "SET@" pos))))))
+
+;------------------------------------------------------------------------------
+;	generate code if
+;
+(defmethod dz-compile-class compile-if (test args do-pop)
+  (let* ((ifn (==> this new-label "if-no"))
+	 (ifend (==> this new-label "if-end"))
+	 (expr1 (==> this compile-expr (car args) do-pop))
+	 (expr2 (when (cdr args)
+		      (==> this compile-list-expr (cdr args) do-pop))))
+    
+    (if (and (null expr2) (null do-pop))
+	(error 'zlambda "if must return a numerical expression (missing else)" node))
+    (if (null expr2)
+	(append (==> this compile-test test () ifn)
+		expr1 (list ifn))
+      (append (==> this compile-test test () ifn)
+	      expr1
+	      (list (list "BR" ifend))
+	      (list ifn)
+	      expr2
+	      (list ifend)))))
+
+;------------------------------------------------------------------------------
+;	generate code when
+;
+(defmethod dz-compile-class compile-when (test args do-pop)
+  (if (null do-pop)
+      (error 'zlambda "this must always return a number" node))
+  (if (null args)
+      (error 'zlambda "bad 'when' construction" node))
+  (let ((when-no (==> this new-label "when-no")))
+    (append (==> this compile-test test () when-no)
+	    (==> this compile-list-expr args t)
+	    (list when-no))))
+
+;------------------------------------------------------------------------------
+;	generate code for for
+;
+(defmethod dz-compile-class compile-for (loop args do-pop)
+    (let (((var start end &optional (inc 1)) loop)
+	  (for-res (==> this new-label "for-res"))
+	  (for-loop (==> this new-label "for-loop"))
+	  (for-end (==> this new-label "for-end"))
+	  (arg-list arg-list))
+
+      (if (not (symbolp var))
+	  (error 'zlambda "bad 'for' loop variable" var))
+
+      (if do-pop
+	  ;; loop which may be avoided, and which returns nothing
+	  (append
+	   (==> this compile-expr inc ())
+	   (==> this compile-expr end ())
+	   (==> this compile-expr start ())
+	   (list (list "BEGFOR" for-loop)
+		 (list "BR" for-end)
+		 for-loop)
+	   (let ((arg-list (cons (cons var for-loop) arg-list)))
+	     (==> this compile-list-expr args t) )
+	   (list (list "ENDFOR" for-loop)
+		 for-end))
+	
+	;; loop which must be executed once, and which returns a number
+	(append
+	 ;; reserve a slot for the result!
+	 (list (list "DUP")
+	       for-res)
+	 (==> this compile-expr inc ())
+	 (==> this compile-expr end ())
+	 (==> this compile-expr start ())
+	 (list (list "BEGFOR" for-loop)
+	       (list "ERROR")
+	       for-loop)
+	 (let ((arg-list (cons (cons var for-loop) arg-list)))
+	   (==> this compile-list-expr args ()) )
+	 (list (list "SET@" for-res)
+	       (list "ENDFOR" for-loop)
+	       for-end)))))
+
+;------------------------------------------------------------------------------
+;	generate code for while
+;
+
+(defmethod dz-compile-class compile-while (test args do-pop)
+  
+  (let ((while-loop (==> this new-label "while-loop"))
+	(while-no-pop (==> this new-label "while-no-pop"))
+	(while-test (==> this new-label "while-test")))
+    
+    (if do-pop
+
+	;; loop which may be avoided, and which returns nothing
+	(append
+	 (list (list "BR" while-test)
+	       while-loop)
+	 (==> this compile-list-expr args t)
+	 (list while-test)
+	 (==> this compile-test test while-loop ()))
+      
+      ;; loop which must be executed once, and which returns a number
+      (append
+       (==> this compile-test test while-no-pop ())
+       (list (list "ERROR")
+	     while-loop
+	     (list "POP")
+	     while-no-pop)
+       (==> this compile-list-expr args ())
+       (==> this compile-test test while-loop ())))))
+
+
+;------------------------------------------------------------------------------
+;	generate code for do-while
+;
+(defmethod dz-compile-class compile-do-while (test args do-pop)
+    (let* ((while-loop (==> this new-label "while-loop"))
+	   (while-no-pop (==> this new-label "while-no-pop")))
+      
+      (if do-pop
+	  (append
+	   (list while-loop)
+	   (==> this compile-list-expr args t)
+	   (==> this compile-test test while-loop ()) )
+	(append 
+	 (list (list "BR" while-no-pop) 
+	       while-loop 
+	       (list "POP") 
+	       while-no-pop)
+	 (==> this compile-list-expr args ())
+	 (==> this compile-test test while-loop ())))))
+
+;------------------------------------------------------------------------------
+;	generate code for test
+;
+(defmethod dz-compile-class compile-test(l ify ifn)
+  ;; l is the test
+  ;; ify is a label to branch to if the test is true
+  ;; ifn is a label to branch to if the test is false
+  ;; if either ify or ifn is (), it means "no branch in that case"
+  (==> this compile-test-2 (==> this remove-not l) ify ifn))
+
+(defmethod dz-compile-class remove-not(l)
+  (cond
+   ((not (consp l))
+    l)
+   ((member (car l) '(not null))
+    (let (((l) (cdr l)))
+      (==> this remove-not-and-negate l) ) )
+   (t
+    (cons (car l) (all ((i (cdr l))) (==> this remove-not i))) ) ) )
+
+(defmethod dz-compile-class remove-not-and-negate(l)
+  (cond
+   ((not (consp l))
+    l)
+   ((member (car l) '(not null))
+    (let (((l) (cdr l)))
+      (==> this remove-not l) ) )
+   ((= (car l) 'and)
+    (cons 'or (all ((i (cdr l))) (==> this remove-not-and-negate i))) )
+   ((= (car l) 'or)
+    (cons 'and (all ((i (cdr l))) (==> this remove-not-and-negate i))) )
+   (t
+    (cons 
+     (selectq (car l)
+	      (0= '0<>)(0<> '0=)(= '<>)(<> '=)(> '<=)(<= '>)(>= '<)(< '>=)
+	      (t (error 'zlambda "illegal test" l)))
+     (cdr l) ) ) ) )
+
+(defmethod dz-compile-class compile-test-2(l ify ifn)
+  (let ((prog ()))
+    (cond
+     
+     ((not (consp l))
+      (error 'zlambda "illegal test" l))
+     
+     ((and (member (car l) '(and or))
+	   ~(consp (cdr l)))
+      (error 'zlambda "arguments expected" l) )
+     
+     ((= (car l) 'and)
+      (let ((ifnbis (if ifn ifn (==> this new-label "and"))))
+	(while (setq l (cdr l))
+	  (if (cdr l)
+	      (setq prog (nconc prog (==> this compile-test-2 (car l) () ifnbis)))
+	    (setq prog (nconc prog (==> this compile-test-2 (car l) ify ifn))) ) )
+	(if ~ifn
+	    (setq prog (nconc1 prog ifnbis)) ) ) )
+     
+     ((= (car l) 'or)
+      (let ((ifybis (if ify ify (==> this new-label "or"))))
+	(while (setq l (cdr l))
+	  (if (cdr l)
+	      (setq prog (nconc prog (==> this compile-test-2 (car l) ifybis ())))
+	    (setq prog (nconc prog (==> this compile-test-2 (car l) ify ifn))) ) )
+	(if ~ify
+	    (setq prog (nconc1 prog ifybis)) ) ) )
+     
+     (t
+      (if (member (car l) '(0= 0<>))
+	  (let (((l) (cdr l)))
+	    (setq prog (nconc prog (==> this compile-expr l ()))) )
+	(let (((a b) (cdr l)))
+	  (setq prog (nconc prog (==> this compile-expr (list '- a b) ())))
+	  (if (= (last prog) '("SUB#" 0))
+	      (setq prog (reverse (cdr (reverse prog)))))))
+      (if ~ify
+	  (setq prog 
+		(==> this add-end prog
+		     (list (selectq (car l) 
+				    (0<> "BREQ")(0= "BRNEQ")(<> "BREQ")(= "BRNEQ")
+				    (<= "BRGT")(> "BRLEQ")(< "BRGEQ")(>= "BRLT")
+				    (t (error 'zlambda "illegal test" l)))
+			   ifn) ))
+	(setq prog 
+	      (==> this add-end prog
+		   (list (selectq (car l) 
+				  (0= "BREQ")(0<> "BRNEQ")(= "BREQ")(<> "BRNEQ")
+				  (> "BRGT")(<= "BRLEQ")(>= "BRGEQ")(< "BRLT")
+				  (t (error 'zlambda "illegal test" l)))
+			 ify) ))
+	(when ifn
+	      (setq prog (==> this add-end prog
+			      (list "BR" ifn) )) ) ) ) )
+    
+    prog ))
+
+
+
+;------------------------------------------------------------------------------
+;	pretty printer for DZs
+;
+
+
+(defmethod |DZ| pretty()
+  (let (((num . prog) (dz-def this)))
+    (==> this pretty-print num prog)))
+
+(defmethod |DZ| pretty-print(num prog)
+  (printf "(dz-load %l '( " num)
+  (let* ((tab-label (tab))
+	 (tab-prog  (+ tab-label 8)))
+    (while prog
+      (tab (if (stringp (car prog))
+	       tab-label
+	     tab-prog))
+      (prin (car prog))
+      (if (setq prog (cdr prog))
+	  (print)))
+    (printf ")\n")))
+
+

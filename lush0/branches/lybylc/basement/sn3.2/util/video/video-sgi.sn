@@ -1,0 +1,187 @@
+#? File "video-sgi"
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; an SN object for grabbing color images from the SGI 
+;; video I/O hardware. This has been tested on Indy VINO, and on O2.
+
+(mload "video/sgi-vl")
+(mload "cmacro")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; higher level functions for video input.
+
+#? video-sgi
+;; an object to access the Indy SGI video 
+;; input-output board.
+(defclass video-sgi object
+  ((-gptr- "VLServer") server)
+  ((-gptr- "VLBuffer") buffer)
+  ((-int-) abgr)                        ; if = 0 RGBA else ABGR
+  ((-int-) sizex)                       ; H-size of grabbed images
+  ((-int-) sizey)                       ; V-size of grabbed images
+  ((-int-) source)
+  ((-int-) drain)
+  ((-int-) path))
+
+
+#? (new video-sgi)
+;; construct a new video-sgi object
+(defmethod video-sgi video-sgi ()
+  ;; open video server
+  (setq server (vlOpenVideo))
+  (when (not server) (error "could not open video"))
+  ;; setup drain in memory
+  (setq drain (vlGetNode server VL_DRN VL_MEM 1))
+  (when (< drain 0) 
+    (vlCloseVideo server)
+    (error "could not get drain video node"))
+  ;; setup source as video input
+  (setq source (vlGetNode server VL_SRC VL_VIDEO VL_ANY))
+  (when (< source 0) 
+    (vlCloseVideo server)
+    (error "could not get source video node"))
+  ;; creating path from source to drain
+  (setq path (vlCreatePath server VL_ANY source drain))
+  (when (< source 0) 
+    (vlCloseVideo server)
+    (error "could not create video from source to drain"))
+  (when (< (vlSetupPath server path VL_LOCK VL_LOCK) 0)
+    (vlDestroyPath server path)
+    (vlCloseVideo server)
+    (error "could not setup video path"))
+  ;; set video format to RGBA, 8 bit per component
+  ;; I had hoped to use this but it does not work
+  ;; (vlSetVL_PACKING server path drain VL_PACKING_ABGR_8)
+  ;; so I have to use that and flip the bytes by hand
+  (vlSetVL_PACKING server path drain VL_PACKING_RGBA_8)
+  ())
+
+#? (==> <video-sgi> begin <zoom> <ox> <oy> <sx> <sy> <n> <rate> <abgr>)
+;; start capturing video frames continuously into a ring buffer
+;; of size <n>. An appropriate value for <n> is 1.
+;; Frames can be captured with the methods grab or grabto
+;; until the method end is called and the method begin is called again.
+;; <zoom> determines the resolution of the grabbed pictures.
+;; allowable values for <zoom> are 1,2,4, and 8 producing picture
+;; resolutions of respectively 640x480, 320x240, 160x120, and 80x60.
+;; <ox>, <oy>, <sx>, <sy> determine a rectangular window (origin and size)
+;; from which the grabbed images will be extracted. Due to a "bug" in SGIs
+;; vl library, the offset parameters seem to be inoperative and to
+;; stick the window at the right side of the grabbed area.
+;; <rate> is meant to determine the frame rate, but it doesn't seem
+;; to work on Indys (the frame rate is invariably 10 frames/second).
+(defmethod video-sgi begin (zoom ox oy sx sy n rate flg)
+  ((-int-) n zoom ox oy sx sy rate flg)
+  (==> this end)
+  (setq abgr flg)
+  ;; setting the rate returns an error code
+  ;; (vlSetVL_RATE server path source rate)
+  (vlSetVL_ZOOM server path drain zoom)
+  (if (and (= 0 sx) (= 0 sy) (= 0 ox) (= 0 oy))
+      (let ((z (int-matrix 2)))
+        (vlGetVL_SIZE server path drain z)
+        (setq sx (z 0)) (setq sy (z 1))
+        ;; (printf "drain  xsize-%d, ysize=%d\n" sx sy)
+        ))
+  (vlSetVL_OFFSET server path drain ox oy)
+  (vlSetVL_SIZE server path drain sx sy)
+  (setq sizex sx) (setq sizey sy)
+  (setq buffer (vlCreateBuffer server path drain n))
+  (vlRegisterBuffer server path drain buffer)
+  (==> this begin-transfer)
+  ())
+
+#? (==> <video-sgi> end)
+;; stops capturing video in the ring buffer.
+(defmethod video-sgi end ()
+  (==> this end-transfer)
+  (when buffer
+    (vlDeregisterBuffer server path drain buffer)
+    (vlDestroyBuffer server buffer)
+    (setq buffer ())))
+
+(defmethod video-sgi -destructor ()
+  (==> this end)
+  (vlDestroyPath server path)
+  (vlCloseVideo server))
+
+#? (==> <video-sgi> sizex)
+;; returns the horizontal size of the pictures
+;; grabbed by the object <video-sgi>
+(defmethod video-sgi sizex () sizex)
+
+#? (==> <video-sgi> sizey)
+;; returns the vertical size of the pictures
+;; grabbed by the object <video-sgi>
+(defmethod video-sgi sizey () sizey)
+
+(defmethod video-sgi begin-transfer ()
+  (cpheader "#include <dmedia/vl.h>")
+  #{{ VLTransferDescriptor desc;
+      /* desc.mode = VL_TRANSFER_MODE_CONTINUOUS;
+         desc.count = 0;
+         desc.delay = 0;
+         desc.trigger = VLTriggerImmediate;
+         vlBeginTransfer($server, $path, 0, &desc); */
+      vlBeginTransfer($server, $path, 0, NULL); 
+  } #} ())
+
+(defmethod video-sgi end-transfer ()
+  (vlEndTransfer server path))
+
+#? (==> <video-sgi> grab)
+;; grab a frame and return an RGBA matrix with 
+;; the image in it.
+;; this must be preceded by a call to the method begin.
+(defmethod video-sgi grab ()
+  (let ((im (ubyte-matrix-nc sizey sizex 4)))
+    #{{ VLInfoPtr info; 
+        unsigned char *imptr, *rptr;
+        while (!(info=vlGetLatestValid($server, $buffer)));
+        imptr = vlGetActiveRegion( $server, $buffer, info);
+        rptr  = IDX_PTR($im,unsigned char);
+        if ($abgr != 0) {
+          memcpy(rptr, imptr, $sizex*$sizey*4);
+          } else { int i,j;
+          for (i=0; i<$sizey; i++) {
+            for (j=0; j<$sizex; j++) {
+              *(rptr++) = imptr[3]; *(rptr++) = imptr[2]; 
+              *(rptr++) = imptr[1]; *(rptr++) = 0;
+              imptr+=4; }}}
+        vlPutFree( $server, $buffer);
+      } #}
+    im))
+
+#? (==> <video-sgi> grabto <im>)
+;; grabs an image into a preexisting ubyte-matrix.
+;; the matrix should have the right size:
+;; sizey by sizex by 4. sizex and sizey are slots of
+;; the video-sgi object that can be read through the
+;; methods of the same name
+(defmethod video-sgi grabto (im)
+  ((-idx3- (-ubyte-)) im)
+  (when (or (<> (idx-dim im 0) sizey)
+            (<> (idx-dim im 1) sizex)
+            (<> (idx-dim im 2) 4))
+    (error "wrong size for image matrix"))
+    #{{ VLInfoPtr info; 
+        unsigned char *imptr, *rptr;
+        while (!(info=vlGetLatestValid($server, $buffer)));
+        imptr = vlGetActiveRegion( $server, $buffer, info);
+        rptr  = IDX_PTR($im,unsigned char);
+        if ($abgr != 0) {
+          memcpy(rptr, imptr, $sizex*$sizey*4);
+          } else { int i,j;
+          for (i=0; i<$sizey; i++) {
+            for (j=0; j<$sizex; j++) {
+              *(rptr++) = imptr[3]; *(rptr++) = imptr[2]; 
+              *(rptr++) = imptr[1]; *(rptr++) = 0;
+              imptr+=4; }}}
+        vlPutFree( $server, $buffer);
+      } #} ())
+
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make () 
+          (video-sgi begin-transfer end-transfer sizex sizey grab grabto))
+

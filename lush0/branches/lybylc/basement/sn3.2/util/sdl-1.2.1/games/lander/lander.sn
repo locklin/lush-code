@@ -1,0 +1,220 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a slightly more sophisticated version on Lunar Lander
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Yann LeCun 07-2001
+
+(mload "sdl/libsdl")
+
+(when (< (SDL_Init SDL_INIT_VIDEO) 0) (error "Unable to init SDL"))
+
+(setq pi/180 (/ 3.1415927 180))
+
+;; modulo for floating point numbers
+(de fmod (x n) (if (or (< x 0) (>= x n)) (- x (* n (int (/ x n)))) x))
+
+;; init data for explosion animation
+(de init-explose (scr)
+    (setq crater (new sprite scr 10))
+    (==> crater load-frame "crater.png" 0 65 18)
+    (setq flash (new sprite scr 10))
+    (==> flash load-frame "flash.png" 3 60 45)
+    (for (i 0 2) (==> flash rotscale-frame 3 i 0 (/ (1+ i) 4)))
+    (setq lembits (array 7))
+    (each ((i (range 0 4)) 
+           (hotx '(11 15 10 25 25))
+           (hoty '(15 12 15 18 16)))
+      (lembits i (new sprite scr 10))
+      (==> (lembits i) load-frame (sprintf "lembit%02d.png" i) 0 hotx hoty))
+    (lembits 5 (new sprite scr 10))
+    (==> (lembits 5) load-frame "stone00.png" 0 15 9)
+    (lembits 6 (new sprite scr 10))
+    (==> (lembits 6) load-frame "stone01.png" 0 15 9)
+    (for (i 0 6) (for (j 1 7) (==> (lembits i) rotscale-frame 0 j (* j 45) 1)))
+    (setq lembits-state (matrix 7 8)))
+
+;; explosion animation
+(de explose (scr bgd x y vx vy dt grav)
+    (let ((n (idx-dim lembits 0)))
+      (for (i 0 (1- n)) 
+        (lembits-state 
+         i () (list (+ x (rand -30 30)) (+ y (rand 0 60))
+                    (+ (rand -50 50) (rand (* 0.2 vx) vx))
+                    (rand (* 0.8 vy) (* 0.3 vy)) 
+                    0 grav 0 (max -1 (min 1 (* (rand 0.2 1) (* 0.01 vx)))))))
+      (for (it 0 99)
+        (==> scr clear)  
+        (==> bgd draw)   
+        (==> crater move x (+ y 10))
+        (==> crater draw)
+        (idx-bloop ((s lembits-state) (l lembits))
+          (s 6 (fmod (+ (s 6) (s 7)) 8))
+          (s 2 (+ (s 2) (* dt (s 4))))
+          (s 3 (+ (s 3) (* dt (s 5))))
+          (s 0 (+ (s 0) (* dt (s 2))))
+          (s 1 (+ (s 1) (* dt (s 3))))
+          (==> (l) set-frame (int (s 6)))
+          (when (< (s 0) -40) (s 0 (+ 800 (- (s 0) -40)))) ; wrap around left side
+          (when (> (s 0) 800) (s 0 (+ -40 (- (s 0) 800)))) ; wrap around right side
+          (when (> (s 1) ground)              ; bounce on ground
+            (s 3 (* -0.7 (s 3))) 
+            (s 2 (* 0.3 (s 2)))
+            (s 7 (max -1 (min 1 (* (rand 0.2 1) (* 0.01 (s 2)) (if (> (abs (s 3)) 50) 1 0)))))
+            (s 1 ground))
+          (==> (l) move (s 0) (s 1))
+          (==> (l) draw))
+        (when (< it 4) 
+          (==> flash set-frame it)
+          (==> flash move x (- y 20)) 
+          (==> flash draw))
+        (==> scr flip))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; dynamic object class definition
+;;
+;; slots are sprite, mass, inverse mass, frame, position, velocity, acceleration
+(defclass dynobj object sp m m1 f x y vx vy ax ay)
+(defmethod dynobj draw () (==> sp move x y) (==> sp draw))
+(defmethod dynobj update (fx fy dt)
+  (setq ax (* m1 fx)) (setq ay (* m1 fy))
+  (incr vx (* dt ax)) (incr vy (* dt ay))
+  (incr x (* dt vx)) (incr y (* dt vy)))
+
+;; bullet class (a dynamical object with a finite life time).
+(defclass bullet dynobj life)
+(defmethod bullet bullet (lx ly lvx lvy lax lay llife lsp)
+  (setq m 1) (setq m1 (/ 1 m))
+  (setq sp lsp) (setq x lx) (setq y ly)
+  (setq vx lvx) (setq vy lvy) 
+  (setq ax lax) (setq ay lay) (setq life llife))
+(defmethod bullet update (dt)
+  (incr vx (* dt ax)) (incr vy (* dt ay))
+  (incr x (* dt vx)) (incr y (* dt vy))
+  (incr life (- deltat)))
+(defmethod bullet draw () (==> sp move x y) (==> sp drawc))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; game proper
+
+(de lander ()
+    (let* ((scr (new screen 800 600 "Lander")) ; open screen
+           (bgd (new sprite scr 0))     ; create background sprite
+           (lem (new sprite scr 1))     ; create lem sprite
+           (lems (new sprite scr 2))    ; create lem shadow sprite
+           (lem-flame (new sprite scr 1))    ; create lem shadow sprite
+           (bulletsp (new sprite scr 3))
+           (ground 510)
+           ;; set initial position, velocity, acceleration of lem
+           (x 100) (y ground) (vx 4) (vy 0) (ax 0) (ay 0) 
+           (z 0)                        ; initial angle of lem
+           ;; set mass, inverse mass, and deltat of lem
+           (mass 1) (mass-inv (/ 1 mass)) (deltat 0.01)
+           (main-thrust 400)          ; set main engine thrust
+           (friction -0.0)            ; set air friction (say -0.04)
+           (grav 200)                 ; set gravity coefficient in pixels/s/s
+           (vb 300)                   ; bullet speed
+           ;; bullet list
+           (blist ())
+           ;; other thingies
+           (stop ())
+           (event (new sdl-event))
+           (xyk (int-matrix 3))
+           ;; (gui (make-lander-gui))
+           )
+      (init-explose scr)
+      (==> bgd load-frame "moon-svga.png" 0 0 0)
+      (==> bgd move 0 406)
+      (==> lems load-frame "lem-shadow.png" 0 40 -6)
+      (==> lem load-frame "lem.png" 0 40 35)
+      (==> lem-flame load-frame "lem-flame.png" 0 40 35)
+      (==> bulletsp load-frame "bullet.png" 0 6 6)
+      ;; fill up frames with rotated lems
+      (let ((i 1))
+        (for (angle 10 350 10)
+          (==> lem rotscale-frame 0 i angle 1)
+          (==> lem-flame rotscale-frame 0 i angle 1)
+          (incr i)))
+      (while (not stop)
+        ;; (process-pending-events)
+        (==> scr clear)                 ; fill image with black
+        (==> bgd draw)                  ; draw moon ground
+        (==> event get-arrows xyk)      ; read keyboard
+        (when (= (xyk 2) SDLK_q) (setq stop t)) ; stop when q is pressed
+        (setq z (+ z (xyk 0)))
+        (while (>= z 36) (setq z (- z 36)))
+        (while (< z 0) (setq z (+ z 36)))
+        (==> lem set-frame (int z))
+        (==> lem-flame set-frame (int z))
+        (setq ax (* mass-inv main-thrust (xyk 1) (sin (* pi/180 -10 z)))) ; update acceleration 
+        (setq ay (+ grav (* mass-inv main-thrust (xyk 1) (cos (* pi/180 10 z))))) ; update acceleration 
+        (setq vx (+ vx (* friction vx) (* ax deltat)))  ; update velocity
+        (setq vy (+ vy (* friction vy) (* ay deltat)))  ; update velocity
+        (setq x  (+ x (* vx deltat)))   ; update position
+        (setq y  (+ y (* vy deltat)))   ; update position
+        (when (< x -40) (setq x (+ 800 (- x -40)))) ; wrap around left side
+        (when (> x 800) (setq x (+ -40 (- x 800)))) ; wrap around right side
+        (when (> y ground)              ; bounce on ground
+          (if (or (<> 0 (int z))
+                  (> vx 100)
+                  (> vy 100))
+              (progn
+                (explose scr bgd x ground vx (- vy) deltat grav)
+                (setq x 100 y ground vx 4 vy 0 ax 0 ay 0 z 0))
+            (setq vy (* -0.5 vy)) 
+            (setq vx (* 0.25 vx))
+            (setq z 0)
+            (==> lem set-frame (int z))
+            (==> lem-flame set-frame (int z))
+            (setq y ground)))
+        ;; bullet stuff
+        (when (= (xyk 2) SDLK_z)
+          (setq blist (cons (new bullet x y 
+                                 (- vx (* vb (sin (* pi/180 -10 z))))
+                                 (- vy (* vb (cos (* pi/180 -10 z))))
+                                 0 grav
+                                 3 bulletsp) blist))
+                  (+ vx (* vb (sin (* pi/180 -10 z))))
+                  (+ vy (* vb (cos (* pi/180 -10 z)))))
+        (let ((blist-new ())) 
+          (each ((b blist))
+            (when (> :b:life 0) 
+              (==> b update deltat) (==> b draw) 
+              (setq blist-new (nconc1 blist-new b))))
+          (setq blist blist-new))
+        (==> lem move x y)              ; move lem sprite to position
+        (==> lem-flame move x y)              ; move lem sprite to position
+        (==> lems move x ground)        ; move shadow sprite to position
+        (==> lems draw)                 ; draw shadow
+        (when (<> 0 (xyk 1)) (==> lem-flame draw))
+        (==> lem draw)                  ; draw lem
+        (==> scr flip)                  ; flip screens
+        (setq deltat :scr:deltat)       ; update deltat to time between screen flips
+        )
+      ;;(delete gui)
+      ))
+
+;; this code is not used at the moment
+(de make-lander-gui ()
+    (setq lander-gui 
+          (new windowobject 10 10 180 100 "Lander Params"
+               (new grid 2
+                    (new string "Thrust") 
+                    (setq gui-thrust (new hslider 0 2000 
+                         (lambda (c) (setq main-thrust (==> c getdata)))))
+                    (new string "Gravity") 
+                    (setq gui-gravity (new hslider 0 2000 
+                         (lambda (c) (setq grav (==> c getdata)))))
+                    (new string "Friction") 
+                    (setq gui-friction (new hslider 0 1 
+                         (lambda (c) (setq friction (- (==> c getdata)))))))))
+    (==> gui-thrust setdata main-thrust)
+    (==> gui-gravity setdata grav)
+    (==> gui-friction setdata (- friction)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; start GUI toolkit
+;; (ogre)
+
+;; start game
+(lander)

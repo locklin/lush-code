@@ -1,0 +1,99 @@
+
+(mload "sdl/libsdl")
+
+(when (< (SDL_Init SDL_INIT_VIDEO) 0)
+    (error "Unable to init SDL"))
+
+;; load an image and display it in a window
+(de showimage (f)
+  (let* ((flags SDL_SWSURFACE)
+	 (image (IMG-load f)))
+    (when (not image) (error "could not load image"))
+    (SDL_WM_SetCaption f "showimage")
+    (let* ((depth (SDL_VideoModeOK (SDL_Surface_w image) (SDL_Surface_h image) 32 flags)))
+      (cond 
+       ((= depth 32) (printf "32 bit mode\n"))
+       ((= depth 24) (printf "24 bit mode\n"))
+       ((= depth 16) (printf "16 bit mode\n"))
+       (t (setq depth 32) (printf "bitdepth=%d, emulating 32 bits\n" depth)))
+      (setq scr 
+	    (SDL_SetVideoMode 
+	     (SDL_Surface_w image) (SDL_Surface_h image) depth SDL_SWSURFACE))
+      (SDL_BlitSurface image () scr ())
+      (SDL_UpdateRect scr 0 0 0 0)
+      (pause "asd")
+      (SDL_FreeSurface image)
+      ())))
+
+
+#? (bounce <f> <b> <n>)
+;; bounce a bunch of objects on a background
+;; <f> is an image filename for the object
+;; <b> is a backgroun image
+;; <n> is the number of objects
+;; example: (bounce "lem.png" "moon.png" 32)
+(de bounce (f b n)
+    (let* ((flags (+ SDL_HWSURFACE SDL_DOUBLEBUF))
+	   (image (IMG-load f))		; load sprite
+	   (bg (IMG-load b)))		; load background
+      (when (not image) (error "could not load sprite image"))
+      (when (not bg) (error "could not load bg image"))
+      (SDL_WM_SetCaption f "showimage")	; set window title
+      (let* ((depth (SDL_VideoModeOK 640 480 32 flags)) ; see if 32 bit win is OK
+	     (imw (SDL_Surface_w image)) ; get width of object image
+	     (imh (SDL_Surface_h image))) ; get height of object image
+	(cond 
+	 ((= depth 32) (printf "32 bit mode\n"))
+	 ((= depth 24) (printf "24 bit mode\n"))
+	 ((= depth 16) (printf "16 bit mode\n"))
+	 (t (setq depth 32) (printf "bitdepth=%d, emulating 32 bits\n" depth)))
+	;; open SDL window as double-buffered hardware surface
+	(setq scr (SDL_SetVideoMode 640 480 depth flags))
+	;; tell object image to use per-pixel alpha blending
+	;; and RLE acceleration
+	(SDL_SetAlpha image (+ SDL_SRCALPHA SDL_RLEACCEL) 255)
+	(let ((r (new-sdl-rect 0 0 imw imh)) ; allocate a new rectangle
+	      ;; convert object image to screen mode 
+	      ;; (and prescale by alpha channel)
+	      (sprite (SDL_DisplayFormatAlpha image)) 
+	      ;; convert bg image to screen mode
+	      (bgd (SDL_DisplayFormat bg))
+	      ;; initialize physical state of object
+	      (x (matrix n))
+	      (y (matrix n))
+	      (vx (matrix n))
+	      (vy (matrix n))
+	      (grav 1))
+	  (idx-bloop ((x x)(y y)(vx vx)(vy vy))
+		     (x (rand 10 600))
+		     (y (rand 10 200))
+		     (vx (rand -5 5))
+		     (vy (rand -2 2)))
+	  (repeat 500
+		  ;; draw the bacground
+		  (SDL_BlitSurface bgd () scr ())
+		  (idx-bloop ((x x)(y y)(vx vx)(vy vy))
+			     ;; move the sprite
+			     (set-sdl-rect r (int (x)) (int (y)) imw imh)
+			     ;; draw it on the screen surface
+			     (SDL_BlitSurface sprite () scr r)
+			     ;; do physics
+			     (vy (+ (vy) grav))
+			     (x (+ (x) (vx))) (y (+ (y) (vy)))
+			     (when (< (x) 0) (vx (- (vx))) (x 0))
+			     (when (> (x) 560) (vx (- (vx))) (x 560))
+			     (when (> (y) 360) (vy (* -0.95 (vy))) (y 360)))
+		  ;; flip the screen buffers
+		  (SDL_flip scr))
+	  ;; deallocate screen-mode images and rectangles
+	  (SDL_FreeSurface sprite)
+	  (SDL_FreeSurface bgd)
+	  (free-sdl-rect r))
+	;; deallocate original images
+	(SDL_FreeSurface image)
+	(SDL_FreeSurface bg)
+	(SDL_FreeSurface scr) ())))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(printf "type: (bounce \"lem.png\" \"moon.png\" 16)\n")

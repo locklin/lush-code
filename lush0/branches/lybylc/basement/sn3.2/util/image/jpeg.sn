@@ -1,0 +1,55 @@
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "file-std")
+(mload "image/pnm")
+
+#? (jpeg-pread-rgba <file>)
+;; read a JPEG image into an RGBA matrix using djpeg through a pipe.
+;; For some unknown reason this function is not very reliable.
+(de jpeg-pread-rgba (file)
+    ((-str-) file)
+    (cheader "#include <stdio.h>\n")
+    (let ((f (popen (concat "djpeg " file) "r"))
+          (nlin 0) (ncol 0))
+      ((-int-) nlin ncol)
+      (when (not f) (error "can't start jpeg decompressor djpeg"))
+      (if (<> 2 (int #{ fscanf((FILE *)$f,"P6 %d %d 255\n",&($ncol), &($nlin)) #}))
+          (progn (pclose f) (error "bad JPEG file"))
+        (let ((rez (ubyte-matrix nlin ncol 4)))
+          #{{
+          int i,j;
+          unsigned char *prez;
+          prez = IDX_PTR($rez,unsigned char);
+          for (i=0; i<$nlin; i++) {
+               for (j=0; j<$ncol; j++) { 
+                    *prez++ = (unsigned char) getc((FILE *)$f);
+                    *prez++ = (unsigned char) getc((FILE *)$f);
+                    *prez++ = (unsigned char) getc((FILE *)$f);
+                    *prez++ = 0;
+               }
+          } } #}
+          (pclose f)
+          rez))))
+
+(setq *jpeg-tmpfname* (tmpnam))
+
+#? (jpeg-read-rgba <file>)
+;; read a JPEG image into an RGBA matrix using djpeg through a
+;; temporary file. This is not compilable.
+;; jpeg-pread-rgba is compilable but unreliable.
+(de jpeg-read-rgba (fname)
+    ((-str-) fname)
+    ;; wait until compilable version ready
+    (sys (sprintf "djpeg -pnm %s > %s" fname *jpeg-tmpfname*))
+    (let ((im (pnm-read-rgbaim *jpeg-tmpfname*)))
+      (sys (sprintf "rm %s" *jpeg-tmpfname*)) 
+      im ) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make "jpeg" jpeg-pread-rgba)
+
+          
+                    
+                    
+

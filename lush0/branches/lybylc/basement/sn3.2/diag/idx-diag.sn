@@ -1,0 +1,975 @@
+;;-----------------------------------------------------------------------------
+;; testing programs for function returning values
+;;-----------------------------------------------------------------------------
+
+(de =number (a b)
+    (if (< (abs (- a b)) 0.00001)
+	t ()))
+
+(de =idx (a b)
+    (if (<> (bound a) (bound b)) ()
+      (let ((al (apply a (makelist (bound a 0) ())))
+	    (bl (apply b (makelist (bound b 0) ()))))
+	(apply and (mapcar =number 
+			   (flatten al)
+			   (flatten bl))))))
+
+(de =storage (a b)
+    (and (= (idx-storage a) (idx-storage b))
+	 (=idx a b)))
+
+(de test (func args &optional testfunc)
+    (let ((c-res (apply func args))
+	  (lisp-res (apply :func:source args)))
+      (if ~((if testfunc testfun
+	     (if (numberp c-res) =number (if (matrixp c-res) =idx =))) c-res lisp-res)
+	  (error 'test "interpreted and compiled code differ" func))))
+
+;;-----------------------------------------------------------------------------
+;; testing basic function definition, basic typing, basic bumping,
+;;         let, let*, if, for, prog1, progn, matrix, setq, copy-matrix
+;;         copy-any-matrix
+;;
+
+(de diag01 (a) (-flt- a) a)
+(de diag02 (a) (-idx1- a) a)
+(de diag03 (a) (-idx3- a) a)
+
+(de diag04 (n a b)
+    (-flt- n) (-idx1- a b)
+    (if (= 0 n) a b))
+
+(de diag05 (a)
+    (-idx1- a)
+    (setq a (for (i 0 2) (prog1 (progn (let ((a a)) a)))))
+    a)
+
+(de diag06 (a)
+    (-idx1- a)
+    (let ((a (matrix 6)))
+      (for (i 0 5)
+	   (a i (flt i)))
+      a))
+
+(de diag07 (a b c)
+    (-idx1- a b c)
+    (b 3 666)
+    b)
+
+(de diag08 ()
+    (let ((a (matrix 3))
+	  (b (matrix 4))
+	  (c (matrix 5))
+	  (d (matrix 6)))
+      (for (i 0 2) (a i (flt i)))
+      (for (i 0 3) (b i (flt i)))
+      (for (i 0 4) (c i (flt i)))
+      (for (i 0 5) (d i (flt i)))
+      c))
+
+(de diag09 (n a)
+    (-flt- n)
+    (-idx1- a)
+    (let ((b (matrix 5)))
+      (a 0 2) (b 0 3)
+      (if (= 0 n) a 
+	(if (= 1 n) b (matrix 5)))))
+
+(de diag010 (n a)
+    (-flt- n)
+    (-idx1- a)
+    (let ((b (matrix 5))
+	  (res (matrix 5)))
+      (a 0 2) (b 0 3)
+      (if (= 0 n) (setq res a) (setq res b))))
+
+(de diag011 (a)
+    (-idx1- a)
+    (let ((b (clone-matrix a)))
+      (b 0 3)
+      (b 1 44)
+      b ) )
+
+(de diag012 (a b)
+    (-idx1- a) (-idx2- b)
+    (copy-any-matrix a b)
+    b)
+
+(de diag013 (a)
+    (-idx2- a)
+    (copy-any-matrix a))
+
+(de diag014 ()
+    [[1 2 3][5 6 7]])
+
+(de diag015 ()
+    (let ((a (matrix 5)))
+      (copy-matrix [3 4 5 6 7] a)
+      a))
+
+(de series1 ()
+    (printf "testing basic function definition, basic typing, basic bump,\n")
+    (printf "  let, let*, if, for, prog1, progn, matrix, setq, copy-matrix,\n")
+    (printf "  copy-any-matrix\n\n")
+    (printf "compiling tests\n")
+    (dhc-make "diag" diag01 diag02 diag03 diag04 diag05 diag06 diag07
+                     diag08 diag09 diag010 diag011 diag012 diag013 diag014 diag015)
+    (printf "testing...\n")
+    (test diag01 '(3.4)) 
+    (printf "diag01 ok\n")
+    (test diag02 '([3 4 5]))
+    (printf "diag02 ok\n")
+    (test diag03 '([[[3 4][4 5]][[3 4][4 5]]]))
+    (printf "diag03 ok\n")
+    (test diag04 '(0 [3 4 5] [7 8 9]))
+    (printf "diag04 ok\n")
+    (test diag05 '([3 4 5]))
+    (printf "diag05 ok\n")
+    (test diag06 '([3 4 5]))
+    (printf "diag06 ok\n")
+    (test diag07 '([3 4 5 6] [2 2 2 2] [8 8 8 9]))
+    (printf "diag07 ok\n")
+    (test diag08 '())
+    (printf "diag08 ok\n")
+    (test diag09 '(0 [3 4 5 6 7]))
+    (test diag09 '(1 [3 4 5 6 7]))
+    (test diag09 '(9 [3 4 5 6 7]))
+    (printf "diag09 ok\n")
+    (test diag010 '(0 [3 4 5 6 7]))
+    (test diag010 '(8 [3 4 5 6 7]))
+    (printf "diag010 ok\n")
+    (test diag011 '([3 4]))
+    (printf "diag011 ok\n")
+    (test diag012 '([3 4] [[0 0]]))
+    (test diag012 '([0 2 0 3 0 8 0 9] [[3 8][4 8][4 4][9 9]]))
+    (printf "diag012 ok\n")
+    (test diag013 '([[7 3 4][4 5 6]]))
+    (printf "diag013 ok\n")
+    (test diag014 '())
+    (printf "diag014 ok\n")
+    (test diag015 '())
+    (printf "diag015 ok\n")
+)
+
+;;-----------------------------------------------------------------------------
+;; testing basic function call to DHs and more of the basic stuff.
+;;         
+
+
+(de diag0211 (a) (-flt- a) a)
+(de diag0221 (a) (-idx1- a) a)
+(de diag0210 (n a)
+    (-flt- n)
+    (-idx1- a)
+    (let ((b (matrix 5))
+	  (res (matrix 5)))
+      (a 0 2) (b 0 3)
+      (if (= 0 n) (setq res a) (setq res b))))
+
+(de diag021 (a) (-flt- a) (diag0211 a))
+
+(de diag022 (a) (-idx1- a) (diag0221 a))
+
+(de diag023 (n m a)
+    (-flt- n m)
+    (-idx1- a)
+    (let ((b (diag0210 m a))
+	  (res (matrix 5)))
+      (a 2 24) (b 2 23)
+      (if (= 0 n) (setq res a) (setq res b))))
+
+(de diag024 (a b c)
+    (-idx1- a b c)
+    (idx-m1add a b c)
+    c)
+
+(de diag025 (a b)
+    (-idx1- a b)
+    (let ((c (clone-matrix a)))
+      (idx-m1add a b c)
+      c))
+
+(de diag026 (a b c d)
+    (-idx1- a b c d)
+    (diag025 a (diag025 b (diag025 c d))))
+
+(de diag025b (a b)
+    (-idx1- a b)
+    (let ((c (clone-matrix a)))
+      (if (= 0 2)
+	  a
+	(if (= 0 2) 
+	    b
+	  c))))
+
+(de diag026b (a b c d)
+    (-idx1- a b c d)
+    (diag025b a (diag025b b (diag025b c d))))
+
+(de diag027 (n)
+    (-ord- n)
+    (let ((c (matrix n)))
+      (idx-bloop ((i c))
+		 (i 1))
+      c))
+
+(de diag028 (a)
+    (-idx1- a)
+    (copy-matrix (diag025 a (diag027 (idx-dim a 0))) a)
+    a)
+
+(de diag029 (a b c d e)
+    (-flt- a)
+    (-bool- b)
+    (-int- c)
+    (-ord- d)
+    (-idx1- e)
+    (let ((e (copy-matrix e)))
+      (setq a (* 3 a))
+      (setq b (if (= b t) () t))
+      (setq a (+ a (if (= b t) 2 3)))
+      (setq c (int (* 3 c)))
+      (setq a (+ a c))
+      (setq d d)
+      (e 0 (+ (e 0) 4))
+      (setq a (+ a (e 0)))
+      (setq a (+ a (let ((u (matrix)))
+		     (u (* a 2))
+		     (u))))
+      (let ((c (matrix 2)))
+	(c 0 a)
+	(c 1 (flt d))
+	c)))
+
+(de diag030 (a b c d e)
+    (-flt- a)
+    (-bool- b)
+    (-ord- c)
+    (-ord- d)
+    (-idx1- e)
+    (diag029 a b c d e))
+
+(de diag031 ()
+    (let ((a t))
+      (setq a (and a (= () (progn))))
+      (setq a (and a (= () (prog1))))
+      (setq a (and a (= () (if t () t))))
+      (setq a (and a (= t  (if () () t))))
+      (setq a (and a (= t  (when t t))))
+      (setq a (and a (= () (when () t))))
+      (setq a (and a (= t (for (i 0 1) t))))
+      (setq a (and a (= t (or t))))
+      (setq a (and a (= () (or ()))))
+      (setq a (and a (= () (cond (t ())))))
+      (setq a (and a (= 1 (cond (t 1)))))
+      (setq a (and a (= 2 (cond (() 1) (t 2) (() 3) (t 4)))))
+      (setq a (and a (= 1 (selectq 3 ((0 2 4 6 8) 2) ((1 3 5 7 9) 1) (t 0)))))
+      (setq a (and a (= 2 (selectq 6 ((0 2 4 6 8) 2) ((1 3 5 7 9) 1) (t 0)))))
+      (setq a (and a (= 0 (selectq 66 ((0 2 4 6 8) 2) ((1 3 5 7 9) 1) (t 0)))))
+      a))
+
+(de series2 ()
+    (printf "testing basic function call to DHs and more of the basic stuff\n")
+    (printf "compiling tests\n")
+    (dhc-make "diag" diag0211 diag0221 diag0210 diag021 diag022
+	      diag023 diag024 diag025 diag027 diag029
+	      diag026 diag028 diag030 diag031)
+
+    (printf "testing...\n")
+    (test diag021 '(3.4)) 
+    (printf "diag021 ok\n")
+    (test diag022 '([3 4 5]))
+    (printf "diag022 ok\n")
+    (test diag023 '(0 0 [9 9 9 9 9]))
+    (test diag023 '(0 1 [9 9 9 9 9]))
+    (test diag023 '(1 0 [9 9 9 9 9]))
+    (test diag023 '(1 1 [9 9 9 9 9]))
+    (printf "diag023 ok\n")
+    (test diag024 '([1 2 3] [4 5 6] [9 9 9]))
+    (printf "diag024 ok\n")
+    (test diag025 '([1 2 3] [4 5 6]))
+    (printf "diag025 ok\n")
+    (test diag026 '([1 2 3] [4 5 6] [9 9 9] [2 2 2]))
+    (printf "diag026 ok\n")
+    (test diag027 '(30))
+    (printf "diag027 ok\n")
+    (test diag028 '([3 4 5 6]))
+    (printf "diag028 ok\n")
+    (test diag029 '(3.4 t 5 2 [3 4]))
+    (test diag029 '(-34 () 3 4 [9 8]))
+    (printf "diag029 ok\n")
+    (test diag030 '(3.4 t 5 2 [3 4]))
+    (test diag030 '(-34 () 3 4 [9 8]))
+    (printf "diag030 ok\n")
+    (if (= (diag031) t)
+	(printf "diag031 ok\n"))
+)
+
+;;-----------------------------------------------------------------------------
+;; testing idx-clear, idx-copy, idx-minus, idx-abs, idx-sqrt, idx-qtanh
+;;         idx-qdtanh, idx-stdsigmoid, idx-dstdsigmoid, idx-expmx, 
+;;         idx-dexpmx, idx-sin, idx-cos, idx-tan, idx-log, idx-exp
+
+(de diag11 (a b)
+    (-idx1- (-int- a))
+    (-idx1- (-byte- b))
+    (idx-copy a b))
+
+(de diag12 (a b)
+    (-idx1- (-double- a))
+    (-idx1- b)
+    (idx-copy a b))
+
+(de diag13 (a)
+    (-idx3- a)
+    (idx-copy a))
+
+(de diag14 (a)
+    (-idx3-  a)
+    (idx-copy a))
+
+(de diag15 (a b)
+    (-idx3- (-short- a))
+    (-idx3- (-float- b))
+    (idx-copy a b))
+
+(de diag16 (a)
+    (-idx1- (-ubyte- a))
+    (idx-copy a))
+
+(de diag17 (a b c d e f)
+    (-idx1- (-ubyte- a b))
+    (-idx1- c d)
+    (-idx1- (-short- e f))
+    (idx-copy a b)
+    (idx-copy b e)
+    (idx-copy e f)
+    (idx-copy f c)
+    (idx-copy c d))
+
+(de diag18 (a)
+    (-idx1- (-short- a))
+    (idx-clear a))
+
+(de diag19 (a)
+    (-idx3- a)
+    (idx-clear a))
+
+(de diag120 (a)
+    (-idx1- a)
+    (idx-minus a))
+
+(de diag121 (a b)
+    (-idx1- a b)
+    (idx-abs a b))
+
+(de diag122 (a b)
+    (-idx1- a b)
+    (idx-sqrt a b))
+
+(de diag123 (a b)
+    (-idx1- a b)
+    (idx-stdsigmoid (idx-dstdsigmoid (idx-qtanh (idx-qdtanh a b)))))
+
+(de diag124 (a b)
+    (-idx1- a b)
+    (idx-log (idx-atan (idx-sin (idx-dexpmx (idx-expmx (idx-exp a b)))))))
+
+
+(de series3 ()
+    (printf "testing idx-clear, idx-copy, idx-minus, idx-abs, idx-sqrt,\n")
+    (printf "idx-qtanh, idx-qdtanh, idx-stdsigmoid, idx-dstdsigmoid,\n")
+    (printf "idx-expmx, idx-dexpmx, idx-sin, idx-cos, idx-tan, idx-log,\n")
+    (printf "idx-exp\n")
+    (printf "compiling tests\n")
+    (dhc-make "diag" diag11 diag12 diag13 diag14 diag15 diag16 diag17 diag18
+	      diag19 diag120 diag121 diag122 diag123 diag124)
+    (printf "testing...\n")
+    (test diag11 '(`((int-matrix 3) () '(2 3 4)) `(byte-matrix 3)))
+    (printf "diag11 ok\n")
+    (test diag12 '(`((real-matrix 3) () '(2 3 4)) `(flt-matrix 3)))
+    (printf "diag12 ok\n")
+    (test diag13 '(`((flt-matrix 2 2 2) () () ()
+		     '(((2 3) (3 4))((3 4)(3 4))))))
+    (printf "diag13 ok\n")
+    (test diag14 '([[[4]]]))
+    (printf "diag14 ok\n")
+    (test diag15 '(`((short-matrix 2 2 2) () () ()
+		     '(((2 3) (3 4))((3 4)(3 4))))
+		    `(float-matrix 2 2 2)))
+    (printf "diag15 ok\n")
+    (test diag16 '(`((ubyte-matrix 3) () '(2 3 4))))
+    (printf "diag16 ok\n")
+    (test diag17 '(`((ubyte-matrix 3) () '(2 3 4)) `(ubyte-matrix 3)
+		    `(matrix 3) `(matrix 3)
+		    `(short-matrix 3) `(short-matrix 3)))
+    (printf "diag17 ok\n")
+    (test diag18 '(`((short-matrix 3) () '(2 3 4))))
+    (printf "diag18 ok\n")
+    (test diag19 '([[[4 5]]]))
+    (printf "diag19 ok\n")
+    (test diag120 '([4 -5]))
+    (printf "diag120 ok\n")
+    (test diag121 '([4 -5] [3 4]))
+    (printf "diag121 ok\n")
+    (test diag122 '([4 5] [3 4]))
+    (printf "diag122 ok\n")
+    (test diag123 '([.2 -.2 .9] [3 4 2]))
+    (printf "diag123 ok\n")
+    (test diag124 '([.2 .5 .9] [3 4 2]))
+    (printf "diag124 ok\n")
+)
+
+;;-----------------------------------------------------------------------------
+;; testing idx-sum, idx-sumacc, idx-sumsqr, idx-sumsqracc
+
+(de diag21 (a b)
+    (-idx1- (-int- a))
+    (-idx0- (-byte- b))
+    (idx-sum a b))
+
+(de diag22 (a)
+    (-idx1- a)
+    (idx-sum a))
+
+(de diag23 (a)
+    (-idx3- a)
+    (idx-sum a))
+
+(de diag24 (a b)
+    (-idx3- a)
+    (-idx0- b)
+    (idx-sum a b))
+
+(de diag25 (a b)
+    (-idx3- a)
+    (-idx0- b)
+    (idx-sumacc a b))
+
+(de diag26 (a b)
+    (-idx1- a)
+    (-idx0- b)
+    (idx-sumacc a b))
+
+(de diag27 (a b)
+    (-idx1- a)
+    (-idx0- b)
+    (idx-sumsqr a b))
+
+(de diag28 (a b)
+    (-idx1- a)
+    (-idx0- b)
+    (idx-sumsqracc a b))
+
+(de series4 ()
+    (printf "testing idx-sum, idx-sumacc, idx-sumsqr, idx-sumsqracc\n")
+    (printf "compiling tests\n")
+    (dhc-make "diag" diag21 diag22 diag23 diag24 diag25 diag26 diag27 diag28)
+    (printf "testing...\n")
+    (test diag21 '(`((int-matrix 3) () '(2 3 4)) `(byte-matrix)))
+    (printf "diag21 ok\n")
+    (test diag22 '(`((matrix 3) () '(2 3 4))))
+    (printf "diag22 ok\n")
+    (test diag23 '(`((flt-matrix 2 2 2) () () ()
+		     '(((2 3) (3 4))((3 4)(3 4))))))
+    (printf "diag23 ok\n")
+    (test diag24 '([[[4 8]]] `(matrix)))
+    (printf "diag24 ok\n")
+    (test diag25 '([[[4 8]]] `((matrix) 2)))
+    (printf "diag25 ok\n")
+    (test diag26 '([4 8] `((matrix) 2)))
+    (printf "diag26 ok\n")
+    (test diag27 '([4 8] `((matrix) 2)))
+    (printf "diag27 ok\n")
+    (test diag28 '([4 8] `((matrix) 2)))
+    (printf "diag28 ok\n")
+)
+
+;;-----------------------------------------------------------------------------
+;; testing idx-add, idx-sub, idx-mul, idx-div
+
+(de diag31 (a b)
+    (-idx1- (-int- a b))
+    (idx-add a b))
+
+(de diag32 (a b c)
+    (-idx1- (-byte- a b))
+    (-idx1- c)
+    (idx-add a b c))
+
+(de diag33 (a b c)
+    (-idx3- (-int- a b))
+    (-idx3-  c)
+    (idx-add a b c))
+
+(de diag34 (a b)
+    (-idx3- (-byte- a b))
+    (idx-add a b))
+
+(de diag35 (a b c d)
+    (-idx1- a b c d)
+    (idx-add (idx-sub a b) (idx-mul d c)))
+
+(de diag36 (a b c)
+    (-idx1- a b c)
+    (idx-sub a b c))
+
+(de diag37 (a b c)
+    (-idx1- a b c)
+    (idx-mul a b c))
+
+(de diag38 (a b c)
+    (-idx1- a b c)
+    (idx-div a b c))
+
+(de series5 ()
+    (printf "testing idx-add, idx-sub, idx-mul, idx-div\n")
+    (printf "compiling tests\n")
+    (dhc-make "diag" diag31 diag32 diag33 diag34 diag35 diag36 diag37 diag38)
+    (printf "testing...\n")
+    (test diag31 '(`((int-matrix 3) () '(2 3 4)) 
+		   `((int-matrix 3) () '(3 33 3))))
+    (printf "diag31 ok\n")
+
+    (test diag32 '(`((byte-matrix 3) () '(2 3 4))
+		   `((byte-matrix 3) () '(2 3 4))
+		   `((flt-matrix 3) () '(2 3 4))))
+    (printf "diag32 ok\n")
+    (test diag33 '(`((int-matrix 2 2 2) () () () 
+		     '(((2 3) (3 4))((3 4)(3 4))))
+		   `((int-matrix 2 2 2) () () () 
+		     '(((2 3) (3 4))((3 4)(3 4))))
+		   `(float-matrix 2 2 2)))
+    (printf "diag33 ok\n")
+    (test diag34 '(`((byte-matrix 2 2 2) () () () 
+		     '(((200 3) (3 4))((3 4)(3 4))))
+		   `((byte-matrix 2 2 2) () () () 
+		     '(((200 333) (3 4))((3 4)(3 4))))))
+    (test diag35 '([4 5] [6 7] [7 8] [4 5]))
+    (printf "diag35 ok\n")
+    (test diag36 '([4 5] [6 7] [7 8]))
+    (printf "diag36 ok\n")
+    (test diag37 '([4 5] [6 7] [7 8]))
+    (printf "diag37 ok\n")
+    (test diag38 '([4 5] [6 7] [7 8]))
+    (printf "diag38 ok\n")
+)
+
+;;-----------------------------------------------------------------------------
+;; testing idx-dot, idx-dotacc, idx-sqrdist, idx-sqrdistacc
+
+(de diag41 (a b)
+    (-idx1- a b)
+    (idx-dot a b))
+
+(de diag42 (a b c)
+    (-idx1- a b)
+    (-idx0- c)
+    (idx-dot a b c))
+
+(de diag43 (a b c)
+    (-idx3- a b)
+    (-idx0- c)
+    (idx-dot a b c))
+
+(de diag44 (a b)
+    (-idx3- a b)
+    (idx-dot a b))
+
+(de diag45 (a b c)
+    (-idx3- a b)
+    (-idx0- c)
+    (idx-dotacc a b c))
+
+(de diag46 (a b c)
+    (-idx3- a b)
+    (-idx0- c)
+    (idx-sqrdist a b c))
+
+(de diag47 (a b c)
+    (-idx3- a b)
+    (-idx0- c)
+    (idx-sqrdistacc a b c))
+
+(de series6 ()
+    (printf "testing idx-dot, idx-dotacc, idx-sqrdist, idx-sqrdistacc\n")
+    (printf "compiling tests\n")
+    (dhc-make "diag" diag41 diag42 diag43 diag44 diag45 diag46 diag47)
+    (printf "testing...\n")
+    (test diag41 '([3 4][5 6]))
+    (printf "diag41 ok\n")
+    (test diag42 '([3 4][5 6] `(matrix)))
+    (printf "diag42 ok\n")
+    (test diag43 '([[[3 4][5 3]][[3 4][5 3]]]
+			[[[3 4][5 3]][[3 4][5 3]]]
+			`(matrix)))
+    (printf "diag43 ok\n")
+    (test diag44 '([[[3 4][5 3]][[3 4][5 3]]]
+			[[[3 4][5 3]][[3 4][5 3]]]))
+    (test diag45 '([[[3 4][5 3]][[3 4][5 3]]]
+			[[[3 4][5 3]][[3 4][5 3]]]
+			`((matrix) 2)))
+    (printf "diag46 ok\n")
+    (test diag46 '([[[3 4][5 3]][[3 4][5 3]]]
+			[[[3 4][5 3]][[3 4][5 3]]]
+			`((matrix) 2)))
+    (printf "diag46 ok\n")
+    (test diag47 '([[[3 4][5 3]][[3 4][5 3]]]
+			[[[3 4][5 3]][[3 4][5 3]]]
+			`((matrix) 2)))
+    (printf "diag47 ok\n")
+)
+
+;;----------------------------------------------------------------------------
+;; testing idx-dotm0, idx-dotm0acc, idx-addm0, idx-addm0acc
+
+(de diag51 (a b)
+    (-idx1- a)
+    (-idx0- b)
+    (idx-dotm0 a b))
+
+(de diag52 (a b c)
+    (-idx1- a c)
+    (-idx0- b)
+    (idx-dotm0 a b c))
+
+(de diag53 (a b c)
+    (-idx3- a c)
+    (-idx0- b)
+    (idx-dotm0 a b c))
+
+(de diag54 (a b)
+    (-idx3- a)
+    (-idx0- b)
+    (idx-dotm0 a b))
+
+(de diag55 (a b)
+    (-idx3- a)
+    (-idx0- b)
+    (idx-addm0 a b))
+
+(de diag56 (a b)
+    (-idx3- a)
+    (-idx0- b)
+    (idx-addm0acc a b a))
+
+(de diag57 (a b)
+    (-idx3- a)
+    (-idx0- b)
+    (idx-dotm0acc a b a))
+
+(de series7 ()
+    (printf "testing idx-dotm0, idx-dotm0acc, idx-addm0, idx-addm0acc\n")
+    (printf "compiling tests\n")
+    (dhc-make "diag" diag51 diag52 diag53 diag54 diag55 diag56 diag57)
+    (printf "testing...\n")
+    (test diag51 '([3 4] `((matrix) 3)))
+    (printf "diag51 ok\n")
+    (test diag52 '([3 4] `((matrix) 3) [5 6]))
+    (printf "diag52 ok\n")
+    (test diag53 '([[[3 4][5 3]][[3 4][5 3]]]
+			`((matrix) 2)
+			[[[3 4][5 3]][[3 4][5 3]]]
+			))
+    (printf "diag53 ok\n")
+    (test diag54 '([[[3 4][5 3]][[3 4][5 3]]]
+			`((matrix) 2)))
+    (printf "diag54 ok\n")
+    (test diag55 '([[[3 4][5 3]][[3 4][5 3]]]
+			`((matrix) 2)))
+    (printf "diag55 ok\n")
+    (test diag56 '([[[3 4][5 3]][[3 4][5 3]]]
+			`((matrix) 2)))
+    (printf "diag56 ok\n")
+    (test diag57 '([[[3 4][5 3]][[3 4][5 3]]]
+			`((matrix) 2)))
+    (printf "diag57 ok\n")
+)
+
+;;----------------------------------------------------------------------------
+;; testing narrow, select and submatrix
+
+(de diag61 (a d size offset)
+    (-idx2- a)
+    (-flt- d size offset)
+    (narrow a d size offset))
+
+(de diag62 (a d n)
+    (-idx2- a)
+    (-flt- d n)
+    (select a d n))
+
+(de diag63 (d size offset)
+    (-flt- d size offset)
+    (narrow [[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+	    d size offset))
+
+(de diag64 (d n)
+    (-flt- d n)
+    (select [[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]] d n))
+
+(de diag65 (a b c d)
+    (-ord- a b c d)
+    (let ((m [[[ 1 2 3 4][ 6 7 8 9]]
+              [[ 0 0 3 3][ 9 9 9 9]]
+              [[ 1 1 1 1][ 8 7 8 7]]]))
+      (selectq d
+               (1 ((submatrix m (list 0 a) b ()) 0 1))
+               (2 ((submatrix m () b c) 0))
+               (3 ((submatrix m () b ()) 1 1))
+               (4 ((submatrix m '(0 1) '(0 0) '(1 2)) 1 0 1))
+               (5 ((submatrix m a b c))))))
+
+(de series8 ()
+    (printf "testing narrow and select and submatrix")
+    (printf "compiling tests\n")
+    (dhc-make "diag" diag61 diag62 diag63 diag64 diag65)
+    (printf "testing...\n")
+
+    (test diag61 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       0 1 0))
+    (test diag61 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       0 2 1))
+    (test diag61 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       1 2 1))
+    (test diag61 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       1 1 3))
+    (printf "diag61 ok\n")
+    (test diag62 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       0 1))
+    (test diag62 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       0 2))
+    (test diag62 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       1 2))
+    (printf "diag62 ok\n")
+    (test diag63 '(1 1 3))
+    (printf "diag63 ok\n")
+    (test diag64 '(0 1))
+    (printf "diag64 ok\n")
+    (test diag65 '(0 0 0 1))
+    (test diag65 '(1 1 1 1))
+    (test diag65 '(2 1 0 2))
+    (test diag65 '(1 0 0 3))
+    (test diag65 '(0 0 0 4))
+    (test diag65 '(2 1 3 5))
+    (printf "diag65 ok\n")
+)
+
+;;----------------------------------------------------------------------------
+;; testing idx-ndim idx-modulo contiguep redim changedim changemod
+
+(de diag71 (a)
+    (-idx2- a)
+    (idx-ndim a))
+
+(de diag72 (a d)
+    (-idx2- a)
+    (-short- d)
+    (idx-modulo a d))
+
+(de diag73 (a)
+    (-idx2- a)
+    (contiguep a))
+
+(de diag74 (a)
+    (-idx1- a)
+    (idx-storage a))
+
+(de diag75 (a)
+    (-idx1- a)
+    (let ((b (idx-storage a)))
+      (new-index b '(2 2))))
+
+(de diag76 (a b c)
+    (-idx1- a)
+    (-flt- b c)
+    (let ((bb (idx-storage a)))
+      (new-index bb (list b c))))
+
+(de diag77 (a b c)
+    (-idx2- a)
+    (-flt- b c)
+    (redim a b c))
+
+(de diag78 (a b)
+    (-idx2- a)
+    (-flt- b)
+    (redim a b))
+
+(de diag79 (a)
+    (-idx2- a)
+    (redim a))
+
+(de diag710 ()
+    (redim [[4 4][3 3]]))
+
+(de diag711 (a)
+    (-byte- a)
+    (redim [[4 4][3 3]] a))
+
+(de series9 ()
+    (printf "testing idx-ndim idx-modulo contiguep redim changedim changemod")
+    (printf "\ncompiling tests\n")
+    (dhc-make "diag" diag71 diag72 diag73 diag74 diag75 diag76
+	      diag77 diag78 diag79 diag710 diag711)
+    (printf "testing...\n")
+
+    (test diag71 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]))
+    (printf "diag71 ok\n")
+    (test diag72 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]] 0))
+    (test diag72 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]] 1))
+    (test diag72 '(`(submatrix [[3 4 9 2][92 44 5 22][9 99 999 222]
+			       [-1 -2 -44 -66]] '(1 2) '(1 2)) 1))
+    (test diag72 '(`(submatrix [[3 4 9 2][92 44 5 22][9 99 999 222]
+			       [-1 -2 -44 -66]] '(1 2) '(1 2)) 0))
+    (printf "diag72 ok\n")
+    (test diag73 '(`(submatrix [[3 4 9 2][92 44 5 22][9 99 999 222]
+			       [-1 -2 -44 -66]] '(1 2) '(1 2))))
+    (test diag73 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]))
+    (printf "diag73 ok\n")
+    (test diag74 '([3 4 9 2]))
+    (printf "diag74 ok\n")
+    (test diag75 '([3 4 9 2]))
+    (test diag75 '([3 4 9 2 5 6]))
+    (printf "diag75 ok\n")
+    (test diag76 '([3 4 9 2 5 6] 2 3))
+    (test diag76 '([3 4 9 2 5 6] 2 2))
+    (printf "diag76 ok\n")
+
+    (test diag77 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]] 2 8))
+    (test diag77 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]] 2 2))
+    (printf "diag77 ok\n")
+    (test diag78 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]] 16))
+    (test diag78 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]] 10))
+;;    (test diag78 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]] 17))
+    (printf "diag78 ok\n")
+    (test diag79 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]))
+    (printf "diag79 ok\n")
+    (test diag710 '())
+    (printf "diag710 ok\n")
+    (test diag711 '(3))
+    (printf "diag711 ok\n")
+)
+
+;;----------------------------------------------------------------------------
+;; testing idx-m2dotm1 idx-m2dotm1acc idx-m4dotm2 idx-m4dotm2acc
+
+(de diag81 (a b c)
+    (-idx2- a)
+    (-idx1- b c)
+    (idx-m2dotm1 a b c))
+
+(de diag82 (a b)
+    (-idx2- a)
+    (-idx1- b)
+    (idx-m2dotm1 a b))
+
+(de diag83 (a b)
+    (-idx2- (-byte- a))
+    (-idx1- (-byte- b))
+    (idx-m2dotm1 a b))
+
+(de diag84 (a b c)
+    (-idx2- a)
+    (-idx1- b c)
+    (idx-m2dotm1acc a b c))
+
+(de diag85 (a b c)
+    (-idx2- (-byte- a))
+    (-idx1- (-byte- b))
+    (-idx1- c)
+    (idx-m2dotm1acc a b c))
+
+(de diag86 (a b c)
+    (-idx4- a)
+    (-idx2- b c)
+    (idx-m4dotm2 a b c))
+
+(de diag87 (a b)
+    (-idx4- a)
+    (-idx2- b)
+    (idx-m4dotm2 a b))
+
+(de series10 ()
+    (printf "testing idx-m2dotm1 idx-m2dotm1acc idx-m4dotm2 idx-m4dotm2acc")
+    (printf "\ncompiling tests\n")
+    (dhc-make "diag" diag81 diag82 diag83 diag84 diag85 diag86 diag87)
+    (printf "testing...\n")
+
+    (test diag81 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       [4 5 6 7] [0 0 0 0]))
+    (printf "diag81 ok\n")
+    (test diag82 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       [4 5 6 7]))
+    (printf "diag82 ok\n")
+    (test diag83 '(`((byte-matrix 3 3) () ()
+		     '(255 254 250 230 0 -199 -125 128 -128))
+		   `((byte-matrix 3) () '(250 128 -127))))
+    (printf "diag83 ok\n")
+    (test diag84 '([[3 4 9 2][92 44 5 22][9 99 999 222][-1 -2 -44 -66]]
+		       [4 5 6 7] [1 2 3 4]))
+    (printf "diag84 ok\n")
+    (test diag85 '(`((byte-matrix 3 3) () ()
+		     '(255 254 250 230 0 -199 -125 128 -128))
+		   `((byte-matrix 3) () '(250 128 -127)) [0 0 0]))
+    (printf "diag85 ok\n")
+
+    (test diag86 '([[ [[3 4][5 6]] [[5 6][5 6]] ] 
+		      [ [[3 4][5 3]] [[5 8][5 6]] ]]
+		      [[5 2][3 -1]] [[0 0][0 0]]))
+    (printf "diag86 ok\n")
+    (test diag87 '([[ [[3 4][5 6]] [[5 6][5 6]] ] 
+		      [ [[3 4][5 3]] [[5 8][5 6]] ]]
+		      [[5 2][3 -1]]))
+    (printf "diag87 ok\n")
+)
+;;-----------------------------------------------------------------------------
+;; testing idx-m1extm1 idx-m2extm2
+
+(de diag91 (a b c)
+    (-idx1- a b)
+    (-idx2- c)
+    (idx-m1extm1 a b c))
+
+(de diag92 (a b)
+    (-idx1- a b)
+    (idx-m1extm1 a b))
+
+(de diag93 (a b c)
+    (-idx2- a b)
+    (-idx4- c)
+    (idx-m2extm2 a b c))
+
+(de diag94 (a b)
+    (-idx2- a b)
+    (idx-m2extm2 a b))
+
+(de series11 ()
+    (printf "testing idx-m1extm1 idx-m2extm2")
+    (printf "\ncompiling tests\n")
+    (dhc-make "diag" diag91 diag92 diag93 diag94)
+    (printf "testing...\n")
+
+    (test diag91 '([4 5 6] [9 3] `(matrix 3 2)))
+    (printf "diag91 ok\n")
+    (test diag92 '([4 5 6] [9 3]))
+    (printf "diag92 ok\n")
+    (test diag93 '([[3 4][5 6]] [[5 6 8][5 6 9]] `(matrix 2 2 2 3)))
+    (printf "diag93 ok\n")
+    (test diag94 '([[3 4][5 6]] [[5 6 8][5 6 9]]))
+    (printf "diag94 ok\n")
+)
+
+
+
+;;-----------------------------------------------------------------------------
+
+;; idx-changedim idx-changemod idx-size storage-size
+;; idx-transclone gauss unfold diagonal idx-narrow m*m m+m m-m mxm m*c m+c
+;; transpose
+
+;;-----------------------------------------------------------------------------
+
+(de series ()
+    (for (i 1 11)
+	 (apply (named (concat "series" (pname i))) ())))

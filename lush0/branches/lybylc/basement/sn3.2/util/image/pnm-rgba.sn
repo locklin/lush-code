@@ -1,0 +1,248 @@
+#? pnm-rgba
+;; extension to pnm.sn ans pnm-stream.sn that handles RGBA and float RGBA insted of RGB.
+
+(mload "cmacro")
+(mload "file-std")
+(mload "image/img-util")
+(mload "image/pnm")
+(mload "image/pnm-stream")
+
+(dm FRED(f)  '0.299)
+(dm FGREEN(f) '0.587)
+(dm FBLUE(f) '0.114)
+
+#? (pnms-read-rgbaim <f>)
+;; read an image from a PNM/PPM file and returns
+;; an idx3 of ubytes (RGBA image)
+;;.SEE pnm
+(de pnms-read-rgbaim (f)
+    ((-gptr-) f)
+    (let ((u (ubyte-matrix-nc 1 1 4)))
+      (nt-pnms-read-rgbaim f u)
+      u
+    ))
+
+#? (nt-pnms-read-rgbaim <f> <out-im>)
+;; read an image from a PNM/PPM file and saves it in <out-im>,
+;; an idx3 of ubytes (RGBA image)
+;;.SEE pnm
+(de nt-pnms-read-rgbaim (f out-im)
+    ((-gptr-) f)
+    ((-idx3- (-ubyte-)) out-im)
+
+    (let ((head (pnm-header f)))
+    (cond 
+     ((= head "P4")
+      (let* ((ncol (fscan-int f))
+             (nlin (fscan-int f))
+             (n 0) (c 0))
+        ((-int-) n c)
+        (rgba-resize out-im)
+        (getc f)
+        (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+                          #{{ unsigned char v;
+                          if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                          v = ($c & 128) ? 0 : 255 ;
+                          p[0]= p[1]= p[2]= v ; p[3]=0; 
+                          $n = ($n == 7) ? 0 : $n+1 ;
+                          $c = $c << 1; } #}
+                          )
+        ))
+     ((= head "P5")
+      (let* ((ncol (fscan-int f))
+             (nlin (fscan-int f))
+             )
+        (rgba-resize out-im)
+        (fscan-int f)
+        (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+                              #{ p[0]=p[1]=p[2]=getc((FILE *)$f) ;
+                              p[3] = 0; #}
+                              )
+            ))
+     ((= head "P6")
+      (let* ((ncol (fscan-int f))
+             (nlin (fscan-int f))
+             )
+        (rgba-resize out-im)
+        (fscan-int f)
+        (getc f)
+        (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+                          #{ p[0]=getc((FILE *)$f) ;
+                          p[1]=getc((FILE *)$f) ;
+                          p[2]=getc((FILE *)$f) ; 
+                          p[3] = 0; #}
+                          )
+        ))
+     )
+    )
+)
+
+
+
+#? (pnms-read-rgbafim <f>)
+;; read an image from a PNM file and returns
+;; an idx3 of floats (RGBA float image)
+;;.SEE pnm
+(de pnms-read-rgbafim (f)
+    ((-gptr-) f)
+    
+      (when (not f) (error "couldn't open PNM file"))
+      (let ((head (fscan-str f)))
+        (when (and (<> "P6" head) (<> "P4" head))
+          (fclose f) (error "not a valid binary PNM(P6)/PPM(P4) file"))
+        (skip-comments 35 f) ; skip lines staring with #
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (out-im (matrix nlin ncol 4))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (getc f)
+            (cinline-idx2loop out-im "flt" "p" "i" "j"
+              #{{ flt v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 255 ;
+                  p[0]= p[1]= p[2]= v ; p[3]=0.0; 
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+             out-im))
+         ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (out-im (matrix nlin ncol 4)))
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "flt" "p" "i" "j"
+              #{ p[0]=(flt)getc((FILE *)$f) ;
+                 p[1]=(flt)getc((FILE *)$f) ;
+                 p[2]=(flt)getc((FILE *)$f) ; #}
+                 )
+             out-im)))))
+
+
+#? (pnm-read-rgbaim <f>)
+;; read an image from a PNM/PPM file and returns
+;; an idx3 of ubytes (RGBA image)
+;;.SEE pnm
+(de pnm-read-rgbaim (f)
+    ((-str-) f)
+    (let ((u (ubyte-matrix-nc 1 1 4)))
+      (nt-pnm-read-rgbaim f u)
+      u
+    ))
+
+
+#? (nt-pnm-read-rgbaim <f> <out-im>)
+;; read an image from a PNM/PPM file and saves it in <out-im>,
+;; an idx3 of ubytes (RGBA image)
+;;.SEE pnm
+(de nt-pnm-read-rgbaim (f out-im)
+    ((-str-) f)
+    ((-idx3- (-ubyte-)) out-im)
+
+    (let ((f (fopen f "rb")))
+      (when (not f) (error "couldn't open PNM file"))
+      (let ((head (fscan-str f)))
+        (when (and (<> "P6" head) (<> "P4" head) (<> "P5" head))
+          (fclose f) (error "not a valid binary PNM file"))
+        (skip-comments 35 f) ; skip lines staring with #
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (rgba-resize out-im)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{{ unsigned char v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 255 ;
+                  p[0]= p[1]= p[2]= v ; p[3]=0; 
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+            (fclose f)))
+         ((= head "P5")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 )
+            (rgba-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{ p[0]=p[1]=p[2]=getc((FILE *)$f) ;
+                 p[3] = 0; #}
+                 )
+            (fclose f)))
+         ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 )
+            (rgba-resize out-im)
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "unsigned char" "p" "i" "j"
+              #{ p[0]=getc((FILE *)$f) ;
+                 p[1]=getc((FILE *)$f) ;
+                 p[2]=getc((FILE *)$f) ; 
+                 p[3] = 0; #}
+                 )
+            (fclose f)))
+         )
+        head
+        )
+            ))
+
+#? (pnm-read-rgbafim <f>)
+;; read an image from a PNM file and returns
+;; an idx3 of floats (RGBA float image)
+;;.SEE pnm
+(de pnm-read-rgbafim (f)
+    ((-str-) f)
+    (let ((f (fopen f "rb")))
+      (when (not f) (error "couldn't open PNM file"))
+      (let ((head (fscan-str f)))
+        (when (and (<> "P6" head) (<> "P4" head))
+          (fclose f) (error "not a valid binary PNM(P6)/PPM(P4) file"))
+        (skip-comments 35 f) ; skip lines staring with #
+        (cond 
+         ((= head "P4")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (out-im (matrix nlin ncol 4))
+                 (n 0) (c 0))
+            ((-int-) n c)
+            (getc f)
+            (cinline-idx2loop out-im "flt" "p" "i" "j"
+              #{{ flt v;
+                  if ((j == 0) || ($n == 0)) { $c = getc((FILE *)$f); $n=0; }
+                  v = ($c & 128) ? 0 : 255 ;
+                  p[0]= p[1]= p[2]= v ; p[3]=0.0; 
+                  $n = ($n == 7) ? 0 : $n+1 ;
+                  $c = $c << 1; } #}
+                  )
+            (fclose f) out-im))
+         ((= head "P6")
+          (let* ((ncol (fscan-int f))
+                 (nlin (fscan-int f))
+                 (out-im (matrix nlin ncol 4)))
+            (fscan-int f)
+            (getc f)
+            (cinline-idx2loop out-im "flt" "p" "i" "j"
+              #{ p[0]=(flt)getc((FILE *)$f) ;
+                 p[1]=(flt)getc((FILE *)$f) ;
+                 p[2]=(flt)getc((FILE *)$f) ; #}
+                 )
+            (fclose f) out-im))))))
+
+
+(dhc-make ()
+          nt-pnms-read-rgbaim pnms-read-rgbaim 
+          pnms-read-rgbafim 
+          nt-pnm-read-rgbaim pnm-read-rgbaim 
+          pnm-read-rgbafim 
+)          

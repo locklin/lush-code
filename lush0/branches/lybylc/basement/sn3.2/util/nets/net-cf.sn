@@ -1,0 +1,81 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; replicable, one hidden layer, fully connected net
+;; unlike net-ff the fist hidden layer is a convolutional
+;; layer so that the replication makes sense.
+;; for a standard fully connected net, the kernel size should
+;; be equal to the input size
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "libnets")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? net-cf
+;; a neural net class with one convolutional layer and one fully 
+;; connected layer. The main purpose of this class is to make
+;; replicable fully connected networks. Unlike with net-ff, the
+;; input spatial dimensions are treated correctly here. 
+;; So if you want to recognize characters, use this class rather 
+;; than net-ff.
+(defclass net-cf sn-module
+  ((-obj- (c-layer)) c0-module)
+  ((-obj- (idx3-ddstate)) c0-state)
+  ((-obj- (f-layer)) f-module))
+
+#? (new net-cf <ini> <inj> <ki0> <kj0> <tbl0> <outthick> <prm>)
+;; makes a new net-cscscf module.
+;; <ini> <inj>: expected max size of input for preallocation of internal states
+;; <ki0> <kj0>: kernel size for first convolutional layer
+;; a standard fully-connected network can be obtained when 
+;; <ini>=<ki0> and <inj>=<kj0>.
+;; <tbl0>: table of connections between input anf feature maps for first layer
+;; <outthick>: number of outputs.
+;; <prm> an idx1-ddparam in which the parameters will be allocated.
+(defmethod net-cf net-cf (ini inj ki0 kj0 tbl0 outthick prm)
+  ((-obj- (idx1-ddparam)) prm)
+  ((-int-) ini inj ki0 kj0 outthick)
+  ((-idx2- (-int-)) tbl0)
+  (let* ((thick0 (1+ (idx-i1max (select tbl0 1 1))))
+         (c0-sizi (1+ (- ini ki0)))
+         (c0-sizj (1+ (- inj kj0)))
+         (c0-squash (new idx3-squasher))
+         (f-squash (new idx3-squasher)))
+    (setq c0-module 
+          (new c-layer ki0 kj0 1 1 tbl0 thick0 c0-sizi c0-sizj c0-squash prm))
+    (setq c0-state (new idx3-ddstate thick0 c0-sizi c0-sizj))
+    (setq f-module (new f-layer thick0 outthick c0-sizi c0-sizj f-squash prm))
+    () ) )
+
+(defmethod net-cf fprop (in out)
+  ((-obj- (idx3-state)) in)
+  ((-obj- (idx3-state)) out)
+  (==> c0-module fprop in c0-state)
+  (==> f-module fprop c0-state out)
+  ())
+
+(defmethod net-cf bprop (in out)
+  ((-obj- (idx3-dstate)) in)
+  ((-obj- (idx3-dstate)) out)
+  (==> f-module bprop c0-state out)
+  (==> c0-module bprop in c0-state)
+  ())
+
+(defmethod net-cf bbprop (in out)
+  ((-obj- (idx3-ddstate)) in)
+  ((-obj- (idx3-ddstate)) out)
+  (==> f-module bbprop c0-state out)
+  (==> c0-module bbprop in c0-state)
+  ())
+
+(defmethod net-cf forget (z p)
+  ((-flt-) z p)
+  (==> f-module forget z p)
+  (==> c0-module forget z p)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; (dhc-make "net-cf" (net-cf net-cf fprop bprop bbprop forget))
+;; constructor was causing gasps because of bumping bug
+(dhc-make "net-cf" (net-cf net-cf fprop bprop bbprop forget))

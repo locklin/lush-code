@@ -1,0 +1,176 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a library of functions for training networks
+
+(mload "modules")
+(mload "trainer")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; first a few utilities
+
+;; a macro char for reading back result files
+(dmc |#:| (read-string "~:") (read-string 1) ())
+
+;; print stuff in the logbook
+(de log-printf p 
+    (when logbook (writing logbook (apply printf p) (flush))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; workbench
+
+#? workbench
+;; the main class for training a machine.
+;; a workbench contains a trainer, two databases, and two meters.
+;; It provides a convenient user interface for many standard
+;; training.
+;; it keeps a logbook of all the operations
+;; performed on it.
+(defclass workbench object
+   logbook-name    ;; file name for logbook
+   logbook         ;; file descriptor for logbook
+
+   age             ;; number of training iterations so far
+
+   trnr            ;; trainer
+   initial-weights ;; initial weights
+
+   train-meter     ;;  meter for training set
+   test-meter      ;; meter for test set
+
+   trainingdb        ;; training db
+   testingdb         ;; test db
+)
+
+#? (new workbench [<logbook> <trainer> <traindb> <testdb> <trainmeter> <testmeter>])
+;; makes a new workbench for training and testing trainer <trainer> on databases
+;; <traindb> and <testdb>. Measurments are performed with <trainmeter> and
+;; <testmeter>. All operations are recorded in file <logbook>.
+(defmethod workbench workbench ( &optional
+      (a-logbook-name ())     ;; a file that records everything that happens
+      netw
+      trn             ;; training database
+      tst             ;; test database
+      tr-m				;; training meter
+      ts-m				;; test meter
+     )
+  (setq logbook-name a-logbook-name)
+  (when logbook-name (setq logbook (open-append logbook-name)))  
+
+  (setq trainingdb trn)
+  (setq testingdb  tst)
+  (setq train-meter (if tr-m tr-m (new classifier-meter (==> trainingdb size))))
+  (setq test-meter (if ts-m ts-m (new classifier-meter (==> testingdb size))))
+
+
+  (setq age 0)  
+  (setq trnr  netw)
+  (setq initial-weights (==> :trnr:param get))
+
+  (log-printf "#:running on %s, pid=%d, %s:\n" 
+	      (reading "|hostname" (read-string)) (getpid)(ctime))
+  (log-printf "((setq wkbnch (new workbench\n")
+  (log-printf "  #:Trainer: %s\n" (pname trnr))
+  (log-printf "  #:Training set size: %d\n" (==> trn size))
+  (log-printf "  #:Testing  set size: %d\n" (==> tst size))
+  (log-printf "  ))\n")
+)
+
+#? (==> <workbench> init)
+;; reset pointers on training and test db. reset meters.
+;; reinitialize parameters (weights) of machine in trainer
+;; (using the forget method).
+(defmethod workbench init ()
+  (log-printf "((==> wkbnch init) ())\n")
+  (==> trainingdb seek 0)
+  (==> testingdb seek 0)
+  (==> :trnr:machine forget)
+  (setq age 0)
+  (==> train-meter clear)
+  (==> test-meter clear)
+)
+
+#? (==> <workbench> compute-diaghessian [<n> <gamma> <mu>])
+;; compute diagonal hessian and set the learning rates using the result.
+;; this should be called every few epochs to readjust the learning rates.
+;; <n> is the number of patterns in the training set (starting from pattern 0)
+;; on which the second derivatives will be calculated.
+;; <gamma> is the running average constant for the second derivatives
+;; (it should be larger than 1/<n>). and <mu> is the failsafe constant
+;; to prevent to learning rates from blowing up if the hessians are small.
+;; default values for the 3 arguments are 200, 0.01, and 0.02.
+(defmethod workbench compute-diaghessian (&optional
+					  (n 200)  ;; number of iterations
+					  (gamma 0.01) ;; 2nd der learning rate
+					  (mu 0.02)    ;; cap for 2nd deriv
+					 )
+  (let ((fude (new sub-db trainingdb)))
+   (log-printf "(==> wkbnch compute-diaghessian #:n: %d #:gamma: %f #:mu: %f)\n" 
+		n gamma mu) 
+    (==> :trnr:param set-gamma gamma)
+    (==> :trnr:param set-mu mu)
+    (==> trnr iterate 'train-bbprop fude (new noop-meter) n)
+    (==> :trnr:param compute-epsilons)
+    (when (idx-dim :trnr:param:epsilons)
+    (let ((mini (idx-m1min :trnr:param:epsilons))
+	  (maxi (idx-m1max :trnr:param:epsilons)))
+      (log-printf "  ( #:min-epsi: %g #:max-epsi: %g)\n" mini maxi)
+      (list mini maxi)))))
+
+#? (==> <workbench> train <n> [<eta>])
+;; perform <n> training iterations using learning rate <eta>.
+;; the meter is cleared before starting.
+(defmethod workbench train (&optional n (eps 0.0001))
+  (when (not n) (setq n (==> trainingdb size)))
+  (log-printf "((==> wkbnch train #:n: %7d #:eta: %10.7f) " n eps)
+  (==>  train-meter clear)
+  (==> :trnr:param set-eta eps)
+  (==> trnr iterate 'train trainingdb train-meter n)
+  (incr age n)
+  (let ((s (==> train-meter sprint-info)))
+    (printf "(%7d %s)\n" age s)
+    (log-printf  "(%7d %s)\n" age s))
+  (==> train-meter save (concat logbook-name "train-meter")))
+
+
+#? (==> <workbench> test [<n>])
+;; measure performance on first <n> patterns of the test set.
+;; If <n> is not given, the performance is measured on the entire set.
+(defmethod workbench test (&optional n)
+  (when (not n) (setq n (==> testingdb size)))
+  (log-printf "((==> wkbnch test  #:n: %7d                  ) " n)
+  (==> testingdb seek 0)
+  (==>  test-meter clear)
+  (==> trnr iterate 'test testingdb test-meter n)
+  (let ((s (==> test-meter sprint-info)))
+    (printf "(%7d %s)\n" age s)
+    (log-printf  "(%7d %s)\n" age s))
+  (==> test-meter save (concat logbook-name "-testm")))
+
+#? (==> <workbench> test-pattern <n> [<db>])
+;; runs pattern <n> of database <db> through the machine.
+;; If <db> is not given, the test database is used.
+(defmethod workbench test-pattern (n &optional d-b)
+  (when (not d-b) (setq d-b testingdb))
+  (setq n (mod n (==> d-b size)))
+  (==> d-b seek n)
+  (log-printf "((==> wkbnch test-pattern #:n: %7d) " n)
+  (==>  test-meter clear)
+  (==> trnr iterate 'test d-b test-meter 1)
+  (let ((s (==> test-meter sprint-info)))
+    (printf "(%7d %s)\n" age s)
+    (log-printf  "(%7d %s)\n" age s)))
+
+;; train on first n patterns of training db for p iterations, for
+;; all values in learning rate in l
+(defmethod workbench findeps (n p l)
+  (log-printf "((==> wkbench findeps #:n: %7d #:p: %7d #:eta: %l)\n" n p l)
+  (let ((winit ()))
+    (each ((e l))
+	  (==> trainingdb seek 0)
+	  (setq winit (==> :trnr:param get))
+	  (printf "******* eps=%15.8f ******\n " e)
+          (for (i 1 p) (printf "%2d  " i) (==> this train n e)))
+    (==> :trnr:param set winit))
+  (log-printf ";; findeps\n"))
+

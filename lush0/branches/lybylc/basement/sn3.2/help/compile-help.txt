@@ -1,0 +1,503 @@
+     			SN3 and SN3.1 DOCUMENTATION
+
+------------------------------------------------------------------------------
+1) HISTORY
+
+SN2.5 is a lisp intepreter (dynamically scoped), which support object
+oriented programming, and has a large library of pattern
+classification subroutines.  SN2.5 is distributed by a french company,
+NEURISTIQUE, and is rather well documented. 
+
+SN2.6 is a minor improvement over SN2.5.  The main difference between
+SN2.5 and SN2.6 is that all the data structures involving neural
+networks have been optimized for speed.  This improvement is
+transparent to the user and therefore SN2.6 and SN2.5 share the same
+documentation.
+
+SN2.7 was made obsolete by SN3 before any body had time to use it.
+
+SN3 is a major rewrite of SN2.6.  All the data structures for neural
+networks have been thrown away, for the more general matrix (tensor)
+operators.  It has a LISP to C compiler which generate C code for a
+subset of the intepreted LISP language.  It has a dynamic loader which
+allows easy switching between the lisp and the compiled version of a
+function without restarting the program.  The core neural network
+engine have been rewritten into matricial form (which means that SN2.6
+code which rely on it won't run on SN3).  Many of the SN2.6 library
+have been ported.  Documentation is pratically inexistent.
+
+SN3.1 is a complete rewrite of the SN3 Lisp to C compiler.  A much
+larger subset of the intepreted LISP language is compilable (including
+object oriented code, and multi-typed matrices).  Code compiled under
+SN3 need to be recompiled.  SN3.1 is pretty much backward compatible
+with SN3 (the major difference is that all variables must be
+explicitely typed before being used).
+
+------------------------------------------------------------------------------
+2) SN3 
+
+[After years of experience in building neural networks and other
+classification algorithms, we have discovered the most sofisticated
+data structures for both efficiency and generality: Matrices of
+numbers...]
+
+SN3 is not backward compatible with SN2.* because the primitves to
+build and run artificial neural networks have been removed.  Instead a
+large library of matricial operation have beed added.  These
+operations are very elementary and can therefore easily be optimized
+for specific compiler architecture.  Several neural networks have been
+translated from SN2.6 to SN3 and are currently beeing used.
+
+A Lisp to C compiler comes with SN3, which allow to take restricted
+LISP code and translate it to C.  The generated code can then be
+compiled with a standard C compiler and dynamically loaded in SN3
+(without stopping the program).  This operation usually results in an
+"on the fly" speed up factor of 30 or more.  Another advantage of the
+C compiler is that the generated C code can be used in a stand alone
+fashion and compiled on specialized architecture for products (shuch
+as DSP running on GIS ATM machine).
+
+------------------------------------------------------------------------------
+3) Going from SN2.6 to SN3...
+
+********* Change in the matrix structure:
+
+Matrices have 0 to 7 dimensions.  To access element <n_1>,<n_2> of
+matrice <m> (of dimension 2), the syntax is (<m> <n_1> <n_2>).  To set
+element <n_1>,<n_2> of matrice <m> (of dimension 2), the syntax is
+(<m> <n_1> <n_2> <new_value>).  Similarily, if <m> is of dimension 0,
+it is a scalar and it can be read with (<m>), and set by (<m>
+<new_value>).
+
+Matrices are composed of 2 structures: the IDX (or index) which contains
+the information for indexing (1D or 2D, contiguous or submatrix) and
+the STORAGE, which contains the data and its type.  Matrices can be 
+of 7 different types: double, float, short, int, char, unsigned char and 
+packed.  To create a 3 by 4 matrix of double, one can use the syntax:
+
+	(new-index (new-d-storage 12) '(3 4))
+
+The primitives to create new storages mentionned above are:
+	new_d_storage new_f_storage new_i16_storage new_i32_storage
+	new_i8_storage new_index new_p_storage new_u8_storage
+with 1 argument (the size) or 0 argument for unsized storage.
+Unsized storage can be dimensioned automatically by certain operations.
+For instance in (copy-matrix <m1> <m2>), <m2> can be undimentionned.
+The function (new-index <storage> <dim-list>) create an index on the
+storage with the dimension specified in the <dim-list> list.
+
+Note that in SN3, all the number crunching operation work only on float
+matrices.  This restriction is lifted in SN3.1.
+
+********* Function of SN2.6 which no longer exists in SN3:
+
+	All function which build the C structures for neural networks:
+		alloc-net, build-net, newneurons, connect, ... 
+
+	All functions for training the C structures for neural networks:
+		run, learn, init-grad, update-state, update-gradient, ...
+
+	All functions for looking at the C structures for neural networks:
+		pre-syn, nfield, sfield, nlf, state, ...
+
+	All functions for storing the C structures for neural networks:
+		load-net, merge-net, dump-weight, 
+
+	All variable related to the C structures for neural networks:	
+		weight-matrix, neuron-matrix, epsilon, decay, alpha, ...
+
+********* New matrix functions in SN3:
+
+In the list below, unless specified otherwise, ma can be replaced by
+m0, m1, and m2 to respectively mean matrix of dimensions 0, 1 or 2.
+For example (idx-m0clear <m>), (idx-m1clear <m>) and (idx-m2clear <m>)
+work respectively on 0D, 1D and 2D matrices and will cause an error if
+<m> doesn't have the specified dimension.  The syntax (idx-maclear
+<m>) is generic and will work with matrices of any dimension.
+
+NUMBER CRUNCHING PRIMTIVES
+
+(idx_maclear <m1>)		: Set to 0 all element of matrix <m1>.
+(idx-macopy <m1> <m2>)		: copy <m1> into <m2>
+(idx-masum <m1> <m2>)		: Sum all element of <m1> and put the result
+				  in <m2> (<m2> is a 0D matrix).
+(idx-masumacc <m1> <m2>)	: Sum all element of <m1> and add the result
+				  to <m2> (<m2> is a 0D matrix).
+(idx-masumsqr <m1> <m2>)	: Sum the square of all element of <m1> and put
+				  the result in <m2> (<m2> is a 0D matrix).
+(idx-masumsqracc <m1> <m2>)	: Sum the square of all element of <m1> and add
+				  the result to <m2> (<m2> is a 0D matrix).
+(idx-madotma <m1> <m2> <m3>)	: Compute dot product of <m1> and <m2> (of same
+				  dimensions) and put result in <m2> (of 0D).
+(idx-madotmaacc <m1> <m2> <m3>)	: Compute dot product of <m1> and <m2> (of same
+				  dimensions) and add result to <m2> (of 0D).
+(idx_masqrdist <m1> <m2> <m3>)	: Compute square distnace of <m1> and <m2> (of
+				  same dims) and put result in <m2> (of 0D).
+(idx_masqrdistacc <m1> <m2> <m3>): Compute square distnace of <m1> and <m2> (of
+				  same dims) and add result in <m2> (of 0D).
+(idx_madotm0 <m1> <m2> <m3>)	: Multiply <m1> by 0D matrix <m2>, put in <m3>
+(idx_madotm0acc <m1> <m2> <m3>)	: Multiply <m1> by 0D matrix <m2>, add in <m3>
+(idx_maaddm0 <m1> <m2> <m3>)	: Add <m1> by 0D matrix <m2>, put in <m3>
+(idx_maaddm0acc <m1> <m2> <m3>)	: Add <m1> by 0D matrix <m2>, add in <m3>
+(idx_m2dotm1 <m1> <m2> <m3>)	: Multiply 2D matirx <m1> by 1D matrix <m1> and
+				  put result in <m3>.
+(idx_m4dotm2 <m1> <m2> <m3>)	: Multiply 4D matirx <m1> by 2D matrix <m1> and
+				  put result in <m3>.
+(idx_m2dotm1acc <m1> <m2> <m3>)	: Multiply 2D matirx <m1> by 1D matrix <m1> and
+				  put result in <m3>.
+(idx_m4dotm2acc <m1> <m2> <m3>)	: Multiply 4D matirx <m1> by 2D matrix <m1> and
+				  put result in <m3>.
+(idx_m1extm1 <m1> <m2> <m3>)	: outer product of 1D matrix <m1> by 1D matrix 
+				  <m2>, and put in 2D matrix <m3>.
+(idx_m2extm2 <m1> <m2> <m3>)	: outer product of 2D matrix <m1> by 2D matrix 
+				  <m2>, and put in 4D matrix <m3>.
+(idx_m1extm1acc <m1> <m2> <m3>)	: outer product of 1D matrix <m1> by 1D matrix 
+				  <m2>, and add in 2D matrix <m3>.
+(idx_m2extm2acc <m1> <m2> <m3>)	: outer product of 2D matrix <m1> by 2D matrix 
+				  <m2>, and add in 4D matrix <m3>.
+(idx_maadd <m1> <m2> <m3>)	: Add <m1> and <m2> and put in <m3> (same dims)
+(idx_masub <m1> <m2> <m3>)	: Sub <m1> and <m2> and put in <m3> (same dims)
+(idx_mamul <m1> <m2> <m3>)	: Mul <m1> and <m2> and put in <m3> (same dims)
+(idx_madiv <m1> <m2> <m3>)	: Div <m1> and <m2> and put in <m3> (same dims)
+
+(idx_maminus <m1> <m2>)		: Compute minus of <m1> and put result in <m2>
+(idx_maabs <m1> <m2>)		: Compute abs of <m1> and put result in <m2>
+(idx_masqrt <m1> <m2>)		: Compute sqrt of <m1> and put result in <m2>
+(idx_mainv <m1> <m2>)		: Compute inv of <m1> and put result in <m2>
+(idx_maqtanh <m1> <m2>)		: Compute qtanh of <m1> and put result in <m2>
+(idx_maqdtanh <m1> <m2>)	: Compute qdtanh of <m1> and put result in <m2>
+(idx_mastdsigmoid <m1> <m2>)	: Compute stdsigmoid of <m1> and put res in <m2>
+(idx_madstdsigmoid <m1> <m2>)	: Compute dstdsigmoid of <m1>, put res in <m2>
+(idx_maexpmx <m1> <m2>)		: Compute expmx of <m1> and put result in <m2>
+(idx_madexpmx <m1> <m2>)	: Compute dexpmx of <m1> and put result in <m2>
+(idx_masin <m1> <m2>)		: Compute sin of <m1> and put result in <m2>
+(idx_macos <m1> <m2>)		: Compute cos of <m1> and put result in <m2>
+(idx_maatan <m1> <m2>)		: Compute atan of <m1> and put result in <m2>
+(idx_malog <m1> <m2>)		: Compute log of <m1> and put result in <m2>
+(idx_maexp <m1> <m2>)		: Compute exp of <m1> and put result in <m2>
+
+(idx_m1permute <m1> <m2> <m3>)	: Execute (<m3> (<m2> i) (<m1> i)), where 
+				  <m1> and <m3> are 1D matrix and <m2> is 
+				  a matrix of int.
+(idx_m2permute <m1> <m2> <m3>)	: Same as m1permute but with <m1> and <m3>
+				  being 2D matrices.
+
+
+IDX STRUCTURE CONTROL
+
+(idx-ndim <idx>)
+	return the number of dimension of <idx>
+(idx-dim <idx> <n>)
+	return the size of dimension <n> of <idx>
+(idx-modulo <idx> <n>)
+	return the modulo of dimension <n> of <idx>
+(idx-changedim <idx> <d> <size>)
+	change dimension <d> of <idx> to <size>.
+(idx-changemod <idx> <d> <size>)
+	change modulo <d> of <idx> to <size>.
+(idx-changeoffset <idx> <d> <size>)
+	change offset <d> of <idx> to <size>.
+(matrix-nc [<s_1> ...])
+	Return an matrix (of float) of dimension <s_1>...  The matrix
+	is not initialized.  Example: (matrix-nc 3 4)
+(unfold <idx> <n> <ksize> <step>)
+	Return an idx with an added dimension at the end of <idx>
+	obtained by unfolding <n>-th dimension.  The size of the new
+	dimension is <ksize>.  A subsampled convolution of kernel size
+	<ksize> and stride <step> can be done by calling (idx-m2dotm1
+	<this-unfolded-idx> <kernel>).
+(idx-unfold <idx> <n> <ksize> <step>)
+	add a dimension at the end of <idx> by unfolding <n>-th
+	dimension.  The size of the new dimension is <ksize>.  A
+	subsampled convolution of kernel size <ksize> and stride
+	<step> can be done by calling (idx-m2dotm1 <this-unfolded-idx>
+	<kernel>).
+(idx-diagonal <idx> <d>)
+	 grabs the diagonal of the last <d> dimensions.  <idx> is
+	transformed into an <idx> with d-1 dimensions less than the
+	original.  example: diagonal of a 2D matrix: (idx-diagonal bzt
+	2).  This turns bzt into a vector.
+(narrow <idx> <d> <size> <offset>)
+	Retun a submatrix of <idx> where the <d> th dimension of <idx>
+	is restricted to <size>, starting at index <offset>.
+(idx-narrow <idx> <d> <size> <offset>)
+	restricts the <d>-th dimension of <idx> to <size>, starting at
+	index <offset>.
+(select <idx> <d> <n>)
+	Retun a submatrix of <idx> where the <d> th dimension of <idx>
+	is deleted , thereby selecting the <n> th row (column, or
+	whatever).  Example (idx-select <20x10-matrix> 0 4) make the
+	argument access line number 4.
+(idx-select <idx> <d> <n>)
+	delete <d>-th dimension of <idx>, thereby selecting the <n>-th
+	row (column, or whatever).  example (idx-select <20x10-matrix>
+	0 4) make the argument access line number 4.
+(idx-transpose <idx> <perm-list>)
+	permute the dimensions of <idx> using the list of int's
+	<perm-list> as a permutation matrix.
+(idx-transpose2 <idx> <d1> <d2>)
+	permute dimesnions <d1> and <d2>.
+(idx-clone <idx>)
+	RETURNS a clone of <idx>
+(idx-transclone <idx> <perm-list>)
+	same as idx-permute, but RETURNS a transposed clone of <idx>,
+(idx-bloop ((<symb1> <idx1>)
+	make each <symbi> be an idx that loops over the first
+	dimension of its corresponding <idxi>.  Execute <body> for
+	each value.
+(idx-eloop ((<symb1> <idx1>)
+	make each <symbi> be an idx that loops over the last dimension
+	of its corresponding <idxi>.  Execute <body> for each value.
+(cinline <format> [<arg1> [<arg2> ... [<argn>]]])
+	THIS IS FOR WIZARDS ONLY this macros allows to bang the
+	hardware directly from lisp, i.e.  generate inline C code
+	within a compile C function.  two cases are possible: if the
+	return value of the cinline call is used, <format> must be a
+	printf-like string format containing a valid C "rhs" (without
+	the trailing semicolon) in which the "%s" will be replaced by
+	the values of the arguments; if the return value is not used,
+	<format> can contain one or several colon-separated C
+	statements.  The last statement must not have a trailing
+	semicolon.
+(ccall <name> [<arg1> [<arg2> ... [<argn>]]])
+	Allows calling C functions directly from lisp.  ccall can only
+	be used from within compiled lisp code, but it is a simple
+	matter to compile a simple lisp function whose only statement
+	is a call to ccall.  <name> must be a string containing the
+	name of the C function to be called.  <arg1>...  are arguments
+	that will be passed to the C function.  currently these
+	arguments can be numbers (float or int), a matrix (which will
+	appear to the C function as an SN3-style idx) or an I8STORAGE
+	(which will appear to the C function as a simple word-aligned
+	pointer to the storage area.  This allows the programmer to
+	create a C structure in an I8STORAGE from lisp and pass it to
+	the C function.  The big caveat is that no size checking can
+	be performed, therefore misuse of the arguments in the C
+	function may result in core dumps.
+(breakp)
+	Test (in compile code) if a <CTRL> C has been sent and interrupt
+(contiguep <m>)
+	Returns true if matrix is congiguous (all its element are in a
+	contiguous space in memory).  Return () otherwise.  Function
+	like select and submatrix may return non contiguous matrices.
+(idx-redim <idx> <list-of-dim>)
+	redimension <idx> to the dimensions in <list-of-dim>.
+	
+
+------------------------------------------------------------------------------
+ Compiling under SN3.1, "dhc-make"
+------------------------------------------------------------------------------
+First, some basic documentation of the "dhc-make" command, the command used
+to compile Lisp functions, classes, and methods into C code which can be
+dynamically linked and accessed through the Lisp interpreter.  Most of this
+is probably well known at this point, but it was brought to my attention
+that "dhc-make" is lacking in terms of documentation.  "Dhc-make" has
+recently been extended to support compilation of classes and associated
+methods and therefore has some new features, as well.
+
+"Dhc-make" takes a list of arguments, the first of which is either a string
+or a null list.  If the first argument is a string, all code compiled by
+"dhc-make" is written to a file name by the string and the added suffix
+".c".  If the first argument is a null list, the name of the compiled class
+or function which appears last is used as the file name, unless the
+"dhc-make" occurs in a file being loaded, in which case the name for the C
+source is the same as the name of the file being loaded, but with a ".c"
+suffix.
+
+"Dhc-make" creates the necessary C source, then compiles and loads it.  If
+the "dhc-make" occurs in a file being loaded, the modification date of the
+file being loaded is compared with the date of the C source and object file
+that would be generated by the "dhc-make" command.  If the object file is
+more recent, it is simply loaded and no compilation occurs.  If the object
+file is older or does not exist, the C source is recompiled.  If the C
+source is older or does not exist, the C source is regenerated, compiled,
+and loaded.
+
+The remaining arguments to "dhc-make" are either atoms or lists.  If an
+argument is an atom, the atom is treated as the name of a function to be
+compiled.  If an argument is a list, the list is expected to contain a
+class as its car, and an (optional) list of methods as its cdr.  All
+arguments are compiled in the order they appear in the "dhc-make" call.
+All methods of a class are compiled in the order listed.
+
+Some examples:
+
+	1.  (dhc-make () foo)
+	2.  (dhc-make "bar" foo)
+	3.  (dhc-make () foo bar)
+	4.  (dhc-make () foo bar (mark1 mark1 meth1 meth2)
+	5.  (dhc-make "bar" foo (mark1 meth1 mark1 meth2) bar)
+
+1.  Function "foo" is compiled and source is written to the file "foo.c"
+2.  Function "foo" is compiled and source is written to the file "bar.c" 
+3.  Functions "foo" and "bar" are both compiled into the file "bar.c"
+4.  Functions "foo" and "bar", and class "mark1" with constructor ("mark1")
+    and methods ("meth1" and "meth2") are all compiled and placed in the file
+    "mark1.c"
+5.  Similar to #4. However, the constructor appears second in the methods
+    list in the C code.  The function "bar" is actually compiled after the
+    class "mark1" in this case, and all code is place in the file "bar.c"
+
+
+------------------------------------------------------------------------------
+ Type declaration commands
+------------------------------------------------------------------------------
+The functions used to type a symbol for compilation have changed
+extensively; however, there should be no apparent change to the user and no
+code which currently contains typed declarations should require
+modification.  The new type declaration method is backwards compatible with
+all of the previous type declaration forms.  The new type declaration
+format offers several benefits, one of which is the ability to write
+declaration macros which expand into simpler known forms, effectively
+allowing rudimentary "typedef" style commands in Lisp.
+
+All type declaration commands are actually macros which expand into a
+"declare" command ("declare" is a DF which takes a type and symbol as its
+arguments).  [Obviously, "declare" is now a locked symbol.]  The new
+preferred type declaration format is a list whose car is a list containing
+a type, and whose cdr is a list of symbols to declare.  By way of example:
+
+	((-int-) a b c)		((-str-) str1 str2)
+	((-idx2- (-flt-)) q)	((-list- (-int-) (-flt-)) l1)
+	((-obj- (mark1)) m1)	((-list- (-str-) (-list- (-int-) (-int-))) bl)
+
+In these examples:
+
+ o  a, b, and c are declared as integers
+ o  str1 and str2 are declared as strings
+ o  q is an idx2 of floats
+ o  l1 is a list containing two elements, an integer and a float
+ o  m1 is an object which is an instantiation of class mark1
+ o  bl is a list of two elements, the first of which is a string and the
+    second of which is a list containing two integers.  For example, 
+    bl might be ("Hello" (42 43)).
+
+The old-style formats such as (-int- a b c) are still supported in the
+macros, of course.  The new format, however, is recommended since both
+list and object support uses only the new format.  Both formats are
+ultimately converted into a "declare" format by the preprocessor.  In other
+words, both (-int- a b c) and ((-int-) a b c) are expanded to
+(declare (-int-) a b c) during preprocessing.       
+
+
+------------------------------------------------------------------------------
+ Class compilation, method compilation, and object creation
+------------------------------------------------------------------------------
+Perhaps the largest addition to SN3.1 this summer is the support for
+compilable classes, methods, and objects.  Inheritance of slots from a
+super-class is provided, along with inheritance of the super-class's
+methods.  Instantiation of a class yields an object with slots of the class
+and all slots of the super-classes of the class, along with access to the
+methods available to the class and its super-classes. Method inheritance is
+performed using the concept of a virtual function.  If a super-class and a
+class share a method of the same name, the class's method is only
+compilable if it has the same interface (argument number and types,
+temporaries, and return type) as the super-class's.
+
+Objects can now be passed to functions using the "-obj-" type declaration.
+The one exception to the above requirement of identical types for virtual
+methods occurs when an object is passed as an argument in the method.  If
+the sub-class method contains an object parameter whose class is a
+sub-class of the super-classes object, then compilation is allowed.
+
+
+Objects which are subclasses of the expected class may also be passed to a
+function.  In cases in which the function calls a method, the appropriate
+method of the object's class is called.  Thus, the appropriate virtual
+method is automatically called by the compiled function whether the object
+is of the expected class or is of a subclass of the expected class.
+
+As an example of both virtual methods and object parameter passing, assume
+ClassB is a sub-class of ClassA, and is defined as follows:
+
+(de foo (a b) 
+	((-int-) a)
+	((-obj- (ClassA)) b)
+	...)
+
+The function "foo" can be called with parameter "b" being an object of
+ClassA or of ClassB.  In addition, provided the types of the return value
+and temporaries are identical, "foo" could be compiled as a method for
+ClassA and as a virtual method for ClassB.  If a compiled function contains
+"(==> a foo)", cases where "a" is a ClassA object call ClassA's "foo" and
+cases where "a" is a ClassB object call ClassB's foo.
+
+Due to Patrice's efforts, the fact that a class is compiled is somewhat
+transparent to someone using the class in interpreted Lisp.  Creation of
+objects using "new" and sending messages using "==>" function similarly in
+interpreted Lisp whether the class has been compiled or not.  There are,
+however, restrictions on the type of classes that can be compiled and
+restrictions on the constructor of the class.  To be compiled, all slots of
+the class must be typed.  The constructor must initialize any complex slots
+of an object of the class to prevent slots from having uninitialized
+pointers.  Thus, constructors can choose not to initialize simple types,
+such as ints or floats, but complex types such as strings, lists, and
+idx-es (types whose slots are actually pointers) must be initialized.  The
+constructor's side effects are checked to verify that any initialized slots
+are initialized to the correct type and that all complex slots are
+initialized.
+
+The currently compilable class and object related functions are:
+
+		new		new-empty
+		==>		scope (:<obj>:<slot>)
+		letslot
+
+"New" calls "new-empty" and then the constructor of the class to initialize
+the object.  "==>" calls a method (the second argument) of an object (the
+first argument) and automatically calls the appropriate virtual method
+based on the object's class.  Support for the construct
+"(==> obj (class . method) ...)"  is not currently available due to a bug
+in append's handling of dotted constructions.  The function "letslot" is
+available and allows direct access to a slot without scoping.  Finally,
+"scope" or its equivalent form ":<obj>:<slot>" compiles and can be chained
+if a slot in an object is another object.
+
+
+------------------------------------------------------------------------------
+ Compilable string support
+------------------------------------------------------------------------------
+Support for compiling a majority of the string-related functions was added
+to SN3.1 over the course of the summer.  The following commands are now
+compilable if the library "dh-string.sn" is loaded prior to running
+"dhc-make":
+
+	asc		chr		concat
+	downcase	index		len
+	left		mid		right	
+	str		strdel		strins
+	upcase		val		printf
+	sprintf	
+
+The regular expression functions are the only string-related functions
+currently not compilable.  There are slight differences in the Lisp and C
+versions of "printf" and "sprintf" to be aware of.  First, the "%l" option
+is not available in the compiled version of the functions.  Second, the
+default format for parameter types such as "%f" and "%d" are different in
+Lisp and compiled code.  This is a result of the Lisp code using a
+hand-made "printf" command and the compiled code simply calling the C
+version of "printf".  There is some simple type checking present in the
+"printf" and "sprintf" format strings, but it may need to be extended or
+modified to be more complete/thorough.
+
+
+------------------------------------------------------------------------------
+ Elementary list compilation support
+------------------------------------------------------------------------------
+During the summer, support for creation and modification of lists was added
+to SN3.1  To compile lists, load the library "dh-list.sn" prior to
+compilation.  The following list commands are now compilable:
+
+	car		length		last
+	list		cons		cdr
+	reverse		nth		append
+
+All should function exactly as they do in Lisp, with the exception of
+"nth".  "Nth"'s first argument must be a specific number when compiled -
+symbols of number type are not sufficient and will not compile.  This is
+due to the need to determine at compile time the exact list type that the
+function returns. Please note that, as of yet, the pairwise 'let' symbol
+assignment form is not yet available.
+
+
+Mark D. Hanes, 9/30/94

@@ -1,0 +1,466 @@
+#? File "idx-macros.sn"
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a library of useful macros, iterators, and 
+;; resizing functions for matrices
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;.SEE (midx-i2resize <m> <n0> <n1>)
+;;.SEE (midx-m1resize <m> <n0>)
+;;.SEE (midx-m2resize <m> <n0> <n1>)
+;;.SEE (idx-m1resize <m> <n0>)
+;;.SEE (idx-i1resize <m> <n0>)
+;;.SEE (idx-s1resize <m> <n0>)
+;;.SEE (idx-b1resize <m> <n0>)
+;;.SEE (idx-u1resize <m> <n0>)
+;;.SEE (idx-g1resize <m> <n0>)
+;;.SEE (idx-d1resize <m> <n0>)
+;;.SEE (idx-ptr <m> <type>)
+;;.SEE (cinline-idx1loop <m> <type> <c> <j> <p1> [<p2>...])
+;;.SEE (cinline-idxloop2 <m1> <type1> <m2> <type2> <c1> <c2> <j> <p1> [<p2>...])
+  ;;.SEE (cinline-idxloop3 <m1> <type1> <m2> <type2> <m3> <type3> <c1> <c2> <c3> <j> <p1> [<p2>...])
+;;.SEE (cinline-idx2loop <m> <type> <c> <i> <j> [<l1>...])
+;;.SEE (cinline-idx2loop2 <m1> <type1> <m2> <type2> <c1> <c2> <i> <j> [<l>...])
+;;.SEE (cinline-idx2loop3 <m1> <type1> <m2> <type2> <m3> <type3> <c1> <c2> <c3> <i> <j> [<l>...])
+;;.SEE (icfor (<i> <begin> <end> <step>) <l1> [<l2>...])
+;;.SEE (idx-gloop (<p1>...[<pn>]) <body>)
+
+(mload "cmacro")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dmd idx-m0acc (in out) '(idx-m0add `in `out `out))
+(dmd idx-m1acc (in out) '(idx-m1add `in `out `out))
+(dmd idx-m2acc (in out) '(idx-m2add `in `out `out))
+(dmd idx-maacc (in out) '(idx-maadd `in `out `out))
+
+(dm -very-large-negative-number- args -1e37)
+(dm -very-large-positive-number- args 1e37)
+(dm -very-small-positive-number- args 1e-35)
+(dm -very-small-negative-number- args -1e-35)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (midx-i2resize <m> <n0> <n1>)
+;; a macro redims idx2 <m> in-place 
+(dm midx-i2resize (f m n0 n1)
+  (if (or c-compile (null (is-of-class idx-i2resize |DH|)))
+      (list 'cinline '"Midx_init_dim2(%s,%s,%s)" m n0 n1)
+    (list 'idx-i2resize m n0 n1) ) )
+
+(dm midx-i2resize1 (f m n0)
+    '(midx-i2resize `m `n0 (idx-dim `m 1)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (midx-m1resize <m> <n0>)
+;; a macro redims idx1 <m> in-place 
+;; with the new size <n0>. Unlike redim, it does not create a temporary
+;; variable. Unlike idx-changedim, this macro increases the size of 
+;; the storage if necessary. very efficient.
+;; In interpreted mode, the function idx1-resize can be called.
+;;.SEE (idx1-resize <m> <n0>)
+(dm midx-m1resize (f m n0)
+    (if (or C_COMPILE ~(is-of-class idx-m1resize |DH|))
+        '(cinline "Midx_init_dim1(%s,%s)" `m `n0)
+      '(idx-m1resize `m `n0) ) )
+
+#? (midx-m2resize <m> <n0> <n1>)
+;; a macro redims idx2 <m> in-place 
+(dm midx-m2resize (f m n0 n1)
+    (if (or C_COMPILE ~(is-of-class idx-m2resize |DH|))
+        '(cinline "Midx_init_dim2(%s,%s,%s)" `m `n0 `n1)
+      '(idx-m2resize `m `n0 `n1) ) )
+
+(dm midx-m3resize (f m n0 n1 n2)
+    (if (or C_COMPILE ~(is-of-class idx-m3resize |DH|))
+        '(cinline "Midx_init_dim3(%s,%s,%s,%s)" `m `n0 `n1 `n2)
+      '(idx-m3resize `m `n0 `n1 `n2) ) )
+
+(dm midx-m4resize (f m n0 n1 n2 n3)
+    (if (or C_COMPILE ~(is-of-class idx-m4resize |DH|))
+        '(cinline "Midx_init_dim4(%s,%s,%s,%s,%s)" `m `n0 `n1 `n2 `n3)
+      '(idx-m4resize `m `n0 `n1 `n2 `n3) ) )
+
+#? (idx-m1resize <m> <n0>)
+;; redims idx1 of flt <m> in-place 
+;; with the new size <n0>. Unlike redim, it does not create a temporary
+;; variable. Unlike idx-changedim, this macro increases the size of 
+;; the storage if necessary. very efficient.
+;; exists also in macro form.
+;;.SEE (midx-m1resize <m> <n0>)
+;;.SEE (idx-m2resize <m> <n0> <n1>)
+;;.SEE (idx-m3resize <m> <n0> <n1> <n2>)
+;;.SEE (idx-m4resize <m> <n0> <n1> <n2> <n3>))
+(de idx-m1resize (m n0) 
+    ((-idx1- (-flt-)) m) (-int- n0) (midx-m1resize m n0) ())
+(de idx-m2resize (m n0 n1) 
+    ((-idx2- (-flt-)) m) (-int- n0 n1) (midx-m2resize m n0 n1) ())
+(de idx-m3resize (m n0 n1 n2) 
+    ((-idx3- (-flt-)) m) (-int- n0 n1 n2) (midx-m3resize m n0 n1 n2) ())
+(de idx-m4resize (m n0 n1 n2 n3) 
+    ((-idx4- (-flt-)) m) (-int- n0 n1 n2 n3) (midx-m4resize m n0 n1 n2 n3) ())
+(dmd idx-f1resize l (cons idx-m1resize l))
+(dmd idx-f2resize l (cons idx-m2resize l))
+(dmd idx-f3resize l (cons idx-m3resize l))
+(dmd idx-f4resize l (cons idx-m4resize l))
+
+#? (idx-i1resize <m> <n0>)
+;; redims idx1 of int <m> in-place 
+;; with the new size <n0>. Unlike redim, it does not create a temporary
+;; variable. Unlike idx-changedim, this macro increases the size of 
+;; the storage if necessary. very efficient.
+;; exists also in macro form.
+;;.SEE (midx-m1resize <m> <n0>)
+;;.SEE (idx-i2resize <m> <n0> <n1>)
+;;.SEE (idx-i3resize <m> <n0> <n1> <n2>)
+;;.SEE (idx-i4resize <m> <n0> <n1> <n2> <n3>))
+(de idx-i1resize (m n0) 
+    ((-idx1- (-int-)) m) (-int- n0) (midx-m1resize m n0) ())
+(de idx-i2resize (m n0 n1) 
+    ((-idx2- (-int-)) m) (-int- n0 n1) (midx-m2resize m n0 n1) ())
+(de idx-i3resize (m n0 n1 n2) 
+    ((-idx3- (-int-)) m) (-int- n0 n1 n2) (midx-m3resize m n0 n1 n2) ())
+(de idx-i4resize (m n0 n1 n2 n3) 
+    ((-idx4- (-int-)) m) (-int- n0 n1 n2 n3) (midx-m4resize m n0 n1 n2 n3) ())
+
+#? (idx-s1resize <m> <n0>)
+;; redims idx1 of short <m> in-place 
+;; with the new size <n0>. Unlike redim, it does not create a temporary
+;; variable. Unlike idx-changedim, this macro increases the size of 
+;; the storage if necessary. very efficient.
+;; exists also in macro form.
+;;.SEE (midx-m1resize <m> <n0>)
+;;.SEE (idx-s2resize <m> <n0> <n1>)
+;;.SEE (idx-s3resize <m> <n0> <n1> <n2>)
+;;.SEE (idx-s4resize <m> <n0> <n1> <n2> <n3>))
+(de idx-s1resize (m n0) 
+    ((-idx1- (-short-)) m) (-int- n0) (midx-m1resize m n0) ())
+(de idx-s2resize (m n0 n1) 
+    ((-idx2- (-short-)) m) (-int- n0 n1) (midx-m2resize m n0 n1) ())
+(de idx-s3resize (m n0 n1 n2) 
+    ((-idx3- (-short-)) m) (-int- n0 n1 n2) (midx-m3resize m n0 n1 n2) ())
+(de idx-s4resize (m n0 n1 n2 n3) 
+    ((-idx4- (-short-)) m) (-int- n0 n1 n2 n3) (midx-m4resize m n0 n1 n2 n3) ())
+
+#? (idx-b1resize <m> <n0>)
+;; redims idx1 of byte <m> in-place 
+;; with the new size <n0>. Unlike redim, it does not create a temporary
+;; variable. Unlike idx-changedim, this macro increases the size of 
+;; the storage if necessary. very efficient.
+;; exists also in macro form.
+;;.SEE (midx-m1resize <m> <n0>)
+;;.SEE (idx-b2resize <m> <n0> <n1>)
+;;.SEE (idx-b3resize <m> <n0> <n1> <n2>)
+;;.SEE (idx-b4resize <m> <n0> <n1> <n2> <n3>))
+(de idx-b1resize (m n0) 
+    ((-idx1- (-byte-)) m) (-int- n0) (midx-m1resize m n0) ())
+(de idx-b2resize (m n0 n1) 
+    ((-idx2- (-byte-)) m) (-int- n0 n1) (midx-m2resize m n0 n1) ())
+(de idx-b3resize (m n0 n1 n2) 
+    ((-idx3- (-byte-)) m) (-int- n0 n1 n2) (midx-m3resize m n0 n1 n2) ())
+(de idx-b4resize (m n0 n1 n2 n3) 
+    ((-idx4- (-byte-)) m) (-int- n0 n1 n2 n3) (midx-m4resize m n0 n1 n2 n3) ())
+
+#? (idx-u1resize <m> <n0>)
+;; redims idx1 of ubyte <m> in-place 
+;; with the new size <n0>. Unlike redim, it does not create a temporary
+;; variable. Unlike idx-changedim, this macro increases the size of 
+;; the storage if necessary. very efficient.
+;; exists also in macro form.
+;;.SEE (midx-m1resize <m> <n0>)
+;;.SEE (idx-u2resize <m> <n0> <n1>)
+;;.SEE (idx-u3resize <m> <n0> <n1> <n2>)
+;;.SEE (idx-u4resize <m> <n0> <n1> <n2> <n3>))
+(de idx-u1resize (m n0) 
+    ((-idx1- (-ubyte-)) m) (-int- n0) (midx-m1resize m n0) ())
+(de idx-u2resize (m n0 n1) 
+    ((-idx2- (-ubyte-)) m) (-int- n0 n1) (midx-m2resize m n0 n1) ())
+(de idx-u3resize (m n0 n1 n2) 
+    ((-idx3- (-ubyte-)) m) (-int- n0 n1 n2) (midx-m3resize m n0 n1 n2) ())
+(de idx-u4resize (m n0 n1 n2 n3) 
+    ((-idx4- (-ubyte-)) m) (-int- n0 n1 n2 n3) (midx-m4resize m n0 n1 n2 n3) ())
+
+#? (idx-g1resize <m> <n0>)
+;; redims idx1 of gptr <m> in-place 
+;; with the new size <n0>. Unlike redim, it does not create a temporary
+;; variable. Unlike idx-changedim, this macro increases the size of 
+;; the storage if necessary. very efficient.
+;; exists also in macro form.
+;;.SEE (midx-m1resize <m> <n0>)
+;;.SEE (idx-g2resize <m> <n0> <n1>)
+;;.SEE (idx-g3resize <m> <n0> <n1> <n2>)
+;;.SEE (idx-g4resize <m> <n0> <n1> <n2> <n3>))
+(de idx-g1resize (m n0) 
+    ((-idx1- (-gptr-)) m) (-int- n0) (midx-m1resize m n0) ())
+(de idx-g2resize (m n0 n1) 
+    ((-idx2- (-gptr-)) m) (-int- n0 n1) (midx-m2resize m n0 n1) ())
+(de idx-g3resize (m n0 n1 n2) 
+    ((-idx3- (-gptr-)) m) (-int- n0 n1 n2) (midx-m3resize m n0 n1 n2) ())
+(de idx-g4resize (m n0 n1 n2 n3) 
+    ((-idx4- (-gptr-)) m) (-int- n0 n1 n2 n3) (midx-m4resize m n0 n1 n2 n3) ())
+
+#? (idx-d1resize <m> <n0>)
+;; redims idx1 of double <m> in-place 
+;; with the new size <n0>. Unlike redim, it does not create a temporary
+;; variable. Unlike idx-changedim, this macro increases the size of 
+;; the storage if necessary. very efficient.
+;; exists also in macro form.
+;;.SEE (midx-m1resize <m> <n0>)
+;;.SEE (idx-d2resize <m> <n0> <n1>)
+;;.SEE (idx-d3resize <m> <n0> <n1> <n2>)
+;;.SEE (idx-d4resize <m> <n0> <n1> <n2> <n3>))
+(de idx-d1resize (m n0) 
+    ((-idx1- (-double-)) m) (-int- n0) (midx-m1resize m n0) ())
+(de idx-d2resize (m n0 n1) 
+    ((-idx2- (-double-)) m) (-int- n0 n1) (midx-m2resize m n0 n1) ())
+(de idx-d3resize (m n0 n1 n2) 
+    ((-idx3- (-double-)) m) (-int- n0 n1 n2) (midx-m3resize m n0 n1 n2) ())
+(de idx-d4resize (m n0 n1 n2 n3) 
+    ((-idx4- (-double-)) m) (-int- n0 n1 n2 n3) (midx-m4resize m n0 n1 n2 n3) ())
+(dmd idx-r1resize l (cons idx-d1resize l))
+(dmd idx-r2resize l (cons idx-d2resize l))
+(dmd idx-r3resize l (cons idx-d3resize l))
+(dmd idx-r4resize l (cons idx-d4resize l))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a few macros to write efficient C code from lisp
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (idx-ptr <m> <type>)
+;; returns pointer to data of IDX <m>.
+;; type must be a string with a valid C type.
+(dmd idx-ptr (m type)
+     '(gptr (cinline `(concat "IDX_PTR(%s," type ")") `m)))
+
+#? (cinline-idx1loop <m> <type> <c> <j> <p1> [<p2>...])
+;; man, that's a tough one to explain.
+;; don't try this at home anyway.
+;; this thing is like a loop for cinline. It executes the cinline instructions
+;; in <p1>... for each element of matrix <m> (must be an idx1).
+;; <c>, and <j> must be strings containing valid C variable
+;; identifiers, and <type> is a string that must contain a valid C type 
+;; (like "float"). during the loop, C variable <c> will point to the current element
+;; of <m>, and C variable <j> will contain the index of that element.
+;; So a macro that fills the elements of a vector with its index plus a constant n
+;; can be written:
+;;.VP
+;;  (cinline-idx1loop mat "flt" "p" "i" (cinline "*p = i+%s;" n))
+;;
+(dmd cinline-idx1loop (m type c j . l)
+     (cons 'progn
+	   (append
+	    '((cinline `(concat "{ register " type " *" c ";"))
+	      (cinline `(concat "  register int " j ", jmax = (%s)->dim[0];") `m)
+	      (cinline          "  register int imat1_m0 = (%s)->mod[0];" `m)
+	      (cinline `(concat "  " c " = IDX_PTR((%s)," type ");") `m)
+	      (cinline `(concat "  for (" j "=0; " j " <jmax; " j "++){")))
+	    l
+	    '((cinline `(concat "    " c " += imat1_m0;"))
+	      (cinline "  } }")
+	      ()))))
+
+#? (cinline-idxloop2 <m1> <type1> <m2> <type2> <c1> <c2> <j> <p1> [<p2>...])
+;; same as cinline-idx1loop, but loops simultaneously on two vectors
+(dmd cinline-idx1loop2 (m1 type1 m2 type2 c1 c2 j . l)
+     (cons 'progn
+	   (append
+	    '((cinline `(concat "{ register " type1 " *" c1 ";"))
+	      (cinline `(concat "  register " type2 " *" c2 ";"))
+	      (cinline `(concat "  register int " j ", jmax = (%s)->dim[0];") `m1)
+	      (cinline          "  register int imat1_m0 = (%s)->mod[0];" `m1)
+	      (cinline          "  register int imat2_m0 = (%s)->mod[0];" `m2)
+	      (cinline `(concat "  " c1 " = IDX_PTR((%s)," type1 ");") `m1)
+	      (cinline `(concat "  " c2 " = IDX_PTR((%s)," type2 ");") `m2)
+	      (cinline `(concat "  for (" j "=0; " j " <jmax; " j "++){")))
+	    l
+	    '((cinline `(concat "    " c1 " += imat1_m0;"))
+	      (cinline `(concat "    " c2 " += imat2_m0;"))
+	      (cinline "  } }")
+	      ()))))
+
+op#? (cinline-idxloop3 <m1> <type1> <m2> <type2> <m3> <type3> <c1> <c2> <c3> <j> <p1> [<p2>...])
+;; same as cinline-idx1loop, but loops simultaneously on three vectors
+(dmd cinline-idx1loop3 (m1 type1 m2 type2 m3 type3 c1 c2 c3 j . l)
+     (cons 'progn
+	   (append
+	    '((cinline `(concat "{ register " type1 " *" c1 ";"))
+	      (cinline `(concat "  register " type2 " *" c2 ";"))
+	      (cinline `(concat "  register " type3 " *" c3 ";"))
+	      (cinline `(concat "  register int " j ", jmax = (%s)->dim[0];") `m1)
+	      (cinline          "  register int imat1_m0 = (%s)->mod[0];" `m1)
+	      (cinline          "  register int imat2_m0 = (%s)->mod[0];" `m2)
+	      (cinline          "  register int imat3_m0 = (%s)->mod[0];" `m3)
+	      (cinline `(concat "  " c1 " = IDX_PTR((%s)," type1 ");") `m1)
+	      (cinline `(concat "  " c2 " = IDX_PTR((%s)," type2 ");") `m2)
+	      (cinline `(concat "  " c3 " = IDX_PTR((%s)," type3 ");") `m3)
+	      (cinline `(concat "  for (" j "=0; " j " <jmax; " j "++){")))
+	    l
+	    '((cinline `(concat "    " c1 " += imat1_m0;"))
+	      (cinline `(concat "    " c2 " += imat2_m0;"))
+	      (cinline `(concat "    " c3 " += imat3_m0;"))
+	      (cinline "  } }")
+	      ()))))
+
+
+#? (cinline-idx2loop <m> <type> <c> <i> <j> [<l1>...])
+;; same as cinline-idx1loop but loops over all elements of an idx2.
+;; <i> and <j> are strings containing the C name of the row and column indices.
+(dmd cinline-idx2loop (m type c i j . l)
+     (cons 'progn
+	   (append
+	    '((cinline `(concat "{ register " type " *_idx2loopc, *" c ";"))
+	      (cinline `(concat "  register int " i ", _imax = (%s)->dim[0];") `m)
+	      (cinline `(concat "  register int " j ", _jmax = (%s)->dim[1];") `m)
+	      (cinline          "  register int _imat1_m0 = (%s)->mod[0];" `m)
+	      (cinline          "  register int _imat1_m1 = (%s)->mod[1];" `m)
+	      (cinline `(concat "    _idx2loopc = IDX_PTR((%s)," type ");") `m)
+	      (cinline `(concat "  for (" i "=0; " i " <_imax; " i "++){"))
+	      (cinline `(concat "    " c "= _idx2loopc;"))
+	      (cinline `(concat "    for (" j "=0; " j " <_jmax; " j "++){")))
+	    l
+	    '((cinline `(concat "    " c " += _imat1_m1;"))
+	      (cinline          "    }")
+	      (cinline          "     _idx2loopc += _imat1_m0;")
+	      (cinline "  } }")
+	      ()))))
+
+#? (cinline-idx2loop2 <m1> <type1> <m2> <type2> <c1> <c2> <i> <j> [<l>...])
+;; same as cinline-idx1loop2 but loops over all elements of an idx2.
+;; <i> and <j> are strings containing the C name of the row and column indices.
+(dmd cinline-idx2loop2 (m1 type1 m2 type2 c1 c2 i j . l)
+     (cons 'progn
+	   (append
+	    '((cinline `(concat "{ register " type1 " *_idx2loopc1, *" c1 ";"))
+	      (cinline `(concat "  register " type2 " *_idx2loopc2, *" c2 ";"))
+	      (cinline `(concat "  register int " i ", _imax = (%s)->dim[0];") `m1)
+	      (cinline `(concat "  register int " j ", _jmax = (%s)->dim[1];") `m1)
+	      (cinline          "  register int _imat1_m0 = (%s)->mod[0];" `m1)
+	      (cinline          "  register int _imat1_m1 = (%s)->mod[1];" `m1)
+	      (cinline          "  register int _imat2_m0 = (%s)->mod[0];" `m2)
+	      (cinline          "  register int _imat2_m1 = (%s)->mod[1];" `m2)
+	      (cinline `(concat "    _idx2loopc1 = IDX_PTR((%s)," type1 ");") `m1)
+	      (cinline `(concat "    _idx2loopc2 = IDX_PTR((%s)," type2 ");") `m2)
+	      (cinline `(concat "  for (" i "=0; " i " <_imax; " i "++){"))
+	      (cinline `(concat "    " c1 "= _idx2loopc1;"))
+	      (cinline `(concat "    " c2 "= _idx2loopc2;"))
+	      (cinline `(concat "    for (" j "=0; " j " <_jmax; " j "++){")))
+	    l
+	    '((cinline `(concat "    " c1 " += _imat1_m1;"))
+	      (cinline `(concat "    " c2 " += _imat2_m1;"))
+	      (cinline          "    }")
+	      (cinline          "     _idx2loopc1 += _imat1_m0;")
+	      (cinline          "     _idx2loopc2 += _imat2_m0;")
+	      (cinline "  } }")
+	      ()))))
+
+#? (cinline-idx2loop3 <m1> <type1> <m2> <type2> <m3> <type3> <c1> <c2> <c3> <i> <j> [<l>...])
+;; same as cinline-idx1loop3 but loops over all elements of an idx2.
+;; <i> and <j> are strings containing the C name of the row and column indices.
+(dmd cinline-idx2loop3 (m1 type1 m2 type2 m3 type3 c1 c2 c3 i j . l)
+     (cons 'progn
+	   (append
+	    '((cinline `(concat "{ register " type1 " *_idx2loopc1, *" c1 ";"))
+	      (cinline `(concat "  register " type2 " *_idx2loopc2, *" c2 ";"))
+	      (cinline `(concat "  register " type3 " *_idx2loopc3, *" c3 ";"))
+	      (cinline `(concat "  register int " i ", _imax = (%s)->dim[0];") `m1)
+	      (cinline `(concat "  register int " j ", _jmax = (%s)->dim[1];") `m1)
+	      (cinline          "  register int _imat1_m0 = (%s)->mod[0];" `m1)
+	      (cinline          "  register int _imat1_m1 = (%s)->mod[1];" `m1)
+	      (cinline          "  register int _imat2_m0 = (%s)->mod[0];" `m2)
+	      (cinline          "  register int _imat2_m1 = (%s)->mod[1];" `m2)
+	      (cinline          "  register int _imat3_m0 = (%s)->mod[0];" `m3)
+	      (cinline          "  register int _imat3_m1 = (%s)->mod[1];" `m3)
+	      (cinline `(concat "    _idx2loopc1 = IDX_PTR((%s)," type1 ");") `m1)
+	      (cinline `(concat "    _idx2loopc2 = IDX_PTR((%s)," type2 ");") `m2)
+	      (cinline `(concat "    _idx2loopc3 = IDX_PTR((%s)," type3 ");") `m3)
+	      (cinline `(concat "  for (" i "=0; " i " <_imax; " i "++){"))
+	      (cinline `(concat "    " c1 "= _idx2loopc1;"))
+	      (cinline `(concat "    " c2 "= _idx2loopc2;"))
+	      (cinline `(concat "    " c3 "= _idx2loopc3;"))
+	      (cinline `(concat "    for (" j "=0; " j " <_jmax; " j "++){")))
+	    l
+	    '((cinline `(concat "    " c1 " += _imat1_m1;"))
+	      (cinline `(concat "    " c2 " += _imat2_m1;"))
+	      (cinline `(concat "    " c3 " += _imat3_m1;"))
+	      (cinline          "    }")
+	      (cinline          "     _idx2loopc1 += _imat1_m0;")
+	      (cinline          "     _idx2loopc2 += _imat2_m0;")
+	      (cinline          "     _idx2loopc3 += _imat3_m0;")
+	      (cinline "  } }")
+	      ()))))
+
+
+#? (icfor (<i> <begin> <end> <step>) <l1> [<l2>...])
+;; a C-like for loop with integer loop variable.
+;; <i> is a lisp symbol used as a loop variable, <begin> <end> and <step>
+;; must be numerical espression. They are all converted to int.
+(dmd icfor (args . l)
+     (let (( (i beg end stp) args))
+       (cons 'let 
+	     (append
+	      '(((`i `beg))
+		(-int- `i)
+		(cinline "for (; %s<(int)(%s); %s+=(int)(%s)) {" `i `end `i `stp))
+	      l
+	      '((cinline "}") ())))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (idx-gloop (<p1>...[<pn>]) <body>)
+;; an enhanced version of bloop which allows to "bloop" through an
+;; pointer table, and to have access to the current index value of the loop.
+;; Each <pi> is a list with 1, 2, or 3 elements.
+;; if it has 2 elements the meaning is like a in reguler bloop.
+;; if it has 1 element, which must be a symbol, it will be used as 
+;; a local variable which contains the current index of the loop.
+;; if it has 3 elements. It must be of the form (<symbol> <p> <m>), where
+;; <p> is a 1D index and <m> an index of at least one dimension.
+;; <symbol> will take the values (idx-select m 0 (p i)) for all
+;; possible values of i. 
+(dmd idx-gloop (vars . body)
+     ;; arg, this won't work when the gloops are parallelized.
+     (let* ((arglist ())
+	    (letlist ())
+	    (sellist ())
+	    (lvar ()))
+       (each ((x vars)) 
+	 (selectq (length x)
+		  (3
+		   ;; a permutation syntax
+		   (let* ((z (uniq-symbol)))
+		     (setq arglist (cons (list z (cadr x)) arglist))
+		     ;; (setq letlist 
+		     ;;       (cons (list (car x) (list 'idx-clone (last x))) letlist))
+		     ;; (setq sellist 
+		     ;;       (cons (list 'idx-select (car x) 0 (list z)) sellist))
+		     (setq letlist
+			   (cons (list (car x) (list 'select (last x) 0 (list z)))
+				 letlist))))
+		  (1   (setq lvar (car x)))
+		  (2   (setq arglist (cons x arglist)))
+		  (t   (error "bad gloop construct"))))
+       (if lvar
+	   '(let* (( `lvar 0))
+	      (-int- `lvar)
+	      `(list 'idx-bloop arglist 
+		     (cons 'let 
+			   (cons letlist 
+				 (append sellist body 
+					 (list (list 'setq lvar (list '+ lvar '1))))))))
+	 (list 'idx-bloop arglist 
+	       (cons 'let (cons letlist (append sellist body)))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make ()
+	  idx-m1resize idx-m2resize idx-m3resize idx-m4resize
+	  idx-i1resize idx-i2resize idx-i3resize idx-i4resize
+  	  idx-s1resize idx-s2resize idx-s3resize idx-s4resize
+  	  idx-b1resize idx-b2resize idx-b3resize idx-b4resize
+  	  idx-u1resize idx-u2resize idx-u3resize idx-u4resize
+  	  idx-g1resize idx-g2resize idx-g3resize idx-g4resize
+  	  idx-d1resize idx-d2resize idx-d3resize idx-d4resize
+         )
+
+

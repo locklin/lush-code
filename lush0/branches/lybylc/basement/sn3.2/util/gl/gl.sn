@@ -1,0 +1,72 @@
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? gl/gl.sn
+;; a simple interface to SGI's low-level GL library.
+;; This is NOT an interface to OpenGL, which is done
+;; by gl/opengl.sn and gl/openglu.sn, but an interface
+;; to the low-leve, metal-banging (and efficient) graphic 
+;; functions on the SGI.
+;; The functions have the same names as their C counterparts
+;; with "gl-" preprended. They have the same arguments and
+;; functionality.
+;;.SEE gl/opengl.sn
+;;.SEE gl/openglu.sn
+;;.SEE (glsn-setup-window <x> <y> <w> <h> <dbf>)
+;;.SEE (gl-winopen <s>)
+
+(mod-dlopen "/usr/lib/libgl.so")
+(mload "cmacro")
+
+#? (gl-prefsize <x> <y>)
+;; specify the size of a GL window to be opened
+(de gl-prefsize (x y)
+    ((-int-) x y)
+    #{ prefsize($x, $y); #} ())
+
+#? (gl-winopen <s>)
+;; open a GL window. This is NOT an opengl window
+;; which is opened by glsn-setup-window, and used by the
+;; library gl/openglu.sn. This is a low-level SGI GL
+;; window.
+(de gl-winopen (s)
+    ((-str-) s)
+    #{ foreground(); #}
+    (gptr #{ winopen("SN GL") #}))
+
+(de gl-RGBmode () #{ RGBmode() #} ())
+
+(de gl-pixmode (mode val)
+    ((-int-) mode val)
+    #{ pixmode($mode, $val) #} ())
+
+(de gl-snpixmode ()
+    (cheader "#undef Object")
+    (cheader "#include <gl/gl.h>")
+    #{ pixmode(PM_TTOB, 1);
+       /* pixmode(PM_INPUT_FORMAT, PM_ABGR); */
+       pixmode(PM_SIZE, 32); 
+       /* pixmode(PM_INPUT_TYPE, PM_UNSIGNED_BYTE); */
+       #} ())
+
+(de gl-gconfig () #{ gconfig() #} ())
+
+#? (gl-draw-matrix <x> <y> <m>)
+;; display an SN idx3 of ubytes in the current 
+;; SGI GL window at position <x> <y>. <m> must be an NxMx4 matrix. 
+;; The 4 components are interpreted as RGBA.
+(de gl-draw-matrix (x y m)
+    ((-int-) x y)
+    ((-idx3- (-ubyte-)) m)
+    (let ((si (idx-dim m 0))
+          (sj (idx-dim m 1)))
+      #{ lrectwrite($x, $y, $x+($sj-1), $y+($si-1), 
+                        (unsigned long *)(IDX_PTR($m, unsigned char))) #}
+      ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "gl"
+          gl-prefsize gl-winopen gl-RGBmode
+          gl-pixmode gl-snpixmode gl-gconfig
+          gl-draw-matrix)

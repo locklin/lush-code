@@ -1,0 +1,154 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a bunch of modules for transforming rawchars
+;; Yann LeCun
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "idx-macros")
+(mload "ocr/rawchar")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (shim-bbox <im> <v>)
+;; writes in <v> the bounding box of non-zero pixels in <im>.
+;; <v> is a 4-vector of ints. The elements will respectively contain
+;; the lowest row, lowest column, highest row, and highest column
+;; of non-zero pixels. they are all set to -1 if no pixels are present
+(de shim-bbox (im v)
+    ((-idx2- (-short-)) im)
+    ((-idx1- (-int-)) v)
+    (let* ((empty ())
+           (is (idx-dim im 0))
+           (js (idx-dim im 1))
+           (imin (1- is))
+           (jmin (1- js))
+           (imax 0)
+           (jmax 0))
+      ((-int-) is js imin jmin imax jmax)
+      (let ((go t) (i 0)) ((-int-) i)
+           (while go
+             (icfor (j 0 js 1) 
+                    (when (> (im i j) 0) (setq imin i) (setq go ())))
+             (incr i) (when (and go (>= i is)) (setq go ()) (setq empty t))))
+      (if empty
+          (progn (v 0 -1) (v 1 -1) (v 2 -1) (v 3 -1))
+        (let ((go t) (i is)) ((-int-) i)
+             (while go
+               (incr i -1)
+               (icfor (j 0 js 1) 
+                      (when (> (im i j) 0) (setq imax i) (setq go ())))
+               (when (<= i 0) (setq go ()))))
+        (let ((go t) (j 0)) ((-int-) j)
+             (while go
+               (icfor (i 0 is 1) 
+                      (when (> (im i j) 0) (setq jmin j) (setq go ())))
+               (incr j) (when (>= j js) (setq go ()))))
+        (let ((go t) (j js)) ((-int-) j)
+             (while go
+               (incr j -1)
+               (icfor (i 0 is 1) 
+                      (when (> (im i j) 0) (setq jmax j) (setq go ())))
+               (when (<= j 0) (setq go ()))))
+        (v 0 imin)
+        (v 1 jmin)
+        (v 2 imax)
+        (v 3 jmax))
+      ()))
+      
+#? (shim-maxblit <x> <y> <in> <out>)
+;; blit <in> into <out> at position <x>,<y>
+;; so that result pixel is max of input pixels
+(de shim-maxblit (x y in out)
+    ((-idx2- (-short-)) in out)
+    ((-int-) x y)
+    (let* ((hin (idx-dim in 0))
+           (win (idx-dim in 1))
+           (hout (idx-dim out 0))
+           (wout (idx-dim out 1)))
+      (when (and (< x wout) (< y hout)
+                 (> x (- win)) (> y (- hin)))
+        (let* ((ly (if (< y 0) 0 y))
+               (lx (if (< x 0) 0 x))
+               (ux (if (> (+ x win) wout) wout (+ x win)))
+               (uy (if (> (+ y hin) hout) hout (+ y hout)))
+               (dest (narrow (narrow out 0 (- uy ly) ly) 1 (- ux lx) lx))
+               (src  (narrow (narrow in  0 (- uy ly) (- ly y))
+                             1 (- ux lx) (- lx x))))
+          ((-int-) hin hout win wout lx ly ux uy)
+          (cinline-idx2loop2 src "short" 
+                             dest "short" "pin" "pout" "i" "j"
+                             #{ *pout = (*pout > *pin) ? *pout : *pin ; #}
+                             )
+          ()))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? rc-noise
+;; an object that adds "salt and pepper" noise to
+;; a rawchar. 
+(defclass rc-noise object
+  ((-float-) prob)
+  ((-float-) amp)
+)
+
+#? (new rc-noise <prob> <amp>)
+;; make a new rc-noise object. <prob> is the proportion
+;; of pixels that will be modified. Modified pixels are added
+;; a random quantity between -<amp> and <amp> and clipped
+;; between 0 and 256. So for a saturated image (where most pixels
+;; are either 0 or 256) the effective number of pixels modified
+;; is only slightly larger than half the total number of pixels
+;; multiplied by <prob>
+(defmethod rc-noise rc-noise (p a)
+  ((-float-) p a)
+  (setq prob p) (setq amp a) ())
+
+(defmethod rc-noise fprop (in out)
+  ((-obj- (rawchar)) in out)
+  (idx-s2resize :out:image (idx-dim :in:image 0) (idx-dim :in:image 1))
+  (idx-bloop ((in :in:image) (out :out:image))
+    (idx-bloop ((in in) (out out))
+      (if (> (rand 0 1) prob)
+          (out (in))
+        (out (min 256 (max 0 (+ (in) (rand (- amp) amp))))))))
+  (setq :out:baseline :in:baseline)
+  (setq :out:coreheight :in:coreheight)
+  (setq :out:skew :in:skew)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (rc-add-sidemen <in> <l> <ld> <r> <rd>)
+;; adds character to the sides of an existing character, simulating
+;; an SDNN-type training.
+;; rawchar <l> is added to the left, and rawchar <r> added to the right
+;; <ld> and <rd> are the respective distance between the bounding boxes 
+;; of <l> and <in>, and <r> and <in>.
+(de rc-add-sidemen (in l ld r rd)
+  ((-obj- (rawchar)) in)
+  ((-idx2- (-short-)) l r)
+  ((-float-) ld rd)
+  (let ((im :in:image)
+        (bbl (int-matrix 4))
+        (bbc (int-matrix 4))
+        (bbr (int-matrix 4)))
+    (shim-bbox im bbc)
+    (shim-bbox l bbl)
+    (shim-bbox r bbr)
+    ;; if center image is empty, move the sidemen around the center
+    (when (< (bbc 0) -0.5)
+      (bbc 0 0)
+      (bbc 1 (int (* 0.5 (1- (idx-dim im 0)))))
+      (bbc 2 (1- (idx-dim im 1)))
+      (bbc 3 (bbc 1)))
+    ;; only do it if the side images are non empty
+    (when (>= (bbl 0) 0)
+      (shim-maxblit (int (+ (bbc 1) (- ld) (- (bbl 3)))) 0 l im))
+    (when (>= (bbr 0) 0)
+      (shim-maxblit (int (+ (bbc 3) rd (- (bbr 1)))) 0 r im)))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make "rawchar_process" 
+          shim-bbox shim-maxblit rc-add-sidemen
+          (rc-noise rc-noise fprop))

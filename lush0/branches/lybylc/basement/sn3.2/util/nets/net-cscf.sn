@@ -1,0 +1,109 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; standard LeNet2/LeNet5 class
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "libnets")
+
+(printf "[%s]\n" file-being-loaded)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass net-cscf idx3-module
+  ((-obj- (c-layer)) c0-module)
+  ((-obj- (idx3-ddstate)) c0-state)
+  ((-obj- (s-layer)) s0-module)
+  ((-obj- (idx3-ddstate)) s0-state)
+  ((-obj- (c-layer)) c2-module)
+  ((-obj- (idx3-ddstate)) c2-state)
+  ((-obj- (f-layer)) f-module))
+
+#? (new net-cscf <ini> <inj> <ki0> <kj0> <tbl0> <si0> <sj0> <ki2> <kj2> <tbl2> <outthick> <prm>)
+;; makes a new net-cscf module.
+;; <ini> <inj>: expected max size of input for preallocation of internal states
+;; <ki0> <kj0>: kernel size for first convolutional layer
+;; <tbl0>: table of connections between input anf feature maps for first layer
+;; <si0> <sj0>: subsampling for first layer
+;; <ki2> <kj2> <tbl2>: same for last convolution layer
+;; <outthick>: number of outputs.
+;; <prm> an idx1-ddparam in which the parameters will be allocated.
+(defmethod net-cscf net-cscf 
+  (
+   ini inj
+   ki0 kj0 tbl0 si0 sj0
+   ki2 kj2 tbl2
+   outthick
+   prm)
+  ((-obj- (idx1-ddparam)) prm)
+  ((-int-)  ini inj
+	    ki0 kj0 si0 sj0
+	    ki2 kj2 outthick)
+  ((-idx2- (-int-)) tbl0 tbl2)
+  (let* ((thick0 (1+ (idx-i1max (select tbl0 1 1))))
+	 (c0-sizi (1+ (- ini ki0)))
+	 (c0-sizj (1+ (- inj kj0)))
+	 (c0-squash (new idx3-squasher))
+	 (s0-sizi (/ c0-sizi si0))
+	 (s0-sizj (/ c0-sizj sj0))
+	 (s0-squash (new idx3-squasher))
+	 (thick2 (1+ (idx-i1max (select tbl2 1 1))))
+	 (c2-sizi (1+ (- s0-sizi ki2)))
+	 (c2-sizj (1+ (- s0-sizj kj2)))
+	 (c2-squash (new idx3-squasher))
+	 (f-squash  (new idx3-squasher)))
+    (setq c0-module 
+	  (new c-layer ki0 kj0 1 1 tbl0 thick0 c0-sizi c0-sizj c0-squash prm))
+    (setq c0-state (new idx3-ddstate thick0 c0-sizi c0-sizj))
+    (setq s0-module 
+	  (new s-layer si0 sj0 thick0 s0-sizi s0-sizj s0-squash prm))
+    (setq s0-state (new idx3-ddstate thick0 s0-sizi s0-sizj))
+    (setq c2-module 
+	  (new c-layer ki2 kj2 1 1 tbl2 thick2
+	       c2-sizi c2-sizj c2-squash prm))
+    (setq c2-state (new idx3-ddstate thick2 c2-sizi c2-sizj))
+    (setq f-module
+	  (new f-layer thick2 outthick c2-sizi c2-sizj f-squash prm))
+    ;; this is a HACK because the compiler has a bump bug
+    ;; so we have to explicitely return these things.
+    ;; (list c0-squash s0-squash c2-squash f-squash)
+    ))
+
+(defmethod net-cscf forget (v p)
+  (-flt- v p)
+  (==> c0-module forget v p)
+  (==> s0-module forget v p)
+  (==> c2-module forget v p)  
+  (==> f-module forget v p)
+  ())
+
+(defmethod net-cscf fprop (in out)
+  ((-obj- (idx3-state)) in)
+  ((-obj- (idx3-state)) out)
+  (==> c0-module fprop in c0-state)
+  (==> s0-module fprop c0-state s0-state)
+  (==> c2-module fprop s0-state c2-state)
+  (==> f-module  fprop c2-state out)
+  ())
+
+(defmethod net-cscf bprop (in out)
+  ((-obj- (idx3-dstate)) in)
+  ((-obj- (idx3-dstate)) out)
+  (==> f-module  bprop c2-state out)
+  (==> c2-module bprop s0-state c2-state)
+  (==> s0-module bprop c0-state s0-state)
+  (==> c0-module bprop in c0-state)
+  ())
+
+(defmethod net-cscf bbprop (in out)
+  ((-obj- (idx3-ddstate)) in)
+  ((-obj- (idx3-ddstate)) out)
+  (==> f-module  bbprop c2-state out)
+  (==> c2-module bbprop s0-state c2-state)
+  (==> s0-module bbprop c0-state s0-state)
+  (==> c0-module bbprop in c0-state)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make "net-cscf" (net-cscf net-cscf forget fprop bprop bbprop) )
+;; can't compile the constructur cause bumping has bugs
+;; (dhc-make "net-cscf" (net-cscf forget fprop bprop bbprop) )
+

@@ -1,0 +1,487 @@
+;/**********************************************************************
+;        Copyright (c) 1996  AT&T --- All Rights Reserved
+;        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF AT&T.
+;        The copyright notice above does not evidence any
+;        actual or intended publication of this work.
+;**********************************************************************/
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; linear coordinate transform using bilinear interpolation.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(mload "cmacro")
+(mload "idx-macros")
+(mload "image/image-transform")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? ubimage
+;; a ubimage is an idx2 of ubytes intended to store image.
+
+#? (ubimage2flt <in> <out>)
+;;.VP
+;; ((-idx2- (-ubyte-)) in):
+;; ((-idx2- (-flt-)) out):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Converts ubimage <in> into idx2 of flt <out>.
+;; Values are scaled down by 1/255.
+(de ubimage2flt (in out)
+    ((-idx2- (-ubyte-)) in)
+    ((-idx2- (-flt-)) out)
+
+    (idx-bloop ((in in) (out out))
+      (cinline-idx1loop2 in "unsigned char" out "flt" "ip" "op" "i"
+                         (cinline "*op = ((flt)(*ip))*0.00392157")))
+    ())
+
+
+#? (flt2ubimage <in> <out>)
+;;.VP
+;; ((-idx2- (-ubyte-)) out):
+;; ((-idx2- (-flt-)) in):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: None
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; converts flt idx2 <in> to an ubimage <out>.
+;; a pixel values are scaled up by 255.
+(de flt2ubimage (in out)
+    ((-idx2- (-ubyte-)) out)
+    ((-idx2- (-flt-)) in)
+
+    (idx-bloop ((in in) (out out))
+      (cinline-idx1loop2 in "flt" out "unsigned char" "ip" "op" "i"
+                         (cinline "*op = (unsigned char)((*ip)*255)")))
+    ())
+
+
+#? (ubimage2fltimage <in> <out> <bkgd> <ink>)
+;;.VP
+;; ((-idx2- (-ubyte-)) in):
+;; ((-idx2- (-flt-)) out):
+;; ((-flt-) bkgd ink):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: C. Burges
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Generalization of Yann's ubimage2flt for arbitrary ink and background.
+;; Converts ubimage <in> into idx2 of flt <out>.
+(de ubimage2fltimage (in out bkgd ink)
+    ((-idx2- (-ubyte-)) in)
+    ((-idx2- (-flt-)) out)
+    ((-flt-) bkgd ink)
+
+    (if (= bkgd ink)
+        (error "ubimage2fltimage: background must differ from ink"))
+
+    (let* ((b bkgd)
+           (a (/ (- ink bkgd) 255)))
+      ((-flt-) a b)
+      (idx-bloop ((in in) (out out))
+        (cinline-idx1loop2 in "unsigned char" out "flt" "ip" "op" "i"
+                           (cinline "*op = (flt)(*ip)* %s+%s" a b))))
+    ())
+
+
+#? (fltimage2ubimage <in> <out> <bkgd> <ink>)
+;;.VP
+;; ((-idx2- (-flt-)) in):
+;; ((-idx2- (-ubyte-)) out):
+;; ((-flt-) bkgd ink):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: C. Burges
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Generalization of Yann's flt2ubimage for arbitrary ink and background.
+;; Converts flt idx2 <in> to a ubimage <out>.
+(de fltimage2ubimage (in out bkgd ink)
+    ((-idx2- (-flt-)) in)
+    ((-idx2- (-ubyte-)) out)
+    ((-flt-) bkgd ink)
+
+    (if (= bkgd ink)
+        (error "fltimage2ubimage: background must differ from ink"))
+
+    (let* ((a (/ 255 (- ink bkgd)))
+           (b (* a (- bkgd))))
+      ((-flt-) a b)
+      (idx-bloop ((in in) (out out))
+        (cinline-idx1loop2 in "flt" out "unsigned char" "ip" "op" "i"
+                           (cinline "*op = (unsigned char)((*ip)* %s+%s)" a b))))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (ubim-subsample <in> <nlin> <ncol>)
+;; subsamples image <in> with integer ratios <nlin> (vertical) <ncol>
+;; (horizontal). the subsampled image is returned.
+;; The horizontal (resp. vertical) size of the returned image is 
+;; equal to the integer part of the horizontal (resp vertical)
+;; size of <in> divided by <ncol> (resp <nlin>).
+;; 
+;; returns (copy-matrix <in>) when subsample rate is 1
+(de ubim-subsample (in nlin ncol)
+    ((-idx2- (-ubyte-)) in)
+    ((-int-) nlin ncol)
+    (if (and (= nlin 1) (= ncol 1))
+        (copy-matrix in)
+    (let* ((h (idx-dim in 0))
+           (w (idx-dim in 1))
+           (nh (int (/ h nlin)))
+           (nw (int (/ w ncol)))
+           (inp (narrow (narrow in 0 (* nlin nh) 0) 1 (* ncol nw) 0))
+           (out (ubyte-matrix-nc nh nw)))
+      #{{
+      unsigned char *_idx2loopc1, *pin;
+      unsigned char *_idx2loopc2, *pout;
+      int i, _imax = ($out)->dim[0];
+      int j, _jmax = ($out)->dim[1];
+      int _imat1_m0 = ($inp)->mod[0];
+      int _imat1_m1 = ($inp)->mod[1];
+      int _imat2_m0 = ($out)->mod[0];
+      int _imat2_m1 = ($out)->mod[1];
+      int pin_incr = $ncol * _imat1_m1;
+      int norm = $ncol * $nlin;
+      register int acc0;
+      register int k,l;
+      register unsigned char *pinptr;
+      register int pinptr_incr = _imat1_m0 - $ncol* _imat1_m1;
+      _idx2loopc1 = IDX_PTR (($inp), unsigned char);
+      _idx2loopc2 = IDX_PTR (($out), unsigned char);
+      for (i = 0; i < _imax; i++) {
+        pin = _idx2loopc1;
+        pout = _idx2loopc2;
+        for (j = 0; j < _jmax; j++) {
+          acc0 =0;
+          pinptr = pin;
+          for (k=0; k<$nlin; k++) {
+            for (l=0; l<$ncol; l++) { 
+              acc0 += pinptr[0];
+              pinptr += _imat1_m1;
+              }
+            pinptr += pinptr_incr;
+            }
+          pout[0] = acc0/norm;
+          pin += pin_incr;
+          pout += _imat2_m1;
+	  }
+	  _idx2loopc1 += _imat1_m0 * $nlin;
+	  _idx2loopc2 += _imat2_m0;
+	}
+        } #}
+  out) ) ) ) ) ) ))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; zoom
+
+#? (ubim-zoom <ubim> <zoomx> <zoomy>)
+;; Zoom an ubyte image <ubim> by the given integer zoom factors.
+(de ubim-zoom (ubim zoomx zoomy)
+    ((-idx2- (-ubyte-)) ubim)
+    ((-int-) zoomx zoomy)
+    (let* ((ans (ubyte-matrix (* zoomy (idx-dim ubim 0)) 
+                              (* zoomx (idx-dim ubim 1))))
+           (uans (unfold (unfold ans 0 zoomy zoomy) 1 zoomx zoomx)) )
+      (idx-eloop ((uans1 uans))
+        (idx-eloop ((uans2 uans1))
+          (idx-copy ubim uans2) ) )
+      ans ) )
+    
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (ubim-invert <im>)
+;; reverse polarity of an ubimage.
+;; each pixel is replaced by 255 minus itself
+(de ubim-invert (im)
+    ((-idx2- (-ubyte-)) im)
+    (cinline-idx2loop im "unsigned char" "p" "i" "j"
+       #{ *p = 255 - *p; #}
+       ) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (ubim-interpolate-bilin <background> <pin> <indimi> <indimj> <inmodi> <inmodj> <ppi> <ppj>)
+;;.VP
+;; (-gptr- pin):
+;; (-int-  background indimi indimj inmodi inmodj ppi ppj):
+;;
+;; RETURNS: (-ubyte-)
+;; SIDE EFFECTS: None
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; returns a bilinearly interpolated pixel value for coordinate
+;; <ppi> <ppj>. The image data is pointed to by <pin>, with 
+;; <indimi> <indimj> <inmodi> <inmodj> being the dimensions and modulos.
+;; This function clips automatically if <ppi> <ppj> are outside of the
+;; bounds by assuming the outside values are equal to <background>.
+;; pixel values are ubytes, while coordinates are 32 bit fixed point
+;; with 16 bit integer part and 16 bit fractional part.
+;; The function does not use floating point arithmetics.
+(de ubim-interpolate-bilin (background pin indimi indimj inmodi inmodj ppi ppj)
+ (-gptr- pin)
+ (-int-  background indimi indimj inmodi inmodj ppi ppj)
+
+ (let ((out 0))
+  (-ubyte- out)
+  #{{
+	 int li0, lj0;
+	 register int li1, lj1;
+	 int deltai, ndeltai;
+	 int deltaj, ndeltaj;
+	 register unsigned char *pin00;
+	 register int v00, v01, v10, v11;
+	 li0 = $ppi >> 16;
+	 li1 = li0+1;
+	 deltai = $ppi & 0x0000ffff;
+	 ndeltai = 0x00010000 - deltai;
+	 lj0 = $ppj  >> 16;
+	 lj1 = lj0+1;
+	 deltaj = $ppj & 0x0000ffff;
+	 ndeltaj = 0x00010000 - deltaj;
+	 pin00 = (unsigned char*)($pin)+$inmodi*li0+$inmodj*lj0;
+   #} #{
+         if ((li1>0)&&(li1<$indimi)) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = *(pin00); 
+		 v01 = *(pin00+$inmodj); 
+		 v11 = *(pin00+$inmodi+$inmodj); 
+		 v10 = *(pin00+$inmodi);
+	     } else if (lj1==0) { 
+		 v00 = $background;
+		 v01 = *(pin00+$inmodj); 
+		 v11 = *(pin00+$inmodi+$inmodj);
+		 v10 = $background;
+	     } else if (lj1==$indimj) {
+		 v00 = *(pin00); 
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = *(pin00+$inmodi); 
+	     } else {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     }
+    #} #{
+	 } else if (li1==0) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = *(pin00+$inmodi+$inmodj); 
+		 v10 = *(pin00+$inmodi);
+	     } else if (lj1==0) { 
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = *(pin00+$inmodi+$inmodj);
+		 v10 = $background;
+	     } else if (lj1==$indimj) {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = *(pin00+$inmodi); 
+	     } else {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     }
+    #} #{
+	 } else if (li1==$indimi) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = *(pin00); 
+		 v01 = *(pin00+$inmodj); 
+		 v11 = $background;
+		 v10 = $background;
+	     } else if (lj1==0) { 
+		 v00 = $background;
+		 v01 = *(pin00+$inmodj); 
+		 v11 = $background;
+		 v10 = $background;
+	     } else if (lj1==$indimj) {
+		 v00 = *(pin00); 
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     } else {
+		 v00 = $background;
+		 v01 = $background;
+		 v11 = $background;
+		 v10 = $background;
+	     }
+    #} #{
+         } else {
+	     v00 = $background;
+	     v01 = $background;
+	     v11 = $background;
+	     v10 = $background;
+	 }
+	 $out = (ndeltaj * (( v10*deltai + v00*ndeltai )>>16) +
+	         deltaj  * (( v11*deltai + v01*ndeltai )>>16))>>16;
+     }
+
+  #} out))
+
+
+#? (ubim-warp <in> <out> <background> <pi> <pj>)
+;;.VP
+;; ((-int-) background):
+;; ((-idx2- (-ubyte-)) in out):
+;; ((-idx2- (-int-)) pi pj):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out> 
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Warps an image using <pi> and <pj> as tabulated coordinate transforms.
+;; <in> and <out> are idx2 of ubytes. <background> is the value assumed outside
+;; of the input image. <pi> and <pj> are tabulated coordinates which can
+;; be filled up using compute-bilin-transform or similar functions.
+;; Pixel values are antialiased using bilinear interpolation.
+(de ubim-warp (in out background pi pj)
+    ((-int-) background)
+    ((-idx2- (-ubyte-)) in out)
+    ((-idx2- (-int-)) pi pj)
+
+    (let ((ni (idx-dim in 0))
+          (nj (idx-dim in 1))
+          (pin (gptr (cinline "IDX_PTR(%s, unsigned char)" in)))
+          (indimi (idx-dim in 0))
+          (indimj (idx-dim in 1))
+          (inmodi (idx-modulo in 0))
+          (inmodj (idx-modulo in 1)))
+      (-gptr- pin)
+      (-int-  indimi indimj inmodi inmodj)
+      (idx-bloop ((lout out) (lpi pi) (lpj pj))
+        (idx-bloop ((llout lout) (llpi lpi) (llpj lpj))
+          (let ((ppi (llpi)) (ppj (llpj)))
+            (-int- ppi ppj)
+            (llout (ubim-interpolate-bilin background pin indimi indimj inmodi inmodj ppi ppj))))))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; fast version, not interpolation.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (ubim-warp-fast <in> <out> <background> <pi> <pj>)
+;;.VP
+;; ((-int-) background):
+;; ((-idx2- (-ubyte-)) in out):
+;; ((-idx2- (-int-)) pi pj):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Warps an image using <pi> and <pj> as tabulated coordinate transforms.
+;; <in> and <out> are idx2 of ubytes. <background> is the value assumed outside
+;; of the input image. <pi> and <pj> are tabulated coordinates which can
+;; be filled up using compute-bilin-transform or similar functions.
+;; This is essentially identical to warp-ubimage, except no antialiasing
+;; is performed (it goes a lot faster, but is not nearly as nice).
+(de ubim-warp-fast (in out background pi pj)
+    ((-int-) background)
+    ((-idx2- (-ubyte-)) in out)
+    ((-idx2- (-int-)) pi pj)
+
+    (unprotect
+      (let ((ni (idx-dim in 0))
+            (nj (idx-dim in 1))
+            (pin (gptr (cinline "IDX_PTR(%s, unsigned char)" in)))
+            (indimi (idx-dim in 0))
+            (indimj (idx-dim in 1))
+            (inmodi (idx-modulo in 0))
+            (inmodj (idx-modulo in 1)))
+        (-gptr- pin)
+        (-int-  indimi indimj inmodi inmodj)
+        (idx-bloop ((lout out) (lpi pi) (lpj pj))
+          (idx-bloop ((llout lout) (llpi lpi) (llpj lpj))
+            (let ((ppi (llpi)) (ppj (llpj)))
+              (-int- ppi ppj)
+  	    (let ((resu 0))
+  	      (-ubyte- resu)
+                #{{
+  		     register int li, lj;
+  		     li = ($ppi+0x7f) >> 16;
+  		     lj = ($ppj+0x7f) >> 16;
+  		     if ((li>=0)&&(li<$indimi)&&(lj>=0)&&(lj<$indimj)) {
+  			 $resu = *((unsigned char*)($pin)+$inmodi*li+$inmodj*lj);
+		     } else {
+			 $resu = $background;
+		     }
+  		   }
+                 #} 
+  	         (llout resu)))))))
+      ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; top-level function
+
+
+#? (ubim-warp-bilin <in> <out> <background> <mode> <x1> <y1> <x2> <y2> <x3> <y3> <x4> <y4> <p1> <q1> <p3> <q3>)
+;;.VP
+;; ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3):
+;; ((-int-) background mode):
+;; ((-idx2- (-ubyte-)) in out):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; transforms ubimage <in> (idx2 of ubyte) mapping quadrilateral <x1> <y1> <x2>
+;; <y2> <x3> <y3> <x4> (points are numbered clockwise starting from upper left)
+;; to rectangle whose upper left and lower right points are <p1><q1>, <p3><q3>.
+;; result is put in <out> (idx2 of ubyte).  Clipping is automatically performed.
+;; pixels outside of the bounds of <in> are assumed to have the value
+;; <background>.  <mode>=0: no antialiasing, <mode>=1: antialiasing with
+;; bilinear interpolation (2 times slower).  execution time on sparc 10 is about
+;; 5 ms in mode 0 and 10 ms in mode 1 for a 32x32 target image.
+(de ubim-warp-bilin (in out background mode x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    ((-int-) background mode)
+    ((-idx2- (-ubyte-)) in out)
+
+    (let* ((outi (idx-dim out 0))
+	   (outj (idx-dim out 1))
+	   (dispi (int-matrix-nc outi outj))
+	   (dispj (int-matrix-nc outi outj)))
+      (compute-bilin-transform dispi dispj x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+      (if (= 0 mode)
+	  (ubim-warp-fast in out background dispi dispj)
+	(ubim-warp in out background dispi dispj)))
+    ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(let ((dhc-cname dhc-cname)
+      (dhc-cflags dhc-cflags))
+
+  (when (and (= operating-system 'sunos) (= dhc-cname "cc"))
+    (setq dhc-cname "gcc")
+    (setq dhc-cflags "-O2 -ffast-math") )
+  
+  (dhc-make "ubimage" 
+            ubimage2flt flt2ubimage 
+            ubimage2fltimage fltimage2ubimage
+            ubim-subsample ubim-invert ubim-zoom
+            ubim-interpolate-bilin ubim-warp ubim-warp-fast
+            ubim-warp-bilin  ) )

@@ -1,0 +1,303 @@
+(mload "hcluster/hcluster")
+(cc-load "hcluster/euc_func.c")
+
+;;------------------------------------------------------------------------------
+#? (cluster-sample-to-c <a>)
+;; Allocate a C structure (return a gptr) for sample <a> (a 1D float matrix).
+;; Calls the C function new_sample defined in the .h file.  For each call to
+;; cluster-sample-to-c, there should be a call to cluster-free-sample to 
+;; prevent memory leak.
+;;.SEE (cluster-free-sample <p>)
+;;.SEE (cluster-c-to-sample <p>)
+;;.SEE (new euc-cluster-tree <a>)
+;;.SEE (new euc-cluster <a>)
+;;
+(de cluster-sample-to-c (a)
+  ((-idx1- (-flt-)) a)
+  (c-include "hcluster/euc_func.h")
+
+  (let ((pt (gptr #{ new_sample($(idx-dim a 0)) #})))
+    #{ ((struct sample_type *)$pt)->norm = 0; #}
+    (cidx-bloop ("i" ("a" a))
+                #{ 
+                ((struct sample_type *)$pt)->pattern[i] = *a; 
+                ((struct sample_type *)$pt)->norm += *a * *a;
+                #})
+               pt))
+
+;;------------------------------------------------------------------------------
+#? (cluster-free-sample <p>)
+;; De-allocate a C structure from gptr <p>, where <p> has been returned by 
+;; cluster-sample-to-c.  Calls the C function free_sample defined in .h file.
+;;.SEE (cluster-sample-to-c <a>)
+;;.SEE (cluster-c-to-sample <p>)
+;;.SEE (new euc-cluster-tree <a>)
+;;.SEE (new euc-cluster <a>)
+;;
+(de cluster-free-sample (p)
+  ((-gptr-) p)
+  #{ free_sample($p) #}
+  ())
+
+;;------------------------------------------------------------------------------
+#? (cluster-c-to-sample <p>)
+;; copy C structure (gptr) <p> into a lisp matrix (return a 1D float matrix).
+;; <p> is a C structure which has been returned by cluster-sample-to-c.
+;;.SEE (cluster-sample-to-c <a>)
+;;.SEE (cluster-free-sample <p>)
+;;.SEE (new euc-cluster-tree <a>)
+;;.SEE (new euc-cluster <a>)
+;;
+(de cluster-c-to-sample (pt)
+  ((-gptr-) pt)
+  
+  (let ((a (matrix-nc (int #{ ((struct sample_type *)$pt)->size #}))))
+    (cidx-bloop ("i" ("a" a))
+                #{ 
+                *a = ((struct sample_type *)$pt)->pattern[i]; 
+                #})
+    a))
+
+;;------------------------------------------------------------------------------
+#? (euc-cluster-display-2d <samples> <ind> <clusters>)
+;; This function will display in the current window <samples> and <cluster>
+;; joined by lines.  Assuming that there are n samples (vectors of dimension m),
+;; p clusters (also of dimension m), then <samples> is a n by m float-matrix, 
+;; <clusters> is a p by m matrix, and <ind> is a n int-matrix in which the kth
+;; entry indicates the cluster index to which sample k is associated.  The
+;; first 2 dimensions (of the m dimension of each vector) are plotted, and 
+;; the values are assumed to be in pixel (pattern [100 200] will be plotted 
+;; at coordinates 100,200 in the current window).
+;;
+(de euc-cluster-display-2d (samples ind clusters)
+    ((-idx2- (-float-)) samples clusters)
+    ((-idx1- (-int-)) ind)
+
+    (let ((n-cluster (idx-dim clusters 0))
+          (red (alloccolor 1 0 0))
+          (black (alloccolor 0 0 0)))
+      (-int- n-cluster red black)
+      
+      (graphics-batch        
+       (cls)
+       
+       ;; draw cluster center (red dots)
+       (color red)
+       (for (i 0 (1- n-cluster) 1)
+         (fill-circle (clusters i 0) (clusters i 1) 5))
+       
+       ;; draw line from cluster to samples (red)
+       (for (i 0 (1- (idx-dim samples 0)))
+         (draw-line (samples i 0) (samples i 1)
+                    (clusters (ind i) 0) (clusters (ind i) 1)))
+       
+       ;; draw samples (black dots)
+       (color black)
+       (for (i 0 (1- (idx-dim samples 0)))
+         (fill-circle (samples i 0) (samples i 1) 3))
+       )))
+
+;;******************************************************************************
+#? euc-cluster-tree.
+;; (new euc-cluster-tree <a>)
+;; Sub-class of cluster-tree.  Assume <a> is a float matrix containing each
+;; sample as a line.  The new_sample, free_sample, distance, clear, accumulate
+;; and normalize functions are defined in file "euc_func.c".
+;;.PP
+;; Take a 2D float matrix and return a C hierachycal tree structure.  The tree
+;; can be grown using the method add-cluster (inhirited from cluster-tree 
+;; class).  The results can be retrieved using methods get-clusters and 
+;; get-index.
+;;.SEE cluster-tree.
+;;.SEE euc-cluster.
+;;.SEE (==> cluster-tree add-cluster <n>)
+;;.SEE (==> euc-cluster-tree get-samples)
+;;.SEE (==> euc-cluster-tree get-clusters <p>)
+;;.SEE (==> euc-cluster-tree get-index <p>)
+;;.SEE (==> euc-cluster-tree display-2d <p>)
+
+(defclass euc-cluster-tree cluster-tree
+  ((-idx2- (-flt-)) l-samples))
+
+;; constructor
+(defmethod euc-cluster-tree euc-cluster-tree (a)
+  ((-idx2- (-flt-)) a)
+
+  (c-include "hcluster/euc_func.h")
+
+  (setq l-samples a)
+  (setq samples (gptr-matrix-nc (idx-dim a 0)))
+  (idx-bloop ((a a) (samples samples))
+    (samples (cluster-sample-to-c a)))
+
+  (==> this cluster-tree samples (idx-dim a 1)
+       (gptr #{ new_sample #}) (gptr #{ free_sample #})
+       (gptr #{ cluster_init #}) (gptr #{ distance #}) (gptr #{ clear #})
+       (gptr #{ accumulate #}) (gptr #{ normalize #}) 1
+       )
+)
+
+;; This is what would go in the C destructor if compiler ok
+(defmethod euc-cluster-tree c-destructor ()
+  (idx-bloop ((samples samples))
+    (cluster-free-sample (samples))))
+
+;; LISP destructor (the compiler doesn't handle destructor correctly
+(defmethod euc-cluster-tree -destructor ()
+  (if samples
+      (==> this c-destructor)))
+
+;;------------------------------------------------------------------------------
+#? (==> euc-cluster-tree get-samples)
+;; Returns the original samples
+(defmethod euc-cluster-tree get-samples ()
+  l-samples)
+
+;;------------------------------------------------------------------------------
+#? (==> euc-cluster-tree get-clusters <p>)
+;; Returns p clusters (a slice in the hierarchical tree).  This is a 
+;; float-matrix p by size (where size in the original size of the samples).
+;;.SEE euc-cluster-tree.
+;;
+(defmethod euc-cluster-tree get-clusters (p)
+  (-int- p)
+  
+  (let* ((clu-ptr (==> this slice-ptr p))
+         (n-cluster (idx-dim clu-ptr 0)) ;; if p to big, n-cluster < p
+         (l-clusters (matrix-nc n-cluster size)))
+    
+    (idx-bloop ((cp clu-ptr) (l-cluster l-clusters))
+      (copy-matrix (cluster-c-to-sample 
+                    (==> (new cluster-access (cp)) cluster)) l-cluster))
+    l-clusters))
+
+;;------------------------------------------------------------------------------
+#? (==> euc-cluster-tree get-index <p>)
+;; Returns an int-matrix <mat> such that the k-th entry of <mat> is the cluster
+;; index of sample <k>.  The clusters can be obtained using the method 
+;; get-clusters.
+;;.SEE euc-cluster-tree.
+;;
+(defmethod euc-cluster-tree get-index (p)
+  (-int- p)
+  (==> this slice-index p))
+
+;;------------------------------------------------------------------------------
+#? (==> euc-cluster-tree display-2d <p>)
+;; Look at first 2 dimensions of samples and cluster and draw them in the
+;; current window.  <p> is the number of clusters (a slice in the 
+;; hierarchical tree.
+;;.SEE euc-cluster-tree.
+;;.SEE (euc-cluster-display-2d <samples> <ind> <clusters>)
+;;
+(defmethod euc-cluster-tree display-2d (p)
+  (-int- p)
+  (euc-cluster-display-2d (==> this get-samples) (==> this get-index p)
+                          (==> this get-clusters p)))
+
+;;******************************************************************************
+#? euc-cluster.
+;; (new euc-cluster <a> <p>)
+;; Sub-class of n-cluster.  Assume <a> is a float matrix containing each
+;; sample as a line.  The new_sample, free_sample, distance, clear, accumulate
+;; and normalize functions are defined in file "euc_func.c".
+;;
+;; Take a 2D float matrix and return a n-cluster structure containing <p> 
+;; clusters.  Each clusters can be accessed using method get-clusters and 
+;; get-index.
+;;
+;;.SEE n-cluster.
+;;.SEE euc-cluster-tree.
+;;.SEE (==> euc-cluster get-samples)
+;;.SEE (==> euc-cluster get-clusters)
+;;.SEE (==> euc-cluster get-index)
+;;.SEE (==> euc-cluster display-2d <p>)
+;;
+(defclass euc-cluster n-clusters
+  ((-idx2- (-flt-)) l-samples))
+
+;; constructor
+(defmethod euc-cluster euc-cluster (a pp)
+  ((-idx2- (-flt-)) a)
+  ((-int-) pp)
+
+  (c-include "hcluster/euc_func.h")
+
+  (setq l-samples a)
+  (setq samples (gptr-matrix-nc (idx-dim a 0)))
+  (idx-bloop ((a a) (samples samples))
+    (samples (cluster-sample-to-c a)))
+  (setq labels (int-matrix-nc 0))
+  (setq clusters (gptr-matrix-nc 0))
+  (setq variance (float-matrix-nc 0))
+  (setq weights (float-matrix-nc 0))
+
+  (==> this n-clusters samples (idx-dim a 1) pp
+       (gptr #{ new_sample #}) (gptr #{ free_sample #})
+       (gptr #{ cluster_init #}) (gptr #{ distance #}) (gptr #{ clear #})
+       (gptr #{ accumulate #}) (gptr #{ normalize #}) 1
+       )
+)
+
+;; This is what would go in the C destructor if compiler ok
+(defmethod euc-cluster euc-cluster-c-destructor ()
+  (idx-bloop ((samples samples))
+    (cluster-free-sample (samples))))
+
+;; LISP destructor (the compiler doesn't handle destructor correctly
+(defmethod euc-cluster -destructor ()
+  (if samples
+      (==> this euc-cluster-c-destructor)))
+
+;;------------------------------------------------------------------------------
+#? (==> euc-cluster get-samples)
+;; Returns the original samples
+;;.SEE euc-cluster.
+(defmethod euc-cluster get-samples ()
+  l-samples)
+
+;;------------------------------------------------------------------------------
+#? (==> euc-cluster get-clusters)
+;; Returns the clusters.  This is a float-matrix p by size (where size in the
+;; original size of the samples).
+;;.SEE euc-cluster.
+(defmethod euc-cluster get-clusters ()
+  (let ((l-clusters (matrix-nc p size))
+        (clu-ptr (==> this clusters)))
+    (idx-bloop ((cp clu-ptr) (l-cluster l-clusters))
+      (copy-matrix (cluster-c-to-sample (cp)) l-cluster))
+    l-clusters))
+
+;;------------------------------------------------------------------------------
+#? (==> euc-cluster get-index)
+;; Returns an int-matrix <mat> such that the k-th entry of <mat> is the cluster
+;; index of sample <k>.  The clusters can be obtained using the method 
+;; get-clusters.
+;;.SEE euc-cluster.
+
+;;------------------------------------------------------------------------------
+#? (==> euc-cluster display-2d <p>)
+;; Look at first 2 dimensions of samples and cluster and draw them in the
+;; current window.  <p> is the number of clusters (a slice in the 
+;; hierarchical tree.
+;;.SEE euc-cluster.
+;;.SEE (euc-cluster-display-2d <samples> <ind> <clusters>)
+;;
+(defmethod euc-cluster display-2d ()
+  (euc-cluster-display-2d (==> this get-samples) (==> this get-index)
+                          (==> this get-clusters)))
+  
+;******************************************************************************
+(dhc-make () 
+          cluster-sample-to-c cluster-free-sample cluster-c-to-sample
+          euc-cluster-display-2d
+          (euc-cluster-tree euc-cluster-tree c-destructor 
+                            get-samples get-clusters get-index display-2d)
+          (euc-cluster euc-cluster euc-cluster-c-destructor 
+                       get-samples get-clusters display-2d))
+
+
+
+
+
+

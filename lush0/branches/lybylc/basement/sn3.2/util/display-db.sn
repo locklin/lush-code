@@ -1,0 +1,175 @@
+(ogre)
+
+(mload "db")
+
+;------------------------------------------------------------------------------
+#? display-db
+;; (new display-db <db> [<xsize> <ysize>])
+;; Display a database <db> with primitive functions (previous, next).
+;; The argument <db> must be of type database and get must return a 2D 
+;; or 1D matrix.  In the case of 1D matrix, square images are assumed but
+;; the optional arguments <xsize> and <ysize> can be used to specified 
+;; images that are not squares.  For example:
+;;.VP
+;; ? (load "data-lenet")           
+;; = "/home/leonb/sn2.6/morelib/data-lenet.sn"
+;; ? (load-base16)
+;; = t
+;; ? (setq browser (new display-db (==> test-hand-16 get-base 'pat)))
+;; = ::display-db:1daf78
+;;.PP
+;; If we want to also display the classes somewhere as the base is scanned, we can
+;; do the following:
+;;.VP
+;; ? (==> browser set-call (lambda (i) (print (==> test-hand-16 get i 'class))))
+;; = ::DE:1a736c
+;;.PP
+;;.SEE (==> <display-db> setcall <func>)
+;;
+(defclass display-db windowobject
+  xsiz ysiz
+  base
+  func
+  commands
+  prev next pat-num quit
+  image
+)
+
+(defclass display-db-image visualobject
+  repaintfunc )
+
+(defmethod display-db-image display-db-image(w h func)
+  (setq repaintfunc func)
+  (==> this visualobject w h) )
+
+(defmethod display-db-image repaint()
+  (repaintfunc) )
+
+(defmethod display-db-image update()
+  (==> this expose rect) )
+  
+(defmethod display-db display-db (basea &optional (xsizea ()) (ysizea ()) )
+  (if (not (is-of-class basea db))
+      (error '==> "not a database" basea))
+  (setq base basea)
+  (setq xsiz xsizea)
+  (setq ysiz ysizea)
+  (setq func (lambda (n) ()))
+  (setq pat-num (new editnumber 6 0))
+  (==> pat-num setcall 
+       (apply lambda '((caller) 
+		       (==> base seek (==> caller getdata))
+		       (==> `this update)) ))
+  (==> pat-num setdata (==> base tell))
+  (setq prev (new stdbutton " Prev " 
+                  (apply lambda '((caller) 
+				  (==> base previous)
+				  (==> `this update)))))
+  (setq next (new stdbutton " Next "
+                  (apply lambda '((caller)
+				  (==> base next) 
+				  (==> `this update)))))
+  (setq quit (new stdbutton " Quit " 
+		  (apply lambda '((caller) 
+				  (==> thiswindowobject -destructor)))))
+  
+  (setq commands 
+	(apply new (append
+		    (flatten (list row prev next pat-num commands quit)))))
+  
+  (setq image (new display-db-image 300 300 
+		   (lambda()
+		     (let ((mat (==> base get-current))
+			   (x-size xsiz)
+			   (y-size ysiz)
+			   (temp ()))
+		       (when (and (not xsiz) (not ysiz))
+			 (cond ((= 2 (bound mat 0))
+				(setq x-size (1+ (bound mat 2)))
+				(setq y-size (1+ (bound mat 1))) )
+			       ((= 1 (bound mat 0))
+				(setq temp (sqrt (1+ (bound mat 1))))
+				(if (<> (int temp) temp)
+				    (error 'display-db "bad dimensions" mat)
+				  (setq x-size temp)
+				  (setq y-size temp)))
+			       (t (error 'display-db "bad dimensions" mat))))
+		       (let (((x y w h) :image:rect))
+			 (let* ((minsize (- (min w h) 5))
+				(maximag (max x-size y-size))
+				(apart (max 1 (/ minsize maximag))) )
+			   (gray-draw-matrix (+ x 5) (+ 5 y) 
+					     (redim mat y-size x-size)
+					     1 0 apart apart ) ) ) ) ) )) 
+  
+  (==> this windowobject 0 0 300 330 "Display-DB" 
+       (new column commands image) )
+  (==> this update) )
+
+;------------------------------------------------------------------------------
+#? (==> <display-db> update)
+;; update image, and rest according to pointer in database
+;;
+(defmethod display-db update ()
+  (==> pat-num setdata (==> base tell))
+  (func (==> base tell))
+  (==> image update))
+
+;------------------------------------------------------------------------------
+#? (==> <display-db> setcall <func>)
+;; set a function of one argument (the database pointer) to be called every
+;; time the database pointer is changed.
+;;
+(defmethod display-db set-call (afunc)
+  (setq func afunc))
+
+; automatic resizing of the visual object
+(defmethod display-db geometry(x y w h)
+  (==> this (windowobject . geometry) x y w h)
+  ;; This hack allow for tracking the window size
+  (let (((x1 y1 w1 h1) :image:rect))
+    ;; resize column
+    (==> (caar contents) geometry 0 0 (xsize) (ysize))
+    ;; resize hist-area
+    (==> image geometry x1 y1 (- (xsize) x1) (- (ysize) y1)) ) )
+
+
+;------------------------------------------------------------------------------
+#? (==> <display-db> seek <n>)
+;; seek to <n> into the database and refresh.
+;;
+(defmethod display-db seek (n)
+  (==> base seek n)
+  (==> this update))
+
+;******************************************************************************
+#? display-db-class
+;; (new display-db-class <db> <db-class> [<xsize> <ysize>])
+;; Display a database <db> with primitive functions (previous, next).
+;; The argument <db> must be of type database and get must return a 2D 
+;; or 1D matrix.  In the case of 1D matrix, square images are assumed but
+;; the optional arguments <xsize> and <ysize> can be used to specified 
+;; images that are not squares.  The second argument <db-class> is a 
+;; database wich returns the class of the corresponding element in <db>.
+
+;;.SEE (new display-db <db> <db-class> [<xsize> <ysize>])
+;;
+(defclass display-db-class display-db
+  vis-class
+  class-db
+)
+
+(defmethod display-db-class display-db-class 
+  (basea classa &optional (xsizea ()) (ysizea ()))
+  (if (not (is-of-class classa db))
+      (error '==> "not a database" classa))
+  (setq class-db classa)
+  (setq vis-class (new string " "))
+  (setq commands vis-class)
+  (==> this (display-db . display-db) basea xsizea ysizea))
+
+(defmethod display-db-class update ()
+  (let ((cl (==> class-db get (==> base tell))))
+    (==> vis-class settext (if (stringp cl) cl (pname cl))))
+  (==> this (display-db . update)))
+

@@ -1,0 +1,171 @@
+;; test garbage collection
+
+(de alist-add(key value alist)
+    (let ((pair (assoc key alist)))
+      (if pair
+          (rplacd pair value)
+        (setq alist (cons (cons key value) alist)) )
+      alist ) )
+
+;; this function returns the value associated to a key
+(de alist-get(key alist)
+    (let ((pair (assoc key alist)))
+      (when pair
+	    (cdr pair) ) ) )
+
+(de gc-info (obj)
+    (let ((gc-list ())
+	  (gc-count 0))
+      (gc-info-r obj)))
+
+(de gc-info-r (obj)
+    (if (null obj) ()
+      (if (atomp obj)
+	  (let ((key (alist-get obj gc-list)))
+	    (when ~key 
+		  (setq gc-list (alist-add obj gc-count gc-list))
+		  (setq key gc-count)
+		  (incr gc-count))
+	    (list key (|COUNT| obj)))
+	(cons (gc-info-r (car obj))
+	      (gc-info-r (cdr obj))))))
+
+;;******************************************************************************
+;; TESTING LISTS
+;;
+(de foo (a)
+    ((-list- (-flt-) (-flt-)) a)
+    (list (list 1 1) 5 a a))
+
+(de bar (b)
+    ((-list- (-flt-) (-flt-)) b)
+    (list b b b (foo b) (foo (list 2 2))))
+
+(dhc-make "diag" foo bar)
+
+(setq a (list 3.4 5.6))
+(setq b (foo a))
+(printf "%d should be 3 for Patrice's (shared lists)\n" (|COUNT| a))
+(printf "%d should be 1 for Leon's (duplicated lists)\n" (|COUNT| a))
+
+(rplaca a 2)
+(if (= (car (caddr b)) 2)
+    (printf "List are shared (Patrice's)\n")
+  (printf "List are not shared (Leon's)\n") )
+
+(setq c (bar a))
+(printf "%d should be 8 for Patrice's (shared lists)\n" (|COUNT| a))
+(printf "%d should be 1 for Leon's (duplicated lists)\n" (|COUNT| a))
+
+(rplaca a 9)
+(if (= (car (last (nth 3 c))) 9)
+    (printf "List are shared (Patrice's)\n")
+  (printf "List are not shared (Leon's)\n") )
+
+(print "Done.!!!!")
+
+(mod-unload "diag")
+
+;;******************************************************************************
+;; TESTING OBJECTS
+;;
+(defclass c1 object
+  ((-flt-) a)
+  ((-idx1- (-flt-)) b)      ;;; BUG ((-idx1-) b) does not work in class decl
+  ((-str-) s)
+)
+
+(defmethod c1 c1 (b-init)
+  (-flt- a)
+  (printf "Value of A in c1: %f\n" a)
+  (printf "In constructor for c1\n")
+  ((-idx1- (-flt-)) b-init)
+  (setq b b-init)
+  (setq s "Initialized by method c1 of class c1")
+  (printf "out of constructor for c1: %f\n" a)
+)
+
+(defmethod c1 m1 ()
+  (printf "In method m1 of c1\n")
+  (list a b s this))
+
+(defmethod c1 m2 (n)
+  (-int- n)
+  (printf "In method m2 of c1\n")
+  b)
+
+(dhc-make "c1" (c1 c1 m1 m2))
+
+(print "Testing basic class creation, slots and methods")
+(setq id1 [3 4 5])
+(setq a (new c1 id1))
+(if (<> id1 (==> a m2 0))
+    (error "c1: new is not work right"))
+(if (<> a (last (==> a m1)))
+    (error "c1: Can't return a pointer to itself???"))
+(print "Done.!!!!")
+
+;;******************************************************************************
+
+(defclass c2 c1
+  ((-obj- (c1)) c d)
+)
+
+(defmethod c2 c2 (t1)
+  ((-obj- (c1)) t1)
+
+  (setq a 3245)
+  (printf "A = %f\n" a)
+  (setq s "Initialized by meth c2 of class c2")
+  (let ((b-init [666 777 888]))
+    (setq b b-init)
+    (==> this c1 b-init))
+  (printf "A = %f\n" a)
+  (setq c t1)
+  (setq d (new c1 [6 7 8]))
+  (printf "A = %f\n" a)
+)
+
+(defmethod c2 m2 (n)
+  (-int- n)
+  (printf "In method m2 of c2\n")
+  (selectq n
+	   (0 b)
+	   (1 :c:b)
+	   (2 :d:b)
+	   (t b)))
+
+(defmethod c2 m3 (n)
+  (-int- n)
+  (printf "In method m3 of c2\n")
+  (selectq n
+	   (0 c)
+	   (1 (obj-super c1 this))
+	   (2 d)
+	   (t d))))
+
+(dhc-make "c2" (c2 c2 m2 m3))
+
+(setq b (new c2 a))
+
+(print "Testing compiled new in constructor, subclasses and methods")
+(if (or (<> :b:a 3245) (<> (:b:b 0) 666) (<> :b:c a) 
+	(<> :b:s "Initialized by method c1 of class c1")
+	(<> (:b:d:b 0) 6))
+    (error "slots of c2 was not initialized correctly by constructor c2"))
+(if (or (<> ((==> b m2 0) 0) 666) (<> ((==> b m2 1) 0) 3)
+	(<> ((==> b m2 2) 0) 6) (<> ((==> a m2 2) 0) 3))
+    (error "method m2 is not properly inherited in c1 or c2"))
+(if (or (<> (last (==> b m1)) b) (<> (last (==> a m1)) a)
+	(<> (car (==> a m1)) 0) (<> (car (==> b m1)) 3245))
+    (error "method m1 is not properly inherited in c1 or c2"))
+(if (or (<> (==> b m3 0) a) (<> (==> b m3 1) b) (<> (==> b m3 2) :b:d))
+    (error "method m3 is not working correctly"))
+(print "Done.!!!!")
+
+(mod-unload "c1")
+(mod-unload "c2")
+;;******************************************************************************
+
+
+
