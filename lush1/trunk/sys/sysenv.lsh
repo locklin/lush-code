@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.96 2003-03-20 21:02:50 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.97 2003-04-25 14:58:15 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1696,11 +1696,21 @@
   (find-file c-include-path name '("")) )
 
 (de find-shared-library(name &optional extlist)
-  (when (not extlist)
-    (setq extlist '(""))
-    (when (not (index "." (basename name)))
-      (setq extlist (list (concat "." (or (getconf "SOEXT") "so")))) ) )
-  (find-file shared-library-path name extlist) )
+  (let ((found ()))
+    (when (not extlist)
+      (setq extlist '(""))
+      (when (not (index "." (basename name)))
+        (setq extlist (list (concat "." (or (getconf "SOEXT") "so"))))
+        ;; Attempt to use ldconfig for dealing with hwcaps etc.
+        (when (filep "/sbin/ldconfig")
+          (let* ((c "| 2>/dev/null /sbin/ldconfig -p | grep '^\t%s\\%s'")
+                 (s (reading (sprintf c name (car extlist)) (read-string)))
+                 (n (when s (regex-seek "=> /" s))) )
+            (when (consp n)
+              (setq s (mid s (+ 3 (car n))))
+              (when (filep s)
+                (setq found s) ) ) ) ) ) ) 
+    (or found (find-file shared-library-path name extlist)) ) )
 
 (de find-static-library(name &optional extlist)
   (when (not extlist)
