@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.37 2003-06-20 20:28:15 leonb Exp $
+ * $Id: unix.c,v 1.38 2003-06-20 20:49:55 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1771,7 +1771,7 @@ DX(xsocketopen)
 DX(xsocketaccept)
 {
 #ifdef HAVE_GETHOSTBYNAME
-  at *p1, *p2 , *f1, *f2;
+  at *f1, *f2;
   int sock1, sock2;
   char hostname[MAXHOSTNAMELEN+1];
   int portnumber;
@@ -1779,16 +1779,12 @@ DX(xsocketaccept)
   struct hostent *hp;
   FILE *ff1, *ff2;
   
-  p1 = NIL;
-  p2 = NIL;
   ALL_ARGS_EVAL;
   if (arg_number!=1) 
     {
       ARG_NUMBER(3);
       ASYMBOL(2);
-      ASYMBOL(1);
-      p1 = APOINTER(2);
-      p2 = APOINTER(1);
+      ASYMBOL(3);
     }
   portnumber = AINTEGER(1);
   sock1 = socket( AF_INET, SOCK_STREAM, 0);
@@ -1804,20 +1800,26 @@ DX(xsocketaccept)
     return NIL;
   if (listen(sock1, 1) < 0)
     return NIL;
-  sock2 = accept(sock1, NULL, NULL);
-  if (sock2 < 0)
-    test_file_error(NULL);
-  close(sock1);
-  sock1 = dup(sock2);
-  ff1 = fdopen(sock1,"r");
-  ff2 = fdopen(sock2,"w");
-  f1=new_extern(&file_R_class, ff1);
-  f2=new_extern(&file_W_class, ff2);
-  if (p1)
-    var_set(p1,f1);
-  if (p2)
-    var_set(p2,f2);
-  return cons(f2,f1);
+  if (arg_number == 1)
+    {
+      close(sock1);
+      return true();
+    }
+  else
+    {
+      sock2 = accept(sock1, NULL, NULL);
+      if (sock2 < 0)
+        test_file_error(NULL);
+      close(sock1);
+      sock1 = dup(sock2);
+      ff1 = fdopen(sock1,"r");
+      ff2 = fdopen(sock2,"w");
+      f1=new_extern(&file_R_class, ff1);
+      f2=new_extern(&file_W_class, ff2);
+      var_set(APOINTER(2),f1);
+      var_set(APOINTER(3),f2);
+      return cons(f2,f1);
+    }
 #else
   error(NIL,"Sockets are not supported on this machine",NIL);
 #endif
