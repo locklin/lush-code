@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.12 2004-11-19 21:21:41 leonb Exp $
+ * $Id: graphics.h,v 1.13 2004-11-22 19:53:45 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -50,8 +50,9 @@ struct window {
   at *eventhandler;
   at *driverdata;
   int color;
-  short clipx, clipy, clipw, cliph;
-  int dash0, dash1;
+  short clipx, clipy;
+  short clipw, cliph;
+  short linestyle;
 };
 
 
@@ -104,6 +105,12 @@ struct event {
 #define HILITE_VECTOR     (2)
 #define HILITE_RECT       (3)
 
+/* LineStyles */
+
+#define LINESTYLE_SOLID      (0)
+#define LINESTYLE_DOTTED     (1)
+#define LINESTYLE_DASHED     (2)
+#define LINESTYLE_DOTDASHED  (3)
 
 
 /* ---------------------------------------- */
@@ -146,7 +153,7 @@ struct gdriver {
   /**** routines added for lush ****/
   void (*get_image) (wptr, uint*, int, int, uint, uint);
   int  (*get_mask)(wptr, uint*, uint*, uint*);
-  void (*set_dash)(wptr, int, int);
+  void (*set_linestyle)(wptr, int);
 };
 
 #undef uint

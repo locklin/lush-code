@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.12 2004-11-19 21:21:49 leonb Exp $
+ * $Id: graphics.c,v 1.13 2004-11-22 19:54:18 leonb Exp $
  **********************************************************************/
 
 
@@ -520,39 +520,22 @@ DX(xclip)
 DX(xlinestyle)
 {
   struct window *win;
-  int d0, d1;
+  int ls;
   ALL_ARGS_EVAL;
   win = current_window();
-  
   if (arg_number>=1)
     {
-      d0 = d1 = 0;
-      if (arg_number==2)
-	{
-	  d0 = AINTEGER(1);
-	  d1 = AINTEGER(2);
-	}
-      else if (arg_number==1)
-	{
-	  if (APOINTER(1))
-	    d0 = d1 = AINTEGER(1);
-	}
-      else
-	ARG_NUMBER(-1);
-      if (win->gdriver->set_dash)
+      ARG_NUMBER(1);
+      ls = AINTEGER(1);
+      if (win->gdriver->set_linestyle)
 	{
 	  (*win->gdriver->begin) (win);
-	  (*win->gdriver->set_dash) (win, d0, d1);
+	  (*win->gdriver->set_linestyle) (win, ls);
 	  (*win->gdriver->end) (win);
-	  win->dash0 = d0;
-	  win->dash1 = d1;
+	  win->linestyle = ls;
 	}
     }
-  if (win->dash0 && win->dash1)
-    return cons(NEW_NUMBER(win->dash0),
-		cons(NEW_NUMBER(win->dash1),
-		     NIL));
-  return NIL;
+  return NEW_NUMBER(win->linestyle);
 }
 
 DX(xcolor)
@@ -2028,8 +2011,7 @@ DY(ygsave)
   at *ans = NIL;
   int  oldcolor;
   at   *oldfont;
-  short oldx,oldy,oldw,oldh;
-  int oldd0, oldd1;
+  short oldx,oldy,oldw,oldh,oldl;
   struct window *win;
   struct context mycontext;
   int errorflag=0;
@@ -2044,8 +2026,7 @@ DY(ygsave)
   oldy = win->clipy;
   oldw = win->clipw;
   oldh = win->cliph;
-  oldd0 = win->dash0;
-  oldd1 = win->dash1;
+  oldl = win->linestyle;
   LOCK(oldfont);
   
   context_push(&mycontext);
@@ -2089,16 +2070,13 @@ DY(ygsave)
 	  win->clipw = oldw;
 	  win->cliph = oldh;
 	}
-
-      if (oldd0!=win->dash0 || oldd1!=win->dash1)
-	if (win->gdriver->set_dash) {
+      if (oldl!=win->linestyle)
+	if (win->gdriver->set_linestyle) {
 	  (*win->gdriver->begin) (win);
-	  (*win->gdriver->set_dash) (win, oldd0, oldd1);
+	  (*win->gdriver->set_linestyle) (win, oldl);
 	  (*win->gdriver->end) (win);
-	  win->dash0 = oldd0;
-	  win->dash1 = oldd1;
+	  win->linestyle = oldl;
 	}
-      
     }
   if (errorflag)
     siglongjmp(context->error_jump, -1L);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: ps_driver.c,v 1.6 2004-11-19 21:21:49 leonb Exp $
+ * $Id: ps_driver.c,v 1.7 2004-11-22 19:54:18 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -422,14 +422,12 @@ ps_clip(struct window *linfo,
 }
 
 static void
-ps_set_dash(struct window *linfo, int d0, int d1)
+ps_set_linestyle(struct window *linfo, int ls)
 {
   struct M_window *info = (struct M_window*)linfo;
   begin(info);
-  if (d0>0 && d1>0)
-    fprintf(info->f,"%d %d SLD\n", d0, d1);
-  else
-    fprintf(info->f,"SL\n");
+  if (ls>=0 && ls<4)
+    fprintf(info->f,"L%d\n",ls);
 }
 
 
@@ -595,7 +593,7 @@ struct gdriver ps_driver = {
   /* import from sn3.2 */
   NIL,
   ps_get_mask,
-  ps_set_dash,
+  ps_set_linestyle,
 };
 
 
@@ -612,8 +610,7 @@ ps_window(int x, int y, int w, int h, char *name)
   info->lwin.gdriver    = &ps_driver;
   info->lwin.clipw = 0;
   info->lwin.cliph = 0;
-  info->lwin.dash0 = 0;
-  info->lwin.dash1 = 0;
+  info->lwin.linestyle = 0;
   info->lwin.backptr    = ans;
   return ans;
 }

@@ -1415,8 +1415,7 @@ comdraw_window(int x, int y, unsigned int w, unsigned int h, char*name)
   info->lwin.gdriver = &comdraw_driver;
   info->lwin.clipw = 0;
   info->lwin.cliph = 0;
-  info->lwin.dash0 = 0;
-  info->lwin.dash1 = 0;
+  info->lwin.linestyle = 0;
   info->lwin.backptr = ans;
   return ans;
 }

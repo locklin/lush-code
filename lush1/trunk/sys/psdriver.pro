@@ -69,10 +69,14 @@
   1 setgray } bind def
 /SCGRAY { strokecheck
   0.5 setgray } bind def
-/SL { strokecheck
+/L0 { strokecheck
   [] 0 setdash } bind def
-/SLD { strokecheck
-  mark 3 1 roll ] 0 setdash } bind def
+/L1 { strokecheck
+  [1 2] 0 setdash } bind def
+/L2 { strokecheck
+  [5 3] 0 setdash } bind def
+/L3 { strokecheck
+  [7 2 1 2] 0 setdash } bind def
 /DL {
   moveto lineto /strokeflag true def } bind def
 /DR { strokecheck
