@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.4 2002-05-04 02:40:11 leonb Exp $
+ * $Id: module.c,v 1.5 2002-05-06 16:17:30 leonb Exp $
  **********************************************************************/
 
 
@@ -110,8 +110,8 @@ static char* dlerror(void)
 #define MODULE_DLD       0x02
 #define MODULE_SO        0x04
 #define MODULE_EXEC      0x08
-#define MODULE_NOINIT    0x10
 #define MODULE_INIT      0x20
+#define MODULE_CLASS     0x40
 
 
 struct module {
@@ -120,6 +120,7 @@ struct module {
   struct module *next;
   dlopen_handle_t *handle;
   char *filename;
+  void (*init)(void);
   at *backptr;
   at *defs;
 };
@@ -172,6 +173,92 @@ class module_class = {
   generic_listeval,
 };
 
+
+DX(xmodule_list)
+{
+  at *ans = NIL;
+  at **where = &ans;
+  struct module *m = &root;
+  ARG_NUMBER(0);
+  do {
+    *where = new_cons(m->backptr, NIL);
+    where = &((*where)->Cdr);
+    m = m->next;
+  } while (m != &root);
+  return ans;
+}
+
+DX(xmodule_filename)
+{
+  at *p;
+  struct module *m;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &module_class))
+    error(NIL,"Not a module", p);
+  m = p->Object;
+  if (m->filename)
+    return new_string(m->filename);
+  return NIL;
+}
+
+DX(xmodule_executable_p)
+{
+  at *p;
+  struct module *m;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &module_class))
+    error(NIL,"Not a module", p);
+  m = p->Object;
+  if (m->flags & MODULE_EXEC)
+    return true();
+  return NIL;
+}
+
+DX(xmodule_unloadable_p)
+{
+  at *p;
+  struct module *m;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &module_class))
+    error(NIL,"Not a module", p);
+  m = p->Object;
+  if (m->flags & (MODULE_SO|MODULE_CLASS))
+    return NIL;
+  return true();
+}
+
+DX(xmodule_defs)
+{
+  at *p;
+  at *ans = NIL;
+  at **where = &ans;
+  struct module *m;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &module_class))
+    error(NIL,"Not a module", p);
+  m = p->Object;
+  p = m->defs;
+  while (CONSP(p) && CONSP(p->Car))
+    {
+      LOCK(p->Car->Car);
+      LOCK(p->Car->Cdr);
+      *where = cons(cons(p->Car->Car,p->Car->Cdr),NIL);
+      where = &((*where)->Cdr);
+      p = p->Cdr;
+    }
+  return ans;
+}
+
+
+
 /* --------- LOCATE PRIMITIVES --------- */
 
 
@@ -202,8 +289,69 @@ find_primitive(at *module, at *name)
 
 
 
+
+/* --------- INITIALISATION CODE --------- */
+
+static const char *program_name = 0;
+static int dynlink_initialized = 0;
+
+
+
+static void 
+dynlink_error(at *p)
+{
+  char buffer[80];
+  strcpy(buffer,"Dynamic linking error");
+#ifdef DLDBFD
+  if (dld_errno) 
+    {
+      strcpy(buffer,"dld/bfd error: ");
+      strcat(buffer, dld_errno);
+    }
+#endif  
+#ifdef DLOPEN
+  if (dlerror())
+    {
+      strcpy(buffer,"dlopen error: ");
+      strcat(buffer, dlerror());
+    }
+#endif
+  error(NIL, buffer, p);
+}
+
+static void
+dynlink_init(void)
+{
+  if (! dynlink_initialized)
+    {
+#ifdef DLDBFD
+      char *exec;
+      if (!program_name)
+        error(NIL,"Internal error (program_name unset)",NIL);        
+      exec = dld_find_executable(program_name);      
+      if (!exec)
+        error(NIL,"Cannot find lush executable",NIL);
+      if (dld_init(exec))
+        dynlink_error(NIL);
+      free(exec);
+#endif
+      dynlink_initialized = 1;
+    }
+}
+
+
+
+
 /* --------- XXX_DEFINE FUNCTIONS --------- */
 
+static at *
+module_priminame(at *name)
+{
+  if (current != &root)
+    return new_cons(current->backptr, name);
+  LOCK(name);
+  return name;
+}
 
 static void
 module_def(at *name, at *val)
@@ -230,9 +378,8 @@ class_define(char *name, class *cl)
 {
   at *symb = new_symbol(name);
   at *classat = new_extern(&class_class,cl);
-
   cl->classname = symb;
-  cl->priminame = NIL;
+  cl->priminame = module_priminame(symb);
   cl->backptr = classat;
   cl->goaway = 0;
   cl->dontdelete = 0;
@@ -240,62 +387,60 @@ class_define(char *name, class *cl)
   cl->super = 0;
   cl->atsuper = NIL;
   cl->nextclass = NIL;
-  /* priminame usually is a pair (module . symbol)
-   * except when defining a class for the root module. */
-  if (!current->backptr) {
-    cl->priminame = symb; 
-    LOCK(symb);
-  } else
-    cl->priminame = new_cons(current->backptr, symb);
-  /* register */
   module_def(symb, classat);
+  current->flags |= MODULE_CLASS;
   UNLOCK(classat);
 }
 
 void 
 dx_define(char *name, at *(*addr) (int, at **))
 {
-  at *func = NIL;
   at *symb = new_symbol(name);
-  if (current->backptr) {
-    at *n = new_cons(current->backptr, symb);
-    func = new_dx(n, addr);
-    UNLOCK(n);
-  } else {
-    func = new_dx(symb, addr);
-  }
+  at *priminame = module_priminame(symb);
+  at *func = new_dx(priminame, addr);
   module_def(symb, func);
   UNLOCK(func);
   UNLOCK(symb);
+  UNLOCK(priminame);
 }
 
 void 
 dy_define(char *name, at *(*addr) (at *))
 {
-  at *func = NIL;
   at *symb = new_symbol(name);
-  if (current->backptr) {
-    at *n = new_cons(current->backptr, symb);
-    func = new_dy(n, addr);
-    UNLOCK(n);
-  } else {
-    func = new_dy(symb, addr);
-  }
+  at *priminame = module_priminame(symb);
+  at *func = new_dy(priminame, addr);
   module_def(symb, func);
   UNLOCK(func);
   UNLOCK(symb);
+  UNLOCK(priminame);
 }
+
+
+
 
 
 
 
 /* --------- INITIALISATION CODE --------- */
 
+
+
+
 void 
-init_module(void)
+init_module(char *progname)
 {
+  class_define("MODULE",&module_class);
   /* Create root module */
   atroot = new_extern(&module_class, &root);
+  root.backptr = atroot;
   protect(atroot);
-  
+  /* Functions */
+  dx_define("module_list", xmodule_list);
+  dx_define("module_filename", xmodule_filename);
+  dx_define("module_defs", xmodule_defs);
+  dx_define("module_executable_p", xmodule_executable_p);
+  dx_define("module_unloadable_p", xmodule_unloadable_p);
+  /* Cache program name for later use */
+  program_name = progname;
 }
