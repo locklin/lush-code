@@ -357,10 +357,64 @@ with the following command.
 
 #? * Debugging modules with gdb.
 
-Although GDB is unaware of Lush's dynamic linking capabilities, it contains
-decent support to debug code contained in shared libraries 
-(i.e. files with extension <".so">).  The best way to debug modules
-therefore consists in building them as shared libraries.
+Although GDB is unaware of Lush's dynamic linking capabilities, 
+it contains a convenient function <add-symbol-file> to load
+symbols from an object file.  The lush dynamic loaded contains 
+a C function <dld_print_gdb_commands> to print the GDB commands
+necessary to load all the required symbols.  This function can be called
+from the GDB prompt.
+
+Example:
+.CODE
+  globina% gdb lush
+  ... GDB starts
+  (gdb) run
+  ... LUSH starts
+  ? ;;; The following override forces compilation with -g:
+  ? (setq dhc-make-overrides (alist-add "OPTS" "-g" dhc-make-overrides))
+  = (("OPTS" . "-g"))
+  ? ;;; Define a function
+  ? (de mydiv(a b) ((-double-) a b) (/ a b))
+  = mydiv
+  ? (dhc-make () mydiv)
+  ...
+  ? (mydiv 2 3)
+  = 0.6667
+  ? (mydiv 2 0)
+  
+  Program received signal SIGFPE, Arithmetic exception.
+  0x0885dcbf in ?? ()
+  (gdb) call dld_print_gdb_commands(1)
+       add-symbol-file /home/leonb/lush/C/i686-pc-linux-gnu/mydiv.o 0x885dc84 \
+           -s .text 0x885dc84 -s .data 0x885dd44 -s .bss 0x885ddf8 -s .rodata 0x885ddf8
+  $1 = 10
+  (gdb) add-symbol-file /home/leonb/lush/C/i686-pc-linux-gnu/mydiv.o 0x885dc84 \
+           -s .text 0x885dc84 -s .data 0x885dd44 -s .bss 0x885ddf8 -s .rodata 0x885ddf8
+  add symbol table from file "/home/leonb/lush/C/i686-pc-linux-gnu/mydiv.o" at
+        .text_addr = 0x885dc84
+        .text_addr = 0x885dc84
+        .data_addr = 0x885dd44
+        .bss_addr = 0x885ddf8
+        .rodata_addr = 0x885ddf8
+  (y or n) y
+  Reading symbols from /home/leonb/lush/C/i686-pc-linux-gnu/mydiv.o...done.
+  (gdb) where
+  #0  0x0885dcbf in C_mydiv (L1_a=2, L1_b=0) at /home/leonb/lush/C/mydiv.c:28
+  #1  0x0885dd00 in X_mydiv (a=0xbfffbaa8) at /home/leonb/lush/C/mydiv.c:44
+  #2  0x0810e8f0 in dh_listeval ()
+  (gdb) up
+  #1  0x0885dd00 in X_mydiv (a=0xbfffbaa8) at /home/leonb/lush/C/mydiv.c:44
+  44        ret.dh_real = C_mydiv (a[1].dh_real, a[2].dh_real);
+  (gdb) down
+  #0  0x0885dcbf in C_mydiv (L1_a=2, L1_b=0) at /home/leonb/lush/C/mydiv.c:28
+  28          L_Tmp0 = (L1_a / (real) L1_b);
+  (gdb) print L1_b
+  $2 = 0      ### HAHA. Bug was found.
+
+.PP
+GDB contains decent support to debug code contained in shared libraries 
+(i.e. files with extension <".so">).  Another possibility for debugging 
+modules consists in building them as shared libraries.
 
 Example:
 .CODE
