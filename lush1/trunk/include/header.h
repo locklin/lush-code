@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.34 2002-07-31 00:21:30 leonb Exp $
+ * $Id: header.h,v 1.35 2002-07-31 16:57:24 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -381,7 +381,7 @@ struct hash_name { /* contains the symbol names and hash */
   char *name;
   at *named;
   struct hash_name *next;
-
+  unsigned long hash;
 };
 
 /* now the hash table declaration */

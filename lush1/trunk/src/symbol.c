@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: symbol.c,v 1.4 2002-06-27 20:49:57 leonb Exp $
+ * $Id: symbol.c,v 1.5 2002-07-31 16:57:27 leonb Exp $
  **********************************************************************/
 
 
@@ -92,59 +92,55 @@ mystrcmp(char *s, char *d)
 static struct hash_name *
 search_by_name(unsigned char *s, int mode)
 {
+  unsigned char *ss;
+  unsigned long hash;
   struct hash_name **lasthn;
+  struct hash_name *hn;
 
   /* Calculate hash value */
-  {
-    unsigned int hash;
-    int i;
-    
-    hash = 0;
-    for (i = 0; i < 8; i++)
+  hash = 0;
+  ss = s;
+  while (*ss)
+    {
+      unsigned char c = *ss++;
+      if (! c)
+        break;
 #ifdef LASTWORD
-      if (s[i] == '-')
-	hash += '_';
-      else
+      else if (c == '-')
+        c = '_';
 #endif
-      if (s[i])
-        hash += s[i];
-      else
-	break;
-    hash %= HASHTABLESIZE;
-    lasthn = names + hash;
-  }
+      hash = (hash<<6) | ((hash&0xfc000000)>>26);
+      hash ^= c;
+    }
+  lasthn = names + (hash % (HASHTABLESIZE-1));
   
   /* Search in list and operate */
-  {
-    struct hash_name *hn;
-
-    hn = *lasthn;
-    while (hn && mystrcmp((char*)s, (char*)hn->name)) 
-      {
-        lasthn = &(hn->next);
-        hn = *lasthn;
-      }
-    
-    if (!hn && mode == 1) 
-      {
-        hn = allocate(&hash_name_alloc);
-        hn->next = NIL;
-        hn->named = NIL;
-        hn->name = malloc(strlen((char*)s) + 1);
-        strcpy((char*)hn->name, (char*)s);
-        *lasthn = hn;
-      } 
-    else if (hn && mode == -1) 
-      {
-        UNLOCK(hn->named);
-        *lasthn = hn->next;
-        free(hn->name);
-        hn->name = 0;
-        deallocate(&hash_name_alloc, (struct empty_alloc *) hn);
-        hn = NIL;
-      }
-    return hn;
-  }
+  hn = *lasthn;
+  while (hn && mystrcmp((char*)s, (char*)hn->name)) 
+    {
+      lasthn = &(hn->next);
+      hn = *lasthn;
+    }
+  if (!hn && mode == 1) 
+    {
+      hn = allocate(&hash_name_alloc);
+      hn->next = NIL;
+      hn->named = NIL;
+      hn->hash = hash;
+      hn->name = malloc(strlen((char*)s) + 1);
+      strcpy((char*)hn->name, (char*)s);
+      *lasthn = hn;
+    } 
+  else if (hn && mode == -1) 
+    {
+      UNLOCK(hn->named);
+      *lasthn = hn->next;
+      free(hn->name);
+      hn->name = 0;
+      deallocate(&hash_name_alloc, (struct empty_alloc *) hn);
+      hn = NIL;
+    }
+  return hn;
 }
 
 
@@ -332,6 +328,14 @@ symbol_eval(at *p)
   }
 }
 
+static unsigned long
+symbol_hash(at *p)
+{
+  struct symbol *symb;
+  symb = p->Object;
+  return symb->name->hash;
+}
+
 
 /* SYMBOL_CLASS DEFINITION */
 
@@ -341,7 +345,10 @@ class symbol_class =
   symbol_action,
   symbol_name,
   symbol_eval,
-  generic_listeval,		/* no function abilities		 */
+  generic_listeval,
+  generic_serialize,
+  generic_compare,
+  symbol_hash
 };
 
 
