@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.13 2002-07-23 19:42:57 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.14 2002-07-25 01:14:47 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -75,6 +75,7 @@
   (let* ((fname (basename filename))
          (ifcompiled (mlambda(fdf then . else) then))
          (C-COMPILE t)
+         (c-depends ())
          (c-pheader ())
          (c-header ())
          (program ())
@@ -149,7 +150,8 @@
       ((functionp func)
        (when (is-of-class func |DH|)
          (setq func (getp func 'saved)) )
-       (let ((source (dhc-alist-get func source-list)))
+       (let ((source (dhc-alist-get func source-list))
+             (c-depends ()) )
          (printf "Generating C for %s...\n" lname)
          (dhc-add-program 
           (append (list "" "/*" (sprintf " * FUNCTION %s" lname) " */")
@@ -281,7 +283,7 @@
                           (nconc returnpoint 
                                  (dhc-gather-types :arg:type ()))))
                   (each ((point returnpoint))
-                    (==> point bump-level 0)) )
+                    (==> point bump-level 0) ) )
                 (setq split 
                       (dhc-split-list bump-list 
                                       (lambda (x) (< (==> :x:type bump-level)
@@ -377,13 +379,14 @@
         (num 0) )
     ;; take care arguments and temporaries
     (each ((sym (all ((x :args:tn-list)) :x:symbol)))
-      (let* ((cast (dhc-objptr-cast :sym:type))
+      (let* ((cast (or (dhc-objptr-cast () :sym:type) ""))
              (format (concat cast "a[%d]." (dhc-arg-format :sym:type))))
         (setq arg-list (nconc1 arg-list (sprintf format (incr num))))))
     (each ((sym :(cadr :treetype:tn-list):symbol))
       (let* ((type (if (==> :sym:type is-a-ptr) :sym:type 
                      (new dhc-type 'dht-ptr :sym:type))) 
-             (format  (concat "a[%d]." (dhc-arg-format type))) )
+             (cast (or (dhc-objptr-cast () type) ""))
+             (format  (concat cast "a[%d]." (dhc-arg-format type))) )
         (setq arg-list (nconc1 arg-list (sprintf format (incr num))))))
     (setq call (nconc1 call (dhc-insert-op arg-list ", ")))
     (list pro "{" "dharg ret;" (concat (apply concat call) ");") 
@@ -599,7 +602,8 @@
       (let* ((method (car treetype))
              (method-cname (dhc-lisp-to-c-name (pname method)))
              (method-fullname (concat method-cname "_C_" cname))
-             (method-tn (cdr treetype)) )
+             (method-tn (cdr treetype)) 
+             (c-depends ()) )
         (printf "Generating C for method %l in class %l ...\n" method fname)
         (dhc-add-program
          (append 
@@ -626,7 +630,8 @@
     ;; generate vtable
     (dhc-add-program
      (append (list  "" "/*" (sprintf " * CLASS %l VTABLE" fname) " */")
-             (list  (sprintf "struct VClass_%s %s =" cname vtname) "{" "(dhclassdoc_t*)0," )
+             (list  (sprintf "struct VClass_%s %s =" cname vtname)
+                    "{" "(dhclassdoc_t*)0," )
              (all ((method method-list))
                (let ((method-type (cdr method))
                      (method-cname (dhc-lisp-to-c-name (car method)))

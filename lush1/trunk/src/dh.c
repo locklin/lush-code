@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.9 2002-07-23 19:25:08 leonb Exp $
+ * $Id: dh.c,v 1.10 2002-07-25 01:14:48 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -123,6 +123,7 @@ next_record(dhrecord *drec)
       while( drec->op != DHT_END_TEMPS &&
              drec->op != DHT_NIL )
         {
+          int m;
           switch(drec->op) 
             {
             case DHT_STR:
@@ -137,9 +138,10 @@ next_record(dhrecord *drec)
               drec++;
               break;
             case DHT_LIST:
-              drec->end = drec + drec->ndim + 2;
+              m = drec->ndim;
+              drec->end = drec + m + 2;
               drec ++;
-              for(i = 0; i<drec->ndim; i++)
+              for(i = 0; i < m; i++)
                 {
                   drec->end = drec+1;
                   drec++;
@@ -460,13 +462,17 @@ dhinfo_record(dhrecord *drec)
       return cons(named("flt"),NIL);
     case DHT_REAL: 
       return cons(named("real"),NIL);
-    case DHT_GPTR: 
-      return cons(named("gptr"),NIL);
     case DHT_NIL: 
       return cons(named("bool"),NIL);
     case DHT_STR: 
       return cons(named("str"),NIL);
 
+    case DHT_GPTR:
+      p = NIL;
+      if (drec->name)
+        p = cons(new_string(strclean(drec->name)),NIL);
+      return cons(named("gptr"), p);
+      
     case DHT_LIST:
       p = dhinfo_chain(drec+1, drec->ndim, dhinfo_record);
       return cons(named("list"), p);

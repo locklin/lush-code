@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-macro.lsh,v 1.10 2002-07-24 15:09:41 leonb Exp $
+;;; $Id: dh-macro.lsh,v 1.11 2002-07-25 01:14:47 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -82,14 +82,6 @@
     (when (not dhtype)
       (dhc-error "Unrecognized type specifier" source) )
     (cond
-     ;; SIMPLE
-     ((member dhtype dhc-simple-types)
-      (setq resultant
-            (new t-node () 
-                 (new dhc-type dhtype)
-                 (car source)))
-      (new t-node (list resultant)
-           (==> :resultant:type copy) ()))
      ;; GPTR
      ((= dhtype 'dht-gptr)
       (setq resultant
@@ -101,6 +93,14 @@
                        ((cadr source)
                         (sprintf "struct CClass_%s*"
                                  (dhc-lisp-to-c-name (pname (caadr source))) ) ) ) )
+                 (car source)))
+      (new t-node (list resultant)
+           (==> :resultant:type copy) ()))
+     ;; SIMPLE
+     ((or (member dhtype dhc-simple-types) (= dhtype 'dht-str))
+      (setq resultant
+            (new t-node () 
+                 (new dhc-type dhtype)
                  (car source)))
       (new t-node (list resultant)
            (==> :resultant:type copy) ()))
@@ -290,19 +290,18 @@
               (expr (dhc-parse-expr-t (cadr source))))
           (let ((objtype (dhu-type :(last :sym:tn-list):type)))
             (==> objtype access 'write) )
-          (setq cast (dhc-objptr-cast :sym:type :expr:type)) 
+          (setq cast (dhc-objptr-cast () :sym:type :expr:type)) 
           (dhc-assign-unify :sym:type :expr:type)
           (setq tn (new t-node (list sym expr) :sym:type ())) )
       ;; regular syntax
       (let* ((sym (dhc-check-symbol (car source)))
              (expr (dhc-parse-expr-t (cadr source))) )
-        (setq cast (dhc-objptr-cast :sym:type :expr:type))        
+        (setq cast (dhc-objptr-cast () :sym:type :expr:type))        
         (dhc-assign-unify :sym:type :expr:type)
         (setq tn (new t-node 
                       (list (new t-node () :sym:type (car source) sym) expr)
                       :sym:type) ) ) )
-    (when (and cast (<> cast ""))
-      (setq :tn:transfer cast) )
+    (setq :tn:transfer cast)
     tn ) )
 
 (dhm-c setq(source treetype retplace)
@@ -3859,15 +3858,11 @@
          (return-type :treetype:type)
          (full-list (dhc-parse-expr-c (cadr source)
                                       (cadr :treetype:tn-list) ())))
-    (cond
-     ((==> return-type is-a-ptr)       ; List or other ptr structure?
-      (sprintf "(%s)*%s" (dhc-type-to-c-decl return-type)
-               (dhc-list-access full-list 0)))
-     ((= 'dht-nil (unode-val :return-type:u-tclass))  ; null list?
-      "0")
-     (t (sprintf "*((%s *) %s)"         ; simple types
-                 (dhc-type-to-c-decl return-type)
-                 (dhc-list-access full-list 0))))))
+    (if (= 'dht-nil (unode-val :return-type:u-tclass))
+        "0"
+      (sprintf "*((%s *) %s)"
+               (dhc-type-to-c-decl return-type)
+               (dhc-list-access full-list 0) ) ) ) )
 
 (dhm-t cdr(source)
   (when ~(= 1 (length (cdr source)))
@@ -3913,19 +3908,12 @@
       (each ((ty (cdr (unode-val :arg-type:u-extra)))
              (ctr (range 1 (length (unode-val
                                     :return-type:u-extra)))))
-        (if (==> ty is-a-ptr)
-            (dhc-add-c-statements
-             (sprintf "(%s)*%s=(%s)*%s;"
-                      (dhc-type-to-c-decl ty)
-                      (dhc-list-access :srg-symb:c-name (1- ctr))
-                      (dhc-type-to-c-decl ty)
-                      (dhc-list-access arg-name ctr)))
-          (dhc-add-c-statements
-           (sprintf "*((%s *) %s)=*((%s *)%s);"
-                    (dhc-type-to-c-decl ty)
-                    (dhc-list-access :srg-symb:c-name (1- ctr))
-                    (dhc-type-to-c-decl ty)
-                    (dhc-list-access arg-name ctr)))))
+        (dhc-add-c-statements
+         (sprintf "*((%s *) %s)=*((%s *)%s);"
+                  (dhc-type-to-c-decl ty)
+                  (dhc-list-access :srg-symb:c-name (1- ctr))
+                  (dhc-type-to-c-decl ty)
+                  (dhc-list-access arg-name ctr)) ) )
       (sprintf "%s" :srg-symb:c-name))))
 
 (dhm-t cons(source)
@@ -3973,27 +3961,19 @@
               (car arg-names)))
     (each ((ty (unode-val :(cadr arg-types):u-extra))
            (ctr (range 1 (length (unode-val :(cadr arg-types):u-extra)))))
-      (if (==> ty is-a-ptr)     ; list or ptr type
-          (dhc-add-c-statements
-           (sprintf "(%s)*%s=(%s)*%s;"
-                    (dhc-type-to-c-decl ty)
-                    (dhc-list-access :srg-symb:c-name ctr)
-                    (dhc-type-to-c-decl ty)
-                    (dhc-list-access (cadr arg-names) (1- ctr))))
-        (dhc-add-c-statements       ; simple type
-         (sprintf "*((%s *) %s)=*((%s *)%s);"
-                  (dhc-type-to-c-decl ty)
-                  (dhc-list-access :srg-symb:c-name ctr)
-                  (dhc-type-to-c-decl ty)
-                  (dhc-list-access (cadr arg-names) (1- ctr))))))
+      (dhc-add-c-statements       ; simple type
+       (sprintf "*((%s *) %s)=*((%s *)%s);"
+                (dhc-type-to-c-decl ty)
+                (dhc-list-access :srg-symb:c-name ctr)
+                (dhc-type-to-c-decl ty)
+                (dhc-list-access (cadr arg-names) (1- ctr)))))
     (sprintf "%s" :srg-symb:c-name)))
 
 (dhm-t last(source)
   (when ~(= 1 (length (cdr source)))
         (dhc-error "one argument expected"))
   (let* ((tn (dhc-parse-expr-t (cadr source))))
-    (selectq 
-        (dhc-list-or-nil tn)
+    (selectq (dhc-list-or-nil tn)
       (dht-nil  
        (new t-node (list tn) :tn:type))
       (dht-list 
@@ -4007,25 +3987,15 @@
          (return-type :treetype:type)
          (full-list (dhc-parse-expr-c (cadr source)
                                       (cadr :treetype:tn-list) ())))
-    (cond
-     ((==> return-type is-a-ptr)       ; List or other ptr structure?
-      (sprintf "(%s)*%s"
-               (dhc-type-to-c-decl return-type)
-               (dhc-list-access
-                full-list
-                (1- (length
-                     (unode-val
-                      :(cadr :treetype:tn-list):type:u-extra))))))
-     ((= 'dht-nil (unode-val :return-type:u-tclass))  ; null list?
-      "0")
-     (t 
+    (if (= 'dht-nil (unode-val :return-type:u-tclass))
+        "0"
       (sprintf "*((%s *) %s)"          ; simple type     
                (dhc-type-to-c-decl return-type)
                (dhc-list-access
                 full-list
                 (1- (length
                      (unode-val
-                      :(cadr :treetype:tn-list):type:u-extra)))))) )))
+                      :(cadr :treetype:tn-list):type:u-extra))))))))
 
 (dhm-t length(source)
   (when ~(= 1 (length (cdr source)))
@@ -4048,8 +4018,8 @@
   (let* ((tns (all ((tn (cdr source))) (dhc-parse-expr-t tn)))
          (types (all ((ty tns)) :ty:type))
          (return-tnode ()) (srg-type ()) (symb-srg ()))
-    (if ~(consp tns)
-      (new t-node () (new dhc-type 'dht-nil) source)  ; nil? (no args?)
+    (if (not (consp tns))
+        (new t-node () (new dhc-type 'dht-nil) source)
       (setq symb-srg (new dhc-symbol
                           (named (sprintf "%d_srg" tmpnames-seed))
                           lex-level))
@@ -4071,28 +4041,22 @@
                       :nm:type)))
     (if (= 'dht-nil (unode-val :return-type:u-tclass))  ; null list?
         "0"
-      (dhc-add-c-statements (sprintf "Msrg_resize(%s,%d);"
-                                     :srg-symb:c-name (length arg-names)))
+      (dhc-add-c-statements 
+       (sprintf "Msrg_resize(%s,%d);"
+                :srg-symb:c-name (length arg-names)))
       (each ((nm arg-names) (ty arg-types)
              (ctr (range 0 (1- (length arg-names)))))
-        (if (==> ty is-a-ptr)     ; list or ptr type
-            (dhc-add-c-statements
-             (sprintf "(%s)*%s=%s;"
-                      (dhc-type-to-c-decl ty)
-                      (dhc-list-access :srg-symb:c-name ctr)
-                      nm))
-          (dhc-add-c-statements       ; simple type
-           (sprintf "*((%s *) %s)=%s;"
-                    (dhc-type-to-c-decl ty)
-                    (dhc-list-access :srg-symb:c-name ctr)
-                    nm))))
+        (dhc-add-c-statements
+         (sprintf "*((%s *) %s)=%s;"
+                  (dhc-type-to-c-decl ty)
+                  (dhc-list-access :srg-symb:c-name ctr)
+                  nm)))
       (sprintf "%s" :srg-symb:c-name))))
 
 (dhm-t nth(source)
   (let* ((tns (all ((tn (cdr source))) (dhc-parse-expr-t tn)))
          (types (all ((ty tns)) :ty:type))
          (number ()) (nth-type ()))
-    
     (when (<> 2 (length tns))
       (dhc-error "two arguments expected"))
     (when (<> 'dht-number (unode-val :(car types):u-tclass))
@@ -4117,15 +4081,10 @@
          (return-type :treetype:type))
     (if (= 'dht-nil (unode-val :return-type:u-tclass))
         "0"
-      (if (==> return-type is-a-ptr)
-          (sprintf "(%s)*%s"
-                   (dhc-type-to-c-decl return-type)
-                   (dhc-list-access (cadr arg-names)
-                                    (val (car arg-names))))
-        (sprintf "*((%s *)%s)"
-                 (dhc-type-to-c-decl return-type)
-                 (dhc-list-access (cadr arg-names)
-                                  (val (car arg-names))))))))
+      (sprintf "*((%s *)%s)"
+               (dhc-type-to-c-decl return-type)
+               (dhc-list-access (cadr arg-names)
+                                (val (car arg-names))))))))
 
 (dhm-t reverse(source)
   (when ~(= 1 (length (cdr source)))
@@ -4173,19 +4132,12 @@
                                         :return-type:u-extra)))))
              (rctr (reverse ctr)))
         (each ((ty ty) (ctr ctr) (rctr rctr))
-          (if (==> ty is-a-ptr)
-              (dhc-add-c-statements
-               (sprintf "(%s)*%s=(%s)*%s;"
-                        (dhc-type-to-c-decl ty)
-                        (dhc-list-access :srg-symb:c-name rctr)
-                        (dhc-type-to-c-decl ty)
-                        (dhc-list-access arg-name ctr)))
-            (dhc-add-c-statements
-             (sprintf "*((%s *) %s)=*((%s *)%s);"
-                      (dhc-type-to-c-decl ty)
-                      (dhc-list-access :srg-symb:c-name rctr)
-                      (dhc-type-to-c-decl ty)
-                      (dhc-list-access arg-name ctr))))))
+          (dhc-add-c-statements
+           (sprintf "*((%s *) %s)=*((%s *)%s);"
+                    (dhc-type-to-c-decl ty)
+                    (dhc-list-access :srg-symb:c-name rctr)
+                    (dhc-type-to-c-decl ty)
+                    (dhc-list-access arg-name ctr)))) )
       (sprintf "%s" :srg-symb:c-name))))
 
 (dhm-t append(source)
@@ -4235,20 +4187,12 @@
                   (range 0
                          (1- (length
                               (unode-val :arg-type:u-extra))))))
-            (if (==> ty is-a-ptr)     ; list or ptr type
-                (dhc-add-c-statements
-                 (sprintf "(%s)*%s=(%s)*%s;"
-                          (dhc-type-to-c-decl ty)
-                          (dhc-list-access
-                           :srg-symb:c-name ctr)
-                          (dhc-type-to-c-decl ty)
-                          (dhc-list-access nm arg-ctr)))
-              (dhc-add-c-statements       ; simple type
-               (sprintf "*((%s *) %s)=*((%s *) %s);"
-                        (dhc-type-to-c-decl ty)
-                        (dhc-list-access :srg-symb:c-name ctr)
-                        (dhc-type-to-c-decl ty)
-                        (dhc-list-access nm arg-ctr))))
+            (dhc-add-c-statements
+             (sprintf "*((%s *) %s)=*((%s *) %s);"
+                      (dhc-type-to-c-decl ty)
+                      (dhc-list-access :srg-symb:c-name ctr)
+                      (dhc-type-to-c-decl ty)
+                      (dhc-list-access nm arg-ctr)))
             (setq ctr (1+ ctr)))))
       (sprintf "%s" :srg-symb:c-name))))
 
@@ -4404,10 +4348,11 @@
 
 (dhm-t new(source)
   (let* ((class-name (cadr source))
+         (class-cname (dhc-lisp-to-c-name (pname class-name)))
          (class-type (dhc-class-to-dhc-type class-name))
          (class-methods (dhu-extra class-type))
          (args (cddr source)))
-    (if (assoc class-name class-methods)  ;; constructor exists
+    (if (assoc class-cname class-methods)  ;; constructor exists
         ;; constructor
         (dhc-parse-replacement-source-t
          source
@@ -4448,206 +4393,162 @@
            (kname (sprintf "Kc_%s_R%s" cname (dhu-hash ctype))) )
       (when (dhu-class ctype)
         (dhc-add-c-externs 
-         (dhc-class-to-vtable-decl ctype))
-        (dhc-add-c-externs 
          (dhc-class-to-struct-decl ctype))
+        (dhc-add-c-externs 
+         (dhc-class-to-vtable-decl ctype))
         (dhc-add-c-metaexterns 
          (sprintf "extern dhclassdoc_t %s;" kname) )
         (dhc-add-c-depends kname) ) )
     :obj-sym:c-name ) )
 
-
 (dhm-t ==>(source)
-       (when (> 3 (length source))
-         (dhc-error "two or more arguments expected"))
-       (let* ((obj-tnode (dhc-parse-expr-t (cadr source)))
-	      (method-name (caddr source))
-	      (args (if (consp (nthcdr 3 source))
-			(all ((arg (nthcdr 3 source)))
-			     (dhc-parse-expr-t arg))))
-	      (class-name ())
-	      (class-info-t ())
-	      (sup-class ())
-	      (class-method ()))
-         
-	 (when ~(==> :obj-tnode:type is-an-objptr)
-	       (dhc-error "first argument must be an object" (cadr source)))
-	 
-	 (setq class-name
-	       (unode-val :(unode-val
-			    :(unode-val 
-			      :obj-tnode:type:u-type):u-type):u-name))
-	 (when (consp method-name)
-           (setq class-name (car method-name))
-           (setq method-name (cdr method-name)))
-         
-	 (when ~(classp (eval (named class-name)))
-	       (dhc-error "not a class" class-name))
-
-	 (setq class-method
-	       (assoc (dhc-lisp-to-c-name (pname method-name))
-		      (dhc-methods-of-class class-name)))
-	 (when (null class-method)
-           (dhc-error 
-            (sprintf "currently no such method in %s"
-                     class-name) method-name))
-	 
-	 (when (<> (length source)
-		   (+ 2 (length (cadr (cdr class-method)))))
-           (dhc-error 
-            (sprintf "%s takes %d argument(s)" (car class-method)
-                     (1- (length (cadr (cdr class-method))))) source))
-	 ;; the following was derived from the dhc-parse-dh-t
-	 (let* ((func-type (dhc-desc-to-type (cdr class-method)))
-		(func-temps (unode-val :func-type:u-temps))
-		(ty-alist ())
-		(return-type (unode-val :func-type:u-type))
-		(func-arg (unode-val :func-type:u-extra))
-		(tnl (cons obj-tnode args))
-		(calling-types (all ((tynl tnl)) :tynl:type))
-		(return-node ()))
-	   
-           ;;;; UNIFY RETURNABLES ;;;;
-           
-	   (each ((ty func-arg)
-		  (da calling-types))    
-             (dhc-unify-types ty da))
-	   
-	   (setq ty-alist (dhc-unify-all-dh calling-types func-temps return-type))
-	   (setq tnl (append (list obj-tnode)
-			(list (new t-node () func-type (caddr source)))
-			(cdr tnl)))
-	   (setq return-node (new t-node tnl return-type))
-	   (setq :return-node:transfer 
-		 (all ((ty func-temps))
-                   (let ((sym (new dhc-symbol 
-                                   (named (sprintf "%d_met_%s" 
-                                                   (dhc-postincr tmpnames-seed)
-                                                   (pname (dht-short 
-                                                           (dhu-tclass ty)))))
-                                   lex-level)))
-                     (while (==> ty is-a-ptr) (setq ty (dhu-type ty)))
-                     (dhc-unify-types ty :sym:type)
-                     sym)))
-	   (setq bump-list (append bump-list :return-node:transfer))
-	   
-	   return-node)))
-
-
-
-
-
-;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;HERE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-(when ()
-
+  (when (> 3 (length source))
+    (dhc-error "two or more arguments expected"))
+  (let* ((obj-tnode (dhc-parse-expr-t (cadr source)))
+         (method-name (caddr source))
+         (args (if (consp (nthcdr 3 source))
+                   (all ((arg (nthcdr 3 source)))
+                     (dhc-parse-expr-t arg)) ) ) )
+    (when (not (==> :obj-tnode:type is-an-objptr))
+      (dhc-error "first argument must be an object") )
+    (let* ((class-type (dhu-type (dhu-type :obj-tnode:type)))
+           (class-name (dhu-name class-type))
+           (method-cname ())
+           (targetclass-type ())
+           (method-type ())
+           (method-class ()) )
+      ;; dotted method syntax
+      (when (consp method-name)
+        (setq targetclass-type 
+              (dhc-class-to-dhc-type (car method-name)))
+        (setq method-name 
+              (cdr method-name))
+        ;; check that this is a superclass
+        (let ((cl class-type))
+          (while (and cl (==> cl is-a-class))
+            (if (<> (dhu-name cl) (dhu-name targetclass-type))
+                (setq cl (dhu-type cl))
+              (setq cl ()) ) )
+          (when cl
+            (dhc-error "Not a superclass of object class" 
+                       (car method-name)) ) ) )
+      ;; search method
+      (when (not (symbolp method-name))
+        (dhc-error "Method name is not a symbol" method-name))
+      (setq method-cname (dhc-lisp-to-c-name (pname method-name)))
+      (let ((sclass (or targetclass-type class-type)))
+        (while (and (not method-type)
+                    (==> sclass is-a-class) )
+          (setq method-type (dhc-alist-get method-cname (dhu-extra sclass)) )
+          (when method-type (setq method-class sclass))
+          (setq sclass (dhu-type sclass)) ) )
+      (when (not method-type)
+        (dhc-error "Method not found" method-name) )
+      ;; the following is derived from dhc-parse-dh-c
+      (let* ((func-arg (dhu-extra method-type))
+             (func-temps (dhu-temps method-type))
+             (return-type (dhu-type method-type))
+             (tnl (cons obj-tnode args))
+             (call-arg (all ((tynl tnl)) :tynl:type))
+             (return-node ()) )
+        ;; check argument types
+        (when (<> (length func-arg) (length call-arg))
+          (dhc-error "Incorrect number of arguments") )
+        (each ((ty func-arg) (da call-arg))
+          (dhc-unify-types ty da))
+        (dhc-unify-all-dh call-arg func-temps return-type)
+        ;; construct return treenode
+        (setq return-node 
+              (new t-node () method-type (caddr source)))
+        (setq :return-node:transfer method-cname)
+        (setq tnl (cons obj-tnode
+                        (cons return-node
+                              (cdr tnl) ) ) )
+        (setq return-node 
+              (new t-node tnl return-type))
+        ;; remember temps
+        (setq :return-node:transfer 
+              (all ((ty func-temps))
+                (let ((sym (new dhc-symbol 
+                                (named (sprintf "%d_%s" 
+                                                (dhc-postincr tmpnames-seed)
+                                                method-cname))
+                                lex-level)))
+                  (while (==> ty is-a-ptr) (setq ty (dhu-type ty)))
+                  (dhc-unify-types ty :sym:type)
+                  sym)))
+        (setq bump-list (append bump-list :return-node:transfer))
+        ;; remember target class
+        (setq :return-node:transfer
+              (cons targetclass-type
+                    :return-node:transfer) )
+        return-node) ) ) )
 
 (dhm-c ==>(source treetype retplace)
   (let* ((this (cadr :treetype:tn-list))
-         (method-name (dhc-lisp-to-c-name (pname (caddr source))))
-         (this-class (unode-val 
-                      :(unode-val 
-                        :(unode-val :this:type:u-type):u-type):u-name))
-         (class-method-list (dhc-methods-of-class this-class))
-         (method-index 0)
-         (dh-info-c ())
-         (symbol (dhc-search-symtable (named this-class) global-table))
-         (args (dhc-parse-expr-c (cadr source) this ())))
-    
-    (dhc-add-c-externs (dhc-class-to-struct-decl (dhu-type (dhu-type :this:type))))
-    (setq args
-          (append (list args)
-                  (all ((so (nthcdr 3 source))
-                        (tt (nthcdr 3 :treetype:tn-list)))
-                    (dhc-parse-expr-c so tt ()))))
-    (setq args
-          (append (list (car args))  ;; first arg is never a number
-                  (all ((arg (cdr args))
-                        (ty (nthcdr 3 :treetype:tn-list)))
-                    (if (==> :ty:type is-a-number)
-                        (concat "(" (dhc-type-to-c-decl :ty:type) ") "
-                                arg)
-                      arg))))
-    
-    ;; get the index into the method table.  1st method is index 0
-    (let ((class-method-list class-method-list))
-      (while (<> method-name (car (car class-method-list)))
-        (setq method-index (1+ method-index))
-        (setq class-method-list (cdr class-method-list))
-        (when (null class-method-list)
-          (error (sprintf
-                  "%s %s" "dhm-c ==> failure. "  
-                  "Couldn't find a method which should exist")))))
-    
-    (let ((cclass (class-cclass (eval (named this-class)))))
-      (cond
-       (cclass
-        (setq dh-info-c
-              (cons (car args)
-                    (cdr (dhinfo-c (nth method-index
-                                        (nth 4 (classinfo-c cclass)) ))) ) ) )
-       (symbol
-        (setq dh-info-c 
-              (list (car args)  "" "" ""
-                    (concat "K_Class_" this-class "_" method-name)
-                    0 ) ) )
-       (t
-        (dhc-error "class is not compiled and not in symbol table"
-                   this-class ) ) ) )
-    
-    (let (((cfunc mfunc ctest mtest kfunc dkey) dh-info-c)
-          (auxargs (all ((sym :treetype:transfer)) :sym:c-name)) )
-      (setq cfunc (sprintf "%s->Methods[%d]" cfunc method-index))
-      (setq args (dhc-insert-op (append args auxargs) ", "))
-      (when (<> ctest "")
-        (dhc-add-c-statements (concat (if (<> mtest "") mtest ctest) 
-                                      "(" args ");" ) ) )
-      ;; Avoid returning inline because of side affects
-      (if (<> mfunc "")
-          ;; if there's a macro, add-c it and return "0"
-          (progn (dhc-add-c-statements (concat mfunc "(" args ", BASETYPE);")) "0")
-        
-        ;; unless ignored, a c function needs a retplace
-        (if ~:treetype:ignore
-            (progn
-              (when ~retplace
-                (setq retplace (dhc-declare-temp-var :treetype:type)))
-              (setq cfunc (sprintf "%s = ((%s (*)()) %s)" retplace
-                                   (dhc-type-to-c-decl :treetype:type)
-                                   cfunc)))
-          (setq cfunc (sprintf "((%s (*)()) %s)"
-                               (dhc-type-to-c-decl :treetype:type)
-                               cfunc)))
-        ;; add depends
-        (when (<> dkey 0)
-          (let* ((kclass (concat "K_Class_" this-class))
-                 (cclass (class-cclass (eval (named this-class)))) 
-                 (ckey (last (classinfo-c cclass))) )
-            (dhc-add-c-externs (sprintf "extern dhclassconstraint %s;" kclass))
-            (dhc-add-c-depends "CLASS" kclass ckey)
-            (dhc-add-c-externs (sprintf "extern dhconstraint %s;" kfunc))
-            (dhc-add-c-depends "DH" kfunc dkey) ) )
-        ;; add-c the c function and return retplace
-        (dhc-add-c-statements
-         (concat "/* method called: " method-name " */")
-         (concat cfunc "(" args ");"))
-        retplace ) ) ) )
-
-
-
-)
+         (class-type (dhu-type (dhu-type :this:type)))
+         (tnm (caddr :treetype:tn-list))
+         (method-type :tnm:type)
+         (method-cname :tnm:transfer)
+         (targetclass-type (car :treetype:transfer))
+         (ctype (or targetclass-type class-type)) 
+         (cname (dhu-name ctype))
+         (cnameplus (sprintf "%s_R%s" cname (dhu-hash ctype))) 
+         (auxargs (all ((sym (cdr :treetype:transfer))) :sym:c-name))
+         (args ()) )
+    ;; add external declarations
+    (when (dhu-class ctype)
+      (let ((stype (dhu-type ctype)))
+        (while (==> stype is-a-class)
+          (when (dhu-class stype)
+            (dhc-add-c-externs 
+             (sprintf "struct CClass_%s;" (dhu-name stype))) )
+          (setq stype (dhu-type stype)) ) )
+      (dhc-add-c-externs 
+       (dhc-class-to-struct-decl ctype))
+      (dhc-add-c-externs 
+       (dhc-class-to-vtable-decl ctype))
+      (dhc-add-c-externs
+       (sprintf "extern struct VClass_%s Vt_%s;" cname cnameplus) )
+      (dhc-add-c-metaexterns 
+       (sprintf "extern dhclassdoc_t Kc_%s;" cnameplus) )
+      (dhc-add-c-depends (concat "Kc_" cnameplus)) )
+    ;; Prepare retplace
+    (let ((retpart "")
+          (objname ()) )
+      (when (not :treetype:ignore) 
+        (when (not retplace)
+          (setq retplace (dhc-declare-temp-var :treetype:type)) )
+        (setq retpart (concat retplace " = ")) ) 
+      ;; Create args
+      (setq args 
+            (cons (setq objname
+                        (dhc-parse-expr-c (cadr source) this ()) )
+                  (all ((so (cdddr source))
+                        (tt (cdddr :treetype:tn-list)) )
+                    (dhc-parse-expr-c so tt () ) ) ) )
+      ;; Cast object types
+      (setq args
+            (all ((arg args)
+                  (argtype (dhu-extra method-type))
+                  (argnode (cons (cadr :treetype:tn-list)
+                                 (cdddr :treetype:tn-list)) ) )
+              (if (==> argtype is-an-objptr)
+                  (dhc-objptr-cast arg argtype :argnode:type)
+                arg ) ) )
+      ;; Generate call
+      (dhc-add-c-statements
+       (concat
+        retpart
+        (if targetclass-type
+            ;; explicit target class
+            (sprintf "Vt_%s.%s(" cnameplus method-cname)
+          ;; call via object vtable
+          (sprintf "(%s)->Vtbl->%s(" objname method-cname) )
+        (dhc-insert-op (append args auxargs) ", ")
+        ");" ) ) )
+    ;; The end
+    retplace ) )
 
 
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.11 2002-07-20 22:01:57 leonb Exp $
+ * $Id: dh.h,v 1.12 2002-07-25 01:14:47 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -138,8 +138,8 @@ typedef struct s_dhrecord
         {DHT_FLT}
 #define DH_REAL \
         {DHT_REAL}
-#define DH_GPTR \
-        {DHT_GPTR}
+#define DH_GPTR(s) \
+        {DHT_GPTR,0,0,s}
 #define DH_STR \
         {DHT_STR}		
 #define DH_LIST(n) \
