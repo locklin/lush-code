@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.8 2002-05-01 18:32:46 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.9 2002-05-02 21:00:32 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -315,14 +315,42 @@
 (de nconc1(l s)
   (if l
       (rplacd (lastcdr l) (list s))
-      (setq l (list s)) )
+    (setq l (list s)) )
   l )
 
+(de alist-add (key value alist)
+  (let ((pair (assoc key alist)))
+    (if pair
+        (rplacd pair value)
+      (setq alist (cons (cons key value) alist)) )
+    alist ) )
+
+(de alist-get(key alist)
+  (let ((pair (assoc key alist)))
+    (when pair
+      (cdr pair) ) ) )
+
 (de classp(q)
-    (= (classof q) class) )
+  (= (classof q) class) )
 
 (dm dmd(f n a . p)
-     `(dm ,n |DMD| (displace |DMD| (let ((,a (cdr |DMD|))) ,@p))) )
+    `(dm ,n |DMD| (displace |DMD| (let ((,a (cdr |DMD|))) ,@p))) )
+
+(setq |*PROPERTIES| (htable))
+
+(de getp(obj key)
+  (let ((data (|*PROPERTIES| key)))
+    (when data (data obj)) ) )
+
+(de putp(obj key val)
+  (let ((data (|*PROPERTIES| key)))
+    (when (not data)
+      (when (symbolp key)
+        (|*PROPERTIES| key (setq data (htable 17 t))) )
+      (when (not data)
+        (error 'putp "not a symbol" key) ) )
+    (data obj val)
+    key ) )
 
 (dm defclass(f name super . body)
     (let ((k ())
@@ -337,7 +365,8 @@
           (setq d (cons (cadr slot) d)) )
          (t
           (error 'defclass "Illegal slot specification" slot) ) ) )
-      `(progn (setq ,name (makeclass ',name ,super ',k ',d)) ',name) ) )
+      `(progn (setq ,name (makeclass ',name ,super ',k (list ,@d))) 
+              ',name) ) )
 
 (dm defmethod(f class name . body)
     `(putmethod ,class ',name (lambda ,@body)) )
@@ -415,7 +444,8 @@
     r ) )
 
 (lock_symbol caddr cdddr cdadr caadr cadar cddar cdaar caaar
-             nconc nconc1 classp dmd 
+             nconc nconc1 classp dmd alist-get alist-add
+             |*PROPERTIES| putp getp 
              defclass defmethod demethod dfmethod dmmethod
              mapfor mapwhile sort-list 
              hset hset-and hset-or)
@@ -445,9 +475,9 @@
 (dm mean_quadrant_dist (f r1 . r2)
     `(let ((r ,r1)) (/ (quadrant_dist r ,@r2) (length r))) )
 
-(lock_symbol x_estimate y_estimate)
-(lock_symbol mean_sup_dist mean_abs_dist mean_sqr_dist )
-(lock_symbol mean_hamming_dist  mean_quadrant_dist )
+(lock_symbol x_estimate y_estimate
+             mean_sup_dist mean_abs_dist mean_sqr_dist 
+             mean_hamming_dist  mean_quadrant_dist )
 
 (setq diff-lists diff-listes)
 (setq add-lists add-listes)
@@ -589,6 +619,29 @@
 
 ;;; --------- pprin, pprint ----------
 
+(each ((sym '( progn graphics-batch debug nodebug )))
+  (putp sym 'pprint-type 0) )
+(each ((sym '( when while do-while for mapfor mapwhile repeat )))
+  (putp sym 'pprint-type 1) )
+(each ((sym '( lambda flambda mlambda zlambda writing reading )))
+  (putp sym 'pprint-type 1) )  
+(each ((sym '( de df dm dz dmd defclass dhm-t dhm-c )))
+  (putp sym 'pprint-type 2) )
+(each ((sym '( defmethod demethod dfmethod dmmethod )))
+  (putp sym 'pprint-type 3) )
+
+(putp 'if        'pprint-type '(1 indent))
+(putp 'prog1     'pprint-type '(0 indent))
+(putp 'cond      'pprint-type '(0 cond))
+(putp 'selectq   'pprint-type '(1 cond))
+(putp 'let       'pprint-type '(0 let))
+(putp 'let*      'pprint-type '(0 let))
+(putp 'all       'pprint-type '(0 let))
+(putp 'each      'pprint-type '(0 let))
+(putp 'idx-bloop 'pprint-type '(0 let))
+(putp 'idx-eloop 'pprint-type '(0 let))
+
+
 (de pprin--v(l tb)
     (let ((nl ()))
       (while (consp l)
@@ -637,145 +690,85 @@
 	      (printf ")") ) )
       nl ) )
 
+(de pprin--n(l n)
+  (let ((c ""))
+    (while (and (consp l) (>= n 0))
+      (printf "%s" c)
+      (setq c " ")
+      (pprin (car l))
+      (setq l (cdr l))
+      (setq n (1- n)) )
+    l ) )
 
 (de pprin(l)
-    (let ((tb (tab)))
-      (cond
-       
-       ;; NIL
-       (~l
-	(prin l)
-	() )
-       
-       ;; a method 'pprint' is defined
-       ((and (classof l) (check==> (classof l) 'pprint))
-	(==> l pprint) )
-       
-       ;; this is not a list
-       ((not (consp l))
-	(prin l)
-	() )
-       
-       ;; starts with a C-0 symbol
-       ((member (car l) '(progn graphics-batch debug nodebug))
-	
-	(printf "(")
-	(pprin (car l))
-	(pprin--v (cdr l) (+ tb 2)) )
-
-       ;; starts with a C-1 symbol
-       ((and (member (car l) '(when while do-while for mapfor mapwhile
-                               repeat dmc lambda flambda mlambda 
-                               writing reading) )
-	     (consp (cdr l)) )
-	(printf "(")
-	(pprin (car l))
-	(printf " ")
-	(pprin (cadr l))
-	(pprin--v (cddr l) (+ tb 2)) )
-       
-       ;; starts with a IF symbol
-       ((and (member (car l) '(if prog1))
-	     (consp (cdr l)) )
-	(printf "(")
-	(pprin (car l))
-	(printf " ")
-	(pprin (cadr l))
-	(setq l (cddr l))
-	(print)
-	(tab (+ tb 4))
-	(pprin (car l))
-	(pprin--v (cdr l) (+ tb 2)) )
-
-       ;; starts with 'QUOTE
-       ((and (= (car l) 'quote) ~(cddr l))
-	(printf "'")
-	(pprin (cadr l)) )
-
-       ;; starts with 'SCOPE
-       ((and (= (car l) 'scope) (consp (cdr l)) ~(cdr (lastcdr l)))
-	(while (setq l (cdr l))
-	  (printf ":")
-	  (pprin (car l)) ) )
-
-       ;; is starts with a C-COND symbol
-       ((and (member (car l) '(cond selectq))
-	     (consp (cdr l)) )
-	(printf "(")
-	(pprin (car l))
-	(when (= (car l) 'selectq)
-	      (printf " ")
-	      (pprin (cadr l))
-	      (setq l (cdr l)) )
-	(while (consp (setq l (cdr l)))
-	  (print)
-	  (tab (+ tb 2))
-	  (if ~(consp (car l))
-	    (pprin l)
-	    (printf "(")
-	    (pprin (caar l))
-	    (pprin--v (cdar l) (+ tb 4)) ) )
-	(pprin--v l (+ tb 2)) )
-	  
-       
-       ;; starts with a C-LET symbol
-       ((and (member (car l) '(let let* all each 
-                               idx-bloop idx-eloop idx-gloop))
-	     (consp (cdr l)) (consp (cadr l)) (consp (cddr l)) )
-	(printf "(")
-	(pprin (car l))
-	(printf " ")
-	(if ~(consp (cadr l))
-	  (pprin (cadr l))
-	  (printf "(")
-	  (let ((tb (tab)))
-	    (pprin (caadr l))
-	    (pprin--v (cdadr l) tb) ) )
-	(pprin--v (cddr l) (+ tb 2)) )
-
-       ;; starts with a C-3 symbol
-       ((and (member (car l) '(de df dm dmd defclass))
-	     (consp (cdr l)) (consp (cddr l)) ) 
-	(printf "(")		
-	(pprin (car l))
-	(printf " ")	
-	(pprin (cadr l))	
-	(printf " ")	
-	(pprin (caddr l))
-	(pprin--v (cdddr l) (+ tb 2)) )
-       
-       ;; starts with a C-4 symbol
-       ((and (member (car l) '(defmethod demthod dfmethod dmmethod))
-	     (consp (cdr l)) (consp (cddr l)) (consp (cdddr l)) ) 
-	(printf "(")
-	(pprin (car l))
-	(printf " ")
-	(pprin (cadr l))
-	(printf " ")
-	(pprin (caddr l))
-	(printf " ")
-	(pprin (cadr (cddr l)))
-	(pprin--v (cddr (cddr l)) (+ tb 2)) )
-       
-       ;; starts with another symbol
-       ((symbolp (car l))
-	(printf "(")
-	(pprin (car l))
-	(pprin--h (cdr l) (+ tb 2)) )
-
-       ;; default
-       (t
-	(printf "(")
-	(pprin (car l))
-	(pprin--h (cdr l) (1+ tb)) ) ) ) )
+  (let ((tb (tab))
+        (type (and (consp l) (getp (car l) 'pprint-type))) )
+    (when (numberp type)
+      (setq type (cons type ())) )
+    (cond
+     ;; nil
+     ((not l) (prin l) ())
+     ;; method 'pprint' is defined
+     ((and (classof l) (check==> (classof l) 'pprint))
+      (==> l pprint) )
+     ;; not a list
+     ((not (consp l)) (prin l) ())
+     ;; type is a pair
+     ((consp type)
+      (printf "(")
+      (setq l (pprin--n l (car type)))  ; first arguments in line
+      (when (consp l)
+        (cond                          ; next argument special
+         ((= (cadr type) 'indent)
+            (print)
+            (tab (+ tb 4))
+            (pprin (car l)) 
+            (setq l (cdr l)) )
+         ((= (cadr type) 'cond)
+           (while (consp l)
+             (print)
+             (tab (+ tb 2))
+             (if (not (consp (car l)))
+                 (pprin l)
+               (printf "(")
+               (pprin (caar l))
+               (pprin--v (cdar l) (+ tb 4)) )
+             (setq l (cdr l)) ) )
+         ((= (cadr type) 'let)
+           (if (not (consp (car l)))
+               (pprin (car l))
+             (printf " (")
+             (let ((tb (tab)))
+               (pprin (caar l))
+               (pprin--v (cdar l) tb) ) )
+           (setq l (cdr l)) ) ) )
+      (pprin--v l (+ tb 2)) )
+     ;; macro quote
+     ((and (= (car l) 'quote) ~(cddr l))
+      (printf "'")
+      (pprin (cadr l)) )
+     ;; macro scope
+     ((and (= (car l) 'scope) (consp (cdr l)) ~(cdr (lastcdr l)))
+      (while (setq l (cdr l))
+        (printf ":")
+        (pprin (car l)) ) )
+     ;; start with symbol
+     ((symbolp (car l))
+      (printf "(")
+      (setq l (pprin--n l 0))
+      (pprin--h l (+ tb 2)) )
+     ;; default
+     (t
+      (printf "(")
+      (setq l (pprin--n l 0))
+      (pprin--h l (+ tb 2)) ) ) ) )
 
 (de pprint(l)
     (pprin l)
     (print)
     t )
 
-
-(lock-symbol pprin--h pprin--v pprin pprint)
+(lock-symbol pprin--h pprin--v pprin--n pprin pprint)
 
 
 
@@ -785,25 +778,29 @@
 
 (de prettyflags(l n) l) ;; compatibility only
 
-(de pretty-print(f)
-    (when (listp f)
-   	  (cond
-    	   ((and (= (car f) 'dm) (= (caddr f) '|DMD|))
-            (let ((text (cdr (cdar(cddr(cadr(cddr f)))))))
-	      (pprint (list 'dmd (cadr f)
-                            (caaar (cdadr (cdadr (cddr f))))
-			    . text )) ))
-      	   ((and (= (car f) 'de) (= (caddr f) ()) (macrochp (cadr f)))
-            (let ((text (cdddr f)))
-              (pprint (list 'dmc (cadr f) . text)) ) )
-      	   (t 
-            (pprint f) ) ) )
-    () )
+(de pretty-print(f &optional name)
+  (when (and (consp f) (consp (cdr f)) (consp (cddr f)))
+    (when (and name (= (car f) 'lambda))
+      (setq f `(de ,name ,@(cdr f))) )
+    (when (and name (= (car f) 'flambda))
+      (setq f `(df ,name ,@(cdr f))) )
+    (when (and name (= (car f) 'mlambda))
+      (setq f `(dm ,name ,@(cdr f))) )
+    (when (and name (= (car f) 'zlambda))
+      (setq f `(dz ,name ,@(cdr f))) )
+    (when (and (= (car f) 'dm) (= (caddr f) '|DMD|))
+      (let ((body (cdr (cdar (cddr (cadr (cddr f))))))
+            (args (caaar (cdadr (cdadr (cddr f))))) )
+        (setq f `(dmd ,(cadr f) ,args ,@body)) ) )
+    (when (and (= (car f) 'de) (macrochp (cadr f)) (null (caddr f)))
+      (let ((body (cdddr f)))
+        (setq f `(dmc ,(cadr f) ,@body)) ) ) )
+  (pprint f) )
 
 (de pretty-slots(this)
     (let ((cl (classof this)))
       (while cl
-	(printf ";; FROM CLASS: %l\n" (classname cl))
+	(printf ";; from class %l:\n" (classname cl))
 	(each ((i (slots cl)))
 	      (if (consp i)
 		  (setq i (car i)))
@@ -811,48 +808,58 @@
 	(setq cl (super cl)) ) ) )
 
 (de pretty-method(class method)
-    (let* ((j (check==> class method))
-           (cj (classof j)) )
-      (pretty-print
-       (cond
-        ((= cj |DE|) `(demethod ,(classname class) ,method ,@(cdr (funcdef j))))
-        ((= cj |DF|) `(dfmethod ,(classname class) ,method ,@(cdr (funcdef j))))
-        ((= cj |DM|) `(dmmethod ,(classname class) ,method ,@(cdr (funcdef j))))
-        (t `(putmethod ,(classname class) ',method ',j)) ) ) ) )
+  (let* ((j (check==> class method))
+         (cj (classof j)) )
+    (pretty-print
+     (cond
+      ((= cj |DE|) 
+       `(demethod ,(classname class) ,method ,@(cdr (funcdef j))))
+      ((= cj |DF|) 
+       `(dfmethod ,(classname class) ,method ,@(cdr (funcdef j))))
+      ((= cj |DM|) 
+       `(dmmethod ,(classname class) ,method ,@(cdr (funcdef j))))
+      (t 
+       `(putmethod ,(classname class) ',method ',j)) ) ) ) )
 
 (demethod object pretty()
   ;; default pretty function
-  (printf ";;*** %l, INSTANCE OF %l\n" this (classof this))
+  (printf "%l ; lisp object with:\n" this (classof this))
   (pretty-slots this) )
 
 (demethod class pretty()
   (printf "(defclass %l %l" (classname this) (classname (super this)))
   (each ((i (slots this)))
-	(if (listp i)
-	    (printf "\n  (%l '%l)" (car i) (cadr i))
-	  (printf "\n   %l" i) ) )
+    (if (listp i)
+        (printf "\n  (%l '%l)" (car i) (cadr i))
+      (printf "\n   %l" i) ) )
   (printf " )\n")
   (each ((i (methods this)))
-	(print)
-	(pretty-method this i) ) )
+    (print)
+    (pretty-method this i) ) )
 
 (demethod |SYMB| pretty()
-  (printf "'%l\n" this) )
-
-(demethod |SYMB| pretty2()
-  (let ((e (eval this))
-        (l (funcdef this)) )
-    (cond
-     ;; this is a function
-     ((consp l) 
-      (pretty-print l))
-     ;; this is an object, and it knows about 'pretty 
-     ((and (setq l (classof e))
-	   (check==> l 'pretty) )
-      (==> e pretty) )
-     ;; default
-     (t
-      (printf "(setq %l '%l)\n" this e) ) ) ) )
+  (if (== this 'this)
+      (printf "'%l\n" this)
+    (let* ((e (eval this))
+           (c (classof e))
+           (x (and e (getp e 'source))) )
+      (cond
+       ;; compiled from source
+       ((and c (setq x (getp e 'source)))
+        (printf ";; compiled from:\n")
+        (pretty-print x this) )
+       ;; custom funcdef
+       ((and c (check==> c 'funcdef))
+        (pretty-print (==> e funcdef) this) )
+       ;; lisp function
+       ((and (functionp e) (setq x (funcdef e)))
+        (pretty-print x this) )
+       ;; custom pretty printer
+       ((and c (check==> c 'pretty))
+        (==> e pretty) )
+       ;; default
+       (t
+        (pretty-print e) ) ) ) ) )
 
 (demethod |DE| pretty()
   (pretty-print (funcdef this)) )
@@ -864,41 +871,28 @@
   (pretty-print (funcdef this)) )
 
 (demethod |DX| pretty()
-  (printf "%l is a DX-type intrinsic function\n" this) )
+  (printf "%l ; DX-type intrinsic function\n" this) )
 
 (demethod |DY| pretty()
-  (printf "%l is a DY-type intrinsic function\n" this) )
-
-(when (classp |DZ|)
-  (demethod |DZ| pretty()
-    (let (((num . prog) (dz-def this)))
-      (printf "(dz-load %l '( " num)
-      (let* ((tab-label (tab))
-             (tab-prog  (+ tab-label 8)))
-        (while prog
-          (tab (if (stringp (car prog))
-                   tab-label
-                 tab-prog))
-          (prin (car prog))
-          (if (setq prog (cdr prog))
-              (print)))
-        (printf ")\n") ) ) ) )
+  (printf "%l ; DY-type intrinsic function\n" this) )
 
 (demethod |INDEX| pretty()
   (index-print this) (print) )
 
 (dm pretty(pretty f)
     (nodebug
-     (if (and (symbolp f) 
-	      (or (<> f 'this) ~this) )
-	 `(nodebug (==> ',f pretty2))
-       `(nodebug (==> ,f pretty)) ) ) )
+     (if (symbolp f) 
+	 `(nodebug (==> ',f pretty))
+       `(let* ((x ,f)(c (classof x)))
+          (if (and c (check==> c 'pretty))
+              (==> x pretty)
+            (pretty-print x) ) ) ) ) )
 
 (dmc |^P| `(pretty ,(read)))  
 
 (dm save(save f . l)
   (when l
-    `(nodebug (writing (open-write ,f "sn")
+    `(nodebug (writing (open-write ,f "lsh")
 		,@(all ((i l)) (list 'pretty i)) ) ) ) )
 
 (lock-symbol pretty-slots pretty-method pretty-print pretty save |^P|)
@@ -969,6 +963,7 @@
    (print) )
 	
 (dmc |^S| (list 'symbols (read_string)))
+
 (lock_symbol |^S| symbols )
 
 
@@ -1003,7 +998,6 @@
 (setq defun de)
 (setq += incr)
 (setq << setq)
-(lock_symbol defun += <<)
 
 ;; consistent naming for storages and matrices
 
@@ -1036,7 +1030,6 @@
 
 (dm dim(f v . l)
   (list 'setq v (list 'f-matrix . l)) )
-(lock_symbol dim)
 
 ;; backward compat with SN3
 
@@ -1078,4 +1071,5 @@
                                 (concat-fname lushdir x))))
              (elist '(".dump" ".lshc" ".lsh")))
         (find-file dlist "lushenv" elist)))
+
 

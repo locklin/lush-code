@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: symbol.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: symbol.c,v 1.2 2002-05-02 21:00:31 leonb Exp $
  **********************************************************************/
 
 
@@ -353,11 +353,6 @@ class symbol_class =
 
 /* Others functions on symbols	 */
 
-
-
-
-
-
 at *
 setq(at *p, at *q)		/* WARNING: returns an UNLOCKED AT	 */
           			/* never use this AT in a C program	 */
@@ -590,111 +585,6 @@ DX(xincr)
 }
 
 
-/* --------- STRUCTURED LISTES  --------- */
-
-
-static at **
-search_label(struct symbol *symb, at *prop)
-{
-  extern int in_object_scope;	/* From OOSTRUCT.C */
-  at **last, *list;
-  if (!symb->valueptr) {
-    if (in_object_scope)
-      error(NIL, "cannot create a new variable from object scope",NIL);
-    else {
-      symb->valueptr = &(symb->value);
-      symb->value = NIL;
-    }
-  }
-  last = symb->valueptr;
-  list = *last;
-  ifn (LISTP(list))
-    error(NIL, "symbol value isn't a list", list);
-  
-  while (CONSP(list) && CONSP(list->Cdr)) {
-    if (list->Car == prop)
-      return last;
-    last = &(list->Cdr->Cdr);
-    list = *last;
-  }
-  UNLOCK(*last);
-  LOCK(prop);
-  list = *last = cons(prop, cons(NIL, NIL));
-  return last;
-}
-
-void
-putprop(struct symbol *symb, at *value, at *prop)
-{
-  at **loc, *list;
-
-  ifn (symb->valueptr) {
-    symb->valueptr = &(symb->value);
-    symb->value = NIL;
-  }
-  list = *(symb->valueptr);
-  ifn (list) {
-    LOCK(prop);
-    LOCK(value);
-    *(symb->valueptr) = cons(prop, cons(value, NIL));
-  }
-  loc = search_label(symb, prop);
-  if (value) {
-    loc = &((*loc)->Cdr->Car);
-    list = *loc;
-    UNLOCK(list);
-    LOCK(value);
-    *loc = value;
-  } else {
-    list = *loc;
-    *loc = list->Cdr->Cdr;
-    list->Cdr->Cdr = NIL;
-    UNLOCK(list);
-  }
-}
-
-DX(xputprop)
-{
-  ARG_NUMBER(3);
-  ALL_ARGS_EVAL;
-  ASYMBOL(3);
-  putprop(ASYMBOL(1), APOINTER(2), APOINTER(3));
-  LOCK(APOINTER(2));
-  return APOINTER(2);
-}
-
-at *
-getprop(struct symbol *symb, at *prop)
-{
-  at *list;
-
-  list = NIL;
-  if (symb->valueptr)
-    list = *(symb->valueptr);
-  ifn (LISTP(list))
-    error(NIL, "symbol value isn't a list", symb->value);
-  
-
-  while (CONSP(list) && CONSP(list->Cdr)) {
-    if (list->Car == prop) {
-      LOCK(list->Cdr->Car);
-      return list->Cdr->Car;
-    }
-    list = list->Cdr->Cdr;
-  }
-  return NIL;
-}
-
-DX(xgetprop)
-{
-
-  ARG_NUMBER(2);
-  ALL_ARGS_EVAL;
-  ASYMBOL(2);
-  return getprop(ASYMBOL(1), APOINTER(2));
-}
-
-
 /* --------- TRUE_SYMBOL_DEFINITION --------- */
 
 at *
@@ -817,6 +707,4 @@ init_symbol(void)
   dx_define("unlock_symbol", xunlock_symbol);
   dx_define("symbolp", xsymbolp);
   dx_define("incr", xincr);
-  dx_define("putp", xputprop);
-  dx_define("getp", xgetprop);
 }

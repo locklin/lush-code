@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.11 2002-05-01 19:02:01 leonb Exp $
+ * $Id: header.h,v 1.12 2002-05-02 21:00:18 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -413,8 +413,6 @@ TLAPI at *setq(at *p, at *q);	/* Warning: Never use the result. */
 TLAPI at *symblist(void); 
 TLAPI at *oblist(void);
 TLAPI at *true(void);
-TLAPI at *getprop(struct symbol *symb, at *prop);
-TLAPI void putprop(struct symbol *symb, at *value, at *prop);
 TLAPI void var_set(at *p, at *q);
 TLAPI void var_SET(at *p, at *q); /* Set variable regardless of lock mode */
 TLAPI void var_lock(at *p);
