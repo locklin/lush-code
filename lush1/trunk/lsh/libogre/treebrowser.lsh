@@ -11,6 +11,7 @@
 
 
 (libload "ogre")
+(libload "libogre/ldocpane")
 (libload "libstd/ltree")
 
 
@@ -32,6 +33,13 @@
       (==> this expose rect) 
       ; (==> this advertize) 
       ) ) )
+
+(defmethod Scroller page-down ()
+  (let (((x y w h) :view:rect)
+	(old-vpos vpos))
+    (==> this vscroll (+ vpos (* 0.5 h)))
+    ;; return true if moved, () if not moved
+    (<> vpos old-vpos)))
   
 (defmethod Scroller vcenter (pv)
   (let (((xx yy ww hh) :inside:rect)
@@ -78,6 +86,7 @@
   open-call				; call when right arrow key is pressed
   close-call				; call when left arrow key is pressed
   move-call				; call shen up/down arrows are pressed
+  space-call				; call shen space bar is pressed
 
   icon-open				; string for open item "-"
   icon-closed				; string for closed item "+"
@@ -93,12 +102,14 @@
 
 ;;; Constructor
 
-(defmethod Explorer explorer(ltree mw mh &optional ecall ocall ccall mcall)
+(defmethod Explorer explorer
+	   (ltree mw mh &optional ecall ocall ccall mcall scall)
   (let ((noop (lambda (c) ())))
     (setq enter-call (if (functionp ecall) ecall noop))
     (setq open-call (if (functionp ocall) ocall noop))
     (setq close-call (if (functionp ccall) ccall noop))
-    (setq move-call (if (functionp mcall) mcall noop)))
+    (setq move-call (if (functionp mcall) mcall noop))
+    (setq space-call (if (functionp scall) scall noop)))
   (setq icon-open "- ")
   (setq icon-closed "+ ")
   (setq min-width mw)
@@ -176,6 +187,9 @@
 
 (defmethod Explorer keypress(c x y)
   (selectq c
+    (" " (when space-call 
+	   (when (not (space-call this))
+	     (==> this next-hit))))
     ("c" (==> this close-all))
     ("\r" (==> this next-hit))))
 
@@ -280,9 +294,8 @@
   tree
   tree-viewer
   tree-explorer
-  text-pane
-  text-vscroller
-  text-hscroller
+  ldoc-scroller
+  ldoc-pane
   search-string
   closeall-btn
   findnext-btn
@@ -305,14 +318,17 @@
 (de enter-func (c) 
     (let* ((curr (==> tree-explorer getdata))
 	   (hn (when curr (==> curr getdata))))
-      (==> (==> hn getdata) render-text)
+      (==> ldoc-pane setdata (==> hn getdata))
+      ;; (==> (==> hn getdata) render-brace)
       ;; (==> (==> hn getdata) render-html)
       ;; (==> (==> hn getdata) render-latex)
-      (when hn (==> text-pane setdata (==> hn getdata)))))
+      ))
 (de open-func (c) ())
 (de close-func (c) 
     (==> tree-explorer recenter tree-viewer))
 (de move-func (c) (==> tree-explorer recenter tree-viewer))
+(de space-func (c) (==> ldoc-scroller page-down))
+
 ;;(de move-func (c) (==> tree-explorer recenter tree-viewer) (enter-func c))
 
 
@@ -324,11 +340,12 @@
   (setq tree intree)
   (==> tree open)
   (setq tree-explorer 
-	(new explorer tree w1 h1 enter-func open-func close-func move-func))
+	(new explorer tree w1 h1 
+	     enter-func open-func close-func move-func space-func))
   (setq tree-viewer (new scroller w1 h1 tree-explorer))
-  (setq text-pane 
-	(new scroller w2 h2
-	(new textpane (int (/ w2 7)) (int (/ h2 9))() () () ())))
+  (setq ldoc-scroller 
+	(new scroller w2 h2 
+	     (setq ldoc-pane (new ldocpane (- w2 26) (- h2 12)))))
   (setq search-string (new editstring 24))
   (==> search-string setcall findnext-func)
   (setq findnext-btn (new stdbutton "Next" findnext-func))
@@ -343,7 +360,7 @@
 		     ))
   (setq srchbtn-tree (new column srchbtn tree-viewer))
   (if horiz
-      (setq srchbtn-tree-text (new row srchbtn-tree text-pane))
-    (setq srchbtn-tree-text (new column srchbtn-tree text-pane)))
+      (setq srchbtn-tree-text (new row srchbtn-tree ldoc-scroller))
+    (setq srchbtn-tree-text (new column srchbtn-tree ldoc-scroller)))
   (==> this (form . insert) srchbtn-tree-text))
 
