@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: oostruct.c,v 1.2 2002-04-29 22:21:58 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -39,6 +39,7 @@ int in_object_scope = 0;
 class *rootclasslist = 0;
 
 static at *at_progn;
+static at *at_mexpand;
 static at *at_this;
 static at *at_destroy;
 static at *at_unknown;
@@ -408,11 +409,11 @@ DX(xmethods)
   cl = q->Object;
   q = cl->methods;
   while (CONSP(q)) {
-    ifn (CONSP(q->Car))
-      error("oostruct/putmethod","Inconsistency detected", cl->methods);
-    LOCK(q->Car->Car);
-    ans = cons(q->Car->Car,ans);
-    q = q->Cdr;
+    if (CONSP(q->Car)) {
+      LOCK(q->Car->Car);
+      ans = cons(q->Car->Car,ans);
+      q = q->Cdr;
+    }
   }
   return ans;
 }
@@ -783,8 +784,8 @@ letslot(at *obj, at *f, at *q, int howmuch)
 {
   register struct oostruct *s;
   register int i;
-  at *call,*ans;
   struct symbol *symb;
+  at *ans;
   
   ifn (obj) 
     {
@@ -793,9 +794,7 @@ letslot(at *obj, at *f, at *q, int howmuch)
   else ifn (obj->flags & X_OOSTRUCT)
     {
       symbol_push(at_this,obj);
-      call = new_cons(f,q);
-      ans = eval_std(call);
-      UNLOCK(call);
+      ans = apply(f, q);
       symbol_pop(at_this);
     }
   else
@@ -827,13 +826,9 @@ letslot(at *obj, at *f, at *q, int howmuch)
       symb->value = obj;
       at_this->Object = symb;
       LOCK(obj);
-
+      
       in_object_scope++;
-
-      call = new_cons(f,q);
-      ans = eval_std(call);
-      UNLOCK(call);
-
+      ans = apply(f,q);
       in_object_scope--;
 
       /* Unstack THIS */
@@ -872,12 +867,8 @@ DY(yletslot)
 /* ---------------- METHODS --------------- */
 
 
-
-
-
-
 static void
-putmethod(class *cl, at *value, at *prop)
+putmethod(class *cl, at *name, at *value)
 {
   register at **last, *list, *q;
   clear_hashok(cl);
@@ -885,23 +876,58 @@ putmethod(class *cl, at *value, at *prop)
   list = *last;
   while (CONSP(list)) {
     q = list->Car;
+    if (! CONSP(q))
+      error("oostruct/putmethod","Internal error",NIL);
+    if (q->Car == name) 
+      {
+        if (value)
+          {
+            /* replace */
+            LOCK(value);
+            UNLOCK(q->Cdr);
+            q->Cdr = value;
+            return;
+          }
+        else
+          {
+            /* remove */
+            *last = list->Cdr;
+            list->Cdr = NIL;
+            UNLOCK(list);
+            return;
+          }
+      }
     last = &(list->Cdr);
     list = *last;
-    ifn (CONSP(q))
-      error("oostruct/putmethod","Inconsistency detected", cl->methods);
-    if (q->Car == prop) {
-      LOCK(value);
-      UNLOCK(q->Cdr);
-      q->Cdr = value;
-      return;
-    }
   }
-  LOCK(value);
-  LOCK(prop);
-  UNLOCK(list);
-  *last = cons( cons(prop,value), NIL);
+  /* append */
+  if (value)
+    {
+      LOCK(value);
+      LOCK(name);
+      UNLOCK(list);
+      *last = cons( cons(name,value), NIL);
+    }
 }
 
+DX(xputmethod)
+{
+  at *atclass, *atname, *atfun;
+  ARG_NUMBER(3);
+  ALL_ARGS_EVAL;
+  atclass = APOINTER(1);
+  if (! EXTERNP(atclass, &class_class))
+    error(NIL,"Not a class", atclass);
+  atname = APOINTER(2);
+  if (! EXTERNP(atname, &symbol_class))
+    error(NIL,"Not a symbol", atname);
+  atfun = APOINTER(3);
+  if (atfun && !(atfun->flags & X_FUNCTION))
+    error(NIL,"Not a function", atfun);
+  putmethod(atclass->Object, atname, atfun);
+  LOCK(atname);
+  return atname;
+}
 
 static at *
 getmethod(class *cl, at *prop)
@@ -918,11 +944,7 @@ getmethod(class *cl, at *prop)
   return NIL;
 }
 
-
-
-
 #define HASH(q,size) ((unsigned long)(q) % (size-1) )
-
 
 static void 
 update_hashtable(class *cl)
@@ -1035,37 +1057,6 @@ DX(xchecksend)
 
 
 
-DY(ydefmethod)
-{
-  register at *q, *symbol, *classat;
-  class *cl;
-  at *func;
-
-  q = ARG_LIST;
-  ifn(CONSP(q) && CONSP(q->Cdr) && 
-      CONSP(q->Cdr->Cdr) && CONSP(q->Cdr->Cdr->Cdr))
-    error(NIL, "illegal definition of function", NIL);
-
-  symbol = q->Cdr->Car;
-  classat = eval(q->Car);
-
-  ifn(classat && (classat->flags & C_EXTERN) 
-      && (classat->Class == &class_class))
-    error(NIL, "not a class", classat);
-  
-  ifn(symbol && (symbol->flags & X_SYMBOL))
-    error(NIL, "not a symbol", symbol);
-
-  cl = classat->Object;
-  func = new_df(q->Cdr->Cdr->Car, q->Cdr->Cdr->Cdr);
-  putmethod(cl,func,symbol);
-  UNLOCK(func);
-  UNLOCK(classat);
-  LOCK(symbol);
-  return symbol;
-}
-
-
 /* ---------------- DELETE ---------------- */
 
 
@@ -1145,18 +1136,61 @@ DX(xdelete)
 
 
 
+static at *
+call_method(at *obj, struct hashelem *hx, at *args)
+{
+  at *p, *q;
+  at *fun = hx->function;
+
+  if (! (fun && fun->flags & X_FUNCTION))
+    error(NIL,"Internal error", fun);
+  
+  if (fun->Class == &de_class)
+    {
+      // DE
+      p = eval_a_list(args);
+      q = letslot(obj, fun, p, hx->sofar);
+      UNLOCK(p);
+      return q;
+    }
+  else if (fun->Class == &df_class)
+    {
+      // DF
+      return letslot(obj, fun, args, hx->sofar);
+    }
+  else if (fun->Class == &dm_class)
+    {
+      // DM
+      p = cons(new_cons(fun, args), NIL);
+      q = letslot(obj, at_mexpand, p, hx->sofar);
+      UNLOCK(p);
+      p = eval(q);
+      UNLOCK(q);
+      return p;
+    }
+  else
+    {
+      // DX, DY, DH
+      LOCK(fun);
+      p = cons(fun, new_cons(obj, args));
+      q = (*fun->Class->list_eval)(fun, p);
+      UNLOCK(p);
+      return q;
+    }
+}
+
+
 DY(ysend)
 {
-  register at *q, *symbol, *obj, *args;
+  register at *q, *symbol, *obj;
   struct hashelem *hx;
   class *cl;
-  at *ans;
-
+  at *args, *ans;
+  /* args */
   q = ARG_LIST;
   ifn (CONSP(q) && CONSP(q->Cdr))
     error(NIL, "arguments expected", NIL);
-
-  obj = eval(q->Car);
+  obj = (*argeval_ptr)(q->Car);
   if ( obj && (obj->flags & C_EXTERN))
     cl = obj->Class;
   else if (obj && (obj->flags & C_NUMBER))
@@ -1165,34 +1199,32 @@ DY(ysend)
     cl = &gptr_class;
   else
     error(NIL,"can't send a message to",obj);
-
+  /* supersend */
   symbol = q->Cdr->Car;
-  if (CONSP(symbol)) {
-    ans = symbol->Car;
-    symbol = symbol->Cdr;
-    while (cl && cl->classname != ans)
-      cl = cl->super;
-    ifn(cl)
-      error(NIL,"cannot find superclass",ans);
-  }
-
-  if ((hx = getmethod_quick(cl,symbol))) {
-    args = eval_a_list(q->Cdr->Cdr);
-    ans = letslot(obj,hx->function,args,hx->sofar);
-    UNLOCK(obj);
-    UNLOCK(args);
-    return ans;
-  } else if ((hx = getmethod_quick(cl,at_unknown))) {
-    LOCK(q->Cdr->Car);
-    args = cons(q->Cdr->Car,cons(eval_a_list(q->Cdr->Cdr),NIL));
-    ans = letslot(obj,hx->function,args,hx->sofar);
-    UNLOCK(obj);
-    UNLOCK(args);
-    return ans;
-  } else
-    error(NIL,"unimplemented message",obj);
+  if (CONSP(symbol)) 
+    {
+      ans = symbol->Car;
+      symbol = symbol->Cdr;
+      while (cl && cl->classname != ans)
+        cl = cl->super;
+      if (! cl)
+        error(NIL,"cannot find superclass",ans);
+    }
+  /* send */
+  if ((hx = getmethod_quick(cl,symbol))) 
+    return call_method(obj, hx, q->Cdr->Cdr);
+  /* send -unknown */
+  if ((hx = getmethod_quick(cl,at_unknown))) 
+    {
+      LOCK(q->Cdr->Car);
+      args = cons(q->Cdr->Car, new_cons(q->Cdr->Cdr, NIL));
+      ans = call_method(obj, hx, args);
+      UNLOCK(args);
+      return ans;
+    }
+  /* fail */
+  error(NIL,"unimplemented message",obj);
 }
-
 
 
 DX(xapplysend)
@@ -1214,7 +1246,7 @@ DX(xapplysend)
     cl = &gptr_class;
   else
     error(NIL,"can't send a message to",obj);
-
+  
   symbol = APOINTER(2);
   if (CONSP(symbol)) {
     ans = symbol->Car;
@@ -1224,13 +1256,24 @@ DX(xapplysend)
     ifn(cl)
       error(NIL,"cannot find superclass",ans);
   }
-
-  if ((hx = getmethod_quick(cl,symbol))) {
-    args = APOINTER(3);
-    ans = letslot(obj,hx->function,args,hx->sofar);
-    return ans;
-  } else
-    error(NIL,"unimplemented message",obj);
+  
+  args = APOINTER(3);
+  /* Send */
+  argeval_ptr = eval_nothing;
+  if ((hx = getmethod_quick(cl,symbol))) 
+    return call_method(obj, hx, args);
+  /* Send -unknown */
+  symbol = APOINTER(2);
+  if ((hx = getmethod_quick(cl,at_unknown))) 
+    {
+      LOCK(symbol);
+      args = cons(symbol, new_cons(args, NIL));
+      ans = call_method(obj, hx, args);
+      UNLOCK(args);
+      return ans;
+    }
+  /* fail */
+  error(NIL,"unimplemented message",obj);
 }
 
 
@@ -1364,7 +1407,7 @@ init_oostruct(void)
   dx_define("delete",xdelete);
   dy_define("letslot",yletslot);
   dx_define("check==>",xchecksend);
-  dy_define("defmethod",ydefmethod);
+  dx_define("putmethod",xputmethod);
   dy_define("==>",ysend);
   dx_define("apply==>",xapplysend);
   dx_define("sender",xsender);
@@ -1372,5 +1415,6 @@ init_oostruct(void)
   at_this = var_define("this");
   at_progn = var_define("progn");
   at_destroy = var_define("-destructor");
+  at_mexpand = var_define("macro-expand");
   at_unknown = var_define("-unknown");
 }

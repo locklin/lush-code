@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.4 2002-04-26 23:21:00 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.5 2002-04-29 22:22:08 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -208,6 +208,7 @@
 
 
 
+
 ;;; --------- Backquote macro ---------
 
 (de backquote-macro()
@@ -296,11 +297,16 @@
 
 
 
-
-
-
-
 ;;; --------- Usual functions ---------
+
+(de caddr(l) (car (cddr l)))
+(de cdddr(l) (cdr (cddr l)))
+(de cdadr(l) (cdr (cadr l)))
+(de caadr(l) (car (cadr l)))
+(de cadar(l) (car (cdar l)))
+(de cddar(l) (cdr (cdar l)))
+(de cdaar(l) (cdr (caar l)))
+(de caaar(l) (car (caar l)))
 
 (de nconc (f . l)
   (cond
@@ -324,17 +330,27 @@
 (dm dmd(f n a . p)
      `(dm ,n |DMD| (displace |DMD| (let ((,a (cdr |DMD|))) ,@p))) )
 
-(dmd mapfor ((var lo hi . step) . p)
-     `(all ((,var (range ,lo ,hi ,@step))) ,@p) )
+(dm defmethod(f class name . body)
+    `(putmethod ,class ',name (lambda ,@body)) )
 
-(de caddr(l) (car (cddr l)))
-(de cdddr(l) (cdr (cddr l)))
-(de cdadr(l) (cdr (cadr l)))
-(de caadr(l) (car (cadr l)))
-(de cadar(l) (car (cdar l)))
-(de cddar(l) (cdr (cdar l)))
-(de cdaar(l) (cdr (caar l)))
-(de caaar(l) (car (caar l)))
+(dm demethod(f class name . body)
+    `(putmethod ,class ',name (lambda ,@body)) )
+
+(dm dfmethod(f class name . body)
+    `(putmethod ,class ',name (flambda ,@body)) )
+
+(dm dmmethod(f class name . body)
+    `(putmethod ,class ',name (mlambda ,@body)) )
+
+(dmd mapfor ((var lo hi . step) . body)
+     `(let ((|MAP| ()))
+        (for (,var ,lo ,hi ,@step) (setq |MAP| (cons (progn ,@body) |MAP|)))
+        (reverse |MAP|) ) )
+
+(dmd mapwhile (expr . body)
+     `(let ((|MAP| ()))
+        (while ,expr (setq |MAP| (cons (progn ,@body) |MAP|)))
+        (reverse |MAP|) ) )
 
 (de sort-list (l comp)
     (if (cdr l)
@@ -467,7 +483,7 @@
 		       (tab tabnow) ) ) ) )
 	(printf end) ) ) )
 
-(defmethod |INDEX| print()
+(demethod |INDEX| print()
   (if (and (matrixp this)
 	   (< (apply * (idx-dim this)) 100))
       (index-print this)
@@ -726,7 +742,7 @@
 	(pprin--v (cdddr l) (+ tb 2)) )
        
        ;; starts with a C-4 symbol
-       ((and (member (car l) '(defmethod))
+       ((and (member (car l) '(defmethod demthod dfmethod dmmethod))
 	     (consp (cdr l)) (consp (cddr l)) (consp (cdddr l)) ) 
 	(printf "(")
 	(pprin (car l))
@@ -792,16 +808,21 @@
 	(setq cl (super cl)) ) ) )
 
 (de pretty-method(class method)
-    (let ((j (funcdef (check==> class method))))
-      (pretty-print 
-       `(defmethod ,(classname class) ,method ,@(cdr j)) ) ) )
+    (let* ((j (check==> class method))
+           (cj (classof j)) )
+      (pretty-print
+       (cond
+        ((= cj |DE|) `(demethod ,(classname class) ,method ,@(cdr (funcdef j))))
+        ((= cj |DF|) `(dfmethod ,(classname class) ,method ,@(cdr (funcdef j))))
+        ((= cj |DM|) `(dmmethod ,(classname class) ,method ,@(cdr (funcdef j))))
+        (t `(putmethod ,(classname class) ',method ',j)) ) ) ) )
 
-(defmethod object pretty()
+(demethod object pretty()
   ;; default pretty function
   (printf ";;*** %l, INSTANCE OF %l\n" this (classof this))
   (pretty-slots this) )
 
-(defmethod class pretty()
+(demethod class pretty()
   (printf "(defclass %l %l" (classname this) (classname (super this)))
   (each ((i (slots this)))
 	(if (listp i)
@@ -812,10 +833,10 @@
 	(print)
 	(pretty-method this i) ) )
 
-(defmethod |SYMB| pretty()
+(demethod |SYMB| pretty()
   (printf "'%l\n" this) )
 
-(defmethod |SYMB| pretty2()
+(demethod |SYMB| pretty2()
   (let ((e (eval this))
         (l (funcdef this)) )
     (cond
@@ -830,23 +851,23 @@
      (t
       (printf "(setq %l '%l)\n" this e) ) ) ) )
 
-(defmethod |DE| pretty()
+(demethod |DE| pretty()
   (pretty-print (funcdef this)) )
 
-(defmethod |DF| pretty()
+(demethod |DF| pretty()
   (pretty-print (funcdef this)) )
 
-(defmethod |DM| pretty()
+(demethod |DM| pretty()
   (pretty-print (funcdef this)) )
 
-(defmethod |DX| pretty()
+(demethod |DX| pretty()
   (printf "%l is a DX-type intrinsic function\n" this) )
 
-(defmethod |DY| pretty()
+(demethod |DY| pretty()
   (printf "%l is a DY-type intrinsic function\n" this) )
 
 (when (classp |DZ|)
-  (defmethod |DZ| pretty()
+  (demethod |DZ| pretty()
     (let (((num . prog) (dz-def this)))
       (printf "(dz-load %l '( " num)
       (let* ((tab-label (tab))
@@ -860,7 +881,7 @@
               (print)))
         (printf ")\n") ) ) ) )
 
-(defmethod |INDEX| pretty()
+(demethod |INDEX| pretty()
   (index-print this) (print) )
 
 (dm pretty(pretty f)
