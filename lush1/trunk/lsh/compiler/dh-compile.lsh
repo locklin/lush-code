@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.10 2002-07-23 18:58:29 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.11 2002-07-23 19:14:22 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -462,107 +462,86 @@
         (when (not (member method (methods cls)))
           (dhc-error "unknown method for this class" method ) )
         
-        (if (= method fname)
-            ;; CONSTRUCTOR
-            ;; --  install slots in symbol table
-            (let ((symbol-table symbol-table)
-                  (slot-list (dhu-temps (dhc-obj-type-from-class cls))))
-              (each ((slot slot-list))
-                (let ((sym (new dhc-symbol (car slot) 0)))
-                  (dhc-unify-types (new dhc-type 'dht-unk) :sym:type)
-                  (setq :sym:c-name 
-                        (concat "L1_this->" 
-                                (dhc-lisp-to-c-name (pname (car slot)))) )
-                  (setq symbol-table 
-                        (append symbol-table (list (cons (car slot) sym))) ) ) )
-              ;; -- parse
-              (let ((tnode ())
-                    (methodname (dhc-lisp-to-c-name (pname method)))
-                    (source (funcdef (check==> cls method))) )
-                (when (<> (car source) 'lambda)
-                  (dhc-error "Cannot compile method not defined with demethod" method) )
-                (setq source `(lambda(this ,@(cadr source))
-                                (declare (-obj- (,fname)) this)
-                                ,@(dhc-pp-all (cddr source)) ))
-                (setq tnode (dhc-parse-expr-t source))
-                (setq :tnode:source source)
-                (setq treetype (append treetype (list (cons method tnode))))
-                ;; -- check that all slots are initialized
-                (each ((slot slot-list))
-                  (let ((sym (dhc-search-symtable (car slot) symbol-table)))
-                    (if (and (= 'dht-unk (dhu-tclass :sym:type))
-                             (not (==> (cdr slot) is-a-simple)) )
-                        (error 'dhc-compile-class-t
-                               (concat "class constructor did not "
-                                       "intialize a slot with complex type")
-                               (list fname (car slot)) ) ) 
-                    ;; Unify slot types
-                    (dhc-unify-types (cdr slot) :sym:type) ) )
-                ;; -- insert into class type method list
-                (unode-unify :class-type:u-extra
-                             (new-unode
-                              (append (unode-val :class-type:u-extra)
-                                      (list (cons methodname :tnode:type))))
-                             (lambda (a b) b) ) ) )
-          ;; REGULAR METHOD
-          ;; --  install slots in symbol table
-          (let ((symbol-table symbol-table)
-                (slot-list (dhu-temps (dhc-obj-type-from-class cls))))
-            (each ((slot slot-list))
-              (let ((sym (new dhc-symbol (car slot) 0)))
-                (dhc-unify-types (cdr slot) :sym:type)
-                (setq :sym:c-name 
-                      (concat "L1_this->" 
-                              (dhc-lisp-to-c-name (pname (car slot)))) )
-                (setq symbol-table 
-                      (append symbol-table (list (cons (car slot) sym))) ) ) )
-            ;; -- parse
-            (let ((tnode ())
-                  (methodname (dhc-lisp-to-c-name (pname method)))
-                  (source (funcdef (check==> cls method))) )
-              (when (<> (car source) 'lambda)
-                (dhc-error "Cannot compile method not defined with demethod" method) )
-              (setq source `(lambda(this ,@(cadr source))
-                              (declare (-obj- (,fname)) this)
-                              ,@(dhc-pp-all (cddr source)) ))
-              (setq tnode (dhc-parse-expr-t source))
-              (setq :tnode:source source)
-              (setq treetype (append treetype (list (cons method tnode))))
-              ;; -- check type of method versus superclass
-              (let ((sup-class-meth ()))
-                (let ((cl sup-cls)
-                      (found ()) )
-                  (while (and cl (not found))
-                    (setq found (member method (methods cl))) 
-                    (setq cl (super cl)) )
-                  (when (and cl found)
-                    (setq sup-class-meth
-                          (dhc-alist-get method 
-                                         (dhu-extra 
-                                          (dhc-class-to-dhc-type cl))) ) ) )
-                (when sup-class-meth
-                  ;; Unify arguments
-                  (each ((args-sup (cdr (dhu-extra sup-class-meth)))
-                         (args-sub (cdr (dhu-extra :tnode:type))))
-                    ;; The order of the unification statement is critical!
-                    (dhc-unify-types args-sub args-sup))
-                  ;; Unify return
-                  (dhc-unify-types (dhu-type sup-class-meth)
-                                   (dhu-type :tnode:type))
-                  ;; Unify temps
-                  (if (<> (length (dhu-temps sup-class-meth))
-                          (length (dhu-temps :tnode:type)))
-                      (dhc-error 
-                       "# of temps in method of class and subclass differs"))
-                  (each ((temp-sup (cdr (dhu-temps sup-class-meth)))
-                         (temp-sub (cdr (dhu-temps :tnode:type))))
-                    (let ((tsup (==> temp-sup copy))
-                          (tsub (==> temp-sub copy)))
-                      (dhc-unify-types tsup tsub)
-                      (dhc-unify-types tsub tsup) ) ) ) )
-              ;; -- install into class type
-              (dhc-add-method-to-class-type class-type 
-                                            methodname :tnode:type) ) ) ) )
+        ;; REGULAR METHOD
+        ;; --  install slots in symbol table
+        (let ((symbol-table symbol-table)
+              (slot-list (dhu-temps (dhc-obj-type-from-class cls))))
+          (each ((slot slot-list))
+            (let ((sym (new dhc-symbol (car slot) 0)))
+              (dhc-unify-types (cdr slot) :sym:type)
+              (setq :sym:c-name 
+                    (concat "L1_this->" 
+                            (dhc-lisp-to-c-name (pname (car slot)))) )
+              (setq symbol-table 
+                    (append symbol-table (list (cons (car slot) sym))) ) ) )
+          ;; -- parse
+          (let ((tnode ())
+                (methodname (dhc-lisp-to-c-name (pname method)))
+                (source (funcdef (check==> cls method))) )
+            (when (<> (car source) 'lambda)
+              (dhc-error "Cannot compile method not defined with demethod" method) )
+            (setq source `(lambda(this ,@(cadr source))
+                            (declare (-obj- (,fname)) this)
+                            ,@(dhc-pp-all (cddr source)) ))
+            (setq tnode (dhc-parse-expr-t source))
+            (setq :tnode:source source)
+            (setq treetype (append treetype (list (cons method tnode))))
+            
+            ;; -- checks
+            (if (= method fname)
+                ;; constructor:
+                (progn
+                  ;; -- check that all slots are initialized
+                  (each ((slot slot-list))
+                    (let ((sym (dhc-search-symtable (car slot) symbol-table)))
+                      (if (and (not (==> (cdr slot) is-a-simple))
+                               (= (dhu-access (cdr slot)) 'read) )
+                          (dhc-error (concat "class constructor did not "
+                                             "intialize a slot with complex type")
+                                     (car slot) ) ) ) )
+                  ;; -- insert into class method list
+                  (unode-unify :class-type:u-extra
+                               (new-unode
+                                (append (unode-val :class-type:u-extra)
+                                        (list (cons methodname :tnode:type))))
+                               (lambda (a b) b) ) )
+              ;; method:
+              (progn
+                ;; -- check type of method versus superclass
+                (let ((sup-class-meth ()))
+                  (let ((cl sup-cls)
+                        (found ()) )
+                    (while (and cl (not found))
+                      (setq found (member method (methods cl))) 
+                      (setq cl (super cl)) )
+                    (when (and cl found)
+                      (setq sup-class-meth
+                            (dhc-alist-get method 
+                                           (dhu-extra 
+                                            (dhc-class-to-dhc-type cl))) ) ) )
+                  (when sup-class-meth
+                    ;; Unify arguments
+                    (each ((args-sup (cdr (dhu-extra sup-class-meth)))
+                           (args-sub (cdr (dhu-extra :tnode:type))))
+                      ;; The order of the unification statement is critical!
+                      (dhc-unify-types args-sub args-sup))
+                    ;; Unify return
+                    (dhc-unify-types (dhu-type sup-class-meth)
+                                     (dhu-type :tnode:type))
+                    ;; Unify temps
+                    (if (<> (length (dhu-temps sup-class-meth))
+                            (length (dhu-temps :tnode:type)))
+                        (dhc-error 
+                         "# of temps in method of class and subclass differs"))
+                    (each ((temp-sup (cdr (dhu-temps sup-class-meth)))
+                           (temp-sub (cdr (dhu-temps :tnode:type))))
+                      (let ((tsup (==> temp-sup copy))
+                            (tsub (==> temp-sub copy)))
+                        (dhc-unify-types tsup tsub)
+                        (dhc-unify-types tsub tsup) ) ) ) )
+                ;; -- install into class type
+                (dhc-add-method-to-class-type class-type 
+                                              methodname :tnode:type) ) ) ) ) ) 
       ;; Fini
       (list class-type treetype) ) )
 
@@ -795,7 +774,7 @@
     (setq strlist 
           (dhc-generate-c (or fname "stdout") fsymblist))
     (writing (if indent
-                 (sprintf "| %s -st -gnu -sob -bfda %s" indent
+                 (sprintf "| %s -st -gnu -sob %s" indent
                           (if cfname (concat "> " cfname) "") )
                (or cfname "$stdout") )
       (each ((str strlist))
