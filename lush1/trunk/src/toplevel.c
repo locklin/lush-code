@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.22 2003-05-20 16:05:07 leonb Exp $
+ * $Id: toplevel.c,v 1.23 2003-06-20 19:50:11 leonb Exp $
  **********************************************************************/
 
 
@@ -525,7 +525,9 @@ toplevel(char *in, char *out, char *new_prompt)
   
   exit_flag = 0;
   sav_prompt = prompt_string;
-  until(exit_flag || feof(context->input_file)) {
+  while ( !exit_flag && !feof(context->input_file)) {
+    if (context->input_file == stdin)
+      fflush(stdout);
     if (new_prompt)
       prompt_string = new_prompt;
     else
