@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.27 2003-03-04 17:17:36 leonb Exp $
+ * $Id: module.c,v 1.28 2003-03-04 17:20:22 leonb Exp $
  **********************************************************************/
 
 
@@ -101,6 +101,9 @@ static char* dlerror(void)
 #endif
 #endif
 
+#ifndef DLOPEN
+typedef void* dlopen_handle_t;
+#endif
 
 /* ------ THE MODULE DATA STRUCTURE -------- */
 
@@ -117,9 +120,7 @@ struct module {
   int flags;
   struct module *prev;
   struct module *next;
-#if DLOPEN
   dlopen_handle_t *handle;
-#endif
   char *filename;
   char *initname;
   void *initaddr;
@@ -803,7 +804,7 @@ module_load(char *filename, at *hook)
   /* Load the file */
   if (dlopen)
     {
-#if DLDBFD && DLOPEN
+#if DLDBFD
       if (! (handle = dld_dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
         dynlink_error(new_string(m->filename));
 #elif DLOPEN
