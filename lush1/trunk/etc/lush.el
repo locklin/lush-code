@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.2 2002-07-10 18:56:07 leonb Exp $
+;;; $Id: lush.el,v 1.3 2002-07-15 19:47:40 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -66,6 +66,9 @@
 (put 'demethod 'lisp-indent-function 3)
 (put 'dfmethod 'lisp-indent-function 3)
 (put 'dmmethod 'lisp-indent-function 3)
+(put 'dhm-p 'lisp-indent-function 2)
+(put 'dhm-t 'lisp-indent-function 2)
+(put 'dhm-c 'lisp-indent-function 2)
 
 ;; masquerade cmacro as comments
 (modify-syntax-entry ?# "' 13b" lisp-mode-syntax-table)
@@ -87,7 +90,7 @@
                 "lambda" "flambda" "mlambda" ) t) )
         1)
   (list
-   (concat "(\\(de\\|df\\|dmc\\|dmd\\|dz\\|dm\\|dhm-t\\|dhm-c\\)"
+   (concat "(\\(de\\|df\\|dmc\\|dmd\\|dz\\|dm\\|dhm-p\\|dhm-t\\|dhm-c\\)"
            "[ \t]+\\(\\sw+\\||[^|]+|\\)?")
    '(1 font-lock-keyword-face)
    '(2 font-lock-function-name-face t t) )
