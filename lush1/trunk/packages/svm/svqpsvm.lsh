@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: svqpsvm.lsh,v 1.2 2004-08-24 20:14:29 leonb Exp $
+;;; $Id: svqpsvm.lsh,v 1.3 2004-08-24 21:30:53 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -94,7 +94,7 @@
   (setq verbose t)
   (setq epsgr 1e-8)
   (setq epskt 1e-20)
-  (setq maxst 1e+10)
+  (setq maxst 1e+9)
   () )
 
 (defmethod SvqpSVM set-xy(lx ly)
@@ -122,14 +122,45 @@
     ((-int-) k)
     (idx-gloop ((i)(alpha1 alpha))
       (when (<> (alpha1) 0)
-	(sv k i)
+	(sv k (x i))
 	(a  k (alpha1))
 	(incr k) ) )
     (let ((lsvm (new SVMExpansion kernel sv a)))
       (setq :lsvm:b b)
       (setq :lsvm:positive-class +1)
-      (setq :lsvm:negative-class +1)
+      (setq :lsvm:negative-class -1)
       lsvm ) ) ) 
+
+(defmethod SvqpSVM compute-b()
+  ;; compute threshold
+  (let ((lexp (==> this get-expansion))
+	(lb -1e9)
+	(ub +1e9)
+	(sfree 0)
+	(nfree 0) )
+    ((-double-) lb ub sfree nfree)
+    (setq :lexp:b 0)
+    (idx-gloop ((i)(alpha1 alpha))
+      (let ((v (==> lexp predict (x i)))
+	    (d (y i))
+	    (a (alpha1))
+	    (e (2* epskt)))
+	(if (< (abs a) e)
+	    (if (> d 0)
+		(setq ub (min ub v))
+	      (setq lb (max lb v)) )
+	  (if (> d 0)
+	      (if (> a (- Cp e))
+		  (setq lb (max lb v))
+		(incr nfree)
+		(incr sfree v) )
+	    (if (< a (- e Cn))
+		(setq ub (min ub v))
+	      (incr nfree)
+	      (incr sfree v) ) ) ) ) )
+    (if (> nfree 0)
+	(setq b (/ sfree nfree))
+      (setq b (2/ (+ lb ub))) ) ) )
 
 (defmethod SvqpSVM run-with-alpha()
   (when (<> (idx-dim x 0) (idx-dim y 0))
@@ -170,23 +201,9 @@
     (idx-bloop ((alpha1 alpha))
       (when (<> (alpha1) 0)
 	(incr nsv) ) )
-    ;; compute theshold
-    (let ((lexp (==> this get-expansion))
-	  (lpos 0)(npos 0)
-	  (lneg 0)(nneg 0))
-      (idx-gloop ((i)(alpha1 alpha))
-	(cond
-	 ((> (alpha1) 0)
-	  (incr npos 1)
-	  (incr lpos (==> lexp predict i)) )
-	 ((< (alpha1) 0)
-	  (incr nneg 1)
-	  (incr lneg (==> lexp predict i)) ) ) )
-      (when (<> (+ npos nneg) nsv)
-	(error "internal") )
-      (setq b (2/ (+ (/ lpos npos) (/ lneg nneg))))
-      (+ npos nneg) ) ) )
-
+    ;; compute-b
+    (==> this compute-b)
+    nsv ) )
 
 (defmethod SvqpSVM run()
   (idx-clear alpha)
@@ -223,4 +240,4 @@
 
 (dhc-make ()
 	  (svmprogram svmprogram compute-arow)
-	  (svqpsvm svqpsvm get-nsv get-expansion run-with-alpha) )
+	  (svqpsvm svqpsvm get-nsv get-expansion compute-b run-with-alpha) )
