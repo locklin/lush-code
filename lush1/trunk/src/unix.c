@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.43 2003-07-01 18:41:14 leonb Exp $
+ * $Id: unix.c,v 1.44 2003-07-01 19:07:04 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -125,6 +125,8 @@
 # endif
 #endif
 
+typedef RETSIGTYPE (*SIGHANDLERTYPE)();
+
 /* Lush header files */
 #include "header.h"
 #include "lushmake.h"
@@ -187,7 +189,7 @@ int break_attempt;
 /* goodsignal -- sets signal using POSIX or BSD when available */
 
 void 
-goodsignal(int sig, void *vec)
+goodsignal(int sig, SIGHANDLERTYPE vec)
 {
 #ifdef POSIXSIGNAL
   struct sigaction act;
@@ -201,7 +203,7 @@ goodsignal(int sig, void *vec)
 #endif /* POSIXSIGNAL */
 #ifdef BSDSIGNAL
   struct sigvec act;
-  act.sv_handler = (void*) vec;
+  act.sv_handler = vec;
   sv.sv_mask = 0L;
   sv.sv_flags = 0L;
 #ifdef SV_BSDSIG
@@ -210,14 +212,14 @@ goodsignal(int sig, void *vec)
   sigvec(sig, &act, NULL);
 #endif /* BSDSIGNAL */
 #ifdef SYSVSIGNAL
-  signal(sig,vec);
+  signal(sig, vec);
 #endif /* SYSVSIGNAL */
 }
 
 
 /* quit_irq -- signal handler for QUIT signal */
 
-static void 
+static RETSIGTYPE
 quit_irq(void)
 {
 #ifdef SYSVSIGNAL
@@ -229,7 +231,7 @@ quit_irq(void)
 
 /* break_irq -- signal handler for Control-C */
 
-static void 
+static RETSIGTYPE
 break_irq(void)
 {
   break_attempt = 1;
@@ -288,7 +290,7 @@ lastchance(char *s)
 
 /* gasp_irq -- signal handler for hopeless situations */
 
-static void
+static RETSIGTYPE
 gasp_irq(int sig)
 {
   char buffer[80];
@@ -421,7 +423,7 @@ static int trigger_fds[MAX_TRIGGER_NFDS];
 static void (*trigger_handler)(void);
 
 /* trigger_irq -- signal handler for trigger */
-static void 
+static RETSIGTYPE
 trigger_irq(void)
 {
   if (trigger_handler)
@@ -430,7 +432,7 @@ trigger_irq(void)
     return;
   /* reset trigger signal */
 #ifdef SYSVSIGNAL
-  signal(trigger_signal, (void*) trigger_irq);
+  signal(trigger_signal, (SIGHANDLERTYPE) trigger_irq);
 #endif
 #ifndef BROKEN_ALARM
   if (trigger_mode == MODE_ALARM)
@@ -510,7 +512,7 @@ setup_signal_once(void)
   sigset_t sset;
   struct sigaction sact;
   sact.sa_flags = 0L;
-  sact.sa_handler = (void*)trigger_irq;
+  sact.sa_handler = (SIGHANDLERTYPE)trigger_irq;
 #ifdef SA_BSDSIG
   sact.sa_flags = SA_BSDSIG;
 #endif
@@ -529,7 +531,7 @@ setup_signal_once(void)
 #endif /* POSIXSIGNAL */
 #ifdef BSDSIGNAL
   struct sigvec sv;
-  sv.sv_handler = (void*)trigger_irq;
+  sv.sv_handler = (SIGHANDLERTYPE)trigger_irq;
   sv.sv_mask = 0L;
   sv.sv_flags = 0L;
 #ifdef SV_BSDSIG

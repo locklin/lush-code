@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.33 2003-06-26 15:54:58 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.34 2003-07-01 19:07:00 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -247,6 +247,7 @@ AC_TYPE_MODE_T
 AC_TYPE_OFF_T
 AC_TYPE_SIZE_T
 AC_TYPE_PID_T
+AC_TYPE_SIGNAL
 
 # ----------------------------------------
 # Functions

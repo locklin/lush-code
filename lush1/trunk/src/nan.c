@@ -24,24 +24,27 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.8 2003-07-01 18:41:14 leonb Exp $
+ * $Id: nan.c,v 1.9 2003-07-01 19:07:04 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
 
 #ifdef HAVE_IEEEFP_H
-#include <ieeefp.h>
+# include <ieeefp.h>
 #endif
 #ifdef HAVE_FPU_CONTROL_H
-#include <fpu_control.h>
+# include <fpu_control.h>
 #endif
 #ifdef HAVE_FENV_H
-#include <fenv.h>
+# include <fenv.h>
 #endif
 #ifdef WIN32
-#include <float.h>
+# include <float.h>
 #endif
 #include <signal.h>
+
+typedef RETSIGTYPE (*SIGHANDLERTYPE)();
+
 
 /*================
   The IEEE spec are re-created. 
@@ -379,17 +382,17 @@ fpe_irq(int sig, int num)
   }
 }
 #else
-static void 
+static RETSIGTYPE
 fpe_irq(void)
 {
   if (ieee_present)
     setup_fpu(fpe_inv, fpe_ofl);
-  signal(SIGFPE, (void*)fpe_irq);
+  signal(SIGFPE, (SIGHANDLERTYPE)fpe_irq);
   error(NIL, "Floating exception", NIL);
 }
 #endif
 
-static void 
+static  RETSIGTYPE
 nop_irq(void)
 {
 }
@@ -399,7 +402,7 @@ nop_irq(void)
 
 static int fpe_flag;
 
-static void 
+static RETSIGTYPE
 probe_fpe_irq(void)
 {
 #ifdef WIN32
@@ -421,21 +424,21 @@ set_fpe_irq(void)
     {
       /* Check whether "INV" exception must be masked */
       fpe_flag = 0;
-      signal(SIGFPE, (void*)probe_fpe_irq);
+      signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
       isnanD(3.0 + getnanD());
       if (! fpe_flag) break;
       /* Check whether all exceptions must be masked */
       fpe_flag = 0;
-      signal(SIGFPE, (void*)nop_irq);
+      signal(SIGFPE, (SIGHANDLERTYPE)nop_irq);
       setup_fpu(FALSE,TRUE);
-      signal(SIGFPE, (void*)probe_fpe_irq);
+      signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
       isnanD(3.0 + getnanD());
       if (! fpe_flag) break;
       /* Check whether signal must be ignored */
       fpe_flag = 0;
-      signal(SIGFPE, (void*)nop_irq);
+      signal(SIGFPE, (SIGHANDLERTYPE)nop_irq);
       setup_fpu(FALSE,FALSE);
-      signal(SIGFPE, (void*)probe_fpe_irq);
+      signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
       isnanD(3.0 + getnanD());
       if (! fpe_flag) break;
       /* Disable FPE signal at OS level.
@@ -443,11 +446,11 @@ set_fpe_irq(void)
        * but Linux forces sigfpe anyway.
        */
       fpe_flag = 0;
-      signal(SIGFPE, (void*)nop_irq);
+      signal(SIGFPE, (SIGHANDLERTYPE)nop_irq);
       return;
     }
   /* We can now setup the real fpe handler */
-  signal(SIGFPE, (void*)fpe_irq);
+  signal(SIGFPE, (SIGHANDLERTYPE)fpe_irq);
 #ifdef HAVE_IEEE_HANDLER
   ieee_handler("set","common",fpe_irq);
 #endif
