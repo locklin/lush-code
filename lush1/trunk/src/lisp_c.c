@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.6 2002-07-03 18:25:00 leonb Exp $
+ * $Id: lisp_c.c,v 1.7 2002-07-05 14:57:08 leonb Exp $
  **********************************************************************/
 
 
@@ -33,36 +33,38 @@
 #include "check_func.h"
 #include "dh.h"
 
-#if 1
-void run_time_error(char *s) { error(NIL,"s",NIL); }
-int  lside_mark_unlinked(gptr g) { return 0; }
-int  lside_check_ownership(void *cptr) { return 1; }
-void lside_destroy_item(gptr g) {}
-void init_lisp_c(void) {} 
-at * dh_listeval(at *p, at *q) { return NIL; }
-#else
+#if HAVE_LIBBFD
+# define DLDBFD 1
+# include "dldbfd.h"
+#endif
 
-extern int storage_to_dht[];
-extern int dht_to_storage[];
+/* From symbol.c */
 extern at *at_true;
 
-
+/* Forward */
 static void update_c_from_lisp();
 static void update_lisp_from_c();
 static at *dharg_to_at();
 static void at_to_dharg();
+
+/* Flags */
 static int dont_track_cside = 0;
 static int dont_warn = 0;
 
 
-int storage_to_dht[ST_LAST];
-int dht_to_storage[DHT_LAST];
+
+/* -----------------------------------------
+   STORAGE TYPE <-> DHT TYPE
+   ----------------------------------------- */
+
+static int storage_to_dht[ST_LAST];
+static int dht_to_storage[DHT_LAST];
+
 
 void
 init_storage_to_dht(void) 
 {
   int i;
-  
   for(i=0;i<ST_LAST;i++)
     storage_to_dht[i] = -1;
   for(i=0;i<DHT_LAST;i++)
@@ -808,7 +810,7 @@ avl_pnode(avlnode *n)
     sprintf(string_buffer,"%-16s ","list");
   else if (n->cinfo == CINFO_OBJ)
     sprintf(string_buffer,"obj:%-12s ",
-            ((dhclassconstraint*)(n->cmoreinfo))->lispdata.name+8);
+            ((dhclassdoc_t*)(n->cmoreinfo))->lispdata.lname);
   else if (n->cinfo == CINFO_UNLINKED)
     sprintf(string_buffer,"%-16s ","unlinked");
   else	
@@ -985,7 +987,7 @@ alloc_idx(int ndim)
 /* alloc_obj -- allocate an object */
 
 static avlnode *
-alloc_obj(dhclassconstraint *classdoc)
+alloc_obj(dhclassdoc_t *classdoc)
 {
   /* Object allocation is plain vanilla :-)
    */
@@ -995,7 +997,7 @@ alloc_obj(dhclassconstraint *classdoc)
   if (!cptr) 
     error(NIL,"Out of memory",NIL);
   memset(cptr,0,classdoc->lispdata.size);
-  *((void**)cptr) = (void*)(classdoc->lispdata.method_table);
+  *((void**)cptr) = (void*)(classdoc->lispdata.vtable);
   n = avl_add(cptr);
   if (n==0)
     error(NIL,"lisp_c internal: cannot add element to item map",NIL);
@@ -1131,8 +1133,7 @@ lside_create_obj(at *p)
   avlnode *n;
   struct oostruct *object;
   class *objcl;
-  union function *cfunc;
-  dhclassconstraint *classdoc;
+  dhclassdoc_t *classdoc;
   void *cptr;
 
   /* check type */
@@ -1151,19 +1152,14 @@ lside_create_obj(at *p)
     {
       /* get compiled class */
       objcl = p->Class;
-      while (objcl && !objcl->at_cclass)
+      while (objcl && !objcl->classdoc)
         objcl = objcl->super;
       ifn (objcl)
         error(NIL,"This is not an instance of a compiled class",p);        
       /* get and check classdoc */
-      cfunc = objcl->at_cclass->Object;
-      classdoc = cfunc->cfunc.address;
-      if (classdoc == NIL)
-        error(NIL,"Object's class was never loaded",p);
-      if (classdoc == (dhclassconstraint*)dynlink_gone)
-        error(NIL,"Object's class has been unlinked",p);
-      if (classdoc == (dhclassconstraint*)dynlink_partial)
-        error(NIL,"Object's class belong to a partially linked module",p);
+      if (CONSP(objcl->priminame))
+        check_primitive(objcl->priminame);
+      classdoc = objcl->classdoc;
       /* allocate object */
       n = alloc_obj(classdoc);
       cptr = n->citem;
@@ -1194,9 +1190,9 @@ lside_create_str(at *p)
   struct string *str;
   struct srg *srg;
     
-  ifn (p && p->ctype==XT_STRING)
+  ifn (EXTERNP(p, &string_class))
     error(NIL,"String expected",p);
-
+  
   str = p->Object;
   if (str->cptr)
     {
@@ -1305,20 +1301,19 @@ DX(xgptr)
 {
   at *p;
   avlnode *n;
-  void *cptr;
     
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
   if (p==0)
     return NIL;
-  else if (p->ctype==XT_INDEX)
-    n = lside_create_idx(p,DHT_WRITE);
-  else if (p->ctype==XT_OBJECT)
+  else if (EXTERNP(p, &index_class))
+    n = lside_create_idx(p);
+  else if (p && (p->flags & X_OOSTRUCT))
     n = lside_create_obj(p);
   else if (storagep(p))
     n = lside_create_srg(p);
-  else if (p->ctype==XT_STRING)
+  else if (EXTERNP(p, &string_class))
     n = lside_create_str(p);
   else
     error(NIL,"Cannot create compiled version of this lisp object",p);
@@ -1366,7 +1361,7 @@ cside_create_srg(void *cptr)
 /* cside_create_obj -- call this when creating an object from C code */
 
 void 
-cside_create_obj(void *cptr, dhclassconstraint *kname)
+cside_create_obj(void *cptr, dhclassdoc_t *kname)
 {
   if (!dont_track_cside)
     {
@@ -1397,28 +1392,21 @@ cside_create_str(void *cptr)
 }
 
 
-/* transmute_object_into_alert -- trick a lisp object into a string */
-    
+/* transmute_object_into_gptr -- 
+   trick a lisp object into a gptr */
+
 static void
 transmute_object_into_gptr(at *p, void *px)
-     at *p;
-     void *px;
 {
-  if (p->count>0)
+  /* This is bad practice */
+  if (p && p->count>0 && (p->flags & C_EXTERN))
     {
-      /* This is very audacious (do not replicate) */
-      extern class gptr_class;
+      /* clean object up */
       (*p->Class->self_dispose)(p);
-      p->Class = &gptr_class;
-      p->flags = C_GPTR;
-      p->ctype = XT_GPTR;
+      /* disguise it as a gptr */
+      p->flags &= ~(C_CONS|C_EXTERN|C_NUMBER);
+      p->flags |= C_GPTR;
       p->Gptr = px;
-      if (p->Slots) 
-        {
-          register struct oostruct *s = p->Slots;
-          UNLOCK(s->class);
-          s->class = NIL;
-        }
     }
 }
 
@@ -1446,7 +1434,7 @@ cside_destroy_node(avlnode *n)
           update_lisp_from_c(n);
           break;
         case CINFO_OBJ:
-          n->litem->Slots->cptr = 0;
+          ((struct oostruct*)(n->litem->Object))->cptr = 0;
           transmute_object_into_gptr(n->litem, n->citem);
           break;
         case CINFO_IDX:
@@ -1642,19 +1630,15 @@ make_lisp_from_c(avlnode *n, void *px)
       {
         at *cl;
         at *atobj;
-        struct oostruct *object;
-        dhclassconstraint *classdoc = n->cmoreinfo;
-        /* Use the name of the class to build the object :-( */
-        atobj = named((classdoc->lispdata.name)+8);
-        cl = var_get(atobj);
-        UNLOCK(atobj);
-        /* Build the object */
-        object = new_oostruct(cl,0);
-        atobj = new_extern(cl->Object,NIL,XT_OBJECT);
-        atobj->Slots = object;
+        dhclassdoc_t *classdoc = n->cmoreinfo;
+        /* Create object */
+        if (! (cl = classdoc->lispdata.atclass))
+          error(NIL,"lisp_c internal: "
+                "classdoc appears to be uninitialized",NIL);
+        atobj = new_oostruct(cl);
         /* Update avlnode */
         n->litem = atobj;
-        object->cptr = n->citem;
+        ((struct oostruct*)(atobj->Object))->cptr = n->citem;
         avlchain_set(n, &dummy_upds);
         /* Update object */
         update_lisp_from_c(n);
@@ -1687,9 +1671,11 @@ make_lisp_from_c(avlnode *n, void *px)
         dharg *arg = srg->data;
         dhrecord *drec = n->cmoreinfo;
         if (drec==0 || drec->op!=DHT_LIST)
-          error(NIL,"lisp_c internal: untyped list made it to make-lisp-from-c\n");
+          error(NIL,"lisp_c internal: "
+                "untyped list made it to make-lisp-from-c",NIL);
         if (drec->ndim != srg->size)
-          error(NIL,"lisp_c internal: list changed size\n");
+          error(NIL,"lisp_c internal: "
+                "list changed size",NIL);
         drec++;
         for (i=0; i<srg->size; i++)
           {
@@ -1701,7 +1687,8 @@ make_lisp_from_c(avlnode *n, void *px)
         return p;
       }
     default:
-      error(NIL,"lisp_c internal: strange type in avl map",NIL);
+      error(NIL,"lisp_c internal: "
+            "strange type in avl map",NIL);
     }
 }
 
@@ -1808,12 +1795,10 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
   avlnode *n;
   struct srg *srg;
   struct storage *st;
-  struct string *str;
   struct index *ind;
-  dhclassconstraint *cdoc;
+  dhclassdoc_t *cdoc;
   dharg *larg;
   class *cl;
-  union function *cfunc;
   at *p;
   int i;
 
@@ -1822,7 +1807,7 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     case DHT_FLT:
       if (!at_obj)
         arg->dh_flt = 0;
-      else if (at_obj->ctype==XT_NUMBER)
+      else if (at_obj->flags & C_NUMBER)
         arg->dh_flt = (flt) at_obj->Number; 
       else
         lisp2c_error("FLT expected",errctx,at_obj);
@@ -1830,17 +1815,16 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     case DHT_REAL:
       if (!at_obj)
         arg->dh_real = 0;
-      else if (at_obj->ctype==XT_NUMBER)
+      else if (at_obj->flags & C_NUMBER)
         arg->dh_real = (real) at_obj->Number; 
       else
         lisp2c_error("REAL expected",errctx,at_obj);
       return;
-
     case DHT_INT:
       if (!at_obj)
         arg->dh_int = 0;
-      else if (at_obj->ctype==XT_NUMBER 
-               && (int)(at_obj->Number)==at_obj->Number)
+      else if ((at_obj->flags & C_NUMBER) && 
+               (at_obj->Number == (int)(at_obj->Number)) )
         arg->dh_int = (int) at_obj->Number; 
       else
         lisp2c_error("INT expected",errctx,at_obj);
@@ -1848,8 +1832,8 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     case DHT_SHORT:
       if(!at_obj)
         arg->dh_short = 0;
-      else if (at_obj->ctype==XT_NUMBER 
-               && (short)(at_obj->Number)==at_obj->Number)
+      else if ((at_obj->flags & C_NUMBER) &&
+               (at_obj->Number == (short)(at_obj->Number)) )
         arg->dh_short = (short) at_obj->Number; 
       else
         lisp2c_error("SHORT expected",errctx,at_obj);
@@ -1857,8 +1841,8 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     case DHT_BYTE:
       if(!at_obj)
         arg->dh_char = 0;
-      else if (at_obj->ctype==XT_NUMBER 
-               && (char)(at_obj->Number)==at_obj->Number)
+      else if ((at_obj->flags & C_NUMBER) &&
+               (at_obj->Number == (char)(at_obj->Number)) )
         arg->dh_char = (char) at_obj->Number; 
       else
         lisp2c_error("BYTE expected",errctx,at_obj);
@@ -1866,29 +1850,26 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     case DHT_UBYTE:
       if(!at_obj)
         arg->dh_uchar = 0;
-      else if (at_obj->ctype==XT_NUMBER 
-               && (unsigned char)(at_obj->Number)==at_obj->Number)
+      else if ((at_obj->flags & C_NUMBER) &&
+               (at_obj->Number == (unsigned char)(at_obj->Number)) )
         arg->dh_uchar = (unsigned char) at_obj->Number; 
       else
         lisp2c_error("UBYTE expected",errctx,at_obj);
       return;
-
     case DHT_GPTR:
       if (at_obj == 0)
         arg->dh_gptr = (gptr) 0;
-      else if (at_obj->ctype == XT_GPTR) 
+      else if (at_obj->flags & C_GPTR)
         arg->dh_gptr = (gptr) at_obj->Gptr;             
       else
         lisp2c_error("GPTR expected",errctx,at_obj);
       return;
-        
     case DHT_NIL:
       if (at_obj == 0)
         arg->dh_char = (char) 0;
       else
         lisp2c_error("NIL expected",errctx,at_obj);
       return;
-        
     case DHT_BOOL:
       if (at_obj == 0)
         arg->dh_char = 0;
@@ -1897,7 +1878,6 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
       else
         lisp2c_error("BOOL expected",errctx,at_obj);
       return;
-
     case DHT_SRG:
       if (at_obj == 0)
         {
@@ -1905,7 +1885,7 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           arg->dh_srg_ptr = 0;
           return;
         }
-      if (at_obj && at_obj->ctype==XT_GPTR)
+      if (GPTRP(at_obj))
         {
           if (!dont_track_cside) 
             lisp2c_warning("(in): found GPTR instead of SRG", errctx);
@@ -1918,13 +1898,13 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
       st = at_obj->Object;
       if (storage_to_dht[st->srg.type] != (drec+1)->op)
         lisp2c_error("STORAGE has illegal type",errctx,at_obj);
-      if ((st->srg.flags & STF_RDONLY) && (drec->access == DHT_WRITE))
+      if ((st->srg.flags & STF_RDONLY) && 
+          (drec->access == DHT_WRITE) )
         lisp2c_error("STORAGE is read only",errctx,at_obj);                
       /* create object */
       n = lside_create_srg(at_obj);
       (arg->dh_srg_ptr) = (struct srg *)(n->citem);
       return;
-        
     case DHT_IDX:
       if (at_obj == 0)
         {
@@ -1932,23 +1912,26 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           arg->dh_idx_ptr = 0;
           return;
         }
-      if (at_obj && at_obj->ctype==XT_GPTR)
+      if (GPTRP(at_obj))
         {
           if (!dont_track_cside) 
             lisp2c_warning("(in): found GPTR instead of IDX", errctx);
           arg->dh_idx_ptr = at_obj->Gptr;
           return;
         }
-      if(at_obj->ctype != XT_INDEX)
+      if(! EXTERNP(at_obj, &index_class))
         lisp2c_error("IDX expected",errctx,at_obj);
       /* check type and access */
       ind = at_obj->Object;
       if (ind->ndim != drec->ndim)
-        lisp2c_error("INDEX has wrong number of dimensions",errctx,at_obj);
+        lisp2c_error("INDEX has wrong number of dimensions",
+                     errctx, at_obj);
       if (storage_to_dht[ind->st->srg.type] != (drec+2)->op)
-        lisp2c_error("INDEX is defined on STORAGE of wrong type",errctx,at_obj);
-      if ((ind->st->srg.flags & STF_RDONLY) && (drec->access == DHT_WRITE))
-        lisp2c_error("INDEX is read only",errctx,at_obj);            
+        lisp2c_error("INDEX is defined on STORAGE of wrong type",
+                     errctx, at_obj);
+      if ((ind->st->srg.flags & STF_RDONLY) && 
+          (drec->access == DHT_WRITE))
+        lisp2c_error("INDEX is read only", errctx, at_obj);            
       /* create object */
       n = lside_create_idx(at_obj);
       (arg->dh_idx_ptr) = (struct idx *)(n->citem);
@@ -1961,28 +1944,24 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           arg->dh_obj_ptr = 0;
           return;
         }
-      if (at_obj && at_obj->ctype==XT_GPTR)
+      if (at_obj->flags & C_GPTR)
         {
           if (!dont_track_cside)
             lisp2c_warning("(in): found GPTR instead of OBJ", errctx);
           arg->dh_obj_ptr = at_obj->Gptr;
           return;
         }
-      if (at_obj->ctype!=XT_OBJECT)
-        lisp2c_error("OBJECT expected",errctx,at_obj);
+      if (at_obj->flags & X_OOSTRUCT)
+        lisp2c_error("OBJECT expected", errctx, at_obj);
       /* check type */
       for (cl = at_obj->Class; cl; cl=cl->super)
-        if (cl->at_cclass)
-          {
-            cfunc = cl->at_cclass->Object;
-            cdoc = (dhclassconstraint*)(cfunc->cfunc.address);
-            if (cdoc == (dhclassconstraint*)(drec->name))
-              break;
-          }
+        if ((cdoc = cl->classdoc))
+          if (cdoc == (dhclassdoc_t*)(drec->arg))
+            break;
       if (cl==NULL)
         lisp2c_error("OBJECT has illegal type",errctx,at_obj);
       /* create object */
-      n = lside_create_obj(at_obj,cdoc);
+      n = lside_create_obj(at_obj);
       (arg->dh_obj_ptr) = n->citem;
       return;
         
@@ -1993,14 +1972,14 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           arg->dh_srg_ptr = 0;
           return;
         }
-      if (at_obj && at_obj->ctype==XT_GPTR)
+      if (GPTRP(at_obj))
         {
           if (!dont_track_cside)
             lisp2c_warning("(in): found GPTR instead of STR", errctx);
           arg->dh_srg_ptr = at_obj->Gptr;
           return;
         }
-      if(at_obj->ctype != XT_STRING)
+      if (! EXTERNP(at_obj, &string_class))
         lisp2c_error("STRING expected",errctx,at_obj);
       n = lside_create_str(at_obj);
       (arg->dh_srg_ptr) = n->citem;
@@ -2010,7 +1989,7 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
       /* Create and *initialize* the SRG:
        * UPDATE_C_FROM_LISP does nothing. 
        * This is an exception to the general rule
-       * because STR and LIST are partially supported.
+       * because STRs and compiled LISTs are immutable.
        */
       if (at_obj == 0)
         {
@@ -2018,15 +1997,15 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
           arg->dh_srg_ptr = 0;
           return;
         }
-      if (at_obj && at_obj->ctype==XT_GPTR)
+      if (at_obj->flags & C_GPTR)
         {
           if (!dont_track_cside) 
             lisp2c_warning("(in): found GPTR instead of LIST", errctx);
           arg->dh_srg_ptr = at_obj->Gptr;
           return;
         }
-      if(at_obj->ctype != XT_CONS)
-        lisp2c_error("LIST expected",errctx,at_obj);
+      if (! (at_obj->flags & C_CONS))
+        lisp2c_error("LIST expected", errctx, at_obj);
       if(length(at_obj) != drec->ndim)
         lisp2c_error("LIST length do not match",errctx,at_obj);
       /* create D storage for the list */
@@ -2179,7 +2158,8 @@ update_c_from_lisp(avlnode *n)
           storage_write_srg(st); 
             
         /* Synchronize compiled object */
-        if ((n->belong == BELONG_C) && (cptr->flags & STS_MALLOC))
+        if ((n->belong == BELONG_C) && 
+            (cptr->flags & STS_MALLOC) )
           {
             /* C allocated SRG manage their own data block */
             int bytes;
@@ -2233,12 +2213,12 @@ update_c_from_lisp(avlnode *n)
     case CINFO_OBJ:
       {
         void *cptr = n->citem;
-        struct oostruct *object = n->litem->Slots;
-        dhclassconstraint *cdoc, *super, *class_list[1024];
+        struct oostruct *object = n->litem->Object;
+        dhclassdoc_t *cdoc, *super, *class_list[1024];
         dhrecord *drec;
         dharg tmparg;
         int k,j,sl;
-            
+        
         if (object==0)
           /* happens during call to the destructor */
           return;
@@ -2251,7 +2231,7 @@ update_c_from_lisp(avlnode *n)
           {
             class_list[k++] = super;
             sl += super->argdata->ndim;
-            super = super->lispdata.super;
+            super = super->lispdata.ksuper;
           }
         if (sl > object->size)
           error(NIL,"lisp_c internal: class slot mismatch",n->litem);
@@ -2264,14 +2244,16 @@ update_c_from_lisp(avlnode *n)
             while (--j>=0)
               {
                 /* quick check of slot name */
+                char *pos;
                 struct symbol *symb = object->slots[sl].symb->Object;
                 if (symb->name->name[0] != drec->name[0])
                   error(NIL,"lisp_c internal : object slot mismatch",n->litem);
                 /* copy field described by current record */
                 at_to_dharg(object->slots[sl].val,&tmparg,drec+1,n->litem);
-                dharg_to_address(&tmparg, (char*)cptr + drec->hashcode, drec+1);
+                pos = (char*)cptr + (unsigned int)(drec->arg);
+                dharg_to_address(&tmparg, pos, drec+1);
                 /* next record */
-                drec = (drec+1)->end;
+                drec = drec->end;
                 sl -= 1;
               }
           }
@@ -2374,8 +2356,8 @@ update_lisp_from_c(avlnode *n)
     case CINFO_OBJ:
       {
         void *cptr = n->citem;
-        struct oostruct *object = n->litem->Slots;
-        dhclassconstraint *cdoc, *super, *class_list[1024];
+        struct oostruct *object = n->litem->Object;
+        dhclassdoc_t *cdoc, *super, *class_list[1024];
         dhrecord *drec;
         dharg tmparg;
         int k,j,sl;
@@ -2394,7 +2376,7 @@ update_lisp_from_c(avlnode *n)
           {
             class_list[k++] = super;
             sl += super->argdata->ndim;
-            super = super->lispdata.super;
+            super = super->lispdata.ksuper;
           }
         if (sl > object->size)
           error(NIL,"lisp_c internal: class slot mismatch",n->litem);
@@ -2407,17 +2389,19 @@ update_lisp_from_c(avlnode *n)
             while (--j>=0)
               {
                 /* quick check of slot name */
+                char *pos;
                 struct symbol *symb = object->slots[sl].symb->Object;
                 if (symb->name->name[0] != drec->name[0])
                   error(NIL,"lisp_c internal : object slot mismatch",n->litem);
                 /* copy field described by current record */
-                address_to_dharg((char*)cptr + drec->hashcode, &tmparg, drec+1);
+                pos = (char*)cptr + (unsigned int)(drec->arg);
+                address_to_dharg(&tmparg, pos, drec+1);
                 orig = object->slots[sl].val;
-                new = dharg_to_at(&tmparg,drec+1,n->litem);
+                new = dharg_to_at(&tmparg, drec+1, n->litem);
                 object->slots[sl].val = new;
                 DELAYED_UNLOCK(new, orig);
                 /* next record */
-                drec = (drec+1)->end;
+                drec = drec->end;
                 sl -= 1;
               }
           }
@@ -2445,34 +2429,26 @@ update_lisp_from_c(avlnode *n)
 
 /* cclass_instance -- builds an object for a compiled class */
 
-at *
+static at *
 cclass_instance(at *atcl)
 {
-  at *p;
   at *atobj;
   class *cl;
   avlnode *n;
-  union function *cfunc;
-  dhclassconstraint *dhdoc;
+  dhclassdoc_t *dhdoc;
   struct oostruct *object;
-    
+  
+  if (! EXTERNP(atcl, &class_class))
+    error(NIL,"Not a class",atcl);    
   cl = atcl->Object;
-  p = cl->at_cclass;
-  ifn (p && p->ctype==XT_CCLASS)
-    error(NIL,"Not a compiled class",cl);
-  cfunc = p->Object;
-  dhdoc = cfunc->cfunc.address;
-  if(dhdoc== (dhclassconstraint *) NIL)
-    error(NIL, "Class was never loaded", p);
-  if(dhdoc== (dhclassconstraint *) dynlink_gone)
-    error(NIL, "This Class has been unlinked", p);
-  if(dhdoc== (dhclassconstraint *) dynlink_partial)
-    error(NIL, "This Class belong to a partially linked module", p);
+  if (! (dhdoc = cl->classdoc))
+    error(NIL,"Not a compiled class",atcl);
+  if (CONSP(cl->priminame))
+    check_primitive(cl->priminame);
   /* Build the object */
   n = alloc_obj(dhdoc);
-  object = new_oostruct(atcl,0);
-  atobj = new_extern(cl,NIL,XT_OBJECT);
-  atobj->Slots = object;
+  atobj = new_oostruct(atcl);
+  object = atobj->Object;
   /* Update avlnode */
   object->cptr = n->citem;
   n->litem = atobj;
@@ -2505,7 +2481,7 @@ build_at_temporary(dhrecord *drec, dharg *arg)
       }
     case DHT_OBJ:
       {
-        dhclassconstraint *classdoc = (dhclassconstraint*)(drec->name);
+        dhclassdoc_t *classdoc = (dhclassdoc_t*)(drec->arg);
         avlnode *n = alloc_obj(classdoc);
         arg->dh_obj_ptr = n->citem;
         avlchain_set(n, &dummy_tmps);
@@ -2590,6 +2566,7 @@ wipe_out_temps(void)
   while (dummy_tmps.chnxt != &dummy_tmps)
     {
       void *cptr;
+      dhclassdoc_t *cdoc;
       avlnode *n = dummy_tmps.chnxt;
 
       if (n->belong!=BELONG_LISP  || n->litem!=0)
@@ -2603,13 +2580,14 @@ wipe_out_temps(void)
           break;
         case CINFO_OBJ:
           /* this horrible hack is used for freeing temporary pools */
-          if (!strcmp("pool", ((dhclassconstraint*)(n->cmoreinfo))->lispdata.name+8))
+          cdoc = n->cmoreinfo;
+          if (!strcmp("pool", cdoc->lispdata.cname))
             {
-#ifndef DLD
-              CClass_pool_free(cptr);
-#else
-              void (*func)() = (void*)dld_get_func("CClass_pool_free");
+#if DLDBFD
+              void (*func)() = (void*)dld_get_func("C_free_C_pool");
               if (func) (*func)(cptr);
+#else
+              C_free_C_pool(cptr);
 #endif
             }
           break;
@@ -2651,7 +2629,8 @@ at *
 dh_listeval(at *p, at *q)
 {
 #define MAXARGS 1024
-  dhconstraint *kname;
+  dhdoc_t *kname;
+  struct cfunction *cfunc;
   dhrecord *drec;
   at *atgs[MAXARGS];
   dharg args[MAXARGS];
@@ -2663,20 +2642,20 @@ dh_listeval(at *p, at *q)
   int i;
     
   /* Find and check the DHDOC */
-  kname = ((union function *) p->Object)->cfunc.address;
-#ifdef DLD
-  dld_check_dh(kname);
-#endif
+  cfunc = p->Object;
+  kname = cfunc->info;
   drec = kname->argdata;
   if(drec->op != DHT_FUNC)
-    error(NIL, "DHDOC is not a function!", NIL);
-    
+    error(NIL, "(lisp_c) a function dhdoc was expected", NIL);
+  if (CONSP(cfunc->name))
+    check_primitive(cfunc->name);
+  
   /* Count the arguments */
   nargs = drec->ndim;
   ntemps = ((dhrecord *) drec->name)->ndim;
   if ( nargs + ntemps > MAXARGS)
     error(NIL,"(lisp_c) too many arguments and temporaries",NIL);
-
+  
   /* Copy and evaluate arguments list */
   for(i=0; i<nargs; i++) {
     q = q->Cdr;
@@ -2690,21 +2669,26 @@ dh_listeval(at *p, at *q)
   /* Make compiled version of the arguments */
   for (i=0, drec= drec+1; i<nargs; i++)
     {
-      if (!atgs[i] && drec->op!=DHT_NIL && drec->op!=DHT_GPTR && drec->op!=DHT_BOOL)
+      if (!atgs[i] && 
+          drec->op!=DHT_NIL && 
+          drec->op!=DHT_GPTR && 
+          drec->op!=DHT_BOOL)
         error(NIL,"(lisp_c) illegal nil argument",NIL);
       at_to_dharg(atgs[i], &args[i], drec, NIL);
       drec = drec->end;
     }
-
+  
   /* Prepare temporaries */
-  if(ntemps!= 0) {
-    drec++;
-    for(i=nargs; i<nargs+ntemps; i++) {
-      build_at_temporary(drec, &args[i]);
-      drec = drec->end;
+  if (ntemps != 0) 
+    {
+      drec++;
+      for(i=nargs; i<nargs+ntemps; i++) 
+        {
+          build_at_temporary(drec, &args[i]);
+          drec = drec->end;
+        }
+      drec++;
     }
-    drec++;
-  }
     
   /* Synchronize all compiled objects */
   set_update_flag();
@@ -2722,8 +2706,8 @@ dh_listeval(at *p, at *q)
     {
       run_time_error_flag = 1;
       /* Call the test function if it exists */
-      if (kname->lispdata.test_name)
-        (*kname->lispdata.test_name->lispdata.call)(args-1);
+      if (kname->lispdata.dhtest)
+        (*kname->lispdata.dhtest->lispdata.call)(args-1);
       /* Call to the function */
       funcret = (*kname->lispdata.call)(args-1);
     }
@@ -2734,6 +2718,7 @@ dh_listeval(at *p, at *q)
   set_update_flag();
     
   /* Build return value */
+  atfuncret = NIL;
   if (!errflag)
     {
       if (drec->op != DHT_RETURN)
@@ -2779,7 +2764,7 @@ DX(xobj)
       break;
     case 2:
       p = APOINTER(1);
-      ifn (p && p->ctype==XT_CLASS)
+      if (! EXTERNP(p, &class_class))
         error(NIL,"not a class",p);
       cl = p->Object;
       p = APOINTER(2);
@@ -2880,4 +2865,3 @@ init_lisp_c(void)
   dx_define("obj", xobj);
 }
 
-#endif

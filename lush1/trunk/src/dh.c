@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.2 2002-07-03 18:25:00 leonb Exp $
+ * $Id: dh.c,v 1.3 2002-07-05 14:57:08 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -503,7 +503,7 @@ dhinfo_record(dhrecord *drec)
       p = dhinfo_chain(drec1, drec->ndim, dhinfo_record);
       while (drec1->op == DHT_NAME)
         drec1 = drec1->end;
-      q = dhinfo_chain(drec1, cdoc->lispdata.nmethods, dhinfo_record);
+      q = dhinfo_chain(drec1, cdoc->lispdata.nmet, dhinfo_record);
       p = cons(p, cons( q, NIL));
       q = NIL;
       if (cdoc->lispdata.ksuper)
@@ -647,21 +647,28 @@ DX(xclassinfo_c)
    CLASSDOC FOR OBJECT CLASS
    --------------------------------------------- */
 
-
-DHCLASSDOC(Kc_object, NULL, 
-           "object", "object", 
-           "Vt_object", 0) = 
-{ 
-  DH_CLASS(0, Kc_object), 
-  DH_END_CLASS, 
-  DH_NIL 
-};
+dhclassdoc_t Kc_object;
 
 struct VClass_object {
   dhclassdoc_t *Cdoc;
 } Vt_object = {
   &Kc_object,
 };
+
+struct CClass_object {
+  struct VClass_object *Vtbl;
+};
+
+DHCLASSDOC(Kc_object, 
+           NULL, 
+           object, "object", 
+           Vt_object, 0) =
+{ 
+  DH_CLASS(0, Kc_object), 
+  DH_END_CLASS, 
+  DH_NIL 
+};
+
 
 
 /* ---------------------------------------------

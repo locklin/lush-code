@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.7 2002-07-03 18:24:54 leonb Exp $
+ * $Id: dh.h,v 1.8 2002-07-05 14:57:05 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -250,8 +250,8 @@ struct dhdoc_s
 /* Names associated with a class
  * -----------------------------
  *
- * struct Cclass_name:  structure representing instances (macro DHCLASSDOC)
- * struct Vclass_name:  structure representing vtable 
+ * struct CClass_name:  structure representing instances (macro DHCLASSDOC)
+ * struct VClass_name:  structure representing vtable 
  * Vt_name_Rxxxxxxxx:   vtable for the class (VClass_name)
  * Kc_name_Rxxxxxxxx:   dhclassdoc for the class
  *
@@ -279,7 +279,10 @@ struct dhclassdoc_s
                                    (V_name_Rxxxxxxxx) */
     char *k_name;               /* string with the name of the classdoc 
                                    (K_name_Rxxxxxxxx) */
-    int nmethods;               /* number of methods */
+    int size;                   /* data size */
+    int nmet;                   /* number of methods */
+    void *vtable;               /* virtual table pointer */
+    
 #ifndef NOLISP
     at *atclass;                /* lisp object for this class */
     char atlocked;              /* lisp object temporarily overlocked */
@@ -289,11 +292,12 @@ struct dhclassdoc_s
 
 #ifndef NOLISP
 
-#define DHCLASSDOC(Kname,superKname,LnameStr,CnameStr,VnameStr,nmet) \
+#define DHCLASSDOC(Kname,superKname,Cname,LnameStr,Vname,nmet) \
   static dhrecord name2(K,Kname)[]; \
   dhclassdoc_t Kname = { name2(K,Kname), \
-   { superKname, LnameStr, CnameStr, VnameStr, \
-     enclose_in_string(Kname), nmet } }; \
+   { superKname, LnameStr, enclose_in_string(Cname), \
+     enclose_in_string(VnameStr), enclose_in_string(Kname), \
+     sizeof(struct name2(CClass_,Cname)), nmet, &Vname } }; \
   static dhrecord name2(K,Kname)[]
 
 #endif
