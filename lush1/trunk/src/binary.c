@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.11 2002-07-02 19:56:38 leonb Exp $
+ * $Id: binary.c,v 1.12 2002-07-07 02:02:59 leonb Exp $
  **********************************************************************/
 
 
@@ -283,11 +283,12 @@ sweep(at *p, int code)
     {
       class *s = p->Object;
       sweep(s->priminame, code);
-      if (s->atsuper) {
-	sweep(s->atsuper, code);
-	sweep(s->keylist, code);
-	sweep(s->defaults, code);
-      }
+      if (s->atsuper && !s->classdoc) 
+        {
+          sweep(s->atsuper, code);
+          sweep(s->keylist, code);
+          sweep(s->defaults, code);
+        }
       sweep(s->methods, code);
     }
   
@@ -308,17 +309,18 @@ sweep(at *p, int code)
           }
     }
   
-  else if (   p->Class == &de_class
-	   || p->Class == &df_class
-	   || p->Class == &dm_class )
+  else if (p->Class == &de_class ||
+	   p->Class == &df_class ||
+           p->Class == &dm_class )
     {
       struct lfunction *c = p->Object;
       sweep(c->formal_arg_list, code);
       sweep(c->evaluable_list, code);
     }
   
-  else if (   p->Class == &dx_class
-	   || p->Class == &dy_class )
+  else if (p->Class == &dx_class ||
+	   p->Class == &dy_class ||
+           p->Class == &dh_class )
     {
       struct cfunction *c = p->Object;
       sweep(c->name, code);
@@ -867,7 +869,7 @@ local_write(at *p)
   if (p->Class == &class_class)
     {
       struct class *c = p->Object;
-      if (c->atsuper) 
+      if (c->atsuper && !c->classdoc)
 	write_card8(TOK_CLASS);	
       else
 	write_card8(TOK_CCLASS);
@@ -1078,10 +1080,10 @@ local_bread_class(at **pp)
 {
   at *name, *super, *key, *def;
   struct class *cl;
-  if (   local_bread(&name, NIL)
-      || local_bread(&super, NIL)
-      || local_bread(&key, NIL) 
-      || local_bread(&def, NIL) )
+  if (local_bread(&name, NIL) || 
+      local_bread(&super, NIL) || 
+      local_bread(&key, NIL) || 
+      local_bread(&def, NIL) )
     error(NIL,"Corrupted file (unresolved critical class component!)",NIL);
   *pp = new_ooclass(name,super,key,def);
   cl = (*pp)->Object;

@@ -1,4 +1,3 @@
-
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
@@ -25,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.8 2002-07-05 15:19:13 leonb Exp $
+ * $Id: lisp_c.c,v 1.9 2002-07-07 02:02:59 leonb Exp $
  **********************************************************************/
 
 
@@ -61,7 +60,7 @@ static int storage_to_dht[ST_LAST];
 static int dht_to_storage[DHT_LAST];
 
 
-void
+static void
 init_storage_to_dht(void) 
 {
   int i;
@@ -1927,7 +1926,7 @@ at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
         lisp2c_error("INDEX has wrong number of dimensions",
                      errctx, at_obj);
       if (storage_to_dht[ind->st->srg.type] != (drec+2)->op)
-        lisp2c_error("INDEX is defined on STORAGE of wrong type",
+        lisp2c_error("INDEX is based on a STORAGE with illegal type",
                      errctx, at_obj);
       if ((ind->st->srg.flags & STF_RDONLY) && 
           (drec->access == DHT_WRITE))
@@ -2288,18 +2287,18 @@ update_lisp_from_c(avlnode *n)
       {
         struct srg *cptr = n->citem;
         struct storage *st = n->litem->Object;
-        if ((n->belong == BELONG_C) && (st->srg.flags & STS_MALLOC))
+        if ((n->belong == BELONG_C) && 
+            (st->srg.flags & STS_MALLOC))
           {
             /* C allocated SRG manage their own data block */
             int bytes;
-            ifn (st->srg.flags & STS_MALLOC)
+            if (! (st->srg.flags & STS_MALLOC))
               error(NIL,"lisp_c internal: expected ram storage",n->litem);
             if (st->srg.size < cptr->size)
               srg_resize(&st->srg,cptr->size,__FILE__,__LINE__);
             bytes = st->srg.size * storage_type_size[st->srg.type];
             if (bytes>0)
               memcpy(st->srg.data, cptr->data, bytes);
-                
           }
         else
           {
@@ -2371,7 +2370,7 @@ update_lisp_from_c(avlnode *n)
           error(NIL,"lisp_c internal: corrupted class information",NIL);
             
         k = sl = 0;
-        super=cdoc;
+        super = cdoc;
         while (super) 
           {
             class_list[k++] = super;
@@ -2826,6 +2825,7 @@ DY(ylisp_c_no_warnings)
 void 
 init_lisp_c(void)
 {
+  init_storage_to_dht();
   dx_define("lisp-c-map", xlisp_c_map);
   dx_define("lisp-c-dont-track-cside", xlisp_c_dont_track_cside);
   dy_define("lisp-c-no-warnings", ylisp_c_no_warnings);
