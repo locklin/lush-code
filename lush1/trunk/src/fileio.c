@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.14 2003-01-14 19:24:56 leonb Exp $
+ * $Id: fileio.c,v 1.15 2003-01-14 23:37:17 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -1961,6 +1961,7 @@ init_fileio(char *program_name)
   var_set(at_lushdir, q);
   var_set(at_tl3dir, q);
   var_lock(at_tl3dir);
+  var_lock(at_lushdir);
   UNLOCK(q);
   s = concat_fname(SADD(q->Object),"sys");
   q = cons(new_string(s),NIL);
