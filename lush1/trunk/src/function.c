@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.11 2002-11-06 16:30:49 leonb Exp $
+ * $Id: function.c,v 1.12 2002-11-06 21:13:22 leonb Exp $
  **********************************************************************/
 
 
@@ -593,9 +593,9 @@ dm_macro_expand(at *p, at *q)
 {
   struct lfunction *lfunc;
   at *before_eval;
-
+  
   ifn(p && (p->flags & C_EXTERN) && p->Class == &dm_class)
-    error("macro_expand", "not a macro", p);
+    error("macro-expand", "not a macro", p);
   lfunc = p->Object;
   push_args(lfunc->formal_arg_list, q);
   before_eval = progn(lfunc->evaluable_list);

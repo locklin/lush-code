@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.26 2002-11-06 16:42:32 leonb Exp $
+ * $Id: unix.c,v 1.27 2002-11-06 21:13:22 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1134,15 +1134,15 @@ DX(xlocaltime)
   }
   t = (struct tm *) localtime(&tl);
 #define ADD_TIME_PROP(p,v) ans=cons(named(p),cons(NEW_NUMBER(t->v),ans))
-  ADD_TIME_PROP("tm_sec", tm_sec);
-  ADD_TIME_PROP("tm_min", tm_min);
-  ADD_TIME_PROP("tm_hour", tm_hour);
-  ADD_TIME_PROP("tm_mday", tm_mday);
-  ADD_TIME_PROP("tm_mon", tm_mon);
-  ADD_TIME_PROP("tm_year", tm_year);
-  ADD_TIME_PROP("tm_wday", tm_wday);
-  ADD_TIME_PROP("tm_yday", tm_yday);
-  ADD_TIME_PROP("tm_isdst", tm_isdst);
+  ADD_TIME_PROP("tm-sec", tm_sec);
+  ADD_TIME_PROP("tm-min", tm_min);
+  ADD_TIME_PROP("tm-hour", tm_hour);
+  ADD_TIME_PROP("tm-mday", tm_mday);
+  ADD_TIME_PROP("tm-mon", tm_mon);
+  ADD_TIME_PROP("tm-year", tm_year);
+  ADD_TIME_PROP("tm-wday", tm_wday);
+  ADD_TIME_PROP("tm-yday", tm_yday);
+  ADD_TIME_PROP("tm-isdst", tm_isdst);
 #undef ADD_TIME_PROP
   return ans;
 }
