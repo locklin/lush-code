@@ -24,11 +24,49 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: blas-config.lsh,v 1.1 2002-08-22 14:34:07 profshadoko Exp $
+;;; $Id: blas-config.lsh,v 1.2 2002-08-22 20:50:50 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "dh-compile")
+(libload "libc/fortran")
 
+;; set FORTRAN libraries
+(defvar blas-libfortran fortran-libs)    
+
+;; find blas library
+(cond
+ ;; blas-lib was already defined, don't touch it
+ (blas-libblas t)
+ ;; look for dynamic libblas.so installed through packages
+ ;; but only if the fortran libs are non static
+ ((when (not fortran-libs-static-p)
+    (let* ((lib (find-shared-library "libblas")))
+      (when (and lib (filep lib)) (defvar blas-libblas lib)))))
+ ;; look for static libblas.a installed through packages
+ ((progn
+    (let* ((lib (find-static-library "libblas")))
+      (when (and lib (filep lib)) (defvar blas-libblas lib)))))
+ ;; look for blas_XXX.a for manually installed BLAS
+ ((progn
+    (let* ((lib (find-static-library 
+		 "blas" '(".a" "_LINUX.a" "_IRIX64.a" "_SUN4SOL2.a"))))
+      (when (and lib (filep lib)) (defvar blas-libblas lib)))))
+ ;; couldn't find it, complain loudly.
+ (t (printf "neither the libblas shared library nor the\n")
+    (printf "blas_XXXX.a static library could be found.\n")
+    (printf "You should install the liblapack and liblapack-devel\n")
+    (printf "packages from your operating system distribution.\n")
+    (printf "Alternatively, you can download BLAS from\n")
+    (printf "http://www.netlib.org/blas, compile it, and install it\n")
+    (printf "by hand (e.g. in /usr/local/lib).\n")
+    (printf "If you have installed BLAS and still get this message, please do\n")
+    (printf "(defvar blas-libblas \"yourblaslibrary\") before loading this file\n")      
+    (printf "(see %s for more details)\n" file-being-loaded)
+    (error "cannot configure BLAS"))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; find the option that suppresses warnings
 (cond
  ((stringp blas-cflags) t)
  ((progn (when (= "yes" (getconf "GCC")) (defvar blas-cflags " -w "))))
@@ -37,55 +75,7 @@
     (printf "  To suppress those warnings, do (defvar blas-cflags \" -w \")\n")
     (printf "  [or whatever your compiler's no-warning option is], before\n")
     (printf "  loading this file (see %s for more details).\n" file-being-loaded)))
-    
 
-(cond
- ;; blas-lib was already defined
- (blas-libblas t)
- ;; look for blas_XXX.a for manually installed BLAS
- ((progn 
-    (let* ((lib (find-static-library 
-		 "blas" '(".a" "_LINUX.a" "_IRIX64.a" "_SUN4SOL2.a"))))
-      (when (and lib (filep lib)) (defvar blas-libblas lib)))))
- ;; look for libblas installed through packages
- ((progn 
-    (let* ((lib (find-shared-library "libblas")))
-      (when (and lib (filep lib)) (defvar blas-libblas lib)))))
- ;; couldn't find it, complain loudly.
- (t (printf "neither the libblas shared library nor the\n")
-    (printf "blas_XXXX.a static libraries could be found.\n")
-    (printf "You should install the liblapack and liblapack-devel\n")
-    (printf "packages from your operating system distribution.\n")
-    (printf "Alternatively, you can download, compile, and install BLAS by hand.\n")
-    (printf "If you have installed BLAS and still get this message, please do\n")
-    (printf "(defvar blas-libblas \"yourblaslibrary\") before loading this file\n")      
-    (printf "(see %s for more details)\n" file-being-loaded)
-    (error "cannot configure BLAS"))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; find libf77.a. Libf77 is the FORTRAN library
-(cond
- (blas-libfortran t)
- ;; look for static lib in standard locations
- ((progn 
-    (let ((lib1 (find-static-library "libf77"))
-	  (lib2 (find-static-library "libG77")))
-      (when (and lib1 lib2 (filep lib1) (filep lib2)) 
-	(defvar blas-libfortran (list lib1 lib2))))))
- ((progn 
-    (let ((lib (find-static-library "libg2c")))
-      (when (and lib (filep lib)) (defvar blas-libfortran (list lib))))))
- ((progn 
-    (when (= "yes" (getconf "GCC"))
-      (let ((lib (reading (concat "| " (getconf "CC") " -print-file-name=libg2c.a")
-                            (read-string))))
-	(when (and lib (filep lib)) (defvar blas-libfortran (list lib)))))))	 (t
-  (printf "The FORTRAN library (libg2c, libG77, or libF77) could not be found.\n")
-  (printf "Please do: (defval blas-libfortran '(\"/yourlibdir/yourfortranlib.a\"))\n")
-  (printf "before loading this file\n")
-  (printf "(see %s for more details)\n" file-being-loaded)
-  (error "cannot configure BLAS")))
 
 
 
