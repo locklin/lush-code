@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.66 2004-08-30 20:44:04 leonb Exp $
+ * $Id: module.c,v 1.67 2005-01-16 23:32:49 leonb Exp $
  **********************************************************************/
 
 
@@ -229,7 +229,11 @@ nsbundle_exec(nsbundle_t *bundle)
 	  if (def == &nsbundle_head) 
 	    bundle->executable = -1;
 	  else if (def)
-	    bundle->executable = nsbundle_exec(def);
+            {
+              int saved = def->executable;
+              bundle->executable = nsbundle_exec(def);
+              def->executable = saved;
+            }
 	  else if (! NSIsSymbolNameDefined(sname))
 	    bundle->executable = -1;
 	  if (bundle->executable < 0)
