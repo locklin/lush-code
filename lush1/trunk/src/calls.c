@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: calls.c,v 1.4 2002-08-13 16:21:18 leonb Exp $
+ * $Id: calls.c,v 1.5 2002-10-31 19:36:39 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -475,18 +475,31 @@ DX(xrange)
     ARG_NUMBER(1);
     high = AREAL(1);
   }
-
+  
   if (arg_number==2)
     if (delta * (high - low) <= 0)
-      ifn(delta = -delta)
-	error(NIL, illegarg, NIL);
-
+      delta = -delta;
+  if (! delta)
+    error(NIL, illegarg, NIL);
+  
   answer = NIL;
   where = &answer;
-  for (i = low; (high - i) * delta >= 0; i += delta) {
-    *where = cons(NEW_NUMBER(i), NIL);
-    where = &((*where)->Cdr);
-  }
+  if (delta > 0)
+    {
+      for (i=low; i<=high; i+=delta)
+        {
+          *where = cons(NEW_NUMBER(i), NIL);
+          where = &((*where)->Cdr);
+        }
+    }
+  else
+    {
+      for (i=low; i>=high; i+=delta)
+        {
+          *where = cons(NEW_NUMBER(i), NIL);
+          where = &((*where)->Cdr);
+        }
+    }
   return answer;
 }
 
