@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.32 2002-08-13 20:20:09 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.33 2002-08-15 21:35:15 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -426,8 +426,15 @@
     (dht-gptr  "ST_GPTR")
     (t (dhc-error "not a know type of matrix"))))
 
-(de dhc-objptr-cast(expr type &optional type2)
+(de dhc-ptr-cast(expr type &optional type2)
   (let ((cast expr))
+    ;; GPTRs
+    (when (and (==> type is-a-gptr)
+               (or (not type2) (==> type2 is-a-gptr)) )
+      (when (<> (dhu-name type) (when type2 (dhu-name type2)))
+        (setq cast (concat "(" (dhc-type-to-c-decl type) ")"))
+        (when expr (setq cast (concat cast "(" expr ")"))) ) )
+    ;; OBJPTRs
     (when (and (==> type is-a-ptr)
                (or (not type2) (==> type2 is-a-ptr)) )
       (setq type (dhu-type type))
@@ -2871,8 +2878,8 @@
               (all ((arg args)
                     (argtype (dhu-extra functype))
                     (argnode (cdr :treetype:tn-list)) )
-                (if (==> argtype is-an-objptr)
-                    (dhc-objptr-cast arg argtype :argnode:type) 
+                (if (or (==> argtype is-an-objptr) (==> argtype is-a-gptr))
+                    (dhc-ptr-cast arg argtype :argnode:type) 
                   arg  ) ) ) )
       ;; Update extern declaration and dependencies
       (let ((ftype :(car :treetype:tn-list):type))
