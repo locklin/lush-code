@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.39 2003-06-20 21:14:30 leonb Exp $
+ * $Id: unix.c,v 1.40 2003-06-21 17:21:10 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1831,6 +1831,74 @@ DX(xsocketaccept)
 
 
 
+DX(xsocketselect)
+{
+  int i;
+  int n = 0;
+  int status;
+  fd_set rset;
+  fd_set wset;
+  struct timeval tv;
+  struct timeval *ptv = 0;
+  at *ans = NIL;
+
+  ALL_ARGS_EVAL;
+  FD_ZERO(&rset);
+  FD_ZERO(&wset);
+  for (i=1; i<=arg_number; i++)
+    {
+      at *p = APOINTER(i);
+      if (NUMBERP(p))
+        {
+          int ms = p->Number;
+          if (ptv)
+            error(NIL,"Timeout already provided",NIL);
+          if (ms < 0)
+            ms = 0;
+          tv.tv_sec = ms / 1000;
+          tv.tv_usec = (ms - 1000 * tv.tv_sec) * 1000;
+          ptv = &tv;
+        }
+      else if (EXTERNP(p,&file_R_class))
+        {
+          FILE *f = p->Object;
+          int fd = fileno(f);
+          FD_SET(fd, &rset);
+          if (fd >= n)
+            n = fd + 1;
+        }
+      else if (EXTERNP(p,&file_W_class))
+        {
+          FILE *f = p->Object;
+          int fd = fileno(f);
+          FD_SET(fd, &wset);
+          if (fd >= n)
+            n = fd + 1;
+        }
+      else
+        error(NIL,"Unexpected argument",p);
+    }
+  status = select(n, &rset, &wset, NULL, ptv);
+  if (status > 0)
+    {
+      for (i=arg_number; i>0; i--)
+        {
+          at *p = APOINTER(i);
+          if (p && (p->flags & C_EXTERN))
+            {
+              FILE *f = p->Object;
+              int fd = fileno(f);
+              if (FD_ISSET(fd,&rset) || FD_ISSET(fd,&wset))
+                {
+                  LOCK(p);
+                  ans = cons(p,ans);
+                }
+            }
+        }
+    }
+  return ans;
+}
+
 
 /* ---------------------------------------- */
 /* INITIALIZATION CODE                      */
@@ -1858,5 +1926,6 @@ init_unix(void)
   dx_define("filteropenpty", xfilteropenpty);
   dx_define("socketopen", xsocketopen);
   dx_define("socketaccept", xsocketaccept);
+  dx_define("socketselect", xsocketselect);
 }
 
