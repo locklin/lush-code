@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: adaptknn.c,v 1.1 2003-03-18 00:52:22 leonb Exp $
+ * $Id: adaptknn.c,v 1.2 2003-03-18 18:17:14 leonb Exp $
  **********************************************************************/
 
 
@@ -788,8 +788,8 @@ DX(xcodebook_distances)
   }
   easy_index_check(APOINTER(1), 1, &(cb->ndim));
   v = make_nrvector(APOINTER(1), 0, NULL);
-  easy_index_check(ans, 1, &(cb->ndim));
-  vd = make_nrvector(ans, 1, NULL);
+  easy_index_check(ans, 1, &(cb->ncode));
+  vd = make_nrvector(ans, 0, NULL);
   vect_dist2(v,cb,vd);
   return ans;
 }
