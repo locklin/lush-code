@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.44 2004-10-22 21:51:24 leonb Exp $
+ * $Id: dldbfd.c,v 1.45 2004-11-02 19:32:56 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1421,26 +1421,29 @@ dld_allocate(size_t s, int perm)
 static void
 dld_deallocate(void *x)
 {
-  a_arena_t *a, **ap;
-  a = (a_arena_t*)((char*)x - A_ALIGN(sizeof(a_arena_t)));
-  if (a->next != x)
-    THROW(bfd_errmsg(bfd_error_no_memory));
-  /* insert */
-  ap = &arenas;
-  while (*ap && a>=*ap)
-    ap = &((*ap)->next); 
-  a->next = *ap;
-  *ap = a;
-  /* compact */
-  a = arenas;
-  while (a)
+  if (x) 
     {
-      while ((void*)a + a->size == (void*)a->next)
+      a_arena_t *a, **ap;
+      a = (a_arena_t*)((char*)x - A_ALIGN(sizeof(a_arena_t)));
+      if (a->next != x)
+	THROW(bfd_errmsg(bfd_error_no_memory));
+      /* insert */
+      ap = &arenas;
+      while (*ap && a>=*ap)
+	ap = &((*ap)->next); 
+      a->next = *ap;
+      *ap = a;
+      /* compact */
+      a = arenas;
+      while (a)
 	{
-	  a->size += a->next->size;
-	  a->next = a->next->next;
+	  while ((void*)a + a->size == (void*)a->next)
+	    {
+	      a->size += a->next->size;
+	      a->next = a->next->next;
+	    }
+	  a = a->next;
 	}
-      a = a->next;
     }
 }
 
