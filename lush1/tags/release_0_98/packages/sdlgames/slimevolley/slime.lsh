@@ -1,0 +1,186 @@
+;; A simple/stupid little game.
+;; Nothing more than a modern version of PONG
+;; Don't look at this as an example of good programming,
+;; this was put together very quickly for a bunch of kids.
+;; Yann LeCun, 01/2003
+
+(libload "libc/constants")
+(libload "sdl/libsdl")
+
+(defconstant "kl_left" @@SDLK_a)
+(defconstant "kl_right" @@SDLK_d)
+(defconstant "kl_up" @@SDLK_w)
+
+(defconstant "kr_left" @@SDLK_j)
+(defconstant "kr_right" @@SDLK_l)
+(defconstant "kr_up" @@SDLK_i)
+
+(defconstant "k_quit" @@SDLK_q)
+
+
+(de bounce (vx vy c s rx ry)
+  ((-float-) vx vy c s)
+  ((-idx0- (-float-)) rx ry)
+  (let* ((c2 (* c c))
+	 (d (- (* 2 c2) 1))
+	 (o (* -2 c s)))
+    (rx (+ (* d vx) (* o vy)))
+    (ry (- (* o vx) (* d vy))) ()))
+
+(defclass sdl-slimevent sdl-event)
+(defmethod sdl-slimevent sdl-slimevent () 
+  (cpheader "#include <SDL/SDL.h>")
+  (setq e (gptr #{ (SDL_Event *)malloc(sizeof(SDL_Event)) #})))
+(defmethod sdl-slimevent delete () (free e))
+
+;; each arg has left/right down/up
+(defmethod sdl-slimevent read-keys (resl resr pressedkey)
+  ((-idx1- (-int-)) resl resr)
+  ((-idx0- (-int-)) pressedkey)
+  (while (<> 0 (SDL_PollEvent e))
+    (let ((type (sdl-event-type e)))
+      (cond 
+       ((= type @@SDL_KEYDOWN)
+	(let ((key (sdl-event-key-keysym-sym e)))
+	  (pressedkey key)
+	  (cond
+	   ((= key @@kl_left) (resl 0 -1))
+	   ((= key @@kl_right) (resl 0 +1)))
+	  (cond
+	   ((= key @@kl_up) (resl 1 +1)))
+	  (cond
+	   ((= key @@kr_left) (resr 0 -1))
+	   ((= key @@kr_right) (resr 0 +1)))
+	  (cond
+	   ((= key @@kr_up) (resr 1 +1)))))
+       ((= type @@SDL_KEYUP)
+	(let ((key (sdl-event-key-keysym-sym e)))
+	  (pressedkey 0)
+	  (cond
+	   ((= key @@kl_left) (when (= -1 (resl 0)) (resl 0 0)))
+	   ((= key @@kl_right) (when (= 1 (resl 0)) (resl 0 0))))
+	  (cond
+	   ((= key @@kl_up) (when (= 1 (resl 1)) (resl 1 0))))
+	  (cond
+	   ((= key @@kr_left) (when (= -1 (resr 0)) (resr 0 0)))
+	   ((= key @@kr_right) (when (= 1 (resr 0)) (resr 0 0))))
+	  (cond
+	   ((= key @@kr_up) (when (= 1 (resr 1)) (resr 1 0))))) ())))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(setq pi/180 (/ 3.1415927 180))
+
+;; (new-window 0 0 640 480 "asd")
+
+;; lunar lander: the ship rotates, has a shadow and a flame
+(de slime ()
+  (sdl-initialize)
+  (let* ((scr (new sdl-screen 640 480 "Slime Volley")) ; open screen
+	 (field (new sdl-sprite scr 10))
+	 (net (new sdl-sprite scr 2))
+	 (ball (new sdl-sprite scr 3))	
+	 (slimel (new sdl-sprite scr 4))
+	 (eyel (new sdl-sprite scr 5))
+	 (slimer (new sdl-sprite scr 6))
+	 (eyer (new sdl-sprite scr 7))
+	 (stop ())
+	 (event (new sdl-slimevent))
+	 (kl (int-matrix 2))
+	 (kr (int-matrix 2))
+	 (kq (int-matrix))
+	 (rx (float-matrix))
+	 (ry (float-matrix))
+	 (plx 100) (ply 440) (plv 0)
+	 (prx (- 640 100)) (pry 440) (prv 0)
+	 (bx 100) (by 100)
+	 (bvx 0) (bvy 0)
+	 (speed 300)
+	 (kick -300)
+	 (gravity 600)
+	 (friction 0.1)
+	 (deltat 0.03)
+	 (ground 440))
+    (==> net load-frame "net.png" 0 8 50)
+    (==> net move 320 440)
+    (==> field load-frame "field.png" 0 0 0)
+    (==> field move 0 440)
+    (==> ball load-frame "ball.png" 0 12 12)
+    (==> slimel load-frame "slime-red.png" 0 32 32)
+    (==> slimer load-frame "slime-blue.png" 0 32 32)
+    (==> eyel load-frame "eye.png" 0 8 8)
+    (==> eyer load-frame "eye.png" 0 8 8)
+    (while (not stop)
+      (==> scr clear)			; fill image with black
+      ;; draw stuff
+      (==> net drawc)
+      (==> field drawc)
+      (==> slimel drawc)
+      (==> eyel draw)
+      (==> slimer drawc)
+      (==> eyer draw)
+      (==> ball drawc)
+      ;; (print "up" (:scr:collision 436 '(80 120) 0))
+      ;; (print "dn" (:scr:collision 444 '(80 120) 0))
+      ;; move ball
+      (if (<> 0 (collided ball net))
+	  (when (not bouncing-net) (setq bvx (- bvx)) (setq bouncing-net t))
+	(setq bouncing-net ()))
+      (when (<> 0 (collided ball field)) (setq bvy -400) (setq bvx 0))
+      (if (<> 0 (collided ball slimel))
+	(when (not bouncing-slimel)
+	  (let* ((d (max -44 (min 44 (- plx bx))))
+		 (s (/ d 100))
+		 (c (sqrt (- 1 (* s s)))))
+	    (bounce bvx (- bvy (* 0.7 plv)) c s rx ry)
+	    (setq bvx (rx))
+	    (setq bvy (ry)))
+	  (setq bouncing-slimel t))
+	(setq bouncing-slimel ()))
+      (if (<> 0 (collided ball slimer))
+	(when (not bouncing-slimer)
+	  (let* ((d (max -44 (min 44 (- prx bx))))
+		 (s (/ d 100))
+		 (c (sqrt (- 1 (* s s)))))
+	    (bounce bvx (- bvy (* 0.7 prv)) c s rx ry)
+	    (setq bvx (rx))
+	    (setq bvy (ry)))
+	  (setq bouncing-slimer t))
+	(setq bouncing-slimer ()))
+      (setq bvx (* (- 1 (* deltat friction)) bvx))
+      (setq bvy (+ (* (- 1 (* deltat friction)) bvy) (* deltat gravity)))
+      (let ((dx (* deltat bvx))
+	    (dy (* deltat bvy)))
+	(when (< (+ bx dx) 6) (setq bvx (- bvx)) (setq dx (- dx)))
+	(when (> (+ bx dx) 634) (setq bvx (- bvx)) (setq dx (- dx)))
+	(setq bx (+ bx dx))
+	(setq by (+ by dy)))
+      (==> ball move bx by)
+      (==> event read-keys kl kr kq)	; read keyboard
+      (when (= (kq) @@SDLK_q) (setq stop t))
+      ;; move slimes
+      (setq prx (max 358 (min 608 (+ prx (* deltat speed (kr 0))))))
+      (setq plx (max 32 (min 282 (+ plx (* deltat speed (kl 0))))))
+      (when (and (= plv 0) (= (kl 1) 1)) (setq plv kick))
+      (when (and (= prv 0) (= (kr 1) 1)) (setq prv kick))
+      (setq plv (+ plv (* deltat gravity)))
+      (setq prv (+ prv (* deltat gravity)))
+      (setq ply (+ ply (* deltat plv)))
+      (setq pry (+ pry (* deltat prv)))
+      (when (>= ply ground) (setq plv 0) (setq ply ground))
+      (when (>= pry ground) (setq prv 0) (setq pry ground))
+      (==> slimel move plx ply)
+      (==> eyel move (+ 14 plx) (- ply 24))
+      (==> slimer move prx pry)
+      (==> eyer move (+ -14 prx) (- pry 24))
+      (==> scr flip)			; flip screens
+      (setq deltat :scr:deltat)	; update deltat to time between screen flips
+      )))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make ()
+	  bounce
+	  (sdl-slimevent sdl-slimevent))
+
