@@ -24,15 +24,16 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.17 2003-01-26 20:05:39 leonb Exp $
+ * $Id: fileio.c,v 1.18 2003-01-27 08:57:30 leonb Exp $
  **********************************************************************/
 
 
-#include "header.h"
-
-#include <errno.h>
+#ifdef HAVE_CONFIG_H
+# include "lushconf.h"
+#endif
 
 #ifdef WIN32
+# include <errno.h>
 # include <windows.h>
 # include <direct.h>
 # include <io.h>
@@ -47,6 +48,7 @@
 #endif
 
 #ifdef UNIX
+# include <errno.h>
 # include <sys/types.h>
 # include <sys/stat.h>
 #ifdef TIME_WITH_SYS_TIME
@@ -82,7 +84,7 @@
 # endif
 #endif
 
-
+#include "header.h"
 
 /* --------- VARIABLES --------- */
 

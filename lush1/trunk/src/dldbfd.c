@@ -24,9 +24,12 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.14 2002-12-16 11:51:34 leonb Exp $
+ * $Id: dldbfd.c,v 1.15 2003-01-27 08:57:30 leonb Exp $
  **********************************************************************/
 
+#ifdef HAVE_CONFIG_H
+# include "lushconf.h"
+#endif
 
 /* ---------------------------------------- */
 /* INCLUDES */
@@ -40,7 +43,6 @@
 #include <string.h>
 #include <setjmp.h>
 #include <bfd.h>
-#include "config.h"
 #include "dldbfd.h"
 #if HAVE_UNISTD_H
 # include <unistd.h>

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.34 2003-01-18 16:32:02 leonb Exp $
+ * $Id: unix.c,v 1.35 2003-01-27 08:57:30 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -43,7 +43,9 @@
 
 
 /* Config */
-#include "config.h"
+#ifdef HAVE_CONFIG_H
+# include "lushconf.h"
+#endif
 
 /* UNIX header files */
 
@@ -107,12 +109,20 @@
 # include <util.h>
 #endif
 #ifdef HAVE_READLINE_READLINE_H
+# ifdef HAVE_CONFIG_H
+#  define HAVE_LUSHCONF_H HAVE_CONFIG_H
+#  undef HAVE_CONFIG_H
+# endif
 # include <readline/readline.h>
 # include <readline/history.h>
+# ifdef HAVE_LUSHCONF_H
+#  define HAVE_CONFIG_H HAVE_LUSHCONF_H 
+# endif
 #endif
 
 /* Lush header files */
 #include "header.h"
+#include "lushmake.h"
 
 
 
@@ -1333,12 +1343,15 @@ DX(xgetconf)
   int i;
   const char *k;
   static struct { char *k,*v; } confdata[] = {
-#include "autoconf.h"
     { "LUSH_MAJOR", enclose_in_string(LUSH_MAJOR) },
     { "LUSH_MINOR", enclose_in_string(LUSH_MINOR) },
 #ifdef __DATE__
     { "LUSH_DATE", __DATE__ },
 #endif
+#ifdef __TIME__
+    { "LUSH_TIME", __TIME__ },
+#endif
+    LUSH_MAKE_MACROS,
     { 0, 0 } 
   };
   ARG_NUMBER(1);

@@ -24,28 +24,22 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: define.h,v 1.9 2003-01-26 20:05:31 leonb Exp $
+ * $Id: define.h,v 1.10 2003-01-27 08:57:30 leonb Exp $
  **********************************************************************/
 
 #ifndef DEFINE_H
 #define DEFINE_H
 
 #ifdef HAVE_CONFIG_H
-# include "config.h"
-# ifndef UNIX
-#  define UNIX
+# include "lushconf.h"
+#else
+# ifdef WIN32
+#  define HAVE_STRFTIME 1
+#  define STDC_HEADERS  1  
+#  define HAVE_STRCHR   1
+#  define HAVE_MEMCPY   1
+#  define HAVE_STRERROR 1
 # endif
-# ifndef _GNU_SOURCE
-#  define _GNU_SOURCE
-# endif
-#endif
-
-#ifdef WIN32
-# define HAVE_STRFTIME 1
-# define STDC_HEADERS  1  
-# define HAVE_STRCHR   1
-# define HAVE_MEMCPY   1
-# define HAVE_STRERROR 1
 #endif
 
 /* --------- GENERAL PURPOSE DEFINITIONS ---------- */

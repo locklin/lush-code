@@ -5,10 +5,10 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.21 2003-01-26 20:05:02 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.22 2003-01-27 08:57:12 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
-AC_CONFIG_HEADER(include/config.h)
+AC_CONFIG_HEADER(include/lushconf.h)
 AC_PREFIX_DEFAULT(/usr/local)
 AC_CANONICAL_HOST
 
@@ -255,6 +255,27 @@ AC_DEFINE_UNQUOTED(EXT_OBJ, ".$OBJEXT", [Extension for object files])
 
 AC_CONFIG_FILES(Makefile)
 AC_CONFIG_FILES(src/Makefile)
-AC_CONFIG_FILES(include/autoconf.h)
+AC_CONFIG_FILES(include/lushmake.h)
 AC_OUTPUT
 
+# ----------------------------------------
+# CONFIG template
+# ----------------------------------------
+
+AH_TOP([
+#ifndef LUSHCONF_H
+#define LUSHCONF_H
+/* lushconf.h: begin */
+])
+
+AH_BOTTOM([
+/* lushconf.h: custom */
+# ifndef UNIX
+#  define UNIX
+# endif
+# ifndef _GNU_SOURCE
+#  define _GNU_SOURCE
+# endif
+/* lushconf.h: end */
+#endif
+])
