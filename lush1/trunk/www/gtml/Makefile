@@ -8,6 +8,8 @@ HTML= \
     ${outdir}/credits.html \
     ${outdir}/news.html \
     ${outdir}/links.html \
+    ${outdir}/todo.html \
+    ${outdir}/faq.html \
     ${outdir}/doc.html \
     ${outdir}/screenshots.html \
 
@@ -28,10 +30,12 @@ clean: FORCE
 ${HTML}:
 	$(gtml) $<
 
-${outdir}/index.html: index.gtml
+${outdir}/index.html: index.gtml latest-news frontpage-faq
 ${outdir}/news.html: news.gtml latest-news older-news
 ${outdir}/credits.html: credits.gtml
 ${outdir}/links.html: links.gtml
+${outdir}/todo.html: todo.gtml
+${outdir}/faq.html: faq.gtml frontpage-faq
 ${outdir}/doc.html: doc.gtml
 ${outdir}/screenshots.html: screenshots.gtml
 
