@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.10 2002-05-07 17:30:12 leonb Exp $
+ * $Id: module.c,v 1.11 2002-05-07 18:39:39 leonb Exp $
  **********************************************************************/
 
 
@@ -470,8 +470,8 @@ update_init_flag(struct module *m)
       strcpy(string_buffer, "minver_");
       strcat(string_buffer, m->initname + 5);
       minptr = (int*) dld_get_symbol(string_buffer);
-      maj = ((majptr) ? *majptr : -1);
-      min = ((minptr) ? *minptr : -1);
+      maj = ((majptr) ? *majptr : TLOPEN_MAJOR);
+      min = ((minptr) ? *minptr : TLOPEN_MINOR);
       status = -2;
       if (maj == TLOPEN_MAJOR && min >= TLOPEN_MINOR)
         {
@@ -744,6 +744,62 @@ DX(xmodule_load)
 
 
 
+/* --------- SN3 FUNCTIONS --------- */
+
+
+
+DX(xmod_create_reference)
+{
+  int i;
+  ALL_ARGS_EVAL;
+#ifdef DLDBFD
+  dynlink_init();
+  for (i=1; i<=arg_number; i++)
+    dld_create_reference(ASTRING(1));
+  return NEW_NUMBER(dld_undefined_sym_count);
+#else
+  return NIL;
+#endif
+}
+
+DX(xmod_compatibility_flag)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+#ifdef DLDBFD
+  dld_compatibility_flag = ( APOINTER(1) ? 1 : 0 );
+  return (dld_compatibility_flag ? true() : NIL);
+#else
+  return NIL
+#endif
+}
+
+DX(xmod_undefined)
+{
+  at *p = NIL;
+  at **where = &p;
+#ifdef DLDBFD
+  if (dynlink_initialized)
+    {
+      int i;
+      char ** dld_undefined_sym_list = (char**)dld_list_undefined_sym();
+      p = NIL;
+      where = &p;
+      for (i=0; i<dld_undefined_sym_count; i++) {
+        *where = cons( new_string(dld_undefined_sym_list[i]), NIL);
+        where = &((*where)->Cdr);
+      }
+      free(dld_undefined_sym_list);
+    }
+#endif
+  return p;
+}
+
+
+
+
+
+
 /* --------- XXX_DEFINE FUNCTIONS --------- */
 
 static at *
@@ -840,10 +896,17 @@ init_module(char *progname)
 {
   class_define("MODULE",&module_class);
   module_class.dontdelete = TRUE;
+
   /* Create root module */
+#ifdef DLDBFD
+  root.filename = dld_find_executable(progname);
+#else
+  root.filename = progname;
+#endif  
   atroot = new_extern(&module_class, &root);
   root.backptr = atroot;
   protect(atroot);
+
   /* Functions */
   dx_define("module-list", xmodule_list);
   dx_define("module-filename", xmodule_filename);
@@ -852,12 +915,11 @@ init_module(char *progname)
   dx_define("module-unloadable-p", xmodule_unloadable_p);
   dx_define("module-load", xmodule_load);
   dx_define("module-unload", xmodule_unload);
-  /* Cache program name for later use */
-#ifdef DLDBFD
-  root.filename = dld_find_executable(progname);
-#else
-  root.filename = progname;
-#endif  
+
+  /* SN3 functions */
+  dx_define("mod-create-reference", xmod_create_reference);
+  dx_define("mod-compatibility-flag", xmod_compatibility_flag);
+  dx_define("mod-undefined",xmod_undefined);
 }
 
 
