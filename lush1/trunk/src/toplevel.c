@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.9 2002-07-23 18:58:35 leonb Exp $
+ * $Id: toplevel.c,v 1.10 2002-07-30 17:03:12 leonb Exp $
  **********************************************************************/
 
 
@@ -810,6 +810,8 @@ DX(xwhere)
     ARG_NUMBER(0);
   }
   call = error_doc.error_call;
+  if (! call)
+    call = error_doc.this_call;
   while (--n!=0 && CONSP(call)) {
     if (call == error_doc.error_call)
       print_string("** in:   ");
