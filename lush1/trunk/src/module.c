@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.39 2004-07-15 22:23:35 leonb Exp $
+ * $Id: module.c,v 1.40 2004-07-15 22:28:21 leonb Exp $
  **********************************************************************/
 
 
@@ -145,8 +145,7 @@ static void
 nsbundle_destroy(nsbundle_t *bundle)
 {
   if (bundle->nsmodule)
-    NSUnLinkModule(bundle->nsmodule, 
-		   NSUNLINKMODULE_OPTION_RESET_LAZY_REFERENCES);
+    NSUnLinkModule(bundle->nsmodule, NSUNLINKMODULE_OPTION_NONE);
   bundle->nsmodule = 0;
   if (bundle->nsimage)
     NSDestroyObjectFileImage(bundle->nsimage);
