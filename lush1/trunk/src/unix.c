@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.51 2004-09-29 23:28:34 leonb Exp $
+ * $Id: unix.c,v 1.52 2005-02-21 15:37:31 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1748,6 +1748,7 @@ DX(xsocketopen)
   int sock1, sock2;
   char *hostname;
   int portnumber;
+  int noerror = 0;
   struct sockaddr_in server;
   struct hostent *hp;
   FILE *ff1, *ff2;
@@ -1765,6 +1766,8 @@ DX(xsocketopen)
     }
   hostname = ASTRING(1);
   portnumber = AINTEGER(2);
+  noerror = (portnumber < 0);
+  portnumber = abs(portnumber);
   sock1 = socket( AF_INET, SOCK_STREAM, 0);
   if (sock1<0)
     test_file_error(NULL);
@@ -1775,7 +1778,12 @@ DX(xsocketopen)
   memcpy(&server.sin_addr, hp->h_addr, hp->h_length);
   server.sin_port = htons(portnumber);
   if (connect(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0)
-    test_file_error(NULL);
+    {
+      if (noerror)
+	return NIL;
+      else
+	test_file_error(NULL);
+    }
   sock2 = dup(sock1);
   ff1 = fdopen(sock1,"r");
   ff2 = fdopen(sock2,"w");
