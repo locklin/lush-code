@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.16 2002-07-20 02:22:36 leonb Exp $
+ * $Id: index.c,v 1.17 2002-08-19 20:29:41 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -2311,6 +2311,36 @@ load_matrix_header(FILE *f,
           goto trouble;
       break;
     default:
+      /* handle pascal vincent idx-io types */
+#ifndef NO_SUPPORT_FOR_PASCAL_IDX_FILES
+      swapflag = 1;
+      swapflag = (int)(*(char*)&swapflag);
+      if (swapflag) 
+        magic = SWAP(magic);
+      if (! (magic & ~0xF03) ) 
+        {
+          ndim = magic & 0x3;
+          switch ((magic & 0xF00) >> 8)
+            {
+            case 0x8: magic = BYTE_MATRIX; break;
+            case 0x9: magic = SHORT8_MATRIX; break;
+            case 0xB: magic = SHORT_MATRIX; break;
+            case 0xC: magic = INTEGER_MATRIX; break;
+            case 0xD: magic = BINARY_MATRIX; break;
+            case 0xE: magic = DOUBLE_MATRIX; break;
+            default: magic = 0;
+            }
+          if (magic && ndim>=1 && ndim<=3)
+            {
+              for (i=0; i<ndim; i++)
+                dim[i] = read4(f);
+              if (swapflag)
+                for (i=0; i<ndim; i++)
+                  dim[i] = SWAP(dim[i]);
+              break;
+            }
+        }
+#endif
       error(NIL, "not a recognized matrix file", NIL);
     trouble:
       test_file_error(f);
