@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.13 2002-12-12 08:24:06 leonb Exp $
+ * $Id: dldbfd.c,v 1.14 2002-12-16 11:51:34 leonb Exp $
  **********************************************************************/
 
 
@@ -42,15 +42,42 @@
 #include <bfd.h>
 #include "config.h"
 #include "dldbfd.h"
-
-
 #if HAVE_UNISTD_H
 # include <unistd.h>
 #endif
-
 #if HAVE_SYS_MMAN_H
 # include <sys/mman.h>
 #endif
+
+/* ---------------------------------------- */
+/* GCC OPTIMISATIONS */
+
+#ifdef __GNUC__
+#if ( __GNUC__ * 1000 + __GNUC_MINOR__ >= 2005 )
+#define noreturn __attribute__ ((noreturn));
+#else
+#define noreturn /**/
+#endif
+#else /* !GNUC */
+#define inline /**/
+#define noreturn /**/
+#endif
+
+/* ---------------------------------------- */
+/* MISSING PROTOTYPES (watch) */
+
+
+#ifdef SEC_LINK_DUPLICATES_SAME_CONTENTS  /* try detecting version 2.8 */
+#define bfd_alloc_by_size_t bfd_alloc
+#endif
+
+void *bfd_alloc_by_size_t(bfd *abfd, size_t wanted);
+unsigned int bfd_log2 (bfd_vma x);
+
+
+
+/* ---------------------------------------- */
+/* DLOPEN */
 
 #if HAVE_DLFCN_H
 #if HAVE_DLOPEN
@@ -82,35 +109,37 @@ typedef void* dlopen_handle_t;
 # endif
 #endif
 
-
-
-
-/* ---------------------------------------- */
-/* GCC OPTIMISATIONS */
-
-
-#ifdef __GNUC__
-#if ( __GNUC__ * 1000 + __GNUC_MINOR__ >= 2005 )
-#define noreturn __attribute__ ((noreturn));
-#else
-#define noreturn /**/
+#if DLOPEN 
+#if HAVE_DL_H
+/* DLOPEN emulation under HP/UX */
+static dlopen_handle_t 
+dlopen(char *soname, int mode)
+{ 
+  return shl_load(soname,BIND_IMMEDIATE|BIND_NONFATAL|
+		  BIND_NOSTART|BIND_VERBOSE, 0L ); 
+}
+static void 
+dlclose(dlopen_handle_t hndl)
+{ 
+  shl_unload(hndl); 
+}
+static void* 
+dlsym(dlopen_handle_t hndl, char *sym)
+{ 
+  void *addr = 0;
+  if (shl_findsym(&hndl,sym,TYPE_PROCEDURE,&addr) >= 0)
+    return addr;
+  return 0;
+}
+static char* 
+dlerror(void)
+{
+  return "Function shl_load() has failed";
+}
 #endif
-#else /* !GNUC */
-#define inline /**/
-#define noreturn /**/
 #endif
 
 
-/* ---------------------------------------- */
-/* MISSING PROTOTYPES (watch) */
-
-
-#ifdef SEC_LINK_DUPLICATES_SAME_CONTENTS  /* try detecting version 2.8 */
-#define bfd_alloc_by_size_t bfd_alloc
-#endif
-
-void *bfd_alloc_by_size_t(bfd *abfd, size_t wanted);
-unsigned int bfd_log2 (bfd_vma x);
 
 
 /* ---------------------------------------- */
@@ -780,7 +809,7 @@ handle_common_symbols(module_entry *ent)
 
 
 /* ---------------------------------------- */
-/* GOT TABLE ALLOCATION (MIPSELF) */
+/* GOT TABLE ALLOCATION (SGI MIPS-ELF) */
 
 /* These subroutines alter the relocation code
  * and generate the GOT table that BFD
@@ -1431,11 +1460,13 @@ insert_module_symbols(module_entry *module)
             /* process undefined symbol */
             name = drop_leading_char(module->abfd,sym->name);
             hsym = insert_symbol(name);
-            /* new symbol may be defined by shared libs */
 #ifdef DLOPEN
+            /* new symbol may be defined by shared libs */
             if (!(hsym->flags & (DLDF_DEFD|DLDF_REFD)) && global_dlopen_handle)
               {
                 void *addr = dlsym(global_dlopen_handle, name);
+                if (!addr && sym->name != name)
+                  addr = dlsym(global_dlopen_handle, sym->name);
                 if (addr)
                   {
                     hsym->flags |= DLDF_DEFD;
@@ -2419,35 +2450,6 @@ dld_init (const char *exec)
 /* DLD_DLOPEN */
 
 
-
-#if DLOPEN 
-#if HAVE_DL_H
-
-/* DLOPEN emulation under HP/UX */
-static dlopen_handle_t dlopen(char *soname, int mode)
-{ 
-  return shl_load(soname,BIND_IMMEDIATE|BIND_NONFATAL|
-		  BIND_NOSTART|BIND_VERBOSE, 0L ); 
-}
-static void dlclose(dlopen_handle_t hndl)
-{ 
-  shl_unload(hndl); 
-}
-static void* dlsym(dlopen_handle_t hndl, char *sym)
-{ 
-  void *addr = 0;
-  if (shl_findsym(&hndl,sym,TYPE_PROCEDURE,&addr) >= 0)
-    return addr;
-  return 0;
-}
-static char* dlerror(void)
-{
-  return "Function shl_load() has failed";
-}
-
-#endif
-#endif
-
 /* dld_dlopen -- replacement for DLOPEN compatible with DLD */
 
 void *
@@ -2504,7 +2506,9 @@ dld_dlopen(char *path, int mode)
                                  BSF_DEBUGGING|BSF_WARNING)))
               {
                 const char *name = drop_leading_char(abfd,sym->name);
-                void *addr = dlsym(handle, /*sym->*/name);
+                void *addr = dlsym(handle, name);
+                if (!addr && name!=sym->name)
+                  addr = dlsym(handle, sym->name);
                 if (addr)
                   {
                     /* Insert entry into global hash table */
@@ -2665,21 +2669,21 @@ dld_get_symbol (const char *id)
     symbol_entry *hsym;
     void *ret = 0;
     TRY
-    {
+      {
         hsym = lookup_symbol(id);
         if (hsym && (hsym->flags & DLDF_DEFD))
-        {
+          {
             while (hsym->flags & DLDF_INDIRECT)
-                hsym = (symbol_entry*)(hsym->definition);
+              hsym = (symbol_entry*)(hsym->definition);
             if ( !(hsym->flags & DLDF_FUNCTION))
-                ret = (void*)value_of_symbol(hsym);
-        }
-    }
+              ret = (void*)value_of_symbol(hsym);
+          }
+      }
     CATCH(n)
-    {
+      {
         dld_errno = n;
         return 0;
-    }
+      }
     END_CATCH;
     return ret;
 }

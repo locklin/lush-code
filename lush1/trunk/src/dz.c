@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dz.c,v 1.4 2002-12-12 08:24:06 leonb Exp $
+ * $Id: dz.c,v 1.5 2002-12-16 11:51:34 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -279,11 +279,9 @@ dz_execute(flt top, struct dz_cell *dz)
     x = sp[pc[-1].code.arg];
     sp++;
     break;
-    
   case OP_POP_r:
     sp = sp+pc[-1].code.arg;
     break;
-    
   case OP_SET_r:
     sp[pc[-1].code.arg] = x;
     x = *--sp;
@@ -292,7 +290,6 @@ dz_execute(flt top, struct dz_cell *dz)
     /* Monadic */
 #define MONADIC(op,prog)\
   case op: prog; break
-
     MONADIC(OP_MINUS, x = -x );
     MONADIC(OP_INVERT, x = 1/x );
     MONADIC(OP_ADD1, x += Fone );
@@ -303,7 +300,6 @@ dz_execute(flt top, struct dz_cell *dz)
     MONADIC(OP_ABS, x = Fabs(x) );
     MONADIC(OP_INT, x = Ffloor(x) );
     MONADIC(OP_SQRT, x = Fsqrt(x) );
-
     MONADIC(OP_PIECE, x = Fpiece(x) );
     MONADIC(OP_RECT, x = Frect(x) );
     MONADIC(OP_SIN, x = Fsin(x) );
@@ -328,7 +324,6 @@ dz_execute(flt top, struct dz_cell *dz)
     MONADIC(OP_QDEXPMX, x = FQDexpmx(x) );
     MONADIC(OP_QEXPMX2, x = FQexpmx2(x) );
     MONADIC(OP_QDEXPMX2, x = FQDexpmx2(x) );
-    
 #undef MONADIC
     
     /* Special */
@@ -349,14 +344,12 @@ dz_execute(flt top, struct dz_cell *dz)
     x = Fdspline(x,arg/3,(flt*)pc);
     pc += arg;
     break;
-    
-    
+
     /* Diadic */
 #define DIADIC(opi,opr,ops,prog) \
   case opi: y = (pc++)->constant; prog; break; \
   case opr: y= sp[pc[-1].code.arg]; prog; break; \
   case ops: y = x ; x = *--sp; prog; break
-    
     DIADIC(OP_ADD_i, OP_ADD_r, OP_ADD, x+=y );
     DIADIC(OP_MUL_i, OP_MUL_r, OP_MUL, x*=y );
     DIADIC(OP_SUB_i, OP_SUB_r, OP_SUB, x-=y );
@@ -366,31 +359,24 @@ dz_execute(flt top, struct dz_cell *dz)
     DIADIC(OP_DIVI_i, OP_DIVI_r, OP_DIVI, x = (flt)((int)x/(int)y) );
     DIADIC(OP_MODI_i, OP_MODI_r, OP_MODI, x = (flt)((int)x%(int)y) );
     DIADIC(OP_POWER_i, OP_POWER_r, OP_POWER, x = Fexp(y*Flog(x)) );
-    
 #undef DIADIC
-    
       
     /* Branches */
-    
   case OP_BR_l:
     pc += pc[-1].code.arg;
     break;
-    
 #define BRANCH(op,cond) \
   case op: if (cond) pc += pc[-1].code.arg; \
     x= *--sp; break;
-    
     BRANCH(OP_BREQ_l,x==0);
     BRANCH(OP_BRNEQ_l,x!=0);
     BRANCH(OP_BRGT_l,x>0);
     BRANCH(OP_BRLT_l,x<0);
     BRANCH(OP_BRGEQ_l,x>=0);
     BRANCH(OP_BRLEQ_l,x<=0);
-    
 #undef BRANCH
 
     /* For loops */
-
   case OP_BEGFOR_l:
     y = sp[-2];
     if ( (y>=0 && x<=sp[-1]) || (y<0 && x>=sp[-1]) ) {
@@ -400,7 +386,6 @@ dz_execute(flt top, struct dz_cell *dz)
       x = *--sp;
     }
     break;
-    
   case OP_ENDFOR_l:
     y = sp[-2];
     x += y;
@@ -564,7 +549,7 @@ dz_new(int narg, int reqs, int plen)
 /* ------------ STATIC CODE ANALYSIS ------------- */
 
 /* This code proves that the virtual machine code will never access illegal
- * stack position.  It works my pre-computing the stack contents expected by
+ * stack position.  It works by pre-computing the expected stack structure for
  * each byte code location.  This static code analyser was written in 1991 by
  * Leon Bottou and Patrice Simard, well before the popular java byte code
  * analyzer.
