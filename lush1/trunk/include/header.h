@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.58 2004-02-04 19:52:10 leonb Exp $
+ * $Id: header.h,v 1.59 2004-02-09 20:59:51 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -723,10 +723,11 @@ TLAPI int eq_test (at *p, at *q);
 /* ARITH.H ----------------------------------------------------- */
 
 extern LUSHAPI class complex_class;
+#ifdef HAVE_COMPLEXREAL
 LUSHAPI at *new_complex(complexreal z);
 LUSHAPI int complexp(at*);
 LUSHAPI complexreal get_complex(at*);
-
+#endif
 
 /* OOSTRUCT.H ----------------------------------------------------- */
 

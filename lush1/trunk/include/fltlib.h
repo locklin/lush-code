@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fltlib.h,v 1.3 2004-01-11 19:13:29 leonb Exp $
+ * $Id: fltlib.h,v 1.4 2004-02-09 20:59:51 leonb Exp $
  **********************************************************************/
 
 #ifndef FLTLIB_H
@@ -163,6 +163,7 @@ LUSHAPI void Dseed(int x);
 #ifdef __cplusplus
 }
 #else
+# define HAVE_COMPLEXREAL
 # ifdef HAVE_COMPLEX
 #  include <complex.h>
 typedef complex double complexreal;
