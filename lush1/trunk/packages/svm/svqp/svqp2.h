@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.2 2004-09-19 20:15:37 leonb Exp $
+ * $Id: svqp2.h,v 1.3 2004-09-20 19:50:47 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -169,8 +169,8 @@ protected:
   void   unswap(void);
   void   shrink(void);
   void   unshrink(int s);
-  int    iterate_gs(bool);
-  int    iterate_smo(bool);
+  int    iterate_gs1(void);
+  int    iterate_gs2(void);
 private:
   SVQP2(const SVQP2&);
   SVQP2& operator=(const SVQP2&);

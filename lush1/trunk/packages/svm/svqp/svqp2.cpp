@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.4 2004-09-19 20:37:47 leonb Exp $
+ * $Id: svqp2.cpp,v 1.5 2004-09-20 19:51:28 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -477,7 +477,7 @@ SVQP2::unshrink(int s)
 
 
 int
-SVQP2::iterate_gs(bool checkshrink)
+SVQP2::iterate_gs1()
 {
   int icount = 0;
   int pcount = 0;
@@ -515,7 +515,7 @@ SVQP2::iterate_gs(bool checkshrink)
       if (! mark[imax]) 
 	pcount += 2;
       mark[imax] = true;
-      if (checkshrink && pcount<icount && icount>200)
+      if (pcount<l && pcount+200<icount)
 	return RESULT_SHRINK;
       // compute kernels
       cache_clean();
@@ -553,7 +553,7 @@ SVQP2::iterate_gs(bool checkshrink)
 }
 
 int
-SVQP2::iterate_smo(bool checkshrink)
+SVQP2::iterate_gs2()
 {
   int icount = 0;
   int pcount = 0;
@@ -592,7 +592,7 @@ SVQP2::iterate_smo(bool checkshrink)
       if (! mark[imin]) 
 	pcount += 1;
       mark[imin] = true;
-      if (checkshrink && pcount<icount && icount>200)
+      if (pcount<l && pcount+200<icount)
 	return RESULT_SHRINK;
       // compute kernels
       cache_clean();
@@ -654,19 +654,17 @@ SVQP2::run(void)
       if (gn < epsgr)
 	break;
       // minimize
-      bool checkshrink = true;
       for(;;)
 	{
 	  if (sumflag)
-	    status = iterate_smo(checkshrink);
+	    status = iterate_gs2();
 	  else
-	    status = iterate_gs(checkshrink);
+	    status = iterate_gs1();
 	  if (status <= RESULT_FIN)
 	    break;
 	  // shrink
 	  int p = l;
 	  shrink();
-	  checkshrink = (l < p);
 	  gn = max(0.0, gmax-gmin);
 	  if (status == RESULT_SHRINK)
 	    info(":",": it:%d l:%d |g|:%f\n", iter, l, gn);
