@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: glut.lsh,v 1.10 2002-08-13 02:18:39 leonb Exp $
+;;; $Id: glut.lsh,v 1.11 2002-08-13 15:28:30 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -239,7 +239,8 @@
 
 
 (de glutint-poll()
-  (cpheader "#include <X11/Xlib.h>")
+  (cheader "#include <X11/Xlib.h>")
+  (cheader "#include <X11/Xutil.h>")
   (cheader "#include <GL/glut.h>")
   (cheader "#include <sys/time.h>")
   (cheader "jmp_buf glut_event_jmp;")
@@ -250,6 +251,10 @@
   (cheader "extern int __glutWindowListSize;")
   (cheader "extern void *__glutWindowWorkList;")
   (cheader "extern struct{void*next;struct timeval tv;}*__glutTimerList;")
+  ;; This is a hack to kill window delete events
+  (cheader "extern Atom __glutWMDeleteWindow;")
+  (cheader "static Bool eventdelp(Display *dpy, XEvent *ev, XPointer arg)\n\
+{ return (ev->type==ClientMessage) && (ev->xclient.data.l[0]==__glutWMDeleteWindow); }")
   ;; Go
   (let ((ms (* 24 3600 1000)))
     ((-int-) ms)
@@ -257,6 +262,8 @@
        if (__glutDisplay && __glutWindowListSize) {
          do {
            do {
+             XEvent ev;
+             while(XCheckIfEvent(__glutDisplay,&ev,eventdelp,0)) /**/;
              if (! setjmp(glut_event_jmp) ) {
                glutIdleFunc(glut_idle_jmp);
                glutMainLoop();
@@ -291,8 +298,9 @@
          $flag = 1;
        }
        if (! glhandlers) {
-         glhandlers = var_define("*GLHANDLERS");
          glhandle = var_define("glhandle");
+         glhandlers = new_htable(7,FALSE);
+         protect(glhandlers);
        }
     #}
    flag ) )
@@ -860,44 +868,39 @@
 ;; ----------------------------------------
 
 
-#? ** Glut3 API Functions
+#? ** GlutWindow class.
 ;; The following class provides an easy way
 ;; to create glut windows and handle glut callbacks.
+(defclass GlutWindow object
+  ((-int-) id) )
 
-(when (not (is-of-class |*GLHANDLERS| |HTABLE|))
-  (setq |*GLHANDLERS| (htable)) )
+#? (new GlutWindow)
+;; Constructs an empty <GlutWindow>.
+;; You must call method <create> to actually create the window.
+(defmethod GlutWindow glutwindow()
+  (setq id -1) )
 
-(de glutint-glhandle(name lexp)
-  ((-gptr- "const char*") name)
-  ((-gptr- "at*") lexp)
-  (let ((wid (glut-get-window)))
-    ;; This is mostly interpreter code...
-    #{{
-       at *m = var_get(glhandlers);
-       if (EXTERNP(m, &htable_class)) {
-         at *w = NEW_NUMBER($wid);
-         at *h = htable_get(m, w);
-         if (h && (h->flags & C_EXTERN)) {
-           UNLOCK(m);
-           m = checksend(h->Class, glhandle);
-           if (m) {
-             $lexp = cons(named((char*)$name),$lexp);
-             argeval_ptr = eval_nothing;
-             UNLOCK(w);
-             w = send_message(NIL,h,glhandle,$lexp);
-             argeval_ptr = eval_std;
-           }
-         }
-         UNLOCK(h);
-         UNLOCK(w);
-       }
-       UNLOCK(m);
-       UNLOCK($lexp);
-    }#}
-    () ) )
-
-(de glutint-set-funcs()
-  (cheader "extern_c char C_glutint_glhandle(const char *, at *);")
+#? (==> <glutwindow> set-callbacks <pasvmotion>)
+;; Establishes the various callbacks for the Glut window <glutwindow>.
+;; The mouse passive motion callback is only set when boolean
+;; <pasvmotion> is true.
+(defmethod GlutWindow set-callbacks(pasvmotion)
+  ((-bool-) pasvmotion)
+  ;; Sending messages
+  (cheader "\nstatic void glutsend(char *name, at *args)\n\
+{ if (EXTERNP(glhandlers, &htable_class)) {\n\
+    at *w = NEW_NUMBER(glutGetWindow());\n\
+    at *h = htable_get(glhandlers, w); UNLOCK(w);\n\
+    if (h && (h->flags & C_EXTERN)) {\n\
+      at *m = checksend(h->Class, glhandle);\n\
+      if (m) { args = cons(named(name),args);\n\
+        argeval_ptr = eval_nothing;\n\
+        w = send_message(NIL,h,glhandle,args);\n\
+        argeval_ptr = eval_std; UNLOCK(w); }\n\
+      UNLOCK(m); }\n\
+    UNLOCK(h); }\n\
+  UNLOCK(args); }\n")
+  ;; Building arguments
   (cheader "static at *make1i(int x)\n\
  { return cons(NEW_NUMBER(x),NIL); }")
   (cheader "static at *make2i(int x, int y)\n\
@@ -906,149 +909,141 @@
  { return cons(NEW_NUMBER(x),make2i(y,z)); }")
   (cheader "static at *make4i(int x, int y, int z, int k)\n\
  { return cons(NEW_NUMBER(x),make3i(y,z,k)); }")
+  ;; Callbacks
   (cheader "static void gDisplay(void)\n\
- { C_glutint_glhandle(\"glut-display\",NIL);}")
+ { glutsend(\"glut-display\",NIL);}")
   (cheader "static void gReshape(int w, int h)\n\
- { C_glutint_glhandle(\"glut-reshape\", make2i(w,h));}")
+ { glutsend(\"glut-reshape\", make2i(w,h));}")
   (cheader "static void gKeyboard(unsigned char key, int x, int y)\n\
- { C_glutint_glhandle(\"glut-keyboard\", make3i(key,x,y));}")
+ { glutsend(\"glut-keyboard\", make3i(key,x,y));}")
   (cheader "static void gMouse(int btn, int state, int x, int y)\n\
- { C_glutint_glhandle(\"glut-mouse\", make4i(btn,state,x,y));}")
+ { glutsend(\"glut-mouse\", make4i(btn,state,x,y));}")
   (cheader "static void gMotion(int x, int y)\n\
- { C_glutint_glhandle(\"glut-motion\", make2i(x,y));}")
+ { glutsend(\"glut-motion\", make2i(x,y));}")
+  (cheader "static void gPassiveMotion(int x, int y)\n\
+ { glutsend(\"glut-passive-motion\", make2i(x,y));}")
   (cheader "static void gEntry(int state)\n\
- { C_glutint_glhandle(\"glut-entry\", make1i(state));}")
+ { glutsend(\"glut-entry\", make1i(state));}")
   (cheader "static void gVisibility(int state)\n\
- { C_glutint_glhandle(\"glut-visibility\", make1i(state));}")
+ { glutsend(\"glut-visibility\", make1i(state));}")
   (cheader "static void gMenuState(int state)\n\
- { C_glutint_glhandle(\"glut-menu-state\", make1i(state));}")
+ { glutsend(\"glut-menu-state\", make1i(state));}")
   (cheader "static void gSpecial(int key, int x, int y)\n\
- { C_glutint_glhandle(\"glut-special\", make3i(key,x,y));}")
+ { glutsend(\"glut-special\", make3i(key,x,y));}")
+  (cheader "static void gSpaceballMotion(int x, int y, int z)\n\
+ { glutsend(\"glut-spaceball-motion\", make3i(x,y,z));}")
+  (cheader "static void gSpaceballRotate(int x, int y, int z)\n\
+ { glutsend(\"glut-spaceball-rotate\", make3i(x,y,z));}")
   (cheader "static void gSpaceballButton(int btn, int state)\n\
- { C_glutint_glhandle(\"glut-spaceball-button\", make2i(btn,state));}")
+ { glutsend(\"glut-spaceball-button\", make2i(btn,state));}")
   (cheader "static void gButtonBox(int btn, int state)\n\
- { C_glutint_glhandle(\"glut-button-box\", make2i(btn,state));}")
+ { glutsend(\"glut-button-box\", make2i(btn,state));}")
   (cheader "static void gDials(int dial, int val)\n\
- { C_glutint_glhandle(\"glut-dials\", make2i(dial,val));}")
+ { glutsend(\"glut-dials\", make2i(dial,val));}")
+  (cheader "static void gTabletMotion(int x, int y)\n\
+ { glutsend(\"glut-tablet-motion\", make2i(x,y));}")
   (cheader "static void gTabletButton(int btn, int state, int x, int y)\n\
- { C_glutint_glhandle(\"glut-tablet-button\", make4i(btn,state,x,y));}")
+ { glutsend(\"glut-tablet-button\", make4i(btn,state,x,y));}")
   (cheader "static void gMenuStatus(int status, int x, int y)\n\
- { C_glutint_glhandle(\"glut-menu-status\", make3i(status,x,y));}")
+ { glutsend(\"glut-menu-status\", make3i(status,x,y));}")
   (cheader "static void gOverlayDisplay(void)\n\
- { C_glutint_glhandle(\"glut-overlay-display\",NIL);}")
+ { glutsend(\"glut-overlay-display\",NIL);}")
   #{
   glutDisplayFunc(gDisplay);
   glutReshapeFunc(gReshape);
   glutKeyboardFunc(gKeyboard);
   glutMouseFunc(gMouse);
   glutMotionFunc(gMotion);
+  glutPassiveMotionFunc($pasvmotion ? gPassiveMotion : 0);
   glutEntryFunc(gEntry);
   glutVisibilityFunc(gVisibility);
   glutMenuStateFunc(gMenuState);
   glutSpecialFunc(gSpecial);
   glutSpaceballButtonFunc(gSpaceballButton);
+  glutSpaceballMotionFunc(gSpaceballMotion);
+  glutSpaceballRotateFunc(gSpaceballRotate);
   glutButtonBoxFunc(gButtonBox);
   glutDialsFunc(gDials);
   glutTabletButtonFunc(gTabletButton);
+  glutTabletMotionFunc(gTabletMotion);
   glutMenuStatusFunc(gMenuStatus);
   glutOverlayDisplayFunc(gOverlayDisplay);
   #}
   () )
 
-(de glutint-set-motion-funcs()
-  (cheader "static void gPassiveMotion(int x, int y)\n\
- { C_glutint_glhandle(\"glut-passive-motion\", make2i(x,y));}")
-  (cheader "static void gSpaceballMotion(int x, int y, int z)\n\
- { C_glutint_glhandle(\"glut-spaceball-motion\", make3i(x,y,z));}")
-  (cheader "static void gSpaceballRotate(int x, int y, int z)\n\
- { C_glutint_glhandle(\"glut-spaceball-rotate\", make3i(x,y,z));}")
-  (cheader "static void gTabletMotion(int x, int y)\n\
- { C_glutint_glhandle(\"glut-tablet-motion\", make2i(x,y));}")
-  #{ glutPassiveMotionFunc(gPassiveMotion);
-  glutSpaceballMotionFunc(gSpaceballMotion);
-  glutSpaceballRotateFunc(gSpaceballRotate);
-  glutTabletMotionFunc(gTabletMotion);
-  #}
-  () )
-
-(de glutint-clr-motion-funcs()
-  #{ glutPassiveMotionFunc(0);
-  glutSpaceballMotionFunc(0);
-  glutSpaceballRotateFunc(0);
-  glutTabletMotionFunc(0);
-  #}
-  () )
-
-
-
-(defclass GlutWindow object
-  id )
-
-#? (new GlutWindow [<x> <y> [<w> <h>]] [<name>])
-;; Constructs a <GlutWindow> object and optionally
-;; creates the associated glut window.
-;; Arguments <x>, <y>, <w>, <h> specify the window location and size.  
-;; Argument <name> specify the window name.  
-(defmethod GlutWindow glutwindow args
-  (when args
-    (selectq (length args)
-      (1 (setq args (list () () () () (car args))))
-      (2 (setq args (list () () (car args) (cadr args) ())))
-      (3 (setq args (list () () . args)))
-      (4 (setq args (append args (list ())))) )
-    (apply==> this 'create args) ) )
-
-(defmethod GlutWindow -destructor()
-  (==> this destroy) )
+#? (==> <glutwindow> destroy)
+;; Destroys the actual glut window 
+;; associated with <glutwindow>.
+(defmethod GlutWindow destroy()
+  (when (> id 0)
+    #{{ at *wid = NEW_NUMBER($id);
+        htable_set(glhandlers, wid, NIL);
+        UNLOCK(wid); }#}
+    (glut-destroy-window id) )
+  (setq id -1) )
 
 #? (==> <glutwindow> create <x> <y> <w> <h> <name>)
 ;; Creates the actual glut window associated with the object <glutwindow>.  
 ;; Arguments <x>, <y>, <w>, <h> specify the window location and size.  
 ;; Argument <name> specify the window name.
-;; Passing the empty list leaves an argument unspecified.
+;; Passing zero leaves the argument unspecified
 (defmethod GlutWindow create(x y w h name)
-  (when id (==> this destroy))
-  (when (and x y) (glut-init-window-position x y))
-  (when (and w h) (glut-init-window-size w h))
-  (setq id (glut-create-window (or name "GlutWindow")))
-  (|*GLHANDLERS| id this)
-  (glutint-set-funcs)
-  id )
+  ((-int-) x y w h)
+  ((-str-) name)
+  (when (> id 0)
+    (==> this destroy) )
+  (when (and (> x 0) (> y 0))
+    (glut-init-window-position x y) )
+  (when (and (> w 0) (> h 0))
+    (glut-init-window-size w h) )
+  (setq id (glut-create-window name))
+  #{{ at *wid = NEW_NUMBER($id);
+      htable_set(glhandlers, wid, cside_find_litem($this));
+      UNLOCK(wid); }#}
+  (==> this set-callbacks ())
+  id ) 
 
-#? (==> <glutwindow> destroy)
-;; Destroys the actual glut window 
-;; associated with <glutwindow>.
-(defmethod GlutWindow destroy()
-  (when id
-    (|*GLHANDLERS| id ())
-    (glut-destroy-window id)
-    (setq id ()) ) )
 
-#? (==> <glutwindow> capture-motion <flag>)
-;; Selects whether the <glut-passive-motion>,
-;; <glut-spaceball-motion>, <glut-spaceball-rotate>
-;; and <glut-tablet-motion> are generated at all.
-;; Generating these callbacks potentially creates
-;; a lot of traffic between the X server and
-;; the currently executing program.
-(defmethod GlutWindow capture-motion(flag)
-  (when id
-    (let ((oid (glut-get-window)))
-      (glut-set-window id)
-      (if flag
-          (glutint-set-motion-funcs)
-        (glutint-get-motion-funcs) )
-      (glut-set-window oid) ) ) )
+#? (==> <glutwindow> set-event-handler <handler>)
+;; Sets the event handler used for posting glut events
+
+(when (not :glutwindow-handlers)
+  (defvar glutwindow-handlers (htable 7 t)) )
+
+(defmethod GlutWindow set-event-handler(handler)
+  (:glutwindow-handlers this handler) )
+
+(defmethod GlutWindow -destructor()
+  (glutwindow-handlers this ())
+  (==> this destroy) )
 
 #? (==> <glutwindow> glhandle <...glcallback...>)
-;; This function gets called whenever Glut 
-;; calls a callback for window <glutwindow>.
-;; The default implementation immediately calls a method
-;; named after the callback selector <glut-xxxx>.
+;; This function gets called whenever a 
+;; callback for window <glutwindow> is called.
+;; The default implementation immediatly calls
+;; methods <glut-reshape>, <glut-display> or <glut-overlay-display>
+;; in order to benefit from Glut optimizations.
+;; All other callbacks are added to the Lush event queue.
+;;
+;; Note: This method is not and cannot be compiled.
 (defmethod GlutWindow glhandle glfunc
-  (when (and (consp glfunc) (symbolp (car glfunc))
-             (check==> (classof this) (car glfunc)) )
-    (apply==> this (car glfunc) (cdr glfunc)) ) )
+  (let ((handler (or (glutwindow-handlers this) this)))
+    (when (consp glfunc)
+      (if (member (car glfunc) '(glut-reshape glut-display glut-overlay-display))
+          (if (check==> (classof handler) (car glfunc))
+              (apply==> handler (car glfunc) (cdr glfunc))
+            (apply==> this (car glfunc) (cdr glfunc)) ) 
+        (if (symbolp (car glfunc))
+            (sendevent (or (glutwindow-handlers this) this) glfunc)) ) ) ) )
+
+#? (==> <glutwindow> handle <event>)
+;; This function is called to handle glut events posted by <glhandle>.
+;; Unless a different event handler is set using method <set-event-handler>,
+;; glut messages are processed by this function 
+;; when <process-pending-events> is called.
+(defmethod GlutWindow handle(event)
+  (when (and (consp event) (check==> (classof this) (car event)))
+    (apply==> this (car event) (cdr event)) ) )
 
 #? (==> <glutwindow> glut-display)
 (defmethod GlutWindow glut-display()
@@ -1145,7 +1140,7 @@
     ;; Compile using X11 flags.
     ;; Then initialize
     (let ((dhc-make-lushflags dhc-make-lushflags)
-          (libs (list opengl-libgl opengl-libglu opengl-libglut)) )
+          (libs (list opengl-libX11 opengl-libgl opengl-libglu opengl-libglut)) )
       (when (getconf "X_CFLAGS")
         (setq dhc-make-lushflags
               (concat dhc-make-lushflags
@@ -1182,11 +1177,7 @@
                           glut-wire-tetrahedron glut-solid-tetrahedron glut-wire-icosahedron
                           glut-solid-icosahedron
                           ;; Glut window
-                          glutint-glhandle 
-                          glutint-set-funcs
-                          glutint-set-motion-funcs
-                          glutint-clr-motion-funcs
-                          ) 
+                          (GlutWindow glutwindow set-callbacks destroy create) ) 
       ;; Init
       (module-never-unload (mod-search "glut.o"))
       (glutint-init) ) ) )

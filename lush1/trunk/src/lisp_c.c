@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.17 2002-07-29 15:38:04 leonb Exp $
+ * $Id: lisp_c.c,v 1.18 2002-08-13 15:28:30 leonb Exp $
  **********************************************************************/
 
 
@@ -1443,6 +1443,20 @@ cside_destroy_range(void *from, void *to)
         cside_destroy_node(n);
       n = m;
     }
+}
+
+
+/* cside_find_at -- returns lisp object associated with cptr */
+
+at * 
+cside_find_litem(void *cptr)
+{
+  avlnode *n = avl_find(cptr);
+  if (n && n->litem) {
+    LOCK(n->litem);
+    return n->litem;
+  }
+  return NIL;
 }
 
 

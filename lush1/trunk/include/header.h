@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.39 2002-08-07 20:01:50 leonb Exp $
+ * $Id: header.h,v 1.40 2002-08-13 15:28:24 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -1233,7 +1233,7 @@ LUSHAPI void cside_create_idx(void *cptr);
 LUSHAPI void cside_create_srg(void *cptr);
 LUSHAPI void cside_create_obj(void *cptr, dhclassdoc_t *);
 LUSHAPI void cside_destroy_range(void *from, void *to);
-
+LUSHAPI at * cside_find_litem(void *cptr);
 
 
 /* EVENT.H ----------------------------------------------------- */
