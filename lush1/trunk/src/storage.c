@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.5 2002-05-02 21:08:56 leonb Exp $
+ * $Id: storage.c,v 1.6 2002-05-07 18:22:17 leonb Exp $
  **********************************************************************/
 
 
@@ -437,6 +437,22 @@ storage_listeval(at *p, at *q)
 }
 
 
+static void 
+swap_buffer(char *b, int n, int m)
+{
+  int i,j;
+  char buffer[16];
+  for (i=0; i<n; i++) {
+    for (j=0; j<m; j++)
+      buffer[j] = b[m-j-1];
+    for (j=0; j<m; j++)
+      *b++ = buffer[j];
+  }
+}
+
+#define STORAGE_NORMAL (0x53524758)
+#define STORAGE_SWAPPED (0x58475253)
+
 static void
 storage_serialize(at **pp, int code)
 {
@@ -472,10 +488,23 @@ storage_serialize(at **pp, int code)
       else 
         {
           FILE *f = serialization_file_descriptor(code);
-          if (code == SRZ_WRITE)
-            storage_save(*pp, f);
-          else if (code == SRZ_READ)
-            storage_load(*pp, f);     // what about endianness?
+          if (code == SRZ_WRITE) 
+            {
+              extern int in_bwrite;
+              in_bwrite += sizeof(int) + size * storage_type_size[type];
+              write4(f, STORAGE_NORMAL);
+              storage_save(*pp, f);
+            } 
+          else if (code == SRZ_READ) 
+            {
+              int magic = read4(f);
+              storage_load(*pp, f);
+              st = (*pp)->Object;
+              if (magic == STORAGE_SWAPPED)
+                swap_buffer(st->srg.data, size, storage_type_size[type]);
+              else if (magic != STORAGE_NORMAL)
+                error(NIL,"Corrupted binary file (storage_serialize)",NIL);
+            }
         }
     }
 }

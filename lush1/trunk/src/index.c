@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.10 2002-05-02 21:08:56 leonb Exp $
+ * $Id: index.c,v 1.11 2002-05-07 18:22:17 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -178,6 +178,36 @@ index_listeval(at *p, at *q)
     return p;
   } else
     error(NIL, "too many dimensions", qsav);
+}
+
+static void
+index_serialize(at **pp, int code)
+{
+  int i;
+  at *st = NIL;
+  struct index *id = 0;
+  
+  if (code != SRZ_READ)
+    {
+      id = (*pp)->Object;
+      st = id->atst;
+    }
+  serialize_atstar(&st, code);
+  if (code == SRZ_READ)
+    {
+      *pp = new_index(st);
+      id = (*pp)->Object;
+      UNLOCK(st);
+    }
+  serialize_int(&id->offset, code);
+  serialize_short(&id->ndim, code);
+  for (i=0; i<id->ndim; i++)
+    serialize_int(&id->dim[i], code);
+  for (i=0; i<id->ndim; i++)
+    serialize_int(&id->mod[i], code);
+  if  (code == SRZ_READ)
+    if (id->ndim >= 0)
+      id->flags &= ~IDF_UNSIZED;
 }
 
 
@@ -372,7 +402,7 @@ class index_class = {
   index_name,
   generic_eval,
   index_listeval,
-  generic_serialize,
+  index_serialize,
   index_compare,
   index_hash,
   index_getslot,
@@ -994,11 +1024,11 @@ DX(xsubindex)
       start[i] = p->Number;
       dim[i] = 0;
     } else if (CONSP(p) && CONSP(p->Cdr) && !p->Cdr->Cdr) {
-      if (EXTERNP(p->Car,&index_class)) 
+      if (NUMBERP(p->Car))
 	start[i] = p->Car->Number;
       else
 	error(NIL,"not a number",p->Car);
-      if (EXTERNP(p->Cdr->Car,&index_class)) 
+      if (NUMBERP(p->Cdr->Car))
 	dim[i] = 1 + p->Cdr->Car->Number - start[i];
       else
 	error(NIL,"not a number",p->Cdr->Car);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.8 2002-05-07 17:30:12 leonb Exp $
+ * $Id: binary.c,v 1.9 2002-05-07 18:22:17 leonb Exp $
  **********************************************************************/
 
 
@@ -291,7 +291,7 @@ sweep(at *p, int code)
       sweep(s->methods, code);
     }
   
-  else if (p->Class == &index_class)
+  else if (p->Class == &index_class && !opt_bwrite)
     {
       struct index *ind = p->Object;
       if (ind->st->srg.type == ST_AT)
@@ -874,7 +874,7 @@ local_write(at *p)
       return 0;
     }
   
-  if (p->Class == &index_class)
+  if (p->Class == &index_class && !opt_bwrite)
     {
       int i;
       struct index *arr = p->Object;
@@ -973,7 +973,17 @@ DX(xbwrite)
   int count = 0;
   ALL_ARGS_EVAL;
   for (i=1; i<=arg_number; i++) 
-    count += bwrite( APOINTER(i), context->output_file, 0 );
+    count += bwrite( APOINTER(i), context->output_file, FALSE );
+  return NEW_NUMBER(count);
+}
+
+DX(xbwrite_exact)
+{
+  int i;
+  int count = 0;
+  ALL_ARGS_EVAL;
+  for (i=1; i<=arg_number; i++) 
+    count += bwrite( APOINTER(i), context->output_file, TRUE );
   return NEW_NUMBER(count);
 }
 
@@ -1331,20 +1341,15 @@ bread(FILE *f, int opt)
 
 DX(xbread)
 {
-  int opt = FALSE;
-  ALL_ARGS_EVAL;
-  switch (arg_number) {
-  case 1:
-    if (APOINTER(1))
-      opt = TRUE;
-  case 0:
-    return bread(context->input_file, opt);
-  default:
-    ARG_NUMBER(-1);
-    return NIL;
-  }
+  ARG_NUMBER(0);
+  return bread(context->input_file, FALSE);
 }
 
+DX(xbread_exact)
+{
+  ARG_NUMBER(0);
+  return bread(context->input_file, TRUE);
+}
 
 /*** INITIALISATION ***/
 
@@ -1353,5 +1358,7 @@ init_binary(void)
 {
   set_swapflag();
   dx_define("bwrite",xbwrite);
+  dx_define("bwrite-exact",xbwrite_exact);
   dx_define("bread",xbread);
+  dx_define("bread-exact",xbread_exact);
 }

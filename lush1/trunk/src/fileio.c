@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.3 2002-04-25 22:54:27 leonb Exp $
+ * $Id: fileio.c,v 1.4 2002-05-07 18:22:17 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -1487,10 +1487,6 @@ file_close(FILE *f)
 
 /* read4(f), write4(f,x) 
  * Low level function to read or write 4-bytes integers, 
- * with highest order byte at lowest address..... 
- *
- * These functions are useful for accessing 
- * file headers into machine independant files.
  * Assuming sizeof(int)==4
  */
 int 
