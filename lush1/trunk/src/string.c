@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.22 2004-09-18 23:57:53 leonb Exp $
+ * $Id: string.c,v 1.23 2004-10-20 21:50:38 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -941,17 +941,17 @@ static char *err[] = {
 /* ----------- private routines ------------ */
 
 
-static bounds regex_alternate(bounds buf, int *rnum);
+static void regex_alternate(bounds*, bounds, int*);
 
-static bounds
-regex_single(bounds buf, int *rnum)
+static void
+regex_single(bounds *ans, bounds buf, int *rnum)
 {
-  bounds ans,tmp;
+  bounds tmp;
   unsigned short *set;
   int toggle=0,last=0;
   unsigned char c;
 
-  ans.beg = ans.end = buf.beg;
+  ans->beg = ans->end = buf.beg;
 
   switch (c = *pat++) {
 
@@ -966,29 +966,29 @@ regex_single(bounds buf, int *rnum)
 
   case '\\':
     if (!*pat) serror(3);
-    concatc(ans,*pat,buf);
+    concatc((*ans),*pat,buf);
     pat++;
-    return ans;
+    break;
     
   case '.':
-    concatc(ans,RE_ANY,buf);
-    return ans;
+    concatc((*ans),RE_ANY,buf);
+    break;
 
   case '(':
     last = *rnum;
     *rnum = *rnum + 1;
-    concatc(ans,RE_START+last,buf);
+    concatc((*ans),RE_START+last,buf);
     buf.beg += 1;
-    tmp = regex_alternate(buf,rnum);
-    concatb(ans,tmp,buf);
+    regex_alternate(&tmp, buf,rnum);
+    concatb((*ans),tmp,buf);
     if (*pat!=')') serror(1);
-    concatc(ans,RE_END+last,buf);
+    concatc((*ans),RE_END+last,buf);
     pat++;
-    return ans;
+    break;
     
   case '[':
-    if (ans.end>buf.beg+18) serror(0);
-    set = ans.end+1;
+    if (ans->end>buf.beg+18) serror(0);
+    set = ans->end+1;
     charset_zero(set);
     toggle = last = 0;
     if (*pat=='^')  { toggle=1; pat++; }
@@ -1013,114 +1013,111 @@ regex_single(bounds buf, int *rnum)
     last = 15;
     while (set[last]==0 && last>0) 
       last--;
-    concatc(ans,RE_RNG+last+1,buf);
-    ans.end += last+1;
-    return ans;
+    concatc((*ans),RE_RNG+last+1,buf);
+    ans->end += last+1;
+    break;
 
   case '^':
-    concatc(ans,RE_CARET,buf);
-    return ans;
+    concatc((*ans),RE_CARET,buf);
+    break;
     
   case '$':
-    concatc(ans,RE_DOLLAR,buf);
-    return ans;
+    concatc((*ans),RE_DOLLAR,buf);
+    break;
     
   default:
-    concatc(ans,c,buf);
-    return ans;
+    concatc((*ans),c,buf);
+    break;
     
   }
 }
 
 
-static bounds
-regex_several(bounds buf, int *rnum)
+static void
+regex_several(bounds *ans, bounds buf, int *rnum)
 {
   bounds b;
-  bounds ans,rem;
+  bounds rem;
 
-  ans.beg = buf.beg;
-  ans.end = buf.beg;
-  rem.beg = ans.beg+2;
+  ans->beg = buf.beg;
+  ans->end = buf.beg;
+  rem.beg = ans->beg+2;
   rem.end = buf.end;
 
-  b = regex_single(rem,rnum);
+  regex_single(&b, rem,rnum);
 
   switch (*pat) {
 
   case '?':
-    concatc(ans, RE_FAIL+(b.end-b.beg), buf);
-    concatb(ans, b, buf);
+    concatc((*ans), RE_FAIL+(b.end-b.beg), buf);
+    concatb((*ans), b, buf);
     pat++;
-    return ans;
+    break;
 
   case '+':
-    concatb(ans,b,buf);
-    concatc(ans, RE_FAIL+1, buf);
-    concatc(ans, RE_JMP+(b.beg-b.end)-2, buf);
+    concatb((*ans),b,buf);
+    concatc((*ans), RE_FAIL+1, buf);
+    concatc((*ans), RE_JMP+(b.beg-b.end)-2, buf);
     pat++;
-    return ans;
+    break;
 
   case '*':
-    concatc(ans, RE_FAIL+(b.end-b.beg)+1, buf);
-    concatb(ans,b,buf);
-    concatc(ans, RE_JMP+(b.beg-b.end)-2, buf);
+    concatc((*ans), RE_FAIL+(b.end-b.beg)+1, buf);
+    concatb((*ans),b,buf);
+    concatc((*ans), RE_JMP+(b.beg-b.end)-2, buf);
     pat++;
-    return ans;
+    break;
 
   default:
-    concatb(ans,b,buf);
-    return ans;
+    concatb((*ans),b,buf);
+    break;
   }
 }
 
-static bounds
-regex_catenate(bounds buf, int *rnum)
+static void
+regex_catenate(bounds *ans, bounds buf, int *rnum)
 {
   bounds b;
-  bounds ans,rem;
+  bounds rem;
 
-  ans.beg = buf.beg;
-  ans.end = buf.beg;
+  ans->beg = buf.beg;
+  ans->end = buf.beg;
   rem.beg = buf.beg;
   rem.end = buf.end;
 
   do {
-    rem.beg = ans.end;
-    b = regex_several(rem,rnum);
-    concatb(ans,b,buf);
+    rem.beg = ans->end;
+    regex_several(&b,rem,rnum);
+    concatb((*ans),b,buf);
   } while (*pat && *pat!='|' && *pat!=')');
-  return ans;
 }
 
-static bounds
-regex_alternate(bounds buf, int *rnum)
+static void
+regex_alternate(bounds *ans, bounds buf, int *rnum)
 {
   bounds b1,b2;
-  bounds ans,rem;
+  bounds rem;
   int newrnum;
 
-  ans.beg = buf.beg;
-  ans.end = buf.beg;
+  ans->beg = buf.beg;
+  ans->end = buf.beg;
   rem.beg = buf.beg+1;
   rem.end = buf.end;
 
   newrnum = *rnum;
-  b1 = regex_catenate(rem,rnum);
+  regex_catenate(&b1,rem,rnum);
   if (*pat == '|') {
     pat++;
     rem.beg = b1.end+1;
-    b2 = regex_alternate(rem,&newrnum);
+    regex_alternate(&b2,rem,&newrnum);
     if (newrnum>*rnum)
       *rnum = newrnum;
-    concatc(ans, RE_FAIL+(b1.end-b1.beg+1), buf);
-    concatb(ans, b1, buf);
-    concatc(ans, RE_JMP +(b2.end-b2.beg), buf);
-    concatb(ans, b2, buf);
-    return ans;
+    concatc((*ans), RE_FAIL+(b1.end-b1.beg+1), buf);
+    concatb((*ans), b1, buf);
+    concatc((*ans), RE_JMP +(b2.end-b2.beg), buf);
+    concatb((*ans), b2, buf);
   } else {
-    concatb(ans, b1, buf);
-    return ans;
+    concatb((*ans), b1, buf);
   }
 }
 
@@ -1236,7 +1233,7 @@ regex_compile(char *pattern,
     }
   else 
     {
-      bounds buf;
+      bounds buf, tmp;
       buf.beg = (unsigned short*) bufstart;
       buf.end = (unsigned short*) bufend;
       if (strict) 
@@ -1244,7 +1241,8 @@ regex_compile(char *pattern,
 	  *buf.beg++ = RE_CARET;
 	  buf.end--;
 	}
-      buf = regex_alternate(buf,rnum); 
+      regex_alternate(&tmp,buf,rnum); 
+      buf = tmp;
       if (strict) 
 	*buf.end++ = RE_DOLLAR;
       *buf.end = 0;
