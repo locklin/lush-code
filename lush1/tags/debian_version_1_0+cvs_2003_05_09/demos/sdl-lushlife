@@ -1,0 +1,92 @@
+#!/bin/sh
+exec lush "$0" "$@"
+!#
+
+
+;; A basic implementation of Conway's Game of Life using SDL
+;; Keir Mierle, Jan 2003.
+;; http://keir.mierle.com
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; process command line arguments
+
+(setq prob 0.2)
+
+(cond
+ ((or (member "-h" argv)
+      (member "--help" argv))
+  (writing "$stderr" 
+   (render-brace-text 0 72
+   '{<p> Synopsis: ,,(basename (car argv)) [-h] [-p prob] {<br>}
+     A simple implementation of Conway's Game of Life.
+     {<ul>
+      {<li> "-h": show this message}
+      {<li> "-p prob": set the probability of an on cell to "prob"
+            for the random initialization. "prob" should be a real
+            number between 0 and 1 (the default value is 0.2)}}
+      While the program is running, press the "r" key
+      to restart from a random configuration, and
+      press "q" to quit.
+     }))
+  (exit 0))
+ ((setq zz (member "-p" argv))
+  (if (not (cadr zz))
+    (progn
+      (writing "$stderr" (printf "probability value missing\n"))
+      (exit 1))
+   (setq zz (val (cadr zz)))
+   (if (and zz (<= zz 1) (>= zz 0))
+      (setq prob zz) 
+    (writing "$stderr" (printf "illegal probability\n"))
+    (exit 1)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; run life
+
+;; the compiled functions are in a separate file.
+;; We don't have to tell lush where to find the
+;; file because the directory of the file being
+;; loaded (i.e. the present file) is always searched first.
+
+(libload "sdl/libsdl")
+(libload "lushlife.lsh")
+
+(setq WIDTH 640)
+(setq HEIGHT 480)
+(setq CONST_255 (ubyte-matrix))
+(CONST_255 255)
+
+(de life () 
+  (sdl-initialize)
+  (let* 
+      ((display (ubyte-matrix HEIGHT WIDTH 3))
+       (accum (ubyte-matrix HEIGHT WIDTH))
+       (cells (ubyte-matrix (+ HEIGHT 2) (+ WIDTH 2)))
+       (scr (new sdlidx-screen display "Game of Life"))
+       (event (new sdl-event)) 
+       (xyk (int-matrix 3))
+       (stop ()))
+
+    ;; initialize cells
+    (randomize cells prob)
+
+    (while (not stop) 
+
+      ;; Draw the cells matrix to the display matrix
+      (idx-copy (idx-dotm0 (narrow (narrow cells 0 HEIGHT 1) 1 WIDTH 1) CONST_255) 
+		(select display 2 1))
+
+      ;; Perform the simulation
+      (lifesim cells accum)
+		
+      ;; Check the keys for interesting keypresses and respond accordingly
+      (==> event get-arrows xyk) 
+      (selectq (xyk 2)
+	(@@SDLK_q (setq stop t))
+	(@@SDLK_r (randomize cells prob)))
+
+      ;; Flip the buffer
+      (==> scr flip) )))
+
+(writing "$stderr" (printf "Press 'r' to restart. Press 'q' to quit\n"))
+(life)
