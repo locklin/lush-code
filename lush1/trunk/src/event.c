@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.16 2002-12-12 08:24:07 leonb Exp $
+ * $Id: event.c,v 1.17 2003-03-04 17:13:24 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -581,22 +581,6 @@ unblock_async_poll(void)
 /* ------------------------------------ */
 /* PROCESSING EVENTS                    */
 /* ------------------------------------ */     
-
-static void
-call_hook(at *hook, at *args)
-{
-  if (EXTERNP(hook, &symbol_class))
-    {
-      at *ans = NIL;
-      at *fun = var_get(hook);
-      if (fun && error_doc.ready_to_an_error)
-        if (fun->flags & X_FUNCTION)
-          ans = apply(hook, args);
-      UNLOCK(fun);
-      UNLOCK(ans);
-    }
-}
-
 
 /* event_wait --
    Waits until events become available.
