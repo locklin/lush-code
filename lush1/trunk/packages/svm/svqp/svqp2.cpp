@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.10 2004-10-18 21:15:50 leonb Exp $
+ * $Id: svqp2.cpp,v 1.11 2004-10-19 21:03:48 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -101,7 +101,7 @@ inline void exch(T &v1, T &v2)
 void
 SVQP2::info(const char *s1, const char *s2, ...)
 {
-  if (verbosity >= 0)
+  if (verbosity > 0)
     {
       const char *fmt = s1;
       if (s2 && (verbosity>1 || vdots>=40 || !fmt))
@@ -123,9 +123,9 @@ SVQP2::info(const char *s1, const char *s2, ...)
 int 
 SVQP2::error(const char *message)
 {
-  if (verbosity>=1 && vdots>0)
+  if (verbosity>0 && vdots>0)
     fprintf(stdout,"\n");
-  if (verbosity>=1)
+  if (verbosity>0)
     fprintf(stdout,"SVQP2 error: %s\n", message);
   errmsg = message;
   return -1;
