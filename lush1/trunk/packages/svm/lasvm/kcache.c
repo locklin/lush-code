@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.c,v 1.3 2005-02-12 02:27:22 leonb Exp $
+ * $Id: kcache.c,v 1.4 2005-02-12 02:32:48 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -386,6 +386,7 @@ lasvm_kcache_query_row(lasvm_kcache_t *self, int i, int len)
 int 
 lasvm_kcache_status_row(lasvm_kcache_t *self, int i)
 {
+  ASSERT(self);
   ASSERT(i>=0);
   if (i < self->l)
     return max(0,self->rsize[i]);
@@ -395,6 +396,7 @@ lasvm_kcache_status_row(lasvm_kcache_t *self, int i)
 void 
 lasvm_kcache_discard_row(lasvm_kcache_t *self, int i)
 {
+  ASSERT(self);
   ASSERT(i>=0);
   if (i<self->l && self->rsize[i]>0)
     {
