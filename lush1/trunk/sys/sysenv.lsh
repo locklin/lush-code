@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.95 2003-03-06 15:23:30 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.96 2003-03-20 21:02:50 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -726,9 +726,31 @@
 
 (defvar libload.data (htable))
 
-(de libload.check(fname seen)
-  (seen fname t)
-  (let* ((rname (or (relative-fname lushdir fname) fname))
+(de libload.search(s)
+  (let ((fname ()))
+    (when (and (stringp file-being-loaded) (<> file-being-loaded "$stdin"))
+      (when (not s) (setq s file-being-loaded))
+      (setq fname (filepath (concat-fname (dirname file-being-loaded) s))) )
+    (when (not fname)
+      (setq fname (filepath s)) )
+    (when (not fname)
+      (error 'libload.search "File not found" s) )
+    fname ) )
+
+(de libload.add(rname)
+  (when (and (stringp file-being-loaded) (<> file-being-loaded "$stdin"))
+    (let* ((f (or (relative-fname lushdir file-being-loaded) file-being-loaded))
+           (frec (libload.data f)))
+      (when (not frec)
+        (setq frec (cons t ()))
+        (libload.data f frec) )
+      (when (not (member rname (cdr frec)))
+        (rplacd frec (cons rname (cdr frec)))
+        rname ) ) ) )
+
+(de libload.check(rname seen)
+  (seen rname t)
+  (let* ((fname (concat-fname lushdir rname))
          (frec (libload.data rname))
          (ok t) )
     (when (consp frec)
@@ -738,7 +760,6 @@
                    (<= mtime (car frec)) )
           (setq ok ())
           (each ((d (cdr frec)))
-            (setq d (concat-fname lushdir d))
             (when (not (seen d))
               (when (libload.check d seen)
                 (setq ok t) ) ) ) ) ) )
@@ -746,37 +767,45 @@
       (libload.data rname ())
       t ) ) )
 
+(de libload-dependencies(&optional fname)
+  (setq fname (if fname (or (filepath fname) fname) file-being-loaded))
+  (let* ((rname (or (relative-fname lushdir fname) fname))
+         (frec (libload.data rname)) )
+    (when frec
+      (all ((d (cdr frec)))
+        (concat-fname lushdir d) ) ) ) )
+
+(de libload-add-dependency(s &optional mustload)
+  (let* ((fname (filepath s))
+         (rname (or (relative-fname lushdir fname) fname)) )
+    ;; record dependency
+    (libload.add rname)
+    ;; mark as already loaded
+    (let ((frec (libload.data rname))
+          (mtime (alist-get 'mtime (fileinfo fname))) )
+      (when (not frec)
+        (libload.data rname (list (or mtime (now))))
+        fname ) ) ) )
+
 (de libload(s &optional opt)
-  (let ((fname ())
-        (rname ()))
-    ;; search relative to load directory
-    (when (and (stringp file-being-loaded) (<> file-being-loaded "$stdin"))
-      (setq fname (filepath (concat-fname (dirname file-being-loaded) s))) )
-    (when (not fname)
-      (setq fname (filepath s)) )
-    (when (not fname)
-      (error 'libload "File not found" s) )
-    (setq rname (or (relative-fname lushdir fname) fname))
-    (when (and opt (not (stringp opt)))
+  (let* ((fname (libload.search s))
+         (rname (or (relative-fname lushdir fname) fname)) )
+    ;; force
+    (when opt 
       (libload.data rname ()) )
-    (when (not (stringp opt))
+    (when (not (stringp opt)) 
       (setq opt "") )
     ;; record dependency
-    (when (and (stringp file-being-loaded) (<> file-being-loaded "$stdin"))
-      (let* ((f (or (relative-fname lushdir file-being-loaded) file-being-loaded))
-             (frec (libload.data f)))
-        (when (not frec)
-          (setq frec (cons t ()))
-          (libload.data f frec) )
-        (when (not (member rname (cdr frec)))
-          (rplacd frec (cons rname (cdr frec))) ) ) )
-    ;; check time and recursive dependencies
-    (when (libload.check fname (htable))
+    (libload.add rname)
+    (when (libload.check rname (htable))
       (when (not (lush-is-quiet))
         (printf " [%s]%s\n" (basename fname) opt) )
-      (libload.data rname (list (now)))
-      (prog1 (load fname)
-        (rplaca (libload.data rname) (now)) ) ) ) ) 
+      ;; record mtime of loaded file
+      (let ((mtime (alist-get 'mtime (fileinfo fname))))
+        (libload.data rname (list (or mtime (now)))) )
+      ;; load
+      (load fname) ) ) )
+
 
 (dm autoload(autoload l . s)
   (let  ((f  (eval `(mlambda f
