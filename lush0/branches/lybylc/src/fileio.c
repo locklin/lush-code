@@ -20,7 +20,7 @@
 	T-Lisp3: (C) LYB YLC 1988
 	fileio.c
         WARNING: OLD (PRE-ARNO) SLIGHTLY EDITED
-        $Id: fileio.c,v 0.1 2001-10-31 17:30:41 profshadoko Exp $
+        $Id: fileio.c,v 0.1.1.1 2001-10-31 17:30:41 profshadoko Exp $
 ********************************************************************** */
 
 #include <errno.h>

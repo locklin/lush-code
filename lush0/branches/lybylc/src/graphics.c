@@ -20,7 +20,7 @@
   T-Lisp3: LYB YLC 1/88
   graphics.c
   Device independant graphics functions
-  $Id: graphics.c,v 0.1 2001-10-31 17:30:51 profshadoko Exp $
+  $Id: graphics.c,v 0.1.1.1 2001-10-31 17:30:51 profshadoko Exp $
   ***********************************************************************/
 
 

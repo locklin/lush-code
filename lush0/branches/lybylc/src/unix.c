@@ -24,7 +24,7 @@
    T-Lisp3:   (C) YLC LYB 1988
    mdep_unix.c
    machine dependant code
-   $Id: unix.c,v 0.1 2001-10-31 17:31:08 profshadoko Exp $
+   $Id: unix.c,v 0.1.1.1 2001-10-31 17:31:08 profshadoko Exp $
 
    INIT_MACHINE         general initializations
    CHECK_MACHINE        called by EVAL

@@ -20,7 +20,7 @@
   T-Lisp3: (C) LYB YLC 1988
   matrix.c
   - array and matrix class definition
-  $Id: matrix.c,v 0.1 2001-10-31 17:31:20 profshadoko Exp $
+  $Id: matrix.c,v 0.1.1.1 2001-10-31 17:31:20 profshadoko Exp $
 ********************************************************************** */
 
 #ifdef WIN32

@@ -24,7 +24,7 @@
 		- logical functions
 		- comparison functions
 		- control structure functions
-		$Id: calls.c,v 0.1 2001-10-31 17:30:32 profshadoko Exp $
+		$Id: calls.c,v 0.1.1.1 2001-10-31 17:30:32 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

@@ -20,7 +20,7 @@
   T-Lisp3: (C) LYB YLC 1988
   header.h
   This file contains general lisp structure definitions
-  $Id: header.h,v 0.1 2001-10-31 17:29:27 profshadoko Exp $
+  $Id: header.h,v 0.1.1.1 2001-10-31 17:29:27 profshadoko Exp $
 ********************************************************************** */
 
 #ifndef HEADER_H

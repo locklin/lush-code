@@ -21,7 +21,7 @@
   at.c
   Definition of the AT object
   General use routines as CONS, NUMBER, EXTERNAL, CAR, CDR etc...
-  $Id: at.c,v 0.1 2001-10-31 17:30:29 profshadoko Exp $
+  $Id: at.c,v 0.1.1.1 2001-10-31 17:30:29 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

@@ -20,7 +20,7 @@
 	T-Lisp3: LYB YLC 1/88
 	PSdriver.c
 	Graphic driver for X11
-$Id: ps_driver.c,v 0.1 2001-10-31 17:30:59 profshadoko Exp $
+$Id: ps_driver.c,v 0.1.1.1 2001-10-31 17:30:59 profshadoko Exp $
 ***********************************************************************/
 
 

@@ -21,7 +21,7 @@
 	classify.c
 	statistic functions		mean sdev hamming_norm
 	small mathematic functions	solve
-	$Id: classify.c,v 0.1 2001-10-31 17:30:33 profshadoko Exp $
+	$Id: classify.c,v 0.1.1.1 2001-10-31 17:30:33 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

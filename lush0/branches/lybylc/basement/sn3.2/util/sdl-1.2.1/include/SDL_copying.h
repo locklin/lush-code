@@ -22,6 +22,6 @@
 
 #ifdef SAVE_RCSID
 static char rcsid =
- "@(#) $Id: SDL_copying.h,v 0.1 2001-10-31 17:37:12 profshadoko Exp $";
+ "@(#) $Id: SDL_copying.h,v 0.1.1.1 2001-10-31 17:37:12 profshadoko Exp $";
 #endif
 

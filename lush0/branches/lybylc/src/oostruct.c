@@ -20,7 +20,7 @@
   T-Lisp3: (C) LYB YLC 1988
   oostruct.c
   - object oriented structures
-  $Id: oostruct.c,v 0.1 2001-10-31 17:30:58 profshadoko Exp $
+  $Id: oostruct.c,v 0.1.1.1 2001-10-31 17:30:58 profshadoko Exp $
 ********************************************************************** */
 
 #include "header.h"

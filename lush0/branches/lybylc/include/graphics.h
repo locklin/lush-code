@@ -20,7 +20,7 @@
 	T-Lisp3: LYB YLC 1/88
 	graphics.h
 	Device independant graphics definitions
-	$Id: graphics.h,v 0.1 2001-10-31 17:29:24 profshadoko Exp $
+	$Id: graphics.h,v 0.1.1.1 2001-10-31 17:29:24 profshadoko Exp $
 ********************************************************************** */
 
 
