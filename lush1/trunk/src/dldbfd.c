@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.31 2004-03-01 16:42:48 leonb Exp $
+ * $Id: dldbfd.c,v 1.32 2004-03-03 00:49:08 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2445,22 +2445,24 @@ define_symbol_of_main_program(const char *exec)
                     (sym->section->flags & SEC_CODE))
                     hsym->flags |= DLDF_FUNCTION;
             }
+#if defined(__GNUC__) && (__GNUC__ >= 3)
+	    else if (sym->name && sym->name[0] 
+		     && !strcmp("__dso_handle",
+				drop_leading_char(abfd,sym->name)) )
+	    {
+	        /* This is the __dso_handle thing for gcc >= 3 */
+	        if (!is_bfd_symbol_defined(sym)) 
+		    continue;
+                hsym = insert_symbol("__dso_handle");
+                if (hsym->flags & DLDF_DEFD) 
+		    continue;
+		hsym->flags = DLDF_DEFD;
+		hsym->definition = value_of_bfd_symbol(sym);
+	    }
+#endif
         }
         /* Close everything */
         bfd_close(abfd);
-	/* This is the __dso_handle thing for gcc >= 3 */
-#if defined(__GNUC__) && (__GNUC__ >= 3)
-	{
-	  extern int __dso_handle __attribute__ ((weak));
-	  if (& __dso_handle) {
-	    hsym = insert_symbol("__dso_handle");
-	    if (! hsym->flags & DLDF_DEFD) {
-	      hsym->flags = DLDF_DEFD;
-	      hsym->definition = ptrvma(&__dso_handle);
-	    }
-	  }
-	}
-#endif
     }
     CATCH(n)
     {
