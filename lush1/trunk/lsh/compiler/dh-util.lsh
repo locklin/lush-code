@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.5 2002-07-12 21:58:47 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.6 2002-07-15 16:39:57 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -2045,9 +2045,12 @@
 ;; Copies a source tree list (except leaves).
 ;; Returns the copy.
 (de dhc-copy-source-tree (source)
-  (if (atomp source) source
-    (cons (dhc-copy-source-tree (car source))
-          (dhc-copy-source-tree (cdr source)))))
+  (if (atomp source) 
+      source
+    (let ((ans (append source ()))
+          (end (cdr (lastcdr source))) )
+      (when end (nconc ans end))
+      ans ) ) )
 
 
 #? (dhc-get-treetype <source>)
@@ -2171,13 +2174,13 @@
      ',copies) )
 
 
-#? (get-dhm-t <func>)
-;; Return the dhm-t for function <func>
+#? (get-dhm-t <symb>)
+;; Return the dhm-t for function <symb>
 (dm get-dhm-t (fn symb)
   `(getp :,symb 'dhm-t) )
 
-#? (get-dhm-c <func>)
-;; Return the dhm-c for function <func>
+#? (get-dhm-c <symb>)
+;; Return the dhm-c for function <symb>
 (dm get-dhm-c (fn symb)
   `(getp :,symb 'dhm-c) )
 
@@ -2185,6 +2188,7 @@
 ;;; ------------------------------------------------------------------------
 ;;; PARSING AN EXPRESSION
 ;;; ------------------------------------------------------------------------
+
 
 ;; This variable is set to true when in declaration mode (i.e. (-idx1- a))
 ;; If a symbol is of unknown type, and we are not in declaration mode,
@@ -2196,7 +2200,8 @@
 (de dhc-parse-expr-t(source &optional ig)
   
   (setq dhc-debug-stack (cons source dhc-debug-stack))
-
+  
+  ;; okay.
   (let* ((ignore ig) ;; ignore is a global for the dhm-t
          (tnout
           ;; Dispatch to specific parsing routines
@@ -2212,8 +2217,9 @@
             (dhc-parse-matrix-t source))
            ;; Case of a string constant
            ((stringp source)
-               (dhc-parse-string-t source))
-           ;; Case of a variable (special case for t)
+            (dhc-parse-string-t source))
+           ;; Case of a symbol
+           ;;  (special cases for compiled functions and t)
            ((symbolp source)
             (cond ((or (dhc-search-symtable source symbol-table)
                        (dhc-search-symtable source global-table) )
@@ -2232,11 +2238,11 @@
                         source ) )
                   (t 
                    (dhc-error "Unknown symbol" source))))
-           ;; list expression
+           ;; List expression
            ((consp source)
             (let* ((car-source (car source))
                    (tn (dhc-parse-expr-t car-source))
-                   (car-type :tn:type))
+                   (car-type :tn:type) )
               ;; Parse the list expression
               (cond 
                ((and (not (dhc-search-symtable car-source symbol-table))
@@ -2599,8 +2605,11 @@
 ;;; PARSING A CALL TO A DH
 ;;; ------------------------------------------------------------------------
 
+
 (de dhc-parse-dh-t(source)
-  (let* ((dhfunc (eval (car source)))
+  (when (not (symbolp (car source)))
+    (dhc-error "Unsupported call to unnamed function" (car source)) )
+  (let* ((dhfunc (eval `:,(car source)))
          (symbol (dhc-search-symtable (car source) global-table))
          (func-type (if symbol 
                         (==> :symbol:type copy)
@@ -2634,7 +2643,6 @@
       (setq bump-list (append bump-list :return-node:transfer))
       return-node))
 
-
 (de dhc-compose-prototype(functype cname)
   (let ((output ())
         (args (dhu-extra functype))
@@ -2655,14 +2663,14 @@
                    (list (dhc-insert-op output ", "))
                    (list " )") ) ) ) )
 
-
 (de dhc-parse-dh-c(source treetype retplace)
+  (when (not (symbolp (car source)))
+    (dhc-error "Unsupported call to unnamed function" (car source)) )
   (let ((symbol (dhc-search-symtable (car source) global-table)))
     (let (((cfunc mfunc ctest mtest kfunc) 
            (if ~symbol 
-               (dhinfo-c (eval (car source)))
-             (list (sprintf "C_%s" :symbol:c-name) 
-                   "" "" ""
+               (dhinfo-c (eval `:,(car source)))
+             (list (sprintf "C_%s" :symbol:c-name) "" "" ""
                    (sprintf "K_%s_R%08x" :symbol:c-name 
                             (dhu-hash :symbol:type) ) ) ) )
           (args (all ((so (cdr source)) 
@@ -2712,6 +2720,3 @@
         ;; add-c the c function and return retplace
         (dhc-add-c-statements (concat cfunc "(" args ");"))
         retplace ) ) ) ) 
-
-
-
