@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.7 2002-05-07 00:14:20 leonb Exp $
+ * $Id: module.c,v 1.8 2002-05-07 00:25:51 leonb Exp $
  **********************************************************************/
 
 
@@ -459,30 +459,28 @@ update_init_flag(struct module *m, int hook)
 static int check_executability = FALSE;
 
 static void 
-check_exec(void)
+check_exec(int hook)
 {
   if (check_executability)
     {
       struct module *m;
       check_executability = FALSE;
       for (m=root.next; m!=&root; m=m->next)
-        update_exec_flag(m, TRUE);
+        update_exec_flag(m, hook);
       for (m=root.next; m!=&root; m=m->next)
         if (! (m->flags & MODULE_INIT))
-          update_init_flag(m, TRUE);
+          update_init_flag(m, hook);
     }
 }
 
 void
 check_primitive(at *prim)
 {
-  struct cfunction *cfunc = prim->Object;
-  if (CONSP(cfunc->name) 
-      && EXTERNP(cfunc->name->Car, &module_class) )
+  if (CONSP(prim) && EXTERNP(prim->Car, &module_class))
     {
-      struct module *m = cfunc->name->Car->Object;
+      struct module *m = prim->Car->Object;
       if (check_executability)
-        check_exec();
+        check_exec(TRUE);
       if (! (m->flags & MODULE_EXEC))
         error(NIL,"Attempting to execute a partially linked function", prim);
     }
@@ -550,7 +548,7 @@ DX(xmodule_unload)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   module_unload(APOINTER(1));
-  check_exec();
+  check_exec(TRUE);
   return NIL;
 }
 
@@ -683,7 +681,7 @@ DX(xmodule_load)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   ans = module_load(ASTRING(1));
-  check_exec();
+  check_exec(TRUE);
   return ans;
 }
 

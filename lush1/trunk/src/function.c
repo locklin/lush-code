@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.5 2002-05-07 00:14:20 leonb Exp $
+ * $Id: function.c,v 1.6 2002-05-07 00:25:51 leonb Exp $
  **********************************************************************/
 
 
@@ -257,7 +257,10 @@ dx_listeval(at *p, at *q)
   at *answer, **arg_pos, **spbuff;
   struct cfunction *cfunc = p->Object;
   at *(*call)(int, at**) = cfunc->call;
-  check_primitive(p);
+
+  if (CONSP(cfunc->name))
+    check_primitive(cfunc->name);
+
   cfunc = p->Object;
   arg_pos = spbuff = dx_sp;
   arg_num = 0;
@@ -319,7 +322,10 @@ dy_listeval(at *p, at *q)
 {
   struct cfunction *cfunc = p->Object;
   at *(*call)(at*) = cfunc->call;
-  check_primitive(p);
+  
+  if (CONSP(cfunc->name))
+    check_primitive(cfunc->name);
+  
   q = (*call)(q->Cdr);
   if (q && (q->flags&X_ZOMBIE)) {
     UNLOCK(q);
