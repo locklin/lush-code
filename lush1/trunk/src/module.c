@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.49 2004-07-19 23:20:18 leonb Exp $
+ * $Id: module.c,v 1.50 2004-07-20 00:05:40 leonb Exp $
  **********************************************************************/
 
 
@@ -218,9 +218,11 @@ nsbundle_exec(nsbundle_t *bundle)
 	{
 	  const char *sname = NSSymbolReferenceNameInObjectFileImage(nsimg, ns, NULL);
 	  nsbundle_t *def = nsbundle_hget(sname);
-	  if (def && def!=&nsbundle_head)
+	  if (def == &nsbundle_head) 
+	    bundle->executable = -1;
+	  else if (def)
 	    bundle->executable = nsbundle_exec(def);
-	  else if (def || !NSIsSymbolNameDefined(sname))
+	  else if (! NSIsSymbolNameDefined(sname))
 	    bundle->executable = -1;
 	  if (bundle->executable < 0)
 	    break;
@@ -1237,6 +1239,10 @@ module_load(char *filename, at *hook)
       if (! (handle = dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
         dynlink_error(new_string(m->filename));
 # endif
+# if NSBUNDLE
+      if (nsbundle_update() < 0)
+        dynlink_error(new_string(m->filename));
+# endif
 #else
       error(NIL,"Dynlinking this file is not supported (dlopen)", 
             new_string(m->filename));
@@ -1376,10 +1382,12 @@ DX(xmod_undefined)
 	  while (--ns >= 0)
 	    {
 	      const char *sname = NSSymbolReferenceNameInObjectFileImage(nsimg, ns, NULL);
-	      nsbundle_t *bundle = nsbundle_hget(sname);
-	      if (bundle==&nsbundle_head || !(bundle || NSIsSymbolNameDefined(sname)))
+	      nsbundle_t *def = nsbundle_hget(sname);
+	      if (def==&nsbundle_head || 
+		  (!def && !NSIsSymbolNameDefined(sname)))
 		{
-		  *where = cons( new_string((char*)(sname+1)), NIL);
+		  if (sname[0]=='_') sname += 1;
+		  *where = cons( new_string((char*)sname), NIL);
 		  where = &((*where)->Cdr);
 		}
 	    }
