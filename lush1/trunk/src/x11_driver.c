@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.7 2003-01-27 08:57:30 leonb Exp $
+ * $Id: x11_driver.c,v 1.8 2003-02-14 23:38:47 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1442,18 +1442,25 @@ void
 x11_get_image(struct window *linfo, unsigned int *image, 
               int x, int y, unsigned int w, unsigned int h)
 {
-  register int i,j;
-  register unsigned int *im;
+  int i,j;
+  int mod = w;
+  unsigned int *im;
   struct X_window *info = (struct X_window*)linfo;
-
   XImage *ximage;
+  
+  memset(image, 0, sizeof(unsigned int) * w * h);
+  if (x < 0) { image -= x; x = 0; }
+  if (y < 0) { image -= y * mod; y = 0; }
+  if (x + w > info->sizx) { w = info->sizx - x; }
+  if (y + h > info->sizy) { h = info->sizy - y; }
   ximage = XGetImage(xdef.dpy, info->backwin, x, y, w, h, ~0, ZPixmap);
-  im = image;
-  for (i=0; i<h; i++) {
-    for (j=0; j<w; j++) {
-      *im++ = XGetPixel(ximage,j,i);
+  for (i=0; i<h; i++) 
+    {
+      im = image;
+      for (j=0; j<w; j++) 
+        *im++ = XGetPixel(ximage,j,i);
+      image += mod;
     }
-  }
   XDestroyImage(ximage);
 }
 
