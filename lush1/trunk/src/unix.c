@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.21 2002-11-05 22:12:02 leonb Exp $
+ * $Id: unix.c,v 1.22 2002-11-05 22:30:21 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -803,7 +803,8 @@ symbol_generator(const char *text, int state)
   while (hni < HASHTABLESIZE) 
     {
       struct hash_name *h;
-      const unsigned char *a, *b;
+      const unsigned char *a;
+      unsigned char *b;
       /* move to next */
       if (! hn) 
         {
@@ -818,23 +819,27 @@ symbol_generator(const char *text, int state)
         {
           a = text;
           b = pname(h->named);
+          if (text[0] != '|')
+            for (i=0; b[i]; i++)
+              if (b[i] == '_')
+                b[i] = '-';
           i = 0;
           while (a[i])
             {
               unsigned char ac = a[i];
               unsigned char bc = b[i];
-              if (text[0]!='|') ac = tolower(ac);
-              if (ac == '_') ac = '-';
-              if (bc == '_') bc = '-';
-              if (ac != bc) break;
+              if (text[0] != '|') 
+                {
+                  ac = tolower(ac);
+                  if (ac == '_') 
+                    ac = '-';
+                }
+              if (ac != bc) 
+                break;
               i++;
             }
           if (! a[i])
-            {
-              char *s = strdup(b);
-              if (s) memcpy(s, text, i);
-              return s;
-            }
+            return strdup(b);
         }
     }
   return 0;
