@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.17 2003-03-04 17:13:24 leonb Exp $
+ * $Id: event.c,v 1.18 2003-03-05 20:32:43 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -838,6 +838,8 @@ DX(xsendevent)
       /* Old syntax */
       at *event = cons(named("sendevent"), cons(p1, cons(p2, NIL)));
       at *handler = current_window_handler();
+      LOCK(p1);
+      LOCK(p2);
       event_add(handler, event);
       UNLOCK(handler);
       UNLOCK(event);
