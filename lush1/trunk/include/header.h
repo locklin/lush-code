@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.21 2002-05-08 20:18:41 leonb Exp $
+ * $Id: header.h,v 1.22 2002-05-09 15:23:43 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -759,7 +759,7 @@ extern class date_class;
 
 TLAPI char *str_date( at *p, int *pfrom, int *pto );
 TLAPI at *new_date( char *s, int from, int to );
-
+TLAPI at *new_date_from_time( time_t *clock, int from, int to );
 
 /* BINARY.H ----------------------------------------------------- */
 

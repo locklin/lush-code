@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: date.c,v 1.2 2002-04-24 21:12:57 leonb Exp $
+ * $Id: date.c,v 1.3 2002-05-09 15:23:43 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -229,12 +229,10 @@ new_date_imp(char *s, struct date *d, int from, int to)
 
 
 static void
-now_imp(struct date *d)
+time_imp(time_t *clock, struct date *d)
 {
-  time_t clock;
   struct tm *tm;
-  time(&clock);
-  tm = localtime(&clock);
+  tm = localtime(clock);
   d->from = DATE_YEAR;
   d->to = DATE_SECOND;
   d->x[DATE_YEAR] = tm->tm_year;
@@ -245,6 +243,13 @@ now_imp(struct date *d)
   d->x[DATE_SECOND] = tm->tm_sec;
 }
 
+static void
+now_imp(struct date *d)
+{
+  time_t clock;
+  time(&clock);
+  time_imp(&clock, d);
+}
 
 static void
 date_extend(struct date *d, struct date *nd, int nfrom, int nto)
@@ -430,6 +435,16 @@ new_date(char *s, int from, int to)
   return make_date(&buf);
 }
   
+at *
+new_date_from_time( time_t *clock, int from, int to )
+{
+  struct date buf;
+  time_imp(clock, &buf);
+  buf.from = from;
+  buf.to = to;
+  return make_date(&buf);
+}
+
 
 
 /* ----------------------------------------

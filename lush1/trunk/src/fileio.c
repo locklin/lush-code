@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.4 2002-05-07 18:22:17 leonb Exp $
+ * $Id: fileio.c,v 1.5 2002-05-09 15:23:43 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -447,6 +447,82 @@ DX(xfilep)
   return filep(ASTRING(1)) ? true() : NIL;
 }
 
+
+
+/** fileinfo **/
+
+DX(xfileinfo)
+{
+  at *ans = NIL;
+  at *type = NIL;
+#ifdef UNIX
+  struct stat buf;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  if (stat(ASTRING(1),&buf)==-1)
+    return NIL;
+#endif
+#ifdef WIN32
+  struct _stat buf;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  if (_stat(ASTRING(1),&buf)==-1)
+    return NIL;
+#endif
+  
+  ans = cons(cons(named("ctime"), 
+                  new_date_from_time(&buf.st_ctime, 
+                                     DATE_YEAR, DATE_SECOND ) ), 
+             ans);
+  ans = cons(cons(named("mtime"), 
+                  new_date_from_time(&buf.st_mtime, 
+                                     DATE_YEAR, DATE_SECOND ) ), 
+             ans);
+  ans = cons(cons(named("atime"), 
+                  new_date_from_time(&buf.st_atime, 
+                                     DATE_YEAR, DATE_SECOND ) ), 
+             ans);
+#ifdef UNIX
+  ans = cons(cons(named("gid"),   NEW_NUMBER(buf.st_gid)), ans);
+  ans = cons(cons(named("uid"),   NEW_NUMBER(buf.st_uid)), ans);
+  ans = cons(cons(named("nlink"), NEW_NUMBER(buf.st_nlink)), ans);
+  ans = cons(cons(named("ino"),   NEW_NUMBER(buf.st_ino)), ans);
+  ans = cons(cons(named("dev"),   NEW_NUMBER(buf.st_dev)), ans);
+#endif  
+  ans = cons(cons(named("mode"),  NEW_NUMBER(buf.st_mode)), ans);
+  ans = cons(cons(named("size"),  NEW_NUMBER(buf.st_size)), ans);
+#ifdef S_ISREG
+  if (!type && S_ISREG(buf.st_mode))
+    type = named("reg");
+#endif
+#ifdef S_ISDIR
+  if (! type && S_ISDIR(buf.st_mode))
+    type = named("dir");
+#endif
+#ifdef S_ISCHR
+  if (! type && S_ISCHR(buf.st_mode))
+    type = named("chr");
+#endif
+#ifdef S_ISBLK
+  if (! type && S_ISBLK(buf.st_mode))
+    type = named("blk");
+#endif
+#ifdef S_ISFIFO
+  if (! type && S_ISFIFO(buf.st_mode))
+    type = named("fifo");
+#endif
+#ifdef S_ISLNK
+  if (! type && S_ISLNK(buf.st_mode))
+    type = named("lnk");
+#endif
+#ifdef S_ISSOCK
+  if (! type && S_ISSOCK(buf.st_mode))
+    type = named("sock");
+#endif
+  if (type)
+    ans = cons(cons(named("type"), type), ans);
+  return ans;
+}
 
 
 /* --------- FILENAME MANIPULATION --------- */
@@ -1877,6 +1953,7 @@ init_fileio(char *program_name)
   dx_define("chdir", xchdir);
   dx_define("dirp", xdirp);
   dx_define("filep", xfilep);
+  dx_define("fileinfo", xfileinfo);
   dx_define("files", xfiles);
   dx_define("mkdir", xmkdir);
   dx_define("unlink", xunlink);
