@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lushenv.lsh,v 1.6 2002-08-19 07:01:14 profshadoko Exp $
+;;; $Id: lushenv.lsh,v 1.7 2002-08-21 19:19:40 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Defines the standard Lush environment and autoload functions
@@ -44,10 +44,44 @@
 (addpath (concat-fname (concat-fname lushdir "lsh") "libogre"))
 (addpath (concat-fname (concat-fname lushdir "lsh") "graphics"))
 
-;; add packages and local to the path
 (each ((d (list "packages" "local")))
   (let ((fd (concat-fname lushdir d)))
     (when (dirp fd) (addpath fd))))
+
+
+;; ------------------------------------------------------------
+;; Setup paths for include files and libraries
+
+(let ((lprepend (mlambda(fn lname dir)
+                  `(let ((dir ,dir))
+                     (when (and (dirp dir) (not (member dir ,lname)))
+                       (setq ,lname (cons dir ,lname)) ) ) ))
+      (lappend  (mlambda(fn lname dir)
+                  `(let ((dir ,dir))
+                     (when (and (dirp dir) (not (member dir ,lname)))
+                       (setq ,lname (append ,lname (list dir))) ) ) ) ) )
+  
+  (lappend c-include-path      "/usr/local/include")
+  (lappend shared-library-path "/usr/local/lib")
+  (lappend static-include-path "/usr/local/lib")
+  
+  (each ((flag (regex-split "[^\t ]+" (or (getconf "LIBS") ""))))
+    (when (= (left flag 2) "-L")
+      (lprepend shared-library-path (mid flag 3))
+      (lprepend static-library-path (mid flag 3)) ) )
+
+  (each ((flag (regex-split "[^\t ]+" (or (getconf "X_LIBS") ""))))
+    (when (= (left flag 2) "-L")
+      (lprepend shared-library-path (mid flag 3))
+      (lprepend static-library-path (mid flag 3)) ) )
+  
+  (each ((flag (regex-split "[^\t ]+" (or (getconf "X_CFLAGS") ""))))
+    (when (= (left flag 2) "-I")
+      (lprepend c-include-path (mid flag 3)) ) )
+  
+  (lprepend c-include-path (concat-fname lushdir "include")) 
+  
+  t )
 
 
 ;; ------------------------------------------------------------
@@ -86,13 +120,6 @@
   dhc-make-with-libs
   dhc-make-with-c++ )
 
-
-;; ------------------------------------------------------------
-;; Setup information for help system
-
-;(autoload "libstd/help" apropos)
-;(autoload "libogre/helptool" helptool)
-;(setq help-book-list '( "lush-manual.hlp"))
 
 
 ;; ------------------------------------------------------------
