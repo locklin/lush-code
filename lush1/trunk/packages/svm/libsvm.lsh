@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: libsvm.lsh,v 1.5 2004-03-10 21:13:00 leonb Exp $
+;;; $Id: libsvm.lsh,v 1.6 2004-08-17 20:53:32 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -33,6 +33,30 @@
 (libload "libc/libc")
 (libload "libc/make")
 (libload "libc/constants")
+(libload "kernel")
+
+;; ----------------------------------------
+;; Old names for kernel code
+
+(defvar LibSVMKernel SVMKernel)
+(putmethod LibSVMKernel 'LibSVMKernel 
+	   (check==> SVMKernel 'SVMKernel))
+
+(defvar LibSVMVectorKernel SVMVectorKernel)
+(putmethod LibSVMVectorKernel 'LibSVMVectorKernel 
+	   (check==> SVMVectorKernel 'SVMVectorKernel))
+
+(defvar LibSVMLinearKernel SVMLinearKernel)
+(putmethod LibSVMLinearKernel 'LibSVMLinearKernel 
+	   (check==> SVMLinearKernel 'SVMLinearKernel))
+
+(defvar LibSVMPolynomialKernel SVMPolynomialKernel)
+(putmethod LibSVMPolynomialKernel 'LibSVMPolynomialKernel 
+	   (check==> SVMPolynomialKernel 'SVMPolynomialKernel))
+
+(defvar LibSVMRBFKernel SVMRBFKernel)
+(putmethod LibSVMRBFKernel 'LibSVMRBFKernel 
+	   (check==> SVMRBFKernel 'SVMRBFKernel))
 
 
 ;; ----------------------------------------
@@ -45,115 +69,6 @@
 
 
 
-
-;; ----------------------------------------
-
-#? * LibSVMKernel.
-;; Abstract kernel interface.
-
-(defclass LibSVMKernel Object)
-
-(defmethod LibSVMKernel LibSVMKernel() ())
-
-(defmethod LibSVMKernel call(i j)
-  ((-int-) i j)
-  (error "Not implemented")
-  (to-real 0) )
-
-(defmethod LibSVMKernel restrict(sv)
-  ;; This one is not compiled.
-  ((-idx1- (-int-)) sv)
-  (error "Not implemented")
-  (to-int 0) )
-
-
-
-;; ----------------------------------------
-
-#? * LibSVMVectorKernel
-;; Kernel operating on vectorial data
-
-(defclass LibSVMVectorKernel LibSVMKernel
-  ((-idx2- (-float-)) data) )
-
-(defmethod LibSVMVectorKernel LibSVMVectorKernel(x)
-  ((-idx2- (-float-)) x)
-  (setq data x) )
-
-(defmethod LibSVMVectorKernel restrict(sv)
-  ((-idx1- (-int-)) sv)
-  ;; not compiled for now.
-  (let ((copy (new-copy this))
-	(nsv (idx-dim sv 0))
-	(d (idx-dim data 1)) )
-    (setq :copy:data (float-matrix nsv d))
-    (idx-bloop ((n :copy:data)(i sv))
-      (idx-copy (select data 0 (i)) n) )
-    copy) )
-
-
-;; ----------------------------------------
-
-#? * LibSVMLinearKernel.
-;; Simple linear kernel.
-
-(defclass LibSVMLinearKernel LibSVMVectorKernel)
-
-(defmethod LibSVMLinearKernel LibSVMLinearKernel(x)
-  ((-idx2- (-float-)) x)
-  (setq data x) )
-
-(defmethod LibSVMLinearKernel call(i j)
-  ((-int-) i j)
-  (let ((dp (idx-dot (select data 0 i) (select data 0 j))))
-    (to-real (dp)) ) )
-
-
-#? LibSVMPolynomial Kernel.
-;; Simple polynomial kernel.
-
-(defclass LibSVMPolynomialKernel LibSVMVectorKernel
-  ((-double-) degree) 
-  ((-double-) gamma) 
-  ((-double-) coeff0) )
-
-(defmethod LibSVMPolynomialKernel LibSVMPolynomialKernel(x d g c)
-  ((-idx2- (-float-)) x)
-  ((-double-) d g c)
-  (setq data x) 
-  (setq degree d)
-  (setq gamma g)
-  (setq coeff0 c) )
-
-(defmethod LibSVMPolynomialKernel call(i j)
-  ((-int-) i j)
-  (let ((dp (idx-dot (select data 0 i) (select data 0 j))))
-    (** (+ coeff0 (* gamma (to-real (dp)))) degree) ) )
-
-
-#? * LibSVMRBFKernel.
-;; Simple rbf kernel.
-
-(defclass LibSVMRBFKernel LibSVMVectorKernel
-  ((-double-) gamma) )
-
-(defmethod LibSVMRBFKernel LibSVMRBFKernel(x g)
-  ((-idx2- (-float-)) x)
-  ((-double-) g)
-  (setq data x) 
-  (setq gamma g) )
-
-(defmethod LibSVMRBFKernel call(i j)
-  ((-int-) i j)
-  (let* ((dp (idx-sqrdist (select data 0 i) (select data 0 j))))
-    (exp (* -1 gamma (to-real (dp)))) ) )
-
-
-
-
-;; ----------------------------------------
-
-
 (defconstant "C_SVC" 0)
 (defconstant "NU_SVC" 1)
 (defconstant "ONE_CLASS" 2)
@@ -164,7 +79,7 @@
   ;; data
   ((-idx1- (-int-)) x)
   ((-idx1- (-double-)) y)
-  ((-obj- (LibSVMKernel)) kernel)
+  ((-obj- (SVMKernel)) kernel)
   ;; parameters
   ((-int-) svm_type)			; svm_train option -s
   ((-double-) cache_size)  		; svm_train option -m
@@ -188,7 +103,7 @@
 
 
 (defmethod LibSVM LibSVM(ik n)
-  ((-obj- (LibSVMKernel)) ik)
+  ((-obj- (SVMKernel)) ik)
   ((-int-) n)
   (setq x (int-matrix n))
   (setq y (double-matrix n))
@@ -375,6 +290,10 @@
     }#}
     yval ) )
 
+(defmethod LibSVM call-kernel(xi xj)
+  ((-int-) xi xj)
+  (==> kernel call xi xj) )
+
 
 ;; ----------------------------------------
 
@@ -389,21 +308,16 @@
          #{ 
 	   #include "svm.h" 
          #}
-         (LibSVMKernel LibSVMKernel call)
-         (LibSVMVectorKernel LibSVMVectorKernel)
-         (LibSVMLinearKernel LibSVMLinearKernel call)
-         (LibSVMPolynomialKernel LibSVMPolynomialKernel call)
-         (LibSVMRBFKernel LibSVMRBFKernel call)
          #{
    	   static double unikernel(const svm_node *x, const svm_node *y) 
 	   {
-	     CClass_libsvmkernel * k = (CClass_libsvmkernel*)(x->pdata);
+	     CClass_svmkernel * k = (CClass_svmkernel*)(x->pdata);
 	     return (*k->Vtbl->M_call)(k, x->idata, y->idata);
 	   }
 	 #}
          (LibSVM LibSVM cleanup -destructor run
                  get-labels get-sv get-alpha get-rho
-                 predict-values predict)
+                 predict-values predict call-kernel)
          
          ) ) )
 

@@ -1,0 +1,153 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: kernel.lsh,v 1.1 2004-08-17 20:53:32 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-ubyte")
+
+
+#? ** Kernels for SVMs.
+;; This defines an abstract kernel object
+;; as well as a few simple implementations.
+
+
+;; ----------------------------------------
+
+#? * SVMKernel.
+;; Abstract kernel interface.
+
+(defclass SVMKernel Object)
+
+(defmethod SVMKernel SVMKernel() ())
+
+(defmethod SVMKernel call(i j)
+  ((-int-) i j)
+  (error "Not implemented")
+  (to-real 0) )
+
+(defmethod SVMKernel restrict(sv)
+  ;; This one is not compiled.
+  ((-idx1- (-int-)) sv)
+  (error "Not implemented")
+  (to-int 0) )
+
+;; ----------------------------------------
+
+#? * SVMVectorKernel
+;; Kernel operating on vectorial data
+
+(defclass SVMVectorKernel SVMKernel
+  ((-idx2- (-float-)) data) )
+
+(defmethod SVMVectorKernel SVMVectorKernel(x)
+  ((-idx2- (-float-)) x)
+  (setq data x) )
+
+(defmethod SVMVectorKernel restrict(sv)
+  ((-idx1- (-int-)) sv)
+  ;; not compiled for now.
+  (let ((copy (new-copy this))
+	(nsv (idx-dim sv 0))
+	(d (idx-dim data 1)) )
+    (setq :copy:data (float-matrix nsv d))
+    (idx-bloop ((n :copy:data)(i sv))
+      (idx-copy (select data 0 (i)) n) )
+    copy) )
+
+
+;; ----------------------------------------
+
+#? * SVMLinearKernel.
+;; Simple linear kernel.
+
+(defclass SVMLinearKernel SVMVectorKernel)
+
+(defmethod SVMLinearKernel SVMLinearKernel(x)
+  ((-idx2- (-float-)) x)
+  (setq data x) )
+
+(defmethod SVMLinearKernel call(i j)
+  ((-int-) i j)
+  (let ((dp (idx-dot (select data 0 i) (select data 0 j))))
+    (to-real (dp)) ) )
+
+
+#? SVMPolynomial Kernel.
+;; Simple polynomial kernel.
+
+(defclass SVMPolynomialKernel SVMVectorKernel
+  ((-double-) degree) 
+  ((-double-) gamma) 
+  ((-double-) coeff0) )
+
+(defmethod SVMPolynomialKernel SVMPolynomialKernel(x d g c)
+  ((-idx2- (-float-)) x)
+  ((-double-) d g c)
+  (setq data x) 
+  (setq degree d)
+  (setq gamma g)
+  (setq coeff0 c) )
+
+(defmethod SVMPolynomialKernel call(i j)
+  ((-int-) i j)
+  (let ((dp (idx-dot (select data 0 i) (select data 0 j))))
+    (** (+ coeff0 (* gamma (to-real (dp)))) degree) ) )
+
+
+#? * SVMRBFKernel.
+;; Simple rbf kernel.
+
+(defclass SVMRBFKernel SVMVectorKernel
+  ((-double-) gamma) )
+
+(defmethod SVMRBFKernel SVMRBFKernel(x g)
+  ((-idx2- (-float-)) x)
+  ((-double-) g)
+  (setq data x) 
+  (setq gamma g) )
+
+(defmethod SVMRBFKernel call(i j)
+  ((-int-) i j)
+  (let* ((dp (idx-sqrdist (select data 0 i) (select data 0 j))))
+    (exp (* -1 gamma (to-real (dp)))) ) )
+
+
+
+;; ----------------------------------------
+
+
+(dhc-make ()
+	  (SVMKernel SVMKernel call)
+	  (SVMVectorKernel SVMVectorKernel)
+	  (SVMLinearKernel SVMLinearKernel call)
+	  (SVMPolynomialKernel SVMPolynomialKernel call)
+	  (SVMRBFKernel SVMRBFKernel call) )
+
+
