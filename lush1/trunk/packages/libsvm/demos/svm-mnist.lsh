@@ -1,0 +1,142 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: svm-mnist.lsh,v 1.1 2004-02-10 20:00:29 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libsvm/svm")
+
+
+(de load-mnist()
+  (when (not  mnist-train-x)
+    (defvar mnist-train-x (load-matrix "mnist/train-images-idx3-ubyte")) )
+  (when (not mnist-test-x)
+    (defvar mnist-test-x (load-matrix "mnist/t10k-images-idx3-ubyte")) )
+  (when (not mnist-train-y)
+    (defvar mnist-train-y (load-matrix "mnist/train-labels-idx1-ubyte")) )
+  (when (not mnist-test-y)
+    (defvar mnist-test-y (load-matrix "mnist/t10k-labels-idx1-ubyte")) )
+  t )
+
+
+
+(defclass MnistRBFKernel SVMKernel
+  ((-idx3- (-ubyte-)) train-x)
+  ((-idx1- (-ubyte-)) train-y)
+  ((-idx3- (-ubyte-)) test-x)
+  ((-idx1- (-ubyte-)) test-y)
+  ((-double-) gamma) )
+
+(defmethod MnistRBFKernel MnistRBFKernel(trx try tex tey g)
+  ((-idx3- (-ubyte-)) trx)
+  ((-idx1- (-ubyte-)) try)
+  ((-idx3- (-ubyte-)) tex)
+  ((-idx1- (-ubyte-)) tey)
+  ((-double-) g) 
+  (setq train-x trx)
+  (setq train-y try)
+  (setq test-x tex)
+  (setq test-y tey)
+  (setq gamma g))
+
+(defmethod MnistRBFKernel vector(i)
+  ((-int-) i)
+  (let ((x (float-matrix (* 28 28)))
+	(m0 (float-matrix)) )
+    (m0 (/ 1.0 255))
+    (copy-any-matrix (if (>= i 60000)
+			 (select test-x 0 (- i 60000))
+		       (select train-x 0 i) ) x)
+    (idx-dotm0 x m0 x)
+    x ) )
+
+(defmethod MnistRBFKernel label(i)
+  ((-int-) i)
+  (to-double  (if (>= i 60000)
+		  (test-y (- i 60000))
+		(train-y i) )) )
+
+(defmethod MnistRBFKernel dist(i j)
+  ((-int-) i j)
+  (let ((x1 (==> this vector i))
+	(x2 (==> this vector j)) )
+    ((idx-sqrdist x1 x2)) ) )
+
+(defmethod MnistRBFKernel call(i j)
+  ((-int-) i j)
+  (let ((d (==> this dist i j)))
+    (exp (* -1 gamma d)) ) )
+
+
+
+
+(dhc-make ()
+	  (MnistRBFKernel MnistRBFKernel vector label dist call) )
+
+
+(de run()
+  (printf "\n--------------------\nLoading data\n")
+  (when (not  mnist-train-x)
+    (defvar mnist-train-x (load-matrix "mnist/train-images-idx3-ubyte")) )
+  (when (not mnist-test-x)
+    (defvar mnist-test-x (load-matrix "mnist/t10k-images-idx3-ubyte")) )
+  (when (not mnist-train-y)
+    (defvar mnist-train-y (load-matrix "mnist/train-labels-idx1-ubyte")) )
+  (when (not mnist-test-y)
+    (defvar mnist-test-y (load-matrix "mnist/t10k-labels-idx1-ubyte")) )
+  
+  (printf "\n--------------------\nDefining kernel\n")
+  (defvar mnist-kernel 
+    (new MnistRBFKernel 
+	 mnist-train-x mnist-train-y
+	 mnist-test-x mnist-test-y
+	 0.003 ) )
+  
+  (printf "\n--------------------\nDefining svm object\n")
+  (defvar mnist-svm 
+    (new SVM mnist-kernel 60000) )
+  (for (i 0 (1- (idx-dim :mnist-svm:x 0)))
+       (:mnist-svm:x i i)
+       (:mnist-svm:y i (==> mnist-kernel label i)) )
+    (setq :mnist-svm:cache-size 400)
+
+  (printf "\n--------------------\nTraining 10*9/2 = 45 C-SVC ... Wait\n")
+  (let ((delay (time (==> mnist-svm run))))
+    (printf "Total time: %l cpu seconds\n" delay) )
+
+  (printf "\n--------------------\nTesting on 10K examples ... Wait\n")
+  (defvar mnist-confusion (matrix 10 10))
+  (for (i 60000 69999)
+       (let ((d (==> mnist-kernel label i))
+	     (s (==> mnist-svm predict i)) )
+	 (mnist-confusion d s (1+ (mnist-confusion d s))) ) )
+  (m*c mnist-confusion (/ 100 10000) mnist-confusion)
+  (printf "\n--------------------\nConfusion matrix\n" )
+  (matrix-print m)
+  (printf "\n--------------------\nTotal errors=%l%%\n"
+	  (- 100 ((idx-sum (diagonal mnist-confusion 2)))) ) )
+
