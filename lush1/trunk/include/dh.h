@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.3 2002-07-01 21:20:36 leonb Exp $
+ * $Id: dh.h,v 1.4 2002-07-01 21:22:08 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -288,7 +288,7 @@ struct dhclassdoc_s
 
 #define DHCLASSDOC(Kname,superKname,nameStr,VnameStr,nmet,vtable) \
   static dhrecord name2(K,Kname)[]; \
-  static dhdoc_t* name2(M,Kname)[]; \
+  static dhdoc_t* name2(M,Kname)[(nmet ? nmet : 1)]; \
   dhclassdoc_t Kname = { name2(K,Kname), \
    { NIL, superKname, nameStr, VnameStr, enclose_in_string(Kname), \
      nmet, name2(M,Kname), vtable } }; \
