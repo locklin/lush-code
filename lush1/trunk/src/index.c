@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.20 2003-03-05 19:38:18 leonb Exp $
+ * $Id: index.c,v 1.21 2003-03-18 00:45:03 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -1287,6 +1287,7 @@ easy_index_check(at *p, int ndim, int dim[])
 {
   int i;
   struct index *ind;
+  static char msg[40];
 
   if (!indexp(p))
     error(NIL,"not an index",p);
@@ -1296,22 +1297,22 @@ easy_index_check(at *p, int ndim, int dim[])
     {
       for(i=0;i<ndim;i++)
 	if (dim[i]==0) {
-	  sprintf(string_buffer,"unspecified dimension #%d",i);
-	  error(NIL,string_buffer,p);
+	  sprintf(msg,"unspecified dimension #%d",i);
+	  error(NIL,msg,p);
 	}
       index_dimension(p,ndim,dim);
     }
   else
     {
       if (ndim != ind->ndim) {
-	sprintf(string_buffer,"%dD index expected",ndim);
-	error(NIL,string_buffer,p);
+	sprintf(msg,"%dD index expected",ndim);
+	error(NIL,msg,p);
       }
       for (i=0;i<ndim;i++) {
 	if (dim[i]) {
 	  if (dim[i] != ind->dim[i]) {
-	    sprintf(string_buffer,"illegal dimension #%d",i);
-	    error(NIL,string_buffer,p);
+	    sprintf(msg,"illegal dimension #%d",i);
+	    error(NIL,msg,p);
 	  }
 	} else
 	  dim[i] = ind->dim[i];
