@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.34 2004-03-10 21:19:08 leonb Exp $
+ * $Id: dldbfd.c,v 1.35 2004-09-09 18:50:57 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -84,6 +84,14 @@
 #ifndef SEC_LINK_DUPLICATES_SAME_CONTENTS  /* bfd<=2.7 */
 # define bfd_alloc bfd_alloc_by_size
 # define bfd_size_type size_t
+#endif
+
+#ifdef bfd_get_section_size_before_reloc   /* bfd<2.15 */
+# define dldbfd_section_rawsize(p) ((p)->_raw_size)
+# define dldbfd_section_size(p) ((p)->_cooked_size)
+#else
+# define dldbfd_section_rawsize(p) ((p)->rawsize ? (p)->rawsize : (p)->size)
+# define dldbfd_section_size(p) ((p)->size)
 #endif
 
 void *bfd_alloc(bfd *abfd, bfd_size_type wanted);
@@ -488,10 +496,10 @@ create_module_entry(bfd *abfd, module_entry **here, int archivep)
         /* Load relocations */
         for (p=abfd->sections; p; p=p->next)
         {
-            /* Set output section and initialize '_cooked_size' */
-            p->output_section = p;
-            p->output_offset = 0;
-            p->_cooked_size = p->_raw_size;
+            /* Set output section and initialize size */
+	    p->output_section = p;
+	    p->output_offset = 0;
+	    dldbfd_section_size(p) = dldbfd_section_rawsize(p);
             /* Read relocs */
             if (p->flags & SEC_RELOC)
             {
@@ -782,7 +790,7 @@ handle_common_symbols(module_entry *ent)
             sbss->flags = SEC_ALLOC;
         }
         ASSERT(sbss->flags & SEC_ALLOC);
-        scommon = sbss->_raw_size;
+        scommon = dldbfd_section_rawsize(sbss);
     }
     /* Change common symbols into BSS or UND symbols */
     if (ncommon > 0)
@@ -1178,8 +1186,8 @@ mipself_create_got(module_entry *ent,
       sgot = bfd_make_section(ent->abfd, ".got");
       ASSERT_BFD(sgot);
       sgot->flags = SEC_ALLOC|SEC_RELOC;
-      sgot->_raw_size = 0;
-      sgot->_cooked_size = offset;
+      dldbfd_section_rawsize(sgot) = 0;
+      dldbfd_section_size(sgot) = offset;
       if (sgot->alignment_power < 4)
         sgot->alignment_power = 4;
       /* Set GOT relocations */
@@ -1372,7 +1380,7 @@ allocate_memory_for_object(module_entry *ent)
             mask = (1L << p->alignment_power) - 1L;
             offset = (offset + mask) & ~mask;
             p->vma = offset;
-            offset += p->_cooked_size;
+            offset += dldbfd_section_size(p);
         }
     /* Allocate memory for all these sections */
     ent->exec = xballoc(abfd, (size_t)offset);
@@ -1404,7 +1412,7 @@ load_object_file_data(module_entry *ent)
         if (p->flags & SEC_LOAD)
         {
             ASSERT(p->flags & SEC_ALLOC);
-            size = p->_raw_size;
+            size = dldbfd_section_rawsize(p);
             ok = bfd_get_section_contents(abfd, p, vmaptr(p->vma), 0, size);
             ASSERT_BFD(ok);
         }
@@ -1948,7 +1956,7 @@ compute_executable_flag(module_entry *module)
             {
               int status;
               bfd_vma start = p->vma;
-              bfd_vma end = start + p->_raw_size;
+              bfd_vma end = start + dldbfd_section_rawsize(p);
               /* Assume PAGESIZE is a power of two */
               start = (start) & ~(pagesize-1);
               end = (end + pagesize - 1) & ~(pagesize-1);
