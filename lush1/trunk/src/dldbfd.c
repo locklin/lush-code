@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.28 2004-02-12 19:54:31 leonb Exp $
+ * $Id: dldbfd.c,v 1.29 2004-02-13 22:19:27 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2445,6 +2445,19 @@ define_symbol_of_main_program(const char *exec)
         }
         /* Close everything */
         bfd_close(abfd);
+	/* This is the __dso_handle thing for gcc >= 3 */
+#if defined(__GNUC__) && (__GNUC__ >= 3)
+	{
+	  extern int __dso_handle __attribute__ ((weak));
+	  if (& __dso_handle) {
+	    hsym = insert_symbol("__dso_handle");
+	    if (! hsym->flags & DLDF_DEFD) {
+	      hsym->flags = DLDF_DEFD;
+	      hsym->definition = ptrvma(&__dso_handle);
+	    }
+	  }
+	}
+#endif
     }
     CATCH(n)
     {
