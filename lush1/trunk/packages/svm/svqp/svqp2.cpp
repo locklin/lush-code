@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.3 2004-09-19 20:23:44 leonb Exp $
+ * $Id: svqp2.cpp,v 1.4 2004-09-19 20:37:47 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -664,13 +664,13 @@ SVQP2::run(void)
 	  if (status <= RESULT_FIN)
 	    break;
 	  // shrink
-	  int ol = l;
-	  checkshrink = false;
-	  shrink();	  
+	  int p = l;
+	  shrink();
+	  checkshrink = (l < p);
 	  gn = max(0.0, gmax-gmin);
 	  if (status == RESULT_SHRINK)
 	    info(":",": it:%d l:%d |g|:%f\n", iter, l, gn);
-	  else if (l < ol)
+	  else if (l < p)
 	    info(".",". it:%d l:%d |g|:%f\n", iter, l, gn);
 	  else if (verbosity >= 3)
 	    info("!","! it:%d l:%d |g|:%f\n", iter, l, gn);
