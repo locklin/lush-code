@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.8 2002-07-19 18:42:19 leonb Exp $
+ * $Id: allocate.c,v 1.9 2002-08-02 15:08:49 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -117,8 +117,15 @@ add_finalizer(at *q, void (*func)(at*,void*), void *arg)
   if (q)
     {
       unsigned int h;
-      finalizer *f = allocate(&finalizer_alloc);
+      finalizer *f;
       h = hash_pointer(q) % HASHTABLESIZE;
+      /* Already there? */
+      if (q->flags & C_FINALIZER)
+        for(f = finalizers[h]; f; f=f->next)
+          if (f->target==q && f->func==func && f->arg==arg)
+            return;
+      /* Add a new one */
+      f = allocate(&finalizer_alloc);
       f->next = finalizers[h];
       f->target = q;
       f->func = func;

@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.8 2002-07-12 22:42:28 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.9 2002-08-02 15:08:47 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -94,10 +94,10 @@ AC_HEADER_DIRENT
 AC_HEADER_TIME
 AC_HEADER_SYS_WAIT     
 AC_CHECK_HEADERS(memory.h string.h strings.h)
-AC_CHECK_HEADERS(unistd.h sys/time.h sys/mman.h)
+AC_CHECK_HEADERS(unistd.h sys/mman.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/ttold.h)
-AC_CHECK_HEADERS(bfd.h)
+AC_CHECK_HEADERS(sys/time.h sys/timeb.h bfd.h)
 
 # ----------------------------------------
 # Types
@@ -118,7 +118,7 @@ AC_FUNC_STRFTIME
 AC_CHECK_FUNCS(strchr memcpy sigaction sigvec strerror getcwd)
 AC_CHECK_FUNCS(ieee_handler fpsetmask __setfpucw)
 AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp)
-AC_CHECK_FUNCS(mprotect getpagesize)
+AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime)
 
 
 # ----------------------------------------
