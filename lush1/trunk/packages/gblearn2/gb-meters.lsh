@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: gb-meters.lsh,v 1.1 2002-11-26 17:24:36 profshadoko Exp $
+;;; $Id: gb-meters.lsh,v 1.2 2002-11-26 23:33:14 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? **** Meters
@@ -65,7 +65,7 @@
 #? ** classifier-meter
 ;; a class that can be used to measure the performance of
 ;; classifiers. This is a simple version that does not
-;; record anything but simply computes performacne measures.
+;; record anything but simply computes performance measures.
 (defclass classifier-meter object
   correctp ; a function that return 1 if the answer is considered correct,
 	   ; 0 if punt, -1 if wrong. 
@@ -80,6 +80,20 @@
   total-energy
   )
 
+#? (new classifier-meter [<comparison-function>])
+;; Create a new <classifier-meter> using <comparison-function>
+;; to compare actual and desired answers. By default
+;; the <same-class?> function is used for that purpose.
+;; It takes two integer arguments, and returns 1 if they
+;; are equal, -1 if they are different, and 0 if 
+;; the first argument is -1 (which means reject).
+(defmethod classifier-meter classifier-meter (&optional cp)
+  (setq correctp (if cp cp same-class?))
+  (==> this clear))
+
+#? (==> <classifier-meter> clear)
+;; reset the meter. This must be called
+;; before a measurement campaign is started.
 (defmethod classifier-meter clear ()
   (setq total-correct 0
 	total-error 0
@@ -88,12 +102,14 @@
 	age 0
 	size 0))
         
-(defmethod classifier-meter classifier-meter (&optional cp)
-  (setq correctp (if cp cp same-class?))
-  (==> this clear))
-
 (defmethod classifier-meter resize (sz) ())
 
+#? (==> <classifier-meter> update <age> <actual> <desired> <energy>)
+;; update the meter with results from a new sample.
+;; <age> is the number of training iterations so far,
+;; <actual> (a <class-state>) the actual output of the machine,
+;; <desired> (an idx0 of int) the desired category, 
+;; and <energy> (an idx0-state) the energy.
 (defmethod classifier-meter update (a co cd en)
   (let* ((crrct (correctp :co:output-class (cd))))
     ;; (print :co:output-class (cd) crrct)
@@ -112,6 +128,12 @@
   (let* ((crrct (correctp :co:output-class cd)))
     (list crrct :co:output-class (cd) :co:confidence (:en:x))))
 
+#? (==> <classifier-meter> info)
+;; return a list with the age, the number of samples
+;; (number of calls to update since the last clear),
+;; the average energy, the percentage of correctly
+;; recognize samples, the percentage of erroneously
+;; recognized samples, and the percentage of rejected samples.
 (defmethod classifier-meter info ()
   (list
    age
@@ -129,6 +151,13 @@
 (defmethod classifier-meter info-print ()
   (printf (==> this info-sprintf)))
 
+#? (==> <classifier-meter> display)
+;; Display the meter's information on the terminal.
+;; namely, the age, the number of samples
+;; (number of calls to update since the last clear),
+;; the average energy, the percentage of correctly
+;; recognize samples, the percentage of erroneously
+;; recognized samples, and the percentage of rejected samples.
 (defmethod classifier-meter display ()
   (apply printf 
 	 (cons "[%5d]  size=%3d  energy=%g  correct=%3.2f%%  errors=%3.2f%%  rejects=%3.2f%%\n" 

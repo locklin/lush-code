@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: data-sources.lsh,v 1.2 2002-11-26 20:22:59 profshadoko Exp $
+;;; $Id: data-sources.lsh,v 1.3 2002-11-26 23:33:14 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "libidx/idx-macros")
@@ -174,15 +174,18 @@
   ((-float-) bias)
   ((-float-) coeff))
 
-#? (new dsource-idx3ul <inp> <lbl>)
+#? (new dsource-idx3ul <inp> <lbl> <bias> <coeff>)
 ;; create a <dsource-idx3ul> where the input
-;; samples are slices of an PxDxYxX idx4 of ubytes
+;; samples are idx3 slices of an PxDxYxX idx4 of ubytes
 ;; passed as argument <inp> and labels are slices
 ;; of an idx1 of int passed as argument <lbl>.
 ;; P is the number of samples, and D,Y,X the dimensions
 ;; of each sample. If your data needs less that three 
 ;; dimensions simply setq Y and/or X to 1 (i.e. <inp> 
 ;; would be a PxDx1x1 matrix).
+;; values in the item are shifted by <bias>
+;; and multiplied by <coeff> before being copied
+;; into the destination by <fprop>.
 (defmethod dsource-idx3ul dsource-idx3ul (inp lbl b c)
   ((-idx4- (-ubyte-)) inp)
   ((-idx1- (-int-)) lbl)
@@ -199,6 +202,9 @@
 ;; get the current item and copy the sample into
 ;; <out> (an idx3-state) and the corresponding 
 ;; label into <lbl> (and idx0 of int).
+;; Raw values are shifted by the <bias> parameter
+;; and multiplied by the <coeff> parameter before 
+;; being copied into the x slot of <out>.
 (defmethod dsource-idx3ul fprop (out lbl)
   ((-obj- (idx3-state)) out)
   ((-idx0- (-int-)) lbl)
@@ -379,7 +385,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-#? dsource-idx3l-narrow
+#? ** dsource-idx3l-narrow
 ;; a data source constructed by taking patterns in
 ;; an existing data source whose indices are within a 
 ;; given range.
@@ -405,6 +411,8 @@
 
 (defmethod dsource-idx3l-narrow size () size)
 
+#? (==> <dsource-idx3l-permute> fprop <out> <lbl>)
+;; copy current item and label into <out> and <lbl>.
 (defmethod dsource-idx3l-narrow fprop (out lbl)
   ((-obj- (idx3-state)) out)
   ((-idx0- (-int-)) lbl)
@@ -412,7 +420,7 @@
   (==> base fprop out lbl) ())
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-#? dsource-idx3l-permute
+#? ** dsource-idx3l-permute
 ;; a data source constructed by shuffling the items
 ;; of a base data source.
 (defclass dsource-idx3l-permute dsource-idx3l
@@ -436,7 +444,7 @@
 (defmethod dsource-idx3l-permute size () (idx-dim map 0))
 
 #? (==> <dsource-idx3l-permute> fprop <out> <lbl>)
-;; copy item and label into <out> and <lbl>.
+;; copy current item and label into <out> and <lbl>.
 (defmethod dsource-idx3l-permute fprop (out lbl)
   ((-obj- (idx3-state)) out)
   ((-idx0- (-int-)) lbl)
@@ -457,7 +465,7 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-#? dsource-idx3l-concat
+#? ** dsource-idx3l-concat
 ;; a data source constructed by concatenating
 ;; two base data sources.
 (defclass dsource-idx3l-concat dsource-idx3l
@@ -466,10 +474,11 @@
   ((-obj- (dsource-idx3l)) base2)
   ((-int-) size2))
 
-#? (new dsource-idx3l-concat <base>)
-;; make a new data source by taking <size> items 
-;; from the data source passed as argument, starting
-;; at item <offset>.
+#? (new dsource-idx3l-concat <base1> <base2>)
+;; make a new data source by taking concatenating
+;; two base data sources <base1> and <base2>.
+;; the Two data sources must be <dsource-idx3l>
+;; or subclasses thereof.
 (defmethod dsource-idx3l-concat dsource-idx3l-concat (b1 b2)
   ((-obj- (dsource-idx3l)) b1 b2)
   (setq base1 b1)
@@ -479,6 +488,8 @@
 
 (defmethod dsource-idx3l-concat size () (+ size1 size2))
 
+#? (==> <dsource-idx3l-concat> fprop <out> <lbl>)
+;; copy item and label into <out> and <lbl>.
 (defmethod dsource-idx3l-concat fprop (out lbl)
   ((-obj- (idx3-state)) out)
   ((-idx0- (-int-)) lbl)
