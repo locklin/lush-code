@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: nan.c,v 1.2 2002-10-31 20:51:59 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -51,6 +51,8 @@ static int ieee_inftyf[1];
 static int ieee_nand[2];
 static int ieee_inftyd[2];
 static int ieee_present = 0;
+static int fpe_inv = 0;
+static int fpe_ofl = 0;
 
 /*================
   The following functions are the only primitives for Nan
@@ -220,6 +222,9 @@ DX(xnot_nan)
 static int
 setup_fpu(int doINV, int doOFL)
 {
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
+
   /* SysVr4 defines fpsetmask() */
 #ifdef HAVE_FPSETMASK
   int mask = 0;
@@ -288,6 +293,8 @@ static void
 fpe_irq(int sig, int num)
 {
   _clearfp();
+  if (ieee_present)
+    setup_fpu(fpe_inv, fpe_ofl);
   signal(SIGFPE, (void(*)(int))fpe_irq);
   switch(num)
   {
@@ -303,6 +310,8 @@ fpe_irq(int sig, int num)
 static void 
 fpe_irq(void)
 {
+  if (ieee_present)
+    setup_fpu(fpe_inv, fpe_ofl);
   signal(SIGFPE, (void*)fpe_irq);
   error(NIL, "Floating exception", NIL);
 }
@@ -368,6 +377,32 @@ set_fpe_irq(void)
 
 
 
+DY(yprogn_without_fpe)
+{
+  int inv,ofl;
+  struct context mycontext;
+  at *answer;
+
+  context_push(&mycontext);
+  if (sigsetjmp(context->error_jump, 1)) 
+    {
+      setup_fpu(fpe_inv, fpe_ofl);
+      context_pop();
+      siglongjmp(context->error_jump, -1L);
+    }
+  inv = fpe_inv;
+  ofl = fpe_ofl;
+  setup_fpu(FALSE,FALSE);
+  fpe_inv = inv;
+  fpe_ofl = ofl;
+  answer = progn(ARG_LIST);
+  context_pop();
+  return answer;
+}
+
+
+
+
 /*================
   Interpretor initialization
   ================*/
@@ -398,10 +433,11 @@ init_nan(void)
 	  set_fpe_irq();
 	}
     }
-  /* Define NaN functions */
+  /* Define functions */
   dx_define("nan"    , xnan    );
   dx_define("nanp"   , xnanp   );
   dx_define("infinity", xinfinity);
   dx_define("infinityp", xinfinityp);
   dx_define("not-nan", xnot_nan); 
+  dy_define("progn-without-fpe", yprogn_without_fpe);
 }
