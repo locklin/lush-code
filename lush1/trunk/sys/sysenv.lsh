@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.17 2002-05-08 19:52:47 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.18 2002-05-08 20:44:51 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -59,7 +59,7 @@
 ;;; --------- Defining variables ---------
 
 (dm defvar(f name value)
-    (list 'set (list 'quote name) value) )
+  (list 'setq (list 'scope name) value) )
 (lock_symbol defvar)
 
 (defvar not null)
@@ -1000,12 +1000,19 @@
 ;;; --------- Modules ---------
 
 (de module.hook(what m)
-  (when (= what 'init)
+  (cond
+   ((= what 'init)
     (each ((pair (module-defs m)))
-      (when (symbolp (cdr pair))
-        (eval (list setq (list 'scope (cdr pair)) (car pair))) ) ) ) )
+      (cond
+       ((symbolp (cdr pair))
+        (eval (list setq (list 'scope (cdr pair)) (car pair))) )
+       ((and (consp (cdr pair)) (classp (cadr pair)) (symbolp (cddr pair)))
+        (putmethod (cadr pair) (cddr pair) (car pair)) ) ) ) )
+   ((= what 'unload)
+    () ) )
+  t )
 
-(de module.search(name)
+(de mod-search(name)
   (let ((found ())
         (n (concat-fname name))
         (l (module-list)))
@@ -1047,7 +1054,7 @@
     (==> m pretty) ) )
 
 (de mod-inquire(name)
-  (let ((m (module.search name)))
+  (let ((m (mod-search name)))
     (when m
       (let ((d (module-defs m))
             (i (module-initname m))
@@ -1064,17 +1071,16 @@
     (module-filename (module-load name hook)) ) )
 
 (de mod-unload(name)
-  (let ((m (module.search name)))
+  (let ((m (mod-search name)))
     (when (not m)
       (error 'mod-unload "Unknown module name" name) )
     (module-unload m) ) )
 
 (defvar mod-dlopen mod-load)
 
-(lock-symbol module.search module.hook
-             mod-list mod-status mod-inquire mod-load mod-unload )
-
-
+(lock-symbol module.hook 
+             mod-search mod-list mod-status 
+             mod-inquire mod-load mod-unload )
 
 
 
