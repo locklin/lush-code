@@ -24,14 +24,26 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: constants.lsh,v 1.1 2002-08-09 16:31:56 leonb Exp $
+;;; $Id: constants.lsh,v 1.2 2002-08-19 07:01:27 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 
 #? *** Symbolic constants.
-;; This file provides a means to define symbolic constants
-;; and refer to them using a well defined syntax.
+;; header files of C libraries are often filled with large 
+;; amounts of #define directives that define numerical macros, 
+;; flags and other constants. Interfacing these libraries
+;; to Lush requires to turn those constants into Lisp 
+;; symbols. Lush contains a mechanism for defining such
+;; constants without filling up the global variable name space
+;; and risquing name clashes.
+;; Constants can be defined with the <(constant "constant-name" value)>
+;; directive. Constants can later be accessed using the <@constant-name> macro
+;; or the <@@constant-name> macro. The <@> macro expands into
+;; a macro that evaluates to the value, while <@@> directly expands
+;; to the value at read time.
+;;.SEE @<identifier>
+;;.SEE (defconstant <identifier> <val>)
 
 (when (not |*CONSTANTS|)
   (defvar |*CONSTANTS| (htable)) )
@@ -43,6 +55,7 @@
 ;; These constant values are not accessible as variables
 ;; but are accessible using the |@| macro-character.
 (dm defconstant(fn var val)
+  (setq val (eval val))
   (when (symbolp var)
     (setq var (pname var)) )
   (when (not (stringp var))
@@ -52,11 +65,12 @@
   `(progn (|*CONSTANTS| ',var ,val) ',var) )
 
 
-#? @<identifier>
-;; Macro-character expands to an expression that retrieves the
-;; value of the symbolic constant named <identifier>.
-;; The retrieval is performed at macro-expansion time.  
-;; This is particularly useful for using symbolic constants 
+#? @<identifier> @@<identifier>
+;; These macro-character expand to a expressions that retrieve 
+;; the value of the symbolic constant named <identifier>.
+;; The <@> form causes the retrieval to occur at macro-expansion time. 
+;; while the <@@> form causes the retrieval to occur at read time.
+;; These macros are particularly useful for using symbolic constants 
 ;; in compiled code.
 ;;
 ;; Argument <identifier> must be a legal C identifier name.
@@ -70,13 +84,13 @@
 ;; it reads a lisp expression and arranges for that expression to 
 ;; be evaluated during the macro expansion time.
 ;;.IP
-;; Previous version of <|@|> used to process the expression at reading time.
-;; This behavior causes problems when files are tokenized because the parsing
-;; process depends on the execution of the previous expressions.
-
-
+;; The expansion of the <@@> form depends on the execution of the 
+;; previous expressions, which may cause discrepancies when loading
+;; tokenized files. However, the <@@> is more efficient in interpreted
+;; mode since the expansion occurs in advance of execution.
 (dmc |@|
-     (let ((expr (read-string "A-Za-z_$")))
+     (let ((scndat (read-string "@"))
+	   (expr (read-string "A-Za-z_$")))
        (cond
         ;; found a legal c identifier
         ((<> expr "")
@@ -84,10 +98,15 @@
          (when (not (index (skip-char "") " \t\n\r()[];"))
            (printf "*** Warning\007: unexpected character after @%s\n" expr) 
            (printf "*** Warning\007: insert a space to remove this warning\n") )
-         (list (eval `(mlambda |_Args| 
-                        (or (:|*CONSTANTS| ,expr) 
-                            (apply scope (cons (named (downcase ,expr)) ())))))) )
+	 (if (= scndat "@")
+	     (or (:|*CONSTANTS| expr) 
+		 (apply scope (list (named (downcase expr)))))
+	   (list (eval `(mlambda |_Args| 
+			  (or (:|*CONSTANTS| ,expr) 
+			      (apply scope (cons (named (downcase ,expr)) ())))))) ))
         ;; found an expression
         (t
-         (setq expr (read))
-         (list (eval `(mlambda |_Args| ,expr))) ) ) ) )
+	 (if (= scndat "@")
+	     (eval (read))
+	   (setq expr (read))
+	   (list (eval `(mlambda |_Args| ,expr))) ) ) ) ))
