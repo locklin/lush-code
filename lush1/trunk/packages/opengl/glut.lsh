@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: glut.lsh,v 1.12 2004-04-29 16:28:15 leonb Exp $
+;;; $Id: glut.lsh,v 1.13 2004-05-04 14:31:58 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -231,20 +231,23 @@
   (let ((ms (* 24 3600 1000)))
     ((-int-) ms)
     #{
+        long msec;
       #ifdef FREEGLUT
         if (glutGet(GLUT_INIT_STATE)) {
           glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE,GLUT_ACTION_CONTINUE_EXECUTION);
-          glutMainLoopEvent();
-      # ifdef GLUT_TIME_TO_NEXT_TIMER
-          { int tms = glutGet(GLUT_TIME_TO_NEXT_TIMER);
-            if (tms>=0) $ms = tms; }
+      # ifdef GLUT_IDLE_TIME
+          while (! (msec = glutGet(GLUT_IDLE_TIME)))
+            glutMainLoopEvent();
       # else   
-          $ms = 500;
+          glutMainLoopEvent();
+          msec = 200;
       # endif
-       }
+          if (msec > $ms)
+            $ms = msec;
+        }
       #else
-       if (__glutDisplay && __glutWindowListSize) {
-         do {
+        if (__glutDisplay && __glutWindowListSize) {
+          do {
            do {
              Atom saved = __glutWMDeleteWindow;
              if (! setjmp(glut_event_jmp) ) {
@@ -262,7 +265,7 @@
                  + (1000000 + (int)__glutTimerList->tv.tv_usec - (int)tv.tv_usec)/1000;
            }
          } while ($ms < 0);
-       }
+        }
       #endif
      #}
     ms ) )
@@ -283,8 +286,8 @@
            argv[1] = 0;
            glutInit(&argc, argv);
        #ifdef FREEGLUT
-       # ifdef GLUT_CONNECTION_NUMBER
-           cn = glutGet(GLUT_CONNECTION_NUMBER);
+       # ifdef GLUT_CONNECTION
+           cn = glutGet(GLUT_CONNECTION);
        # else
            cn = ConnectionNumber(fgDisplay.dpy);
        #endif
