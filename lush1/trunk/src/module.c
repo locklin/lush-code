@@ -24,11 +24,112 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.2 2002-05-01 18:32:46 leonb Exp $
+ * $Id: module.c,v 1.3 2002-05-03 18:46:39 leonb Exp $
  **********************************************************************/
 
 
 #include "header.h"
+
+
+/* ------ DLOPEN, BFD, ETC. -------- */
+
+#if HAVE_LIBBFD
+# define DLDBFD 1
+# include "dldbfd.h"
+#endif
+
+#if HAVE_DLFCN_H
+#if HAVE_DLOPEN
+#include <dlfcn.h>
+#define DLOPEN 1
+typedef void* dlopen_handle_t;
+#endif
+#endif
+
+#if HAVE_DL_H 
+#if HAVE_LIBDLD
+#include <dl.h>
+#define DLOPEN 1
+typedef shl_t dlopen_handle_t
+#endif
+#endif
+
+#ifdef WIN32
+#define DLOPEN 1
+typedef void* dlopen_handle_t;
+#endif
+
+#if DLOPEN
+#define RTLD_SPECIAL -1
+#ifndef RTLD_LAZY
+#define RTLD_LAZY 1
+#endif
+#ifndef RTLD_NOW
+#define RTLD_NOW 1
+#endif
+#endif
+
+#ifndef DLDBFD
+#ifdef DLOPEN
+#ifdef HAVE_DL_H
+
+/* DLOPEN emulation under HP/UX */
+static dlopen_handle_t dlopen(char *soname, int mode)
+{ 
+  return shl_load(soname,BIND_IMMEDIATE|BIND_NONFATAL|
+		  BIND_NOSTART|BIND_VERBOSE, 0L ); 
+}
+static void dlclose(dlopen_handle_t hndl)
+{ 
+  shl_unload(hndl); 
+}
+static void* dlsym(dlopen_handle_t hndl, char *sym)
+{ 
+  void *addr = 0;
+  if (shl_findsym(&hndl,sym,TYPE_PROCEDURE,&addr) >= 0)
+    return addr;
+  return 0;
+}
+static char* dlerror(void)
+{
+  return "Function shl_load() has failed";
+}
+
+#endif
+#endif
+#endif
+
+
+
+
+
+
+/* ------ THE MODULE DATA STRUCTURE -------- */
+
+#define MODULE_ROOT      0x01
+#define MODULE_DLD       0x02
+#define MODULE_SO        0x04
+#define MODULE_EXEC      0x08
+#define MODULE_CAN_INIT  0x10
+#define MODULE_INIT      0x20
+
+
+struct module {
+  short used;
+  short flags;
+  struct module *prev;
+  struct module *next;
+  dlopen_handle_t *handle;
+  const char *name;
+  at *defs;
+};
+
+static struct module root = { 1, MODULE_ROOT|MODULE_INIT, &root, &root };
+static struct module *current = &root;
+
+
+/* ---------- THE MODULE OBJECT ----------- */
+
 
 
 /* --------- XXX_DEFINE FUNCTIONS --------- */

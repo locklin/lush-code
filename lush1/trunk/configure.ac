@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.5 2002-05-01 17:30:35 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.6 2002-05-03 18:46:36 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -187,6 +187,8 @@ fi
 AC_SUBST(UNIX_YES)
 AC_SUBST(WIN32_YES)
 
+AC_DEFINE_UNQUOTED(EXT_DLL, ".$SOEXT",  [Extension for shared libraries])
+AC_DEFINE_UNQUOTED(EXT_OBJ, ".$OBJEXT", [Extension for object files])
 
 
 # ----------------------------------------
