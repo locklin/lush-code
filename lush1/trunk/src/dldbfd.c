@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.16 2003-02-14 18:12:00 leonb Exp $
+ * $Id: dldbfd.c,v 1.17 2003-02-14 21:45:03 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -42,9 +42,6 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <setjmp.h>
-#if HAVE_STDBOOL_H
-# include <stdbool.h>
-#endif
 #if HAVE_UNISTD_H
 # include <unistd.h>
 #endif
@@ -54,6 +51,13 @@
 
 #include <bfd.h>
 #include "dldbfd.h"
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
 
 /* ---------------------------------------- */
 /* GCC OPTIMISATIONS */
@@ -322,13 +326,13 @@ module_list *free_list_of_module_lists = 0;
 
 /* insert_entry_into_list -- insert an entry into a file list */
 
-static boolean
+static int
 insert_entry_into_list(module_list **here, struct module_entry *ent)
 {
     module_list *p;
     for (p=*here; p; p=p->next)
         if (p->entry == ent)
-            return false;
+            return FALSE;
     if (!free_list_of_module_lists) 
     {
         int nobj = 510;
@@ -344,13 +348,13 @@ insert_entry_into_list(module_list **here, struct module_entry *ent)
     p->next = *here;
     p->entry = ent;
     *here = p;
-    return true;
+    return TRUE;
 }
 
 
 /* remove_entry_from_list -- remove an entry from a file list */
 
-static boolean
+static int
 remove_entry_from_list(module_list **here, struct module_entry *ent)
 {
     module_list *p;
@@ -362,11 +366,11 @@ remove_entry_from_list(module_list **here, struct module_entry *ent)
             *here = p->next;
             p->next = free_list_of_module_lists;
             free_list_of_module_lists = p;
-            return true;
+            return TRUE;
         }
         here = &p->next;
     }
-    return false;
+    return FALSE;
 }
 
 
@@ -391,9 +395,9 @@ typedef struct module_entry {
     void *exec;                 /* area for executable program */
     struct module_entry *mods;  /* for archives */
     signed char executable_flag;/* >0 if module is executable */
-    boolean symdone_flag;       /* symbols have been put into global table */
-    boolean archive_flag;       /* module is an archive */
-    boolean relocated_flag;     /* relocation has been performed */
+    int symdone_flag;       /* symbols have been put into global table */
+    int archive_flag;       /* module is an archive */
+    int relocated_flag;     /* relocation has been performed */
 } module_entry;
 
 
@@ -406,7 +410,7 @@ static module_entry *dld_modules = 0;
 /* create_module_entry -- create a module entry and chain it */
 
 static module_entry *
-create_module_entry(bfd *abfd, module_entry **here, boolean archivep)
+create_module_entry(bfd *abfd, module_entry **here, int archivep)
 {
     module_entry *new;
     long storage_needed;
@@ -544,13 +548,13 @@ create_file_entry(const char *fname)
     ASSERT_BFD(abfd);
     if (bfd_check_format(abfd, bfd_object)) 
       {
-        ret = create_module_entry(abfd, &dld_modules, false);
-        ret->archive_flag = false;
+        ret = create_module_entry(abfd, &dld_modules, FALSE);
+        ret->archive_flag = FALSE;
       }
     else if (bfd_check_format(abfd, bfd_archive)) 
       {
-        ret = create_module_entry(abfd, &dld_modules, true);
-        ret->archive_flag = true;
+        ret = create_module_entry(abfd, &dld_modules, TRUE);
+        ret->archive_flag = TRUE;
       }
     else
       THROW(bfd_errmsg(bfd_error_wrong_format));
@@ -659,7 +663,7 @@ static inline symbol_entry *
 lookup_symbol(const char *id)
 {
     return (symbol_entry*)bfd_hash_lookup(&global_symbol_table, 
-                                          id, false, false);
+                                          id, FALSE, FALSE);
 }
 
 
@@ -669,7 +673,7 @@ static inline symbol_entry *
 insert_symbol(const char *id)
 {
     return (symbol_entry*)bfd_hash_lookup(&global_symbol_table,
-                                          id, true, true);
+                                          id, TRUE, TRUE);
 }
 
 
@@ -1127,13 +1131,13 @@ mipself_free_got_info(module_entry *ent,
 
 /* mipself_got_traverse -- got table traversal function */
 
-static boolean
+static int
 mipself_got_traverse(struct bfd_hash_entry *ent, void *gcookie)
 {
   mipself_got_entry *gotent = (mipself_got_entry*)ent;
   asection *sgot = (asection*)gcookie;
   sgot->orelocation[gotent->index] = gotent->reloc;
-  return true;
+  return TRUE;
 }
 
 
@@ -1169,7 +1173,7 @@ mipself_create_got(module_entry *ent,
                 /* Search entry in GOT table */
                 const char *name = (*reloc->sym_ptr_ptr)->name;
                 mipself_got_entry *gotent = (mipself_got_entry*)
-                  bfd_hash_lookup(&info->got_table, name, true, true );
+                  bfd_hash_lookup(&info->got_table, name, TRUE, TRUE );
                 /* Fill entry */
                 if (!gotent->reloc)
                   {
@@ -1204,7 +1208,7 @@ mipself_create_got(module_entry *ent,
         sgot->alignment_power = 4;
       /* Set GOT relocations */
       sgot->orelocation = xballoc(ent->abfd, info->gotsize*sizeof(void*));
-      bfd_hash_traverse(&info->got_table, mipself_got_traverse, sgot);
+      bfd_hash_traverse(&info->got_table, (void*)mipself_got_traverse, sgot);
       sgot->reloc_count = info->gotsize;
     }
   /* return GOT section if any */
@@ -1268,7 +1272,7 @@ mipself_fix_relocs(module_entry *ent,
                 {
                   /* Find GOT entry */
                   mipself_got_entry *gotent = (mipself_got_entry*)
-                    bfd_hash_lookup(&info->got_table, symbol->name, false, false );
+                    bfd_hash_lookup(&info->got_table, symbol->name, FALSE, FALSE );
                   ASSERT_BFD(gotent);
                   /* Addend should be null */
                   if (reloc->addend)
@@ -1381,7 +1385,7 @@ load_object_file_data(module_entry *ent)
     bfd *abfd;
     asection *p;
     bfd_size_type size;
-    boolean ok;
+    int ok;
     
     abfd = ent->abfd;
     for (p=abfd->sections; p; p=p->next)
@@ -1528,7 +1532,7 @@ insert_module_symbols(module_entry *module)
         }
     }
     ASSERT(dld_undefined_sym_count >= 0);
-    module->symdone_flag = true;
+    module->symdone_flag = TRUE;
 }
 
 
@@ -1589,7 +1593,7 @@ remove_module_symbols(module_entry *module)
         }
     }
     ASSERT(dld_undefined_sym_count >= 0);
-    module->symdone_flag = false;
+    module->symdone_flag = FALSE;
 }
 
 
@@ -1666,7 +1670,7 @@ resolve_newly_defined_symbols(module_entry *chain)
 /* apply_relocations -- perform relocation on a fully linked module */
 
 static void
-apply_relocations(module_entry *module, boolean externalp)
+apply_relocations(module_entry *module, int externalp)
 {
     /* Flag externalp decides if we apply the internal relocations only
      * (i.e. those depending on symbols defined within this module) or
@@ -1758,7 +1762,7 @@ apply_relocations(module_entry *module, boolean externalp)
         }
     /* Mark module as relocated */
     if (externalp)
-        module->relocated_flag = true;
+        module->relocated_flag = TRUE;
 }
 
 
@@ -1802,7 +1806,7 @@ undo_relocations(module_entry *module)
         }
     }
     /* Done */
-    module->relocated_flag = false;
+    module->relocated_flag = FALSE;
 }
 
 
@@ -1817,7 +1821,7 @@ perform_all_relocations(module_entry *chain)
         if (chain->archive_flag)
             perform_all_relocations(chain->mods);
         else if (chain->undefined_symbol_count==0 && !chain->relocated_flag)
-            apply_relocations(chain, true);
+            apply_relocations(chain, TRUE);
         else if (chain->undefined_symbol_count>0 && chain->relocated_flag)
             undo_relocations(chain);
         chain = chain->next;
@@ -1946,7 +1950,7 @@ static void
 remove_module_entry(module_entry *module, module_entry **chain)
 {
     module_list *p;
-    boolean symdone;
+    int symdone;
 
     /* Process archive modules */
     if (module->archive_flag)
@@ -2046,31 +2050,31 @@ typedef struct archive_cookie {
     struct bfd_hash_table *armap;
     struct chain_of_bfd *aropen;
     module_entry *armod;
-    boolean again;
+    int again;
 } archive_cookie;
 
 
 /* bfdchain_add -- Add function to chain of open bfd */
 
-static boolean
+static int
 bfdchain_add(archive_cookie *cookie, bfd *element)
 {
     chain_of_bfd **bfdchn;
     for (bfdchn=&(cookie->aropen); *bfdchn; bfdchn=&((*bfdchn)->next))
         if ((*bfdchn)->abfd == element)
-            return false;
+            return FALSE;
     *bfdchn = bfd_hash_allocate(cookie->armap, sizeof(chain_of_bfd));
     if (! *bfdchn)
         THROW(bfd_errmsg(bfd_error_no_memory));
     (*bfdchn)->abfd = element;
     (*bfdchn)->next = 0;
-    return true;
+    return TRUE;
 }
 
 
 /* arlink_traverse -- Traversal function for linking archives */
 
-static boolean
+static int
 arlink_traverse(struct bfd_hash_entry *gsym, void *gcookie)
 {
     symbol_entry *hsym = (symbol_entry*)gsym;
@@ -2082,15 +2086,15 @@ arlink_traverse(struct bfd_hash_entry *gsym, void *gcookie)
 
     /* Continue if symbol is defined or unreferenced */
     if (! (hsym->flags & DLDF_REFD))
-        return true;
+        return TRUE;
     if (hsym->flags & DLDF_DEFD)
-        return true;
+        return TRUE;
 
     /* Continue if symbol is not in archive map */
     asym = (archive_entry*)
-        bfd_hash_lookup(cookie->armap, hsym->root.string, false, false);
+        bfd_hash_lookup(cookie->armap, hsym->root.string, FALSE, FALSE);
     if (!asym)
-        return true;
+        return TRUE;
     
     /* Search chain */
     for (achn=asym->first; achn; achn=achn->next)
@@ -2106,7 +2110,7 @@ arlink_traverse(struct bfd_hash_entry *gsym, void *gcookie)
             && bfd_check_format(element, bfd_object) )
         {
             /* Include element in archive module chain */
-            armodule = create_module_entry(element, &cookie->armod->mods, false);
+            armodule = create_module_entry(element, &cookie->armod->mods, FALSE);
             armodule->filename = xballoc(element, strlen(element->filename)
                                          + strlen(cookie->armod->filename) + 3);
             sprintf((char*)armodule->filename, "%s(%s)", 
@@ -2119,10 +2123,10 @@ arlink_traverse(struct bfd_hash_entry *gsym, void *gcookie)
             handle_got_relocations(armodule);
             allocate_memory_for_object(armodule);
             load_object_file_data(armodule);
-            apply_relocations(armodule,false);
+            apply_relocations(armodule,FALSE);
             insert_module_symbols(armodule);
             /* Loop again */
-            cookie->again = true;
+            cookie->again = TRUE;
             break;
         }
     }
@@ -2177,7 +2181,7 @@ link_archive_members(module_entry *module)
                 name = drop_leading_char(dbfd, asym->name);
                 /* Insert symbol name into hash table */
                 are = (archive_entry*)
-                    bfd_hash_lookup(&archive_map, name, true, false );
+                    bfd_hash_lookup(&archive_map, name, TRUE, FALSE );
                 arc = (archive_chain*)
                     bfd_hash_allocate(&archive_map, sizeof(archive_chain) );
                 if (!arc)
@@ -2207,18 +2211,18 @@ link_archive_members(module_entry *module)
                     /* Register open bfd */
                     bfdchain_add(&cookie, dbfd);
                     /* Read minisymbols */
-                    symcount = bfd_read_minisymbols(dbfd, false, &minptr, &minsize);
+                    symcount = bfd_read_minisymbols(dbfd, FALSE, &minptr, &minsize);
                     for (i=0; i<symcount; i++)
                     {
                         asymbol *sym;
-                        sym = bfd_minisymbol_to_symbol(dbfd, false, minptr, nsym);
+                        sym = bfd_minisymbol_to_symbol(dbfd, FALSE, minptr, nsym);
                         if (sym->flags & (BSF_GLOBAL|BSF_WEAK|BSF_INDIRECT))
                         {
                             /* Remove leading character */
                             name = drop_leading_char(dbfd, sym->name);
                             /* Insert symbol name into hash table */
                             are = (archive_entry*)
-                                bfd_hash_lookup(&archive_map, name, true, false );
+                                bfd_hash_lookup(&archive_map, name, TRUE, FALSE );
                             arc = (archive_chain*)
                                 bfd_hash_allocate(&archive_map, sizeof(archive_chain));
                             if (!arc)
@@ -2242,11 +2246,11 @@ link_archive_members(module_entry *module)
             }
         }
         /* Traverse global symbol table for undefined symbols */
-        cookie.again = true;
+        cookie.again = TRUE;
         while (cookie.again && dld_undefined_sym_count>0)
         {
-            cookie.again = false;
-            bfd_hash_traverse(&global_symbol_table, arlink_traverse, &cookie);
+            cookie.again = FALSE;
+            bfd_hash_traverse(&global_symbol_table, (void*)arlink_traverse, &cookie);
         }
     }
     CATCH(n)
@@ -2308,7 +2312,7 @@ dld_link (const char *oname)
             handle_got_relocations(module);
             allocate_memory_for_object(module);
             load_object_file_data(module);
-            apply_relocations(module,false);
+            apply_relocations(module,FALSE);
             insert_module_symbols(module);
         }
         resolve_newly_defined_symbols(dld_modules);
@@ -2616,7 +2620,7 @@ struct list_undefined_cookie {
 
 /* function called when traversing */
 
-static boolean
+static int
 list_undefined_traverse(struct bfd_hash_entry *gsym, void *gcookie)
 {
     symbol_entry *hsym = (symbol_entry*)gsym;
@@ -2632,7 +2636,7 @@ list_undefined_traverse(struct bfd_hash_entry *gsym, void *gcookie)
         }
         cookie->current = n+1;
     }
-    return true;
+    return TRUE;
 }
 
 
@@ -2647,7 +2651,7 @@ dld_list_undefined_sym (void)
         cookie.syms = xmalloc( (dld_undefined_sym_count+1)*sizeof(char*) );
         cookie.current = 0;
         cookie.total = dld_undefined_sym_count;
-        bfd_hash_traverse(&global_symbol_table, list_undefined_traverse, &cookie);
+        bfd_hash_traverse(&global_symbol_table, (void*)list_undefined_traverse, &cookie);
         ASSERT(cookie.current = cookie.total);
         cookie.syms[cookie.current] = 0;
     }
