@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.27 2002-07-01 21:20:36 leonb Exp $
+ * $Id: header.h,v 1.28 2002-07-02 20:47:41 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -1225,8 +1225,10 @@ LUSHAPI at *new_dhclass(at *name, dhclassdoc_t *kdata);
 
 /* LISP_C.H ---------------------------------------------- */
 
-extern LUSHAPI void lside_dld_partial(gptr);
+extern LUSHAPI int lside_mark_unlinked(gptr);
 extern LUSHAPI void lside_destroy_item(gptr);
+extern LUSHAPI int  lside_check_ownership(void *cptr);
+
 
 /* CPLUSPLUS --------------------------------------------------- */
 

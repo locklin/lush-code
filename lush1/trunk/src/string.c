@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.3 2002-06-27 20:09:43 leonb Exp $
+ * $Id: string.c,v 1.4 2002-07-02 20:47:46 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -66,6 +66,7 @@ new_safe_string(char *s)
 
   st->flag = STRING_SAFE;
   st->start = s;
+  st->cptr = 0;
   q = new_extern(&string_class, st);
   q->flags |= X_STRING;
 
@@ -93,6 +94,7 @@ new_string_bylen(int n)
   buffer[n] = 0;
   st->flag = STRING_ALLOCATED;
   st->start = buffer;
+  st->cptr = 0;
   q = new_extern(&string_class, st);
   q->flags |= X_STRING;
   return q;
@@ -132,6 +134,8 @@ string_dispose(at *p)
   s = p->Object;
   if (s->flag == STRING_ALLOCATED)
     free(s->start);
+  if (s->cptr)
+    lside_destroy_item(s->cptr);
   deallocate(&alloc_string, (struct empty_alloc *) s);
 }
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.10 2002-06-29 17:36:38 leonb Exp $
+ * $Id: oostruct.c,v 1.11 2002-07-02 20:47:46 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -61,27 +61,30 @@ static void
 zombie_dispose(at *p)
 {
   /* is it an old oostruct? */
-  if (p->Object) {
-    register struct oostruct *s;
-    int i;
-    s = p->Object;
-    for(i=0;i<s->size;i++)
-      UNLOCK(s->slots[i].val);
-    free(s);
-  }
+  if (p->Object) 
+    {
+      struct oostruct *s;
+      int i;
+      s = p->Object;
+      lside_destroy_item(s->cptr);
+      for(i=0;i<s->size;i++)
+        UNLOCK(s->slots[i].val);
+      free(s);
+    }
 }
 
 static void
 zombie_action(at *q, void (*action) (at *))
 {
   /* is it an old oostruct? */
-  if (q->Object) {
-    register struct oostruct *s;
-    int i;
-    s = q->Object;
-    for(i=0;i<s->size;i++)
-      (*action)(s->slots[i].val);
-  }
+  if (q->Object) 
+    {
+      struct oostruct *s;
+      int i;
+      s = q->Object;
+      for(i=0;i<s->size;i++)
+        (*action)(s->slots[i].val);
+    }
 }
 
 static at *
@@ -117,14 +120,14 @@ oostruct_dispose(at *q)
   int oldready;
   int errflag;
   
-/* 
- * This routine may be called during garbage collection.
- * If an error occurs during the destructor action,
- * an error handler zombifies the object.
- * The garbage will be restarted
- * but its destructors are cancelled.
- */
-
+  /* 
+   * This routine may be called during garbage collection.
+   * If an error occurs during the destructor action,
+   * an error handler zombifies the object.
+   * The garbage will be restarted
+   * but its destructors are cancelled.
+   */
+  
   s = q->Object;
 
   oldready = error_doc.ready_to_an_error;
@@ -132,15 +135,15 @@ oostruct_dispose(at *q)
   q->count++;
   q->flags |= C_GARBAGE;
   context_push(&mycontext);
-
+  
   errflag = sigsetjmp(context->error_jump,1);
   if (errflag == 0)
     send_delete(q);
-
+  
   context_pop();
   error_doc.ready_to_an_error = oldready;
   q->count--;
-
+  
   UNLOCK(s->class);
   zombie_dispose(q);
   q->Class = &zombie_class;
@@ -603,6 +606,7 @@ new_oostruct(at *cl)
   s = malloc(sizeof(struct oostruct)+(len-1)*sizeof(struct oostructitem));
   s->size = len;
   s->class = cl;
+  s->cptr = NULL;
   LOCK(cl);
   
   i = 0;
@@ -1178,24 +1182,30 @@ DX(xsender)
 static void
 send_delete(at *p)
 {
-  at *f = NIL;
-  register class *cl;
-  if (! (p && (p->flags & X_OOSTRUCT)))
-    return;
-  cl = p->Class;
-  while (cl)
+  if (p && (p->flags & X_OOSTRUCT))
     {
-      struct hashelem *hx = getmethod(cl, at_destroy);
-      cl = cl->super;
-      if (! hx)
-        break;
-      else if (hx->function == f)
-        continue;
-      f = call_method(p, hx, NIL);
-      UNLOCK(f);
-      f = hx->function;
+      struct oostruct *s = p->Object;
+      if (lside_check_ownership(s->cptr))
+        {
+          /* Only send destructor to objects owned by lisp */
+          at *f = NIL;
+          class *cl = p->Class;
+          while (cl)
+            {
+              struct hashelem *hx = getmethod(cl, at_destroy);
+              cl = cl->super;
+              if (! hx)
+                break;
+              else if (hx->function == f)
+                continue;
+              f = call_method(p, hx, NIL);
+              UNLOCK(f);
+              f = hx->function;
+            }
+        }
     }
 }
+
 
 void 
 delete_at_special(at *p, int flag)

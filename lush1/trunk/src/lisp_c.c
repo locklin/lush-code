@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.4 2002-07-02 19:56:38 leonb Exp $
+ * $Id: lisp_c.c,v 1.5 2002-07-02 20:47:46 leonb Exp $
  **********************************************************************/
 
 
@@ -35,7 +35,8 @@
 
 #if 1
 void run_time_error(char *s) { error(NIL,"s",NIL); }
-void lside_dld_partial(gptr g) {}
+int  lside_mark_unlinked(gptr g) { return 0; }
+int  lside_check_ownership(void *cptr) { return 1; }
 void lside_destroy_item(gptr g) {}
 void init_lisp_c(void) {} 
 at * dh_listeval(at *p, at *q) { return NIL; }
@@ -43,8 +44,6 @@ at * dh_listeval(at *p, at *q) { return NIL; }
 
 extern int storage_to_dht[];
 extern int dht_to_storage[];
-extern at *dynlink_gone();
-extern at *dynlink_partial();
 extern at *at_true;
 
 
@@ -1248,10 +1247,11 @@ lside_destroy_item(void *cptr)
 
 /* lside_dld_partial -- called from DLD.C when objects become non executable */
 
-void 
-lside_dld_partial(void *cdoc)
+int
+lside_mark_unlinked(void *cdoc)
 {
   avlnode *n;
+  int count = 0;
   n = avl_first(0);
   while (n)
     {
@@ -1260,9 +1260,11 @@ lside_dld_partial(void *cdoc)
           {
             n->cinfo = CINFO_UNLINKED;
             n->cmoreinfo = 0;
+            count += 1;
           }
       n = avl_succ(n);
     }
+  return count;
 }
 
 

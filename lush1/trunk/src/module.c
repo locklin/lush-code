@@ -24,12 +24,13 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.17 2002-06-27 21:10:40 leonb Exp $
+ * $Id: module.c,v 1.18 2002-07-02 20:47:46 leonb Exp $
  **********************************************************************/
 
 
 
 #include "header.h"
+#include "dh.h"
 
 
 /* ------ DLOPEN, BFD, ETC. -------- */
@@ -597,14 +598,33 @@ cleanup_module(struct module *m)
       at *q = p->Car;
       if (EXTERNP(q, &class_class))
         {
+          int n;
           class *cl = q->Object;
-          fprintf(stderr,"*** WARNING: destroying all instances of %s\n", pname(q));
-          begin_iter_at(x) 
+          /* Mark cside objects as unlinked */
+          if (cl->classdoc)
             {
-              if (EXTERNP(x, cl))
-                delete_at(x);
+              n = lside_mark_unlinked(cl->classdoc);
+              if (n > 0)
+                fprintf(stderr,"*** WARNING: "
+                        "marked %d instances of class %s as unlinked\n", 
+                        n, pname(q));
             }
-          end_iter_at(x);
+          else
+            {
+              n = 0;
+              begin_iter_at(x) 
+                {
+                  if (EXTERNP(x, cl)) 
+                    {
+                      delete_at(x);
+                      n += 1;
+                    }
+                }
+              end_iter_at(x);
+              if (n > 0)
+                fprintf(stderr,"*** WARNING: "
+                        "destroyed %d instances of class %s\n", n, pname(q));
+            }
         }
       p = p->Cdr;
     }
@@ -1034,6 +1054,7 @@ class_define(char *name, class *cl)
   UNLOCK(classat);
 }
 
+
 void 
 dx_define(char *name, at *(*addr) (int, at **))
 {
@@ -1046,6 +1067,7 @@ dx_define(char *name, at *(*addr) (int, at **))
   UNLOCK(priminame);
 }
 
+
 void 
 dy_define(char *name, at *(*addr) (at *))
 {
@@ -1057,6 +1079,7 @@ dy_define(char *name, at *(*addr) (at *))
   UNLOCK(symb);
   UNLOCK(priminame);
 }
+
 
 void 
 dxmethod_define(class *cl, char *name, at *(*addr) (int, at **))
@@ -1084,6 +1107,53 @@ dymethod_define(class *cl, char *name, at *(*addr) (at *))
 }
 
 
+void 
+dhclass_define(char *name, dhclassdoc_t *kclass)
+{
+  at *symb;
+  at *classat;
+  class *cl;
+  
+  symb = new_symbol(name);
+  classat = new_dhclass(symb, kclass);
+  cl = classat->Object;
+  UNLOCK(cl->priminame);
+  cl->priminame = module_priminame(symb); 
+  module_def(symb, classat);
+  current->flags |= MODULE_CLASS;
+  UNLOCK(classat);
+  UNLOCK(symb);
+}
+
+
+void 
+dh_define(char *name, dhdoc_t *kname)
+{
+  at *symb = new_symbol(name);
+  at *priminame = module_priminame(symb);
+  at *func = new_dh(priminame, kname);
+  module_def(symb, func);
+  UNLOCK(func);
+  UNLOCK(symb);
+  UNLOCK(priminame);
+}
+
+void 
+dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname)
+{
+  at *symb, *priminame, *func;
+  class *cl;
+  symb = new_symbol(name);
+  if (! kclass->lispdata.atclass)
+    error(NIL,"Internal: dhmethod_define called before dhclass_define", symb);
+  cl = kclass->lispdata.atclass->Object;
+  priminame = module_method_priminame(cl, symb);
+  func = new_dh(priminame, kname);
+  module_method_def(cl, symb, func);
+  UNLOCK(func);
+  UNLOCK(symb);
+  UNLOCK(priminame);
+}
 
 
 
