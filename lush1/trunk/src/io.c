@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.14 2005-02-15 20:34:39 leonb Exp $
+ * $Id: io.c,v 1.15 2005-02-19 18:05:17 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -43,6 +43,7 @@ static at *at_pname, *at_print, *at_pprint;
 
 char *line_buffer;
 char *line_pos;
+int   line_flush_stdout;
 char *print_buffer;
 char *pname_buffer;
 
@@ -156,8 +157,10 @@ print_char(register char c)
 	context->output_tab = 0;
 	if (context->output_file)
 	  test_file_error(context->output_file);
+	if (line_flush_stdout && context->output_file == stdout)
+	  fflush(stdout);
 	break;
-
+	
       case '\b':
 	context->output_tab--;
 	break;
