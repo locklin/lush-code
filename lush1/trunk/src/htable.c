@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.2 2002-04-29 18:40:29 leonb Exp $
+ * $Id: htable.c,v 1.3 2002-05-06 18:44:50 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -353,15 +353,33 @@ htable_rehash(struct hashtable *htable)
 {
   int i;
   int pointerhashp;
-  struct hashelt *n;
+  struct hashelt *n, **np;
   pointerhashp = htable->pointerhashp;
   /* recompute hash numbers */
   for (i=0; i<htable->size; i++)
-    for (n=htable->table[i]; n; n=n->next)
-      if (pointerhashp)
-        n->hash = hash_pointer(n->key);
-      else
-        n->hash = hash_value(n->key);
+    {
+      np = &htable->table[i];
+      while ((n = *np))
+        {
+          /* zap entries whose key is a zombie */
+          if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
+               (n->value && (n->value->flags & X_ZOMBIE)) )
+            {
+              *np = n->next;
+              UNLOCK(n->key);
+              UNLOCK(n->value);
+              deallocate(&alloc_hashelt,(void*)n);
+              htable->nelems -= 1;
+              continue;
+            }
+          /* recompute hash */
+          if (pointerhashp)
+            n->hash = hash_pointer(n->key);
+          else
+            n->hash = hash_value(n->key);
+          np = &(n->next);
+        }
+    }
   /* reorganize hash table */
   htable_resize(htable, htable->size);
   htable->rehashp = FALSE;
@@ -382,9 +400,11 @@ htable_set(at *ht, at *key, at *value)
   struct hashelt *n,**np;
   struct hashtable *htable;
   int pointerhashp;
-
+  
   if (!EXTERNP(ht, &htable_class))
     error(NIL,"not a hash table", ht);
+  if ( value && (value->flags & X_ZOMBIE))
+    value = NIL;
   /* check hash table */
   htable = ht->Object;
   if (htable->rehashp)
@@ -398,45 +418,58 @@ htable_set(at *ht, at *key, at *value)
   /* search */
   np = &(htable->table[hash % htable->size]);
   while ((n = *np))
-  {
-    if (key == n->key)
-      break;
-    if (!pointerhashp)
-      if (hash == n->hash)
-        if (eq_test(key, n->key))
-          break;
-    np = &(n->next);
-  }
+    {
+      /* zap entries with zombies */
+      if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
+           (n->value && (n->value->flags & X_ZOMBIE)) )
+        {
+          *np = n->next;
+          UNLOCK(n->key);
+          UNLOCK(n->value);
+          deallocate(&alloc_hashelt,(void*)n);
+          htable->nelems -= 1;
+          continue;
+        }
+      /* check */
+      if (key == n->key)
+        break;
+      if (!pointerhashp)
+        if (hash == n->hash)
+          if (eq_test(key, n->key))
+            break;
+      /* next */
+      np = &(n->next);
+    }
   /* change */
   if (value && n)
-  {
-    LOCK(value);
-    UNLOCK(n->value);
-    n->value = value;
-  }
+    {
+      LOCK(value);
+      UNLOCK(n->value);
+      n->value = value;
+    }
   else if (value)
-  {
-    while (2 * htable->size < 3 * htable->nelems)
-      htable_resize(htable, 2 * htable->size - 1);
-    n = allocate(&alloc_hashelt);
-    LOCK(value);
-    LOCK(key);
-    n->hash = hash;
-    n->value = value;
-    n->key = key;
-    i = hash % htable->size;
-    n->next = htable->table[i];
-    htable->table[i] = n;
-    htable->nelems += 1;
-  }
+    {
+      while (2 * htable->size < 3 * htable->nelems)
+        htable_resize(htable, 2 * htable->size - 1);
+      n = allocate(&alloc_hashelt);
+      LOCK(value);
+      LOCK(key);
+      n->hash = hash;
+      n->value = value;
+      n->key = key;
+      i = hash % htable->size;
+      n->next = htable->table[i];
+      htable->table[i] = n;
+      htable->nelems += 1;
+    }
   else if (n)
-  {
-    *np = n->next;
-    UNLOCK(n->key);
-    UNLOCK(n->value);
-    deallocate(&alloc_hashelt,(void*)n);
-    htable->nelems -= 1;
-  }
+    {
+      *np = n->next;
+      UNLOCK(n->key);
+      UNLOCK(n->value);
+      deallocate(&alloc_hashelt,(void*)n);
+      htable->nelems -= 1;
+    }
 }
 
 
@@ -445,7 +478,7 @@ htable_set(at *ht, at *key, at *value)
 LUSHAPI at *
 htable_get(at *ht, at *key)
 {
-  struct hashelt *n;
+  struct hashelt *n, **np;
   struct hashtable *htable;
   unsigned long hash;
   int pointerhashp;
@@ -463,22 +496,35 @@ htable_get(at *ht, at *key)
   else
     hash = hash_value(key);
   /* search chain */
-  n=htable->table[hash % htable->size];
-  while (n)
-  {
-    if (key == n->key)
-      break;
-    if (!pointerhashp)
-      if (hash == n->hash)
-        if (eq_test(key, n->key))
-          break;
-    n = n->next;
-  }
+  np = &htable->table[hash % htable->size];
+  while ((n = *np))
+    {
+      /* zap entries whose key is a zombie */
+      if ( (n->key && (n->key->flags & X_ZOMBIE)) ||
+           (n->value && (n->value->flags & X_ZOMBIE)) )
+        {
+          *np = n->next;
+          UNLOCK(n->key);
+          UNLOCK(n->value);
+          deallocate(&alloc_hashelt,(void*)n);
+          htable->nelems -= 1;
+          continue;
+        }
+      /* check */
+      if (key == n->key)
+        break;
+      if (!pointerhashp)
+        if (hash == n->hash)
+          if (eq_test(key, n->key))
+            break;
+      /* next */
+      np = &(n->next);
+    }
   if (n)
-  {
-    LOCK(n->value);
-    return n->value;
-  }
+    {
+      LOCK(n->value);
+      return n->value;
+    }
   return NIL;
 }
 
