@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.5 2002-07-12 14:30:02 leonb Exp $
+ * $Id: dh.c,v 1.6 2002-07-12 21:56:58 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -401,6 +401,7 @@ static at *
 dhinfo_record_temp(dhrecord *drec)
 {
   at *p;
+  dhclassdoc_t *cdoc;
   switch(drec->op)
     {
     case DHT_LIST:
@@ -411,8 +412,22 @@ dhinfo_record_temp(dhrecord *drec)
       p = cons(named("srg"), cons(named("w"), cons(p, NIL)));
       p = cons(NEW_NUMBER(drec->ndim), cons(p, NIL));
       return cons(named("idx"), cons(named("w"), p));
+    case DHT_OBJ: 
+      cdoc = drec->arg;
+      return cons( named("obj"),
+                   cons( named(strclean(cdoc->lispdata.lname)), 
+                         new_cons(cdoc->lispdata.atclass, 
+                                  NIL ) ) );
+    case DHT_SRG: 
+      return cons(named("srg"), 
+                  cons(named((drec[1].access == DHT_READ) ? "r" : "w"),
+                       cons(dhinfo_record(drec+1), 
+                            NIL) ) );
+    case DHT_STR:
+      return cons(named("str"), NIL);
     default:
-      return dhinfo_record(drec);
+      error(NIL, "Malformed dhdoc: "
+            "temporary argument type cannot be pointers", NIL);
     }
 }
 
@@ -557,13 +572,16 @@ DX(xdhinfo_c)
   cname = new_string(strclean(dhdoc->lispdata.c_name));
   mname = new_string(strclean(dhdoc->lispdata.m_name));
   kname = new_string(strclean(dhdoc->lispdata.k_name));
-  ctest = NIL;
-  mtest = NIL;
   if (dhdoc->lispdata.dhtest)
     {
       dhdoc_t *dhtest = dhdoc->lispdata.dhtest;
       ctest = new_string(strclean(dhtest->lispdata.c_name));
       mtest = new_string(strclean(dhtest->lispdata.m_name));
+    }
+  else
+    {
+      ctest = new_safe_string("");
+      mtest = new_safe_string("");
     }
   /* build */
   p = cons(ctest, cons(mtest, cons(kname, NIL)));
