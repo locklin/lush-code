@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.16 2004-07-26 17:30:44 leonb Exp $
+ * $Id: dh.c,v 1.17 2004-08-02 22:19:40 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -652,10 +652,10 @@ DX(xclassinfo_c)
   if (! EXTERNP(p, &class_class))
     error(NIL,"not a class",p);
   cl = p->Object;
-  if (CONSP(cl->priminame))
-    check_primitive(cl->priminame, cl->classdoc);
   if (!(cdoc = cl->classdoc))
     error(NIL,"class is not compiled", p);
+  if (CONSP(cl->priminame))
+    check_primitive(cl->priminame, cl->classdoc);
   cname = new_string(strclean(cdoc->lispdata.cname));
   kname = new_string(strclean(cdoc->lispdata.k_name));
   vname = new_string(strclean(cdoc->lispdata.v_name));
