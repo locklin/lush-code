@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ffmpeg.lsh,v 1.3 2004-02-02 19:12:12 leonb Exp $
+;;; $Id: ffmpeg.lsh,v 1.4 2004-02-03 16:30:30 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -414,6 +414,8 @@
   ((-gptr-) curframe)
   ((-gptr-) curptr)
   ((-int-)  curlen)
+  ((-real-) curpts)
+  ((-real-) pktpts)
   ;; information...
   ((-int-)  frame_height)
   ((-int-)  frame_width)
@@ -472,6 +474,8 @@
     $frame_rate_base = st->r_frame_rate_base;
   }#}
   (:ai:sources streamno (gptr this))
+  (setq pktpts 0)
+  (setq curpts 0)
   () )
 
 (defmethod AvVideoSource process()
@@ -515,6 +519,52 @@
                     / AV_TIME_BASE / st->r_frame_rate_base;
     }#}
     nframes ) )
+
+(defmethod AvVideoSource nextframe()
+  (let ((again t))
+    (setq gotcurframe ())
+    (while again
+      ;; pump data
+      (when (<= curlen 0)
+	(==> data pop)
+	(while (and again (<= :data:count 0))
+	  (setq again (==> ai pump)) )
+	(let ((pkt (==> data peek)))
+	  (when pkt
+	    #{{
+	        AVStream *st = (AVStream*)$st;
+	        AVPacket *pkt = (AVPacket*)$pkt;
+	        $curlen = pkt->len;
+	        $curptr = (gptr) pkt->data;
+	        if (pkt->pts != AV_NOPTS_VALUE)
+	           $pktpts = (double) pkt->pts * st->ic->pts_num / st->ic->pts_den;
+	    }#} ) ) )
+      ;; call decoder
+      (when (> curlen 0)
+	#{{
+	    AVStream *st = (AVStream*)$st;
+	    AVFrame *curframe = (AVFrame*)$curframe;
+	    int gotpic = 0;
+	    int ret= avcodec_decode_video(st->codec, curframe, &gotpic, $curptr, $curlen);
+	    if (ret < 0) run_time_error("FFMPEG returned an error code while decoding");
+	    $curptr = (gptr)((const char*)$curptr) + ret);
+	    $curlen = $curlen - ret;
+	    if (gotpic) {
+	      if (curframe->pts != AV_NOPTS_VALUE) {
+	         $curpts = (double) curframe->pts * st->ic->pts_num / st->ic->pts_den;
+	      } else if ($pktpts > 0) {
+	         $curpts = $pktpts;
+	         $pktpts = 0;
+	      } else {
+	         $curpts += (double) st->r_frame_rate_base / st->r_frame_rate;
+	      }  
+	      $gotcurframe = 1;
+	}
+	}#} )
+      (when gotcurframe
+	(setq again ()) ) ) ) )
+
+    gotcurframe ) )
     
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
