@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.9 2003-07-01 19:07:04 leonb Exp $
+ * $Id: nan.c,v 1.10 2003-07-11 13:03:45 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -83,12 +83,14 @@ infinityF (void)
 int
 isinfF(flt x)
 {
-  float fx = x;
-  int ix = *(int*)&fx;
+  union { float f; int i; } u;
+  int ix;
   if (sizeof(flt)!=sizeof(ieee_nanf))
     return 0;
   if (ieee_present <= 0)
     return 0;
+  u.f = x;
+  ix = u.i;
   ix &= 0x7fffffff;
   ix ^= 0x7f800000;
   return (ix == 0);
@@ -97,12 +99,14 @@ isinfF(flt x)
 int
 isnanF(flt x)
 {
-  float fx = x;
-  int ix = *(int*)&fx;
+  union { float f; int i; } u;
+  int ix;
   if (sizeof(flt)!=sizeof(ieee_nanf))
     return 0;
   if (ieee_present <= 0)
     return 0;
+  u.f = x;
+  ix = u.i;
   ix &= 0x7fffffff;
   ix = 0x7f800000 - ix;
   return (ix < 0);
@@ -127,14 +131,18 @@ infinityD (void)
 int
 isinfD(real x)
 {
-  int ix, jx, a = 1;
+  int ix, jx, a;
+  union { int i; char c[sizeof(int)]; } u;
+  union { real r; int i[2]; } v;
   if (sizeof(real)!=sizeof(ieee_nand))
     return 0;
   if (ieee_present <= 0)
     return 0;
-  a = * (char*) &a;
-  ix = ((int*)&x)[a];
-  jx = ((int*)&x)[1-a];
+  u.i = 1;
+  a = u.c[0];
+  v.r = x;
+  ix = v.i[a];
+  jx = v.i[1-a];
   ix ^= 0x7ff00000;
   if (ix&0x7fffffff)
     return 0;
@@ -146,14 +154,18 @@ isinfD(real x)
 int
 isnanD(real x)
 {
-  int ix, jx, a = 1;
+  int ix, jx, a;
+  union { int i; char c[sizeof(int)]; } u;
+  union { real r; int i[2]; } v;
   if (sizeof(real)!=sizeof(ieee_nand))
     return 0;
   if (ieee_present <= 0)
     return 0;
-  a = * (char*) &a;
-  ix = ((int*)&x)[a];
-  jx = ((int*)&x)[1-a];
+  u.i = 1;
+  a = u.c[0];
+  v.r = x;
+  ix = v.i[a];
+  jx = v.i[1-a];
   ix ^= 0x7ff00000;
   if (ix&0x7ff00000)
     return 0;

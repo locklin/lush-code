@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.26 2003-04-14 12:51:44 leonb Exp $
+ * $Id: dldbfd.c,v 1.27 2003-07-11 13:03:45 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -940,7 +940,7 @@ mipself_new_lo16_reloc (bfd *abfd,
                                    output_bfd, error_message);
 }
 
-
+#if 0
 static bfd_reloc_status_type
 mipself_new_gprel32_reloc (bfd *abfd,
                            arelent *reloc_entry,
@@ -961,10 +961,7 @@ mipself_new_gprel32_reloc (bfd *abfd,
   bfd_put_32(abfd, value, addr);
   return bfd_reloc_ok;
 }
-
-
-
-
+#endif
 
 static bfd_reloc_status_type
 mipself_new_call16_reloc (bfd *abfd, 

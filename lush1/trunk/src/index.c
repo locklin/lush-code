@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.24 2003-05-27 21:49:50 leonb Exp $
+ * $Id: index.c,v 1.25 2003-07-11 13:03:45 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -287,7 +287,7 @@ index_hash(at *p)
   int type = ind->st->srg.type;
   real (*get)(gptr,int) = *storage_type_getr[type];
   gptr base;
-  real r;
+  union { real r; long l[2]; } u;
   /* compute */
   index_read_idx(ind,&id);
   base = (char*) IDX_DATA_PTR(&id);
@@ -303,10 +303,10 @@ index_hash(at *p)
           x ^= (unsigned long) ( ((gptr*)base) [off] );
           break;
         default:
-          r = (*get)(base, off);
-          x ^= ((unsigned long *)&r)[0];
+          u.r = (*get)(base, off);
+          x ^= u.l[0];
           if (sizeof(real) >= 2*sizeof(unsigned long))
-            x ^= ((unsigned long *)&r)[1];
+            x ^= u.l[1];
           break;
         }
     } end_idx_aloop1(&id, off);

@@ -155,12 +155,6 @@ read_top(stack_ptr stack)
   return cw;
 }
 
-static void 
-empty_stack(stack_ptr stack)
-{
-  stack->link = NIL;
-}
-
 /* ==================  WINDOW CREATION ===================== */
 
 static struct C_window *
