@@ -1,0 +1,58 @@
+#!/bin/sh
+exec lush "$0" "$@"
+!#
+
+(defvar slave-input ())
+(defvar slave-output ())
+
+(let ((port 4000))
+  ;; Search available port.
+  (while (not (socketaccept port)) (incr port))
+  (printf "%s %d\n" (reading "|hostname" (read-string)) port)
+  (flush)
+  ;; Open.
+  (socketaccept port 'slave-input 'slave-output) )
+
+(de slave-debug-hook()
+  (let ((err (errname)))
+    ;; Uncomment to print error messages
+    ;; (printf "*** %s\n" err)
+    (lush-is-quiet t)
+    (writing slave-output
+      (print (cons 'error err))
+      (flush) ) )
+  (lush-is-quiet ()) )
+
+(de slave-break-hook()
+  ;; Uncomment to print error messages
+  ;; (printf "*** Break\n")
+  (lush-is-quiet t)
+  (writing slave-output
+    (print (cons 'error "Break"))
+    (flush) ) 
+  (lush-is-quiet ()) )
+
+(unlock-symbol toplevel)
+
+(de toplevel()
+  (let ((debug-hook slave-debug-hook)
+        (break-hook slave-break-hook))
+    (lush-is-quiet ())
+    (while (<> (reading slave-input (skip-char)) "\e")
+      (let* ((command (reading slave-input (read)))
+             (result (eval command)) )
+        (writing slave-output
+          (bwrite (cons 'ok result))
+          (flush) ) ) )
+    (lush-is-quiet t)
+    (exit 0) ) )
+
+(lock-symbol slave-input 
+             slave-output
+             slave-debug-hook
+             slave-break-hook
+             toplevel )
+
+(toplevel)
+
+
