@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.34 2004-08-02 19:13:44 leonb Exp $
+ * $Id: lisp_c.c,v 1.35 2004-08-02 22:08:32 leonb Exp $
  **********************************************************************/
 
 
@@ -1248,7 +1248,18 @@ lside_destroy_item(void *cptr)
                * the data blocks associated to this object (e.g. storage data)
                * because this data block was owned by the lisp object...
                */
-              free(n->citem);
+	      if (n->litem)
+		{
+		  at *p = n->litem;
+		  if (p->flags & X_OOSTRUCT)
+		    ((struct oostruct *)(p->Object))->cptr = 0;
+		  else if (p->flags & X_INDEX)
+		    ((struct index *)(p->Object))->cptr = 0;
+		  else if (storagep(p))
+		    ((struct storage *)(p->Object))->cptr = 0;
+		}
+	      if (n->citem)
+		free(n->citem);
               avl_del(cptr);
               return;
 	    default:
@@ -1265,19 +1276,31 @@ lside_destroy_item(void *cptr)
 int
 lside_mark_unlinked(void *cdoc)
 {
-  avlnode *n;
   int count = 0;
-  n = avl_first(0);
-  while (n)
+  int again = 1;
+  while (again)
     {
-      if (n->cmoreinfo == cdoc)
-        if (n->cinfo == CINFO_OBJ)
-          {
-            n->cinfo = CINFO_UNLINKED;
-            n->cmoreinfo = 0;
-            count += 1;
-          }
-      n = avl_succ(n);
+      avlnode *m = avl_first(0);
+      again = 0;
+      while (m)
+	{
+	  avlnode *n = m;
+	  m = avl_succ(m);
+	  if (n->cmoreinfo != cdoc)
+	    continue;
+	  if (n->belong == BELONG_LISP)
+	    {
+	      lside_destroy_item(n->citem);
+	      count += 1;
+	      again = 1;
+	    }
+	  else if (n->cinfo == CINFO_OBJ)
+	    {
+	      n->cinfo = CINFO_UNLINKED;
+	      n->cmoreinfo = 0;
+	      count += 1;
+	    }
+	}
     }
   return count;
 }
@@ -2225,9 +2248,11 @@ update_c_from_lisp(avlnode *n)
         break;
       }
 
+#if LISP_C_VERBOSE
     case CINFO_UNLINKED:
       lisp2c_warning("(in): Found object with unlinked class",0);
       return;
+#endif
         
     case CINFO_OBJ:
       {
@@ -2369,11 +2394,13 @@ update_lisp_from_c(avlnode *n)
         DELAYED_UNLOCK(ind->atst, origst);
         break;
       }
-        
+
+#if LISP_C_VERBOSE
     case CINFO_UNLINKED:
       lisp2c_warning("(out) : Found C object with unlinked class",0);
       break;
-        
+#endif
+
     case CINFO_OBJ:
       {
         void *cptr = n->citem;

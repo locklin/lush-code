@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.61 2004-08-02 19:13:44 leonb Exp $
+ * $Id: module.c,v 1.62 2004-08-02 22:08:32 leonb Exp $
  **********************************************************************/
 
 
@@ -850,33 +850,26 @@ cleanup_module(struct module *m)
   /* 3 --- Zap instances of impacted classes */
   for (p = classes; CONSP(p); p=p->Cdr)
     {
+      int n = 0;
       at *q = p->Car;
       if (EXTERNP(q, &class_class))
         {
-          int n = 0;
           class *cl = q->Object;
-	  begin_iter_at(x) 
+	  if (!cl->goaway || !cl->classdoc) 
 	    {
-	      if (EXTERNP(x, cl))
+	      begin_iter_at(x) 
 		{
-		  void *cptr = 0;
-		  if (cl->goaway) 
+		  if (EXTERNP(x, cl)) 
 		    {
-		      struct oostruct *s = x->Object;
-		      cptr = s->cptr;
-		      s->cptr = 0;
+		      delete_at(x);
+		      n += 1;
 		    }
-		  if (cptr)
-		    lside_destroy_item(cptr);
-		  else
-		    delete_at(x);
-		  n += 1;
-		}
+		} 
+	      end_iter_at(x);
 	    }
-	  end_iter_at(x);
 	  if (n > 0)
 	    fprintf(stderr,"*** WARNING: "
-		    "destroyed %d compiled instances of class %s\n", n, pname(q));
+		    "destroyed %d instances of class %s\n", n, pname(q));
 	}
     }
   for (p = classes; CONSP(p); p=p->Cdr)
@@ -891,7 +884,7 @@ cleanup_module(struct module *m)
 	      cl->classdoc = 0;
               if (n > 0)
                 fprintf(stderr,"*** WARNING: "
-                        "marked %d compiled instances of class %s as unlinked\n", 
+                        "unlinked %d instances of compiled class %s\n", 
                         n, pname(q));
             }
         }
