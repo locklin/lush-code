@@ -46,61 +46,68 @@
     /ansifont newdict definefont
     end
   } if
-} def
+} bind def
 
 /BEGINPAGE {
-  gsave translate scale } def
+  gsave translate scale } bind def
 /ENDPAGE {
-  grestore showpage } def
+  grestore showpage } bind def
 /SF {
   dup /default eq 
   { pop pop /Courier findfont recodefont 11 scalefont setfont }
-  { findfont recodefont exch scalefont setfont } ifelse } def
+  { findfont recodefont exch scalefont setfont } ifelse } bind def
 /SC {
-  setrgbcolor } def
+  setrgbcolor } bind def
 /SCFG { 
-  0 setgray } def
+  0 setgray } bind def
 /SCBG {
-  1 setgray } def
+  1 setgray } bind def
 /SCGRAY { 
-  0.5 setgray } def
+  0.5 setgray } bind def
 /DL {
-  newpath moveto lineto stroke } def
+  newpath moveto lineto stroke } bind def
 /DR {
   newpath moveto exch dup 0 rlineto exch
   0 exch rlineto neg 0 rlineto
-  closepath stroke } def
+  closepath stroke } bind def
 /FR {
   newpath moveto exch dup 0 rlineto exch
   0 exch rlineto neg 0 rlineto
-  closepath fill } def
+  closepath fill } bind def
 /DC {
-  newpath 0 360 arc stroke } def
+  newpath 0 360 arc stroke } bind def
 /FC {
-  newpath 0 360 arc fill } def
+  newpath 0 360 arc fill } bind def
 /DA {
-  newpath neg exch neg arc stroke } def
+  newpath neg exch neg arc stroke } bind def
 /FA {
-  newpath 4 index 4 index moveto  neg exch neg arc closepath fill } def
+  newpath 4 index 4 index moveto  neg exch neg arc closepath fill } bind def
 /backstr 2 string def backstr 1 8 put
 /DT {
-  moveto gsave 1 -1 scale show grestore } def
+  moveto gsave 1 -1 scale show grestore } bind def
 /CLIP {
   initclip newpath moveto exch dup 0 rlineto exch
   0 exch rlineto neg 0 rlineto
-  closepath clip newpath } def
+  closepath clip newpath } bind def
 /PSTART {
-  newpath moveto } def
+  newpath moveto } bind def
 /FP {
-  lineto } def
+  lineto } bind def
 /PEND {
-  lineto closepath fill } def
-/picstr 1 string def
+  lineto closepath fill } bind def
 /PM {
   gsave	translate scale
   8 [ 1 0 0 1 0 0 ] 
+  2 index 2 mul string /picstr exch def
   { currentfile picstr readhexstring pop } image
-  grestore } def
+  grestore } bind def
+/CPM {
+  gsave translate scale
+  [ 1 0 0 1 0 0 ]
+  3 index 6 mul string /picstr exch def
+  { currentfile picstr readhexstring pop }
+  false 3 colorimage
+  grestore } bind def
 /HM {
   gsave	translate gsave 2 copy
     4 index mul exch 5 index mul exch scale
@@ -118,7 +125,7 @@
      pop grestore
     0 1 translate } repeat
   grestore pop
-} def
+} bind def
 
 11 /default SF 
 SCFG 

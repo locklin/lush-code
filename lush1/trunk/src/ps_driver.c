@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: ps_driver.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: ps_driver.c,v 1.2 2002-04-30 20:03:16 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -428,21 +428,43 @@ ps_pixel_map(struct window *linfo, unsigned int *data,
 	     unsigned int sx, unsigned int sy)
 {
   struct M_window *info = (struct M_window*)linfo;
-  unsigned int i;
+  int color = FALSE;
+  int size = w * h;
+  int i;
   ifn (data)
     return TRUE;
-  begin(info);
-  fprintf(info->f,"%d %d %d %d %d %d PM\n",w,h,sx,sy,x,y);
-  for(i=0;i<w*h;i++) {
-    fprintf(info->f,"%c%c",
-	    hexmap[(*data&0xff)>>4],
-	    hexmap[(*data&0xf)] );
-    if ((i&0xf)==0xf)
-      fprintf(info->f,"\n");
-    data++;
+  /* Check if we want colors */
+  for (i=0; i<size && !color; i++) {
+    unsigned int c = data[i];
+    if ( ( c ^ (c>>8) ) & 0xffff )
+      color = TRUE;
   }
-  if (i&0xf)
-    fprintf(info->f,"\n");
+  /* Display */
+  begin(info);
+  if (color)
+    {
+      /* Color */
+      fprintf(info->f,"%d %d 8 %d %d %d %d CPM\n",w,h,sx,sy,x,y);
+      for(i=0; i<size; i++) {
+        fprintf(info->f,"%06x", data[i]);
+        if ((i&0x7)==0x7)
+          fprintf(info->f,"\n");
+      }
+      if (i&0x7)
+        fprintf(info->f,"\n");
+    }
+  else
+    {
+      /* Gray scale */
+      fprintf(info->f,"%d %d %d %d %d %d PM\n",w,h,sx,sy,x,y);
+      for(i=0; i<size; i++) {
+        fprintf(info->f,"%02x", data[i] & 0xff);
+        if ((i&0xf)==0xf)
+          fprintf(info->f,"\n");
+      }
+      if (i&0xf)
+        fprintf(info->f,"\n");
+    }
   return TRUE;
 }
 
@@ -509,6 +531,22 @@ ps_clear(struct window *linfo)
 
 
 
+
+/********** get_mask *********/
+
+int 
+ps_get_mask(struct window *linfo, 
+            unsigned int *red_mask, 
+            unsigned int *green_mask, 
+            unsigned int *blue_mask  )
+{
+  *red_mask = 0xff0000;
+  *green_mask = 0xff00;
+  *blue_mask = 0xff;
+  return 1;
+}
+
+
 /********** driver definition *********/
 
 
@@ -541,6 +579,9 @@ struct gdriver ps_driver = {
   /* release 2 */
   ps_draw_arc,
   ps_fill_arc,
+  /* import from sn3.2 */
+  NIL,
+  ps_get_mask,
 };
 
 
