@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.27 2002-07-08 21:12:36 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.28 2002-07-09 00:43:18 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1159,40 +1159,84 @@
 ;;; --------- Declaring types -----------
 
 
+;; type macros
+(let ((m (mlambda fn (mlambda args (cons 'declare args)))))
+  (each ((fn (append '(-bool- -ubyte- -byte- -short- -int-)
+                     '(-flt- -real- -float- -double-)
+                     '(-obj- -gptr- -str- -list-)
+                     (mapfor (i 0 15) (named (sprintf "-idx%d-" i))) )))
+    (eval `(progn
+             (defvar ,fn ,m)
+             (lock-symbol ,fn) )) ) )
 
+;; verify type syntax
 (de verify-type-decl-format(source &optional where)
-  ;; Parse type syntax.
+  (when (not where)
+    (setq where 'declare) )
   (when (or (not (consp source))
             (not (symbolp (car source))) )
     (error where "invalid type specifier" source) )
-  (selectq (car source)
-    ((-bool- -int- -short- -byte- -ubyte- 
-      -flt- -float- -real- -double- -str-)
-     (when (cdr source)
-       (error where "syntax error in simple type specifier" source) ) ) 
-    ((-idx0- -idx1- -idx2- -idx3- -idx4- -idx5- -idx6- -idx7- -idx8-
-      -idx9- -idx10- -idx11- -idx12- -idx13- -idx14- -idx15-)
-     (when (or (not (consp (cadr source))) (cdadr source) (cddr source))
-       (error where "syntax error in idx type specifier" source) ) 
-     (when (not (member (caadr source) 
-                        '(-bool- -int- -short- -byte- -ubyte- -gptr- 
-                          -flt- -float- -real- -double- ) ))
-       (error where "invalid base type in idx type specifier" source) ) )
-    ((-gptr-)
-     (when (and (cdr source)
-                (or (cddr source)
-                    (if (consp (cadr source))
-                        (or (not (symbolp (caadr source))) (cdadr source))
-                      (not (stringp (cadr source))) ) ) )
-       (error where "invalid gptr type specifier" source) ) )
-    ((-list-)
-     (each ((arg (cdr source)))
-       (verify-type-decl-format arg)))
-    ((-obj-)
-     (when (or (not (consp (cadr source))) (cddr source))
-       (error where "" source) ) )
-    (t
-     (error where "unrecognized type specifier" source) ) ) )
+  (let ((check (getp (car source) 'parse-type)))
+    (if (functionp check)
+        (check where source)
+      (error where "invalid type specifier" source) ) ) )
+
+;; idx base types
+(putp '-int-    'srg-type |I32STORAGE|)
+(putp '-short-  'srg-type |I16STORAGE|)
+(putp '-byte-   'srg-type |I8STORAGE|)
+(putp '-ubyte-  'srg-type |U8STORAGE|)
+(putp '-flt-    'srg-type |FSTORAGE|)
+(putp '-float-  'srg-type |FSTORAGE|)
+(putp '-real-   'srg-type |DSTORAGE|)
+(putp '-double- 'srg-type |DSTORAGE|)
+(putp '-gptr-   'srg-type |GPTRSTORAGE|)
+
+;; type syntax checks (simple types)
+(let ((m (lambda(where (fn . args))
+           (when args
+             (error where "syntax error in simple type" (cons fn args)) ) )))
+  (each ((fn (append '(-bool- -ubyte- -byte- -short- -int-)
+                     '(-flt- -real- -float- -double- -str-) )))
+    (putp fn 'parse-type m) ) )
+
+;; type syntax checks (idx types)
+(let ((m (lambda(where (fn . args))
+           (when (not (and (consp args) 
+                           (consp (car args))
+                           (not (cdr args))))
+             (error where "syntax error in idx type" (cons fn args)) )
+           (when (not (getp (caar args) 'srg-type))
+             (error where "illegal base type in idx type specifier" (cons fn args)) ) )))
+  (for (i 0 15)
+       (putp (named (sprintf "-idx%d-" i)) 'parse-type m) ) )
+
+;; type syntax checks (obj types)
+(putp '-obj- 'parse-type
+      (lambda (where (fn . args))
+        (when (not (and (consp args) 
+                        (consp (car args)) 
+                        (not (cdr args)) 
+                        (not (cdar args))
+                        (symbolp (caar args)) ))
+          (error where "syntax error in object type" (cons fn args)) ) ) )
+
+;; type syntax checks (gptr types)
+(putp '-gptr- 'parse-type
+      (lambda (where (fn . args))
+        (when (not (or (not args)
+                       (and (consp args) 
+                            (not (cdr args))
+                            (or (stringp (car args))
+                                (and (consp (car args)) 
+                                     (symbolp (caar args)) 
+                                     (not (cdar args)) ) ) ) ))
+          (error where "syntax error in gptr type" (cons fn args)) ) ) )
+
+;; type syntax checks (list types)
+(putp '-list- 'parse-type
+      (lambda (where (fn . args))
+        (each ((arg args)) (verify-type-decl-format arg where)) ) )
 
 
 
