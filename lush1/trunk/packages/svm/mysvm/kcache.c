@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.c,v 1.2 2004-09-14 19:11:56 leonb Exp $
+ * $Id: kcache.c,v 1.3 2004-09-21 21:34:15 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -266,21 +266,21 @@ xswap(mysvm_kcache_t *this, int i1, int i2, int r1, int r2)
 void 
 mysvm_kcache_swap_rr(mysvm_kcache_t *this, int r1, int r2)
 {
-  xminsize(this, max(r1,r2));
+  xminsize(this, 1+max(r1,r2));
   xswap(this, this->r2i[r1], this->r2i[r2], r1, r2);
 }
 
 void 
 mysvm_kcache_swap_ii(mysvm_kcache_t *this, int i1, int i2)
 {
-  xminsize(this, max(i1,i2));
+  xminsize(this, 1+max(i1,i2));
   xswap(this, i1, i2, this->i2r[i1], this->i2r[i2]);
 }
 
 void 
 mysvm_kcache_swap_ri(mysvm_kcache_t *this, int r1, int i2)
 {
-  xminsize(this, max(r1,i2));
+  xminsize(this, 1+max(r1,i2));
   xswap(this, this->r2i[r1], i2, r1, this->i2r[i2]);
 }
 
@@ -340,7 +340,7 @@ mysvm_kcache_query_row(mysvm_kcache_t *this, int i, int len)
   ASSERT(i>=0);
   ASSERT(len>0);
   if (i >= this->l || len>= this->l)
-    xminsize(this, max(i,len));
+    xminsize(this, max(1+i,len));
   r = this->row[i];
   /* Fast path */
   if (r)
