@@ -226,7 +226,7 @@ readnbytes(int fd, char* rbuffer, int size, long maxwait)
   struct timeval tv;
   struct timeval *ptv = &tv;
   int readreturn, selectreturn;
-  char buffer[MAX_OUTPUT_SIZE];
+  char buffer[MAX_OUTPUT_SIZE+1];
   fd_set readset;
   
   buffer[0] = 0;
@@ -239,6 +239,7 @@ readnbytes(int fd, char* rbuffer, int size, long maxwait)
   if ((selectreturn = select(fd+1, &readset, NIL, NIL, ptv))>0)
     if ((readreturn = read(fd, buffer, size))>=0)
       {
+        buffer[readreturn] = 0;
         strcpy(rbuffer,buffer);      
         return readreturn;
       }
