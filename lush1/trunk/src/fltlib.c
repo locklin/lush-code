@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fltlib.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: fltlib.c,v 1.2 2002-04-25 17:12:44 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -333,11 +333,13 @@ Fspline(flt xx, int size, flt *parm)
 	
   if (klo==0 && xx<x[klo]) 
     {
-      return y[klo] + (xx-x[klo])*(y[khi]-y[klo])/h;
+      flt d = (y[khi]-y[klo])/h - h/(flt)(6.0)*(2*y2[klo]+y2[khi]);
+      return y[klo] + (xx-x[klo])*d;
     }
   else if (khi==size-1 && xx>x[khi])
     {
-      return y[khi] + (xx-x[khi])*(y[khi]-y[klo])/h;
+      flt d = (y[khi]-y[klo])/h + h/(flt)(6.0)*(y2[klo]+2*y2[khi]);
+      return y[khi] + (xx-x[khi])*d;
     }
   else
     {
@@ -375,11 +377,11 @@ Fdspline(flt xx, int size, flt *parm)
 
   if (klo==0 && xx<x[klo]) 
     {
-      return (y[khi]-y[klo])/h;
+      return (y[khi]-y[klo])/h - h/(flt)(6.0)*(2*y2[klo]+y2[khi]);
     }
   else if (khi==size-1 && xx>x[khi])
     {
-      return (y[khi]-y[klo])/h;  
+      return (y[khi]-y[klo])/h + h/(flt)(6.0)*(y2[klo]+2*y2[khi]);  
     }
   else
     {

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.2 2002-04-24 20:55:38 leonb Exp $
+ * $Id: index.c,v 1.3 2002-04-25 17:12:44 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -1134,7 +1134,7 @@ easy_index_get(struct index *ind, int *coord)
   st = ind->st;
   offset = make_offset(ind,coord);
   p = (*st->getat)(st,offset);	        /* Horrible & Slow! */
-  ifn (EXTERNP(p,&index_class)) 
+  ifn (NUMBERP(p))
     error(NIL,"Not a number",p);
   x = p->Number;
   UNLOCK(p);

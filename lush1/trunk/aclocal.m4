@@ -38,11 +38,12 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
    CFLAGS=
    for opt in $saved_CFLAGS ; do
      case $opt in
-       -O*|-g*) ;;
+       -O*) ;;
+       -g*) OPTS="$OPTS $opt" ;;
        *) CFLAGS="$CFLAGS $opt" ;;
      esac
    done
-   if test $ac_debug = no ; then
+   if test x$ac_debug = xno ; then
      OPTS=-DNO_DEBUG
      AC_CHECK_CC_OPT([-Wall],[OPTS="$OPTS -Wall"])
      AC_CHECK_CC_OPT([-O3],[OPTS="$OPTS -O3"],

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dz.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: dz.c,v 1.2 2002-04-25 17:12:44 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -675,23 +675,14 @@ find_l_arg(at *ins, int inum)
 static int
 find_n_arg(at *ins, inst **pc_p)
 {
-  /*[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[*/
-#ifndef TODO
-  error(NIL,"TODO:index",NIL);
-  return 0;
-#else
-  struct index *ind;
-  int i, n;
   at *q;
-  flt *f;
-  ifn (CONSP(ins) && CONSP(ins->Cdr)
-       && (q=ins->Cdr->Car) && (!ins->Cdr->Cdr)
-       && q->ctype==XT_INDEX)
+  int i, n;
+  struct index *ind;
+  ifn (CONSP(ins) && CONSP(ins->Cdr) && !ins->Cdr->Cdr &&
+       (q = ins->Cdr->Car) && EXTERNP(q, &index_class) )
     error(NIL,"one index expected as operand",ins);
-  
   n = 0;
   ind = easy_index_check(q,1,&n);
-  
   if (pc_p) {
     (*pc_p)->code.arg = n;
     for (i=0;i<n;i++) {
@@ -700,8 +691,6 @@ find_n_arg(at *ins, inst **pc_p)
     }
   }
   return n;
-#endif
-/*]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]*/
 }
 
 static void 
@@ -1156,10 +1145,6 @@ gen_inst(union dz_inst **pc_p)
     
   case 'n':
     {
-/*[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[*/
-#ifndef TODO
-      error(NIL,"TODO:index",NIL);
-#else
       int i;
       at *p;
       struct index *ind;
@@ -1170,8 +1155,6 @@ gen_inst(union dz_inst **pc_p)
 	(*pc_p)++;
       }
       ans = cons(ans, cons(p,NIL));
-#endif
-/*]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]*/
     }
     break;
   case 'i':
@@ -1241,11 +1224,6 @@ DX(xdz_trace)
 static at *
 lisp_spline(int arg_number, at *arg_array[], char *op)
 {
-/*[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[*/
-#ifndef TODO
-  error(NIL,"TODO:index",NIL);
-  return NIL;
-#else
   struct index *ind;
   int dim[2];
   int i,n;
@@ -1263,7 +1241,6 @@ lisp_spline(int arg_number, at *arg_array[], char *op)
   dim[1] = 2;
   ind = easy_index_check(APOINTER(1),2,dim);
   n = dim[0];
-
   wspace = (flt*)alloca( sizeof(flt) * 3 * n );
   ifn (wspace)
     error(NIL,"Not enough memory",NIL);
@@ -1295,8 +1272,6 @@ lisp_spline(int arg_number, at *arg_array[], char *op)
   pc->code.op = 0;
   pc->code.arg = 0;
   return ans;
-#endif
-/*]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]*/
 }
 
 DX(xdz_spline)
