@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.44 2003-07-01 19:07:04 leonb Exp $
+ * $Id: unix.c,v 1.45 2003-11-25 17:04:51 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1147,26 +1147,41 @@ DX(xsys)
 
 DY(ytime)
 {
-  struct tms buffer;
-  time_t oldtime, newtime;
-  register at *q;
-
-  ifn(ARG_LIST) {
-    time(&newtime);
-    return NEW_NUMBER(newtime);
-  } else {
-    times(&buffer);
-    oldtime = buffer.tms_utime;
-    q = progn(ARG_LIST);
-    times(&buffer);
-    newtime = buffer.tms_utime;
-    UNLOCK(q);
-#ifdef CLK_TCK
-    return NEW_NUMBER((newtime - oldtime) / (double)(CLK_TCK));
-#else
-    return NEW_NUMBER((newtime - oldtime) / (double)60.0);
+  if (! ARG_LIST) 
+    {
+      int s, ms;
+      os_curtime(&s, &ms);
+      return NEW_NUMBER( s + (double) ms * 0.001 );
+    } 
+  else 
+    {
+      long ticks;
+      struct tms buffer;
+      time_t oldtime, newtime;
+      register at *q;
+      
+      times(&buffer);
+      oldtime = buffer.tms_utime;
+      q = progn(ARG_LIST);
+      times(&buffer);
+      newtime = buffer.tms_utime;
+      UNLOCK(q);
+      
+      ticks = -1;
+#ifdef HAVE_SYSCONF
+#ifdef _SC_CLK_TCK
+      ticks = sysconf(_SC_CLK_TCK);
 #endif
-  }
+#endif
+#ifdef CLK_TCK
+      if (ticks <= 0)
+        ticks = CLK_TCK;
+#else
+      if (ticks <= 0)
+        ticks = 60;
+#endif
+      return NEW_NUMBER((newtime - oldtime) / (double)(ticks));
+    }
 }
 
 
