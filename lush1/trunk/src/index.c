@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.22 2003-05-05 14:57:52 leonb Exp $
+ * $Id: index.c,v 1.23 2003-05-05 15:09:11 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -2482,7 +2482,7 @@ at *
 map_matrix(FILE *f)
 {
   int ndim, dim[MAXDIMS];
-  int magic, swapflag;
+  int magic, swapflag, pos;
   at *atst, *ans;
 
   /* Header */
@@ -2503,7 +2503,9 @@ map_matrix(FILE *f)
       error(NIL, "cannot map an ascii matrix file", NIL);
     }
   /* Map storage */
-  storage_mmap(atst, f, ((ndim>3) ? (ndim+2) : 5) * sizeof(int));
+  if ((pos = ftell(f)) < 0)
+    error(NIL, "cannot seek through this file", NIL);
+  storage_mmap(atst, f, pos);
   /* Create index */
   ans = new_index(atst);
   UNLOCK(atst);
