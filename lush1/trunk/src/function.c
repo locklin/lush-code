@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.13 2003-02-28 23:20:23 leonb Exp $
+ * $Id: function.c,v 1.14 2003-07-01 19:12:03 leonb Exp $
  **********************************************************************/
 
 
@@ -277,7 +277,7 @@ dx_listeval(at *p, at *q)
   int arg_num;
   at *answer, **arg_pos, **spbuff;
   struct cfunction *cfunc = p->Object;
-  at *(*call)(int, at**) = cfunc->call;
+  at *(*call)(int, at**) = (at*(*)()) cfunc->call;
 
   if (CONSP(cfunc->name))
     check_primitive(cfunc->name);
@@ -342,7 +342,7 @@ at *
 dy_listeval(at *p, at *q)
 {
   struct cfunction *cfunc = p->Object;
-  at *(*call)(at*) = cfunc->call;
+  at *(*call)(at*) = (at*(*)()) cfunc->call;
   
   if (CONSP(cfunc->name))
     check_primitive(cfunc->name);

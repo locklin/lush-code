@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.10 2003-02-14 17:01:07 leonb Exp $
+ * $Id: graphics.h,v 1.11 2003-07-01 19:11:57 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -159,7 +159,7 @@ LUSHAPI int  gray_draw_idx(int x, int y,
                            int apartx, int aparty);
 LUSHAPI int  color_draw_idx(int x, int y, 
                             struct idx *idx, real minv, real maxv, 
-                            int apartx, int aparty, unsigned int *colors);
+                            int apartx, int aparty, int *colors);
 
 LUSHAPI int  rgb_draw_idx(int x, int y, 
                           struct idx *idx, int sx, int sy);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.10 2003-02-14 17:01:35 leonb Exp $
+ * $Id: graphics.c,v 1.11 2003-07-01 19:12:03 leonb Exp $
  **********************************************************************/
 
 
@@ -865,9 +865,9 @@ DX(xdraw_list)
 
 /* allocate the gray levels or the colors */
 
-static unsigned int colors[64];
+static int colors[64];
 
-static unsigned int *
+static int *
 allocate_grays(void)
 {
   struct window *win;
@@ -885,7 +885,7 @@ allocate_grays(void)
 }
 
 /* fill the color table with 64 colors taken from a int-matrix */
-static unsigned int *
+static int *
 colors_from_int_matrix(at *p)
 {
   struct index *ind;
@@ -898,7 +898,7 @@ colors_from_int_matrix(at *p)
   return colors;
 }
 
-static unsigned int *
+static int *
 allocate_cube(int *cube)
 {
   struct window *win;
@@ -1036,7 +1036,7 @@ DX(xcolor_draw_list)
 int 
 color_draw_idx(int x, int y, struct idx *idx, 
                real minv, real maxv, int apartx, int aparty, 
-               unsigned int *colors)
+               int *colors)
 {
   struct window *win;
 
@@ -1340,7 +1340,7 @@ rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
       unsigned char *im;
       flt (*getf)(gptr,int);
       gptr data;
-      unsigned int cube[64];
+      int cube[64];
       /* Allocate color cube */
       if (!allocate_cube(cube)) {
           return 5;
@@ -1415,7 +1415,7 @@ rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
                 im += 4;
               }
           }
-      im = (char*)image;
+      im = (unsigned char*)image;
       for (j=0; j<d2; j++)
         for (i=0; i<d1; i++)
           {
