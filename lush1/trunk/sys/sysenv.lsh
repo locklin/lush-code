@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.37 2002-07-10 15:20:16 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.38 2002-07-10 18:56:07 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -155,17 +155,22 @@
 	  (load "$stdin" "$stdout" "[Debug] ? ") )
       t ) )
 
+(de pause l
+  (writing "$stderr"
+    (printf "\n\x07*** ")
+    (apply printf (or l '("Paused")))
+    (printf "\n") )
+  (load "$stdin" "$stdout" "[Pause] ? ") )
+
 (defvar break-hook simple-break-hook)
 (defvar debug-hook simple-debug-hook)
 
-
 (lock-symbol toplevel 
-	     break-hook debug-hook
+	     break-hook debug-hook pause
 	     nice-break-hook nice-debug-hook 
 	     break-action debug-action
 	     on-error on-break
-	     on-error-macro on-break-macro
-	     )
+	     on-error-macro on-break-macro )
 
 
 
@@ -1322,6 +1327,14 @@
 (df cinline args
   (error 'cinline "only works in compiled functions" ()) )
 
+(dm ifdef (fn tst . args)
+  `(eval (cons (mlambda(fn tst then . else)
+                 (if tst then (cons 'progn else)) )
+               (cons ,tst ',args) )) )
+
+(dm ifcompiled (fn then . else)
+  (cons 'progn else) )
+
 (de cmacro.read-c()
   (let ((nextchar (skip-char " \t")))
     (cond
@@ -1400,7 +1413,8 @@
       (setq pgm (nconc1 pgm '(cinline `stmt `@expr))) )
     (list (if (cdr pgm) (cons 'progn pgm) (car pgm))) ) )
 
-(lock-symbol breakp protect unprotect cinline
+(lock-symbol breakp protect unprotect 
+             cinline ifdef ifcompiled
              cmacro.read-c cmacro.read-string 
              cmacro.read-dollar |#{| )
 

@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.1 2002-07-09 22:40:53 leonb Exp $
+;;; $Id: lush.el,v 1.2 2002-07-10 18:56:07 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -37,6 +37,8 @@
 
 ;; indentation
 (put 'when 'lisp-indent-function 1)
+(put 'ifdef 'lisp-indent-function 2)
+(put 'ifcompiled 'lisp-indent-function 1)
 (put 'reading 'lisp-indent-function 1)
 (put 'writing 'lisp-indent-function 1)
 (put 'idx-bloop 'lisp-indent-function 1)
@@ -81,6 +83,7 @@
                 "let-filter" "reading" "writing" "selectq"
                 "do-while" "mapwhile" "mapfor" "repeat"
                 "idx-eloop" "idx-bloop" "idx-gloop"
+                "ifdef" "ifcompiled"
                 "lambda" "flambda" "mlambda" ) t) )
         1)
   (list
