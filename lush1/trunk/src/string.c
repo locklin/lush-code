@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.27 2004-11-06 00:11:11 leonb Exp $
+ * $Id: string.c,v 1.28 2004-12-17 13:31:56 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -985,14 +985,39 @@ DX(xstr_asc)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
+#if  HAVE_WCHAR_T
+  {
+    mbstate_t ps;
+    wchar_t wc = 0;
+    memset(&ps, 0, sizeof(mbstate_t));
+    mbrtowc(&wc, s, strlen(s), &ps);
+    if (wc)
+      return NEW_NUMBER(wc);
+  }
+#else
   if (s[0])
     return NEW_NUMBER(s[0] & 0xff);
-  else
-    error(NIL,"Empty string",APOINTER(1));
+#endif
+  error(NIL,"Empty string",APOINTER(1));
 }
 
 DX(xstr_chr)
 {
+#if HAVE_WCHAR_T
+  char s[MB_LEN_MAX+1];
+  size_t m;
+  mbstate_t ps;
+  int i;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  i = AINTEGER(1);
+  memset(s, 0, sizeof(s));
+  memset(&ps, 0, sizeof(mbstate_t));
+  m = wcrtomb(s, (wchar_t)i, &ps);
+  if (m==0 || m==(size_t)-1)
+    error(NIL,"Out of range",APOINTER(1));
+  return new_string(s);
+#else
   int i;
   char s[2];
   ARG_NUMBER(1);
@@ -1003,6 +1028,7 @@ DX(xstr_chr)
   s[0]=i;
   s[1]=0;
   return new_string(s);
+#endif
 }
 
 DX(xisprint)
