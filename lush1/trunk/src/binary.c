@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.2 2002-04-25 22:54:27 leonb Exp $
+ * $Id: binary.c,v 1.3 2002-04-26 14:34:18 leonb Exp $
  **********************************************************************/
 
 
@@ -873,9 +873,12 @@ local_write(at *p)
   
   if (matrixp(p))
     {
+      struct index *arr = p->Object;
       write_card8(TOK_MATRIX);
       in_bwrite += save_matrix_len(p);
-      save_matrix(p,fout);
+      if (arr->st->srg.type == ST_GPTR)
+        error(NIL,"Cannot save a gptr matrix",p);
+      save_matrix(p, fout);
       return 1;
     }
   
@@ -1078,7 +1081,6 @@ static void
 local_bread_array(at **pp)
 {
   struct index *ind;
-  struct storage *st;
   struct idx id;
   int dim[MAXDIMS];
   int i, size, ndim;
