@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.3 2002-04-25 17:12:44 leonb Exp $
+ * $Id: toplevel.c,v 1.4 2002-05-01 17:30:43 leonb Exp $
  **********************************************************************/
 
 
@@ -70,6 +70,7 @@ extern void init_classify (void);
 extern void init_nan (void);
 extern void init_binary (void);
 extern void init_dump (void);
+extern void init_module (void);
 extern void init_date (void);
 extern void init_dz (void);
 extern void init_storage (void);
@@ -168,6 +169,7 @@ init_lush(char *program_name)
   init_classify();
   init_nan();
   init_binary();
+  init_module();
   init_date();
   init_dz();
   init_storage();

@@ -24,38 +24,21 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: autoconf.h.in,v 1.3 2002-05-01 17:30:43 leonb Exp $
+ * $Id: module.c,v 1.1 2002-05-01 17:30:43 leonb Exp $
  **********************************************************************/
 
-  { "SHELL", "@SHELL@" },
-  { "OPTS", "@OPTS@" },
-  { "DEFS", "@DEFS@" },
-  { "LDFLAGS", "@LDFLAGS@" },
-  { "LIBS", "@LIBS@" },
-  { "host", "@host@" },
-  { "CPP", "@CPP@" },
-  { "CPPFLAGS", "@CPPFLAGS@" },
-  { "CC", "@CC@" },
-  { "CFLAGS", "@CFLAGS@" },
-  { "CXX", "@CXX@" },
-  { "CXXFLAGS", "@CXXFLAGS@" },
-  { "F77", "@F77@" },
-  { "FFLAGS", "@FFLAGS@" },
-  { "LDCC", "@LDCC@" },
-  { "LDFLAGS", "@LDFLAGS@" },
-  { "AR", "@AR@" },
-  { "MV", "@MV@" },
-  { "CP", "@CP@" },
-  { "LN_S", "@LN_S@" },
-  { "TOUCH", "@TOUCH@" },
-  { "RANLIB", "@RANLIB@" },
-  { "LN_S", "@LN_S@" },
-  { "X_LIBS", "@X_LIBS@" },
-  { "X_CFLAGS", "@X_CFLAGS@" },
-  { "CC_PIC_FLAG", "@CC_PIC_FLAG@" },
-  { "CC_EXP_FLAG", "@CC_EXP_FLAG@" },
-  { "MAKESO", "@MAKESO@" },
-  { "EXEEXT", "@EXEEXT@" },
-  { "OBJEXT", "@OBJEXT@" },
-  { "SOEXT", "@SOEXT@" },
-  { "MAKESO", "@MAKESO@" },
+
+
+
+/* --------- XXX_DEFINE FUNCTIONS --------- */
+
+
+
+
+
+/* --------- INITIALISATION CODE --------- */
+
+void 
+init_module(void)
+{
+}

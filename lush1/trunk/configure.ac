@@ -5,12 +5,31 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.4 2002-05-01 15:22:56 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.5 2002-05-01 17:30:35 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
 AC_PREFIX_DEFAULT(/usr/local)
 AC_CANONICAL_HOST
+
+AC_ARG_WITH(extra-includes,
+            AC_HELP_STRING([--with-extra-includes=DIR],
+                       [Define an additional directory for include files]),
+        [ if test -d "$withval" ; then
+            CPPFLAGS="$CPPFLAGS -I$withval" 
+          else
+            AC_MSG_ERROR([Cannot stat directory $withval])
+          fi ] )
+
+AC_ARG_WITH(extra-libraries,
+            AC_HELP_STRING([--with-extra-libraries=DIR],
+                       [Define an additional directory for library files]),
+        [ if test -d "$withval" ; then
+           LDFLAGS="$LDFLAGS -L$withval"
+          else
+            AC_MSG_ERROR([Cannot stat directory $withval])
+          fi ] )
+
 
 # ----------------------------------------
 # Programs
@@ -150,7 +169,6 @@ case "$host" in
         ;;
 esac
 
-AC_MSG_CHECKING
 AC_SUBST(LDCC)
 AC_SUBST(SOEXT)
 AC_SUBST(CC_EXP_FLAG)
@@ -168,6 +186,24 @@ else
 fi
 AC_SUBST(UNIX_YES)
 AC_SUBST(WIN32_YES)
+
+
+
+# ----------------------------------------
+# Diagnostics
+# ----------------------------------------
+
+if test x$BFD_YES != x ; then
+    AC_MSG_WARN([Compiling without the BFD library.
+---------------------------------------------------
+This substantially reduces the capability of lush.
+* If you are using Linux, check that you have the
+  binutils-devel package, and check that its version
+  number matches the installed binutils.
+* Otherwise you should download and compile the
+  GNU binutils source on your system.
+---------------------------------------------------])
+fi
 
 # ----------------------------------------
 # Output
