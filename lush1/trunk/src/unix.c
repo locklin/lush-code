@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.45 2003-11-25 17:04:51 leonb Exp $
+ * $Id: unix.c,v 1.46 2004-03-04 20:19:45 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -785,14 +785,17 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
    gets a line on the console (and process events) */
 
 #if HAVE_LIBREADLINE
-
-#if RL_READLINE_VERSION >= 0x400
-# define READLINE_COMPLETION 1
-#else
-# define READLINE_COMPLETION 0
+# if HAVE_READLINE_READLINE_H
+#  define READLINE 1
+#  if RL_READLINE_VERSION >= 0x400
+#   define READLINE_COMPLETION 1
+#  endif
+# endif
 #endif
 
 static int console_in_eventproc = 0;
+
+#if READLINE
 
 static void
 console_wait_for_char(int prep)
@@ -1035,7 +1038,7 @@ console_getline(char *prompt, char *buf, int size)
     }
 }
 
-#else /* !HAVE_LIBREADLINE */
+#else /* !READLINE */
 
 static void
 console_init(void)
