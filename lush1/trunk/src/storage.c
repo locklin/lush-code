@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.4 2002-04-29 19:34:08 leonb Exp $
+ * $Id: storage.c,v 1.5 2002-05-02 21:08:56 leonb Exp $
  **********************************************************************/
 
 
@@ -78,7 +78,7 @@ int storage_type_size[ST_LAST] = {
   sizeof(char),
   sizeof(flt),
   sizeof(real),
-  sizeof(long),
+  sizeof(int),
   sizeof(short),
   sizeof(char),
   sizeof(unsigned char),
@@ -120,7 +120,7 @@ static flt name2(Prefix,_getf)(gptr pt, int off)        		     \
 
 Generic_getf(F, flt)
 Generic_getf(D, real)
-Generic_getf(I32, long)
+Generic_getf(I32, int)
 Generic_getf(I16, short)
 Generic_getf(I8, char)
 Generic_getf(U8, unsigned char)
@@ -176,7 +176,7 @@ static void name2(Prefix,_setf)(gptr pt, int off, flt x)		     \
     
 Generic_setf(F, flt)
 Generic_setf(D, real)
-Generic_setf(I32, long)
+Generic_setf(I32, int)
 Generic_setf(I16, short)
 Generic_setf(I8, char)
 Generic_setf(U8, unsigned char)
@@ -230,7 +230,7 @@ static real name2(Prefix,_getr)(gptr pt, int off)        		     \
 
 Generic_getr(F, flt)
 Generic_getr(D, real)
-Generic_getr(I32, long)
+Generic_getr(I32, int)
 Generic_getr(I16, short)
 Generic_getr(I8, char)
 Generic_getr(U8, unsigned char)
@@ -284,7 +284,7 @@ static void name2(Prefix,_setr)(gptr pt, int off, real x)		     \
     
 Generic_setr(F, flt)
 Generic_setr(D, real)
-Generic_setr(I32, long)
+Generic_setr(I32, int)
 Generic_setr(I16, short)
 Generic_setr(I8, char)
 Generic_setr(U8, unsigned char)
@@ -710,7 +710,7 @@ Generic_new_storage(AT, AT, at*)
 Generic_new_storage(P, N, char)
 Generic_new_storage(F, N, flt)
 Generic_new_storage(D, N, real)
-Generic_new_storage(I32, N, long)
+Generic_new_storage(I32, N, int)
 Generic_new_storage(I16, N, short)
 Generic_new_storage(I8, N, char)
 Generic_new_storage(U8, N, unsigned char)

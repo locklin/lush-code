@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.9 2002-04-29 20:00:35 leonb Exp $
+ * $Id: index.c,v 1.10 2002-05-02 21:08:56 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -1591,7 +1591,7 @@ void copy_index(struct index *i1, struct index *i2)
     GenericCopy(P, unsigned char);
     GenericCopy(F, flt);
     GenericCopy(D, real);
-    GenericCopy(I32, long);
+    GenericCopy(I32, int);
     GenericCopy(I16, short);
     GenericCopy(I8, char);
     GenericCopy(U8, unsigned char);
