@@ -24,80 +24,12 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: mnist-libsvm.lsh,v 1.3 2004-08-18 20:07:56 leonb Exp $
+;;; $Id: mnist-libsvm.lsh,v 1.4 2004-09-30 14:02:44 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
+(libload "svm/demos/mnist-kernel")
 (libload "svm/libsvm")
-(libload "libidx/idx-float")
-(libload "libidx/idx-double")
-(libload "libidx/idx-int")
-
-(defclass MnistRBFKernel SVMKernel
-  ((-idx2- (-ubyte-)) x)
-  ((-idx1- (-ubyte-)) y)
-  ((-double-) gamma) 
-  ((-int-) count) )
-
-(defmethod MnistRBFKernel MnistRBFKernel(trx try tex tey g)
-  ((-idx3- (-ubyte-)) trx)
-  ((-idx1- (-ubyte-)) try)
-  ((-idx3- (-ubyte-)) tex)
-  ((-idx1- (-ubyte-)) tey)
-  ((-double-) g) 
-
-  (setq x (ubyte-matrix 70000 (* 28 28)))
-  (setq y (ubyte-matrix 70000))
-  (copy-any-matrix trx (narrow x 0 60000 0))
-  (copy-any-matrix tex (narrow x 0 10000 60000))
-  (copy-any-matrix try (narrow y 0 60000 0))
-  (copy-any-matrix tey (narrow y 0 10000 60000))
-  (setq gamma g)
-  (setq count 0) )
-
-(defmethod MnistRBFKernel vector(i)
-  ((-int-) i)
-  (select x 0 i) )
-
-(defmethod MnistRBFKernel label(i)
-  ((-int-) i)
-  (to-double (y i)) )
-
-(defmethod MnistRBFKernel call(i j)
-  ((-int-) i j)
-  (incr count)
-  (let ((sum 0)
-	(x1 (select x 0 i))
-	(x2 (select x 0 j)) )
-    ((-int-) sum)
-    (cinline-idx1loop2 x1 "unsigned char" x2 "unsigned char" "p1" "p2" "k"
-		       #{ int d = (int)( (int)*p1 - (int)*p2 );
-		          $sum += d * d; #} ) 
-    (exp (- (* (/ gamma 16384) sum))) ) )
-
-(setq mnist-kernel ())
-(setq mnist-svm ())
-
-(let ((dhc-make-lushflags (concat dhc-make-lushflags " -funroll-all-loops")))
-  (dhc-make () (MnistRBFKernel MnistRBFKernel vector label call) ) )
-
-
-(de load-mnist()
-  ;; loading
-  (when (not  mnist-train-x)
-    (defvar mnist-train-x (load-matrix "mnist/train-images-idx3-ubyte")) )
-  (when (not mnist-test-x)
-    (defvar mnist-test-x (load-matrix "mnist/t10k-images-idx3-ubyte")) )
-  (when (not mnist-train-y)
-    (defvar mnist-train-y (load-matrix "mnist/train-labels-idx1-ubyte")) )
-  (when (not mnist-test-y)
-    (defvar mnist-test-y (load-matrix "mnist/t10k-labels-idx1-ubyte")) ) 
-  ;; kernel
-  (defvar mnist-kernel 
-    (new MnistRBFKernel 
-	 mnist-train-x mnist-train-y
-	 mnist-test-x mnist-test-y
-	 0.005 ) ) )
 
 
 
@@ -126,7 +58,6 @@
   (matrix-print mnist-confusion)
   (printf "\n--------------------\nTotal errors=%l%%\n"
 	  (- 100 ((idx-sum (diagonal mnist-confusion 2)))) ) )
-
 
 
 
