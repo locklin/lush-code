@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.3 2002-06-27 21:10:40 leonb Exp $
+ * $Id: allocate.c,v 1.4 2002-06-27 21:31:46 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -275,15 +275,22 @@ garbage(int flag)
        */
       begin_iter_at(p) 
         {
-          if ((p->flags & C_GARBAGE) && (p->flags & C_EXTERN)) 
+          if (p->flags & C_GARBAGE)
             {
-              if (p->flags & X_OOSTRUCT)
-                oostruct_dispose(p); /* class may be gone already */
-              else
-                (*p->Class->self_dispose)(p);
-              p->Class = &zombie_class;
-              p->Object = NIL;
-              p->flags  = C_EXTERN | C_GARBAGE | X_ZOMBIE;
+              /* destructors */
+              if (p->flags & C_EXTERN)
+                {
+                  if (p->flags & X_OOSTRUCT)
+                    oostruct_dispose(p);
+                  else 
+                    (*p->Class->self_dispose)(p);
+                  p->Class = &zombie_class;
+                  p->Object = NIL;
+                  p->flags  = C_EXTERN | C_GARBAGE | X_ZOMBIE;
+                }
+              /* finalizers */
+              if (p->flags & C_FINALIZER)
+                run_finalizers(p);
             }
         }
       end_iter_at(p);
@@ -314,11 +321,7 @@ garbage(int flag)
         for (i = at_alloc.chunklist; i; i = i->next)
           for (p = i->begin; (gptr) p < i->end; p++)
             if (p->count==0) 
-              {
-                if (p->flags & C_FINALIZER)
-                  run_finalizers(p);
-                deallocate(&at_alloc, (struct empty_alloc *) p);
-              }
+              deallocate(&at_alloc, (struct empty_alloc *) p);
       }
       
       /*
