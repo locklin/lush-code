@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.41 2003-06-26 15:55:02 leonb Exp $
+ * $Id: unix.c,v 1.42 2003-06-26 15:59:26 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1917,18 +1917,21 @@ static int mpi_initialized = 0;
 DX(xmpi_init)
 {
   ARG_NUMBER(0);
-  MPI_Init(lush_argc, lush_argv);
+  if (mpi_initialized)
+    return NIL;
+  MPI_Init(&lush_argc, &lush_argv);
   mpi_initialized = 1;
-  return NIL;
+  return true();
 }
 
 DX(xmpi_finalize)
 {
   ARG_NUMBER(0);
-  if (mpi_initalized)
-    MPI_Finalize();
+  if (!mpi_initialized)
+    return NIL;
   mpi_initialized = 0;
-  return NIL;
+  MPI_Finalize();
+  return true();
 }
 #endif
 
@@ -1971,7 +1974,7 @@ void
 fini_unix(void)
 {
 #ifdef HAVE_MPI
-  if (mpi_initalized)
+  if (mpi_initialized)
     MPI_Finalize();
 #endif  
 }
