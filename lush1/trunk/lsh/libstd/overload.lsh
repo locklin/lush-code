@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: overload.lsh,v 1.2 2003-03-06 04:22:27 leonb Exp $
+;;; $Id: overload.lsh,v 1.3 2003-03-06 04:37:08 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -35,10 +35,32 @@
 
 
 
+#? (typematch (<dh1>...<dhn>) <...args...>)
+;; Apply the first of the DH functions <dh1>...<dhn>
+;; whose prototype matches the type of the 
+;; arguments <...args...>
+
+(dm typematch(fn dhlist . args)
+  (list typematch.sub (list 'quote dhlist) . args) )
+
+
+#? (overload <overloadname> <dhfunctionname>)
+;; Define <overloadname> as an overloaded function
+;; and adds <dhfunctioname> as one of its alternatives.
+
+(dm overload(overload overloadname dhfuncname)
+  (let ((alternatives (getp overloadname 'overload)))
+    (when (not (member dhfuncname alternatives))
+      (putp overloadname 'overload (cons dhfuncname alternatives)) ) )
+  (list 'setq `:,overloadname
+        (mlambda(overloadname . args)
+          (list 'typematch (getp overloadname 'overload) . args) ) ) )
+
+
 ;; This function converts type descriptors
 ;; returned by function dhinfo-t into type declarations.
 ;; Why so many representations?
-(de overload.typedecl(desc)
+(de typematch.typedecl(desc)
   (while (and (consp desc) (= (car desc) 'ptr))
     (setq desc (cadr desc)) )
   (selectq (car desc)
@@ -52,26 +74,25 @@
     (flt '(-flt- ))
     (real '(-real-))
     (str '(-str- ))
-    (list (cons '-list- (mapcar overload.typedecl (cdr desc))))
+    (list (cons '-list- (mapcar typematch.typedecl (cdr desc))))
     (obj (list '-obj- (list (nth 1 desc))))
     (idx 
      (let* ((ndim (nth 2 desc))
             (base (nth 3 desc)) )
        (when (<> (car base) 'srg)
-         (error 'overload "Illegal type descriptor" desc) )
+         (error 'typematch "Illegal type descriptor" desc) )
        (list (named (sprintf "-idx%d-" ndim))
-             (overload.typedecl (nth 2 base)) ) ) )
+             (typematch.typedecl (nth 2 base)) ) ) )
     (t
-     (error 'overload "Unsupported type descriptor" desc) ) ) )
+     (error 'typematch "Unsupported type descriptor" desc) ) ) )
 
-
-;; This is the workhose of interpreted overloaded calls
-(de overload.sub(dhlist . args)
+;; This is the workhose of interpreted typematched calls
+(de typematch.sub(dhlist . args)
   (let ((found ())
         (nargs (length args)))
     (while (not found)
       (when (not (consp dhlist))
-        (error 'overload "No DH function matches these arguments" ()) )
+        (error 'typematch "No type match for these arguments" ()) )
       (let* ((name (car dhlist))
              (func (eval `:,name))
              (info ()) )
@@ -79,41 +100,29 @@
         (when (is-of-class func |DH|)
           (setq info (dhinfo-t func)) )
         (when (not info)
-          (error 'overload "Not a compiled DH function" name) )
-        (setq info (mapcar overload.typedecl (cadr info)))
+          (error 'typematch "Not a compiled DH function" name) )
+        (setq info (mapcar typematch.typedecl (cadr info)))
         (when (= (length info) nargs)
           (let ((okay t))
             (each ((d info)
                    (a args))
               (when okay
                 (let ((p (getp (eval `:,(car d)) 'type-syntax)))
-                  (setq p (p 'overload d))
+                  (setq p (p 'typematch d))
                   (when (not (p a))
                     (setq okay ()) ) ) ) )
             (when okay
               (setq found func) ) ) ) ) )
     (apply found args) ) )
 
-
-#? (overload (<dh1>...<dhn>) <...args...>)
-;; Apply the first of the DH functions <dh1>...<dhn>
-;; whose prototype matches the type of the 
-;; arguments <...args...>
-
-(dm overload(fn dhlist . args)
-  (list overload.sub (list 'quote dhlist) . args) )
-
-
-
 ;; dhm-p
-(dhm-p overload(source)
+(dhm-p typematch(source)
   (if (and (consp source) (consp (cdr source)))
       (cons (car source) (cons (cadr source) (dhc-pp-all (cddr source))))
     source ) )
 
-
 ;; compare types (ugly)
-(de overload.typecheck(ot1 ot2)
+(de typematch.typecheck(ot1 ot2)
   (setq ot1 (==> ot1 copy))
   (setq ot2 (==> ot2 copy))
   (let ((dhc-unif-error-flag t)
@@ -122,7 +131,7 @@
     dhc-unif-error-flag ) )
 
 ;; dhm-t
-(dhm-t overload(source)
+(dhm-t typematch(source)
   (let* ((fs (cadr source))
          (as (cddr source)) 
          (ftypes ())
@@ -137,7 +146,7 @@
     ;; Search function
     (while (not found-name)
       (when (not (consp fs))
-        (dhc-error "No DH function matches these arguments") )
+        (dhc-error "No type match for these arguments") )
       (let* ((f (car fs))
              (fnode (car fnodes))
              (ftype :fnode:type)
@@ -148,7 +157,7 @@
           (let ((okay t))
             (each ((ptype ptypes)
                    (anode anodes))
-              (when (and okay (not (overload.typecheck ptype :anode:type)))
+              (when (and okay (not (typematch.typecheck ptype :anode:type)))
                 (setq okay ()) ) ) 
             (when okay
               (setq found-name f) ) ) ) ) )
@@ -167,11 +176,12 @@
 (libload "idx-float")
 (libload "idx-double")
 
-(dm idx-dotc(fn . args)
-  `(overload (idx-d3dotc idx-f3dotc
-              idx-d2dotc idx-f2dotc 
-              idx-d1dotc idx-f1dotc) 
-             ,@args) )
+(overload idx-dotc idx-d3dotc)
+(overload idx-dotc idx-d2dotc)
+(overload idx-dotc idx-d1dotc)
+(overload idx-dotc idx-f3dotc)
+(overload idx-dotc idx-f2dotc)
+(overload idx-dotc idx-f1dotc)
 
 (de aa(a c b) ((-flt-) c) ((-idx1- (-flt-)) a b)
     (idx-dotc a c b) )
