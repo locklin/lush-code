@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.10 2003-07-01 18:41:14 leonb Exp $
+ * $Id: x11_driver.c,v 1.11 2003-11-10 16:48:22 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -395,7 +395,7 @@ x11_make_window(int x, int y, int w, int h, char *name)
   wmhints.input = True;
   wmhints.flags = InputHint;
   clhints.res_name = "lush";
-  clhints.res_class = "TL";
+  clhints.res_class = "Lush";
   ifn (XStringListToTextProperty(&name,1,&xtpname)) {
     enable();
     error(NIL,"memory exhausted",NIL);
