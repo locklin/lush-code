@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: image-io.lsh,v 1.3 2002-10-09 06:43:39 profshadoko Exp $
+;;; $Id: image-io.lsh,v 1.4 2002-11-22 22:43:44 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? *** Reading/Writing Image Files to/from IDX.
@@ -54,13 +54,15 @@
 ;; command can convert to PPM.
 ;; The type of the input image is determined
 ;; automatically. In case it is not, the the type
-;; can be prepended to the filename with a semicolon.
+;; can be prepended to the filename with a colon.
 ;; Command line options prepended to the argument
 ;; are passed to convert.
 ;;.P
 ;; Example:
 ;;.CODE
-;; (setq img (image-read-rgb "TIFF:myimage.png"))
+;; (setq img (image-read-rgb "myimage.png"))
+;; (setq img (image-read-rgb "TIFF:myimage.dunno"))
+;; (setq img (image-read-rgb "-geometry 50x50% myimage.jpg"))
 (de image-read-rgb (s)
   ((-str-) s)
   (let ((f (popen (sprintf "%s %s PPM:-" @@*convert-cmd* s) "r")))
@@ -69,24 +71,35 @@
 
 #? (image-read-rgba <f>)
 ;; read an image file (in any format), and return
-;; an rgbaimage with the image in it. 
+;; an rgbaimage with the image in it
 ;; (IDX3 of ubytes with last dimension=4).
+;; The alpha channel is filled if the image being read has one.
+;; An alpha value of 0 means opaque and 255 means fully transparent
+;; (this is backward to many conventions in other places in the
+;; Lush library).
 ;; Accepted format are whatever ImageMagick's convert
 ;; command can convert to PPM.
 ;; The type of the input image is determined
 ;; automatically. In case it is not, the the type
-;; can be prepended to the filename with a semicolon
+;; can be prepended to the filename with a colon
 ;; Command line options prepended to the argument
 ;; are passed to convert.
 ;;.P
 ;; Example:
 ;;.CODE
-;; (setq img (image-read-rgba "-geometry 50x50% PNG:myimage.png"))
+;; (setq img (image-read-rgba "-geometry 50x50% myimage.png"))
+;; (setq img (image-read-rgba "-geometry 50x50% PNG:myimage"))
 (de image-read-rgba (s)
   ((-str-) s)
   (let ((f (popen (sprintf "%s %s PPM:-" @@*convert-cmd* s) "r")))
     (when (not f) (error "couldn't open convert pipe file"))
-    (prog1 (pnm-fread-rgba f) (fclose f))))
+    (let ((r (pnm-fread-rgba f)))
+      (fclose f)
+      (setq f (popen (sprintf "%s -channel Matte %s PGM:-" @@*convert-cmd* s) "r"))
+      (when (not f) (error "couldn't open alpha channel pipe file"))
+      (pnm-fread-into-ubim f (select r 2 3))
+      (fclose f) r)))
+
 
 #? (image-read-ubim <f>)
 ;; read an image file (in any format), and return
@@ -106,13 +119,13 @@
 ;; Writes an image stored in an IDX3 of ubytes into
 ;; an image file (in any format).
 ;; The type of the input image is determined
-;; by a string prepended to the filename with a semicolon.
+;; by a string prepended to the filename with a colon.
 ;; Command line options prepended to the argument
 ;; are passed to the convert command
 ;;.P
 ;; Example:
 ;;.CODE
-;; (setq img (image-read-rgb "TIFF:myimage.png"))
+;;  (image-write-rgb "TIFF:myimage.tiff"))
 (de image-write-rgb (s im)
     ((-str-) s)
     ((-idx3- (-ubyte-)) im)
