@@ -96,10 +96,10 @@ static struct C_window {
   FILE *foutptr;
   int width;  
   int height;
-  stack_ptr compview_stack; /* for grouping */
+  stack_ptr group_stack; /*for grouping*/
   int compview_no; 
-  short compview_inc_flag;  /* number of compviews changed or not */
   int group_cnt;
+  int command_type;
 } wind[MAXWIN];
 
 
@@ -122,6 +122,9 @@ push(stack_ptr stack, int cw)
     node->compview = cw;     
     node->link = stack->link;  
     stack->link = node;
+#if DEBUG
+    printf("%d is pushed...\n", cw);
+#endif
     return 0;     
   } else {
     fprintf(stdout,"Out of memory, compview stack is full\n"); 
@@ -137,6 +140,9 @@ pop(stack_ptr stack)
   node = stack->link;   
   stack->link = node->link;  
   cw = node->compview;
+#if DEBUG
+  printf("%d is poped...\n", cw);
+#endif
   return cw;
 }
 
@@ -153,7 +159,7 @@ read_top(stack_ptr stack)
 static void 
 empty_stack(stack_ptr stack)
 {
-  stack->link=NIL;
+  stack->link = NIL;
 }
 
 /* ==================  WINDOW CREATION ===================== */
@@ -185,11 +191,12 @@ comdraw_new_window(int x, int y, int w, int h, char* name)
   info->saveflag = 0;
   info->finptr = NIL;
   info->foutptr = NIL;
-  info->width=512;
-  info->height=512;
-  info->compview_stack=init_stack(); 
-  info->compview_no=10000;
-  info->group_cnt=0;
+  info->width = 512;
+  info->height = 512;
+  info->group_stack = init_stack(); 
+  info->compview_no = 10000;
+  info->group_cnt = 10000;
+  info->command_type = 0;
   filteropenpty(cmd,&info->finptr,&info->foutptr);
   fin = info->finptr;
   fout = info->foutptr;
@@ -208,13 +215,13 @@ comdraw_new_window(int x, int y, int w, int h, char* name)
 static void 
 delete_comdraw_win(struct C_window *info)
 {
-  info->lwin.backptr->Object=NIL;
+  info->lwin.backptr->Object = NIL;
   info->lwin.backptr->Class = &zombie_class;
   info->lwin.backptr->flags = C_EXTERN | X_ZOMBIE;
   free(info->filename);
   pclose(info->foutptr);
   fclose(info->finptr);
-  free(info->compview_stack);
+  free(info->group_stack);
   info->lwin.used = 0;
 }
 
@@ -245,7 +252,6 @@ readnbytes(int fd, char* rbuffer, int size, long maxwait)
       }
     else
       {
-        perror("read(2)");
         return readreturn;
       }
   else if (selectreturn<0)
@@ -268,11 +274,10 @@ writenbytes(int fd, char* command, int size, long maxwait)
   if (maxwait < 0)
     ptv = 0;
   if ((selectreturn = select(fd+2, NIL, &writeset, NIL, ptv))>0)
-    if((writereturn=write(fd,command,size))>=0)
+    if((writereturn = write(fd,command,size)) >= 0)
       return writereturn;
     else
       {
-        perror("write(2)");
         return writereturn;
       }
   else if(selectreturn == 0)
@@ -289,12 +294,12 @@ runcommand(struct C_window* info, char* command, int noflines_toread)
   int fdout;
   int fdin;
   char buffer[MAX_OUTPUT_SIZE];
-  int nofbytes=0;
+  int nofbytes = 0;
   int i,j;
   
   buffer[0] = 0;
-  fdout=fileno(info->foutptr);
-  fdin=fileno(info->finptr);
+  fdout = fileno(info->foutptr);
+  fdin = fileno(info->finptr);
 
   /* read (for garbage) */
   nofbytes = readnbytes(fdout, buffer, MAX_OUTPUT_SIZE-1,0); 
@@ -320,11 +325,11 @@ runcommand(struct C_window* info, char* command, int noflines_toread)
   /* read */
   while(i < noflines_toread)
     {
-      buffer[0]='\0';
+      buffer[0] = 0;
       nofbytes += readnbytes(fdout, buffer, MAX_OUTPUT_SIZE-1,-1);      
       for(j=0;j<nofbytes;j++)
         {
-          if (buffer[j]=='\0')
+          if (buffer[j] == 0)
             j=nofbytes;
           else if(buffer[j]=='\n')
             i++;
@@ -370,7 +375,7 @@ runcommandReadout(struct C_window* info, char* command,
     return -1;
   if (nofbytes < strlen(command))
     fprintf(stdout,"Command is not written properly\n");
-  buffer[0]='\0';
+  buffer[0] = 0;
   nofbytes = 0; 
   i=lastindex=0;
   /* read */
@@ -380,9 +385,9 @@ runcommandReadout(struct C_window* info, char* command,
                              MAX_OUTPUT_SIZE-strlen(buffer)-1,-1);      
       for(j=lastindex;j<nofbytes;j++)
         {
-          if (buffer[j]=='\0')
+          if (buffer[j] == 0 )
             j=nofbytes;
-          else if(buffer[j]=='\n')
+          else if(buffer[j] == '\n')
             i++;     
         }
       lastindex=nofbytes;
@@ -486,22 +491,6 @@ do_line_clip(int *x1, int *y1, int *x2, int *y2, struct C_window *info)
   return 1;
 }
 
-/* ============================================================ */
-
-static void 
-begin(struct C_window *info)
-{
-  char command[MAX_INPUT_SIZE];
-  
-  if (!info->saveflag) {
-    sprintf(command,"save(\"%s\")\n",info->filename);
-    runcommand(info,command,1);
-    info->saveflag = 1;
-  }
-  info->compview_no++;
-  info->compview_inc_flag=1;
-}
-
 /* ======================  BASIC FUNCTIONS ==================== */
 
 static void 
@@ -509,6 +498,8 @@ comdraw_begin(struct window *linfo)
 {
   struct C_window *info = (struct C_window*)linfo;
   char buffer[MAX_OUTPUT_SIZE];
+  stack_ptr S = info->group_stack;
+
 #if DEBUG
   fprintf(stdout,"begin...\n");      
 #endif
@@ -517,21 +508,42 @@ comdraw_begin(struct window *linfo)
       delete_comdraw_win(info);
       return;
     } 
-  info->compview_inc_flag =0;
-  info->group_cnt++;
-  
+  push(S,0);
 }
 
+/* ============================================================ */
+static void 
+begin(struct C_window *info)
+{
+  char command[MAX_INPUT_SIZE];
+  command[0] = 0;
+  if (!info->saveflag) {
+    sprintf(command,"save(\"%s\")\n",info->filename);
+    runcommand(info,command,1);
+    info->saveflag = 1;
+  }
+  info->compview_no++;
+  info->command_type = 1;
+}
+
+/* ============================================================ */
+static void 
+begin_no_cw(struct C_window *info)
+{
+  info->command_type = 2;
+}
 /****************************************************************/
 
 static void 
 comdraw_end(struct window *linfo)
 {
   struct C_window *info = (struct C_window*)linfo;
-  int image;
+  int group1 = 0;
+  int group2 = 0;
+  int image =  info->compview_no;
   char command[MAX_INPUT_SIZE];
-  stack_ptr S=info->compview_stack;
-  int linecnt=0;
+  stack_ptr S = info->group_stack;
+  int linecnt = 0;
 
   command[0] = 0;
   if (! info->lwin.used)
@@ -539,47 +551,38 @@ comdraw_end(struct window *linfo)
 #if DEBUG
   fprintf(stdout,"end...\n");
 #endif
-  info->group_cnt--; 
-
-  /* if info->group_cnt is 0 then batching is over, 
-     if the stack is full, pop everything and process*/
-  if (!info->group_cnt){ 
-    if (S->link)
-      {  
-	image=pop(S);
-	sprintf(command,"lushng=growgroup(c%d c%d)\n",image, image);    
+  group1 = pop(S);
+  if (!(S->link)) 
+    return;
+  if (group1 == 0){
+    group2 = read_top(S);
+    if (group2 == 0) 
+      {
+	if (info->command_type == 1){
+	  pop(S);
+	  info->group_cnt++;
+	  push(S,info->group_cnt);
+	  sprintf(command,"lushng%d=growgroup(c%d c%d)\n",info->group_cnt, image, image);    
+	  linecnt++;
+	}
+      }
+    else 
+      {
+	sprintf(command,"lushng%d=growgroup(lushng%d c%d)\n",info->group_cnt, group2, image);    
 	linecnt++;
-	while(S->link)
-	  {
-	    image=pop(S);
-	    if(strlen(command)<MAX_INPUT_SIZE-(42+NO_OF_DIGITS_INT))
-	      {
-		sprintf(&command[strlen(command)],"lushng=growgroup(lushng c%d)\n",image);
-		linecnt++;
-	      }
-	    else
-	      {
-		runcommand(info,command,linecnt);
-		command[0]='\0';
-		sprintf(command,"lushng=growgroup(lushng c%d)\n",image);
-		linecnt=1;
-	      }
-	  }
-	sprintf(&command[strlen(command)],"select(:clear)\n");
-	runcommand(info,command,linecnt);
       }
   }
-  /* if  info->group_cnt > 0 then still batching. if the stack is full and
-     this is a new image push. if if the stack is empty and it is an image push.
-     These checks are done because commands that set the color, font, etc. are 
-     not images but they call comdraw_begin and comdraw_end. */
-  else if (S->link){
-    if (info->compview_no != read_top(S))
-      push(S,info->compview_no);    
+  else 
+    {
+      group2 = read_top(S);
+      sprintf(command,"lushng%d=growgroup(lushng%d lushng%d)\n",group2, group2, group1);    
+      linecnt++;
+    }
+  if (info->command_type != 2){
+    sprintf(&command[strlen(command)],"select(:clear)\n");
+    runcommand(info,command,2);
   }
-  else if (info->compview_inc_flag)
-    push(S,info->compview_no); 
-}
+}      
 
 /****************************************************************/
 /* Close a window */
@@ -595,6 +598,7 @@ comdraw_close(struct window *linfo)
 #if DEBUG
   fprintf(stdout,"close...\n");
 #endif
+  command[0] = 0;
   sprintf(command,"save\n");
   runcommand(info,command,1);
   sprintf(command,"exit\n");
@@ -602,7 +606,7 @@ comdraw_close(struct window *linfo)
   free(info->filename);
   pclose(info->foutptr);
   fclose(info->finptr);
-  free(info->compview_stack);
+  free(info->group_stack);
   info->lwin.used = 0;
 }
 
@@ -615,11 +619,12 @@ comdraw_xsize(struct window *linfo)
   struct C_window *info = (struct C_window*)linfo;
   char rbuffer[MAX_OUTPUT_SIZE];
   char* command = "ncols\n";
-  int xsize=0;
+  int xsize = 0;
   char* bufptr;
   char number[NO_OF_DIGITS_INT];
   int i;
-  
+
+  begin_no_cw(info);
   rbuffer[0] = 0;
   if (! info->lwin.used)
     return 0 ;
@@ -627,21 +632,21 @@ comdraw_xsize(struct window *linfo)
   fprintf(stdout,"xsize...\n");
 #endif
   runcommandReadout(info,command,rbuffer,1);
-  bufptr=rbuffer;
-  number[0]='\0';
-  i=0;
+  bufptr = rbuffer;
+  number[0] = 0;
+  i = 0;
   while (*bufptr)
     {
       if (isdigit(*bufptr)) 
         {
-          number[i]=(*bufptr);
+          number[i] = (*bufptr);
           i++;
         }
       else if (i>0)
-        xsize=atoi(number);    
+        xsize = atoi(number);    
       bufptr++;
     }
-  info->width=xsize;
+  info->width = xsize;
   return (xsize);
 }
 
@@ -653,33 +658,35 @@ comdraw_ysize(struct window *linfo)
   struct C_window *info = (struct C_window*)linfo;
   char rbuffer[MAX_OUTPUT_SIZE];
   char* command = "nrows\n";
-  int ysize=0;
+  int ysize = 0;
   char* bufptr;
   char number[NO_OF_DIGITS_INT];
   int i;
 
+ 
   rbuffer[0] = 0;
   if (! info->lwin.used)
     return 0 ;
 #if DEBUG
   fprintf(stdout,"ysize...\n");
 #endif
+  begin_no_cw(info);
   runcommandReadout(info,command,rbuffer,1);
-  bufptr=rbuffer;
-  number[0]='\0';
-  i=0;
+  bufptr = rbuffer;
+  number[0] = 0;
+  i = 0;
   while (*bufptr)
     {
       if (isdigit(*bufptr))
         {
-          number[i]=(*bufptr);
+          number[i] = (*bufptr);
           i++;
         }
       else if (i>0)
-        ysize=atoi(number);    
+        ysize = atoi(number);    
       bufptr++;
     }
-  info->width=ysize;
+  info->width = ysize;
   return (ysize);
 }
 
@@ -691,16 +698,22 @@ comdraw_setfont(struct window *linfo, char *f)
 {
   struct C_window *info = (struct C_window*)linfo;
   char command[MAX_INPUT_SIZE]; 
-  char *font;
-  
+  char font[15];
+  char def_font[] = "default";
+
   if (! info->lwin.used)
     return;
+
 #if DEBUG
   fprintf(stdout,"setfont...\n");
 #endif
-  font=strdup(f);
-  ifn (strcmp(font,"default"))
-    strcpy(font,"Helvetica-12");
+
+  command[0] = 0;
+  begin_no_cw(info);
+  strcpy(font,f);
+  ifn (strcmp(font,def_font)){
+    strcpy(font,"Helvetica-12"); 
+  }
   sprintf(command,"fontbyname(\"%s\")\n",font);
   runcommand(info, command,1);
 }
@@ -717,12 +730,13 @@ comdraw_clear(struct window *linfo)
 #if DEBUG
   fprintf(stdout,"clear...\n");
 #endif
+  command[0] = 0;
+  begin_no_cw(info);
   sprintf(command,
 	  "lushtmp=select(:all)\n"
           "for(i=0 i<size(lushtmp) i++ delete(at(lushtmp i)))\n");
   runcommand(info,command,2);
-  empty_stack(info->compview_stack);
-  info->compview_no=0;
+  info->compview_no = 10000;
 }
 
 /* ======================  Drawing Functions =================== */
@@ -741,11 +755,13 @@ comdraw_draw_line(struct window *linfo,
 #endif
   if (do_line_clip(&x1, &y1, &x2, &y2, info)) {
     begin(info);
-    command[0]='\0';
+    command[0] = 0;
     sprintf(command,"c%d=line(%d,nrows-(%d),%d,nrows-(%d))\nselect(:clear)\n",
 	    info->compview_no,x1, (y1+1), x2, (y2+1));
     runcommand(info, command,2);
   }
+  else
+    begin_no_cw(info);
 }
 /****************************************************************/
  
@@ -762,7 +778,7 @@ comdraw_draw_rect(struct window *linfo,
   fprintf(stdout,"draw_rect...\n");
 #endif
   begin(info);
-  command[0]='\0';
+  command[0] = 0;
   sprintf(command,"c%d=rect(%d,nrows-(%d),%d,nrows-(%d))\nselect(:clear)\n",
 	  info->compview_no,x1, (y1+1), x1+w-1, (y1+h));
   runcommand(info,command,2);
@@ -781,7 +797,7 @@ comdraw_draw_circle(struct window *linfo, int x1,int y1,unsigned int r)
   fprintf(stdout,"draw_circle...\n");
 #endif
   begin(info);
-  command[0]='\0';
+  command[0] = 0;
   sprintf(command,"c%d=ellipse(%d,nrows-(%d),%d,%d)\nselect(:clear)\n",
 	  info->compview_no,x1,(y1+1),r,r);
   runcommand(info,command,2);
@@ -801,7 +817,7 @@ comdraw_fill_rect(struct window *linfo,
   fprintf(stdout,"fill_rect...\n");
 #endif
   begin(info); 
-  command[0]='\0';
+  command[0] = 0;
   sprintf(command,
 	  "pattern(2)\n"
 	  "c%d=rect(%d,nrows-(%d),%d,nrows-(%d))\n"
@@ -823,7 +839,7 @@ comdraw_fill_circle(struct window *linfo,int x1,int y1,unsigned int r)
   fprintf(stdout,"fill_circle...\n");
 #endif
   begin(info);
-  command[0]='\0';
+  command[0] = 0;
   sprintf(command,
 	  "pattern(2)\n"
           "c%d=ellipse(%d,nrows-(%d),%d,%d)\n"
@@ -843,14 +859,16 @@ comdraw_draw_text(struct window *linfo, int x, int y, char *s)
   
   if (! info->lwin.used)
     return;
-  if (! s || !*s)
+  if (! s || !*s){
+    begin_no_cw(info);
     return;
+  }
 #if DEBUG
   fprintf(stdout,"draw_text...\n");
 #endif
  
-  command[0]=0;
-  t=strdup(s);
+  command[0] = 0;
+  t = strdup(s);
   if (*t)
     begin(info);
 
@@ -860,10 +878,10 @@ comdraw_draw_text(struct window *linfo, int x, int y, char *s)
     sprintf(command,"lushtmp=\"%c",*t);
   t++;
   while (*t) {
-    if (strlen(command) >= MAX_INPUT_SIZE-6) {
+    if (strlen(command) >= MAX_INPUT_SIZE-4) {
       sprintf(&command[strlen(command)],"\"\n");
       runcommand(info, command,1); 
-      command[0]='\0';
+      command[0] = 0;
       if (*t=='"' || *t=='\\')
 	sprintf(command,"lushtmp=lushtmp+\"\\%c",*t);
       else
@@ -881,7 +899,7 @@ comdraw_draw_text(struct window *linfo, int x, int y, char *s)
     t++;
   }
   if (*s){
-    command[0]='\0';
+    command[0] = 0;
     sprintf(command,"c%d=text(%d,nrows-(%d) lushtmp)\nselect(:clear)\n",
 	    info->compview_no,x,(y+1));
     runcommand(info, command,2);  
@@ -889,7 +907,7 @@ comdraw_draw_text(struct window *linfo, int x, int y, char *s)
 }
 /****************************************************************/
 
-static char *hexmap="0123456789ABCDEF";
+static char *hexmap = "0123456789ABCDEF";
 
 static void 
 comdraw_setcolor(struct window *linfo,int x)
@@ -905,6 +923,7 @@ comdraw_setcolor(struct window *linfo,int x)
 #if DEBUG
   fprintf(stdout,"set_color...\n");
 #endif
+  begin_no_cw(info);
   switch(x)
     {
     case COLOR_FG:
@@ -917,9 +936,9 @@ comdraw_setcolor(struct window *linfo,int x)
       sprintf(hexcolor,"#808080");
       break;
     default:
-      rr=(int)RED_256(x);
-      gg=(int)GREEN_256(x);
-      bb=(int)BLUE_256(x);
+      rr = (int)RED_256(x);
+      gg = (int)GREEN_256(x);
+      bb = (int)BLUE_256(x);
       sprintf(hexcolor,"#%c%c%c%c%c%c",
 	      hexmap[ (rr&0xf0)>>4 ],
 	      hexmap[ rr&0xf ],
@@ -937,9 +956,12 @@ comdraw_setcolor(struct window *linfo,int x)
 static int 
 comdraw_alloccolor(struct window *linfo,double r,double g,double b)
 {
+  struct C_window *info = (struct C_window*)linfo;
+
 #if DEBUG
   fprintf(stdout,"alloccolor...\n");
 #endif
+  begin_no_cw(info);
   return COLOR_RGB(r,g,b);
 }
 
@@ -962,10 +984,10 @@ comdraw_fill_polygon(struct window *linfo,short (*points)[2], unsigned int n)
 
   sprintf(command,"lushtmp=%d,nrows-(%d)",points[0][0],(points[0][1]+1));
   for (i=1; i<n; i++){
-    if (strlen(command)>=MAX_INPUT_SIZE-(9+2*NO_OF_DIGITS_INT)){
+    if (strlen(command)>=MAX_INPUT_SIZE-(11+2*NO_OF_DIGITS_INT)){
       sprintf(&command[strlen(command)],"\n");
       runcommand(info, command,1); 
-      command[0]='\0';
+      command[0] = 0;
       sprintf(command,"lushtmp=lushtmp,%d,nrows-(%d)",points[i][0],(points[i][1]+1));
     }
     else
@@ -976,7 +998,7 @@ comdraw_fill_polygon(struct window *linfo,short (*points)[2], unsigned int n)
   sprintf(&command[strlen(command)],"\n");
   runcommand(info,command,1); 
   
-  command[0]='\0';
+  command[0] = 0;
   sprintf(command,"c%d=polygon(lushtmp)\npattern(2)\nselect(:clear)\npattern(1)\n",
 	  info->compview_no);
   runcommand(info,command,2); 
@@ -999,7 +1021,7 @@ static void comdraw_rect_text(struct window *linfo,
   char *t;
   
  *xptr = *yptr = *wptr = *hptr = 0;
-  
+ begin_no_cw(info);
   if (! s || !*s)
     {
       *xptr = x;
@@ -1008,12 +1030,13 @@ static void comdraw_rect_text(struct window *linfo,
     }
   
   rbuffer[0] = 0;
+  command[0] = 0;
   if (! info->lwin.used)
     return;
 #if DEBUG
   fprintf(stdout,"rect_text...\n");
 #endif
-  t=strdup(s);
+  t = strdup(s);
   ysize = comdraw_ysize(linfo);
 
   if (*t=='"' || *t=='\\')
@@ -1022,10 +1045,10 @@ static void comdraw_rect_text(struct window *linfo,
     sprintf(command,"lushtmp=\"%c",*t);
   t++;
   while (*t) {
-    if (strlen(command)>=MAX_INPUT_SIZE-6){
+    if (strlen(command)>=MAX_INPUT_SIZE-4){
       sprintf(&command[strlen(command)],"\"\n");
       runcommand(info, command,1); 
-      command[0]='\0';
+      command[0] = 0;
       if (*t=='"' || *t=='\\')
 	sprintf(command,"lushtmp=lushtmp+\"\\%c",*t);
       else
@@ -1041,30 +1064,30 @@ static void comdraw_rect_text(struct window *linfo,
   sprintf(&command[strlen(command)],"\"\n");
   runcommand(info, command,1); 
   
-  command[0]='\0';
+  command[0] = 0;
   sprintf(command,"lushtmp2=text(%d,nrows-(%d) lushtmp)\nmbr(lushtmp2 :scrn)\ndelete(lushtmp2)\n",x,(y+1));
   runcommandReadout(info,command,rbuffer,3);
-  bufptr=rbuffer;
-  number[0]='\0';
-  i=j=0;
+  bufptr = rbuffer;
+  number[0] = 0;
+  i = j = 0;
   while (*bufptr){
     if (isdigit(*bufptr)){
-      number[i]=(*bufptr);
+      number[i] = (*bufptr);
       i++;
     }   
     else if (i>0)
       {
-	number[i]='\0';
-	i=0;
-	coord[j]=atoi(number);
+	number[i] = 0;
+	i = 0;
+	coord[j] = atoi(number);
 	j++;    
       }
     bufptr++;
   }
-  (*xptr)=coord[0];
-  (*yptr)=ysize-(coord[3]+1);
-  (*wptr)=coord[2]-coord[0]+1;
-  (*hptr)=coord[3]-coord[1]+1;
+  (*xptr) = coord[0];
+  (*yptr) = ysize-(coord[3]+1);
+  (*wptr) = coord[2]-coord[0]+1;
+  (*hptr) = coord[3]-coord[1]+1;
 }
 
 /****************************************************************/
@@ -1080,7 +1103,8 @@ comdraw_gspecial(struct window *linfo,char *s)
 #if DEBUG
   fprintf(stdout,"gspecial...\n");
 #endif
-  command[0]='\0';
+  begin_no_cw(info);
+  command[0] = 0;
   sprintf(command,"%s\n",s);
   if (strlen(command)>MAX_INPUT_SIZE)
     fprintf(stdout,"String is too long!\n");
@@ -1099,6 +1123,7 @@ comdraw_clip(struct window *linfo, int x, int y, unsigned int w, unsigned int h)
 #if DEBUG
   fprintf(stdout,"clip...\n");
 #endif
+  begin_no_cw(info);
   if (!(w == 0 && h == 0)){
     info->lwin.clipx = x;
     info->lwin.clipy = y; 
@@ -1123,7 +1148,7 @@ comdraw_pixel_map(struct window *linfo,
   int i,j,k,l,hcnt,wcnt;
   int pointcnt;
   char line[MAX_INPUT_SIZE];
-  int index=0;
+  int index = 0;
   int limit = MAX_INPUT_SIZE-22-5*NO_OF_DIGITS_INT;
 
   command[0] = 0;
@@ -1142,8 +1167,8 @@ comdraw_pixel_map(struct window *linfo,
 	    info->compview_no,x, (y+h),x+w-1 ,y+1);
     runcommand(info, command,1);
     for(hcnt=0; hcnt<h; hcnt++){
-      pointcnt=0;
-      line[0]='\0';
+      pointcnt = 0;
+      line[0] = 0;
       for (wcnt=0; wcnt<w-1; wcnt++){
 	index = w*hcnt+wcnt;
 	if(strlen(line)<limit){  
@@ -1155,7 +1180,7 @@ comdraw_pixel_map(struct window *linfo,
 		  info->compview_no, pointcnt, (h-1-hcnt), (wcnt-pointcnt+1), line);
 	  runcommand(info, command,1);
 	  pointcnt = wcnt+1;
-	  line[0]='\0';
+	  line[0]= 0;
 	}
       }  
       sprintf(&line[strlen(line)],"%d",data[index+1]);
@@ -1187,7 +1212,7 @@ comdraw_pixel_map(struct window *linfo,
     runcommand(info, command,1);
     for(hcnt=0; hcnt<sy_h; hcnt++){
       pointcnt=0;
-      line[0]='\0';
+      line[0] = 0;
       for (wcnt=0; wcnt<sx_w-1; wcnt++){
 	index = sx_w*hcnt+wcnt;
 	if(strlen(line)<limit){  
@@ -1199,7 +1224,7 @@ comdraw_pixel_map(struct window *linfo,
 		  info->compview_no, pointcnt, (h-1-hcnt), (wcnt-pointcnt+1), line);
 	  runcommand(info, command,1);
 	  pointcnt = wcnt+1;
-	  line[0]='\0';
+	  line[0] = 0;
 	}
       }
       sprintf(&line[strlen(line)],"%d",data2[index+1]);
@@ -1244,10 +1269,10 @@ static void comdraw_draw_arc(struct window *linfo,
   point[nofpoints].y = (int)round(y1-r*sin(DEGTORAD(to)));
   sprintf(command,"lushtmp=%d,nrows-(%d)",point[0].x,(point[0].y+1));
   for (cnt=1; cnt<nofpoints+1; cnt++){
-    if (strlen(command)>=MAX_INPUT_SIZE-(9+2*NO_OF_DIGITS_INT)){
+    if (strlen(command)>=MAX_INPUT_SIZE-(11+2*NO_OF_DIGITS_INT)){
       sprintf(&command[strlen(command)],"\n");
       runcommand(info, command,1); 
-      command[0]='\0';
+      command[0] = 0;
       sprintf(command,"lushtmp=lushtmp,%d,nrows-(%d)",point[cnt].x,(point[cnt].y+1));
     }
     else{
@@ -1256,7 +1281,7 @@ static void comdraw_draw_arc(struct window *linfo,
   }  
   sprintf(&command[strlen(command)],"\n");
   runcommand(info, command,1);
-  command[0]='\0';
+  command[0] = 0;
   sprintf(command,"c%d=multiline(lushtmp)\nselect(:clear)\n",info->compview_no);
   runcommand(info, command,2);    
 
@@ -1293,10 +1318,10 @@ comdraw_fill_arc(struct window *linfo,
   point[nofpoints].y = (int)round(y1-r*sin(DEGTORAD(to)));
   sprintf(command,"lushtmp=%d,nrows-(%d)",x1,(y1+1));
   for (cnt=0; cnt<nofpoints+1; cnt++){
-    if (strlen(command)>=MAX_INPUT_SIZE-(9+2*NO_OF_DIGITS_INT)){
+    if (strlen(command)>=MAX_INPUT_SIZE-(11+2*NO_OF_DIGITS_INT)){
       sprintf(&command[strlen(command)],"\n");
       runcommand(info, command,1); 
-      command[0]='\0';
+      command[0] = 0;
       sprintf(command,"lushtmp=lushtmp,%d,nrows-(%d)",point[cnt].x,(point[cnt].y+1));
     }
     else
@@ -1305,7 +1330,7 @@ comdraw_fill_arc(struct window *linfo,
   }
   sprintf(&command[strlen(command)],"\n");
   runcommand(info, command,1); 
-  command[0]='\0';
+  command[0] = 0;
   sprintf(command,"c%d=polygon(lushtmp)\npattern(2)\nselect(:clear)\npattern(1)\n",
 	  info->compview_no);
   runcommand(info, command,2);   
@@ -1320,9 +1345,11 @@ comdraw_get_mask(struct window *linfo,
                  unsigned int *blue_mask)
      
 {
+  struct C_window *info = (struct C_window*)linfo;
 #if DEBUG
   fprintf(stdout,"get_mask...\n");
 #endif
+  begin_no_cw(info);
   *red_mask = 0xff0000;
   *green_mask = 0xff00;
   *blue_mask = 0xff;
