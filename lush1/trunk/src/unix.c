@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.20 2002-11-05 01:24:34 leonb Exp $
+ * $Id: unix.c,v 1.21 2002-11-05 22:12:02 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -787,12 +787,122 @@ console_getc(FILE *f)
   return rl_getc(f);
 }
 
+static char *
+symbol_generator(const char *text, int state)
+{
+  int i;
+  static int hni;
+  static struct hash_name *hn;
+  if (!text || !text[0])
+    return NULL;
+  if (! state) 
+    {
+      hni = 0;
+      hn = 0;
+    }
+  while (hni < HASHTABLESIZE) 
+    {
+      struct hash_name *h;
+      const unsigned char *a, *b;
+      /* move to next */
+      if (! hn) 
+        {
+          hn = names[hni];
+          hni++;
+          continue;
+        }
+      h = hn;
+      hn = hn->next;
+      /* compare symbol names */
+      if (text[0]=='|' || tolower(text[0])==h->name[0])
+        {
+          a = text;
+          b = pname(h->named);
+          i = 0;
+          while (a[i])
+            {
+              unsigned char ac = a[i];
+              unsigned char bc = b[i];
+              if (text[0]!='|') ac = tolower(ac);
+              if (ac == '_') ac = '-';
+              if (bc == '_') bc = '-';
+              if (ac != bc) break;
+              i++;
+            }
+          if (! a[i])
+            {
+              char *s = strdup(b);
+              if (s) memcpy(s, text, i);
+              return s;
+            }
+        }
+    }
+  return 0;
+}
+
+static char **
+console_complete(const char *text, int start, int end)
+{
+  int i;
+  int state = 0;
+  int lasti = -1;
+  /* Where are we? */
+  for (i=0; i<start; i++)
+    {
+      char c = rl_line_buffer[i];
+      if (! strchr(rl_basic_word_break_characters, c))
+        lasti = i;
+      switch(state) {
+      case 0:    
+        if (c==';' || c=='|' || c=='"')
+          state = c; 
+        break;
+      case '\\': 
+        state = '"'; 
+        break;
+      case '"':  
+        if (c=='\\') 
+          state = '\\';
+      case '|':  
+        if (c==state) 
+          state = 0;
+      case ';':  
+        if ( c=='\n' || c=='\r') 
+          state = 0; 
+        break;
+      }
+    }
+  /* Filename completion */
+  if (state == '"' && start>0 && rl_line_buffer[start-1]=='"')
+    return NULL; /* first word of a string */
+  if (state == 0 && lasti>=0 && rl_line_buffer[lasti]==(0x1f&'L'))
+    return NULL; /* after ctrl-L */
+  if (state == 0 && lasti>=1 && rl_line_buffer[lasti-1]=='^' && rl_line_buffer[lasti]=='L')
+    return NULL; /* after ^L */
+  /* Symbol completion */
+  if ((state==0 || state=='|') && end>start)
+    return rl_completion_matches(text, symbol_generator);
+  /* No completion */
+  rl_attempted_completion_over = 1;
+  return 0;
+}
+
 static void
 console_init(void)
 {
-  /* handle events anyway */
+  /* quotes etc. */
+  rl_special_prefixes = "|";
+  rl_basic_quote_characters = "\"";
+  rl_basic_word_break_characters = 
+    " ()#^\"|;"   /* syntactic separators */
+    "~'`,@[]{}:"  /* common macro characters */
+    "\001\002\003\004\005\006\007"
+    "\011\012\013\014\015\016\017"
+    "\021\022\023\024\025\026\027"
+    "\031\032\033\034\035\036\037";
+  /* callbacks */
   rl_getc_function = console_getc;
-  
+  rl_attempted_completion_function = console_complete;
   /* matching parenthesis */
 #if RL_READLINE_VERSION > 0x401
 #if RL_READLINE_VERSION > 0x402
@@ -802,31 +912,14 @@ console_init(void)
   rl_bind_key (']', rl_insert_close);
   rl_bind_key ('}', rl_insert_close);
 #endif
-
   /* ctrl+j makes a multiline readline */
   rl_bind_key ('\n', rl_insert);  
-  
-  /* quotes etc. */
-  rl_special_prefixes = "^#";
-  rl_basic_quote_characters = "\"|";
-  rl_basic_word_break_characters = 
-    " ()#^\"|;"   /* syntactic separators */
-    "~'`,@[]{}:"  /* common macro characters */
-    "\001\002\003\004\005\006\007"
-    "\011\012\013\014\015\016\017"
-    "\021\022\023\024\025\026\027"
-    "\031\032\033\034\035\036\037";
-
-  /* no completion for now */
-  rl_bind_key ('\t', rl_insert);
 }
 
 void
 console_getline(char *prompt, char *buf, int size)
 {
-  char *line;
-  char *s;
-  
+  char *s, *line;
   buf[0] = 0;
   line = readline(prompt);
   if (line)
@@ -860,7 +953,6 @@ console_getline(char *prompt, char *buf, int size)
     {
       buf[0] = (char)EOF;
       buf[1] = 0;
-      
     }
 }
 

@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.13 2002-11-04 17:58:40 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.14 2002-11-05 22:11:51 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -42,6 +42,7 @@ AC_CC_OPTIMIZE
 AC_SUBST(GCC)
 AC_PROG_CXX
 AC_PROG_F77
+AC_PROG_CPP
 
 
 AC_PROG_RANLIB
@@ -66,11 +67,35 @@ AC_CHECK_LIB(dld,shl_load)
 AC_CHECK_LIB(util,openpty)
 
 # bfd
-AC_CHECK_LIB(iberty, xmalloc)
-AC_CHECK_LIB(bfd, bfd_init,,[ac_has_bfd=no])
-BFD_YES=''
-test x$ac_has_bfd = xno && BFD_YES='#'
+AC_ARG_WITH(bfd,
+    AC_HELP_STRING([--without-bfd],
+        [Compile Lush without the BFD library.]),
+    [require_bfd=$withval],[require_bfd=yes])
+
+if test x$require_bfd = xno ; then
+    BFD_YES='#'
+    AC_MSG_WARN([Compiling Lush without BFD])
+else
+    BFD_YES=''
+    has_bfd=yes
+    AC_CHECK_LIB(iberty, xmalloc)
+    AC_CHECK_HEADER(bfd.h,,has_bfd=no)
+    AC_CHECK_LIB(bfd, bfd_init,,[has_bfd=no])
+    if test x$has_bfd = xno ; then
+        AC_MSG_ERROR([Unable to locate BFD development files.
+-------------------------------------------------------------
+We were unable to locate required GNU binutils files.
+- Some Linux distributions do not install these by default.
+  You need to install the 'libbinutils-devel' package.
+- On other platforms, get GNU binutils on www.fsf.org.
+You can configure Lush to run without these files by using 
+option "--without-bfd".  The dynamic loader/linker/compiler 
+will not work and Lush will be seriously crippled.
+-----------------------------------------------------------------])
+    fi
+fi
 AC_SUBST(BFD_YES)
+
 
 # x11
 AC_PATH_X
@@ -91,8 +116,6 @@ AC_PATH_PTHREAD
 # readline
 AC_CHECK_LIB(curses,tputs)
 AC_CHECK_LIB(readline,readline)
-
-
 
 
 # ----------------------------------------
@@ -203,22 +226,6 @@ AC_SUBST(WIN32_YES)
 AC_DEFINE_UNQUOTED(EXT_DLL, ".$SOEXT",  [Extension for shared libraries])
 AC_DEFINE_UNQUOTED(EXT_OBJ, ".$OBJEXT", [Extension for object files])
 
-
-# ----------------------------------------
-# Diagnostics
-# ----------------------------------------
-
-if test x$BFD_YES != x ; then
-    AC_MSG_WARN([Compiling without the BFD library.
----------------------------------------------------
-This substantially reduces the capability of lush.
-* If you are using Linux, check that you have the
-  binutils-devel package, and check that its version
-  number matches the installed binutils.
-* Otherwise you should download and compile the
-  GNU binutils source on your system.
----------------------------------------------------])
-fi
 
 # ----------------------------------------
 # Output
