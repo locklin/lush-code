@@ -1,0 +1,47 @@
+;; by Fu Jie Huang, May 2003
+;; this script is similar with the example program in Torch3:
+;; $Torch3/examples/discriminatives/svm_multi.cc (the test mode)
+
+;; you have to run the "svm_multi_train.lsh" to train the svm
+;; assume the trained the models are written in the file "model"
+
+(libload "torch/torch")
+
+(setq stdv        1650)
+(setq n_classes   10)
+(setq model_fn    "model")
+(setq test_fn "test_data.gz")
+
+(setq trained-models (new torch_DiskXFile () model_fn "r"))
+
+(setq the-kernel  (new torch_GaussianKernel () (/ 1.0 (* stdv stdv))))
+
+(setq svm-array (array 10))
+(for (i 0 9)   
+     (svm-array i (new  torch_SVMClassification ()  :the-kernel:p  (gptr ()) (gptr ())))
+     (==> (svm-array i) loadXFile :trained-models:p))
+
+(setq mat_data (new torch_MatDataSet () test_fn -1 1 () -1 ()))
+
+(setq class_format  (new torch_OneHotClassFormat ()  n_classes))
+
+(setq n_errors  0)
+(setq buffer (double-matrix n_classes))
+(setq n_examples (==> mat_data get_n_examples))
+
+(printf "\nstart testing on %d examples...\n" n_examples)
+(for (i 0 (1- n_examples))
+     (printf ".")
+     (flush)
+     (==> mat_data  setExample  i t t)
+
+     (for (j 0 (1- n_classes))
+	  (==> (svm_array  j)  forward  (scope (==> mat_data get_inputs) p))
+	  (buffer j (==> (==> (svm_array j) get_outputs) frames_getval 0 0)))
+
+     (setq the_class (==> (==> mat_data get_targets) frames_getval 0 0))
+     (when (<> the_class (==> class_format  getClass  (idx-ptr buffer)))
+       (incr n_errors))
+)
+(printf "\n%g%% of misclassification. (%d errors)\n" (* 100 (/ n_errors n_examples)) n_errors)
+
