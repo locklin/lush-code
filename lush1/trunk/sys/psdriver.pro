@@ -104,7 +104,7 @@
 /CPM {
   gsave translate scale
   [ 1 0 0 1 0 0 ]
-  3 index 6 mul string /picstr exch def
+  3 index 3 mul string /picstr exch def
   { currentfile picstr readhexstring pop }
   false 3 colorimage
   grestore } bind def
