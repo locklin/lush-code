@@ -1,0 +1,48 @@
+#!/bin/sh
+exec lush "$0" "$@"
+!#
+
+(defvar slave-input ())
+(defvar slave-output ())
+
+(let ((port 4000))
+  ;; Search port
+  (while (not (socketaccept port))
+    (incr port) )
+  ;; Open connexion
+  (printf "%s %d\n" (reading "|hostname" (read-string)) port)
+  (socketaccept port 'slave-input 'slave-output) )
+
+(de slave-debug-hook()
+  (writing slave-output
+    (print (list 'error (errname))) ) )
+
+(de slave-break-hook()
+  (writing slave-output
+    (print (list 'break (errname))) ) )
+
+(unlock-symbol toplevel)
+
+(de toplevel()
+  (let ((debug-hook slave-debug-hook)
+        (break-hook slave-break-hook))
+    (while (<> (reading slave-input (skip-char "")) "\e")
+      (let* ((command (reading slave-input (read)))
+             (result (eval command)) )
+        (writing slave-output
+          (bwrite result) 
+          (flush) ) ) ) 
+    (lush-is-quiet t)
+    t ) )
+
+(lock-symbol slave-input 
+             slave-output
+             slave-debug-hook
+             slave-break-hook
+             toplevel )
+
+(lush-is-quiet ())
+(toplevel)
+
+
+     
