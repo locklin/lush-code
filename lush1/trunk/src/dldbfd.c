@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.41 2004-10-21 20:23:25 leonb Exp $
+ * $Id: dldbfd.c,v 1.42 2004-10-21 20:32:40 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1903,10 +1903,11 @@ apply_relocations(module_entry *module, int externalp)
 		if (externalp && status == bfd_reloc_overflow)
 		  if ((hsym->flags & DLDF_DEFD) && !( hsym->flags & DLDF_ALLOC))
 		    {
-		      bfd_byte *data = vmaptr(p->vma);
 		      void **stub = 0;
+		      bfd_byte *data = vmaptr(p->vma);
 #ifdef __x86_64__
-		      if (data[reloc->address-1]==0xe8)
+		      bfd_byte opcode = data[reloc->address-1];
+		      if (opcode==0xe8 || opcode==0xe9)
 			{
 			  stub = dld_allocate(2*sizeof(void*), 1);
 			  stub[0] = vmaptr(0x0225ff);
