@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.8 2004-05-12 17:51:59 leonb Exp $
+ * $Id: svqp.cpp,v 1.9 2004-09-15 21:07:02 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -308,7 +308,11 @@ ConvexProgram::run(void)
       if (restartp)
         {
 	  if (itercg<2 && perform_coordinate_descent())
-	    info(1,"+");
+	    {
+	      info(1,"+");
+	      if (gnorm<epsgr)
+		break;
+	    }
 	  else
 	    info(1,"-");
           // Just copy gradient into search direction
