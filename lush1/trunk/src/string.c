@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.10 2002-08-27 21:44:45 leonb Exp $
+ * $Id: string.c,v 1.11 2002-08-27 21:58:41 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1560,7 +1560,8 @@ DX(xsprintf)
           default:
             if (!isdigit((unsigned char)c))
               goto err_printf0;
-            n = (n * 10) + (c - '0');
+            if (ok <= 4)
+              n = (n * 10) + (c - '0');
             if (ok <= 4)
               ok = 4;
             else if (ok <= 8)
@@ -1582,6 +1583,8 @@ DX(xsprintf)
           *buf++ = 0;
           if (ok == 9) {
             large_string_add(&ls, str_number((real) AINTEGER(i)), -1);
+          } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+            goto err_printf0;
           } else {
             sprintf(buf, print_buffer, AINTEGER(i));
             large_string_add(&ls, buf, -1);
@@ -1593,7 +1596,7 @@ DX(xsprintf)
           if (ok == 9) {
             large_string_add(&ls, ASTRING(i), -1);
           } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
-            error(NIL,toolong,NIL);
+            goto err_printf0;
           } else {
             sprintf(buf, print_buffer, ASTRING(i));
             large_string_add(&ls, buf, -1);
@@ -1604,6 +1607,8 @@ DX(xsprintf)
           *buf++ = 0;
           if (ok == 9) {
             large_string_add(&ls, str_number(AREAL(i)), -1);
+          } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+            goto err_printf0;
           } else {
             sprintf(buf, print_buffer, AREAL(i));
             large_string_add(&ls, buf, -1);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.5 2002-08-27 21:44:45 leonb Exp $
+ * $Id: io.c,v 1.6 2002-08-27 21:58:41 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1023,8 +1023,16 @@ void
 print_string(register char *s)
 {
   if (s)
-    while (*s)
-      print_char(*s++);
+    {
+#ifdef HAVE_FLOCKFILE
+      flockfile(context->input_file);
+#endif
+      while (*s)
+        print_char(*s++);
+#ifdef HAVE_FLOCKFILE
+      funlockfile(context->input_file);
+#endif
+    }
 }
 
 
@@ -1034,11 +1042,18 @@ print_string(register char *s)
 void 
 print_tab(int n)
 {
-  while (context->output_tab < n) {
-    print_char(' ');
-    if (context->output_tab == 0)	/* WIDTH set */
-      break;
-  }
+#ifdef HAVE_FLOCKFILE
+  flockfile(context->input_file);
+#endif
+  while (context->output_tab < n) 
+    {
+      print_char(' ');
+      if (context->output_tab == 0)	/* WIDTH set */
+        break;
+    }
+#ifdef HAVE_FLOCKFILE
+  funlockfile(context->input_file);
+#endif
 }
 
 DX(xtab)
@@ -1174,7 +1189,7 @@ DX(xprin)
 DX(xprintf)
 {
   register char *fmt, *buf, c;
-  register int i, ok;
+  register int i, n, ok;
 
   if (arg_number < 1)
     error(NIL, "format string expected", NIL);
@@ -1183,7 +1198,8 @@ DX(xprintf)
   fmt = ASTRING(1);
 
   i = 1;
-  forever
+  n = 0;
+  for(;;)
   {
     if (*fmt == 0)
       break;
@@ -1246,6 +1262,8 @@ DX(xprintf)
 	default:
 	  if (!isdigit((unsigned char)c))
 	    goto err_printf0;
+          if (ok <= 4)
+            n = (n * 10) + (c - '0');
 	  if (ok <= 4)
 	    ok = 4;
 	  else if (ok <= 8)
@@ -1271,6 +1289,8 @@ DX(xprintf)
       *buf++ = 0;
       if (ok == 9) {
 	print_string(str_number((real) AINTEGER(i)));
+      } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+        goto err_printf0;
       } else {
 	sprintf(buf, print_buffer, AINTEGER(i));
 	print_string(buf);
@@ -1279,27 +1299,28 @@ DX(xprintf)
       *buf++ = 0;
       if (ok == 9) {
 	print_string(ASTRING(i));
+      } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+        goto err_printf0;
       } else {
-	sprintf(buf, print_buffer, ASTRING(i));
-	print_string(buf);
+        sprintf(buf, print_buffer, ASTRING(i));
+        print_string(buf);
       }
     } else if (c == 'e' || c == 'f' || c == 'g') {
       *buf++ = 0;
       if (ok == 9) {
 	print_string(str_number(AREAL(i)));
+      } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+        goto err_printf0;
       } else {
 	sprintf(buf, print_buffer, AREAL(i));
 	print_string(buf);
       }
-    };
-
+    }
     if (c == '%')
       print_char('%');
-  };
-
+  }
   if (i < arg_number)
     goto err_printf1;
-
   return NIL;
 
   err_printf0:
