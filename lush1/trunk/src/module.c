@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.15 2002-05-10 23:29:25 leonb Exp $
+ * $Id: module.c,v 1.16 2002-06-24 18:51:12 leonb Exp $
  **********************************************************************/
 
 
@@ -62,11 +62,11 @@ typedef void* dlopen_handle_t;
 
 #if DLOPEN
 #define RTLD_SPECIAL -1
-#ifndef RTLD_LAZY
-#define RTLD_LAZY 1
-#endif
 #ifndef RTLD_NOW
 #define RTLD_NOW 1
+#endif
+#ifndef RTLD_GLOBAL
+#define RTLD_GLOBAL 0
 #endif
 #endif
 
@@ -747,10 +747,10 @@ module_load(char *filename, at *hook)
   if (dlopen)
     {
 #if DLDBFD
-      if (! (handle = dld_dlopen(m->filename, RTLD_NOW)))
+      if (! (handle = dld_dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
         dynlink_error(new_string(m->filename));
 #elif DLOPEN
-      if (! (handle = dlopen(m->filename, RTLD_NOW)))
+      if (! (handle = dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
         dynlink_error(new_string(m->filename));
 #else
       error(NIL,"Dynlinking this file is not supported (need dlopen)", 
