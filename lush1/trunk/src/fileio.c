@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.9 2002-11-06 16:30:49 leonb Exp $
+ * $Id: fileio.c,v 1.10 2002-12-09 13:06:31 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -88,10 +88,6 @@
 static char path_buffer[PATHLEN];
 char *path[PATHNUMBER];
 char file_name[FILELEN];
-
-/* From DATE.C */
-extern at *new_date_from_time( time_t*, int, int );
-
 
 /* --------- FILE OPERATIONS --------- */
 
