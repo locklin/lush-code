@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.38 2004-07-15 22:22:17 leonb Exp $
+ * $Id: module.c,v 1.39 2004-07-15 22:23:35 leonb Exp $
  **********************************************************************/
 
 
@@ -163,14 +163,13 @@ nsbundle_lookup(const char *sname)
   char *usname = malloc(strlen(sname)+2);
   if (usname)
     {
-      strcpy(usname,"_");
-      strcat(usname,sname);
+      strcpy(usname, "_");
+      strcat(usname, sname);
       if (NSIsSymbolNameDefined(usname))
 	{
 	  NSSymbol symbol = NSLookupAndBindSymbol(usname);
 	  addr = NSAddressOfSymbol(symbol);
 	}
-      printf("%s = %p\n", usname, addr);
       free(usname);
     }
   return addr;
