@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.17 2002-12-12 08:24:07 leonb Exp $
+ * $Id: toplevel.c,v 1.18 2003-01-10 21:40:27 leonb Exp $
  **********************************************************************/
 
 
@@ -221,7 +221,7 @@ init_lush(char *program_name)
 
 
 void 
-start_lisp(int argc, char **argv)
+start_lisp(int argc, char **argv, int quietflag)
 {
   at *p, *q;
   at **where;
@@ -246,24 +246,29 @@ start_lisp(int argc, char **argv)
   context->output_file = stdout;
   context->input_tab = context->output_tab = 0;
 
-  quiet = FALSE;
+  quiet = quietflag;
   if (! sigsetjmp(context->error_jump, 1)) 
     {
+      s = "stdenv";
       /* Check @-argument */
-      s = "sysenv";
       if (argc>1 && argv[1][0]=='@')
 	{
-          r = &argv[1][1];
 	  argc--;
 	  argv++;
-          if (*r == '@')
-            quiet = TRUE;
-          if (*r == '@')
-            r++;
-          if (r[0])
-            s = r;
-	}
-      /* Dump file */
+          if (!argv[0][1] && argc>1)
+            {
+              /* Case 'lush @ xxxenv' */
+              argc--;
+              argv++;
+              s = argv[0];
+            }
+          else if (strcmp(&argv[0][1],"@"))
+            {
+              /* Case 'lush @xxxenv' but not 'lush @@' */
+              s = &argv[0][1];
+            }
+        }
+      /* Search a dump file */
       if ((r = search_file(s,"|.dump")) && isdump(r))
 	{
 	  error_doc.ready_to_an_error = FALSE;
@@ -275,7 +280,7 @@ start_lisp(int argc, char **argv)
             }
 	  undump(r);
 	}
-      /* Library file */
+      /* Search a lush file */
       else if ((r = search_file(s,"|.lshc|.lsh|.lshc|.lsh")))
 	{
 	  error_doc.ready_to_an_error = TRUE;
@@ -305,18 +310,17 @@ start_lisp(int argc, char **argv)
       in_bwrite = 0;
       p = NIL;
       where = &p;
-      for (i=1; i<argc; i++) {
-	*where = cons(new_string(argv[i]),NIL);
-	where = &((*where)->Cdr);
-      }
-      if (quiet)
-        p = cons(new_string("@@"), p);
+      for (i=1; i<argc; i++)
+        {
+          *where = cons(new_string(argv[i]),NIL);
+          where = &((*where)->Cdr);
+        }
       q = apply(at_startup,p);
       UNLOCK(p);
       UNLOCK(q);
     }
   /* No interactive loop in quiet mode */
-  if (!quiet)
+  if (! quiet)
     {
       error_doc.ready_to_an_error = FALSE;
       garbage(TRUE);
@@ -346,7 +350,7 @@ start_lisp(int argc, char **argv)
     }
   /* Finished */
   clean_up();
-  exit(0);
+  exit(1);
 }
 
 
@@ -804,7 +808,6 @@ DX(xerror)
   return NIL;
 }
 
-
 DX(xwhere)
 {
   at *call;
@@ -837,7 +840,15 @@ DX(xerrname)
   return new_string( error_text() );
 }
 
-
+DX(xquiet)
+{
+  ALL_ARGS_EVAL;
+  if (arg_number==1)
+    quiet = ((APOINTER(1)) ? TRUE : FALSE);
+  else if (arg_number)
+    ARG_NUMBER(-1);
+  return ((quiet) ? true() : NIL);
+}
 
 /* --------- INITIALISATION CODE --------- */
 
@@ -858,4 +869,5 @@ init_toplevel(void)
   dx_define("error", xerror);
   dx_define("where", xwhere);
   dx_define("errname", xerrname);
+  dx_define("lush-is-quiet", xquiet);
 }

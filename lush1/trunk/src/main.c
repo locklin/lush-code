@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: main.c,v 1.2 2003-01-10 21:40:27 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -32,8 +32,13 @@
 LUSHAPI int
 main(int argc, char **argv)
 {
-  /* First argument '@@...' implies script mode. */
-  int quiet = (argc>1 && argv[1][0]=='@' && argv[1][1]=='@');
+  /* Define quiet mode. */
+  int quiet = FALSE;
+  if (argc>1 && argv[1][0]!='@')
+    quiet = TRUE;
+  else if (argc>2)
+    quiet = TRUE;
+  /* Message */
   if (! quiet) 
     {
       FMODE_TEXT(stderr);
@@ -52,8 +57,9 @@ main(int argc, char **argv)
               "of the GNU Public Licence (GPL) with ABSOLUTELY NO WARRANTY.\n"
               "Type `(helptool)' for details.\n\n");
     } 
+  /* Start */
   FMODE_BINARY(stderr);
   init_lush(argv[0]);
-  start_lisp(argc,argv);
+  start_lisp(argc, argv, quiet);
   return 0;
 }

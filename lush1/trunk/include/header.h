@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.44 2002-12-09 13:04:44 leonb Exp $
+ * $Id: header.h,v 1.45 2003-01-10 21:40:01 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -482,7 +482,7 @@ TLAPI void toplevel(char *in, char *out, char *new_prompt);
 TLAPI void error(char *prefix, char *text, at *suffix) no_return;
 TLAPI void user_break(char *s);
 TLAPI void init_lush (char *program_name);
-TLAPI void start_lisp(int argc, char **argv);
+TLAPI void start_lisp(int argc, char **argv, int quiet);
 TLAPI void clean_up(void);
 TLAPI void abort (char *s) no_return;
 
@@ -618,7 +618,6 @@ TLAPI void all_args_eval(at **arg_array, int i);
 /* FILEIO.H ------------------------------------------------- */
 
 extern TLAPI class file_R_class, file_W_class;
-extern TLAPI char *path[];
 extern TLAPI char file_name[];
 
 #define OPEN_READ(f,s)  new_extern(&file_R_class,open_read(f,s))

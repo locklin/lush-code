@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.11 2003-01-10 20:22:42 leonb Exp $
+ * $Id: fileio.c,v 1.12 2003-01-10 21:40:26 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -1011,22 +1011,22 @@ search_lushdir(char *progname)
   /* Searches auxilliary files */
   {
     static char *trials[] = {
-      "sysenv.dump",
-      "sys/sysenv.dump",
-      "sys/sysenv.lshc",
-      "sys/sysenv.lsh",
-      "../sys/sysenv.dump",
-      "../sys/sysenv.lshc",
-      "../sys/sysenv.lsh",
-      "../share/lush/sys/sysenv.dump",
-      "../share/lush/sys/sysenv.lshc",
-      "../share/lush/sys/sysenv.lsh",
-      "../../sys/sysenv.dump",
-      "../../sys/sysenv.lshc",
-      "../../sys/sysenv.lsh",
-      "../../../sys/sysenv.dump",
-      "../../../sys/sysenv.lshc",
-      "../../../sys/sysenv.lsh",
+      "stdenv.dump",
+      "sys/stdenv.dump",
+      "sys/stdenv.lshc",
+      "sys/stdenv.lsh",
+      "../sys/stdenv.dump",
+      "../sys/stdenv.lshc",
+      "../sys/stdenv.lsh",
+      "../share/lush/sys/stdenv.dump",
+      "../share/lush/sys/stdenv.lshc",
+      "../share/lush/sys/stdenv.lsh",
+      "../../sys/stdenv.dump",
+      "../../sys/stdenv.lshc",
+      "../../sys/stdenv.lsh",
+      "../../../sys/stdenv.dump",
+      "../../../sys/stdenv.lshc",
+      "../../../sys/stdenv.lsh",
       0L,
     };
     char **st = trials;
