@@ -1,0 +1,370 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "inventor/inventor-config")
+
+
+
+#? *** misc
+
+;; dummy function that adds inventor header files in C file
+(eval `(de |dummy_misc| () ,inventor-cpheader-cmd ()))
+
+#? * sobase
+;;.TYPE CLASS
+#? (==> <sobase> ref)
+#? (==> <sobase> unref)
+#? (==> <sobase> unrefnodelete)
+#? (==> <sobase> touch)
+#? (==> <sobase> gettypeid)
+#? (==> <sobase> isoftype <type>)
+#? (==> <sobase> getname)
+#? (==> <sobase> setname <name>)
+
+#? * sobytestream
+;;.TYPE CLASS
+#? (new sobytestream <flag>>
+#? (==> <sobytestream> -destructor)
+#? (==> <sobytestream> convert-node <node> <binaryformat>)
+#? (==> <sobytestream> convert-path <path> <binaryformat>)
+#? (==> <sobytestream> convert-pathlist <pathlist> <binaryformat>)
+#? (==> <sobytestream> getdata)
+#? (==> <sobytestream> getnumbytes)
+
+#? * socallbacklist
+;;.TYPE CLASS
+#? (new socallbacklist <flag>>
+#? (==> <socallbacklist> -destructor)
+#? (==> <socallbacklist> addcallback <f> <userdata>)
+#? (==> <socallbacklist> removecallback <f> <userdata>)
+#? (==> <socallbacklist> clearcallbacks)
+#? (==> <socallbacklist> getnumcallbacks)
+#? (==> <socallbacklist> invokecallbacks <callbackdata>)
+
+#? * sotransender
+;;.TYPE CLASS
+#? (new sotransender <flag> <output>>
+#? (==> <sotransender> -destructor)
+#? (==> <sotransender> getoutput)
+#? (==> <sotransender> insert <node> <parent> <n>)
+#? (==> <sotransender> remove <parent> <n>)
+#? (==> <sotransender> replace <parent> <n> <newnode>)
+#? (==> <sotransender> modify <node>)
+#? (==> <sotransender> preparetosend)
+
+#? * sotranreceiver
+;;.TYPE CLASS
+#? (new sotranreceiver <flag> <rootnode>>
+#? (==> <sotranreceiver> -destructor)
+#? (==> <sotranreceiver> interpret <in>)
+
+#? * (|dummy_misc|)
+
+;; ********************************************************
+
+(libload "inventor/sotype")
+
+;; class SoBase : public InventorObject
+(defclass SoBase InventorObject)
+
+(defmethod SoBase  ref (  )
+  
+  #{ ((SoBase *)$p)->ref();  #} 
+  ())
+
+(defmethod SoBase  unref (  )
+  
+  #{ ((SoBase *)$p)->unref();  #} 
+  ())
+
+(defmethod SoBase  unrefNoDelete (  )
+  
+  #{ ((SoBase *)$p)->unrefNoDelete();  #} 
+  ())
+
+(defmethod SoBase  touch (  )
+  
+  #{ ((SoBase *)$p)->touch();  #} 
+  ())
+
+(defmethod SoBase  getTypeId (  )
+  
+  (let*  ((retobj (new SoType ()))
+	  (retobjp :retobj:p))
+    #{ *((SoType *)$retobjp) = ((SoBase *)$p)->getTypeId();  #} 
+    (setq :retobj:p retobjp)
+    retobj))
+
+(defmethod SoBase  isOfType ( type)
+  
+  ((-gptr- "SoType *") type)
+  (int #{ ((SoBase *)$p)->isOfType(*$type)  #} ))
+
+(defmethod SoBase  getName (  )
+  
+  (let* ((retobj (new SbName ()))
+	 (retobjp :retobj:p))
+    #{ *((SbName *)$retobjp) = ((SoBase *)$p)->getName();  #} 
+    (setq :retobj:p retobjp)
+    retobj))
+
+(defmethod SoBase  setName ( name)
+  
+  ((-gptr- "const SbName *") name)   ;; reference -> gptr
+  #{ ((SoBase *)$p)->setName(*$name);  #} 
+  ())
+
+
+
+
+;; class SoByteStream : public InventorObject
+(defclass SoByteStream InventorObject)
+
+(defmethod SoByteStream  SoByteStream ( flag  )
+  ((-bool-) flag)
+  
+  #{ if($flag == false ) {
+           $p = new SoByteStream;
+           $shell_flag = false;
+     }
+     else
+           $shell_flag = true;
+  #} 
+  ())
+
+(defmethod SoByteStream -destructor (  )
+  
+   #{  if($shell_flag == false ) {
+             delete  ((SoByteStream *)$p);
+             $p = NULL;
+             $shell_flag = true;
+       }
+  #} 
+  ())
+
+(defmethod SoByteStream  convert_node ( node binaryFormat)
+  
+  ((-gptr- "SoNode *") node)
+  ((-int-) binaryFormat)                    ;; SbBool -> int
+  #{ ((SoByteStream *)$p)->convert($node,$binaryFormat);  #} 
+  ())
+
+(defmethod SoByteStream  convert_path ( path binaryFormat)
+  
+  ((-gptr- "SoPath *") path)
+  ((-int-) binaryFormat)                    ;; SbBool -> int
+  #{ ((SoByteStream *)$p)->convert($path,$binaryFormat);  #} 
+  ())
+
+(defmethod SoByteStream  convert_pathlist ( pathList binaryFormat)
+  
+  ((-gptr- "SoPathList *") pathList)
+  ((-int-) binaryFormat)                    ;; SbBool -> int
+  #{ ((SoByteStream *)$p)->convert($pathList,$binaryFormat);  #} 
+  ())
+
+(defmethod SoByteStream  getData (  )
+  
+  (gptr #{ ((SoByteStream *)$p)->getData()  #} ))    ;; void *  -> gptr
+
+(defmethod SoByteStream  getNumBytes (  )
+  
+  (int #{ ((SoByteStream *)$p)->getNumBytes()  #} )) ;; uint32_t -> int
+
+
+;; class SoCallbackList  : public InventorObject
+(defclass SoCallbackList InventorObject)
+
+(defmethod SoCallbackList  SoCallbackList ( flag  )
+  ((-bool-) flag)
+  
+  #{ if($flag == false ) {
+           $p = new SoCallbackList;
+           $shell_flag = false;
+     }
+     else
+           $shell_flag = true;
+  #} 
+  ())
+
+(defmethod SoCallbackList -destructor (  )
+  
+   #{  if($shell_flag == false ) {
+             delete  ((SoCallbackList *)$p);
+             $p = NULL;
+             $shell_flag = true;
+       }
+  #} 
+  ())
+
+(defmethod SoCallbackList  addCallback ( f userData)
+  
+  ((-gptr- "SoCallbackListCB *") f)
+  ((-gptr-) userData)
+  #{ ((SoCallbackList *)$p)->addCallback($f,$userData);  #} 
+  ())
+
+(defmethod SoCallbackList  removeCallback ( f userData)
+  
+  ((-gptr- "SoCallbackListCB *") f)
+  ((-gptr-) userData)
+  #{ ((SoCallbackList *)$p)->removeCallback($f,$userData);  #} 
+  ())
+
+(defmethod SoCallbackList  clearCallbacks (  )
+  
+  #{ ((SoCallbackList *)$p)->clearCallbacks();  #} 
+  ())
+
+(defmethod SoCallbackList  getNumCallbacks (  )
+  
+  (int #{ ((SoCallbackList *)$p)->getNumCallbacks()  #} ))
+
+(defmethod SoCallbackList  invokeCallbacks ( callbackData)
+  
+  ((-gptr-) callbackData)
+  #{ ((SoCallbackList *)$p)->invokeCallbacks($callbackData);  #} 
+  ())
+
+
+;; class SoTranSender : public InventorObject
+(defclass SoTranSender InventorObject)
+
+(defmethod SoTranSender  SoTranSender ( flag output)
+  ((-bool-) flag)
+  
+  ((-gptr- "SoOutput *") output)
+  #{ if($flag == false ) {
+           $p = new SoTranSender($output);
+           $shell_flag = false;
+     }
+     else
+           $shell_flag = true;
+  #} 
+  ())
+
+(defmethod SoTranSender -destructor (  )
+  
+   #{  if($shell_flag == false ) {
+             delete  ((SoTranSender *)$p);
+             $p = NULL;
+             $shell_flag = true;
+       }
+  #} 
+  ())
+
+(defmethod SoTranSender  getOutput (  )
+  
+  (gptr #{ ((SoTranSender *)$p)->getOutput()  #} ))    ;; SoOutput *  -> gptr
+
+;; (defmethod SoTranSender  insert ( node)
+;;   
+;;   ((-gptr- "SoNode *") node)
+;;   #{ ((SoTranSender *)$p)->insert($node);  #} 
+;;   ())
+
+(defmethod SoTranSender  insert ( node parent n)
+  
+  ((-gptr- "SoNode *") node)
+  ((-gptr- "SoNode *") parent)
+  ((-int-) n)
+  #{ ((SoTranSender *)$p)->insert($node,$parent,$n);  #} 
+  ())
+
+(defmethod SoTranSender  remove ( parent n)
+  
+  ((-gptr- "SoNode *") parent)
+  ((-int-) n)
+  #{ ((SoTranSender *)$p)->remove($parent,$n);  #} 
+  ())
+
+(defmethod SoTranSender  replace ( parent n newNode)
+  
+  ((-gptr- "SoNode *") parent)
+  ((-int-) n)
+  ((-gptr- "SoNode *") newNode)
+  #{ ((SoTranSender *)$p)->replace($parent,$n,$newNode);  #} 
+  ())
+
+(defmethod SoTranSender  modify ( node)
+  
+  ((-gptr- "SoNode *") node)
+  #{ ((SoTranSender *)$p)->modify($node);  #} 
+  ())
+
+(defmethod SoTranSender  prepareToSend (  )
+  
+  #{ ((SoTranSender *)$p)->prepareToSend();  #} 
+  ())
+
+
+
+
+;; class SoTranReceiver : public InventorObject
+(defclass SoTranReceiver InventorObject)
+
+(defmethod SoTranReceiver  SoTranReceiver ( flag rootNode)
+  ((-bool-) flag)
+  
+  ((-gptr- "SoGroup *") rootNode)
+  #{ if($flag == false ) {
+           $p = new SoTranReceiver($rootNode);
+           $shell_flag = false;
+     }
+     else
+           $shell_flag = true;
+  #} 
+  ())
+
+(defmethod SoTranReceiver -destructor (  )
+  
+   #{  if($shell_flag == false ) {
+             delete  ((SoTranReceiver *)$p);
+             $p = NULL;
+             $shell_flag = true;
+       }
+  #} 
+  ())
+
+(defmethod SoTranReceiver interpret ( in )
+  
+  ((-gptr- "SoInput *") in)
+  (int #{ ((SoTranReceiver *)$p)->interpret($in)  #} ))
+
+
+;; ********************************************************
+
+(dhc-make-with-c++ () () 
+  |dummy_misc|
+  (sobase  setname  getname  isoftype  gettypeid  touch  unrefnodelete  unref  ref)
+  (sobytestream  getnumbytes  getdata  convert-pathlist  convert-path  convert-node  -destructor  sobytestream)
+  (socallbacklist  invokecallbacks  getnumcallbacks  clearcallbacks  removecallback  addcallback  -destructor  socallbacklist)
+  (sotransender  preparetosend  modify  replace  remove  insert  getoutput  -destructor  sotransender)
+  (sotranreceiver  interpret  -destructor  sotranreceiver)
+)
