@@ -560,31 +560,37 @@ void
 init_lisp_driver()
 {
   dx_define("lisp-window",xlisp_window);
-  
+ 
+  /* Here is the list of methods accepted by the lisp driver.
+     The qualification 'mandatory, recommanded, optional' are 
+     just informative. The action between parenthesis is what 
+     happens when you do something that would invoke an
+     undefined method. */
+ 
   at_begin = var_define("begin");               /* optional (noop) */
   at_end = var_define("end");          	        /* optional (noop) */
-  at_xsize = var_define("xsize");               /* mandatory */
-  at_ysize = var_define("ysize");               /* mandatory */
+  at_xsize = var_define("xsize");               /* mandatory (error) */
+  at_ysize = var_define("ysize");               /* mandatory (error) */
   at_setfont = var_define("font");              /* recommanded (noop) */
-  at_clear = var_define("clear");               /* mandatory */
-  at_draw_line = var_define("draw-line");       /* mandatory */
-  at_draw_rect = var_define("draw-rect");       /* mandatory */
-  at_draw_circle = var_define("draw-circle");   /* mandatory */
-  at_fill_rect = var_define("fill-rect");       /* mandatory */
-  at_fill_circle = var_define("fill-circle");   /* mandatory */
-  at_draw_text = var_define("draw-text");       /* mandatory */
-  at_rect_text = var_define("rect-text");       /* optional (nil) */
+  at_clear = var_define("clear");               /* mandatory (error) */
+  at_draw_line = var_define("draw-line");       /* mandatory (error) */
+  at_draw_rect = var_define("draw-rect");       /* mandatory (error) */
+  at_draw_circle = var_define("draw-circle");   /* mandatory (error) */
+  at_fill_rect = var_define("fill-rect");       /* mandatory (error) */
+  at_fill_circle = var_define("fill-circle");   /* mandatory (error) */
+  at_draw_text = var_define("draw-text");       /* mandatory (error) */
+  at_rect_text = var_define("rect-text");       /* optional (return nil) */
   at_setcolor = var_define("color");            /* recommanded (noop) */
-  at_alloccolor = var_define("alloccolor");     /* optional (bad idea) */
+  at_alloccolor = var_define("alloccolor");     /* optional (assume truecolor) */
   at_fill_polygon = var_define("fill-polygon"); /* recommanded (error) */
   at_gspecial = var_define("gspecial");         /* optional (noop) */
   at_clip = var_define("clip");                 /* optional (noop) */
   at_hilite = var_define("hilite");             /* optional (noop) */
-  at_pixel_map = var_define("pixel-map");       /* optional (suggested) */
-  at_hinton_map = var_define("hinton-map");     /* optional (bad idea) */
+  at_pixel_map = var_define("pixel-map");       /* optional (emulate with fill-rect) */
+  at_hinton_map = var_define("hinton-map");     /* optional (emulate with fill-rect) */
   at_draw_arc = var_define("draw-arc");         /* recommanded (error) */
   at_fill_arc = var_define("fill-arc");         /* recommanded (error) */
   at_get_image = var_define("get-image");       /* optional (error) */
-  at_get_mask = var_define("get-mask");         /* optional (bad idea) */
+  at_get_mask = var_define("get-mask");         /* optional (assume truecolor) */
   at_set_linestyle = var_define("linestyle");   /* optional (noop) */
 }
