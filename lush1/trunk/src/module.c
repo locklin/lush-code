@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.44 2004-07-18 18:27:12 leonb Exp $
+ * $Id: module.c,v 1.45 2004-07-19 02:16:52 leonb Exp $
  **********************************************************************/
 
 
@@ -100,6 +100,12 @@ static nsbundle_t  nsbundle_head;
 static NSLinkEditErrorHandlers nsbundle_handlers;
 at *nsbundle_symtable;
 
+#define DYLD_NASTY_HACK 1
+#if DYLD_NASTY_HACK
+enum mybool {myfalse, mytrue};
+void (*nsbundle_clear_undefined_list)(enum mybool);
+enum mybool *nsbundle_return_on_error;
+#endif
 
 static int
 nsbundle_init()
@@ -172,6 +178,14 @@ nsbundle_undef_unload(const char *sname)
 {
   int okay = 0;
   nsbundle_t *bundle = 0;
+#if DYLD_NASTY_HACK
+  if (sname && nsbundle_clear_undefined_list && nsbundle_return_on_error)
+    {
+      (*nsbundle_clear_undefined_list)(myfalse);
+      *nsbundle_return_on_error = mytrue;
+      return;
+    }
+#endif
   for (bundle = nsbundle_head.next; 
        bundle != &nsbundle_head; 
        bundle=bundle->next)
