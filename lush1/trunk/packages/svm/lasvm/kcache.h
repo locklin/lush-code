@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.h,v 1.1 2005-02-10 14:49:10 leonb Exp $
+ * $Id: kcache.h,v 1.2 2005-02-11 16:30:30 leonb Exp $
  **********************************************************************/
 
 #ifndef KCACHE_H
@@ -110,11 +110,17 @@ double lasvm_kcache_query(lasvm_kcache_t *self, int i, int j);
 
 float *lasvm_kcache_query_row(lasvm_kcache_t *self, int i, int len);
 
-/* --- lasvm_kcache_query_row_cold
-   Same but avoids thrashing the cache.
+/* --- lasvm_kcache_status_row
+   Returns the number of cached entries for row i.
 */
 
-float *lasvm_kcache_query_row_cold(lasvm_kcache_t *self, int i, int len);
+int lasvm_kcache_status_row(lasvm_kcache_t *self, int i);
+
+/* --- lasvm_kcache_discard_row
+   Indicates that we wont need row i in the near future.
+*/
+
+void lasvm_kcache_discard_row(lasvm_kcache_t *self, int i);
 
 
 /* --- lasvm_kcache_i2r

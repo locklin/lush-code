@@ -395,12 +395,18 @@ lasvm_process( lasvm_t *self, int xi, double y )
       if (self->gmin < self->gmax)
 	if ((y>0 && g<self->gmin) || 
 	    (y<0 && g>self->gmax)  )
-	  return 0;
+	  {
+	    lasvm_kcache_discard_row(self->kernel, xi);
+	    return 0;
+	  }
     }
   else
     {
       if (y * g < 0)
-        return 0;
+	{
+	  lasvm_kcache_discard_row(self->kernel, xi);
+	  return 0;
+	}
     }
   /* Insert */
   checksize(self, l+1);
@@ -486,18 +492,21 @@ unshrink(lasvm_t *self)
     {
       double *alpha = self->alpha;
       double *g = self->g;
-      double a;
-      float *row;
       int *r2i = lasvm_kcache_r2i(self->kernel, l);
+      double a;
       int i,j;
       for(i=s; i<l; i++)
         g[i] = (alpha[i]>0) ? 1.0 : -1.0;
       for(j=0; j<l; j++)
         if ((a = alpha[j]) != 0)
           {
-            row = lasvm_kcache_query_row_cold(self->kernel, r2i[j], l);
+	    int xj = r2i[j];
+	    int cached = lasvm_kcache_status_row(self->kernel, xj);
+            float *row = lasvm_kcache_query_row(self->kernel, r2i[j], l);
             for (i=s; i<l; i++)
               g[i] -= a * row[i];
+	    if (! cached) /* do not keep what was not cached */
+	      lasvm_kcache_discard_row(self->kernel, xj);
           }
       self->minmaxflag = 0;
       self->s = l;
@@ -620,7 +629,7 @@ void lasvm_init( lasvm_t *self, int l,
       for (i=0; i<k; i++)
         {
           double s = self->g[i];
-          float *row = lasvm_kcache_query_row_cold(self->kernel, r2i[i], k);
+          float *row = lasvm_kcache_query_row(self->kernel, r2i[i] , k);
           int j;
           for (j=0; j<k; j++)
             s -= self->alpha[j] * row[j];

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.c,v 1.1 2005-02-10 14:49:10 leonb Exp $
+ * $Id: kcache.c,v 1.2 2005-02-11 16:30:29 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -362,8 +362,8 @@ xpurge(lasvm_kcache_t *self)
     }
 }
 
-static float *
-xrow(lasvm_kcache_t *self, int i, int len, int hot)
+float *
+lasvm_kcache_query_row(lasvm_kcache_t *self, int i, int len)
 {
   int olen = 0;
   row_t *r;
@@ -382,11 +382,8 @@ xrow(lasvm_kcache_t *self, int i, int len, int hot)
       olen = r->size;
       if (len <= olen)
 	{
-          if (hot) 
-            {
-              xunlink(r);
-              xlink(self, r);
-            }
+	  xunlink(r);
+	  xlink(self, r);
 	  return r->data;
 	}
     }
@@ -424,23 +421,34 @@ xrow(lasvm_kcache_t *self, int i, int len, int hot)
   xpurge(self);
   /* Return */
   self->row[i] = nr;
-  if (hot)
-    xlink(self, nr);
-  else
-    xlinkcold(self, nr);
+  xlink(self, nr);
   return nr->data;
 }
 
-float *
-lasvm_kcache_query_row(lasvm_kcache_t *self, int i, int len)
+int 
+lasvm_kcache_status_row(lasvm_kcache_t *self, int i)
 {
-  return xrow(self, i, len, 1);
+  row_t *r = 0;
+  ASSERT(i>=0);
+  if (i <= self->l)
+    r = self->row[i];
+  if (r)
+    return r->size;
+  return 0;
 }
 
-float *
-lasvm_kcache_query_row_cold(lasvm_kcache_t *self, int i, int len)
+void 
+lasvm_kcache_discard_row(lasvm_kcache_t *self, int i)
 {
-  return xrow(self, i, len, 0);
+  row_t *r = 0;
+  ASSERT(i>=0);
+  if (i <= self->l)
+    r = self->row[i];
+  if (r)
+    {
+      xunlink(r);
+      xlinkcold(self, r);
+    }
 }
 
 void 
