@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.112 2004-05-21 14:53:17 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.113 2004-08-02 21:32:06 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1304,7 +1304,7 @@
 
 (de module.hook(what m)
   (cond
-   ;; ON INITIALIZATION
+   ;; ON INIT
    ((= what 'init)
     (each ((pair (module-defs m)))
       (cond
@@ -1328,15 +1328,22 @@
         ;; - perform definition
         (when (and (classp (cadr pair)) (symbolp (cddr pair)))
           (putmethod (cadr pair) (cddr pair) (car pair)) ) ) ) ) )
-   ;; ON UNLOAD.
+   ;; ON UNLINK
    ((= what 'unlink)
     (each ((pair (module-defs m)))
-      ;; undo global definitions
-      (when (symbolp (cdr pair))
-        (let ((old (eval `:,(cdr pair))))
-          (when (== (car pair) old)
-            (setq old (getp old 'saved))
-            (eval `(setq :,(cdr pair) ',old)) ) ) ) ) ) ) )
+      (cond
+       ;; global definition
+       ((symbolp (cdr pair))
+        (let ((old (getp (car pair) 'saved)))
+          (when (and old (== (car pair) (eval `:,(cdr pair))))
+	    (if (not (and (classp old) (classp (car pair))))
+		;; non class: undo global definition
+		(eval `(setq :,(cdr pair) ',old))
+	      ;; class: copy saved methods
+	      (putp (car pair) 'saved ())
+	      (putp (car pair) 'precious (getp old 'precious))
+	      (each ((m (methods old)))
+		(putmethod (car pair) m (check==> old m)) ) ) ) ) ) ) ) ) ) )
 
 (de mod-search(name)
   (let ((found ())
