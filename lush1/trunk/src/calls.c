@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: calls.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: calls.c,v 1.2 2002-04-29 18:40:29 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -56,31 +56,45 @@ comp_test(at *p, at *q)
 {
   if (p && q) 
   {
-    if ((p->flags & C_NUMBER) && (q->flags & C_NUMBER)) 
-    {
-      real r1 = p->Number;
-      real r2 = q->Number;
-      if (r1<r2)
-        return -1;
-      else if (r1>r2)
-        return 1;
-      else
-        return 0;
-    }
+    if ((p->flags & C_NUMBER) && 
+        (q->flags & C_NUMBER)) 
+      {
+        real r1 = p->Number;
+        real r2 = q->Number;
+        if (r1<r2)
+          return -1;
+        else if (r1>r2)
+          return 1;
+        else
+          return 0;
+      }
     else if ((p->flags & C_EXTERN) && 
              (q->flags & C_EXTERN) &&
              (p->Class == q->Class) && 
              (p->Class->compare) )
-    {
-      int ans = 0;
-      struct recur_elt elt;
-      if (recur_push_ok(&elt, &comp_test, p))
       {
-        ans = (*p->Class->compare)(p,q,TRUE);
-        recur_pop(&elt);
+        int ans = 0;
+        struct recur_elt elt;
+        if (recur_push_ok(&elt, &comp_test, p))
+          {
+            ans = (*p->Class->compare)(p,q,TRUE);
+            recur_pop(&elt);
+          }
+        return ans;
       }
-      return ans;
-    }
+    else if ((p->flags & C_GPTR) && 
+             (q->flags & C_GPTR) )
+      {
+        unsigned long r1 = (unsigned long)p->Gptr;
+        unsigned long r2 = (unsigned long)q->Gptr;
+        if (r1<r2)
+          return -1;
+        else if (r1>r2)
+          return 1;
+        else
+          return 0;
+      }
+
   }
   error(NIL, "Cannot rank these objects", NIL);
 }
@@ -103,58 +117,68 @@ again:
   /* Trivial */
   if (p == q)
     return TRUE;
-  if (!p || !q)
+  else if (!p || !q)
     return FALSE;
   /* List */
-  if ((p->flags & C_CONS) && (q->flags & C_CONS)) 
-  {
-    if (recur_push_ok(&elt, &eq_test, p))
+  else if ((p->flags & C_CONS) && (q->flags & C_CONS)) 
     {
-      ans = eq_test(p->Car, q->Car);
-      recur_pop(&elt);
+      if (recur_push_ok(&elt, &eq_test, p))
+        {
+          ans = eq_test(p->Car, q->Car);
+          recur_pop(&elt);
+        }
+      if (ans)
+        {
+          /* go to next list element */
+          p = p->Cdr;
+          q = q->Cdr;
+          if (p==pslow) /* circular list detected */
+            return ans;
+          toggle ^= 1;
+          if (toggle)
+            pslow = pslow->Cdr;
+          goto again;
+        }
+      return ans;
     }
-    if (ans)
-    {
-      /* go to next list element */
-      p = p->Cdr;
-      q = q->Cdr;
-      if (p==pslow) /* circular list detected */
-        return ans;
-      toggle ^= 1;
-      if (toggle)
-        pslow = pslow->Cdr;
-      goto again;
-    }
-    return ans;
-  }
   /* Number */
-  if ((p->flags & C_NUMBER) && (q->flags & C_NUMBER))
-  {
-#if defined(WIN32) && defined(_MSC_VER) && defined(_M_IX86)
-    if (p->Number == q->Number) {
-      float delta = (float)(p->Number - q->Number);
-      if (! *(long*)&delta)
-        return TRUE;
-    }
-#else
-    if (p->Number == q->Number)
-      return TRUE;
-#endif
-    return FALSE;
-  }
-  /* Comparison method provided */
-  if ((p->flags & C_EXTERN) && 
-      (q->flags & C_EXTERN) &&
-      (p->Class == q->Class) && 
-      (p->Class->compare) )
-  {
-    if (recur_push_ok(&elt, &eq_test, p))
+  else if ((p->flags & C_NUMBER) && 
+           (q->flags & C_NUMBER))
     {
-      ans = !(*p->Class->compare)(p,q,FALSE);
-      recur_pop(&elt);
+#if defined(WIN32) && defined(_MSC_VER) && defined(_M_IX86)
+      if (p->Number == q->Number) {
+        float delta = (float)(p->Number - q->Number);
+        if (! *(long*)&delta)
+          return TRUE;
+      }
+#else
+      if (p->Number == q->Number)
+        return TRUE;
+#endif
+      return FALSE;
     }
-    return ans;
-  }
+  /* Comparison method provided */
+  else if ((p->flags & C_EXTERN) && 
+           (q->flags & C_EXTERN) &&
+           (p->Class == q->Class) && 
+           (p->Class->compare) )
+    {
+      if (recur_push_ok(&elt, &eq_test, p))
+        {
+          ans = !(*p->Class->compare)(p,q,FALSE);
+          recur_pop(&elt);
+        }
+      return ans;
+    }
+  /* GPTR */
+  else if ((p->flags & C_GPTR) && 
+           (q->flags & C_GPTR) )
+    {
+      if (p->Gptr == q->Gptr)
+        return TRUE;
+      return FALSE;
+    }
+  
   /* No way to prove that objects are equal */
   return FALSE;
 }

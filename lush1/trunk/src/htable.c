@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: htable.c,v 1.2 2002-04-29 18:40:29 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -265,43 +265,47 @@ hash_value(at *p)
 again:
   x = (x<<1)|((long)x<0 ? 0 : 1);
   if (!p)
-  {
-    return x;
-  }
-  else if (p->flags & C_NUMBER)
-  {
-    x ^= ((unsigned long*)&p->Number)[0];
-    if (sizeof(real) >= 2*sizeof(unsigned long))
-      x ^= ((unsigned long*)&p->Number)[1];
-  }
-  else if (p->flags & C_CONS)
-  {
-    if (recur_push_ok(&elt, &hash_value, p->Car))
     {
-      x ^= hash_value(p->Car);
-      recur_pop(&elt);
-    }
-    /* go to next list element */
-    p = p->Cdr;
-    if (p == slow) /* circular list */
       return x;
-    toggle ^= 1;
-    if (!toggle)
-      slow = slow->Cdr;
-    goto again;
-  }
-  else if ((p->flags & C_EXTERN) && (p->Class->hash))
-  {
-    if (recur_push_ok(&elt, &hash_value, p))
-    {
-      x ^= (*p->Class->hash)(p);
-      recur_pop(&elt);
     }
-  }
+  else if (p->flags & C_NUMBER)
+    {
+      x ^= ((unsigned long*)&p->Number)[0];
+      if (sizeof(real) >= 2*sizeof(unsigned long))
+        x ^= ((unsigned long*)&p->Number)[1];
+    }
+  else if (p->flags & C_CONS)
+    {
+      if (recur_push_ok(&elt, &hash_value, p->Car))
+        {
+          x ^= hash_value(p->Car);
+          recur_pop(&elt);
+        }
+      /* go to next list element */
+      p = p->Cdr;
+      if (p == slow) /* circular list */
+        return x;
+      toggle ^= 1;
+      if (!toggle)
+        slow = slow->Cdr;
+      goto again;
+    }
+  else if ((p->flags & C_EXTERN) && (p->Class->hash))
+    {
+      if (recur_push_ok(&elt, &hash_value, p))
+        {
+          x ^= (*p->Class->hash)(p);
+          recur_pop(&elt);
+        }
+    }
+  else if (p->flags & C_GPTR)
+    {
+      x ^= (unsigned long)(p->Gptr);
+    }
   else
-  {
-    x ^= hash_pointer(p);
-  }
+    {
+      x ^= hash_pointer(p);
+    }
   return x;
 }
 
