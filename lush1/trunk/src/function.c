@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.6 2002-05-07 00:25:51 leonb Exp $
+ * $Id: function.c,v 1.7 2002-05-08 20:18:42 leonb Exp $
  **********************************************************************/
 
 
@@ -66,13 +66,31 @@ cfunc_name(at *p)
 {
   struct cfunction *func = p->Object;
   at *name = func->name;
-  if (CONSP(name))
-    name = name->Cdr;
-  if (! EXTERNP(name, &symbol_class))
-    return generic_name(p);
-  sprintf(string_buffer, "::%s:", nameof(p->Class->classname));
-  strcat(string_buffer, nameof(name));
-  return string_buffer;
+  at *clname = NIL;
+  
+  if (CONSP(name) && EXTERNP(name->Car, &module_class))
+    {
+      name = name->Cdr;
+    }
+  if (CONSP(name) && EXTERNP(name->Car, &class_class)) 
+    {
+      class *cl = name->Car->Object;
+      clname = cl->classname;
+      name = name->Cdr;
+    }
+  if (EXTERNP(name, &symbol_class))
+    {
+      sprintf(string_buffer, "::%s:", nameof(p->Class->classname));
+      if (EXTERNP(clname, &symbol_class)) 
+        {
+          strcat(string_buffer, nameof(clname));
+          strcat(string_buffer, ".");
+        }
+      strcat(string_buffer, nameof(name));
+      return string_buffer;
+    }
+  /* Kesako? */
+  return generic_name(p);
 }
 
 

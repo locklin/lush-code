@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.13 2002-05-08 19:52:47 leonb Exp $
+ * $Id: module.c,v 1.14 2002-05-08 20:18:42 leonb Exp $
  **********************************************************************/
 
 
@@ -942,6 +942,36 @@ module_def(at *name, at *val)
     }
 }
 
+static at *
+module_method_priminame(class *cl, at *name)
+{
+  at *n = new_cons(cl->backptr, name);
+  if (current == &root)
+    return n;
+  LOCK(current->backptr);
+  return cons(current->backptr, n);
+}
+
+static void
+module_method_def(class *cl, at *name, at *val)
+{
+  /* Check name and add definition */
+  if (! EXTERNP(name, &symbol_class))
+    error("module.c/module_def",
+          "internal error (symbol expected)",name);
+  if (! cl->backptr)
+    error("module.c/module_def",
+          "defining method before class_define",name);
+  LOCK(val);
+  LOCK(name);
+  LOCK(cl->backptr);
+  current->defs = cons(cons(val, cons(cl->backptr, name)), current->defs);
+  /* Root definitions are also written into classes */
+  if (current == &root)
+    putmethod(cl, name, val);
+}
+
+
 void 
 class_define(char *name, class *cl)
 {
@@ -988,6 +1018,30 @@ dy_define(char *name, at *(*addr) (at *))
   UNLOCK(priminame);
 }
 
+void 
+dxmethod_define(class *cl, char *name, at *(*addr) (int, at **))
+{
+  at *symb = new_symbol(name);
+  at *priminame = module_method_priminame(cl, symb);
+  at *func = new_dx(priminame, addr);
+  module_method_def(cl, symb, func);
+  UNLOCK(func);
+  UNLOCK(symb);
+  UNLOCK(priminame);
+}
+
+
+void 
+dymethod_define(class *cl, char *name, at *(*addr) (at *))
+{
+  at *symb = new_symbol(name);
+  at *priminame = module_method_priminame(cl, symb);
+  at *func = new_dy(priminame, addr);
+  module_method_def(cl, symb, func);
+  UNLOCK(func);
+  UNLOCK(symb);
+  UNLOCK(priminame);
+}
 
 
 

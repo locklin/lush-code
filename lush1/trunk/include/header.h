@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.20 2002-05-08 15:17:31 leonb Exp $
+ * $Id: header.h,v 1.21 2002-05-08 20:18:41 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -735,6 +735,8 @@ extern LUSHAPI class module_class;
 TLAPI void class_define(char *name, class *cl);
 TLAPI void dx_define(char *name, at *(*addr) (int, at **));
 TLAPI void dy_define(char *name, at *(*addr) (at *));
+TLAPI void dxmethod_define(class *cl, char *name, at *(*addr) (int, at **));
+TLAPI void dymethod_define(class *cl, char *name, at *(*addr) (at *));
 
 LUSHAPI void check_primitive(at *prim);
 LUSHAPI at *find_primitive(at *module, at *name);
