@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.21 2003-01-15 16:32:37 leonb Exp $
+ * $Id: toplevel.c,v 1.22 2003-05-20 16:05:07 leonb Exp $
  **********************************************************************/
 
 
@@ -731,12 +731,16 @@ user_break(char *s)
 void 
 error(char *prefix, char *text, at *suffix)
 {
+  if (run_time_error_flag)
+    run_time_error(text);
+
   eval_ptr = eval_std;
   argeval_ptr = eval_std;
   compute_bump_active = 0;
+
   if (error_doc.ready_to_an_error == FALSE)
     lastchance(text);
-
+  
   TOPLEVEL_MACHINE;
   error_doc.error_call = error_doc.this_call;
   error_doc.ready_to_an_error = FALSE;
@@ -748,7 +752,7 @@ error(char *prefix, char *text, at *suffix)
   *line_buffer = 0;
   LOCK(suffix);
 
-  if (!error_doc.debug_toplevel) 
+  if (! error_doc.debug_toplevel) 
     {
       eval_ptr = eval_std;
       argeval_ptr = eval_std;

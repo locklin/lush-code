@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.25 2003-05-13 14:38:33 leonb Exp $
+ * $Id: lisp_c.c,v 1.26 2003-05-20 16:05:07 leonb Exp $
  **********************************************************************/
 
 
@@ -2560,8 +2560,8 @@ wipe_out_temps(void)
 
 /* run_time_error -- called by compiled code when an error occurs */
 
-static int     run_time_error_flag;
-static jmp_buf run_time_error_jump;
+int     run_time_error_flag;
+jmp_buf run_time_error_jump;
 
 void
 run_time_error(char *s)

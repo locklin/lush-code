@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.7 2003-05-06 20:31:57 leonb Exp $
+ * $Id: check_func.h,v 1.8 2003-05-20 16:04:29 leonb Exp $
  **********************************************************************/
 
 #ifndef CHECK_FUNC_H
@@ -83,8 +83,6 @@ LUSHAPI void print_dh_trace_stack(void);
 /* ---------------------------------------- */
 /* RUNTIME ERRORS                           */
 /* ---------------------------------------- */
-
-LUSHAPI void run_time_error(char *);
 
 extern LUSHAPI char *rterr_bound;
 extern LUSHAPI char *rterr_rtype;
