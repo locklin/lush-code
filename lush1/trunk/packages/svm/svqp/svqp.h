@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.h,v 1.3 2004-05-11 19:13:52 leonb Exp $
+ * $Id: svqp.h,v 1.4 2004-05-12 17:46:49 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -254,8 +254,10 @@ public:
   virtual ~QuadraticProgram();
   // b -- linear term
   svreal *b;
-  // compute_Arow -- store the ith row of matrix A into r.
-  virtual void compute_Arow(int i, svreal *r);
+  // compute_Arow -- returns the ith row of matrix A. 
+  //   Vector r can be used as storage space for the
+  //   returned row, but this is not required.
+  virtual svreal *compute_Arow(int i, svreal *r);
   // compute_Ax -- computes Ax into y.
   virtual void compute_Ax(const svreal *x, svreal *y);
   
@@ -297,5 +299,5 @@ protected:
   // memory allocation
   svreal *mem;
   // overrides
-  virtual void compute_Arow(int i, svreal *r);
+  virtual svreal *compute_Arow(int i, svreal *r);
 };

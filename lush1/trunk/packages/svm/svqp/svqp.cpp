@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.6 2004-05-11 19:13:52 leonb Exp $
+ * $Id: svqp.cpp,v 1.7 2004-05-12 17:46:49 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -280,9 +280,10 @@ ConvexProgram::run(void)
 	  info(1,"? %s\n", err);
           return -1;
         }
-      if (iterations % 50 == 49)
-	info(1, "\nSVQP iteration %d: w=%e g=%e active=%d\n", 
-	     iterations+1, w, gnorm, nactive);
+      // messages deoend on verbosity settings.
+      if (((verbosity>=2) || (iterations%40==0)) && iterations>0)
+	info(1, " iteration %d: w=%e g=%e active=%d\n", 
+	     iterations, w, gnorm, nactive);
       // project gradient and compute clamp status
       if (sumflag)
         project_with_linear_constraint();
@@ -419,11 +420,7 @@ QuadraticProgram::QuadraticProgram(int n)
   b = mem;
   tmp1 = mem+n;
   tmp2 = mem+n+n;
-  // do we have compute_Arow?
-  err = 0;
-  compute_Arow(0,tmp1);
-  arow = !!err;
-  err = 0;
+  arow = 1;
 }
 
 QuadraticProgram::~QuadraticProgram()
@@ -435,7 +432,7 @@ svbool
 QuadraticProgram::perform_coordinate_descent(void)
 {
   int maxrun = n;
-  // Bail out if no compute_Arow
+  // Bail out if compute_Arow does nothing
   if (! arow)
     return 0;
   // Loop at most n times without reaching constraints.
@@ -465,8 +462,11 @@ QuadraticProgram::perform_coordinate_descent(void)
 	  svreal ostep;
 	  svreal step = maxst;
 	  svreal curvature;
-	  compute_Arow(gmaxidx, tmp1);
-	  compute_Arow(gminidx, tmp2);
+	  // get rows
+	  svreal *rmax = compute_Arow(gmaxidx, tmp1);
+	  svreal *rmin = compute_Arow(gminidx, tmp2);
+	  if (! (rmax && rmin))
+	    { arow = 0; return 0; }
 	  // box constraints
 	  ostep = x[gmaxidx] - cmin[gmaxidx];
 	  if (ostep < step)
@@ -475,8 +475,8 @@ QuadraticProgram::perform_coordinate_descent(void)
 	  if (ostep < step)
 	    step = ostep;
 	  // newton
-	  curvature = tmp1[gmaxidx] + tmp2[gminidx]
-	          - ( tmp1[gminidx] + tmp2[gmaxidx] );
+	  curvature = rmax[gmaxidx] + rmin[gminidx]
+	          - ( rmax[gminidx] + rmin[gmaxidx] );
 	  if (curvature > epskt)
 	    {
 	      ostep = (gmax - gmin) / curvature;
@@ -492,7 +492,7 @@ QuadraticProgram::perform_coordinate_descent(void)
 	  x[gmaxidx] -= step;
 	  x[gminidx] += step;
 	  for (j=0; j<n; j++)
-	    grad[j] = grad[j] + step * ( tmp2[j] - tmp1[j] );
+	    grad[j] = grad[j] + step * ( rmin[j] - rmax[j] );
 	}
       else
 	{
@@ -500,13 +500,17 @@ QuadraticProgram::perform_coordinate_descent(void)
 	  svreal ostep;
 	  svreal step = maxst;
 	  svreal curvature;
+	  svreal *rmax;
+	  // select best axis.
 	  if (fabs(gmax) < fabs(gmin))
 	    {
 	      gmax = gmin;
 	      gmaxidx = gminidx;
 	    }
-	  compute_Arow(gmaxidx, tmp2);
-	  curvature = tmp2[gmaxidx];
+	  // get row
+	  rmax = compute_Arow(gmaxidx, tmp2);
+	  if (! rmax)
+	    { arow = 0; return 0; }
 	  // box constraints
 	  if (gmax > 0)
 	    ostep = x[gmaxidx] - cmin[gmaxidx];
@@ -515,6 +519,7 @@ QuadraticProgram::perform_coordinate_descent(void)
 	  if (ostep < step)
 	    step = ostep;
 	  // newton
+	  curvature = rmax[gmaxidx];
 	  if (curvature > epskt)
 	    {
 	      ostep = fabs(gmax) / curvature;
@@ -529,7 +534,7 @@ QuadraticProgram::perform_coordinate_descent(void)
 	    step = - step;
 	  x[gmaxidx] += step;
 	  for (j=0; j<n; j++)
-	    grad[j] = grad[j] + step * tmp2[j];
+	    grad[j] = grad[j] + step * rmax[j];
 	}
     }
   // Restore and return
@@ -568,19 +573,26 @@ QuadraticProgram::compute_Ax(const svreal *x, svreal *y)
       svreal xx = x[i];
       if (xx)
 	{
-	  compute_Arow(i, tmp2);
-	  for (j=0; j<n; j++)
-	    y[j] += xx * tmp2[j];
+	  svreal *row = compute_Arow(i, tmp2);
+	  if (row) 
+	    {
+	      for (j=0; j<n; j++)
+		y[j] += xx * row[j];
+	    } 
+	  else 
+	    {
+	      err = "neither compute_Ax not compute_Arow are defined";
+	      info(0, "?%s\n", err);
+	      return;
+	    }
 	}
     }
-  if (err)
-    info(0, "?%s\n", err);
 }
 
-void
+svreal *
 QuadraticProgram::compute_Arow(int i, svreal *r)
 {
-  err = "neither compute_Ax not compute_Arow are defined";
+  return 0;
 }
 
 
@@ -605,12 +617,10 @@ SimpleQuadraticProgram::~SimpleQuadraticProgram()
   delete [] mem;
 }
 
-void
+svreal *
 SimpleQuadraticProgram::compute_Arow(int i, svreal *r)
 {
-  const svreal *aa = a + i*n;
-  for (int j=0; j<n; j++)
-    r[i] = aa[i];
+  return a + i*n;
 }
 
 
