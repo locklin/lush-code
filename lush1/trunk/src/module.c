@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.67 2005-01-16 23:32:49 leonb Exp $
+ * $Id: module.c,v 1.68 2005-01-17 16:37:37 leonb Exp $
  **********************************************************************/
 
 
@@ -955,15 +955,18 @@ update_exec_flag(struct module *m)
 	if (CONSP(p->Car)) {
 	  at *q = p->Car->Car;
 	  if (q && (q->flags & X_FUNCTION)) {
+	    extern void clean_dhdoc(dhdoc_t*);
 	    struct cfunction *cfunc = q->Object;
 	    if (!newstate) {
 	      cfunc->info = 0;
 	    } else if (q->Class==&dh_class && cfunc->kname) {
 	      cfunc->info = dynlink_symbol(m, cfunc->kname, 0, 0);
 	      cfunc->call = ((dhdoc_t*)cfunc->info)->lispdata.call;
+	      clean_dhdoc((dhdoc_t*)cfunc->info);
 	    } else if (cfunc->kname) {
 	      cfunc->info = dynlink_symbol(m, cfunc->kname, 1, 0);
 	      cfunc->call = cfunc->info;
+	      clean_dhdoc((dhdoc_t*)cfunc->info);
 	    }
 	  } else if (EXTERNP(q, &class_class)) {
 	    struct class *cl = q->Object;
