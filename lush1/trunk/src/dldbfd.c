@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.42 2004-10-21 20:32:40 leonb Exp $
+ * $Id: dldbfd.c,v 1.43 2004-10-22 14:55:47 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1325,20 +1325,22 @@ perform_rewrites(module_entry *ent)
 
 /* ---------------------------------------- */
 /* MEMORY ALLOCATOR IN LOW MEMORY 
-   This is useful with x86-64.
-   It uses the MAP_32BIT thing (linux) */
+   The default X86-64 code expects to live in the low 2GB of memory. 
+   This is implemented using the MAP_32BIT mmap flag.
+*/
 
-#ifdef HAVE_MMAP
+#ifdef __x86_64__
 # ifdef MAP_32BIT
-#  ifdef MAP_ANONYMOUS
-
-#define A_ALIGN(x)   (((x)+0xF)&~0xF)
-#define A_CHUNKSIZE  (0x400000)
+#  define DLD_ALLOCATE_DEFINED
+#  define DLD_DEALLOCATE_DEFINED
 
 typedef struct a_arena_s {
   struct a_arena_s *next;
   size_t size;
 } a_arena_t;
+
+#define A_ALIGN(x)   (((x)+0xF)&~0xF)
+#define A_CHUNKSIZE  (0x400000)
 
 static a_arena_t *arenas = 0;
 
@@ -1352,8 +1354,7 @@ a_chunk(size_t sz)
   flag |= MAP_32BIT;
 #endif
 #ifdef MAP_ANONYMOUS
-  flag |= MAP_ANONYMOUS | MAP_SHARED;
-  flag &= ~MAP_PRIVATE;
+  flag |= MAP_ANONYMOUS;
 #else
   if (fd < 0)
     fd = open("/dev/zero", O_RDWR);
@@ -1443,8 +1444,6 @@ dld_deallocate(void *x)
     }
 }
 
-#   define DLD_ALLOCATE_DEFINED
-#  endif
 # endif
 #endif
 
@@ -1453,19 +1452,19 @@ dld_deallocate(void *x)
 /* DEFAULT MEMORY ALLOCATOR */
 
 #ifndef DLD_ALLOCATE_DEFINED
-
 static void * 
 dld_allocate(size_t s, int perm)
 {
   return xmalloc(s);
 }
+#endif
 
+#ifndef DLD_DEALLOCATE_DEFINED
 static void
 dld_deallocate(void *x)
 {
   if (x) free(x);
 }
-
 #endif
 
 
