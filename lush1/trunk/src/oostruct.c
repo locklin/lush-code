@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.16 2003-02-15 00:15:28 leonb Exp $
+ * $Id: oostruct.c,v 1.17 2004-02-10 18:39:07 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -663,6 +663,30 @@ DX(xnew_empty)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   return new_oostruct(APOINTER(1));
+}
+
+DX(xnew_copy)
+{
+  at *p, *c, *ans;
+  struct oostruct *s, *d;
+  int i;
+  
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! (p && (p->flags & X_OOSTRUCT)))
+    error(NIL,"Not an instance of a user defined class",p);
+  c = classof(p);
+  ans = new_oostruct(c);
+  UNLOCK(c);
+  s = p->Object;
+  d = ans->Object;
+  for (i=0; i<d->size && i<s->size; i++)
+    {
+      p = d->slots[i].val = s->slots[i].val;
+      LOCK(p);
+    }
+  return ans;
 }
 
 
@@ -1382,6 +1406,7 @@ init_oostruct(void)
   dx_define("makeclass",xmakeclass);
   dy_define("new",ynew);
   dx_define("new-empty",xnew_empty);
+  dx_define("new-copy",xnew_copy);
   dx_define("delete",xdelete);
   dy_define("letslot",yletslot);
   dx_define("check==>",xchecksend);
