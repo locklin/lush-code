@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.30 2004-02-07 01:04:43 leonb Exp $
+ * $Id: lisp_c.c,v 1.31 2004-07-16 21:57:19 leonb Exp $
  **********************************************************************/
 
 
@@ -2612,12 +2612,12 @@ dh_listeval(at *p, at *q)
     
   /* Find and check the DHDOC */
   cfunc = p->Object;
+  if (CONSP(cfunc->name))
+    check_primitive(cfunc->name);
   kname = cfunc->info;
   drec = kname->argdata;
   if(drec->op != DHT_FUNC)
     error(NIL, "(lisp_c) a function dhdoc was expected", NIL);
-  if (CONSP(cfunc->name))
-    check_primitive(cfunc->name);
   dont_warn_zombie = 0;
   
   /* Count the arguments */
