@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxmac.h,v 1.4 2003-05-22 20:49:15 leonb Exp $
+ * $Id: idxmac.h,v 1.5 2004-02-04 15:34:26 leonb Exp $
  **********************************************************************/
 
 #ifndef IDXMAC_H
@@ -204,7 +204,7 @@ max = (idx)->offset; \
 /* Transpose the dimensions of i,
  * according to a permutation vector p
  */
-#define Midx_tranpose(i, p, Type) \
+#define Midx_transpose(i, p, Type) \
 { \
   int tmp[MAXDIMS]; \
   register int j; \
