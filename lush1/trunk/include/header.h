@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.45 2003-01-10 21:40:01 leonb Exp $
+ * $Id: header.h,v 1.46 2003-01-11 05:09:41 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -81,6 +81,7 @@ typedef struct dhdoc_s dhdoc_t;
 extern TLAPI int break_attempt;
 TLAPI void lastchance(char *s) no_return;
 /* console management */
+void toplevel_unix(void);
 void console_getline(char *prompt, char *buf, int size);
 /* openTL entry points */
 void init_user(void);

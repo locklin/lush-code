@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: define.h,v 1.7 2003-01-10 20:23:33 leonb Exp $
+ * $Id: define.h,v 1.8 2003-01-11 05:09:41 leonb Exp $
  **********************************************************************/
 
 #ifndef DEFINE_H
@@ -112,7 +112,7 @@ typedef void* gptr;
 
 #ifdef UNIX
 # define INIT_MACHINE      init_unix()
-# define TOPLEVEL_MACHINE  break_attempt=0
+# define TOPLEVEL_MACHINE  toplevel_unix()
 # define CHECK_MACHINE(s)  if (break_attempt) user_break(s)
 # ifdef HAVE_WAITPID
 #  define NEED_POPEN

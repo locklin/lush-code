@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.31 2003-01-10 20:41:27 leonb Exp $
+ * $Id: unix.c,v 1.32 2003-01-11 05:09:41 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -229,8 +229,8 @@ break_irq(void)
 void 
 lastchance(char *s)
 {
-  at *q;
   static char reason[40];
+  at *q;
   /* Test for recursive call */
   if (!s || !*s)
     s = "Unknown reason";
@@ -775,19 +775,23 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
 # define READLINE_COMPLETION 0
 #endif
 
+static int console_in_eventproc = 0;
+
 static void
 console_wait_for_char(void)
 {
   fflush(stdout);
-  rl_deprep_terminal();
+  console_in_eventproc = 1;
   process_pending_events();
   rl_prep_terminal(1);
+  console_in_eventproc = 0;
   for(;;)
     {
       at *handler = event_wait(TRUE);
-      rl_deprep_terminal();
+      console_in_eventproc = 1;
       process_pending_events();
       rl_prep_terminal(1);
+      console_in_eventproc = 0;
       if (! handler) break;
       UNLOCK(handler);
     }
@@ -946,11 +950,23 @@ console_getline(char *prompt, char *buf, int size)
 {
   char *s, *line;
   buf[0] = 0;
-  
+  /* Problem: Recursive calls to readline happen when an 
+     event handler attempts to read something on the tty.
+     Solution: Revert to non-readline operation. */
+  if (console_in_eventproc)
+    {
+      rl_deprep_terminal();
+      fputs(prompt,stdout);
+      fflush(stdout);
+      if (!break_attempt)
+        if (!feof(stdin))
+          fgets(buf,size-2,stdin);
+      return;
+    }
+  /* Problem: Readline erases previous output on the same line.
+     Solution: Wait until user types something and go to new line. */
   if (context->output_tab > 0)
     {
-      /* Make sure that readline does not 
-         erase the entire line right away. */
       fputs(prompt, stdout);
       fflush(stdout);
       console_wait_for_char();
@@ -958,6 +974,7 @@ console_getline(char *prompt, char *buf, int size)
         return;
       print_string("\n");
     }
+  /* Call readline */
   line = readline(prompt);
   if (line)
     {
@@ -974,7 +991,7 @@ console_getline(char *prompt, char *buf, int size)
               size = l-2;
             }
         }
-      /* Standard routine */
+      /* End of hack */
       strncpy(buf, line, size);
       buf[size-1] = 0;
       buf[size-2] = 0;
@@ -988,8 +1005,10 @@ console_getline(char *prompt, char *buf, int size)
     }
   else
     {
+      /* Got a ctrl+d */
       extern void set_toplevel_exit_flag(void);
       set_toplevel_exit_flag();
+      print_string("\n");
       buf[0] = (char)EOF;
       buf[1] = 0;
     }
@@ -1024,6 +1043,17 @@ console_getline(char *prompt, char *buf, int size)
 }
 
 #endif
+
+
+void
+toplevel_unix(void)
+{
+  break_attempt = 0;
+#if HAVE_LIBREADLINE
+  console_in_eventproc = 0;
+  rl_deprep_terminal();
+#endif
+}
 
 
 /* ---------------------------------------- */
