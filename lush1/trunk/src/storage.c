@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.12 2004-10-22 19:50:36 leonb Exp $
+ * $Id: storage.c,v 1.13 2005-02-15 22:51:27 leonb Exp $
  **********************************************************************/
 
 
@@ -395,7 +395,7 @@ storage_name(at *p)
   else if (st->srg.flags & STS_DISK)
     sprintf(string_buffer, "::%s:disk@%lx:<%d>", 
 	    nameof(p->Class->classname), (long)st->srg.data, st->srg.size);
-  else if (st->srg.flags & STS_MMAP)
+  else if (st->srg.flags & STS_REMOTE)
     sprintf(string_buffer, "::%s:remote@%lx:<%d>", 
 	    nameof(p->Class->classname), (long)st->srg.data, st->srg.size);
   else if (st->srg.flags & STS_STATIC)
