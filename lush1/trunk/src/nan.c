@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.4 2002-11-01 14:51:02 leonb Exp $
+ * $Id: nan.c,v 1.5 2002-11-01 15:27:41 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -245,27 +245,63 @@ setup_fpu(int doINV, int doOFL)
   int mask = 0;
   fpe_inv = doINV;
   fpe_ofl = doOFL;
+
 #ifdef _FPU_DEFAULT
   mask = _FPU_DEFAULT;
 #endif
-#ifdef _FPU_MASK_DM
-  mask |= _FPU_MASK_DM;
-#endif
-#ifdef _FPU_MASK_UM
-  mask |= _FPU_MASK_UM;
-#endif
-#ifdef _FPU_MASK_PM
-  mask |= _FPU_MASK_PM;
-#endif
+
+#define DO(condition,flag) if (condition) mask&=(~(flag)); else mask|=(~(flag))
+
+  /* i386, alpha */
+#if defined(__i386__) || defined(__alpha__)
 #ifdef _FPU_MASK_IM
-  if (doINV) mask&=(~_FPU_MASK_IM); else mask|=(_FPU_MASK_IM);
+  DO(doINV, _FPU_MASK_IM);
 #endif
+#ifdef _FPU_MASK_OM
+  DO(doOFL, _FPU_MASK_OM);
+#endif
+#ifdef _FPU_MASK_ZM
+  DO(doOFL, _FPU_MASK_ZM);
+#endif
+#endif
+  /* ppc, sparc, arm */
+#if defined(__ppc__) || defined(__sparc__) || defined(__arm__)
 #ifdef _FPU_MASK_IM
-  if (doOFL) mask&=(~_FPU_MASK_OM); else mask|=(_FPU_MASK_OM);
+  DO(!doINV, _FPU_MASK_IM);
 #endif
-#ifdef _FPU_MASK_IM
-  if (doOFL) mask&=(~_FPU_MASK_ZM); else mask|=(_FPU_MASK_ZM);
+#ifdef _FPU_MASK_OM
+  DO(!doOFL, _FPU_MASK_OM);
 #endif
+#ifdef _FPU_MASK_ZM
+  DO(!doOFL, _FPU_MASK_ZM);
+#endif
+#endif
+  /* mips */
+#if defined(__mips__)
+#ifdef _FPU_MASK_V
+  DO(!doINV, _FPU_MASK_V);
+#endif
+#ifdef _FPU_MASK_O
+  DO(!doOFL, _FPU_MASK_O);
+#endif
+#ifdef _FPU_MASK_Z
+  DO(!doOFL, _FPU_MASK_Z);
+#endif
+#endif
+  /* m68k */
+#if defined(__m68k__)
+#ifdef _FPU_MASK_OPERR
+  DO(!doINV, _FPU_MASK_OPERR);
+#endif
+#ifdef _FPU_MASK_OVFL
+  DO(!doOFL, _FPU_MASK_OPERR);
+#endif
+#ifdef _FPU_MASK_DZ
+  DO(!doOFL, _FPU_MASK_DZ);
+#endif
+#endif
+#undef DO
+  /* continue */
 #ifdef HAVE___SETFPUCW
   __setfpucw( mask );
   return 1;
