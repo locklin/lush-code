@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.22 2002-08-19 15:59:46 leonb Exp $
+ * $Id: lisp_c.c,v 1.23 2003-01-28 18:00:40 leonb Exp $
  **********************************************************************/
 
 
@@ -1217,8 +1217,11 @@ int
 lside_check_ownership(void *cptr)
 {
   avlnode *n;
-  n = avl_find(cptr);
-  return (cptr==0) || (n==0) || (n->belong==BELONG_LISP);
+  if (cptr)
+    if ((n = avl_find(cptr)))
+      if (n->belong != BELONG_LISP)
+        return FALSE;
+  return TRUE;
 }
 
 

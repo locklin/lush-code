@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.12 2002-07-29 21:02:22 leonb Exp $
+ * $Id: dh.c,v 1.13 2003-01-28 18:00:39 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -266,7 +266,7 @@ new_dh(at *name, dhdoc_t *kdata)
    --------------------------------------------- */
 
 
-static void
+static at *
 make_dhclass(dhclassdoc_t *kdata)
 {
   at *p;
@@ -277,12 +277,23 @@ make_dhclass(dhclassdoc_t *kdata)
   at **klwhere;
   class *cl;
   dhrecord *drec;
+  at *superlock;
 
-  if (kdata && !kdata->lispdata.atclass)
+  if (!kdata)
+    {
+      return 0;
+    }
+  else if ((p = kdata->lispdata.atclass))
+    {
+      LOCK(p);
+      return p;
+    }
+  else
     {
       /* Make sure superclass is okay */
+      superlock = 0;
       if (kdata->lispdata.ksuper)
-        make_dhclass(kdata->lispdata.ksuper);
+        superlock = make_dhclass(kdata->lispdata.ksuper);
       /* fixup classdoc pointer in vtable */
       ((dhclassdoc_t**)(kdata->lispdata.vtable))[0] = kdata;
       /* update next record pointer in dhdoc */
@@ -317,12 +328,14 @@ make_dhclass(dhclassdoc_t *kdata)
       UNLOCK(classname);
       UNLOCK(keylist);
       UNLOCK(defaults);
+      UNLOCK(superlock);
       /* store */
       cl = p->Object;
       cl->classdoc = kdata;
       kdata->lispdata.atclass = p;
-      kdata->lispdata.atlocked = 1;
+      return p;
     }
+  
 }
 
 
@@ -333,12 +346,8 @@ new_dhclass(at *name, dhclassdoc_t *kdata)
   if (strcmp(nameof(name), kdata->lispdata.lname))
     error(NIL, "Incorrect CLASSDOC: "
           "class name does not match dhclass_define", NIL);    
-  make_dhclass(kdata);
-  if (! (p = kdata->lispdata.atclass))
+  if (! (p = make_dhclass(kdata)))
     error(NIL, "Internal error: make_dhclass failed", NIL);
-  if (! kdata->lispdata.atlocked)
-    LOCK(p);
-  kdata->lispdata.atlocked = 0;
   return p;
 }
 
@@ -509,6 +518,8 @@ dhinfo_record(dhrecord *drec)
       return cons(named("ptr"), cons(p, NIL));
       
     case DHT_FUNC:
+      if (! drec->name)
+        next_record(drec);
       drec1 = (dhrecord*) drec->name;
       p = dhinfo_chain(drec+1, drec->ndim, dhinfo_record);
       q = NIL;
@@ -657,14 +668,14 @@ DX(xclassinfo_c)
 
 dhclassdoc_t Kc_object;
 
-struct VClass_object {
-  dhclassdoc_t *Cdoc;
-} Vt_object = {
-  &Kc_object,
-};
+static void 
+Cdestroy_C_object(gptr p)
+{
+}
 
-struct CClass_object {
-  struct VClass_object *Vtbl;
+struct VClass_object Vt_object = { 
+  &Kc_object, 
+  &Cdestroy_C_object,
 };
 
 DHCLASSDOC(Kc_object, 

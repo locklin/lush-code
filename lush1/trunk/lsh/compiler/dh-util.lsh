@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.47 2003-01-27 08:57:30 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.48 2003-01-28 18:00:30 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -340,8 +340,8 @@
                                  " " 
                                  (dhc-lisp-to-c-name 
                                   (if (consp (car slot))  ;; why?
-                                      (pname (caar slot))
-                                    (pname (car slot)))) ";"))))
+                                      (nameof (caar slot))
+                                    (nameof (car slot)))) ";"))))
     (concat the-struct "\n};")))
 
 #? (dhc-class-to-vtable-decl <type>)
@@ -351,7 +351,8 @@
   (when ~(= 'dht-class (unode-val :type:u-tclass))
         (dhc-error "type is not a class in dhc-class-to-struct-decl"))
   (let ((the-struct (sprintf (concat "struct VClass_%s {\n"
-                                     "  dhclassdoc_t *Cdoc;" )
+                                     "  dhclassdoc_t *Cdoc;\n"
+                                     "  void (*Cdestroy)(gptr);")
                              (unode-val :type:u-name) ))
         (the-methods ())
         (sclass type)
@@ -480,6 +481,7 @@
    ((==> type is-an-obj)
     (let* ((ctype (dhu-type type))
            (cname (dhu-name ctype))
+           (tname (dhc-type-to-c-decl type))
            (kname (sprintf "Kc_%s_R%s" cname (dhu-hash ctype))) )
       (when (dhu-class ctype)
         (dhc-add-c-externs 
@@ -487,17 +489,14 @@
         (dhc-add-c-externs
          (dhc-class-to-struct-decl (dhu-type type)) ) )
       (dhc-add-c-declarations 
-       (concat (dhc-type-to-c-decl type) (sprintf " %s_Struct;" name)))
+       (concat tname (sprintf " %s_Struct;" name)))
       (dhc-add-c-declarations 
-       (sprintf "%s *%s= &%s_Struct;" (dhc-type-to-c-decl type) name name))
+       (sprintf "%s *%s= &%s_Struct;" tname name name))
       (dhc-add-c-statements 
+       (sprintf "memset(%s, 0, sizeof(%s));" name tname)
        (sprintf "%s->Vtbl = &Vt_%s;" name cname) )
-      ;; HORRIBLE HACK FOR POOLS -- WE SHOULD SUPPORT DESTRUCTORS
-      (when (= "pool" cname)
-        (dhc-add-c-statements 
-         (sprintf "%s->slink = %s->glink = %s->destroychain= 0;" name name name) )
-        (dhc-add-c-externs "extern_c char C_free_C_pool(struct CClass_pool*);")
-        (dhc-add-c-epilog (sprintf "C_free_C_pool(%s);" name) ) ) ) )
+      (dhc-add-c-epilog
+       (sprintf "(%s->Vtbl->Cdestroy)((gptr)(%s));" name name) ) ) )
    
    ((==> type is-a-srg) 
     (dhc-add-c-declarations 
@@ -626,7 +625,7 @@
              (setq :temp:c-name
                    (sprintf "L%d_%d_%s" :temp:lex-level
                             (dhc-postincr tmpnames-seed)
-                            (dhc-lisp-to-c-name (pname :temp:lisp-name))))
+                            (dhc-lisp-to-c-name (nameof :temp:lisp-name))))
              (dhc-declare-var :temp:c-name :temp:type))))
        (setq retexpr ,(cons progn instr-list))
        (setq block (append c-declarations c-statements c-epilog)))
@@ -1595,7 +1594,7 @@
       (dhc-error "this class is not a compiled class" cl) )
      (t
       (new dhc-type 'dht-class
-           (dhc-lisp-to-c-name (pname clname))
+           (dhc-lisp-to-c-name (nameof clname))
            (if (super cl)
                (dhc-class-to-dhc-type (super cl))
              (new dhc-type 'dht-nil) )
@@ -1735,7 +1734,7 @@
       (apply dhc-d-to-doc-complex desc))
      ;; simple types
      ((member (dht-long tclass) dhc-simple-types)
-      (list (sprintf "DH_%s," (upcase (pname tclass)))) )
+      (list (sprintf "DH_%s," (upcase (nameof tclass)))) )
      (t 
       (dhc-unif-error "unrecognized type descriptor" desc)))))
 
@@ -1875,7 +1874,7 @@
 (defmethod dhc-symbol dhc-symbol(name lex &optional (fmt "L%d_%s"))
   (setq lisp-name name)
   (setq lex-level lex)
-  (setq c-name (sprintf fmt lex (dhc-lisp-to-c-name (pname name))))
+  (setq c-name (sprintf fmt lex (dhc-lisp-to-c-name (nameof name))))
   (setq type (new dhc-type 'dht-unk))
   (setq :type:u-bump (new-unode lex)))
 
@@ -2845,7 +2844,7 @@
             (let ((sym (new dhc-symbol 
                             (named (sprintf "%d_%s" 
                                             (dhc-postincr tmpnames-seed)
-                                            (pname (car source))))
+                                            (nameof (car source))))
                             lex-level)))
               (while (==> ty is-a-ptr) (setq ty (dhu-type ty)))
               (dhc-unify-types ty :sym:type)

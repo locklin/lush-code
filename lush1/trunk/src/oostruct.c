@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.14 2002-11-06 16:30:50 leonb Exp $
+ * $Id: oostruct.c,v 1.15 2003-01-28 18:00:43 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -32,6 +32,7 @@
 ********************************************************************** */
 
 #include "header.h"
+#include "dh.h"
 
 extern struct alloc_root symbol_alloc;
 
@@ -302,15 +303,18 @@ class_dispose(at *q)
 
   s = q->Object;
   q->Object = NIL;
+  /* Remove atclass in dhclassdoc */
+  if (s->classdoc)
+    s->classdoc->lispdata.atclass = 0;
   /* Unlink subclass chain */
   if (s->super && s->atsuper->Object) 
-  {
-    p = &(s->super->subclasses);
-    while (*p && (*p != s))
-      p = &( (*p)->nextclass);
-    if (*p == s)
-      *p = s->nextclass;
-  }
+    {
+      p = &(s->super->subclasses);
+      while (*p && (*p != s))
+        p = &( (*p)->nextclass);
+      if (*p == s)
+        *p = s->nextclass;
+    }
   /* Free class resources */
   UNLOCK(s->keylist);
   UNLOCK(s->defaults);

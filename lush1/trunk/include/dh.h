@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.17 2003-01-11 07:18:58 leonb Exp $
+ * $Id: dh.h,v 1.18 2003-01-28 18:00:14 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -278,6 +278,15 @@ struct dhdoc_s
  *
  */
 
+struct VClass_object 
+{
+  dhclassdoc_t *Cdoc;
+  void (*Cdestroy)(gptr);
+};
+
+struct CClass_object {
+  struct VClass_object *Vtbl;
+};
 
 
 /* dhclassconstraint ---
@@ -302,7 +311,6 @@ struct dhclassdoc_s
     
 #ifndef NOLISP
     at *atclass;                /* lisp object for this class */
-    char atlocked;              /* lisp object temporarily overlocked */
 #endif
   } lispdata;
 };
