@@ -24,9 +24,16 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.3 2002-07-15 19:47:40 leonb Exp $
+;;; $Id: lush.el,v 1.4 2002-10-01 18:32:28 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; call this with M-X lush
+(defun lush ()
+  "starts Lush"
+  (interactive)
+  (inferior-lisp "lush"))
+
+(global-set-key "\C-xg" 'goto-line)
 
 ;; this file contains useful definitions for emacs
 
