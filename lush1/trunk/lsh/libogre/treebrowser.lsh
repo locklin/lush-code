@@ -84,6 +84,8 @@
   icon-width				; width of icon string
   tabs					; indentation between levels
 
+  min-width
+  min-height
   min-nlin				; minimum number of lines
   min-ncol				; minimum number of columns
   current-filter			; function to filter nodes
@@ -91,7 +93,7 @@
 
 ;;; Constructor
 
-(defmethod Explorer explorer(ltree &optional ecall ocall ccall mcall)
+(defmethod Explorer explorer(ltree mw mh &optional ecall ocall ccall mcall)
   (let ((noop (lambda (c) ())))
     (setq enter-call (if (functionp ecall) ecall noop))
     (setq open-call (if (functionp ocall) ocall noop))
@@ -99,8 +101,10 @@
     (setq move-call (if (functionp mcall) mcall noop)))
   (setq icon-open "- ")
   (setq icon-closed "+ ")
-  (setq min-nlin 20)
-  (setq min-ncol 32)
+  (setq min-width mw)
+  (setq min-height mh)
+  ;; (setq min-nlin 20)
+  ;; (setq min-ncol 32)
   (setq tabs 2)
   (setq tree ltree)
   (setq current-item tree))
@@ -125,10 +129,17 @@
     (==> this shrink-wrap)
     rect ))
 
+(defmethod Explorer set-minsize (w h)
+  (setq min-width w)
+  (setq min-height h)
+  (==> this shrink-wrap))
+
 (defmethod Explorer shrink-wrap()
-  (setq nlin (max min-nlin (ltree-count-lines tree)))
-  (setq ncol (max min-ncol (ltree-count-columns tree 0 tabs)))
-  (==> this resize (+ (* charw ncol) icon-width 8)  (+ (* lineh nlin) 8)))
+  (let ((min-nlin (max 20 (int (/ (- min-height 8) lineh))))
+	(min-ncol (max 32 (int (/ (- min-width (+ 8 icon-width)) charw)))))
+    (setq nlin (max min-nlin (ltree-count-lines tree)))
+    (setq ncol (max min-ncol (ltree-count-columns tree 0 tabs)))
+    (==> this resize (+ (* charw ncol) icon-width 8)  (+ (* lineh nlin) 8))))
 
 (defmethod Explorer recenter(v)
   (==> v vcenter (* lineh (ltree-where tree current-item))))
@@ -294,10 +305,9 @@
 (de enter-func (c) 
     (let* ((curr (==> tree-explorer getdata))
 	   (hn (when curr (==> curr getdata))))
-      ;; (pretty (==> hn getdata))
-      ;; (setq *asd*  (==> hn getdata))
-      (==> *ldoc-text* render (==> hn getdata))
-      ;; (==> *ldoc-html* render (==> hn getdata))
+      (==> (==> hn getdata) render-text)
+      ;; (==> (==> hn getdata) render-html)
+      ;; (==> (==> hn getdata) render-latex)
       (when hn (==> text-pane setdata (==> hn getdata)))))
 (de open-func (c) ())
 (de close-func (c) 
@@ -314,7 +324,7 @@
   (setq tree intree)
   (==> tree open)
   (setq tree-explorer 
-	(new explorer tree enter-func open-func close-func move-func))
+	(new explorer tree w1 h1 enter-func open-func close-func move-func))
   (setq tree-viewer (new scroller w1 h1 tree-explorer))
   (setq text-pane 
 	(new scroller w2 h2
