@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: symbol.c,v 1.2 2002-05-02 21:00:31 leonb Exp $
+ * $Id: symbol.c,v 1.3 2002-05-06 18:42:43 leonb Exp $
  **********************************************************************/
 
 
@@ -697,6 +697,7 @@ init_symbol(void)
   var_lock(at_true);
 
   class_define("SYMB",&symbol_class );
+  symbol_class.dontdelete = TRUE;
 
   dx_define("named", xnamed);
   dx_define("symblist", xsymblist);
