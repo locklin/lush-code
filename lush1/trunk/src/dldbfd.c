@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.9 2002-08-19 20:00:38 leonb Exp $
+ * $Id: dldbfd.c,v 1.10 2002-09-06 19:24:18 leonb Exp $
  **********************************************************************/
 
 
@@ -2556,16 +2556,16 @@ dld_find_executable (const char *file)
 {
     char *search;
     struct stat st;
-    register char *p;
+    char *p;
     
-    if (file[0] == '/')
-	return strdup(file);
+    if (strchr(file, '/'))
+      return strdup(file);
     if (((search = (char *) getenv("DLDPATH")) == 0) &&
 	((search = (char *) getenv("PATH")) == 0))
-	search = ".";
+      search = ".";
     p = search;
     while (*p) 
-    {
+      {
 	char  name[MAXPATHLEN];
 	register char *next;
 	next = name;
@@ -2573,14 +2573,14 @@ dld_find_executable (const char *file)
 	*next = 0;
 	if (*p) p++;
 	if (name[0] == '.' && name[1] == 0)
-	    getcwd (name, sizeof(name));
+          getcwd (name, sizeof(name));
 	strcat (name, "/");
 	strcat (name, file);
 	if (access (name, X_OK) == 0) 
-            if (stat(name, &st) == 0) 
-                if (S_ISREG(st.st_mode))
-                    return strdup(name);
-    }
+          if (stat(name, &st) == 0) 
+            if (S_ISREG(st.st_mode))
+              return strdup(name);
+      }
     return 0;
 }
 
