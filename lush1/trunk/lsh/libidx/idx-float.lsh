@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: idx-float.lsh,v 1.3 2002-11-26 17:24:34 profshadoko Exp $
+;;; $Id: idx-float.lsh,v 1.4 2003-04-11 18:54:27 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #? *** IDX of Single Precision Floating Point Numbers
@@ -65,7 +65,7 @@
 ;; fills
 
 #? (idx-f1fill <m> <f>)
-;; multiply elements of <m> by float <f>, put result in <q>
+;; fill idx1 <m> with value <f>
 (de idx-f1fill  (m c) ((-idx1- (-float-)) m) ((-float-) c)
     (cinline-idx1loop m "flt" "mp" "i" 
       (cinline "*mp = (%s)" c)) ())
@@ -372,6 +372,41 @@
 	  (cinline "%s += Fexp( %s - *mp)" r exp-offset)))
       (- exp-offset (log r)) ) )
 
+#? (idx-f1logaddb <m> <beta>)
+;; computes a "log-add" with inverse temperature <b>
+;; of the elements in <m>, i.e. 
+;; -1/beta log ( Sum_i ( exp( - beta*m_i ) ))
+(de idx-f1logaddb (m beta)
+    ((-idx1- (-float-)) m)
+    ((-float-) beta)
+    (let ((exp-offset (m 0))
+	  (r 0))
+      ((-float-) exp-offset r)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "%s += Fexp( %s*(%s - *mp))" r beta exp-offset))
+      (- exp-offset (/ (log r) beta))))
+
+#? (idx-f2logaddb <m> <beta>)
+;; same as idx-f1logaddb, but in 2 dimensions
+;; -1/beta log( Sum_ij ( exp( - beta*m_ij ) ))
+(de idx-f2logaddb (m beta)
+    ((-idx2- (-float-)) m)
+    ((-float-) beta)
+    (let ((exp-offset (m 0 0))
+	  (r 0))
+      ((-float-) exp-offset r)
+      ;; first compute smallest element of m
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "flt" "mp" "i"
+	  (cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset)))
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "flt" "mp" "i"
+	  (cinline "%s += Fexp( %s*(%s - *mp) )" r beta exp-offset)))
+      (- exp-offset (/ (log r) beta)) ) )
+
 #? (idx-f1logdotf1 <m> <p>)
 ;; computes a "log-add" of term-by-termt products
 ;; of elements in <m> and <p>, i.e. 
@@ -671,6 +706,7 @@
 	  idx-f1avg idx-f1prod 
 	  idx-f1logsum idx-f2logsum
 	  idx-f1logadd idx-f2logadd
+	  idx-f1logaddb idx-f2logaddb
 	  idx-f1logdotf1 idx-f1blogdotf1 idx-f2logdotf2
 	  idx-f1subextf1 idx-f1subf0 idx-f1mulacc
           idx-f1entropy idx-f1subsample-fast
