@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.5 2002-08-07 15:20:39 leonb Exp $
+ * $Id: graphics.c,v 1.6 2002-09-27 20:58:47 leonb Exp $
  **********************************************************************/
 
 
@@ -475,39 +475,45 @@ DX(xclip)
   register struct window *win;
   register int x, y, w, h;
   
+  ALL_ARGS_EVAL;
   win = current_window();
-  if (!win->gdriver->clip)
-    error(NIL, "this driver does not support 'clip'", NIL);
-  
-  if (arg_number) {
-    ALL_ARGS_EVAL;
-    if (arg_number == 1 && !APOINTER(1)) {
-      (*win->gdriver->begin) (win);
-      (*win->gdriver->clip) (win, 0, 0, 0, 0);
-      (*win->gdriver->end) (win);
-      win->clipw = win->cliph = 0;
-    } else {
-      ARG_NUMBER(4);
-      x = AINTEGER(1);
-      y = AINTEGER(2);
-      w = AINTEGER(3);
-      h = AINTEGER(4);
-      (*win->gdriver->begin) (win);
-      (*win->gdriver->clip) (win, x, y, w, h);
-      (*win->gdriver->end) (win);
-      win->clipx = x;
-      win->clipy = y;
-      win->clipw = w;
-      win->cliph = h;
+  if (arg_number) 
+    {
+      if (arg_number == 1 && APOINTER(1) == NIL)
+        {
+          if (win->gdriver->clip)
+            {
+              (*win->gdriver->begin) (win);
+              (*win->gdriver->clip) (win, 0, 0, 0, 0);
+              (*win->gdriver->end) (win);
+            }
+          win->clipw = win->cliph = 0;
+        } 
+      else 
+        {
+          ARG_NUMBER(4);
+          x = AINTEGER(1);
+          y = AINTEGER(2);
+          w = AINTEGER(3);
+          h = AINTEGER(4);
+          if (win->gdriver->clip)
+            {
+              (*win->gdriver->begin) (win);
+              (*win->gdriver->clip) (win, x, y, w, h);
+              (*win->gdriver->end) (win);
+              win->clipx = x;
+              win->clipy = y;
+              win->clipw = w;
+              win->cliph = h;
+            }
+        }
     }
-  }
   if (win->clipw || win->cliph)
     return cons(NEW_NUMBER(win->clipx),
 		cons(NEW_NUMBER(win->clipy),
 		     cons(NEW_NUMBER(win->clipw),
 			  cons(NEW_NUMBER(win->cliph), NIL))));
-  else
-    return NIL;
+  return NIL;
 }
 
 
