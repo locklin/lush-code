@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.31 2003-03-04 18:19:19 leonb Exp $
+ * $Id: module.c,v 1.32 2003-03-04 21:16:53 leonb Exp $
  **********************************************************************/
 
 
@@ -768,7 +768,7 @@ module_load(char *filename, at *hook)
   if (l[0]==0 || l[0]=='.')
     {
       len = strlen(EXT_DLL);
-      if (len>0 && !strncmp(EXT_DLL, l-len, len))
+      if (len>0 && l>filename+len && !strncmp(EXT_DLL, l-len, len))
         dlopen = 1;
     }
   /* Initialize */

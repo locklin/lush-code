@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.28 2003-03-04 18:41:02 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.29 2003-03-04 21:16:19 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -99,6 +99,10 @@ else
     BFD_YES=''
     has_bfd=yes
     AC_CHECK_LIB(iberty, xmalloc)
+    if test $ac_cv_lib_iberty_xmalloc = no; then
+      AC_CHECK_LIB(mmalloc, mmalloc)
+      AC_CHECK_LIB(iberty, xcalloc)
+    fi
     AC_CHECK_HEADER(bfd.h,,has_bfd=no)
     AC_CHECK_LIB(bfd, bfd_init,,[has_bfd=no])
 fi
