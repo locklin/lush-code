@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.3 2002-05-01 15:37:16 leonb Exp $
+ * $Id: dldbfd.c,v 1.4 2002-05-03 18:33:37 leonb Exp $
  **********************************************************************/
 
 
@@ -2400,7 +2400,7 @@ dld_init (const char *exec)
 
 
 #if DLOPEN 
-#if HAVE_LIBDLD
+#if HAVE_DL_H
 
 /* DLOPEN emulation under HP/UX */
 static dlopen_handle_t dlopen(char *soname, int mode)
