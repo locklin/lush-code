@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idx.h,v 1.1 2002-04-16 19:47:03 leonb Exp $
+ * $Id: idx.h,v 1.2 2002-07-01 21:20:36 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -160,33 +160,31 @@
 /* Macros that define function with one output index */
 
 #define Xidx_o(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
-    struct idx i1;		\
-    struct index *ind1;		\
-    ALL_ARGS_EVAL;		\
-    ARG_NUMBER(1);		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
+    struct idx i1; \
+    struct index *ind1; \
+    ALL_ARGS_EVAL; \
+    ARG_NUMBER(1); \
     ind1 = AINDEX(1); \
-    index_write_idx(ind1, &i1);		\
-		    \
-    CHECK_FUNC(&i1);		\
+    index_write_idx(ind1, &i1); \
+    CHECK_FUNC(&i1); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-		    \
-    index_rls_idx(ind1, &i1);		\
+    index_rls_idx(ind1, &i1); \
     LOCK(APOINTER(1)); \
-    return APOINTER(1);	\
-    }
+    return APOINTER(1); \
+  }
   
 /* ================================================================ */
 /* Macros that define function with one input index and one output index */
 
 #define Xidx_io0(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
     at *p2, *atst; \
-    struct idx i1, i2;		\
-    struct index *ind1, *ind2;		\
-    ALL_ARGS_EVAL;		\
+    struct idx i1, i2; \
+    struct index *ind1, *ind2; \
+    ALL_ARGS_EVAL; \
     if (arg_number==1) { \
        ind1 = AINDEX(1); \
        atst = new_storage_nc(ind1->st->srg.type, 1); \
@@ -198,29 +196,25 @@
        ind1 = AINDEX(1); \
        p2 = APOINTER(2); \
        ind2 = AINDEX(2); \
-       LOCK(p2);  \
+       LOCK(p2); \
     } \
-    \
-    if(ind2->ndim != 0) ERRBADARGS;		\
-    index_read_idx(ind1, &i1);		\
-    index_write_idx(ind2, &i2);		\
-		    \
-    CHECK_FUNC(&i1, &i2);		\
+    if(ind2->ndim != 0) ERRBADARGS; \
+    index_read_idx(ind1, &i1); \
+    index_write_idx(ind2, &i2); \
+    CHECK_FUNC(&i1, &i2); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-		    \
-    index_rls_idx(ind1, &i1);		\
-    index_rls_idx(ind2, &i2);		\
- \
-     return p2;		\
+    index_rls_idx(ind1, &i1); \
+    index_rls_idx(ind2, &i2); \
+     return p2; \
   }
 
 #define Xidx_ioa(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
     at *p2; \
-    struct idx i1, i2;		\
-    struct index *ind1, *ind2;		\
-    ALL_ARGS_EVAL;		\
+    struct idx i1, i2; \
+    struct index *ind1, *ind2; \
+    ALL_ARGS_EVAL; \
     if (arg_number==1) { \
        ind1 = AINDEX(1); \
        p2 = create_samesize_matrix(APOINTER(1)); \
@@ -232,30 +226,26 @@
        ind2 = AINDEX(2); \
        LOCK(p2); \
     } \
-    if(ind1->ndim != ind2->ndim) ERRBADARGS;		\
-    \
-    index_read_idx(ind1, &i1);		\
-    index_write_idx(ind2, &i2);		\
-  		\
-    CHECK_FUNC(&i1, &i2);		\
+    if(ind1->ndim != ind2->ndim) ERRBADARGS; \
+    index_read_idx(ind1, &i1); \
+    index_write_idx(ind2, &i2); \
+    CHECK_FUNC(&i1, &i2); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-  		\
-    index_rls_idx(ind1, &i1);		\
-    index_rls_idx(ind2, &i2);		\
-  		\
-    return p2;		\
+    index_rls_idx(ind1, &i1); \
+    index_rls_idx(ind2, &i2); \
+    return p2; \
   }
   
 /* ================================================================ */
 /* Macros that define function with two input indices and one output index */
 
 #define Xidx_aiai0o(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
     at *p3, *atst; \
-    struct idx i1, i2, i3;		\
-    struct index *ind1, *ind2, *ind3;		\
-    ALL_ARGS_EVAL;		\
+    struct idx i1, i2, i3; \
+    struct index *ind1, *ind2, *ind3; \
+    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -269,33 +259,28 @@
        ind2 = AINDEX(2); \
        p3 = APOINTER(3); \
        ind3 = AINDEX(3); \
-       if(ind3->ndim != 0) ERRBADARGS;		\
-       LOCK(p3);  \
+       if(ind3->ndim != 0) ERRBADARGS; \
+       LOCK(p3); \
     } \
-    if(ind1->ndim != ind2->ndim) ERRBADARGS;		\
-    		\
-    index_read_idx(ind1, &i1);		\
-    index_read_idx(ind2, &i2);		\
-    index_write_idx(ind3, &i3);		\
-  		\
-    CHECK_FUNC(&i1, &i2, &i3);		\
-    /* name2(Midx_,FUNC_NAME)(&i1, &i2, &i3, BASETYPE); */ \
+    if(ind1->ndim != ind2->ndim) ERRBADARGS; \
+    index_read_idx(ind1, &i1); \
+    index_read_idx(ind2, &i2); \
+    index_write_idx(ind3, &i3); \
+    CHECK_FUNC(&i1, &i2, &i3); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-  		\
-    index_rls_idx(ind1, &i1);		\
-    index_rls_idx(ind2, &i2);		\
-    index_rls_idx(ind3, &i3);		\
-	\
+    index_rls_idx(ind1, &i1); \
+    index_rls_idx(ind2, &i2); \
+    index_rls_idx(ind3, &i3); \
     return p3; \
   }
 
 #define Xidx_ai0iao(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
     at *p3; \
-    struct idx i1, i2, i3;		\
-    struct index *ind1, *ind2, *ind3;		\
-    ALL_ARGS_EVAL;		\
+    struct idx i1, i2, i3; \
+    struct index *ind1, *ind2, *ind3; \
+    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -309,28 +294,26 @@
        ind3 = AINDEX(3); \
        LOCK(p3); \
     } \
-    if(ind1->ndim != ind3->ndim) ERRBADARGS;		\
-    if(ind2->ndim != 0) ERRBADARGS;		\
-  		\
-    index_read_idx(ind1, &i1);		\
-    index_read_idx(ind2, &i2);		\
-    index_write_idx(ind3, &i3);		\
-    CHECK_FUNC(&i1, &i2, &i3);		\
+    if(ind1->ndim != ind3->ndim) ERRBADARGS; \
+    if(ind2->ndim != 0) ERRBADARGS; \
+    index_read_idx(ind1, &i1); \
+    index_read_idx(ind2, &i2); \
+    index_write_idx(ind3, &i3); \
+    CHECK_FUNC(&i1, &i2, &i3); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-    index_rls_idx(ind1, &i1);		\
-    index_rls_idx(ind2, &i2);		\
-    index_rls_idx(ind3, &i3);		\
-  		\
+    index_rls_idx(ind1, &i1); \
+    index_rls_idx(ind2, &i2); \
+    index_rls_idx(ind3, &i3); \
     return p3; \
   }
 
 #define Xidx_aiaiao(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
     at *p3; \
-    struct idx i1, i2, i3;		\
-    struct index *ind1, *ind2, *ind3;		\
-    ALL_ARGS_EVAL;		\
+    struct idx i1, i2, i3; \
+    struct index *ind1, *ind2, *ind3; \
+    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -344,27 +327,25 @@
        ind3 = AINDEX(3); \
        LOCK(p3); \
     } \
-    if((ind1->ndim != ind3->ndim) || (ind1->ndim != ind2->ndim)) ERRBADARGS;\
-  		\
-    index_read_idx(ind1, &i1);		\
-    index_read_idx(ind2, &i2);		\
-    index_write_idx(ind3, &i3);		\
-    CHECK_FUNC(&i1, &i2, &i3);		\
+    if((ind1->ndim != ind3->ndim) || (ind1->ndim != ind2->ndim)) ERRBADARGS; \
+    index_read_idx(ind1, &i1); \
+    index_read_idx(ind2, &i2); \
+    index_write_idx(ind3, &i3); \
+    CHECK_FUNC(&i1, &i2, &i3); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-    index_rls_idx(ind1, &i1);		\
-    index_rls_idx(ind2, &i2);		\
-    index_rls_idx(ind3, &i3);		\
-  		\
+    index_rls_idx(ind1, &i1); \
+    index_rls_idx(ind2, &i2); \
+    index_rls_idx(ind3, &i3); \
     return p3; \
   }
 
 #define Xidx_2i1i1o(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
     at *p3; \
-    struct idx i1, i2, i3;		\
-    struct index *ind1, *ind2, *ind3;		\
-    ALL_ARGS_EVAL;		\
+    struct idx i1, i2, i3; \
+    struct index *ind1, *ind2, *ind3; \
+    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -378,27 +359,25 @@
        ind3 = AINDEX(3); \
        LOCK(p3); \
     } \
-    if(ind1->ndim != 2 || ind2->ndim != 1 || ind3->ndim != 1) ERRBADARGS;\
-  		\
-    index_read_idx(ind1, &i1);		\
-    index_read_idx(ind2, &i2);		\
-    index_write_idx(ind3, &i3);		\
-    CHECK_FUNC(&i1, &i2, &i3);		\
+    if(ind1->ndim != 2 || ind2->ndim != 1 || ind3->ndim != 1) ERRBADARGS; \
+    index_read_idx(ind1, &i1); \
+    index_read_idx(ind2, &i2); \
+    index_write_idx(ind3, &i3); \
+    CHECK_FUNC(&i1, &i2, &i3); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-    index_rls_idx(ind1, &i1);		\
-    index_rls_idx(ind2, &i2);		\
-    index_rls_idx(ind3, &i3);		\
-  		\
+    index_rls_idx(ind1, &i1); \
+    index_rls_idx(ind2, &i2); \
+    index_rls_idx(ind3, &i3); \
     return p3; \
-	    }
+  }
 
 #define Xidx_4i2i2o(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
     at *p3; \
-    struct idx i1, i2, i3;		\
-    struct index *ind1, *ind2, *ind3;		\
-    ALL_ARGS_EVAL;		\
+    struct idx i1, i2, i3; \
+    struct index *ind1, *ind2, *ind3; \
+    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -412,32 +391,30 @@
        ind3 = AINDEX(3); \
        LOCK(p3); \
     } \
-    if(ind1->ndim != 4 || ind2->ndim != 2 || ind3->ndim != 2) ERRBADARGS;\
-  		\
-    index_read_idx(ind1, &i1);		\
-    index_read_idx(ind2, &i2);		\
-    index_write_idx(ind3, &i3);		\
-    CHECK_FUNC(&i1, &i2, &i3);		\
+    if(ind1->ndim != 4 || ind2->ndim != 2 || ind3->ndim != 2) ERRBADARGS; \
+    index_read_idx(ind1, &i1); \
+    index_read_idx(ind2, &i2); \
+    index_write_idx(ind3, &i3); \
+    CHECK_FUNC(&i1, &i2, &i3); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-    index_rls_idx(ind1, &i1);		\
-    index_rls_idx(ind2, &i2);		\
-    index_rls_idx(ind3, &i3);		\
-  		\
+    index_rls_idx(ind1, &i1); \
+    index_rls_idx(ind2, &i2); \
+    index_rls_idx(ind3, &i3); \
     return p3; \
-	    }
+  }
   
 #define Xidx_1i1i2o(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
     at *p3, *atst; \
-    struct idx i1, i2, i3;		\
-    struct index *ind1, *ind2, *ind3;		\
-    int dim[2];\
-    ALL_ARGS_EVAL;		\
+    struct idx i1, i2, i3; \
+    struct index *ind1, *ind2, *ind3; \
+    int dim[2]; \
+    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
-       if(ind1->ndim != 1 || ind2->ndim != 1) ERRBADARGS;\
+       if(ind1->ndim != 1 || ind2->ndim != 1) ERRBADARGS; \
        atst = new_storage_nc(ind1->st->srg.type, ind1->dim[0]*ind2->dim[0]); \
        p3 = new_index(atst); \
        dim[0] = ind1->dim[0]; \
@@ -450,35 +427,33 @@
        ind2 = AINDEX(2); \
        p3 = APOINTER(3); \
        ind3 = AINDEX(3); \
-       if(ind1->ndim != 1 || ind2->ndim != 1 || ind3->ndim != 2) ERRBADARGS;\
+       if(ind1->ndim != 1 || ind2->ndim != 1 || ind3->ndim != 2) ERRBADARGS; \
        LOCK(p3); \
     } \
-  		\
-    index_read_idx(ind1, &i1);		\
-    index_read_idx(ind2, &i2);		\
-    index_write_idx(ind3, &i3);		\
-    CHECK_FUNC(&i1, &i2, &i3);		\
+    index_read_idx(ind1, &i1); \
+    index_read_idx(ind2, &i2); \
+    index_write_idx(ind3, &i3); \
+    CHECK_FUNC(&i1, &i2, &i3); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-    index_rls_idx(ind1, &i1);		\
-    index_rls_idx(ind2, &i2);		\
-    index_rls_idx(ind3, &i3);		\
-  		\
+    index_rls_idx(ind1, &i1); \
+    index_rls_idx(ind2, &i2); \
+    index_rls_idx(ind3, &i3); \
     return p3; \
-	    }
+  }
 
 #define Xidx_2i2i4o(FUNC_NAME, CHECK_FUNC) \
-  DX(name2(Xidx_,FUNC_NAME))		\
-  {		\
+  DX(name2(Xidx_,FUNC_NAME)) \
+  { \
     at *p3, *atst; \
-    struct idx i1, i2, i3;		\
-    struct index *ind1, *ind2, *ind3;		\
-    int dim[4];\
-    ALL_ARGS_EVAL;		\
+    struct idx i1, i2, i3; \
+    struct index *ind1, *ind2, *ind3; \
+    int dim[4]; \
+    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
-       if(ind1->ndim != 2 || ind2->ndim != 2) ERRBADARGS;\
-       atst = new_storage_nc(ind1->st->srg.type,  \
+       if(ind1->ndim != 2 || ind2->ndim != 2) ERRBADARGS; \
+       atst = new_storage_nc(ind1->st->srg.type, \
 		   ind1->dim[0]*ind1->dim[1] * ind2->dim[0]*ind2->dim[1]); \
        p3 = new_index(atst); \
        dim[0] = ind1->dim[0]; \
@@ -493,19 +468,17 @@
        ind2 = AINDEX(2); \
        p3 = APOINTER(3); \
        ind3 = AINDEX(3); \
-       if(ind1->ndim != 2 || ind2->ndim != 2 || ind3->ndim != 4) ERRBADARGS;\
+       if(ind1->ndim != 2 || ind2->ndim != 2 || ind3->ndim != 4) ERRBADARGS; \
        LOCK(p3); \
     } \
-  		\
-    index_read_idx(ind1, &i1);		\
-    index_read_idx(ind2, &i2);		\
-    index_write_idx(ind3, &i3);		\
-    CHECK_FUNC(&i1, &i2, &i3);		\
+    index_read_idx(ind1, &i1); \
+    index_read_idx(ind2, &i2); \
+    index_write_idx(ind3, &i3); \
+    CHECK_FUNC(&i1, &i2, &i3); \
     switch_type1(name2(Midx_,FUNC_NAME)); \
-    index_rls_idx(ind1, &i1);		\
-    index_rls_idx(ind2, &i2);		\
-    index_rls_idx(ind3, &i3);		\
-  		\
+    index_rls_idx(ind1, &i1); \
+    index_rls_idx(ind2, &i2); \
+    index_rls_idx(ind3, &i3); \
     return p3; \
-	    }
+  }
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.26 2002-06-29 20:05:28 leonb Exp $
+ * $Id: header.h,v 1.27 2002-07-01 21:20:36 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -67,6 +67,10 @@ extern "C" {
 #ifndef no_return
 #define no_return /**/
 #endif
+
+/* Actually defined in dh.h */
+typedef struct dhclassdoc_s dhclassdoc_t;
+typedef struct dhdoc_s dhdoc_t;
 
 
 /* OS.H ---------------------------------------------------------- */
@@ -212,20 +216,22 @@ typedef struct class {
   /* class information */
   at*              classname;   /* class name */
   at*              priminame;   /* class name for binary files */
-  at*              backptr;
-  int              slotssofar;    
-  at*              keylist;
-  at*              defaults;
-  at*              atsuper;
+  at*              backptr;     /* back pointer to class object */
+  int              slotssofar;  /* number of fields */  
+  at*              keylist;     /* field names */
+  at*              defaults;    /* default field values */
+  at*              atsuper;     /* superclass object */
   struct class*    super;	/* link to superclass */
   struct class*    subclasses;	/* link to subclasses */
-  struct class*    nextclass;	/* next subclass      */
-  at*              methods;
-  struct hashelem* hashtable;
-  int              hashsize;
-  char	    	   hashok;
-  char             goaway;
-  char 	           dontdelete;
+  struct class*    nextclass;	/* next subclass of the same superclass */
+  at*              methods;     /* alist of methods */
+  struct hashelem* hashtable;   /* buckets for hashed methods */
+  int              hashsize;    /* number of buckets */
+  char	    	   hashok;      /* is the hash table up-to-date */
+  char             goaway;      /* class was allocated with malloc */
+  char 	           dontdelete;  /* class should not be deleted */
+  /* additional info for dhclasses */
+  dhclassdoc_t    *classdoc;  
 } class;
 
 
@@ -734,8 +740,12 @@ extern LUSHAPI class module_class;
 TLAPI void class_define(char *name, class *cl);
 TLAPI void dx_define(char *name, at *(*addr) (int, at **));
 TLAPI void dy_define(char *name, at *(*addr) (at *));
-TLAPI void dxmethod_define(class *cl, char *name, at *(*addr) (int, at **));
-TLAPI void dymethod_define(class *cl, char *name, at *(*addr) (at *));
+LUSHAPI void dxmethod_define(class *cl, char *name, at *(*addr) (int, at **));
+LUSHAPI void dymethod_define(class *cl, char *name, at *(*addr) (at *));
+
+LUSHAPI void dhclass_define(char *name, dhclassdoc_t *kclass);
+LUSHAPI void dh_define(char *name, dhdoc_t *kname);
+LUSHAPI void dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname);
 
 LUSHAPI void check_primitive(at *prim);
 LUSHAPI at *find_primitive(at *module, at *name);
@@ -1208,7 +1218,10 @@ TLAPI at *load_matrix(FILE *f);
  */
 
 extern LUSHAPI class dh_class;
-extern LUSHAPI class cclass_class;
+
+LUSHAPI at *new_dh(at *name, dhdoc_t *kdata);
+LUSHAPI at *new_dhclass(at *name, dhclassdoc_t *kdata);
+
 
 /* LISP_C.H ---------------------------------------------- */
 
