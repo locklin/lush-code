@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dump.c,v 1.5 2003-01-10 19:52:17 leonb Exp $
+ * $Id: dump.c,v 1.6 2003-01-11 00:10:37 leonb Exp $
  **********************************************************************/
 
 
@@ -206,6 +206,7 @@ undump(char *s)
   at *atf;
   int magic;
   int version;
+  struct symbol *symb;
 
   atf = OPEN_READ(s,"dump");
   f = atf->Object;
@@ -264,11 +265,14 @@ undump(char *s)
           val = p->Car->Cdr;
           ifn (EXTERNP(sym,&symbol_class))
             error(NIL,"Corrupted dump file (4)",NIL);
-          var_SET(sym,val);
+          symb = sym->Object;
+          if (symb->mode != SYMBOL_LOCKED)
+            var_SET(sym,val);
         }
       else if (EXTERNP(p->Car,&symbol_class))
         {
-          var_lock(p->Car);
+          symb = p->Car->Object;
+          symb->mode = SYMBOL_LOCKED;
         }
       val = p;
       p = p->Cdr;
