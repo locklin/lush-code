@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: libsdl.lsh,v 1.7 2002-11-10 08:26:17 profshadoko Exp $
+;;; $Id: libsdl.lsh,v 1.8 2002-11-22 21:41:03 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -293,9 +293,10 @@
 ;; a set of function to manage pixel-accurate collision
 ;; detection between object drawn on an SDL_Surface.
 
+
 #? (sdl-collide <id> <src> <srcrect> <dst> <dstrect> <coll>)
-;; this function can be used as the basis of a pixel-accurate collision
-;; detection mechanism. The arguments <src> <srcrect> <dst> <dstrect>
+;; this is a low-level function for pixel-accurate collision
+;; detection. The arguments <src> <srcrect> <dst> <dstrect>
 ;; play the samee role as the corresponding arguments of
 ;; SDL_BlitSurface. <dst> is an idx3 of ints. The vector of
 ;; ints obtained by fixing the first two indexes and varying
@@ -357,6 +358,79 @@
              x2 = (dx2<dstx1)?dstx1:( (dx2>dstx2)?dstx2:dx2 );
              p = dstptr+(dy*dstpitch)+x1*dstdepth + dstword;
              for (j=x1; j<x2; j++) { *collword |= *p; *p |= dstbit; p++; }
+           }
+           $src += 3;
+         }
+      } #} ())
+
+#? (sdl-test-collision <id> <src> <srcrect> <dst> <dstrect> <coll>)
+;; this is a low-level function for pixel-accurate collision
+;; detection. This function is essentially identical to <sdl-collide>,
+;; except it doesn't modify the destination bitmap <dst>.
+;; This function can be used to get a list of which sprites would
+;; be collided if a sprite were drawn.
+;; On output, the i-th bit of <coll> (idx1 of ubyte) is set if 
+;; the any pixel of <src> would collide with any non-transparent
+;; pixel of <dst>.
+;; The arguments <src> <srcrect> <dst> <dstrect>
+;; play the samee role as the corresponding arguments of
+;; SDL_BlitSurface. <dst> is an idx3 of ints. The vector of
+;; ints obtained by fixing the first two indexes and varying
+;; the last is interpreted as a bitmap. <src> is an RLE-encoded mask of 
+;; an object (a list of runs) as returned by rle-encode-alpha
+;; which indicates which pixels trigger collision.
+;; <srcrect> is a subrectangle in <src> that is actually painted
+;; (must be NULL in current implementation). <dstrect> is the
+;; clipping rectangle in <dst>. <coll> is an idx1 of int interpreted
+;; as a bitmap, which on exit contains a set bit for every 
+;; already painted object that collided with the current object.
+(de sdl-test-collision (id src srcrect dst dstrect coll)
+    (cpheader "#include <SDL/SDL.h>") 
+    ((-gptr- "SDL_Rect *") srcrect dstrect)
+    ((-gptr- "int *") src)
+    ((-idx3- (-int-)) dst)
+    ((-idx1- (-int-)) coll)
+    ((-int-) id)
+      #{{
+         int nruns = *$src;
+         int i;
+         int dstx1, dsty1, dstx2, dsty2, *dstptr, dstpitch, dstdepth;
+         int dstword, dstbit, *collword;
+
+         dstpitch = $dst->mod[0];
+         dstdepth = $dst->mod[1];
+         dstptr = IDX_PTR($dst,int);
+         dstword = $id / 32;
+         dstbit  = 1<<($id % 32);
+         /* printf("dstword=%d, dstbit=%d\n", dstword, dstbit); */
+         if ( dstword > dstdepth-1 ){ run_time_error("sprite id too large for collision map"); }
+         collword = IDX_PTR($coll,int) + dstword;
+
+         $src++; /* skip run count and point to first run */
+         if ($srcrect != NULL) {
+           run_time_error("collision detection with non-null srcrect no yet implemented");
+         }
+         if ($dstrect == NULL) {
+           run_time_error("destination rect must be set for collision detection");
+         }
+         /* printf("dstrect x=%d,y=%d,w=%d,h=%d\n",$dstrect->x,$dstrect->y,$dstrect->w,$dstrect->h); */
+         dstx1= (int)($dstrect->x); dsty1= (int)($dstrect->y);
+         dstx2= dstx1+(int)($dstrect->w); dsty2=dsty1+(int)($dstrect->h);
+         /* these clippings are not supposed to be necessary */
+         dstx1 = (dstx1<0)?0:( (dstx1>$dst->dim[1])?$dst->dim[1]:dstx1 ); 
+         dsty1 = (dsty1<0)?0:( (dsty1>$dst->dim[0])?$dst->dim[0]:dsty1 ); 
+         dstx2 = (dstx2<0)?0:( (dstx2>$dst->dim[1])?$dst->dim[1]:dstx2 ); 
+         dsty2 = (dsty2<0)?0:( (dsty2>$dst->dim[0])?$dst->dim[0]:dsty2 ); 
+
+         /* printf("dstx1=%d, dsty1=%d, dstx2=%d, dsty2=%d\n",dstx1, dsty1, dstx2, dsty2); */
+         for (i=0; i<nruns; i++) {
+           int sy=$src[0], dy=sy+dsty1;
+           if ((dy>dsty1)&&(dy<dsty2)) {
+             int *p, j, x1, x2, dx1=$src[1]+dstx1, dx2=$src[2]+dstx1;
+             x1 = (dx1<dstx1)?dstx1:( (dx1>dstx2)?dstx2:dx1 );
+             x2 = (dx2<dstx1)?dstx1:( (dx2>dstx2)?dstx2:dx2 );
+             p = dstptr+(dy*dstpitch)+x1*dstdepth + dstword;
+             for (j=x1; j<x2; j++) { *collword |= *p; p++; }
            }
            $src += 3;
          }
@@ -507,6 +581,46 @@
 	   ((= key @@SDLK_UP) (when (< (xyk 1) 0) (xyk 1 0)))
 	   ((= key @@SDLK_DOWN) (when (> (xyk 1) 0) (xyk 1 0)))
 	   (t ()))))))) ())
+
+#? (==> <sdl-event> get-keys <keymap> <keystate>)
+;; <keymap> is an idx1 of -int- containing a list
+;; keys to be polled. The keys are identified by their
+;; SDLK code. 
+;; <keystate> is an -idx1- of
+;; -int- of the same size. Upon exit, each element of
+;; <keystate> whose corresponding key (as specified in 
+;; keymap) is pressed down is set to 1.
+;; If the corresponding key is not pressed, it is
+;; set to 0.
+;; This method can be used for games when simultaneous 
+;; keypresses of all the keys specified in <keymap> must 
+;; be detected.
+;; {<code>
+;;  (libload "sdl/libsdl")
+;;  (sdl-initialize)
+;;  (setq scr (new sdl-screen 640 480 "Key Test"))
+;;  (setq ev (new sdl-event))
+;;  (setq kmap [i @@SDLK_a @@SDLK_d @@SDLK_w @@SDLK_s])
+;;  (setq ks (int-matrix 4))
+;;  (while t
+;;    (==> ev get-keys kmap ks)
+;;    (when (<> 0 ((idx-sum ks)))
+;;     (print ks)
+;;     (sleep 0.25)))
+;; </code>}
+(defmethod sdl-event get-keys (keymap keystate)
+  ((-idx1- (-int-)) keymap keystate)
+  (while (<> 0 (SDL_PollEvent e))
+    (let ((type (sdl-event-type e)))
+      (cond 
+       ((= type @@SDL_KEYDOWN)
+	(let ((key (sdl-event-key-keysym-sym e)))
+	  (idx-bloop ((k keymap) (s keystate)) 
+	    (when (= key (k)) (s (+ 1 (s)))))))
+       ((= type @@SDL_KEYUP)
+	(let ((key (sdl-event-key-keysym-sym e)))
+	  (idx-bloop ((k keymap) (s keystate)) 
+	    (when (= key (k)) (s 0)))))))) ())
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? ** Miscellaneous/internal functions
@@ -984,7 +1098,7 @@
       (if (<> c 0) (error "error occured while blitting sprite")))) ())
 
 
-#? (==> <sdl-sprite> draw)
+#? (==> <sdl-sprite> drawc)
 ;; draw the sprite on the screen using the current frame and position.
 ;; This performs all the operation necessary to do pixel-accurate
 ;; collision detection. Any pixel with a non-zero alpha value 
@@ -1000,6 +1114,23 @@
       ;; rect is set by BlitSurface to the actual blitting rectangle
       (idx-clear collided)
       (sdl-collide id (idmask frame) (gptr ()) :win:collision rect collided))) ())
+
+#? (==> <sdl-sprite> test-collision)
+;; Computes the already drawn sprites with which the current sprite
+;; would collide if it were drawn. Unlike <drawc>, this method
+;; does not draw the sprite and does not modify the screen's
+;; collision map. It provides a way to test for collision and
+;; take actions before the collisio actually happens.
+;; Subsequent calls to <collided> can be performed to
+;; test if the current sprite would have collided with any other
+;; already drawn sprites.
+(defmethod sdl-sprite test-collision ()
+  (let* ((s (p frame))
+	 (w (SDL_Surface_w s))
+	 (h (SDL_Surface_h s)))
+    (set-sdl-rect rect (int (- x (hotx frame))) (int (- y (hoty frame))) w h)
+    (idx-clear collided)
+    (sdl-test-collision id (idmask frame) (gptr ()) :win:collision rect collided)) ())
 
 (defmethod sdl-sprite delete ()
   (free rect)
@@ -1127,13 +1258,14 @@
           sdl-surface-ptr-idx
           sdl-fill-rect
           sdl-collide
+          sdl-test-collision
 
 	  new-sdl-event sdl-event-type sdl-event-key-keysym-sym
 	  sdl-event-button-x sdl-event-button-y  sdl-event-motion-x
 	  sdl-event-motion-y
 
           (sdl-event sdl-event type key-keysym-sym button-x button-y 
-           motion-x motion-y delete get-arrows)
+           motion-x motion-y delete get-arrows get-keys)
 
           rle-encode-alpha
 
@@ -1145,7 +1277,8 @@
 
           (sdl-sprite set-hotpoint get-hotpoint sdl-sprite 
 	   get-width get-height alloc-frame make-frame load-frame
-           make-frame-idx set-frame get-frame move moverel draw delete)
+           make-frame-idx set-frame get-frame move moverel 
+	   draw drawc test-collision delete)
 
           collided
 
