@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.10 2003-05-06 20:32:37 leonb Exp $
+ * $Id: io.c,v 1.11 2004-01-18 05:35:31 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -194,13 +194,13 @@ print_char(register char c)
 
 char *prompt_string = 0;
 
-char 
-read_char(void)
+static void
+fill_line_buffer(void)
 {
-  register char c, *s;
-  
-  if (context->input_file==stdin && prompt_string) {
-    until(*line_pos) {
+  char c;
+  char *s;
+  while (! *line_pos) 
+    {
       line_pos = line_buffer;
       if (feof(stdin)) {
 	line_pos[0] = (char)EOF;
@@ -223,11 +223,18 @@ read_char(void)
 	}
       }
     }
+}
+
+char 
+read_char(void)
+{
+  char c = (char) EOF;
+  if (context->input_file==stdin && prompt_string) {
+    fill_line_buffer();
     c = *line_pos++;
   } else if (context->input_file) {
     c = getc(context->input_file);
-  } else
-    c = (char)EOF;
+  }
   /* Handle CR and CR-LF as line separator */
   if (c == '\r') {
     c = '\n';
@@ -286,33 +293,15 @@ read_char(void)
 char 
 next_char(void)
 {
-  register char c, *s;
-  
+  char c = (char) EOF;
   if (context->input_file==stdin && prompt_string) {
-    until(*line_pos) {
-      line_pos = line_buffer;
-      if (feof(stdin)) {
-	line_pos[0] = (char)EOF;
-	line_pos[1] = 0;
-      } else {
-	*line_buffer = 0;
-	c = 0;
-	TOPLEVEL_MACHINE;
-	console_getline(prompt_string,line_buffer, LINE_BUFFER - 2);
-	CHECK_MACHINE("on read");
-	for (s = line_buffer; *s; s++)
-	  c = *s;
-	ifn (c == '\n' || c == (char) EOF)
-	  putc('\n', stdout);
-      }
-    }
+    fill_line_buffer();
     c = *line_pos;
   } else if (context->input_file) {
     c = getc(context->input_file);
     if (c != (char)EOF)
       ungetc(c,context->input_file);
-  } else
-    c = (char)EOF;
+  }
   if (c == '\r')
     c = '\n';
   if (c == (char) EOF && context->input_tab)
@@ -599,20 +588,37 @@ DX(xread_string)
 }
 
 
+
+/* 
+ * Skip chars until reaching some expression 
+ */
+char 
+skip_to_expr(void)
+{
+  for(;;)
+    {
+      char c = next_char();
+      if (c == ';') {		/* COMMENT */
+        skip_char("~\n\r\377");
+      } else if (isascii((unsigned char)c) 
+                 && isspace((unsigned char)c) ) { 
+        read_char();
+      } else
+        return c;
+    }
+  return 0;
+}
+
 /*
  * read_word reads a lisp word. if the word was a quoted symbol, returns |xxx
  * if it was a string, returns "xxx" if anything else, return it
  */
-char *
+static char *
 read_word(void)
 {
   register char c, *s;
-  
   s = string_buffer;
-  while ((c = next_char(), 
-          isascii((unsigned char)c) && isspace((unsigned char)c)))
-    read_char();
-  
+  c = skip_to_expr();
   if (c == '|') {
     *s++ = read_char();
     until((c = read_char()) == '|' || c == (char) EOF) {
@@ -680,46 +686,6 @@ errw2:
  * 
  */
 
-static at *rl_read(register char *s);
-
-at *
-read_list(void)
-{
-  char *sav_prompt, *word, c;
-  at *ans;
-  
-  sav_prompt = prompt_string;
-
- read_list:
-
-  word = read_word();
-  c = word[1] ? 0 : word[0];
-  if (c == ';') {		/* COMMENT			 */
-    skip_char("~\n\r\377");
-    goto read_list;
-  }
-  if (c == ')') {		/* EXTRA RIGHT PARENTHESIS	 */
-    goto read_list;
-  }
-  ans = rl_read(word);
-
-  prompt_string = sav_prompt;
-  return ans;
-}
-
-DX(xread)
-{
-  at *answer;
-
-  ARG_NUMBER(0);
-  answer = read_list();
-  if (feof(context->input_file))
-    error(NIL, "End of file", NIL);
-  return answer;
-}
-
-
-
 static at *
 rl_string(register char *s)
 {
@@ -784,7 +750,8 @@ rl_string(register char *s)
   *d = 0;
   return new_string(string_buffer);
 
-err_string:error(NIL, "bad backslash sequence in a string", NIL);
+ err_string:
+  error(NIL, "bad backslash sequence in a string", NIL);
 }
 
 static at *
@@ -815,123 +782,73 @@ rl_mchar(register char *s)
 static at *
 rl_read(register char *s)
 {
-  at *answer, **where, *t;
-  char c;
+  at *answer, **where;
 
-read_again:
-
-  c = s[1] ? 0 : s[0];
-
+ read_again1:
+  
   /* DOT */
-  if (c == '.')
+  if (s[0] == '.' && !s[1])
     goto err_read1;
-
+  
   /* LIST */
-  if (c == '(') {
-    if (prompt_string)
-      prompt_string = "  ";
-    while (c = next_char(), isascii((unsigned char)c) && isspace((unsigned char)c))
-      read_char();
-    if (next_char() == (char) EOF)
-      goto err_read0;
-    
+  if (s[0] == '(' && !s[1]) {
     where = &answer;
     answer = NIL;
     
   read_again2:
-    while (c = next_char(), isascii((unsigned char)c) && isspace((unsigned char)c))
-      read_char();
-    if (next_char() == (char) EOF)
-      goto err_read0;
-    
     s = read_word();
-    c = s[1] ? 0 : s[0];
-    
-    switch (c) {
-    case ')':
+    if (!s[0])
+      goto err_read0;
+    else if (s[0] == ')' && !s[1])
       return answer;
-
-    case ';':
-      skip_char("~\n\r\377");
-      goto read_again2;
-      
-    case '.':
-      ifn(where)
-	goto err_read1;
+    else if (! where)
+      goto err_read1;
+    else if (s[0] == '.' && !s[1]) {
       s = read_word();
-    read_again3:
-      c = s[1] ? 0 : s[0];
-      switch (c) {
-      case '(':
-      case ')':
+      if (! s[0])
+        goto err_read0;
+      else if (s[1]==')' && !s[1])
 	goto err_read1;
-      case ';':
-	skip_char("~\n\r\377");
-	s = read_word();
-	goto read_again3;
-      default:
-	t = rl_read(s);
-	if (s[0] == '#' && t) {	/* DIEZE MACROCH */
-	  ifn(CONSP(t) && !t->Cdr)
-	    goto err_read2;
-	  *where = t->Car;
-	  LOCK(t->Car);
-	  UNLOCK(t);
-	} else {
-	  if (CONSP(t))
-	    goto err_read1;
-	  *where = t;
-	}
-	where = NIL;
-	goto read_again2;
-      }
-      
-    default:
-      ifn(where)
-	goto err_read1;
-      
-      if (s[0] == '#') {	/* DIEZE MACROCH */
-	t = rl_mchar(s);
-	if (t && !CONSP(t))
-	  goto err_read2;
-	*where = t;
-      } else
-	*where = cons(rl_read(s), NIL);
-      
-      while (CONSP(*where))
-	where = &((*where)->Cdr);
-      
+      *where = rl_read(s);
+      where = NIL;
       goto read_again2;
-    }
+    } else if (s[0] == '#') {
+      at *t = rl_mchar(s);
+      if (t && !CONSP(t))
+        goto err_read2;
+      *where = t;
+    } else
+      *where = cons(rl_read(s), NIL);
+    while (CONSP(*where))
+      where = &((*where)->Cdr);
+    goto read_again2;
   }
-
+  
   /* BINARY TOKENS */
   if (get_char_map(s[0]) & CHAR_BINARY)
     return bread(context->input_file, NIL);
-
+  
   /* MACRO CHARS */
   if (get_char_map(s[0]) & CHAR_MCHAR)
     return rl_mchar(s);
-
+  
   if (s[0] == '^')
     return rl_mchar(s);
-
+  
   if (s[0] == '#') {
     answer = rl_mchar(s);
-    ifn(answer) {
+    if (!answer) {
       s = read_word();
-      goto read_again;
+      goto read_again1;
+    } else if (CONSP(answer) && !answer->Cdr) {
+      at *p = answer->Car;
+      LOCK(p);
+      UNLOCK(answer);
+      return p;
     } else
-      if (CONSP(answer) && !answer->Cdr) {
-	register at *p;
-	p = answer->Car;
-	LOCK(p);
-	UNLOCK(answer);
-	return p;
-      } else
-	goto err_read2;
+      goto err_read2;
   }
-
+  
   /* STRING */
   if (s[0] == '\"')  /*"*/
     return rl_string(s + 1);
@@ -950,7 +867,7 @@ read_again:
   
   /* EOF */
   return NIL;
-
+  
 err_read0:
   error("read", "end of file", NIL);
 err_read1:
@@ -958,6 +875,29 @@ err_read1:
 err_read2:
   error("read", "bad dieze (#) macro-char", NIL);
 }
+
+at *
+read_list(void)
+{
+  while (skip_to_expr() == ')')
+    read_char();
+  return rl_read(read_word());
+}
+
+DX(xread)
+{
+  at *answer;
+
+  ARG_NUMBER(0);
+  answer = read_list();
+  if (feof(context->input_file))
+    error(NIL, "End of file", NIL);
+  return answer;
+}
+
+
+
+
 
 
 

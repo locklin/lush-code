@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.56 2004-01-11 19:13:29 leonb Exp $
+ * $Id: header.h,v 1.57 2004-01-18 05:35:31 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -674,9 +674,9 @@ TLAPI char *first_line(at *l);
 TLAPI char read_char(void);
 TLAPI char next_char(void);
 TLAPI int  ask (char *t);
-TLAPI char *read_word(void);
 TLAPI char *dmc(char *s, at *l);
 TLAPI char skip_char(char *s);
+TLAPI char skip_to_expr(void);
 TLAPI at *read_list(void);
 
 

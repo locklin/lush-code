@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.24 2003-12-15 14:00:10 leonb Exp $
+ * $Id: toplevel.c,v 1.25 2004-01-18 05:35:31 leonb Exp $
  **********************************************************************/
 
 
@@ -489,14 +489,16 @@ static int discard_flag;
 static int exit_flag = 0;
 
 void 
-toplevel(char *in, char *out, char *new_prompt)
+toplevel(char *in, char *out, char *prompts)
 {
   FILE *f1, *f2;
   at *ans = NIL;
   register at *q1, *q2;
-  char *sav_prompt;
+  char *ps1 = 0;
+  char *ps2 = 0;
+  char *ps3 = 0;
   struct context mycontext;
-
+  /* Open files */
   f1 = f2 = NIL;
   if (in) {
     f1 = open_read(in, "|.lshc|.snc|.tlc|.lsh|.sn|.tl");
@@ -504,7 +506,7 @@ toplevel(char *in, char *out, char *new_prompt)
   }
   if (out)
     f2 = open_write(out, "script");
-  
+  /* Make files current */
   context_push(&mycontext);
   symbol_push(at_file,ans);
   if (f1) {
@@ -516,31 +518,61 @@ toplevel(char *in, char *out, char *new_prompt)
     context->output_tab = 0;
   }
   if (sigsetjmp(context->error_jump, 1)) {
+    /* An error occurred */
     if (f1)
       file_close(f1);
     if (f2)
       file_close(f2);
+    if (ps1)
+      free(ps1);
     context_pop();
     symbol_pop(at_file);
     siglongjmp(context->error_jump, -1);
   }
-  
+  /* Split prompt */
+  if (prompts) {
+    const char d = '|';
+    char *s;
+    ps1 = strdup(prompts);
+    s = ps1;
+    while (*s && *s != d)
+      s += 1;
+    if (*s) {
+      *s++ = 0;
+      ps2 = s;
+      while (*s && *s != d)
+        s += 1;
+      if (*s) {
+        *s++ = 0;
+        ps3 = s;
+        while (*s && *s != d)
+          s += 1;
+        if (*s)
+          *s = 0;
+      }
+    }
+  }
+  /* Toplevel loop */
   exit_flag = 0;
-  sav_prompt = prompt_string;
   while ( !exit_flag && !feof(context->input_file)) {
     if (context->input_file == stdin)
       fflush(stdout);
-    if (new_prompt)
-      prompt_string = new_prompt;
-    else
-      prompt_string = 0;
+    /* Skip junk */
+    prompt_string = ps1;
+    while (skip_to_expr() == ')')
+      read_char();
+    /* Read */
+    prompt_string = ((ps1 && ps2) ? ps2 : ps1);
     TOPLEVEL_MACHINE;
     q1 = read_list();
     if (q1) {
+      /* Eval */
+      prompt_string = ((ps1 && ps3) ? ps3 : ps1);
       error_doc.debug_tab = 0;
       TOPLEVEL_MACHINE;
       discard_flag = FALSE;
       q2 = eval(q1);
+      /* Print */
       if (f2) {
 	if (discard_flag) {
 	  print_string("= ");
@@ -557,7 +589,7 @@ toplevel(char *in, char *out, char *new_prompt)
       UNLOCK(q2);
     }
   }
-  
+  /* Cleanup */
   if (context->input_file)
     {
       clearerr(context->input_file);
@@ -575,9 +607,10 @@ toplevel(char *in, char *out, char *new_prompt)
     }
   if (f2)
     file_close(f2);
+  if (ps1)
+    free(ps1);
   context_pop();
   symbol_pop(at_file);
-  prompt_string = sav_prompt;
   exit_flag = 0;
 }
 
