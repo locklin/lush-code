@@ -1,0 +1,191 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: svqpsvm.lsh,v 1.1 2004-08-24 19:26:21 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-ubyte")
+(libload "svqp")
+(libload "kernel")
+
+;; ----------------------------------------
+
+#? *** SvqpSVM
+;; This is a simple SVM implemented with the SVQP optimizer.
+
+
+(defclass SVMProgram QuadraticProgram
+  ((-idx1- (-int-)) x)
+  ((-obj- (SVMKernel)) kernel) )
+
+(defmethod SVMProgram SVMProgram(xx kk)
+  ((-idx1- (-int-)) xx)
+  ((-obj- (SVMKernel)) kk) 
+  (setq x xx)
+  (setq kernel kk)
+  (==> this QuadraticProgram (idx-dim xx 0)) )
+
+(defmethod SVMProgram compute-arow(i r)
+  ((-int-) i)
+  ((-idx1- (-double-)) r)
+  (idx-bloop ((x1 x)(r1 r))
+    (r (==> kernel call i (x1))) )
+  () )
+
+(defclass SvqpSVM Object
+  ;; data
+  ((-obj- (SVMKernel)) kernel)
+  ((-idx1- (-int-)) x)
+  ((-idx1- (-double-)) y)
+  ;; result
+  ((-idx1- (-double-)) alpha)
+  ((-double-) b)
+  ((-int-) nsv)
+  ;; parameters
+  ((-double-) epsgr)			;see svqp
+  ((-double-) epskt)			;see svqp
+  ((-double-) maxst)			;see svqp
+  ((-double-) Cp)			;C for positive examples
+  ((-double-) Cn)			;C for negative examples
+  ((-bool-) verbose) )
+
+(defmethod  SvqpSVM SvqpSVM(ik n)
+  ((-obj- (SVMKernel)) ik)
+  ((-int-) n)
+  (setq kernel ik)
+  (setq x (int-matrix n))
+  (setq y (double-matrix n))
+  (setq alpha (double-matrix n))
+  (setq b 0)
+  (setq nsv 0)
+  (setq Cp 1)
+  (setq Cn 1)
+  (setq verbose t)
+  (setq epsgr 1e-8)
+  (setq epskt 1e-20)
+  (setq maxst 1e+10)
+  () )
+
+(defmethod SvqpSVM set-xy(lx ly)
+  (let ((l1 (len lx))
+        (l2 (len ly)) )
+    (when (<> l1 l2)
+      (error "List lengths do not match") )
+    (idx-i1resize x l1)
+    (idx-d1resize y l2)
+    (x () lx)
+    (y () ly) )
+  t )
+
+(defmethod SvqpSVM get-nSV()
+  (when (<= nsv 0)
+    (error "Must call method 'run' first") )
+  nsv )
+
+(defmethod SvqpSVM get-expansion()
+  (when (<= nsv 0)
+    (error "Must call method 'run' first") )
+  (let ((sv (int-matrix nsv))
+	(a  (double-matrix nsv))
+	(k  0) )
+    ((-int-) k)
+    (idx-gloop ((i)(alpha1 alpha))
+      (when (<> (alpha1) 0)
+	(sv k i)
+	(a  k (alpha1))
+	(incr k) ) )
+    (let ((lsvm (new SVMExpansion kernel sv a)))
+      (setq :lsvm:b b)
+      (setq :lsvm:positive-class +1)
+      (setq :lsvm:negative-class +1)
+      lsvm ) ) ) 
+
+(defmethod SvqpSVM run()
+  (when (<> (idx-dim x 0) (idx-dim y 0))
+    (error "Matrix x and y have different sizes") )
+  (when (or (< Cn 0) (< Cp 0))
+    (error "Negative Cp and/or Cn") )
+
+  (let* ((n (idx-dim x 0))
+	 (pgm (new SVMProgram x kernel))
+	 (bv (double-matrix n))
+	 (cmin (double-matrix n))
+	 (cmax (double-matrix n)) )
+    ;; init
+    (idx-bloop ((y1 y)(b1 bv)(cmin1 cmin)(cmax1 cmax))
+      (let ((f (> (y1) 0)))
+	(b1      (if f +1 -1))
+	(cmin1   (if f 0 (- Cn)))
+	(cmax1   (if f Cp 0)) ) )
+    (idx-clear alpha)
+    ;; prepare
+    (==> pgm set-x alpha)
+    (==> pgm set-b bv)
+    (==> pgm set-cmin cmin)
+    (==> pgm set-cmax cmax)
+    (==> pgm set-sumflag t)
+    (==> pgm set-ktflag t)
+    (==> pgm set-maxst maxst)
+    (==> pgm set-epsgr epsgr)
+    (==> pgm set-epskt epskt)
+    (==> pgm set-verbosity (if verbose 1 0))
+    ;; run
+    (when (< (==> pgm run) 0)
+      (printf "svqp error: %s\n" (==> pgm get-error))
+      (error "svqp error") )
+    ;; retrieve nsv
+    (setq nsv 0)
+    (idx-bloop ((alpha1 alpha))
+      (when (<> (alpha1) 0)
+	(incr nsv) ) )
+    ;; retrieve alpha
+    (setq b 0)
+    (idx-copy (==> pgm get-x) alpha)
+    (let ((lexp (==> this get-expansion))
+	  (lpos 0)(npos 0)
+	  (lneg 0)(nneg 0))
+      (idx-gloop ((i)(alpha1 alpha))
+	(cond
+	 ((> (alpha1) 0)
+	  (incr npos 1)
+	  (incr lpos (==> lexp predict i)) )
+	 ((< (alpha1) 0)
+	  (incr nneg 1)
+	  (incr lneg (==> lexp predict i)) ) ) )
+      (when (<> (+ npos nneg) nsv)
+	(error "internal") )
+      (setq b (2/ (+ (/ lpos npos) (/ lneg nneg))))
+      (+ npos nneg) ) ) )
+
+
+
+;; ----------------------------------------
+
+(dhc-make ()
+	  (svmprogram svmprogram compute-arow)
+	  (svqpsvm svqpsvm get-nsv get-expansion run) )
