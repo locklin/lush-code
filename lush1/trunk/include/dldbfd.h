@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.h,v 1.3 2002-05-08 19:52:47 leonb Exp $
+ * $Id: dldbfd.h,v 1.4 2004-02-12 19:54:25 leonb Exp $
  **********************************************************************/
 
 /* DLD-4.0 -- DYNAMIC LINK/UNLINK EDITOR FOR C
@@ -120,6 +120,8 @@ void *dld_dlopen(char *path, int mode);
    as they should be. */
 int dld_simulate_unlink_by_file(const char *);
 
-
+/* New: print gdb commands to load the symbol 
+   of the dynamically loaded object files. */
+void dld_print_gdb_commands(int detail);
 
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.27 2003-07-11 13:03:45 leonb Exp $
+ * $Id: dldbfd.c,v 1.28 2004-02-12 19:54:31 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1217,7 +1217,7 @@ mipself_create_got(module_entry *ent,
         sgot->alignment_power = 4;
       /* Set GOT relocations */
       sgot->orelocation = xballoc(ent->abfd, info->gotsize*sizeof(void*));
-      bfd_hash_traverse(&info->got_table, (void*)mipself_got_traverse, sgot);
+      bfd_hash_traverse(&info->got_table, (boolean(*)())mipself_got_traverse, sgot);
       sgot->reloc_count = info->gotsize;
     }
   /* return GOT section if any */
@@ -2290,7 +2290,7 @@ link_archive_members(module_entry *module)
         while (cookie.again && dld_undefined_sym_count>0)
         {
             cookie.again = FALSE;
-            bfd_hash_traverse(&global_symbol_table, (void*)arlink_traverse, &cookie);
+            bfd_hash_traverse(&global_symbol_table, (boolean(*)()) arlink_traverse, &cookie);
         }
     }
     CATCH(n)
@@ -2678,7 +2678,7 @@ dld_list_undefined_sym (void)
         cookie.syms = xmalloc( (dld_undefined_sym_count+1)*sizeof(char*) );
         cookie.current = 0;
         cookie.total = dld_undefined_sym_count;
-        bfd_hash_traverse(&global_symbol_table, (void*)list_undefined_traverse, &cookie);
+        bfd_hash_traverse(&global_symbol_table, (boolean(*)())list_undefined_traverse, &cookie);
         ASSERT(cookie.current = cookie.total);
         cookie.syms[cookie.current] = 0;
     }
@@ -3035,3 +3035,36 @@ dld_remove_defined_symbol (const char *id)
     END_CATCH;
 }
 
+
+
+
+/* -------------- */
+/* DEBUGGING HELP */
+
+/* dld_print_gdb_commands -- prints gdb commands to load symbol tables */
+
+void 
+dld_print_gdb_commands(int detail)
+{
+  module_entry *module=0;
+  for (module = dld_modules; module; module=module->next)
+    {
+	bfd *abfd = module->abfd;
+	if (bfd_check_format(abfd, bfd_object))
+	  {
+	    asection *p;
+	    for (p=abfd->sections; p; p=p->next)
+	      if (p->flags & SEC_CODE)
+		if (p->flags & SEC_ALLOC)
+		  break;
+	    if (! p)
+	      continue;
+	    printf("\tadd-symbol-file %s %p", module->filename, vmaptr(p->vma));
+	    if (detail)
+	      for (p=abfd->sections; p; p=p->next)
+		if (p->flags & SEC_ALLOC)
+		  printf(" -s %s %p", p->name, vmaptr(p->vma));
+	    printf("\n");
+	  } 
+    }
+}
