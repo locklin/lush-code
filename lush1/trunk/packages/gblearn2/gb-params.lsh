@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: gb-params.lsh,v 1.3 2002-12-19 04:27:25 profshadoko Exp $
+;;; $Id: gb-params.lsh,v 1.4 2003-05-05 14:18:27 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -320,11 +320,13 @@
 ;; derivatives.
 (defclass idx1-ddparam idx1-dparam-eps
   ((-idx1- (-gbtype-)) ddx)
-  ((-idx1- (-gbtype-)) ddeltas))
+  ((-idx1- (-gbtype-)) ddeltas)
+  ((-idx1- (-gbtype-)) xaverage) )
 
 (defmethod idx1-ddparam resize (s) 
   ((-int-) s)
   (midx-m1resize x s)
+  (midx-m1resize xaverage s)
   (midx-m1resize dx s)
   (midx-m1resize deltas s)
   (midx-m1resize ddx s)
@@ -339,6 +341,7 @@
 (defmethod idx1-ddparam idx1-ddparam (s sts)
   ((-int-) s sts)
   (setq x (gbtype-matrix sts))
+  (setq xaverage (gbtype-matrix sts))
   (setq dx (gbtype-matrix sts))
   (setq deltas (gbtype-matrix sts))
   (setq temp (gbtype-matrix sts))
@@ -358,6 +361,29 @@
 (defmethod idx1-ddparam update-ddeltas (knew kold)
   ((-gbtype-) knew kold)
   (idx-f1lincomb ddx knew ddeltas kold ddeltas) ())
+
+#? (==> <idx1-ddparam> update-xaverage <kappa>)
+;; Update running average of x
+;;  xaverage += kappa ( x - xaverage )
+(defmethod idx1-ddparam update-xaverage (kappa)
+  ((-gbtype-) kappa)
+  (idx-f1lincomb xaverage (- 1 kappa) x kappa xaverage) 
+  () )
+
+#? (==> <idx1-ddparam> copy-xaverage)
+;; Copy contents of xaverage into x
+(defmethod idx1-ddparam copy-xaverage()
+  (idx-copy xaverage x)
+  () )
+
+#? (==> <idx1-ddparam> swap-xaverage)
+;; Swap contents of x and xaverage
+(defmethod idx1-ddparam swap-xaverage()
+  (idx-bloop ((x0 x)(xa0 xaverage))
+    (let ((tmp (x0)))
+      (x0 (xa0))
+      (xa0 tmp)) )
+  () )
 
 #? (==> <idx1-ddparam> saliencies)
 ;; Compute the parameters saliencies as defined by the 
@@ -459,7 +485,8 @@
  (idx1-dparam-eps resize idx1-dparam-eps update 
 		  set-epsilons set-epsilon)
  (idx1-ddparam resize idx1-ddparam clear-ddx clear-ddeltas
-	       update-ddeltas compute-epsilons saliencies
+	       update-ddeltas update-xaverage swap-xaverage copy-xaverage 
+               compute-epsilons saliencies
 	       alloc-idx0-ddstate alloc-idx1-ddstate alloc-idx2-ddstate
 	       alloc-idx3-ddstate alloc-idx4-ddstate))
 

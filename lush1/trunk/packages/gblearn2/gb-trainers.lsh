@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: gb-trainers.lsh,v 1.5 2002-12-20 07:32:37 profshadoko Exp $
+;;; $Id: gb-trainers.lsh,v 1.6 2003-05-05 14:18:27 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "gblearn2/gb-modules")
@@ -201,10 +201,14 @@
   (==> this supervised m p e in out des)
   ())
 
-#? (==> supervised-gradient train-online <dsource> <mtr> <n> <eta> <inertia>)
+#? (==> supervised-gradient train-online <dsource> <mtr> <n> <eta> [<inertia>] [<kappa>])
 ;; train with stochastic (online) gradient on the next <n>
 ;; samples of data source <dsource> with global learning rate <eta>.
-;; and "momentum term" <inertia>.
+;; and "momentum term" <inertia>.  
+;; Optionally maintain a running average of the weights with positive rate <kappa>.  
+;; A negative value for kappa sets a rate equal to -<kappa>/<age>.
+;; No such update is performed if <kappa> is 0.
+;;
 ;; Record performance in <mtr>. 
 ;; <mtr> must understand the following methods:
 ;; {<code>
@@ -216,7 +220,7 @@
 ;; <desired> is the desired output (most likely an idx0 of int),
 ;; and <energy> is an <idx0-state>.
 ;; The <info> should return a list of relevant measurements.
-(defmethod supervised-gradient train-online (ds mtr n eta inertia)
+(defmethod supervised-gradient train-online (ds mtr n eta &optional (inertia 0) (kappa 0))
   (repeat n
     (==> ds fprop input desired)
     (==> machine fprop input output desired energy)
@@ -224,18 +228,20 @@
     (==> param clear-dx)
     (==> machine bprop input output desired energy)
     (==> param update eta inertia)
+    (cond ((> kappa 0) (==> param update-xaverage kappa))
+          ((< kappa 0) (==> param update-xaverage (/ (- kappa) (1+ age)))) )
     (incr age)
     ;; (print (==> ds tell) (desired) :machine:mout:x)
     (==> ds next))
   (==> mtr info))
 
-#? (==> supervised-gradient train <dsource> <mtr> <eta> <inertia>)
+#? (==> supervised-gradient train <dsource> <mtr> <eta> [<inertia>] [<kappa>])
 ;; train the machine on all the samples in data source 
 ;; <dsource> and measure the performance with <mtr>.
-(defmethod supervised-gradient train (ds mtr eta inertia)
+(defmethod supervised-gradient train (ds mtr eta &optional (inertia 0) (kappa 0))
   (==> ds seek 0)
   (==> mtr clear)
-  (==> this train-online ds mtr (==> ds size) eta inertia))
+  (==> this train-online ds mtr (==> ds size) eta inertia kappa))
 
 #? (==> supervised-gradient compute-diaghessian <dsource> <n> <mu>)
 ;; Compute per-parameter learning rates (epsilons) using the
