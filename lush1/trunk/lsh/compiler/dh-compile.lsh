@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.39 2002-12-16 11:51:27 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.40 2003-01-13 15:44:35 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -745,20 +745,28 @@
 
 #? (dhc-substitute-env <str> [<htable>])
 ;; Returns a copy of string <str> after substituting all
-;; environment variables.  Substitution values are
-;; searched in <htable> when available, then passed
-;; to functions <getconf> and <getenv>.
+;; variable names prefixed by a <"$"> character. 
+;; Variable <"LUSHDIR"> is always replaced by the
+;; content of <lushdir>. Substitutions then are
+;; first searched in the optional <htable>, and
+;; finally passed to functions <getconf> and <getenv>.
+;; 
 (de dhc-substitute-env (str &optional ht)
   (let ((r ())
         (pos 1)
         (npos ()) )
     ;; Decompose and substitute
-    (while (setq npos (regex-seek "\\$[({]?[_A-Za-z][_A-Za-z0-9]*[})]?" str pos))
+    (while (setq npos (regex-seek 
+                       "\\$[({]?[_A-Za-z][_A-Za-z0-9]*[})]?" 
+                       str pos))
       (when (> (car npos) pos)
         (setq r (cons (mid str pos (- (car npos) pos)) r)) )
       (let* ((var (regex-subst "[$({})]" "" (mid str (car npos) (cadr npos)) ))
-             (subst1 (or (when ht (ht var)) (getconf var)))
-             (subst2 (or subst1 (getenv var))) )
+             (subst1 (or (when (= var "LUSHDIR") lushdir)
+                         (when ht (ht var)) 
+                         (getconf var) ))
+             (subst2 (or subst1 
+                         (getenv var))) )
         (when (and (not subst1) (= subst2 ""))
           (error 'dhc-substitute-env "Unknown variable" var) )
         (setq r (cons subst2 r)) )
@@ -772,9 +780,9 @@
 ;;.TYPE VAR
 ;;.FILE lushenv.lsh
 ;; This variable is defined by <"lushenv.sn"> when the owner of the lush
-;; directory is different from the owner of the lush process.  Compiled versions
-;; of the system lush files will be created in a shadow directory tree located
-;; under the <varlushdir> directory.
+;; directory is different from the owner of the lush process.  
+;; Compiled versions of the system lush files will be created in a shadow
+;; directory tree located under the <varlushdir> directory.
 
 #? (dhc-make-cdir <cdir> [<create>])
 ;; This function returns <cdir> when <varlushdir> is the empty list.  When
@@ -882,7 +890,7 @@
 ;;  The pathname of the object file.
 (when (not (stringp dhc-make-command))
   (defvar dhc-make-command
-    "$CC $DEFS $INCS $LUSHFLAGS -c $SRC -o $OBJ" ) )
+    "$CC $DEFS $LUSHFLAGS -I$LUSHDIR/include -c $SRC -o $OBJ" ) )
 
 
 #? dhc-make-overrides
@@ -928,11 +936,10 @@
   (let ((cmd ()) (vars (htable)))
     ;; Define additional variables.
     (each (((var . def) dhc-make-overrides)) (vars var def))
-    (vars "INCS" (concat "-I" (concat-fname lushdir "include")))
     (setq lushflags (or lushflags dhc-make-lushflags))
     (vars "LUSHFLAGS" (dhc-substitute-env lushflags vars))
-    (vars "SRC" src)
-    (vars "OBJ" obj)
+    (vars "SRC" (dhc-substitute-env src vars))
+    (vars "OBJ" (dhc-substitute-env obj vars))
     (setq cmd (dhc-substitute-env dhc-make-command vars))
     ;; Print and execute.
     (printf "%s\n" cmd)
