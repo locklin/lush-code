@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.38 2004-10-15 14:54:36 leonb Exp $
+ * $Id: dldbfd.c,v 1.39 2004-10-15 19:43:29 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1794,7 +1794,9 @@ apply_relocations(module_entry *module, int externalp)
                                                 p, NULL, &dummy_string );
 #ifdef __x86_64__
 		/* Quick and dirty fix for amd64 overflow problems */
-		if (status==bfd_reloc_overflow && externalp)
+		if ( (hsym->flags & DLDF_DEFD) &&
+		     !( hsym->flags & DLDF_ALLOC) && 
+		     (data[reloc->address-1]==0xe8) )
 		  {
 		    bfd_byte *data = vmaptr(p->vma);
 		    if ( data[reloc->address - 1] == 0xe8 && hsym->flags == (DLDF_DEFD|DLDF_REFD))
