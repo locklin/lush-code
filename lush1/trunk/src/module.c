@@ -24,60 +24,163 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.37 2004-02-13 22:31:16 leonb Exp $
+ * $Id: module.c,v 1.38 2004-07-15 22:22:17 leonb Exp $
  **********************************************************************/
 
 
 
 #include "header.h"
 #include "dh.h"
-#include "dldbfd.h"
 
-/* ------ DLOPEN, BFD, ETC. -------- */
+/* ------- DLDBFD/NSBUNDLE HEADERS ------- */
 
 #if HAVE_LIBBFD
+# include "dldbfd.h"
 # define DLDBFD 1
+#elif HAVE_MACH_O_DYLD_H
+# include <mach-o/dyld.h>
+# define NSBUNDLE 1
 #endif
 
+/* ------- DLOPEN HEADERS ------- */
+
 #if HAVE_DLFCN_H
-#if HAVE_DLOPEN
-#include <dlfcn.h>
-#define DLOPEN 1
-typedef void* dlopen_handle_t;
-#endif
+# if HAVE_DLOPEN
+#  include <dlfcn.h>
+#  define DLOPEN 1
+#  define dlopen_handle_t void*
+# endif
 #endif
 
 #if HAVE_DL_H 
-#if HAVE_LIBDLD
-#include <dl.h>
-#define DLOPEN 1
-typedef shl_t dlopen_handle_t
-#endif
-#endif
-
-#ifdef WIN32
-#define DLOPEN 1
-typedef void* dlopen_handle_t;
+# if HAVE_LIBDLD
+#  include <dl.h>
+#  define DLOPEN 1
+#  define DLOPENSHL 1
+#  define dlopen_handle_t shl_t
+# endif
 #endif
 
 #if DLOPEN
-#define RTLD_SPECIAL -1
-#ifndef RTLD_NOW
-#define RTLD_NOW 1
-#endif
-#ifndef RTLD_LAZY
-#define RTLD_LAZY 1
-#endif
-#ifndef RTLD_GLOBAL
-#define RTLD_GLOBAL 0
-#endif
+# define RTLD_SPECIAL -1
+# ifndef RTLD_NOW
+#  define RTLD_NOW 1
+# endif
+# ifndef RTLD_LAZY
+#  define RTLD_LAZY 1
+# endif
+# ifndef RTLD_GLOBAL
+#  define RTLD_GLOBAL 0
+# endif
 #endif
 
-#ifndef DLDBFD
-#ifdef DLOPEN
-#ifdef HAVE_DL_H
 
-/* DLOPEN emulation under HP/UX */
+/* ------- NSBUNDLE HELPERS ------- */
+
+#if NSBUNDLE
+/* Use the NSObjectFileImage and NSModule apis */
+
+static const char *nsbundle_error;
+
+typedef struct {
+  char *name;
+  NSObjectFileImage nsimage;
+  NSModule *nsmodule;
+} nsbundle_t;
+
+static void
+nsbundle_geterror(void)
+{
+  int ierr;
+  const char *ferr;
+  NSLinkEditErrors lerr;
+  NSLinkEditError(&lerr, &ierr, &ferr, &nsbundle_error);
+}
+
+static int 
+nsbundle_create(const char *fname, nsbundle_t *bundle)
+{
+  int fnamelen = strlen(fname);
+  char *cmd = 0;
+  bundle->name = 0;
+  bundle->nsimage = 0;
+  bundle->nsmodule = 0;
+  nsbundle_error = "out of memory";
+  if ((cmd = malloc(fnamelen*2 + 128)) && 
+      (bundle->name = malloc(fnamelen + 8)) )
+    {
+      sprintf(bundle->name, "%s.bundle", fname);
+      sprintf(cmd, 
+	      "ld -bundle -flat_namespace -bind_at_load -undefined suppress"
+	      " \"%s\" -lbundle1.o -lgcc -lSystem -o \"%s\"", 
+	      fname, bundle->name);
+      nsbundle_error = "Cannot create bundle from object file";
+      if (system(cmd) == 0)
+	{
+	  nsbundle_error = "Cannot load bundle";
+	  if (NSCreateObjectFileImageFromFile(bundle->name, &bundle->nsimage) 
+	      == NSObjectFileImageSuccess)
+	    {
+	      nsbundle_error = 0;
+	      /* NSBUNDLE: should first check executability! */
+	      bundle->nsmodule = NSLinkModule(bundle->nsimage, bundle->name, 
+					      NSLINKMODULE_OPTION_BINDNOW|
+					      NSLINKMODULE_OPTION_RETURN_ON_ERROR);
+	      if (! bundle->nsmodule)
+		nsbundle_geterror();
+	    }
+	}
+    }
+  if (cmd) 
+    free(cmd);
+  if (!nsbundle_error)
+    return 0;
+  if (bundle->name)
+    free(bundle->name);
+  bundle->name = 0;
+  return -1;
+}
+
+static void
+nsbundle_destroy(nsbundle_t *bundle)
+{
+  if (bundle->nsmodule)
+    NSUnLinkModule(bundle->nsmodule, 
+		   NSUNLINKMODULE_OPTION_RESET_LAZY_REFERENCES);
+  bundle->nsmodule = 0;
+  if (bundle->nsimage)
+    NSDestroyObjectFileImage(bundle->nsimage);
+  bundle->nsimage = 0;
+  if (bundle->name)
+    free(bundle->name);
+  bundle->name = 0;
+}
+
+static void *
+nsbundle_lookup(const char *sname)
+{
+  void *addr = 0;
+  char *usname = malloc(strlen(sname)+2);
+  if (usname)
+    {
+      strcpy(usname,"_");
+      strcat(usname,sname);
+      if (NSIsSymbolNameDefined(usname))
+	{
+	  NSSymbol symbol = NSLookupAndBindSymbol(usname);
+	  addr = NSAddressOfSymbol(symbol);
+	}
+      printf("%s = %p\n", usname, addr);
+      free(usname);
+    }
+  return addr;
+}
+
+#endif
+
+/* ------- DLOPEN HELPERS ------- */
+
+#if DLOPENSHL
 static dlopen_handle_t dlopen(char *soname, int mode)
 { 
   return shl_load(soname,BIND_IMMEDIATE|BIND_NONFATAL|
@@ -98,19 +201,13 @@ static char* dlerror(void)
 {
   return "Function shl_load() has failed";
 }
-
-#endif
-#endif
 #endif
 
-#ifndef DLOPEN
-typedef void* dlopen_handle_t;
-#endif
 
 /* ------ THE MODULE DATA STRUCTURE -------- */
 
 #define MODULE_USED       0x01
-#define MODULE_DLD        0x02
+#define MODULE_O          0x02
 #define MODULE_SO         0x04
 #define MODULE_EXEC       0x08
 #define MODULE_INIT       0x20
@@ -122,10 +219,15 @@ struct module {
   int flags;
   struct module *prev;
   struct module *next;
-  dlopen_handle_t *handle;
   char *filename;
   char *initname;
   void *initaddr;
+#if NSBUNDLE
+  nsbundle_t bundle;
+#endif
+#if DLOPEN
+  dlopen_handle_t *handle;
+#endif
   at *backptr;
   at *defs;
   at *hook;
@@ -179,9 +281,12 @@ module_dispose(at *p)
   m->filename = 0;
   m->initname = 0;
   m->initaddr = 0;
+#if DLOPEN
   m->handle = 0;
+#endif
   deallocate(&module_alloc, (struct empty_alloc *) m);
 }
+
 
 static void 
 module_action(at *p, void (*action) (at *p))
@@ -360,7 +465,7 @@ dynlink_error(at *p)
   const char *err;
   char buffer[80];
   strcpy(buffer,"Dynamic linking error");
-#ifdef DLDBFD
+#if DLDBFD
   if ((err = dld_errno))
     {
       strcpy(buffer,"dld/bfd error\n*** ");
@@ -368,7 +473,15 @@ dynlink_error(at *p)
       error(NIL, buffer, p);
     }
 #endif  
-#ifdef DLOPEN
+#if NSBUNDLE
+  if ((err = nsbundle_error))
+    {
+      strcpy(buffer,"nsbundle error\n*** ");
+      strcat(buffer, nsbundle_error);
+      error(NIL, buffer, p);
+    }
+#endif
+#if DLOPEN
   if ((err = dlerror()))
     {
       strcpy(buffer,"dlopen error\n*** ");
@@ -384,7 +497,7 @@ dynlink_init(void)
 {
   if (! dynlink_initialized)
     {
-#ifdef DLDBFD
+#if DLDBFD
       if (!root.filename)
         error(NIL,"Internal error (program_name unset)",NIL);        
       if (dld_init(root.filename))
@@ -418,13 +531,16 @@ update_exec_flag(struct module *m)
 {
   int oldstate = (m->flags & MODULE_EXEC);
   int newstate = TRUE;
-#ifdef DLDBFD
-  if (m->flags & MODULE_DLD)
+#if DLDBFD
+  if (m->flags & MODULE_O)
     {
       newstate = FALSE;
       if (m->initname)
         newstate = dld_function_executable_p(m->initname);
     }
+#endif
+#if NSBUNDLE 
+  /* NSBUNDLE: implement me */
 #endif
   m->flags &= ~MODULE_EXEC;
   if (newstate)
@@ -463,6 +579,8 @@ update_init_flag(struct module *m)
       majptr = minptr = 0;
 #if DLDBFD
       majptr = (int*) dld_get_symbol(string_buffer);
+#elif NSBUNDLE
+      majptr = (int*) nsbundle_lookup(string_buffer);
 #elif DLOPEN
       majptr = (int*) dlsym(m->handle, string_buffer);
 #endif
@@ -470,6 +588,8 @@ update_init_flag(struct module *m)
       strcat(string_buffer, m->initname + 5);
 #if DLDBFD
       minptr = (int*) dld_get_symbol(string_buffer);
+#elif NSBUNDLE
+      minptr = (int*) nsbundle_lookup(string_buffer);
 #elif DLOPEN
       minptr = (int*) dlsym(m->handle, string_buffer);
 #endif
@@ -587,6 +707,9 @@ DX(xmodule_depends)
     dld_simulate_unlink_by_file(0);
   }
 #endif
+#if NSBUNDLE
+  /* NSBUNDLE (implement me!) */
+#endif
   /* Return */
   return p;
 }
@@ -631,6 +754,9 @@ cleanup_module(struct module *m)
          }
    dld_simulate_unlink_by_file(0);
  }
+#endif
+#if NSBUNDLE
+  /* NSBUNDLE (implement me!) */
 #endif
   
   /* 3 --- Zap instances of impacted classes */
@@ -700,7 +826,7 @@ module_maybe_unload(struct module *m)
 {
   if (m == &root)
     return "Cannot unload root module";
-  if (! (m->flags & MODULE_DLD))
+  if (! (m->flags & MODULE_O))
     return "Cannot unload module of this type";
   if (m->flags & MODULE_STICKY)
     return "Cannot unload this module";
@@ -715,9 +841,13 @@ module_maybe_unload(struct module *m)
       dynlink_error(new_string(m->filename));
 #endif
 #if DLDBFD
-  if (m->flags & MODULE_DLD)
+  if (m->flags & MODULE_O)
     if (dld_unlink_by_file(m->filename, 1))
       dynlink_error(new_string(m->filename));
+#endif
+#if NSBUNDLE
+  if (m->flags & MODULE_O)
+    nsbundle_destroy(&m->bundle);
 #endif
   check_executability = TRUE;
   /* Remove the module from the chain */
@@ -768,7 +898,9 @@ module_load(char *filename, at *hook)
   at *ans;
   struct module *m;
   int dlopenp;
+#if DLOPEN
   dlopen_handle_t handle = 0;
+#endif
   /* Check that file exists */
   filename = concat_fname(NULL, filename);
   ans = new_string(filename);
@@ -810,7 +942,14 @@ module_load(char *filename, at *hook)
   m->flags = MODULE_USED ;
   m->prev = 0;
   m->next = 0;
+#if DLOPEN
   m->handle = handle;
+#endif
+#if NSBUNDLE
+  m->bundle.name = 0;
+  m->bundle.nsimage = 0;
+  m->bundle.nsmodule = 0;
+#endif
   m->filename = filename = strdup(filename);
   m->initname = 0;
   m->initaddr = 0;
@@ -826,14 +965,16 @@ module_load(char *filename, at *hook)
   /* Load the file */
   if (dlopenp)
     {
-#if DLDBFD && DLOPEN
+#if DLOPEN
+# if DLDBFD
       if (! (handle = dld_dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
         dynlink_error(new_string(m->filename));
-#elif DLOPEN
+# else
       if (! (handle = dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
         dynlink_error(new_string(m->filename));
+# endif
 #else
-      error(NIL,"Dynlinking this file is not supported (need dlopen)", 
+      error(NIL,"Dynlinking this file is not supported (dlopen)", 
             new_string(m->filename));
 #endif
       m->flags |= MODULE_SO | MODULE_STICKY;
@@ -843,11 +984,14 @@ module_load(char *filename, at *hook)
 #if DLDBFD
       if (dld_link(m->filename))
         dynlink_error(new_string(m->filename));
+#elif NSBUNDLE
+      if (nsbundle_create(m->filename, &m->bundle))
+        dynlink_error(new_string(m->filename));
 #else
-      error(NIL,"Dynlinking this file is not supported (need bfd)", 
+      error(NIL,"Dynlinking this file is not supported (bfd)", 
             new_string(m->filename));
 #endif      
-      m->flags |= MODULE_DLD;
+      m->flags |= MODULE_O;
     }
   /* Search init function */
 #if DLOPEN
@@ -857,16 +1001,20 @@ module_load(char *filename, at *hook)
       m->initaddr = dlsym(handle, string_buffer);
     }
 #endif
-#if DLDBFD
   if (! m->initaddr)
     {
+#if DLDBFD
       strcpy(string_buffer, "init_");
       strcat(string_buffer, basename(m->filename, 0));
-      if ((l = strchr(string_buffer, '.')))
-        l[0] = 0;
+      if ((l = strchr(string_buffer, '.'))) l[0] = 0;
       m->initaddr = dld_get_func(string_buffer);
-    }
+#elif NSBUNDLE
+      strcpy(string_buffer, "init_");
+      strcat(string_buffer, basename(m->filename, 0));
+      if ((l = strchr(string_buffer, '.'))) l[0] = 0;
+      m->initaddr = nsbundle_lookup(string_buffer);
 #endif
+    }
   if (m->initaddr)
     {
       m->initname = strdup(string_buffer);
@@ -910,7 +1058,7 @@ DX(xmodule_load)
 
 DX(xmod_create_reference)
 {
-#ifdef DLDBFD
+#if DLDBFD
   int i;
   ALL_ARGS_EVAL;
   dynlink_init();
@@ -927,7 +1075,7 @@ DX(xmod_compatibility_flag)
 {
   ARG_NUMBER(1);
   ARG_EVAL(1);
-#ifdef DLDBFD
+#if DLDBFD
   dld_compatibility_flag = ( APOINTER(1) ? 1 : 0 );
   return (dld_compatibility_flag ? true() : NIL);
 #else
@@ -938,7 +1086,7 @@ DX(xmod_compatibility_flag)
 DX(xmod_undefined)
 {
   at *p = NIL;
-#ifdef DLDBFD
+#if DLDBFD
   at **where = &p;
   if (dynlink_initialized)
     {
@@ -1238,7 +1386,7 @@ init_module(char *progname)
   module_class.dontdelete = TRUE;
 
   /* Create root module */
-#ifdef DLDBFD
+#if DLDBFD
   root.filename = dld_find_executable(progname);
 #else
   root.filename = progname;
