@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.2 2002-04-24 21:06:11 leonb Exp $
+ * $Id: unix.c,v 1.3 2002-04-29 20:53:07 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -213,6 +213,7 @@ lastchance(char *s)
   if (reason[0]==0)
     strncpy(reason,s,38);
   /* Signal problem */
+  argeval_ptr = eval_ptr = eval_std;
   error_doc.ready_to_an_error = FALSE;
   fprintf(stderr, "\n\007**** GASP: Severe error : %s\n", s);
   q = eval(named("toplevel"));
@@ -249,6 +250,7 @@ gasp_irq(int sig)
   char buffer[80];
   sprintf(buffer,"Signal %d has occurred",sig);
   error_doc.ready_to_an_error = FALSE;
+  argeval_ptr = eval_ptr = eval_std;
   lastchance(buffer);
 }
 
