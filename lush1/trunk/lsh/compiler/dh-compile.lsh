@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-compile.lsh,v 1.47 2003-02-19 19:13:04 leonb Exp $
+;;; $Id: dh-compile.lsh,v 1.48 2003-03-17 16:55:27 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -979,6 +979,27 @@
         (error 'dhc-make-o "Compiler returned error code" retcode) ) )
     obj ) )
 
+
+#? (dhc-make-rebuild-p <target> <dependencies>)
+;; Returns true if file <target> needs to be rebuilt.
+;; This is the case if filr <target> does not exist
+;; or if any of the files listed in <dependencies>
+;; is newer than file <target>
+
+(de dhc-make-rebuild-p(obj deps)
+  (let ((flag t)
+        (objtime (alist-get 'mtime (fileinfo obj))) )
+    (when objtime
+      (setq flag dhc-make-force)
+      (each ((src deps))
+        (let ((srctime (alist-get 'mtime (fileinfo src))))
+          (when (not srctime)
+            (error 'dhc-make-rebuild-p "Source file not found" src) )
+          (when (< objtime srctime)
+            (setq flag t) ) ) ) )
+    flag ) )
+
+
 #? (dhc-make-o-maybe <src-file> [<obj-file> [<cflags>]])
 ;; Same as <dhc-make-o> but only recompiles if
 ;; source file is newer than object file
@@ -987,10 +1008,8 @@
     (error 'dhc-make-o-maybe "Source file not found" src) )
   (when (not obj)
     (setq obj (dhc-make-o-filename src)) )
-  (let ((srctime (alist-get 'mtime (fileinfo src)))
-        (objtime (alist-get 'mtime (fileinfo obj))) )
-    (when (or (not objtime) (< objtime srctime) dhc-make-force)
-      (dhc-make-o src obj cflags) ) )
+  (when (dhc-make-rebuild-p obj (list src))
+    (dhc-make-o src obj cflags) ) 
   obj )
 
 
