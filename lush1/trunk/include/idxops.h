@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxops.h,v 1.2 2002-08-16 18:40:56 leonb Exp $
+ * $Id: idxops.h,v 1.3 2003-05-21 21:44:58 leonb Exp $
  **********************************************************************/
 
 #ifndef IDXOPS_H
@@ -36,8 +36,6 @@
 /* ============== clear operations, m0, m1, m2, ma =========== */
 
 #define Midx_m0clear(i1, Type)  *IDX_PTR(i1, Type) = 0
-
-#define MTidx_m1clear(i1, Type) \
 
 #define Midx_m1clear(i1, Type) \
 { register Type *c1; \
@@ -526,6 +524,19 @@
 /* ===================== dot product on m1, m2, ma ===== */
 /*                       result in a 0D vector */
 
+
+/* compute dot product M0 x M0 to M0 */ 
+#define Midx_m0dotm0(i1, i2, o1, Type1, Type2, Type3) \
+{ register Type1 *c1; \
+  register Type2 *c2; \
+  Type3 *d1; \
+  c1 = IDX_PTR((i1), Type1); \
+  c2 = IDX_PTR((i2), Type2); \
+  d1 = IDX_PTR((o1), Type3); \
+  *d1 = c1[0] * c2[0]; \
+}
+
+
 /* compute dot product M1 x M1 to M0 */ 
 #define Midx_m1dotm1(i1, i2, o1, Type1, Type2, Type3) \
 { \
@@ -643,6 +654,17 @@
 /* ===================== dot product on m1, m2, ma ===== */
 /*                       accumulate result in a 0D vector */
 
+/* compute dot product M0 x M0 accumulated into M0 */ 
+#define Midx_m0dotm0acc(i1, i2, o1, Type1, Type2, Type3) \
+{ register Type1 *c1; \
+  register Type2 *c2; \
+  Type3 *d1; \
+  c1 = IDX_PTR((i1), Type1); \
+  c2 = IDX_PTR((i2), Type2); \
+  d1 = IDX_PTR((o1), Type3); \
+  *d1 += c1[0] * c2[0]; \
+}
+
 /* compute dot product M1 x M1 accumulated into M0 */ 
 #define Midx_m1dotm1acc(i1, i2, o1, Type1, Type2, Type3) \
 { register Type1 *c1; \
@@ -710,6 +732,17 @@
 
 /* ===================== square distance on m1, m2, ma ===== */
 /*                       result in a 0D vector */
+
+#define Midx_m0sqrdist(i1, i2, o1, Type1, Type2, Type3) \
+{ register Type1 *c1; \
+  register Type2 *c2; \
+  Type3 *d1, f; \
+  c1 = IDX_PTR((i1), Type1); \
+  c2 = IDX_PTR((i2), Type2); \
+  d1 = IDX_PTR((o1), Type3); \
+  f = c1[0] - c2[0]; \
+  *d1 = f*f; \
+}
 
 #define Midx_m1sqrdist(i1, i2, o1, Type1, Type2, Type3) \
 { register Type1 *c1; \
@@ -781,6 +814,17 @@
 
 /* ===================== square distance on m1, m2, ma ===== */
 /*                       accumulate result in a 0D vector */
+
+#define Midx_m0sqrdistacc(i1, i2, o1, Type1, Type2, Type3) \
+{ register Type1 *c1; \
+  register Type2 *c2; \
+  Type3 *d1, f; \
+  c1 = IDX_PTR((i1), Type1); \
+  c2 = IDX_PTR((i2), Type2); \
+  d1 = IDX_PTR((o1), Type3); \
+  f = c1[0] - c2[0]; \
+  *d1 += f*f; \
+}
 
 /* compute square distance M1 x M1 accumulated into M0 */ 
 #define Midx_m1sqrdistacc(i1, i2, o1, Type1, Type2, Type3) \
@@ -1516,7 +1560,6 @@
   c1 = IDX_PTR((i1), Type1); \
   c2 = IDX_PTR((i2), Type2); \
   *c2 = OPER(*c1); \
-  } \
 }
 
 #define m1fop(i1,i2, Type1, Type2, OPER) \
