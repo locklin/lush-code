@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: db.lsh,v 1.7 2004-04-19 21:24:13 leonb Exp $
+;;; $Id: db.lsh,v 1.8 2004-04-23 20:39:22 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -167,7 +167,12 @@
 ;; or inherited from a parent dataset.
 
 (defmethod db keys()
-  (let ((h (==> this info 'access)))
+  (let ((h (hset (==> this keys-sub))))
+    (sort-list (htable-keys h)
+	       (lambda(x y) (> (nameof x) (nameof y))) ) ) )
+
+(defmethod db keys-sub()
+  (let ((h (getp this 'info)))
     (when (is-of-class h |HTABLE|)
       (htable-keys h) ) ) )
 
@@ -177,16 +182,16 @@
 ;; the lush object specified by symbol <key>.
 ;; Symbol <key> must be provided unquoted.
 ;;.VP
-;;   (==> db-stereo get 234 image-left)
-;;   (==> dn-stereo get 234 image-right)
+;;   (==> db-stereo get 234 'image-left)
+;;   (==> dn-stereo get 234 'image-right)
 
-(dmmethod db get(get n key)
+(defmethod db get(n key)
   (when (not (symbolp key))
     (error '==> "not a symbol" key) )
   (let* ((f (==> this info key))
 	 (x (cdr f)) )
     (when (and (consp f) (functionp (car f)))
-      (list (car f) this n . x)) ) )
+      ((car f) this n . x) ) ) )
 
 #? (==> <db> set-key <key> <func> <..extraargs..>)
 ;; Defines a new key and access function for database <db>.
@@ -314,6 +319,10 @@
 (defmethod db-subset info(property)
   (or (==> this (db . info) property)
       (==> base info property) ) )
+
+(defmethod db-subset keys-sub()
+  (append (==> base keys-sub) (==> this (db . keys-sub))) )
+
 
 #? (db-shuffle <d>)
 ;; Creates a new dataset (instance of <db-subset>)
@@ -727,6 +736,9 @@
 (defmethod db-transform info(property)
   (or (==> this (db . info) property)
       (==> base info property) ) )
+
+(defmethod db-transform keys-sub()
+  (append (==> base keys-sub) (==> this (db . keys-sub))) )
 
 
 ;;; ------------------------------
