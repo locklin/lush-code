@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.19 2004-07-26 17:30:44 leonb Exp $
+ * $Id: oostruct.c,v 1.20 2005-02-23 21:23:13 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -527,6 +527,8 @@ new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
   ifn (EXTERNP(superclass, &class_class))
     error(NIL,"not a class",superclass);
   super = superclass->Object;
+  if (super->self_dispose != oostruct_dispose)
+    error(NIL,"superclass does not inherit class <object>",superclass);
   cl = malloc(sizeof(struct class));
   *cl = object_class;
   cl->slotssofar = super->slotssofar+i;
