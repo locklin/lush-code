@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.14 2002-05-04 02:40:08 leonb Exp $
+ * $Id: header.h,v 1.15 2002-05-06 19:15:58 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -210,9 +210,7 @@ typedef struct class {
   at*              classname;   /* class name */
   at*              priminame;   /* class name for binary files */
   at*              backptr;
-  short            slotssofar;    
-  char             goaway;
-  char 	           dontdelete;
+  int              slotssofar;    
   at*              keylist;
   at*              defaults;
   at*              atsuper;
@@ -222,7 +220,9 @@ typedef struct class {
   at*              methods;
   struct hashelem* hashtable;
   int              hashsize;
-  int	    	   hashok;
+  char	    	   hashok;
+  char             goaway;
+  char 	           dontdelete;
 } class;
 
 
