@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.3 2004-12-10 16:28:45 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.4 2004-12-10 16:51:32 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -38,29 +38,45 @@
 ;; ----------------------------------------
 ;; UTILITIES
 
+#? (plot-context-grid)
+;; Defines the default style and color of grid lines.
 (de plot-context-grid()
   (linestyle-solid)
   (color-rgb 0.7 0.7 0.7) )
 
+#? (plot-context-axes)
+;; Defines the default style and color of grid lines.
 (de plot-context-axes()
   (color color-fg) 
   (linestyle-solid) )
 
+#? (plot-context-axes)
+;; Defines the default font and color of the title.
 (de plot-context-title()
   (color color-fg) 
   (font-18) )
 
+#? (plot-context-labels)
+;; Defines the default font and color of the axis labels and legends.
 (de plot-context-labels()
   (color color-fg) 
   (font-12) )
 
 
 #? (plot-range <lo> <hi> <step>)
-;; Returns the smallest list of consecutive multiples of <step>
-;; that contains the interval <lo>...<hi>.
-(de plot-range(lo hi step)
-  (mapfor (i (int (/ lo step)) (- (int (- (/ hi step)))))
-    (* i step) ) )
+;; Returns a list of consecutive multiples of <step>
+;; that spans the interval <lo>...<hi>.  
+;; When flag <inside> is set all multiples are stricly 
+;; between <lo> and <hi>. Otherwise they range from the largest
+;; multiple smaller than <lo> to the smallest multiple higher than <hi>.
+(de plot-range(lo hi step &optional inside)
+  (let ((lb (int (/ lo step)))
+	(hb (- (int (- (/ hi step))))))
+    (when inside
+      (setq lb (- (int (- (/ lo step)))))
+      (setq hb (int (/ hi step))) )
+    (all ((i (range lb hb))) (* i step)) ) )
+
 
 #? (plot-nice-range <lo> <hi> [<len> [<logscale>])
 ;; Returns a sequence of about <len> nice numbers that can be
@@ -112,6 +128,11 @@
   window attrwindow plotrect
   ;; curves
   curves
+  ;; styles
+  plot-context-title
+  plot-context-labels
+  plot-context-axes
+  plot-context-grid
   ;; user specifications (nil means automatic)
   margintop marginbottom 
   marginleft marginright    ;; margins around the graph (points)
@@ -127,6 +148,12 @@
   cmargintop cmarginbottom cmarginleft cmarginright crect
   cxmin cymin cxmax cymax rbx rby
   cxticks cyticks cxlabels cylabels )
+
+(defmethod PlotPort plotport()
+  (setq plot-context-title :plot-context-title)
+  (setq plot-context-labels :plot-context-labels)
+  (setq plot-context-axes :plot-context-axes)
+  (setq plot-context-grid :plot-context-grid) )
 
 (defmethod PlotPort text-rect(s &optional f)
   (let ((r ()))
@@ -177,14 +204,14 @@
      ((consp xlabels) 
       (setq cxlabels xlabels))
      ((and cxmin cxmax (numberp xlabels))
-      (setq cxlabels (range cxmin cxmax xlabels)))
+      (setq cxlabels (plot-range cxmin cxmax xlabels xbounds)))
      ((and cxmin cxmax)
       (setq cxlabels (plot-nice-range cxmin cxmax (/ cw (* 2 tw)) xlog))) )
     (cond
      ((consp ylabels) 
       (setq cylabels ylabels))
      ((and cymin cymax (numberp ylabels))
-      (setq cylabels (plot-range cymin cymax ylabels)))
+      (setq cylabels (plot-range cymin cymax ylabels ybounds)))
      ((and cymin cymax)
       (setq cylabels (plot-nice-range cymin cymax (/ ch (* 3 th)) ylog))) )
     (when (and cxlabels cxmin cxmax (not xbounds))
@@ -198,14 +225,14 @@
      ((consp xticks) 
       (setq cxticks xticks))
      ((and cxmin cxmax (numberp xticks))
-      (setq cxticks (plot-range cxmin cxmax xticks)))
+      (setq cxticks (plot-range cxmin cxmax xticks xbounds)))
      ((and cxmin cxmax)
       (setq cxticks (plot-nice-range cxmin cxmax (/ cw 10) xlog)) ) )
     (cond
      ((consp yticks) 
       (setq cyticks yticks))
      ((and cymin cymax (numberp yticks))
-      (setq cyticks (range cymin cymax yticks)))
+      (setq cyticks (plot-range cymin cymax yticks ybounds)))
      ((and cymin cymax)
       (setq cyticks (plot-nice-range cymin cymax (/ ch 10) ylog))) )
     (when (and cxticks cxmin cxmax (not xbounds))
