@@ -49,7 +49,7 @@ Xidx_io0(mainfacc, check_main_m0out)
 Xidx_io0(masumsqr, check_main_m0out)
 Xidx_io0(masumsqracc, check_main_m0out)
 
-init_idx1()
+void init_idx1(void)
 {
 #ifdef Midx_maclear
   dx_define("idx_clear",Xidx_maclear);

@@ -11,7 +11,7 @@
 
 static char badargs[]="bad arguments";
 #define ERRBADARGS error(NIL,badargs,NIL)
-extern at *create_samesize_matrix();
+extern at *create_samesize_matrix(at *);
 
 /* All the code below is interpreted, so all the macros such as
    Mis_size, check_main_maout,... should not call run_time_error,
@@ -49,7 +49,7 @@ Xidx_ioa(maexp, check_main_maout)
 
 
 
-init_idx2()
+void init_idx2(void)
 {
   dx_define("idx_minus",Xidx_maminus);
   dx_define("idx_abs",Xidx_maabs);

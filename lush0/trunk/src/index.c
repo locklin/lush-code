@@ -1845,7 +1845,7 @@ at *load_matrix(at *atf)
     for (i=0; i<size; i++) {
       float x;
       flt *data = st->srg.data;
-      if (FSCANF1(f," %hf",&x) != 1)
+      if (FSCANF1(f," %f",&x) != 1)
 	  error(NIL,"Garbage in ascii matrix file",NIL);
       data[i] = (flt)x;
     }
