@@ -1,0 +1,412 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: ffmpeg.lsh,v 1.1 2004-01-20 23:06:22 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "audiosource")
+(libload "videosource")
+
+(libload "ffmpeg-config")
+(libload "ffmpeg-enum")
+(libload "libc/libc")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; INITIALIZATION
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(de av-init()
+  #{{
+    static int av_init = 0;
+    if (! av_init) {
+      av_init = 1;
+      av_register_all();
+    }
+  }#}
+  t
+)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; AVINPUTFILE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass AvInputFile Object
+  ((-gptr-) ic)
+  ((-gptr-) image_format) 
+  ((-gptr-) file_iformat)
+  ((-int-)  audio_streams)
+  ((-int-)  video_streams)
+  ((-int-)  audio_channels)
+  ((-int-)  audio_sample_rate)
+  ((-int-)  frame_height)
+  ((-int-)  frame_width)
+  ((-int-)  frame_aspect_ratio)
+  ((-int-)  frame_pix_fmt)
+  ((-int-)  frame_rate)
+  ((-int-)  frame_rate_base) 
+  ((-int-)  workaround_bugs)
+  ((-int-)  error_resilience)
+  ((-int-)  error_concealment)
+  ((-int-)  idct_algo)
+  ((-int-)  bitexact)
+  ((-int-)  debug)
+  )
+
+
+
+(defmethod AvInputFile AvInputFile()
+  (setq ic (gptr ()))
+  (setq image_format (gptr ())) 	;ffmpeg opt_image_format: -img
+  (setq file_iformat (gptr ()))		;ffmpeg opt_format: -f
+  (setq audio_streams 0)
+  (setq video_streams 0)
+  (setq audio_channels 1)		;ffmpeg opt_audio_channels: -ac
+  (setq audio_sample_rate 44100)	;ffmpeg opt_audio_rate: -ar
+  (setq frame_height 128)		;ffmpeg opt_frame_size: -s
+  (setq frame_width 160)		;ffmpeg opt_frame_size: -s
+  (setq frame_aspect_ratio 0)		;ffmpeg opt_frame_aspect_ratio: -aspect
+  (setq frame_pix_fmt @PIX_FMT_YUV420P)	;ffmpeg opt_frame_pix_fmt:  -pix_fmt
+  (setq frame_rate 25)			;ffmpeg opt_frame_rate: -r
+  (setq frame_rate_base 1)		;ffmpeg opt_frame_rate: -r
+  (setq workaround_bugs 1) 		;ffmpeg opt_workaround_bug: -bug
+  (setq error_resilience 2)		;ffmpeg opt_error_resilience: -er
+  (setq error_concealment 3)		;ffmpef opt_error_concealment: -ec
+  (setq idct_algo 0)			;ffmpeg opt_idct_algo: -idct_algo
+  (setq bitexact 0)			;ffmpeg opt_bitexact: -bitexatc
+  (setq debug 0)			;ffmpef opt_debug: -debug
+  () )
+
+(defmethod AvInputFile -AvInputFile()
+  #{
+     AVFormatContext *ic = (AVFormatContext*)($this->ic);
+     if (ic) av_close_input_file(ic);
+  #}
+  () )
+
+(defmethod AvInputFile get-nb-streams()
+  (+ audio-streams video-streams) )
+
+
+;; Interesting return values are @CODEC_TYPE_VIDEO or @CODEC_TYPE_AUDIO.
+(defmethod AvInputFile get-stream-codec-type(n)
+  ((-int-) n)
+  (when (or (< n 0) (>= n (+ audio-streams video-streams)))
+    (error "Illegal stream number") )
+  (to-int #{ ((AVFormatContext*)($this->ic))->streams[$n]
+                           ->codec.codec_type #}) )
+
+;; Interesting return values are @CODEC_ID_XXX.
+(defmethod AvInputFile get-stream-codec-id(n)
+  ((-int-) n)
+  (when (or (< n 0) (>= n (+ audio-streams video-streams)))
+    (error "Illegal stream number") )
+  (to-int #{ ((AVFormatContext*)($this->ic))->streams[$n]
+                           ->codec.codec_id #}) )
+
+(defmethod AvInputFile get-format-name()
+  (if file_iformat
+      (ptr-str (to-gptr #{ ((AVInputFormat*)($file_iformat))->name #} ))
+    "<?>" ) )
+
+(defmethod AvInputFile get-start-time()
+  (if ic
+      (to-real #{ (double)(((AVFormatContext*)($ic))->start_time) #})
+    0 ) )
+
+(defmethod AvInputFile get-duration()
+  (if ic
+      (to-real #{ (double)(((AVFormatContext*)($ic))->duration) #})
+    0 ) )
+
+(defmethod AvInputFile open(s)
+  ((-str-) s)
+  (av-init)
+  (let ((ai this))
+    #{{
+        /* ------------------------------------------------- */
+        /* This is derived from 'opt_input_file' in ffmpeg.c */
+        /* ------------------------------------------------- */
+        AVFormatParameters params;
+        AVFormatParameters *ap = &params;
+        AVFormatContext *ic = 0;
+        AVInputFormat *ifmt = (AVInputFormat*)($ai->file_iformat);
+        int err, i, ret, rfps, rfps_base;
+        char *filename = $s->data;
+
+        if (!strcmp(filename, "$stdin"))
+           filename = "pipe:";
+
+        /* get default parameters from command line */ 
+        memset(ap, 0, sizeof(*ap));
+        ap->sample_rate = $ai->audio_sample_rate;
+        ap->channels = $ai->audio_channels;
+        ap->frame_rate = $ai->frame_rate;
+        ap->frame_rate_base = $ai->frame_rate_base;
+        ap->width = $ai->frame_width;
+        ap->height = $ai->frame_height;
+        ap->image_format = $ai->image_format;
+        ap->pix_fmt = $ai->frame_pix_fmt;
+        
+        /* open the input file with generic libav function */
+        err = av_open_input_file(&ic,filename,ifmt,0,ap);
+        if (err < 0) {
+           fprintf(stderr, "%s: Error %d while opening file\n", filename, err);
+           run_time_error("FFMPEG returned an error code");
+        }
+        $ai->ic = (gptr)(ic);
+        $ai->file_iformat = (gptr)(ic->iformat);
+
+        /* If not enough info to get the stream parameters, we decode the
+           first frames to get it. (used in mpeg case for example) */
+        ret = av_find_stream_info(ic);
+        if (ret < 0) {
+           fprintf(stderr, "%s: could not find codec parameters\n", filename);
+           run_time_error("FFMPEG returned an error code");
+        }
+    
+        /* update the current parameters so that they match the one of the input stream */
+        $ai->audio_streams = 0;
+        $ai->video_streams = 0;
+        for(i=0;i<ic->nb_streams;i++) {
+           AVCodecContext *enc = &ic->streams[i]->codec;
+           switch(enc->codec_type) {
+           case CODEC_TYPE_AUDIO:
+             $ai->audio_streams += 1;
+             $ai->audio_channels = enc->channels;
+             $ai->audio_sample_rate = enc->sample_rate;
+             break;
+           case CODEC_TYPE_VIDEO:
+             $ai->video_streams += 1;
+             $ai->frame_height = enc->height;
+             $ai->frame_width = enc->width;
+	     $ai->frame_aspect_ratio = enc->aspect_ratio;
+	     $ai->frame_pix_fmt = enc->pix_fmt;
+             rfps      = ic->streams[i]->r_frame_rate;
+             rfps_base = ic->streams[i]->r_frame_rate_base;
+             enc->workaround_bugs = $ai->workaround_bugs;
+             enc->error_resilience = $ai->error_resilience;
+             enc->error_concealment = $ai->error_concealment;
+             enc->idct_algo = $ai->idct_algo;
+             enc->debug = $ai->debug;
+             if(enc->codec_id==CODEC_ID_MPEG1VIDEO || enc->codec_id==CODEC_ID_H264)
+                enc->flags |= CODEC_FLAG_TRUNCATED;
+             if ($ai->bitexact)
+                enc->flags |= CODEC_FLAG_BITEXACT;
+             assert(enc->frame_rate_base == rfps_base);
+             /* update the current frame rate to match the stream frame rate */
+             $ai->frame_rate      = rfps;
+             $ai->frame_rate_base = rfps_base;
+             enc->rate_emu = 0;
+             break;
+           default:
+             break;
+        }
+    }
+    }#}
+    ai ) )
+
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; AVAUDIOSOURCE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass AvAudioSource AudioSource
+  ((-obj- (AvInputFile)) ai)
+  ((-int-) streamno)
+  ((-gptr-) st) )
+
+(defmethod AvAudioSource AvAudioSource(avfile n)
+  ((-obj- (AvInputFile)) avfile)
+  ((-int-) n)
+  (setq ai avfile)
+  (setq streamno n)
+  (setq st (gptr ()))
+  (when (or (< n 0) (>= n (==> avfile get-nb-streams)))
+    (error "Illegal stream number") )
+  (when (<> (==> avfile get-stream-codec-type n) @CODEC_TYPE_AUDIO)
+    (error "Not an audio stream") )
+  #{ $st = (gptr)( ((AVFormatContext*)($ai->ic))->streams[$n] ); #}
+  (when (not st) 
+    (error "Stream not found")) 
+  #{{
+    AVStream *st = (AVStream*)($st);
+    AVCodec *codec = avcodec_find_decoder(st->codec.codec_id);
+    if (!codec)
+       run_time_error("FFMPEG error: unsupported codec");
+    if (avcodec_open(&st->codec, codec) < 0) 
+       run_time_error("FFMPEG error: error while opening codec");
+  }#}
+  () )
+
+(defmethod AvAudioSource get-codec-name()
+  (let ((g (gptr ())))
+    #{{
+      AVStream *st = (AVStream*)($st);
+      $g = (gptr) st->codec.codec->name;
+    }#}
+    (ptr-str g) ) )
+
+(defmethod AvAudioSource get-codec-id()
+  (==> ai get-stream-codec-id streamno) )
+
+
+        ;;; AVAUDIOSOURCE IS UNFINISHED AND NOT USABLE YET
+	;;; AUDIOSOURCE STILL NEEDS TO BE DEFINED.
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; AVVIDEOSOURCE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass AvVideoSource VideoSource
+  ((-obj- (AvInputFile)) ai)
+  ((-int-) streamno)
+  ((-gptr-) st) )
+
+(defmethod AvVideoSource AvVideoSource(avfile n)
+  ((-obj- (AvInputFile)) avfile)
+  ((-int-) n)
+  (setq ai avfile)
+  (setq streamno n)
+  (setq st (gptr ()))
+  (when (or (< n 0) (>= n (==> avfile get-nb-streams)))
+    (error "Illegal stream number") )
+  (when (<> (==> avfile get-stream-codec-type n) @CODEC_TYPE_VIDEO)
+    (error "Not a video stream") )
+  #{ $st = (gptr)( ((AVFormatContext*)($ai->ic))->streams[$n] ); #}
+  (when (not st) 
+    (error "Stream not found") ) 
+  #{{
+    AVStream *st = (AVStream*)($st);
+    AVCodec *codec = avcodec_find_decoder(st->codec.codec_id);
+    if (!codec)
+       run_time_error("FFMPEG error: unsupported codec");
+    if (avcodec_open(&st->codec, codec) < 0) 
+       run_time_error("FFMPEG error: error while opening codec");
+  }#}
+  () )
+
+(defmethod AvVideoSource get-codec-name()
+  (let ((g (gptr ())))
+    #{{
+      AVStream *st = (AVStream*)($st);
+      $g = (gptr) st->codec.codec->name;
+    }#}
+    (ptr-str g) ) )
+
+(defmethod AvVideoSource get-codec-id()
+  (==> ai get-stream-codec-id streamno) )
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; HELPERS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(de av-open-input-file(s)
+  ((-str-) s)
+  (let ((ai (new AvInputFile)))
+    (==> ai open s)
+    ai ) )
+
+(de av-open-video-source(s)
+  ((-str-) s)
+  (let ((ai (new AvInputFile)))
+    (==> ai open s)
+    (let ((vs 0)
+	  (ns (==> ai get-nb-streams)))
+      ((-int-) vs ns)
+      (while (and (< vs ns) 
+		  (<> (==> ai get-stream-codec-type vs) @CODEC_TYPE_VIDEO))
+	(incr vs) )
+      (when (>= vs ns)
+	(error "No video stream in this file") )
+      (new AvVideoSource ai vs) ) ) )
+
+(de av-open-audio-source(s)
+  ((-str-) s)
+  (let ((ai (new AvInputFile)))
+    (==> ai open s)
+    (let ((vs 0)
+	  (ns (==> ai get-nb-streams)))
+      ((-int-) vs ns)
+      (while (and (< vs ns) 
+		  (<> (==> ai get-stream-codec-type vs) @CODEC_TYPE_AUDIO))
+	(incr vs) )
+      (when (>= vs ns)
+	(error "No video stream in this file") )
+      (new AvAudioSource ai vs) ) ) )
+
+	   
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; MAKE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(let ((dhc-make-lushflags (concat dhc-make-lushflags ffmpeg-cflags)))
+  (dhc-make-with-libs () ffmpeg-libs
+		      #{ 
+		         #include <ffmpeg/avformat.h>
+		         #include <ffmpeg/avcodec.h>
+		         #define assert(x) do{if(!(x))run_time_error("Assertion failed: " #x);}while(0)
+		      #}
+		      av-init
+		      (AvInputFile AvInputFile -AvInputFile 
+				   get-format-name
+				   get-nb-streams
+				   get-stream-codec-type
+				   get-stream-codec-id
+				   get-start-time
+				   get-duration
+				   open  )
+
+		      (AvAudioSource AvAudioSource
+				     get-codec-name
+				     get-codec-id )
+
+		      (AvVideoSource AvVideoSource
+				     get-codec-name
+				     get-codec-id )
+
+		      av-open-input-file 
+		      av-open-video-source 
+		      av-open-audio-source
+		      
+		      ) ) 
