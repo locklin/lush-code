@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.58 2004-07-30 20:06:53 leonb Exp $
+ * $Id: module.c,v 1.59 2004-07-30 20:37:36 leonb Exp $
  **********************************************************************/
 
 
@@ -1168,10 +1168,6 @@ module_maybe_unload(struct module *m)
   if (m->flags & MODULE_SO)
     if (dlclose(m->handle))
       dynlink_error(new_string(m->filename));
-# if NSBUNDLE
-      if (nsbundle_update() < 0)
-        dynlink_error(new_string(m->filename));
-# endif
 #endif
 #if DLDBFD
   if (m->flags & MODULE_O)
@@ -1181,6 +1177,9 @@ module_maybe_unload(struct module *m)
 #if NSBUNDLE
   if (m->flags & MODULE_O)
     if (nsbundle_unload(&m->bundle) < 0)
+      dynlink_error(new_string(m->filename));
+  if (m->flags & MODULE_SO) 
+    if (nsbundle_update() < 0)
       dynlink_error(new_string(m->filename));
 #endif
   check_executability = TRUE;
