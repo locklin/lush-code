@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.63 2004-08-10 15:25:44 leonb Exp $
+ * $Id: module.c,v 1.64 2004-08-10 16:43:50 leonb Exp $
  **********************************************************************/
 
 
@@ -974,9 +974,6 @@ update_exec_flag(struct module *m)
 	}
 	p = p->Cdr;
       }
-      /* Refresh init function pointer */
-      if (newstate && m->initname)
-	m->initaddr = dynlink_symbol(m, m->initname, 1, 0);
     }
   /* Call hook */
   dynlink_hook(m, "exec");
@@ -1000,7 +997,9 @@ update_init_flag(struct module *m)
       dynlink_hook(m, "unlink");
       cleanup_module(m);
     }
-  
+  /* Refresh init function pointer */
+  if (m->initname)
+    m->initaddr = dynlink_symbol(m, m->initname, 1, 0);
   /* Call init function */
   if (! strcmp(m->initname, "init_user_dll"))
     {
