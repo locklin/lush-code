@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.88 2003-01-12 03:44:36 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.89 2003-01-14 21:01:49 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -98,10 +98,6 @@
 	  (list (list 'break-action
 		      (list 'cons (list 'quote p) 'break-action) ))
 	  l )) )
-
-(dm on-break-macro (n onbm . r)
-    `(eval (cons 'on-break (cons ,onbm (quote ,r))))
-    )
 
 (de simple-break-hook()
     (each ((action break-action)) (eval action))
@@ -722,8 +718,9 @@
 
 (de libload.check(fname seen)
   (seen fname t)
-  (let ((frec (libload.data fname))
-        (ok t) )
+  (let* ((rname (or (relative-fname lushdir fname) fname))
+         (frec (libload.data rname))
+         (ok t) )
     (when (consp frec)
       (let ((mtime (alist-get 'mtime (fileinfo fname))))
         (when (and (is-of-class (car frec) |DATE|)
@@ -735,11 +732,12 @@
               (when (libload.check d seen)
                 (setq ok t) ) ) ) ) ) )
     (when ok
-      (libload.data fname ())
+      (libload.data rname ())
       t ) ) )
 
 (de libload(s &optional opt)
-  (let ((fname ()))
+  (let ((fname ())
+        (rname ()))
     ;; search relative to load directory
     (when (and (stringp file-being-loaded) (<> file-being-loaded "$stdin"))
       (setq fname (filepath (concat-fname (dirname file-being-loaded) s))) )
@@ -747,25 +745,27 @@
       (setq fname (filepath s)) )
     (when (not fname)
       (error 'libload "File not found" s) )
+    (setq rname (or (relative-fname lushdir fname) fname))
     (when (and opt (not (stringp opt)))
-      (libload.data fname ()) )
+      (libload.data rname ()) )
     (when (not (stringp opt))
       (setq opt "") )
     ;; record dependency
     (when (and (stringp file-being-loaded) (<> file-being-loaded "$stdin"))
-      (let ((frec (libload.data file-being-loaded)))
+      (let* ((f (or (relative-fname lushdir file-being-loaded) file-being-loaded))
+             (frec (libload.data f)))
         (when (not frec)
           (setq frec (cons t ()))
-          (libload.data file-being-loaded frec) )
-        (when (not (member fname (cdr frec)))
-          (rplacd frec (cons fname (cdr frec))) ) ) )
+          (libload.data f frec) )
+        (when (not (member rname (cdr frec)))
+          (rplacd frec (cons rname (cdr frec))) ) ) )
     ;; check time and recursive dependencies
-    (when (libload.check fname (htable))
+    (when (libload.check rname (htable))
       (when (not (lush-is-quiet))
         (printf " [%s]%s\n" (basename fname) opt) )
-      (libload.data fname (list (now)))
+      (libload.data rname (list (now)))
       (prog1 (load fname)
-        (rplaca (libload.data fname) (now)) ) ) ) )
+        (rplaca (libload.data rname) (now)) ) ) ) ) 
 
 (dm autoload(autoload l . s)
   (let  ((f  (eval `(mlambda f
