@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.60 2002-08-21 14:54:05 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.61 2002-08-21 18:37:02 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1134,49 +1134,34 @@
 ;;; --------- Strings/Regex ---------
 
 
-(de strip (s) (stripl (stripr s)))
-(lock-symbol strip)
+(de strip (s) 
+  (stripl (stripr s)) )
 
-(de stripl (s) (regex-subst "^( )+" "" s) )
-(lock-symbol stripl)
+(de stripl(s) 
+  (regex-subst "^( )+" "" s) )
 
-(de stripr (s) (regex-subst "( )+$" "" s) )
-(lock-symbol stripr)
+(de stripr(s)
+  (regex-subst "( )+$" "" s) )
 
 (de regex-rseek (r s &optional n gr)
   (setq n (if (numberp n) (max (int n) 0) -1))
-  (let* ((x ())
-	 (i 1)
-	 (l '(())) )
-    
-    ;; find recursive occurences
-    (while (and (<> 0 n)
-		(setq x (regex-seek r s i))
-		)
+  (let* ((x ()) (i 1) (l (list ())))
+    (while (and (<> 0 n) (setq x (regex-seek r s i)) )
       (setq i (apply + x))
       (setq l (cons x l))
-      (incr n -1)
-      )
+      (incr n -1) )
     (setq l (when (<= n 0) (cdr (reverse l))))
-    
-    ;; check garbage stuff conformity
     (when (and l gr)
-      (let* ((ll l)
-	     (x 1) )
+      (let* ((ll l) (x 1))
 	(while ll
-	  (when ~(regex-match gr (mid s x (- (caar ll) x)))
-		(setq l () ll ()) ;; failure
-		)
+	  (when (not (regex-match gr (mid s x (- (caar ll) x))))
+            (setq l () ll ()) )
 	  (setq x (caar ll))
-	  (setq ll (cdr ll))
-	  )
-	(when (< n 0) ;; undefined n
+	  (setq ll (cdr ll)) )
+	(when (< n 0)
 	  (when ~(regex-match gr (mid s (apply + (last l))))
-		(setq l () ll ()))))) ;; failure
-    ;; return value
+		(setq l () ll ()) ) ) ) )
     l ))
-(lock-symbol regex-rseek)
-
 
 (de regex-skip (r s &optional n gr neg)
   (when ~n (setq n 1))
@@ -1184,8 +1169,6 @@
       s
     (let* ((l (regex-rseek r s n gr)))
       (when l (mid s (if neg (car (last l)) (apply + (last l))))))))
-(lock-symbol regex-skip)
-
 
 (de regex-split (r s &optional n gr neg)
   (let* ((l (regex-rseek r s n gr)))
@@ -1195,20 +1178,15 @@
 	   (all (((x i) l)) (prog1 (mid s y (- x y)) (setq y (+ x i))))
 	   (if n () (list (mid s y)))))
       (all (((x i) l)) (mid s x i)))))
-(lock-symbol regex-split)
 
-
-(de regex-count (r s) (length (regex-rseek r s)) )
-(lock-symbol regex-count)
-
+(de regex-count (r s) 
+  (length (regex-rseek r s)) )
 
 (de regex-tail (r s &optional n gr neg)
   (when ~n (setq n 1))
   (let* ((i (regex-count r s)))
     (when (>= i n)
       (regex-skip r s (if neg (- i n) (1+ (- i n))) gr ~neg))))
-(lock-symbol regex-tail)
-
 
 (de regex-member (rl s)
   (while (and rl s)
@@ -1217,8 +1195,11 @@
       (setq rl (cdr rl))))
   (car rl))
 
-(lock-symbol regex-member)
+(lock-symbol stripl stripr strip)
 
+(lock-symbol regex-rseek regex-skip 
+             regex-split regex-count
+             regex-tail regex-member)
 
 
 
@@ -1619,15 +1600,8 @@
 
 ;;; --------- Search Startup File -----------
 
-;; Find the first file that exists fo the form
-;; <dir>/<file>.<ext> where <dir> is on of the
-;; directories in list <dirlist> and <ext> is
-;; one of the suffixes in <extlist>.
-;; example: (find-file '("local" "lsh") "lushenv" '(".lshc" ".lsh"))
-;; This is somewhat redundant with the DX <filepath>,
-;; but we can't set the standard path here.
-
-(de find-file (dirlist file extlist)
+(de find-file (dirlist file &optional extlist)
+  (setq extlist (or extlist (list "")))
   (let ((keepgoing t) (e ()) (d ()) (f ()) (r ()))
     (while (and keepgoing dirlist)
       (setq d (car dirlist))
@@ -1640,48 +1614,39 @@
       (setq dirlist (cdr dirlist)))
     r))
 
-;; find X-Windows library directory
-(de find-xlibdirs ()
-  (let ((dirs ())
-	(xlibs (getconf "X_LIBS")))
-    (while (and xlibs (<> xlibs ""))
-      (when (regex-match "^-L(/[^ ]+).*$" xlibs)
-	(setq dirs (cons (regex-subst "^-L(/[^ ]+).*$" "%0" xlibs) dirs)) )
-      (setq xlibs (regex-subst "^[^ ]*[ ]+(.*)$" "%0" xlibs)))
-    dirs))
-  
-;; get LD_LIBRARY_PATH as a list
-(de find-ldlibrarypath ()
-  (let* ((llpenv (getenv "LD_LIBRARY_PATH"))
-	 (d (reverse (regex-split ":" (concat ":" llpenv ":") t ".*" t)))
-	 (dirs ()))
-    (each ((x d)) 
-      (when (and x (<> x "") (dirp x)) (setq dirs (cons x dirs))))
-    dirs))
-    
-;; find a library in /usr/lib, /usr/X11R6/lib (or wherever
-;; the X libraries are, /usr/local/lib, and in the LD_LIBRARY_PATH.
-(de find-library (name extlist)
-  (let* ((dirs (append (list "/usr/lib") 
-		       (find-xlibdirs) 
-		       (list "/usr/local/lib")
-		       (find-ldlibrarypath))))
-    (find-file dirs name extlist)))
+(de find-c-include(name) 
+  (find-file c-include-path name '("")) )
 
+(de find-shared-library(name &optional extlist)
+  (when (not extlist)
+    (setq extlist '(""))
+    (when (not (index "." (basename name)))
+      (setq extlist (list (concat "." (or (getconf "SOEXT") "so")))) ) )
+  (find-file shared-library-path name extlist) )
 
-(defvar headerdirs '("/usr/include" "/usr/X11R6/include" "/usr/local/include"))
+(de find-static-library(name &optional extlist)
+  (when (not extlist)
+    (setq extlist '(""))
+    (when (not (index "." (basename name)))
+      (setq extlist (list (concat "." (or (getconf "AEXT") "a")))) ) )
+  (find-file shared-library-path name extlist) )
 
-;; find header file
-(de find-header (name) (find-file headerdirs name '("")))
+;; Default search path for C libraries.
+;; This will be refined in lushenv.lsh
+(defvar shared-library-path '("/usr/lib" "/lib"))
+(defvar static-library-path '("/usr/lib" "/lib"))
 
-;; Find the default lushenv.[dump,lshc,lsh] in
-;; curent dir, local, packages, and lsh and set 
-;; lushenv-path to it
+;; Default search path for C include files.
+;; This will be refined in lushenv.lsh
+(defvar c-include-path '("/usr/include"))
 
+;; Default lushenv.[dump,lshc,lsh] 
+;; in curent dir, local, packages, and lsh.
 (defvar lushenv-path 
-  (let* ((dlist (cons "." (all ((x '("local" "packages" "lsh"))) 
-                            (concat-fname lushdir x))))
-         (elist '(".dump" ".lshc" ".lsh")))
-    (find-file dlist "lushenv" elist)))
-
+  (find-file (list "." 
+                   (concat-fname lushdir "local")
+                   (concat-fname lushdir "packages")
+                   (concat-fname lushdir "lsh") )
+             "lushenv"
+             (list ".dump" ".lshc" ".lsh") ) )
 
