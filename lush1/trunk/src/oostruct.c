@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.12 2002-07-03 18:25:00 leonb Exp $
+ * $Id: oostruct.c,v 1.13 2002-07-10 15:13:10 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -596,12 +596,12 @@ new_oostruct(at *cl)
   register int len,i;
   register at *q, *p;
   struct oostruct *s;
-
-  ifn( cl && (cl->flags & C_EXTERN) && (cl->Class == &class_class))
+  
+  if (! EXTERNP(cl, &class_class))
     error(NIL,"not a class",cl);
   c = cl->Object;
-  ifn( c->self_dispose == oostruct_dispose )
-    error(NIL,"cannot 'new' on an intrinsinc class",cl);
+  if ( c->self_dispose != oostruct_dispose )
+    error(NIL,"class is not a subclass of ::class:object",cl);
   
   len = c->slotssofar;
   s = malloc(sizeof(struct oostruct)+(len-1)*sizeof(struct oostructitem));
@@ -652,6 +652,13 @@ DY(ynew)
   UNLOCK(p);
   UNLOCK(q);
   return ans;
+}
+
+DX(xnew_empty)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return new_oostruct(APOINTER(1));
 }
 
 
@@ -1370,6 +1377,7 @@ init_oostruct(void)
   dx_define("is_of_class",xis_of_class);
   dx_define("makeclass",xmakeclass);
   dy_define("new",ynew);
+  dx_define("new-empty",xnew_empty);
   dx_define("delete",xdelete);
   dy_define("letslot",yletslot);
   dx_define("check==>",xchecksend);

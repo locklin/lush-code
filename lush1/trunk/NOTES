@@ -15,6 +15,7 @@ x11_driver.c:
 Documentation update
 ----------------------------------------------
 
+SN3 * Index & Storages.
 TL3 * import_raw_matrix
 TL3 * import_text_matrix
 TL3 * export_raw_matrix
@@ -26,13 +27,23 @@ TL3 * map_matrix
 DELETED * save_flt_matrix
 DELETED * save_packed_matrix
 DELETED * map_pmatrix
+
+SN3 * new_empty
 SN3 * putmethod, defmethod, demethod, dfmethod, dmmethod
-TL3 * mapfor mapwhile
-TL3 * nfirst
+TL3 * mapfor mapwhile [DM:sysenv.sn]
+TL3 * nfirst [DE:sysenv.sn]
 SN3 * new_unode, unode_val, unode_uid, unode_eq, unode_unify
-TL3 * alist_add, alist_get
+TL3 * alist_add, alist_get [DE:sysenv.sn]
+
 DELETED * mod-dlopen  [use mod-load instead]
 DELETED * dhgptr [use to-gptr instead]
+
+SN3 * contiguep
+SN3 * clone-matrix 
+SN3 * redim
+
+SN3 * cinline    [DM:sysenv.sn]
+SN3 * |#{|       [DMC:sysenv.sn]
 
 
 ----------------------------------------------
@@ -139,24 +150,31 @@ hash table are automatically removed when the key object is deallocated.
 
 
 
+
 ----------------------------------------------
 LUSH Specific doc
 ----------------------------------------------
 
 #? (defvar name val)
+.TYPE DM
+.FILE sysenv.sn
 Defines a new variable named <name> (a symbol) and initialized with value
 <val>.  Traditionally function <setq> was used for that purpose in SN/TLisp.
 There are cases however when <setq> refuses to create a new global variable.
 Eventually we will completely disallow creating global variables with <setq>
 and require the use of <defvar> for that purpose.
 
-#? (private <..symbols..>
+#? (private <..symbols..>)
+.TYPE DM
+.FILE sysenv.sn
 This function must be used inside a package definition.
 It indicates that the symbols <..symbols..> must be considered
 private to the package.
 .SEE (package <name> <..expressions..>)
 
 #? (package <name> <..expressions..>) 
+.TYPE DM
+.FILE sysenv.sn
 This function provides a simple way to identify symbols that should remain
 private to a group of functions.  Symbol <name> is used to identify the group
 of functions.  Function <package> maintains a list of hidden symbols declared
@@ -193,6 +211,8 @@ for that.
 
 
 #? (putp <anything> <name> <value>)
+.TYPE DE
+.FILE sysenv.sn
 Every Lush object (atoms, cons, etc.) may be enriched by defining properties
 identified by a symbolic name.  Function <putp> is used to define such 
 properties.  Its first argument is an arbitrary Lush object <anything>.
@@ -200,8 +220,25 @@ Function <putp> sets the property named by symbol <name> to value <value>.
 Properties can be later retrieved using <getp>.
 
 #? (getp <anything> <name>)
+.TYPE DE
+.FILE sysenv.sn
 Retrieves the property <name> for the Lush object <anything>.
 
+#? (find-file <dirlist> <filename> <extlist>)
+.TYPE DE
+.FILE sysenv.sn
+Finds the first file that exists fo the form
+<dir>/<file>.<ext> where <dir> is one of the
+directories in list <dirlist> and <ext> is
+one of the suffixes in <extlist>.
+
+Example:
+.VP
+ (find-file '("local" "lsh") "lushenv" '(".lshc" ".lsh"))
+.PP
+Note:
+This is somewhat redundant with <filepath>
+but does not require changing the current path.
 
 #? (fileinfo <filename>)
 Returns an a-list containing lots of information about 
@@ -310,6 +347,7 @@ The minor version of Lush specified in loadable modules.
 
 #? (let-filter ((<filter> <data>)) <l1>...<ln>)
 .TYPE DM
+.FILE sysenv.sn
 The function <let-filter> attempts to match the data 
 expression <data> with the filter expression <filter>.
 A filter expression is a lisp expression composed uniquely with lists and
@@ -464,6 +502,8 @@ We say that such a module is in a unknown state.
 .PP
 
 #? (mod-list)
+.TYPE DE
+.FILE sysenv.sn
 This function returns the list of the currently loaded modules.
 
 Example:
@@ -483,9 +523,13 @@ Example:
 .PP
 
 #? (mod-status)
+.TYPE DE
+.FILE sysenv.sn
 Displays a summary of all loaded modules.
 
 #? (mod-inquire <filename>)
+.TYPE DE
+.FILE sysenv.sn
 This function returns a list describing the status of a loaded module defined
 by the object file <filename>. The first element of this list is a string
 describing the states of a module.  When the initialization function has been
@@ -493,6 +537,8 @@ called, the names of the new lisp functions are provided in the remaining part
 of this list.
 
 #? (mod-load <filename>)
+.TYPE DE
+.FILE sysenv.sn
 This function loads a piece of binary code into LUSH.
 It can be used to load various kind of files containing object code:
 .IP
@@ -536,6 +582,8 @@ until the new system is almost as buggy as the old one.
 
 
 #? (mod-unload <filename>)
+.TYPE DE
+.FILE sysenv.sn
 This function removes a piece of binary code previously loaded with
 <mod-load>.  Only object files (extension <".o">) and library archives
 (extension <".a">) can be safely removed.  It is currently not possible to
@@ -554,9 +602,6 @@ Checking the executability of all loaded modules, and mark the lisp
 functions defined by a module as partially linked, if this modules is
 no longer executable.
 
-#? (mod-dlopen <sofilename>) 
-Obsolete function.
-Use <mod-load> instead.
 
 
 #? * Low level module functions.
@@ -763,7 +808,13 @@ Casts <arg> into an integer.
 #? (to-flt <arg>)
 Casts <arg> into a single precision number.
 
+#? (to-float <arg>)
+Casts <arg> into a single precision number.
+
 #? (to-real <arg>)
+Casts <arg> into a double precision number.
+
+#? (to-double <arg>)
 Casts <arg> into a double precision number.
 
 #? (to-bool <arg>)
@@ -793,14 +844,18 @@ object to a pool using <in-pool>.
 #? (to-obj [<class>] <arg>)
 Casts <arg> into an object of class <class>.
 Argument <arg> must be a GPTR or an object.
-
-The <class> argument is optional in interpreted mode.
-When <arg> is a GPTR, the lisp-to-c interface
-retrieves and returns the lisp object associated with 
-the C object pointed to by the GPTR.  It also checks
-that the object class is indeed a subclass of <class>.
-
-The <class> argument is mandatory in compiled mode.
-This function performs no checks that the expression
-is actually a pointer to an object of the specified class.
-This is a potentially dangerous operation.
+Argument <class> is mandatory in compiled mode.
+.IP 
+When argument <arg> is an object, 
+this function checks that the object class
+is a subclass of <class> and returns the 
+unmodified object. 
+.IP
+When this function is called in interpreted mode with a GPTR argument, the
+lisp-to-c interface retrieves and returns the lisp object associated with the
+C object pointed to by the GPTR.  It also checks that the object class is
+indeed a subclass of <class>.
+.IP
+When this function is called in compiled mode with a GPTR argument, the
+compiler converts the GPTR into a pointer to an object of the specified class.
+No checks are performed.  This is a potentially dangerous operation.

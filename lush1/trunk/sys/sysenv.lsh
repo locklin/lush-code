@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.35 2002-07-09 22:46:24 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.36 2002-07-10 15:13:10 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -561,6 +561,25 @@
 
 ;;;; --------- Arrays & Matrix utilities ---------
 
+(de contiguep (m)
+  (let ((flag t)(size 1))
+    (for (i (1- (idx-ndim m)) 0 -1)
+         (if (<> size (idx-modulo m i))
+             (setq flag ())
+           (setq size (* size (idx-dim m i)))))
+    flag ) )
+
+(de clone-matrix (mat)
+    (let* ((size (apply * (bound mat)))
+	   (sto (new-f-storage)))
+      (storage-malloc-nc sto size)
+      (new-index sto (bound mat))))
+
+(dmd redim (idx . l)
+  `(new-index (idx-storage ,idx) ,(cons 'list l)) )
+
+(lock-symbol contiguep clone-matrix redim
+
 (de index-print(this)
     (let ((begin "[")
 	  (end "]"))
@@ -636,6 +655,9 @@
          m ) ) )
 
 (lock_symbol index-print list-to-matrix |[| |]| |{| |}|)
+
+
+
 
 
 
@@ -1170,6 +1192,9 @@
 
 
 
+
+
+
 ;;; --------- Declaring types -----------
 
 ;; Types have no existence in the interpreter.
@@ -1270,7 +1295,7 @@
        (putp (named (sprintf "-idx%d-" ndim)) 'type-syntax
              (eval `(lambda(where source) (,idxsyntax ,ndim where source))) ) ) )
 
-
+;; variable declaration
 (df declare(|Type| . |Syms|)
   (setq |Type| (verify-type-decl-format |Type|))
   (each ((|Sym| |Syms|))
@@ -1280,6 +1305,105 @@
       (error 'declare "type mismatch" |Sym|) ) ) )
 
 (lock-symbol verify-type-decl-format declare)
+
+
+
+
+
+
+;;; --------- Misc compiler support ---------
+
+(df breakp () ())
+
+(df protect |Args| (apply progn |Args|))
+
+(df unprotect |Args| (apply progn |Args|))
+
+(df cinline args
+  (error 'cinline "only works in compiled functions" ()) )
+
+(de cmacro.read-c()
+  (let ((nextchar (skip-char " \t")))
+    (cond
+     ((= nextchar ";")
+      (read-string 1)
+      (if (not (index (skip-char " \t") "#\n")) "; " (skip-char) ";") )
+     ((= nextchar "$")
+      (cmacro.read-dollar) )
+     ((= nextchar "#")
+      (read-string 1)
+      (if (<> (skip-char "") "}") "#" (read-string 1) "#}") )
+     ((or (= nextchar "\"") (= nextchar "'"))
+      (cmacro.read-string (read-string 1)) )
+     ((= nextchar "\n")
+      (read-string 1) )
+     (t
+      (concat (read-string "~$;#'\"\n")) ) ) ) )
+
+(de cmacro.read-string(delim)
+  (let ((dat (list delim))
+        (str ())
+        (ok t))
+    (while ok
+      (setq str (read-string (concat "~\e\\" delim)))
+      (setq dat (nconc1 dat str))
+      (if (= (skip-char "") "\\")
+          (setq dat (nconc1 dat (read-string 2)))
+        (setq ok ()) ) )
+    (if (= (skip-char "") delim)
+        (setq dat (nconc1 dat (read-string 1))) )
+    (apply concat dat) ) )
+
+(de cmacro.read-dollar()
+  (read-string 1)
+  (let ((nextchar (skip-char "")))
+    (cond 
+     ((= nextchar "(")
+      (read) )
+     ((= nextchar "{")
+      (read-string 1)
+      (let ((data (read-string "~{}() ;'\"")))
+        (if (<> (read-string 1) "}") 
+            (error "Illegal $-expression in #{ ... #}")
+          (named data) ) ) )
+     ((and (>= (upcase nextchar) "A") (<= (upcase nextchar) "Z"))
+      (named (read-string "A-Za-z0-9_")) )
+     (t
+      (error "Illegal $-expression in #{ .... #}") ) ) ) )
+
+(dmc |#{|
+  (let ((again t)
+        (pgm  ())
+        (stmt ())
+        (expr ()) )
+    (while again
+      (let ((item (cmacro.read-c)))
+        (when (stringp item)
+          (setq item (regex-subst "%" "%%%%" item)) )
+        (cond
+         ((= item "#}")
+          (setq again ()) )
+         ((= item ";")
+          (setq stmt (apply concat (nconc1 stmt item)))
+          (setq pgm (nconc1 pgm '(cinline `stmt `@expr)))
+          (setq stmt ())
+          (setq expr ()) )
+         ((not (stringp item))
+          (setq stmt (nconc1 stmt "(%s)"))
+          (setq expr (nconc1 expr item)) )
+         ((= item "\e")
+          (error "unbalanced cmacro #{ #}") )
+         (t
+          (setq stmt (nconc1 stmt item)) ) ) ) )
+    (when stmt
+      (setq stmt (apply concat stmt))
+      (setq pgm (nconc1 pgm '(cinline `stmt `@expr))) )
+    (list (if (cdr pgm) (cons 'progn pgm) (car pgm))) ) )
+
+(lock-symbol breakp protect unprotect cinline
+             cmacro.read-c cmacro.read-string 
+             cmacro.read-dollar |#{| )
+
 
 
 
@@ -1299,6 +1423,8 @@
 	       (setq help-root (cons hroot help-root)) ) ) )
      (skip-char "~\n\r")
      () )
+
+
 
 
 
@@ -1329,24 +1455,19 @@
              byte-storage ubyte-storage gptr-storage
              packed-storage atom-storage)
 
-;; backward compatibility with SN3 (backquote)
-(when () ;; disabled
-  (unlock-symbol |'|)
-  (dmc |'| 
-    (backquote-subst
-     (let* ((|`| backquote-macro))
-       (read) ) ) )
-  (lock-symbol |'|) )
-
 ;; backward compatibility with SN3 (cast)
-(dm flt(f x)    `(to-flt ,x))
-(dm float(f x)  `(to-flt ,x))
-(dm real(f x)   `(to-real ,x))
-(dm double(f x) `(to-real ,x))
-(dm bool(f x)   `(to-bool ,x))
-(dm gptr(f x)   `(to-gptr ,x))
-(dm obj(f . x)  `(to-obj ,@x))
-(lock-symbol flt float real double bool gptr obj)
+(defvar to-float  to-flt)
+(defvar to-double to-real)
+(defvar flt       to-flt)
+(defvar float     to-float)
+(defvar real      to-real)
+(defvar double    to-double)
+(defvar bool      to-bool)
+(defvar gptr      to-gptr)
+(defvar obj       to-obj)
+(defvar obj-super to-obj)
+(lock-symbol to-float to-double
+             flt float real double bool gptr obj obj-super)
 
 ;; backward compatibility with SN3 (misc)
 (defvar mload libload)
