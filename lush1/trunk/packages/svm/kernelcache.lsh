@@ -1,0 +1,154 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: kernelcache.lsh,v 1.1 2004-08-30 22:07:03 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libc/make")
+(libload "libidx/idx-double")
+(libload "libidx/idx-float")
+(libload "libidx/idx-int")
+
+(libload "kernel")
+(libload "mysvm")
+
+
+;; ----------------------------------------
+
+#? * KernelCache.
+;; Abstract kernel interface.
+
+(defclass KernelCache SVMKernel
+  ((-obj- (SVMKernel)) basekernel)
+  ((-gptr-) kcache) )
+
+(defmethod KernelCache KernelCache(k)
+  ((-obj- (SVMKernel)) k)
+  (setq basekernel k)
+  #{ $kcache = mysvm_kcache_create(unikernel, $basekernel); #}
+  () )
+
+(defmethod KernelCache -destructor()
+  #{ mysvm_kcache_destroy($kcache); #}
+  () )
+
+(defmethod KernelCache call(i j)
+  ((-int-) i j)
+  (to-real #{ mysvm_kcache_query($kcache, $i, $j) #}) )
+
+(defmethod KernelCache call-bypass(i j)
+  ((-int-) i j)
+  (==> basekernel call i j) )
+
+(defmethod KernelCache label(i)
+  ((-int-) i)
+  (==> basekernel label i) )
+
+(defmethod KernelCache set-maximum-size(n)
+  ((-int-) n)
+  #{ mysvm_kcache_set_maximum_size($kcache, $n); #}
+  n )
+
+(defmethod KernelCache get-maximum-size()
+  (to-int #{ mysvm_kcache_get_maximum_size($kcache) #}) )
+
+(defmethod KernelCache get-current-size()
+  (to-int #{ mysvm_kcache_get_current_size($kcache) #}) )
+
+(defmethod KernelCache get-i2r(n)
+  ((-int-) n)
+  (let ((x (int-matrix n)))
+    #{{
+        int i;
+        const int *s = mysvm_kcache_i2r($kcache,$n);
+        int *d = IDX_PTR($x, int);
+        for (i=0; i<$n; i++)
+          d[i] = s[i];
+    }#}
+    x ) )
+
+(defmethod KernelCache get-r2i(n)
+  ((-int-) n)
+  (let ((x (int-matrix n)))
+    #{{
+        int i;
+        const int *s = mysvm_kcache_r2i($kcache,$n);
+        int *d = IDX_PTR($x, int);
+        for (i=0; i<$n; i++)
+          d[i] = s[i];
+    }#}
+    x ) )
+
+(defmethod KernelCache swap-rr(s1 s2)
+  ((-int-) s1 s2)
+  #{ mysvm_kcache_swap_rr($kcache,$s1,$s2); #}
+  () )
+
+(defmethod KernelCache swap-ii(s1 s2)
+  ((-int-) s1 s2)
+  #{ mysvm_kcache_swap_ii($kcache,$s1,$s2); #}
+  () )
+
+(defmethod KernelCache swap-ri(s1 s2)
+  ((-int-) s1 s2)
+  #{ mysvm_kcache_swap_ri($kcache,$s1,$s2); #}
+  () )
+
+(defmethod KernelCache row(i len)
+  ((-int-) i len)
+  (let ((x (float-matrix len)))
+    #{{
+        int i;
+        const float *s = mysvm_kcache_query_row($kcache, $i, $len);
+        float *d = IDX_PTR($x, float);
+        for (i=0; i<$len; i++)
+          d[i] = s[i];
+    }#}
+    x ) )
+
+;; ----------------------------------------
+;; COMPILE
+
+
+(let* ((mysvmdir (concat-fname (dirname file-being-loaded) "mysvm"))
+       (dhc-make-lushflags (concat dhc-make-lushflags " -I" mysvmdir)))
+  (dhc-make ()
+	    #{ 
+	       #include "kcache.h" 
+	    #}
+	    #{
+	       static double unikernel(int i, int j, void *closure)
+	       {
+	         struct CClass_svmkernel * k = (struct CClass_svmkernel*)closure;
+	         return (*k->Vtbl->M_call)(k, i, j);
+	       }
+	    #}
+	    (KernelCache KernelCache -destructor call call-bypass label
+			 set-maximum-size get-maximum-size get-current-size
+			 get-i2r get-r2i swap-rr swap-ii swap-ri row) ) )
+
+
