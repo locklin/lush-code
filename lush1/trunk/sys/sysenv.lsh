@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.58 2002-08-21 03:27:19 profshadoko Exp $
+;;;  $Id: sysenv.lsh,v 1.59 2002-08-21 05:09:57 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1638,6 +1638,40 @@
         (setq e (cdr e)))
       (setq dirlist (cdr dirlist)))
     r))
+
+;; find X-Windows library directory
+(de find-xlibdirs ()
+  (let ((dirs ())
+	(xlibs (getconf "X_LIBS")))
+    (while (and xlibs (<> xlibs ""))
+      (when (regex-match "^-L(/[^ ]+).*$" xlibs)
+	(setq dirs (cons (regex-subst "^-L(/[^ ]+).*$" "%0" xlibs) dirs)) )
+      (setq xlibs (regex-subst "^[^ ]*[ ]+(.*)$" "%0" xlibs)))
+    dirs))
+  
+;; get LD_LIBRARY_PATH as a list
+(de find-ldlibrarypath ()
+  (let* ((llpenv (getenv "LD_LIBRARY_PATH"))
+	 (d (reverse (regex-split ":" (concat ":" llpenv ":") t ".*" t)))
+	 (dirs ()))
+    (each ((x d)) 
+      (when (and x (<> x "") (dirp x)) (setq dirs (cons x dirs))))
+    dirs))
+    
+;; find a library in /usr/lib, /usr/X11R6/lib (or wherever
+;; the X libraries are, /usr/local/lib, and in the LD_LIBRARY_PATH.
+(de find-library (name extlist)
+  (let* ((dirs (append (list "/usr/lib") 
+		       (find-xlibdirs) 
+		       (list "/usr/local/lib")
+		       (find-ldlibrarypath))))
+    (find-file dirs name extlist)))
+
+
+(defvar headerdirs '("/usr/include" "/usr/X11R6/include" "/usr/local/include"))
+
+;; find header file
+(de find-header (name) (find-file headerdirs name '("")))
 
 ;; Find the default lushenv.[dump,lshc,lsh] in
 ;; curent dir, local, packages, and lsh and set 
