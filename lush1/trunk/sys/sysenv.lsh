@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.80 2002-11-06 23:35:56 profshadoko Exp $
+;;;  $Id: sysenv.lsh,v 1.81 2002-11-18 08:29:18 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -607,6 +607,17 @@
 
 (lock-symbol matrix array submatrix)
 
+(dmd scalar (typ v) 
+  (selectq typ
+    ((d -double-) `((double-matrix) ,v))
+    ((f -float-) `((float-matrix) ,v))
+    ((i -int-) `((int-matrix) ,v))
+    ((s -short-) `((short-matrix) ,v))
+    ((b -byte-) `((byte-matrix) ,v))
+    ((u -ubyte-) `((ubyte-matrix) ,v))
+    ((g -gptr-) `((gptr-matrix) ,v)))
+    (a `((atom-matrix) ,v)))
+
 ;; matrix-matrix multiply
 (dmd idx-m2timesm2 (a b c)
   (list 'idx-eloop (list (list 'bi b) (list 'ci c))
@@ -672,35 +683,45 @@
 
 (de index-print(this)
   (let ((begin "[")
-        (end "]"))
-    (when (arrayp this)
-      (setq begin "{")
-      (setq end "}"))
+        (end "]")
+	(typ (classof (idx-storage this))))
+    (cond
+      ((= typ |DSTORAGE|) (setq begin "["))
+      ((= typ |FSTORAGE|)(setq begin "[f"))
+      ((= typ |I32STORAGE|)(setq begin "[i"))
+      ((= typ |I16STORAGE|)(setq begin "[s"))
+      ((= typ |I8STORAGE|)(setq begin "[b"))
+      ((= typ |U8STORAGE|)(setq begin "[u"))
+      ((= typ |GPTRSTORAGE|)(setq begin "[p"))
+      ((= typ |ATSTORAGE|)(setq begin "[a")))
     (if (or (not (idx-ndim this)) (0= (idx-ndim this)))
         (printf "%s" (pname this))
       (printf begin)
       (let ((tabnow (tab))
-            (len (idx-bound this 0)) )
+            (len (idx-bound this 0)))
         (if (= 1 (idx-ndim this))
-            (if (not (member (classof (idx-storage this))
-                             (list |ATSTORAGE| |GPTRSTORAGE|) ) )
-                (for (i 0 len)
-                     (printf "%5.2f " (this i))) 
+	    (cond 
+	     ((member typ (list |ATSTORAGE| |GPTRSTORAGE|))
               (printf " ")
-              (for (i 0 len)
-                   (prin (this i))
-                   (printf " ")) )
+              (for (i 0 len) (prin (this i)) (printf " ")))
+	     ((member typ (list |DSTORAGE| |FSTORAGE|))
+	      (printf " ")
+	      (for (i 0 len) (printf "%5.2f " (this i))))
+	     (t (printf " ")
+		(for (i 0 len) (printf "%3d " (this i)))))
           (for (i 0 len)
-               (index-print (new-index this 
-                                       (cons 0 (cdr (idx-dim this)))
-                                       (list i) ))
+               (index-print 
+		(new-index 
+		 this 
+		 (cons 0 (cdr (idx-dim this)))
+		 (list i) ))
                (when (< i len)
                  (print)
                  (tab tabnow) ) ) ) )
       (printf end) ) ) )
 
 (demethod |INDEX| print()
-  (if (and (matrixp this)
+  (if (and (indexp this)
 	   (< (apply * (idx-dim this)) 100))
       (index-print this)
     (printf "%s" (pname this)) ) )
@@ -723,20 +744,32 @@
 (dmc |]| (error 'read "extra ']' found"))
 
 (dmc |[| 
-     (on-error (error 'list-to-index "Illegal matrix syntax")
-       (let ((l (when (<> (skip-char) "[") (list 'quote)))
-             (|]| (lambda() (setq m (list-to-index l double-matrix))))
-             (m ()) )
-         (while ~m
-           (setq l (nconc1 l (read))) )
-         m ) ) )
+     (on-error (error 'list-to-index "bad syntax or values for litteral IDX")
+       (let ((matfunc double-matrix)
+	     (c (skip-char)))
+	 (selectq c
+	   ("d" (setq matfunc double-matrix) (read-string 1))
+	   ("f" (setq matfunc float-matrix) (read-string 1))
+	   ("i" (setq matfunc int-matrix) (read-string 1))
+	   ("s" (setq matfunc short-matrix) (read-string 1))
+	   ("b" (setq matfunc byte-matrix) (read-string 1))
+	   ("u" (setq matfunc ubyte-matrix) (read-string 1))
+	   ("p" (setq matfunc gptr-matrix) (read-string 1))
+	   ("a" (setq matfunc atom-matrix) (read-string 1)))
+	 (let ((l (when (<> (skip-char) "[") (list 'quote)))
+	       (|]| (lambda() (setq m (list-to-index l matfunc))))
+	       (m ()) )
+	   (while ~m
+	     (setq l (nconc1 l (read))) )
+	   m ))))
+
 
 (dmc |#]| (error 'read "extra '#]' found"))
 (dmc |#[|
      (on-error (error 'list-to-index "array literal not implemented") 
        ()))
 
-(lock_symbol contiguousp clone-matrix 
+(lock_symbol scalar contiguousp clone-matrix 
              redim unfold select diagonal narrow idx-gloop
              index-print list-to-index 
              |[| |]| |#[| |#]|)
