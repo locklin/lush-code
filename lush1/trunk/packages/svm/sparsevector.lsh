@@ -24,16 +24,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: sparsevector.lsh,v 1.1 2004-08-30 23:24:21 leonb Exp $
+;;; $Id: sparsevector.lsh,v 1.2 2004-10-27 22:17:39 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 (libload "libc/make")
 (libload "libidx/idx-double")
 (libload "libidx/idx-int")
-
+(libload "dynamic")
+(libload "kernel")
 (libload "mysvm")
 
+
+;; -------------------------------- sparsevector
 
 (defclass SparseVector Object
   ((-gptr-) p) )
@@ -134,6 +137,113 @@
 
 
 
+;; -------------------------------- sparsevectorcollection
+
+
+
+(defclass SparseVectorCollection Object
+  ((-obj- (pool)) apool) 
+  ((-idx1- (-gptr-)) arr) )
+
+(defmethod SparseVectorCollection SparseVectorCollection(n)
+  ((-int-) n)
+  (setq arr (gptr-matrix n))
+  (setq apool (new Pool))
+  (for (i 0 (1- n))
+       (let ((sv (in-pool apool (new SparseVector))))
+	 (arr i (to-gptr sv)) ) )
+  () )
+
+(defmethod SparseVectorCollection vector(i)
+  ((-int-) i)
+  (to-obj SparseVector (arr i)) )
+
+
+
+;; -------------------------------- sparsekernel
+
+
+(defclass SVMSparseKernel SVMKernel
+  ((-obj- (SparseVectorCollection)) vec)
+  ((-idx1- (-double-)) lab)
+  ((-bool-) changed) )
+
+(defmethod SVMSparseKernel SVMSparseKernel(n)
+  ((-int-) n)
+  (setq vec (new SparseVectorCollection n))
+  (setq lab (double-matrix n))
+  (setq changed t)
+  () )
+
+(defmethod SVMSparseKernel set-label(i y)
+  ((-int-) i)
+  ((-double-) y)
+  (lab i y) )
+
+(defmethod SVMSparseKernel label(i)
+  ((-int-) i)
+  (lab i) )
+
+(defmethod SVMSparseKernel set-data(i j x)
+  ((-int-) i j)
+  ((-double-) x)
+  (let ((sv (==> vec vector i)))
+    (==> sv set j x) )
+  (setq changed t) )
+
+(defmethod SVMSparseKernel data(i)
+  ((-int-) i)
+  (==> vec vector i) )
+
+(defmethod SVMSparseKernel dot(i j)
+  ((-int-) i j)
+  (let ((sv1 (to-obj SparseVector (:vec:arr i)))
+	(sv2 (to-obj SparseVector (:vec:arr j))) )
+    (sparsevector-dot sv1 sv2) ) )
+
+
+
+(defclass SVMSparseLinearKernel SVMSparseKernel)
+
+(defmethod SVMSparseLinearKernel SVMSparseLinearKernel(n)
+  ((-int-) n) 
+  (setq vec (new SparseVectorCollection n))
+  (setq lab (double-matrix n))
+  (setq changed t)
+  () )
+
+(defmethod SVMSparseLinearKernel call(i j)
+  ((-int-) i j)
+  (==> this dot i j) )
+
+
+
+(defclass SVMSparseRBFKernel SVMSparseKernel
+  ((-idx1- (-double-)) norm) 
+  ((-double-) gamma) )
+
+(defmethod SVMSparseRBFKernel SVMSparseRBFKernel(n)
+  ((-int-) n) 
+  (setq vec (new SparseVectorCollection n))
+  (setq lab (double-matrix n))
+  (setq gamma 1)
+  (setq norm (double-matrix n))
+  (setq changed t) )
+
+(defmethod SVMSparseRBFKernel prep()
+  (for (i 0 (1- (idx-dim norm 0)))
+       (norm i (==> this dot i i)) )
+  (setq changed ()) )
+
+(defmethod SVMSparseRBFKernel call(i j)
+  ((-int-) i j)
+  (when changed (==> this prep))
+  (qexpmx (* gamma (+ (norm i) (norm j) (* -2 (==> this dot i j))))) )
+
+
+
+
+
 ;; ----------------------------------------
 ;; COMPILE
 
@@ -142,5 +252,8 @@
   (dhc-make ()
 	    #{ #include "vector.h" #}
 	    (SparseVector sparsevector -destructor size pairs get set contents unpack)
-	    sparsevector-lincomb sparsevector-dot ) )
-
+	    sparsevector-lincomb sparsevector-dot 
+	    (SparseVectorCollection SparseVectorCollection vector)
+	    (SVMSparseKernel SVMSparseKernel set-label label set-data data dot)
+	    (SVMSparseLinearKernel SVMSparseLinearKernel call)
+	    (SVMSparseRBFKernel SVMSparseRBFKernel prep call) ) )
