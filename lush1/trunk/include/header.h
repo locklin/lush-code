@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.6 2002-04-26 23:31:44 leonb Exp $
+ * $Id: header.h,v 1.7 2002-04-29 19:25:03 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -831,6 +831,8 @@ enum storage_type {
 extern LUSHAPI int storage_type_size[ST_LAST];
 extern LUSHAPI flt (*storage_type_getf[ST_LAST])(gptr, int);
 extern LUSHAPI void (*storage_type_setf[ST_LAST])(gptr, int, flt);
+extern LUSHAPI real (*storage_type_getr[ST_LAST])(gptr, int);
+extern LUSHAPI void (*storage_type_setr[ST_LAST])(gptr, int, real);
 
 /* 
  * General purpose flags (STF)
