@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.29 2004-02-13 22:19:27 leonb Exp $
+ * $Id: dldbfd.c,v 1.30 2004-02-13 22:52:03 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1217,7 +1217,7 @@ mipself_create_got(module_entry *ent,
         sgot->alignment_power = 4;
       /* Set GOT relocations */
       sgot->orelocation = xballoc(ent->abfd, info->gotsize*sizeof(void*));
-      bfd_hash_traverse(&info->got_table, (boolean(*)())mipself_got_traverse, sgot);
+      bfd_hash_traverse(&info->got_table, (void*)mipself_got_traverse, sgot);
       sgot->reloc_count = info->gotsize;
     }
   /* return GOT section if any */
@@ -2290,7 +2290,7 @@ link_archive_members(module_entry *module)
         while (cookie.again && dld_undefined_sym_count>0)
         {
             cookie.again = FALSE;
-            bfd_hash_traverse(&global_symbol_table, (boolean(*)()) arlink_traverse, &cookie);
+            bfd_hash_traverse(&global_symbol_table, (void*)arlink_traverse, &cookie);
         }
     }
     CATCH(n)
@@ -2691,7 +2691,7 @@ dld_list_undefined_sym (void)
         cookie.syms = xmalloc( (dld_undefined_sym_count+1)*sizeof(char*) );
         cookie.current = 0;
         cookie.total = dld_undefined_sym_count;
-        bfd_hash_traverse(&global_symbol_table, (boolean(*)())list_undefined_traverse, &cookie);
+        bfd_hash_traverse(&global_symbol_table, (void*)list_undefined_traverse, &cookie);
         ASSERT(cookie.current = cookie.total);
         cookie.syms[cookie.current] = 0;
     }
