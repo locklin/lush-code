@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.49 2003-05-15 20:08:18 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.50 2003-06-25 18:25:13 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -2691,19 +2691,34 @@
 ;;; PARSING A MATRIX CONSTANT
 ;;; ------------------------------------------------------------------------
 
+
+(de dhc-base-type-of-srg(srg)
+  (let* ((cls (classof srg)))
+    (new dhc-type
+         (cond
+          ((= cls |DSTORAGE|)    'dht-real)
+          ((= cls |FSTORAGE|)    'dht-flt)
+          ((= cls |I32STORAGE|)  'dht-int)
+          ((= cls |I16STORAGE|)  'dht-short)
+          ((= cls |I8STORAGE|)   'dht-char)
+          ((= cls |U8STORAGE|)   'dht-uchar)
+          ((= cls |GPTRSTORAGE|) 'dht-gptr)
+          (t (dhc-error "Illegal literal storage type")) ) ) ) )
+
+
 (de dhc-parse-matrix-t (source)
   (let* ((ndim (idx-ndim source))
-         (srg-type (new dhc-type 'dht-srg (new dhc-type 'dht-flt)))
-	   (idx-type (new dhc-type 'dht-idx ndim srg-type))
-	   (rettype (new dhc-type 'dht-ptr idx-type))
-	   (symbol-idx (new dhc-symbol (named (sprintf "%d_matrix" 
-						       tmpnames-seed))
-			    lex-level))
-	   (symbol-srg (new dhc-symbol (named (sprintf "%d_srg" 
-						       tmpnames-seed))
-			    lex-level))
-	   
-	   (tn (new t-node () rettype source)))
+         (base-type (dhc-base-type-of-srg (idx-storage source))) 
+         (srg-type (new dhc-type 'dht-srg base-type))
+         (idx-type (new dhc-type 'dht-idx ndim srg-type))
+         (rettype (new dhc-type 'dht-ptr idx-type))
+         (symbol-idx (new dhc-symbol 
+                          (named (sprintf "%d_matrix" tmpnames-seed))
+                          lex-level))
+         (symbol-srg (new dhc-symbol 
+                          (named (sprintf "%d_srg" tmpnames-seed))
+                          lex-level))
+         (tn (new t-node () rettype source)))
     (incr tmpnames-seed)
     (dhc-unify-types :symbol-idx:type idx-type)
     (dhc-unify-types :symbol-srg:type srg-type)
@@ -2712,29 +2727,25 @@
     tn))
 
 (de dhc-parse-matrix-c (source treetype retplace)
-  (let ((constant-name (sprintf "constant_%d_%d" 
-                                lex-level tmpnames-seed))
+  (let ((constant-name (sprintf "constant_%d_%d" lex-level tmpnames-seed))
         ((idx-symb srg-symb) :treetype:transfer)
         (ndim (idx-ndim source))
-        (srg-type (==> :treetype:type get-element-type))
-        (default-type "flt")
+        (ctype (==> :treetype:type get-element-decl))
         (s "")
         (size ())
         (temp-mat ()))
     
     (incr tmpnames-seed)
     (setq size (apply * (bound source)))
-    (setq temp-mat (float-matrix size))
-    (copy-any-matrix source temp-mat)
+    (setq temp-mat (copy-any-matrix source))
     (dhc-add-c-declarations (sprintf "static %s %s[] = {" 
-                                     default-type constant-name))
-    
+                                     ctype constant-name))
     (for (i 0 (- size 2))
          (when (= 9 (mod i 10))
            (dhc-add-c-declarations s)
            (setq s ""))
-         (setq s (concat s (sprintf "%g, " (temp-mat i)))))
-    (dhc-add-c-declarations (concat s (sprintf "%g}; " (temp-mat (1- size)))))
+         (setq s (concat s (sprintf "%l, " (temp-mat i)))))
+    (dhc-add-c-declarations (concat s (sprintf "%l}; " (temp-mat (1- size)))))
     (dhc-add-c-statements (sprintf "(%s)->srg = %s;" :idx-symb:c-name :srg-symb:c-name))
     (dhc-add-c-statements (sprintf "(%s)->flags &= ~IDF_UNSIZED;" :idx-symb:c-name))
     (dhc-add-c-statements (sprintf "(%s)->offset = 0;" :idx-symb:c-name))
