@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.46 2004-03-04 20:19:45 leonb Exp $
+ * $Id: unix.c,v 1.47 2004-04-02 15:35:01 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -793,9 +793,9 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
 # endif
 #endif
 
-static int console_in_eventproc = 0;
-
 #if READLINE
+
+static int console_in_eventproc = 0;
 
 static void
 console_wait_for_char(int prep)
@@ -1073,7 +1073,7 @@ void
 toplevel_unix(void)
 {
   break_attempt = 0;
-#if HAVE_LIBREADLINE
+#if READLINE
   console_in_eventproc = 0;
   rl_deprep_terminal();
 #endif

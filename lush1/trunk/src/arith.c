@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: arith.c,v 1.1 2003-12-15 14:00:10 leonb Exp $
+ * $Id: arith.c,v 1.2 2004-04-02 15:35:01 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -97,16 +97,17 @@ static unsigned long
 complex_hash(at *p)
 {
   complexreal *c = p->Object;
-  real r = Creal(*c);
-  real i = Cimag(*c);
+  real r[2];
+  r[0] = Creal(*c);
+  r[1] = Cimag(*c);
   unsigned long x = 0x1011;
-  x ^= ((unsigned long*)&r)[0];
+  x ^= ((unsigned long*)&r[0])[0];
   x = (x<<1)|((long)x<0 ? 0 : 1);
-  x ^= ((unsigned long*)&i)[0];
+  x ^= ((unsigned long*)&r[1])[0];
   if (sizeof(real) >= 2*sizeof(unsigned long)) {
-    x ^= ((unsigned long*)&r)[1];
+    x ^= ((unsigned long*)&r[0])[1];
     x = (x<<1)|((long)x<0 ? 0 : 1);
-    x ^= ((unsigned long*)&i)[1];
+    x ^= ((unsigned long*)&r[1])[1];
   }
   return x;
 }
