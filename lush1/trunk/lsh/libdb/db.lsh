@@ -1,0 +1,563 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: db.lsh,v 1.1 2004-04-16 17:50:58 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "idx-int.lsh")
+(libload "idx-float.lsh")
+(libload "dynamic.lsh")
+
+;;; ------------------------------
+
+
+(defclass db object)
+  
+(defmethod db size() 
+  (error "This method must be defined by a subclass")
+  (int 0) )
+
+(defmethod db getx(n p)
+  ((-int-) n) 
+  ((-idx1- (-float-)) p)
+  (error "This method must be defined by a subclass")
+  p )
+
+(defmethod db gety(n p) 
+  ((-int-) n) 
+  ((-idx1- (-float-)) p)
+  (error "This method must be defined by a subclass")
+  p )
+
+(defmethod db getx-int(n p)
+  ((-int-) n) 
+  ((-idx1- (-int-)) p)
+  (error "This method must be defined by a subclass")
+  p )
+
+(defmethod db gety-int(n p) 
+  ((-int-) n) 
+  ((-idx1- (-int-)) p)
+  (error "This method must be defined by a subclass")
+  p )
+
+(defmethod db getx-ubyte(n p)
+  ((-int-) n) 
+  ((-idx1- (-ubyte-)) p)
+  (error "This method must be defined by a subclass")
+  p )
+
+(defmethod db gety-ubyte(n p) 
+  ((-int-) n) 
+  ((-idx1- (-ubyte-)) p)
+  (error "This method must be defined by a subclass")
+  p )
+
+(defmethod db get-label(n)
+  ((-int-) n) 
+  (let ((y (int-matrix 1)))
+    (==> this gety-int n y)
+    (y 0) ) )
+
+(defmethod db print()
+  (printf "::%s:{size=%d}"
+          (nameof (classname (classof this)))
+          (==> this size)) )
+
+
+;;; ------------------------------
+    
+(defclass db-subset db
+  ((-obj- (db)) base)
+  ((-idx1- (-int-)) map) )
+
+(defmethod db-subset db-subset(b m)
+  ((-obj- (db)) b)
+  ((-idx1- (-int-)) m)
+  (setq base b)
+  (setq map m)
+  () )
+
+(defmethod db-subset size()
+  (idx-dim map 0) )
+
+(defmethod db-subset getx(n p)
+  ((-int-) n) 
+  ((-idx1- (-float-)) p)
+  (==> base getx (map n) p) )
+
+(defmethod db-subset gety(n p)
+  ((-int-) n) 
+  ((-idx1- (-float-)) p)
+  (==> base gety (map n) p) )
+
+(defmethod db-subset getx-int(n p)
+  ((-int-) n) 
+  ((-idx1- (-int-)) p)
+  (==> base getx-int (map n) p) )
+
+(defmethod db-subset gety-int(n p)
+  ((-int-) n) 
+  ((-idx1- (-int-)) p)
+  (==> base gety-int (map n) p) )
+
+(defmethod db-subset getx-ubyte(n p)
+  ((-int-) n) 
+  ((-idx1- (-ubyte-)) p)
+  (==> base getx-ubyte (map n) p) )
+
+(defmethod db-subset gety-ubyte(n p)
+  ((-int-) n) 
+  ((-idx1- (-ubyte-)) p)
+  (==> base gety-ubyte (map n) p) )
+
+(defmethod db-subset get-label(n)
+  ((-int-) n) 
+  (==> base get-label (map n)) )
+
+(defmethod db-subset select(m)
+  ((-idx1- (-int-)) m)
+  (let* ((n (idx-dim m 0))
+	 (p (int-matrix n)))
+    (for (i 0 (1- n))
+	 (p i (map (m i))) )
+    (new db-subset base p) ) )
+
+(de db-shuffle(d)
+  ((-obj- (db)) d)
+  (let* ((n (==> d size))
+	 (m (int-matrix n)) )
+    (if (is-of-class d db-subset)
+	;; collapse db-subset operations
+	(let ((dd (to-obj db-subset d)))
+	  (idx-copy :dd:map m)
+	  (random-permute m) 
+	  (setq d :dd:base) )
+      ;; standard way
+      (idx-i1fill-with-index m)
+      (random-permute m) )
+    ;; create subset
+    (new db-subset d m) ) )
+
+(de db-narrow(d size start)
+  ((-obj- (db)) d)
+  ((-int-) size start)
+  (let ((m (int-matrix size)))
+    (if (is-of-class d db-subset)
+	;; collapse db-subset operations
+	(let ((dd (to-obj db-subset d)))
+	  (idx-copy (narrow :dd:map 0 size start) m)
+	  (setq d dd) )
+      ;; standard
+      (idx-i1fill-with-index m) 
+      (idx-i1addc m start m) )
+    (new db-subset d m) ) )
+
+(de db-select(d predicate)
+  ((-obj- (db)) d)
+  (let ((okay ()))
+    (for (i 0 (1- (==> d size)))
+	 (let ((x (float-matrix 1))
+	       (y (float-matrix 1)) )
+	   (==> d getx i x)
+	   (==> d gety i y)
+	   (when (predicate x y)
+	     (setq okay (cons i okay)) ) ) )
+    (let ((m (int-matrix (length okay))))
+      (m () (reverse okay))
+      (if (check==> (classof d) 'select)
+	  (==> d select m)
+	(new db-subset d m) ) ) ) )
+
+
+;;; ------------------------------
+
+(defvar db-matrix-fsymblist ())
+
+(each (((db-matrix -xtype- -ytype-)
+	'((db-ffmatrix -float- -float-)
+	  (db-fimatrix -float- -int-)
+	  (db-fsmatrix -float- -short-)
+	  (db-fbmatrix -float- -ubyte-)
+	  (db-ifmatrix -int-   -float-)
+	  (db-iimatrix -int-   -int-)
+	  (db-ismatrix -int-   -short-)
+	  (db-ibmatrix -int-   -ubyte-)
+	  (db-sfmatrix -short- -float-)
+	  (db-simatrix -short- -int-)
+	  (db-ssmatrix -short- -short-)
+	  (db-sbmatrix -short- -ubyte-)
+	  (db-bfmatrix -ubyte- -float-)
+	  (db-bimatrix -ubyte- -int-)
+	  (db-bsmatrix -ubyte- -short-)
+	  (db-bbmatrix -ubyte- -ubyte-)) ))
+
+  (eval 
+   `(progn
+      
+      (defclass ,db-matrix db
+	((-idx2- (,-xtype-)) xmat)
+	((-idx2- (,-ytype-)) ymat) )
+
+      (defmethod ,db-matrix ,db-matrix(x y)
+	((-idx2- (,-xtype-)) x)
+	((-idx2- (,-ytype-)) y)
+	(when (<> (idx-dim x 0) (idx-dim y 0))
+	  (error "matrices have different numbers of rows") )
+	(setq xmat x)
+	(setq ymat y) 
+	() )
+
+      (defmethod ,db-matrix size() 
+	(idx-dim xmat 0) )
+      
+      (defmethod ,db-matrix getx(n f)
+	((-int-) n) 
+	((-idx1- (-float-)) f)
+	(idx-f1resize f (idx-dim xmat 1))
+	(idx-copy (select xmat 0 n) f)
+	f )
+
+      (defmethod ,db-matrix gety(n f)
+	((-int-) n) 
+	((-idx1- (-float-)) f)
+	(idx-f1resize f (idx-dim ymat 1))
+	(idx-copy (select ymat 0 n) f)
+	f )
+
+      (defmethod ,db-matrix getx-int(n f)
+	((-int-) n) 
+	((-idx1- (-int-)) f)
+	(idx-i1resize f (idx-dim xmat 1))
+	(idx-copy (select xmat 0 n) f)
+	f )
+
+      (defmethod ,db-matrix gety-int(n f)
+	((-int-) n) 
+	((-idx1- (-int-)) f)
+	(idx-i1resize f (idx-dim ymat 1))
+	(idx-copy (select ymat 0 n) f)
+	f )
+
+      (defmethod ,db-matrix getx-ubyte(n f)
+	((-int-) n) 
+	((-idx1- (-ubyte-)) f)
+	(idx-u1resize f (idx-dim xmat 1))
+	(idx-copy (select xmat 0 n) f)
+	f )
+      
+      (defmethod ,db-matrix gety-ubyte(n f)
+	((-int-) n) 
+	((-idx1- (-ubyte-)) f)
+	(idx-u1resize f (idx-dim ymat 1))
+	(idx-copy (select ymat 0 n) f)
+	f ) 
+      
+      (setq db-matrix-fsymblist
+	    (cons '(,db-matrix ,db-matrix size 
+			      getx gety 
+			      getx-int gety-int 
+			      getx-ubyte gety-ubyte )
+		  db-matrix-fsymblist ) ) ) ) )
+
+
+;;; ------------------------------
+
+
+(defclass db-transform db
+  ((-obj- (db)) base) )
+
+(defmethod db-transform db-transform(d)
+  ((-obj- (db)) d)
+  (setq base d) 
+  () )
+
+(defmethod db-transform size()
+  (==> base size) )
+
+(defmethod db-transform getx(n p)
+  ((-int-) n) 
+  ((-idx1- (-float-)) p)
+  (==> base getx n p) )
+
+(defmethod db-transform gety(n p)
+  ((-int-) n) 
+  ((-idx1- (-float-)) p)
+  (==> base gety n p) )
+
+(defmethod db-transform getx-int(n p)
+  ((-int-) n) 
+  ((-idx1- (-int-)) p)
+  (==> base getx-int n p) )
+
+(defmethod db-transform gety-int(n p) 
+  ((-int-) n) 
+  ((-idx1- (-int-)) p)
+  (==> base gety-int n p) )
+
+(defmethod db-transform getx-ubyte(n p)
+  ((-int-) n) 
+  ((-idx1- (-ubyte-)) p)
+  (==> base getx-ubyte n p) )
+
+(defmethod db-transform gety-ubyte(n p) 
+  ((-int-) n) 
+  ((-idx1- (-ubyte-)) p)
+  (==> base gety-ubyte n p) )
+  
+(defmethod db-transform get-label(n)
+  ((-int-) n) 
+  (==> base get-label n) )
+
+
+;;; ------------------------------
+
+(defclass db-norm db-transform
+  ((-idx1- (-float-)) add)
+  ((-idx1- (-float-)) mul) )
+
+(defmethod db-norm db-norm(d)
+  ((-obj- (db)) d)
+  (setq base d)
+  (setq add (float-matrix 1))
+  (setq mul (float-matrix 1))
+  (error "This class does nothing: use db-normx or db-normy")
+  () )
+
+(defmethod db-norm set-coeff(i bias scale)
+  ((-int-) i)
+  ((-float-) bias scale)
+  (in-stack
+   (db-norm-helper add 0 i)
+   (db-norm-helper mul 1 i) )
+  (add i bias)
+  (mul i scale)
+  i )
+
+;; ---------
+
+(de db-get-x-statistics(d)
+  ((-obj- (db)) d)
+  (let ((s (float-matrix 1)))
+    (==> d getx 0 s)
+    (let* ((m (idx-dim s 0))
+	   (n (==> d size))
+	   (f (float-matrix 5 m)) 
+	   (minis (select f 0 0))
+	   (maxis (select f 0 4))
+	   (sums  (select f 0 2))
+	   (sum2s (select f 0 3)) 
+	   (tmps  (select f 0 1)) )
+      (idx-copy s minis)
+      (idx-copy s maxis)
+      (for (i 0 (1- n))
+	   (==> d getx i s)
+	   (idx-bloop ((mi minis)(ma maxis)(ss s))
+	     (mi (min (mi) (ss)))
+	     (ma (max (ma) (ss))) )
+	   (idx-add s sums sums)
+	   (idx-f1mulacc s s sum2s))
+      (idx-f1dotc sums (/ 1.0 n) sums)
+      (idx-f1dotc sum2s (/ 1.0 n) sum2s)
+      (idx-mul sums sums tmps)
+      (idx-sub sum2s tmps sum2s)
+      (idx-sqrt sum2s sum2s)
+      (idx-sub sums sum2s (select f 0 1))
+      (idx-add sums sum2s (select f 0 3))
+      f ) ) )
+
+(de db-get-y-statistics(d)
+  ((-obj- (db)) d)
+  (let ((s (float-matrix 1)))
+    (==> d gety 0 s)
+    (let* ((m (idx-dim s 0))
+	   (n (==> d size))
+	   (f (float-matrix 5 m)) 
+	   (minis (select f 0 0))
+	   (maxis (select f 0 4))
+	   (sums  (select f 0 2))
+	   (sum2s (select f 0 3)) 
+	   (tmps  (select f 0 1)) )
+      (idx-copy s minis)
+      (idx-copy s maxis)
+      (for (i 0 (1- n))
+	   (==> d gety i s)
+	   (idx-bloop ((mi minis)(ma maxis)(ss s))
+	     (mi (min (mi) (ss)))
+	     (ma (max (ma) (ss))) )
+	   (idx-add s sums sums)
+	   (idx-f1mulacc s s sum2s))
+
+      (idx-f1dotc sums (/ 1.0 n) sums)
+      (idx-f1dotc sum2s (/ 1.0 n) sum2s)
+      (idx-mul sums sums tmps)
+      (idx-sub sum2s tmps sum2s)
+      (idx-sqrt sum2s sum2s)
+      (idx-sub sums sum2s (select f 0 1))
+      (idx-add sums sum2s (select f 0 3))
+      f ) ) )
+
+;; ---------
+
+(de db-norm-min-max(d stat i nmin nmax)
+  ((-obj- (db-norm)) d)
+  ((-idx2- (-float-)) stat)
+  ((-int-) i)
+  ((-float-) nmin nmax)
+  (let ((omin (stat i 0))
+	(omax (stat i 4)))
+    (==> d set-coeff i 
+	 (2/ (- (+ nmin nmax) (+ omin omax)))
+	 (/ (- nmax nmin) (- omax omin)) ) ) )
+
+(de db-norm-mean-sdev(d stat i nmean nsdev)
+  ((-obj- (db-norm)) d)
+  ((-idx2- (-float-)) stat)
+  ((-int-) i)
+  ((-float-) nmean nsdev)
+  (let* ((omean (stat i 2))
+	 (osdev (- (stat i 3) (stat i 2))) )
+    (==> d set-coeff i 
+	 (- (/ (* nmean osdev) nsdev) omean) 
+	 (/ nsdev osdev) ) ) )
+
+
+;; ---------
+
+(de db-norm-helper(x d n)
+  ((-idx1- (-float-)) x)
+  ((-float-) d)
+  ((-int-) n)
+  (cond
+   ((= n (idx-dim x 0)) x)
+   ((< n (idx-dim x 0)) (narrow x 0 n 0))
+   (t  (let ((temp (copy-matrix x)))
+	 (idx-f1resize x n)
+	 (idx-f1fill x d)
+	 (idx-copy temp (narrow x 0 (idx-dim temp 0) 0)) )
+       x ) ) )
+
+;; ---------
+
+(defclass db-normx db-norm)
+
+(defmethod db-normx db-normx(d)
+  ((-obj- (db)) d)
+  (setq base d)
+  (setq add (float-matrix 1))
+  (setq mul (float-matrix 1))
+  (idx-f1fill mul 1)
+  () )
+
+(defmethod db-normx getx(n p)
+  ((-int-) n) 
+  ((-idx1- (-float-)) p)
+  (==> base getx n p)
+  (in-stack
+   (idx-add p (db-norm-helper add 0 (idx-dim p 0)) p)
+   (idx-mul p (db-norm-helper mul 1 (idx-dim p 0)) p) )
+  p )
+
+(defmethod db-normx getx-int(n p)
+  ((-int-) n) 
+  ((-idx1- (-int-)) p)
+  (error "Cannot reliably normalize integers")
+  p )
+
+(defmethod db-normx getx-ubyte(n p)
+  ((-int-) n) 
+  ((-idx1- (-ubyte-)) p)
+  (error "Cannot reliably normalize ubytes")
+  p )
+
+;; ---------
+
+(defclass db-normy db-norm)
+
+(defmethod db-normy db-normy(d)
+  ((-obj- (db)) d)
+  (setq base d)
+  (setq add (float-matrix 1))
+  (setq mul (float-matrix 1))
+  (idx-f1fill mul 1)
+  () )
+
+(defmethod db-normy gety(n p)
+  ((-int-) n) 
+  ((-idx1- (-float-)) p)
+  (==> base gety n p)
+  (in-stack
+   (idx-add p (db-norm-helper add 0 (idx-dim p 0)) p)
+   (idx-mul p (db-norm-helper mul 1 (idx-dim p 0)) p) )
+  p )
+
+(defmethod db-normy gety-int(n p)
+  ((-int-) n) 
+  ((-idx1- (-int-)) p)
+  (error "Cannot reliably normalize integers")
+  p )
+
+(defmethod db-normy gety-ubyte(n p)
+  ((-int-) n) 
+  ((-idx1- (-ubyte-)) p)
+  (error "Cannot reliably normalize ubytes")
+  p )
+
+
+
+
+
+;;; ------------------------------
+
+(dhc-make-all ()
+	      `(;; base
+		(db size getx gety 
+		    getx-int gety-int 
+		    getx-ubyte gety-ubyte
+		    get-label)
+		;; subset
+		(db-subset db-subset size getx gety 
+			   getx-int gety-int 
+			   getx-ubyte gety-ubyte
+			   get-label select)
+		db-shuffle db-narrow
+		;; matrix
+		,@db-matrix-fsymblist
+		;; transform
+		(db-transform db-transform size getx gety 
+			      getx-int gety-int 
+			      getx-ubyte gety-ubyte
+			      get-label)
+		;; norm
+		db-norm-helper
+		(db-norm set-coeff)
+		db-get-x-statistics db-get-y-statistics 
+		db-norm-min-max db-norm-mean-sdev
+		(db-normx db-normx getx getx-int getx-ubyte)
+		(db-normy db-normy gety gety-int gety-ubyte)  
+		;; fini
+		) () )
