@@ -676,15 +676,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defmethod Plotter Redisplay (&optional location)
   (gsave
-   (when  location
-     (when rect
-       (addclip rect)
-       (cls)
-       (clip ()))
-     (setq rect location))
-   (when ~rect (setq rect (list 0 0 (xsize) (ysize))))
-   (addclip rect)
-   (cls)
+   (when (not rect)
+     (setq rect (list 0 0 (xsize) (ysize))))
    ;; copy user defined attributes
    (let* ((rect rect)
 	  (rectx (car rect)) 
@@ -717,8 +710,12 @@
      (setq axes (list xaxismin yaxismin xaxismax yaxismax))
      (when ~xscale (setq xscale (compute-xscale this)))
      (when ~yscale (setq yscale (compute-yscale this)))
-     (when xlogscale (if (> (last xscale) 0) (setq xscale (list 0 (last xscale)))(error '==> "Scale is not valid for log" xscale )))
-     (when ylogscale (if (> (last yscale) 0) (setq yscale (list 0 (last yscale))) (error '==> "Scale is not valid for log" yscale )))
+     (when xlogscale (if (> (last xscale) 0) 
+			 (setq xscale (list 0 (last xscale)))
+		       (error '==> "Scale is not valid for log" xscale )))
+     (when ylogscale (if (> (last yscale) 0) 
+			 (setq yscale (list 0 (last yscale))) 
+		       (error '==> "Scale is not valid for log" yscale )))
      (when ~xlabel (setq xlabel ""))  
      (when ~ylabel (setq ylabel "")) 
      (when ~legend (setq legend "")) 
@@ -730,108 +727,123 @@
 		     (when ~(= (last yticks) (last yscale)) (setq yticks (append yticks (cdr xscale)))) ))
      (when ~title (setq title ""))
      (when ~grid (setq grid 0))
-     ;; display axes and legends 
-     (set-axes axes xscale yscale xticks yticks xlabel ylabel legend title grid xlogscale ylogscale)
-     (when xscale2 
-       (when ~xticks2 (let ((step (** 10 (int (/ (log (2/ (- (last xscale2) (car xscale2)))) (log 10))))))
-			(setq xticks2 (range (car xscale2) (last xscale2) step))
-			(when ~(= (last xticks2) (last xscale2)) (setq xticks2 (append xticks2 (cdr xscale2))))))
-       (when ~xlabel2 (setq xlabel2 ""))
-       (set-x2axis xaxismin xaxismax yaxismax xscale2 xticks2 xlabel2))
-     (when yscale2 
-       (when ~yticks2 (let ((step (** 10 (int (/ (log (2/ (- (last yscale2) (car yscale2)))) (log 10))))))
-			(setq yticks2 (range (car yscale2) (last yscale2) step))
-			(when ~(= (last yticks2) (last yscale2)) (setq yticks2 (append yticks2 (cdr yscale2)))) ))
-       (when ~ylabel2 (setq ylabel2 ""))
-       (set-y2axis yaxismin yaxismax xaxismax yscale2 yticks2 ylabel2))
-     
-     ;;iterate on curves
-     (addclip (list xaxismin yaxismax (- rectw 120) (- recth 70)))
-     (when curves 
-       (let ((curveno 0))
-	 (each (((curvename . curve) curves))
-	   (when curve 
-	     (let* ((points :curve:points)
-		    (color :curve:color)
-		    (symbol :curve:symbol)
-		    (symsize :curve:symsize)
-		    (line :curve:line)		      
-		    (curvexaxis :curve:xaxis)
-		    (curveyaxis :curve:yaxis)
-		    (prev-pointx ())
-		    (prev-pointy ())
-		    (curvexscale ())
-		    (curveyscale ())
-		    (colordef (list (alloccolor 0 0 1) 
-				    (alloccolor 0 1 0) 
-				    (alloccolor 1 0 0) 
-				    (alloccolor 0 1 1) 
-				    (alloccolor 1 1 0)
-				    (alloccolor 1 0 1))))
-	       ;; compute undefined attributes	
-	       (when ~color (setq color (nth (mod curveno 6) colordef)))
-	       (setq curveno (1+ curveno))
-	       (when ~symbol (setq symbol ()))
-	       (when ~symsize (setq symsize 1))
-	       (when ~line (setq line 1))
-	       (when ~curvexaxis (setq curvexaxis 1))
-	       (when ~curveyaxis (setq curveyaxis 1))
-	       (color color)
-	       (setq object-size symsize)
-	       (setq curvexscale (if (= curvexaxis 1) xscale xscale2)) 
-	       (setq curveyscale (if (= curveyaxis 1) yscale  yscale2))
-	       ;;display 
-	       ;;for each point find real pixel coordinates. 
-	       ;;draw symbol at each point. if wanted draw line between points
-	       (graphics-batch
-		(each ((point points))
-		  (when ~(or (nanp (car point)) (nanp (last point)))
-			(let ((realx ())
-			      (realy ())
-			      (curvexscalemin (car curvexscale))
-			      (curvexscalemax (last curvexscale))
-			      (curveyscalemin (car curveyscale))
-			      (curveyscalemax (last curveyscale)))
-			  ;;if x or y is infinity, set it to 10 times the rectsize
-			  (if (= (car point) (infinity)) (setq realx (* 10 rectw))
-			    (if (= (car point) (- (infinity))) (setq realx (* -10 rectw))
-			      (setq realx (if (and xlogscale (= curvexaxis 1)) 
-					      (convert-to-real-x (car point) xaxismin xaxismax curvexscalemin  curvexscalemax xlogscale)
-					    (convert-to-real-x (car point) xaxismin xaxismax curvexscalemin	curvexscalemax)))))
-			  (if  (= (last point) (infinity)) (setq realy (* -10 recth))
-			    (if  (= (last point) (- (infinity))) (setq realy (* 10 recth))
-			      (setq realy (if (and ylogscale (= curveyaxis 1)) 
-					      (convert-to-real-y (last point) yaxismin yaxismax curveyscalemin curveyscalemax ylogscale)
-					    (convert-to-real-y (last point) yaxismin yaxismax curveyscalemin curveyscalemax))))) 
-			  (when (and prev-pointx prev-pointy (= line 1))
-			    (draw-line prev-pointx prev-pointy realx realy))
-			  (setq prev-pointx realx)
-			  (setq prev-pointy realy)
-			  (when  (and symbol (< realx xaxismax) (> realx xaxismin) (> realy yaxismax) (< realy yaxismin) (> symsize 0))
-			    (symbol realx realy)))))))))))
-	 ;;iterate on lines 
-     (when lines
-       (each ((line lines))
-	 (let* ((x1 (car line))
-		(y1 (nth 1 line))
-		(x2 (nth 2 line))
-		(y2 (last line))
-		(real-x1 (convert-to-real-x x1 xaxismin xaxismax (car xscale) (last xscale)))
-		(real-y1 (convert-to-real-x y1 yaxismin yaxismax (car yscale) (last yscale)))
-		(real-x2 (convert-to-real-x x2 xaxismin xaxismax (car xscale) (last xscale)))
-		(real-y2 (convert-to-real-x y2 yaxismin yaxismax (car yscale) (last yscale))))
-	   (draw-line real-x1 real-y1 real-x2 real-y2))))
-     ;; iterate on texts
-     (when texts 
-       (each ((text texts))
-	 (let* ((x (car text))
-		(y (nth 1 text))
-		(textstr (nth 2 text))
-		(y2 (last line))
-		(real-x (convert-to-real-x x xaxismin xaxismax (car xscale) (last xscale)))
-		(real-y (convert-to-real-x y yaxismin yaxismax (car yscale) (last yscale))))
-	   (draw-text real-x real-y textstr)))	
-       (color old-color)))))
+     ;; display axes and legends
+     (when (addclip rect)
+       (cls)
+       (set-axes axes xscale yscale xticks yticks xlabel ylabel legend title grid xlogscale ylogscale)
+       (when xscale2 
+	 (when ~xticks2 
+	   (let ((step (** 10 (int (/ (log (2/ (- (last xscale2) (car xscale2)))) (log 10))))))
+	     (setq xticks2 (range (car xscale2) (last xscale2) step))
+	     (when ~(= (last xticks2) (last xscale2))
+		   (setq xticks2 (append xticks2 (cdr xscale2))))))
+	 (when ~xlabel2 
+	   (setq xlabel2 ""))
+	 (set-x2axis xaxismin xaxismax yaxismax xscale2 xticks2 xlabel2))
+       (when yscale2 
+	 (when ~yticks2 
+	   (let ((step (** 10 (int (/ (log (2/ (- (last yscale2) (car yscale2)))) (log 10))))))
+	     (setq yticks2 (range (car yscale2) (last yscale2) step))
+	     (when ~(= (last yticks2) (last yscale2)) 
+		   (setq yticks2 (append yticks2 (cdr yscale2)))) ))
+	 (when ~ylabel2
+	   (setq ylabel2 ""))
+	 (set-y2axis yaxismin yaxismax xaxismax yscale2 yticks2 ylabel2)) )
+     (when (addclip (list xaxismin yaxismax (- rectw 120) (- recth 70)))
+       (when curves
+	 (let ((curveno 0))
+	   (each (((curvename . curve) curves))
+	     (when curve 
+	       (let* ((points :curve:points)
+		      (color :curve:color)
+		      (symbol :curve:symbol)
+		      (symsize :curve:symsize)
+		      (line :curve:line)		      
+		      (curvexaxis :curve:xaxis)
+		      (curveyaxis :curve:yaxis)
+		      (prev-pointx ())
+		      (prev-pointy ())
+		      (curvexscale ())
+		      (curveyscale ())
+		      (colordef (list (alloccolor 0 0 1) 
+				      (alloccolor 0 1 0) 
+				      (alloccolor 1 0 0) 
+				      (alloccolor 0 1 1) 
+				      (alloccolor 1 1 0)
+				      (alloccolor 1 0 1))))
+		 ;; compute undefined attributes	
+		 (when ~color (setq color (nth (mod curveno 6) colordef)))
+		 (setq curveno (1+ curveno))
+		 (when ~symbol (setq symbol ()))
+		 (when ~symsize (setq symsize 1))
+		 (when ~line (setq line 1))
+		 (when ~curvexaxis (setq curvexaxis 1))
+		 (when ~curveyaxis (setq curveyaxis 1))
+		 (color color)
+		 (setq object-size symsize)
+		 (setq curvexscale (if (= curvexaxis 1) xscale xscale2)) 
+		 (setq curveyscale (if (= curveyaxis 1) yscale  yscale2))
+		 ;;display 
+		 ;;for each point find real pixel coordinates. 
+		 ;;draw symbol at each point. if wanted draw line between points
+		 (graphics-batch
+		  (each ((point points))
+		    (when ~(or (nanp (car point)) (nanp (last point)))
+			  (let ((realx ())
+				(realy ())
+				(curvexscalemin (car curvexscale))
+				(curvexscalemax (last curvexscale))
+				(curveyscalemin (car curveyscale))
+				(curveyscalemax (last curveyscale)))
+			    ;;if x or y is infinity, set it to 10 times the rectsize
+			    (if (= (car point) (infinity)) (setq realx (* 10 rectw))
+			      (if (= (car point) (- (infinity))) (setq realx (* -10 rectw))
+				(setq realx (if (and xlogscale (= curvexaxis 1)) 
+						(convert-to-real-x (car point) 
+								   xaxismin xaxismax 
+								   curvexscalemin curvexscalemax xlogscale)
+					      (convert-to-real-x (car point) 
+								 xaxismin xaxismax 
+								 curvexscalemin curvexscalemax)))))
+			    (if  (= (last point) (infinity)) (setq realy (* -10 recth))
+			      (if  (= (last point) (- (infinity))) (setq realy (* 10 recth))
+				(setq realy (if (and ylogscale (= curveyaxis 1)) 
+						(convert-to-real-y (last point) 
+								   yaxismin yaxismax 
+								   curveyscalemin curveyscalemax ylogscale)
+					      (convert-to-real-y (last point) 
+								 yaxismin yaxismax 
+								 curveyscalemin curveyscalemax))))) 
+			    (when (and prev-pointx prev-pointy (= line 1))
+			      (draw-line prev-pointx prev-pointy realx realy))
+			    (setq prev-pointx realx)
+			    (setq prev-pointy realy)
+			    (when  (and symbol (< realx xaxismax) (> realx xaxismin)
+					(> realy yaxismax) (< realy yaxismin) (> symsize 0))
+			      (symbol realx realy)))))))))))
+       ;;iterate on lines 
+       (when lines
+	 (each ((line lines))
+	   (let* ((x1 (car line))
+		  (y1 (nth 1 line))
+		  (x2 (nth 2 line))
+		  (y2 (last line))
+		  (real-x1 (convert-to-real-x x1 xaxismin xaxismax (car xscale) (last xscale)))
+		  (real-y1 (convert-to-real-x y1 yaxismin yaxismax (car yscale) (last yscale)))
+		  (real-x2 (convert-to-real-x x2 xaxismin xaxismax (car xscale) (last xscale)))
+		  (real-y2 (convert-to-real-x y2 yaxismin yaxismax (car yscale) (last yscale))))
+	     (draw-line real-x1 real-y1 real-x2 real-y2))))
+       ;; iterate on texts
+       (when texts 
+	 (each ((text texts))
+	   (let* ((x (car text))
+		  (y (nth 1 text))
+		  (textstr (nth 2 text))
+		  (y2 (last line))
+		  (real-x (convert-to-real-x x xaxismin xaxismax (car xscale) (last xscale)))
+		  (real-y (convert-to-real-x y yaxismin yaxismax (car yscale) (last yscale))))
+	     (draw-text real-x real-y textstr)))	
+	 (color old-color) ) ) ) ) )
 
 
 #? * low level utility functions
@@ -851,9 +863,11 @@
 	       (max-x (sup xs))
 	       (min-x (inf xs)))
 	  ;;if max is infinity take the next max. value
-	  (while (or (nanp max-x) (= max-x (infinity))) (setq xs (cdr (sort-list xs <))) (setq max-x (car xs)))
+	  (while (or (nanp max-x) (= max-x (infinity)))
+	    (setq xs (cdr (sort-list xs <))) (setq max-x (car xs)))
 	  ;;if min is -infinity take the next min value
-	  (while (or (nanp min-x)(= min-x (-(infinity))))(setq xs (cdr (sort-list xs >)))(setq min-x (car xs)))
+	  (while (or (nanp min-x)(= min-x (-(infinity))))
+	    (setq xs (cdr (sort-list xs >)))(setq min-x (car xs)))
 	  (setq max-x-list (append max-x-list (list max-x)))
 	  (setq min-x-list (append min-x-list (list min-x))))))
     ;;find max of max x list
@@ -878,9 +892,11 @@
 	       (max-y (sup ys))
 	       (min-y (inf ys)))
 	  ;;if max is infinity take the next max. value
-	  (while (or (nanp max-y)(= max-y (infinity))) (setq ys (cdr (sort-list ys <)))(setq max-y (car ys)))
+	  (while (or (nanp max-y)(= max-y (infinity)))
+	    (setq ys (cdr (sort-list ys <)))(setq max-y (car ys)))
 	  ;;if min is -infinity take the next min value
-	  (while (or (nanp min-y) (= min-y (- (infinity))))(setq ys (cdr (sort-list ys >)))(setq min-y (car ys)) )
+	  (while (or (nanp min-y) (= min-y (- (infinity))))
+	    (setq ys (cdr (sort-list ys >)))(setq min-y (car ys)) )
 	  (setq max-y-list (append max-y-list (list max-y)))
 	  (setq min-y-list (append min-y-list (list min-y))))))
     ;;find max of max x list
