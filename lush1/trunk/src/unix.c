@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.19 2002-11-05 01:02:37 leonb Exp $
+ * $Id: unix.c,v 1.20 2002-11-05 01:24:34 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -792,6 +792,7 @@ console_init(void)
 {
   /* handle events anyway */
   rl_getc_function = console_getc;
+  
   /* matching parenthesis */
 #if RL_READLINE_VERSION > 0x401
 #if RL_READLINE_VERSION > 0x402
@@ -800,8 +801,22 @@ console_init(void)
   rl_bind_key (')', rl_insert_close);
   rl_bind_key (']', rl_insert_close);
   rl_bind_key ('}', rl_insert_close);
-  rl_basic_quote_characters = "\"|";
 #endif
+
+  /* ctrl+j makes a multiline readline */
+  rl_bind_key ('\n', rl_insert);  
+  
+  /* quotes etc. */
+  rl_special_prefixes = "^#";
+  rl_basic_quote_characters = "\"|";
+  rl_basic_word_break_characters = 
+    " ()#^\"|;"   /* syntactic separators */
+    "~'`,@[]{}:"  /* common macro characters */
+    "\001\002\003\004\005\006\007"
+    "\011\012\013\014\015\016\017"
+    "\021\022\023\024\025\026\027"
+    "\031\032\033\034\035\036\037";
+
   /* no completion for now */
   rl_bind_key ('\t', rl_insert);
 }
