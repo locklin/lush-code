@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-util.lsh,v 1.6 2002-07-15 16:39:57 leonb Exp $
+;;; $Id: dh-util.lsh,v 1.7 2002-07-15 19:07:03 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -2045,12 +2045,9 @@
 ;; Copies a source tree list (except leaves).
 ;; Returns the copy.
 (de dhc-copy-source-tree (source)
-  (if (atomp source) 
-      source
-    (let ((ans (append source ()))
-          (end (cdr (lastcdr source))) )
-      (when end (nconc ans end))
-      ans ) ) )
+  (if (consp source) 
+      (append source () (cdr (lastcdr source)))
+    source ) )
 
 
 #? (dhc-get-treetype <source>)
@@ -2071,31 +2068,13 @@
         (dhc-debug-stack ()))
     (dhc-parse-expr-t source)))
 
+
+
 #? (dhc-get-type <source>)
 ;; This function returns the dhc-type of expression <source>
 (de dhc-get-type (source)
-    :(dhc-get-treetype source):type)
+  :(dhc-get-treetype source):type)
 
-#? (dhc-get-c <source>)
-;; This function print the C program for a DE.
-;; This is only to speed up debugging
-(de dhc-get-c (source)
-  (let ((lambda-counter 0)
-        (source (dhc-pp (dhc-copy-source-tree source)))
-        (program ())
-        (c-declarations ())
-        (c-statements ())
-        (c-epilog ())
-        (lex-level 0)
-        (tmpnames-seed 0)
-        (ret-expr ()))
-    (setq ret-expr (dhc-parse-expr-c source (dhc-get-treetype source) ()))
-    (setq program
-          (append program c-declarations c-statements c-epilog))
-    (writing (concat "| " dhc-pretty-c)
-      (each ((i program))
-        (printf "%s\n" i)))
-    ret-expr))
 
 
 #? (dhm-t <func> (source) . <body>)
@@ -2183,6 +2162,106 @@
 ;; Return the dhm-c for function <symb>
 (dm get-dhm-c (fn symb)
   `(getp :,symb 'dhm-c) )
+
+
+
+
+
+;;; ------------------------------------------------------------------------
+;;; PREPROCESSING AND MACRO-EXPANSIONS
+;;; ------------------------------------------------------------------------
+;;; Surely needs a lot more dhm-p.
+;;; It would have been better to do this in dhc-parse-expr-t
+
+
+
+#? (dhm-p <func> (source) . <body>)
+;; Installs a new DHM-P for the function named <func>
+;; 
+;; The DHM-P function will be called when preprocessing
+;; a list expression starting with function <func>.
+;; The list expression is passed as <source>. 
+;; It should construct a copy of <source>, using
+;; function <dhc-pp> on all parts of <source>
+;; that can be subject to macro-expansion
+;;
+;; There are relatively few DHM-P functions
+;; because the SN3 compiler lacked this facilities.
+;; In the absence of a DHM-P function, all arguments
+;; of a function call are considered for macro-expansion.
+;; This is obviously wrong for functions like <let>
+;; or <quote>.  
+
+(dm dhm-p (fn name args . body)
+  `(let ((func :,name))
+     (if (or (is-of-class func |DF|)
+             (is-of-class func |DM|)
+             (is-of-class func |DY|)
+             (is-of-class func |DX|) )
+         (putp func 'dhm-p (lambda args ,@body))
+       (if (or (is-of-class func |DE|)
+               (is-of-class func |DZ|) )
+           (error 'dhm-p "DE and DZ functions do not need dhm-p" ',name) 
+         (error 'dhm-p "Not a valid target for a dhm-t" ',name) ) ) ) )
+
+#? (get-dhm-p <symb>)
+;; Return the dhm-p for function <symb>
+(dm get-dhm-p (fn symb)
+  `(getp :,symb 'dhm-p) )
+
+
+#? (dhc-pp <body>)
+;; Macro preprocessor for the dhc compiler.
+;; return a version of lisp expression <body> with
+;; all macros (both dm and dmd) expanded. 
+
+(de dhc-pp(body)
+  (if (atomp body)
+      body
+    (let* ((fname (car body))
+           (func  (if (symbolp fname) (eval `:,fname) fname))
+           (dhm   ()) )
+      ;; inlined mlambda
+      (when (and (consp fname) (= (car fname) 'mlambda))
+        (setq func (eval fname)) )
+      (cond
+       ;; dhm-p is provided
+       ((setq dhm (get-dhm-p func))
+        (dhm body) )
+       ;; macro function
+       ((is-of-class func |DM|)
+        (dhc-pp (eval `(macro-expand ,body))) )
+       ;; sn3 defaults to expanding everything
+       ((functionp func)
+        (cons (car body) (dhc-pp-all (cdr body))) )
+       ;; limited lambda syntax (compatibility purposes)
+       ((and (consp fname) (= (car fname) 'lambda))
+        (let ((bindings ())
+              (argnam (cadr fname))
+              (argval (cdr source)) )
+          (while (or argnam argval)
+            (when (not (and (consp argnam) (consp argval) (symbolp (car argnam))))
+              (dhc-error "Cannot expand this lambda function call" body) )
+            (setq bindings (cons (list (car argnam) (car argval)) bindings))
+            (setq argnam (cdr argnam))
+            (setq argval (cdr argval)) )
+          `(let ,(reverse bindings) ,@(cddr fname)) ) )
+       ;; sn3 defaults to expanding everything
+       ;; with a convoluted algorithm whose effects 
+       ;; are hopefully reproduced below.
+       (t
+        (let ((x (dhc-pp (car body))))
+          (if (is-of-class x |DM|)
+              (eval `(macro-expand ,body))
+            (cons x (dhc-pp-all (cdr body))) ) ) ) ) ) ) )
+
+(de dhc-pp-all(src)
+  (let ((x ()))
+    (while (consp src)
+      (setq x (cons (dhc-pp (car src)) x))
+      (setq src (cdr src)) )
+    (nconc (reverse x) src) ) )
+
 
 
 ;;; ------------------------------------------------------------------------
@@ -2601,6 +2680,9 @@
 (de dhc-parse-variable-c(source treetype retplace)
   (scope :treetype:symbol c-name))
 
+
+
+
 ;;; ------------------------------------------------------------------------
 ;;; PARSING A CALL TO A DH
 ;;; ------------------------------------------------------------------------
@@ -2720,3 +2802,5 @@
         ;; add-c the c function and return retplace
         (dhc-add-c-statements (concat cfunc "(" args ");"))
         retplace ) ) ) ) 
+
+
