@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fltlib.c,v 1.5 2003-10-17 18:06:24 leonb Exp $
+ * $Id: fltlib.c,v 1.6 2003-12-15 14:00:10 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -843,4 +843,91 @@ Dgauss(void)
 #undef MSEED
 #undef FAC
 #undef FAC2
+
+
+/* -------------------------------------------- */
+/* Complex numbers */
+
+#ifdef HAVE_COMPLEX
+
+complexreal Ci = _Complex_I;
+
+#else
+
+complexreal Ci = { 0, 1 };
+
+complexreal 
+Cnew(real r, real i)
+{
+  complexreal a;
+  a.r = r;
+  a.i = i;
+  return a;
+}
+
+complexreal 
+Cadd(complexreal x, complexreal y)
+{
+  complexreal a;
+  a.r = x.r + y.r;
+  a.i = x.i + y.i;
+  return a;
+}
+
+complexreal 
+Csub(complexreal x, complexreal y)
+{
+  complexreal a;
+  a.r = x.r - y.r;
+  a.i = x.i - y.i;
+  return a;
+}
+
+complexreal 
+Cmul(complexreal x, complexreal y)
+{
+  complexreal a;
+  a.r = x.r * y.r - x.i * y.i;
+  a.i = x.r * y.i + x.i * y.r;
+  return a;
+}
+
+complexreal 
+Cdiv(complexreal x, complexreal y)
+{
+  /* Suboptimal */
+  complexreal m;
+  real r = y.r * y.r + y.i * y.i;
+  m.r = y.r / r;
+  m.i = -y.i / r;
+  return Cmul(x, m);
+}
+
+complexreal 
+Cconj(complexreal z)
+{
+  complexreal a;
+  a.r = z.r;
+  a.i = - z.i;
+  return a;
+}
+
+#endif
+
+real 
+Cabs(complexreal z)
+{
+  real r = Creal(z);
+  real i = Cimag(z);
+  return sqrt(r*r+i*i);
+}
+
+real 
+Carg(complexreal z)
+{
+  real r = Cabs(z);
+  real a = acos(Creal(z) / r);
+  return copysign(a, Cimag(z));
+}
+
 

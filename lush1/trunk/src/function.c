@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.14 2003-07-01 19:12:03 leonb Exp $
+ * $Id: function.c,v 1.15 2003-12-15 14:00:10 leonb Exp $
  **********************************************************************/
 
 
@@ -673,7 +673,7 @@ DX(xfunctionp)
 static char need_arg_num[80];
 static char *need_errlist[] =
 { "incorrect number of arguments",
-  "not a number",
+  "not a real number",
   "not a list",
   "empty list",
   "not a string",

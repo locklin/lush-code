@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: calls.c,v 1.7 2003-09-26 03:54:45 profshadoko Exp $
+ * $Id: calls.c,v 1.8 2003-12-15 14:00:10 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -35,12 +35,8 @@
 
 #include "header.h"
 
-static char badmatharg[] = "bad argument in math function";
-static char divbyzero[] = "division by zero";
 static char illegarg[] = "illegal argument(s)";
 static char pointlist[] = "why a pointed list ?";
-
-
 
 /* --------- UTILITY FUNCTIONS --------- */
 
@@ -185,183 +181,6 @@ again:
 
 
 
-/* --------- NUMERICS FUNCTIONS --------- */
-
-
-
-DX(xadd)
-{
-  register real sum;
-  register int i;
-
-  sum = 0.0;
-  i = 0;
-  ALL_ARGS_EVAL;
-  while (++i <= arg_number)
-    sum += AREAL(i);
-  return NEW_NUMBER(sum);
-}
-
-DX(xmul)
-{
-  register real prod;
-  register int i;
-
-  prod = 1.0;
-  i = 0;
-  ALL_ARGS_EVAL;
-  while (++i <= arg_number)
-    prod *= AREAL(i);
-  return NEW_NUMBER(prod);
-}
-
-DX(xsub)
-{
-  register real a1, a2;
-
-  if (arg_number == 1) {
-    ARG_EVAL(1);
-    return NEW_NUMBER(-AREAL(1));
-  } else {
-    ARG_NUMBER(2);
-    ALL_ARGS_EVAL;
-    a1 = AREAL(1);
-    a2 = AREAL(2);
-    return NEW_NUMBER(a1 - a2);
-  }
-}
-
-DX(xdiv)
-{
-  register real a1, a2;
-
-  if (arg_number == 1) {
-    ARG_EVAL(1);
-    a1 = 1.0;
-    a2 = AREAL(1);
-  } else {
-    ARG_NUMBER(2);
-    ALL_ARGS_EVAL;
-    a1 = AREAL(1);
-    a2 = AREAL(2);
-  }
-  return NEW_NUMBER(a1 / a2);
-}
-
-DX(xpower)
-{
-  register real r;
-  ARG_NUMBER(2);
-  ALL_ARGS_EVAL;
-  r = AREAL(1);
-  if (r < 0)
-    error(NIL, badmatharg, APOINTER(1));
-  return NEW_NUMBER(pow((double) (r), (double) (AREAL(2))));
-}
-
-DX(xadd1)
-{
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  return NEW_NUMBER(AREAL(1) + 1.0);
-}
-
-DX(xsub1)
-{
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  return NEW_NUMBER(AREAL(1) - 1.0);
-}
-
-DX(xmul2)
-{
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  return NEW_NUMBER(AREAL(1) * 2.0);
-}
-
-DX(xdiv2)
-{
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  return NEW_NUMBER(AREAL(1) / 2.0);
-}
-
-DX(xdivi)
-{
-  register int dv;
-
-  ARG_NUMBER(2);
-  ALL_ARGS_EVAL;
-  dv = AINTEGER(2);
-  if (dv == 0)
-    error(NIL, divbyzero, NIL);
-  return NEW_NUMBER(AINTEGER(1) / dv);
-}
-
-DX(xmodi)
-{
-  register int dv;
-
-  ARG_NUMBER(2);
-  ALL_ARGS_EVAL;
-  dv = AINTEGER(2);
-  if (dv == 0)
-    error(NIL, divbyzero, NIL);
-  return NEW_NUMBER(AINTEGER(1) % dv);
-}
-
-
-DX(xbitand)
-{
-  int i;
-  int x = ~0;
-  ALL_ARGS_EVAL;
-  for (i=1; i<=arg_number; i++)
-    x &= AINTEGER(i);
-  return NEW_NUMBER(x);
-}
-
-DX(xbitor)
-{
-  int i;
-  int x = 0;
-  ALL_ARGS_EVAL;
-  for (i=1; i<=arg_number; i++)
-    x |= AINTEGER(i);
-  return NEW_NUMBER(x);
-}
-
-DX(xbitxor)
-{
-  int i;
-  int x = 0;
-  ALL_ARGS_EVAL;
-  for (i=1; i<=arg_number; i++)
-    x ^= AINTEGER(i);
-  return NEW_NUMBER(x);
-}
-
-DX(xbitshl)
-{
-  int x1, x2;
-  ARG_NUMBER(2);
-  ALL_ARGS_EVAL;
-  x1 = AINTEGER(1);
-  x2 = AINTEGER(2);
-  return NEW_NUMBER(x1 << x2);
-}
-
-DX(xbitshr)
-{
-  int x1, x2;
-  ARG_NUMBER(2);
-  ALL_ARGS_EVAL;
-  x1 = AINTEGER(1);
-  x2 = AINTEGER(2);
-  return NEW_NUMBER(x1 >> x2);
-}
-
 
 
 /* --------- WEIRD FUNCTIONS --------- */
@@ -502,68 +321,6 @@ DX(xrange)
 }
 
 
-
-/* --------- RANDOM FUNCTIONS --------- */
-
-DX(xseed)
-{
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  Dseed((int)AREAL(1));
-  return NIL;
-}
-
-DX(xrand)
-{
-  real lo, hi, rand;
-
-  ALL_ARGS_EVAL;
-  if (arg_number == 0) {
-    lo = 0.0;
-    hi = 1.0;
-  } else if (arg_number == 1) {
-    hi = AREAL(1);
-    lo = -hi;
-  } else {
-    ARG_NUMBER(2);
-    lo = AREAL(1);
-    hi = AREAL(2);
-  }
-
-  rand = Drand();
-  return NEW_NUMBER((hi - lo) * rand + lo);
-}
-
-
-DX(xgauss)
-{
-  real mean, sdev, rand;
-
-  ALL_ARGS_EVAL;
-  if (arg_number == 0) {
-    mean = 0.0;
-    sdev = 1.0;
-  } else if (arg_number == 1) {
-    mean = 0.0;
-    sdev = AREAL(1);
-  } else {
-    ARG_NUMBER(2);
-    mean = AREAL(1);
-    sdev = AREAL(2);
-  }
-
-  rand = Dgauss();
-  return NEW_NUMBER(sdev * rand + mean);
-}
-
-
-DX(xuniq)
-{
-  static int uniq = 0;
-  ARG_NUMBER(0);
-  uniq++;
-  return NEW_NUMBER(uniq);
-}
 
 /* --------- LOGICAL FUNCTIONS --------- */
 
@@ -935,30 +692,10 @@ DY(yrepeat)
 void 
 init_calls(void)
 {
-  dx_define("+", xadd);
-  dx_define("*", xmul);
-  dx_define("-", xsub);
-  dx_define("/", xdiv);
-  dx_define("**", xpower);
-  dx_define("1+", xadd1);
-  dx_define("1-", xsub1);
-  dx_define("2*", xmul2);
-  dx_define("2/", xdiv2);
-  dx_define("mod", xmodi);
-  dx_define("div", xdivi);
-  dx_define("bitand", xbitand);
-  dx_define("bitor", xbitor);
-  dx_define("bitxor", xbitxor);
-  dx_define("bitshl", xbitshl);
-  dx_define("bitshr", xbitshr);
   dx_define("sizeof", xsizeof);
   dx_define("atgptr", xatgptr);
   dx_define("makelist", xmakelist);
   dx_define("range", xrange);
-  dx_define("seed", xseed);
-  dx_define("rand", xrand);
-  dx_define("gauss", xgauss);
-  dx_define("uniq", xuniq);
   dx_define("and", xand);
   dx_define("or", xor);
   dx_define("==", xeqptr);

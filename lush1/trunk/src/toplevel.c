@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.23 2003-06-20 19:50:11 leonb Exp $
+ * $Id: toplevel.c,v 1.24 2003-12-15 14:00:10 leonb Exp $
  **********************************************************************/
 
 
@@ -61,6 +61,7 @@ extern void init_eval (void);
 extern void init_function (void);
 extern void init_at (void);
 extern void init_calls (void);
+extern void init_arith (void);
 extern void init_string (void);
 extern void init_fileio (char *);
 extern void init_io (void);
@@ -167,6 +168,7 @@ init_lush(char *program_name)
   init_fileio(program_name);
   init_at();
   init_calls();
+  init_arith();
   init_io();
   init_htable();
   init_toplevel();
