@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.9 2002-12-09 13:10:55 leonb Exp $
+ * $Id: storage.c,v 1.10 2003-01-12 02:57:09 leonb Exp $
  **********************************************************************/
 
 
@@ -840,20 +840,17 @@ storage_malloc(at *atp, int size, int clear_flag)
     error(NIL,"Illegal size",NEW_NUMBER(size));
   ifn (st->srg.flags & STF_UNSIZED)
     error(NIL,"An unsized storage is required",atp);
-  
+  if (st->srg.type==ST_AT)
+    clear_flag = TRUE;
   if (clear_flag) {
     st->allinfo.sts_malloc.addr 
       = calloc(size , storage_type_size[st->srg.type]);
-  } else if (st->srg.type==ST_AT) {
-    error(NIL,"An AT storage must be initialized",atp);
   } else {
     st->allinfo.sts_malloc.addr 
       = malloc(size * storage_type_size[st->srg.type]);    
   }
-  
   if (!st->allinfo.sts_malloc.addr)
     error(NIL,"not enough memory",NIL);
-
   st->srg.data = st->allinfo.sts_malloc.addr;
   st->srg.flags = STS_MALLOC & ~STF_UNSIZED;
   st->srg.size = size;
