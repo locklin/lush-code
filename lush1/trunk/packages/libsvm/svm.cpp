@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svm.cpp,v 1.1 2004-02-09 20:44:52 leonb Exp $
+ * $Id: svm.cpp,v 1.2 2004-02-09 22:47:49 leonb Exp $
  **********************************************************************/
 
 // ---------------------------------------------------------------------
@@ -105,7 +105,7 @@ template <class S, class T> inline void clone(T*& dst, S* src, int n)
 #define Malloc(type,n) (type *)xmalloc((n)*sizeof(type))
 #define Realloc(type,p,n) (type *)xrealloc((void*)p, (n)*sizeof(type))
 
-extern void run_time_error(const char *s);
+extern "C" void run_time_error(const char *s);
 
 void *xmalloc(int n) 
 {
