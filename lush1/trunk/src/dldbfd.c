@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.5 2002-05-07 00:14:20 leonb Exp $
+ * $Id: dldbfd.c,v 1.6 2002-05-07 15:53:40 leonb Exp $
  **********************************************************************/
 
 
@@ -2228,9 +2228,9 @@ dld_link (const char *oname)
         }
     
     /* Create file entry */
-    module = create_file_entry(oname);
     TRY
     {
+        module = create_file_entry(oname);
         if (module->archive_flag)
         {
             if (dld_undefined_sym_count > 0)
