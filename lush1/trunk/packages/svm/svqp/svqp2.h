@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.1 2004-09-18 23:57:53 leonb Exp $
+ * $Id: svqp2.h,v 1.2 2004-09-19 20:15:37 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -143,8 +143,7 @@ public:
   double   gmax;
   double   w;
 
-
-  // INTERNAL VARIABLES
+  // INTERNAL
 
 protected:
   int      iter;		// total iterations
@@ -158,17 +157,9 @@ protected:
   double  *dmem;                // Allocated memory
   int     *imem;                // Allocated memory
   int      vdots;		// Infodot counter
-
-  // SEMI-PUBLIC FUNCTIONS
-
-public:
+protected:
   void   info(const char*, const char *, ...);
   int    error(const char *message);
-  
-  // INTERNAL FUNCTIONS
-  
-protected:
-  // cache
   void   cache_init(void);
   void   cache_fini(void);
   long   cache_clean(void);
@@ -177,7 +168,7 @@ protected:
   void   swap(int, int);
   void   unswap(void);
   void   shrink(void);
-  void   unshrink(void);
+  void   unshrink(int s);
   int    iterate_gs(bool);
   int    iterate_smo(bool);
 private:
