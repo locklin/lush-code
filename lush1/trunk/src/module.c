@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.64 2004-08-10 16:43:50 leonb Exp $
+ * $Id: module.c,v 1.65 2004-08-10 19:14:49 leonb Exp $
  **********************************************************************/
 
 
@@ -140,16 +140,19 @@ nsbundle_init(void)
 		else if (!strcmp(sname,"_return_on_error"))
 		  nsbundle_return_on_error = (void*)addr;
 	      }
-	    while (!feof(f))
+	    while (! feof(f))
 	      if (fgetc(f) == '\n')
 		break;
 	  }
-	nsbundle_clear_undefined_list 
-	  = (void*)(slide + (char*)nsbundle_clear_undefined_list);
-	nsbundle_return_on_error 
-	  = (void*)(slide + (char*)nsbundle_return_on_error);
-	pclose(f);
+	if (nsbundle_clear_undefined_list)
+	  nsbundle_clear_undefined_list 
+	    = (void*)(slide + (char*)nsbundle_clear_undefined_list);
+	if (nsbundle_return_on_error)
+	  nsbundle_return_on_error 
+	    = (void*)(slide + (char*)nsbundle_return_on_error);
       }
+    if (f)
+      pclose(f);
     if (! (nsbundle_clear_undefined_list && nsbundle_return_on_error))
       fprintf(stderr,
 	      "*** Dynamic loader warning:\n"
