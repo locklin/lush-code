@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: symbol.c,v 1.5 2002-07-31 16:57:27 leonb Exp $
+ * $Id: symbol.c,v 1.6 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 
@@ -58,37 +58,6 @@ struct alloc_root hash_name_alloc =
  * target
  */
 
-
-#define LASTWORD
-#ifdef LASTWORD
-
-/*
- * With LASTWORD option, Lush confuses '-' and '_'.
- */
-
-static int
-mystrcmp(char *s, char *d)
-{
-  unsigned char b, c;
-  
-  while (*s || *d) {
-    if ((b = *s++) == '-')
-      b = '_';
-    if ((c = *d++) == '-')
-      c = '_';
-    if (c != b)
-      return b > c ? 1 : -1;
-  }
-  return 0;
-}
-
-#else
-
-#define mystrcmp(s,d)   (int)strcmp(s,d)
-
-#endif
-
-
 static struct hash_name *
 search_by_name(unsigned char *s, int mode)
 {
@@ -105,10 +74,6 @@ search_by_name(unsigned char *s, int mode)
       unsigned char c = *ss++;
       if (! c)
         break;
-#ifdef LASTWORD
-      else if (c == '-')
-        c = '_';
-#endif
       hash = (hash<<6) | ((hash&0xfc000000)>>26);
       hash ^= c;
     }
@@ -116,7 +81,7 @@ search_by_name(unsigned char *s, int mode)
   
   /* Search in list and operate */
   hn = *lasthn;
-  while (hn && mystrcmp((char*)s, (char*)hn->name)) 
+  while (hn && strcmp((char*)s, (char*)hn->name)) 
     {
       lasthn = &(hn->next);
       hn = *lasthn;
@@ -709,8 +674,8 @@ init_symbol(void)
   dx_define("oblist", xoblist);
   dx_define("set", xset);
   dx_define("setq", xsetq);
-  dx_define("lock_symbol", xlock_symbol);
-  dx_define("unlock_symbol", xunlock_symbol);
+  dx_define("lock-symbol", xlock_symbol);
+  dx_define("unlock-symbol", xunlock_symbol);
   dx_define("symbolp", xsymbolp);
   dx_define("incr", xincr);
 }

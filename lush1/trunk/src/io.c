@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.8 2002-11-04 17:59:07 leonb Exp $
+ * $Id: io.c,v 1.9 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -607,11 +607,12 @@ char *
 read_word(void)
 {
   register char c, *s;
-
+  
   s = string_buffer;
-  while ((c = next_char(), isascii((unsigned char)c) && isspace((unsigned char)c)))
+  while ((c = next_char(), 
+          isascii((unsigned char)c) && isspace((unsigned char)c)))
     read_char();
-
+  
   if (c == '|') {
     *s++ = read_char();
     until((c = read_char()) == '|' || c == (char) EOF) {
@@ -654,9 +655,10 @@ read_word(void)
       c = read_char();
       if (iscntrl(toascii((unsigned char)c)))
 	goto errw1;
-      else if (s < string_buffer + STRING_BUFFER - 2)
+      else if (s < string_buffer + STRING_BUFFER - 2) {
+        if (s > string_buffer && c == '_') c = '-';
 	*s++ = tolower((unsigned char)c);
-      else
+      } else
 	goto errw2;
     }
   }
@@ -1408,13 +1410,13 @@ convert(register char *s, register at *list, register char *end)
       mode = 0;
       if (list->flags & X_SYMBOL) {
 	for (m = n; *m; m++)
-	  if (   (isascii((unsigned char)*m) && isspace((unsigned char)*m)) 
-	      || isupper(toascii((unsigned char)*m))
-	      || (get_char_map(*m) & CHAR_INTERWORD) ) {
+	  if ((m>n && *m=='_') ||
+	      isupper(toascii((unsigned char)*m)) ||
+	      (get_char_map(*m) & CHAR_INTERWORD) ) {
 	    mode = 1;
 	    break;
 	  }
-	ifn(*n)
+	if(!*n)
 	  mode = 1;
       }
       if (mode)
@@ -1498,8 +1500,8 @@ init_io(void)
   dx_define("macrochp", xmacrochp);
   dx_define("flush",xflush);
   dx_define("ask", xask);
-  dx_define("skip_char", xskip_char);
-  dx_define("read_string", xread_string);
+  dx_define("skip-char", xskip_char);
+  dx_define("read-string", xread_string);
   dx_define("read", xread);
   dy_define("dmc", ydmc);
   dx_define("tab", xtab);

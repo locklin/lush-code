@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idx1.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: idx1.c,v 1.2 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -79,36 +79,36 @@ Xidx_io0(masumsqracc, check_main_m0out)
 void init_idx1(void)
 {
 #ifdef Midx_maclear
-  dx_define("idx_clear",Xidx_maclear);
+  dx_define("idx-clear",Xidx_maclear);
 #endif
 
 #ifdef Midx_macopy
-  dx_define("idx_copy",Xidx_macopy);
+  dx_define("idx-copy",Xidx_macopy);
 #endif
 
 #ifdef Midx_masum
-  dx_define("idx_sum",Xidx_masum);
+  dx_define("idx-sum",Xidx_masum);
 #endif
 #ifdef Midx_masup
-  dx_define("idx_sup",Xidx_masup);
+  dx_define("idx-sup",Xidx_masup);
 #endif
 #ifdef Midx_mainf
-  dx_define("idx_inf",Xidx_mainf);
+  dx_define("idx-inf",Xidx_mainf);
 #endif
 #ifdef Midx_masumacc
-  dx_define("idx_sumacc",Xidx_masumacc);
+  dx_define("idx-sumacc",Xidx_masumacc);
 #endif
 #ifdef Midx_masupacc
-  dx_define("idx_supacc",Xidx_masupacc);
+  dx_define("idx-supacc",Xidx_masupacc);
 #endif
 #ifdef Midx_mainfacc
-  dx_define("idx_infacc",Xidx_mainfacc);
+  dx_define("idx-infacc",Xidx_mainfacc);
 #endif
 
 #ifdef Midx_masumsqr
-  dx_define("idx_sumsqr",Xidx_masumsqr);
+  dx_define("idx-sumsqr",Xidx_masumsqr);
 #endif
 #ifdef Midx_masumsqracc
-  dx_define("idx_sumsqracc",Xidx_masumsqracc);
+  dx_define("idx-sumsqracc",Xidx_masumsqracc);
 #endif
 }

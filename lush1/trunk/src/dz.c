@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dz.c,v 1.2 2002-04-25 17:12:44 leonb Exp $
+ * $Id: dz.c,v 1.3 2002-11-06 16:30:49 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1294,12 +1294,12 @@ init_dz(void)
 {
     class_define("DZ",&dz_class);
 
-    dx_define("dz_load",  xdz_load);
+    dx_define("dz-load",  xdz_load);
     dx_define("dzp",      xdzp);
-    dx_define("dz_def",   xdz_def);
-    dx_define("dz_trace", xdz_trace);
-    dx_define("dz_spline", xdz_spline);
-    dx_define("dz_dspline", xdz_dspline);
+    dx_define("dz-def",   xdz_def);
+    dx_define("dz-trace", xdz_trace);
+    dx_define("dz-spline", xdz_spline);
+    dx_define("dz-dspline", xdz_dspline);
 
     dz_define("sgn", "SGN", NULL);
     dz_define("abs", "ABS", NULL);

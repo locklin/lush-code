@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idx2.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: idx2.c,v 1.2 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -78,19 +78,19 @@ Xidx_ioa(maexp, check_main_maout)
 
 void init_idx2(void)
 {
-  dx_define("idx_minus",Xidx_maminus);
-  dx_define("idx_abs",Xidx_maabs);
-  dx_define("idx_sqrt",Xidx_masqrt);
-  dx_define("idx_inv",Xidx_mainv);
-  dx_define("idx_qtanh",Xidx_maqtanh);
-  dx_define("idx_qdtanh",Xidx_maqdtanh);
-  dx_define("idx_stdsigmoid",Xidx_mastdsigmoid);
-  dx_define("idx_dstdsigmoid",Xidx_madstdsigmoid);
-  dx_define("idx_expmx",Xidx_maexpmx);
-  dx_define("idx_dexpmx",Xidx_madexpmx);
-  dx_define("idx_sin",Xidx_masin);
-  dx_define("idx_cos",Xidx_macos);
-  dx_define("idx_atan",Xidx_maatan);
-  dx_define("idx_log",Xidx_malog);
-  dx_define("idx_exp",Xidx_maexp);
+  dx_define("idx-minus",Xidx_maminus);
+  dx_define("idx-abs",Xidx_maabs);
+  dx_define("idx-sqrt",Xidx_masqrt);
+  dx_define("idx-inv",Xidx_mainv);
+  dx_define("idx-qtanh",Xidx_maqtanh);
+  dx_define("idx-qdtanh",Xidx_maqdtanh);
+  dx_define("idx-stdsigmoid",Xidx_mastdsigmoid);
+  dx_define("idx-dstdsigmoid",Xidx_madstdsigmoid);
+  dx_define("idx-expmx",Xidx_maexpmx);
+  dx_define("idx-dexpmx",Xidx_madexpmx);
+  dx_define("idx-sin",Xidx_masin);
+  dx_define("idx-cos",Xidx_macos);
+  dx_define("idx-atan",Xidx_maatan);
+  dx_define("idx-log",Xidx_malog);
+  dx_define("idx-exp",Xidx_maexp);
 }

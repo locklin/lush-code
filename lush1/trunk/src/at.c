@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: at.c,v 1.4 2002-06-27 21:10:40 leonb Exp $
+ * $Id: at.c,v 1.5 2002-11-06 16:30:49 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1138,11 +1138,11 @@ init_at(void)
   dx_define("reverse", xreverse);
   dx_define("flatten", xflatten);
   dx_define("assoc", xassoc);
-  dx_define("new_unode", xnew_unode);
-  dx_define("unode_val", xunode_val);
-  dx_define("unode_uid", xunode_uid);	
-  dx_define("unode_eq", xunode_eq);
-  dx_define("unode_unify", xunode_unify);
+  dx_define("new-unode", xnew_unode);
+  dx_define("unode-val", xunode_val);
+  dx_define("unode-uid", xunode_uid);	
+  dx_define("unode-eq", xunode_eq);
+  dx_define("unode-unify", xunode_unify);
 
   dx_define("used", xused);
   dx_define("COUNT",xcounter);

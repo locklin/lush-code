@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idx3.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: idx3.c,v 1.2 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -82,30 +82,30 @@ Xidx_aiai0o(masqrdistacc, check_main_main_m0out)
 void init_idx3(void)
 {
 #ifdef Midx_madotma
-  dx_define("idx_dot",Xidx_madotma);
+  dx_define("idx-dot",Xidx_madotma);
 #endif
 #ifdef Midx_madotmaacc
-  dx_define("idx_dotacc",Xidx_madotmaacc);
+  dx_define("idx-dotacc",Xidx_madotmaacc);
 #endif
 
 #ifdef Midx_madotm0
-  dx_define("idx_dotm0",Xidx_madotm0);
+  dx_define("idx-dotm0",Xidx_madotm0);
 #endif
 #ifdef Midx_madotm0acc
-  dx_define("idx_dotm0acc",Xidx_madotm0acc);
+  dx_define("idx-dotm0acc",Xidx_madotm0acc);
 #endif
 
 #ifdef Midx_maaddm0
-  dx_define("idx_addm0",Xidx_maaddm0);
+  dx_define("idx-addm0",Xidx_maaddm0);
 #endif
 #ifdef Midx_maaddm0acc
-  dx_define("idx_addm0acc",Xidx_maaddm0acc);
+  dx_define("idx-addm0acc",Xidx_maaddm0acc);
 #endif
 
 #ifdef Midx_masqrdist
-  dx_define("idx_sqrdist",Xidx_masqrdist);
+  dx_define("idx-sqrdist",Xidx_masqrdist);
 #endif
 #ifdef Midx_masqrdistacc
-  dx_define("idx_sqrdistacc",Xidx_masqrdistacc);
+  dx_define("idx-sqrdistacc",Xidx_masqrdistacc);
 #endif
 }

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.13 2002-11-01 15:59:31 leonb Exp $
+ * $Id: event.c,v 1.14 2002-11-06 16:30:49 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -984,8 +984,8 @@ init_event(void)
   protect(head);
   /* EVENTS FUNCTION */
   at_handle = var_define("handle");
-  dx_define("set_event_handler",xseteventhandler);
-  dx_define("process_pending_events",xprocess_pending_events);
+  dx_define("set-event-handler",xseteventhandler);
+  dx_define("process-pending-events",xprocess_pending_events);
   dx_define("sendevent",xsendevent);
   dx_define("testevent",xtestevent);
   dx_define("checkevent",xcheckevent);

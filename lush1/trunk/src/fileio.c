@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.8 2002-09-05 16:02:31 leonb Exp $
+ * $Id: fileio.c,v 1.9 2002-11-06 16:30:49 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -1968,14 +1968,14 @@ init_fileio(char *program_name)
   dx_define("lockfile", xlockfile);
   dx_define("basename",xbasename);
   dx_define("dirname", xdirname);
-  dx_define("concat_fname", xconcat_fname);
+  dx_define("concat-fname", xconcat_fname);
   dx_define("tmpname", xtmpname);
   dx_define("path", xpath);
   dx_define("filepath", xfilepath);
   dx_define("script", xscript);
-  dx_define("open_read", xopen_read);
-  dx_define("open_write", xopen_write);
-  dx_define("open_append", xopen_append);
+  dx_define("open-read", xopen_read);
+  dx_define("open-write", xopen_write);
+  dx_define("open-append", xopen_append);
   dy_define("reading", yreading);
   dy_define("writing", ywriting);
   dx_define("read8", xread8);

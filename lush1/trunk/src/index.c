@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.18 2002-09-03 19:42:38 leonb Exp $
+ * $Id: index.c,v 1.19 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -3110,43 +3110,43 @@ void init_index()
   dx_define("bound",xoldbound);
 
   /* creation */
-  dx_define("new_index", xnew_index);
-  dx_define("sub_index", xsubindex);
-  dx_define("atom_matrix", xATmatrix);
-  dx_define("packed_matrix", xPmatrix);
-  dx_define("float_matrix", xFmatrix);
-  dx_define("double_matrix", xDmatrix);
-  dx_define("int_matrix", xI32matrix);
-  dx_define("short_matrix", xI16matrix);
-  dx_define("byte_matrix", xI8matrix);
-  dx_define("ubyte_matrix", xU8matrix);
-  dx_define("gptr_matrix", xGPTRmatrix);
-  dx_define("packed_matrix_nc", xPmatrix_nc);
-  dx_define("float_matrix_nc", xFmatrix_nc);
-  dx_define("double_matrix_nc", xDmatrix_nc);
-  dx_define("int_matrix_nc", xI32matrix_nc);
-  dx_define("short_matrix_nc", xI16matrix_nc);
-  dx_define("byte_matrix_nc", xI8matrix_nc);
-  dx_define("ubyte_matrix_nc", xU8matrix_nc);
-  dx_define("gptr_matrix_nc", xGPTRmatrix_nc);
+  dx_define("new-index", xnew_index);
+  dx_define("sub-index", xsubindex);
+  dx_define("atom-matrix", xATmatrix);
+  dx_define("packed-matrix", xPmatrix);
+  dx_define("float-matrix", xFmatrix);
+  dx_define("double-matrix", xDmatrix);
+  dx_define("int-matrix", xI32matrix);
+  dx_define("short-matrix", xI16matrix);
+  dx_define("byte-matrix", xI8matrix);
+  dx_define("ubyte-matrix", xU8matrix);
+  dx_define("gptr-matrix", xGPTRmatrix);
+  dx_define("packed-matrix-nc", xPmatrix_nc);
+  dx_define("float-matrix-nc", xFmatrix_nc);
+  dx_define("double-matrix-nc", xDmatrix_nc);
+  dx_define("int-matrix-nc", xI32matrix_nc);
+  dx_define("short-matrix-nc", xI16matrix_nc);
+  dx_define("byte-matrix-nc", xI8matrix_nc);
+  dx_define("ubyte-matrix-nc", xU8matrix_nc);
+  dx_define("gptr-matrix-nc", xGPTRmatrix_nc);
 
   /* nr */
   dx_define("nrvectorp", xnrvectorp);
   dx_define("nrmatrixp", xnrmatrixp);
 
   /* copy */
-  dx_define("copy_matrix", xcopy_matrix);
+  dx_define("copy-matrix", xcopy_matrix);
 
   /* matrix files */
-  dx_define("save_matrix", xsave_matrix);
-  dx_define("save_ascii_matrix", xsave_ascii_matrix);
-  dx_define("export_raw_matrix", xexport_raw_matrix);
-  dx_define("export_text_matrix", xexport_text_matrix);
-  dx_define("import_raw_matrix", ximport_raw_matrix);
-  dx_define("import_text_matrix", ximport_text_matrix);
-  dx_define("load_matrix", xload_matrix);
+  dx_define("save-matrix", xsave_matrix);
+  dx_define("save-ascii-matrix", xsave_ascii_matrix);
+  dx_define("export-raw-matrix", xexport_raw_matrix);
+  dx_define("export-text-matrix", xexport_text_matrix);
+  dx_define("import-raw-matrix", ximport_raw_matrix);
+  dx_define("import-text-matrix", ximport_text_matrix);
+  dx_define("load-matrix", xload_matrix);
 #ifdef HAVE_MMAP
-  dx_define("map_matrix", xmap_matrix);
+  dx_define("map-matrix", xmap_matrix);
 #endif
 
   /* structure functions */

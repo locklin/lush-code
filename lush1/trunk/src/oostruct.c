@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.13 2002-07-10 15:13:10 leonb Exp $
+ * $Id: oostruct.c,v 1.14 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1374,7 +1374,7 @@ init_oostruct(void)
   dx_define("methods",xmethods);
   dx_define("classname",xclassname);
   dx_define("classof",xclassof);
-  dx_define("is_of_class",xis_of_class);
+  dx_define("is-of-class",xis_of_class);
   dx_define("makeclass",xmakeclass);
   dy_define("new",ynew);
   dx_define("new-empty",xnew_empty);

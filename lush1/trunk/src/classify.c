@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: classify.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: classify.c,v 1.2 2002-11-06 16:30:49 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -763,12 +763,12 @@ init_classify(void)
   dx_define("sum", xsum);
   dx_define("sup", xsup);
   dx_define("inf", xinf);
-  dx_define("diff_listes", xdiff_listes);
-  dx_define("add_listes", xadd_listes);
+  dx_define("diff-listes", xdiff_listes);
+  dx_define("add-listes", xadd_listes);
   dx_define("rank", xrank);
-  dx_define("sup_dist", xsup_dist);
-  dx_define("abs_dist", xabs_dist);
-  dx_define("sqr_dist", xsqr_dist);
-  dx_define("hamming_dist", xhamming_dist);
-  dx_define("quadrant_dist", xquadrant_dist);
+  dx_define("sup-dist", xsup_dist);
+  dx_define("abs-dist", xabs_dist);
+  dx_define("sqr-dist", xsqr_dist);
+  dx_define("hamming-dist", xhamming_dist);
+  dx_define("quadrant-dist", xquadrant_dist);
 }

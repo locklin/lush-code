@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: date.c,v 1.3 2002-05-09 15:23:43 leonb Exp $
+ * $Id: date.c,v 1.4 2002-11-06 16:30:49 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1136,21 +1136,21 @@ void init_date(void)
 {
   class_define("DATE", &date_class);
   
-  dx_define("date_to_day",xdate_to_day);
-  dx_define("day_to_date",xday_to_date);
+  dx_define("date-to-day",xdate_to_day);
+  dx_define("day-to-date",xday_to_date);
   dx_define("today",xtoday);
   dx_define("now",xnow);
-  dx_define("split_date",xsplit_date);
-  dx_define("date_type",xdate_type); 
-  dx_define("date_extend",xdate_extend);
-  dx_define("date_to_string",xdate_to_string);
-  dx_define("string_to_date",xstring_to_date);
-  dx_define("date_add_second",xdate_add_second);
-  dx_define("date_add_minute",xdate_add_minute);
-  dx_define("date_add_hour",xdate_add_hour);
-  dx_define("date_add_day",xdate_add_day);
-  dx_define("date_add_month",xdate_add_month);
-  dx_define("date_add_year",xdate_add_year);
-  dx_define("date_code",xdate_code);
+  dx_define("split-date",xsplit_date);
+  dx_define("date-type",xdate_type); 
+  dx_define("date-extend",xdate_extend);
+  dx_define("date-to-string",xdate_to_string);
+  dx_define("string-to-date",xstring_to_date);
+  dx_define("date-add-second",xdate_add_second);
+  dx_define("date-add-minute",xdate_add_minute);
+  dx_define("date-add-hour",xdate_add_hour);
+  dx_define("date-add-day",xdate_add_day);
+  dx_define("date-add-month",xdate_add_month);
+  dx_define("date-add-year",xdate_add_year);
+  dx_define("date-code",xdate_code);
 }
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.10 2002-07-15 18:42:11 leonb Exp $
+ * $Id: function.c,v 1.11 2002-11-06 16:30:49 leonb Exp $
  **********************************************************************/
 
 
@@ -758,7 +758,7 @@ init_function(void)
   dy_define("df", ydf);
   dy_define("mlambda", ymlambda);
   dy_define("dm", Ydm);
-  dy_define("macro_expand", ymacro_expand);
+  dy_define("macro-expand", ymacro_expand);
   dx_define("funcdef", xfuncdef);
   dx_define("functionp", xfunctionp);
 }

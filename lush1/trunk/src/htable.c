@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.9 2002-07-26 20:53:03 leonb Exp $
+ * $Id: htable.c,v 1.10 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -770,10 +770,10 @@ void init_htable(void)
   class_define("HTABLE",&htable_class);
   dx_define("hashcode",xhashcode);
   dx_define("htable",xnew_htable);
-  dx_define("htable_alist",xhtable_alist);
-  dx_define("htable_keys", xhtable_keys);
-  dx_define("htable_rehash", xhtable_rehash);
-  dx_define("htable_size",xhtable_size);
-  dx_define("htable_info",xhtable_info);
+  dx_define("htable-alist",xhtable_alist);
+  dx_define("htable-keys", xhtable_keys);
+  dx_define("htable-rehash", xhtable_rehash);
+  dx_define("htable-size",xhtable_size);
+  dx_define("htable-info",xhtable_info);
 }
 

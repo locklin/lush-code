@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.5 2002-08-07 15:20:39 leonb Exp $
+ * $Id: x11_driver.c,v 1.6 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1792,13 +1792,13 @@ void
 init_x11_driver(void)
 {
   display = var_define("display");
-  dx_define("x11_window", xx11_window);
-  dx_define("x11_fontname", xx11_fontname);
-  dx_define("x11_depth", xx11_depth);
-  dx_define("x11_configure", xx11_configure);
-  dx_define("x11_lookup_color", xx11_lookup_color);
-  dx_define("x11_clip_to_text", xx11_clip_to_text);
-  dx_define("x11_text_to_clip", xx11_text_to_clip);
+  dx_define("x11-window", xx11_window);
+  dx_define("x11-fontname", xx11_fontname);
+  dx_define("x11-depth", xx11_depth);
+  dx_define("x11-configure", xx11_configure);
+  dx_define("x11-lookup-color", xx11_lookup_color);
+  dx_define("x11-clip-to-text", xx11_clip_to_text);
+  dx_define("x11-text-to-clip", xx11_text_to_clip);
 }
 
 

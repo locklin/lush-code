@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.15 2002-10-02 19:05:28 leonb Exp $
+ * $Id: string.c,v 1.16 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1664,9 +1664,9 @@ init_string(void)
   dx_define("chr", xstr_chr);
   dx_define("isprint", xisprint);
   dx_define("stringp", xstringp);
-  dx_define("regex_match", xregex_match);
-  dx_define("regex_extract", xregex_extract);
-  dx_define("regex_seek", xregex_seek);
-  dx_define("regex_subst", xregex_subst);
+  dx_define("regex-match", xregex_match);
+  dx_define("regex-extract", xregex_extract);
+  dx_define("regex-seek", xregex_seek);
+  dx_define("regex-subst", xregex_subst);
   dx_define("sprintf", xsprintf);
 }

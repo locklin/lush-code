@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.8 2002-10-01 20:52:39 leonb Exp $
+ * $Id: graphics.c,v 1.9 2002-11-06 16:30:49 leonb Exp $
  **********************************************************************/
 
 
@@ -2110,44 +2110,43 @@ init_graphics(void)
   dx_define("ysize",xysize);
   dx_define("font",xfont);
   dx_define("cls",xcls);
-  dx_define("draw_line",xdraw_line);
-  dx_define("draw_rect",xdraw_rect);
-  dx_define("draw_circle",xdraw_circle);
-  dx_define("fill_rect",xfill_rect);
-  dx_define("fill_circle",xfill_circle);
-  dx_define("draw_text",xdraw_text);
-  dx_define("rect_text",xrect_text);
+  dx_define("draw-line",xdraw_line);
+  dx_define("draw-rect",xdraw_rect);
+  dx_define("draw-circle",xdraw_circle);
+  dx_define("fill-rect",xfill_rect);
+  dx_define("fill-circle",xfill_circle);
+  dx_define("draw-text",xdraw_text);
+  dx_define("rect-text",xrect_text);
   /* RELEASE 2 */
-  dx_define("fill_polygon",xfill_polygon);
+  dx_define("fill-polygon",xfill_polygon);
   dx_define("gspecial",xgspecial);
   dx_define("hilite",xhilite);
   dx_define("clip",xclip);
   dx_define("color",xcolor);
   dx_define("alloccolor",xalloccolor);
   /* RELEASE 3 */
-  dx_define("draw_arc",xdraw_arc);
-  dx_define("fill_arc",xfill_arc);
+  dx_define("draw-arc",xdraw_arc);
+  dx_define("fill-arc",xfill_arc);
   /* BATCHING */
-  dy_define("graphics_batch",ygraphics_batch);
-  dx_define("graphics_sync",xgraphics_sync);
+  dy_define("graphics-batch",ygraphics_batch);
+  dx_define("graphics-sync",xgraphics_sync);
   /* COMPLEX COMMANDS */
-  dx_define("draw_value",xdraw_value);
-  dx_define("draw_list",xdraw_list);
-  dx_define("gray_draw_list",xgray_draw_list);
-  dx_define("color_draw_list",xcolor_draw_list);
-  dx_define("gray_draw_matrix",xgray_draw_matrix);
-  dx_define("color_draw_matrix",xcolor_draw_matrix);
-  /* dx_define("draw_pixel_matrix",xdraw_pixel_matrix); */
-  dx_define("rgb_draw_matrix",xrgb_draw_matrix);  
-  dx_define("xget_image",xget_image);  
+  dx_define("draw-value",xdraw_value);
+  dx_define("draw-list",xdraw_list);
+  dx_define("gray-draw-list",xgray_draw_list);
+  dx_define("color-draw-list",xcolor_draw_list);
+  dx_define("gray-draw-matrix",xgray_draw_matrix);
+  dx_define("color-draw-matrix",xcolor_draw_matrix);
+  dx_define("rgb-draw-matrix",xrgb_draw_matrix);  
+  dx_define("xget-image",xget_image);  
   /* OGRE SPEEDUP */
-  dx_define("point_in_rect",xpoint_in_rect);
-  dx_define("rect_in_rect",xrect_in_rect);
-  dx_define("collide_rect",xcollide_rect);
-  dx_define("bounding_rect",xbounding_rect);
-  dx_define("expand_rect",xexpand_rect);
-  dx_define("draw_round_rect",xdraw_round_rect);
-  dx_define("fill_round_rect",xfill_round_rect);
+  dx_define("point-in-rect",xpoint_in_rect);
+  dx_define("rect-in-rect",xrect_in_rect);
+  dx_define("collide-rect",xcollide_rect);
+  dx_define("bounding-rect",xbounding_rect);
+  dx_define("expand-rect",xexpand_rect);
+  dx_define("draw-round-rect",xdraw_round_rect);
+  dx_define("fill-round-rect",xfill_round_rect);
   dy_define("gsave",ygsave);
   dx_define("addclip",xaddclip);
 }

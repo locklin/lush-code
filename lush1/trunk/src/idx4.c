@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idx4.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: idx4.c,v 1.2 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -120,48 +120,48 @@ Xidx_aiaiao(m2permute, Mcheck_m1in_m2in_m1out2)
 void init_idx4(void)
 {
 #ifdef Midx_m2dotm1
-  dx_define("idx_m2dotm1", Xidx_m2dotm1);
+  dx_define("idx-m2dotm1", Xidx_m2dotm1);
 #endif
 #ifdef Midx_m4dotm2
-  dx_define("idx_m4dotm2", Xidx_m4dotm2);
+  dx_define("idx-m4dotm2", Xidx_m4dotm2);
 #endif
 #ifdef Midx_m2dotm1acc
-  dx_define("idx_m2dotm1acc", Xidx_m2dotm1acc);
+  dx_define("idx-m2dotm1acc", Xidx_m2dotm1acc);
 #endif
 #ifdef Midx_m4dotm2acc
-  dx_define("idx_m4dotm2acc", Xidx_m4dotm2acc);
+  dx_define("idx-m4dotm2acc", Xidx_m4dotm2acc);
 #endif
 
 
 #ifdef Midx_maadd
-  dx_define("idx_add",Xidx_maadd);
+  dx_define("idx-add",Xidx_maadd);
 #endif
 #ifdef Midx_masub
-  dx_define("idx_sub",Xidx_masub);
+  dx_define("idx-sub",Xidx_masub);
 #endif
 #ifdef Midx_mamul
-  dx_define("idx_mul",Xidx_mamul);
+  dx_define("idx-mul",Xidx_mamul);
 #endif
 #ifdef Midx_madiv
-  dx_define("idx_div",Xidx_madiv);
+  dx_define("idx-div",Xidx_madiv);
 #endif
 
 #ifdef Midx_m1extm1
-  dx_define("idx_m1extm1",Xidx_m1extm1);
+  dx_define("idx-m1extm1",Xidx_m1extm1);
 #endif
 #ifdef Midx_m1extm1acc
-  dx_define("idx_m1extm1acc",Xidx_m1extm1acc);
+  dx_define("idx-m1extm1acc",Xidx_m1extm1acc);
 #endif
 #ifdef Midx_m2extm2
-  dx_define("idx_m2extm2",Xidx_m2extm2);
+  dx_define("idx-m2extm2",Xidx_m2extm2);
 #endif
 #ifdef Midx_m2extm2acc
-  dx_define("idx_m2extm2acc",Xidx_m2extm2acc);
+  dx_define("idx-m2extm2acc",Xidx_m2extm2acc);
 #endif
 
 /*
-  dx_define("idx_m1permute",Xidx_m1permute);
-  dx_define("idx_m2permute",Xidx_m2permute);
+  dx_define("idx-m1permute",Xidx_m1permute);
+  dx_define("idx-m2permute",Xidx_m2permute);
 */
 
 }

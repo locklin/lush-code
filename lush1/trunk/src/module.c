@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.22 2002-08-06 18:02:05 leonb Exp $
+ * $Id: module.c,v 1.23 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 
@@ -1087,7 +1087,6 @@ class_define(char *name, class *cl)
   UNLOCK(classat);
 }
 
-
 void 
 dx_define(char *name, at *(*addr) (int, at **))
 {
@@ -1100,7 +1099,6 @@ dx_define(char *name, at *(*addr) (int, at **))
   UNLOCK(priminame);
 }
 
-
 void 
 dy_define(char *name, at *(*addr) (at *))
 {
@@ -1112,7 +1110,6 @@ dy_define(char *name, at *(*addr) (at *))
   UNLOCK(symb);
   UNLOCK(priminame);
 }
-
 
 void 
 dxmethod_define(class *cl, char *name, at *(*addr) (int, at **))

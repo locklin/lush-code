@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.7 2002-07-19 03:29:19 leonb Exp $
+ * $Id: storage.c,v 1.8 2002-11-06 16:30:50 leonb Exp $
  **********************************************************************/
 
 
@@ -1358,28 +1358,28 @@ void init_storage()
   class_define("U8STORAGE",&U8_storage_class);
   class_define("GPTRSTORAGE",&GPTR_storage_class);
 
-  dx_define("atom_storage",xnew_AT_storage);
-  dx_define("packed_storage",xnew_P_storage);
-  dx_define("float_storage",xnew_F_storage);
-  dx_define("double_storage",xnew_D_storage);
-  dx_define("int_storage",xnew_I32_storage);
-  dx_define("short_storage",xnew_I16_storage);
-  dx_define("byte_storage",xnew_I8_storage);
-  dx_define("ubyte_storage",xnew_U8_storage);
-  dx_define("gptr_storage",xnew_GPTR_storage);
+  dx_define("atom-storage",xnew_AT_storage);
+  dx_define("packed-storage",xnew_P_storage);
+  dx_define("float-storage",xnew_F_storage);
+  dx_define("double-storage",xnew_D_storage);
+  dx_define("int-storage",xnew_I32_storage);
+  dx_define("short-storage",xnew_I16_storage);
+  dx_define("byte-storage",xnew_I8_storage);
+  dx_define("ubyte-storage",xnew_U8_storage);
+  dx_define("gptr-storage",xnew_GPTR_storage);
 
-  dx_define("storage_malloc",xstorage_malloc);
-  dx_define("storage_malloc_nc",xstorage_malloc_nc);
-  dx_define("storage_realloc",xstorage_realloc);
-  dx_define("storage_realloc_nc",xstorage_realloc_nc);
+  dx_define("storage-malloc",xstorage_malloc);
+  dx_define("storage-malloc-nc",xstorage_malloc_nc);
+  dx_define("storage-realloc",xstorage_realloc);
+  dx_define("storage-realloc-nc",xstorage_realloc_nc);
 #ifdef HAVE_MMAP
-  dx_define("storage_mmap",xstorage_mmap);
+  dx_define("storage-mmap",xstorage_mmap);
 #endif
   dx_define("storagep",xstoragep);
   dx_define("writablep",xwritablep);
-  dx_define("storage_read_only", xstorage_read_only);
-  dx_define("storage_size",xstorage_size);
-  dx_define("storage_clear",xstorage_clear);
-  dx_define("storage_load",xstorage_load);
-  dx_define("storage_save",xstorage_save);
+  dx_define("storage-read-only", xstorage_read_only);
+  dx_define("storage-size",xstorage_size);
+  dx_define("storage-clear",xstorage_clear);
+  dx_define("storage-load",xstorage_load);
+  dx_define("storage-save",xstorage_save);
 }
