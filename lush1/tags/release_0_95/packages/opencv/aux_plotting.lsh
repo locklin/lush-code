@@ -1,0 +1,205 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+
+
+
+#? *** aux_plotting
+
+;; dummy function that adds OpenCV C header files in C file
+(eval `(de dummy_aux_plotting () ,cv-cpheader-cmd ()))
+
+#? * (dummy_aux_plotting)
+#? * (draw-arrowhead <x> <y> <theta>)
+#? * (draw-arrowhead-slope <x> <y> <tx> <ty>)
+#? * (draw-arrow <sx> <sy> <d> <theta>)
+#? * (draw-arrow-slope <sx> <sy> <tx> <ty> <scale>)
+#? * (draw-needles <positions> <arrows> <scale>)
+#? * (draw-needle-map <velx> <vely> <sample> <scale>)
+#? * (demo-needles <interval>)
+
+;; ********************************************************
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+
+
+
+#? *** plotting
+
+;; dummy function that adds OpenCV C header files in C file
+(eval `(de dummy_plotting () ,cv-cpheader-cmd ()))
+
+#? * (dummy_plotting)
+#? * (draw-arrowhead <x> <y> <theta>)
+#? * (draw-arrowhead-slope <x> <y> <tx> <ty>)
+#? * (draw-arrow <sx> <sy> <d> <theta>)
+#? * (draw-arrow-slope <sx> <sy> <tx> <ty> <scale>)
+#? * (draw-needles <positions> <arrows> <scale>)
+#? * (draw-needle-map <velx> <vely> <sample> <scale>)
+#? * (demo-needles <interval>)
+
+;; ********************************************************
+
+(de draw-arrowhead (x y theta)
+    (let ((r (* (/ theta 180) pi))
+	  (d object-size)
+	  (v1 (cos r))
+	  (v2 (sin r))
+	  (v3 (cos (+ 2.1 r)))
+	  (v4 (sin (+ 2.1 r)))
+	  (v5 (cos (- r 2.1)))
+	  (v6 (sin (- r 2.1))))
+      (draw-line (+ x (* d v1)) (+ y (* d v2)) (+ x (* d v3)) (+ y (* d v4)))
+      (draw-line (+ x (* d v1)) (+ y (* d v2)) (+ x (* d v5)) (+ y (* d v6)))
+      ))
+
+(de draw-arrowhead-slope (x y tx ty)
+    (let* ((len  (sqrt (+ (* tx tx) (* ty ty))))
+	   (l (max len 1e-8))
+	   (d object-size)
+	   (p (cos 2.1))
+	   (q (sin 2.1))
+	   (v1 (/ tx l))
+	   (v2 (/ ty l))
+	   (v3 (- (* v1 p) (* v2 q)))
+	   (v4 (+ (* v2 p) (* v1 q)))
+	   (v5 (+ (* v1 p) (* v2 q)))
+	   (v6 (- (* v2 p) (* v1 q))))
+      (draw-line (+ x (* d v1)) (+ y (* d v2)) (+ x (* d v3)) (+ y (* d v4)))
+      (draw-line (+ x (* d v1)) (+ y (* d v2)) (+ x (* d v5)) (+ y (* d v6)))
+      ))
+
+(de draw-arrow (sx sy d theta)
+    (let* ((r (* (/ theta 180) pi))
+	   (px (+ sx (* d (cos r))))
+	   (py (+ sy (* d (sin r)))))
+      (draw-line sx sy px py)
+      (draw-arrowhead px py theta)))
+
+(de draw-arrow-slope (sx sy tx ty scale)
+    (let  ((px (+ sx (* tx scale)))
+	   (py (+ sy (* ty scale)))
+	   (l (sqrt (+ (* tx tx scale scale) (* ty ty scale scale)))))
+      (draw-line sx sy px py)
+      (when (> l object-size)
+	(draw-arrowhead-slope px py tx ty))))
+
+
+(de draw-needles (positions arrows scale)
+    (when (not (and (indexp positions)
+		    (indexp arrows)))
+      (error 'draw-needlemap "input parameters must be idx-matrix" ()))
+    (when (or (<> (idx-ndim positions) 2)
+	      (<> (idx-ndim arrows) 2)
+	      (<> (idx-dim positions 1) 2)
+	      (<> (idx-dim  arrows 1) 2)
+	      (<> (idx-dim positions 0) (idx-dim arrows 0)))      
+      (error 'draw-needlmap "input idxes must be of size nx2" ()))
+    (idx-bloop ((p positions) (a arrows))
+      (draw-arrow-slope (p 0) (p 1) (a 0) (a 1) scale))
+    ())
+
+(de draw-needle-map (velx vely sample scale)
+    (let ((row 0) (col 0))
+      (idx-bloop ((rowx velx) (rowy vely))
+	(when (= (mod row sample) 0)
+	  (idx-bloop ((ptx rowx) (pty rowy))
+	    (when (= (mod col sample) 0)
+	      (draw-arrow-slope col row (ptx 0) (pty 0) scale))
+	    (setq col (+ col 1)))
+	  (setq col 0))
+	(setq row (+ row 1)))))
+	 
+	      
+(de demo-needles (interval)
+    (let ((pos (int-matrix 100 2))
+	  (arr (int-matrix 100 2)))
+      (for (i 0 9)
+	   (for (j 0 9)
+		(pos (+ (* i 10) j) 0 (+ (* j interval) 1))
+		(pos (+ (* i 10) j) 1 (+ (* i interval) 1))
+		(arr (+ (* i 10) j) 0 10)
+		(arr (+ (* i 10) j) 1 0)))
+      (draw-needlemap pos arr)
+      ()))
+;; ********************************************************
+
+(dhc-make ()
+  dummy_plotting
+  draw-arrowhead
+  draw-arrowhead-slope
+  draw-arrow
+  draw-arrow-slope
+  draw-needles
+  draw-needle-map
+  demo-needles
+)
+
+;; ********************************************************
+
+(dhc-make ()
+  dummy_aux_plotting
+  draw-arrowhead
+  draw-arrowhead-slope
+  draw-arrow
+  draw-arrow-slope
+  draw-needles
+  draw-needle-map
+  demo-needles
+)

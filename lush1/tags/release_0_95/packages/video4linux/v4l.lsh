@@ -1,0 +1,862 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: v4l.lsh,v 1.4 2002-10-28 19:55:45 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; interface to Video4Linux
+
+
+(libload "libc/constants")
+
+#? ** Video Mode Constants
+;; 
+;;.PRE
+;;   VIDEO_MODE_PAL	0
+;;   VIDEO_MODE_NTSC	1
+;;   VIDEO_MODE_SECAM  2
+;;   VIDEO_MODE_AUTO	3
+
+(defconstant  "VIDEO_MODE_PAL"	0)
+(defconstant  "VIDEO_MODE_NTSC"	1)
+(defconstant  "VIDEO_MODE_SECAM" 2)
+(defconstant  "VIDEO_MODE_AUTO"	3)
+
+#? ** Video Palette Constants
+;;.PRE
+;; VIDEO_PALETTE_GREY	1
+;; VIDEO_PALETTE_HI240	2
+;; VIDEO_PALETTE_RGB565	3
+;; VIDEO_PALETTE_RGB24	4
+;; VIDEO_PALETTE_RGB32	5
+;; VIDEO_PALETTE_RGB555	6
+;; VIDEO_PALETTE_YUV422	7
+;; VIDEO_PALETTE_YUYV	8
+;; VIDEO_PALETTE_UYVY	9
+;; VIDEO_PALETTE_YUV420	10
+;; VIDEO_PALETTE_YUV411	11
+;; VIDEO_PALETTE_RAW	12
+;; VIDEO_PALETTE_YUV422P 13
+;; VIDEO_PALETTE_YUV411P 14
+;; VIDEO_PALETTE_YUV420P 15
+;; VIDEO_PALETTE_YUV410P 16
+;; VIDEO_PALETTE_PLANAR	13
+;; VIDEO_PALETTE_COMPONENT 7
+
+
+(defconstant  "VIDEO_PALETTE_GREY"	1)
+(defconstant  "VIDEO_PALETTE_HI240"	2)
+(defconstant  "VIDEO_PALETTE_RGB565"	3)
+(defconstant  "VIDEO_PALETTE_RGB24"	4)
+(defconstant  "VIDEO_PALETTE_RGB32"	5)
+(defconstant  "VIDEO_PALETTE_RGB555"	6)
+(defconstant  "VIDEO_PALETTE_YUV422"	7)
+(defconstant  "VIDEO_PALETTE_YUYV"	8)
+(defconstant  "VIDEO_PALETTE_UYVY"	9)
+(defconstant  "VIDEO_PALETTE_YUV420"	10)
+(defconstant  "VIDEO_PALETTE_YUV411"	11)
+(defconstant  "VIDEO_PALETTE_RAW"	12)
+(defconstant  "VIDEO_PALETTE_YUV422P"	13)
+(defconstant  "VIDEO_PALETTE_YUV411P"	14)
+(defconstant  "VIDEO_PALETTE_YUV420P"	15)
+(defconstant  "VIDEO_PALETTE_YUV410P"	16)
+
+(defconstant  "VIDEO_PALETTE_PLANAR"	13)
+(defconstant  "VIDEO_PALETTE_COMPONENT" 7)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(de v4l_dummy ()
+    (cpheader "#include <stdio.h>")
+    (cpheader "#include <stdlib.h>")
+    (cpheader "#include <string.h>")
+    (cpheader "#include <unistd.h>")
+    (cpheader "#include <errno.h>")
+    (cpheader "#include <fcntl.h>")
+    (cpheader "#include <sys/time.h>")
+    (cpheader "#include <sys/mman.h>")
+    (cpheader "#include <sys/ioctl.h>")
+    (cpheader "#include <linux/videodev.h>")
+    ())
+
+
+#? ** v4ldevice
+;;.TYPE CLASS
+;; the v4l device is the main class through
+;; which video frames can be grabbed using the Video4Linux
+;; device. This requires a v4l compatible video grabbing card
+;; such as the Hauppaugge and AverMedia cards that use
+;; the BrookTree bttv848 chipset.
+;;.P
+;; Here is an example of code that repeatedly grabs an image
+;; from the composite video input and displays it on the screen:
+;;.CODE
+;; (de v4l-demo (swidth sheight)
+;;   (let* ((bg (ubyte-matrix sheight swidth 3)) ; make image buffer
+;;          ;; open video device NTSC standard, composite input (channel 1).
+;;	    (vdev (new v4ldevice "/dev/video0" "NTSC" 1 swidth sheight)))
+;;     ;; open window
+;;     (setq screen (new-window))
+;;     (while t
+;;       ;; grab frame
+;;       (==> vdev grab-into-rgb bg)
+;;       ;; display frame
+;;       (rgb-draw-matrix 10 10 bg))))
+(defclass v4ldevice object
+  ;; state variables
+  ((-int-) fd)				; file desc for video device
+  ((-int-) width)
+  ((-int-) height)		        ; image size
+  ((-int-) frame)			; current frame
+  ((-int-) depth)                       ; depth of current grabbing format
+  ((-int-) nframe)			; number of frames in buffer
+  ((-gptr-) buffer)			; frame buffer
+  ((-int-) buffersize)			; size thereof
+  ;; parameters and capabilities
+  ((-int-) cap_channels cap_audios)
+  ((-int-) cap_maxwidth cap_maxheight)
+  ((-int-) cap_minwidth cap_minheight)
+  ;; C structs
+  ((-gptr- "struct video_capability *") capability)
+  ((-gptr- "struct video_channel *") channel)
+  ((-gptr- "struct video_tuner *") tuner)
+  ((-gptr- "struct video_capture *") capture)
+  ((-gptr- "struct video_picture *") picture)
+  ((-gptr- "struct video_mmap *") mmapinfo)
+  ((-gptr- "struct video_mbuf *") mbuffer)
+  )
+
+;; a macro that prints an error message and 
+;; deallocates all the structures.
+;; This should only be called in the constructor.
+(dmd v4l-fatalerror (err info)
+ `(let ((_info ,info)) 
+    (when (<> _info "") (printf "%s\n" _info))
+    (==> this cleanup)
+    (error ,err)))
+
+;; simple error. Does not deallocate anything.
+(dmd v4l-error (err info)
+ `(let ((_info ,info)) 
+    (when (<> _info "") (printf "%s\n" _info))
+    (error ,err)))
+
+#? (==> <v4ldevice> cleanup)
+;; deallocate all malloced slots and
+;; close device. This is a private method called by
+;; the destructor and various error handlers, but
+;; rarely called directly.
+(defmethod v4ldevice cleanup ()
+  (when buffer #{ munmap($buffer, $mbuffer->size); #})
+  (when (> fd 0) #{ close($fd); #})
+  (when capability #{ free($capability); #} )
+  (when channel #{ free($channel); #} )
+  (when capture #{ free($capture); #} )
+  (when capture #{ free($tuner); #} )
+  (when picture #{ free($picture); #} )
+  (when mmapinfo #{ free($mmapinfo); #} )
+  (when mbuffer #{ free($mbuffer); #})
+  ())
+
+#? (==> <v4ldevice> set-format <f> <w> <h>)
+;; set the video format/palette (VIDEO_PALETTE_RGB24,
+;; VIDEO_PALETTE_RGB32, VIDEO_PALETTE_YUV422 etc...),
+;; the width and the height of the image
+;; to be grabbed.  This is a rarely called low-level method 
+;; since the various grab-into-xxx methods set the size
+;; and video palette. Returns 0 on success and -1 on error
+(defmethod v4ldevice set-format (f w h)
+  ((-int-) f w h)
+  (if (or (> w cap_maxwidth) (> h cap_maxheight)
+	  (< w cap_minwidth) (< h cap_minheight)
+	  (< f 1) (> f 16))
+      -1				; error
+      (let ((retcode 0))
+	((-int-) retcode)
+        #{{ int changedp=0;  
+	    int depths[]={-1,1,-1,2,3,4,2,2,2,2,-1,-1,-1,-1,-1,-1,-1};
+            if (($f != $mmapinfo->format)||
+		($w != $mmapinfo->width) ||
+		($h != $mmapinfo->height)) {
+	      $changep = 1;
+	      $mmapinfo->format = $f
+	      $mmapinfo->width = $width = $w;
+	      $mmapinfo->height = $height = $h;
+	      /* now grab a couple of frames to clear
+  	         the buffer from inapropriately formated frames */
+	      for ( $frame=0; 
+		    $frame<$nframe; 
+		    $frame) {
+		$mmapinfo->frame = $frame;
+		$retcode += ioctl($fd,VIDIOCMCAPTURE,$mmapinfo);
+		$retcode += ioctl($fd, VIDIOCSYNC, &($frame));
+		}
+	      $mmapinfo->frame = $frame = 0;
+	    }
+	  } 
+        #}
+	retocde)))
+
+#? (new v4ldevice <devname> <n> <c> <w> <h>)
+;; opens a new v4ldevice for video grabbing.
+;; Arguments are: device name (e.g. "/dev/video0"), 
+;; norm, channel, width, and height.
+;; norm can be "NTSC", "PAL", "SECAM", "AUTO".
+;; The "channel" <c> determines which video source
+;; the card will listen to. On most bttv cards,
+;; 0 means TV tuner, 1 means composite video input, 
+;; and 2 means S-video input (if present).
+;; Tuning to a particular broadcast or cable channel
+;; is done with the "tune" method.
+;;.P
+;; example: open device to grab 320x240 NTSC video 
+;; from S-video on BTTV/avermedia card (channel 2):
+;;.CODE
+;; (setq a (new v4ldevice "/dev/video0" "NTSC" 2 320 240))
+(defmethod v4ldevice v4ldevice (devname n c w h)
+  ((-str-) devname n)
+  ((-int-) c w h)
+  (setq width w)
+  (setq height h)
+  (setq capability (gptr #{ malloc(sizeof(struct video_capability)) #}))
+  (setq channel (gptr #{ malloc(sizeof(struct video_channel)) #}))
+  (setq tuner (gptr #{ malloc(sizeof(struct video_tuner)) #}))
+  (setq capture (gptr #{ malloc(sizeof(struct video_capture)) #}))
+  (setq picture (gptr #{ malloc(sizeof(struct video_picture)) #}))
+  (setq mmapinfo (gptr #{ malloc(sizeof(struct video_mmap)) #}))
+  (setq mbuffer (gptr #{ malloc(sizeof(struct video_mbuf)) #}))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    ;; opening device
+    (setq fd (int #{ open((char *)($devname->data),O_RDWR+O_NONBLOCK ) #}))
+    (when (= -1 fd) (v4l-fatalerror "could not open V4L video device " ""))
+    ;; get capabilities of video device
+    #{ $retcode = ioctl($fd,VIDIOCGCAP,$capability); #}
+    (when (= -1 retcode) (v4l-fatalerror "could not get V4L device capabilities" ""))
+    (setq cap_channels (int #{ $capability->channels #}))
+    (setq cap_audios (int #{ $capability->audios #}))
+    (setq cap_maxwidth (int #{ $capability->maxwidth #}))
+    (setq cap_maxheight (int #{ $capability->maxheight #}))
+    (setq cap_minwidth (int #{ $capability->minwidth #}))
+    (setq cap_minheight (int #{ $capability->minheight #}))
+
+    ;; check that requested size is OK
+    (when (or (> width cap_maxwidth) (> height cap_maxheight)
+	      (< width cap_minwidth) (< height cap_minheight))
+      (v4l-fatalerror 
+       "bad size argument"
+       (sprintf "requested image size %dx%d out of bounds (%dx%d to %dx%d)" 
+		width height cap_minwidth cap_minheight 
+		cap_maxwidth cap_maxheight)))
+    ;; select norm and channel
+    (when (<> c -1)
+      #{ $channel->channel = $c;
+         $retcode = ioctl($fd,VIDIOCGCHAN,$channel);
+      #}
+      (when (= -1 retcode) (v4l-fatalerror "could not get channel info" ""))
+      (cond 
+       ((= "PAL" n) #{ $channel->norm = VIDEO_MODE_PAL; #} 
+	())
+       ((= "NTSC" n) #{ $channel->norm = VIDEO_MODE_NTSC; #} 
+	())
+       ((= "SECAM" n) #{ $channel->norm = VIDEO_MODE_SECAM; #} 
+	())
+       ((= "AUTO" n) #{ $channel->norm = VIDEO_MODE_AUTO; #} 
+	())
+       (t (v4l-fatalerror "unsupported video mode (must be NTSC, PAL, SECAM, or AUTO)" "")))
+      #{ $retcode = ioctl($fd,VIDIOCSCHAN,$channel); #}
+      (when (= -1 retcode) (v4l-fatalerror "could not set channel" "")))
+
+    ;; get max number of frames in buffer
+    #{ $retcode = ioctl($fd,VIDIOCGMBUF,$mbuffer); #}    
+    (when (= -1 retcode) (v4l-fatalerror "could not get mbuffer info" ""))
+
+    ;; memory-map buffer
+    (setq buffer 
+	  (gptr #{ (char *)mmap(NULL, $mbuffer->size, 
+				PROT_READ+PROT_WRITE, MAP_SHARED, $fd, 0) #}))
+    ;; no more than 2 buffers, otherwise trouble happens with some webcams
+    (setq nframe (min 2 (int #{ $mbuffer->frames #})))
+    (setq buffersize (int #{ $mbuffer->size #}))
+    (setq frame 0)
+    (when (< retcode 0) 
+      (v4l-fatalerror "could not start grabbing frame 0" ""))
+    ()))
+
+;; doesn't work for some reason
+(defmethod v4ldevice adjust (bright hue color cont white)
+  ((-int-) bright hue color cont white)
+  (printf "%d %d %d %d %d\n" bright hue color cont white)
+  (let ((ret 0))
+    ((-int-) ret)
+  #{{  struct video_picture vid_pic;
+      vid_pic.brightness = (unsigned short)(256*$bright);
+      vid_pic.hue = (unsigned short)(256*$hue);
+      vid_pic.colour = (unsigned short)(256*$color);
+      vid_pic.contrast = (unsigned short)(256*$cont);
+      vid_pic.whiteness = (unsigned short)(256*$white);
+
+      $ret = ioctl($fd, VIDIOCSPICT, &vid_pic);
+      } #} ret))
+
+
+#? (==> v4ldevice tune <freq>)
+;; tune the tuner to frequency <n>, expressed in 1/16th of a MHz.
+;; Tables that map channels to frequencies are available
+;; in file <freq-table.lsh>.
+;; Tuning to a channel can only be done is the device
+;; was opened to listen to the TV tuner (as opposed to 
+;; the composite video or S-video).
+(defmethod v4ldevice tune (n)
+  ((-int-) n)
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{ long freq;
+       freq = (long)$n;
+       $tuner->tuner = 0;
+       $retcode = ioctl($fd,VIDIOCGTUNER,$tuner);
+       /* printf("1 %d\n",$retcode); */
+       $tuner->tuner = 0;
+       $retcode = ioctl($fd,VIDIOCSTUNER,$tuner);
+       /* printf("2 %d\n",$retcode); */
+       $retcode = ioctl($fd,VIDIOCSFREQ,&freq);
+       /* printf("3 %d\n",$retcode); */
+       $retcode = ioctl($fd,VIDIOCGTUNER,$tuner);
+       /* printf("4 %d\n",$retcode); */
+       $retcode = (int)$tuner->signal;
+    } #}
+    retcode))
+
+(defmethod v4ldevice -destructor ()
+  (==> this cleanup))
+
+
+#? (==> <v4ldevice> grab-into-rgb <img>)
+;; grab an image from the v4l device into a
+;; preexisting image (a ubyte-matrix of size heightxwidthx3.
+;; Consecutive elements in the last dimension are
+;; interpreted as RGB values. This uses the recommended
+;; sequence of calls.
+(defmethod v4ldevice grab-into-rgb (img)
+  ((-idx3- (-ubyte-)) img)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 3))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j, lastframe;
+        unsigned char *imgptr, *bufptr;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_RGB24;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	     *(imgptr++) = bufptr[2];
+	     *(imgptr++) = bufptr[1];
+	     *(imgptr++) = bufptr[0];
+	     bufptr+=3;
+	  }
+	}
+
+     } #}
+     frame))
+
+#? (==> <v4ldevice> grab-into-rgb32 <img>)
+;; grab an image from the v4l device into a
+;; preexisting image (a ubyte-matrix of size heightxwidthx3.
+;; Consecutive elements in the last dimension are
+;; interpreted as RGB values. This uses the recommended
+;; sequence of calls.
+(defmethod v4ldevice grab-into-rgb32 (img)
+  ((-idx3- (-ubyte-)) img)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 3))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j, lastframe;
+        unsigned char *imgptr, *bufptr;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_RGB32;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	     *(imgptr++) = bufptr[2];
+	     *(imgptr++) = bufptr[1];
+	     *(imgptr++) = bufptr[0];
+	     bufptr+=3;
+	  }
+	}
+
+     } #}
+     frame))
+
+;; grab an image from the v4l device into a
+;; preexisting image (a ubyte-matrix of size heightxwidthx3.
+;; Consecutive elements in the last dimension are
+;; interpreted as RGB values. This uses an unorthodox
+;; sequence of ioctl calls.
+(defmethod v4ldevice grab-into-rgb-old (img)
+  ((-idx3- (-ubyte-)) img)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 3))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j,k;
+        unsigned char *imgptr, *bufptr;
+
+        $mmapinfo->format = VIDEO_PALETTE_RGB24;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &($frame));
+	/* printf("retcode = %d, mmapinfo->frame = %d\n",$retcode,$mmapinfo->frame); */
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[$frame];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	     *(imgptr++) = bufptr[2];
+	     *(imgptr++) = bufptr[1];
+	     *(imgptr++) = bufptr[0];
+	     bufptr+=3;
+	  }
+	}
+
+     } #}
+     frame))
+
+#? (==> <v4ldevice> record-into-rgb <movie> <s>)
+;; record successive frames from the v4l device into a
+;; preexisting movie (a 4-dimensional ubyte-matrix of 
+;; size nframesxheightxwidthx3). Consecutive elements 
+;; in the last dimension are interpreted as RGBA values. 
+;; Consecutive slices in the first dimension are 
+;; individual frames. The <s> parameter controls the
+;; temporal subsampling: every <s> video frame is saved
+;; in <movie>.
+(defmethod v4ldevice record-into-rgb (movie s)
+  ((-idx4- (-ubyte-)) movie)
+  ((-int-) s)
+  (idx-bloop ((f movie))
+    (for (i 1 s) (==> this grab-into-rgb f))))
+
+#? (==> <v4ldevice> monitor <x> <y> <z> <n> <w> <h>)
+;; grab video frames and display them in the
+;; current Lush window at position <x>,<y>, with
+;; zoom factor <z>. The number of frames grabbed is <n>,
+;; and their widht/height is <w>/<h>.
+;; return the last grabbed frame.
+(defmethod v4ldevice monitor (x y z n w h)
+  (let ((f (ubyte-matrix h w 3)))
+    (repeat n 
+	    (==> this grab-into-rgb f)
+	    (rgb-draw-matrix x y f z z)) f))
+
+
+#? (==> <v4ldevice> grab-into-rgba <img> <alpha>)
+;; grab an image from the v4l device into a
+;; preexisting image (a ubyte-matrix of size heightxwidthx4.
+;; Consecutive elements in the last dimension are
+;; interpreted as RGBA values. The <alpha> paramter
+;; is used to fill the A values.
+(defmethod v4ldevice grab-into-rgba (img alpha)
+  ((-idx3- (-ubyte-)) img)
+  ((-int-) alpha)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 4))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j, lastframe;
+        unsigned char *imgptr, *bufptr;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_RGB32;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	     *(imgptr++) = bufptr[2];
+	     *(imgptr++) = bufptr[1];
+	     *(imgptr++) = bufptr[0];
+	     *(imgptr++) = $alpha;
+	     bufptr+=4;
+	  }
+	}
+
+     } #}
+     frame))
+
+;; grab an image from the v4l device into a
+;; preexisting image (a ubyte-matrix of size heightxwidthx4.
+;; Consecutive elements in the last dimension are
+;; interpreted as RGBA values. The <alpha> paramter
+;; is used to fill the A values. This uses an unorthodox
+;; sequence of ioctl calls.
+(defmethod v4ldevice grab-into-rgba-old (img alpha)
+  ((-idx3- (-ubyte-)) img)
+  ((-int-) alpha)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 4))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j,k;
+        unsigned char *imgptr, *bufptr;
+
+        $mmapinfo->format = VIDEO_PALETTE_RGB32;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+        $retcode = ioctl($fd,VIDIOCMCAPTURE,$mmapinfo);
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &($frame));
+	/* printf("retcode = %d, mmapinfo->frame = %d\n",$retcode,$mmapinfo->frame); */
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[$frame];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	     *(imgptr++) = bufptr[2];
+	     *(imgptr++) = bufptr[1];
+	     *(imgptr++) = bufptr[0];
+	     *(imgptr++) = $alpha;
+	     bufptr+=4;
+	  }
+	}
+
+     } #}
+     frame))
+
+
+#? (==> <v4ldevice> grab-into-yuv422 <img>)
+;; grab an image from the v4l device into a
+;; preexisting image (a ubyte-matrix of size heightxwidthx2.
+;; Consecutive elements are interpreted as YUYVYUYV.....
+(defmethod v4ldevice grab-into-yuv422 (img)
+  ((-idx3- (-ubyte-)) img)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 2))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int lastframe;
+        unsigned char *imgptr, *bufptr;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_YUV422;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[$frame];
+	imgptr = IDX_PTR($img, unsigned char);
+	memcpy(imgptr,bufptr,$width*$height*2);
+
+     } #}
+     frame))
+
+;; this is for webcams
+(defmethod v4ldevice grab-into-rgba-from-yuv420p (img alpha)
+  ((-idx3- (-ubyte-)) img)
+  ((-int-) alpha)
+  (cheader "#define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x))")
+
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 4))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j,lastframe;
+        unsigned char *imgptr, *bufptr;
+	register float y,u,v,p;
+	int y_pos, cb_pos, cr_pos;
+	int even;
+
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_YUV420P;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	even=1;
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+
+	       y_pos=i*$width+j;
+	       y =  1.1643835*((float)(bufptr[y_pos])-16.0);
+	       //if (even)
+	       //{
+	       cb_pos=$width*$height + (i/2)*$width/2 + j/2;
+	       cr_pos=$width*$height*5/4 +(i/2)*$width/2 + j/2;
+	       u =  1.1339285*((float)(bufptr[cb_pos])-128.0);
+	       v =  1.1339285*((float)(bufptr[cr_pos])-128.0);
+	      // }
+	       p = y + 1.402*v; 
+	       *(imgptr++) = RGBSATURATE(p);
+	   
+	       p = y - 0.344*u - 0.714*v;
+	       *(imgptr++) = RGBSATURATE(p);
+	    
+	       p = y + 1.772*u;
+	       *(imgptr++) = RGBSATURATE(p);
+	       even = 1 - even;
+	    
+	       *(imgptr++) = $alpha;
+	  }
+	}
+     } #}
+     frame))
+
+;; this is for webcams: grab B&W image
+(defmethod v4ldevice grab-into-y (img)
+  ((-idx2- (-ubyte-)) img)
+  (cheader "#define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x))")
+
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int lastframe;
+        unsigned char *imgptr, *bufptr;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_GREY;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+        memcpy(imgptr,bufptr,$width*$height);
+     } #}
+     frame))
+
+#? (==> <v4ldevice> grab-acc-rgb <img>)
+;; grab an image from the v4l device and accumulate
+;; the result into a preexisting image 
+;; (an int-matrix of size <height>x<width>x<3>
+;; where <height> and <width> are the dimensions of the <v4ldevice>).
+;; Consecutive elements in the last dimension are
+;; interpreted as RGB values. 
+(defmethod v4ldevice grab-acc-rgb (img)
+  ((-idx3- (-int-)) img)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 3))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j, lastframe;
+        unsigned char *imgptr, *bufptr;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_RGB24;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	     *(imgptr++) += bufptr[2];
+	     *(imgptr++) += bufptr[1];
+	     *(imgptr++) += bufptr[0];
+	     bufptr+=3;
+	  }
+	}
+
+     } #}
+     frame))
+
+#? (==> <v4ldevice> grab-acc-rgba <img>)
+;; grab an image from the v4l device and accumulate the result
+;; into a preexisting image (an int-matrix of size <height>x<width>x<4>
+;; where <height> and <width> are the dimensions of the <v4ldevice>).
+;; Consecutive elements in the last dimension are
+;; interpreted as RGBA values. The alpha channel
+;; is left untouched.
+(defmethod v4ldevice grab-acc-rgba (img)
+  ((-idx3- (-int-)) img)
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (<> (idx-dim img 2) 4))
+      (error "wrong size for image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j, lastframe;
+        unsigned char *imgptr, *bufptr;
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_RGB24;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+
+	$retcode = ioctl($fd, VIDIOCSYNC, &lastframe);
+	bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+	     *(imgptr++) += bufptr[2];
+	     *(imgptr++) += bufptr[1];
+	     *(imgptr++) += bufptr[0];
+	     imgptr++;
+	     bufptr+=4;
+	  }
+	}
+     } #}
+     frame))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () v4l_dummy 
+	  (v4ldevice 
+	   cleanup v4ldevice -destructor
+	   adjust tune
+	   grab-into-rgb
+	   grab-into-rgb32
+	   record-into-rgb
+	   grab-into-rgba
+	   grab-into-yuv422
+	   grab-into-rgba-from-yuv420p
+	   grab-into-y
+	   grab-acc-rgb
+	   grab-acc-rgba
+	   ))
