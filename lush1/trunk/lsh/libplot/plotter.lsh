@@ -29,18 +29,51 @@
 #? *** Plotting
 ;; This class library allows graph plotting. It contains the {<c> Plotter} and
 ;; the {<c> PlotterCurve} classes providing functions for drawing multiple 
-;; curves on axes  and modifying their appearance. Here is a sample code to draw y=log(x)
-;; function with grids in the (0,10) interval for x.
+;; curves and modifying their appearance. Here is a sample code to plot
+;; various curves:
 ;; {<code>
 ;;  (libload "libplot/plotter")
-;;  (setq x (range 0 10 0.1))
-;;  (setq y (progn-without-fpe (mapcar log x)))
-;;  (setq P (new Plotter))
-;;  (==> P PlotLists "s" x y)
-;;  (==> P SetGrid 1)
-;;  (==> P Redisplay)
+;;  ;; create a new plotter with default size (open a window if necessary)
+;;  (setq p (new Plotter))  
+;;  ;; plot log function in blue from 0 to 10.
+;;  (==> p PlotFunc "log" log 0 10 0.1 (alloccolor 0 0 1))
+;;  ;; show it on the screen
+;;  (==> p redisplay)
+;;
+;;  ;; add a piece of a red ellipse
+;;  (==> p PlotXY "lips" sin cos 0 5 0.1 (alloccolor 1 0 0))
+;;  (==> p redisplay)
+;;
+;;  ;; plot a green polygonal sinusoid
+;;  (setq x (range 0 10 0.5))
+;;  (setq y (all ((v x)) (sin v)))
+;;  (==> p plotlists "sine" x y (alloccolor 0 1 0) closed-circle)
+;;  (==> p Redisplay)
+;;
+;;  ;; add a grid
+;;  (==> p SetGrid 1)
+;;  (==> p Redisplay)
+;;
+;;  ;; move the plotter to 100,0 and set its size to 300,200
+;;  (==> p move 100 0)
+;;  (==> p setsize 300 200)
+;;  (cls)
+;;  (==> p redisplay)
+;;
+;;  ;; plot log function in a postscript file
+;;  (let ((window (ps-window "/tmp/curve.ps")))
+;;    (setq psp (new Plotter))
+;;    (==> psp PlotFunc "log" log 0 10 0.1 (alloccolor 0 0 1))
+;;    (==> psp redisplay))
+;;
+;;  ;; plot log function in an editable graphic window using comdraw
+;;  (setq window (comdraw-window))
+;;  (setq cp (new Plotter)) 
+;;  (==> cp PlotFunc "log" log 0 10 0.1 (alloccolor 0 0 1))
+;;  (==> cp setgrid 1)
+;;  (==> cp redisplay)
 ;; </code>}
-;;;;;;;;;;;;;;;;;
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? * Plotter
@@ -48,10 +81,9 @@
 ;; This is the main class to define {<c> Plotter} objects in Lush. Plotter objects have slots
 ;; to define  properties of the axes such as scales, labels, legend, title, ticks and 
 ;; logscale. It also stores the curves, lines and texts that will be drawn on the Plotter.
-;; {<c> rect} slot of the Plotter specifies the rentangular area of the Plotter on the current 
+;; {<c> rect} slot of the Plotter specifies the rectangular area of the Plotter on the current 
 ;; current window. Slots of the Plotter object can be modified by methods of the class.
 ;; They are computed automatically or set to their default values if not speicifed by the use. 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defclass Plotter object   
   rect				       ;(x y w h) for drawing the plot
   curves 
@@ -90,6 +122,18 @@
 (defmethod Plotter Plotter(&optional x y w h)
   (==> this Attach x y w h))
 
+#? (==> <Plotter> move <x> <y>)
+;; move the upper left-hand corner of the plotter to screen position <x> <y>.
+;; No screen update is performed until the next call to redisplay.
+(defmethod Plotter move (x y)
+  (let (( (xo yo w h) rect)) (setq rect (list x y w h))))
+
+#? (==> <Plotter> setsize <w> <h>)
+;; set the width and height of the plotter object to <w> and <h>.
+;; No screen update is performed until the next call to redisplay.
+(defmethod Plotter setsize (w h)
+  (let (( (x y wo ho) rect)) (setq rect (list x y w h))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; destructor
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -111,14 +155,14 @@
   (when ~window (setq window (new-window))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-#? (==> <Plotter> Set <slot> <value>)
+#? (==> <Plotter> Set <attribute> <value>)
 
-;; Sets the slots of the {<c> Plotter} object to the given value. The
-;; {<c> slot} argument is a string and can be "xticks", "yticks",
+;; Sets the attribute of the {<c> Plotter} object to the given value. The
+;; {<c> attribute} argument is a string and can be "xticks", "yticks",
 ;; "xscale", "yscale", "xlabel", "ylabel", "legend", "title", "grid",
 ;; "xscale2", "yscale2", "xticks2", "yticks2", "xlabel2",
-;; "ylabel2". If an invalid slot name is given error is generated.
-;; The {<c> value} argument should match the slot's data type. For
+;; "ylabel2". If an invalid attribute name is given error is generated.
+;; The {<c> value} argument should match the attribute's data type. For
 ;; "xticks", "yticks", "xticks2" and "yticks2" the value should be a
 ;; list of numbers, for "xscale" and "yscale" it should be a list of
 ;; two numbers, for "legend","title", "xlabel", "ylabel", "xlabel2"
@@ -128,8 +172,8 @@
 ;;  (==> myplotter Set "xscale" (list 0 10))
 ;;  (==> myplotter Set "xlabel "x")
 ;; </code>}
-;; Individual methods are also provided to set and change the slots of
-;; the Plotter object.
+;; Individual methods are also provided to set and change the attributes 
+;; of the Plotter object.
 (defmethod Plotter Set (slot value)
   (selectq slot
     ("xticks" (==> this SetXTicks value))
@@ -347,18 +391,18 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  #? * PlotterCurve
 ;; Class {<c> PlotterCurve} is used to define the curve objects in the
-;; {<c> Plotter} rectangle. Slots of the {<c> PlotterCurve} are {<c>
+;; {<c> Plotter} rectangle. Attributes of the {<c> PlotterCurve} are {<c>
 ;; points, color, symbol, symsize, line, xaxis} and {<c> yaxis}. {<c>
-;; Points} slot is a list of data points of the curve. {<c> Color}
-;; slot is the color of the curve. {<c> Symbol} is the shape of the
-;; markers at each data point. Symbol can be set to "open-square",
-;; "closed-square", "open-circle", "closed-circle",
-;; "open-up-triangle", "open-down-triangle", "closed-up-triangle",
-;; "closed-down-triangle", "straight-cross" and "oblique-cross". {<c>
+;; Points} attribute is a list of data points of the curve. {<c> Color}
+;; attribute is the color of the curve. {<c> Symbol} is the shape of the
+;; markers at each data point. Symbol can be set to <open-square>,
+;; <closed-square>, <open-circle>, <closed-circle>,
+;; <open-up-triangle>, <open-down-triangle>, <closed-up-triangle>,
+;; <closed-down-triangle>, <straight-cross> and <oblique-cross>. {<c>
 ;; Symsize} is the size of the symbols at data points in pixels. The
-;; {<c> line} slot specifies whether the data points of the curve will
+;; {<c> line} attribute specifies whether the data points of the curve will
 ;; be connected by a line or not. Finally, {<c> xaxis} and {<c> yaxis}
-;; slots of the curve indicates which of the two x axes or y axes the
+;; attributes of the curve indicates which of the two x axes or y axes the
 ;; curve is using.
 (defclass PlotterCurve object
   points				;list of points
@@ -404,7 +448,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? (==> <Plotter> SetCurveColor <curvename> <c>)
 ;; Sets the color of the {<c> PlotterCurve} object named {<c>
-;; curvename} to color {<c> c}. Argument {<c> c} is a color number.
+;; curvename} to color {<c> c}. Argument {<c> c} is a color number
+;; (as returned by <alloc-color>).
 ;; If a curve named {<c> curvename} does not exist, error is returned.
 (defmethod Plotter SetCurveColor(curvename color)
   (let ((curve (alist-get curvename curves)))
@@ -413,17 +458,19 @@
     (setq :curve:color color)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-#? (==> <Plotter> SetCurveSymbol <curvename> <symbolname>)
+#? (==> <Plotter> SetCurveSymbol <curvename> <symbolfunc>)
 ;; Sets the marker symbol of the {<c> PlotterCurve} object named {<c>
-;; curvename} to symbol {<c> symbolname}. Argument {<c> symbolname} is
-;; a string and is one of the following : "open-square",
-;; "closed-square", "open-circle", "closed-circle",
-;; "open-up-triangle", "open-down-triangle", "closed-up-triangle",
-;; "closed-down-triangle", "straight-cross" and "oblique-cross".
+;; curvename} to symbol {<c> symbolname}. Argument {<c> symbolfunc} 
+;; must be a two-argument function whose role is to draw a symbol
+;; at the screen coordinates passed as arguments. A set of pre-defined
+;; such functions are provided: <open-square>,
+;; <closed-square>, <open-circle>, <closed-circle>,
+;; <open-up-triangle>, <open-down-triangle>, <closed-up-triangle>,
+;; <closed-down-triangle>, <straight-cross> and <oblique-cross>.
 (defmethod Plotter SetCurveSymbol(curvename symbolname)
   (let ((curve (alist-get curvename curves)))
     (when (not curve)
-      (error '==> "Undefined curve" curvename))(libload "libplot/libplotter")
+      (error '==> "Undefined curve" curvename))
     (setq :curve:symbol symbolname)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -481,18 +528,79 @@
     (setq :curve:yaxis yaxis)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-#? (==> <Plotter> PlotLists <curvename> <xlist> <ylist>)
-;; This method is just a convinient way to add multiple points to
-;; curves. {<c> xlist} is the list of x coordinates of the data
-;; points. {<c> ylist} is the list of y coordinates of the
-;; datapoints.{<br>} For example:{<br>}
+#? (==> <Plotter> PlotFunc <curvename> <func> <xmin> <xmax> <xstep> [<color>] [<symbol>])
+;; Plot a scalar real function. Samples are computed for are all values between
+;; <xmin> and <xmax> by step of <xstep>. 
+;; <color> is a color identifier (as returned by <alloccolor>),
+;; and symbol is a function of two arguments (x and y coordinates) 
+;; that is called each time a data point is to be plotted. Predefined
+;; such functions include nil (no symbol is plotted), open-square, closed-square, 
+;; open-circle, closed-circle, open-up-triangle, open-down-triangle, closed-up-triangle,
+;; closed-down-triangle, straight-cross and oblique-cross, or any user-defined functions
+;; {<br>}
+;; Example:{<br>}
 ;; {<code>
-;;  (==> myplotter PlotLists "" (range 1 100) (mapcar log x))
+;;  (libload "libplot/plotter")
+;;  (setq p (new Plotter))
+;;  (==> p PlotFunc "log" log 0 10 0.1 (alloccolor 1 0 0))
+;;  (==> p redisplay)
 ;; </code>}
-(defmethod Plotter PlotLists (curvename xlist ylist)
-  (setq curves (alist-add curvename (new PlotterCurve) curves))
-  (each ((x xlist) (y ylist))
-    (==> this AddPoint curvename x y)))
+(defmethod Plotter PlotFunc (curvename func xmin xmax xstep &optional col symb)
+  (let* ((xl (range xmin xmax xstep))
+	 (yl (progn-without-fpe (mapcar func xl))))
+    (==> this PlotLists curvename xl yl col symb)))
+
+#? (==> <Plotter> PlotXY <curvename> <funcx> <funcy> <tmin> <tmax> <tstep> [<color>] [<symbol>])
+;; Plot a parameterized curve (X(t),Y(t)). Samples are computed for are all 
+;; values of t between <tmin> and <tmax> by step of <tstep>. 
+;; <color> is a color identifier (as returned by <alloccolor>),
+;; and symbol is a function of two arguments (x and y coordinates) 
+;; that is called each time a data point is to be plotted. Predefined
+;; such functions include nil (no symbol is plotted), open-square, closed-square, 
+;; open-circle, closed-circle, open-up-triangle, open-down-triangle, closed-up-triangle,
+;; closed-down-triangle, straight-cross and oblique-cross, or any user-defined functions
+;; {<br>}
+;; Example:{<br>}
+;; {<code>
+;;  (libload "libplot/plotter")
+;;  (setq p (new Plotter))
+;;  (==> p PlotXY "log" log 0 10 0.1 (alloccolor 1 0 0))
+;;  (==> p redisplay)
+;; </code>}
+(defmethod Plotter PlotXY (curvename funcx funcy tmin tmax tstep &optional col symb)
+  (let* ((tl (range tmin tmax tstep))
+	 (xl (progn-without-fpe (mapcar funcx tl)))
+	 (yl (progn-without-fpe (mapcar funcy tl))))
+    (==> this PlotLists curvename xl yl col symb)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> PlotLists <curvename> <xlist> <ylist> [<color>] [<symbol>])
+;; Plot a list of points whose x and y coordinates are corresponding
+;; elements in <xlist> and <ylist>. In other words
+;; {<c> xlist} is the list of x coordinates of the data
+;; {<c> ylist} is the list of y coordinates of the
+;; datapoints. <curvename> is a curve identifier (generally a string).
+;; If the curve <curvename> already exists, it is replaces.
+;; <color> is a color identifier (as returned by <alloc-color>),
+;; and symbol is a function of two arguments (x and y coordinates) 
+;; that is called each time a data point is to be plotted. Predefined
+;; such functions include open-square, closed-square, open-circle, 
+;; closed-circle, open-up-triangle, open-down-triangle, closed-up-triangle,
+;; closed-down-triangle, straight-cross and oblique-cross.
+;; {<br>}
+;; Example:{<br>}
+;; {<code>
+;;  (==> myplotter PlotLists "log" (range 1 100) (mapcar log x))
+;; </code>}
+(defmethod Plotter PlotLists (curvename xlist ylist &optional col symb)
+  (let ((pc (new PlotterCurve)))
+    (setq curves (alist-add curvename pc curves))
+    (when col (setq :pc:color col))
+    (when symb 
+      (setq :pc:symbol symb)
+      (setq :pc:symsize 3))
+    (each ((x xlist) (y ylist))
+      (==> this AddPoint curvename x y))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? (==> <Plotter> AddText <x> <y> txtstring)
@@ -663,7 +771,7 @@
 	       ;; compute undefined attributes	
 	       (when ~color (setq color (nth (mod curveno 6) colordef)))
 	       (setq curveno (1+ curveno))
-	       (when ~symbol (setq symbol open-square))
+	       (when ~symbol (setq symbol ()))
 	       (when ~symsize (setq symsize 1))
 	       (when ~line (setq line 1))
 	       (when ~curvexaxis (setq curvexaxis 1))
@@ -699,7 +807,7 @@
 			    (draw-line prev-pointx prev-pointy realx realy))
 			  (setq prev-pointx realx)
 			  (setq prev-pointy realy)
-			  (when  (and (< realx xaxismax) (> realx xaxismin) (> realy yaxismax) (< realy yaxismin) (> symsize 0))
+			  (when  (and symbol (< realx xaxismax) (> realx xaxismin) (> realy yaxismax) (< realy yaxismin) (> symsize 0))
 			    (symbol realx realy)))))))))))
 	 ;;iterate on lines 
      (when lines
