@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.7 2002-07-31 00:21:33 leonb Exp $
+ * $Id: fileio.c,v 1.8 2002-09-05 16:02:31 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -1020,6 +1020,9 @@ search_lushdir(char *progname)
       "../sys/sysenv.dump",
       "../sys/sysenv.lshc",
       "../sys/sysenv.lsh",
+      "../share/lush/sys/sysenv.dump",
+      "../share/lush/sys/sysenv.lshc",
+      "../share/lush/sys/sysenv.lsh",
       "../../sys/sysenv.dump",
       "../../sys/sysenv.lshc",
       "../../sys/sysenv.lsh",
