@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.8 2002-08-27 21:02:54 leonb Exp $
+ * $Id: string.c,v 1.9 2002-08-27 21:13:51 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1412,8 +1412,8 @@ DX(xregex_subst)
   short buffer[1024];
   char *regptr[10];
   int  reglen[10];
-  int reg,i;
-  char *start,*end, *s1, *s2;
+  char *start, *end, *s1;
+  struct large_string ls;
 
 
   ARG_NUMBER(3);
@@ -1427,46 +1427,45 @@ DX(xregex_subst)
   if (pat)
     error(NIL,pat,APOINTER(1));
   
-  s2 = string_buffer;
+  large_string_init(&ls);
   do {
     if (! regex_seek(buffer,datstart,dat,regptr,reglen,10,&start,&end))
-      start = end = dat+strlen(dat);
-    if (dat<start) {
+      start = end = dat + strlen(dat);
+    if (dat < start) {
       s1 = dat;
-      while (s1<start)
-	if (s2<string_buffer+STRING_BUFFER-2)
-	  *s2++ = *s1++;
-	else
-	  error(NIL,toolong,NIL);
+      large_string_add(&ls, s1, start-s1);
+      s1 = start;
     }
-    if (start<end) {
+    if (start < end) {
       s1 = str;
-      while (*s1) {
-	if (s2>string_buffer+STRING_BUFFER-2)
-	  error(NIL,toolong,NIL);
-	if (*s1=='%') {
-	  s1++;
-	  if (*s1=='%')
-	    *s2++ = *s1++;
-	  else {
-	    reg = *s1++ - '0';
-	    if (reg<0 || reg>9)
-	      error(NIL,"bad register number",APOINTER(3));
-	    if (s2>string_buffer+STRING_BUFFER-2-reglen[reg])
-	      error(NIL,toolong,NIL);
-	    for(i=0; i<reglen[reg] && regptr[reg][i]; i++)
-	      *s2++ = regptr[reg][i];
-	  }
-	} else {
-	  *s2++ = *s1++;
-	}
-      }
+      while (*s1) 
+        {
+          if (*s1 == '%') 
+            {
+              s1++;
+              if (*s1=='%')
+                large_string_add(&ls, "%", 1);
+              else {
+                int reg = *s1++ - '0';
+                if (reg<0 || reg>9)
+                  error(NIL,"bad register number",APOINTER(3));
+                large_string_add(&ls, regptr[reg], reglen[reg]);
+              }
+            } 
+          else 
+            {
+              char *s2 = s1;
+              while (*s1 && *s1!='%')
+                s1 += 1;
+              large_string_add(&ls, s2, s1-s2);
+            }
+        }
     }
     while (*dat && dat<end)
       dat++;
   } while (*dat);
-  *s2=0;
-  return new_string(string_buffer);
+  
+  return large_string_collect(&ls);
 }
 
 
