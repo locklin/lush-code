@@ -88,10 +88,12 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
      AC_CHECK_CC_OPT([-Wall],[OPTS="$OPTS -Wall"])
      AC_CHECK_CC_OPT([-O3],[OPTS="$OPTS -O3"],
         [ AC_CHECK_CC_OPT([-O2], [OPTS="$OPTS -O2"] ) ] )
-     AC_CHECK_CC_OPT([-funroll-loops], [OPTS="$OPTS -funroll-loops"])
-     case "${host_cpu}" in
+     AC_CHECK_CC_OPT([-fomit-frame-pointer], [OPTS="$OPTS -fomit-frame-pointer"])
+     cpu=`uname -m 2>/dev/null`
+     test -n "${cpu}" || cpu=${host_cpu} 
+     case "${cpu}" in
         i?86)
-           opt="-mcpu=${host_cpu}"
+           opt="-mcpu=${cpu}"
            AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"])
            ;;
       esac
