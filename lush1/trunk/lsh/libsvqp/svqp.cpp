@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.3 2003-09-04 00:22:03 leonb Exp $
+ * $Id: svqp.cpp,v 1.4 2003-09-04 00:25:30 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -353,6 +353,7 @@ ConvexProgram::run(void)
           if (gnorm<epsgr)
             break;
           // Continue processing
+          restartp = 1;
         }
       // compute search direction
       if (restartp)
