@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.3 2002-04-24 20:56:40 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.4 2002-05-01 15:22:56 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/config.h)
@@ -42,21 +42,26 @@ AC_SUBST(INSTALL)
 AC_CHECK_LIB(m,sqrt)
 AC_CHECK_LIB(dl,dlopen)
 AC_CHECK_LIB(dld,shl_load)
+AC_CHECK_LIB(dld,shl_load)
+
+AC_CHECK_LIB(iberty, xmalloc)
+AC_CHECK_LIB(bfd, bfd_init,,[ac_has_bfd=no])
+BFD_YES=''
+test x$ac_has_bfd = xno && BFD_YES='#'
+AC_SUBST(BFD_YES)
 
 AC_PATH_X
 AC_PATH_XTRA
 X_LIBS=
 test -n "$x_libraries" && X_LIBS="-L$x_libraries"
 X_YES='#'
-X_NO=''
 if test "${no_x-no}" != yes ; then 
   X_LIBS="$X_LIBS $X_PRE_LIBS -lX11 $X_EXTRA_LIBS"
   X_YES=''
-  X_NO='#'
 fi
 AC_SUBST(X_LIBS)
 AC_SUBST(X_YES)
-AC_SUBST(X_NO)
+
 
 
 # ----------------------------------------
@@ -71,6 +76,7 @@ AC_CHECK_HEADERS(memory.h string.h strings.h)
 AC_CHECK_HEADERS(unistd.h sys/time.h sys/mman.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/ttold.h)
+AC_CHECK_HEADERS(bfd.h)
 
 # ----------------------------------------
 # Types
@@ -91,6 +97,7 @@ AC_FUNC_STRFTIME
 AC_CHECK_FUNCS(strchr memcpy sigaction sigvec strerror getcwd)
 AC_CHECK_FUNCS(ieee_handler fpsetmask __setfpucw)
 AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp)
+AC_CHECK_FUNCS(mprotect getpagesize)
 
 
 # ----------------------------------------

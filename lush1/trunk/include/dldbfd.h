@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.h,v 1.1 2002-04-16 19:47:02 leonb Exp $
+ * $Id: dldbfd.h,v 1.2 2002-05-01 15:23:00 leonb Exp $
  **********************************************************************/
 
 /* DLD-4.0 -- DYNAMIC LINK/UNLINK EDITOR FOR C
@@ -90,17 +90,6 @@
  */
 
 
-// [LUSH] -- MUST CHANGE THIS
-#if defined(SUNOS) || defined(SOLARIS) || defined(SOLARIS86)
-#define DLOPEN
-#endif
-#if defined(LINUX) || defined(SGI)
-#define DLOPEN
-#endif
-
-
-#ifdef __STDC__
-
 extern const char *dld_errno;
 extern int dld_undefined_sym_count;
 extern int dld_compatibility_flag;
@@ -121,29 +110,6 @@ void dld_remove_defined_symbol (const char *);
 void dld_perror (const char *);
 void *dld_dlopen(char *path, int mode); /* NEW */ 
 
-#else
-
-extern char *dld_errno;
-extern int dld_undefined_sym_count;
-extern int dld_compatibility_flag;
-
-int dld_init ();
-int dld_link ();
-void *dld_get_symbol ();
-void *dld_get_func ();
-void *dld_get_bare_symbol ();
-int dld_unlink_by_file ();
-int dld_unlink_by_symbol ();
-int dld_function_executable_p ();
-char **dld_list_undefined_sym ();
-char *dld_find_executable ();
-int dld_create_reference ();
-int dld_define_sym ();
-void dld_remove_defined_symbol ();
-void dld_perror ();
-void *dld_dlopen (); /* NEW */ 
-
-#endif
 
 
 
