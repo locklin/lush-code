@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.c,v 1.4 2004-10-03 09:38:20 leonb Exp $
+ * $Id: kcache.c,v 1.5 2004-10-20 15:55:17 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -175,6 +175,7 @@ xunlink(row_t *r)
     {
       r->lru.prev->lru.next = r->lru.next;
       r->lru.next->lru.prev = r->lru.prev;
+      r->lru.next = r->lru.prev = 0;
     }
 }
 
@@ -197,6 +198,7 @@ xnewrow(mysvm_kcache_t *this, int i, int len)
   row_t *r = xmalloc(sz);
   r->i = i;
   r->size = len;
+  r->lru.prev = r->lru.next = 0;
   this->cursize += sz;
   return r;
 }
@@ -225,8 +227,8 @@ xtruncate(mysvm_kcache_t *this, row_t *row, int n)
     r->data[p] = row->data[p];
   xunlink(row);
   this->row[i] = r;
-  xfreerow(this, row);
   xlink(this, r);
+  xfreerow(this, row);
 }
 
 static void
@@ -374,7 +376,6 @@ mysvm_kcache_query_row(mysvm_kcache_t *this, int i, int len)
 	}
     }
   /* Allocate */
-  xpurge(this);
   nr = xnewrow(this, i, len);
   if (r)
     {
@@ -404,6 +405,8 @@ mysvm_kcache_query_row(mysvm_kcache_t *this, int i, int len)
       else 
         nr->data[p] = nr->diag;
     }
+  /* Make sure the cache does not exceed the max size */
+  xpurge(this);
   /* Return */
   this->row[i] = nr;
   xlink(this, nr);
