@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.c,v 1.2 2004-08-30 23:24:30 leonb Exp $
+ * $Id: vector.c,v 1.3 2004-11-02 19:00:54 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -35,6 +35,12 @@
 #include "messages.h"
 #include "vector.h"
 
+
+#ifdef __cplusplus__
+#define this  mythis
+#define or    myor
+#define and   myand
+#endif
 
 #ifndef min
 # define min(a,b) (((a)<(b))?(a):(b))
@@ -63,7 +69,7 @@ mysvm_vector_create(int size)
 {
   mysvm_vector_t *v;
   ASSERT(size>1);
-  v = xmalloc(sizeof(mysvm_vector_t) + (size-1)*sizeof(double));
+  v = (mysvm_vector_t*)xmalloc(sizeof(mysvm_vector_t) + (size-1)*sizeof(double));
   v->size = size;
   return v;
 }
@@ -96,7 +102,7 @@ mysvm_sparsevector_t *
 mysvm_sparsevector_create(void)
 {
   mysvm_sparsevector_t *v;
-  v = xmalloc(sizeof(mysvm_sparsevector_t));
+  v = (mysvm_sparsevector_t*)xmalloc(sizeof(mysvm_sparsevector_t));
   v->size = 0;
   v->npairs = 0;
   v->pairs = 0;
@@ -136,7 +142,8 @@ mysvm_sparsevector_get(mysvm_sparsevector_t *v, int index)
 static void 
 quickappend(mysvm_sparsevector_t *v, int index, double data)
 {
-  mysvm_sparsevector_pair_t *d = xmalloc(sizeof(mysvm_sparsevector_pair_t));
+  mysvm_sparsevector_pair_t *d;
+  d = (mysvm_sparsevector_pair_t*)xmalloc(sizeof(mysvm_sparsevector_pair_t));
   ASSERT(index >= v->size);
   d->next = 0;
   d->index = index;
@@ -168,7 +175,7 @@ mysvm_sparsevector_set(mysvm_sparsevector_t *v, int index, double data)
 	  p->data = data;
 	  return;
 	}
-      d = xmalloc(sizeof(mysvm_sparsevector_pair_t));
+      d = (mysvm_sparsevector_pair_t*)xmalloc(sizeof(mysvm_sparsevector_pair_t));
       d->next = p;
       d->index = index;
       d->data = data;

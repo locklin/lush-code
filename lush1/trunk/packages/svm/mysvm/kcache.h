@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.h,v 1.2 2004-09-14 19:11:57 leonb Exp $
+ * $Id: kcache.h,v 1.3 2004-11-02 19:00:54 leonb Exp $
  **********************************************************************/
 
 #ifndef KCACHE_H
@@ -73,32 +73,32 @@ mysvm_kcache_t* mysvm_kcache_create(mysvm_kernel_t kernelfunc, void *closure);
 /* --- mysvm_kcache_destroy
    Deallocates a kernel cache object.
 */
-void mysvm_kcache_destroy(mysvm_kcache_t *this);
+void mysvm_kcache_destroy(mysvm_kcache_t *self);
 
 /* --- mysvm_kcache_set_maximum_size
    Sets the maximum memory size used by the cache.
    Argument <entries> indicates the maximum cache memory.
    The default size is 256Mb.
 */
-void mysvm_kcache_set_maximum_size(mysvm_kcache_t *this, int entries);
+void mysvm_kcache_set_maximum_size(mysvm_kcache_t *self, int entries);
 
 /* --- mysvm_kcache_set_maximum_size
    Returns the maximum cache memory.
  */
-int mysvm_kcache_get_maximum_size(mysvm_kcache_t *this);
+int mysvm_kcache_get_maximum_size(mysvm_kcache_t *self);
 
 /* --- mysvm_kcache_set_maximum_size
    Returns the currently used cache memory.
    This can slighly exceed the value specified by 
    <mysvm_kcache_set_maximum_size>.
  */
-int mysvm_kcache_get_current_size(mysvm_kcache_t *this);
+int mysvm_kcache_get_current_size(mysvm_kcache_t *self);
 
 /* --- mysvm_kcache_query
    Returns the possibly cached value of the Gram matrix element (<i>,<j>).
    This function will not modify the cache geometry.
  */
-double mysvm_kcache_query(mysvm_kcache_t *this, int i, int j);
+double mysvm_kcache_query(mysvm_kcache_t *self, int i, int j);
 
 /* --- mysvm_kcache_query_row
    Returns the <len> first elements of row <i> of the Gram matrix.
@@ -108,7 +108,7 @@ double mysvm_kcache_query(mysvm_kcache_t *this, int i, int j);
    and vice-versa.
 */
 
-float *mysvm_kcache_query_row(mysvm_kcache_t *this, int i, int len);
+float *mysvm_kcache_query_row(mysvm_kcache_t *self, int i, int len);
 
 /* --- mysvm_kcache_i2r
    --- mysvm_kcache_r2i
@@ -116,8 +116,8 @@ float *mysvm_kcache_query_row(mysvm_kcache_t *this, int i, int len);
    the conversion table from example index to row position and vice-versa. 
 */
 
-int *mysvm_kcache_i2r(mysvm_kcache_t *this, int n);
-int *mysvm_kcache_r2i(mysvm_kcache_t *this, int n);
+int *mysvm_kcache_i2r(mysvm_kcache_t *self, int n);
+int *mysvm_kcache_r2i(mysvm_kcache_t *self, int n);
 
 
 /* --- mysvm_kcache_swap_rr
@@ -128,9 +128,9 @@ int *mysvm_kcache_r2i(mysvm_kcache_t *this, int n);
    or by indicating the example number (<i1>, <i2>).
 */
 
-void mysvm_kcache_swap_rr(mysvm_kcache_t *this, int r1, int r2);
-void mysvm_kcache_swap_ii(mysvm_kcache_t *this, int i1, int i2);
-void mysvm_kcache_swap_ri(mysvm_kcache_t *this, int r1, int i2);
+void mysvm_kcache_swap_rr(mysvm_kcache_t *self, int r1, int r2);
+void mysvm_kcache_swap_ii(mysvm_kcache_t *self, int i1, int i2);
+void mysvm_kcache_swap_ri(mysvm_kcache_t *self, int r1, int i2);
 
 
 #ifdef __cplusplus__

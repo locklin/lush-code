@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kernel.c,v 1.2 2004-08-30 23:24:30 leonb Exp $
+ * $Id: kernel.c,v 1.3 2004-11-02 19:00:54 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -36,14 +36,17 @@
 #include "messages.h"
 #include "kernel.h"
 
-
-
+#ifdef __cplusplus__
+#define this  mythis
+#define or    myor
+#define and   myand
+#endif
 
 
 double 
 mysvm_vectorproblem_lin_kernel(int i, int j, void *problem)
 {
-  mysvm_vectorproblem_t *p = problem;
+  mysvm_vectorproblem_t *p = (mysvm_vectorproblem_t*)problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
   return mysvm_vector_dot_product(p->x[i], p->x[j]);
@@ -54,7 +57,7 @@ double
 mysvm_vectorproblem_rbf_kernel(int i, int j, void *problem)
 {
   double d;
-  mysvm_vectorproblem_t *p = problem;
+  mysvm_vectorproblem_t *p = (mysvm_vectorproblem_t*)problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
   d = mysvm_vector_dot_product(p->x[i], p->x[j]);
@@ -66,7 +69,7 @@ mysvm_vectorproblem_rbf_kernel(int i, int j, void *problem)
 double 
 mysvm_sparsevectorproblem_lin_kernel(int i, int j, void *problem)
 {
-  mysvm_sparsevectorproblem_t *p = problem;
+  mysvm_sparsevectorproblem_t *p = (mysvm_sparsevectorproblem_t*)problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
   return mysvm_sparsevector_dot_product(p->x[i], p->x[j]);
@@ -76,7 +79,7 @@ double
 mysvm_sparsevectorproblem_rbf_kernel(int i, int j, void *problem)
 {
   double d;
-  mysvm_sparsevectorproblem_t *p = problem;
+  mysvm_sparsevectorproblem_t *p = (mysvm_sparsevectorproblem_t*)problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
   d = mysvm_sparsevector_dot_product(p->x[i], p->x[j]);
