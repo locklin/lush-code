@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: compat.lsh,v 1.6 2002-07-27 19:58:40 leonb Exp $
+;;; $Id: compat.lsh,v 1.7 2002-07-29 16:08:29 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -133,6 +133,46 @@
     (setq dirs (cons "." dirs))
     (setq filename (find-file dirs filename '("" ".h"))) )
   `(cheader ,(concat "#include \"" filename "\"\n")) )
+
+(de cc-load(cfile &optional moreflags)
+  (when (not (functionp dhc-make-o-maybe))
+    (error 'cc-load "This function requires dh-compile.lsh" ()) )
+  (let ((dirs (path)))
+    (when (<> file-being-loaded "$stdin")
+      (setq dirs (cons (dirname file-being-loaded) dirs)) )
+    (setq dirs (cons "." dirs))
+    (setq cfile (find-file dirs cfile '("" ".c"))) )
+  (let* ((dhc-make-lushflags dhc-make-lushflags))
+    (when moreflags
+      (setq dhc-make-lushflags (concat dhc-make-lushflags " " moreflags)) )
+    (let ((obj (dhc-make-o-maybe cfile)))
+      (mod-load obj)
+      obj ) ) )
+
+(de c++-load(cfile &optional moreflags)
+  (when (not (functionp dhc-make-o-maybe))
+    (error 'cc-load "This function requires dh-compile.lsh" ()) )
+  (let ((dirs (path)))
+    (when (<> file-being-loaded "$stdin")
+      (setq dirs (cons (dirname file-being-loaded) dirs)) )
+    (setq dirs (cons "." dirs))
+    (setq cfile (find-file dirs cfile '("" ".cpp" ".cc" ".C"))) )
+  (let* ((dhc-make-lushflags dhc-make-lushflags)
+         (dhc-make-overrides dhc-make-overrides) )
+    (when moreflags
+      (setq dhc-make-lushflags (concat dhc-make-lushflags " " moreflags)) )
+    (let ((cxx (or (alist-get "CXX" dhc-make-overrides)
+                   (getconf "CXX") (getenv "CXX") ) ))
+      (if (and (stringp cxx) (<> cxx ""))
+          (setq dhc-make-overrides (alist-add "CC" cxx dhc-make-overrides))
+        (error 'c++-load "Cannot find C++ compiler" ()) ) )
+    (let ((obj (dhc-make-o-maybe cfile)))
+      (mod-load obj)
+      obj ) ) )
+
+(defvar gcc-load cc-load)
+(defvar g++-load c++-load)
+
 
 
 ;;; ----------------------------------------

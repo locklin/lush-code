@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.12 2002-07-25 01:14:47 leonb Exp $
+ * $Id: dh.h,v 1.13 2002-07-29 16:08:27 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -219,7 +219,7 @@ struct dhdoc_s
   struct {
     char *c_name;		/* string with the C_name */
     char *m_name;		/* string with the M_name or nil */
-    dharg (*call)();		/* pointer to the X_name function */
+    dharg (*call)(dharg *);	/* pointer to the X_name function */
     char *k_name;               /* string with the K_name_Rxxxxxxxx */
     dhdoc_t *dhtest;            /* pointer to the dhdoc for the testfunc */ 
   } lispdata;
