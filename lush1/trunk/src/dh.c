@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.19 2005-01-17 16:37:35 leonb Exp $
+ * $Id: dh.c,v 1.20 2005-01-17 18:23:25 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -207,10 +207,9 @@ next_record(dhrecord *drec)
 }
 
 void
-clean_dhdoc(dhdoc_t *kdata)
+clean_dhrecord(dhrecord *drec)
 {
-  dhrecord *drec = kdata->argdata;
-  if (kdata->argdata->op == DHT_FUNC || kdata->argdata->op == DHT_CLASS)
+  if (drec)
     next_record(drec);
 }
 
