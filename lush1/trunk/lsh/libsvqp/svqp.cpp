@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.1 2003-09-03 21:41:05 leonb Exp $
+ * $Id: svqp.cpp,v 1.2 2003-09-04 00:18:40 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -136,6 +136,10 @@ QuadraticProgram::compute_ggx(const svreal*, const svreal *z)
   return dot(tmp,z,n);
 }
 
+void
+QuadraticProgram::compute_Ax(const svreal *x, svreal *y)
+{
+}
 
 
 
@@ -416,6 +420,18 @@ ConvexProgram::run(void)
   return iterations;
 }
 
+
+svreal
+ConvexProgram::compute_gx(const svreal *x, svreal *g)
+{
+  return 0;
+}
+
+svreal 
+ConvexProgram::compute_ggx(const svreal*, const svreal *z)
+{
+  return 0;
+}
 
 
 

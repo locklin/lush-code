@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.h,v 1.1 2003-09-03 21:41:05 leonb Exp $
+ * $Id: svqp.h,v 1.2 2003-09-04 00:18:40 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -202,9 +202,9 @@ public:
 
 protected:
   // compute_gx -- stores gradient of f into vector g and returns f(x)
-  virtual svreal compute_gx(const svreal *x, svreal *g) = 0;
+  virtual svreal compute_gx(const svreal *x, svreal *g);
   // compute_ggx -- returns curvature along direction z at point x
-  virtual svreal compute_ggx(const svreal *x, const svreal *z) = 0;
+  virtual svreal compute_ggx(const svreal *x, const svreal *z);
 
 private:
   // conjugate gradient stuff
@@ -251,7 +251,7 @@ public:
 
 protected:
   // compute_Ax -- store into y product of matrix A by vector x
-  virtual void compute_Ax(const svreal *x, svreal *y) = 0;
+  virtual void compute_Ax(const svreal *x, svreal *y);
   
 private:
   // memory allocation
