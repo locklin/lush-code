@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.28 2004-12-17 13:31:56 leonb Exp $
+ * $Id: string.c,v 1.29 2005-01-26 03:04:52 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -833,7 +833,7 @@ DX(xupcase)
     memset(&ps1, 0, sizeof(mbstate_t));
     memset(&ps2, 0, sizeof(mbstate_t));
     large_string_init(&ls);
-    for(;;)
+    while(n > 0)
       {
 	wchar_t wc = 0;
 	int m = (int)mbrtowc(&wc, s, n, &ps1);
@@ -936,7 +936,7 @@ DX(xdowncase)
     memset(&ps1, 0, sizeof(mbstate_t));
     memset(&ps2, 0, sizeof(mbstate_t));
     large_string_init(&ls);
-    for(;;)
+    while(n > 0)
       {
 	wchar_t wc = 0;
 	int m = (int)mbrtowc(&wc, s, n, &ps1);
@@ -1044,7 +1044,7 @@ DX(xisprint)
     int n = strlen(s);
     mbstate_t ps;
     memset(&ps, 0, sizeof(mbstate_t));
-    for(;;)
+    while(n > 0)
       {
 	wchar_t wc = 0;
 	int m = (int)mbrtowc(&wc, s, n, &ps);
