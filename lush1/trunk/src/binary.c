@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: binary.c,v 1.2 2002-04-25 22:54:27 leonb Exp $
  **********************************************************************/
 
 
@@ -294,7 +294,18 @@ sweep(at *p, int code)
   
   else if (p->Class == &index_class)
     {
-      error(NIL,"sweep for index class not yet implemented",NIL);
+      struct index *ind = p->Object;
+      if (ind->st->srg.type == ST_AT)
+        {
+          at** data;
+          struct idx id;
+          index_read_idx(ind, &id);
+          data = IDX_DATA_PTR(&id);
+          begin_idx_aloop1(&id, off) {
+            sweep(data[off], code);
+          } end_idx_aloop1(&id, off);
+          index_rls_idx(ind, &id);
+        }
     }
   
   else if (   p->Class == &de_class
@@ -849,29 +860,23 @@ local_write(at *p)
       return 0;
     }
   
-  if (matrixp(p))
-    {
-      error(NIL,"can't serialize matrix yet",p);
-      /*
-      write_card8(TOK_MATRIX);
-      in_bwrite += save_matrix_len(p);
-      save_matrix(p,fout);
-      */
-      return 1;
-    }
-  
   if (arrayp(p))
     {
-      error(NIL,"can't serialize arrays yet",p);
-      /* 
-      struct array *arr = p->Object;
       int i;
+      struct index *arr = p->Object;
       write_card8(TOK_ARRAY);
       write_card24(arr->ndim);
       for (i=0; i<arr->ndim; i++)
 	write_card32(arr->dim[i]);
-      */
       return 0;
+    }
+  
+  if (matrixp(p))
+    {
+      write_card8(TOK_MATRIX);
+      in_bwrite += save_matrix_len(p);
+      save_matrix(p,fout);
+      return 1;
     }
   
   if (p->Class == &de_class)
@@ -1072,9 +1077,9 @@ local_bread_cclass(at **pp)
 static void
 local_bread_array(at **pp)
 {
-  error(NIL,"local_bread_array not implemented yet",NIL);
-  /*
-  struct array *arr;
+  struct index *ind;
+  struct storage *st;
+  struct idx id;
   int dim[MAXDIMS];
   int i, size, ndim;
   
@@ -1085,13 +1090,14 @@ local_bread_array(at **pp)
   for (i=0; i<ndim; i++) {
     dim[i] = read_card32();
     size *= dim[i];
-  }
-  *pp = array(ndim,dim);
-  arr = (*pp)->Object;
-  pp = arr->data;
+  } 
+  *pp = AT_matrix(ndim,dim);
+  ind = (*pp)->Object;
+  index_write_idx(ind, &id);
+  pp = IDX_DATA_PTR(&id);
   for (i=0; i<size; i++)
     local_bread(pp++, NIL);
-  */
+  index_rls_idx(ind,&id);
 }
 
 
@@ -1217,7 +1223,6 @@ local_bread(at **pp, at *opt)
 	return 0;
       }
       
-      
     case TOK_OBJECT:
       {
 	local_bread_object(pp, opt);
@@ -1230,25 +1235,17 @@ local_bread(at **pp, at *opt)
 	return 0;
       }
       
+    case TOK_ARRAY:
+      {
+	local_bread_array(pp);
+	return 0;
+      }
       
     case TOK_MATRIX:
       {
-        error(NIL,"can't handle index/matrix yet",NIL);
-        /*
-	*pp = load_matrix(fin);
-        */
+        *pp = load_matrix(fin);
 	return 0;
       }
-      
-    case TOK_ARRAY:
-      {
-        error(NIL,"can't handle arrays yet",NIL);
-        /* 
-	local_bread_array(pp);
-        */
-	return 0;
-      }
-      
       
     case TOK_DE:
       {

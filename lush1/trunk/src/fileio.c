@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.2 2002-04-24 21:00:47 leonb Exp $
+ * $Id: fileio.c,v 1.3 2002-04-25 22:54:27 leonb Exp $
  **********************************************************************/
 
 #include <errno.h>
@@ -1484,6 +1484,35 @@ file_close(FILE *f)
 }
 
 
+
+/* read4(f), write4(f,x) 
+ * Low level function to read or write 4-bytes integers, 
+ * with highest order byte at lowest address..... 
+ *
+ * These functions are useful for accessing 
+ * file headers into machine independant files.
+ * Assuming sizeof(int)==4
+ */
+int 
+read4(FILE *f)
+{
+  int i;
+  int status;
+  status = fread(&i, sizeof(int), 1, f);
+  if (status != 1)
+    test_file_error(f);
+  return i;
+}
+
+int 
+write4(FILE *f, unsigned int l)
+{
+  int status;
+  status = fwrite(&l, sizeof(int), 1, f);
+  if (status != 1)
+    test_file_error(f);
+  return l;
+}
 
 /* file_size returns the remaining length of the file
  * It causes an error when the file is not exhaustable

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: graphics.c,v 1.2 2002-04-25 22:54:27 leonb Exp $
  **********************************************************************/
 
 
@@ -1826,7 +1826,7 @@ DX(xcolor_draw_matrix)
 
 
 /* -------------------------------------------- */
-/*     RGB DRAW MATRIX */
+/*     RGB DRAW MATRIX                          */
 /* -------------------------------------------- */
 
 int 
@@ -1970,9 +1970,12 @@ rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
       int v, xx, i, j;
       int off1, off2;
       gptr data;
-      void (*fill_rect)(struct window *, int, int, unsigned int, unsigned int) = win->gdriver->fill_rect;
-      void (*setcolor)(struct window *, int) = win->gdriver->setcolor;
-      int (*alloccolor)(struct window *, double, double, double) = win->gdriver->alloccolor;
+      void (*fill_rect)(struct window *, int, int, unsigned int, unsigned int) 
+        = win->gdriver->fill_rect;
+      void (*setcolor)(struct window *, int) 
+        = win->gdriver->setcolor;
+      int (*alloccolor)(struct window *, double, double, double) 
+        = win->gdriver->alloccolor;
       flt (*getf)(gptr,int);
       
       ifn (alloccolor && setcolor && fill_rect ) {

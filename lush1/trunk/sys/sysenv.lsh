@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.1 2002-04-16 19:13:52 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.2 2002-04-25 22:54:27 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -430,6 +430,10 @@
 (setq add-lists add-listes)
 (lock-symbol diff-lists add-lists)
 
+
+
+
+
 ;;;; --------- Arrays & Matrix utilities ---------
 
 (de index-print(this)
@@ -484,11 +488,6 @@
 	     (setq l (cdr l)) )
 	m ) ) )
 
-(de list2array (l)
-    (let*((a (array (length l)))(i 0))
-      (each ((e l))(a i e)(incr i))
-      a))
-
 (dmc |]| (error 'read "extra ']' found"))
 
 (dmc |}| (error 'read "extra '}' found"))
@@ -515,44 +514,18 @@
 		   (setq l (nconc1 l (read))) )
 		 m ) ) )
 
+(lock_symbol index-print list-to-matrix |[| |]| |{| |}|)
 
-(de map-matrix (s)
-    (let ((offset 20)
-	  (diml ()))
-      (let ((d (new-i32-storage)))
-	(storage-mmap d s)
-	(when (<> (d 0) 507333713)
-          (error (if (= (d 0) 1363950878)
-                     "File has been saved on a wrong endian cpu"
-                   "File has not been created by save-flt-matrix" )) )
-	(when (> (d 1) 3) (setq offset (+ 20 (* 4 (- (d 1) 3)))))
-	(setq diml (mapfor (i 1 (d 1)) (d (+ i 1))))
-      )
-      (let ((f (new-f-storage)))
-	(storage-mmap f s offset)
-	(new-index f diml)
-      )
-   )
-)
+;; Compat
+(setq map-pmatrix map-matrix)
+(setq save-flt-matrix save-matrix)
+(setq save-packed-matrix save-matrix)
 
-(de map-pmatrix (s)
-    (let ((offset 20)
-           (diml ()) )
-      (let ((d (new_i32_storage)))
-	(storage_mmap d s)
-	(when (and (<> (d 0) 507333714)
-                   (<> (d 0) 1380728094) )
-          (error "File has not been created by save-packed-matrix") )
-	(when (> (d 1) 3)
-          (setq offset (+ 20 (* 4 (- (d 1) 3)))) )
-	(setq diml (mapfor (i 1 (d 1))
-			   (d (+ i 1)) )) )
-      (let ((f (new_p_storage)))
-	(storage_mmap f s offset)
-	(new_index f diml))))
+(lock-symbol map-pmatrix save-flt-matrix save-packed-matrix)
 
-(lock_symbol index-print list-to-matrix |[| |]| |{| |}|
-	     map-matrix map-pmatrix)
+
+
+
 	     
 ;;; --------- Path functions ---------
 
@@ -587,8 +560,6 @@
 		      (libload ,l " (autoload)")
 		      f) )))
     `(progn ,@(all ((i s)) `(setq ,i ,f))) ) )
-
-
 
 (lock-symbol addpath |^L| libload autoload)
 
@@ -667,15 +638,16 @@
 	() )
        
        ;; starts with a C-0 symbol
-       ((member (car l) '(progn prog1 graphics-batch debug nodebug))
+       ((member (car l) '(progn graphics-batch debug nodebug))
 	
 	(printf "(")
 	(pprin (car l))
 	(pprin--v (cdr l) (+ tb 2)) )
 
        ;; starts with a C-1 symbol
-       ((and (member (car l) '(when while do-while dmc for mapfor repeat
-			       lambda flambda mlambda writing reading) )
+       ((and (member (car l) '(when while do-while for mapfor mapwhile
+                               repeat dmc lambda flambda mlambda 
+                               writing reading) )
 	     (consp (cdr l)) )
 	(printf "(")
 	(pprin (car l))
@@ -684,7 +656,7 @@
 	(pprin--v (cddr l) (+ tb 2)) )
        
        ;; starts with a IF symbol
-       ((and (= (car l) 'if)
+       ((and (member (car l) '(if prog1))
 	     (consp (cdr l)) )
 	(printf "(")
 	(pprin (car l))
@@ -728,7 +700,8 @@
 	  
        
        ;; starts with a C-LET symbol
-       ((and (member (car l) '(let let* all each))
+       ((and (member (car l) '(let let* all each 
+                               idx-bloop idx-eloop idx-gloop))
 	     (consp (cdr l)) (consp (cadr l)) (consp (cddr l)) )
 	(printf "(")
 	(pprin (car l))
@@ -887,6 +860,9 @@
               (print)))
         (printf ")\n") ) ) ) )
 
+(defmethod |INDEX| pretty()
+  (index-print this) (print) )
+
 (dm pretty(pretty f)
     (nodebug
      (if (and (symbolp f) 
@@ -905,12 +881,14 @@
 
 
 
+
+
 ;;; --------- Edition Functions ---------
 
 (setq edit-call ())
 (setq edit_buffer (tmpname () "lush"))
 (cond
-  ((not winlushp)
+  ((not wintl3p)
    ;; unix
    (setq edit-call (getenv "EDITOR"))
    (when (= edit-call "")
@@ -990,16 +968,20 @@
      (skip-char "~\n\r")
      () )
 
-;;; --------- standard aliases
-;;; some may find themselves more familiar with these names
+
+
+
+
+;;; --------- Standard Aliases -----------
+
+;; some may find themselves more familiar with these names
 
 (setq defun de)
 (setq += incr)
 (setq << setq)
-
 (lock_symbol defun += <<)
 
-;;; consistent naming for storages and matrices
+;; consistent naming for storages and matrices
 
 (setq float-matrix f-matrix)
 (setq double-matrix d-matrix)
@@ -1009,7 +991,6 @@
 (setq ubyte-matrix u8-matrix)
 (setq packed-matrix p-matrix)
 (setq atom-matrix at-matrix)
-
 (setq float-storage new-f-storage)
 (setq double-storage new-d-storage)
 (setq int-storage new-i32-storage)
@@ -1023,28 +1004,26 @@
 (lock-symbol
         float-matrix double-matrix int-matrix short-matrix 
         byte-matrix ubyte-matrix packed-matrix atom-matrix
-
         float-storage double-storage int-storage short-storage 
         byte-storage ubyte-storage gptr-storage packed-storage 
         atom-storage)
 
-;;; backward compatibility with TL3/sn2.5
+;; backward compatibility with SN1, SN2
 
 (dm dim(f v . l)
   (list 'setq v (list 'f-matrix . l)) )
-
 (lock_symbol dim)
 
-;;; backward compat with sn3.2
+;; backward compat with SN3
 
 (setq mload libload)
-
 (lock_symbol mload)
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; search for startup environment file
-;;
+
+
+;;; --------- Search Startup File -----------
+
 ;; find the first file that exists fo the form
 ;; <dir>/<file>.<ext> where <dir> is on of the
 ;; directories in list <dirlist> and <ext> is
@@ -1052,6 +1031,7 @@
 ;; example: (find-file '("local" "lsh") "lushenv" '(".lshc" ".lsh"))
 ;; this is somewhat redundant with the DX <filepath>,
 ;; but we can't set the standard path here.
+
 (de find-file (dirlist file extlist)
     (let ((keepgoing t) (e ()) (d ()) (f ()) (r ()))
       (while (and keepgoing dirlist)
@@ -1065,9 +1045,9 @@
         (setq dirlist (cdr dirlist)))
       r))
 
-;;; --------- find the default lushenv.[dump,lshc,lsh] in
-;;; --------- curent dir, local, packages, and lsh and set 
-;;; --------- lushenv-path to it
+;; find the default lushenv.[dump,lshc,lsh] in
+;; curent dir, local, packages, and lsh and set 
+;; lushenv-path to it
 
 (setq lushenv-path 
       (let* ((dlist (cons "." (all ((x '("local" "packages" "lsh"))) 

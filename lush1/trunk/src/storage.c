@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.1 2002-04-18 20:17:13 leonb Exp $
+ * $Id: storage.c,v 1.2 2002-04-25 22:54:27 leonb Exp $
  **********************************************************************/
 
 
@@ -209,48 +209,46 @@ storage_dispose(at *p)
   struct storage *st;
   st = p->Object;
   if (st) 
-  {
-      
+    {
       if (st->srg.type == ST_AT) 
-      {
+        {
           at **data;
           int i;
           data = st->srg.data;
           for (i=0; i<st->srg.size; i++)
-              UNLOCK(data[i]);
-      }
-      
+            UNLOCK(data[i]);
+        }
       if (st->srg.flags & STS_MALLOC) 
-      {
-          if(st->srg.size!=0)
-              if (st->allinfo.sts_malloc.addr)
-                  free(st->allinfo.sts_malloc.addr);
-      }
-#ifdef HAVE_MMAP
-    if (st->srg.flags & STS_MMAP) 
-    {
-	if (st->allinfo.sts_mmap.addr) 
         {
-	    if(st->srg.size==0)
-		printf("unmapping a mapped storage of zero size. OK?\n");
-	    munmap(st->allinfo.sts_mmap.addr, st->allinfo.sts_mmap.len);
-	}
-    }
+          if(st->srg.size!=0)
+            if (st->allinfo.sts_malloc.addr)
+                  free(st->allinfo.sts_malloc.addr);
+        }
+#ifdef HAVE_MMAP
+      if (st->srg.flags & STS_MMAP) 
+        {
+          if (st->allinfo.sts_mmap.addr) 
+            {
+#ifdef UNIX
+              munmap(st->allinfo.sts_mmap.addr, st->allinfo.sts_mmap.len);
 #endif
-    
+#ifdef WIN32
+              UnmapViewOfFile(st->allinfo.sts_mmap.addr);
+              CloseHandle((HANDLE)(st->allinfo.sts_mmap.xtra));
+#endif
+            }
+        }
+#endif
 #ifdef DISKARRAY
-    /* --- UNIMPLEMENTED --- */
+      /* --- UNIMPLEMENTED --- */
 #endif
-    
 #ifdef REMOTEARRAY
-    /* --- UNIMPLEMENTED --- */
+      /* --- UNIMPLEMENTED --- */
 #endif
-    
-    if (st->cptr)
-      lside_destroy_item(st->cptr);
-    
-    deallocate(&storage_alloc, (struct empty_alloc *) st);
-  }
+      if (st->cptr)
+        lside_destroy_item(st->cptr);
+      deallocate(&storage_alloc, (struct empty_alloc *) st);
+    }
 }
 
 static void
@@ -853,34 +851,42 @@ DX(xstorage_realloc_nc)
 #ifdef HAVE_MMAP
 
 void 
-storage_mmap(at *atp, at *atf, int offset)
+storage_mmap(at *atp, FILE *f, int offset)
 {
   struct storage *st;
-  File *f;
   int len;
-
+  gptr addr;
+  gptr xtra;
+  
   ifn (storagep(atp))
     error(NIL,"not a storage",atp);
-  
   st = atp->Object;
-  f = atf->Object;
-
-  if (FSEEK(f,0,2)==-1)
+  if (fseek(f,0,SEEK_END)==-1)
     test_file_error(NIL);
-  len = FTELL(f);
-  REWIND(f);
-  
+  len = ftell(f);
+  rewind(f);
   if (st->srg.type == ST_AT)
     error(NIL,"cannot map an AT storage",atp);
-  
   ifn (st->srg.flags & STF_UNSIZED)
     error(NIL,"An unsized storage is required",NIL);
-  
+#ifdef UNIX
+  xtra = 0;
+  addr = mmap(0,len,PROT_READ,MAP_SHARED,fileno(f),0);
+  if (addr == (void*)-1L)
+    test_file_error(NIL);
+#endif
+#ifdef WIN32
+  if (! (xtra = (gptr)CreateFileMapping((HANDLE)(_get_osfhandle(fd)), 
+                                        NULL, PAGE_READONLY, 0, len, NULL)))
+    error(NIL,"Cannot create file mapping",NIL);
+  if (! (addr = (gptr)MapViewOfFile((HANDLE)(xtra), 
+                                    FILE_MAP_READ, 0, 0, size + pos)))
+    error(NIL,"Cannot create view on mapped file",NIL);
+#endif
   st->srg.size = (len - offset) / storage_type_size[st->srg.type];
   st->allinfo.sts_mmap.len  = len;
-  st->allinfo.sts_mmap.addr = mmap(0,len,PROT_READ,MAP_SHARED,FILENO(f),0);
-  if (st->allinfo.sts_mmap.addr==(void*)-1L)
-    test_file_error(NIL);
+  st->allinfo.sts_mmap.xtra = xtra;
+  st->allinfo.sts_mmap.addr = addr;
   st->srg.data = (char*)(st->allinfo.sts_mmap.addr)+offset;
   st->srg.flags = (STS_MMAP | STF_RDONLY) & ~STF_UNSIZED;
 }
@@ -898,15 +904,13 @@ DX(xstorage_mmap)
   
   atp = APOINTER(1);
   atf = APOINTER(2);
-
   if (EXTERNP(atf,&file_R_class)) {
     LOCK(atf);
   } else if (EXTERNP(atf,&string_class)) {
     atf = OPEN_READ(SADD(atf->Object),NULL);
   } else
     error(NIL,"Neither a string, nor a file descriptor",atf);
-
-  storage_mmap(atp,atf,offset);
+  storage_mmap(atp, atf->Object, offset);
   LOCK(atp);
   UNLOCK(atf);
   return atp;
@@ -1106,10 +1110,9 @@ DX(xstorage_clear)
  */
 
 
-int storage_load(at *atp, at *atf)
+int storage_load(at *atp, FILE *f)
 {
   struct storage *st;
-  File *f;
   int nrec;
   char *pt;
 
@@ -1117,30 +1120,28 @@ int storage_load(at *atp, at *atf)
     error(NIL,"not a storage",atp);
 
   st = atp->Object;
-  f = atf->Object;
-
   if (st->srg.type==ST_AT)
     error(NIL,"cannot load a AT storage",atp);
   if (st->srg.flags & STF_UNSIZED) {
     int len;
     int here;
-    here = FTELL(f);
-    if (FSEEK(f,0,2)==-1)
+    here = ftell(f);
+    if (fseek(f,0,SEEK_END)==-1)
       test_file_error(NIL);
-    len = FTELL(f);
-    if (FSEEK(f,here,0)==-1)
+    len = ftell(f);
+    if (fseek(f,here,SEEK_SET)==-1)
       test_file_error(NIL);
     if (len==0) { return 0; }
     storage_malloc(atp,len/storage_type_size[st->srg.type],0);
   }
-
+  
   (*st->write_srg)(st);
   pt = st->srg.data;
-  nrec = PFREAD(pt, storage_type_size[st->srg.type], st->srg.size, f);
+  nrec = fread(pt, storage_type_size[st->srg.type], st->srg.size, f);
   (*st->rls_srg)(st);
-  if (nrec<st->srg.size)
-   error(NIL,"End of file reached!",atf);
-  TEST_FILE_ERROR(f);
+  if (nrec < st->srg.size)
+    error(NIL,"file is too short",NIL);
+  test_file_error(f);
   return 1;
 }
 
@@ -1160,7 +1161,7 @@ DX(xstorage_load)
   } else
     error(NIL,"Neither a string, nor a file descriptor",atf);
 
-  if (!storage_load(atp,atf)) { 
+  if (!storage_load(atp,atf->Object)) { 
      UNLOCK(atf);
      return NIL; 
   }
@@ -1172,17 +1173,16 @@ DX(xstorage_load)
 
 
 
-/* ------------ Lush: STORAGE_LOAD ------------ */
+/* ------------ Lush: STORAGE_SAVE ------------ */
 
 
 /*
  * save a size storage only..
  */
 
-void storage_save(at *atp, at *atf)
+void storage_save(at *atp, FILE *f)
 {
   struct storage *st;
-  File *f;
   int nrec;
   char *pt;
 
@@ -1190,22 +1190,17 @@ void storage_save(at *atp, at *atf)
     error(NIL,"not a storage",atp);
   
   st = atp->Object;
-  f = atf->Object;
-  
   if (st->srg.type==ST_AT)
     error(NIL,"cannot save a AT storage",atp);
-  
   if (st->srg.flags & STF_UNSIZED) 
     error(NIL,"cannot save an unsized storage",atp);
   
   (*st->read_srg)(st);
   pt = st->srg.data;
-
-  nrec = PFWRITE(pt,storage_type_size[st->srg.type],st->srg.size,f);
+  nrec = fwrite(pt,storage_type_size[st->srg.type],st->srg.size,f);
   (*st->rls_srg)(st);
-  
-  TEST_FILE_ERROR(f);
-  if (nrec<st->srg.size)
+  test_file_error(f);
+  if (nrec < st->srg.size)
     error(NIL,"Storage has not been completely saved",atp);
 }
 
@@ -1228,7 +1223,7 @@ DX(xstorage_save)
   } else
     error(NIL,"Neither a string, nor a file descriptor",atf);
 
-  storage_save(atp,atf);
+  storage_save(atp,atf->Object);
   LOCK(atp);
   UNLOCK(atf);
   return atp;
@@ -1269,13 +1264,6 @@ void init_storage()
 #ifdef HAVE_MMAP
   dx_define("storage_mmap",xstorage_mmap);
 #endif
-#ifdef DISKARRAY
-  dx_define("storage_disk",xstorage_disk);
-#endif
-#ifdef REMOTEARRAY
-  dx_define("storage_remote",xstorage_remote);
-#endif
-
   dx_define("storagep",xstoragep);
   dx_define("writablep",xwritablep);
   dx_define("storage_read_only", xstorage_read_only);

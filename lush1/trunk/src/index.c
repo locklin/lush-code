@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.3 2002-04-25 17:12:44 leonb Exp $
+ * $Id: index.c,v 1.4 2002-04-25 22:54:27 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -259,9 +259,10 @@ matrixp(at *p)
   struct index *ind;
   if (EXTERNP(p,&index_class)) {
     ind = p->Object;
-    ifn (ind->flags & IDF_UNSIZED)
-      return TRUE;
-  }
+    if (! (ind->flags & IDF_UNSIZED))
+      if (ind->st->srg.type != ST_AT)
+        return TRUE;
+}
   return FALSE;
 }
 
@@ -281,7 +282,7 @@ arrayp(at *p)
   struct index *ind;
   if (EXTERNP(p,&index_class)) {
     ind = p->Object;
-    ifn (ind->flags & IDF_UNSIZED)
+    if (! (ind->flags & IDF_UNSIZED))
       if (ind->st->srg.type == ST_AT)
 	return TRUE;
   }
@@ -1272,13 +1273,13 @@ not_a_nrmatrix(at *p)
   
   if (ind->ndim != 2)
     return "Not a 2D index";
-  if (ind->mod[1] != 1)
+  if (st->srg.type != ST_F)
     return "Not an index on a flt storage";
   if (st->srg.flags & STF_RDONLY)
     return "Not an index on a writable storage";
   ifn (st->srg.flags & STS_MALLOC)
     return "Not an index on a memory based storage";
-  if (st->srg.type != ST_F)
+  if (ind->mod[1] != 1 || ind->mod[0] != ind->dim[1])
     return "This index is incompatible with the NR functions";
   return NULL;
 }
@@ -1529,241 +1530,286 @@ DX(xcopy_matrix)
 }
 
 
-/* --------------- SAVE MATRIX -------------- */
 
 
+/* -------- MATRIX FILE FUNCTIONS ----------- */
 
-/* SN2 compatible read function.
-   The magic number tells the type of the file,
-   and reveals if the integers require flipping!  */
 
-#define MAGIC_FLT_MAT    ((int)0x1e3d4c51)
-#define MAGIC_PACKED_MAT ((int)0x1e3d4c52)
-#define MAGIC_ASCII_MAT  ((int)0x2e4d4154) /* ".MAT" */
+#define BINARY_MATRIX    (0x1e3d4c51)
+#define PACKED_MATRIX	 (0x1e3d4c52)
+#define DOUBLE_MATRIX	 (0x1e3d4c53)
+#define INTEGER_MATRIX	 (0x1e3d4c54)
+#define BYTE_MATRIX	 (0x1e3d4c55)
+#define SHORT_MATRIX	 (0x1e3d4c56)
+#define SHORT8_MATRIX	 (0x1e3d4c57)
+#define ASCII_MATRIX	 (0x2e4d4154)	/* '.MAT' */
 
-#define FLIP(n) ((((n)&0xff000000)>>24)|(((n)&0x00ff0000)>> 8)|\
-		 (((n)&0x0000ff00)<< 8)|(((n)&0x000000ff)<<24) )
+#define SWAP(x) ((int)(((x&0xff)<<24)|((x&0xff00)<<8)|\
+		      ((x&0xff0000)>>8)|((x&0xff000000)>>24))) 
 
+
+/* --------- Utilities */
 
 /* Check that datatypes are ``standard'' */
-
-static void compatible_p(void)
+static void 
+compatible_p(void)
 {
   static int warned = 0;
   if (warned)
-      return;
+    return;
   warned = 1;
   if (sizeof(int)!=4) 
-  {
+    {
       print_string(" ** Warning:\n");
       print_string(" ** Integers are not four bytes wide on this cpu\n");
       print_string(" ** Matrix files may be non portable!\n");
-  }
+    }
   else 
-  {
+    {
       union { int i; flt b; } u;
       u.b = 2.125;
       if (sizeof(flt)!=4 || u.i!=0x40080000) 
-      {
+        {
           print_string(" ** Warning:\n");
           print_string(" ** Flt are not IEEE single precision numbers\n");
           print_string(" ** Matrix files may be non portable!\n");
-      }
-  }
+        }
+    }
 }
 
-
-/* Integer R/W functions */
-
-static int read_i(File *f, int flip_p)
+static void 
+mode_check(at *p, int *size_p, int *elem_p)
 {
-  int x;
-  if (PFREAD(&x, sizeof(int), 1, f) != 1) {
-    TEST_FILE_ERROR(f);
-    error(NIL,"Cannot read header: EOF found",NIL);
-  }
-  if (flip_p && sizeof(int)==4)
-    x = FLIP(x);
-  return x;
-}
-
-static void write_i(File *f, int x)
-{
-  if (PFWRITE(&x, sizeof(int), 1, f) != 1) {
-    TEST_FILE_ERROR(f);
-    error(NIL,"Cannot write header: EOF found(?)",NIL);
-  }
-}
-
-void save_flt_matrix(at *atp, at *atf)
-{
-  File *f;
-  int off;
   struct index *ind;
-  struct idx idx;
-  flt (*getf)(gptr,int);
-  flt x;
+  struct storage *st;
+  int elsize;
+  int type;
+  int size;
+  int i;
   
+  if (! EXTERNP(p, &index_class))
+    error(NIL,"Not an index", p);
+  ind = p->Object;
+  st = ind->st;
+  type = st->srg.type;
+  elsize = storage_type_size[type];
+  size = 1;
+  for (i=0; i<ind->ndim; i++) 
+    size *= ind->dim[i];
+  *size_p = size;
+  *elem_p = elsize;
+}
+
+static int 
+contiguity_check(at *p)
+{
+  struct index *ind;
+  struct storage *st;
+  int size, i;
+  
+  ind = p->Object;
+  st = ind->st;
+  if (st->srg.flags & STF_RDONLY)
+    error(NIL,"Not an index on a writable storage",p);
+  if (! (st->srg.flags & STS_MALLOC))
+    error(NIL,"Not an index on a memory based storage",p);
+  size = 1;
+  for (i=ind->ndim-1; i>=0; i--) {
+    if (size != ind->mod[i])
+      return 0;
+    size *= ind->dim[i];
+  }
+  return 1;
+}
+
+static void 
+swap_buffer(char *b, int n, int m)
+{
+  int i,j;
+  char buffer[16];
+  for (i=0; i<n; i++) {
+    for (j=0; j<m; j++)
+      buffer[j] = b[m-j-1];
+    for (j=0; j<m; j++)
+      *b++ = buffer[j];
+  }
+}
+
+/* -------- Saving a Matrix -------- */
+
+
+/* save_matrix_len(p)
+ * returns the number of bytes written by a save_matrix!
+ */
+
+int 
+save_matrix_len(at *p)
+{
+  struct index *ind;
+  int size, elsize, ndim;
+  mode_check(p, &size, &elsize);
+  ind = p->Object;
+  ndim = ind->ndim;
+  if (ndim <= 3)
+    return elsize * size + 5*sizeof(int);
+  else
+    return elsize * size + (ndim+2)*sizeof(int);
+}
+
+
+/*
+ * save_matrix(p,f) 
+ * save_ascii_matrix(p,f)
+ */
+
+static void 
+format_save_matrix(at *p, FILE *f, int h)
+{
+  struct index *ind;
+  struct idx id;
+  int magic, type, elsize;
+  /* validation */  
   compatible_p();
-
-  check_sized_index(atp);
-  ifn (EXTERNP(atf,&file_W_class)) 
-    error(NIL,"not a write file descriptor",atf);
-
-  ind = atp->Object;
-  f = atf->Object;
-
-  write_i(f, MAGIC_FLT_MAT);
-  write_i(f, ind->ndim);
-  for (off = 0; off < ind->ndim; off++)
-    write_i(f, ind->dim[off]);
-  while (off++ < 3)
-    write_i(f, 1);
-  
-  index_read_idx(ind,&idx);
-  getf = storage_type_getf[idx.srg->type];
-  begin_idx_aloop1(&idx,off) 
+  check_sized_index(p);
+  ind = p->Object;
+  type = ind->st->srg.type;
+  elsize = storage_type_size[type];
+  /* magic */
+  switch(type)
     {
-      x = (*getf)(IDX_DATA_PTR(&idx),off);
-      PFWRITE(&x, sizeof(flt), 1, f);
-    } 
-  end_idx_aloop1(&idx,off);
-  index_rls_idx(ind,&idx);
-
-  FFLUSH(f);
-  TEST_FILE_ERROR(f);
-}
-
-
-void save_packed_matrix(at *atp, at *atf)
-{
-  File *f;
-  int off;
-  struct index *ind;
-  struct idx idx;
-  flt (*getf)(gptr,int);
-  flt x;
-
-  compatible_p();
-
-  check_sized_index(atp);
-  ifn (EXTERNP(atf,&file_W_class)) 
-    error(NIL,"not a write file descriptor",atf);
-  
-  ind = atp->Object;
-  f = atf->Object;
-  
-  write_i(f, MAGIC_PACKED_MAT);
-  write_i(f, ind->ndim);
-  for (off = 0; off < ind->ndim; off++)
-    write_i(f, ind->dim[off]);
-  while (off++ < 3)
-    write_i(f, 1);
-  
-  index_read_idx(ind,&idx);
-  getf = storage_type_getf[idx.srg->type];
-  begin_idx_aloop1(&idx,off) 
+    case ST_P:    magic=PACKED_MATRIX  ; break;
+    case ST_F:    magic=BINARY_MATRIX  ; break;
+    case ST_D:    magic=DOUBLE_MATRIX  ; break;
+    case ST_I32:  magic=INTEGER_MATRIX ; break;
+    case ST_I16:  magic=SHORT_MATRIX   ; break;
+    case ST_I8:   magic=SHORT8_MATRIX  ; break;
+    case ST_U8:   magic=BYTE_MATRIX    ; break;
+    default:      
+      error(NIL,"Cannot save an index this storage",ind->atst);
+    }
+  /* header */
+  FMODE_BINARY(f);
+  if( h )
     {
-      char b;
-      x = (*getf)(IDX_DATA_PTR(&idx),off);
-      if (x > 8.0-1.0/16.0)
-	b = 127;
-      else if (x < -8.0)
-	b = -128;
-      else
-	b = x*16.0;
-      PFWRITE(&b, sizeof(char), 1, f);
-    } 
-  end_idx_aloop1(&idx,off);
-  index_rls_idx(ind,&idx);
-  FFLUSH(f);
-  TEST_FILE_ERROR(f);
+      int j;
+      write4(f, magic);
+      write4(f, ind->ndim);
+      for (j = 0; j < ind->ndim; j++)
+	write4(f, ind->dim[j]);
+      while (j++ < 3)
+	write4(f, 1);	/* SN1 compatibility */
+    }
+  /* iterate */
+  index_read_idx(ind,&id);
+  begin_idx_aloop1(&id, off) {
+    char *p = (char*)(id.srg->data) + elsize * (id.offset + off);
+    fwrite(p, elsize, 1, f);
+  } end_idx_aloop1(&id, off);
+  index_rls_idx(ind,&id);
+  test_file_error(f);
 }
 
-
-void save_ascii_matrix(at *atp, at *atf)
+void
+save_matrix(at *p, FILE *f)
 {
-  File *f;
-  int off;
-  struct index *ind;
-  struct idx idx;
-  flt (*getf)(gptr,int);
-  flt x;
-
-  check_sized_index(atp);
-  ifn (EXTERNP(atf,&file_W_class)) 
-    error(NIL,"not a write file descriptor",atf);
-
-  ind = atp->Object;
-  f = atf->Object;
-  
-  fprintf(f,".MAT %d", ind->ndim); 
-  for (off=0;off<ind->ndim;off++)
-     fprintf(f, " %d", ind->dim[off]);
-  fprintf(f,"\n");
-  index_read_idx(ind,&idx);
-  getf = storage_type_getf[idx.srg->type];
-  begin_idx_aloop1(&idx,off) 
-  {
-      x = (*getf)(IDX_DATA_PTR(&idx),off);
-      fprintf(f," %g\n", x);
-  } 
-  end_idx_aloop1(&idx,off);
-  index_rls_idx(ind,&idx);
-  FFLUSH(f);
-  TEST_FILE_ERROR(f);
+  format_save_matrix(p, f, (int)1);
 }
 
+void
+export_matrix(at *p, FILE *f)
+{
+  format_save_matrix(p, f, (int)0);
+}
 
-
-DX(xsave_flt_matrix)
+DX(xsave_matrix)
 {
   at *p, *ans;
-
   ALL_ARGS_EVAL;
   ARG_NUMBER(2);
   if (ISSTRING(2)) {
-    p = OPEN_WRITE(ASTRING(2), "SNMX@mat");
+    p = OPEN_WRITE(ASTRING(2), "mat");
     ans = new_string(file_name);
-    
-  } /* else if ((p=APOINTER(2)) && p->ctype == XT_U8STORAGE) {
-    p = new_extern(&file_W_class,pseudo_fopen(p, "w"),XT_FILE_WO);
-    } */ 
-  else if (EXTERNP(p,&file_W_class)) {
+  } else {
+    p = APOINTER(2);
+    ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_W_class)) 
+      error(NIL, "not a string or write descriptor", p);
     LOCK(p);
     LOCK(p);
     ans = p;
-  } else {
-    error(NIL, "neither a string nor a U8 storage nor a write file descriptor", p);
   }
-  save_flt_matrix(APOINTER(1), p);
+  save_matrix(APOINTER(1), p->Object);
   UNLOCK(p);
   return ans;
 }
 
-DX(xsave_packed_matrix)
+DX(xexport_raw_matrix)
 {
   at *p, *ans;
-
   ALL_ARGS_EVAL;
   ARG_NUMBER(2);
   if (ISSTRING(2)) {
-    p = OPEN_WRITE(ASTRING(2), "SNMX@mat");
+    p = OPEN_WRITE(ASTRING(2), NULL);
     ans = new_string(file_name);
-  } 
-  /* else if ((p=APOINTER(2)) && p->ctype == XT_U8STORAGE) {
-    p = new_extern(&file_W_class,pseudo_fopen(p, "w"),XT_FILE_WO);
-    } */
-  else if (EXTERNP(p,&file_W_class)) {
+  } else {
+    p = APOINTER(2);
+    ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_W_class)) 
+      error(NIL, "not a string or write descriptor", p);
     LOCK(p);
     LOCK(p);
     ans = p;
-  } else {
-    error(NIL, "neither a string nor a write file descriptor", p);
   }
-  save_packed_matrix(APOINTER(1), p);
+  export_matrix(APOINTER(1), p->Object);
   UNLOCK(p);
   return ans;
+}
+
+
+static void 
+format_save_ascii_matrix(at *p, FILE *f, int h)
+{
+  struct index *ind;
+  struct idx id;
+  int magic, type;
+  flt (*getf)(gptr,int);
+  gptr base;
+  /* validation */  
+  compatible_p();
+  check_sized_index(p);
+  ind = p->Object;
+  type = ind->st->srg.type;
+  getf = storage_type_getf[type];
+  /* header */
+  FMODE_TEXT(f);
+  if( h )
+    {
+      int j;
+      fprintf(f, ".MAT %d", ind->ndim); 
+      for (j = 0; j < ind->ndim; j++)
+	fprintf(f, " %d", ind->dim[j]);
+      fprintf(f, "\n");
+    }
+  /* iterate */
+  index_read_idx(ind,&id);
+  base = IDX_DATA_PTR(&id);
+  begin_idx_aloop1(&id, off) {
+    flt x = (*getf)(base, off);
+    fprintf(f, "%6.4f\n", x);
+  } end_idx_aloop1(&id, off);
+  index_rls_idx(ind,&id);
+  FMODE_BINARY(f);
+  test_file_error(f);
+}
+
+void
+save_ascii_matrix(at *p, FILE *f)
+{
+  format_save_ascii_matrix(p, f, (int)1);
+}
+
+void
+export_ascii_matrix(at *p, FILE *f)
+{
+  format_save_ascii_matrix(p, f, (int)0);
 }
 
 DX(xsave_ascii_matrix)
@@ -1773,161 +1819,320 @@ DX(xsave_ascii_matrix)
   ALL_ARGS_EVAL;
   ARG_NUMBER(2);
   if (ISSTRING(2)) {
-    p = OPEN_WRITE(ASTRING(2), "mat");
+    p = OPEN_WRITE(ASTRING(2), NULL);
     ans = new_string(file_name);
-  } 
-  /* else if ((p=APOINTER(2)) && p->ctype == XT_U8STORAGE) {
-    p = new_extern(&file_W_class,pseudo_fopen(p, "w"),XT_FILE_WO);
-    } */
-  else if (EXTERNP(p,&file_W_class)) {
+  } else if ((p = APOINTER(2)) && (p->flags & C_EXTERN)
+	     && (p->Class == &file_W_class)) {
     LOCK(p);
     LOCK(p);
     ans = p;
   } else {
-    error(NIL, "neither a string nor a write file descriptor", p);
+    error(NIL, "not a string or write descriptor", p);
   }
-  save_ascii_matrix(APOINTER(1), p);
+  save_ascii_matrix(APOINTER(1), p->Object);
+  UNLOCK(p);
+  return ans;
+}
+
+DX(xexport_text_matrix)
+{
+  at *p, *ans;
+  
+  ALL_ARGS_EVAL;
+  ARG_NUMBER(2);
+  if (ISSTRING(2)) {
+    p = OPEN_WRITE(ASTRING(2), "mat");
+    ans = new_string(file_name);
+  } else {
+    p = APOINTER(2);
+    ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_W_class)) 
+      error(NIL, "not a string or write descriptor", p);
+    LOCK(p);
+    LOCK(p);
+    ans = p;
+  }
+  export_ascii_matrix(APOINTER(1), p->Object);
   UNLOCK(p);
   return ans;
 }
 
 
-/* --------------- LOAD MATRIX -------------- */
+/* -------- Loading a Matrix ------ */
+
+/*
+ * import_raw_matrix(p,f,n) 
+ * import_text_matrix(p,f)
+ */
+
+void 
+import_raw_matrix(at *p, FILE *f, int offset)
+{
+  struct index *ind;
+  struct idx id;
+  int size, elsize, rsize;
+  char *pntr;
+  int contiguous;
+  /* validate */
+  mode_check(p, &size, &elsize);
+  contiguous = contiguity_check(p);
+  ind = p->Object;
+  switch(ind->st->srg.type)
+    {
+    case ST_AT:
+    case ST_GPTR:
+      error(NIL,"Cannot import a matric file into this storage",ind->atst);
+    }
+  /* skip */
+  if (fseek(f, offset, SEEK_CUR) < 0)
+    test_file_error(NIL);
+  /* read */
+  index_write_idx(ind, &id);
+  pntr = IDX_DATA_PTR(&id);
+  if (contiguous)
+    {
+      /* fast read of contiguous matrices */
+      rsize = fread(pntr, elsize, size, f);
+      index_rls_idx(ind,&id);
+      if (rsize < 0)
+        test_file_error(NIL);
+      else if (rsize < size)
+        error(NIL, "file is too short", NIL); 
+    }
+  else
+    {
+      /* must loop on each element */
+      rsize = 1;
+      begin_idx_aloop1(&id, off) {
+        char *p = pntr + (off * elsize);
+        if (rsize == 1)
+          rsize = fread(pntr, elsize, 1, f);
+      } end_idx_aloop1(&id, off);
+      index_rls_idx(ind,&id);
+      if (rsize < 0)
+        test_file_error(NIL);
+      else if (rsize < 1)
+        error(NIL, "file is too short", NIL); 
+    }
+}
+
+DX(ximport_raw_matrix)
+{
+  int offset = 0;
+  at *p;
+  ALL_ARGS_EVAL;
+  if (arg_number==3)
+    offset = AINTEGER(3);
+  else 
+    ARG_NUMBER(2);
+  if (ISSTRING(2)) {
+    p = OPEN_READ(ASTRING(2), NULL);
+  } else {
+    p = APOINTER(2);
+    ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_R_class)) 
+      error(NIL, "not a string or read file descriptor", p);
+    LOCK(p);
+  }
+  import_raw_matrix(APOINTER(1),p->Object,offset);
+  UNLOCK(p);
+  p = APOINTER(1);
+  LOCK(p);
+  return p;
+}
+
+
+void 
+import_text_matrix(at *p, FILE *f)
+{
+  struct index *ind;
+  struct idx id;
+  int size, elsize, type;
+  char *pntr;
+  real x;
+  void (*setf)(gptr,int,flt);
+
+  /* validate */
+  mode_check(p, &size, &elsize);
+  contiguity_check(p);
+  ind = p->Object;
+  type = ind->st->srg.type;
+  setf = storage_type_setf[type];
+  switch(type)
+    {
+    case ST_AT:
+    case ST_GPTR:
+      error(NIL,"Cannot import a matric file into this storage",ind->atst);
+    }
+
+  /* load */
+  index_write_idx(ind, &id);
+  pntr = IDX_DATA_PTR(&id);
+  begin_idx_aloop1(&id, off) {
+    if (fscanf(f, " %lf ", &x) != 1) {
+      index_rls_idx(ind,&id);
+      error(NIL,"Cannot read a number",NIL);
+    }
+    (*setf)(pntr, off, rtoF(x));
+  } end_idx_aloop1(&id, off);
+  index_rls_idx(ind,&id);
+}
+
+
+DX(ximport_text_matrix)
+{
+  at *p;
+  
+  ALL_ARGS_EVAL;
+  ARG_NUMBER(2);
+  
+  if (ISSTRING(2)) {
+    p = OPEN_READ(ASTRING(2), NULL);
+  } else {
+    p = APOINTER(2);
+    ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_R_class)) 
+      error(NIL, "not a string or read descriptor", p);
+    LOCK(p);
+  }
+  
+  import_text_matrix(APOINTER(1),p->Object);
+  
+  UNLOCK(p);
+  p = APOINTER(1);
+  LOCK(p);
+  return p;
+}
+
+static void
+load_matrix_header(FILE *f, 
+                   int *ndim_p, int *magic_p, 
+                   int *swap_p, int *dim)
+{
+  int swapflag = 0;
+  int magic, ndim, i;
+  switch (magic = read4(f)) 
+    {
+    case SWAP( BINARY_MATRIX ):
+    case SWAP( PACKED_MATRIX ):
+    case SWAP( DOUBLE_MATRIX ):
+    case SWAP( SHORT_MATRIX ):
+    case SWAP( SHORT8_MATRIX ):
+    case SWAP( INTEGER_MATRIX ):
+    case SWAP( BYTE_MATRIX ):
+      magic = SWAP(magic);
+      swapflag = 1;
+      /* no break */
+    case BINARY_MATRIX:
+    case PACKED_MATRIX:
+    case DOUBLE_MATRIX:
+    case SHORT_MATRIX:
+    case SHORT8_MATRIX:
+    case INTEGER_MATRIX:
+    case BYTE_MATRIX:
+      ndim = 0;
+      ndim = read4(f);
+      if (swapflag) 
+        ndim = SWAP(ndim);
+      if (ndim < 1 || ndim > MAXDIMS) 
+        goto trouble;
+      for (i = 0; i < ndim; i++) {
+        dim[i] = read4(f);
+        if (swapflag)
+          dim[i] = SWAP(dim[i]);
+        if (dim[i]<1)
+          goto trouble;
+      }
+      while (i++ < 3)
+        if (read4(f) != (swapflag ? SWAP(1) : 1)) 
+          goto trouble;
+      break;
+    case SWAP(ASCII_MATRIX):
+      magic = SWAP(magic);
+      /* no break */
+    case ASCII_MATRIX:
+      if (fscanf(f, " %d", &ndim) != 1) 
+        goto trouble;
+      if (ndim < 1 || ndim > MAXDIMS) 
+        goto trouble;
+      for (i = 0; i < ndim; i++)
+        if (fscanf(f, " %d ", &(dim[i])) != 1) 
+          goto trouble;
+      break;
+    default:
+      error(NIL, "not a recognized matrix file", NIL);
+    trouble:
+      test_file_error(f);
+      error(NIL, "corrupted matrix file",NIL);
+    }
+  
+  *ndim_p = ndim;
+  *magic_p = magic;
+  *swap_p = swapflag;
+  return;
+}
 
 
 
-
-
-
-static int load_header(File *f, int *size_p, int *ndim_p, int dim[])
+at *
+load_matrix(FILE *f)
 {
   int i;
-  int ndim;
+  at *ans;
   int magic;
-  int size;
-  int flip_p;
+  int ndim, dim[MAXDIMS];
+  int swapflag = 0;
   
-  compatible_p();
-
-  magic = read_i(f,0);
-  flip_p = 0;
-  
+  /* Header */
+  load_matrix_header(f, &ndim, &magic, &swapflag, dim);
+  /* Create */
   switch (magic) {
-    
-  case FLIP(MAGIC_FLT_MAT):
-  case FLIP(MAGIC_PACKED_MAT):
-    
-    flip_p = 1;
-    
-  case MAGIC_FLT_MAT:
-  case MAGIC_PACKED_MAT:
-    
-    ndim = read_i(f, flip_p);
-    if (ndim<0 || ndim>MAXDIMS)
-      error(NIL,"Corrupted file: Bad number of dimensions", NEW_NUMBER(ndim));
-    for (i=0; i<ndim; i++)
-      dim[i] = read_i(f, flip_p);
-    while (i++<3)
-      read_i(f, flip_p);
+  case ASCII_MATRIX:
+  case BINARY_MATRIX:
+    ans = F_matrix(ndim, dim);
     break;
-    
-  case MAGIC_ASCII_MAT:
-  case FLIP(MAGIC_ASCII_MAT):
-    
-    FSCANF1(f," %d",&ndim);
-    TEST_FILE_ERROR(f);
-    if (ndim<0 || ndim>MAXDIMS)
-      error(NIL,"Corrupted file: Invalid ndim",NEW_NUMBER(ndim));
-    for (i=0; i<ndim; i++)
-      FSCANF1(f, " %d", &(dim[i]));
+  case PACKED_MATRIX:
+    ans = P_matrix(ndim, dim);
     break;
-    
+  case DOUBLE_MATRIX:
+    ans = D_matrix(ndim, dim);
+    break;
+  case INTEGER_MATRIX:
+    ans = I32_matrix(ndim, dim);
+    break;
+  case SHORT_MATRIX:
+    ans = I16_matrix(ndim, dim);
+    break;
+  case SHORT8_MATRIX:
+    ans = I8_matrix(ndim, dim);
+    break;
+  case BYTE_MATRIX:
+    ans = U8_matrix(ndim, dim);
+    break;
   default:
-    TEST_FILE_ERROR(f);
-    error(NIL,"Not a matrix file",NIL);
+    error("matrix.c/load_matrix",
+	  "internal error: unhandled format",NIL);
   }
-
-  *ndim_p = ndim;
-  size = 1;
-  for (i=0; i<ndim; i++)
-    size *= dim[i];
-  *size_p = size;
-  
-  return magic;
-}
-
-
-
-at *load_matrix(at *atf)
-{
-  at *atp;
-  at *atst;
-  File *f;
-  struct storage *st;
-  int i, magic, ndim, size, dim[MAXDIMS];
-  
-  ifn (EXTERNP(atf,&file_R_class)) 
-    error(NIL,"not a read file descriptor",atf);
-  f = atf->Object;
-  
-  magic = load_header(f,&size,&ndim,dim);
-  
-  switch (magic) {
-      
-  case MAGIC_FLT_MAT:
-  case FLIP(MAGIC_FLT_MAT):
-
-      atst = new_F_storage();
-      storage_malloc(atst,size,0);
-      storage_load(atst,atf);
-      /* Flip data when magic number is flipped */
-      if (magic!=MAGIC_FLT_MAT && 
-          sizeof(flt)==sizeof(int) &&
-          sizeof(int)==4 )
+  /* Import */
+  if (magic==ASCII_MATRIX)
+    import_text_matrix(ans,f);
+  else
+    import_raw_matrix(ans,f,0);
+  /* Swap when needed */
+  if (swapflag) {
+    struct index *ind;
+    struct idx id;
+    int size, elsize;
+    char *pntr;
+    mode_check(ans, &size, &elsize);
+    if (elsize > 1) 
       {
-          int *data;
-          st = atst->Object;
-          data = st->srg.data;
-          for (i=0; i<size; i++, data++)
-              *data = FLIP(*data);
+        ind = ans->Object;
+        index_write_idx(ind, &id);
+        pntr = IDX_DATA_PTR(&id);
+        swap_buffer(pntr, size, elsize);
+        index_rls_idx(ind,&id);
       }
-      break;
-    
-  case MAGIC_PACKED_MAT:
-  case FLIP(MAGIC_PACKED_MAT):
-
-    atst = new_P_storage();
-    storage_malloc(atst,size,0);
-    storage_load(atst,atf);
-    break;
-    
-  case MAGIC_ASCII_MAT:
-  case FLIP(MAGIC_ASCII_MAT):
-
-    atst = new_F_storage();
-    st = atst->Object;
-    storage_malloc(atst,size,0);
-    for (i=0; i<size; i++) {
-      float x;
-      flt *data = st->srg.data;
-      if (FSCANF1(f," %f",&x) != 1)
-	  error(NIL,"Garbage in ascii matrix file",NIL);
-      data[i] = (flt)x;
-    }
-    TEST_FILE_ERROR(f);
-    break;
-
-  default:
-    error("index.c/load_matrix","Unknown matrix file type",atf);
   }
-
-  atp = new_index(atst);
-  index_dimension(atp,ndim,dim);
-  UNLOCK(atst);
-  return atp;
+  return ans;
 }
-
-
 
 DX(xload_matrix)
 {
@@ -1936,37 +2141,108 @@ DX(xload_matrix)
   if (arg_number == 2) {
     ARG_EVAL(2);
     ASYMBOL(1);
-    p = APOINTER(2);
+    if (ISSTRING(2)) {
+      p = OPEN_READ(ASTRING(2), "mat");
+    } else {
+      p = APOINTER(2);
+      ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_R_class)) 
+	error(NIL, "not a string or read descriptor", p);
+      LOCK(p);
+    }
+    ans = load_matrix(p->Object);
+    var_set(APOINTER(1), ans);
   } else {
     ARG_NUMBER(1);
     ARG_EVAL(1);
-    p = APOINTER(1);
+    if (ISSTRING(1)) {
+      p = OPEN_READ(ASTRING(1), "mat");
+    } else {
+      p = APOINTER(1);
+      ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_R_class))
+	error(NIL, "not a string or read descriptor", p);
+      LOCK(p);
+    }
+    ans = load_matrix(p->Object);
   }
-  
-  if (EXTERNP(p,&string_class)) {
-    p = OPEN_READ(SADD(p->Object),"SNMX@mat");
-  } 
-  /* else if (p && p->ctype == XT_U8STORAGE) {
-    p = new_extern(&file_R_class,pseudo_fopen(p, "r"),XT_FILE_RO);
-    } */
-  else if (EXTERNP(p,&file_R_class)) {
-    LOCK(p);
-  } else {
-    error(NIL, "neither a string nor a read file descriptor", p);
-  }
-  
-  ans = load_matrix(p);
-  
-  if (arg_number==2)
-    var_set(APOINTER(1), ans);
   UNLOCK(p);
   return ans;
 }
 
 
 
+/* ------------- Mapping a matrix */
 
 
+#ifdef HAVE_MMAP
+
+at *
+map_matrix(FILE *f)
+{
+  int ndim, dim[MAXDIMS];
+  int magic, swapflag;
+  at *atst, *ans;
+
+  /* Header */
+  load_matrix_header(f,&ndim, &magic, &swapflag, dim);
+  if (swapflag)
+    error(NIL,"Can't map this byteswapped matrix",NIL);
+  /* Create storage */
+  switch(magic)
+    {
+    case BINARY_MATRIX:  atst = new_F_storage();   break;
+    case DOUBLE_MATRIX:  atst = new_D_storage();   break;
+    case PACKED_MATRIX:  atst = new_P_storage();   break;
+    case INTEGER_MATRIX: atst = new_I32_storage(); break;
+    case SHORT_MATRIX:   atst = new_I16_storage(); break;
+    case SHORT8_MATRIX:  atst = new_I8_storage();  break;
+    case BYTE_MATRIX:    atst = new_U8_storage();  break;
+    default:
+      error(NIL, "cannot map an ascii matrix file", NIL);
+    }
+  /* Map storage */
+  storage_mmap(atst, f, ((ndim>3) ? (ndim+2) : 5) * sizeof(int));
+  /* Create index */
+  ans = new_index(atst);
+  UNLOCK(atst);
+  index_dimension(ans, ndim, dim);
+  return ans;
+}
+
+DX(xmap_matrix)
+{
+  at *p, *ans;
+  
+  if (arg_number == 2) {
+    ARG_EVAL(2);
+    ASYMBOL(1);
+    if (ISSTRING(2)) {
+      p = OPEN_READ(ASTRING(2), "mat");
+    } else {
+      p = APOINTER(2);
+      ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_R_class))
+	error(NIL, "not a string or read descriptor", p);
+      LOCK(p);
+    }
+    ans = map_matrix(p->Object);
+    var_set(APOINTER(1), ans);
+  } else {
+    ARG_NUMBER(1);
+    ARG_EVAL(1);
+    if (ISSTRING(1)) {
+      p = OPEN_READ(ASTRING(1), "mat");
+    } else {
+      p = APOINTER(1);
+      ifn (p && (p->flags & C_EXTERN) && (p->Class == &file_R_class)) 
+	error(NIL, "not a string or read descriptor", p);
+      LOCK(p);
+    }
+    ans = map_matrix(p->Object);
+  }
+  UNLOCK(p);
+  return ans;
+}
+
+#endif
 
 /* ------ INDEX STRUCTURE OPERATIONS ------ */
 
@@ -2388,7 +2664,8 @@ DX(xindex_change_offset)
 #define MAXEBLOOP 8
 
 
-static int ebloop_args(at *p, at **syms, at **iats, struct index **inds, at **last_index)
+static int ebloop_args(at *p, at **syms, at **iats, 
+                       struct index **inds, at **last_index)
 {
   at *q, *r, *s;
   int n;
@@ -2516,7 +2793,11 @@ DY(ybloop)
 }
 
 
+
+
 /* ------------ FROM SN3.2 CHECK_FUNC ------------ */
+
+
 
 static void 
 index_is_sized(struct idx *i1)
@@ -2662,12 +2943,18 @@ void init_index()
 
   dx_define("copy_matrix", xcopy_matrix);
 
-  /* files */
+  /* matrix files */
 
-  dx_define("save_flt_matrix", xsave_flt_matrix);
-  dx_define("save_packed_matrix", xsave_packed_matrix);
+  dx_define("save_matrix", xsave_matrix);
   dx_define("save_ascii_matrix", xsave_ascii_matrix);
+  dx_define("export_raw_matrix", xexport_raw_matrix);
+  dx_define("export_text_matrix", xexport_text_matrix);
+  dx_define("import_raw_matrix", ximport_raw_matrix);
+  dx_define("import_text_matrix", ximport_text_matrix);
   dx_define("load_matrix", xload_matrix);
+#ifdef HAVE_MMAP
+  dx_define("map_matrix", xmap_matrix);
+#endif
 
   /* structure functions */
 

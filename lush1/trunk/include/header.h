@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.3 2002-04-24 20:55:38 leonb Exp $
+ * $Id: header.h,v 1.4 2002-04-25 22:54:23 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -624,30 +624,12 @@ TLAPI FILE *attempt_open_write(char *s, char *suffixes);
 TLAPI FILE *attempt_open_append(char *s, char *suffixes);
 TLAPI void file_close(FILE *f);
 TLAPI void set_script(char *s);
+TLAPI int read4(FILE *f);
+TLAPI int write4(FILE *f, unsigned int l);
 TLAPI long file_size(FILE *f);
 #ifndef HAVE_STRERROR
 TLAPI char *strerror(int errno);
 #endif
-
-/* macros for compatibility with SN3.x files */
-#define File FILE
-#define PFWRITE(source, n, size, pf) fwrite(source, n, size, pf)  
-#define PFREAD(dest, n, size, pf) fread(dest, n, size, pf) 
-#define FSEEK(pf, offset, ptrname) fseek(pf, offset, ptrname) 
-#define REWIND(pf) rewind(pf) 
-#define FTELL(pf) ftell(pf) 
-#define FCLOSE(pf) fclose(pf) 
-#define FFLUSH(pf) fflush(pf) 
-#define FPUTS(s, pf) fputs(s, pf) 
-#define FGETC(pf) fgetc(pf) 
-#define FPUTC(c, pf) fputc(c, pf) 
-#define FERROR(pf) ferror(pf) 
-#define TEST_FILE_ERROR(pf) test_file_error(pf) 
-#define FEOF(pf) feof(pf) 
-#define FSCANF1(pf, format, addr) fscanf(pf, format, addr) 
-#define UNGETC(c, pf) ungetc(c, pf) 
-#define CLEARERR(pf) clearerr(pf) 
-#define FILENO(pf) fileno(pf) 
 
 
 /* IO.H ----------------------------------------------------- */
@@ -970,13 +952,13 @@ struct srg {
 struct storage {
 
   struct srg srg;
-  void (*read_srg)(struct storage *);	/* given an index, returns an idx for reading  */
-  void (*write_srg)(struct storage *);	/* given an index, returns an idx for writing  */
-  void (*rls_srg)(struct storage *);	/* release an idx structure */
-  at*  (*getat)(struct storage *,int);  /* given an offset, gets a at value */
-  void (*setat)(struct storage *,int,at*); /* given an at at a specific offset */
-  at *atst;                     /* pointer on the at storage */
-  struct srg *cptr;             /* srg structure for the C side (lisp_c) */
+  void (*read_srg)(struct storage *);	
+  void (*write_srg)(struct storage *);	
+  void (*rls_srg)(struct storage *);	
+  at*  (*getat)(struct storage *,int);
+  void (*setat)(struct storage *,int,at*);
+  at *atst;          /* pointer on the at storage */
+  struct srg *cptr;  /* srg structure for the C side (lisp_c) */
   
   /* Allocation dependent info */
   
@@ -989,6 +971,7 @@ struct storage {
 #ifdef HAVE_MMAP
     struct {			
       gptr addr;
+      gptr xtra;
       int len;
     } sts_mmap;			/* for mmaps... */
 #endif
@@ -1027,20 +1010,11 @@ LUSHAPI at *new_storage_nc(int,int);
 
 LUSHAPI void storage_malloc(at*, int, int);
 LUSHAPI void storage_realloc(at*, int, int );
-LUSHAPI void storage_mmap(at*, at*, int);
+LUSHAPI void storage_mmap(at*, FILE*, int);
 LUSHAPI int storagep(at*);
-#ifdef MMAPARRAY
-LUSHAPI void storage_mmap(void);
-#endif
-#ifdef DISKARRAY
-LUSHAPI void storage_disk(void);
-#endif
-#ifdef REMOTEARRAY
-LUSHAPI void storage_remote(void);
-#endif
 LUSHAPI void storage_clear(at *p);
-LUSHAPI int storage_load(at*, at*);
-LUSHAPI void storage_save(at*, at*);
+LUSHAPI int storage_load(at*, FILE*);
+LUSHAPI void storage_save(at*, FILE*);
 
 
 /* INDEX.H ---------------------------------------------- */
@@ -1113,6 +1087,7 @@ LUSHAPI at *copy_matrix(at *, at *);
 LUSHAPI at *AT_matrix(int,int*);	/* Simultaneous creation       */
 LUSHAPI at *F_matrix(int,int*);	/* of an index and its storage */
 LUSHAPI at *D_matrix(int,int*);
+LUSHAPI at *P_matrix(int,int*);
 LUSHAPI at *I32_matrix(int,int*);
 LUSHAPI at *I16_matrix(int,int*);
 LUSHAPI at *I8_matrix(int,int*);
@@ -1125,11 +1100,15 @@ LUSHAPI void index_read_idx(struct index *, struct idx *);
 LUSHAPI void index_write_idx(struct index *, struct idx *);
 LUSHAPI void index_rls_idx(struct index *, struct idx *);
 
-/* Other functions */
-LUSHAPI at *load_matrix(at*);
-LUSHAPI void save_flt_matrix(at*,at*);
-LUSHAPI void save_packed_matrix(at*,at*);
-LUSHAPI void save_ascii_matrix(at*,at*);
+/* Other functions (TL compatible) */
+TLAPI void import_raw_matrix(at *p, FILE *f, int offset);
+TLAPI void import_text_matrix(at *p, FILE *f);
+TLAPI int save_matrix_len (at *p);
+TLAPI void save_matrix(at *p, FILE *f);
+TLAPI void export_matrix(at *p, FILE *f);
+TLAPI void save_ascii_matrix(at *p, FILE *f);
+TLAPI void export_ascii_matrix(at *p, FILE *f);
+TLAPI at *load_matrix(FILE *f);
 
 /* 
  * Loops over all elements of idx <idx>
@@ -1157,7 +1136,7 @@ LUSHAPI void save_ascii_matrix(at*,at*);
 	ptr-=(idx)->dim[_j_]*(idx)->mod[_j_]; 				     \
 	_d_[_j_--] = -1; 						     \
       } 								     \
-    } while (_j_<(idx)->ndim);  						     \
+    } while (_j_<(idx)->ndim);  					     \
   } 									     \
 }
 
