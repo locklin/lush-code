@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-macro.lsh,v 1.35 2003-06-12 19:35:35 leonb Exp $
+;;; $Id: dh-macro.lsh,v 1.36 2003-09-02 19:09:44 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -401,7 +401,7 @@
                              :(last :treetype:transfer):c-name
                              (len (last source))) )
                    (dhc-add-c-statements 
-                    (sprintf "strcpy(%s->data,%l);"
+                    (sprintf "strcpy((char*)(%s->data),%l);"
                              :(last :treetype:transfer):c-name
                              (last source) ) )
                    (setq ret :(last :treetype:transfer):c-name))
@@ -3328,7 +3328,7 @@
                                (cadr :treetype:tn-list) ())))
     (if ~dhc-unprotect
         (dhc-add-c-statements 
-         (sprintf "RTERR_EMPTYSTR(!(strlen(%s->data)));" exp)))
+         (sprintf "RTERR_EMPTYSTR(!(strlen((char*)(%s->data))));" exp)))
     (sprintf "(*((%s *)%s->data))" 
              (dhc-type-to-c-decl :treetype:type) exp)))
 
@@ -3396,13 +3396,13 @@
     (dhc-add-c-statements (sprintf "Msrg_resize(%s, "
                                    :srg-symb:c-name))
     (each ((thestr string-names))
-      (dhc-add-c-statements (sprintf "strlen(%s->data)+"
+      (dhc-add-c-statements (sprintf "strlen((char*)(%s->data))+"
                                      thestr)))
     (dhc-add-c-statements (sprintf "1);" ))
-    (dhc-add-c-statements (sprintf "strcpy(%s->data,%s->data);"
+    (dhc-add-c-statements (sprintf "strcpy((char*)(%s->data),(char*)(%s->data));"
                                    :srg-symb:c-name (car string-names)))
     (each ((thestr (cdr string-names)))
-      (dhc-add-c-statements (sprintf "strcat(%s->data,%s->data);"
+      (dhc-add-c-statements (sprintf "strcat((char*)(%s->data),(char*)(%s->data));"
                                      :srg-symb:c-name thestr)))
     (sprintf "%s" :srg-symb:c-name)))
 
@@ -3430,10 +3430,10 @@
   (let* ((srg-symb (car :treetype:transfer))
          (thestr (dhc-parse-expr-c (cadr source)
                                    (cadr :treetype:tn-list) ())))
-    (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen(%s->data)+1);"
+    (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen((char*)(%s->data))+1);"
                                    :srg-symb:c-name thestr))
     (dhc-add-c-statements (sprintf "{\nint ctr;\nctr=0;" )) 
-    (dhc-add-c-statements (sprintf "while (ctr<strlen(%s->data))" thestr))
+    (dhc-add-c-statements (sprintf "while (ctr<strlen((char*)(%s->data)))" thestr))
     (dhc-add-c-statements (sprintf "{" ))
     (dhc-add-c-statements
      (sprintf 
@@ -3442,7 +3442,7 @@
     (dhc-add-c-statements (sprintf "ctr++;"))
     (dhc-add-c-statements (sprintf "}\n}" ))
     (dhc-add-c-statements
-     (sprintf "((char *)(%s->data))[strlen(%s->data)]='\\0';"
+     (sprintf "((char *)(%s->data))[strlen((char*)(%s->data))]='\\0';"
               :srg-symb:c-name thestr))
     (sprintf "%s" :srg-symb:c-name)))
 
@@ -3489,7 +3489,7 @@
 
 (dhm-c len(source treetype retplace)
   (let ((exp (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ())))
-    (sprintf "(strlen(%s->data))" exp)))
+    (sprintf "(strlen((char*)(%s->data)))" exp)))
 
 (dhm-t left(source)
   (when (<> 3 (length source))
@@ -3523,7 +3523,7 @@
     (if ~dhc-unprotect 
         (dhc-add-c-statements
          (sprintf "RTERR_RANGE((int)%s<0);" val)))
-    (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen(%s->data)+1);"
+    (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen((char*)(%s->data))+1);"
                                    :srg-symb:c-name valstr))
     (dhc-add-c-externs "char *memccpy();")
     (dhc-add-c-statements 
@@ -3576,15 +3576,15 @@
     (dhc-add-c-statements (sprintf "((char *)(%s->data))[0]='\\0';"
                                    :srg-symb:c-name))
     (if (null l)
-        (dhc-add-c-statements (sprintf "if (%s<=strlen(%s->data))" n thestr))
-      (dhc-add-c-statements (sprintf "if ((%s!=0)&&(%s<=strlen(%s->data)))"
+        (dhc-add-c-statements (sprintf "if (%s<=strlen((char*)(%s->data)))" n thestr))
+      (dhc-add-c-statements (sprintf "if ((%s!=0)&&(%s<=strlen((char*)(%s->data))))"
                                      l n thestr)))
     (dhc-add-c-statements (sprintf "{"))
-    (dhc-add-c-statements (sprintf "Msrg_resize(%s,strlen(%s->data)-%s+2);"
+    (dhc-add-c-statements (sprintf "Msrg_resize(%s,strlen((char*)(%s->data))-%s+2);"
                                    :srg-symb:c-name thestr n))
     (if (null l)
         (dhc-add-c-statements 
-         (sprintf "strcpy(%s->data,((char *)(%s->data)+%s-1));"
+         (sprintf "strcpy((char*)(%s->data),((char *)(%s->data)+%s-1));"
                   :srg-symb:c-name thestr n))
       (dhc-add-c-statements 
        (sprintf
@@ -3608,13 +3608,13 @@
     (if ~dhc-unprotect
         (dhc-add-c-statements
          (sprintf "RTERR_RANGE((int)%s<0);" val)))
-    (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen(%s->data)+1);"
+    (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen((char*)(%s->data))+1);"
                                    :srg-symb:c-name valstr))
     (dhc-add-c-statements 
-     (sprintf "strcpy(%s->data,(char *)((char *)(%s->data)+"
+     (sprintf "strcpy((char*)(%s->data),(char *)((char *)(%s->data)+"
               :srg-symb:c-name valstr))
     (dhc-add-c-statements 
-     (sprintf "(int)((strlen(%s->data)>%s)?(strlen(%s->data)-%s):0)));"
+     (sprintf "(int)((strlen((char*)(%s->data))>%s)?(strlen((char*)(%s->data))-%s):0)));"
               valstr val valstr val))
     (sprintf "%s" :srg-symb:c-name)))
 
@@ -3680,7 +3680,7 @@
     (dhc-add-c-statements  "if (templen >= sizeof(tempstr)-1)")
     (dhc-add-c-statements  "run_time_error(\"sprintf buffer full\");")
     (dhc-add-c-statements (sprintf "Msrg_resize(%s, templen+1);" :srg-symb:c-name))
-    (dhc-add-c-statements (sprintf "strcpy(%s->data,tempstr);\n}" :srg-symb:c-name))
+    (dhc-add-c-statements (sprintf "strcpy((char*)(%s->data),tempstr);\n}" :srg-symb:c-name))
     (sprintf "%s" :srg-symb:c-name)))
 
 (dhm-t str(source)
@@ -3710,7 +3710,7 @@
     (dhc-add-c-statements (sprintf "sprintf(tmpchar,\"%%g\",(double)(%s));" val))
     (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen(tmpchar));"
                                    :srg-symb:c-name))
-    (dhc-add-c-statements (sprintf "strcpy(%s->data,tmpchar);"
+    (dhc-add-c-statements (sprintf "strcpy((char*)(%s->data),tmpchar);"
                                    :srg-symb:c-name))
     (dhc-add-c-statements (sprintf "}"))
     (sprintf "%s" :srg-symb:c-name)))
@@ -3742,7 +3742,7 @@
     (dhc-add-c-statements (sprintf "sprintf(tmpchar,\"0x%%x\",(int)(%s));" val))
     (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen(tmpchar));"
                                    :srg-symb:c-name))
-    (dhc-add-c-statements (sprintf "strcpy(%s->data,tmpchar);"
+    (dhc-add-c-statements (sprintf "strcpy((char*)(%s->data),tmpchar);"
                                    :srg-symb:c-name))
     (dhc-add-c-statements (sprintf "}"))
     (sprintf "%s" :srg-symb:c-name)))
@@ -3841,7 +3841,7 @@
         (dhc-add-c-statements
          (sprintf "RTERR_RANGE((int)%s<0);" n)))
     (dhc-add-c-statements 
-     (sprintf "Msrg_resize(%s, strlen(%s->data)+strlen(%s->data)+1);"
+     (sprintf "Msrg_resize(%s, strlen((char*)(%s->data))+strlen((char*)(%s->data))+1);"
               :srg-symb:c-name stra strb))
     (dhc-add-c-statements
      (sprintf "memccpy(%s->data,%s->data,'\\0',(int)(%s));"
@@ -3852,7 +3852,7 @@
      (sprintf "strcat(%s->data,%s->data);"
               :srg-symb:c-name strb))
     (dhc-add-c-statements 
-     (sprintf "if (((int)%s)<strlen(%s->data))" n stra))
+     (sprintf "if (((int)%s)<strlen((char*)(%s->data)))" n stra))
     (dhc-add-c-statements 
      (sprintf "  strcat(%s->data,(char *)((char *)%s->data+%s));"
               :srg-symb:c-name stra n))
@@ -3864,10 +3864,10 @@
   (let* ((srg-symb (car :treetype:transfer))
          (thestr (dhc-parse-expr-c (cadr source)
                                    (cadr :treetype:tn-list) ())))
-    (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen(%s->data)+1);"
+    (dhc-add-c-statements (sprintf "Msrg_resize(%s, strlen((char*)(%s->data))+1);"
                                    :srg-symb:c-name thestr))
     (dhc-add-c-statements (sprintf "{\nint ctr;\nctr=0;" )) 
-    (dhc-add-c-statements (sprintf "while (ctr<strlen(%s->data))" thestr))
+    (dhc-add-c-statements (sprintf "while (ctr<strlen((char*)(%s->data)))" thestr))
     (dhc-add-c-statements (sprintf "{" ))
     (dhc-add-c-statements
      (sprintf "((char *)(%s->data))[ctr]=toupper(((char *)(%s->data))[ctr]);"
@@ -3875,7 +3875,7 @@
     (dhc-add-c-statements (sprintf "ctr++;"))
     (dhc-add-c-statements (sprintf "}\n}" ))
     (dhc-add-c-statements
-     (sprintf "((char *)(%s->data))[strlen(%s->data)]='\\0';"
+     (sprintf "((char *)(%s->data))[strlen((char*)(%s->data))]='\\0';"
               :srg-symb:c-name thestr))
     (sprintf "%s" :srg-symb:c-name)))
 
