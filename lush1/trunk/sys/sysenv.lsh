@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.87 2003-01-10 23:53:48 leonb Exp $
+;;;  $Id: sysenv.lsh,v 1.88 2003-01-12 03:44:36 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -411,7 +411,8 @@
                               (setq d (cdr d)) )
                             (cond
                              ((and okay (symbolp f))
-                              (setq bindings (cons (list f (list 'quote d)) bindings)) )
+                              (setq bindings (cons (list f (list 'quote d)) 
+                                                   bindings)) )
                              ((<> f d)
                               (setq okay ()) ) ) )) )
                (match f d)
@@ -509,36 +510,6 @@
 	     list-insert list-delete list-merge)
 
 
-;;; ---------- Scheme pseudo-compatibility
-
-(defvar set! setq)
-(defvar begin progn)
-(defvar else t)
-(defvar equal? =)
-(defvar eqv? =)
-(defvar eq? ==)
-(defvar define defvar)
-(defvar map mapcar)
-(defvar for-each mapc)
-(de boolean? (a) (or (= a ()) (= a t)))
-(de null? (a) (= a ()))
-(defvar pair? consp)
-(defvar number? numberp)
-(defvar string? stringp)
-(defvar vector? indexp)
-(defvar symbol? symbolp)
-(defvar procedure? functionp)
-(df set-car! (a b) (set a (rplaca (eval a) (eval b))))
-(df set-cdr! (a b) (set a (rplacd (eval a) (eval b))))
-(defvar symbol->string nameof)
-(defvar string->symbol named)
-
-(lock-symbol 
- set!  begin else equal?  eqv?  eq?  define map for-each boolean?
- null?  pair?  number?  string?  vector?  symbol?  procedure?  set-car!
- set-cdr!  symbol->string string->symbol
- )
-
 ;;; --------- Packages ---------
 
 (dm private(f . args)
@@ -582,25 +553,8 @@
 (defvar matrix double-matrix)
 (defvar array atom-matrix)
 (defvar submatrix sub-index)
-(de load-matrix-into (f x) (let ((m (load-matrix f))) (idx-copy m x)))
 
-(lock-symbol matrix array submatrix load-matrix-into)
-
-(dmd scalar (typ v) 
-  (selectq typ
-    ((d -double-) `((double-matrix) ,v))
-    ((f -float-) `((float-matrix) ,v))
-    ((i -int-) `((int-matrix) ,v))
-    ((s -short-) `((short-matrix) ,v))
-    ((b -byte-) `((byte-matrix) ,v))
-    ((u -ubyte-) `((ubyte-matrix) ,v))
-    ((g -gptr-) `((gptr-matrix) ,v)))
-    (a `((atom-matrix) ,v)))
-
-;; matrix-matrix multiply
-(dmd idx-m2timesm2 (a b c)
-  (list 'idx-eloop (list (list 'bi b) (list 'ci c))
-    (cons 'idx_m2dotm1 (cons a '(bi ci))) ) )
+(lock-symbol matrix array submatrix)
 
 (de contiguousp (m)
   (let ((flag t)(size 1))
@@ -656,7 +610,8 @@
                   (cons 'let 
                         (cons letlist 
                               (append sellist body 
-                                      (list (list 'setq lvar (list '+ lvar '1))) ) ) ) ) )
+                                      (list (list 'setq lvar 
+                                                  (list '+ lvar '1))))))))
       (list 'idx-bloop arglist 
             (cons 'let (cons letlist (append sellist body))) ) ) ) )
 
@@ -665,14 +620,14 @@
         (end "]")
 	(typ (classof (idx-storage this))))
     (cond
-      ((= typ |DSTORAGE|) (setq begin "["))
-      ((= typ |FSTORAGE|)(setq begin "[f"))
-      ((= typ |I32STORAGE|)(setq begin "[i"))
-      ((= typ |I16STORAGE|)(setq begin "[s"))
-      ((= typ |I8STORAGE|)(setq begin "[b"))
-      ((= typ |U8STORAGE|)(setq begin "[u"))
-      ((= typ |GPTRSTORAGE|)(setq begin "[p"))
-      ((= typ |ATSTORAGE|)(setq begin "[a")))
+      ((= typ |DSTORAGE|)    (setq begin "["))
+      ((= typ |FSTORAGE|)    (setq begin "[f"))
+      ((= typ |I32STORAGE|)  (setq begin "[i"))
+      ((= typ |I16STORAGE|)  (setq begin "[s"))
+      ((= typ |I8STORAGE|)   (setq begin "[b"))
+      ((= typ |U8STORAGE|)   (setq begin "[u"))
+      ((= typ |GPTRSTORAGE|) (setq begin "[p"))
+      ((= typ |ATSTORAGE|)   (setq begin "#[" end "#]")) )
     (if (or (not (idx-ndim this)) (0= (idx-ndim this)))
         (printf "%s" (pname this))
       (printf begin)
@@ -720,42 +675,43 @@
            (setq l (cdr l)) )
       m ) ) )
 
-(dmc |]| (error 'read "extra ']' found"))
+(dmc |]| 
+     (error 'read "extra ']' found"))
 
 (dmc |[| 
-     (on-error (error 'list-to-index "bad syntax or values for litteral IDX")
-       (let ((matfunc double-matrix)
-	     (c (skip-char)))
-	 (selectq c
-	   ("d" (setq matfunc double-matrix) (read-string 1))
-	   ("f" (setq matfunc float-matrix) (read-string 1))
-	   ("i" (setq matfunc int-matrix) (read-string 1))
-	   ("s" (setq matfunc short-matrix) (read-string 1))
-	   ("b" (setq matfunc byte-matrix) (read-string 1))
-	   ("u" (setq matfunc ubyte-matrix) (read-string 1))
-	   ("p" (setq matfunc gptr-matrix) (read-string 1))
-	   ("a" (setq matfunc atom-matrix) (read-string 1)))
-	 (let ((l (when (<> (skip-char) "[") (list 'quote)))
-	       (|]| (lambda() (setq m (list-to-index l matfunc))))
-	       (m ()) )
-	   (while ~m
-	     (setq l (nconc1 l (read))) )
-	   m ))))
+     (let ((matfunc double-matrix)
+           (c (skip-char)))
+       (selectq c
+         ("d" (setq matfunc double-matrix) (read-string 1))
+         ("f" (setq matfunc float-matrix)  (read-string 1))
+         ("i" (setq matfunc int-matrix)    (read-string 1))
+         ("s" (setq matfunc short-matrix)  (read-string 1))
+         ("b" (setq matfunc byte-matrix)   (read-string 1))
+         ("u" (setq matfunc ubyte-matrix)  (read-string 1))
+         ("p" (setq matfunc gptr-matrix)   (read-string 1)) )
+       (let ((l (when (<> (skip-char) "[") (list 'quote)))
+             (|]| (lambda() (setq m (list-to-index l matfunc))))
+             (m ()) )
+         (while ~m
+           (setq l (nconc1 l (read))) )
+         m ))))
 
+(dmc |#]| 
+     (error 'read "extra '#]' found"))
 
-(dmc |#]| (error 'read "extra '#]' found"))
 (dmc |#[|
-     (on-error (error 'list-to-index "array literal not implemented") 
-       ()))
+     (let ((l (list 'quote))
+           (m ())
+           (|#]| (lambda() 
+                   (list (setq m (list-to-index l atom-matrix))) )) )
+       (while ~m
+         (setq l (nconc1 l (read))) )
+       (list m) ) ) )
 
-(lock_symbol scalar contiguousp clone-matrix 
+(lock_symbol contiguousp clone-matrix 
              redim unfold select diagonal narrow idx-gloop
              index-print list-to-index 
              |[| |]| |#[| |#]|)
-
-
-
-
 
 
 
@@ -1412,22 +1368,21 @@
    `(dm ,fn (fn . args)
       (if (not (symbolp (car args)))
           (mlambda args (cons 'declare args))
-        (printf "*** Warning\007: old style declaration : %l\n" (cons fn args))
+        (printf "*** Warning\007: old style declaration : %l\n"
+                (cons fn args))
         (list 'declare 
               '(,fn ,@(when (regex-match "-idx[0-9]+-" (pname fn))
                         '((-flt-)) ))
-                . args) ) ) )
+              . args) ) ) )
   (eval 
    `(lock-symbol ,fn)) )
 
+;; important aliases
 (defvar -float- -flt-)
-(lock-symbol -float-)
 (defvar -double- -real-)
-(lock-symbol -double-)
-
+(lock-symbol -float- -double-)
 
 ;; verify type syntax
-
 (defvar verify-type-decl-format.table (htable))
 
 (de verify-type-decl-format(source &optional where)
@@ -1511,13 +1466,15 @@
             (or (let-filter (((fn (base)) source))
                   (let ((srgtype ()))
                     (when (or (not (symbolp base))
-                              (not (setq srgtype (getp (eval `:,base) 'srg-type))) )
+                              (not (setq srgtype
+                                         (getp (eval `:,base) 'srg-type))) )
                       (error where "Illegal base for idx type" source) )
                     (eval `(lambda(x) (,idxcheck x ,ndim ,srgtype))) ) )
                 (error where "Illegal syntax in idx type" source) ) ) ) ))
   (for (ndim 0 15)
        (putp (eval `:,(named (sprintf "-idx%d-" ndim))) 'type-syntax
-             (eval `(lambda(where source) (,idxsyntax ,ndim where source))) ) ) )
+             (eval `(lambda(where source) 
+                      (,idxsyntax ,ndim where source))) ) ) )
 
 ;; variable declaration
 (df declare(|Type| . |Syms|)
@@ -1528,9 +1485,8 @@
     (when (not (|Type| (eval |Sym|)))
       (error 'declare "type mismatch" |Sym|) ) ) )
 
-(lock-symbol verify-type-decl-format verify-type-decl-format.table declare)
-
-
+(lock-symbol verify-type-decl-format 
+             verify-type-decl-format.table declare)
 
 
 
