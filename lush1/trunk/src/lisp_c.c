@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.19 2002-08-13 15:57:01 leonb Exp $
+ * $Id: lisp_c.c,v 1.20 2002-08-19 15:36:14 leonb Exp $
  **********************************************************************/
 
 
@@ -2764,7 +2764,44 @@ DX(xto_bool)
   return NIL;
 }
 
-/* (to-obj [<class>] <gptr>)  */
+/* (to-idx <ndim> <gptr|idx>) */
+DX(xto_idx)
+{
+  at *p;
+  int ndim;
+  struct index *ind;
+  ARG_NUMBER(2);
+  ARG_EVAL(2);
+  ndim = AINTEGER(1);
+  p = APOINTER(2);
+  LOCK(p);
+  if (! p)
+    {
+      return NIL;
+    }
+  if (p->flags & C_GPTR)
+    {
+      avlnode *n;
+      void *gp = p->Gptr;
+      UNLOCK(p);
+      /* search object */
+      if (! (n = avl_find(p->Gptr)))
+        error(NIL,"Index pointed to by this GPTR has been deallocated",p);
+      /* make lisp object */
+      delayed_kill_list = 0;
+      p = make_lisp_from_c(n, gp);
+      UNLOCK(delayed_kill_list);
+    }
+  if (! EXTERNP(p, &index_class))
+    error(NIL,"This does not appear to be an index", p);
+  ind = p->Object;
+  if (ind->ndim != ndim)
+    error(NIL,"This index has not the expected number of dimensions", p);
+  return p;
+}
+
+
+/* (to-obj [<class>] <gptr|obj>)  */
 DX(xto_obj)
 {
   class *cl = NULL;
@@ -2896,6 +2933,7 @@ init_lisp_c(void)
   dx_define("to-number", xto_number);
   dx_define("to-bool", xto_bool);
   dx_define("to-gptr", xto_gptr);
+  dx_define("to-idx", xto_idx);
   dx_define("to-obj", xto_obj);
 }
 
