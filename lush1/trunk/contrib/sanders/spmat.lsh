@@ -1,0 +1,895 @@
+;; spmat.lsh
+
+#? *** package spmat
+;; Lush package {<b> spmat}
+;;
+;; {<i> This package implements two simple classes for sparse matrices
+;; with real and complex values.}
+;;
+;; {<b> Author:} Simon Anders (Munich, Germany), sanders@fs.tum.de
+;;
+;; {<b> Version:} v0.10-beta  --  Date: 2003-09-08
+;;
+;; Copyright (c) 2003  --  see below for details
+;;
+;; ---
+;;
+;; This program is free software; you can redistribute it and/or
+;; modify it under the terms of the GNU General Public License (GPL)
+;; as published by the Free Software Foundation; either version 2
+;; of the License, or (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; For the complete text of the GPL, see
+;;    http://www.fsf.org/licenses/gpl.html
+;; or, write to the Free Software Foundation, Inc.,
+;; 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+
+#? * Release Notes
+;; This is v0.10-beta, the first version of the package to have enough
+;; functionality to be of use for general purposes. I have added ways
+;; to manipulate sparse matrices by adding or changing elements, you can
+;; now scale the matrices and convert them back to dense matrice (as
+;; well as vice versa). And, of course, as before, you can right-multiply
+;; dense matrices and vectors to them which should be the main use of it.
+;;
+;; I have not yet taken too much effort to make the package really fast,
+;; so there is surely place for performance optimization.
+;;
+;; Please note also, taht this is beta version, meaning that I did not
+;; test it yet very carefully. So don't rely on it without making
+;; consistency checks from time to time. Please report bugs (and
+;; successful use) to me.
+;;
+;; If you also want to use sparse matrices under Lush, feel free to use
+;; this package to build upon. If you implement further features I'd appreciate
+;; if you mailed that to me and I'll bundle it with my stuff.
+;;
+;; Also, if you only use the package and find it useful I would be delighted
+;; to hear about it. Any mail of this kind might encourage me to further refine
+;; the package.
+;;
+
+
+#? * Installation & Quick Intro
+;; Just put this file somewhere, where Lush will find it, or specify the path
+;; directly when loading with the following commands.
+;;
+;; Load this documentation with <(helptool "libsparse.lsh")>.
+;;
+;; Load the package with <(loadlib "spmat")>
+;;
+;; Test the package, e.g. with the following commands which also show you how
+;; to use the package:
+;;
+;; {<pre>
+;; ? (setq spm (new spmatrix-dcoo 3 3 [.5 7 -9] [i[0 2 1][0 1 2]]))
+;; = ::spmatrix-dcoo:<3x3, 3 entries, 0 free>
+;; ? ^Pspm
+;; ;; sparse matrix 3x3:
+;; ;;  0,  0: 0.5
+;; ;;  2,  1: 7
+;; ;;  1,  2: -9
+;; ;; space left for another 0 entries
+;; ? (==> spm multvect [0.1 1 10])
+;; = [  0.05 -90.00  7.00 ]
+;; ? (==> spm enlarge 3)
+;; = ::spmatrix-dcoo:[3x3, 3 entries, 3 free]
+;; ? (==> spm put 0 1 3.14)
+;; = 3.14
+;; ? <(==> spm get-dense-matrix)>
+;; = [[  0.50  3.14  0.00 ]
+;;    [  0.00  0.00 -9.00 ]
+;;    [  0.00  7.00  0.00 ]]
+;; </pre>}
+
+
+(package spmat
+
+(libload "gsl/gsl-idx")
+(libload "gsl/vector")
+(libload "libnum/libcomplex")
+
+#? * class spmatrix-dcoo
+;; An object of this class represents a sparse matrix with -double-
+;; precision in coordinate representation. The latter means that each
+;; non-zero entry is stored by its value and its row and column
+;; coordinate.
+
+(defclass spmatrix-dcoo object
+   ((-idx1- (-double-)) vals)
+   ((-idx2- (-int-)) coords)
+   ((-int-) rows)
+   ((-int-) cols)
+   ((-int-) nnz)
+)
+
+
+(de spmatrix-error (msg)
+   ((-str-) msg)
+   (printf "*** Error using spmat package: %s" msg)
+   (error "Aborting.")
+   t
+)
+
+
+#? (new spmatrix-dcoo <rows> <cols> <vals> <coords>)
+;; Constructor to instantiate a new sparse matrix.
+;;
+;; <rows> and <cols> are integers specifying the dimension of the
+;; matrix. <vals> is an idx1 of non-zero matrix values. <coords>
+;; is an idx2 with the coordinates of the values, row coords in
+;; the upper and col coords in the lower row of <coords>. The
+;; coords are 0-based, and <coords> must be an integer array.
+;;
+;; Example:
+;;
+;; (setq spm (new spmatrix-dcoo 3 3 [0.5 7 -9] [i[0 2 1][0 1 2]]))
+;;
+;; defines the following sparse matrix:
+;;
+;; {<pre>
+;;  /  .5    0     0 \
+;; |    0    0    -9  |
+;;  \   0    7     0 / </pre>}
+
+(defmethod spmatrix-dcoo spmatrix-dcoo (rows_ cols_ vals_ coords_)
+   ((-int-) rows_ cols_)
+   ((-idx1- (-double-)) vals_)
+   ((-idx2- (-int-)) coords_)
+
+   ;; consistency checks:
+   (when (<> 2 (idx-dim coords_ 0))
+      (spmatrix-error "constructor: Param <coords> must be a matrix with two rows."))
+   (when (<> (idx-dim coords_ 1) (idx-dim vals_ 0))
+      (spmatrix-error "constructor: Nbr of items in <vals> and <coords> disagrees."))
+   (when (not (and (contiguousp vals_) (contiguousp coords_)))
+      (spmatrix-error "constructor: Passed data must be contiguous."))
+
+   (setq rows rows_)
+   (setq cols cols_)
+   (setq vals (idx-clone vals_))
+   (setq coords (idx-clone coords_))
+   (setq nnz (idx-dim vals 0))
+   this
+)
+
+
+#? (==> <spmatrix-dcoo> pretty)
+;; Prints the sparse matrix as a table of all non-zero elements
+
+(defmethod spmatrix-dcoo pretty ()
+   (let*
+      (  (i 0) )
+         ((-int-) i)
+
+      (printf ";; sparse matrix %dx%d:\n" rows cols)
+      (for (i 0 (1- nnz))
+         (printf ";; %2d, %2d: %.3g \n" (coords 0 i) (coords 1 i) (to-float (vals i)))
+      )
+      (printf ";; space left for another %d entries\n" (- (idx-dim vals 0) nnz))
+   )
+   t
+)
+
+#? (==> <spmatrix-dcoo> pname)
+;; Briefly describes the matrix as in the following example
+;; where pname is implicitly called by <^P>:
+;;
+;; ? ^Pspm
+;;
+;; {<pre> spmatrix-dcoo:<3x3, 3 entries, 0 free> </pre>}
+
+
+(defmethod spmatrix-dcoo pname ()
+   (sprintf "::spmatrix-dcoo:<%dx%d, %d entries, %d free>" rows cols
+      nnz (- (idx-dim vals 0) nnz) )
+)
+
+
+#? (==> <spmatrix-dcoo> multvect_r <vec_in> <vec_out>)
+;; right-multiplies the vector <vec_in> with the matrix and stores the result in <vec_out>
+;; as well as returning it
+;;
+;; <vec_in> and <vec_out> must be idx1 vectors of type double and the correct length
+
+
+(defmethod spmatrix-dcoo multvect_r (vec_in vec_out)
+   ((-idx1- (-double-)) vec_in vec_out)
+
+   (let*
+      (  (inptr  (idx-ptr vec_in))
+         (outptr (idx-ptr vec_out))
+      )
+      ((-gptr- (-double-)) inptr outptr)
+
+      (when (<> cols (idx-dim vec_in 0))
+         (spmatrix-error "multvect_r: argument <vec_in> has wrong size") )
+
+      (when (<> rows (idx-dim vec_out 0))
+	 (spmatrix-error "multvect_r: argument <vec_out> has wrong size") )
+
+      (==> this multmatr_r (new-index (idx-storage vec_in)  (list (idx-dim vec_in 0)  1))
+                           (new-index (idx-storage vec_out) (list (idx-dim vec_out 0) 1)))
+   )
+   vec_out
+)
+
+
+#? (==> <spmatrix-dcoo> multvect <vec_in>)
+;; right-multiplies the vector <vec_in> with the matrix and returns the result
+;;
+;; <vec_in> and <vec_out> must be idx1 vectors of type double and the correct length
+
+
+(defmethod spmatrix-dcoo multvect (vec_in)
+   ((-idx1- (-double-)) vec_in)
+
+   (let*
+      (  (inptr  (idx-ptr vec_in))
+      (vec_out (double-matrix rows))
+      (outptr (idx-ptr vec_out)) )
+      ((-gptr- (-double-)) inptr)
+      ((-idx1- (-double-)) vec_out)
+      ((-gptr- (-double-)) inptr)
+
+      (when (<> cols (idx-dim vec_in 0))
+         (spmatrix-error "multvect: argument <vec_in> has wrong size") )
+
+      (==> this multvect_r vec_in vec_out)
+
+      vec_out
+   )
+)
+
+
+#? (==> <spmatrix-dcoo> multmatr_r <matr_B> <matr_C>)
+;; This method performs the following matrix multiplication operation:
+;;
+;; {<pre>   C <-- A*B + C </pre>}
+;;
+;; In the above formulae, <A>
+;; is the sparse matrix <spmatrix-dcoo>. The matrices <B> and <C> are
+;; dense matrices of appropiate sizes, to be passed as idx2 of type double.
+;; Note that <C> also takes the result.
+
+(defmethod spmatrix-dcoo multmatr_r (matr_B matr_C)
+   ((-idx2- (-double-)) matr_B matr_C)
+   (let*
+      ((val_ptr (idx-ptr vals))
+       (row_ptr (idx-ptr (select coords 0 0)))
+       (col_ptr (idx-ptr (select coords 0 1)))
+       (ptr_B (idx-ptr matr_B))
+       (ptr_C (idx-ptr matr_C))
+       (cols_B (idx-dim matr_B 1)) )
+      ((-int-) nnz cols_B)
+      ((-gptr- (-double-)) val_ptr row_ptr col_ptr ptr_B ptr_C)
+
+      (when (or (<> rows   (idx-dim matr_C 0))
+	        (<> cols_B (idx-dim matr_C 1))
+		(<> cols   (idx-dim matr_B 0)) )
+         (spmatrix-error "mult_matr: Mismatch of matrix sizes.") )
+      (when (not (and (contiguousp matr_B) (contiguousp matr_C)))
+         (spmatrix-error "mult_matr: <matr_B> or <matr_C> not contiguous in memory.") )
+
+      #{ {
+            int i, j;
+	    for (i = 0; i < $nnz; i++)
+	      for (j = 0; j < $cols_B; j++)
+	        $ptr_C [$row_ptr[i]*$cols_B + j] +=
+		  $val_ptr[i] * $ptr_B [$col_ptr[i]*$cols_B + j];
+	 }
+      #}
+   )
+   matr_C
+)
+
+
+#? (==> <spmatrix-dcoo> enlarge <space>)
+;; This methods appends space to the sparse matrix to allow for appending
+;; further values using the <put> method.
+;;
+;; As this is done by reallocating new space for the complete arrays,
+;; it might be quite slow. So avoid using this method to often.
+
+(defmethod spmatrix-dcoo enlarge (space)
+   ((-int-) space)
+   (if (< space 0)
+      (spmatrix-error "enlarge: negative value passed") )
+   (let*
+      ((od (idx-dim vals 0))
+       (newvals (double-matrix (+ od space)))
+       (newcoords (int-matrix 2 (+ od space))) )
+      ((-int-) od)
+      ((-idx1- (-double-)) newvals)
+      ((-idx2- (-int-)) newcoords)
+
+      (idx-copy vals
+                (narrow newvals 0 od 0) )
+      (idx-copy (select coords 0 0)
+                (narrow (select newcoords 0 0) 0 od 0) )
+      (idx-copy (select coords 0 1)
+                (narrow (select newcoords 0 1) 0 od 0) )
+      (setq vals newvals)
+      (setq coords newcoords)
+      (+ od space)
+   )
+   this
+)
+
+
+#? (==> <spmatrix-dcoo> get <row> <col>)
+;; This method returns the element at the given position
+
+(defmethod spmatrix-dcoo get (row col)
+   ((-int-) row col)
+   (let*
+      ((i 0) (res 0))
+      ((-int-) i)
+      ((-double-) res)
+
+      (if (or (>= row rows) (>= col cols) (< row 0) (< col 0))
+         (spmatrix-error "get: index out of range.") )
+      (for (i 0 (1- (idx-dim vals 0)))
+         (if (and (= row (coords 0 i)) (= col (coords 1 i)))
+            (setq res (vals i)) ) )
+      res
+   )
+)
+
+
+#? (==> <spmatrix-dcoo> put <row> <col> <val>)
+;; This method puts the value <val> at the given position. If this
+;; position already was in use the value is overwritten, overwise
+;; the position is added. If there is no space left for this,
+;; <enlarge> is called with argument <space> = 1. (Avoid the latter
+;; to happen as it damages performance.)
+
+(defmethod spmatrix-dcoo put (row col val)
+   ((-int-) row col)
+   ((-double-) val)
+   (let*
+      ((i 0) (found ()))
+      ((-int-) i)
+      ((-bool-) found)
+
+      (if (or (>= row rows) (>= col cols) (< row 0) (< col 0))
+         (spmatrix-error "put: index out of range.") )
+      (for (i 0 (1- (idx-dim vals 0)))
+         (when (and (= row (coords 0 i)) (= col (coords 1 i)))
+            (setq found t)
+            (vals i val)
+         )
+      )
+      (when (not found)
+         (when (= (idx-dim vals 0) nnz)
+            (==> this enlarge 1)
+         )
+         (coords 0 nnz row)
+         (coords 1 nnz col)
+         (vals nnz val)
+         (setq nnz (1+ nnz))
+      )
+   )
+   val
+)
+
+
+#? (==> <spmatrix-dcoo> scale <factor>)
+;; multiplies all elements of the sparse matrix with the
+;; -double- value <factor>
+
+(defmethod spmatrix-dcoo scale (factor)
+   ((-double-) factor)
+   (cheader "#include <gsl/gsl_vector_double.h>")
+
+   (let*
+      ((v (gsl-vector-double-idx-ptr (narrow vals 0 nnz 0))))
+      ((-gptr-) v)
+      (gsl_vector_scale v factor)
+      (free v)
+   )
+   this
+)
+
+#? (==> <spmatrix-dcoo> get_dense_matrix)
+;; returns a dense matrix, i.e. an (-idx2- (-double-)), which equals
+;; the sparse matrix
+;;
+;; FIXME: I just caught a SIGV while testing this function. So where might
+;; be some bug lurking in the neighborhood but I couldn't reproduce it
+;; (Note of 2003-09-05)
+
+(defmethod spmatrix-dcoo get_dense_matrix ()
+   (let*
+      ((dense (double-matrix rows cols))
+       (i 0) )
+      ((-idx2- (-double-)) dense)
+      ((-int-) i)
+
+      (for (i 0 (1- nnz))
+         (dense (coords 0 i) (coords 1 i) (vals i))
+      )
+      dense
+   )
+)
+
+
+#? (dense-to-spmatrix-dcoo <dense>)
+;; Transforms the dense matrix <dense> (an idx2 of type -double-) into
+;; a sparse matrix, i.e. returns an spmatrix-dcoo object
+
+(de dense-to-spmatrix-dcoo (dense)
+   ((-idx2- (-double-)) dense)
+
+   (let*
+      (  (r 0) (c 0) (nz 0) )
+      ((-int-) r c nz)
+
+      (for (r 0 (1- (idx-dim dense 0)))
+         (for (c 0 (1- (idx-dim dense 1)))
+	    (when (<> 0 (dense r c))
+               (setq nz (1+ nz))
+	    )
+	 )
+      )
+      (let*
+         (  (val (double-matrix nz))
+	    (coords (int-matrix 2 nz))
+	    (i 0) )
+	 ((-idx1- (-double-)) val)
+	 ((-idx2- (-int-)) coords)
+	 ((-int-) i)
+	 ((-int-) r c)  ;; BUG in Lush: This line is ignored
+         (for (r 0 (1- (idx-dim dense 0)))
+            (for (c 0 (1- (idx-dim dense 1)))
+	       (when (<> 0 (dense r c))
+	          (val i (dense r c))
+		  (coords 0 i (to-int r))
+		  (coords 1 i (to-int c))
+                  (setq i (1+ i))
+               )
+	    )
+         )
+
+	 (new spmatrix-dcoo (idx-dim dense 0) (idx-dim dense 1) val coords)
+      )
+   )
+)
+
+
+
+
+#? * class spmatrix-ccoo
+;; An object of this class represents a sparse matrix of complex numbers with
+;; double precision in coordinate representation. The latter means that each
+;; non-zero entry is stored by its value and its row and column
+;; coordinate.
+
+(defclass spmatrix-ccoo object
+   ((-idx2- (-double-)) vals)
+   ((-idx2- (-int-)) coords)
+   ((-int-) rows)
+   ((-int-) cols)
+   ((-int-) nnz)
+)
+
+
+#? (new spmatrix-ccoo <rows> <cols> <vals> <coords>)
+;; Constructor to instantiate a new sparse matrix.
+;;
+;; <rows> and <cols> are integers specifying the dimension of the
+;; matrix. <vals> is an idx2 of the non-zero matrix values, real parts in
+;; the first and imaginary parts in the second column. <coords>
+;; is an idx2 with the coordinates of the values, row coords in
+;; the upper and col coords in the lower row. The
+;; coords are 0-based, and <coords> must be an integer array.
+;;
+;; Example:
+;;
+;; (setq spm (new spmatrix-ccoo 3 3 [[0.5 0] [7 2] [0 -9]] [i[0 2 1][0 1 2]]))
+;;
+;; defines the following sparse matrix:
+;; {<pre>
+;;  /  .5    0     0   \
+;; |    0    0    -9i   |
+;;  \   0  7+2i    0  / </pre>}
+
+(defmethod spmatrix-ccoo spmatrix-ccoo (rows_ cols_ vals_ coords_)
+   ((-int-) rows_ cols_)
+   ((-idx2- (-double-)) vals_)
+   ((-idx2- (-int-)) coords_)
+
+   ;; consistency checks:
+   (when (<> 2 (idx-dim coords_ 0))
+      (spmatrix-error "constructor: Param <coords> must be a matrix with two rows."))
+   (when (<> 2 (idx-dim vals_ 1))
+      (spmatrix-error "constructor: Param <vals> must be a matrix with two columns."))
+   (when (<> (idx-dim coords_ 1) (idx-dim vals_ 0))
+      (spmatrix-error "constructor: Nbr of items in <vals> and <coords> disagrees."))
+   (when (not (and (contiguousp vals_) (contiguousp coords_)))
+      (spmatrix-error "constructor: Passed data must be contiguous."))
+
+   (setq rows rows_)
+   (setq cols cols_)
+   (setq vals (idx-clone vals_))
+   (setq coords (idx-clone coords_))
+   (setq nnz (idx-dim vals 0))
+   this
+)
+
+
+#? (==> <spmatrix-ccoo> pretty)
+;; Prints the sparse matrix as a table of all non-zero elements
+
+(defmethod spmatrix-ccoo pretty ()
+   (let*
+      (  (i 0) )
+         ((-int-) i)
+
+      (printf "complex sparse matrix %dx%d:\n" rows cols)
+      (for (i 0 (1- nnz))
+         (printf ";; %2d, %2d: %.4g + %.4gi \n" (coords 0 i) (coords 1 i)
+           (to-float (vals i 0)) (to-float (vals i 1)))
+      )
+      (printf ";; space left for another %d entries\n" (- (idx-dim vals 0) nnz))
+   )
+   t
+)
+
+
+#? (==> <spmatrix-ccoo> pname)
+;; Briefly describes the matrix as in the following example
+;; where pname is implicitely called by <^P>:
+;;
+;; ? ^Pspm
+;;
+;; {<pre> ::spmatrix-ccoo:<3x3, 3 entries, 0 free> </pre>}
+
+(defmethod spmatrix-ccoo pname ()
+   (sprintf "::spmatrix-ccoo:<%dx%d, %d entries, %d free>" rows cols
+      nnz (- (idx-dim vals 0) nnz) )
+)
+
+#? (==> <spmatrix-ccoo> multvect_r <vec_in> <vec_out>)
+;; right-multiplies the vector <vec_in> with the matrix and stores the result in <vec_out>
+;; as well as returning it
+;;
+;; <vec_in> and <vec_out> must be vectors of type complex (i.e. 2-column matrices
+;; of type double) and of the correct lengths.
+
+
+(defmethod spmatrix-ccoo multvect_r (vec_in vec_out)
+   ((-idx2- (-double-)) vec_in vec_out)
+
+   (let*
+      (  (inptr  (idx-ptr vec_in))
+         (outptr (idx-ptr vec_out))
+      )
+      ((-gptr- (-double-)) inptr outptr)
+
+      (when (or (<> 2 (idx-dim vec_in 1)) (<> 2 (idx-dim vec_out 1)))
+         (spmatrix-error
+            "multvect_r: argument <vec_in> or <vec_out> is not a vector or complex numbers") )
+
+      (when (<> cols (idx-dim vec_in 0))
+         (spmatrix-error "multvect_r: argument <vec_in> has wrong size") )
+
+      (when (<> rows (idx-dim vec_out 0))
+	 (spmatrix-error "multvect_r: argument <vec_out> has wrong size") )
+
+      (==> this multmatr_r (new-index (idx-storage vec_in)  (list (idx-dim vec_in 0)  1 2))
+                           (new-index (idx-storage vec_out) (list (idx-dim vec_out 0) 1 2)))
+   )
+   vec_out
+)
+
+
+#? (==> <spmatrix-ccoo> multvect <vec_in>)
+;; right-multiplies the vector <vec_in> with the matrix and returns the result
+;;
+;; <vec_in> must be a vector of type complex (i.e. a 2-column matrix
+;; of type double) and of the correct length
+
+
+(defmethod spmatrix-ccoo multvect (vec_in)
+   ((-idx2- (-double-)) vec_in)
+
+   (let*
+      (  (inptr  (idx-ptr vec_in))
+         (vec_out (double-matrix rows 2))
+         (outptr (idx-ptr vec_out)) )
+      ((-gptr- (-double-)) inptr)
+      ((-idx2- (-double-)) vec_out)
+      ((-gptr- (-double-)) inptr)
+
+      (==> this multvect_r vec_in vec_out)
+
+      vec_out
+   )
+)
+
+
+#? (==> <spmatrix-ccoo> multmatr_r <matr_B> <matr_C>)
+;; This method performs the following matrix multiplication operation:
+;;
+;; {<pre>   C <-- A*B + C </pre>}
+;;
+;; In the above formulae, <A>
+;; is the sparse matrix <spmatrix-dcoo>. The matrices <B> and <C> are
+;; dense matrices of appropiate sizes, to be passed as idx2 of type complex
+;; (i.e. idx3 of type double with last dimension 2).
+;; Note that <C> also takes the result.
+
+(defmethod spmatrix-ccoo multmatr_r (matr_B matr_C)
+   ((-idx3- (-double-)) matr_B matr_C)
+   (let*
+      ((val_ptr (idx-ptr vals))
+       (row_ptr (idx-ptr (select coords 0 0)))
+       (col_ptr (idx-ptr (select coords 0 1)))
+       (ptr_B (idx-ptr matr_B))
+       (ptr_C (idx-ptr matr_C))
+       (cols_B (idx-dim matr_B 1)) )
+      ((-int-) nnz cols_B)
+      ((-gptr- (-double-)) val_ptr row_ptr col_ptr ptr_B ptr_C)
+
+      (when (or (<> rows   (idx-dim matr_C 0))
+	        (<> cols_B (idx-dim matr_C 1))
+		(<> cols   (idx-dim matr_B 0))
+                (<> 2      (idx-dim matr_B 2))
+                (<> 2      (idx-dim matr_C 2)) )
+         (spmatrix-error "mult_matr: Mismatch of matrix sizes.") )
+      (when (not (and (contiguousp matr_B) (contiguousp matr_C)))
+         (spmatrix-error "mult_matr: <matr_B> or <matr_C> not contiguous in memory.") )
+
+      #{ {
+            int i, j;
+	    for (i = 0; i < $nnz; i++)
+	      for (j = 0; j < $cols_B; j++) {
+	        $ptr_C [($row_ptr[i]*$cols_B + j) * 2] +=
+		  $val_ptr[i*2]   * $ptr_B [($col_ptr[i]*$cols_B + j) * 2] -
+                  $val_ptr[i*2+1] * $ptr_B [($col_ptr[i]*$cols_B + j) * 2 + 1];
+	        $ptr_C [($row_ptr[i]*$cols_B + j) * 2 + 1] +=
+		  $val_ptr[i*2+1] * $ptr_B [($col_ptr[i]*$cols_B + j) * 2] +
+                  $val_ptr[i*2]   * $ptr_B [($col_ptr[i]*$cols_B + j) * 2 + 1];
+              }
+	 }
+      #}
+   )
+   matr_C
+)
+
+
+#? (==> <spmatrix-ccoo> enlarge <space>)
+;; This methods appends space to the sparse matrix to allow for appending
+;; further values using the <put> method.
+;;
+;; As this is done by reallocating new space for the complete arrays,
+;; it might be quite slow. So avoid using this method to often.
+
+(defmethod spmatrix-ccoo enlarge (space)
+   ((-int-) space)
+   (if (< space 0)
+      (spmatrix-error "enlarge: negative value passed") )
+   (let*
+      ((od (idx-dim vals 0))
+       (newvals (double-matrix (+ od space) 2))
+       (newcoords (int-matrix 2 (+ od space))) )
+      ((-int-) od)
+      ((-idx2- (-double-)) newvals)
+      ((-idx2- (-int-)) newcoords)
+
+      (idx-copy vals
+                (narrow newvals 0 od 0) )
+      (idx-copy (select coords 0 0)
+                (narrow (select newcoords 0 0) 0 od 0) )
+      (idx-copy (select coords 0 1)
+                (narrow (select newcoords 0 1) 0 od 0) )
+      (setq vals newvals)
+      (setq coords newcoords)
+      (+ od space)
+   )
+   this
+)
+
+
+#? (==> <spmatrix-ccoo> get <row> <col>)
+;; This method returns the element at the given position as
+;; a complex number, i.w. an -idx1- of two doubles
+
+(defmethod spmatrix-ccoo get (row col)
+   ((-int-) row col)
+   (let*
+      ((i 0)
+       (res (double-matrix 2)) )
+      ((-int-) i)
+      ((-idx1- (-double-)) res)
+
+      (if (or (>= row rows) (>= col cols) (< row 0) (< col 0))
+         (spmatrix-error "get: index out of range.") )
+      (for (i 0 (1- (idx-dim vals 0)))
+         (if (and (= row (coords 0 i)) (= col (coords 1 i)))
+            (res 0 (vals i 0))
+            (res 1 (vals i 1))
+         )
+      )
+      res
+   )
+)
+
+
+#? (==> <spmatrix-ccoo> put <row> <col> <val>)
+;; This method puts the value <val> at the given position. If this
+;; position already was in use the value is overwritten, overwise
+;; the position is added. If there is no space left for this,
+;; <enlarge> is called with argument <space> = 1. (Avoid the latter
+;; to happen as it damages performance.)
+;;
+;; <val> is a complex number, i.e. an -idx1- of two -double-'s.
+
+(defmethod spmatrix-ccoo put (row col val)
+   ((-int-) row col)
+   ((-idx1- (-double-)) val)
+   (let*
+      ((i 0) (found ()))
+      ((-int-) i)
+      ((-bool-) found)
+
+      (if (<> (idx-dim val 0) 2)
+         (spmatrix-error "put: passed value is not an -idx1- of two doubles.") )
+      (if (or (>= row rows) (>= col cols) (< row 0) (< col 0))
+         (spmatrix-error "put: index out of range.") )
+      (for (i 0 (1- (idx-dim vals 0)))
+         (when (and (= row (coords 0 i)) (= col (coords 1 i)))
+            (setq found t)
+            (vals i 0 (val 0))
+            (vals i 1 (val 1))
+         )
+      )
+      (when (not found)
+         (when (= (idx-dim vals 0) nnz)
+            (==> this enlarge 1)
+         )
+         (coords 0 nnz row)
+         (coords 1 nnz col)
+         (vals nnz 0 (val 0))
+         (vals nnz 1 (val 1))
+         (setq nnz (1+ nnz))
+      )
+   )
+   val
+)
+
+
+#? (==> <spmatrix-ccoo> scale <factor>)
+;; multiplies all elements of the sparse matrix with the
+;; complex number (i.e. -idx1- of two -double-'s) <factor>
+
+(defmethod spmatrix-ccoo scale (factor)
+   ((-idx1- (-double-)) factor)
+
+   (idx-bloop ((v vals))
+      (idx-copy (c* v factor) v)   ;; this is probably not too efficient, to be improved
+   )
+   this
+)
+
+
+#? (==> <spmatrix-ccoo> get_dense_matrix)
+;; returns a complex dense matrix, i.e. an (-idx3- (-double-)), which equals
+;; the sparse matrix
+
+(defmethod spmatrix-ccoo get_dense_matrix ()
+   (let*
+      ((dense (double-matrix rows cols 2))
+       (i 0) )
+      ((-idx3- (-double-)) dense)
+      ((-int-) i)
+
+      (for (i 0 (1- nnz))
+         (dense (coords 0 i) (coords 1 i) 0 (vals i 0))
+         (dense (coords 0 i) (coords 1 i) 1 (vals i 1))
+      )
+      dense
+   )
+)
+
+
+#? (dense-to-spmatrix-ccoo <dense>)
+;; Transforms the dense complex matrix <dense> (an idx3 of type -double-, with the
+;; last dimension being 2 and giving first the real, then the imaginary part of
+;; the matrix entry) into a complex sparse matrix, i.e. returns an spmatrix-ccoo object
+
+(de dense-to-spmatrix-ccoo (dense)
+   ((-idx3- (-double-)) dense)
+
+   (let*
+      (  (r 0) (c 0) (nz 0) )
+      ((-int-) r c nz)
+
+      (for (r 0 (1- (idx-dim dense 0)))
+         (for (c 0 (1- (idx-dim dense 1)))
+	    (when (or (<> 0 (dense r c 0)) (<> 0 (dense r c 1)))
+               (setq nz (1+ nz))
+	    )
+	 )
+      )
+      (let*
+         (  (val (double-matrix nz 2))
+	    (coords (int-matrix 2 nz))
+	    (i 0) )
+	 ((-idx2- (-double-)) val)
+	 ((-idx2- (-int-)) coords)
+	 ((-int-) i)
+	 ((-int-) r c)  ;; BUG in Lush: This line is ignored
+         (for (r 0 (1- (idx-dim dense 0)))
+            (for (c 0 (1- (idx-dim dense 1)))
+	       (when (or (<> 0 (dense r c 0)) (<> 0 (dense r c 1)))
+	          (val i 0 (dense r c 0))
+	          (val i 1 (dense r c 1))
+		  (coords 0 i (to-int r))
+		  (coords 1 i (to-int c))
+                  (setq i (1+ i))
+               )
+	    )
+         )
+
+	 (new spmatrix-ccoo (idx-dim dense 0) (idx-dim dense 1) val coords)
+      )
+   )
+)
+
+
+
+
+#? * package-private functions
+
+#? (spmatrix-error <msg>)
+;; A package-private function which is always called in case of an error
+;; that is detected by the Lush part of the interface. Up to now, it
+;; only reports the error as given by the string <msg>.
+;;
+;; ToDo: Maybe I should change this function to me a virtual method
+;; of the classes so that it can be overloaded.
+
+#? * To Do
+;; {<ul>
+;; {<li> addition of sparse matrices}
+;; {<li> make the error handler a virtual (i.e. overloadable) method}
+;; }
+
+#? * Version History
+;; {<b> v0.10-beta, released 2003-09-08} {<ul>
+;; {<li> added enlarge, get, put, scale, get_dense_matrix}
+;; {<li> changed name of output functions to pname and pretty and changed
+;;      output style to be Lush style compliant} }
+;;
+;; {<b> v0.01.1, released 2003-07-15}
+;;   {<ul>
+;;   {<li> minor change in documentation immediatly after release of v0.01 } }
+;;
+;; {<b> v0.01, released 2003-07-15}
+;;   {<ul>
+;;   {<li> initial release}
+;;   {<li> Released by posting on the Lush Open Discussion Forum on SourceForge}
+;;   {<li> This was a tidied-up hack, very rudimentary in functionality. It could only
+;;   initialize sparse matrices, real or complex with some values which could
+;;   not be altered supsequently. The sparse matrices could be multiplied with
+;;   dense vectors and dense matrices.}
+;;   {<li> License was the GNU GPL from the beginning.} }
+
+(dhc-make () spmatrix_error
+  (spmatrix-dcoo spmatrix-dcoo multmatr_r multvect_r multvect
+     enlarge get put scale get_dense_matrix)
+  dense-to-spmatrix-dcoo
+  (spmatrix-ccoo spmatrix-ccoo multmatr_r multvect_r multvect
+     enlarge get put scale get_dense_matrix)
+  dense-to-spmatrix-ccoo
+)
+
+
+)
