@@ -344,7 +344,8 @@ gcc -DHAVE_CONFIG_H -I/home/yann/lush/include   -DNO_DEBUG -Wall -O3 -funroll-lo
 = "/tmp/C/i686-pc-linux-gnu/junk.o"
 .P
 Now let's see how many CPU seconds it takes to execute the compiled version of
-the code. We need to repeat the code 1000 times to get a meaningful figure:
+the code. We need to repeat the code a few hundred times to get a 
+meaningful figure:
 .CODE
   ? (time (repeat 450  (first-sum 5000000)))
   = 7
@@ -489,18 +490,14 @@ First, dynamically load the object file into Lush
   ? (mod-load "titi.o")
 .P
 then, write a lisp function whose only purpose is to call <tt>sq</tt>.
-To be able to call C from Lush, we need to load the "cmacro" library.
 .CODE
-  ? (libload "cmacro")
-  [/usr/local/lush/lsh/cmacro.lsh]
-  = "/usr/local/lush/lsh/cmacro.lsh"
   ? (de square (x) ((-float-) x) 
-        (cheader "extern float sq(float);")
-        (float #{ sq( $x ) #} )
+        (cpheader "extern float sq(float);")
+        (to-float #{ sq( $x ) #} )
 .P
 Here is what the above means: <(de square (x) ...)> means define a new Lisp
 function called <square> with a single argument <x>.
-<((-float-) x)> simply declares <x> as float.  <(float ....)> converts 
+<((-float-) x)> simply declares <x> as float.  <(to-float ....)> converts 
 its argument to float (like a cast in C).  The sequence
 <#{ .... #}> allows to insert C code within Lisp code.  Therefore
 <#{ sq( $x ) #}> simply calls the C function <sq> and returns
@@ -546,19 +543,17 @@ this way:
 	 #}
          r))
   (dhc-make () first-sum)
-  Preprocessing first-sum...
-  ...Done
-  Parsing types for first-sum...
-  ...Done
-  Generating C code first-sum...
-  ...Done
-  "cc -I/usr/local/lush/include -I. -c -DLINUX86 -O -o OBJS/LINUX86/first_sum.o first_sum.c" 
-  = (first-sum)
-  ? (time (repeat 1000 (first-sum 100000)))
-  = 0.77
+  [dh-compile.lsh] (autoload)
+  [dh-util.lsh]
+  [dh-macro.lsh]
+ Preprocessing and parsing first-sum ...
+ Generating C for first-sum ...
+ gcc -DHAVE_CONFIG_H -I/home/yann/lush/include   -DNO_DEBUG -Wall -O3 -funroll-loops -mcpu=i686 -pthread -c /home/yann/lush/C/first_sum.c -o /home/yann/lush/C/i686-pc-linux-gnu/first_sum.o
+  = "/home/yann/lush/C/i686-pc-linux-gnu/first_sum.o"
+  ? (time (repeat 900 (first-sum 5000000)))
+  = 4
 .P
-That's about 23 percent faster than the version written 
-entirely in Lisp and compiled.
+That's about 4 times faster than the compiled Lisp version.
 
 #? *** Multiple file programs and search path
 
@@ -568,10 +563,10 @@ functions in the file <"/usr/yann/lsh/dsp.lsh">, and now we are writing a
 program <"tutu.lsh"> that uses some of those functions.  The beginning of
 <"tutu.lsh"> would look like the following
 .CODE
-  #? File "tutu.lsh"
-  ;; my really cool dsp application
+  #? *** My Cool Signal Processing Application
+  ;; this is my really cool dsp application.
   
-  (load "/usr/yann/lsh/dsp")
+  (load "/home/yann/lsh/dsp")
   .....
 .P
 (the <.lsh> extension is automatically added if required).  However, if
@@ -580,10 +575,10 @@ on their own, <"dsp.lsh"> will be loaded several times.  This can be
 alleviated by using the function <libload> which loads a file only if it
 has not been loaded before.
 .CODE
-  #? File "tutu.lsh"
-  ;; my really cool dsp application
+  #? *** My Cool Signal Processing Application
+  ;; this is my really cool dsp application.
   
-  (libload "/usr/yann/lsh/dsp")
+  (load "/home/yann/lsh/dsp")
   .....
 .P
 Putting absolute path names in a program is generally a bad idea since
@@ -594,12 +589,18 @@ search path. The default search path includes <lush/local, lush/packages,
 lush/lsh, and lush/sys>. The search path
 can be user-extended with the <addpath> function:
 .CODE
-  (addpath "/usr/yann/lsh")
+  (addpath "/home/yann/lsh")
 .P
 now, loading <"dsp.lsh"> only requires:
 .CODE
   (libload "dsp")
 .P
+The function <libload> has another important feature: it keep track of 
+the tree of dependencies between Lush program files. It also keeps
+track of the times of last modification of each file: when a file
+is loaded with <libload>, all the files on which this file depends
+are also loaded, but only if they have been modified since last
+time they were libloaded.
 
 #? *** Setting things up
 
@@ -614,14 +615,16 @@ Most people will prefer to run Lush from within Emacs.  To make this
 convenient, a few lines should be included in your .emacs file so as
 to correctly format and indent Lush Lisp code, hilite the commands
 apropriately, and automatically turn on the Lisp mode whenever an
-Lush file is loaded. Such additions to the .emacs file are given in 
-the section "emacs configuration file".
+Lush file is loaded. Such a <.emacs> file is provided in 
+<LUSHDIR/etc/lush.el>. Simply add the following line in your
+own .emacs file: <(load "your-lush-dir/etc/lush.el")>.
 .P
 Then, in your bin directory, make a symbolic link from "lisp"
 to the Lush executable:
 .CODE
-amiga% ln -s /usr/local/lush/bin/lush /home/yann/bin/lisp
+amiga% ln -s your-lush-dir/bin/lush your-home-dir/bin/lisp
 .P
+(this assumes that <your-home-dir/bin/lisp> is in your shell search path).
 When in Emacs, type "ESC-X run-lisp" (or M-X run-lisp).
 This will start Lush in the directory of the current buffer file.
 .P
@@ -1123,6 +1126,63 @@ double-buffered animation:
       (draw-stuff-3)))
 .P
 
+#? *** Writing Executable "Shell Scripts" with Lush
+
+Lush can be used to write executable scripts that can be
+run just like shell scripts or Perl scripts.
+
+Rather than a long explanation, here is an example
+of a Lush script file:
+.CODE
+  #!/usr/bin/lush @@
+  (printf "Capitalizing the arguments:\n")
+  (each ((arg (cdr argv))) (printf "%s %s\n" arg (upcase arg)))
+.P
+The <@@> at the end of the first line tells Lush to
+run in script mode. In that mode, Lush does not display the
+usual startup banner. It load <sys/sysenv.lsh>. It sets
+the variable <argv> to a list of strings, where the strings
+are the command line arguments (including the command itself). 
+Finally it reads and evaluates the content of the 
+script file. It is important to note that <lsh/lushenv.lsh>
+is not loaded automaticall in script mode. To have the
+same environment as in regular Lush, the first line of
+a script should probably be <(libload (concat-fname lushdir "lsh/lushenv"))>.
+
+The library <lsh/libc/shell.lsh> contains several functions to 
+facilitate the writing of shell scripts. Among other things, 
+it contains Lisp versions of common shell functions such 
+as <ls>, <cp>, <mv>, etc.
+
+Here is another script example: a photo slideshow program in 12 
+lines of Lush. Put this in a file (say <slideshow.lsh>), make it 
+executable with <chmod a+x slideshow.lsh>. Then, at the shell 
+prompt, type: <slideshow photo1.jpg photo2.jpg photo3.jpg>:
+.CODE
+#!/usr/bin/lush @@
+(libload (concat-fname lushdir "lsh/lushenv"))
+(libload "libimage/image-io")
+(libload "libimage/rgbaimage")
+(setq window (x11-window 1 1 640 480 "Slide Show"))
+(while t
+  (each ((f (cdr argv)))
+    (rgb-draw-matrix 
+     0 0 (rgbaim-resize (image-read-rgba f) (xsize) (ysize) 0))
+    (sleep 4)))
+.P
+This assumes that your lush executable is in </usr/bin/lush>.
+
+
+#? *** Writing Standalone Binary Executables with Lush
+
+[under construction]
+
+Using the function <dump>, it is possible to create a binary image of the
+lisp structures contained in a Lush process.  Such binary dump files are
+useful for distributing Lush programs to users who may not have installed
+Lush. Details are given in a section of this manual entitled Lush Runtime.
+.HLINK Lush Runtime
+
 #? *** The Ogre GUI Toolkit
 
 Lush contains a fairly complete Graphical User Interface
@@ -1147,4 +1207,5 @@ in the Packages/SDL section of this manual.
 Lush is also interfaced to OpenGL, which allows the 
 development of 3D applications.
 .SEE OpenGL
+
 
