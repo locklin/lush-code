@@ -24,8 +24,9 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.6 2002-05-06 20:09:47 leonb Exp $
+ * $Id: module.c,v 1.7 2002-05-07 00:14:20 leonb Exp $
  **********************************************************************/
+
 
 
 #include "header.h"
@@ -106,12 +107,13 @@ static char* dlerror(void)
 
 /* ------ THE MODULE DATA STRUCTURE -------- */
 
-#define MODULE_USED      0x01
-#define MODULE_DLD       0x02
-#define MODULE_SO        0x04
-#define MODULE_EXEC      0x08
-#define MODULE_INIT      0x20
-#define MODULE_CLASS     0x40
+#define MODULE_USED       0x01
+#define MODULE_DLD        0x02
+#define MODULE_SO         0x04
+#define MODULE_EXEC       0x08
+#define MODULE_INIT       0x20
+#define MODULE_CLASS      0x40
+#define MODULE_STICKY     0x80
 
 
 struct module {
@@ -120,7 +122,8 @@ struct module {
   struct module *next;
   dlopen_handle_t *handle;
   char *filename;
-  void (*init)(void);
+  char *initname;
+  void *initaddr;
   at *backptr;
   at *defs;
 };
@@ -130,7 +133,7 @@ static struct alloc_root module_alloc = {
 };
 
 static struct module root = { 
-  (MODULE_USED|MODULE_INIT|MODULE_EXEC), &root, &root 
+  (MODULE_USED|MODULE_STICKY|MODULE_INIT|MODULE_EXEC), &root, &root 
 };
 
 static struct module *current = &root;
@@ -140,22 +143,36 @@ static at *atroot;
 
 /* ---------- THE MODULE OBJECT ----------- */
 
+static char *module_maybe_unload(struct module *m);
+
 static void 
 module_dispose(at *p)
 {
-  struct module *m = p->Object;
+  struct module *m;
+  m = p->Object;
+  /* Unlock dependencies */
   UNLOCK(m->defs);
   m->defs = NIL;
+  m->backptr = NIL;
+  if (m == &root)
+    return;
+  /* Attempt to unload */
+  if (m->prev && m->next)
+    module_maybe_unload(m);
+  if (m->prev && m->next)
+    m->prev->next = m->next;
+  if (m->prev && m->next)
+    m->next->prev = m->prev;    
+  /* Free memory */
   if (m->filename)
     free(m->filename);
+  if (m->initname)
+    free(m->initname);
   m->filename = 0;
+  m->initname = 0;
+  m->initaddr = 0;
   m->handle = 0;
-  if (m != &root) 
-    {
-      m->prev->next = m->next;
-      m->next->prev = m->prev;
-      deallocate(&module_alloc, (struct empty_alloc *) m);
-    }
+  deallocate(&module_alloc, (struct empty_alloc *) m);
 }
 
 static void 
@@ -228,16 +245,15 @@ DX(xmodule_unloadable_p)
   if (! EXTERNP(p, &module_class))
     error(NIL,"Not a module", p);
   m = p->Object;
-  if (m->flags & (MODULE_SO|MODULE_CLASS))
-    return NIL;
-  return true();
+  if (m->flags & MODULE_STICKY)
+     return NIL;
+     return true();
 }
 
 DX(xmodule_defs)
 {
   at *p;
   at *ans = NIL;
-  at **where = &ans;
   struct module *m;
   ARG_NUMBER(1);
   ARG_EVAL(1);
@@ -248,10 +264,7 @@ DX(xmodule_defs)
   p = m->defs;
   while (CONSP(p) && CONSP(p->Car))
     {
-      LOCK(p->Car->Car);
-      LOCK(p->Car->Cdr);
-      *where = cons(cons(p->Car->Car,p->Car->Cdr),NIL);
-      where = &((*where)->Cdr);
+      ans = cons(new_cons(p->Car->Car,p->Car->Cdr),ans);
       p = p->Cdr;
     }
   return ans;
@@ -290,12 +303,11 @@ find_primitive(at *module, at *name)
 
 
 
-/* --------- INITIALISATION CODE --------- */
+/* --------- DYNLINK UTILITY FUNCTIONS --------- */
 
-static const char *program_name = 0;
+
+
 static int dynlink_initialized = 0;
-
-
 
 static void 
 dynlink_error(at *p)
@@ -306,7 +318,7 @@ dynlink_error(at *p)
 #ifdef DLDBFD
   if (dld_errno) 
     {
-      strcpy(buffer,"dld/bfd error: ");
+      strcpy(buffer,"dld/bfd error\n*** ");
       strcat(buffer, dld_errno);
     }
 #endif  
@@ -314,7 +326,7 @@ dynlink_error(at *p)
   err = dlerror();
   if (err)
     {
-      strcpy(buffer,"dlopen error: ");
+      strcpy(buffer,"dlopen error\n*** ");
       strcat(buffer, err);
     }
 #endif
@@ -327,15 +339,10 @@ dynlink_init(void)
   if (! dynlink_initialized)
     {
 #ifdef DLDBFD
-      char *exec;
-      if (!program_name)
+      if (!root.filename)
         error(NIL,"Internal error (program_name unset)",NIL);        
-      exec = dld_find_executable(program_name);      
-      if (!exec)
-        error(NIL,"Cannot find lush executable",NIL);
-      if (dld_init(exec))
+      if (dld_init(root.filename))
         dynlink_error(NIL);
-      free(exec);
 #endif
       dynlink_initialized = 1;
     }
@@ -345,11 +352,340 @@ static void
 dynlink_hook(struct module *m, char *hookname)
 {
   at *hook = named(hookname);
-  at *ans = send_message(NIL, m->backptr, hook, NIL);
+  at *ans = checksend(&module_class, hook);
+  if (ans)
+    {
+      UNLOCK(ans);
+      ans = send_message(NIL, m->backptr, hook, NIL);
+      UNLOCK(ans);
+    }
   UNLOCK(hook);
-  UNLOCK(ans);
 }
 
+
+
+
+/* --------- EXECUTABILITY CHECK --------- */
+
+
+
+static void
+update_exec_flag(struct module *m, int hook)
+{
+  int oldstate = (m->flags & MODULE_EXEC);
+  int newstate = TRUE;
+#ifdef DLDBFD
+  if (m->flags & MODULE_DLD)
+    {
+      newstate = FALSE;
+      if (m->initname)
+        newstate = dld_function_executable_p(m->initname);
+    }
+#endif
+  m->flags &= ~MODULE_EXEC;
+  if (newstate)
+    m->flags |= MODULE_EXEC;
+  if (hook && m->defs && newstate != oldstate)
+    dynlink_hook(m, "exec");
+}
+
+static void
+update_init_flag(struct module *m, int hook)
+{
+  int status;
+  
+  if (m->flags & MODULE_INIT) 
+    return;
+  if (! (m->flags & MODULE_EXEC))
+    return;
+  if (! (m->initaddr && m->initname))
+    return;
+  
+  /* Execute init function */
+  if (! strcmp(m->initname, "init_user_dll"))
+    {
+      /* TL3 style init function */
+      int (*call)(int, int) = m->initaddr;
+      current = m;
+      status = (*call)(TLOPEN_MAJOR, TLOPEN_MINOR);
+      current = &root;
+    }
+  else
+    {
+      /* SN3 style init function */
+      int *majptr, *minptr, maj, min;
+      strcpy(string_buffer, "majver_");
+      strcat(string_buffer, m->initname + 5);
+      majptr = (int*) dld_get_symbol(string_buffer);
+      strcpy(string_buffer, "minver_");
+      strcat(string_buffer, m->initname + 5);
+      minptr = (int*) dld_get_symbol(string_buffer);
+      maj = ((majptr) ? *majptr : -1);
+      min = ((minptr) ? *minptr : -1);
+      status = -2;
+      if (maj == TLOPEN_MAJOR && min >= TLOPEN_MINOR)
+        {
+          void (*call)(void) = m->initaddr;
+          current = m;
+          (*call)();
+          current = &root;
+          status = 0;
+        }
+    }
+  /* Mark new status */
+  if (status >= 0)
+    {
+      m->flags |= MODULE_INIT;
+      if (hook)
+        dynlink_hook(m, "init");
+    }
+  else 
+    {
+      m->initaddr = 0;
+      if (status == -2)
+        fprintf(stderr,
+                "*** WARNING: Module %s\n"
+                "***   Initialization failed because of mismatched version number\n",
+                m->filename );
+      else if (status == -1)
+        fprintf(stderr,
+                "*** WARNING: Module %s\n"
+                "***   Initialization failed\n",
+                m->filename );
+    }
+}
+
+
+static int check_executability = FALSE;
+
+static void 
+check_exec(void)
+{
+  if (check_executability)
+    {
+      struct module *m;
+      check_executability = FALSE;
+      for (m=root.next; m!=&root; m=m->next)
+        update_exec_flag(m, TRUE);
+      for (m=root.next; m!=&root; m=m->next)
+        if (! (m->flags & MODULE_INIT))
+          update_init_flag(m, TRUE);
+    }
+}
+
+void
+check_primitive(at *prim)
+{
+  struct cfunction *cfunc = prim->Object;
+  if (CONSP(cfunc->name) 
+      && EXTERNP(cfunc->name->Car, &module_class) )
+    {
+      struct module *m = cfunc->name->Car->Object;
+      if (check_executability)
+        check_exec();
+      if (! (m->flags & MODULE_EXEC))
+        error(NIL,"Attempting to execute a partially linked function", prim);
+    }
+}
+
+
+
+/* --------- MODULE_UNLOAD --------- */
+
+
+
+static char *
+module_maybe_unload(struct module *m)
+{
+  at *p;
+
+  if (m == &root)
+    return "Cannot unload root module";
+  if (! (m->flags & MODULE_DLD))
+    return "Cannot unload module of this type";
+  if (m->flags & MODULE_CLASS)
+    return "Cannot unload a module defining a primitive class";
+  if (m->flags & MODULE_STICKY)
+    return "Cannot unload this module";
+  /* Advertize */
+  dynlink_hook(m, "unlink");
+  if (m->defs)
+    for (p = m->defs; CONSP(p); p = p->Cdr)
+      if (CONSP(p->Car))
+        delete_at(p->Car->Cdr);
+  UNLOCK(m->defs);
+  m->defs = NIL;
+  /* Unload module */
+#if DLOPEN
+  if (m->flags & MODULE_SO)
+    if (dlclose(m->handle))
+      dynlink_error(new_string(m->filename));
+#endif
+#if DLDBFD
+  if (m->flags & MODULE_DLD)
+    if (dld_unlink_by_file(m->filename, 1))
+      dynlink_error(new_string(m->filename));
+#endif
+  check_executability = TRUE;
+  /* Remove the module from the chain */
+  m->prev->next = m->next;
+  m->next->prev = m->prev;
+  m->next = m->prev = 0;
+  unprotect(m->backptr);
+  return NULL;
+}
+
+void
+module_unload(at *atmodule)
+{
+  char *err;
+  if (! EXTERNP(atmodule, &module_class))
+    error(NIL,"Not a module", atmodule);
+  if ((err = module_maybe_unload(atmodule->Object)))
+    error(NIL, err, atmodule);
+}
+
+DX(xmodule_unload)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  module_unload(APOINTER(1));
+  check_exec();
+  return NIL;
+}
+
+
+
+
+
+/* --------- MODULE_LOAD --------- */
+
+
+at *
+module_load(char *filename)
+{
+  char *l;
+  int len;
+  at *ans;
+  struct module *m;
+  int dlopen;
+  dlopen_handle_t handle = 0;
+  /* Check that file exists */
+  filename = concat_fname(NULL, filename);
+  if (! filep(filename))
+    error(NIL,"file not found",new_string(filename));
+  /* Check if the file extension indicates a DLL */
+  dlopen = 0;
+  l = filename + strlen(filename);
+  while (l>filename && isdigit(l[-1]))
+    {
+      while (l>filename && isdigit(l[-1]))
+        l -= 1;
+      if (l>filename && l[-1]=='.')
+        l -= 1;
+    }
+  if (l[0]==0 || l[0]=='.')
+    {
+      len = strlen(EXT_DLL);
+      if (!strncmp(EXT_DLL, l-len, len))
+        dlopen = 1;
+    }
+  /* Initialize */
+  dynlink_init();
+  /* Are we reloading an existing module */
+  for (m = root.next; m != &root; m = m->next)
+    if (!strcmp(filename, m->filename))
+      break;
+  if (m != &root)
+    if (module_maybe_unload(m))
+      {
+        LOCK(m->backptr);
+        return m->backptr;
+      }
+  /* Allocate */
+  m = allocate(&module_alloc);
+  m->flags = MODULE_USED ;
+  m->prev = 0;
+  m->next = 0;
+  m->handle = handle;
+  m->filename = strdup(filename);
+  m->initname = 0;
+  m->initaddr = 0;
+  m->defs = 0;
+  m->backptr = 0;
+  ans = new_extern(&module_class, m);
+  m->backptr = ans;
+  if (! m->filename) 
+    error(NIL,"out of memory", NIL);
+  /* Load the file */
+  if (dlopen)
+    {
+#if DLDBFD
+      if (! (handle = dld_dlopen(m->filename, RTLD_NOW)))
+        dynlink_error(new_string(m->filename));
+#elif DLOPEN
+      if (! (handle = dlopen(m->filename, RTLD_NOW)))
+        dynlink_error(new_string(m->filename));
+#else
+      error(NIL,"Dynlinking this file is not supported (need dlopen)", 
+            new_string(m->filename));
+#endif
+      m->flags |= MODULE_SO | MODULE_STICKY;
+    }
+  else
+    {
+#if DLDBFD
+      if (dld_link(m->filename))
+        dynlink_error(new_string(m->filename));
+#else
+      error(NIL,"Dynlinking this file is not supported (need bfd)", 
+            new_string(m->filename));
+#endif      
+      m->flags |= MODULE_DLD;
+    }
+  /* Search init function */
+#if DLOPEN
+  if (dlopen)
+    {
+      strcpy(string_buffer, "init_user_dll");
+      m->initaddr = dlsym(handle, string_buffer);
+    }
+#endif
+#if DLDBFD
+  if (! m->initaddr)
+    {
+      strcpy(string_buffer, "init_");
+      strcat(string_buffer, basename(m->filename, 0));
+      if ((l = strchr(string_buffer, '.')))
+        l[0] = 0;
+      m->initaddr = dld_get_func(string_buffer);
+    }
+#endif
+  if (m->initaddr)
+    {
+      m->initname = strdup(string_buffer);
+      if (! m->initname)
+        error(NIL,"Out of memory", NIL);
+    }
+  /* Terminate */
+  m->prev = root.prev;
+  m->next = &root;
+  m->prev->next = m;
+  m->next->prev = m;
+  protect(ans);
+  check_executability = TRUE;
+  return ans;
+}
+
+DX(xmodule_load)
+{
+  at *ans;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  ans = module_load(ASTRING(1));
+  check_exec();
+  return ans;
+}
 
 
 
@@ -375,7 +711,7 @@ module_def(at *name, at *val)
     error("module.c/module_def",
           "internal error (symbol expected)",name);
   current->defs = cons(new_cons(name,val),current->defs);
-  /* Root definitions are also writtin into symbols */
+  /* Root definitions are also written into symbols */
   if (current == &root)
     {
       struct symbol *symb = name->Object;
@@ -390,8 +726,14 @@ module_def(at *name, at *val)
 void 
 class_define(char *name, class *cl)
 {
-  at *symb = new_symbol(name);
-  at *classat = new_extern(&class_class,cl);
+  at *symb;
+  at *classat;
+  
+  if (current->flags & MODULE_DLD)
+    error(NIL,"Cannot (yet) define a primitive class in a dld/bfd module",NIL);
+
+  symb = new_symbol(name);
+  classat = new_extern(&class_class,cl);
   cl->classname = symb;
   cl->priminame = module_priminame(symb);
   cl->backptr = classat;
@@ -402,7 +744,7 @@ class_define(char *name, class *cl)
   cl->atsuper = NIL;
   cl->nextclass = NIL;
   module_def(symb, classat);
-  current->flags |= MODULE_CLASS;
+  current->flags |= MODULE_CLASS | MODULE_STICKY;
   UNLOCK(classat);
 }
 
@@ -445,16 +787,25 @@ void
 init_module(char *progname)
 {
   class_define("MODULE",&module_class);
+  module_class.dontdelete = TRUE;
   /* Create root module */
   atroot = new_extern(&module_class, &root);
   root.backptr = atroot;
   protect(atroot);
   /* Functions */
-  dx_define("module_list", xmodule_list);
-  dx_define("module_filename", xmodule_filename);
-  dx_define("module_defs", xmodule_defs);
-  dx_define("module_executable_p", xmodule_executable_p);
-  dx_define("module_unloadable_p", xmodule_unloadable_p);
+  dx_define("module-list", xmodule_list);
+  dx_define("module-filename", xmodule_filename);
+  dx_define("module-defs", xmodule_defs);
+  dx_define("module-executable-p", xmodule_executable_p);
+  dx_define("module-unloadable-p", xmodule_unloadable_p);
+  dx_define("module-load", xmodule_load);
+  dx_define("module-unload", xmodule_unload);
   /* Cache program name for later use */
-  program_name = progname;
+#ifdef DLDBFD
+  root.filename = dld_find_executable(progname);
+#else
+  root.filename = progname;
+#endif  
 }
+
+

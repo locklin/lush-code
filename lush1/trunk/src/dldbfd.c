@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.4 2002-05-03 18:33:37 leonb Exp $
+ * $Id: dldbfd.c,v 1.5 2002-05-07 00:14:20 leonb Exp $
  **********************************************************************/
 
 
@@ -2458,7 +2458,7 @@ dld_dlopen(char *path, int mode)
         /* Check BFD and HANDLE */
         ASSERT_BFD(abfd);
         if (! bfd_check_format(abfd, bfd_object))
-            THROW("Cannot read symbols of main program");
+            THROW("Cannot read symbols of shared library");
         if (!handle)
           {
             if (err)

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.17 2002-05-06 21:29:07 leonb Exp $
+ * $Id: header.h,v 1.18 2002-05-07 00:14:20 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -734,6 +734,7 @@ TLAPI void class_define(char *name, class *cl);
 TLAPI void dx_define(char *name, at *(*addr) (int, at **));
 TLAPI void dy_define(char *name, at *(*addr) (at *));
 
+LUSHAPI void check_primitive(at *prim);
 LUSHAPI at *find_primitive(at *module, at *name);
 LUSHAPI at *module_load(char *filename);
 LUSHAPI void module_unload(at *atmodule);
