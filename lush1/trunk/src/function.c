@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: function.c,v 1.2 2002-05-01 18:32:46 leonb Exp $
+ * $Id: function.c,v 1.3 2002-05-03 18:24:15 leonb Exp $
  **********************************************************************/
 
 
@@ -329,7 +329,7 @@ new_dx(at *(*addr) (int, at **))
   at *p;
 
   cfunc = allocate(&function_alloc);
-  cfunc->c_function = addr;
+  cfunc->c_function = cfunc->c_info = addr;
   cfunc->formal_arg_list = NIL;
   cfunc->evaluable_list = NIL;
   p = new_extern(&dx_class, cfunc);
@@ -378,7 +378,7 @@ new_dy(at *(*addr) (at *))
   cfunc = allocate(&function_alloc);
   cfunc->formal_arg_list = NIL;
   cfunc->evaluable_list = NIL;
-  cfunc->c_function = addr;
+  cfunc->c_function = cfunc->c_info = addr;
   p = new_extern(&dy_class, cfunc);
   p->flags |= X_FUNCTION;
   cfunc->formal_arg_list = p;
@@ -421,7 +421,7 @@ new_de(at *formal, at *evaluable)
   at *p;
 
   lfunc = allocate(&function_alloc);
-  lfunc->c_function = 0;
+  lfunc->c_function = lfunc->c_info = 0;
   lfunc->formal_arg_list = formal;
   LOCK(formal);
   lfunc->evaluable_list = evaluable;
@@ -491,7 +491,7 @@ new_df(at *formal, at *evaluable)
   at *p;
 
   lfunc = allocate(&function_alloc);
-  lfunc->c_function = 0;
+  lfunc->c_function = lfunc->c_info = 0;
   lfunc->formal_arg_list = formal;
   LOCK(formal);
   lfunc->evaluable_list = evaluable;
@@ -565,7 +565,7 @@ new_dm(at *formal, at *evaluable)
   at *p;
 
   lfunc = allocate(&function_alloc);
-  lfunc->c_function = 0;
+  lfunc->c_function = lfunc->c_info = 0;
   lfunc->formal_arg_list = formal;
   LOCK(formal);
   lfunc->evaluable_list = evaluable;

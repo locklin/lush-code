@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.12 2002-05-02 21:00:18 leonb Exp $
+ * $Id: header.h,v 1.13 2002-05-03 18:24:13 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -533,9 +533,10 @@ extern TLAPI char aspect_string[];
 
 struct function {
   int used;			/* CFUNC                  LFUNC */
-  at *formal_arg_list;		/* backptr              arglist */
+  at *formal_arg_list;		/* backptr                arglist */
   at *evaluable_list;		/* name                   body  */
-  void *c_function;		/* call                      0  */
+  void *c_function;		/* call/stub              0  */
+  void *c_info;		        /* call/call              0  */
 };
 
 extern TLAPI class de_class;
@@ -722,6 +723,8 @@ TLAPI void setslot(at**, at*, at*);
 
 
 /* MODULE.H --------------------------------------------------- */
+
+extern LUSHAPI class module_class;
 
 TLAPI void class_define(char *name, class *cl);
 TLAPI void dx_define(char *name, at *(*addr) (int, at **));
