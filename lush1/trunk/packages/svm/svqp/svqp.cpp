@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp.cpp,v 1.7 2004-05-12 17:46:49 leonb Exp $
+ * $Id: svqp.cpp,v 1.8 2004-05-12 17:51:59 leonb Exp $
  **********************************************************************/
 
 #include "svqp.h"
@@ -482,7 +482,7 @@ QuadraticProgram::perform_coordinate_descent(void)
 	      ostep = (gmax - gmin) / curvature;
 	      if (ostep < step)
 		{
-		  maxrun -= 2;
+		  maxrun -= 1;
 		  step = ostep;
 		}
 	    }
