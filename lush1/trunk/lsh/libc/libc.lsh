@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: libc.lsh,v 1.7 2002-09-03 04:59:08 profshadoko Exp $
+;;; $Id: libc.lsh,v 1.8 2002-09-06 22:29:24 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "constants.lsh")
@@ -43,11 +43,37 @@
 
 #? (malloc <n>)
 ;; malloc <n> bytes of memory and return a gptr to it.
-(de malloc (n) ((-int-) n) (gptr #{ malloc($n) #}))
+(de malloc (n) 
+  ((-int-) n) 
+  (cpheader "#include <stdlib.h>")
+  (cpheader "#include <string.h>")
+  (to-gptr #{ malloc($n) #}))
 
 #? (free <p>)
 ;; free malloc'ed memory area pointed to by gptr <p>.
 (de free (p) ((-gptr-) p) #{ free($p) #} ())
+
+#? (memcpy <dest> <src> <size>)
+;; free malloc'ed memory area pointed to by gptr <p>.
+(de memcpy (dest src size) 
+  ((-gptr-) dest src)
+  ((-int-) size)
+  #{ memcpy($dest,$src,$size) #} ())
+
+#? (gptr+ <p> <n>)
+;; add <n> to generic pointer <p>.
+;; The returned pointer points <n> 
+;; bytes higher than <p>.
+(de gptr+ (p n)
+  ((-gptr-) p) ((-int-) n)
+  (to-gptr #{ (gptr)((char*)($p) + ($n)) #}))
+
+#? (gptr- <p1> <p2>)
+;; returns the distance between
+;; two pointers (in bytes).
+(de gptr- (p1 p2)
+  ((-gptr-) p1 p2)
+  (to-int #{ (int)((char*)($p2) - (char*)($p1)) #}))
 
 #? (testbit <v> <b>)
 ;; test if bit <b> of integer <v> is on.
@@ -75,6 +101,99 @@
 (de str-ptr (s) ((-str-) s) (to-gptr #{ (char *)($s->data) #}))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(dhc-make () little-endianp malloc free testbit str-ptr)
+;; peek/poke
+
+(de peek-ubyte (s) 
+  ((-gptr- "unsigned char *") s)
+  (to-int #{ *(unsigned char *)($s) #}))
+(de poke-ubyte (s v) 
+  ((-gptr- "unsigned char *") s) ((-ubyte-) v) 
+  (to-int #{ *(unsigned char *)($s) = (unsigned char)$v #}))
+
+(de peek-short (s) 
+  ((-gptr- "short *") s)
+  (to-int #{ *(short *)($s) #}))
+(de poke-short (s v) 
+  ((-gptr- "short *") s) ((-short-) v) 
+  (to-int #{ *(short *)($s) = (short)$v #}))
+
+(de peek-int (s) 
+  ((-gptr- "int *") s)
+  (to-int #{ *(int *)($s) #}))
+(de poke-int (s v) 
+  ((-gptr- "int *") s) ((-int-) v) 
+  (to-int #{ *(int *)($s) = (int)$v #}))
+
+(de peek-float (s) 
+  ((-gptr- "float *") s)
+  (to-float #{ *(float *)($s) #}))
+(de poke-float (s v) 
+  ((-gptr- "float *") s) ((-float-) v) 
+  (to-float #{ *(float *)($s) = (float)$v #}))
+
+(de peek-double (s) 
+  ((-gptr- "double *") s)
+  (to-double #{ *(double *)($s) #}))
+(de poke-double (s v) 
+  ((-gptr- "double *") s) ((-double-) v) 
+  (to-double #{ *(double *)($s) = (double)$v #}))
+
+(de peek-gptr (s) 
+  ((-gptr- "gptr *") s)
+  (to-gptr #{ *(gptr *)($s) #}))
+(de poke-gptr (s v) 
+  ((-gptr- "gptr *") s) ((-gptr-) v) 
+  (to-gptr #{ *(gptr *)($s) = (gptr)$v #}))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; fields is a hash table whose keys are field names
+;; and values are pairs (ctype . offset)
+(defclass cstruct object
+  type					; pointer to the ctype
+  data					; storage that contains the object
+  )
+
+(defmethod cstruct get (fld)
+  (==> get (:type:field fld)))
+
+(defclass ctype object
+  size
+  fields)
+
+;; take a list of strings that define C slots
+;; generate a C function that returns an array
+;; with the offsets and sizes of the slots.
+(de get-ctype-info (flist) ())
+
+;; to get the offset of a field in a C struct:
+;; #include <stddef.h>
+;; #ifndef offsetof
+;; #define offsetof(type, mem) ((size_t) \
+;;		((char *)&((type *) 0)->mem - (char *)((type *) 0)))
+;; #endif
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make 
+ () 
+ little-endianp malloc free testbit str-ptr
+ memcpy gptr+ gptr-
+ peek-ubyte
+ poke-ubyte
+ peek-short
+ poke-short
+ peek-int
+ poke-int
+ peek-float
+ poke-float
+ peek-double
+ poke-double
+ peek-gptr
+ poke-gptr)
+
+
 
 
