@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.3 2002-07-25 01:14:48 leonb Exp $
+ * $Id: io.c,v 1.4 2002-08-26 23:13:54 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -121,42 +121,6 @@ DX(xmacrochp)
     return NIL;
 }
 
-
-/*
- * test_char(c,s) does the string s match the character c ? the string s is
- * an optionnal tilde  '~', any string of characters, eventually separed by
- * '-'.
- */
-static int 
-test_char(char c, register char *s)
-{
-  register int found;
-  register int old;
-
-  ifn(s)
-    return FALSE;
-
-  if (*s == '~') {
-    found = FALSE;
-    s++;
-  } else
-    found = TRUE;
-
-  old = 0;
-  while (*s) {
-    if (s[0] == '-' && old && s[1]) {
-      if (c > old && c <= s[1])
-	return found;
-      else
-	++s;
-    }
-    if (c == s[0])
-      return found;
-    old = *s++;
-  }
-
-  return !found;
-}
 
 /* --------- CHARACTER PRIMITIVES --------- */
 
@@ -455,6 +419,47 @@ DX(xask)
     return NIL;
 }
 
+
+
+
+
+/*
+ * make_testchar_map(s,buf[256])
+ */
+static void
+make_testchar_map(char *s, char *buf)
+{
+  memset(buf, 0, 256);
+  if (s)
+    {
+      int old = -1;
+      int yes = TRUE;
+      if (*s == '~') 
+        {
+          memset(buf, yes, 256);
+          yes = FALSE;
+          s++;
+        }
+      while (*s)
+        {
+          if (old>0 && s[0]=='-' && s[1]) 
+            {
+              while (old < ((unsigned char*)s)[1])
+                buf[old++] = yes;
+              old = -1;
+              s += 1;
+            } 
+          else 
+            {
+              old = *(unsigned char*)s;
+              buf[old] = yes;
+            }
+          s += 1;
+        } 
+    }
+}
+
+
 /*
  * skip_char(s) skips any char matched by the string s returns the next char
  * available
@@ -462,9 +467,58 @@ DX(xask)
 char 
 skip_char(char *s)
 {
-  register char c;
-  while (test_char(c = next_char(), s) && c != (char) EOF)
-    read_char();
+  char c, map[256];
+  make_testchar_map(s, map);
+  map[255] = FALSE;
+  
+  c = EOF;
+  if (context->input_file==stdin && prompt_string)
+    {
+      /* Standard implementation */
+      while (map[(unsigned char)(c = next_char())])
+        read_char();
+    }
+  else
+    {
+      /* Go faster */
+      c = EOF;
+      if (context->input_file)
+        {
+#ifdef HAVE_FLOCKFILE
+          flockfile(context->input_file);
+          c = getc_unlocked(context->input_file);
+#else
+          c = getc(context->input_file);
+#endif
+          while (map[(unsigned char)c])
+            {
+              if (isprint(toascii((unsigned char)c)))
+                context->input_tab++;
+              else
+                switch (c) {
+                case '\n':
+                case '\r':
+                  context->input_tab = 0;
+                  break;
+                case '\t':
+                  context->input_tab |= 0x7;
+                  context->input_tab++;
+                  break;
+                }
+#ifdef HAVE_FLOCKFILE
+              c = getc_unlocked(context->input_file);
+#else
+              c = getc(context->input_file);
+#endif
+            }
+          test_file_error(context->input_file);
+#ifdef HAVE_FLOCKFILE
+          funlockfile(context->input_file);
+#endif
+          if (c != (char)EOF)
+            ungetc(c, context->input_file);
+        }
+    }
   return c;
 }
 
@@ -490,10 +544,10 @@ DX(xskip_char)
 char *
 read_string(char *s)
 {
-  register char *bpos;
-
+  char *bpos, map[256];
+  make_testchar_map(s, map);
   bpos = string_buffer;
-  while (test_char(next_char(), s)) {
+  while (map[(unsigned char)next_char()]) {
     if (bpos < string_buffer + STRING_BUFFER - 1) {
       if ((*bpos++ = read_char()) == (char) EOF)
 	break;
