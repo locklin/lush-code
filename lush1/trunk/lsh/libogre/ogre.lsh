@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ogre.lsh,v 1.7 2002-08-15 18:38:36 leonb Exp $
+;;; $Id: ogre.lsh,v 1.8 2002-08-27 07:20:24 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -5053,3 +5053,71 @@
   (setq metakey c) )
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass OgrImage VisualObject
+  image
+  selected)
+
+(defmethod OgrImage OgrImage(&optional mat) (setq image mat))
+
+
+(defmethod OgrImage gettext() 
+  image
+)
+
+(defmethod OgrImage settext(mat)
+  (setq image mat)
+  (when window
+	(==> this compute-geometry)
+	(==> this expose rect) ) )
+
+(defmethod OgrImage compute-geometry()
+  (if ~image
+      (==> this resize 10 10)
+    (==> this resize (idx-dim image 1) (idx-dim image 0))
+    rect ))
+
+(defmethod OgrImage repaint()
+  (when image
+	(let (((x y w h) rect)
+              ((cx cy cw ch) (clip)))
+          (rgb-draw-matrix 
+           cx cy (narrow (narrow image 1 cw (- cx x)) 0 ch (- cy y)) ))))
+
+(defmethod OgrImage mouse-down(x y) ())
+
+(defmethod OgrImage mouse-drag(x1 y1 x2 y2)
+  (hilite hilite-rect x1 y1 x2 y2))
+
+(defmethod OgrImage mouse-up(x1 y1 x2 y2)
+  (hilite hilite-rect x1 y1 x2 y2)
+  (let (((x y w h) rect)
+        (sx (min x1 x2))
+        (sy (min y1 y2))
+        (sw (abs (- x1 x2)))
+        (sh (abs (- y1 y2))))
+    (setq selected (list (max 0 (- sx x)) (max 0 (- sy y)) sw sh))))
+
+(defmethod OgrImage get-selected ()
+  selected)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass ImageViewer viewer ogrim)
+
+(defmethod ImageViewer ImageViewer (w h m &optional drg)
+  (==> this Viewer w h (setq ogrim (new ogrimage m)) t t)
+  (when drg
+    (setq :hscroll:drag-callback :hscroll:call)
+    (setq :vscroll:drag-callback :vscroll:call))
+  ())
+
+(defmethod ImageViewer keypress (c x y)
+  (let (((x y w h) :view:rect))
+    (cond 
+     ((= c " ")  (==> this setvpos (+ vpos (* .9 h))))
+     ((= c "\b") (==> this setvpos (- vpos (* .9 h))))
+     (t ()))))
+
+(defmethod ImageViewer get-selected () (==> ogrim get-selected))
