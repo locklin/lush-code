@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dump.c,v 1.2 2002-04-24 21:12:57 leonb Exp $
+ * $Id: dump.c,v 1.3 2002-05-07 17:30:12 leonb Exp $
  **********************************************************************/
 
 
@@ -42,7 +42,7 @@
 /* - 1 list of pairs (symbol . value) for the other symbols */
 
 #define DUMPMAGIC  0x44454d50
-#define DUMPVERSION 2
+#define DUMPVERSION 3
 
 
 /* From IO.C */
@@ -111,12 +111,12 @@ readmagic32(FILE *f)
 
 
 static void 
-dump(char *s, at *exec)
+dump(char *s)
 {
   FILE *f;
   at *atf;
   struct hash_name **j, *hn;
-  at *ans;
+  at *ans, *p, *q;
   at **where;
   at *sym, *val;
   struct symbol *symb;
@@ -132,12 +132,20 @@ dump(char *s, at *exec)
   if (ferror(f))
     test_file_error(f);
 
-  /* The executable statement */
-  bwrite(exec,f);
-
-  /* The classes */
+  /* Building the big list */
   ans = NIL;
   where = &ans;
+
+  /* 1-- the modules */
+  p = q = module_list();
+  while (CONSP(q)) {
+    *where = new_cons(q->Car, NIL);
+    where = &((*where)->Cdr);
+    q = q->Cdr;
+  }
+  UNLOCK(p);
+  
+  /* 2- all symbols */
   iter_hash_name(j, hn)
     if (EXTERNP(hn->named, &symbol_class))
       {
@@ -147,53 +155,23 @@ dump(char *s, at *exec)
 	  symb = symb->next;
 	if (symb->valueptr) {
 	  val = *(symb->valueptr);
-	  if (EXTERNP(val,&class_class)) {
-	    *where = cons( new_cons(sym,val), NIL);
-	    where = &((*where)->Cdr);
-	  }
-	}
+          *where = cons( new_cons(sym,val), NIL);
+          where = &((*where)->Cdr);
+        }
       }
-  bwrite(ans,f);
+  
+  /* Write the big list */
+  bwrite(ans, f, TRUE);
   UNLOCK(ans);
-
-  /* The rest */
-  ans = NIL;
-  where = &ans;
-  iter_hash_name(j, hn)
-    if (EXTERNP(hn->named, &symbol_class))
-      {
-	sym = hn->named;
-	symb = sym->Object;
-	while (symb->next)
-	  symb = symb->next;
-	if (symb->valueptr) {
-	  val = *(symb->valueptr);
-	  ifn (EXTERNP(val,&class_class)) {
-	    *where = cons( new_cons(sym,val), NIL);
-	    where = &((*where)->Cdr);
-	  }
-	}
-      }
-  bwrite(ans,f);
-  UNLOCK(ans);
-  UNLOCK(atf);
 }
 
 
 DX(xdump)
 {
-  ALL_ARGS_EVAL;
-  if (arg_number == 1)
-  {
-    dump(ASTRING(1), NIL);
-    return new_string(file_name);
-  }
-  else
-  {
-    ARG_NUMBER(2);
-    dump(ASTRING(1), ALIST(2));
-    return new_string(file_name);
-  }
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  dump(ASTRING(1));
+  return new_string(file_name);
 }
 
 
@@ -246,7 +224,7 @@ undump(char *s)
     error(NIL,"Corrupted dump file (1)",NIL);
 
   /* The executable list */
-  if (version >= 2)
+  if (version == 2)
   {
     p = bread(f, NIL);
     sym = named("file-being-loaded");
@@ -260,37 +238,44 @@ undump(char *s)
     UNLOCK(sym);
   }
 
-  /* The classes */
+  if (version <= 2)
+    {
+      /* The classes */
+      p = bread(f, NIL);
+      while (CONSP(p)) {
+        ifn (CONSP(p->Car))
+          error(NIL,"Corrupted dump file (2)",NIL);
+        sym = p->Car->Car;
+        val = p->Car->Cdr;
+        p = p->Cdr;
+        ifn (EXTERNP(sym,&symbol_class))
+          error(NIL,"Corrupted dump file (3)",NIL);
+        var_SET(sym,val);
+      }
+      UNLOCK(p);
+    }
+  
+  /* The unified list */
   p = bread(f, NIL);
-  while (CONSP(p)) {
-    ifn (CONSP(p->Car))
-      error(NIL,"Corrupted dump file (2)",NIL);
-    sym = p->Car->Car;
-    val = p->Car->Cdr;
-    p = p->Cdr;
-    ifn (EXTERNP(sym,&symbol_class))
-      error(NIL,"Corrupted dump file (3)",NIL);
-    var_SET(sym,val);
-  }
-  UNLOCK(p);
-
-  /* The rest */
-  p = bread(f, NIL);
-  while (CONSP(p)) {
-    ifn (CONSP(p->Car))
-      error(NIL,"Corrupted dump file (2)",NIL);
-    sym = p->Car->Car;
-    val = p->Car->Cdr;
-    p = p->Cdr;
-    ifn (EXTERNP(sym,&symbol_class))
-      error(NIL,"Corrupted dump file (3)",NIL);
-    var_SET(sym,val);
-  }
+  while (CONSP(p)) 
+    {
+      if (CONSP(p->Car))
+        {
+          sym = p->Car->Car;
+          val = p->Car->Cdr;
+          ifn (EXTERNP(sym,&symbol_class))
+            error(NIL,"Corrupted dump file (4)",NIL);
+          var_SET(sym,val);
+        }
+      p = p->Cdr;
+    }
   UNLOCK(p);
 
   /* Close file */
   UNLOCK(atf);
 }
+
+
 
 /* --------- INIT SECTION ----------- */
 

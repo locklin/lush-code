@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.7 2002-05-04 02:40:11 leonb Exp $
+ * $Id: binary.c,v 1.8 2002-05-07 17:30:12 leonb Exp $
  **********************************************************************/
 
 
@@ -52,7 +52,7 @@ enum binarytokens {
   TOK_DM,
   TOK_CFUNC,
   TOK_CCLASS,
-  TOK_COBJECT,
+  TOK_COBJECT,  
 };
 
 
@@ -64,7 +64,8 @@ enum binarytokens {
 
 /*** GLOBAL VARIABLES ****/
 
-int in_bwrite = 0;
+int          in_bwrite = 0;
+static int   opt_bwrite = 0;
 static FILE *fin;
 static FILE *fout;
 
@@ -220,7 +221,7 @@ forbid_refd_reloc(void)
 static int cond_set_flags(at *p);
 static int cond_clear_flags(at *p);
 static int local_write(at *p);
-static int local_bread(at **pp, at *opt);
+static int local_bread(at **pp, int opt);
 
 /* This function recursively performs an action on
  * all objects under p. If action returns a non 0
@@ -268,7 +269,10 @@ sweep(at *p, int code)
     {
       struct oostruct *c = p->Object;
       int i;
-      sweep(p->Class->classname, code);
+      if (opt_bwrite)
+        sweep(p->Class->backptr, code);
+      else
+        sweep(p->Class->classname, code);
       for(i=0;i<c->size;i++) {
 	sweep(c->slots[i].symb, code);
 	sweep(c->slots[i].val, code);
@@ -941,12 +945,13 @@ local_write(at *p)
  */
 
 int 
-bwrite(at *p, FILE *f)
+bwrite(at *p, FILE *f, int opt)
 {
   int count;
   
   if (in_bwrite!=0)
     error(NIL,"Recursive binary read/write are forbidden",NIL);
+  opt_bwrite = opt;
   
   fout = f;
   in_bwrite = 0;
@@ -956,6 +961,7 @@ bwrite(at *p, FILE *f)
   write_card24(relocn);
   sweep(p, SRZ_WRITE);
   clear_flags(p);
+  
   count = in_bwrite;
   in_bwrite = 0;
   return count;
@@ -963,11 +969,11 @@ bwrite(at *p, FILE *f)
 
 DX(xbwrite)
 {
-  int count = 0;
   int i;
+  int count = 0;
   ALL_ARGS_EVAL;
   for (i=1; i<=arg_number; i++) 
-    count += bwrite( APOINTER(i), context->output_file );
+    count += bwrite( APOINTER(i), context->output_file, 0 );
   return NEW_NUMBER(count);
 }
 
@@ -1010,7 +1016,7 @@ local_bread_cobject(at **pp)
 }
 
 static void 
-local_bread_object(at **pp,  at *opt)
+local_bread_object(at **pp,  int opt)
 {
   int size,i,j;
   at *name, *cname, *cptr;
@@ -1068,6 +1074,7 @@ local_bread_class(at **pp)
   *pp = new_ooclass(name,super,key,def);
   cl = (*pp)->Object;
   local_bread(&cl->methods, NIL);
+  cl->hashok = FALSE;
 }
 
 
@@ -1138,6 +1145,7 @@ local_bread_primitive(at **pp)
     {
       class *cl = p->Object;
       local_bread(&cl->methods, NIL);
+      cl->hashok = 0;
     }
 }
 
@@ -1145,7 +1153,7 @@ local_bread_primitive(at **pp)
 /* This is the basic reading routine */
 
 static int
-local_bread(at **pp, at *opt)
+local_bread(at **pp, int opt)
 {
   int tok;
   int ret = 1;
@@ -1299,7 +1307,7 @@ local_bread(at **pp, at *opt)
 
 
 at *
-bread(FILE *f, at *opt)
+bread(FILE *f, int opt)
 {
   at *ans = NIL;
   int tok;
@@ -1323,12 +1331,12 @@ bread(FILE *f, at *opt)
 
 DX(xbread)
 {
-  at *opt = NIL;
-  
+  int opt = FALSE;
   ALL_ARGS_EVAL;
   switch (arg_number) {
   case 1:
-    opt = APOINTER(1);
+    if (APOINTER(1))
+      opt = TRUE;
   case 0:
     return bread(context->input_file, opt);
   default:

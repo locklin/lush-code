@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.9 2002-05-07 00:33:45 leonb Exp $
+ * $Id: module.c,v 1.10 2002-05-07 17:30:12 leonb Exp $
  **********************************************************************/
 
 
@@ -126,6 +126,7 @@ struct module {
   void *initaddr;
   at *backptr;
   at *defs;
+  at *hook;
 };
 
 static struct alloc_root module_alloc = {
@@ -140,6 +141,8 @@ static struct module *current = &root;
 
 static at *atroot;
 
+static int check_executability = FALSE;
+static void check_exec();
 
 /* ---------- THE MODULE OBJECT ----------- */
 
@@ -150,15 +153,18 @@ module_dispose(at *p)
 {
   struct module *m;
   m = p->Object;
+  /* Try to unload */
+  if (m->prev && m->next && m!=&root)
+    module_maybe_unload(m);
   /* Unlock dependencies */
   UNLOCK(m->defs);
   m->defs = NIL;
+  UNLOCK(m->hook);
+  m->hook = NIL;
   m->backptr = NIL;
   if (m == &root)
     return;
   /* Attempt to unload */
-  if (m->prev && m->next)
-    module_maybe_unload(m);
   if (m->prev && m->next)
     m->prev->next = m->next;
   if (m->prev && m->next)
@@ -180,6 +186,46 @@ module_action(at *p, void (*action) (at *p))
 {
   struct module *m = p->Object;
   (*action)(m->defs);
+  (*action)(m->hook);
+}
+
+static void
+module_serialize(at **pp, int code)
+{
+  char *fname = 0;
+  struct module *m = 0;
+  at *junk;
+  
+  if (code != SRZ_READ)
+    {
+      m = (*pp)->Object;
+      fname = "";
+      if (m != &root)
+        fname = m->filename;
+    }
+  serialize_string(&fname, code, -1);
+  if (code == SRZ_READ)
+    {
+      m = &root;
+      if (fname[0] == 0)
+        {
+        already:
+          LOCK(m->backptr);
+          *pp = m->backptr;
+          serialize_atstar(&junk, code); 
+          UNLOCK(junk);
+          return;
+        }
+      while ( (m = m->next) != &root)
+        if (!strcmp(fname, m->filename))
+          goto already;
+      (*pp) = module_load(fname, NIL);
+      m = (*pp)->Object;
+      free(fname);
+      fname = m->filename;
+      check_exec();
+    }
+  serialize_atstar(&m->hook, code);  
 }
 
 class module_class = {
@@ -188,21 +234,27 @@ class module_class = {
   generic_name,
   generic_eval,
   generic_listeval,
+  module_serialize,
 };
 
-
-DX(xmodule_list)
+at *
+module_list(void)
 {
   at *ans = NIL;
   at **where = &ans;
   struct module *m = &root;
-  ARG_NUMBER(0);
   do {
     *where = new_cons(m->backptr, NIL);
     where = &((*where)->Cdr);
     m = m->next;
   } while (m != &root);
   return ans;
+}
+
+DX(xmodule_list)
+{
+  ARG_NUMBER(0);
+  return module_list();
 }
 
 DX(xmodule_filename)
@@ -351,15 +403,13 @@ dynlink_init(void)
 static void
 dynlink_hook(struct module *m, char *hookname)
 {
-  at *hook = named(hookname);
-  at *ans = checksend(&module_class, hook);
-  if (ans)
+  if (m->hook)
     {
-      UNLOCK(ans);
-      ans = send_message(NIL, m->backptr, hook, NIL);
+      at *arg = cons(named(hookname), new_cons(m->backptr, NIL));
+      at *ans = apply(m->hook, arg);
+      UNLOCK(arg);
       UNLOCK(ans);
     }
-  UNLOCK(hook);
 }
 
 
@@ -370,7 +420,7 @@ dynlink_hook(struct module *m, char *hookname)
 
 
 static void
-update_exec_flag(struct module *m, int hook)
+update_exec_flag(struct module *m)
 {
   int oldstate = (m->flags & MODULE_EXEC);
   int newstate = TRUE;
@@ -385,12 +435,12 @@ update_exec_flag(struct module *m, int hook)
   m->flags &= ~MODULE_EXEC;
   if (newstate)
     m->flags |= MODULE_EXEC;
-  if (hook && m->defs && newstate != oldstate)
+  if (m->defs && newstate != oldstate)
     dynlink_hook(m, "exec");
 }
 
 static void
-update_init_flag(struct module *m, int hook)
+update_init_flag(struct module *m)
 {
   int status;
   
@@ -436,8 +486,7 @@ update_init_flag(struct module *m, int hook)
   if (status >= 0)
     {
       m->flags |= MODULE_INIT;
-      if (hook)
-        dynlink_hook(m, "init");
+      dynlink_hook(m, "init");
     }
   else 
     {
@@ -455,21 +504,18 @@ update_init_flag(struct module *m, int hook)
     }
 }
 
-
-static int check_executability = FALSE;
-
 static void 
-check_exec(int hook)
+check_exec()
 {
   if (check_executability)
     {
       struct module *m;
       check_executability = FALSE;
       for (m=root.next; m!=&root; m=m->next)
-        update_exec_flag(m, hook);
+        update_exec_flag(m);
       for (m=root.next; m!=&root; m=m->next)
         if (! (m->flags & MODULE_INIT))
-          update_init_flag(m, hook);
+          update_init_flag(m);
     }
 }
 
@@ -560,7 +606,7 @@ DX(xmodule_unload)
 
 
 at *
-module_load(char *filename)
+module_load(char *filename, at *hook)
 {
   char *l;
   int len;
@@ -610,9 +656,11 @@ module_load(char *filename)
   m->initname = 0;
   m->initaddr = 0;
   m->defs = 0;
+  m->hook = hook;
   m->backptr = 0;
   ans = new_extern(&module_class, m);
   m->backptr = ans;
+  LOCK(hook);
   if (! m->filename) 
     error(NIL,"out of memory", NIL);
   /* Load the file */
@@ -666,11 +714,11 @@ module_load(char *filename)
         error(NIL,"Out of memory", NIL);
     }
   /* Terminate */
+  protect(ans);
   m->prev = root.prev;
   m->next = &root;
   m->prev->next = m;
   m->next->prev = m;
-  protect(ans);
   check_executability = TRUE;
   return ans;
 }
@@ -678,9 +726,15 @@ module_load(char *filename)
 DX(xmodule_load)
 {
   at *ans;
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  ans = module_load(ASTRING(1));
+  at *hook = NIL;
+  ALL_ARGS_EVAL;
+  if (arg_number != 1)
+    ARG_NUMBER(2);
+  if (arg_number >= 2)
+    hook = APOINTER(2);
+  if (hook && !(hook->flags & X_FUNCTION))
+    error(NIL,"Not a function", hook);
+  ans = module_load(ASTRING(1), hook);
   check_exec(TRUE);
   return ans;
 }

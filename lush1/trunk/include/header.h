@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.18 2002-05-07 00:14:20 leonb Exp $
+ * $Id: header.h,v 1.19 2002-05-07 17:30:08 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -736,7 +736,8 @@ TLAPI void dy_define(char *name, at *(*addr) (at *));
 
 LUSHAPI void check_primitive(at *prim);
 LUSHAPI at *find_primitive(at *module, at *name);
-LUSHAPI at *module_load(char *filename);
+LUSHAPI at *module_list(void);
+LUSHAPI at *module_load(char *filename, at *hook);
 LUSHAPI void module_unload(at *atmodule);
 
 
@@ -765,8 +766,8 @@ enum serialize_action {
   SRZ_READ
 };
 
-TLAPI int bwrite(at *p, FILE *f);
-TLAPI at *bread(FILE *f, at *opt);
+TLAPI int bwrite(at *p, FILE *f, int opt);
+TLAPI at *bread(FILE *f, int opt);
 
 /* serialization functions */
 TLAPI void serialize_char(char *data, int code);
