@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.18 2003-01-27 08:57:30 leonb Exp $
+ * $Id: fileio.c,v 1.19 2003-02-08 13:48:42 leonb Exp $
  **********************************************************************/
 
 
@@ -998,7 +998,6 @@ DX(xtmpname)
 
 /* --------- AUTOMATIC DIRECTORY--------- */
 
-
 static char *
 search_lushdir(char *progname)
 {
@@ -1078,12 +1077,11 @@ search_lushdir(char *progname)
       "../share/lush/sys/stdenv.dump",
       "../share/lush/sys/stdenv.lshc",
       "../share/lush/sys/stdenv.lsh",
-      "../../sys/stdenv.dump",
-      "../../sys/stdenv.lshc",
-      "../../sys/stdenv.lsh",
-      "../../../sys/stdenv.dump",
-      "../../../sys/stdenv.lshc",
-      "../../../sys/stdenv.lsh",
+#ifdef DIR_DATADIR
+      DIR_DATADIR "/lush/sys/stdenv.dump",
+      DIR_DATADIR "/lush/sys/stdenv.lshc",
+      DIR_DATADIR "/lush/sys/stdenv.lsh",
+#endif
       0L,
     };
     char **st = trials;

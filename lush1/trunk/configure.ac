@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.22 2003-01-27 08:57:12 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.23 2003-02-08 13:48:26 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -252,6 +252,8 @@ AC_DEFINE_UNQUOTED(EXT_OBJ, ".$OBJEXT", [Extension for object files])
 # ----------------------------------------
 # Output
 # ----------------------------------------
+
+AC_DEFINE_INSTALL_PATHS
 
 AC_CONFIG_FILES(Makefile)
 AC_CONFIG_FILES(src/Makefile)

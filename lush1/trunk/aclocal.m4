@@ -14,6 +14,30 @@ dnl along with this program; if not, write to the Free Software
 dnl Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 
 
+dnl -------------------------------------------------------
+dnl @synopsis AC_DEFINE_INSTALL_PATHS
+dnl Define various installation paths
+dnl -------------------------------------------------------
+AC_DEFUN([AC_DEFINE_INSTALL_PATHS],[
+  save_prefix="${prefix}"
+  save_exec_prefix="${exec_prefix}"
+  test "x$prefix" = xNONE && prefix="$ac_default_prefix"
+  test "x$exec_prefix" = xNONE && exec_prefix="$prefix"
+  DIR_PREFIX="`eval echo \"$prefix\"`"
+  AC_DEFINE_UNQUOTED(DIR_PREFIX,["${DIR_PREFIX}"],[directory "prefix"])
+  DIR_EXEC_PREFIX="`eval echo \"$exec_prefix\"`"
+  AC_DEFINE_UNQUOTED(DIR_EXEC_PREFIX,["${DIR_EXEC_PREFIX}"],[directory "exec_prefix"])
+  DIR_BINDIR="`eval echo \"$bindir\"`"
+  AC_DEFINE_UNQUOTED(DIR_BINDIR,["${DIR_BINDIR}"],[directory "bindir"])
+  DIR_LIBDIR="`eval echo \"$libdir\"`"
+  AC_DEFINE_UNQUOTED(DIR_LIBDIR,["${DIR_LIBDIR}"],[directory "libdir"])
+  DIR_DATADIR="`eval echo \"$datadir\"`"
+  AC_DEFINE_UNQUOTED(DIR_DATADIR,["${DIR_DATADIR}"],[directory "datadir"])
+  DIR_MANDIR="`eval echo \"$mandir\"`"
+  AC_DEFINE_UNQUOTED(DIR_MANDIR,["${DIR_MANDIR}"],[directory "mandir"])
+  prefix="${save_prefix}"
+  exec_prefix="${save_exec_prefix}"
+])
 
 dnl -------------------------------------------------------
 dnl @synopsis AC_CHECK_CC_OPT(OPTION, 
