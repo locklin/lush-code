@@ -576,7 +576,6 @@ lasvm_predict(lasvm_t *self, int xi)
 {
   int j;
   int l = self->l;
-  int cached = lasvm_kcache_status_row(self->kernel, xi);
   float *row = lasvm_kcache_query_row(self->kernel, xi, l);
   double *alpha = self->alpha;
   double s = 0;
@@ -586,11 +585,18 @@ lasvm_predict(lasvm_t *self, int xi)
     s += alpha[j] * row[j];
   if (self->sumflag)
     s += (self->gmin + self->gmax) / 2;
+  return s;
+}
+
+double 
+lasvm_predict_nocache(lasvm_t *self, int xi)
+{ 
+  int cached = lasvm_kcache_status_row(self->kernel, xi);
+  double s = lasvm_predict(self, xi);
   if (! cached) /* do not keep what was not cached */
     lasvm_kcache_discard_row(self->kernel, xi);
   return s;
 }
-
 
 void lasvm_init( lasvm_t *self, int l, 
                  const int *sv, 

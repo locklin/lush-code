@@ -36,6 +36,8 @@ double lasvm_get_w2(lasvm_t *self);
 
 double lasvm_predict(lasvm_t *self, int xi);
 
+double lasvm_predict_nocache(lasvm_t *self, int xi);
+
 void lasvm_init( lasvm_t *self, int l, 
                  const int *sv, 
                  const double *alpha, 
