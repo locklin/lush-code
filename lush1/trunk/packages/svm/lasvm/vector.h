@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.h,v 1.1 2005-02-10 14:49:11 leonb Exp $
+ * $Id: vector.h,v 1.2 2005-02-22 17:46:43 leonb Exp $
  **********************************************************************/
 
 #ifndef VECTOR_H
@@ -77,6 +77,8 @@ typedef struct lasvm_sparsevector_s {
 lasvm_sparsevector_t *lasvm_sparsevector_create(void);
 
 void lasvm_sparsevector_destroy(lasvm_sparsevector_t *v);
+
+void lasvm_sparsevector_clear(lasvm_sparsevector_t *v);
 
 void lasvm_sparsevector_set(lasvm_sparsevector_t *v, int index, double data);
 

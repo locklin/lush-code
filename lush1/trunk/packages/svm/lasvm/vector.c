@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.c,v 1.1 2005-02-10 14:49:11 leonb Exp $
+ * $Id: vector.c,v 1.2 2005-02-22 17:46:33 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -111,7 +111,7 @@ lasvm_sparsevector_create(void)
 }
 
 void 
-lasvm_sparsevector_destroy(lasvm_sparsevector_t *v)
+lasvm_sparsevector_clear(lasvm_sparsevector_t *v)
 {
   lasvm_sparsevector_pair_t *p = v->pairs;
   while (p)
@@ -123,7 +123,13 @@ lasvm_sparsevector_destroy(lasvm_sparsevector_t *v)
   v->size = 0;
   v->npairs = 0;
   v->pairs = NULL;
-  v->last = NULL;
+  v->last = &v->pairs;
+}
+
+void 
+lasvm_sparsevector_destroy(lasvm_sparsevector_t *v)
+{
+  lasvm_sparsevector_clear(v);
   free(v);
 }
 

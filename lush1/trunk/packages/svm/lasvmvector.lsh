@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lasvmvector.lsh,v 1.4 2005-02-19 03:21:54 leonb Exp $
+;;; $Id: lasvmvector.lsh,v 1.5 2005-02-22 17:45:47 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -52,6 +52,10 @@
 (defmethod SparseVector get(i)
   ((-int-) i)
   (to-real #{ lasvm_sparsevector_get($p,$i) #}) )
+
+(defmethod SparseVector clear()
+  #{ lasvm_sparsevector_clear($p); #}
+  0 )
 
 (defmethod SparseVector set(i v)
   ((-int-) i)
@@ -101,6 +105,23 @@
        }
     }#}
     m ) )
+
+(defmethod SparseVector parse(s)
+  ((-str-) s)
+  (==> this clear)
+  (let ((ans t))
+    #{{ int i;
+        int n = 0;
+        double x;
+        char *s = (char*)(($s)->data);
+        while (*s && sscanf(s, " %d:%lf%n", &i, &x, &n)>1 && n>0) {
+          lasvm_sparsevector_set($p,i,x);     
+          s += n;
+        }
+        while (*s==' ' || *s=='\t' || *s=='\n' || *s=='\r') s++;
+        if (*s) $ans = 0;
+    }#}
+    ans ) )
 
 (de sparsevector-lincomb(v1 a1 v2 a2)
   ((-double-) a1 a2)
@@ -218,6 +239,9 @@
     n ) )
 
 
+;; --------------------- sparselinearkernel
+
+
 (defclass SVMSparseLinearKernel SVMSparseKernel)
 
 (defmethod SVMSparseLinearKernel SVMSparseLinearKernel(n)
@@ -232,6 +256,7 @@
   (==> this dot i j) )
 
 
+;; --------------------- sparserbfkernel
 
 (defclass SVMSparseRBFKernel SVMSparseKernel
   ((-idx1- (-double-)) norm) 
@@ -256,8 +281,38 @@
   (qexpmx (* gamma (+ (norm i) (norm j) (* -2 (==> this dot i j))))) )
 
 
+;; --------------------- libsvm files
 
+(defmethod SVMSparseKernel load(fname &optional (pos 0))
+  (reading fname
+    (let ((count 1))
+      (while (<> (skip-char) "\e")
+	(let ((y (read))
+	      (s (read-string))
+	      (v ()) )
+	  (when (> pos (idx-dim lab 0))
+	    (error '==> "Too many libsvm records" count) )
+	  (setq v (==> this data pos))
+	  (==> v clear)
+	  (when (not (==> v parse s))
+	    (==> v clear)
+	    (error '==> "Corrupted libsvm record" count) )
+	  (lab pos y)
+	  (incr pos) ) ) 
+      pos ) ) )
 
+(defmethod SVMSparseKernel save(fname size &optional (pos 0))
+  (writing fname
+    (for (i pos (+ pos size -1))
+	 (printf "%l " (lab i))
+	 (let ((v (==> this data i))
+	       (ivec (int-matrix 1))
+	       (dvec (double-matrix 1)))
+	   (==> v contents ivec dvec)
+	   (for (j 0 (1- (idx-dim ivec 0)))
+		(printf " %d:%.5e" (ivec j) (dvec j)) )
+	   (printf "\n") ) ) )
+  fname )
 
 ;; ----------------------------------------
 ;; COMPILE
@@ -266,9 +321,11 @@
        (dhc-make-lushflags (concat dhc-make-lushflags " -I" lasvmdir)))
   (dhc-make ()
 	    #{ #include "vector.h" #}
-	    (SparseVector sparsevector -destructor size pairs get set contents unpack)
+	    (SparseVector sparsevector -destructor 
+			  clear size pairs get set contents unpack parse)
 	    sparsevector-lincomb sparsevector-dot 
 	    (SparseVectorCollection SparseVectorCollection vector)
-	    (SVMSparseKernel SVMSparseKernel set-label label set-data data dot shuffle)
+	    (SVMSparseKernel SVMSparseKernel 
+			     set-label label set-data data dot shuffle)
 	    (SVMSparseLinearKernel SVMSparseLinearKernel call)
 	    (SVMSparseRBFKernel SVMSparseRBFKernel prep call) ) )
