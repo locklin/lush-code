@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;  $Id: brace.lsh,v 1.3 2002-10-06 06:44:12 profshadoko Exp $
+;;;;  $Id: brace.lsh,v 1.4 2002-10-07 08:25:30 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Functions and classes to handle brace lists.
@@ -63,27 +63,54 @@
 ;; preformatted text can inserted (with no need to escape special chars)
 ;; using the {<pre> xxxx </pre>} and {<code> xxxx </code>} tags.
 
-(de brace.read-text()
+(de brace.read-text(&optional leave-bracket)
   (let ((nextchar (skip-char "")))
     (selectq nextchar
       (" " (len (read-string " ")))
-      ("\n" (read-string 1) -1)
+      ("\n" (read-string 1) 
+       (if (<> "\n" (skip-char "")) -1
+	 (read-string 1) (list '<p> -1)))
       ("\t" (read-string 1) -2)
       ("{" (read))
-      ("$" (read))
       (("," "\\")
        (read-string 1)
        (let ((n (skip-char "")))
 	 (selectq n
 	  ("(" (read))
 	  ("$" (read-string 1) (read))
+	  (("," "@") (read-string 1) (eval (read)))
 	  ("{" (read-string 1))
 	  ("}" (read-string 1))
 	  (("," "\\") (read-string 1) (eval (read)))
 	  (t nextchar))))
       ("}" (read-string 1) "<END>")
       ("\e" "<END>")
-      (t (read-string "~ ,{}\n\t\\")))))
+      ("<" (if leave-bracket
+	       (read-string "~ ,{}\n\t\\")
+	     (read-string 1) (brace.read-bracket)))
+      (t (read-string "~ ,{}<\n\t\\")))))
+
+(de brace.read-bracket ()
+  (let ((pgm (list '<c>))
+	(again t)
+	(found-endtag ()))
+    (while again
+      (let ((item 
+	     (let ((nextchar (skip-char "")))
+	       (selectq nextchar
+		 (" " (len (read-string " ")))
+		 ("\n" (read-string 1) -1)
+		 ("\t" (read-string 1) -2)
+		 ("\e" "<END>")
+		 (">" (read-string 1) (setq found-endtag t) "<END>")
+		 (t (read-string "~ >\n\t\e"))))))
+        (cond
+         ((= item "<END>")
+	  (setq again ()))
+	  ;; end of file: no end tag
+          ;; (error "no end tag for pre-formatted text") 
+         (t (setq pgm (nconc1 pgm item))))))
+    pgm))
 
 ;; read preformatted text
 (de brace.read-pre (endtag)
@@ -105,9 +132,9 @@
 	  ;; insert end tag in preformatted doc
           (setq pgm (nconc1 pgm (named (downcase item))))
 	  (setq found-endtag t))
-	 ((and (stringp item) (regex-match "{<.+>" item))
-	  ;; we found a brace and a tag, this must be a mistake
-	  (error "no end tag for pre-formatted text?"))
+	 ;; ((and (stringp item) (regex-match "{<.+>" item))
+	 ;; we found a brace and a tag, this must be a mistake
+	 ;; (error "no end tag for pre-formatted text?"))
          ((= item "<END>")
 	  (setq again ()))
 	  ;; end of file: no end tag
@@ -116,28 +143,6 @@
           (setq pgm (nconc1 pgm item))))))
     pgm))
     
-
-;; read old-style preformatted text (.PRE .VP or .CODE).
-(de brace.read-old-pre ()
-  (let ((pgm ())
-	(again t))
-    (while again
-      (let ((item 
-	     (let ((nextchar (skip-char "")))
-	       (selectq nextchar
-		 (" " (len (read-string " ")))
-		 ("\n" (read-string 1) -1)
-		 ("\t" (read-string 1) -2)
-		 ("\e" "<END>")
-		 (t (read-string "~ \n\t\e"))))))
-        (cond
-         ((= item -1)
-	  ;; did we find an old style . tag
-	  (when (= "." (skip-char "")) (setq again ()))
-          (setq pgm (nconc1 pgm item)))
-         ((= item "<END>") (setq again ()))
-         (t (setq pgm (nconc1 pgm item))))))
-    pgm))
 
 (de brace.read-tag (tags)
   (let ((tag (progn (read-string " \t\n") (read-string "~ \t\n{}"))))
@@ -154,14 +159,6 @@
 	  (setq again ()) )
 	 ((= item "\e")
 	  (error "unbalanced brace construct { }") )
-	 ((or (= item ".PRE") (= item ".VP"))
-	  (if (and pgm (= (last pgm) -1))
-	      (setq pgm (nconc1 pgm (cons '<pre> (brace.read-old-pre))))
-	    (setq pgm (nconc1 pgm item))))
-	 ((= item ".CODE")
-	  (if (and pgm (= (last pgm) -1))
-	      (setq pgm (nconc1 pgm (cons '<code> (brace.read-old-pre))))
-	    (setq pgm (nconc1 pgm item))))
 	 (t
 	  (setq pgm (nconc1 pgm item)))))))
   pgm)
@@ -194,7 +191,7 @@
 	(cons (named (downcase tag)) (brace.read-pre endtag))))
      ((member tag '("<ex>" "<EX>"))
       (brace.read-example))
-     (t (brace.read-body (list (named (downcase tag)) -1))))))
+     (t (brace.read-body (list (named (downcase tag))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; list of old-style tags
@@ -256,9 +253,10 @@
 	  rez))
      ;; is it a tag whose scope ends at another tag
      ((setq <tag> (alist-get tag brace.old-tags-textargs-map))
-      (let ((stop ()) (rez (list <tag>)))
+      (let ((stop ()) (rez (list <tag>))
+	    (leave-bracket (member <tag> '(<code> <pre> <c>))))
 	(while (not stop)
-	  (let ((token (brace.read-old-token)))
+	  (let ((token (brace.read-old-token leave-bracket)))
 	    (cond 
 	     ((= token "<EOF>") (setq stop t) token)
 	     ((= token -1) 
@@ -270,17 +268,21 @@
      (t (error (concat "unknown dot tag: " tag))))))
       
 ;; parse word/carriage-return/tab/spaces/eof
-(de brace.read-old-token()
+(de brace.read-old-token(&optional leave-bracket)
   (let ((nextchar (skip-char "")))
     (selectq nextchar
       (" " (len (read-string " ")))
-      ("\n" (read-string 1) -1)
+      ("\n" (read-string 1)
+       (if (= "\n" (skip-char "")) (list '<p> -1) -1))
       ("\t" (read-string 1) -2)
       ("{" (read-string 1)
        (if (<> (skip-char "") "<")
 	   "{" (printf "WARNING: brace tag in old-style doc\n")))
       ("\e" "<EOF>")
-      (t (read-string "~ {\n\t\e")))))
+      ("<" (if leave-bracket 
+	       (read-string "~ {\n\t\e")
+	     (read-string 1) (brace.read-bracket)))
+      (t (read-string "~ {<\n\t\e")))))
 
 ;; reads the body of a document in the "old" format (with dot tags).
 ;; result will be spliced into <doc>, which must be a non-empty list.
@@ -294,7 +296,9 @@
       (let ((c (skip-char "")))
 	(cond 
 	 ((= "\e" c) (setq done t))
-	 ((= "\n" c) (read-string 1) (nconc1 doc -1))
+	 ((= "\n" c) (read-string 1) 
+	  (nconc1 doc (if (<> "\n" (skip-char "")) -1
+			(read-string 1) (list '<p> -1))))
 	 ((= "." c) (nconc1 doc (brace.read-old-tag)))
 	 (t 				; read tokens until end of line
 	  (let ((stop ()))
@@ -382,6 +386,7 @@
   <b>					; bold
   <i>					; italic
   <u>					; underlined
+  <c>					; highlighted code/arguments
   <font>				; font
   <center>				; center
   <img>					; image
@@ -403,6 +408,8 @@
   <if-text>
 
   <meta>				; metatags
+
+  <ex>					; we should never see that one
   )
 
 
@@ -542,6 +549,7 @@
   (setq <b> (flambda p (brace-text.parprint p)))
   (setq <i> (flambda p (brace-text.parprint p)))
   (setq <u> (flambda p (brace-text.parprint p)))
+  (setq <c> (flambda p (brace-text.parprint p)))
   (setq <font> (flambda p ()))
   (setq <center> (flambda p (brace-text.parprint p)))
   (setq <img> (flambda p 
@@ -667,13 +675,33 @@
     (incr px space-width)
     (setq returns 0)))
 
+(de brace-ogre.print-word (s)
+  (setq s (regex-subst "%" "%%%%" s))
+  (let ((w (caddr (rect-text 0 0 s))))
+    (when (> (+ w px) right-margin)
+      (setq px left-margin)
+      (incr py line-height)
+      (incr returns))
+    (nconc1 gcode `(gprintf (+ x ,px) (+ y ,py) ,s))
+    (incr px (+ space-width w))
+    (setq returns 0)))
+
+;; print paragraph (any brace list really)
+(de brace-ogre.parprint-broken (p)
+  (each ((x p))
+    (let ((z (eval x)))
+      (cond
+       ((stringp z) (brace-ogre.print-word z))
+       ((and (numberp z) (> 0 z)) (incr px space-width))))))
+
 ;; print paragraph (any brace list really)
 (de brace-ogre.parprint (p)
   (each ((x p))
-    (cond
-     ((consp x) (eval x))
-     ((stringp x) (brace-ogre.print-word x))
-     (t ()))))
+    (let ((z (eval x)))
+      (cond
+       ((stringp z) (brace-ogre.print-word z))))))
+
+
 
 ;; build the name of a font from the 
 ;; family name, a bold flag, an italic flag and a size integer.
@@ -714,7 +742,6 @@
       (font f)
       (nconc1 gcode `(font ,f)))))
 
-
 (de brace-ogre.pop-font ()
   (setq font-stack (cdr font-stack))
   (let* ((f (apply make-font-name (car font-stack))))
@@ -729,6 +756,12 @@
   (setq color-stack (cdr color-stack))
   (nconc1 gcode (cons 'color-rgb (car color-stack))))
 
+(de brace-ogre.image (p) 
+  (let ((img (image-read-rgba (eval (car p)))))
+    (brace-ogre.cr)
+    (nconc1 gcode (cons 'rgb-draw-matrix px py img))
+    (incr py (idx-dim img 0))
+    (brace-ogre.cr)))
 
 ;; print pre-formatted text
 (de brace-ogre.preprint (p)
@@ -801,60 +834,69 @@
 (defmethod brace-ogre brace-ogre ()
   (setq <p> (flambda p 
 	      (when p (brace-ogre.parprint p))
-	      (brace-ogre.parskip)))
-  (setq <pre> (flambda p (brace-ogre.preprint p)))
+	      (brace-ogre.parskip) ()))
+  (setq <pre> (flambda p (brace-ogre.preprint p)()))
   (setq <code> (flambda p 
 		 (brace-ogre.push-color code-color)
 		 (brace-ogre.push-font "Courier" 0 0 12)
 		 (brace-ogre.preprint p)
 		 (brace-ogre.pop-font)
-		 (brace-ogre.pop-color)))
+		 (brace-ogre.pop-color)()))
   (setq <li> (flambda p 
 	       (brace-ogre.printf "*")
 	       (brace-ogre.sp)
 	       (let ((left-margin (+ left-margin (* 2 space-width))))
 		 (brace-ogre.parprint p))
-	       (brace-ogre.br)))
+	       (brace-ogre.br) ()))
   (setq <br> (flambda p 
 	       (when p (brace-ogre.parprint p))
-	       (brace-ogre.br)))
-  (setq <tt> (flambda p (brace-ogre.parprint p)))
+	       (brace-ogre.br) ()))
+  (setq <tt> (flambda p 
+	       (brace-ogre.push-font "Courier" () () ())
+	       (brace-ogre.parprint p)
+	       (brace-ogre.pop-font) ()))
   (setq <b> (flambda p 
 	      (brace-ogre.push-font () t () ())
 	      (brace-ogre.parprint p)
-	      (brace-ogre.pop-font)))
+	      (brace-ogre.pop-font) ()))
   (setq <i> (flambda p 
 	      (brace-ogre.push-font () () t ())
 	      (brace-ogre.parprint p)
-	      (brace-ogre.pop-font)))
-  (setq <u> (flambda p (brace-ogre.parprint p)))
-  (setq <font> (flambda p ()))
-  (setq <center> (flambda p (brace-ogre.parprint p)))
-  (setq <img> (flambda p (brace-ogre.image p)))
+	      (brace-ogre.pop-font) ()))
+  (setq <u> (flambda p (brace-ogre.parprint p) ()))
+  (setq <c> (flambda p 
+	      (brace-ogre.push-color bracket-color)
+	      (brace-ogre.push-font "Courier" 1 0 12)
+	      (brace-ogre.parprint p)
+	      (brace-ogre.pop-font)
+	      (brace-ogre.pop-color) ()))
+  (setq <font> (flambda p ()()))
+  (setq <center> (flambda p (brace-ogre.parprint p) ()))
+  (setq <img> (flambda p (brace-ogre.image p)()))
   (setq <ul> (flambda p 
 	       (brace-ogre.br)
 	       (brace-ogre.parprint p)
-	       (brace-ogre.br)))
-  (setq <div> (flambda p (brace-ogre.parprint p)))
+	       (brace-ogre.br)()))
+  (setq <div> (flambda p (brace-ogre.parprint p) ()))
   (setq <h1> (flambda p 
 	       (brace-ogre.parskip)
 	       (brace-ogre.printf "### ")
 	       (brace-ogre.parprint p)
-	       (brace-ogre.parksip)))
+	       (brace-ogre.parksip)()))
   (setq <h2> (flambda p 
 	       (brace-ogre.parskip)
 	       (brace-ogre.printf "## ")
 	       (brace-ogre.parprint p)
-	       (brace-ogre.parksip)))
+	       (brace-ogre.parksip)()))
   (setq <h3> (flambda p 
 	       (brace-ogre.parskip)
 	       (brace-ogre.printf "# ")
 	       (brace-ogre.parprint p)
-	       (brace-ogre.parksip)))
+	       (brace-ogre.parksip) ()))
   (setq <hlink> (flambda p 
 		  (brace-ogre.print-word "[HLINK:")
 		  (brace-ogre.parprint p)
-		  (brace-ogre.print-word "]")))
+		  (brace-ogre.print-word "]") ()))
   (setq <see> (flambda p 
 		(brace-ogre.br)
 		(brace-ogre.printf "*")
@@ -862,14 +904,14 @@
 		(let ((left-margin (+ left-margin (* 2 space-width))))
 		  (brace-ogre.print-word "See:")
 		  (brace-ogre.parprint p))
-		(brace-ogre.br)))
+		(brace-ogre.br) ()))
 
   (setq <if-html> (flambda p ()))
   (setq <if-latex> (flambda p ()))
   (setq <if-text> (flambda p ()))
-  (setq <if-ogre> (flambda p (brace-ogre.parprint p)))
+  (setq <if-ogre> (flambda p (brace-ogre.parprint p) ()))
 
-  (setq <meta> (flambda p (brace-ogre.meta p)))
+  (setq <meta> (flambda p (brace-ogre.meta p) ()))
   )
 
 (defmethod brace-ogre render (doc w)
@@ -929,6 +971,10 @@
 	      (brace-brace.printf "}")))
   (setq <u> (flambda p 
 	      (brace-brace.printf "{<u> ")
+	      (brace-brace.parprint p)
+	      (brace-brace.printf "}")))
+  (setq <c> (flambda p 
+	      (brace-brace.printf "{<c> ")
 	      (brace-brace.parprint p)
 	      (brace-brace.printf "}")))
   (setq <font> (flambda p 
@@ -1140,6 +1186,10 @@
 	      (brace-html.printf "<u>")
 	      (brace-html.parprint p)
 	      (brace-html.printf "</u>")))
+  (setq <u> (flambda p 
+	      (brace-html.printf "<font color=#5500ff><b>")
+	      (brace-html.parprint p)
+	      (brace-html.printf "</b></font>")))
   (setq <font> (flambda p (brace-html.parprint p)))
   (setq <center> (flambda p 
 		   (brace-html.printf "\n<center>")
