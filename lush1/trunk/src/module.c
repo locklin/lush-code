@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.29 2003-03-04 18:15:58 leonb Exp $
+ * $Id: module.c,v 1.30 2003-03-04 18:18:12 leonb Exp $
  **********************************************************************/
 
 
@@ -359,10 +359,10 @@ dynlink_error(at *p)
   char buffer[80];
   strcpy(buffer,"Dynamic linking error");
 #ifdef DLDBFD
-  if (dld_errno) 
+  if ((err = dld_errno))
     {
       strcpy(buffer,"dld/bfd error\n*** ");
-      strcat(buffer, dld_errno);
+      strcat(buffer, err);
       error(NIL, buffer, p);
     }
 #endif  
