@@ -1,3 +1,5 @@
 #!/bin/bash -e
 
-bdeb.sh -Slush
+bdeb.sh -Slush #-bp $*
+
+exit 0
