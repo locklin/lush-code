@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.53 2004-07-21 16:12:25 leonb Exp $
+ * $Id: module.c,v 1.54 2004-07-26 16:39:35 leonb Exp $
  **********************************************************************/
 
 
@@ -962,6 +962,9 @@ update_exec_flag(struct module *m)
 	}
 	q = q->Cdr;
       }
+      /* Refresh init function pointer */
+      if (m->initname)
+	m->initaddr = dynlink_symbol(m, m->initname, 1, 0);
     }
   /* Call hook */
   dynlink_hook(m, "exec");
@@ -979,18 +982,14 @@ update_init_flag(struct module *m)
   if (! (m->initaddr && m->initname))
     return;
   
-  /* Simulate unlink if we already have definitions (nsbundle) */
-#if NSBUNDLE
-  if (m->defs) {
-    dynlink_hook(m, "unlink");
-    cleanup_module(m);
-  }
-#endif
+  /* Simulate unlink if we already have definitions */
+  if (m->defs) 
+    {
+      dynlink_hook(m, "unlink");
+      cleanup_module(m);
+    }
   
   /* Call init function */
-  m->initaddr = dynlink_symbol(m, m->initname, 1, 0);
-  if (! m->initaddr)
-    return;
   if (! strcmp(m->initname, "init_user_dll"))
     {
       /* TL3 style init function */
