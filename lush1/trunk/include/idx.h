@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idx.h,v 1.3 2004-02-13 19:03:12 leonb Exp $
+ * $Id: idx.h,v 1.4 2004-03-29 21:19:06 profshadoko Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -351,9 +351,13 @@
     struct index *ind1, *ind2, *ind3; \
     ALL_ARGS_EVAL; \
     if (arg_number==2) { \
+       at *atst; \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
-       p3 = create_samesize_matrix(APOINTER(2)); \
+       atst = new_storage_nc(ind1->st->srg.type, ind1->dim[0]); \
+       p3 = new_index(atst); \
+       UNLOCK(atst); \
+       index_dimension(p3, 1, ind1->dim); \
        ind3 = p3->Object; \
     }  else { \
        ARG_NUMBER(3); \
@@ -383,9 +387,13 @@
     struct index *ind1, *ind2, *ind3; \
     ALL_ARGS_EVAL; \
     if (arg_number==2) { \
+       at *atst; \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
-       p3 = create_samesize_matrix(APOINTER(2)); \
+       atst = new_storage_nc(ind1->st->srg.type, (ind1->dim[0])*(ind1->dim[1])); \
+       p3 = new_index(atst); \
+       UNLOCK(atst); \
+       index_dimension(p3, 2, ind1->dim); \
        ind3 = p3->Object; \
     }  else { \
        ARG_NUMBER(3); \
