@@ -24,13 +24,17 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: glut.lsh,v 1.3 2002-08-07 15:20:39 leonb Exp $
+;;; $Id: glut.lsh,v 1.4 2002-08-07 16:50:22 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 (libload "dh-compile")
 (libload "opengl-config")
 
+
+;; ----------------------------------------
+;; INTERNAL FUNCTIONS
+;; ----------------------------------------
 
 
 (de glutint-poll()
@@ -60,8 +64,8 @@
            if (__glutTimerList) {
              struct timeval tv;
              gettimeofday(&tv, 0);
-             $ms = ((int)__glutTimerList->tv.tv_sec - (int)tv.tv_sec)*1000 
-                 + ((int)__glutTimerList->tv.tv_usec - (int)tv.tv_usec)/1000;
+             $ms = ((int)__glutTimerList->tv.tv_sec - (int)tv.tv_sec - 1) * 1000 
+                 + (1000000 + (int)__glutTimerList->tv.tv_usec - (int)tv.tv_usec)/1000;
            }
          } while ($ms < 0);
        }
@@ -75,8 +79,8 @@
        if (! __glutDisplay) {
          char *argv[2];
          int argc = 1;
-         argv[1] = "lush";
-         argv[2] = 0;
+         argv[0] = "lush";
+         argv[1] = 0;
          glutInit(&argc, argv);
          register_poll_functions( C_glutint_poll, 0, 0, 0,
                                   ConnectionNumber(__glutDisplay) );
@@ -85,21 +89,86 @@
     #}
    flag ) )
 
+(de glutint-check()
+  (if (not (gptr #{ __glutDisplay #}))
+      (error "Glut is not initialized") )
+  () )
 
+
+
+
+;; ----------------------------------------
+;; CONSTANTS FROM GLUT.H
+;; ----------------------------------------
+
+
+
+
+;; ----------------------------------------
+;; GLUT FUNCTIONS
+;; ----------------------------------------
+
+
+#? (glut-init)
+;; Initializes the glut subsystem.
+;; Must be called before any other command.
 (de glut-init()
   (when (glutint-init)
-    (module-never-unload (mod-search "glut.o")) ) )
+    (module-never-unload (mod-search "glut.o"))
+    t ) )
 
 
-(let ((dhc-make-lushflags dhc-make-lushflags))
+
+(de glut-init-display-mode(mode)
+  ((-int-) mode)
+  (glutint-check)
+  #{ glutInitDisplayMode($mode) #}
+  t )
+
+(de glut-init-window-size(w h)
+  ((-int-) w h)
+  (glutint-check)
+  #{ glutInitWindowSize($w, $h) #}
+  t )
+
+(de glut-init-window-position(x y)
+  ((-int-) x y)
+  (glutint-check)
+  #{ glutInitWindowPosition($x, $y) #}
+  t )
+  
+(de glut-create-window(name)
+  ((-str-) name)
+  (glutint-check)
+  (cheader "static void nop(void) { }")
+  (let ((wid (to-int #{ glutCreateWindow($name->data) #})))
+    #{ glutDisplayFunc(nop); #}
+    wid ) ) )
+
+
+
+
+;; ----------------------------------------
+;; MAKE
+;; ----------------------------------------
+
+(let ((dhc-make-lushflags dhc-make-lushflags)
+      (libs (list opengl-libgl opengl-libglu opengl-libglut)) )
+  ;; Use the X11 flags to compile
   (when (getconf "X_CFLAGS")
     (setq dhc-make-lushflags
           (concat dhc-make-lushflags
                   " " (getconf "X_CFLAGS")) ) )
-  
-  (dhc-make-with-libs () (list opengl-libgl opengl-libglu opengl-libglut)
+  ;; Make
+  (dhc-make-with-libs () libs
                       glutint-poll
-                      glutint-init ) )
+                      glutint-init 
+                      glutint-check
+                      glut-init-display-mode
+                      glut-init-window-size
+                      glut-init-window-position
+                      glut-create-window
+                      ) )
 
 
 
