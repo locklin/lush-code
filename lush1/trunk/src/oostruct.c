@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.18 2004-04-16 14:28:24 leonb Exp $
+ * $Id: oostruct.c,v 1.19 2004-07-26 17:30:44 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -306,6 +306,10 @@ class_dispose(at *q)
   /* Remove atclass in dhclassdoc */
   if (s->classdoc)
     s->classdoc->lispdata.atclass = 0;
+  if (s->kname)
+    free(s->kname);
+  s->kname = 0;
+  s->classdoc = 0;
   /* Unlink subclass chain */
   if (s->super && s->atsuper->Object) 
     {
@@ -525,7 +529,6 @@ new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
   super = superclass->Object;
   cl = malloc(sizeof(struct class));
   *cl = object_class;
-  cl->classdoc = 0;
   cl->slotssofar = super->slotssofar+i;
   cl->goaway = 1;
   cl->dontdelete = 0;
@@ -555,6 +558,10 @@ new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
   cl->hashtable = 0L;
   cl->hashsize = 0;
   cl->hashok = 0;
+
+  /* Initialize DHCLASS stuff */
+  cl->classdoc = 0;
+  cl->kname = 0;
   
   /* Create AT and returns it */
   UNLOCK(p);
@@ -605,7 +612,7 @@ new_oostruct(at *cl)
     error(NIL,"not a class",cl);
   c = cl->Object;
   if ( c->self_dispose != oostruct_dispose )
-    error(NIL,"class is not a subclass of ::class:object",cl);
+    error(NIL,"class is not a subclass of ::class:object", cl);
   
   len = c->slotssofar;
   s = malloc(sizeof(struct oostruct)+(len-1)*sizeof(struct oostructitem));

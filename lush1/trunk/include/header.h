@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.60 2004-07-20 18:51:00 leonb Exp $
+ * $Id: header.h,v 1.61 2004-07-26 17:30:43 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -235,6 +235,7 @@ typedef struct class {
   char 	           dontdelete;  /* class should not be deleted */
   /* additional info for dhclasses */
   dhclassdoc_t    *classdoc;  
+  char            *kname;
 } class;
 
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.15 2004-07-20 18:51:06 leonb Exp $
+ * $Id: dh.c,v 1.16 2004-07-26 17:30:44 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -333,6 +333,7 @@ make_dhclass(dhclassdoc_t *kdata)
       /* store */
       cl = p->Object;
       cl->classdoc = kdata;
+      cl->kname = strdup(kdata->lispdata.k_name);
       kdata->lispdata.atclass = p;
       return p;
     }

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.54 2004-07-26 16:39:35 leonb Exp $
+ * $Id: module.c,v 1.55 2004-07-26 17:30:44 leonb Exp $
  **********************************************************************/
 
 
@@ -792,18 +792,14 @@ dynlink_symbol(struct module *m, char *sname, int func, int exist)
 
 
 static void
-cleanup_defs(at **pcls, struct module *mc, int clear)
+cleanup_defs(at **pcls, struct module *mc)
 {
   at *p = mc->defs;
   while (CONSP(p))
     {
       if (CONSP(p->Car)) {
 	at *q = p->Car->Car;
-	if (q && (q->flags & X_FUNCTION)) {
-	  struct cfunction *cfunc = q->Object;
-	  if  (clear)
-	    cfunc->info = 0;
-	} else if (q) {
+	if (EXTERNP(q,&class_class)) {
 	  LOCK(q);
 	  *pcls = cons(q, *pcls);
 	}
@@ -832,7 +828,7 @@ cleanup_module(struct module *m)
     for (mc = root.next; mc != &root; mc = mc->next)
       if (mc->initname && mc->defs && (mc->flags & MODULE_CLASS))
 	if (! dld_function_executable_p(mc->initname))
-	  cleanup_defs(&classes, mc, 0);
+	  cleanup_defs(&classes, mc);
     dld_simulate_unlink_by_file(0);
   }
 #endif
@@ -844,7 +840,7 @@ cleanup_module(struct module *m)
     for (mc = root.next; mc != &root; mc = mc->next)
       if (mc->initname && mc->defs)
 	if (mc->bundle.executable <= 0)
-	  cleanup_defs(&classes, mc, 1);
+	  cleanup_defs(&classes, mc);
     nsbundle_symmark(&m->bundle, &m->bundle);
     nsbundle_exec_all();
   }
@@ -863,7 +859,6 @@ cleanup_module(struct module *m)
           if (cl->classdoc)
             {
               n = lside_mark_unlinked(cl->classdoc);
-	      cl->classdoc = 0;
               if (n > 0)
                 fprintf(stderr,"*** WARNING: "
                         "marked %d instances of class %s as unlinked\n", 
@@ -899,7 +894,6 @@ cleanup_module(struct module *m)
           if (EXTERNP(q, &class_class))
             {
               class *cl = q->Object;
-              cl->classdoc = 0;
               if (! cl->goaway)
                 delete_at_special(q, FALSE);
             }
@@ -920,21 +914,22 @@ static void
 update_exec_flag(struct module *m)
 {
   int oldstate = (m->flags & MODULE_EXEC);
-  int newstate = TRUE;
+  int newstate = MODULE_EXEC;
 #if DLDBFD
   if (m->flags & MODULE_O)
     {
-      newstate = FALSE;
+      newstate = 0;
       if (m->initname)
-        newstate = dld_function_executable_p(m->initname);
+        if (dld_function_executable_p(m->initname))
+	  newstate = MODULE_EXEC;
     }
 #endif
 #if NSBUNDLE 
   if (m->flags & MODULE_O)
     {
-      newstate = FALSE;
+      newstate = 0;
       if (m->initname && m->bundle.executable>0)
-	newstate = TRUE;
+	newstate = MODULE_EXEC;
       if (m->defs && !newstate)
 	m->flags &= ~MODULE_INIT;
     }
@@ -944,27 +939,42 @@ update_exec_flag(struct module *m)
     m->flags |= MODULE_EXEC;
   if (m->defs && newstate != oldstate)
     {
-      /* Refresh function pointers */
+   printf(">upd %s\n",m->filename);
+      /* Refresh function/class pointers */
       at *p = m->defs;
-      if (CONSP(p->Car)) {
-	at *q = p->Car->Car;
-	if (q && (q->flags & X_FUNCTION)) {
-	  struct cfunction *cfunc = q->Object;
-	  if (!newstate) {
-	    cfunc->info = 0;
-	  } else if (q->Class==&dh_class && cfunc->kname) {
-	    cfunc->info = dynlink_symbol(m, cfunc->kname, 0, 0);
-	    cfunc->call = ((dhdoc_t*)cfunc->info)->lispdata.call;
-	  } else if (cfunc->kname) {
-	    cfunc->info = dynlink_symbol(m, cfunc->kname, 1, 0);
-	    cfunc->call = cfunc->info;
+      while (p) {
+	if (CONSP(p->Car)) {
+	  at *q = p->Car->Car;
+	  if (q && (q->flags & X_FUNCTION)) {
+	    struct cfunction *cfunc = q->Object;
+	    if (!newstate) {
+	      cfunc->info = 0;
+	    } else if (q->Class==&dh_class && cfunc->kname) {
+	      cfunc->info = dynlink_symbol(m, cfunc->kname, 0, 0);
+	      cfunc->call = ((dhdoc_t*)cfunc->info)->lispdata.call;
+	    } else if (cfunc->kname) {
+	      cfunc->info = dynlink_symbol(m, cfunc->kname, 1, 0);
+	      cfunc->call = cfunc->info;
+	    }
+	  } else if (EXTERNP(q, &class_class)) {
+	    struct class *cl = q->Object;
+	    printf("%s %p\n",cl->kname, cl->classdoc);
+	    if (! newstate)
+	      cl->classdoc = 0;
+	    else if (cl->kname && !cl->classdoc) {
+	      dhclassdoc_t *kdata = dynlink_symbol(m, cl->kname, 0, 0);
+	      ((dhclassdoc_t**)(kdata->lispdata.vtable))[0] = kdata;
+	      cl->classdoc = kdata;
+	    }
+	    printf("%s %p\n",cl->kname, cl->classdoc);
 	  }
 	}
-	q = q->Cdr;
+	p = p->Cdr;
       }
       /* Refresh init function pointer */
-      if (m->initname)
+      if (newstate && m->initname)
 	m->initaddr = dynlink_symbol(m, m->initname, 1, 0);
+   printf("<upd %s\n",m->filename);
     }
   /* Call hook */
   dynlink_hook(m, "exec");
