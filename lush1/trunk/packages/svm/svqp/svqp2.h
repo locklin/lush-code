@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.4 2004-09-28 14:33:01 leonb Exp $
+ * $Id: svqp2.h,v 1.5 2004-09-30 21:24:35 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -160,6 +160,7 @@ protected:
   double  *dmem;                // Allocated memory
   int     *imem;                // Allocated memory
   int      vdots;		// Infodot counter
+  bool     hitcache;		// Did I hit the cache size limit.
 protected:
   void   info(const char*, const char *, ...);
   int    error(const char *message);
