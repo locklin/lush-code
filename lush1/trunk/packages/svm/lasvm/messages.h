@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: messages.h,v 1.1 2004-08-30 22:07:28 leonb Exp $
+ * $Id: messages.h,v 1.1 2005-02-10 14:49:11 leonb Exp $
  **********************************************************************/
 
 #ifndef MESSAGES_H
@@ -44,37 +44,37 @@ extern "C" {
 
 /* Message levels */
 
-typedef enum { MYSVM_ERROR, 
-	       MYSVM_WARNING, 
-	       MYSVM_INFO, 
-	       MYSVM_DEBUG }  mysvm_message_t;
+typedef enum { LASVM_ERROR, 
+	       LASVM_WARNING, 
+	       LASVM_INFO, 
+	       LASVM_DEBUG }  lasvm_message_t;
 
 
-/* mysvm_message_level ---
+/* lasvm_message_level ---
    Default routine will print every message 
    more severe than this.
 */
 
-extern mysvm_message_t mysvm_message_level;
+extern lasvm_message_t lasvm_message_level;
 
-/* mysvm_message_proc ---
+/* lasvm_message_proc ---
    The routine to handle messages.
    The default routine will print everything
-   with message level less than mysvm_message_level
-   and abort when message level is MYSVM_ERROR.
+   with message level less than lasvm_message_level
+   and abort when message level is LASVM_ERROR.
 */
 
-typedef void mysvm_message_proc_t(mysvm_message_t, const char*, va_list);
-extern mysvm_message_proc_t  *mysvm_message_proc;
+typedef void lasvm_message_proc_t(lasvm_message_t, const char*, va_list);
+extern lasvm_message_proc_t  *lasvm_message_proc;
 
 
-/* mysvm_error, mysvm_warning, mysvm_info, mysvm_debug ---
+/* lasvm_error, lasvm_warning, lasvm_info, lasvm_debug ---
    Convenience functions to display messages and signal errors.
 */
-extern void mysvm_error(const char *fmt, ...);
-extern void mysvm_warning(const char *fmt, ...);
-extern void mysvm_info(const char *fmt, ...);
-extern void mysvm_debug(const char *fmt, ...);
+extern void lasvm_error(const char *fmt, ...);
+extern void lasvm_warning(const char *fmt, ...);
+extern void lasvm_info(const char *fmt, ...);
+extern void lasvm_debug(const char *fmt, ...);
 
 
 /* ASSERT --- 
@@ -85,11 +85,11 @@ extern void mysvm_debug(const char *fmt, ...);
 # define ASSERT(x) /**/
 #else
 # define ASSERT(x) do { if (!(x))\
-                     mysvm_assertfail(__FILE__,__LINE__);\
+                     lasvm_assertfail(__FILE__,__LINE__);\
                    } while(0)
 #endif
 
-void mysvm_assertfail(const char *file,int line);
+void lasvm_assertfail(const char *file,int line);
 
 
 #ifdef __cplusplus__

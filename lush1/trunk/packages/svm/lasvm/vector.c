@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.c,v 1.3 2004-11-02 19:00:54 leonb Exp $
+ * $Id: vector.c,v 1.1 2005-02-10 14:49:11 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -55,7 +55,7 @@ xmalloc(int n)
 {
   void *p = malloc(n);
   if (! p) 
-    mysvm_error("Function malloc() has returned zero\n");
+    lasvm_error("Function malloc() has returned zero\n");
   return p;
 }
 
@@ -64,25 +64,25 @@ xmalloc(int n)
 /* SIMPLE VECTORS */
 
 
-mysvm_vector_t *
-mysvm_vector_create(int size)
+lasvm_vector_t *
+lasvm_vector_create(int size)
 {
-  mysvm_vector_t *v;
+  lasvm_vector_t *v;
   ASSERT(size>1);
-  v = (mysvm_vector_t*)xmalloc(sizeof(mysvm_vector_t) + (size-1)*sizeof(double));
+  v = (lasvm_vector_t*)xmalloc(sizeof(lasvm_vector_t) + (size-1)*sizeof(double));
   v->size = size;
   return v;
 }
 
 void 
-mysvm_vector_destroy(mysvm_vector_t *v)
+lasvm_vector_destroy(lasvm_vector_t *v)
 {
   v->size = 0;
   free(v);
 }
 
 double 
-mysvm_vector_dot_product(mysvm_vector_t *v1, mysvm_vector_t *v2)
+lasvm_vector_dot_product(lasvm_vector_t *v1, lasvm_vector_t *v2)
 {
   int i;
   int n = min(v1->size, v2->size);
@@ -98,11 +98,11 @@ mysvm_vector_dot_product(mysvm_vector_t *v1, mysvm_vector_t *v2)
 /* SPARSE VECTORS */
 
 
-mysvm_sparsevector_t *
-mysvm_sparsevector_create(void)
+lasvm_sparsevector_t *
+lasvm_sparsevector_create(void)
 {
-  mysvm_sparsevector_t *v;
-  v = (mysvm_sparsevector_t*)xmalloc(sizeof(mysvm_sparsevector_t));
+  lasvm_sparsevector_t *v;
+  v = (lasvm_sparsevector_t*)xmalloc(sizeof(lasvm_sparsevector_t));
   v->size = 0;
   v->npairs = 0;
   v->pairs = 0;
@@ -111,12 +111,12 @@ mysvm_sparsevector_create(void)
 }
 
 void 
-mysvm_sparsevector_destroy(mysvm_sparsevector_t *v)
+lasvm_sparsevector_destroy(lasvm_sparsevector_t *v)
 {
-  mysvm_sparsevector_pair_t *p = v->pairs;
+  lasvm_sparsevector_pair_t *p = v->pairs;
   while (p)
     {
-      mysvm_sparsevector_pair_t *q = p->next;
+      lasvm_sparsevector_pair_t *q = p->next;
       free(p);
       p = q;
     }
@@ -128,9 +128,9 @@ mysvm_sparsevector_destroy(mysvm_sparsevector_t *v)
 }
 
 double 
-mysvm_sparsevector_get(mysvm_sparsevector_t *v, int index)
+lasvm_sparsevector_get(lasvm_sparsevector_t *v, int index)
 {
-  mysvm_sparsevector_pair_t *p = v->pairs;
+  lasvm_sparsevector_pair_t *p = v->pairs;
   ASSERT(index>=0);
   while (p && p->index < index)
     p = p->next;
@@ -140,10 +140,10 @@ mysvm_sparsevector_get(mysvm_sparsevector_t *v, int index)
 }
 
 static void 
-quickappend(mysvm_sparsevector_t *v, int index, double data)
+quickappend(lasvm_sparsevector_t *v, int index, double data)
 {
-  mysvm_sparsevector_pair_t *d;
-  d = (mysvm_sparsevector_pair_t*)xmalloc(sizeof(mysvm_sparsevector_pair_t));
+  lasvm_sparsevector_pair_t *d;
+  d = (lasvm_sparsevector_pair_t*)xmalloc(sizeof(lasvm_sparsevector_pair_t));
   ASSERT(index >= v->size);
   d->next = 0;
   d->index = index;
@@ -155,7 +155,7 @@ quickappend(mysvm_sparsevector_t *v, int index, double data)
 }
 
 void 
-mysvm_sparsevector_set(mysvm_sparsevector_t *v, int index, double data)
+lasvm_sparsevector_set(lasvm_sparsevector_t *v, int index, double data)
 {
   if (index >= v->size)
     {
@@ -165,8 +165,8 @@ mysvm_sparsevector_set(mysvm_sparsevector_t *v, int index, double data)
   else
     {
       /* Slow insert */
-      mysvm_sparsevector_pair_t **pp = &v->pairs;
-      mysvm_sparsevector_pair_t *p, *d;
+      lasvm_sparsevector_pair_t **pp = &v->pairs;
+      lasvm_sparsevector_pair_t *p, *d;
       while ( (p=*pp) && (p->index<index) )
 	pp = &(p->next);
       ASSERT(p);
@@ -175,7 +175,7 @@ mysvm_sparsevector_set(mysvm_sparsevector_t *v, int index, double data)
 	  p->data = data;
 	  return;
 	}
-      d = (mysvm_sparsevector_pair_t*)xmalloc(sizeof(mysvm_sparsevector_pair_t));
+      d = (lasvm_sparsevector_pair_t*)xmalloc(sizeof(lasvm_sparsevector_pair_t));
       d->next = p;
       d->index = index;
       d->data = data;
@@ -184,15 +184,15 @@ mysvm_sparsevector_set(mysvm_sparsevector_t *v, int index, double data)
     }
 }
 
-mysvm_sparsevector_t *
-mysvm_sparsevector_combine(mysvm_sparsevector_t *v1, double c1,
-			   mysvm_sparsevector_t *v2, double c2)
+lasvm_sparsevector_t *
+lasvm_sparsevector_combine(lasvm_sparsevector_t *v1, double c1,
+			   lasvm_sparsevector_t *v2, double c2)
 {
   
-  mysvm_sparsevector_t *r;
-  mysvm_sparsevector_pair_t *p1 = v1->pairs;
-  mysvm_sparsevector_pair_t *p2 = v2->pairs;
-  r = mysvm_sparsevector_create();
+  lasvm_sparsevector_t *r;
+  lasvm_sparsevector_pair_t *p1 = v1->pairs;
+  lasvm_sparsevector_pair_t *p2 = v2->pairs;
+  r = lasvm_sparsevector_create();
   
   while (p1 && p2)
     {
@@ -227,12 +227,12 @@ mysvm_sparsevector_combine(mysvm_sparsevector_t *v1, double c1,
 }
 
 double 
-mysvm_sparsevector_dot_product(mysvm_sparsevector_t *v1, 
-			       mysvm_sparsevector_t *v2)
+lasvm_sparsevector_dot_product(lasvm_sparsevector_t *v1, 
+			       lasvm_sparsevector_t *v2)
 {
   double sum = 0;
-  mysvm_sparsevector_pair_t *p1 = v1->pairs;
-  mysvm_sparsevector_pair_t *p2 = v2->pairs;
+  lasvm_sparsevector_pair_t *p1 = v1->pairs;
+  lasvm_sparsevector_pair_t *p2 = v2->pairs;
   while (p1 && p2)
     {
       if (p1->index < p2->index)

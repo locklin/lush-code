@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: messages.c,v 1.3 2004-10-03 09:38:20 leonb Exp $
+ * $Id: messages.c,v 1.1 2005-02-10 14:49:11 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -32,79 +32,79 @@
 
 #include "messages.h"
 
-mysvm_message_t mysvm_message_level = MYSVM_INFO;
+lasvm_message_t lasvm_message_level = LASVM_INFO;
 
-mysvm_message_proc_t  *mysvm_message_proc = 0;
+lasvm_message_proc_t  *lasvm_message_proc = 0;
 
 
 static void 
-defaultproc(mysvm_message_t level, const char *fmt, va_list ap)
+defaultproc(lasvm_message_t level, const char *fmt, va_list ap)
 {
-  if (level <= mysvm_message_level)
+  if (level <= lasvm_message_level)
     vprintf(fmt, ap);
 #ifdef LUSH
-  if (level <= MYSVM_ERROR)
+  if (level <= LASVM_ERROR)
     {
       extern void run_time_error(const char *s);
-      run_time_error("mysvm error");
+      run_time_error("lasvm error");
     }
 #endif
-  if (level <= MYSVM_ERROR)
+  if (level <= LASVM_ERROR)
     abort();
 }
 
 void 
-mysvm_error(const char *fmt, ...) 
+lasvm_error(const char *fmt, ...) 
 { 
-  mysvm_message_proc_t *f = mysvm_message_proc;
+  lasvm_message_proc_t *f = lasvm_message_proc;
   va_list ap; 
   va_start(ap,fmt);
   if (! f) 
     f = defaultproc;
-  (*f)(MYSVM_ERROR,fmt,ap);
+  (*f)(LASVM_ERROR,fmt,ap);
   va_end(ap); 
   abort();
 }
 
 void 
-mysvm_warning(const char *fmt, ...) 
+lasvm_warning(const char *fmt, ...) 
 { 
-  mysvm_message_proc_t *f = mysvm_message_proc;
+  lasvm_message_proc_t *f = lasvm_message_proc;
   va_list ap; 
   va_start(ap,fmt);
   if (! f) 
     f = defaultproc;
-  (*f)(MYSVM_WARNING,fmt,ap);
+  (*f)(LASVM_WARNING,fmt,ap);
   va_end(ap); 
 }
 
 void 
-mysvm_info(const char *fmt, ...) 
+lasvm_info(const char *fmt, ...) 
 { 
-  mysvm_message_proc_t *f = mysvm_message_proc;
+  lasvm_message_proc_t *f = lasvm_message_proc;
   va_list ap; 
   va_start(ap,fmt);
   if (! f) 
     f = defaultproc;
-  (*f)(MYSVM_INFO,fmt,ap);
+  (*f)(LASVM_INFO,fmt,ap);
   va_end(ap); 
 }
 
 void 
-mysvm_debug(const char *fmt, ...) 
+lasvm_debug(const char *fmt, ...) 
 { 
-  mysvm_message_proc_t *f = mysvm_message_proc;
+  lasvm_message_proc_t *f = lasvm_message_proc;
   va_list ap; 
   va_start(ap,fmt);
   if (! f) 
     f = defaultproc;
-  (*f)(MYSVM_DEBUG,fmt,ap);
+  (*f)(LASVM_DEBUG,fmt,ap);
   va_end(ap); 
 }
 
 void 
-mysvm_assertfail(const char *file,int line)
+lasvm_assertfail(const char *file,int line)
 {
-  mysvm_error("Assertion failed: %s:%d\n", file, line);
+  lasvm_error("Assertion failed: %s:%d\n", file, line);
 }
 

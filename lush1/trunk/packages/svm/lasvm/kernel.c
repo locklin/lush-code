@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kernel.c,v 1.3 2004-11-02 19:00:54 leonb Exp $
+ * $Id: kernel.c,v 1.1 2005-02-10 14:49:11 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -44,45 +44,45 @@
 
 
 double 
-mysvm_vectorproblem_lin_kernel(int i, int j, void *problem)
+lasvm_vectorproblem_lin_kernel(int i, int j, void *problem)
 {
-  mysvm_vectorproblem_t *p = (mysvm_vectorproblem_t*)problem;
+  lasvm_vectorproblem_t *p = (lasvm_vectorproblem_t*)problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
-  return mysvm_vector_dot_product(p->x[i], p->x[j]);
+  return lasvm_vector_dot_product(p->x[i], p->x[j]);
 }
 
 
 double 
-mysvm_vectorproblem_rbf_kernel(int i, int j, void *problem)
+lasvm_vectorproblem_rbf_kernel(int i, int j, void *problem)
 {
   double d;
-  mysvm_vectorproblem_t *p = (mysvm_vectorproblem_t*)problem;
+  lasvm_vectorproblem_t *p = (lasvm_vectorproblem_t*)problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
-  d = mysvm_vector_dot_product(p->x[i], p->x[j]);
+  d = lasvm_vector_dot_product(p->x[i], p->x[j]);
   return exp( - p->rbfgamma * ( p->xnorm[i] + p->xnorm[j] - 2 * d ));
 }
 
 
 
 double 
-mysvm_sparsevectorproblem_lin_kernel(int i, int j, void *problem)
+lasvm_sparsevectorproblem_lin_kernel(int i, int j, void *problem)
 {
-  mysvm_sparsevectorproblem_t *p = (mysvm_sparsevectorproblem_t*)problem;
+  lasvm_sparsevectorproblem_t *p = (lasvm_sparsevectorproblem_t*)problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
-  return mysvm_sparsevector_dot_product(p->x[i], p->x[j]);
+  return lasvm_sparsevector_dot_product(p->x[i], p->x[j]);
 }
 
 double 
-mysvm_sparsevectorproblem_rbf_kernel(int i, int j, void *problem)
+lasvm_sparsevectorproblem_rbf_kernel(int i, int j, void *problem)
 {
   double d;
-  mysvm_sparsevectorproblem_t *p = (mysvm_sparsevectorproblem_t*)problem;
+  lasvm_sparsevectorproblem_t *p = (lasvm_sparsevectorproblem_t*)problem;
   ASSERT(i>=0 && i<p->l);
   ASSERT(j>=0 && j<p->l);
-  d = mysvm_sparsevector_dot_product(p->x[i], p->x[j]);
+  d = lasvm_sparsevector_dot_product(p->x[i], p->x[j]);
   return exp( - p->rbfgamma * ( p->xnorm[i] + p->xnorm[j] - 2 * d ));
 }
 

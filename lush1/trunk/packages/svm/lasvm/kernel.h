@@ -24,14 +24,16 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.h,v 1.2 2004-08-30 23:24:30 leonb Exp $
+ * $Id: kernel.h,v 1.1 2005-02-10 14:49:11 leonb Exp $
  **********************************************************************/
 
-#ifndef VECTOR_H
-#define VECTOR_H
+#ifndef KERNEL_H
+#define KERNEL_H
 
 #include <stdlib.h>
 #include <stdio.h>
+
+#include "vector.h"
 
 #ifdef __cplusplus__
 extern "C" { 
@@ -41,52 +43,67 @@ extern "C" {
 #endif
 
 
-/* ------------------------------------- */
-/* SIMPLE VECTORS */
-
-
-typedef struct mysvm_vector_s {
-  int size;
-  double data[1];
-} mysvm_vector_t;
-
-mysvm_vector_t *mysvm_vector_create(int size);
-
-void mysvm_vector_destroy(mysvm_vector_t *v);
-
-double mysvm_vector_dot_product(mysvm_vector_t *v1, mysvm_vector_t *v2);
-
 
 /* ------------------------------------- */
-/* SPARSE VECTORS */
+/* GENERIC KERNEL TYPE */
 
 
-typedef struct mysvm_sparsevector_pair_s {
-  struct mysvm_sparsevector_pair_s *next;
-  int    index;
-  double data;
-} mysvm_sparsevector_pair_t;
+/* --- lasvm_kernel_t
+   This is the type for user defined symmetric kernel functions.
+   It returns the Gram matrix element at position <i>,<j>. 
+   Argument <closure> represents arbitrary additional information.
+*/
+#ifndef LASVM_KERNEL_T_DEFINED
+#define LASVM_KERNEL_T_DEFINED
+typedef double (*lasvm_kernel_t)(int i, int j, void* closure);
+#endif
 
-typedef struct mysvm_sparsevector_s {
-  int size;
-  int npairs;
-  mysvm_sparsevector_pair_t *pairs;
-  mysvm_sparsevector_pair_t **last;
-} mysvm_sparsevector_t;
 
-mysvm_sparsevector_t *mysvm_sparsevector_create(void);
 
-void mysvm_sparsevector_destroy(mysvm_sparsevector_t *v);
+/* ------------------------------------- */
+/* USEFUL KERNELS */
 
-void mysvm_sparsevector_set(mysvm_sparsevector_t *v, int index, double data);
 
-double mysvm_sparsevector_get(mysvm_sparsevector_t *v, int index);
+typedef struct lasvm_vectorproblem_s 
+{
+  int l;			/* number of examples */
+  int n;			/* dimension of examples */
+  lasvm_vector_t **x;		/* x[0]...x[l-1] */
+  double *y;			/* category */
+  double *xnorm;		/* for rbf kernel: l2-norm of the x[i] */
+  double rbfgamma;		/* for rbf kernel: gamma */
+} lasvm_vectorproblem_t;
 
-mysvm_sparsevector_t *mysvm_sparsevector_combine(mysvm_sparsevector_t *v1, double coeff1,
-						 mysvm_sparsevector_t *v2, double coeff2);
 
-double mysvm_sparsevector_dot_product(mysvm_sparsevector_t *v1, 
-				      mysvm_sparsevector_t *v2);
+double lasvm_vectorproblem_lin_kernel(int i, int j, void *problem);
+
+double lasvm_vectorproblem_rbf_kernel(int i, int j, void *problem);
+
+
+/* ------------------------------------- */
+/* MORE USEFUL KERNELS */
+
+
+typedef struct lasvm_sparsevectorproblem_s 
+{
+  int l;			/* number of examples */
+  int n;			/* dimension of examples */
+  lasvm_sparsevector_t **x;	/* x[0]...x[l-1] */
+  double *y;			/* category */
+  double *xnorm;		/* for rbf kernel: l2-norm of the x[i] */
+  double rbfgamma;		/* for rbf kernel: gamma */
+} lasvm_sparsevectorproblem_t;
+
+
+double lasvm_sparsevectorproblem_lin_kernel(int i, int j, void *problem);
+
+double lasvm_sparsevectorproblem_rbf_kernel(int i, int j, void *problem);
+
+
+
+
+
+
 
 #ifdef __cplusplus__
 }
