@@ -1,0 +1,3412 @@
+#? * BLAS: Double Precision Complex Functions
+;;.AUTHOR Fu Jie Huang, Yann LeCun
+;; This provides a complete interface to the FORTRAN BLAS
+;; library of low-level linear algebra functions.
+
+(libload "blas-config")
+(libload "blas-x")
+
+;; Check if we can short-circuit by just mod-loading the object file
+(let* ((dhc-make-lushflags (concat dhc-make-lushflags blas-cflags))
+       (objfile (dhc-make-test ())) )
+  (when objfile
+    (mod-load objfile)
+    (mapcar mod-load (cons blas-libblas blas-libfortran))
+    (exit) ) )
+
+
+(de blas-z-dummy () (cheader "typedef int int_func();") ())
+
+
+#? (zaxpy <n>  <za>  <zx>  <incx>  <zy>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*
+;;*     constant times a vector plus a vector.
+;;*     jack dongarra, 3/11/78.
+;;*     modified 12/3/93, array(1) declarations changed to array(*)
+;;*
+;;*  =====================================================================
+
+(de zaxpy (n  za  zx  incx  zy  incy  )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double_)) za )
+	((-idx2- (-double-)) zx )
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) zy )
+	((-idx0- (-int-)) incy )
+	#{ zaxpy_(IDX_PTR($n,int), IDX_PTR($za,double), IDX_PTR($zx,double), IDX_PTR($incx,int), IDX_PTR($zy,double), IDX_PTR($incy,int)) #} ())
+
+
+
+#? (zcopy <n>  <zx>  <incx>  <zy>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*
+;;*     copies a vector, x, to a vector, y.
+;;*     jack dongarra, linpack, 4/11/78.
+;;*     modified 12/3/93, array(1) declarations changed to array(*)
+;;*
+;;*  =====================================================================
+
+(de zcopy (n  zx  incx  zy  incy  )
+	((-idx0- (-int-)) n )
+	((-idx2- (-double-)) zx)
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) zy)
+	((-idx0- (-int-)) incy )
+	#{ zcopy_(IDX_PTR($n,int), IDX_PTR($zx,double), IDX_PTR($incx,int), IDX_PTR($zy,double), IDX_PTR($incy,int)) #} ())
+
+
+
+#? (zdotc <n>  <zx>  <incx>  <zy>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*
+;;*     forms the dot product of a vector.
+;;*     jack dongarra, 3/11/78.
+;;*     modified 12/3/93, array(1) declarations changed to array(*)
+;;*
+;;*  =====================================================================
+
+(de zdotc (n  zx  incx  zy  incy  )
+	((-idx0- (-int-)) n )
+	((-idx2- (-double-)) zx)
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) zy)
+	((-idx0- (-int-)) incy )
+	(let ((rval 0))
+	#{ $rval=zdotc_(IDX_PTR($n,int), IDX_PTR($zx,double), IDX_PTR($incx,int), IDX_PTR($zy,double), IDX_PTR($incy,int)) #} rval))
+
+
+
+#? (zdotu <n>  <zx>  <incx>  <zy>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*
+;;*     forms the dot product of two vectors.
+;;*     jack dongarra, 3/11/78.
+;;*     modified 12/3/93, array(1) declarations changed to array(*)
+;;*
+;;*  =====================================================================
+
+(de zdotu (n  zx  incx  zy  incy  )
+	((-idx0- (-int-)) n )
+	((-idx2- (-double-)) zx)
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) zy)
+	((-idx0- (-int-)) incy )
+	(let ((rval 0))
+	#{ $rval=zdotu_(IDX_PTR($n,int), IDX_PTR($zx,double), IDX_PTR($incx,int), IDX_PTR($zy,double), IDX_PTR($incy,int)) #} rval))
+
+
+
+#? (zdscal <n>  <da>  <zx>  <incx>  )
+;;.VP
+;;*  =====================================================================
+;;*
+;;*     scales a vector by a constant.
+;;*     jack dongarra, 3/11/78.
+;;*     modified 3/93 to return if incx .le. 0.
+;;*     modified 12/3/93, array(1) declarations changed to array(*)
+;;*
+;;*  =====================================================================
+
+(de zdscal (n  da  zx  incx  )
+	((-idx0- (-int-)) n )
+	((-idx0- (-double-)) da)
+	((-idx2- (-double-)) zx)
+	((-idx0- (-int-)) incx )
+	#{ zdscal_(IDX_PTR($n,int), IDX_PTR($da,double), IDX_PTR($zx,double), IDX_PTR($incx,int)) #} ())
+
+
+
+#? (zgbmv <trans>  <m>  <n>  <kl>  <ku>  <alpha>  <a>  <lda>  <x>  <incx>  <beta>  <y>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZGBMV  performs one of the matrix-vector operations
+;;*
+;;*     y := alpha*A*x + beta*y,   or   y := alpha*A'*x + beta*y,   or
+;;*
+;;*     y := alpha*conjg( A' )*x + beta*y,
+;;*
+;;*  where alpha and beta are scalars, x and y are vectors and A is an
+;;*  m by n band matrix, with kl sub-diagonals and ku super-diagonals.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry, TRANS specifies the operation to be performed as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   y := alpha*A*x + beta*y.
+;;*
+;;*              TRANS = 'T' or 't'   y := alpha*A'*x + beta*y.
+;;*
+;;*              TRANS = 'C' or 'c'   y := alpha*conjg( A' )*x + beta*y.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  M      - INTEGER.
+;;*           On entry, M specifies the number of rows of the matrix A.
+;;*           M must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the number of columns of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  KL     - INTEGER.
+;;*           On entry, KL specifies the number of sub-diagonals of the
+;;*           matrix A. KL must satisfy  0 .le. KL.
+;;*           Unchanged on exit.
+;;*
+;;*  KU     - INTEGER.
+;;*           On entry, KU specifies the number of super-diagonals of the
+;;*           matrix A. KU must satisfy  0 .le. KU.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry, the leading ( kl + ku + 1 ) by n part of the
+;;*           array A must contain the matrix of coefficients, supplied
+;;*           column by column, with the leading diagonal of the matrix in
+;;*           row ( ku + 1 ) of the array, the first super-diagonal
+;;*           starting at position 2 in row ku, the first sub-diagonal
+;;*           starting at position 1 in row ( ku + 2 ), and so on.
+;;*           Elements in the array A that do not correspond to elements
+;;*           in the band matrix (such as the top left ku by ku triangle)
+;;*           are not referenced.
+;;*           The following program segment will transfer a band matrix
+;;*           from conventional full matrix storage to band storage:
+;;*
+;;*                 DO 20, J = 1, N
+;;*                    K = KU + 1 - J
+;;*                    DO 10, I = MAX( 1, J - KU ), MIN( M, J + KL )
+;;*                       A( K + I, J ) = matrix( I, J )
+;;*              10    CONTINUE
+;;*              20 CONTINUE
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           ( kl + ku + 1 ).
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of DIMENSION at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ) when TRANS = 'N' or 'n'
+;;*           and at least
+;;*           ( 1 + ( m - 1 )*abs( INCX ) ) otherwise.
+;;*           Before entry, the incremented array X must contain the
+;;*           vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry, BETA specifies the scalar beta. When BETA is
+;;*           supplied as zero then Y need not be set on input.
+;;*           Unchanged on exit.
+;;*
+;;*  Y      - COMPLEX*16       array of DIMENSION at least
+;;*           ( 1 + ( m - 1 )*abs( INCY ) ) when TRANS = 'N' or 'n'
+;;*           and at least
+;;*           ( 1 + ( n - 1 )*abs( INCY ) ) otherwise.
+;;*           Before entry, the incremented array Y must contain the
+;;*           vector y. On exit, Y is overwritten by the updated vector y.
+;;*
+;;*
+;;*  INCY   - INTEGER.
+;;*           On entry, INCY specifies the increment for the elements of
+;;*           Y. INCY must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zgbmv (trans  m  n  kl  ku  alpha  a  lda  x  incx  beta  y  incy  )
+	((-str-) trans )
+	((-idx0- (-int-)) m )
+	((-idx0- (-int-)) n )
+	((-idx0- (-int-)) kl )
+	((-idx0- (-int-)) ku )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx1- (-double-)) beta )
+	((-idx2- (-double-)) y )
+	((-idx0- (-int-)) incy )
+	#{ zgbmv_($trans->data, IDX_PTR($m,int), IDX_PTR($n,int), IDX_PTR($kl,int), IDX_PTR($ku,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($beta,double), IDX_PTR($y,double), IDX_PTR($incy,int)) #} ())
+
+
+
+#? (zgemm <transa>  <transb>  <m>  <n>  <k>  <alpha>  <a>  <lda>  <b>  <ldb>  <beta>  <c>  <ldc>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZGEMM  performs one of the matrix-matrix operations
+;;*
+;;*     C := alpha*op( A )*op( B ) + beta*C,
+;;*
+;;*  where  op( X ) is one of
+;;*
+;;*     op( X ) = X   or   op( X ) = X'   or   op( X ) = conjg( X' ),
+;;*
+;;*  alpha and beta are scalars, and A, B and C are matrices, with op( A )
+;;*  an m by k matrix,  op( B )  a  k by n matrix and  C an m by n matrix.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  TRANSA - CHARACTER*1.
+;;*           On entry, TRANSA specifies the form of op( A ) to be used in
+;;*           the matrix multiplication as follows:
+;;*
+;;*              TRANSA = 'N' or 'n',  op( A ) = A.
+;;*
+;;*              TRANSA = 'T' or 't',  op( A ) = A'.
+;;*
+;;*              TRANSA = 'C' or 'c',  op( A ) = conjg( A' ).
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANSB - CHARACTER*1.
+;;*           On entry, TRANSB specifies the form of op( B ) to be used in
+;;*           the matrix multiplication as follows:
+;;*
+;;*              TRANSB = 'N' or 'n',  op( B ) = B.
+;;*
+;;*              TRANSB = 'T' or 't',  op( B ) = B'.
+;;*
+;;*              TRANSB = 'C' or 'c',  op( B ) = conjg( B' ).
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  M      - INTEGER.
+;;*           On entry,  M  specifies  the number  of rows  of the  matrix
+;;*           op( A )  and of the  matrix  C.  M  must  be at least  zero.
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry,  N  specifies the number  of columns of the matrix
+;;*           op( B ) and the number of columns of the matrix C. N must be
+;;*           at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  K      - INTEGER.
+;;*           On entry,  K  specifies  the number of columns of the matrix
+;;*           op( A ) and the number of rows of the matrix op( B ). K must
+;;*           be at least  zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, ka ), where ka is
+;;*           k  when  TRANSA = 'N' or 'n',  and is  m  otherwise.
+;;*           Before entry with  TRANSA = 'N' or 'n',  the leading  m by k
+;;*           part of the array  A  must contain the matrix  A,  otherwise
+;;*           the leading  k by m  part of the array  A  must contain  the
+;;*           matrix A.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. When  TRANSA = 'N' or 'n' then
+;;*           LDA must be at least  max( 1, m ), otherwise  LDA must be at
+;;*           least  max( 1, k ).
+;;*           Unchanged on exit.
+;;*
+;;*  B      - COMPLEX*16       array of DIMENSION ( LDB, kb ), where kb is
+;;*           n  when  TRANSB = 'N' or 'n',  and is  k  otherwise.
+;;*           Before entry with  TRANSB = 'N' or 'n',  the leading  k by n
+;;*           part of the array  B  must contain the matrix  B,  otherwise
+;;*           the leading  n by k  part of the array  B  must contain  the
+;;*           matrix B.
+;;*           Unchanged on exit.
+;;*
+;;*  LDB    - INTEGER.
+;;*           On entry, LDB specifies the first dimension of B as declared
+;;*           in the calling (sub) program. When  TRANSB = 'N' or 'n' then
+;;*           LDB must be at least  max( 1, k ), otherwise  LDB must be at
+;;*           least  max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry,  BETA  specifies the scalar  beta.  When  BETA  is
+;;*           supplied as zero then C need not be set on input.
+;;*           Unchanged on exit.
+;;*
+;;*  C      - COMPLEX*16       array of DIMENSION ( LDC, n ).
+;;*           Before entry, the leading  m by n  part of the array  C must
+;;*           contain the matrix  C,  except when  beta  is zero, in which
+;;*           case C need not be set on entry.
+;;*           On exit, the array  C  is overwritten by the  m by n  matrix
+;;*           ( alpha*op( A )*op( B ) + beta*C ).
+;;*
+;;*  LDC    - INTEGER.
+;;*           On entry, LDC specifies the first dimension of C as declared
+;;*           in  the  calling  (sub)  program.   LDC  must  be  at  least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 3 Blas routine.
+;;*
+;;*  -- Written on 8-February-1989.
+;;*     Jack Dongarra, Argonne National Laboratory.
+;;*     Iain Duff, AERE Harwell.
+;;*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+;;*     Sven Hammarling, Numerical Algorithms Group Ltd.
+;;*
+;;*
+;;*     .. External Functions ..
+;;*  =====================================================================
+
+(de zgemm (transa  transb  m  n  k  alpha  a  lda  b  ldb  beta  c  ldc  )
+	((-str-) transa )
+	((-str-) transb )
+	((-idx0- (-int-)) m )
+	((-idx0- (-int-)) n )
+	((-idx0- (-int-)) k )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx3- (-double-)) b )
+	((-idx0- (-int-)) ldb )
+	((-idx1- (-double-)) beta )
+	((-idx3- (-double-)) c )
+	((-idx0- (-int-)) ldc )
+	#{ zgemm_($transa->data, $transb->data, IDX_PTR($m,int), IDX_PTR($n,int), IDX_PTR($k,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($b,double), IDX_PTR($ldb,int), IDX_PTR($beta,double), IDX_PTR($c,double), IDX_PTR($ldc,int)) #} ())
+
+
+
+#? (zgemv <trans>  <m>  <n>  <alpha>  <a>  <lda>  <x>  <incx>  <beta>  <y>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZGEMV  performs one of the matrix-vector operations
+;;*
+;;*     y := alpha*A*x + beta*y,   or   y := alpha*A'*x + beta*y,   or
+;;*
+;;*     y := alpha*conjg( A' )*x + beta*y,
+;;*
+;;*  where alpha and beta are scalars, x and y are vectors and A is an
+;;*  m by n matrix.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry, TRANS specifies the operation to be performed as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   y := alpha*A*x + beta*y.
+;;*
+;;*              TRANS = 'T' or 't'   y := alpha*A'*x + beta*y.
+;;*
+;;*              TRANS = 'C' or 'c'   y := alpha*conjg( A' )*x + beta*y.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  M      - INTEGER.
+;;*           On entry, M specifies the number of rows of the matrix A.
+;;*           M must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the number of columns of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry, the leading m by n part of the array A must
+;;*           contain the matrix of coefficients.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of DIMENSION at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ) when TRANS = 'N' or 'n'
+;;*           and at least
+;;*           ( 1 + ( m - 1 )*abs( INCX ) ) otherwise.
+;;*           Before entry, the incremented array X must contain the
+;;*           vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry, BETA specifies the scalar beta. When BETA is
+;;*           supplied as zero then Y need not be set on input.
+;;*           Unchanged on exit.
+;;*
+;;*  Y      - COMPLEX*16       array of DIMENSION at least
+;;*           ( 1 + ( m - 1 )*abs( INCY ) ) when TRANS = 'N' or 'n'
+;;*           and at least
+;;*           ( 1 + ( n - 1 )*abs( INCY ) ) otherwise.
+;;*           Before entry with BETA non-zero, the incremented array Y
+;;*           must contain the vector y. On exit, Y is overwritten by the
+;;*           updated vector y.
+;;*
+;;*  INCY   - INTEGER.
+;;*           On entry, INCY specifies the increment for the elements of
+;;*           Y. INCY must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zgemv (trans  m  n  alpha  a  lda  x  incx  beta  y  incy  )
+	((-str-) trans )
+	((-idx0- (-int-)) m )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx1- (-double-)) beta )
+	((-idx2- (-double-)) y )
+	((-idx0- (-int-)) incy )
+	#{ zgemv_($trans->data, IDX_PTR($m,int), IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($beta,double), IDX_PTR($y,double), IDX_PTR($incy,int)) #} ())
+
+
+
+#? (zgerc <m>  <n>  <alpha>  <x>  <incx>  <y>  <incy>  <a>  <lda>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZGERC  performs the rank 1 operation
+;;*
+;;*     A := alpha*x*conjg( y' ) + A,
+;;*
+;;*  where alpha is a scalar, x is an m element vector, y is an n element
+;;*  vector and A is an m by n matrix.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  M      - INTEGER.
+;;*           On entry, M specifies the number of rows of the matrix A.
+;;*           M must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the number of columns of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( m - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the m
+;;*           element vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  Y      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCY ) ).
+;;*           Before entry, the incremented array Y must contain the n
+;;*           element vector y.
+;;*           Unchanged on exit.
+;;*
+;;*  INCY   - INTEGER.
+;;*           On entry, INCY specifies the increment for the elements of
+;;*           Y. INCY must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry, the leading m by n part of the array A must
+;;*           contain the matrix of coefficients. On exit, A is
+;;*           overwritten by the updated matrix.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zgerc (m  n  alpha  x  incx  y  incy  a  lda  )
+	((-idx0- (-int-)) m )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) y )
+	((-idx0- (-int-)) incy )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	#{ zgerc_(IDX_PTR($m,int), IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($y,double), IDX_PTR($incy,int), IDX_PTR($a,double), IDX_PTR($lda,int)) #} ())
+
+
+
+#? (zgeru <m>  <n>  <alpha>  <x>  <incx>  <y>  <incy>  <a>  <lda>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZGERU  performs the rank 1 operation
+;;*
+;;*     A := alpha*x*y' + A,
+;;*
+;;*  where alpha is a scalar, x is an m element vector, y is an n element
+;;*  vector and A is an m by n matrix.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  M      - INTEGER.
+;;*           On entry, M specifies the number of rows of the matrix A.
+;;*           M must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the number of columns of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( m - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the m
+;;*           element vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  Y      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCY ) ).
+;;*           Before entry, the incremented array Y must contain the n
+;;*           element vector y.
+;;*           Unchanged on exit.
+;;*
+;;*  INCY   - INTEGER.
+;;*           On entry, INCY specifies the increment for the elements of
+;;*           Y. INCY must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry, the leading m by n part of the array A must
+;;*           contain the matrix of coefficients. On exit, A is
+;;*           overwritten by the updated matrix.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zgeru (m  n  alpha  x  incx  y  incy  a  lda  )
+	((-idx0- (-int-)) m )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) y )
+	((-idx0- (-int-)) incy )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	#{ zgeru_(IDX_PTR($m,int), IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($y,double), IDX_PTR($incy,int), IDX_PTR($a,double), IDX_PTR($lda,int)) #} ())
+
+
+
+#? (zhbmv <uplo>  <n>  <k>  <alpha>  <a>  <lda>  <x>  <incx>  <beta>  <y>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHBMV  performs the matrix-vector  operation
+;;*
+;;*     y := alpha*A*x + beta*y,
+;;*
+;;*  where alpha and beta are scalars, x and y are n element vectors and
+;;*  A is an n by n hermitian band matrix, with k super-diagonals.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the upper or lower
+;;*           triangular part of the band matrix A is being supplied as
+;;*           follows:
+;;*
+;;*              UPLO = 'U' or 'u'   The upper triangular part of A is
+;;*                                  being supplied.
+;;*
+;;*              UPLO = 'L' or 'l'   The lower triangular part of A is
+;;*                                  being supplied.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  K      - INTEGER.
+;;*           On entry, K specifies the number of super-diagonals of the
+;;*           matrix A. K must satisfy  0 .le. K.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry with UPLO = 'U' or 'u', the leading ( k + 1 )
+;;*           by n part of the array A must contain the upper triangular
+;;*           band part of the hermitian matrix, supplied column by
+;;*           column, with the leading diagonal of the matrix in row
+;;*           ( k + 1 ) of the array, the first super-diagonal starting at
+;;*           position 2 in row k, and so on. The top left k by k triangle
+;;*           of the array A is not referenced.
+;;*           The following program segment will transfer the upper
+;;*           triangular part of a hermitian band matrix from conventional
+;;*           full matrix storage to band storage:
+;;*
+;;*                 DO 20, J = 1, N
+;;*                    M = K + 1 - J
+;;*                    DO 10, I = MAX( 1, J - K ), J
+;;*                       A( M + I, J ) = matrix( I, J )
+;;*              10    CONTINUE
+;;*              20 CONTINUE
+;;*
+;;*           Before entry with UPLO = 'L' or 'l', the leading ( k + 1 )
+;;*           by n part of the array A must contain the lower triangular
+;;*           band part of the hermitian matrix, supplied column by
+;;*           column, with the leading diagonal of the matrix in row 1 of
+;;*           the array, the first sub-diagonal starting at position 1 in
+;;*           row 2, and so on. The bottom right k by k triangle of the
+;;*           array A is not referenced.
+;;*           The following program segment will transfer the lower
+;;*           triangular part of a hermitian band matrix from conventional
+;;*           full matrix storage to band storage:
+;;*
+;;*                 DO 20, J = 1, N
+;;*                    M = 1 - J
+;;*                    DO 10, I = J, MIN( N, J + K )
+;;*                       A( M + I, J ) = matrix( I, J )
+;;*              10    CONTINUE
+;;*              20 CONTINUE
+;;*
+;;*           Note that the imaginary parts of the diagonal elements need
+;;*           not be set and are assumed to be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           ( k + 1 ).
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of DIMENSION at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the
+;;*           vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry, BETA specifies the scalar beta.
+;;*           Unchanged on exit.
+;;*
+;;*  Y      - COMPLEX*16       array of DIMENSION at least
+;;*           ( 1 + ( n - 1 )*abs( INCY ) ).
+;;*           Before entry, the incremented array Y must contain the
+;;*           vector y. On exit, Y is overwritten by the updated vector y.
+;;*
+;;*  INCY   - INTEGER.
+;;*           On entry, INCY specifies the increment for the elements of
+;;*           Y. INCY must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zhbmv (uplo  n  k  alpha  a  lda  x  incx  beta  y  incy  )
+	((-str-) uplo )
+	((-idx0- (-int-)) n )
+	((-idx0- (-int-)) k )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx1- (-double-)) beta )
+	((-idx2- (-double-)) y )
+	((-idx0- (-int-)) incy )
+	#{ zhbmv_($uplo->data, IDX_PTR($n,int), IDX_PTR($k,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($beta,double), IDX_PTR($y,double), IDX_PTR($incy,int)) #} ())
+
+
+
+#? (zhemm <side>  <uplo>  <m>  <n>  <alpha>  <a>  <lda>  <b>  <ldb>  <beta>  <c>  <ldc>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHEMM  performs one of the matrix-matrix operations
+;;*
+;;*     C := alpha*A*B + beta*C,
+;;*
+;;*  or
+;;*
+;;*     C := alpha*B*A + beta*C,
+;;*
+;;*  where alpha and beta are scalars, A is an hermitian matrix and  B and
+;;*  C are m by n matrices.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  SIDE   - CHARACTER*1.
+;;*           On entry,  SIDE  specifies whether  the  hermitian matrix  A
+;;*           appears on the  left or right  in the  operation as follows:
+;;*
+;;*              SIDE = 'L' or 'l'   C := alpha*A*B + beta*C,
+;;*
+;;*              SIDE = 'R' or 'r'   C := alpha*B*A + beta*C,
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On  entry,   UPLO  specifies  whether  the  upper  or  lower
+;;*           triangular  part  of  the  hermitian  matrix   A  is  to  be
+;;*           referenced as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   Only the upper triangular part of the
+;;*                                  hermitian matrix is to be referenced.
+;;*
+;;*              UPLO = 'L' or 'l'   Only the lower triangular part of the
+;;*                                  hermitian matrix is to be referenced.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  M      - INTEGER.
+;;*           On entry,  M  specifies the number of rows of the matrix  C.
+;;*           M  must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the number of columns of the matrix C.
+;;*           N  must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, ka ), where ka is
+;;*           m  when  SIDE = 'L' or 'l'  and is n  otherwise.
+;;*           Before entry  with  SIDE = 'L' or 'l',  the  m by m  part of
+;;*           the array  A  must contain the  hermitian matrix,  such that
+;;*           when  UPLO = 'U' or 'u', the leading m by m upper triangular
+;;*           part of the array  A  must contain the upper triangular part
+;;*           of the  hermitian matrix and the  strictly  lower triangular
+;;*           part of  A  is not referenced,  and when  UPLO = 'L' or 'l',
+;;*           the leading  m by m  lower triangular part  of the  array  A
+;;*           must  contain  the  lower triangular part  of the  hermitian
+;;*           matrix and the  strictly upper triangular part of  A  is not
+;;*           referenced.
+;;*           Before entry  with  SIDE = 'R' or 'r',  the  n by n  part of
+;;*           the array  A  must contain the  hermitian matrix,  such that
+;;*           when  UPLO = 'U' or 'u', the leading n by n upper triangular
+;;*           part of the array  A  must contain the upper triangular part
+;;*           of the  hermitian matrix and the  strictly  lower triangular
+;;*           part of  A  is not referenced,  and when  UPLO = 'L' or 'l',
+;;*           the leading  n by n  lower triangular part  of the  array  A
+;;*           must  contain  the  lower triangular part  of the  hermitian
+;;*           matrix and the  strictly upper triangular part of  A  is not
+;;*           referenced.
+;;*           Note that the imaginary parts  of the diagonal elements need
+;;*           not be set, they are assumed to be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the  calling (sub) program. When  SIDE = 'L' or 'l'  then
+;;*           LDA must be at least  max( 1, m ), otherwise  LDA must be at
+;;*           least max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*  B      - COMPLEX*16       array of DIMENSION ( LDB, n ).
+;;*           Before entry, the leading  m by n part of the array  B  must
+;;*           contain the matrix B.
+;;*           Unchanged on exit.
+;;*
+;;*  LDB    - INTEGER.
+;;*           On entry, LDB specifies the first dimension of B as declared
+;;*           in  the  calling  (sub)  program.   LDB  must  be  at  least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry,  BETA  specifies the scalar  beta.  When  BETA  is
+;;*           supplied as zero then C need not be set on input.
+;;*           Unchanged on exit.
+;;*
+;;*  C      - COMPLEX*16       array of DIMENSION ( LDC, n ).
+;;*           Before entry, the leading  m by n  part of the array  C must
+;;*           contain the matrix  C,  except when  beta  is zero, in which
+;;*           case C need not be set on entry.
+;;*           On exit, the array  C  is overwritten by the  m by n updated
+;;*           matrix.
+;;*
+;;*  LDC    - INTEGER.
+;;*           On entry, LDC specifies the first dimension of C as declared
+;;*           in  the  calling  (sub)  program.   LDC  must  be  at  least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 3 Blas routine.
+;;*
+;;*  -- Written on 8-February-1989.
+;;*     Jack Dongarra, Argonne National Laboratory.
+;;*     Iain Duff, AERE Harwell.
+;;*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+;;*     Sven Hammarling, Numerical Algorithms Group Ltd.
+;;*
+;;*
+;;*     .. External Functions ..
+;;*  =====================================================================
+
+(de zhemm (side  uplo  m  n  alpha  a  lda  b  ldb  beta  c  ldc  )
+	((-str-) side )
+	((-str-) uplo )
+	((-idx0- (-int-)) m )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx3- (-double-)) b )
+	((-idx0- (-int-)) ldb )
+	((-idx1- (-double-)) beta )
+	((-idx3- (-double-)) c )
+	((-idx0- (-int-)) ldc )
+	#{ zhemm_($side->data, $uplo->data, IDX_PTR($m,int), IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($b,double), IDX_PTR($ldb,int), IDX_PTR($beta,double), IDX_PTR($c,double), IDX_PTR($ldc,int)) #} ())
+
+
+
+#? (zhemv <uplo>  <n>  <alpha>  <a>  <lda>  <x>  <incx>  <beta>  <y>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHEMV  performs the matrix-vector  operation
+;;*
+;;*     y := alpha*A*x + beta*y,
+;;*
+;;*  where alpha and beta are scalars, x and y are n element vectors and
+;;*  A is an n by n hermitian matrix.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the upper or lower
+;;*           triangular part of the array A is to be referenced as
+;;*           follows:
+;;*
+;;*              UPLO = 'U' or 'u'   Only the upper triangular part of A
+;;*                                  is to be referenced.
+;;*
+;;*              UPLO = 'L' or 'l'   Only the lower triangular part of A
+;;*                                  is to be referenced.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry with  UPLO = 'U' or 'u', the leading n by n
+;;*           upper triangular part of the array A must contain the upper
+;;*           triangular part of the hermitian matrix and the strictly
+;;*           lower triangular part of A is not referenced.
+;;*           Before entry with UPLO = 'L' or 'l', the leading n by n
+;;*           lower triangular part of the array A must contain the lower
+;;*           triangular part of the hermitian matrix and the strictly
+;;*           upper triangular part of A is not referenced.
+;;*           Note that the imaginary parts of the diagonal elements need
+;;*           not be set and are assumed to be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry, BETA specifies the scalar beta. When BETA is
+;;*           supplied as zero then Y need not be set on input.
+;;*           Unchanged on exit.
+;;*
+;;*  Y      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCY ) ).
+;;*           Before entry, the incremented array Y must contain the n
+;;*           element vector y. On exit, Y is overwritten by the updated
+;;*           vector y.
+;;*
+;;*  INCY   - INTEGER.
+;;*           On entry, INCY specifies the increment for the elements of
+;;*           Y. INCY must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zhemv (uplo  n  alpha  a  lda  x  incx  beta  y  incy  )
+	((-str-) uplo )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx1- (-double-)) beta )
+	((-idx2- (-double-)) y )
+	((-idx0- (-int-)) incy )
+	#{ zhemv_($uplo->data, IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($beta,double), IDX_PTR($y,double), IDX_PTR($incy,int)) #} ())
+
+
+
+#? (zher2k <uplo>  <trans>  <n>  <k>  <alpha>  <a>  <lda>  <b>  <ldb>  <beta>  <c>  <ldc>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHER2K  performs one of the hermitian rank 2k operations
+;;*
+;;*     C := alpha*A*conjg( B' ) + conjg( alpha )*B*conjg( A' ) + beta*C,
+;;*
+;;*  or
+;;*
+;;*     C := alpha*conjg( A' )*B + conjg( alpha )*conjg( B' )*A + beta*C,
+;;*
+;;*  where  alpha and beta  are scalars with  beta  real,  C is an  n by n
+;;*  hermitian matrix and  A and B  are  n by k matrices in the first case
+;;*  and  k by n  matrices in the second case.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On  entry,   UPLO  specifies  whether  the  upper  or  lower
+;;*           triangular  part  of the  array  C  is to be  referenced  as
+;;*           follows:
+;;*
+;;*              UPLO = 'U' or 'u'   Only the  upper triangular part of  C
+;;*                                  is to be referenced.
+;;*
+;;*              UPLO = 'L' or 'l'   Only the  lower triangular part of  C
+;;*                                  is to be referenced.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry,  TRANS  specifies the operation to be performed as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'    C := alpha*A*conjg( B' )          +
+;;*                                         conjg( alpha )*B*conjg( A' ) +
+;;*                                         beta*C.
+;;*
+;;*              TRANS = 'C' or 'c'    C := alpha*conjg( A' )*B          +
+;;*                                         conjg( alpha )*conjg( B' )*A +
+;;*                                         beta*C.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry,  N specifies the order of the matrix C.  N must be
+;;*           at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  K      - INTEGER.
+;;*           On entry with  TRANS = 'N' or 'n',  K  specifies  the number
+;;*           of  columns  of the  matrices  A and B,  and on  entry  with
+;;*           TRANS = 'C' or 'c',  K  specifies  the number of rows of the
+;;*           matrices  A and B.  K must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16         .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, ka ), where ka is
+;;*           k  when  TRANS = 'N' or 'n',  and is  n  otherwise.
+;;*           Before entry with  TRANS = 'N' or 'n',  the  leading  n by k
+;;*           part of the array  A  must contain the matrix  A,  otherwise
+;;*           the leading  k by n  part of the array  A  must contain  the
+;;*           matrix A.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in  the  calling  (sub)  program.   When  TRANS = 'N' or 'n'
+;;*           then  LDA must be at least  max( 1, n ), otherwise  LDA must
+;;*           be at least  max( 1, k ).
+;;*           Unchanged on exit.
+;;*
+;;*  B      - COMPLEX*16       array of DIMENSION ( LDB, kb ), where kb is
+;;*           k  when  TRANS = 'N' or 'n',  and is  n  otherwise.
+;;*           Before entry with  TRANS = 'N' or 'n',  the  leading  n by k
+;;*           part of the array  B  must contain the matrix  B,  otherwise
+;;*           the leading  k by n  part of the array  B  must contain  the
+;;*           matrix B.
+;;*           Unchanged on exit.
+;;*
+;;*  LDB    - INTEGER.
+;;*           On entry, LDB specifies the first dimension of B as declared
+;;*           in  the  calling  (sub)  program.   When  TRANS = 'N' or 'n'
+;;*           then  LDB must be at least  max( 1, n ), otherwise  LDB must
+;;*           be at least  max( 1, k ).
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - DOUBLE PRECISION            .
+;;*           On entry, BETA specifies the scalar beta.
+;;*           Unchanged on exit.
+;;*
+;;*  C      - COMPLEX*16          array of DIMENSION ( LDC, n ).
+;;*           Before entry  with  UPLO = 'U' or 'u',  the leading  n by n
+;;*           upper triangular part of the array C must contain the upper
+;;*           triangular part  of the  hermitian matrix  and the strictly
+;;*           lower triangular part of C is not referenced.  On exit, the
+;;*           upper triangular part of the array  C is overwritten by the
+;;*           upper triangular part of the updated matrix.
+;;*           Before entry  with  UPLO = 'L' or 'l',  the leading  n by n
+;;*           lower triangular part of the array C must contain the lower
+;;*           triangular part  of the  hermitian matrix  and the strictly
+;;*           upper triangular part of C is not referenced.  On exit, the
+;;*           lower triangular part of the array  C is overwritten by the
+;;*           lower triangular part of the updated matrix.
+;;*           Note that the imaginary parts of the diagonal elements need
+;;*           not be set,  they are assumed to be zero,  and on exit they
+;;*           are set to zero.
+;;*
+;;*  LDC    - INTEGER.
+;;*           On entry, LDC specifies the first dimension of C as declared
+;;*           in  the  calling  (sub)  program.   LDC  must  be  at  least
+;;*           max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 3 Blas routine.
+;;*
+;;*  -- Written on 8-February-1989.
+;;*     Jack Dongarra, Argonne National Laboratory.
+;;*     Iain Duff, AERE Harwell.
+;;*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+;;*     Sven Hammarling, Numerical Algorithms Group Ltd.
+;;*
+;;*  -- Modified 8-Nov-93 to set C(J,J) to DBLE( C(J,J) ) when BETA = 1.
+;;*     Ed Anderson, Cray Research Inc.
+;;*
+;;*
+;;*     .. External Functions ..
+;;*  =====================================================================
+
+(de zher2k (uplo  trans  n  k  alpha  a  lda  b  ldb  beta  c  ldc  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-idx0- (-int-)) n )
+	((-idx0- (-int-)) k )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx3- (-double-)) b )
+	((-idx0- (-int-)) ldb )
+	((-idx0- (-double-)) beta )
+	((-idx3- (-double-)) c )
+	((-idx0- (-int-)) ldc )
+	#{ zher2k_($uplo->data, $trans->data, IDX_PTR($n,int), IDX_PTR($k,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($b,double), IDX_PTR($ldb,int), IDX_PTR($beta,double), IDX_PTR($c,double), IDX_PTR($ldc,int)) #} ())
+
+
+
+#? (zher2 <uplo>  <n>  <alpha>  <x>  <incx>  <y>  <incy>  <a>  <lda>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHER2  performs the hermitian rank 2 operation
+;;*
+;;*     A := alpha*x*conjg( y' ) + conjg( alpha )*y*conjg( x' ) + A,
+;;*
+;;*  where alpha is a scalar, x and y are n element vectors and A is an n
+;;*  by n hermitian matrix.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the upper or lower
+;;*           triangular part of the array A is to be referenced as
+;;*           follows:
+;;*
+;;*              UPLO = 'U' or 'u'   Only the upper triangular part of A
+;;*                                  is to be referenced.
+;;*
+;;*              UPLO = 'L' or 'l'   Only the lower triangular part of A
+;;*                                  is to be referenced.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  Y      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCY ) ).
+;;*           Before entry, the incremented array Y must contain the n
+;;*           element vector y.
+;;*           Unchanged on exit.
+;;*
+;;*  INCY   - INTEGER.
+;;*           On entry, INCY specifies the increment for the elements of
+;;*           Y. INCY must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry with  UPLO = 'U' or 'u', the leading n by n
+;;*           upper triangular part of the array A must contain the upper
+;;*           triangular part of the hermitian matrix and the strictly
+;;*           lower triangular part of A is not referenced. On exit, the
+;;*           upper triangular part of the array A is overwritten by the
+;;*           upper triangular part of the updated matrix.
+;;*           Before entry with UPLO = 'L' or 'l', the leading n by n
+;;*           lower triangular part of the array A must contain the lower
+;;*           triangular part of the hermitian matrix and the strictly
+;;*           upper triangular part of A is not referenced. On exit, the
+;;*           lower triangular part of the array A is overwritten by the
+;;*           lower triangular part of the updated matrix.
+;;*           Note that the imaginary parts of the diagonal elements need
+;;*           not be set, they are assumed to be zero, and on exit they
+;;*           are set to zero.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zher2 (uplo  n  alpha  x  incx  y  incy  a  lda  )
+	((-str-) uplo )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) y )
+	((-idx0- (-int-)) incy )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	#{ zher2_($uplo->data, IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($y,double), IDX_PTR($incy,int), IDX_PTR($a,double), IDX_PTR($lda,int)) #} ())
+
+
+
+#? (zherk <uplo>  <trans>  <n>  <k>  <alpha>  <a>  <lda>  <beta>  <c>  <ldc>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHERK  performs one of the hermitian rank k operations
+;;*
+;;*     C := alpha*A*conjg( A' ) + beta*C,
+;;*
+;;*  or
+;;*
+;;*     C := alpha*conjg( A' )*A + beta*C,
+;;*
+;;*  where  alpha and beta  are  real scalars,  C is an  n by n  hermitian
+;;*  matrix and  A  is an  n by k  matrix in the  first case and a  k by n
+;;*  matrix in the second case.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On  entry,   UPLO  specifies  whether  the  upper  or  lower
+;;*           triangular  part  of the  array  C  is to be  referenced  as
+;;*           follows:
+;;*
+;;*              UPLO = 'U' or 'u'   Only the  upper triangular part of  C
+;;*                                  is to be referenced.
+;;*
+;;*              UPLO = 'L' or 'l'   Only the  lower triangular part of  C
+;;*                                  is to be referenced.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry,  TRANS  specifies the operation to be performed as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   C := alpha*A*conjg( A' ) + beta*C.
+;;*
+;;*              TRANS = 'C' or 'c'   C := alpha*conjg( A' )*A + beta*C.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry,  N specifies the order of the matrix C.  N must be
+;;*           at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  K      - INTEGER.
+;;*           On entry with  TRANS = 'N' or 'n',  K  specifies  the number
+;;*           of  columns   of  the   matrix   A,   and  on   entry   with
+;;*           TRANS = 'C' or 'c',  K  specifies  the number of rows of the
+;;*           matrix A.  K must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - DOUBLE PRECISION            .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, ka ), where ka is
+;;*           k  when  TRANS = 'N' or 'n',  and is  n  otherwise.
+;;*           Before entry with  TRANS = 'N' or 'n',  the  leading  n by k
+;;*           part of the array  A  must contain the matrix  A,  otherwise
+;;*           the leading  k by n  part of the array  A  must contain  the
+;;*           matrix A.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in  the  calling  (sub)  program.   When  TRANS = 'N' or 'n'
+;;*           then  LDA must be at least  max( 1, n ), otherwise  LDA must
+;;*           be at least  max( 1, k ).
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - DOUBLE PRECISION.
+;;*           On entry, BETA specifies the scalar beta.
+;;*           Unchanged on exit.
+;;*
+;;*  C      - COMPLEX*16          array of DIMENSION ( LDC, n ).
+;;*           Before entry  with  UPLO = 'U' or 'u',  the leading  n by n
+;;*           upper triangular part of the array C must contain the upper
+;;*           triangular part  of the  hermitian matrix  and the strictly
+;;*           lower triangular part of C is not referenced.  On exit, the
+;;*           upper triangular part of the array  C is overwritten by the
+;;*           upper triangular part of the updated matrix.
+;;*           Before entry  with  UPLO = 'L' or 'l',  the leading  n by n
+;;*           lower triangular part of the array C must contain the lower
+;;*           triangular part  of the  hermitian matrix  and the strictly
+;;*           upper triangular part of C is not referenced.  On exit, the
+;;*           lower triangular part of the array  C is overwritten by the
+;;*           lower triangular part of the updated matrix.
+;;*           Note that the imaginary parts of the diagonal elements need
+;;*           not be set,  they are assumed to be zero,  and on exit they
+;;*           are set to zero.
+;;*
+;;*  LDC    - INTEGER.
+;;*           On entry, LDC specifies the first dimension of C as declared
+;;*           in  the  calling  (sub)  program.   LDC  must  be  at  least
+;;*           max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 3 Blas routine.
+;;*
+;;*  -- Written on 8-February-1989.
+;;*     Jack Dongarra, Argonne National Laboratory.
+;;*     Iain Duff, AERE Harwell.
+;;*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+;;*     Sven Hammarling, Numerical Algorithms Group Ltd.
+;;*
+;;*  -- Modified 8-Nov-93 to set C(J,J) to DBLE( C(J,J) ) when BETA = 1.
+;;*     Ed Anderson, Cray Research Inc.
+;;*
+;;*
+;;*     .. External Functions ..
+;;*  =====================================================================
+
+(de zherk (uplo  trans  n  k  alpha  a  lda  beta  c  ldc  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-idx0- (-int-)) n )
+	((-idx0- (-int-)) k )
+	((-idx0- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx0- (-double-)) beta )
+	((-idx3- (-double-)) c )
+	((-idx0- (-int-)) ldc )
+	#{ zherk_($uplo->data, $trans->data, IDX_PTR($n,int), IDX_PTR($k,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($beta,double), IDX_PTR($c,double), IDX_PTR($ldc,int)) #} ())
+
+
+
+#? (zher <uplo>  <n>  <alpha>  <x>  <incx>  <a>  <lda>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHER   performs the hermitian rank 1 operation
+;;*
+;;*     A := alpha*x*conjg( x' ) + A,
+;;*
+;;*  where alpha is a real scalar, x is an n element vector and A is an
+;;*  n by n hermitian matrix.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the upper or lower
+;;*           triangular part of the array A is to be referenced as
+;;*           follows:
+;;*
+;;*              UPLO = 'U' or 'u'   Only the upper triangular part of A
+;;*                                  is to be referenced.
+;;*
+;;*              UPLO = 'L' or 'l'   Only the lower triangular part of A
+;;*                                  is to be referenced.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - DOUBLE PRECISION.
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry with  UPLO = 'U' or 'u', the leading n by n
+;;*           upper triangular part of the array A must contain the upper
+;;*           triangular part of the hermitian matrix and the strictly
+;;*           lower triangular part of A is not referenced. On exit, the
+;;*           upper triangular part of the array A is overwritten by the
+;;*           upper triangular part of the updated matrix.
+;;*           Before entry with UPLO = 'L' or 'l', the leading n by n
+;;*           lower triangular part of the array A must contain the lower
+;;*           triangular part of the hermitian matrix and the strictly
+;;*           upper triangular part of A is not referenced. On exit, the
+;;*           lower triangular part of the array A is overwritten by the
+;;*           lower triangular part of the updated matrix.
+;;*           Note that the imaginary parts of the diagonal elements need
+;;*           not be set, they are assumed to be zero, and on exit they
+;;*           are set to zero.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zher (uplo  n  alpha  x  incx  a  lda  )
+	((-str-) uplo )
+	((-idx0- (-int-)) n )
+	((-idx0- (-double-)) alpha )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	#{ zher_($uplo->data, IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($a,double), IDX_PTR($lda,int)) #} ())
+
+
+
+#? (zhpmv <uplo>  <n>  <alpha>  <ap>  <x>  <incx>  <beta>  <y>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHPMV  performs the matrix-vector operation
+;;*
+;;*     y := alpha*A*x + beta*y,
+;;*
+;;*  where alpha and beta are scalars, x and y are n element vectors and
+;;*  A is an n by n hermitian matrix, supplied in packed form.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the upper or lower
+;;*           triangular part of the matrix A is supplied in the packed
+;;*           array AP as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   The upper triangular part of A is
+;;*                                  supplied in AP.
+;;*
+;;*              UPLO = 'L' or 'l'   The lower triangular part of A is
+;;*                                  supplied in AP.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  AP     - COMPLEX*16       array of DIMENSION at least
+;;*           ( ( n*( n + 1 ) )/2 ).
+;;*           Before entry with UPLO = 'U' or 'u', the array AP must
+;;*           contain the upper triangular part of the hermitian matrix
+;;*           packed sequentially, column by column, so that AP( 1 )
+;;*           contains a( 1, 1 ), AP( 2 ) and AP( 3 ) contain a( 1, 2 )
+;;*           and a( 2, 2 ) respectively, and so on.
+;;*           Before entry with UPLO = 'L' or 'l', the array AP must
+;;*           contain the lower triangular part of the hermitian matrix
+;;*           packed sequentially, column by column, so that AP( 1 )
+;;*           contains a( 1, 1 ), AP( 2 ) and AP( 3 ) contain a( 2, 1 )
+;;*           and a( 3, 1 ) respectively, and so on.
+;;*           Note that the imaginary parts of the diagonal elements need
+;;*           not be set and are assumed to be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry, BETA specifies the scalar beta. When BETA is
+;;*           supplied as zero then Y need not be set on input.
+;;*           Unchanged on exit.
+;;*
+;;*  Y      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCY ) ).
+;;*           Before entry, the incremented array Y must contain the n
+;;*           element vector y. On exit, Y is overwritten by the updated
+;;*           vector y.
+;;*
+;;*  INCY   - INTEGER.
+;;*           On entry, INCY specifies the increment for the elements of
+;;*           Y. INCY must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zhpmv (uplo  n  alpha  ap  x  incx  beta  y  incy  )
+	((-str-) uplo )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx2- (-double-)) ap )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx1- (-double-)) beta )
+	((-idx2- (-double-)) y )
+	((-idx0- (-int-)) incy )
+	#{ zhpmv_($uplo->data, IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($ap,double), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($beta,double), IDX_PTR($y,double), IDX_PTR($incy,int)) #} ())
+
+
+
+#? (zhpr2 <uplo>  <n>  <alpha>  <x>  <incx>  <y>  <incy>  <ap>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHPR2  performs the hermitian rank 2 operation
+;;*
+;;*     A := alpha*x*conjg( y' ) + conjg( alpha )*y*conjg( x' ) + A,
+;;*
+;;*  where alpha is a scalar, x and y are n element vectors and A is an
+;;*  n by n hermitian matrix, supplied in packed form.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the upper or lower
+;;*           triangular part of the matrix A is supplied in the packed
+;;*           array AP as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   The upper triangular part of A is
+;;*                                  supplied in AP.
+;;*
+;;*              UPLO = 'L' or 'l'   The lower triangular part of A is
+;;*                                  supplied in AP.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  Y      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCY ) ).
+;;*           Before entry, the incremented array Y must contain the n
+;;*           element vector y.
+;;*           Unchanged on exit.
+;;*
+;;*  INCY   - INTEGER.
+;;*           On entry, INCY specifies the increment for the elements of
+;;*           Y. INCY must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  AP     - COMPLEX*16       array of DIMENSION at least
+;;*           ( ( n*( n + 1 ) )/2 ).
+;;*           Before entry with  UPLO = 'U' or 'u', the array AP must
+;;*           contain the upper triangular part of the hermitian matrix
+;;*           packed sequentially, column by column, so that AP( 1 )
+;;*           contains a( 1, 1 ), AP( 2 ) and AP( 3 ) contain a( 1, 2 )
+;;*           and a( 2, 2 ) respectively, and so on. On exit, the array
+;;*           AP is overwritten by the upper triangular part of the
+;;*           updated matrix.
+;;*           Before entry with UPLO = 'L' or 'l', the array AP must
+;;*           contain the lower triangular part of the hermitian matrix
+;;*           packed sequentially, column by column, so that AP( 1 )
+;;*           contains a( 1, 1 ), AP( 2 ) and AP( 3 ) contain a( 2, 1 )
+;;*           and a( 3, 1 ) respectively, and so on. On exit, the array
+;;*           AP is overwritten by the lower triangular part of the
+;;*           updated matrix.
+;;*           Note that the imaginary parts of the diagonal elements need
+;;*           not be set, they are assumed to be zero, and on exit they
+;;*           are set to zero.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zhpr2 (uplo  n  alpha  x  incx  y  incy  ap  )
+	((-str-) uplo )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) y )
+	((-idx0- (-int-)) incy )
+	((-idx2- (-double-)) ap )
+	#{ zhpr2_($uplo->data, IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($y,double), IDX_PTR($incy,int), IDX_PTR($ap,double)) #} ())
+
+
+
+#? (zhpr <uplo>  <n>  <alpha>  <x>  <incx>  <ap>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZHPR    performs the hermitian rank 1 operation
+;;*
+;;*     A := alpha*x*conjg( x' ) + A,
+;;*
+;;*  where alpha is a real scalar, x is an n element vector and A is an
+;;*  n by n hermitian matrix, supplied in packed form.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the upper or lower
+;;*           triangular part of the matrix A is supplied in the packed
+;;*           array AP as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   The upper triangular part of A is
+;;*                                  supplied in AP.
+;;*
+;;*              UPLO = 'L' or 'l'   The lower triangular part of A is
+;;*                                  supplied in AP.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - DOUBLE PRECISION.
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element vector x.
+;;*           Unchanged on exit.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*  AP     - COMPLEX*16       array of DIMENSION at least
+;;*           ( ( n*( n + 1 ) )/2 ).
+;;*           Before entry with  UPLO = 'U' or 'u', the array AP must
+;;*           contain the upper triangular part of the hermitian matrix
+;;*           packed sequentially, column by column, so that AP( 1 )
+;;*           contains a( 1, 1 ), AP( 2 ) and AP( 3 ) contain a( 1, 2 )
+;;*           and a( 2, 2 ) respectively, and so on. On exit, the array
+;;*           AP is overwritten by the upper triangular part of the
+;;*           updated matrix.
+;;*           Before entry with UPLO = 'L' or 'l', the array AP must
+;;*           contain the lower triangular part of the hermitian matrix
+;;*           packed sequentially, column by column, so that AP( 1 )
+;;*           contains a( 1, 1 ), AP( 2 ) and AP( 3 ) contain a( 2, 1 )
+;;*           and a( 3, 1 ) respectively, and so on. On exit, the array
+;;*           AP is overwritten by the lower triangular part of the
+;;*           updated matrix.
+;;*           Note that the imaginary parts of the diagonal elements need
+;;*           not be set, they are assumed to be zero, and on exit they
+;;*           are set to zero.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de zhpr (uplo  n  alpha  x  incx  ap  )
+	((-str-) uplo )
+	((-idx0- (-int-)) n )
+	((-idx0- (-double-)) alpha )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) ap )
+	#{ zhpr_($uplo->data, IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($x,double), IDX_PTR($incx,int), IDX_PTR($ap,double)) #} ())
+
+
+
+#? (zrotg <ca>  <cb>  <c>  <s>  )
+;;.VP
+;;*  =====================================================================
+;;*  =====================================================================
+
+(de zrotg (ca  cb  c  s  )
+	((-idx1- (-double-)) ca)
+	((-idx1- (-double-)) cb)
+	((-idx0- (-double-)) c)
+	((-idx1- (-double-)) s)
+	#{ zrotg_(IDX_PTR($ca,double), IDX_PTR($cb,double), IDX_PTR($c,double), IDX_PTR($s,double)) #} ())
+
+
+
+#? (zscal <n>  <za>  <zx>  <incx>  )
+;;.VP
+;;*  =====================================================================
+;;*
+;;*     scales a vector by a constant.
+;;*     jack dongarra, 3/11/78.
+;;*     modified 3/93 to return if incx .le. 0.
+;;*     modified 12/3/93, array(1) declarations changed to array(*)
+;;*
+;;*  =====================================================================
+
+(de zscal (n  za  zx  incx  )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) za)
+	((-idx2- (-double-)) zx)
+	((-idx0- (-int-)) incx )
+	#{ zscal_(IDX_PTR($n,int), IDX_PTR($za,double), IDX_PTR($zx,double), IDX_PTR($incx,int)) #} ())
+
+
+
+#? (zswap <n>  <zx>  <incx>  <zy>  <incy>  )
+;;.VP
+;;*  =====================================================================
+;;*
+;;*     interchanges two vectors.
+;;*     jack dongarra, 3/11/78.
+;;*     modified 12/3/93, array(1) declarations changed to array(*)
+;;*
+;;*  =====================================================================
+
+(de zswap (n  zx  incx  zy  incy  )
+	((-idx0- (-int-)) n )
+	((-idx2- (-double-)) zx)
+	((-idx0- (-int-)) incx )
+	((-idx2- (-double-)) zy)
+	((-idx0- (-int-)) incy )
+	#{ zswap_(IDX_PTR($n,int), IDX_PTR($zx,double), IDX_PTR($incx,int), IDX_PTR($zy,double), IDX_PTR($incy,int)) #} ())
+
+
+
+#? (zsymm <side>  <uplo>  <m>  <n>  <alpha>  <a>  <lda>  <b>  <ldb>  <beta>  <c>  <ldc>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZSYMM  performs one of the matrix-matrix operations
+;;*
+;;*     C := alpha*A*B + beta*C,
+;;*
+;;*  or
+;;*
+;;*     C := alpha*B*A + beta*C,
+;;*
+;;*  where  alpha and beta are scalars, A is a symmetric matrix and  B and
+;;*  C are m by n matrices.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  SIDE   - CHARACTER*1.
+;;*           On entry,  SIDE  specifies whether  the  symmetric matrix  A
+;;*           appears on the  left or right  in the  operation as follows:
+;;*
+;;*              SIDE = 'L' or 'l'   C := alpha*A*B + beta*C,
+;;*
+;;*              SIDE = 'R' or 'r'   C := alpha*B*A + beta*C,
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On  entry,   UPLO  specifies  whether  the  upper  or  lower
+;;*           triangular  part  of  the  symmetric  matrix   A  is  to  be
+;;*           referenced as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   Only the upper triangular part of the
+;;*                                  symmetric matrix is to be referenced.
+;;*
+;;*              UPLO = 'L' or 'l'   Only the lower triangular part of the
+;;*                                  symmetric matrix is to be referenced.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  M      - INTEGER.
+;;*           On entry,  M  specifies the number of rows of the matrix  C.
+;;*           M  must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the number of columns of the matrix C.
+;;*           N  must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, ka ), where ka is
+;;*           m  when  SIDE = 'L' or 'l'  and is n  otherwise.
+;;*           Before entry  with  SIDE = 'L' or 'l',  the  m by m  part of
+;;*           the array  A  must contain the  symmetric matrix,  such that
+;;*           when  UPLO = 'U' or 'u', the leading m by m upper triangular
+;;*           part of the array  A  must contain the upper triangular part
+;;*           of the  symmetric matrix and the  strictly  lower triangular
+;;*           part of  A  is not referenced,  and when  UPLO = 'L' or 'l',
+;;*           the leading  m by m  lower triangular part  of the  array  A
+;;*           must  contain  the  lower triangular part  of the  symmetric
+;;*           matrix and the  strictly upper triangular part of  A  is not
+;;*           referenced.
+;;*           Before entry  with  SIDE = 'R' or 'r',  the  n by n  part of
+;;*           the array  A  must contain the  symmetric matrix,  such that
+;;*           when  UPLO = 'U' or 'u', the leading n by n upper triangular
+;;*           part of the array  A  must contain the upper triangular part
+;;*           of the  symmetric matrix and the  strictly  lower triangular
+;;*           part of  A  is not referenced,  and when  UPLO = 'L' or 'l',
+;;*           the leading  n by n  lower triangular part  of the  array  A
+;;*           must  contain  the  lower triangular part  of the  symmetric
+;;*           matrix and the  strictly upper triangular part of  A  is not
+;;*           referenced.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the  calling (sub) program. When  SIDE = 'L' or 'l'  then
+;;*           LDA must be at least  max( 1, m ), otherwise  LDA must be at
+;;*           least max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*  B      - COMPLEX*16       array of DIMENSION ( LDB, n ).
+;;*           Before entry, the leading  m by n part of the array  B  must
+;;*           contain the matrix B.
+;;*           Unchanged on exit.
+;;*
+;;*  LDB    - INTEGER.
+;;*           On entry, LDB specifies the first dimension of B as declared
+;;*           in  the  calling  (sub)  program.   LDB  must  be  at  least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry,  BETA  specifies the scalar  beta.  When  BETA  is
+;;*           supplied as zero then C need not be set on input.
+;;*           Unchanged on exit.
+;;*
+;;*  C      - COMPLEX*16       array of DIMENSION ( LDC, n ).
+;;*           Before entry, the leading  m by n  part of the array  C must
+;;*           contain the matrix  C,  except when  beta  is zero, in which
+;;*           case C need not be set on entry.
+;;*           On exit, the array  C  is overwritten by the  m by n updated
+;;*           matrix.
+;;*
+;;*  LDC    - INTEGER.
+;;*           On entry, LDC specifies the first dimension of C as declared
+;;*           in  the  calling  (sub)  program.   LDC  must  be  at  least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 3 Blas routine.
+;;*
+;;*  -- Written on 8-February-1989.
+;;*     Jack Dongarra, Argonne National Laboratory.
+;;*     Iain Duff, AERE Harwell.
+;;*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+;;*     Sven Hammarling, Numerical Algorithms Group Ltd.
+;;*
+;;*
+;;*     .. External Functions ..
+;;*  =====================================================================
+
+(de zsymm (side  uplo  m  n  alpha  a  lda  b  ldb  beta  c  ldc  )
+	((-str-) side )
+	((-str-) uplo )
+	((-idx0- (-int-)) m )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx3- (-double-)) b )
+	((-idx0- (-int-)) ldb )
+	((-idx1- (-double-)) beta )
+	((-idx3- (-double-)) c )
+	((-idx0- (-int-)) ldc )
+	#{ zsymm_($side->data, $uplo->data, IDX_PTR($m,int), IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($b,double), IDX_PTR($ldb,int), IDX_PTR($beta,double), IDX_PTR($c,double), IDX_PTR($ldc,int)) #} ())
+
+
+
+#? (zsyr2k <uplo>  <trans>  <n>  <k>  <alpha>  <a>  <lda>  <b>  <ldb>  <beta>  <c>  <ldc>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZSYR2K  performs one of the symmetric rank 2k operations
+;;*
+;;*     C := alpha*A*B' + alpha*B*A' + beta*C,
+;;*
+;;*  or
+;;*
+;;*     C := alpha*A'*B + alpha*B'*A + beta*C,
+;;*
+;;*  where  alpha and beta  are scalars,  C is an  n by n symmetric matrix
+;;*  and  A and B  are  n by k  matrices  in the  first  case  and  k by n
+;;*  matrices in the second case.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On  entry,   UPLO  specifies  whether  the  upper  or  lower
+;;*           triangular  part  of the  array  C  is to be  referenced  as
+;;*           follows:
+;;*
+;;*              UPLO = 'U' or 'u'   Only the  upper triangular part of  C
+;;*                                  is to be referenced.
+;;*
+;;*              UPLO = 'L' or 'l'   Only the  lower triangular part of  C
+;;*                                  is to be referenced.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry,  TRANS  specifies the operation to be performed as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'    C := alpha*A*B' + alpha*B*A' +
+;;*                                         beta*C.
+;;*
+;;*              TRANS = 'T' or 't'    C := alpha*A'*B + alpha*B'*A +
+;;*                                         beta*C.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry,  N specifies the order of the matrix C.  N must be
+;;*           at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  K      - INTEGER.
+;;*           On entry with  TRANS = 'N' or 'n',  K  specifies  the number
+;;*           of  columns  of the  matrices  A and B,  and on  entry  with
+;;*           TRANS = 'T' or 't',  K  specifies  the number of rows of the
+;;*           matrices  A and B.  K must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, ka ), where ka is
+;;*           k  when  TRANS = 'N' or 'n',  and is  n  otherwise.
+;;*           Before entry with  TRANS = 'N' or 'n',  the  leading  n by k
+;;*           part of the array  A  must contain the matrix  A,  otherwise
+;;*           the leading  k by n  part of the array  A  must contain  the
+;;*           matrix A.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in  the  calling  (sub)  program.   When  TRANS = 'N' or 'n'
+;;*           then  LDA must be at least  max( 1, n ), otherwise  LDA must
+;;*           be at least  max( 1, k ).
+;;*           Unchanged on exit.
+;;*
+;;*  B      - COMPLEX*16       array of DIMENSION ( LDB, kb ), where kb is
+;;*           k  when  TRANS = 'N' or 'n',  and is  n  otherwise.
+;;*           Before entry with  TRANS = 'N' or 'n',  the  leading  n by k
+;;*           part of the array  B  must contain the matrix  B,  otherwise
+;;*           the leading  k by n  part of the array  B  must contain  the
+;;*           matrix B.
+;;*           Unchanged on exit.
+;;*
+;;*  LDB    - INTEGER.
+;;*           On entry, LDB specifies the first dimension of B as declared
+;;*           in  the  calling  (sub)  program.   When  TRANS = 'N' or 'n'
+;;*           then  LDB must be at least  max( 1, n ), otherwise  LDB must
+;;*           be at least  max( 1, k ).
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry, BETA specifies the scalar beta.
+;;*           Unchanged on exit.
+;;*
+;;*  C      - COMPLEX*16       array of DIMENSION ( LDC, n ).
+;;*           Before entry  with  UPLO = 'U' or 'u',  the leading  n by n
+;;*           upper triangular part of the array C must contain the upper
+;;*           triangular part  of the  symmetric matrix  and the strictly
+;;*           lower triangular part of C is not referenced.  On exit, the
+;;*           upper triangular part of the array  C is overwritten by the
+;;*           upper triangular part of the updated matrix.
+;;*           Before entry  with  UPLO = 'L' or 'l',  the leading  n by n
+;;*           lower triangular part of the array C must contain the lower
+;;*           triangular part  of the  symmetric matrix  and the strictly
+;;*           upper triangular part of C is not referenced.  On exit, the
+;;*           lower triangular part of the array  C is overwritten by the
+;;*           lower triangular part of the updated matrix.
+;;*
+;;*  LDC    - INTEGER.
+;;*           On entry, LDC specifies the first dimension of C as declared
+;;*           in  the  calling  (sub)  program.   LDC  must  be  at  least
+;;*           max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 3 Blas routine.
+;;*
+;;*  -- Written on 8-February-1989.
+;;*     Jack Dongarra, Argonne National Laboratory.
+;;*     Iain Duff, AERE Harwell.
+;;*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+;;*     Sven Hammarling, Numerical Algorithms Group Ltd.
+;;*
+;;*
+;;*     .. External Functions ..
+;;*  =====================================================================
+
+(de zsyr2k (uplo  trans  n  k  alpha  a  lda  b  ldb  beta  c  ldc  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-idx0- (-int-)) n )
+	((-idx0- (-int-)) k )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx3- (-double-)) b )
+	((-idx0- (-int-)) ldb )
+	((-idx1- (-double-)) beta )
+	((-idx3- (-double-)) c )
+	((-idx0- (-int-)) ldc )
+	#{ zsyr2k_($uplo->data, $trans->data, IDX_PTR($n,int), IDX_PTR($k,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($b,double), IDX_PTR($ldb,int), IDX_PTR($beta,double), IDX_PTR($c,double), IDX_PTR($ldc,int)) #} ())
+
+
+
+#? (zsyrk <uplo>  <trans>  <n>  <k>  <alpha>  <a>  <lda>  <beta>  <c>  <ldc>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZSYRK  performs one of the symmetric rank k operations
+;;*
+;;*     C := alpha*A*A' + beta*C,
+;;*
+;;*  or
+;;*
+;;*     C := alpha*A'*A + beta*C,
+;;*
+;;*  where  alpha and beta  are scalars,  C is an  n by n symmetric matrix
+;;*  and  A  is an  n by k  matrix in the first case and a  k by n  matrix
+;;*  in the second case.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On  entry,   UPLO  specifies  whether  the  upper  or  lower
+;;*           triangular  part  of the  array  C  is to be  referenced  as
+;;*           follows:
+;;*
+;;*              UPLO = 'U' or 'u'   Only the  upper triangular part of  C
+;;*                                  is to be referenced.
+;;*
+;;*              UPLO = 'L' or 'l'   Only the  lower triangular part of  C
+;;*                                  is to be referenced.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry,  TRANS  specifies the operation to be performed as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   C := alpha*A*A' + beta*C.
+;;*
+;;*              TRANS = 'T' or 't'   C := alpha*A'*A + beta*C.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry,  N specifies the order of the matrix C.  N must be
+;;*           at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  K      - INTEGER.
+;;*           On entry with  TRANS = 'N' or 'n',  K  specifies  the number
+;;*           of  columns   of  the   matrix   A,   and  on   entry   with
+;;*           TRANS = 'T' or 't',  K  specifies  the number of rows of the
+;;*           matrix A.  K must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry, ALPHA specifies the scalar alpha.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, ka ), where ka is
+;;*           k  when  TRANS = 'N' or 'n',  and is  n  otherwise.
+;;*           Before entry with  TRANS = 'N' or 'n',  the  leading  n by k
+;;*           part of the array  A  must contain the matrix  A,  otherwise
+;;*           the leading  k by n  part of the array  A  must contain  the
+;;*           matrix A.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in  the  calling  (sub)  program.   When  TRANS = 'N' or 'n'
+;;*           then  LDA must be at least  max( 1, n ), otherwise  LDA must
+;;*           be at least  max( 1, k ).
+;;*           Unchanged on exit.
+;;*
+;;*  BETA   - COMPLEX*16      .
+;;*           On entry, BETA specifies the scalar beta.
+;;*           Unchanged on exit.
+;;*
+;;*  C      - COMPLEX*16       array of DIMENSION ( LDC, n ).
+;;*           Before entry  with  UPLO = 'U' or 'u',  the leading  n by n
+;;*           upper triangular part of the array C must contain the upper
+;;*           triangular part  of the  symmetric matrix  and the strictly
+;;*           lower triangular part of C is not referenced.  On exit, the
+;;*           upper triangular part of the array  C is overwritten by the
+;;*           upper triangular part of the updated matrix.
+;;*           Before entry  with  UPLO = 'L' or 'l',  the leading  n by n
+;;*           lower triangular part of the array C must contain the lower
+;;*           triangular part  of the  symmetric matrix  and the strictly
+;;*           upper triangular part of C is not referenced.  On exit, the
+;;*           lower triangular part of the array  C is overwritten by the
+;;*           lower triangular part of the updated matrix.
+;;*
+;;*  LDC    - INTEGER.
+;;*           On entry, LDC specifies the first dimension of C as declared
+;;*           in  the  calling  (sub)  program.   LDC  must  be  at  least
+;;*           max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 3 Blas routine.
+;;*
+;;*  -- Written on 8-February-1989.
+;;*     Jack Dongarra, Argonne National Laboratory.
+;;*     Iain Duff, AERE Harwell.
+;;*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+;;*     Sven Hammarling, Numerical Algorithms Group Ltd.
+;;*
+;;*
+;;*     .. External Functions ..
+;;*  =====================================================================
+
+(de zsyrk (uplo  trans  n  k  alpha  a  lda  beta  c  ldc  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-idx0- (-int-)) n )
+	((-idx0- (-int-)) k )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx1- (-double-)) beta )
+	((-idx3- (-double-)) c )
+	((-idx0- (-int-)) ldc )
+	#{ zsyrk_($uplo->data, $trans->data, IDX_PTR($n,int), IDX_PTR($k,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($beta,double), IDX_PTR($c,double), IDX_PTR($ldc,int)) #} ())
+
+
+
+#? (ztbmv <uplo>  <trans>  <diag>  <n>  <k>  <a>  <lda>  <x>  <incx>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZTBMV  performs one of the matrix-vector operations
+;;*
+;;*     x := A*x,   or   x := A'*x,   or   x := conjg( A' )*x,
+;;*
+;;*  where x is an n element vector and  A is an n by n unit, or non-unit,
+;;*  upper or lower triangular band matrix, with ( k + 1 ) diagonals.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the matrix is an upper or
+;;*           lower triangular matrix as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   A is an upper triangular matrix.
+;;*
+;;*              UPLO = 'L' or 'l'   A is a lower triangular matrix.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry, TRANS specifies the operation to be performed as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   x := A*x.
+;;*
+;;*              TRANS = 'T' or 't'   x := A'*x.
+;;*
+;;*              TRANS = 'C' or 'c'   x := conjg( A' )*x.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  DIAG   - CHARACTER*1.
+;;*           On entry, DIAG specifies whether or not A is unit
+;;*           triangular as follows:
+;;*
+;;*              DIAG = 'U' or 'u'   A is assumed to be unit triangular.
+;;*
+;;*              DIAG = 'N' or 'n'   A is not assumed to be unit
+;;*                                  triangular.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  K      - INTEGER.
+;;*           On entry with UPLO = 'U' or 'u', K specifies the number of
+;;*           super-diagonals of the matrix A.
+;;*           On entry with UPLO = 'L' or 'l', K specifies the number of
+;;*           sub-diagonals of the matrix A.
+;;*           K must satisfy  0 .le. K.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry with UPLO = 'U' or 'u', the leading ( k + 1 )
+;;*           by n part of the array A must contain the upper triangular
+;;*           band part of the matrix of coefficients, supplied column by
+;;*           column, with the leading diagonal of the matrix in row
+;;*           ( k + 1 ) of the array, the first super-diagonal starting at
+;;*           position 2 in row k, and so on. The top left k by k triangle
+;;*           of the array A is not referenced.
+;;*           The following program segment will transfer an upper
+;;*           triangular band matrix from conventional full matrix storage
+;;*           to band storage:
+;;*
+;;*                 DO 20, J = 1, N
+;;*                    M = K + 1 - J
+;;*                    DO 10, I = MAX( 1, J - K ), J
+;;*                       A( M + I, J ) = matrix( I, J )
+;;*              10    CONTINUE
+;;*              20 CONTINUE
+;;*
+;;*           Before entry with UPLO = 'L' or 'l', the leading ( k + 1 )
+;;*           by n part of the array A must contain the lower triangular
+;;*           band part of the matrix of coefficients, supplied column by
+;;*           column, with the leading diagonal of the matrix in row 1 of
+;;*           the array, the first sub-diagonal starting at position 1 in
+;;*           row 2, and so on. The bottom right k by k triangle of the
+;;*           array A is not referenced.
+;;*           The following program segment will transfer a lower
+;;*           triangular band matrix from conventional full matrix storage
+;;*           to band storage:
+;;*
+;;*                 DO 20, J = 1, N
+;;*                    M = 1 - J
+;;*                    DO 10, I = J, MIN( N, J + K )
+;;*                       A( M + I, J ) = matrix( I, J )
+;;*              10    CONTINUE
+;;*              20 CONTINUE
+;;*
+;;*           Note that when DIAG = 'U' or 'u' the elements of the array A
+;;*           corresponding to the diagonal elements of the matrix are not
+;;*           referenced, but are assumed to be unity.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           ( k + 1 ).
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element vector x. On exit, X is overwritten with the
+;;*           tranformed vector x.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de ztbmv (uplo  trans  diag  n  k  a  lda  x  incx  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-str-) diag )
+	((-idx0- (-int-)) n )
+	((-idx0- (-int-)) k )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	#{ ztbmv_($uplo->data, $trans->data, $diag->data, IDX_PTR($n,int), IDX_PTR($k,int), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($x,double), IDX_PTR($incx,int)) #} ())
+
+
+
+#? (ztbsv <uplo>  <trans>  <diag>  <n>  <k>  <a>  <lda>  <x>  <incx>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZTBSV  solves one of the systems of equations
+;;*
+;;*     A*x = b,   or   A'*x = b,   or   conjg( A' )*x = b,
+;;*
+;;*  where b and x are n element vectors and A is an n by n unit, or
+;;*  non-unit, upper or lower triangular band matrix, with ( k + 1 )
+;;*  diagonals.
+;;*
+;;*  No test for singularity or near-singularity is included in this
+;;*  routine. Such tests must be performed before calling this routine.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the matrix is an upper or
+;;*           lower triangular matrix as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   A is an upper triangular matrix.
+;;*
+;;*              UPLO = 'L' or 'l'   A is a lower triangular matrix.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry, TRANS specifies the equations to be solved as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   A*x = b.
+;;*
+;;*              TRANS = 'T' or 't'   A'*x = b.
+;;*
+;;*              TRANS = 'C' or 'c'   conjg( A' )*x = b.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  DIAG   - CHARACTER*1.
+;;*           On entry, DIAG specifies whether or not A is unit
+;;*           triangular as follows:
+;;*
+;;*              DIAG = 'U' or 'u'   A is assumed to be unit triangular.
+;;*
+;;*              DIAG = 'N' or 'n'   A is not assumed to be unit
+;;*                                  triangular.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  K      - INTEGER.
+;;*           On entry with UPLO = 'U' or 'u', K specifies the number of
+;;*           super-diagonals of the matrix A.
+;;*           On entry with UPLO = 'L' or 'l', K specifies the number of
+;;*           sub-diagonals of the matrix A.
+;;*           K must satisfy  0 .le. K.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry with UPLO = 'U' or 'u', the leading ( k + 1 )
+;;*           by n part of the array A must contain the upper triangular
+;;*           band part of the matrix of coefficients, supplied column by
+;;*           column, with the leading diagonal of the matrix in row
+;;*           ( k + 1 ) of the array, the first super-diagonal starting at
+;;*           position 2 in row k, and so on. The top left k by k triangle
+;;*           of the array A is not referenced.
+;;*           The following program segment will transfer an upper
+;;*           triangular band matrix from conventional full matrix storage
+;;*           to band storage:
+;;*
+;;*                 DO 20, J = 1, N
+;;*                    M = K + 1 - J
+;;*                    DO 10, I = MAX( 1, J - K ), J
+;;*                       A( M + I, J ) = matrix( I, J )
+;;*              10    CONTINUE
+;;*              20 CONTINUE
+;;*
+;;*           Before entry with UPLO = 'L' or 'l', the leading ( k + 1 )
+;;*           by n part of the array A must contain the lower triangular
+;;*           band part of the matrix of coefficients, supplied column by
+;;*           column, with the leading diagonal of the matrix in row 1 of
+;;*           the array, the first sub-diagonal starting at position 1 in
+;;*           row 2, and so on. The bottom right k by k triangle of the
+;;*           array A is not referenced.
+;;*           The following program segment will transfer a lower
+;;*           triangular band matrix from conventional full matrix storage
+;;*           to band storage:
+;;*
+;;*                 DO 20, J = 1, N
+;;*                    M = 1 - J
+;;*                    DO 10, I = J, MIN( N, J + K )
+;;*                       A( M + I, J ) = matrix( I, J )
+;;*              10    CONTINUE
+;;*              20 CONTINUE
+;;*
+;;*           Note that when DIAG = 'U' or 'u' the elements of the array A
+;;*           corresponding to the diagonal elements of the matrix are not
+;;*           referenced, but are assumed to be unity.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           ( k + 1 ).
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element right-hand side vector b. On exit, X is overwritten
+;;*           with the solution vector x.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de ztbsv (uplo  trans  diag  n  k  a  lda  x  incx  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-str-) diag )
+	((-idx0- (-int-)) n )
+	((-idx0- (-int-)) k )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	#{ ztbsv_($uplo->data, $trans->data, $diag->data, IDX_PTR($n,int), IDX_PTR($k,int), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($x,double), IDX_PTR($incx,int)) #} ())
+
+
+
+#? (ztpmv <uplo>  <trans>  <diag>  <n>  <ap>  <x>  <incx>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZTPMV  performs one of the matrix-vector operations
+;;*
+;;*     x := A*x,   or   x := A'*x,   or   x := conjg( A' )*x,
+;;*
+;;*  where x is an n element vector and  A is an n by n unit, or non-unit,
+;;*  upper or lower triangular matrix, supplied in packed form.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the matrix is an upper or
+;;*           lower triangular matrix as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   A is an upper triangular matrix.
+;;*
+;;*              UPLO = 'L' or 'l'   A is a lower triangular matrix.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry, TRANS specifies the operation to be performed as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   x := A*x.
+;;*
+;;*              TRANS = 'T' or 't'   x := A'*x.
+;;*
+;;*              TRANS = 'C' or 'c'   x := conjg( A' )*x.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  DIAG   - CHARACTER*1.
+;;*           On entry, DIAG specifies whether or not A is unit
+;;*           triangular as follows:
+;;*
+;;*              DIAG = 'U' or 'u'   A is assumed to be unit triangular.
+;;*
+;;*              DIAG = 'N' or 'n'   A is not assumed to be unit
+;;*                                  triangular.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  AP     - COMPLEX*16       array of DIMENSION at least
+;;*           ( ( n*( n + 1 ) )/2 ).
+;;*           Before entry with  UPLO = 'U' or 'u', the array AP must
+;;*           contain the upper triangular matrix packed sequentially,
+;;*           column by column, so that AP( 1 ) contains a( 1, 1 ),
+;;*           AP( 2 ) and AP( 3 ) contain a( 1, 2 ) and a( 2, 2 )
+;;*           respectively, and so on.
+;;*           Before entry with UPLO = 'L' or 'l', the array AP must
+;;*           contain the lower triangular matrix packed sequentially,
+;;*           column by column, so that AP( 1 ) contains a( 1, 1 ),
+;;*           AP( 2 ) and AP( 3 ) contain a( 2, 1 ) and a( 3, 1 )
+;;*           respectively, and so on.
+;;*           Note that when  DIAG = 'U' or 'u', the diagonal elements of
+;;*           A are not referenced, but are assumed to be unity.
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element vector x. On exit, X is overwritten with the
+;;*           tranformed vector x.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de ztpmv (uplo  trans  diag  n  ap  x  incx  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-str-) diag )
+	((-idx0- (-int-)) n )
+	((-idx2- (-double-)) ap )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	#{ ztpmv_($uplo->data, $trans->data, $diag->data, IDX_PTR($n,int), IDX_PTR($ap,double), IDX_PTR($x,double), IDX_PTR($incx,int)) #} ())
+
+
+
+#? (ztpsv <uplo>  <trans>  <diag>  <n>  <ap>  <x>  <incx>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZTPSV  solves one of the systems of equations
+;;*
+;;*     A*x = b,   or   A'*x = b,   or   conjg( A' )*x = b,
+;;*
+;;*  where b and x are n element vectors and A is an n by n unit, or
+;;*  non-unit, upper or lower triangular matrix, supplied in packed form.
+;;*
+;;*  No test for singularity or near-singularity is included in this
+;;*  routine. Such tests must be performed before calling this routine.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the matrix is an upper or
+;;*           lower triangular matrix as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   A is an upper triangular matrix.
+;;*
+;;*              UPLO = 'L' or 'l'   A is a lower triangular matrix.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry, TRANS specifies the equations to be solved as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   A*x = b.
+;;*
+;;*              TRANS = 'T' or 't'   A'*x = b.
+;;*
+;;*              TRANS = 'C' or 'c'   conjg( A' )*x = b.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  DIAG   - CHARACTER*1.
+;;*           On entry, DIAG specifies whether or not A is unit
+;;*           triangular as follows:
+;;*
+;;*              DIAG = 'U' or 'u'   A is assumed to be unit triangular.
+;;*
+;;*              DIAG = 'N' or 'n'   A is not assumed to be unit
+;;*                                  triangular.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  AP     - COMPLEX*16       array of DIMENSION at least
+;;*           ( ( n*( n + 1 ) )/2 ).
+;;*           Before entry with  UPLO = 'U' or 'u', the array AP must
+;;*           contain the upper triangular matrix packed sequentially,
+;;*           column by column, so that AP( 1 ) contains a( 1, 1 ),
+;;*           AP( 2 ) and AP( 3 ) contain a( 1, 2 ) and a( 2, 2 )
+;;*           respectively, and so on.
+;;*           Before entry with UPLO = 'L' or 'l', the array AP must
+;;*           contain the lower triangular matrix packed sequentially,
+;;*           column by column, so that AP( 1 ) contains a( 1, 1 ),
+;;*           AP( 2 ) and AP( 3 ) contain a( 2, 1 ) and a( 3, 1 )
+;;*           respectively, and so on.
+;;*           Note that when  DIAG = 'U' or 'u', the diagonal elements of
+;;*           A are not referenced, but are assumed to be unity.
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element right-hand side vector b. On exit, X is overwritten
+;;*           with the solution vector x.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de ztpsv (uplo  trans  diag  n  ap  x  incx  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-str-) diag )
+	((-idx0- (-int-)) n )
+	((-idx2- (-double-)) ap )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	#{ ztpsv_($uplo->data, $trans->data, $diag->data, IDX_PTR($n,int), IDX_PTR($ap,double), IDX_PTR($x,double), IDX_PTR($incx,int)) #} ())
+
+
+
+#? (ztrmm <side>  <uplo>  <transa>  <diag>  <m>  <n>  <alpha>  <a>  <lda>  <b>  <ldb>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZTRMM  performs one of the matrix-matrix operations
+;;*
+;;*     B := alpha*op( A )*B,   or   B := alpha*B*op( A )
+;;*
+;;*  where  alpha  is a scalar,  B  is an m by n matrix,  A  is a unit, or
+;;*  non-unit,  upper or lower triangular matrix  and  op( A )  is one  of
+;;*
+;;*     op( A ) = A   or   op( A ) = A'   or   op( A ) = conjg( A' ).
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  SIDE   - CHARACTER*1.
+;;*           On entry,  SIDE specifies whether  op( A ) multiplies B from
+;;*           the left or right as follows:
+;;*
+;;*              SIDE = 'L' or 'l'   B := alpha*op( A )*B.
+;;*
+;;*              SIDE = 'R' or 'r'   B := alpha*B*op( A ).
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the matrix A is an upper or
+;;*           lower triangular matrix as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   A is an upper triangular matrix.
+;;*
+;;*              UPLO = 'L' or 'l'   A is a lower triangular matrix.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANSA - CHARACTER*1.
+;;*           On entry, TRANSA specifies the form of op( A ) to be used in
+;;*           the matrix multiplication as follows:
+;;*
+;;*              TRANSA = 'N' or 'n'   op( A ) = A.
+;;*
+;;*              TRANSA = 'T' or 't'   op( A ) = A'.
+;;*
+;;*              TRANSA = 'C' or 'c'   op( A ) = conjg( A' ).
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  DIAG   - CHARACTER*1.
+;;*           On entry, DIAG specifies whether or not A is unit triangular
+;;*           as follows:
+;;*
+;;*              DIAG = 'U' or 'u'   A is assumed to be unit triangular.
+;;*
+;;*              DIAG = 'N' or 'n'   A is not assumed to be unit
+;;*                                  triangular.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  M      - INTEGER.
+;;*           On entry, M specifies the number of rows of B. M must be at
+;;*           least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the number of columns of B.  N must be
+;;*           at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry,  ALPHA specifies the scalar  alpha. When  alpha is
+;;*           zero then  A is not referenced and  B need not be set before
+;;*           entry.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, k ), where k is m
+;;*           when  SIDE = 'L' or 'l'  and is  n  when  SIDE = 'R' or 'r'.
+;;*           Before entry  with  UPLO = 'U' or 'u',  the  leading  k by k
+;;*           upper triangular part of the array  A must contain the upper
+;;*           triangular matrix  and the strictly lower triangular part of
+;;*           A is not referenced.
+;;*           Before entry  with  UPLO = 'L' or 'l',  the  leading  k by k
+;;*           lower triangular part of the array  A must contain the lower
+;;*           triangular matrix  and the strictly upper triangular part of
+;;*           A is not referenced.
+;;*           Note that when  DIAG = 'U' or 'u',  the diagonal elements of
+;;*           A  are not referenced either,  but are assumed to be  unity.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program.  When  SIDE = 'L' or 'l'  then
+;;*           LDA  must be at least  max( 1, m ),  when  SIDE = 'R' or 'r'
+;;*           then LDA must be at least max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*  B      - COMPLEX*16       array of DIMENSION ( LDB, n ).
+;;*           Before entry,  the leading  m by n part of the array  B must
+;;*           contain the matrix  B,  and  on exit  is overwritten  by the
+;;*           transformed matrix.
+;;*
+;;*  LDB    - INTEGER.
+;;*           On entry, LDB specifies the first dimension of B as declared
+;;*           in  the  calling  (sub)  program.   LDB  must  be  at  least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 3 Blas routine.
+;;*
+;;*  -- Written on 8-February-1989.
+;;*     Jack Dongarra, Argonne National Laboratory.
+;;*     Iain Duff, AERE Harwell.
+;;*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+;;*     Sven Hammarling, Numerical Algorithms Group Ltd.
+;;*
+;;*
+;;*     .. External Functions ..
+;;*  =====================================================================
+
+(de ztrmm (side  uplo  transa  diag  m  n  alpha  a  lda  b  ldb  )
+	((-str-) side )
+	((-str-) uplo )
+	((-str-) transa )
+	((-str-) diag )
+	((-idx0- (-int-)) m )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx3- (-double-)) b )
+	((-idx0- (-int-)) ldb )
+	#{ ztrmm_($side->data, $uplo->data, $transa->data, $diag->data, IDX_PTR($m,int), IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($b,double), IDX_PTR($ldb,int)) #} ())
+
+
+
+#? (ztrmv <uplo>  <trans>  <diag>  <n>  <a>  <lda>  <x>  <incx>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZTRMV  performs one of the matrix-vector operations
+;;*
+;;*     x := A*x,   or   x := A'*x,   or   x := conjg( A' )*x,
+;;*
+;;*  where x is an n element vector and  A is an n by n unit, or non-unit,
+;;*  upper or lower triangular matrix.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the matrix is an upper or
+;;*           lower triangular matrix as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   A is an upper triangular matrix.
+;;*
+;;*              UPLO = 'L' or 'l'   A is a lower triangular matrix.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry, TRANS specifies the operation to be performed as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   x := A*x.
+;;*
+;;*              TRANS = 'T' or 't'   x := A'*x.
+;;*
+;;*              TRANS = 'C' or 'c'   x := conjg( A' )*x.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  DIAG   - CHARACTER*1.
+;;*           On entry, DIAG specifies whether or not A is unit
+;;*           triangular as follows:
+;;*
+;;*              DIAG = 'U' or 'u'   A is assumed to be unit triangular.
+;;*
+;;*              DIAG = 'N' or 'n'   A is not assumed to be unit
+;;*                                  triangular.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry with  UPLO = 'U' or 'u', the leading n by n
+;;*           upper triangular part of the array A must contain the upper
+;;*           triangular matrix and the strictly lower triangular part of
+;;*           A is not referenced.
+;;*           Before entry with UPLO = 'L' or 'l', the leading n by n
+;;*           lower triangular part of the array A must contain the lower
+;;*           triangular matrix and the strictly upper triangular part of
+;;*           A is not referenced.
+;;*           Note that when  DIAG = 'U' or 'u', the diagonal elements of
+;;*           A are not referenced either, but are assumed to be unity.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element vector x. On exit, X is overwritten with the
+;;*           tranformed vector x.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de ztrmv (uplo  trans  diag  n  a  lda  x  incx  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-str-) diag )
+	((-idx0- (-int-)) n )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	#{ ztrmv_($uplo->data, $trans->data, $diag->data, IDX_PTR($n,int), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($x,double), IDX_PTR($incx,int)) #} ())
+
+
+
+#? (ztrsm <side>  <uplo>  <transa>  <diag>  <m>  <n>  <alpha>  <a>  <lda>  <b>  <ldb>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZTRSM  solves one of the matrix equations
+;;*
+;;*     op( A )*X = alpha*B,   or   X*op( A ) = alpha*B,
+;;*
+;;*  where alpha is a scalar, X and B are m by n matrices, A is a unit, or
+;;*  non-unit,  upper or lower triangular matrix  and  op( A )  is one  of
+;;*
+;;*     op( A ) = A   or   op( A ) = A'   or   op( A ) = conjg( A' ).
+;;*
+;;*  The matrix X is overwritten on B.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  SIDE   - CHARACTER*1.
+;;*           On entry, SIDE specifies whether op( A ) appears on the left
+;;*           or right of X as follows:
+;;*
+;;*              SIDE = 'L' or 'l'   op( A )*X = alpha*B.
+;;*
+;;*              SIDE = 'R' or 'r'   X*op( A ) = alpha*B.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the matrix A is an upper or
+;;*           lower triangular matrix as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   A is an upper triangular matrix.
+;;*
+;;*              UPLO = 'L' or 'l'   A is a lower triangular matrix.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANSA - CHARACTER*1.
+;;*           On entry, TRANSA specifies the form of op( A ) to be used in
+;;*           the matrix multiplication as follows:
+;;*
+;;*              TRANSA = 'N' or 'n'   op( A ) = A.
+;;*
+;;*              TRANSA = 'T' or 't'   op( A ) = A'.
+;;*
+;;*              TRANSA = 'C' or 'c'   op( A ) = conjg( A' ).
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  DIAG   - CHARACTER*1.
+;;*           On entry, DIAG specifies whether or not A is unit triangular
+;;*           as follows:
+;;*
+;;*              DIAG = 'U' or 'u'   A is assumed to be unit triangular.
+;;*
+;;*              DIAG = 'N' or 'n'   A is not assumed to be unit
+;;*                                  triangular.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  M      - INTEGER.
+;;*           On entry, M specifies the number of rows of B. M must be at
+;;*           least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the number of columns of B.  N must be
+;;*           at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  ALPHA  - COMPLEX*16      .
+;;*           On entry,  ALPHA specifies the scalar  alpha. When  alpha is
+;;*           zero then  A is not referenced and  B need not be set before
+;;*           entry.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, k ), where k is m
+;;*           when  SIDE = 'L' or 'l'  and is  n  when  SIDE = 'R' or 'r'.
+;;*           Before entry  with  UPLO = 'U' or 'u',  the  leading  k by k
+;;*           upper triangular part of the array  A must contain the upper
+;;*           triangular matrix  and the strictly lower triangular part of
+;;*           A is not referenced.
+;;*           Before entry  with  UPLO = 'L' or 'l',  the  leading  k by k
+;;*           lower triangular part of the array  A must contain the lower
+;;*           triangular matrix  and the strictly upper triangular part of
+;;*           A is not referenced.
+;;*           Note that when  DIAG = 'U' or 'u',  the diagonal elements of
+;;*           A  are not referenced either,  but are assumed to be  unity.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program.  When  SIDE = 'L' or 'l'  then
+;;*           LDA  must be at least  max( 1, m ),  when  SIDE = 'R' or 'r'
+;;*           then LDA must be at least max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*  B      - COMPLEX*16       array of DIMENSION ( LDB, n ).
+;;*           Before entry,  the leading  m by n part of the array  B must
+;;*           contain  the  right-hand  side  matrix  B,  and  on exit  is
+;;*           overwritten by the solution matrix  X.
+;;*
+;;*  LDB    - INTEGER.
+;;*           On entry, LDB specifies the first dimension of B as declared
+;;*           in  the  calling  (sub)  program.   LDB  must  be  at  least
+;;*           max( 1, m ).
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 3 Blas routine.
+;;*
+;;*  -- Written on 8-February-1989.
+;;*     Jack Dongarra, Argonne National Laboratory.
+;;*     Iain Duff, AERE Harwell.
+;;*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+;;*     Sven Hammarling, Numerical Algorithms Group Ltd.
+;;*
+;;*
+;;*     .. External Functions ..
+;;*  =====================================================================
+
+(de ztrsm (side  uplo  transa  diag  m  n  alpha  a  lda  b  ldb  )
+	((-str-) side )
+	((-str-) uplo )
+	((-str-) transa )
+	((-str-) diag )
+	((-idx0- (-int-)) m )
+	((-idx0- (-int-)) n )
+	((-idx1- (-double-)) alpha )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx3- (-double-)) b )
+	((-idx0- (-int-)) ldb )
+	#{ ztrsm_($side->data, $uplo->data, $transa->data, $diag->data, IDX_PTR($m,int), IDX_PTR($n,int), IDX_PTR($alpha,double), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($b,double), IDX_PTR($ldb,int)) #} ())
+
+
+
+#? (ztrsv <uplo>  <trans>  <diag>  <n>  <a>  <lda>  <x>  <incx>  )
+;;.VP
+;;*  =====================================================================
+;;*  Purpose
+;;*  =======
+;;*
+;;*  ZTRSV  solves one of the systems of equations
+;;*
+;;*     A*x = b,   or   A'*x = b,   or   conjg( A' )*x = b,
+;;*
+;;*  where b and x are n element vectors and A is an n by n unit, or
+;;*  non-unit, upper or lower triangular matrix.
+;;*
+;;*  No test for singularity or near-singularity is included in this
+;;*  routine. Such tests must be performed before calling this routine.
+;;*
+;;*  Parameters
+;;*  ==========
+;;*
+;;*  UPLO   - CHARACTER*1.
+;;*           On entry, UPLO specifies whether the matrix is an upper or
+;;*           lower triangular matrix as follows:
+;;*
+;;*              UPLO = 'U' or 'u'   A is an upper triangular matrix.
+;;*
+;;*              UPLO = 'L' or 'l'   A is a lower triangular matrix.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  TRANS  - CHARACTER*1.
+;;*           On entry, TRANS specifies the equations to be solved as
+;;*           follows:
+;;*
+;;*              TRANS = 'N' or 'n'   A*x = b.
+;;*
+;;*              TRANS = 'T' or 't'   A'*x = b.
+;;*
+;;*              TRANS = 'C' or 'c'   conjg( A' )*x = b.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  DIAG   - CHARACTER*1.
+;;*           On entry, DIAG specifies whether or not A is unit
+;;*           triangular as follows:
+;;*
+;;*              DIAG = 'U' or 'u'   A is assumed to be unit triangular.
+;;*
+;;*              DIAG = 'N' or 'n'   A is not assumed to be unit
+;;*                                  triangular.
+;;*
+;;*           Unchanged on exit.
+;;*
+;;*  N      - INTEGER.
+;;*           On entry, N specifies the order of the matrix A.
+;;*           N must be at least zero.
+;;*           Unchanged on exit.
+;;*
+;;*  A      - COMPLEX*16       array of DIMENSION ( LDA, n ).
+;;*           Before entry with  UPLO = 'U' or 'u', the leading n by n
+;;*           upper triangular part of the array A must contain the upper
+;;*           triangular matrix and the strictly lower triangular part of
+;;*           A is not referenced.
+;;*           Before entry with UPLO = 'L' or 'l', the leading n by n
+;;*           lower triangular part of the array A must contain the lower
+;;*           triangular matrix and the strictly upper triangular part of
+;;*           A is not referenced.
+;;*           Note that when  DIAG = 'U' or 'u', the diagonal elements of
+;;*           A are not referenced either, but are assumed to be unity.
+;;*           Unchanged on exit.
+;;*
+;;*  LDA    - INTEGER.
+;;*           On entry, LDA specifies the first dimension of A as declared
+;;*           in the calling (sub) program. LDA must be at least
+;;*           max( 1, n ).
+;;*           Unchanged on exit.
+;;*
+;;*  X      - COMPLEX*16       array of dimension at least
+;;*           ( 1 + ( n - 1 )*abs( INCX ) ).
+;;*           Before entry, the incremented array X must contain the n
+;;*           element right-hand side vector b. On exit, X is overwritten
+;;*           with the solution vector x.
+;;*
+;;*  INCX   - INTEGER.
+;;*           On entry, INCX specifies the increment for the elements of
+;;*           X. INCX must not be zero.
+;;*           Unchanged on exit.
+;;*
+;;*
+;;*  Level 2 Blas routine.
+;;*
+;;*  -- Written on 22-October-1986.
+;;*     Jack Dongarra, Argonne National Lab.
+;;*     Jeremy Du Croz, Nag Central Office.
+;;*     Sven Hammarling, Nag Central Office.
+;;*     Richard Hanson, Sandia National Labs.
+;;*
+;;*
+;;*     .. Parameters ..
+;;*  =====================================================================
+
+(de ztrsv (uplo  trans  diag  n  a  lda  x  incx  )
+	((-str-) uplo )
+	((-str-) trans )
+	((-str-) diag )
+	((-idx0- (-int-)) n )
+	((-idx3- (-double-)) a )
+	((-idx0- (-int-)) lda )
+	((-idx2- (-double-)) x )
+	((-idx0- (-int-)) incx )
+	#{ ztrsv_($uplo->data, $trans->data, $diag->data, IDX_PTR($n,int), IDX_PTR($a,double), IDX_PTR($lda,int), IDX_PTR($x,double), IDX_PTR($incx,int)) #} ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(let ((dhc-make-lushflags (concat dhc-make-lushflags blas-cflags)))
+  (dhc-make-with-libs  
+   () 
+   (cons blas-libblas blas-libfortran)
+   blas-z-dummy 
+   zaxpy zcopy zdotc zdotu zdscal zgbmv zgemm zgemv zgerc zgeru zhbmv 
+   zhemm zhemv zher2k zher2 zherk zher zhpmv zhpr2 zhpr zrotg zscal 
+   zswap zsymm zsyr2k zsyrk ztbmv ztbsv ztpmv ztpsv ztrmm 
+   ztrmv ztrsm ztrsv ))
+
