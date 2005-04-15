@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.45 2004-11-02 19:32:56 leonb Exp $
+ * $Id: dldbfd.c,v 1.46 2005-04-15 20:48:35 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -840,6 +840,21 @@ handle_common_symbols(module_entry *ent)
 
 
 /* ---------------------------------------- */
+/* PATCHING BFD FOR SPECIAL ARCHS */
+
+static void
+write_const_pointer(void **pointer, void *value)
+{
+#if HAVE_MPROTECT
+  int pagesize = getpagesize();
+  bfd_vma start = ptrvma(pointer) & ~(pagesize-1);
+  mprotect( vmaptr(start), pagesize, PROT_READ|PROT_WRITE);
+#endif
+  *pointer = value;
+}
+
+
+/* ---------------------------------------- */
 /* SPECIAL PROCESSING FOR MIPS-ELF */
 
 #ifdef __mips__
@@ -1025,7 +1040,7 @@ mipself_install_patches(bfd *abfd)
   if (howto->special_function != mipself_new_hi16_reloc)
     {
       mipself_old_hi16_reloc = howto->special_function;
-      *(void**)&(howto->special_function) = mipself_new_hi16_reloc;
+      write_const_pointer((void**)&howto->special_function, mipself_new_hi16_reloc);
       ASSERT_BFD(mipself_old_hi16_reloc);
     }
   /* LO16 */
@@ -1034,17 +1049,17 @@ mipself_install_patches(bfd *abfd)
   if (howto->special_function != mipself_new_lo16_reloc)
     {
       mipself_old_lo16_reloc = howto->special_function;
-      *(void**)&(howto->special_function) = mipself_new_lo16_reloc;
+      write_const_pointer((void**)&howto->special_function, mipself_new_lo16_reloc);
       ASSERT_BFD(mipself_old_lo16_reloc);
     }
   /* GOT16 */
   howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_MIPS_GOT16);
   ASSERT_BFD(howto);
-  *(void**)&(howto->special_function) = mipself_new_got16_reloc;  
+  write_const_pointer((void**)&howto->special_function, mipself_new_got16_reloc);  
   /* CALL16 */
   howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_MIPS_CALL16);
   ASSERT_BFD(howto);
-  *(void**)&(howto->special_function) = mipself_new_call16_reloc;  
+  write_const_pointer((void**)&howto->special_function, mipself_new_call16_reloc);
 }
 
 
@@ -1308,6 +1323,350 @@ handle_mipself_code(module_entry *ent)
 
 
 /* ---------------------------------------- */
+/* SPECIAL PROCESSING FOR ALPHA 
+   Return courtesy from GCL.
+   Untested */
+
+#ifdef __alpha__
+
+static asymbol *alphaelf_gpdisp = NULL;
+
+static unsigned long alphaelf_gp(bfd *abfd)
+{
+  extern unsigned long _bfd_set_gp_value(bfd*,unsigned long);
+  unsigned long gp = alphaelf_gpdisp->section->output_section->vma;
+  gp += alphaelf_gpdisp->value;
+  _bfd_set_gp_value(abfd, gp);
+  return gp;
+}
+
+static bfd_reloc_status_type
+(*alphaelf_old_gpdisp_reloc)(bfd *abfd, 
+			     arelent *reloc_entry,
+			     asymbol *symbol,
+			     PTR data,
+			     asection *input_section,
+			     bfd *output_bfd,
+			     char **error_message);
+
+static bfd_reloc_status_type
+alphaelf_new_gpdisp_reloc (bfd *abfd, 
+                           arelent *reloc_entry,
+                           asymbol *symbol,
+                           PTR data,
+                           asection *input_section,
+                           bfd *output_bfd,
+                           char **error_message) 
+{
+  alphaelf_gp(abfd);
+  return alphaelf_old_gpdisp_reloc(abfd,reloc_entry,
+				   symbol,data,input_section,
+				   output_bfd,error_message);
+}
+
+static bfd_reloc_status_type
+alphaelf_new_literal_reloc (bfd *abfd, 
+			    arelent *reloc_entry,
+			    asymbol *symbol,
+			    PTR data,
+			    asection *input_section,
+			    bfd *output_bfd,
+			    char **error_message) 
+{
+  int insn;
+  bfd_byte *addr;
+  addr = (bfd_byte*)(data) + reloc_entry->address;
+  insn = bfd_get_32(abfd, addr);
+  if (insn & 0x0000ffff)
+    return bfd_reloc_notsupported;    
+  if (reloc_entry->addend != (reloc_entry->addend & 0x7fff))
+    return bfd_reloc_notsupported;        
+  /* Plug GOT offset into low 16 bits of instruction */
+  insn |= reloc_entry->addend;
+  bfd_put_32(abfd, insn, addr);
+  return bfd_reloc_ok;
+}
+
+static bfd_reloc_status_type
+alphaelf_new_hi16_reloc (bfd *abfd, 
+                         arelent *reloc_entry,
+                         asymbol *symbol,
+                         PTR data,
+                         asection *input_section,
+                         bfd *output_bfd,
+                         char **error_message) 
+{
+  int loinsn, hiinsn;
+  bfd_vma addr = ptrvma(data) + reloc_entry->address;
+  bfd_vma value = symbol->section->vma + symbol->value + reloc_entry->addend;
+  hiinsn = bfd_get_32(abfd, (bfd_byte*)vmaptr(addr));
+  if ((hiinsn & 0xffff))
+    return bfd_reloc_notsupported;
+  value = value - alphaelf_gp(abfd);
+  loinsn = (value & 0xffff);
+  value = (value>>16) + (loinsn&0x8000 ? 1 : 0); 
+  hiinsn |= (value & 0xffff);
+  bfd_put_32 (abfd, hiinsn, (bfd_byte*)vmaptr(addr));
+  return bfd_reloc_ok;
+
+}
+
+static bfd_reloc_status_type
+alphaelf_new_lo16_reloc (bfd *abfd, 
+                         arelent *reloc_entry,
+                         asymbol *symbol,
+                         PTR data,
+                         asection *input_section,
+                         bfd *output_bfd,
+                         char **error_message) 
+{
+  int insn;
+  bfd_vma addr = ptrvma(data) + reloc_entry->address;
+  bfd_vma value = symbol->section->vma + symbol->value + reloc_entry->addend;
+  insn = bfd_get_32(abfd, (bfd_byte*)vmaptr(addr));
+  if ((insn & 0xffff))
+    return bfd_reloc_notsupported;
+  value = value - alphaelf_gp(abfd);
+  insn |= (value & 0xffff);
+  bfd_put_32 (abfd, insn, (bfd_byte*)vmaptr(addr));
+  return bfd_reloc_ok;
+}
+
+static void
+alphaelf_install_patches(bfd *abfd) 
+{
+  reloc_howto_type *howto;
+  howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_ALPHA_GPDISP);
+  ASSERT_BFD(howto);
+  if (howto->special_function != alphaelf_new_gpdisp_reloc) 
+    {
+      alphaelf_old_gpdisp_reloc=howto->special_function;
+      ASSERT_BFD(alphaelf_old_gpdisp_reloc);
+      write_const_pointer((void**)&howto->special_function, alphaelf_new_gpdisp_reloc);
+    }
+  howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_ALPHA_GPREL_HI16);
+  ASSERT_BFD(howto);
+  if (howto->special_function != alphaelf_new_hi16_reloc)
+    write_const_pointer((void**)&howto->special_function, alphaelf_new_hi16_reloc);
+  howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_ALPHA_GPREL_LO16);
+  ASSERT_BFD(howto);
+  if (howto->special_function != alphaelf_new_lo16_reloc)
+    write_const_pointer((void**)&howto->special_function, alphaelf_new_lo16_reloc);
+  howto = bfd_reloc_type_lookup(abfd,BFD_RELOC_ALPHA_ELF_LITERAL);
+  ASSERT_BFD(howto);
+  if (howto->special_function != alphaelf_new_literal_reloc)
+    write_const_pointer((void**)&howto->special_function, alphaelf_new_literal_reloc);
+}
+
+typedef struct alphaelf_got_info {
+  int gotsize;
+  asection *sgot;
+  struct bfd_hash_table got_table;
+  reloc_howto_type *reloc_literal;
+  reloc_howto_type *reloc_64;       /* for relocs in got */
+} alphaelf_got_info;
+
+typedef struct alphaelf_got_entry {
+  struct bfd_hash_entry root;
+  arelent *reloc;
+  bfd_vma offset;
+  int index;
+} alphaelf_got_entry;
+
+static struct bfd_hash_entry *
+alphaelf_init_got_entry(struct bfd_hash_entry *entry,
+			struct bfd_hash_table *table,
+			const char *string) 
+{
+  alphaelf_got_entry *ret = (alphaelf_got_entry*)entry;
+  if (!ret) 
+    {
+      ret = (alphaelf_got_entry*)
+	bfd_hash_allocate(table, sizeof(alphaelf_got_entry));
+      if (!ret)
+	THROW(bfd_errmsg(bfd_error_no_memory));
+    }
+  memset(ret, 0, sizeof(alphaelf_got_entry));
+  return bfd_hash_newfunc((struct bfd_hash_entry*)ret, table, string);
+}
+
+static void
+alphaelf_init_got_info(module_entry *ent, 
+		       alphaelf_got_info *info) 
+{
+  info->sgot = NULL;
+  info->gotsize = 0;
+  bfd_hash_table_init(&info->got_table, alphaelf_init_got_entry);
+  info->reloc_literal = bfd_reloc_type_lookup(ent->abfd,BFD_RELOC_ALPHA_ELF_LITERAL);
+  info->reloc_64 = bfd_reloc_type_lookup(ent->abfd,BFD_RELOC_64);
+}
+
+static void
+alphaelf_free_got_info(alphaelf_got_info *info) 
+{
+  bfd_hash_table_free(&info->got_table);
+}
+
+static int
+alphaelf_got_traverse(struct bfd_hash_entry *ent, void *gcookie) 
+{
+  alphaelf_got_entry *gotent = (alphaelf_got_entry*)ent;
+  asection *sgot = (asection*)gcookie;
+  sgot->relocation[gotent->index] = *gotent->reloc;
+  return TRUE;
+}
+
+static const char *
+alphaelf_msymbol_name(bfd *abfd, const asymbol *s, unsigned long a) 
+{
+  char *n;
+  if (!(s->flags & BSF_SECTION_SYM))
+    return s->name;
+  n = xballoc(abfd, strlen(s->name)+18);
+  sprintf(n,"%s+%016lx", s->name, a);
+  return n;
+}
+
+static asection *
+alphaelf_create_got(module_entry *ent, 
+		    alphaelf_got_info *info) 
+{
+  asection *sgot;
+  bfd_vma offset;
+  asection *p;
+  bfd *abfd;
+  int i;
+  /* Check that there are no GOT section */
+  sgot = bfd_get_section_by_name(ent->abfd, ".got");
+  ASSERT_BFD(!sgot);
+  /* Compute GOT hash table */
+  offset = 0;
+  abfd = ent->abfd;
+  for (p=abfd->sections; p; p=p->next)
+    if ((p->flags & SEC_ALLOC) && (p->flags & SEC_RELOC)) 
+      {
+	ASSERT(p->orelocation);
+	for (i=0; i<p->reloc_count; i++) 
+	  {
+	    arelent *reloc = p->orelocation[i];
+	    if ((reloc->howto == info->reloc_literal)) 
+	      {
+		const char *name = alphaelf_msymbol_name(abfd,*reloc->sym_ptr_ptr,reloc->addend);
+		alphaelf_got_entry *gotent = (alphaelf_got_entry*)
+		  bfd_hash_lookup(&info->got_table, name, TRUE, TRUE );
+		if (!gotent->reloc) {
+		  gotent->index = info->gotsize;
+		  gotent->offset = offset;
+		  gotent->reloc = xballoc(ent->abfd, sizeof(arelent));
+		  gotent->reloc->sym_ptr_ptr = reloc->sym_ptr_ptr;
+		  gotent->reloc->address = offset;
+		  gotent->reloc->addend = reloc->addend;
+		  gotent->reloc->howto = info->reloc_64;
+		  offset += sizeof(void*);
+		  info->gotsize += 1;
+		}
+	      }
+	  }
+      }
+  if (offset >= 0x8000)
+    THROW("Too many entries in GOT (GOT full, merci ALPHA)");
+  if (info->gotsize > 0) 
+    {
+      sgot = bfd_make_section(ent->abfd, ".got");
+      ASSERT(sgot);
+      sgot->flags = SEC_ALLOC|SEC_RELOC|SEC_LOAD;
+      dldbfd_section_rawsize(sgot) = 0;
+      dldbfd_section_size(sgot) = offset;
+      if (sgot->alignment_power < 4)
+	sgot->alignment_power = 4;      /* Set GOT relocations */
+      sgot->relocation = xballoc(abfd, info->gotsize*sizeof(*info->sgot->relocation));
+      bfd_hash_traverse(&info->got_table, (void*)alphaelf_got_traverse, sgot);
+      sgot->reloc_count = info->gotsize;
+    }
+  info->sgot = sgot;
+  return sgot;
+
+}
+
+static void 
+alphaelf_fix_relocs(module_entry *ent, 
+		    alphaelf_got_info *info) 
+{
+  int i;
+  asymbol *gpdisp = NULL;
+  asymbol **gpdisp_ptr = NULL;
+  asection *p;
+  bfd *abfd = ent->abfd;
+  /* Make a gpdisp symbol at the top of the .got section */
+  gpdisp = xballoc(abfd, sizeof(asymbol));
+  gpdisp->value = 0;
+  gpdisp->name= "gpdisp";
+  gpdisp->flags = BSF_LOCAL|BSF_SECTION_SYM;
+  gpdisp->section = info->sgot ? info->sgot : bfd_abs_section_ptr;
+  gpdisp->udata.p = NULL;
+  alphaelf_gpdisp = gpdisp;
+  if (!info->sgot)
+    return;
+  
+  /* Prepare pointer to gpdisp to patch got relocs */
+  gpdisp_ptr = xballoc(abfd, sizeof(asymbol*));
+  *gpdisp_ptr = gpdisp;
+  
+  /* Iterate on sections and relocations */
+  for (p=abfd->sections; p; p=p->next)
+    if ((p->flags & SEC_ALLOC) && (p->flags & SEC_RELOC)) 
+      {
+	ASSERT_BFD(p->orelocation);
+	for (i=0; i<p->reloc_count; i++) 
+	  {
+	    arelent *reloc = p->orelocation[i];
+	    if (reloc->howto==info->reloc_literal) 
+	      {
+		const char *name = alphaelf_msymbol_name(abfd,*reloc->sym_ptr_ptr,reloc->addend);
+		alphaelf_got_entry *gotent = 
+		  (alphaelf_got_entry*) bfd_hash_lookup(&info->got_table, name, FALSE, FALSE );
+		ASSERT(gotent);
+		/* ELF_LITERAL relocations will refer
+		 * to the GPDISP symbol and have the GOT index
+		 * in the addend */
+		reloc->addend = gotent->offset;
+		reloc->sym_ptr_ptr = gpdisp_ptr;
+	      }
+	  } 
+      }
+}
+
+
+/* handle_alphaelf -- special processing for alpha elf */
+
+static void
+handle_alphaelf_code(module_entry *ent)
+{
+  /* ALPHAELF case */
+  if (bfd_get_flavour(ent->abfd) == bfd_target_elf_flavour &&
+      bfd_get_arch(ent->abfd) == bfd_arch_alpha )
+    {
+      alphaelf_got_info got_info;
+      alphaelf_install_patches(ent->abfd);
+      alphaelf_init_got_info(ent, &got_info);
+      TRY
+        {
+	  alphaelf_create_got(ent, &got_info);
+	  alphaelf_fix_relocs(ent, &got_info);
+	}
+      CATCH(n)
+	{
+	  alphaelf_free_got_info(&got_info);
+	  THROW(n);
+	}
+      END_CATCH;
+      alphaelf_free_got_info(&got_info);
+    }
+}
+
+#endif
+
+/* ---------------------------------------- */
 /* REWRITES */
 
 
@@ -1319,6 +1678,9 @@ perform_rewrites(module_entry *ent)
   handle_common_symbols(ent);
 #ifdef __mips__
   handle_mipself_code(ent);
+#endif
+#ifdef __alpha__
+  handle_alphaelf_code(ent);
 #endif
 }
 
