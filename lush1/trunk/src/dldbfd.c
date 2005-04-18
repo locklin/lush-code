@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.46 2005-04-15 20:48:35 leonb Exp $
+ * $Id: dldbfd.c,v 1.47 2005-04-18 22:19:30 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1520,7 +1520,7 @@ static const char *
 alphaelf_msymbol_name(bfd *abfd, const asymbol *s, unsigned long a) 
 {
   char *n;
-  if (!(s->flags & BSF_SECTION_SYM))
+  if (!(s->flags & BSF_SECTION_SYM) && !a)
     return s->name;
   n = xballoc(abfd, strlen(s->name)+18);
   sprintf(n,"%s+%016lx", s->name, a);
