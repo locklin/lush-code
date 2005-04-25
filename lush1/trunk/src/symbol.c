@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: symbol.c,v 1.8 2003-01-10 19:52:17 leonb Exp $
+ * $Id: symbol.c,v 1.9 2005-04-25 18:57:46 leonb Exp $
  **********************************************************************/
 
 
@@ -377,8 +377,6 @@ at *
 setq(at *p, at *q)		/* WARNING: returns an UNLOCKED AT	 */
           			/* never use this AT in a C program	 */
 {
-  extern int in_object_scope;	/* From OOSTRUCT.C */
-
   if (p && (p->flags&X_SYMBOL)) 
   {
     /* 
@@ -388,20 +386,18 @@ setq(at *p, at *q)		/* WARNING: returns an UNLOCKED AT	 */
     symb = (struct symbol *) (p->Object);
     if (symb->mode == SYMBOL_LOCKED)
       error(NIL, "locked symbol", p);
-    if (!symb->valueptr) {
-      if (in_object_scope)
-	error(NIL, "cannot create a new variable from object scope",p);
-      else {
+    if (!symb->valueptr) 
+      {
+	fprintf(stderr, "+++ Warning: use <defvar> to declare global variable <%s>.\n",
+		symb->name->name ? symb->name->name : "??" );
 	symb->valueptr = &(symb->value);
 	symb->value = NIL;
       }
-    }
     p = *(symb->valueptr);
     LOCK(q);
     *(symb->valueptr) = q;
     UNLOCK(p);
     return q;
-
   } 
   else if (CONSP(p)) 
   {
@@ -581,6 +577,19 @@ DX(xsymbolp)
     return NIL;
 }
 
+DX(xsymbol_globally_bound_p)
+{
+  struct symbol *a;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  a = ASYMBOL(1);
+  while (a->next)
+    a = a->next;
+  if (a->valueptr)
+    return true();
+  return NIL;
+}
+
 DX(xincr)
 {
   real incr;
@@ -730,5 +739,6 @@ init_symbol(void)
   dx_define("lock-symbol", xlock_symbol);
   dx_define("unlock-symbol", xunlock_symbol);
   dx_define("symbolp", xsymbolp);
+  dx_define("symbol-globally-bound-p", xsymbol_globally_bound_p);
   dx_define("incr", xincr);
 }

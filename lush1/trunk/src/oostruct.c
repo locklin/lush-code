@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.20 2005-02-23 21:23:13 leonb Exp $
+ * $Id: oostruct.c,v 1.21 2005-04-25 18:57:45 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -35,8 +35,6 @@
 #include "dh.h"
 
 extern struct alloc_root symbol_alloc;
-
-int in_object_scope = 0;
 
 static at *at_progn;
 static at *at_mexpand;
@@ -838,9 +836,7 @@ letslot(at *obj, at *f, at *q, int howmuch)
       at_this->Object = symb;
       LOCK(obj);
       
-      in_object_scope++;
       ans = apply(f,q);
-      in_object_scope--;
 
       /* Unstack THIS */
       UNLOCK(symb->value);

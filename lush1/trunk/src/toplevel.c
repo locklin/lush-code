@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.31 2005-02-19 18:10:07 leonb Exp $
+ * $Id: toplevel.c,v 1.32 2005-04-25 18:57:46 leonb Exp $
  **********************************************************************/
 
 
@@ -110,9 +110,6 @@ extern void undump (char *s);
 
 /* From BINARY.C */
 extern int in_bwrite;
-
-/* From OOSTRUCT.C */
-extern int in_object_scope;
 
 /* FORWARD */
 static void recur_doc_init(void);
@@ -242,7 +239,6 @@ start_lisp(int argc, char **argv, int quietflag)
   error_doc.error_call = NIL;
   recur_doc_init();
   dx_sp = dx_stack - 1;
-  in_object_scope = 0;
 
   context = &first_context;
   context->next = NIL;
@@ -307,7 +303,6 @@ start_lisp(int argc, char **argv, int quietflag)
       dx_sp = dx_stack - 1;
       line_pos = line_buffer;
       *line_buffer = 0;
-      in_object_scope = 0;
       in_bwrite = 0;
       p = NIL;
       where = &p;
@@ -336,7 +331,6 @@ start_lisp(int argc, char **argv, int quietflag)
       dx_sp = dx_stack - 1;
       line_pos = line_buffer;
       *line_buffer = 0;
-      in_object_scope = 0;
       in_bwrite = 0;
       for(;;)
         {
