@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.h,v 1.2 2005-02-11 16:30:30 leonb Exp $
+ * $Id: kcache.h,v 1.3 2005-04-27 15:42:49 leonb Exp $
  **********************************************************************/
 
 #ifndef KCACHE_H
@@ -77,22 +77,22 @@ void lasvm_kcache_destroy(lasvm_kcache_t *self);
 
 /* --- lasvm_kcache_set_maximum_size
    Sets the maximum memory size used by the cache.
-   Argument <entries> indicates the maximum cache memory.
+   Argument <entries> indicates the maximum cache memory in megabytes
    The default size is 256Mb.
 */
-void lasvm_kcache_set_maximum_size(lasvm_kcache_t *self, int entries);
+void lasvm_kcache_set_maximum_size(lasvm_kcache_t *self, long entries);
 
-/* --- lasvm_kcache_set_maximum_size
+/* --- lasvm_kcache_get_maximum_mb
    Returns the maximum cache memory.
  */
-int lasvm_kcache_get_maximum_size(lasvm_kcache_t *self);
+long lasvm_kcache_get_maximum_size(lasvm_kcache_t *self);
 
 /* --- lasvm_kcache_set_maximum_size
    Returns the currently used cache memory.
    This can slighly exceed the value specified by 
    <lasvm_kcache_set_maximum_size>.
  */
-int lasvm_kcache_get_current_size(lasvm_kcache_t *self);
+long lasvm_kcache_get_current_size(lasvm_kcache_t *self);
 
 /* --- lasvm_kcache_query
    Returns the possibly cached value of the Gram matrix element (<i>,<j>).

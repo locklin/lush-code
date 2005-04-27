@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.c,v 1.4 2005-02-12 02:32:48 leonb Exp $
+ * $Id: kcache.c,v 1.5 2005-04-27 15:42:49 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -46,8 +46,8 @@
 struct lasvm_kcache_s {
   lasvm_kernel_t func;
   void *closure;
-  int maxsize;
-  int cursize;
+  long maxsize;
+  long cursize;
   int l;
   int *i2r;
   int *r2i;
@@ -192,7 +192,7 @@ xextend(lasvm_kcache_t *self, int k, int nlen)
 	}
       self->rdata[k] = ndata;
       self->rsize[k] = nlen;
-      self->cursize += (nlen - olen) * sizeof(float);
+      self->cursize += (long)(nlen - olen) * sizeof(float);
     }
 }
 
@@ -219,7 +219,7 @@ xtruncate(lasvm_kcache_t *self, int k, int nlen)
       free(odata);
       self->rdata[k] = ndata;
       self->rsize[k] = nlen;
-      self->cursize += (nlen - olen) * sizeof(float);
+      self->cursize += (long)(nlen - olen) * sizeof(float);
     }
 }
 
@@ -410,7 +410,7 @@ lasvm_kcache_discard_row(lasvm_kcache_t *self, int i)
 }
 
 void 
-lasvm_kcache_set_maximum_size(lasvm_kcache_t *self, int entries)
+lasvm_kcache_set_maximum_size(lasvm_kcache_t *self, long entries)
 {
   ASSERT(self);
   ASSERT(entries>0);
@@ -418,14 +418,14 @@ lasvm_kcache_set_maximum_size(lasvm_kcache_t *self, int entries)
   xpurge(self);
 }
 
-int 
+long
 lasvm_kcache_get_maximum_size(lasvm_kcache_t *self)
 {
   ASSERT(self);
   return self->maxsize;
 }
 
-int 
+long
 lasvm_kcache_get_current_size(lasvm_kcache_t *self)
 {
   ASSERT(self);
