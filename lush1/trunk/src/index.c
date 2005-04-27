@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.26 2004-04-15 23:45:34 leonb Exp $
+ * $Id: index.c,v 1.27 2005-04-27 19:53:38 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -141,6 +141,8 @@ index_name(at *p)
   return string_buffer;
 }
 
+static at *index_set(struct index*,at**,at*,int);
+static at *index_ref(struct index*,at**);
 
 static at *
 index_listeval(at *p, at *q)
@@ -149,9 +151,6 @@ index_listeval(at *p, at *q)
   register int i;
   register at *qsav;
   at *myp[MAXDIMS];
-
-  static at *index_set(struct index*,at**,at*,int);
-  static at *index_ref(struct index*,at**);
 
   ind = p->Object;
 

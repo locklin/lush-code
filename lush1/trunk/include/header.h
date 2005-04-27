@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.63 2005-01-06 02:09:38 leonb Exp $
+ * $Id: header.h,v 1.64 2005-04-27 19:53:11 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -805,7 +805,6 @@ LUSHAPI void module_unload(at *atmodule);
 #define DATE_MINUTE     4
 #define DATE_SECOND     5
 
-extern char *ansidatenames[];
 extern class date_class;
 
 TLAPI char *str_date( at *p, int *pfrom, int *pto );

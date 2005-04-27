@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.52 2005-02-21 15:37:31 leonb Exp $
+ * $Id: unix.c,v 1.53 2005-04-27 19:53:38 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1487,7 +1487,7 @@ unix_popen(const char *cmd, const char *mode)
       for (i=0; i<kidpidsize; i++)
         if (kidpid[i])
           close(i);
-      execl("/bin/sh", "sh", "-c", cmd, 0);
+      execl("/bin/sh", "sh", "-c", cmd, NULL);
       _exit(127);
     }
   /* Parent process */
@@ -1594,7 +1594,7 @@ filteropen(const char *cmd, FILE **pfw, FILE **pfr)
         if (kidpid[i])
           close(i);
 #endif
-      execl("/bin/sh", "sh", "-c", string_buffer, 0);
+      execl("/bin/sh", "sh", "-c", string_buffer, NULL);
       _exit(127);
     }
   /* Parent process */ 
@@ -1688,7 +1688,7 @@ filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
         if (kidpid[i])
           close(i);
 # endif
-      execl("/bin/sh", "sh", "-c", string_buffer, 0);
+      execl("/bin/sh", "sh", "-c", string_buffer, NULL);
       _exit(127);
     }
   /* Parent process */ 

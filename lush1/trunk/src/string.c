@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.29 2005-01-26 03:04:52 leonb Exp $
+ * $Id: string.c,v 1.30 2005-04-27 19:53:38 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1041,13 +1041,13 @@ DX(xisprint)
     return NIL;
 #if HAVE_WCHAR_T
   {
-    int n = strlen(s);
+    int n = strlen((char*)s);
     mbstate_t ps;
     memset(&ps, 0, sizeof(mbstate_t));
     while(n > 0)
       {
 	wchar_t wc = 0;
-	int m = (int)mbrtowc(&wc, s, n, &ps);
+	int m = (int)mbrtowc(&wc, (char*)s, n, &ps);
 	if (m == 0)
 	  break;
 	if (m < 0)
