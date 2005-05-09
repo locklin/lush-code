@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.69 2005-01-17 18:23:32 leonb Exp $
+ * $Id: module.c,v 1.70 2005-05-09 14:53:01 leonb Exp $
  **********************************************************************/
 
 
@@ -1131,6 +1131,8 @@ DX(xmodule_depends)
 #if DLDBFD
   {
     struct module *mc = 0;
+    if (m->flags & MODULE_SO)
+      return NIL;
     /* Simulate unlink */
     if (dld_simulate_unlink_by_file(m->filename) < 0)
       dynlink_error(NIL);
