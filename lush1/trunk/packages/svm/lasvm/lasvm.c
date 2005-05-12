@@ -24,6 +24,11 @@
 # define FLT_EPSILON 1e-6
 #endif
 
+#if USE_CBLAS
+# include <cblas.h>
+#endif
+
+
 
 static void *
 xmalloc(int n)
@@ -245,8 +250,13 @@ gs1( lasvm_t *self, int i, double epsgr)
   if (g < 0)
     step = -step;
   self->alpha[i] += step;
+
+#if USE_CBLAS
+  cblas_daxpy(l, -step, row, 1, self->g, 1);
+#else
   for (j=0; j<l; j++)
     self->g[j] -= step * row[j];
+#endif
   self->minmaxflag = 0;
   return 1;
 }
@@ -296,8 +306,13 @@ gs2( lasvm_t *self, int imin, int imax, double epsgr)
   /* Perform update */
   self->alpha[imax] += step;
   self->alpha[imin] -= step;
+#if USE_CBLAS
+  cblas_daxpy(l, -step, rmax, 1, self->g, 1);
+  cblas_daxpy(l,  step, rmin, 1, self->g, 1);
+#else
   for (j=0; j<l; j++)
     self->g[j] -= step * ( rmax[j] - rmin[j] );
+#endif
   self->minmaxflag = 0;
   return 1;
 }
@@ -581,8 +596,12 @@ lasvm_predict(lasvm_t *self, int xi)
   double s = 0;
   if (self->sumflag)
     minmax(self);
+#if USE_CBLAS
+  s = cblas_ddot(l, alpha, 1, row, 1);
+#else
   for (j=0; j<l; j++)
     s += alpha[j] * row[j];
+#endif
   if (self->sumflag)
     s += (self->gmin + self->gmax) / 2;
   return s;
@@ -639,8 +658,12 @@ void lasvm_init( lasvm_t *self, int l,
           double s = self->g[i];
           float *row = lasvm_kcache_query_row(self->kernel, r2i[i] , k);
           int j;
+#if USE_CBLAS
+          s -= cblas_ddot(k, self->alpha, 1, row, 1);
+#else
           for (j=0; j<k; j++)
             s -= self->alpha[j] * row[j];
+#endif
           self->g[i] = s;
         }
     }
