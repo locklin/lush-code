@@ -26,8 +26,15 @@
 
 #if USE_CBLAS
 # include <cblas.h>
+# unded  USE_FLOAT
+# define USE_FLOAT 1
 #endif
 
+#if USE_FLOAT
+# define real_t float
+#else
+# define real_t double
+#endif
 
 
 static void *
@@ -55,16 +62,16 @@ struct lasvm_s
 {
   lasvm_kcache_t *kernel;
   int     sumflag;
-  double  cp;
-  double  cn;
+  real_t  cp;
+  real_t  cn;
   int     maxl;
   int     s;
   int     l;
-  double *alpha;
-  double *cmin;
-  double *cmax;
-  double *g;
-  double  gmin, gmax;
+  real_t *alpha;
+  real_t *cmin;
+  real_t *cmax;
+  real_t *g;
+  real_t  gmin, gmax;
   int     imin, imax;
   int     minmaxflag;
 };
@@ -75,10 +82,10 @@ checksize(lasvm_t *self, int l)
   int maxl = max(l,256);
   while (maxl < l)
     maxl += maxl;
-  self->alpha = (double*)xrealloc(self->alpha, maxl*sizeof(double));
-  self->cmin = (double*)xrealloc(self->cmin, maxl*sizeof(double));
-  self->cmax = (double*)xrealloc(self->cmax, maxl*sizeof(double));
-  self->g = (double*)xrealloc(self->g, maxl*sizeof(double));
+  self->alpha = (real_t*)xrealloc(self->alpha, maxl*sizeof(real_t));
+  self->cmin = (real_t*)xrealloc(self->cmin, maxl*sizeof(real_t));
+  self->cmax = (real_t*)xrealloc(self->cmax, maxl*sizeof(real_t));
+  self->g = (real_t*)xrealloc(self->g, maxl*sizeof(real_t));
   self->maxl = maxl;
 }
 
@@ -165,12 +172,12 @@ minmax( lasvm_t *self )
       int l = self->s;
       int imin = -1;
       int imax = -1;
-      double gmin = 0;
-      double gmax = 0;
-      double *alpha = self->alpha;
-      double *g = self->g;
-      double *cmin = self->cmin;
-      double *cmax = self->cmax;
+      real_t gmin = 0;
+      real_t gmax = 0;
+      real_t *alpha = self->alpha;
+      real_t *g = self->g;
+      real_t *cmin = self->cmin;
+      real_t *cmax = self->cmax;
 
       if (self->sumflag)
         {
@@ -179,8 +186,8 @@ minmax( lasvm_t *self )
         }
       for (i=0; i<l; i++)
         {
-          double gi = g[i];
-          double ai = alpha[i];
+          real_t gi = g[i];
+          real_t ai = alpha[i];
           if (gi<gmin && ai>cmin[i])
             {
               imin = i;
@@ -204,9 +211,8 @@ static int
 gs1( lasvm_t *self, int i, double epsgr)
 {
   int l = self->s;
-  int j;
-  double g;
-  double step, ostep, curv;
+  real_t g;
+  real_t step, ostep, curv;
   float *row;
   int *r2i;
   /* Determine coordinate to process */
@@ -252,10 +258,13 @@ gs1( lasvm_t *self, int i, double epsgr)
   self->alpha[i] += step;
 
 #if USE_CBLAS
-  cblas_daxpy(l, -step, row, 1, self->g, 1);
+  cblas_saxpy(l, -step, row, 1, self->g, 1);
 #else
-  for (j=0; j<l; j++)
-    self->g[j] -= step * row[j];
+  {
+    int j;
+    for (j=0; j<l; j++)
+      self->g[j] -= step * row[j];
+  }
 #endif
   self->minmaxflag = 0;
   return 1;
@@ -265,9 +274,8 @@ static int
 gs2( lasvm_t *self, int imin, int imax, double epsgr)
 {
   int l = self->s;
-  int j;
-  double gmin, gmax;
-  double step, ostep, curv;
+  real_t gmin, gmax;
+  real_t step, ostep, curv;
   float *rmin, *rmax;
   int *r2i;
   /* Determine coordinate to process */
@@ -297,7 +305,7 @@ gs2( lasvm_t *self, int imin, int imax, double epsgr)
   curv = rmax[imax]+rmin[imin]-rmax[imin]-rmin[imax];
   if (curv >= FLT_EPSILON)
     {
-      double ostep = (gmax - gmin) / curv;
+      real_t ostep = (gmax - gmin) / curv;
       if (ostep < step)
         step = ostep;
     }
@@ -307,11 +315,14 @@ gs2( lasvm_t *self, int imin, int imax, double epsgr)
   self->alpha[imax] += step;
   self->alpha[imin] -= step;
 #if USE_CBLAS
-  cblas_daxpy(l, -step, rmax, 1, self->g, 1);
-  cblas_daxpy(l,  step, rmin, 1, self->g, 1);
+  cblas_saxpy(l, -step, rmax, 1, self->g, 1);
+  cblas_saxpy(l,  step, rmin, 1, self->g, 1);
 #else
-  for (j=0; j<l; j++)
-    self->g[j] -= step * ( rmax[j] - rmin[j] );
+  {
+    int j;
+    for (j=0; j<l; j++)
+      self->g[j] -= step * ( rmax[j] - rmin[j] );
+  }
 #endif
   self->minmaxflag = 0;
   return 1;
@@ -326,10 +337,10 @@ swap( lasvm_t *self, int r1, int r2)
     self->v[r2]=tmp; }
 
   lasvm_kcache_swap_rr(self->kernel, r1, r2);
-  swap(double, alpha);
-  swap(double, cmin);
-  swap(double, cmax);
-  swap(double, g);
+  swap(real_t, alpha);
+  swap(real_t, cmin);
+  swap(real_t, cmax);
+  swap(real_t, g);
   if (self->minmaxflag)
     {
       if (self->imin==r1) 
@@ -349,14 +360,14 @@ evict( lasvm_t *self )
 {
   int i;
   int l = self->l;
-  double *alpha = self->alpha;
-  double *cmin = self->cmin;
-  double *cmax = self->cmax;
-  double *g = self->g;
+  real_t *alpha = self->alpha;
+  real_t *cmin = self->cmin;
+  real_t *cmax = self->cmax;
+  real_t *g = self->g;
   
   if (self->sumflag)
     {
-      double gmin, gmax;
+      real_t gmin, gmax;
       minmax(self);
       gmin = self->gmin;
       gmax = self->gmax;
@@ -384,7 +395,7 @@ lasvm_process( lasvm_t *self, int xi, double y )
   int l = self->l;
   int *i2r = 0;
   float *row = 0;
-  double g;
+  real_t g;
   int j;
   /* Checks */
   if (self->s != self->l)
@@ -472,13 +483,13 @@ shrink(lasvm_t *self)
 {
   int i;
   int s = self->s;
-  double *alpha = self->alpha;
-  double *cmin = self->cmin;
-  double *cmax = self->cmax;
-  double *g = self->g;
+  real_t *alpha = self->alpha;
+  real_t *cmin = self->cmin;
+  real_t *cmax = self->cmax;
+  real_t *g = self->g;
   if (self->sumflag)
     {
-      double gmin, gmax;
+      real_t gmin, gmax;
       minmax(self);
       gmin = self->gmin;
       gmax = self->gmax;
@@ -505,10 +516,10 @@ unshrink(lasvm_t *self)
   int s = self->s;
   if (s < l)
     {
-      double *alpha = self->alpha;
-      double *g = self->g;
+      real_t *alpha = self->alpha;
+      real_t *g = self->g;
       int *r2i = lasvm_kcache_r2i(self->kernel, l);
-      double a;
+      real_t a;
       int i,j;
       for(i=s; i<l; i++)
         g[i] = (alpha[i]>0) ? 1.0 : -1.0;
@@ -575,9 +586,9 @@ double lasvm_get_w2(lasvm_t *self)
 {
   int i;
   int l = self->l;
-  double *alpha = self->alpha;
-  double *g = self->g;
-  double s = 0;
+  real_t *alpha = self->alpha;
+  real_t *g = self->g;
+  real_t s = 0;
   for (i=0; i<l; i++)
     if (alpha[i]>0)
       s += alpha[i] * ( g[i] + 1.0 );
@@ -589,18 +600,20 @@ double lasvm_get_w2(lasvm_t *self)
 double 
 lasvm_predict(lasvm_t *self, int xi)
 {
-  int j;
   int l = self->l;
   float *row = lasvm_kcache_query_row(self->kernel, xi, l);
-  double *alpha = self->alpha;
-  double s = 0;
+  real_t *alpha = self->alpha;
+  real_t s = 0;
   if (self->sumflag)
     minmax(self);
 #if USE_CBLAS
-  s = cblas_ddot(l, alpha, 1, row, 1);
+  s = cblas_sdot(l, alpha, 1, row, 1);
 #else
-  for (j=0; j<l; j++)
-    s += alpha[j] * row[j];
+  {
+    int j;
+    for (j=0; j<l; j++)
+      s += alpha[j] * row[j];
+  }
 #endif
   if (self->sumflag)
     s += (self->gmin + self->gmax) / 2;
@@ -611,7 +624,7 @@ double
 lasvm_predict_nocache(lasvm_t *self, int xi)
 { 
   int cached = lasvm_kcache_status_row(self->kernel, xi);
-  double s = lasvm_predict(self, xi);
+  real_t s = lasvm_predict(self, xi);
   if (! cached) /* do not keep what was not cached */
     lasvm_kcache_discard_row(self->kernel, xi);
   return s;
@@ -655,14 +668,16 @@ void lasvm_init( lasvm_t *self, int l,
       int *r2i = lasvm_kcache_r2i(self->kernel, k);
       for (i=0; i<k; i++)
         {
-          double s = self->g[i];
+          real_t s = self->g[i];
           float *row = lasvm_kcache_query_row(self->kernel, r2i[i] , k);
-          int j;
 #if USE_CBLAS
-          s -= cblas_ddot(k, self->alpha, 1, row, 1);
+          s -= cblas_sdot(k, self->alpha, 1, row, 1);
 #else
-          for (j=0; j<k; j++)
-            s -= self->alpha[j] * row[j];
+          {
+            int j;
+            for (j=0; j<k; j++)
+              s -= self->alpha[j] * row[j];
+          }
 #endif
           self->g[i] = s;
         }
