@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxmac.h,v 1.7 2005-01-20 17:57:44 leonb Exp $
+ * $Id: idxmac.h,v 1.8 2005-05-13 21:26:51 ysulsky Exp $
  **********************************************************************/
 
 #ifndef IDXMAC_H
@@ -86,6 +86,10 @@ max = (idx)->offset; \
     (ni)->dim[6]=(i)->dim[6]; (ni)->mod[6]=(i)->mod[6]; 
 #define Midx_copy_dim8(ni,i) Midx_copy_dim7((ni),i); \
     (ni)->dim[7]=(i)->dim[7]; (ni)->mod[7]=(i)->mod[7];
+#define Midx_copy_dim9(ni,i) Midx_copy_dim8((ni),i); \
+    (ni)->dim[8]=(i)->dim[8]; (ni)->mod[8]=(i)->mod[8];
+#define Midx_copy_dim10(ni,i) Midx_copy_dim9((ni),i); \
+    (ni)->dim[9]=(i)->dim[9]; (ni)->mod[9]=(i)->mod[9];
 
 
 #define Midx_update_mod_from_dim(i0) \
@@ -273,6 +277,8 @@ struct srg *newi = & name2(_srg_,newi)
 #define Midx_clone6(ni,i) Midx_short_clone(ni,i);Midx_copy_dim6(ni,i)}
 #define Midx_clone7(ni,i) Midx_short_clone(ni,i);Midx_copy_dim7(ni,i)}
 #define Midx_clone8(ni,i) Midx_short_clone(ni,i);Midx_copy_dim8(ni,i)}
+#define Midx_clone9(ni,i) Midx_short_clone(ni,i);Midx_copy_dim9(ni,i)}
+#define Midx_clone10(ni,i) Midx_short_clone(ni,i);Midx_copy_dim10(ni,i)}
 
 #define Midx_clone(newi, i, Type) \
 { int j; \
