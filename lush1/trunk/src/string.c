@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.30 2005-04-27 19:53:38 leonb Exp $
+ * $Id: string.c,v 1.31 2005-05-16 22:59:22 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -985,7 +985,7 @@ DX(xstr_asc)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-#if  HAVE_WCHAR_T
+#if HAVE_WCHAR_T
   {
     mbstate_t ps;
     wchar_t wc = 0;
@@ -994,8 +994,12 @@ DX(xstr_asc)
     if (wc)
       return NEW_NUMBER(wc);
   }
+  if (s[0])
+    /* negative to indicate illegal sequence */
+    return NEW_NUMBER((s[0] & 0xff) - 256); 
 #else
   if (s[0])
+    /* assume iso-8859-1 */
     return NEW_NUMBER(s[0] & 0xff);
 #endif
   error(NIL,"Empty string",APOINTER(1));
