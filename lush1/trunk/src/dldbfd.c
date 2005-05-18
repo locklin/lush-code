@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.47 2005-04-18 22:19:30 leonb Exp $
+ * $Id: dldbfd.c,v 1.48 2005-05-18 21:00:58 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -841,6 +841,11 @@ handle_common_symbols(module_entry *ent)
 
 /* ---------------------------------------- */
 /* PATCHING BFD FOR SPECIAL ARCHS */
+
+#ifdef __GNUC__
+static void write_const_pointer(void **pointer, void *value)
+     __attribute__ ((unused));
+#endif
 
 static void
 write_const_pointer(void **pointer, void *value)
