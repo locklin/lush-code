@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.21 2004-05-12 21:13:36 leonb Exp $
+ * $Id: fileio.c,v 1.22 2005-05-18 19:00:15 leonb Exp $
  **********************************************************************/
 
 
@@ -1087,6 +1087,12 @@ search_lushdir(char *progname)
       "../share/lush/sys/stdenv.dump",
       "../share/lush/sys/stdenv.lshc",
       "../share/lush/sys/stdenv.lsh",
+      "../../sys/stdenv.dump",
+      "../../sys/stdenv.lshc",
+      "../../sys/stdenv.lsh",
+      "../../share/lush/sys/stdenv.dump",
+      "../../share/lush/sys/stdenv.lshc",
+      "../../share/lush/sys/stdenv.lsh",
 #ifdef DIR_DATADIR
       DIR_DATADIR "/lush/sys/stdenv.dump",
       DIR_DATADIR "/lush/sys/stdenv.lshc",
