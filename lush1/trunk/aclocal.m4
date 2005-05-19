@@ -135,13 +135,13 @@ changequote(<<, >>)dnl--- small database of common cpu models
            if grep -q 'GenuineIntel' /proc/cpuinfo ; then
              if test ${host_cpu} = x86_64 ; then
                ac_cpu=nocona
-             elif grep -q 'entium[(R)]* 4' /proc/cpuinfo ; then
-               ac_cpu=pentium4
-             elif grep -q 'entium[(R)]* M' /proc/cpuinfo ; then
+             elif grep -q 'Pentium[(RTM)]* M' /proc/cpuinfo ; then
                ac_cpu=pentium-m
-             elif grep -q 'entium[(R)]* III' /proc/cpuinfo ; then
+             elif grep -q 'family[[:blank:]]*: *15' /proc/cpuinfo ; then
+               ac_cpu=pentium4
+             elif grep -q 'Pentium[(RTM)]* III' /proc/cpuinfo ; then
                ac_cpu=pentium3
-             elif grep -q 'entium[(R)]* II' /proc/cpuinfo ; then
+             elif grep -q 'Pentium[(RTM)]* II' /proc/cpuinfo ; then
                ac_cpu=pentium2
              fi
            elif grep -q 'AuthenticAMD' /proc/cpuinfo ; then
