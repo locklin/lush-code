@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.12 2003-02-28 18:39:23 leonb Exp $
+ * $Id: htable.c,v 1.13 2005-05-19 15:46:28 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -271,7 +271,7 @@ hash_value(at *p)
   at *slow = p;
 
 again:
-  x = (x<<1)|((long)x<0 ? 0 : 1);
+  x = (x<<1)|((x&0x80000000) ? 0 : 1);
   if (!p)
     {
       return x;
@@ -279,9 +279,9 @@ again:
   else if (p->flags & C_NUMBER)
     {
       x ^= 0x1010;
-      x ^= ((unsigned long*)&p->Number)[0];
-      if (sizeof(real) >= 2*sizeof(unsigned long))
-        x ^= ((unsigned long*)&p->Number)[1];
+      x ^= ((unsigned int*)&p->Number)[0];
+      if (sizeof(real) >= 2*sizeof(unsigned int))
+        x ^= ((unsigned int*)&p->Number)[1];
     }
   else if (p->flags & C_CONS)
     {
@@ -568,15 +568,12 @@ htable_get(at *ht, at *key)
 
 DX(xhashcode)
 {
-  static char format[8];
   char buffer[24];
   unsigned long x;
   ARG_NUMBER(1);
   ARG_EVAL(1);
   x = hash_value(APOINTER(1));
-  if (! format[0])
-    sprintf(format,"%%0%dlx", (int)(2*sizeof(unsigned long)));
-  sprintf(buffer,format, x);
+  sprintf(buffer,"%08x", (int)(x));
   return new_string(buffer);
 }
 

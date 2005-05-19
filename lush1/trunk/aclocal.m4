@@ -96,6 +96,11 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
         AC_HELP_STRING([--enable-debug],
                        [Compile with debugging options (default: no)]),
         [ac_debug=$enableval],[ac_debug=no])
+   AC_ARG_WITH(cpu,
+        AC_HELP_STRING([--with-cpu=NAME],
+                       [Compile for specified cpu (default: auto)]),
+        [ac_cpu=$withval],[ac_cpu=auto])
+
    AC_ARG_VAR(OPTS, [Optimization flags for all compilers.])
    if test x${OPTS+set} = xset ; then
      saved_CFLAGS="$CFLAGS"
@@ -123,9 +128,38 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
        AC_CHECK_CC_OPT([-Wall],[OPTS="$OPTS -Wall"])
        AC_CHECK_CC_OPT([-O3],[OPTS="$OPTS -O3"],
          [ AC_CHECK_CC_OPT([-O2], [OPTS="$OPTS -O2"] ) ] )
-       cpu=${host_cpu}
-       if test -n "${cpu}" ; then
-         opt="-march=${cpu}"
+       if test "$ac_cpu" = "auto" ; then
+         AC_MSG_CHECKING([cpu model (override with --with-cpu=NAME)])
+         if test -r /proc/cpuinfo ; then
+changequote(<<, >>)dnl--- small database of common cpu models
+           if grep -q 'GenuineIntel' /proc/cpuinfo ; then
+             if test ${host_cpu} = x86_64 ; then
+               ac_cpu=nocona
+             elif grep -q 'entium[(R)]* 4' /proc/cpuinfo ; then
+               ac_cpu=pentium4
+             elif grep -q 'entium[(R)]* M' /proc/cpuinfo ; then
+               ac_cpu=pentium-m
+             elif grep -q 'entium[(R)]* III' /proc/cpuinfo ; then
+               ac_cpu=pentium3
+             elif grep -q 'entium[(R)]* II' /proc/cpuinfo ; then
+               ac_cpu=pentium2
+             fi
+           elif grep -q 'AuthenticAMD' /proc/cpuinfo ; then
+             if test ${host_cpu} = x86_64 ; then
+               ac_cpu=k8
+             elif grep -q 'Athlon' /proc/cpuinfo ; then
+               ac_cpu=athlon
+             fi
+           fi
+changequote([, ])dnl--- fin
+         fi        
+         if test "$ac_cpu" = "auto" ; then
+           ac_cpu=${host_cpu}
+         fi
+       fi
+       AC_MSG_RESULT(${ac_cpu-unkown})
+       if test -n "${ac_cpu}" ; then
+         opt="-march=${ac_cpu}"
          AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"],
 	  [ opt="-mcpu=${cpu}"
             AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"]) ] )
