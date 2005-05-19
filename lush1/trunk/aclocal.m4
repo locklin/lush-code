@@ -146,7 +146,9 @@ changequote(<<, >>)dnl--- small database of common cpu models
              fi
            elif grep -q 'AuthenticAMD' /proc/cpuinfo ; then
              if test ${host_cpu} = x86_64 ; then
-               ac_cpu=k8
+               ac_cpu=opteron
+             elif grep -q 'sse' /proc/cpuinfo ; then
+               ac_cpu=athlon-xp
              elif grep -q 'Athlon' /proc/cpuinfo ; then
                ac_cpu=athlon
              fi
