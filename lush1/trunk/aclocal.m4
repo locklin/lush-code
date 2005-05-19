@@ -98,8 +98,8 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
         [ac_debug=$enableval],[ac_debug=no])
    AC_ARG_WITH(cpu,
         AC_HELP_STRING([--with-cpu=NAME],
-                       [Compile for specified cpu (default: auto)]),
-        [ac_cpu=$withval],[ac_cpu=auto])
+                       [Compile for specified cpu (default: ${host_cpu})]),
+        [ac_cpu=$withval])
 
    AC_ARG_VAR(OPTS, [Optimization flags for all compilers.])
    if test x${OPTS+set} = xset ; then
@@ -128,43 +128,16 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
        AC_CHECK_CC_OPT([-Wall],[OPTS="$OPTS -Wall"])
        AC_CHECK_CC_OPT([-O3],[OPTS="$OPTS -O3"],
          [ AC_CHECK_CC_OPT([-O2], [OPTS="$OPTS -O2"] ) ] )
-       if test "$ac_cpu" = "auto" ; then
-         AC_MSG_CHECKING([cpu model (override with --with-cpu=NAME)])
-         if test -r /proc/cpuinfo ; then
-changequote(<<, >>)dnl--- small database of common cpu models
-           if grep -q 'GenuineIntel' /proc/cpuinfo ; then
-             if test ${host_cpu} = x86_64 ; then
-               ac_cpu=nocona
-             elif grep -q 'Pentium[(RTM)]* M' /proc/cpuinfo ; then
-               ac_cpu=pentium-m
-             elif grep -q 'family[[:blank:]]*: *15' /proc/cpuinfo ; then
-               ac_cpu=pentium4
-             elif grep -q 'Pentium[(RTM)]* III' /proc/cpuinfo ; then
-               ac_cpu=pentium3
-             elif grep -q 'Pentium[(RTM)]* II' /proc/cpuinfo ; then
-               ac_cpu=pentium2
-             fi
-           elif grep -q 'AuthenticAMD' /proc/cpuinfo ; then
-             if test ${host_cpu} = x86_64 ; then
-               ac_cpu=opteron
-             elif grep -q 'sse' /proc/cpuinfo ; then
-               ac_cpu=athlon-xp
-             elif grep -q 'Athlon' /proc/cpuinfo ; then
-               ac_cpu=athlon
-             fi
-           fi
-changequote([, ])dnl--- fin
-         fi        
-         if test "$ac_cpu" = "auto" ; then
-           ac_cpu=${host_cpu}
-         fi
+       if test -z "$ac_cpu" ; then
+         AC_MSG_WARN([use --with-cpu=X to override cpu options below.])
        fi
-       AC_MSG_RESULT(${ac_cpu-unkown})
-       if test -n "${ac_cpu}" ; then
-         opt="-march=${ac_cpu}"
-         AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"],
-	  [ opt="-mcpu=${cpu}"
+       opt="-march=${ac_cpu-${host_cpu}}"
+       AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"],
+	  [ opt="-mcpu=${ac_cpu-${host_cpu}}"
             AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"]) ] )
+       if test -z "$ac_cpu" -a "$host_cpu" = "i686" ; then
+            AC_CHECK_CC_OPT([-mmmx],[OPTS="$OPTS -mmmx"])
+            AC_CHECK_CC_OPT([-msse],[OPTS="$OPTS -msse"])
        fi
      fi
    fi
