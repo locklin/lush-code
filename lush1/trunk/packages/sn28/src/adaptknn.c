@@ -29,14 +29,16 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: adaptknn.c,v 1.2 2003-03-18 18:17:14 leonb Exp $
+ * $Id: adaptknn.c,v 1.3 2005-06-03 04:10:09 leonb Exp $
  **********************************************************************/
 
 
 #include "header.h"
 #include "codebook.h"
 
-#define MAXFLOAT ((flt)(1e38))
+#ifndef MAXFLOAT
+# define MAXFLOAT ((flt)(1e38))
+#endif
 
 
 /**************************************************************************/
@@ -343,6 +345,7 @@ knn_class(flt *x, struct codebook *cb, int nclass, int k)
 
 static flt perf_knn_err;
 static flt perf_knn_rej;
+static int number_of_labels(struct codebook *cb);
 
 flt 
 perf_knn(struct codebook *cbtst, struct codebook *cbref, int knn)
@@ -350,7 +353,6 @@ perf_knn(struct codebook *cbtst, struct codebook *cbref, int knn)
   int      i;
   int      err=0,rej=0;
   int      clas,nclas;
-  static int number_of_labels(struct codebook *cb);
 
   nclas = number_of_labels(cbref);
   for (i=0;i<cbtst->ncode;i++) {

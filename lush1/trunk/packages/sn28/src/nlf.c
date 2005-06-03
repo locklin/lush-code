@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nlf.c,v 1.1 2003-03-18 18:17:20 leonb Exp $
+ * $Id: nlf.c,v 1.2 2005-06-03 04:10:09 leonb Exp $
  **********************************************************************/
 
 
@@ -97,25 +97,24 @@ nlf_listeval(at *p, at *q)
   return ans;
 }
 
+static flt f_0(struct nlf *n, float x);
+static flt f_lisp(struct nlf *n, float x);
+static flt f_bell(struct nlf *n, float x);
+static flt df_bell(struct nlf *n, float x);
+static flt f_tanh(struct nlf *n, float x);
+static flt df_tanh(struct nlf *n, float x);
+static flt f_lin(struct nlf *n, float x);
+static flt f_piecewise(struct nlf *n, float x);
+static flt f_threshold(struct nlf *n, float x);
+static flt f_spline(struct nlf *n, float xx);
+static flt df_spline(struct nlf *n, float xx);
+static flt ddf_spline(struct nlf *n, float xx);
+static flt df_all(struct nlf *n, float xx);
+static flt ddf_all(struct nlf *n, float xx);
 
 void
 nlf_serialize(at **pp, int code)
 {
-  static flt f_0(struct nlf *n, float x);
-  static flt f_lisp(struct nlf *n, float x);
-  static flt f_bell(struct nlf *n, float x);
-  static flt df_bell(struct nlf *n, float x);
-  static flt f_tanh(struct nlf *n, float x);
-  static flt df_tanh(struct nlf *n, float x);
-  static flt f_lin(struct nlf *n, float x);
-  static flt f_piecewise(struct nlf *n, float x);
-  static flt f_threshold(struct nlf *n, float x);
-  static flt f_spline(struct nlf *n, float xx);
-  static flt df_spline(struct nlf *n, float xx);
-  static flt ddf_spline(struct nlf *n, float xx);
-  static flt df_all(struct nlf *n, float xx);
-  static flt ddf_all(struct nlf *n, float xx);
-  
   static flt (*ftable[])(struct nlf*, flt) =  { 
     f_0, f_lisp, f_bell, df_bell, f_tanh, df_tanh, 
     f_lin, f_piecewise, f_threshold, 

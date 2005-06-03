@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.70 2005-05-09 14:53:01 leonb Exp $
+ * $Id: module.c,v 1.71 2005-06-03 04:10:09 leonb Exp $
  **********************************************************************/
 
 
@@ -90,7 +90,7 @@ typedef struct nsbundle_s {
   struct nsbundle_s *prev;
   struct nsbundle_s *next;
   NSObjectFileImage nsimage;
-  NSModule *nsmodule;
+  NSModule nsmodule;
   int executable;
   int beingworked;
 } nsbundle_t;
@@ -376,8 +376,7 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
     {
       strcpy(bundle->name, tmpname("/tmp","bundle"));
       sprintf(cmd, 
-	      "ld -bundle -flat_namespace -undefined suppress"
-	      " \"%s\" -lbundle1.o -lgcc -lSystem -o \"%s\"", 
+	      "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"", 
 	      fname, bundle->name);
       nsbundle_error = "Cannot create bundle from object file";
       if (system(cmd) == 0)
@@ -674,7 +673,7 @@ DX(xmodule_executable_p)
     error(NIL,"Not a module", p);
   m = p->Object;
   if (m->flags & MODULE_EXEC)
-    return true();
+    return TLtrue();
   return NIL;
 }
 
@@ -690,7 +689,7 @@ DX(xmodule_unloadable_p)
   m = p->Object;
   if (m->flags & MODULE_STICKY)
      return NIL;
-     return true();
+  return TLtrue();
 }
 
 DX(xmodule_defs)

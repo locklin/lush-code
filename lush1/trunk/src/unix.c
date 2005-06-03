@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.53 2005-04-27 19:53:38 leonb Exp $
+ * $Id: unix.c,v 1.54 2005-06-03 04:10:09 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -786,9 +786,11 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
 
 #if HAVE_LIBREADLINE
 # if HAVE_READLINE_READLINE_H
-#  define READLINE 1
-#  if RL_READLINE_VERSION >= 0x400
-#   define READLINE_COMPLETION 1
+#  ifdef RL_READLINE_VERSION
+#   define READLINE 1
+#   if RL_READLINE_VERSION >= 0x400
+#     define READLINE_COMPLETION 1
+#   endif
 #  endif
 # endif
 #endif

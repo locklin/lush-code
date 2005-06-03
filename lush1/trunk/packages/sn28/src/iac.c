@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: iac.c,v 1.1 2003-03-18 18:17:17 leonb Exp $
+ * $Id: iac.c,v 1.2 2005-06-03 04:10:09 leonb Exp $
  **********************************************************************/
 
 
@@ -134,7 +134,8 @@ DX(xupdate_inhibition)
  */
 
 #ifndef NOSPARE
-
+# define alpha iac_alpha
+# define decay iac_decay
 static flt alpha,beta,mygamma,max,min,rest,decay;
 
 static void
