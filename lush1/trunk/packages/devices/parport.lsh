@@ -22,12 +22,16 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: parport.lsh,v 1.4 2005-06-08 03:21:44 profshadoko Exp $
+;;; $Id: parport.lsh,v 1.5 2005-06-08 04:44:42 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
 ;; reading/writing data from/to the parallel port
 
 (libload "libc/stopwatch")
+
+;; for info, see:
+;; http://www.sephail.net/c/lpif/lpif.c
+;; http://www.linuxfocus.org/common/src/article205/ppdev.html
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -46,6 +50,7 @@
 (defclass parport object
   ((-str-) dev)
   ((-int-) fd)
+  ((-int-) reverse)
   )
 
 #? (new parport <d>)
@@ -65,7 +70,9 @@
     (delete this))
   (when (<> 0 (parport-claim fd))
     (printf "could not claim ownership of parport %s\n" dev)
-    (delete this)) )
+    (delete this)) 
+  (setq reverse 0)
+  (parport-datadir fd reverse) ())
 
 (defmethod parport -destructor ()
   (parport-release fd)
@@ -74,7 +81,19 @@
 
 #? (==> <parport> write <b>)
 ;; write unsigned byte <b> to parport
-(defmethod parport write (b) (parport-write fd b))
+(defmethod parport write (b) 
+  (when (<> 0 reverse) 
+    (setq reverse 0)
+    (parport-datadir fd reverse))
+  (parport-write fd b))
+
+#? (==> <parport> read)
+;; read unsigned byte from parport
+(defmethod parport read ()
+  (when (= 0 reverse) 
+    (setq reverse 255)
+    (parport-datadir fd reverse))
+  (parport-read fd))
 
 #? (==> <parport> control <b>)
 ;; write unsigned byte <b> to control lines of parport
@@ -85,7 +104,7 @@
 ;; The STROBE, AUTOFEED, and SELECT bits are inverted
 ;; by this function to compensate for the hardware inversion.
 ;; Return non-zero integer on error.
-(defmethod parport write (b) (parport-write fd b))
+(defmethod parport control (b) (parport-control fd b))
 
 #? (==> <parport> status)
 ;; return status of parport
@@ -139,6 +158,16 @@
   ((-int-) fd)
   (to-int #{ (ioctl ($fd, PPRELEASE)) #}))
 
+#? (parport-datadir <fd> <b>)
+;; set the direction of the data pins.
+;; <b> is an int.
+;; <b>=0 for output, <b>=255 for input.
+;; This uses <ioctl(fd,PPDATADIR,b)>.
+(de parport-datadir (fd b)
+  ((-int-) fd)
+  ((-int-) b)
+  (to-int #{ ioctl($fd, PPDATADIR, &$b) #}))
+
 #? (parport-write <fd> <b>)
 ;; write unsigned byte <b> to the parport <fd>
 ;; using <ioctl(fd,PPWDATA,b)>.
@@ -146,6 +175,16 @@
   ((-int-) fd)
   ((-ubyte-) b)
   (to-int #{ ioctl($fd, PPWDATA, &$b) #}))
+
+#? (parport-read <fd> )
+;; read unsigned byte from the parport <fd>
+;; using <ioctl(fd,PPRDATA,b)>.
+(de parport-read (fd)
+  ((-int-) fd)
+  (let ((b 0))
+    ((-ubyte-) b)
+    (to-int #{ ioctl($fd, PPRDATA, &$b) #})
+    (to-double b)))
 
 #? (parport-control <fd> <b>)
 ;; write unsigned byte <b> to the control lines
@@ -191,6 +230,7 @@
           #}
 	  parport-open parport-claim 
 	  parport-close parport-release
+	  parport-datadir parport-read
 	  parport-write parport-control
 	  parport-status
 	  (parport))
