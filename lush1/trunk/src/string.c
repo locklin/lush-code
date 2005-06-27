@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.32 2005-06-27 19:11:58 leonb Exp $
+ * $Id: string.c,v 1.33 2005-06-27 20:35:46 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -976,6 +976,44 @@ DX(xdowncase)
   return rr;
 }
 
+DX(xisprint)
+{
+  unsigned char *s;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  s = (unsigned char*) ASTRING(1);
+  if (!s || !*s)
+    return NIL;
+#if HAVE_WCHAR_T
+  {
+    int n = strlen((char*)s);
+    mbstate_t ps;
+    memset(&ps, 0, sizeof(mbstate_t));
+    while(n > 0)
+      {
+	wchar_t wc = 0;
+	int m = (int)mbrtowc(&wc, (char*)s, n, &ps);
+	if (m == 0)
+	  break;
+	if (m < 0)
+	  return NIL;
+	if (! iswprint(wc))
+	  return NIL;
+	s += m;
+	n -= m;
+      }
+  }
+#else
+  while (*s) {
+    int c = *(unsigned char*)s;
+    if (! (isascii(c) && isprint(c)))
+      return NIL;
+    s++;
+  }
+#endif
+  return true();
+}
+
 
 /* ----------------------- */
 
@@ -1035,43 +1073,135 @@ DX(xstr_chr)
 #endif
 }
 
-DX(xisprint)
+
+/*------------------------ */
+
+static at *
+explode_bytes(char *s)
 {
-  unsigned char *s;
+  at *p = NIL;
+  at **where = &p;
+  while (*s)
+    {
+      int code = *s;
+      *where = cons(NEW_NUMBER(code & 0xff),NIL);
+      where = &((*where)->Cdr);
+      s += 1;
+    }
+  return p;
+}
+
+static at *
+explode_chars(char *s)
+{
+#if HAVE_WCHAR_T
+  at *p = NIL;
+  at **where = &p;
+  int n = strlen(s);
+  mbstate_t ps;
+  memset(&ps, 0, sizeof(mbstate_t));
+  while (n > 0)
+    {
+      wchar_t wc = 0;
+      int m = (int)mbrtowc(&wc, s, n, &ps);
+      if (m == 0)
+        break;
+      if (m > 0)
+        {
+          *where = cons(NEW_NUMBER(wc),NIL);
+          where = &((*where)->Cdr);
+          s += m;
+          n -= m;
+        }
+      else
+        error(NIL,"Illegal characters in string",NIL);
+    }
+  return p;
+#else
+  return explode_bytes(s);
+#endif
+}
+
+static at *
+implode_bytes(at *p)
+{
+  char c;
+  struct large_string ls;
+  large_string_init(&ls);
+  while (CONSP(p))
+    {
+      if (! NUMBERP(p->Car))
+        error(NIL,"Number expected",p->Car);
+      c = (char)(p->Car->Number);
+      if (p->Car->Number != (real)(unsigned char)c)
+        error(NIL,"Integer in range 0..255 expected",p->Car);
+      large_string_add(&ls, &c, 1);
+      p = p->Cdr;
+    }
+  return large_string_collect(&ls);
+}
+
+static at *
+implode_chars(at *p)
+{
+#if HAVE_WCHAR_T
+  mbstate_t ps;
+  struct large_string ls;
+  memset(&ps, 0, sizeof(mbstate_t));
+  large_string_init(&ls);
+  while (CONSP(p))
+    {
+      char buffer[MB_LEN_MAX];
+      wchar_t wc;
+      int d;
+      if (! NUMBERP(p->Car))
+        error(NIL,"Number expected",p->Car);
+      wc = (wchar_t)(p->Car->Number);
+      if (p->Car->Number != (real)wc)
+        error(NIL,"Integer expected",p->Car);
+      d = wcrtomb(buffer, wc, &ps);
+      if (d > 0)
+        large_string_add(&ls, buffer, d);
+      else
+        error(NIL,"Integer is out of range",p->Car);
+      p = p->Cdr;
+    }
+  return large_string_collect(&ls);
+#else
+  return explode_bytes(p);
+#endif
+}
+
+DX(xexplode_bytes)
+{
   ARG_NUMBER(1);
   ARG_EVAL(1);
-  s = (unsigned char*) ASTRING(1);
-  if (!s || !*s)
-    return NIL;
-#if HAVE_WCHAR_T
-  {
-    int n = strlen((char*)s);
-    mbstate_t ps;
-    memset(&ps, 0, sizeof(mbstate_t));
-    while(n > 0)
-      {
-	wchar_t wc = 0;
-	int m = (int)mbrtowc(&wc, (char*)s, n, &ps);
-	if (m == 0)
-	  break;
-	if (m < 0)
-	  return NIL;
-	if (! iswprint(wc))
-	  return NIL;
-	s += m;
-	n -= m;
-      }
-  }
-#else
-  while (*s) {
-    int c = *(unsigned char*)s;
-    if (! (isascii(c) && isprint(c)))
-      return NIL;
-    s++;
-  }
-#endif
-  return true();
+  return explode_bytes(ASTRING(1));
 }
+
+DX(xexplode_chars)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return explode_chars(ASTRING(1));
+}
+
+DX(ximplode_bytes)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return implode_bytes(APOINTER(1));
+}
+
+DX(ximplode_chars)
+{
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  return implode_chars(APOINTER(1));
+}
+
+
+
 
 /*------------------------ */
 
@@ -1897,9 +2027,13 @@ init_string(void)
   dx_define("upcase", xupcase);
   dx_define("upcase1", xupcase1);
   dx_define("downcase", xdowncase);
+  dx_define("isprint", xisprint);
   dx_define("asc", xstr_asc);
   dx_define("chr", xstr_chr);
-  dx_define("isprint", xisprint);
+  dx_define("explode-bytes", xexplode_bytes);
+  dx_define("explode-chars", xexplode_chars);
+  dx_define("implode-bytes", ximplode_bytes);
+  dx_define("implode-chars", ximplode_chars);
   dx_define("stringp", xstringp);
   dx_define("regex-match", xregex_match);
   dx_define("regex-extract", xregex_extract);
