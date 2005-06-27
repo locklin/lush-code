@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.31 2005-05-16 22:59:22 leonb Exp $
+ * $Id: string.c,v 1.32 2005-06-27 19:11:58 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -985,7 +985,7 @@ DX(xstr_asc)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-#if HAVE_WCHAR_T
+#if 0 /* Disabled for compatibility reasons */
   {
     mbstate_t ps;
     wchar_t wc = 0;
@@ -1007,7 +1007,7 @@ DX(xstr_asc)
 
 DX(xstr_chr)
 {
-#if HAVE_WCHAR_T
+#if 0 /* Disabled for compatibility reasons */
   char s[MB_LEN_MAX+1];
   size_t m;
   mbstate_t ps;
