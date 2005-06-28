@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.22 2005-05-18 19:00:15 leonb Exp $
+ * $Id: fileio.c,v 1.23 2005-06-28 21:42:21 leonb Exp $
  **********************************************************************/
 
 
@@ -1419,22 +1419,23 @@ attempt_open_read(char *s, char *suffixes)
   /*** stdin ***/
   if (! strcmp(s, "$stdin"))
     return stdin;
-
+  
   /*** pipes ***/
   if (*s == '|') {
     errno = 0;
-    f = popen(s + 1, "r");
-    if (f)
+    if ((f = popen(s + 1, "r"))) {
+      FMODE_BINARY(f);
       return f;
-    else
+    } else
       return NIL;
   }
-
+  
   /*** search and open ***/
   name = search_file(s,suffixes);
-  if (name && ((f = fopen(name, "r"))))
+  if (name && ((f = fopen(name, "rb")))) {
+    FMODE_BINARY(f);
     return f;
-  else
+  } else
     return NIL;
 }
 
@@ -1490,9 +1491,10 @@ attempt_open_write(char *s, char *suffixes)
   /*** pipes ***/
   if (*s == '|') {
     errno = 0;
-    if ((f = popen(s + 1, "w")))
+    if ((f = popen(s + 1, "w"))) {
+      FMODE_BINARY(f);
       return f;
-    else
+    } else
       return NIL;
   }
 
@@ -1503,9 +1505,10 @@ attempt_open_write(char *s, char *suffixes)
   }
 
   /*** open ***/
-  if ((f = fopen(s, "w")))
+  if ((f = fopen(s, "w"))) {
+    FMODE_BINARY(f);
     return f;
-  else
+  } else
     return NIL;
 }
 
@@ -1554,9 +1557,10 @@ attempt_open_append(char *s, char *suffixes)
   /*** pipes ***/
   if (*s == '|') {
     errno = 0;
-    if ((f = popen(s + 1, "w")))
+    if ((f = popen(s + 1, "w"))) {
+      FMODE_BINARY(f);
       return f;
-    else
+    } else
       return NIL;
   }
 
@@ -1567,9 +1571,10 @@ attempt_open_append(char *s, char *suffixes)
   }
   
   /*** open ***/
-  if ((f = fopen(s, "a")))
+  if ((f = fopen(s, "a"))) {
+    FMODE_BINARY(f);
     return f;
-  else
+  } else
     return NIL;
 }
 
