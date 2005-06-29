@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.h,v 1.3 2005-04-27 15:42:49 leonb Exp $
+ * $Id: kcache.h,v 1.4 2005-06-29 20:47:13 leonb Exp $
  **********************************************************************/
 
 #ifndef KCACHE_H
@@ -77,17 +77,17 @@ void lasvm_kcache_destroy(lasvm_kcache_t *self);
 
 /* --- lasvm_kcache_set_maximum_size
    Sets the maximum memory size used by the cache.
-   Argument <entries> indicates the maximum cache memory in megabytes
+   Argument <entries> indicates the maximum cache memory in bytes
    The default size is 256Mb.
 */
 void lasvm_kcache_set_maximum_size(lasvm_kcache_t *self, long entries);
 
-/* --- lasvm_kcache_get_maximum_mb
+/* --- lasvm_kcache_get_maximum_size
    Returns the maximum cache memory.
  */
 long lasvm_kcache_get_maximum_size(lasvm_kcache_t *self);
 
-/* --- lasvm_kcache_set_maximum_size
+/* --- lasvm_kcache_get_current_size
    Returns the currently used cache memory.
    This can slighly exceed the value specified by 
    <lasvm_kcache_set_maximum_size>.
