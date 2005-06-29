@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lasvmvector.lsh,v 1.6 2005-02-22 18:05:17 leonb Exp $
+;;; $Id: lasvmvector.lsh,v 1.7 2005-06-29 18:13:07 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -91,6 +91,18 @@
     }#}
     n ) )
 
+(defmethod SparseVector build(ivec dvec)
+  ((-idx1- (-int-)) ivec)
+  ((-idx1- (-double-)) dvec)
+  (let ((n (idx-dim ivec 0)))
+    (when (<> (idx-dim dvec 0) n)
+      (error "dimension mismatch") )
+    (==> this clear)
+    (for (i 0 (1- n))
+         ((-int-) i n)
+         (==> this set (ivec i) (dvec i)) ) )
+  this )
+
 (defmethod SparseVector unpack(n)
   ((-int-) n)
   (let ((m (double-matrix n)))
@@ -122,6 +134,7 @@
         if (*s) $ans = 0;
     }#}
     ans ) )
+
 
 (de sparsevector-lincomb(v1 a1 v2 a2)
   ((-double-) a1 a2)
@@ -178,6 +191,32 @@
 (defmethod SparseVectorCollection vector(i)
   ((-int-) i)
   (to-obj SparseVector (arr i)) )
+
+
+(de save-sparsevectorcollection(data fname)
+  (let ((n (idx-dim :data:arr 0)))
+    (writing fname
+      (bwrite n)
+      (for (i 0 (1- n))
+           (let ((v (==> data vector i)))
+             (if (> (==> v pairs) 0)
+                 (let ((ivec (int-matrix 1))
+                       (dvec (double-matrix 1)))
+                   (==> v contents ivec dvec)
+                   (bwrite (cons ivec dvec)) )
+               (bwrite ()) ) ) )
+      data ) ) )
+
+(de load-sparsevectorcollection(fname)
+  (reading fname
+    (let* ((n (bread))
+           (c (new sparsevectorcollection n)))
+      (for (i 0 (1- n))
+           (let ((x (bread)))
+             (when (consp x)
+               (let (((ivec . dvec) x) (v (==> c vector i)))
+                 (==> v build ivec dvec) ) ) ) )
+      c ) ) )
 
 
 ;; -------------------------------- sparsekernel
@@ -323,7 +362,8 @@
   (dhc-make ()
 	    #{ #include "vector.h" #}
 	    (SparseVector sparsevector -destructor 
-			  clear size pairs get set contents unpack parse)
+			  clear size pairs get set contents build 
+                          unpack parse)
 	    sparsevector-lincomb sparsevector-dot 
 	    (SparseVectorCollection SparseVectorCollection vector)
 	    (SVMSparseKernel SVMSparseKernel 
