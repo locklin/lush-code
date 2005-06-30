@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svm.cpp,v 1.2 2004-02-17 20:46:31 leonb Exp $
+ * $Id: svm.cpp,v 1.3 2005-06-30 19:39:05 leonb Exp $
  **********************************************************************/
 
 // ---------------------------------------------------------------------
@@ -150,7 +150,7 @@ void info_flush()
 class Cache
 {
 public:
-	Cache(int l,int size);
+	Cache(int l,long size);
 	~Cache();
 
 	// request data [0,len)
@@ -160,7 +160,7 @@ public:
 	void swap_index(int i, int j);	// future_option
 private:
 	int l;
-	int size;
+	long size;
 	struct head_t
 	{
 		head_t *prev, *next;	// a cicular list
@@ -174,7 +174,7 @@ private:
 	void lru_insert(head_t *h);
 };
 
-Cache::Cache(int l_,int size_):l(l_),size(size_)
+Cache::Cache(int l_,long size_):l(l_),size(size_)
 {
 	head = (head_t *)calloc(l,sizeof(head_t));	// initialized to 0
 	size /= sizeof(Qfloat);
@@ -1091,7 +1091,7 @@ public:
 	:Kernel(prob.l, prob.x, param)
 	{
 		clone(y,y_,prob.l);
-		cache = new Cache(prob.l,(int)(param.cache_size*(1<<20)));
+		cache = new Cache(prob.l,(long)(param.cache_size*(1<<20)));
 	}
 	
 	Qfloat *get_Q(int i, int len) const
@@ -1129,7 +1129,7 @@ public:
 	ONE_CLASS_Q(const svm_problem& prob, const svm_parameter& param)
 	:Kernel(prob.l, prob.x, param)
 	{
-		cache = new Cache(prob.l,(int)(param.cache_size*(1<<20)));
+		cache = new Cache(prob.l,(long)(param.cache_size*(1<<20)));
 	}
 	
 	Qfloat *get_Q(int i, int len) const
@@ -1165,7 +1165,7 @@ public:
 	:Kernel(prob.l, prob.x, param)
 	{
 		l = prob.l;
-		cache = new Cache(l,(int)(param.cache_size*(1<<20)));
+		cache = new Cache(l,(long)(param.cache_size*(1<<20)));
 		sign = new schar[2*l];
 		index = new int[2*l];
 		for(int k=0;k<l;k++)
