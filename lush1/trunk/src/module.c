@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.72 2005-08-03 21:16:22 leonb Exp $
+ * $Id: module.c,v 1.73 2005-08-03 21:35:43 leonb Exp $
  **********************************************************************/
 
 
@@ -144,16 +144,16 @@ nsbundle_hset(const char *sname, nsbundle_t *mark)
       else if (s > 0)
         pp = &p->right;
       else 
-        {
-          p->def = mark;
-          return;
-        }
+        break;
     }
-  p = malloc(sizeof(struct nsbundle_sym_s));
-  p->name = strdup(sname);
+  if (! p)
+    {
+      p = malloc(sizeof(struct nsbundle_sym_s));
+      p->name = strdup(sname);
+      p->left = p->right = 0;
+      *pp = p;
+    }
   p->def = mark;
-  p->left = p->right = 0;
-  *pp = p;
 }
 
 static int
@@ -363,6 +363,8 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
     free(cmd);
   if (! nsbundle_error)
     return 0;
+  if (bundle->nsimage)
+    nsbundle_symmark(bundle, NULL);
   if (bundle->nsimage)
     NSDestroyObjectFileImage(bundle->nsimage);
   if (bundle->name)
