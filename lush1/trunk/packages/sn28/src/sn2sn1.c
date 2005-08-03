@@ -29,11 +29,29 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: sn2sn1.c,v 1.1 2003-03-18 18:17:21 leonb Exp $
+ * $Id: sn2sn1.c,v 1.2 2005-08-03 22:09:42 leonb Exp $
  **********************************************************************/
 
 
 #include "defn.h"
+
+
+/* ============= VARIABLES ============= */
+
+neurone *neurbase = NIL;
+int neurnombre = 0, neurmax = 0;
+neurone **neuraddress = NIL;
+
+synapse *synbase = NIL;
+int synnombre = 0, synmax = 0;
+
+#ifdef ITERATIVE
+weight *weightbase = NIL;
+int weightnombre = 0;
+int weightmax = 0;
+at *w_matrix = NIL;
+at *w_matrix_var = NIL;
+#endif
 
 
 /* ============= SEQUENCER ============= */

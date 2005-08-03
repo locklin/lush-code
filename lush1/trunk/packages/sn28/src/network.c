@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: network.c,v 1.1 2003-03-18 18:17:19 leonb Exp $
+ * $Id: network.c,v 1.2 2005-08-03 22:09:42 leonb Exp $
  **********************************************************************/
 
 
@@ -50,22 +50,19 @@ int *netconvert = NIL;          /* Tableau d'entier destines a stocker  */
                                 /* les conversions a effectuer au cours */
                                 /* des sauvegardes et relectures ..     */
 
-neurone *neurbase = NIL;
-int neurnombre = 0, neurmax = 0;
-neurone **neuraddress = NIL;
-
-synapse *synbase = NIL;
-int synnombre = 0, synmax = 0;
+extern neurone *neurbase;
+extern int neurnombre;
+extern neurone **neuraddress;
+extern synapse *synbase;
+extern int synnombre;
 
 #ifdef ITERATIVE
-weight *weightbase = NIL;
-int weightnombre = 0;
-int weightmax = 0;
-at *w_matrix = NIL;
-at *w_matrix_var = NIL;
+extern weight *weightbase;
+extern int weightnombre;
+extern int weightmax;
+extern at *w_matrix;
+extern at *w_matrix_var;
 #endif
-
-
 
 /* zero_reseau
    routines d'initialisation et de remise a zero pour main.c

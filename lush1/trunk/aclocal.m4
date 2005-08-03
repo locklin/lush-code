@@ -128,16 +128,15 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
        AC_CHECK_CC_OPT([-Wall],[OPTS="$OPTS -Wall"])
        AC_CHECK_CC_OPT([-O3],[OPTS="$OPTS -O3"],
          [ AC_CHECK_CC_OPT([-O2], [OPTS="$OPTS -O2"] ) ] )
-       if test -z "$ac_cpu" ; then
-         AC_MSG_WARN([use --with-cpu=X to override cpu options below.])
-       fi
        opt="-march=${ac_cpu-${host_cpu}}"
        AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"],
 	  [ opt="-mcpu=${ac_cpu-${host_cpu}}"
             AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"]) ] )
        if test -z "$ac_cpu" -a "$host_cpu" = "i686" ; then
-            AC_CHECK_CC_OPT([-mmmx],[OPTS="$OPTS -mmmx"])
-            AC_CHECK_CC_OPT([-msse],[OPTS="$OPTS -msse"])
+            AC_CHECK_CC_OPT([-mmmx],[OPTS="$OPTS -mmmx"
+              AC_MSG_WARN([use --with-cpu=cpuname to avoid assuming that MMX works.])])
+            AC_CHECK_CC_OPT([-msse],[OPTS="$OPTS -msse"
+              AC_MSG_WARN([use --with-cpu=cpuname to avoid assuming that SSE works.])])
        fi
      fi
    fi
