@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.73 2005-08-03 21:35:43 leonb Exp $
+ * $Id: module.c,v 1.74 2005-08-04 13:34:52 leonb Exp $
  **********************************************************************/
 
 
@@ -165,14 +165,14 @@ nsbundle_symmark(nsbundle_t *bundle, nsbundle_t *mark)
     {
       const char *sname = NSSymbolDefinitionNameInObjectFileImage(nsimg, ns);
       nsbundle_t *old = nsbundle_hget(sname);
-      if (old && mark && old!=&nsbundle_head && mark!=&nsbundle_head && old!=mark)
+      if (old && mark && old!=mark)
 	{
           static char buffer[512];
           sprintf(buffer,"duplicate definition of symbol '%s'", sname);
           nsbundle_error = buffer;
           return -1;
 	}
-      if (old==0 || old==&nsbundle_head || old==bundle)
+      if (old==0 || old==bundle)
 	nsbundle_hset(sname, mark);
     }
   return 0;
@@ -306,8 +306,6 @@ nsbundle_update(void)
 static int
 nsbundle_unload(nsbundle_t *bundle)
 {
-  if (bundle->nsimage)
-    nsbundle_symmark(bundle, &nsbundle_head);
   if (nsbundle_exec_all_but(bundle) < 0 ||
       nsbundle_update() < 0)
     return -1;
@@ -340,9 +338,12 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
   nsbundle_error = "out of memory";
   if ((cmd = malloc(fnamelen + 256)) && (bundle->name = malloc(256)))
     {
-      //strcpy(bundle->name, tmpname("/tmp","bundle"));
+#if DEBUGNAMES
       strcpy(bundle->name, fname);
       strcat(bundle->name, ".bundle");
+#else
+      strcpy(bundle->name, tmpname("/tmp","bundle"));
+#endif
       sprintf(cmd, 
 	      "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"", 
 	      fname, bundle->name);
@@ -818,13 +819,11 @@ cleanup_module(struct module *m)
 #if NSBUNDLE
   {
     struct module *mc = 0;
-    nsbundle_symmark(&m->bundle, &nsbundle_head);
     nsbundle_exec_all_but(&m->bundle);
     for (mc = root.next; mc != &root; mc = mc->next)
       if (mc->initname && mc->defs)
 	if (mc == m || mc->bundle.executable < 0)
 	  cleanup_defs(&classes, mc);
-    nsbundle_symmark(&m->bundle, &m->bundle);
     nsbundle_exec_all_but(NULL);
   }
 #endif
@@ -1120,8 +1119,7 @@ DX(xmodule_depends)
 #if NSBUNDLE
     struct module *mc = 0;
     /* Simulate unlink */
-    nsbundle_symmark(&m->bundle, &nsbundle_head);
-    nsbundle_exec_all_but(0);
+    nsbundle_exec_all_but(&m->bundle);
     for (mc = root.next; mc != &root; mc = mc->next)
       if (mc->initname && mc->defs)
 	if (mc->bundle.executable < 0)
@@ -1130,7 +1128,6 @@ DX(xmodule_depends)
             p = cons(mc->backptr, p);
           }
     /* Reset everything as it should be */
-    nsbundle_symmark(&m->bundle, &m->bundle);
     nsbundle_exec_all_but(NULL);
 #endif
   /* Return */
