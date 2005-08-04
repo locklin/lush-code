@@ -29,14 +29,14 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: sn2sn1.c,v 1.2 2005-08-03 22:09:42 leonb Exp $
+ * $Id: sn2sn1.c,v 1.3 2005-08-04 18:20:42 leonb Exp $
  **********************************************************************/
 
 
 #include "defn.h"
 
 
-/* ============= VARIABLES ============= */
+/* ============= GLOBALS ============= */
 
 neurone *neurbase = NIL;
 int neurnombre = 0, neurmax = 0;
@@ -49,10 +49,12 @@ int synnombre = 0, synmax = 0;
 weight *weightbase = NIL;
 int weightnombre = 0;
 int weightmax = 0;
-at *w_matrix = NIL;
-at *w_matrix_var = NIL;
 #endif
 
+flt theta, alpha, decay;
+#ifdef NEWTON
+flt mygamma, mu;
+#endif
 
 /* ============= SEQUENCER ============= */
 
@@ -131,6 +133,7 @@ map2neur(at *q1, at *q2, void (*f) (neurone *, neurone *))
 at *var_Nnum, *var_Snum, *var_Nmax, *var_Smax, *var_age;
 #ifdef ITERATIVE
 at *var_Wnum, *var_Wmax;
+at *w_matrix, *w_matrix_var;
 #endif
 /* compatibility */
 at *var_alpha, *var_decay, *var_theta;

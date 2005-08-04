@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: network.c,v 1.2 2005-08-03 22:09:42 leonb Exp $
+ * $Id: network.c,v 1.3 2005-08-04 18:20:42 leonb Exp $
  **********************************************************************/
 
 
@@ -46,23 +46,9 @@
 
 #include "defn.h"
 
-int *netconvert = NIL;          /* Tableau d'entier destines a stocker  */
+static int *netconvert = NIL;   /* Tableau d'entier destines a stocker  */
                                 /* les conversions a effectuer au cours */
                                 /* des sauvegardes et relectures ..     */
-
-extern neurone *neurbase;
-extern int neurnombre;
-extern neurone **neuraddress;
-extern synapse *synbase;
-extern int synnombre;
-
-#ifdef ITERATIVE
-extern weight *weightbase;
-extern int weightnombre;
-extern int weightmax;
-extern at *w_matrix;
-extern at *w_matrix_var;
-#endif
 
 /* zero_reseau
    routines d'initialisation et de remise a zero pour main.c
