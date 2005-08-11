@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.49 2005-08-03 21:57:03 leonb Exp $
+ * $Id: dldbfd.c,v 1.50 2005-08-11 17:47:36 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -298,12 +298,12 @@ value_of_bfd_symbol(asymbol *sym)
     /* Check that symbol is indeed defined */
     ASSERT(!bfd_is_com_section(sym->section) &&
            !bfd_is_und_section(sym->section) &&
-#ifdef BSF_DEBUGGING_RELOC
-           !(sym->flags & BSF_DEBUGGING_RELOC) &&
-#else
-           !(sym->flags & BSF_DEBUGGING) &&
-#endif
            !(sym->flags & BSF_WARNING) );
+#ifdef BSF_DEBUGGING_RELOC
+    ASSERT(!(sym->flags & BSF_DEBUGGING_RELOC));
+#else
+    ASSERT(!(sym->flags & BSF_DEBUGGING));
+#endif
     /* Return value of symbol */
     return sym->section->vma + sym->value;
 }
