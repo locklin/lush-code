@@ -1,0 +1,68 @@
+
+;; by Fu Jie Huang, Jan 2003
+
+;; understanding the data management components is crutial to understand Torch
+;; the most used components are: MatDataSet, IOAscii, Sequence and DiskXFile
+
+;; DiskXFile is the bottome layer, it has a "FILE *" and does the file I/O
+;; IOAscii has a "DiskXFile *" for obvious purpose, and defines the file format
+;; Sequence is the container to hold all the data read in by IOAscii
+;; MatDataSet uses IOAscii (or IOBin) to read the file into memory it manages
+
+;; part I.    IOAscii, Sequence
+;; *******************************************************************************
+;; IOAscii is fairly well designed, and is a good starting point to test-drive
+;; you just create an IOAscii object, and the constructor does all the work
+(libload "torch/torch")
+(setq a (new torch_IOAscii () "train_data.gz" () -1))
+
+;; "a" is now a lush object which points to a C++ object IOAscii. 
+;; this C++ object have all the information. try:
+(printf "\nread from train_data.gz: number_of_frames =%d, frame_size= %d\n"
+	(==> a getTotalNumberOfFrames)
+	(==> a get_frame_size))        
+
+;; has the whole file actually been read into memory?
+;; nope... we need to create a Sequence, and call the getSequence method to read:
+(setq b (new torch_Sequence () 1000 785))
+(==> a getSequence 0 :b:p)
+
+;; now let's check if "b" really has the data
+(printf "sequence #0: n_real_frames=%d, "
+	(==> b get_n_real_frames))
+
+;; check the content of the Sequence
+(printf "frames[0][0]=%f, frames[0][784]=%f\n"
+	(==> b frames_getval  0 0)     
+	(==> b frames_getval  0 784))    
+
+;; everything seems working great, let finish up...
+(delete b)
+(delete a)
+
+
+;; part II.    MatDataSet
+;; ****************************************************************************
+;; manipulating IOAscii and Sequence is tedious...
+;; let's now try the MatDataSet, which is supposed to do things automatically for us
+;; construct the MatDataSet object, and it will read and separate the data into 
+;; the Sequences pointed by "inputs_array" and "targets_array"
+
+(setq a (new torch_MatDataSet () "train_data.gz" -1 1 () -1 ()))
+
+;; check things out
+(printf "\n read with MatDataSet: n_examples=%d\n"
+	(==> a get_n_examples))
+
+;; has the whole file been read into memory? 
+;; yep... (you should see "# MatDataSet: 1000 exampls loaded")
+(==> a setExample 10 t t)
+(printf "example 10: inputs->frames[0][0]=%f, targets->frames[0][0]=%f\n"
+	(==> (==> a get_inputs)  frames_getval 0 0)    
+	(==> (==> a get_targets) frames_getval 0 0))   
+;; see... it's that simple
+
+;; finish up
+(delete a)
+
+

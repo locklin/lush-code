@@ -1,0 +1,209 @@
+<
+#? *** GSL: The Gnu Scientific Library 
+{<author> Fu Jie Huang, Yann LeCun}
+This section describes the interface to the popular
+Gnu Scientific Library. GSL is a huge library of numerical 
+functions (several thousand functions). The Lush GSL library 
+includes "raw" calls to GSL functions that may require conversions
+from Lush datastructures to GSL data structures. Higher-level 
+functions that encapsulate some commonly used GSL functionalities 
+to make them easy to use from Lush are provided in <packages/libnum.lsh>.
+
+An individual help entry is provided for each function,
+but no documentation is given. Users are refered to the
+GSL reference manual available at 
+{<hlink> http://sources.redhat.com/gsl}
+in HTML and .ps.gz (700KB). 
+
+GSL provides its own interface to the BLAS/CBLAS library.
+
+This GSL interface dynamically loads de libraries libgsl.so
+and libgslcblas.so (or their static counterparts if the .so
+are not available). The interface is designed to work with
+version 1.0 and version 1.2 of GSL. The 1.2 version that are
+not present in 1.0 exist in the interface, but produce an
+error message if called with a version in which they don't
+exist.
+
+Each GSL interface file (e.g. <gsl/cheb.lsh>, 
+<gsl/eigen.lsh>, etc...) can be loaded independently into 
+the interpreter. Loading <gsl/gsl.lsh> will load the entire GSL 
+interface. Functions in each file corresponds to the functions
+defined in the GSL header file of the same name.
+
+#? ** << gsl/demos/gsl-demos.hlp
+
+
+#? ** Using the Lush GSL interface
+
+There are three ways to call GSL functions from Lush:
+(1) directly from an inline C statement (compiled
+code only); (2) through the Lush "raw" interface
+function; (3) within an <idx2gsl> construct; (4) indirectly
+through one of the high-level functions provided in 
+<gsl/libgsl.lsh> described in a previous section. 
+
+The main question is how to convert Lush objects (numbers,
+vectors, matrices, functions, chunks of memory, etc) into objects 
+expected by GSL functions.
+
+#? * numbers and pointers to numbers
+
+Lush numbers can simply be passed to GSL functions
+that take numeric arguments:
+{<code>
+  (libload "gsl/specfunc")
+  (setq z (gsl_sf_gamma 10))
+</code>}
+
+Some functions write their result into a location whose
+address is passed as argument. It is not possible to get the
+address of a Lush number, but it is possible to get the address
+of an IDX element using the idx-ptr function. Here is an example:
+{<code>
+  (libload "gsl/specfunc")
+  (setq resu (double-matrix))
+  (gsl_sf_gamma_e 10 (idx-ptr resu))
+  (printf "%g\n" (resu))
+</code>}
+
+Complex numbers are not handled natively in Lush. 
+Complex numbers can be represented by an IDX with two elements.
+Applying <idx-ptr> to this idx will return a pointer that
+GSL can interpret as a <gsl_complex*>. Some GSL functions take
+complex scalar arguments. To facilitate the calling process, the Lush 
+interface to these functions is written to accept a pointer to a complex.
+Similarly, the Lush interface to GSL functions that return a complex number
+are written to accept a second complex pointer argument in which the result
+will be written. Here is an example:
+{<code>
+  (libload "gsl/complex")
+  (setq resu (double-matrix 2))
+  (setq x (double-matrix 2))
+  (x () '(1 2))
+  (gsl_complex_sin (idx-ptr x) (idx-ptr resu))
+  (printf "%g, %g\n" (resu 0) (resu 1))
+</code>}
+
+
+#? * pointers to data areas
+
+A large number of GSL functions take arguments that are pointers
+to data areas together with a size, and sometimes a stride. 
+This is easily handled by creating a Lush matrix, and obtaining
+a pointer to its data  with <idx-ptr>, the stride with
+<idx-modulo>, and the size with <idx-size>.
+{<code>
+   (libload "gsl/sort")
+   (setq z (int-matrix 10))
+   (z () '(3 6 4 1 6 4 9 0 2 7))
+   (gsl_sort_int (idx-ptr z) (idx-modulo z 0) (idx-dim z 0))
+   (pretty z)
+</code>}
+
+
+#? * vectors and matrices
+
+Most GSL functions that operate on vectors or matrices 
+expect <gsl_vector*> or <gsl_matrix*> objects as arguments.
+Functions are provided in <gsl/gsl-idx.lsh> to create such 
+structures from Lush vectors and matrices without copying any 
+real data. Those functions have the form 
+{<c> (gsl-vector-TYPE-idx-ptr m)}, or
+{<c> (gsl-matrix-TYPE-idx-ptr m)} where <TYPE> can be 
+<complex-double>, <complex-float>, <double>, <float>, <int>,
+<short>, <ubyte>, <byte>. They <malloc> the appropriate GSL
+structure that point to the data of <m> and return a <gptr>
+to it. The structure must be subsequently freed manually 
+with <free>. Here is an example:
+{<code>
+   (libload "gsl/sort")
+   (libload "gsl/gsl-idx")
+   (setq z (int-matrix 10))
+   (z () '(3 6 4 1 6 4 9 0 2 7))
+   (let ((z-gsl (gsl-vector-int-idx-ptr z)))
+     (gsl_sort_vector_int z-gsl)
+     (free z-gsl))
+   (pretty z)
+</code>}
+
+A much simpler way to do this is to use the <idx2gsl> construct.
+This construct automagically transforms IDX into the corresponding
+GSL structure within its scope:
+{<code>
+   (libload "gsl/sort")
+   (libload "gsl/gsl-idx")
+   (setq z (int-matrix 10))
+   (z () '(3 6 4 1 6 4 9 0 2 7))
+   (idx2gsl (gsl_sort_vector_int z))
+   (pretty z)
+</code>}
+
+N-vector and NxM-matrices of complex numbers should be represented
+in Lush as Nx2 matrices and NxMx2 tensors. The two "slices" in the
+last dimension should contain the real and imaginary parts of
+the complex number. In other words, the functions 
+<gsl-vector-complex-double-idx-ptr> and <gsl-vector-complex-float-idx-ptr>
+take Nx2 matrices as argument, and the functions
+<gsl-matrix-complex-double-idx-ptr> and <gsl-matrix-complex-float-idx-ptr>
+take NxMx2 tensors as argument. 
+
+#? * functions
+
+The pointer the the compiled C function associated with
+a Lisp function can be obtained with {<c> (to-gptr func)}.
+This allows to pass functions to GSL call that require them,
+such as minimizers and solvers.
+
+#? * allocating GSL data types
+
+Functions are provided to allocate GSL structures of various
+types. Look into the documentation for <aux_structure> for more details.
+
+#? ** << gsl/gsl-idx.lsh
+
+
+#? ** << gsl/gsl-config.lsh
+#? ** << gsl/aux_convert.lsh
+#? ** << gsl/aux_globalvar.lsh
+#? ** << gsl/aux_macro_func.lsh
+#? ** << gsl/aux_structure.lsh
+#? ** << gsl/blas.lsh
+#? ** << gsl/block.lsh
+#? ** << gsl/cheb.lsh
+#? ** << gsl/combination.lsh
+#? ** << gsl/complex.lsh
+#? ** << gsl/const.lsh
+#? ** << gsl/dht.lsh
+#? ** << gsl/diff.lsh
+#? ** << gsl/eigen.lsh
+#? ** << gsl/err.lsh
+#? ** << gsl/fft.lsh
+#? ** << gsl/fit.lsh
+#? ** << gsl/gsl_pow_int.lsh
+#? ** << gsl/histogram.lsh
+#? ** << gsl/ieee_utils.lsh
+#? ** << gsl/integration.lsh
+#? ** << gsl/interpolation.lsh
+#? ** << gsl/linalg.lsh
+#? ** << gsl/matrix.lsh
+#? ** << gsl/min.lsh
+#? ** << gsl/monte.lsh
+#? ** << gsl/multifit.lsh
+#? ** << gsl/multimin.lsh
+#? ** << gsl/multiroots.lsh
+#? ** << gsl/ntuple.lsh
+#? ** << gsl/ode-initval.lsh
+#? ** << gsl/permutation.lsh
+#? ** << gsl/poly.lsh
+#? ** << gsl/qrng.lsh
+#? ** << gsl/randist.lsh
+#? ** << gsl/rng.lsh
+#? ** << gsl/roots.lsh
+#? ** << gsl/siman.lsh
+#? ** << gsl/sort.lsh
+#? ** << gsl/specfunc.lsh
+#? ** << gsl/statistics.lsh
+#? ** << gsl/sum.lsh
+#? ** << gsl/sys.lsh
+#? ** << gsl/vector.lsh

@@ -1,0 +1,363 @@
+
+#? *** realtime video effects
+;; a simple GUI application that shows
+;; several real-time video effects, including:
+;; color manipulation, image difference,
+;; background substitution, edge detection, 
+;; and image warping.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; global settings
+
+;; activate video camera by default
+(when (and (not webcam) (not videocam)) (setq videocam t))
+
+(defvar *vin*)
+(defvar *sdl-screen*)
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(libload "video4linux/v4l")
+(libload "libidx/idx-macros")
+(libload "libimage/morpho")
+(libload "libimage/image-io")
+(libload "libimage/rgbaimage")
+(libload "libidx/idx-convol.lsh")
+(libload "video4linux/demos/video-utils")
+
+;; (libload "video/video-proc")
+;; (libload "sdl/libsdl")
+
+
+(ogre)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; no effect
+(defclass effect-noop object)
+
+(defmethod effect-noop fprop (in out) (idx-copy in out))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; color hacking
+(defclass effect-color object rgain ggain bgain)
+
+(defmethod effect-color effect-color ()
+  (setq rgain 128 ggain 128 bgain 128))
+
+(defmethod effect-color fprop (in out)
+  (img-gain-color in out rgain ggain bgain))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; image difference
+(defclass effect-difference object last)
+
+(defmethod effect-difference effect-difference (w h)
+  (setq last (ubyte-matrix h w 3)))
+
+(defmethod effect-difference fprop (in out)
+  (img-diff in last out)
+  (idx-copy in last))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; background subtratction and substitution
+(defclass effect-bgsubst object 
+  background
+  foreground
+  average
+  rez
+  radius1 radius2 threshold
+  xx yy n)
+
+(defmethod effect-bgsubst effect-bgsubst (f &optional (r1 1) (r2 1) (th 4000))
+  (setq background (image-read-rgb f))
+  (let ((w (idx-dim background 1))
+	(h (idx-dim background 0)))
+    (setq threshold th)
+    (setq radius1 r1)
+    (setq radius2 r2)
+    (setq rez (ubyte-matrix h w))
+    (setq average (float-matrix h w 3))
+    (setq n 1)))
+
+(defmethod effect-bgsubst init () (setq n 1))
+
+(defmethod effect-bgsubst fprop (in out)
+  (when (< n 10) (img-update-av m average (/ 1 n)) (incr n))
+  (img-flt-diffthres in average rez threshold 255 255 0)
+  (when (> radius1 0) (ubim-dilation rez radius1))
+  (when (> radius2 0) (ubim-erosion rez radius2))
+  (img-mask in rez background 255 out)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; edge enhancement
+(defclass effect-edge object
+  fin fout
+  bias
+  kernel)
+
+(defmethod effect-edge effect-edge (w h) 
+  (setq fin (float-matrix h w))
+  ;; (setq kernel [[-1 -2 -1][-2 12 -2][-1 -2 -1]])
+  (setq kernel [f
+	[-1 -2 -4 -2 -1]
+	[-2  2  4  2 -2]
+	[-4  4 12  4 -4]
+	[-2  2  4  2 -2]
+	[-1 -2 -4 -2 -1] ])
+  (idx-dotm0 kernel ((float-matrix) 0.4) kernel)
+  (setq fout (float-matrix (1+ (- h (idx-dim kernel 0)))
+		     (1+ (- w (idx-dim kernel 1)))))
+  (setq bias -40))
+
+(defmethod effect-edge fprop (in out)
+  (let ((h (1+ (- (idx-dim in 0) (idx-dim kernel 0))))
+	(w (1+ (- (idx-dim in 0) (idx-dim kernel 0)))))
+    (rgbaim-fluminance in fin)
+    (idx-m2convol fin kernel fout)
+    (let ((z (narrow (narrow out 0 (idx-dim fout 0) 1) 1 (idx-dim fout 1) 1)))
+      (fbim-beautify fout z bias))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; image warping
+(defclass effect-warp object pi pj bg in4 out4)
+
+(defmethod effect-warp effect-warp (w h)
+  (setq in4 (ubyte-matrix h w 4))
+  (setq out4 (ubyte-matrix h w 4))
+  (setq bg (ubyte-matrix 4))
+  (setq pi (int-matrix h w))
+  (setq pj (int-matrix h w))
+  (let ((ci (/ h 2)) (cj (/ w 2)) (d 0))
+    (for (i 0 (1- h))
+	 (for (j 0 (1- w))
+	      (pi i j (* 65536 (+ i (* 20 (sin (* (- i ci) 0.04))))))
+	      (pj i j (* 65536 (+ j (* 20 (sin (* (- j cj) 0.04))))))))))
+
+(defmethod effect-warp fprop (in out)
+  (idx-copy in (narrow in4 2 3 0))
+  (rgbaim-warp in4 out4 bg pi pj)
+  (idx-copy (narrow out4 2 3 0) out))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; (effect-demo  fx-difference 2)
+;; (effect-demo  fx-edge 2)
+;; (effect-demo  fx-bgsubst 2)
+;; vinp is the video input
+(de effect-demo (eff)
+  (let* ((si *height*)
+	 (sj *width*)
+	 (m (ubyte-matrix si sj 3))
+	 (out (if *sdl-screen* :*sdl-screen*:image (ubyte-matrix si sj 3)))
+	 (window *video-window*))
+    (setq *vin* (new v4ldevice *video-device* *video-standard* *video-input* sj si))
+    (==> *vin* grab-into-rgb m)
+    (setq *stop* ())
+    ;; (==> eff init m)
+    (while (not *stop*)
+      (==> *vin* grab-into-rgb m)	
+      (==> eff fprop m out)
+      (if  *sdl-screen*
+	  (==> *sdl-screen* flip)
+	(rgb-draw-matrix 2 2 out))
+      (process-pending-events))
+    (delete *vin*)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(when (not sendevent) (de sendevent p ()))
+(when (not testevent) (de testevent p ()))
+
+(when gui-window (delete gui-window))
+
+(de demo (n)
+    (cond
+     ((= 0 n)
+      ;; webcam
+      (setq *width* 320)
+      (setq *height* 240)
+      (setq *video-input* -1)
+      (setq *video-device* "/dev/video")
+      (setq *video-standard* "NTSC")
+      (setq *image-dir* (concat-fname lushdir "packages/video4linux/demos"))
+      (setq *image-array* [a "jabba-320x240.jpg"]))
+     ((= 1 n)
+      ;; NTSC video camera on composite input of BTTV card
+      (setq *width* 640)
+      (setq *height* 480)
+      (setq *video-input* 1)
+      (setq *video-device* "/dev/video")
+      (setq *video-standard* "NTSC")
+      (setq *image-dir* (concat-fname lushdir "packages/video4linux/demos"))
+      (setq *image-array* [a "jabba-640x480.jpg"]))
+     ((= 2 n)
+      ;; NTSC video camera on composite input of BTTV card
+      (setq *width* 640)
+      (setq *height* 480)
+      (setq *video-input* 1)
+      (setq *video-device* "/dev/video")
+      (setq *video-standard* "PAL")
+      (setq *image-dir* (concat-fname lushdir "packages/video4linux/demos"))
+      (setq *image-array* [a "jabba-640x480.jpg"]))
+     (t (error "invalid argument, use 0,1 or 2")))
+
+
+    (setq *stop* ())
+    (if *sdl-mode*
+	(progn
+	  (libload "sdl/libsdl")
+	  (sdl-initialize)
+	  (setq *sdl-screen* 
+		(new sdlidx-screen 
+		     (ubyte-matrix *height* *width* 3) "Video Effects")))
+      (setq *video-window* 
+	    (x11-window 10 10 (+ 4 *width*) (+ 4 *height*) "Video Effects")))
+    (setq adjust (lambda (c) 
+		   (when *vin* 
+		     (print (==> *vin* adjust
+			  (==> adj-bright getdata)
+			  (==> adj-hue getdata)
+			  (==> adj-colour getdata)
+			  (==> adj-contrast getdata)
+			  (==> adj-whiteness getdata))))))
+    ;; brightness/contrast adjustment doesn't work 
+    (setq adj-row 
+	  (new row
+	       (setq adj-bright (new vslider 0 255 adjust))
+	       (setq adj-hue (new vslider 0 255 adjust))
+	       (setq adj-colour (new vslider 0 255 adjust))
+	       (setq adj-contrast (new vslider 0 255 adjust))
+	       (setq adj-whiteness (new vslider 0 255 adjust))))
+
+    (setq fx-noop (new effect-noop))
+    (setq fx-noop-button
+	  (new stdbutton "start monitoring"
+	       (lambda (c) 
+		 (disable-stuff)
+		 (setq *stop* ())
+		 (effect-demo fx-noop))))
+    ;; effect-color
+    (setq fx-color (new effect-color))
+    (setq fx-color-button
+	  (new stdbutton "start color hacking"
+	       (lambda (c) 
+		 (disable-stuff)
+		 (setq *stop* ())
+		 (effect-demo fx-color))))
+    (setq color-red 
+	  (new hslider 0 255 
+	       (lambda (c) (setq :fx-color:rgain (==> c getdata)))))
+    (setq color-green
+	  (new hslider 0 255 
+	       (lambda (c) (setq :fx-color:ggain (==> c getdata)))))
+    (setq color-blue
+	  (new hslider 0 255 
+	       (lambda (c) (setq :fx-color:bgain (==> c getdata)))))
+    ;; image difference
+    (setq fx-difference (new effect-difference *width* *height*))
+    (setq fx-difference-button
+	  (new stdbutton "start image difference"
+	       (lambda (c) 
+		 (disable-stuff)
+		 (setq *stop* ())
+		 (effect-demo fx-difference))))
+    ;; background substitution
+    (setq fx-bgsubst 
+	  (new effect-bgsubst 
+	       (concat-fname *image-dir* (*image-array* 0))))
+    (setq fx-bgsubst-button
+	  (new stdbutton "start bckgd substitution"
+	       (lambda (c) 
+		 (disable-stuff)
+		 (setq *stop* ())
+		 (==> fx-bgsubst init)
+		 (effect-demo fx-bgsubst))))
+    (setq threshold-slider 
+	  (new hslider 0 100
+	       (lambda (c) (setq :fx-bgsubst:threshold 
+				 (* 100 (==> c getdata))))))
+    ;; edge extraction
+    (setq fx-edge (new effect-edge *width* *height*))
+    (setq fx-edge-button
+	  (new stdbutton "start edge enhancement"
+	       (lambda (c) 
+		 (disable-stuff)
+		 (setq *stop* ())
+		 (effect-demo fx-edge))))
+
+    ;; warp
+    (setq fx-warp (new effect-warp *width* *height*))
+    (setq fx-warp-button
+	  (new stdbutton "start image warp"
+	       (lambda (c) 
+		 (disable-stuff)
+		 (setq *stop* ())
+		 (effect-demo fx-warp))))
+
+
+    (setq enable-stuff 
+	  (lambda ()
+	    (==> fx-noop-button enable)
+	    (==> fx-color-button enable)
+	    (==> fx-difference-button enable)
+	    (==> fx-bgsubst-button enable)
+	    (==> fx-edge-button enable)
+	    (==> fx-warp-button enable)))
+    (setq disable-stuff 
+	  (lambda ()
+	    (==> fx-noop-button disable)
+	    (==> fx-color-button disable)
+	    (==> fx-difference-button disable)
+	    (==> fx-bgsubst-button disable)
+	    (==> fx-edge-button disable)
+	    (==> fx-warp-button disable)))
+    (setq reset-color-sliders
+	  (lambda (c) 
+	    (==> color-red setdata 128) (==> color-red execute)
+	    (==> color-green setdata 128) (==> color-green execute)
+	    (==> color-blue setdata 128) (==> color-blue execute)))
+
+    (==> color-red setdata :fx-color:rgain)
+    (==> color-green setdata :fx-color:ggain)
+    (==> color-blue setdata :fx-color:bgain)
+    (==> threshold-slider setdata (* 0.01 :fx-bgsubst:threshold ))
+    (setq gui-window
+	  (new windowobject 10 10 320 365 "effects"
+	       (new column
+		    ;; adj-row
+		    (new grid 2
+			 fx-noop-button
+			 (new emptyspace 10)
+			 fx-color-button
+			 (new column
+			      (new row color-red (new string "R "))
+			      (new row color-green (new string "G"))
+			      (new row color-blue (new string "B"))
+			      (new stdbutton "reset" reset-color-sliders))
+			 fx-difference-button
+			 (new emptyspace 10)
+			 fx-bgsubst-button
+			 (new column threshold-slider (new string "Threshold"))
+			 fx-edge-button
+			 (new emptyspace 10)
+			 fx-warp-button
+			 (new emptyspace 10)
+
+			 (new stdbutton "stop"
+			      (lambda (c) (enable-stuff) (setq *stop* t)))
+			 (new emptyspace 10))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(printf "this demo uses the video device /dev/video\n")
+(printf "type (demo 0) for 320x240 NTSC composite video or webcam\n")
+(printf "type (demo 1) for 640x480 NTSC composite video\n")
+(printf "type (demo 2) for 640x480 PAL composite video\n"))
+			  
