@@ -545,7 +545,7 @@ DX(xlisp_window)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
-  if (! EXTERNP(p, &object_class))
+  if (! (p && (p->flags & X_OOSTRUCT)))
     error(NIL,"Invalid delegate for graphic driver calls", p);
   return lisp_window(p);
 }
