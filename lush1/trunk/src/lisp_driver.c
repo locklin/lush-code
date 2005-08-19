@@ -390,15 +390,18 @@ lisp_pixel_map(wptr info, uint *data, int x, int y,
 {
   if (lisp_check(info, at_pixel_map))
     {
-      at *m = lisp_make_i32matrix(data, w, h);
-      at *q = cons(NEW_NUMBER(x),
-		   cons(NEW_NUMBER(y),
-			cons(m,
-			     cons(NEW_NUMBER(sx),
-				  cons(NEW_NUMBER(sy), NIL ) ) ) ) );
-      at *p = lisp_send(info,at_pixel_map,q);
-      UNLOCK(q);
-      UNLOCK(p);
+      if (data)
+        {
+          at *m = lisp_make_i32matrix(data, w, h);
+          at *q = cons(NEW_NUMBER(x),
+                       cons(NEW_NUMBER(y),
+                            cons(m,
+                                 cons(NEW_NUMBER(sx),
+                                      cons(NEW_NUMBER(sy), NIL ) ) ) ) );
+          at *p = lisp_send(info,at_pixel_map,q);
+          UNLOCK(q);
+          UNLOCK(p);
+        }
       return TRUE;
     }
   return FALSE;
@@ -410,15 +413,18 @@ lisp_hinton_map(wptr info, uint *data, int x, int y,
 {
   if (lisp_check(info, at_hinton_map))
     {
-      at *m = lisp_make_i32matrix(data, ncol, nlin);
-      at *q = cons(NEW_NUMBER(x),
-		   cons(NEW_NUMBER(y),
-			cons(m,
-			     cons(NEW_NUMBER(len),
-				  cons(NEW_NUMBER(apart), NIL ) ) ) ) );
-      at *p = lisp_send(info,at_hinton_map,q);
-      UNLOCK(q);
-      UNLOCK(p);
+      if (data)
+        {
+          at *m = lisp_make_i32matrix(data, ncol, nlin);
+          at *q = cons(NEW_NUMBER(x),
+                       cons(NEW_NUMBER(y),
+                            cons(m,
+                                 cons(NEW_NUMBER(len),
+                                      cons(NEW_NUMBER(apart), NIL ) ) ) ) );
+          at *p = lisp_send(info,at_hinton_map,q);
+          UNLOCK(q);
+          UNLOCK(p);
+        }
       return TRUE;
     }
   return FALSE;
@@ -550,6 +556,23 @@ DX(xlisp_window)
   return lisp_window(p);
 }
 
+DX(xlisp_window_delegate)
+{
+  at *p;
+  struct window *w;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &window_class))
+    error(NIL,"Not a window", p);
+  w = p->Object;
+  if (w->gdriver != &lisp_driver)
+    error(NIL,"Not a lisp-driver window",p);
+  p = w->driverdata;
+  LOCK(p);
+  return p;
+}
+
 
 /* ===================================================================== */
 /* INITIALISATION CODE */
@@ -560,6 +583,7 @@ void
 init_lisp_driver()
 {
   dx_define("lisp-window",xlisp_window);
+  dx_define("lisp-window-delegate", xlisp_window_delegate);
  
   /* Here is the list of methods accepted by the lisp driver.
      The qualification 'mandatory, recommanded, optional' are 
