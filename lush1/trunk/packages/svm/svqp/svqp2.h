@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.6 2004-11-02 16:41:51 leonb Exp $
+ * $Id: svqp2.h,v 1.7 2005-09-01 15:55:16 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -112,7 +112,7 @@ public:
   int      verbosity;
 
   // OPTIONAL INPUTS:
-  // - EPSKT is the tolerance for checking KKT conditions (default 1e-20)
+  // - EPSKT is the tolerance for checking KKT conditions (default 1e-10)
   // - EPSGR is the maximal L0 norm of the gradient on exit (default 1e-3)
   // - MAXST is the maximal conjugate gradient step (default 1e20)
 
