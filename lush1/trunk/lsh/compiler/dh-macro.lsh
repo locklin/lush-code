@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-macro.lsh,v 1.46 2005-04-26 00:42:41 leonb Exp $
+;;; $Id: dh-macro.lsh,v 1.47 2005-09-07 18:05:30 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -782,7 +782,7 @@
                ~(and (==> t1 is-a-bool) (==> t2 is-a-bool))
                ~(and (==> t1 is-a-gptr) (==> t2 is-a-gptr))
                ~(and (==> t1 is-a-strptr) (==> t2 is-a-strptr))
-               ~(and (==> t1 is-an-objptr) (==> t2 is-an-objptr)
+               ~(and (==> t1 is-an-objptr) (==> t2 is-an-objptr) 
                      (or (= cop "==") (= cop "!="))) )
       (dhc-error "illegal type(s) for test expression" t1))
     ;; (dhc-unify-types (==> t1 copy) (==> t2 copy))
@@ -793,10 +793,15 @@
   ;; if ~ignore unify bool ??
   (let ((e1 (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ()))
         (e2 (dhc-parse-expr-c (caddr source) (caddr :treetype:tn-list) ())))
-    (if (==> :(cadr :treetype:tn-list):type is-a-strptr)
-        (sprintf "(strcmp((%s)->data, (%s)->data) %s 0)" e1 e2 cop)
-      (concat "(" e1 cop e2 ")" ) )
-    ))
+    (cond
+     ((==> :(cadr :treetype:tn-list):type is-a-strptr)
+      (sprintf "(strcmp((%s)->data, (%s)->data) %s 0)" 
+               e1 e2 cop) )
+     ((==> :(cadr :treetype:tn-list):type is-an-objptr)
+      (sprintf "(memcmp((%s), (%s), sizeof(*(%s))) == 0)" e1 e2 e1) )
+     (t
+      (concat "(" e1 cop e2 ")" ) ) ) ) )
+
 
 (dhm-t =(source)                   (dhc-comparison-t "=="))
 (dhm-c =(source treetype retplace) (dhc-comparison-c "=="))
@@ -815,6 +820,26 @@
 
 (dhm-t >=(source)                   (dhc-comparison-t ">="))
 (dhm-c >=(source treetype retplace) (dhc-comparison-c ">="))
+
+
+(dhm-t ==(source)
+   (when (<> 3 (length source))
+     (dhc-error "this operator takes two arguments"))
+   (let* ((r1 (dhc-parse-expr-t (cadr source)))
+          (r2 (dhc-parse-expr-t (caddr source)))
+          (t1 :r1:type)
+          (t2 :r2:type))   
+     (when (and ~(and (==> t1 is-a-number) (==> t2 is-a-number))
+                ~(and (==> t1 is-a-bool) (==> t2 is-a-bool))
+                ~(and (==> t1 is-a-gptr) (==> t2 is-a-gptr))
+                ~(and (==> t1 is-a-ptr) (==> t2 is-a-ptr)) )
+       (dhc-error "illegal type(s) for test expression" t1))
+    (new t-node (list r1 r2) (new dhc-type 'dht-bool)) ) )
+
+(dhm-c ==(source treetype retplace)
+  (let ((e1 (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ()))
+        (e2 (dhc-parse-expr-c (caddr source) (caddr :treetype:tn-list) ())))
+    (concat "(" e1 "==" e2 ")" ) ) )
 
 
 ;;; ------------------------------------------------------------------------
