@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ffmpeg.lsh,v 1.10 2004-05-19 16:01:35 leonb Exp $
+;;; $Id: ffmpeg.lsh,v 1.11 2005-09-08 21:28:41 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -570,7 +570,6 @@
   ((-int-)  curlen)
   ((-real-) curpts)
   ((-int-)  curno)
-  ((-gptr-) pts)
   ;; information...
   ((-int-)  frame_height)
   ((-int-)  frame_width)
@@ -596,9 +595,7 @@
   ;; frame
   (setq gotcurframe ())
   (setq curframe (to-gptr #{ av_mallocz(sizeof(AVFrame)) #}))
-  (setq pts (to-gptr #{ av_mallocz(4*sizeof(int64_t)) #}))
-  (when (not (and curframe pts))
-    (error "Out of memory") )
+  (when (not curframe) (error "Out of memory"))
   (setq curptr (gptr ()))
   (setq curlen 0)
   (setq curpts -1)
@@ -619,7 +616,6 @@
   (when (not st) 
     (error "Stream not found") ) 
   #{{
-    int64_t *pts = (int64_t*)$pts;
     AVStream *st = (AVStream*)($st);
     AVCodecContext *enc = &st->codec;
     AVCodec *codec = avcodec_find_decoder(enc->codec_id);
@@ -627,7 +623,6 @@
        run_time_error("FFMPEG error: unsupported codec");
     if (avcodec_open(&st->codec, codec) < 0) 
        run_time_error("FFMPEG error: error while opening codec");
-    pts[0] = pts[1] = pts[2] = pts[3] = AV_NOPTS_VALUE;
     $frame_height = enc->height;
     $frame_width = enc->width;
   #ifdef RATIONAL_H
@@ -653,7 +648,6 @@
   (when (and (to-gptr ai) (to-gptr :ai:sources))
     (:ai:sources streamno (gptr ())) )
   (when curframe #{ av_free($curframe); #})
-  (when pts #{ av_free($pts); #})
   () )
 
 #? (==> <avvideosource> get-codec-name)
@@ -719,8 +713,7 @@
 ;; be called once in order to access the first video frame.
 
 (defmethod AvVideoSource nextframe()
-  (let ((again t)
-	(start t) )
+  (let ((again t))
     ;; increment curpts
     (when (>= curno 0)
       (let ((period (==> this get-frame-period))) 
@@ -740,34 +733,22 @@
 	(let ((pkt (==> data peek)))
 	  (when pkt
 	    #{{
-                int64_t *pts = (int64_t*)$pts;
 	        AVPacket *pkt = (AVPacket*)$pkt;
 	        $curlen = pkt->size;
 	        $curptr = (gptr) pkt->data;
-	        if ($start) { pts[1] = pkt->pts; $start=0; }
 	    }#} ) ) )
       ;; call decoder
       (when (> curlen 0)
 	#{{
-            int64_t *pts = (int64_t*)$pts;
             AVStream *st = (AVStream*)$st;
 	    AVFrame *curframe = (AVFrame*)$curframe;
-	    AVFormatContext *ai = (AVFormatContext*)$ai;
 	    int gotpic = 0;
 	    int ret = avcodec_decode_video(&st->codec, curframe, &gotpic, $curptr, $curlen);
 	    if (ret < 0) run_time_error("FFMPEG returned an error code while decoding");
 	    $curptr = (gptr) (((const char*)$curptr) + ret);
 	    $curlen = $curlen - ret;
 	    if (gotpic) {
-	      int64_t ipts;
 	      $gotcurframe = 1;
-	      ipts = pts[1];
-	      if (st->codec.has_b_frames && curframe->pict_type != FF_B_TYPE) {
-	         ipts = pts[2]; 
-	         pts[2] = pts[1]; 
-	      }
-	      if (ipts != AV_NOPTS_VALUE)
-	        $curpts = (double) ipts * ai->pts_num / ai->pts_den;
               $frame_height = st->codec.height;
               $frame_width = st->codec.width;
             #ifdef RATIONAL_H
