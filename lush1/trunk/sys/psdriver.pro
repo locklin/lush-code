@@ -111,7 +111,7 @@
 /PM { strokecheck
   gsave	translate scale
   8 [ 1 0 0 1 0 0 ] 
-  2 index 2 mul string /picstr exch def
+  2 index string /picstr exch def
   { currentfile picstr readhexstring pop } image
   grestore } bind def
 /CPM { strokecheck
