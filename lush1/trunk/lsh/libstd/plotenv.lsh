@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.9 2005-09-30 18:35:29 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.10 2005-09-30 18:56:20 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -169,6 +169,10 @@
   (setq plot-context-grid :plot-context-grid) 
   (setq locks 0) )
 
+(defmethod PlotPort window()
+  (or window attrwindow 
+      (when plotwindow :plotwindow:window) ) )
+
 (defmethod PlotPort text-rect(s &optional f)
   (let ((r ()))
     (when window 
@@ -196,8 +200,6 @@
 (defmethod PlotPort compute()
   ;; bounds calculation
   (setq cxmin () cxmax () cymin () cymax ())
-  (when (not curves)
-    (setq cxmin 0 cxmax 1 cymin 0 cymax 1) )
   (each ((curve curves))
     (let ((r (==> curve bounds)))
       (when r
@@ -213,6 +215,8 @@
     (setq cxmin (car xbounds) cxmax (cadr xbounds)) )
   (when ybounds
     (setq cymin (car ybounds) cymax (cadr ybounds)) )
+  (when (not (and cxmin cxmax cymin cymax))
+    (setq cxmin 0 cxmax 1 cymin 0 cymax 1) )
   (when (<= cxmax cxmin)
     (setq cxmax (1+ cxmin)) )
   (when (<= cymax cymin)
@@ -332,9 +336,9 @@
   (cond
    ((> locks 0)
     (setq dirty t) )
-   ((not (and window plotrect))
-    (when plotwindow (==> plotwindow expose)) )
-   (t
+   ((and plotwindow clear)
+    (==> plotwindow expose) )
+   ((and window plotrect)
     (setq dirty ())
     (==> this compute)
     (when clear
@@ -594,7 +598,7 @@
   (setq name (or nam (sprintf "Lush Plot #%d" (incr plot-window-id))))
   (setq plot (new PlotPort))
   (setq plotrect ()) 
-  (putp plot 'plotwindow this)
+  (setq :plot:plotwindow this)
   (setq menubar (new row
 		     (new menu "File"
 			  "Export..."
@@ -941,7 +945,8 @@
 	    (setq :pp:ybounds (list ymin ymax)) ) ) )
       (setq pc (new PlotCompat))
       (when (functionp object)
-	(==> pc command `(setq current-object ,object)) )
+        (let ((window (or window (==> pp window))))
+          (==> pc command `(setq current-object ,object)) ) )
       (==> pp add pc)
       (list pc pp object) ) )
   
@@ -980,35 +985,48 @@
       (==> pp execute) ) )
   
   ;; replacement for setup-axes.
-  (de setup-axes(xmin ymin xmax ymax &optional xstep ystep (name "") object x2l y2l)
-    (let* ((brect (list 0 0 (xsize) (ysize)))
-           (rrect (list xmin ymin xmax ymax)) )
+  (de setup-axes(&optional xmin ymin xmax ymax xstep ystep (name "") object x2l y2l)
+    (let* ((brect (when window (list 0 0 (xsize) (ysize))))
+           (rrect (when (and xmin ymin xmax ymax) (list xmin ymin xmax ymax))) )
       (setq plot-port (new-plot-port brect rrect (or object open-square)))
+      (let (((pc pp . aux) plot-port))
+        (when name
+          (setq :pp:title (when (<> name "") name)) )
+        (when xstep
+          (setq :pp:xlabels xstep)
+          (setq :pp:xticks xstep) )
+        (when ystep
+          (setq :pp:xlabels ystep)
+          (setq :pp:xticks ystep) )
+        (when (functionp x2l)
+          (setq :pp:xlabel2str x2l) )
+        (when (functionp y2l)
+          (setq :pp:xlabel2str y2l) ) )
       (==> (cadr plot-port) execute)
       plot-port) )
   
   ;; simple drawing functions.
   (de plt-clear()
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window :pp:window)))
+      (let ((window (or window (==> pp window))))
 	(==> pc command `(plt-clear)) ) ) )
   (de plt-move(x y)
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window :pp:window)))
+      (let ((window (or window (==> pp window))))
 	(==> pc command `(plt-move ,x ,y)) ) ) )
   (de plt-draw(x y)
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window :pp:window)))
+      (let ((window (or window (==> pp window))))
 	(==> pc command `(plt-draw ,x ,y)) )
       (==> pp execute) ) )
   (de plt-plot(x y)
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window :pp:window)))
+      (let ((window (or window (==> pp window))))
 	(==> pc command `(plt-plot ,x ,y)) )
       (==> pp execute) ) )
   (de plt-sd(x y v)
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window :pp:window)))
+      (let ((window (or window (==> pp window))))
 	(==> pc command `(plt-sd ,x ,y ,v)) )
       (==> pp execute) ) )
 
