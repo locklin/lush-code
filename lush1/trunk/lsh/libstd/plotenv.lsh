@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.6 2005-05-09 01:21:56 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.7 2005-09-30 16:05:46 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -70,6 +70,10 @@
 ;; between <lo> and <hi>. Otherwise they range from the largest
 ;; multiple smaller than <lo> to the smallest multiple higher than <hi>.
 (de plot-range(lo hi step &optional inside)
+  (when (<= hi lo)
+    (setq hi (1+ lo)) )
+  (when (<= step 0)
+    (setq step 1) )
   (let ((lb (int (/ lo step)))
 	(hb (- (int (- (/ hi step))))))
     (when inside
@@ -195,6 +199,10 @@
     (setq cxmin (car xbounds) cxmax (cadr xbounds)) )
   (when ybounds
     (setq cymin (car ybounds) cymax (cadr ybounds)) )
+  (when (<= cxmax cxmin)
+    (setq cxmax (1+ cxmin)) )
+  (when (<= cymax cymin)
+    (setq cymax (1+ cymin)) )
   ;; labels
   (let* ((cw (if plotrect (- (nth 2 plotrect) 40) 400))
 	 (ch (if plotrect (- (nth 3 plotrect) 40) 300))
@@ -402,23 +410,12 @@
 ;; PLOTCURVES...
 
 
-
-;; ---------
 ;; PLOTCURVE
 
 
-
-;; -------
 ;; PLOTBAR
 
 
-
-;; ---------
-;; PLOTANNOT
-
-
-
-;; ----------
 ;; PLOTCOMPAT
 
 
@@ -430,7 +427,7 @@
   cur-linestyle
   cmds)
 
-(defmethod PlotCompat plotcompatcurve()
+(defmethod PlotCompat plotcompat()
   (setq cur-object open-square)
   (setq cur-object-size 3)
   (setq cur-sd-size 3)
@@ -466,9 +463,11 @@
 
 (defmethod PlotCompat execute(rbx rby info)
   (gsave
-   (when (addclip (expand-rect :info:crect 1 1))
+   (when (addclip (expand-rect :info:crect 1 1)) 
+     (color -1)
+     (linestyle 0)
      (let ((current-object open-square)
-	   (object-size 3)
+           (object-size 3)
 	   (sd-bar-size 3)
 	   (ox ())
 	   (oy ()) )
@@ -535,12 +534,11 @@
       (list xmin ymin xmax ymax) ) ) )
 
 
-;; -------------
-
 
 
 ;; ----------------------------------------
 ;; PLOTWINDOW
+
 
 (when (not (numberp :plot-window-id))
   (setq :plot-window-id 0) )
@@ -552,7 +550,8 @@
   plot
   plotrect
   filereq
-  printreq )
+  printreq
+  setupwin )
 
 (defmethod PlotWindow PlotWindow(&optional nam)
   (setq name (or nam (sprintf "Lush Plot #%d" (incr plot-window-id))))
@@ -568,11 +567,7 @@
 			  (lambda(item) (==> thisform quit-action)) )
 		     (new menu "Setup"
 			  "Setup Plot..."
-			  (lambda(item) (==> thisform setup-action))
-			  "Setup Curve..."
-			  (lambda(item) (==> thisform curve-action))
-			  "Setup Axis..."
-			  (lambda(item) (==> thisform axis-action)) ) ))
+			  (lambda(item) (==> thisform setup-action)) ) ))
   (==> this WindowObject 0 0 600 420 (or name "Lush Plot") menubar) )
 
 (defmethod PlotWindow manage-geometry()
@@ -614,7 +609,7 @@
 ;; GUI
 
 (defmethod PlotWindow quit-action()
-  (delete this) )
+  (==> this delete) )
 
 (defmethod PlotWindow print-action()
   (when (not printreq)
@@ -630,34 +625,217 @@
 	     (lambda(s) (regex-match ".*\\.eps" s)) )
     (==> this sendplot (==> filereq getdata)) ) )
 
-;;; stuff below does not work.
-
-(defclass PlotWindowSetup YesNoRequester
-  titlestr)
-
-(defmethod PlotWindowSetup PlotWindowSetup(w)
-  (==> this yesnorequester w
-       (new column
-	    (new grid 2
-		 (new string "Title:")
-		 (setq titlestr (new editstring 20))
-		 (new string "Legend:")
-		 (new editstring 20) )
-	    (new checkbox "Display grid") )
-       "Ok" "Cancel" () ) )
-
 (defmethod PlotWindow setup-action()
-  (let ((r (new PlotWindowSetup this)))
-    (==> r setdata (list
-		    (or :plot:title "")
-		    (or :plot:legend "")
-		    (= :plot:grid 1)) )
-    (when (==> r popuplock)
-      (let (((title legend grid) (==> r getdata)))
-	(==> plot settitle title)
-	(==> plot setlegend legend)
-	(==> plot setgrid (if grid 1 0))
-	(==> this expose) ) ) ) )
+  (if (not setupwin)
+      (setq setupwin (new PlotPortController this)) )
+  (let ((window :setupwin:window))
+    (when (and window ogre-configure)
+      (ogre-configure t () () () ()) ) ) )
+
+
+
+;; ----------------------------------------
+;; PLOTPORTCONTROLLER
+
+
+
+;; PLOT DATA
+
+(defclass PlotDataSetup Form
+  titleedit )
+
+(defmethod PlotDataSetup PlotDataSetup()
+  (==> this form
+       (new column 
+            (setq titleedit (new editstring 30)) ) ) )
+
+(defmethod PlotDataSetup load(port)
+  (==> titleedit setdata (or :port:title "")) )
+
+(defmethod PlotDataSetup save(port)
+  (let ((s (==> titleedit getdata)))
+    (setq :port:title (when (<> s "") s)) ) )
+
+
+;; AXIS DATA
+
+(defclass PlotAxisSetup Form
+  axis
+  titleedit
+  minboundedit
+  maxboundedit
+  labeledit
+  tickedit 
+  logchk
+  gridchk
+  autoboundchk
+  autotickchk )
+
+(defmethod PlotAxisSetup PlotAxisSetup(theaxis)
+  (setq axis theaxis)
+  (==> this form
+       (new column
+            (new string "Axis legend:")
+            (new row (new emptyspace 30 1) 
+                 (setq titleedit (new editstring 20)))
+            (setq logchk (new checkbox "Logarithmic scale"
+                              (lambda(c) (==> thisform status)) ))             
+            (setq gridchk (new checkbox "Display grid"))
+            (setq autoboundchk (new checkbox "Automatic bounds"
+                                    (lambda(c) (==> thisform status)) ))
+            (new row (new emptyspace 30 1)
+                 (new grid 2 
+                      (new string "Min:") 
+                      (setq minboundedit (new editnumber 8))
+                      (new string "Max:")
+                      (setq maxboundedit (new editnumber 8)) ) )
+            (setq autotickchk (new checkbox "Automatic ticks"
+                                   (lambda(c) (==> thisform status)) ))
+            (new row (new emptyspace 30 1)
+                 (new grid 2 
+                      (new string "Major:") 
+                      (setq labeledit (new editnumber 8))
+                      (new string "Minor:") 
+                      (setq tickedit (new editnumber 8)) ) ) ) ) )
+
+(defmethod PlotAxisSetup status()
+  (==> minboundedit enable)
+  (==> maxboundedit enable)
+  (==> labeledit enable)
+  (==> tickedit enable)
+  (==> autotickchk enable)
+  (when (==> autoboundchk getdata)
+    (==> minboundedit disable)
+    (==> maxboundedit disable) )
+  (when (==> logchk getdata)
+    (==> autotickchk setdata t)
+    (==> autotickchk disable) )
+  (when (==> autotickchk getdata)
+    (==> labeledit disable)
+    (==> tickedit disable) ) )
+
+(defmethod PlotAxisSetup load(port)
+  (let ((v ()))
+    (cond
+     ((= axis 'x)
+      (setq v (letslot port
+                       (list xtitle xlog xgrid xbounds xlabels xticks) )) )
+     ((= axis 'y)
+      (setq v (letslot port
+                       (list ytitle ylog ygrid ybounds ylabels yticks) )) ) )
+    (when v
+      (let (((ttl log grd bnd lab tik) v))
+        (==> this setdata
+             (list (or ttl "") log grd 
+                   (not (consp bnd)) 
+                   (if (consp bnd) (car bnd) 0)
+                   (if (consp bnd) (cadr bnd) 0)
+                   (not (numberp lab))
+                   (if (numberp lab) lab 0)
+                   (if (numberp tik) tik 0) ) ) ) ) ) )
+
+(defmethod PlotAxisSetup save(port)
+  (let (((ttl log grd abnd minbnd maxbnd alab majlab minlab) 
+         (==> this getdata) ))
+    (cond
+     ((= axis 'x)
+      (setq :port:xtitle (if (= ttl "") () ttl))
+      (setq :port:xlog log)
+      (setq :port:xgrid grd)
+      (setq :port:xbounds (if (not abnd) (list minbnd maxbnd)))
+      (setq :port:xlabels (if (not alab) majlab))
+      (setq :port:xticks  (if (not alab) minlab)) )
+     ((= axis 'y)
+      (setq :port:ytitle (if (= ttl "") () ttl))
+      (setq :port:ylog log)
+      (setq :port:ygrid grd)
+      (setq :port:ybounds (if (not abnd) (list minbnd maxbnd)))
+      (setq :port:ylabels (if (not alab) majlab))
+      (setq :port:yticks  (if (not alab) minlab)) ) ) ) )
+
+
+;; CONTROLLER
+
+(defclass PlotPortController AutoWindowObject
+  port
+  basewindow
+  themenu
+  thestack
+  thestuff 
+  applybtn )
+
+(defmethod PlotPortController PlotPortController(p)
+  (if (is-of-class p PlotPort)
+      (setq port p)
+    (setq basewindow p)
+    (setq port :p:plot) )
+  (setq thestack (new stack))
+  (setq themenu (new choicemenu () (lambda(c) (==> thisform select (==> c getdata)))))
+  (setq applybtn (new stdbutton "Apply" (lambda(c) (==> thisform save))))
+  (setq :applybtn:default-ring t)
+  (==> this add "Title" (new PlotDataSetup))
+  (==> this add "X axis" (new PlotAxisSetup 'x ))
+  (==> this add "Y axis" (new PlotAxisSetup 'y ))
+  (==> this load)
+  (==> this autowindowobject 0 0 400 300 
+       (if basewindow
+           (concat "Setup " :basewindow:name)
+         "Setup Plot" )
+       (new column
+            (new row
+                 (new string "Configure ") 
+                 themenu )
+            (new darkspace 3 3)
+            thestack
+            (new darkspace 3 3)
+            (new row
+                 (new emptyspace 80 1)
+                 applybtn
+                 (new stdbutton "Close" (lambda(c) (==> thisform delete))) 
+                 (new emptyspace 80 1) ) ) ) )
+
+(defmethod PlotPortController keypress(c x y)
+  (if (= c "\r") (==> applybtn trigger) 'ignored) )
+
+(defmethod PlotPortController select(&optional key)
+  (when (not key)
+    (setq key (or (==> themenu getdata) (caar thestuff))) )
+  (let ((obj (cdr (assoc key thestuff))))
+    (when obj
+      (==> themenu setdata key)
+      (==> obj front) ) ) )
+
+(defmethod PlotPortController load()
+  (when port
+    (each (((k . obj) thestuff)) (==> obj load port)) ) )
+
+(defmethod PlotPortController save()
+  (when port
+    (each (((k . obj) thestuff)) (==> obj save port))
+    (if basewindow
+        (==> basewindow expose)
+      (==> port execute) ) ) )
+
+(defmethod PlotPortController add(key obj)
+  (setq thestuff (nconc1 thestuff (cons key obj)))
+  (==> thestack insert obj)
+  (let (((x y w h) :thestack:rect))
+    (==> obj back x y w h) )
+  (let ((key (==> themenu getdata)))
+    (==> themenu setitems (mapcar car thestuff))
+    (==> this select key) ) )
+
+(defmethod PlotPortController del(key)
+  (let ((ns ()))
+    (each ((pair thestuff))
+      (if (<> key (car pair))
+          (setq ns (cons pair ns))
+        (==> thestack remove (cdr pair)) ) )
+    (setq thestuff (reverse ns))
+    (let ((key (==> themenu getdata)))
+      (==> thesmenu setitems (mapcar car thestuff))
+      (==> this select key) ) ) )
+
 
 
 
