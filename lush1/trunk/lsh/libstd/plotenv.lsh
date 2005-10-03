@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.11 2005-09-30 18:58:49 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.12 2005-10-03 12:59:58 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -37,6 +37,8 @@
 
 (defvar plot-port)
 (defvar current-object)
+(defvar plot-window-id 0)
+
 
 ;; ----------------------------------------
 ;; UTILITIES
@@ -100,7 +102,11 @@
 	(let ((k 1) (s step))
 	  (while (> (* len s k) d)
 	    (setq step (* s k))
-	    (setq k (selectq k (1 0.5) (0.5 0.2)(0.2 0.1)(0.1 (setq s (/ s 10)) 1))) ) )
+	    (setq k (selectq k 
+                      (1 0.5) 
+                      (0.5 0.2)
+                      (0.2 0.1)
+                      (0.1 (setq s (/ s 10)) 1))) ) )
 	(plot-range lo hi step) )
     ;; log scale (check)
     (when (<= hi 0)
@@ -133,11 +139,7 @@
 (defclass PlotPort Object
   ;; windows
   window attrwindow plotrect
-  ;; ogre
-  plotwindow
-  controlwindow
-  ;; locks
-  locks dirty
+  plotwindow controlwindow
   ;; curves
   curves
   ;; styles
@@ -150,12 +152,12 @@
   marginleft marginright    ;; margins around the graph (points)
   title 		    ;; title of the graph
   xtitle ytitle 	    ;; legend for the axes
-  xbounds ybounds	    ;; list (min max) representing the bounds of each axis
+  xbounds ybounds	    ;; list (min max): bounds of each axis
   xlog ylog                 ;; flag indicating logarithmic scale
-  xticks yticks             ;; interval between tick on each axis (or list values)
-  xlabels ylabels           ;; interval between labels on each axis (or list of values)
+  xticks yticks             ;; tick interval (or list values)
+  xlabels ylabels           ;; label interval (or list of values)
   xgrid ygrid 		    ;; flag telling whether grid lines must be drawn
-  xlabel2str ylabel2str     ;; functions to convert labels values into displayable strings
+  xlabel2str ylabel2str     ;; functions to convert values into labels
   ;; computed values
   cmargintop cmarginbottom cmarginleft cmarginright crect
   cxmin cymin cxmax cymax rbx rby
@@ -169,8 +171,7 @@
   (setq plot-context-title :plot-context-title)
   (setq plot-context-labels :plot-context-labels)
   (setq plot-context-axes :plot-context-axes)
-  (setq plot-context-grid :plot-context-grid) 
-  (setq locks 0) )
+  (setq plot-context-grid :plot-context-grid) )
 
 (defmethod PlotPort window()
   (or window attrwindow 
@@ -193,12 +194,26 @@
 
 (defmethod PlotPort add(curve)
   (when (not (member curve curves))
+    (let* ((name :curve:name)
+           (names (all ((c curves)) :c:name))
+           (stem (regex-subst " *[0-9]+$" "" name))
+           (count 0) )
+      (while (member name names)
+        (setq name (sprintf "%s%d" stem (incr count))) )
+      (setq :curve:name name) )
     (setq curves (nconc1 curves curve))
-    (when plotwindow (==> plotwindow expose)) ) )
+    (when controlwindow
+      (when (check==> (classof curve) 'gui)
+        (==> controlwindow add :curve:name (==> curve gui)) ) )
+    (==> this execute)
+    curve ) )
 
 (defmethod PlotPort del(curve)
   (setq curves (flatten (all ((c curves)) (when (<> c curve) c))))
-  (when plotwindow (==> plotwindow expose)) )
+  (==> this execute) 
+  (when controlwindow
+    (==> controlwindow del :curve:name) )
+  curve )
 
 (defmethod PlotPort compute()
   ;; bounds calculation
@@ -337,12 +352,9 @@
 
 (defmethod PlotPort execute(&optional (clear t))
   (cond
-   ((> locks 0)
-    (setq dirty t) )
    ((and plotwindow clear)
     (==> plotwindow expose) )
    ((and window plotrect)
-    (setq dirty ())
     (==> this compute)
     (when clear
       (gsave 
@@ -390,12 +402,16 @@
            (when xtitle			; x axis legend
              (plot-context-labels)
              (let (((tx ty tw th) (==> this text-rect xtitle)))
-               (gprintf (- (+ cx cw) (+ tw tx)) (+ ybot 6 (- ty)) xtitle)
+               (gprintf (- (+ cx cw) (+ tw tx)) 
+                        (+ ybot 6 (- ty)) 
+                        xtitle )
                (incr ybot (+ 6 th)) ) )
            (when ytitle			; y axis legend
              (plot-context-labels)
              (let (((tx ty tw th) (==> this text-rect ytitle)))
-               (gprintf (- (max xleft (- cx (2/ tw))) tx) (- ytop (+ 6 th ty)) ytitle)
+               (gprintf (- (max xleft (- cx (2/ tw))) tx)
+                        (- ytop (+ 6 th ty))
+                        ytitle )
                (setq ytop (- ytop (+ 6 th))) ) )
            ;; draw axis
            (graphics-batch
@@ -434,37 +450,10 @@
 
 
 ;; ----------------------------------------
-;; PLOTPORTLOCK
-
-(defclass PlotPortLock Object
-  port )
-
-(defmethod PlotPortLock PlotPortLock(p)
-  (when (setq port p)
-    (setq :port:locks (1+ :port:locks)) ) )
-
-(defmethod PlotPortLock -destructor()
-  (when (and port (numberp :port:locks))
-    (when (> :port:locks 0)
-      (setq :port:locks (1- :port:locks)) )
-    (when :port:dirty
-      (==> port execute) ) ) )
-
-
-;; ----------------------------------------
-;; PLOTCURVES
-
-
 ;; PLOTCURVE
 
-
-;; PLOTBAR
-
-
-;; PLOTCOMPAT
-
-
-(defclass PlotCompat Object
+(defclass PlotCurve Object
+  name
   cur-object
   cur-object-size 
   cur-sd-size
@@ -472,15 +461,25 @@
   cur-linestyle
   cmds)
 
-(defmethod PlotCompat plotcompat()
+(defmethod PlotCurve plotcurve(&optional lx ly lv)
+  (setq name "Curve1")
   (setq cur-object open-square)
   (setq cur-object-size 3)
   (setq cur-sd-size 3)
   (setq cur-color -1)
   (setq cur-linestyle 0)
-  (setq cmds ()) )
+  (setq cmds ()) 
+  (when (and lx ly)
+    (==> this command `(plt-clear))
+    (each ((x lx) (y ly))
+      (setq cmds `((plt-draw ,x ,y) ,@cmds)) )
+    (if lv
+        (each ((x lx) (y ly) (v lv))
+          (setq cmds `((plt-plot ,x ,y) (plt-sd ,x ,y ,v) ,@cmds)) )
+      (each ((x lx) (y ly))
+        (setq cmds `((plt-plot ,x ,y) ,@cmds)) ) ) ) )
 
-(defmethod PlotCompat command(cmd)
+(defmethod PlotCurve command(cmd)
   ;; synchronize context
   (when (and (functionp current-object)
 	     (<> current-object cur-object) )
@@ -494,19 +493,20 @@
 	     (<> sd-bar-size cur-sd-size))
     (setq cmds (cons `(setq sd-bar-size ,sd-bar-size) cmds))
     (setq cur-sd-size sd-bar-size) )
-  (let ((c (color)))
-    (when (<> c cur-color)
-      (setq cmds (cons `(color ,c) cmds))
-      (setq cur-color c)))
-  (let ((l (linestyle)))
-    (when (<> l cur-linestyle)
-      (setq cmds (cons `(linestyle ,l) cmds))
-      (setq cur-linestyle l) ) )
+  (when window
+    (let ((c (color)))
+      (when (<> c cur-color)
+        (setq cmds (cons `(color ,c) cmds))
+        (setq cur-color c)))
+    (let ((l (linestyle)))
+      (when (<> l cur-linestyle)
+        (setq cmds (cons `(linestyle ,l) cmds))
+        (setq cur-linestyle l) ) ) )
   ;; add command
   (setq cmds (cons cmd cmds))
   cmd )
 
-(defmethod PlotCompat execute(rbx rby info)
+(defmethod PlotCurve execute(rbx rby info)
   (gsave
    (when (addclip (expand-rect :info:crect 1 1)) 
      (color -1)
@@ -535,8 +535,10 @@
 	    (let ((x (cadr cmd))
 		  (y (caddr cmd)))
 	      (when current-object
-		(gsave (apply clip (expand-rect (clip) object-size object-size))
-		       (current-object (rbx x y) (rby x y)) ) ) ) )
+		(gsave 
+                 (linestyle 0)
+                 (apply clip (expand-rect (clip) object-size object-size))
+                 (current-object (rbx x y) (rby x y)) ) ) ) )
 	   (plt-sd
 	    (let* ((x (cadr cmd))
 		   (y (caddr cmd))
@@ -546,14 +548,15 @@
 		   (mv (rby x (- y v)))
 		   (pv (rby x (+ y v))))
 	      (draw-line rx mv rx pv)
-	      (gsave (linestyle 0)
-		     (draw-line (- rx sd-bar-size) mv (+ rx sd-bar-size) mv)
-		     (draw-line (- rx sd-bar-size) pv (+ rx sd-bar-size) pv) ) ) )
+	      (gsave
+               (linestyle 0)
+               (draw-line (- rx sd-bar-size) mv (+ rx sd-bar-size) mv)
+               (draw-line (- rx sd-bar-size) pv (+ rx sd-bar-size) pv) ) ) )
 	   ;; execute rest directly
 	   (t (eval cmd)) ) )
        () ) ) ) )
 
-(defmethod PlotCompat bounds()
+(defmethod PlotCurve bounds()
   (let ((xmin ())
 	(ymin ())
 	(xmax ())
@@ -578,15 +581,79 @@
     (when (and xmin ymin xmax ymax)
       (list xmin ymin xmax ymax) ) ) )
 
+(defmethod PlotCurve set-color(c)
+  (when (not (numberp c))
+    (error '==> "illegal color argument" c) )
+  (let ((newcmds ()))
+    (each ((cmd cmds))
+      (when (not (and (consp cmd) (= (car cmd) 'color)))
+        (setq newcmds (cons cmd newcmds)) ) )
+    (setq cmds (cons `(color ,c) 
+                     (reverse newcmds) )) ) 
+  t )
+
+(defmethod PlotCurve set-color-rgb(r g b)
+  (when (not (and (numberp r) (numberp g) (numberp b)))
+    (error '==> "illegal color argument" (list r g b)) )
+  (let ((newcmds ()))
+    (each ((cmd cmds))
+      (when (not (and (consp cmd) (= (car cmd) 'color)))
+        (setq newcmds (cons cmd newcmds)) ) )
+    (setq cmds (reverse (cons `(color-rgb ,r ,g ,b) newcmds))) )
+  t )
+
+(defmethod PlotCurve set-linestyle(s)
+  (when (not (numberp s))
+    (error '==> "illegal linestyle argument" s) )
+  (let ((newcmds ()))
+    (each ((cmd cmds))
+      (when (not (and (consp cmd) (= (car cmd) 'linestyle)))
+        (setq newcmds (cons cmd newcmds)) ) )
+    (setq cmds (reverse (cons `(linestyle ,s) newcmds))) )
+  t )
+
+(defmethod PlotCurve set-object(object)
+  (when (not (functionp object))
+    (error '==> "illegal object argument" object) )
+  (let ((newcmds ()))
+    (each ((cmd cmds))
+      (when (not (and (consp cmd) 
+                      (= (car cmd) 'setq)
+                      (= (cadr cmd) 'current-object) ))
+        (setq newcmds (cons cmd newcmds)) ) )
+    (setq cmds (reverse (cons `(setq current-object ,object) newcmds))) )
+  t )
+    
+(defmethod PlotCurve set-object-size(x)
+  (when (not (numberp x))
+    (error '==> "illegal size argument" x) )
+  (let ((newcmds ()))
+    (each ((cmd cmds))
+      (when (not (and (consp cmd) 
+                      (= (car cmd) 'setq)
+                      (= (cadr cmd) 'object-size) ))
+        (setq newcmds (cons cmd newcmds)) ) )
+    (setq cmds (reverse (cons `(setq object-size ,x) newcmds))) )
+  t )
+  
+(defmethod PlotCurve set-sd-bar-size(x)
+  (when (not (numberp x))
+    (error '==> "illegal size argument" x) )
+  (let ((newcmds ()))
+    (each ((cmd cmds))
+      (when (not (and (consp cmd) 
+                      (= (car cmd) 'setq)
+                      (= (cadr cmd) 'sd-bar-size) ))
+        (setq newcmds (cons cmd newcmds)) ) )
+    (setq cmds (reverse (cons `(setq sd-bar-size ,x) newcmds))) )
+  t )
+  
 
 
 
 ;; ----------------------------------------
 ;; PLOTWINDOW
 
-
-(when (not (numberp :plot-window-id))
-  (setq :plot-window-id 0) )
 
 
 (defclass PlotWindow WindowObject
@@ -598,21 +665,24 @@
   printreq )
 
 (defmethod PlotWindow PlotWindow(&optional nam)
-  (setq name (or nam (sprintf "Lush Plot #%d" (incr plot-window-id))))
+  (setq name (or nam (sprintf "Lush Plot %d" (incr plot-window-id))))
   (setq plot (new PlotPort))
   (setq plotrect ()) 
   (setq :plot:plotwindow this)
-  (setq menubar (new row
-		     (new menu "File"
-			  "Export..."
-			  (lambda(item) (==> thisform export-action))
-			  "Print..."
-			  (lambda(item) (==> thisform print-action))
-			  "Quit"
-			  (lambda(item) (==> thisform quit-action)) )
-		     (new menu "Setup"
-			  "Setup Plot..."
-			  (lambda(item) (==> thisform setup-action)) ) ))
+  (setq menubar 
+        (new row
+             (new menu "File"
+                  "New"
+                  (lambda(c) (new PlotWindow))
+                  "Print..."
+                  (lambda(item) (==> thisform print-action))
+                  "Export..."
+                  (lambda(item) (==> thisform export-action))
+                  "Close"
+                  (lambda(item) (==> thisform quit-action)) )
+             (new menu "Setup"
+                  "Setup Plot..."
+                  (lambda(item) (==> thisform setup-action)) ) ))
   (==> this WindowObject 0 0 600 420 (or name "Lush Plot") menubar) )
 
 (defmethod PlotWindow manage-geometry()
@@ -643,7 +713,16 @@
     (setq :plot:plotrect (list 0 0 pw ph))
     (setq :plot:window (let ((window ())) (print-window pw ph dest)))
     (setq :plot:attrwindow window)
-    (==> plot execute)
+    (==> plot execute ())
+    (delete :plot:window) ) )
+
+(defmethod PlotWindow sendplot-svg(dest)
+  (let* ((pw (if plotrect (nth 2 plotrect) 600))
+	 (ph (if plotrect (nth 3 plotrect) 400)))
+    (setq :plot:plotrect (list 0 0 pw ph))
+    (setq :plot:window (svg-window pw ph dest))
+    (setq :plot:attrwindow window)
+    (==> plot execute ())
     (delete :plot:window) ) )
 
 
@@ -660,11 +739,19 @@
 
 (defmethod PlotWindow export-action()
   (when (not filereq)
-    (setq filereq (new FileRequester this))
-    (==> filereq setdata "lushplot.eps") )
+    (setq filereq (new FileRequester this)) )
+  (==> filereq setdata "lushplot.eps") 
   (when (==> filereq ask "Save plot as..." 'ask-oldfile
 	     (lambda(s) (regex-match ".*\\.eps" s)) )
     (==> this sendplot (==> filereq getdata)) ) )
+
+(defmethod PlotWindow svg-action()
+  (when (not filereq)
+    (setq filereq (new FileRequester this)) )
+  (==> filereq setdata "lushplot.svg") 
+  (when (==> filereq ask "Save plot as..." 'ask-oldfile
+	     (lambda(s) (regex-match ".*\\.svg" s)) )
+    (==> this sendplot-svg (==> filereq getdata)) ) )
 
 (defmethod PlotWindow setup-action()
   (let ((controlwindow (when plot :plot:controlwindow)))
@@ -680,10 +767,9 @@
 ;; PLOTPORTCONTROLLER
 
 
-
 ;; PLOT DATA
 
-(defclass PlotDataSetup Form
+(defclass PlotDataSetup PlotSetup
   titleedit )
 
 (defmethod PlotDataSetup PlotDataSetup()
@@ -701,7 +787,7 @@
 
 ;; AXIS DATA
 
-(defclass PlotAxisSetup Form
+(defclass PlotAxisSetup PlotSetup
   axis
   titleedit
   minboundedit
@@ -721,7 +807,7 @@
             (new row (new emptyspace 30 1) 
                  (setq titleedit (new editstring 20)))
             (setq logchk (new checkbox "Logarithmic scale"
-                              (lambda(c) (==> thisform status)) ))             
+                              (lambda(c) (==> thisform status)) ))
             (setq gridchk (new checkbox "Display grid"))
             (setq autoboundchk (new checkbox "Automatic bounds"
                                     (lambda(c) (==> thisform status)) ))
@@ -820,12 +906,17 @@
    (t
     (error 'new "illegal argument" p) ) )
   (setq thestack (new stack))
-  (setq themenu (new choicemenu () (lambda(c) (==> thisform select (==> c getdata)))))
-  (setq applybtn (new stdbutton "Apply" (lambda(c) (==> thisform save))))
+  (setq themenu (new choicemenu ()
+                     (lambda(c) (==> thisform select (==> c getdata)))))
+  (setq applybtn (new stdbutton "Apply" 
+                      (lambda(c) (==> thisform save))))
   (setq :applybtn:default-ring t)
   (==> this add "Title" (new PlotDataSetup))
   (==> this add "X axis" (new PlotAxisSetup 'x ))
   (==> this add "Y axis" (new PlotAxisSetup 'y ))
+  (each ((curve :port:curves))
+    (when (check==> (classof curve) 'gui)
+      (==> this add :curve:name (==> curve gui)) ) )
   (==> this load)
   (==> this autowindowobject 0 0 400 300 
        (if basewindow
@@ -858,11 +949,15 @@
 
 (defmethod PlotPortController load()
   (when port
-    (each (((k . obj) thestuff)) (==> obj load port)) ) )
+    (each (((k . obj) thestuff)) 
+      (when (check==> (classof obj) 'load)
+        (==> obj load port) ) ) ) )
 
 (defmethod PlotPortController save()
   (when port
-    (each (((k . obj) thestuff)) (==> obj save port))
+    (each (((k . obj) thestuff))
+      (when (check==> (classof obj) 'save)
+        (==> obj save port) ) )
     (==> port execute) ) )
 
 (defmethod PlotPortController add(key obj)
@@ -898,8 +993,10 @@
   ;; Copied from oldplotenv.
   (de nice-brect()
     (list 0 (ysize) (xsize) 0) )
+
   (de rect-2-ppbrect((x y w h))
     (list x (+ y h) (+ x w) y) )
+
   (de nice-scale(mini maxi &optional (deltamin 0))
     (let* ((d (abs (- maxi mini)))
 	   (logd (int (/ (log (/ d 3)) (log 10))))
@@ -908,6 +1005,7 @@
 	   (step  (* step1 (max 1 (- (int (- ratio))))))
 	   (start (* step (int (/ (+ mini step) step)))))
       (range start maxi step) ) )
+
   (de graph-scale(min max)
     (let ((mult (** 10 (int (/ (log (/ (- max min) 2)) (log 10))))))
       (setq min (* mult (int (/ min mult))))
@@ -946,10 +1044,11 @@
 	    (setq :pp:xbounds (list xmin xmax)) )
 	  (when (and ymin ymax)
 	    (setq :pp:ybounds (list ymin ymax)) ) ) )
-      (setq pc (new PlotCompat))
+      (setq pc (new PlotCurve))
       (when (functionp object)
-        (let ((window (or window (==> pp window))))
+        (let ((window (==> pp window)))
           (==> pc command `(setq current-object ,object)) ) )
+      (setq :pc:name "Compat1")
       (==> pp add pc)
       (list pc pp object) ) )
   
@@ -957,9 +1056,11 @@
   (de copy-plot-port(port &optional object)
     (setq object (or object (nth 2 port)))
     (let ((pp (cadr port))
-	  (pc (new PlotCompat)))
+	  (pc (new PlotCurve)))
       (when (functionp object)
-	(==> pc command `(setq current-object ,object)) )
+        (let ((window (==> pp window)))
+          (==> pc command `(setq current-object ,object)) ) )
+      (setq :pc:name "Compat1")
       (==> pp add pc)
       (list pc pp object) ) )
   
@@ -988,10 +1089,17 @@
       (==> pp execute) ) )
   
   ;; replacement for setup-axes.
-  (de setup-axes(&optional xmin ymin xmax ymax xstep ystep (name "") object x2l y2l)
-    (let* ((brect (when window (list 0 0 (xsize) (ysize))))
-           (rrect (when (and xmin ymin xmax ymax) (list xmin ymin xmax ymax))) )
-      (setq plot-port (new-plot-port brect rrect (or object open-square)))
+  (de setup-axes(&optional xmin ymin xmax ymax xstep ystep 
+                           (name "") object x2l y2l)
+    (when (or xmin ymin xmax ymax)
+      (when (not (and (numberp xmin) (numberp ymin)
+                      (numberp xmax) (numberp ymax) ))
+        (error 'setup-axes "First four arguments must be numeric" ()) ) )
+    (let* ((brect (when xmin (list 0 0 (xsize) (ysize))))
+           (rrect (when xmin (list xmin ymin xmax ymax))) 
+           (window (when xmin window)) )
+      (setq plot-port 
+            (new-plot-port brect rrect (or object open-square)))
       (let (((pc pp . aux) plot-port))
         (when name
           (setq :pp:title (when (<> name "") name)) )
@@ -1011,62 +1119,67 @@
   ;; simple drawing functions.
   (de plt-clear()
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window (==> pp window))))
+      (let ((window (==> pp window)))
 	(==> pc command `(plt-clear)) ) ) )
+
   (de plt-move(x y)
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window (==> pp window))))
+      (let ((window (==> pp window)))
 	(==> pc command `(plt-move ,x ,y)) ) ) )
+
   (de plt-draw(x y)
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window (==> pp window))))
+      (let ((window (==> pp window)))
 	(==> pc command `(plt-draw ,x ,y)) )
       (==> pp execute) ) )
+
   (de plt-plot(x y)
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window (==> pp window))))
+      (let ((window (==> pp window)))
 	(==> pc command `(plt-plot ,x ,y)) )
       (==> pp execute) ) )
+
   (de plt-sd(x y v)
     (let (((pc pp . aux) plot-port))
-      (let ((window (or window (==> pp window))))
+      (let ((window (==> pp window)))
 	(==> pc command `(plt-sd ,x ,y ,v)) )
       (==> pp execute) ) )
 
+  (de plt-linestyle(s)
+    (let (((pc pp . aux) plot-port))
+      (let ((window (==> pp window)))
+        (linestyle s) ) ) )
+  
+  (de plt-color(c)
+    (let (((pc pp . aux) plot-port))
+      (let ((window (==> pp window)))
+        (color c) ) ) )
+  
+  (de plt-color-rgb(r g b)
+    (let (((pc pp . aux) plot-port))
+      (let ((window (==> pp window)))
+        (color-rgb r g b) ) ) )
+  
   ;; high level drawing functions.
-  ;; (not very good yet)
+  
   (de plot-lists (lx ly)
-    (plt-clear)
-    (let ((lock (new PlotPortLock (cadr plot-port))))
-      (each ((x lx)(y ly))
-        (plt-draw x y) )
-      (each ((x lx)(y ly))
-        (plt-plot x y) ) ) )
+    (let (((pc pp . aux) plot-port))
+      (let ((window (==> pp window)))
+        (==> pp add (new PlotCurve lx ly) ) ) ) )
+  
   (de plot-lists-sd (lx ly lv)
-    (plt-clear)
-    (let ((lock (new PlotPortLock (cadr plot-port))))
-      (each ((x lx)(y ly))
-        (plt-draw x y) )
-      (each ((x lx)(y ly)(v lv))
-        (plt-sd x y v) 
-        (plt-plot x y) ) ) )
+    (let (((pc pp . aux) plot-port))
+      (let ((window (==> pp window)))
+        (==> pp add (new PlotCurve lx ly lv) ) ) ) )
+  
   (de graph-xy(lx ly &optional name)
     (let* ((pp (new PlotWindow))
-	   (pc (new PlotCompat))
-	   (plot-port (list pc :pp:plot ())) 
-	   (window :pp:window) )
+	   (pc (new PlotCurve lx ly)) )
       (when name (setq :pp:plot:title name))
-      (==> :pp:plot add pc)
-      (plot-lists lx ly)
-      pp ) )
+      (==> :pp:plot add pc) ) )
+
   (de graph-xyv(lx ly lv &optional name)
     (let* ((pp (new PlotWindow))
-	   (pc (new PlotCompat))
-	   (plot-port (list pc :pp:plot ())) 
-	   (window :pp:window) )
+	   (pc (new PlotCurve lx ly lv)) )
       (when name (setq :pp:plot:title name))
-      (==> :pp:plot add pc)
-      (plot-lists-sd lx ly lv)
-      pp ) )
-  
-  () )
+      (==> :pp:plot add pc) ) ) )
