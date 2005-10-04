@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.15 2005-10-04 13:52:18 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.16 2005-10-04 15:35:11 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -192,19 +192,24 @@
 (defmethod PlotPort text-height(s &optional f)
   (nth 3 (==> this text-rect s f)) )
 
+(defmethod PlotPort make-unique-names()
+  (let ((names ()))
+    (each ((curve curves))
+      (let* ((name :curve:name)
+             (stem (regex-subst " *[0-9]+$" "" name))
+             (count 0) )
+        (while (member name names)
+          (setq name (sprintf "%s%d" stem (incr count))) )
+        (setq :curve:name name)
+        (setq names (cons name names)) ) ) ) )
+
 (defmethod PlotPort add(curve)
   (when (not (member curve curves))
-    (let* ((name :curve:name)
-           (names (all ((c curves)) :c:name))
-           (stem (regex-subst " *[0-9]+$" "" name))
-           (count 0) )
-      (while (member name names)
-        (setq name (sprintf "%s%d" stem (incr count))) )
-      (setq :curve:name name) )
     (setq curves (nconc1 curves curve))
+    (==> this make-unique-names)
     (when controlwindow
       (when (check==> (classof curve) 'gui)
-        (==> controlwindow add :curve:name (==> curve gui)) ) )
+        (==> controlwindow add (==> curve gui)) ) )
     (==> this execute)
     curve ) )
 
@@ -786,6 +791,9 @@
   (let ((s (==> titleedit getdata)))
     (setq :port:title (when (<> s "") s)) ) )
 
+(defmethod PlotDataSetup name()
+  "Title" )
+
 
 ;; AXIS SETUP
 
@@ -883,6 +891,8 @@
       (setq :port:ylabels (if (not alab) majlab))
       (setq :port:yticks  (if (not alab) minlab)) ) ) ) )
 
+(defmethod PlotAxisSetup name()
+  (if (= axis 'x) "X Axis" "Y Axis") )
 
 ;; CURVE SETUP
 
@@ -1089,6 +1099,9 @@
 (defmethod PlotCurveSetup save(port)
   (if (==> delcheck getdata)
       (==> port del curve)
+    (let ((s (==> curvename getdata)))
+      (when (and (stringp s) (<> s ""))
+        (setq :curve:name s) ) )
     (let ((s (==> stylechoice getdata)))
       (when s (==> curve set-linestyle s)) )
     (let ((s (==> objectchoice getdata)))
@@ -1105,6 +1118,9 @@
         (let (((r g b) s))
           (==> curve set-color-rgb r g b) ) ) ) )
     t ) )
+
+(defmethod PlotCurveSetup name()
+  :curve:name )
 
 ;; CONTROLLER
 
@@ -1135,12 +1151,12 @@
   (setq applybtn (new stdbutton "Apply" 
                       (lambda(c) (==> thisform save))))
   (setq :applybtn:default-ring t)
-  (==> this add "Title" (new PlotDataSetup))
-  (==> this add "X axis" (new PlotAxisSetup 'x ))
-  (==> this add "Y axis" (new PlotAxisSetup 'y ))
+  (==> this add (new PlotDataSetup))
+  (==> this add (new PlotAxisSetup 'x ))
+  (==> this add (new PlotAxisSetup 'y ))
   (each ((curve :port:curves))
     (when (check==> (classof curve) 'gui)
-      (==> this add :curve:name (==> curve gui)) ) )
+      (==> this add (==> curve gui)) ) )
   (==> this load)
   (==> this autowindowobject 0 0 400 300 
        (if basewindow
@@ -1182,19 +1198,34 @@
     (each (((k . obj) thestuff))
       (when (check==> (classof obj) 'save)
         (==> obj save port) ) )
+    (==> port make-unique-names)
+    (let ((items ())
+          (key (==> themenu getdata))
+          (newkey ()))
+      (each ((pair thestuff))
+        (let (((name . obj) pair))
+          (let ((newname (==> obj name)))
+            (rplaca pair newname)
+            (setq items (nconc1 items newname))
+            (when (= name key)
+              (setq newkey newname) ) ) ) )
+      (==> themenu setitems items)
+      (==> this select newkey) )
+    (==> this load)
     (==> port execute) ) )
 
-(defmethod PlotPortController add(key obj)
+(defmethod PlotPortController add(obj)
   (==> obj load port)
-  (setq thestuff (nconc1 thestuff (cons key obj)))
-  (==> thestack insert obj)
-  (==> obj back)
-  (let ((key (==> themenu getdata)))
-    (==> themenu setitems (mapcar car thestuff))
-    (==> this select key) ) )
+  (let ((key (==> obj name)))
+    (setq thestuff (nconc1 thestuff (cons key obj)))
+    (==> thestack insert obj)
+    (==> obj back)
+    (let ((key (==> themenu getdata)))
+      (==> themenu setitems (mapcar car thestuff))
+      (==> this select key) ) ) )
 
 (defmethod PlotPortController del(key)
-  (let ((ns ()))
+  (let ((ns ()) )
     (each ((pair thestuff))
       (if (<> key (car pair))
           (setq ns (cons pair ns))
