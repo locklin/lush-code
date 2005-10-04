@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.16 2005-10-04 15:35:11 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.17 2005-10-04 15:40:11 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -131,6 +131,95 @@
 	(while (and (consp l) (<= (cadr l) lo))
 	  (setq l (cdr l)) )
 	l ) ) ) )
+
+
+#? FancyChoiceMenu.
+;; Subclass of Ogre's ChoiceMenu where
+;; each item is drawn by a callback function.
+
+(defclass FancyMenuItem MenuItem
+  paintcall )
+
+(defmethod FancyMenuItem FancyMenuItem(pcall parg xcall)
+  (setq text parg)
+  (setq paintcall pcall)
+  (==> this control 70 22 xcall) )
+
+(defmethod FancyMenuItem compute-geometry() ())
+
+(defmethod FancyMenuItem repaint()
+  (let (((x y w h) rect))
+    (if hilited
+	(fill-down-round-rect (+ x 2) (+ y 2) (- w 4) (- h 4)) )
+    (when disabled (setcolor palette-disabled) )
+    (textfont)
+    (when paintcall
+      (paintcall text (+ x 8) (+ y 4)
+                 (max 0 (- w 16)) (max 0 (- h 8)) ) ) ) )
+
+(defclass FancyChoiceMenu ChoiceMenu
+  disabled
+  paintcall 
+  execcall )
+
+(defmethod FancyChoiceMenu FancyChoiceMenu(pcall &optional callback)
+  (setq paintcall pcall)
+  (setq text "[******]")
+  (==> this choicemenu () callback)
+  (setq execcall (lambda(c) 
+                   (when (not :c:disabled)
+                     (==> thismenu setdata :c:text)
+                     (==> thismenu execute) ) )) )
+
+(defmethod FancyChoiceMenu setitems(d)
+  (==> itspopup removall)
+  (each ((i d))
+    (==> this insert 
+         (new fancymenuitem paintcall i execcall))) )
+
+(defmethod FancyChoiceMenu additems(parg)
+  (==> this insert (new fancymenuitem paintcall parg execcall)) )
+
+(defmethod FancyChoiceMenu setdata(d)
+  (setq data d) )
+
+(defmethod FancyChoiceMenu disable()
+  (if disabled
+      (incr disabled)
+    (setq disabled 1)
+    (==> this expose rect)
+    (each (((s . aux) :itspopup:contents))
+      (==> s disable) ) ) )
+
+(defmethod FancyChoiceMenu enable()
+  (when disabled
+    (incr disabled -1)
+    (when (0= disabled)
+      (setq disabled ())
+      (==> this expose rect) 
+      (each (((s . aux) :itspopup:contents))
+        (==> s enable) ) ) ) )
+
+(defmethod FancyChoiceMenu repaint()
+  (let (((x y w h) rect))
+    (if hilited	(fill-down-rect x y w h))
+    (setq y (+ y (2/ h) (2/ texth)))
+    (setcolor palette-left)
+    (fill-polygon (+ x 4) (+ y -8) (+ x 9) (+ y 2) (+ x 14) (+ y -8))
+    (setcolor palette-right)
+    (fill-polygon (+ x 2) (+ y -10) (+ x 7) (+ y 0) (+ x 12) (+ y -10))
+    (setcolor palette-down)
+    (fill-polygon (+ x 3) (+ y -9) (+ x 8) (+ y 1) (+ x 13) (+ y -9)) )
+  (let (((x y w h) rect))
+    (textfont)
+    (if disabled
+        (setcolor palette-disabled)
+      (color color-fg) )
+    (when (and paintcall data)
+      (paintcall data (+ x 18) (+ y 3)
+                 (max 0 (- w 22)) (max 0 (- h 6)) ) ) ) )
+
+
 
 
 ;; ----------------------------------------
@@ -895,88 +984,6 @@
   (if (= axis 'x) "X Axis" "Y Axis") )
 
 ;; CURVE SETUP
-
-(defclass FancyMenuItem MenuItem
-  paintcall )
-
-(defmethod FancyMenuItem FancyMenuItem(pcall parg xcall)
-  (setq text parg)
-  (setq paintcall pcall)
-  (==> this control 70 22 xcall) )
-
-(defmethod FancyMenuItem compute-geometry() ())
-
-(defmethod FancyMenuItem repaint()
-  (let (((x y w h) rect))
-    (if hilited
-	(fill-down-round-rect (+ x 2) (+ y 2) (- w 4) (- h 4)) )
-    (when disabled (setcolor palette-disabled) )
-    (textfont)
-    (when paintcall
-      (paintcall text (+ x 8) (+ y 4)
-                 (max 0 (- w 16)) (max 0 (- h 8)) ) ) ) )
-
-(defclass FancyChoiceMenu ChoiceMenu
-  disabled
-  paintcall 
-  execcall )
-
-(defmethod FancyChoiceMenu FancyChoiceMenu(pcall &optional callback)
-  (setq paintcall pcall)
-  (setq text "[******]")
-  (==> this choicemenu () callback)
-  (setq execcall (lambda(c) 
-                   (when (not :c:disabled)
-                     (==> thismenu setdata :c:text)
-                     (==> thismenu execute) ) )) )
-
-(defmethod FancyChoiceMenu setitems(d)
-  (==> itspopup removall)
-  (each ((i d))
-    (==> this insert 
-         (new fancymenuitem paintcall i execcall))) )
-
-(defmethod FancyChoiceMenu additems(parg)
-  (==> this insert (new fancymenuitem paintcall parg execcall)) )
-
-(defmethod FancyChoiceMenu setdata(d)
-  (setq data d) )
-
-(defmethod FancyChoiceMenu disable()
-  (if disabled
-      (incr disabled)
-    (setq disabled 1)
-    (==> this expose rect)
-    (each (((s . aux) :itspopup:contents))
-      (==> s disable) ) ) )
-
-(defmethod FancyChoiceMenu enable()
-  (when disabled
-    (incr disabled -1)
-    (when (0= disabled)
-      (setq disabled ())
-      (==> this expose rect) 
-      (each (((s . aux) :itspopup:contents))
-        (==> s enable) ) ) ) )
-
-(defmethod FancyChoiceMenu repaint()
-  (let (((x y w h) rect))
-    (if hilited	(fill-down-rect x y w h))
-    (setq y (+ y (2/ h) (2/ texth)))
-    (setcolor palette-left)
-    (fill-polygon (+ x 4) (+ y -8) (+ x 9) (+ y 2) (+ x 14) (+ y -8))
-    (setcolor palette-right)
-    (fill-polygon (+ x 2) (+ y -10) (+ x 7) (+ y 0) (+ x 12) (+ y -10))
-    (setcolor palette-down)
-    (fill-polygon (+ x 3) (+ y -9) (+ x 8) (+ y 1) (+ x 13) (+ y -9)) )
-  (let (((x y w h) rect))
-    (textfont)
-    (if disabled
-        (setcolor palette-disabled)
-      (color color-fg) )
-    (when (and paintcall data)
-      (paintcall data (+ x 18) (+ y 3)
-                 (max 0 (- w 22)) (max 0 (- h 6)) ) ) ) )
 
 (defclass PlotCurveSetup Form
   curve
