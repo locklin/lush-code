@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.12 2005-10-03 12:59:58 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.13 2005-10-04 11:12:35 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -586,10 +586,11 @@
     (error '==> "illegal color argument" c) )
   (let ((newcmds ()))
     (each ((cmd cmds))
-      (when (not (and (consp cmd) (= (car cmd) 'color)))
+      (when (not (and (consp cmd) 
+                      (member (car cmd) '(color color-rgb)) ))
         (setq newcmds (cons cmd newcmds)) ) )
     (setq cmds (cons `(color ,c) 
-                     (reverse newcmds) )) ) 
+                     (reverse newcmds) )) )
   t )
 
 (defmethod PlotCurve set-color-rgb(r g b)
@@ -597,7 +598,8 @@
     (error '==> "illegal color argument" (list r g b)) )
   (let ((newcmds ()))
     (each ((cmd cmds))
-      (when (not (and (consp cmd) (= (car cmd) 'color)))
+      (when (not (and (consp cmd) 
+                      (member (car cmd) '(color color-rgb)) ))
         (setq newcmds (cons cmd newcmds)) ) )
     (setq cmds (reverse (cons `(color-rgb ,r ,g ,b) newcmds))) )
   t )
@@ -767,9 +769,9 @@
 ;; PLOTPORTCONTROLLER
 
 
-;; PLOT DATA
+;; PLOT SETUP
 
-(defclass PlotDataSetup PlotSetup
+(defclass PlotDataSetup Form
   titleedit )
 
 (defmethod PlotDataSetup PlotDataSetup()
@@ -785,9 +787,9 @@
     (setq :port:title (when (<> s "") s)) ) )
 
 
-;; AXIS DATA
+;; AXIS SETUP
 
-(defclass PlotAxisSetup PlotSetup
+(defclass PlotAxisSetup Form
   axis
   titleedit
   minboundedit
@@ -881,6 +883,228 @@
       (setq :port:ylabels (if (not alab) majlab))
       (setq :port:yticks  (if (not alab) minlab)) ) ) ) )
 
+
+;; CURVE SETUP
+
+(defclass FancyMenuItem MenuItem
+  paintcall )
+
+(defmethod FancyMenuItem FancyMenuItem(pcall parg xcall)
+  (setq text parg)
+  (setq paintcall pcall)
+  (==> this control 70 22 xcall) )
+
+(defmethod FancyMenuItem compute-geometry() ())
+
+(defmethod FancyMenuItem repaint()
+  (let (((x y w h) rect))
+    (if hilited
+	(fill-down-round-rect (+ x 2) (+ y 2) (- w 4) (- h 4)) )
+    (when disabled (setcolor palette-disabled) )
+    (textfont)
+    (when paintcall
+      (paintcall text (+ x 8) (+ y 4)
+                 (max 0 (- w 16)) (max 0 (- h 8)) ) ) ) )
+
+(defclass FancyChoiceMenu ChoiceMenu
+  disabled
+  paintcall 
+  execcall )
+
+(defmethod FancyChoiceMenu FancyChoiceMenu(pcall &optional callback)
+  (setq paintcall pcall)
+  (setq text "[******]")
+  (==> this choicemenu () callback)
+  (setq execcall (lambda(c) 
+                   (when (not :c:disabled)
+                     (==> thismenu setdata :c:text)
+                     (==> thismenu execute) ) )) )
+
+(defmethod FancyChoiceMenu setitems(d)
+  (==> itspopup removall)
+  (each ((i d))
+    (==> this insert 
+         (new fancymenuitem paintcall i execcall))) )
+
+(defmethod FancyChoiceMenu additems(parg)
+  (==> this insert (new fancymenuitem paintcall parg execcall)) )
+
+(defmethod FancyChoiceMenu setdata(d)
+  (setq data d) )
+
+(defmethod FancyChoiceMenu disable()
+  (if disabled
+      (incr disabled)
+    (setq disabled 1)
+    (==> this expose rect)
+    (each (((s . aux) :itspopup:contents))
+      (==> s disable) ) ) )
+
+(defmethod FancyChoiceMenu enable()
+  (when disabled
+    (incr disabled -1)
+    (when (0= disabled)
+      (setq disabled ())
+      (==> this expose rect) 
+      (each (((s . aux) :itspopup:contents))
+        (==> s enable) ) ) ) )
+
+(defmethod FancyChoiceMenu repaint()
+  (let (((x y w h) rect))
+    (if hilited	(fill-down-rect x y w h))
+    (setq y (+ y (2/ h) (2/ texth)))
+    (setcolor palette-left)
+    (fill-polygon (+ x 4) (+ y -8) (+ x 9) (+ y 2) (+ x 14) (+ y -8))
+    (setcolor palette-right)
+    (fill-polygon (+ x 2) (+ y -10) (+ x 7) (+ y 0) (+ x 12) (+ y -10))
+    (setcolor palette-down)
+    (fill-polygon (+ x 3) (+ y -9) (+ x 8) (+ y 1) (+ x 13) (+ y -9)) )
+  (let (((x y w h) rect))
+    (textfont)
+    (if disabled
+        (setcolor palette-disabled)
+      (color color-fg) )
+    (when (and paintcall data)
+      (paintcall data (+ x 18) (+ y 3)
+                 (max 0 (- w 22)) (max 0 (- h 6)) ) ) ) )
+
+(defclass PlotCurveSetup Form
+  curve
+  curvename
+  delcheck
+  objectchoice
+  objectsize
+  sdbarsize
+  stylechoice
+  colorchoice )
+
+(defmethod PlotCurve gui()
+  (new PlotCurveSetup this) )
+
+(defmethod PlotCurveSetup PlotCurveSetup(thecurve)
+  (setq curve thecurve)
+  (setq objectchoice 
+        (new fancychoicemenu
+             (lambda(dat x y w h)
+               (draw-line x (+ y (2/ h)) (+ x w) (+ y (2/ h)))
+               (when (functionp dat)
+                 (let ((object-size 4))
+                   (dat (+ x (2/ w)) (+ y (2/ h))) ) ) ) ) )
+  (setq stylechoice 
+        (new fancychoicemenu
+             (lambda(dat x y w h)
+               (when (numberp dat) (linestyle dat))
+               (draw-line x (+ y (2/ h)) (+ x w) (+ y (2/ h))) ) ) )
+  (setq colorchoice 
+        (new fancychoicemenu
+             (lambda(dat x y w h)
+               (gsave
+                (cond
+                 ((numberp dat)
+                  (color dat) 
+                  (fill-rect x y w h))
+                 ((consp dat)
+                  (let (((r g b) dat)) 
+                    (color-rgb r g b)
+                    (fill-rect x y w h) ) ) ) )
+               (draw-rect x y w h) ) ) )
+  ;; choices
+  (==> stylechoice setitems '(0 1 2 3))
+  (==> objectchoice setitems
+       (list object-nil 
+             open-square open-circle 
+             open-up-triangle open-down-triangle
+             closed-square closed-circle 
+             closed-up-triangle closed-down-triangle
+             straight-cross oblique-cross) )
+  (==> colorchoice setitems
+       (list '(0 0 0) ;; choose better colors
+             '(.7 0 0) '(0 .7 0) '(0 0 .7)
+             '(.5 .5 0) '(0 .5 .5) '(.5 0 .5) ) )
+  ;; layout
+  (==> this form
+       (new column
+            (new row
+                 (new String "Name")
+                 (setq curvename (new EditString 20)) )
+            (new emptyspace 3 3)
+            (new row
+                 (new emptyspace 30 1)
+                 (new grid 2
+                      (new string "Object style")
+                      objectchoice
+                      (new string "Line style")
+                      stylechoice
+                      (new string "Color")
+                      colorchoice
+                      (new string "Object size")
+                      (setq objectsize (new editnumber 5))
+                      (new string "SDbar size")
+                      (setq sdbarsize (new editnumber 5)) ) )
+            (new emptyspace 3 3)
+            (setq delcheck (new checkbox "Remove this curve")) ) ) )
+
+(defmethod PlotCurveSetup load(port)
+  (let ((current-object open-square)
+        (object-size 3)
+        (sd-bar-size 3)
+        (xlinestyle 0)
+        (xcolor (list 0 0 0)) 
+        (xins 0) )
+    ;; scan commands
+    (each ((cmd :curve:cmds))
+      (cond
+       ((= (car cmd) 'linestyle)
+        (setq xlinestyle (cadr cmd)))
+       ((= (car cmd) 'color)
+        (setq xcolor (cadr cmd)) )
+       ((= (car cmd) 'color-rgb)
+        (setq xcolor (cdr cmd)) )
+       ((= (car cmd) 'setq)
+        (when (member (cadr cmd) '(current-object object-size sd-bar-size))
+          (eval cmd) ) )
+       (t
+        (incr xins) ) ) )
+    ;; string
+    (==> objectchoice enable)
+    (==> stylechoice enable)
+    (==> colorchoice enable)
+    (==> objectsize enable)
+    (==> sdbarsize enable)
+    (when (<= xins 0)
+      (==> objectchoice disable)
+      (==> stylechoice disable)
+      (==> colorchoice disable)
+      (==> objectsize disable)
+      (==> sdbarsize disable) )
+    ;; setup
+    (==> curvename setdata :curve:name)
+    (==> objectchoice setdata current-object)
+    (==> objectsize setdata object-size)
+    (==> sdbarsize setdata sd-bar-size)
+    (==> stylechoice setdata xlinestyle)
+    (==> colorchoice setdata xcolor) 
+    (==> delcheck setdata ()) ) )
+
+(defmethod PlotCurveSetup save(port)
+  (if (==> delcheck getdata)
+      (==> port del curve)
+    (let ((s (==> stylechoice getdata)))
+      (when s (==> curve set-linestyle s)) )
+    (let ((s (==> objectchoice getdata)))
+      (when s (==> curve set-object s)) )
+    (let ((s (==> objectsize getdata)))
+      (when s (==> curve set-object-size s)) )
+    (let ((s (==> objectsize getdata)))
+      (when s (==> curve set-object-size s)) )
+    (let ((s (==> colorchoice getdata)))
+      (cond
+       ((numberp s)
+        (==> curve set-color s) )
+       ((consp s)
+        (let (((r g b) s))
+          (==> curve set-color-rgb r g b) ) ) ) )
+    t ) )
 
 ;; CONTROLLER
 
@@ -977,8 +1201,8 @@
         (==> thestack remove (cdr pair)) ) )
     (setq thestuff (reverse ns))
     (let ((key (==> themenu getdata)))
-      (==> thesmenu setitems (mapcar car thestuff))
-      (==> this select key) ) ) )
+      (==> themenu setitems (mapcar car thestuff))
+      (==> this select ()) ) ) )
 
 
 
