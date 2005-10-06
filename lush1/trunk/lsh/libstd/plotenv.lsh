@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.18 2005-10-04 15:46:10 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.19 2005-10-06 13:16:28 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -852,7 +852,7 @@
 (defmethod PlotWindow setup-action()
   (let ((controlwindow (when plot :plot:controlwindow)))
     (when (not controlwindow)
-      (setq controlwindow (new PlotPortController this)) )
+      (setq controlwindow (new PlotSetup this)) )
     (let ((window :controlwindow:window))
       (when (and window ogre-configure)
         (ogre-configure t () () () ()) ) ) ) )
@@ -860,7 +860,7 @@
 
 
 ;; ----------------------------------------
-;; PLOTPORTCONTROLLER
+;; PLOTSETUP
 
 
 ;; PLOT SETUP
@@ -1131,7 +1131,7 @@
 
 ;; CONTROLLER
 
-(defclass PlotPortController AutoWindowObject
+(defclass PlotSetup AutoWindowObject
   port
   basewindow
   themenu
@@ -1139,7 +1139,7 @@
   thestuff 
   applybtn )
 
-(defmethod PlotPortController PlotPortController(&optional p)
+(defmethod PlotSetup PlotSetup(&optional p)
   (when (not p)
     (setq p plot-port) )
   (when (consp p)
@@ -1183,10 +1183,10 @@
                  (new emptyspace 80 1) ) ) )
   (setq :port:controlwindow this) )
 
-(defmethod PlotPortController keypress(c x y)
+(defmethod PlotSetup keypress(c x y)
   (if (= c "\r") (==> applybtn trigger) 'ignored) )
 
-(defmethod PlotPortController select(&optional key)
+(defmethod PlotSetup select(&optional key)
   (when (not key)
     (setq key (or (==> themenu getdata) (caar thestuff))) )
   (let ((obj (cdr (assoc key thestuff))))
@@ -1194,13 +1194,13 @@
       (==> themenu setdata key)
       (==> obj front) ) ) )
 
-(defmethod PlotPortController load()
+(defmethod PlotSetup load()
   (when port
     (each (((k . obj) thestuff)) 
       (when (check==> (classof obj) 'load)
         (==> obj load port) ) ) ) )
 
-(defmethod PlotPortController save()
+(defmethod PlotSetup save()
   (when port
     (each (((k . obj) thestuff))
       (when (check==> (classof obj) 'save)
@@ -1221,7 +1221,7 @@
     (==> this load)
     (==> port execute) ) )
 
-(defmethod PlotPortController add(obj)
+(defmethod PlotSetup add(obj)
   (==> obj load port)
   (let ((key (==> obj name)))
     (setq thestuff (nconc1 thestuff (cons key obj)))
@@ -1231,7 +1231,7 @@
       (==> themenu setitems (mapcar car thestuff))
       (==> this select key) ) ) )
 
-(defmethod PlotPortController del(key)
+(defmethod PlotSetup del(key)
   (let ((ns ()) )
     (each ((pair thestuff))
       (if (<> key (car pair))
@@ -1249,207 +1249,204 @@
 ;; EMULATION OF OLDPLOTENV
 
 
-;; Emulate "oldplotenv" unless it has already been loaded.
-(when (not (is-of-class in-plot-port |DM|))
-  
-  ;; Copied from oldplotenv.
-  (de nice-brect()
-    (list 0 (ysize) (xsize) 0) )
+;; Copied from oldplotenv.
+(de nice-brect()
+  (list 0 (ysize) (xsize) 0) )
 
-  (de rect-2-ppbrect((x y w h))
-    (list x (+ y h) (+ x w) y) )
+(de rect-2-ppbrect((x y w h))
+  (list x (+ y h) (+ x w) y) )
 
-  (de nice-scale(mini maxi &optional (deltamin 0))
-    (let* ((d (abs (- maxi mini)))
-	   (logd (int (/ (log (/ d 3)) (log 10))))
-	   (step1 (** 10 logd))
-	   (ratio (/ deltamin step1))
-	   (step  (* step1 (max 1 (- (int (- ratio))))))
-	   (start (* step (int (/ (+ mini step) step)))))
-      (range start maxi step) ) )
+(de nice-scale(mini maxi &optional (deltamin 0))
+  (let* ((d (abs (- maxi mini)))
+         (logd (int (/ (log (/ d 3)) (log 10))))
+         (step1 (** 10 logd))
+         (ratio (/ deltamin step1))
+         (step  (* step1 (max 1 (- (int (- ratio))))))
+         (start (* step (int (/ (+ mini step) step)))))
+    (range start maxi step) ) )
 
-  (de graph-scale(min max)
-    (let ((mult (** 10 (int (/ (log (/ (- max min) 2)) (log 10))))))
-      (setq min (* mult (int (/ min mult))))
-      (setq max (* mult (int (+ 0.99 (/ max mult)))))
-      (list min max mult) ) )
-  
-  ;; Functions no longer available.
-  (df in-plot-port args
-    (error "This function is only available with \"oldplotenv.lsh\".") )
-  (df plt-rbx args
-    (error "This function is only available with \"oldplotenv.lsh\".") )
-  (df plt-rby args
-    (error "This function is only available with \"oldplotenv.lsh\".") )
+(de graph-scale(min max)
+  (let ((mult (** 10 (int (/ (log (/ (- max min) 2)) (log 10))))))
+    (setq min (* mult (int (/ min mult))))
+    (setq max (* mult (int (+ 0.99 (/ max mult)))))
+    (list min max mult) ) )
 
-  ;; Replacement for new-plot-port.
-  (de new-plot-port(&optional brect prect object)
-    (let* ((pw ()) (pp ()) (pc ()))
-      (if (not window)
-          (progn 
-            (setq pw (new PlotWindow))
-            (setq pp :pw:plot) )
-        (progn
-          (setq pp (new PlotPort))
-          (setq :pp:window window)
-          (setq :pp:attrwindow window)
-          (setq :pp:plotrect
-                (let (((xmin ymin xmax ymax)
-                       (or brect (list 0 0 (xsize) (ysize))) ))
-                  (list (min xmin xmax)
-                        (min ymin ymax)
-                        (abs (- xmax xmin))
-                        (abs (- ymax ymin)) ) ) ) ) )
-      (when prect
-	(let (((xmin ymin xmax ymax) prect))
-	  (when (and xmin xmax)
-	    (setq :pp:xbounds (list xmin xmax)) )
-	  (when (and ymin ymax)
-	    (setq :pp:ybounds (list ymin ymax)) ) ) )
-      (setq pc (new PlotCurve))
-      (when (functionp object)
-        (let ((window (==> pp window)))
-          (==> pc command `(setq current-object ,object)) ) )
-      (setq :pc:name "Compat1")
-      (==> pp add pc)
-      (list pc pp object) ) )
+;; Functions no longer available.
+(df in-plot-port args
+  (error "This function is only available with \"oldplotenv.lsh\".") )
+(df plt-rbx args
+  (error "This function is only available with \"oldplotenv.lsh\".") )
+(df plt-rby args
+  (error "This function is only available with \"oldplotenv.lsh\".") )
+
+;; Replacement for new-plot-port.
+(de new-plot-port(&optional brect prect object)
+  (let* ((pw ()) (pp ()) (pc ()))
+    (if (not window)
+        (progn 
+          (setq pw (new PlotWindow))
+          (setq pp :pw:plot) )
+      (progn
+        (setq pp (new PlotPort))
+        (setq :pp:window window)
+        (setq :pp:attrwindow window)
+        (setq :pp:plotrect
+              (let (((xmin ymin xmax ymax)
+                     (or brect (list 0 0 (xsize) (ysize))) ))
+                (list (min xmin xmax)
+                      (min ymin ymax)
+                      (abs (- xmax xmin))
+                      (abs (- ymax ymin)) ) ) ) ) )
+    (when prect
+      (let (((xmin ymin xmax ymax) prect))
+        (when (and xmin xmax)
+          (setq :pp:xbounds (list xmin xmax)) )
+        (when (and ymin ymax)
+          (setq :pp:ybounds (list ymin ymax)) ) ) )
+    (setq pc (new PlotCurve))
+    (when (functionp object)
+      (let ((window (==> pp window)))
+        (==> pc command `(setq current-object ,object)) ) )
+    (setq :pc:name "Compat1")
+    (==> pp add pc)
+    (list pc pp object) ) )
   
-  ;; Replacement for copy-plot-port.
-  (de copy-plot-port(port &optional object)
-    (setq object (or object (nth 2 port)))
-    (let ((pp (cadr port))
-	  (pc (new PlotCurve)))
-      (when (functionp object)
-        (let ((window (==> pp window)))
-          (==> pc command `(setq current-object ,object)) ) )
-      (setq :pc:name "Compat1")
-      (==> pp add pc)
-      (list pc pp object) ) )
+;; Replacement for copy-plot-port.
+(de copy-plot-port(port &optional object)
+  (setq object (or object (nth 2 port)))
+  (let ((pp (cadr port))
+        (pc (new PlotCurve)))
+    (when (functionp object)
+      (let ((window (==> pp window)))
+        (==> pc command `(setq current-object ,object)) ) )
+    (setq :pc:name "Compat1")
+    (==> pp add pc)
+    (list pc pp object) ) )
   
-  ;; approximate replacement for draw-axes
-  (de draw-axes(brect xlabel ylabel name &optional x2l y2l)
+;; approximate replacement for draw-axes
+(de draw-axes(brect xlabel ylabel name &optional x2l y2l)
+  (let (((pc pp . aux) plot-port))
+    (setq :pp:plotrect
+          (let (((xmin ymin xmax ymax)
+                 (or brect (list 0 0 (xsize) (ysize))) ))
+            (list (min xmin xmax)
+                  (min ymin ymax)
+                  (abs (- xmax xmin))
+                  (abs (- ymax ymin)) ) ) )
+    (when xlabel 
+      (setq :pp:xlabels xlabel) 
+      (setq :pp:xticks xlabel) )
+    (when ylabel 
+      (setq :pp:ylabels ylabel) 
+      (setq :pp:yticks ylabel) )
+    (when name
+      (setq :pp:title (when (<> name "") name)) )
+    (when (functionp x2l)
+      (setq :pp:xlabel2str x2l) )
+    (when (functionp y2l)
+      (setq :pp:xlabel2str y2l) )
+    (==> pp execute) ) )
+  
+;; replacement for setup-axes.
+(de setup-axes(&optional xmin ymin xmax ymax xstep ystep 
+                         (name "") object x2l y2l)
+  (when (or xmin ymin xmax ymax)
+    (when (not (and (numberp xmin) (numberp ymin)
+                    (numberp xmax) (numberp ymax) ))
+      (error 'setup-axes "First four arguments must be numeric" ()) ) )
+  (let* ((brect (when xmin (list 0 0 (xsize) (ysize))))
+         (rrect (when xmin (list xmin ymin xmax ymax))) 
+         (window (when xmin window)) )
+    (setq plot-port 
+          (new-plot-port brect rrect (or object open-square)))
     (let (((pc pp . aux) plot-port))
-      (setq :pp:plotrect
-            (let (((xmin ymin xmax ymax)
-                   (or brect (list 0 0 (xsize) (ysize))) ))
-              (list (min xmin xmax)
-                    (min ymin ymax)
-                    (abs (- xmax xmin))
-                    (abs (- ymax ymin)) ) ) )
-      (when xlabel 
-        (setq :pp:xlabels xlabel) 
-        (setq :pp:xticks xlabel) )
-      (when ylabel 
-        (setq :pp:ylabels ylabel) 
-        (setq :pp:yticks ylabel) )
       (when name
         (setq :pp:title (when (<> name "") name)) )
+      (when xstep
+        (setq :pp:xlabels xstep)
+        (setq :pp:xticks xstep) )
+      (when ystep
+        (setq :pp:xlabels ystep)
+        (setq :pp:xticks ystep) )
       (when (functionp x2l)
         (setq :pp:xlabel2str x2l) )
       (when (functionp y2l)
-        (setq :pp:xlabel2str y2l) )
-      (==> pp execute) ) )
+        (setq :pp:xlabel2str y2l) ) )
+    (==> (cadr plot-port) execute)
+    plot-port) )
   
-  ;; replacement for setup-axes.
-  (de setup-axes(&optional xmin ymin xmax ymax xstep ystep 
-                           (name "") object x2l y2l)
-    (when (or xmin ymin xmax ymax)
-      (when (not (and (numberp xmin) (numberp ymin)
-                      (numberp xmax) (numberp ymax) ))
-        (error 'setup-axes "First four arguments must be numeric" ()) ) )
-    (let* ((brect (when xmin (list 0 0 (xsize) (ysize))))
-           (rrect (when xmin (list xmin ymin xmax ymax))) 
-           (window (when xmin window)) )
-      (setq plot-port 
-            (new-plot-port brect rrect (or object open-square)))
-      (let (((pc pp . aux) plot-port))
-        (when name
-          (setq :pp:title (when (<> name "") name)) )
-        (when xstep
-          (setq :pp:xlabels xstep)
-          (setq :pp:xticks xstep) )
-        (when ystep
-          (setq :pp:xlabels ystep)
-          (setq :pp:xticks ystep) )
-        (when (functionp x2l)
-          (setq :pp:xlabel2str x2l) )
-        (when (functionp y2l)
-          (setq :pp:xlabel2str y2l) ) )
-      (==> (cadr plot-port) execute)
-      plot-port) )
-  
-  ;; simple drawing functions.
-  (de plt-clear()
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-	(==> pc command `(plt-clear)) ) ) )
+;; simple drawing functions.
+(de plt-clear()
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (==> pc command `(plt-clear)) ) ) )
 
-  (de plt-move(x y)
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-	(==> pc command `(plt-move ,x ,y)) ) ) )
+(de plt-move(x y)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (==> pc command `(plt-move ,x ,y)) ) ) )
 
-  (de plt-draw(x y)
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-	(==> pc command `(plt-draw ,x ,y)) )
-      (==> pp execute) ) )
+(de plt-draw(x y)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (==> pc command `(plt-draw ,x ,y)) )
+    (==> pp execute) ) )
 
-  (de plt-plot(x y)
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-	(==> pc command `(plt-plot ,x ,y)) )
-      (==> pp execute) ) )
+(de plt-plot(x y)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (==> pc command `(plt-plot ,x ,y)) )
+    (==> pp execute) ) )
 
-  (de plt-sd(x y v)
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-	(==> pc command `(plt-sd ,x ,y ,v)) )
-      (==> pp execute) ) )
+(de plt-sd(x y v)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (==> pc command `(plt-sd ,x ,y ,v)) )
+    (==> pp execute) ) )
 
-  (de plt-linestyle(s)
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-        (linestyle s) ) ) )
+(de plt-linestyle(s)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (linestyle s) ) ) )
   
-  (de plt-color(c)
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-        (color c) ) ) )
+(de plt-color(c)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (color c) ) ) )
   
-  (de plt-color-rgb(r g b)
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-        (color-rgb r g b) ) ) )
+(de plt-color-rgb(r g b)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (color-rgb r g b) ) ) )
   
-  ;; high level drawing functions.
+;; high level drawing functions.
   
-  (de plot-lists (lx ly)
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-        (==> pp add (new PlotCurve lx ly) ) ) ) )
+(de plot-lists (lx ly)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (==> pp add (new PlotCurve lx ly) ) ) ) )
   
-  (de plot-lists-sd (lx ly lv)
-    (let (((pc pp . aux) plot-port))
-      (let ((window (==> pp window)))
-        (==> pp add (new PlotCurve lx ly lv) ) ) ) )
+(de plot-lists-sd (lx ly lv)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window)))
+      (==> pp add (new PlotCurve lx ly lv) ) ) ) )
   
-  (de graph-xy(lx ly &optional arg)
-    (let* ((pp ())
-	   (pc (new PlotCurve lx ly)) )
-      (when (is-of-class arg PlotWindow) (setq pp :arg:plot) )
-      (when (is-of-class arg PlotPort) (setq pp arg) )
-      (when (not pp) (setq pp :(new PlotWindow):plot) )
-      (when (stringp arg) (setq :pp:title arg))
-      (==> pp add pc) 
-      pp ) )
+(de graph-xy(lx ly &optional arg)
+  (let* ((pp ())
+         (pc (new PlotCurve lx ly)) )
+    (when (is-of-class arg PlotWindow) (setq pp :arg:plot) )
+    (when (is-of-class arg PlotPort) (setq pp arg) )
+    (when (not pp) (setq pp :(new PlotWindow):plot) )
+    (when (stringp arg) (setq :pp:title arg))
+    (==> pp add pc) 
+    pp ) )
   
-  (de graph-xyv(lx ly lv &optional arg)
-    (let* ((pp ())
-	   (pc (new PlotCurve lx ly lv)) )
-      (when (is-of-class arg PlotWindow) (setq pp :arg:plot) )
-      (when (is-of-class arg PlotPort) (setq pp arg) )
-      (when (not pp) (setq pp :(new PlotWindow):plot) )
-      (when (stringp arg) (setq :pp:title arg))
-      (==> pp add pc) 
-      pp ) ) )
+(de graph-xyv(lx ly lv &optional arg)
+  (let* ((pp ())
+         (pc (new PlotCurve lx ly lv)) )
+    (when (is-of-class arg PlotWindow) (setq pp :arg:plot) )
+    (when (is-of-class arg PlotPort) (setq pp arg) )
+    (when (not pp) (setq pp :(new PlotWindow):plot) )
+    (when (stringp arg) (setq :pp:title arg))
+    (==> pp add pc) 
+    pp ) ) )
