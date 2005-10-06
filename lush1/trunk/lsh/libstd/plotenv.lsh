@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.19 2005-10-06 13:16:28 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.20 2005-10-06 13:24:54 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -223,9 +223,9 @@
 
 
 ;; ----------------------------------------
-;; PLOTPORT
+;; PLOTCONTEXT
 
-(defclass PlotPort Object
+(defclass PlotContext Object
   ;; windows
   window attrwindow plotrect
   plotwindow controlwindow
@@ -252,21 +252,21 @@
   cxmin cymin cxmax cymax rbx rby
   cxticks cyticks cxlabels cylabels )
 
-(defmethod PlotPort -destructor()
+(defmethod PlotContext -destructor()
   (delete plotwindow)
   (delete controlwindow) )
 
-(defmethod PlotPort plotport()
+(defmethod PlotContext PlotContext()
   (setq plot-context-title :plot-context-title)
   (setq plot-context-labels :plot-context-labels)
   (setq plot-context-axes :plot-context-axes)
   (setq plot-context-grid :plot-context-grid) )
 
-(defmethod PlotPort window()
+(defmethod PlotContext window()
   (or window attrwindow 
       (when plotwindow :plotwindow:window) ) )
 
-(defmethod PlotPort text-rect(s &optional f)
+(defmethod PlotContext text-rect(s &optional f)
   (let ((r ()))
     (when window 
       (gsave (when f (f)) (setq r (rect-text 0 0 s))) )
@@ -275,13 +275,13 @@
 	(gsave (when f (f)) (setq r (rect-text 0 0 s))) ) )
     (or r (list 0 -10 (* (len s) 7) 10)) ) )
 
-(defmethod PlotPort text-width(s &optional f)
+(defmethod PlotContext text-width(s &optional f)
   (nth 2 (==> this text-rect s f)) )
 
-(defmethod PlotPort text-height(s &optional f)
+(defmethod PlotContext text-height(s &optional f)
   (nth 3 (==> this text-rect s f)) )
 
-(defmethod PlotPort make-unique-names()
+(defmethod PlotContext make-unique-names()
   (let ((names ()))
     (each ((curve curves))
       (let* ((name :curve:name)
@@ -292,7 +292,7 @@
         (setq :curve:name name)
         (setq names (cons name names)) ) ) ) )
 
-(defmethod PlotPort add(curve)
+(defmethod PlotContext add(curve)
   (when (not (member curve curves))
     (setq curves (nconc1 curves curve))
     (==> this make-unique-names)
@@ -302,14 +302,14 @@
     (==> this execute)
     curve ) )
 
-(defmethod PlotPort del(curve)
+(defmethod PlotContext del(curve)
   (setq curves (flatten (all ((c curves)) (when (<> c curve) c))))
   (==> this execute) 
   (when controlwindow
     (==> controlwindow del :curve:name) )
   curve )
 
-(defmethod PlotPort compute()
+(defmethod PlotContext compute()
   ;; bounds calculation
   (setq cxmin () cxmax () cymin () cymax ())
   (each ((curve curves))
@@ -444,7 +444,7 @@
   (setq rby (eval `(lambda(x y) (max -20000 (min 20000 ,rby)))))
   t )
 
-(defmethod PlotPort execute(&optional (clear t))
+(defmethod PlotContext execute(&optional (clear t))
   (cond
    ((and plotwindow clear)
     (==> plotwindow expose) )
@@ -762,7 +762,7 @@
 
 (defmethod PlotWindow PlotWindow(&optional nam)
   (setq name (or nam (sprintf "Lush Plot %d" (incr plot-window-id))))
-  (setq plot (new PlotPort))
+  (setq plot (new PlotContext))
   (setq plotrect ()) 
   (setq :plot:plotwindow this)
   (setq menubar 
@@ -873,12 +873,12 @@
        (new column 
             (setq titleedit (new editstring 30)) ) ) )
 
-(defmethod PlotDataSetup load(port)
-  (==> titleedit setdata (or :port:title "")) )
+(defmethod PlotDataSetup load(plot)
+  (==> titleedit setdata (or :plot:title "")) )
 
-(defmethod PlotDataSetup save(port)
+(defmethod PlotDataSetup save(plot)
   (let ((s (==> titleedit getdata)))
-    (setq :port:title (when (<> s "") s)) ) )
+    (setq :plot:title (when (<> s "") s)) ) )
 
 (defmethod PlotDataSetup name()
   "Title" )
@@ -941,14 +941,14 @@
     (==> labeledit disable)
     (==> tickedit disable) ) )
 
-(defmethod PlotAxisSetup load(port)
+(defmethod PlotAxisSetup load(plot)
   (let ((v ()))
     (cond
      ((= axis 'x)
-      (setq v (letslot port
+      (setq v (letslot plot
                        (list xtitle xlog xgrid xbounds xlabels xticks) )) )
      ((= axis 'y)
-      (setq v (letslot port
+      (setq v (letslot plot
                        (list ytitle ylog ygrid ybounds ylabels yticks) )) ) )
     (when v
       (let (((ttl log grd bnd lab tik) v))
@@ -961,24 +961,24 @@
                    (if (numberp lab) lab 0)
                    (if (numberp tik) tik 0) ) ) ) ) ) )
 
-(defmethod PlotAxisSetup save(port)
+(defmethod PlotAxisSetup save(plot)
   (let (((ttl log grd abnd minbnd maxbnd alab majlab minlab) 
          (==> this getdata) ))
     (cond
      ((= axis 'x)
-      (setq :port:xtitle (if (= ttl "") () ttl))
-      (setq :port:xlog log)
-      (setq :port:xgrid grd)
-      (setq :port:xbounds (if (not abnd) (list minbnd maxbnd)))
-      (setq :port:xlabels (if (not alab) majlab))
-      (setq :port:xticks  (if (not alab) minlab)) )
+      (setq :plot:xtitle (if (= ttl "") () ttl))
+      (setq :plot:xlog log)
+      (setq :plot:xgrid grd)
+      (setq :plot:xbounds (if (not abnd) (list minbnd maxbnd)))
+      (setq :plot:xlabels (if (not alab) majlab))
+      (setq :plot:xticks  (if (not alab) minlab)) )
      ((= axis 'y)
-      (setq :port:ytitle (if (= ttl "") () ttl))
-      (setq :port:ylog log)
-      (setq :port:ygrid grd)
-      (setq :port:ybounds (if (not abnd) (list minbnd maxbnd)))
-      (setq :port:ylabels (if (not alab) majlab))
-      (setq :port:yticks  (if (not alab) minlab)) ) ) ) )
+      (setq :plot:ytitle (if (= ttl "") () ttl))
+      (setq :plot:ylog log)
+      (setq :plot:ygrid grd)
+      (setq :plot:ybounds (if (not abnd) (list minbnd maxbnd)))
+      (setq :plot:ylabels (if (not alab) majlab))
+      (setq :plot:yticks  (if (not alab) minlab)) ) ) ) )
 
 (defmethod PlotAxisSetup name()
   (if (= axis 'x) "X Axis" "Y Axis") )
@@ -1061,7 +1061,7 @@
             (new emptyspace 3 3)
             (setq delcheck (new checkbox "Remove this curve")) ) ) )
 
-(defmethod PlotCurveSetup load(port)
+(defmethod PlotCurveSetup load(plot)
   (let ((current-object open-square)
         (object-size 3)
         (sd-bar-size 3)
@@ -1103,9 +1103,9 @@
     (==> colorchoice setdata xcolor) 
     (==> delcheck setdata ()) ) )
 
-(defmethod PlotCurveSetup save(port)
+(defmethod PlotCurveSetup save(plot)
   (if (==> delcheck getdata)
-      (==> port del curve)
+      (==> plot del curve)
     (let ((s (==> curvename getdata)))
       (when (and (stringp s) (<> s ""))
         (setq :curve:name s) ) )
@@ -1132,7 +1132,7 @@
 ;; CONTROLLER
 
 (defclass PlotSetup AutoWindowObject
-  port
+  plot
   basewindow
   themenu
   thestack
@@ -1145,11 +1145,11 @@
   (when (consp p)
     (setq p (cadr p)) )
   (cond
-   ((is-of-class p PlotPort)
-    (setq port p) )
+   ((is-of-class p PlotContext)
+    (setq plot p) )
    ((is-of-class p PlotWindow)
     (setq basewindow p)
-    (setq port :p:plot) )
+    (setq plot :p:plot) )
    (t
     (error 'new "illegal argument" p) ) )
   (setq thestack (new stack))
@@ -1161,7 +1161,7 @@
   (==> this add (new PlotDataSetup))
   (==> this add (new PlotAxisSetup 'x ))
   (==> this add (new PlotAxisSetup 'y ))
-  (each ((curve :port:curves))
+  (each ((curve :plot:curves))
     (when (check==> (classof curve) 'gui)
       (==> this add (==> curve gui)) ) )
   (==> this load)
@@ -1181,7 +1181,7 @@
                  applybtn
                  (new stdbutton "Close" (lambda(c) (==> thisform delete))) 
                  (new emptyspace 80 1) ) ) )
-  (setq :port:controlwindow this) )
+  (setq :plot:controlwindow this) )
 
 (defmethod PlotSetup keypress(c x y)
   (if (= c "\r") (==> applybtn trigger) 'ignored) )
@@ -1195,17 +1195,17 @@
       (==> obj front) ) ) )
 
 (defmethod PlotSetup load()
-  (when port
+  (when plot
     (each (((k . obj) thestuff)) 
       (when (check==> (classof obj) 'load)
-        (==> obj load port) ) ) ) )
+        (==> obj load plot) ) ) ) )
 
 (defmethod PlotSetup save()
-  (when port
+  (when plot
     (each (((k . obj) thestuff))
       (when (check==> (classof obj) 'save)
-        (==> obj save port) ) )
-    (==> port make-unique-names)
+        (==> obj save plot) ) )
+    (==> plot make-unique-names)
     (let ((items ())
           (key (==> themenu getdata))
           (newkey ()))
@@ -1219,10 +1219,10 @@
       (==> themenu setitems items)
       (==> this select newkey) )
     (==> this load)
-    (==> port execute) ) )
+    (==> plot execute) ) )
 
 (defmethod PlotSetup add(obj)
-  (==> obj load port)
+  (==> obj load plot)
   (let ((key (==> obj name)))
     (setq thestuff (nconc1 thestuff (cons key obj)))
     (==> thestack insert obj)
@@ -1287,7 +1287,7 @@
           (setq pw (new PlotWindow))
           (setq pp :pw:plot) )
       (progn
-        (setq pp (new PlotPort))
+        (setq pp (new PlotContext))
         (setq :pp:window window)
         (setq :pp:attrwindow window)
         (setq :pp:plotrect
@@ -1435,7 +1435,7 @@
   (let* ((pp ())
          (pc (new PlotCurve lx ly)) )
     (when (is-of-class arg PlotWindow) (setq pp :arg:plot) )
-    (when (is-of-class arg PlotPort) (setq pp arg) )
+    (when (is-of-class arg PlotContext) (setq pp arg) )
     (when (not pp) (setq pp :(new PlotWindow):plot) )
     (when (stringp arg) (setq :pp:title arg))
     (==> pp add pc) 
@@ -1445,7 +1445,7 @@
   (let* ((pp ())
          (pc (new PlotCurve lx ly lv)) )
     (when (is-of-class arg PlotWindow) (setq pp :arg:plot) )
-    (when (is-of-class arg PlotPort) (setq pp arg) )
+    (when (is-of-class arg PlotContext) (setq pp arg) )
     (when (not pp) (setq pp :(new PlotWindow):plot) )
     (when (stringp arg) (setq :pp:title arg))
     (==> pp add pc) 
