@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.54 2005-06-03 04:10:09 leonb Exp $
+ * $Id: unix.c,v 1.55 2005-10-06 17:43:12 ysulsky Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1160,32 +1160,53 @@ DY(ytime)
     } 
   else 
     {
-      long ticks;
-      struct tms buffer;
-      time_t oldtime, newtime;
-      register at *q;
+      long numcpus = -1;
+#ifdef HAVE_SYSCONF
+#ifdef _SC_NPROCESSORS_ONLN
+      numcpus = sysconf (_SC_NPROCESSORS_ONLN);
+#endif
+#endif
+      if (numcpus > 1) 
+        {
+          int s1, ms1, s2, ms2;
+          register at *q;
+
+          os_curtime(&s1, &ms1);
+          q = progn(ARG_LIST);
+          os_curtime(&s2, &ms2);
+          UNLOCK(q);
+
+          return NEW_NUMBER(s2 - s1 + (double) (ms2 - ms1) * 0.001);
+        }
+      else
+        {
+          long ticks;
+          struct tms buffer;
+          time_t oldtime, newtime;
+          register at *q;
       
-      times(&buffer);
-      oldtime = buffer.tms_utime;
-      q = progn(ARG_LIST);
-      times(&buffer);
-      newtime = buffer.tms_utime;
-      UNLOCK(q);
+          times(&buffer);
+          oldtime = buffer.tms_utime;
+          q = progn(ARG_LIST);
+          times(&buffer);
+          newtime = buffer.tms_utime;
+          UNLOCK(q);
       
-      ticks = -1;
+          ticks = -1;
 #ifdef HAVE_SYSCONF
 #ifdef _SC_CLK_TCK
-      ticks = sysconf(_SC_CLK_TCK);
+          ticks = sysconf(_SC_CLK_TCK);
 #endif
 #endif
 #ifdef CLK_TCK
-      if (ticks <= 0)
-        ticks = CLK_TCK;
+          if (ticks <= 0)
+            ticks = CLK_TCK;
 #else
-      if (ticks <= 0)
-        ticks = 60;
+          if (ticks <= 0)
+            ticks = 60;
 #endif
-      return NEW_NUMBER((newtime - oldtime) / (double)(ticks));
+          return NEW_NUMBER((newtime - oldtime) / (double) ticks);
+        }
     }
 }
 
