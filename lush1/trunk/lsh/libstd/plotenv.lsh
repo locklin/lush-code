@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.20 2005-10-06 13:24:54 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.21 2005-10-11 08:27:13 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -542,6 +542,13 @@
               (gprintf (+ (- xleft tx) (2/ (- (+ cx cw (- xleft)) tw))) 
                        (- ytop (+ 10 th ty)) title) ) ) ) ) ) ) ) ) )
 
+(defmethod PlotContext setup()
+  (when (not controlwindow)
+    (setq controlwindow (new PlotSetup this)) )
+  (let ((window :controlwindow:window))
+    (when (and window ogre-configure)
+      (ogre-configure t () () () ()) ) ) )
+
 
 ;; ----------------------------------------
 ;; PLOTCURVE
@@ -761,7 +768,7 @@
   printreq )
 
 (defmethod PlotWindow PlotWindow(&optional nam)
-  (setq name (or nam (sprintf "Lush Plot %d" (incr plot-window-id))))
+  (setq name (or nam (sprintf "Plot %d" (incr plot-window-id))))
   (setq plot (new PlotContext))
   (setq plotrect ()) 
   (setq :plot:plotwindow this)
@@ -779,7 +786,9 @@
              (new menu "Setup"
                   "Setup Plot..."
                   (lambda(item) (==> thisform setup-action)) ) ))
-  (==> this WindowObject 0 0 600 420 (or name "Lush Plot") menubar) )
+  (==> this WindowObject 0 0 600 420 
+       (concat "Lush: " (or name "Plot"))
+       menubar) )
 
 (defmethod PlotWindow manage-geometry()
   (let (((x y w h) rect)
@@ -850,14 +859,7 @@
     (==> this sendplot-svg (==> filereq getdata)) ) )
 
 (defmethod PlotWindow setup-action()
-  (let ((controlwindow (when plot :plot:controlwindow)))
-    (when (not controlwindow)
-      (setq controlwindow (new PlotSetup this)) )
-    (let ((window :controlwindow:window))
-      (when (and window ogre-configure)
-        (ogre-configure t () () () ()) ) ) ) )
-
-
+  (==> plot setup) )
 
 ;; ----------------------------------------
 ;; PLOTSETUP
@@ -993,38 +995,47 @@
   objectsize
   sdbarsize
   stylechoice
-  colorchoice )
+  colorchoice 
+  changed )
 
 (defmethod PlotCurve gui()
   (new PlotCurveSetup this) )
 
 (defmethod PlotCurveSetup PlotCurveSetup(thecurve)
-  (setq curve thecurve)
-  (setq objectchoice 
-        (new fancychoicemenu
-             (lambda(dat x y w h)
-               (draw-line x (+ y (2/ h)) (+ x w) (+ y (2/ h)))
-               (when (functionp dat)
-                 (let ((object-size 4))
-                   (dat (+ x (2/ w)) (+ y (2/ h))) ) ) ) ) )
-  (setq stylechoice 
-        (new fancychoicemenu
-             (lambda(dat x y w h)
-               (when (numberp dat) (linestyle dat))
-               (draw-line x (+ y (2/ h)) (+ x w) (+ y (2/ h))) ) ) )
-  (setq colorchoice 
-        (new fancychoicemenu
-             (lambda(dat x y w h)
-               (gsave
-                (cond
-                 ((numberp dat)
-                  (color dat) 
-                  (fill-rect x y w h))
-                 ((consp dat)
-                  (let (((r g b) dat)) 
-                    (color-rgb r g b)
-                    (fill-rect x y w h) ) ) ) )
-               (draw-rect x y w h) ) ) )
+  (let ((xeq (lambda(c) (setq :thisform:changed t))))
+    (setq curve thecurve)
+    (setq objectchoice 
+          (new fancychoicemenu
+               (lambda(dat x y w h)
+                 (draw-line x (+ y (2/ h)) (+ x w) (+ y (2/ h)))
+                 (when (functionp dat)
+                   (let ((object-size 4))
+                     (dat (+ x (2/ w)) (+ y (2/ h))) ) ) )
+               xeq ) )
+    (setq stylechoice 
+          (new fancychoicemenu
+               (lambda(dat x y w h)
+                 (when (numberp dat) (linestyle dat))
+                 (draw-line x (+ y (2/ h)) (+ x w) (+ y (2/ h))) )
+               xeq ) )
+    (setq colorchoice 
+          (new fancychoicemenu
+               (lambda(dat x y w h)
+                 (gsave
+                  (cond
+                   ((numberp dat)
+                    (color dat) 
+                    (fill-rect x y w h))
+                   ((consp dat)
+                    (let (((r g b) dat)) 
+                      (color-rgb r g b)
+                      (fill-rect x y w h) ) ) ) )
+                 (draw-rect x y w h) ) 
+               xeq ) )
+    (setq objectsize (new editnumber 5))
+    (setq sdbarsize (new editnumber 5)) 
+    (==> objectsize setcall xeq)
+    (==> sdbarsize setcall xeq) )
   ;; choices
   (==> stylechoice setitems '(0 1 2 3))
   (==> objectchoice setitems
@@ -1055,12 +1066,12 @@
                       (new string "Color")
                       colorchoice
                       (new string "Object size")
-                      (setq objectsize (new editnumber 5))
+                      objectsize
                       (new string "SDbar size")
-                      (setq sdbarsize (new editnumber 5)) ) )
+                      sdbarsize ) )
             (new emptyspace 3 3)
             (setq delcheck (new checkbox "Remove this curve")) ) ) )
-
+  
 (defmethod PlotCurveSetup load(plot)
   (let ((current-object open-square)
         (object-size 3)
@@ -1101,11 +1112,14 @@
     (==> sdbarsize setdata sd-bar-size)
     (==> stylechoice setdata xlinestyle)
     (==> colorchoice setdata xcolor) 
-    (==> delcheck setdata ()) ) )
+    (==> delcheck setdata ()) 
+    (setq changed ()) ) )
 
 (defmethod PlotCurveSetup save(plot)
-  (if (==> delcheck getdata)
-      (==> plot del curve)
+  (cond
+   ((==> delcheck getdata)
+    (==> plot del curve))
+   (changed
     (let ((s (==> curvename getdata)))
       (when (and (stringp s) (<> s ""))
         (setq :curve:name s) ) )
@@ -1124,7 +1138,8 @@
        ((consp s)
         (let (((r g b) s))
           (==> curve set-color-rgb r g b) ) ) ) )
-    t ) )
+    (setq changed ())
+    t ) ) )
 
 (defmethod PlotCurveSetup name()
   :curve:name )
@@ -1139,19 +1154,11 @@
   thestuff 
   applybtn )
 
-(defmethod PlotSetup PlotSetup(&optional p)
-  (when (not p)
-    (setq p plot-port) )
-  (when (consp p)
-    (setq p (cadr p)) )
-  (cond
-   ((is-of-class p PlotContext)
-    (setq plot p) )
-   ((is-of-class p PlotWindow)
-    (setq basewindow p)
-    (setq plot :p:plot) )
-   (t
-    (error 'new "illegal argument" p) ) )
+(defmethod PlotSetup PlotSetup(p)
+  (when (not (is-of-class p :PlotContext))
+    (error 'new "illegal argument" p) )
+  (setq plot p)
+  (setq basewindow :p:plotwindow)
   (setq thestack (new stack))
   (setq themenu (new choicemenu ()
                      (lambda(c) (==> thisform select (==> c getdata)))))
@@ -1167,8 +1174,8 @@
   (==> this load)
   (==> this autowindowobject 0 0 400 300 
        (if basewindow
-           (concat "Setup " :basewindow:name)
-         "Setup Plot" )
+           (concat "Lush: " :basewindow:name " Setup")
+         "Lush: Plot Setup" )
        (new column
             (new row
                  (new string "Configure ") 
