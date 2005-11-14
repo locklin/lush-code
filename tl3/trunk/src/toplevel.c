@@ -19,7 +19,7 @@
 /***********************************************************************
   TL3: (C) LYB YLC 1988
   toplevel.c
-  $Id: toplevel.c,v 1.1.1.1 2002-04-16 17:37:39 leonb Exp $
+  $Id: toplevel.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
@@ -89,7 +89,7 @@ extern int isdump (char *s);
 extern void undump (char *s);
 
 /* From BINARY.C */
-extern int in_bwrite;
+extern void clear_bwrite_flag(void);
 
 /* From OOSTRUCT.C */
 extern int in_object_scope;
@@ -256,7 +256,7 @@ start_lisp(int argc, char **argv)
       line_pos = line_buffer;
       *line_buffer = 0;
       in_object_scope = 0;
-      in_bwrite = 0;
+      clear_bwrite_flag();
       p = NIL;
       where = &p;
       for (i=1; i<argc; i++) {
@@ -282,7 +282,7 @@ start_lisp(int argc, char **argv)
   line_pos = line_buffer;
   *line_buffer = 0;
   in_object_scope = 0;
-  in_bwrite = 0;
+  clear_bwrite_flag();
 
   print_string("\n");
   do {

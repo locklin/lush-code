@@ -20,7 +20,7 @@
 	TL3: (C) LYB YLC 1988
 	fileio.c
         WARNING: OLD (PRE-ARNO) SLIGHTLY EDITED
-        $Id: fileio.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+        $Id: fileio.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
 ********************************************************************** */
 
 #include <errno.h>
@@ -44,7 +44,16 @@
 #ifdef UNIX
 # include <sys/types.h>
 # include <sys/stat.h>
-# include <sys/time.h>
+# ifdef TIME_WITH_SYS_TIME
+#  include <sys/time.h>
+#  include <time.h>
+# else
+#  ifdef HAVE_SYS_TIME_H
+#   include <sys/time.h>
+#  else
+#   include <time.h>
+#  endif
+# endif
 # include <fcntl.h>
 # include <stdio.h>
 # ifdef HAVE_UNISTD_H

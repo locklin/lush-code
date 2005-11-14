@@ -20,7 +20,7 @@
   TL3: (C) LYB YLC 1988
   matrix.c
   - array and matrix class definition
-  $Id: fmatops.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+  $Id: fmatops.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
@@ -54,7 +54,7 @@ static flt * m_buffer=0;
 
 
 
-static void buffer_check(void **pbuffer, int *psize, int reqsize)
+static void buffer_check(flt **pbuffer, int *psize, int reqsize)
 {
   if( *psize < reqsize ) {
     if( ! *psize ) *psize = 4096; /* bytes */
@@ -1529,7 +1529,7 @@ LUfact(float *a00, int N, int mi, int mj, unsigned int *pivot)
    */
 
 static void 
-LUsolve(float *a00, int N, int mi, int mj, int *pivot, float *b)
+LUsolve(float *a00, int N, int mi, int mj, unsigned int *pivot, float *b)
 {
   int i;
   int j, ip, id=0, flag=0;
@@ -1573,13 +1573,13 @@ static double
 minvdet(float *a00, int N, int mi, int mj, int flag)
 {
   int i,j;
-  int *piv;
+  unsigned int *piv;
   double det = 1.0;
   float *inv, *b, *invij, *invj, *aij;
 
   inv = (float *)tl_malloc(sizeof(float)*N*N);
   b = (float *)tl_malloc(sizeof(float)*N);
-  piv = (int *)tl_malloc(sizeof(int)*N);
+  piv = (unsigned int *)tl_malloc(sizeof(int)*N);
 
   det = (double) LUfact(a00, N, mi, mj, piv);
   aij = a00;
@@ -1620,14 +1620,14 @@ DX(xmlufact)
 {
   struct array *arr;
   int n=0;
-  int *piv;
+  unsigned int *piv;
   double signe;
 
   ARG_NUMBER(1);
   ALL_ARGS_EVAL;
 
   arr = check_matrix(APOINTER(1),&n,&n);
-  piv = (int *) tl_malloc(sizeof(int)*n);
+  piv = (unsigned int *) tl_malloc(sizeof(int)*n);
 
   signe = LUfact(arr->data,n,arr->modulo[0],arr->modulo[1],piv);
 
@@ -2288,7 +2288,7 @@ mindex_compute (at *m0, at *ans)
 
   mm0 = check_matrix (m0, &n, &m);
   mmans = answer_imatrix (&ans, mm0->dim, &m);
-  buffer_check((void **)&m_buffer,&m_buffer_size, sizeof(flt) * n);
+  buffer_check(&m_buffer,&m_buffer_size, sizeof(flt) * n);
 
   /* copy m0 to buffer.
      Oops; this code *isnt* quite reentrant (MT-Safe??)
@@ -2342,7 +2342,7 @@ mindex_apply (at *midx, at *msrc, at *mans)
      ((mmans->flags & SUB_ARRAY) ? mmans->main_array : mans)
      )
     {
-      buffer_check((void **)&m_buffer,&m_buffer_size, sizeof(flt) * n);
+      buffer_check(&m_buffer,&m_buffer_size, sizeof(flt) * n);
       overlp = 1;
     }
 
