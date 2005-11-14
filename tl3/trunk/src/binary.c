@@ -20,7 +20,7 @@
   TL3: (C) LYB YLC 1988
   binary.c
   This file contains general lisp structure definitions
-  $Id: binary.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+  $Id: binary.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
   ********************************************************************** */
 
 
@@ -65,13 +65,11 @@ enum binarytokens {
 
 /*** GLOBAL VARIABLES ****/
 
-int in_bwrite = 0;
+static int in_bwrite = 0;
 static FILE *fin;
 static FILE *fout;
 
-
-
-
+void clear_bwrite_flag(void);
 
 
 
@@ -886,12 +884,10 @@ int
 bwrite(at *p, FILE *f)
 {
   int count;
-  
   if (in_bwrite!=0)
     error(NIL,"Recursive binary read/write are forbidden",NIL);
   
   fout = f;
-  in_bwrite = 0;
   clear_reloc(0);
   set_flags(p);
   write_card8(BINARYSTART);
@@ -899,7 +895,7 @@ bwrite(at *p, FILE *f)
   sweep(p, SRZ_WRITE);
   clear_flags(p);
   count = in_bwrite;
-  in_bwrite = 0;
+  clear_bwrite_flag();
   return count;
 }
 
@@ -1294,6 +1290,12 @@ DX(xbread)
 
 
 /*** INITIALISATION ***/
+
+void 
+clear_bwrite_flag(void)
+{
+  in_bwrite = 0;
+}
 
 void 
 init_binary(void)

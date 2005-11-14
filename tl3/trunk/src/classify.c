@@ -21,7 +21,7 @@
 	classify.c
 	statistic functions		mean sdev hamming_norm
 	small mathematic functions	solve
-	$Id: classify.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+	$Id: classify.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
@@ -221,7 +221,7 @@ ksmallest(real *v, unsigned int n, unsigned int k)
         break;
     }
   return v[k];
-#undef swap;
+#undef swap
 }
 
 DX(xmedian)

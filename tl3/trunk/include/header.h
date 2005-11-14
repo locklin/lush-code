@@ -20,7 +20,7 @@
   TL3: (C) LYB YLC 1988
   header.h
   This file contains general lisp structure definitions
-  $Id: header.h,v 1.1.1.1 2002-04-16 17:37:32 leonb Exp $
+  $Id: header.h,v 1.2 2005-11-14 19:00:22 leonb Exp $
 ********************************************************************** */
 
 #ifndef HEADER_H
@@ -52,11 +52,11 @@ extern "C" {
 #define forever         for(;;)
 #define until(s)        while(!(s))
 
-#if defined(__GNUC__) && (__GNUC__ > 1 ) && (__GNUC_MINOR__ > 5) /* Arno */
-#define no_return __attribute__((__noreturn__))
+#if defined(__GNUC__)
+# define no_return __attribute__((__noreturn__))
 #endif
 #ifndef no_return
-#define no_return /**/
+# define no_return /**/
 #endif
 
 

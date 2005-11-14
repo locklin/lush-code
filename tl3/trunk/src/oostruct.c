@@ -20,7 +20,7 @@
   TL3: (C) LYB YLC 1988
   oostruct.c
   - object oriented structures
-  $Id: oostruct.c,v 1.1.1.1 2002-04-16 17:37:39 leonb Exp $
+  $Id: oostruct.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
@@ -488,13 +488,11 @@ class_define(char *name, class *cl)
 }
 
 
-
+static void clear_hashok(struct class *cl);
 
 at *
 defclass(at *classname, at *superclass, at *keylist, at *defaults)
 {
-  static void clear_hashok(struct class *cl);
-
   class *cl,*super;
   at *p,*q;
   int i;

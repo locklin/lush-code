@@ -20,7 +20,7 @@
   TL3: (C) LYB 
   date.c
   This file contains functions for handling date/time
-  $Id: date.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+  $Id: date.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
 ********************************************************************** */
 
 
@@ -299,21 +299,21 @@ date_name(at *p)
   return string_buffer;
 }
 
+static at *make_date(struct date *d);
+
 static void
 date_serialize(at **pp, int code)
 {
-  static at *make_date(struct date *d);
-  struct date *d;
-
+  void *p;
   if (code == SRZ_READ)
   {
-      serialize_chars((void**)&d,code,-1);
-      *pp = make_date(d);
+    serialize_chars(&p,code,-1);
+    *pp = make_date(p);
   }
   else
   {
-      d = (*pp)->Object;
-      serialize_chars((void**)&d,code,sizeof(struct date));
+    p = (*pp)->Object;
+    serialize_chars(&p,code,sizeof(struct date));
   }
 }
 
@@ -967,10 +967,12 @@ makecycle(double after, double before, double here, float *m)
 {
   double ratio;
   double c,s;
-  ratio = (here-before)/(after-before);
 #ifdef HAVE_SINCOS
+  void sincos(double, double*, double*);
+  ratio = (here-before)/(after-before);
   sincos( 6.283185308*ratio, &s, &c );
 #else
+  ratio = (here-before)/(after-before);
   ratio *= 6.283185308;
   s = sin(ratio);
   c = cos(ratio);
