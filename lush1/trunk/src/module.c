@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.74 2005-08-04 13:34:52 leonb Exp $
+ * $Id: module.c,v 1.75 2005-11-14 15:35:06 leonb Exp $
  **********************************************************************/
 
 
@@ -849,7 +849,7 @@ cleanup_module(struct module *m)
 	      end_iter_at(x);
 	    }
 	  if (n > 0)
-	    fprintf(stderr,"*** WARNING: "
+	    fprintf(stderr,"+++ Warning: "
 		    "destroyed %d instances of class %s\n", n, pname(q));
 	}
     }
@@ -864,7 +864,7 @@ cleanup_module(struct module *m)
               int n = lside_mark_unlinked(cl->classdoc);
 	      cl->classdoc = 0;
               if (n > 0)
-                fprintf(stderr,"*** WARNING: "
+                fprintf(stderr,"+++ Warning: "
                         "unlinked %d instances of compiled class %s\n", 
                         n, pname(q));
             }

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.55 2005-10-06 17:43:12 ysulsky Exp $
+ * $Id: unix.c,v 1.56 2005-11-14 15:35:06 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1148,7 +1148,52 @@ DX(xsys)
 }
 
 
-/* time -- count time for executing commands */
+/* real-time, cpu-time -- return the number of 
+   seconds (real or cpu) executing expressions. */
+
+DY(yrealtime)
+{
+  at *q;
+  int s1, ms1, s2, ms2;
+  os_curtime(&s1, &ms1);
+  q = progn(ARG_LIST);
+  os_curtime(&s2, &ms2);
+  UNLOCK(q);
+  return NEW_NUMBER(s2 - s1 + (double) (ms2 - ms1) * 0.001);
+}
+
+DY(ycputime)
+{
+  long ticks;
+  struct tms buffer;
+  time_t oldtime, newtime;
+  at *q;
+  
+  times(&buffer);
+  oldtime = buffer.tms_utime + buffer.tms_stime;
+  q = progn(ARG_LIST);
+  times(&buffer);
+  newtime = buffer.tms_utime + buffer.tms_stime;
+  UNLOCK(q);
+  
+  ticks = -1;
+#ifdef HAVE_SYSCONF
+#ifdef _SC_CLK_TCK
+  ticks = sysconf(_SC_CLK_TCK);
+#endif
+#endif
+#ifdef CLK_TCK
+  if (ticks <= 0)
+    ticks = CLK_TCK;
+#else
+  if (ticks <= 0)
+    ticks = 60;
+#endif
+  return NEW_NUMBER((newtime - oldtime) / (double) ticks);
+}
+
+/* time -- return the number of seconds
+   spent since a constant, system dependent, date */
 
 DY(ytime)
 {
@@ -1160,53 +1205,9 @@ DY(ytime)
     } 
   else 
     {
-      long numcpus = -1;
-#ifdef HAVE_SYSCONF
-#ifdef _SC_NPROCESSORS_ONLN
-      numcpus = sysconf (_SC_NPROCESSORS_ONLN);
-#endif
-#endif
-      if (numcpus > 1) 
-        {
-          int s1, ms1, s2, ms2;
-          register at *q;
-
-          os_curtime(&s1, &ms1);
-          q = progn(ARG_LIST);
-          os_curtime(&s2, &ms2);
-          UNLOCK(q);
-
-          return NEW_NUMBER(s2 - s1 + (double) (ms2 - ms1) * 0.001);
-        }
-      else
-        {
-          long ticks;
-          struct tms buffer;
-          time_t oldtime, newtime;
-          register at *q;
-      
-          times(&buffer);
-          oldtime = buffer.tms_utime;
-          q = progn(ARG_LIST);
-          times(&buffer);
-          newtime = buffer.tms_utime;
-          UNLOCK(q);
-      
-          ticks = -1;
-#ifdef HAVE_SYSCONF
-#ifdef _SC_CLK_TCK
-          ticks = sysconf(_SC_CLK_TCK);
-#endif
-#endif
-#ifdef CLK_TCK
-          if (ticks <= 0)
-            ticks = CLK_TCK;
-#else
-          if (ticks <= 0)
-            ticks = 60;
-#endif
-          return NEW_NUMBER((newtime - oldtime) / (double) ticks);
-        }
+      fprintf(stderr,"+++ Warning: deprecated function\n");
+      fprintf(stderr,"+++ Use <cputime> or <realtime> instead.\n");
+      return ycputime(ARG_LIST);
     }
 }
 
@@ -2003,6 +2004,8 @@ init_unix(void)
   dx_define("sys", xsys);
   dy_define("bground", ybground);
   dy_define("time", ytime);
+  dy_define("realtime", yrealtime);
+  dy_define("cputime", ycputime);
   dx_define("ctime", xctime);
   dx_define("localtime", xlocaltime);
   dx_define("beep", xbeep);
