@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.18 2005-11-26 19:42:06 leonb Exp $
+ * $Id: io.c,v 1.19 2005-11-26 19:46:08 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -854,8 +854,11 @@ rl_read(register char *s)
   }
   
   /* BINARY TOKENS */
-  if (get_char_map(s[0]) & CHAR_BINARY)
-    return bread(context->input_file, NIL);
+  if (get_char_map(s[0]) & CHAR_BINARY) {
+    if (! context->input_string)
+      return bread(context->input_file, NIL);
+    error("read", "cannot (yet) read binary tokens from a string", NIL);
+  }
   
   /* MACRO CHARS */
   if (get_char_map(s[0]) & CHAR_MCHAR)
