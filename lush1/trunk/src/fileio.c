@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.23 2005-06-28 21:42:21 leonb Exp $
+ * $Id: fileio.c,v 1.24 2005-11-26 19:42:06 leonb Exp $
  **********************************************************************/
 
 
@@ -1903,6 +1903,35 @@ DY(ywriting)
   return answer;
 }
 
+/*
+ * writing - reading - appending LISP I/O FUNCTIONS
+ * (reading "filename" | filedesc ( ..l1.. ) .......ln.. ) )	
+ * (writing "filename" | filedesc ( ..l1.. ) ........... ) )
+ */
+
+DY(yreading_string)
+{
+  struct context mycontext;
+  at *answer;
+  at *str;
+  if (! (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr)))
+    error(NIL, "syntax error", NIL);
+  str = eval(ARG_LIST->Car);
+  if (! EXTERNP(str,&string_class))
+    error("reading-string", "string expected", str);
+  context_push(&mycontext);
+  context->input_tab = 0;
+  context->input_string = SADD(str->Object);
+  if (sigsetjmp(context->error_jump, 1)) {
+    context_pop();
+    UNLOCK(str);
+    siglongjmp(context->error_jump, -1L);
+  }
+  answer = progn(ARG_LIST->Cdr);
+  context_pop();
+  UNLOCK(str);
+  return answer;
+}
 
 
 
@@ -2027,6 +2056,7 @@ init_fileio(char *program_name)
   dx_define("open-append", xopen_append);
   dy_define("reading", yreading);
   dy_define("writing", ywriting);
+  dy_define("reading-string", yreading_string);
   dx_define("read8", xread8);
   dx_define("write8", xwrite8);
   dx_define("fsize", xfsize);

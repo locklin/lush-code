@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.33 2005-06-28 21:44:58 leonb Exp $
+ * $Id: toplevel.c,v 1.34 2005-11-26 19:42:06 leonb Exp $
  **********************************************************************/
 
 
@@ -446,20 +446,11 @@ recur_pop(struct recur_elt *elt)
  * context stack handling context_push(s) context_pop()
  */
 
-static void
-context_copy(char *c1, char *c2)
-{
-  register int i;
-  i = sizeof(struct context);
-  while (i--)
-    *c1++ = *c2++;
-}
-
-
 void 
 context_push(struct context *newc)
 {
-  context_copy((char *) newc, (char *) context);
+  *newc = *context;
+  newc->input_string = 0;
   newc->next = context;
   context = newc;
 }

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.17 2005-05-26 20:39:03 leonb Exp $
+ * $Id: io.c,v 1.18 2005-11-26 19:42:06 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -232,7 +232,10 @@ char
 read_char(void)
 {
   int c = EOF;
-  if (context->input_file==stdin && prompt_string) {
+  if (context->input_string) {
+    if (*context->input_string)
+      c = *context->input_string++;
+  } else if (context->input_file==stdin && prompt_string) {
     fill_line_buffer();
     c = *line_pos++;
   } else if (context->input_file) {
@@ -297,7 +300,10 @@ char
 next_char(void)
 {
   int c = EOF;
-  if (context->input_file==stdin && prompt_string) {
+  if (context->input_string) {
+    if (*context->input_string)
+      c = *context->input_string;
+  } else if (context->input_file==stdin && prompt_string) {
     fill_line_buffer();
     c = *line_pos;
   } else if (context->input_file) {

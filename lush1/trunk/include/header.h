@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.65 2005-05-13 21:26:51 ysulsky Exp $
+ * $Id: header.h,v 1.66 2005-11-26 19:42:04 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -492,6 +492,7 @@ extern TLAPI struct error_doc {
 extern TLAPI struct context {
   struct context *next;
   sigjmp_buf error_jump;
+  char *input_string;
   FILE *input_file;
   FILE *output_file;
   short input_tab;
