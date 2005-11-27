@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.24 2005-11-26 19:42:06 leonb Exp $
+ * $Id: fileio.c,v 1.25 2005-11-27 18:37:38 leonb Exp $
  **********************************************************************/
 
 
@@ -1833,6 +1833,7 @@ DY(yreading)
 
   context_push(&mycontext);
   context->input_tab = 0;
+  context->input_string = 0;
   context->input_file = f;
 
   if (sigsetjmp(context->error_jump, 1)) {
@@ -1842,6 +1843,8 @@ DY(yreading)
         if (pclose(f) < 0)
            fclose(f);
     }
+    context->input_tab = -1;
+    context->input_string = NULL;
     context_pop();
     UNLOCK(fdesc);
     siglongjmp(context->error_jump, -1L);
@@ -1851,6 +1854,8 @@ DY(yreading)
   if (fdesc->flags & X_STRING)
     file_close(context->input_file);
 
+  context->input_tab = -1;
+  context->input_string = NULL;
   context_pop();
   UNLOCK(fdesc);
   return answer;
@@ -1888,6 +1893,7 @@ DY(ywriting)
            fclose(f);
     } else
       fflush(f);
+    context->output_tab = -1;
     context_pop();
     UNLOCK(fdesc);
     siglongjmp(context->error_jump, -1L);
@@ -1898,6 +1904,7 @@ DY(ywriting)
     file_close(context->output_file);
   else
     fflush(context->output_file);
+  context->output_tab = -1;
   context_pop();
   UNLOCK(fdesc);
   return answer;
@@ -1923,11 +1930,15 @@ DY(yreading_string)
   context->input_tab = 0;
   context->input_string = SADD(str->Object);
   if (sigsetjmp(context->error_jump, 1)) {
+    context->input_tab = -1;
+    context->input_string = NULL;
     context_pop();
     UNLOCK(str);
     siglongjmp(context->error_jump, -1L);
   }
   answer = progn(ARG_LIST->Cdr);
+  context->input_tab = -1;
+  context->input_string = NULL;
   context_pop();
   UNLOCK(str);
   return answer;

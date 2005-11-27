@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.34 2005-11-26 19:42:06 leonb Exp $
+ * $Id: toplevel.c,v 1.35 2005-11-27 18:37:39 leonb Exp $
  **********************************************************************/
 
 
@@ -450,7 +450,6 @@ void
 context_push(struct context *newc)
 {
   *newc = *context;
-  newc->input_string = 0;
   newc->next = context;
   context = newc;
 }
@@ -458,8 +457,15 @@ context_push(struct context *newc)
 void 
 context_pop(void)
 {
+  struct context *oldcontext = context;
   if (context->next)
     context = context->next;
+  if (oldcontext->input_string && context->input_string)
+    context->input_string = oldcontext->input_string;
+  if (oldcontext->input_tab >= 0)
+    context->input_tab = oldcontext->input_tab;
+  if (oldcontext->output_tab >= 0)
+    context->output_tab = oldcontext->output_tab;
 }
 
 
