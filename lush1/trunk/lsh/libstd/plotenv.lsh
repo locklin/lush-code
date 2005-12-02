@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.21 2005-10-11 08:27:13 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.22 2005-12-02 19:56:41 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -571,14 +571,17 @@
   (setq cur-linestyle 0)
   (setq cmds ()) 
   (when (and lx ly)
-    (==> this command `(plt-clear))
-    (each ((x lx) (y ly))
-      (setq cmds `((plt-draw ,x ,y) ,@cmds)) )
-    (if lv
-        (each ((x lx) (y ly) (v lv))
-          (setq cmds `((plt-plot ,x ,y) (plt-sd ,x ,y ,v) ,@cmds)) )
+    (let ((current-object ())
+          (object-size ())
+          (sd-bar-size ()))
+      (==> this command `(plt-clear))
       (each ((x lx) (y ly))
-        (setq cmds `((plt-plot ,x ,y) ,@cmds)) ) ) ) )
+        (setq cmds `((plt-draw ,x ,y) ,@cmds)) )
+      (if lv
+          (each ((x lx) (y ly) (v lv))
+            (setq cmds `((plt-plot ,x ,y) (plt-sd ,x ,y ,v) ,@cmds)) )
+        (each ((x lx) (y ly))
+          (setq cmds `((plt-plot ,x ,y) ,@cmds)) ) ) ) ) )
 
 (defmethod PlotCurve command(cmd)
   ;; synchronize context
@@ -1289,7 +1292,7 @@
 ;; Replacement for new-plot-port.
 (de new-plot-port(&optional brect prect object)
   (let* ((pw ()) (pp ()) (pc ()))
-    (if (not window)
+    (if (not (and window brect))
         (progn 
           (setq pw (new PlotWindow))
           (setq pp :pw:plot) )
@@ -1426,8 +1429,6 @@
     (let ((window (==> pp window)))
       (color-rgb r g b) ) ) )
   
-;; high level drawing functions.
-  
 (de plot-lists (lx ly)
   (let (((pc pp . aux) plot-port))
     (let ((window (==> pp window)))
@@ -1438,22 +1439,91 @@
     (let ((window (==> pp window)))
       (==> pp add (new PlotCurve lx ly lv) ) ) ) )
   
-(de graph-xy(lx ly &optional arg)
-  (let* ((pp ())
-         (pc (new PlotCurve lx ly)) )
-    (when (is-of-class arg PlotWindow) (setq pp :arg:plot) )
-    (when (is-of-class arg PlotContext) (setq pp arg) )
-    (when (not pp) (setq pp :(new PlotWindow):plot) )
-    (when (stringp arg) (setq :pp:title arg))
+;; options for high level drawing functions.
+
+(let ((f (lambda(pw pp pc k s)
+           (when (or (null s) (stringp s)) 
+             (letslot pp (set k s))) )))
+  (each ((k '(title xtitle ytitle)))
+    (putp k 'graph-options f) ) )
+
+(let ((f (lambda(pw pp pc k s)
+           (when (and (numberp s) (>= s 0)) 
+             (letslot pp (set k s))) )))
+  (each ((k '(margintop marginleft marginbottom marginright)))
+    (putp k 'graph-options f) ) )
+
+(let ((f (lambda(pw pp pc k s)
+           (letslot pp (set k s) t) )))
+  (each ((k '(xlog ylog xgrid ygrid)))
+    (putp k 'graph-options f) ) )
+
+(let ((f (lambda(pw pp pc k s)
+           (when (or (null s) 
+                     (let-filter (((a b) s)) 
+                       (and (numberp a) (numberp s)) ) )
+             (letslot pp (set k s) t) ) )))
+  (each ((k '(xbounds )))
+    (putp k 'graph-options f) ) )
+
+(let ((f (lambda(pw pp pc k s)
+           (when (or (null s)
+                     (and (numberp s) (> s 0))
+                     (and (consp s) (apply 'and (mapcar numberp s))) )
+             (letslot pp (set k s) t) ) )))
+  (each ((k '(xlabels ylabels xticks yticks)))
+    (putp k 'graph-options f) ) )
+
+(let ((f (lambda(pw pp pc k . args)
+           (setq k (namedclean (concat "set-" (nameof k))))
+           (if (check==> (classof pc) k)
+               (eval (list ==> pc k . args))
+             (printf "+++ warning: unrecognized option: %l\n" (cons k args)) ) )))
+  (each ((k '(color color-rgb linestyle object object-size sd-bar-size)))
+    (putp k 'graph-options f) ) )
+
+
+(de graph-options(pc args)
+  (let ((pw ()) (pp ()))
+    (each ((arg args))
+      (cond
+       ((is-of-class arg PlotWindow) 
+        (setq pw arg) 
+        (setq pp :pw:plot) )
+       ((is-of-class arg PlotContext)
+        (setq pw ())
+        (setq pp arg) )
+       ((and (consp arg) (is-of-class (cadr arg) PlotContext))
+        (setq pw ())
+        (setq pp (cadr arg)) ) ) )
+    (when (not pp)
+      (setq pw (new PlotWindow))
+      (setq pp :pw:plot) )
+    (each ((arg args))
+      (when (not 
+             (cond
+              ((stringp arg) (setq :pp:title arg) t)
+              ((is-of-class arg PlotWindow) t)
+              ((is-of-class arg PlotContext) t) 
+              ((consp arg)
+               (let* ((s (car arg)))
+                 (if (not (symbolp s))
+                     (is-of-class (cadr arg) PlotContext)
+                   (let ((f (getp s 'graph-options)))
+                     (when (functionp f) 
+                       (setq arg (cdr arg))
+                       (f pw pp pc s . arg) ) ) ) ) ) ) )
+        (printf "+++ warning: unrecognized option: %l\n" arg) ) )
+    pp ) )
+
+(de graph-xy(lx ly . options)
+  (let* ((pc (new PlotCurve lx ly))
+         (pp (graph-options pc options)) )
     (==> pp add pc) 
     pp ) )
   
 (de graph-xyv(lx ly lv &optional arg)
-  (let* ((pp ())
-         (pc (new PlotCurve lx ly lv)) )
-    (when (is-of-class arg PlotWindow) (setq pp :arg:plot) )
-    (when (is-of-class arg PlotContext) (setq pp arg) )
-    (when (not pp) (setq pp :(new PlotWindow):plot) )
-    (when (stringp arg) (setq :pp:title arg))
+  (let* ((pc (new PlotCurve lx ly lv)) 
+         (pp (graph-options pc options)) )
     (==> pp add pc) 
-    pp ) ) )
+    pp ) )
