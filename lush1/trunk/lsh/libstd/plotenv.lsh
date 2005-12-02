@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.23 2005-12-02 20:03:28 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.24 2005-12-02 21:47:08 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -609,7 +609,7 @@
         (setq cmds (cons `(linestyle ,l) cmds))
         (setq cur-linestyle l) ) ) )
   ;; add command
-  (setq cmds (cons cmd cmds))
+  (when cmd (setq cmds (cons cmd cmds)))
   cmd )
 
 (defmethod PlotCurve execute(rbx rby info)
@@ -1431,6 +1431,24 @@
     (let ((window (==> pp window)))
       (color-rgb r g b) ) ) )
   
+(de plt-object(f)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window))
+          (current-object f) )
+      (==> pc command ()) ) ) )
+  
+(de plt-object-size(f)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window))
+          (object-size f) )
+      (==> pc command ()) ) ) )
+
+(de plt-sd-bar-size(f)
+  (let (((pc pp . aux) plot-port))
+    (let ((window (==> pp window))
+          (sd-bar-size f) )
+      (==> pc command ()) ) ) )
+
 (de plot-lists (lx ly)
   (let (((pc pp . aux) plot-port))
     (let ((window (==> pp window)))
@@ -1465,7 +1483,7 @@
                      (let-filter (((a b) s)) 
                        (and (numberp a) (numberp s)) ) )
              (letslot pp (set k s) t) ) )))
-  (each ((k '(xbounds )))
+  (each ((k '(xbounds ybounds)))
     (putp k 'graph-options f) ) )
 
 (let ((f (lambda(pw pp pc k s)
@@ -1476,14 +1494,19 @@
   (each ((k '(xlabels ylabels xticks yticks)))
     (putp k 'graph-options f) ) )
 
+(let ((f (lambda(pw pp pc k s)
+           (when (or (null s) (functionp s))
+             (letslot pp (set k s) t) ) )))
+  (each ((k '(xlabel2str ylabel2str)))
+    (putp k 'graph-options f) ) )
+
 (let ((f (lambda(pw pp pc k . args)
            (setq k (namedclean (concat "set-" (nameof k))))
-           (if (check==> (classof pc) k)
+           (if (and pc (check==> (classof pc) k))
                (eval (list ==> pc k . args))
              (printf "+++ warning: unrecognized option: %l\n" (cons k args)) ) )))
   (each ((k '(color color-rgb linestyle object object-size sd-bar-size)))
     (putp k 'graph-options f) ) )
-
 
 (de graph-options args
   (let ((pc ()) (pw ()) (pp ()))
@@ -1497,8 +1520,11 @@
        ((is-of-class arg PlotContext)
         (setq pw ())
         (setq pp arg) )
-       ((and (consp arg) (is-of-class (cadr arg) PlotContext))
+       ((and (consp arg) 
+             (is-of-class (car arg) PlotCurve)
+             (is-of-class (cadr arg) PlotContext) )
         (setq pw ())
+        (setq pc (car arg))
         (setq pp (cadr arg)) ) ) )
     (when (not pp)
       (setq pw (new PlotWindow))
@@ -1509,12 +1535,14 @@
       (when (not 
              (cond
               ((stringp arg) (setq :pp:title arg) t)
+              ((is-of-class arg PlotGenericCurve) t)
               ((is-of-class arg PlotWindow) t)
               ((is-of-class arg PlotContext) t) 
               ((consp arg)
                (let* ((s (car arg)))
                  (if (not (symbolp s))
-                     (is-of-class (cadr arg) PlotContext)
+                     (and (is-of-class (car arg) PlotCurve)
+                          (is-of-class (cadr arg) PlotContext) )
                    (let ((f (getp s 'graph-options)))
                      (when (functionp f) 
                        (setq arg (cdr arg))
