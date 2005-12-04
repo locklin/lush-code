@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.26 2005-12-02 22:33:26 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.27 2005-12-04 01:36:53 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -55,7 +55,7 @@
   (color color-fg) 
   (linestyle-solid) )
 
-#? (plot-context-axes)
+#? (plot-context-title)
 ;; Defines the default font and color of the title.
 (de plot-context-title()
   (color color-fg) 
@@ -68,7 +68,7 @@
   (font-12) )
 
 
-#? (plot-range <lo> <hi> <step>)
+#? (plot-range <lo> <hi> <step> [<inside>])
 ;; Returns a list of consecutive multiples of <step>
 ;; that spans the interval <lo>...<hi>.  
 ;; When flag <inside> is set all multiples are stricly 
@@ -332,9 +332,9 @@
 	    (setq cymin (min (or cymin ymin) ymin))
 	    (setq cymax (max (or cymax ymax) ymax)) ) ) ) ) )
   ;; bounds override
-  (when xbounds
+  (when (and xbounds (numberp (car xbounds)) (numberp (cadr xbounds)))
     (setq cxmin (car xbounds) cxmax (cadr xbounds)) )
-  (when ybounds
+  (when (and ybounds (numberp (car ybounds)) (numberp (cadr ybounds)))
     (setq cymin (car ybounds) cymax (cadr ybounds)) )
   (when (not (and cxmin cxmax cymin cymax))
     (setq cxmin 0 cxmax 1 cymin 0 cymax 1) )
@@ -712,8 +712,7 @@
       (when (not (and (consp cmd) 
                       (member (car cmd) '(color color-rgb)) ))
         (setq newcmds (cons cmd newcmds)) ) )
-    (setq cmds (cons `(color ,c) 
-                     (reverse newcmds) )) )
+    (setq cmds (reverse (cons `(color ,c) newcmds))) )
   t )
 
 (defmethod PlotCurve set-color-rgb(r g b)
@@ -803,8 +802,10 @@
                   (lambda(c) (new PlotWindow))
                   "Print..."
                   (lambda(item) (==> thisform print-action))
-                  "Export..."
+                  "Export EPS..."
                   (lambda(item) (==> thisform export-action))
+                  ;; "Export SVG..."
+                  ;; (lambda(item) (==> thisform svg-action))
                   "Close"
                   (lambda(item) (==> thisform quit-action)) )
              (new menu "Setup"
@@ -890,7 +891,8 @@
 
 
 #? PlotDataSetup
-;; A class to implement each page of the setup dialog.
+;; A class that implements the title setup page
+;; in the plot setup dialog.
 
 (defclass PlotDataSetup Form
   titleedit )
@@ -912,8 +914,8 @@
 
 
 #? PlotAxisSetup
-;; A subclass of <PlotDataSetup> that implements
-;; the axis attribute dialog page.
+;; A class that implements the axis attribute dialog page
+;; in the plot setup dialog.
 
 (defclass PlotAxisSetup Form
   axis
@@ -988,7 +990,8 @@
                    (if (consp bnd) (cadr bnd) 0)
                    (not (numberp lab))
                    (if (numberp lab) lab 0)
-                   (if (numberp tik) tik 0) ) ) ) ) ) )
+                   (if (numberp tik) tik 0) ) )
+        (==> this status) ) ) ) )
 
 (defmethod PlotAxisSetup save(plot)
   (let (((ttl log grd abnd minbnd maxbnd alab majlab minlab) 
@@ -1014,8 +1017,8 @@
 
 
 #? PlotCurveSetup
-;; A subclass of <PlotDataSetup> that implements
-;; the curve attribute dialog page.
+;; A class that implements the curve attribute 
+;; dialog page in the plot setup dialog.
 
 (defclass PlotCurveSetup Form
   curve
@@ -1285,16 +1288,13 @@
 
 
 ;; ----------------------------------------
-;; EMULATION OF OLDPLOTENV
+;; PLOT PORTS
 
-
-;; Copied from oldplotenv.
+;; Functions copied from oldplotenv.
 (de nice-brect()
   (list 0 (ysize) (xsize) 0) )
-
 (de rect-2-ppbrect((x y w h))
   (list x (+ y h) (+ x w) y) )
-
 (de nice-scale(mini maxi &optional (deltamin 0))
   (let* ((d (abs (- maxi mini)))
          (logd (int (/ (log (/ d 3)) (log 10))))
@@ -1303,7 +1303,6 @@
          (step  (* step1 (max 1 (- (int (- ratio))))))
          (start (* step (int (/ (+ mini step) step)))))
     (range start maxi step) ) )
-
 (de graph-scale(min max)
   (let ((mult (** 10 (int (/ (log (/ (- max min) 2)) (log 10))))))
     (setq min (* mult (int (/ min mult))))
@@ -1486,7 +1485,8 @@
     (let ((window (==> pp window)))
       (==> pp add (new PlotCurve lx ly lv) ) ) ) )
   
-;; options for high level drawing functions.
+;; ----------------------------------------
+;; HIGH LEVEL DRAWING FUNCTIONS.
 
 (let ((f (lambda(pw pp pc k s)
            (when (or (null s) (stringp s)) 
@@ -1501,14 +1501,14 @@
     (putp k 'graph-options f) ) )
 
 (let ((f (lambda(pw pp pc k s)
-           (letslot pp (set k s) t) )))
+           (letslot pp (set k (not (not s))) t) )))
   (each ((k '(xlog ylog xgrid ygrid)))
     (putp k 'graph-options f) ) )
 
 (let ((f (lambda(pw pp pc k s)
            (when (or (null s) 
                      (let-filter (((a b) s)) 
-                       (and (numberp a) (numberp s)) ) )
+                       (and (numberp a) (numberp b)) ) )
              (letslot pp (set k s) t) ) )))
   (each ((k '(xbounds ybounds)))
     (putp k 'graph-options f) ) )
@@ -1531,7 +1531,8 @@
            (setq k (namedclean (concat "set-" (nameof k))))
            (if (and pc (check==> (classof pc) k))
                (eval (list ==> pc k . args))
-             (printf "+++ warning: unrecognized option: %l\n" (cons k args)) ) )))
+             (printf "+++ warning: unrecognized option: %l\n"
+                     (cons k args)) ) )))
   (each ((k '(color color-rgb linestyle object object-size sd-bar-size)))
     (putp k 'graph-options f) ) )
 
@@ -1572,8 +1573,8 @@
                           (is-of-class (cadr arg) PlotContext) )
                    (let ((f (getp s 'graph-options)))
                      (when (functionp f) 
-                       (setq arg (cdr arg))
-                       (f pw pp pc s . arg) ) ) ) ) ) ) )
+                       (let ((arg (cdr arg)))
+                         (f pw pp pc s . arg) ) ) ) ) ) ) ) )
         (printf "+++ warning: unrecognized option: %l\n" arg) ) )
     (==> pp execute)
     pp ) )
@@ -1584,7 +1585,7 @@
     (==> pp add pc) 
     pp ) )
   
-(de graph-xyv(lx ly lv &optional arg)
+(de graph-xyv(lx ly lv . options)
   (let* ((pc (new PlotCurve lx ly lv)) 
          (pp (graph-options pc . options)) )
     (==> pp add pc) 
