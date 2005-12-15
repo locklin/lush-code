@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;  $Id: brace.lsh,v 1.14 2005-12-02 21:11:23 leonb Exp $
+;;;;  $Id: brace.lsh,v 1.15 2005-12-15 17:13:35 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Functions and classes to handle brace lists.
@@ -120,30 +120,32 @@
       (t (read-string "~ ,{}<\n\t\\")))))
 
 (de brace.read-bracket ()
-  (let ((pgm ())
+  (let ((c ())
+        (pgm ())
 	(again t)
         (level 0) )
     (while again
       (let ((item 
 	     (let ((nextchar (skip-char "")))
 	       (selectq nextchar
-		 (" " (read-string " "))
+		 (" "  (len (read-string " ")))
+		 ("\e" ())
 		 ("\n" (read-string 1) -1)
 		 ("\t" (read-string 1) -2)
-		 ("\e" "<END>")
-                 ("<" (incr level +1) (read-string 1))
-		 (">" (if (>= (incr level -1) 0)
-                          (read-string 1)
-                        (read-string 1)
-                        "<END>") )
-		 (t (read-string "~ <>\n\t\e")) ) ) ))
+                 ("<"  (incr level +1) (read-string 1))
+		 (">"  (read-string 1) (when (>= (incr level -1) 0) ">"))
+                 (t    (read-string "~ <>\n\t\e")) ) ) ))
         (cond
-         ((= item "<END>")
-	  (setq again ()))
-         ;; end of file: no end tag
-         ;; (error "no end tag for pre-formatted text") 
-         (t (setq pgm (cons item pgm))) ) ) )
-    (list '<c> (apply concat (reverse pgm))) ) )
+         ((stringp item)
+          (setq pgm (cons item pgm)) )
+         ((numberp item)
+          (setq c (cons item (cons (apply concat (reverse pgm)) c)))
+          (setq pgm ()) )
+         (t
+          (setq again ()) ) ) ) )
+    (when (or pgm (not c))
+      (setq c (cons (apply concat (reverse pgm)) c)) )
+    (cons '<c> (reverse c)) ) )
 
 ;; read preformatted text
 (de brace.read-pre (endtag)
