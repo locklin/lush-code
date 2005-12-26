@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.56 2005-11-14 15:35:06 leonb Exp $
+ * $Id: unix.c,v 1.57 2005-12-26 14:49:08 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1792,21 +1792,21 @@ DX(xsocketopen)
   portnumber = AINTEGER(2);
   noerror = (portnumber < 0);
   portnumber = abs(portnumber);
+  hp = gethostbyname(hostname);
+  if (hp==0) 
+    error(NIL,"unknown host",APOINTER(1));
   sock1 = socket( AF_INET, SOCK_STREAM, 0);
   if (sock1<0)
     test_file_error(NULL);
   server.sin_family = AF_INET;
-  hp = gethostbyname(hostname);
-  if (hp==0) 
-    error(NIL,"unknown host",APOINTER(1));
   memcpy(&server.sin_addr, hp->h_addr, hp->h_length);
   server.sin_port = htons(portnumber);
   if (connect(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0)
     {
       if (noerror)
 	return NIL;
-      else
-	test_file_error(NULL);
+      close(sock1);
+      test_file_error(NULL);
     }
   sock2 = dup(sock1);
   ff1 = fdopen(sock1,"r");
@@ -1847,19 +1847,21 @@ DX(xsocketaccept)
       ASYMBOL(3);
     }
   portnumber = AINTEGER(1);
+  gethostname(hostname, MAXHOSTNAMELEN);
+  if (! (hp = gethostbyname(hostname)))
+    test_file_error(NULL);
   sock1 = socket( AF_INET, SOCK_STREAM, 0);
   if (sock1<0)
     test_file_error(NULL);
   server.sin_family = AF_INET;
-  gethostname(hostname, MAXHOSTNAMELEN);
-  if (! (hp = gethostbyname(hostname)))
-    test_file_error(NULL);
   memcpy(&server.sin_addr, hp->h_addr, hp->h_length);
   server.sin_port = htons(portnumber);
-  if (bind(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0)
-    return NIL;
-  if (listen(sock1, 1) < 0)
-    return NIL;
+  if ((bind(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0) ||
+      (listen(sock1, 1) < 0) )
+    {
+      close(sock1);
+      return NIL;
+    }
   if (arg_number == 1)
     {
       close(sock1);
@@ -1868,9 +1870,9 @@ DX(xsocketaccept)
   else
     {
       sock2 = accept(sock1, NULL, NULL);
+      close(sock1);
       if (sock2 < 0)
         test_file_error(NULL);
-      close(sock1);
       sock1 = dup(sock2);
       ff1 = fdopen(sock1,"r");
       ff2 = fdopen(sock2,"w");
