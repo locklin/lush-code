@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.57 2005-12-26 14:49:08 leonb Exp $
+ * $Id: unix.c,v 1.58 2005-12-26 20:37:11 profshadoko Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1803,9 +1803,9 @@ DX(xsocketopen)
   server.sin_port = htons(portnumber);
   if (connect(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0)
     {
-      if (noerror)
-	return NIL;
       close(sock1);
+      if (noerror)
+        return NIL;
       test_file_error(NULL);
     }
   sock2 = dup(sock1);
