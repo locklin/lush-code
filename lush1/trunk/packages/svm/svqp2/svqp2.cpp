@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.1 2005-09-26 19:01:41 leonb Exp $
+ * $Id: svqp2.cpp,v 1.2 2006-01-24 20:14:21 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -46,7 +46,7 @@
 #include <stdarg.h>
 
 
-
+#define GBAR 1
 
 
 // --------- utilities
@@ -338,6 +338,10 @@ SVQP2::swap(int i, int j)
       exch(cmax[i], cmax[j]);
       exch(x[i], x[j]);
       exch(g[i], g[j]);
+#if GBAR
+      exch(gbar[i], gbar[j]);
+      exch(xbar[i], xbar[j]);
+#endif
       exch(pivot[i], pivot[j]);
       cache_swap(i,j);
     }
@@ -365,7 +369,11 @@ SVQP2::unswap(void)
 SVQP2::SVQP2(int n)
   : n(n)
 {
+#if GBAR
+  dmem = new double[n * 7];
+#else
   dmem = new double[n * 5];
+#endif
   imem = new int[n * 2];
   // setup
   Afunction = 0;
@@ -377,13 +385,19 @@ SVQP2::SVQP2(int n)
   x = dmem + 3*n;
   sumflag = true;
   verbosity = 1;
-  epskt = 1e-10;
+  epskt = 1e-20;
   epsgr = 1e-3;
   maxst = 1e+20;
   errmsg = 0;
   iter = 0;
   l = 0;
   g = dmem + 4*n;
+#if GBAR
+  gbar = dmem + 5*n;
+  xbar = dmem + 6*n;
+#else
+  gbar = xbar = 0;
+#endif
   pivot = imem + n;
   curcachesize = 0;
   maxcachesize = 256*1024*1024;
@@ -412,6 +426,22 @@ SVQP2::~SVQP2()
 
 
 // --------- shrink
+
+void
+SVQP2::togbar(int i)
+{
+#if GBAR
+  double deltai = x[i] - xbar[i];
+  if (deltai != 0)
+    {
+      cache_clean();
+      float *arow = getrow(i, n, false);
+      for (int j=0; j<n; j++)
+        gbar[j] -= deltai * arow[j];
+      xbar[i] = x[i];
+    }
+#endif
+}
 
 void
 SVQP2::shrink()
@@ -450,28 +480,56 @@ SVQP2::shrink()
 
 
 void
-SVQP2::unshrink(int s)
+SVQP2::unshrink(bool usegbar)
 {
-  s = min(s,n);
-  if (l < s)
+  if (l < n)
     {
-      // recompute gradients
-      for (int i=l; i<s; i++)
-	g[i] = b[i];
-      for (int j=0; j<s; j++)
-	{
-	  double xj = x[j];
-	  if (xj != 0)
-	    {
-	      cache_clean();
-	      float *arow = getrow(j, s, false);
-	      for (int i=l; i<s; i++)
-		g[i] -= xj * arow[i];
-	    }
-	}
+#if GBAR
+      if (usegbar)
+        {
+          // recompute gradients from gbar
+          for (int i=l; i<n; i++)
+            g[i] = gbar[i];
+          for (int j=0; j<n; j++)
+            {
+              double deltaj = x[j] - xbar[j];
+              if (deltaj != 0)
+                {
+                  cache_clean();
+                  float *arow = getrow(j, n, false);
+                  for (int i=l; i<n; i++)
+                    g[i] -= deltaj * arow[i];
+                }
+            }
+        }
+      else
+        {
+#endif
+          // recompute gradients from scratch
+          for (int i=l; i<n; i++)
+            g[i] = b[i];
+          for (int j=0; j<n; j++)
+            {
+              double xj = x[j];
+              if (xj != 0)
+                {
+                  cache_clean();
+                  float *arow = getrow(j, n, false);
+                  for (int i=l; i<n; i++)
+                    g[i] -= xj * arow[i];
+                }
+            }
+#if GBAR
+        }
+      for (int i=0; i<n; i++)
+        {
+          gbar[i] = g[i];
+          xbar[i] = x[i];
+        }
+#endif
     }
   // compute bounds
-  l = s;
+  l = n;
   double sum = 0;
   gmax = ((sumflag) ? -maxst : 0);
   gmin = ((sumflag) ?  maxst : 0);
@@ -492,9 +550,8 @@ SVQP2::unshrink(int s)
 
 // --------- iterate
 
-#define RESULT_FIN    0
-#define RESULT_HIT    1
-#define RESULT_SHRINK 2
+#define RESULT_FIN     0
+#define RESULT_SHRINK  1
 
 
 int
@@ -516,15 +573,15 @@ SVQP2::iterate_gs1()
 	{
 	  double gi = g[i];
 	  if ((gi > gmax) && (x[i] < cmax[i]))
-	    {
-	      gmax = gi;
-	      imax = i;
-	    }
+            {
+              gmax = gi;
+              imax = i;
+            }
 	  if ((gi < gmin) && (x[i] > cmin[i]))
-	    {
-	      gmin = gi;
-	      imin = i;
-	    }
+            {
+              gmin = gi;
+              imin = i;
+            }
 	}
       if (gmin + gmax < 0)
 	imax = imin;
@@ -568,8 +625,10 @@ SVQP2::iterate_gs1()
 	g[j] -= step * rmax[j];
       // stop on hit
       iter += 1;
+#if GBAR
       if (hit)
-	return RESULT_HIT;
+        togbar(imax);
+#endif
     }
 }
 
@@ -593,15 +652,15 @@ SVQP2::iterate_gs2()
 	{
 	  double gi = g[i];
 	  if ((gi > gmax) && (x[i] < cmax[i]))
-	    {
-	      gmax = gi;
-	      imax = i;
-	    }
+            {
+              gmax = gi;
+              imax = i;
+            }
 	  if ((gi < gmin) && (x[i] > cmin[i]))
-	    {
-	      gmin = gi;
-	      imin = i;
-	    }
+            {
+              gmin = gi;
+              imin = i;
+            }
 	}
       // Exit tests
       if (gmax - gmin < epsgr)
@@ -620,11 +679,16 @@ SVQP2::iterate_gs2()
       float *rmax = getrow(imax, l);
       float *rmin = getrow(imin, l);
       double step, ostep, curvature;
-      bool   hit = true;
+      bool hit = true;
+      bool down = false;
       // compute max step
       step = cmax[imax] - x[imax];
       ostep = x[imin] - cmin[imin];
-      step = min(ostep,step);
+      if (ostep < step)
+        {
+          down = true;
+          step = ostep;
+        }
       // newton step
       curvature = rmax[imax]+rmin[imin]-rmax[imin]-rmin[imax];
       if (curvature >= epskt)
@@ -643,10 +707,17 @@ SVQP2::iterate_gs2()
       x[imin] -= step;
       for (int j=0; j<l; j++)
 	g[j] -= step * ( rmax[j] - rmin[j] );
-      // stop on hit
+      // handle hits
       iter += 1;
+#if GBAR
       if (hit)
-	return RESULT_HIT;
+        {
+          if (down)
+            togbar(imin);
+          else
+            togbar(imax);
+        }
+#endif
     }
 }
 
@@ -665,15 +736,12 @@ SVQP2::run(void)
   vdots = 0;
   iter = 0;
   l = 0;
-  // check
-  for (int i=0; i<n; i++)
-    if (x[i]<=cmin[i]-epskt || x[i]>=cmax[i]+epskt)
-      return error("Initial x[] does not satisfy inequality constraints");
+  unshrink(false);
   // loop
   for(;;)
     {
       // incorporate
-      unshrink(n);
+      unshrink(true);
       gn = max(0.0, gmax-gmin);
       info("*","* it:%d l:%d |g|:%f w:%f\n", iter, l, gn, w);
       // test termination
@@ -690,11 +758,10 @@ SVQP2::run(void)
 	    break;
 	  // shrink
 	  int p = l;
-	  shrink();
+          shrink();
+          // display
 	  gn = max(0.0, gmax-gmin);
-	  if (status == RESULT_SHRINK)
-	    info(":",": it:%d l:%d |g|:%f\n", iter, l, gn);
-	  else if (l < p)
+          if (l < p)
 	    info(".",". it:%d l:%d |g|:%f\n", iter, l, gn);
 	  else if (verbosity >= 3)
 	    info("!","! it:%d l:%d |g|:%f\n", iter, l, gn);

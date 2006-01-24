@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.1 2005-09-26 19:01:41 leonb Exp $
+ * $Id: svqp2.h,v 1.2 2006-01-24 20:14:21 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -112,7 +112,7 @@ public:
   int      verbosity;
 
   // OPTIONAL INPUTS:
-  // - EPSKT is the tolerance for checking KKT conditions (default 1e-10)
+  // - EPSKT is the tolerance for checking KKT conditions (default 1e-20)
   // - EPSGR is the maximal L0 norm of the gradient on exit (default 1e-3)
   // - MAXST is the maximal conjugate gradient step (default 1e20)
 
@@ -140,7 +140,7 @@ public:
   // OUTPUT: GMIN, GMAX, W
   // - W is the optimal value of the objective function
   // - GMIN, GMAX are the active gradient bounds.
-  //   The SVM threshold is -(GMIN+GMAX)/2...
+  //   The SVM threshold is (GMIN+GMAX)/2...
   
   double   gmin;
   double   gmax;
@@ -152,6 +152,8 @@ protected:
   int      iter;		// total iterations
   int      l;                   // Active set size
   double  *g ;                  // [l] Gradient
+  double  *xbar ;               // [n] Another x
+  double  *gbar ;               // [n] Gradient at xbar
   int     *pivot;		// [n] Pivoting vector
   long     curcachesize;        // Current cache size
   struct Arow;                  // Cached rows
@@ -171,8 +173,9 @@ protected:
   float *getrow(int, int, bool hot=true);
   void   swap(int, int);
   void   unswap(void);
+  void   togbar(int);
   void   shrink(void);
-  void   unshrink(int s);
+  void   unshrink(bool);
   int    iterate_gs1(void);
   int    iterate_gs2(void);
 private:
