@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.2 2006-01-24 20:14:21 leonb Exp $
+ * $Id: svqp2.cpp,v 1.3 2006-01-24 23:59:04 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -47,6 +47,7 @@
 
 
 #define GBAR 1
+#define HMG 1
 
 
 // --------- utilities
@@ -141,6 +142,9 @@ struct SVQP2::Arow
   Arow  *next;
   int    ai;
   int    sz;
+#if HMG
+  float  diag;
+#endif
   float *d;
 public:
   Arow(int);
@@ -224,6 +228,9 @@ SVQP2::cache_init()
       if (! p)
 	{
 	  p = new Arow(ai);
+#if HMG
+          p->diag = (*Afunction)(ai, ai, Aclosure);
+#endif
 	  p->next = c[h];
 	  c[h] = p;
 	}
@@ -640,40 +647,112 @@ SVQP2::iterate_gs2()
   vec<bool> mark(l);
   for(int i=0; i<l; i++)
     mark[i] = false;
+
+#if HMG
+  /* See: Tobias Glasmachers and Christian Igel. 
+     Maximum-Gain Working Set Selection for Support Vector Machines. 
+     Technical Report, IRINI-2005-03, Institut für Neuroinformatik, 
+     Ruhr-Bochum Universitaet, 2005 */
+  bool flag = false;
+  int last[2];
+#endif
+  
   // Iterate
   for(;;)
     {
-      // Determine extreme gradients
       int imax = -1;
       int imin = -1;
-      gmax = -maxst;
-      gmin = maxst;
-      for (int i=0; i<l; i++)
-	{
-	  double gi = g[i];
-	  if ((gi > gmax) && (x[i] < cmax[i]))
+#if HMG
+      double maxgrad = 0;
+      double maxgain = 0;
+      if (flag)
+        {
+          for (int z=0; z<2; z++)
             {
-              gmax = gi;
-              imax = i;
+              int i = last[z];
+              if (rows[i]->sz < l) continue;
+              float *arow = rows[i]->d;
+              double cmaxi = cmax[i]-x[i];
+              double cmini = cmin[i]-x[i];
+              for (int j=0; j<l; j++)
+                {
+                  double curvature, smax, step, gain;
+                  double gradient = g[i] - g[j];
+                  if (i == j) 
+                    continue;
+                  if (gradient >= epskt)
+                    {
+                      step = min(cmaxi,x[j]-cmin[j]);
+                      if (step <= epskt) continue;
+                      curvature = arow[i] + rows[j]->diag - 2*arow[j];
+                      smax = gradient / curvature; 
+                      step = min(step, smax);
+                    }
+                  else if (gradient <= -epskt)
+                    {
+                      step = max(cmini,x[j]-cmax[j]);
+                      if (step >= -epskt) continue;
+                      curvature = arow[i] + rows[j]->diag - 2*arow[j];
+                      smax = gradient / curvature; 
+                      step = max(step, smax);
+                      gradient = -gradient;
+                    }
+                  else
+                    continue;
+                  gain = step * ( 2 * smax - step ) * curvature;                      
+                  if (gain > maxgain)
+                    {
+                      maxgrad = gradient;
+                      maxgain = gain;
+                      imin = i;
+                      imax = j;
+                    }
+                }
             }
-	  if ((gi < gmin) && (x[i] > cmin[i]))
+        }
+      if (maxgrad > epsgr)
+        {
+          if (g[imin] > g[imax])
+            exch(imin, imax);
+          gmax = g[imax];
+          gmin = g[imin];
+        }
+      else
+        {
+          imax = imin = -1;
+#endif
+          // Determine extreme gradients
+          gmax = -maxst;
+          gmin = maxst;
+          for (int i=0; i<l; i++)
             {
-              gmin = gi;
-              imin = i;
+              double gi = g[i];
+              if ((gi > gmax) && (x[i] < cmax[i]))
+                {
+                  gmax = gi;
+                  imax = i;
+                }
+              if ((gi < gmin) && (x[i] > cmin[i]))
+                {
+                  gmin = gi;
+                  imin = i;
+                }
             }
-	}
-      // Exit tests
-      if (gmax - gmin < epsgr)
-	return RESULT_FIN;
-      icount += 1;
+          // Exit tests
+          if (gmax - gmin < epsgr)
+            return RESULT_FIN;
+#if HMG
+        }
+#endif
       if (! mark[imax]) 
-	pcount += 1;
+        pcount += 1;
       mark[imax] = true;
       if (! mark[imin]) 
-	pcount += 1;
+        pcount += 1;
       mark[imin] = true;
+      icount += 1;
       if (pcount<l && pcount+200<icount)
-	return RESULT_SHRINK;
+        return RESULT_SHRINK;
       // compute kernels
       cache_clean();
       float *rmax = getrow(imax, l);
@@ -707,17 +786,27 @@ SVQP2::iterate_gs2()
       x[imin] -= step;
       for (int j=0; j<l; j++)
 	g[j] -= step * ( rmax[j] - rmin[j] );
-      // handle hits
+      // finish
       iter += 1;
-#if GBAR
+#if HMG
+      last[0] = imin;
+      last[1] = imax;
+      flag = true;
+#endif
       if (hit)
         {
+#if HMG
+          if (x[imax]>=cmax[imax]-epskt)
+            if (x[imin]<=cmin[imin]+epskt)
+              flag = false;
+#endif
+#if GBAR
           if (down)
             togbar(imin);
           else
             togbar(imax);
-        }
 #endif
+        }
     }
 }
 
