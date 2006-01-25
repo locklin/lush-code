@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lasvmvector.lsh,v 1.7 2005-06-29 18:13:07 leonb Exp $
+;;; $Id: lasvmvector.lsh,v 1.8 2006-01-25 15:15:22 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -63,11 +63,16 @@
   #{ lasvm_sparsevector_set($p,$i,$v); #}
   v )
 
-(defmethod SparseVector size()
-  (to-int #{ ((lasvm_sparsevector_t*)($p))->size #}) )
+(defmethod SparseVector maxindex()
+  (let ((s (to-int 0)))
+    #{{ 
+        lasvm_sparsevector_t *v = (lasvm_sparsevector_t*)($p);
+        if (v->size > 0) { $s = v->pairs[v->size-1].index; }
+    }#} 
+    s ) )
 
 (defmethod SparseVector pairs()
-  (to-int #{ ((lasvm_sparsevector_t*)($p))->npairs #}) )
+  (to-int #{ ((lasvm_sparsevector_t*)($p))->size #}) )
 
 (defmethod SparseVector contents(ivec dvec)
   ((-idx1- (-int-)) ivec)
@@ -80,11 +85,11 @@
        double *dv = IDX_PTR($dvec, double);
        lasvm_sparsevector_t *v = (lasvm_sparsevector_t*)$p;
        lasvm_sparsevector_pair_t *p = v->pairs;
-       while (p)
+       while (p->index>=0)
        {  
          *iv = p->index;
-         *dv = p->data;
-         p = p->next;
+         *dv = p->value;
+         p += 1;
          iv += $ivec->mod[0];
          dv += $dvec->mod[0];
        }
@@ -110,10 +115,10 @@
        double *dv = IDX_PTR($m, double);
        lasvm_sparsevector_t *v = (lasvm_sparsevector_t*)$p;
        lasvm_sparsevector_pair_t *p = v->pairs;
-       while (p && p->index < $n)
+       while (p && p->index>=0 && p->index<$n)
        {  
-         dv[p->index] = p->data;
-         p = p->next;
+         dv[p->index] = p->value;
+         p = p+1;
        }
     }#}
     m ) )
@@ -362,7 +367,7 @@
   (dhc-make ()
 	    #{ #include "vector.h" #}
 	    (SparseVector sparsevector -destructor 
-			  clear size pairs get set contents build 
+			  clear maxindex pairs get set contents build 
                           unpack parse)
 	    sparsevector-lincomb sparsevector-dot 
 	    (SparseVectorCollection SparseVectorCollection vector)
