@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.4 2006-01-25 00:19:39 leonb Exp $
+ * $Id: svqp2.cpp,v 1.5 2006-01-25 00:27:46 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -679,14 +679,14 @@ SVQP2::iterate_gs2()
                   double gradient = g[i] - g[j];
                   if (i == j) 
                     continue;
-                  if (gradient>=epskt && cmaxi>0 && x[j]-cmin[j]>0)
+                  if (gradient>=epsgr && cmaxi>epskt && x[j]-cmin[j]>epskt)
                     {
                       step = min(cmaxi,x[j]-cmin[j]);
                       curvature = arow[i] + rows[j]->diag - 2*arow[j];
                       smax = gradient / curvature; 
                       step = min(step, smax);
                     }
-                  else if (gradient<=-epskt && cmini<0 && x[j]-cmax[j]<0)
+                  else if (gradient<=-epsgr && cmini<-epskt && x[j]-cmax[j]<-epskt)
                     {
                       step = max(cmini,x[j]-cmax[j]);
                       curvature = arow[i] + rows[j]->diag - 2*arow[j];
