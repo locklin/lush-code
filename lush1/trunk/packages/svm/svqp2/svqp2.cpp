@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.7 2006-01-25 00:48:07 leonb Exp $
+ * $Id: svqp2.cpp,v 1.8 2006-01-25 15:39:00 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -576,6 +576,30 @@ SVQP2::iterate_gs1()
   // Iterate
   for(;;)
     {
+#if HMG
+      int imax = -1;
+      double maxgain = 0;
+      for (int j=0; j<l; j++)
+        {
+          double step, gain;
+          double curvature = rows[j]->diag;
+          double gradient = g[j];
+          if (gradient>=epsgr && cmax[j]-x[j]>epskt)
+            step = min(curvature*(cmax[j]-x[j]), gradient);
+          else if (gradient<=-epsgr && cmin[j]-x[j]<-epskt)
+            step = max(curvature*(x[j]-cmin[j]), gradient);
+          else
+            continue;
+          gain = step * ( 2 * gradient - step );
+          if (gain > maxgain * curvature)
+            {
+              maxgain = gain / curvature;
+              imax = j;
+            }
+        }
+      if (maxgain <= 0)
+        return RESULT_FIN;
+#else
       // Determine extreme gradients
       int imax = -1;
       int imin = -1;
@@ -596,10 +620,10 @@ SVQP2::iterate_gs1()
 	}
       if (gmin + gmax < 0)
 	imax = imin;
-      bool down = (g[imax]<0);
       // Exit tests
       if (gmax - gmin < epsgr)
 	return RESULT_FIN;
+#endif
       icount += 1;
       if (! mark[imax]) 
 	pcount += 2;
@@ -610,7 +634,8 @@ SVQP2::iterate_gs1()
       cache_clean();
       float *rmax = getrow(imax, l);
       double step, ostep, curvature;
-      bool   hit = true;
+      bool hit = true;
+      bool down = (g[imax]<0);
       if (down)
         step = x[imax] - cmin[imax];
       else
