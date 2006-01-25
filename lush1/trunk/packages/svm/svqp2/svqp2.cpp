@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.5 2006-01-25 00:27:46 leonb Exp $
+ * $Id: svqp2.cpp,v 1.6 2006-01-25 00:34:26 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -675,30 +675,28 @@ SVQP2::iterate_gs2()
               double cmini = cmin[i]-x[i];
               for (int j=0; j<l; j++)
                 {
-                  double curvature, smax, step, gain;
+                  double curvature, step, gain;
                   double gradient = g[i] - g[j];
                   if (i == j) 
                     continue;
                   if (gradient>=epsgr && cmaxi>epskt && x[j]-cmin[j]>epskt)
                     {
-                      step = min(cmaxi,x[j]-cmin[j]);
+                      step = min(cmaxi, x[j]-cmin[j]);
                       curvature = arow[i] + rows[j]->diag - 2*arow[j];
-                      smax = gradient / curvature; 
-                      step = min(step, smax);
+                      step = min(step * curvature, gradient);
                     }
                   else if (gradient<=-epsgr && cmini<-epskt && x[j]-cmax[j]<-epskt)
                     {
-                      step = max(cmini,x[j]-cmax[j]);
+                      step = max(cmini, x[j]-cmax[j]);
                       curvature = arow[i] + rows[j]->diag - 2*arow[j];
-                      smax = gradient / curvature; 
-                      step = max(step, smax);
+                      step = max(step * curvature, gradient);
                     }
                   else
                     continue;
-                  gain = step * ( 2 * smax - step ) * curvature;                      
-                  if (gain > maxgain)
+                  gain = step * ( 2 * gradient - step );
+                  if (gain > maxgain * curvature)
                     {
-                      maxgain = gain;
+                      maxgain = gain / curvature;
                       imin = i;
                       imax = j;
                     }
