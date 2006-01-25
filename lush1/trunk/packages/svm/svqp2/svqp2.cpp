@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.3 2006-01-24 23:59:04 leonb Exp $
+ * $Id: svqp2.cpp,v 1.4 2006-01-25 00:19:39 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -663,7 +663,6 @@ SVQP2::iterate_gs2()
       int imax = -1;
       int imin = -1;
 #if HMG
-      double maxgrad = 0;
       double maxgain = 0;
       if (flag)
         {
@@ -680,29 +679,25 @@ SVQP2::iterate_gs2()
                   double gradient = g[i] - g[j];
                   if (i == j) 
                     continue;
-                  if (gradient >= epskt)
+                  if (gradient>=epskt && cmaxi>0 && x[j]-cmin[j]>0)
                     {
                       step = min(cmaxi,x[j]-cmin[j]);
-                      if (step <= epskt) continue;
                       curvature = arow[i] + rows[j]->diag - 2*arow[j];
                       smax = gradient / curvature; 
                       step = min(step, smax);
                     }
-                  else if (gradient <= -epskt)
+                  else if (gradient<=-epskt && cmini<0 && x[j]-cmax[j]<0)
                     {
                       step = max(cmini,x[j]-cmax[j]);
-                      if (step >= -epskt) continue;
                       curvature = arow[i] + rows[j]->diag - 2*arow[j];
                       smax = gradient / curvature; 
                       step = max(step, smax);
-                      gradient = -gradient;
                     }
                   else
                     continue;
                   gain = step * ( 2 * smax - step ) * curvature;                      
                   if (gain > maxgain)
                     {
-                      maxgrad = gradient;
                       maxgain = gain;
                       imin = i;
                       imax = j;
@@ -710,7 +705,7 @@ SVQP2::iterate_gs2()
                 }
             }
         }
-      if (maxgrad > epsgr)
+      if (maxgain > 0)
         {
           if (g[imin] > g[imax])
             exch(imin, imax);
