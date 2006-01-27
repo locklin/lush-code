@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.75 2005-11-14 15:35:06 leonb Exp $
+ * $Id: module.c,v 1.76 2006-01-27 16:12:17 leonb Exp $
  **********************************************************************/
 
 
@@ -1293,7 +1293,7 @@ module_load(char *filename, at *hook)
         dynlink_error(new_string(m->filename));
 # endif
 # if NSBUNDLE
-      if (nsbundle_update() < 0)
+      if (nsbundle_exec_all_but(NULL) < 0 || nsbundle_update() < 0)
         dynlink_error(new_string(m->filename));
 # endif
 #else
