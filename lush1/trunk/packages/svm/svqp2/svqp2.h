@@ -26,18 +26,11 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.3 2006-01-25 15:54:23 leonb Exp $
+ * $Id: svqp2.h,v 1.4 2006-01-27 15:32:41 leonb Exp $
  **********************************************************************/
 
 
-#ifndef llint_t
-# if defined(__GNUC__)
-#  define llint_t long long int
-# else
-#  define llint_t long int
-# endif
-#endif
-
+
 
 //////////////////////////////////////
 ///
@@ -134,7 +127,7 @@ public:
   // Size in bytes of the cache of kernel values.
   // Default: 256M.
   
-  llint_t maxcachesize;
+  long     maxcachesize;
 
   // PUBLIC FUNCTION: run
   // Runs the solver.  
@@ -165,7 +158,7 @@ protected:
   double  *xbar ;               // [n] Another x
   double  *gbar ;               // [n] Gradient at xbar
   int     *pivot;		// [n] Pivoting vector
-  llint_t  curcachesize;        // Current cache size
+  long     curcachesize;        // Current cache size
   struct Arow;                  // Cached rows
   Arow   **rows;		// [n] Cached rows
   Arow    *lru;                 // Most recently used cache row
