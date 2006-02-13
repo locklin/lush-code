@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.19 2005-11-26 19:46:08 leonb Exp $
+ * $Id: io.c,v 1.20 2006-02-13 19:25:08 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -470,7 +470,7 @@ skip_char(char *s)
   map[255] = FALSE;
   map['\r'] |= map['\n'];
   
-  if (context->input_file==stdin && prompt_string)
+  if (context->input_string || (context->input_file==stdin && prompt_string))
     {
       /* Standard implementation */
       while (map[(unsigned char)(c = next_char())])
