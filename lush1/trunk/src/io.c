@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.20 2006-02-13 19:25:08 leonb Exp $
+ * $Id: io.c,v 1.21 2006-02-20 16:04:00 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -641,7 +641,7 @@ read_word(void)
   if (c == '|') {
     *s++ = read_char();
     until((c = read_char()) == '|' || c == (char) EOF) {
-      if (iscntrl(toascii((unsigned char)c)))
+      if (isascii(c) && iscntrl(c))
 	goto errw1;
       else if (s < string_buffer + STRING_BUFFER - 1)
 	*s++ = c;
@@ -651,7 +651,7 @@ read_word(void)
   } else if (c == '\"' /*"*/) {   
     *s++ = read_char();
     until((c = read_char()) == '\"' /*"*/ || c == (char) EOF) {  
-      if (iscntrl(toascii((unsigned char)c)))
+      if (isascii(c) && iscntrl(c))
 	goto errw1;
       else if (s < string_buffer + STRING_BUFFER - 2)
 	*s++ = c;
@@ -678,11 +678,11 @@ read_word(void)
 	   (isascii((unsigned char)c) && isspace((unsigned char)c)) ||
 	   (c == (char) EOF))) {
       c = read_char();
-      if (iscntrl(toascii((unsigned char)c)))
+      if (!isascii(c) || iscntrl(c))
 	goto errw1;
       else if (s < string_buffer + STRING_BUFFER - 2) {
         if (s > string_buffer && c == '_') c = '-';
-	*s++ = tolower((unsigned char)c);
+	*s++ = tolower(c);
       } else
 	goto errw2;
     }
@@ -1382,12 +1382,15 @@ convert(register char *s, register at *list, register char *end)
       mode = 0;
       if (list->flags & X_SYMBOL) {
 	for (m = n; *m; m++)
-	  if ((m>n && *m=='_') ||
-	      isupper(toascii((unsigned char)*m)) ||
-	      (get_char_map(*m) & CHAR_INTERWORD) ) {
-	    mode = 1;
-	    break;
-	  }
+	  if (!isascii((unsigned char)*m) || 
+              iscntrl((unsigned char)*m) ||
+              isupper((unsigned char)*m) ||
+              (m>n && *m=='_') ||
+              (get_char_map(*m) & CHAR_INTERWORD) ) 
+            {
+              mode = 1;
+              break;
+            }
 	if(!*n)
 	  mode = 1;
       }
