@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.35 2005-11-27 18:37:39 leonb Exp $
+ * $Id: toplevel.c,v 1.36 2006-02-21 19:54:32 leonb Exp $
  **********************************************************************/
 
 
@@ -509,18 +509,6 @@ toplevel(char *in, char *out, char *prompts)
     context->output_file = f2;
     context->output_tab = 0;
   }
-  if (sigsetjmp(context->error_jump, 1)) {
-    /* An error occurred */
-    if (f1)
-      file_close(f1);
-    if (f2)
-      file_close(f2);
-    if (ps1)
-      free(ps1);
-    context_pop();
-    symbol_pop(at_file);
-    siglongjmp(context->error_jump, -1);
-  }
   /* Split prompt */
   if (prompts) {
     const char d = '|';
@@ -548,6 +536,18 @@ toplevel(char *in, char *out, char *prompts)
           *s = 0;
       }
     }
+  }
+  if (sigsetjmp(context->error_jump, 1)) {
+    /* An error occurred */
+    if (f1)
+      file_close(f1);
+    if (f2)
+      file_close(f2);
+    if (ps1)
+      free(ps1);
+    context_pop();
+    symbol_pop(at_file);
+    siglongjmp(context->error_jump, -1);
   }
   /* Toplevel loop */
   exit_flag = 0;
