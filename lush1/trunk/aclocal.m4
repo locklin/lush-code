@@ -301,3 +301,69 @@ else
 fi
 ])
 
+
+
+
+dnl -------------------------------------------------------
+dnl @synopsis AC_PROG_PKGCONFIG
+dnl Checks for existence of pkg-config.
+dnl Sets variable PKGCONFIG to its path
+dnl -------------------------------------------------------
+
+AC_DEFUN([AC_PROG_PKGCONFIG], [
+  AC_PATH_PROG(PKGCONFIG,pkg-config)
+])
+
+dnl -------------------------------------------------------
+dnl @synopsis AC_APPEND_OPTION(variable,option)
+dnl Adds option into variable unless it is already there.
+dnl -------------------------------------------------------
+
+AC_DEFUN([AC_APPEND_OPTION], [
+  again=no
+  for n in $[$1] ; do test "[$2]" = "$n" && again=yes ; done
+  test x$again = xno && [$1]="$[$1] [$2]"
+])
+
+
+
+dnl -------------------------------------------------------
+dnl @synopsis AC_PATH_XFT([ACTION-IF-FOUND[, ACTION-IF-NOT-FOUND]])
+dnl Checks for existence of library Xft.
+dnl Sets variable HAVE_XFT when present.
+dnl Update x_libraries and x_cflags to handle Xft.
+dnl -------------------------------------------------------
+
+AC_DEFUN([AC_PATH_XFT], [
+  AC_REQUIRE([AC_PROG_PKGCONFIG])
+  AC_CACHE_CHECK(for library Xft, ac_cv_cc_xft, [
+    ac_cv_cc_xft=no
+    if test -x "$PKGCONFIG" && $PKGCONFIG --exists xft ; then
+      ac_cv_cc_xft=yes
+      cflags="`$PKGCONFIG --cflags xft`"
+      for cflag in $cflags ; do 
+        AC_APPEND_OPTION(X_CFLAGS, $cflag)
+      done
+      libs="`$PKGCONFIG --libs xft` $X_LIBS"
+      X_LIBS=
+      for lib in $libs ; do
+        case $lib in
+          -L*) AC_APPEND_OPTION(X_LIBS, $lib) ;;
+        esac
+      done
+      for lib in $libs ; do
+        case $lib in
+          -L*)  ;;
+          *) AC_APPEND_OPTION(X_LIBS, $lib) ;;
+        esac
+      done
+    fi
+  ])
+  if test x$ac_cv_cc_xft = xyes ; then
+    AC_DEFINE(HAVE_XFT,1, [Define to 1 if you have the "Xft" library.])
+    ifelse([$1],,:,[$1])
+  else 
+    ifelse([$2],,:,[$2])
+  fi
+])
+

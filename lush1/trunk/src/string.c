@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.33 2005-06-27 20:35:46 leonb Exp $
+ * $Id: string.c,v 1.34 2006-02-22 21:14:34 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -147,7 +147,7 @@ string_name(at *p)
 {
   char *s = ((struct string *) (p->Object))->start;
   char *name = string_buffer;
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   int n = strlen(s);
   mbstate_t ps;
   memset(&ps, 0, sizeof(mbstate_t));
@@ -823,7 +823,7 @@ DX(xupcase)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   {
     char buffer[MB_LEN_MAX];
     struct large_string ls;
@@ -880,7 +880,7 @@ DX(xupcase1)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   {
     char buffer[MB_LEN_MAX];
     struct large_string ls;
@@ -926,7 +926,7 @@ DX(xdowncase)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   {
     char buffer[MB_LEN_MAX];
     struct large_string ls;
@@ -984,7 +984,7 @@ DX(xisprint)
   s = (unsigned char*) ASTRING(1);
   if (!s || !*s)
     return NIL;
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   {
     int n = strlen((char*)s);
     mbstate_t ps;
@@ -1094,7 +1094,7 @@ explode_bytes(char *s)
 static at *
 explode_chars(char *s)
 {
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   at *p = NIL;
   at **where = &p;
   int n = strlen(s);
@@ -1144,7 +1144,7 @@ implode_bytes(at *p)
 static at *
 implode_chars(at *p)
 {
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   mbstate_t ps;
   struct large_string ls;
   memset(&ps, 0, sizeof(mbstate_t));

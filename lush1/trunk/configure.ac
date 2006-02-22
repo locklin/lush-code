@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.46 2006-02-21 01:02:30 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.47 2006-02-22 21:14:30 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -97,8 +97,8 @@ AC_PATH_PROG(CP, cp)
 AC_PATH_PROG(RM, rm)
 AC_PATH_PROG(AR, ar)
 AC_PATH_PROG(TOUCH, touch)
-
 AC_PATH_PROG(INDENT, indent)
+
 if test -x $INDENT ; then
   AC_MSG_CHECKING([if $INDENT accepts GNU options])
   if $INDENT -gnu </dev/null 2>/dev/null ; then 
@@ -210,17 +210,14 @@ will not work and Lush will be seriously crippled.
 fi
 
 # x11
-AC_PATH_X
 AC_PATH_XTRA
-X_LIBS=
-X_CFLAGS=
-test -n "$x_libraries" && X_LIBS="-L$x_libraries"
-test -n "$x_includes" && X_CFLAGS="-I$x_includes"
-X_YES='#'
-if test "${no_x-no}" != yes ; then 
-  X_LIBS="$X_LIBS $X_PRE_LIBS -lX11 $X_EXTRA_LIBS"
+if test "${no_x-no}" != yes ; then
+  X_LIBS="$X_LIBS $X_PRE_LIBS -lX11 $X_EXTRA_LIBS" 
   X_YES=''
+else
+  X_YES='#'
 fi
+AC_PATH_XFT
 AC_SUBST(X_LIBS)
 AC_SUBST(X_CFLAGS)
 AC_SUBST(X_YES)
@@ -283,8 +280,9 @@ AC_CHECK_FUNCS(feenableexcept ieee_handler fpsetmask __setfpucw)
 AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp waitpid openpty)
 AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
-AC_CHECK_FUNCS(setenv putenv fseeko ftello)
-AC_CHECK_FUNCS(mbrlen mbrtowc wcrtomb setlocale)
+AC_CHECK_FUNCS(setenv putenv fseeko ftello setlocale)
+AC_FUNC_MBRTOWC
+
 
 
 # ----------------------------------------
