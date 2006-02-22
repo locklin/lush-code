@@ -24,10 +24,19 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.34 2006-02-22 21:14:34 leonb Exp $
+ * $Id: string.c,v 1.35 2006-02-22 22:28:06 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
+
+#if HAVE_LANGINFO_H
+# include <langinfo.h>
+#endif
+#if HAVE_ICONV_H
+# include <iconv.h>
+# include <errno.h>
+#endif
+
 
 struct alloc_root alloc_string = {
   NULL,
@@ -105,7 +114,7 @@ new_string_bylen(int n)
  * create a new AT and return it.
  */
 at *
-new_string(char *s)
+new_string(const char *s)
 {
   register struct string *st;
   register at *q;
@@ -354,8 +363,93 @@ large_string_collect(struct large_string *ls)
 }
 
 
+/* multibyte strings ---------------------------------- */
 
+#if HAVE_ICONV
+static at *
+recode(const char *s, const char *fromcode, const char *tocode)
+{
+  unsigned int ilen, olen;
+  char *obuf, *ibuf;
+  struct large_string ls;
+  char buffer[512];
+  at *ans = NIL;
 
+  iconv_t conv = iconv_open(tocode, fromcode);
+  if (conv)
+    {
+      ibuf = (char*)s;
+      ilen = strlen(s);
+      large_string_init(&ls);
+      for(;;)
+        {
+          obuf = buffer;
+          olen = sizeof(buffer);
+          iconv(conv, &ibuf, &ilen, &obuf, &olen);
+          if (obuf > buffer)
+            large_string_add(&ls, buffer, obuf-buffer);
+          if (ilen <= 0 || errno != E2BIG)
+            break;
+        }
+      iconv_close(conv);
+      ans = large_string_collect(&ls);
+      if (ilen <= 0)
+        return ans;
+    }
+  UNLOCK(ans);
+  return NIL;
+}
+#endif
+
+at* 
+str_mb_to_utf8(const char *s)
+{
+  /* best effort conversion from locale encoding to utf8 */
+#if HAVE_ICONV
+  at *ans;
+# if HAVE_NL_LANGINFO
+  if ((ans = recode(s, nl_langinfo(CODESET), "UTF-8")))
+    return ans;
+# endif
+  if ((ans = recode(s, "char", "UTF-8")))
+    return ans;
+  if ((ans = recode(s, "", "UTF-8")))
+    return ans;
+#endif
+  return new_string(s);
+}
+
+at* 
+str_utf8_to_mb(const char *s)
+{
+  /* best effort conversion from locale encoding from utf8 */
+#if HAVE_ICONV
+  at *ans;
+# if HAVE_NL_LANGINFO
+  if ((ans = recode(s, "UTF-8", nl_langinfo(CODESET))))
+    return ans;
+# endif
+  if ((ans = recode(s, "UTF-8", "char")))
+    return ans;
+  if ((ans = recode(s, "UTF-8", "")))
+    return ans;
+#endif
+  return new_string(s);
+}
+
+DX(xstr_locale_to_utf8)
+{
+  ARG_EVAL(1);
+  ASTRING(1);
+  return str_mb_to_utf8(SADD(APOINTER(1)->Object));
+}
+
+DX(xstr_utf8_to_locale)
+{
+  ARG_EVAL(1);
+  ASTRING(1);
+  return str_utf8_to_mb(SADD(APOINTER(1)->Object));
+}
 
 
 /* operations on strings ------------------------------	 */
@@ -2034,6 +2128,8 @@ init_string(void)
   dx_define("explode-chars", xexplode_chars);
   dx_define("implode-bytes", ximplode_bytes);
   dx_define("implode-chars", ximplode_chars);
+  dx_define("locale-to-utf8", xstr_locale_to_utf8);
+  dx_define("utf8-to-locale", xstr_utf8_to_locale);
   dx_define("stringp", xstringp);
   dx_define("regex-match", xregex_match);
   dx_define("regex-extract", xregex_extract);

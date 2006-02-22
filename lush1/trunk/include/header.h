@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.66 2005-11-26 19:42:04 leonb Exp $
+ * $Id: header.h,v 1.67 2006-02-22 22:28:06 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -527,7 +527,7 @@ struct string {
 
 #define SADD(str)       (((struct string *)(str))->start)
 
-TLAPI at *new_string(char *s);
+TLAPI at *new_string(const char *s);
 TLAPI at *new_safe_string(char *s);
 TLAPI at *new_string_bylen(int n);
 TLAPI int str_index(char *s1, char *s2, int start);
@@ -560,6 +560,9 @@ struct large_string {
 LUSHAPI void large_string_init(struct large_string *ls);
 LUSHAPI void large_string_add(struct large_string *ls, char *s, int len);
 LUSHAPI at * large_string_collect(struct large_string *ls);
+
+LUSHAPI at* str_mb_to_utf8(const char *s);
+LUSHAPI at* str_utf8_to_mb(const char *s);
 
 
 /* FUNCTION.H -------------------------------------------------- */

@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.48 2006-02-22 21:41:26 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.49 2006-02-22 22:28:04 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -240,7 +240,7 @@ AC_HEADER_STDC
 AC_HEADER_DIRENT
 AC_HEADER_TIME
 AC_HEADER_SYS_WAIT     
-AC_CHECK_HEADERS(wchar.h wctype.h iconv.h)
+AC_CHECK_HEADERS(wchar.h wctype.h langinfo.h iconv.h)
 AC_CHECK_HEADERS(memory.h string.h strings.h limits.h alloca.h)
 AC_CHECK_HEADERS(unistd.h sys/mman.h termios.h pty.h util.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
@@ -281,8 +281,10 @@ AC_CHECK_FUNCS(feenableexcept ieee_handler fpsetmask __setfpucw)
 AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp waitpid openpty)
 AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
-AC_CHECK_FUNCS(setenv putenv fseeko ftello setlocale iconv)
+AC_CHECK_FUNCS(setenv putenv fseeko ftello)
 AC_FUNC_MBRTOWC
+AC_CHECK_FUNCS(setlocale nl_langinfo iconv)
+
 
 
 
