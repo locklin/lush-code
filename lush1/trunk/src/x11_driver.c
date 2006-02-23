@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.15 2006-02-23 04:11:11 leonb Exp $
+ * $Id: x11_driver.c,v 1.16 2006-02-23 05:07:40 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1041,7 +1041,7 @@ parse_psfont(char *name, char *family, int *size,
 {
   char *s = name;
   char *d = family;
-  while (*s && isascii(*s) && isalpha(*s))
+  while (*s && isascii(*s) && (isalpha(*s) || *s==' '))
     {
       int c = *s++;
       if (d - family < 128)
@@ -1078,7 +1078,7 @@ parse_psfont(char *name, char *family, int *size,
           break;
         }
     }
-  while (*s && isascii(*s) && (isalpha(*s) || *s=='-'))
+  while (*s && isascii(*s) && (isalpha(*s) || *s==' ' || *s=='-'))
     s++;
   if (*s>='0' && *s<='9')
     *size = atoi(s);
