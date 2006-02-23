@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.21 2006-02-20 16:04:00 leonb Exp $
+ * $Id: io.c,v 1.22 2006-02-23 04:48:57 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -786,7 +786,7 @@ rl_string(register char *s)
 static at *
 rl_mchar(register char *s)
 {
-  register at *q, *answer;
+  register at *q, *p, *answer;
   at *(*sav_ptr) (at *);
 
   ifn (macrochp(s)) {
@@ -798,13 +798,13 @@ rl_mchar(register char *s)
       error("io", "internal mchar failure", NIL);
   }
   q = named(s);
-  answer = var_get(q);
+  p = var_get(q);
   sav_ptr = eval_ptr;
   eval_ptr = eval_std;
-  answer = apply(answer, NIL);
+  answer = apply(p, NIL);
   eval_ptr = sav_ptr;
   UNLOCK(q);
-
+  UNLOCK(p);
   return answer;
 }
 
