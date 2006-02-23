@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.14 2006-02-22 21:14:34 leonb Exp $
+ * $Id: x11_driver.c,v 1.15 2006-02-23 04:11:11 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -53,6 +53,15 @@
 #endif
 #ifdef X11R4
 #include <X11/Xatom.h>
+#endif
+
+#if HAVE_XFT
+# include <X11/Xft/Xft.h>
+# ifdef XFT_MAJOR
+#  if XFT_MAJOR >= 2
+#   define HAVE_XFT2 1
+#  endif
+# endif
 #endif
 
 #include "header.h"
@@ -95,13 +104,22 @@ static struct X_def {
   int      gcflag;
 } xdef;
 
-
+struct X_font {
+  char name[256];
+  XFontStruct *xfs;
+#if HAVE_XFT2
+  XftFont *xft;
+#endif
+};
 
 static struct X_window {
   struct window lwin;
   Window win;
   GC gc;
-  XFontStruct *font;
+  struct X_font *font;
+#if HAVE_XFT2
+  XftColor xftcolor;
+#endif
   Pixmap backwin;
   int sizx, sizy;
   int dbflag;
@@ -277,6 +295,12 @@ x11_init(void)
   
   /* Error handler */
   XSetErrorHandler(x11_handler);
+
+  /* Xft */
+#if HAVE_XFT2
+  XftInit(NULL);
+  XftInitFtLibrary();
+#endif
 
   /* Miscellaneous */
   Xinitialised = TRUE;
@@ -848,6 +872,7 @@ x11_close(struct window *linfo)
   XUndefineCursor( xdef.dpy, info->win);
   XUnmapWindow(xdef.dpy, info->win);
   XDestroyWindow(xdef.dpy, info->win);
+
   XFlush(xdef.dpy);
   info->lwin.used = 0;
   enable();
@@ -867,247 +892,352 @@ x11_ysize(struct window *linfo)
   return info->sizy;
 }
 
+static int 
+x11_alloccolor(struct window *linfo, double r, double g, double b)
+{
+  return COLOR_RGB(r, g, b);
+}
+
+static long colorcube[6][6][6];
+static char colorready[6][6][6];
+
+static long
+alloc_from_cube(int r, int g, int b)
+{
+  XColor xc;
+  r = (r + 26) / 51;
+  g = (g + 26) / 51;
+  b = (b + 26) / 51;
+  if (colorready[b][g][r])
+    return colorcube[b][g][r];
+  xc.red = r * 13107;
+  xc.green = g * 13107;
+  xc.blue = b * 13107;
+  xc.pixel = xdef.fgcolor;
+  XAllocColor(xdef.dpy, xdef.cmap, &xc);
+  colorcube[b][g][r] = xc.pixel;
+  colorready[b][g][r] = 1;
+  return xc.pixel;
+}
+
 static void 
-x11_setcolor(struct window *linfo, int xx)
+x11_setcolor(struct window *linfo, int c)
 {
   struct X_window *info = (struct X_window*)linfo;
-  int x;
-
-  switch (xx) {
+  int r, g, b;
+  long x;
+  
+  switch (c) {
 
   case COLOR_FG:
+    r = g = b = 0;
+    x = xdef.fgcolor;
     XSetFillStyle(xdef.dpy, info->gc, FillSolid);
     XSetForeground(xdef.dpy, info->gc, xdef.fgcolor);
     break;
   case COLOR_BG:
+    r = g = b = 255;
+    x = xdef.bgcolor;
     XSetFillStyle(xdef.dpy, info->gc, FillSolid);
     XSetForeground(xdef.dpy, info->gc, xdef.bgcolor);
     break;
   case COLOR_GRAY:
+    r = g = b = 128;
+    x = alloc_from_cube(128,128,128);
     XSetStipple(xdef.dpy, info->gc, gray_stipple[4]);
     XSetFillStyle(xdef.dpy, info->gc, FillOpaqueStippled);
     XSetForeground(xdef.dpy, info->gc, xdef.fgcolor);
     break;
   default:
-    if (xdef.depth < MINDEPTH) {
-      x = xx / 32;
-      if (x < 1) {
-	XSetFillStyle(xdef.dpy, info->gc, FillSolid);
-	XSetForeground(xdef.dpy, info->gc, xdef.fgcolor);
-      } else if (x > 6) {
-	XSetFillStyle(xdef.dpy, info->gc, FillSolid);
-	XSetForeground(xdef.dpy, info->gc, xdef.bgcolor);
-      } else {
-	XSetStipple(xdef.dpy, info->gc, gray_stipple[7 - x]);
-	XSetFillStyle(xdef.dpy, info->gc, FillOpaqueStippled);
-	XSetForeground(xdef.dpy, info->gc, xdef.fgcolor);
+    r = RED_256(c);
+    g = GREEN_256(c);
+    b = BLUE_256(c);
+    if (xdef.red_mask && xdef.green_mask && xdef.blue_mask) 
+      {
+        x = (((int)(xdef.red_mask * ((double)r/255.0))) & xdef.red_mask) 
+          | (((int)(xdef.green_mask * ((double)g/255.0))) & xdef.green_mask) 
+          | (((int)(xdef.blue_mask * ((double)b/255.0))) & xdef.blue_mask);
+        XSetFillStyle(xdef.dpy, info->gc, FillSolid);
+        XSetForeground(xdef.dpy, info->gc, x);
       }
-    } else {
-      if (xx < 0 || xx >= (1 << xdef.depth))
-	return;
-      XSetFillStyle(xdef.dpy, info->gc, FillSolid);
-      XSetForeground(xdef.dpy, info->gc, xx);
-    }
+    else if (xdef.depth >= MINDEPTH)
+      {
+        x = alloc_from_cube(r, g, b);
+        r = (r + 26) / 51;  r *= 51;
+        g = (g + 26) / 51;  g *= 51;
+        b = (b + 26) / 51;  b *= 51;
+        XSetFillStyle(xdef.dpy, info->gc, FillSolid);
+        XSetForeground(xdef.dpy, info->gc, x);
+      }
+    else
+      {
+        x = SHADE_256(c) / 32;
+        r = g = b = x * 32;
+        if (x < 1) {
+          XSetFillStyle(xdef.dpy, info->gc, FillSolid);
+          XSetForeground(xdef.dpy, info->gc, xdef.fgcolor);
+        } else if (x > 6) {
+          XSetFillStyle(xdef.dpy, info->gc, FillSolid);
+          XSetForeground(xdef.dpy, info->gc, xdef.bgcolor);
+        } else {
+          XSetStipple(xdef.dpy, info->gc, gray_stipple[7 - x]);
+          XSetFillStyle(xdef.dpy, info->gc, FillOpaqueStippled);
+          XSetForeground(xdef.dpy, info->gc, xdef.fgcolor);
+        }
+        x = alloc_from_cube(r, g, b);
+      }
+    break;
   }
+#if HAVE_XFT2
+  info->xftcolor.color.red   = (r << 8) | 0x80;
+  info->xftcolor.color.green = (g << 8) | 0x80;
+  info->xftcolor.color.blue  = (b << 8) | 0x80;
+  info->xftcolor.color.alpha = 0xffff;
+  info->xftcolor.pixel = x;
+#endif
 }
 
 
-#define COLORCACHE 256
-static XColor colorcache[COLORCACHE];
-static int whereinthecache = 0, lasthitinthecache = 0;
+static char *fontweights[] = {
+  "thin", "extralight", "ultralight", "light", "book",
+  "regular", "normal", "medium", "demibold", "semibold",
+  "bold", "extrabold", "black", "heavy", 0
+};
 
+static char *fontslants[] = {
+  "roman", "italic", "oblique", 0
+};
 
-static int 
-x11_alloccolor(struct window *linfo, double r, double g, double b)
+static char *fontwidths[] = {
+  "ultracondensed",  "extracondensed", "condensed",
+  "semicondensed", "normal", "semiexpanded", "expanded",
+  "extraexpanded", "ultraexpanded", 0
+};
+
+static int
+compare(const char *s, const char *q)
 {
-  if (xdef.depth >= MINDEPTH) {
-    int i;
-    XColor xc;
-
-    xc.pixel = COLOR_GRAY;
-    xc.red = (long)(r*65535)&0xff00;
-    xc.green = (long)(g*65535)&0xff00;
-    xc.blue = (long)(b*65535)&0xff00;
-
-    for (i = lasthitinthecache; i < whereinthecache; i++)
-      if (colorcache[i].red == xc.red &&
-	  colorcache[i].green == xc.green &&
-	  colorcache[i].blue == xc.blue) {
-	lasthitinthecache = i;
-	return colorcache[i].pixel;
-      }
-    for (i = 0; i < lasthitinthecache; i++)
-      if (colorcache[i].red == xc.red &&
-	  colorcache[i].green == xc.green &&
-	  colorcache[i].blue == xc.blue) {
-	lasthitinthecache = i;
-	return colorcache[i].pixel;
-      }
-
-
-    XAllocColor(xdef.dpy,xdef.cmap,&xc);
-
-    /* If it fails, try a new colormap! */
-    if (xc.pixel==COLOR_GRAY && !xdef.cmapflag) {
-      xdef.cmap = XCopyColormapAndFree(xdef.dpy,xdef.cmap);
-      xdef.cmapflag = 1;
-      for (i=0; i<MAXWIN; i++)
-	if (xwind[i].lwin.used) 
-	  XSetWindowColormap(xdef.dpy, xwind[i].win, xdef.cmap);
-      XAllocColor(xdef.dpy,xdef.cmap,&xc);
+  while (*s && *q)
+    {
+      int c1 = *s;
+      int c2 = *q;
+      if (isascii(c1))
+        c1 = tolower(c1);
+      if (isascii(c2))
+        c2 = tolower(c2);
+      if (c1 != c2)
+        return 0;
+      s++;
+      q++;
     }
-
-    if (xc.pixel!=COLOR_GRAY)
-      if (whereinthecache < COLORCACHE) {
-	colorcache[whereinthecache].pixel = xc.pixel;
-	colorcache[whereinthecache].red = r * 65535;
-	colorcache[whereinthecache].green = g * 65535;
-	colorcache[whereinthecache].blue = b * 65535;
-	whereinthecache++;
-      }
-    return xc.pixel;
-
-  } else {
-    int x;
-
-    x = 16 * (5 * r + 9 * g + 2 * b);
-    if (x >= 256)
-      x = 255;
-    return x;
-  }
+  if (*q)
+    return 0;
+  return 1;
 }
 
-
-
-
-
-
-
-#define FONTCACHE 8
-
-static struct {
-  char name[128];
-  XFontStruct *fs;
-} fontcache[FONTCACHE];
-
-static int lastfont = 0;
-
+static int
+parse_psfont(char *name, char *family, int *size,
+             char **weight, char **slant, char **width)
+{
+  char *s = name;
+  char *d = family;
+  while (*s && isascii(*s) && isalpha(*s))
+    {
+      int c = *s++;
+      if (d - family < 128)
+        *d++ = tolower(c);
+    }
+  *d = 0;
+  if (*s == '-')
+    {
+      s++;
+      for(;;)
+        {
+          char **q;
+          for (q = fontweights; *q; q++)
+            if (compare(s, *q))
+              {
+                *weight = *q;
+                s += strlen(*q);
+                continue;
+              }
+          for (q = fontslants; *q; q++)
+            if (compare(s, *q))
+              {
+                *slant = *q;
+                s += strlen(*q);
+                continue;
+              }
+          for (q = fontwidths; *q; q++)
+            if (compare(s, *q))
+              {
+                *width = *q;
+                s += strlen(*q);
+                continue;
+              }
+          break;
+        }
+    }
+  while (*s && isascii(*s) && (isalpha(*s) || *s=='-'))
+    s++;
+  if (*s>='0' && *s<='9')
+    *size = atoi(s);
+  while (*s && isascii(*s) && isdigit(*s))
+    s++;
+  if (*s)
+    return 0;
+  return 1;
+}
 
 static char*
 psfonttoxfont(char *f)
 {
-  /* convert a PS name to a X... */
-  char type[10];
-  int size=0;
-  static char copy[256];
-  static char name[256];
-  static char *wght[] = { "bold","demi","light","demibold","book",0 };
-  char *s;
-  
-  if (*f=='-')
+  char family[256];
+  static char buffer[256];
+  int size = 11;
+  char *weight = "medium";
+  char *slant = "r";
+  char *width = "normal";
+  if (*f == '-')
     return f;
-  strcpy(copy,f);
-  s = copy;
-  while (*s) {
-    *s = tolower((unsigned char)*s);
-    s++;
-  }
-  f = copy+strlen(copy);
-  s = strchr(copy,'-');
-  if (!s) {
-    strcpy(type,"medium-r");
-  } else {
-    *s=0;
-    s++;
-    for (size=0;wght[size];size++)
-      if (!strncmp(s,wght[size],strlen(wght[size]))) {
-	strcpy(type,wght[size]);
-	strcat(type,"-");
-	s+=strlen(wght[size]);
-	break;
-      }
-    ifn (wght[size])
-      strcpy(type,"medium-");
-    switch (*s) {
-    case 'i':
-      strcat(type,"i");
-      break;
-    case 'o':
-      strcat(type,"o");
-      break;
-    default:
-      strcat(type,"r");
-      break;
-    }
-  }
+  if (! parse_psfont(f, family, &size, &weight, &slant, &width))
+    return f;
+  if (!family[0])
+    strcpy(family,"fixed");
+  sprintf(buffer,"-*-%s-%s-%c-%s-*-%d-*-*-*-*-*-iso8859-1",
+	  family, weight, slant[0], width, size);
+  return buffer;
+}
 
-  size = 11;
-  while (f[-1]>='0' && f[-1]<='9')
-    f--;
-  
-  if (*f)
-    size = atoi(f);
-  f[0] = 0;
-  if (f[-1]=='-')
-    f[-1] = 0;
-  sprintf(name,"-*-%s-%s-normal-*-%d-*-*-*-*-*-iso8859-1",
-	  copy, type, size );
-  return name;
+#if HAVE_XFT2
+static char*
+psfonttoxftfont(char *f)
+{
+  /* convert a PS name to a XFT name */
+  char *d;
+  static char buffer[256];
+  int size = 11;
+  char *weight = 0;
+  char *slant = 0;
+  char *width = 0;
+  if (*f == '-')
+    return f;
+  if (! parse_psfont(f, buffer, &size, &weight, &slant, &width))
+    return f;
+  if (!buffer[0]) strcpy(buffer,"fixed");
+  d = buffer + strlen(buffer);
+  sprintf(d, ":pixelsize=%d", size);
+  d = buffer + strlen(buffer);
+  if (weight) sprintf(d, ":%s", weight);
+  d = buffer + strlen(buffer);
+  if (slant) sprintf(d, ":%s", slant);
+  d = buffer + strlen(buffer);
+  if (width) sprintf(d, ":%s", width);
+  return buffer;
+}
+#endif
+
+#define FONTCACHE 32
+
+static struct X_font *fontcache[FONTCACHE];
+
+static void 
+delfont(struct X_font *fc)
+{
+  if (fc && fc->xfs)
+    XFreeFont(xdef.dpy, fc->xfs);
+#if HAVE_XFT2
+  if (fc && fc->xft)
+    XftFontClose(xdef.dpy, fc->xft);
+#endif
+  if (fc)
+    free(fc);
+}
+
+static struct X_font *
+getfont(const char *name, int xft, int xfld)
+{
+  int i;
+  struct X_font *fc;
+  for (i=0; i<FONTCACHE; i++)
+    if (fontcache[i] && !strcmp(name, fontcache[i]->name))
+      break;
+  /* not found */
+  if (i>= FONTCACHE)
+    {
+      /* prepare */
+      i = FONTCACHE-1;
+      fc = fontcache[i];
+      delfont(fc);
+      fontcache[i] = 0;
+      if (strlen(name)>255) 
+        return 0;
+      if (! (fc = malloc(sizeof(struct X_font))))
+        return 0;
+      memset(fc, 0, sizeof(struct X_font));
+      strcpy(fc->name, name);
+      /* load */
+#if HAVE_XFT2
+      if (xft)
+        fc->xft = XftFontOpenName(xdef.dpy, xdef.screen, name);
+      else if (xfld)
+        fc->xft = XftFontOpenXlfd(xdef.dpy, xdef.screen, name);
+      else
+#endif
+        {
+          Font fid;
+          badname = 0;
+          fid = XLoadFont(xdef.dpy, name);
+          XSync(xdef.dpy, False);
+          if (! badname)
+            fc->xfs = XQueryFont(xdef.dpy,fid);
+        }
+      /* check */
+#if HAVE_XFT2
+      if (!fc->xft)
+#endif
+        if (! fc->xfs)
+          {
+            delfont(fc);
+            return 0;
+          }
+      /* install */
+      fontcache[i] = fc;
+    }
+  /* move to front */
+  fc = fontcache[i];
+  while (--i >= 0)
+    fontcache[i+1] = fontcache[i];
+  fontcache[i] = fc;
+  return fc;
 }
 
 static void 
 x11_setfont(struct window *linfo, char *f)
 {
   struct X_window *info = (struct X_window*)linfo;
-  Font fid;
-  XFontStruct *xfs = 0;
-  int i;
-  char *xf;
-  
-  xf = psfonttoxfont(f);
-  ifn (strcmp(f, FONT_STD)) {
-    xfs = fontcache[0].fs;
-    i = 0;
-  } else {
-    for (i = 0; i < FONTCACHE; i++)
-      if (fontcache[i].fs) {
-	if (strcmp(f, fontcache[i].name)==0) {
-	  xfs = fontcache[i].fs;
-	  break;
-	}
-	if (strcmp(xf, fontcache[i].name)==0) {
-	  xfs = fontcache[i].fs;
-	  break;
-	}
-      }
-  }
-  
-  if (i >= FONTCACHE) {
-    i = lastfont;
-    if (++lastfont >= FONTCACHE)
-      lastfont = 1;
-    badname = 0;
-    fid = XLoadFont(xdef.dpy,f);
-    XSync(xdef.dpy,False);
-    if (badname) {
-      badname = 0;
-      fid = XLoadFont(xdef.dpy,xf);
-      XSync(xdef.dpy,False);
-      if (badname)
-	error(NIL, "Cannot load font", new_string(f));
-      f = xf;
-    }
-    badname = 1;
-    xfs = XQueryFont(xdef.dpy,fid);
-    if (!xfs)
-      error(NIL,"Problem while loading font",new_string(f));
-    if (fontcache[i].fs)
-      XFreeFont(xdef.dpy, fontcache[i].fs);
-    strcpy(fontcache[i].name, f);
-    fontcache[i].fs = xfs;
-  }
-  XSetFont(xdef.dpy, info->gc, xfs->fid);
-  info->font = xfs;
+  struct X_font *fc = 0;
+#if HAVE_XFT2
+  if (!fc && f[0]==':')
+    fc = getfont(f+1, 1, 0);
+  if (!fc && f[0]=='-')
+    fc = getfont(f, 0, 1);
+  if (!fc)
+    fc = getfont(psfonttoxftfont(f), 1, 0);
+  if (!fc)
+    fc = getfont(f, 1, 0);
+#endif
+  if (!fc && f[0]=='-')
+    fc = getfont(f, 0, 0);
+  if (!fc)
+    fc = getfont(psfonttoxfont(f), 0, 0);
+  if (!fc)
+    fc = getfont(f, 0, 0);
+  if (!fc)
+    error(NIL, "Cannot load font", new_string(f));
+  info->font = fc;
+  if (fc->xfs)
+    XSetFont(xdef.dpy, info->gc, fc->xfs->fid);
 }
 
 static void
@@ -1266,14 +1396,54 @@ static void
 x11_draw_text(struct window *linfo, int x, int y, char *s)
 {
   struct X_window *info = (struct X_window*)linfo;
-  int i, junk;
-  XCharStruct overall;
-
-  i = strlen(s);
-  XTextExtents(info->font, s, i, &junk, &junk, &junk, &overall);
-  XDrawString(xdef.dpy, info->backwin, info->gc, x, y, s, i);
-  grow_rect(info, x - overall.lbearing - 5, y - overall.ascent,
-	    x + overall.rbearing + 5, y + overall.descent);
+  if (!s[0]) return;
+#if HAVE_XFT2
+  if (info->font->xft)
+    {
+      XGlyphInfo extents;
+      Pixmap pmap;
+      XftDraw *draw;
+      at *utf8q = str_mb_to_utf8(s);
+      const FcChar8 *utf8 = (FcChar8*)SADD(utf8q->Object);
+      unsigned int utf8l = strlen((char*)utf8);
+      XftTextExtentsUtf8(xdef.dpy, info->font->xft, 
+                         utf8, utf8l, &extents);
+      if (extents.width<=0 || extents.height<=0)
+        return;
+      pmap = XCreatePixmap(xdef.dpy, DefaultRootWindow(xdef.dpy),
+                           extents.width, extents.height, xdef.depth);
+      draw = XftDrawCreate(xdef.dpy, pmap, xdef.visual, xdef.cmap);
+      if (draw)
+        {
+          XCopyArea(xdef.dpy, info->backwin, pmap,
+                    xdef.gccopy, x - extents.x, y - extents.y,
+                    extents.width, extents.height, 0, 0);
+          XftDrawStringUtf8(draw, &info->xftcolor, info->font->xft, 
+                            extents.x, extents.y, utf8, utf8l);
+          XCopyArea(xdef.dpy, pmap, info->backwin,
+                    info->gc, 0, 0, extents.width, extents.height,
+                    x - extents.x, y - extents.y);
+          XftDrawDestroy(draw);
+          XFreePixmap(xdef.dpy, pmap);
+        }
+      UNLOCK(utf8q);
+      grow_rect(info, x - extents.x, y - extents.y, 
+                x - extents.x + extents.width, 
+                y - extents.y + extents.height);
+    }
+  else
+#endif
+    {
+      int junk;
+      int len = strlen(s);
+      XCharStruct overall;
+      XTextExtents(info->font->xfs, s, len, 
+                   &junk, &junk, &junk, &overall);
+      XDrawString(xdef.dpy, info->backwin, info->gc, 
+                  x, y, s, len);
+      grow_rect(info, x - overall.lbearing - 5, y - overall.ascent,
+                x + overall.rbearing + 5, y + overall.descent);
+    }
 }
 
 static void 
@@ -1282,18 +1452,44 @@ x11_rect_text(struct window *linfo,
 	      int *xptr, int *yptr, int *wptr, int *hptr)
 {
   struct X_window *info = (struct X_window*)linfo;
-  int i, junk;
-  XCharStruct overall;
-
-  i = strlen(s);
-  XTextExtents(info->font, s, i, &junk, &junk, &junk, &overall);
-  *xptr = x - overall.lbearing;
-  *yptr = y - overall.ascent;
-  if (overall.rbearing > overall.width)
-    *wptr = overall.lbearing + overall.rbearing;
+#if HAVE_XFT2
+  if (info->font->xft)
+    {
+      XGlyphInfo extents;
+      at *utf8q = str_mb_to_utf8(s);
+      const FcChar8 *utf8 = (FcChar8*)SADD(utf8q->Object);
+      unsigned int utf8l = strlen((char*)utf8);
+      XftTextExtentsUtf8(xdef.dpy, info->font->xft, 
+                         utf8, utf8l, &extents);
+      UNLOCK(utf8q);
+      int lb = extents.x;
+      int rb = extents.width - extents.x;
+      if (lb < 0) lb = 0;
+      if (rb < 0) rb = 0;
+      *xptr = x - lb;
+      *yptr = y - extents.y;
+      if (rb > extents.xOff)
+        *wptr = lb + rb;
+      else
+        *wptr = lb + extents.xOff;
+      *hptr = extents.height;
+    }
   else
-    *wptr = overall.lbearing + overall.width;
-  *hptr = overall.ascent + overall.descent;
+#endif
+    {
+      int junk;
+      int len = strlen(s);
+      XCharStruct overall;
+      XTextExtents(info->font->xfs, s, len, 
+                   &junk, &junk, &junk, &overall);
+      *xptr = x - overall.lbearing;
+      *yptr = y - overall.ascent;
+      if (overall.rbearing > overall.width)
+        *wptr = overall.lbearing + overall.rbearing;
+      else
+        *wptr = overall.lbearing + overall.width;
+      *hptr = overall.ascent + overall.descent;
+    }
 }
 
 
@@ -1695,7 +1891,11 @@ DX(xx11_fontname)
 {
   ARG_NUMBER(1);
   ARG_EVAL(1);
+#if HAVE_XFT2
+  return new_string(psfonttoxftfont(ASTRING(1)));
+#else
   return new_string(psfonttoxfont(ASTRING(1)));
+#endif
 }
 
 DX(xx11_configure)
