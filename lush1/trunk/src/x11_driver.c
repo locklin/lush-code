@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.16 2006-02-23 05:07:40 leonb Exp $
+ * $Id: x11_driver.c,v 1.17 2006-02-23 20:05:33 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -989,9 +989,9 @@ x11_setcolor(struct window *linfo, int c)
     break;
   }
 #if HAVE_XFT2
-  info->xftcolor.color.red   = (r << 8) | 0x80;
-  info->xftcolor.color.green = (g << 8) | 0x80;
-  info->xftcolor.color.blue  = (b << 8) | 0x80;
+  info->xftcolor.color.red   = (r << 8) | 0x7f;
+  info->xftcolor.color.green = (g << 8) | 0x7f;
+  info->xftcolor.color.blue  = (b << 8) | 0x7f;
   info->xftcolor.color.alpha = 0xffff;
   info->xftcolor.pixel = x;
 #endif
@@ -1115,6 +1115,7 @@ psfonttoxftfont(char *f)
 {
   /* convert a PS name to a XFT name */
   char *d;
+  char family[256];
   static char buffer[256];
   int size = 11;
   char *weight = 0;
@@ -1122,16 +1123,17 @@ psfonttoxftfont(char *f)
   char *width = 0;
   if (*f == '-')
     return f;
-  if (! parse_psfont(f, buffer, &size, &weight, &slant, &width))
+  if (! parse_psfont(f, family, &size, &weight, &slant, &width))
     return f;
-  if (!buffer[0]) strcpy(buffer,"fixed");
+  buffer[0] = 0;
+  if (family[0]) sprintf(buffer, ":family=%s", family);
   d = buffer + strlen(buffer);
   sprintf(d, ":pixelsize=%d", size);
-  d = buffer + strlen(buffer);
+  d = d + strlen(d);
   if (weight) sprintf(d, ":%s", weight);
-  d = buffer + strlen(buffer);
+  d = d + strlen(d);
   if (slant) sprintf(d, ":%s", slant);
-  d = buffer + strlen(buffer);
+  d = d + strlen(d);
   if (width) sprintf(d, ":%s", width);
   return buffer;
 }
@@ -1219,7 +1221,7 @@ x11_setfont(struct window *linfo, char *f)
   struct X_font *fc = 0;
 #if HAVE_XFT2
   if (!fc && f[0]==':')
-    fc = getfont(f+1, 1, 0);
+    fc = getfont(f, 1, 0);
   if (!fc && f[0]=='-')
     fc = getfont(f, 0, 1);
   if (!fc)
