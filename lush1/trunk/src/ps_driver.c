@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: ps_driver.c,v 1.7 2004-11-22 19:54:18 leonb Exp $
+ * $Id: ps_driver.c,v 1.8 2006-02-23 04:18:16 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -383,7 +383,7 @@ ps_setcolor(struct window *linfo, int x)
       break;
     default:
       fprintf(info->f,"%f %f %f SC\n",
-	      (x&0xff)/256.0, (x&0xff00)/65536.0, (x&0xff0000)/16777216.0);
+              (x&0xff0000)/16777216.0, (x&0xff00)/65536.0, (x&0xff)/256.0);
       break;
     }
 }
@@ -392,7 +392,7 @@ ps_setcolor(struct window *linfo, int x)
 static int
 ps_alloccolor(struct window *linfo, double r, double g, double b)
 {
-  return (((int)(b*255)<<16) | ((int)(g*255)<<8) | (int)(r*255));
+  return COLOR_RGB(r,g,b);
 }
 
 
