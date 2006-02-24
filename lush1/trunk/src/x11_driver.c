@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.20 2006-02-24 20:56:59 leonb Exp $
+ * $Id: x11_driver.c,v 1.21 2006-02-24 21:42:13 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -109,7 +109,8 @@ static struct X_def {
 } xdef;
 
 struct X_font {
-  char name[256];
+  char *name1;
+  char *name2;
   XFontStruct *xfs;
 #if HAVE_XFT2
   XftFont *xft;
@@ -1099,11 +1100,12 @@ parse_psfont(char *name, char *family, int *size,
   return 1;
 }
 
+static char fname_buffer[256];
+
 static char*
 psfonttoxfont(char *f)
 {
   char family[256];
-  static char buffer[256];
   int size = 11;
   char *weight = "medium";
   char *slant = "r";
@@ -1114,9 +1116,9 @@ psfonttoxfont(char *f)
     return f;
   if (!family[0])
     strcpy(family,"helvetica");
-  sprintf(buffer,"-*-%s-%s-%c-%s-*-%d-*-*-*-*-*-iso8859-1",
+  sprintf(fname_buffer,"-*-%s-%s-%c-%s-*-%d-*-*-*-*-*-iso8859-1",
 	  family, weight, slant[0], width, size);
-  return buffer;
+  return fname_buffer;
 }
 
 #if HAVE_XFT2
@@ -1126,7 +1128,6 @@ psfonttoxftfont(char *f)
   /* convert a PS name to a XFT name */
   char *d;
   char family[256];
-  static char buffer[256];
   int size = 11;
   char *weight = 0;
   char *slant = 0;
@@ -1135,10 +1136,10 @@ psfonttoxftfont(char *f)
     return f;
   if (! parse_psfont(f, family, &size, &weight, &slant, &width))
     return f;
-  buffer[0] = 0;
+  fname_buffer[0] = 0;
   if (family[0]) 
-    sprintf(buffer, ":family=%s", family);
-  d = buffer + strlen(buffer);
+    sprintf(fname_buffer, ":family=%s", family);
+  d = fname_buffer + strlen(fname_buffer);
   sprintf(d, ":pixelsize=%d", size);
   d = d + strlen(d);
   if (weight) sprintf(d, ":%s", weight);
@@ -1146,7 +1147,7 @@ psfonttoxftfont(char *f)
   if (slant) sprintf(d, ":%s", slant);
   d = d + strlen(d);
   if (width) sprintf(d, ":%s", width);
-  return buffer;
+  return fname_buffer;
 }
 #endif
 
@@ -1155,15 +1156,15 @@ static char *
 fcpatterntoxftfont(FcPattern *p)
 {
   FcValue val;
-  static char name[256];
   char *s, *d;
-  char *n = name;
+  char *n = fname_buffer;
   int i;
   for (i=0; i<16; i++)
     if (FcPatternGet(p,"family",i,&val) == FcResultMatch && 
         val.type == FcTypeString)
       {
-        if (n + strlen((char*)val.u.s) + 16 > name + sizeof(name)) return 0;
+        if (n + strlen((char*)val.u.s)+16 > fname_buffer+sizeof(fname_buffer)) 
+          return 0;
         sprintf(n, (i) ? ",%s" : ":family=%s", val.u.s);
         n = n + strlen(n);
       }
@@ -1171,17 +1172,19 @@ fcpatterntoxftfont(FcPattern *p)
     if (FcPatternGet(p,"size",i,&val) == FcResultMatch 
         && val.type == FcTypeDouble)
       {
-        if (n + 24 > name + sizeof(name)) return 0;
+        if (n + 24 > fname_buffer+sizeof(fname_buffer)) 
+          return 0;
         sprintf(n, (i) ? ",%f" : ":size=%f", val.u.d);
         n = n + strlen(n);
       }
   s = d = (char*)FcNameUnparse(p);
   if (!s) return 0;
   while (*d && (*d != ':')) d++;
-  if (n + strlen(d) + 2 > name + sizeof(name)) return 0;
+  if (n + strlen(d) + 2 > fname_buffer+sizeof(fname_buffer)) 
+    return 0;
   strcpy(n, d);
   free(s);
-  return name;
+  return fname_buffer;
 }
 #endif
 
@@ -1192,14 +1195,20 @@ static struct X_font *fontcache[FONTCACHE];
 static void 
 delfont(struct X_font *fc)
 {
-  if (fc && fc->xfs)
-    XFreeFont(xdef.dpy, fc->xfs);
-#if HAVE_XFT2
-  if (fc && fc->xft)
-    XftFontClose(xdef.dpy, fc->xft);
-#endif
   if (fc)
-    free(fc);
+    {
+      if (fc->xfs)
+        XFreeFont(xdef.dpy, fc->xfs);
+#if HAVE_XFT2
+      if (fc->xft)
+        XftFontClose(xdef.dpy, fc->xft);
+#endif
+      if (fc->name1)
+        free(fc->name1);
+      if (fc->name2)
+        free(fc->name2);
+      free(fc);
+    }
 }
 
 static struct X_font *
@@ -1208,8 +1217,10 @@ getfont(const char *name, int xft)
   int i;
   struct X_font *fc;
   for (i=0; i<FONTCACHE; i++)
-    if (fontcache[i] && !strcmp(name, fontcache[i]->name))
-      break;
+    if (fontcache[i])
+      if ((fontcache[i]->name1 && !strcmp(name, fontcache[i]->name1)) ||
+          (fontcache[i]->name2 && !strcmp(name, fontcache[i]->name1)) )
+        break;
   /* not found */
   if (i>= FONTCACHE)
     {
@@ -1223,7 +1234,7 @@ getfont(const char *name, int xft)
       if (! (fc = malloc(sizeof(struct X_font))))
         return 0;
       memset(fc, 0, sizeof(struct X_font));
-      strcpy(fc->name, name);
+      fc->name1 = strdup(name);
       /* load */
 #if HAVE_XFT2
       if (xft)
@@ -1245,7 +1256,7 @@ getfont(const char *name, int xft)
                   FcPatternAdd(pattern, "family", val, 0);
                 }
               if ((s = fcpatterntoxftfont(pattern)))
-                strcpy(fc->name, s);
+                fc->name2 = strdup(s);
               fc->xft = XftFontOpenPattern(xdef.dpy, newpattern);
               if (fc->xft)
                 newpattern = 0;
@@ -1255,6 +1266,7 @@ getfont(const char *name, int xft)
           if (newpattern)
             FcPatternDestroy(newpattern);
         }
+      else
 #endif
         {
           Font fid;
@@ -1280,7 +1292,7 @@ getfont(const char *name, int xft)
   fc = fontcache[i];
   while (--i >= 0)
     fontcache[i+1] = fontcache[i];
-  fontcache[i] = fc;
+  fontcache[0] = fc;
   return fc;
 }
 
@@ -1311,8 +1323,10 @@ x11_setfont(struct window *linfo, char *f)
       if (!fc)
         fc = getfont(f, 0);
     }
-  if (fc)
-    r = fc->name;
+  if (fc && fc->name2)
+    r = fc->name2;
+  else if (fc && fc->name1)
+    r = fc->name1;
 #if HAVE_XFT2
   if (! fc)
     fc = getfont(xdef.font, 1);
