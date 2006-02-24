@@ -705,9 +705,8 @@ comdraw_setfont(struct window *linfo, char *f)
   command[0] = 0;
   begin_no_cw(info);
   strcpy(font,f);
-  ifn (strcmp(font,def_font)){
-    strcpy(font,"Helvetica-12"); 
-  }
+  ifn (strcmp(font,def_font))
+    strcpy(font,"Helvetica-11"); 
   sprintf(command,"fontbyname(\"%s\")\n",font);
   runcommand(info, command,1);
   return f;

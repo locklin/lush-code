@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: ps_driver.c,v 1.9 2006-02-24 17:14:27 leonb Exp $
+ * $Id: ps_driver.c,v 1.10 2006-02-24 19:59:10 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -242,7 +242,8 @@ ps_setfont(struct window *linfo, char *f)
   int size;
   char font[128];
   char *s;
-  
+  if (!strcmp(f,"default"))
+    f = "Helvetica-11";
   begin(info);
   strncpy(font,f,126);
   s = font+strlen(f);

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.18 2006-02-24 17:14:27 leonb Exp $
+ * $Id: x11_driver.c,v 1.19 2006-02-24 19:59:10 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -264,7 +264,7 @@ x11_init(void)
     xdef.bgcolor = xdef.fgcolor;
     xdef.fgcolor = tmp;
   }
-  strcpy(xdef.font, "fixed");
+  strcpy(xdef.font, "-misc-fixed-medium-r-normal--10-*-*-*-*-*-iso8859-1");
   tempstr = XGetDefault(xdef.dpy, "SN", "Font");
   if (tempstr) {
     strcpy(xdef.font, tempstr);
@@ -1098,12 +1098,12 @@ psfonttoxfont(char *f)
   char *weight = "medium";
   char *slant = "r";
   char *width = "normal";
-  if (*f == '-')
+  if (*f == '-' || *f == ':')
     return f;
   if (! parse_psfont(f, family, &size, &weight, &slant, &width))
     return f;
   if (!family[0])
-    strcpy(family,"fixed");
+    strcpy(family,"helvetica");
   sprintf(buffer,"-*-%s-%s-%c-%s-*-%d-*-*-*-*-*-iso8859-1",
 	  family, weight, slant[0], width, size);
   return buffer;
@@ -1121,7 +1121,7 @@ psfonttoxftfont(char *f)
   char *weight = 0;
   char *slant = 0;
   char *width = 0;
-  if (*f == '-')
+  if (*f == '-' || *f == ':')
     return f;
   if (! parse_psfont(f, family, &size, &weight, &slant, &width))
     return f;
@@ -1281,7 +1281,7 @@ x11_setfont(struct window *linfo, char *f)
   struct X_font *fc = 0;
   char *r = 0;
   if (!strcmp(f, "default"))
-    f = "fixed";
+    f = xdef.font;
   if (f[0]=='-')
     fc = getfont(f, 0);
 #if HAVE_XFT2
@@ -1305,8 +1305,10 @@ x11_setfont(struct window *linfo, char *f)
     r = fc->name;
 #if HAVE_XFT2
   if (! fc)
-    fc = getfont("fixed", 1);
+    fc = getfont(xdef.font, 1);
 #endif
+  if (! fc)
+    fc = getfont(xdef.font, 0);
   if (! fc)
     fc = getfont("fixed", 0);
   if (fc) 
