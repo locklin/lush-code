@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.19 2006-02-24 19:59:10 leonb Exp $
+ * $Id: x11_driver.c,v 1.20 2006-02-24 20:56:59 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -42,17 +42,21 @@
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
-#ifndef X11R3
-#ifndef X11R4
-#ifndef PWinGravity
-#define X11R3
-#else
-#define X11R4
+
+#ifndef X11RELEASE
+# ifdef XlibSpecificationRelease
+#  define X11RELEASE XlibSpecificationRelease
+# else
+#  ifdef PWinGravity
+#   define X11RELEASE 4
+#  else 
+#   define X11RELEASE 3
+#  endif
+# endif
 #endif
-#endif
-#endif
-#ifdef X11R4
-#include <X11/Xatom.h>
+
+#if X11RELEASE >= 4
+# include <X11/Xatom.h>
 #endif
 
 #if HAVE_XFT
@@ -277,7 +281,7 @@ x11_init(void)
   }
 
   /* Get wm_delete_window atom */
-#ifdef X11R4
+#if X11RELEASE >= 4
   xdef.wm_delete_window = XInternAtom(xdef.dpy, "WM_DELETE_WINDOW", True);
   xdef.wm_protocols = XInternAtom(xdef.dpy, "WM_PROTOCOLS", True);
 #endif
@@ -335,7 +339,7 @@ static int
 x11_make_window(int x, int y, int w, int h, char *name)
 {
   XSizeHints hints;
-#ifdef X11R4
+#if X11RELEASE >= 4
   XWMHints wmhints;
   XClassHint clhints;
   XTextProperty xtpname;
@@ -411,26 +415,32 @@ x11_make_window(int x, int y, int w, int h, char *name)
   else
     hints.flags = (PPosition | PSize);
 
-#ifdef X11R3
+#if X11RELEASE < 4
   XSetStandardProperties(xdef.dpy, info->win,
 			 name, name, None,
 			 NULL, 0, &hints);
-#endif
-#ifdef X11R4
+#else
   wmhints.input = True;
   wmhints.flags = InputHint;
   clhints.res_name = "lush";
   clhints.res_class = "Lush";
-  ifn (XStringListToTextProperty(&name,1,&xtpname)) {
-    enable();
-    error(NIL,"memory exhausted",NIL);
-  }
+# if X11RELEASE >= 6
+  if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XTextStyle, &xtpname))
+# else
+    if (XStringListToTextProperty(&name,1,&xtpname))
+# endif
+      {
+        enable();
+        error(NIL,"memory exhausted",NIL);
+      }
   XSetWMProperties(xdef.dpy,info->win,&xtpname,&xtpname,
 		   NULL,0, &hints, &wmhints, &clhints );
+  if (xtpname.value)
+    XFree(xtpname.value);
   if (xdef.wm_delete_window!=None)
     XSetWMProtocols(xdef.dpy,info->win,&xdef.wm_delete_window,1);
 #endif
-
+  
   XSelectInput(xdef.dpy, info->win, ExposureMask);
 
   /* Map the window */
@@ -772,7 +782,7 @@ handle_sync_events(void)
                               buttondown);
 	  break;
 	  
-#ifdef X11R4
+#if X11RELEASE >= 4
 	case ClientMessage:
 	  if (xdef.wm_delete_window != None &&
 	      ev.xclient.message_type == xdef.wm_protocols &&
@@ -1988,7 +1998,7 @@ DX(xx11_configure)
   w = current_window();
   if (w->gdriver == &x11_driver)
     {
-#ifdef X11R4      
+#if X11RELEASE >= 4      
       int mask = 0;
       XWindowChanges xwc;
       XWindowAttributes xwa;
@@ -2076,7 +2086,7 @@ DX(xx11_text_to_clip)
     x11_init();
   disable();
   XStoreBuffer(xdef.dpy,s,strlen(s),0);
-#ifdef X11R4
+#if X11RELEASE >= 4
   XSetSelectionOwner(xdef.dpy,XA_PRIMARY,None,CurrentTime);
   /* TODO: Own CLIPBOARD (and SHELF?) selections */
 #endif
@@ -2098,11 +2108,9 @@ DX(xx11_clip_to_text)
   if (!Xinitialised)
     x11_init();
   disable();
-
-#ifdef X11R4
+#if X11RELEASE >= 4
   /* Check CLIPBOARD (and SHELF?) selections */
 #endif
-  
   if (!buf)
     {
       buf = XFetchBuffer(xdef.dpy,&nbytes,0);
