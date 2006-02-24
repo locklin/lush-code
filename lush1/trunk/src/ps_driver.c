@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: ps_driver.c,v 1.8 2006-02-23 04:18:16 leonb Exp $
+ * $Id: ps_driver.c,v 1.9 2006-02-24 17:14:27 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -235,7 +235,7 @@ ps_ysize(struct window *linfo)
 
 /* set the font in a window */
 
-static void 
+static char * 
 ps_setfont(struct window *linfo, char *f)
 {
   struct M_window *info = (struct M_window*)linfo;
@@ -256,6 +256,7 @@ ps_setfont(struct window *linfo, char *f)
     s--;
   *s=0;
   fprintf(info->f,"%d /%s SF\n",size,font);
+  return f;
 }
 
 

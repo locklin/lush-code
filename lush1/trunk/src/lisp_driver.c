@@ -85,16 +85,26 @@ lisp_send(wptr info, at *method, at *args)
 }
 
 static int 
-lisp_send_maybe(wptr info, at *method, at *args)
+lisp_send_maybe_ext(wptr info, at *method, at *args, at **pret)
 {
   if (lisp_check(info, method))
     {
       at *p = send_message(NIL,info->driverdata,method,args);
-      UNLOCK(p);
+      if (pret)
+        *pret = p;
+      else
+        UNLOCK(p);
       return TRUE;
     }
   return FALSE;
 }
+
+static int 
+lisp_send_maybe(wptr info, at *method, at *args)
+{
+  return lisp_send_maybe_ext(info, method, args, NIL);
+}
+
 
 static void 
 lisp_begin(wptr info)
@@ -132,12 +142,20 @@ lisp_ysize(wptr info)
   error(NIL,"Method ysize returned something illegal",p);
 }
 
-static void
+static char *
 lisp_setfont(wptr info, char *f)
 {
   at *q = cons(new_string(f),NIL);
-  lisp_send_maybe(info,at_setfont,q);
+  at *r = NIL;
+  lisp_send_maybe_ext(info,at_setfont,q, &r);
   UNLOCK(q);
+  if (EXTERNP(r, &string_class))
+    {
+      UNLOCK(info->font);
+      info->font = r;
+      return SADD(r->Object);
+    }
+  return 0;
 }
 
 static void 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.h,v 1.13 2004-11-22 19:53:45 leonb Exp $
+ * $Id: graphics.h,v 1.14 2006-02-24 17:14:25 leonb Exp $
  **********************************************************************/
 
 #ifndef GRAPHICS_H
@@ -124,36 +124,36 @@ struct gdriver {
   /**** gdriver name *** */
   char *name;
   /**** initial routines *** */
-  void (*begin) (wptr);		/* begin(device) & end(device) */
-  void (*end) (wptr);		/* encapsulate graphics calls */
-  void (*close) (wptr);
-  int (*xsize) (wptr);
-  int (*ysize) (wptr);
-  void (*setfont) (wptr, char *);
-  void (*clear) (wptr);
-  void (*draw_line) (wptr, int, int, int, int);
-  void (*draw_rect) (wptr, int, int, uint, uint);
-  void (*draw_circle) (wptr, int, int, uint);
-  void (*fill_rect) (wptr, int, int, uint, uint);
-  void (*fill_circle) (wptr, int, int, uint);
-  void (*draw_text) (wptr, int, int, char *);
+  void  (*begin) (wptr);		/* begin(device) & end(device) */
+  void  (*end) (wptr);		/* encapsulate graphics calls */
+  void  (*close) (wptr);
+  int   (*xsize) (wptr);
+  int   (*ysize) (wptr);
+  char* (*setfont) (wptr, char*);
+  void  (*clear) (wptr);
+  void  (*draw_line) (wptr, int, int, int, int);
+  void  (*draw_rect) (wptr, int, int, uint, uint);
+  void  (*draw_circle) (wptr, int, int, uint);
+  void  (*fill_rect) (wptr, int, int, uint, uint);
+  void  (*fill_circle) (wptr, int, int, uint);
+  void  (*draw_text) (wptr, int, int, char *);
   /**** routines added for release 2 ****/
-  void (*setcolor) (wptr, int);
-  int  (*alloccolor) (wptr, double, double, double);
-  void (*fill_polygon) (wptr, short (*points)[2], uint);
-  void (*rect_text) (wptr, int, int, char*, int*, int*, int*, int*);
-  void (*gspecial) (wptr, char*);
-  void (*clip) (wptr, int, int, uint, uint);
-  void (*hilite) (wptr, int, int, int, int, int);
-  int (*pixel_map) (wptr, uint*, int, int, uint, uint, uint, uint);
-  int (*hinton_map) (wptr, uint*, int, int, uint, uint, uint, uint);
+  void  (*setcolor) (wptr, int);
+  int   (*alloccolor) (wptr, double, double, double);
+  void  (*fill_polygon) (wptr, short (*points)[2], uint);
+  void  (*rect_text) (wptr, int, int, char*, int*, int*, int*, int*);
+  void  (*gspecial) (wptr, char*);
+  void  (*clip) (wptr, int, int, uint, uint);
+  void  (*hilite) (wptr, int, int, int, int, int);
+  int   (*pixel_map) (wptr, uint*, int, int, uint, uint, uint, uint);
+  int   (*hinton_map) (wptr, uint*, int, int, uint, uint, uint, uint);
   /**** routines added for release 3 ****/
-  void (*draw_arc) (wptr, int, int, uint, int, int);
-  void (*fill_arc) (wptr, int, int, uint, int, int);
+  void  (*draw_arc) (wptr, int, int, uint, int, int);
+  void  (*fill_arc) (wptr, int, int, uint, int, int);
   /**** routines added for lush ****/
-  void (*get_image) (wptr, uint*, int, int, uint, uint);
-  int  (*get_mask)(wptr, uint*, uint*, uint*);
-  void (*set_linestyle)(wptr, int);
+  void  (*get_image) (wptr, uint*, int, int, uint, uint);
+  int   (*get_mask)(wptr, uint*, uint*, uint*);
+  void  (*set_linestyle)(wptr, int);
 };
 
 #undef uint

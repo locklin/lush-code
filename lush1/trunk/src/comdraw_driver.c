@@ -690,21 +690,18 @@ comdraw_ysize(struct window *linfo)
 /****************************************************************/
 /* set the font in a window */
 
-static void 
+static char *
 comdraw_setfont(struct window *linfo, char *f)
 {
   struct C_window *info = (struct C_window*)linfo;
   char command[MAX_INPUT_SIZE]; 
   char font[15];
   char def_font[] = "default";
-
   if (! info->lwin.used)
-    return;
-
+    return 0;
 #if DEBUG
   fprintf(stdout,"setfont...\n");
 #endif
-
   command[0] = 0;
   begin_no_cw(info);
   strcpy(font,f);
@@ -713,6 +710,7 @@ comdraw_setfont(struct window *linfo, char *f)
   }
   sprintf(command,"fontbyname(\"%s\")\n",font);
   runcommand(info, command,1);
+  return f;
 }
 
 /****************************************************************/

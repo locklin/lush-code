@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;  $Id: brace.lsh,v 1.15 2005-12-15 17:13:35 leonb Exp $
+;;;;  $Id: brace.lsh,v 1.16 2006-02-24 17:14:27 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Functions and classes to handle brace lists.
@@ -757,14 +757,13 @@
 ;; build the name of a font from the 
 ;; family name, a bold flag, an italic flag and a size integer.
 (de make-font-name (n b i s)
-  (sprintf "%s-%s%d"
-	   n 
+  ;; not used when 'ogre-font' is present
+  (sprintf "%s-%s%d" n 
 	   (cond 
 	    ((and (<> 0 b) (<> 0 i)) "BoldItalic-")
 	    ((<> 0 b) "Bold-")
 	    ((<> 0 i) "Italic-")
-	    (t ""))
-	   s))
+	    (t "")) s ) )
 
 (de brace-ogre.push-bold () (brace-ogre.push-font () t () ()))
 (de brace-ogre.pop-bold () (brace-ogre.pop-font))
@@ -776,32 +775,26 @@
 (de brace-ogre.pop-size () (brace-ogre.pop-font))
 
 (de brace-ogre.push-font (&optional name boldp italicp size)
-  (if font-stack
-      (let (((n b i s) (car font-stack)))
-	(let* ((n2 (if name name n))
-	       (b2 (if boldp boldp b))
-	       (i2 (if italicp italicp i))
-	       (s2 (if size size s))
-	       (f (make-font-name n2 b2 i2 s2)))
-	  (setq font-stack (cons (list n2 b2 i2 s2) font-stack))
-	  (font f)
-	  (setq line-height (* 1.25 (last (rect-text 0 0 "pd0"))))
-	  (setq space-width 
-		(* (if (= n2 "Times") 1.25 1)
-		   (- (caddr (rect-text 0 0 "0 0"))
-		      (caddr (rect-text 0 0 "00")))))
-	  (nconc1 gcode `(font ,f))))
-    (when (not (and name boldp italicp size))
-      (error "font stack is empty, cannot modify font"))
-    (let* ((f (make-font-name name boldp italicp size)))
-      (setq font-stack (cons (list name boldp italicp size) font-stack))
-      (font f)
-      (setq line-height (* 1.25 (last (rect-text 0 0 "pd0"))))
-      (setq space-width 
-	    (* (if (= name "Times") 1.25 1)
-	       (- (caddr (rect-text 0 0 "0 0"))
-		  (caddr (rect-text 0 0 "00")))))
-      (nconc1 gcode `(font ,f)))))
+  (when font-stack
+    (let (((n b i s) (car font-stack)))
+      (setq name (or name n))
+      (setq boldp (or boldp b))
+      (setq italicp (or italicp i))
+      (setq size (or size s)) ) )
+  (let ((expr
+         (if (functionp ogre-font)
+             `(ogre-font ,(or size 11)
+                         ,(= name "Times") ,(= name "Courier")
+                         ,(<> boldp 0) ,(<> italicp 0) )
+           `(font ,(make-font-name name boldp italicp size)) ) ))
+    (setq font-stack (cons (list name boldp italicp size) font-stack))
+    (eval expr)
+    (setq line-height (* 1.25 (last (rect-text 0 0 "pd0"))))
+    (setq space-width 
+          (* (if (= name "Times") 1.25 1)
+             (- (caddr (rect-text 0 0 "0 0"))
+                (caddr (rect-text 0 0 "00")))))
+    (nconc1 gcode expr) ) )
 
 (de brace-ogre.pop-font ()
   (setq font-stack (cdr font-stack))
