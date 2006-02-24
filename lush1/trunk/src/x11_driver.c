@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.21 2006-02-24 21:42:13 leonb Exp $
+ * $Id: x11_driver.c,v 1.22 2006-02-24 21:48:37 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1219,7 +1219,7 @@ getfont(const char *name, int xft)
   for (i=0; i<FONTCACHE; i++)
     if (fontcache[i])
       if ((fontcache[i]->name1 && !strcmp(name, fontcache[i]->name1)) ||
-          (fontcache[i]->name2 && !strcmp(name, fontcache[i]->name1)) )
+          (fontcache[i]->name2 && !strcmp(name, fontcache[i]->name2)) )
         break;
   /* not found */
   if (i>= FONTCACHE)
