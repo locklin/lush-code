@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.22 2006-02-24 21:48:37 leonb Exp $
+ * $Id: x11_driver.c,v 1.23 2006-02-25 18:40:27 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -77,9 +77,14 @@
 /* ============================  X11DRIVER STRUCTURES */
 
 #define MAXWIN 64
+#define MAXFONT 96
 #define MINDEPTH 2
 #define ASYNC_EVENTS (ExposureMask|StructureNotifyMask)
 #define SYNC_EVENTS  (ButtonPressMask|ButtonReleaseMask|KeyPressMask|ButtonMotionMask)
+
+#if MAXFONT <= MAXWIN
+# error "MAXFONT must be greater than MAXWIN"
+#endif
 
 /* pointeur to the var 'display' */
 static at *display;
@@ -108,14 +113,14 @@ static struct X_def {
   int      gcflag;
 } xdef;
 
-struct X_font {
+static struct X_font {
   char *name1;
   char *name2;
   XFontStruct *xfs;
 #if HAVE_XFT2
   XftFont *xft;
 #endif
-};
+} *fontcache[MAXFONT];
 
 static struct X_window {
   struct window lwin;
@@ -1188,10 +1193,6 @@ fcpatterntoxftfont(FcPattern *p)
 }
 #endif
 
-#define FONTCACHE 32
-
-static struct X_font *fontcache[FONTCACHE];
-
 static void 
 delfont(struct X_font *fc)
 {
@@ -1216,16 +1217,16 @@ getfont(const char *name, int xft)
 {
   int i;
   struct X_font *fc;
-  for (i=0; i<FONTCACHE; i++)
+  for (i=0; i<MAXFONT; i++)
     if (fontcache[i])
       if ((fontcache[i]->name1 && !strcmp(name, fontcache[i]->name1)) ||
           (fontcache[i]->name2 && !strcmp(name, fontcache[i]->name2)) )
         break;
   /* not found */
-  if (i>= FONTCACHE)
+  if (i>= MAXFONT)
     {
       /* prepare */
-      i = FONTCACHE-1;
+      i = MAXFONT-1;
       fc = fontcache[i];
       delfont(fc);
       fontcache[i] = 0;
