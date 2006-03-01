@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ogre.lsh,v 1.31 2006-02-26 15:35:37 leonb Exp $
+;;; $Id: ogre.lsh,v 1.32 2006-03-01 19:39:57 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -3330,18 +3330,23 @@
 
 (defmethod Slider mouse-down(x1 y1)
   (when ~disabled
-    (let (((x y w h) rect))
+    (let (((x y w h) rect)
+          (name (car (eventinfo))))
       (cond
-	;; in the knob
-	((==> this click-in-knob-p x1 y1)
-	 (==> this drag-action x1 y1) )
-	;; up
-	((==> this click-for-more-p x1 y1)
-	 (==> this up-action x1 y1) )
-	;; down
-	((==> this click-for-less-p x1 y1)
-	 (==> this down-action x1 y1) ) ) ) ) )
-
+       ;; wheel
+       ((= name "Button4")
+        (==> this up-action x1 y1))
+       ((= name "Button5")
+        (==> this down-action x1 y1))
+       ;; in the knob
+       ((==> this click-in-knob-p x1 y1)
+        (==> this drag-action x1 y1) )
+       ;; up
+       ((==> this click-for-more-p x1 y1)
+        (==> this up-action x1 y1) )
+       ;; down
+       ((==> this click-for-less-p x1 y1)
+        (==> this down-action x1 y1) ) ) ) ) )
 
 
 
@@ -4062,8 +4067,18 @@
 		   (nth (+ pos i) items)) ) ) ) )
 
 (defmethod Selector mouse-up(x1 y1 x2 y2)
-  (if (point-in-rect x1 y1 :scroller:rect)
-      (==> scroller mouse-up x1 y1 x2 y2)
+  (cond
+   ;; scroller
+   ((point-in-rect x1 y1 :scroller:rect)
+    (==> scroller mouse-up x1 y1 x2 y2) )
+   ;; wheel
+   ((selectq (car (eventinfo))
+      ("Button4" (==> this arrow-up x1 y1) t)
+      ("Button5" (==> this arrow-down x1 y1) t)
+      (t ()) )
+    () )
+   ;; select
+   (t
     (let (((x y w h) rect))
       (let ((n1 (+ pos (div (- y1 (+ y 2)) texth)))
 	    (n2 (+ pos (div (- y2 (+ y 2)) texth))))
@@ -4083,31 +4098,31 @@
 		;; selector single choice, first click
 		(setq data (list n1))
 		(==> this expose rect) 
-		(when call1 (call1 this)) ) ) ) ) ) ) ) )
+		(when call1 (call1 this)) ) ) ) ) ) ) ) ) )
 
 
 (defmethod Selector arrow-up(x y)
   (when items
-    (if data
-	(setq data (list (max 0 (1- (car data))))) 
-      (setq data (list (1- (length items)))) )
-    (if (< (car data) pos)
-	(==> this setpos (car data))
-      (==> this expose) )
-    (when call1 (call1 this)) ) )	
+    (if (not data)
+        (==> this setpos (1- pos))
+      (setq data (list (max 0 (1- (car data))))) 
+      (if (< (car data) pos)
+          (==> this setpos (car data))
+        (==> this expose) )
+      (when call1 (call1 this)) ) ) )
 
 (defmethod Selector arrow-down(x y)
   (when items
-    (if data
-	(setq data (list (min (1- (length items)) (1+ (car data)))))
-      (setq data (list 0)) )
-    (if (>= (car data) (+ pos nvisible))
-	(==> this setpos (1+ (- (car data) nvisible)))
-      (==> this expose) )
-    (when call1 (call1 this)) ) )	
+    (if (not data)
+        (==> this setpos (1+ pos))
+      (setq data (list (min (1- (length items)) (1+ (car data)))))
+      (if (>= (car data) (+ pos nvisible))
+          (==> this setpos (1+ (- (car data) nvisible)))
+        (==> this expose) )
+      (when call1 (call1 this)) ) ) )
 
 (defmethod Selector setpos(n)
-  (let ((newpos (max 0 (min n (- (length items) (length selitems))))))
+  (let ((newpos (max 0 (min n (- (length items) nvisible)))))
     (when (<> pos newpos)
       (setq pos newpos)
       (==> scroller setdata pos)

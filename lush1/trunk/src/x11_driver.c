@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.23 2006-02-25 18:40:27 leonb Exp $
+ * $Id: x11_driver.c,v 1.24 2006-03-01 19:39:59 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -692,15 +692,19 @@ handle_sync_events(void)
 	  info->ydown = ev.xbutton.y;
           
           i = ((ev.xbutton.time - timedown) < 600);
-          buttondown = NULL;
+          buttondown = "n/a";
           if (ev.xbutton.button == Button1)
             buttondown = (i ? "Button1-Dbl" : "Button1");
           else if (ev.xbutton.button == Button2)
             buttondown = (i ? "Button2-Dbl" : "Button2");
           else if (ev.xbutton.button == Button3)
             buttondown = (i ? "Button3-Dbl" : "Button3");
+          else if (ev.xbutton.button == Button4)
+            buttondown = "Button4";
+          else if (ev.xbutton.button == Button5)
+            buttondown = "Button5";
           timedown = ev.xbutton.time;
-
+          
 	  if (info->lwin.eventhandler)
 	    enqueue_eventdesc(info->lwin.eventhandler,EVENT_MOUSE_DOWN,
                               ev.xbutton.x, ev.xbutton.y,
