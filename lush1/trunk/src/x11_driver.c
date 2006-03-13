@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.25 2006-03-13 15:45:24 leonb Exp $
+ * $Id: x11_driver.c,v 1.26 2006-03-13 16:09:18 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -431,10 +431,10 @@ x11_make_window(int x, int y, int w, int h, char *name)
   clhints.res_name = "lush";
   clhints.res_class = "Lush";
 # if X11RELEASE >= 6
+  if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XStdICCTextStyle, &xtpname))
 #  if X_HAVE_UTF8_STRING
-  if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XUTF8StringStyle, &xtpname))
+    if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XUTF8StringStyle, &xtpname))
 #  endif
-    if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XCompoundTextStyle, &xtpname))
       if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XTextStyle, &xtpname))
 # else
         if (XStringListToTextProperty(&name,1,&xtpname))
