@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.77 2006-02-21 19:54:32 leonb Exp $
+ * $Id: module.c,v 1.78 2006-03-29 20:22:44 leonb Exp $
  **********************************************************************/
 
 
@@ -876,11 +876,16 @@ cleanup_module(struct module *m)
   /* 4 --- Zap primitives defined by this module. */
   if (m->defs)
     for (p = m->defs; CONSP(p); p = p->Cdr)
-      if (CONSP(p->Car))
+      if (CONSP(p->Car) && (p->Car->Car))
         {
           at *q = p->Car->Car;
-          if (q && q->Class != &class_class)
-	    delete_at(q);
+          if (q->Class == &class_class)
+            {
+              class *cl = q->Object;
+              if (cl->goaway)
+                continue;
+            }
+          delete_at_special(q, FALSE);
         }
   UNLOCK(m->defs);
   m->defs = NIL;
