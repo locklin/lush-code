@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.26 2006-03-13 16:09:18 leonb Exp $
+ * $Id: x11_driver.c,v 1.27 2006-03-29 15:15:21 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -59,11 +59,13 @@
 # include <X11/Xatom.h>
 #endif
 
-#if HAVE_XFT
-# include <X11/Xft/Xft.h>
-# ifdef XFT_MAJOR
-#  if XFT_MAJOR >= 2
-#   define HAVE_XFT2 1
+#ifndef MAKEDEPEND
+# if HAVE_XFT
+#  include <X11/Xft/Xft.h>
+#  ifdef XFT_MAJOR
+#   if XFT_MAJOR >= 2
+#    define HAVE_XFT2 1
+#   endif
 #  endif
 # endif
 #endif
