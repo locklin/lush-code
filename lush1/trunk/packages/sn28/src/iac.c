@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: iac.c,v 1.2 2005-06-03 04:10:09 leonb Exp $
+ * $Id: iac.c,v 1.3 2006-03-29 19:44:53 leonb Exp $
  **********************************************************************/
 
 
@@ -130,20 +130,20 @@ DX(xupdate_inhibition)
 /********* update_IAC_activation **********/
 
 /*
- *  (update-IAC-activation layer alpha beta mygamma min max rest decay)  
+ *  (update-IAC-activation layer alpha beta gamma min max rest decay)  
  */
 
 #ifndef NOSPARE
 # define alpha iac_alpha
 # define decay iac_decay
-static flt alpha,beta,mygamma,max,min,rest,decay;
+static flt alpha,beta,iacgamma,max,min,rest,decay;
 
 static void
 updN_IAC_activation(neurone *n)
 {
   flt net;
 
-  net = Fadd(Fmul(n->Nval, mygamma),
+  net = Fadd(Fmul(n->Nval, iacgamma),
 	     Fadd(Fmul(n->Nspare1,alpha), Fmul(n->Nspare2,beta) ));
   if (Fsgn(net)>0) {
     n->Nsum = Fadd(n->Nsum,Fsub(Fmul(net,Fsub(max,n->Nsum)),
@@ -159,7 +159,7 @@ DX(xupdate_IAC_activation)
   ALL_ARGS_EVAL;
   alpha = AFLT(2);
   beta  = AFLT(3);
-  mygamma = AFLT(4);
+  iacgamma = AFLT(4);
   min   = AFLT(5);
   max   = AFLT(6);
   rest  = AFLT(7);
@@ -182,7 +182,7 @@ DX(xupdate_IAC_activation)
 /********* update_ART_activation **********/
 
 /*
- *  (update-ART-activation layer alpha beta mygamma min max rest decay)  
+ *  (update-ART-activation layer alpha beta gamma min max rest decay)  
  */
 
 #ifndef NOSPARE
@@ -193,11 +193,11 @@ updN_ART_activation(neurone *n)
   flt net1,net2;
 
   if (Fsgn(n->Nval)>0) {
-    net1 = Fadd(Fmul(n->Nval, mygamma),Fmul(n->Nspare1,alpha));
+    net1 = Fadd(Fmul(n->Nval, iacgamma),Fmul(n->Nspare1,alpha));
     net2 = Fmul(n->Nspare2,beta);
   } else {
     net1 = Fmul(n->Nspare1,alpha);
-    net2 = Fadd(Fmul(n->Nval, mygamma),Fmul(n->Nspare2,beta));
+    net2 = Fadd(Fmul(n->Nval, iacgamma),Fmul(n->Nspare2,beta));
   }
   n->Nsum = Fsub(Fadd(n->Nsum, Fadd(Fmul(net1,Fsub(max,n->Nsum)),
 				    Fmul(net2,Fsub(n->Nsum,min)))),
@@ -209,7 +209,7 @@ DX(xupdate_ART_activation)
   ALL_ARGS_EVAL;
   alpha = AFLT(2);
   beta  = AFLT(3);
-  mygamma = AFLT(4);
+  iacgamma = AFLT(4);
   min   = AFLT(5);
   max   = AFLT(6);
   rest  = AFLT(7);
