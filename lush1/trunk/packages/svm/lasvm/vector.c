@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.c,v 1.3 2006-01-25 15:15:25 leonb Exp $
+ * $Id: vector.c,v 1.4 2006-04-04 22:01:24 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -188,7 +188,7 @@ lasvm_sparsevector_set(lasvm_sparsevector_t *v, int index, double value)
   lasvm_sparsevector_pair_t *pairs = v->pairs;
   if (value)
     {
-      if (index>pairs[size-1].index && size<v->maxsize)
+      if (size>0 && index>pairs[size-1].index && size<v->maxsize)
         {
           // quick append
           pairs[size].index = index;
