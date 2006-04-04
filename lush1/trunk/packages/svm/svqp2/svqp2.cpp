@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.8 2006-01-25 15:39:00 leonb Exp $
+ * $Id: svqp2.cpp,v 1.9 2006-04-04 21:59:07 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -576,8 +576,9 @@ SVQP2::iterate_gs1()
   // Iterate
   for(;;)
     {
-#if HMG
       int imax = -1;
+      int imin = -1;
+#if HMG
       double maxgain = 0;
       for (int j=0; j<l; j++)
         {
@@ -587,7 +588,7 @@ SVQP2::iterate_gs1()
           if (gradient>=epsgr && cmax[j]-x[j]>epskt)
             step = min(curvature*(cmax[j]-x[j]), gradient);
           else if (gradient<=-epsgr && cmin[j]-x[j]<-epskt)
-            step = max(curvature*(x[j]-cmin[j]), gradient);
+            step = max(curvature*(cmin[j]-x[j]), gradient);
           else
             continue;
           gain = step * ( 2 * gradient - step );
@@ -598,31 +599,32 @@ SVQP2::iterate_gs1()
             }
         }
       if (maxgain <= 0)
-        return RESULT_FIN;
-#else
-      // Determine extreme gradients
-      int imax = -1;
-      int imin = -1;
-      gmin = gmax = 0;
-      for (int i=0; i<l; i++)
-	{
-	  double gi = g[i];
-	  if ((gi > gmax) && (x[i] < cmax[i]))
+        {
+#endif
+          // Determine extreme gradients
+          imax = imin = -1;
+          gmin = gmax = 0;
+          for (int i=0; i<l; i++)
             {
-              gmax = gi;
-              imax = i;
+              double gi = g[i];
+              if ((gi > gmax) && (x[i] < cmax[i]))
+                {
+                  gmax = gi;
+                  imax = i;
+                }
+              if ((gi < gmin) && (x[i] > cmin[i]))
+                {
+                  gmin = gi;
+                  imin = i;
+                }
             }
-	  if ((gi < gmin) && (x[i] > cmin[i]))
-            {
-              gmin = gi;
-              imin = i;
-            }
-	}
-      if (gmin + gmax < 0)
-	imax = imin;
-      // Exit tests
-      if (gmax - gmin < epsgr)
-	return RESULT_FIN;
+          if (gmin + gmax < 0)
+            imax = imin;
+          // Exit tests
+          if (gmax - gmin < epsgr)
+            return RESULT_FIN;
+#if HMG
+        }
 #endif
       icount += 1;
       if (! mark[imax]) 
