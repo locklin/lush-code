@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.45 2005-06-03 04:09:57 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.45.2.1 2006-04-12 19:44:50 laseray Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -97,8 +97,8 @@ AC_PATH_PROG(CP, cp)
 AC_PATH_PROG(RM, rm)
 AC_PATH_PROG(AR, ar)
 AC_PATH_PROG(TOUCH, touch)
-
 AC_PATH_PROG(INDENT, indent)
+
 if test -x $INDENT ; then
   AC_MSG_CHECKING([if $INDENT accepts GNU options])
   if $INDENT -gnu </dev/null 2>/dev/null ; then 
@@ -210,17 +210,14 @@ will not work and Lush will be seriously crippled.
 fi
 
 # x11
-AC_PATH_X
 AC_PATH_XTRA
-X_LIBS=
-X_CFLAGS=
-test -n "$x_libraries" && X_LIBS="-L$x_libraries"
-test -n "$x_includes" && X_CFLAGS="-I$x_includes"
-X_YES='#'
-if test "${no_x-no}" != yes ; then 
-  X_LIBS="$X_LIBS $X_PRE_LIBS -lX11 $X_EXTRA_LIBS"
+if test "${no_x-no}" != yes ; then
+  X_LIBS="$X_LIBS $X_PRE_LIBS -lX11 $X_EXTRA_LIBS" 
   X_YES=''
+else
+  X_YES='#'
 fi
+AC_PATH_XFT
 AC_SUBST(X_LIBS)
 AC_SUBST(X_CFLAGS)
 AC_SUBST(X_YES)
@@ -231,6 +228,7 @@ AC_PATH_PTHREAD
 # readline
 AC_CHECK_LIB(curses,tputs)
 AC_CHECK_LIB(readline,readline)
+AC_CHECK_LIB(iconv,iconv_open)
 
 
 
@@ -242,12 +240,12 @@ AC_HEADER_STDC
 AC_HEADER_DIRENT
 AC_HEADER_TIME
 AC_HEADER_SYS_WAIT     
-AC_CHECK_HEADERS(wchar.h wctype.h)
+AC_CHECK_HEADERS(wchar.h wctype.h langinfo.h iconv.h)
 AC_CHECK_HEADERS(memory.h string.h strings.h limits.h alloca.h)
 AC_CHECK_HEADERS(unistd.h sys/mman.h termios.h pty.h util.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/types.h sys/ttold.h)
-AC_CHECK_HEADERS(sys/time.h sys/timeb.h readline/readline.h bfd.h)
+AC_CHECK_HEADERS(sys/time.h sys/timeb.h locale.h readline/readline.h bfd.h)
 AC_SYS_LARGEFILE
 
 if test $ac_have_mpi = yes ; then
@@ -284,7 +282,10 @@ AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp waitpid openpty)
 AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
 AC_CHECK_FUNCS(setenv putenv fseeko ftello)
-AC_CHECK_FUNCS(mbrlen mbrtowc wcrtomb)
+AC_FUNC_MBRTOWC
+AC_CHECK_FUNCS(setlocale nl_langinfo iconv)
+
+
 
 
 # ----------------------------------------

@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ogre.lsh,v 1.24 2005-05-09 01:21:55 leonb Exp $
+;;; $Id: ogre.lsh,v 1.24.2.1 2006-04-12 19:44:55 laseray Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -203,36 +203,49 @@
 
 ;;; fonction pour selectionner des fontes
 
+(de ogre-font(size &optional serif mono bold italic)
+  (let ((fam1 (cond (mono  "Courier")
+                    (serif "Times")
+                    (t     "Helvetica")))
+        (fam2 (cond (mono  "Bitstream Vera Sans Mono,Mono")
+                    (serif "Bitstream Vera Serif,Serif")
+                    (t     "Bitstream Vera Sans,Sans"))) )
+    (if (= (gdriver) "X11")
+        (or (font 
+             (sprintf ":family=%s:pixelsize=%d%s%s" 
+                      fam2 size (if bold ":bold" "")(if italic ":italic" "")))
+            (font 
+             (sprintf "-adobe-%s-%s-%s-*-*-%d-*-*-*-*-*-iso8859-1"
+                      (downcase fam1) (if bold "bold" "medium")
+                      (if italic (if (or serif mono) "i" "o") "r")
+                      size ) )
+            (font 
+             "default") )
+      (if (= (gdriver) "WBM")
+          (setq fam1 (cond (mono  "Courier New")
+                           (serif "Time New Roman")
+                           (t     "Arial") ) ) )
+      (or (font (sprintf "%s-%s%s%s%d" fam1
+                         (if bold "Bold" "")
+                         (if italic (if (and serif mono) "Italic" "Oblique") "")
+                         (if (or bold italic) "-" "")
+                         size ) )
+          (font "default") ) ) ) )
+
 (de font-18 ()
-  (selectq (gdriver)
-    ("X11" (font "-adobe-helvetica-medium-r-*-*-18-*-75-75-*-*-iso8859-1"))
-    ("WBM" (font "Arial-18"))
-    (t     (font "Helvetica-18")) ) )
+  (ogre-font 18 () () () ()) )
 
 (de font-12b ()
-  (selectq (gdriver)
-    ("X11" (font "-adobe-helvetica-bold-r-*-*-12-*-75-75-*-*-iso8859-1"))
-    ("WBM" (font "Arial-Bold-12"))
-    (t     (font "Helvetica-Bold-12")) ) )
+  (ogre-font 12 () () t ()) )
 
-(de font-12 ()			
-  (selectq (gdriver)
-    ("X11" (font "-adobe-helvetica-medium-r-*-*-12-*-75-75-*-*-iso8859-1"))
-    ("WBM" (font "Arial-12"))
-    (t     (font "Helvetica-12")) ) )
+(de font-12 ()
+  (ogre-font 12 () () () ()) )
 
 (de font-8f ()	
-  (selectq (gdriver)
-    ("X11" (font "-adobe-courier-medium-r-*-*-12-*-75-75-*-*-iso8859-1"))
-    ("WBM" (font "Courier New-12"))
-    (t     (font "Courier-12")) ) )
+  (ogre-font 12 () t () ()) )
 
-(de font-8 ()	
-  (selectq (gdriver)
-    ("X11" (font "-adobe-helvetica-medium-r-*-*-8-*-75-75-*-*-iso8859-1"))
-    ("WBM" (font "Arial-8"))
-    (t     (font "Helvetica-8")) ) )
-
+(de font-8 ()
+  (ogre-font 8 () () () ()) )
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -671,9 +684,24 @@
     (let ((lock (new disablelock this)))
       (==> this repair-damaged)
       (when call
-	(call this) )
+        (let ((thiswindowobject ())
+              (thisrequester ())
+              (thisform ())
+              (thismenu ()) )
+          (let ((p this))
+            (while p
+              (when (and (not thiswindowobject) (is-of-class p WindowObject))
+                (setq thiswindowobject p) )
+              (when (and (not thisrequester) (is-of-class p Requester))
+                (setq thisrequester p) )
+              (when (and (not thisform) (is-of-class p Form))
+                (setq thisform p) )
+              (when (and (not thismenu) (is-of-class p Menu))
+                (setq thismenu p) )
+              (setq p :p:itscontainer) ) )
+          (call this) ) )
       (when this
-	(==> this repair-damaged) ) ) ) )
+        (==> this repair-damaged) ) ) ) )
 
 (defmethod Control trigger()
   (==> this execute) )
@@ -1370,6 +1398,27 @@
 	(incr x (+ w hspace)) ) ) ) )
 
 (defmethod Row Row contenu
+  (each ((i contenu))
+    (==> this insert i) ) )
+
+(defclass Stack Container)
+
+(defmethod Stack compute-geometry()
+  (when window
+    (let* ((nth3 (lambda(c) (nth 3 c)))
+	   (nth4 (lambda(c) (nth 4 c)))
+	   (h (sup (cons 50 (mapcar nth4 contents))))
+	   (w (sup (cons 50 (mapcar nth3 contents)))) )
+      (==> this resize w h)
+      rect ) ) )
+
+(defmethod Stack manage-geometry()
+  (let (((x y w h) rect))
+    (each ((i contents))
+      (==> (car i) geometry x y w h)
+      (rplacd i (list x y w h)) ) ) )
+
+(defmethod Stack Stack contenu
   (each ((i contenu))
     (==> this insert i) ) )
 
@@ -2822,20 +2871,15 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(defclass ChoiceMenu menu
+(defclass ChoiceMenu Menu
+  popupcall
   call
   data )
-
-;;; ----------------------------------------
 
 (defmethod ChoiceMenu ChoiceMenu(&optional d callback)
   (==> this menu "<noname>")
   (==> this setcall callback)
   (==> this setitems d) )
-
-
-
-;;; ----------------------------------------
 
 (defmethod ChoiceMenu setitems(d)
   (==> itspopup removall)
@@ -2846,28 +2890,25 @@
       (==> this insert (new menuitem i f)) ) )
   (==> this setdata ()) )
 
-
-;;; ----------------------------------------
-
 (defmethod ChoiceMenu hasdata()
   this )
-
-;;; ----------------------------------------
 
 (defmethod ChoiceMenu setdata(d)
   (==> this settext (or d "[*****]" ))
   (setq data d) )
 
-;;; ----------------------------------------
-
 (defmethod ChoiceMenu getdata()
   data )
 
-
-;;; ----------------------------------------
-
 (defmethod ChoiceMenu setcall(callback)
   (setq call callback) )
+
+(defmethod ChoiceMenu setpopupcall(callback)
+  (setq popupcall callback) )
+
+(defmethod ChoiceMenu mouse-down(x y)
+  (when (functionp popupcall) (popupcall this))
+  (==> this (menu . mouse-down) x y) )
 
 
 ;;; ----------------------------------------
@@ -3289,18 +3330,23 @@
 
 (defmethod Slider mouse-down(x1 y1)
   (when ~disabled
-    (let (((x y w h) rect))
+    (let (((x y w h) rect)
+          (name (car (eventinfo))))
       (cond
-	;; in the knob
-	((==> this click-in-knob-p x1 y1)
-	 (==> this drag-action x1 y1) )
-	;; up
-	((==> this click-for-more-p x1 y1)
-	 (==> this up-action x1 y1) )
-	;; down
-	((==> this click-for-less-p x1 y1)
-	 (==> this down-action x1 y1) ) ) ) ) )
-
+       ;; wheel
+       ((= name "Button4")
+        (==> this up-action x1 y1))
+       ((= name "Button5")
+        (==> this down-action x1 y1))
+       ;; in the knob
+       ((==> this click-in-knob-p x1 y1)
+        (==> this drag-action x1 y1) )
+       ;; up
+       ((==> this click-for-more-p x1 y1)
+        (==> this up-action x1 y1) )
+       ;; down
+       ((==> this click-for-less-p x1 y1)
+        (==> this down-action x1 y1) ) ) ) ) )
 
 
 
@@ -4021,8 +4067,18 @@
 		   (nth (+ pos i) items)) ) ) ) )
 
 (defmethod Selector mouse-up(x1 y1 x2 y2)
-  (if (point-in-rect x1 y1 :scroller:rect)
-      (==> scroller mouse-up x1 y1 x2 y2)
+  (cond
+   ;; scroller
+   ((point-in-rect x1 y1 :scroller:rect)
+    (==> scroller mouse-up x1 y1 x2 y2) )
+   ;; wheel
+   ((selectq (car (eventinfo))
+      ("Button4" (==> this arrow-up x1 y1) t)
+      ("Button5" (==> this arrow-down x1 y1) t)
+      (t ()) )
+    () )
+   ;; select
+   (t
     (let (((x y w h) rect))
       (let ((n1 (+ pos (div (- y1 (+ y 2)) texth)))
 	    (n2 (+ pos (div (- y2 (+ y 2)) texth))))
@@ -4042,31 +4098,31 @@
 		;; selector single choice, first click
 		(setq data (list n1))
 		(==> this expose rect) 
-		(when call1 (call1 this)) ) ) ) ) ) ) ) )
+		(when call1 (call1 this)) ) ) ) ) ) ) ) ) )
 
 
 (defmethod Selector arrow-up(x y)
   (when items
-    (if data
-	(setq data (list (max 0 (1- (car data))))) 
-      (setq data (list (1- (length items)))) )
-    (if (< (car data) pos)
-	(==> this setpos (car data))
-      (==> this expose) )
-    (when call1 (call1 this)) ) )	
+    (if (not data)
+        (==> this setpos (1- pos))
+      (setq data (list (max 0 (1- (car data))))) 
+      (if (< (car data) pos)
+          (==> this setpos (car data))
+        (==> this expose) )
+      (when call1 (call1 this)) ) ) )
 
 (defmethod Selector arrow-down(x y)
   (when items
-    (if data
-	(setq data (list (min (1- (length items)) (1+ (car data)))))
-      (setq data (list 0)) )
-    (if (>= (car data) (+ pos nvisible))
-	(==> this setpos (1+ (- (car data) nvisible)))
-      (==> this expose) )
-    (when call1 (call1 this)) ) )	
+    (if (not data)
+        (==> this setpos (1+ pos))
+      (setq data (list (min (1- (length items)) (1+ (car data)))))
+      (if (>= (car data) (+ pos nvisible))
+          (==> this setpos (1+ (- (car data) nvisible)))
+        (==> this expose) )
+      (when call1 (call1 this)) ) ) )
 
 (defmethod Selector setpos(n)
-  (let ((newpos (max 0 (min n (- (length items) (length selitems))))))
+  (let ((newpos (max 0 (min n (- (length items) nvisible)))))
     (when (<> pos newpos)
       (setq pos newpos)
       (==> scroller setdata pos)
