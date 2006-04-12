@@ -1,0 +1,490 @@
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;  Tree Explorer class for Lush
+
+#? *** treebrowser
+;;  This provides an easy way to navigate ltree structures
+;;  similar to the familiar file/directory explorers found on
+;;  various desktop environments.
+;;  See {hlink "ltree"}.
+
+
+(libload "ogre")
+(libload "libogre/ldocpane")
+(libload "libstd/ltree")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defclass Scroller Viewer)
+
+(defmethod Scroller Scroller(w h contenu)
+  (==> this Viewer w h contenu t t)
+  (==> vscroll setdrag 
+       (eval `(lambda (c) (==> ,this vscroll (==> c getdata))))))
+
+(defmethod Scroller vscroll (pv)
+  (let (((xx yy ww hh) :inside:rect)
+	((x y w h) :view:rect) )
+    (setq pv (max 0 (min pv (- hh h))))
+    (when (<> vpos pv)
+      (setq vpos pv)
+      (==> inside move (- x hpos) (- y vpos))
+      (==> this expose rect) 
+      (==> this advertize) 
+      ) ) )
+
+(defmethod Scroller scroll-by (v) (==> this vscroll (+ vpos v)))
+
+(defmethod Scroller page-down ()
+  (let (((x y w h) :view:rect)
+	(old-vpos vpos))
+    (==> this vscroll (+ vpos (* 0.5 h)))
+    ;; return true if moved, () if not moved
+    (<> vpos old-vpos)))
+  
+(defmethod Scroller page-up ()
+  (let (((x y w h) :view:rect)
+	(old-vpos vpos))
+    (==> this vscroll (- vpos (* 0.5 h)))
+    ;; return true if moved, () if not moved
+    (<> vpos old-vpos)))
+
+(defmethod Scroller vcenter (pv)
+  (let (((xx yy ww hh) :inside:rect)
+	((x y w h) :view:rect) )
+    (when (or (> (- pv vpos) (- h 30)) (< (- pv vpos) 15))
+      (==> this vscroll (- pv (/ h 2))))))
+
+;; same as viewer, but scrollbar on the left
+(defmethod Scroller manage-geometry()
+  (let (((x y ww hh) rect))
+    (when hscroll (incr hh -21))
+    (when vscroll (incr ww -21))
+    (==> view geometry (+ x 2 (if vscroll 21 0)) (+ y 2)
+      (- ww (if vscroll 6 4))
+      (- hh (if hscroll 6 4)) )
+    (when hscroll
+      (==> hscroll geometry (+ x (if vscroll 21 0))(+ y hh)
+	(if vscroll (1+ ww) ww) 21 ) )
+    (when vscroll
+      (==> vscroll geometry x  y
+	21 (if hscroll (1+ hh) hh) ) ) )
+  (==> this setpos hpos vpos)
+  (==> this advertize) )
+
+
+
+(defclass LdocScroller Scroller)
+
+(defmethod LdocScroller LdocScroller (w h contenu)
+  (==> this Scroller w h contenu))
+
+(defmethod LdocScroller mouse-up(x1 y1 x2 y2)
+  (==> this activate t) )
+
+(defmethod LdocScroller arrow-up(x1 y1) 
+  (if (or disabled ~activated)
+      'ignored
+    (==> this vscroll (- vpos 12))) )
+
+(defmethod LdocScroller arrow-down(x1 y1)
+  (if (or disabled ~activated)
+      'ignored
+    (==> this vscroll (+ vpos 12)) ) )
+  
+(defmethod LdocScroller keypress (c x y)
+  (if (or disabled ~activated)
+      'ignored
+    (selectq c
+      (" " (==> this page-down))
+      (("\b" "\x7f") (==> this page-up))
+      (("\r" "\n") (==> this arrow-down x y)))) )
+  
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass Explorer Control
+  (textfont font-8f)
+  charw					; width of typical character
+  charh					; height of typical character
+  lineh					; distance between lines
+  baseline				; ordinate of text baseline from top
+  selcolor				; highligthed color of selected item
+  iconcolor				; bg color of open/close icons
+  iconcolor-d				; bg color of disabled open/close icons
+  txtcolor				; text color
+  txtcolor-d				; disabled text color
+  nlin					; number of lines (open items in tree)
+  ncol					; number of column to display entire tree
+  tree					; root node of currently displayed ltree
+  current-item				; item under cursor (highlighted)
+  data					; content of selected item
+  show-call				; call when enter key is pressed on an item
+  open-call				; call when right arrow key is pressed
+  close-call				; call when left arrow key is pressed
+  move-call				; call shen up/down arrows are pressed
+  space-call				; call shen space bar is pressed
+  backspace-call			; call shen space bar is pressed
+
+  icon-open				; string for open item "-"
+  icon-closed				; string for closed item "+"
+  icon-width				; width of icon string
+  tabs					; indentation between levels
+
+  min-width
+  min-height
+  min-nlin				; minimum number of lines
+  min-ncol				; minimum number of columns
+  current-filter			; function to filter nodes
+)
+
+;;; Constructor
+
+(defmethod Explorer explorer
+	   (ltree mw mh &optional ecall ocall ccall mcall scall bcall)
+  (let ((noop (lambda (c) ())))
+    (setq show-call (if (functionp ecall) ecall noop))
+    (setq open-call (if (functionp ocall) ocall noop))
+    (setq close-call (if (functionp ccall) ccall noop))
+    (setq move-call (if (functionp mcall) mcall noop))
+    (setq space-call (if (functionp scall) scall noop))
+    (setq backspace-call (if (functionp bcall) bcall noop)))
+  (setq icon-open "- ")
+  (setq icon-closed "+ ")
+  (setq min-width mw)
+  (setq min-height mh)
+  ;; (setq min-nlin 20)
+  ;; (setq min-ncol 32)
+  (setq tabs 2)
+  (setq tree ltree)
+  (setq current-item tree))
+
+;;; Aspect
+
+(defmethod Explorer compute-geometry()
+  (when window
+    (textfont)
+    (when (not icon-width)
+      (setq selcolor (color-rgb 0.9 0.93 1.0))
+      (setq iconcolor (color-rgb 0.9 0.7 0.7))
+      (setq iconcolor-d (color-rgb 1 0.9 0.9))
+      (setq txtcolor (color-rgb 0 0 0))
+      (setq txtcolor-d (color-rgb 0.6 0.6 0.6))
+      (setq icon-width (text-width icon-open))
+      (setq charh (text-height "0"))
+      (setq lineh (int (* 1.6 charh)))
+      (setq charw (- (text-width "00") (text-width "0")))
+      (setq baseline (- (int (* 0.3 charh)) (cadr (rect-text 0 0 "0"))))
+      (setq nlin 0) (setq ncol 0))
+    (==> this shrink-wrap)
+    rect ))
+
+(defmethod Explorer set-minsize (w h)
+  (setq min-width w)
+  (setq min-height h)
+  (==> this shrink-wrap))
+
+(defmethod Explorer shrink-wrap()
+  (let ((min-nlin (max 20 (int (/ (- min-height 8) lineh))))
+	(min-ncol (max 32 (int (/ (- min-width (+ 8 icon-width)) charw)))))
+    (setq nlin (max min-nlin (ltree-count-lines tree)))
+    (setq ncol (max min-ncol (ltree-count-columns tree 0 tabs)))
+    (==> this resize (+ (* charw ncol) icon-width 8)  (+ (* lineh nlin) 8))))
+
+(defmethod Explorer recenter(v)
+  (==> v vcenter (* lineh (ltree-where tree current-item))))
+
+(defmethod Explorer backpaint-bw()
+  (let (((x y w h) rect))
+    (cls)
+    (draw-rect x y (1- w) (1- h)) 
+    (draw-rect (+ x 2) (+ y 2) (- w 5) (- h 5)) ) )
+
+(defmethod Explorer repaint-bw()
+  (let (((x y w h) rect))
+    (ltree-paint-bw tree current-item (+ x 2) (+ y 2) (- w 5) (- h 5) 
+		   (+ x 4) (+ y 4) charw lineh baseline 
+		   icon-open icon-closed icon-width tabs 
+		   selcolor)))
+
+(defmethod Explorer backpaint-color()
+  (let (((x y w h) rect))
+    (fill-down-rect x y w h color-bg)))
+
+(defmethod Explorer set-current(c)
+  (when (<> c current-item)
+    (setq current-item c)
+    (==> this expose)
+    (when move-call (move-call this))))
+
+(defmethod Explorer repaint-color()
+  (let (((x y w h) rect))
+    (ltree-paint-color tree current-item (+ x 2) (+ y 2) (- w 5) (- h 5) 
+		       (+ x 4) (+ y 4) charw lineh baseline 
+		       icon-open icon-closed icon-width tabs 
+		       selcolor iconcolor iconcolor-d txtcolor txtcolor-d)))
+
+(defmethod Explorer keypress(c x y)
+  (if (or disabled ~activated)
+      'ignored
+    (selectq c
+      (" " 
+       (if (<> current-item now-showing)
+	   ;; display doc of current node
+	   (==> this arrow-right x y)
+	 ;; otherwise, scroll down 
+	 (when space-call 
+	   (when (not (space-call this))
+	     ;; if at the bottom, flip to next node
+	     (==> this next-hit)))))
+      (("\b" "\x7f") (when backspace-call (backspace-call this)))
+      ("c" (==> this close-all))
+      ("n" (==> this arrow-down x y))
+      ("p" (==> this arrow-up x y))
+      ("\r" (==> this next-hit)))) )
+
+(defmethod Explorer arrow-left(x y)
+  (if (or disabled ~activated)
+      'ignored
+    (let ((changep ()))
+      (if  (==> current-item openp)
+	  (progn
+	    (==> current-item close)
+	    (setq changep t))
+	(let ((p (==> current-item getparent)))
+	  (when p (setq current-item p) (setq changep t))))
+      (when changep
+	(==> this shrink-wrap)
+      (==> this expose) 
+      (when close-call (close-call this))))) )
+
+(defmethod Explorer arrow-right(x y)
+  (if (or disabled ~activated)
+      'ignored
+    (==> current-item open)
+    (when  (==> current-item openp)
+      (==> this shrink-wrap)
+      (==> this expose) 
+      (when open-call (open-call this)))
+    (when show-call 
+      (setq now-showing current-item)
+      (show-call this))) )
+
+
+(defmethod Explorer arrow-down(x y)
+  (if (or disabled ~activated)
+      'ignored
+    (let ((c current-item))
+      (setq current-item (ltree-next current-item ))
+      (when (<> c current-item)
+	(==> this expose) 
+	(when move-call (move-call this))))) )
+
+(defmethod Explorer arrow-up(x y)
+  (if (or disabled ~activated)
+      'ignored
+    (let ((c current-item))
+      (setq current-item (ltree-previous current-item))
+      (when (<> c current-item)
+	(==> this expose) 
+	(when move-call (move-call this))))) )
+
+(defmethod Explorer mouse-up(x1 y1 x2 y2)
+  (==> this activate t)
+  (let (((x y w h) rect))
+    (let* ((n (div (- y2 (+ y 2)) lineh))
+	   (tx (ltree-nth (cons tree 0) n)))
+      (when (and tx (not (numberp tx))) 
+	(let ((ctx (car tx)))
+	  (==> this set-current ctx)
+	  (when show-call
+	    (setq now-showing current-item)
+	    (show-call this))
+	  (when (< (- x2 (+ x 2)) (* 2 charw (1+ (cdr tx))))
+	    (if (==> ctx openp) 
+		(progn
+		  (==> ctx close)
+		  (==> this shrink-wrap)
+		  (==> this expose) 
+		  (when close-call (close-call this)))
+	      (==> ctx open)
+	      (==> this shrink-wrap)
+	      (==> this expose) 
+	      (when open-call (open-call this)))))))))
+
+(defmethod Explorer next-hit()
+  (let ((c current-item))
+    (if current-filter
+	(setq current-item 
+	      (or (ltree-next-hit current-item current-filter) tree))
+      (when (not (==> current-item openp)) (==> current-item open))
+      (setq current-item (ltree-next current-item)))
+    (when (<> c current-item)
+      (==> this shrink-wrap)
+      (==> this expose) 
+      (when move-call (move-call this))
+      (when show-call 
+	(setq now-showing current-item)
+	(show-call this)))))
+
+(defmethod Explorer close-all()
+  (ltree-close-all tree)
+  (setq current-item tree)
+  (==> this shrink-wrap)
+  (==> this expose) 
+  (when move-call (move-call this)))
+
+;; set filter to a function that returns t if the
+;; regular expression <f> is present in any of
+;; the key phrases (as returned by method getkey).
+(defmethod Explorer setfilter(f) 
+  (if (or (not f) (= f ""))
+      (setq current-filter ())
+    (setq current-filter 
+	  (eval
+	   `(lambda (c)
+	      (let ((s (==> c getkey)) (r ())) 
+		(while (and s (not r)) 
+		  (when (regex-seek ,f (cleanup-regex (car s))) (setq r t)) 
+		  (setq s (cdr s))) r))))))
+
+
+(defmethod Explorer getdata() current-item)
+
+(defmethod Explorer hasdata() this )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass TreeBrowserKnob Knob)
+
+(defmethod TreeBrowserKnob TreeBrowserKnob(w h callback)
+  (==> this knob w h callback) )
+
+(defmethod TreeBrowserKnob data-from-drag(x1 y1 x2 y2)
+  (==> this (knob . data-from-drag) x1 y1 x2 y1) )
+
+(defmethod TreeBrowserKnob repaint()
+  (let (((x y w h) rect))
+    (fill-up-rect x y (1- w) (1- h)) ) )
+  
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass TreeBrowser form
+  tree
+  tree-viewer
+  tree-explorer
+  ldoc-scroller
+  ldoc-pane
+  splitter
+  now-showing
+  search-string
+  closeall-btn
+  findnext-btn
+  clear-btn
+  srchbtn
+  )
+
+(defmethod TreeBrowser closeall-func(c)
+  (==> tree-explorer close-all))
+
+(defmethod TreeBrowser searchstr-func(c) 
+  (==> tree-explorer setfilter (==> search-string getdata))
+  (when (==> c isactivated) (==> findnext-btn trigger)) )
+
+(defmethod TreeBrowser findnext-func(c) 
+  (==> tree-explorer setfilter (==> search-string getdata))
+  (==> tree-explorer next-hit) )
+
+(defmethod TreeBrowser clear-func (c)  
+  (==> search-string setdata "")
+  (==> tree-explorer setfilter (==> search-string getdata)))
+
+(defmethod TreeBrowser show-func (c) 
+  (let* ((curr (==> tree-explorer getdata))
+         (hn (when curr (==> curr getdata))))
+    (==> ldoc-pane setdata (==> hn getdata))
+    (==> ldoc-scroller vscroll 0) ) )
+
+(defmethod TreeBrowser open-func (c)
+  ())
+
+(defmethod TreeBrowser close-func (c) 
+  (==> tree-explorer recenter tree-viewer))
+
+(defmethod TreeBrowser move-func (c) 
+  (==> tree-explorer recenter tree-viewer))
+
+(defmethod TreeBrowser space-func (c) 
+  (==> ldoc-scroller page-down))
+
+(defmethod TreeBrowser backspace-func (c)
+  (==> ldoc-scroller page-up))
+
+;; intree must be the root node of an ltree, i.e. an object
+;; that implements the required methods listed in
+;; the class ltree-node. intree does not need to be an ltree-node,
+;; it just needs to implement the interface.
+(defmethod TreeBrowser TreeBrowser (w1 h1 w2 h2 intree &optional horiz)
+  (setq tree intree)
+  (==> tree open)
+  (setq tree-explorer 
+	(new explorer tree w1 h1 
+             (lambda(c) (==> thisform show-func c))
+             (lambda(c) (==> thisform open-func c))
+             (lambda(c) (==> thisform close-func c))
+             (lambda(c) (==> thisform move-func c))
+             (lambda(c) (==> thisform space-func c))
+             (lambda(c) (==> thisform backspace-func c)) ) )
+  (setq tree-viewer (new scroller w1 h1 tree-explorer))
+  (setq ldoc-scroller 
+	(new ldocscroller w2 h2 
+	     (setq ldoc-pane (new ldocpane (- w2 26) (- h2 12)))))
+  (setq search-string (new editstring 24))
+  (==> search-string setcall (lambda(c) (==> thisform searchstr-func c)))
+  (setq findnext-btn (new tinybutton "Next" 
+                          (lambda(c) (==> thisform findnext-func c)) ))
+  (setq closeall-btn (new tinybutton "Collapse"
+                          (lambda(x) (==> thisform closeall-func c)) ))
+  (setq srchbtn (new row (new string "search:") 
+		     search-string findnext-btn 
+		     closeall-btn ))
+  (setq splitter (new TreeBrowserKnob 8 (max h1 h2) 
+		      (lambda(c) (==> thisform split-action)) ))
+  (==> this form srchbtn tree-viewer splitter ldoc-scroller) 
+  (==> tree-explorer activate t))
+
+(defmethod TreeBrowser split-action()
+  (let (((kx ky kw kh) (==> splitter getdata)))
+    (==> splitter move kx ky) ) )
+
+(defmethod TreeBrowser compute-geometry()
+  (let (((sx sy sw sh) :srchbtn:rect)
+	((tx ty tw th) :tree-viewer:rect)
+	((lx ly lw lh) :ldoc-scroller:rect) 
+	((kx ky kw kh) :splitter:rect) )
+    (==> this resize
+	 (+ 1 tw 1 kw 1 lw 1)
+	 (+ 1 sh 1 (max th lh) 1) ) ) 
+  () )
+
+(defmethod TreeBrowser manage-geometry()
+  (let (((x y w h) rect)
+	((sx sy sw sh) :srchbtn:rect)
+	((tx ty tw th) :tree-viewer:rect)
+	((lx ly lw lh) :ldoc-scroller:rect) 
+	((kx ky kw kh) :splitter:rect) )
+    (when (= kx 0)
+      (setq kx (+ tw 2)) )
+    (setq kx (min kx (div w 2)))
+    (let ((height (- h (+ sh 3))) )
+      (==> srchbtn geometry 0 1 w sh)
+      (==> tree-viewer geometry 1 (+ sh 2) (- kx 2) height)
+      (==> splitter geometry kx (+ sh 2) kw height)
+      (==> ldoc-scroller geometry (+ kx kw 1) (+ sh 2) 
+	   (- (- w 1) (+ kx kw 1)) height)
+      () ) ) )
+
+

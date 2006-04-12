@@ -1,0 +1,193 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+
+
+
+#? *** motion
+
+;; dummy function that adds OpenCV C header files in C file
+(eval `(de dummy_motion () ,cv-cpheader-cmd ()))
+
+;; #? * (dummy_motion)
+;; #? * (cvupdatemotionhistory <sil> <mhi> <ts> <dur>)
+;; #? * (cvcalcmotiongradient <mhi> <mask> <ori> <maxtd> <mintd> <as>)
+;; #? * (cvcalcglobalorientation <ori> <mask> <mhi> <ts> <dur>)
+;; #? * (cvsegmentmotion <mhi> <segmask> <stor> <ts> <segthresh>)
+
+;; ********************************************************
+
+;;  /****************************************************************************************\
+;;  *        All the motion template functions work only with single channel images.         *
+;;  *        Silhouette image must have depth IPL_DEPTH_8U or IPL_DEPTH_8S                   *
+;;  *        Motion history image must have depth IPL_DEPTH_32F,                             *
+;;  *        Gradient mask - IPL_DEPTH_8U or IPL_DEPTH_8S,                                   *
+;;  *        Motion orientation image - IPL_DEPTH_32F                                        *
+;;  *        Segmentation mask - IPL_DEPTH_32F                                               *
+;;  *        All the angles are in degrees, all the times are in milliseconds                *
+;;  \****************************************************************************************/
+
+#? (cvUpdateMotionHistory  <sil> <mhi> <ts> <dur>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvUpdateMotionHistory
+;;  //    Purpose: updates motion history image.
+;;  //    Context:
+;;  //    Parameters:
+;;  //        silhouette  - silhouette image
+;;  //        mhi         - motion history image
+;;  //        timestamp   - current system time
+;;  //        mhiDuration - maximal duration of motion track before it will be removed
+;;  //    Returns:
+;;  //    Notes:
+;;  //      Motion history image is changed by the following algorithm:
+;;  //         for every point(x,y) in the mhi do
+;;  //             if( silhouette(x,y) != 0 )
+;;  //             {
+;;  //                 mhi(x,y) = timestamp;
+;;  //             }
+;;  //             else if( mhi(x,y) < timestamp - mhi_duration )
+;;  //             {
+;;  //                 mhi(x,y) = 0;
+;;  //             }
+;;  //             // else mhi(x,y) remains unchanged
+;;  //F*/
+;;  OPENCVAPI  void    cvUpdateMotionHistory( const CvArr* silhouette, CvArr* mhi,
+;;                                            double timestamp, double mhiDuration );
+
+(de cvUpdateMotionHistory( sil mhi ts dur)
+    ((-gptr- "const CvArr *") sil)
+    ((-gptr- "CvArr *") mhi)
+    ((-double-) ts dur)
+    #{ cvUpdateMotionHistory($sil, $mhi, $ts, $dur); #}
+    ())
+  
+#? (cvCalcMotionGradient <mhi> <mask> <ori> <maxtd> <mintd> <as>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvCalcMotionGradient
+;;  //    Purpose: calculates motion gradient and mask where it is valid
+;;  //    Context:
+;;  //    Parameters:
+;;  //       mhi         - motion history image
+;;  //       mask        -(output image) indicates where <orientation> data is valid
+;;  //       orientation -(output image) contains gradient orientation in degrees
+;;  //       aperture_size - size of the filters for x & y derivatives
+;;  //
+;;  //       maxTDelta   - gradient bounds.
+;;  //       minTDelta   _/
+;;  //    Returns:
+;;  //    Notes:
+;;  //      Function handles both top-left and bottom-left origins of orientation image
+;;  //F*/
+;;  OPENCVAPI  void    cvCalcMotionGradient( const CvArr* mhi, CvArr* mask, CvArr* orientation,
+;;                                           double maxTDelta, double minTDelta,
+;;                                           int aperture_size CV_DEFAULT(3));
+
+(de cvCalcMotionGradient(mhi mask ori maxtd mintd as)
+      ((-gptr- "const CvArr *") mhi)
+      ((-gptr- "CvArr *") mask)
+      ((-gptr- "CvArr *") ori)
+      ((-double-) maxtd mintd)
+      ((-int-) as)
+      #{  cvCalcMotionGradient($mhi, $mask, $ori, $maxtd, $mintd, $as);  #}
+      ())
+
+#? (cvCalcGlobalOrientation  <ori> <mask> <mhi> <ts> <dur>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvCalcGlobalOrientation
+;;  //    Purpose: calculates general motion direction in the selected region.
+;;  //    Context:
+;;  //    Parameters:
+;;  //         orient       - orientation image
+;;  //         mask         - region mask
+;;  //         mhi          - motion history image
+;;  //         timestamp    - the last timestamp when mhi was updated
+;;  //         mhi_duration - maximal motion track duration.
+;;  //    Returns:
+;;  //      direction of selected region in degrees
+;;  //F*/
+;;  OPENCVAPI  double  cvCalcGlobalOrientation( const CvArr* orientation, const CvArr* mask,
+;;                                              const CvArr* mhi, double curr_mhi_timestamp,
+;;                                              double mhi_duration );
+
+(de cvCalcGlobalOrientation (ori mask mhi ts dur)
+      ((-gptr- "const CvArr *") ori)
+      ((-gptr- "const CvArr *") mask)
+      ((-gptr- "const CvArr *") mhi)
+      ((-double-) ts dur)
+      (let ((s 0))
+	((-double-) s)
+	#{  $s = cvCalcGlobalOrientation($ori, $mask, $mhi, $ts, $dur);  #}
+	s))
+    
+#? (cvSegmentMotion  <mhi> <segmask> <stor> <ts> <segthresh>)  
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvSegmentMotion
+;;  //    Purpose: splits motion history image into several regions that
+;;  //             move in different directions.
+;;  //    Context:
+;;  //    Parameters:
+;;  //        mhi        - motion history image
+;;  //        seg_mask   - segmentation mask image. It is marked with different values
+;;  //                    (1,2,3...) for every motion component
+;;  //        storage    - where to store motion components
+;;  //        timestamp  - the last timestamp when mhi was updated
+;;  //        seg_thresh - threshold, which is used to split motion components(regions)
+;;  //                     the bigger threshold, the coarse segmentation is.
+;;  //    Returns:
+;;  //      sequence of connected components
+;;  //    Notes:
+;;  //F*/
+;;  OPENCVAPI  CvSeq*  cvSegmentMotion( CvArr* mhi, CvArr* seg_mask,
+;;                                      CvMemStorage* storage,
+;;                                      double timestamp, double seg_thresh );
+
+(de cvSegmentMotion (mhi segmask stor ts segthresh)
+    ((-gptr- "CvArr *") mhi)
+    ((-gptr- "CvArr *") segmask)
+    ((-gptr- "CvMemStorage *") stor)
+    ((-double-) ts segthresh)
+    (let ((s (gptr ())))
+      #{ $s = (CvSeq *) cvSegmentMotion($mhi, $segmask, $stor, $ts, $segthresh); #}
+      s))
+
+
+;; ********************************************************
+
+(dhc-make ()
+  dummy_motion
+  cvupdatemotionhistory
+  cvcalcmotiongradient
+  cvcalcglobalorientation
+  cvsegmentmotion
+)

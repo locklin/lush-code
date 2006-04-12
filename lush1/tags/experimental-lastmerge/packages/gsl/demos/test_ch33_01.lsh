@@ -1,0 +1,92 @@
+;; Fu Jie Huang , 8/2002
+;; a quick test of the  2-dimensional minimization  
+;; example from <GSL reference manual> pp.451
+;; minimize function "f(x,y)=10*(x-1.0)^2+20*(y-2.0)^2+30" 
+;; initial value: x=5, y=7
+;; obviously, the result will be x=1, y=2
+
+(libload "gsl/const.lsh")
+(libload "gsl/aux_globalvar")
+(libload "gsl/aux_structure")
+(libload "gsl/vector")
+(libload "gsl/multimin")
+
+(eval `(de dummy_test33_01 () ,gsl-cpheader-cmd ()))
+ 
+(de my_f ( v params)
+    ((-gptr- "gsl_vector *") v)
+    ((-gptr-) params)
+    (let ((ret (double 0)))
+      #{ { 
+      double x, y;
+      double *dp;
+      dp = (double *) $params;
+      x=gsl_vector_get($v, 0);
+      y=gsl_vector_get($v, 1);
+
+      $ret = 10.0*(x-dp[0])*(x-dp[0]) + 20.0*(y-dp[1])*(y-dp[1]) + 30.0;
+      } #} 
+      ret))
+
+(de my_df ( v params df)
+    ((-gptr- "gsl_vector *") v)
+    ((-gptr-) params)
+    ((-gptr- "gsl_vector *") df)
+    #{ {
+    double x, y;
+    double * dp = (double *) $params;
+
+    x= gsl_vector_get($v,0);
+    y= gsl_vector_get($v,1);
+
+    gsl_vector_set($df, 0, 20.0*(x-dp[0]));
+    gsl_vector_set($df, 1, 40.0*(y-dp[1]));
+    } #}
+    ())
+
+(de my_fdf ( x params f df)
+    ((-gptr- "gsl_vector *") x)
+    ((-gptr-) params)
+    ((-gptr- "double *") f)
+    ((-gptr- "gsl_vector *") df)
+    #{  {
+    double a, b;
+    double * dp=(double *) $params;
+    a = gsl_vector_get($x, 0);
+    b = gsl_vector_get($x, 1);
+    *$f = 10.0*(a-dp[0])*(a-dp[0]) + 20.0*(b-dp[1])*(b-dp[1]) + 30.0;
+    gsl_vector_set($df, 0, 20.0*(a-dp[0]));
+    gsl_vector_set($df, 1, 40.0*(b-dp[1]));     
+    } #}
+    ())
+
+(dhc-make () dummy_test33_01 my_f my_df my_fdf)))
+
+(setq pp (double-matrix 2))
+(pp 0 1.0)
+(pp 1 2.0)
+
+(setq f  (alloc_gsl_multimin_function_fdf))
+     (setval_f_gsl_multimin_function_fdf   f  (gptr my_f))
+    (setval_df_gsl_multimin_function_fdf   f  (gptr my_df))
+   (setval_fdf_gsl_multimin_function_fdf   f  (gptr my_fdf))
+     (setval_n_gsl_multimin_function_fdf   f  2)
+(setval_params_gsl_multimin_function_fdf   f (idx-ptr pp))
+
+(setq x (gsl_vector_alloc 2))
+(gsl_vector_set x   0   5.0)
+(gsl_vector_set x   1   7.0)
+
+(setq ss (gsl_multimin_fdfminimizer_alloc 
+	  (var_gsl_multimin_fdfminimizer_conjugate_fr) 2))
+(gsl_multimin_fdfminimizer_set  ss  f   x   0.01    1e-4)
+
+(setq iter 0)
+(do-while (and (= status GSL_CONTINUE) (< iter 100))
+  (incr iter)
+  (setq status (gsl_multimin_fdfminimizer_iterate ss))
+  (setq status (gsl_multimin_test_gradient 
+		(getval_gradient_gsl_multimin_fdfminimizer ss)  1e-3))
+  (when (= status GSL_SUCCESS) (printf "converged: \n"))
+)
+

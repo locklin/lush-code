@@ -1,0 +1,102 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libnum-config")
+
+;; dummy function that adds GSL C header files in C file
+(eval `(de dummy_special () 
+         (cpheader "#include <gsl/gsl_sf.h>") ()))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Special Functions
+;; The complete collection of special functions is available
+;; through direct calls to GSL. This library provides access
+;; to some of the most common ones, or those whose low-level
+;; GSL version are a bit difficult to call, or those whose
+;; GSL name is obfuscated.
+
+#? (polar-to-rect <v>)
+;; transform a double vector of size 2 from
+;; polar coordinates (magnitude and angle), to rectangular coordinates.
+;; The result is returned in a fresh idx1 of double of size 2.
+(de polar-to-rect (v)
+  ((-idx1- (-double-)) v)
+  (when (<> 2 (idx-dim v 0)) (error "not a 2D vector"))
+  (let* ((r (double-matrix 2))
+	 (pv (idx-ptr v))
+	 (pr (idx-ptr r)))
+    #{{ gsl_sf_result gr0, gr1;
+        gsl_sf_polar_to_rect ($pv[0],$pv[1],&gr0,&gr1);
+        $pr[0] = gr0.val; $pr[1]=gr1.val;
+     }#} r))
+
+#? (rect-to-polar <v>)
+;; transform a double vector of size 2 from
+;; polar coordinates to rectangular coordinates.
+;; The result is returned in a fresh idx1 of double of size 2
+;; with the magnitude and angle components.
+(de rect-to-polar (v)
+  ((-idx1- (-double-)) v)
+  (when (<> 2 (idx-dim v 0)) (error "not a 2D vector"))
+  (let* ((r (double-matrix 2))
+	 (pv (idx-ptr v))
+	 (pr (idx-ptr r)))
+    #{{ gsl_sf_result gr0, gr1;
+        gsl_sf_rect_to_polar ($pv[0],$pv[1],&gr0,&gr1);
+        $pr[0] = gr0.val; $pr[1]=gr1.val;
+     }#} r))
+
+#? (factorial <n>)
+;; returns fatorial of <n>. 
+;; argument and return values are double.
+(de factorial (n)
+  ((-double-) n)
+  (to-double #{ gsl_sf_fact ((unsigned int)($n)) #}))
+
+#? (logistic <x>)
+;; return the value of the logistic function 
+;; (also known as fermi-dirac integral with index of -1)
+;; 1/(1+exp(-x).
+(de logistic (x)
+  ((-double-) x)
+  (double #{ gsl_sf_fermi_dirac_m1 ($x) #}))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make-with-libs
+ ()
+ (list libnum-libgslcblas libnum-libgsl)
+
+ dummy_special
+ polar-to-rect
+ rect-to-polar
+ factorial
+ logistic
+ )

@@ -1,0 +1,113 @@
+
+(libload "opencv/cv-config")
+(libload "opencv/aux_macro_func")
+(libload "opencv/memstorage")
+
+(eval `(de |dummy_cvdyn| () ,cv-cpheader-cmd ()))
+
+
+;;********************************************************************
+(defclass cvdynob object 
+  ((-gptr-) p))
+
+(defmethod cvdynob cvdynob ()
+  ())
+
+(defmethod cvdynob -destructor ()
+  ())
+
+;;**************************************************************************
+(defclass cvmemstorage cvdynob
+  ((-gptr-) pp)  )
+
+(defmethod cvmemstorage cvmemstorage ( )
+  (setq p (cvCreateMemStorage 0))
+  #{ $pp = &($p);  #}
+  ())
+
+(defmethod cvmemstorage -destructor ()
+  (cvReleaseMemStorage pp)) )
+
+(defmethod cvmemstorage clear ()
+  (cvClearMemStorage  p)  )
+
+;;**********************************************************************
+(defclass cvseq cvdynob
+  ((-gptr-) memstorage)
+  ((-gptr-) pp)  )
+
+
+(defmethod cvseq cvseq  ( storage )
+  ((-gptr- "CvMemStorage *") storage)
+  #{  $memstorage = $storage; 
+      $pp = &($p); 
+  #}
+  ())
+
+(defmethod cvseq -destructor ()
+  #{ $memstorage = NULL;
+     $p = NULL; #}
+  ())
+
+(defmethod cvseq create ( flag headsize elemsize )
+  ((-int-) flag headsize  elemsize)
+  #{   $p = cvCreateSeq($flag, $headsize, $elemsize, (CvMemStorage *)$memstorage); 
+  #} 
+  ())
+
+(defmethod cvseq GetElem ( index )
+  ((-int-) index)
+  (let ((ret (gptr ())))
+    #{ $ret = cvGetSeqElem((CvSeq *)$p, $index); #}
+    ret) )
+
+(defmethod cvseq h_next ()
+  (let ((ret 0))
+    #{  if( ((CvSeq *)$p)->h_next ) {
+             $ret = 1;
+             $p = ((CvSeq *)$p)->h_next;
+        }
+        else 
+             $ret = 0;
+    #}
+    ret) )
+        
+(defmethod cvseq set_p ( s )
+  ((-gptr- "CvSeq *") s)
+  #{  if($s) {
+         $memstorage = $s->storage; 
+         $p = $s;  
+      } 
+  #}
+  ())
+
+(defmethod cvseq get_total ()
+  (int #{ ((CvSeq *)$p)->total #} ))
+
+
+;;**************************************************************************
+(defclass cvpointerarray cvdynob)
+
+(defmethod cvpointerarray cvpointerarray (size)
+  ((-int-) size)
+  #{ $p = malloc(($size) * sizeof(char *)); #}
+  ())
+
+(defmethod cvpointerarray -destructor ()
+  #{ free($p); #}
+  ())
+
+(defmethod cvpointerarray set_pointer (index pt)
+  ((-int-) index)
+  ((-gptr-) pt)
+  #{  *((void **)$p + $index) = $pt; #}
+  ())
+
+
+(dhc-make ()
+  |dummy_cvdyn|
+  (cvdynob cvdynob -destructor)
+  (cvseq cvseq  -destructor getelem h_next  set_p get_total)
+;;findcontours  contourperimeter contourarea checkcontourconvexity  iscontour 
+  (cvmemstorage  cvmemstorage  -destructor clear)
+  (cvpointerarray cvpointerarray -destructor  set_pointer)  )
