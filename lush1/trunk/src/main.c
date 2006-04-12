@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.7 2006-02-21 01:02:36 leonb Exp $
+ * $Id: main.c,v 1.8 2006-04-12 22:51:39 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -39,12 +39,12 @@ char **lush_argv;
 LUSHAPI int
 main(int argc, char **argv)
 {
+  /* Define quiet mode. */
+  int quiet = FALSE;
   /* Setup locale */
 #if HAVE_SETLOCALE && defined(LC_ALL)
   setlocale(LC_ALL,"");
 #endif
-  /* Define quiet mode. */
-  int quiet = FALSE;
   lush_argc = argc;
   lush_argv = argv;
   if (argc>1 && argv[1][0]!='@')
