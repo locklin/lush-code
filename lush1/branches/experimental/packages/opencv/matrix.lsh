@@ -188,24 +188,26 @@
     #{ cvSubRS($src, *$value, $dst, $mask);  #}
     ())
 
-#? (cvMul <srca> <srcb> <dst>)
+#? (cvMul <src1> <src2> <dst> <scale>)
 ;;.VP
 ;;  /*F///////////////////////////////////////////////////////////////////////////////////////
 ;;  //    Name:       cvMul
 ;;  //    Purpose:    Multiplies two arrays
 ;;  //    Context:
 ;;  //    Parameters:
-;;  //      srcA - first source array
-;;  //      srcB - second source array
+;;  //      src1 - first source array
+;;  //      src2 - second source array
 ;;  //      dst  - destination array: dst(x,y) = srcA(x,y) * srcB(x,y)
+;;  //      scale- scale factor
 ;;  //    Returns:
 ;;  //F*/
-;;  OPENCVAPI  void  cvMul( const CvArr* srcA, const CvArr* srcB, CvArr* dst);
+;;  OPENCVAPI  void  cvMul( const CvArr* srcA, const CvArr* srcB, CvArr* dst, double scale);
 
-(de cvMul (srca srcb dst)
+(de cvMul (srca srcb dst scale)
     ((-gptr- "const CvArr *") srca srcb)
     ((-gptr- "CvArr *") dst)
-    #{ cvMul($srca, $srcb, $dst);  #}
+    ((-double-) scale)
+    #{ cvMul($srca, $srcb, $dst, $scale);  #}
     ())
 
 
@@ -470,7 +472,7 @@
     ((-gptr- "const CvArr *") srcarr)
     ((-gptr- "CvArr *") dstarr)
     ((-int-) order)
-    #{ cvMulTransposed($srcarr, $dstarr, $order); #}
+    #{ cvMulTransposed($srcarr, $dstarr, $order, NULL); #}
     ())
 
 #? (cvTranspose <src> <dst>)
@@ -538,7 +540,7 @@
     #{ cvFlip ($src, $dst, $flipmode); #}
     ())
 
-#? (cvInvert  <src> <dst> )
+#? (cvInvert  <src> <dst>)
 ;;.VP
 ;;  /*F///////////////////////////////////////////////////////////////////////////////////////
 ;;  //    Name:       cvInvert
@@ -558,21 +560,10 @@
     ((-gptr- "CvArr *") dst)
     (let ((s 0))
       ((-int-) s)
-      #{ $s = cvInvert($src, $dst); #}
+      #{ $s = cvInvert($src, $dst, CV_LU); #}
       s))
 
-
-#? * (cvinv <src> <dst>)
-;;.PRE
-;;  #define cvInv cvInvert
-
-(de cvInv ( src dst )
-    ((-gptr- "const CvArr *") src)
-    ((-gptr- "CvArr *") dst)
-    (let ((s 0))
-      ((-int-) s)
-      #{ $s = cvInvert($src, $dst); #}
-      s))
+;(defalias cvInv cvInvert)
 
 #? (cvSolve  <a> <b> <x>)
 ;;.VP
@@ -595,7 +586,7 @@
     ((-gptr- "CvArr *") x)
     (let ((s 0))
       ((-int-) s)
-      #{ $s = cvSolve ($a, $b, $x); #}
+      #{ $s = cvSolve ($a, $b, $x, CV_LU); #}
       s))
 
 #? (cvDetmat <mat>)
@@ -670,7 +661,7 @@
     ())
 
 
-#? (cvPseudoInverse  <a> <b> <flags>)
+#? (cvPseudoInverse  <a> <b>)
 ;;.VP
 ;;  /*F///////////////////////////////////////////////////////////////////////////////////////
 ;;  //    Name:       cvPseudoInv
@@ -678,34 +669,20 @@
 ;;  //       if A is (m x n) matrix, B will be (n x m) matrix, such that
 ;;  //       AB = I(m x m), BA = I(n x n).
 ;;  //
-;;  //       flags:  0th bit, reset to 0, means that A is copyied before processing,
-;;  //                        otherwise it is modified during the processing, which is
-;;  //                        faster.
 ;;  //    Return value:
 ;;  //       The function returns condition number or DBL_MAX if the matrix is signular.
 ;;  //F*/
-;;  OPENCVAPI  double  cvPseudoInverse( CvArr* A, CvArr* B,
-;;                                      int flags CV_DEFAULT(0));
+;;  OPENCVAPI  double  cvPseudoInverse( CvArr* A, CvArr* B);
 
-(de cvPseudoInverse ( a b flags)
+(de cvPseudoInverse ( a b)
     ((-gptr- "CvArr *") a b)
-    ((-int-) flags)
     (let ((s 0))
       ((-double-) s)
-      #{ $s = cvPseudoInverse($a, $b, $flags); #}
+      #{ $s = cvInvert($a, $b, CV_SVD); #}
       s))
 
-#? * (cvpseudoinv <a> <b> <flags>)
-;;.PRE
-;;  #define cvPseudoInv cvPseudoInverse
+;(defalias cvPseudoInv cvPseudoInverse)
 
-(de cvPseudoInv ( a b flags)
-    ((-gptr- "CvArr *") a b)
-    ((-int-) flags)
-    (let ((s 0))
-      ((-double-) s)
-      #{ $s = cvPseudoInverse($a, $b, $flags); #}
-      s))
 
 #? (cvEigenVV  <src> <evects> <evals> <eps>)
 ;;.VP
@@ -758,7 +735,7 @@
     #{ cvSetZero($mat); #}
     ())
 
-#? (cvSetIdentity  <mat> )
+#? (cvSetIdentity  <mat> <value>)
 ;;.VP
 ;;  /*F///////////////////////////////////////////////////////////////////////////////////////
 ;;  //    Name:       cvSetIdentity
@@ -773,7 +750,7 @@
 
 (de cvSetIdentity ( mat )
     ((-gptr- "CvArr *") mat)
-    #{ cvSetIdentity($mat); #}
+    #{ cvSetIdentity($mat, cvRealScalar(1)); #}
     ())
 
 #? (cvMahalanobis  <srca> <srcb> <mat>)
@@ -859,13 +836,11 @@
   cvflip
   cvmirror
   cvinvert
-  cvinv
   cvsolve
   cvdet
   cvtrace
   cvsvd
   cvpseudoinverse
-  cvpseudoinv
   cveigenvv
   cvsetzero
   cvzero

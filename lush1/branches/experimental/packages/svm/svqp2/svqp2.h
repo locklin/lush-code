@@ -26,8 +26,11 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.6 2004-11-02 16:41:51 leonb Exp $
+ * $Id: svqp2.h,v 1.5.2.2 2006-04-12 20:06:12 laseray Exp $
  **********************************************************************/
+
+
+
 
 //////////////////////////////////////
 ///
@@ -140,7 +143,7 @@ public:
   // OUTPUT: GMIN, GMAX, W
   // - W is the optimal value of the objective function
   // - GMIN, GMAX are the active gradient bounds.
-  //   The SVM threshold is -(GMIN+GMAX)/2...
+  //   The SVM threshold is (GMIN+GMAX)/2...
   
   double   gmin;
   double   gmax;
@@ -152,6 +155,8 @@ protected:
   int      iter;		// total iterations
   int      l;                   // Active set size
   double  *g ;                  // [l] Gradient
+  double  *xbar ;               // [n] Another x
+  double  *gbar ;               // [n] Gradient at xbar
   int     *pivot;		// [n] Pivoting vector
   long     curcachesize;        // Current cache size
   struct Arow;                  // Cached rows
@@ -171,8 +176,9 @@ protected:
   float *getrow(int, int, bool hot=true);
   void   swap(int, int);
   void   unswap(void);
+  void   togbar(int);
   void   shrink(void);
-  void   unshrink(int s);
+  void   unshrink(bool);
   int    iterate_gs1(void);
   int    iterate_gs2(void);
 private:

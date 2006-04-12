@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.h,v 1.2 2005-02-22 17:46:43 leonb Exp $
+ * $Id: vector.h,v 1.2.2.1 2006-04-12 20:06:12 laseray Exp $
  **********************************************************************/
 
 #ifndef VECTOR_H
@@ -46,8 +46,8 @@ extern "C" {
 
 
 typedef struct lasvm_vector_s {
-  int size;
-  double data[1];
+  int   size;
+  float data[1];
 } lasvm_vector_t;
 
 lasvm_vector_t *lasvm_vector_create(int size);
@@ -62,16 +62,14 @@ double lasvm_vector_dot_product(lasvm_vector_t *v1, lasvm_vector_t *v2);
 
 
 typedef struct lasvm_sparsevector_pair_s {
-  struct lasvm_sparsevector_pair_s *next;
-  int    index;
-  double data;
+  int   index;
+  float value;
 } lasvm_sparsevector_pair_t;
 
 typedef struct lasvm_sparsevector_s {
   int size;
-  int npairs;
+  int maxsize;
   lasvm_sparsevector_pair_t *pairs;
-  lasvm_sparsevector_pair_t **last;
 } lasvm_sparsevector_t;
 
 lasvm_sparsevector_t *lasvm_sparsevector_create(void);
@@ -89,6 +87,23 @@ lasvm_sparsevector_t *lasvm_sparsevector_combine(lasvm_sparsevector_t *v1, doubl
 
 double lasvm_sparsevector_dot_product(lasvm_sparsevector_t *v1, 
 				      lasvm_sparsevector_t *v2);
+
+
+
+/* lasvm_sparsevector_foreach --
+   To iterate on the sparsevector pairs.
+   Use as follows:
+
+       lasvm_sparsevector_t *v = somevector();
+       lasvm_sparsevector_pair_t *p;
+       lasvm_sparsevector_foreach(p, v) {
+           printf(" %d:%.8g", p->index, p->value);
+       }
+*/       
+
+#define lasvm_sparsevector_foreach(p, v) \
+   for(p=v->pairs; p->index>=0; p++)
+
 
 #ifdef __cplusplus__
 }

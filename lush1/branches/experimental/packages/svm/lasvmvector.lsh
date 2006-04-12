@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lasvmvector.lsh,v 1.7 2005-06-29 18:13:07 leonb Exp $
+;;; $Id: lasvmvector.lsh,v 1.7.2.1 2006-04-12 20:06:12 laseray Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -63,11 +63,16 @@
   #{ lasvm_sparsevector_set($p,$i,$v); #}
   v )
 
-(defmethod SparseVector size()
-  (to-int #{ ((lasvm_sparsevector_t*)($p))->size #}) )
+(defmethod SparseVector maxindex()
+  (let ((s (to-int 0)))
+    #{{ 
+        lasvm_sparsevector_t *v = (lasvm_sparsevector_t*)($p);
+        if (v->size > 0) { $s = v->pairs[v->size-1].index; }
+    }#} 
+    s ) )
 
 (defmethod SparseVector pairs()
-  (to-int #{ ((lasvm_sparsevector_t*)($p))->npairs #}) )
+  (to-int #{ ((lasvm_sparsevector_t*)($p))->size #}) )
 
 (defmethod SparseVector contents(ivec dvec)
   ((-idx1- (-int-)) ivec)
@@ -79,12 +84,11 @@
        int *iv = IDX_PTR($ivec, int);
        double *dv = IDX_PTR($dvec, double);
        lasvm_sparsevector_t *v = (lasvm_sparsevector_t*)$p;
-       lasvm_sparsevector_pair_t *p = v->pairs;
-       while (p)
+       lasvm_sparsevector_pair_t *p;
+       lasvm_sparsevector_foreach(p,v)
        {  
          *iv = p->index;
-         *dv = p->data;
-         p = p->next;
+         *dv = p->value;
          iv += $ivec->mod[0];
          dv += $dvec->mod[0];
        }
@@ -109,11 +113,11 @@
     #{{
        double *dv = IDX_PTR($m, double);
        lasvm_sparsevector_t *v = (lasvm_sparsevector_t*)$p;
-       lasvm_sparsevector_pair_t *p = v->pairs;
-       while (p && p->index < $n)
+       lasvm_sparsevector_pair_t *p;
+       lasvm_sparsevector_foreach(p,v)
        {  
-         dv[p->index] = p->data;
-         p = p->next;
+         if (p->index >= $n) break;
+         dv[p->index] = p->value;
        }
     }#}
     m ) )
@@ -362,7 +366,7 @@
   (dhc-make ()
 	    #{ #include "vector.h" #}
 	    (SparseVector sparsevector -destructor 
-			  clear size pairs get set contents build 
+			  clear maxindex pairs get set contents build 
                           unpack parse)
 	    sparsevector-lincomb sparsevector-dot 
 	    (SparseVectorCollection SparseVectorCollection vector)

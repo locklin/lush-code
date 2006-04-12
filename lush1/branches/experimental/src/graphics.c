@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.15 2005-02-08 18:02:35 leonb Exp $
+ * $Id: graphics.c,v 1.15.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 
@@ -172,36 +172,51 @@ DX(xysize)
 DX(xfont)
 {
   char *s;
+  char *r = 0;
   struct window *win;
   struct context mycontext;
+  at *q;
   
   win = current_window();
+  q = win->font;
   
-  if (arg_number) {
-    ARG_NUMBER(1);
-    ARG_EVAL(1);
-    s = ASTRING(1);
-    
-    if (win->gdriver->setfont) {
-      context_push(&mycontext);	/* can be interrupted */
-      (*win->gdriver->begin) (win);
-      if (sigsetjmp(context->error_jump, 1)) { 
-	(*win->gdriver->end) (win);
-	context_pop();
-	siglongjmp(context->error_jump, -1);
+  if (arg_number) 
+    {
+      ARG_NUMBER(1);
+      ARG_EVAL(1);
+      s = ASTRING(1);
+      q = str_mb_to_utf8(s);
+      if (EXTERNP(q, &string_class))
+        s = SADD(q->Object);
+      if (win->gdriver->setfont)
+        {
+          context_push(&mycontext);	/* can be interrupted */
+          (*win->gdriver->begin) (win);
+          if (sigsetjmp(context->error_jump, 1)) { 
+            (*win->gdriver->end) (win);
+            context_pop();
+            siglongjmp(context->error_jump, -1);
+          }
+          r = (*win->gdriver->setfont) (win, s);
+          (*win->gdriver->end) (win);
+          context_pop();
+        } 
+      else
+        {
+          UNLOCK(q);
+          error(NIL, "this driver does not support 'font'", NIL);
+        }
+      UNLOCK(q);
+    q = NIL;
+    if (r)
+      {
+        q = str_utf8_to_mb(r);
+        UNLOCK(win->font);
+        win->font = q;
       }
-      (*win->gdriver->setfont) (win, s);
-      (*win->gdriver->end) (win);
-      context_pop();
-    } else
-      error(NIL, "this driver does not support 'font'", NIL);
-    
-    UNLOCK(win->font);
-    win->font = APOINTER(1);
-    LOCK(win->font);
-  }
-  LOCK(win->font);
-  return win->font;
+    }
+  LOCK(q);
+  return q;
 }
 
 DX(xcls)

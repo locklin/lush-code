@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.23 2005-06-28 21:42:21 leonb Exp $
+ * $Id: fileio.c,v 1.23.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 
@@ -1833,6 +1833,7 @@ DY(yreading)
 
   context_push(&mycontext);
   context->input_tab = 0;
+  context->input_string = 0;
   context->input_file = f;
 
   if (sigsetjmp(context->error_jump, 1)) {
@@ -1842,6 +1843,8 @@ DY(yreading)
         if (pclose(f) < 0)
            fclose(f);
     }
+    context->input_tab = -1;
+    context->input_string = NULL;
     context_pop();
     UNLOCK(fdesc);
     siglongjmp(context->error_jump, -1L);
@@ -1851,6 +1854,8 @@ DY(yreading)
   if (fdesc->flags & X_STRING)
     file_close(context->input_file);
 
+  context->input_tab = -1;
+  context->input_string = NULL;
   context_pop();
   UNLOCK(fdesc);
   return answer;
@@ -1888,6 +1893,7 @@ DY(ywriting)
            fclose(f);
     } else
       fflush(f);
+    context->output_tab = -1;
     context_pop();
     UNLOCK(fdesc);
     siglongjmp(context->error_jump, -1L);
@@ -1898,11 +1904,45 @@ DY(ywriting)
     file_close(context->output_file);
   else
     fflush(context->output_file);
+  context->output_tab = -1;
   context_pop();
   UNLOCK(fdesc);
   return answer;
 }
 
+/*
+ * writing - reading - appending LISP I/O FUNCTIONS
+ * (reading "filename" | filedesc ( ..l1.. ) .......ln.. ) )	
+ * (writing "filename" | filedesc ( ..l1.. ) ........... ) )
+ */
+
+DY(yreading_string)
+{
+  struct context mycontext;
+  at *answer;
+  at *str;
+  if (! (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr)))
+    error(NIL, "syntax error", NIL);
+  str = eval(ARG_LIST->Car);
+  if (! EXTERNP(str,&string_class))
+    error("reading-string", "string expected", str);
+  context_push(&mycontext);
+  context->input_tab = 0;
+  context->input_string = SADD(str->Object);
+  if (sigsetjmp(context->error_jump, 1)) {
+    context->input_tab = -1;
+    context->input_string = NULL;
+    context_pop();
+    UNLOCK(str);
+    siglongjmp(context->error_jump, -1L);
+  }
+  answer = progn(ARG_LIST->Cdr);
+  context->input_tab = -1;
+  context->input_string = NULL;
+  context_pop();
+  UNLOCK(str);
+  return answer;
+}
 
 
 
@@ -2027,6 +2067,7 @@ init_fileio(char *program_name)
   dx_define("open-append", xopen_append);
   dy_define("reading", yreading);
   dy_define("writing", ywriting);
+  dy_define("reading-string", yreading_string);
   dx_define("read8", xread8);
   dx_define("write8", xwrite8);
   dx_define("fsize", xfsize);

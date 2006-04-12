@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.33 2005-06-28 21:44:58 leonb Exp $
+ * $Id: toplevel.c,v 1.33.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 
@@ -446,20 +446,10 @@ recur_pop(struct recur_elt *elt)
  * context stack handling context_push(s) context_pop()
  */
 
-static void
-context_copy(char *c1, char *c2)
-{
-  register int i;
-  i = sizeof(struct context);
-  while (i--)
-    *c1++ = *c2++;
-}
-
-
 void 
 context_push(struct context *newc)
 {
-  context_copy((char *) newc, (char *) context);
+  *newc = *context;
   newc->next = context;
   context = newc;
 }
@@ -467,8 +457,15 @@ context_push(struct context *newc)
 void 
 context_pop(void)
 {
+  struct context *oldcontext = context;
   if (context->next)
     context = context->next;
+  if (oldcontext->input_string && context->input_string)
+    context->input_string = oldcontext->input_string;
+  if (oldcontext->input_tab >= 0)
+    context->input_tab = oldcontext->input_tab;
+  if (oldcontext->output_tab >= 0)
+    context->output_tab = oldcontext->output_tab;
 }
 
 
@@ -512,18 +509,6 @@ toplevel(char *in, char *out, char *prompts)
     context->output_file = f2;
     context->output_tab = 0;
   }
-  if (sigsetjmp(context->error_jump, 1)) {
-    /* An error occurred */
-    if (f1)
-      file_close(f1);
-    if (f2)
-      file_close(f2);
-    if (ps1)
-      free(ps1);
-    context_pop();
-    symbol_pop(at_file);
-    siglongjmp(context->error_jump, -1);
-  }
   /* Split prompt */
   if (prompts) {
     const char d = '|';
@@ -551,6 +536,18 @@ toplevel(char *in, char *out, char *prompts)
           *s = 0;
       }
     }
+  }
+  if (sigsetjmp(context->error_jump, 1)) {
+    /* An error occurred */
+    if (f1)
+      file_close(f1);
+    if (f2)
+      file_close(f2);
+    if (ps1)
+      free(ps1);
+    context_pop();
+    symbol_pop(at_file);
+    siglongjmp(context->error_jump, -1);
   }
   /* Toplevel loop */
   exit_flag = 0;
@@ -815,21 +812,30 @@ error(char *prefix, char *text, at *suffix)
 
 DX(xerror)
 {
-  at *call, *symb, *arg;
-
+  at *call;
+  at *symb = 0;
+  at *arg = 0;
+  char *msg = 0;
+  
   ALL_ARGS_EVAL;
   switch (arg_number) {
   case 1:
-    error("",ASTRING(1),NIL);
+    msg = ASTRING(1);
+    break;
   case 2:
-    ASYMBOL(1);
-    symb=APOINTER(1);
-    arg=NIL;
+    if (ISSYMBOL(1)) {
+      symb = APOINTER(1);
+      msg = ASTRING(2);
+    } else {
+      msg = ASTRING(1);
+      arg = APOINTER(2);
+    }
     break;
   case 3: 
     ASYMBOL(1);
-    symb=APOINTER(1);
-    arg=APOINTER(3);
+    symb = APOINTER(1);
+    msg = ASTRING(2);
+    arg = APOINTER(3);
     break;
   default:
     error(NIL,"illegal arguments",NIL);
@@ -842,7 +848,7 @@ DX(xerror)
     }
     call = call->Cdr;
   }
-  error(NIL,ASTRING(2),arg);
+  error(NIL, msg, arg);
   return NIL;
 }
 

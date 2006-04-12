@@ -92,6 +92,7 @@
 ;;  //                                         are coded with ending vertices (by default).
 ;;  //                CV_CHAIN_APPROX_TC89_L1 - Teh-Chin algorithm, L1 curvature
 ;;  //                CV_CHAIN_APPROX_TC89_KCOS - Teh-Chin algorithm, k-cosine curvature
+;;  //         offset - a cvPoint object
 ;;  //    Returns:
 ;;  //      Number of contours found.
 ;;  //F*/
@@ -101,16 +102,15 @@
 ;;                             CvContourRetrievalMode mode CV_DEFAULT( CV_RETR_LIST ),
 ;;                             CvChainApproxMethod method CV_DEFAULT(CV_CHAIN_APPROX_SIMPLE));
 
-(de cvFindContours (array stor first hsize mode method)
+(de cvFindContours (array stor first hsize mode method offset)
     ((-gptr- "CvArr *") array)
     ((-gptr- "CvMemStorage *") stor)
     ((-gptr- "CvSeq **") first)
-    ((-int-) hsize)
-    ((-int-) mode)
-    ((-int-) method)
+    ((-int-) hsize mode method)
+    ((-gptr- "CvPoint *") offset)
     (let ((s 0))
       ((-int-) s)
-      #{ $s = cvFindContours($array, $stor, $first, $hsize, $mode, $method); #}
+      #{ $s = cvFindContours($array, $stor, $first, $hsize, $mode, $method, *$offset); #}
       s))
 
 
@@ -127,6 +127,7 @@
 ;;  //         header_size - size of contours headers.
 ;;  //         mode - contour retrieving mode(see cvFindContours description)
 ;;  //         method - approximation method(see cvFindContours description)
+;;  //         offset - a cvPoint object
 ;;  //    Returns:
 ;;  //      contour scanner state.
 ;;  //F*/
@@ -134,14 +135,16 @@
 ;;                                          int header_size, CvContourRetrievalMode mode,
 ;;                                          CvChainApproxMethod method );
 
-(de cvStartFindContours (array stor hsize mode method)
+(de cvStartFindContours (array stor hsize mode method offset)
     ((-gptr- "CvArr *") array)
     ((-gptr- "CvMemStorage *") stor)
     ((-int-) hsize)
     ((-int-) mode)
     ((-int-) method)
-    (let ((s (gptr ())))
-      #{ $s = (CvContourScanner) cvStartFindContours($array, $stor, $hsize, $mode, $method); #}
+    ((-gptr- "CvPoint *") offset)
+    (let ((s #{ (CvContourScanner)NULL #}))
+      ((-gptr- "CvContourScanner") s)
+      #{ $s = cvStartFindContours($array, $stor, $hsize, $mode, $method, *$offset); #}
       s))
 
 
@@ -315,7 +318,7 @@
       #{ $s = (CvSeq *) cvApproxPoly($src_seq, $hsize, $stor, $method, $parameter, $recursive);  #}
       s))
 
-#? (cvContourPerimeter  <contour> <slice>)
+#? (cvContourPerimeter  <contour>)
 ;;.VP
 ;;  /*F///////////////////////////////////////////////////////////////////////////////////////
 ;;  //    Name:    cvContourPerimeter
@@ -324,7 +327,6 @@
 ;;  //    Context:
 ;;  //    Parameters:
 ;;  //      contour  - source contour
-;;  //      slice    - optional parameter. ending and starting indices of contour section  
 ;;  //    Returns:
 ;;  //      contour section perimeter
 ;;  //      when a part of contour is selected, the function doesn't add
@@ -333,12 +335,11 @@
 ;;  OPENCVAPI  double  cvContourPerimeter( CvSeq* contour,
 ;;                                         CvSlice slice CV_DEFAULT(CV_WHOLE_SEQ) );
 
-(de cvContourPerimeter (contour slice)
+(de cvContourPerimeter (contour)
     ((-gptr- "CvSeq *") contour)
-    ((-gptr- "CvSlice *") slice)
     (let ((s 0))
       ((-double-) s)
-      #{  $s = cvContourPerimeter($contour, *$slice); #}
+      #{  $s = cvContourPerimeter($contour); #}
       s))
 
 #? (cvContourBoundingRect  <contour> <update> <rect>)
@@ -535,7 +536,7 @@
       s))
 
 
-#? (cvDrawContours <img> <contour> <excolor> <hcolor> <maxlevel> <thickness> <connectivity>)
+#? (cvDrawContours <img> <contour> <excolor> <hcolor> <maxlevel> <thickness> <connectivity> <offset>)
 ;;.VP
 ;;  /*F///////////////////////////////////////////////////////////////////////////////////////
 ;;  //    Name: cvDrawContours
@@ -545,27 +546,31 @@
 ;;  //    Parameters:
 ;;  //      img      - destination three-channel image
 ;;  //      contour  - pointer to drawn contour(s).
-;;  //      external_color - color to draw external contours with
-;;  //      hole_color - color to draw hole contours with
+;;  //      external_color - color to draw external contours with (CvScalar object)
+;;  //      hole_color - color to draw hole contours with (CvScalar object)
 ;;  //      max_level  - max level of the tree(starting from contour pointer) to draw.
 ;;  //                   if it is 0, draw single contour, if 1 - draw the contour and
 ;;  //                   other contours at the same level, 2 - draw two levels etc.
 ;;  //      thickness - thickness of lines the contours are drawn with. If it is
 ;;  //                  equal to CV_FILLED (-1), the contour(s) interior is filled.
+;;  //      line_type - (an int)
+;;  //      offset    - (a CvPoint object)
 ;;  //    Returns:
 ;;  //F*/
-;;  OPENCVAPI void  cvDrawContours( void *img, CvSeq* contour,
-;;                                  double external_color, double hole_color,
+;;  CVAPI void  cvDrawContours(CvArr *img, CvSeq* contour,
+;;                                  CvScalar external_color, CvScalar double hole_color,
 ;;                                  int max_level, int thickness CV_DEFAULT(1),
-;;                                  int connectivity CV_DEFAULT(8));
+;;                                  int line_type CV_DEFAULT(8),
+;;                                  CvPoint offset CV_DEFAULT(cvPoint(0,0));
 
-(de cvDrawContours(img contour excolor hcolor maxlevel thickness connectivity)
+(de cvDrawContours(img contour excolor hcolor maxlevel thickness connectivity offset)
     ((-gptr-) img)
     ((-gptr- "CvSeq *") contour)
-    ((-double-) excolor hcolor)
+    ((-gptr- "CvScalar *") excolor hcolor)
     ((-int-) maxlevel thickness connectivity)
-    #{  cvDrawContours($img, $contour, $excolor, $hcolor, $maxlevel, $thickness, $connectivity);  #}
-    ())
+    ((-gptr- "CvPoint *") offset)
+    #{  cvDrawContours($img, $contour, *$excolor, *$hcolor, $maxlevel, $thickness, $connectivity, *$offset);  #}
+    ()))
 
 
 #? (cvCalcPGH <contour> <hist>)

@@ -24,10 +24,19 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.33 2005-06-27 20:35:46 leonb Exp $
+ * $Id: string.c,v 1.33.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 #include "header.h"
+
+#if HAVE_LANGINFO_H
+# include <langinfo.h>
+#endif
+#if HAVE_ICONV_H
+# include <iconv.h>
+# include <errno.h>
+#endif
+
 
 struct alloc_root alloc_string = {
   NULL,
@@ -105,7 +114,7 @@ new_string_bylen(int n)
  * create a new AT and return it.
  */
 at *
-new_string(char *s)
+new_string(const char *s)
 {
   register struct string *st;
   register at *q;
@@ -147,7 +156,7 @@ string_name(at *p)
 {
   char *s = ((struct string *) (p->Object))->start;
   char *name = string_buffer;
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   int n = strlen(s);
   mbstate_t ps;
   memset(&ps, 0, sizeof(mbstate_t));
@@ -354,8 +363,93 @@ large_string_collect(struct large_string *ls)
 }
 
 
+/* multibyte strings ---------------------------------- */
 
+#if HAVE_ICONV
+static at *
+recode(const char *s, const char *fromcode, const char *tocode)
+{
+  unsigned int ilen, olen;
+  char *obuf, *ibuf;
+  struct large_string ls;
+  char buffer[512];
+  at *ans = NIL;
 
+  iconv_t conv = iconv_open(tocode, fromcode);
+  if (conv)
+    {
+      ibuf = (char*)s;
+      ilen = strlen(s);
+      large_string_init(&ls);
+      for(;;)
+        {
+          obuf = buffer;
+          olen = sizeof(buffer);
+          iconv(conv, &ibuf, &ilen, &obuf, &olen);
+          if (obuf > buffer)
+            large_string_add(&ls, buffer, obuf-buffer);
+          if (ilen <= 0 || errno != E2BIG)
+            break;
+        }
+      iconv_close(conv);
+      ans = large_string_collect(&ls);
+      if (ilen <= 0)
+        return ans;
+    }
+  UNLOCK(ans);
+  return NIL;
+}
+#endif
+
+at* 
+str_mb_to_utf8(const char *s)
+{
+  /* best effort conversion from locale encoding to utf8 */
+#if HAVE_ICONV
+  at *ans;
+# if HAVE_NL_LANGINFO
+  if ((ans = recode(s, nl_langinfo(CODESET), "UTF-8")))
+    return ans;
+# endif
+  if ((ans = recode(s, "char", "UTF-8")))
+    return ans;
+  if ((ans = recode(s, "", "UTF-8")))
+    return ans;
+#endif
+  return new_string(s);
+}
+
+at* 
+str_utf8_to_mb(const char *s)
+{
+  /* best effort conversion from locale encoding from utf8 */
+#if HAVE_ICONV
+  at *ans;
+# if HAVE_NL_LANGINFO
+  if ((ans = recode(s, "UTF-8", nl_langinfo(CODESET))))
+    return ans;
+# endif
+  if ((ans = recode(s, "UTF-8", "char")))
+    return ans;
+  if ((ans = recode(s, "UTF-8", "")))
+    return ans;
+#endif
+  return new_string(s);
+}
+
+DX(xstr_locale_to_utf8)
+{
+  ARG_EVAL(1);
+  ASTRING(1);
+  return str_mb_to_utf8(SADD(APOINTER(1)->Object));
+}
+
+DX(xstr_utf8_to_locale)
+{
+  ARG_EVAL(1);
+  ASTRING(1);
+  return str_utf8_to_mb(SADD(APOINTER(1)->Object));
+}
 
 
 /* operations on strings ------------------------------	 */
@@ -823,7 +917,7 @@ DX(xupcase)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   {
     char buffer[MB_LEN_MAX];
     struct large_string ls;
@@ -880,7 +974,7 @@ DX(xupcase1)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   {
     char buffer[MB_LEN_MAX];
     struct large_string ls;
@@ -926,7 +1020,7 @@ DX(xdowncase)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   s = ASTRING(1);
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   {
     char buffer[MB_LEN_MAX];
     struct large_string ls;
@@ -984,7 +1078,7 @@ DX(xisprint)
   s = (unsigned char*) ASTRING(1);
   if (!s || !*s)
     return NIL;
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   {
     int n = strlen((char*)s);
     mbstate_t ps;
@@ -1094,7 +1188,7 @@ explode_bytes(char *s)
 static at *
 explode_chars(char *s)
 {
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   at *p = NIL;
   at **where = &p;
   int n = strlen(s);
@@ -1144,7 +1238,7 @@ implode_bytes(at *p)
 static at *
 implode_chars(at *p)
 {
-#if HAVE_WCHAR_T
+#if HAVE_MBRTOWC
   mbstate_t ps;
   struct large_string ls;
   memset(&ps, 0, sizeof(mbstate_t));
@@ -2034,6 +2128,8 @@ init_string(void)
   dx_define("explode-chars", xexplode_chars);
   dx_define("implode-bytes", ximplode_bytes);
   dx_define("implode-chars", ximplode_chars);
+  dx_define("locale-to-utf8", xstr_locale_to_utf8);
+  dx_define("utf8-to-locale", xstr_utf8_to_locale);
   dx_define("stringp", xstringp);
   dx_define("regex-match", xregex_match);
   dx_define("regex-extract", xregex_extract);

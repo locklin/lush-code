@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.17 2005-05-26 20:39:03 leonb Exp $
+ * $Id: io.c,v 1.17.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -232,7 +232,10 @@ char
 read_char(void)
 {
   int c = EOF;
-  if (context->input_file==stdin && prompt_string) {
+  if (context->input_string) {
+    if (*context->input_string)
+      c = *context->input_string++;
+  } else if (context->input_file==stdin && prompt_string) {
     fill_line_buffer();
     c = *line_pos++;
   } else if (context->input_file) {
@@ -297,7 +300,10 @@ char
 next_char(void)
 {
   int c = EOF;
-  if (context->input_file==stdin && prompt_string) {
+  if (context->input_string) {
+    if (*context->input_string)
+      c = *context->input_string;
+  } else if (context->input_file==stdin && prompt_string) {
     fill_line_buffer();
     c = *line_pos;
   } else if (context->input_file) {
@@ -464,7 +470,7 @@ skip_char(char *s)
   map[255] = FALSE;
   map['\r'] |= map['\n'];
   
-  if (context->input_file==stdin && prompt_string)
+  if (context->input_string || (context->input_file==stdin && prompt_string))
     {
       /* Standard implementation */
       while (map[(unsigned char)(c = next_char())])
@@ -635,7 +641,7 @@ read_word(void)
   if (c == '|') {
     *s++ = read_char();
     until((c = read_char()) == '|' || c == (char) EOF) {
-      if (iscntrl(toascii((unsigned char)c)))
+      if (isascii(c) && iscntrl(c))
 	goto errw1;
       else if (s < string_buffer + STRING_BUFFER - 1)
 	*s++ = c;
@@ -645,7 +651,7 @@ read_word(void)
   } else if (c == '\"' /*"*/) {   
     *s++ = read_char();
     until((c = read_char()) == '\"' /*"*/ || c == (char) EOF) {  
-      if (iscntrl(toascii((unsigned char)c)))
+      if (isascii(c) && iscntrl(c))
 	goto errw1;
       else if (s < string_buffer + STRING_BUFFER - 2)
 	*s++ = c;
@@ -672,11 +678,11 @@ read_word(void)
 	   (isascii((unsigned char)c) && isspace((unsigned char)c)) ||
 	   (c == (char) EOF))) {
       c = read_char();
-      if (iscntrl(toascii((unsigned char)c)))
+      if (!isascii(c) || iscntrl(c))
 	goto errw1;
       else if (s < string_buffer + STRING_BUFFER - 2) {
         if (s > string_buffer && c == '_') c = '-';
-	*s++ = tolower((unsigned char)c);
+	*s++ = tolower(c);
       } else
 	goto errw2;
     }
@@ -780,7 +786,7 @@ rl_string(register char *s)
 static at *
 rl_mchar(register char *s)
 {
-  register at *q, *answer;
+  register at *q, *p, *answer;
   at *(*sav_ptr) (at *);
 
   ifn (macrochp(s)) {
@@ -792,13 +798,13 @@ rl_mchar(register char *s)
       error("io", "internal mchar failure", NIL);
   }
   q = named(s);
-  answer = var_get(q);
+  p = var_get(q);
   sav_ptr = eval_ptr;
   eval_ptr = eval_std;
-  answer = apply(answer, NIL);
+  answer = apply(p, NIL);
   eval_ptr = sav_ptr;
   UNLOCK(q);
-
+  UNLOCK(p);
   return answer;
 }
 
@@ -848,8 +854,11 @@ rl_read(register char *s)
   }
   
   /* BINARY TOKENS */
-  if (get_char_map(s[0]) & CHAR_BINARY)
-    return bread(context->input_file, NIL);
+  if (get_char_map(s[0]) & CHAR_BINARY) {
+    if (! context->input_string)
+      return bread(context->input_file, NIL);
+    error("read", "cannot (yet) read binary tokens from a string", NIL);
+  }
   
   /* MACRO CHARS */
   if (get_char_map(s[0]) & CHAR_MCHAR)
@@ -1373,12 +1382,15 @@ convert(register char *s, register at *list, register char *end)
       mode = 0;
       if (list->flags & X_SYMBOL) {
 	for (m = n; *m; m++)
-	  if ((m>n && *m=='_') ||
-	      isupper(toascii((unsigned char)*m)) ||
-	      (get_char_map(*m) & CHAR_INTERWORD) ) {
-	    mode = 1;
-	    break;
-	  }
+	  if (!isascii((unsigned char)*m) || 
+              iscntrl((unsigned char)*m) ||
+              isupper((unsigned char)*m) ||
+              (m>n && *m=='_') ||
+              (get_char_map(*m) & CHAR_INTERWORD) ) 
+            {
+              mode = 1;
+              break;
+            }
 	if(!*n)
 	  mode = 1;
       }

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: binary.c,v 1.12 2002-07-07 02:02:59 leonb Exp $
+ * $Id: binary.c,v 1.12.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 
@@ -884,8 +884,8 @@ local_write(at *p)
         {
           /* THIS IS AN ARRAY */
           int ndim = arr->ndim;
-          if (arr->flags & STF_UNSIZED)
-            ndim = 0xFFFFFF;
+          if (arr->flags & IDF_UNSIZED)
+            ndim = -1;
           write_card8(TOK_ARRAY);
           write_card24(ndim);
           for (i=0; i<ndim; i++)

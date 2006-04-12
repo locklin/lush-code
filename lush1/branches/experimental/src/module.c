@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.74 2005-08-04 13:34:52 leonb Exp $
+ * $Id: module.c,v 1.74.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 
@@ -552,6 +552,7 @@ module_serialize(at **pp, int code)
       if (fname[0] == 0)
         {
         already:
+          free(fname);
           LOCK(m->backptr);
           *pp = m->backptr;
           UNLOCK(junk);
@@ -849,7 +850,7 @@ cleanup_module(struct module *m)
 	      end_iter_at(x);
 	    }
 	  if (n > 0)
-	    fprintf(stderr,"*** WARNING: "
+	    fprintf(stderr,"+++ Warning: "
 		    "destroyed %d instances of class %s\n", n, pname(q));
 	}
     }
@@ -864,7 +865,7 @@ cleanup_module(struct module *m)
               int n = lside_mark_unlinked(cl->classdoc);
 	      cl->classdoc = 0;
               if (n > 0)
-                fprintf(stderr,"*** WARNING: "
+                fprintf(stderr,"+++ Warning: "
                         "unlinked %d instances of compiled class %s\n", 
                         n, pname(q));
             }
@@ -875,11 +876,16 @@ cleanup_module(struct module *m)
   /* 4 --- Zap primitives defined by this module. */
   if (m->defs)
     for (p = m->defs; CONSP(p); p = p->Cdr)
-      if (CONSP(p->Car))
+      if (CONSP(p->Car) && (p->Car->Car))
         {
           at *q = p->Car->Car;
-          if (q && q->Class != &class_class)
-	    delete_at(q);
+          if (q->Class == &class_class)
+            {
+              class *cl = q->Object;
+              if (cl->goaway)
+                continue;
+            }
+          delete_at_special(q, FALSE);
         }
   UNLOCK(m->defs);
   m->defs = NIL;
@@ -1293,7 +1299,7 @@ module_load(char *filename, at *hook)
         dynlink_error(new_string(m->filename));
 # endif
 # if NSBUNDLE
-      if (nsbundle_update() < 0)
+      if (nsbundle_exec_all_but(NULL) < 0 || nsbundle_update() < 0)
         dynlink_error(new_string(m->filename));
 # endif
 #else

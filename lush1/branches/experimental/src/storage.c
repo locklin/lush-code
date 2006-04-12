@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: storage.c,v 1.13 2005-02-15 22:51:27 leonb Exp $
+ * $Id: storage.c,v 1.13.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 
@@ -464,7 +464,7 @@ storage_serialize(at **pp, int code)
     {
       st = (*pp)->Object;
       type = st->srg.type;
-      flags = st->srg.type;
+      flags = st->srg.flags;
       size = st->srg.size;
     }
   // Read/write basic info

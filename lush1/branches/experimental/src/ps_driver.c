@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: ps_driver.c,v 1.7 2004-11-22 19:54:18 leonb Exp $
+ * $Id: ps_driver.c,v 1.7.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -235,14 +235,15 @@ ps_ysize(struct window *linfo)
 
 /* set the font in a window */
 
-static void 
+static char * 
 ps_setfont(struct window *linfo, char *f)
 {
   struct M_window *info = (struct M_window*)linfo;
   int size;
   char font[128];
   char *s;
-  
+  if (!strcmp(f,"default"))
+    f = "Helvetica-11";
   begin(info);
   strncpy(font,f,126);
   s = font+strlen(f);
@@ -256,6 +257,7 @@ ps_setfont(struct window *linfo, char *f)
     s--;
   *s=0;
   fprintf(info->f,"%d /%s SF\n",size,font);
+  return f;
 }
 
 
@@ -383,7 +385,7 @@ ps_setcolor(struct window *linfo, int x)
       break;
     default:
       fprintf(info->f,"%f %f %f SC\n",
-	      (x&0xff)/256.0, (x&0xff00)/65536.0, (x&0xff0000)/16777216.0);
+              (x&0xff0000)/16777216.0, (x&0xff00)/65536.0, (x&0xff)/256.0);
       break;
     }
 }
@@ -392,7 +394,7 @@ ps_setcolor(struct window *linfo, int x)
 static int
 ps_alloccolor(struct window *linfo, double r, double g, double b)
 {
-  return (((int)(b*255)<<16) | ((int)(g*255)<<8) | (int)(r*255));
+  return COLOR_RGB(r,g,b);
 }
 
 

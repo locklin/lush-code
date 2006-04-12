@@ -24,19 +24,25 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.6 2003-06-26 16:50:29 profshadoko Exp $
+ * $Id: main.c,v 1.6.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 #include "header.h"
 
+#if HAVE_LOCALE_H
+# include <locale.h>
+#endif
 
 int lush_argc;
 char **lush_argv;
 
-
 LUSHAPI int
 main(int argc, char **argv)
 {
+  /* Setup locale */
+#if HAVE_SETLOCALE && defined(LC_ALL)
+  setlocale(LC_ALL,"");
+#endif
   /* Define quiet mode. */
   int quiet = FALSE;
   lush_argc = argc;

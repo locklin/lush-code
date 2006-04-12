@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.35 2004-08-02 22:08:32 leonb Exp $
+ * $Id: lisp_c.c,v 1.35.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 
@@ -1560,9 +1560,9 @@ lisp2c_warning(char *s, at *errctx)
 {
   if (dont_warn)
     return;
-  printf("*** lisp_c_warning %s\n", s);
+  fprintf(stderr,"+++ Warning(lisp_c): %s\n", s);
   if (errctx) 
-    printf("***    in object %s\n",pname(errctx));
+    fprintf(stderr,"+++ in object %s\n",pname(errctx));
 }
 
 

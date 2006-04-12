@@ -85,16 +85,26 @@ lisp_send(wptr info, at *method, at *args)
 }
 
 static int 
-lisp_send_maybe(wptr info, at *method, at *args)
+lisp_send_maybe_ext(wptr info, at *method, at *args, at **pret)
 {
   if (lisp_check(info, method))
     {
       at *p = send_message(NIL,info->driverdata,method,args);
-      UNLOCK(p);
+      if (pret)
+        *pret = p;
+      else
+        UNLOCK(p);
       return TRUE;
     }
   return FALSE;
 }
+
+static int 
+lisp_send_maybe(wptr info, at *method, at *args)
+{
+  return lisp_send_maybe_ext(info, method, args, NIL);
+}
+
 
 static void 
 lisp_begin(wptr info)
@@ -132,12 +142,20 @@ lisp_ysize(wptr info)
   error(NIL,"Method ysize returned something illegal",p);
 }
 
-static void
+static char *
 lisp_setfont(wptr info, char *f)
 {
   at *q = cons(new_string(f),NIL);
-  lisp_send_maybe(info,at_setfont,q);
+  at *r = NIL;
+  lisp_send_maybe_ext(info,at_setfont,q, &r);
   UNLOCK(q);
+  if (EXTERNP(r, &string_class))
+    {
+      UNLOCK(info->font);
+      info->font = r;
+      return SADD(r->Object);
+    }
+  return 0;
 }
 
 static void 
@@ -390,15 +408,18 @@ lisp_pixel_map(wptr info, uint *data, int x, int y,
 {
   if (lisp_check(info, at_pixel_map))
     {
-      at *m = lisp_make_i32matrix(data, w, h);
-      at *q = cons(NEW_NUMBER(x),
-		   cons(NEW_NUMBER(y),
-			cons(m,
-			     cons(NEW_NUMBER(sx),
-				  cons(NEW_NUMBER(sy), NIL ) ) ) ) );
-      at *p = lisp_send(info,at_pixel_map,q);
-      UNLOCK(q);
-      UNLOCK(p);
+      if (data)
+        {
+          at *m = lisp_make_i32matrix(data, w, h);
+          at *q = cons(NEW_NUMBER(x),
+                       cons(NEW_NUMBER(y),
+                            cons(m,
+                                 cons(NEW_NUMBER(sx),
+                                      cons(NEW_NUMBER(sy), NIL ) ) ) ) );
+          at *p = lisp_send(info,at_pixel_map,q);
+          UNLOCK(q);
+          UNLOCK(p);
+        }
       return TRUE;
     }
   return FALSE;
@@ -410,15 +431,18 @@ lisp_hinton_map(wptr info, uint *data, int x, int y,
 {
   if (lisp_check(info, at_hinton_map))
     {
-      at *m = lisp_make_i32matrix(data, ncol, nlin);
-      at *q = cons(NEW_NUMBER(x),
-		   cons(NEW_NUMBER(y),
-			cons(m,
-			     cons(NEW_NUMBER(len),
-				  cons(NEW_NUMBER(apart), NIL ) ) ) ) );
-      at *p = lisp_send(info,at_hinton_map,q);
-      UNLOCK(q);
-      UNLOCK(p);
+      if (data)
+        {
+          at *m = lisp_make_i32matrix(data, ncol, nlin);
+          at *q = cons(NEW_NUMBER(x),
+                       cons(NEW_NUMBER(y),
+                            cons(m,
+                                 cons(NEW_NUMBER(len),
+                                      cons(NEW_NUMBER(apart), NIL ) ) ) ) );
+          at *p = lisp_send(info,at_hinton_map,q);
+          UNLOCK(q);
+          UNLOCK(p);
+        }
       return TRUE;
     }
   return FALSE;
@@ -545,9 +569,26 @@ DX(xlisp_window)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
-  if (! EXTERNP(p, &object_class))
+  if (! (p && (p->flags & X_OOSTRUCT)))
     error(NIL,"Invalid delegate for graphic driver calls", p);
   return lisp_window(p);
+}
+
+DX(xlisp_window_delegate)
+{
+  at *p;
+  struct window *w;
+  ARG_NUMBER(1);
+  ARG_EVAL(1);
+  p = APOINTER(1);
+  if (! EXTERNP(p, &window_class))
+    error(NIL,"Not a window", p);
+  w = p->Object;
+  if (w->gdriver != &lisp_driver)
+    error(NIL,"Not a lisp-driver window",p);
+  p = w->driverdata;
+  LOCK(p);
+  return p;
 }
 
 
@@ -560,6 +601,7 @@ void
 init_lisp_driver()
 {
   dx_define("lisp-window",xlisp_window);
+  dx_define("lisp-window-delegate", xlisp_window_delegate);
  
   /* Here is the list of methods accepted by the lisp driver.
      The qualification 'mandatory, recommanded, optional' are 

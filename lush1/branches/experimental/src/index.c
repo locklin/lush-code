@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.27 2005-04-27 19:53:38 leonb Exp $
+ * $Id: index.c,v 1.27.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -1809,9 +1809,9 @@ compatible_p(void)
   warned = 1;
   if (sizeof(int)!=4) 
     {
-      print_string(" ** Warning:\n");
-      print_string(" ** Integers are not four bytes wide on this cpu\n");
-      print_string(" ** Matrix files may be non portable!\n");
+      fprintf(stderr, "+++ Warning:\n");
+      fprintf(stderr, "+++ Integers are not four bytes wide on this cpu\n");
+      fprintf(stderr, "+++ Matrix files may be non portable!\n");
     }
   else 
     {
@@ -1819,9 +1819,9 @@ compatible_p(void)
       u.b = 2.125;
       if (sizeof(flt)!=4 || u.i!=0x40080000) 
         {
-          print_string(" ** Warning:\n");
-          print_string(" ** Flt are not IEEE single precision numbers\n");
-          print_string(" ** Matrix files may be non portable!\n");
+          fprintf(stderr, "+++ Warning:\n");
+          fprintf(stderr, "+++ Flt are not IEEE single precision numbers\n");
+          fprintf(stderr, "+++ Matrix files may be non portable!\n");
         }
     }
 }

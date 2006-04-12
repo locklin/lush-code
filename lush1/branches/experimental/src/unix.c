@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.54 2005-06-03 04:10:09 leonb Exp $
+ * $Id: unix.c,v 1.54.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -964,6 +964,10 @@ console_init(void)
   rl_bind_key (']', rl_insert_close);
   rl_bind_key ('}', rl_insert_close);
 #endif 
+  /* variables */
+#if RL_READLINE_VERSION > 0x400
+  rl_variable_bind("comment-begin",";;; ");
+#endif  
 }
 
 void
@@ -1148,7 +1152,52 @@ DX(xsys)
 }
 
 
-/* time -- count time for executing commands */
+/* real-time, cpu-time -- return the number of 
+   seconds (real or cpu) executing expressions. */
+
+DY(yrealtime)
+{
+  at *q;
+  int s1, ms1, s2, ms2;
+  os_curtime(&s1, &ms1);
+  q = progn(ARG_LIST);
+  os_curtime(&s2, &ms2);
+  UNLOCK(q);
+  return NEW_NUMBER(s2 - s1 + (double) (ms2 - ms1) * 0.001);
+}
+
+DY(ycputime)
+{
+  long ticks;
+  struct tms buffer;
+  time_t oldtime, newtime;
+  at *q;
+  
+  times(&buffer);
+  oldtime = buffer.tms_utime + buffer.tms_stime;
+  q = progn(ARG_LIST);
+  times(&buffer);
+  newtime = buffer.tms_utime + buffer.tms_stime;
+  UNLOCK(q);
+  
+  ticks = -1;
+#ifdef HAVE_SYSCONF
+#ifdef _SC_CLK_TCK
+  ticks = sysconf(_SC_CLK_TCK);
+#endif
+#endif
+#ifdef CLK_TCK
+  if (ticks <= 0)
+    ticks = CLK_TCK;
+#else
+  if (ticks <= 0)
+    ticks = 60;
+#endif
+  return NEW_NUMBER((newtime - oldtime) / (double) ticks);
+}
+
+/* time -- return the number of seconds
+   spent since a constant, system dependent, date */
 
 DY(ytime)
 {
@@ -1160,32 +1209,9 @@ DY(ytime)
     } 
   else 
     {
-      long ticks;
-      struct tms buffer;
-      time_t oldtime, newtime;
-      register at *q;
-      
-      times(&buffer);
-      oldtime = buffer.tms_utime;
-      q = progn(ARG_LIST);
-      times(&buffer);
-      newtime = buffer.tms_utime;
-      UNLOCK(q);
-      
-      ticks = -1;
-#ifdef HAVE_SYSCONF
-#ifdef _SC_CLK_TCK
-      ticks = sysconf(_SC_CLK_TCK);
-#endif
-#endif
-#ifdef CLK_TCK
-      if (ticks <= 0)
-        ticks = CLK_TCK;
-#else
-      if (ticks <= 0)
-        ticks = 60;
-#endif
-      return NEW_NUMBER((newtime - oldtime) / (double)(ticks));
+      fprintf(stderr,"+++ Warning: deprecated function\n");
+      fprintf(stderr,"+++ Use <cputime> or <realtime> instead.\n");
+      return ycputime(ARG_LIST);
     }
 }
 
@@ -1770,21 +1796,21 @@ DX(xsocketopen)
   portnumber = AINTEGER(2);
   noerror = (portnumber < 0);
   portnumber = abs(portnumber);
+  hp = gethostbyname(hostname);
+  if (hp==0) 
+    error(NIL,"unknown host",APOINTER(1));
   sock1 = socket( AF_INET, SOCK_STREAM, 0);
   if (sock1<0)
     test_file_error(NULL);
   server.sin_family = AF_INET;
-  hp = gethostbyname(hostname);
-  if (hp==0) 
-    error(NIL,"unknown host",APOINTER(1));
   memcpy(&server.sin_addr, hp->h_addr, hp->h_length);
   server.sin_port = htons(portnumber);
   if (connect(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0)
     {
+      close(sock1);
       if (noerror)
-	return NIL;
-      else
-	test_file_error(NULL);
+        return NIL;
+      test_file_error(NULL);
     }
   sock2 = dup(sock1);
   ff1 = fdopen(sock1,"r");
@@ -1825,19 +1851,21 @@ DX(xsocketaccept)
       ASYMBOL(3);
     }
   portnumber = AINTEGER(1);
+  gethostname(hostname, MAXHOSTNAMELEN);
+  if (! (hp = gethostbyname(hostname)))
+    test_file_error(NULL);
   sock1 = socket( AF_INET, SOCK_STREAM, 0);
   if (sock1<0)
     test_file_error(NULL);
   server.sin_family = AF_INET;
-  gethostname(hostname, MAXHOSTNAMELEN);
-  if (! (hp = gethostbyname(hostname)))
-    test_file_error(NULL);
   memcpy(&server.sin_addr, hp->h_addr, hp->h_length);
   server.sin_port = htons(portnumber);
-  if (bind(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0)
-    return NIL;
-  if (listen(sock1, 1) < 0)
-    return NIL;
+  if ((bind(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0) ||
+      (listen(sock1, 1) < 0) )
+    {
+      close(sock1);
+      return NIL;
+    }
   if (arg_number == 1)
     {
       close(sock1);
@@ -1846,9 +1874,9 @@ DX(xsocketaccept)
   else
     {
       sock2 = accept(sock1, NULL, NULL);
+      close(sock1);
       if (sock2 < 0)
         test_file_error(NULL);
-      close(sock1);
       sock1 = dup(sock2);
       ff1 = fdopen(sock1,"r");
       ff2 = fdopen(sock2,"w");
@@ -1982,6 +2010,8 @@ init_unix(void)
   dx_define("sys", xsys);
   dy_define("bground", ybground);
   dy_define("time", ytime);
+  dy_define("realtime", yrealtime);
+  dy_define("cputime", ycputime);
   dx_define("ctime", xctime);
   dx_define("localtime", xlocaltime);
   dx_define("beep", xbeep);

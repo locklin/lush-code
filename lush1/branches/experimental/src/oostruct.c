@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.21 2005-04-25 18:57:45 leonb Exp $
+ * $Id: oostruct.c,v 1.21.2.1 2006-04-12 20:04:12 laseray Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -856,14 +856,31 @@ letslot(at *obj, at *f, at *q, int howmuch)
 
 DY(yletslot)
 {
-  at *q,*p,*ans;
+  at *q,*p,*l,*ans;
+  int howmuch = -1;
 
   ifn ( CONSP(ARG_LIST) )
     error(NIL,"some argument expected",NIL);
 
-  q = eval(ARG_LIST->Car);
+  l = ARG_LIST;
+  q = eval(l->Car);
+  if (EXTERNP(q,&class_class))
+    {
+      p = q;
+      l = l->Cdr;
+      q = eval(l->Car);
+      if (q && (q->flags & X_OOSTRUCT))
+        {
+          class *cl = q->Class;
+          while (cl && cl != p->Object)
+            cl = cl->super;
+          if (! cl)
+            error(NIL,"object is not an instance of this superclass", p);
+          howmuch = cl->slotssofar;
+        }
+    }
   p = eval(at_progn);
-  ans = letslot(q, p, ARG_LIST->Cdr, -1);
+  ans = letslot(q, p, l->Cdr, howmuch);
   UNLOCK(q);
   UNLOCK(p);
   return ans;
