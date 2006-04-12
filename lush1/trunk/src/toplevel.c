@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.36 2006-02-21 19:54:32 leonb Exp $
+ * $Id: toplevel.c,v 1.37 2006-04-12 15:43:43 leonb Exp $
  **********************************************************************/
 
 
@@ -812,21 +812,30 @@ error(char *prefix, char *text, at *suffix)
 
 DX(xerror)
 {
-  at *call, *symb, *arg;
-
+  at *call;
+  at *symb = 0;
+  at *arg = 0;
+  char *msg = 0;
+  
   ALL_ARGS_EVAL;
   switch (arg_number) {
   case 1:
-    error("",ASTRING(1),NIL);
+    msg = ASTRING(1);
+    break;
   case 2:
-    ASYMBOL(1);
-    symb=APOINTER(1);
-    arg=NIL;
+    if (ISSYMBOL(1)) {
+      symb = APOINTER(1);
+      msg = ASTRING(2);
+    } else {
+      msg = ASTRING(1);
+      arg = APOINTER(2);
+    }
     break;
   case 3: 
     ASYMBOL(1);
-    symb=APOINTER(1);
-    arg=APOINTER(3);
+    symb = APOINTER(1);
+    msg = ASTRING(2);
+    arg = APOINTER(3);
     break;
   default:
     error(NIL,"illegal arguments",NIL);
@@ -839,7 +848,7 @@ DX(xerror)
     }
     call = call->Cdr;
   }
-  error(NIL,ASTRING(2),arg);
+  error(NIL, msg, arg);
   return NIL;
 }
 
