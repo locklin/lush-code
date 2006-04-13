@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.9 2006-04-04 21:59:07 leonb Exp $
+ * $Id: svqp2.cpp,v 1.10 2006-04-13 19:04:18 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -49,8 +49,17 @@
 #ifndef GBAR
 # define GBAR 1
 #endif
+
 #ifndef HMG
 # define HMG 1
+#endif
+#if HMG
+# ifndef HMG1
+#  define HMG1 0
+# endif
+# ifndef HMG2
+#  define HMG2 1
+# endif
 #endif
 
 
@@ -578,7 +587,7 @@ SVQP2::iterate_gs1()
     {
       int imax = -1;
       int imin = -1;
-#if HMG
+#if HMG1
       double maxgain = 0;
       for (int j=0; j<l; j++)
         {
@@ -623,7 +632,7 @@ SVQP2::iterate_gs1()
           // Exit tests
           if (gmax - gmin < epsgr)
             return RESULT_FIN;
-#if HMG
+#if HMG1
         }
 #endif
       icount += 1;
@@ -679,7 +688,7 @@ SVQP2::iterate_gs2()
   for(int i=0; i<l; i++)
     mark[i] = false;
 
-#if HMG
+#if HMG2
   /* See: Tobias Glasmachers and Christian Igel. 
      Maximum-Gain Working Set Selection for Support Vector Machines. 
      Technical Report, IRINI-2005-03, Institut für Neuroinformatik, 
@@ -693,7 +702,7 @@ SVQP2::iterate_gs2()
     {
       int imax = -1;
       int imin = -1;
-#if HMG
+#if HMG2
       double maxgain = 0;
       if (flag)
         {
@@ -765,7 +774,7 @@ SVQP2::iterate_gs2()
           // Exit tests
           if (gmax - gmin < epsgr)
             return RESULT_FIN;
-#if HMG
+#if HMG2
         }
 #endif
       if (! mark[imax]) 
