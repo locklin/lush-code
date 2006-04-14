@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.6.2.1 2006-04-12 20:04:12 laseray Exp $
+ * $Id: main.c,v 1.6.2.2 2006-04-14 15:26:55 laseray Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -45,6 +45,10 @@ main(int argc, char **argv)
 #endif
   /* Define quiet mode. */
   int quiet = FALSE;
+  /* Setup locale */
+#if HAVE_SETLOCALE && defined(LC_ALL)
+  setlocale(LC_ALL,"");
+#endif
   lush_argc = argc;
   lush_argv = argv;
   if (argc>1 && argv[1][0]!='@')
