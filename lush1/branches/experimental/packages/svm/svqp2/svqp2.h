@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.5.2.2 2006-04-12 20:06:12 laseray Exp $
+ * $Id: svqp2.h,v 1.5.2.3 2006-04-18 13:15:52 laseray Exp $
  **********************************************************************/
 
 
@@ -64,9 +64,9 @@ public:
   virtual ~SVQP2();
 
   // CONSTRUCTOR:
-  // Argument 'n' is the dimension of vectors x,b,cmin,cmax.
-  // The constructor allocates all arrays.
-  // The user must then set all input variables properly.
+  // Argument N is the dimension of vectors APERM, X, B, CMIN, and CMAX.
+  // The constructor allocates all these arrays.  
+  // The caller must then set all input variables properly.
   // These are marked as 'MANDATORY INPUT' or 'OPTIONAL INPUT'
 
   SVQP2(int n);
@@ -81,7 +81,7 @@ public:
   // Matrix A is represented by several variables.
   // Element A[i][j] is accessed as
   //    (*Afunction)(Aperm[i], Aperm[j], Aclosure);
-  // Array Aperm[] initially contains 1...n but can be changed.
+  // Array APERM[] initially contains 1...n but can be changed.
   // Cache space is not wasted when the same integer appears twice.
   
   double (*Afunction)(int, int, void *);
@@ -124,19 +124,21 @@ public:
   double   maxst;
 
   // OPTIONAL INPUT: MAXCACHESIZE
-  // Size in bytes of the cache of kernel values.
+  // Maximum memory used to cache coefficients of matrix A. 
   // Default: 256M.
   
   long     maxcachesize;
 
-  // PUBLIC FUNCTION: run
-  // Runs the solver.  
-  // Returns -1 on error, >=0 otherwise.
+  // PUBLIC FUNCTION: RUN()
+  // Calling this function with the defaults arguments runs the solver.  
+  // If an error occurs, it returns -1 and sets variable ERRMSG.
+  // Otherwise the final result can be found in vector X.
+  // Section "Advanced" below discusses the arguments of this function.
   
-  int run(void);
+  int run(bool initialize=true, bool finalize=true);
 
   // OUTPUT: ERRMSG
-  // Error message
+  // Error message set when run() returns -1.
   
   const char *errmsg;
   
@@ -149,6 +151,39 @@ public:
   double   gmax;
   double   w;
 
+
+  // ADVANCED: INITIALIZE, FINALIZE, PERMUTATION
+  // Sometimes one wishes to perform several optimizations 
+  // that differ in vectors B, CMIN and CMAX, but do not
+  // modify matrix A. It would be then wasteful to recompute
+  // the cached coefficients for each optimization.
+  //
+  // - Function RUN() usually flushes the cached coefficients 
+  //   before starting the optimization. This can be avoided
+  //   by setting argument INITIALIZE to false.
+  //
+  // - Function RUN() then runs the optimizer. The optimizer 
+  //   performs complex permutations to the coefficients of 
+  //   vectors APERM, CMIN, CMAX, B and X.
+  //
+  // - Finally function RUN() rearranges the coefficients of
+  //   vectors APERM, CMIN, CMAX, B and X to restore the initial order. 
+  //   This operation destroys the cache as a side effect.
+  //   This can be avoided by setting argument FINALIZE to false.
+  //
+  // To preserve the cache between successive invocations of RUN(), 
+  // the caller needs to set both arguments INITIALIZE and FINALIZE to false.
+  // As a consequence it must deal with arbitrary permutations of
+  // the vector coefficients. This is done by relying on the contents
+  // of vector APERM, or by using function PERMUTATION.
+  //
+  // Public function PERMUTATION() takes a pointer to a preallocated 
+  // vector of N integers and fills it with the new coefficient locations.
+  // For instance, TABLE[J] indicates the new location of the coefficient 
+  // initially located at position J.
+  
+  void permutation(int *table);
+  
   // INTERNAL
 
 protected:

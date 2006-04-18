@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.9.2.3 2006-04-14 15:26:54 laseray Exp $
+ * $Id: svqp2.cpp,v 1.9.2.4 2006-04-18 13:15:52 laseray Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -367,12 +367,20 @@ SVQP2::swap(int i, int j)
     }
 }
 
+
+void
+SVQP2::permutation(int *table)
+{
+  for (int i=0; i<n; i++)
+    table[pivot[i]] = i;
+}
+
+
 void
 SVQP2::unswap(void)
 {
   vec<int> rpivot(n);
-  for (int i=0; i<n; i++)
-    rpivot[pivot[i]] = i;
+  permutation(rpivot);
   for (int i=0; i<n; i++)
     {
       int r = rpivot[i];
@@ -381,6 +389,8 @@ SVQP2::unswap(void)
       rpivot[pivot[r]] = r;
     }
 }
+
+
 
 
 
@@ -430,7 +440,7 @@ SVQP2::SVQP2(int n)
   for (int i=0; i<n; i++)
     rows[i] = 0;
   for (int i=0; i<n; i++)
-    Aperm[i] = pivot[i] = i;
+    Aperm[i] = i;
   for (int i=0; i<n; i++)
     x[i] = cmin[i] = cmax[i] = b[i] = 0;
 }
@@ -849,12 +859,17 @@ SVQP2::iterate_gs2()
 
       
 int
-SVQP2::run(void)
+SVQP2::run(bool initialize, bool finalize)
 {
   int status = 0;
   double gn = maxst;
   // prepare
-  cache_init();
+  if (initialize || ! lru)
+    {
+      cache_init();
+      for (int i=0; i<n; i++)
+        pivot[i] = i;
+    }
   vdots = 0;
   iter = 0;
   l = 0;
@@ -892,8 +907,11 @@ SVQP2::run(void)
 	break;
     }
   // finish
-  cache_fini();
-  unswap();
+  if (finalize) 
+    {
+      cache_fini();
+      unswap();
+    }
   if (status < 0)
     return status;
   if (vdots>0)
