@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: make.lsh,v 1.11 2006-02-27 15:43:46 laseray Exp $
+;;; $Id: make.lsh,v 1.12 2006-05-15 19:16:08 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -67,8 +67,7 @@
   objdir
   srcdir
   moreflags
-  rules )
-
+  rules  )
 
 #? (new LushMake [<srcdir> [<objdir>]])
 ;; Create a new <LushMake> object.
@@ -170,7 +169,7 @@
   target )
 
 
-(defmethod LushMake rebuild(target &optional done)
+(defmethod LushMake rebuild(target &optional done dryrun)
   (when (not (rules target))
     (error '==> "Do not know how to make" target) )
   (when (or (not done) (not (done target)))
@@ -182,7 +181,7 @@
           (each ((src deps))
             (let ((srctime (alist-get 'mtime (fileinfo src))))
               (when (or (rules src) (not srctime))
-                (setq flag (or flag (==> this rebuild src done))) )
+                (setq flag (or flag (==> this rebuild src done dryrun))) )
               (when (< objtime srctime)
                 (setq flag t) ) ) ) )
         (when done (done target))
@@ -207,12 +206,28 @@
             ;; Execute 
             (setq cmd (dhc-substitute-env cmd vars))
             (printf "%s\n" cmd)
-            (let ((retcode (sys cmd)))
-              (when (<> retcode 0)
-                (error 'dhc-make-o "Compiler returned error code" retcode) ) ) )
-            t ) ) ) ) )
+            (when (not dryrun)
+              (let ((retcode (sys cmd)))
+                (when (<> retcode 0)
+                  (error 'dhc-make-o "Compiler returned error code" retcode) ) ) ) )
+          t ) ) ) ) )
 
   
+#? (==> <lushmake> show [<...target...>])
+;; Show what commands need to be executed to bring 
+;; targets <...target...> up to date.
+;; Calling this method without arguments processes all
+;; targets defined by the rules.
+
+(defmethod LushMake show targets
+  (when (not targets)
+    (setq targets (htable-keys rules)) )
+  (let ((done (htable)))
+    (each ((target targets))
+      (==> this rebuild target done t) ) )
+  t )
+
+
 #? (==> <lushmake> make [<...target...>])
 ;; Makes sure that the targets listed as argument are 
 ;; up-to-date relative to their dependencies.
@@ -242,6 +257,7 @@
 ;; object file targets defined by the rules.
 
 (defmethod LushMake load targets
+  (setq dryrun ())
   (when (not targets)
     (setq targets (htable-keys rules)) )
   (let ((done (htable)))
