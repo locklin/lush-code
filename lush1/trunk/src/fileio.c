@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.25 2005-11-27 18:37:38 leonb Exp $
+ * $Id: fileio.c,v 1.26 2006-06-05 07:29:33 leonb Exp $
  **********************************************************************/
 
 
@@ -2025,7 +2025,8 @@ init_fileio(char *program_name)
   at_tl3dir = var_define("tl3dir");
   
   if (!(s=search_lushdir(program_name)))
-    abort("Cannot locate library files");
+    if (!(s=search_lushdir("lush")))
+      abort("Cannot locate library files");
 #ifdef UNIX
   unix_setenv("LUSHDIR",s);
 #endif
