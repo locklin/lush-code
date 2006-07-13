@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.35 2006-02-22 22:28:06 leonb Exp $
+ * $Id: string.c,v 1.36 2006-07-13 20:36:13 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -369,7 +369,7 @@ large_string_collect(struct large_string *ls)
 static at *
 recode(const char *s, const char *fromcode, const char *tocode)
 {
-  unsigned int ilen, olen;
+  size_t ilen, olen;
   char *obuf, *ibuf;
   struct large_string ls;
   char buffer[512];
