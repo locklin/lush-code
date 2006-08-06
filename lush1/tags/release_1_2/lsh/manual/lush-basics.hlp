@@ -1,0 +1,373 @@
+#? **** Lush Basics
+
+#? *** Lush Interpreter Basics
+
+The Lush language works on data structures referred to as Lush
+objects.  The main data structure is the ``list''. A list is an
+ordered sequence of Lush objects of any type including other lists.
+
+All other Lush objects are collectively referred to as ``atoms''.
+There are in fact many kind of atoms used for implementing various
+Lush features. For instance:
+{<ul>
+ {<li> A number represents a numerical value.}
+ {<li> A symbol is just a name used for naming other lisp objects.}
+ {<li> A string is a sequence of characters useful for storing text.}
+}
+
+A Lush program is stored as a collection of ``functions'' which are
+just another kind of Lush object. When a function is called, a
+predefined sequence of operations is applied to a couple of lisp
+objects (the function arguments) and a new lisp object is returned
+(the function result).
+
+Once Lush is started, a loop is entered which ``reads'' a Lush
+object, ``evaluates'' it and displays the resulting Lush object.  The
+evaluation of a list consists in calling the function named after the
+head of the list with the rest of the list as arguments.
+
+Examples:
+{<ul>
+ {<li> Typing <(+ 3 4)> prints <7> which is the result of calling a function
+  named <+> on the two numbers <3> and <4>.}
+ {<li> Typing <(de sqr(x) (* x x))> defines a function named <sqr> with one
+  argument referred to as symbol <x>. This functions calls the
+  multiplication function <*> with two arguments both equal to <x>. The
+  result of this call is then returned.}
+ {<li> Typing <(sqr 4)> then calls function <sqr> on the number <4>. The
+  number <16> is then returned.}
+}
+
+
+#? *** Lush Startup
+
+{<see> (dump <fname>)}
+{<see> (startup <...argv...>)}
+{<see> (toplevel)}
+At startup time, Lush locates the executable file and
+goes up in the directory hierarchy until it finds a suitable
+initialization file.
+{<ul>
+ {<li> If there is a file named <"sys/stdenv.dump">,
+       Lush loads this binary dump file (created with function <dump>) and
+       proceed with the startup procedure. }
+ {<li> If there is a file named <"sys/stdenv.lshc"> 
+       or <"sys/stdenv.lsh">, Lush loads this text or binary 
+       lisp file and proceed with the startup procedure. Lush refuses 
+       to start without one of the above files.}
+}
+
+Lush then calls the lisp function <startup> with the Lush command line
+argument as arguments. The startup function provided by the 
+standard <"stdenv"> file first searches and loads a 
+file named <".lush/lushrc.lsh"> in your home directory.
+
+{<ul>
+ {<li> If no arguments were passed to the Lush interpreter,
+       the function <startup> exits. Lush then calls
+       function <toplevel>. This function 
+       sets up some debugging code, and 
+       interactively waits for user commands.
+
+       The toplevel function continuously prints a question mark prompt,
+       reads a lisp expresion, evaluates this object and prints the result on
+       the standard output. This process is repeated until you enter an end
+       of file character. The global variable <result> always contains the last
+       result printed by <toplevel>.
+
+       If the outermost list has not been completed when you enter a carriage
+       return, toplevel prompts you for rest of the list, by displaying a few
+       spaces instead of displaying a question mark prompt.
+
+       Example: Starting Lush
+{<code>
+  % lush/bin/lush
+  LUSH Lisp Universal Shell (compiled on Aug 14 2002)
+     Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+   Includes parts of TL3
+     Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+   Includes selected parts of SN3.2:
+     Copyright (C) 1991-2001 AT&T Corp.
+  This program is free software; it is distributed under the terms
+  of the GNU Public Licence (GPL) with ABSOLUTELY NO WARRANTY.
+  Type `(helptool)' for details.
+  +[/home/yann/lush/sys/stdenv.dump]
+   [.lushrc]
+  ? 
+</code>} }
+
+ {<li> If one or more arguments are passed to the Lush interpreter,
+       the <startup> function defines a variable <argv> containing
+       the specified arguments, runs the lush file specified
+       by the first argument, and exits.  This is suitable for 
+       writing Lush scripts:
+{<code>
+  #!/bin/sh
+  exec lush "$0" "$@"
+  !#
+  (printf "Capitalizing the arguments:\n")
+  (each ((arg argv)) (printf "%s %s\n" arg (upcase arg)))
+  </code>}
+         
+       The shell </bin/sh> runs the script and starts Lush.
+       Lush then processes the script and recognize everything
+       between <#!> and <!#> as a multi-line comment. } }
+
+The startup process can be customized by specifying a magic first 
+argument on the command line.  The magic first argument starts with 
+character <"@"> followed by the name of an alternate 
+initialization file which will be loaded instead of 
+the default <"sys/stdenv.dump"> or <"sys/stdenv.lsh"> file.
+
+
+#? *** The Lush Reader
+
+At this point you can type a textual representation of certain lisp
+object.  The reader is a program which converts this textual
+representation into an actual lisp object.
+
+Lush input is composed of words separated by blank delimiters (i.e.
+<space>, <tab> or <end-of-line>) by parentheses, or macro-characters.
+Any character between a semicolon <;> and an end-of-line is considered
+as a comment and is ignored by the interpreter.  Lush also recognizes
+multi-line comments surrounded by <#!> and <!#>.
+{<ul>
+ {<li> A numerical word is interpreted as a number.}
+ {<li> A word surrounded by double quotes is considered as a string.}
+ {<li> Any other words is interpreted as a symbol name.}
+ {<li> A list is read as a sequence of words enclosed within parenthesis.
+  The empty list is written <()>.}
+}
+
+The exact syntax for lisp objects is defined later in this manual.
+Moreover, the behavior of the reader can be modified by defining
+``macro-characters''. Whenever the Lush reader reaches a macro-character,
+it executes immediately an attached function which often calls the Lisp
+reader recursively.  For instance, the character quote (') is a
+macro-character.
+
+
+#? *** The Lush Evaluator
+
+The evaluator is a program which computes a new lisp object from
+another lisp object using a very simple rule. Every kind of object is
+in fact defined by a class (yet another Lush object). The class
+defines what happens when this object is evaluated and what happens
+when a list starting with this object name is evaluated.
+
+The Lisp evaluator thus does not need to know anything about the
+evaluation behavior of all the different kinds of objects. In
+addition, it does not even need to test the nature of the objects. An
+indirect call is considerably more efficient than series of tests.
+Here is the evaluation algorithm for evaluating a Lisp object <p> :
+{<code>
+  eval(p) :
+   if (p is the empty list)
+      return the empty list
+   else if (p is a list)
+      q = eval(car p)
+      if (q is an atom)
+           call the class function 'listeval' for q with args (q,p)
+      else
+           call the default 'listeval' function with args (q,p)
+   else if (p is an atom)
+      call the class function 'selfeval' for p with arg (p)
+</code>}
+
+#? *** Errors in Lush
+{<see> Interruptions in Lush.}
+{<see> (on-error <p> <l1> ... <ln>)}
+{<see> (errname)}
+{<see> (debug-hook)}
+
+The evaluation of the lists sometimes leads to an error.  When an
+error occurs, Lush then executes the <debug-hook> function, which
+has been set on startup by function <toplevel>.
+
+This function prints an error message, followed by the top elements of
+the evaluation stack (i.e. the list whose evaluation has caused the
+error, the list whose evaluation has caused the evaluation of the list
+that causes the error, etc... ). 
+
+You are then prompted for a ``Debug toplevel''.
+{<ul>
+ {<li> If you answer <n>, or simply type a carriage return, Lush aborts any
+  current evaluation, resets the stack, and restarts the toplevel
+  function.}
+ {<li> If you answer <y>, a prompt <"[Debug] ?"> is displayed, and you are
+  able to type Lush commands for examining the current variables,
+  display the current evaluation stack or perform any useful debugging
+  tasks.  You can leave this debugging toplevel by typing <Ctrl-D> or
+  using the function <exit>.}
+}
+
+#? *** Interruptions in Lush
+
+Lush can be interrupted at any time by typing <Ctrl-C> or <Ctrl-Break>.  
+Interruption handling is essentially similar to error handling.  
+First, Lush runs the function <break-hook> function which typically has 
+been set up on startup by function <toplevel>.
+
+This function prints an error message. You are then prompted for a
+``Break toplevel" which is basically a special kind of debug
+toplevel. When you leave the break toplevel by typing <Ctrl-D> or by
+using function <exit>, you get a chance to resume the execution at the
+interruption point.
+
+Example: 
+{<code>
+? (for (i 1 100)
+     (for (j 1 100)
+        (if (= i j) (print (* i j))))))
+1
+4
+^C9
+
+*** Break
+** in:   (if (= i j) (print (* i j)))
+** from: (for (j 1 100) (if (= i j) (print (* i j))))
+** from: (for (i 1 100) (for (j 1 100) (if (= i j) (print (* i j))))) ...
+** from: (load "$stdin" "$stdout")
+** from: (let ((break-hook (lambda () (beep) (if (not (ask "Break top ...
+Break toplevel [y/n] ?y
+[Break] ? i
+= 3
+[Break] ? j
+= 4
+[Break] ? (* i j)
+= 12
+[Break] ? (where)
+Current eval stack:
+** in:   (where)
+** from: (load "$stdin" "$stdout" "[Break] ? ")
+** from: (if (not (ask "Break toplevel")) (error "Stopped") (load "$s ...
+** from: (if (= i j) (print (* i j)))
+** from: (for (j 1 100) (if (= i j) (print (* i j))))
+** from: (for (i 1 100) (for (j 1 100) (if (= i j) (print (* i j))))) ...
+** from: (load "$stdin" "$stdout")
+** from: (let ((break-hook (lambda () (beep) (if (not (ask "Break top ...
+= ()
+[Break] ? ^D
+Resume execution [y/n] ?y
+Resuming execution
+16
+25
+36
+49
+64....
+</code>}
+
+Break toplevels and debug toplevels cannot be nested. If an error or
+an interruption occurs when you are working in a break or debug
+toplevel, Lush will clean up the evaluation stack, and restart the
+toplevel function.
+
+On Unix systems, Lush is inconditionnally interrupted by typing
+<Ctrl-\>. This method however may leave Lush with inconsistent
+internal states. Use it only when <Ctrl-C> does not work for some
+reason.
+{<see> Errors in Lush.}
+{<see> (on-break <p> <l1> ... <ln>)}
+{<see> (errname)}
+{<see> (break-hook)}
+
+#? *** Leaving Lush
+
+For leaving Lush, just type <Ctrl-D> or use the <exit> function.
+Type <y> and a carriage return when the confirmation request is
+displayed.
+
+Example: 
+{<code>
+? (exit)
+= ()
+
+Really quit [y/n] ?y 
+Bye
+%
+</code>}
+
+#? *** Lush Memory Management
+
+Under normal use, Lush uses a fast reference counting garbage
+collector. Cells are allocated and deallocated on the fly. Each cell
+has a counter which contains the number of pointers that can access
+it, when the counter is equal to 0, the cell is free; when it is
+greater than 0, the cell is left for later use. The free cells are
+linked in a free list.
+
+Careful use of these counters and of the free list allow the current
+Lush to be two to three times faster than the previous versions. You
+will probably notice the lack of bothersome pauses while the garbage
+collector takes effect.
+
+If an error occurs, these counters are no longer right, and a
+classical garbage collector rebuilds the free-list and recomputes the
+counter values.  Cells are allocated in the core memory by chunks.
+Once all allocated cells are used, Lush gets a new chunk from the
+system, and appends them in its free-list. This allocation scheme is
+used by all objects in Lush.
+
+
+#? *** Lush Libraries
+
+Lush program files and libraries customarily end with 
+the <".lsh"> extension.
+
+Lush reads library files from three directories:
+{<ul>
+ {<li> <sys>: contains the system libraries without which Lush cannot run}
+ {<li> <lsh>: contains libraries that are part of the standard Lush package}
+ {<li> <packages>: contains libraries that are contributed by users, which may not
+  (necessarily) be supported to the same extent as the ones in lsh, and
+  may not (necessarily) be available to all installation/versions of Lush.}
+ {<li> <local>: is meant to contain libraries that are specific to you local
+  installation of Lush.}
+}
+
+Loading a program or a library is done with the <load> or the <libload>
+functions, as in <(libload "cmacro")>. This will search the above three
+directories for a file named <"cmacro.lsh">. In other words, the above 
+three directories constitute the default search path for finding
+programs and libraries. The search order is <local, packages, lsh, sys>.
+
+The core libraries (in the sys directory) contains <"sysenv.lsh">, which
+includes functions, macros, and macrocharacters that
+define the core language.
+
+Some files in the library directories have the extension ".lshc" instead
+of ".lsh". These are "tokenized" version of the corresponding ".lsh" file.
+Tokenized files are binary files that load faster than the equivalent ".lsh".
+
+The standard library directory tree (lsh directory and its subdirectories) 
+contains many libraries and utilities without which Lush would not be 
+nearly as much fun. These libraries can be relied on to 
+be present with all distributions of Lush on all platforms.
+
+When Lush is started, it looks for a file named <"stdenv.{dump,lshc,lsh}"> 
+in the following directories: current directory, <"local">, <"packages">,
+and <"lsh">. If it is found, it is loaded. There is a default <"stdenv.lsh">
+in the <"lsh"> directory. This default <"stdenv.lsh"> sets the search path
+to, defines a few autoload functions, and reads the <".lush/lushrc.lsh"> file
+in the home directory of the user.
+
+The standard library contains many niceties including numerous
+numerical and graphic functions and objects.
+
+A notable example is <"ogre">, an object-oriented GUI toolkit which makes 
+it very easy to build mouse driven graphical user interfaces. A couple
+lines of code are enough to setup a window with a button that calls a lush
+function when clicked upon:
+{<code>
+  ;; start ogre
+  (ogre)  
+  ;; define function that will be called when button is clicked
+  (de print-coucou (c) (printf "coucou\n")) 
+  ;; open ogre window and insert a button in it
+  (new windowobject 0 0 100 40 "hello" 
+       (new stdbutton "coucou" print-coucou))
+</code>}
+
+
+
+

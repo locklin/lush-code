@@ -1,0 +1,607 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+
+
+
+#? *** histogram
+
+;; dummy function that adds OpenCV C header files in C file
+(eval `(de dummy_histogram () ,cv-cpheader-cmd ()))
+
+;; #? * (dummy_histogram)
+;; #? * (cvcalcemd_aux)
+;; #? * (cvcalcemd <signature1> <size1> <signature2> <size2> <dims> <dist_type> <dist_func> <lower_bound> <user_param>)
+;; #? * (cvcreatehist <c_dims> <dims> <type> <ranges> <uniform>)
+;; #? * (cvsethistbinranges <hist> <ranges> <uniform>)
+;; #? * (cvmakehistheaderforarray <c_dims> <dims> <hist> <data> <ranges> <uniform>)
+;; #? * (cvreleasehist <hist>)
+;; #? * (cvclearhist <hist>)
+;; #? * (cvqueryhistvalue_1d <hist> <idx0>)
+;; #? * (cvgethistvalue_1d <hist> <idx0>)
+;; #? * (cvgetminmaxhistvalue <hist> <value_min> <value_max> <idx_min> <idx_max>)
+;; #? * (cvnormalizehist <hist> <factor>)
+;; #? * (cvthreshhist <hist> <thresh>)
+;; #? * (cvcomparehist <hist1> <hist2> <method>)
+;; #? * (cvcopyhist <src> <dst>)
+;; #? * (cvcalcbayesianprob <src> <number> <dst>)
+;; #? * (cvcalchist <img> <hist> <donotclear> <mask>)
+;; #? * (cvcalccontrasthist <img> <hist> <donotclear> <mask>)
+;; #? * (cvcalcbackproject <img> <dst> <hist>)
+;; #? * (cvcalcbackprojectpatch <img> <dst> <range> <hist> <method> <normfactor>)
+
+;; ********************************************************
+
+;;  /****************************************************************************************\
+;;  *                                  Histogram functions                                   *
+;;  \****************************************************************************************/
+
+(de cvCalcEMD_aux () 
+    (cheader "typedef float float_distance_func(const float *, const float *, void *);")
+    ())
+
+
+#? (cvCalcEMD  <signature1> <size1> <signature2> <size2> <dims> <dist_type> <dist_func> <lower_bound> <user_param>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvCalcEMD
+;;  //    Purpose:    Computes Earth mover distance(and/or lower bound of it) for given pair
+;;  //                of signatures. Ground distance can calculated as
+;;  //                L1, L2 or C distance between features' coordinate vectors or
+;;  //                using user-defined distance function.
+;;  //    Context:
+;;  //    Parameters:
+;;  //      signature1  - first signature - array of size1 *(dims + 1) elements
+;;  //      signature2  - second signature - array of size2 *(dims + 1) elements
+;;  //      dims        - number of dimensions in feature space. If 0, then
+;;  //                    signature1 and signature2 are considered as simple 1D histograms,
+;;  //                    else both signatures must look as follows:
+;;  //                   (weight_i0, x0_i0, x1_i0, ..., x(dims-1)_i0,
+;;  //                     weight_i1, x0_i1, x1_i1, ..., x(dims-1)_i1,
+;;  //                     ...
+;;  //                     weight_(size1-1),x0_(size1-1),x1_(size1-1,...,x(dims-1)_(size1-1))
+;;  //
+;;  //                     where weight_ik - weight of ik cluster.
+;;  //                     x0_ik,...,x(dims-1)_ik - coordinates of ik cluster.
+;;  //
+;;  //      dist_type   - CV_DIST_L1, CV_DIST_L2, CV_DIST_C mean one of standard metrics.
+;;  //                   ((CvDisType)-1) means user-defined distance function, which is
+;;  //                    passes two coordinate vectors and user parameter, and which returns
+;;  //                    distance between those feature points.
+;;  //      emd         - pointer to calculated emd distance
+;;  //      lower_bound - pointer to calculated lower bound.
+;;  //                    if 0, this quantity is not calculated(only emd is calculated).
+;;  //                    else if calculated lower bound is greater or equal to the value,
+;;  //                    stored at this pointer, then the true emd is not calculated, but
+;;  //                    is set to that lower_bound.
+;;  //    Returns:
+;;  //    Notes:
+;;  //F*/
+;;  OPENCVAPI  float  cvCalcEMD( const float* signature1, int size1,
+;;                               const float* signature2, int size2,
+;;                               int dims, CvDisType dist_type,
+;;                               CvDistanceFunction dist_func,
+;;                               float* lower_bound,
+;;                               void* user_param );
+
+(de cvCalcEMD (signature1 size1 signature2 size2 dims dist_type dist_func lower_bound user_param)
+    ((-gptr- "const float *") signature1 signature2)
+    ((-int-) size1 size2 dims)
+    ((-int-) dist_type)			;CvDisType is an enum integer type, with possible avalue -1,1~6
+    ((-gptr- "float_distance_func *") dist_func)
+    ((-gptr- "float *") lower_bound)
+    ((-gptr-) user_param)
+    (let ((s 0))
+      ((-float-) s)
+      #{ $s = cvCalcEMD($signature1, $size1, $signature2, $size2, $dims, $dist_type, $dist_func, $lower_bound, $user_param); #}
+      s))
+
+#? (cvCreateHist  <c_dims> <dims> <type> <ranges> <uniform>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvCreateHist
+;;  //    Purpose:    Creates histogram
+;;  //    Context:
+;;  //    Parameters:
+;;  //      c_dims - number of dimension in the histogram
+;;  //      dims   - array, containing number of bins per each dimension
+;;  //      type   - type of histogram. Now, CV_HIST_ARRAY is only supported type.
+;;  //      ranges - array of bin ranges.
+;;  //      uniform - flag; non 0 if histogram bins are evenly spaced.
+;;  //    Returns:
+;;  //      Created histogram.
+;;  //F*/
+;;  OPENCVAPI  CvHistogram*  cvCreateHist( int c_dims, int* dims,
+;;                                      CvHistType type,
+;;                                      float** ranges CV_DEFAULT(0),
+;;                                      int uniform CV_DEFAULT(1));
+
+(de cvCreateHist (c_dims dims type ranges uniform)
+    ((-int-) c_dims)
+    ((-gptr- "int *") dims)
+    ((-int-) type)			;CvHistType is an enum integer type, value: 0 or 1
+    ((-gptr- "float **") ranges)		;we'll take the address of "ranges" to call the C function
+    ((-int-) uniform)
+    (let ((s (gptr ())))
+      #{  $s = cvCreateHist($c_dims, $dims, $type, $ranges, $uniform); #}
+      s))
+
+#? (cvSetHistBinRanges  <hist> <ranges> <uniform>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvSetHistBinRanges
+;;  //    Purpose:    Sets histogram bins' ranges
+;;  //    Context:
+;;  //    Parameters:
+;;  //      ranges - array of bin ranges.
+;;  //      uniform - flag; non 0 if histogram bins are evenly spaced.
+;;  //    Returns:
+;;  //      nothing
+;;  //    Notes:      if uniform parameter is not NULL then thresh[i][0] - minimum value,
+;;  //                thresh[i][1] - maximum value of thresholds for dimension i
+;;  //F*/
+;;  OPENCVAPI void  cvSetHistBinRanges( CvHistogram* hist, float** ranges,
+;;                                   int uniform CV_DEFAULT(1));
+
+(de cvSetHistBinRanges (hist ranges uniform)
+    ((-gptr- "CvHistogram *") hist)
+    ((-gptr- "float **") ranges)
+    ((-int-) uniform)
+    #{  cvSetHistBinRanges($hist, $ranges, $uniform); #}
+    ())
+
+
+#? (cvMakeHistHeaderForArray  <c>_<dims> <dims> <hist> <data> <ranges> <uniform>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvMakeHistHeaderForArray
+;;  //    Purpose:    Initializes histogram header and sets
+;;  //                its data pointer to given value
+;;  //    Context:
+;;  //    Parameters:
+;;  //      c_dims - number of dimension in the histogram
+;;  //      dims   - array, containing number of bins per each dimension
+;;  //      hist   - pointer to histogram structure. It will have CV_HIST_ARRAY type.
+;;  //      data   - histogram data
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  void  cvMakeHistHeaderForArray( int  c_dims, int* dims, CvHistogram* hist,
+;;                                             float* data, float** ranges CV_DEFAULT(0),
+;;                                             int uniform CV_DEFAULT(1));
+
+(de cvMakeHistHeaderForArray( c_dims dims hist data ranges uniform)
+    ((-int-) c_dims)
+    ((-gptr- "int *") dims)
+    ((-gptr- "CvHistogram *") hist)
+    ((-gptr- "float *") data)
+    ((-gptr- "float **") ranges)
+    ((-int-) uniform)
+    #{  cvMakeHistHeaderForArray($c_dims, $dims, $hist, $data, $ranges, $uniform);  #}
+    ())
+
+#? (cvReleaseHist  <hist>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvReleaseHist
+;;  //    Purpose:    Releases histogram header and underlying data
+;;  //    Context:
+;;  //    Parameters:
+;;  //      hist - pointer to released histogram.
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  void  cvReleaseHist( CvHistogram** hist );
+
+(de cvReleaseHist( hist)
+    ((-gptr- "CvHistogram **") hist)
+    #{ cvReleaseHist($hist); #}
+    ())
+
+#? (cvClearHist  <hist>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvClearHist
+;;  //    Purpose:    Clears histogram(sets all bins to zero)
+;;  //    Context:
+;;  //    Parameters:
+;;  //      hist - pointer to cleared histogram.
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  void  cvClearHist( CvHistogram* hist);
+
+(de cvClearHist (hist)
+    ((-gptr- "CvHistogram *") hist)
+    #{ cvClearHist($hist); #}
+    ())
+
+#? (cvQueryHistValue_1D  <hist> <idx0>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvQueryHistValue....
+;;  //    Purpose:    Returns value or histogram bin, given its cooridinates
+;;  //    Context:
+;;  //    Parameters:
+;;  //      hist - pointer to histogram.
+;;  //      idx0 - index for the 1st dimension
+;;  //      idx1 - index for the 2nd dimension
+;;  //             ...
+;;  //      idx  - array of coordinates(for multi-dimensonal histogram)
+;;  //    Returns:
+;;  //      Value of histogram bin
+;;  //    Notes:
+;;  //      For non-array histogram function returns 0 if the specified element isn't present
+;;  //F*/
+;;  OPENCVAPI  float  cvQueryHistValue_1D( CvHistogram* hist, int idx0 );
+
+(de cvQueryHistValue_1D (hist idx0)
+    ((-gptr- "CvHistogram *") hist)
+    ((-int-) idx0)
+    (let ((s 0))
+      ((-float-) s)
+      #{  $s = cvQueryHistValue_1D($hist, $idx0); #}
+      s))
+
+#? * (cvqueryhistvalue_2d <hist> <idx0> <idx1>)
+;;.PRE
+;;  OPENCVAPI  float  cvQueryHistValue_2D( CvHistogram* hist, int idx0, int idx1 );
+(de cvQueryHistValue_2D (hist idx0 idx1)
+    ((-gptr- "CvHistogram *") hist)
+    ((-int-) idx0 idx1)
+    (let ((s 0))
+      ((-float-) s)
+      #{  $s = cvQueryHistValue_2D($hist, $idx0, $idx1); #}
+      s))
+
+#? * (cvqueryhistvalue_3d <hist> <idx0> <idx1> <idx2>)
+;;.PRE
+;;  OPENCVAPI  float  cvQueryHistValue_3D( CvHistogram* hist, int idx0, int idx1, int idx2 );
+(de cvQueryHistValue_3D (hist idx0 idx1 idx2)
+    ((-gptr- "CvHistogram *") hist)
+    ((-int-) idx0 idx1 idx2)
+    (let ((s 0))
+      ((-float-) s)
+      #{  $s = cvQueryHistValue_3D($hist, $idx0, $idx1, $idx2); #}
+      s))
+
+#? * (cvqueryhistvalue_nd <hist> <idx>)
+;;.PRE
+;;  OPENCVAPI  float  cvQueryHistValue_nD( CvHistogram* hist, int* idx );
+(de cvQueryHistValue_nD (hist idx)
+    ((-gptr- "CvHistogram *") hist)
+    ((-gptr- "int *") idx)
+    (let ((s 0))
+      ((-float-) s)
+      #{  $s = cvQueryHistValue_nD($hist, $idx); #}
+      s))
+
+
+
+#? (cvGetHistValue_1D  <hist> <idx0>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvGetHistValue....
+;;  //    Purpose:    Returns pointer to histogram bin, given its cooridinates
+;;  //    Context:
+;;  //    Parameters:
+;;  //      hist - pointer to histogram.
+;;  //      idx0 - index for the 1st dimension
+;;  //      idx1 - index for the 2nd dimension
+;;  //             ...
+;;  //      idx  - array of coordinates(for multi-dimensonal histogram).
+;;  //             must have hist->c_dims elements.
+;;  //    Returns:
+;;  //      Pointer to histogram bin
+;;  //    Notes:
+;;  //      For non-array histogram function creates a new element if it is not exists.
+;;  //F*/
+;;  OPENCVAPI  float*  cvGetHistValue_1D( CvHistogram* hist, int idx0 );
+
+(de cvGetHistValue_1D (hist idx0)
+    ((-gptr- "CvHistogram *") hist)
+    ((-int-) idx0)
+    (let ((s (gptr ())))
+      #{  $s = cvGetHistValue_1D($hist, $idx0); #}
+      s))
+
+
+#? * (cvgethistvalue_2d <hist> <idx0> <idx1>)
+;;.PRE
+;;  OPENCVAPI  float*  cvGetHistValue_2D( CvHistogram* hist, int idx0, int idx1 );
+(de cvGetHistValue_2D (hist idx0 idx1)
+    ((-gptr- "CvHistogram *") hist)
+    ((-int-) idx0 idx1)
+    (let ((s (gptr ())))
+      #{  $s = cvGetHistValue_2D($hist, $idx0, $idx1); #}
+      s))
+
+#? * (cvgethistvalue_3d <hist> <idx0> <idx1> <idx2>)
+;;.PRE
+;;  OPENCVAPI  float*  cvGetHistValue_3D( CvHistogram* hist, int idx0, int idx1, int idx2 );
+(de cvGetHistValue_3D (hist idx0 idx1 idx2)
+    ((-gptr- "CvHistogram *") hist)
+    ((-int-) idx0 idx1 idx2)
+    (let ((s (gptr ())))
+      #{  $s = cvGetHistValue_3D($hist, $idx0, $idx1, $idx2); #}
+      s))
+
+#? * (cvgethistvalue_nd <hist> <idx>)
+;;.PRE
+;;  OPENCVAPI  float*  cvGetHistValue_nD( CvHistogram* hist, int* idx );
+(de cvGetHistValue_nD (hist idx)
+    ((-gptr- "CvHistogram *") hist)
+    ((-gptr- "int *") idx)
+    (let ((s (gptr ())))
+      #{  $s = (float*)cvPtrND($hist->bins, $idx, NULL, 1, NULL); #}
+      s))
+
+
+#? (cvGetMinMaxHistValue <hist> <value_min> <value_max> <idx_min> <idx_max>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvGetMinMaxHistValue
+;;  //    Purpose:    Finds coordinates and numerical values of minimum and maximum
+;;  //                histogram bins
+;;  //    Context:
+;;  //    Parameters:
+;;  //      hist - pointer to histogram.
+;;  //      idx_min - pointer to array of coordinates for minimum.
+;;  //                if not NULL, must have hist->c_dims elements.
+;;  //      value_min - pointer to minimum value of histogram( Can be NULL).
+;;  //      idx_max - pointer to array of coordinates for maximum.
+;;  //                if not NULL, must have hist->c_dims elements.
+;;  //      value_max - pointer to maximum value of histogram( Can be NULL).
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  void  cvGetMinMaxHistValue( CvHistogram* hist,
+;;                                      float* value_min, float* value_max,
+;;                                      int* idx_min CV_DEFAULT(0), 
+;;                                      int* idx_max CV_DEFAULT(0));
+
+(de cvGetMinMaxHistValue(hist value_min value_max idx_min idx_max)
+    ((-gptr- "CvHistogram *") hist)
+    ((-gptr- "float *") value_min value_max)
+    ((-gptr- "int *") idx_min idx_max)
+    #{  cvGetMinMaxHistValue($hist, $value_min, $value_max, $idx_min, $idx_max); #}
+    ())
+
+#? (cvNormalizeHist  <hist> <factor>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:     cvNormalizeHist
+;;  //    Purpose:  Normalizes histogram(such that sum of histogram bins becomes factor)
+;;  //    Context:
+;;  //    Parameters:
+;;  //      hist - pointer to normalized histogram.
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  void  cvNormalizeHist( CvHistogram* hist, double factor );
+
+(de cvNormalizeHist (hist factor)
+    ((-gptr- "CvHistogram *") hist)
+    ((-double-) factor)
+    #{ cvNormalizeHist($hist, $factor);  #}
+    ())
+
+#? (cvThreshHist  <hist> <thresh>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:     cvThreshHist
+;;  //    Purpose:  Clears histogram bins that are below specified level
+;;  //    Context:
+;;  //    Parameters:
+;;  //      hist - pointer to histogram.
+;;  //      thresh - threshold level
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  void  cvThreshHist( CvHistogram* hist, double thresh );
+
+(de cvThreshHist (hist thresh)
+    ((-gptr- "CvHistogram *") hist)
+    ((-double-) thresh)
+    #{ cvThreshHist($hist, $thresh); #}
+    ())
+
+#? (cvCompareHist  <hist1> <hist2> <method>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:     cvCompareHist
+;;  //    Purpose:  compares two histograms using specified method
+;;  //    Context:
+;;  //    Parameters:
+;;  //      hist1 - first compared histogram.
+;;  //      hist2 - second compared histogram.
+;;  //      method - comparison method
+;;  //    Returns:
+;;  //      value, that characterizes similarity(or difference) of two histograms
+;;  //    Notes:
+;;  //F*/
+;;  OPENCVAPI  double  cvCompareHist( CvHistogram*  hist1,
+;;                                 CvHistogram*  hist2,
+;;                                 CvCompareMethod method);
+
+(de cvCompareHist (hist1 hist2 method)
+    ((-gptr- "CvHistogram *") hist1 hist2)
+    ((-int-) method)			;CvCompareMethod: enum integer, value: 0/1/2
+    (let ((s 0))
+      ((-double-) s)
+      #{ $s = cvCompareHist($hist1, $hist2, $method); #}
+      s))
+
+#? (cvCopyHist  <src> <dst>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvCopyHist
+;;  //    Purpose:    Copying one histogram to another
+;;  //    Context:
+;;  //    Parameters:
+;;  //      src - source histogram
+;;  //      dst - destination histogram
+;;  //    Returns:
+;;  //    Notes:      if second parameter is pointer to NULL(*dst == 0) then second
+;;  //                histogram will be created.
+;;  //                both histograms(if second histogram present) must be equal
+;;  //                types & sizes
+;;  //F*/
+;;  OPENCVAPI void  cvCopyHist( CvHistogram* src, CvHistogram** dst );
+
+(de cvCopyHist (src dst)
+    ((-gptr- "CvHistogram *") src)
+    ((-gptr- "CvHistogram **") dst)
+    #{ cvCopyHist($src, $dst); #}
+    ())
+
+#? (cvCalcBayesianProb   <src> <number> <dst>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvCalcBayesianProb
+;;  //    Purpose:    Calculates bayesian probabilistic histograms
+;;  //    Context:
+;;  //    Parameters:
+;;  //      src - array of source histograms
+;;  //      number - number of source/destination histograms 
+;;  //      dst - array of destination histograms
+;;  //    Returns:
+;;  //    Notes:
+;;  //F*/
+;;  OPENCVAPI void  cvCalcBayesianProb( CvHistogram** src, int number,
+;;                                    CvHistogram** dst);
+
+(de cvCalcBayesianProb ( src number dst)
+    ((-gptr- "CvHistogram **") src dst)
+    ((-int-) number)
+    #{  cvCalcBayesianProb($src, $number, $dst);  #}
+    ())
+
+#? (cvCalcHist  <img> <hist> <donotclear> <mask>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvCalcHist
+;;  //    Purpose:    Calculating histogram from array of one-channel images
+;;  //    Context:
+;;  //    Parameters:
+;;  //      img - array of single-channel images
+;;  //      hist - histogram to be calculated. It must have as many dimensions as number of
+;;  //             images in <img> array.
+;;  //      doNotClear - if not 0, the histogram is not cleared before calculations.
+;;  //      mask - optional mask that determines pixels that participate in histogram
+;;  //             accumulation.
+;;  //    Returns:
+;;  //    Notes:      if doNotClear parameter is NULL then histogram clearing before
+;;  //                calculating(all values sets to NULL)
+;;  //F*/
+;;  OPENCVAPI  void  cvCalcHist( IplImage** img, CvHistogram* hist,
+;;                            int doNotClear CV_DEFAULT(0),
+;;                            IplImage* mask CV_DEFAULT(0) );
+
+(de cvCalcHist (img hist donotclear mask)
+    ((-gptr- "IplImage *") mask)
+    ((-gptr- "IplImage **") img)
+    ((-gptr- "CvHistogram *") hist)
+    ((-int-) donotclear)
+    #{ cvCalcHist($img, $hist, $donotclear, $mask); #}
+    ())
+
+
+#? (cvCalcBackProject  <img> <dst> <hist>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvCalcBackProject
+;;  //    Purpose:    Calculates back project of histogram
+;;  //      img - array of input single-channel images
+;;  //      dst - destination single-channel image
+;;  //      hist - histogram, used for calculating back project. It must have as many
+;;  //             dimensions as the number of images in the <img> array.
+;;  //    Context:
+;;  //    Parameters:
+;;  //    Returns:
+;;  //    Notes:
+;;  //F*/
+;;  OPENCVAPI  void  cvCalcBackProject( IplImage** img, IplImage* dst,
+;;                                   CvHistogram* hist );
+
+(de cvCalcBackProject (img dst hist)
+    ((-gptr- "IplImage *") dst)
+    ((-gptr- "IplImage **") img)
+    ((-gptr- "CvHistogram *") hist)
+    #{ cvCalcBackProject($img, $dst, $hist); #}
+    ())
+
+#? (cvCalcBackProjectPatch  <img> <dst> <range> <hist> <method> <normfactor>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:       cvCalcBackProjectPatch
+;;  //    Purpose:    Calculating back project patch of histogram
+;;  //    Context:
+;;  //    Parameters:
+;;  //    Returns:
+;;  //    Notes:
+;;  //F*/
+;;  OPENCVAPI  void  cvCalcBackProjectPatch( IplImage** img, IplImage* dst, CvSize range,
+;;                                        CvHistogram* hist, CvCompareMethod method,
+;;                                        double normFactor );
+
+(de cvCalcBackProjectPatch (img dst range hist method normfactor)
+    ((-gptr- "IplImage *") dst)
+    ((-gptr- "IplImage **") img)
+    ((-gptr- "CvSize *") range)
+    ((-gptr- "CvHistogram *") hist)
+    ((-int-) method)
+    ((-double-) normfactor)
+    #{ cvCalcBackProjectPatch($img, $dst, *$range,  $hist, $method, $normfactor); #}
+    ())
+
+;; ********************************************************
+
+(dhc-make ()
+  dummy_histogram
+  cvcalcemd_aux
+  cvcalcemd
+  cvcreatehist
+  cvsethistbinranges
+  cvmakehistheaderforarray
+  cvreleasehist
+  cvclearhist
+  cvqueryhistvalue_1d
+  cvqueryhistvalue_2d
+  cvqueryhistvalue_3d
+  cvqueryhistvalue_nd
+  cvgethistvalue_1d
+  cvgethistvalue_2d
+  cvgethistvalue_3d
+  cvgethistvalue_nd
+  cvgetminmaxhistvalue
+  cvnormalizehist
+  cvthreshhist
+  cvcomparehist
+  cvcopyhist
+  cvcalcbayesianprob
+  cvcalchist
+  cvcalcbackproject
+  cvcalcbackprojectpatch
+)

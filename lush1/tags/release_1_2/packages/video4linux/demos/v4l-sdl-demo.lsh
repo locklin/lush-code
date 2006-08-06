@@ -1,0 +1,161 @@
+#? *** Demos of V4L capture and display on SDL.
+
+(libload "video4linux/v4l")
+(libload "sdl/libsdl")
+;; (libload "video/video-proc")
+
+(defvar *video-device* "/dev/video")
+(defvar *video-standard* "NTSC")
+(defvar *video-input* 1)
+
+(de v4l-sdl-demo-img-diff (a b c)
+  ((-idx3- (-ubyte-)) a b c)
+  (cidx-bloop ("i" "j" ("a" a) ("b" b) ("c" c)) 
+	      #{ register int z;
+	         z = (int)(a[0])-(int)(b[0])+128;
+	         c[0] = (z<0)?0:( (z>255)?255:z );
+	         z = (int)(a[1])-(int)(b[1])+128;
+	         c[1] = (z<0)?0:( (z>255)?255:z );
+	         z = (int)(a[2])-(int)(b[2])+128;
+	         c[2] = (z<0)?0:( (z>255)?255:z );
+	         c[3] = a[3];
+	      #}
+	      ) ())
+
+(dhc-make () v4l-sdl-demo-img-diff)
+
+#? (v4l-sdl-demo 320 240)
+;; play captured video on screen with SDL
+(de v4l-sdl-demo (swidth sheight)
+  (sdl-initialize)
+  (let* ((flags (+ @@SDL_HWSURFACE @@SDL_DOUBLEBUF))
+	 (bg (ubyte-matrix sheight swidth 4))
+	 (vdev (new v4ldevice 
+		   @*video-device* @*video-standard* @*video-input* 
+		   swidth sheight))
+	 (depth (SDL_VideoModeOK swidth sheight 32 flags)))
+    (cond 
+     ((= depth 32) (printf "32 bit mode\n"))
+     ((= depth 24) (printf "24 bit mode\n"))
+     ((= depth 16) (printf "16 bit mode\n"))
+     (t (setq depth 32) (printf "bitdepth=%d, emulating 32 bits\n" depth)))
+    (setq screen (SDL_SetVideoMode swidth sheight depth flags))
+    (let ((bgd (sdl-surface-ptr-idx bg))
+	  (x 10) (y 20) (vx 4) (vy 0) (grav 1)
+	  (stop ())
+	  (event (new sdl-event))
+	  (xyk (int-matrix 3)))
+      (SDL_SetAlpha bgd 0 255)
+      (printf "press 'q' or 'escape' to quit\n")
+      (while (not stop)
+	(==> vdev grab-into-rgba bg 255)
+	(SDL_BlitSurface bgd () screen ())
+	(SDL_flip screen)
+	(==> event get-arrows xyk)
+	(when (or (= (xyk 2) @@SDLK_ESCAPE)
+		  (= (xyk 2) @@SDLK_q))
+	  (setq stop t)))
+
+      (SDL_FreeSurface bgd))
+    (SDL_FreeSurface screen)))
+
+#? (v4l-diff-demo <width> <height>)
+;; realtime frame difference demo
+;; using v4l and SDL.
+(de v4l-diff-demo (swidth sheight)
+  (sdl-initialize)
+  (let* ((flags (+ @@SDL_HWSURFACE @@SDL_DOUBLEBUF))
+         (im0 (ubyte-matrix sheight swidth 4))
+         (im1 (ubyte-matrix sheight swidth 4))
+         (image (ubyte-matrix sheight swidth 4))
+	 (vdev (new v4ldevice 
+		   @*video-device* @*video-standard* @*video-input* 
+		   swidth sheight))
+         (depth (SDL_VideoModeOK swidth sheight 32 flags)))
+    (cond
+     ((= depth 32) (printf "32 bit mode\n"))
+     ((= depth 24) (printf "24 bit mode\n"))
+     ((= depth 16) (printf "16 bit mode\n"))
+     (t (setq depth 32) (printf "bitdepth=%d, emulating 32 bits\n" depth)))
+    (setq screen (SDL_SetVideoMode swidth sheight depth flags))
+    (let ((simage (sdl-surface-ptr-idx image))
+          (stop ())
+	  (event (new sdl-event))
+          (xyk (int-matrix 3)))
+      (SDL_SetAlpha simage 0 255)
+      (printf "press 'q' or 'escape' to quit\n")
+      (while (not stop)
+        (==> vdev grab-into-rgba im1 255)
+        (v4l-sdl-demo-img-diff im1 im0 image)
+        (let ((tt im0)) (setq im0 im1) (setq im1 tt))
+        (SDL_BlitSurface simage () screen ())
+        (SDL_flip screen)
+        (==> event get-arrows xyk)
+        (when (or (= (xyk 2) @@SDLK_ESCAPE)
+                  (= (xyk 2) @@SDLK_q))
+          (setq stop t)))
+
+      (SDL_FreeSurface bgd))
+    (SDL_FreeSurface screen)))
+
+#? (v4l-lander-demo <image-file>)
+;; play lunar lander on top of a live video.
+;; <image-file> should be a PNG image file
+;; of the spaceship. Example:
+;;.CODE
+;; (v4l-lander-demo (concat-fname lushdir "packages/sdl/demos/lem.png"))
+(de v4l-lander-demo (f)
+  (sdl-initialize)
+  (let* ((flags (+ @@SDL_HWSURFACE @@SDL_DOUBLEBUF))
+	 (image (IMG-load f))		; load sprite
+	 (swidth 640)
+	 (sheight 480)
+	 (bg (ubyte-matrix sheight swidth 3))
+	 (vdev (new v4ldevice 
+		   @*video-device* @*video-standard* @*video-input* 
+		   swidth sheight)))
+    (when (not image) (error "could not load sprite image"))
+    (SDL_WM_SetCaption f "video grabbing demo")	; set window title
+    (let* ((depth (SDL_VideoModeOK swidth sheight 32 flags)) ; see if 32 bit win is OK
+	   (imw (SDL_Surface_w image))	; get width of object image
+	   (imh (SDL_Surface_h image)))	; get height of object image
+      (cond 
+       ((= depth 32) (printf "32 bit mode\n"))
+       ((= depth 24) (printf "24 bit mode\n"))
+       ((= depth 16) (printf "16 bit mode\n"))
+       (t (setq depth 32) (printf "bitdepth=%d, emulating 32 bits\n" depth)))
+      (setq screen (SDL_SetVideoMode swidth sheight depth flags))
+      (SDL_SetAlpha image (+ @@SDL_SRCALPHA @@SDL_RLEACCEL) 255)
+      (let ((r (new-sdl-rect 0 0 imw imh)) ; allocate a new rectangle
+	    (sprite (SDL_DisplayFormatAlpha image)) 
+	    (bgd (sdl-surface-ptr-idx bg))
+	    (x 10) (y 20) (vx 4) (vy 0) (grav 1)
+	    (stop ())
+	    (event (new sdl-event))
+	    (xyk (int-matrix 3)))
+	  (SDL_SetAlpha bgd 0 255)
+	  (printf "press arrow keys to drive the ship\n")
+	  (printf "press 'q' or 'escape' to quit\n")
+	  (while (not stop)
+	       (==> vdev grab-into-rgb bg)
+	       (SDL_BlitSurface bgd () screen ())
+	       (set-sdl-rect r (int x) (int y) imw imh)
+	       (SDL_BlitSurface sprite () screen r)
+	       (SDL_flip screen)
+	       (==> event get-arrows xyk)
+	       (when (or (= (xyk 2) @@SDLK_ESCAPE)
+			 (= (xyk 2) @@SDLK_q))
+			 (setq stop t))
+	       (when (= (xyk 2) @@SDLK_p) (pause "asd"))
+	       (incr vx (* (xyk 0) 1))
+	       (incr vy (+ (* (xyk 1) 2) grav))
+	       (incr x vx) (incr y vy)
+	       (when (< x 0) (setq vx (- vx)) (setq x 0))
+	       (when (> x (- swidth 80)) (setq vx (- vx)) (setq x (- swidth 80)))
+	       (when (> y (- sheight 110)) (setq vy (* -0.95 vy)) (setq y (- sheight 110))))
+	  (SDL_FreeSurface sprite)
+	  (SDL_FreeSurface bgd)
+	  (free r))
+      (SDL_FreeSurface image)
+      (SDL_FreeSurface screen) ())))
+

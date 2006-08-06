@@ -1,0 +1,89 @@
+;; Fu Jie Huang, Dec 2002
+;; the Inventor Component Library (SoXt_) is not designed for X Window,
+;; and therefore not portable.
+;; here we show that we can use Inventor(excluding SoXt_) with GLUT.
+
+;; the Lush interface of GLUT defines a class "glutwindow"
+;; we can inherit from it, and put stuff to render the scene.
+
+(libload "opengl/glut")
+(libload "inventor/inventor")
+
+(defclass molecule-window glutwindow
+  ((-obj- (SoSeparator)) root)
+  ((-obj- (SbViewportRegion)) vp)
+  ((-obj- (SoPerspectiveCamera)) mycamera))
+ 
+(defmethod molecule-window molecule-window ()
+  (setq root  (new soseparator ()))
+  (setq vp    (new sbviewportregion ()))
+  (setq mycamera   (new soperspectivecamera ()))
+  (glut-init-display-mode @(bitor @GLUT_RGB @GLUT_DOUBLE @GLUT_DEPTH @GLUT_MULTISAMPLE))
+  (==> this create 0 0 400 400 "")
+  (==> vp setWindowSize 400 400)
+  (let ((mylight    (new sodirectionallight ())))
+    (SoDB_init)
+    (==> root ref)
+    (==> (==> mycamera getsf_position) setvalue 0.0 0.0 4.0)
+    (==> (==> mycamera getsf_heightAngle) setvalue (/ 3.14159 2.5))
+    (==> (==> mycamera getsf_nearDistance) setvalue 1.0)
+    (==> (==> mycamera getsf_farDistance) setvalue  15.0)
+
+    (==> root addchild :mycamera:p)
+    (==> root addchild :mylight:p)
+
+    (glenable @GL_DEPTH_TEST)
+    (glclearcolor 0.132 0.542 0.132 1.0)
+
+    (==> this water-scene)
+    ))
+
+(defmethod molecule-window water-scene ()
+  (let* ((waterMolecule (new SoGroup ()))
+	 (oxygen (new SoGroup ()))
+	 (redPlastic (new SoMaterial ()))
+	 (whitePlastic (new SoMaterial ()))
+	 (sphere1 (new SoSphere ()))
+	 (sphere2 (new SoSphere ()))
+	 (sphere3 (new SoSphere ()))
+	 (hydrogen1 (new SoGroup ()))
+	 (hydrogen2 (new SoGroup ()))
+	 (hydrogenXform1 (new SoTransform ()))
+	 (hydrogenXform2 (new SoTransform ()))
+	 )
+    (==> (==> redPlastic getmf_ambientColor)  setvalue 1.0 0.0 0.0)
+    (==> (==> redPlastic getmf_diffuseColor)  setvalue 1.0 0.0 0.0)
+    (==> (==> redPlastic getmf_specularColor) setvalue 0.5 0.5 0.5)
+    (==> (==> redPlastic getmf_shininess)  setvalue 0.5)
+
+    (==> (==> hydrogenXform1 getsf_scaleFactor) setvalue 0.75 0.75 0.75)
+    (==> (==> hydrogenXform1 getsf_translation) setvalue 0.0  -1.2 0.0)
+    (==> (==> hydrogenXform2 getsf_translation) setvalue 1.1852 1.3877 0.0)
+    
+    (==> (==> whitePlastic getmf_ambientColor) setvalue  1.0 1.0 1.0)
+    (==> (==> whitePlastic getmf_diffuseColor) setvalue 1.0 1.0 1.0)
+    (==> (==> whitePlastic getmf_specularColor) setvalue 0.5 0.5 0.5)
+    (==> (==> whitePlastic getmf_shininess) setvalue 0.5)
+
+    (==> waterMolecule addChild :oxygen:p)
+    (==> waterMolecule addChild :hydrogen1:p)
+    (==> waterMolecule addChild :hydrogen2:p)
+    (==> oxygen addChild :redPlastic:p)
+    (==> oxygen addChild :sphere1:p)
+    (==> hydrogen1 addChild :hydrogenXform1:p)
+    (==> hydrogen1 addChild :whitePlastic:p)
+    (==> hydrogen1 addChild :sphere2:p)
+    (==> hydrogen2 addChild :hydrogenXform2:p)
+    (==> hydrogen2 addChild :sphere3:p)
+
+    (==> root addChild :waterMolecule:p)
+    ))
+
+
+(defmethod molecule-window glut-display ( ) 
+  (let ((myrenderer (new soglrenderaction () :vp:p)))
+    (glclear @(bitor @GL_COLOR_BUFFER_BIT @GL_DEPTH_BUFFER_BIT))
+    (==>  myrenderer apply_node :root:p)
+    (glut-swap-buffers)))
+
+(setq window (new molecule-window))
