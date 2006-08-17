@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.50 2005-08-11 17:47:36 leonb Exp $
+ * $Id: dldbfd.c,v 1.51 2006-08-17 19:22:02 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -93,6 +93,13 @@
 # define dldbfd_section_rawsize(p) ((p)->rawsize ? (p)->rawsize : (p)->size)
 # define dldbfd_section_size(p) ((p)->size)
 #endif
+
+#if HAVE_BFD_HASH_TABLE_INIT_WANTS_2_ARGS
+# define my_bfd_hash_table_init(a,b,c) bfd_hash_table_init(a,b)
+#else
+# define my_bfd_hash_table_init(a,b,c) bfd_hash_table_init(a,b,c)
+#endif
+
 
 void *bfd_alloc(bfd *abfd, bfd_size_type wanted);
 unsigned int bfd_log2 (bfd_vma x);
@@ -683,7 +690,7 @@ init_global_symbol_table(void)
 {
     static int initialized = 0;
     ASSERT(!initialized);
-    bfd_hash_table_init(&global_symbol_table, init_symbol_entry);
+    my_bfd_hash_table_init(&global_symbol_table, init_symbol_entry, sizeof(symbol_entry));
     initialized = 1;
 }
 
@@ -1129,7 +1136,7 @@ mipself_init_got_info(module_entry *ent,
   /* Create GOT hash table */
   info->sgot = NULL;
   info->gotsize = 0;
-  bfd_hash_table_init(&info->got_table, mipself_init_got_entry);
+  my_bfd_hash_table_init(&info->got_table, mipself_init_got_entry, sizeof(mipself_got_entry));
   /* Identify pertinent howto information */
   info->reloc_got16 = bfd_reloc_type_lookup(ent->abfd,BFD_RELOC_MIPS_GOT16);
   info->reloc_call16 = bfd_reloc_type_lookup(ent->abfd,BFD_RELOC_MIPS_CALL16);
@@ -1511,7 +1518,7 @@ alphaelf_init_got_info(module_entry *ent,
 {
   info->sgot = NULL;
   info->gotsize = 0;
-  bfd_hash_table_init(&info->got_table, alphaelf_init_got_entry);
+  my_bfd_hash_table_init(&info->got_table, alphaelf_init_got_entry, sizeof(alphaelf_got_entry));
   info->reloc_literal = bfd_reloc_type_lookup(ent->abfd,BFD_RELOC_ALPHA_ELF_LITERAL);
   info->reloc_64 = bfd_reloc_type_lookup(ent->abfd,BFD_RELOC_64);
 }
@@ -2722,7 +2729,7 @@ link_archive_members(module_entry *module)
     chain_of_bfd *chain;
 
     /* Initialize archive symbol table */
-    if (! bfd_hash_table_init(&archive_map, init_archive_entry))
+    if (! my_bfd_hash_table_init(&archive_map, init_archive_entry, sizeof(archive_entry)))
         THROW(bfd_errmsg(bfd_error_no_memory));        
     cookie.armap = &archive_map;
     cookie.armod = module;
