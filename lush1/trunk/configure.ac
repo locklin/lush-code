@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.49 2006-02-22 22:28:04 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.50 2006-08-17 19:17:13 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -190,6 +190,18 @@ if test x$has_bfd = xyes ; then
 		fi
 	    fi
 	fi
+    fi
+    if test x$okay_bfd = xyes ; then
+	AC_MSG_CHECKING([whether bfd_hash_table_init wants two arguments])
+        AC_TRY_COMPILE([#include "bfd.h"],
+                       [struct bfd_hash_table t; bfd_hash_table_init(&t,(void*)0);],
+                       [bfd_hash_init_2_args=yes],
+                       [bfd_hash_init_2_args=no])
+        AC_MSG_RESULT($bfd_hash_init_2_args)
+        if test x$bfd_hash_init_2_args = xyes ; then
+            AC_DEFINE(HAVE_BFD_HASH_TABLE_INIT_WANTS_2_ARGS,1,
+                      [Define if bfd_hash_table_init() takes two arguments])
+        fi
     fi
     if test x$okay_bfd = xno ; then
 	has_bfd=no
