@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.8 2006-04-12 22:51:39 leonb Exp $
+ * $Id: main.c,v 1.9 2006-08-19 11:40:49 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -44,6 +44,7 @@ main(int argc, char **argv)
   /* Setup locale */
 #if HAVE_SETLOCALE && defined(LC_ALL)
   setlocale(LC_ALL,"");
+  setlocale(LC_NUMERIC,"C");
 #endif
   lush_argc = argc;
   lush_argv = argv;
