@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.51 2006-08-17 19:22:02 leonb Exp $
+ * $Id: dldbfd.c,v 1.52 2006-09-05 22:12:43 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2927,6 +2927,17 @@ define_symbol_of_main_program(const char *exec)
 
     /* Read symbols of main program */
     abfd = bfd_openr(exec,"default");
+#if defined(__CYGWIN32__) || defined(WIN32)
+    if (! abfd)
+      {
+        char *l = malloc(strlen(exec)+8);
+        ASSERT(l);
+        strcpy(l, exec);
+        strcat(l, ".exe");
+        abfd = bfd_openr(l, "default");
+        free(l);
+      }
+#endif
     TRY
     {
         ASSERT_BFD(abfd);
