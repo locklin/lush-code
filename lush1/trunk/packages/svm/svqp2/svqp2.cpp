@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.11 2006-04-18 00:04:03 leonb Exp $
+ * $Id: svqp2.cpp,v 1.12 2006-09-29 15:02:14 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -823,7 +823,7 @@ SVQP2::iterate_gs2()
 	    }
 	}
       else if (curvature + epskt < 0)
-	return error("Function is not convex (negative curvature)");
+	return error("Function is not concave (curvature sign is incorrect)");
       // update x and g
       x[imax] += step;
       x[imin] -= step;
