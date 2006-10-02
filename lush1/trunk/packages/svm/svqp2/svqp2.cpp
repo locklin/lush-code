@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.13 2006-10-02 12:57:24 leonb Exp $
+ * $Id: svqp2.cpp,v 1.14 2006-10-02 12:58:08 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -343,6 +343,9 @@ SVQP2::getrow(int i, int len, bool hot)
 {
   Arow *row = rows[i];
   int osz = row->sz;
+#if KSTATS
+  SVQP2::kreqs += len;
+#endif
   if (osz >= len)
     {
       if (hot)
@@ -353,7 +356,6 @@ SVQP2::getrow(int i, int len, bool hot)
   float *d = row->d;
   int ai = Aperm[i];
 #if KSTATS
-  SVQP2::kreqs += len;
   SVQP2::kcalcs += len - osz;
 #endif  
   for (int j=osz; j<len; j++)
