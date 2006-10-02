@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.h,v 1.6 2006-04-18 00:04:03 leonb Exp $
+ * $Id: svqp2.h,v 1.7 2006-10-02 12:55:50 leonb Exp $
  **********************************************************************/
 
 
@@ -185,7 +185,12 @@ public:
   void permutation(int *table);
   
   // INTERNAL
-
+  
+#if KSTATS
+  static long long kcalcs;
+  static long long kreqs;
+#endif
+  
 protected:
   int      iter;		// total iterations
   int      l;                   // Active set size
