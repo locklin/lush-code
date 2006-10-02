@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: vector.h,v 1.3 2006-01-25 15:15:25 leonb Exp $
+ * $Id: vector.h,v 1.4 2006-10-02 12:24:38 leonb Exp $
  **********************************************************************/
 
 #ifndef VECTOR_H
@@ -33,7 +33,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#ifdef __cplusplus__
+#ifdef __cplusplus
 extern "C" { 
 #if 0
 }
@@ -105,7 +105,7 @@ double lasvm_sparsevector_dot_product(lasvm_sparsevector_t *v1,
    for(p=v->pairs; p->index>=0; p++)
 
 
-#ifdef __cplusplus__
+#ifdef __cplusplus
 }
 #endif
 #endif
