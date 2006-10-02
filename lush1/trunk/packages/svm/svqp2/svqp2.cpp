@@ -26,7 +26,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: svqp2.cpp,v 1.12 2006-09-29 15:02:14 leonb Exp $
+ * $Id: svqp2.cpp,v 1.13 2006-10-02 12:57:24 leonb Exp $
  **********************************************************************/
 
 //////////////////////////////////////
@@ -38,8 +38,6 @@
 ///
 /////////////////////////////////////
 
-
-#include "svqp2.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -62,6 +60,21 @@
 # endif
 #endif
 
+#ifndef SHRINK
+# define SHRINK 1
+#endif
+
+#ifndef KSTATS
+# define KSTATS 0
+#endif
+
+#include "svqp2.h"
+
+
+#if KSTATS
+long long SVQP2::kcalcs = 0;
+long long SVQP2::kreqs = 0;
+#endif
 
 // --------- utilities
 
@@ -243,6 +256,7 @@ SVQP2::cache_init()
 	  p = new Arow(ai);
 #if HMG
           p->diag = (*Afunction)(ai, ai, Aclosure);
+          SVQP2::kcalcs += 1;
 #endif
 	  p->next = c[h];
 	  c[h] = p;
@@ -338,6 +352,10 @@ SVQP2::getrow(int i, int len, bool hot)
   curcachesize += row->resize(len);
   float *d = row->d;
   int ai = Aperm[i];
+#if KSTATS
+  SVQP2::kreqs += len;
+  SVQP2::kcalcs += len - osz;
+#endif  
   for (int j=osz; j<len; j++)
     d[j] = (*Afunction)(ai, Aperm[j], Aclosure);
   if (hot)
@@ -895,7 +913,9 @@ SVQP2::run(bool initialize, bool finalize)
 	    break;
 	  // shrink
 	  int p = l;
+#if SHRINK
           shrink();
+#endif
           // display
 	  gn = max(0.0, gmax-gmin);
           if (l < p)
