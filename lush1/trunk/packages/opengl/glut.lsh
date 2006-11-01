@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: glut.lsh,v 1.17 2005-05-09 01:21:57 leonb Exp $
+;;; $Id: glut.lsh,v 1.18 2006-11-01 01:10:29 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -267,6 +267,7 @@
          } while ($ms < 0);
         }
       #endif
+       msec = 0;
      }#}
     ms ) )
 
@@ -289,7 +290,7 @@
        # ifdef GLUT_CONNECTION
            cn = glutGet(GLUT_CONNECTION);
        # else
-           cn = ConnectionNumber(fgDisplay.dpy);
+           cn = ConnectionNumber(pFgDisplay->dpy);
        # endif
        #else
            cn = ConnectionNumber(__glutDisplay);
@@ -314,6 +315,7 @@
        #else
          $flag = !! __glutDisplay;
        #endif
+         /**/
     #}
     (when (not flag)
       (error "Glut is not initialized") )
@@ -322,16 +324,10 @@
 (de glutint-font(glutfont)
   ((-int-) glutfont)
   (let ((fptr (to-gptr ())))
-    #{ switch($glutfont) {
-        case 0: $fptr = (&glutBitmap9By15); break;
-        case 1: $fptr = (&glutBitmap8By13); break;
-        case 2: $fptr = (&glutBitmapTimesRoman10); break;
-        case 3: $fptr = (&glutBitmapTimesRoman24); break;
-        case 4: $fptr = (&glutBitmapHelvetica10); break;
-        case 5: $fptr = (&glutBitmapHelvetica12); break;
-        case 6: $fptr = (&glutBitmapHelvetica18); break;
-        default: run_time_error("Unknown glut font"); break;
-       } #}
+    #{ if ($glutfont<0 || $glutfont>6)
+         run_time_error("Unknown glut font");
+       $fptr = glutFonts[$glutfont];
+    #}
     fptr ) )
 
 
@@ -572,7 +568,7 @@
 (de glut-idle-func(func)
   ((-gptr-) func)
   (error "Calling glutIdleFunc() from Lush is forbidden")
-  func )
+  () )
 
 (de glut-timer-func(millis func value)
   ((-int-) millis value)
@@ -989,7 +985,8 @@
           ;; Helpers
           #{
              #ifdef FREEGLUT
-               extern struct { Display *dpy; /*...*/ } fgDisplay;
+               extern struct fgdisplay { Display *dpy; /*...*/ } fgDisplay;
+               static struct fgdisplay * volatile pFgDisplay = &fgDisplay;
              #else
                jmp_buf glut_event_jmp;
                void glut_idle_jmp(void) { longjmp(glut_event_jmp, 1); }
@@ -1001,6 +998,10 @@
              #endif
              static at *glhandlers = 0;
              static at *glhandle = 0;
+             static void * volatile glutFonts[7] = { 
+                &glutBitmap9By15, &glutBitmap8By13, &glutBitmapTimesRoman10,
+                &glutBitmapTimesRoman24, &glutBitmapHelvetica10,
+                &glutBitmapHelvetica12, &glutBitmapHelvetica18 };
           #}
           ;; Utilities
           glutint-poll glutint-init glutint-check glutint-font
