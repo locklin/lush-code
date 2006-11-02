@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.53 2006-11-01 00:38:00 leonb Exp $
+ * $Id: dldbfd.c,v 1.54 2006-11-02 16:46:09 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2293,10 +2293,7 @@ apply_relocations(module_entry *module, int externalp)
 		      bfd_byte *data = vmaptr(p->vma) + reloc->address;
 #ifdef __x86_64__
 		      bfd_byte opcode = data[-1];
-		      if ( (opcode==0xe8) || 
-                           (opcode==0xe9) ||
-                           ((opcode&0xf8)==0xb8) ||
-                           ((opcode&0xf8)==0xc0 && (data[-2]==0xc7)) )
+		      if ((opcode==0xe8) || (opcode==0xe9))
 			{
 			  stub = dld_allocate(2*sizeof(void*), 1);
 			  stub[0] = vmaptr(0x0225ff);
@@ -2304,7 +2301,18 @@ apply_relocations(module_entry *module, int externalp)
 			}
                       else
                         {
-                          printf("Panic: x86_64 relocation overflow\n");
+                          fprintf(stderr,
+                                  "dldbfd: x86_64 relocation overflow\n"
+                                  "  This happens when accessing data variables\n"
+                                  "  located in a shared object loaded via dlopen\n"
+                                  "  Instead of\n"
+                                  "     extern int remotevar;\n"
+                                  "     if (remotevar = 15) ....\n"
+                                  "  You can do:\n"
+                                  "     extern int remotevar;\n"
+                                  "     int * volatile premotevar = &remotevar\n"
+                                  "     if (*premotevar = 15) ....\n"
+                                  );
                         }
 #endif
 		      if (stub)
