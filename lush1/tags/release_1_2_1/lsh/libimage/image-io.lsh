@@ -1,0 +1,163 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: image-io.lsh,v 1.9 2006-02-27 15:43:47 laseray Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Reading/Writing Image Files to/from IDX
+;; Functions to read/write image files into/from
+;; an IDX. Image files can be in any format that
+;; ImageMagick's convert command can handle.
+;; The type of the input image is determined
+;; automatically. 
+
+(libload "libc/constants")
+(libload "libimage/pnm")
+
+;; configure
+(defvar *convert-cmd* (reading "| which convert" (read-string)))
+
+(when (not (filep @@*convert-cmd*)) 
+  (printf "cannot find the convert command\n")
+  (printf "please install ImageMagick\n")
+  (error "could not find convert"))
+
+
+#? (image-read-rgb <f>)
+;; read an image file (in any format), and return
+;; an rgbimage with the image in it
+;; (IDX3 of ubytes with last dimension=3).
+;; Accepted format are whatever ImageMagick's convert
+;; command can convert to PPM.
+;; The type of the input image is determined
+;; automatically. In case it is not, the the type
+;; can be prepended to the filename with a colon.
+;; Command line options prepended to the argument
+;; are passed to convert.
+;;.P
+;; Example:
+;;.CODE
+;; (setq img (image-read-rgb "myimage.png"))
+;; (setq img (image-read-rgb "TIFF:myimage.dunno"))
+;; (setq img (image-read-rgb "-geometry 50x50% myimage.jpg"))
+(de image-read-rgb (s)
+  ((-str-) s)
+  (let ((f (popen (sprintf "%s %s PPM:-" @@*convert-cmd* s) "r")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (prog1 (pnm-fread-rgb f) (pclose f))))
+
+#? (image-read-rgba <f>)
+;; read an image file (in any format), and return
+;; an rgbaimage with the image in it
+;; (IDX3 of ubytes with last dimension=4).
+;; The alpha channel is filled if the image being read has one.
+;; An alpha value of 0 means opaque and 255 means fully transparent
+;; (this is backward to many conventions in other places in the
+;; Lush library).
+;; Accepted format are whatever ImageMagick's convert
+;; command can convert to PPM.
+;; The type of the input image is determined
+;; automatically. In case it is not, the the type
+;; can be prepended to the filename with a colon
+;; Command line options prepended to the argument
+;; are passed to convert.
+;;.P
+;; Example:
+;;.CODE
+;; (setq img (image-read-rgba "-geometry 50x50% myimage.png"))
+;; (setq img (image-read-rgba "-geometry 50x50% PNG:myimage"))
+(de image-read-rgba (s)
+  ((-str-) s)
+  (let ((f (popen (sprintf "%s %s PPM:-" @@*convert-cmd* s) "r")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (let ((r (pnm-fread-rgba f)))
+      (pclose f)
+      (setq f (popen (sprintf "%s -channel Matte %s PGM:-"
+                              @@*convert-cmd* s) "r"))
+      (when (not f) (error "couldn't open alpha channel pipe file"))
+      (pnm-fread-into-ubim f (select r 2 3))
+      (pclose f) r)))
+
+
+#? (image-read-ubim <f>)
+;; read an image file (in any format), and return
+;; a ubimage with the image in it (IDX2 of ubytes)
+;; Accepted format are whatever ImageMagick's convert
+;; command can convert to PPM. Conversion to gryscale
+;; is performed by Lush, since convert doesn't convert
+;; to PGM.
+(de image-read-ubim (s)
+  ((-str-) s)
+  (let* ((f (popen (sprintf "%s %s PPM:-" @@*convert-cmd* s) "r")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (prog1 (pnm-fread-ubim f) (pclose f))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (image-write-rgb <f> <im>)
+;; Writes an image stored in an IDX3 of ubytes into
+;; an image file (in any format).
+;; The type of the output image file is determined
+;; by a string prepended to the filename with a colon.
+;; Command line options prepended to the argument
+;; are passed to the convert command
+;;.P
+;; Example:
+;;.CODE
+;;  (image-write-rgb "TIFF:myimage.tiff" m))
+(de image-write-rgb (s im)
+    ((-str-) s)
+    ((-idx3- (-ubyte-)) im)
+  (let ((f (popen (sprintf "%s PPM:- %s" @@*convert-cmd* s) "w")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (prog1 (ppm-fwrite-rgb f im) (pclose f))))
+
+#? (image-write-ubim <f> <im>)
+;; Writes an image stored in an IDX2 of ubytes into
+;; an grayscale image file (in any format).
+;; The type of the output image file is determined
+;; by a string prepended to the filename with a colon.
+;; Command line options prepended to the argument
+;; are passed to the convert command
+;;.P
+;; Example:
+;;.CODE
+;;  (image-write-ubim "myimage.png"))
+(de image-write-ubim (s im)
+    ((-str-) s)
+    ((-idx2- (-ubyte-)) im)
+  (let ((f (popen (sprintf "%s PGM:- %s" @@*convert-cmd* s) "w")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (prog1 (pgm-fwrite-ubim f im) (pclose f))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make ()
+	  image-read-rgb
+	  image-read-rgba
+	  image-read-ubim
+	  image-write-rgb
+	  image-write-ubim)
+

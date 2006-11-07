@@ -1,0 +1,89 @@
+#? **** MPI: Message Passing Interface 1.1
+{<author> Fu Jie Huang}
+
+This package enables Lush to utilize the MPI library. It's built on <MPI standard 1.1>, and tested on RedHat 9, which comes with an MPI implementation named <LAM/MPI> version 6.5.8-4.
+
+More information about the MPI Standard is available at {<hlink> http://www-unix.mcs.anl.gov/mpi/mpi-standard/mpi-report-1.1/mpi-report.html}. Information about the LAM/MPI implementation is available at {<hlink> http://www.lam-mpi.org}.
+
+#? *** Installation
+
+The following steps need to be carried out on all the computers that will participate the parallel computing.
+
+First, you need to install the LAM/MPI (or any other MPI implementation). And start the MPI demon, e.g. under LAM:
+{<code>
+	lamboot -v hostfile
+</code>}
+
+Then, configure and re-compile Lush with MPI support, on all the MPI hosts:
+{<code>
+	($LUSHDIR)/configure --with-mpi
+	($LUSHDIR)/make
+</code>}
+
+Test the Lush/MPI by:
+{<code>
+	cd ($LUSHDIR)/packages/mpi/demos
+	mpirun -np ($NUM_NODES) ($LUSHDIR)/bin/lush test00.lsh
+</code>}
+and you should see greetings from computers participating the computing.
+
+Currently, you cannot run Lush/MPI in interactive mode. You need only run a written script.
+
+#? *** Programming
+
+Let's look at the <demos/test00.lsh> script:
+{<code>
+(libload "mpi/mpi")
+(mpi-init)
+(setq a (int-matrix))
+(mpi-comm-rank MPI_COMM_WORLD  (idx-ptr a))
+(if (= 1 (a))
+    (progn 
+      (printf "hello from 1.\n"))
+  (printf "hello from 0.\n"))
+(mpi-finalize)
+</code>}
+
+To use the MPI, first load in the Lush/MPI interface, as shown in the first line. Then initialize and finalize the MPI library as shown in the second and the last line.
+
+The Lush/MPI interface follows strictly the MPI standard. For example, the <MPI_Comm_rank> function in the MPI standard is prototyped as:
+{<code>  
+int MPI_Comm_rank(MPI_Comm comm, int *rank); 
+</code>}
+
+And its Lush interface is defined as:
+{<code> 
+(de MPI_Comm_rank  (comm rank) 
+  ((MPI_Comm) comm)
+  ((-gptr- "int *") rank) 
+  (int  #{ MPI_Comm_rank($comm, $rank) #}))
+</code>}
+
+Therefore, in the script, you can write:
+{<code> 
+(setq a (int-matrix))
+(mpi-comm-rank MPI_COMM_WORLD  (idx-ptr a))	
+</code>}
+where {<i> MPI_COMM_WORLD} is a constant of type {<i> MPI_Comm}, and {<i> (idx-ptr a)} returns an integer pointer.
+
+#? *** Different MPI implementations
+There are numerous MPI implementations, commercial or free. This Lush interface is tailored for {<b> LAM/MPI}, which is the most readily available implementation on RedHat.
+
+If you prefer to use other MPI implementation,say, {<b> MPICH}, you need to modify the <mpi-config.lsh> file. Mostly, the job is to modify the implementation-dependent types:
+{<code>
+	MPI_Datatype   MPI_Comm  MPI_Aint  MPI_Op  MPI_Group
+	MPI_Errhandler  MPI_Request
+</code>}
+
+For example, Change:
+{<code>
+	(defvar MPI_Datatype -gptr-)
+	(defvar to-mpi-datatype to-gptr)
+</code>}
+to:
+{<code>
+	(defvar MPI_Datatype -int-)
+	(defvar to-mpi-datatype to-int)
+</code>}
+since in {<b> MPICH}, {<i> MPI_Datatype} is typedef-ed as integer, instead of a generic pointer.
+

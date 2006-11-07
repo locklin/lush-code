@@ -1,0 +1,360 @@
+
+(libload "video4linux/v4l")
+(libload "sdl/libsdl")
+(libload "libidx/idx-ubyte")
+(libload "libidx/idx-convol")
+(libload "libimage/rgbaimage")
+(libload "libimage/morpho")
+(libload "libimage/image-io")
+
+
+(defvar *video-device* "/dev/video")
+(defvar  *video-standard* "NTSC")
+(defvar  *video-input* 1)
+
+(sdl-initialize)
+
+
+#? *** (effect-sdl-demo <eff>)
+;; This starts a real-time video effect demo that uses
+;; video4linux for grabbing video and SDL for displaying.
+;; The <eff> parameter must be an instance of a
+;; subclass of <effect>. Several subclasses are provided
+;; including edge detection, laplacian, image difference, etc...
+;;.P
+;; This function uses three global variables to configure
+;; the video grabbing. Their names are: <*video-device*> 
+;; <*video-standard*> and <*video-input*>, and their default
+;; values are respectively "/dev/video", "NTSC", 1 
+;; (1 is the composite input on most TV cards). The default
+;; values can be changed by <defvar>ing those variables to
+;; the desired value before loading the present file.
+;; Example:
+;;.CODE
+;; (effect-sdl-demo (new effect-trail 320 240 20))
+;; (effect-sdl-demo (new effect-edge 320 240))
+;;.P
+
+(de effect-sdl-demo (ef)
+  (let* ((si (==> ef height))
+	 (sj (==> ef width))
+	 ;; open sdlidx-screen (SDL screen where the back buffer is an idx)
+	 (screen
+	  (new sdlidx-screen (ubyte-matrix si sj 4) "Video Effects"))
+	 ;; open video device
+	 (vin (new v4ldevice 
+		   @*video-device* @*video-standard* @*video-input* sj si)))
+    ;; call main loop
+    (effect-demo-loop vin ef screen)))
+
+
+;; this is the main loop (compiled for efficiency)
+(de effect-demo-loop (vin eff screen)
+  ((-obj- (v4ldevice)) vin)
+  ((-obj- (effect)) eff)
+  ((-obj- (sdlidx-screen)) screen)
+  (cpheader "#include <SDL/SDL.h>")	; we need this for the types
+  (let* ((out :screen:image)		; get screen back buffer
+	 (m (ubyte-matrix (idx-dim out 0) (idx-dim out 1) 4))
+	 (event (new sdl-event))
+	 (xyk (int-matrix 3))
+	 (stop ()))
+    (==> vin grab-into-rgba m 255)	; grab the first image
+    (while (not stop)			; loop
+      (==> vin grab-into-rgba m 255)	; grab image
+      (==> eff fprop m out)		; apply effect
+      (==> screen flip)			; copy back buffer to screen
+      (==> event get-arrows xyk)	; poll keyboard
+      (when (or (= (xyk 2) @@SDLK_ESCAPE) ; did someone press escape
+		(= (xyk 2) @@SDLK_q))	; did someone press q
+	(setq stop t)))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Video Effects
+;; Video effect classes are subclasses of the <effect> class.
+;; Video effects are used by calling the <fprop> method which takes
+;; one input (RGBA image) and one output (RGBA image).
+;; The effect is applied to the input image and written
+;; into the output image. The input and output must be
+;; <height>x<width>x4 idx3 of ubytes. If used with effect-sdl-demo
+;; The alpha channel of the output image will determine the blending of 
+;; the output image with the previously displayed image.
+;; Set all the alphas to 255 for full opacity.
+;; Effect subclasses must have a constructor that takes at least a width
+;; and height parameter (and possibly other initialization parameters).
+;; They must have width and height methods that return the width
+;; and height.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass effect object 
+  ((-int-) width)
+  ((-int-) height))
+
+#? (new effect <width> <height>)
+;; noop effect: simply copies the input to the output unaffected
+(defmethod effect effect (w h) 
+  ((-int-) w h)
+  (setq width w) (setq height h))
+(defmethod effect width () width)
+(defmethod effect height () height)
+(defmethod effect fprop (in out)
+  ((-idx3- (-ubyte-)) in out) 
+  (idx-copy in out) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; simple edge detection
+(defclass effect-edge effect
+  ((-idx2- (-float-)) fin)
+  ((-idx2- (-float-)) fout)
+  ((-float-) bias)
+  ((-idx2- (-float-)) kernel))
+
+#? (new effect-edge <width> <height>)
+;; performs a simple edge detection by applying
+;; an on-center/off-surround convolution filter 
+;; and rectifying, amplifying and saturating the result.
+(defmethod effect-edge effect-edge (w h)
+  ((-int-) w h)
+  (setq width w) (setq height h)
+  (setq fin (float-matrix h w))
+  (setq kernel (float-matrix 5 5))
+  (idx-dotm0 
+   [[-1 -2 -4 -2 -1]
+   [-2  2  4  2 -2]
+   [-4  4 12  4 -4]
+   [-2  2  4  2 -2]
+   [-1 -2 -4 -2 -1]]
+   ((float-matrix) 0.4) kernel)
+  (setq fout (float-matrix (1+ (- h (idx-dim kernel 0)))
+		     (1+ (- w (idx-dim kernel 1)))))
+  (setq bias -40))
+
+(defmethod effect-edge fprop (in out)
+  ((-idx3- (-ubyte-)) in out)
+  (let* ((oh (idx-dim fout 0))
+	 (ow (idx-dim fout 1)))
+    ;; compute luminance
+    (cidx-bloop ("i" "j" ("pin" in) ("pout" fin))
+      #{ *pout = 0.299 * (flt)(pin[0]) + 
+                 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2]); #})
+    (idx-f2convol fin kernel fout)
+    (let ((z (narrow (narrow out 0 oh 2) 1 ow 2)))
+      ;; rectify, amplify, invert, saturate
+      (cidx-bloop ("i" "j" ("pin" fout) ("pout" z))
+	#{{ register float zin;
+	    register unsigned char zout;
+ 	    zin = 255 - (fabs(*pin) + $bias);
+            zout = (unsigned char)( (zin > 0)? ( (zin < 256) ? zin : 255 ) : 0);
+  	    pout[0] = pout[1] = pout[2] = zout; 
+	    pout[3] = 255;
+          } #}) ())))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; leaves a trail: simply sets the alpha to some non-opaqu value
+(defclass effect-trail effect 
+  ((-int-) alpha))
+
+#? (new effect-trail <width> <height> <hl>)
+;; simply change the transparency to 
+;; create a "trail" effect. <hl> is the "half life" 
+;; of the trail: 0 leaves no trail, 1 leaves a trail 
+;; that decays by half at each frame, and 20 looks funny.
+;; Example:
+;;.CODE
+;; (new effect-diff 320 240 20)
+(defmethod effect-trail effect-trail (w h a) 
+  ((-int-) w h)
+  ((-double-) a)
+  (setq width w) (setq height h) 
+  (setq alpha (to-int (* 255.99 (/ 1 (+ 1 (max 0 a)))))) ())
+
+(defmethod effect-trail fprop (in out)
+  ((-idx3- (-ubyte-)) in out)
+  (idx-copy (narrow in 2 3 0) (narrow out 2 3 0))
+  (idx-ub2fill (select out 2 3) alpha) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; laplacian operator
+(defclass effect-laplace effect
+  ((-idx2- (-float-)) fin)
+  ((-idx2- (-float-)) fout)
+  ((-float-) bias)
+  ((-idx2- (-float-)) kernel))
+
+#? (new effect-laplace <width> <height> <gain>)
+;; this applies a sort-of laplacian filter (really
+;; a set-of-your-pant on-center/off-surround filter)
+;; to each RGB component of the image.
+;; The <gain> paramter determines the gain of
+;; the output. Values around 1 are reasonable.
+(defmethod effect-laplace effect-laplace (w h gain) 
+  ((-int-) w h)
+  ((-float-) gain)
+  (setq width w) (setq height h)
+  (setq fin (float-matrix h w))
+  (setq kernel (float-matrix 5 5))
+  (idx-dotm0 
+   [[-1 -2 -4 -2 -1]
+   [-2  2  4  2 -2]
+   [-4  4 12  4 -4]
+   [-2  2  4  2 -2]
+   [-1 -2 -4 -2 -1]]
+   ((float-matrix) (* 0.1 gain)) kernel)
+  (setq fout (float-matrix (1+ (- h (idx-dim kernel 0)))
+			   (1+ (- w (idx-dim kernel 1)))))
+  (setq bias 128) ())
+
+(defmethod effect-laplace fprop (in out)
+  ((-idx3- (-ubyte-)) in out)
+  (idx-eloop ((in (narrow in 2 3 0)) (out (narrow out 2 3 0)))
+    (idx-copy in fin)
+    (idx-f2convol fin kernel fout)
+    (let ((z (narrow (narrow out 0 (idx-dim fout 0) 1) 1 (idx-dim fout 1) 1)))
+      (cidx-bloop ("i" "j" ("pin" fout) ("pout" z))
+	#{{ register float zin;
+            zin = *pin + $bias;
+            *pout = (unsigned char)( (zin > 0)? ( (zin < 256) ? zin : 255 ) : 0) ;
+          } #})))
+  (idx-copy (select in 2 3) (select out 2 3)) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; background subtraction
+(defclass effect-diff effect
+  ((-idx3- (-ubyte-)) last)
+  ((-int-) alpha))
+
+#? (new effect-diff <width> <height> <alpha>)
+;; computes a simple difference between 
+;; consecutive images. <alpha> is the transparency
+;; with which the difference image is painted.
+;; Setting it to 255 will make it opaque, setting
+;; it to 128 will leave a short trail. 
+(defmethod effect-diff effect-diff (w h a) 
+  ((-int-) w h a)
+  (setq width w) (setq height h)
+  (setq alpha a)
+  (setq last (ubyte-matrix h w 4))
+  ())
+
+(defmethod effect-diff fprop (in out)
+  ((-idx3- (-ubyte-)) in out)
+  (cidx-bloop 
+   ("i" "j" ("m" in) ("z" out) ("last" last))
+   #{ z[0] = ((int)(m[0]) + 256 - (int)(last[0]))>>1 ;
+      last[0] = m[0];
+      z[1] = ((int)(m[1]) + 256 - (int)(last[1]))>>1 ;
+      last[1] = m[1];
+      z[2] = ((int)(m[2]) + 256 - (int)(last[2]))>>1 ;
+      last[2] = m[2];
+      z[3] = $alpha;
+   #} ) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defclass effect-bgsubst effect
+  ((-idx3- (-ubyte-)) background)
+  ((-idx3- (-float-)) average)
+  ((-idx2- (-ubyte-)) mask)
+  ((-int-) radius1 radius2 n)
+  ((-float-) threshold))
+
+#? (new effect-bgsubst <width> <height> <imagefile> <erosion> <dilation> <thres>)
+;; performs background substitution. This compares the current grabbed image
+;; with an image computed as the average of the first 10 frames. If the Euclidean
+;; distance in RGB space of a pixel to the average is larger than <thres>,
+;; the corresponding pixel of the currently grabbed image is drawn, otherwise
+;; the corresponding pixel in the image <imagefile> is drawn.
+;; <thres> should be between 500 and 5000 for normal lighting conditions.
+;; <erosion> and <dilation> are used to erode and dilate the mask so as
+;; to eliminate rogue foreground pixels. Suggested values are 3 and 2 
+;; respectively.
+(defmethod effect-bgsubst effect-bgsubst (w h f r1 r2 th)
+  ((-int-) w h r1 r2)
+  ((-float-) th)
+  ((-str-) f)
+  (setq width w) (setq height h)
+  (setq background 
+	(rgbaim-resize (image-read-rgb f) (to-double w) (to-double h) 1))
+  (setq threshold th)
+  (setq radius1 r1)
+  (setq radius2 r2)
+  (setq mask (ubyte-matrix h w))
+  (setq average (float-matrix h w 4))
+  (setq n 1) ())
+
+(defmethod effect-bgsubst fprop (in out)
+  ((-idx3- (-ubyte-)) in out)
+  ;; update average image during first 10 frames
+  (when (< n 10) 
+    (let* ((eta (/ 1 n)) (meta (- 1 eta)))
+      (cidx-bloop 
+       ("i" "j" "k" ("im" in) ("av" average))
+       #{ *av = $meta * *av + $eta * (flt)(*im); #}))
+    (incr n))
+  ;; set 
+  (let ((alpha 255) (fg 255) (bg 0))
+    ((-int-) alpha fg bg)
+    ;; set pixel to fg if distance to avarage is larger than threshold
+    (cidx-bloop ("i" "j" ("im" in) ("av" average) ("mask" mask))
+	#{{ register flt dist, r;
+	r = (flt)(im[0]) - av[0] ;
+	dist = r*r		;
+	r = (flt)(im[1]) - av[1] ;
+	dist += r*r		;
+	r = (flt)(im[2]) - av[2] ;
+	dist += r*r		;
+	*mask  = (unsigned char) ((dist > $threshold) ? $fg : $bg) ;
+	} #}
+		))
+  (when (> radius1 0) (ubim-erosion mask radius1))
+  (when (> radius2 0) (ubim-dilation mask radius2))
+  ;; composite in with background using mask as alpha channel.
+  (let ((scale (* 1.0 (/ 1.0 255.0))))
+    ((-float-) scale)
+    (cidx-bloop 
+     ("i" "j" ("im" in)("mask" mask)("bg" background)("res" out))
+         #{ if (*mask==0) { 
+              res[0] = bg[0];
+              res[1] = bg[1];
+              res[2] = bg[2];
+	    } else {
+	      register float a, b;
+  	    a = (float)(*mask)*$scale;
+	      b = 1.0-a;
+	      res[0] = (unsigned char)(bg[0]*b+a*im[0]);
+	      res[1] = (unsigned char)(bg[1]*b+a*im[1]);
+  	      res[2] = (unsigned char)(bg[2]*b+a*im[2]);
+	    }
+            res[3] = 255;
+     #})
+    ())))
+
+
+      
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () 
+	  (effect effect fprop)
+	  (effect-edge effect-edge fprop)
+	  (effect-laplace effect-laplace fprop)
+	  (effect-diff effect-diff fprop)
+	  (effect-trail effect-trail fprop)
+	  (effect-bgsubst effect-bgsubst fprop)
+	  effect-demo-loop
+	  )
+
+;; ^Lvideo4linux/demos/edge-detection-sdl
+(printf "demo of realtime video effects using video4linux and SDL\n\n")
+(printf "type: (effect-sdl-demo <effect>))\n")
+(printf "where <effect> is an effect object created with one of the following:\n")
+(printf "  (new effect 320 240): no effect, just monitor the video\n")
+(printf "  (new effect-edge 320 240): simple edge detection\n")
+(printf "  (new effect-trail 320 240 20): ghost-like trail\n")
+(printf "  (new effect-laplace 320 240 1): edge enhancement\n")
+(printf "  (new effect-diff 320 240 128): temporal difference\n")
+(printf "  (new effect-bgsubst 320 240 (concat-fname lushdir \"packages/sdl/demos/moon.png\") 3 2 1000): background substitution\n")
+(printf "the image sizes (320x240 in the above examples) can be changed\n")
+(printf "to 640x480 for some of the effects and still have bearable framerates\n")

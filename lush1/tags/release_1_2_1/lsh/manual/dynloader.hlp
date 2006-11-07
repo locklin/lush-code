@@ -1,0 +1,467 @@
+#? *** Dynamic Loader/Linker
+
+One of the coolest features of Lush is its dynamic loader/linker.
+The dynamic loader/linker allows to load object files
+(.o, .so, or .a) and make their functions easily accessible 
+from the interpreter. Functions in dynamically loaded object
+files can be written in any language (though C is preferred).
+
+Object files can be dynamically loaded into Lush using
+the <(mod-load "mylibrary.o")> construct.
+
+Let's say you have written a C file called <tt>titi.c</tt> 
+with the following content:
+.CODE
+  float sq(float x)
+  {
+    return x*x;
+  }
+.P
+You have compiled the file and produced the object file <titi.o>.
+Calling <sq> from the Lush interpreter is as simple as the following.
+First, dynamically load the object file into Lush
+.CODE
+  ? (mod-load "titi.o")
+.P
+then, write a compiled lisp function whose only purpose is to call <tt>sq</tt>.
+To be able to call C from Lush:
+.CODE
+  ? (de square (x) ((-float-) x) 
+        (cheader "extern float sq(float);")
+        (float #{ sq( $x ) #} )
+  ? (dhc-make "junk" square)
+.P
+The function square can now be called:
+.CODE
+  ? (square 5)
+  = 25
+.P
+
+Dynamically loaded Modules can be .o object files, but also .a files
+(static libraries), or .so files (shared objects).
+Functions in dynamically loaded modules can call any external function or 
+variable defined or used by Lush as well as external functions and variable 
+defined in other modules.  In particular, the C library functions are 
+accessible. A function defined in a module however is not always executable.
+Indeed, its module might call an undefined function, or a function
+defined by another non executable module.
+In fact, four situations occur: 
+.IP 
+Initialized and executable modules are the only accessible modules.
+All functions referenced by these modules have been found, and the
+initialization routine (e.g.  <init_essai>) has been succesfully
+executed, creating descriptors for the new lisp functions defined in
+the modules.  At this point, all new lisp functions defined by such a
+module are accessible and work as expected.
+
+.IP
+Uninitialized modules reference some undefined functions, or some
+functions defined by a non executable module.  Therefore, the
+initialization function has not been executed, and the descriptors for
+the new lisp functions defined by such a module have not been created.
+
+.IP
+Modules may be initialized but non executable. Such a situation occurs
+when a module has been initialized and executable, but is no longer
+executable, because it uses some function or global variable which is
+no longer defined, because its module has been unloaded.
+
+.IP 
+Finally, certain modules do not define an initialization function.
+Such modules just define C functions used by other modules.
+We say that such a module is in a unknown state.
+.PP
+
+#? (mod-load <filename>)
+.TYPE DE
+.FILE sysenv.lsh
+This function loads a piece of binary code into LUSH.
+It can be used to load various kind of files containing object code:
+.IP
+Shared libraries.
+These files usually have extension <".so">, <".sl">, <".dll"> or <".dylib">
+depending on the operating system. Use <(getconf "SOEXT")> to 
+determine which extension is valid on your system.
+.IP
+Object files.
+These files usually have extension <".o"> or <".obj">.
+Use <(getconf "OBJEXT")> to determine which extension is 
+valid on your system.
+.IP
+Library archives containing a collection of object files. 
+Function <mod-load> only loads the components of a <.a> file that 
+provide definitions for currently undefined symbols.  You may want 
+to use functions <mod-create-reference> to create fake undefined 
+symbols and selectively load parts of the library before 
+actually using them. WARNING: C++ static constructors are not called
+when a <.a> file is loaded. If you experience problems calling
+functions defined in a dynamically loadad <.a> files written in C++,
+you should first convert the <.a> file to a <.so> file
+(static constructors in <.so> files are called).
+
+.PP
+WARNING: Lush on Mac OS X has some peculiarities. First, <mod-load> 
+loads object files by first creating a equivalent "bundle" file. 
+These bundle files are stored in directory <"/tmp">.
+Second, <mod-load> has no support for loading library archive.
+The best course of action is to first transform them into
+dynamic library (dylibs).
+.PP
+
+#? (mod-unload <filename>)
+.TYPE DE
+.FILE sysenv.lsh
+This function removes a piece of binary code previously loaded with
+<mod-load>.  Only object files (extension <".o">) and library archives
+(extension <".a">) can be safely removed.  It is currently not possible to
+unload a shared library module (usually a file with extension <".so">) because
+these files are dealt with using operating system facilities that seldom
+provide unloading support.
+.P
+This operations encompasses three steps:
+.IP
+Destroying all lisp functions previously defined by the module.
+Calling such functions will cause an error in the future.
+.IP
+Relinquishing the memory utilized by the module.
+.IP
+Checking the executability of all loaded modules, and mark the lisp
+functions defined by a module as partially linked, if this modules is
+no longer executable.
+
+
+#? (find-shared-library <name> [<extlist>])
+.TYPE DE
+.FILE sysenv.lsh
+Returns the pathname of a shared library named <name>.
+Shared libraries are searched in the directories
+specified by variable <shared-include-path>
+which is initialized by <"stdenv.lsh">.
+
+The optional argument <extlist> is a list of 
+possible filename extensions.  The default value
+is either null (when <name> already contains an extension)
+or the system dependent filename extension for shared 
+libraries.
+.EX (find-shared-library "libm")
+
+#? (find-static-library <name> [<extlist>])
+.TYPE DE
+.FILE sysenv.lsh
+Returns the pathname of a static library named <name>.
+Static libraries are searched in the directories
+specified by variable <static-include-path>
+which is initialized by <"stdenv.lsh">.
+
+The optional argument <extlist> is a list of 
+possible filename extensions.  The default value
+is either null (when <name> already contains an extension)
+or the system dependent filename extension for static 
+libraries.
+.EX (find-static-library "libm")
+
+#? (find-shared-or-static-library <name> [<extlist>])
+.TYPE DE
+.FILE sysenv.lsh
+Returns the pathname of a library named <name>.  
+A shared library is first searched with the supplied extension list <extlist>.  
+Otherwise a static library is searched.
+.EX (find-shared-or-static-library "libm")
+
+
+#? (mod-list)
+.TYPE DE
+.FILE sysenv.lsh
+This function returns the list of the currently loaded modules.
+
+Example:
+.CODE
+   ? (mod-list)
+   = ("/home/leonb/lush/src/lush" "/home/leonb/test/essai.o")
+.PP
+
+#? (mod-undefined)
+This function returns a list with the names of all undefined C
+functions and global variables in the current modules.
+
+Example:
+.CODE
+   ? (mod-undefined)
+   = ("compute_squares" "numbers_of_squares")
+.PP
+
+#? (mod-status)
+.TYPE DE
+.FILE sysenv.lsh
+Displays a summary of all loaded modules.
+
+#? (mod-inquire <filename>)
+.TYPE DE
+.FILE sysenv.lsh
+This function returns a list describing the status of a loaded module defined
+by the object file <filename>. The first element of this list is a string
+describing the states of a module.  When the initialization function has been
+called, the names of the new lisp functions are provided in the remaining part
+of this list.
+
+
+#? (mod-create-reference <string1> ... <stringN>)
+
+Creates a fake undefined symbol that will be considered when loading libraries
+(archive files like <"foo.a">). The loader indeed only loads the library
+components which define symbols currently undefined. You may want to use
+functions <mod-create-reference> to create fake undefined symbols and load
+certain parts of the library before actually using them.
+
+#? (mod-compatibility-flag <boolean>)
+
+The old loaded was based on the DLD-3.2.3 library. This library had
+significant bugs in the code checking the executability of a module. 
+The new loader implements these checks properly. This righful code
+may prevent you to load your old files. You can use function
+<mod-compatibility-flag> with a non nil argument to loosen the checks
+until the new system is almost as buggy as the old one.
+
+
+
+#? * Low-Level Module Functions
+
+Most of the above functions are in fact written in Lisp 
+using a set of lower level functions.   LUSH modules
+are represented by lisp object of class <|MODULE|>.
+The following functions manipulate these objects.
+
+#? (module-list)
+Returns the list of all currently loaded modules.
+Unlike <mod-list> this function returns the module objects
+instead of the module filenames.
+
+#? (module-filename <m>)
+Returns the filename associated with module object <m>.
+
+#? (module-executable-p <m>)
+Test if the code for module <m> is executable.
+
+#? (module-unloadable-p <m>)
+Test if module <m> can be removed from memory.
+
+#? (module-initname <m>)
+Returns the name of the C initialization function for module <m>.
+
+#? (module-depends <m>)
+Returns the list of all the initialized modules that 
+depends on module <m>.  This function is useful to evaluate
+the consequences of a call to <module-unload>.
+
+#? (module-never-unload <m>)
+Make sure that the module <m> will not be unloaded.
+Attemps to unload the module will cause an error.
+
+#? (module-defs <m>)
+Returns an alist describing all the primitives defined by module <m>.
+This alist is populated the first time the module becomes executable.
+It is the user's responsibility to make this primitives available
+for general use by defining conveniently named variables.
+
+#? (module-load <filename> [<hookfunction>])
+Loads the binary code file <filename> and returns a module object.
+
+Function <hookfunction> is called with two arguments when the state of the
+module changes.  The first argument is a selector symbol representing the
+nature of the state change.  The second arguments is the module object itself.
+
+The selector symbol can take the following values:
+.IP <init>
+The hook function is called with selector <init> 
+just after calling the initialization function of the module.
+Most useful hook functions will scan the list of definitions
+returned by <module-defs> and define global symbols
+to access the newly defined primitives.
+.IP <exec>
+The hook function is called with selector <exec>
+whenever the executability of the module changes
+because of loading/unloading another module.
+.IP <unlink>
+The hook function is called with selector <unlink>
+just before unloading the module.  This is a good
+time to revert the changes made during the module
+initialization.
+.PP
+
+#? (module-unload <m>)
+Unloads the binary module <m>.
+
+
+#? * Extending the Interpreter
+
+While most users will prefer limit themselves to writing
+lisp functions (possibly with inline C code) and compiling them,
+some adventurous users may need to extend the interpreter
+more directly. This section describes how to do that
+by making use of the dynamic loader/linker.
+
+Here is an example of a file, named <"essai.c">, which defines a new
+lisp function written in C for computing the square of the hypotenuse
+of triangles.
+
+.CODE
+   /* ------ Beginning of File "essai.c" ------ */
+
+   #include "header.h"
+
+   /* This is the function that does the work */
+
+   double hypotenuse(x,y)
+   double x,y;
+   {
+     double z = x*x + y*y; 
+     printf("hypot(%f,%f)=%f\n",x,y,z);
+     return z;
+   }
+   
+   
+   /* This is the interpreter interface function */
+   
+   DX(xhypotenuse) {
+     ARG_NUMBER(2); 
+     ALL_ARGS_EVAL;
+     return NEW_NUMBER( hypotenuse(AREAL(1),AREAL(2)));
+   }
+   
+   /* This is the initialization routine.
+    * Its name is formed by prepending "init_" to the file name
+    */
+   void init_essai()
+   {
+     dx_define("hypotenuse",xhypotenuse);
+   }
+
+   /* These two (optional) definitions to guarantee that
+    * this module will only be loaded by compatible versions of LUSH. 
+    */
+   int majver_essai = 40; /* LUSH_MAJOR */
+   int minver_essai = 10; /* LUSH_MINOR */
+
+
+   /* ------ End of File "essai.c" ------ */
+.PP 
+Integrating this function into the LUSH interpreter can be achieved in 
+two ways: 
+.IP
+Copying this file in the <"src"> directory of Lush, adding <"essai.o"> to
+the list of objects in the <"Makefile">, calling <"init_essai()"> 
+from file <"toplevel.c"> and recompiling everything.
+This will build a new version of Lush with the new function.
+.IP
+Compiling this file separately and loading the resulting object file into Lush
+at run-time.  This solution is named dynamic linking of an external module.
+Modules are loaded with the function <mod-load>, and unloaded with the
+function <mod-unload>. These functions allocate the necessary memory, relocate
+the machine code, and resolve the external references.
+.PP
+The compilation is performed by the command:
+.CODE
+  globina% gcc -c -I/home/leonb/lush/include essai.c
+.PP
+The resulting <"essai.o"> file can be loaded into LUSH 
+with the following command.
+.CODE
+  ? (mod-load "essai.o")
+  = "/home/user/subdir/essai.o"
+  ? (hypotenuse 3 4)
+  hypot(3.000000,4.000000)=25.000000
+  = 25
+.PP
+
+#? * Debugging Modules with gdb
+
+Although GDB is unaware of Lush's dynamic linking capabilities, 
+it contains a convenient function <add-symbol-file> to load
+symbols from an object file.  The lush dynamic loaded contains 
+a C function <dld_print_gdb_commands> to print the GDB commands
+necessary to load all the required symbols.  This function can be called
+from the GDB prompt.
+
+Example:
+.CODE
+  globina% gdb lush
+  ... GDB starts
+  (gdb) run
+  ... LUSH starts
+  ? ;;; The following override forces compilation with -g:
+  ? (setq dhc-make-overrides (alist-add "OPTS" "-g" dhc-make-overrides))
+  = (("OPTS" . "-g"))
+  ? ;;; Define a function
+  ? (de mydiv(a b) ((-double-) a b) (/ a b))
+  = mydiv
+  ? (dhc-make () mydiv)
+  ...
+  ? (mydiv 2 3)
+  = 0.6667
+  ? (mydiv 2 0)
+  
+  Program received signal SIGFPE, Arithmetic exception.
+  0x0885dcbf in ?? ()
+  (gdb) call dld_print_gdb_commands(1)
+       add-symbol-file /home/leonb/lush/C/i686-pc-linux-gnu/mydiv.o 0x885dc84 \
+           -s .text 0x885dc84 -s .data 0x885dd44 -s .bss 0x885ddf8 -s .rodata 0x885ddf8
+  $1 = 10
+  (gdb) add-symbol-file /home/leonb/lush/C/i686-pc-linux-gnu/mydiv.o 0x885dc84 \
+           -s .text 0x885dc84 -s .data 0x885dd44 -s .bss 0x885ddf8 -s .rodata 0x885ddf8
+  add symbol table from file "/home/leonb/lush/C/i686-pc-linux-gnu/mydiv.o" at
+        .text_addr = 0x885dc84
+        .text_addr = 0x885dc84
+        .data_addr = 0x885dd44
+        .bss_addr = 0x885ddf8
+        .rodata_addr = 0x885ddf8
+  (y or n) y
+  Reading symbols from /home/leonb/lush/C/i686-pc-linux-gnu/mydiv.o...done.
+  (gdb) where
+  #0  0x0885dcbf in C_mydiv (L1_a=2, L1_b=0) at /home/leonb/lush/C/mydiv.c:28
+  #1  0x0885dd00 in X_mydiv (a=0xbfffbaa8) at /home/leonb/lush/C/mydiv.c:44
+  #2  0x0810e8f0 in dh_listeval ()
+  (gdb) up
+  #1  0x0885dd00 in X_mydiv (a=0xbfffbaa8) at /home/leonb/lush/C/mydiv.c:44
+  44        ret.dh_real = C_mydiv (a[1].dh_real, a[2].dh_real);
+  (gdb) down
+  #0  0x0885dcbf in C_mydiv (L1_a=2, L1_b=0) at /home/leonb/lush/C/mydiv.c:28
+  28          L_Tmp0 = (L1_a / (real) L1_b);
+  (gdb) print L1_b
+  $2 = 0      ### HAHA. Bug was found.
+
+.PP
+GDB contains decent support to debug code contained in shared libraries 
+(i.e. files with extension <".so">).  Another possibility for debugging 
+modules consists in building them as shared libraries.
+
+Example:
+.CODE
+  globina% gcc -shared -o essai.so -I/home/leonb/lush/include  essai.c
+  globina% gdb lush
+  ... GDB starts
+  (gdb) run
+  ... LUSH starts
+  ? (mod-load "essai.so")
+  = "/home/leonb/essai.so"
+  <CTRL-C>
+  (gdb) br xhypotenuse
+  Break in xhypotenuse
+  (gdb) cont
+  ? (hypotenuse 3 4)
+  Breakpoint 1, 0x4001a8c1 in xhypotenuse () from /home/leonb/essai.so
+  (gdb) ....
+.PP
+
+There are two limitations:
+.IP
+Shared libraries must be completely linked.
+They can only reference symbols contained in the main lush executable
+and its libraries (not in other dynamically loaded modules)
+.IP
+Shared libraries cannot be unloaded and replaced
+by another version.
+
+
+#? * << libc/make.lsh
+
+

@@ -1,0 +1,618 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+
+
+
+#? *** contours
+
+;; dummy function that adds OpenCV C header files in C file
+(eval `(de dummy_contours () ,cv-cpheader-cmd ()))
+
+;; #? * (dummy_contours)
+;; #? * (cvfindcontours <array> <stor> <first> <hsize> <mode> <method>)
+;; #? * (cvstartfindcontours <array> <stor> <hsize> <mode> <method>)
+;; #? * (cvfindnextcontour <scanner>)
+;; #? * (cvsubstitutecontour <scanner> <ncontour>)
+;; #? * (cvendfindcontours <scanner>)
+;; #? * (cvapproxchains <src_seq> <stor> <method> <parameter> <minimal_perimeter> <recursive>)
+;; #? * (cvstartreadchainpoints <chain> <reader>)
+;; #? * (cvreadchainpoint <reader> <pt>)
+;; #? * (cvapproxpoly <src_seq> <hsize> <stor> <method> <parameter> <recursive>)
+;; #? * (cvcontourperimeter <contour> <slice>)
+;; #? * (cvcontourboundingrect <contour> <update> <rect>)
+;; #? * (cvcontourmoments <contour> <moments>)
+;; #? * (cvcontourarea <contour> <slice>)
+;; #? * (cvmatchcontours <contour1> <contour2> <method> <parameter>)
+;; #? * (cvcreatecontourtree <contour> <stor> <threshold>)
+;; #? * (cvcontourfromcontourtree <tree> <stor> <criteria>)
+;; #? * (cvmatchcontourtrees <tree1> <tree2> <method> <threshold>)
+;; #? * (cvdrawcontours <img> <contour> <excolor> <hcolor> <maxlevel> <thickness> <connectivity>)
+;; #? * (cvcalcpgh <contour> <hist>)
+
+;; ********************************************************
+
+;;  /****************************************************************************************\
+;;  *                              Contours procceding                                       *
+;;  \****************************************************************************************/
+
+#? (cvFindContours  <array> <stor> <first> <hsize> <mode> <method>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvFindContours
+;;  //    Purpose: finds contours on the binary image
+;;  //    Context:
+;;  //    Parameters:
+;;  //         img - binary image(depth is IPL_DEPTH_8U or IPL_DEPTH_8S, single channel).
+;;  //         storage - memory storage where the contours will be stored
+;;  //         firstContour - output parameter. First contour on the highest level.
+;;  //         headerSize - size of contours headers.
+;;  //         mode - contour retrieving mode.
+;;  //                  CV_RETR_EXTERNAL - get only the most external contours(list).
+;;  //                  CV_RETR_LIST     - get all the contours without any hierarchical links
+;;  //                                    (list).
+;;  //                  CV_RETR_CCOMP    - get all the contours and make holes as child
+;;  //                                     contours of corresponding external contour
+;;  //                                    (two-level hierarchical structure)
+;;  //                  CV_RETR_TREE     - get all the contours and build all
+;;  //                                     hierarchical links(tree).
+;;  //         method - approximation method
+;;  //                CV_CHAIN_CODE    - output contours in chain-coded form(Freeman code).
+;;  //                              The rest of methods approximate chain code with polyline
+;;  //                CV_CHAIN_APPROX_NONE - no compression. Every point of digital curve
+;;  //                                       is coded
+;;  //                CV_CHAIN_APPROX_SIMPLE - horizontal, vertical and diagonal segments are
+;;  //                                         are coded with ending vertices (by default).
+;;  //                CV_CHAIN_APPROX_TC89_L1 - Teh-Chin algorithm, L1 curvature
+;;  //                CV_CHAIN_APPROX_TC89_KCOS - Teh-Chin algorithm, k-cosine curvature
+;;  //         offset - a cvPoint object
+;;  //    Returns:
+;;  //      Number of contours found.
+;;  //F*/
+;;  OPENCVAPI  int  cvFindContours( CvArr* array, CvMemStorage* storage,
+;;                             CvSeq**  firstContour,
+;;                             int  headerSize CV_DEFAULT(sizeof(CvContour)),
+;;                             CvContourRetrievalMode mode CV_DEFAULT( CV_RETR_LIST ),
+;;                             CvChainApproxMethod method CV_DEFAULT(CV_CHAIN_APPROX_SIMPLE));
+
+(de cvFindContours (array stor first hsize mode method offset)
+    ((-gptr- "CvArr *") array)
+    ((-gptr- "CvMemStorage *") stor)
+    ((-gptr- "CvSeq **") first)
+    ((-int-) hsize mode method)
+    ((-gptr- "CvPoint *") offset)
+    (let ((s 0))
+      ((-int-) s)
+      #{ $s = cvFindContours($array, $stor, $first, $hsize, $mode, $method, *$offset); #}
+      s))
+
+
+
+#? (cvStartFindContours  <array> <stor> <hsize> <mode> <method>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvStartFindContours
+;;  //    Purpose: starts iterrative process of contours retrieving
+;;  //    Context:
+;;  //    Parameters:
+;;  //         img - binary image(depth is IPL_DEPTH_8U or IPL_DEPTH_8S, single channel).
+;;  //         storage - memory storage where the contours will be stored
+;;  //         header_size - size of contours headers.
+;;  //         mode - contour retrieving mode(see cvFindContours description)
+;;  //         method - approximation method(see cvFindContours description)
+;;  //         offset - a cvPoint object
+;;  //    Returns:
+;;  //      contour scanner state.
+;;  //F*/
+;;  OPENCVAPI  CvContourScanner   cvStartFindContours( CvArr* array, CvMemStorage* storage,
+;;                                          int header_size, CvContourRetrievalMode mode,
+;;                                          CvChainApproxMethod method );
+
+(de cvStartFindContours (array stor hsize mode method offset)
+    ((-gptr- "CvArr *") array)
+    ((-gptr- "CvMemStorage *") stor)
+    ((-int-) hsize)
+    ((-int-) mode)
+    ((-int-) method)
+    ((-gptr- "CvPoint *") offset)
+    (let ((s #{ (CvContourScanner)NULL #}))
+      ((-gptr- "CvContourScanner") s)
+      #{ $s = cvStartFindContours($array, $stor, $hsize, $mode, $method, *$offset); #}
+      s))
+
+
+#? (cvFindNextContour   <scanner>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    <Name>:    cvFindNextContour
+;;  //    Purpose: finds next contour on the image
+;;  //    Context:
+;;  //    Parameters:
+;;  //         scanner - contour scanner state
+;;  //    Returns:
+;;  //      next contour or NULL, if no more contours on the image
+;;  //F*/
+;;  OPENCVAPI  CvSeq*  cvFindNextContour( CvContourScanner scanner );
+
+(de cvFindNextContour ( scanner)
+    ((-gptr- "CvContourScanner") scanner)
+    (let ((s (gptr ())))
+      #{  $s = (CvSeq *) cvFindNextContour($scanner);  #}
+      s))
+
+#? (cvSubstituteContour  <scanner> <ncontour>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvSubstituteContour
+;;  //    Purpose: substitutes retrived contour with another one.
+;;  //    Context:
+;;  //    Parameters:
+;;  //         scanner - contour scanner state
+;;  //         newContour - substituting contour
+;;  //                      (or NULL, if retrived contour should be rejected)
+;;  //    Returns:
+;;  //    Notes:
+;;  //      The function may be called immediately after contour is retrived
+;;  //     (may be, after some processing) before cvFindNextContour is called next time.
+;;  //      It replaces found contour with processed contour, or even rejects it.
+;;  //F*/
+;;  OPENCVAPI  void   cvSubstituteContour( CvContourScanner scanner, CvSeq* newContour );
+
+(de cvSubstituteContour( scanner ncontour)
+    ((-gptr- "CvContourScanner") scanner)
+    ((-gptr- "CvSeq *") ncontour)
+    #{  cvSubstituteContour($scanner, $ncontour);  #}
+    ())
+
+#? (cvEndFindContours <scanner>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvEndFindContours
+;;  //    Purpose: finishes process of contours retrieving
+;;  //    Context:
+;;  //    Parameters:
+;;  //         scanner - contour scanner state
+;;  //    Returns:
+;;  //      pointer to first contour on the highest hierarchical level
+;;  //F*/
+;;  OPENCVAPI  CvSeq*  cvEndFindContours( CvContourScanner* scanner );
+
+(de cvEndFindContours(scanner)
+    ((-gptr- "CvContourScanner *") scanner)
+    (let ((s (gptr ())))
+      #{ $s = (CvSeq *) cvEndFindContours($scanner);   #}
+      s))
+
+#? (cvApproxChains <src>_<seq> <stor> <method> <parameter> <minimal_perimeter> <recursive>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvApproxChains
+;;  //    Purpose: approximates single(all) chains with polylines.
+;;  //    Context:
+;;  //    Parameters:
+;;  //         src_seq - pointer to chain(which can reffer to other chains).
+;;  //         storage - where to place resultant polylines.
+;;  //         dst_seq - double pointer to first resultant polyline.
+;;  //         method  - approximation method(see cvFindContours description)
+;;  //         parameter - method parameter(is not used now).
+;;  //         minimal_perimeter - approximates only those contours which perimeter is
+;;  //                             not less than <minimal_perimeter>. Other chains
+;;  //                             are removed from resultant structure
+;;  //         recursive - if not 0, approximate all the chains, which can be accessed
+;;  //                     from src_seq. if 0, approximate a single chain
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  CvSeq* cvApproxChains( CvSeq* src_seq, CvMemStorage* storage,
+;;                              CvChainApproxMethod method CV_DEFAULT(CV_CHAIN_APPROX_SIMPLE),
+;;                              double parameter CV_DEFAULT(0),
+;;                              int  minimal_perimeter CV_DEFAULT(0),
+;;                              int  recursive CV_DEFAULT(0));
+
+(de cvApproxChains(src_seq stor method parameter minimal_perimeter recursive)
+    ((-gptr- "CvSeq *") src_seq)
+    ((-gptr- "CvMemStorage *") stor)
+    ((-int-) method minimal_perimeter recursive)
+    ((-double-) parameter)
+    (let ((s (gptr ())))
+      #{ $s = (CvSeq *) cvApproxChains($src_seq, $stor, $method, $parameter, $minimal_perimeter, $recursive);  #}
+      s))
+ 
+
+#? (cvStartReadChainPoints  <chain> <reader>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvStartReadChainPoints
+;;  //    Purpose: starts read successive points of the chain-coded curve
+;;  //    Context:
+;;  //    Parameters:
+;;  //         chain   - chain
+;;  //         reader  - chain reader state
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  void  cvStartReadChainPoints( CvChain* chain, CvChainPtReader* reader );
+
+(de cvStartReadChainPoints (chain reader)
+    ((-gptr- "CvChain *") chain)
+    ((-gptr- "CvChainPtReader *") reader)
+    #{  cvStartReadChainPoints($chain, $reader); #}
+    ())
+
+#? (cvReadChainPoint  <reader>  <pt>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvReadChainPoint
+;;  //    Purpose: read current point of the chain and moves read position to the next code
+;;  //    Context:
+;;  //    Parameters:
+;;  //         reader - chain reader state
+;;  //    Returns:
+;;  //         current point of the chain
+;;  //F*/
+;;  OPENCVAPI  CvPoint   cvReadChainPoint( CvChainPtReader* reader );
+
+(de cvReadChainPoint (reader  pt)
+    ((-gptr- "CvChainPtReader *") reader)
+    ((-gptr- "CvPoint *") pt)
+    #{ { CvPoint tmp;
+    tmp = cvReadChainPoint($reader); 
+    memcpy($pt, &tmp, sizeof(CvPoint));  } #}
+    ())
+
+#? (cvApproxPoly  <src_seq> <hsize> <stor> <method> <parameter> <recursive>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvApproxPoly
+;;  //    Purpose: approximates polygonal curve (either closed or not)
+;;  //             with another polygonal curve with desired accuracy
+;;  //    Context:
+;;  //    Parameters:
+;;  //         src_seq - source contour
+;;  //         header_size - size of destination contour header
+;;  //         storage - memory storage for result
+;;  //         dst_seq - destination contour
+;;  //         method  - approximation method. Only a single method is implemented now.
+;;  //                   CV_POLY_APPROX_DP - Douglas-Peucker method.
+;;  //         parameter - depends on method. For CV_POLY_APPROX_DP it is a desired accuracy.
+;;  //         recursive - if not 0, the function approximates all the contours that
+;;  //                     are next to or below the initial contour, otherwise the single
+;;  //                     contour is approximated
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  CvSeq*  cvApproxPoly( CvSeq* src_seq, int  header_size, CvMemStorage* storage,
+;;                                   CvPolyApproxMethod  method, double parameter,
+;;                                   int recursive CV_DEFAULT(0));
+
+(de cvApproxPoly (src_seq hsize stor method parameter recursive)
+    ((-gptr- "CvSeq *") src_seq)
+    ((-int-) hsize method  recursive)
+    ((-gptr- "CvMemStorage *") stor)
+    ((-double-) parameter)
+    (let ((s (gptr ())))
+      #{ $s = (CvSeq *) cvApproxPoly($src_seq, $hsize, $stor, $method, $parameter, $recursive);  #}
+      s))
+
+#? (cvContourPerimeter  <contour>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvContourPerimeter
+;;  //    Purpose:
+;;  //      Calculates contour perimeter, finds minimal edge and maximal egde lengths
+;;  //    Context:
+;;  //    Parameters:
+;;  //      contour  - source contour
+;;  //    Returns:
+;;  //      contour section perimeter
+;;  //      when a part of contour is selected, the function doesn't add
+;;  //      length of chord, connecting starting and ending points
+;;  //F*/
+;;  OPENCVAPI  double  cvContourPerimeter( CvSeq* contour,
+;;                                         CvSlice slice CV_DEFAULT(CV_WHOLE_SEQ) );
+
+(de cvContourPerimeter (contour)
+    ((-gptr- "CvSeq *") contour)
+    (let ((s 0))
+      ((-double-) s)
+      #{  $s = cvContourPerimeter($contour); #}
+      s))
+
+#? (cvContourBoundingRect  <contour> <update> <rect>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name:    cvContourBoundingRect
+;;  //    Purpose:
+;;  //      calculates contour bounding rebox
+;;  //    Context:
+;;  //    Parameters:
+;;  //      contour  - pointer to the source contour
+;;  //      update   - attribute of contour bounding box updating
+;;  //                 (if update = 0 the bounding box isn't updated)
+;;  //    Returns:
+;;  //      bounding rectangle
+;;  //F*/
+;;  OPENCVAPI  CvRect  cvContourBoundingRect( CvSeq* contour, int update CV_DEFAULT(0) );
+
+(de cvContourBoundingRect( contour update rect)
+    ((-gptr- "CvSeq *") contour)
+    ((-int-) update )
+    ((-gptr- "CvRect *") rect)
+    #{ { CvRect tmp;
+    tmp = cvContourBoundingRect($contour, $update); 
+    memcpy($rect, &tmp, sizeof(CvRect)); } #}
+    ())
+
+#? (cvContourMoments  <contour> <moments>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvContourMoments
+;;  //    Purpose:
+;;  //      Calculates spatial and central moments of the contour up to order 3
+;;  //    Context:
+;;  //    Parameters:
+;;  //      contour - the source contour
+;;  //      moments - output parameter. Pointer to the calculated moments
+;;  //
+;;  //F*/
+;;  OPENCVAPI  void  cvContourMoments( CvSeq* contour, CvMoments* moments);
+
+(de cvContourMoments (contour moments)
+    ((-gptr- "CvSeq *") contour)
+    ((-gptr- "CvMoments *") moments)
+    #{ cvContourMoments($contour, $moments);  #}
+    ())
+
+#? (cvContourArea <contour> <slice>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvContourArea
+;;  //    Purpose:
+;;  //      Calculates area within the contour
+;;  //    Context:
+;;  //    Parameters:
+;;  //      contour - pointer to input contour object.
+;;  //      slice  - optional parameter. ending and starting indices of contour section  
+;;  //    Returns:
+;;  //      Contour section area
+;;  //F*/
+;;  OPENCVAPI  double  cvContourArea( CvSeq* contour,
+;;                                 CvSlice slice CV_DEFAULT(CV_WHOLE_SEQ));
+
+(de cvContourArea(contour slice)
+    ((-gptr- "CvSeq *") contour)
+    ((-gptr- "CvSlice *") slice)
+    (let ((s 0))
+      ((-double-) s)
+      #{ $s = cvContourArea($contour, *$slice);  #}
+      s))
+
+
+#? (cvMatchContours  <contour1> <contour2> <method> <parameter>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvMatchContours
+;;  //    Purpose:
+;;  //      Compares two contours
+;;  //    Context:
+;;  //    Parameters:
+;;  //      contour1 - pointer to the first input contour object.
+;;  //      contour2 - pointer to the second input contour object.
+;;  //      method - method for the matching calculation
+;;  //     (now CV_CONTOURS_MATCH_I1, CV_CONTOURS_MATCH_I2 or
+;;  //      CV_CONTOURS_MATCH_I3 only  )
+;;  //      parameter - method-specific parameter (is used now)
+;;  //    Returns:
+;;  //      Comparison result
+;;  //F*/
+;;  OPENCVAPI  double  cvMatchContours( CvSeq* contour1, CvSeq* contour2,
+;;                                   CvContoursMatchMethod method,
+;;                                   long parameter CV_DEFAULT(0));
+
+
+(de cvMatchContours (contour1 contour2 method parameter)
+    ((-gptr- "CvSeq *") contour1 contour2)
+    ((-int-) method)
+    ((-int-) parameter)
+    (let ((s 0))
+      ((-double-) s)
+      #{ $s = cvMatchContours($contour1, $contour2, $method, (long)$parameter);  #}
+      s))
+
+
+
+#? (cvCreateContourTree  <contour> <stor> <threshold>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvCreateContourTree
+;;  //    Purpose:
+;;  //      Creates binary tree representation for the contour
+;;  //    Context:
+;;  //    Parameters:
+;;  //      contour - input contour
+;;  //      storage - storage
+;;  //      tree    - output pointer to the binary tree representation
+;;  //      threshold - threshold for the binary tree building
+;;  //    Returns:
+;;  //      Binary tree
+;;  //F*/
+;;  typedef struct CvContourTree
+;;  {
+;;      CV_SEQUENCE_FIELDS()
+;;      CvPoint p1;            /* the first point of the binary tree root segment */
+;;      CvPoint p2;            /* the last point of the binary tree root segment */
+;;  } CvContourTree;
+;;  OPENCVAPI  CvContourTree*   cvCreateContourTree( CvSeq* contour, CvMemStorage* storage,
+;;                                                   double threshold );
+
+(de cvCreateContourTree (contour stor threshold)
+    ((-gptr- "CvSeq *") contour)
+    ((-gptr- "CvMemStorage *") stor)
+    ((-double-) threshold)
+    (let ((s (gptr ())))
+      #{ $s = (CvContourTree *) cvCreateContourTree($contour, $stor, $threshold);  #}
+      s))
+
+#? (cvContourFromContourTree  <tree> <stor> <criteria>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvContourFromContourTree
+;;  //    Purpose:
+;;  //      Reconstructs contour from binary tree representation
+;;  //    Context:
+;;  //    Parameters:
+;;  //      tree   -  input binary tree representation
+;;  //      storage - memory storage
+;;  //      criteria - criteria for the definition threshold value
+;;  //                 for the contour reconstruction(level or precision)
+;;  //    Returns:
+;;  //      Created contour
+;;  //F*/
+;;  OPENCVAPI  CvSeq*  cvContourFromContourTree( CvContourTree *tree,
+;;                                            CvMemStorage* storage,
+;;                                            CvTermCriteria criteria );
+
+(de cvContourFromContourTree (tree stor criteria)
+    ((-gptr- "CvContourTree *") tree)
+    ((-gptr- "CvMemStorage *") stor)
+    ((-gptr- "CvTermCriteria *") criteria)
+    (let ((s (gptr ())))
+      #{ $s = cvContourFromContourTree($tree, $stor, *$criteria);  #}
+      s))
+
+
+#? (cvMatchContourTrees <tree1> <tree2> <method> <threshold>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvMatchContourTrees
+;;  //    Purpose:
+;;  //      Compares two contour trees
+;;  //    Context:
+;;  //    Parameters:
+;;  //      tree1 - pointer to the first input contour tree object.
+;;  //      tree2 - pointer to the second input contour tree object.
+;;  //      method - method for the matching calculation
+;;  //     (now CV_CONTOUR_TREES_MATCH_I1 only  )
+;;  //      threshold - threshold for the contour trees matching
+;;  //    Returns:
+;;  //      comparison result
+;;  //F*/
+;;  OPENCVAPI  double  cvMatchContourTrees( CvContourTree *tree1,
+;;                                       CvContourTree *tree2,
+;;                                       CvContourTreesMatchMethod method,
+;;                                       double threshold );
+
+(de cvMatchContourTrees(tree1 tree2 method threshold)
+    ((-gptr- "CvContourTree *") tree1 tree2)
+    ((-int-) method)
+    ((-double-) threshold)
+    (let ((s 0))
+      ((-double-) s)
+      #{ $s = cvMatchContourTrees($tree1, $tree2, $method, $threshold);  #}
+      s))
+
+
+#? (cvDrawContours <img> <contour> <excolor> <hcolor> <maxlevel> <thickness> <connectivity> <offset>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvDrawContours
+;;  //    Purpose:
+;;  //      Draws one or more contours outlines or their interiors on the image
+;;  //    Context:
+;;  //    Parameters:
+;;  //      img      - destination three-channel image
+;;  //      contour  - pointer to drawn contour(s).
+;;  //      external_color - color to draw external contours with (CvScalar object)
+;;  //      hole_color - color to draw hole contours with (CvScalar object)
+;;  //      max_level  - max level of the tree(starting from contour pointer) to draw.
+;;  //                   if it is 0, draw single contour, if 1 - draw the contour and
+;;  //                   other contours at the same level, 2 - draw two levels etc.
+;;  //      thickness - thickness of lines the contours are drawn with. If it is
+;;  //                  equal to CV_FILLED (-1), the contour(s) interior is filled.
+;;  //      line_type - (an int)
+;;  //      offset    - (a CvPoint object)
+;;  //    Returns:
+;;  //F*/
+;;  CVAPI void  cvDrawContours(CvArr *img, CvSeq* contour,
+;;                                  CvScalar external_color, CvScalar double hole_color,
+;;                                  int max_level, int thickness CV_DEFAULT(1),
+;;                                  int line_type CV_DEFAULT(8),
+;;                                  CvPoint offset CV_DEFAULT(cvPoint(0,0));
+
+(de cvDrawContours(img contour excolor hcolor maxlevel thickness connectivity offset)
+    ((-gptr-) img)
+    ((-gptr- "CvSeq *") contour)
+    ((-gptr- "CvScalar *") excolor hcolor)
+    ((-int-) maxlevel thickness connectivity)
+    ((-gptr- "CvPoint *") offset)
+    #{  cvDrawContours($img, $contour, *$excolor, *$hcolor, $maxlevel, $thickness, $connectivity, *$offset);  #}
+    ()))
+
+
+#? (cvCalcPGH <contour> <hist>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //    Name: cvCalcPGH
+;;  //    Purpose:
+;;  //      Calculates PGH(pairwise geometric histogram) for given contour.
+;;  //    Context:
+;;  //    Parameters:
+;;  //      contour  - input contour.
+;;  //      pgh      - output histogram(must be two-dimensional)
+;;  //    Returns:
+;;  //F*/
+;;  OPENCVAPI  void  cvCalcPGH( CvSeq* contour, CvHistogram* hist );
+
+(de cvCalcPGH(contour hist)
+    ((-gptr- "CvSeq *") contour)
+    ((-gptr- "CvHistogram *") hist)
+    #{ cvCalcPGH($contour, $hist); #}
+    ())
+;; ********************************************************
+
+(dhc-make ()
+  dummy_contours
+  cvfindcontours
+  cvstartfindcontours
+  cvfindnextcontour
+  cvsubstitutecontour
+  cvendfindcontours
+  cvapproxchains
+  cvstartreadchainpoints
+  cvreadchainpoint
+  cvapproxpoly
+  cvcontourperimeter
+  cvcontourboundingrect
+  cvcontourmoments
+  cvcontourarea
+  cvmatchcontours
+  cvcreatecontourtree
+  cvcontourfromcontourtree
+  cvmatchcontourtrees
+  cvdrawcontours
+  cvcalcpgh
+)

@@ -1,0 +1,1130 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;	Secil Ugurel - 09/2002
+;;;    "libplotter.lsh"  
+
+
+#? *** Plotting Library
+;;{<see> Plotting Functions.}
+;;
+;; This class library offers an alternate set of graph plotting functions
+;; besides those provided by the core interpreter (see Plotting Functions.)
+;; It contains the {<c> Plotter} and the {<c> PlotterCurve} classes 
+;; providing functions for drawing multiple curves and modifying 
+;; their appearance. Here is a sample code to plot
+;; various curves:
+;; {<code>
+;;  (libload "libplot/plotter")
+;;  ;; create a new plotter with default size (open a window if necessary)
+;;  (setq p (new Plotter))  
+;;  ;; plot log function in blue from 0 to 10.
+;;  (==> p PlotFunc "log" log 0 10 0.1 (alloccolor 0 0 1))
+;;  ;; show it on the screen
+;;  (==> p redisplay)
+;;
+;;  ;; add a piece of a red ellipse
+;;  (==> p PlotXY "lips" sin cos 0 5 0.1 (alloccolor 1 0 0))
+;;  (==> p redisplay)
+;;
+;;  ;; plot a green polygonal sinusoid
+;;  (setq x (range 0 10 0.5))
+;;  (setq y (all ((v x)) (sin v)))
+;;  (==> p plotlists "sine" x y (alloccolor 0 1 0) closed-circle)
+;;  (==> p Redisplay)
+;;
+;;  ;; add a grid
+;;  (==> p SetGrid 1)
+;;  (==> p Redisplay)
+;;
+;;  ;; move the plotter to 100,0 and set its size to 300,200
+;;  (==> p move 100 0)
+;;  (==> p setsize 300 200)
+;;  (cls)
+;;  (==> p redisplay)
+;;
+;;  ;; plot log function in a postscript file
+;;  (let ((window (ps-window "/tmp/curve.ps")))
+;;    (setq psp (new Plotter))
+;;    (==> psp PlotFunc "log" log 0 10 0.1 (alloccolor 0 0 1))
+;;    (==> psp redisplay))
+;;
+;;  ;; plot log function in an editable graphic window using comdraw
+;;  (setq window (comdraw-window))
+;;  (setq cp (new Plotter)) 
+;;  (==> cp PlotFunc "log" log 0 10 0.1 (alloccolor 0 0 1))
+;;  (==> cp setgrid 1)
+;;  (==> cp redisplay)
+;; </code>}
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? * Plotter
+;; Class Plotter
+;; This is the main class to define {<c> Plotter} objects in Lush. Plotter objects have slots
+;; to define  properties of the axes such as scales, labels, legend, title, ticks and 
+;; logscale. It also stores the curves, lines and texts that will be drawn on the Plotter.
+;; {<c> rect} slot of the Plotter specifies the rectangular area of the Plotter on the current 
+;; current window. Slots of the Plotter object can be modified by methods of the class.
+;; They are computed automatically or set to their default values if not speicifed by the use. 
+(defclass Plotter object   
+  rect				       ;(x y w h) for drawing the plot
+  curves 
+  lines
+  texts
+  axes ;pixel coordinates of the axes. (x1 y1 x2 y2) where (x1,y1) is the origin of the AXES and (x2,y2) is the upper right corner of the AXES.
+  xticks 
+  yticks
+  xscale 
+  yscale
+  xlabel
+  ylabel
+  legend
+  title
+  grid
+  xscale2			  ;these are for multiple X and Y axes
+  yscale2
+  xticks2
+  yticks2
+  xlabel2
+  ylabel2
+  xlogscale   ;these are to use logscale on the primary x and y axes. 
+  ylogscale)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (new Plotter [[<x> <y>] <w> <h>])
+;;The constructor {<c> Plotter} creates a new {<c> Plotter} object at pixel positions (x,y), with width 
+;;{<c> w} and height {<c> h} on the current window. If the {<c> window} object is empty, it pops up a new window. 
+;; {<c> x,y,w} and {<c> h} are optional.  If {<c> x} and {<c> y} are omitted, they are both set to 0. If {<c> w} and {<c> h} are omitted, the size of the 
+;; {<c> Plotter} is equal to the size of the current window.{<br>}
+;; For example:{<br>}
+;; {<code>
+;;  (setq myplotter (new Plotter 600 600))
+;; </code>}
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defmethod Plotter Plotter(&optional x y w h)
+  (==> this Attach x y w h))
+
+#? (==> <Plotter> move <x> <y>)
+;; move the upper left-hand corner of the plotter to screen position <x> <y>.
+;; No screen update is performed until the next call to redisplay.
+(defmethod Plotter move (x y)
+  (let (( (xo yo w h) rect)) (setq rect (list x y w h))))
+
+#? (==> <Plotter> setsize <w> <h>)
+;; set the width and height of the plotter object to <w> and <h>.
+;; No screen update is performed until the next call to redisplay.
+(defmethod Plotter setsize (w h)
+  (let (( (x y wo ho) rect)) (setq rect (list x y w h))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; destructor
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defmethod Plotter -destructor()
+  (when window 
+    (cls)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;This is an internal method called by the constructor. It sets up the Plotter object
+;;with the given coordinates. 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defmethod Plotter Attach(&optional x y w h)
+  (when (and x y w h) 
+    (setq rect (list x y w h))
+    (when ~window (setq window (new-window (+ x w) (+ y h)))))
+  (when(and x y ~w ~h) 
+    (setq rect (list 0 0 x y))
+    (when ~window (setq window (new-window  w  y))))
+  (when ~window (setq window (new-window))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> Set <attribute> <value>)
+
+;; Sets the attribute of the {<c> Plotter} object to the given value. The
+;; {<c> attribute} argument is a string and can be "xticks", "yticks",
+;; "xscale", "yscale", "xlabel", "ylabel", "legend", "title", "grid",
+;; "xscale2", "yscale2", "xticks2", "yticks2", "xlabel2",
+;; "ylabel2". If an invalid attribute name is given error is generated.
+;; The {<c> value} argument should match the attribute's data type. For
+;; "xticks", "yticks", "xticks2" and "yticks2" the value should be a
+;; list of numbers, for "xscale" and "yscale" it should be a list of
+;; two numbers, for "legend","title", "xlabel", "ylabel", "xlabel2"
+;; and "ylabel2", it should be a string. Example:
+;; {<code>
+;;  (==> myplotter Set "xticks" (range 0 10))
+;;  (==> myplotter Set "xscale" (list 0 10))
+;;  (==> myplotter Set "xlabel "x")
+;; </code>}
+;; Individual methods are also provided to set and change the attributes 
+;; of the Plotter object.
+(defmethod Plotter Set (slot value)
+  (selectq slot
+    ("xticks" (==> this SetXTicks value))
+    ("yticks" (==> this SetYTicks value))
+    ("xscale" (if (<> (length value) 2) 
+		  (error '==> "List does not have 2 elements" value)
+		(==> this SetXScale (nth 0 value) (nth 1 value))))
+    ("yscale" (if (<> (length value) 2)
+		  (error '==> "list does not have 2 elements" value)
+		(==> this SetYScale (nth 0 value) (nth 1 value))))
+    ("xlabel" (==> this SetXLabel value))
+    ("ylabel" (==> this SetYlabel value))
+    ("legend" (==> this SetLegend value))
+    ("title" (==> this SetTitle value))
+    ("grid" (==> this SetGrid value))
+    ("xscale2" (==> this SetXScale2 (nth 0 value) (nth 1 value)))
+    ("yscale2" (==> this SetYScale2 (nth 0 value) (nth 1 value)))
+    ("xticks2" (==> this SetXTicks2 value))
+    ("yticks2" (==> this SetYTicks2 value))
+    ("xlabel2" (==> this SetXLabel2 value))
+    ("ylabel2" (==> this SetYLabel2 value))
+    (t (error '==> "Not a slot or private" slot))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetRectNth <i> <m> <n>)
+;; Divides the current window into {<c> m} by {<c> n} rectangles and
+;; sets the rectangular area of the {<c> Plotter} to the {<c> i}th
+;; one.  The first rectangle is the one on the upper left corner. When
+;; the rectangle of a {<c> Plotter} object is set, the graphics plot
+;; is restricted to that rectangular area.
+;;
+;; For example:
+;; {<code>
+;;  ;;divides the current window vertically and 
+;;  ;;plots the first object on the left and the second object on the right. 
+;;  (==> plotter1 SetRectNth 1 1 2)
+;;  (==> plotter2 SetRectNth 2 2 1)
+;; </code>} 
+(defmethod Plotter SetRectNth (i m n)
+  (when rect (addclip rect)
+	(cls)
+	(clip ()))
+  (let* ((width (xsize))
+	 (height (ysize))
+	 (rectw (int (/ width m)))
+	 (recth (int (/ height n)))
+	 (rectx (* (mod	(1- i) m) rectw))
+	 (recty (* (int (/ (1- i) n)) recth)))
+    (setq rect (list rectx recty rectw recth))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetXScale <xmin> <xmax>)
+;; Sets the {<c> xscale} slot of the {<c> Plotter}. {<c> xmin}
+;; argument is the minimum axis limit and {<c> xmax} is the maximum
+;; axis limit on x.  If a scale for x is not set, LUSH selects the
+;; axis limits based on the curve points.
+(defmethod Plotter SetXScale (xmin xmax)
+  (if ~(numberp xmin)(error '==> "Not a number" xmin)
+      (if ~(numberp xmax)(error '==> "Not a number" xmax)
+	  (setq xscale (list xmin xmax)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetYScale <ymin> <ymax>)
+;; Sets the {<c> yscale} slot of the {<c> Plotter}. {<c> ymin}
+;; argument is the minimum axis limit and {<c> ymax} is the maximum
+;; axis limit on y.  If a scale for y is not set, LUSH selects the
+;; axis limits based on the curve points.
+(defmethod Plotter SetYScale (ymin ymax)
+  (if ~(numberp ymin)(error '==> "Not a number" ymin)
+      (if ~(numberp ymax)(error '==> "Not a number" ymax)
+	  (setq yscale (list ymin ymax))))) 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetXTicks <x>)
+;; Sets the {<c> xticks} slot of the {<c> Plotter}. LUSH computes the
+;; ticks marks on the x axis based on the x scale.  However the tick
+;; marks on the x axis can be specified with the {<c> SetXTicks}
+;; method. Argument {<c> x} is a list of numbers
+(defmethod Plotter SetXTicks (x)
+  (when ~(listp x) (list x))
+  (setq xticks x))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetYTicks <y>)
+;; Sets the {<c> yticks} slot of the {<c> Plotter}. LUSH computes the
+;; ticks marks on the y axis based on the y scale.  However the tick
+;; marks on the y axis can be specified with the {<c> SetYTicks}
+;; method. Argument {<c> y} is a list of numbers.
+(defmethod Plotter SetYTicks (y)
+  (when ~(listp y) (list y))
+  (setq yticks y))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetXLabel <x>)
+;; Adds axis label to the x axis. Argument {<c> x} is a string.
+(defmethod Plotter SetXLabel (x)
+  (if ~(stringp x)(error '==> "Not a string" x) (setq xlabel x)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetYLabel <y>)
+;; Adds axis label to the y axis. Argument {<c> y} is a string.
+(defmethod Plotter SetYLabel (y)
+  (if ~(stringp y)(error '==> "Not a string" y) (setq ylabel y)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetLegend <l>)
+;; Adds a legend text to the up right corner of the {<c> Plotter}
+;; rectangle. Argument {<c> l} is a string.
+(defmethod Plotter SetLegend (l)
+  (if ~(stringp l)(error '==> "Not a string" l) (setq legend l)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetTitle <t>)
+;; Adds a title text to the top of the {<c> Plotter}
+;; rectangle. Argument {<c> t} is a string.
+(defmethod Plotter SetTitle (l)
+  (if ~(stringp l)(error '==> "Not a string" l) (setq title l)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetGrid <x>)
+;; Specifies whether to draw grid lines or not. Argument {<c> x} is
+;; either 0 or 1. When {<c> x} is 1 grid lines are drawn, when {<c> x}
+;; is 0 grids are not drawn.
+(defmethod Plotter SetGrid (x)
+  (if ~(numberp x)(error '==> "Not a number" x) (setq grid x)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetXScale2 <xmin> <xmax>)
+;; Using the {<c> Plotter} library it is possible to draw graphs with
+;; double x axes. {<c> SetXScale2} method sets the scale of the second
+;; x axis.  {<c> xmin} argument is the minimum axis limit and {<c>
+;; xmax} is the maximum axis limit on the second x axis. If no scale
+;; is specified for the second x axis, it is not drawn.
+(defmethod Plotter SetXScale2 (xmin xmax)
+  (setq xscale2 (list xmin xmax)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetYScale2 <ymin> <ymax>)
+;; Using the {<c> Plotter} library it is possible to draw graphs with
+;; double y axes. {<c> SetYScale2} method sets the scale of the second
+;; y axis.  {<c> ymin} argument is the minimum axis limit and {<c>
+;; ymax} is the maximum axis limit on the second y axis. If no scale
+;; is specified for the second y axis, it is not drawn.
+(defmethod Plotter SetYScale2 (ymin ymax)
+  (setq yscale2 (list ymin ymax)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetXTicks2 <x>)
+;; Using the {<c> Plotter} library it is possible to draw graphs with
+;; double x axes. {<c> SetXTicks2} method sets the tick marks of the
+;; second x axis.  Argument {<c> x} is a list of numbers indicating
+;; the tick marks.
+(defmethod Plotter SetXTicks2 (x)
+  (when ~(listp x) (list x))
+  (setq xticks2 x))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetYTicks2 <x>)
+;; Using the {<c> Plotter} library it is possible to draw graphs with
+;; double y axes. {<c> SetYTicks2} method sets the tick marks of the
+;; second y axis.  Argument {<c> y} is a list of numbers indicating
+;; the tick marks.
+(defmethod Plotter SetYTicks2 (y)
+  (when ~(listp y) (list y))
+  (setq yticks2 y))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetXLabel2 <x>)
+;; Using the {<c> Plotter} library it is possible to draw graphs with
+;; double x axes. {<c> SetXLabel2} method sets the label of the second
+;; x axis.  Argument {<c> x} is a string.
+(defmethod Plotter SetXLabel2 (x)
+  (if ~(stringp x)(error '==> "Not a string" x) (setq xlabel2 x)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetYLabel2 <y>)
+;; Using the {<c> Plotter} library it is possible to draw graphs with
+;; double y axes. {<c> SetYLabel2} method sets the label of the second
+;; y axis.  Argument {<c> y} is a string
+(defmethod Plotter SetYLabel2 (y)
+  (if ~(stringp y)(error '==> "Not a string" y) (setq ylabel2 y)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetXLogScale)
+;; Using the {<c> Plotter} library it is possible to draw
+;; logplots. {<c> SetXLogScale} method converts the scale of the x
+;; axis to log.
+(defmethod Plotter SetXLogScale  ()
+  (setq xlogscale 1)) 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetYLogScale)
+;; Using the {<c> Plotter} library it is possible to draw
+;; logplots. {<c> SetYLogScale} method converts the scale of the y
+;; axis to log.
+(defmethod Plotter SetYLogScale ()
+  (setq ylogscale 1))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> ResetXLogScale)
+;; Using the {<c> Plotter} library it is possible to draw
+;; logplots. {<c> ResetYLogScale} method converts the scale of the x
+;; axis from log to regular.
+(defmethod Plotter ResetXLogScale ()
+  (setq xlogscale ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> ResetXLogScale)
+;; Using the {<c> Plotter} library it is possible to draw
+;; logplots. {<c> ResetYLogScale} method converts the scale of the y
+;; axis from log to regular.
+(defmethod Plotter ResetYLogScale ()
+  (setq ylogscale ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ #? * PlotterCurve
+;; Class {<c> PlotterCurve} is used to define the curve objects in the
+;; {<c> Plotter} rectangle. Attributes of the {<c> PlotterCurve} are {<c>
+;; points, color, symbol, symsize, line, xaxis} and {<c> yaxis}. {<c>
+;; Points} attribute is a list of data points of the curve. {<c> Color}
+;; attribute is the color of the curve. {<c> Symbol} is the shape of the
+;; markers at each data point. Symbol can be set to <open-square>,
+;; <closed-square>, <open-circle>, <closed-circle>,
+;; <open-up-triangle>, <open-down-triangle>, <closed-up-triangle>,
+;; <closed-down-triangle>, <straight-cross> and <oblique-cross>. {<c>
+;; Symsize} is the size of the symbols at data points in pixels. The
+;; {<c> line} attribute specifies whether the data points of the curve will
+;; be connected by a line or not. Finally, {<c> xaxis} and {<c> yaxis}
+;; attributes of the curve indicates which of the two x axes or y axes the
+;; curve is using.
+(defclass PlotterCurve object
+  points				;list of points
+  color					;number of the color
+  symbol      ;open-square, closed-square, open-circle, closed-circle,
+	     ;open-up-triangle, open-down-triangle,closed-up-triangle,
+		 ;closed-down-triangle, straight-cross, oblique-cross,
+  symsize
+  line					;1 or 0
+  xaxis			    ;1 or 2, which x-axis to use. Default is 1
+  yaxis			    ;1 or 2, which y-axis to use. Default is 1
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> NewCurve <name>)
+;; Adds a new {<c> PlotterCurve} object to the {<c> Plotter}. {<c>
+;; name} is the name of the curve and of type string.  Curves are
+;; stored as alists in the {<c> Plotter} objects. Each {<c>
+;; PlotterCurve} is associated with a name and with the {<c> NewCurve}
+;; method added to the list of curves in the {<c> Plotter}.
+(defmethod Plotter NewCurve(name)
+  (setq curves (alist-add name (new PlotterCurve) curves)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> ClearCurve <curvename>)
+;;  Deletes the {<c> PlotterCurve} object named {<c> curvename} form
+;;  the {<c> Plotter}.
+(defmethod Plotter ClearCurve(curvename)
+  (setq curves (alist-add curvename () curves)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> AddPoint <curvename> <x> <y>)
+;; Adds the data point ({<c> x, y}) to the {<c> PlotterCurve} object
+;; named {<c> curvename} to the {<c> Plotter}. If a curve named {<c>
+;; curvename} does not exist, error is returned.{<br>} For
+;; example:{<br>} {<code> (==> myplotter AddPoint "S" 0 10) </code>}
+(defmethod Plotter AddPoint(curvename x y)
+  (let ((curve (alist-get curvename curves)))
+    (when (not curve)
+      (error '==> "Undefined curve" curvename))
+    (setq :curve:points (cons (cons x y) :curve:points))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetCurveColor <curvename> <c>)
+;; Sets the color of the {<c> PlotterCurve} object named {<c>
+;; curvename} to color {<c> c}. Argument {<c> c} is a color number
+;; (as returned by <alloc-color>).
+;; If a curve named {<c> curvename} does not exist, error is returned.
+(defmethod Plotter SetCurveColor(curvename color)
+  (let ((curve (alist-get curvename curves)))
+    (when (not curve)
+      (error '==> "Undefined curve" curvename) )
+    (setq :curve:color color)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetCurveSymbol <curvename> <symbolfunc>)
+;; Sets the marker symbol of the {<c> PlotterCurve} object named {<c>
+;; curvename} to symbol {<c> symbolname}. Argument {<c> symbolfunc} 
+;; must be a two-argument function whose role is to draw a symbol
+;; at the screen coordinates passed as arguments. A set of pre-defined
+;; such functions are provided: <open-square>,
+;; <closed-square>, <open-circle>, <closed-circle>,
+;; <open-up-triangle>, <open-down-triangle>, <closed-up-triangle>,
+;; <closed-down-triangle>, <straight-cross> and <oblique-cross>.
+(defmethod Plotter SetCurveSymbol(curvename symbolname)
+  (let ((curve (alist-get curvename curves)))
+    (when (not curve)
+      (error '==> "Undefined curve" curvename))
+    (setq :curve:symbol symbolname)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetCurveSymbolSize <curvename> <symbolsize>)
+;; Sets the size of the marker of the {<c> PlotterCurve} named {<c>
+;; curvename} to {<c> symbolsize}. {<c> symbolsize} is an integer
+;; normally between 1 and 5. If {<c> symbolsize} is set to 0 no markers are 
+;; drawn at data points.{<br>} 
+;;For example:
+;; {<code> 
+;;   (==> myplotter SetCurveSymbolSize "s" 3) 
+;; </code>}
+(defmethod Plotter SetCurveSymbolSize (curvename symbolsize)
+  (let ((curve (alist-get curvename curves)))
+    (when (not curve)
+      (error '==> "Undefined curve" curvename))
+    (setq :curve:symsize symbolsize)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetCurveLine <curvename> <line>)
+;; Specifies whether to draw lines between markers of the {<c>
+;; PlotterCurve} object or not. Argument line is 0 or 1.  If {<c>
+;; line} is 0 only markers at data points are drawn, if line is 1,
+;; markers are connected. By default, line is 1.
+(defmethod Plotter SetCurveLine (curvename line)
+  (let ((curve (alist-get curvename curves)))
+    (when (not curve)
+      (error '==> "Undefined curve" curvename))
+    (setq :curve:line line)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetCurveXAxis <curvename> <xaxis>)
+;; In case of use of double x axes, associates the {<c> PlotterCurve}
+;; object to the x axis specified by the argument {<c> xaxis}. If {<c>
+;; xaxis} argument is 0 the x axis at the bottom is used (default), if
+;; it is 1, x axis at the top is used to draw the curve.  The scales
+;; for the second (top) axis should be set.
+(defmethod Plotter SetCurveXAxis (curvename xaxis)
+  (let ((curve (alist-get curvename curves)))
+    (when (not curve)
+      (error '==> "Undefined curve" curvename))
+    (setq :curve:xaxis xaxis)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> SetCurveYAxis <curvename> <yaxis>)
+;; In case of use of double y axes, associates the {<c> PlotterCurve}
+;; object to the y axis specified by the argument {<c> yaxis}. If {<c>
+;; yaxis} argument is 0 the y axis on the left is used (default), if
+;; it is 1, x axis on the right is used to draw the curve. The scales
+;; for the second (right) axis should be set.
+(defmethod Plotter SetCurveYAxis (curvename yaxis)
+  (let ((curve (alist-get curvename curves)))
+    (when (not curve)
+      (error '==> "Undefined curve" curvename))
+    (setq :curve:yaxis yaxis)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> PlotFunc <curvename> <func> <xmin> <xmax> <xstep> [<color>] [<symbol>])
+;; Plot a scalar real function. Samples are computed for are all values between
+;; <xmin> and <xmax> by step of <xstep>. 
+;; <color> is a color identifier (as returned by <alloccolor>),
+;; and symbol is a function of two arguments (x and y coordinates) 
+;; that is called each time a data point is to be plotted. Predefined
+;; such functions include nil (no symbol is plotted), open-square, closed-square, 
+;; open-circle, closed-circle, open-up-triangle, open-down-triangle, closed-up-triangle,
+;; closed-down-triangle, straight-cross and oblique-cross, or any user-defined functions
+;; {<br>}
+;; Example:{<br>}
+;; {<code>
+;;  (libload "libplot/plotter")
+;;  (setq p (new Plotter))
+;;  (==> p PlotFunc "log" log 0 10 0.1 (alloccolor 1 0 0))
+;;  (==> p redisplay)
+;; </code>}
+(defmethod Plotter PlotFunc (curvename func xmin xmax xstep &optional col symb)
+  (let* ((xl (range xmin xmax xstep))
+	 (yl (progn-without-fpe (mapcar func xl))))
+    (==> this PlotLists curvename xl yl col symb)))
+
+#? (==> <Plotter> PlotXY <curvename> <funcx> <funcy> <tmin> <tmax> <tstep> [<color>] [<symbol>])
+;; Plot a parameterized curve (X(t),Y(t)). Samples are computed for are all 
+;; values of t between <tmin> and <tmax> by step of <tstep>. 
+;; <color> is a color identifier (as returned by <alloccolor>),
+;; and symbol is a function of two arguments (x and y coordinates) 
+;; that is called each time a data point is to be plotted. Predefined
+;; such functions include nil (no symbol is plotted), open-square, closed-square, 
+;; open-circle, closed-circle, open-up-triangle, open-down-triangle, closed-up-triangle,
+;; closed-down-triangle, straight-cross and oblique-cross, or any user-defined functions
+;; {<br>}
+;; Example:{<br>}
+;; {<code>
+;;  (libload "libplot/plotter")
+;;  (setq p (new Plotter))
+;;  (==> p PlotXY "log" log 0 10 0.1 (alloccolor 1 0 0))
+;;  (==> p redisplay)
+;; </code>}
+(defmethod Plotter PlotXY (curvename funcx funcy tmin tmax tstep &optional col symb)
+  (let* ((tl (range tmin tmax tstep))
+	 (xl (progn-without-fpe (mapcar funcx tl)))
+	 (yl (progn-without-fpe (mapcar funcy tl))))
+    (==> this PlotLists curvename xl yl col symb)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> PlotLists <curvename> <xlist> <ylist> [<color>] [<symbol>])
+;; Plot a list of points whose x and y coordinates are corresponding
+;; elements in <xlist> and <ylist>. In other words
+;; {<c> xlist} is the list of x coordinates of the data
+;; {<c> ylist} is the list of y coordinates of the
+;; datapoints. <curvename> is a curve identifier (generally a string).
+;; If the curve <curvename> already exists, it is replaces.
+;; <color> is a color identifier (as returned by <alloc-color>),
+;; and symbol is a function of two arguments (x and y coordinates) 
+;; that is called each time a data point is to be plotted. Predefined
+;; such functions include open-square, closed-square, open-circle, 
+;; closed-circle, open-up-triangle, open-down-triangle, closed-up-triangle,
+;; closed-down-triangle, straight-cross and oblique-cross.
+;; {<br>}
+;; Example:{<br>}
+;; {<code>
+;;  (==> myplotter PlotLists "log" (range 1 100) (mapcar log x))
+;; </code>}
+(defmethod Plotter PlotLists (curvename xlist ylist &optional col symb)
+  (let ((pc (new PlotterCurve)))
+    (setq curves (alist-add curvename pc curves))
+    (when col (setq :pc:color col))
+    (when symb 
+      (setq :pc:symbol symb)
+      (setq :pc:symsize 3))
+    (each ((x xlist) (y ylist))
+      (==> this AddPoint curvename x y))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> AddText <x> <y> txtstring)
+;; Adds a new text to the {<c> Plotter} object. Texts are stored as
+;; list of lists in the {<c> Plotter}. Each element of the text list
+;; is a list of the coordinates of the corresponding text and its
+;; string. Arguments {<c> x} and {<c> y} are real coordinates
+;; (coordinates on the plotter)
+(defmethod Plotter AddText (x y string)
+  (let* ((text-list (list x y string)))
+    (setq texts (append  (list text-list) texts))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> AddLine <x1> <y1> <x2> <y2>)
+;; Adds a new line to the {<c> Plotter} object. Lines are stored as
+;; list of lists in the {<c> Plotter}. Each element of the line list
+;; is a list of the coordinates of the line. Arguments {<c> x1, x2,
+;; y1} and {<c> y2} are real coordinates (coordinates on the Plotter).
+(defmethod Plotter AddLine (x1 y1 x2 y2)
+  (let* ((line-list (list x1 y1 x2 y2)))
+    (setq lines (append  (list line-list) lines))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> GetClick)
+;; Returns the real coordinates of the point clicked on the {<c>
+;; Plotter}. This method is not supported in a Comdraw window
+(defmethod Plotter GetClick ()
+  (let* ((pointlist (get-click))
+	 (x (car pointlist))
+	 (y (last pointlist))
+	 (xscale (if :this:xscale :this:xscale (compute-xscale this)))
+	 (yscale (if :this:yscale :this:yscale (compute-yscale this)))
+	 (actual-x  (convert-to-plotcoord-x x (car axes) (nth 2 axes) (car xscale) (last xscale)))
+	 (actual-y (convert-to-plotcoord-y y (nth 1 axes) (nth 3 axes) (car yscale) (last yscale))))
+    (list actual-x actual-y)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> GetDistance)
+;; Computes the the length of the vector drawn by dragging and
+;; dropping the mouse pointer on the {<c> Plotter}.  The distance is
+;; in real coordinates (coordinates of the plotter). This method is
+;; not supported in a Comdraw window.
+(defmethod Plotter GetDistance ()
+  (let* ((pointlist (get-vector))
+	 (x1 (car pointlist))
+	 (y1 (nth 1 pointlist))
+	 (x2 (nth 2 pointlist))
+	 (y2 (last pointlist))
+	 (xscale (if :this:xscale :this:xscale (compute-xscale this)))
+	 (yscale (if :this:yscale :this:yscale (compute-yscale this)))
+	 (actual-x1 (convert-to-plotcoord-x x1 (car axes) (nth 2 axes) (car xscale) (last xscale)))
+	 (actual-y1 (convert-to-plotcoord-y y1 (nth 1 axes) (nth 3 axes) (car yscale) (last yscale)))
+	 (actual-x2 (convert-to-plotcoord-x x2 (car axes) (nth 2 axes) (car xscale) (last xscale)))
+	 (actual-y2 (convert-to-plotcoord-y y2 (nth 1 axes) (nth 3 axes) (car yscale) (last yscale))))
+    (sqrt (+ (** (abs (- actual-x2 actual-x1)) 2) (** (abs (- actual-y2 actual-y1)) 2)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (==> <Plotter> Redisplay [<location>])
+;; This is fundamental method of a {<c> Plotter} object. Every curve,
+;; line, text, etc is stored in the {<c> Plotter} object and is drawn
+;; after a {<c> Redisplay} command. To see the modifications on the
+;; window, {<c> Redisplay} should be called. The argument {<c>
+;; location} is optional. It is a list of x and y pixel coordinates,
+;; width and height of the {<c> Plotter}. If specified as (list x y w h), 
+;; it displays the {<c> Plotter} in the rectangular area (x y w h). 
+;;
+;; For example:
+;; {<code>
+;;  ;;locates and reprints the plotter in the rectangle 
+;;  ;;specified by (100,100,500,500) on current window
+;;  (==> myplotter Redisplay 100 100 500 500)
+;; </code>}
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defmethod Plotter Redisplay (&optional location)
+  (gsave
+   (when  location
+     (when rect
+       (addclip rect)
+       (cls)
+       (clip ()))
+     (setq rect location))
+   (when ~rect (setq rect (list 0 0 (xsize) (ysize))))
+   (addclip rect)
+   (cls)
+   ;; copy user defined attributes
+   (let* ((rect rect)
+	  (rectx (car rect)) 
+	  (recty (nth 1 rect)) 
+	  (rectw (nth 2 rect)) 
+	  (recth (nth 3 rect))
+	  (xticks xticks) 
+	  (yticks yticks)
+	  (xlabel xlabel) 
+	  (ylabel ylabel) 
+	  (legend legend) 
+	  (xscale xscale)
+	  (yscale yscale)
+	  (title title)
+	  (grid grid)
+	  (xscale2 xscale2)
+	  (yscale2 yscale2)
+	  (xticks2 xticks2) 
+	  (yticks2 yticks2)
+	  (xlabel2 xlabel2) 
+	  (ylabel2 ylabel2) 
+	  (xlogscale xlogscale)
+	  (ylogscale ylogscale)
+	  (xaxismin (+ rectx 60))
+	  (xaxismax (- (+ rectx rectw) 60))
+	  (yaxismin (- (+ recty recth) 30))
+	  (yaxismax (+ recty  40))
+	  (old-color (color)))
+     ;; compute yet undefined attributes
+     (setq axes (list xaxismin yaxismin xaxismax yaxismax))
+     (when ~xscale (setq xscale (compute-xscale this)))
+     (when ~yscale (setq yscale (compute-yscale this)))
+     (when xlogscale (if (> (last xscale) 0) (setq xscale (list 0 (last xscale)))(error '==> "Scale is not valid for log" xscale )))
+     (when ylogscale (if (> (last yscale) 0) (setq yscale (list 0 (last yscale))) (error '==> "Scale is not valid for log" yscale )))
+     (when ~xlabel (setq xlabel ""))  
+     (when ~ylabel (setq ylabel "")) 
+     (when ~legend (setq legend "")) 
+     (when ~xticks (let ((step (** 10 (int (/ (log (2/ (- (last xscale) (car xscale)))) (log 10))))))
+		     (setq xticks  (range (car xscale)	(last xscale)  step))
+		     (when ~(= (last xticks) (last xscale)) (setq xticks (append xticks (cdr xscale))))))
+     (when ~yticks (let ((step (** 10 (int (/ (log (2/ (- (last yscale) (car yscale)))) (log 10))))))
+		     (setq yticks (range (car yscale) (last yscale) step))
+		     (when ~(= (last yticks) (last yscale)) (setq yticks (append yticks (cdr xscale)))) ))
+     (when ~title (setq title ""))
+     (when ~grid (setq grid 0))
+     ;; display axes and legends 
+     (set-axes axes xscale yscale xticks yticks xlabel ylabel legend title grid xlogscale ylogscale)
+     (when xscale2 
+       (when ~xticks2 (let ((step (** 10 (int (/ (log (2/ (- (last xscale2) (car xscale2)))) (log 10))))))
+			(setq xticks2 (range (car xscale2) (last xscale2) step))
+			(when ~(= (last xticks2) (last xscale2)) (setq xticks2 (append xticks2 (cdr xscale2))))))
+       (when ~xlabel2 (setq xlabel2 ""))
+       (set-x2axis xaxismin xaxismax yaxismax xscale2 xticks2 xlabel2))
+     (when yscale2 
+       (when ~yticks2 (let ((step (** 10 (int (/ (log (2/ (- (last yscale2) (car yscale2)))) (log 10))))))
+			(setq yticks2 (range (car yscale2) (last yscale2) step))
+			(when ~(= (last yticks2) (last yscale2)) (setq yticks2 (append yticks2 (cdr yscale2)))) ))
+       (when ~ylabel2 (setq ylabel2 ""))
+       (set-y2axis yaxismin yaxismax xaxismax yscale2 yticks2 ylabel2))
+     
+     ;;iterate on curves
+     (addclip (list xaxismin yaxismax (- rectw 120) (- recth 70)))
+     (when curves 
+       (let ((curveno 0))
+	 (each (((curvename . curve) (reverse curves)))
+	   (when curve 
+	     (let* ((points :curve:points)
+		    (color :curve:color)
+		    (symbol :curve:symbol)
+		    (symsize :curve:symsize)
+		    (line :curve:line)		      
+		    (curvexaxis :curve:xaxis)
+		    (curveyaxis :curve:yaxis)
+		    (prev-pointx ())
+		    (prev-pointy ())
+		    (curvexscale ())
+		    (curveyscale ())
+		    (colordef (list (alloccolor 0 0 1) 
+				    (alloccolor 0 1 0) 
+				    (alloccolor 1 0 0) 
+				    (alloccolor 0 1 1) 
+				    (alloccolor 1 1 0)
+				    (alloccolor 1 0 1))))
+	       ;; compute undefined attributes	
+	       (when ~color (setq color (nth (mod curveno 6) colordef)))
+	       (setq curveno (1+ curveno))
+	       (when ~symbol (setq symbol ()))
+	       (when ~symsize (setq symsize 1))
+	       (when ~line (setq line 1))
+	       (when ~curvexaxis (setq curvexaxis 1))
+	       (when ~curveyaxis (setq curveyaxis 1))
+	       (color color)
+	       (setq object-size symsize)
+	       (setq curvexscale (if (= curvexaxis 1) xscale xscale2)) 
+	       (setq curveyscale (if (= curveyaxis 1) yscale  yscale2))
+	       ;;display 
+	       ;;for each point find real pixel coordinates. 
+	       ;;draw symbol at each point. if wanted draw line between points
+	       (graphics-batch
+		(each ((point points))
+		  (when ~(or (nanp (car point)) (nanp (last point)))
+			(let ((realx ())
+			      (realy ())
+			      (curvexscalemin (car curvexscale))
+			      (curvexscalemax (last curvexscale))
+			      (curveyscalemin (car curveyscale))
+			      (curveyscalemax (last curveyscale)))
+			  ;;if x or y is infinity, set it to 10 times the rectsize
+			  (if (= (car point) (infinity)) (setq realx (* 10 rectw))
+			    (if (= (car point) (- (infinity))) (setq realx (* -10 rectw))
+			      (setq realx (if (and xlogscale (= curvexaxis 1)) 
+					      (convert-to-real-x (car point) xaxismin xaxismax curvexscalemin  curvexscalemax xlogscale)
+					    (convert-to-real-x (car point) xaxismin xaxismax curvexscalemin	curvexscalemax)))))
+			  (if  (= (last point) (infinity)) (setq realy (* -10 recth))
+			    (if  (= (last point) (- (infinity))) (setq realy (* 10 recth))
+			      (setq realy (if (and ylogscale (= curveyaxis 1)) 
+					      (convert-to-real-y (last point) yaxismin yaxismax curveyscalemin curveyscalemax ylogscale)
+					    (convert-to-real-y (last point) yaxismin yaxismax curveyscalemin curveyscalemax))))) 
+			  (when (and prev-pointx prev-pointy (= line 1))
+			    (draw-line prev-pointx prev-pointy realx realy))
+			  (setq prev-pointx realx)
+			  (setq prev-pointy realy)
+			  (when  (and symbol (< realx xaxismax) (> realx xaxismin) (> realy yaxismax) (< realy yaxismin) (> symsize 0))
+			    (symbol realx realy)))))))))))
+	 ;;iterate on lines 
+     (when lines
+       (each ((line lines))
+	 (let* ((x1 (car line))
+		(y1 (nth 1 line))
+		(x2 (nth 2 line))
+		(y2 (last line))
+		(real-x1 (convert-to-real-x x1 xaxismin xaxismax (car xscale) (last xscale)))
+		(real-y1 (convert-to-real-x y1 yaxismin yaxismax (car yscale) (last yscale)))
+		(real-x2 (convert-to-real-x x2 xaxismin xaxismax (car xscale) (last xscale)))
+		(real-y2 (convert-to-real-x y2 yaxismin yaxismax (car yscale) (last yscale))))
+	   (draw-line real-x1 real-y1 real-x2 real-y2))))
+     ;; iterate on texts
+     (when texts 
+       (each ((text texts))
+	 (let* ((x (car text))
+		(y (nth 1 text))
+		(textstr (nth 2 text))
+		(y2 (last line))
+		(real-x (convert-to-real-x x xaxismin xaxismax (car xscale) (last xscale)))
+		(real-y (convert-to-real-x y yaxismin yaxismax (car yscale) (last yscale))))
+	   (draw-text real-x real-y textstr)))	
+       (color old-color)))))
+
+
+#? * Low-Level Utility Functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (compute-xscale <pobject>)
+;; Computes the scale of the x axis for a given {<c> Plotter} object
+;; from the data points in each curve.
+(de compute-xscale (pobject)
+  (let ((max-x-list ())
+	(min-x-list ()))
+    (each (((curvename . curve) :pobject:curves))
+      (when curve 
+	;;find max and min x for each curve and add them to list
+	(let* ((points :curve:points)
+	       ;;if there are no points in the Plotter set to (0 1)
+	       (xs  (if points (map car points) (list 0 1))) 
+	       (max-x (sup xs))
+	       (min-x (inf xs)))
+	  ;;if max is infinity take the next max. value
+	  (while (or (nanp max-x) (= max-x (infinity))) (setq xs (cdr (sort-list xs <))) (setq max-x (car xs)))
+	  ;;if min is -infinity take the next min value
+	  (while (or (nanp min-x)(= min-x (-(infinity))))(setq xs (cdr (sort-list xs >)))(setq min-x (car xs)))
+	  (setq max-x-list (append max-x-list (list max-x)))
+	  (setq min-x-list (append min-x-list (list min-x))))))
+    ;;find max of max x list
+    (let* ((max (if max-x-list (sup max-x-list) 1))
+	   (min (if min-x-list (inf min-x-list) 0))
+	   (mult (** 10 (int (/ (log (/ (- max min) 2)) (log 10))))))
+      (list (* mult (int (/ min mult))) (* mult (int (+ 0.99 (/ max mult))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (compute-yscale <pobject>)
+;; Computes the scale of the y axis for a given {<c> Plotter} object
+;; from the data points in each curve.
+(de compute-yscale (pobject)
+  (let ((max-y-list ())
+	(min-y-list ()))
+    (each (((curvename . curve) :pobject:curves))
+      ;;find max and min y for each curve and add them to list
+      (when curve
+	(let* ((points :curve:points)
+	       ;;if there are no points in the Plotter set to (0 1)
+	       (ys (if points (map last points) (list 0 1)))
+	       (max-y (sup ys))
+	       (min-y (inf ys)))
+	  ;;if max is infinity take the next max. value
+	  (while (or (nanp max-y)(= max-y (infinity))) (setq ys (cdr (sort-list ys <)))(setq max-y (car ys)))
+	  ;;if min is -infinity take the next min value
+	  (while (or (nanp min-y) (= min-y (- (infinity))))(setq ys (cdr (sort-list ys >)))(setq min-y (car ys)) )
+	  (setq max-y-list (append max-y-list (list max-y)))
+	  (setq min-y-list (append min-y-list (list min-y))))))
+    ;;find max of max x list
+    (let* ((max (if max-y-list (sup max-y-list) 1))
+	   (min (if min-y-list (inf min-y-list) 0))
+	   (mult (** 10 (int (/ (log (/ (- max min) 2)) (log 10))))))
+      (list (* mult (int (/ min mult))) (* mult (int (+ 0.99 (/ max mult))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;converts the actual coordinate "x" to the pixel coordinate in the current window.
+;we need the xscale and the pixel coordinates of the x-axis to compute
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de convert-to-real-x (x xaxismin xaxismax xscalemin xscalemax &optional xlogplot)
+  (when xlogplot
+    (setq x (progn-without-fpe (log x)))
+    (setq xscalemin (if (= xscalemin 0) 0 (log xscalemin)))
+    (setq xscalemax (log xscalemax)) )
+  (let ((d (- x xscalemin))
+	(interval (/ (- xaxismax xaxismin) (- xscalemax xscalemin))))
+    (+ xaxismin (* interval d))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;converts the actual coordinate "y" to the pixel coordinate in the current window. 
+;;we need the yscale and the pixel coordinates of the y-axis to compute
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de convert-to-real-y (y yaxismin yaxismax yscalemin yscalemax &optional ylogplot)
+  (when ylogplot 
+    (setq y (progn-without-fpe (log y))) 
+    (setq yscalemin (if (= yscalemin 0) 0(log yscalemin)))
+    (setq yscalemax (log yscalemax)))
+  (let ((d (- y yscalemin))
+	(interval (/ (- yaxismin yaxismax) (- yscalemax yscalemin))))
+    (- yaxismin (* interval d))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;converts the pixel coordinate "x" to the plotter (actual) coordinate in the current window. 
+;;we need the xscale and the pixel coordinates of the x-axis to compute
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de convert-to-plotcoord-x (x xaxismin xaxismax xscalemin xscalemax &optional xlogplot)
+  (when xlogplot
+    (setq x (exp x))
+    (setq xscalemin (exp xscalemin))
+    (setq xscalemax (exp xscalemax)) )
+  (let ((d (- x xaxismin))
+	(interval (/ (- xaxismax xaxismin) (- xscalemax xscalemin))))
+    (+ xscalemin (/ d interval))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;converts the pixel coordinate "y" to the plotter (actual) coordinate in the current window. 
+;;we need the yscale and the pixel coordinates of the y-axis to compute
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de convert-to-plotcoord-y (y yaxismin yaxismax yscalemin yscalemax &optional ylogplot)
+  (when ylogplot 
+    (setq y (exp y)) 
+    (setq yscalemin (exp yscalemin))
+    (setq yscalemax (exp yscalemax)))
+  (let ((d (- y yaxismin))
+	(interval (/ (- yaxismin yaxismax) (- yscalemax yscalemin))))
+    (- yscalemin (/ d interval))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (set-axes <axes> <xscale> <yscale> <xticks> <yticks> <xlabel> <ylabel> <legend> <title> <grid> [<xlogscale>] <ylogscale>])
+;; Plots the axes given the scales of the x and y axis, axis ticks,
+;; axis labels, legend and the title.  Labels, legend and title can be
+;; empty strings. The {<c> axes} argument is a list of xaxismin,
+;; yaxismin, xaxismax and yaxismax.  xaxismin and yaxismin are the
+;; pixel coordinates of the origin of the xaxes, and xaxismax and
+;; yaxismax are the pixel coordinates of the top right corner of the
+;; axes. The {<c> grid} argument is either 1 or 0, specifies whether
+;; to have grid on the plotter or not.  {<c> xlogscale} and {<c>
+;; ylogscale} are optional and are used if a logscale is desired on
+;; one of the axes.
+;;
+;; For example:
+;; {<code>
+;;  (set-axes (list 100 600 800 100) 
+;;    (list 0 10) (list 0 10) (range 0 10) (range 0 10) "x" "y" "" "graph" 1)
+;; </code>}
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de set-axes ((xaxismin yaxismin xaxismax yaxismax) 
+	      (xscalemin xscalemax) (yscalemin yscalemax)
+	      xticks yticks xlabel ylabel legend title grid &optional xlogscale ylogscale)
+  (let* ((s 3)
+	 (xaxisminright (+ xaxismin 3))
+	 (yaxisminup (- yaxismin 3))
+	 (oldfont (font)))
+    (graphics-batch
+					;locate and draw title
+     (font "Helvetica-14")
+     (let* ((titlewidth (text-width title))
+	    (titleheight (text-height title))
+	    (midpoint (2/ (+ xaxismin xaxismax)))
+	    (titlex (- midpoint (2/ titlewidth)))
+	    (titley  (+ 2 (+ (- yaxismax 40)  titleheight))))
+       (draw-text titlex titley title))
+     ;;locate and draw xlabel
+     (font "Helvetica-12")
+     (let* ((xlabelwidth (text-width xlabel))
+	    (midpoint (2/ (+ xaxismin xaxismax)))
+	    (xlabelx (+ midpoint (2/ xlabelwidth)))
+	    (xlabely ( - (+ yaxismin 30) 3))) ;;recty-3
+       (draw-text xlabelx xlabely xlabel))
+					;locate and draw ylabel
+
+     (let* ((ylabelwidth (text-width ylabel))
+	    (ylabelheight (text-height ylabel))
+	    (ylabelx (- ( - xaxismin ylabelwidth) 2))
+	    (ylabely (- (- yaxismax ylabelheight) 2)))
+       (draw-text ylabelx ylabely ylabel))
+     ;;draw x ticks
+     (each ((x xticks))
+       (when (< (abs x) 1e-08) 
+	 (setq x 0))
+       (let* ((realx (if xlogscale (if (= x 0) xaxismin (convert-to-real-x  x xaxismin xaxismax xscalemin xscalemax 1))
+		       (convert-to-real-x  x xaxismin xaxismax xscalemin xscalemax)))
+	      (strx (str x))
+	      (lenx (text-width strx))
+	      (heightx (+ 2 (text-height strx))))
+	 (draw-line realx yaxisminup realx yaxismin)
+	 (draw-text (- realx (2/ lenx)) (+ (+ yaxismin heightx) 2) strx)
+	 (when (and (> grid 0) (<> realx xaxismin)) (set-grid-x realx yaxisminup yaxismax))))
+     ;;draw y ticks
+     (each ((y yticks))
+       (when (< (abs y) 1e-08)
+	 (setq y 0))
+       (let* ((realy (if ylogscale (if (= y 0) yaxismin (convert-to-real-y  y yaxismin yaxismax yscalemin yscalemax 1))
+		       (convert-to-real-y  y yaxismin yaxismax yscalemin yscalemax)))
+	      (stry (str y))
+	      (leny (text-width stry))
+	      (heighty (text-height stry)))
+	 (draw-line xaxismin realy  xaxisminright realy)
+	 (draw-text (- (- xaxismin leny) 2) (+ realy (2/ leny)) stry)
+	 (when (and (> grid 0) (<> realy yaxismin)) (set-grid-y realy xaxisminright xaxismax))))
+     ;;draw y-axis
+     (draw-line xaxismin yaxismin xaxismin yaxismax)
+     ;;draw x-axis
+     (draw-line xaxismin yaxismin xaxismax yaxismin)
+     ;;locate and draw legend
+     (let* ((legwidth (text-width legend))
+	    (legheight (text-height legend))
+	    (legx (- (- xaxismax legwidth) 2))
+	    (legy (+ yaxismax legheight)))
+       (draw-text legx legy legend))
+     (font oldfont))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Given a x point on  one of the axes, it draws one line of the grid, which will be
+;; parallel to the y axis using the the boundaries of the y axis. 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de set-grid-x (x yaxismin yaxismax &optional color)
+  (let ((y yaxismin)
+	(old-obj-size object-size)
+	(old-color (color))
+	(colorno color))
+    (when ~colorno (setq colorno (alloccolor 0.7 0.7 0.7))) 
+    (color colorno) 
+    (setq object-size 1)
+    (draw-line x yaxismin x yaxismax)
+    (setq object-size old-obj-size)
+    (color old-color)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Given a y point on one of the axes, it draws one line of the grid, which will be
+;; parallel to the x axis using the the  boundaries of the x axis. 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;	    
+(de set-grid-y (y xaxismin xaxismax &optional color)
+  (let ((x xaxismin)
+	(old-obj-size object-size)
+	(old-color (color))
+	(colorno color))
+    (when ~colorno(setq colorno (alloccolor 0.7 0.7 0.7))) 
+    (color colorno)
+    (setq object-size 1)
+    (draw-line  xaxismin y xaxismax y)
+    (setq object-size old-obj-size)
+    (color old-color)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Plots a second x axis (which is optaional) on the top of the Plotter  given the boundaries of the
+;; axis in pixels, the scale,axis ticks and the  axis label. Argument xscale is a list of two numbers.
+;; Argument xticks is a list of numbers. xlabel2 can be an empty string
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de set-x2axis (xaxismin xaxismax yaxismax (xscale2min xscale2max) xticks2 xlabel2)
+  (let* ((s 3)
+	 (yaxismaxdown (+ yaxismax 3))
+	 (yaxisminup (- yaxismin 3))
+	 (oldfont (font)))
+    (graphics-batch
+     (font "Helvetica-12")
+     ;;locate and draw xlabel
+     (let* ((xlabelwidth (text-width xlabel2))
+	    (xlabelheight (text-height xlabel2))
+	    (midpoint (2/ (+ xaxismin xaxismax)))
+	    (xlabelx (+ midpoint (2/ xlabelwidth)))
+	    (xlabely (+ (+ (- yaxismax 40) xlabelheight) 2)))
+       (draw-text xlabelx xlabely xlabel2))
+     ;;draw x ticks
+     (each ((x xticks2))
+       (when (< (abs x) 1e-08)
+	 (setq x 0))
+       (let* ((realx  (convert-to-real-x  x xaxismin xaxismax xscale2min xscale2max))
+	      (strx (str x))
+	      (lenx (text-width strx)))
+	 (draw-line realx yaxismax realx yaxismaxdown)
+	 (draw-text (- realx (2/ lenx)) (- yaxismax 4) strx)
+	 (when (and (= grid 1) (<>  realx xaxismax) (<> realx xaxismin)) (set-grid-x realx yaxisminup yaxismaxdown)))))
+    ;;draw x-axis
+    (draw-line xaxismin yaxismax xaxismax yaxismax)
+    (font oldfont)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;Plots a second y axis (which is optaional) on the right of the Plotter  given the boundaries of the
+;; axis in pixels, the scale,axis ticks and the  axis label. Argument yscale is a list of two numbers.
+;; Argument yticks is a list of numbers. ylabel2 can be an empty string.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de set-y2axis (yaxismin yaxismax xaxismax (yscale2min yscale2max) yticks2 ylabel2)
+  (let* ((s 3)
+	 (xaxismaxleft (- xaxismax 3))
+	 (xaxisminright (+ xaxismin 3))
+	 (oldfont (font)))
+    (graphics-batch
+     (font "Helvetica-12")
+     ;;locate and draw ylabel
+     (let* ((ylabelwidth (text-width ylabel2))
+	    (ylabelheight (text-height ylabel2))
+	    (ylabelx (+ ( + xaxismax ylabelwidth) 2))
+	    (ylabely (- (- yaxismax ylabelheight) 2)))
+       (draw-text ylabelx ylabely ylabel2))
+     ;;draw y ticks
+     (each ((y yticks2))
+       (when (< (abs y) 1e-08)
+	 (setq y 0))
+       (let* ((realy  (convert-to-real-y  y yaxismin yaxismax yscale2min yscale2max))
+	      (stry (str y))
+	      (leny (text-height stry) ))
+	 (draw-line xaxismaxleft realy  xaxismax realy)
+	 (draw-text (+ xaxismax 4) (+ realy (2/ leny)) stry)
+	 (when ( and (= grid 1) (<> realy yaxismax) (<> realy yaxismin)) (set-grid-y realy xaxisminright xaxismaxleft)))))
+    ;;draw y-axis
+    (draw-line xaxismax yaxismin xaxismax yaxismax)
+    (font oldfont)))
+
+
