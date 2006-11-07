@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.16 2004-04-02 15:40:52 leonb Exp $
+ * $Id: nan.c,v 1.17 2006-11-07 20:57:43 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -78,7 +78,7 @@ getnanF (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (flt*) ieee_nanf;
+  return * (flt*) (char*) ieee_nanf;
 }
 
 flt
@@ -86,7 +86,7 @@ infinityF (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (flt*) ieee_inftyf;
+  return * (flt*) (char*) ieee_inftyf;
 }
 
 int
@@ -126,7 +126,7 @@ getnanD (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (real*) ieee_nand;
+  return * (real*) (char*) ieee_nand;
 }
 
 real
@@ -134,7 +134,7 @@ infinityD (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (real*) ieee_inftyd;
+  return * (real*) (char*) ieee_inftyd;
 }
 
 int
@@ -530,9 +530,9 @@ init_nan(void)
       set_fpe_irq();
       /* Check that NaN works as expected */
       if (ieee_present)
-        if (!isnanD(*(real*)ieee_nand + 3.0) ||
-            !isnanD(*(real*)ieee_nand - 3.0e40) ||
-            !isinfD(*(real*)ieee_inftyd - 3.0e40) )
+        if (!isnanD(*(real*)(char*)ieee_nand + 3.0) ||
+            !isnanD(*(real*)(char*)ieee_nand - 3.0e40) ||
+            !isinfD(*(real*)(char*)ieee_inftyd - 3.0e40) )
           {
             ieee_present = 0;
             set_fpe_irq();
