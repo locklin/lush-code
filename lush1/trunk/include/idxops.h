@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: idxops.h,v 1.6 2005-10-06 22:17:36 profshadoko Exp $
+ * $Id: idxops.h,v 1.7 2006-11-12 06:31:43 profshadoko Exp $
  **********************************************************************/
 
 #ifndef IDXOPS_H
@@ -75,7 +75,7 @@
 /* ============== copy operations, m0, m1, m2, ma =========== */
 
 #define Midx_m0copy(i1,i2, Type1, Type2) \
-   *IDX_PTR(i2, Type1) = *IDX_PTR(i1, Type2)
+   *IDX_PTR(i2, Type2) = *IDX_PTR(i1, Type1)
 
 #define Midx_m1copy(i1,i2, Type1, Type2) \
 { Type1 *c1; \
