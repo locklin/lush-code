@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.36 2006-07-13 20:36:13 leonb Exp $
+ * $Id: string.c,v 1.37 2006-11-25 05:48:18 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1227,6 +1227,8 @@ implode_bytes(at *p)
       if (! NUMBERP(p->Car))
         error(NIL,"Number expected",p->Car);
       c = (char)(p->Car->Number);
+      if (! c)
+        break;
       if (p->Car->Number != (real)(unsigned char)c)
         error(NIL,"Integer in range 0..255 expected",p->Car);
       large_string_add(&ls, &c, 1);
@@ -1251,6 +1253,8 @@ implode_chars(at *p)
       if (! NUMBERP(p->Car))
         error(NIL,"Number expected",p->Car);
       wc = (wchar_t)(p->Car->Number);
+      if (! wc)
+        break;
       if (p->Car->Number != (real)wc)
         error(NIL,"Integer expected",p->Car);
       d = wcrtomb(buffer, wc, &ps);
