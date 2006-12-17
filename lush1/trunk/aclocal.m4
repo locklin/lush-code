@@ -129,6 +129,7 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
        AC_CHECK_CC_OPT([-O3],[OPTS="$OPTS -O3"],
          [ AC_CHECK_CC_OPT([-O2], [OPTS="$OPTS -O2"] ) ] )
        if test -z "$ac_cpu" ; then
+        test "$ac_cpu" = "x86_64" && ac_cpu="nocona" 
         AC_MSG_WARN([guessing cpu type (use --with-cpu=cpuname to override.)])
        fi
        opt="-march=${ac_cpu-${host_cpu}}"
