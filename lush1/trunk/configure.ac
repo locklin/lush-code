@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.50 2006-08-17 19:17:13 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.51 2006-12-17 14:11:08 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -323,7 +323,7 @@ case "$host" in
         ;;
     *-darwin* | *-macos10* | *-rhapsody*)
         SOEXT=dylib
-        MAKESO="$LDCC -dylib -o"
+        MAKESO="$LDCC -bundle -flat_namespace -undefined suppress -o"
         ;;
     *-freebsd2*)
         CC_PIC_FLAG='-fPIC'
