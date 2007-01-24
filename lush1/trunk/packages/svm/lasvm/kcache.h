@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.h,v 1.6 2007-01-23 23:47:45 leonb Exp $
+ * $Id: kcache.h,v 1.7 2007-01-24 16:42:05 leonb Exp $
  **********************************************************************/
 
 #ifndef KCACHE_H
@@ -144,6 +144,32 @@ int *lasvm_kcache_r2i(lasvm_kcache_t *self, int n);
 void lasvm_kcache_swap_rr(lasvm_kcache_t *self, int r1, int r2);
 void lasvm_kcache_swap_ii(lasvm_kcache_t *self, int i1, int i2);
 void lasvm_kcache_swap_ri(lasvm_kcache_t *self, int r1, int i2);
+
+
+/* --- lasvm_kcache_shuffle
+   Swaps the row ordering table in order to make sure that the 
+   first elements are exactly those found in <ilist[0]...ilist[ilen-1]>.
+   The elements are always kept in increasing order and the duplicates are eliminated. 
+   This function returns the number <n> of distinct elements.
+   Array <ilist> is reordered in the process.
+*/
+
+int lasvm_kcache_shuffle(lasvm_kcache_t *self, int *ilist, int ilen);
+
+
+
+/* --- lasvm_kcache_set_delegate
+   This function is called to indicate that the cache <self>
+   should ignore the kernel function specified at creation time
+   and instead query the missing values from the cache <delegate>.
+   Calling <lasvm_kcache_query_row> on this cache might automatically
+   swap entries in <delegate> in order to reposition missing values
+   at the end of the currently cached values. However it is 
+   advisable to call <lasvm_kcache_shuffle> on <delegate> in order
+   to save the memory occupied by cache entries for indices
+   that are no longer useful. */
+
+void lasvm_kcache_set_delegate(lasvm_kcache_t *self, lasvm_kcache_t *delegate);
 
 
 #ifdef __cplusplus__

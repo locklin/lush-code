@@ -24,13 +24,14 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.c,v 1.7 2007-01-23 23:47:45 leonb Exp $
+ * $Id: kcache.c,v 1.8 2007-01-24 16:42:05 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "messages.h"
 #include "kcache.h"
@@ -45,12 +46,14 @@
 
 struct lasvm_kcache_s {
   lasvm_kernel_t func;
+  lasvm_kcache_t *delegate;
   void *closure;
   long maxsize;
   long cursize;
   int l;
   int *i2r;
   int *r2i;
+  int maxrowlen;
   /* Rows */
   int    *rsize;
   float  *rdiag;
@@ -121,7 +124,9 @@ lasvm_kcache_create(lasvm_kernel_t kernelfunc, void *closure)
   self = (lasvm_kcache_t*)xmalloc(sizeof(lasvm_kcache_t));
   memset(self, 0, sizeof(lasvm_kcache_t));
   self->l = 0;
+  self->maxrowlen = 0;
   self->func = kernelfunc;
+  self->delegate = 0;
   self->closure = closure;
   self->cursize = sizeof(lasvm_kcache_t);
   self->maxsize = 256*1024*1024;
@@ -193,6 +198,7 @@ xextend(lasvm_kcache_t *self, int k, int nlen)
       self->rdata[k] = ndata;
       self->rsize[k] = nlen;
       self->cursize += (long)(nlen - olen) * sizeof(float);
+      self->maxrowlen = max(self->maxrowlen, nlen);
     }
 }
 
@@ -226,52 +232,60 @@ xtruncate(lasvm_kcache_t *self, int k, int nlen)
 static void
 xswap(lasvm_kcache_t *self, int i1, int i2, int r1, int r2)
 {
-  int k = self->rnext[-1];
-  while (k >= 0)
+  /* swap row data */
+  if (r1 < self->maxrowlen || r2 < self->maxrowlen )
     {
-      int nk = self->rnext[k];
-      int n  = self->rsize[k];
-      int rr = self->i2r[k];
-      float *d = self->rdata[k];
-      if (r1 < n)
-	{
-	  if (r2 < n)
-	    {
-	      float t1 = d[r1];
-	      float t2 = d[r2];
-	      d[r1] = t2;
-	      d[r2] = t1;
-	    }
-	  else if (rr == r2)
-            {
-              d[r1] = self->rdiag[k];
-            }
-          else
-            {
-	      int arsize = self->rsize[i2];
-              if (rr < arsize && rr != r1)
-                d[r1] = self->rdata[i2][rr];
-              else
-                xtruncate(self, k, r1);
-            }
-	}
-      else if (r2 < n)
+      int mrl = 0;
+      int k = self->rnext[-1];
+      while (k >= 0)
         {
-          if (rr == r1)
+          int nk = self->rnext[k];
+          int n  = self->rsize[k];
+          int rr = self->i2r[k];
+          float *d = self->rdata[k];
+          if (r1 < n)
             {
-              d[r2] = self->rdiag[k];
-            }
-          else 
-            {
-	      int arsize = self->rsize[i1];
-              if (rr < arsize && rr != r2)
-                d[r2] = self->rdata[i1][rr];
+              if (r2 < n)
+                {
+                  float t1 = d[r1];
+                  float t2 = d[r2];
+                  d[r1] = t2;
+                  d[r2] = t1;
+                }
+              else if (rr == r2)
+                {
+                  d[r1] = self->rdiag[k];
+                }
               else
-                xtruncate(self, k, r2);
+                {
+                  int arsize = self->rsize[i2];
+                  if (rr < arsize && rr != r1)
+                    d[r1] = self->rdata[i2][rr];
+                  else
+                    xtruncate(self, k, r1);
+                }
             }
+          else if (r2 < n)
+            {
+              if (rr == r1)
+                {
+                  d[r2] = self->rdiag[k];
+                }
+              else 
+                {
+                  int arsize = self->rsize[i1];
+                  if (rr < arsize && rr != r2)
+                    d[r2] = self->rdata[i1][rr];
+                  else
+                    xtruncate(self, k, r2);
+                }
+            }
+          mrl = max(mrl, self->rsize[k]);
+          k = nk;
         }
-      k = nk;
+      self->maxrowlen = mrl;
     }
+  /* swap r2i and i2r */
   self->r2i[r1] = i2;
   self->r2i[r2] = i1;
   self->i2r[i1] = r2;
@@ -299,6 +313,89 @@ lasvm_kcache_swap_ri(lasvm_kcache_t *self, int r1, int i2)
   xswap(self, self->r2i[r1], i2, r1, self->i2r[i2]);
 }
 
+int 
+lasvm_kcache_shuffle(lasvm_kcache_t *self, int *ilist, int ilen)
+{
+  int k = 0;
+  int maxid = 0;
+  float *m = 0;
+  char *c = 0;
+  int mrl = 0;
+  int i, j, r;
+
+  ASSERT(ilist);
+  ASSERT(ilen>0);
+  
+  /* find max index */
+  for (r=0; r<ilen; r++)
+    {
+      i = ilist[r];
+      ASSERT(i>=0 && i<self->l);
+      maxid = max(maxid, i);
+    }
+  /* compute map */
+  xminsize(self, maxid+1);
+  c = xmalloc(self->l);
+  memset(c, 0, self->l * sizeof(char));
+  for (r=0; r<ilen; r++)
+    c[ ilist[r] ] = 1;
+  /* sort ilist and remove duplicates */
+  ilen = 0;
+  for (i=0; i<self->l; i++)
+    if (c[i])
+      ilist[ilen++] = i;
+  /* reorganize cache entries */
+  m = xmalloc(ilen * sizeof(float));
+  k = self->rnext[-1];
+  while (k >= 0)
+    {
+      int nk = self->rnext[k];
+      int n  = self->rsize[k];
+      int rr = self->i2r[k];
+      float *d = self->rdata[k];
+      /* collect */
+      for (j=0; j<ilen; j++)
+        {
+          int r = self->i2r[ ilist[j] ];
+          if (r < n)
+            m[j] = d[r];
+          else if (r == rr)
+            m[j] = self->rdiag[r];
+          else
+            break;
+        }
+      /* copy */
+      if (j < n)
+        xtruncate(self, k, j);
+      else
+        xextend(self, k, j);
+      d = self->rdata[k];      
+      for (i=0; i<j; i++)
+        d[i] = m[i];
+      mrl = max(mrl, j);
+      /* next */
+      k = nk;
+    }
+  free(m);
+  /* recompose i2r and r2i */
+  r = 0;
+  for (i=0; i<self->l; i++)
+    if (c[i])
+      self->r2i[r++] = i;
+  for (i=0; i<self->l; i++)
+    if (!c[i])
+      self->r2i[r++] = i;
+  ASSERT(r == self->l);
+  for (r=0; r<self->l; r++)
+    self->i2r[ self->r2i[r] ] = r;
+  ASSERT(mrl <= ilen);
+  free(c);
+  /* return */
+  self->maxrowlen = mrl;
+  return ilen;
+}
+
+
 double 
 lasvm_kcache_query(lasvm_kcache_t *self, int i, int j)
 {
@@ -320,7 +417,10 @@ lasvm_kcache_query(lasvm_kcache_t *self, int i, int j)
 	return self->rdata[j][p];
     }
   /* compute */
-  return (*self->func)(i, j, self->closure);
+  if (self->delegate)
+    return lasvm_kcache_query(self->delegate, i, j);
+  else
+    return (*self->func)(i, j, self->closure);
 }
 
 static void 
@@ -335,6 +435,44 @@ xpurge(lasvm_kcache_t *self)
           xtruncate(self, k, 0);
 	  k = pk;
 	}
+    }
+}
+
+static void
+xdelegate(lasvm_kcache_t *self, int i, int olen, int len, float *d)
+{
+  lasvm_kcache_t *delegate = self->delegate;
+  int *r2i = self->r2i;
+  int *di2r = delegate->i2r;
+  float *row = 0;
+  int mdrl = delegate->maxrowlen;
+  int mdr = 0;
+  int r;
+  xminsize(delegate, self->l);
+  di2r = delegate->i2r;
+  for (r=olen; r<len; r++)
+    {
+      int j = r2i[r];
+      int dr = di2r[j];
+      if (dr >= mdrl)
+        {
+          if (dr > mdrl)
+            {
+              lasvm_kcache_swap_ri(delegate, mdrl, j);
+              di2r = delegate->i2r;
+              dr = mdrl;
+            }
+          mdrl += 1;
+        }
+      mdr = max(mdr, dr);
+    }
+  row = lasvm_kcache_query_row(delegate, i, mdr+1);
+  di2r = delegate->i2r;
+  for (r=olen; r<len; r++)
+    {
+      int j = r2i[r];
+      int dr = di2r[j];
+      d[r] = row[dr];
     }
 }
 
@@ -354,24 +492,41 @@ lasvm_kcache_query_row(lasvm_kcache_t *self, int i, int len)
       if (i >= self->l || len >= self->l)
 	xminsize(self, max(1+i,len));
       olen = self->rsize[i];
-      if (olen < 0)
-	{
-	  self->rdiag[i] = (*self->func)(i, i, self->closure);
-	  olen = self->rsize[i] = 0;
-	}
-      xextend(self, i, len);
-      q = self->i2r[i];
-      d = self->rdata[i];
-      for (p=olen; p<len; p++)
-	{
-	  int j = self->r2i[p];
-	  if (i == j)
-	    d[p] = self->rdiag[i];
-	  else if (q < self->rsize[j])
-	    d[p] = self->rdata[j][q];
-	  else
-	    d[p] = (*self->func)(i, j, self->closure);
-	}
+      if (olen < len)
+        {
+          if (self->delegate)
+            {
+              if (olen < 0)
+                {
+                  self->rdiag[i] = lasvm_kcache_query(self->delegate, i, i);
+                  olen = self->rsize[i] = 0;
+                }
+              xextend(self, i, len);
+              d = self->rdata[i];
+              xdelegate(self, i, olen, len, d);
+            }
+          else
+            {
+              if (olen < 0)
+                {
+                  self->rdiag[i] = (*self->func)(i, i, self->closure);
+                  olen = self->rsize[i] = 0;
+                }
+              xextend(self, i, len);
+              q = self->i2r[i];
+              d = self->rdata[i];
+              for (p=olen; p<len; p++)
+                {
+                  int j = self->r2i[p];
+                  if (i == j)
+                    d[p] = self->rdiag[i];
+                  else if (q < self->rsize[j])
+                    d[p] = self->rdata[j][q];
+                  else
+                    d[p] = (*self->func)(i, j, self->closure);
+                }
+            }
+        }
       self->rnext[self->rprev[i]] = self->rnext[i];
       self->rprev[self->rnext[i]] = self->rprev[i];
       xpurge(self);
@@ -432,3 +587,8 @@ lasvm_kcache_get_current_size(lasvm_kcache_t *self)
   return self->cursize;
 }
 
+void 
+lasvm_kcache_set_delegate(lasvm_kcache_t *self, lasvm_kcache_t *delegate)
+{
+  self->delegate = delegate;
+}
