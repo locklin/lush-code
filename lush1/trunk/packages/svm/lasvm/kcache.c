@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.c,v 1.8 2007-01-24 16:42:05 leonb Exp $
+ * $Id: kcache.c,v 1.9 2007-01-25 22:42:09 leonb Exp $
  **********************************************************************/
 
 #include <stdlib.h>
@@ -46,7 +46,8 @@
 
 struct lasvm_kcache_s {
   lasvm_kernel_t func;
-  lasvm_kcache_t *delegate;
+  lasvm_kcache_t *prevbuddy;
+  lasvm_kcache_t *nextbuddy;
   void *closure;
   long maxsize;
   long cursize;
@@ -126,7 +127,8 @@ lasvm_kcache_create(lasvm_kernel_t kernelfunc, void *closure)
   self->l = 0;
   self->maxrowlen = 0;
   self->func = kernelfunc;
-  self->delegate = 0;
+  self->prevbuddy = self;
+  self->nextbuddy = self;
   self->closure = closure;
   self->cursize = sizeof(lasvm_kcache_t);
   self->maxsize = 256*1024*1024;
@@ -145,6 +147,11 @@ lasvm_kcache_destroy(lasvm_kcache_t *self)
   if (self)
     {
       int i;
+      lasvm_kcache_t *nb = self->nextbuddy;
+      lasvm_kcache_t *pb = self->prevbuddy;
+      pb->nextbuddy = nb;
+      nb->prevbuddy = pb;
+      /* delete */
       if (self->i2r)
 	free(self->i2r);
       if (self->r2i)
@@ -396,32 +403,42 @@ lasvm_kcache_shuffle(lasvm_kcache_t *self, int *ilist, int ilen)
 }
 
 
+static double 
+xquery(lasvm_kcache_t *self, int i, int j)
+{
+  /* search buddies */
+  lasvm_kcache_t *cache = self->nextbuddy;
+  do {
+    int l = cache->l;
+    if (i<l && j<l)
+      {
+        int s = cache->rsize[i];
+        int p = cache->i2r[j];
+        if (p < s)
+          return cache->rdata[i][p];
+        if (i == j && s >= 0)
+          return cache->rdiag[i];
+        p = cache->i2r[i];
+        s = cache->rsize[j];
+        if (p < s)
+          return cache->rdata[j][p];
+      }
+    cache = cache->nextbuddy;
+  } while (cache != self);
+  /* compute */
+  return (*self->func)(i, j, self->closure);
+}
+
+
 double 
 lasvm_kcache_query(lasvm_kcache_t *self, int i, int j)
 {
-  int l = self->l;
+  ASSERT(self);
   ASSERT(i>=0);
   ASSERT(j>=0);
-  if (i<l && j<l)
-    {
-      /* check cache */
-      int s = self->rsize[i];
-      int p = self->i2r[j];
-      if (p < s)
-	return self->rdata[i][p];
-      else if (i == j && s >= 0)
-	return self->rdiag[i];
-      p = self->i2r[i];
-      s = self->rsize[j];
-      if (p < s)
-	return self->rdata[j][p];
-    }
-  /* compute */
-  if (self->delegate)
-    return lasvm_kcache_query(self->delegate, i, j);
-  else
-    return (*self->func)(i, j, self->closure);
+  return xquery(self, i, j);
 }
+
 
 static void 
 xpurge(lasvm_kcache_t *self)
@@ -438,44 +455,6 @@ xpurge(lasvm_kcache_t *self)
     }
 }
 
-static void
-xdelegate(lasvm_kcache_t *self, int i, int olen, int len, float *d)
-{
-  lasvm_kcache_t *delegate = self->delegate;
-  int *r2i = self->r2i;
-  int *di2r = delegate->i2r;
-  float *row = 0;
-  int mdrl = delegate->maxrowlen;
-  int mdr = 0;
-  int r;
-  xminsize(delegate, self->l);
-  di2r = delegate->i2r;
-  for (r=olen; r<len; r++)
-    {
-      int j = r2i[r];
-      int dr = di2r[j];
-      if (dr >= mdrl)
-        {
-          if (dr > mdrl)
-            {
-              lasvm_kcache_swap_ri(delegate, mdrl, j);
-              di2r = delegate->i2r;
-              dr = mdrl;
-            }
-          mdrl += 1;
-        }
-      mdr = max(mdr, dr);
-    }
-  row = lasvm_kcache_query_row(delegate, i, mdr+1);
-  di2r = delegate->i2r;
-  for (r=olen; r<len; r++)
-    {
-      int j = r2i[r];
-      int dr = di2r[j];
-      d[r] = row[dr];
-    }
-}
-
 float *
 lasvm_kcache_query_row(lasvm_kcache_t *self, int i, int len)
 {
@@ -487,45 +466,24 @@ lasvm_kcache_query_row(lasvm_kcache_t *self, int i, int len)
     }
   else
     {
-      int olen, p, q;
+      int olen, p;
       float *d;
       if (i >= self->l || len >= self->l)
 	xminsize(self, max(1+i,len));
       olen = self->rsize[i];
       if (olen < len)
         {
-          if (self->delegate)
+          if (olen < 0)
             {
-              if (olen < 0)
-                {
-                  self->rdiag[i] = lasvm_kcache_query(self->delegate, i, i);
-                  olen = self->rsize[i] = 0;
-                }
-              xextend(self, i, len);
-              d = self->rdata[i];
-              xdelegate(self, i, olen, len, d);
+              self->rdiag[i] = (*self->func)(i, i, self->closure);
+              olen = self->rsize[i] = 0;
             }
-          else
-            {
-              if (olen < 0)
-                {
-                  self->rdiag[i] = (*self->func)(i, i, self->closure);
-                  olen = self->rsize[i] = 0;
-                }
-              xextend(self, i, len);
-              q = self->i2r[i];
-              d = self->rdata[i];
-              for (p=olen; p<len; p++)
-                {
-                  int j = self->r2i[p];
-                  if (i == j)
-                    d[p] = self->rdiag[i];
-                  else if (q < self->rsize[j])
-                    d[p] = self->rdata[j][q];
-                  else
-                    d[p] = (*self->func)(i, j, self->closure);
-                }
-            }
+          xextend(self, i, len);
+          d = self->rdata[i];
+          self->rsize[i] = olen;
+          for (p=olen; p<len; p++)
+            d[p] = lasvm_kcache_query(self, self->r2i[p], i);
+          self->rsize[i] = len;
         }
       self->rnext[self->rprev[i]] = self->rnext[i];
       self->rprev[self->rnext[i]] = self->rprev[i];
@@ -588,7 +546,21 @@ lasvm_kcache_get_current_size(lasvm_kcache_t *self)
 }
 
 void 
-lasvm_kcache_set_delegate(lasvm_kcache_t *self, lasvm_kcache_t *delegate)
+lasvm_kcache_set_buddy(lasvm_kcache_t *self, lasvm_kcache_t *buddy)
 {
-  self->delegate = delegate;
+  lasvm_kcache_t *p = self;
+  lasvm_kcache_t *selflast = self->prevbuddy;
+  lasvm_kcache_t *buddylast = buddy->prevbuddy;
+  /* check functions are identical */
+  ASSERT(self->func == buddy->func);
+  /* make sure we are not already buddies */
+  do { 
+    if (p == buddy) return; 
+    p = p->nextbuddy; 
+  } while (p != self);
+  /* link */
+  selflast->nextbuddy = buddy;
+  buddy->prevbuddy = selflast;
+  buddylast->nextbuddy = self;
+  self->prevbuddy = buddylast;
 }

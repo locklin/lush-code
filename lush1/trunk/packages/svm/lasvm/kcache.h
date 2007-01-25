@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: kcache.h,v 1.7 2007-01-24 16:42:05 leonb Exp $
+ * $Id: kcache.h,v 1.8 2007-01-25 22:42:09 leonb Exp $
  **********************************************************************/
 
 #ifndef KCACHE_H
@@ -158,18 +158,13 @@ int lasvm_kcache_shuffle(lasvm_kcache_t *self, int *ilist, int ilen);
 
 
 
-/* --- lasvm_kcache_set_delegate
-   This function is called to indicate that the cache <self>
-   should ignore the kernel function specified at creation time
-   and instead query the missing values from the cache <delegate>.
-   Calling <lasvm_kcache_query_row> on this cache might automatically
-   swap entries in <delegate> in order to reposition missing values
-   at the end of the currently cached values. However it is 
-   advisable to call <lasvm_kcache_shuffle> on <delegate> in order
-   to save the memory occupied by cache entries for indices
-   that are no longer useful. */
+/* --- lasvm_kcache_set_buddy
+   This function is called to indicate that the caches <self> and <buddy>
+   implement the same kernel function. When a buddy experiences a cache
+   miss, it can try querying its buddies instead of calling the 
+   kernel function.  Buddy relationship is transitive. */
 
-void lasvm_kcache_set_delegate(lasvm_kcache_t *self, lasvm_kcache_t *delegate);
+void lasvm_kcache_set_buddy(lasvm_kcache_t *self, lasvm_kcache_t *buddy);
 
 
 #ifdef __cplusplus__
