@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.16 2006-02-24 17:14:27 leonb Exp $
+ * $Id: graphics.c,v 1.17 2007-02-06 19:36:46 leonb Exp $
  **********************************************************************/
 
 
@@ -206,14 +206,19 @@ DX(xfont)
           UNLOCK(q);
           error(NIL, "this driver does not support 'font'", NIL);
         }
-      UNLOCK(q);
-    q = NIL;
-    if (r)
-      {
-        q = str_utf8_to_mb(r);
-        UNLOCK(win->font);
-        win->font = q;
-      }
+      if (r)
+        {
+          at *a = str_utf8_to_mb(r);
+          UNLOCK(win->font);
+          win->font = a;
+          UNLOCK(q);
+          q = a;
+        }
+      else
+        {
+          UNLOCK(q);
+          q = NIL;
+        }
     }
   LOCK(q);
   return q;
