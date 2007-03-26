@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.22 2005-08-19 14:38:53 leonb Exp $
+ * $Id: oostruct.c,v 1.23 2007-03-26 20:56:53 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -41,6 +41,7 @@ static at *at_mexpand;
 static at *at_this;
 static at *at_destroy;
 static at *at_unknown;
+static at *at_call;
 
 static struct hashelem *getmethod(class *cl, at *prop);
 static at *call_method(at *obj, struct hashelem *hx, at *args);
@@ -162,6 +163,15 @@ oostruct_action(at *q, void (*action) (at *))
   zombie_action(q,action);
 }
 
+static at*
+oostruct_listeval(at *p, at *q)
+{
+  struct hashelem *hx;
+  if ((hx = getmethod(p->Class, at_call)))
+    return call_method(p, hx, q->Cdr);
+  return generic_listeval(p, q);
+}
+
 static int
 oostruct_compare(at *p, at *q, int order)
 {
@@ -233,7 +243,7 @@ class object_class =
   oostruct_action,
   generic_name,
   generic_eval,
-  generic_listeval,
+  oostruct_listeval,
   generic_serialize,
   oostruct_compare,
   oostruct_hash,
@@ -1462,4 +1472,5 @@ init_oostruct(void)
   at_destroy = var_define("-destructor");
   at_mexpand = var_define("macro-expand");
   at_unknown = var_define("-unknown");
+  at_call = var_define("-call");
 }
