@@ -6,34 +6,33 @@
 (libload "video4linux/v4l")
 (libload "opencv/opencv")
 
-(setq width 640)
-(setq height 480)
+(de opencv-canny-demo ()
+  (let* ((width 640) (height 480)
+	 (webcam (new v4ldevice 
+		      "/dev/video0" "NTSC" 0 width height))
+	 (captimg (ubyte-matrix height width 3))
+	 (bufimg (new cvimage width height @IPL_DEPTH_8U 3))
+	 (roirect (new cvrect 0 0 width height))
+	 (grayimg (new cvimage width height @IPL_DEPTH_8U 1))
+	 (edgeimg (new cvimage width height @IPL_DEPTH_8U 1))
+	 (halfimg (new cvimage (/ width 2) (/ height 2) 
+		       @IPL_DEPTH_8U 3))
+	 )
+    (new-window 0 0 width height "Lush/OpenCV Edge Demo")
+    (printf "type CTRL-C to stop\n")
+    (while t
+      (==> webcam grab-into-rgb captimg)
+      (idx8u_ipl  captimg  :bufimg:p)
 
-(new-window width height  "webcam")
-(setq webcam (new v4ldevice 
-		  "/dev/video0" "NTSC" 0 width height))
+      (cvPyrDown :bufimg:p  :halfimg:p  7)
+      (cvPyrUp   :halfimg:p :bufimg:p   7)
 
-(setq captimg (ubyte-matrix height width 3))
-(setq bufimg (new cvimage width height @IPL_DEPTH_8U 3))
-(setq roirect (new cvrect 0 0 width height))
-(setq grayimg (new cvimage width height @IPL_DEPTH_8U 1))
-(setq edgeimg (new cvimage width height @IPL_DEPTH_8U 1))
-(setq halfimg (new cvimage 
-		   (/ width 2) (/ height 2) 
-		   @IPL_DEPTH_8U 3))
+      (cvSetImageCOI  :bufimg:p 1)
+      (cvSetImageROI  :bufimg:p :roirect:p)
+      (cvCopy     :bufimg:p  :grayimg:p  (gptr ()) )
 
- (while t
-   (==> webcam grab-into-rgb captimg)
-   (idx8u_ipl  captimg  :bufimg:p)
+      (cvCanny  :grayimg:p    :edgeimg:p  0 50 3)
+      (cvDilate :edgeimg:p    :edgeimg:p  (gptr ()) 1)
+      (cvimage-draw 0 0 edgeimg))))
 
-   (cvPyrDown :bufimg:p  :halfimg:p  7)
-   (cvPyrUp   :halfimg:p :bufimg:p   7)
-
-   (cvSetImageCOI  :bufimg:p 1)
-   (cvSetImageROI  :bufimg:p :roirect:p)
-   (cvCopy     :bufimg:p  :grayimg:p  (gptr ()) )
-
-   (cvCanny  :grayimg:p    :edgeimg:p  0 50 3)
-   (cvDilate :edgeimg:p    :edgeimg:p  (gptr ()) 1)
-   (cvimage-show edgeimg))
-
+(opencv-canny-demo)

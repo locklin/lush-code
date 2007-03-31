@@ -1,6 +1,7 @@
-
+;; Lukas-Kanade tracking demo.
 ;; by Fu Jie Huang, Jan 2003
 ;;  updated Oct 2006
+;; updated by  Yann LeCun March 2007.
 
 ;; when all the points are lost in the tracking,
 ;; the program does nothing but displaying the frame
@@ -27,9 +28,7 @@
 		    8       ;; line type (default)
 		    0)      ;; shift (default)
 	 ())
-    (delete ipoint)
-    (delete fpoint)
-    ()))  
+    ()))
 
 (de find_dots ( img dots count )
   (let* ((width  (==> img get_width))
@@ -74,107 +73,97 @@
 	  #{ #include <cv.h> #}
 	  update_dots)
 
-(setq width 640)
-(setq height 480)
 
-(new-window width height  "webcam")
-(setq webcam (new v4ldevice 
-		  "/dev/video0" "NTSC" 
-		  0 width height))
+(let* ((width 640) (height 480)
+       (webcam (new v4ldevice "/dev/video0" "NTSC" 0 width height))
+       (captimg (ubyte-matrix height width 3))
+       (bufimg (new cvimage width height 8 3))
+       (nextimg (new cvimage width height 8 3))
+       (bufgray (new cvimage width height 8 1))
+       (nextgray (new cvimage width height 8 1))
+       (pyramid (new cvimage width height 8 1))
+       (nextpyr (new cvimage width height 8 1))
+       (disimg (new cvimage width height 8 3))
+       (corners (new cvsmobarray (memsize_cvpoint2d32f) 300))
+       (nextcorners (new cvsmobarray (memsize_cvpoint2d32f) 300))
+       (count  (new cvsmobarray 4 1))
+       (numpoints 0)
 
-(setq captimg (ubyte-matrix height width 3))
-(setq bufimg  (new cvimage width height 8 3))
-(setq nextimg (new cvimage width height 8 3))
+       (status   (new cvsmobarray 1 300))
+       (winsize  (new cvsize 10 10))
+       (criteria (new cvtermcriteria 
+		      (bitor @CV_TERMCRIT_ITER  
+			     @CV_TERMCRIT_EPS)  
+		      20  0.03 ))
+       (flag 0))
 
-(setq bufgray  (new cvimage width height 8 1))
-(setq nextgray (new cvimage width height 8 1))
+  (new-window 0 0 width height "Lush/OpenCV Tracking demo")
 
-(setq pyramid  (new cvimage width height 8 1))
-(setq nextpyr  (new cvimage width height 8 1))
-
-(setq disimg  (new cvimage width height 8 3))
-
-(setq corners     (new cvsmobarray (memsize_cvpoint2d32f) 300))
-(setq nextcorners (new cvsmobarray (memsize_cvpoint2d32f) 300))
-
-(setq count   (new cvsmobarray 4 1))
-(poke-int (==> count ptr_nth 0) 1000)  ;; maximum
-
-(==> webcam grab-into-rgb captimg)
-
-(idx8u_ipl  captimg  :bufimg:p)
-(find_dots  bufimg   corners  count)
-(setq  numpoints (peek-int (==> count ptr_nth 0)))
-
-(idx8u_ipl  captimg  :disimg:p)
-(put_dots   disimg   corners  numpoints)
- 
-(cvimage-show disimg) 
-;; (idx8u_ipl  captimg  :bufimg:p)
-
-(setq status   (new cvsmobarray 1 300))
-(setq winsize  (new cvsize 10 10))
-(setq criteria (new cvtermcriteria 
-		    (bitor @CV_TERMCRIT_ITER  
-			   @CV_TERMCRIT_EPS)  
-		    20  0.03 ))
- 
-(setq flag 0)
-
-(setq  numpoints (peek-int (==> count ptr_nth 0)))
-(while t 
+  (poke-int (==> count ptr_nth 0) 1000)	;; maximum
   (==> webcam grab-into-rgb captimg)
-  (idx8u_ipl   captimg  :disimg:p)
+  (idx8u_ipl  captimg  :bufimg:p)
+  (find_dots bufimg corners count)
+  (setq  numpoints (peek-int (==> count ptr_nth 0)))
+  (idx8u_ipl  captimg  :disimg:p)
+  (put_dots disimg corners  numpoints)
+  (cvimage-show disimg) 
+  ;; (idx8u_ipl  captimg  :bufimg:p)
+  (setq  numpoints (peek-int (==> count ptr_nth 0)))
+
+  (while t 
+    (==> webcam grab-into-rgb captimg)
+    (idx8u_ipl   captimg  :disimg:p)
  
-  (when (and (= flag 0)
-	     (<> numpoints 0))
-    (idx8u_ipl  captimg  :nextimg:p)
-    (cvSetImageCOI  :nextimg:p 1)
-    (cvcopy :nextimg:p   :nextgray:p (gptr ()) )
-    (cvsetimagecoi  :bufimg:p  1)
-    (cvcopy :bufimg:p    :bufgray:p (gptr ()) )
-    (cvcalcOpticalFlowPyrLK  :bufgray:p  
-			     :nextgray:p  
-			     :pyramid:p
-			     :nextpyr:p
-			     :corners:p  
-			     :nextcorners:p 
-			     numpoints
-			     :winsize:p  
-			     3
-			     :status:p   
-			     (gptr ())
-			     :criteria:p 
-			     0)
-    (setq flag 1) 
-    (setq numpoints (update_dots :nextcorners:p :status:p numpoints))
-    (put_dots    disimg  nextcorners  numpoints))
+    (when (and (= flag 0)
+	       (<> numpoints 0))
+      (idx8u_ipl  captimg  :nextimg:p)
+      (cvSetImageCOI  :nextimg:p 1)
+      (cvcopy :nextimg:p   :nextgray:p (gptr ()) )
+      (cvsetimagecoi  :bufimg:p  1)
+      (cvcopy :bufimg:p    :bufgray:p (gptr ()) )
+      (cvcalcOpticalFlowPyrLK  :bufgray:p  
+			       :nextgray:p  
+			       :pyramid:p
+			       :nextpyr:p
+			       :corners:p  
+			       :nextcorners:p 
+			       numpoints
+			       :winsize:p  
+			       3
+			       :status:p   
+			       (gptr ())
+			       :criteria:p 
+			       0)
+      (setq flag 1) 
+      (setq numpoints (update_dots :nextcorners:p :status:p numpoints))
+      (put_dots    disimg  nextcorners  numpoints))
  
-  (when (and (= flag 1)
-	     (<> numpoints 0))
-    (idx8u_ipl  captimg  :bufimg:p)
-    (cvSetImageCOI  :bufimg:p 1)
-    (cvSetImageCOI  :nextimg:p 1)
-    (cvcopy :nextimg:p   :nextgray:p (gptr ()) )
-    (cvcopy :bufimg:p    :bufgray:p (gptr ()) )
-    (cvcalcOpticalFlowPyrLK  :nextgray:p  
-			     :bufgray:p  
-			     :nextpyr:p
-			     :pyramid:p
-			     :nextcorners:p  
-			     :corners:p 
-			     numpoints
-			     :winsize:p  
-			     3
-			     :status:p   
-			     (gptr ())
-			     :criteria:p 
-			     0)
-    (setq flag 0) 
-    (setq numpoints (update_dots :corners:p :status:p numpoints))
-    (put_dots    disimg  corners  numpoints))    
+    (when (and (= flag 1)
+	       (<> numpoints 0))
+      (idx8u_ipl  captimg  :bufimg:p)
+      (cvSetImageCOI  :bufimg:p 1)
+      (cvSetImageCOI  :nextimg:p 1)
+      (cvcopy :nextimg:p   :nextgray:p (gptr ()) )
+      (cvcopy :bufimg:p    :bufgray:p (gptr ()) )
+      (cvcalcOpticalFlowPyrLK  :nextgray:p  
+			       :bufgray:p  
+			       :nextpyr:p
+			       :pyramid:p
+			       :nextcorners:p  
+			       :corners:p 
+			       numpoints
+			       :winsize:p  
+			       3
+			       :status:p   
+			       (gptr ())
+			       :criteria:p 
+			       0)
+      (setq flag 0) 
+      (setq numpoints (update_dots :corners:p :status:p numpoints))
+      (put_dots    disimg  corners  numpoints))    
   
-  (cvimage-show disimg) )
+    (cvimage-draw 0 0 disimg)))
+
 
     
     
