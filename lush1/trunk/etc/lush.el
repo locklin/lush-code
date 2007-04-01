@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.7 2007-04-01 07:05:08 ysulsky Exp $
+;;; $Id: lush.el,v 1.8 2007-04-01 07:08:48 ysulsky Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (require 'pcomplete)
@@ -63,7 +63,7 @@
 (defun lush-filter-input (inp)
   "Just check the input for any loads or defines and set 
    *lush-symbols-stale?* to true if there are any. This
-   have to be very accurate."
+   doesn't have to be very accurate."
   (if (string-match "load\\|def\\|set\\|(d.[\\t\\n ]" inp)
       (setq *lush-symbols-stale?* t)))
 
