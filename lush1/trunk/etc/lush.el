@@ -24,18 +24,60 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.4 2002-10-01 18:32:28 profshadoko Exp $
+;;; $Id: lush.el,v 1.5 2007-04-01 05:07:52 ysulsky Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(require 'pcomplete)
 
 ;; call this with M-X lush
 (defun lush ()
   "starts Lush"
   (interactive)
-  (inferior-lisp "lush"))
+  (inferior-lisp "lush")
+  (setq comint-prompt-regexp "^?")
+  (set (make-local-variable 'pcomplete-parse-arguments-function)
+       'lush-parse-arguments)
+  (local-set-key "\t" 'pcomplete))
 
 (global-set-key "\C-xg" 'goto-line)
 
 ;; this file contains useful definitions for emacs
+
+(defun filter (p lst)
+  (let ((ret ()))
+    (mapc (lambda (x) (if (funcall p x) (setq ret (cons x ret)))) lst)
+    (nreverse ret)))
+
+(defun lush-complete (sym)
+  (let ((sym-name (downcase (if (stringp sym) sym (symbol-name sym))))
+        (all-names (car (read-from-string
+                         (car (comint-redirect-results-list-from-process
+                               (inferior-lisp-proc)
+                               "(symblist)"
+                               "(.*)" 0))))))
+    (let ((minl (length sym-name)))
+      (filter (lambda (s)
+                (and (>= (length s) minl)
+                     (string= sym-name (substring s 0 minl))))
+              all-names))))
+
+
+;; See http://www.emacswiki.org/cgi-bin/wiki/PcompleteExamples
+(defun lush-parse-arguments ()
+  (save-excursion
+    (let* ((cur (point))
+           (beg (search-backward-regexp "[][{}#():'\" \t\n]" nil t))
+           (pos (if beg (+ beg 1) cur))
+           (arg (buffer-substring-no-properties pos cur)))
+      (cons (list "lush-complete" arg)
+            (list (point-min) pos)))))
+
+(defun pcomplete/lush-complete ()
+  "Complete the symbol at point"
+   (let* ((sym (cadr (car (lush-parse-arguments))))
+          (completions (lush-complete sym)))
+     (throw 'pcomplete-completions completions)))
+
 
 ;; detection
 (setq auto-mode-alist (cons (cons "\\.sn$" 'lisp-mode) auto-mode-alist))
