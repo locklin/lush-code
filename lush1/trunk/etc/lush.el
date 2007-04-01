@@ -24,10 +24,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.8 2007-04-01 07:08:48 ysulsky Exp $
+;;; $Id: lush.el,v 1.9 2007-04-01 09:03:25 ysulsky Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; this file contains useful definitions for emacs
+
 (require 'pcomplete)
+
+;; if this is set to nil then tab completion will read the environment
+;; from the lush process every time, even when nothing new was defined
+(defvar cache-symbols t)
+
+(defvar *lush-symbols* ())
+(defvar *lush-symbols-stale?* t)
 
 ;; call this with M-X lush
 (defun lush ()
@@ -35,37 +44,43 @@
   (interactive)
   (inferior-lisp "lush")
   (setq comint-prompt-regexp "^?")
-  (setq comint-input-filter-functions
-        (cons 'lush-filter-input comint-input-filter-functions))
+  (if cache-symbols
+      (progn
+        ;; override comint-send-string to check for definitions/file loads
+        ;; entered by hand in the repl or through the lisp-load-file command
+        (defvar prev-comint-send-string (symbol-function 'comint-send-string))
+        (defun comint-send-string (proc inp)
+          (if (string-match "load\\|\\^L\\|def\\|dmd\\|set\\|(d[efmz][\\t\\n ]" inp)
+              (setq *lush-symbols-stale?* t))
+          (funcall prev-comint-send-string proc inp))
+
+        ;; override comint-send-region to mark the symbol cache stale
+        ;; whenever the lisp-eval-* commands are used
+        (defvar prev-comint-send-region (symbol-function 'comint-send-region))
+        (defun comint-send-region (proc start end)
+          (setq *lush-symbols-stale?* t)
+          (funcall prev-comint-send-region proc start end))))
+
   (set (make-local-variable 'pcomplete-parse-arguments-function)
        'lush-parse-arguments)
+
   (local-set-key "\t" 'pcomplete))
 
 (global-set-key "\C-xg" 'goto-line)
-
-;; this file contains useful definitions for emacs
 
 (defun filter (p lst)
   (let ((ret ()))
     (mapc (lambda (x) (if (funcall p x) (setq ret (cons x ret)))) lst)
     (nreverse ret)))
 
+;; be careful; calling this after entering an unfinished expression
+;; will cause this to hang
 (defun lush-symbols ()
   (car (read-from-string
         (car (comint-redirect-results-list-from-process
               (inferior-lisp-proc)
               "(symblist)"
               "(.*)" 0)))))
-
-(defvar *lush-symbols* ())
-(defvar *lush-symbols-stale?* t)
-
-(defun lush-filter-input (inp)
-  "Just check the input for any loads or defines and set 
-   *lush-symbols-stale?* to true if there are any. This
-   doesn't have to be very accurate."
-  (if (string-match "load\\|def\\|set\\|(d.[\\t\\n ]" inp)
-      (setq *lush-symbols-stale?* t)))
 
 (defun lush-complete (sym)
   (let* ((sym-name (downcase (if (stringp sym) sym (symbol-name sym))))
@@ -75,15 +90,14 @@
              (> (save-excursion (search-backward-regexp "^?" nil t)) 
                 (save-excursion (search-backward-regexp "\n" nil t))))
         (progn (setq *lush-symbols* (lush-symbols))
-               (setq *lush-symbols-stale?* ())))
+               (if cache-symbols
+                   (setq *lush-symbols-stale?* ()))))
     (filter (lambda (s)
               (and (>= (length s) minl)
                    (string= sym-name (substring s 0 minl))))
             *lush-symbols*)))
 
-
-
-;; See http://www.emacswiki.org/cgi-bin/wiki/PcompleteExamples
+;; see http://www.emacswiki.org/cgi-bin/wiki/PcompleteExamples
 (defun lush-parse-arguments ()
   (save-excursion
     (let* ((cur (point))
