@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.6 2007-04-01 05:18:19 ysulsky Exp $
+;;; $Id: lush.el,v 1.7 2007-04-01 07:05:08 ysulsky Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (require 'pcomplete)
@@ -35,6 +35,8 @@
   (interactive)
   (inferior-lisp "lush")
   (setq comint-prompt-regexp "^?")
+  (setq comint-input-filter-functions
+        (cons 'lush-filter-input comint-input-filter-functions))
   (set (make-local-variable 'pcomplete-parse-arguments-function)
        'lush-parse-arguments)
   (local-set-key "\t" 'pcomplete))
@@ -48,18 +50,37 @@
     (mapc (lambda (x) (if (funcall p x) (setq ret (cons x ret)))) lst)
     (nreverse ret)))
 
+(defun lush-symbols ()
+  (car (read-from-string
+        (car (comint-redirect-results-list-from-process
+              (inferior-lisp-proc)
+              "(symblist)"
+              "(.*)" 0)))))
+
+(defvar *lush-symbols* ())
+(defvar *lush-symbols-stale?* t)
+
+(defun lush-filter-input (inp)
+  "Just check the input for any loads or defines and set 
+   *lush-symbols-stale?* to true if there are any. This
+   have to be very accurate."
+  (if (string-match "load\\|def\\|set\\|(d.[\\t\\n ]" inp)
+      (setq *lush-symbols-stale?* t)))
+
 (defun lush-complete (sym)
-  (let ((sym-name (downcase (if (stringp sym) sym (symbol-name sym))))
-        (all-names (car (read-from-string
-                         (car (comint-redirect-results-list-from-process
-                               (inferior-lisp-proc)
-                               "(symblist)"
-                               "(.*)" 0))))))
-    (let ((minl (length sym-name)))
-      (filter (lambda (s)
-                (and (>= (length s) minl)
-                     (string= sym-name (substring s 0 minl))))
-              all-names))))
+  (let* ((sym-name (downcase (if (stringp sym) sym (symbol-name sym))))
+         (minl (length sym-name)))
+    ;; if we have the prompt and the symbols are stale, update *lush-symbols*
+    (if (and *lush-symbols-stale?*
+             (> (save-excursion (search-backward-regexp "^?" nil t)) 
+                (save-excursion (search-backward-regexp "\n" nil t))))
+        (progn (setq *lush-symbols* (lush-symbols))
+               (setq *lush-symbols-stale?* ())))
+    (filter (lambda (s)
+              (and (>= (length s) minl)
+                   (string= sym-name (substring s 0 minl))))
+            *lush-symbols*)))
+
 
 
 ;; See http://www.emacswiki.org/cgi-bin/wiki/PcompleteExamples
@@ -79,7 +100,6 @@
      (if completions
          (throw 'pcomplete-completions completions)
        (pcomplete-here (pcomplete-all-entries)))))
-
 
 ;; detection
 (setq auto-mode-alist (cons (cons "\\.sn$" 'lisp-mode) auto-mode-alist))
