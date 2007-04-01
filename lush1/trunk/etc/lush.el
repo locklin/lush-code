@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.5 2007-04-01 05:07:52 ysulsky Exp $
+;;; $Id: lush.el,v 1.6 2007-04-01 05:18:19 ysulsky Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (require 'pcomplete)
@@ -76,7 +76,9 @@
   "Complete the symbol at point"
    (let* ((sym (cadr (car (lush-parse-arguments))))
           (completions (lush-complete sym)))
-     (throw 'pcomplete-completions completions)))
+     (if completions
+         (throw 'pcomplete-completions completions)
+       (pcomplete-here (pcomplete-all-entries)))))
 
 
 ;; detection
