@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.67 2006-02-22 22:28:06 leonb Exp $
+ * $Id: header.h,v 1.68 2007-04-02 21:58:48 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -494,8 +494,9 @@ extern TLAPI struct context {
   sigjmp_buf error_jump;
   char *input_string;
   FILE *input_file;
-  FILE *output_file;
   short input_tab;
+  short input_case_sensitive;
+  FILE *output_file;
   short output_tab;
 } *context;
 

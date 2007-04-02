@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.26 2006-06-05 07:29:33 leonb Exp $
+ * $Id: fileio.c,v 1.27 2007-04-02 21:58:49 leonb Exp $
  **********************************************************************/
 
 
@@ -1833,6 +1833,7 @@ DY(yreading)
 
   context_push(&mycontext);
   context->input_tab = 0;
+  context->input_case_sensitive = 0;
   context->input_string = 0;
   context->input_file = f;
 
@@ -1928,6 +1929,7 @@ DY(yreading_string)
     error("reading-string", "string expected", str);
   context_push(&mycontext);
   context->input_tab = 0;
+  context->input_case_sensitive = 0;
   context->input_string = SADD(str->Object);
   if (sigsetjmp(context->error_jump, 1)) {
     context->input_tab = -1;

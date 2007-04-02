@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.38 2006-04-12 22:52:55 leonb Exp $
+ * $Id: toplevel.c,v 1.39 2007-04-02 21:58:49 leonb Exp $
  **********************************************************************/
 
 
@@ -243,9 +243,12 @@ start_lisp(int argc, char **argv, int quietflag)
 
   context = &first_context;
   context->next = NIL;
+  context->input_string = 0;
   context->input_file = stdin;
+  context->input_tab = 0;
+  context->input_case_sensitive = 0;
   context->output_file = stdout;
-  context->input_tab = context->output_tab = 0;
+  context->output_tab = 0;
 
   quiet = quietflag;
   if (! sigsetjmp(context->error_jump, 1)) 
@@ -505,6 +508,7 @@ toplevel(char *in, char *out, char *prompts)
   if (f1) {
     context->input_file = f1;
     context->input_tab = 0;
+    context->input_case_sensitive = 0;
   }
   if (f2) {
     context->output_file = f2;
@@ -898,6 +902,23 @@ DX(xquiet)
   return ((quiet) ? true() : NIL);
 }
 
+DX(xcasesensitive)
+{
+  ALL_ARGS_EVAL;
+  if (arg_number>0)
+    {
+      ARG_NUMBER(1);
+      if (APOINTER(1))
+        context->input_case_sensitive = 1;
+      else
+        context->input_case_sensitive = 0;
+    }
+  if (context->input_case_sensitive)
+    return true();
+  return NIL;
+}
+
+
 /* --------- INITIALISATION CODE --------- */
 
 
@@ -918,4 +939,5 @@ init_toplevel(void)
   dx_define("where", xwhere);
   dx_define("errname", xerrname);
   dx_define("lush-is-quiet", xquiet);
+  dx_define("lush-is-case-sensitive", xcasesensitive);
 }

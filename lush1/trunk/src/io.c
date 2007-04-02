@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.23 2006-10-09 12:50:47 leonb Exp $
+ * $Id: io.c,v 1.24 2007-04-02 21:58:49 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -681,8 +681,11 @@ read_word(void)
       if (!isascii(c) || iscntrl(c))
 	goto errw1;
       else if (s < string_buffer + STRING_BUFFER - 2) {
-        if (s > string_buffer && c == '_') c = '-';
-	*s++ = tolower(c);
+        if (s > string_buffer && c == '_') 
+          c = '-';
+        if (! context->input_case_sensitive)
+          c = tolower(c);
+        *s++ = c;
       } else
 	goto errw2;
     }
@@ -1102,17 +1105,17 @@ print_list(at *list)
       UNLOCK(l);
       l = checksend(cl,at_print);
       if (l)
-      {
-        if (recur_push_ok(&elt,&print_string,list))
         {
-          list = send_message(NIL, list, at_print, NIL);
-          recur_pop(&elt);
+          if (recur_push_ok(&elt,&print_string,list))
+            {
+              list = send_message(NIL, list, at_print, NIL);
+              recur_pop(&elt);
+              UNLOCK(l);
+              UNLOCK(list);
+              return;
+            }
           UNLOCK(l);
-          UNLOCK(list);
-          return;
-        }
-        UNLOCK(l);
-      } 
+        } 
     }
     print_string(pname(list));
   }
