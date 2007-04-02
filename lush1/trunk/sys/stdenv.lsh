@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: stdenv.lsh,v 1.23 2005-08-10 23:40:57 leonb Exp $
+;;;  $Id: stdenv.lsh,v 1.24 2007-04-02 16:02:57 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -90,31 +90,42 @@
   ;; Process arguments
   ;; ------------------------------
   (when argv
-    ;; Usage
-    (when (= (car argv) "-h")
-      (writing "$stderr"
-        (printf "Usage:\n")
-        (printf "- Type 'lush' without arguments for the interactive mode.\n")
-        (printf "- Type 'lush <lshfile> <...args...>' for script mode.\n")
-        (printf "- Type 'lush -e \"lush expression\"' for immediate evaluation.\n")
-        (exit 10) ) )
-    ;; check if this is an immediate execute
-    (when (= (car argv) "-e")
-      (let ((tmp (tmpname)))
-	(writing tmp 
-	  (each ((x (cdr argv))) (printf "%s " x))
-	  (printf "\n"))
-	(load tmp)
-	(unlink tmp)
-	(exit 0)))
-    ;; Check that the first argument is a file,
-    (when (not (filep (car argv)))
-      (writing "$stderr"
-        (printf "lush: file not found: %s\n" (car argv))
-        (exit 10) ) )
-    ;; ... run it,
-    (libload (car argv))
-    ;; ... and exit with exit code 0.
+    ;; Process options
+    (while (and (consp argv) (= (left (car argv) 1) "-"))
+      (cond
+       ;; Option -h for help
+       ((= (car argv) "-h")
+        (writing "$stderr"
+          (printf "Usage:\n")
+          (printf " 'lush [options]' for the interactive mode.\n")
+          (printf " 'lush [options] <lshfile> <...args...>' for script mode.\n")
+          (printf " 'lush [options] -e \"lush expression\"' for immediate eval.\n")
+          (exit 10) ) )
+       ;; Option -e for immediate execute
+       ((= (car argv) "-e") 
+        (let ((tmp (tmpname)))
+          (writing tmp 
+            (each ((x (cdr argv))) (printf "%s " x))
+            (printf "\n"))
+          (load tmp)
+          (unlink tmp)
+          (lush-is-quiet t)
+          (setq argv ()) ) )
+       ;; Unrecognized option
+       (t 
+        (writing "$stderr"
+          (printf "Warning: unrecognized option %s\n" (car argv)) 
+          (exit 10) ) ) )
+      (setq argv (cdr argv)) )
+    ;; Process file arguments
+    (when (consp argv)
+      (when (not (filep (car argv)))
+        (writing "$stderr"
+          (printf "lush: file not found: %s\n" (car argv))
+          (exit 10) ) )
+      (libload (car argv))
+      (setq argv ()) )
+    ;; Exit with code 0 unless lush is interactive.
     (when (lush-is-quiet)
       (exit 0) ) ) )
 

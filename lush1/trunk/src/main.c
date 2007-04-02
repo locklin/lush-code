@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: main.c,v 1.9 2006-08-19 11:40:49 leonb Exp $
+ * $Id: main.c,v 1.10 2007-04-02 16:02:57 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -39,19 +39,25 @@ char **lush_argv;
 LUSHAPI int
 main(int argc, char **argv)
 {
-  /* Define quiet mode. */
+  /* Skip options and define quiet mode 
+     if there are remaining arguments. */
+  int i = 1;
   int quiet = FALSE;
+  if (i<argc && argv[i][0]=='@')
+    i++;
+  while (i<argc && argv[i][0]=='-')
+    i++;
+  if (i < argc)
+    quiet = TRUE;
+  lush_argc = argc;
+  lush_argv = argv;
+
   /* Setup locale */
 #if HAVE_SETLOCALE && defined(LC_ALL)
   setlocale(LC_ALL,"");
   setlocale(LC_NUMERIC,"C");
 #endif
-  lush_argc = argc;
-  lush_argv = argv;
-  if (argc>1 && argv[1][0]!='@')
-    quiet = TRUE;
-  else if (argc>2)
-    quiet = TRUE;
+
   /* Message */
   if (! quiet) 
     {
@@ -71,6 +77,7 @@ main(int argc, char **argv)
               "of the GNU Public Licence (GPL) with ABSOLUTELY NO WARRANTY.\n"
               "Type `(helptool)' for details.\n");
     } 
+
   /* Start */
   FMODE_BINARY(stderr);
   init_lush(argv[0]);
