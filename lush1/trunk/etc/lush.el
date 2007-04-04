@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.10 2007-04-02 01:27:00 ysulsky Exp $
+;;; $Id: lush.el,v 1.11 2007-04-04 23:49:07 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; this file contains useful definitions for emacs
@@ -45,9 +45,11 @@
 
 ;; call this with M-X lush
 (defun lush ()
-  "starts Lush"
+  "starts Lush in another subwindow"
   (interactive)
+  (switch-to-buffer-other-window "*inferior-lisp*")
   (inferior-lisp "lush")
+  (other-window -1)
   (setq comint-prompt-regexp "^?")
   (setq comint-get-old-input #'lush-get-incomplete-input)
   (if cache-symbols
