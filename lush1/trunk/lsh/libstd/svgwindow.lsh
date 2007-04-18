@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: svgwindow.lsh,v 1.4 2007-04-13 23:04:48 profshadoko Exp $
+;;;  $Id: svgwindow.lsh,v 1.5 2007-04-18 00:57:57 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -66,50 +66,47 @@
 ;; for drawing objects. This includes manipulating
 ;; coordinate transforms, stroke width, stroke styles,
 ;; separate stroke color and fill color, opacity, etc.
-;;
-;; The coordinate unit is set to 0.25mm by default.
-;; This can be changed by passing an additional argument
-;; to function <svg-window> to specify 
-;; the number of units per millimeter.
 
 
-
-#? (svg-window [[<w> <h>] <name> [<units-per-mm>]])
+#? (svg-window [<w> <h>] <name> [<rw> <rh> <units>])
 ;; Function <svg-window> creates a window descriptor
-;; that produces a SVG file named <name>.
+;; that produces an SVG file named <name>.
 ;;
-;; Arguments <w> and <h> specify the width and height 
-;; of the coordinate system. Argument <units-per-mm>
-;; indicates the number of graphic units per millimeter
-;; and defaults to 4.
+;; Arguments <w> and <h> specify the width and height of the drawing
+;; rectangle in drawing units (default: 512x512). Optional arguments
+;; <rw> <rh> and <units> indicate the physical size of the rectangle
+;; into which the drawing rectangle will be mapped (not necessarily
+;; preserving the aspect ratio).  <units> is the unit in which this
+;; physical size is expressed. The default is "px" (pixels).  Possible
+;; units are "pt" (=1.25px), "pc" (=15px), "mm" (=3.543307px), "cm"
+;; (=35.43307px), and "in" (=90px).  By default, the real size is
+;; <w>px by <h>px.  hence the resolution is 90 units per inch.
 ;;
 ;; Unlike <new-window> or <print-window>, this function does not store 
 ;; the newly created window in the variable <window>, and thus does not 
 ;; make this window current.
 
 (de svg-window args
-  (let ((w 512)(h 512)(f "tloutput.svg")(upm 4))
-    (when (and (numberp (car args))
-               (numberp (cadr args))
-               (numberp (car (cddr args)))
-               (numberp (cadr (cddr args))) )
-      (setq args (cddr args)) )
-    (when (and (numberp (car args))
-               (numberp (cadr args)) )
-      (setq w (car args))
-      (setq h (cadr args))
-      (setq args (cddr args)) )
-    (when (consp args)
-      (setq f (car args))
-      (setq args (cddr args))
-      (when (not (stringp f))
-        (error 'svg-window "string expected" f) ) )
-    (when args
-      (when (or (not (consp args)) (not (numberp (car args))) (cdr args))
-        (error 'svg-window "too many arguments" args) )
-      (setq upm (car args)) )
-    (lisp-window (new SVGWindow f w h upm)) ) )
-
+  (let ((w 512)(h 512)(rw ())(rh ())(units ())
+	(a1 (car args)) (a2 (cadr args)) 
+	(a3 (caddr args)) (a4 (car (cdddr args)))
+	(a5 (cadr (cdddr args))) (a6 (caddr (cdddr args))))
+    (when (> (length args) 6) (error "too many arguments (6 max)"))
+    (cond
+     ((and (numberp a1) (numberp a2) (stringp a3) (numberp a4) (numberp a5) (stringp a6))
+      (setq w a1 h a2 f a3 rw a4 rh a5 units a6))
+     ((and (numberp a1) (numberp a2) (stringp a3) (numberp a4) (numberp a5) (not a6))
+      (setq w a1 h a2 f a3 rw a4 rh a5))
+     ((and (numberp a1) (numberp a2) (stringp a3) (not a4) (not a5) (not a6))
+      (setq w a1 h a2 f a3))
+     ((and (stringp a1) (numberp a2) (numberp a3) (stringp a4) (not a5) (not a6))
+      (setq f a1 rw a2 rh a3 units a4))
+     ((and (stringp a1) (numberp a2) (numberp a3) (not a4) (not a5) (not a6))
+      (setq f a1 rw a2 rh a3))
+     ((and (stringp a1) (not a2) (not a3) (not a4) (not a5) (not a6))
+      (setq f a1))
+     (t (error "illegal combination of arguments")))
+    (lisp-window (new SVGWindow f w h rw rh units))))
 
 
 #? SVGWindow
@@ -158,27 +155,29 @@
 
 
 
-#? (new SVGWindow <svg-file> <width> <height> [<resolution>])
+#? (new SVGWindow <svg-file> <w> <h> [<real-width> <real-height> <units>])
 ;; Create a new SVGWindow object whose output is written to the
-;; file <svg-file>. The parameters <width> and <height> determine the 
-;; size of the drawing surface in pixel-like arbitrary units.
-;; The optional resolution argument determines the number of units
-;; per millimeter. The default value is 4, which means that
-;; an 800 unit window will occupy roughly 20.0cm (7.87 inches),
-;; which is roughly the usable width of an A4 or US Letter page.
-;; This is a little more than 100 units per inch.
-;; If you want 100 units per inch, set the resolution to 3.937.
-;;
-;; In general, if you want your drawing to have a precise width
-;; in millimeters, use:
-;; {<code> 
-;;  (setq z (new SVGWindow "drawing.svg" width height (/ width width-in-mm)))
+;; file <svg-file>. The parameters <w> and <h> are
+;; size of the window in drawing coordinates (i.e. a object
+;; drawn at coordinates (0,0) will be in the upper left corner, 
+;; and an object with coordinates (<w>,<h>) will be in the
+;; lower right corner of the drawing area. Optional parameters 
+;; <real-width> and <real-height> give the physical size of a
+;; rectangle within which the drawing are will be mapped 
+;; (not necessarily preserving the aspect ratio).
+;; <units> is a string with the name of the units in which
+;; these sizes are expressed. The default is "px" (pixels).
+;; Possible units are "pt" (=1.25px), "pc" (=15px), 
+;; "mm" (=3.543307px), "cm" (=35.43307px), and "in" (=90px).
+;; By default, the real size is <w>px by <h>px.
+;; hence the resolution is 90 units per inch.
+;; example:
+;; {<code>
+;;   ;; make a drawing whose real size is 180x90mm
+;;   ;; but the drawing coordinate range from 0,0 to 2000,1000
+;;   (new SVGWindow "stuff.svg" 2000 1000 180 90 "mm")
 ;; </code>}
-;; For an actual width in inches, use:
-;; {<code> 
-;;  (setq z (new SVGWindow "drawing.svg" width height (/ (* 25.4 width) width-in-inches)))
-;; </code>}
-(defmethod SVGWindow SVGWindow (f w h &optional (units-per-mm 4))
+(defmethod SVGWindow SVGWindow (f w h &optional realw realh units)
   (setq svgwin-file (open-write f))
   (setq svgwin-image-path (filename-chop-suffix f))
   (setq svgwin-image-basename (filename-chop-suffix (basename f)))
@@ -186,6 +185,9 @@
   (setq svgwin-stack ())
   (setq svgwin-width w)
   (setq svgwin-height h)
+  (setq realw (or realw w))
+  (setq realh (or realh h))
+  (setq units (or units "px"))
   (setq svgwin-font-family "Courier")
   (setq svgwin-font-style "normal")
   (setq svgwin-font-weight "bold")
@@ -209,25 +211,15 @@
       svgwin-coeff svgwin-stroke svgwin-fill svgwin-fill-opacity
       svgwin-fill-rule svgwin-stroke-linecap svgwin-stroke-linejoin
       svgwin-stroke-opacity svgwin-opacity ))
-
   (writing svgwin-file 
     (printf "<svg\n")
     (printf " xmlns=\"http://www.w3.org/2000/svg\"\n")
     (printf " xmlns:sodipodi=\"http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd\"\n")
-    (printf " xmlns:xml=\"http://www.w3.org/XML/1998/namespace\"\n")
     (printf " xmlns:xlink=\"http://www.w3.org/1999/xlink\"\n")
-    (printf " xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\"\n")
-    (printf " xmlns:rdf=\"http://www.w3.Org/1999/02/22-rdf-syntax-ns#\"\n")
-    (printf " xmlns:cc=\"http://web.resource.org/cc/\"\n")
-    (printf " xmlns:dc=\"http://purl.org/dc/elements/1.1/\"\n")
-    (printf " inkscape:export-xdpi=\"101.60000\"\n")
-    (printf " inkscape:export-ydpi=\"101.60000\"\n")
-    (printf " width=\"%gmm\" height=\"%gmm\" viewBox=\"0 0 %g %g\" >\n" 
-	    (/ svgwin-width units-per-mm) (/ svgwin-height units-per-mm)
-	    svgwin-width svgwin-height)
-    
-    (printf "<sodipodi:namedview id=\"base\" pagecolor=\"#ffffff\" ")
-    (printf "  inkscape:pageopacity=\"1.0\" showborder=\"false\" />\n")
+    ;; (printf " width=\"%gpx\" height=\"%gpx\" >\n" svgwin-width svgwin-height)
+    (printf " width=\"%g%s\" height=\"%g%s\" viewBox=\"%g %g %g %g\" >\n" 
+	realw units realh units
+        0 0 svgwin-width svgwin-height)
     )
   )
 
@@ -343,23 +335,33 @@
   (incr svgwin-open-groups -1)
   (writing svgwin-file (printf "</g>\n")))
 
+#? (==> <SVGWindow> gspecial <s>)
+;; Write string <s> into the SVG file.
+;; This allows to write raw SVG directly.
+(defmethod SVGWindow gspecial (s) 
+  (writing svgwin-file (printf s)))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Standard lisp-driver functions
 
-(defmethod SVGWindow begin()
-  (==> this start-group) )
+(defmethod SVGWindow begin() ())
 
-(defmethod SVGWindow end()
-  (==> this end-group) )
+(defmethod SVGWindow end() ())
 
 (defmethod SVGWindow clear () ())
 
 (defmethod SVGWindow color(x)
-  (setq svgwin-stroke 
-        (sprintf "#%s%s%s" 
-                 (right (concat "00" (mid (strhex (bitand x 0xff)) 3)) 2)
-                 (right (concat "00" (mid (strhex (bitand (bitshr x 16) 0xff)) 3)) 2)
-                 (right (concat "00" (mid (strhex (bitand (bitshr x 24) 0xff)) 3)) 2) ) ) 
+  (cond 
+   ((= -1 x) (setq svgwin-stroke "#000000"))
+   ((= -2 x) (setq svgwin-stroke "#ffffff"))
+   ((= -3 x) (setq svgwin-stroke "#808080"))
+   (t (setq svgwin-stroke 
+	    (sprintf "#%s%s%s" 
+		     (right (concat "00" (mid (strhex (bitand x 0xff)) 3)) 2)
+		     (right (concat "00" (mid (strhex (bitand (bitshr x 16) 0xff)) 3)) 2)
+		     (right (concat "00" (mid (strhex (bitand (bitshr x 24) 0xff)) 3)) 2) ) ) ))
+  ;; (print svgwin-stroke) (pause "asd")
   (setq svgwin-fill svgwin-stroke) )
 
 (defmethod SVGWindow rect-text (x y s)
@@ -370,9 +372,6 @@
 (defmethod SVGWindow xsize () svgwin-width)
 
 (defmethod SVGWindow ysize () svgwin-height)
-
-(defmethod SVGWindow gspecial (s) 
-  (writing svgwin-file (printf s)))
 
 (defmethod SVGWindow linestyle (s)
   (cond
@@ -482,7 +481,7 @@
 (de svg-demo (f)
   (setq m (ubyte-matrix 100 200 3))
   (idx-bloop ((m m)) (idx-bloop ((m m)) (idx-bloop ((m m)) (m (rand 0 255)))))
-  (let* ((window (svg-window f 500 500))
+  (let* ((window (svg-window 500 500 f))
          (zz (lisp-window-delegate window)))
     ;; plain rectangle
     (draw-rect 10 10 100 50)
@@ -527,8 +526,17 @@
 
 ;; plot a curve
 (de svg-demo2 (f)
-  (let ((window (svg-window f 500 500)))
-    (setup-axes 0 -1.2 20 1.2 2 0.2)
-    (let ((xx (range 0 20 0.4)))
-      (plot-lists xx (all ((x xx)) (cos x))))
-    (delete window) ) )
+  (libload "libplot/plotter")
+  (let* ((window (svg-window 800 600 f))
+	 (p (new plotter 0 0 800 600)))
+    (==> p setgrid 0.2)
+    (==> p setxscale -1.2 1.2)
+    (==> p setyscale -1.2 1.2)
+    (==> p setxticks (range -1.2 1.2 0.2))
+    (==> p setyticks (range -1.2 1.2 0.2))
+    (==> p plotxy "lips" 
+	 sin 
+	 (lambda (x) (cos (* 2.33 x)))
+	 0 10 0.1 (alloccolor 1 0 0))
+    (==> p redisplay)
+    ()))
