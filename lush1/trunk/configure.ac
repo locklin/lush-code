@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.51 2006-12-17 14:11:08 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.52 2007-04-20 16:35:54 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -99,7 +99,7 @@ AC_PATH_PROG(AR, ar)
 AC_PATH_PROG(TOUCH, touch)
 AC_PATH_PROG(INDENT, indent)
 
-if test -x $INDENT ; then
+if test -x "$INDENT" ; then
   AC_MSG_CHECKING([if $INDENT accepts GNU options])
   if $INDENT -gnu </dev/null 2>/dev/null ; then 
     AC_MSG_RESULT(yes)
