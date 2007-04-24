@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.55 2007-04-24 15:48:40 leonb Exp $
+ * $Id: dldbfd.c,v 1.56 2007-04-24 16:15:54 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2310,7 +2310,7 @@ apply_relocations(module_entry *module, int externalp)
                                   "     if (remotevar = 15) ....\n"
                                   "  You can do:\n"
                                   "     extern int remotevar;\n"
-                                  "     int * volatile premotevar = &remotevar\n"
+                                  "     static int* volatile premotevar = &remotevar\n"
                                   "     if (*premotevar = 15) ....\n",
                                   dummy_symbol.name );
                         }
