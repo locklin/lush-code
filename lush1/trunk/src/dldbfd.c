@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.54 2006-11-02 16:46:09 leonb Exp $
+ * $Id: dldbfd.c,v 1.55 2007-04-24 15:48:40 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -2302,7 +2302,7 @@ apply_relocations(module_entry *module, int externalp)
                       else
                         {
                           fprintf(stderr,
-                                  "dldbfd: x86_64 relocation overflow\n"
+                                  "dldbfd: x86_64 relocation overflow (%s)\n"
                                   "  This happens when accessing data variables\n"
                                   "  located in a shared object loaded via dlopen\n"
                                   "  Instead of\n"
@@ -2311,8 +2311,8 @@ apply_relocations(module_entry *module, int externalp)
                                   "  You can do:\n"
                                   "     extern int remotevar;\n"
                                   "     int * volatile premotevar = &remotevar\n"
-                                  "     if (*premotevar = 15) ....\n"
-                                  );
+                                  "     if (*premotevar = 15) ....\n",
+                                  dummy_symbol.name );
                         }
 #endif
 		      if (stub)
