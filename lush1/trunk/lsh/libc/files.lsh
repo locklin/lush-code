@@ -1,0 +1,183 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: files.lsh,v 1.1 2007-06-14 19:51:44 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Unix File Descriptor Handling
+;; Functions in this section provide an interface to the
+;; Unix low-level file descriptor functions, such as 
+;; <open>, <close>, <read>, <write>, <fcntl>, and <ioctl>.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; constants
+
+(defconstant "O_ACCMODE" 3)
+(defconstant "O_RDONLY" 0)
+(defconstant "O_WRONLY" 1)
+(defconstant "O_RDWR" 2)
+(defconstant "O_CREAT" 64)
+(defconstant "O_EXCL" 128)
+(defconstant "O_NOCTTY" 256)
+(defconstant "O_TRUNC" 512)
+(defconstant "O_APPEND" 1024)
+(defconstant "O_NONBLOCK" 2048)
+(defconstant "O_NDELAY" 2048)
+(defconstant "O_SYNC" 4096)
+(defconstant "O_FSYNC" 4096)
+(defconstant "O_ASYNC" 8192)
+(defconstant "O_DIRECT" 16384)
+(defconstant "O_DIRECTORY" 65536)
+(defconstant "O_NOFOLLOW" 131072)
+(defconstant "O_NOATIME" 262144)
+(defconstant "O_DSYNC" 4096)
+(defconstant "O_RSYNC" 4096)
+(defconstant "O_LARGEFILE" 32768)
+(defconstant "F_DUPFD" 0)
+(defconstant "F_GETFD" 1)
+(defconstant "F_SETFD" 2)
+(defconstant "F_GETFL" 3)
+(defconstant "F_SETFL" 4)
+(defconstant "F_GETLK" 5)
+(defconstant "F_SETLK" 6)
+(defconstant "F_SETLKW" 7)
+(defconstant "F_GETLK64" 12)
+(defconstant "F_SETLK64" 13)
+(defconstant "F_SETLKW64" 14)
+(defconstant "F_SETOWN" 8)
+(defconstant "F_GETOWN" 9)
+(defconstant "F_SETSIG" 10)
+(defconstant "F_GETSIG" 11)
+(defconstant "F_SETLEASE" 1024)
+(defconstant "F_GETLEASE" 1025)
+(defconstant "F_NOTIFY" 1026)
+(defconstant "FD_CLOEXEC" 1)
+(defconstant "F_RDLCK" 0)
+(defconstant "F_WRLCK" 1)
+(defconstant "F_UNLCK" 2)
+(defconstant "F_EXLCK" 4)
+(defconstant "F_SHLCK" 8)
+(defconstant "LOCK_SH" 1)
+(defconstant "LOCK_EX" 2)
+(defconstant "LOCK_NB" 4)
+(defconstant "LOCK_UN" 8)
+(defconstant "LOCK_MAND" 32)
+(defconstant "LOCK_READ" 64)
+(defconstant "LOCK_WRITE" 128)
+(defconstant "LOCK_RW" 192)
+(defconstant "DN_ACCESS" 1)
+(defconstant "DN_MODIFY" 2)
+(defconstant "DN_CREATE" 4)
+(defconstant "DN_DELETE" 8)
+(defconstant "DN_RENAME" 16)
+(defconstant "DN_ATTRIB" 32)
+(defconstant "DN_MULTISHOT" -2147483648)
+(defconstant "FAPPEND" 1024)
+(defconstant "FFSYNC" 4096)
+(defconstant "FASYNC" 8192)
+(defconstant "FNONBLOCK" 2048)
+(defconstant "FNDELAY" 2048)
+(defconstant "POSIX_FADV_NORMAL" 0)
+(defconstant "POSIX_FADV_RANDOM" 1)
+(defconstant "POSIX_FADV_SEQUENTIAL" 2)
+(defconstant "POSIX_FADV_WILLNEED" 3)
+(defconstant "POSIX_FADV_DONTNEED" 4)
+(defconstant "POSIX_FADV_NOREUSE" 5)
+(defconstant "SYNC_FILE_RANGE_WAIT_BEFORE" 1)
+(defconstant "SYNC_FILE_RANGE_WRITE" 2)
+(defconstant "SYNC_FILE_RANGE_WAIT_AFTER" 4)
+(defconstant "SPLICE_F_MOVE" 1)
+(defconstant "SPLICE_F_NONBLOCK" 2)
+(defconstant "SPLICE_F_MORE" 4)
+(defconstant "SPLICE_F_GIFT" 8)
+
+
+#? * file-desc
+(defclass file-desc 
+  ((-int-) fd))
+
+(defmethod file-desc file-desc (s flags)
+  ((-int-) s flags)
+  (setq fd (fd-open s flags))
+  (when (< fd 0) (error "could not open file"))
+  ())
+
+(defmethod file-desc -destructor ()
+  (when (>= fd 0) (fd-close fd)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? * low-level file descriptor functions
+
+#? (fd-open <s> <flags>)
+;; open file <s> using Unix function <open>.
+;; returns an integer file descriptor, or a negative
+;; number if the operation failed. <flags> 
+;; can be any combination of the constants
+;; <O_RDONLY>, <O_WRONLY>, <O_RDWR>, <O_ACCMODE>,
+;; <O_CREAT>, <O_EXCL>, <O_NOCTTY>, <O_TRUNC>,
+;; <O_APPEND>, <O_NONBLOCK>, <O_NDELAY>, <O_SYNC>,
+;; <O_FSYNC>, <O_ASYNC>, <O_DIRECT>, <O_DIRECTORY>,
+;; <O_NOFOLLOW>, <O_NOATIME>.
+;; example:
+;; {<code>
+;;  (setq fd (open "blah" (+ @O_RDWR @O_NOCTTY @O_NONBLOCK)))
+;; </code>}
+(de fd-open (s flags)
+  ((-str-) s)
+  ((-int-) flags)
+  (to-int #{ open($port->data, $flags) #}))
+
+#? (fd-close <fd>)
+;; close file descriptor <fd>.
+(de fd-close (fd)
+  ((-int-) fd)
+  (to-int #{ close($fd) #}))
+
+#? (fd-fcntl <fd> <cmd> <arg>)
+;; file control.
+(de fd-fcntl (fd cmd arg)
+  ((-int-) fd cmd arg)
+  (to-int #{ fcntl($fd,$cmd,(long)$arg) #}))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make 
+ ()
+ #{
+   #include <sys/types.h>
+   #include <sys/stat.h>
+   #include <sys/ioctl.h>
+   #include <fcntl.h>
+   #include <unistd.h>
+ #}
+ fd-open
+ fd-close
+ fd-read
+ fd-write
+ fd-ioctl
+ fd-fcntl
+)
