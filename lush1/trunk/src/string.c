@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.39 2007-08-02 20:46:07 leonb Exp $
+ * $Id: string.c,v 1.40 2007-08-03 15:42:30 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -742,7 +742,7 @@ str_number(double x)
   
   y = fabs(x);
   if (y<1e-3 || y>1e10)
-    sprintf(string_buffer, "%e", (double) (x));
+    sprintf(string_buffer, "%g", (double) (x));
   else
     sprintf(string_buffer, "%.4f", (double) (x));
   
