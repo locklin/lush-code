@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.12 2007-04-05 00:50:33 ysulsky Exp $
+;;; $Id: lush.el,v 1.13 2007-09-19 23:15:29 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; this file contains useful definitions for emacs
@@ -253,4 +253,172 @@
   (list
    "\\<:\\sw\\sw+\\>" 0 (internal-find-face 'default) t t)
 ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; some Lush-related macros
+;; Author: Jan Kreps (krepsj(at)seznam.cz)
+;; Keywords: lush
+
+;;; Hopefully, this will evolve into a minor mode. 
+;;; you can type M-x lush-new-method or set your own key
+;;; binding for it.
+
+;;; Code: Functions for inserting method declarations with comments at
+;;; once.
+
+;;; TODO: Function for commenting or uncommenting regions of code with
+;;; one keystroke according to the context. 
+;;;
+;;; Maybe rename all "internal" functions and add "lush-" prefix to
+;;; them.
+;;;
+;;; Add some nifty menu.
+;;;
+;;; Automagically switch between lisp mode and C mode
+;;; according to the currently edited content
+
+;; -----------------------------------------------------------------------
+;; Functions and variables for filling method prototype according to
+;; the last declared class name.  Basically it searches backward for
+;; string contained in variable class-identifier. After finding it we
+;; save first next word as a lush-class-name. Then it is used for
+;; constructing comment string and prototype. Comments can be turned
+;; off by setting lush-comments-on variable to nil.
+
+
+(defvar lush-class-identifier "defclass"
+  "String that identifies begin of class declaration. Default value is
+'defclass. Overwriting this variable is neither expected nor
+necessary, but is stil possible. ")
+
+(defvar lush-method-identifier "defmethod"
+  "Identifies begining of method declaration. Default value is
+'defmethod. As with 'lush-class-identifier, changes of it's value are
+not expected.")
+
+(defvar lush-class-name "lush-class-name"
+  "Variable for saving found class name. Default value is
+'lush-class-name. Used by several functions.")
+
+(defvar lush-method-name "lush-method-name"
+  "Variable for saving entered method name. Default value is
+'lush-method-name -- should be overwriten.")
+
+(defvar lush-method-params ()
+  "Variable holds list of parameters for current method. Default is
+empty list.")
+
+(defvar lush-comments-on t
+  "Variable determining whether new method/functions will be commented or
+not. Default value is 't.")
+
+
+(defun next-word ()
+  "Returns next word after current position. This position could be
+find using search functions. Purpose is to get word following the
+searched one. Words with hyphens and underscores are accepted (eg. not
+splitted) as they can be valid function names. "
+  (let (substring 		
+	start			
+	end
+	)
+    (save-excursion
+      (setq start (point))
+      (forward-word-dash)   	
+      (setq end (point))	
+      (setq substring (buffer-substring-no-properties start end))) 
+    substring) 				
+  )
+    
+
+(defun forward-word-dash ()
+   "Simmilar like ordinary 'forward-word but does not consider dashes
+and underscores as words separator."
+   (let (foo
+	 )
+     (forward-word 1)
+     (setq foo (char-to-string (following-char)))
+     (if (or (string= foo "-") (string= foo "_")) 
+	 (forward-word-dash) 
+       )                     
+     )
+   )
+
+
+(defun search-class-name ()
+  "Searches backward for class name. Found name is saved in
+lush-class-name variable and returned as function value as
+well. Complains if there is no preceeding defclass."
+  (save-excursion
+    (if ( not (search-backward lush-class-identifier () t)) 
+	(error "No previously declared class found")
+      (progn
+	(forward-word 1)		          
+	(skip-chars-forward " ")		  
+	(setq lush-class-name (next-word))	  
+	)
+      )
+    ;; return value purely for aesthetic reasons :-)
+    lush-class-name
+    )
+  )
+
+
+
+(defun insert-lush-method ()
+  "Begins new method declaration. First it searches backward for last
+defclass statement and finds name of this class. Then uses this name
+in declaration of actual method. Commenting of this prototype depends
+on variable lush-commnents-on. If true then first is inserted
+documentation string #? (==> lush-class-name lush-method-name). 
+Variable lush-method-name should be set prior this function is
+called."
+  (let ((args (split-string lush-method-params))
+	(comment "")
+	)
+     
+    (while (> (length args) 0)
+      (setq comment (concat comment " <" (pop args) ">"))
+      ) 
+    (if lush-comments-on
+	(progn
+	  (if (string= lush-class-name lush-method-name)  ; constructor? 	
+	      (insert "#? (new " lush-class-name  comment ")")   
+	    (insert "#? (==> " lush-class-name " "  lush-method-name  comment ")") 
+	    )
+	  (newline)
+	  (insert ";;")
+	  (newline)
+	  ) 
+      )
+    (insert "("lush-method-identifier " " lush-class-name " " lush-method-name " (" lush-method-params ")")
+    (newline)
+    )
+  )
+
+
+(defun lush-new-method ()
+  "Asks for method name and for its params. Then searches for last
+declared class, finds its name and puts new text in buffer in usual
+form:
+
+#?(==> classname methodname <foo> <bar>)
+;;
+\(defmethod classname methodname (foo bar)
+
+In case of constructor comment line will be:
+
+#? (new classname <foo> <bar>)
+
+Commenting can be turned off by setting variable 'lush-comments-on to
+nil.
+"
+  (interactive)
+
+  (setq lush-class-name (search-class-name))
+  (setq lush-method-name (read-string "Function name: ")) 
+  (setq lush-method-params (read-string "Parameters: "))  
+  (insert-lush-method)		      		      
+  )
 
