@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: v4l.lsh,v 1.8 2003-01-14 22:08:46 profshadoko Exp $
+;;; $Id: v4l.lsh,v 1.9 2007-10-01 02:53:56 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -167,6 +167,9 @@
     (when (<> _info "") (printf "%s\n" _info))
     (error ,err)))
 
+;; simple warning message.
+(dmd v4l-warning (info) `(let ((_info ,info)) (printf "v4l Warning: %s\n" _info)))
+
 #? (==> <v4ldevice> cleanup)
 ;; deallocate all malloced slots and
 ;; close device. This is a private method called by
@@ -290,7 +293,7 @@
       #{ $channel->channel = $c;
          $retcode = ioctl($fd,VIDIOCGCHAN,$channel);
       #}
-      (when (= -1 retcode) (v4l-fatalerror "could not get channel info" ""))
+      (when (= -1 retcode) (v4l-warning "could not get channel info"))
       (cond 
        ((= "PAL" n) #{ $channel->norm = VIDEO_MODE_PAL; #} 
 	())
@@ -302,7 +305,7 @@
 	())
        (t (v4l-fatalerror "unsupported video mode (must be NTSC, PAL, SECAM, or AUTO)" "")))
       #{ $retcode = ioctl($fd,VIDIOCSCHAN,$channel); #}
-      (when (= -1 retcode) (v4l-fatalerror "could not set channel" "")))
+      (when (= -1 retcode) (v4l-warning "could not set channel")))
 
     ;; get max number of frames in buffer
     #{ $retcode = ioctl($fd,VIDIOCGMBUF,$mbuffer); #}    
@@ -761,6 +764,63 @@
      } #}
     (if (<> retcode 0) -1 frame)))
 
+#? (==> <v4ldevice> grab-yuv420p-into-yuv <img>)
+;; grab an image from the v4l device in YUV420P (planar) format 
+;; into a preexisting image (a ubyte-matrix of size 
+;; heightxwidthxdepth with depth at least equal to 3).
+;; Consecutive elements are interpreted as YUV components.
+;; This mode is useful for certain webcam that
+;; support YUV grabbing (e.g. Logitech Quickam 3000 Pro).
+(defmethod v4ldevice grab-yuv420p-into-yuv (img)
+  ((-idx3- (-ubyte-)) img)
+
+  (when (or (<> (idx-dim img 0) height)
+	    (<> (idx-dim img 1) width)
+	    (< (idx-dim img 2) 3))
+      (error "wrong size for YUVX image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        int i,j,lastframe,code;
+        unsigned char *imgptr, *bufptr;
+	int y_pos, cb_pos, cr_pos;
+	int even;
+        int mod1 = $img->mod[1];
+	lastframe = $frame;
+
+	/* compute next frame number */
+	$frame++; 
+	if ($frame >= $nframe) $frame = 0;
+
+        $mmapinfo->format = VIDEO_PALETTE_YUV420P;
+        $mmapinfo->width = $width;
+        $mmapinfo->height = $height;
+        $mmapinfo->frame = $frame;
+        $depth = depths[$mmapinfo->format];
+
+	$retcode = ioctl($fd, VIDIOCMCAPTURE, $mmapinfo);
+	code = ioctl($fd, VIDIOCSYNC, &lastframe);
+        // if (code == -1) error(NIL,"error ioctl(VIDIOCSYNC)",NIL);
+	$framebuffer = bufptr = (unsigned char *)$buffer + $mbuffer->offsets[lastframe];
+	imgptr = IDX_PTR($img, unsigned char);
+
+	even=1;
+	for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+               // if (i==200) { printf("new: %d %d %d\n",i,j,(int)(imgptr));}
+	       y_pos=i*$width+j;
+	       cb_pos=$width*$height + (i/2)*$width/2 + j/2;
+	       cr_pos=$width*$height*5/4 +(i/2)*$width/2 + j/2;
+               imgptr[0] = bufptr[y_pos];
+	       imgptr[1] = bufptr[cb_pos];
+	       imgptr[2] = bufptr[cr_pos];
+	       even = 1 - even;
+               imgptr += mod1;
+	  }
+	}
+     } #}
+    (if (<> retcode 0) -1 frame)))
+
 #? (==> <v4ldevice> grab-yuv420p-into-rgba <img> <alpha>)
 ;; grab an image from the v4l device in YUV420P (planar) format 
 ;; into a preexisting image (a ubyte-matrix of size 
@@ -827,6 +887,7 @@
 	}
      } #}
     (if (<> retcode 0) -1 frame)))
+
 
 #? (==> <v4ldevice> grab-grey-into-y <img>)
 ;; grab an image from the v4l device in GREY (monocrhome) format 
@@ -1070,6 +1131,7 @@
 	   grab-yuv422-into-yuv422 
 	   grab-yuv420p-into-rgbx 
 	   grab-yuv420p-into-rgba 
+	   grab-yuv420p-into-yuv
 	   grab-grey-into-y 
 	   grab-into-rgb
 	   grab-into-rgbx 
