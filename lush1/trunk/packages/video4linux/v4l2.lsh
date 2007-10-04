@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: v4l2.lsh,v 1.1 2007-10-01 02:53:56 profshadoko Exp $
+;;; $Id: v4l2.lsh,v 1.2 2007-10-04 16:31:18 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -180,13 +180,14 @@
             /* printf("i=%u, length: %u, offset: %u, r=%d\n", i, buf.length, buf.m.offset, r); */
             if (r < 0) { $ret = -(i+1); }
             if ($ret == 0) {
-  	      bufp[i] = mmap(0, buf.length, PROT_READ, MAP_SHARED, $fd, buf.m.offset);
+  	      bufp[i] = mmap(0, buf.length, PROT_READ + PROT_WRITE, MAP_SHARED, $fd, buf.m.offset);
               sizep[i] = buf.length;
 	      if ( bufp[i] == MAP_FAILED) { $ret = -(i+1000); }
             }
           }
          }#} )
       (when (< ret 0)
+	(printf "ret=%d\n" ret)
 	(if (> ret -1000) 
 	    (progn
 	      (printf "query buffer %d\n" (- (+ 1 ret)))
@@ -286,6 +287,57 @@
         }
         $ret += ioctl($fd, VIDIOC_QBUF, &buf);
      }#} ret))
+
+#? (==> <v4l2device> get-frame-yuv <frame>)
+;; Get the next available frame from the v4l2 device
+;; and place it in <frame> in YUV format.
+;; Unlike with YUV422, the U and V components are
+;; not subsampled.
+;; <frame> must be an idx3 of ubytes of size
+;; <height> by <width> by <bpp>, where <bpp>
+;; must be at least 3.
+;; The underlying frame is actually grabbed in
+;; YUYV (aka YUV422) and converted to YUV.
+(defmethod v4l2device get-frame-yuv (frame) 
+  ((-idx3- (-ubyte-)) frame)
+  (when (or (< (idx-dim frame 2) 3) 
+	    (<> (idx-dim frame 0) height)
+	    (<> (idx-dim frame 1) width))
+    (error "frame has wrong size"))
+  (when (= 0 started) (==> this start))
+  (let ((ret 0)
+	(m0 (idx-modulo frame 0))
+	(m1 (idx-modulo frame 1)))
+    ((-int-) ret m0 m1)
+    #{{ struct v4l2_buffer buf;
+        void **buffers;
+        unsigned char *src, *dst;
+        int *bsizes, i, j, k;
+        buffers = IDX_PTR($buffers,void *);
+        bsizes = IDX_PTR($bsizes,int);
+        memset(&buf, 0, sizeof(struct v4l2_buffer));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        $ret = ioctl ($fd, VIDIOC_DQBUF, &buf);
+        src = (unsigned char *)(buffers[buf.index]);
+        dst = IDX_PTR($frame,unsigned char);
+        for (i=0; i<$height; i++) {
+          for (j=0, k=0; j<$width; j++, k+=$m1) {
+            int j2;
+            j2 = j<<1;
+            dst[k] = src[j2]; 
+            if (j & 1) {
+              dst[k+1] = src[j2-1]; dst[k+2] = src[j2+1];
+            } else {
+              dst[k+1] = src[j2+1]; dst[k+2] = src[j2+3];
+            }
+          }
+          src += $width << 1;
+          dst += $m0;
+        }
+        $ret += ioctl($fd, VIDIOC_QBUF, &buf);
+     }#} ret))
+
 
 #? (==> <v4l2device> get-frame-yuv422 <frame>)
 ;; Get the next available frame from the v4l2 device
@@ -460,5 +512,5 @@
     #include <linux/videodev2.h>
   #}
  (v4l2device start stop cleanup v4l2device -destructor 
-	     get-frame-yuv422 get-frame-grey get-frame-rgb)
+	     get-frame-yuv422 get-frame-grey get-frame-yuv get-frame-rgb)
  )
