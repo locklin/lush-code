@@ -834,14 +834,158 @@ in the standard library section of this manual.
 
 #? ** << libc/constants.lsh
 
-#? ** Interfacing C Code
-[under construction]
+#? ** Interfacing C/C++ Code
 
-#? ** Interfacing C++ Code
-[under construction]
+Using Lush's inline C capability and the <mod-load> function,
+interfacing existing C code to Lush is extremely simple.
+
+#? * Calling C/C++ functions defined in a library
+
+If the code is available as a dynamic library <libasd.so>
+or a static library <libasd.a>, one merely needs to 
+include the library and the header file in a call
+to <dhc-make-with-libs>. Let's assume that our library
+defines a function <cblah> that we would like to call
+in a Lush function <blah>. Here is an example:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+
+ (dhc-make-with-libs ()
+   '("libasd.so")
+   #{ #include <asd.h> #}
+   blah)
+</code>}
+This will only work if <libasd.so> is in the system's library search path,
+and if <asd.h> is in the standard header file search path.
+
+Let's say that <libasd.so> and <asd.h> were placed in the same directory
+as our Lush file, we can do the following:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+
+ (libload "libc/make")
+ (let* ((current-dir (dirname file-being-loaded))
+        (dhc-make-lushflags (concat dhc-make-lushflags (sprintf " -I%s" current-dir))))
+
+   (dhc-make-with-libs ()
+     (list (concat current-dir "/libpng.so"))
+     #{ #include "asd.h" #}
+   blah))
+</code>}
+
+
+
+#? * Calling C/C++ functions defined in an object file
+
+If the code is available as an object file </wherever/asd.o>, one
+merely needs to do <(mod-load "/wherever/asd.o")>.  The C functions
+and global variables defined in <asd.o> are automatically visible from
+inline C code in Lush.
+
+Here is a simple example of a Lush file that dynamically loads <asd.o>
+and defines a function <blah> that calls the C function <cblah>
+defined in <asd.o>:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+ 
+ (mod-load "/wherever/asd.o")
+ (dhc-make ()
+   #{ double cblah(double); #}
+   blah)
+</code>}    
+
+Rather than explicitely defining the C prototype of <cblah> in
+the <dhc-make> call, one may prefer to include the header file <asd.h> 
+that corresponds to <asd.o>. This can be done easily:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+ 
+ (mod-load "/wherever/asd.o")
+ (dhc-make ()
+   #{ #include "/wherever/asd.h" #}
+   blah)
+</code>}    
+
+Naturally, rather than refering to absolute paths, we may prefer
+to put <asd.o> and <asd.h> in the same directory as our Lush file.
+In that case, we need to tell Lush and the C compiler where to find
+everything:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+ 
+ (let* ((current-dir (dirname file-being-loaded))
+        (dhc-make-lushflags (concat dhc-make-lushflags (sprintf " -I%s" current-dir))))
+   (mod-load (concat current-dir "/asd.o"))
+   (dhc-make ()
+     #{ #include "asd.h" #}
+   blah))
+</code>}
+Redefining <dhc-make-lushflags> like this will add the directory where the
+Lush file resides to the path in which the C compiler looks for header files.
+
+Naturally, all of this assumes that <asd.o> has previously been compiled.
+Lush conveniently provides a "make"-like utility to compile C files
+and specify dependencies called <LushMake> (see the corresponding documentation. 
+Using <LushMake> as shown below will automatically generate
+<asd.o> when the Lush file is loaded, whenever <asd.c> or <asd.h> 
+have been modified:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+
+ (libload "libc/make")
+ (let* ((current-dir (dirname file-being-loaded))
+        (dhc-make-lushflags (concat dhc-make-lushflags (sprintf " -I%s" current-dir)))
+        (lm (new LushMake current-dir)))
+   ;; compile asd.c to asd.o and mod-load asd.o
+   (==> lm setflags (sprintf "-I%s" current-dir))
+   (==> lm rule "asd.o"  '("asd.c" "asd.h"))
+   (==> lm load)
+
+   (dhc-make ()
+     #{ #include "asd.h" #}
+   blah))
+</code>}
+
+Perhaps the functions defined in <asd.o> call functions from 
+a library that must be linked-in, say <libpng.so>. These 
+libraries can easily be added into using <dhc-make-with-libs> 
+instead of <dhc-make>:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+
+ (libload "libc/make")
+ (let* ((current-dir (dirname file-being-loaded))
+        (dhc-make-lushflags (concat dhc-make-lushflags (sprintf " -I%s" current-dir)))
+        (lm (new LushMake current-dir)))
+   ;; compile asd.c to asd.o and mod-load asd.o
+   (==> lm setflags (sprintf "-I%s" current-dir))
+   (==> lm rule "asd.o"  '("asd.c" "asd.h"))
+   (==> lm load)
+
+   (dhc-make-with-libs ()
+     '("libpng.so")
+     #{ #include "asd.h" #}
+   blah))
+</code>}
+
+If our code in <asd.c> is written in C++ instead of C,
+we must replace the call to <dhc-make-with-libs> with
+<dhc-make-with-c++>.
+
+
 
 #? ** Interfacing FORTRAN Code
-[under construction]
+
+[This section is under construction]
+
+Basically, this works like calling C code.
+FORTRAN libraries can be loaded 
+
+
+
+#? *** << make-standalone.lsh
+
+
 
 #? *** More on the Lisp-C Interface
 [under construction]
