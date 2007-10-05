@@ -1,0 +1,90 @@
+#!/bin/sh
+exec lush "$0" "$@"
+!#
+
+(libload "video4linux/v4l2")
+(libload "libc/stopwatch")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; process command line arguments
+
+(defparameter dev "/dev/video0")
+(defparameter width 640)
+(defparameter height 480)
+(defparameter mode 0)
+(defparameter fps 30)
+(defparameter nb 4)
+(defparameter zz ())
+
+(cond
+ ((or (member "-h" argv)
+      (member "--help" argv))
+  (writing "$stderr" 
+	   (render-brace-text 0 72
+		'{<p> Synopsis: ,,(basename (or (car argv) "")) [-d device] [-w width] [-h height]<br>
+		A simple demo of video capture using the v4l2 interface
+		{<ul>
+		{<li> "-h": show this message}
+		{<li> "-d device": use <device> (default "/dev/video0")}
+		{<li> "-w width": width of image (default: 640)}
+		{<li> "-w height": width of image (default: 480)}
+		}}))
+  (exit 0))
+ ((setq zz (member "-d" argv))
+  (if (not (cadr zz))
+      (progn
+	(writing "$stderr" (printf "device missing\n"))
+	(exit 1))
+    (setq dev (cadr zz))))
+ ((setq zz (member "-w" argv))
+  (if (not (cadr zz))
+      (progn
+	(writing "$stderr" (printf "width missing\n"))
+	(exit 1))
+    (setq width (val (cadr zz)))))
+ ((setq zz (member "-h" argv))
+  (if (not (cadr zz))
+      (progn
+	(writing "$stderr" (printf "height missing\n"))
+	(exit 1))
+    (setq height (val (cadr zz))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; run life
+
+;; the compiled functions are in a separate file.
+;; We don't have to tell lush where to find the
+;; file because the directory of the file being
+;; loaded (i.e. the present file) is always searched first.
+
+
+(de demo (d width height fps nb)
+    (new-window (+ width 20) (+ height 20))
+    (let* ((evlock (new EventLock window))
+	   (event ())
+	   (stop ())
+	   (z (new v4l2device d width height fps nb))
+	   (frame-rgb (ubyte-matrix height width 3))
+	   (sw (new stopwatch))
+	   (tim 0))
+
+      (cls)
+      (setq tim (==> sw get))
+      
+      (while (and window (not stop))
+	(graphics-batch
+	 (==> z get-frame-rgb frame-rgb)
+	 (rgb-draw-matrix 10 10 frame-rgb)
+	 (let ((ntim (==> sw get)))
+	   (color-rgb 0.2 0.2 1)
+	   (gprintf 12 30 "%4.1f FPS" (/ 1 (- ntim tim)))
+	   (setq tim ntim)))
+	(while (setq event (==> evlock check-event))
+	  (selectq (car event)
+	    (("q" delete) (setq stop t)))))))
+
+
+(writing "$stderr" (printf "Press 'q' to quit\n"))
+
+(demo dev width height fps nb)
+
