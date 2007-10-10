@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.52 2007-04-20 16:35:54 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.53 2007-10-10 20:25:44 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -240,7 +240,7 @@ AC_PATH_PTHREAD
 # readline
 AC_CHECK_LIB(curses,tputs)
 AC_CHECK_LIB(readline,readline)
-AC_CHECK_LIB(iconv,iconv_open)
+AC_CHECK_LIB(iconv,libiconv_open)
 
 
 
@@ -295,7 +295,20 @@ AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
 AC_CHECK_FUNCS(setenv putenv fseeko ftello)
 AC_FUNC_MBRTOWC
-AC_CHECK_FUNCS(setlocale nl_langinfo iconv)
+AC_CHECK_FUNCS(setlocale nl_langinfo)
+
+
+# iconv function might be defined as libiconv in iconv.h
+AC_MSG_CHECKING([for iconv])
+ac_has_iconv=no
+AC_TRY_LINK([#include "iconv.h"],
+            [iconv((iconv_t)0, (char**)0, (size_t*)0, (char**)0, (size_t*)0);],
+            [ac_has_iconv=yes])
+AC_MSG_RESULT($ac_has_iconv)
+if test x$ac_has_iconv = xyes ; then
+    AC_DEFINE(HAVE_ICONV,1,
+        [Define to 1 if you have the `iconv' function.])
+fi
 
 
 
