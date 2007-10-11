@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: v4l2.lsh,v 1.3 2007-10-11 20:29:51 profshadoko Exp $
+;;; $Id: v4l2.lsh,v 1.4 2007-10-11 21:26:05 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -197,6 +197,14 @@
 	(==> this cleanup)
 	(error "could not map v4l2 buffer"))
       ())))
+
+#? (==> <v4l2device> set-input <n>)
+;; Set active input to <n>.
+;; return 0 on success, -1 on failure.
+(defmethod v4l2device set-input (n)
+  ((-int-) n)
+  (to-int #{ ioctl($fd, VIDIOC_S_INPUT, &$n) #}))
+
 
 #? (==> <v4l2device> get-frame-rgb <frame>)
 ;; Get the next available frame from the v4l2 device
@@ -446,24 +454,27 @@
 
 #? * v4l2 demos
 
-#? (v4l2-demo [<device>] [<width>] [<height>] [<mode>] [<fps>] [<nbuf>])
+#? (v4l2-demo [<device>] [<width>] [<height>] [<input>] [<nbuf>] [<fps>] [<mode>])
 ;; Testing/demo function for <v4l2device>: grabs 1000 video frames
 ;; and simultaneously displays them in a Lush graphic window.
 ;; All arguments are optional:
 ;; <device>: video device (default: <"/dev/video0">).
 ;; <width>, <height>: dimensions of the images to be grabbed
-;; (default: 640 by 480).
+;; (default: 320 by 240).
+;; <input>: input number from which frames will be grabbed (generally 0, 1, or 2). 
+;;  Default is -1, which leaves the input unchanged from the last time the
+;;  device was used.
+;; <nbuf>: number of frame buffers (default: 2).
 ;; <mode>: 0 for RGB, 1 for grayscale, 2 for YUYV with "manual"
 ;; conversion to RGB before display (default: 0).
 ;; <fps>: frame rate at which v4l2 will grab frames.
 ;; The actual frame rate is displayed on the screen. It may
 ;; be lower than the one requested in <fps> (generally half).
-;; <nbuf>: number of frame buffers (default: 4).
 ;; Example:
 ;; {<code>
-;; (v4l2-demo "/dev/video0" 960 720 0 30 4)
+;; (v4l2-demo "/dev/video0" 960 720 0 2 30 0)
 ;; </code>}
-(de v4l2-demo (&optional (d "/dev/video0") (width 640) (height 480) (mode 0) (fps 30) (nb 2))
+(de v4l2-demo (&optional (d "/dev/video0") (width 320) (height 240) (input -1) (nb 2) (fps 30) (mode 0))
   (libload "libimage/img-util")
   (libload "libc/stopwatch")
   (let  ((z (new v4l2device d width height fps nb))
@@ -472,6 +483,10 @@
 	 (frame-rgb (ubyte-matrix height width 3))
 	 (sw (new stopwatch))
 	 (tim 0))
+    (when (>= input 0) 
+      (when (< (==> z set-input input) 0) 
+	(printf "input=%d\n" input)
+	(error "could not select input")))
     (when (not window) (new-window 0 0 (+ width 20) (+ height 20) "v4l2"))
     (cls)
     (setq tim (==> sw get))
@@ -511,6 +526,6 @@
     #include <asm/types.h>          /* for videodev2.h */
     #include <linux/videodev2.h>
   #}
- (v4l2device start stop cleanup v4l2device -destructor 
+ (v4l2device start stop cleanup v4l2device -destructor set-input
 	     get-frame-yuv422 get-frame-grey get-frame-yuv get-frame-rgb)
  )
