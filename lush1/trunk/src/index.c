@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.28 2005-11-14 15:35:06 leonb Exp $
+ * $Id: index.c,v 1.29 2007-10-12 21:28:44 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -2390,13 +2390,13 @@ load_matrix(FILE *f)
   load_matrix_header(f, &ndim, &magic, &swapflag, dim);
   /* Create */
   switch (magic) {
-  case ASCII_MATRIX:
   case BINARY_MATRIX:
     ans = F_matrix(ndim, dim);
     break;
   case PACKED_MATRIX:
     ans = P_matrix(ndim, dim);
     break;
+  case ASCII_MATRIX:
   case DOUBLE_MATRIX:
     ans = D_matrix(ndim, dim);
     break;
