@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: index.c,v 1.29 2007-10-12 21:28:44 leonb Exp $
+ * $Id: index.c,v 1.30 2007-10-13 15:03:36 leonb Exp $
  **********************************************************************/
 
 /******************************************************************************
@@ -2218,14 +2218,14 @@ import_text_matrix(at *p, FILE *f)
   int size, elsize, type;
   char *pntr;
   real x;
-  void (*setf)(gptr,int,flt);
+  void (*setr)(gptr,int,real);
 
   /* validate */
   mode_check(p, &size, &elsize);
   contiguity_check(p);
   ind = p->Object;
   type = ind->st->srg.type;
-  setf = storage_type_setf[type];
+  setr = storage_type_setr[type];
   if (ind->flags & IDF_UNSIZED)
     return;
   if (ind->st->srg.type == ST_AT ||
@@ -2240,7 +2240,7 @@ import_text_matrix(at *p, FILE *f)
       index_rls_idx(ind,&id);
       error(NIL,"Cannot read a number",NIL);
     }
-    (*setf)(pntr, off, rtoF(x));
+    (*setr)(pntr, off, x);
   } end_idx_aloop1(&id, off);
   index_rls_idx(ind,&id);
 }
