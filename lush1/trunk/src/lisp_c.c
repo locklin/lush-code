@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.36 2005-11-14 15:35:06 leonb Exp $
+ * $Id: lisp_c.c,v 1.37 2007-12-20 03:46:17 leonb Exp $
  **********************************************************************/
 
 
@@ -1271,7 +1271,8 @@ lside_destroy_item(void *cptr)
 
 
 
-/* lside_dld_partial -- called from DLD.C when objects become non executable */
+/* lside_dld_partial -- called from MODULE.C when 
+   objects become non executable */
 
 int
 lside_mark_unlinked(void *cdoc)
@@ -2932,8 +2933,19 @@ DX(xto_gptr)
       cfunc = p->Object;
       if (CONSP(cfunc->name))
         check_primitive(cfunc->name, cfunc->info);
-      if (( dhdoc = (dhdoc_t*)(cfunc->info) ))
-        return NEW_GPTR(dhdoc->lispdata.call);
+      void *funcall = 0;
+#if HAVE_LIBBFD
+      extern void *dld_get_func(const char *);         /* defined in DLDBFD.C */
+      if ((dhdoc = (dhdoc_t*)(cfunc->info)) && dhdoc->lispdata.c_name)
+        funcall = dld_get_func(dhdoc->lispdata.c_name);
+#endif
+#if HAVE_NSBUNDLE
+      extern void *nsbundle_lookup(const char *, int); /* defined in MODULE.C */
+      if ((dhdoc = (dhdoc_t*)(cfunc->info)) && dhdoc->lispdata.c_name)
+        funcall = nsbundle_lookup(dhdoc->lispdata.c_name, 0);
+#endif
+      if (funcall)
+        return NEW_GPTR(funcall);
     }
   error(NIL,"Cannot make a compiled version of this lisp object",p);
 }

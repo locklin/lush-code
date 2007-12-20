@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.78 2006-03-29 20:22:44 leonb Exp $
+ * $Id: module.c,v 1.79 2007-12-20 03:46:18 leonb Exp $
  **********************************************************************/
 
 
@@ -378,7 +378,7 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
   return -1;
 }
 
-static void *
+void * /* USED FROM LISP_C.C */
 nsbundle_lookup(const char *sname, int exist)
 {
   void *addr = 0;
