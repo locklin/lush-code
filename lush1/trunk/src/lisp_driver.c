@@ -290,7 +290,7 @@ lisp_alloccolor(wptr info, double r, double g, double b)
 	error(NIL,"Method alloccolor returned something illegal", p);
       return (int)(p->Number);
     }
-  return (((int)(b*255)<<16) | ((int)(g*255)<<8) | (int)(r*255));
+  return (((int)(r*255)<<16) | ((int)(g*255)<<8) | (int)(b*255));
 }
 
 static int
