@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.60 2008-01-23 22:45:06 leonb Exp $
+ * $Id: unix.c,v 1.61 2008-01-23 22:52:51 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -825,8 +825,6 @@ console_getc(FILE *f)
   return rl_getc(f);
 }
 
-#if RL_READLINE_VERSION > 0x400
-
 static char *
 symbol_generator(const char *text, int state)
 {
@@ -879,6 +877,8 @@ symbol_generator(const char *text, int state)
   return 0;
 }
 
+
+#if RL_READLINE_VERSION > 0x400
 
 static char **
 console_complete(const char *text, int start, int end)
@@ -933,23 +933,29 @@ console_complete(const char *text, int start, int end)
 static void
 console_init(void)
 {
-  /* callbacks */
-  rl_getc_function = console_getc;
   /* quotes etc. */
-#if RL_READLINE_VERSION > 0x400
-  rl_special_prefixes = "|";
-  rl_basic_quote_characters = "\"";
-  rl_basic_word_break_characters = 
+  static const char *special_prefixes = "|";
+  static const char *quote_characters = "\"";
+  static const char *word_break_characters = 
     " ()#^\"|;"   /* syntactic separators */
     "~'`,@[]{}:"  /* common macro characters */
     "\001\002\003\004\005\006\007"
     "\010\011\012\013\014\015\016\017"
     "\020\021\022\023\024\025\026\027"
     "\030\031\032\033\034\035\036\037";
-#endif
+  /* callbacks */
+  rl_getc_function = console_getc;
   /* completion */
 #if RL_READLINE_VERSION > 0x400
+  rl_special_prefixes = special_prefixes;
+  rl_basic_quote_characters = quote_characters;
+  rl_basic_word_break_characters = word_break_characters;
   rl_attempted_completion_function = console_complete;
+#else
+  rl_special_prefixes = special_prefixes;
+  rl_completer_quote_characters = quote_characters;
+  rl_completer_word_break_characters = word_break_characters;
+  rl_completion_entry_function = symbol_generator;
 #endif
   /* matching parenthesis */
 #if RL_READLINE_VERSION > 0x402
@@ -960,7 +966,7 @@ console_init(void)
   rl_bind_key (']', rl_insert_close);
   rl_bind_key ('}', rl_insert_close);
 #endif 
-  /* variables */
+  /* comments */
 #if RL_READLINE_VERSION > 0x400
   rl_variable_bind("comment-begin",";;; ");
 #endif  
