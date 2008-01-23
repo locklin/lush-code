@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.59 2006-02-13 20:00:28 leonb Exp $
+ * $Id: unix.c,v 1.60 2008-01-23 22:45:06 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -114,9 +114,14 @@
 #  undef HAVE_CONFIG_H
 # endif
 # include <readline/readline.h>
-# include <readline/history.h>
+# ifdef HAVE_READLINE_HISTORY_H
+#  include <readline/history.h>
+# endif
 # ifdef HAVE_LUSHCONF_H
 #  define HAVE_CONFIG_H HAVE_LUSHCONF_H 
+# endif
+# ifndef RL_READLINE_VERSION
+#  define RL_READLINE_VERSION 0  /* non-gnu */
 # endif
 #endif
 #ifdef HAVE_MPI
@@ -784,18 +789,7 @@ os_wait(int nfds, int* fds, int console, unsigned long ms)
 /* console_getline -- 
    gets a line on the console (and process events) */
 
-#if HAVE_LIBREADLINE
-# if HAVE_READLINE_READLINE_H
-#  ifdef RL_READLINE_VERSION
-#   define READLINE 1
-#   if RL_READLINE_VERSION >= 0x400
-#     define READLINE_COMPLETION 1
-#   endif
-#  endif
-# endif
-#endif
-
-#if READLINE
+#ifdef RL_READLINE_VERSION
 
 static int console_in_eventproc = 0;
 
@@ -831,7 +825,7 @@ console_getc(FILE *f)
   return rl_getc(f);
 }
 
-#if READLINE_COMPLETION
+#if RL_READLINE_VERSION > 0x400
 
 static char *
 symbol_generator(const char *text, int state)
@@ -939,7 +933,10 @@ console_complete(const char *text, int start, int end)
 static void
 console_init(void)
 {
+  /* callbacks */
+  rl_getc_function = console_getc;
   /* quotes etc. */
+#if RL_READLINE_VERSION > 0x400
   rl_special_prefixes = "|";
   rl_basic_quote_characters = "\"";
   rl_basic_word_break_characters = 
@@ -949,17 +946,16 @@ console_init(void)
     "\010\011\012\013\014\015\016\017"
     "\020\021\022\023\024\025\026\027"
     "\030\031\032\033\034\035\036\037";
-  /* callbacks */
-  rl_getc_function = console_getc;
+#endif
   /* completion */
-#if READLINE_COMPLETION
+#if RL_READLINE_VERSION > 0x400
   rl_attempted_completion_function = console_complete;
 #endif
   /* matching parenthesis */
-#if RL_READLINE_VERSION > 0x401
-# if RL_READLINE_VERSION > 0x402
+#if RL_READLINE_VERSION > 0x402
   rl_set_paren_blink_timeout(250000);
-# endif
+#endif
+#if RL_READLINE_VERSION > 0x401
   rl_bind_key (')', rl_insert_close);
   rl_bind_key (']', rl_insert_close);
   rl_bind_key ('}', rl_insert_close);
