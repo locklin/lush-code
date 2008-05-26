@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.39 2007-04-02 21:58:49 leonb Exp $
+ * $Id: toplevel.c,v 1.40 2008-05-26 17:22:23 leonb Exp $
  **********************************************************************/
 
 
@@ -493,6 +493,7 @@ toplevel(char *in, char *out, char *prompts)
   char *ps1 = 0;
   char *ps2 = 0;
   char *ps3 = 0;
+  char *saved_prompt = prompt_string;
   struct context mycontext;
   /* Open files */
   f1 = f2 = NIL;
@@ -552,6 +553,7 @@ toplevel(char *in, char *out, char *prompts)
       free(ps1);
     context_pop();
     symbol_pop(at_file);
+    prompt_string = saved_prompt;
     siglongjmp(context->error_jump, -1);
   }
   /* Toplevel loop */
@@ -613,6 +615,7 @@ toplevel(char *in, char *out, char *prompts)
     free(ps1);
   context_pop();
   symbol_pop(at_file);
+  prompt_string = saved_prompt;
   exit_flag = 0;
 }
 
