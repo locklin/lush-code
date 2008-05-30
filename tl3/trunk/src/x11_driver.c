@@ -20,7 +20,7 @@
   TL3: LYB YLC 1/88
   X11driver.c
   Graphic driver for X11
-  $Id: x11_driver.c,v 1.1.1.1 2002-04-16 17:37:39 leonb Exp $
+  $Id: x11_driver.c,v 1.2 2008-05-30 14:26:27 leonb Exp $
   ********************************************************************** */
 
 #include "config.h"
@@ -904,8 +904,6 @@ x11_setcolor(struct window *linfo, int xx)
 	XSetForeground(xdef.dpy, info->gc, xdef.fgcolor);
       }
     } else {
-      if (xx < 0 || xx >= (1 << xdef.depth))
-	return;
       XSetFillStyle(xdef.dpy, info->gc, FillSolid);
       XSetForeground(xdef.dpy, info->gc, xx);
     }

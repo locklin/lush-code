@@ -23,7 +23,7 @@
   string creation -->	NEW_STRING  NEW_SAFE_STRING
   string manipulation --> LEFT$ RIGHT$ MID$ CONCAT$ VAL$ STR$
   string test -->		STRINGP
-  $Id: string.c,v 1.1.1.1 2002-04-16 17:37:39 leonb Exp $
+  $Id: string.c,v 1.2 2008-05-30 14:26:27 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
@@ -767,7 +767,7 @@ DX(xisprint)
   unsigned char *s;
   ARG_NUMBER(1);
   ARG_EVAL(1);
-  s = ASTRING(1);
+  s = (unsigned char*)ASTRING(1);
   if (!s || !*s)
     return NIL;
   while (*s) {
@@ -1171,8 +1171,8 @@ regex_compile(char *pattern,
   else 
     {
       bounds buf;
-      buf.beg = bufstart;
-      buf.end = bufend;
+      buf.beg = (unsigned short*)bufstart;
+      buf.end = (unsigned short*)bufend;
       if (strict) 
 	{
 	  *buf.beg++ = RE_CARET;
@@ -1196,7 +1196,7 @@ regex_exec(short int *buffer, char *string,
   for(c=0;c<nregs;c++)
     reglen[c] = 0;
   dat = datstart = string;
-  buf = buffer;
+  buf = (unsigned short*)buffer;
   return regex_execute(regptr,reglen,nregs);
 }
 
@@ -1212,7 +1212,7 @@ regex_seek(short int *buffer, char *string, char *seekstart,
     for(c=0;c<nregs;c++)
       reglen[c] = 0;
     dat = seekstart;
-    buf = buffer;
+    buf = (unsigned short*)buffer;
     if (regex_execute(regptr,reglen,nregs)) {
       *start = seekstart;
       *end = dat;

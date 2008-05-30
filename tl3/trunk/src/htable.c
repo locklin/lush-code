@@ -20,7 +20,7 @@
   TL3: (C) LYB 
   htable.c
   This file contains functions for handling hash tables
-  $Id: htable.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+  $Id: htable.c,v 1.2 2008-05-30 14:26:27 leonb Exp $
 ********************************************************************** */
 
 /* --- INITIALISATION SECTION --- */
@@ -262,9 +262,9 @@ again:
   }
   else if (p->flags & C_NUMBER)
   {
-    x ^= ((unsigned long*)&p->Number)[0];
+    x ^= ((unsigned long*)(char*)&p->Number)[0];
     if (sizeof(real) >= 2*sizeof(unsigned long))
-      x ^= ((unsigned long*)&p->Number)[1];
+      x ^= ((unsigned long*)(char*)&p->Number)[1];
   }
   else if (p->flags & C_CONS)
   {
