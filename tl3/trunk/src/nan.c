@@ -20,24 +20,33 @@
   TL3: (C) Neuristique
   nan.c
   This file contains NaN functions.
-  $Id: nan.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+  $Id: nan.c,v 1.2 2008-05-30 14:26:27 leonb Exp $
 ********************************************************************** */
-
-/* LYB COMMENT:
- *  I added infinities and better tests */
 
 #include "header.h"
 
 #ifdef HAVE_IEEEFP_H
-#include <ieeefp.h>
+# include <ieeefp.h>
 #endif
 #ifdef HAVE_FPU_CONTROL_H
-#include <fpu_control.h>
+# include <fpu_control.h>
+#endif
+#ifdef HAVE_FENV_H
+# include <fenv.h>
 #endif
 #ifdef WIN32
-#include <float.h>
+# include <float.h>
 #endif
 #include <signal.h>
+
+#ifdef linux
+# ifdef __hppa__          /* Checked (debian) 2003-07-14 */
+#  define BROKEN_SIGFPE
+# endif
+# ifdef __mips__          /* Checked (debian) 2004-03-06 */
+#   define BROKEN_SIGFPE
+# endif
+#endif
 
 
 /*================
@@ -50,6 +59,8 @@ static int ieee_inftyf[1];
 static int ieee_nand[2];
 static int ieee_inftyd[2];
 static int ieee_present = 0;
+static int fpe_inv = 0;
+static int fpe_ofl = 0;
 
 /*================
   The following functions are the only primitives for Nan
@@ -61,7 +72,7 @@ getnanF (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (flt*) ieee_nanf;
+  return * (flt*) (char*) ieee_nanf;
 }
 
 flt
@@ -69,18 +80,20 @@ infinityF (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (flt*) ieee_inftyf;
+  return * (flt*) (char*) ieee_inftyf;
 }
 
 int
 isinfF(flt x)
 {
-  float fx = x;
-  int ix = *(int*)&fx;
+  union { float f; int i; } u;
+  int ix;
   if (sizeof(flt)!=sizeof(ieee_nanf))
     return 0;
   if (ieee_present <= 0)
     return 0;
+  u.f = x;
+  ix = u.i;
   ix &= 0x7fffffff;
   ix ^= 0x7f800000;
   return (ix == 0);
@@ -89,12 +102,14 @@ isinfF(flt x)
 int
 isnanF(flt x)
 {
-  float fx = x;
-  int ix = *(int*)&fx;
+  union { float f; int i; } u;
+  int ix;
   if (sizeof(flt)!=sizeof(ieee_nanf))
     return 0;
   if (ieee_present <= 0)
     return 0;
+  u.f = x;
+  ix = u.i;
   ix &= 0x7fffffff;
   ix = 0x7f800000 - ix;
   return (ix < 0);
@@ -105,7 +120,7 @@ getnanD (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (real*) ieee_nand;
+  return * (real*) (char*) ieee_nand;
 }
 
 real
@@ -113,20 +128,24 @@ infinityD (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (real*) ieee_inftyd;
+  return * (real*) (char*) ieee_inftyd;
 }
 
 int
 isinfD(real x)
 {
-  int ix, jx, a = 1;
+  int ix, jx, a;
+  union { int i; char c[sizeof(int)]; } u;
+  union { real r; int i[2]; } v;
   if (sizeof(real)!=sizeof(ieee_nand))
     return 0;
   if (ieee_present <= 0)
     return 0;
-  a = * (char*) &a;
-  ix = ((int*)&x)[a];
-  jx = ((int*)&x)[1-a];
+  u.i = 1;
+  a = u.c[0];
+  v.r = x;
+  ix = v.i[a];
+  jx = v.i[1-a];
   ix ^= 0x7ff00000;
   if (ix&0x7fffffff)
     return 0;
@@ -138,14 +157,18 @@ isinfD(real x)
 int
 isnanD(real x)
 {
-  int ix, jx, a = 1;
+  int ix, jx, a;
+  union { int i; char c[sizeof(int)]; } u;
+  union { real r; int i[2]; } v;
   if (sizeof(real)!=sizeof(ieee_nand))
     return 0;
   if (ieee_present <= 0)
     return 0;
-  a = * (char*) &a;
-  ix = ((int*)&x)[a];
-  jx = ((int*)&x)[1-a];
+  u.i = 1;
+  a = u.c[0];
+  v.r = x;
+  ix = v.i[a];
+  jx = v.i[1-a];
   ix ^= 0x7ff00000;
   if (ix&0x7ff00000)
     return 0;
@@ -156,8 +179,8 @@ isnanD(real x)
 
 
 /*================
-  The following functions are the TLisp primitives
-  dedicated to Nan at TLisp level.
+  The following functions are the Lush primitives
+  dedicated to Nan at Lush level.
   ================*/
 
 
@@ -219,9 +242,27 @@ DX(xnot_nan)
 static int
 setup_fpu(int doINV, int doOFL)
 {
+
+#if defined(WIN32)
+
+  /* Win32 uses _controlfp() */
+
+  unsigned int mask = _controlfp(0,0);
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
+  if (doINV) mask&=(~_EM_INVALID); else mask|=(_EM_INVALID);
+  if (doOFL) mask&=(~_EM_OVERFLOW); else mask|=(_EM_OVERFLOW);
+  if (doOFL) mask&=(~_EM_ZERODIVIDE); else mask|=(_EM_ZERODIVIDE);
+  _controlfp(mask, _MCW_EM);
+  return 1;
+
+#elif defined(HAVE_FPSETMASK)
+
   /* SysVr4 defines fpsetmask() */
-#ifdef HAVE_FPSETMASK
+
   int mask = 0;
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
 #ifdef FP_X_INV
   if (doINV) mask |= FP_X_INV;
 #endif
@@ -233,48 +274,103 @@ setup_fpu(int doINV, int doOFL)
 #endif
   fpsetmask( mask );
   return 1;
+
+#elif defined(HAVE_FENV_H) && defined(HAVE_FEENABLEEXCEPT)
+
+  /* GLIBC-2.2 model */
+
+  int mask1 = 0;
+  int mask2 = 0;
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
+
+#ifdef FE_INVALID
+  if (doINV) 
+    mask1 |= FE_INVALID;
+  else
+    mask2 |= FE_INVALID;    
 #endif
-  /* GLIBC __setfpucw() emulates i387 */
-#ifdef HAVE_FPU_CONTROL_H 
+#ifdef FE_DIVBYZERO
+  if (doOFL) 
+    mask1 |= FE_DIVBYZERO;
+  else
+    mask2 |= FE_DIVBYZERO;    
+#endif
+#ifdef FE_OVERFLOW
+  if (doOFL) 
+    mask1 |= FE_OVERFLOW;
+  else
+    mask2 |= FE_OVERFLOW;    
+#endif
+  feenableexcept(mask1);
+  fedisableexcept(mask2);
+  return 1;
+
+#elif defined(HAVE_FPU_CONTROL_H)
+
+  /* Older GLIBC */
+  
   int mask = 0;
+  fpe_inv = doINV;
+  fpe_ofl = doOFL;
+  
 #ifdef _FPU_DEFAULT
   mask = _FPU_DEFAULT;
 #endif
-#ifdef _FPU_MASK_DM
-  mask |= _FPU_MASK_DM;
-#endif
-#ifdef _FPU_MASK_UM
-  mask |= _FPU_MASK_UM;
-#endif
-#ifdef _FPU_MASK_PM
-  mask |= _FPU_MASK_PM;
-#endif
+  
+#define DO(c,f) mask=((c)?(mask|(f)):(mask&~(f)));
+
+#if defined(__i386__) || defined(__alpha__)
 #ifdef _FPU_MASK_IM
-  if (doINV) mask&=(~_FPU_MASK_IM); else mask|=(_FPU_MASK_IM);
+  DO(!doINV, _FPU_MASK_IM);
 #endif
+#ifdef _FPU_MASK_OM
+  DO(!doOFL, _FPU_MASK_OM);
+#endif
+#ifdef _FPU_MASK_ZM
+  DO(!doOFL, _FPU_MASK_ZM);
+#endif
+#else
 #ifdef _FPU_MASK_IM
-  if (doOFL) mask&=(~_FPU_MASK_OM); else mask|=(_FPU_MASK_OM);
+  DO(doINV, _FPU_MASK_IM);
 #endif
-#ifdef _FPU_MASK_IM
-  if (doOFL) mask&=(~_FPU_MASK_ZM); else mask|=(_FPU_MASK_ZM);
+#ifdef _FPU_MASK_OM
+  DO(doOFL, _FPU_MASK_OM);
 #endif
-#ifdef HAVE___SETFPUCW
+#ifdef _FPU_MASK_ZM
+  DO(doOFL, _FPU_MASK_ZM);
+#endif
+#ifdef _FPU_MASK_V
+  DO(doINV, _FPU_MASK_V);
+#endif
+#ifdef _FPU_MASK_O
+  DO(doOFL, _FPU_MASK_O);
+#endif
+#ifdef _FPU_MASK_Z
+  DO(doOFL, _FPU_MASK_Z);
+#endif
+#ifdef _FPU_MASK_OPERR
+  DO(doINV, _FPU_MASK_OPERR);
+#endif
+#ifdef _FPU_MASK_OVFL
+  DO(doOFL, _FPU_MASK_OPERR);
+#endif
+#ifdef _FPU_MASK_DZ
+  DO(doOFL, _FPU_MASK_DZ);
+#endif
+#endif
+  /* continue */
+#if defined(HAVE___SETFPUCW)
   __setfpucw( mask );
   return 1;
 #elif defined(_FPU_SETCW)
   _FPU_SETCW( mask );
   return 1;
+#undef DO
 #endif
+
 #endif
-  /* Win32 uses _controlfp() */
-#ifdef WIN32
-  unsigned int mask = _controlfp(0,0);
-  if (doINV) mask&=(~_EM_INVALID); else mask|=(_EM_INVALID);
-  if (doOFL) mask&=(~_EM_OVERFLOW); else mask|=(_EM_OVERFLOW);
-  if (doOFL) mask&=(~_EM_ZERODIVIDE); else mask|=(_EM_ZERODIVIDE);
-  _controlfp(mask, _MCW_EM);
-  return 1;
-#endif
+
   /* Default */
   return 0;
 }
@@ -287,6 +383,8 @@ static void
 fpe_irq(int sig, int num)
 {
   _clearfp();
+  if (ieee_present)
+    setup_fpu(fpe_inv, fpe_ofl);
   signal(SIGFPE, (void(*)(int))fpe_irq);
   switch(num)
   {
@@ -299,33 +397,42 @@ fpe_irq(int sig, int num)
   }
 }
 #else
-static void 
+static void
 fpe_irq(void)
 {
+  if (ieee_present)
+    setup_fpu(fpe_inv, fpe_ofl);
   signal(SIGFPE, (void*)fpe_irq);
   error(NIL, "Floating exception", NIL);
 }
 #endif
 
-static void 
-nop_irq(void)
-{
-}
-
-
 /* probe_fpe_irq -- signal handler for testing SIGFPE */
 
-static sigjmp_buf probe_fpe_jmp;
+static int fpe_flag;
+static int fpe_isnan;
 
-static void 
+static void
 probe_fpe_irq(void)
 {
 #ifdef WIN32
   _clearfp();
 #endif
-  siglongjmp(probe_fpe_jmp, 1);
+  fpe_flag = 1;
+  /* Avoid incorrect restarts */
+  signal(SIGFPE, SIG_IGN);
 }
 
+static void 
+probe_fpe(void)
+{
+  signal(SIGFPE, (void*)probe_fpe_irq);
+  fpe_isnan = isnanD(3.0 + getnanD());
+#ifdef __alpha__
+  asm ("trapb");
+#endif
+  signal(SIGFPE, SIG_IGN);
+}
 
 /* set_fpe_irq -- set signal handler for FPU exceptions */
 
@@ -335,35 +442,62 @@ set_fpe_irq(void)
   /* Setup fpu exceptions */
   setup_fpu(TRUE,TRUE);
   /* Check NAN behavior */
+#ifdef BROKEN_SIGFPE
+  ieee_present = 0;
+#else
   while (ieee_present)
     {
+      signal(SIGFPE, SIG_IGN);
       /* Check whether "INV" exception must be masked */
-      signal(SIGFPE, (void*)probe_fpe_irq);
-      if (!sigsetjmp(probe_fpe_jmp, 1)) 
-	{ isnanD(3.0 + getnanD()); break; }
-      setup_fpu(FALSE,TRUE);
+      fpe_flag = 0;
+      probe_fpe();
+      if (! fpe_flag) break;
       /* Check whether all exceptions must be masked */
-      signal(SIGFPE, (void*)probe_fpe_irq);
-      if (!sigsetjmp(probe_fpe_jmp, 1)) 
-	{ isnanD(3.0 + getnanD()); break; }
-      setup_fpu(FALSE,FALSE);
+      fpe_flag = 0;
+      setup_fpu(FALSE,TRUE);
+      probe_fpe();
+      if (! fpe_flag) break;
       /* Check whether signal must be ignored */
-      signal(SIGFPE, (void*)probe_fpe_irq);
-      if (!sigsetjmp(probe_fpe_jmp, 1)) 
-	{ isnanD(3.0 + getnanD()); break; }
-      /* Disable FPE signal at OS level.
-       * You would think that SIG_IGN would do it,
-       * but Linux forces sigfpe anyway.
-       */
-      signal(SIGFPE, (void*)nop_irq);
+      fpe_flag = 0;
+      setup_fpu(FALSE,FALSE);
+      probe_fpe();
+      if (! fpe_flag) break;
+      fpe_flag = 0;
       return;
     }
+#endif
   /* We can now setup the real fpe handler */
   signal(SIGFPE, (void*)fpe_irq);
 #ifdef HAVE_IEEE_HANDLER
   ieee_handler("set","common",fpe_irq);
 #endif
 }
+
+
+
+DY(yprogn_without_fpe)
+{
+  int inv,ofl;
+  struct context mycontext;
+  at *answer;
+
+  context_push(&mycontext);
+  if (sigsetjmp(context->error_jump, 1)) 
+    {
+      setup_fpu(fpe_inv, fpe_ofl);
+      context_pop();
+      siglongjmp(context->error_jump, -1L);
+    }
+  inv = fpe_inv;
+  ofl = fpe_ofl;
+  setup_fpu(FALSE,FALSE);
+  fpe_inv = inv;
+  fpe_ofl = ofl;
+  answer = progn(ARG_LIST);
+  context_pop();
+  return answer;
+}
+
 
 
 
@@ -389,18 +523,20 @@ init_nan(void)
       ieee_present = ( sizeof(real)==8 && sizeof(int)==4 );
       set_fpe_irq();
       /* Check that NaN works as expected */
-      if (!isnanD(*(real*)ieee_nand + 3.0) ||
-	  !isnanD(*(real*)ieee_nand - 3.0e40) ||
-	  !isinfD(*(real*)ieee_inftyd - 3.0e40) )
-	{
-	  ieee_present = 0;
-	  set_fpe_irq();
-	}
+      if (ieee_present)
+        if (!isnanD(*(real*)(char*)ieee_nand + 3.0) ||
+            !isnanD(*(real*)(char*)ieee_nand - 3.0e40) ||
+            !isinfD(*(real*)(char*)ieee_inftyd - 3.0e40) )
+          {
+            ieee_present = 0;
+            set_fpe_irq();
+          }
     }
-  /* Define NaN functions */
+  /* Define functions */
   dx_define("nan"    , xnan    );
   dx_define("nanp"   , xnanp   );
   dx_define("infinity", xinfinity);
   dx_define("infinityp", xinfinityp);
   dx_define("not-nan", xnot_nan); 
+  dy_define("progn-without-fpe", yprogn_without_fpe);
 }

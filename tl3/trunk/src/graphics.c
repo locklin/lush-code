@@ -20,7 +20,7 @@
   TL3: LYB YLC 1/88
   graphics.c
   Device independant graphics functions
-  $Id: graphics.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+  $Id: graphics.c,v 1.2 2008-05-30 14:26:27 leonb Exp $
   ***********************************************************************/
 
 
@@ -1113,7 +1113,7 @@ DX(xgraphics_sync)
 
 /* static structure for pixel_map and hinton_map... */
 
-static int *image = NULL;
+static unsigned int *image = NULL;
 static unsigned int imagesize = 0;
 
 static void 
@@ -1175,7 +1175,7 @@ draw_list(int xx, int y, register at *l, int ncol,
   register struct window *win;
   register int x, size, len, nlin, ap2;
   register double v;
-  register int *im;
+  register unsigned int *im;
   void (*setcolor)(struct window *, int);
   void (*fill_rect)(struct window *, int, int, unsigned int, unsigned int);
   
@@ -1330,7 +1330,7 @@ color_draw_list(int xx, int y, register at *l, int ncol,
 {
   register struct window *win;
   register int x, len, nlin;
-  register int *im;
+  register unsigned int *im;
   register int v;
   void (*setcolor)(struct window *, int);
   void (*fill_rect)(struct window *, int, int, unsigned int, unsigned int);
@@ -1449,7 +1449,7 @@ color_draw_matrix(int xx, int y, register at *p,
   float w, dm, dv;
   struct array *mat;
   int d1, d2, m1, m2, mode;
-  int *im;
+  unsigned int *im;
   void (*setcolor)(struct window *, int);
   void (*fill_rect)(struct window *, int, int, unsigned int, unsigned int);
   
@@ -1875,13 +1875,13 @@ DX(xcolor_draw_matrix)
 
 static void 
 draw_pixel_matrix(int xx, int y, at *p, int apartx, int aparty, 
-		  int *colors, int ncolors)
+		  unsigned int *colors, int ncolors)
 {
   register struct window *win;
   register int x, i, j;
   struct array *mat;
   int d1, d2, m1, m2;
-  int *im, *p1, *p2;
+  unsigned int *im, *p1, *p2;
   void (*setcolor)(struct window *, int);
   void (*fill_rect)(struct window *, int, int, unsigned int, unsigned int);
 
@@ -1980,7 +1980,8 @@ draw_pixel_matrix(int xx, int y, at *p, int apartx, int aparty,
 DX(xdraw_pixel_matrix)
 {
   int sx,sy;
-  int *colors, ncolors;
+  unsigned int *colors;
+  int ncolors;
   ALL_ARGS_EVAL;
   if (arg_number==6) {
     sx = AINTEGER(4);
@@ -1988,7 +1989,7 @@ DX(xdraw_pixel_matrix)
     ncolors = 0;
     colors = 0;
     if (APOINTER(6))
-      colors = get_nr0_ivector(APOINTER(6),&ncolors);
+      colors = (unsigned int*)get_nr0_ivector(APOINTER(6),&ncolors);
   } else if (arg_number==5) {
     sx = AINTEGER(4);
     sy = AINTEGER(5);
