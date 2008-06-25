@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: arith.c,v 1.4 2004-10-20 16:06:30 leonb Exp $
+ * $Id: arith.c,v 1.5 2008-06-25 15:47:52 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -241,35 +241,38 @@ DX(xmul)
 
 DX(xsub)
 {
-  real a1, a2;
-
+  int i;
+  real a = 0;
   if (arg_number == 1) {
     ARG_EVAL(1);
     return NEW_NUMBER(-AREAL(1));
+  } else if (arg_number < 1) {
+    ARG_NUMBER(-1);
   } else {
-    ARG_NUMBER(2);
     ALL_ARGS_EVAL;
-    a1 = AREAL(1);
-    a2 = AREAL(2);
-    return NEW_NUMBER(a1 - a2);
+    a = AREAL(1);
+    for (i=2; i<=arg_number; i++)
+      a -= AREAL(i);
   }
+  return NEW_NUMBER(a);
 }
 
 DX(xdiv)
 {
-  real a1, a2;
-
+  int i;
+  real a =  0;
   if (arg_number == 1) {
     ARG_EVAL(1);
-    a1 = 1.0;
-    a2 = AREAL(1);
+    return NEW_NUMBER(1.0 / AREAL(1));
+  } else if (arg_number < 1) {
+    ARG_NUMBER(-1);
   } else {
-    ARG_NUMBER(2);
     ALL_ARGS_EVAL;
-    a1 = AREAL(1);
-    a2 = AREAL(2);
+    a = AREAL(1);
+    for (i=2; i<=arg_number; i++)
+      a /= AREAL(i);
   }
-  return NEW_NUMBER(a1 / a2);
+  return NEW_NUMBER(a);
 }
 
 DX(xpower)
