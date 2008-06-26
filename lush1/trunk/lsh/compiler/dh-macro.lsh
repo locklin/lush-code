@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: dh-macro.lsh,v 1.50 2006-11-07 20:31:49 leonb Exp $
+;;; $Id: dh-macro.lsh,v 1.51 2008-06-26 13:07:13 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1065,9 +1065,11 @@
 ;; type of the return value in <rettype>.
 ;;
 (de process-numerical-args-t (arglist &optional forcertyp)
+(print arglist)
   ;; determin the natural type of each arglist, except if rettype is
   (let* ((types (all ((x arglist)) (dhc-parse-expr-t x)))
          (rtyp (1+ (length dhc-number-types))))
+(print types)
     ;; determine return type of arglist. Casting is: number->int ->flt ->real
     ;; use priority order determined by dhc-number-types
     (each ((y types) (x arglist)) 
@@ -1109,26 +1111,36 @@
 ;;; DIADIC FUNCTIONS
 ;;; -----------------
 (dhm-t -(source)
-  (when (and (<> 2 (length source)) (<> 3 (length source)) )
-	(dhc-error "wrong number of arguments"))
-  (process-numerical-args-t (cdr source)))
-
+  (cond
+   ((> (length source) 3)
+    (let ((ns `(progn (- ,(cadr source) (+ ,@(cddr source))))))
+      (dhc-parse-replacement-source-t source ns) ) )
+   ((< (length source) 2)
+    (dhc-error "wrong number of arguments") )
+   (t
+    (process-numerical-args-t (cdr source)) ) ) )
+   
 (dhm-c -(source treetype retplace)
-   (let ((arg1 (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ())))
-     (if (= (length source) 2)
-	 (concat "(-" arg1 ")")
-       (concat "(" arg1 "-" (dhc-parse-expr-c (caddr source) 
-					      (caddr :treetype:tn-list)
-					      ()) ")"))))
+  (let ((arg1 (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ())))
+    (if (= (length source) 2)
+        (concat "(-" arg1 ")")
+      (concat "(" arg1 "-" (dhc-parse-expr-c (caddr source) 
+                                             (caddr :treetype:tn-list)
+                                             ()) ")"))))
 
 (dhm-t /(source)
-  (when (and (<> 2 (length source)) (<> 3 (length source)) )
-	(dhc-error "wrong number of arguments"))
-  (let ((tnode (process-numerical-args-t (cdr source))))
-    ;; integer division in C isn't used
-    (when (==> :tnode:type is-an-int)
-      (setq :tnode:type (new dhc-type 'dht-real)))
-    tnode))
+  (cond
+   ((> (length source) 3)
+    (let ((ns `(progn (/ ,(cadr source) (* ,@(cddr source))))))
+      (dhc-parse-replacement-source-t source ns) ) )
+   ((< (length source) 2)
+    (dhc-error "wrong number of arguments") )
+   (t
+    (let ((tnode (process-numerical-args-t (cdr source))))
+      ;; integer division in C isn't used
+      (when (==> :tnode:type is-an-int)
+        (setq :tnode:type (new dhc-type 'dht-real)))
+      tnode) ) ) )
 
 (de dhc-c-cast (type)
     (if (==> type is-a-real) "(real)"
