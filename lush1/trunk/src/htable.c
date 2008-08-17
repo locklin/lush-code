@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: htable.c,v 1.14 2006-11-07 20:58:34 leonb Exp $
+ * $Id: htable.c,v 1.15 2008-08-17 20:18:44 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -403,7 +403,7 @@ htable_rehash(struct hashtable *htable)
         for (n=htable->table[i]; n; n=n->next)
           {
             p = cons(n->key, p); /* steal lock */
-            add_finalizer(p, hashelt_finalize, htable);
+            add_finalizer(n->key, hashelt_finalize, htable);
           }
       htable->keylockp = 0;
       UNLOCK(p);
