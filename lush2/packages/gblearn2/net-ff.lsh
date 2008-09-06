@@ -1,0 +1,96 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: net-ff.lsh,v 1.3 2002/12/19 04:27:25 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; replicable, one hidden layer, fully connected net
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gblearn2/gb-modules-nn")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** net-ff
+;;.AUTHOR Yann LeCun
+;; standard one-hidden layer, fully-connected neural net.
+;; this network is replicable.
+(defclass net-ff idx3-module
+  ((-obj- (f-layer)) f0-module)
+  ((-obj- (idx3-ddstate)) f0-state)
+  ((-obj- (f-layer)) f1-module))
+
+#? (new net-ff <thickin> <thick0> <thick1> <ini> <inj> <prm>)
+;; create a new net-ff network.
+;;.VP
+;; <thickin>: number of inputs.
+;; <thick0>: size of hidden layer
+;; <thick1>: number of outputs
+;; <ini> <inj>: expected max size of input over which the network
+;;              shbould be replicated.
+;; <prm> an idx1-ddparam in which the parameters will be allocated.
+(defmethod net-ff net-ff (thickin thick0 thick1 ini inj prm)
+  ((-obj- (idx1-ddparam)) prm)
+  ((-int-) ini inj thickin thick0 thick1)
+  (let ((f0-squash (new idx3-squasher))
+	(f1-squash (new idx3-squasher)))
+    (setq f0-module (new f-layer thickin thick0 ini inj f0-squash prm))
+    (setq f0-state (new idx3-ddstate thick0 ini inj))
+    (setq f1-module (new f-layer thick0 thick1 ini inj f1-squash prm))
+    () ) )
+
+(defmethod net-ff fprop (in out)
+  ((-obj- (idx3-state)) in)
+  ((-obj- (idx3-state)) out)
+  (==> f0-module fprop in f0-state)
+  (==> f1-module fprop f0-state out)
+  ())
+
+(defmethod net-ff bprop (in out)
+  ((-obj- (idx3-dstate)) in)
+  ((-obj- (idx3-dstate)) out)
+  (==> f1-module bprop f0-state out)
+  (==> f0-module bprop in f0-state)
+  ())
+
+(defmethod net-ff bbprop (in out)
+  ((-obj- (idx3-ddstate)) in)
+  ((-obj- (idx3-ddstate)) out)
+  (==> f1-module bbprop f0-state out)
+  (==> f0-module bbprop in f0-state)
+  ())
+
+(defmethod net-ff forget (z p)
+  ((-flt-) z p)
+  (==> f1-module forget z p)
+  (==> f0-module forget z p)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () (net-ff net-ff fprop bprop bbprop forget))

@@ -1,0 +1,416 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; PSU Lush
+;;;   Copyright (C) 2005 Ralf Juengling
+;;; Derived from LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; A dynamic graph offers methods for modifying the graph in-place.
+
+(libload "datatypes/heap")
+(libload "datatypes/graph")
+(libload "datatypes/int-set")
+(libload "datatypes/ipair-set")
+(libload "libidx/idx-sort")
+
+#? ** Dynamic Graph
+;; This class allows efficient dynamic creation and manipulation
+;; of graphs. Vertices and edges are identified with integers.
+;; The identifiers for vertices may be chosen freely, the 
+;; identifiers for edges result from pairing two vertex identifiers,
+;; e.g., <(ipair v0 v1)>.
+;;
+;; A <DynamicGraph> object may represent directed or undirected
+;; graphs. Directed edges are called {<i> arcs}, and undirected
+;; edges are called {<i> edges}. For example, method <insert-edge>
+;; inserts an edge, method <insert-arc> inserts an arc into the
+;; graph. Some methods make only sense for undirected graphs.
+;; The result of applying a method for undirected graphs to a
+;; graph that is not undirected is undefined.
+
+(defclass DynamicGraph object
+  ((-obj- (IntSet))   vertices)
+  ((-obj- (IPairSet)) arcs)
+  ;((-int-)           max-degree)
+  ((-bool-)           undirected)  ; if true, graph is undirected
+  ((-bool-)           recycle)     ; if true, reuse free vertex ids
+  ((-obj- (IHeap))    free-vertices) )
+
+(in-namespace (class DynamicGraph)
+(libload "datatypes/dynamic-graph-utils" t)
+(import (lt gt eq) from IPairSet)
+)
+
+#? (new <DynamicGraph>)
+;; Create a new empty graph.
+(defmethod DynamicGraph DynamicGraph ()
+  (setq vertices (new IntSet))
+  (setq arcs (new IPairSet))
+  (setq undirected t)
+  (setq recycle t)
+  (setq free-vertices (new IHeap -1))
+  ())
+
+(defmethod DynamicGraph -emptyp ()
+  (==> vertices -emptyp) )
+
+(defmethod DynamicGraph -deepcopy (clone)
+  (declare (-obj- (DynamicGraph)) clone)
+  (setq :clone:vertices (deepcopy vertices))
+  (setq :clone:arcs (deepcopy arcs))
+  (setq :clone:recycle recycle)
+  (setq :clone:free-vertices (new IHeap -1))
+  ())
+
+#? (==> <DynamicGraph> number-of-vertices)
+(defmethod DynamicGraph number-of-vertices ()
+  (==> vertices number-of-items))
+
+#? (==> <DynamicGraph> number-of-edges)
+(defmethod DynamicGraph number-of-edges ()
+  (if undirected
+      (to-int (/ (==> arcs number-of-items) 2))
+    (let ((n 0))
+      (declare (-int-) n)
+      (do-set (a arcs)
+        (when (==> arcs member (iprot a))
+          (incr n) ))
+      (to-int (/ n 2)) )))
+
+#? (==> <DynamicGraph> number-of-arcs)
+(defmethod DynamicGraph number-of-arcs ()
+  (==> arcs number-of-items) )
+
+#? (==> <DynamicGraph> new-vertex)
+;; Insert a new vertex into graph and return it.
+(defmethod DynamicGraph new-vertex ()
+  (let ((v (if (or (emptyp free-vertices) (not recycle))
+               (if (emptyp vertices) 0 (+ (==> vertices maximum) 1))
+             (next free-vertices) )))
+    (declare (-int-) v)
+    (==> vertices insert v)
+    v))
+
+#? (==> <DynamicGraph> insert-vertex <v>)
+;; Insert vertex <v> into graph, return <t> on success and <()> when <v>
+;; was already in the graph.
+(defmethod DynamicGraph insert-vertex (v)
+  (declare (-int-) v)
+  (==> vertices insert v) )
+
+#? (==> <DynamicGraph> insert-vertex-range <v0> <v1>)
+;; Insert vertices [<v0>..<v1>], return <()>.
+(defmethod DynamicGraph insert-vertex-range (v0 v1)
+  (declare (-int-) v0 v1)
+  (for (v v0 v1)
+    (declare (-int-) v)
+    (==> vertices insert v) )
+  ())
+
+#? (==> <DynamicGraph> remove-vertex <v>)
+;; Remove vertex <v> and all edges incident with <v>. Return <t> on success
+;; and <()> when <v> was not an existing vertex.
+(defmethod DynamicGraph remove-vertex (v)
+  (declare (-int-) v)
+  (if (not (==> vertices member v))
+      (progn (printf "*** Warning: vertex %d does not exist\n" v) ())
+    ;; remove adjacencies
+    (let ((es (==> arcs remove-range* 
+                   (ipair v @+int-min+) 
+                   (ipair v @+int-max+) )))
+      (do ((e es)) (==> arcs remove (iprot e))) )
+    ;; remove vertex
+    (==> vertices remove v)
+    (==> free-vertices insert (to-double v) v)
+    t))
+
+#? (==> <DynamicGraph> eliminate-vertex <v>)
+;; Eliminate vertex <v> and return <()>. Raise an error if the 
+;; vertex does not exist.
+(defmethod DynamicGraph eliminate-vertex (v)
+  (declare (-int-) v)
+  (when (not (==> vertices member v))
+    (errorf "not a vertex (%d)" v) )
+  (let ((adjs (make-stack 32 int)))
+    (do-vertices (w adjacent-to v)
+      (declare (-int-) w)
+      (push adjs w) )
+    (for* (i 0 (length adjs))
+      (==> arcs remove (ipair v (adjs i)))
+      (==> arcs remove (ipair (adjs i) v))
+      (for* (j (+ i 1) (length adjs))
+        (declare (-int-) i j)
+        (==> arcs insert (ipair (adjs i) (adjs j)))
+        (==> arcs insert (ipair (adjs j) (adjs i))) )))
+  (==> vertices remove v)
+  ())
+
+#? (==> <DynamicGraph> deficiency <v>)
+;; Return deficiency set of vertex <v> (an arc table).
+(defmethod DynamicGraph deficiency (v)
+  (declare (-int-) v)
+  (when (not (==> vertices member v))
+    (errorf "not a vertex (%d)" v) )
+  (let ((adjs (make-stack 32 int)))
+    (do-vertices (w adjacent-to v)
+      (declare (-int-) w)
+      (push adjs w) )
+
+    (let* ((n (length adjs))
+           (d 0)
+           (dfcy (int-array (* n n) 2)) )
+      (declare (-int-) n d)
+
+      (for* (i 0 n)
+        (for* (j (+ i 1) n)
+          (declare (-int-) i j)
+          (when (not (==> arcs member (ipair (adjs i) (adjs j))))
+            (dfcy d 0 (adjs i))
+            (dfcy d 1 (adjs j))
+            (incr d) )
+          (when (not (==> arcs member (ipair (adjs j) (adjs i))))
+            (dfcy d 0 (adjs j))
+            (dfcy d 1 (adjs i))
+            (incr d) ) ))
+
+      (idx-trim! dfcy 0 0 d)
+      dfcy)))
+
+#? (==> <DynamicGraph> degree <v>)
+;; Return out-degree of vertex <v>.
+(defmethod DynamicGraph degree (v)
+  (declare (-int-) v)
+  (when (not (==> vertices member v))
+    (errorf "not a vertex (%d)" v) )
+
+  (let ((d 0))
+    (declare (-int-) d)
+    (do-vertices (w adjacent-to v)
+      (declare (-int-) w)
+      (incr d) )
+    d))
+
+#? (==> <DynamicGraph> degrees)
+;; Return out-degree for all vertices as a vector.
+(defmethod DynamicGraph degrees ()
+  (if (emptyp vertices)
+      (int-array 0)
+    (let ((ds (int-array (==> vertices number-of-items)))
+          (i -1)
+          (v @+int-max+) )
+      (declare (-int-) v i)
+      (do-set (a arcs)
+        (when (<> v (ipi1 a))
+          (incr i)
+          (setq v (ipi1 a)) )
+        (incr (ds i)) )
+      ds)))
+
+#? (==> <DynamicGraph> insert-vertices <vs>)
+;; Insert vertices (integers) in table <vs> into graph and  return <()>.
+;; A vertex id must be in the range 0...65535.
+(defmethod DynamicGraph insert-vertices (vs)
+  (declare (-idx1- (-int-)) vs)
+  ;; check values is valid
+  (for* (i 0 (length vs))
+    (declare (-int-) i)
+    (==> vertices insert-all vs) ))
+
+
+(defmethod DynamicGraph -insert-edge (v0 v1 di)
+  (declare (-int-) v0 v1)
+  (declare (-bool-) di)
+  ;; check that the two vertices are exist
+  (when (not (==> vertices member v0))
+    (error (sprintf "vertex %d does not exist" v0)) )
+  (when (not (==> vertices member v1))
+    (error (sprintf "vertex %d does not exist" v1)) )
+  ;; add adjacencies (two directed edges per edge)
+  (let ((a01 (ipair v0 v1)))
+    (if (==> arcs member a01)
+        (printf "*** Warning: edge (%d,%d) already in set\n" v0 v1)
+      (assert (==> arcs insert a01)) )
+    (if di
+        (setq undirected ())
+      (==> arcs insert (iprot a01)) )
+    a01))
+
+#? (==> <DynamicGraph> insert-edge <v0> <v1>)
+;; Insert edge between vertices <v0> and <v1> and returns it.
+;; Print a warning when edge <(v0,v1)> already exists in the graph.
+(defmethod DynamicGraph insert-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (==> this -insert-edge v0 v1 ()) )
+
+#? (==> <DynamicGraph> insert-arc <v0> <v1>)
+;; Insert arc <(v0,v1)> and return it.
+;; Print a warning when <(v0,v1)> already exists in the graph.
+(defmethod DynamicGraph insert-arc (v0 v1)
+  (declare (-int-) v0 v1)
+  (setq undirected ())
+  (==> this -insert-edge v0 v1 t) )
+
+#? (==> <DynamicGraph> has-arc <v0> <v1>)
+;; True when arc <(v0,v1)> is in the graph.
+(defmethod DynamicGraph has-arc (v0 v1)
+  (declare (-int-) v0 v1)
+  (==> arcs member (ipair v0 v1)) )
+
+#? (==> <DynamicGraph> has-edge <v0> <v1>)
+;; True when edge <(v0,v1)> is in the graph.
+(defmethod DynamicGraph has-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (and (==> arcs member (ipair v0 v1))
+       (==> arcs member (ipair v1 v0)) ))
+
+(defmethod DynamicGraph -insert-edges (edges di)
+  (declare (-idx2- (-int-)) edges)
+  (declare (-bool-) di)
+  (when (<> (idx-shape edges 1) 2)
+    (error "Not a valid edge table") )
+  ;; insert edges into graph
+  (for* (i 0 (length edges))
+    (declare (-int-) i)
+    (==> this -insert-edge (edges i 0) (edges i 1) di) )
+  ())
+
+#? (==> <DynamicGraph> insert-edges <edges>)
+;; Insert edges in table <edges> into graph and return <()>.
+;; Print a warning when an edge in <edges> already exists in the graph.
+(defmethod DynamicGraph insert-edges (edges)
+  (declare (-idx2- (-int-)) edges)
+  (==> this -insert-edges edges ())
+  ())
+
+#? (==> <DynamicGraph> insert-arcs <arcs>)
+;; Insert arcs in table <arcs> into graph and return <()>.
+;; Print a warning when an edge in <edges> already exists in the graph.
+(defmethod DynamicGraph insert-arcs (edges)
+  (declare (-idx2- (-int-)) edges)
+  (==> this -insert-edges edges t)
+  ())
+
+#? (==> <DynamicGraph> from-igraph <ig>)
+(defmethod DynamicGraph from-igraph (ig)
+  (declare (-obj- (IGraph)) ig)
+  (when (not (emptyp this))
+    (error "graph not empty") )
+  (for* (v 0 (==> ig number-of-vertices))
+    (declare (-int-) v)
+    (==> vertices insert v) )
+  (==> this insert-edges :ig:edges)
+  () )
+
+(defmethod DynamicGraph -check-undirected ()
+  (let ((ud t)
+        (it (iterate arcs)) )
+    (while (and ud (not (emptyp it)))
+      (setq ud (==> arcs member (iprot (next it)))) )
+    (setq undirected ud) )
+  ())
+
+#? (==> <DynamicGraph> undirected)
+;; True if an undirected graph.
+(defmethod DynamicGraph undirected ()
+  (when (not undirected)
+    (==> this -check-undirected) )
+  undirected)
+
+#? (==> <DynamicGraph> vector-dimension <ord>)
+;; Return the vector dimension of the vertex ordering <ord>.
+(defmethod DynamicGraph vector-dimension (ord)
+  (declare (-idx1- (-int-)) ord)
+  (when (<> (length ord) (==> vertices number-of-items))
+    (error "not a valid ordering (length mismatch)") )
+  (let ((gg (deepcopy this))
+        (vd (clone-array ord)) )
+    (for* (i 0 (length ord))
+      (declare (-int-) i)
+      (when (not (==> :gg:vertices member (ord i)))
+        (errorf "invalid or duplicate vertex %d" (ord i)) )
+      (vd i (==> gg degree (ord i)))
+      (==> gg eliminate-vertex (ord i)) )
+    (array-sortdown! vd)
+    vd))
+
+#? (==> <DynamicGraph> perfect <ord>)
+;; True if <ord> is a perfect elimination ordering for
+;; this graph.
+(defmethod DynamicGraph perfect (ord)
+  (declare (-idx1- (-int-)) ord)
+  (when (<> (length ord) (==> vertices number-of-items))
+    (error "not a valid ordering (length mismatch)") )
+  (let ((iord (new IPairSet))        ; inverse ordering
+        (hp   (new IHeap 32))        ; 
+        (as   (new IPairSet))        ; adjacencies to check
+        (perfect t)
+        (i 0)
+        (v 0) )
+    (declare (-int-) i v)
+
+    (for* (k 0 (length ord))    
+      (declare (-int-) k)
+      (==> iord insert (ipair (ord k) k)) )
+
+    (while (and perfect (< i (- (length ord) 1)))
+      (assert (emptyp hp))
+      (setq v (ord i))
+
+      ;; find relevant adjacent vertices
+      (do-vertices (u adjacent-to v)
+        (declare (-int-) u)
+        (do-set (p iord (ipair u i))
+          (when (= (ipi1 p) u)
+            (==> hp insert (to-double (ipi2 p)) u) )
+          (setq continue ()) )
+        (==> as remove (ipair v u)))
+      
+      ;; update as
+      (when (not (emptyp hp))
+        (let ((u (==> hp next)))
+          (declare (-int-) u)
+          (do ((w hp)) (==> as insert (ipair u w))) ))
+      
+      ;; check for missing adjacents of v
+      (do-set (p as (ipair v @+int-min+))
+        (setq perfect (<> (ipi1 p) v))
+        (setq continue ()) )
+      
+      (incr i) )
+    perfect))
+
+(defmethod DynamicGraph pretty ()
+  (printf "Graph with %d vertices\n" (==> vertices number-of-items))
+  (printf "Vertex | Adjacent vertices\n")
+  (printf "--------------------------------------------------\n")
+  (do ((v vertices))
+    (declare (-int-) v)
+    (printf "%5d  |" v)
+    (do-vertices (u adjacent-to v)
+      (declare (-int-) u)
+      (printf " %3d" u) )
+    (printf "\n") )
+  ())
+
+(dhc-make-class () DynamicGraph)
+

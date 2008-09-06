@@ -1,0 +1,125 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; PSU Lush
+;;;   Copyright (C) 2005 Ralf Juengling.
+;;; Derived from LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "cv-config")
+(libload "libc/make")
+
+(let ((auxdx (new LushMake (dirname file-being-loaded))))
+  (==> auxdx setflags cv-flags)
+  (==> auxdx rule "aux_cv_arrays.o" '("aux_cv_arrays.c"))
+  (==> auxdx make)
+  (==> auxdx load) )
+
+#? ** Converting Lush arrays to CvMat objects
+
+;; An object of class <CvMat> is created from a Lush array.
+;; It holds references to the Lush object as well as to a
+;; C structure "CvMat" that describes the array for OpenCV
+;; functions.
+
+(defclass CvMat object
+  ((-gptr- "CvMat *") p)
+  ((-gptr- "at *") data-owner) )
+
+#? (new CvMat <rows> <cols> <type> <data>)
+;; Create a <CvMat> object that references the <data> of some
+;; Lush array.  The resulting object's pointer (<:obj:p>) may
+;; be passed to <cv*> functions taking <cvArr *> arguments.
+;; 
+;; Note: A safer way to create a <CvMat> is to use <new-cvmat>
+;; or <make-cvmat>.
+(defmethod CvMat CvMat (rows cols type data)
+  (declare (-int-) rows cols type)
+  (declare (-gptr-) data)
+  (cv-cpheader)
+  #{ $p = cvCreateMatHeader($rows, $cols, $type);
+     cvSetData($p, $data, CV_AUTOSTEP);
+     $data_owner = NIL;
+  #}
+  ())
+
+#? (new-cvmat <m> <type-str>)
+;; Create a <CvMat> object with type <type-str> that references
+;; array <m>.
+;; 
+;; Example:
+;;
+;; {<code> (new-cvmat m "CV_8UC(1)") </code>}
+(defmacro new-cvmat (arr s)
+  (let (((m e0 e1 type) (gensyms 4)))
+    `(let* ((m ,arr)
+            (,e0 (idx-shape m 0))
+            (,e1 (idx-shape m 1))
+            (,type (to-int (cinline ,s))) )
+       (declare (-int-) ,e0 ,e1 ,type)
+       (new CvMat ,e0 ,e1 ,type (idx-base m)) )
+    ))
+
+(defmethod CvMat -set-data-owner (owner)
+  (declare (-gptr- "at *") owner)
+  #{ 
+     if ($data_owner)
+       UNLOCK($data_owner);
+     $data_owner = $owner;
+     LOCK($data_owner);
+  #}
+  ())
+
+;#? (==> <CvMat> set-data-owner <lush-object>) 
+;; Store reference to data owner.
+(defmethod CvMat set-data-owner (obj)
+  (==> this -set-data-owner (atgptr obj)) 
+  ())
+
+(defmethod CvMat -destructor ()
+  #{ cvReleaseMat((CvMat **)&$p); 
+     if ($data_owner)
+       UNLOCK($data_owner);
+  #}
+  ())
+
+#? (make-cvmat <m>)
+;; Create an <CvMat> object for a Lush array <m>.
+(defun make-cvmat (m)
+  (when (not (idx-contiguousp m))
+    (error "array must be contiguous" m) )
+  (when (or (> (rank m) 3) (< (rank m) 2))
+    (error "array must be of rank 2 or 3" m) )
+  (let* ((rows (idx-shape m 0))
+         (cols (idx-shape m 1))
+         (nchannels (if (> (idx-rank m) 2) (idx-shape m 2) 1))
+         (type (cvmat-typecode m nchannels))
+         (cvm  (new CvMat rows cols type (idx-base m))) )
+    (==> cvm set-data-owner (idx-storage m))
+    cvm))
+
+;; XXX: redo make-cvmat using defoverload so that it may be compiled
+
+(let ((dhc-make-lushflags (concat dhc-make-lushflags cv-flags)))
+  (dhc-make "opencv2_arrays"
+    (CvMat CvMat -set-data-owner -destructor)
+    ))

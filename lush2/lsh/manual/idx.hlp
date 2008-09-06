@@ -1,0 +1,1409 @@
+#? **** Arrays and Indexes
+
+Lush has a powerful mechanism for manipulating tabular data such 
+as scalars, vectors, matrices, and higher dimensional arrays.
+
+The basic Lush object for accessing tabular data is called an index,
+and is of type <INDEX>. An index is merely an access structure, the
+actual data is stored in a storage referenced by the index. The data
+contained in a storage and accessed with an index can be of numeric
+type like <double>, <float>, <int>, etc. The data may also be pointers,
+(type <gptr>), or arbitrary Lush objects (type <atom>). See variable 
+<storage-classes> for a list of available storage element types.
+
+#? *** Array API conventions
+
+We distinguish arrays from indexes. An array is an index plus an
+associated storage. PSU Lush's array API uses this naming convention 
+to distinguish two types of functions, index functions and array
+functions. Index functions create or manipulate indexes but leave
+the storage data unchanged. Array functions create or manipulate 
+storage contents (and possibly the index, too). For example, 
+<copy-index> creates a new index from an existing one but does not 
+copy the associated storage. The function <copy-array> on the other
+hand creates a new index and a new storage; function <array-copy> 
+copies data from one storage into another. Index functions are
+prefixed by <idx>, (e.g., <idx-reshape>), array functions are 
+prefixed by <array> (e.g., <array-extend>). 
+
+Many index manipulation functions have a destructive counterpart,
+that is, the counterpart alters the index argument rather than 
+creating a new index and leaving the argument unchanged. The 
+convention is that if a destructive counterpart exists, its name
+is derived from the non-destructive function by adding a trailing
+'!'. For example, <idx-reverse!> is the destructive counterpart to
+<idx-reverse>.
+
+More specialized index functions assume the index argument is a 
+vector (a one-dimensional index) or a matrix (a two-dimensional index).
+These index functions are prefixed wit <vec>, or <mat>, respectively 
+(e.g., <mat-fliplr>.)
+
+Lush comes with a long list of index functions. Many are described 
+in this section, many more are described in the corresponding Standard
+Libraries section.
+
+#? *** The Index structure, Shape and Subscripts
+
+A storage is a container for homogeneous data. Its only properties 
+are the number and type of elements. All other information necessary
+for the interpretation of storage data as an array are summarized in
+the index structure. The index structure contains:
+{<ul>
+   {<li> a base pointer (a pointer to the associated storage data)}
+   {<li> an offset to the first element in the array (the element 
+	 with subscript (0 0 ... 0)}
+   {<li> the number of dimensions (0 to 8)}
+   {<li> the array size in each dimension}
+   {<li> a "modulo" for each dimension, that is, the data pointer 
+         increment associated with a subscript increment of 1 in
+         that dimension}
+}
+
+The list of array sizes, or "extents", is called the shape of the
+index. Some functions like <idx-reshape> take a shape as an argument.
+Arrays with zero dimensions have shape "()" and are called scalars.
+The length of the shape is sometimes called the rank of the index or
+array. Thus, scalars, vectors, and matrices have rank 0, 1, and 2,
+respectively.
+
+Any particular element accessible through an index has a unique 
+subscript, that is, a list of indices like <'(1 2 3)>. In the above
+example the index object was "applied" to the subscript in order to
+access an array element, in other words, {<code> (apply m '(3 4 2)) 
+</code>} evaluates to the element (3,4,2) of array m.
+
+Many index functions taking subscripts as arguments and allow them 
+to be negative. This corresponds to a "backwards" enumeration of the
+array elements. The subscript index "-1" refers to the last element
+of a vector, "-2" to last but one, and so on.
+
+{<ex> ((array-range 1 5) -1)}
+
+The modulo data is used to map subscripts to pointers. As a Lush user
+you do not need to know about modulos until you need to implement 
+your own functions in C to manipulate Lush arrays.
+
+
+#? *** Array and Index Creation and Allocation
+
+Arrays of any type and shape can be created with <make-array>. 
+
+#? (make-array <storage-class> <shp> <init>)
+{<see> clone-array}
+{<location> sysenv.lsh}
+Create a storage of class <storage-class> and allocate memory for 
+an array of shape <shp>. If <init> is not <nil>, all elements of 
+the array are set to <init>. The array is not initialized if init 
+is <nil> and the array element values are undefined.
+
+Examples:
+{<code>
+? (make-array 'float '(100 100) 0)     ;; this is equivalent to
+= ::INDEX:<100x100>
+? (make-array |FSTORAGE| '(100 100) 0) ;; initialize with 3.1415 instead
+= ::INDEX:<100x100>
+? (make-array |FSTORAGE| '(100 100) 3.1415)
+= ::INDEX:<100x100>
+?
+</code>}
+
+More convenient array creation functions of the form 
+"<element-type>-array" exist.
+
+
+#? (double-array <e1>...<en>)
+Create an <n>-dimensional double array of zeros. The arguments <e1>...<en>
+are the extents of the new array. 
+
+#? (double-array* <e1>...<en>)
+Create an <n>-dimensional double array. The arguments <e1>...<en> are
+the extents of the new array. The array content is undefined.
+ 
+#? (atom-array <e1>...<en>)
+Create an <n>-dimensional atom array of <nil>s. The arguments <e1>...<en>
+are the extents of the new array. 
+
+#? (array-range [<n1>] <n2> [<delta>])
+{<see> range, array-range*}
+Similiar to <range> but the result is a one-dimensional double array 
+instead of a list. Example:
+
+{<ex> (array-range 2 5)}
+
+
+#? (array-range* [<n1>] <n2> [<delta>])
+{<see> range*, array-range}
+Similiar to <range*> but the result is a one-dimensional double array
+instead of a list. Example:
+
+{<ex> (array-range* 2 5)}
+
+
+#? (vector ... <args> ...)
+Create a vector of type double from arguments. Example:
+
+{<ex> (vector 1 2 (+ 1 2))}
+
+
+#? (clone-array <prototype> [<init>])
+Make a new array of same shape and element type as <prototype>.
+If no argument <init> is given, don't intialize the new array,
+otherwise set all elements to <init>.
+
+{<ex> (clone-array (vector 1 2 3) 5)}
+
+
+#? (array-clear <m> <value>)
+Set all elements of array <m> to <value>.
+
+{<code> 
+? (let ((m (int-array 2 2)))
+    (array-clear m 4) )
+ = [i[i     4     4]
+    [i     4     4]]
+</code>}
+
+
+An index to an existing storage can be created with <new-index>. 
+
+#? (new-index <st> [<shp>])
+Create an index pointing to storage st. If no shape <shp> is specified, 
+the new index is one dimensional. If a shape <shp> is specified, the 
+number of elements must match the number of elements in the storage.
+See also <make-array>. Example:
+{<code>
+? (let ((st (make-storage 'short 12 1)))
+     (new-index st '(3 4)) )
+= [s[s     1     1     1     1]
+    [s     1     1     1     1]
+    [s     1     1     1     1]]
+</code>}
+
+#? +maxdims+
+Maximum number of array dimensions. (This is a builtin limit on
+array dimensions; it is defined in file <header.h>).
+
+#? *** Array Literals
+
+Small arrays can be created easily using special syntax. Array literals 
+consist of nested square brackets enclosing the array elements. Some
+examples:
+{<code>
+  (setq m [d 3 4 5])   ; a vector of doubles
+  (setq m [3 4 5])     ; a vector of doubles
+  (setq m [[1 2 3] [3 4 5]])  ; a matrix of doubles
+</code>}
+
+Vectors and matrices of other types than doubles can be created by specifying
+the type with a single character right after the first opening bracket. Examples:
+{<code>
+  (setq m [d 1 2 3])   ; doubles
+  (setq m [f 1 2 3])   ; floats
+  (setq m [i 1 2 3])   ; ints
+  (setq m [s 1 2 3])   ; shorts
+  (setq m [b 1 2 3])   ; bytes
+  (setq m [u 1 2 3])   ; ubytes
+  (setq m [a "choucroute" [1 2 3]])  ; lisp objects
+</code>}
+
+#? ** Scalar literals
+
+Scalar literals can be entered by placing an @ sign after the type indicator:
+{<code> (idx-dotm0 vector [f@ 34] output) </code>}
+
+Here are examples for each storage element type:
+{<code>        
+  (setq s [d@ 42])
+  (setq s [f@ 42])
+  (setq s [i@ 42])
+  (setq s [s@ 42])
+  (setq s [b@ 42])
+  (setq s [u@ 42])
+  (setq s [a@ "choucroute"])
+</code>}
+
+#? ** Array Literals as Local Variables in Functions
+
+A very important fact about array literals created as local variables within 
+functions is that they are "static" variables (a bit like closures in 
+lexically-bound Lisps). Here is an example:
+{<code>
+  ? (de foo () (let ((v [0 1])) (v 0 (+ (v 0) 1)) v))
+  = foo
+  ? (foo)
+  = [d  1.00  1.00]
+  ? (foo)
+  = [d  2.00  1.00]
+</code>}
+The array values are retained from one call to the next. This is true in 
+interpreted mode and in compiled mode. Preventing this behavior can be done 
+by copying the literal each time the function is called:
+{<code>
+  (de foo () (let ((v (copy-array [0 1]))) (v 0 (+ (v 0) 1)) v))
+</code>}
+
+#? ** Array Literals as Closures
+
+Being dynamically bound, Lush has no lexical closure mechanism. However, 
+array literals provide a way to emulate the behavior of lexical closures 
+(i.e., bundling "static" variables within a function):
+{<code>
+  ? (de new-counter () (lambda () (let ((v [@ 0])) (v (1+ (v))) (v))))
+  = new-counter
+  ? (setq c (new-counter))
+  = ::DE:8805898
+  ? (c)
+  = 1
+  ? (c)
+  = 2
+</code>}
+
+#? *** Index Properties and Predicates
+
+#? (indexp <arg>)
+Return <t> if <arg> is an index and <nil> otherwise.
+
+
+#? (idx-numericp <arg>)
+Return <t> if <arg> is an index whose storage is of a numerical type.
+Return <nil> if the storage class is <ATSTORAGE> or <GPTRSTORAGE>.
+
+
+#? (idx-contiguousp <m>)
+True if the elements of index <m> are contiguous in memory. Indexes 
+resulting from <idx-transpose> or <idx-trim> usually are non-contiguous.
+
+
+#? (idx-emptyp <m>)
+True if array <m> has zero elements.
+
+
+#? (idx-shape <m> [<d>])
+With one argument, return the shape of <m> as a list. With two arguments, 
+return the extent of <m> in its <d>-th dimension (starting at zero). 
+<shape> is an alias for <idx-shape>.
+
+{<ex> (shape [[2 3 4][5 6 7]])}
+
+
+#? (idx-rank <m>)
+Return rank (the number of dimensions) of index <m>.
+
+{<ex> (length (idx-shape [[2 3 4][5 6 7]]))}
+{<ex> (idx-rank [[2 3 4][5 6 7]])}
+
+
+#? (idx-nelems <idx>)
+Return the number of elements accessible through index <idx>.
+
+
+#? (idx-offset <m>)
+Return the offset of the first element of index <m> in its storage.
+The offset is in number of elements, not bytes.
+
+
+#? (idx-mod <m> [<d>])
+With one argument, return the list modulos. With two arguments return 
+the modulo for dimension <d>.
+
+
+#? (idx-storage <idx>)
+Return the storage accessed through index <idx>.
+
+
+#? (idx-base <m>)
+Return a <gptr> that points to the first element of <m>. This must be 
+used with caution because the data pointed to by the pointer may be garbage
+collected (when <m> is destroyed), or even displaced (when <m> is resized).
+<idx-ptr> is primarily used when calling C function that require a pointer
+to numerical data.
+
+
+#? (idx-element-type <idx>)
+Return the symbol indicating the storage element type.
+
+
+#? (idx-dc <idx>)
+Return array element with subscript (0,0,...) as a scalar. This is useful
+for manipulating the DC component of a discrete signal, or for checking 
+the element-type of arrays.
+
+{<ex> (let ((psp (arange 10 1 -1)))
+	((idx-dc psp) 0)
+	psp)
+
+{<ex> (let ((arg [a "this" "is" "about" "words"]))
+	(if (stringp  ((idx-dc arg))) 
+	    (apply concat (arg ()))
+	  (error "not an array of strings" arg) ))}
+
+
+#? *** Arithmetic with Arrays
+
+The usual arithmetic functions <+>, <->, <*>, </>, as well as many other
+mathematical functions from Section "Numbers" (<abs>, <sin>, <exp>, etc.)
+may be applied to arrays as well. If applied to an array, the result is 
+a double array of the same shape as the input array.
+
+{<ex> (let ((m (reshape (arange 20) '(4 5))))
+        (+ (** (cos m) 2) (** (sin m) 2)) ) }
+
+If the input array to a function (<sin>, <cos>, etc.) is of a floating 
+point type, then the output array is of the same type.
+
+#? ** Index Broadcasting
+
+When more than one array is passed to an arithmetic function, then not
+all arrays need to have the same shape. The indexes must be <broadcastable> 
+to the same shape, however. The result then has then same shape as the 
+broadcasted input indexes. In this example, both indexes are of
+equal rank:
+
+{<code> 
+? (let ((v (vector 1 2 3)))
+      (+ (reshape v '(1 3)) (reshape v '(3 1))) )
+= [d[d  2.00  3.00  4.00]
+    [d  3.00  4.00  5.00]
+    [d  4.00  5.00  6.00]]
+</code>}
+
+But equal rank is not a necessary condition as these examples show:
+
+{<code>
+? (let ((v (vector 1 2 3)))
+      (+ v (reshape v '(3 1))) )
+= [d[d  2.00  3.00  4.00]
+    [d  3.00  4.00  5.00]
+    [d  4.00  5.00  6.00]]
+?
+? (let ((m (double-array 3 4)))
+      (+ m 5) )
+= [d[d  5.00  5.00  5.00  5.00]
+    [d  5.00  5.00  5.00  5.00]
+    [d  5.00  5.00  5.00  5.00]]
+?
+? (let ((m (double-array 3 4)))
+      (+ m (reshape (vector 1 2 3) '(3 1))) )
+= [d[d  1.00  1.00  1.00  1.00]
+    [d  2.00  2.00  2.00  2.00]
+    [d  3.00  3.00  3.00  3.00]]
+?
+? (let ((m (double-array 3 4)))
+      (+ m (reshape (vector 1 2 3 4) '(1 4))) )
+= [d[d  1.00  2.00  3.00  4.00]
+    [d  1.00  2.00  3.00  4.00]
+    [d  1.00  2.00  3.00  4.00]]
+</code>}
+
+The term "broadcasting" as well as the algorithm are adopted from 
+the Numarray project {<hlink> http://www.stsci.edu/resources/software_hardware/numarray}.
+The broadcasting algorithm is:
+
+{<code>
+  (defun idx-broadcast2 (a b)
+    (let ((a (copy-index a)) (b (copy-index b)))
+      (while (< (rank a) (rank b))
+        (idx-lift! a 1) )
+      (while (< (rank b) (rank a))
+        (idx-lift! b 1) )
+    (each ((d (range* (rank a))) (ea (shape a)) (eb (shape b)))
+      (cond
+       ((= ea eb) ()) 
+       ((= ea 1) (idx-expand! a d eb))
+       ((= eb 1) (idx-expand! b d ea))
+       (t (error "indexes not broadcastable")) ))
+    b))
+</code>}
+
+#? (idx-broadcastable-p <ma> <mb>)
+True if indexes <ma> and <mb> are broadcastable.
+
+{<ex> (let ((m (reshape (arange 20) '(5 4))))
+        (idx-broadcastable-p m (vector 4 3 2 1)) )}
+{<ex> (let ((m (reshape (arange 20) '(5 4))))
+        (idx-broadcastable-p m (vector 5 4 3 2 1)) )}
+
+#? (idx-broadcast <m0> ... <mn>)
+Return list of broadcasted indexes <m0>...<mn>. Raise an error if
+the two indexes are not broadcastable.
+
+{<ex> (let ((m (reshape (arange 12) '(4 3))))
+        (idx-broadcast m (vector 3 2 1) [@5]) )}
+
+
+#? *** General Index and Array Functions
+
+Most functions in this section create a new index from a given index so
+that the new index restricts access to certain parts of the input array.
+E.g., <idx-trim> reduces the extent of a selected dimension of the input 
+index. When you are studying the index mapping functions in this section
+for the first time, it is helpful to not only ask what index properties
+a certain function alters, but also, what index properties are invariant.
+For example, <idx-reshape> changes the shape of an index, possibly its 
+rank, too, but not the number of elements accessible through the index.
+<Idx-trim> changes the shape and the number of elements, but it does not
+change the the rank of an index. Finally, <idx-select> reduces the rank
+and the number of elements, <array-lift> on the other hand increases the
+rank and the number of elements.
+
+
+#? (idx-reshape <m> <shp>)
+{<see> idx-reshape!}
+Return a new index with shape <shp>, referring to the same storage as
+index <m>. The number of elements of <m> must match the number of 
+elements with the new shape.
+
+{<ex> (idx-reshape (array-range 20) '(4 5))}
+
+
+#? (idx-nick <m> <d>)
+{<see> idx-nick!}
+Add a new singleton dimension <d> and return the new index.
+This is a special reshape operation, it increases the rank by one.
+
+{<ex> (shape (idx-nick (double-array 4 5) 1))}
+
+
+#? (idx-squeeze-shape <m>)
+{<see> idx-reshape}
+Return a new index referring to the same storage as index <m>, with
+a shape derived from <(shape m)> by removing all singleton dimensions.
+
+{<ex> (shape (idx-squeeze-shape (double-array 1 2 1 3 1)))}
+
+
+#? (idx-flatten <m> [<n>])
+Turn <m> into a vector where the order of elements of <m> in the
+result is that of a C-contiguous array (row-major order). If <m> is
+not a contiguous array, create a contiguous copy first. 
+The second, optional argument is an integer. If <n> is present and greater
+zero, flatten only the first <n> dimensions, if it is negative, flatten
+the last <n> dimensions.
+
+{<ex> (let ((m (reshape (array-range 24) '(2 3 4)))) 
+      (idx-flatten m 2) )}
+
+
+#? (idx-select <m> <d> <s>)
+{<see> idx-select*}
+Return a new index with the <d>-th dimension of <m> removed, and which is
+the <s>-th "slice" of <m>, in the <d>-th dimension.
+{<code>
+  ? (setq m [[0 1 2 3 4][10 11 12 13 14]])
+  = [[ 0.00  1.00  2.00  3.00  4.00 ]
+     [10.00 11.00 12.00 13.00 14.00 ]]
+  ? (idx-select m 1 2)
+  = [ 2.00 12.00 ]
+</code>}
+
+
+#? (idx-select-all <m> [<d>])
+{<see> idx-select}
+Return list of all "slices" of <m> along dimension <d>. Default for
+<d> is zero. Example:
+
+{<ex> (let ((m (reshape (arange 20) '(4 5))))
+        (idx-select-all m) )}
+
+
+#? (idx-select* <m> <s0> <s1> ...)
+{<see> idx-select}
+Recursively select index with argument <si> for dimension <i> of <m>.
+{<code>
+  ? (setq m [[0 1 2 3 4][10 11 12 13 14]])
+  = [[ 0.00  1.00  2.00  3.00  4.00 ]
+     [10.00 11.00 12.00 13.00 14.00 ]]
+  ? (idx-select* m 1 2)
+  = [@d 12.00]
+</code>}
+
+
+#? (idx-lift <m> <e1>...<en>)
+{<see> array-lift, idx-sink}
+Create a new index with <n>+<(rank m)> dimensions, where the first <n>
+dimensions have extents <e1>...<en>. Applying an <n>-element subscript
+to the resulting array yields an index equivalent to <m>.
+
+{<ex> (let* ((m  (reshape (arange 9) '(3 3)))
+             (m* (idx-lift m 2)))
+        (list (shape m) (shape m*) m*))}
+
+
+#? (array-lift <m> <e1>...<en>)
+{<see> idx-lift, array-sink}
+Create a new array with <n>+<(rank m)> dimensions, where the first <n>
+dimensions have extents <e1>...<en>. Applying an <n>-element subscript
+to the resulting array yields a copy of <m>.
+
+{<ex> (let* ((m  (reshape (arange 9) '(3 3)))
+             (m* (array-lift m 2)))
+        (list (shape m) (shape m*) m*))}
+
+
+#? (idx-sink <m> <e1>...<en>)
+{<see> array-sink, idx-lift}
+Create a new index with <n>+<(rank m)> dimensions, where the last <n>
+dimensions have extents <e1>...<en>. Similar to <idx-lift> but the
+new dimensions are added to the end of <m>'s shape.
+
+{<ex> (let* ((m  (reshape (arange 9) '(3 3)))
+             (m* (idx-sink m 2)))
+        (list (shape m) (shape m*) m*))}
+
+
+#? (array-sink <m> <e1>...<en>)
+{<see> array-lift}
+Create a new array with <n>+<(rank m)> dimensions, where the last <n>
+dimensions have extents <e1>...<en>. Similar to <array-lift> but the
+new dimensions are added to the end of <m>'s shape.
+
+{<ex> (let* ((m  (reshape (arange 9) '(3 3)))
+             (m* (array-sink m 2)))
+        (list (shape m) (shape m*) m*))}
+
+
+#? (idx-trim <idx> <d> <new-zero> [<new-extent>]) 
+{<see> idx-trim*, idx-trim!}
+Make a copy of index <idx> and reduce the extent in the <d>-th dimension
+to <new-extent> elements, starting with element <new-zero>. If 
+<new-extent> is omitted, then the old extent minus <new-zero> is taken
+as default. If <new-zero> is negative, trimming at the higher-index end
+of that dimension is performed.
+
+{<code>
+  ? (setq m [[0 1 2 3 4][10 11 12 13 14]])
+  = [d[d  0.00  1.00  2.00  3.00  4.00]
+      [d 10.00 11.00 12.00 13.00 14.00]]
+  ? (idx-trim m 0 1)
+  = [d[d 10.00 11.00 12.00 13.00 14.00]]
+  ? (idx-trim m 0 -1)
+  = [d[d  0.00  1.00  2.00  3.00  4.00]]
+  ? (idx-trim m 1 -1)
+  = [d[d  0.00  1.00  2.00  3.00]
+      [d 10.00 11.00 12.00 13.00]]
+  ? (idx-trim m 1 -1 3)
+  = [d[d  1.00  2.00  3.00]
+      [d 11.00 12.00 13.00]]
+</code>}
+
+
+#? (idx-trim* <m> <e0> <e1> ...)
+{<see> idx-trim}
+Trim <m> to extent <e0> in first dimension, to extent <e1> in second 
+dimension, and so on (see help on <idx-trim> for details).
+
+{<ex> (idx-trim* (double-array 5 5) 2 3)}
+
+
+#? (idx-expand <m> <d> <ne>)
+{<see> idx-expand!}
+Expand singleton dimension <d> of <m> to new extend <ne>. This 
+manipulation increases the logical number of elements of <m> but
+not the physical number of elements. That is, all elements with
+subscripts that differ only in the new dimension refer to the 
+same storage location.
+
+{<ex> (idx-expand (reshape (array-range 5) '(1 5)) 0 4)}
+
+
+#? (idx-extend <m> <d> <n>)
+{<see> idx-extend!}
+Extend dimension <d> of <m> by <n>; <n> may be negative. This 
+operation is only successful if there are enough elements in
+the storage, so that every possible subscript of the resulting
+index refers to a storage location.
+
+{<ex> (idx-extend (idx-trim* (array-range 10) 4) 0 2)}
+
+
+#? (idx-extend* <m> <de0> <de1> ...)
+{<see> idx-extend}
+Extend <m> by <de0> in first dimension, by <de1> in second 
+dimension and so on (see help on <idx-extend> for details).
+
+{<ex> (idx-extend* (idx-trim* (array-range 10) 4) 2)}
+
+
+#? (array-extend <m> <d> <n> [<init>])
+Create a new array which has the same shape as <m> save for dimension
+<d>, which is extended by <n>. The new array has the same contents as
+<m> for all subscripts valid for <m>, and is set to <init> for all 
+other subscripts (default is zero). If <init> is null, don't init.
+This operation is always successful (given that the required memory 
+can be allocated), and the resulting array is contiguous.
+
+{<ex> (array-extend (array-range 5) 0 5)}
+
+
+#? (array-extend! <m> <d> <n> [<init>])
+Extend array <m> in-place. 
+(Fixme: Currently this operation is only implemented for the case that
+<m> is a contiguous, numeric array and <d>=0.)
+
+
+#? (idx-shift <m> <d> <n>)
+{<see> idx-shift*, idx-shift!}
+Create a copy of index <m> and alter its offset so that the new
+index is "shifted" by <n> elements along dimension <d> with
+respect to <m>. This operation can be useful in combination with
+<idx-trim> or <idx-extend>.
+
+{<ex> (idx-shift (idx-extend (array-range 10) 0 -5) 0 2)}
+
+
+#? (idx-shift! <m> <d> <n>)
+{<see> idx-shift, idx-shift*}
+Shift <m> by <n> along dimension <d> in-place and return <m>
+(see help on <idx-shift> for more info).
+
+
+#? (idx-shift* <m> <n0> <n1> ...)
+{<see> idx-shift}
+Shift <m> by <n0> first dimension, by <n1> in second dimension, and
+so on (see help on <idx-shift> for details). 
+
+{<ex> (idx-shift* (idx-trim* (array-range 10) 5) 5)}
+
+
+#? (idx-transpose <m> <dimlist>)
+Create an index where the dimensions of <m> have been permuted 
+according to the list of dimension indices <dimlist>. For example,
+{<code> 
+  (idx-transpose m '(0 2 1)) 
+</code>} 
+permutes the second and third dimensions of m.
+
+
+#? (array-transpose <m> <dimlist>)
+Similiar to <idx-transpose> but the result is a new contiguous array.
+
+
+#? (idx-reverse <m> <d>)
+{<see> idx-reverse!}
+Reverse the order of elements of <m> along dimension <d>. This
+transformation leaves the shape of <m> unchanged but turns a 
+contiguous array into a non-contiguous. Use <array-reverse> if
+the result ought to be contiguous.
+
+
+#? (array-reverse <m> <d>)
+Reverse the order of elements of <m> along dimension <d>. 
+Similiar to <idx-reverse> but the result is a new contiguous array.
+
+
+#? *** Copying of Indexes and Arrays
+
+Besides the usual copy functions <copy-idx> and <copy-array> there are also
+some functions that copy arrays conditionally (e.g., <as-int-array>). This is 
+helpful when processing array arguments to functions that need the input
+arrays to have certain properties.
+
+
+#? (copy-index <idx>)
+Return a copy of index <idx>.
+
+
+#? (copy-array <m>)
+Create a copy of array <m> by creating copy of the storage referenced by <m>
+and creating a new index to that storage. The resulting index is always 
+contiguous.
+
+
+#? (array-copy <m1> <m2>)
+Copy contents of <m1> into <m2> and return <m2>. <M1> and <m2> must have the
+same shape. If <m1> and <m2> are of different numerical types, appropriate 
+conversion will be performed.
+
+
+#? (array-swap <m1> <m2>)
+Swap contents of <m1> and <m2> and return <nil>. <M1> and <m2> must have
+identical shape and element-type.
+
+
+#? (array-take <m> <d> <im>)
+{<see> array-take*}
+Take slices of <m> in dimension <d> and combine then into a new array.
+Index array <im> contains the indices along at which to take slices.
+The rank of the result is (+ (rank <m>) (rank <im>) -1).
+
+Examples:
+{<ex>
+  (let ((m (reshape (arange 20) '(4 5))))
+    (array-take m 0 [3 2 1 1 2 3]) ) } 
+
+
+#? (array-take* <m> <map>)
+{<see> array-take}
+Take slices of <m> in leading dimensions and combine them into a new array.
+Take the slices at indices where <map> is nonzero. <(shape map)> must be a
+prefix of <(shape m)>. The result has rank <(rank m)>.
+
+Examples:
+{<ex>
+  (let ((m (reshape (arange 20) '(4 5))))
+    (array-take* m [i 0 1 1 0]) ) } 
+
+
+#? (array-where-nonzero m)
+Return indices of nonzero elements of <m>. The result is an NxD array,
+where N is the number of nonzero elements in <m>, and <d> is <(rank m)>.
+
+{<ex> (let ((m (reshape (arange 16) '(4 4))))
+        (array-where-nonzero (c< m 8)) )}
+
+
+#? (as-double-array <m>)
+{<see> as-int-array}
+Turn <m> into a double array.
+If <m> is a number, create a double scalar (a zero-dimensional array) with
+value <m>. If <m> is a list of numbers, create a double vector of length
+<(length m)> and fill it with the elements of <m>. If <m> is an array and 
+the element type of <m> is double, return <m>. If <m> is a numeric array 
+but not double, create a new double array of same shape and copy contents
+of <m> into it using <array-copy>. In all other cases, raise an error.
+
+{<ex> (as-double-array (list 3 2 1))}
+
+
+#? (as-int-array <m>)
+{<see> as-double-array}
+Same as <as-double-array> except that the resulting array has element type
+int. <as-int-array> does not check for over- or underflow during conversion.
+
+
+#? (as-ubyte-array <m>)
+{<see> as-double-array}
+Same as <as-double-array> except that the resulting array has element type
+ubyte (unsigned byte). <as-ubyte-array> does not check for over- or underflow
+during conversion.
+
+
+#? (as-contiguous-array <m>)
+If <m> is a contiguous array, return <m>. If <m> is a non-contiguous array,
+return a contiguous copy of <m>. Raise an error if <m> is not an index.
+
+
+#? *** Index Iterators
+
+#? (idx-bloop ((<symb1> <idx1>) [ (<symb2> <idx2>) [...(<symbn> <idxn>) ]]) <body>)
+make each <symbi> be an idx that loops over the first dimension of 
+its corresponding <idxi>. Execute <body> for each value.
+More precisely, each <si> will be an idx with one less dimension than 
+the corresponding <idxi>, and will simulataneously loop over the
+successive "slices" of <idxi> for each possible value of the
+first index. In other words, applying function <myfunc> to each
+element of a vector <v1> and putting the result in the 
+corresponding element in <v2> can be done with:
+{<code>
+  (idx-bloop ((x1 v1) (x2 v2)) (x2 (myfunc (x1))))
+</code>}
+<x1> and <x2> are scalars (i.e. zero-dimensional tensors).
+The above function work just as well is <v1> and <v2> are
+<d>-dimensional tensors and <myfunc> accepts <n-1>-th
+dimensional tensors as arguments.
+
+
+#? (idx-pbloop ((<symb1> <idx1>) [ (symb2> <idx2>) [...(<symbn> <idxn>) ]]) <body>)
+Works just like idx-bloop, but the multiple evaluations of the
+body may be executed in parallel on some implementations of Lush.
+
+
+#? (idx-eloop ((<symb1> <idx1>) [ (symb2> <idx2>) [...(<symbn> <idxn>) ]]) <body>)
+Make each <symbi> be an idx that loops over the last dimension of its
+corresponding <idxi>. Execute <body> for each value.
+This is like idx-bloop, but it loops on the last dimension,
+instead of the first. For example, the matrix product operation 
+<C = A*B> can be written as follows:
+{<code>
+  (de idx-m2timesm2 (A B C) 
+     (idx-eloop ((Bj B)(Cj C)) (idx-m2dotm1 A Bj Cj)))
+</code>}
+where <idx-m2dotm1> is the usual matrix-vector product. The <idx-eloop>
+construct simultaneously iterates over all columns of <B> and <C>.
+
+
+#? (idx-peloop ((<symb1> <idx1>) [ (symb2> <idx2>) [...(<symbn> <idxn>) ]]) <body>)
+Works just like idx-pbloop, but the multiple evaluations of the
+body may be executed in parallel on some implementations of Lush.
+
+
+#? (cidx-bloop (<i_1> [<i_2>...<i_n>] (<c_1> <l_1>) [(<c_1> <l_1>)...(<c_m> <l_m>)) <p_1> [<p_2>...])
+This iterator is desinged to facilitate the implementation of
+inner loops of tensor functions in C, while leaving all the 
+bookkeeping to the Lisp.
+A call to <cidx-bloop> as shown in the synopsis is somewhat equivalent 
+to <n> nested <idx-bloop>s, which will loop over the first <n> dimensions 
+of idxs <l_1> to <l_m> simultaneously.  The arguments <i_1> to <i_n> are 
+strings containing names of C local variables that will be created and set 
+to the loop index in each of the <n> dimensions. At each iteration, the C 
+variables provided in strings <c_1> to <c_m> will point to the appropriate 
+values in the idxs <l_1> to <l_m>.  For example, the following function 
+will fill matrix <a> with cos(i+j).
+{<code>
+    (de foo (a)
+       ((-idx2- (-flt-)) a)
+       (cidx-bloop ("i" "j" ("a" a)) #{ *a = cos(i+j); #}) a)
+</code>}
+The return value is (like in idx-bloop) the last IDX specified in the
+declaration (in the example above, the return value is superfluous).
+
+
+#? (idx-gloop (<p1>...[<pn>]) <body>)
+Enhanced version of <bloop> which allows to "bloop" through a
+pointer table, and to have access to the current index value of the loop.
+Each <pi> is a list with 1, 2, or 3 elements.
+If it has 2 elements the meaning is like a in regular bloop.
+If it has 1 element, which must be a symbol, it will be used as 
+a local variable which contains the current index of the loop.
+With 3 elements, it must be of the form (<symbol> <p> <m>), where
+<p> is a 1D index and <m> an index of at least one dimension.
+<Symbol> will take the values (idx-select m 0 (p i)) for all
+possible values of i. 
+
+
+#? (array-reduce <op> <m> [<d>])
+{<see> array-reduce*}
+Apply operator <op> along dimension <d> of <m> (default for <d> is -1).
+The result has rank <(- (rank m) 1)>, hence the name
+"reduce". Function <op> must accept two array arguments of equal shape
+and must return a result of the same shape.
+
+Examples:
+{<ex> (let ((m (reshape (array-range 20) '(4 5)))) 
+	(list (array-reduce + m) (array-reduce min m 0) ))}
+
+#? (array-reduce* <op> <m> [<d>])
+{<see> array-reduce}
+Apply operator <op> along dimension <d> of <m> (default for <d> is -1).
+The result has rank <(- (rank m) 1)>. Function <op> must accept three
+array arguments of equal shape, the third being the explicit output.
+
+Examples:
+{<ex> (let ((m (reshape (array-range 20) '(4 5)))) 
+	(array-reduce* idx-add m))}
+
+#? *** << libstd/boxing.lsh
+
+#? *** << libstd/mat.lsh 
+
+#? *** Index Argument Checking
+
+Functions with prefix <chk-> check a property of an argument and
+raise an error if that property does not hold. They return nothing.
+Functions with prefix <validate-> also check a property of an 
+argument, but in addition carry out a normalization of the argument.
+They return the normalized argument, and raise an error if the 
+property in question does not hold.
+
+
+#? (vectorp <arg>)
+Return <t> if <arg> is a one-dimensional index and <nil> otherwise.
+
+
+#? (chk-idx <arg>)
+Raise an error if <arg> is not an index, otherwise return <arg>.
+
+
+#? (chk-idx-numeric <arg>)
+Raise an error if <arg> is not a numeric index, otherwise return <arg>.
+
+
+#? (chk-idx-contiguous <arg>)
+Raise an error if <arg> is not a contiguous index, otherwise return <arg>.
+
+
+#? (validate-dimension <idx> <d>)
+Make sure that <idx> has a dimension <d>. Return the non-negative 
+dimension that corresponds to <d>. Example:
+{<ex> (let ((m (reshape (array-range 20) '(4 5)))) (validate-dimension m -1))}
+
+
+#? (validate-shape <idx> <template>)
+Make sure that shape of <idx> matches <template>. <Template> is a list.
+For each element in <template>, if it is an integer, the shape of
+<idx> must have this extent in that dimension, if it is a <nil>, the
+extent is not constrained.
+{<ex> (let ((m (reshape (array-range 20) '(4 5)))) 
+      (validate-shape m '(() 5)))}
+
+
+#? *** Direct IDX Manipulations
+
+#? (idx-set-dim <m> <d> <v>)
+Set the <d>-th dimension of <m> to <v>. This generates an 
+error if the resulting IDX overflows its storage.
+{<code>
+  ? (setq m (double-array 3 4))
+  = [[ 0.00  0.00  0.00  0.00 ]
+     [ 0.00  0.00  0.00  0.00 ]
+     [ 0.00  0.00  0.00  0.00 ]]
+  ? (m () () (range 0 11))
+  = [[ 0.00  1.00  2.00  3.00 ]
+     [ 4.00  5.00  6.00  7.00 ]
+     [ 8.00  9.00 10.00 11.00 ]]
+  ? (idx-set-dim m 1 3)
+  = ()
+  ? m
+  = [[ 0.00  1.00  2.00 ]
+     [ 4.00  5.00  6.00 ]
+     [ 8.00  9.00 10.00 ]]
+</code>}
+
+#? (idx-set-mod <m> <d> <v>)
+Set modulo of <d>-th dimension of <m> to <v>.
+
+#? (idx-set-offset <m> <n>)
+Set offset of <m> in its storage to <n>
+
+
+#? *** Loading and Saving 
+There are two ways to load and save matrices and tensors
+in Lush which deal with two incompatible formats. 
+The functions listed below use the so-called 
+"classic" format, but cannot be used in compiled
+code. The other set of functions, described in the
+standard library section uses a different format
+(so-called IDX format) and are based on the C 
+stdio library. This discrepancy exists largely for 
+historical reasons and will be fixed eventually.
+
+#? ** Loading, Saving, and Mapping Matrices
+
+There are two types of "classic" matrix files: ASCII files 
+and binary files. Binary files are a more accurate, more
+compact, and more efficient way of saving matrix data. 
+ASCII matrix files should be used only reserved to 
+
+#? (save-matrix  <mat> <file>)
+Stores the matrix <mat> into the binary file <file>.  Argument <file>
+may be a filename string or a file descriptor created with
+<open-write> or <open-append>. When <file> is a file name, a suffix
+<".mat"> is added when needed.
+{<hlink> Binary Matrix File Format.}
+
+#? (save-ascii-matrix  <mat> <file>)
+Stores the matrix <mat> into the text file <file>.  Argument <file>
+may be a filename string or a file descriptor created with
+<open-write> or <open-append>. When <file> is a file name, a suffix
+<".mat"> is added when needed.
+{<hlink> Ascii Matrix File Format.}
+
+#? (load-matrix  [<mat>] <file>)
+Loads a matrix from file <file> and returns it. This function senses
+the file format and performs the adequate actions. If a symbol <mat>
+is specified, it stores the new matrix in symbol <mat>.
+
+Argument <file> may be a filename string or a file descriptor created
+with <open-read>.  When <file> is a file name, a suffix <".mat"> is
+added when needed.
+{<hlink> Binary Matrix File Format.}
+{<hlink> Ascii Matrix File Format.}
+
+#? (map-matrix [<mat>] <filename>)
+This function is available on certain systems only.  It loads a binary
+matrix file by mapping the file to certain memory addresses using the
+virtual memory facilities provided by the operating system.  This
+function is especially handy for handling very large matrices.
+Mapped matrices however are always read-only.
+
+#? ** Native Matrix File Formats
+This section describes the "classic" or "native" file formats
+used for Lush matrices. The IDX format (used by compilable 
+matrix I/O functions) is not described here.
+
+#? * Ascii Matrix File Format
+ASCII matrix files are generated with function <save-ascii-matrix>.
+These machine independent files are handy for transferring data
+between different computers. They tend however to eat a lot of disk
+space.
+
+The first line of the file is a matrix header. It is composed of the
+letters ``.MAT'', the number of dimensions and the size of each
+dimension. The array elements are written then, separated by spaces
+and newlines characters.
+
+The following lines display the content of a
+valid ascii matrix file.
+{<code>
+        .MAT 2 3 4
+         1 -1  1  2  -1  1 -3
+         1 -1
+         4  0  0
+</code>}
+The same matrix could have been written
+in the following, more natural way.
+{<code>
+        .MAT 2 3 4
+         1 -1  1
+         2 -1  1
+        -3  1 -1
+         4  0  0
+</code>}
+
+#? * Binary Matrix File Format
+
+Binary matrix files are generated with function <save-matrix>. Binary
+matrix files begin with a header which describes the type and the size
+of the matrix. Then comes a binary image of the matrix.
+
+The core header is a C structure defined as follows :
+{<code>
+struct header {
+        int magic;
+        int ndim;
+        int dim[3];
+};
+</code>}
+It can be followed by further <int> when the matrix has more
+than 3 dimensions.
+
+The first member, <magic>, of this structure is a ``magic'' number,
+which encodes the type of the matrix. This number must be:
+{<ul>
+ {<li> <0x1E3D4C51> for a single precision matrix}
+ {<li> <0x1E3D4C53> for a double precision matrix}
+ {<li> <0x1E3D4C54> for an integer matrix}
+ {<li> <0x1E3D4C56> for a short matrix}
+ {<li> <0x1E3D4C55> for a byte matrix}
+ {<li> <0x1E3D4C52> for a packed matrix}
+}
+
+The second member of this structure, <ndim>, is the number of
+dimensions of the matrix. Then come the dimensions themselves in the
+array <dim>. If there are more than three dimensions, the array <dim>
+is extended to accomodate the extra dimensions.
+
+When the number of dimensions (specified in <ndim>) is greater than 3,
+the header is completed by <ndim - 3> further integers.
+
+This header is followed by a binary image of the matrix. Elements are
+stored with the last index changing faster, i.e.
+{<pre>
+(0,0,0) (0,0,1) (0,0,2) ...  (0,1,0) (0,1,2) etc...
+</pre>}
+
+{<ul>
+ {<li> as float numbers for single precision matrix}
+ {<li> as double numbers for double precision matrix}
+ {<li> as int numbers for integer matrix}
+ {<li> as short numbers for short matrix}
+ {<li> as unsigned char numbers for byte matrix}
+ {<li> and as char for packed matrix.}
+}
+
+In this latter case, each byte represents a fixed point number between
+-8 and +8 (+8 not included), the first 4 bits (most significant
+nybble) contain the integral part and the remaining 4 bits contain the
+fractional part. It uses a two's complement format. Here are two C
+functions which convert a ``compacted fixed point'' number into a
+floating point number and back.
+
+{<pre>
+/* Converts a packed number to a float */
+float unpack(b)
+int b;
+{
+    if (b & 0x80)
+        b |= ~0x7f;
+    else
+        b &= 0x7f;
+    return (float)b / 16.0;
+}
+
+/* Converts a float into a single byte packed number */
+unsigned char pack(x)
+float x;
+{
+    if (x > 8.0-1.0/16.0)
+        return 0x7f;
+    else if (x < -8.0)
+        return 0x80;
+    else
+        return x*16;
+}
+</pre>}
+
+
+#? ** Foreign Matrix Files
+
+The following functions are for reading and writing information stored
+in files created by other programs than Lush. These functions make it
+easy to read binary or text files into a Lush matrix.
+
+#? * Foreign Binary Matrices
+
+#? (import-raw-matrix <mat> <file> [<offset>])
+This function just reads the contents of file <file> into matrix
+<mat>. Accessing the matrix then access this data as single precision
+numbers (float), double precision numbers (double), integers (int),
+short integers (short), bytes (unsigned char) or packed numbers according
+to the type of matrix <mat>.
+
+Argument <mat> must be a matrix freshly created with functions
+<matrix>, <dmatrix>, <imatrix>, <smatrix>, <bmatrix> or <pmatrix>. Submatrices
+are usually rejected. Argument <file> might be a file name or a file
+descriptor created with <open-read>.
+When argument <offset> is specified, a header of offset bytes is skipped.
+
+After executing this function, the file descriptor <file> points to
+the first byte following the matrix data.
+
+#? (export-raw-matrix <mat> <file>)
+Stores the data of the matrix <mat> into the binary file <file>.
+Argument <file> may be a filename string or a file descriptor created
+with <open-write> or <open-append>. No header is written.
+
+
+#? * Foreign Ascii Matrices
+
+#? (import-text-matrix <mat> <file>)
+This function reads numbers in the text file <file> and stores them in
+matrix <mat>.  Argument <mat> must be a freshly created matrix
+(submatrices are not accepted). Argument <file> might be or a file
+descriptor created with <open-read>.
+
+After executing this function, the file descriptor <file> points to
+the first non blank character following the matrix data.
+
+
+#? (export-text-matrix <mat> <file>)
+Stores the data of the matrix <mat> into the text file <file>.
+Argument <file> may be a filename string or a file descriptor created
+with <open-write> or <open-append>. No header is stored.
+
+
+
+#? *** Component-wise Unary Operations
+All of these functions apply 
+a unary function to each element
+and either write the result in the elements
+of the second argument if it is present, 
+or return a new tensor with the result if the 
+second argument is not present
+(except for idx-clear). The two argument must
+have the same dimensions. If their numerical
+types are different, appropriate conversions
+are performed.
+
+#? (idx-clear <src>)
+Set elements of <src> to 0.
+
+#? (idx-minus <src> [<dst>])
+negate all elements of <src>.
+
+#? (idx-abs <src> [<dst>])
+absolute value of elements of <src>.
+
+#? (idx-sqrt <src> [<dst>])
+square root of elements of <src>.
+
+#? (idx-inv <src> [<dst>])
+inverse of elements of <src>.
+
+#? (idx-sin <src> [<dst>])
+apply sine to elements of <src>.
+
+#? (idx-cos <src> [<dst>])
+apply cosine to elements of <src>.
+
+#? (idx-atan <src> [<dst>])
+apply arctangent to elements of <src>.
+
+#? (idx-log <src> [<dst>])
+apply log to elements of <src>.
+
+#? (idx-exp <src> [<dst>])
+apply exp to elements of <src>.
+
+#? (idx-qtanh <src> [<dst>])
+apply rational approximation to hyperbolic tangent to elements of <src>.
+
+#? (idx-qdtanh <src> [<dst>])
+apply derivative of the rational approximation to 
+hyperbolic tangent to elements of <src>.
+
+#? (idx-stdsigmoid <src> [<dst>])
+apply the "standard" neural-net sigmoid function to elements of <src>.
+
+#? (idx-dstdsigmoid <src> [<dst>])
+apply derivative of the "standard" neural-net sigmoid 
+function to elements of <src>.
+
+#? (idx-expmx <src> [<dst>])
+apply a rational approximation of (exp -x) to elements of <src>.
+
+#? (idx-dexpmx <src> [<dst>])
+apply derivative of <expmx> to elements of <src>.
+
+#? *** Component-wise Dyadic Operations
+All of these functions apply 
+a dyadic function to each pair of corresponding
+elements in the first two arguments.
+They either write the result in the elements
+of the third argument if it is present, 
+or return a new tensor with the result if the 
+third argument is not present
+All the arguments must have the same dimensions. 
+If their numerical types are different, appropriate 
+conversions are performed.
+
+#? (idx-add <m1> <m2> [<r>])
+component-wise addition of <m1> and <m2>.
+Result in <r> if present, or returned if not present.
+
+#? (idx-sub <m1> <m2> [<r>])
+component-wise subtraction of <m1> and <m2>.
+Result in <r> if present, or returned if not present.
+
+#? (idx-mul <m1> <m2> [<r>])
+component-wise multiplication of <m1> and <m2>.
+Result in <r> if present, or returned if not present.
+
+#? (idx-div <m1> <m2> [<r>])
+component-wise division of <m1> and <m2>.
+Result in <r> if present, or returned if not present.
+
+#? *** Contracting Operations
+
+#? (array-sum <m> [<d>])
+Sum <m> over dimension <d> (default -1).
+
+#? (array-prod <m> [<d>])
+Multiply <m> over dimension <d> (default -1).
+
+
+#? *** Contracting Operations with Scalar Result
+The following functions include dot products, distances, sums of terms, 
+min, max, etc and return scalars. These operations "contract" all 
+the dimensions. The dyadic ones can be seen as generalized dot product of 
+two tensors (e.g. the sum of all the products of corresponding terms in 
+the two tensors). These function have a base form and an accumulating
+form (which accumulates the result in idx0 past as last argument).
+If the last (and optional) idx0 argument is present, the result
+is written in it. If it is not present, a number (not an idx0)
+is returned.
+
+#? (idx-sum <m> [<r>])
+sum of all terms of <m>.
+
+#? (idx-sup <m> [<r>])
+max of all terms of <m>.
+
+#? (idx-inf <m> [<r>])
+min of all terms of <m>.
+
+#? (idx-sumsqr <m> [<r>])
+sum of squares of all terms of <m>.
+
+#? (idx-dot <m1> <m2> [<r>])
+generalized dot product of <m1> and <m2>, i.e.
+the sum of all products of corresponding terms
+in <m1> and <m2>.
+
+#? (idx-sqrdist <m1> <m2> [<r>])
+generalized Uclidean distance between <m1> and <m2>,
+i.e. the sum of squares of all the differences
+between corresponding terms of <m1> and <m2>.
+
+#? (idx-sumacc <m> <r>)
+sum of terms of <m>. Result accumulated in idx0 <r>.
+
+#? (idx-supacc <m> <r>)
+max of terms of <m>. Result accumulated in idx0 <r>.
+
+#? (idx-infacc <m> <r>)
+min of terms of <m>. Result accumulated in idx0 <r>.
+
+#? (idx-sumsqracc <m> <r>)
+sum square of terms of <m>. Result accumulated in idx0 <r>.
+
+#? (idx-dotacc <m1> <m2> <r>)
+generalized dot product of <m1> and <m2>, i.e.
+the sum of all products of corresponding terms
+in <m1> and <m2>. Result accumulated in idx0 <r>.
+
+#? (idx-sqrdistacc <m1> <m2> <r>)
+generalized Uclidean distance between <m1> and <m2>,
+i.e. the sum of squares of all the differences
+between corresponding terms of <m1> and <m2>.
+Result accumulated in idx0 <r>.
+
+#? *** Operations between Tensors and Scalars
+
+#? (idx-dotm0 <m> <s> [<r>])
+multiply all terms of <m> by scalar <s> (an idx0).
+
+#? (idx-addm0 <m> <s> [<r>])
+add scalar <s> (an idx0) to all terms of <m>.
+
+#? (idx-dotm0acc <m> <s> <r>)
+multiply all terms of <m> by scalar <s> (an idx0).
+Result accumulated in <r>.
+
+#? (idx-addm0acc <m> <s> <r>)
+add scalar <s> (an idx0) to all terms of <m>.
+Result accumulated in <r>.
+
+
+#? *** Matrix/Vector and 4-Tensor/Matrix Products
+
+#? (idx-m2dotm1 <m1> <m2> [<r>])
+matrix-vector multiply.
+
+#? (idx-m4dotm2 <m1> <m2> [<r>])
+4-tensor by 2-matrix multiplication:
+R_ij = sum_kl M1_ijkl * M2_kl
+
+#? (idx-m2dotm1acc <m1> <m2> <r>)
+matrix-vector multiply.
+Result accumulated in <r>.
+
+#? (idx-m4dotm2acc <m1> <m2> <r>)
+4-tensor by 2-matrix multiplication with
+accumulation: R_ij += sum_kl M1_ijkl M2_kl
+
+#? *** Outer Products
+
+#? (idx-m1extm1 <m1> <m2> [<r>])
+outer product between vectors:
+R_ij = M1_i * M_j
+
+#? (idx-m2extm2 <m1> <m2> [<r>])
+outer product between matrices. Gives
+a 4-tensor: R_ijkl = M1_ij * M2_kl
+
+#? (idx-m1extm1acc <m1> <m2> <r>]
+outer product between vectors with accumulation:
+R_ij + = M1_i * M_j
+
+#? (idx-m2extm2acc <m1> <m2> [<r>])
+outer product between matrices with accumulation. 
+Gives a 4-tensor: R_ijkl += M1_ij * M2_kl
+
+
+#? *** Backward Compatibility Functions
+These functions are here for historical reasons.
+
+#? (dot-product <a> <b>)
+return the dot product of <a> and <b>
+
+#? (m*m <a> <b> [<c>])
+obsolete and non-compilable matrix product function.
+
+#? (m+m <a> <b> [<c>])
+obsolete and non-compilable matrix addition function.
+
+#? (mxm <a> <b> [<c>])
+obsolete and non-compilable component-wise matrix multiply function.
+
+#? (m-m <a> <b> [<c>])
+obsolete and non-compilable matrix subtraction function.
+
+#? (m*c <a> <b> [<c>])
+obsolete and non-compilable multiplication of
+a matrix by a scalar.
+
+#? (m+c <a> <b> [<c>])
+obsolete and non-compilable addition of a scalar
+to the elements of a matrix.

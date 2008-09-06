@@ -1,0 +1,313 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; PSU Lush
+;;;   Copyright (C) 2005 Ralf Juengling
+;;; Derived from LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; stuff that was formerly in sysenv.lsh
+
+(dm array-range (_ &rest args)
+  `(let ((l (range ,@args)))
+    ((double-array (length l)) () l) ) )
+
+(defalias arange array-range)
+
+
+(dm array-range* (_ &rest args)
+  `(let ((l (range* ,@args)))
+    ((double-array (length l)) () l) ) )
+
+(defalias arange* array-range*)
+
+
+(dm array-transpose (_ &rest args)
+  `(copy-array (apply idx-transpose ,args)) )
+
+
+(dm array-reverse (_ &rest args)
+  `(copy-array (apply idx-reverse ,args)) )
+
+
+(defmacro array-reduce (op m &optional (d -1))
+  `(let* ((m ,m)
+	  (d (validate-dimension m ,d))
+	  (e (idx-shape m d))
+	  (carry (copy-array (idx-select m d 0))) )
+     (declare (-int-) d e)
+     (for* (i 1 e)
+       (declare (-int-) i)
+       (setq carry (,op carry (idx-select m d i))) )
+     carry)
+  )
+
+(defalias .ar array-reduce)
+
+
+(defmacro array-reduce* (op m &optional (d -1))
+  `(let* ((m ,m)
+	  (d (validate-dimension m ,d))
+	  (e (idx-shape m d))
+	  (carry (copy-array (idx-select m d 0))) )
+     (declare (-int-) d e)
+     (for* (i 1 e)
+       (declare (-int-) i)
+       (,op carry (idx-select m d i) carry))
+     carry)
+  )
+
+
+(defmacro array-sum args
+  `(array-reduce* idx-add ,@args)
+  )
+
+
+(defmacro array-prod args
+  `(array-reduce* idx-mul ,@args)
+  )
+
+
+(de array-lift (m &rest dims)
+  (chk-idx m)
+  (if (null dims)
+      (copy-array m)
+    (let* ((elt (idx-element-type m))
+           (shp (append dims (shape m)))
+           (arr (make-array elt shp ()))
+	   (shp* (cons (prod dims) (shape m)))
+	   (arr* (reshape arr shp*)) )
+      (idx-bloop ((sl arr*)) (array-copy m sl))
+      arr)))
+
+
+(de array-sink (m &rest dims)
+  (chk-idx m)
+  (if (null dims)
+      (copy-array m)
+    (let* ((elt (idx-element-type m))
+           (shp (append (shape m) dims))
+           (arr (make-array elt shp ()))
+	   (shp* (nconc1 (shape m) (prod dims)))
+	   (arr* (reshape arr shp*)) )
+      (idx-eloop ((sl arr*)) (array-copy m sl))
+      arr)))
+
+
+(defmacro array-extend! (-m -d -n &optional (init 0))
+  (let (((m d n i ed st ne) (gensyms 7)))
+    (let* ((source-init (if (null init) 
+                            () 
+                          `(array-clear (idx-trim ,m ,d ,ed) ,init)) )
+           (source-chk-d (if (numberp -d)
+                             (if (= -d 0)
+                                 ()
+                               (error "can do in-place extend along first dimension only"))
+                           `(when (<> ,d 0) 
+                              (error "array-extend!: can do in-place extend along first dimension only")) ))
+           (source-main (if (not (numberp -n))
+                            `(cond ((> -delta-ne 0)  ; we actually want to extend the array
+                                    (if (< (+ (idx-nelems ,m) -delta-ne) ,ne)
+                                        (idx-extend! ,m ,d ,n)
+                                      (storage-realloc ,st (max (+ ,ne -delta-ne)
+                                                                (+ ,ne ,ne) ))
+                                      (idx-extend! ,m ,d ,n) )
+                                    ,source-init)
+                                   ((< -delta-ne 0) ; we actually want to shrink the array
+                                    (idx-extend! ,m ,d ,n)
+                                    (when (< (idx-nelems ,m) (div ,ne 2))
+                                      (storage-realloc ,st (div ,ne 2)) ))
+                                   (t               ; no change
+                                    ()))
+                          (cond ((> -n 0)
+                                 `(progn
+                                    (if (< (+ (idx-nelems ,m) -delta-ne) ,ne)
+                                        (idx-extend! ,m ,d ,n)
+                                      (storage-realloc ,st (max (+ ,ne -delta-ne)
+                                                                (+ ,ne ,ne) ))
+                                      (idx-extend! ,m ,d ,n) )
+                                    ,source-init) )
+                                ((< -n 0)
+                                 `(progn
+                                    (idx-extend! ,m ,d ,n)
+                                    (when (< (idx-nelems ,m) (div ,ne 2))
+                                      (storage-realloc ,st (div ,ne 2)) )) )
+                                (t
+                                 ()) ))))
+      `(let ((,m ,-m) (,d ,-d) (,n ,-n))
+	 (declare (-int-) ,d ,n)
+	 (let ((-delta-ne ,n) (,ed (idx-shape ,m ,d)))
+	   (declare (-int-) -delta-ne ,ed)
+           ,source-chk-d
+           (when (<> (idx-offset ,m) 0)
+             (error "array-extend!: not implemented for arrays with non-zero offset") )
+	   (when (not (idx-contiguousp ,m))
+	     (error "array-extend!: array not contiguous") )
+	   (for* (,i 1 (idx-rank ,m)) 
+	     (declare (-int-) ,i)
+	     (setq -delta-ne (* -delta-ne (idx-shape ,m ,i))) )
+	   (let* ((,st (idx-storage ,m))
+                  (,ne (storage-nelems ,st)) )
+             (declare (-int-) ,ne)
+             ,source-main
+             ))
+         ,m)
+      )))
+
+
+(defun idx-squeeze-shape (m)
+  (let ((shp (cons nil (shape m))))
+    (reshape m (cdr (prog1 shp
+                      (while (cdr shp)
+                        (when (= 1 (cadr shp)) (rplacd shp (cddr shp)))
+                        (setq shp (cdr shp))) )))))
+
+(defalias squeeze     idx-squeeze-shape)
+
+
+(dm as-contiguous-array (_ arg)
+  `(let ((m ,arg))
+     (chk-idx m)
+     (if (idx-contiguousp m)
+	 m
+       (copy-array m) )))
+  
+
+(dm idx-flatten (_ m &optional nd)
+  (if (null nd)
+      `(let ((m ,m))
+         (reshape (as-contiguous-array m) (list (idx-nelems m))))
+    `(let* ((m ,m) (shp (shape m)) (nd ,nd))
+       (cond
+        ((or (= nd 0) (> nd (length shp)) (> (- nd) (length shp)))
+         (error "invalid value for number of dimensions" nd))
+        ((or (= nd 1) (= nd -1))
+         m)
+        (t
+         (let* ((n (if (< 0 nd) nd (+ (length shp) nd)))
+                (m (as-contiguous-array m)) )
+           (let (((shp-head . shp-tail) (list-split! shp n)))
+             (if (< 0 nd)
+                 (reshape m (cons (prod shp-head) shp-tail))
+               (reshape m (nconc1 shp-head (prod shp-tail))) ))))) )))
+  
+(defalias ravel idx-flatten)
+
+(defun idx-broadcast ms
+  (let* ((bm (reduce> idx-broadcast2 (car ms) (cdr ms)))
+         (bms (.cl bm)) )
+    (prog1 (mapcar idx-broadcast2 bms ms)
+      (delete bms) )))
+
+
+(defmacro idx-select* (m . ss)
+  (let ((c m))
+    (while ss
+      (setq c `(idx-select ,c 0 ,(car ss)))
+      (setq ss (cdr ss)) )
+    c))
+
+(defalias .s* idx-select*)
+
+
+(defmacro idx-trim* (m . shp)
+  (if (null shp)
+      `(copy-index ,m)
+    `(let ((m (idx-trim ,m 0 0 ,(car shp))))
+       ,@(mapcar list (.cl 'idx-trim!) (.cl 'm) (range* 1 (length shp)) (.cl 0) (cdr shp))
+       m)
+    ))
+
+
+(defmacro idx-shift* (m . ns)
+  (if (null ns)
+      `(copy-index ,m)
+    `(let ((m (idx-shift ,m 0 ,(car ns))))
+       ,@(mapcar list (.cl 'idx-shift!) (.cl 'm) (range* 1 (length ns)) (cdr ns))
+       m)
+    ))
+  
+(defmacro idx-extend* (m . ns)
+  (if (null ns)
+      `(copy-index ,m)
+    `(let ((m (idx-extend ,m 0 ,(car ns))))
+       ,@(mapcar list (.cl 'idx-extend!) (.cl 'm) (range* 1 (length ns)) (cdr ns))
+       m)
+    ))
+
+(dm idx-unfold (fn idx n k s)
+  `(let ((m (copy-index ,idx))) (idx-unfold! m ,n ,k ,s) m ))
+
+(defalias unfold idx-unfold)
+
+
+(dmd idx-gloop (vars . body)
+  (let* ((arglist ())
+         (letlist ())
+         (sellist ())
+         (lvar ())
+         (tmpseed 0))
+    (each ((x vars)) 
+      (selectq (length x)
+        (3
+         ;; a permutation syntax
+         (let* ((z (named (sprintf "_UNIQ_%d" (incr tmpseed)))))
+           (setq arglist (cons (list z (cadr x)) arglist))
+           (setq letlist
+                 (cons (list (car x) (list 'select (lasta x) 0 (list z)))
+                       letlist))))
+        (1   (setq lvar (car x)))
+        (2   (setq arglist (cons x arglist)))
+        (t   (error "bad gloop construct"))))
+    (if lvar
+        `(let* (( ,lvar 0))
+           ((-int-) ,lvar)
+           ,(list 'idx-bloop arglist 
+                  (cons 'let 
+                        (cons letlist 
+                              (append sellist body 
+                                      (list (list 'setq lvar 
+                                                  (list '+ lvar '1))))))))
+      (list 'idx-bloop arglist 
+            (cons 'let (cons letlist (append sellist body))) ) ) ) )
+
+
+(defun to-idx (p &optional dim type)
+  (cond
+   ((is-of-class p |GPTR|)
+    (let ((m (to-obj p)))
+      (when (not (indexp m))
+        (error "Not an index-pointer" (list p '-> m) ))
+      (when (and dim (<> dim (idx-rank m)))
+        (error "array has wrong rank" (list (idx-rank m) 'should 'be dim)) )
+      (when (and type (<> type (idx-element-type m)))
+        (error "array has wrong element type"
+               (list (idx-element-type m) 'should 'be type) ))
+      m))
+   ((indexp p)
+    p)
+   (t 
+    (error "Not a pointer nor an index" p)) ))
+   
+(lock-symbol arange arange* idx-squeeze-shape idx-broadcast
+	     array-reduce array-reduce* array-sum array-prod
+             idx-gloop to-idx)

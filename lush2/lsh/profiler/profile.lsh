@@ -1,0 +1,240 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: profile.lsh,v 1.2 2005/05/14 22:11:46 ysulsky Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Profiling for Lush
+;; Gathering performance data for your Lush functions
+;;
+;; Profiling a function is as easy as wrapping your definition
+;; with <profile>.
+;;
+;; Example:
+;; .CODE
+;; (profile
+;;    (de test-func () (sleep 2)))
+;; (test-func)
+;; (profile-stats-all)
+;; .DIV
+;;
+;; You can globally disable profiling once you're finished debugging
+;; by setting <*disable-profiling*> to <t> before you include 
+;; <"profile.lsh"> anywhere in your code.
+
+;;; XXX: for some reason, when editing this file, files that use profile
+;;;      don't get rebuilt automatically
+
+;; set this before including any files that use profile
+(when (null *disable-profiling*)
+  (defvar *disable-profiling* nil))
+
+(de symbcat (&rest parts)
+  (string->symbol (apply 'concat (map (lambda (part)
+                                        (if (symbolp part)
+                                          (symbol->string part)
+                                          (if (consp part)
+                                            (concat (symbol->string (car part))
+                                                    "--"
+                                                    (symbol->string (cadr part)))
+                                            part)))
+                                      parts))))
+
+(de profile-c-var (lisp-name)
+  (regex-subst "[^a-zA-Z0-9]" "_" (symbol->string lisp-name)))
+
+
+(de profile-header-footer (fn-name fn-body)
+   (let ((numcalls-symb (symbcat "profile-" fn-name "-numcalls"))
+         (ttotal-symb   (symbcat "profile-" fn-name "-ttotal"))
+         (talone-symb   (symbcat "profile-" fn-name "-talone"))
+         (running-symb  (symbcat "profile-" fn-name "-running")))
+     ;; to avoid problems with defmethod interp mode, create vars beforehand
+     (profile-clear-stats fn-name)
+     `(let ((tstart 0)
+            (tend   0)
+            (orig-talone 0) ; this gets modified if another profiled func gets called inside this one
+            (final-talone 0))
+       (ifcompiled
+           (progn
+             ((-double-) tstart tend)
+             (cpheader "#include <sys/time.h>")
+             #{
+             {
+               struct timeval tv;
+               gettimeofday (&tv, NULL);
+               $tstart = ((double) tv.tv_sec) + ((double) tv.tv_usec) / 1.0e6;
+             }
+             #}
+             (cinline ,(concat "var_get (named (\"" (symbol->string numcalls-symb) "\"))->Number++;"))
+             (cinline ,(concat "var_get (named (\"" (symbol->string running-symb)  "\"))->Number++;"))
+             (cinline ,(concat "%s = var_get (named (\"" (symbol->string talone-symb) "\"))->Number;")
+                      orig-talone)
+             (prog1
+                 (progn ,@fn-body)
+               #{
+               {
+                 struct timeval tv;
+                 gettimeofday (&tv, NULL);
+                 $tend = ((double) tv.tv_sec) + ((double) tv.tv_usec) / 1.0e6;
+               }
+               #}
+               (cinline ,(concat "var_get (named (\"" (symbol->string running-symb) "\"))->Number--;"))
+               (cinline ,(concat "var_get (named (\"" (symbol->string ttotal-symb) "\"))->Number += %s - %s;")
+                        tend tstart)
+               (cinline ,(concat "%s = (var_get (named (\"" (symbol->string talone-symb) "\"))->Number += %s - %s);")
+                        final-talone tend tstart)
+               #{
+               {
+                 struct at *fn;
+                 double duration_alone;
+
+                 duration_alone = $final_talone - $orig_talone;
+                 fn = var_get (named ("profiled-funcs"));
+                 while (fn)
+                 {
+                   struct at *fn_name, *running, *talone;
+                   char var_base[80] = "profile-";
+                   char var_name[80];
+
+                   fn_name = fn->Car;
+                   if (CONSP (fn_name))
+                   { // a class method
+                     strcat (var_base, nameof (fn_name->Car));
+                     strcat (var_base, "--");
+                     strcat (var_base, nameof (fn_name->Cdr->Car));
+                   }
+                   else
+                   {
+                     strcat (var_base, nameof (fn_name));
+                   }
+
+                   strcpy (var_name, var_base);
+                   strcat (var_name, "-running");
+                   running = var_get (named (var_name));
+
+                   strcpy (var_name, var_base);
+                   strcat (var_name, "-talone");
+                   talone = var_get (named (var_name));
+
+                   if (running->Number > 0.5)
+                     talone->Number -= duration_alone;
+                  
+                   fn = fn->Cdr;
+                 }
+               }
+               #}))
+         (incr ,numcalls-symb)
+         (incr ,running-symb)
+         (setq orig-talone ,talone-symb)
+         (setq tstart (time))
+         (prog1
+             (progn ,@fn-body)
+           (setq tend (time))
+           (incr ,running-symb -1)
+           (let* ((duration-total (- tend tstart))
+                  (final-talone (+ ,talone-symb duration-total))
+                  (duration-alone (- final-talone orig-talone))
+                  (fn profiled-funcs))
+             (incr ,ttotal-symb duration-total)
+             (setq ,talone-symb final-talone)
+             (while fn
+               (let* ((fn-name (car fn))
+                      (running (eval (symbcat "profile-" fn-name "-running")))
+                      (talone-symb   (symbcat "profile-" fn-name "-talone"))
+                      (talone  (eval talone-symb)))
+                 (when (> running 0.5)
+                   (set talone-symb (- talone duration-alone))))
+               (setq fn (cdr fn)))))))))
+              
+
+#? (profile-stats <fn-name>)
+;; Prints out profiling statistics for <fn-name>
+(de profile-stats (fn-name &optional all-total-times)
+  (let ((numcalls (eval (symbcat "profile-" fn-name "-numcalls")))
+        (ttotal   (eval (symbcat "profile-" fn-name "-ttotal")))
+        (talone   (eval (symbcat "profile-" fn-name "-talone"))))
+    (if (= 0 numcalls)
+      (printf "%l has not been called yet.\n" fn-name)
+      (when (not all-total-times)
+        (setq all-total-times 0))
+      (printf "%l was called %d times, time alone / total = %f / %f secs (avg. = %f / %f)%s\n"
+              fn-name numcalls talone ttotal (/ talone numcalls) (/ ttotal numcalls)
+              (if (<> 0 all-total-times)
+                (sprintf " [%f%%]" (/ (* 100 talone) all-total-times))
+                "")))))
+
+#? (profile-clear-stats <fn-name>)
+;; Resets profiling statistics for <fn-name>
+(de profile-clear-stats (fn-name)
+  (let ((numcalls-symb (symbcat "profile-" fn-name "-numcalls"))        (ttotal-symb   (symbcat "profile-" fn-name "-ttotal"))
+        (talone-symb   (symbcat "profile-" fn-name "-talone"))
+        (running-symb  (symbcat "profile-" fn-name "-running")))
+    ;; use (number x) to ensure different variables are created
+    (set numcalls-symb (number 0))
+    (set ttotal-symb   (number 0))
+    (set talone-symb   (number 0))
+    (set running-symb  (number 0))))
+
+#? (profile-stats-all)
+;; Prints out statistics for all profiled functions
+(de profile-stats-all ()
+  (let ((fn profiled-funcs)
+        (all-total-times 0))
+    (while fn
+      (incr all-total-times (eval (symbcat "profile-" (car fn) "-talone")))
+      (setq fn (cdr fn)))
+    (setq fn profiled-funcs)
+    (while fn
+      (profile-stats (car fn) all-total-times)
+      (setq fn (cdr fn)))))
+
+#? (profile-clear-stats-all)
+;; Clear all profiling statistics
+(de profile-clear-stats-all ()
+  (let ((fn profiled-funcs))
+    (while fn
+      (profile-clear-stats (car fn))
+      (setq fn (cdr fn)))))
+
+(when (not profiled-funcs)
+  (defvar profiled-funcs ()))
+
+#? (profile <fn-def>)
+;; Wraps the function definition <fn-def> to include profiling code.
+;; <fn-def> can be a <de> or a <defmethod> form.
+;;
+;; Profiling works for both compiled and interpreted code, so feel
+;; free to <dhc-make> your <fn-def>
+(dmd profile (fn)
+  (when (not *disable-profiling*)
+    (let ((fn-name  (if (<> (car fn) 'defmethod) (cadr fn) (list (cadr fn) (caddr fn))))
+          (fn-start (if (<> (car fn) 'defmethod) (nthcdr 2 fn) (nthcdr 3 fn))))
+      (profile-clear-stats fn-name)
+      (setq profiled-funcs (cons fn-name profiled-funcs))
+      (rplacd fn-start (list (profile-header-footer fn-name (cdr fn-start))))))
+  fn)
+

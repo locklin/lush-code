@@ -1,0 +1,246 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: oldplotenv.lsh,v 1.5 2005/12/04 01:36:53 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; Old plotting functions.
+
+
+
+;;; plot ports
+;; A plot port is ((plt-x plt-y) window xscale xoffset yscale yoffset object)
+;; plt-x and plt-y are the current coordinates
+;; xscale, yscale, xoffset yoffset are the transformation values
+;; The current port is stored in the global variable 'plot-port
+
+(defvar plot-port)
+(defvar current-object)
+
+;; Macro for unpacking the plot port information
+(dmd in-plot-port l
+  (list 'if '~(cadr plot-port)
+	'(delete plot-port)
+	(list 'rplaca 'plot-port
+	      (append
+		'(let (( ((plt-x plt-y) window xscale xoffset yscale yoffset object)
+			 plot-port )) )
+		l
+		'((list plt-x plt-y)) ) ) ) )
+
+;; Creates a new port in the current window,
+;; makes it current and returns it
+(de new-plot-port((bxmin bymin bxmax bymax)(xmin ymin xmax ymax) object)
+  (let* ((xscale (/ (- bxmax bxmin) (- xmax xmin)))
+	 (yscale (/ (- bymax bymin) (- ymax ymin)))
+	 (xoffset (- bxmin (* xmin xscale)))
+	 (yoffset (- bymin (* ymin yscale))) )
+    (list '(()()) window
+	  xscale xoffset
+	  yscale yoffset 
+	  object ) ) ) 
+
+;; Copy a plot-port
+(de copy-plot-port(plot-port . object)
+  (when object
+    (if (cdr object)
+	(error 'copy-plot-port "too many arguments" ())
+      (setq object (car object)) ) )
+  (let ((p (apply list plot-port)))
+    (rplaca p '(()()))
+    (when object (rplaca (lastcdr p) object))
+    p ) )
+
+;; Draw axes in the current port
+(de draw-axes ((bxmin bymin bxmax bymax)
+	       xlabel ylabel name
+	       &optional x2l y2l)
+  (when ~x2l (setq x2l str))
+  (when ~y2l (setq y2l str))
+  (in-plot-port
+   (let* ((s 3)
+          (bxmin1 (+ bxmin s))
+	   (bxmin0 (- bxmin s))
+	   (bymin1 (+ bymin s))
+	   (bymin0 (- bymin s))
+	   (oldfont (font)) )
+     (font "Helvetica-18")
+     (draw_text bxmin (- bymax 20) name)
+     (font "default")
+     (graphics_batch
+      (draw_line bxmin bymin bxmin bymax)
+      (draw_line bxmin bymin bxmax bymin)
+      (each ((x xlabel))
+        (when (< (abs x) 1e-08)
+          (setq x 0) )
+        (let* ((bx (plt-rbx x))
+               (v (x2l x))
+               (l (text-width v))
+               (h (+ 2 (text-height v))) )
+          (draw_line bx bymin0 bx bymin1)
+          (draw_text (- bx (2/ l)) (+ bymin1 h) v) ) )
+      (each ((y ylabel))
+        (when (< (abs y) 1e-08)
+	    (setq y 0) )
+        (let* ((by (plt-rby y))
+		 (v (y2l y))
+		 (l (+ 5 (text-width v))) )
+          (draw_line bxmin0 by bxmin1 by)
+          (draw_text (- bxmin0 l) by v) ) ) )
+     (font oldfont) )) )
+
+;; Returns a nice rectangle in the current window
+(de nice-brect()
+  (list 60 (- (ysize) 30) (- (xsize) 50) 40) )
+
+;; Returns a brect suitable for new-plot-port
+;; with a (x y w h) rectangle
+(de rect-2-ppbrect((x y w h))
+  (list x (+ y h) (+ x w) y) )
+
+;; Computes nice scale
+(de nice-scale (mini maxi &optional deltamin)
+  (when ~(numberp deltamin) (setq deltamin 0))
+  (let* ((d (abs (- maxi mini)))
+	 (logd (int (/ (log (/ d 3)) (log 10))))
+	 (step1 (** 10 logd))
+	 (ratio (/ deltamin step1))
+	 (step  (* step1 (max 1 (+ (int ratio) (if (= ratio (int ratio)) 0 1)))))
+	 (start (* step (int (/ (+ mini step) step))))
+	 )
+    (range start maxi step) ) )
+
+;; Does all the work
+(de setup-axes(xmin ymin xmax ymax 
+               &optional xstep ystep (name "") object x2l y2l)
+  (let* ((brect (nice-brect))
+	 (rrect (list xmin ymin xmax ymax)) 
+	 (xlabel (if xstep (range xmin xmax xstep) (nice-scale xmin xmax)))
+	 (ylabel (if ystep (range ymin ymax ystep) (nice-scale ymin ymax))) )
+    (cls)
+    (prog1
+        (setq plot-port (new-plot-port brect rrect (or object open-square)))
+      (draw-axes brect xlabel ylabel name x2l y2l) ) ) )
+
+;; Coord transformation from real space to pixel space
+(de plt-rbx (x) (+ xoffset (* xscale x)) )
+(de plt-rby (y) (+ yoffset (* yscale y)) )
+
+;;; Plotting functions
+
+;; - classical move function
+(de plt-move (x y)
+  (in-plot-port
+    (setq plt-x x plt-y y) ) )
+
+;; - clear last plotted point
+(de plt-clear()
+  (in-plot-port
+    (setq plt-x () plt-y ()) ) )
+
+;; - classical draw function
+(de plt-draw (x y) 
+  (in-plot-port
+    (when plt-x
+      (draw-line (plt-rbx plt-x) (plt-rby plt-y) (plt-rbx x) (plt-rby y)) )
+    (setq plt-x x plt-y y) ) )
+
+;; - plot an object at coord x y
+(de plt-plot (x y) 
+  (in-plot-port
+    (setq plt-x x plt-y y)
+    (if current-object
+        (current-object (plt-rbx x) (plt-rby y))
+      (object (plt-rbx x)(plt-rby y)) ) ) )
+
+;; - plot a standard deviation bar vertically
+(de plt-sd (x y v)
+  (in-plot-port
+    (let ((real-x (plt-rbx x))
+	  (real-y (plt-rby y))
+	  (minus-v (plt-rby (- y v)))
+	  (plus-v (plt-rby (+ y v)))  
+	  (sd-bar-size (if (numberp sd-bar-size) sd-bar-size object-size)) )
+      (draw-line real-x minus-v real-x plus-v)
+      (draw-line (- real-x sd-bar-size) minus-v
+		 (+ real-x sd-bar-size) minus-v)
+      (draw-line (- real-x sd-bar-size) plus-v
+		 (+ real-x sd-bar-size) plus-v) ) ) )
+
+;; - setup plot color
+(de plt-color(c)
+  (in-plot-port (color c)) )
+  
+;; - setup plot color
+(de plt-color-rgb(r g b)
+  (in-plot-port (color-rgb r g b)) )
+
+;;; -------------------- plotting listes
+
+; plot a graph taking the first list as abscissa,
+; the second as ordinates
+(de plot-lists (lx ly)
+  (graphics-batch
+   (plt-clear)
+   (each ((x lx)(y ly))
+     (plt-draw x y) ) )
+  (graphics-batch
+   (each ((x lx)(y ly))
+     (plt-plot x y) ) ) )
+
+; same as before plus standard deviation bars
+(de plot-lists-sd (lx ly lv)
+  (graphics-batch
+   (plt-clear)
+   (each ((x lx)(y ly))
+     (plt-draw x y) ) )
+  (graphics-batch
+   (each ((x lx)(y ly)(v lv))
+     (plt-sd x y v) 
+     (plt-plot x y) ) ) )
+
+
+; creates a plot-port and draw the axes, insuring
+; that the curve will fit in it. Then calls 'plot-lists'
+(de graph-scale(min max)
+  (let ((mult (** 10 (int (/ (log (/ (- max min) 2)) (log 10))))))
+    (setq min (* mult (int (/ min mult))))
+    (setq max (* mult (int (+ 0.99 (/ max mult)))))
+    (list min max mult) ) )
+
+(de graph-xy(lx ly name)
+  (let (((xmin xmax xstep) (graph-scale (inf lx) (sup lx)))
+	((ymin ymax ystep) (graph-scale (inf ly) (sup ly))) )
+    (let ((plot-port (setup-axes xmin ymin xmax ymax xstep ystep name)))
+      (plot-lists lx ly) ) ) )
+
+(de graph-xyv(lx ly lv name)
+  (let (((xmin xmax xstep) (graph-scale (inf lx) (sup lx)))
+	((ymin ymax ystep) (graph-scale (- (inf ly) (sup lv))
+					(- (sup ly) (sup lv)))) )
+    (let ((plot-port (setup-axes xmin ymin xmax ymax xstep ystep name)))
+      (plot-lists-sd lx ly lv) ) ) )
+

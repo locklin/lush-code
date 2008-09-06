@@ -1,0 +1,246 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: statenv.sn,v 1.3 2003/03/18 19:52:01 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(printf "\n***\007 Lush Warning (%s): %s\n"
+        (basename file-being-loaded)
+        "Lush misses compatibility functions to run this file" )
+
+
+;;;============== Data analysis =====================
+
+
+(de mstd (m q)
+    (let* ((me (mean-mat m))
+	   (sd (sdev-mat m)) )
+      (m+c m (- me) q)
+      (if (0<> sd) (m*c q (/ sd) q) (q () 0))
+      (list me sd)
+      ) )
+
+(de mstdv (m q &optional mv dv)
+    (when ~q (setq q m))
+    (let* ((vv (double-array (1+ (bound q 2)) 2)))
+      (for (i 0 (bound q 2))
+	(vv i () (mstd (submatrix m () i) (submatrix q () i)))
+	)
+      (if mv (array-copy (submatrix vv () 0) mv) (setq mv (submatrix vv () 0)))
+      (if dv (array-copy (submatrix vv () 1) dv) (setq dv (submatrix vv () 1)))
+      )
+    (list mv dv) )
+
+(de mco (m &optional mv dv q)
+    (let (((k d) (bound m)))
+      (when (and (or mv dv) ~q)
+	(setq q (double-array k d))
+	)
+      (when mv
+	(for (i 0 (1- d)) (mv i (mean-mat (submatrix m () i))))
+	(m-m m (mrep-dim mv 0 k) q)
+	(setq m q) ;; cheat
+	)
+      (when dv
+	(for (i 0 (1- d)) (dv i (sdev-mat (submatrix m () i))))
+	(m/m m (mrep-dim dv 0 k) q t)
+	(setq m q) ;; cheat
+	)
+      (mcov m) ) )
+
+(de mcov (m)
+    (let* ((o (copy-array m))
+	   (p (copy-array m))
+	   (k ())
+	   )
+      ;; get Nan occurences to 0 and other to 1
+      (when (nan) 
+	(m*c p 0 p)
+	(moccur p (nan) -1)
+	(m+c p 1 p)
+	)
+      ;; get the matrix of counts of non nans
+      (setq p (m*m (transpose p) p))
+
+      (moccur o (nan) 0)
+      (m/m (m*m (transpose o) o) p p (nan))
+    ) )
+
+
+(de pca (m n &optional eig evan mv dv)
+    (when (and (<> mv t) ~(numericp mv))
+      (setq mv (double-array (1+ (bound m 2))))
+      )
+    (when (and (<> dv t) ~(numericp dv))
+      (setq dv (double-array (1+ (bound m 2))))
+      )
+    (let* ((eve (mco m mv dv)) ;; the correlation matrix
+	   (eva (mseigvv eve)) ;; is overwritten with eigen vectors
+	   (l  (sort-index eva))
+	   (e  ())
+	   )
+      (rplacd (nthcdr (1- n) l) ())
+      (setq evan (matrix-lines eva l evan))
+      (setq e (matrix-lines (transpose eve) l eig))
+      (eval `(lambda (&optional pm res)
+	       (selectq (and pm (bound pm 0))
+		 (1 
+		  (setq pm (m-m pm ,mv))
+		  (m/m pm ,dv pm t)
+		  (when ~res (setq res (double-array ,n)))
+		  (m*m ,e pm res)
+		  res
+		  )
+		 (2
+		  (let (((k d) (bound pm)))
+		    ;; coordnates with center-reduction
+		    (setq pm (m-m pm (mrep-dim ,mv 0 k)))
+		    (m/m pm (mrep-dim ,dv 0 k) pm t)
+		    ;; coordinates in eigen referential
+		    (when ~res (setq res (double-array k ,n)))
+		    (m*m ,e (transpose pm) (transpose res))
+		    res
+		    ) )
+		 (()
+		  ,evan
+		  )
+		 (t
+		  (error "1D or 2D matrix or nil expected")
+		  ) ) )) ) )
+
+(de pca-draw (m m2 &optional cl rect co pa)
+
+    ;; possible codebooks are splitted
+    (when (= |CODEBOOK| (classof m))
+      (setq m (codebook-word m))
+      )
+    (when (and ~cl (= |CODEBOOK| (classof m2)))
+      (setq cl (codebook-label m2))
+      (setq m2 (codebook-word m2))
+      (setq cl ((double-array (1+ (bound cl 1))) () (cl ())))
+      )
+
+    ;; w and h are better to be equal
+    (let (((x y w h) (or rect
+			 (and window (or (clip)
+					 (list 0 0 (xsize) (ysize)) ))
+			 (list 0 0 512 512) ))
+	  (pc2 ())
+	  (sca (double-array 2 2))
+	  (s ())
+	  (d (1+ (bound m 2)))
+	  (p ())
+	  )
+
+      (setq p (pca m 2))
+      (setq pc2 (p m2))
+      (setq m () m2 ())
+      (setq s (apply + ((p) ())))
+
+      (when ~window
+	(new-window
+	 (sprintf "(%s) Projection on 1st & 2nd eigen axes. Information = %3.2f%%"
+		  (concat (upcase version))
+		  (* 100 (/ s d))
+		  )
+	 ) )
+
+      (sca 0 0 (/ (* 0.5 w) s))
+      (sca 1 1 (/ (* 0.5 h) s))
+      (setq pc2 (m*m pc2 sca))
+
+      (when cl
+	(setq cl (class-ext-to-int cl))
+	(when (and ~co ~pa) (setq co t pa t) )
+	(when (= co t) (setq co (class-to-color cl)))
+	(when (= pa t) (setq pa (class-to-gpattern cl)))
+	)
+
+      (gsave
+
+       (cls)
+       (when (colorp)
+	 (color color-bg)
+	 (fill-rect x y w h)
+	 )
+
+       (addclip (list x y w h))
+       (draw-matrix-points (m*c pc2 -1) (+ x (/ w 2)) (+ y (/ h 2)) co pa)
+       )
+      s
+      ) )
+
+(de class-ext-to-int (cl)
+    (if (<= (bound cl 0) 1)
+	cl
+      ;; cl is a matrix made of class boolean exclusive flags 1/0 or 1/-1
+      (let* ((cd  (bound cl 2))
+	     (cl2 (double-array (1+ (bound cl 1))))
+	     )
+	(for (i 0 (bound cl 1))
+	  (cl2 i (a-rank-of-max (cl i ())))
+	  )
+	(setq cl cl2)
+	) )
+    ;; now cl is a vector made of class numbers
+    )
+
+(de class-int-to-ext (cl &optional num low)
+    (if (> (bound cl 0) 1)
+	cl
+      ;; cl is a matrix made of integers from 0 to num - 1
+      (when ~num (setq num (1+ (sup-mat cl))))
+      (when ~low (setq low -1))
+      (let* ((res (apply matrix (nconc1 (bound cl) num))))
+	(res () () low)
+	(for (i 0 (bound cl 1))
+	  (res i (cl i) 1)
+	  )
+	res
+	) ) )
+
+(de class-to-color (cl &optional cd)
+    (setq cl (class-ext-to-int cl))
+    (when (colorp)
+      (when ~cd (setq cd (1+ (sup_mat cl))))
+      (matrix-lines
+       ((double-array cd) () (mapcar color-std (range 0 0.75 (/ 0.75 (1- cd)))))
+       (cl ()) ) ) )
+      
+(de class-to-gpattern (cl &optional cd)
+    (setq cl (class-ext-to-int cl))
+    (when ~cd (setq cd (1+ (- (sup_mat cl) (inf_mat cl)))))
+    (matrix-lines
+     ((atom-array cd) () (mapcar str (range 0 (1- cd))))
+     (cl ()) ) )
+
+
