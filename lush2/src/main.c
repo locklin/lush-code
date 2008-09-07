@@ -90,8 +90,8 @@ LUSHAPI int main(int argc, char **argv)
    /* Start */
    FMODE_BINARY(stderr);
    
-   FILE *mmlog = fopen("lushmm.log", "w");
-   //FILE *mmlog = NULL;
+   //FILE *mmlog = fopen("lushmm.log", "w");
+   FILE *mmlog = NULL;
    mm_init(10000, (notify_func_t *)run_notifiers, mmlog);
    MM_ENTER;
 
