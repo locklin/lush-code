@@ -177,13 +177,12 @@ extern LUSHAPI class_t gptr_class;
 extern LUSHAPI class_t zombie_class;
 
 #define NUM_PTRBITS       3
-#define PTRBITS(p)        ((intptr_t)(p) & ((1<<NUM_PTRBITS) - 1))
-#define SET_PTRBIT(p, b)  ((void *)((intptr_t)(p) | b))
-#define CLEAR_PTR(p)      ((void *)((intptr_t)(p)&~((1<<NUM_PTRBITS) - 1)))
+#define PTRBITS(p)        ((uintptr_t)(p) & ((1<<NUM_PTRBITS) - 1))
+#define SET_PTRBIT(p, b)  { p = (void *)((uintptr_t)(p) | b); }
+#define CLEAR_PTR(p)      ((void *)((uintptr_t)(p)&~((1<<NUM_PTRBITS) - 1)))
 
 struct at {
    struct class *class;
-   int    flags;
    union {
       double  r;
       void   *p;
@@ -202,16 +201,8 @@ struct at {
 #define Number  payload.r
 
 
-/* flags */
-
-#define C_MARK          (1<<6)  /* Temp (bwrite) */
-#define C_MULTIPLE      (1<<7)  /* Temp (bwrite) */
-
-
 /* Some useful macros */
 
-//#define LOCK(x)         { if (x) (x)->count++; }
-//#define UNLOCK(x)       { if ( (x) && --((x)->count)==0 )  purge(x); }
 #define ANY_CLASS       NULL
 
 #define CONSP(x)        ((x)&&((x)->Class == &cons_class))

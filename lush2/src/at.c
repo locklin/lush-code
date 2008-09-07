@@ -69,7 +69,6 @@ mt_t mt_at = mt_undefined;
 LUSHAPI at *new_cons(at *car, at *cdr) 
 {
    at *new = mm_alloc(mt_at);
-   new->flags = 0;
    new->Car = car;
    new->Cdr = cdr;
    new->class = &cons_class;
@@ -87,7 +86,6 @@ DX(xcons)
 at *new_number(double x)
 {
    at *new = mm_alloc(mt_at);
-   new->flags = 0;
    new->Number = x;
    new->class = &number_class;
    return new;
@@ -96,7 +94,6 @@ at *new_number(double x)
 at *new_gptr(gptr p)
 {
    at *new = mm_alloc(mt_at);
-   new->flags = 0;
    new->Gptr = p;
    new->class = &gptr_class;
    return new;
@@ -157,7 +154,6 @@ static at *compute_bump_list = 0;
 at *new_extern(class_t *cl, void *obj)
 {
    at *new = mm_alloc(mt_at);
-   new->flags = 0;
    new->Object = obj;
    new->class = cl;
    

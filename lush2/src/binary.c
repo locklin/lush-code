@@ -216,37 +216,39 @@ again:
       error(NIL, "internal error (unknown serialization action)", NIL);
    }
    
-   if (!p) {
+   if (!p)
       return;
-  
-   } else if (CONSP(p)) {
+
+   class_t *cl = CLEAR_PTR(p->class);
+
+   if (cl == &cons_class) {
       sweep(p->Car,code);
       p = p->Cdr;
       goto again;
-
-   } else ifn (EXTERNP(p)) {
+      
+   } else if (cl==&number_class || cl==&gptr_class) {
       return;
 
-   } else if (OBJECTP(p)) {
+   } else if (cl->dispose == object_class->dispose) {
       object_t *c = p->Object;
       if (opt_bwrite)
-         sweep(p->Class->backptr, code);
+         sweep(cl->backptr, code);
       else
-         sweep(p->Class->classname, code);
+         sweep(cl->classname, code);
       for(int i=0; i<c->size; i++) {
 	sweep(c->slots[i].symb, code);
 	sweep(c->slots[i].val, code);
       }
-   } else if (CLASSP(p)) {
-      class_t *cl = p->Object;
-      sweep(cl->priminame, code);
-      if (!builtin_class_p(cl) && !cl->classdoc) {
-         sweep(cl->atsuper, code);
-         sweep(cl->keylist, code);
-         sweep(cl->defaults, code);
+   } else if (cl == &class_class) {
+      class_t *clcl = p->Object;
+      sweep(clcl->priminame, code);
+      if (!builtin_class_p(clcl) && !clcl->classdoc) {
+         sweep(clcl->atsuper, code);
+         sweep(clcl->keylist, code);
+         sweep(clcl->defaults, code);
       }
-      sweep(cl->methods, code);
-   } else if (p->Class == &index_class && !opt_bwrite) {
+      sweep(clcl->methods, code);
+   } else if (cl == &index_class && !opt_bwrite) {
       index_t *ind = p->Object;
       if (IND_STTYPE(ind) == ST_AT)
          if (!IND_UNSIZEDP(ind)) {
@@ -259,22 +261,18 @@ again:
             } end_idx_aloop1(&id, off);
             index_rls_idx(ind, &id);
          }
-   } else if (p->Class == &de_class ||
-              p->Class == &df_class ||
-              p->Class == &dm_class ) {
-      lfunction_t *c = p->Object;
-      sweep(c->formal_args, code);
-      sweep(c->body, code);
-
-   } else if (p->Class == &dx_class ||
-              p->Class == &dy_class ||
-              p->Class == &dh_class ) {
-      cfunction_t *c = p->Object;
-      sweep(c->name, code);
-
-   } else if (p->Class->serialize) {
-      sweep(p->Class->classname, code);
-      (*p->Class->serialize) (&p, code);
+   } else if (cl == &de_class || cl == &df_class || cl == &dm_class ) {
+      lfunction_t *f = p->Object;
+      sweep(f->formal_args, code);
+      sweep(f->body, code);
+      
+   } else if (cl == &dx_class || cl == &dy_class || cl == &dh_class ) {
+      cfunction_t *f = p->Object;
+      sweep(f->name, code);
+      
+   } else if (cl->serialize) {
+      sweep(cl->classname, code);
+      (cl->serialize) (&p, code);
    }
 }
 
@@ -286,26 +284,32 @@ again:
  * which must be relocated when saving object p 
  */
 
+/* flags */
+
+#define MARK       2
+#define MULTIPLE   4
+
 static int cond_set_flags(at *p)
 {
    if (p) {
-      if (p->flags&C_MARK) {
-         if (! (p->flags&C_MULTIPLE))
+      uintptr_t bs = PTRBITS(p->class);
+      if (bs & MARK) {
+         if (! (bs & MULTIPLE))
             insert_reloc(p);
-         p->flags |= C_MULTIPLE;
+         SET_PTRBIT(p->class, MULTIPLE);
          return 1;  /* stop recursion */
       }
-      p->flags |= C_MARK;
+      SET_PTRBIT(p->class, MARK);
       return 0;
    }
    return 1;
 }
 
+
 static void set_flags(at *p)
 {
    sweep(p, SRZ_SETFL);
 }
-
 
 /* This function clears all flags 
  * leaving Lush ready for another run
@@ -313,8 +317,8 @@ static void set_flags(at *p)
 
 static int cond_clear_flags(at *p)
 {
-   if (p && (p->flags&C_MARK)) {
-      p->flags &= ~(C_MULTIPLE|C_MARK);
+   if (p && ((uintptr_t)(p->class) & MARK)) {
+      p->class = CLEAR_PTR(p->class);
       return 0;
    } else
       return 1; /* stop recursion if already cleared */
@@ -721,7 +725,7 @@ static int local_write(at *p)
       return 1;
    }
   
-   if (p->flags & C_MULTIPLE) {
+   if ((uintptr_t)(p->class) & MULTIPLE) {
       int k = search_reloc(p);
       if (relocf[k]) {
          write_card8(TOK_REF);
@@ -736,12 +740,13 @@ static int local_write(at *p)
       }
    }
   
-   if (CONSP(p)) {
+   class_t *cl = CLEAR_PTR(p->Class);
+   if (cl == &cons_class) {
       write_card8(TOK_CONS);
       return 0;
    }
   
-   if (NUMBERP(p)) {
+   if (cl == &number_class) {
       double x = p->Number;
       write_card8(TOK_NUMBER);
       if (swapflag)
@@ -750,11 +755,7 @@ static int local_write(at *p)
       return 1;
    }
   
-   ifn (EXTERNP(p)) {
-      error(NIL, "internal error: What's this", p);
-   }
-
-   if (STRINGP(p)) {
+   if (cl == &string_class) {
       char *s = SADD(p->Object);
       int l = strlen(s);
       write_card8(TOK_STRING);
@@ -763,8 +764,11 @@ static int local_write(at *p)
       return 1;
    }
   
-   if (SYMBOLP(p)) {
+   if (cl == &symbol_class) {
+      class_t *pcl = p->class;
+      p->class = cl;
       char *s = nameof(p);
+      p->class = pcl;
       int l = strlen(s);
       write_card8(TOK_SYMBOL);
       write_card24(l);
@@ -772,14 +776,14 @@ static int local_write(at *p)
       return 1;
    }
   
-   if (OBJECTP(p)) {
+   if (cl->dispose == object_class->dispose) {
       object_t *o = p->Object;
       write_card8(TOK_OBJECT);
       write_card24(o->size);
       return 0;
    }
   
-   if (CLASSP(p)) {
+   if (cl == &class_class) {
       class_t *c = p->Object;
       if (!builtin_class_p(c) && !c->classdoc)
          write_card8(TOK_CLASS);	
@@ -788,7 +792,7 @@ static int local_write(at *p)
       return 0;
    }
   
-   if (INDEXP(p) && !opt_bwrite) {
+   if (cl==&index_class && !opt_bwrite) {
       index_t *arr = p->Object;
       if (arr->st->type == ST_AT) {
          int ndim = arr->ndim;
@@ -808,33 +812,32 @@ static int local_write(at *p)
       }
    }
   
-   if (p->Class == &de_class) {
+   if (cl == &de_class) {
       write_card8(TOK_DE);
       return 0;
    }
   
-   if (p->Class == &df_class) {
+   if (cl == &df_class) {
       write_card8(TOK_DF);
       return 0;
    }
   
-   if (p->Class == &dm_class) {
+   if (cl == &dm_class) {
       write_card8(TOK_DM);
       return 0;
    }
   
-   if (p->Class == &dx_class || 
-       p->Class == &dy_class ||
-       p->Class == &dh_class) {
+   if (cl == &dx_class || cl == &dy_class || cl == &dh_class) {
       write_card8(TOK_CFUNC);
       return 0;
    }
   
-   if (p->Class->serialize) {
+   if (cl->serialize) {
       write_card8(TOK_COBJECT);
       return 0;
    }
-   error(NIL, "cannot save this object",p);
+
+   error(NIL, "cannot save this object", p);
 }
 
 
