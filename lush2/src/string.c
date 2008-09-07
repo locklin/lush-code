@@ -123,7 +123,7 @@ static at *string_listeval (at *p, at *q)
  */
 static char *string_name(at *p)
 {
-   char *s = (char *)CLEAR_PTR(p->Object);
+   char *s = p->Object;
    char *name = string_buffer;
 #if HAVE_MBRTOWC
    int n = mm_strlen(s);
