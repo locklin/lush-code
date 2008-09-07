@@ -1730,7 +1730,7 @@ DX(xsocketselect)
   for (int i=1; i<=arg_number; i++) {
      at *p = APOINTER(i);
      if (NUMBERP(p)) {
-        int ms = p->Number;
+        int ms = Number(p);
         if (ptv)
            RAISEFX("timeout already provided",NIL);
         if (ms < 0)

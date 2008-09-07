@@ -474,19 +474,19 @@ DY(yfor)
    p = p->Cdr;
    ifn (CONSP(p) && (num = eval(p->Car)) && NUMBERP(num))
       RAISEFX("not a number", num);
-   real start = num->Number;
+   double start = Number(num);
 
    p = p->Cdr;
    ifn (CONSP(p) && (num = eval(p->Car)) && NUMBERP(num))
       RAISEFX("not a number", num);
-   real end = num->Number;
+   double end = Number(num);
 
    p = p->Cdr;
-   real step = 1.0;
+   double step = 1.0;
    if (CONSP(p) && !p->Cdr) {
       ifn (CONSP(p) && (num = eval(p->Car)) && NUMBERP(num))
          RAISEFX("not a number", num);
-      step = num->Number;
+      step = Number(num);
 
    } else if (p) {
       RAISEFX("syntax error", p);
@@ -497,7 +497,7 @@ DY(yfor)
    num = NIL;
 
    if ((start <= end) && (step >= 0)) {
-      for (real i = start; i <= end; i += step) {
+      for (double i = start; i <= end; i += step) {
          symbol->value = NEW_NUMBER(i);
          num = progn(ARG_LIST->Cdr);
       }

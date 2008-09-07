@@ -107,7 +107,7 @@ static flt AT_getf(gptr pt, size_t off)
    at *p = ((at **)pt)[off];
    ifn (p && NUMBERP(p))
       error(NIL, "accessed element is not a number", p);
-   return p->Number;
+   return Number(p);
 }
 
 static flt GPTR_getf(gptr pt, size_t off)
@@ -170,7 +170,7 @@ static real AT_getr(gptr pt, size_t off)
    at *p = ((at **)pt)[off];
    ifn (p && NUMBERP(p))
       error(NIL, "accessed element is not a number", NIL);
-   return p->Number;
+   return Number(p);
 }
 
 static real GPTR_getr(gptr pt, size_t off)
@@ -271,7 +271,7 @@ static void N_setat(storage_t *st, size_t off, at *x)
    ifn (NUMBERP(x))
       error(NIL, "not a number", x);
    void (*set)(gptr,size_t,real) = storage_setr[st->type];
-   (*set)(st->data, off, x->Number);
+   (*set)(st->data, off, Number(x));
 }
 
 static void GPTR_setat(storage_t *st, size_t off, at *x)
@@ -348,7 +348,7 @@ static at *storage_listeval(at *p, at *q)
    ifn (CONSP(q) && q->Car && NUMBERP(q->Car))
       error(NIL, "illegal subscript", q);
 
-   size_t off = q->Car->Number;
+   size_t off = Number(q->Car);
    if (off<0 || off>=st->size)
       error(NIL, "subscript out of range", q);
 
@@ -629,7 +629,7 @@ void storage_clear(storage_t *st, at *init, size_t from)
          void (*set)(gptr, size_t, real);
          set = storage_setr[st->type];
          for (int off = from; off < size; off++)
-            (*set)(st->data, off, init->Number);
+            (*set)(st->data, off, Number(init));
       } else
          for (int off = from; off<size; off++)
             N_setat(st, off, init);

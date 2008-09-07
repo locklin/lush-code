@@ -747,7 +747,7 @@ static int local_write(at *p)
    }
   
    if (cl == &number_class) {
-      double x = p->Number;
+      double x = Number(p);
       write_card8(TOK_NUMBER);
       if (swapflag)
          swap_buffer(&x,1,sizeof(real));
@@ -756,7 +756,7 @@ static int local_write(at *p)
    }
   
    if (cl == &string_class) {
-      char *s = SADD(p->Object);
+      char *s = String(p);
       int l = strlen(s);
       write_card8(TOK_STRING);
       write_card24(l);
@@ -1074,7 +1074,7 @@ again:
    case TOK_CONS:
    {
       *pp = new_cons(NIL,NIL);
-      local_bread( & ((*pp)->Car), opt );
+      local_bread(&((*pp)->Car), opt);
       pp = & ((*pp)->Cdr);
       ret = 0;
       goto again;
@@ -1083,9 +1083,9 @@ again:
    case TOK_NUMBER:
    {
       *pp = new_number(0.0);
-      read_buffer( &(*pp)->Number, sizeof(real) );
+      read_buffer(&Number(*pp), sizeof(real));
       if (swapflag)
-         swap_buffer( &(*pp)->Number, 1, sizeof(real) );
+         swap_buffer(&Number(*pp), 1, sizeof(real));
       return 0;
    }
    

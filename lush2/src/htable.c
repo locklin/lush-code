@@ -248,7 +248,7 @@ again:
       return x;
 
    } else if (NUMBERP(p)) {
-      unsigned int *up = (unsigned int*)(char*)&p->Number;
+      unsigned int *up = (unsigned int*)(char*)&Number(p);
       x ^= 0x1010;
       x ^= up[0];
       if (sizeof(real) >= 2*sizeof(unsigned int))

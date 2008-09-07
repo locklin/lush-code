@@ -138,7 +138,7 @@ static subscript_t *parse_subscript(at *atss, subscript_t *ss)
          ifn (nd<MAXDIMS)
             error(NIL, errmsg_dimensions, atss);
       
-         ss->dim[nd++] = (int)l->Car->Number;
+         ss->dim[nd++] = (int)*l->Car->Number;
          l = l->Cdr;
       }
       ss->ndims = nd;
@@ -924,7 +924,7 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
          ifn (nd<MAXDIMS)
             error(NIL, errmsg_dimensions, atshp);
          
-         shp->dim[nd++] = (int)l->Car->Number;
+         shp->dim[nd++] = (int)Number(l->Car);
          l = l->Cdr;
       }
       shp->ndims = nd;
@@ -1143,7 +1143,7 @@ static at *index_ref(index_t *ind, at *p[])
    for (; i<ind->ndim; i++) {
       q = p[i];
       if (NUMBERP(q)) {
-         size_t k = validate_subscript(ind, i, (q->Number));
+         size_t k = validate_subscript(ind, i, Number(q));
          offs += k*IND_MOD(ind, i);
       } else
          goto list_ref;
@@ -1164,8 +1164,8 @@ list_ref:
       end = ind->dim[i] - 1;
    } else if (LISTP(q) && CONSP(q->Cdr) && !q->Cdr->Cdr &&
               NUMBERP(q->Car) && NUMBERP(q->Cdr->Car) ) {
-      start = q->Car->Number;
-      end = q->Cdr->Car->Number;
+      start = Number(q->Car);
+      end = Number(q->Cdr->Car);
    } else
       error(NIL, "illegal subscript", NIL);
 
@@ -1173,7 +1173,7 @@ list_ref:
    at **where = &ans;
    myp[i] = NEW_NUMBER(0);
    for (int j = start; j <= end; j++) {
-      myp[i]->Number = j;
+      Number(myp[i]) = j;
       *where = new_cons(index_ref(ind, myp), NIL);
       where = &((*where)->Cdr);
       CHECK_MACHINE("on");
@@ -1204,7 +1204,7 @@ static at *index_set(struct index *ind, at *p[], at *value, int mode)
    for (; i < ind->ndim; i++) {
       q = p[i];
       if (NUMBERP(q)) {
-         size_t k = validate_subscript(ind, i, (q->Number));
+         size_t k = validate_subscript(ind, i, Number(q));
          offs += k*IND_MOD(ind, i);
       } else
          goto list_set;
@@ -1234,8 +1234,8 @@ static at *index_set(struct index *ind, at *p[], at *value, int mode)
       end = ind->dim[i] - 1;
    } else if (LISTP(q) && CONSP(q->Cdr) && !q->Cdr->Cdr &&
               NUMBERP(q->Car) &&  NUMBERP(q->Cdr->Car) ) {
-      start = q->Car->Number;
-      end = q->Cdr->Car->Number;
+      start = Number(q->Car);
+      end = Number(q->Cdr->Car);
    } else
       error(NIL, "illegal subscript", NIL);
       
@@ -1245,7 +1245,7 @@ static at *index_set(struct index *ind, at *p[], at *value, int mode)
    
    myp[i] = NEW_NUMBER(0);
    for (int j = start; j <= end; j++) {
-      myp[i]->Number = j;
+      Number(myp[i]) = j;
       ifn(CONSP(value))
          mode = 0;
       switch (mode) {

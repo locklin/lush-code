@@ -1236,7 +1236,7 @@ static char *convert(char *s, at *list, char *end)
          n = (*(list->Class->name)) (list);
          
       } else if (NUMBERP(list)) {
-         n = str_number(list->Number);
+         n = str_number(Number(list));
         
       } else if (GPTRP(list)) {
          n = str_gptr(list->Gptr);

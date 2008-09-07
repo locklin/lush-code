@@ -736,7 +736,7 @@ static void draw_list(int xx, int y, register at *l, int ncol,
       while (CONSP(l)) {
          if (! NUMBERP(l->Car))
             RAISEFX("not a number", l->Car);
-         double v = l->Car->Number / maxv;
+         double v = Number(l->Car) / maxv;
          l = l->Cdr;
          if (v > 1.0)
             v = 1.0;
@@ -771,7 +771,7 @@ static void draw_list(int xx, int y, register at *l, int ncol,
             (*win->gdriver->end) (win);
             RAISEFX("not a number", l->Car);
          }
-         double v = l->Car->Number / maxv;
+         double v = Number(l->Car) / maxv;
          if (v > 1.0)
             v = 1.0;
          if (v < -1.0)
@@ -897,7 +897,7 @@ static void color_draw_list(int xx, int y, at *l, int ncol,
       while (CONSP(l)) {
          if (! NUMBERP(l->Car))
             error(NIL, "not a number", l->Car);
-         int v = (int)(64 * (l->Car->Number - minv) / (maxv - minv));
+         int v = (int)(64 * (Number(l->Car) - minv) / (maxv - minv));
          l = l->Cdr;
          if (v > 63)
             v = 63;
@@ -930,7 +930,7 @@ static void color_draw_list(int xx, int y, at *l, int ncol,
             (*win->gdriver->end) (win);
             RAISEFX("not a number", l->Car);
          }
-         int v = (int)(64 * (l->Car->Number - minv) / (maxv - minv));
+         int v = (int)(64 * (Number(l->Car) - minv) / (maxv - minv));
          if (v > 63)
             v = 63;
          if (v < 0)
@@ -1589,16 +1589,16 @@ static void getrect(at *pp, int *x, int *y, int *w, int *h)
 {
    at *p = pp;
    if (CONSP(p) && NUMBERP(p->Car)) {
-      *x = (int)(p->Car->Number);
+      *x = (int)Number(p->Car);
       p = p->Cdr;
       if (CONSP(p) && NUMBERP(p->Car)) {
-         *y = (int)(p->Car->Number);
+         *y = (int)Number(p->Car);
          p = p->Cdr;
          if (CONSP(p) && NUMBERP(p->Car)) {
-            *w = (int)(p->Car->Number);
+            *w = (int)Number(p->Car);
             p = p->Cdr;
             if (CONSP(p) && NUMBERP(p->Car)) {
-               *h = (int)(p->Car->Number);
+               *h = (int)Number(p->Car);
                p = p->Cdr;
                if (! p)
                   return;

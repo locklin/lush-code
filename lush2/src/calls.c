@@ -49,8 +49,8 @@ int comp_test(at *p, at *q)
 {
    if (p && q) {
       if (NUMBERP(p) && NUMBERP(q)) {
-         real r1 = p->Number;
-         real r2 = q->Number;
+         real r1 = Number(p);
+         real r2 = Number(q);
          if (r1<r2)
             return -1;
          else if (r1>r2)
@@ -122,14 +122,14 @@ again:
    } else if (NUMBERP(p) && NUMBERP(q)) {
 
 #if defined(WIN32) && defined(_MSC_VER) && defined(_M_IX86)
-      if (p->Number == q->Number) {
-         float delta = (float)(p->Number - q->Number);
+      if (*p->Number == *q->Number) {
+         float delta = (float)(*p->Number - *q->Number);
          if (! *(long*)&delta)
             return true;
          return false;
       }
 #else
-      return (p->Number == q->Number);
+      return (Number(p) == Number(q));
 #endif
       /* GPTR */
    } else if (GPTRP(p) && GPTRP(q)) {
@@ -541,10 +541,11 @@ DY(yrepeat)
    at *q = eval(ARG_LIST->Car);
    if (!NUMBERP(q)) {
       RAISEFX("not a number", q);
-   } else if (q->Number<0 || q->Number>1e9) {
+
+   } else if (Number(q)<0 || Number(q)>1e9) {
       RAISEFX("out of range", q);
    }
-   int i = (int)(q->Number);
+   int i = (int)Number(q);
    at *p = NIL;
    while (i--) {
       p = progn(ARG_LIST->Cdr);

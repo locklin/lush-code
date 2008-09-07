@@ -110,7 +110,7 @@ static at *string_listeval (at *p, at *q)
    char *s = p->Object;
    assert(s);
    int n = mm_strlen(s);
-   int i = (int)qi->Car->Number;
+   int i = (int)Number(qi->Car);
    i = (i < 0) ? n + i : i;
    if (i<0 || i>=n)
       error(NIL, "not a valid index value", qi->Car);
@@ -1142,10 +1142,10 @@ static at *implode_bytes(at *p)
    while (CONSP(p)) {
       if (! NUMBERP(p->Car))
          RAISEF("number expected",p->Car);
-      char c = (char)(p->Car->Number);
+      char c = (char)Number(p->Car);
       if (! c)
          break;
-      if (p->Car->Number != (real)(unsigned char)c)
+      if (Number(p->Car) != (real)(unsigned char)c)
          RAISEF("integer in range 0..255 expected",p->Car);
       large_string_add(&ls, &c, 1);
       p = p->Cdr;
@@ -1167,11 +1167,11 @@ static at *implode_chars(at *p)
 
       if (! NUMBERP(p->Car))
          RAISEF("number expected", p->Car);
-      wc = (wchar_t)(p->Car->Number);
+      wc = (wchar_t)Number(p->Car);
       if (! wc)
          break;
-      if (p->Car->Number != (real)wc)
-         RAISEF("integer expected",p->Car);
+      if (Number(p->Car) != (real)wc)
+         RAISEF("integer expected", p->Car);
       int d = wcrtomb(buffer, wc, &ps);
       if (d > 0)
          large_string_add(&ls, buffer, d);

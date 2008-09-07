@@ -184,7 +184,8 @@ extern LUSHAPI class_t zombie_class;
 struct at {
    struct class *class;
    union {
-      double  r;
+      double *d;
+      char   *c;
       void   *p;
       struct {
          struct at *car;
@@ -198,8 +199,8 @@ struct at {
 #define Object  payload.p
 #define Class   class
 #define Gptr    payload.p
-#define Number  payload.r
-
+#define Number(p) (*(p)->payload.d)
+#define String(p) ((p)->payload.c)
 
 /* Some useful macros */
 
@@ -558,13 +559,13 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 #define DX_ERROR(i,j)   (need_error(i,j,arg_array))
 
 #define APOINTER(i)     ( arg_array[i] )
-#define AREAL(i)        ( ISNUMBER(i) ? APOINTER(i)->Number:(long)DX_ERROR(1,i))
+#define AREAL(i)        ( ISNUMBER(i) ? Number(APOINTER(i)) :(long)DX_ERROR(1,i))
 #define AGPTR(i)        ( ISGPTR(i) ? APOINTER(i)->Gptr:(gptr)DX_ERROR(9,i))
 #define AINTEGER(i)     ( (intg) AREAL(i) )
 #define AFLT(i)         ( rtoF(AREAL(i)) )
 #define ALIST(i)        ( ISLIST(i) ? APOINTER(i):(at*)DX_ERROR(2,i) )
 #define ACONS(i)        ( ISCONS(i) ? APOINTER(i):(at*)DX_ERROR(3,i) )
-#define ASTRING(i)      ( ISSTRING(i) ? SADD( AEXTERN(i)):(char*)DX_ERROR(4,i) )
+#define ASTRING(i)      ( ISSTRING(i) ? String(APOINTER(i)) :(char*)DX_ERROR(4,i) )
 #define ASYMBOL(i)      ( ISSYMBOL(i) ? APOINTER(i)->Object:DX_ERROR(7,i) )
 #define AEXTERN(i)      ( ISEXTERN(i) ? APOINTER(i)->Object:DX_ERROR(8,i) )
 #define ASTORAGE(i)     ( ISSTORAGE(i) ? APOINTER(i)->Object:DX_ERROR(10,i) )

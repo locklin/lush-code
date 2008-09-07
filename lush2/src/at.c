@@ -46,18 +46,16 @@ static void mark_at(at *a)
       MM_MARK(a->Car);
       MM_MARK(a->Cdr);
       
-   } else if (OBJECTP(a)) {
+   } else if (NUMBERP(a) || OBJECTP(a)) {
       mm_mark(a->Object);
-
-   } else if (NUMBERP(a) || GPTRP(a)) {
-      // nothing to mark
 
    } else if (CLASSP(a)) {
       if (((class_t *)a->Object)->managed)
          mm_mark(a->Object);
       
-   } else if (RFILEP(a) || WFILEP(a) || ZOMBIEP(a)) {
+   } else if (GPTRP(a) || RFILEP(a) || WFILEP(a) || ZOMBIEP(a)) {
       // nothing to mark
+
    } else if (a->class)
       MM_MARK(a->Object);
 }
@@ -83,12 +81,13 @@ DX(xcons)
 }
 
 
+mt_t mt_double = mt_undefined;
+
 at *new_number(double x)
 {
-   at *new = mm_alloc(mt_at);
-   new->Number = x;
-   new->class = &number_class;
-   return new;
+   double *d = mm_alloc(mt_double);
+   *d = x;
+   return new_extern(&number_class, d);
 }
 
 at *new_gptr(gptr p)
@@ -488,7 +487,6 @@ bool finalize_class(class_t *cl)
 
 mt_t mt_class = mt_undefined;
 
-
 /* --------- INITIALISATION CODE --------- */
 
 class_t number_class, gptr_class, cons_class, null_class;
@@ -505,6 +503,8 @@ void init_at(void)
 
    mt_class = MM_REGTYPE("class", sizeof(class_t),
                          clear_class, mark_class, 0);
+
+   mt_double = MM_REGTYPE("double", sizeof(double), 0, 0, 0);
 
    /* bootstrapping the type registration */
    pre_init_symbol();

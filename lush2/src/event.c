@@ -128,7 +128,7 @@ void ev_parsedesc(at *desc)
    } else if (GPTRP(desc))
       evdesc = (const char *)(desc->Gptr);
    else if (NUMBERP(desc))
-      evmods = (unsigned char)(desc->Number);
+      evmods = (unsigned char)Number(desc);
 }
 
 

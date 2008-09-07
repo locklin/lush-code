@@ -142,7 +142,7 @@ complexreal
 get_complex(at *p)
 {
   if (NUMBERP(p))
-    return Cnew(p->Number, 0);
+    return Cnew(Number(p), 0);
   else if (COMPLEXP(p))
     return *(complexreal*)(p->Object);
   else
@@ -283,7 +283,7 @@ DX(name2(x, NAME))                                           \
 static inline at *name2(unary, NAME)(at *arg) {              \
                                                              \
   if (NUMBERP(arg))                                          \
-    return NEW_NUMBER(OP(NELEM, arg->Number));               \
+    return NEW_NUMBER(OP(NELEM, Number(arg)));               \
                                                              \
   else if (INDEXP(arg)) {                                    \
     index_t *ind = arg->Object;                              \

@@ -109,7 +109,7 @@ static int lisp_xsize(wptr info)
 {
    at *p = lisp_send(info,at_xsize,NIL);
    if (NUMBERP(p))
-      return (int)(p->Number);
+      return (int)Number(p);
    error(NIL, "method 'xsize' did not return a number", p);
 }
 
@@ -117,7 +117,7 @@ static int lisp_ysize(wptr info)
 {
    at *p = lisp_send(info,at_ysize,NIL);
    if (NUMBERP(p))
-      return (int)(p->Number);
+      return (int)Number(p);
    error(NIL, "method 'ysize' did not return a number", p);
 }
 
@@ -199,16 +199,16 @@ static void lisp_rect_text(wptr info, int x, int y, char *s,
    at *p = lisp_send(info,at_rect_text,q);
    at *r = p;
    if (CONSP(p) && NUMBERP(p->Car)) { 
-      *xp = (int)(p->Car->Number); 
+      *xp = (int)Number(p->Car); 
       p = p->Cdr; 
       if (CONSP(p) && NUMBERP(p->Car)) {
-         *yp = (int)(p->Car->Number); 
+         *yp = (int)Number(p->Car); 
          p = p->Cdr; 
          if (CONSP(p) && NUMBERP(p->Car)) {
-            *wp = (int)(p->Car->Number); 
+            *wp = (int)Number(p->Car); 
             p = p->Cdr; 
             if (CONSP(p) && NUMBERP(p->Car)) {
-               *hp = (int)(p->Car->Number); 
+               *hp = (int)Number(p->Car); 
                p = p->Cdr; 
                if (!p)
                   return;
@@ -235,7 +235,7 @@ static int lisp_alloccolor(wptr info, double r, double g, double b)
       at *p = lisp_send(info, at_alloccolor, q);
       if (! NUMBERP(p))
          error(NIL, "method 'alloccolor' returned something invalid", p);
-      return (int)(p->Number);
+      return (int)Number(p);
    }
    return (((int)(r*255)<<16) | ((int)(g*255)<<8) | (int)(b*255));
 }
@@ -246,13 +246,13 @@ static int lisp_get_mask(wptr info, uint *rp, uint *gp, uint *bp)
       at *p = lisp_send(info, at_get_mask, NIL);
       at *r = p;
       if (CONSP(p) && NUMBERP(p->Car)) {
-         *rp = (uint)(p->Car->Number);
+         *rp = (uint)Number(p->Car);
          p = p->Cdr;
          if (CONSP(p) && NUMBERP(p->Car)) {
-            *gp = (uint)(p->Car->Number);
+            *gp = (uint)Number(p->Car);
             p = p->Cdr;
             if (CONSP(p) && NUMBERP(p->Car)) {
-               *bp = (uint)(p->Car->Number);
+               *bp = (uint)Number(p->Car);
                p = p->Cdr;
                if (!p)
                   return 1;

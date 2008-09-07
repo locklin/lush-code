@@ -800,46 +800,46 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
   
   case DHT_FLT:
     if (NUMBERP(at_obj))
-      arg->dh_flt = (flt) at_obj->Number; 
+      arg->dh_flt = (flt)Number(at_obj); 
     else
       lisp2c_error("FLT expected",errctx,at_obj);
     break;
 
   case DHT_REAL:
     if (NUMBERP(at_obj))
-      arg->dh_real = (real) at_obj->Number; 
+      arg->dh_real = (real)Number(at_obj); 
     else
       lisp2c_error("REAL expected",errctx,at_obj);
     break;
   
   case DHT_INT:
     if (NUMBERP(at_obj) &&
-	(at_obj->Number == (int)(at_obj->Number)) )
-      arg->dh_int = (int) at_obj->Number; 
+	(Number(at_obj) == (int)Number(at_obj)) )
+      arg->dh_int = (int)Number(at_obj); 
     else
       lisp2c_error("INT expected",errctx,at_obj);
     break;
   
   case DHT_SHORT:
     if (NUMBERP(at_obj) &&
-	(at_obj->Number == (short)(at_obj->Number)) )
-      arg->dh_short = (short) at_obj->Number; 
+	(Number(at_obj) == (short)Number(at_obj)) )
+      arg->dh_short = (short)Number(at_obj); 
     else
       lisp2c_error("SHORT expected",errctx,at_obj);
     break;
   
   case DHT_BYTE:
     if (NUMBERP(at_obj) &&
-	(at_obj->Number == (char)(at_obj->Number)) )
-      arg->dh_char = (char) at_obj->Number; 
+	(Number(at_obj) == (char)(Number(at_obj))) )
+      arg->dh_char = (char)Number(at_obj); 
     else
       lisp2c_error("BYTE expected",errctx,at_obj);
     break;
   
   case DHT_UBYTE:
     if (NUMBERP(at_obj) &&
-	(at_obj->Number == (unsigned char)(at_obj->Number)) )
-      arg->dh_uchar = (unsigned char) at_obj->Number; 
+	(Number(at_obj) == (unsigned char)(Number(at_obj))) )
+      arg->dh_uchar = (unsigned char)Number(at_obj); 
     else
       lisp2c_error("UBYTE expected",errctx,at_obj);
     break;
@@ -1836,7 +1836,7 @@ DX(xlisp_c_map)
   if (p==0)
     return lisp_c_map(0);
   else if (NUMBERP(p))
-    return lisp_c_map((void*)(unsigned long)(p->Number));
+    return lisp_c_map((void*)(unsigned long)Number(p));
   else if (OBJECTP(p))
     cptr = ((struct oostruct *)(p->Object))->cptr;
   else if (INDEXP(p))
@@ -1959,7 +1959,7 @@ DX(xto_bool)
   if (! p)
     return NIL;
   if (NUMBERP(p))
-    if (p->Number == 0)
+    if (Number(p) == 0)
       return NIL; /* compiled semantic */
   return t();
 }

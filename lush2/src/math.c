@@ -220,8 +220,7 @@ double solve_call(double x)
 {
    at *expr = new_cons(solve_function, new_cons(NEW_NUMBER(x), NIL));
    at *ans = eval(expr);
-   x = ans->Number;
-   return x;
+   return Number(ans);
 }
 
 DX(xfindroot)
