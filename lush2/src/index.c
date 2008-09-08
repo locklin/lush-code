@@ -173,7 +173,7 @@ static char *index_name(at *p)
       while (*s)
          s++;
       for (int d=0; d<ind->ndim; d++) {
-         sprintf(s, "%"PRIdPTR, ind->dim[d]);
+         sprintf(s, "%"PRIdPTR"x", ind->dim[d]);
          while (*s)
             s++;
       }
