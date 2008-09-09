@@ -1396,38 +1396,45 @@ void *mm_realloc(void *q, size_t s)
       return mm_malloc(s);
 
    assert(ADDRESS_VALID(q));
-   
-   if (INHEAP(q)) {
+   info_t *info_q = (info_t *)unalign(q);
+   mt_t t = info_q->t;
+   if (INHEAP(q) || t!=mt_blob) {
       warn("address was not obtained with mm_malloc\n");
       abort();
    }
 
-   info_t *info = (info_t *)((char *)q - MIN_HUNKSIZE);
-   mt_t   t = info->t;
-
    assert(TYPE_VALID(t));
-   assert(s >= types[t].size);
-   void *r = realloc((void *)info, s + MIN_HUNKSIZE);
+   if (s < types[t].size) {
+      warn("new size is smaller than size of memory type '%s'\n",
+           types[t].name);
+      abort();
+   }  
+
+   if (s % MIN_HUNKSIZE)
+      s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS;
+   void *r = malloc(s + MIN_HUNKSIZE);
+   void *qr = NULL;
    if (r) {
-      void *qr = align(r);
-      if (s % MIN_HUNKSIZE)
-         s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS;
-      info_t *info = unalign(qr);
-      info->t = t;
-      info->nh = s/MIN_HUNKSIZE;
-      if (qr != q) {
-         int i = find_managed(q);
-         assert(i != -1);
-         bool has_notify = NOTIFY(managed[i]);
+      qr = align(r);
+      memcpy(qr, q, info_q->nh*MIN_HUNKSIZE);
+      info_t *info_r = unalign(qr);
+      info_r->t = t;
+      info_r->nh = s/MIN_HUNKSIZE;
+
+      /* the new address r inherits q's notify flag     */
+      /* notifiers and finalizers should not run for q  */
+      /* so we clear q's notify flag and set its memory */
+      /* type to mt_blob                                */
+      manage(qr);
+      int i = find_managed(q);
+      assert(i != -1);
+      if (NOTIFY(managed[i])) {
+         MARK_NOTIFY(qr);
          UNMARK_NOTIFY(managed[i]);
-         unmanage(q);
-         manage(qr);
-         if (has_notify)
-            MARK_NOTIFY(managed[i]);
       }
-      return qr;
-   } else
-      return NULL;
+      info_q->t = mt_blob; 
+   }
+   return qr;
 }
      
 
