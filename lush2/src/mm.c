@@ -260,6 +260,12 @@ static bool       anchor_transients = true;
 
 #define DO_MANAGED_END }}} 
 
+#define DISABLE_GC \
+   bool __nogc = gc_disabled; \
+   gc_disabled = true;
+
+#define ENABLE_GC gc_disabled = __nogc;
+
 static int find_managed(const void *p);
 
 static bool obsolete(const void *p)
@@ -913,8 +919,7 @@ process_stack:
 /* run finalizer, return true if q may be reclaimed */
 static bool run_finalizer(finalize_func_t *f, void *q)
 {
-   bool nogc = gc_disabled;
-   gc_disabled = true;
+   DISABLE_GC;
 
    errno = 0;
    bool ok = f(q);
@@ -923,7 +928,8 @@ static bool run_finalizer(finalize_func_t *f, void *q)
       debug("finalizer of object 0x%"PRIxPTR" (%s) caused an error:\n%s\n",
             PPTR(q), types[MM_TYPEOF(q)].name, errmsg);
    }
-   gc_disabled = nogc;
+
+   ENABLE_GC;
    return ok;
 }
 
@@ -1104,6 +1110,7 @@ static void mark_stack_chunk(stack_chunk_t *c)
 static void add_chunk(mmstack_t *st)
 {
    anchor_transients = false;
+   DISABLE_GC;
 
    stack_chunk_t *c = mm_alloc(mt_stack_chunk);
    assert(c);
@@ -1111,6 +1118,7 @@ static void add_chunk(mmstack_t *st)
    st->current = c;
    st->sp = ELT_N(c);
    
+   ENABLE_GC;
    anchor_transients = true;
 }
 
@@ -1919,7 +1927,7 @@ void mm_end_nogc(bool nogc)
 {
    gc_disabled = nogc;
    if (collect_requested && !gc_disabled)
-      mm_collect_now();
+      mm_collect();
 }
 
 static void mark_refs(void **p)
