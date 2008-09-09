@@ -1398,7 +1398,7 @@ void *mm_realloc(void *q, size_t s)
    assert(ADDRESS_VALID(q));
    info_t *info_q = (info_t *)unalign(q);
    mt_t t = info_q->t;
-   if (INHEAP(q) || t!=mt_blob) {
+   if (INHEAP(q)) {
       warn("address was not obtained with mm_malloc\n");
       abort();
    }
@@ -1410,31 +1410,25 @@ void *mm_realloc(void *q, size_t s)
       abort();
    }  
 
-   if (s % MIN_HUNKSIZE)
-      s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS;
-   void *r = malloc(s + MIN_HUNKSIZE);
-   void *qr = NULL;
+   void *r = alloc_variable_sized(t, s);
    if (r) {
-      qr = align(r);
-      memcpy(qr, q, info_q->nh*MIN_HUNKSIZE);
-      info_t *info_r = unalign(qr);
-      info_r->t = t;
-      info_r->nh = s/MIN_HUNKSIZE;
+      memcpy(r, q, info_q->nh*MIN_HUNKSIZE);
 
       /* the new address r inherits q's notify flag     */
       /* notifiers and finalizers should not run for q  */
       /* so we clear q's notify flag and set its memory */
       /* type to mt_blob                                */
-      manage(qr);
+      manage(r);
       int i = find_managed(q);
       assert(i != -1);
+      assert(managed[man_last] == r);
       if (NOTIFY(managed[i])) {
-         MARK_NOTIFY(qr);
+         MARK_NOTIFY(managed[man_last]);
          UNMARK_NOTIFY(managed[i]);
       }
       info_q->t = mt_blob; 
    }
-   return qr;
+   return r;
 }
      
 
