@@ -32,7 +32,7 @@
 int cvmat_typecode(index_t *ind, int nchannels) {
   
   ifn (nchannels>0 && nchannels<5)
-    RAISEFU("invalid number of channels", NEW_NUMBER(nchannels));
+    RAISEF("invalid number of channels", NEW_NUMBER(nchannels));
   
   storage_type_t stt = IND_STTYPE(ind);
   int typecode = -1;

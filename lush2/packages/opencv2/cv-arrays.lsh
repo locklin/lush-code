@@ -42,8 +42,7 @@
 ;; functions.
 
 (defclass CvMat object
-  ((-gptr- "CvMat *") p)
-  ((-gptr- "at *") data-owner) )
+  ((-gptr- "CvMat *") p) )
 
 #? (new CvMat <rows> <cols> <type> <data>)
 ;; Create a <CvMat> object that references the <data> of some
@@ -56,9 +55,9 @@
   (declare (-int-) rows cols type)
   (declare (-gptr-) data)
   (cv-cpheader)
-  #{ $p = cvCreateMatHeader($rows, $cols, $type);
+  #{
+     $p = cvCreateMatHeader($rows, $cols, $type);
      cvSetData($p, $data, CV_AUTOSTEP);
-     $data_owner = NIL;
   #}
   ())
 
@@ -79,27 +78,14 @@
        (new CvMat ,e0 ,e1 ,type (idx-base m)) )
     ))
 
-(defmethod CvMat -set-data-owner (owner)
-  (declare (-gptr- "at *") owner)
-  #{ 
-     if ($data_owner)
-       UNLOCK($data_owner);
-     $data_owner = $owner;
-     LOCK($data_owner);
-  #}
-  ())
-
 ;#? (==> <CvMat> set-data-owner <lush-object>) 
 ;; Store reference to data owner.
 (defmethod CvMat set-data-owner (obj)
-  (==> this -set-data-owner (atgptr obj)) 
+  (putp this 'data-owner obj)
   ())
 
 (defmethod CvMat -destructor ()
-  #{ cvReleaseMat((CvMat **)&$p); 
-     if ($data_owner)
-       UNLOCK($data_owner);
-  #}
+  #{ cvReleaseMat((CvMat **)&$p); #}
   ())
 
 #? (make-cvmat <m>)
@@ -121,5 +107,5 @@
 
 (let ((dhc-make-lushflags (concat dhc-make-lushflags cv-flags)))
   (dhc-make "opencv2_arrays"
-    (CvMat CvMat -set-data-owner -destructor)
+    (CvMat CvMat -destructor)
     ))
