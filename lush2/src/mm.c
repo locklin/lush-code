@@ -1090,6 +1090,17 @@ static void mark_stack(mmstack_t *st)
       mm_mark(st->current);
 }
 
+static void mark_stack_chunk(stack_chunk_t *c)
+{
+   MM_MARK(c->prev);
+   for (int i = STACK_ELTS_PER_CHUNK-1; i >= 0; i--) {
+      if (c->elems[i])
+         mm_mark(c->elems[i]);
+      else
+         break;
+   }
+}
+
 static void add_chunk(mmstack_t *st)
 {
    anchor_transients = false;
@@ -2025,7 +2036,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    /* initialize transient object stack */
    mt_stack = MM_REGTYPE("mm_stack", sizeof(mmstack_t), 0, mark_stack, 0);
    mt_stack_chunk = MM_REGTYPE("mm_stack_chunk", sizeof(stack_chunk_t),
-                               0, mark_refs, 0);
+                               0, mark_stack_chunk, 0);
    *(mmstack_t **)&transients = make_stack();
    MM_ROOT(transients);
    assert(stack_works_fine(transients));
