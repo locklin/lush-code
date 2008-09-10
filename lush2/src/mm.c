@@ -255,7 +255,8 @@ static bool       anchor_transients = true;
 /* NOTE: the real address is 'managed[i]', which is not */
 /* a cleared address (use CLRPTR2 to clear)             */ 
 #define DO_MANAGED(i) { \
-  for (int i = 0; i <= man_last; i++) { \
+  int __lasti = collect_in_progress ? man_k : man_last; \
+  for (int i = 0; i <= __lasti; i++) { \
      if (!OBSOLETE(managed[i])) {
 
 #define DO_MANAGED_END }}} 
@@ -1904,9 +1905,10 @@ bool mm_collect_in_progress(void)
 
 void mm_idle(void)
 {
-   if (collect_in_progress && !gc_disabled)
-      fetch_unreachables();
-   else
+   if (collect_in_progress) {
+      if (!gc_disabled)
+         fetch_unreachables();
+   } else
       update_man_k(MIN_MAN_K_UPDS);
 }
 
