@@ -85,13 +85,19 @@ void   mm_return_anchored(void **, void *);
 
 
 /* critical section */
-bool mm_begin_nogc(void);
+bool mm_begin_nogc(bool);
 void mm_end_nogc(bool);
 
 #define MM_NOGC \
-  { bool __mm_nogc = mm_begin_nogc();
+  { bool __mm_nogc = mm_begin_nogc(false);
 
 #define MM_NOGC_END \
+  mm_end_nogc(__mm_nogc); }
+
+#define MM_PAUSEGC \
+  { bool __mm_nogc = mm_begin_nogc(true);
+
+#define MM_PAUSEGC_END \
   mm_end_nogc(__mm_nogc); }
 
 #endif /* MM_INCLUDED */

@@ -1911,12 +1911,14 @@ void mm_idle(void)
 }
 
 
-bool mm_begin_nogc(void)
+bool mm_begin_nogc(bool dont_block)
 {
    /* block when a collect is in progress */
-   while (collecting_child)
-      fetch_unreachables();
-   assert(!collect_in_progress);
+   if (!dont_block) {
+      while (collecting_child)
+         fetch_unreachables();
+      assert(!collect_in_progress);
+   }
 
    bool nogc = gc_disabled;
    gc_disabled = true;
