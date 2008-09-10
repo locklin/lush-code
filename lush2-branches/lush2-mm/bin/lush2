@@ -1,0 +1,108 @@
+#!/bin/sh
+
+#;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#;;;
+#;;; LUSH Lisp Universal Shell
+#;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+#;;; Includes parts of TL3:
+#;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+#;;; Includes selected parts of SN3.2:
+#;;;   Copyright (C) 1991-2001 AT&T Corp.
+#;;;
+#;;; This program is free software; you can redistribute it and/or modify
+#;;; it under the terms of the GNU General Public License as published by
+#;;; the Free Software Foundation; either version 2 of the License, or
+#;;; (at your option) any later version.
+#;;;
+#;;; This program is distributed in the hope that it will be useful,
+#;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+#;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#;;; GNU General Public License for more details.
+#;;;
+#;;; You should have received a copy of the GNU General Public License
+#;;; along with this program; if not, write to the Free Software
+#;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+#;;;
+#;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#;;; $Id: lush,v 1.2 2007/11/25 23:42:58 leonb Exp $
+#;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+# Step 1 --- locate the directory containing this script
+
+progname="`basename $0`"
+if [ "$progname" != "$0" ]
+then
+    # programname contains directory components
+    progdir="`dirname $0`"
+else
+    # must search along path
+    tmpvar="$PATH"
+    while [ -n "$tmpvar" ]
+    do
+      IFS=':' read progdir tmpvar <<EOF
+$tmpvar
+EOF
+      test -x "$progdir/$progname" && break
+    done
+fi
+progdir=`cd $progdir ; pwd`
+while [ -L "$progdir/$progname" ]
+do
+    tmpvar=`ls -ld $progdir/$progname`
+    tmpvar=`expr "$tmpvar" : '.*-> *\(.*\)'`
+    progname=`basename $tmpvar` 
+    tmpvar=`dirname $tmpvar` 
+    progdir=`cd $progdir ; cd $tmpvar ; pwd` 
+done
+if [ ! -x "$progdir/$progname" ]
+then
+   echo 1>&2 "$progname: command not found"
+   exit 10
+fi
+
+
+# Step 2 --- determine system type
+
+host=none
+
+if [ -x $progdir/../config/config.guess ]
+then
+  host=`$progdir/../config/config.guess`
+fi
+
+if [ -x $progdir/$host/lush2 ]
+then
+   exec $progdir/$host/lush2 "$@"
+fi
+
+host=none
+for n in $progdir/* 
+do
+   if [ -d $n -a -x $n/lush2 ] 
+   then
+     if [ "$host" = none ] 
+     then   
+        host=`basename $n`
+     else
+        host=multiple
+     fi
+   fi
+done
+
+if [ -x $progdir/$host/lush2 ]
+then
+   exec $progdir/$host/lush2 "$@"
+fi
+
+echo 1>&2 "Which binary should be run on this machine?"
+for n in $progdir/*/lush2
+do
+  echo 1>&2 "   $n"
+done
+
+exit 10
+
+

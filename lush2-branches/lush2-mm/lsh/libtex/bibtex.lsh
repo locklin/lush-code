@@ -1,0 +1,412 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: bibtex.lsh,v 1.2 2007/02/04 08:16:11 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libtex/texutf8")
+(libload "libtex/texhtml")
+
+
+;;#? (bibtex-mogrify <s>)
+;; In order to avoid parsing stuff that is quoted by nested braces,
+;; this function encodes all characters inside the braces into
+;; a control-c followed by two capital letters.
+(de bibtex-mogrify(s)
+  (let ((ob (asc "{"))
+        (cb (asc "}"))
+        (mm (asc "\^C"))
+        (ls (explode-bytes s))
+        (ns ())
+        (count 0))
+    (while ls
+      (let ((c (car ls)))
+        (setq ls (cdr ls))
+        (when (= c ob) 
+          (incr count +1) )
+        (if (<= count 0) 
+            (setq ns (cons c ns))
+          (setq ns (cons mm ns))
+          (setq ns (cons (+ 65 (div c 16)) ns))
+          (setq ns (cons (+ 65 (mod c 16)) ns)) )
+        (when (= c cb) 
+          (setq count (max 0 (1- count))) ) ) )
+    (implode-bytes (reverse ns)) ) )
+
+;;#? (bibtex-unmogrify <s>)
+;;Undo the transformation achieved by <bibtex-mogrify>.
+(de bibtex-unmogrify(s)
+  (let ((ob (asc "{"))
+        (cb (asc "}"))
+        (mm (asc "\^C"))
+        (ls (explode-bytes s))
+        (ns ()))
+    (while ls
+      (let ((c (car ls))
+            (c1 (cadr ls))
+            (c2 (caddr ls)) )
+        (setq ls (cdr ls))
+        (if (and (= c mm) c1 c2 (>= c1 65) (>= c2 65) (< c1 81) (< c2 81))
+            (setq c (+ (* 16 (- c1 65)) (- c2 65)) ls (cddr ls)) )
+        (setq ns (cons c ns)) ) )
+    (implode-bytes (reverse ns)) ) )
+
+
+#? (bibtex-process-author <authorstring>)
+;; Returns a list <(lastname firstname)> for 
+;; a bibtex author entry <authorstring>
+;; containing a single author.
+
+(de bibtex-process-author(author)
+  (setq author (bibtex-mogrify author))
+  (let* ((rx (regex-extract "(.*),[ \n\r\t]*(.*)" author)))
+    (if (consp rx)
+        (list (bibtex-unmogrify (car rx)) (bibtex-unmogrify (cadr rx)))
+      (setq rx (regex-extract "(.*)[ \n\r\t]+([^ \n\r\t]+)" author))
+      (if (consp rx)
+          (list (bibtex-unmogrify (cadr rx)) (bibtex-unmogrify (car rx)))
+        (list (bibtex-unmogrify author)) ) ) ) )
+
+#? (bibtex-process-author-list <authorliststring>)
+;; Returns a list of lists <(lastname firstname)> 
+;; for the authors in a bibtex authors entry <authorstring>
+;; possibly containing multiple authors.
+
+(de bibtex-process-author-list(authors)
+  (setq authors (bibtex-mogrify authors))
+  (setq authors (regex-subst "^[ \n\t\r]*" "" authors))
+  (setq authors (regex-subst "[ \n\t\r]*$" "" authors))
+  (let ((data ())
+        (re "(.*[^ \n\r\t])[ \n\r\t]+and[ \n\r\t]+(.*)")
+        (rx ()) )
+    (while (setq rx (regex-extract re authors))
+      (setq authors (car rx)) 
+      (when (<> (cadr rx) "")
+        (setq data (cons (bibtex-process-author (bibtex-unmogrify (cadr rx))) data)) ) )
+    (when (<> authors "")
+      (setq data (cons (bibtex-process-author (bibtex-unmogrify authors)) data)) )
+    ;;(print data)
+    data ) )
+
+
+
+;; ---------------------------------------------
+
+#? (read-bibtex-file <f>)
+;; This is the main function for reading a bibtex file <f>.
+;; It returns a hash table associating a <bibtex-entry>
+;; object to each bibtex key string.
+;;.VP
+;;  ? (setq m (read-bibtex-file "/home/leonb/publis.bib")))
+;;  = ::HTABLE:81e2278
+;;  ? (setq r (m "bottou-cortes-94"))
+;;  = ::bibtex-entry:8895d98
+;;  ? (==> r get 'title)
+;;  = "Comparison of classifier methods: a case study in handwritten digit recognition"
+;;  ? (==> r get 'author)
+;;  = "Bottou, Léon and Cortes, Corinna and Denker, John S. and Drucker, Harris and .....
+;;  ? (bibtex-process-author-list (==> r get 'author))
+;;  = (("Bottou" "Léon") ("Cortes" "Corinna") ("Denker" "John S.") ("Drucker" "Harris") ...
+
+
+(de read-bibtex-file(f)
+  (let ((map (htable))
+        (b (new bibtex-reader f)))
+    (while (==> b spaces)
+      (let ((e (==> b read t)))
+        (when e
+          (when (stringp f)
+            (setq :e:source f) )
+          (map (downcase :e:key) e) ) ) )
+    map ) )
+
+
+
+
+#? bibtex-entry.
+;; Class <bibtex-entry> represents a single bibtex entry.
+;; Instances of this class are created by the function <read-bibtex-file>.
+;;.IP
+;; Slot <type> contains the entry type string.
+;;.IP
+;; Slot <key> contains the entry key string.
+;;.IP
+;; Slot <source> contains the name of the bibtex file containing this entry.
+;;.IP
+;; Slot <fields> is a hash table containing the entry fields.
+
+(defclass bibtex-entry object
+  type
+  key
+  source
+  fields
+  data )
+
+(defmethod bibtex-entry bibtex-entry(xtype xkey)
+  (setq type (downcase xtype))
+  (setq key xkey)
+  (setq data (htable)) )
+
+
+#? (==> <bibtex-entry> get <fieldsymbol> [<type>])
+;; Returns the bibtex entry field named <fieldsymbol>.
+;; When <type> is <'utf8> (the default), special TeX
+;; characters are recoded in utf8. When <type> is <'html>
+;; special TeX characters are recoded into HTML sequences.
+;; For all other values of <type> the result is left
+;; unchanged.
+
+(defmethod bibtex-entry get(key &optional (type 'utf8))
+  (let ((a (data key)))
+    (when (and a type (not (member key '(original url))))
+      (selectq type
+	(utf8 (setq a (tex-to-utf8-list a)) )
+	(html (setq a (tex-to-html-list a)) )
+	(t )))
+    a ) )
+
+
+;; bibtex-reader.
+;; internal
+
+(defclass bibtex-reader object
+  fd
+  lineno
+  curline
+  curpos 
+  strings )
+
+(defmethod bibtex-reader bibtex-reader(f)
+  (when (stringp f) 
+    (setq f (open-read f)) )
+  (when (not (is-of-class f |FILE_RO|))
+    (error "read file descriptor expected" f) )
+  (setq fd f)
+  (setq lineno 0)
+  (setq curline (reading fd (read-string)))
+  (setq curpos 1) 
+  (setq strings (htable)) )
+
+(defmethod bibtex-reader fill()
+  (when curline
+    (when (> curpos (len curline))
+      (let ((c (reading fd (read-string 1))))
+        (when (and (= "\r" c) (= "\n" (reading fd (skip-char ""))))
+          (setq c (reading fd (read-string 1))) )
+        (if (or (= c "\e") (= c ""))
+            (setq curline ())
+          (setq curline (reading fd (read-string)))
+          (incr lineno) )
+        (setq curpos 1) ) )
+    curline ) )
+
+(defmethod bibtex-reader peek()
+  (when (==> this fill)
+    (mid curline curpos) ) )
+
+(defmethod bibtex-reader spaces()
+  (let ((again t))
+    (while (and again (==> this fill))
+      (let* ((r (regex-seek "[^ \n\r\t]" curline curpos)))
+        (if (consp r)
+            (setq curpos (car r) again ())
+          (setq curpos (1+ (len curline))) ) ) ) )
+  curline )
+
+(defmethod bibtex-reader token(&optional re)
+  (when (==> this spaces)
+    (let ((c (==> this peek)))
+      (setq re (or re "[-_A-Za-z][-_A-Za-z0-9]*"))
+      (if (regex-match (concat re ".*")  c)
+          (let ((r (regex-seek re c)))
+            (incr curpos (cadr r))
+            (left c (cadr r)) )
+        (incr curpos)
+      (left c 1) ) ) ) )
+
+(defmethod bibtex-reader expect(s)
+  (when (<> (==> this token) s)
+    (error (sprintf "Token '%s' expected on line %d" s lineno)) ) )
+
+(defmethod bibtex-reader bdata(equote)
+  (let ((count 0) (data ()))
+    (while (>= count 0)
+      (when (not (==> this fill))
+        (error (sprintf "Premature end-of-file")) )
+      (let* ((re (if (= count 0) (concat "[{}" equote "]") "[{}]"))
+             (rs (regex-seek re curline curpos)))
+        (if (not rs)
+            (progn 
+              (setq data (cons "\n" (cons (mid curline curpos) data)))
+              (setq curpos (1+ (len curline))) )
+          (setq data (cons (mid curline curpos (- (car rs) curpos)) data))
+          (setq curpos (1+ (car rs)))
+          (let ((c (mid curline (car rs) 1)))
+            (if (= c "{")
+                (incr count +1)
+              (incr count -1)
+              (when (<> c (if (>= count 0) "}" equote))
+                (error (sprintf "Unbalanced {...} or \"...\" on line %d" lineno)) ) )
+            (when (>= count 0)
+              (setq data (cons c data)) ) ) ) ) )
+    (apply concat (reverse data)) ) )
+
+(defmethod bibtex-reader fdata()
+  (when (==> this spaces)
+    (let ((c (mid curline curpos 1)))
+      (cond
+       ((= c "\"") 
+        (incr curpos) 
+        (==> this bdata c))
+       ((= c "{" ) 
+        (incr curpos) 
+        (==> this bdata "}"))
+       ((regex-match "[0-9]" c) 
+        (==> this token "[0-9]+") )
+       (t 
+        (let ((s (==> this token "[^ \n\r\t,/}=]+")))
+          (or (strings (downcase s))
+              (list 'undefined s) ) ) ) ) ) ) )
+
+
+(defmethod bibtex-reader read(&optional loose)
+  (when loose
+    (while (<> (left (==> this peek) 1) "@")
+      (incr curpos) ) )
+  (==> this expect "@")
+  (let ((type ()) (key ()) (closechar "}"))
+    (setq type (==> this token))
+    (let ((openchar (==> this token)))
+      (cond
+       ((= openchar "{") (setq closechar "}"))
+       ((= openchar "(") (setq closechar ")"))
+       (t (error (sprintf "Token '{' or '(' expected on line %d" lineno))) ) )
+    (setq key (==> this token "[^ \n\r\t,/}=]+"))
+    (cond
+     ;; string
+     ((= (downcase type) "string")
+      (==> this expect "=")
+      (strings (downcase key) (==> this fdata))
+      (==> this expect "}")
+      () )
+     ;; comment entry
+     ((= (downcase type) "comment")
+      (==> this fdata)
+      () )
+     ;; regular entry
+     (t
+      (==> this expect ",")
+      (let ((e (new bibtex-entry type key)))
+        ;; read fields
+        (let ((lasttok ","))
+          (while (= lasttok ",")
+            (setq lasttok (==> this token))
+            (when (<> lasttok "}")
+              (==> this expect "=")
+              (let ((fname (named (downcase lasttok)))
+                    (fdata (==> this fdata)) )
+                (setq lasttok (==> this token))
+                (while (= lasttok "#")
+                  (let ((moredata (==> this fdata)))
+                    (setq fdata (if (not (stringp fdata)) fdata
+                                  (if (not (stringp moredata)) moredata
+                                    (concat fdata moredata) ) ) )
+                    (setq lasttok (==> this token)) ) )
+                (:e:data fname fdata)
+                (setq :e:fields (nconc1 :e:fields fname)) ) ) )
+          (when (<> lasttok closechar)
+            (error (sprintf "Missing comma around line %d" lineno)) ) )
+        e ) ) ) ) )
+      
+
+
+
+
+
+;;; ---- generate bibtex output
+
+
+
+(defmethod bibtex-entry pretty()
+  (printf "%l\n" this)
+  (printf ";; @%s{%s,\n" type key)
+  (each ((k fields))
+    (printf ";;   %l = %l,\n" k (data k)) )
+  (printf ";; }\n") )
+
+
+#? (==> <bibtex-entry> to-bibtex [<httpurl>] [<strict>])
+;; Prints a bibtex entry.
+;; Argument <httpurl> is an optional string representing
+;; the document url. The sequence <"%s"> in this string 
+;; represents the bibtex entry key. 
+;; This function normalizes the author and editor fields
+;; in name, firstname form. Setting the argument <strict> 
+;; to <t> prevents this normalization.
+;;.VP
+;;   (==> r to-bibtex "http://foo.com/papers/%s.html")
+;;   ;;; entry nips-2005 from /home/leonb/publis.bib
+;;   @proceedings{nips-2005,
+;;      editor = {Saul, Lawrence and Weiss, Yair and Bottou, L\'{e}on},
+;;      title = {Advances in Neural Information Processing Systems 17},
+;;      publisher = {MIT Press},
+;;      year = {2005},
+;;     url = {http://foo.com/papers/nips-2005.html},
+;;   }
+
+(defmethod bibtex-entry to-bibtex(&optional (httpurl ()) (strict ()))
+  (when source
+    (printf "\n\n;;; entry %s from %s\n" key source) )
+  (printf "@%s{%s,\n" type key)
+  (each ((k fields))
+    (when (not (or (= k original)
+                   (and (= k url) httpurl) ) )
+      (let ((s (data k)))
+        (cond
+         ((stringp s)
+          (when (and (not strict) (member k '(author editor)))
+            (setq s (bibtex-process-author-list s))
+            (let ((l ())(n ""))
+              (each ((author s))
+                (setq l (cons
+                         (if (cadr author)
+                             (sprintf "%s%s, %s" n (car author) (cadr author))
+                           (sprintf "%s%s" n (car author)) ) l))
+                (setq n " and ") )
+              (setq s (apply concat (reverse l))) ) )
+          (printf "    %l = {%s},\n" k (regex-subst "[ \n\r\t]+" " " s)) )
+         ((and (consp s) (stringp (cadr s)))
+          (setq s (cadr s))
+          (writing "$stderr" (printf "Warning: Undefined string '%s' in entry '%s'\n" s key))
+          (printf "    %l = %s,\n" k (regex-subst "[ \n\r\t]+" " " s)) )
+         (t
+          (error "should not happen") ) ) ) ) )
+  (when httpurl
+    (printf "    url = {%s},\n" (sprintf httpurl key)) )
+  (printf "}\n") )
+
+

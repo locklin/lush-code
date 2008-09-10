@@ -1,0 +1,66 @@
+
+;; by Marco Scoffier, and Fu Jie Huang, Oct 2006
+
+;;  this script probes the firewire bus,
+;;  finds how many cameras are connected,
+;;  capture images from each camera,
+;;  and display them.
+;;  the displaying window fits two images
+
+(libload "video/libdc/libdc")
+
+(defvar devname "/dev/video1394-0")
+(defvar mode @MODE_320x240_YUV422) 
+;; (setq mode @MODE_640x480_RGB)
+
+(defvar camera-array (new dc1394-cameras 
+			devname
+			@SPEED_400))
+
+(==> camera-array init 	
+     @FORMAT_VGA_NONCOMPRESSED
+     mode
+     @FRAMERATE_3_75)
+
+;; img is used to capture images
+;;   for YUV422 mode, the last dim of img is 2
+(defvar img (ubyte-matrix))
+(==> camera-array resize-img img)
+(printf "img dims: %l\n" (idx-dim img))
+
+;; img will be converted to rgbimg,
+;;  which has RGB components, the last dim is 3
+(defvar rgbimg (ubyte-matrix))
+(idx-redim rgbimg (list (idx-dim img 0)
+			(idx-dim img 1)
+			(idx-dim img 2) 
+			3))
+
+(new-window 0 0 
+	    (* 2 (==> camera-array get-width)) 
+	    (==> camera-array get-height))
+
+(print (==> camera-array get-hue 0))
+(print (==> camera-array get-white-balance 0))
+(print (==> camera-array get-white-balance 1))
+
+;; selectq doesn't expand the @MODE properly so I have to use cond
+(cond 
+ ((= mode @MODE_640x480_RGB)
+   (while t
+     (==> camera-array grab-rgb24-into-rgbx img)
+     (graphics-batch
+      (rgb-draw-matrix   0 0 (select img 0 0))
+      (rgb-draw-matrix :camera-array:width 0 (select img 0 1))
+      ())))
+ ((= mode @MODE_320x240_YUV422)
+  (while t
+    (==> camera-array grab-yuv422-into-yuv422 img)
+    ;; have to convert first
+    (==> camera-array yuv422-to-rgb (select img 0 0) (select rgbimg 0 0))
+    (==> camera-array yuv422-to-rgb (select img 0 1) (select rgbimg 0 1))
+    (graphics-batch
+     (rgb-draw-matrix 0 0 (select rgbimg 0 0))
+     (rgb-draw-matrix :camera-array:width 0 (select rgbimg 0 1))
+     ())))
+  (t (error "Check your Mode")))

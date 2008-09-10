@@ -1,0 +1,289 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: make.lsh,v 1.12 2006/05/15 19:16:08 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "dh-compile.lsh")
+
+
+#? ** Compiling and Loading C Code
+;; It is often useful to compile and load C subroutines
+;; that either define new Lush primitives, or provide
+;; support functions to compiled lush functions.
+;;
+;; Class <LushMake> provides a familiar interface
+;; for controlling the compilation of these subroutines
+;; and for loading them into the Lush system.
+;;.IP
+;; First you create a <LushMake> object.
+;; Optionally you can specify the directory containing the source files,
+;; a different directory for the object files, and 
+;; additional compilation options.  
+;;.IP
+;; Then you add compilation rules very similar in spirit
+;; to makefile rules.
+;;.IP
+;; Finally you invoke methods <make> and <load>.
+;;.CODE
+;;  (let ((lm (new LushMake)))
+;;    ;; Define the rules
+;;    (==> lm rule "foo.o" '("foo.c" "foo.h"))
+;;    (==> lm rule "bar.o" '("bar.f" "foo.h")
+;;            "$F77 $DEFS $LUSHFLAGS -c $SRC -o $OBJ" )
+;;    ;; Compile and load
+;;    (==> lm make)
+;;    (==> lm load) )
+;;.PP
+;; A more extensive example can be seen in 
+;; <"packages/sn28/sn28common.lsh">.
+
+
+(defclass LushMake Object
+  objdir
+  srcdir
+  moreflags
+  rules  )
+
+#? (new LushMake [<srcdir> [<objdir>]])
+;; Create a new <LushMake> object.
+;;
+;; The source files will be searched under directory <srcdir>.  The default is
+;; to search source files under the directory containing the file being
+;; loaded. The object files will be created in architecture dependent
+;; subdirectories of <objdir>.  The default is to create these subdirectories
+;; inside the source directory.
+
+(defmethod LushMake lushmake(&optional d1 d2)
+  (setq rules (htable))
+  (setq srcdir (dirname (or file-being-loaded ".")))
+  (setq moreflags "")
+  (when d1 (==> this setdirs d1 d2)) )
+
+
+#? (==> <lushmake> setdirs <srcdir> [<objdir>])
+;; Sets the source directory <srcdir> (where source files are searched)
+;; and the object directory <objdir> (where architecture dependent subdirectories
+;; are created to hold the object files).  The default value for <objdir> is 
+;; equal to <srcdir>.
+
+
+(defmethod LushMake setdirs(srcd &optional objd)
+  (when (not (dirp srcdir))
+    (error '==> "Source directory does not exist" dir) )
+  (setq srcdir srcd)
+  (setq objdir (dhc-make-cdir (or objd srcd) t))
+  (when (<> (basename objdir) "C")
+    (setq objdir (concat-fname objdir "C"))
+    (when (not (dirp objdir)) 
+      (printf "*** Warning: Creating %s\n" objdir)
+      (mkdir objdir) ) )
+  (when (getconf "host")
+    (setq objdir (concat-fname objdir (getconf "host")))
+    (when (not (dirp objdir)) 
+      (printf "*** Warning: Creating %s\n" objdir)
+      (mkdir objdir) ) ) )
+
+
+#? (==> <lushmake> setflags <flags>)
+;; Sets additional compilation flags.
+;; These additional compilation flags will be appended
+;; to the contents of the rule variable <"$LUSHFLAGS">.
+
+(defmethod LushMake setflags(flags)
+  (setq moreflags flags) )
+
+
+#? (==> <lushmake> rule <target> <deps> [<command>])
+;; Define a compilation rule in the spirit of makefiles.
+;;
+;; Argument <target> is the name of the object file to create
+;; relative to an architecture dependent subdirectory of the
+;; object directory. 
+;;
+;; Argument <deps> is a list containing the names of the files
+;; on which the target depends. The target is rebuilt if 
+;; any of these files is more recent than the current target.
+;; 
+;; The optional argument <command> is a string containing
+;; the command to execute to rebuild <target>.  The default 
+;; command is provided in variable <dhc-make-command> and
+;; should be adequate for C programs.  Environment variables
+;; in the command are expanded using <getenv> or <getconf>.
+;; The following additional variables are also defined:
+;;.IP <$LUSHFLAGS>:
+;; Compilation flags composed by concatenating the contents
+;; of variable <dhc-make-lushflags> and the additional 
+;; flags defined using method <setflags>.
+;;.IP <$INCS>:
+;; Compilation flags specifying the directories to search
+;; for include files.  The value of this variable is 
+;; generated by <dhc-generate-include-flags> and 
+;; augmented with <"-I$SRCDIR">.
+;;.IP <$SRCDIR>:
+;; The pathname of the source directory.
+;;.IP <$OBJDIR>:
+;; The pathname of the object directory.
+;;.IP <$SRC>:
+;; The pathname of the first file listed in argument <deps>.
+;;.IP <$OBJ>:
+;; The pathname of the target file <target>.
+;;.PP
+;;.SEE dhc-make-command
+;;.SEE dhc-make-lushflags
+;;.SEE (dhc-substitute-env <str> [<htable>])
+;;.SEE (dhc-generate-include-flags [<includepath>])
+
+(defmethod LushMake rule(target deps &optional command)
+  (when (not objdir) 
+    (==> this setdirs srcdir) )
+  (when (not command)
+    (setq command dhc-make-command) )
+  (setq target (concat-fname objdir target))
+  (setq deps (all ((dep deps)) (concat-fname srcdir dep)))
+  (rules target (list target deps command)) 
+  target )
+
+
+(defmethod LushMake rebuild(target &optional done dryrun)
+  (when (not (rules target))
+    (error '==> "Do not know how to make" target) )
+  (when (or (not done) (not (done target)))
+    (let (((obj deps cmd) (rules target)))
+      (let ((flag t)
+            (objtime (alist-get 'mtime (fileinfo obj))) )
+        (when objtime
+          (setq flag dhc-make-force)
+          (each ((src deps))
+            (let ((srctime (alist-get 'mtime (fileinfo src))))
+              (when (or (rules src) (not srctime))
+                (setq flag (or flag (==> this rebuild src done dryrun))) )
+              (when (< objtime srctime)
+                (setq flag t) ) ) ) )
+        (when done (done target))
+        (when flag
+          ;; Call compilation command
+          (let ((vars (htable)) )
+            ;; Define additional variables.
+            (each (((var . def) dhc-make-overrides))
+	      (vars var def) )
+	    (vars "INCS"
+		  (concat "-I" srcdir " "
+			  (or (vars "INCS") 
+			      (dhc-generate-include-flags) ) ) )
+	    (vars "LUSHFLAGS"
+		  (concat (or (vars "LUSHFLAGS") 
+			      (dhc-substitute-env dhc-make-lushflags vars) )
+			  " " moreflags ) )
+            (vars "SRCDIR" srcdir)
+            (vars "OBJDIR" objdir)
+            (vars "SRC" (car deps))
+            (vars "OBJ" obj)
+            ;; Execute 
+            (setq cmd (dhc-substitute-env cmd vars))
+            (printf "%s\n" cmd)
+            (when (not dryrun)
+              (let ((retcode (sys cmd)))
+                (when (<> retcode 0)
+                  (error 'dhc-make-o "Compiler returned error code" retcode) ) ) ) )
+          t ) ) ) ) )
+
+  
+#? (==> <lushmake> show [<...target...>])
+;; Show what commands need to be executed to bring 
+;; targets <...target...> up to date.
+;; Calling this method without arguments processes all
+;; targets defined by the rules.
+
+(defmethod LushMake show targets
+  (when (not targets)
+    (setq targets (htable-keys rules)) )
+  (let ((done (htable)))
+    (each ((target targets))
+      (==> this rebuild target done t) ) )
+  t )
+
+
+#? (==> <lushmake> make [<...target...>])
+;; Makes sure that the targets listed as argument are 
+;; up-to-date relative to their dependencies.
+;; This method finds the relevant rule and checks each dependency file.
+;; It first checks whether the dependency files themselves must be rebuilt.
+;; The rule command is then invoked if any of the dependency is more recent than the target.
+;;
+;; Calling this method without arguments processes all
+;; targets defined by the rules.
+
+(defmethod LushMake make targets
+  (when (not targets)
+    (setq targets (htable-keys rules)) )
+  (let ((done (htable)))
+    (each ((target targets))
+      (==> this rebuild target done) ) )
+  t )
+
+
+#? (==> <lushmake> load [<...targets...>])
+;; Makes sure that all listed targets are up-to-date 
+;; and loads all listed object files using <mod-load>.
+;; In addition all the relevant dependencies will
+;; be recorded using <libload-add-dependency>.
+;;
+;; Calling this method without arguments processes all
+;; object file targets defined by the rules.
+
+(defmethod LushMake load targets
+  (setq dryrun ())
+  (when (not targets)
+    (setq targets (htable-keys rules)) )
+  (let ((done (htable)))
+    (each ((target targets))
+      (==> this rebuild target done) ) )
+  (let ((ext (concat "." (or (getconf "OBJEXT") "o"))))
+    (each ((obj targets))
+      (if (= (right obj (len ext)) ext)
+	  (mod-load obj) 
+	(printf "*** Warning ***: Cannot load target '%s'\n" obj))
+      ;; record dependencies with libload.
+      (let ((mark (lambda(f)
+                    (let ((dep (cadr (rules f))))
+                      (each ((d dep))
+                        (libload-add-dependency d)
+                        (mark d) ) ) ) ))
+        (mark obj) ) ) )
+  t )
+
+
+        
+
+  
+
+    
+    
+  
+  
+  

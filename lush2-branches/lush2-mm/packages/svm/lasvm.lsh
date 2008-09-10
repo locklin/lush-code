@@ -1,0 +1,256 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: lasvm.lsh,v 1.10 2005/11/11 20:44:59 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libc/make")
+(libload "svm/kernel")
+(libload "lasvmload.lsh")
+(libload "lasvmcache.lsh")
+(libload "lasvmvector.lsh")
+
+
+;; ----------------------------------------
+
+(defclass LaSVM Object
+  ((-obj- (KernelCache)) kernel)
+  ((-gptr-) svm) 
+  ((-int-) l) )
+
+(defmethod LaSVM LaSVM(k sumflag cp cn)
+  ((-obj- (KernelCache)) k)
+  ((-bool-) sumflag)
+  ((-double-) cp cn)
+  (setq kernel k)
+  (setq l 0)
+  (let ((kcache :k:kcache))
+    #{ $svm = lasvm_create($kcache, $sumflag, $cp, $cn); #}
+    () ) )
+
+(defmethod LaSVM -destructor()
+  #{ lasvm_destroy($svm); #}
+  (setq svm (gptr ()))
+  () )
+
+(defmethod LaSVM process(i y)
+  ((-int-) i y)
+  (let ((ans ()))
+    ((-bool-) ans)
+    #{ $ans = !!lasvm_process($svm, $i, $y);
+    $l = lasvm_get_l($svm); #}
+    ans ) )
+
+(defmethod LaSVM reprocess(epsgr)
+  ((-double-) epsgr)
+  (let ((ans ()))
+    ((-bool-) ans)
+    #{ $ans = !!lasvm_reprocess($svm, $epsgr);
+       $l = lasvm_get_l($svm); #}
+    ans ) )
+
+(defmethod LaSVM finish(epsgr)
+  ((-double-) epsgr)
+  (let ((ans ()))
+    ((-bool-) ans)
+    #{ lasvm_finish($svm, $epsgr);
+       $l = lasvm_get_l($svm);
+       $ans = ( lasvm_get_delta($svm) > $epsgr );
+    #}
+    ans ) )
+
+(defmethod LaSVM get-alpha()
+  #{ $l = lasvm_get_l($svm); #}
+  (when (< l 1) (error "empty expansion"))
+  (let ((alpha (matrix l)))
+    #{  lasvm_get_alpha($svm, IDX_PTR($alpha,double)); #}
+    alpha ) )
+
+(defmethod LaSVM get-sv()
+  #{ $l = lasvm_get_l($svm); #}
+  (when (< l 1) (error "empty expansion"))
+  (let ((sv (int-matrix l)))
+    #{  lasvm_get_sv($svm, IDX_PTR($sv,int)); #}
+    sv ) )
+
+(defmethod LaSVM get-g()
+  #{ $l = lasvm_get_l($svm); #}
+  (when (< l 1) (error "empty expansion"))
+  (let ((g (matrix l)))
+    #{  lasvm_get_g($svm, IDX_PTR($g,double)); #}
+    g ) )
+
+(defmethod LaSVM get-b()
+  (to-double #{ lasvm_get_b($svm) #}) )
+
+(defmethod LaSVM get-delta()
+  (to-double #{ lasvm_get_delta($svm) #}) )
+
+(defmethod LaSVM get-w2()
+  (to-double #{ lasvm_get_w2($svm) #}) )
+
+(defmethod LaSVM get-cp()
+  (to-double #{ lasvm_get_cp($svm) #}) )
+
+(defmethod LaSVM get-cn()
+  (to-double #{ lasvm_get_cn($svm) #}) )
+
+(defmethod LaSVM predict(i)
+  ((-int-) i)
+  (to-double #{ lasvm_predict($svm, $i) #}) )
+
+(defmethod LaSVM predict-nocache(i)
+  ((-int-) i)
+  (to-double #{ lasvm_predict_nocache($svm, $i) #}) )
+
+(defmethod LaSVM load2(sv alpha)
+  ((-idx1- (-int-)) sv)
+  ((-idx1- (-double-)) alpha)
+  (let ((l (idx-dim sv 0)))
+    (when (<> l (idx-dim alpha 0))
+      (error "mismatched arguments") )
+    (let ((s (copy-matrix sv))
+          (a (copy-matrix alpha)) )
+      #{
+         lasvm_init($svm, $l, IDX_PTR($s,int), IDX_PTR($a,double), NULL);
+         $l = lasvm_get_l($svm); #}
+      l ) ) )
+
+(defmethod LaSVM load3(sv alpha grad)
+  ((-idx1- (-int-)) sv)
+  ((-idx1- (-double-)) alpha grad)
+  (let ((ll (idx-dim sv 0)))
+    (when (<> ll (idx-dim alpha 0))
+      (error "mismatched arguments") )
+    (when (<> ll (idx-dim grad 0))
+      (error "mismatched arguments") )
+    (let ((s (copy-matrix sv))
+          (a (copy-matrix alpha))
+          (g (copy-matrix grad)))
+      #{
+         lasvm_init($svm, $ll, IDX_PTR($s,int), 
+                     IDX_PTR($a,double), IDX_PTR($g,double));
+         $l = lasvm_get_l($svm); #}
+      l ) ) )
+
+(defclass LaSVMExpansion SVMExpansion
+  ((-idx1- (-double-))  grad) )
+
+(defmethod LaSVMExpansion LASVMExpansion(k s a g)
+  ((-obj- (SVMKernel)) k)
+  ((-idx1- (-int-))    s)
+  ((-idx1- (-double-))  a g)
+  (setq kernel k)
+  (setq sv s)
+  (setq alpha a)
+  (setq grad g)
+  (setq b 0)
+  (setq scale 1)
+  (setq postb 0)
+  (setq positive-class 0)
+  (setq negative-class 0)
+  () )
+
+(defmethod LaSVM get-expansion()
+  #{ $l = lasvm_get_l($svm); #}
+  (when (< l 1) (error "empty expansion"))
+  (let ((lsvm (new LaSVMExpansion kernel 
+		   (==> this get-sv)
+		   (==> this get-alpha)
+                   (==> this get-g) )))
+    (setq :lsvm:b (==> this get-b))
+    (setq :lsvm:scale 1)
+    (setq :lsvm:positive-class +1)
+    (setq :lsvm:negative-class -1)
+    (setq :lsvm:userdata (double-matrix 1))
+    lsvm ) )
+
+(defmethod LaSVM load-expansion(e)
+  ((-obj- (SVMExpansion)) e)
+  (if (is-of-class e LaSVMExpansion)
+      (==> this load3 :e:sv :e:alpha :e:grad)
+    (==> this load2 :e:sv :e:alpha) ) )
+
+(defmethod LaSVM label(i)
+  ((-int-) i)
+  (==> kernel label i) )
+
+
+;; ----------------------------------------
+
+(let* ((lasvmdir (concat-fname (dirname file-being-loaded) "lasvm"))
+       (dhc-make-lushflags (concat dhc-make-lushflags " -I" lasvmdir)) )
+  (dhc-make ()
+	    #{ #include "lasvm.h" #}
+            (LaSVMExpansion lasvmexpansion)
+	    (LaSVM lasvm -destructor 
+		   process reprocess finish predict predict-nocache
+		   get-alpha get-sv get-g get-b get-w2 get-delta 
+                   get-cp get-cn load2 load3
+                   get-expansion label ) ) )
+
+
+;; ----------------------------------------
+
+(defmethod LaSVM init(from sz)
+  (let ((sp 0)
+	(sn 0) )
+    (while (or (< sp sz) (< sn sz))
+      (let ((y (==> kernel label from)))
+	(if (> y 0)
+	    (when (< sp sz) (==> this process from +1) (incr sp))
+	  (when (< sn sz) (==> this process from -1) (incr sn)) ) )
+      (incr from) ) ) )
+
+(defmethod LaSVM train(from sz &optional (epsgr 1e-2))
+  (let ((reprocess t))
+    ((-bool-) reprocess)
+    (for (i from (+ from sz -1))
+	 ((-int-) i)
+	 (when (==> this process i (==> this label i))
+	   (setq reprocess t) )
+	 (when reprocess
+	   (when (not (==> this reprocess 0.1))
+	     (setq reprocess ()) ) )
+	 (when (= (mod i 5000) 0)
+	   (printf "Ex %d: L= %d, D=%f, W2=%f\n" 
+		   i l (==> this get-delta) (==> this get-w2) ) ) )
+    (when epsgr
+      (printf "Finishing: L= %d, D=%f, W2=%f\n" 
+	      l (==> this get-delta) (==> this get-w2) )
+      (setq reprocess t)
+      (while reprocess
+	(when (not (==> this finish epsgr))
+	  (setq reprocess ()) ) ) )
+    (printf "Finished: L= %d, D=%f, W2=%f\n" 
+	    l (==> this get-delta) (==> this get-w2) ) ) )
+
+
+;; ----------------------------------------
+
+
+

@@ -1,0 +1,108 @@
+
+#? *** LAPACK: Linear Algebra Package
+{<author> Fu Jie Huang, Yann LeCun}
+
+This is a full interface to the popular LAPACK
+library (written in FORTRAN). Most functions have
+a single precision and a double precision form for
+real and complex numbers. A complex number is
+represented in Lush as an -idx1- with two elements.
+
+
+#? ** Requirements/Installation
+
+Most GNU/Linux distributions include LAPACK
+as part of the <lapcak>, <liblapack> or <liblapack-devel>
+packages (e.g. lapack-3.0-14.i386.rpm on RedHat 7.3 or 
+liblapack3-3.0-4mdk.i586.rpm and liblapack3-devel-3.0-4mdk.i586.rpm
+on Mandrake 7.2). Those packages are not generally installed by default 
+and will probably have to be installed manually from RPMs or APT. 
+
+If you are on a system without a LAPACK package, you can download 
+the FORTRAN source code from http://www.netlib.org/lapack
+and install the resulting library (e.g. lapack_LINUX.a) in
+/usr/local/lib. If you put lapack_XXX.a in a non-standard
+location, you must tell Lush where you put it by doing:
+.CODE
+  (defparameter lapack-liblapack "yourlapacklibrary.a") 
+.P
+before loading any of the LAPACK files into Lush.
+
+#? ** A Short (and incomplete) Tutorial
+{<author> Fu Jie Huang}
+
+A typical LAPACK function takes several types of arguments:
+
+{<ul>
+{<li> character, to indicate options}
+{<li> array, as the vector/matrix}
+{<li> integer, to provide informations (such as dimention) of vector/matrix}
+}
+
+The correponding Lush types are:
+
+{<ul>
+{<li> string, (-str-), a one character string}
+{<li> vector/matrix, (-idx1-, or -idx2-)}
+{<li> scalar (-idx0-)}
+}
+
+
+An example LAPACK function interface (in Fortran) and its Lush interface:
+{<code>
+SUBROUTINE DGESV( N, NRHS, A, LDA, IPIV, B, LDB, INFO )
+      INTEGER            INFO, LDA, LDB, N, NRHS
+      INTEGER            IPIV( * )
+      DOUBLE PRECISION   A( LDA, * ), B( LDB, * )
+
+(de dgesv (n  nrhs  a  lda  ipiv  b  ldb  info  )
+	((-idx0- (-int-)) info lda ldb n nrhs)
+	((-idx1- (-int-)) ipiv )
+	((-idx2- (-double-)) a b)
+</code>}
+
+
+Note that:
+
+{<ul>
+{<li> Fortran assumes a 2D matrix is stored column-wise, while C and Lush store it row-wise. Make sure you feed the correct stuff to LAPACK.}
+{<li> All Fortran arguments are pointers (there's only call-by-reference in Fortran, no call-by-value). Therefore for those integer arguments {<c> info}, {<c> lda}, {<c> ldb} etc. in the above example, we pass a Lush scalar (-idx0-) whose value can be changed by the LAPACK function}
+}
+
+Here's one example use of the above function. (you can find it in the "demos" directory)
+{<code>
+;; use the routine "dgesv" to solve a linear equation Ax=b
+;;  [ 2   -1   1]   [-1]
+;;  [ 3    3   9]*x=[ 0]
+;;  [ 3    3   5]   [ 4]
+;; obviously, 
+;;   [ 1]
+;; x=[ 2] 
+;;   [-1]
+
+(libload "lapack/lapack-d")    ;; use the double precision functions
+(setq A [d [2 3 3][-1 3 3][1 9 5]])  ;; row-wise storage
+(setq b [d [-1 0 4]])                ;; row-wise storage
+
+(let ((ipiv (int-matrix 3))
+      (n    ((int-matrix) 3))
+      (nrhs ((int-matrix) 1))
+      (lda  ((int-matrix) 3))
+      (ldb  ((int-matrix) 3))
+      (info ((int-matrix) 0)))
+  (dgesv n nrhs A lda ipiv b ldb info))
+
+(pretty b)        ;; the output "x" is stored in "b"
+</code>}
+
+Note that, A is initialized in the way that LAPACK can interpret its content correctly. The syntax to create a scalar (-idx0-) is a little weird: you need to cast a regular number into a scalar. As a syntax sugar, you can also do (if you have a updated Lush):
+{<code> 
+(setq x [i@ 3])
+</code>}
+
+#? ** << lapack/lapack-x.lsh
+#? ** << lapack/lapack-s.lsh
+#? ** << lapack/lapack-d.lsh
+#? ** << lapack/lapack-c.lsh
+#? ** << lapack/lapack-z.lsh
+
