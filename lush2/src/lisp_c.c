@@ -1684,11 +1684,13 @@ void run_time_error(char *s)
 
 /* dh_listeval -- calls a compiled function */
     
-at *dh_listeval(at *p, at *q)
+static at *_dh_listeval(at *p, at *q)
 {
 #define MAXARGS 1024
   at *atgs[MAXARGS];
   dharg args[MAXARGS];
+
+  MM_ENTER;
   
   // printf("dh_listeval: %s\n", pname(q));
   /* Find and check the DHDOC */
@@ -1788,9 +1790,22 @@ at *dh_listeval(at *p, at *q)
   dont_warn_zombie = false;
   if (errflag)
     error(NIL,"Run-time error in compiled code",NIL);
-  return atfuncret;
+  MM_RETURN(atfuncret);
 }
 
+/* we must pause while in compiled code gc to avoid reentrant calls
+ * to dh_listeval by finalizers 
+ */
+at *dh_listeval(at *p, at *q)
+{
+  at *result = NIL;
+
+  MM_PAUSEGC {
+    result = _dh_listeval(p, q);
+  } MM_PAUSEGC_END;
+
+  return result;
+}
 
 
 at *lisp_c_map(void *p)
