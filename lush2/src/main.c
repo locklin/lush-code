@@ -39,6 +39,14 @@ char **lush_argv;
 
 extern void api_init_tables(void);  /* defined in misc.c */
 
+static int mm_spoll(void)
+{
+   if (mm_idle())
+      return 50;  /* msec */
+   else
+      return 500; /* msec */
+}
+
 LUSHAPI int main(int argc, char **argv)
 {
    /* Call inits of support code */
@@ -96,6 +104,7 @@ LUSHAPI int main(int argc, char **argv)
    MM_ENTER;
 
    init_lush(argv[0]);
+   register_poll_functions(mm_spoll, 0, 0, 0, 0);
    start_lisp(argc, argv, quiet);
 
    MM_EXIT;
