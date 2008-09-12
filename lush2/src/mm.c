@@ -18,6 +18,13 @@
 
 #ifndef NVALGRIND
 #  include <valgrind/memcheck.h>
+#else
+#  define VALGRIND_POOL_ALLOC(...)
+#  define VALGRIND_POOL_FREE(...)
+#  define VALGRIND_CREATE_BLOCK(...)
+#  define VALGRIND_MAKE_MEM_NOACCESS(...)
+#  define VALGRIND_MAKE_MEM_DEFINED(...)
+#  define VALGRIND_MAKE_MEM_UNDEFINED(...)
 #endif
 
 #include <unistd.h>
