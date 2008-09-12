@@ -1,6 +1,8 @@
 
 #define NVALGRIND
-#include "memcheck.h"
+#ifndef NVALGRIND
+#  include <valgrind/memcheck.h>
+#endif
 
 /* ALLOC.H ---------------------------------------------------- */
 

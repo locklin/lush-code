@@ -15,7 +15,10 @@
 #define _XOPEN_SOURCE    500
 
 #include "mm.h"
-#include "memcheck.h"
+
+#ifndef NVALGRIND
+#  include <valgrind/memcheck.h>
+#endif
 
 #include <unistd.h>
 #include <stdlib.h>
@@ -2024,7 +2027,6 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
       warn("could not allocate heap map\n");
       abort();
    }
-   assert(no_marked_live());
 
    debug("heapsize  : %6"PRIdPTR" KByte (%d %d KByte blocks)\n",
          (heapsize/(1<<10)), num_blocks, BLOCKSIZE/(1<<10));
@@ -2044,6 +2046,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
       free_blocks = b;
       p += BLOCKSIZE;
    }
+   assert(no_marked_live());
 
    /* set up type directory */
    types = (typerec_t *) malloc(MIN_TYPES * sizeof(typerec_t));
