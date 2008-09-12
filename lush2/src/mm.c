@@ -364,7 +364,7 @@ static void maybe_trigger_collect(size_t s)
    }
 }
 
-static bool fetch_unreachables(void);
+static int fetch_unreachables(void);
 
 /* allocate with malloc */
 static void *alloc_variable_sized(mt_t t, size_t s)
@@ -814,6 +814,7 @@ static void collect_epilogue(void)
             warn("cause unknown (status = %d)\n", status);
          abort();
       }
+      //mm_printf("reaped gc child %d\n", collecting_child);
       collecting_child = 0;
    }
    collect_in_progress = false;
@@ -1706,13 +1707,11 @@ static void sweep(void)
       write(pfd_garbage[1], &buf, n*sizeof(void *));
 }
 
-/* fetch up to MIN_NUM_TRANSFER indices from garbage pipe */
-/* return true if there is more to be read at this point  */
-static bool fetch_unreachables(void)
+/* fetch up to MIN_NUM_TRANSFER addresses from garbage pipe */
+/* return number of objects reclaimed                       */
+static int fetch_unreachables(void)
 {
-   static bool inheap = true;
-
-   assert(collecting_child);
+   assert(collecting_child && !gc_disabled);
    
    errno = 0;
    void *buf[MIN_NUM_TRANSFER];
@@ -1725,14 +1724,13 @@ static bool fetch_unreachables(void)
          warn(errmsg);
          abort();
       } else
-         return false;
+         return 0;
 
    } else if (n == 0) {
       /* we're done */
       close(pfd_garbage[0]);
       collect_epilogue();
-      inheap = true;
-      return false;
+      return 0;
 
    } else {
       /* don't need to disable gc here as gc is still
@@ -1745,7 +1743,7 @@ static bool fetch_unreachables(void)
          //assert(!obsolete(p));
          reclaim(p);
       }
-      return true;
+      return n;
    }
 }
 
@@ -1814,6 +1812,7 @@ static void collect(void)
       return;
 
    } else if (collecting_child) {
+      //mm_printf("spawned gc child %d\n", collecting_child);
       close(pfd_garbage[1]);
       int flags = fcntl(pfd_garbage[0], F_GETFL);
       fcntl(pfd_garbage[0], F_SETFL, flags | O_NONBLOCK);
