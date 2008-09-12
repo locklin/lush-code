@@ -66,8 +66,7 @@
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
 #define MAX_VOLUME      0x100000    /* max volume threshold */
-#define MIN_MAN_K_UPDS  10
-#define MAX_MAN_K_UPDS  100
+#define MAN_K_UPDS      100
 #define NUM_TRANSFER    (min(PIPE_BUF,PAGESIZE)/sizeof(void *))
 #define MIN_NUM_TRANSFER 128
 
@@ -364,7 +363,7 @@ static void maybe_trigger_collect(size_t s)
    }
 }
 
-static int fetch_unreachables(void);
+static int fetch_unreachables(bool);
 
 /* allocate with malloc */
 static void *alloc_variable_sized(mt_t t, size_t s)
@@ -404,7 +403,7 @@ static void *alloc_variable_sized(mt_t t, size_t s)
    }
    
    if (collecting_child && !gc_disabled)
-      fetch_unreachables();
+      fetch_unreachables(false);
    maybe_trigger_collect(s);
 
    assert(!INHEAP(q));
@@ -463,7 +462,7 @@ static void *alloc_fixed_size(mt_t t)
    }
    
    if (collecting_child && !gc_disabled)
-      fetch_unreachables();
+      fetch_unreachables(false);
    maybe_trigger_collect(s);
 
    return h;
@@ -704,7 +703,7 @@ static void add_managed(const void *p)
    managed[man_last] = (void *)p;
    
    if (!collect_in_progress)
-      update_man_k(MAX_MAN_K_UPDS);
+      update_man_k(MAN_K_UPDS);
    
 }
 
@@ -1707,15 +1706,16 @@ static void sweep(void)
       write(pfd_garbage[1], &buf, n*sizeof(void *));
 }
 
-/* fetch up to MIN_NUM_TRANSFER addresses from garbage pipe */
+/* fetch addresses of unreachable objects from garbage pipe */
 /* return number of objects reclaimed                       */
-static int fetch_unreachables(void)
+static int fetch_unreachables(bool idle)
 {
    assert(collecting_child && !gc_disabled);
    
    errno = 0;
-   void *buf[MIN_NUM_TRANSFER];
-   int n = read(pfd_garbage[0], &buf, sizeof(buf));
+   void *buf[NUM_TRANSFER];
+   size_t s_trans = idle ? sizeof(buf) : MIN_NUM_TRANSFER*sizeof(void *);
+   int n = read(pfd_garbage[0], &buf, s_trans);
 
    if (n == -1) {
       if (errno != EAGAIN) {
@@ -1902,13 +1902,30 @@ bool mm_collect_in_progress(void)
 }
 
 
-void mm_idle(void)
+bool mm_idle(void)
 {
+   static int ncalls = 0;
+
    if (collect_in_progress) {
       if (!gc_disabled)
-         fetch_unreachables();
-   } else
-      update_man_k(MIN_MAN_K_UPDS);
+         return fetch_unreachables(true)>0;
+      else
+         return false;
+
+   } else if ((man_last - man_k) > 10*MAN_K_UPDS) {
+      update_man_k(-1);
+      return true;
+
+   } else {
+      ncalls++;
+      if (ncalls<10) {
+         return false;
+      }
+      /* create some work for ourselves */
+      mm_collect();
+      ncalls = 0;
+      return true;
+   }
 }
 
 
@@ -1917,7 +1934,7 @@ bool mm_begin_nogc(bool dont_block)
    /* block when a collect is in progress */
    if (!dont_block) {
       while (collecting_child)
-         fetch_unreachables();
+         fetch_unreachables(true);
       assert(!collect_in_progress);
    }
 
@@ -1950,6 +1967,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
 {
    assert(sizeof(info_t) <= MIN_HUNKSIZE);
    assert(sizeof(hunk_t) <= MIN_HUNKSIZE);
+   assert(MIN_NUM_TRANSFER < NUM_TRANSFER);
    assert((1<<HMAP_EPI_BITS) == HMAP_EPI);
 
    client_notify = clnotify;
