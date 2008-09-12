@@ -535,7 +535,7 @@ static void transmute_object_into_gptr(at *p, void *px)
   /* This is bad practice */
   if (p && (EXTERNP(p))) {
     /* clean object up */
-    (*p->Class->dispose)(p);
+    (*p->Class->dispose)(p->Object);
     /* disguise it as a gptr */
     p->Class = &gptr_class;
     p->Gptr = px;
