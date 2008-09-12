@@ -158,6 +158,7 @@ void clean_up(void)
 
 void init_lush(char *program_name)
 {
+   MM_ENTER;
    at *p,*version;
    init_weakref();
    init_at();
@@ -213,6 +214,7 @@ void init_lush(char *program_name)
    p = new_string("lush2");
    var_set(version,p);
    var_lock(version);
+   MM_EXIT;
 }
 
 
@@ -228,6 +230,7 @@ extern LUSHAPI at **dx_stack, **dx_sp; /* defined in src/function.c */
 
 void start_lisp(int argc, char **argv, int quietflag)
 {
+   MM_ENTER;
    at *p, *q;
    at **where;
    char *s, *r;
@@ -271,6 +274,7 @@ void start_lisp(int argc, char **argv, int quietflag)
       }
 
       /* Search a dump file */
+      MM_ENTER;
       if ((r = search_file(s,"|.dump")) && isdump(r)) {
          error_doc.ready_to_an_error = false;
          if (! quiet) {
@@ -291,7 +295,8 @@ void start_lisp(int argc, char **argv, int quietflag)
          
       } else
          abort("Cannot locate system libraries");
-      
+      MM_EXIT;
+
       /* Calls the cold startup procedure with arguments */
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = false;
@@ -347,6 +352,7 @@ void start_lisp(int argc, char **argv, int quietflag)
    }
    /* Finished */
    clean_up();
+   MM_EXIT;
 }
 
 

@@ -632,9 +632,6 @@ void process_pending_events(void)
       timer_fire();
       timer_fired = 1;
       hndl = ev_peek();
-
-      /* work on pending gc or whatever */
-      mm_idle();
    }
    MM_EXIT;
 }

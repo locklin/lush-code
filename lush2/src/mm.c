@@ -2157,21 +2157,21 @@ void dump_stack(mmstack_t *st)
 
 void dump_stack_depth(void)
 {
-   debug("depth of transients stack: %d\n", stack_depth(transients));
+   mm_printf("depth of transients stack: %d\n", stack_depth(transients));
    mm_printf("\n");
    fflush(stdlog);
 }
 
 void dump_freelist(mt_t t) 
 {
-   printf("freelist of type '%s':\n", types[t].name);
+   mm_printf("freelist of type '%s':\n", types[t].name);
 
    hunk_t *h = types[t].freelist;
    while (h) {
-      printf("0x%"PRIxPTR" -> ", PPTR(h));
+      mm_printf("0x%"PRIxPTR" -> ", PPTR(h));
       h = h->next;
    }
-   printf("0x0\n");
+   mm_printf("0x0\n");
 }
 
 void dump_heap_stats(void)
