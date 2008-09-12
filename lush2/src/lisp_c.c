@@ -1798,12 +1798,18 @@ static at *_dh_listeval(at *p, at *q)
  */
 at *dh_listeval(at *p, at *q)
 {
-  at *result = NIL;
-
-  MM_PAUSEGC {
-    result = _dh_listeval(p, q);
-  } MM_PAUSEGC_END;
-
+  struct context c;
+  MM_PAUSEGC;
+  context_push(&c);
+ 
+  if (sigsetjmp(context->error_jump, 1)) {
+    MM_PAUSEGC_END;
+    context_pop();
+    siglongjmp(context->error_jump, -1);
+  }
+  at *result = _dh_listeval(p, q);
+  MM_PAUSEGC_END;
+  context_pop();
   return result;
 }
 

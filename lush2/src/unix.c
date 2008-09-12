@@ -833,9 +833,9 @@ static char **console_complete(const char *text, int start, int end)
    /* Symbol completion */
    if ((state==0 || state=='|') && end>start) {
       char **matches;
-      MM_NOGC {
-         matches = rl_completion_matches(text, symbol_generator);
-      } MM_NOGC_END;
+      MM_NOGC;
+      matches = rl_completion_matches(text, symbol_generator);
+      MM_NOGC_END;
       return matches;
    }
    /* No completion */

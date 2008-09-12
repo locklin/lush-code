@@ -103,10 +103,9 @@ object_t *oostruct_dispose(object_t *obj)
    }
    zombify(obj->backptr);
    obj->cl = NULL;
-   if (errflag) {
-      fprintf(stderr, "*** error while executing a desctuctor\n");
+   if (errflag)
       siglongjmp(context->error_jump, -1L);
-   }
+
    return obj;
 }
 

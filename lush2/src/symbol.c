@@ -187,7 +187,8 @@ static hash_name_t *search_by_name(char *s, int mode)
 void purge_names(void)
 {
    /* if a gc is under way, wait until done */
-   MM_NOGC { } MM_NOGC_END;
+   MM_NOGC;
+   MM_NOGC_END;
 
    purging_symbols = true;
    mm_collect_now();

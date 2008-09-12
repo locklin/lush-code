@@ -19,12 +19,15 @@
 #ifndef NVALGRIND
 #  include <valgrind/memcheck.h>
 #else
-#  define VALGRIND_POOL_ALLOC(...)
-#  define VALGRIND_POOL_FREE(...)
+#  define VALGRIND_CREATE_MEMPOOL(...)
+#  define VALGRIND_MEMPOOL_ALLOC(...)
+#  define VALGRIND_MEMPOOL_FREE(...)
 #  define VALGRIND_CREATE_BLOCK(...)
 #  define VALGRIND_MAKE_MEM_NOACCESS(...)
 #  define VALGRIND_MAKE_MEM_DEFINED(...)
 #  define VALGRIND_MAKE_MEM_UNDEFINED(...)
+#  define VALGRIND_CHECK_MEM_IS_DEFINED(...)
+#  define VALGRIND_DISCARD(...)
 #endif
 
 #include <unistd.h>
@@ -1943,6 +1946,10 @@ bool mm_begin_nogc(bool dont_block)
 {
    /* block when a collect is in progress */
    if (!dont_block) {
+      if (collecting_child && gc_disabled) {
+         warn("deadlock (MM_NOGC while pending GC paused)\n");
+         abort();
+      }
       while (collecting_child)
          fetch_unreachables(true);
       assert(!collect_in_progress);
