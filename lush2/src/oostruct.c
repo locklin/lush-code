@@ -83,6 +83,9 @@ extern mt_t mt_class; /* in at.c */
 
 object_t *oostruct_dispose(object_t *obj)
 {
+   if (!obj->cl)
+      return obj;
+
    int oldready = error_doc.ready_to_an_error;
    error_doc.ready_to_an_error = true;
 
@@ -103,9 +106,13 @@ object_t *oostruct_dispose(object_t *obj)
    }
    zombify(obj->backptr);
    obj->cl = NULL;
-   if (errflag)
-      siglongjmp(context->error_jump, -1L);
-
+   if (errflag) {
+      if (mm_collect_in_progress())
+         /* we cannot longjump when called by a finalizer */
+         fprintf(stderr, "*** Warning: error occurred in finalizer\n");
+      else
+         siglongjmp(context->error_jump, -1L);
+   }
    return obj;
 }
 
