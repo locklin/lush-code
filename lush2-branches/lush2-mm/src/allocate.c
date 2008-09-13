@@ -60,7 +60,7 @@ void allocate_chunk(alloc_root_t *ar)
       ea->used = 0;
       ar->freelist = ea;
     }
-    VALGRIND_MAKE_NOACCESS(chkhd->begin, sizeof_chunk);
+    VALGRIND_MAKE_MEM_NOACCESS(chkhd->begin, sizeof_chunk);
   } else
     RAISEF("not enough memory", NIL);
 }

@@ -1,6 +1,14 @@
 
 #define NVALGRIND
-#include "memcheck.h"
+#ifndef NVALGRIND
+#  include <valgrind/memcheck.h>
+# define REDZONE_SIZE 4
+#else
+#  define VALGRIND_MALLOCLIKE_BLOCK(...)
+#  define VALGRIND_FREELIKE_BLOCK(...)
+#  define VALGRIND_MAKE_MEM_NOACCESS(...)
+# define REDZONE_SIZE 0
+#endif
 
 /* ALLOC.H ---------------------------------------------------- */
 
@@ -9,12 +17,6 @@
   o #undef NVALGRIND
   o recompile (with '-g -O -Wall')
 */
-
-#ifndef NVALGRIND
-# define REDZONE_SIZE 4
-#else
-# define REDZONE_SIZE 0
-#endif 
 
 /* Allocation of objects of identical size */
 

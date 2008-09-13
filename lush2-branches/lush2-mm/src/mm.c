@@ -15,7 +15,20 @@
 #define _XOPEN_SOURCE    500
 
 #include "mm.h"
-#include "memcheck.h"
+
+#ifndef NVALGRIND
+#  include <valgrind/memcheck.h>
+#else
+#  define VALGRIND_CREATE_MEMPOOL(...)
+#  define VALGRIND_MEMPOOL_ALLOC(...)
+#  define VALGRIND_MEMPOOL_FREE(...)
+#  define VALGRIND_CREATE_BLOCK(...)
+#  define VALGRIND_MAKE_MEM_NOACCESS(...)
+#  define VALGRIND_MAKE_MEM_DEFINED(...)
+#  define VALGRIND_MAKE_MEM_UNDEFINED(...)
+#  define VALGRIND_CHECK_MEM_IS_DEFINED(...)
+#  define VALGRIND_DISCARD(...)
+#endif
 
 #include <unistd.h>
 #include <stdlib.h>
@@ -66,8 +79,7 @@
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
 #define MAX_VOLUME      0x100000    /* max volume threshold */
-#define MIN_MAN_K_UPDS  10
-#define MAX_MAN_K_UPDS  100
+#define MAN_K_UPDS      100
 #define NUM_TRANSFER    (min(PIPE_BUF,PAGESIZE)/sizeof(void *))
 #define MIN_NUM_TRANSFER 128
 
@@ -364,7 +376,7 @@ static void maybe_trigger_collect(size_t s)
    }
 }
 
-static bool fetch_unreachables(void);
+static int fetch_unreachables(bool);
 
 /* allocate with malloc */
 static void *alloc_variable_sized(mt_t t, size_t s)
@@ -404,7 +416,7 @@ static void *alloc_variable_sized(mt_t t, size_t s)
    }
    
    if (collecting_child && !gc_disabled)
-      fetch_unreachables();
+      fetch_unreachables(false);
    maybe_trigger_collect(s);
 
    assert(!INHEAP(q));
@@ -463,7 +475,7 @@ static void *alloc_fixed_size(mt_t t)
    }
    
    if (collecting_child && !gc_disabled)
-      fetch_unreachables();
+      fetch_unreachables(false);
    maybe_trigger_collect(s);
 
    return h;
@@ -704,7 +716,7 @@ static void add_managed(const void *p)
    managed[man_last] = (void *)p;
    
    if (!collect_in_progress)
-      update_man_k(MAX_MAN_K_UPDS);
+      update_man_k(MAN_K_UPDS);
    
 }
 
@@ -814,6 +826,7 @@ static void collect_epilogue(void)
             warn("cause unknown (status = %d)\n", status);
          abort();
       }
+      //mm_printf("reaped gc child %d\n", collecting_child);
       collecting_child = 0;
    }
    collect_in_progress = false;
@@ -1706,17 +1719,16 @@ static void sweep(void)
       write(pfd_garbage[1], &buf, n*sizeof(void *));
 }
 
-/* fetch up to MIN_NUM_TRANSFER indices from garbage pipe */
-/* return true if there is more to be read at this point  */
-static bool fetch_unreachables(void)
+/* fetch addresses of unreachable objects from garbage pipe */
+/* return number of objects reclaimed                       */
+static int fetch_unreachables(bool idle)
 {
-   static bool inheap = true;
-
-   assert(collecting_child);
+   assert(collecting_child && !gc_disabled);
    
    errno = 0;
-   void *buf[MIN_NUM_TRANSFER];
-   int n = read(pfd_garbage[0], &buf, sizeof(buf));
+   void *buf[NUM_TRANSFER];
+   size_t s_trans = idle ? sizeof(buf) : MIN_NUM_TRANSFER*sizeof(void *);
+   int n = read(pfd_garbage[0], &buf, s_trans);
 
    if (n == -1) {
       if (errno != EAGAIN) {
@@ -1725,14 +1737,13 @@ static bool fetch_unreachables(void)
          warn(errmsg);
          abort();
       } else
-         return false;
+         return 0;
 
    } else if (n == 0) {
       /* we're done */
       close(pfd_garbage[0]);
       collect_epilogue();
-      inheap = true;
-      return false;
+      return 0;
 
    } else {
       /* don't need to disable gc here as gc is still
@@ -1745,7 +1756,7 @@ static bool fetch_unreachables(void)
          //assert(!obsolete(p));
          reclaim(p);
       }
-      return true;
+      return n;
    }
 }
 
@@ -1814,6 +1825,7 @@ static void collect(void)
       return;
 
    } else if (collecting_child) {
+      //mm_printf("spawned gc child %d\n", collecting_child);
       close(pfd_garbage[1]);
       int flags = fcntl(pfd_garbage[0], F_GETFL);
       fcntl(pfd_garbage[0], F_SETFL, flags | O_NONBLOCK);
@@ -1903,13 +1915,30 @@ bool mm_collect_in_progress(void)
 }
 
 
-void mm_idle(void)
+bool mm_idle(void)
 {
+   static int ncalls = 0;
+
    if (collect_in_progress) {
       if (!gc_disabled)
-         fetch_unreachables();
-   } else
-      update_man_k(MIN_MAN_K_UPDS);
+         return fetch_unreachables(true)>0;
+      else
+         return false;
+
+   } else if ((man_last - man_k) > 10*MAN_K_UPDS) {
+      update_man_k(-1);
+      return true;
+
+   } else {
+      ncalls++;
+      if (ncalls<10) {
+         return false;
+      }
+      /* create some work for ourselves */
+      mm_collect();
+      ncalls = 0;
+      return true;
+   }
 }
 
 
@@ -1917,8 +1946,12 @@ bool mm_begin_nogc(bool dont_block)
 {
    /* block when a collect is in progress */
    if (!dont_block) {
+      if (collecting_child && gc_disabled) {
+         warn("deadlock (MM_NOGC while pending GC paused)\n");
+         abort();
+      }
       while (collecting_child)
-         fetch_unreachables();
+         fetch_unreachables(true);
       assert(!collect_in_progress);
    }
 
@@ -1951,6 +1984,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
 {
    assert(sizeof(info_t) <= MIN_HUNKSIZE);
    assert(sizeof(hunk_t) <= MIN_HUNKSIZE);
+   assert(MIN_NUM_TRANSFER < NUM_TRANSFER);
    assert((1<<HMAP_EPI_BITS) == HMAP_EPI);
 
    client_notify = clnotify;
@@ -2007,7 +2041,6 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
       warn("could not allocate heap map\n");
       abort();
    }
-   assert(no_marked_live());
 
    debug("heapsize  : %6"PRIdPTR" KByte (%d %d KByte blocks)\n",
          (heapsize/(1<<10)), num_blocks, BLOCKSIZE/(1<<10));
@@ -2027,6 +2060,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
       free_blocks = b;
       p += BLOCKSIZE;
    }
+   assert(no_marked_live());
 
    /* set up type directory */
    types = (typerec_t *) malloc(MIN_TYPES * sizeof(typerec_t));
@@ -2140,21 +2174,21 @@ void dump_stack(mmstack_t *st)
 
 void dump_stack_depth(void)
 {
-   debug("depth of transients stack: %d\n", stack_depth(transients));
+   mm_printf("depth of transients stack: %d\n", stack_depth(transients));
    mm_printf("\n");
    fflush(stdlog);
 }
 
 void dump_freelist(mt_t t) 
 {
-   printf("freelist of type '%s':\n", types[t].name);
+   mm_printf("freelist of type '%s':\n", types[t].name);
 
    hunk_t *h = types[t].freelist;
    while (h) {
-      printf("0x%"PRIxPTR" -> ", PPTR(h));
+      mm_printf("0x%"PRIxPTR" -> ", PPTR(h));
       h = h->next;
    }
-   printf("0x0\n");
+   mm_printf("0x0\n");
 }
 
 void dump_heap_stats(void)

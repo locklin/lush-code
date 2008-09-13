@@ -445,11 +445,9 @@ static void unblock_async_trigger(void)
 {
    if (++block_count == 0) {
       if (trigger_signal >= 0 && trigger_nfds >= 0) {
-#ifdef POSIXSIGNAL
-         sigset_t sset;
-#endif
          trigger_irq();
 #ifdef POSIXSIGNAL
+         sigset_t sset;
          sigemptyset(&sset);
          sigaddset(&sset, trigger_signal);
          sigprocmask(SIG_UNBLOCK,&sset,NULL);
@@ -835,9 +833,9 @@ static char **console_complete(const char *text, int start, int end)
    /* Symbol completion */
    if ((state==0 || state=='|') && end>start) {
       char **matches;
-      MM_NOGC {
-         matches = rl_completion_matches(text, symbol_generator);
-      } MM_NOGC_END;
+      MM_NOGC;
+      matches = rl_completion_matches(text, symbol_generator);
+      MM_NOGC_END;
       return matches;
    }
    /* No completion */

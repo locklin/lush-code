@@ -535,7 +535,7 @@ static void transmute_object_into_gptr(at *p, void *px)
   /* This is bad practice */
   if (p && (EXTERNP(p))) {
     /* clean object up */
-    (*p->Class->dispose)(p);
+    (*p->Class->dispose)(p->Object);
     /* disguise it as a gptr */
     p->Class = &gptr_class;
     p->Gptr = px;
@@ -1798,12 +1798,18 @@ static at *_dh_listeval(at *p, at *q)
  */
 at *dh_listeval(at *p, at *q)
 {
-  at *result = NIL;
-
-  MM_PAUSEGC {
-    result = _dh_listeval(p, q);
-  } MM_PAUSEGC_END;
-
+  struct context c;
+  MM_PAUSEGC;
+  context_push(&c);
+ 
+  if (sigsetjmp(context->error_jump, 1)) {
+    MM_PAUSEGC_END;
+    context_pop();
+    siglongjmp(context->error_jump, -1);
+  }
+  at *result = _dh_listeval(p, q);
+  MM_PAUSEGC_END;
+  context_pop();
   return result;
 }
 
