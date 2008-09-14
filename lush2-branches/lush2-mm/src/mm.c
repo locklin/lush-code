@@ -72,7 +72,6 @@
 #define ALIGN_NUM_BITS  3
 #define MIN_HUNKSIZE    (1<<ALIGN_NUM_BITS)
 #define MIN_STRING      MIN_HUNKSIZE
-#define MIN_MED_STRING  (4*MIN_HUNKSIZE)
 #define MIN_NUMBLOCKS   0x100
 #define MIN_TYPES       0x100
 #define MIN_MANAGED     0x40000
@@ -99,7 +98,7 @@
 #  define HMAP_EPI        4
 #  define HMAP_EPI_BITS   2
 #else
-#  error INT_MAX not supported.
+#  error Value of INT_MAX not supported.
 #endif
 
 
@@ -127,9 +126,9 @@ typedef struct typerec {
    clear_func_t    *clear; 
    mark_func_t     *mark;
    finalize_func_t *finalize;
-   hunk_t          *freelist;
-   hunk_t          *freelist_last;
-   bool            free_offheap;
+   uintptr_t       current_a;     /* current address   */
+   uintptr_t       current_amax; 
+   int             next_b;        /* next block to try */
 } typerec_t;
 
 /* heap management */
@@ -138,7 +137,6 @@ static size_t     hmapsize;
 static size_t     volume_threshold;
 static int        num_blocks;
 static blockrec_t *blockrecs = NULL;
-static block_t   *free_blocks = NULL;
 static char      *heap = NULL;
 static unsigned int *restrict hmap = NULL; /* bits for heap objects */
 
@@ -171,6 +169,7 @@ static int        num_collects = 0;
 static size_t     vol_allocs = 0;
 static bool       gc_disabled = false;
 static bool       collect_in_progress = false;
+static bool       mark_in_progress = false;
 static bool       collect_requested = false;
 static pid_t      collecting_child = 0;
 static bool       mm_debug = false;
@@ -244,8 +243,9 @@ static bool       anchor_transients = true;
 #define INHEAP(p)          (((char *)(p) >= heap) && ((char *)(p) < (heap + heapsize)))
 #define BLOCK(p)           (((ptrdiff_t)((char *)(p) - heap))>>BLOCKBITS)
 #define BLOCK_ADDR(p)      (heap + BLOCKSIZE*BLOCK(p))
-#define INFO_S(p)          (((info_t *)((char *)p - MIN_HUNKSIZE))->nh*MIN_HUNKSIZE)
-#define INFO_T(p)          (((info_t *)((char *)p - MIN_HUNKSIZE))->t)
+#define BLOCKA(a)          (((uintptr_t)((char *)(a)))>>BLOCKBITS)
+#define INFO_S(p)          (((info_t *)(unseal((char *)p)))->nh*MIN_HUNKSIZE)
+#define INFO_T(p)          (((info_t *)(unseal((char *)p)))->t)
 #define MM_SIZEOF(p)       \
    (INHEAP(p) ? types[blockrecs[BLOCK(p)].t].size : INFO_S(p))
 #define MM_TYPEOF(p)       \
@@ -256,7 +256,7 @@ static bool       anchor_transients = true;
 #define DO_HEAP(a, b) { \
    uintptr_t __a = 0; \
    for (int b = 0; b < num_blocks; b++, __a += BLOCKSIZE) { \
-      if (blockrecs[b].in_use) { \
+      if (blockrecs[b].t != mt_undefined) { \
          uintptr_t __a_next = __a + BLOCKSIZE; \
          for (uintptr_t a = __a; a < __a_next; a += MIN_HUNKSIZE) { \
             if (HMAP_MANAGED(a))
@@ -301,6 +301,22 @@ static bool isroot(const void *p)
 }
 */
 
+static inline void *seal(const char *p)
+{
+   assert(!LBITS(p));
+   VALGRIND_MAKE_MEM_NOACCESS(p, MIN_HUNKSIZE);
+   p += MIN_HUNKSIZE;
+   return (void *)p;
+}
+
+static inline void *unseal(const char *p)
+{
+   assert(!LBITS(p));
+   p -= MIN_HUNKSIZE;
+   VALGRIND_MAKE_MEM_DEFINED(p, MIN_HUNKSIZE);
+   return (void *)p;
+}
+
 static inline finalize_func_t *finalizeof(const void *p)
 {
    assert(ADDRESS_VALID(p));
@@ -308,28 +324,12 @@ static inline finalize_func_t *finalizeof(const void *p)
    return types[t].finalize;
 }
 
-static inline void *align(char *p)
-{
-   assert(!LBITS(p));
-   p += MIN_HUNKSIZE;
-   return (void *)p;
-}
-
-static inline void *unalign(char *p)
-{
-   assert(!LBITS(p));
-   p -= MIN_HUNKSIZE;
-   return (void *)p;
-}
-
 static int num_free_blocks(void)
 {
    int n = 0;
-   block_t *p = free_blocks;
-   while (p) {
-      n++;
-      p = p->next;
-   }
+   for (int b=0; b < num_blocks; b++)
+     if (blockrecs[b].t == mt_undefined)
+        n++;
    return n;
 }
 
@@ -358,7 +358,6 @@ static void mark_live(const void *p)
    MARK_LIVE(managed[i]);
 }
 
-
 static void maybe_trigger_collect(size_t s)
 {
    num_allocs += 1;
@@ -376,6 +375,73 @@ static void maybe_trigger_collect(size_t s)
    }
 }
 
+#define AMAX(s) ((BLOCKSIZE/(s) - 1)*(s))
+ 
+/* scan small object heap for next free hunk                 */
+/* update current_a field for type t, return true on success */  
+static bool _update_current_a(mt_t t, typerec_t *tr, uintptr_t s, uintptr_t a)
+{
+   if (blockrecs[BLOCKA(a)].t != t)
+      goto search_for_block;
+
+search_in_block:
+   /* search for next free hunk in block */
+   while (HMAP_MANAGED(a) && a <= tr->current_amax)
+      a += s;
+   if (a <= tr->current_amax) {
+      tr->current_a = a;
+      return true;
+   }
+
+ search_for_block:
+   /* search for another block with free hunks */
+   ;
+   int b = tr->next_b;
+   int orig_b = (b-1) % num_blocks;
+
+   while (b != orig_b) {
+      if (blockrecs[b].t == mt_undefined) {
+         assert(blockrecs[b].in_use == 0);
+         blockrecs[b].t = t;
+         VALGRIND_CREATE_BLOCK(heap + a, BLOCKSIZE, types[t].name);
+         tr->current_a = a = b*BLOCKSIZE;
+         tr->current_amax = a + AMAX(s);
+         tr->next_b = b + 1;
+         return true;
+
+      } else if (blockrecs[b].t==t && blockrecs[b].in_use<(BLOCKSIZE/s)) {
+         a = b*BLOCKSIZE;
+         tr->current_amax = a + AMAX(s);
+         tr->next_b = b + 1;
+         goto search_in_block;
+      }
+      b = (b+1) % num_blocks;
+   }
+
+   /* no free hunk found */
+   assert(b == orig_b);
+   tr->current_a = 0;
+   tr->current_amax = AMAX(s);
+   tr->next_b = 1;
+   return false;
+}
+
+static inline bool update_current_a(mt_t t)
+{
+   assert(TYPE_VALID(t));
+   typerec_t *tr = &types[t];
+
+   if (blockrecs[BLOCKA(tr->current_a)].t == t) {
+      tr->current_a += tr->size;
+      if (tr->current_a <= tr->current_amax) {
+         if (!HMAP_MANAGED(tr->current_a))
+            return true;
+      } else
+         tr->current_a -= tr->size;
+   }   
+   return _update_current_a(t, tr, tr->size, tr->current_a);
+}
+   
 static int fetch_unreachables(bool);
 
 /* allocate with malloc */
@@ -384,43 +450,28 @@ static void *alloc_variable_sized(mt_t t, size_t s)
    /* make sure s is a multiple of MIN_HUNKSIZE */
    if (s % MIN_HUNKSIZE)
       s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS;
-   if (t == mt_string)
-      s = max(s, MIN_MED_STRING);
 
    if (s > MM_SIZE_MAX) {
       warn("size exceeds MM_SIZE_MAX\n");
       abort();
    }
-      
-   /* try from freelist and malloc if INHEAP or if too small */
-   void *p = types[t].freelist;
-   void *q = NULL;
-   size_t sp = 0;
-   if (p && !INHEAP(p) && (s<= (sp=MM_SIZEOF(p)))) {
-      hunk_t *h = (hunk_t *)p;
-      VALGRIND_MAKE_MEM_DEFINED(&(h->next), sizeof(h->next));
-      types[t].freelist = h->next;
-      if (!types[t].freelist)
-         types[t].freelist_last = NULL;
-      s = sp;
-      q = p;
-   } else {
-      p = malloc(s + MIN_HUNKSIZE);  // + space for info
-      if (p)
-         q = align(p);
-   }
-   if (q) {
-      info_t *info = unalign(q);
+  
+   void *p = malloc(s + MIN_HUNKSIZE);  // + space for info
+   assert(!LBITS(p));
+
+   if (p) {
+      info_t *info = p;
       info->t = t;
       info->nh = s/MIN_HUNKSIZE;
-   }
-   
-   if (collecting_child && !gc_disabled)
-      fetch_unreachables(false);
-   maybe_trigger_collect(s);
+      
+      if (collecting_child && !gc_disabled)
+         fetch_unreachables(false);
+      maybe_trigger_collect(s);
 
-   assert(!INHEAP(q));
-   return q;
+      return seal(p);
+
+   } else
+      return NULL;
 }
 
 /* allocate from small-object heap if possible */
@@ -433,101 +484,46 @@ static void *alloc_fixed_size(mt_t t)
    if (BLOCKSIZE<(2*s))
       return alloc_variable_sized(t, s);
    
-   if (!types[t].freelist) {
-      assert(!types[t].freelist_last);
-      if (!free_blocks)
-         return alloc_variable_sized(t, s);
+   if (!update_current_a(t)) {
+      warn("no free block found\n");
+      return alloc_variable_sized(t, s);
+   }   
 
-      char *p = (char *)free_blocks;
-      VALGRIND_CREATE_BLOCK(p, BLOCKSIZE, types[t].name);
-      VALGRIND_MAKE_MEM_DEFINED(&(free_blocks->next), sizeof(free_blocks->next));
-      free_blocks = free_blocks->next;
-      blockrecs[BLOCK(p)].t = t;
-      assert(blockrecs[BLOCK(p)].in_use==0);
-
-      /* fill up freelist with fresh hunks */
-      hunk_t *h = types[t].freelist = (hunk_t *)p;
-      int n = BLOCKSIZE/s - 1;
-      while (n>0) {
-         p += s;
-         VALGRIND_MAKE_MEM_UNDEFINED(&(h->next), sizeof(h->next));
-         h->next = (hunk_t *)p;
-         h = h->next;
-         VALGRIND_MAKE_MEM_NOACCESS(&(h->next), sizeof(h->next));
-         n--;
-      }
-      VALGRIND_MAKE_MEM_UNDEFINED(&(h->next), sizeof(h->next));
-      h->next = NULL;
-      types[t].freelist_last = h;
-      VALGRIND_MAKE_MEM_NOACCESS(&(h->next), sizeof(h->next));
-   }
-
-   assert(types[t].freelist);
-   hunk_t *h = types[t].freelist;
-   assert(ADDRESS_VALID(h));
-   VALGRIND_MAKE_MEM_DEFINED(&(h->next), sizeof(h->next));
-   types[t].freelist = h->next;
-   if (!types[t].freelist)
-      types[t].freelist_last = NULL;
-   if (INHEAP(h)) {
-      blockrecs[BLOCK(h)].in_use++;
-      VALGRIND_MEMPOOL_ALLOC(heap, h, s);
-   }
+   void *p = heap + types[t].current_a;
+   VALGRIND_MEMPOOL_ALLOC(heap, p, s);
+   blockrecs[BLOCKA(types[t].current_a)].in_use++;
    
    if (collecting_child && !gc_disabled)
       fetch_unreachables(false);
    maybe_trigger_collect(s);
 
-   return h;
+   return p;
 }
 
 static bool no_marked_live(void)
 {
-   DO_HEAP(a, b) {
-      if (HMAP_LIVE(a)) {
-         int i = a>>(ALIGN_NUM_BITS + HMAP_EPI_BITS);
-         printf("hmap[%d] (in block %d) is 0x%x \n", i, b, hmap[i]);
+   uintptr_t __a = 0;
+   for (int b = 0; b < num_blocks; b++, __a += BLOCKSIZE) {
+      uintptr_t __a_next = __a + BLOCKSIZE;
+      for (uintptr_t a = __a; a < __a_next; a += MIN_HUNKSIZE) {
+         if (HMAP_LIVE(a)) {
+            warn("address 0x%x (in block %d) is marked live\n", PPTR(heap + a), b);
+            return false;
+         }
+      }
+   }
+
+   for (int i = 0; i <= man_last; i++) {
+      if (LIVE(managed[i])) {
+         void *p = CLRPTR2(managed[i]);
+         warn("address 0x%x is marked live\n", PPTR(p));
          return false;
       }
-   } DO_HEAP_END;
+   }
+
    return true;
 }
 
-static bool heap_ok(void)
-{
-   /* check #free blocks is ok */
-   int n = 0;
-   for (int b = 0; b < num_blocks; b++) {
-      assert(blockrecs[b].in_use>=0);
-      if (blockrecs[b].in_use) n++;
-   }
-   
-   block_t *p = free_blocks;
-   while (p) {
-      n++;
-      p = p->next;
-   }
-   if (n != num_blocks) {
-      debug("number of free blocks is bogus\n");
-      return false;
-   }
-   
-   /* churn through all free lists and make sure
-    * all hunks are from blocks of the correct type
-    */
-   for (int t = 0; t <= types_last; t++) {
-      hunk_t *h = types[t].freelist;
-      while (h) {
-         if (INHEAP(h))
-            if (blockrecs[BLOCK(h)].t != t) {
-               debug("freelist of type %d is bogus\n", t);
-               return false;
-            }
-         h = h->next;
-      }
-   }
-   return true;
-}
 
 /* 
  * Sort managed array in-place using poplar sort.
@@ -728,7 +724,9 @@ static void manage(const void *p)
    if (a>=0 && a<heapsize) {
       assert(!HMAP_MANAGED(a));
       HMAP_MARK_MANAGED(a);
-      
+      if (mark_in_progress && !collecting_child)
+         HMAP_MARK_LIVE(a);
+
    } else
       add_managed(p);
    
@@ -748,7 +746,7 @@ static void unmanage(const void *p)
          client_notify((void *)p);
       }
       HMAP_UNMARK_MANAGED(a);
-      
+
    } else {
       int i = find_managed(p);
       assert(!OBSOLETE(managed[i]));
@@ -781,18 +779,13 @@ static void collect_prologue(void)
    num_collects += 1;
    debug("%dth collect after %d allocations:\n",
          num_collects, num_allocs);
-#ifdef NVALGRIND
    debug("mean alloc %.2f bytes, %d free blocks)\n",
          ((double)vol_allocs)/num_allocs, num_free_blocks());
-#endif
 }
 
 static void collect_epilogue(void)
 {
    assert(collect_in_progress);
-#ifdef NVALGRIND
-   assert(heap_ok());
-#endif
 
    if (stack_overflowed2) {
       /* only effective with synchronous collect */
@@ -834,8 +827,7 @@ static void collect_epilogue(void)
 }
 
 /*
- * When not yet marked, mark address i and push i onto the
- * marking stack.
+ * Push address onto marking stack and mark it if requested.
  */
 static inline void push(const void *p, bool push_and_mark)
 {
@@ -947,28 +939,6 @@ static bool run_finalizer(finalize_func_t *f, void *q)
    return ok;
 }
 
-/* add to front in normal mode, to back in debug mode */
-static void add_hunk_to_freelist(mt_t t, hunk_t *h)
-{
-   if (mm_debug) {
-      if (types[t].freelist_last) {
-         VALGRIND_MAKE_MEM_UNDEFINED(&(types[t].freelist_last->next),sizeof(types[t].freelist_last->next));
-         types[t].freelist_last->next = h;
-         VALGRIND_MAKE_MEM_NOACCESS(&(types[t].freelist_last->next),sizeof(types[t].freelist_last->next));
-      } else
-         types[t].freelist = h;
-      
-      h->next = NULL;
-      types[t].freelist_last = h;
-      
-   } else {
-      h->next = types[t].freelist;
-      types[t].freelist = h;
-      if (!types[t].freelist_last)
-         types[t].freelist_last = h;
-   }
-}
-
 static void reclaim(void *q)
 {
    assert(ADDRESS_VALID(q));
@@ -984,59 +954,19 @@ static void reclaim(void *q)
       VALGRIND_MEMPOOL_FREE(heap, q);
       const int b = BLOCK(q);
       const mt_t t = blockrecs[b].t;
-      hunk_t *h = (hunk_t *)q;
-      VALGRIND_MAKE_MEM_UNDEFINED(&(h->next), sizeof(h->next));
-      add_hunk_to_freelist(t, h);
-      VALGRIND_MAKE_MEM_NOACCESS(&(h->next), sizeof(h->next));
-      
+
       assert(blockrecs[b].in_use > 0);
       blockrecs[b].in_use--;      
-      if (blockrecs[b].in_use==0) {
-         /* 
-          * reap hunks from type's freelist and
-          * put block into block-freelist
-          */
-         block_t *p = (block_t *)BLOCK_ADDR(q);
-         VALGRIND_MAKE_MEM_UNDEFINED(p, BLOCKSIZE);
-         int nh = BLOCKSIZE/types[t].size;
-         VALGRIND_MAKE_MEM_DEFINED(&(types[t].freelist), sizeof(h->next));
-         hunk_t **hp = &types[t].freelist;
-         hunk_t *h, *last_h = NULL;
-         while ((h = *hp)) {
-            VALGRIND_MAKE_MEM_DEFINED(&(h->next), sizeof(h->next));
-            if (BLOCK(h) == b) {
-               nh--;
-               *hp = h->next;
-            } else {
-               last_h = h;
-               hp = &(h->next);
-            }
-         }
-         assert(nh==0);
+      if (blockrecs[b].in_use == 0) {
          blockrecs[b].t = mt_undefined;
-         p->next = free_blocks;
-         free_blocks = p;
-         types[t].freelist_last = last_h;
-         VALGRIND_MAKE_MEM_NOACCESS(p, BLOCKSIZE);
-         VALGRIND_DISCARD(p);
+         VALGRIND_MAKE_MEM_NOACCESS((block_t *)BLOCK_ADDR(q), BLOCKSIZE);
+         VALGRIND_DISCARD((block_t *)BLOCK_ADDR(q));
       }
-      
-   } else {
-      const mt_t t  = INFO_T(q);
-      void *p = unalign(q);
-      assert(TYPE_VALID(t));
+      if (b < types[t].next_b)
+         types[t].next_b = b;
 
-      if ((t == mt_string) && (INFO_S(q) > MIN_MED_STRING)) {
-         free(p);
-      } else if (types[t].free_offheap) {
-         free(p); 
-         types[t].free_offheap = false;
-      } else {
-         hunk_t *h = (hunk_t *)q;
-         add_hunk_to_freelist(t, h);
-         types[t].free_offheap = true;
-      }
-   }
+   } else
+      free(unseal(q));
 }
 
 static int sweep_now(void)
@@ -1100,14 +1030,13 @@ static void mark_stack(mmstack_t *st)
 {
    assert(STACK_VALID(st));
 
-   if (st->temp) mm_mark(st->temp);
+   MM_MARK(st->temp);
 
    /* clear unused entries in current chunk */
    int n = st->sp - CURRENT_0(st);
    memset(st->current->elems, 0, n * sizeof(stack_elem_t));
 
-   if (st->current)
-      mm_mark(st->current);
+   MM_MARK(st->current);
 }
 
 static void mark_stack_chunk(stack_chunk_t *c)
@@ -1119,7 +1048,7 @@ static void mark_stack_chunk(stack_chunk_t *c)
       else
          break;
    }
-}
+ }
 
 static void add_chunk(mmstack_t *st)
 {
@@ -1338,6 +1267,7 @@ mt_t mm_regtype(const char *n, size_t s,
       assert(types);
    }
    assert(types_last < types_size);
+   assert(types_last < num_blocks);
 
    typerec_t *rec = &(types[types_last]);
    rec->name = strdup(n);
@@ -1348,10 +1278,11 @@ mt_t mm_regtype(const char *n, size_t s,
    rec->clear = c;
    rec->mark = m;
    rec->finalize = f;
-   rec->freelist = NULL;
-   rec->freelist_last = NULL;
-   rec->free_offheap = true;
-
+   if (rec->size > 0) {
+      rec->current_a = 0;
+      rec->current_amax = rec->current_a + AMAX(rec->size);
+      rec->next_b = types_last;
+   }
    return types_last;
 }
 
@@ -1375,6 +1306,7 @@ void *mm_alloc(mt_t t)
    
    void *p = alloc_fixed_size(t);
    assert(p); // XXX
+   assert(ADDRESS_VALID(p));
    if (types[t].clear)
       types[t].clear(p);
    manage(p);
@@ -1386,6 +1318,7 @@ void *mm_allocv(mt_t t, size_t s)
 {
    void *p = alloc_variable_sized(t, s);
    assert(p); // XXX
+   assert(ADDRESS_VALID(p));
    if (types[t].clear)
       types[t].clear(p);
    manage(p);
@@ -1418,7 +1351,7 @@ void *mm_realloc(void *q, size_t s)
       return mm_malloc(s);
 
    assert(ADDRESS_VALID(q));
-   info_t *info_q = (info_t *)unalign(q);
+   info_t *info_q = unseal(q);
    mt_t t = info_q->t;
    if (INHEAP(q)) {
       warn("address was not obtained with mm_malloc\n");
@@ -1452,7 +1385,7 @@ void *mm_realloc(void *q, size_t s)
    }
    return r;
 }
-     
+
 
 char *mm_strdup(const char *s)
 {
@@ -1461,8 +1394,6 @@ char *mm_strdup(const char *s)
 
    if (ss < MIN_STRING)
       s2 = mm_alloc(mt_string);
-   else if (ss < MIN_MED_STRING)
-      s2 = mm_allocv(mt_string, MIN_MED_STRING);
    else
       s2 = mm_allocv(mt_string, ss+1);
 
@@ -1478,16 +1409,10 @@ size_t mm_strlen(const char *s)
    if (MM_TYPEOF(s) != mt_string)
       return strlen(s);
    
-   size_t l = MM_SIZEOF(s);
-   if (l <= MIN_MED_STRING) {
-      return strlen(s);
-
-   } else {
-      l -= MIN_HUNKSIZE;
-      while (s[l])
-         l++;
-      return l;
-   }
+   size_t l = MM_SIZEOF(s) - MIN_HUNKSIZE;
+   l += strlen(s + l);
+   assert(l == strlen(s));
+   return l;
 }
 
 
@@ -1517,8 +1442,9 @@ void mm_type(void *p, mt_t t)
       warn("Size of new memory type may not be larger than size of old memory type.\n"); 
       abort();
    }
-   info_t *info = unalign(p);
+   info_t *info = unseal(p);
    info->t = t;
+   seal((char *)info);
 }
 
 
@@ -1533,6 +1459,7 @@ void mm_notify(const void *p, bool set)
    
    ptrdiff_t a = ((char *)p) - heap;
    if (a>=0 && a<heapsize) {
+         
       if (!HMAP_MANAGED(a)) {
          warn("(mm_notify) not a managed address\n");
          abort();
@@ -1651,6 +1578,8 @@ void mm_unroot(const void *_pr)
 
 static void mark(void)
 {
+   mark_in_progress = true;
+
    /* Trace live objects from root objects */
    for (int r = 0; r <= roots_last; r++) {
       if (*roots[r]) {
@@ -1685,6 +1614,7 @@ static void mark(void)
    } DO_MANAGED_END;
 
    assert(empty());
+   mark_in_progress = false;
 }
 
 static void sweep(void)
@@ -1902,7 +1832,7 @@ int mm_collect_now(void)
       mark();
       n = sweep_now();
    } TEMP_STORAGE;
-   
+
    collect_epilogue();
 
    return n;
@@ -2022,11 +1952,8 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
 
    blockrecs = (blockrec_t *)malloc(num_blocks * sizeof(blockrec_t));
    assert(blockrecs);
-   {
-      size_t s = heapsize + PAGESIZE;
-      heap = (char *) malloc(s);
-      VALGRIND_MAKE_MEM_NOACCESS(heap, s);
-   }
+   heap = (char *) malloc(heapsize + PAGESIZE);
+   VALGRIND_MAKE_MEM_NOACCESS(heap, heapsize);
    if (!heap) {
       warn("could not allocate heap\n");
       abort();
@@ -2047,18 +1974,10 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    debug("hmapsize  : %6"PRIdPTR" KByte\n", (hmapsize*sizeof(int))/(1<<10));
    debug("threshold : %6"PRIdPTR" KByte\n", volume_threshold/(1<<10));
 
-   /* build free list */
-   free_blocks = NULL;
-   char *p = heap;
-   for (int i=0; i<num_blocks; i++) {
-      assert(BLOCK(p)==i);
+   /* initialize block records */
+   for (int i = 0; i < num_blocks; i++) {
       blockrecs[i].t = mt_undefined;
       blockrecs[i].in_use = 0;
-      block_t *b = (block_t *)p;
-      VALGRIND_MAKE_MEM_UNDEFINED(&(b->next), sizeof(b->next));
-      b->next = free_blocks;
-      free_blocks = b;
-      p += BLOCKSIZE;
    }
    assert(no_marked_live());
 
@@ -2083,7 +2002,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    /* initialize transient object stack */
    mt_stack = MM_REGTYPE("mm_stack", sizeof(mmstack_t), 0, mark_stack, 0);
    mt_stack_chunk = MM_REGTYPE("mm_stack_chunk", sizeof(stack_chunk_t),
-                               0, mark_stack_chunk, 0);
+                               clear_refs, mark_stack_chunk, 0);
    *(mmstack_t **)&transients = make_stack();
    MM_ROOT(transients);
    assert(stack_works_fine(transients));
@@ -2125,13 +2044,9 @@ void dump_types(void)
    mm_printf("Dumping type registry (%d types)...\n", types_last+1);
    for (int t = 0; t <= types_last; t++) {
       int n = 0;
-      {
-         hunk_t *h = types[t].freelist;
-         while (h) {
+      for (int b = 0; b < num_blocks; b++)
+         if (blockrecs[b].t == t)
             n++;
-            h = h->next;
-         }
-      }
       mm_printf("%3d: %15s  %4"PRIdPTR" 0x%"PRIxPTR" 0x%"PRIxPTR"  0x%"PRIxPTR" (%d in freelist)\n",
                 t,
                 types[t].name,
@@ -2177,18 +2092,6 @@ void dump_stack_depth(void)
    mm_printf("depth of transients stack: %d\n", stack_depth(transients));
    mm_printf("\n");
    fflush(stdlog);
-}
-
-void dump_freelist(mt_t t) 
-{
-   mm_printf("freelist of type '%s':\n", types[t].name);
-
-   hunk_t *h = types[t].freelist;
-   while (h) {
-      mm_printf("0x%"PRIxPTR" -> ", PPTR(h));
-      h = h->next;
-   }
-   mm_printf("0x0\n");
 }
 
 void dump_heap_stats(void)
