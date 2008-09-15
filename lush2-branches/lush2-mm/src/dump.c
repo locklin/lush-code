@@ -116,16 +116,16 @@ static off_t dump(char *s)
    at *p = module_list();
    at *q = p;
    while (CONSP(q)) {
-      *where = new_cons(q->Car, NIL);
-      where = &((*where)->Cdr);
-      q = q->Cdr;
+      *where = new_cons(Car(q), NIL);
+      where = &Cdr(*where);
+      q = Cdr(q);
    }
    /* 2- the globals */
    *where = global_defs();
 
    /* Header */
    at *atf = OPEN_WRITE(s,"dump");
-   FILE *f = atf->Object;
+   FILE *f = Gptr(atf);
    write32(f, DUMPMAGIC);
    write32(f, DUMPVERSION);
 
@@ -165,7 +165,7 @@ DX(xdump)
 int isdump(char *s)
 {
    at *atf = OPEN_READ(s,0);
-   FILE *f = atf->Object;
+   FILE *f = Gptr(atf);
    int magic = readmagic32(f);
    if (magic != DUMPMAGIC)
       return 0;
@@ -176,7 +176,7 @@ void undump(char *s)
 {
    MM_NOGC;
    at *atf = OPEN_READ(s,0);
-   FILE *f = atf->Object;
+   FILE *f = Gptr(atf);
 
    int magic = readmagic32(f);
    int version = read32(f);
@@ -193,17 +193,17 @@ void undump(char *s)
    /* The unified list */
    at *val, *sym, *p = bread(f, NIL);
    while (CONSP(p)) {
-      if (CONSP(p->Car)) {
-         sym = p->Car->Car;
-         val = p->Car->Cdr;
+      if (CONSP(Car(p))) {
+         sym = Caar(p);
+         val = Cdar(p);
          ifn (SYMBOLP(sym))
             error(NIL, "corrupted dump file (4)", NIL);
          var_SET(sym, val);
-      } else if (SYMBOLP(p->Car))
-         var_lock(p->Car);
+      } else if (SYMBOLP(Car(p)))
+         var_lock(Car(p));
       val = p;
-      p = p->Cdr;
-      val->Cdr = NIL;
+      p = Cdr(p);
+      Cdr(val) = NIL;
    }
    MM_NOGC_END;
 }

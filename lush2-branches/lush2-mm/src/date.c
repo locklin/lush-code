@@ -60,7 +60,7 @@ struct date {
    char str[24];
 };
 
-#define DATEP(x)  ((x)&&((x)->Class == &date_class))
+#define DATEP(x)  ((x)&&(Class(x) == &date_class))
  
 /* ----------------------------------------
  * Ansi conversion strings
@@ -270,7 +270,7 @@ static mt_t mt_date = mt_undefined;
 
 static char *date_name(at *p)
 {
-   struct date *d = p->Object;
+   struct date *d = Mptr(p);
    strcpy(string_buffer,"::DATE:");
    strcat(string_buffer, ansidatenames[(int)(d->from)]);
    strcat(string_buffer,"-");
@@ -293,15 +293,15 @@ static void date_serialize(at **pp, int code)
       free(p);
 
    } else {
-      p = (*pp)->Object;
+      p = Mptr(*pp);
       serialize_chars(&p, code, sizeof(struct date));
    }
 }
 
 static int date_compare(at *p, at *q, int order)
 {
-   struct date *d1 = p->Object;
-   struct date *d2 = q->Object;
+   struct date *d1 = Mptr(p);
+   struct date *d2 = Mptr(q);
    if (d1->from != d2->from) {
       if (order)
          error(NIL, "cannot rank incompatible dates", NIL);
@@ -325,7 +325,7 @@ static int date_compare(at *p, at *q, int order)
 static unsigned long date_hash(at *p)
 {
    unsigned long x = 0x01020304;
-   struct date *d = p->Object;
+   struct date *d = Mptr(p);
    x ^= d->from;
    for (int i=d->from; i<MAXDATE; i++) {
       int n = 0;
@@ -348,7 +348,7 @@ static struct date *get_date(at *p)
 {
    ifn (DATEP(p))
       error(NIL, "not a date", p);
-   return p->Object;
+   return Mptr(p);
 }
 
 static at *copy_date(struct date *d)
@@ -585,16 +585,16 @@ DX(xsplit_date)
    struct date *d = get_date(APOINTER(1));
    for (int i=d->from; i<=d->to; i++) {
       *pp = new_cons(new_cons(named(ansidatenames[i]),NEW_NUMBER(d->x[i])),NIL);
-      pp = &((*pp)->Cdr);
+      pp = &Cdr(*pp);
    }
 
    if (d->from<=DATE_YEAR && d->to>=DATE_DAY) {
       int wday = date_to_wday(d);
       int yday = date_to_yday(d);
       *pp = new_cons(new_cons(named("wday"), NEW_NUMBER(wday)),NIL);
-      pp = &((*pp)->Cdr);
+      pp = &Cdr(*pp);
       *pp = new_cons(new_cons(named("yday"), NEW_NUMBER(yday)),NIL);
-      pp = &((*pp)->Cdr);
+      pp = &Cdr(*pp);
    }
    return p;
 }
@@ -1003,7 +1003,7 @@ DX(xdate_code)
    at **pp = &p;
    for (int i=0; i<count; i++) {
       *pp = new_cons(NEW_NUMBER(m[i]),NIL);
-      pp = &((*pp)->Cdr);
+      pp = &Cdr(*pp);
    }
    return p;
 }

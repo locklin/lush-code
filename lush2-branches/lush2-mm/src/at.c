@@ -43,21 +43,21 @@ static void clear_at(at *a)
 static void mark_at(at *a)
 {
    if (CONSP(a)) {
-      MM_MARK(a->Car);
-      MM_MARK(a->Cdr);
+      MM_MARK(Car(a));
+      MM_MARK(Cdr(a));
       
    } else if (NUMBERP(a) || OBJECTP(a)) {
-      mm_mark(a->Object);
-
-   } else if (CLASSP(a)) {
-      if (((class_t *)a->Object)->managed)
-         mm_mark(a->Object);
+      mm_mark(Mptr(a));
+        
+   } else if (CLASSP(a) && (((class_t *)Gptr(a))->managed)) {
+      mm_mark(Mptr(a));
       
    } else if (GPTRP(a) || RFILEP(a) || WFILEP(a) || ZOMBIEP(a)) {
       // nothing to mark
 
-   } else if (a->class)
-      MM_MARK(a->Object);
+   } else if (Class(a)) {
+      MM_MARK(Mptr(a));
+   }
 }
 
 mt_t mt_at = mt_undefined;
@@ -67,9 +67,9 @@ mt_t mt_at = mt_undefined;
 LUSHAPI at *new_cons(at *car, at *cdr) 
 {
    at *new = mm_alloc(mt_at);
-   new->Car = car;
-   new->Cdr = cdr;
-   new->class = &cons_class;
+   Car(new) = car;
+   Cdr(new) = cdr;
+   Class(new) = &cons_class;
    return new;
 }
 
@@ -93,8 +93,8 @@ at *new_number(double x)
 at *new_gptr(gptr p)
 {
    at *new = mm_alloc(mt_at);
-   new->Gptr = p;
-   new->class = &gptr_class;
+   Gptr(new) = p;
+   Class(new) = &gptr_class;
    return new;
 }
 
@@ -153,8 +153,8 @@ static at *compute_bump_list = 0;
 at *new_extern(class_t *cl, void *obj)
 {
    at *new = mm_alloc(mt_at);
-   new->Object = obj;
-   new->class = cl;
+   Mptr(new) = obj;
+   Class(new) = cl;
    
    /* This is used by 'compute_bump' */
 /*    if (compute_bump_active) { */
@@ -225,7 +225,7 @@ DX(xnull)
 void zombify(at *p)
 {
    if (p)
-      p->class = &null_class;
+      Class(p) = &null_class;
 }
 
 /* ----- unodes ------ */
@@ -239,8 +239,8 @@ static at *new_unode(at *doc)
 static at *unode_dive(at *p)
 {
    at *q = p;
-   while (CONSP(q) && q->Car)
-      q = q->Car;
+   while (CONSP(q) && Car(q))
+      q = Car(q);
    ifn (CONSP(q))
       error(NIL,"Not a valid unode",p);
    return q;
@@ -249,7 +249,7 @@ static at *unode_dive(at *p)
 static at *unode_val(at *p)
 {
    p = unode_dive(p);
-   p = p->Cdr;
+   p = Cdr(p);
    return p;
 }
 
@@ -272,13 +272,13 @@ static at *unode_unify(at *p1, at *p2, at *combine)
 
    at *doc;
    if (combine) {
-      at *node = new_cons(q1->Cdr, new_cons(q2->Cdr,NIL));
+      at *node = new_cons(Cdr(q1), new_cons(Cdr(q2),NIL));
       doc = apply(combine, node);
   } else
      doc = NIL;
    at *node = new_unode(doc);
-   q1->Car = node;
-   q2->Car = node;
+   Car(q1) = node;
+   Car(q2) = node;
    return node;
 }
 
@@ -331,12 +331,12 @@ DX(xunode_unify)
 
 char *generic_name(at *p)
 {
-   if (p->Class->classname)
+   if (Class(p)->classname)
       sprintf(string_buffer, "::%s:%lx", 
-              nameof(p->Class->classname),(long)p->Object);
+              nameof(Class(p)->classname),(long)Mptr(p));
    else
       sprintf(string_buffer, "::%lx:%lx", 
-              (long)p->Class, (long)p->Object);
+              (long)Class(p), (long)Mptr(p));
    
    return string_buffer;
 }
@@ -349,21 +349,20 @@ at *generic_selfeval(at *p)
 at *generic_listeval(at *p, at *q)
 {
    /* looking for stacked functional values */
-   at *pp = q->Car;			
+   at *pp = Car(q);			
    
    /* added stacked search on 15/7/88 */
    if (SYMBOLP(pp)) {
-      symbol_t *s = pp->Object;
+      symbol_t *s = Symbol(pp);
       s = s->next;
       while (s && s->valueptr) {
          pp = *(s->valueptr);
-         if (EXTERNP(pp) &&
-             (pp->Class->listeval != generic_listeval)) {
+         if (Class(pp)->listeval != generic_listeval) {
             if (eval_ptr == eval_debug) {
                print_tab(error_doc.debug_tab);
                print_string("  !! inefficient stacked call\n");
             }
-            return (*(pp->Class->listeval)) (pp, q);
+            return Class(pp)->listeval(pp, q);
          }
          s = s->next;
       }
@@ -386,7 +385,7 @@ static at *null_selfeval(at *p)
 
 static at *null_listeval(at *p, at *q)
 {
-   error("eval", "not a function (null)", q->Car);
+   error("eval", "not a function (null)", Car(q));
 }
 
 #define generic_dispose   NULL
