@@ -79,8 +79,7 @@
 #define MIN_STACK       0x1000
 #define MAX_VOLUME      0x100000    /* max volume threshold */
 #define MAN_K_UPDS      100
-#define NUM_TRANSFER    (min(PIPE_BUF,PAGESIZE)/sizeof(void *))
-#define MIN_NUM_TRANSFER 128
+#define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
 
 #define MM_SIZE_MAX     (UINT32_MAX*MIN_HUNKSIZE) /* checked in alloc_variable_sized */
 
@@ -256,7 +255,7 @@ static bool       anchor_transients = true;
 #define DO_HEAP(a, b) { \
    uintptr_t __a = 0; \
    for (int b = 0; b < num_blocks; b++, __a += BLOCKSIZE) { \
-      if (blockrecs[b].t != mt_undefined) { \
+      if (blockrecs[b].in_use > 0) { \
          uintptr_t __a_next = __a + BLOCKSIZE; \
          for (uintptr_t a = __a; a < __a_next; a += MIN_HUNKSIZE) { \
             if (HMAP_MANAGED(a))
@@ -428,7 +427,6 @@ search_in_block:
 
 static inline bool update_current_a(mt_t t)
 {
-   assert(TYPE_VALID(t));
    typerec_t *tr = &types[t];
 
    if (blockrecs[BLOCKA(tr->current_a)].t == t) {
@@ -442,7 +440,7 @@ static inline bool update_current_a(mt_t t)
    return _update_current_a(t, tr, tr->size, tr->current_a);
 }
    
-static int fetch_unreachables(bool);
+static int fetch_unreachables(void);
 
 /* allocate with malloc */
 static void *alloc_variable_sized(mt_t t, size_t s)
@@ -465,7 +463,7 @@ static void *alloc_variable_sized(mt_t t, size_t s)
       info->nh = s/MIN_HUNKSIZE;
       
       if (collecting_child && !gc_disabled)
-         fetch_unreachables(false);
+         fetch_unreachables();
       maybe_trigger_collect(s);
 
       return seal(p);
@@ -477,15 +475,18 @@ static void *alloc_variable_sized(mt_t t, size_t s)
 /* allocate from small-object heap if possible */
 static void *alloc_fixed_size(mt_t t)
 {
-   assert(TYPE_VALID(t));
-   assert(types[t].size>0);
-
    size_t s = types[t].size;
    if (BLOCKSIZE<(2*s))
       return alloc_variable_sized(t, s);
    
    if (!update_current_a(t)) {
-      warn("no free block found\n");
+      static bool warned = false;
+      if (!warned) {
+         /* warn once */
+         warn("no free block found.\n");
+         warn("consider re-compiling with larger heap size.\n");
+         warned = true;
+      }
       return alloc_variable_sized(t, s);
    }   
 
@@ -494,7 +495,7 @@ static void *alloc_fixed_size(mt_t t)
    blockrecs[BLOCKA(types[t].current_a)].in_use++;
    
    if (collecting_child && !gc_disabled)
-      fetch_unreachables(false);
+      fetch_unreachables();
    maybe_trigger_collect(s);
 
    return p;
@@ -939,35 +940,50 @@ static bool run_finalizer(finalize_func_t *f, void *q)
    return ok;
 }
 
-static void reclaim(void *q)
+static void reclaim_inheap(void *q)
 {
-   assert(ADDRESS_VALID(q));
-   
-   finalize_func_t *f = finalizeof(q);
+   const int b = BLOCK(q);
+   const mt_t t = blockrecs[b].t;
+   finalize_func_t *f = types[t].finalize;
    if (f)
       if (!run_finalizer(f, q))
          return;
 
    unmanage(q);
-
-   if (INHEAP(q)) {
-      VALGRIND_MEMPOOL_FREE(heap, q);
-      const int b = BLOCK(q);
-      const mt_t t = blockrecs[b].t;
-
-      assert(blockrecs[b].in_use > 0);
-      blockrecs[b].in_use--;      
-      if (blockrecs[b].in_use == 0) {
-         blockrecs[b].t = mt_undefined;
-         VALGRIND_MAKE_MEM_NOACCESS((block_t *)BLOCK_ADDR(q), BLOCKSIZE);
-         VALGRIND_DISCARD((block_t *)BLOCK_ADDR(q));
-      }
-      if (b < types[t].next_b)
-         types[t].next_b = b;
-
-   } else
-      free(unseal(q));
+   VALGRIND_MEMPOOL_FREE(heap, q);
+   
+   assert(blockrecs[b].in_use > 0);
+   blockrecs[b].in_use--;      
+   if (blockrecs[b].in_use == 0) {
+      blockrecs[b].t = mt_undefined;
+      VALGRIND_MAKE_MEM_NOACCESS((block_t *)BLOCK_ADDR(q), BLOCKSIZE);
+      VALGRIND_DISCARD((block_t *)BLOCK_ADDR(q));
+   }
+   if (b < types[t].next_b)
+      types[t].next_b = b;
 }
+
+static void reclaim_offheap(void *q)
+{
+   info_t *info_q = unseal(q); 
+   finalize_func_t *f = types[info_q->t].finalize;
+   if (f)
+      if (!run_finalizer(f, q))
+         return;
+
+   unmanage(q);
+   free(info_q);
+}
+
+/*
+static inline void reclaim(void *q)
+{
+   if (INHEAP(q))
+      reclaim_inheap(q);
+   else
+      reclaim_offheap(q);
+}
+*/
 
 static int sweep_now(void)
 {
@@ -978,7 +994,7 @@ static int sweep_now(void)
       if (HMAP_LIVE(a)) {
          HMAP_UNMARK_LIVE(a);
       } else {
-         reclaim(heap + a);
+         reclaim_inheap(heap + a);
          n++;
       }
    } DO_HEAP_END;
@@ -988,7 +1004,7 @@ static int sweep_now(void)
       if (LIVE(managed[i])) {
          UNMARK_LIVE(managed[i]);
       } else {
-         reclaim(CLRPTR2(managed[i]));
+         reclaim_offheap(CLRPTR2(managed[i]));
          n++;
       }
    } DO_MANAGED_END;
@@ -1305,8 +1321,10 @@ void *mm_alloc(mt_t t)
    }
    
    void *p = alloc_fixed_size(t);
-   assert(p); // XXX
-   assert(ADDRESS_VALID(p));
+   if (!p) {
+      warn("allocation failed\n");
+      abort();
+   }
    if (types[t].clear)
       types[t].clear(p);
    manage(p);
@@ -1316,9 +1334,17 @@ void *mm_alloc(mt_t t)
 
 void *mm_allocv(mt_t t, size_t s)
 {
+   if (t == mt_undefined) {
+      warn("attempt to allocate with undefined memory type\n");
+      abort();
+   }
+   assert(TYPE_VALID(t));
+
    void *p = alloc_variable_sized(t, s);
-   assert(p); // XXX
-   assert(ADDRESS_VALID(p));
+   if (!p) {
+      warn("allocation failed\n");
+      abort();
+   }
    if (types[t].clear)
       types[t].clear(p);
    manage(p);
@@ -1635,6 +1661,8 @@ static void sweep(void)
       }
    } DO_HEAP_END;
 
+   buf[n++] = NULL;
+
    /* malloc'ed objects */
    DO_MANAGED(i) {
       if (!LIVE(managed[i])) {
@@ -1651,14 +1679,14 @@ static void sweep(void)
 
 /* fetch addresses of unreachable objects from garbage pipe */
 /* return number of objects reclaimed                       */
-static int fetch_unreachables(bool idle)
+static int fetch_unreachables(void)
 {
+   static bool inheap = true;
    assert(collecting_child && !gc_disabled);
    
    errno = 0;
    void *buf[NUM_TRANSFER];
-   size_t s_trans = idle ? sizeof(buf) : MIN_NUM_TRANSFER*sizeof(void *);
-   int n = read(pfd_garbage[0], &buf, s_trans);
+   int n = read(pfd_garbage[0], &buf, NUM_TRANSFER*sizeof(void *));
 
    if (n == -1) {
       if (errno != EAGAIN) {
@@ -1673,6 +1701,7 @@ static int fetch_unreachables(bool idle)
       /* we're done */
       close(pfd_garbage[0]);
       collect_epilogue();
+      inheap = true;
       return 0;
 
    } else {
@@ -1681,10 +1710,22 @@ static int fetch_unreachables(bool idle)
        */
       assert((n%sizeof(void *)) == 0);
       n = n/sizeof(void *);
-      for (int j = 0; j < n; j++) {
-         void *p = buf[j];
-         //assert(!obsolete(p));
-         reclaim(p);
+      int j = 0;
+      if (!inheap)
+         goto reclaim_offheap;
+
+      for (; j < n; j++) {
+         if (buf[j])
+            reclaim_inheap(buf[j]);
+         else {
+            inheap = false;
+            break;
+         }
+      }
+      j++;
+   reclaim_offheap:
+      for (; j < n; j++) {
+         reclaim_offheap(buf[j]);
       }
       return n;
    }
@@ -1851,7 +1892,7 @@ bool mm_idle(void)
 
    if (collect_in_progress) {
       if (!gc_disabled)
-         return fetch_unreachables(true)>0;
+         return fetch_unreachables()>0;
       else
          return false;
 
@@ -1881,7 +1922,7 @@ bool mm_begin_nogc(bool dont_block)
          abort();
       }
       while (collecting_child)
-         fetch_unreachables(true);
+         fetch_unreachables();
       assert(!collect_in_progress);
    }
 
@@ -1914,7 +1955,6 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
 {
    assert(sizeof(info_t) <= MIN_HUNKSIZE);
    assert(sizeof(hunk_t) <= MIN_HUNKSIZE);
-   assert(MIN_NUM_TRANSFER < NUM_TRANSFER);
    assert((1<<HMAP_EPI_BITS) == HMAP_EPI);
 
    client_notify = clnotify;
