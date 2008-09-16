@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.54 2008-01-23 22:45:03 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.55 2008-09-16 15:59:27 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -324,11 +324,14 @@ CC_EXP_FLAG=
 CC_PIC_FLAG=
 MAKESO=
 
+CPP_YES='#'
 if test x${GCC} = xyes ; then
-    test x${GXX} = xyes && LDCC=${CXX}
+    test x${GXX} = xyes && LDCC=${CXX} && CPP_YES=''
     CC_PIC_FLAG='-fPIC'
     MAKESO="$LDCC -shared -o"
 fi
+AC_SUBST(CPP_YES)
+
 
 # Tested?
 case "$host" in

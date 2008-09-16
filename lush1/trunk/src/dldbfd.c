@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dldbfd.c,v 1.56 2007-04-24 16:15:54 leonb Exp $
+ * $Id: dldbfd.c,v 1.57 2008-09-16 15:59:27 leonb Exp $
  **********************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -3035,7 +3035,7 @@ define_symbol_of_main_program(const char *exec)
 
 
 
-/* Some g++ versions need this symbol. */
+/* Some g++ versions need these symbols. */
 
 #if defined(__GNUC__) && (__GNUC__ < 3)
 void 

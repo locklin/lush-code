@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.61 2008-01-23 22:52:51 leonb Exp $
+ * $Id: unix.c,v 1.62 2008-09-16 15:59:27 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1370,10 +1370,9 @@ unix_setenv(const char *name, const char *value)
       newenv[envsize] = environ[envsize];
     newenv[envsize] = s;
     newenv[envsize+1] = 0;
-    environ = newenv;
     if (environ == lastenv)
       free(environ);
-    lastenv = environ;
+    environ = lastenv = newenv;
     return 0;
   } 
 #endif
