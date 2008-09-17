@@ -328,10 +328,10 @@ DX(xflush)
       ARG_EVAL(1);
       at *p = APOINTER(1);
       if (RFILEP(p)) {
-         if (p->Object==stdin && prompt_string)
+         if (Gptr(p)==stdin && prompt_string)
             line_pos = "";
       } else if (WFILEP(p)) {
-         fflush(p->Object);
+         fflush(Gptr(p));
       } else
          RAISEFX("not a file descriptor", p);
 
@@ -789,7 +789,7 @@ read_again1:
       } else
          *where = new_cons(rl_read(s), NIL);
       while (CONSP(*where))
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
       goto read_again2;
    }
   
@@ -812,8 +812,8 @@ read_again1:
       if (!answer) {
          s = read_word();
          goto read_again1;
-      } else if (CONSP(answer) && !answer->Cdr) {
-         return answer->Car;
+      } else if (CONSP(answer) && !Cdr(answer)) {
+         return Car(answer);
       } else
          goto err_read2;
    }
@@ -901,8 +901,8 @@ DY(ydmc)
 {
    ifn (CONSP(ARG_LIST))
       RAISEFX("bad arguments", ARG_LIST);
-   at *q = ARG_LIST->Car;
-   at *l = ARG_LIST->Cdr;
+   at *q = Car(ARG_LIST);
+   at *l = Cdr(ARG_LIST);
 
    ifn (SYMBOLP(q))
       RAISEF("not a symbol", q);
@@ -971,13 +971,13 @@ void print_list(at *list)
       struct recur_elt elt;
       print_char('(');
       for(;;) {
-         if (recur_push_ok(&elt,&print_list,l->Car)) {
-            print_list(l->Car);
+         if (recur_push_ok(&elt,&print_list, Car(l))) {
+            print_list(Car(l));
             recur_pop(&elt);
          } else
             print_string("(...)");
 
-         l = l->Cdr;
+         l = Cdr(l);
          if (l == slow) {
             print_string(" ...");
             l = NIL;
@@ -988,7 +988,7 @@ void print_list(at *list)
 
          toggle ^= 1;
          if (toggle)
-            slow = slow->Cdr;
+            slow = Cdr(slow);
          print_char(' ');
       }
       if (l && !ZOMBIEP(l)) {
@@ -1202,9 +1202,9 @@ static char *convert(char *s, at *list, char *end)
       if (s > end - 8 )
          goto exit_convert;
       forever {
-         ifn ((s = convert(s, list->Car, end)))
+         ifn ((s = convert(s, Car(list), end)))
             return 0L;
-         list = list->Cdr;
+         list = Cdr(list);
          ifn (CONSP(list))
             break;
          *s++ = ' ';
@@ -1225,21 +1225,22 @@ static char *convert(char *s, at *list, char *end)
    } else {
       
       char *n = NULL;	
-      at *p = checksend(list->Class,at_pname); 
+      at *p = checksend(Class(list), at_pname); 
       if (p) {
          at *q = send_message(NIL, list, at_pname, NIL);
          ifn (STRINGP(q))
             error(NIL, "pname does not return a string", q);
-         n = SADD(q->Object);
-         
-      } else if (EXTERNP(list)) {
-         n = (*(list->Class->name)) (list);
+         n = String(q);
          
       } else if (NUMBERP(list)) {
          n = str_number(Number(list));
         
+      } else if (EXTERNP(list)) {
+         n = Class(list)->name(list);
+
       } else if (GPTRP(list)) {
-         n = str_gptr(list->Gptr);
+         n = str_gptr(Gptr(list));
+         
       }
       if (n == NIL)
          error("io.c/convert", "internal error", NIL);

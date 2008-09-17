@@ -257,7 +257,7 @@ void lastchance(char *s)
       error_doc.ready_to_an_error = false;
       fprintf(stderr, "\n\007**** GASP: Severe error : %s\n", s);
       at *q = eval(named("toplevel"));
-      if (isatty(0) && q && (q->Class == &de_class)) {
+      if (isatty(0) && q && (Class(q) == &de_class)) {
          fprintf(stderr, "**** GASP: Trying to recover\n");
          fprintf(stderr, "**** GASP: You should save your work immediatly\n\n");
          /* Sanitize IO */
@@ -1141,15 +1141,15 @@ DX(xbeep)
 
 DY(ybground)
 {
-   ifn (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr))
+   ifn (CONSP(ARG_LIST) && CONSP(Cdr(ARG_LIST)))
       RAISEFX("syntax error", NIL);
-   at *fname = eval(ARG_LIST->Car);
+   at *fname = eval(Car(ARG_LIST));
    ifn (STRINGP(fname))
       RAISEFX("string expected as first argument", NIL);
    if (isatty(0) && ask("Launch a background job")==0)
       RAISEFX("background launch aborted", NIL);
    
-   int f = open(SADD(fname->Object), O_WRONLY|O_TRUNC|O_CREAT, 0666);
+   int f = open(String(fname), O_WRONLY|O_TRUNC|O_CREAT, 0666);
    if (f<0)
       test_file_error(NULL);
    fflush(stdin);
@@ -1184,7 +1184,7 @@ DY(ybground)
          fprintf(stderr,"\n\n**** BGROUND: Error occured on %s\n", ctime(&clock));
          _exit(10);
       }
-      fname = progn(ARG_LIST->Cdr);
+      fname = progn(Cdr(ARG_LIST));
       time(&clock);
       fprintf(stderr,"\n\n****   BGROUND: Job terminated on %s\n", ctime(&clock));
       _exit(0);
@@ -1223,7 +1223,7 @@ int unix_setenv(const char *name, const char *value)
          return ENOMEM;
       
       envsize = -1;
-      while(environ[++envsize])
+      while (environ[++envsize])
          newenv[envsize] = environ[envsize];
       newenv[envsize] = s;
       newenv[envsize+1] = 0;
@@ -1738,14 +1738,14 @@ DX(xsocketselect)
         ptv = &tv;
         
      } else if (RFILEP(p)) {
-        FILE *f = p->Object;
+        FILE *f = Gptr(p);
         int fd = fileno(f);
         FD_SET(fd, &rset);
         if (fd >= n)
            n = fd + 1;
 
      } else if (WFILEP(p)) {
-        FILE *f = p->Object;
+        FILE *f = Gptr(p);
         int fd = fileno(f);
         FD_SET(fd, &wset);
         if (fd >= n)
@@ -1760,7 +1760,7 @@ DX(xsocketselect)
      for (int i=arg_number; i>0; i--) {
         at *p = APOINTER(i);
         if (EXTERNP(p)) {
-           FILE *f = p->Object;
+           FILE *f = Gptr(p);
            int fd = fileno(f);
            if (FD_ISSET(fd,&rset) || FD_ISSET(fd,&wset))
               ans = new_cons(p,ans);

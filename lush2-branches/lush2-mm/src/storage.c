@@ -280,7 +280,7 @@ static void GPTR_setat(storage_t *st, size_t off, at *x)
    ifn (GPTRP(x))
       error(NIL, "not a gptr", x);
    gptr *pt = st->data;
-   pt[off] = x->Gptr;
+   pt[off] = Gptr(x);
 }
 
 void (*storage_setat[ST_LAST])(storage_t *, size_t, at *) = {
@@ -317,47 +317,47 @@ static storage_t *storage_dispose(storage_t *st)
 
 static char *storage_name(at *p)
 {
-   storage_t *st = (storage_t *)p->Object;
+   storage_t *st = (storage_t *)Mptr(p);
  
   if (st->flags & STS_MALLOC)
       sprintf(string_buffer, "::%s:ram@%"PRIxPTR":<%"PRIdPTR">", 
-              nameof(p->Class->classname), (uintptr_t)st->data, st->size);
+              nameof(Class(p)->classname), (uintptr_t)st->data, st->size);
    else if (st->flags & STS_MMAP)
       sprintf(string_buffer, "::%s:mmap@%"PRIxPTR":<%"PRIdPTR">", 
-              nameof(p->Class->classname), (uintptr_t)st->data, st->size);
+              nameof(Class(p)->classname), (uintptr_t)st->data, st->size);
    else if (st->flags & STS_STATIC)
       sprintf(string_buffer, "::%s:static@%"PRIxPTR,
-              nameof(p->Class->classname), (uintptr_t)st->data);
+              nameof(Class(p)->classname), (uintptr_t)st->data);
    else if (st->data == NULL)
       sprintf(string_buffer, "::%s:unsized@%"PRIxPTR,
-              nameof(p->Class->classname), (uintptr_t)st->data);
+              nameof(Class(p)->classname), (uintptr_t)st->data);
    else
       sprintf(string_buffer, "::%s:strange@%"PRIxPTR,
-              nameof(p->Class->classname), (uintptr_t)st->data);
+              nameof(Class(p)->classname), (uintptr_t)st->data);
    return string_buffer;
 }
 
 static at *storage_listeval(at *p, at *q)
 {
-   storage_t *st = p->Object;
+   storage_t *st = Mptr(p);
 
    if (!st->data)
       error(NIL, "unsized storage", p);
 
-   q = eval_a_list(q->Cdr);
-   ifn (CONSP(q) && q->Car && NUMBERP(q->Car))
+   q = eval_a_list(Cdr(q));
+   ifn (CONSP(q) && Car(q) && NUMBERP(Car(q)))
       error(NIL, "illegal subscript", q);
 
-   size_t off = Number(q->Car);
+   size_t off = Number(Car(q));
    if (off<0 || off>=st->size)
       error(NIL, "subscript out of range", q);
 
-   if (q->Cdr) {
-      ifn (CONSP(q->Cdr) && !q->Cdr->Cdr)
+   if (Cdr(q)) {
+      ifn (CONSP(Cdr(q)) && !Cddr(q))
          error(NIL,"bad value",q);
-      (storage_setat[st->type])(st, off, q->Cdr->Car);
+      storage_setat[st->type](st, off, Cadr(q));
    }
-   return (storage_getat[st->type])(st, off);
+   return storage_getat[st->type](st, off);
 }
 
 
@@ -380,7 +380,7 @@ static void storage_serialize(at **pp, int code)
    size_t size;
 
    if (code != SRZ_READ) {
-      st = (*pp)->Object;
+      st = Mptr(*pp);
       type = st->type;
       flags = st->flags;
       size = st->size;
@@ -395,7 +395,7 @@ static void storage_serialize(at **pp, int code)
       *pp = MAKE_STORAGE(type, size, NIL);
    
    // Read/write storage data
-   st = (*pp)->Object;
+   st = Mptr(*pp);
    if (type == ST_AT) {
       at **data = st->data;
       for (int i=0; i<size; i++)
@@ -412,7 +412,7 @@ static void storage_serialize(at **pp, int code)
       } else if (code == SRZ_READ) {
          int magic = read4(f);
          storage_load(st, f);
-         st = (*pp)->Object;
+         st = Mptr(*pp);
          if (magic == STORAGE_SWAPPED)
             swap_buffer(st->data, size, storage_sizeof[type]);
          else if (magic != STORAGE_NORMAL)
@@ -638,7 +638,7 @@ void storage_clear(storage_t *st, at *init, size_t from)
       get_write_permit(st);
       gptr *pt = st->data;
       for (int off=from; off<size; off++)
-         pt[off] = init->Gptr;
+         pt[off] = Gptr(init);
    } else
       RAISEF("don't know how to clear this storage", st->backptr);
 }
@@ -711,11 +711,11 @@ DX(xstorage_mmap)
    if (RFILEP(atf)) {
       // fine
    } else if (STRINGP(atf)) {
-      atf = OPEN_READ(SADD(atf->Object),NULL);
+      atf = OPEN_READ(String(atf), NULL);
    } else
       RAISEF("neither a string nor a file descriptor", atf);
    
-   storage_mmap(st, atf->Object, offset);
+   storage_mmap(st, Gptr(atf), offset);
    return NIL;
 }
 
@@ -736,7 +736,7 @@ bool storage_classp(const at *p)
 {
    ifn (CLASSP(p))
       return false;
-   class_t *cl = p->Object;
+   class_t *cl = Mptr(p);
 
    for (storage_type_t t = ST_FIRST; t < ST_LAST; t++)
       if (cl == &storage_class[t]) 
@@ -853,11 +853,11 @@ DX(xstorage_load)
    if (RFILEP(atf)) {
       // fine
    } else if (STRINGP(atf)) {
-      atf = OPEN_READ(SADD(atf->Object),NULL);
+      atf = OPEN_READ(String(atf), NULL);
    } else
       RAISEF("neither a string nor a file descriptor",atf);
 
-   storage_load(st, atf->Object);
+   storage_load(st, Gptr(atf));
    return NIL;
 }
 
@@ -893,10 +893,10 @@ DX(xstorage_save)
    if (WFILEP(atf)) {
       // fine
    } else if (STRINGP(atf)) {
-      atf = OPEN_WRITE(SADD(atf->Object),NULL);
+      atf = OPEN_WRITE(String(atf), NULL);
    } else
       RAISEF("neither a string nor a file descriptor", atf);
-   storage_save(st, atf->Object);
+   storage_save(st, Gptr(atf));
   return NIL;
 }
 

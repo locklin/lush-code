@@ -365,7 +365,7 @@ static void maybe_trigger_collect(size_t s)
       return;
 
    if ((vol_allocs >= volume_threshold) || collect_requested) {
-      mm_collect();
+        //mm_collect();
       if (!collect_in_progress)
          /* could not spawn child, do it synchronously */
          mm_collect_now();

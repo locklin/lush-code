@@ -186,7 +186,7 @@ struct at {
    struct at *car;
    union {
       double *d;
-      char   *c;
+      char *c;
       void   *p;
       struct symbol *s;
       struct at *cdr;
@@ -197,6 +197,8 @@ struct at {
 #define Number(q) (*(q)->payload.d)
 #define String(q) ((q)->payload.c)
 #define Symbol(q) ((q)->payload.s)
+#define Value(q)  (*Symbol(q)->valueptr)
+#define ValueS(s) (*s->valueptr) 
 #define Gptr(q)   ((q)->payload.p)
 #define Mptr(q)   ((q)->payload.p)
 #define Car(q)    ((q)->car)
@@ -212,7 +214,7 @@ struct at {
 
 #define CONSP(x)        ((x)&&(Class(x) == &cons_class))
 #define FUNCTIONP(x)    ((x)&&(Class(x)->super==&function_class))
-#define LASTCONSP(x)    (CONSP(x) && !CONSP((x)->Cdr))
+#define LASTCONSP(x)    (CONSP(x) && !CONSP(Cdr(x)))
 #define LISTP(x)        (!(x)||(Class(x) == &cons_class))
 #define NUMBERP(x)	((x)&&(Class(x) == &number_class))
 #define GPTRP(x)	((x)&&(Class(x) == &gptr_class))
@@ -225,8 +227,7 @@ struct at {
 #define ZOMBIEP(x)      ((x)&&(Class(x) == &null_class))
 #define EXTERNP(x)	((x)&&!((Class(x) == &cons_class) || \
                                 (Class(x) == &gptr_class)) )
-#define WINDOWP(x)  ((x)&&(Class(x) == &window_class))
-                         
+#define WINDOWP(x)      ((x)&&(Class(x) == &window_class))
 
 extern LUSHAPI at *(*eval_ptr) (at*);
 extern LUSHAPI at *(*argeval_ptr) (at*);
@@ -423,8 +424,8 @@ extern LUSHAPI struct error_doc {
 
 #define ED_POP_CALL()   {\
   at *q = error_doc.this_call; \
-  error_doc.this_call = q->Cdr; \
-  q->Cdr = NIL; \
+  error_doc.this_call = Cdr(q); \
+  Cdr(q) = NIL; \
 }
 
 #define SCRIPT_OFF      0
@@ -563,7 +564,7 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 
 #define APOINTER(i)     ( arg_array[i] )
 #define AREAL(i)        ( ISNUMBER(i) ? Number(APOINTER(i)) :(long)DX_ERROR(1,i))
-#define AGPTR(i)        ( ISGPTR(i) ? APOINTER(i)->Gptr:(gptr)DX_ERROR(9,i))
+#define AGPTR(i)        ( ISGPTR(i) ? Gptr(APOINTER(i)):(gptr)DX_ERROR(9,i))
 #define AINTEGER(i)     ( (intg) AREAL(i) )
 #define AFLT(i)         ( rtoF(AREAL(i)) )
 #define ALIST(i)        ( ISLIST(i) ? APOINTER(i):(at*)DX_ERROR(2,i) )

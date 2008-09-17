@@ -314,7 +314,7 @@ void start_lisp(int argc, char **argv, int quietflag)
       where = &p;
       for (int i = 1; i<argc; i++) {
          *where = new_cons(new_string(argv[i]),NIL);
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
       }
       q = apply(at_startup,p);
    }
@@ -608,7 +608,7 @@ void toplevel(char *in, char *out, char *prompts)
    }
    if (f1) {
       file_close(f1);
-      strcpy(file_name, SADD(ans->Object));
+      strcpy(file_name, String(ans));
    }
    if (f2)
       file_close(f2);
@@ -717,8 +717,8 @@ static char *error_text(void)
   
    strcpy(print_buffer, unknown_errmsg);
    
-   if (!prefix && CONSP(call) && CONSP(call->Car) && SYMBOLP(call->Car->Car)) {
-      prefix = nameof(call->Car->Car);
+   if (!prefix && CONSP(call) && CONSP(Car(call)) && SYMBOLP(Caar(call))) {
+      prefix = nameof(Caar(call));
    }
    prefix = prefix ? prefix : "";
    text = text ? text : "";
@@ -859,11 +859,11 @@ DX(xerror)
    }
    call = error_doc.this_call;
    while(CONSP(call)) {
-      if (CONSP(call->Car) && call->Car->Car==symb) {
+      if (CONSP(Car(call)) && Caar(call)==symb) {
          error_doc.this_call = call;
          break;
       }
-      call = call->Cdr;
+      call = Cdr(call);
    }
    error(NIL, errmsg, arg);
    return NIL;
@@ -890,8 +890,8 @@ DX(xbtrace)
          print_string("** in:   ");
       else
          print_string("** from: ");
-      print_string(first_line(call->Car));
-      call = call->Cdr;
+      print_string(first_line(Car(call)));
+      call = Cdr(call);
       print_string("\n");
    }
    return NIL;

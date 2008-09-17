@@ -92,8 +92,8 @@ static subscript_t *parse_subscript(at *atss, subscript_t *ss)
    static char errmsg_not_a_subscript[] = "not a valid subscript";
    static char errmsg_dimensions[] = "too many dimensions";
    
-   if (INDEXP(atss) && index_numericp(atss->Object)) {
-      index_t *ind = atss->Object;
+   if (INDEXP(atss) && index_numericp(Mptr(atss)) {
+      index_t *ind = Mptr(atss);
       ifn (IND_NDIMS(ind)==1)
          error(NIL, errmsg_not_a_subscript, atss);
       ss->ndims = IND_DIM(ind,0);
@@ -133,13 +133,13 @@ static subscript_t *parse_subscript(at *atss, subscript_t *ss)
       at *l = atss;
       int nd = 0;
       while(l) {
-         ifn (CONSP(l) && NUMBERP(l->Car))
+         ifn (CONSP(l) && NUMBERP(Car(l)))
             error(NIL, errmsg_not_a_subscript, atss);
          ifn (nd<MAXDIMS)
             error(NIL, errmsg_dimensions, atss);
       
-         ss->dim[nd++] = (int)*l->Car->Number;
-         l = l->Cdr;
+         ss->dim[nd++] = (int)Number(Car(l));
+         l = Cdr(l);
       }
       ss->ndims = nd;
    } else
@@ -162,14 +162,14 @@ static index_t *index_dispose(index_t *ind)
 
 static char *index_name(at *p)
 {
-   index_t *ind = p->Object;
+   index_t *ind = Mptr(p);
    char *s = string_buffer;
    
    if (IND_UNSIZEDP(ind)) {
-      sprintf(s, "::%s:<unsized>", nameof(p->Class->classname));
+      sprintf(s, "::%s:<unsized>", nameof(Class(p)->classname));
 
    } else {
-      sprintf(s, "::%s:<", nameof(p->Class->classname));
+      sprintf(s, "::%s:<", nameof(Class(p)->classname));
       while (*s)
          s++;
       for (int d=0; d<ind->ndim; d++) {
@@ -188,25 +188,25 @@ static at *index_listeval(at *p, at *q)
    extern at *index_set(index_t*, at**, at*, int);
    extern at *index_ref(index_t*, at**);
    at *myp[MAXDIMS];
-   index_t *ind = p->Object;
+   index_t *ind = Mptr(p);
    
    if (IND_UNSIZEDP(ind))
       error(NIL, "unsized index", p);
-   at *qsav = eval_a_list(q->Cdr);
+   at *qsav = eval_a_list(Cdr(q));
    q = qsav;
    for (int i = 0; i < ind->ndim; i++) {
       ifn(CONSP(q))
          error(NIL, "not enough subscripts", qsav);
-      myp[i] = q->Car;
-      q = q->Cdr;
+      myp[i] = Car(q);
+      q = Cdr(q);
    }
    
    ifn (q) {
       q = index_ref(ind, myp);
       return q;
 
-   } else if (CONSP(q) && (!q->Cdr)) {
-      index_set(ind, myp, q->Car, 1);
+   } else if (CONSP(q) && !Cdr(q)) {
+      index_set(ind, myp, Car(q), 1);
       return p;
    } else
       error(NIL, "too many subscripts", qsav);
@@ -217,12 +217,12 @@ static void index_serialize(at **pp, int code)
    at *atst = NIL;
    index_t *ind = NIL;
    if (code != SRZ_READ) {
-      ind = (*pp)->Object;
+      ind = Mptr(*pp);
       atst = IND_ATST(ind);
    }
    serialize_atstar(&atst, code);
    if (code == SRZ_READ) {
-      ind = new_index((storage_t *)atst->Object, NIL);
+      ind = new_index((storage_t *)Mptr(atst), NIL);
       *pp = ind->backptr;
    }
    serialize_offset(&ind->offset, code);
@@ -237,8 +237,8 @@ static void index_serialize(at **pp, int code)
 
 static int index_compare(at *p, at *q, int order) 
 { 
-   index_t *ind1 = p->Object;
-   index_t *ind2 = q->Object;
+   index_t *ind1 = Mptr(p);
+   index_t *ind2 = Mptr(q);
    
    /* simple */
    if (order)
@@ -307,7 +307,7 @@ fail:
 
 static unsigned long index_hash(at *p)
 { 
-   index_t *ind = p->Object;
+   index_t *ind = Mptr(p);
    struct idx idx;
    index_read_idx(ind,&idx);
    gptr *base = IDX_BASE(&idx);
@@ -356,61 +356,58 @@ static unsigned long index_hash(at *p)
 
 static at *index_getslot(at *obj, at *prop)
 { 
-   index_t *ind = obj->Object;
-   class_t *cl = obj->Class;
+   index_t *ind = Mptr(obj);
    
    /* Checks */
-   at *p = prop->Car;
+   at *p = Car(prop);
    ifn (LISTP(p))
       error(NIL, "subscript(s) expected with this object", obj);
 
    for (int i=0; i<IND_NDIMS(ind); i++) {
       ifn (CONSP(p))
          error(NIL, "not enough subscripts for array access", obj);
-      p = p->Cdr;
+      p = Cdr(p);
    }
    if (p)
       error(NIL,"Too many subscripts for array access",obj);
 
   /* Access */
-   at *arg = new_cons(obj,prop->Car);
-   at *ans = (cl->listeval)(obj, arg);
-   if (prop->Cdr) {
+   at *arg = new_cons(obj, Cdr(prop));
+   at *ans = Class(obj)->listeval(obj, arg);
+   if (Cdr(prop)) {
       p = ans;
-      ans = getslot(p, prop->Cdr);
+      ans = getslot(p, Cdr(prop));
    }
    return ans;
 }
 
 static void index_setslot(at *obj, at *prop, at *val)
 {
-   at *p, *arg;
-   at **where;
-   struct index *arr = obj->Object;
-   struct class *cl = obj->Class;
+   struct index *arr = Mptr(obj);
+
    /* Build listeval argument */
-   p = prop->Car;
+   at *p = Car(prop);
    if (!LISTP(p))
       error(NIL,"Subscript(s) expected with this object",obj);
-   arg = new_cons(obj,NIL);
-   where = &(arg->Cdr);
+   at *arg = new_cons(obj,NIL);
+   at **where = &Cdr(arg);
    for (int i=0; i<arr->ndim; i++) {
       if (!CONSP(p)) 
          error(NIL,"not enough subscripts for array access",obj);
-      *where = new_cons(p->Car,NIL);
-      where = &((*where)->Cdr);
-      p = p->Cdr;
+      *where = new_cons(Car(p), NIL);
+      where = &Cdr(*where);
+      p = Cdr(p);
    }
    if (p)
       error(NIL,"too many subscripts for array access",obj);
    /* Access */
-   if (prop->Cdr) {
-      p = (*cl->listeval)(obj,arg);
-      setslot(&p, prop->Cdr, val);
+   if (Cdr(prop)) {
+      p = Class(obj)->listeval(obj, arg);
+      setslot(&p, Cdr(prop), val);
 
    } else {
       *where = new_cons(val,NIL);
-      (*cl->listeval)(obj,arg);
+      Class(obj)->listeval(obj, arg);
    }
 }
 
@@ -878,8 +875,8 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
    if (shp==NIL)
       shp = &shape;
    
-   if (INDEXP(atshp) && index_numericp(atshp->Object)) {
-      index_t *ind = atshp->Object;
+   if (INDEXP(atshp) && index_numericp(Mptr(atshp))) {
+      index_t *ind = Mptr(atshp);
       ifn (IND_NDIMS(ind)==1)
          error(NIL, errmsg_not_a_shape, atshp);
       shp->ndims = IND_DIM(ind, 0);
@@ -919,13 +916,13 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
       at *l = atshp;
       int nd = 0;
       while(l) {
-         ifn (CONSP(l) && NUMBERP(l->Car) )
+         ifn (CONSP(l) && NUMBERP(Car(l)) )
             error(NIL, errmsg_not_a_shape, atshp);
          ifn (nd<MAXDIMS)
             error(NIL, errmsg_dimensions, atshp);
          
-         shp->dim[nd++] = (int)Number(l->Car);
-         l = l->Cdr;
+         shp->dim[nd++] = (int)Number(Car(l));
+         l = Cdr(l);
       }
       shp->ndims = nd;
    } else
@@ -1036,7 +1033,7 @@ index_t *as_double_array(at *arg)
       return ind;
 
    } else if (INDEXP(arg)) {
-      index_t *ind = arg->Object;
+      index_t *ind = Mptr(arg);
       if (IND_STTYPE(ind)==ST_DOUBLE)
          return copy_index(ind);
       else
@@ -1070,7 +1067,7 @@ index_t *as_int_array(at *arg)
       return ind;
 
    } else if (INDEXP(arg)) {
-      index_t *ind = arg->Object;
+      index_t *ind = Mptr(arg);
       if (IND_STTYPE(ind)==ST_INT)
          return copy_index(ind);
       else
@@ -1103,7 +1100,7 @@ index_t *as_ubyte_array(at *arg)
       return ind;
       
    } else if (INDEXP(arg)) {
-      index_t *ind = arg->Object;
+      index_t *ind = Mptr(arg);
       if (IND_STTYPE(ind)==ST_U8)
          return copy_index(ind);
       else
@@ -1162,10 +1159,10 @@ list_ref:
    if (!q) {
       start = 0;
       end = ind->dim[i] - 1;
-   } else if (LISTP(q) && CONSP(q->Cdr) && !q->Cdr->Cdr &&
-              NUMBERP(q->Car) && NUMBERP(q->Cdr->Car) ) {
-      start = Number(q->Car);
-      end = Number(q->Cdr->Car);
+   } else if (LISTP(q) && CONSP(Cdr(q)) && !Cddr(q) &&
+              NUMBERP(Car(q)) && NUMBERP(Cadr(q))) {
+      start = Number(Car(q));
+      end = Number(Cadr(q));
    } else
       error(NIL, "illegal subscript", NIL);
 
@@ -1175,7 +1172,7 @@ list_ref:
    for (int j = start; j <= end; j++) {
       Number(myp[i]) = j;
       *where = new_cons(index_ref(ind, myp), NIL);
-      where = &((*where)->Cdr);
+      where = &Cdr(*where);
       CHECK_MACHINE("on");
    }
    return ans;
@@ -1211,8 +1208,8 @@ static at *index_set(struct index *ind, at *p[], at *value, int mode)
    }
    
    if (mode == 2) {
-      q = value->Car;
-      value = value->Cdr;
+      q = Car(value);
+      value = Cdr(value);
    } else {
       q = value;
       value = NIL;
@@ -1232,10 +1229,10 @@ static at *index_set(struct index *ind, at *p[], at *value, int mode)
    if (!q) {
       start = 0;
       end = ind->dim[i] - 1;
-   } else if (LISTP(q) && CONSP(q->Cdr) && !q->Cdr->Cdr &&
-              NUMBERP(q->Car) &&  NUMBERP(q->Cdr->Car) ) {
-      start = Number(q->Car);
-      end = Number(q->Cdr->Car);
+   } else if (LISTP(q) && CONSP(Cdr(q)) && !Cddr(q) &&
+              NUMBERP(Car(q)) &&  NUMBERP(Cadr(q)) ) {
+      start = Number(Car(q));
+      end = Number(Cadr(q));
    } else
       error(NIL, "illegal subscript", NIL);
       
@@ -1253,8 +1250,8 @@ static at *index_set(struct index *ind, at *p[], at *value, int mode)
          index_set(ind, myp, value, mode);
          break;
       case 1:
-         index_set(ind, myp, value->Car, mode);
-         value = value->Cdr;
+         index_set(ind, myp, Car(value), mode);
+         value = Cdr(value);
          break;
       case 2:
          value = index_set(ind, myp, value, mode);
@@ -1744,11 +1741,11 @@ DX(xsave_matrix)
       ans = new_string(file_name);
    } else {
       p = APOINTER(2);
-      ifn (p && (p->Class == &file_W_class))
+      ifn (p && (Class(p) == &file_W_class))
          error(NIL, "not a string or write descriptor", p);
       ans = p;
    }
-   save_matrix(AINDEX(1), p->Object);
+   save_matrix(AINDEX(1), Mptr(p));
    return ans;
 }
 
@@ -1762,11 +1759,11 @@ DX(xexport_raw_matrix)
       ans = new_string(file_name);
    } else {
       p = APOINTER(2);
-      ifn (p && (p->Class == &file_W_class)) 
+      ifn (p && (Class(p) == &file_W_class)) 
          error(NIL, "not a string or write descriptor", p);
       ans = p;
    }
-   export_matrix(AINDEX(1), p->Object);
+   export_matrix(AINDEX(1), Mptr(p));
    return ans;
 }
 
@@ -1844,7 +1841,7 @@ DX(xsave_ascii_matrix)
    } else {
       error(NIL, "not a string or write descriptor", p);
   }
-   save_ascii_matrix(AINDEX(1), p->Object);
+   save_ascii_matrix(AINDEX(1), Mptr(p));
    return ans;
 }
 
@@ -1863,7 +1860,7 @@ DX(xexport_text_matrix)
          error(NIL, "not a string or write descriptor", p);
       ans = p;
    }
-   export_ascii_matrix(AINDEX(1), p->Object);
+   export_ascii_matrix(AINDEX(1), Mptr(p));
    return ans;
 }
 
@@ -1882,7 +1879,7 @@ DX(xarray_export_tabular)
          error(NIL, "not a string or write descriptor", p);
       ans = p;
    }
-   format_save_ascii_matrix(AINDEX(1), p->Object, 2);
+   format_save_ascii_matrix(AINDEX(1), Mptr(p), 2);
    return ans;
 }
 
@@ -1963,7 +1960,7 @@ DX(ximport_raw_matrix)
       ifn (p && RFILEP(p))
          error(NIL, "not a string or read file descriptor", p);
    }
-   import_raw_matrix(AINDEX(1),p->Object,offset);
+   import_raw_matrix(AINDEX(1),Mptr(p),offset);
    return APOINTER(1);
 }
 
@@ -2014,7 +2011,7 @@ DX(ximport_text_matrix)
          error(NIL, "not a string or read descriptor", p);
    }
    
-   import_text_matrix(AINDEX(1),p->Object);
+   import_text_matrix(AINDEX(1),Mptr(p));
    return APOINTER(1);
 }
 
@@ -2188,7 +2185,7 @@ DX(xload_matrix)
       ifn (p && RFILEP(p))
          error(NIL, "not a string or read descriptor", p);
       }
-      ans = load_matrix(p->Object);
+      ans = load_matrix(Mptr(p));
       var_set(APOINTER(1), ans);
 
    } else {
@@ -2201,7 +2198,7 @@ DX(xload_matrix)
          ifn (p && RFILEP(p))
             error(NIL, "not a string or read descriptor", p);
       }
-      ans = load_matrix(p->Object);
+      ans = load_matrix(Mptr(p));
    }
    return ans;
 }
@@ -2264,7 +2261,7 @@ DX(xmap_matrix)
          ifn (p && RFILEP(p))
             error(NIL, "not a string or read descriptor", p);
       }
-      ans = map_matrix(p->Object);
+      ans = map_matrix(Mptr(p));
       var_set(APOINTER(1), ans);
    } else {
       ARG_NUMBER(1);
@@ -2276,7 +2273,7 @@ DX(xmap_matrix)
          ifn (p && RFILEP(p))
             error(NIL, "not a string or read descriptor", p);
       }
-      ans = map_matrix(p->Object);
+      ans = map_matrix(Mptr(p));
    }
    return ans;
 }
@@ -3182,26 +3179,26 @@ static int ebloop_args(at *p, at **syms, at **iats,
    at *q, *r, *s;
    int n;
    
-   ifn ( CONSP(p) && CONSP(p->Car) )
+   ifn ( CONSP(p) && CONSP(Car(p)) )
       error(NIL, "syntax error", NIL);
   
    n = 0;
    r = NIL;
-   for (q = p->Car; CONSP(q); q = q->Cdr) {
-      p = q->Car;
-      ifn (CONSP(p) && CONSP(p->Cdr) && !p->Cdr->Cdr)
+   for (q = Car(p); CONSP(q); q = Cdr(q)) {
+      p = Car(q);
+      ifn (CONSP(p) && CONSP(Cdr(p)) && !Cddr(p))
          error(NIL, "syntax error in variable declaration", p);
-      ifn ((s = p->Car) && SYMBOLP(s))
+      ifn ((s = Car(p)) && SYMBOLP(s))
          error(NIL, "symbol expected", s);
-      r = eval(p->Cdr->Car);
+      r = eval(Cadr(p));
       ifn (INDEXP(r))
          RAISE(NIL, "not an index", r);
     
       if (n >= MAXEBLOOP)
          error(NIL,"Looping on too many indexes",NIL);
       syms[n] = s;
-      iats[n] = s = COPY_INDEX(r->Object);
-      inds[n] = s->Object;
+      iats[n] = s = COPY_INDEX(Mptr(r));
+      inds[n] = Mptr(s);
       n++;
    }
    *last_index = r;
@@ -3227,13 +3224,13 @@ DY(yeloop)
       ind = inds[i];
       int j = --(ind->ndim);		/* remove last dimension */
       if (d != ind->dim[j])
-         error(NIL,"looping dimension are different",ARG_LIST->Car);
+         error(NIL,"looping dimension are different", Car(ARG_LIST));
       SYMBOL_PUSH(syms[i], iats[i]);
    }
 
    /* loop */
    for (int j=0; j<d; j++) {
-      ans = progn(ARG_LIST->Cdr);
+      ans = progn(Cdr(ARG_LIST));
       for (int i=0; i<n; i++)
          if (INDEXP(iats[i])) {
             /* check not deleted! */
@@ -3262,7 +3259,7 @@ DY(ybloop)
    for (int i=0; i<n; i++) {
       ind = inds[i];
       if (d != ind->dim[0])
-         error(NIL,"looping dimension are different",ARG_LIST->Car);
+         error(NIL,"looping dimension are different", Car(ARG_LIST));
       --(ind->ndim);		/* remove one dimension */
       int m = ind->mod[0];		/* reorganize the dim and mod arrays */
       for (int j=0; j<ind->ndim; j++) {
@@ -3275,7 +3272,7 @@ DY(ybloop)
    
    at *ans = NIL;			/* loop */
    for (int j=0; j<d; j++) {
-      ans = progn(ARG_LIST->Cdr);
+      ans = progn(Cdr(ARG_LIST));
       for (int i=0; i<n; i++)
          if (INDEXP(iats[i])) {
             /* check not deleted! */

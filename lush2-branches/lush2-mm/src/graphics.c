@@ -82,9 +82,9 @@ static window_t *window_dispose(window_t *win)
 static char *window_name(at *p)
 {
    sprintf(string_buffer, "::%s:%s:%lx",
-           nameof(p->Class->classname),
-           ((window_t *)(p->Object))->gdriver->name,
-           (long)p->Object);
+           nameof(Class(p)->classname),
+           ((window_t *)Mptr(p))->gdriver->name,
+           (long)Mptr(p));
    return string_buffer;
 }
 
@@ -98,14 +98,14 @@ window_t *current_window(void)
   at *p = var_get(at_window);
   ifn (WINDOWP(p))
      error("window", "not a window", p);
-  return (window_t *)p->Object;
+  return (window_t *)Mptr(p);
 }
 
 /* This function can be called by compiled code */
 window_t *current_window_no_error(void)
 {
    at *p = var_get(at_window);
-   return WINDOWP(p) ? (window_t *)p->Object : NULL;
+   return WINDOWP(p) ? (window_t *)Mptr(p) : NULL;
 }
 
 
@@ -166,7 +166,7 @@ DX(xfont)
       char *s = ASTRING(1);
       q = str_mb_to_utf8(s);
       if (STRINGP(q))
-         s = SADD(q->Object);
+         s = String(q);
       if (win->gdriver->setfont) {
          context_push(&mycontext);	/* can be interrupted */
          (*win->gdriver->begin)(win);
@@ -734,10 +734,10 @@ static void draw_list(int xx, int y, register at *l, int ncol,
       unsigned int *im = image;
       
       while (CONSP(l)) {
-         if (! NUMBERP(l->Car))
-            RAISEFX("not a number", l->Car);
-         double v = Number(l->Car) / maxv;
-         l = l->Cdr;
+         if (! NUMBERP(Car(l)))
+            RAISEFX("not a number", Car(l));
+         double v = Number(Car(l)) / maxv;
+         l = Cdr(l);
          if (v > 1.0)
             v = 1.0;
          if (v < -1.0)
@@ -766,12 +766,12 @@ static void draw_list(int xx, int y, register at *l, int ncol,
       
       nlin = ncol;
       while (CONSP(l)) {
-         if (! NUMBERP(l->Car)) {
+         if (! NUMBERP(Car(l))) {
             (*setcolor) (win, win->color);
             (*win->gdriver->end) (win);
-            RAISEFX("not a number", l->Car);
+            RAISEFX("not a number", Car(l));
          }
-         double v = Number(l->Car) / maxv;
+         double v = Number(Car(l)) / maxv;
          if (v > 1.0)
             v = 1.0;
          if (v < -1.0)
@@ -787,7 +787,7 @@ static void draw_list(int xx, int y, register at *l, int ncol,
             (*setcolor) (win, COLOR_BG);
             (*fill_rect) (win, x + ap2, y + ap2, size, size);
          }
-         l = l->Cdr;
+         l = Cdr(l);
          (--nlin) ? (x += apart) : (x = xx, y += apart, nlin = ncol);
       }
       (setcolor) (win, win->color);
@@ -830,7 +830,7 @@ static int *colors_from_int_matrix(at *p)
 {
    ifn (INDEXP(p))
       RAISEF("not an index", p);
-   index_t *ind = p->Object;
+   index_t *ind = Mptr(p);
    ifn (IND_STTYPE(ind)==ST_I32) 
       RAISEF("not an integer array", p);
    easy_index_check(ind, SHAPE1D(64));
@@ -895,10 +895,10 @@ static void color_draw_list(int xx, int y, at *l, int ncol,
       unsigned int *im = image;
       
       while (CONSP(l)) {
-         if (! NUMBERP(l->Car))
-            error(NIL, "not a number", l->Car);
-         int v = (int)(64 * (Number(l->Car) - minv) / (maxv - minv));
-         l = l->Cdr;
+         if (! NUMBERP(Car(l)))
+            error(NIL, "not a number", Car(l));
+         int v = (int)(64 * (Number(Car(l)) - minv) / (maxv - minv));
+         l = Cdr(l);
          if (v > 63)
             v = 63;
          if (v < 0)
@@ -925,12 +925,12 @@ static void color_draw_list(int xx, int y, at *l, int ncol,
       (*win->gdriver->begin) (win);
       nlin = ncol;
       while (CONSP(l)) {
-         if (! NUMBERP(l->Car)) {
+         if (! NUMBERP(Car(l))) {
             (*setcolor) (win, win->color);
             (*win->gdriver->end) (win);
-            RAISEFX("not a number", l->Car);
+            RAISEFX("not a number", Car(l));
          }
-         int v = (int)(64 * (Number(l->Car) - minv) / (maxv - minv));
+         int v = (int)(64 * (Number(Car(l)) - minv) / (maxv - minv));
          if (v > 63)
             v = 63;
          if (v < 0)
@@ -940,7 +940,7 @@ static void color_draw_list(int xx, int y, at *l, int ncol,
          else
             (*setcolor) (win, COLOR_SHADE((real) v / 63.0));
          (*fill_rect) (win, x, y, apart, apart);
-         l = l->Cdr;
+         l = Cdr(l);
          (--nlin) ? (x += apart) : (x = xx, y += apart, nlin = ncol);
       }
       (*setcolor) (win, win->color);
@@ -1110,7 +1110,7 @@ static void color_draw_matrix(int x, int y, at *p,
 {
    ifn (INDEXP(p))
       error(NIL, "not an index", p);
-   index_t *ind = p->Object;
+   index_t *ind = Mptr(p);
    
    struct idx idx;
    index_read_idx(ind,&idx);
@@ -1151,7 +1151,7 @@ DX(xcolor_draw_matrix)
    }
    
    at *p = APOINTER(3);
-   ifn (INDEXP(p) && index_numericp(p->Object))
+   ifn (INDEXP(p) && index_numericp(Mptr(p)))
       RAISEFX("not a numeric storage class", p);
    
    color_draw_matrix(AINTEGER(1), AINTEGER(2), p,
@@ -1175,7 +1175,7 @@ DX(xgray_draw_matrix)
    }
    
    at *p = APOINTER(3);
-   ifn (INDEXP(p) && index_numericp(p->Object))
+   ifn (INDEXP(p) && index_numericp(Mptr(p)))
       RAISEFX("not a numeric storage class", p);
    
    color_draw_matrix(AINTEGER(1), AINTEGER(2), p,
@@ -1421,7 +1421,7 @@ static void rgb_draw_matrix(int x, int y, at *p, int sx, int sy)
 {
     ifn (INDEXP(p))
        error(NIL, "not an index", p);
-    index_t *ind = p->Object;
+    index_t *ind = Mptr(p);
 
     struct idx idx;
     index_read_idx(ind,&idx);
@@ -1544,7 +1544,7 @@ static void rgb_grab_matrix(int x, int y, at *p)
 {
    ifn (INDEXP(p))
       error(NIL, "not an index", p);
-   index_t *ind = p->Object;
+   index_t *ind = Mptr(p);
    
    struct idx idx;
    index_read_idx(ind,&idx);
@@ -1588,18 +1588,18 @@ DX(xrgb_grab_matrix)
 static void getrect(at *pp, int *x, int *y, int *w, int *h)
 {
    at *p = pp;
-   if (CONSP(p) && NUMBERP(p->Car)) {
-      *x = (int)Number(p->Car);
-      p = p->Cdr;
-      if (CONSP(p) && NUMBERP(p->Car)) {
-         *y = (int)Number(p->Car);
-         p = p->Cdr;
-         if (CONSP(p) && NUMBERP(p->Car)) {
-            *w = (int)Number(p->Car);
-            p = p->Cdr;
-            if (CONSP(p) && NUMBERP(p->Car)) {
-               *h = (int)Number(p->Car);
-               p = p->Cdr;
+   if (CONSP(p) && NUMBERP(Car(p))) {
+      *x = (int)Number(Car(p));
+      p = Cdr(p);
+      if (CONSP(p) && NUMBERP(Car(p))) {
+         *y = (int)Number(Car(p));
+         p = Cdr(p);
+         if (CONSP(p) && NUMBERP(Car(p))) {
+            *w = (int)Number(Car(p));
+            p = Cdr(p);
+            if (CONSP(p) && NUMBERP(Car(p))) {
+               *h = (int)Number(Car(p));
+               p = Cdr(p);
                if (! p)
                   return;
             }
@@ -1836,7 +1836,7 @@ DY(ygsave)
       if (oldfont!=win->font)
          if (win->gdriver->setfont && STRINGP(oldfont)) {
             (*win->gdriver->begin) (win);
-            (*win->gdriver->setfont)(win,SADD(oldfont->Object));
+            (*win->gdriver->setfont)(win, String(oldfont));
             (*win->gdriver->end) (win);
             win->font = oldfont;
          }

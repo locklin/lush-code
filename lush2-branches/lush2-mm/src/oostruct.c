@@ -118,7 +118,7 @@ object_t *oostruct_dispose(object_t *obj)
 
 static at *oostruct_listeval(at *p, at *q)
 {
-   return send_message(NIL, p, at_listeval, q->Cdr);
+   return send_message(NIL, p, at_listeval, Cdr(q));
 }
 
 static int oostruct_compare(at *p, at *q, int order)
@@ -126,8 +126,8 @@ static int oostruct_compare(at *p, at *q, int order)
    if (order)
       error(NIL, "cannot rank objects", NIL);
 
-   object_t *obj1 = p->Object;
-   object_t *obj2 = q->Object;
+   object_t *obj1 = Mptr(p);
+   object_t *obj2 = Mptr(q);
   
    for(int i=0; i<obj1->size; i++)
       if (!eq_test(obj1->slots[i].val, obj2->slots[i].val))
@@ -138,9 +138,9 @@ static int oostruct_compare(at *p, at *q, int order)
 static unsigned long oostruct_hash(at *p)
 {
    unsigned long x = 0x87654321;
-   object_t *obj = p->Object;
+   object_t *obj = Mptr(p);
 
-   x ^= hash_pointer((void*)p->Class);
+   x ^= hash_pointer((void*)Class(p));
    for(int i=0; i<obj->size; i++) {
       x = (x<<1) | ((long)x<0 ? 1 : 0);
       x ^= hash_value(obj->slots[i].val);
@@ -150,14 +150,14 @@ static unsigned long oostruct_hash(at *p)
 
 at *oostruct_getslot(at *p, at *prop)
 {
-   at *slot = prop->Car;
+   at *slot = Car(prop);
    ifn (SYMBOLP(slot))
       error(NIL,"not a slot name", slot);
 
-   object_t *obj = p->Object;
+   object_t *obj = Mptr(p);
    for(int i=0; i<obj->size; i++)
       if (slot == obj->slots[i].symb)
-         return getslot(obj->slots[i].val, prop->Cdr);
+         return getslot(obj->slots[i].val, Cdr(prop));
    
    error(NIL, "not a slot", slot);
    return NIL;
@@ -166,14 +166,14 @@ at *oostruct_getslot(at *p, at *prop)
 
 void oostruct_setslot(at *p, at *prop, at *val)
 {
-   at *slot = prop->Car;
+   at *slot = Car(prop);
    ifn (SYMBOLP(slot))
       error(NIL, "not a slot name", slot);
 
-   object_t *obj = p->Object;
+   object_t *obj = Mptr(p);
    for(int i=0; i<obj->size; i++)
       if (slot == obj->slots[i].symb) {
-         setslot(&obj->slots[i].val, prop->Cdr, val);
+         setslot(&obj->slots[i].val, Cdr(prop), val);
          return;
       }
    error(NIL, "not a slot", slot);
@@ -209,13 +209,13 @@ static class_t *class_dispose(class_t *cl)
          *p = cl->nextclass;
       cl->super = NULL;
    }
-   cl->backptr->class = &null_class;
+   zombify(cl->backptr);
    return NULL;
 }
 
 static char *class_name(at *p)
 {
-   class_t *cl = p->Object;
+   class_t *cl = Mptr(p);
    
    if (cl->classname)
       sprintf(string_buffer, "::class:%s", nameof(cl->classname));
@@ -239,13 +239,13 @@ DX(xslots)
    at *ds = cl->defaults;
    at *ans = NIL;
    while (CONSP(ks) && (CONSP(ds))) {
-      if (ds->Car)
+      if (Car(ds))
          ans = new_cons(
-            new_cons(ks->Car, new_cons(ds->Car,NIL)), ans);
+            new_cons(Car(ks), new_cons(Car(ds), NIL)), ans);
       else
-         ans = new_cons(ks->Car, ans);
-      ks = ks->Cdr;
-      ds = ds->Cdr;
+         ans = new_cons(Car(ks), ans);
+      ks = Cdr(ks);
+      ds = Cdr(ds);
    }
    return ans;
 }
@@ -259,11 +259,11 @@ DX(xmethods)
    at *mthds = NIL;
    at *q = cl->methods;
    while (CONSP(q)) {
-      if (CONSP(q->Car)) 
-         if (q->Car->Cdr && !ZOMBIEP(q->Car->Cdr)) {
-            mthds = new_cons(q->Car->Car, mthds);
+      if (CONSP(Car(q))) 
+         if (Cdar(q) && !ZOMBIEP(Cdar(q))) {
+            mthds = new_cons(Caar(q), mthds);
          }
-      q = q->Cdr;
+      q = Cdr(q);
    }
    return reverse(mthds);
 }
@@ -328,10 +328,10 @@ at *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
    at *q = defaults;
    int i = 0;
    while (CONSP(p) && CONSP(q)) {
-      ifn (SYMBOLP(p->Car))
-         error(NIL, "not a symbol", p->Car);
-      p = p->Cdr;
-      q = q->Cdr;
+      ifn (SYMBOLP(Car(p)))
+         error(NIL, "not a symbol", Car(p));
+      p = Cdr(p);
+      q = Cdr(q);
       i++;
    }
    if (p || q)
@@ -340,7 +340,7 @@ at *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
    /* builds the new class */
    ifn (CLASSP(superclass))
       error(NIL, "not a class", superclass);
-   class_t *super = superclass->Object;
+   class_t *super = Mptr(superclass);
    if (builtin_class_p(super))
       error(NIL, "superclass not descendend of class <object>", superclass);
 
@@ -425,10 +425,10 @@ at *new_object(class_t *cl)
       at *p = super->keylist;
       at *q = super->defaults;
       while (CONSP(p) && CONSP(q)) {
-         obj->slots[i].symb = p->Car;
-         obj->slots[i].val = q->Car;
-         p = p->Cdr;
-         q = q->Cdr;
+         obj->slots[i].symb = Car(p);
+         obj->slots[i].val = Car(q);
+         p = Cdr(p);
+         q = Cdr(q);
          i++;
       }
       super = super->super;
@@ -442,16 +442,16 @@ DY(ynew)
    ifn (CONSP(ARG_LIST))
       error(NIL, "some argument expected", NIL);
    
-   at *q = eval(ARG_LIST->Car);
+   at *q = eval(Car(ARG_LIST));
    ifn (CLASSP(q))
       RAISEFX("not a class", q);
-   class_t *cl = q->Object;
+   class_t *cl = Mptr(q);
    at *ans = new_object(cl);
    
    struct hashelem *hx = getmethod(cl, cl->classname);
    if (hx)
-      call_method(ans, hx, ARG_LIST->Cdr);
-   else if (ARG_LIST->Cdr)
+      call_method(ans, hx, Cdr(ARG_LIST));
+   else if (Cdr(ARG_LIST))
       RAISEF("constructor expects no arguments", NIL);
    
    return ans;
@@ -474,7 +474,7 @@ at *getslot(at *obj, at *prop)
       return obj;
       
    } else {
-      class_t *cl = obj ? obj->Class : NULL;
+      class_t *cl = obj ? Class(obj) : NULL;
       ifn (cl && cl->getslot)
          error(NIL, "object does not accept scope syntax", obj);
       ifn (LISTP(prop))
@@ -490,7 +490,7 @@ void setslot(at **pobj, at *prop, at *val)
 
    } else {
       at *obj = *pobj;
-      class_t *cl = obj ? obj->Class : NULL;
+      class_t *cl = obj ? Class(obj) : NULL;
       ifn (cl && cl->setslot)
          error(NIL, "object does not accept scope syntax", obj);
       ifn (LISTP(prop))
@@ -513,7 +513,7 @@ at *with_object(at *p, at *f, at *q, int howfar)
 
    at *ans = NIL;
    if (OBJECTP(p)) {
-      object_t *obj = p->Object;
+      object_t *obj = Mptr(p);
      
       if (howfar > 0)
          howfar = obj->size - howfar;
@@ -525,31 +525,30 @@ at *with_object(at *p, at *f, at *q, int howfar)
          at *atsym = obj->slots[i].symb;
          symbol_t *sym = mm_alloc(mt_symbol);
          sym->mode = SYMBOL_UNLOCKED;
-         sym->next = (symbol_t *)(atsym->Object);
+         sym->next = Symbol(atsym);
          sym->hn = sym->next->hn;
          sym->valueptr = &(obj->slots[i].val);
-         atsym->Object = sym;
+         Mptr(atsym) = sym;
       }
 
       /* push THIS */
       symbol_t *sym = mm_alloc(mt_symbol);
       sym->mode = SYMBOL_UNLOCKED;
-      sym->next = (symbol_t *)(at_this->Object);
+      sym->next = Symbol(at_this);
       sym->hn = sym->next->hn;
       sym->value = p;
       sym->valueptr = &(sym->value);
-      at_this->Object = sym;
+      Symbol(at_this) = sym;
 
       ans = apply(f, q);
       
       /* pop THIS */
-      at_this->Object = sym->next;
+      Mptr(at_this) = sym->next;
       
       /* pop SLOTS */
       for(int i = howfar; i < obj->size; i++) {
          at *atsym = obj->slots[i].symb;
-         symbol_t *sym = (symbol_t *) (atsym->Object);
-         atsym->Object = sym->next;
+         Symbol(atsym) = Symbol(atsym)->next;
      }
       
    } else {
@@ -570,14 +569,14 @@ DY(ywith_object)
 
    int howfar = -1;
    at *l = ARG_LIST;
-   at *p = eval(l->Car);
+   at *p = eval(Car(l));
    
    if (CLASSP(p)) {
-      l = l->Cdr;
-      at *q = eval(l->Car);
+      l = Cdr(l);
+      at *q = eval(Car(l));
       if (OBJECTP(q)) {
-         class_t *cl = q->Class;
-         while (cl && cl != p->Object)
+         class_t *cl = Class(q);
+         while (cl && cl != Mptr(p))
             cl = cl->super;
          if (! cl)
             RAISEFX("object not an instance of this superclass", p);
@@ -586,7 +585,7 @@ DY(ywith_object)
    }
    //at *q = eval(at_progn);
    at *q = symbol_class.selfeval(at_progn);
-   return with_object(p, q, l->Cdr, howfar);
+   return with_object(p, q, Cdr(l), howfar);
 }
 
 
@@ -604,22 +603,22 @@ void putmethod(class_t *cl, at *name, at *value)
    at **last = &(cl->methods);
    at *list = *last;
    while (CONSP(list)) {
-      at *q = list->Car;
+      at *q = Car(list);
       ifn (CONSP(q))
          RAISEF("not a pair", q);
-      if (q->Car == name) {
+      if (Car(q) == name) {
          if (value) {
             /* replace */
-            q->Cdr = value;
+            Cdr(q) = value;
             return;
          } else {
             /* remove */
-            *last = list->Cdr;
-            list->Cdr = NIL;
+            *last = Cdr(list);
+            Cdr(list) = NIL;
             return;
          }
       }
-      last = &(list->Cdr);
+      last = &Cdr(list);
       list = *last;
    }
    /* not an existing method, append */
@@ -679,14 +678,14 @@ restart:
    while (c) {
       pp = &c->methods;
       while ((p = *pp) && CONSP(p)) {
-         at *prop = p->Car->Car;
-         at *value = p->Car->Cdr;
+         at *prop = Caar(p);
+         at *value = Cdar(p);
          if (!value || ZOMBIEP(value)) {
-            *pp = p->Cdr;
-            p->Cdr = NIL;
+            *pp = Cdr(p);
+            Cdr(p) = NIL;
             continue;
          }
-         pp = &(p->Cdr);
+         pp = &Cdr(p);
          int hx = HASH(prop,size);
          at *q = cl->hashtable[hx].symbol;
          if (q)
@@ -756,16 +755,16 @@ static at *call_method(at *obj, struct hashelem *hx, at *args)
    at *fun = hx->function;
    assert(FUNCTIONP(fun));
    
-   if (fun->Class == &de_class) {
+   if (Class(fun) == &de_class) {
       // DE
       at *p = eval_a_list(args);
       return with_object(obj, fun, p, hx->sofar);
 
-   } else if (fun->Class == &df_class) {
+   } else if (Class(fun) == &df_class) {
       // DF
       return with_object(obj, fun, args, hx->sofar);
 
-   } else if (fun->Class == &dm_class) {
+   } else if (Class(fun) == &dm_class) {
       // DM
       at *p = new_cons(new_cons(fun, args), NIL);
       at *q = with_object(obj, at_mexpand, p, hx->sofar);
@@ -774,7 +773,7 @@ static at *call_method(at *obj, struct hashelem *hx, at *args)
    } else {
       // DX, DY, DH
       at *p = new_cons(fun, new_cons(obj, args));
-      return (*fun->Class->listeval)(fun, p);
+      return Class(fun)->listeval(fun, p);
    }
 }
 
@@ -814,15 +813,15 @@ DY(ysend)
 {
    /* Get arguments */
    at *q = ARG_LIST;
-   ifn (CONSP(q) && CONSP(q->Cdr))
+   ifn (CONSP(q) && CONSP(Cdr(q)))
       RAISEFX("arguments expected", NIL);
-   at *obj = (*argeval_ptr)(q->Car);
-   at *method = (*argeval_ptr)(q->Cdr->Car);
-   at *args = q->Cdr->Cdr;
+   at *obj = (*argeval_ptr)(Car(q));
+   at *method = (*argeval_ptr)(Cadr(q));
+   at *args = Cddr(q);
    
    /* Send */
    return (CONSP(method) ? 
-           send_message(method->Car, obj, method->Cdr, args) :
+           send_message(Car(method), obj, Cdr(method), args) :
            send_message(NIL, obj, method, args));
 }
 
@@ -830,7 +829,7 @@ DX(xsender)
 {
    ARG_NUMBER(0);
    
-   symbol_t *symb = at_this->Object;
+   symbol_t *symb = Symbol(at_this);
    ifn (symb->next)
       return NIL;
    return *(symb->next->valueptr);
@@ -866,17 +865,17 @@ void delete(at *p, bool respect_dontdelete)
    if (!p || ZOMBIEP(p))
       return;
 
-   if (respect_dontdelete && p->Class->dontdelete)
+   if (respect_dontdelete && Class(p)->dontdelete)
       error(NIL, "cannot delete this object", p);
    
    run_notifiers(p);
 
-   if (*p->Class->dispose)
-      p->Object = (*p->Class->dispose)(p->Object);
+   if (Class(p)->dispose)
+      Mptr(p) = Class(p)->dispose(Mptr(p));
    else
-      p->Object = NULL;
+      Mptr(p) = NULL;
    
-   p->Class = &null_class;
+   zombify(p);
 }
 
 DX(xdelete)
@@ -899,7 +898,7 @@ DX(xdelete)
 
 class_t *classof(at *p)
 {
-   return p ? p->Class : &null_class;
+   return p ? Class(p) : &null_class;
 }
 
 DX(xclassof)
@@ -926,7 +925,7 @@ DX(xis_of_class)
    at *q = APOINTER(2);
    ifn (CLASSP(q))
       RAISEFX("not a class", q);
-   if (is_of_class(p, q->Object))
+   if (is_of_class(p, Mptr(q)))
       return t();
 
 #ifdef DHCLASSDOC
@@ -935,10 +934,10 @@ DX(xis_of_class)
       int flag = 0;
       at *sym = named("to-obj");
       at *fun = find_primitive(0, sym);
-      if (fun && (fun->Class == &dx_class)) {
+      if (fun && (Class(fun) == &dx_class)) {
          at *arg = new_cons(p,NIL);
          sym = apply(fun, arg);
-         flag = is_of_class(sym, q->Object);
+         flag = is_of_class(sym, Mptr(q));
       }
       if (flag)
          return t();

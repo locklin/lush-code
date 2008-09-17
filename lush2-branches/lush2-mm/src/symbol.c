@@ -89,7 +89,7 @@ void mark_symbol_hash(hash_name_t *hn)
    if (!purging_symbols) {
       MM_MARK(hn->named);
    } else if (hn->named) {
-      MM_MARK(hn->named->Object);  /* weak reference when purging */
+      MM_MARK(Mptr(hn->named));  /* weak reference when purging */
    }
    MM_MARK(hn->next);
 }
@@ -128,7 +128,7 @@ void mark_symbol(symbol_t *s)
 
 void at_symbol_notify(at *p, void *_)
 {
-   symbol_t *s = (symbol_t *)p->Object;
+   symbol_t *s = Symbol(p);
    //printf("clearing backref of symbol '%s'\n", s->hn->name);
    assert(s->next==NULL);
    assert(s->valueptr==NULL);
@@ -320,7 +320,7 @@ DX(xnamedclean)
 char *nameof(at *p)
 {
    if (SYMBOLP(p)) {
-      symbol_t *symb = (symbol_t *)(p->Object);
+      symbol_t *symb = Symbol(p);
       if (symb->hn)
          return symb->hn->name;
    }
@@ -341,7 +341,7 @@ DX(xnameof)
 
 #define iter_hash_name(i,hn) \
   for (i=names; i<names+HASHTABLESIZE; i++) \
-  for (hn= *i; hn; hn = hn->next )
+  for (hn= *i; hn; hn = hn->next)
 
 /* sorted list of globally defined symbols */
 
@@ -353,8 +353,8 @@ at *global_names(void)
    iter_hash_name(j, hn) {
       char *name = hn->name;
       where = &answer;
-      while (*where && strcmp(name, SADD((*where)->Car->Object)) > 0)
-         where = &((*where)->Cdr);
+      while (*where && strcmp(name, String(Car(*where))) > 0)
+         where = &Cdr(*where);
       *where = new_cons(new_string(name), *where);
    }
    return answer;
@@ -376,18 +376,18 @@ at *global_defs()
    hash_name_t **j, *hn;
    iter_hash_name(j, hn)
       if (SYMBOLP(hn->named)) {
-         at *sym = hn->named;
-         symbol_t *symb = sym->Object;
+         at *p = hn->named;
+         symbol_t *symb = Symbol(p);
          while (symb->next)
             symb = symb->next;
          if (symb->valueptr) {
-            at *val = *(symb->valueptr);  /* globally bound */
-            *where = new_cons(new_cons(sym, val), NIL);
-            where = &((*where)->Cdr);
+            at *val = ValueS(symb);  /* globally bound */
+            *where = new_cons(new_cons(p, val), NIL);
+            where = &Cdr(*where);
             /* locked? */
             if (symb->mode == SYMBOL_LOCKED) {
-               *where = new_cons(sym,NIL);
-               where = &((*where)->Cdr);
+               *where = new_cons(p, NIL);
+               where = &Cdr(*where);
             }
          }
       }
@@ -429,13 +429,13 @@ static char *symbol_name(at *p)
    if (s)
       return s;
    else
-      return (p->Class->name)(p);
+      return Class(p)->name(p);
 }
 
 
 static at *symbol_selfeval(at *p)
 {
-   symbol_t *symb = p->Object;
+   symbol_t *symb = Symbol(p);
    at *q = symb->valueptr ? *(symb->valueptr) : NIL;
    
    if (ZOMBIEP(q)) {
@@ -448,7 +448,7 @@ static at *symbol_selfeval(at *p)
 
 static unsigned long symbol_hash(at *p)
 {
-   symbol_t *symb = p->Object;
+   symbol_t *symb = Symbol(p);
    return symb->hn->hash;
 }
 
@@ -458,24 +458,24 @@ static unsigned long symbol_hash(at *p)
 at *setq(at *p, at *q)
 {
    if (SYMBOLP(p)) {             /* (setq symbol value) */
-      symbol_t *sym = p->Object;
+      symbol_t *sym = Symbol(p);
       ifn (sym->valueptr)
          fprintf(stderr, "+++ Warning: use <defvar> to declare global variable <%s>.\n",
                  sym->hn->name ? sym->hn->name : "??" );
       sym_set(sym, q, false);
       
    } else if (CONSP(p)) {          /* scope specification */
-      if (p->Car!=at_scope || !CONSP(p->Cdr))
+      if (Car(p)!=at_scope || !CONSP(Cdr(p)))
          RAISEF("syntax error", p);
-      p = p->Cdr;
-      ifn (p->Cdr) {              /* (setq :symbol value)  */
-         ifn (SYMBOLP(p->Car))
+      p = Cdr(p);
+      ifn (Cdr(p)) {              /* (setq :symbol value)  */
+         ifn (SYMBOLP(Car(p)))
             error(NIL, "illegal global scope specification (not a symbol)", p); 
-         sym_set(p->Car->Object, q, true);
+         sym_set(Mptr(Car(p)), q, true);
          
       } else {                    /* (setq :object:slot:slot:slot value ) */
-         at *obj = eval(p->Car);
-         setslot(&obj, p->Cdr, q);
+         at *obj = eval(Car(p));
+         setslot(&obj, Cdr(p), q);
       }
    } else
       RAISEF("neither a symbol nor scope specification", p);
@@ -503,10 +503,10 @@ void reset_symbols(void)
    iter_hash_name(j, hn) {
       at *p = hn->named;
       if (p) {
-         symbol_t *s = p->Object;
+         symbol_t *s = Symbol(p);
          while (s->next)
             s = s->next;
-         p->Object = s;
+         Symbol(p) = s;
       }
    }
 }
@@ -556,11 +556,11 @@ DY(yscope)
       RAISEFX("no arguments", NIL);
    
    at *p = ARG_LIST;
-   ifn (p->Cdr) {
+   ifn (Cdr(p)) {
       /* :globalvar */
-      ifn (SYMBOLP(p->Car))
-         RAISEFX("not a symbol", p->Car);
-      symbol_t *symb = p->Car->Object;
+      ifn (SYMBOLP(Car(p)))
+         RAISEFX("not a symbol", Car(p));
+      symbol_t *symb = Symbol(Car(p));
       while(symb->next)
          symb = symb->next;
       if (symb->valueptr)
@@ -571,8 +571,8 @@ DY(yscope)
        * :object:slot:slot:...:slot
        * (scope object slot slot .... slot)
        */
-      at *obj = eval(p->Car);
-      return getslot(obj, p->Cdr);
+      at *obj = eval(Car(p));
+      return getslot(obj, Cdr(p));
    }
 }
 
@@ -612,7 +612,7 @@ DX(xsymbol_stack)
    symbol_t *s = ASYMBOL(1);
    at *ans = NIL;
    do {
-      ans = new_cons(s->valueptr ? *s->valueptr : NIL, ans);
+      ans = new_cons(s->valueptr ? *(s->valueptr) : NIL, ans);
       s = s->next;
    } while (s);
 
@@ -639,7 +639,7 @@ DX(xsymbol_globally_bound_p)
 at *sym_get(symbol_t *symb, bool in_global_scope)
 {
    if (in_global_scope)
-      while(symb->next)
+      while (symb->next)
          symb = symb->next;
 
    ifn (symb->valueptr) {
@@ -654,7 +654,7 @@ at *var_get(at *p)
 {
    if (!SYMBOLP(p))
       RAISEF("not a symbol", p);
-   return sym_get((symbol_t *)p->Object, false);
+   return sym_get(Symbol(p), false);
 }
 
 void sym_set(symbol_t *symb, at *q, bool in_global_scope)
@@ -677,13 +677,13 @@ void var_set(at *p, at *q)
 {
    ifn (SYMBOLP(p))
       RAISEF("not a symbol", p);
-   sym_set((symbol_t *)p->Object, q, false);
+   sym_set(Symbol(p), q, false);
 }
 
 /* set, even is symbol is locked */
 void var_SET(at *p, at *q)
 {
-   symbol_t *symb = p->Object;
+   symbol_t *symb = Symbol(p);
    ifn (symb->valueptr) {
       symb->valueptr = &(symb->value);
       symb->value = NIL;
@@ -694,7 +694,7 @@ void var_SET(at *p, at *q)
 
 void var_lock(at *p)
 {
-   symbol_t *symb = p->Object;
+   symbol_t *symb = Symbol(p);
    symb->mode = SYMBOL_LOCKED;
 }
 
@@ -702,7 +702,7 @@ void var_lock(at *p)
 at *var_define(char *s)
 {
    at *p = named(s);
-   symbol_t *symb = (symbol_t *)(p->Object);
+   symbol_t *symb = Symbol(p);
    symb->valueptr = &(symb->value);
    return p;
 }

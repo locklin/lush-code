@@ -10,7 +10,7 @@
 #ifndef MM_INCLUDED
 #define MM_INCLUDED
 
-#define NVALGRIND
+//#define NVALGRIND
 
 #include <stddef.h>
 #include <stdbool.h>

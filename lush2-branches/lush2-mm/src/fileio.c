@@ -148,10 +148,10 @@ at *files(char *s)
       while ((d = readdir(dirp))) {
          int n = NAMLEN(d);
          at *ats = new_string_bylen(n);
-         char *s = SADD(ats->Object);
+         char *s = String(ats);
          strncpy(s, d->d_name, n); s[n] = 0;
          *where = new_cons(ats,NIL);
-         where = &(*where)->Cdr;
+         where = &Cdr(*where);
       }
       closedir(dirp);
    }
@@ -168,11 +168,11 @@ at *files(char *s)
       for (info.name[0]='A'; info.name[0]<='Z'; info.name[0]++)
          if (hfind & (1<<(info.name[0]-'A'))) {
             *where = new_cons(new_string(info.name),NIL);
-            where = &(*where)->Cdr;
+            where = &Cdr(*where);
          }
    } else if (dirp(s)) {
       *where = new_cons(new_string(".."),NIL);
-      where = &(*where)->Cdr;
+      where = &Cdr(*where);
    }
    strcpy(string_buffer,s);
    char *last = string_buffer + strlen(string_buffer);
@@ -185,7 +185,7 @@ at *files(char *s)
       do {
          if (strcmp(".",info.name) && strcmp("..",info.name)) {
             *where = new_cons(new_string(info.name),NIL);
-            where = &(*where)->Cdr;
+            where = &Cdr(*where);
          }
       } while ( _findnext(hfind, &info) != -1 );
       _findclose(hfind);
@@ -272,7 +272,7 @@ DX(xcopyfile)
    if (RFILEP(atfin)) {
       // ok
    } else if (STRINGP(atfin)) {
-      atfin = OPEN_READ(SADD(atfin->Object), NULL);
+      atfin = OPEN_READ(String(atfin), NULL);
    } else
       RAISEFX("not a string or file descriptor", atfin);
 
@@ -280,13 +280,13 @@ DX(xcopyfile)
    if (WFILEP(atfout)) {
       // ok
    } else if (STRINGP(atfout)) {
-      atfout = OPEN_WRITE(SADD(atfout->Object), NULL);
+      atfout = OPEN_WRITE(String(atfout), NULL);
    } else
       RAISEFX("not a string or file descriptor", atfout);
 
    /* copy */
-   FILE *fin = atfin->Object;
-   FILE *fout = atfout->Object;
+   FILE *fin = Gptr(atfin);
+   FILE *fout = Gptr(atfout);
    int nread = 0;
    for (;;) {
       int bread = fread(buffer, 1, sizeof(buffer), fin);
@@ -1178,18 +1178,18 @@ char *search_file(char *ss, char *suffices)
    if (*s != '/')
 #endif
       if (SYMBOLP(at_path)) {
-         at *q = sym_get((symbol_t *)at_path->Object, true);
+         at *q = sym_get(Symbol(at_path), true);
          
          while (CONSP(q)) {
-            if (STRINGP(q->Car)) {
-               c = concat_fname(SADD(q->Car->Object), s);
+            if (STRINGP(Car(q))) {
+               c = concat_fname(String(Car(q)), s);
                if (strlen(c)+1 > FILELEN)
                   error(NIL,"File name is too long",NIL);
                strcpy(file_name, c);
                if (suffixed_file(suffices))
                   return file_name;
             }
-            q = q->Cdr;
+            q = Cdr(q);
          }
       }
    /* -- absolute filename or broken path */
@@ -1512,9 +1512,9 @@ static FILE *file_dispose(FILE *f)
 
 void at_file_notify(at *p, void *_)
 {
-   FILE *f = (FILE *)p->Object;
+   FILE *f = (FILE *)Gptr(p);
    if (f) {
-      p->Object = file_dispose(f);
+      Gptr(p) = file_dispose(f);
    }
 } 
 
@@ -1645,16 +1645,16 @@ DX(xopen_append)
 
 DY(yreading)
 {
-   if (! (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr)))
+     ifn (CONSP(ARG_LIST) && CONSP(Cdr(ARG_LIST)))
       RAISEFX("syntax error", NIL);
    
-   at *fdesc = eval(ARG_LIST->Car);
+   at *fdesc = eval(Car(ARG_LIST));
 
    FILE *f;
    if (STRINGP(fdesc))
-      f = open_read(SADD(fdesc->Object), NIL);
+      f = open_read(String(fdesc), NIL);
    else if (RFILEP(fdesc))
-      f = fdesc->Object;
+      f = Gptr(fdesc);
    else
       RAISEFX("file name or read descriptor expected", fdesc);
 
@@ -1678,7 +1678,7 @@ DY(yreading)
       siglongjmp(context->error_jump, -1L);
    }
 
-   at *answer = progn(ARG_LIST->Cdr);
+   at *answer = progn(Cdr(ARG_LIST));
    if (STRINGP(fdesc))
       file_close(context->input_file);
    
@@ -1691,16 +1691,16 @@ DY(yreading)
 
 DY(ywriting)
 {
-   if (! (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr)))
+   ifn (CONSP(ARG_LIST) && CONSP(Cdr(ARG_LIST)))
       RAISEFX("syntax error", NIL);
    
-   at *fdesc = eval(ARG_LIST->Car);
+   at *fdesc = eval(Car(ARG_LIST));
 
    FILE *f;
    if (STRINGP(fdesc))
-      f = open_write(SADD(fdesc->Object), NIL);
+      f = open_write(String(fdesc), NIL);
    else if (WFILEP(fdesc))
-      f = fdesc->Object;
+      f = Gptr(fdesc);
    else
       RAISEFX("file name or write descriptor expected", fdesc);
 
@@ -1722,7 +1722,7 @@ DY(ywriting)
       siglongjmp(context->error_jump, -1L);
    }
 
-   at *answer = progn(ARG_LIST->Cdr);
+   at *answer = progn(Cdr(ARG_LIST));
    if (STRINGP(fdesc))
       file_close(context->output_file);
    else
@@ -1740,19 +1740,19 @@ DY(ywriting)
 
 DY(yreading_string)
 {
-   ifn (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr))
+   ifn (CONSP(ARG_LIST) && CONSP(Cdr(ARG_LIST)))
       RAISEFX("syntax error", NIL);
 
-   at *str = eval(ARG_LIST->Car);
+   at *p = eval(Car(ARG_LIST));
    
-   ifn (STRINGP(str))
-      RAISEFX("string expected", str);
+   ifn (STRINGP(p))
+      RAISEFX("string expected", p);
 
    struct context mycontext;
    context_push(&mycontext);
    context->input_tab = 0;
    context->input_case_sensitive = 0;
-   context->input_string = SADD(str->Object);
+   context->input_string = String(p);
    if (sigsetjmp(context->error_jump, 1)) {
       context->input_tab = -1;
       context->input_string = NULL;
@@ -1760,7 +1760,7 @@ DY(yreading_string)
       siglongjmp(context->error_jump, -1L);
    }
 
-   at *answer = progn(ARG_LIST->Cdr);
+   at *answer = progn(Cdr(ARG_LIST));
    context->input_tab = -1;
    context->input_string = NULL;
    context_pop();
@@ -1776,7 +1776,7 @@ DX(xread8)
    at *fdesc = APOINTER(1);
    ifn (RFILEP(fdesc))
       RAISEFX("read file descriptor expected", fdesc);
-   FILE *f = fdesc->Object;
+   FILE *f = Gptr(fdesc);
    return NEW_NUMBER(fgetc(f));
 }
 
@@ -1794,7 +1794,7 @@ DX(xwrite8)
 
    ifn (WFILEP(fdesc))
      RAISEFX("write file descriptor expected", fdesc);
-   FILE *f = fdesc->Object;
+   FILE *f = Gptr(fdesc);
    return NEW_NUMBER(fputc(x,f));
 }
 
@@ -1813,7 +1813,7 @@ DX(xfsize)
       ifn (RFILEP(p))
          RAISEFX("not a string or read descriptor", p);
    }
-   return NEW_NUMBER(file_size(p->Object));
+   return NEW_NUMBER(file_size(Gptr(p)));
 }
 
 
@@ -1846,7 +1846,7 @@ void init_fileio(char *program_name)
    at *q = new_string(s);
    var_set(at_lushdir, q);
    var_lock(at_lushdir);
-   s = concat_fname(SADD(q->Object),"sys");
+   s = concat_fname(String(q),"sys");
    q = new_cons(new_string(s),NIL);
    var_set(at_path, q);
    

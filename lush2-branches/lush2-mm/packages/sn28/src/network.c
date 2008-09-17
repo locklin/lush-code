@@ -101,23 +101,17 @@ set_vars(void)
   
   p = NEW_NUMBER(neurnombre);
   var_SET(var_Nnum,p);
-  UNLOCK(p);
   p = NEW_NUMBER(synnombre);
   var_SET(var_Snum,p);
-  UNLOCK(p);
   p = NEW_NUMBER(neurmax);
   var_SET(var_Nmax,p);
-  UNLOCK(p);
   p = NEW_NUMBER(synmax);
   var_SET(var_Smax,p);
-  UNLOCK(p);
 #ifdef ITERATIVE
   p = NEW_NUMBER(weightnombre);
   var_SET(var_Wnum,p);
-  UNLOCK(p);
   p = NEW_NUMBER(weightmax);
   var_SET(var_Wmax,p);
-  UNLOCK(p);
 #endif
 }
 
@@ -156,10 +150,9 @@ netalloc(int n1, int n2)
     dim[1] = sizeof(weight) / sizeof(flt);
     w_matrix = F_matrix(2,dim);
     protect(w_matrix);
-    UNLOCK(w_matrix);
     if (w_matrix_var)
       var_SET(w_matrix_var,w_matrix);
-    arr = w_matrix->Object;
+    arr = Mptr(w_matrix);
     weightbase = arr->st->srg.data;
     weightmax = n3;
   }
@@ -241,8 +234,8 @@ DX(xnewneurons)
     {
       if (neur>=neurmax)
 	error(NIL,"too many neurons",NIL);
-      *where = cons( NEW_NUMBER(neur++),NIL);
-      where = &((*where)->Cdr);
+      *where = new_cons( NEW_NUMBER(neur++),NIL);
+      where = &Cdr(*where));
     };
   neurnombre=neur;
   set_vars();
@@ -407,11 +400,11 @@ static void
 testlist(at *q)
 {
   at *p;
-  for(p=q;CONSP(p);p=p->Cdr) {
-    if (! (p->Car->flags & C_NUMBER))
-      error(NIL,"not a cell number",p->Car);
-    else if (p->Car->Number < 0 || p->Car->Number > neurnombre)
-      error(NIL,"illegal cell number",p->Car);
+  for(p=q; CONSP(p); p=Cdr(p)) {
+    if (! NUMBERP(Car(p)) )
+      error(NIL,"not a cell number", Car(p));
+    else if (Number(Car(p)) < 0 || Number(Car(p)) > neurnombre)
+      error(NIL,"illegal cell number", Car(p));
   }
   if (p)
     error(NIL,"illegal cell list",q);
@@ -444,13 +437,10 @@ DX(xconnect)
     avl = flatten(APOINTER(2));
     testlist(aml);
     testlist(avl);
-    for( am2=aml; am2; am2=am2->Cdr )
-      for( av2=avl; av2; av2=av2->Cdr )
-	connection( (int)(am2->Car->Number),
-		   (int)(av2->Car->Number),
+    for( am2=aml; am2; am2=Cdr(am2) )
+      for( av2=avl; av2; av2=Cdr(av2) )
+	connection((int)Number(Car(am2)), (int)Number(Car(av2)),
 		   Flt0, Flt0 );
-    UNLOCK(aml);
-    UNLOCK(avl);
   }
   set_vars();
   return NIL;
@@ -534,17 +524,11 @@ DX(xdup_connection)
     testlist(svl);
     if ( length(aml) != length(sml) || length(avl) != length(svl) )
       error(NIL,"source and target listes should have the same length",NIL);
-    for( am2=aml,sm2=sml; am2 && sm2; am2=am2->Cdr,sm2=sm2->Cdr )
-      for( av2=avl,sv2=svl; av2 && sv2; av2=av2->Cdr,sv2=sv2->Cdr )
-	dup_connection( (int)(sm2->Car->Number),
-		       (int)(sv2->Car->Number),
-		       (int)(am2->Car->Number),
-		       (int)(av2->Car->Number),
+    for( am2=aml,sm2=sml; am2 && sm2; am2=Cdr(am2), sm2=Cdr(sm2) )
+      for( av2=avl,sv2=svl; av2 && sv2; av2=Cdr(av2),sv2=Cdr(sv2) )
+	dup_connection( (int)Number(Car(sm2)), (int)Number(Car(sv2)),
+                        (int)Number(Car(am2)), (int)Number(Car(av2)),
 		       0,Flt0, Flt0 );
-    UNLOCK(aml);
-    UNLOCK(sml);
-    UNLOCK(avl);
-    UNLOCK(svl);
   }
   set_vars();
   return NIL;
@@ -944,7 +928,6 @@ DX(xmerge_net)
   file_close(f);
   q = NEW_NUMBER(Nheader.age);
   var_SET(var_age,q);
-  UNLOCK(q);
   set_vars();
   return new_string(s);
   

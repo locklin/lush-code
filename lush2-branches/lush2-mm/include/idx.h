@@ -237,7 +237,7 @@
     if (arg_number==1) { \
        ind1 = AINDEX(1); \
        p2 = CLONE_ARRAY(ind1); \
-       ind2 = p2->Object; \
+       ind2 = Mptr(p2); \
     }  else { \
        ARG_NUMBER(2); \
        ind1 = AINDEX(1); \
@@ -300,7 +300,7 @@
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
        p3 = CLONE_ARRAY(ind1); \
-       ind3 = p3->Object; \
+       ind3 = Mptr(p3); \
     }  else { \
        ARG_NUMBER(3); \
        ind1 = AINDEX(1); \
@@ -332,7 +332,7 @@
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
        p3 = CLONE_ARRAY(ind1); \
-       ind3 = p3->Object; \
+       ind3 = Mptr(p3); \
     }  else { \
        ARG_NUMBER(3); \
        ind1 = AINDEX(1); \

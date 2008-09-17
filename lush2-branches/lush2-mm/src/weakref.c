@@ -148,9 +148,9 @@ void protect(at *q)
    at *p = protected;
 
    while (CONSP(p)) {
-      if (p->Car==q)
+      if (Car(p)==q)
          return;
-      p = p->Cdr;
+      p = Cdr(p);
    }
    protected = new_cons(q, protected);
 }
@@ -160,12 +160,12 @@ void unprotect(at *q)
    at **p = &protected;
    
    while(CONSP((*p))) {
-      if ((*p)->Car==q) {
+      if (Car(*p)==q) {
          q = *p;
-         *p = (*p)->Cdr;
-         q->Cdr = NIL;
+         *p = Cdr(*p);
+         Cdr(q) = NIL;
       } else
-         p = &((*p)->Cdr);
+         p = &Cdr(*p);
    }
 }
 

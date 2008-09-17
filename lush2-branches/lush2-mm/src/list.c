@@ -63,7 +63,7 @@ at *car(at *q)
 {
    ifn (LISTP(q))
       RAISEF("not a list", q);
-   return q ? q->Car : q;
+   return q ? Car(q) : q;
 }
 
 DX(xcar)
@@ -78,7 +78,7 @@ at *cdr(at *q)
 {
    ifn (LISTP(q))
       RAISEF("not a list", q);
-   return q ? q->Cdr : q;
+   return q ? Cdr(q) : q;
 }
 
 DX(xcdr)
@@ -144,7 +144,7 @@ DX(xcddr)
 at *rplaca(at *q, at *p)
 {
    if (CONSP(q))
-      q->Car = p;
+      Car(q) = p;
    else
       RAISEF("not a cons", q);
 
@@ -162,7 +162,7 @@ DX(xrplaca)
 at *rplacd(at *q, at *p)
 {
   if (CONSP(q))
-     q->Cdr = p;
+     Cdr(q) = p;
   else
      RAISEF("not a cons", q);
 
@@ -184,8 +184,8 @@ at *displace(at *q, at *p)
    ifn (CONSP(p))
       RAISEF("not a cons", p);
   
-   q->Car = p->Car;
-   q->Cdr = p->Cdr;
+   Car(q) = Car(p);
+   Cdr(q) = Cdr(p);
    return q;
 }
 
@@ -208,22 +208,22 @@ at *deepcopy_list(at *p)
       at *q = NIL;
       at **qp = &q;
       while (CONSP(p)) {
-         *qp = new_cons(p->Car, NIL);
-         qp = &((*qp)->Cdr);
-         p = p->Cdr;
+         *qp = new_cons(Car(p), NIL);
+         qp = &Cdr(*qp);
+         p = Cdr(p);
          if (p == p0)
             RAISEF("can't do circular structures", NIL);
          move_p0 = !move_p0;
          if (move_p0)
-            p0 = p0->Cdr;
+            p0 = Cdr(p0);
       }
       *qp = deepcopy_list(p);
 
       /* descend */
       p = q;
       while (CONSP(p)) {
-         p->Car = deepcopy_list(p->Car);
-         p = p->Cdr;
+         Car(p) = deepcopy_list(Car(p));
+         p = Cdr(p);
       }
       MM_RETURN(q);
     
@@ -260,11 +260,11 @@ int length(at *p)
    int i = 0;
    while (CONSP(p)) {
       i++;
-      p = p->Cdr;
+      p = Cdr(p);
       if (p == q)
          return -1;
       if (i & 1)
-         q = q->Cdr;
+         q = Cdr(q);
    }
    return i;
 }
@@ -298,18 +298,18 @@ at *lasta(at *list)
 
    int toggle = 1;
    at *q = list;
-   while (CONSP(list->Cdr)) {
-      list = list->Cdr;
+   while (CONSP(Cdr(list))) {
+      list = Cdr(list);
       if (list == q)
          RAISEF("circular list has no last element",NIL);
       toggle ^= 1;
       if (toggle)
-         q = q->Cdr;
+         q = Cdr(q);
    }
-   if (list->Cdr) {
-      return list->Cdr;
+   if (Cdr(list)) {
+      return Cdr(list);
    } else {
-      return list->Car;
+      return Car(list);
    }
 }
 
@@ -328,13 +328,13 @@ at *lastcdr(at *list)
 
    at *q = list;
    int toggle = 0;
-   while (CONSP(list->Cdr)) {
-      list = list->Cdr;
+   while (CONSP(Cdr(list))) {
+      list = Cdr(list);
       if (list == q)
          RAISEF("circular list has no last element",NIL);
       toggle ^= 1;
       if (toggle)
-         q = q->Cdr;
+         q = Cdr(q);
    }
    return list;
 }
@@ -352,14 +352,14 @@ at *member(at *elem, at *list)
    at *q = list;
    int toggle = 0;
    while (CONSP(list)) {
-      if (eq_test(list->Car, elem))
+      if (eq_test(Car(list), elem))
          return list;
-      list = list->Cdr;
+      list = Cdr(list);
       if (list == q)
          break;
       toggle ^= 1;
       if (toggle)
-         q = q->Cdr;
+         q = Cdr(q);
    }
    return NIL;
 }
@@ -381,15 +381,15 @@ at *append(at *l1, at *l2)
    int toggle = 0;
 
    while (CONSP(l1)) {
-      *where = new_cons(l1->Car, NIL);
-      where = &((*where)->Cdr);
-      l1 = l1->Cdr;
+      *where = new_cons(Car(l1), NIL);
+      where = &Cdr(*where);
+      l1 = Cdr(l1);
       if (l1 == q) {
          RAISEF("cannot append to a circular list",NIL);
       }
       toggle ^= 1;
       if (toggle)
-         q = q->Cdr;
+         q = Cdr(q);
    }
    if (l1 != NIL) {
       *where = l1;
@@ -421,10 +421,10 @@ at *nfirst(int n, at *l)
    at **where = &answer;
 
    while (CONSP(l) && n>0) {
-      *where = new_cons(l->Car, NIL);
-      where = &((*where)->Cdr);
+      *where = new_cons(Car(l), NIL);
+      where = &Cdr(*where);
       n--;
-      l = l->Cdr;
+      l = Cdr(l);
    }
    if (l && n>0)
       *where = l;
@@ -445,10 +445,10 @@ at *nth(at *l, int n)
    while (n>0 && CONSP(l)) {
       //CHECK_MACHINE("on");
       n--;
-      l = l->Cdr;
+      l = Cdr(l);
    }
    if (n==0 && CONSP(l))
-      return l->Car;
+      return Car(l);
    else
       return NIL;
 }
@@ -465,7 +465,7 @@ at *nthcdr(at *l, int n)
 {
    while (n>0 && CONSP(l)) {
       n--;
-      l = l->Cdr;
+      l = Cdr(l);
    }
    if (n==0 && CONSP(l))
       return l;
@@ -488,14 +488,14 @@ at *reverse(at *l)
    int toggle = 0;
    at *r = NIL;
    while (CONSP(l)) {
-      r = new_cons(l->Car, r);
-      l = l->Cdr;
+      r = new_cons(Car(l), r);
+      l = Cdr(l);
       if (l == q) {
          RAISEF("cannot reverse a circular list",NIL);
       }
       toggle ^= 1;
       if (toggle)
-         q = q->Cdr;
+         q = Cdr(q);
    }
    MM_RETURN(r);
 }
@@ -515,20 +515,20 @@ static at **flat1(at *l, at **where)
    struct recur_elt elt;
    
    while (CONSP(l)) {
-      ifn (recur_push_ok(&elt, &flat1, l->Car))
+      ifn (recur_push_ok(&elt, &flat1, Car(l)))
          error("flatten", "cannot flatten circular list",NIL);
-      where = flat1(l->Car, where);
+      where = flat1(Car(l), where);
       recur_pop(&elt);
-      l = l->Cdr;
+      l = Cdr(l);
       if (l==slow)
          error("flatten", "cannot flatten circular list",NIL);
       toggle = !toggle;
       if (toggle)
-         slow = slow->Cdr;
+         slow = Cdr(slow);
    }
    if (l) {
       *where = new_cons(l, NIL);
-      return &((*where)->Cdr);
+      return &Cdr(*where);
    } else
       return where;
 }
@@ -555,16 +555,16 @@ at *assoc(at *k, at *l)
    int toggle = 0;
    while (CONSP(l)) 
    {
-      at *p = l->Car;
-      if (CONSP(p) && eq_test(p->Car,k))
+      at *p = Car(l);
+      if (CONSP(p) && eq_test(Car(p),k))
          return p;
 
-      l = l->Cdr;
+      l = Cdr(l);
       if (l==q)
          break;
       toggle ^= 1;
       if (toggle)
-         q = q->Cdr;
+         q = Cdr(q);
    }
    return NIL;
 }
