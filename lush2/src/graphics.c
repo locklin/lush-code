@@ -181,11 +181,9 @@ DX(xfont)
       } else {
          RAISEFX("driver does not support 'font'", NIL);
       }
-      if (r) {
-         at *a = str_utf8_to_mb(r);
-         win->font = a;
-         q = a;
-      } else
+      if (r)
+         q = win->font = str_utf8_to_mb(r);
+      else
          q = NIL;
    }
    return q;
@@ -1812,7 +1810,7 @@ DY(ygsave)
    short oldw = win->clipw;
    short oldh = win->cliph;
    short oldl = win->linestyle;
-  
+
    struct context mycontext;
    int errorflag = 0;
    at *ans = NIL;
@@ -1834,11 +1832,13 @@ DY(ygsave)
       }
       
       if (oldfont!=win->font)
+         protect(oldfont);
          if (win->gdriver->setfont && STRINGP(oldfont)) {
             (*win->gdriver->begin) (win);
             (*win->gdriver->setfont)(win,SADD(oldfont->Object));
             (*win->gdriver->end) (win);
             win->font = oldfont;
+            unprotect(oldfont);
          }
       
       if (oldx!=win->clipx || oldy!=win->clipy || 
