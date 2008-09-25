@@ -1255,7 +1255,7 @@ void mm_anchor(void *p)
 }
 
 mt_t mm_regtype(const char *n, size_t s, 
-                clear_func_t *c, mark_func_t *m, finalize_func_t *f)
+                clear_func_t c, mark_func_t *m, finalize_func_t *f)
 {
    if (!n || !n[0]) {
       warn("first argument invalid\n");
@@ -1442,7 +1442,7 @@ size_t mm_strlen(const char *s)
 }
 
 
-void mm_type(void *p, mt_t t)
+void mm_type(const void *p, mt_t t)
 {
    assert(ADDRESS_VALID(p));
    assert(TYPE_VALID(t));
