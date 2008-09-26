@@ -365,7 +365,7 @@ static void maybe_trigger_collect(size_t s)
       return;
 
    if ((vol_allocs >= volume_threshold) || collect_requested) {
-        //mm_collect();
+      mm_collect();
       if (!collect_in_progress)
          /* could not spawn child, do it synchronously */
          mm_collect_now();
@@ -956,7 +956,6 @@ static void reclaim_inheap(void *q)
    blockrecs[b].in_use--;      
    if (blockrecs[b].in_use == 0) {
       blockrecs[b].t = mt_undefined;
-      VALGRIND_MAKE_MEM_NOACCESS((block_t *)BLOCK_ADDR(q), BLOCKSIZE);
       VALGRIND_DISCARD((block_t *)BLOCK_ADDR(q));
    }
    if (b < types[t].next_b)
