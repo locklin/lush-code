@@ -280,7 +280,7 @@ at *large_string_collect(large_string_t *ls)
    char *r = String(q);
    for (at *p = ls->backup; p; p = Cdr(p)) {
       strcpy(r, String(Car(p)));
-      r += mm_strlen(r);
+      r += strlen(r);
    }
    strcpy(r, ls->buffer);
    large_string_init(ls);
