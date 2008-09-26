@@ -626,6 +626,8 @@ void toplevel(char *in, char *out, char *prompts)
 DX(xgc)
 {
    ARG_NUMBER(0);
+   MM_NOGC;
+   MM_NOGC_END;
    int i = mm_collect_now();
    return NEW_NUMBER(i);
 }
