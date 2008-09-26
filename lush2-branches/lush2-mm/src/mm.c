@@ -300,6 +300,17 @@ static bool isroot(const void *p)
 }
 */
 
+static bool man_is_sorted(void)
+{
+     for (int i = 0; i<man_k; i++)
+          if (managed[i]>=managed[i+1]) {
+               printf("i = %d\n", i);
+               return false;
+          }
+     return true;
+          
+}
+
 static inline void *seal(const char *p)
 {
    assert(!LBITS(p));
@@ -531,9 +542,9 @@ static bool no_marked_live(void)
  * Information Processing Letters 39, pp 269-276, 1991.
  */
 
-#define MAXPOPLAR 31
-static int   poplar_roots[MAXPOPLAR+2] = {-1};
-static bool  poplar_sorted[MAXPOPLAR];
+#define MAX_POPLAR 31
+static int   poplar_roots[MAX_POPLAR+2] = {-1};
+static bool  poplar_sorted[MAX_POPLAR];
 
 #define M(p,q) (((p)+(q))/2)
 #define A(q)   (managed[q])
@@ -594,7 +605,7 @@ static void sort_poplar(int n)
    
    if (poplar_sorted[n]) return;
 
-   int r[MAXPOPLAR+1], t = 1;
+   int r[MAX_POPLAR+1], t = 1;
    r[0] = poplar_roots[n];
    r[1] = poplar_roots[n+1];
    
@@ -622,16 +633,6 @@ static void sort_poplar(int n)
    poplar_sorted[n] = true;
 }
 
-static bool poplar_roots_ok(void)
-{
-   for (int n = 1; n < man_t; n++) {
-      assert(-1<=poplar_roots[n] && poplar_roots[n]<=man_k);
-      assert(poplar_roots[n] < poplar_roots[n+1]);
-   }
-   assert(poplar_roots[man_t]==man_k);
-   return true;
-}
-
 /* Remove obsolete entries from managed. */
 static void compact_managed(void)
 {
@@ -639,19 +640,46 @@ static void compact_managed(void)
 
    if (man_is_compact) return;
 
-   int j = 0;
-   for (int i=0; i<=man_last; i++) {
+   /* every poplar is sorted, so we set man_k to the last element */
+   /* of the first poplar and recompute the poplar roots quickly  */
+   assert(man_t > 0);
+   man_k = poplar_roots[1];
+
+   int i, n = 0;
+   for (i = 0; i <= man_k; i++) {
       if (!OBSOLETE(managed[i]))
-         managed[j++] = managed[i];
+         managed[n++] = managed[i];
    }
-   j--;
+   man_k = n-1;
+   for (; i <= man_last; i++) {
+      if (!OBSOLETE(managed[i]))
+         managed[n++] = managed[i];
+   }
+   man_last = n-1;
 
    /* rebuild poplars */
-   man_last = j;
+#if 1
+   {
+      /* this only works when managed was sorted up to man_k */
+      n = man_k + 1;
+      man_t = 0;
+      poplar_roots[man_t] = -1;
+      int m = (1<<(MAX_POPLAR-1))-1;
+      while (n) {
+         if (n >= m) {
+            poplar_roots[man_t+1] = poplar_roots[man_t] + m;
+            poplar_sorted[man_t] = true;
+            man_t++;
+            n -= m;
+         } else
+            m = m>>1;
+      }
+   }
+#else
    man_k = -1;
    man_t = 0;
    update_man_k(-1);
-   assert(poplar_roots_ok());
+#endif
 
    man_is_compact = true;
 }
