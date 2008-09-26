@@ -358,7 +358,7 @@ at *generic_listeval(at *p, at *q)
       s = s->next;
       while (s && s->valueptr) {
          pp = *(s->valueptr);
-         if (Class(pp)->listeval != generic_listeval) {
+         if (pp && Class(pp)->listeval != generic_listeval) {
             if (eval_ptr == eval_debug) {
                print_tab(error_doc.debug_tab);
                print_string("  !! inefficient stacked call\n");
