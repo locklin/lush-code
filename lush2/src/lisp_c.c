@@ -1617,47 +1617,39 @@ static void wipe_out_temps(void)
 
     avlnode_t *n = dummy_tmps.chnxt;
 
-    if (n->belong!=BELONG_LISP)
+    if (n->belong!=BELONG_LISP || n->litem)
       error(NIL,"internal error in TMPS chain",NIL);
     
-    if (n->litem) {
-/*       printf("ignoring temp %s (count %d)\n",  */
-/* 	     pname(n->litem), n->litem->count); */
-      avlchain_set(n, 0);
-      
-    } else {
-	     
-      void *cptr = n->citem;
-      switch(n->cinfo) {
-      case CINFO_LIST:
-      case CINFO_SRG:
-         //srg_free(cptr);
-	break;
-	
-      case CINFO_OBJ: {
-	void (*cdestroy)(gptr) = ((struct CClass_object*)cptr)->Vtbl->Cdestroy;
-	if (cdestroy)
-	  (*cdestroy)(cptr); /* call destructor */
-	break;
-	
-      case CINFO_STR:
-        /* printf("(lisp_c) wiping out temporary string\n"); */
-        cptr = NULL;
-	break;
-	
-      case CINFO_IDX:
-        /* printf("(lisp_c) wiping out temporary index\n"); */
-        break;
+    void *cptr = n->citem;
 
-      default:
-	printf("(lisp_c) wiping out unknown temporay (%lx)\n",(long)cptr);
-	break;
-      }
-      }
-      avlchain_set(n, 0);
-      avl_del(n->citem);
-      if (cptr) free(cptr);
+    switch(n->cinfo) {
+    case CINFO_LIST:
+    case CINFO_SRG:
+      //srg_free(cptr);
+      break;
+      
+    case CINFO_OBJ: {
+      void (*cdestroy)(gptr) = ((struct CClass_object*)cptr)->Vtbl->Cdestroy;
+      if (cdestroy)
+        (*cdestroy)(cptr); /* call destructor */
+      break;
     }
+    case CINFO_STR:
+      /* printf("(lisp_c) wiping out temporary string\n"); */
+      cptr = NULL;
+      break;
+      
+    case CINFO_IDX:
+      /* printf("(lisp_c) wiping out temporary index\n"); */
+      break;
+      
+    default:
+      printf("(lisp_c) wiping out unknown temporay (%lx)\n",(long)cptr);
+      break;
+    }
+    avlchain_set(n, 0);
+    avl_del(n->citem);
+    if (cptr) free(cptr);
   }
 }
 
