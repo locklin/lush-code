@@ -186,7 +186,7 @@ struct at {
    struct at *car;
    union {
       double *d;
-      char *c;
+      char   *c;
       void   *p;
       struct symbol *s;
       struct at *cdr;
@@ -243,6 +243,7 @@ extern LUSHAPI at *(*argeval_ptr) (at*);
 
 typedef void *dispose_func_t(void *);
 struct class {
+   double           dummy;       /* force alignment of static class structs */
    /* class vectors */
    void*          (*dispose)      (void *);
    void           (*action)       (at*, void (*f)(at*));

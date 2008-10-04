@@ -55,6 +55,14 @@ enum binarytokens {
 };
 
 
+/* flags */
+
+#define MARK       2
+#define MULTIPLE   4
+
+#define CLEAR(p)  ((void *)((uintptr_t)(p)&~(MARK + MULTIPLE)))
+
+
 /*** GLOBAL VARIABLES ****/
 
 int          in_bwrite = 0;
@@ -219,7 +227,7 @@ again:
    if (!p)
       return;
 
-   class_t *cl = CLEAR_PTR(p->class);
+   class_t *cl = CLEAR(Class(p));
 
    if (cl == &cons_class) {
       sweep(Car(p),code);
@@ -284,11 +292,6 @@ again:
  * which must be relocated when saving object p 
  */
 
-/* flags */
-
-#define MARK       2
-#define MULTIPLE   4
-
 static int cond_set_flags(at *p)
 {
    if (p) {
@@ -318,7 +321,7 @@ static void set_flags(at *p)
 static int cond_clear_flags(at *p)
 {
    if (p && ((uintptr_t)(p->class) & MARK)) {
-      p->class = CLEAR_PTR(p->class);
+      p->class = CLEAR(p->class);
       return 0;
    } else
       return 1; /* stop recursion if already cleared */
@@ -740,7 +743,7 @@ static int local_write(at *p)
       }
    }
   
-   class_t *cl = CLEAR_PTR(Class(p));
+   class_t *cl = CLEAR(Class(p));
    if (cl == &cons_class) {
       write_card8(TOK_CONS);
       return 0;
