@@ -93,6 +93,7 @@ inline static void mark_temporary (avlnode_t *n)
 
 inline static void mark_for_update(avlnode_t *n)
 {
+  assert(!ZOMBIEP(n->litem));
   avlchain_set(n, &dummy_upds);
 }
 
@@ -331,7 +332,6 @@ static avlnode_t *lside_create_str(at *p)
   avlnode_t *n = avl_find(str);
   
   if (n==0) {
-     /* create storage pointing to the string */
      avlnode_t *n = alloc_str(str);
      n->litem = p;
   }
@@ -1150,7 +1150,6 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
     index_t *ind = new_index(atst->Object, NIL);
     ind->cptr = idx;
     n->litem = ind->backptr;
-    //DELAYED_UNLOCK(n->litem, NIL);
     mark_for_update(n);
     update_lisp_from_c(n);
     return n->litem;
@@ -1179,7 +1178,6 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
     /* We can now update the avl tree */
     st->cptr = srg;
     n->litem = st->backptr;
-    //DELAYED_UNLOCK(n->litem, NIL);
     mark_for_update(n);
     update_lisp_from_c(n);
     return n->litem;
@@ -1193,7 +1191,6 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
 
     /* Update avlnode_t */
     n->litem = new_object(classdoc->lispdata.atclass->Object);
-    //DELAYED_UNLOCK(n->litem, NIL);
     ((struct oostruct*)(n->litem->Object))->cptr = n->citem;
     mark_for_update(n);
     /* Update object */
@@ -1208,8 +1205,6 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
 
     at *p = new_string(cs);
     n->litem = p;
-    //DELAYED_UNLOCK(n->litem, NIL);
-    //mark_for_update(n);
     return n->litem;
   }
 
@@ -1238,7 +1233,6 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
       drec = drec->end;
       where = &((*where)->Cdr);
     }
-    //DELAYED_UNLOCK(p, NIL);
     return p;
   }
   default:
@@ -1496,7 +1490,7 @@ static void update_lisp_from_c(avlnode_t *n)
 	  at *orig = obj->slots[j].val;
 	  at *new = dharg_to_at(&tmparg, drec+1, p);
 	  obj->slots[j].val = new;
-	  DELAYED_UNLOCK(new, orig);
+          DELAYED_UNLOCK(new, orig);
 
 	  drec = drec->end;
 	}
@@ -1682,8 +1676,6 @@ static at *_dh_listeval(at *p, at *q)
   at *atgs[MAXARGS];
   dharg args[MAXARGS];
 
-  MM_ENTER;
-  
   // printf("dh_listeval: %s\n", pname(q));
   /* Find and check the DHDOC */
   struct cfunction *cfunc = p->Object;
@@ -1721,10 +1713,11 @@ static at *_dh_listeval(at *p, at *q)
         drec->op!=DHT_GPTR && 
         drec->op!=DHT_BOOL)
       error(NIL,"(lisp_c) illegal nil argument",NIL);
+    assert(!ZOMBIEP(atgs[i]));
     at_to_dharg(atgs[i], &args[i], drec, NIL);
     drec = drec->end;
   }
-  
+
   /* Prepare temporaries */
   if (ntemps != 0) {
     drec++;
@@ -1782,7 +1775,7 @@ static at *_dh_listeval(at *p, at *q)
   dont_warn_zombie = false;
   if (errflag)
     error(NIL,"Run-time error in compiled code",NIL);
-  MM_RETURN(atfuncret);
+  return atfuncret;
 }
 
 /* we must pause while in compiled code gc to avoid reentrant calls
@@ -1791,6 +1784,7 @@ static at *_dh_listeval(at *p, at *q)
 at *dh_listeval(at *p, at *q)
 {
   struct context c;
+  MM_ENTER;
   MM_PAUSEGC;
   context_push(&c);
  
@@ -1802,7 +1796,8 @@ at *dh_listeval(at *p, at *q)
   at *result = _dh_listeval(p, q);
   MM_PAUSEGC_END;
   context_pop();
-  return result;
+
+  MM_RETURN(result);
 }
 
 
