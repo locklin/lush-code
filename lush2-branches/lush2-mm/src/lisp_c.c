@@ -1316,7 +1316,7 @@ static void update_c_from_lisp(avlnode_t *n)
 
     if (obj) {
        // if (p->flags & C_GARBAGE)
-       // dont_warn_zombie = true;
+      dont_warn_zombie = true;
       
       dhclassdoc_t *cdoc = n->cmoreinfo;
       if (cdoc==0)
