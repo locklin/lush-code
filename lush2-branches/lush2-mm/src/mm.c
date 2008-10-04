@@ -300,17 +300,6 @@ static bool isroot(const void *p)
 }
 */
 
-static bool man_is_sorted(void)
-{
-     for (int i = 0; i<man_k; i++)
-          if (managed[i]>=managed[i+1]) {
-               printf("i = %d\n", i);
-               return false;
-          }
-     return true;
-          
-}
-
 static inline void *seal(const char *p)
 {
    assert(!LBITS(p));
