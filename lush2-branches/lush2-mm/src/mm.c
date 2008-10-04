@@ -936,7 +936,6 @@ void mm_mark(const void *p)
 /* trace starting from objects currently in the stack */
 static void trace_from_stack(void)
 {
-   assert(!stack_overflowed);
 
 process_stack:
    while (!empty()) {
