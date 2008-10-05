@@ -228,7 +228,7 @@ static avlnode_t *lside_create_srg(at *p)
 {
   ifn (STORAGEP(p))
     error(NIL,"not a storage", p);
-  storage_t *st = p->Object;
+  storage_t *st = Mptr(p);
 
   if (st->cptr) {
     avlnode_t *n = avl_find(st->cptr);
@@ -259,7 +259,7 @@ static avlnode_t *lside_create_idx(at *p)
 {
   ifn (INDEXP(p))
     error(NIL,"Not an index",p);
-  index_t *ind = p->Object;
+  index_t *ind = Mptr(p);
   
   if (ind->cptr) {
     avlnode_t *n = avl_find(ind->cptr);
@@ -284,7 +284,7 @@ static avlnode_t *lside_create_obj(at *p)
   /* check type */
   ifn (OBJECTP(p))
     error(NIL,"Object expected",p);
-  struct oostruct *obj = p->Object;
+  struct oostruct *obj = Mptr(p);
   
   if (obj && obj->cptr) {
     avlnode_t *n = avl_find(obj->cptr);
@@ -296,7 +296,7 @@ static avlnode_t *lside_create_obj(at *p)
     
   } else {
     /* get compiled class */
-    class_t *cl = p->Class;
+    class_t *cl = Class(p);
     while (cl && !cl->classdoc)
       cl = cl->super;
     ifn (cl)
@@ -327,7 +327,7 @@ static avlnode_t *lside_create_str(at *p)
 {
   ifn (STRINGP(p))
     error(NIL,"String expected",p);
-  char *str = SADD(p->Object);
+  char *str = String(p);
   assert(str);
   avlnode_t *n = avl_find(str);
   
@@ -384,19 +384,19 @@ void lside_destroy_item(void *cptr)
 	  switch (n->cinfo) {
 
 	  case CINFO_SRG:
-	    ((storage_t *)p->Object)->cptr = NULL;
+	    ((storage_t *)Mptr(p))->cptr = NULL;
 	    break;
 	    
 	  case CINFO_OBJ:
-	    ((object_t *)p->Object)->cptr = NULL;
+	    ((object_t *)Mptr(p))->cptr = NULL;
 	    break;
 
 	  case CINFO_IDX:
-            ((index_t *)p->Object)->cptr = NULL;
+            ((index_t *)Mptr(p))->cptr = NULL;
 	    break;
 
 	  case CINFO_STR:
-             //n->litem->Object = NULL;
+             //Mptr(n->litem) = NULL;
             n->citem = NULL;
 	    break;
 	  }
@@ -535,10 +535,10 @@ static void transmute_object_into_gptr(at *p, void *px)
   /* This is bad practice */
   if (p && (EXTERNP(p))) {
     /* clean object up */
-    (*p->Class->dispose)(p->Object);
+    Class(p)->dispose(Mptr(p));
     /* disguise it as a gptr */
-    p->Class = &gptr_class;
-    p->Gptr = px;
+    Class(p) = &gptr_class;
+    Gptr(p) = px;
   }
 }
 
@@ -561,27 +561,27 @@ static void cside_destroy_node(avlnode_t *n)
     switch (n->cinfo) {
 
     case CINFO_SRG:
-      ((struct storage *)(p->Object))->cptr = 0;
+      ((struct storage *)Mptr(p))->cptr = 0;
       update_lisp_from_c(n);
       break;
 
     case CINFO_OBJ:
-      ((struct oostruct*)(p->Object))->cptr = 0;
+      ((struct oostruct*)Mptr(p))->cptr = 0;
       transmute_object_into_gptr(n->litem, n->citem);
       break;
 
     case CINFO_IDX:
-      ((struct index *)(p->Object))->cptr = 0;
+      ((struct index *)Mptr(p))->cptr = 0;
       transmute_object_into_gptr(n->litem, n->citem);
       break;
 
     case CINFO_STR:
-      p->Object = 0;
+      Mptr(p) = 0;
       transmute_object_into_gptr(n->litem, n->citem);
       break;
       
     default:
-      error(NIL,"lisp_c internal: cinfo field invalid",n->litem);
+      error(NIL,"lisp_c internal: cinfo field invalid", n->litem);
       break;
     }
   }
@@ -846,7 +846,7 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
   
   case DHT_GPTR:
     if (GPTRP(at_obj))
-      arg->dh_gptr = (gptr) at_obj->Gptr;             
+      arg->dh_gptr = Gptr(at_obj);             
     else
       lisp2c_error("GPTR expected",errctx,at_obj);
     break;
@@ -866,14 +866,14 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     if (GPTRP(at_obj)) {
       if (!dont_track_cside) 
 	lisp2c_warning("(in): found GPTR instead of SRG", errctx);
-      arg->dh_srg_ptr = at_obj->Gptr;
+      arg->dh_srg_ptr = Gptr(at_obj);
       
     } else if (ZOMBIEP(at_obj) && dont_warn_zombie) {
       arg->dh_srg_ptr = 0;
       
     } else if (STORAGEP(at_obj)) {
       /* check type and access */
-      storage_t *st = at_obj->Object;
+      storage_t *st = Mptr(at_obj);
       if (storage_to_dht[st->type] != (drec+1)->op)
 	lisp2c_error("STORAGE has illegal type",errctx,at_obj);
       if ((st->flags & STF_RDONLY) && (drec->access == DHT_WRITE))
@@ -891,14 +891,14 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     if (GPTRP(at_obj)) {
       if (!dont_track_cside) 
         lisp2c_warning("(in): found GPTR instead of IDX", errctx);
-      arg->dh_idx_ptr = at_obj->Gptr;
+      arg->dh_idx_ptr = Gptr(at_obj);
       
     } else if (ZOMBIEP(at_obj) && dont_warn_zombie) {
       arg->dh_idx_ptr = 0;
 
     } else if (INDEXP(at_obj)) {
       /* check type and access */
-      index_t *ind = at_obj->Object;
+      index_t *ind = Mptr(at_obj);
       if (ind->ndim != drec->ndim)
 	lisp2c_error("INDEX has wrong number of dimensions",
 		     errctx, at_obj);
@@ -920,7 +920,7 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     if (GPTRP(at_obj)) {
       if (!dont_track_cside)
         lisp2c_warning("(in): found GPTR instead of OBJ", errctx);
-      arg->dh_obj_ptr = at_obj->Gptr;
+      arg->dh_obj_ptr = Gptr(at_obj);
 
     } else if (ZOMBIEP(at_obj)) {
       if (!dont_track_cside && !dont_warn_zombie)
@@ -929,7 +929,7 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
 
     } else if (OBJECTP(at_obj)) {
       /* check type */
-      class_t *cl = at_obj->Class;
+      class_t *cl = Class(at_obj);
       for (; cl; cl=cl->super) {
 	dhclassdoc_t *cdoc = cl->classdoc;
 	if ((cdoc) && (cdoc == (dhclassdoc_t*)(drec->arg)))
@@ -948,14 +948,14 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     if (GPTRP(at_obj)) {
       if (!dont_track_cside)
         lisp2c_warning("(in): found GPTR instead of STR", errctx);
-      arg->dh_str_ptr = at_obj->Gptr;
+      arg->dh_str_ptr = Gptr(at_obj);
 
     } else if (ZOMBIEP(at_obj) && dont_warn_zombie) {
       arg->dh_str_ptr = 0;
 
     } else if (STRINGP(at_obj)) {
        //avlnode_t *n = lside_create_str(at_obj);
-      avlnode_t *n = alloc_str(at_obj->Object);
+      avlnode_t *n = alloc_str(String(at_obj));
       arg->dh_str_ptr = n->citem;
       
     } else
@@ -971,7 +971,7 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     if (GPTRP(at_obj)) {
       if (!dont_track_cside) 
         lisp2c_warning("(in): found GPTR instead of LIST", errctx);
-      arg->dh_srg_ptr = at_obj->Gptr;
+      arg->dh_srg_ptr = Gptr(at_obj);
 
     } else if (CONSP(at_obj)) {
       if (length(at_obj) != drec->ndim)
@@ -989,10 +989,10 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
       int i = drec->ndim;
       drec++;
       while (--i >= 0) {
-	at_to_dharg(p->Car, larg, drec, at_obj);
+	at_to_dharg(Car(p), larg, drec, at_obj);
 	drec = drec->end;
 	larg += 1;
-	p = p->Cdr;
+	p = Cdr(p);
       }
       (arg->dh_srg_ptr) = srg;
       
@@ -1147,7 +1147,7 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
     struct idx *idx = n->citem;
     avlnode_t *nst = avl_find(idx->srg);
     at *atst = make_lisp_from_c(nst, idx->srg);
-    index_t *ind = new_index(atst->Object, NIL);
+    index_t *ind = new_index(Mptr(atst), NIL);
     ind->cptr = idx;
     n->litem = ind->backptr;
     mark_for_update(n);
@@ -1190,8 +1190,8 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
 	    "classdoc appears to be uninitialized",NIL);
 
     /* Update avlnode_t */
-    n->litem = new_object(classdoc->lispdata.atclass->Object);
-    ((struct oostruct*)(n->litem->Object))->cptr = n->citem;
+    n->litem = new_object(Mptr(classdoc->lispdata.atclass));
+    ((struct oostruct*)Mptr(n->litem))->cptr = n->citem;
     mark_for_update(n);
     /* Update object */
     update_lisp_from_c(n);
@@ -1231,7 +1231,7 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
       *where = new_cons(dharg_to_at(arg,drec,NIL),NIL);
       arg += 1;
       drec = drec->end;
-      where = &((*where)->Cdr);
+      where = &Cdr(*where);
     }
     return p;
   }
@@ -1257,7 +1257,7 @@ static void update_c_from_lisp(avlnode_t *n)
   case CINFO_SRG: {
 
     /* Possibly broken code */        
-    storage_t *st = n->litem->Object;
+    storage_t *st = Mptr(n->litem);
     if (n->cmoreinfo)
        get_write_permit(st);
             
@@ -1284,7 +1284,7 @@ static void update_c_from_lisp(avlnode_t *n)
   case CINFO_IDX: {
 
     struct idx *idx = n->citem;
-    struct index *ind = n->litem->Object;
+    struct index *ind = Mptr(n->litem);
     
     /* setup storage */
     avlnode_t *nst = lside_create_srg(IND_ATST(ind));
@@ -1312,11 +1312,11 @@ static void update_c_from_lisp(avlnode_t *n)
 
     void *cptr = n->citem;
     at *p = n->litem;
-    struct oostruct *obj = p->Object;
+    struct oostruct *obj = Mptr(p);
 
     if (obj) {
        // if (p->flags & C_GARBAGE)
-       // dont_warn_zombie = true;
+      dont_warn_zombie = true;
       
       dhclassdoc_t *cdoc = n->cmoreinfo;
       if (cdoc==0)
@@ -1385,7 +1385,7 @@ static void update_lisp_from_c(avlnode_t *n)
 
   case CINFO_SRG: {
     struct srg *cptr = n->citem;
-    struct storage *st = n->litem->Object;
+    struct storage *st = Mptr(n->litem);
 
     if (n->belong == BELONG_C) {
       /* C allocated SRG manage their own data block */
@@ -1412,7 +1412,7 @@ static void update_lisp_from_c(avlnode_t *n)
   case CINFO_IDX: {
 
     struct idx *idx = n->citem;
-    struct index *ind = n->litem->Object;
+    struct index *ind = Mptr(n->litem);
 
     /* copy index structure */
     ind->ndim = idx->ndim;
@@ -1433,7 +1433,7 @@ static void update_lisp_from_c(avlnode_t *n)
     /* plug the storage into lisp object */
     at *origatst = IND_ATST(ind);
     at *atst = make_lisp_from_c(nst, idx->srg);
-    IND_ST(ind) = atst->Object;
+    IND_ST(ind) = Mptr(atst);
     DELAYED_UNLOCK(atst, origatst);
     break;
   }
@@ -1448,7 +1448,7 @@ static void update_lisp_from_c(avlnode_t *n)
 
     void *cptr = n->citem;
     at* p = n->litem;
-    struct oostruct *obj = p->Object;
+    struct oostruct *obj = Mptr(p);
     
     if (obj) {
        //if (p->flags & C_GARBAGE)
@@ -1678,7 +1678,7 @@ static at *_dh_listeval(at *p, at *q)
 
   // printf("dh_listeval: %s\n", pname(q));
   /* Find and check the DHDOC */
-  struct cfunction *cfunc = p->Object;
+  struct cfunction *cfunc = Mptr(p);
   if (CONSP(cfunc->name))
     check_primitive(cfunc->name, cfunc->info);
 
@@ -1697,12 +1697,12 @@ static at *_dh_listeval(at *p, at *q)
   
   /* Copy and evaluate arguments list */
   for(int i=0; i<nargs; i++) {
-    q = q->Cdr;
+    q = Cdr(q);
     ifn (CONSP(q))
       need_error(0,nargs,NIL);
-    atgs[i] = (*argeval_ptr)(q->Car);
+    atgs[i] = (*argeval_ptr)(Car(q));
   }
-  if (q->Cdr)	
+  if (Cdr(q))	
     need_error(0,nargs,NIL);
 
   /* Make compiled version of the arguments */
@@ -1846,13 +1846,13 @@ DX(xlisp_c_map)
   else if (NUMBERP(p))
     return lisp_c_map((void*)(unsigned long)Number(p));
   else if (OBJECTP(p))
-    cptr = ((struct oostruct *)(p->Object))->cptr;
+    cptr = ((struct oostruct *)Mptr(p))->cptr;
   else if (INDEXP(p))
-    cptr = ((struct index *)(p->Object))->cptr;
+    cptr = ((struct index *)Mptr(p))->cptr;
   else if (STORAGEP(p))
-    cptr = ((struct storage *)(p->Object))->cptr;
+    cptr = ((struct storage *)Mptr(p))->cptr;
   else if (GPTRP(p))
-    cptr = p->Gptr;
+    cptr = Gptr(p);
   if (cptr) {
     avlnode_t *n = avl_find(cptr);
     if (n) {
@@ -1989,7 +1989,7 @@ DX(xto_obj)
     p = APOINTER(1);
     ifn (CLASSP(p))
       error(NIL,"not a class", p);
-    cl = p->Object;
+    cl = Mptr(p);
     p = APOINTER(2);
     break;
 
@@ -2004,12 +2004,12 @@ DX(xto_obj)
 
   } else if (GPTRP(p)) {
     /* search object */
-    avlnode_t *n = avl_find(p->Gptr);
+    avlnode_t *n = avl_find(Gptr(p));
     ifn (n)
       error(NIL,"Object pointed to by this GPTR has been deallocated",p);
 
     /* make lisp object */
-    p = make_lisp_from_c(n, p->Gptr);
+    p = make_lisp_from_c(n, Gptr(p));
     delayed_kill_list = NIL;
 
   } else
@@ -2020,7 +2020,7 @@ DX(xto_obj)
     ifn (OBJECTP(p))
       error(NIL, "GPTR does not point to an object", APOINTER(2));
 
-    class_t *clm = p->Class;
+    class_t *clm = Class(p);
     while (clm && (clm != cl))
       clm = clm->super;
     if (clm != cl)
@@ -2042,12 +2042,12 @@ DX(xto_str)
     return p;
 
   } else if (GPTRP(p)) {
-    avlnode_t *n = avl_find(p->Gptr);
+    avlnode_t *n = avl_find(Gptr(p));
     ifn (n)
       RAISEF("Object pointed to by this GPTR has been deallocated",p);
 
     /* make lisp object */
-    at *q = make_lisp_from_c(n, p->Gptr);
+    at *q = make_lisp_from_c(n, Gptr(p));
     delayed_kill_list = NIL;
 
     ifn (STRINGP(q)) {
@@ -2097,13 +2097,13 @@ DX(xto_gptr)
     avlnode_t *n = lside_create_str(p);
     return NEW_GPTR(n->citem);
 
-  } else if (p && (p->class == &dh_class)) {
-    struct cfunction *cfunc = p->Object;
+  } else if (p && (Class(p) == &dh_class)) {
+    struct cfunction *cfunc = Mptr(p);
     if (CONSP(cfunc->name))
       check_primitive(cfunc->name, cfunc->info);
     
-    assert(MODULEP(cfunc->name->Car));
-    struct module *m = cfunc->name->Car->Object;
+    assert(MODULEP(Car(cfunc->name)));
+    struct module *m = Mptr(Car(cfunc->name));
     dhdoc_t *dhdoc;
     if (( dhdoc = (dhdoc_t*)(cfunc->info) )) {
       void *q = dynlink_symbol(m, dhdoc->lispdata.c_name, 1, 1);

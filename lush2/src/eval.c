@@ -76,9 +76,9 @@ at *eval_std(at *p)
       argeval_ptr = eval_ptr;
       CHECK_MACHINE("on");
       
-      at *q = eval_std(p->Car);
+      at *q = eval_std(Car(p));
       if (q)
-         p = (q->Class->listeval)(q, p);
+         p = Class(q)->listeval(q, p);
       else
          p = generic_listeval(q, p);
 
@@ -86,8 +86,8 @@ at *eval_std(at *p)
       return p;
       
    } else if (p) {
-      assert(p->Class->selfeval);
-      return (*(p->Class->selfeval)) (p);
+      assert(Class(p)->selfeval);
+      return Class(p)->selfeval(p);
    } else
       return NIL;
 }
@@ -175,8 +175,8 @@ at *apply(at *p, at *q)
    
    at *result;
    PUSH_ARGEVAL_PTR(eval_nothing) {
-      assert(p->Class->listeval);
-      result = (*(p->Class->listeval)) (p, q);
+      assert(Class(p)->listeval);
+      result = Class(p)->listeval(p, q);
    } POP_ARGEVAL_PTR;
 
    return result;
@@ -185,19 +185,19 @@ at *apply(at *p, at *q)
 DY(yapply)
 { 
    at *p = ARG_LIST;
-   ifn (CONSP(p) && CONSP(p->Cdr))
+   ifn (CONSP(p) && CONSP(Cdr(p)))
       RAISEF("at least two arguments expected", NIL);
    
    at *q;
-   if (p->Cdr->Cdr) {
-      at *args = eval_a_list(p->Cdr);
+   if (Cddr(p)) {
+      at *args = eval_a_list(Cdr(p));
       at *l1 = nfirst(length(args)-1, args);
       at *l2 = lasta(args);
       q = append(l1, l2);
    } else
-      q = eval(p->Cdr->Car);
+      q = eval(Cadr(p));
    
-   p = eval(p->Car);
+   p = eval(Car(p));
    return apply(p, q);
 }
 
@@ -211,8 +211,8 @@ at *progn(at *p)
 
    at *q = NIL;
    while (CONSP(p)) {
-      q = eval(p->Car);
-      p = p->Cdr;
+      q = eval(Car(p));
+      p = Cdr(p);
    }
    if (p){
       RAISEF("form not a proper list", p);
@@ -235,12 +235,12 @@ at *prog1(at *p)
 {
    at *ans = NIL;
    if (CONSP(p)) {
-      ans = eval(p->Car);
-      p = p->Cdr;
+      ans = eval(Car(p));
+      p = Cdr(p);
    }
    while (CONSP(p)) {
-      eval(p->Car);
-      p = p->Cdr;
+      eval(Car(p));
+      p = Cdr(p);
    }
    if (p) {
       RAISEF("form not a proper list", p);
@@ -272,11 +272,11 @@ static inline at *next_args(at **listv, int nargs)
       if (listv[i]==NIL) {
          return NIL;
       } else {
-         *where = new_cons(listv[i]->Car, NIL);
-         where = &((*where)->Cdr);
+         *where = new_cons(Car(listv[i]), NIL);
+         where = &Cdr(*where);
          ifn (CONSP(listv[i]))
             error(NIL, "some argument is not a proper list", NIL); 
-         listv[i] = listv[i]->Cdr;
+         listv[i] = Cdr(listv[i]);
       }
    return args;
 }
@@ -285,10 +285,10 @@ static inline at *next_args(at **listv, int nargs)
   for (n=0; n<=MAXARGMAPC; n++) {              \
     if (ls==NIL)                               \
       break;                                   \
-    ifn (LISTP(ls->Car))                       \
-      RAISEF("not a list", ls->Car);           \
-    listv[n] = ls->Car;                        \
-    ls = ls->Cdr;                              \
+    ifn (LISTP(Car(ls)))                       \
+      RAISEF("not a list", Car(ls));           \
+    listv[n] = Car(ls);                        \
+    ls = Cdr(ls);                              \
   }                                            \
   if (ls!=NIL)                                 \
     RAISEF("too many arguments", NIL);
@@ -318,7 +318,7 @@ at *mapcar(at *f, at *lists)
    at *args;
    while ((args = next_args(listv, n))) {
       *where = new_cons(apply(f, args), NIL);
-      where = &((*where)->Cdr);
+      where = &Cdr(*where);
    }
    return result;
 }
@@ -334,7 +334,7 @@ at *mapcan(at *f, at *lists)
    at *args;
    while ((args = next_args(listv, n))) {
       while (CONSP(*where))
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
       *where = apply(f, args);
    }
    return result;
@@ -344,8 +344,8 @@ at *mapcan(at *f, at *lists)
   ifn (CONSP(ARG_LIST))                         \
     RAISEF("arguments missing", NIL);           \
                                                 \
-  at *fn = eval(ARG_LIST->Car);                 \
-  at *lists = eval_a_list(ARG_LIST->Cdr);       \
+  at *fn = eval(Car(ARG_LIST));                 \
+  at *lists = eval_a_list(Cdr(ARG_LIST));       \
   if (lists==NIL)                               \
     RAISEF("list argument(s) missing", NIL);    \
                                                 \
@@ -373,16 +373,16 @@ char *unzip_and_eval_cdr(at *l, at **l1, at **l2)
    
    *l1 = *l2 = NIL;
    while (CONSP(q)) {
-      at *pair = q->Car;
-      q = q->Cdr;
+      at *pair = Car(q);
+      q = Cdr(q);
 
-      ifn (CONSP(pair) && LASTCONSP(pair->Cdr)) {
+      ifn (CONSP(pair) && LASTCONSP(Cdr(pair))) {
          return errmsg_vardecl1;
       }
-      *where1 = new_cons(pair->Car, NIL);
-      *where2 = new_cons(eval(pair->Cdr->Car), NIL);
-      where1 = &((*where1)->Cdr);
-      where2 = &((*where2)->Cdr);
+      *where1 = new_cons(Car(pair), NIL);
+      *where2 = new_cons(eval(Cadr(pair)), NIL);
+      where1 = &Cdr(*where1);
+      where2 = &Cdr(*where2);
    }
    if (q) {
       return errmsg_vardecl2;
@@ -406,31 +406,31 @@ DY(ylet)
 {
    ifn (CONSP(ARG_LIST))
       RAISEF("invalid 'let' form", NIL);
-   return let(ARG_LIST->Car, ARG_LIST->Cdr);
+   return let(Car(ARG_LIST), Cdr(ARG_LIST));
 }
 
 at *letS(at *vardecls, at *body)
 {
    at *q;
-   for (q = vardecls; CONSP(q); q = q->Cdr) {
-      at *pair = q->Car;
-      ifn (CONSP(pair) && LASTCONSP(pair->Cdr))
+   for (q = vardecls; CONSP(q); q = Cdr(q)) {
+      at *pair = Car(q);
+      ifn (CONSP(pair) && LASTCONSP(Cdr(pair)))
          RAISEF(errmsg_vardecl1, vardecls);
 
-      if (SYMBOLP(pair->Car)) {
-         at *val = eval(pair->Cdr->Car);
-         SYMBOL_PUSH(pair->Car, val);
+      if (SYMBOLP(Car(pair))) {
+         at *val = eval(Cadr(pair));
+         SYMBOL_PUSH(Car(pair), val);
          
-      } else if (CONSP(pair->Car)) {
-         at *syms = pair->Car;
-         at *vals = eval(pair->Cdr->Car);
+      } else if (CONSP(Car(pair))) {
+         at *syms = Car(pair);
+         at *vals = eval(Cadr(pair));
          if (length(syms) != (length(vals))) {
             RAISEF(errmsg_vardecl3, vardecls);
          }
          while (CONSP(syms)) {
-            SYMBOL_PUSH(syms->Car, vals->Car);
-            syms = syms->Cdr;
-            vals = vals->Cdr;
+            SYMBOL_PUSH(Car(syms), Car(vals));
+            syms = Cdr(syms);
+            vals = Cdr(vals);
          }
       }
    }
@@ -439,14 +439,14 @@ at *letS(at *vardecls, at *body)
 
    at *ans = progn(body);
 
-   for (q = vardecls; q; q = q->Cdr) {
-      if (SYMBOLP(q->Car->Car)) {
-         SYMBOL_POP(q->Car->Car);
+   for (q = vardecls; q; q = Cdr(q)) {
+      if (SYMBOLP(Caar(q))) {
+         SYMBOL_POP(Caar(q));
       } else {
-         at *syms = q->Car->Car;
+         at *syms = Caar(q);
          while (CONSP(syms)) {
-            SYMBOL_POP(syms->Car);
-            syms = syms->Cdr;
+            SYMBOL_POP(Car(syms));
+            syms = Cdr(syms);
          }
       }
    }
@@ -457,34 +457,34 @@ DY(yletS)
 {
    ifn (CONSP(ARG_LIST))
       RAISEF("invalid 'let*' form", NIL);
-   return letS(ARG_LIST->Car, ARG_LIST->Cdr);
+   return letS(Car(ARG_LIST), Cdr(ARG_LIST));
 }
   
 
 DY(yfor)
 {
-   ifn(CONSP(ARG_LIST) && CONSP(ARG_LIST->Car))
+   ifn(CONSP(ARG_LIST) && CONSP(Car(ARG_LIST)))
       RAISEFX("syntax error", NIL);
 
-   at *sym, *p = ARG_LIST->Car;
-   ifn (SYMBOLP(sym = p->Car))
+   at *sym, *p = Car(ARG_LIST);
+   ifn (SYMBOLP(sym = Car(p)))
       RAISEFX("not a symbol", sym);
 
    at *num = NIL;
-   p = p->Cdr;
-   ifn (CONSP(p) && (num = eval(p->Car)) && NUMBERP(num))
+   p = Cdr(p);
+   ifn (CONSP(p) && (num = eval(Car(p))) && NUMBERP(num))
       RAISEFX("not a number", num);
    double start = Number(num);
 
-   p = p->Cdr;
-   ifn (CONSP(p) && (num = eval(p->Car)) && NUMBERP(num))
+   p = Cdr(p);
+   ifn (CONSP(p) && (num = eval(Car(p))) && NUMBERP(num))
       RAISEFX("not a number", num);
    double end = Number(num);
 
-   p = p->Cdr;
+   p = Cdr(p);
    double step = 1.0;
-   if (CONSP(p) && !p->Cdr) {
-      ifn (CONSP(p) && (num = eval(p->Car)) && NUMBERP(num))
+   if (CONSP(p) && !Cdr(p)) {
+      ifn (CONSP(p) && (num = eval(Car(p))) && NUMBERP(num))
          RAISEFX("not a number", num);
       step = Number(num);
 
@@ -493,18 +493,18 @@ DY(yfor)
    }
 
    SYMBOL_PUSH(sym, NIL);
-   symbol_t *symbol = sym->Object;
+   symbol_t *symbol = Mptr(sym);
    num = NIL;
 
    if ((start <= end) && (step >= 0)) {
       for (double i = start; i <= end; i += step) {
          symbol->value = NEW_NUMBER(i);
-         num = progn(ARG_LIST->Cdr);
+         num = progn(Cdr(ARG_LIST));
       }
    } else if ((start >= end) && (step <= 0)) {
       for (real i = start; i >= end; i += step) {
          symbol->value = NEW_NUMBER(i);
-         num = progn(ARG_LIST->Cdr);
+         num = progn(Cdr(ARG_LIST));
       }
    }
    SYMBOL_POP(sym);

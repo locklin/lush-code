@@ -286,7 +286,7 @@ static inline at *name2(unary, NAME)(at *arg) {              \
     return NEW_NUMBER(OP(NELEM, Number(arg)));               \
                                                              \
   else if (INDEXP(arg)) {                                    \
-    index_t *ind = arg->Object;                              \
+    index_t *ind = Mptr(arg);                                \
     index_t *res = clone_array(ind);                         \
     UNARY_BINOP(ind, res, double, double, OP, NELEM);        \
     return res->backptr;                                     \
@@ -332,7 +332,7 @@ DX(name2(x, NAME))                                           \
   /* we encountered some index argument */                   \
   ;                                                          \
   index_t *res = DOUBLE_ARRAY_P(atsum) ?                     \
-    copy_array((index_t *)atsum->Object) :                   \
+    copy_array((index_t *)Mptr(atsum)) :                     \
     as_double_array(atsum);                                  \
                                                              \
   index_t ba_, *ba = &ba_;                                   \

@@ -506,9 +506,9 @@ DX(xregex_extract)
    if (regex_exec(buffer,dat,regptr,reglen,regnum)) {
       for (i=0; i<regnum; i++) {
          at *str = new_string_bylen(reglen[i]);
-         strncpy(SADD(str->Object), regptr[i], reglen[i]);
+         strncpy(String(str), regptr[i], reglen[i]);
          *where = new_cons(str,NIL);
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
       }
       if (!ans)
          *where = new_cons(APOINTER(2),NIL);

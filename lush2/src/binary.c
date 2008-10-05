@@ -55,6 +55,14 @@ enum binarytokens {
 };
 
 
+/* flags */
+
+#define MARK       2
+#define MULTIPLE   4
+
+#define CLEAR(p)  ((void *)((uintptr_t)(p)&~(MARK + MULTIPLE)))
+
+
 /*** GLOBAL VARIABLES ****/
 
 int          in_bwrite = 0;
@@ -219,18 +227,18 @@ again:
    if (!p)
       return;
 
-   class_t *cl = CLEAR_PTR(p->class);
+   class_t *cl = CLEAR(Class(p));
 
    if (cl == &cons_class) {
-      sweep(p->Car,code);
-      p = p->Cdr;
+      sweep(Car(p),code);
+      p = Cdr(p);
       goto again;
       
    } else if (cl==&number_class || cl==&gptr_class) {
       return;
 
    } else if (cl->dispose == object_class->dispose) {
-      object_t *c = p->Object;
+      object_t *c = Mptr(p);
       if (opt_bwrite)
          sweep(cl->backptr, code);
       else
@@ -240,7 +248,7 @@ again:
 	sweep(c->slots[i].val, code);
       }
    } else if (cl == &class_class) {
-      class_t *clcl = p->Object;
+      class_t *clcl = Mptr(p);
       sweep(clcl->priminame, code);
       if (!builtin_class_p(clcl) && !clcl->classdoc) {
          sweep(clcl->atsuper, code);
@@ -249,7 +257,7 @@ again:
       }
       sweep(clcl->methods, code);
    } else if (cl == &index_class && !opt_bwrite) {
-      index_t *ind = p->Object;
+      index_t *ind = Mptr(p);
       if (IND_STTYPE(ind) == ST_AT)
          if (!IND_UNSIZEDP(ind)) {
             at** data;
@@ -262,12 +270,12 @@ again:
             index_rls_idx(ind, &id);
          }
    } else if (cl == &de_class || cl == &df_class || cl == &dm_class ) {
-      lfunction_t *f = p->Object;
+      lfunction_t *f = Mptr(p);
       sweep(f->formal_args, code);
       sweep(f->body, code);
       
    } else if (cl == &dx_class || cl == &dy_class || cl == &dh_class ) {
-      cfunction_t *f = p->Object;
+      cfunction_t *f = Mptr(p);
       sweep(f->name, code);
       
    } else if (cl->serialize) {
@@ -283,11 +291,6 @@ again:
 /* This functions computes all objects
  * which must be relocated when saving object p 
  */
-
-/* flags */
-
-#define MARK       2
-#define MULTIPLE   4
 
 static int cond_set_flags(at *p)
 {
@@ -318,7 +321,7 @@ static void set_flags(at *p)
 static int cond_clear_flags(at *p)
 {
    if (p && ((uintptr_t)(p->class) & MARK)) {
-      p->class = CLEAR_PTR(p->class);
+      p->class = CLEAR(p->class);
       return 0;
    } else
       return 1; /* stop recursion if already cleared */
@@ -740,7 +743,7 @@ static int local_write(at *p)
       }
    }
   
-   class_t *cl = CLEAR_PTR(p->Class);
+   class_t *cl = CLEAR(Class(p));
    if (cl == &cons_class) {
       write_card8(TOK_CONS);
       return 0;
@@ -777,14 +780,14 @@ static int local_write(at *p)
    }
   
    if (cl->dispose == object_class->dispose) {
-      object_t *o = p->Object;
+      object_t *o = Mptr(p);
       write_card8(TOK_OBJECT);
       write_card24(o->size);
       return 0;
    }
   
    if (cl == &class_class) {
-      class_t *c = p->Object;
+      class_t *c = Mptr(p);
       if (!builtin_class_p(c) && !c->classdoc)
          write_card8(TOK_CLASS);	
       else
@@ -793,7 +796,7 @@ static int local_write(at *p)
    }
   
    if (cl==&index_class && !opt_bwrite) {
-      index_t *arr = p->Object;
+      index_t *arr = Mptr(p);
       if (arr->st->type == ST_AT) {
          int ndim = arr->ndim;
          write_card8(TOK_ARRAY);
@@ -898,7 +901,7 @@ static void local_bread_cobject(at **pp)
    at *name = cname;
    at *cptr = NIL;
    if (CONSP(cname))
-      cptr = find_primitive(cname->Car, (name = cname->Cdr));
+      cptr = find_primitive(Car(cname), (name = Cdr(cname)));
    if (!cptr)
       cptr = find_primitive(NIL, name);
    if (!SYMBOLP(name))
@@ -906,7 +909,7 @@ static void local_bread_cobject(at **pp)
    if (!CLASSP(cptr))
       error(NIL, "cannot find primitive class", name);
   
-   class_t *cl = cptr->Object;
+   class_t *cl = Mptr(cptr);
    if (! cl->serialize)
       error(NIL, "serialization error (undefined serialization)", name);
    *pp = 0;
@@ -925,12 +928,12 @@ static void local_bread_object(at **pp,  int opt)
    if (! CLASSP(cptr))
       error(NIL,"corrupted binary file (class expected)",cname);    
    if (cname == cptr) {
-      cname = ((class_t *)(cptr->Object))->classname;
+      cname = ((class_t *)Mptr(cptr))->classname;
    }
   
-   class_t *cl = cptr->Object;
+   class_t *cl = Mptr(cptr);
    *pp = new_object(cl);     /* create structure */
-   object_t *s = (*pp)->Object;  /* access slots */
+   object_t *s = Mptr(*pp);
    if (size > s->size) 
       error(NIL, "class definition has less slots than expected",cname);
    else  if ( (size < s->size) && opt)
@@ -963,7 +966,7 @@ static void local_bread_class(at **pp)
        local_bread(&def, NIL) )
       error(NIL, "corrupted file (unresolved critical class component)", NIL);
    *pp = new_ooclass(name,super,key,def);
-   class_t *cl = (*pp)->Object;
+   class_t *cl = Mptr(*pp);
    local_bread(&cl->methods, NIL);
    cl->hashok = false;
 }
@@ -984,7 +987,7 @@ static void local_bread_array(at **pp)
          size *= ( shape.dim[i] = read_card32() );
       shape.ndims = ndims;
       *pp = MAKE_ARRAY(ST_AT, &shape, NIL);
-      index_t *ind = (*pp)->Object;
+      index_t *ind = Mptr(*pp);
       struct idx id;
       index_write_idx(ind, &id);
       pp = IDX_DATA_PTR(&id);
@@ -1000,7 +1003,7 @@ static void local_bread_array(at **pp)
 static void local_bread_lfunction(at **pp, at *(*new) (at*, at*))
 {
    *pp = (*new)(NIL,NIL);
-   lfunction_t *f = (*pp)->Object;
+   lfunction_t *f = Mptr(*pp);
    local_bread(&f->formal_args, NIL);
    local_bread(&f->body, NIL);
 }
@@ -1012,9 +1015,9 @@ static void local_bread_primitive(at **pp)
    if (local_bread(&q, NIL))
       error(NIL, "corrupted file (unresolved symbol!)", NIL);
    if (CONSP(q)) {
-      p = find_primitive(q->Car, q->Cdr);
+      p = find_primitive(Car(q), Cdr(q));
       if (! p)
-         p = find_primitive(NIL, q->Cdr);      
+         p = find_primitive(NIL, Cdr(q));      
    } else 
       p = find_primitive(NIL,q);
 
@@ -1074,8 +1077,8 @@ again:
    case TOK_CONS:
    {
       *pp = new_cons(NIL,NIL);
-      local_bread(&((*pp)->Car), opt);
-      pp = & ((*pp)->Cdr);
+      local_bread(&Car(*pp), opt);
+      pp = & Cdr(*pp);
       ret = 0;
       goto again;
    }
@@ -1093,7 +1096,7 @@ again:
    {
       int l = read_card24();
       *pp = new_string_bylen(l);
-      read_buffer(SADD((*pp)->Object),l);
+      read_buffer(Mptr(*pp), l);
       return 0;
    }
    
@@ -1157,7 +1160,7 @@ again:
    case TOK_CCLASS:
    {
       local_bread_primitive(pp);
-      class_t *cl = (*pp)->Object;
+      class_t *cl = Mptr(*pp);
       local_bread(&cl->methods, opt);
       cl->hashok = 0;
       return 0;

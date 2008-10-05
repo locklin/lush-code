@@ -183,47 +183,51 @@ extern LUSHAPI class_t zombie_class;
 
 struct at {
    struct class *class;
+   struct at *car;
    union {
       double *d;
       char   *c;
       void   *p;
-      struct {
-         struct at *car;
-         struct at *cdr;
-      } cons;
+      struct symbol *s;
+      struct at *cdr;
    } payload;
 };
 
-#define Car     payload.cons.car
-#define Cdr     payload.cons.cdr
-#define Object  payload.p
-#define Class   class
-#define Gptr    payload.p
-#define Number(p) (*(p)->payload.d)
-#define String(p) ((p)->payload.c)
+#define Class(q)  ((q)->class)
+#define Number(q) (*(q)->payload.d)
+#define String(q) ((q)->payload.c)
+#define Symbol(q) ((q)->payload.s)
+#define Value(q)  (*Symbol(q)->valueptr)
+#define ValueS(s) (*s->valueptr) 
+#define Gptr(q)   ((q)->payload.p)
+#define Mptr(q)   ((q)->payload.p)
+#define Car(q)    ((q)->car)
+#define Cdr(q)    ((q)->payload.cdr)
+#define Caar(q)   Car(Car(q))
+#define Cadr(q)   Car(Cdr(q))
+#define Cdar(q)   Cdr(Car(q))
+#define Cddr(q)   Cdr(Cdr(q))
 
 /* Some useful macros */
 
 #define ANY_CLASS       NULL
 
-#define CONSP(x)        ((x)&&((x)->Class == &cons_class))
-#define FUNCTIONP(x)    ((x)&&((x)->Class->super==&function_class))
-#define LASTCONSP(x)    (CONSP(x) && !CONSP((x)->Cdr))
-#define LISTP(x)        (!(x)||((x)->Class == &cons_class))
-#define NUMBERP(x)	((x)&&((x)->Class == &number_class))
-#define GPTRP(x)	((x)&&((x)->Class == &gptr_class))
-#define OBJECTP(x)      ((x)&&((x)->Class->dispose == object_class->dispose))
-#define CLASSP(x)       ((x)&&((x)->Class == &class_class))
-#define SYMBOLP(x)      ((x)&&((x)->Class == &symbol_class))
-#define STORAGEP(x)     ((x)&&((x)->Class->super == &abstract_storage_class))
-#define INDEXP(x)       ((x)&&((x)->Class == &index_class))
-#define STRINGP(x)      ((x)&&((x)->Class == &string_class))
-#define ZOMBIEP(x)      ((x)&&((x)->Class == &null_class))
-#define EXTERNP(x)	((x)&&!(((x)->Class == &cons_class) || \
-                                ((x)->Class == &number_class) || \
-                                ((x)->Class == &gptr_class)) )
-#define WINDOWP(x)  ((x)&&((x)->Class == &window_class))
-                         
+#define CONSP(x)        ((x)&&(Class(x) == &cons_class))
+#define FUNCTIONP(x)    ((x)&&(Class(x)->super==&function_class))
+#define LASTCONSP(x)    (CONSP(x) && !CONSP(Cdr(x)))
+#define LISTP(x)        (!(x)||(Class(x) == &cons_class))
+#define NUMBERP(x)	((x)&&(Class(x) == &number_class))
+#define GPTRP(x)	((x)&&(Class(x) == &gptr_class))
+#define OBJECTP(x)      ((x)&&(Class(x)->dispose == object_class->dispose))
+#define CLASSP(x)       ((x)&&(Class(x) == &class_class))
+#define SYMBOLP(x)      ((x)&&(Class(x) == &symbol_class))
+#define STORAGEP(x)     ((x)&&(Class(x)->super == &abstract_storage_class))
+#define INDEXP(x)       ((x)&&(Class(x) == &index_class))
+#define STRINGP(x)      ((x)&&(Class(x) == &string_class))
+#define ZOMBIEP(x)      ((x)&&(Class(x) == &null_class))
+#define EXTERNP(x)	((x)&&!((Class(x) == &cons_class) || \
+                                (Class(x) == &gptr_class)) )
+#define WINDOWP(x)      ((x)&&(Class(x) == &window_class))
 
 extern LUSHAPI at *(*eval_ptr) (at*);
 extern LUSHAPI at *(*argeval_ptr) (at*);
@@ -239,6 +243,7 @@ extern LUSHAPI at *(*argeval_ptr) (at*);
 
 typedef void *dispose_func_t(void *);
 struct class {
+   double           dummy;       /* force alignment of static class structs */
    /* class vectors */
    void*          (*dispose)      (void *);
    void           (*action)       (at*, void (*f)(at*));
@@ -365,8 +370,8 @@ extern at *at_t;
 LUSHAPI char *nameof(at *p);
 LUSHAPI symbol_t *symbol_push(symbol_t *sym, at *q);
 LUSHAPI symbol_t *symbol_pop(symbol_t *sym);
-#define SYMBOL_PUSH(p, q) { at *__p__ = p; __p__->Object = symbol_push((symbol_t*)__p__->Object, q); }
-#define SYMBOL_POP(p) { at *__p__ = p; __p__->Object = symbol_pop((symbol_t*)__p__->Object); }
+#define SYMBOL_PUSH(p, q) { at *__p__ = p; Mptr(__p__) = symbol_push((symbol_t*)Mptr(__p__), q); }
+#define SYMBOL_POP(p) { at *__p__ = p; Mptr(__p__) = symbol_pop((symbol_t*)Mptr(__p__)); }
 
 LUSHAPI at *setq(at *p, at *q);	/* Warning: Never use the result. */
 LUSHAPI at *global_names(void); 
@@ -420,8 +425,8 @@ extern LUSHAPI struct error_doc {
 
 #define ED_POP_CALL()   {\
   at *q = error_doc.this_call; \
-  error_doc.this_call = q->Cdr; \
-  q->Cdr = NIL; \
+  error_doc.this_call = Cdr(q); \
+  Cdr(q) = NIL; \
 }
 
 #define SCRIPT_OFF      0
@@ -560,17 +565,17 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 
 #define APOINTER(i)     ( arg_array[i] )
 #define AREAL(i)        ( ISNUMBER(i) ? Number(APOINTER(i)) :(long)DX_ERROR(1,i))
-#define AGPTR(i)        ( ISGPTR(i) ? APOINTER(i)->Gptr:(gptr)DX_ERROR(9,i))
+#define AGPTR(i)        ( ISGPTR(i) ? Gptr(APOINTER(i)):(gptr)DX_ERROR(9,i))
 #define AINTEGER(i)     ( (intg) AREAL(i) )
 #define AFLT(i)         ( rtoF(AREAL(i)) )
 #define ALIST(i)        ( ISLIST(i) ? APOINTER(i):(at*)DX_ERROR(2,i) )
 #define ACONS(i)        ( ISCONS(i) ? APOINTER(i):(at*)DX_ERROR(3,i) )
 #define ASTRING(i)      ( ISSTRING(i) ? String(APOINTER(i)) :(char*)DX_ERROR(4,i) )
-#define ASYMBOL(i)      ( ISSYMBOL(i) ? APOINTER(i)->Object:DX_ERROR(7,i) )
-#define AEXTERN(i)      ( ISEXTERN(i) ? APOINTER(i)->Object:DX_ERROR(8,i) )
-#define ASTORAGE(i)     ( ISSTORAGE(i) ? APOINTER(i)->Object:DX_ERROR(10,i) )
-#define AINDEX(i)       ( ISINDEX(i) ? APOINTER(i)->Object:DX_ERROR(11,i) )
-#define ACLASS(i)       ( ISCLASS(i) ? APOINTER(i)->Object:DX_ERROR(12,i) )
+#define ASYMBOL(i)      ( ISSYMBOL(i) ? Mptr(APOINTER(i)):DX_ERROR(7,i) )
+#define AEXTERN(i)      ( ISEXTERN(i) ? Mptr(APOINTER(i)):DX_ERROR(8,i) )
+#define ASTORAGE(i)     ( ISSTORAGE(i) ? Mptr(APOINTER(i)):DX_ERROR(10,i) )
+#define AINDEX(i)       ( ISINDEX(i) ? Mptr(APOINTER(i)):DX_ERROR(11,i) )
+#define ACLASS(i)       ( ISCLASS(i) ? Mptr(APOINTER(i)):DX_ERROR(12,i) )
 
 #define ARG_NUMBER(i)	if (arg_number != i)  DX_ERROR(0,i);
 #define ARG_EVAL(i)	arg_eval(arg_array,i)
@@ -613,8 +618,8 @@ LUSHAPI off_t file_size(FILE *f);
 LUSHAPI char *strerror(int errno);
 #endif
 
-#define RFILEP(x) ((x)&&((x)->Class == &file_R_class))
-#define WFILEP(x) ((x)&&((x)->Class == &file_W_class))
+#define RFILEP(x) ((x)&&(Class(x) == &file_R_class))
+#define WFILEP(x) ((x)&&(Class(x) == &file_W_class))
 
 
 /* IO.H ----------------------------------------------------- */
@@ -643,7 +648,7 @@ LUSHAPI at *read_list(void);
 /* HTABLE.H ------------------------------------------------- */
 
 extern LUSHAPI class_t htable_class;
-#define HTABLEP(x)   ((x)&&((x)->Class == &htable_class))
+#define HTABLEP(x)   ((x)&&(Class(x) == &htable_class))
 
 LUSHAPI unsigned long hash_value(at *);
 LUSHAPI unsigned long hash_pointer(at *);
@@ -696,7 +701,7 @@ LUSHAPI void setslot(at**, at*, at*);
 /* MODULE.H --------------------------------------------------- */
 
 extern LUSHAPI class_t module_class;
-#define MODULEP(x)  ((x)&&(x)->Class == &module_class)
+#define MODULEP(x)  ((x)&&Class(x) == &module_class)
 
 LUSHAPI void class_define(char *name, class_t *cl);
 LUSHAPI void dx_define(char *name, at *(*addr) (int, at **));
@@ -942,8 +947,8 @@ LUSHAPI index_t *copy_array(index_t*);
 #define COPY_ARRAY(ind) (copy_array(ind)->backptr)
 
 /* argument processing */
-#define DOUBLE_ARRAY_P(p) (INDEXP(p) && IND_STTYPE(p->Object)==ST_DOUBLE)
-#define INT_ARRAY_P(p)  (INDEXP(p) && IND_STTYPE(p->Object)==ST_INT)
+#define DOUBLE_ARRAY_P(p) (INDEXP(p) && IND_STTYPE(Mptr(p))==ST_DOUBLE)
+#define INT_ARRAY_P(p)  (INDEXP(p) && IND_STTYPE(Mptr(p))==ST_INT)
 LUSHAPI index_t *as_contiguous_array(index_t *ind);
 LUSHAPI index_t *as_double_array(at *arg);
 LUSHAPI index_t *as_int_array(at *arg);

@@ -196,7 +196,7 @@ static char *search_display_name(void)
    char *s;
    at *p = var_get(display);
    if (STRINGP(p))
-      strcpy(dpyname, SADD(p->Object));
+      strcpy(dpyname, String(p));
    else if ((s = getenv("DISPLAY")))
       strcpy(dpyname, s);
    return dpyname;
@@ -1441,7 +1441,7 @@ static void x11_draw_text(window_t *linfo, int x, int y, char *s)
       Pixmap pmap;
       XftDraw *draw;
       at *utf8q = str_mb_to_utf8(s);
-      const FcChar8 *utf8 = (FcChar8*)SADD(utf8q->Object);
+      const FcChar8 *utf8 = (FcChar8*)String(utf8q);
       unsigned int utf8l = strlen((char*)utf8);
       XftTextExtentsUtf8(xdef.dpy, info->font->xft, 
                          utf8, utf8l, &extents);
@@ -1489,7 +1489,7 @@ static void x11_rect_text(window_t *linfo,
    if (info->font->xft) {
       XGlyphInfo extents;
       at *utf8q = str_mb_to_utf8(s);
-      const FcChar8 *utf8 = (FcChar8*)SADD(utf8q->Object);
+      const FcChar8 *utf8 = (FcChar8*)String(utf8q);
       uint utf8l = strlen((char*)utf8);
       XftTextExtentsUtf8(xdef.dpy, info->font->xft, 
                          utf8, utf8l, &extents);
@@ -1901,7 +1901,7 @@ DX(xx11_id)
       at *p = APOINTER(1);
       ifn (WINDOWP(p))
          RAISEF("not a window", p);
-      w = (window_t *)p->Object;
+      w = (window_t *)Mptr(p);
    }
    if (w->gdriver == &x11_driver) {
       struct X_window *info = (struct X_window *)w;
@@ -2023,7 +2023,7 @@ DX(xx11_iconify)
       at *p = APOINTER(1);
       ifn (WINDOWP(p))
          RAISEF("not a window", p);
-      w = (window_t *)p->Object;
+      w = (window_t *)Mptr(p);
    }
    if (w->gdriver == &x11_driver) {
       struct X_window *info = (struct X_window *)w;
@@ -2102,7 +2102,7 @@ DX(xx11_clip_to_text)
          p = NIL;
       } else {
          p = new_string_bylen(nbytes);
-         char *s = SADD(p->Object);
+         char *s = String(p);
          strncpy(s, buf, nbytes);
          s[nbytes] = 0;
          XFree(buf);

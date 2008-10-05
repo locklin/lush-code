@@ -75,21 +75,21 @@ mapneur(at *q, void (*f)(neurone *))
   int i;
   
   while(q) {
-    if (! (q->flags & C_CONS))
+    if (! CONSP(q))
       error(NIL,"bad neuron numbers list",NIL);
-    else if ((ql = q->Car)) {
-      if (ql->flags & C_NUMBER) {
-	i = (int)(ql->Number);
+    else if ((ql = Car(q))) {
+      if (NUMBERP(ql)) {
+	i = (int)(Number(ql);
 	if ( i >= 0  &&  i<neurnombre )
 	  (*f)( neuraddress [i] );
 	else
 	  error(NIL,"bad neuron number",ql);
-      } else if ( ql->flags & C_CONS )
+      } else if (CONSP(ql))
 	mapneur (ql,f);
       else
 	error(NIL,"bad neuron number",ql);
     }
-    q  = q->Cdr;
+    q  = Cdr(q);
   };
 }
 
@@ -100,25 +100,25 @@ map2neur(at *q1, at *q2, void (*f) (neurone *, neurone *))
   int i,j;
   
   while (q1 && q2) {
-    if ( (!(q1->flags & C_CONS)) || (!(q2->flags & C_CONS)) ) {
+    if ( !CONSP(q1) || !CONSP(q2) ) {
       error(NIL,"bad neuron numbers list",NIL);
-    } else if ((ql1 = q1->Car) && (ql2 = q2->Car) ) {
-      if ( (ql1->flags & C_NUMBER) && (ql2->flags & C_NUMBER) ) {
-	i = (int)(ql1->Number);
-	j = (int)(ql2->Number);
+    } else if ((ql1 = Car(q1)) && (ql2 = Car(q2)) ) {
+      if ( NUMBERP(ql1) && NUMBERP(ql2) ) {
+	i = (int)Number(ql1);
+	j = (int)Number(ql2);
 	if ( i<0  ||  i>=neurnombre )
 	  error(NIL,"bad neuron number",ql1);
 	if ( j<0  ||  j>=neurnombre )
 	  error(NIL,"bad neuron number",ql2);
 	(*f)( neuraddress[i], neuraddress[j] );
 	
-      } else if ( (ql1->flags & C_CONS) && (ql2->flags & C_CONS) )
-	map2neur(ql1,ql2,f);
+      } else if ( CONSP(ql1) && CONSP(ql2) )
+	map2neur(ql1, ql2, f);
       else
 	error(NIL,"listes doesn't have the same structure",NIL);
     }
-    q1 = q1->Cdr;
-    q2 = q2->Cdr;
+    q1 = Cdr(q1);
+    q2 = Cdr(q2);
   };
   if ( q1 || q2)
     error(NIL,"listes doesn't have the same length",NIL);
@@ -152,11 +152,10 @@ growage(void)
         at *q;
 	
         q = var_get(var_age);
-        ifn (q->flags & C_NUMBER)
+        ifn (Number(q))
 	  error("age","should contain an integer",NIL);
-        i = q->Number+1.0;
+        i = Number(q) + 1.0;
         var_set(var_age,NEW_NUMBER(i));
-        UNLOCK(q);
 }
 
 int 
@@ -165,9 +164,9 @@ readage(void)
         at *q;
 	
         q = var_get(var_age);
-        ifn (q->flags & C_NUMBER)
+        ifn (NUMBERP(q))
 	  error("age","should contain an integer",NIL);
-        return (int)(q->Number);
+        return (int)(Number(q);
 }
 
 /************ get_patterns ***********/
@@ -190,7 +189,7 @@ DX(xget_pattern_2)
   mat  = APOINTER(1);
   ifn (numericp(mat))
     error(NIL,"not a numeric index", mat);
-  ind = mat->Object;
+  ind = Mptr(mat);
   
   type = ind->st->srg.type;
   getf = storage_getf[type];
@@ -204,10 +203,10 @@ DX(xget_pattern_2)
           nlist += 1;
           nptr = APOINTER(nlist);
         }
-      if (! CONSP(nptr) && ! NUMBERP(nptr->Car))
+      if (! CONSP(nptr) && ! NUMBERP(Car(nptr)))
         error(NIL,"bad neuron number list",nptr);
-      nnum = (int) (nptr->Car->Number);
-      nptr = nptr->Cdr;
+      nnum = (int) Number(Car(nptr));
+      nptr = Cdr(nptr);
       if (nnum < 0 || nnum >= neurnombre)
         error(NIL,"bad neuron number", nptr->Car);
       neuraddress[nnum]->Nval = (*getf)(base, off);

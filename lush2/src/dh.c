@@ -272,7 +272,7 @@ static at *make_dhclass(dhclassdoc_t *kdata)
    while (drec->op == DHT_NAME) {
       defaults = new_cons(NIL,defaults);
       *klwhere = new_cons(named(drec->name),NIL);
-      klwhere = &((*klwhere)->Cdr);
+      klwhere = &Cdr(*klwhere);
       drec = drec->end;
    }
 
@@ -285,7 +285,7 @@ static at *make_dhclass(dhclassdoc_t *kdata)
       superclass = object_class->backptr;
    /* create ooclass */
    at *p = new_ooclass(classname, superclass, keylist, defaults);
-   class_t *cl = p->Object;
+   class_t *cl = Mptr(p);
    cl->classdoc = kdata;
    cl->kname = mm_strdup(kdata->lispdata.k_name);
    kdata->lispdata.atclass = p;
@@ -328,7 +328,7 @@ static at *dhinfo_chain(dhrecord *drec, int n, at*(*f)(dhrecord*))
    at **where = &ans;
    while (n-->0) {
       *(where) = new_cons((*f)(drec), NIL);
-      where = &((*where)->Cdr);
+      where = &Cdr(*where);
       drec = drec->end;
     }
    return ans;
@@ -514,9 +514,9 @@ DX(xdhinfo_t)
    ARG_EVAL(1);
 
    at *p = APOINTER(1);
-   ifn (p && (p->Class == &dh_class))
+   ifn (p && (Class(p) == &dh_class))
       error(NIL, "not a DH function", p);
-   cfunction_t *cfunc = p->Object;
+   cfunction_t *cfunc = Mptr(p);
    if (CONSP(cfunc->name))
       check_primitive(cfunc->name, cfunc->info);
    dhdoc_t *dhdoc = (dhdoc_t*)(cfunc->info);
@@ -531,10 +531,10 @@ DX(xdhinfo_c)
    ARG_NUMBER(1);
    ARG_EVAL(1);
    at *p = APOINTER(1);
-   ifn (p && (p->Class == &dh_class))
+   ifn (p && (Class(p) == &dh_class))
       error(NIL, "not a DH function", p);
 
-   cfunction_t *cfunc = p->Object;
+   cfunction_t *cfunc = Mptr(p);
    if (CONSP(cfunc->name))
       check_primitive(cfunc->name, cfunc->info);
    dhdoc_t *dhdoc = (dhdoc_t*)(cfunc->info);
@@ -568,7 +568,7 @@ DX(xclassinfo_t)
   ifn (CLASSP(p))
      error(NIL,"not a class",p);
 
-  class_t *cl = p->Object;
+  class_t *cl = Mptr(p);
   if (!cl->classdoc)
      return NIL;
   if (CONSP(cl->priminame))
@@ -585,7 +585,7 @@ DX(xclassinfo_c)
    ifn (CLASSP(p))
       error(NIL, "not a class", p);
    
-   class_t *cl = p->Object;
+   class_t *cl = Mptr(p);
    dhclassdoc_t *cdoc = cl->classdoc;
    if (!cdoc)
       error(NIL, "class is not compiled", p);

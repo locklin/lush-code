@@ -569,7 +569,7 @@ static void module_serialize(at **pp, int code)
    char *fname = NULL;
 
    if (code != SRZ_READ) {
-      m = (*pp)->Object;
+      m = Mptr(*pp);
       fname = "";
       if (m != root) {
          fname = relative_fname(lushdir_name, m->filename);
@@ -596,7 +596,7 @@ static void module_serialize(at **pp, int code)
          if (!strcmp(aname, m->filename))
             goto already;
       (*pp) = module_load(aname, NIL);
-      m = (*pp)->Object;
+      m = Mptr(*pp);
       free(fname);
       check_exec();
    }
@@ -610,7 +610,7 @@ at *module_list(void)
    module_t *m = root;
    do {
       *where = new_cons(m->backptr, NIL);
-      where = &((*where)->Cdr);
+      where = &Cdr(*where);
       m = m->next;
    } while (m != root);
    return ans;
@@ -631,7 +631,7 @@ DX(xmodule_filename)
    ifn (MODULEP(p))
       RAISEFX("not a module", p);
    
-   module_t *m = p->Object;
+   module_t *m = Mptr(p);
    if (m->filename)
       return new_string(m->filename);
    return NIL;
@@ -646,7 +646,7 @@ DX(xmodule_init_function)
    ifn (MODULEP(p))
       RAISEFX("not a module", p);
 
-   module_t *m = p->Object;
+   module_t *m = Mptr(p);
    if (m->initname)
       return new_string(m->initname);
    if (m == root)
@@ -663,7 +663,7 @@ DX(xmodule_executable_p)
    ifn (MODULEP(p))
       RAISEFX("not a module", p);
 
-   module_t *m = p->Object;
+   module_t *m = Mptr(p);
    if (m->flags & MODULE_EXEC)
       return t();
    return NIL;
@@ -678,7 +678,7 @@ DX(xmodule_unloadable_p)
    ifn (MODULEP(p))
       RAISEFX("not a module", p);
 
-   module_t *m = p->Object;
+   module_t *m = Mptr(p);
    if (m->flags & MODULE_STICKY)
       return NIL;
    return t();
@@ -693,12 +693,12 @@ DX(xmodule_defs)
    ifn (MODULEP(p))
       error(NIL,"Not a module", p);
 
-   module_t *m = p->Object;
+   module_t *m = Mptr(p);
    p = m->defs;
    at *ans = NIL;
-   while (CONSP(p) && CONSP(p->Car)) {
-      ans = new_cons(new_cons(p->Car->Car,p->Car->Cdr),ans);
-      p = p->Cdr;
+   while (CONSP(p) && CONSP(Car(p))) {
+      ans = new_cons(new_cons(Caar(p), Cdar(p)), ans);
+      p = Cdr(p);
    }
    return ans;
 }
@@ -787,13 +787,13 @@ static void cleanup_defs(at **pcls, module_t *mc)
 {
    at *p = mc->defs;
    while (CONSP(p)) {
-      if (CONSP(p->Car)) {
-         at *q = p->Car->Car;
+      if (CONSP(Car(p))) {
+         at *q = Caar(p);
          if (CLASSP(q)) {
             *pcls = new_cons(q, *pcls);
          }
       }
-      p = p->Cdr;
+      p = Cdr(p);
    }
 }
 
@@ -829,19 +829,19 @@ static void cleanup_module(module_t *m)
 #endif
   
    /* 3 --- Mark impacted classes as dead --- */
-   for (at *p = classes; CONSP(p); p = p->Cdr) {
-      at *q = p->Car;
+   for (at *p = classes; CONSP(p); p = Cdr(p)) {
+      at *q = Car(p);
       if (CLASSP(q)) {
-         class_t *cl = q->Object;
+         class_t *cl = Mptr(q);
          if (!cl->managed)
             cl->live = false;
       }
    }
 
-  for (at *p = classes; CONSP(p); p=p->Cdr) {
-     at *q = p->Car;
+  for (at *p = classes; CONSP(p); p = Cdr(p)) {
+     at *q = Car(p);
      if (CLASSP(q)) {
-        class_t *cl = q->Object;
+        class_t *cl = Mptr(q);
         if (cl->classdoc) {
            int n = lside_mark_unlinked(cl->classdoc);
            cl->classdoc = 0;
@@ -855,11 +855,11 @@ static void cleanup_module(module_t *m)
 
    /* 4 --- Zap primitives defined by this module. */
    if (m->defs)
-      for (at *p = m->defs; CONSP(p); p = p->Cdr)
-         if (CONSP(p->Car) && (p->Car->Car)) {
-            at *q = p->Car->Car;
+      for (at *p = m->defs; CONSP(p); p = Cdr(p))
+         if (CONSP(Car(p)) && Caar(p)) {
+            at *q = Caar(p);
             if (CLASSP(q)) {
-               class_t *cl = q->Object;
+               class_t *cl = Mptr(q);
                if (cl->managed)
                   continue;
             }
@@ -904,14 +904,14 @@ static void update_exec_flag(module_t *m)
       /* Refresh function/class pointers */
       at *p = m->defs;
       while (p) {
-         if (CONSP(p->Car)) {
-            at *q = p->Car->Car;
+         if (CONSP(Car(p))) {
+            at *q = Caar(p);
             if (FUNCTIONP(q)) {
                dhdoc_t *kdoc = 0;
-               struct cfunction *cfunc = q->Object;
+               struct cfunction *cfunc = Mptr(q);
                if (!newstate) {
                   kdoc = cfunc->info = 0;
-               } else if (q->Class==&dh_class && cfunc->kname) {
+               } else if (Class(q)==&dh_class && cfunc->kname) {
                   kdoc = cfunc->info = dynlink_symbol(m, cfunc->kname, 0, 0);
                   cfunc->call = kdoc->lispdata.call;
                } else if (cfunc->kname) {
@@ -921,7 +921,7 @@ static void update_exec_flag(module_t *m)
                if (kdoc)
                   clean_dhrecord(kdoc->argdata);
             } else if (CLASSP(q)) {
-               class_t *cl = q->Object;
+               class_t *cl = Mptr(q);
                if (! newstate)
                   cl->classdoc = 0;
                else if (cl->kname && !cl->classdoc) {
@@ -936,7 +936,7 @@ static void update_exec_flag(module_t *m)
                }
             }
          }
-         p = p->Cdr;
+         p = Cdr(p);
       }
    }
    /* Call hook */
@@ -1024,12 +1024,12 @@ static void check_exec(void)
 
 void check_primitive(at *prim, void *info)
 {
-   if (CONSP(prim) && MODULEP(prim->Car)) {
-      module_t *m = prim->Car->Object;
+   if (CONSP(prim) && MODULEP(Car(prim))) {
+      module_t *m = Mptr(Car(prim));
       if (check_executability)
          check_exec();
       if (!info || !(m->flags & MODULE_EXEC))
-         error(NIL,"function belongs to a partially linked module", prim->Cdr);
+         error(NIL,"function belongs to a partially linked module", Cdr(prim));
    }
 }
 
@@ -1046,7 +1046,7 @@ DX(xmodule_never_unload)
    at *p = APOINTER(1);
    ifn (MODULEP(p))
       RAISEFX("not a module",p);
-   module_t *m = p->Object;
+   module_t *m = Mptr(p);
    m->flags |= MODULE_STICKY;
    return p;
 }
@@ -1060,7 +1060,7 @@ DX(xmodule_depends)
    at *p = APOINTER(1);
    ifn (MODULEP(p))
       RAISEFX("not a module",p);
-   module_t *m = p->Object;
+   module_t *m = Mptr(p);
    p = NIL;
    if (m == root)
       return NIL;
@@ -1139,7 +1139,7 @@ void module_unload(at *atmodule)
    char *err;
    ifn (MODULEP(atmodule))
       RAISEF("not a module", atmodule);
-   if ((err = module_maybe_unload(atmodule->Object)))
+   if ((err = module_maybe_unload(Mptr(atmodule))))
       RAISEF(err, atmodule);
    check_exec();
 }
@@ -1199,7 +1199,7 @@ at *module_load(char *filename, at *hook)
 
    /* Allocate */
    at *ans = new_module(filename, hook);
-   m = ans->Object;
+   m = Mptr(ans);
    m->flags = MODULE_USED;
 #if DLOPEN
    m->handle = handle;
@@ -1323,7 +1323,7 @@ DX(xmod_undefined)
       where = &p;
       for (int i=0; i<dld_undefined_sym_count; i++) {
          *where = new_cons( new_string(dld_undefined_sym_list[i]), NIL);
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
       }
       free(dld_undefined_sym_list);
 #endif
@@ -1341,7 +1341,7 @@ DX(xmod_undefined)
             if (def==&nsbundle_head || (!def && !NSIsSymbolNameDefined(sname))) {
                if (sname[0]=='_') sname += 1;
                *where = cons( new_string((char*)sname), NIL);
-               where = &((*where)->Cdr);
+               where = &Cdr(*where);
             }
          }
       }
@@ -1368,38 +1368,37 @@ at *find_primitive(at *module, at *name)
   if (module) {
      ifn (MODULEP(module))
         RAISEF("not a module descriptor", module);
-     p = ((module_t *)(module->Object))->defs;
+     p = ((module_t *)Mptr(module))->defs;
   }
   /* Name can be NAME or (CLASSNAME . NAME) */
   if (CONSP(name)) {
-     clname = name->Car;
-     name = name->Cdr;
+     clname = Car(name);
+     name = Cdr(name);
   }
   /* Iterate over module definitions */
   at *q = NIL;
   while (CONSP(p)) {
-     q = p->Car;
+     q = Car(p);
      if (CONSP(q)) {
         if (clname) {
            /* Looking for a method:
               - names must match, 
               - clname must match class. */
-           if ( CONSP(q->Cdr) && q->Cdr->Cdr == name &&
-                CLASSP(q->Cdr->Car) &&
-                ((class_t *)(q->Cdr->Car->Object))->classname == clname)
+           if ( CONSP(Cdr(q)) && Cddr(q) == name && CLASSP(Cadr(q)) &&
+                ((class_t *)Mptr(Cadr(q)))->classname == clname)
               break;
         } else {
            /* Looking for a function: 
               - names must match. */
-           if (name == q->Cdr)
+           if (name == Cdr(q))
               break;
         }
      }
-     p = p->Cdr;
+     p = Cdr(p);
      q = 0;
   }
   if (q) {
-     return q->Car;
+     return Car(q);
   }
   return NIL;
 }
@@ -1426,7 +1425,7 @@ static void module_def(at *name, at *val)
    current->defs = new_cons(new_cons(val, name),current->defs);
    /* Root definitions are also written into symbols */
    if (current == root) {
-      symbol_t *symb = name->Object;
+      symbol_t *symb = Mptr(name);
       if (symb->mode == SYMBOL_LOCKED)
          RAISEF("internal error (multiple definition)", name);
       var_set(name, val);
@@ -1508,7 +1507,7 @@ void dhclass_define(char *name, dhclassdoc_t *kclass)
 {
    at *symb = new_symbol(name);
    at *classat = new_dhclass(symb, kclass);
-   class_t *cl = classat->Object;
+   class_t *cl = Mptr(classat);
    cl->priminame = module_priminame(symb); 
    module_def(symb, classat);
    current->flags |= MODULE_CLASS;
@@ -1538,7 +1537,7 @@ void dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname)
           break;
    if (drec->arg != kname)
       error(NIL,"internal: method is not listed in classdoc", symb);
-   class_t *cl = kclass->lispdata.atclass->Object;
+   class_t *cl = Mptr(kclass->lispdata.atclass);
    at *priminame = module_method_priminame(cl, symb);
    at *func = new_dh(priminame, kname);
    module_method_def(cl, symb, func);

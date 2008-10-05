@@ -101,19 +101,19 @@ at *new_string(const char *s)
 
 static at *string_listeval (at *p, at *q)
 {
-   at *qi = eval_a_list(q->Cdr);
+   at *qi = eval_a_list(Cdr(q));
    ifn (LASTCONSP(qi))
       error(NIL, "one argument expected", NIL);
-   ifn (NUMBERP(qi->Car))
-      error(NIL, "not a number", qi->Car);
+   ifn (NUMBERP(Car(qi)))
+      error(NIL, "not a number", Car(qi));
    
-   char *s = p->Object;
+   char *s = Mptr(p);
    assert(s);
    int n = mm_strlen(s);
-   int i = (int)Number(qi->Car);
+   int i = (int)Number(Car(qi));
    i = (i < 0) ? n + i : i;
    if (i<0 || i>=n)
-      error(NIL, "not a valid index value", qi->Car);
+      error(NIL, "not a valid index value", Car(qi));
    return NEW_NUMBER(s[i]);
 }
      
@@ -123,7 +123,7 @@ static at *string_listeval (at *p, at *q)
  */
 static char *string_name(at *p)
 {
-   char *s = p->Object;
+   char *s = String(p);
    char *name = string_buffer;
 #if HAVE_MBRTOWC
    int n = mm_strlen(s);
@@ -216,7 +216,7 @@ static char *string_name(at *p)
 
 static int string_compare(at *p, at *q, int order)
 {
-   return strcmp(SADD(p->Object),SADD(q->Object));
+   return strcmp(String(p),String(q));
 }
 
 
@@ -227,7 +227,7 @@ static int string_compare(at *p, at *q, int order)
 static unsigned long string_hash(at *p)
 {
    unsigned long x = 0x12345678;
-   char *s = SADD(p->Object);
+   char *s = String(p);
    while (*s) {
       x = (x<<6) | ((x&0xfc000000)>>26);
       x ^= (*s);
@@ -254,14 +254,14 @@ void large_string_add(large_string_t *ls, char *s, int len)
       if (ls->p + len > ls->buffer + sizeof(ls->buffer)-1) {
          *ls->p = 0;
          *ls->where = new_cons(new_string(ls->buffer), NIL);
-         ls->where = &((*ls->where)->Cdr);
+         ls->where = &Cdr(*ls->where);
          ls->p = ls->buffer;
       }
    if (len > sizeof(ls->buffer)-1) {
       at *p = new_string_bylen(len);
-      memcpy(SADD(p->Object), s, len);
+      memcpy(String(p), s, len);
       *ls->where = new_cons(p, NIL);
-      ls->where = &((*ls->where)->Cdr);
+      ls->where = &Cdr(*ls->where);
       ls->p = ls->buffer;
    } else {
       memcpy(ls->p, s, len);
@@ -273,13 +273,13 @@ at *large_string_collect(large_string_t *ls)
 {
    *ls->p = 0;
    int len = strlen(ls->buffer);
-   for (at *p = ls->backup; p; p = p->Cdr)
-      len += mm_strlen(SADD(p->Car->Object));
+   for (at *p = ls->backup; p; p = Cdr(p))
+      len += mm_strlen(String(Car(p)));
    
    at *q = new_string_bylen(len);
-   char *r = SADD(q->Object);
-   for (at *p = ls->backup; p; p = p->Cdr) {
-      strcpy(r, SADD(p->Car->Object));
+   char *r = String(q);
+   for (at *p = ls->backup; p; p = Cdr(p)) {
+      strcpy(r, String(Car(p)));
       r += strlen(r);
    }
    strcpy(r, ls->buffer);
@@ -387,7 +387,7 @@ DX(xstr_left)
       n = l;
 
    at *p = new_string_bylen(n);
-   char *a = SADD(p->Object);
+   char *a = String(p);
    strncpy(a,s,n);
    a[n] = 0;
    return p;
@@ -444,7 +444,7 @@ DX(xsubstring)
    /* create new string of length m-n+1 */
    l = m-n;
    at *p = new_string_bylen(l);
-   char *a = SADD(p->Object);
+   char *a = String(p);
    strncpy(a, s+n, l);
    a[l] = 0;
    return p;
@@ -485,7 +485,7 @@ DX(xstr_mid)
          return null_string;
 
       p = new_string_bylen(m);
-      a = SADD(p->Object);
+      a = String(p);
       strncpy(a,s+(n-1),m);
       a[m] = 0;
       return p;
@@ -504,7 +504,7 @@ DX(xstr_concat)
       length += (int)mm_strlen(ASTRING(i));
 
    at *p = new_string_bylen(length);
-   char *here = SADD(p->Object);
+   char *here = String(p);
    for (int i=1; i<=arg_number; i++) {
       char *s = ASTRING(i);
       while (*s) {
@@ -896,7 +896,7 @@ DX(xupcase)
  {
     char c, *r;
     rr = new_string_bylen(mm_strlen(s));
-    r = SADD(rr->Object);
+    r = String(rr);
     while ((c = *s++)) 
        *r++ = toupper((unsigned char)c);
     *r = 0;
@@ -939,7 +939,7 @@ DX(xupcase1)
    {
       char *r, c;
       rr = new_string_bylen(mm_strlen(s));
-      r = SADD(rr->Object);
+      r = String(rr);
       strcpy(r,s);
       if ((c = *r))
          *r =  toupper((unsigned char)c);
@@ -991,7 +991,7 @@ DX(xdowncase)
   {
      char c, *r;
      rr = new_string_bylen(mm_strlen(s));
-     r = SADD(rr->Object);
+     r = String(rr);
      while ((c = *s++)) 
         *r++ = tolower((unsigned char)c);
      *r = 0;
@@ -1100,7 +1100,7 @@ static at *explode_bytes(char *s)
    while (*s) {
       int code = *s;
       *where = new_cons(NEW_NUMBER(code & 0xff),NIL);
-      where = &((*where)->Cdr);
+      where = &Cdr(*where);
       s += 1;
    }
    return p;
@@ -1121,7 +1121,7 @@ static at *explode_chars(char *s)
          break;
       if (m > 0) {
          *where = new_cons(NEW_NUMBER(wc),NIL);
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
          s += m;
          n -= m;
       } else
@@ -1140,15 +1140,15 @@ static at *implode_bytes(at *p)
    large_string_init(&ls);
    
    while (CONSP(p)) {
-      if (! NUMBERP(p->Car))
-         RAISEF("number expected",p->Car);
-      char c = (char)Number(p->Car);
+      if (! NUMBERP(Car(p)))
+         RAISEF("number expected", Car(p));
+      char c = (char)Number(Car(p));
       if (! c)
          break;
-      if (Number(p->Car) != (real)(unsigned char)c)
-         RAISEF("integer in range 0..255 expected",p->Car);
+      if (Number(Car(p)) != (real)(unsigned char)c)
+         RAISEF("integer in range 0..255 expected", Car(p));
       large_string_add(&ls, &c, 1);
-      p = p->Cdr;
+      p = Cdr(p);
    }
    MM_RETURN(large_string_collect(&ls));
 }
@@ -1165,19 +1165,19 @@ static at *implode_chars(at *p)
       char buffer[MB_LEN_MAX];
       wchar_t wc;
 
-      if (! NUMBERP(p->Car))
-         RAISEF("number expected", p->Car);
-      wc = (wchar_t)Number(p->Car);
+      if (! NUMBERP(Car(p)))
+         RAISEF("number expected", Car(p));
+      wc = (wchar_t)Number(Car(p));
       if (! wc)
          break;
-      if (Number(p->Car) != (real)wc)
-         RAISEF("integer expected", p->Car);
+      if (Number(Car(p)) != (real)wc)
+         RAISEF("integer expected", Car(p));
       int d = wcrtomb(buffer, wc, &ps);
       if (d > 0)
          large_string_add(&ls, buffer, d);
       else
-         error(NIL,"Integer is out of range",p->Car);
-      p = p->Cdr;
+         error(NIL,"Integer is out of range", Car(p));
+      p = Cdr(p);
    }
    MM_RETURN(large_string_collect(&ls));
 #else
@@ -1241,7 +1241,7 @@ DX(xvector_to_string)
 
    ind = as_contiguous_array(ind);
    at *p = new_string_bylen(IND_DIM(ind, 0));
-   char *s = SADD(p->Object);
+   char *s = String(p);
    memcpy(s, IND_BASE(ind), IND_DIM(ind, 0));
    
    //delete_index(ind);

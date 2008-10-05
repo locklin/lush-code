@@ -50,17 +50,17 @@ extern void os_curtime(int *sec, int *msec);
 
 static void *ev_hndl(at *q)
 {
-   if (CONSP(q) && GPTRP(q->Car) && CONSP(q->Cdr) && q->Cdr->Cdr)
-      return q->Car->Gptr;
+   if (CONSP(q) && GPTRP(Car(q)) && CONSP(Cdr(q)) && Cddr(q))
+      return Gptr(Car(q));
    return 0;
 }
 
 static void ev_remove(at *pp, at *p)
 {
-   if (pp->Cdr != p)
+   if (Cdr(pp) != p)
       error(NIL, "internal error", NIL);
-   pp->Cdr = p->Cdr;
-   p->Cdr = NIL;
+   Cdr(pp) = Cdr(p);
+   Cdr(p) = NIL;
    if (tail == p)
       tail = pp;
 }
@@ -69,14 +69,14 @@ static void ev_notify(at *handler, void *_)
 {
    at *pp = head;
    if (CONSP(pp)) {
-      at *p = pp->Cdr;
+      at *p = Cdr(pp);
       while (CONSP(p)) {
-         void *hndl = ev_hndl(p->Car);
+         void *hndl = ev_hndl(Car(p));
          if (hndl==0 || hndl==(gptr)handler) 
             ev_remove(pp, p);
          else
             pp = p;
-         p = pp->Cdr;
+         p = Cdr(pp);
       }
    }
 }
@@ -94,8 +94,8 @@ void ev_add(at *handler, at *event, const char *desc, int mods)
          d = new_gptr((gptr)desc);
       at *p = new_cons(new_gptr(handler), new_cons(d, event));
       add_notifier(handler, (wr_notify_func_t *)ev_notify, 0);
-      tail->Cdr = new_cons(p,NIL);
-      tail = tail->Cdr;
+      Cdr(tail) = new_cons(p,NIL);
+      tail = Cdr(tail);
    }
    MM_EXIT;
 }
@@ -104,15 +104,15 @@ static void *ev_peek(void)
 {
    at *pp = head;
    if (CONSP(pp)) {
-      while (CONSP(pp->Cdr)) {
-         at *p = pp->Cdr;
-         void *hndl = ev_hndl(p->Car);
+      while (CONSP(Cdr(pp))) {
+         at *p = Cdr(pp);
+         void *hndl = ev_hndl(Car(p));
          if (hndl)
             return hndl;
          ev_remove(pp, p);
       }
-      if (pp->Cdr)
-         pp->Cdr = NIL;
+      if (Cdr(pp))
+         Cdr(pp) = NIL;
    }
    return NULL;
 }
@@ -123,10 +123,10 @@ static int evmods = 0;
 void ev_parsedesc(at *desc)
 {
    if (CONSP(desc)) {
-      ev_parsedesc(desc->Car);
-      ev_parsedesc(desc->Cdr);
+      ev_parsedesc(Car(desc));
+      ev_parsedesc(Cdr(desc));
    } else if (GPTRP(desc))
-      evdesc = (const char *)(desc->Gptr);
+      evdesc = (const char *)String(desc);
    else if (NUMBERP(desc))
       evmods = (unsigned char)Number(desc);
 }
@@ -162,13 +162,13 @@ at *event_get(void *handler, bool remove)
 {
    at *pp = head;
    if (CONSP(pp)) {
-      while (CONSP(pp->Cdr)) {
-         at *p = pp->Cdr;
-         void *hndl = ev_hndl(p->Car);
+      while (CONSP(Cdr(pp))) {
+         at *p = Cdr(pp);
+         void *hndl = ev_hndl(Car(p));
 
          if (hndl == handler) {
-            at *event = p->Car->Cdr->Cdr;
-            ev_parsedesc(p->Car->Cdr->Car);
+            at *event = Cdr(Cdar(p));
+            ev_parsedesc(Car(Cdar(p)));
             if (remove)
                ev_remove(pp, p);
             return event;
@@ -179,8 +179,8 @@ at *event_get(void *handler, bool remove)
          }
          pp = p;
       }
-      if (pp->Cdr)
-         pp->Cdr = NIL;
+      if (Cdr(pp))
+         Cdr(pp) = NIL;
    }
    return NIL;
 }
@@ -751,7 +751,7 @@ DX(xseteventhandler)
    ifn (WINDOWP(w))
       RAISEFX("not a window", w);
    
-   struct window *win = w->Object;
+   struct window *win = Mptr(w);
    at *p = win->eventhandler;
    if (p) {
       win->eventhandler = NIL;

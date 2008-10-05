@@ -62,7 +62,7 @@ static at *at_set_linestyle;
 static int lisp_check(wptr info, at *method)
 {
    at *obj = info->driverdata;
-   at *p = checksend(obj->Class, method);
+   at *p = checksend(Class(obj), method);
    if (p)
       return true;
    return false;
@@ -129,7 +129,7 @@ static char *lisp_setfont(wptr info, char *f)
 
    if (STRINGP(r)) {
       info->font = r;
-      return SADD(r->Object);
+      return String(r);
    }
    return 0;
 }
@@ -198,18 +198,18 @@ static void lisp_rect_text(wptr info, int x, int y, char *s,
                              new_cons(new_string(s),NIL)));
    at *p = lisp_send(info,at_rect_text,q);
    at *r = p;
-   if (CONSP(p) && NUMBERP(p->Car)) { 
-      *xp = (int)Number(p->Car); 
-      p = p->Cdr; 
-      if (CONSP(p) && NUMBERP(p->Car)) {
-         *yp = (int)Number(p->Car); 
-         p = p->Cdr; 
-         if (CONSP(p) && NUMBERP(p->Car)) {
-            *wp = (int)Number(p->Car); 
-            p = p->Cdr; 
-            if (CONSP(p) && NUMBERP(p->Car)) {
-               *hp = (int)Number(p->Car); 
-               p = p->Cdr; 
+   if (CONSP(p) && NUMBERP(Car(p))) { 
+      *xp = (int)Number(Car(p)); 
+      p = Cdr(p); 
+      if (CONSP(p) && NUMBERP(Car(p))) {
+         *yp = (int)Number(Car(p)); 
+         p = Cdr(p); 
+         if (CONSP(p) && NUMBERP(Car(p))) {
+            *wp = (int)Number(Car(p)); 
+            p = Cdr(p); 
+            if (CONSP(p) && NUMBERP(Car(p))) {
+               *hp = (int)Number(Car(p)); 
+               p = Cdr(p); 
                if (!p)
                   return;
             }
@@ -245,15 +245,15 @@ static int lisp_get_mask(wptr info, uint *rp, uint *gp, uint *bp)
    if (lisp_check(info, at_get_mask)) {
       at *p = lisp_send(info, at_get_mask, NIL);
       at *r = p;
-      if (CONSP(p) && NUMBERP(p->Car)) {
-         *rp = (uint)Number(p->Car);
-         p = p->Cdr;
-         if (CONSP(p) && NUMBERP(p->Car)) {
-            *gp = (uint)Number(p->Car);
-            p = p->Cdr;
-            if (CONSP(p) && NUMBERP(p->Car)) {
-               *bp = (uint)Number(p->Car);
-               p = p->Cdr;
+      if (CONSP(p) && NUMBERP(Car(p))) {
+         *rp = (uint)Number(Car(p));
+         p = Cdr(p);
+         if (CONSP(p) && NUMBERP(Car(p))) {
+            *gp = (uint)Number(Car(p));
+            p = Cdr(p);
+            if (CONSP(p) && NUMBERP(Car(p))) {
+               *bp = (uint)Number(Car(p));
+               p = Cdr(p);
                if (!p)
                   return 1;
             }
@@ -281,7 +281,7 @@ static void lisp_fill_polygon(wptr info, short (*points)[2], uint n)
    for (int i=0;i<n;i++) {
       *w = new_cons(NEW_NUMBER(points[i][0]),
                     new_cons(NEW_NUMBER(points[i][1]), NIL) );
-      w = &((*w)->Cdr->Cdr);
+      w = &Cddr(*w);
    }
    lisp_send(info,at_fill_polygon,q);
 }
@@ -395,7 +395,7 @@ static void lisp_get_image(wptr info, uint *data, int x, int y, uint w, uint h)
       ifn (INDEXP(p))
          RAISEF("not an index", p);
       shape_t shape, *shp = shape_set(&shape, 2, 0, 0, 0, 0);
-      easy_index_check((index_t *)p->Object, shp);
+      easy_index_check((index_t *)Mptr(p), shp);
       if (shp->dim[0]!=h || shp->dim[0]!=w)
          error(NIL, "method 'get-image' returned something invalid", p);
 
@@ -483,7 +483,7 @@ DX(xlisp_window_delegate)
    at *p = APOINTER(1);
    ifn (WINDOWP(p))
       error(NIL, "not a window", p);
-   window_t *w = p->Object;
+   window_t *w = Mptr(p);
    if (w->gdriver != &lisp_driver)
       error(NIL, "not a lisp-driver window", p);
    p = w->driverdata;

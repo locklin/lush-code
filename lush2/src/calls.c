@@ -58,8 +58,8 @@ int comp_test(at *p, at *q)
          else
             return 0;
       } else if (GPTRP(p) && GPTRP(q)) {
-         unsigned long r1 = (unsigned long)p->Gptr;
-         unsigned long r2 = (unsigned long)q->Gptr;
+         unsigned long r1 = (unsigned long)Gptr(p);
+         unsigned long r2 = (unsigned long)Gptr(q);
          if (r1<r2)
             return -1;
          else if (r1>r2)
@@ -67,11 +67,11 @@ int comp_test(at *p, at *q)
          else
             return 0;
 
-      } else if (p->Class==q->Class && p->Class->compare) {
+      } else if (Class(p)==Class(q) && Class(p)->compare) {
          int ans = 0;
          struct recur_elt elt;
          if (recur_push_ok(&elt, &comp_test, p)) {
-            ans = (*p->Class->compare)(p,q,true);
+            ans = Class(p)->compare(p,q,true);
             recur_pop(&elt);
          }
          return ans;
@@ -103,18 +103,18 @@ again:
    else if (CONSP(p) && CONSP(q)) {
       struct recur_elt elt;
       if (recur_push_ok(&elt, &eq_test, p)) {
-         ans = eq_test(p->Car, q->Car);
+         ans = eq_test(Car(p), Car(q));
          recur_pop(&elt);
       }
       if (ans) {
          /* go to next list element */
-         p = p->Cdr;
-         q = q->Cdr;
+         p = Cdr(p);
+         q = Cdr(q);
          if (p==pslow) /* circular list detected */
             return ans;
          toggle ^= 1;
          if (toggle)
-            pslow = pslow->Cdr;
+            pslow = Cdr(pslow);
          goto again;
       }
       return ans;
@@ -122,8 +122,8 @@ again:
    } else if (NUMBERP(p) && NUMBERP(q)) {
 
 #if defined(WIN32) && defined(_MSC_VER) && defined(_M_IX86)
-      if (*p->Number == *q->Number) {
-         float delta = (float)(*p->Number - *q->Number);
+      if (Number(p) == Number(q)) {
+         float delta = (float)(Number(p) - Number(q));
          if (! *(long*)&delta)
             return true;
          return false;
@@ -133,13 +133,13 @@ again:
 #endif
       /* GPTR */
    } else if (GPTRP(p) && GPTRP(q)) {
-      return (p->Gptr == q->Gptr);
+      return (Gptr(p) == Gptr(q));
 
       /* Comparison method provided */
-   } else if (p->Class==q->Class && p->Class->compare) {
+   } else if (Class(p)==Class(q) && Class(p)->compare) {
       struct recur_elt elt;
       if (recur_push_ok(&elt, &eq_test, p)) {
-         ans = !(*p->Class->compare)(p,q,false);
+         ans = ! Class(p)->compare(p,q,false);
          recur_pop(&elt);
       }
       return ans;
@@ -231,12 +231,12 @@ DX(xrange)
    if (delta > 0) {
       for (real i=low; i<=high; i+=delta) {
          *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
       }
    } else {
       for (real i=low; i>=high; i+=delta) {
          *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
       }
    }
    return answer;
@@ -272,12 +272,12 @@ DX(xrange_star)
    if (delta > 0) {
       for (real i=low; i<high; i+=delta) {
          *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
       }
    } else {
       for (real i=low; i>high; i+=delta) {
          *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &((*where)->Cdr);
+         where = &Cdr(*where);
       }
    }
    return answer;
@@ -436,22 +436,22 @@ DX(xle)
 
 DY(yif)
 {
-   ifn (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr))
+   ifn (CONSP(ARG_LIST) && CONSP(Cdr(ARG_LIST)))
       RAISEFX("syntax error", NIL);
-   at *q = eval(ARG_LIST->Car);
+   at *q = eval(Car(ARG_LIST));
    if (q)
-      return eval(ARG_LIST->Cdr->Car);
+      return eval(Cadr(ARG_LIST));
    else
-      return progn(ARG_LIST->Cdr->Cdr);
+      return progn(Cddr(ARG_LIST));
 }
 
 DY(ywhen)
 {
-   ifn (CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr))
+   ifn (CONSP(ARG_LIST) && CONSP(Cdr(ARG_LIST)))
       RAISEFX("syntax error", NIL);
-   at *q = eval(ARG_LIST->Car);
+   at *q = eval(Car(ARG_LIST));
    if (q)
-      return progn(ARG_LIST->Cdr);
+      return progn(Cdr(ARG_LIST));
    else
       return NIL;
 }
@@ -462,14 +462,14 @@ DY(ycond)
    at *l = ARG_LIST;
    
    while (CONSP(l)) {
-      at *q = l->Car;
+      at *q = Car(l);
       ifn (CONSP(q)) {
          RAISEFX("syntax error", q);
-      } else
-         if ((q = eval(q->Car))) {
-            return progn(l->Car->Cdr);
-       }
-      l = l->Cdr;
+      } else {
+         if ((q = eval(Car(q))))
+            return progn(Cdar(l));
+      }
+      l = Cdr(l);
    }
    if (l) 
       RAISEFX("not a proper list", NIL);
@@ -482,25 +482,25 @@ DY(yselectq)
    ifn (CONSP(ARG_LIST))
       RAISEFX("not a proper list", ARG_LIST);
    
-   at *item = eval(ARG_LIST->Car);
-   at *l = ARG_LIST->Cdr;
+   at *item = eval(Car(ARG_LIST));
+   at *l = Cdr(ARG_LIST);
    
    while (CONSP(l)) {
-      at *q = l->Car;
+      at *q = Car(l);
       ifn (CONSP(q)) {
          RAISEFX("syntax error", q);
       } else {
-         if (q->Car==at_t || eq_test(q->Car, item))
-            return progn(q->Cdr);
-         else if (CONSP(q->Car) && member(item, q->Car))
-            return progn(l->Car->Cdr);
+         if (Car(q)==at_t || eq_test(Car(q), item))
+            return progn(Cdr(q));
+         else if (CONSP(Car(q)) && member(item, Car(q)))
+            return progn(Cdar(l));
       }
       CHECK_MACHINE("on");
-      l = l->Cdr;
+      l = Cdr(l);
    }
    if (!l)
       return NIL;
-
+   
    RAISEFX("not a proper list", ARG_LIST);
 }
 
@@ -509,10 +509,10 @@ DY(ywhile)
 {
    ifn (CONSP(ARG_LIST))
       RAISEFX("syntax error", ARG_LIST);
-
+   
    at *q2, *q1 = NIL;
-   while ((q2 = eval(ARG_LIST->Car))) {
-      q1 = progn(ARG_LIST->Cdr);
+   while ((q2 = eval(Car(ARG_LIST)))) {
+      q1 = progn(Cdr(ARG_LIST));
       CHECK_MACHINE("on");
    }
    return q1;
@@ -526,9 +526,9 @@ DY(ydowhile)
 
    at *q1 = NIL;
    do {
-      q1 = progn(ARG_LIST->Cdr);
+      q1 = progn(Cdr(ARG_LIST));
       CHECK_MACHINE("on");
-   } while (eval(ARG_LIST->Car));
+   } while (eval(Car(ARG_LIST)));
    return q1;
 }
 
@@ -538,7 +538,7 @@ DY(yrepeat)
    ifn (CONSP(ARG_LIST))
       RAISEFX("syntax error", ARG_LIST);
    
-   at *q = eval(ARG_LIST->Car);
+   at *q = eval(Car(ARG_LIST));
    if (!NUMBERP(q)) {
       RAISEFX("not a number", q);
 
@@ -548,7 +548,7 @@ DY(yrepeat)
    int i = (int)Number(q);
    at *p = NIL;
    while (i--) {
-      p = progn(ARG_LIST->Cdr);
+      p = progn(Cdr(ARG_LIST));
       CHECK_MACHINE("on");
    }
    return p;

@@ -10,7 +10,7 @@
 #ifndef MM_INCLUDED
 #define MM_INCLUDED
 
-#define NVALGRIND
+//#define NVALGRIND
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -33,13 +33,13 @@ enum mt {
 };
 
 void    mm_init(int, notify_func_t *, FILE *); // initialize manager
-mt_t    mm_regtype(const char *, size_t, clear_func_t *, mark_func_t *, finalize_func_t *);
+mt_t    mm_regtype(const char *, size_t, clear_func_t, mark_func_t *, finalize_func_t *);
 void   *mm_alloc(mt_t);                  // allocate fixed-size object
 void   *mm_allocv(mt_t, size_t);         // allocate variable-sized object
 void   *mm_malloc(size_t);               // malloc replacement
 void   *mm_calloc(size_t, size_t);       // calloc replacement
 void   *mm_realloc(void *, size_t);      // realloc replacement
-void    mm_type(void *, mt_t);           // set type of managed object
+void    mm_type(const void *, mt_t);     // set type of managed object
 void    mm_notify(const void *, bool);   // set or unset notify flag
 bool    mm_ismanaged(const void *);      // true if managed object
 mt_t    mm_typeof(const void *);         // type of object

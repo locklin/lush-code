@@ -63,8 +63,7 @@ nlf_dispose(at *p)
 {
 	struct nlf *n;
 
-	n = p->Object;
-	UNLOCK(n->atf);
+	n = Mptr(p);
 	if (n->type == TYPE_SPLINE)
 	  free(n->Splin.x);
 	deallocate( &nlf_alloc, (void*)n );
@@ -86,14 +85,13 @@ nlf_listeval(at *p, at *q)
 
   n = p->Object;
   q = q->Cdr;
-  ifn (CONSP(q) && !q->Cdr)
+  ifn (CONSP(q) && !Cdr(q))
     error(NIL,"One argument only",q);
-  q = eval(q->Car);
-  ifn (q && (q->flags&C_NUMBER))
+  q = eval(Car(q));
+  ifn (q && NUMBERP(q))
     error(NIL,"Not a number",q);
 
-  ans = NEW_NUMBER(Ftor((*(n->f))(n,rtoF(q->Number))));
-  UNLOCK(q);
+  ans = NEW_NUMBER(Ftor((*(n->f))(n,rtoF(Number(q)))));
   return ans;
 }
 
@@ -129,7 +127,7 @@ nlf_serialize(at **pp, int code)
   if (code == SRZ_READ) {
     n = allocate( &nlf_alloc );
   } else {
-    n = (*pp)->Object;
+    n = Mptr(*pp);
     for (func=0; ftable[func]!=n->f ; func++)
       if (!ftable[func])
 	error(NIL,"Internal error (corrupted NLF)",NIL);      
@@ -239,9 +237,7 @@ f_lisp(struct nlf *n, float x)
 
   call = cons(new_number(Ftor(x)),NIL);
   result = apply(n->atf,call);
-  x = rtoF(result->Number);
-  UNLOCK(call);
-  UNLOCK(result);
+  x = rtoF(Number(result));
   return x;
 }
 
@@ -253,12 +249,11 @@ DX(xnlf_f_lisp)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
-  ifn(p && (p->flags & X_FUNCTION))
+  ifn (FUNCTIONP(p))
     error(NIL,"not a function",p);
   n = allocate( &nlf_alloc );
   n->type = TYPE_STD;
   n->atf = p;
-  LOCK(p);
   n->f = f_lisp;
   return new_extern(&nlf_class,n);
 }
@@ -536,16 +531,16 @@ precompute_spline(struct nlf *n, at *xl, at *yl)
     n->Splin.y2 = n->Splin.y + size;
 
     for (u = n->Splin.x; CONSP(xl); xl=xl->Cdr)
-	if ( xl->Car && (xl->Car->flags & C_NUMBER) )
-	    *u++ = rtoF( xl->Car->Number );
+        if ( Car(xl) && NUMBERP(Car(xl)) )
+	    *u++ = rtoF( Number(Car(xl)) );
 	else
 	    error(NIL,"not a number",xl->Car);
 
-    for (u = n->Splin.y; CONSP(yl); yl=yl->Cdr)
-	if ( yl->Car && (yl->Car->flags & C_NUMBER) )
-	    *u++ = rtoF( yl->Car->Number );
+    for (u = n->Splin.y; CONSP(yl); yl=Cdr(yl))
+        if ( Car(yl) && NUMBERP(Car(yl)) )
+	    *u++ = rtoF( Number(Car(yl)) );
 	else
-	    error(NIL,"not a number",yl->Car);
+	    error(NIL,"not a number", Car(yl));
 
 /* y2 calculation */
 
@@ -757,7 +752,7 @@ df_all(struct nlf *n, float x)
 {
 	flt dy,dx,dx2;
 	
-	n = n->atf->Object;
+	n = Mptr(n->atf);
 	dx = rtoF(1.0/256.0);
 	dx2 = rtoF(1.0/128.0);
 	
@@ -773,13 +768,12 @@ DX(xnlf_df_all)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
-  ifn  (p && (p->flags & C_EXTERN) && (p->Class==&nlf_class))
+  ifn  (p && EXTERNP(p) && (Class(p)==&nlf_class))
     error(NIL,"not a nlf",p);
   n = allocate(&nlf_alloc);
   n->type = TYPE_STD;
   n->f = df_all;
   n->atf = p;
-  LOCK(p);
   return new_extern(&nlf_class,n);
 }
 
@@ -793,7 +787,7 @@ ddf_all(struct nlf *n, float x)
 {
 	flt dy,dx,dx2;
 	
-	n = n->atf->Object;
+	n = Mptr(n->atf);
 	dx  = rtoF(1.0/128.0);
 	dx2 = rtoF(1.0/16384.0);
 	
@@ -811,13 +805,12 @@ DX(xnlf_ddf_all)
   ARG_NUMBER(1);
   ARG_EVAL(1);
   p = APOINTER(1);
-  ifn  (p && (p->flags & C_EXTERN) && (p->Class==&nlf_class))
+  ifn  (p && EXTERNP(p) && (Class(p)==&nlf_class))
     error(NIL,"not a nlf",p);
   n = allocate(&nlf_alloc);
   n->type = TYPE_STD;
   n->f = ddf_all;
   n->atf = p;
-  LOCK(p);
   return new_extern(&nlf_class,n);
 }
 

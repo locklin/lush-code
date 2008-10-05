@@ -116,19 +116,19 @@ static hashtable_t *htable_dispose(hashtable_t *h)
 
 static at *htable_listeval(at *p, at *q)
 {
-   q = q->Cdr;
+   q = Cdr(q);
    int nargs = length(q);
 
    if (nargs==1) {
       /* retrieve an element */
       q = eval_a_list(q);
-      p = htable_get(p, q->Car);
+      p = htable_get(p, Car(q));
       
    } else if ((nargs&1)==0) {
       /* set or update key-value pair(s) */
       q = eval_a_list(q);
-      for (at *qq = q; qq; qq = qq->Cdr->Cdr)
-         htable_set(p, qq->Car, qq->Cdr->Car);
+      for (at *qq = q; qq; qq = Cddr(qq))
+         htable_set(p, Car(qq), Cadr(qq));
 
    } else
       error(NIL, "one argument or even number of arguments expected", q);
@@ -147,7 +147,7 @@ static void htable_serialize(at **pp, int code)
       serialize_int(&nelems, code);
 
       (*pp) = new_htable(nelems, (bool)pointerhashp, (bool)raise_keyerror_p);
-      struct hashtable *ht = (*pp)->Object;
+      struct hashtable *ht = Mptr(*pp);
       ht->rehashp = true;
       ht->keylockp = true;
       
@@ -162,7 +162,7 @@ static void htable_serialize(at **pp, int code)
       }
       
    } else {
-      struct hashtable *ht = (*pp)->Object;
+      struct hashtable *ht = Mptr(*pp);
       int i = (int)ht->raise_keyerror_p;
       serialize_int(&i, code);
       i = (int)ht->pointerhashp;
@@ -184,8 +184,8 @@ static int htable_compare(at *p, at *q, int order)
   if (order)
      error(NIL,"cannot rank hashtables",NIL);
   
-  hashtable_t *htp= p->Object;
-  hashtable_t *htq = q->Object;
+  hashtable_t *htp = Mptr(p);
+  hashtable_t *htq = Mptr(q);
   
   if (htp->nelems != htq->nelems)
      return 1;
@@ -208,7 +208,7 @@ static int htable_compare(at *p, at *q, int order)
 static unsigned long htable_hash(at *p)
 {
    unsigned long x = 0;
-   struct hashtable *ht = p->Object;
+   struct hashtable *ht = Mptr(p);
 
    for (int i=0; i<ht->size; i++) {
       for (struct htpair *n=ht->table[i]; n; n=n->next) {
@@ -256,29 +256,29 @@ again:
       
    } else if (CONSP(p)) {
       x ^= 0x2020;
-      if (recur_push_ok(&elt, &hash_value, p->Car)) {
-         x ^= hash_value(p->Car);
+      if (recur_push_ok(&elt, &hash_value, Car(p))) {
+         x ^= hash_value(Car(p));
          recur_pop(&elt);
       }
       /* go to next list element */
-      p = p->Cdr;
+      p = Cdr(p);
       if (p == slow) /* circular list */
          return x;
       toggle ^= 1;
       if (!toggle)
-         slow = slow->Cdr;
+         slow = Cdr(slow);
       goto again;
 
-   } else if (p->Class->hash) {
+   } else if (Class(p)->hash) {
       x ^= 0x3030;
       if (recur_push_ok(&elt, &hash_pointer, p)) {
-         x ^= (*p->Class->hash)(p);
+         x ^= Class(p)->hash(p);
          recur_pop(&elt);
       }
 
    } else if (GPTRP(p)) {
       x ^= 0x4040;
-      x ^= (unsigned long)(p->Gptr);
+      x ^= (unsigned long)Gptr(p);
 
    } else {
       x ^= hash_pointer(p);
@@ -380,7 +380,7 @@ LUSHAPI void htable_set(at *hta, at *key, at *value)
       return;
 
    /* check hash table */
-   hashtable_t *ht = hta->Object;
+   hashtable_t *ht = Mptr(hta);
    if (ht->rehashp)
       htable_rehash(ht);
    
@@ -430,7 +430,7 @@ LUSHAPI void htable_set(at *hta, at *key, at *value)
 
 LUSHAPI void htable_delete(at *hta, at *key)
 {
-   hashtable_t *ht = hta->Object;
+   hashtable_t *ht = Mptr(hta);
    bool raise_keyerror_p = ht->raise_keyerror_p;
    ht->raise_keyerror_p = false;
    htable_set(hta, key, NIL);
@@ -441,7 +441,7 @@ LUSHAPI void htable_delete(at *hta, at *key)
 
 LUSHAPI void htable_clear(at *hta)
 {
-   hashtable_t *ht = hta->Object;
+   hashtable_t *ht = Mptr(hta);
    for (int i=0; i<ht->size; i++) {
       struct htpair *n = ht->table[i];
       while (n) {
@@ -460,7 +460,7 @@ LUSHAPI at *htable_get(at *hta, at *key)
    ifn (HTABLEP(hta))
       error(NIL, "not a hash table", hta);
    
-   hashtable_t *ht = hta->Object;
+   hashtable_t *ht = Mptr(hta);
    if (ht->rehashp)
       htable_rehash(ht);
    unsigned long hash = ht->pointerhashp ?
@@ -546,7 +546,7 @@ DX(xhtable_alist)
    at *a = APOINTER(1);
    ifn (HTABLEP(a))
       RAISEFX("not a hash table", a);
-   hashtable_t *ht = a->Object;
+   hashtable_t *ht = Mptr(a);
    
    a = NIL;
    for (int i=0; i<ht->size; i++)
@@ -563,7 +563,7 @@ DX(xcopy_htable)
    at *p = APOINTER(1);
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
-   hashtable_t *ht = p->Object;
+   hashtable_t *ht = Mptr(p);
 
    at* ans = new_htable(ht->size, ht->pointerhashp, ht->raise_keyerror_p);
    for (int i=0; i<ht->size; i++)
@@ -605,7 +605,7 @@ DX(xhtable_update)
    ifn (HTABLEP(other))
       RAISEFX("not a hash table", other);
   
-   hashtable_t *ht = other->Object;
+   hashtable_t *ht = Mptr(other);
    for (int i=0; i<ht->size; i++)
       for (struct htpair *n = ht->table[i]; n; n = n->next)
          htable_set(ans, n->key, n->value);
@@ -621,7 +621,7 @@ DX(xhtable_keys)
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
 
-   hashtable_t *ht = p->Object;
+   hashtable_t *ht = Mptr(p);
    at *ans = NIL;
    for (int i=0; i<ht->size; i++)
       for (struct htpair *n=ht->table[i]; n; n=n->next)
@@ -638,7 +638,7 @@ DX(xhtable_rehash)
    ifn (HTABLEP(p))
       error(NIL,"not a hash table", p);
 
-   hashtable_t *ht = p->Object;
+   hashtable_t *ht = Mptr(p);
    ht->rehashp = true;
    return NEW_NUMBER(ht->nelems);
 }
@@ -654,7 +654,7 @@ DX(xhtable_size)
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
 
-   hashtable_t *ht = p->Object;
+   hashtable_t *ht = Mptr(p);
    return NEW_NUMBER(ht->nelems);
 }
 
@@ -671,7 +671,7 @@ DX(xhtable_info)
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
 
-   struct hashtable *ht = p->Object;
+   struct hashtable *ht = Mptr(p);
    if (ht->rehashp)
       htable_rehash(ht);
 
