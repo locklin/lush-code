@@ -508,7 +508,7 @@ static bool no_marked_live(void)
       uintptr_t __a_next = __a + BLOCKSIZE;
       for (uintptr_t a = __a; a < __a_next; a += MIN_HUNKSIZE) {
          if (HMAP_LIVE(a)) {
-            warn("address 0x%x (in block %d) is marked live\n", PPTR(heap + a), b);
+            warn("address 0x%"PRIxPTR" (in block %d) is marked live\n", PPTR(heap + a), b);
             return false;
          }
       }
@@ -517,7 +517,7 @@ static bool no_marked_live(void)
    for (int i = 0; i <= man_last; i++) {
       if (LIVE(managed[i])) {
          void *p = CLRPTR2(managed[i]);
-         warn("address 0x%x is marked live\n", PPTR(p));
+         warn("address 0x%"PRIxPTR" is marked live\n", PPTR(p));
          return false;
       }
    }
@@ -1677,6 +1677,10 @@ static void sweep(void)
    } DO_HEAP_END;
 
    buf[n++] = NULL;
+   if (n == NUM_TRANSFER) {
+      write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+      n = 0;
+   }
 
    /* malloc'ed objects */
    DO_MANAGED(i) {
@@ -1688,6 +1692,7 @@ static void sweep(void)
          }
       }
    } DO_MANAGED_END;
+   
    if (n)
       write(pfd_garbage[1], &buf, n*sizeof(void *));
 }
