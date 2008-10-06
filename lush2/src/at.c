@@ -37,7 +37,7 @@
 
 static void clear_at(at *a)
 {
-   a->class = &null_class;
+   a->cl = &null_class;
 }
 
 static void mark_at(at *a)

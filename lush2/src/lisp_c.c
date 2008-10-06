@@ -1426,7 +1426,7 @@ static void update_lisp_from_c(avlnode_t *n)
     if (nst==0) {
       /* danger: storage has been deallocated! */
       lisp2c_warning("(out) : Found idx with dangling storage!",0);
-      delete(n->litem, true);
+      lush_delete(n->litem);
       n->litem = NIL;
       return;
     } 

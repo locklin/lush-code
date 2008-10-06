@@ -295,14 +295,14 @@ again:
 static int cond_set_flags(at *p)
 {
    if (p) {
-      uintptr_t bs = PTRBITS(p->class);
+      uintptr_t bs = PTRBITS(p->cl);
       if (bs & MARK) {
          if (! (bs & MULTIPLE))
             insert_reloc(p);
-         SET_PTRBIT(p->class, MULTIPLE);
+         SET_PTRBIT(p->cl, MULTIPLE);
          return 1;  /* stop recursion */
       }
-      SET_PTRBIT(p->class, MARK);
+      SET_PTRBIT(p->cl, MARK);
       return 0;
    }
    return 1;
@@ -320,8 +320,8 @@ static void set_flags(at *p)
 
 static int cond_clear_flags(at *p)
 {
-   if (p && ((uintptr_t)(p->class) & MARK)) {
-      p->class = CLEAR(p->class);
+   if (p && ((uintptr_t)(p->cl) & MARK)) {
+      p->cl = CLEAR(p->cl);
       return 0;
    } else
       return 1; /* stop recursion if already cleared */
@@ -728,7 +728,7 @@ static int local_write(at *p)
       return 1;
    }
   
-   if ((uintptr_t)(p->class) & MULTIPLE) {
+   if ((uintptr_t)(p->cl) & MULTIPLE) {
       int k = search_reloc(p);
       if (relocf[k]) {
          write_card8(TOK_REF);
@@ -768,10 +768,10 @@ static int local_write(at *p)
    }
   
    if (cl == &symbol_class) {
-      class_t *pcl = p->class;
-      p->class = cl;
+      class_t *save = Class(p);
+      Class(p) = cl;
       char *s = nameof(p);
-      p->class = pcl;
+      Class(p) = save;
       int l = strlen(s);
       write_card8(TOK_SYMBOL);
       write_card24(l);

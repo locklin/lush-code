@@ -860,13 +860,13 @@ static void send_delete(object_t *obj)
 }
 
 
-void delete(at *p, bool respect_dontdelete)
+void lush_delete(at *p)
 {
    if (!p || ZOMBIEP(p))
       return;
 
-   if (respect_dontdelete && Class(p)->dontdelete)
-      error(NIL, "cannot delete this object", p);
+   if (Class(p)->dontdelete)
+        error(NIL, "cannot delete this object", p);
    
    run_notifiers(p);
 
@@ -883,7 +883,7 @@ DX(xdelete)
    ARG_NUMBER(1);
    ARG_EVAL(1);
 
-   delete(APOINTER(1), true);
+   lush_delete(APOINTER(1));
    return NIL;
 }
 

@@ -166,7 +166,7 @@ DLLEXPORT int init_user_dll(int major, int minor);
 
 /* AT.H -------------------------------------------------------- */
 
-typedef struct class class_t;
+typedef struct class_s class_t;
 
 extern LUSHAPI class_t class_class;
 extern LUSHAPI class_t *object_class;
@@ -182,7 +182,7 @@ extern LUSHAPI class_t zombie_class;
 #define CLEAR_PTR(p)      ((void *)((uintptr_t)(p)&~((1<<NUM_PTRBITS) - 1)))
 
 struct at {
-   struct class *class;
+   class_t *cl;
    struct at *car;
    union {
       double *d;
@@ -193,7 +193,7 @@ struct at {
    } payload;
 };
 
-#define Class(q)  ((q)->class)
+#define Class(q)  ((q)->cl)
 #define Number(q) (*(q)->payload.d)
 #define String(q) ((q)->payload.c)
 #define Symbol(q) ((q)->payload.s)
@@ -242,7 +242,7 @@ extern LUSHAPI at *(*argeval_ptr) (at*);
  */
 
 typedef void *dispose_func_t(void *);
-struct class {
+struct class_s {
    double           dummy;       /* force alignment of static class structs */
    /* class vectors */
    void*          (*dispose)      (void *);
@@ -260,9 +260,9 @@ struct class {
    at*              priminame;   /* class name for binary files */
    at*              backptr;     /* back pointer to class object */
    at*              atsuper;     /* superclass object */
-   struct class*    super;	 /* link to superclass */
-   struct class*    subclasses;	 /* link to subclasses */
-   struct class*    nextclass;	 /* next subclass of the same superclass */
+   struct class_s*  super;	 /* link to superclass */
+   struct class_s*  subclasses;	 /* link to subclasses */
+   struct class_s*  nextclass;	 /* next subclass of the same superclass */
    int              slotssofar;  /* number of fields */  
    at*              keylist;     /* field names */
    at*              defaults;    /* default field values */
@@ -693,7 +693,7 @@ LUSHAPI at *checksend(class_t *cl, at *prop);
 LUSHAPI at *send_message(at *classname, at *obj, at *method, at *args);
 LUSHAPI class_t *classof(at *p);
 LUSHAPI bool is_of_class(at *p, class_t *cl);
-LUSHAPI void delete(at *p, bool);
+LUSHAPI void lush_delete(at *p);       /* avoid conflict with C++ keyword */
 LUSHAPI at *getslot(at*, at*);
 LUSHAPI void setslot(at**, at*, at*);
 

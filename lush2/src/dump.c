@@ -136,7 +136,7 @@ static off_t dump(char *s)
 
    /* Write the big list */
    bwrite(ans, f, true);
-   delete(atf, true);     /* close file */
+   lush_delete(atf);     /* close file */
 
    /* get file size */
    struct stat buf;

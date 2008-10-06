@@ -863,7 +863,11 @@ static void cleanup_module(module_t *m)
                if (cl->managed)
                   continue;
             }
-            delete(q, false);
+            /* temporarily enable deleting objects of this class */
+            bool dontdelete = Class(q)->dontdelete;
+            Class(q)->dontdelete = false;
+            lush_delete(q);
+            Class(q)->dontdelete = dontdelete;
          }
    m->defs = NIL;
    MM_EXIT;

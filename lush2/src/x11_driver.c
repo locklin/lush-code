@@ -776,7 +776,7 @@ static int handle_sync_events(void)
 	    if (info->lwin.eventhandler)
                enqueue_event(info->lwin.eventhandler,EVENT_DELETE,0,0,0,0);
 	    else
-               delete(info->lwin.backptr, true);
+               lush_delete(info->lwin.backptr);
          }
          break;
 #endif
