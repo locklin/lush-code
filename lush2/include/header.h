@@ -218,6 +218,7 @@ struct at {
 #define LISTP(x)        (!(x)||(Class(x) == &cons_class))
 #define NUMBERP(x)	((x)&&(Class(x) == &number_class))
 #define GPTRP(x)	((x)&&(Class(x) == &gptr_class))
+#define MPTRP(x)	((x)&&(Class(x) == &gptr_class))
 #define OBJECTP(x)      ((x)&&(Class(x)->dispose == object_class->dispose))
 #define CLASSP(x)       ((x)&&(Class(x) == &class_class))
 #define SYMBOLP(x)      ((x)&&(Class(x) == &symbol_class))
@@ -225,8 +226,6 @@ struct at {
 #define INDEXP(x)       ((x)&&(Class(x) == &index_class))
 #define STRINGP(x)      ((x)&&(Class(x) == &string_class))
 #define ZOMBIEP(x)      ((x)&&(Class(x) == &null_class))
-#define EXTERNP(x)	((x)&&!((Class(x) == &cons_class) || \
-                                (Class(x) == &gptr_class)) )
 #define WINDOWP(x)      ((x)&&(Class(x) == &window_class))
 
 extern LUSHAPI at *(*eval_ptr) (at*);
@@ -558,7 +557,6 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 #define ISSTORAGE(i)	(STORAGEP(arg_array[i]))
 #define ISINDEX(i)	(INDEXP(arg_array[i]))
 #define ISSYMBOL(i)     (SYMBOLP(arg_array[i]))
-#define ISEXTERN(i) 	(EXTERNP(arg_array[i]))
 //#define ISOBJECT(i)     (OBJECTP(arg_array[i]))
 #define ISCLASS(i)      (CLASSP(arg_array[i]))
 #define DX_ERROR(i,j)   (need_error(i,j,arg_array))
@@ -572,7 +570,6 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 #define ACONS(i)        ( ISCONS(i) ? APOINTER(i):(at*)DX_ERROR(3,i) )
 #define ASTRING(i)      ( ISSTRING(i) ? String(APOINTER(i)) :(char*)DX_ERROR(4,i) )
 #define ASYMBOL(i)      ( ISSYMBOL(i) ? Mptr(APOINTER(i)):DX_ERROR(7,i) )
-#define AEXTERN(i)      ( ISEXTERN(i) ? Mptr(APOINTER(i)):DX_ERROR(8,i) )
 #define ASTORAGE(i)     ( ISSTORAGE(i) ? Mptr(APOINTER(i)):DX_ERROR(10,i) )
 #define AINDEX(i)       ( ISINDEX(i) ? Mptr(APOINTER(i)):DX_ERROR(11,i) )
 #define ACLASS(i)       ( ISCLASS(i) ? Mptr(APOINTER(i)):DX_ERROR(12,i) )

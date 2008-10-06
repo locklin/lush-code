@@ -1235,12 +1235,9 @@ static char *convert(char *s, at *list, char *end)
       } else if (NUMBERP(list)) {
          n = str_number(Number(list));
         
-      } else if (EXTERNP(list)) {
+      } else if (Class(list)->name) {
          n = Class(list)->name(list);
 
-      } else if (GPTRP(list)) {
-         n = str_gptr(Gptr(list));
-         
       }
       if (n == NIL)
          error("io.c/convert", "internal error", NIL);

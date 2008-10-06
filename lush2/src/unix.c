@@ -1759,7 +1759,7 @@ DX(xsocketselect)
   if (status > 0) {
      for (int i=arg_number; i>0; i--) {
         at *p = APOINTER(i);
-        if (EXTERNP(p)) {
+        if (!NUMBERP(p)) {
            FILE *f = Gptr(p);
            int fd = fileno(f);
            if (FD_ISSET(fd,&rset) || FD_ISSET(fd,&wset))

@@ -737,17 +737,11 @@ DX(xstr_number_hex)
 
 /*------------------------ */
 
-char *str_gptr(gptr x)
-{
-   sprintf(string_buffer, "#$%lX", (unsigned long)(x));
-   return string_buffer;
-}
-
 DX(xstr_gptr)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   return new_string(str_gptr(AGPTR(1)));
+   return new_string(gptr_class.name(APOINTER(1)));
 }
 
 /*------------------------ */

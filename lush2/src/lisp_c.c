@@ -533,7 +533,7 @@ void cside_create_str_gc(void *cptr)
 static void transmute_object_into_gptr(at *p, void *px)
 {
   /* This is bad practice */
-  if (p && (EXTERNP(p))) {
+  if (p && !CONSP(p) && !GPTRP(p) && !MPTRP(p)) {
     /* clean object up */
     Class(p)->dispose(Mptr(p));
     /* disguise it as a gptr */

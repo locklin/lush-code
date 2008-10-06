@@ -34,6 +34,7 @@
 
 #include "header.h"
 #include "mm.h"
+#include <inttypes.h>
 
 static void clear_at(at *a)
 {
@@ -374,6 +375,12 @@ at *generic_listeval(at *p, at *q)
       error(pname(p), "can't evaluate this list", NIL);
 }
 
+static char *gptr_name(at *p)
+{
+   sprintf(string_buffer, "#$%"PRIxPTR, (uintptr_t)Gptr(p));
+   return string_buffer;
+}
+
 static char *null_name(at *p)
 {
    return "( )";
@@ -516,6 +523,7 @@ void init_at(void)
    class_define("NUMBER", &number_class);
    
    class_init(&gptr_class, false);
+   gptr_class.name = gptr_name;
    class_define("GPTR", &gptr_class);
 
    class_init(&cons_class, false);
