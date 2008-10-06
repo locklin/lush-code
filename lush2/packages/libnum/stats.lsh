@@ -6,7 +6,11 @@
 ;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
 ;;; Includes selected parts of SN3.2:
 ;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;  
 ;;;
+;;; Bronze additions
+;;; Copyright (C) Scott Locklin, Lugos LLC
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Includes information derived from the GSL (Gnu Scientific Library)
 ;;;   header files which are copyrighted and distributed under the GPL
 ;;;   by their respective authors.
@@ -27,9 +31,11 @@
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+
 (libload "gsl/gsl-config")
 (libload "gsl/gsl-idx")
 (libload "gsl/statistics")
+
 
 ;; dummy function that adds GSL C header files in C file
 (eval `(de dummy_stats () ,gsl-cpheader-cmd ()))
@@ -38,6 +44,7 @@
 ;; This is a set of simple statistical functions.
 ;; Most of them are high-level calls to GSL functions.
 ;; They operate on vectors of double.
+;; Included some of the other functions not included in the Lush distrib.
 
 #? (stat-mean <v>)
 ;; return the mean of elements of vector <v>.
@@ -47,6 +54,43 @@
 	(n (idx-dim v 0))
 	(s (idx-modulo v 0)))
     (to-double #{ gsl_stats_mean( $pv, $s, $n) #})))
+
+#? (stat-absdev <v>)
+;;returns the absolute deviation of elements of vector <v>
+(de stat-absdev (v)
+  ((-idx1- (-double-)) v)
+  (let ((pv (idx-ptr v))
+	(n (idx-dim v 0))
+	(s (idx-modulo v 0)))
+    (to-double #{ gsl_stats_absdev( $pv, $s, $n) #})))
+
+#? (stat-median <v>)
+;;returns the median value of sorted list <v> (idx-d1sortup v)
+(de stat-median (v)
+  ((-idx1- (-double-)) v)
+  (let ((pv (idx-ptr v))
+	(n (idx-dim v 0))
+	(s (idx-modulo v 0)))
+    (to-double #{ gsl_stats_median_from_sorted_data( $pv, $s, $n) #})))
+
+#? (stat-quantile <v> <f>)
+;;returns the quantile of sorted list <v> (idx-d1sortup v) quantile <f>
+(de stat-quantile (v f)
+  ((-idx1- (-double-)) v)
+  ((-double-) f)
+  (let ((pv (idx-ptr v))
+	(n (idx-dim v 0))
+	(s (idx-modulo v 0)))
+    (to-double #{ gsl_stats_quantile_from_sorted_data( $pv, $s, $n, $f) #})))
+
+#? (stat-autocorr <v>)
+;;returns the lag 1 autocorrelation of elements of vector <v>
+(de stat-autocorr (v)
+  ((-idx1- (-double-)) v)
+  (let ((pv (idx-ptr v))
+	(n (idx-dim v 0))
+	(s (idx-modulo v 0)))
+    (to-double #{ gsl_stats_lag1_autocorrelation( $pv, $s, $n) #})))
 
 #? (stat-variance <v>)
 ;; return the variance of values in vector <v>.
@@ -99,17 +143,99 @@
     (when (<> n (idx-dim v2 0)) (error "vectors have different sizes"))
     (to-double #{ gsl_stats_covariance( $pv1, $s1, $pv2, $s2, $n) #})))
 
+#? (stat-wmean <v> <w>)
+;; weighted mean of vector <v> with weights <w>
+(de stat-wmean (v w)
+  ((-idx1- (-double-)) v w)
+  (let ((pv (idx-ptr v))
+	(pw (idx-ptr w))
+	(n (idx-dim v 0))
+	(s1 (idx-modulo v 0))
+	(s2 (idx-modulo w 0)))
+    (when (<> n (idx-dim w 0)) (error "vectors have different sizes"))
+    (to-double #{ gsl_stats_wmean( $pw, $s1, $pv, $s2, $n) #})))
+
+#? (stat-wvariance <v> <w>)
+;; weighted variance of vector <v> with weights <w>
+(de stat-wvariance (v w)
+  ((-idx1- (-double-)) v w)
+  (let ((pv (idx-ptr v))
+	(pw (idx-ptr w))
+	(n (idx-dim v 0))
+	(s1 (idx-modulo v 0))
+	(s2 (idx-modulo w 0)))
+    (when (<> n (idx-dim w 0)) (error "vectors have different sizes"))
+    (to-double #{ gsl_stats_wvariance( $pw, $s1, $pv, $s2, $n) #})))
+
+#? (stat-wsdev <v> <w>)
+;; weighted standard deviation of vector <v> with weights <w>
+(de stat-wsdev (v w)
+  ((-idx1- (-double-)) v w)
+  (let ((pv (idx-ptr v))
+	(pw (idx-ptr w))
+	(n (idx-dim v 0))
+	(s1 (idx-modulo v 0))
+	(s2 (idx-modulo w 0)))
+    (when (<> n (idx-dim w 0)) (error "vectors have different sizes"))
+    (to-double #{ gsl_stats_wsd( $pw, $s1, $pv, $s2, $n) #})))
+
+#? (stat-wabsdev <v> <w>)
+;; weighted absolute deviation of vector <v> with weights <w>
+(de stat-wabsdev (v w)
+  ((-idx1- (-double-)) v w)
+  (let ((pv (idx-ptr v))
+	(pw (idx-ptr w))
+	(n (idx-dim v 0))
+	(s1 (idx-modulo v 0))
+	(s2 (idx-modulo w 0)))
+    (when (<> n (idx-dim w 0)) (error "vectors have different sizes"))
+    (to-double #{ gsl_stats_wabsdev( $pw, $s1, $pv, $s2, $n) #})))
+
+#? (stat-wskew <v> <w>)
+;; weighted skew of vector <v> with weights <w>
+(de stat-wskew (v w)
+  ((-idx1- (-double-)) v w)
+  (let ((pv (idx-ptr v))
+	(pw (idx-ptr w))
+	(n (idx-dim v 0))
+	(s1 (idx-modulo v 0))
+	(s2 (idx-modulo w 0)))
+    (when (<> n (idx-dim w 0)) (error "vectors have different sizes"))
+    (to-double #{ gsl_stats_wskew( $pw, $s1, $pv, $s2, $n) #})))
+
+#? (stat-wkurtosis <v> <w>)
+;; weighted kurtosis of vector <v> with weights <w>
+(de stat-wkurtosis (v w)
+  ((-idx1- (-double-)) v w)
+  (let ((pv (idx-ptr v))
+	(pw (idx-ptr w))
+	(n (idx-dim v 0))
+	(s1 (idx-modulo v 0))
+	(s2 (idx-modulo w 0)))
+    (when (<> n (idx-dim w 0)) (error "vectors have different sizes"))
+    (to-double #{ gsl_stats_wkurtosis( $pw, $s1, $pv, $s2, $n) #})))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(dhc-make-sf
- ()
- dummy_stats
- stat-mean
- stat-variance
- stat-sd
- stat-skew
- stat-kurtosis
- stat-covariance
- )
+(with-namespace lush1-
 
+(dhc-make ()
+          dummy_stats
+          stat-mean
+          stat-variance
+          stat-sd
+          stat-skew
+          stat-kurtosis
+          stat-covariance
+          stat-absdev
+          stat-quantile
+          stat-autocorr
+          stat-median
+          stat-wmean
+          stat-wvariance
+          stat-wsdev
+          stat-wabsdev
+          stat-wskew
+          stat-wkurtosis
+          )
 
-
+) ; lush1-
