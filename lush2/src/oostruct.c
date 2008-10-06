@@ -878,7 +878,7 @@ void lush_delete(at *p)
    zombify(p);
 }
 
-DX(xdelete)
+DX(x_delete)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
@@ -993,7 +993,7 @@ void init_oostruct(void)
    dx_define("builtin-class-p",xbuiltin_class_p);
    dy_define("new",ynew);
    dx_define("new-empty",xnew_empty);
-   dx_define("delete",xdelete);
+   dx_define("-delete",x_delete);
    dy_define("with-object",ywith_object);
    dx_define("getmethod",xgetmethod);
    dx_define("putmethod",xputmethod);
