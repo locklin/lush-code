@@ -1,0 +1,442 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;  $Id: ltree.lsh,v 1.4 2005/04/25 18:57:45 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ltree
+;; Yann LeCun, May/June 2002.
+
+#? *** ltree
+;; {<author> Yann LeCun}
+;; classes and functions for creating and manipulating
+;; trees of "document" nodes (often ldoc or subclasses thereof).
+;; these tress are easily displayed and navigated
+;; using the ogre TreeBrowser object.
+;; {<see> "TreeBrowser" "the TreeBrowser section"}
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; added for upward compatibility between lush and sn3.5
+
+(defvar tolower downcase)
+(de cleanup-regex (s) (tolower s))
+(de member== (x l) (while (and l (not (== x (car l)))) (setq l (cdr l))) l)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** ltree-node 
+;; ltree-node is a reference implementation of a
+;; basic navigable tree  node. Actual tree node classes
+;; can be derived from this, or written from scratch
+;; as long as they conform to the interface.
+;; Trees of ltree-node can be navigated graphically
+;; (a la Explorer)  using the TreeBrowser Ogre class,
+;; or the lower level Explorer class. Those Ogre classes
+;; provides easy GUI-based navigation through the tree.
+;; ltree-node it is a container class whose name slot
+;; is meant to contained the displayable name of the 
+;; node, and whose data slot is  meant to contain the actual 
+;; data to be displayed. The keywords slot is meant to
+;; contain a list of strings that are used for search and
+;; indexing purpose.
+;; Tree browser classes only assume the presence of the 
+;; following methods from their node class:
+;; {<ul>
+;;  {<li> getdata: returns an ldoc object (that can be displayed).}
+;;  {<li> getchildren: return the children of the node}
+;;  {<li> getparent: return the parent node}
+;;  {<li> getname: return the name of the node}
+;;  {<li> getkey: return a list of keywords (or other strings for searching).}
+;;  {<li> openp: return t if the node is open}
+;;  {<li> open: open the node}
+;;  {<li> close: close the node}
+;;  {<li> disabledp: return t if node is disabled}
+;;  {<li> enable: enable node}
+;;  {<li> disable: disable node}
+;; }
+(defclass ltree-node object 
+  data
+  name
+  keywords
+  open
+  disabled
+  parent
+  children
+  )
+
+;; required interface methods
+
+#? (==> <tree-node> getdata)
+;; return the data of a tree node (generally
+;; an ldoc object.
+(defmethod ltree-node getdata () data)
+
+#? (==> <tree-node> getname)
+;; return the displayable name of the tree node (string)
+(defmethod ltree-node getname () name)
+
+#? (==> <tree-node> getkey)
+;; return the list of searchable keywords associated with the tree node
+(defmethod ltree-node getkey () (cons name keywords))
+
+#? (==> <tree-node> getchildren)
+;; return the list of children nodes to the current node
+(defmethod ltree-node getchildren () children)
+
+#? (==> <tree-node> getparent)
+;; return the parent of the present node, or nil if it is the root node
+(defmethod ltree-node getparent () parent)
+
+#? (==> <tree-node> openp)
+;; return t if the node is currently open, nil otherwise
+(defmethod ltree-node openp () open)
+
+#? (==> <tree-node> open)
+;; open the current node if it has children
+(defmethod ltree-node open () (if children (setq open t)))
+
+#? (==> <tree-node> close)
+;; close the current node
+(defmethod ltree-node close () (setq open ()))
+
+#? (==> <tree-node> disabledp)
+;; return t if the node is disabled, nil otherwise.
+;; Disabled nodes are displayed in halftone and
+;; skipped over by the browsers.
+(defmethod ltree-node disabledp () disabled)
+
+#? (==> <tree-node> disable)
+;; disable the node
+(defmethod ltree-node disable () (setq disabled t))
+
+#? (==> <tree-node> enable)
+;; enable the node
+(defmethod ltree-node enable () (setq disabled ()))
+
+;; non required interface methods
+;; (convenient methods that are not used by the
+;; explorer or treebrowser classes.
+
+#? (new ltree-node <lname> <lkey> <ldata> [<lchildren>])
+;; create a new ltree-node. <lname>  is the displayed name,
+;; <lkey> the list of keywords (for search purpose),
+;; <ldata> the document/data associated with the node,
+;; <lchildren> an optional list of children nodes.
+(defmethod ltree-node ltree-node (lname lkey ldata &optional lchildren)
+  (setq data ldata)
+  (setq keywords lkey)
+  (setq name lname)
+  (each ((c lchildren))
+    (==> this insert c)))
+
+(defmethod ltree-node setparent (p) (setq parent p))
+
+(defmethod ltree-node insert (n) 
+  (setq children (nconc1 children n))
+  (==> n setparent this))
+
+(defmethod ltree-node -destructor () 
+  (each ((c (==> this getchildren))) (delete c)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defvar zecalls 0)
+
+#? (make-ltree-from-tree <root>)
+;; make a tree of ltree-node from a tree of 
+;; objects of any type whose root is <root>. The only 
+;; requirements for the objects is to possess methods 
+;; called "getname" and "getchildren" that return the
+;; name of the object and its list of children.
+;; The returned tree has the same structure as 
+;; the input tree.
+(de make-ltree-from-tree (tree)
+  (new ltree-node (==> tree getname) (==> tree getkey) tree 
+       (all ((x (==> tree getchildren))) (make-ltree-from-tree x))))
+
+;; debugging code
+(de make-ltree-from-tree-debug (tree)
+  (incr zecalls)
+  (printf "%d %s\n" zecalls (==> tree getname)) (flush)
+  (prog1 
+      (new ltree-node (==> tree getname) (==> tree getkey) tree 
+	   (all ((x (==> tree getchildren))) (make-ltree-from-tree x)))
+    (incr zecalls -1)))
+
+#? (filter-ltree-from-tree <root> <filter>)
+;; make a tree of ltree-node from a tree of 
+;; objects of any type whose root is <root>. 
+;; Only nodes that return t when function <filter>
+;; is applied to them are included in the output tree.
+;; The only requirements for the objects is to possess methods 
+;; called "getkey" and "getchildren" that return the
+;; name of the object and its list of children.
+(de filter-ltree-from-tree (tree filter)
+    (if (filter tree)
+	(make-ltree-from-tree tree)
+      (let* ((r ()))
+	(each ((x (==> tree getchildren)))
+	      (let ((s (filter-ltree-from-tree x filter)))
+		(when s (setq r (nconc1 r s)))))
+	(when r (let ((node (new ltree-node 
+				 (==> tree getname) (==> tree getkey) tree r)))
+		  (==> node open) (==> node disable) node)))))
+
+
+#? (filter-flat-ltree-from-tree <root> <res> <filter>)
+;; adds to the children of ltree-node <res> a flat 
+;; list of nodes from <root> on which the application 
+;; of function <filter> returns t.
+(de filter-flat-ltree-from-tree (tree res filter)
+    (if (filter tree) 
+	(==> res insert (make-ltree-from-tree tree))
+      (==> res disable))
+    (each ((x (==> tree getchildren)))
+	  (filter-flat-ltree-from-tree x res filter))
+    res)
+
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (previous <x> <l>)
+;; return predecessor of <x> in list <l>.
+(de previous (x l)
+    (let ((done ()) (r ()))
+      (while (and (not done) (consp l))
+	(when (= x (cadr l)) (setq r (car l)) (setq done t))
+	(setq l (cdr l)))
+      r))
+
+#? (ltree-next <n> [<nosub>])
+;; return the next element to a given element in a tree,
+;; skipping over the children of closed nodes.
+;; If the <nosub> argument is non nil, all children
+;; nodes are skipped. The current node is returned if
+;; no child is found.
+(de ltree-next (n &optional (nosub ()))
+  (let* ((p (==> n getparent)))
+    (if (and (not nosub) (==> n openp))
+	(car (==> n getchildren))
+      (if (not p)
+	  n
+	(let ((m (member== n (==> p getchildren))))
+	  (cond
+	   ((not m) (error "non existing ltree node"))
+	   ((= 1 (length m)) (or (ltree-next p t) n))
+	   (t (cadr m))))))))
+
+#? (ltree-next-all <n> [<nosub>])
+;; returns the next element to node <n> in an ltree
+;; Unlike <ltree-next>, this goes through all nodes,
+;; whether they are open or not.  
+;; If the <nosub> argument is non nil, all children
+;; nodes are skipped. The current node is returned if
+;; no child is found.
+(de ltree-next-all (n &optional (nosub ()))
+  (let* ((p (==> n getparent))
+	 (c (==> n getchildren)))
+    (if (and (not nosub) c)
+	(car c)
+      (if (not p)
+	  n
+	(let ((m (member== n (==> p getchildren))))
+	  (cond
+	   ((not m) (error "non existing ltree node"))
+	   ((= 1 (length m)) (or (ltree-next-all p t) n))
+	   (t (cadr m))))))))
+
+#? (ltree-next-hit <n> <filter>)
+;; returns the next node, starting from node <n>,
+;; such that the <filter> function returns a non-nil
+;; result when applied to it.
+;; This opens nodes as needed.
+(de ltree-next-hit (n filter)
+    (let ((res ()) (s n))
+      (while (not res)
+	(setq s (ltree-next-all s))
+	(cond
+	 ((not (==> s getparent)) (setq res s))
+	 ((filter s) 
+	  (setq res s)
+	  (let ((p (==> s getparent))) 
+	    (while p (==> p open) (setq p (==> p getparent)))))))
+      res))
+
+#? (ltree-previous <n> [<nosub>])
+;; return previous element to node <n>.
+(de ltree-previous (n &optional (nosub ()))
+  (let* ((p (==> n getparent)))
+    (if (not p)
+	n
+      (let ((r (previous n (==> p getchildren)))) (if r r p)))))
+
+#? (ltree-count-lines <root>)
+;; Count the number of open nodes
+;; in an <ltree>.
+(de ltree-count-lines (root)
+    (if (==> root openp)
+	(1+ (sum (all ((x (==> root getchildren))) (ltree-count-lines x))))
+      1))
+
+#? (ltree-close-all <root>)
+;; recursively closes all children node in ltree
+(de ltree-close-all (root)
+    (each ((x (==> root getchildren)))
+	  (==> x close) (ltree-close-all x)))
+
+
+#? (ltree-nth <root> <n>)
+;; this returns a cons whose car is the n-th element 
+;; of a ltree, and cdr is the indenting level.
+;; The function returns an integer if <n> is out of bounds.
+;; argument <root> must be a cons whose car is an ltree
+;; and cdr the initial indentation level.
+(de ltree-nth (root n)
+    (cond
+     ((< n 0) n)
+     ((= n 0) root)
+     (t 
+      (if (not (==> (car root) openp))
+	  (- n 1)
+	(let ((x (==> (car root) getchildren)))
+	  (incr n -1)
+	  (while (and (numberp n) x)
+	    (setq n (ltree-nth (cons (car x) (1+ (cdr root))) n))
+	    (setq x (cdr x)))
+	  n)))))
+
+#? (ltree-where <root> <n>)
+;; this returns the line number where node n
+;; appears, or nil if it does not appear.
+(de ltree-where (root n)
+    (let ((z (ltree-where-sub root n)))
+      (when (cdr z) (car z))))
+
+(de ltree-where-sub (root n)
+    (if (= n root) 
+	(cons 0 t)
+      (if (not (==> root openp))
+	  (cons 1 ())
+	(let ((i (cons 1 ()))
+	      (x (==> root getchildren)))
+	  (while (and x (not (cdr i)))
+	    (let ((z (ltree-where-sub (car x) n)))
+	      (setq i (cons (+ (car i) (car z)) (cdr z))))
+	    (setq x (cdr x)))
+	  i))))
+
+#? (ltree-pretty <root>)
+;; prints an ltree at the terminal.
+(de ltree-pretty (root)
+  (let ((i 1))
+    (printf "%s\n" (==> root getname))
+    (each ((x (==> root getchildren)))
+      (printf " %2d. %s\n" i (==> x getname))
+      (incr i))))
+
+
+#? (ltree-count-columns <root> <indent> <tabs>)
+;; this counts the number of columns
+;; of characters necessary to display an ltree hierarchy
+(de ltree-count-columns (root indent tabs)
+  (let ((s (+ indent (len (==> root getname)))))
+    (when (==> root openp)
+      (each ((x (==> root getchildren)))
+        (let ((z (ltree-count-columns x (+ indent tabs) tabs)))
+          (setq s (max z s)) ) ) )
+    s ) )
+
+
+#? (ltree-paint-color <root> <curr> <x> <y> <w> <h> <px> <py> <charw> <lineh> <baseline> <icon-open> <icon-closed> <icon-width> <tabs> <selcolor> <iconcolor> <iconcolor-d> <txtcolor> <txtcolor-d>)
+;; paints an ltree in the current window. Arguments are as follows:
+;; {<ul>
+;;  {<li> <root>: tree root node }
+;;  {<li> <curr>: current node} 
+;;  {<li> <x>,<y>,<w>,<h>: clipping rectangle in which the tree will be painted.} 
+;;  {<li> <px>, <py>: coordinates of upper left corner of painted tree} 
+;;  {<li> <charw>: width of a character} 
+;;  {<li> <lineh>: height of a line (distance between baselines)} 
+;;  {<li> <baseline>: baseline of character from top} 
+;;  {<li> <icon-open>: character string for open node icon (e.g. "-"} 
+;;  {<li> <icon-closed>: character string for closed node icon (e.g. "+")} } 
+;;  {<li> <icon-width>: width of icon} 
+;;  {<li> <tabs>: number of characther width for indentation } 
+;;  {<li> <selcolor>: color id of selected node} 
+;;  {<li> <iconcolor>: color id of open/close icon} 
+;;  {<li> <iconcolor-d>: color id of disabled open/close icon} 
+;;  {<li> <txtcolor>: color id for text} 
+;;  {<li> <txtcolor-d>: color id for disabled text}
+;; }
+(de ltree-paint-color (root curr x y w h px py charw lineh baseline 
+		icon-open icon-closed icon-width tabs 
+		selcolor iconcolor iconcolor-d txtcolor txtcolor-d)
+    (when (and (> py y) (< py (+ y h)))
+      (if (==> root disabledp) (color iconcolor-d) (color iconcolor))
+      (fill-rect (- px 1) (+ py 1) (+ charw 2) (- lineh 2))
+      (let ((dx (+ px 1 charw)) (dy (+ py (* 0.5 lineh))))
+	(draw-line dx dy (+ dx charw) dy))
+      (if (==> root disabledp) (color txtcolor-d) (color txtcolor))
+      (when (==> root getchildren)
+	(gprintf px (+ py baseline) 
+		 "%s" (if (==> root openp) icon-open icon-closed)))
+      (let ((n  (==> root getname)))
+	(when (= root curr)
+	  (color selcolor)
+	  (fill-rect (+ px icon-width -2)
+		     py (+ 4 (text-width n)) lineh)
+	  (color txtcolor))
+	(gprintf (+ px icon-width) (+ py baseline) "%s" n)))
+    (incr py lineh)
+    (when (==> root openp)
+      (let ((ppx (+ px (* tabs charw))))
+	(each ((r (==> root getchildren)))
+	  (setq py (ltree-paint-color 
+		    r curr x y w h ppx py charw lineh baseline
+		    icon-open icon-closed icon-width tabs
+		    selcolor iconcolor iconcolor-d txtcolor txtcolor-d)))))
+    py)
+
+(de ltree-paint-bw (root curr x y w h px py charw lineh baseline
+		icon-open icon-closed icon-width tabs)
+    (error "ltree-paint-bw is not yet written")
+    (when (and (> py y) (< py (+ y h)))
+      (if (==> root getchildren)
+	  (gprintf px (+ py baseline) 
+		   "%s" (if (==> root openp) icon-open icon-closed)))
+      (let ((n  (==> root getname)))
+	(if (= root curr)
+	    (progn
+	      (fill-rect (+ px icon-width -2)
+			 py (+ 4 (text-width n)) lineh)
+	      (color color-bg)
+	      (gprintf (+ px icon-width) py "%s" n)
+	      (color color-fg))
+	  (gprintf (+ px icon-width) (+ py baseline) "%s" n))))
+    (incr py lineh)
+    (when (==> root openp)
+      (let ((ppx (+ px (* tabs charw))))
+	(each ((r (==> root getchildren)))
+	      (setq py (ltree-paint-bw r curr x y w h ppx py charw lineh baseline
+			       icon-open icon-closed icon-width tabs)))))
+    py)

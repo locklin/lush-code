@@ -1,0 +1,88 @@
+#!/bin/sh
+exec psu-lush "$0" "$@"
+!#
+
+;; Plot an object's surface composed of several meshes.
+;; 
+;; Based on demo file "multimsh.dem" in the gnuplot distribution
+;; See subdirectory 'gnuplot' for relevant files and Copyright
+;; statement.
+
+(libload "libplot/gnuplot")
+(libload "libplot/plot")
+(libload "libimage/image-io")
+
+;; read point data from text file and return list of matrices
+;;
+;; lines beginning with '#' are comments
+;; a blank line ends one column of data
+;; two blank lines ends a matrix of data
+(defun read-xyz-data (filename)
+  (let ((v ()) (m ()) (ms ()) 
+	(lastline ()) (line ()) )
+    (reading (open-read filename)
+      ;; read lines
+    (while (<> (skip-char "") "\e")
+      (setq line (strip (read-string)))
+      (read-string 1) ;; read newline character
+      (cond 
+       ;; ignore comment line
+       ((str-startswith line "#") 
+	()) 
+       
+       ;; turn list of columns into a matrix
+       ((and (= line "") (= lastline ""))
+	(setq ms (cons (apply mat-catcols (reverse m)) ms))
+	(setq m ()) )
+       
+       ;; add another column-vector to m
+       ((= line "")
+	(mapc idx-lift! v 1s 1s)
+	(setq m (cons (apply mat-catrows (reverse v)) m))
+	(setq v ()) )
+	 
+       ;; read line with xyz data
+       (t
+	(setq v (cons 
+		 (reading-string (concat "[" line "]") (read))
+		 v)) ))
+      (setq lastline line))
+    (reverse ms))))
+
+
+(ogre)
+
+(let ((gp (new gnuplot 'interactive ()))
+      (title "Digitized Blue Whale")
+      (meshes (read-xyz-data "gnuplot/whale.dat")) )
+  
+  (defparameter *gnuplot* gp)
+  ;(printf "gnuplot instance bound to symbol *gnuplot*\n")
+
+  ;; preamble
+  (gp "set parametric; set hidden3d; unset key"
+      "set xrange [0:8]; set yrange [-4:4]; set zrange [-2:2]"
+      "set style data line"
+      (sprintf "set title '%s'" title))
+  
+  ;; plot the meshes
+  (apply gp "splot '-'" meshes)
+
+  (wait (new autowindowobject 10 10 100 100 ""
+          (new stdbutton "next demo" (lambda (c) (==> thiswindowobject delete))) ))
+  
+  (gp "reset")
+  (let ((img (image-read "lena.jpg"))
+        (plotter gp))
+    (plot-image img) )
+
+  (wait (new autowindowobject 10 10 100 100 ""
+          (new stdbutton "end demo" (lambda (c) 
+                                      (delete gp)
+                                      (==> thiswindowobject delete))) )) )
+  
+
+	 
+	 
+	  
+	    

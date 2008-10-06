@@ -1,0 +1,224 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: perceptron.sn,v 1.2 2003/03/18 21:18:30 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;   Perceptron
+;;;   Reference: F.Rosenblatt "The perceptron: a probabilistic model
+;;;     for information storage and organisation in the brain" (1958)
+;;;
+;;;   (C) Copyright Neuristique, 1989
+
+
+;;; === Building function
+
+; The standard library function (build-net ..)
+; needs no modification.
+
+; No assumption is made on the perceptron architecture.
+; The perceptron rule only modifies the last layer weights! 
+
+;;; === Threshold transfert function
+(de nlf-threshold(min max)
+    (nlf-bin 0.6 0 (2/ (- max min)) (2/ (+ max min))) )
+
+(nlf-threshold -1 1)              ; threshold transfert function
+
+;;; === Retrieval functions
+
+; The standard library function (test-pattern n)
+; needs no modification.
+
+
+;;; === Learning function: Widrow Hoff rule, 
+;;;         also called Delta rule.
+
+; We can't use (init-grad) because this function uses the derivative
+; of the transfert function for computing the gradients.
+
+(de perceptron-iteration (patt-number)
+    
+    ;retrieval
+    (present-pattern input-layer patt-number) 
+    (mapc 'update_state (cdar net-struc)) 
+    
+    ;tests and display
+    (present-desired desired-layer patt-number)
+    (setq good-answer 
+      	  (classify patt-number))
+    (setq local-error 
+      	  (2/ (mean-sqr-dist (state output-layer) (state desired-layer))))
+    (disp-basic-iteration patt-number) 
+    
+    ;learning
+    (copy-nfield output-layer n-grad desired-layer n-val)
+    (op-nfield output-layer n-grad n-val -1 n-grad 1)
+    (incr age)
+    (update-weight) )
+
+
+(de perceptron-learn(it)
+    (repeat it 
+	    (perceptron-iteration current-pattern)
+	    (setq current-pattern 
+            	  (next-pattern current-pattern)) ) )
+
+
+; perceptron-run can produce standard graphics.
+; like (init-perf-plotting n) etc...
+
+(de perceptron-run (it num) 
+    (perf patt-min patt-max) 
+    (reset-training-ports) 
+    (auto-plot-training) 
+    (repeat num 
+      	    (perceptron-learn it) 
+      	    (perf patt-min patt-max) 
+      	    (auto-plot-training) ) )
+
+
+; a new forget that only changes the last layer weights
+
+ (de perceptron-forget(n)
+     (setq age 0)
+     (setq current-pattern 0)
+     (each ((i output-layer))
+    	   (each ((j (amont i)))
+       		 (sval j i (rand n)) ) ) )
+
+
+
+;;; === EXAMPLE: 7x5 DIGITS RECOGNITION
+
+
+;loads the examples
+(load-matrix pattern-matrix "patterns.mat")
+(load-matrix desired-matrix "desired.mat")
+(ensemble 0 9)
+
+;shows the examples
+(de show-patterns()
+    (setq patterns-window (new-window 10 10 420 100 "examples patterns"))
+    (let ((window patterns-window))
+      (for (i patt-min patt-max)
+	   (draw-list (+ (* 40 i) 10) 30 (pattern-matrix i ()) 5 1.0 6 5) ) ) )
+(show-patterns)
+
+; builds the network
+(alloc-net 200 5000)
+(build-net
+ '((input 35)
+   (hidden1 15)(hidden2 15)(hidden3 15)(hidden4 15)
+   (hidden5 15)(hidden6 15)(hidden7 15)(hidden8 15)
+   (output 10) )
+ '((hidden1 output)(hidden2 output)(hidden3 output)(hidden4 output)
+   (hidden5 output)(hidden6 output)(hidden7 output)(hidden8 output) ) )
+
+(local-2d-connect input 7 5 hidden1 5 3 1 1 3 3)
+(local-2d-connect input 7 5 hidden2 5 3 1 1 3 3)
+(local-2d-connect input 7 5 hidden3 5 3 1 1 3 3)
+(local-2d-connect input 7 5 hidden4 5 3 1 1 3 3)
+(local-2d-connect input 7 5 hidden5 5 3 1 1 3 3)
+(local-2d-connect input 7 5 hidden6 5 3 1 1 3 3)
+(local-2d-connect input 7 5 hidden7 5 3 1 1 3 3)
+(local-2d-connect input 7 5 hidden8 5 3 1 1 3 3)
+
+; the predefined weights in the first layers.
+(each ((i hidden1))
+      (set-weight i '(1.0 -1.0 -1.0 -1.0 
+                           1.0  1.0  1.0 
+                          -1.0 -1.0 -1.0 )))
+(each ((i hidden2))
+      (set-weight i '(1.0 -1.0  1.0 -1.0
+                          -1.0  1.0 -1.0 
+		          -1.0  1.0 -1.0 )))
+
+(each ((i hidden3))
+      (set-weight i '(1.0 -1.0 -1.0  1.0 
+                          -1.0  1.0 -1.0 
+                           1.0 -1.0 -1.0 )))
+(each ((i hidden4))
+      (set-weight i '(1.0  1.0 -1.0 -1.0 
+                          -1.0  1.0 -1.0  
+                          -1.0 -1.0  1.0 )))
+(each ((i hidden5))
+      (set-weight i '(1.0 -1.0 -1.0 -1.0 
+                           1.0  1.0 -1.0 
+                          -1.0  1.0 -1.0 )))
+(each ((i hidden6))
+      (set-weight i '(1.0 -1.0 -1.0 -1.0
+                          -1.0  1.0  1.0 
+                          -1.0  1.0 -1.0 )))
+
+(each ((i hidden7))
+      (set-weight i '(1.0 -1.0  1.0 -1.0 
+                           1.0  1.0 -1.0 
+                          -1.0 -1.0 -1.0 )))
+(each ((i hidden8))
+      (set-weight i '(1.0 -1.0  1.0 -1.0 
+                          -1.0  1.0  1.0  
+                          -1.0 -1.0 -1.0 )))
+
+; a draw-net function
+(de draw-net (l num)
+    (when (not draw-net-window)
+      	  (setq draw-net-window (new-window 10 200 450 600 "network")) 
+      	  (gprintf 10 180 "Retina")
+      	  (gprintf 150 10 "Associative Area")
+      	  (gprintf 350 160 "Responses") )
+    (setq window draw-net-window)
+    
+    (draw-list 10 200 (state input) 5 1.0 20 18)
+    (let ((y 20))
+      (each ((i (list hidden1 hidden2 hidden3 hidden4)))
+            (draw-list 150 y (state i) 3 2.0 20 18)
+            (incr y 120) ) ) 
+    (let ((y 20))
+      (each ((i (list hidden5 hidden6 hidden7 hidden8)))
+            (draw-list 230 y (state i) 3 2.0 20 18)
+            (incr y 120) ) ) 
+    (draw-list 350 180 (state output) 1 1.0 20 18) )
+   
+
+; sets the parameters
+(epsilon 0.001)
+(perceptron-forget 0)
+
+; sets the display
+(set-disp-net-and-error)
+;(init-perf-plotting 10)
+
+; sets the classification criterion
+(set-class-quadrant)
+
+; let's go
+(perceptron-run (2* (1+ patt-max)) 5)
