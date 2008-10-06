@@ -325,11 +325,13 @@ CC_EXP_FLAG=
 CC_PIC_FLAG=
 MAKESO=
 
+CPP_YES='#'
 if test x${GCC} = xyes ; then
-    test x${GXX} = xyes && LDCC=${CXX}
+    test x${GXX} = xyes && LDCC=${CXX} && CPP_YES=''
     CC_PIC_FLAG='-fPIC'
     MAKESO="$LDCC -shared -o"
 fi
+AC_SUBST(CPP_YES)
 
 # Tested?
 case "$host" in
