@@ -409,6 +409,29 @@ DY(ylet)
    return let(Car(ARG_LIST), Cdr(ARG_LIST));
 }
 
+at *lete(at *vardecls, at *body)
+{
+   at *syms, *vals;
+   RAISEF(unzip_and_eval_cdr(vardecls, &syms, &vals), vardecls);
+
+   at *func = new_df(syms, body);
+   at *result = apply(func, vals);
+
+   /* before we return, explicitly delete all local variables */
+   while (CONSP(vals)) {
+      lush_delete(Car(vals));
+      vals = Cdr(vals);
+   }
+   return result;
+}
+
+DY(ylete)
+{
+   ifn (CONSP(ARG_LIST))
+      RAISEF("invalid 'lete' form", NIL);
+   return lete(Car(ARG_LIST), Cdr(ARG_LIST));
+}
+
 at *letS(at *vardecls, at *body)
 {
    at *q;
@@ -568,6 +591,7 @@ void init_eval(void)
    dy_define("mapcar", ymapcar);
    dy_define("mapcan", ymapcan);
    dy_define("let", ylet);
+   dy_define("lete", ylete);
    dy_define("let*", yletS);
    dy_define("for", yfor);
    dx_define("quote", xquote);
