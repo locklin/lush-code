@@ -48,7 +48,7 @@
   "starts Lush in another subwindow"
   (interactive)
   (switch-to-buffer-other-window "*inferior-lisp*")
-  (inferior-lisp "psu-lush")
+  (inferior-lisp "lush")
   (other-window -1)
   (set-buffer "*inferior-lisp*")
   (setq comint-prompt-regexp "^?")
@@ -233,7 +233,7 @@
          "(" (regexp-opt
               '("cond" "if" "when" "for" "each" "all" 
 		"domapc" "domapcar" "domapcan"
-                "while" "let" "let*" "progn" "prog1" 
+                "while" "let" "lete" "let*" "progn" "prog1" 
                 "let-filter" "reading" "writing" "selectq"
                 "do-while" "mapwhile" "mapfor" "repeat"
                 "idx-eloop" "idx-bloop" "idx-gloop"
