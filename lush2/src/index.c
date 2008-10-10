@@ -2455,7 +2455,7 @@ DX(xarray_extend)
    if (arg_number<3 || arg_number>4)
       ARG_NUMBER(-1);
    ALL_ARGS_EVAL;
-   at *init = arg_number==4 ? APOINTER(4) : NIL;
+   at *init = arg_number==4 ? APOINTER(4) : NEW_NUMBER(0);
    return array_extend(AINDEX(1), AINTEGER(2), AINTEGER(3), init)->backptr;
 }
 
