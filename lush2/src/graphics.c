@@ -158,7 +158,9 @@ DX(xfont)
    struct context mycontext;
    
    window_t *win = current_window();
-   at *q = win->font;
+   at *oldfont = win->font;
+   MM_ANCHOR(oldfont);
+   at *q = oldfont;
    char *r = 0;
    if (arg_number) {
       ARG_NUMBER(1);
@@ -1814,6 +1816,7 @@ DY(ygsave)
    struct context mycontext;
    int errorflag = 0;
    at *ans = NIL;
+   MM_ANCHOR(oldfont);
    context_push(&mycontext);
    if (sigsetjmp(context->error_jump, 1))
       errorflag = 1;
@@ -1832,13 +1835,11 @@ DY(ygsave)
       }
       
       if (oldfont!=win->font)
-         protect(oldfont);
          if (win->gdriver->setfont && STRINGP(oldfont)) {
             (*win->gdriver->begin) (win);
             (*win->gdriver->setfont)(win, String(oldfont));
             (*win->gdriver->end) (win);
             win->font = oldfont;
-            unprotect(oldfont);
          }
       
       if (oldx!=win->clipx || oldy!=win->clipy || 
@@ -1862,7 +1863,7 @@ DY(ygsave)
    }
    if (errorflag)
       siglongjmp(context->error_jump, -1L);
-  return ans;
+   return ans;
 }
 
 
