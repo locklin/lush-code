@@ -144,7 +144,7 @@ DX(xcddr)
 at *rplaca(at *q, at *p)
 {
    if (CONSP(q))
-      Car(q) = p;
+      AssignCar(q, p);
    else
       RAISEF("not a cons", q);
 
@@ -184,7 +184,7 @@ at *displace(at *q, at *p)
    ifn (CONSP(p))
       RAISEF("not a cons", p);
   
-   Car(q) = Car(p);
+   AssignCar(q, Car(p));
    Cdr(q) = Cdr(p);
    return q;
 }
@@ -222,7 +222,7 @@ at *deepcopy_list(at *p)
       /* descend */
       p = q;
       while (CONSP(p)) {
-         Car(p) = deepcopy_list(Car(p));
+         AssignCar(p, deepcopy_list(Car(p)));
          p = Cdr(p);
       }
       MM_RETURN(q);

@@ -57,10 +57,10 @@ enum binarytokens {
 
 /* flags */
 
-#define MARK       2
-#define MULTIPLE   4
+#define MARK_BIT          2
+#define MULTIPLE_BIT      4
 
-#define CLEAR(p)  ((void *)((uintptr_t)(p)&~(MARK + MULTIPLE)))
+#define CLEAR(p)  ((void *)((uintptr_t)(p)&~(MARK_BIT + MULTIPLE_BIT)))
 
 
 /*** GLOBAL VARIABLES ****/
@@ -227,14 +227,17 @@ again:
    if (!p)
       return;
 
-   class_t *cl = CLEAR(Class(p));
+   class_t *cl = Class(p);
 
    if (cl == &cons_class) {
       sweep(Car(p),code);
       p = Cdr(p);
       goto again;
       
-   } else if (cl==&number_class || cl==&gptr_class) {
+   } 
+   cl = CLEAR(cl);
+
+   if (cl==&number_class || cl==&gptr_class) {
       return;
 
    } else if (cl->dispose == object_class->dispose) {
@@ -296,13 +299,13 @@ static int cond_set_flags(at *p)
 {
    if (p) {
       uintptr_t bs = PTRBITS(p->cl);
-      if (bs & MARK) {
-         if (! (bs & MULTIPLE))
+      if (bs & MARK_BIT) {
+         if (! (bs & MULTIPLE_BIT))
             insert_reloc(p);
-         SET_PTRBIT(p->cl, MULTIPLE);
+         SET_PTRBIT(p->cl, MULTIPLE_BIT);
          return 1;  /* stop recursion */
       }
-      SET_PTRBIT(p->cl, MARK);
+      SET_PTRBIT(p->cl, MARK_BIT);
       return 0;
    }
    return 1;
@@ -320,7 +323,7 @@ static void set_flags(at *p)
 
 static int cond_clear_flags(at *p)
 {
-   if (p && ((uintptr_t)(p->cl) & MARK)) {
+   if (p && ((uintptr_t)(p->cl) & MARK_BIT)) {
       p->cl = CLEAR(p->cl);
       return 0;
    } else
@@ -728,7 +731,7 @@ static int local_write(at *p)
       return 1;
    }
   
-   if ((uintptr_t)(p->cl) & MULTIPLE) {
+   if ((uintptr_t)(p->cl) & MULTIPLE_BIT) {
       int k = search_reloc(p);
       if (relocf[k]) {
          write_card8(TOK_REF);
@@ -743,11 +746,12 @@ static int local_write(at *p)
       }
    }
   
-   class_t *cl = CLEAR(Class(p));
+   class_t *cl = Class(p);
    if (cl == &cons_class) {
       write_card8(TOK_CONS);
       return 0;
    }
+   cl = CLEAR(cl);
   
    if (cl == &number_class) {
       double x = Number(p);
@@ -768,10 +772,7 @@ static int local_write(at *p)
    }
   
    if (cl == &symbol_class) {
-      class_t *save = Class(p);
-      Class(p) = cl;
-      char *s = nameof(p);
-      Class(p) = save;
+      char *s = nameof(Symbol(p));
       int l = strlen(s);
       write_card8(TOK_SYMBOL);
       write_card24(l);
@@ -1077,7 +1078,9 @@ again:
    case TOK_CONS:
    {
       *pp = new_cons(NIL,NIL);
-      local_bread(&Car(*pp), opt);
+      //local_bread(&Car(*pp), opt);
+      local_bread((at **)&(*pp)->cl, opt);
+      SET_PTRBIT((*pp)->cl, CONS_BIT);
       pp = & Cdr(*pp);
       ret = 0;
       goto again;

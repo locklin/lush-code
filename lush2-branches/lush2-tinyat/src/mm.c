@@ -61,7 +61,8 @@
 #endif
 
 #define PAGEBITS        12
-#define BLOCKBITS       (PAGEBITS+1)
+//#define BLOCKBITS       (PAGEBITS+1)
+#define BLOCKBITS       PAGEBITS
 #if defined  PAGESIZE && (PAGESIZE != (1<<PAGEBITS))
 #  error "definitions related to PAGESIZE need to be updated"
 #elif !defined PAGESIZE
@@ -80,6 +81,7 @@
 #define MAX_VOLUME      0x100000    /* max volume threshold */
 #define MAN_K_UPDS      100
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
+#define NUM_IDLE_CALLS  10
 
 #define MM_SIZE_MAX     (UINT32_MAX*MIN_HUNKSIZE) /* checked in alloc_variable_sized */
 
@@ -1922,7 +1924,7 @@ bool mm_idle(void)
 
    } else {
       ncalls++;
-      if (ncalls<10) {
+      if (ncalls<NUM_IDLE_CALLS) {
          return false;
       }
       /* create some work for ourselves */

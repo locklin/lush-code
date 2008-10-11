@@ -118,7 +118,7 @@ DX(xmacrochp)
    ARG_NUMBER(1);
    ARG_EVAL(1);
    ASYMBOL(1);
-   if (macrochp(nameof(APOINTER(1))))
+   if (macrochp(NAMEOF(APOINTER(1))))
       return t();
    else
       return NIL;
@@ -907,7 +907,7 @@ DY(ydmc)
    ifn (SYMBOLP(q))
       RAISEF("not a symbol", q);
 
-   dmc(nameof(q), l);
+   dmc(NAMEOF(q), l);
    return q;
 }
 

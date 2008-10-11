@@ -218,7 +218,7 @@ static char *class_name(at *p)
    class_t *cl = Mptr(p);
    
    if (cl->classname)
-      sprintf(string_buffer, "::class:%s", nameof(cl->classname));
+      sprintf(string_buffer, "::class:%s", NAMEOF(cl->classname));
    else
       sprintf(string_buffer, "::class:%lx", (long)cl);
    

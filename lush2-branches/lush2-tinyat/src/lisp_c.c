@@ -537,7 +537,7 @@ static void transmute_object_into_gptr(at *p, void *px)
     /* clean object up */
     Class(p)->dispose(Mptr(p));
     /* disguise it as a gptr */
-    Class(p) = &gptr_class;
+    AssignClass(p, &gptr_class);
     Gptr(p) = px;
   }
 }

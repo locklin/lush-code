@@ -317,14 +317,18 @@ DX(xnamedclean)
  * nameof(p) returns the name of the SYMBOL p
  */
 
-char *nameof(at *p)
+char *nameof(symbol_t *s)
 {
-   if (SYMBOLP(p)) {
-      symbol_t *symb = Symbol(p);
-      if (symb->hn)
-         return symb->hn->name;
-   }
-   return NIL;
+   if (s->hn)
+      return s->hn->name;
+   else
+      return NIL;
+}
+
+char *NAMEOF(at *p)
+{
+   assert(SYMBOLP(p));
+   return nameof(Symbol(p));
 }
 
 DX(xnameof)
@@ -332,7 +336,7 @@ DX(xnameof)
    ARG_NUMBER(1);
    ARG_EVAL(1);
 
-   char *s = nameof(APOINTER(1));
+   char *s = nameof(ASYMBOL(1));
    if (!s)
       RAISEFX("not a symbol", APOINTER(1));
    return new_string(s);
@@ -381,7 +385,7 @@ at *global_defs()
          while (symb->next)
             symb = symb->next;
          if (symb->valueptr) {
-            at *val = ValueS(symb);  /* globally bound */
+            at *val = *symb->valueptr;  /* globally bound */
             *where = new_cons(new_cons(p, val), NIL);
             where = &Cdr(*where);
             /* locked? */
@@ -425,7 +429,7 @@ DX(xoblist)
 
 static char *symbol_name(at *p)
 {
-   char *s = nameof(p);
+   char *s = NAMEOF(p);
    if (s)
       return s;
    else

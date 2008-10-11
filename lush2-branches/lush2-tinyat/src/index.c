@@ -166,10 +166,10 @@ static char *index_name(at *p)
    char *s = string_buffer;
    
    if (IND_UNSIZEDP(ind)) {
-      sprintf(s, "::%s:<unsized>", nameof(Class(p)->classname));
+      sprintf(s, "::%s:<unsized>", NAMEOF(Class(p)->classname));
 
    } else {
-      sprintf(s, "::%s:<", nameof(Class(p)->classname));
+      sprintf(s, "::%s:<", NAMEOF(Class(p)->classname));
       while (*s)
          s++;
       for (int d=0; d<ind->ndim; d++) {

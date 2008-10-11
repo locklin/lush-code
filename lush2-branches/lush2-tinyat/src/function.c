@@ -60,12 +60,12 @@ char *cfunc_name(at *p) {
      name = Cdr(name);
   }
   if (SYMBOLP(name)) {
-     sprintf(string_buffer, "::%s:", nameof(Class(p)->classname));
+     sprintf(string_buffer, "::%s:", NAMEOF(Class(p)->classname));
      if (SYMBOLP(clname)) {
-        strcat(string_buffer, nameof(clname));
+        strcat(string_buffer, NAMEOF(clname));
         strcat(string_buffer, ".");
      }
-     strcat(string_buffer, nameof(name));
+     strcat(string_buffer, NAMEOF(name));
      return string_buffer;
   }
   /* Kesako? */

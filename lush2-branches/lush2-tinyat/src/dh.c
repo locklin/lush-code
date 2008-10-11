@@ -295,7 +295,7 @@ static at *make_dhclass(dhclassdoc_t *kdata)
 
 LUSHAPI at *new_dhclass(at *name, dhclassdoc_t *kdata)
 {
-   if (strcmp(nameof(name), kdata->lispdata.lname))
+   if (strcmp(NAMEOF(name), kdata->lispdata.lname))
       error(NIL, "incorrect CLASSDOC: "
             "class name does not match dhclass_define", NIL);    
 

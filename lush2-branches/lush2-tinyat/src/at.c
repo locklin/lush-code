@@ -57,9 +57,8 @@ static void mark_at(at *a)
    } else if (GPTRP(a) || RFILEP(a) || WFILEP(a) || ZOMBIEP(a)) {
       // nothing to mark
 
-   } else if (Class(a)) {
+   } else 
       MM_MARK(Mptr(a));
-   }
 }
 
 mt_t mt_at = mt_undefined;
@@ -69,95 +68,95 @@ mt_t mt_at = mt_undefined;
 LUSHAPI at *new_cons(at *car, at *cdr) 
 {
    at *new = mm_alloc(mt_at);
-   Car(new) = car;
-   Cdr(new) = cdr;
-   Class(new) = &cons_class;
-   return new;
-}
+    AssignCar(new, car);
+    Cdr(new) = cdr;
+    //Class(new) = &cons_class;
+    return new;
+ }
 
-DX(xcons)
-{
-   ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   return new_cons(APOINTER(1), APOINTER(2));
-}
-
-
-mt_t mt_double = mt_undefined;
-
-at *new_number(double x)
-{
-   double *d = mm_alloc(mt_double);
-   *d = x;
-   return new_extern(&number_class, d);
-}
-
-at *new_gptr(gptr p)
-{
-   at *new = mm_alloc(mt_at);
-   Gptr(new) = p;
-   Class(new) = &gptr_class;
-   return new;
-}
-
-/*
- * This strange function allows us to compute the 'simulated
- * bumping list' during a progn. This is used for the interpreted
- * 'in-pool' and 'in-stack' emulation.
- */
-
-/* int compute_bump_active = 0; */
-static at *compute_bump_list = 0;
-
-/* DY(ycompute_bump) */
-/* { */
-/*    at *ans; */
-/*    at *bump; */
-/*    at *temp; */
-/*    at *sav_compute_bump_list = compute_bump_list; */
-/*    int sav_compute_bump_active = compute_bump_active; */
-    
-/*    /\* execute program in compute_bump mode *\/ */
-/*    compute_bump_active = 1; */
-/*    compute_bump_list = NIL; */
-/*    at *ans = progn(ARG_LIST); */
-/*    at *bump = compute_bump_list; */
-/*    compute_bump_list = sav_compute_bump_list; */
-/*    compute_bump_active = sav_compute_bump_active; */
-    
-/*    /\* remove objects with trivial count *\/ */
-/*    int flag = 1; */
-/*    while (flag) { */
-/*       flag = 0; */
-/*       at **where = &bump; */
-
-/*       while (CONSP(*where)) { */
-/*          if ((*where)->Car && (*where)->Car->count>1) { */
-/*             where = &((*where)->Cdr); */
-/*          } else { */
-/*             flag = 1; */
-/*             at* temp = *where; */
-/*             *where = (*where)->Cdr; */
-/*             temp->Cdr = NIL; */
-/*          } */
-/*       } */
-/*    } */
-/*    /\* return everything *\/ */
-/*    return new_cons(ans, bump); */
-/* } */
+ DX(xcons)
+ {
+    ARG_NUMBER(2);
+    ALL_ARGS_EVAL;
+    return new_cons(APOINTER(1), APOINTER(2));
+ }
 
 
-/*
- * new_extern(class,object) returns a LISP descriptor for an EXTERNAL object
- * of class class
- */
+ mt_t mt_double = mt_undefined;
 
-at *new_extern(class_t *cl, void *obj)
-{
-   at *new = mm_alloc(mt_at);
-   Mptr(new) = obj;
-   Class(new) = cl;
-   
+ at *new_number(double x)
+ {
+    double *d = mm_alloc(mt_double);
+    *d = x;
+    return new_extern(&number_class, d);
+ }
+
+ at *new_gptr(gptr p)
+ {
+    at *new = mm_alloc(mt_at);
+    Gptr(new) = p;
+    AssignClass(new, &gptr_class);
+    return new;
+ }
+
+ /*
+  * This strange function allows us to compute the 'simulated
+  * bumping list' during a progn. This is used for the interpreted
+  * 'in-pool' and 'in-stack' emulation.
+  */
+
+ /* int compute_bump_active = 0; */
+ static at *compute_bump_list = 0;
+
+ /* DY(ycompute_bump) */
+ /* { */
+ /*    at *ans; */
+ /*    at *bump; */
+ /*    at *temp; */
+ /*    at *sav_compute_bump_list = compute_bump_list; */
+ /*    int sav_compute_bump_active = compute_bump_active; */
+
+ /*    /\* execute program in compute_bump mode *\/ */
+ /*    compute_bump_active = 1; */
+ /*    compute_bump_list = NIL; */
+ /*    at *ans = progn(ARG_LIST); */
+ /*    at *bump = compute_bump_list; */
+ /*    compute_bump_list = sav_compute_bump_list; */
+ /*    compute_bump_active = sav_compute_bump_active; */
+
+ /*    /\* remove objects with trivial count *\/ */
+ /*    int flag = 1; */
+ /*    while (flag) { */
+ /*       flag = 0; */
+ /*       at **where = &bump; */
+
+ /*       while (CONSP(*where)) { */
+ /*          if ((*where)->Car && (*where)->Car->count>1) { */
+ /*             where = &((*where)->Cdr); */
+ /*          } else { */
+ /*             flag = 1; */
+ /*             at* temp = *where; */
+ /*             *where = (*where)->Cdr; */
+ /*             temp->Cdr = NIL; */
+ /*          } */
+ /*       } */
+ /*    } */
+ /*    /\* return everything *\/ */
+ /*    return new_cons(ans, bump); */
+ /* } */
+
+
+ /*
+  * new_extern(class,object) returns a LISP descriptor for an EXTERNAL object
+  * of class class
+  */
+
+ at *new_extern(class_t *cl, void *obj)
+ {
+    at *new = mm_alloc(mt_at);
+    Mptr(new) = obj;
+    AssignClass(new, cl);
+
    /* This is used by 'compute_bump' */
 /*    if (compute_bump_active) { */
 /*       compute_bump_list = cons(new,compute_bump_list); */
@@ -227,7 +226,7 @@ DX(xnull)
 void zombify(at *p)
 {
    if (p)
-      Class(p) = &null_class;
+      AssignClass(p, &null_class);
 }
 
 /* ----- unodes ------ */
@@ -279,8 +278,8 @@ static at *unode_unify(at *p1, at *p2, at *combine)
   } else
      doc = NIL;
    at *node = new_unode(doc);
-   Car(q1) = node;
-   Car(q2) = node;
+   AssignCar(q1, node);
+   AssignCar(q2, node);
    return node;
 }
 
@@ -335,7 +334,7 @@ char *generic_name(at *p)
 {
    if (Class(p)->classname)
       sprintf(string_buffer, "::%s:%lx", 
-              nameof(Class(p)->classname),(long)Mptr(p));
+              NAMEOF(Class(p)->classname),(long)Mptr(p));
    else
       sprintf(string_buffer, "::%lx:%lx", 
               (long)Class(p), (long)Mptr(p));
@@ -504,6 +503,8 @@ extern void pre_init_module(void);
 
 void init_at(void)
 {
+   assert(sizeof(at)==2*sizeof(void *));
+
    mt_at = MM_REGTYPE("at", sizeof(at),
                       clear_at, mark_at, 0);
    MM_ROOT(compute_bump_list);

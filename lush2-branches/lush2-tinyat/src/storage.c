@@ -321,19 +321,19 @@ static char *storage_name(at *p)
  
   if (st->flags & STS_MALLOC)
       sprintf(string_buffer, "::%s:ram@%"PRIxPTR":<%"PRIdPTR">", 
-              nameof(Class(p)->classname), (uintptr_t)st->data, st->size);
+              NAMEOF(Class(p)->classname), (uintptr_t)st->data, st->size);
    else if (st->flags & STS_MMAP)
       sprintf(string_buffer, "::%s:mmap@%"PRIxPTR":<%"PRIdPTR">", 
-              nameof(Class(p)->classname), (uintptr_t)st->data, st->size);
+              NAMEOF(Class(p)->classname), (uintptr_t)st->data, st->size);
    else if (st->flags & STS_STATIC)
       sprintf(string_buffer, "::%s:static@%"PRIxPTR,
-              nameof(Class(p)->classname), (uintptr_t)st->data);
+              NAMEOF(Class(p)->classname), (uintptr_t)st->data);
    else if (st->data == NULL)
       sprintf(string_buffer, "::%s:unsized@%"PRIxPTR,
-              nameof(Class(p)->classname), (uintptr_t)st->data);
+              NAMEOF(Class(p)->classname), (uintptr_t)st->data);
    else
       sprintf(string_buffer, "::%s:strange@%"PRIxPTR,
-              nameof(Class(p)->classname), (uintptr_t)st->data);
+              NAMEOF(Class(p)->classname), (uintptr_t)st->data);
    return string_buffer;
 }
 

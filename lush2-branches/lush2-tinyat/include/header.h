@@ -166,24 +166,23 @@ DLLEXPORT int init_user_dll(int major, int minor);
 
 /* AT.H -------------------------------------------------------- */
 
-typedef struct class_s class_t;
-
-extern LUSHAPI class_t class_class;
-extern LUSHAPI class_t *object_class;
-extern LUSHAPI class_t null_class;
-extern LUSHAPI class_t cons_class;
-extern LUSHAPI class_t number_class;
-extern LUSHAPI class_t gptr_class;
-extern LUSHAPI class_t zombie_class;
-
 #define NUM_PTRBITS       3
 #define PTRBITS(p)        ((uintptr_t)(p) & ((1<<NUM_PTRBITS) - 1))
 #define SET_PTRBIT(p, b)  { p = (void *)((uintptr_t)(p) | b); }
 #define CLEAR_PTR(p)      ((void *)((uintptr_t)(p)&~((1<<NUM_PTRBITS) - 1)))
 
+typedef struct class_s class_t;
+
+extern LUSHAPI class_t class_class;
+extern LUSHAPI class_t *object_class;
+extern LUSHAPI class_t cons_class;
+extern LUSHAPI class_t null_class;
+extern LUSHAPI class_t number_class;
+extern LUSHAPI class_t gptr_class;
+extern LUSHAPI class_t zombie_class;
+
 struct at {
    class_t *cl;
-   struct at *car;
    union {
       double *d;
       char   *c;
@@ -193,26 +192,26 @@ struct at {
    } payload;
 };
 
-#define Class(q)  ((q)->cl)
+#define Class(q)  (CONSP(q) ? &cons_class : (q)->cl)
 #define Number(q) (*(q)->payload.d)
 #define String(q) ((q)->payload.c)
 #define Symbol(q) ((q)->payload.s)
 #define Value(q)  (*Symbol(q)->valueptr)
-#define ValueS(s) (*s->valueptr) 
 #define Gptr(q)   ((q)->payload.p)
 #define Mptr(q)   ((q)->payload.p)
-#define Car(q)    ((q)->car)
+#define Car(q)    ((at *)CLEAR_PTR((q)->cl))
 #define Cdr(q)    ((q)->payload.cdr)
 #define Caar(q)   Car(Car(q))
 #define Cadr(q)   Car(Cdr(q))
 #define Cdar(q)   Cdr(Car(q))
 #define Cddr(q)   Cdr(Cdr(q))
 
-/* Some useful macros */
+#define AssignClass(q, _cl) ((q)->cl) = _cl
+#define AssignCar(q, _car)  (q)->cl = (class_t *)((uintptr_t)(_car) | CONS_BIT)
 
-#define ANY_CLASS       NULL
+#define CONS_BIT        1
 
-#define CONSP(x)        ((x)&&(Class(x) == &cons_class))
+#define CONSP(p)        ((p)&&(((uintptr_t)((p)->cl)) & CONS_BIT))
 #define FUNCTIONP(x)    ((x)&&(Class(x)->super==&function_class))
 #define LASTCONSP(x)    (CONSP(x) && !CONSP(Cdr(x)))
 #define LISTP(x)        (!(x)||(Class(x) == &cons_class))
@@ -360,15 +359,16 @@ typedef struct symbol { 	/* each symbol is an external AT which */
 #define SYMBOL_UNLOCKED 1
 
 /* symbol creation */
-LUSHAPI at *new_symbol(char *s);
-LUSHAPI at *named(char *s);
-LUSHAPI at *namedclean(char *s);
+LUSHAPI at *new_symbol(char *);
+LUSHAPI at *named(char *);
+LUSHAPI at *namedclean(char *);
 extern at *at_t; 
 #define t()           at_t
 
-LUSHAPI char *nameof(at *p);
-LUSHAPI symbol_t *symbol_push(symbol_t *sym, at *q);
-LUSHAPI symbol_t *symbol_pop(symbol_t *sym);
+LUSHAPI char *nameof(symbol_t *);
+LUSHAPI char *NAMEOF(at *);
+LUSHAPI symbol_t *symbol_push(symbol_t *, at *);
+LUSHAPI symbol_t *symbol_pop(symbol_t *);
 #define SYMBOL_PUSH(p, q) { at *__p__ = p; Mptr(__p__) = symbol_push((symbol_t*)Mptr(__p__), q); }
 #define SYMBOL_POP(p) { at *__p__ = p; Mptr(__p__) = symbol_pop((symbol_t*)Mptr(__p__)); }
 
