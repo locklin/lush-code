@@ -118,7 +118,7 @@ void mark_symbol(symbol_t *s)
       mm_mark(s->next);
 
    else if (s->valueptr)
-      mm_mark(s->hn->named);
+      mm_mark(SYM_HN(s)->named);
 }
 
 /* 
@@ -129,11 +129,10 @@ void mark_symbol(symbol_t *s)
 void at_symbol_notify(at *p, void *_)
 {
    symbol_t *s = Symbol(p);
-   //printf("clearing backref of symbol '%s'\n", s->hn->name);
    assert(s->next==NULL);
    assert(s->valueptr==NULL);
-   assert(s->hn->named == p);
-   s->hn->named = NIL;
+   assert(SYM_HN(s)->named == p);
+   SYM_HN(s)->named = NIL;
    //search_by_name(s->hn->name, -1); /* done by purge_names directly */
 }   
 
@@ -319,8 +318,8 @@ DX(xnamedclean)
 
 char *nameof(symbol_t *s)
 {
-   if (s->hn)
-      return s->hn->name;
+   if (SYM_HN(s))
+      return SYM_HN(s)->name;
    else
       return NIL;
 }
@@ -389,7 +388,7 @@ at *global_defs()
             *where = new_cons(new_cons(p, val), NIL);
             where = &Cdr(*where);
             /* locked? */
-            if (symb->mode == SYMBOL_LOCKED) {
+            if (SYMBOL_LOCKED_P(p)) {
                *where = new_cons(p, NIL);
                where = &Cdr(*where);
             }
@@ -452,8 +451,8 @@ static at *symbol_selfeval(at *p)
 
 static unsigned long symbol_hash(at *p)
 {
-   symbol_t *symb = Symbol(p);
-   return symb->hn->hash;
+   symbol_t *s = Symbol(p);
+   return SYM_HN(s)->hash;
 }
 
 
@@ -462,11 +461,11 @@ static unsigned long symbol_hash(at *p)
 at *setq(at *p, at *q)
 {
    if (SYMBOLP(p)) {             /* (setq symbol value) */
-      symbol_t *sym = Symbol(p);
-      ifn (sym->valueptr)
+      symbol_t *s = Symbol(p);
+      ifn (s->valueptr)
          fprintf(stderr, "+++ Warning: use <defvar> to declare global variable <%s>.\n",
-                 sym->hn->name ? sym->hn->name : "??" );
-      sym_set(sym, q, false);
+                 SYM_HN(s)->name ? SYM_HN(s)->name : "??" );
+      sym_set(s, q, false);
       
    } else if (CONSP(p)) {          /* scope specification */
       if (Car(p)!=at_scope || !CONSP(Cdr(p)))
@@ -519,9 +518,8 @@ void reset_symbols(void)
 symbol_t *symbol_push(symbol_t *s, at *q)
 {
    symbol_t *sym = mm_alloc(mt_symbol);
-   sym->mode = SYMBOL_UNLOCKED;
    sym->next = s;
-   sym->hn = s->hn;
+   sym->hn = SYM_HN(s);
    sym->value = q;
    sym->valueptr = &(sym->value);
    return sym;
@@ -533,23 +531,18 @@ symbol_t *symbol_pop(symbol_t *s)
    return s->next; 
 }
 
-at *new_symbol(char *s)
+at *new_symbol(char *str)
 {
-   if (s[0] == ':' && s[1] == ':')
-      error(s, "belongs to a reserved package... ", NIL);
+   if (str[0] == ':' && str[1] == ':')
+      error(NIL, "belongs to a reserved package... ", new_string(str));
    
-   hash_name_t *hn = search_by_name(s, 1);
+   hash_name_t *hn = search_by_name(str, 1);
    ifn (hn->named) {
       /* symbol does not exist yet, create new */
-      symbol_t *symb = mm_alloc(mt_symbol);
-      symb->mode = SYMBOL_UNLOCKED;
-      //symb->value = NIL;    /* cleared by mm_alloc */
-      //symb->valueptr = NIL;
-      symb->hn = hn;
-      hn->named = new_extern(&symbol_class, symb);
-      add_notifier(hn->named, 
-                   (wr_notify_func_t *)at_symbol_notify,
-                   NULL);
+      symbol_t *s = mm_alloc(mt_symbol);
+      s->hn = hn;
+      hn->named = new_extern(&symbol_class, s);
+      add_notifier(hn->named, (wr_notify_func_t *)at_symbol_notify, NULL);
    }
    return hn->named;
 }
@@ -584,8 +577,8 @@ DY(yscope)
 DX(xlock_symbol)
 {
    for (int i = 1; i <= arg_number; i++) {
-      symbol_t *s = ASYMBOL(i);
-      s->mode = SYMBOL_LOCKED;
+      ASYMBOL(i);
+      LOCK_SYMBOL(APOINTER(i));
    }
    return NIL;
 }
@@ -593,8 +586,8 @@ DX(xlock_symbol)
 DX(xunlock_symbol)
 {
    for (int i = 1; i <= arg_number; i++) {
-      symbol_t *s = ASYMBOL(i);
-      s->mode = SYMBOL_UNLOCKED;
+      ASYMBOL(i);
+      UNLOCK_SYMBOL(APOINTER(i));
    }
    return NIL;
 }
@@ -661,20 +654,20 @@ at *var_get(at *p)
    return sym_get(Symbol(p), false);
 }
 
-void sym_set(symbol_t *symb, at *q, bool in_global_scope)
+void sym_set(symbol_t *s, at *q, bool in_global_scope)
 {
    if (in_global_scope)
-      while(symb->next)
-         symb = symb->next;
+      while (s->next)
+         s = s->next;
 
-   if (symb->mode == SYMBOL_LOCKED)
-      error(NIL, "locked symbol", symb->hn->named);
+   if ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
+      error(NIL, "locked symbol", SYM_HN(s)->named);
   
-   ifn (symb->valueptr) {
-      symb->valueptr = &(symb->value);
-      symb->value = NIL;
+   ifn (s->valueptr) {
+      s->value = NIL;
+      s->valueptr = &(s->value);
    }
-   *(symb->valueptr) = q;
+   *(s->valueptr) = q;
 }
 
 void var_set(at *p, at *q) 
@@ -698,16 +691,15 @@ void var_SET(at *p, at *q)
 
 void var_lock(at *p)
 {
-   symbol_t *symb = Symbol(p);
-   symb->mode = SYMBOL_LOCKED;
+   LOCK_SYMBOL(p);
 }
 
 
-at *var_define(char *s)
+at *var_define(char *str)
 {
-   at *p = named(s);
-   symbol_t *symb = Symbol(p);
-   symb->valueptr = &(symb->value);
+   at *p = named(str);
+   symbol_t *s = Symbol(p);
+   s->valueptr = &(s->value);
    return p;
 }
 

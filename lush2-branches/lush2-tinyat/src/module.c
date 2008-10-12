@@ -1426,14 +1426,13 @@ static void module_def(at *name, at *val)
    /* Check name and add definition */
    ifn (SYMBOLP(name))
       RAISEF("internal error (symbol expected)",name);
-   current->defs = new_cons(new_cons(val, name),current->defs);
+   current->defs = new_cons(new_cons(val, name), current->defs);
    /* Root definitions are also written into symbols */
    if (current == root) {
-      symbol_t *symb = Mptr(name);
-      if (symb->mode == SYMBOL_LOCKED)
+      if (SYMBOL_LOCKED_P(name))
          RAISEF("internal error (multiple definition)", name);
       var_set(name, val);
-      symb->mode = SYMBOL_LOCKED;
+      LOCK_SYMBOL(name);
    }
 }
 

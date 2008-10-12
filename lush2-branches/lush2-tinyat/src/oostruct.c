@@ -524,18 +524,16 @@ at *with_object(at *p, at *f, at *q, int howfar)
       for (int i = obj->size-1; i >= howfar; i--) {
          at *atsym = obj->slots[i].symb;
          symbol_t *sym = mm_alloc(mt_symbol);
-         sym->mode = SYMBOL_UNLOCKED;
          sym->next = Symbol(atsym);
-         sym->hn = sym->next->hn;
+         sym->hn = SYM_HN(sym->next);
          sym->valueptr = &(obj->slots[i].val);
          Mptr(atsym) = sym;
       }
 
       /* push THIS */
       symbol_t *sym = mm_alloc(mt_symbol);
-      sym->mode = SYMBOL_UNLOCKED;
       sym->next = Symbol(at_this);
-      sym->hn = sym->next->hn;
+      sym->hn = SYM_HN(sym->next);
       sym->value = p;
       sym->valueptr = &(sym->value);
       Symbol(at_this) = sym;

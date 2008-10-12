@@ -720,7 +720,7 @@ static char *error_text(void)
    strcpy(print_buffer, unknown_errmsg);
    
    if (!prefix && CONSP(call) && CONSP(Car(call)) && SYMBOLP(Caar(call))) {
-      prefix = nameof(Caar(call));
+      prefix = NAMEOF(Caar(call));
    }
    prefix = prefix ? prefix : "";
    text = text ? text : "";

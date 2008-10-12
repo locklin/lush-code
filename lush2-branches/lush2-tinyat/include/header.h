@@ -169,7 +169,11 @@ DLLEXPORT int init_user_dll(int major, int minor);
 #define NUM_PTRBITS       3
 #define PTRBITS(p)        ((uintptr_t)(p) & ((1<<NUM_PTRBITS) - 1))
 #define SET_PTRBIT(p, b)  { p = (void *)((uintptr_t)(p) | b); }
+#define UNSET_PTRBIT(p,b) { p = (void *)((uintptr_t)(p) & ~b); }
 #define CLEAR_PTR(p)      ((void *)((uintptr_t)(p)&~((1<<NUM_PTRBITS) - 1)))
+
+#define CONS_BIT          1
+#define SYMBOL_LOCKED_BIT 1
 
 typedef struct class_s class_t;
 
@@ -209,7 +213,6 @@ struct at {
 #define AssignClass(q, _cl) ((q)->cl) = _cl
 #define AssignCar(q, _car)  (q)->cl = (class_t *)((uintptr_t)(_car) | CONS_BIT)
 
-#define CONS_BIT        1
 
 #define CONSP(p)        ((p)&&(((uintptr_t)((p)->cl)) & CONS_BIT))
 #define FUNCTIONP(x)    ((x)&&(Class(x)->super==&function_class))
@@ -347,16 +350,16 @@ LUSHAPI void unprotect(at *q);
 extern LUSHAPI class_t symbol_class;
 
 typedef struct symbol { 	/* each symbol is an external AT which */
-   short mode;		        /* points to this structure */
    struct symbol *next;
    struct hash_name *hn;
    at *value;
    at **valueptr;
 } symbol_t;
 
-#define SYMBOL_UNUSED   0
-#define SYMBOL_LOCKED   2
-#define SYMBOL_UNLOCKED 1
+#define SYMBOL_LOCKED_P(p) ((uintptr_t)(Symbol(p)->hn) & SYMBOL_LOCKED_BIT)
+#define LOCK_SYMBOL(p)     SET_PTRBIT(Symbol(p)->hn, SYMBOL_LOCKED_BIT)
+#define UNLOCK_SYMBOL(p)   UNSET_PTRBIT(Symbol(p)->hn, SYMBOL_LOCKED_BIT)
+#define SYM_HN(s)          ((struct hash_name *)CLEAR_PTR((s)->hn))
 
 /* symbol creation */
 LUSHAPI at *new_symbol(char *);
@@ -464,7 +467,6 @@ LUSHAPI void abort (char *s) no_return;
 
 extern LUSHAPI class_t string_class;
 
-#define SADD(obj)         ((char *)(obj))
 LUSHAPI at *new_string(const char *s);
 LUSHAPI at *new_string_bylen(int n);
 LUSHAPI int str_index(char *s1, char *s2, int start);
@@ -507,7 +509,6 @@ LUSHAPI at* str_utf8_to_mb(const char *s);
  */
 
 struct cfunction {
-   int used;
    at *name;
    void *call;
    void *info;
@@ -517,7 +518,6 @@ struct cfunction {
 typedef struct cfunction cfunction_t;
 
 struct lfunction {
-   int used;
    at *formal_args;
    at *body;
 };

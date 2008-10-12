@@ -1079,9 +1079,9 @@ again:
    {
       *pp = new_cons(NIL,NIL);
       //local_bread(&Car(*pp), opt);
-      local_bread((at **)&(*pp)->cl, opt);
+      local_bread((at **)&((*pp)->cl), opt);
       SET_PTRBIT((*pp)->cl, CONS_BIT);
-      pp = & Cdr(*pp);
+      pp = &Cdr(*pp);
       ret = 0;
       goto again;
    }
