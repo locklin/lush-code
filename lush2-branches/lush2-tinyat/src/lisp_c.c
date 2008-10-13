@@ -1653,7 +1653,7 @@ static void wipe_out_temps(void)
 int     run_time_error_flag;
 jmp_buf run_time_error_jump;
 
-void run_time_error(char *s)
+void run_time_error(const char *s)
 {
   if (run_time_error_flag) {
     printf("\n\n*** lisp_c runtime error: %s\007\007\n",s);

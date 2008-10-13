@@ -96,7 +96,7 @@ typedef int intg;
 
 /* lifted from TOPLEVEL.H; find better solution */
 typedef struct at at;
-LUSHAPI void error(const char *prefix, char *text, at *suffix) no_return;
+LUSHAPI void error(const char *prefix, const char *text, at *suffix) no_return;
 
 LUSHAPI char *api_translate_c2lisp(const char*);
 LUSHAPI char *api_translate_lisp2c(const char*);
@@ -119,7 +119,7 @@ LUSHAPI char *api_translate_lisp2c(const char*);
 #ifdef UNIX
 /* interruptions */
 extern LUSHAPI int break_attempt;
-LUSHAPI void lastchance(char *s) no_return;
+LUSHAPI void lastchance(const char *s) no_return;
 /* unix hooks */
 void init_unix(void);
 void fini_unix(void);
@@ -145,7 +145,7 @@ LUSHAPI void cygwin_fmode_binary(FILE *f);
 /* interruptions */
 extern LUSHAPI int break_attempt;
 extern LUSHAPI int kill_attempt;
-LUSHAPI void lastchance(char *s) no_return;
+LUSHAPI void lastchance(const char *s) no_return;
 /* system override */
 LUSHAPI void  win32_exit(int);
 LUSHAPI int   win32_isatty(int);
@@ -411,8 +411,8 @@ extern LUSHAPI struct error_doc {
    /* contains info for printing error messages */
    at *this_call;
    at *error_call;
-   char *error_prefix;
-   char *error_text;
+   const char *error_prefix;
+   const char *error_text;
    at *error_suffix;
    short debug_tab;
    short ready_to_an_error;
@@ -627,7 +627,7 @@ extern LUSHAPI char *line_buffer;
 extern LUSHAPI char *prompt_string;
 
 LUSHAPI void print_char (char c);
-LUSHAPI void print_string(char *s);
+LUSHAPI void print_string(const char *s);
 LUSHAPI void print_list(at *list);
 LUSHAPI void print_tab(int n);
 LUSHAPI char *pname(at *l);
@@ -1029,7 +1029,7 @@ LUSHAPI at  *load_matrix(FILE*);
  */
 
 #define begin_idx_aloop1(idx,ptr) { 					     \
-  ptrdiff_t _d_[MAXDIMS]; 						     \
+  size_t _d_[MAXDIMS]; 						     \
   ptrdiff_t ptr = 0;							     \
   int _j_;                                                                   \
   bool emptyp = false;                                                       \
@@ -1062,8 +1062,8 @@ LUSHAPI at  *load_matrix(FILE*);
  */
 
 #define begin_idx_aloop2(idx1, idx2, ptr1, ptr2) { 			     \
-  ptrdiff_t _d1_[MAXDIMS]; 						     \
-  ptrdiff_t _d2_[MAXDIMS];						     \
+  size_t _d1_[MAXDIMS]; 						     \
+  size_t _d2_[MAXDIMS];						             \
   ptrdiff_t ptr1 = 0;							     \
   ptrdiff_t ptr2 = 0;							     \
   int _j1_, _j2_;                                                            \
@@ -1114,9 +1114,9 @@ LUSHAPI at  *load_matrix(FILE*);
  */
 
 #define begin_idx_aloop3(idx0, idx1, idx2, ptr0, ptr1, ptr2) { 	             \
-  ptrdiff_t _d0_[MAXDIMS]; 						     \
-  ptrdiff_t _d1_[MAXDIMS]; 						     \
-  ptrdiff_t _d2_[MAXDIMS]; 						     \
+  size_t _d0_[MAXDIMS]; 						     \
+  size_t _d1_[MAXDIMS]; 						     \
+  size_t _d2_[MAXDIMS]; 						     \
   ptrdiff_t ptr0 = 0;						     	     \
   ptrdiff_t ptr1 = 0;						     	     \
   ptrdiff_t ptr2 = 0;							     \
@@ -1217,7 +1217,7 @@ LUSHAPI bool lisp_owns_p(void *cptr);  /* true when interpreter owns the object 
 
 extern LUSHAPI int run_time_error_flag;
 extern LUSHAPI jmp_buf run_time_error_jump;
-LUSHAPI void run_time_error(char *s);
+LUSHAPI void run_time_error(const char *s);
 
 
 /* EVENT.H ----------------------------------------------------- */

@@ -245,7 +245,7 @@ break_irq(void)
 
 /* lastchance -- safety code for hopeless situations */
 
-void lastchance(char *s)
+void lastchance(const char *s)
 {
    static int already = 0;
 

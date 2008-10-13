@@ -918,7 +918,7 @@ DY(ydmc)
 /*
  * print_string s prints the string s via the print_char routine.
  */
-void print_string(char *s)
+void print_string(const char *s)
 {
    if (s) {
       flockfile(context->input_file);
