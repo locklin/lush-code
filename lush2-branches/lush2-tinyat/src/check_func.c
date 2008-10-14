@@ -31,7 +31,6 @@
 /* Functions that check the dimensions of index parameters */
 
 #include "header.h"
-#include "mm.h"
 #include "idxmac.h"
 #include "idxops.h"
 #include "check_func.h"

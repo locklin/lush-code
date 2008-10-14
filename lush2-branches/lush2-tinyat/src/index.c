@@ -59,7 +59,6 @@
  */
 
 #include "header.h"
-#include "mm.h"
 #include <inttypes.h>
 
 void clear_index(index_t *ind)

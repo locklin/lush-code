@@ -30,7 +30,6 @@
  **********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 
 void clear_cfunction(cfunction_t *f)
 {

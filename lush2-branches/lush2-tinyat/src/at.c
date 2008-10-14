@@ -33,7 +33,6 @@
 ********************************************************************** */
 
 #include "header.h"
-#include "mm.h"
 #include <inttypes.h>
 
 static void clear_at(at *a)
@@ -64,18 +63,16 @@ static void mark_at(at *a)
 mt_t mt_at = mt_undefined;
 
 
-
 LUSHAPI at *new_cons(at *car, at *cdr) 
 {
    at *new = mm_alloc(mt_at);
-    AssignCar(new, car);
-    Cdr(new) = cdr;
-    //Class(new) = &cons_class;
-    return new;
- }
+   AssignCar(new, car);
+   Cdr(new) = cdr;
+   return new;
+}
 
- DX(xcons)
- {
+DX(xcons)
+{
     ARG_NUMBER(2);
     ALL_ARGS_EVAL;
     return new_cons(APOINTER(1), APOINTER(2));

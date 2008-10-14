@@ -47,6 +47,8 @@ extern "C" {
 #endif
 #endif
 
+#include "mm.h"
+
 /* VERSION.H --------------------------------------------------- */
 
 #define LUSH_MAJOR  50
@@ -284,6 +286,7 @@ struct hashelem {
    at *function;
    int sofar;
 };
+
 
 LUSHAPI at *new_gptr(gptr x);
 LUSHAPI at *new_number(double x);

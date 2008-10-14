@@ -23,7 +23,6 @@
  ***********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 #include "graphics.h"
 
 #define wptr struct window *

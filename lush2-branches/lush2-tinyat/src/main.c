@@ -28,7 +28,6 @@
  **********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 
 #if HAVE_LOCALE_H
 # include <locale.h>

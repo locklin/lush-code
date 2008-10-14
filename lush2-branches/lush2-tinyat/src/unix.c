@@ -134,7 +134,6 @@ typedef RETSIGTYPE (*SIGHANDLERTYPE)();
 
 /* Lush header files */
 #include "header.h"
-#include "mm.h"
 #include "lushmake.h"
 
 

@@ -28,7 +28,6 @@
  **********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 #include "graphics.h"
 
 /****** PSDRIVER.PRO contains PostScript programs for *****

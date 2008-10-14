@@ -24,7 +24,6 @@
  ***********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 
 /*
  * Objects holding weak references to another object may 

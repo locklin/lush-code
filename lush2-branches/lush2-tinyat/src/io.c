@@ -37,7 +37,6 @@
 ********************************************************************** */
 
 #include "header.h"
-#include "mm.h"
 
 char *line_buffer;
 char *line_pos;

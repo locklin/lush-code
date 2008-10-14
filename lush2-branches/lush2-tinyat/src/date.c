@@ -36,7 +36,6 @@
  * Declarations
  */
 #include "header.h"
-#include "mm.h"
 
 #ifdef TIME_WITH_SYS_TIME
 # include <sys/times.h>

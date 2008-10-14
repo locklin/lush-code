@@ -32,7 +32,6 @@
 ********************************************************************** */
 
 #include "header.h"
-#include "mm.h"
 #include "dh.h"
 
 /* objects with less or equal MIN_NUM_SLOTS slots will
