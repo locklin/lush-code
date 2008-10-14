@@ -1699,16 +1699,11 @@ static void sweep(void)
       write(pfd_garbage[1], &buf, n*sizeof(void *));
 }
 
-/* fetch addresses of unreachable objects from garbage pipe */
-/* return number of objects reclaimed                       */
-static int fetch_unreachables(void)
+/* fill buffer */
+static int _fetch_unreachables(void *buf)
 {
-   static bool inheap = true;
-   assert(collecting_child && !gc_disabled);
-   
    errno = 0;
-   void *buf[NUM_TRANSFER];
-   int n = read(pfd_garbage[0], &buf, NUM_TRANSFER*sizeof(void *));
+   int n = read(pfd_garbage[0], buf, NUM_TRANSFER*sizeof(void *));
 
    if (n == -1) {
       if (errno != EAGAIN) {
@@ -1716,41 +1711,91 @@ static int fetch_unreachables(void)
          warn("error reading from garbage pipe\n");
          warn(errmsg);
          abort();
-      } else
-         return 0;
-
+      }
+      
    } else if (n == 0) {
       /* we're done */
       close(pfd_garbage[0]);
       collect_epilogue();
-      inheap = true;
-      return 0;
+   }
 
-   } else {
+   return n;
+}
+   
+
+/* fetch addresses of unreachable objects from garbage pipe */
+/* return number of objects reclaimed                       */
+static int fetch_unreachables(void)
+{
+   assert(collecting_child && !gc_disabled);
+
+   static void *buf[NUM_TRANSFER];
+   static int j, n = 0;
+   static bool inheap = true;
+
+   if (n) {
       /* don't need to disable gc here as gc is still
        * in progress
        */
-      assert((n%sizeof(void *)) == 0);
-      n = n/sizeof(void *);
-      int j = 0;
-      if (!inheap)
-         goto reclaim_offheap;
+      if (inheap) {
 
-      for (; j < n; j++) {
-         if (buf[j])
+         if (buf[j]) {
             reclaim_inheap(buf[j]);
-         else {
+            j++;
+         } else {
             inheap = false;
-            break;
+            j++;
          }
+         if (j == n) {
+            n = 0;
+            return 1;
+         }
+         
+         if (inheap) {
+            if (buf[j]) {
+               reclaim_inheap(buf[j]);
+               j++;
+            } else {
+               inheap = false;
+               j++;
+            }
+            if (j == n) {
+               n = 0;
+            }
+            return 2;
+         }
+
+      } else {
+
+         reclaim_offheap(buf[j++]);
+         if (j == n) {
+            n = 0;
+            return 1;
+         }
+         reclaim_offheap(buf[j++]);
+         if (j == n) {
+            n = 0;
+         }
+         return 2;
       }
-      j++;
-   reclaim_offheap:
-      for (; j < n; j++) {
-         reclaim_offheap(buf[j]);
+
+   } else if (n == 0) {
+
+      n = _fetch_unreachables(&buf);
+      
+      if (n == -1) {
+         n = 0;
+
+      } else if (n == 0) {
+         inheap = true;
+
+      } else {
+         assert((n%sizeof(void *)) == 0);
+         n = n/sizeof(void *);
+         j = 0;
       }
-      return n;
    }
+   return 0;
 }
 
 /* close all file descriptors except essential ones */
@@ -1913,9 +1958,10 @@ bool mm_idle(void)
    static int ncalls = 0;
 
    if (collect_in_progress) {
-      if (!gc_disabled)
-         return fetch_unreachables()>0;
-      else
+      if (!gc_disabled) {
+         fetch_unreachables();
+         return true;
+      } else
          return false;
 
    } else if ((man_last - man_k) > 10*MAN_K_UPDS) {
