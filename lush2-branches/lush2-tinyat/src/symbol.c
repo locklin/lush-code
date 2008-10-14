@@ -94,8 +94,6 @@ void mark_symbol_hash(hash_name_t *hn)
    MM_MARK(hn->next);
 }
 
-static hash_name_t *search_by_name(char *, int);
-
 static mt_t mt_symbol_hash = mt_undefined;
 
 
@@ -147,11 +145,11 @@ mt_t mt_symbol = mt_undefined;
  * static hash table 'names'.
  */
 
-static hash_name_t *search_by_name(char *s, int mode)
+static hash_name_t *search_by_name(const char *s, int mode)
 {
    /* Calculate hash value */
    unsigned long hash = 0;
-   uchar *ss = (uchar *)s;
+   const uchar *ss = (const uchar *)s;
    while (*ss) {
       uchar c = *ss++;
       if (! c)
@@ -263,7 +261,7 @@ char *symbol_generator(const char *text, int state)
  * it.
  */
 
-at *named(char *s)
+at *named(const char *s)
 {
    return new_symbol(s);
 }
@@ -280,9 +278,9 @@ DX(xnamed)
  * (lowercase, some _ become -)
  */
 
-at *namedclean(char *n)
+at *namedclean(const char *n)
 {
-   char *d = mm_strdup(n);
+   char *d = strdup(n);
    if (!d)
       RAISEF("not enough memory", NIL);
 
@@ -531,7 +529,7 @@ symbol_t *symbol_pop(symbol_t *s)
    return s->next; 
 }
 
-at *new_symbol(char *str)
+at *new_symbol(const char *str)
 {
    if (str[0] == ':' && str[1] == ':')
       error(NIL, "belongs to a reserved package... ", new_string(str));

@@ -362,9 +362,9 @@ typedef struct symbol { 	/* each symbol is an external AT which */
 #define SYM_HN(s)          ((struct hash_name *)CLEAR_PTR((s)->hn))
 
 /* symbol creation */
-LUSHAPI at *new_symbol(char *);
-LUSHAPI at *named(char *);
-LUSHAPI at *namedclean(char *);
+LUSHAPI at *new_symbol(const char *);
+LUSHAPI at *named(const char *);
+LUSHAPI at *namedclean(const char *);
 extern at *at_t; 
 #define t()           at_t
 
@@ -588,14 +588,14 @@ extern LUSHAPI char file_name[];
 #define OPEN_READ(f,s)  new_extern(&file_R_class,open_read(f,s))
 #define OPEN_WRITE(f,s) new_extern(&file_W_class,open_write(f,s))
 
-LUSHAPI char *cwd(char *s);
-LUSHAPI at *files(char *s);
-LUSHAPI bool dirp(char *s);
-LUSHAPI bool filep(char *s);
-LUSHAPI char *dirname(char *fname);
-LUSHAPI char *basename(char *fname, char *suffix);
-LUSHAPI char *concat_fname(char *from, char *fname);
-LUSHAPI char *relative_fname(char *from, char *fname);
+LUSHAPI char *cwd(const char *s);
+LUSHAPI at *files(const char *s);
+LUSHAPI bool dirp(const char *s);
+LUSHAPI bool filep(const char *s);
+LUSHAPI char *dirname(const char *fname);
+LUSHAPI char *basename(const char *fname, const char *suffix);
+LUSHAPI char *concat_fname(const char *from, const char *fname);
+LUSHAPI char *relative_fname(const char *from, const char *fname);
 LUSHAPI void unlink_tmp_files(void);
 LUSHAPI char *tmpname(char *s, char *suffix);
 LUSHAPI char *search_file(char *s, char *suffixes);
@@ -700,20 +700,20 @@ LUSHAPI void setslot(at**, at*, at*);
 extern LUSHAPI class_t module_class;
 #define MODULEP(x)  ((x)&&Class(x) == &module_class)
 
-LUSHAPI void class_define(char *name, class_t *cl);
-LUSHAPI void dx_define(char *name, at *(*addr) (int, at **));
-LUSHAPI void dy_define(char *name, at *(*addr) (at *));
-LUSHAPI void dxmethod_define(class_t *cl, char *name, at *(*addr) (int, at **));
-LUSHAPI void dymethod_define(class_t *cl, char *name, at *(*addr) (at *));
+LUSHAPI void class_define(const char *name, class_t *cl);
+LUSHAPI void dx_define(const char *name, at *(*addr) (int, at **));
+LUSHAPI void dy_define(const char *name, at *(*addr) (at *));
+LUSHAPI void dxmethod_define(class_t *cl, const char *name, at *(*addr) (int, at **));
+LUSHAPI void dymethod_define(class_t *cl, const char *name, at *(*addr) (at *));
 
-LUSHAPI void dhclass_define(char *name, dhclassdoc_t *kclass);
-LUSHAPI void dh_define(char *name, dhdoc_t *kname);
-LUSHAPI void dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname);
+LUSHAPI void dhclass_define(const char *name, dhclassdoc_t *kclass);
+LUSHAPI void dh_define(const char *name, dhdoc_t *kname);
+LUSHAPI void dhmethod_define(dhclassdoc_t *kclass, const char *name, dhdoc_t *kname);
 
 LUSHAPI void check_primitive(at *prim, void *info);
 LUSHAPI at *find_primitive(at *module, at *name);
 LUSHAPI at *module_list(void);
-LUSHAPI at *module_load(char *filename, at *hook);
+LUSHAPI at *module_load(const char *filename, at *hook);
 LUSHAPI void module_unload(at *atmodule);
 
 

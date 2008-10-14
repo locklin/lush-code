@@ -112,7 +112,7 @@ void dld_perror (const char *);
 
 
 /* New: load a shared library */
-void *dld_dlopen(char *path, int mode); 
+void *dld_dlopen(const char *path, int mode); 
 
 /* New: simulate the effect of unloading the specified
    module by recomputing all executability flag.

@@ -98,7 +98,7 @@ char lushdir_name[FILELEN];
 
 /* --------- FILE OPERATIONS --------- */
 
-char *cwd(char *s)
+char *cwd(const char *s)
 {
 #ifdef UNIX
    if (s) {
@@ -136,7 +136,7 @@ DX(xchdir)
 
 /** files **/
 
-at *files(char *s)
+at *files(const char *s)
 {
    at *ans = NIL;
    at **where = &ans;
@@ -204,7 +204,7 @@ DX(xfiles)
 }
 
 
-static int makedir(char *s)
+static int makedir(const char *s)
 {
 #ifdef UNIX
    return mkdir(s,0777);
@@ -224,7 +224,7 @@ DX(xmkdir)
 }
 
 
-static int deletefile(char *s)
+static int deletefile(const char *s)
 {
 #ifdef WIN32
    if (dirp(s))
@@ -303,7 +303,7 @@ DX(xcopyfile)
 
 /* create a locking file using O_EXCL */
    
-static int lockfile(char *filename)
+static int lockfile(const char *filename)
 {
 #ifdef WIN32
    int fd = _open(filename, _O_RDWR|_O_CREAT|_O_EXCL, 0644);
@@ -360,7 +360,7 @@ DX(xlockfile)
 }
 
 
-bool dirp(char *s)
+bool dirp(const char *s)
 {
 #ifdef UNIX
    struct stat buf;
@@ -397,7 +397,7 @@ DX(xdirp)
 }
 
 
-bool filep(char *s)
+bool filep(const char *s)
 {
 #ifdef UNIX
    struct stat buf;
@@ -507,11 +507,11 @@ static char *strcpyif(char *d, const char *s)
    return d;
 }
 
-char *dirname(char *fname)
+char *dirname(const char *fname)
 {
 #ifdef UNIX
-   char *s = fname;
-   char *p = 0;
+   const char *s = fname;
+   const char *p = 0;
    char *q = string_buffer;
    while (*s) {
       if (s[0]=='/' && s[1])
@@ -520,7 +520,7 @@ char *dirname(char *fname)
    }
    if (!p) {
       if (fname[0]=='/')
-         return fname;
+         return mm_strdup(fname);
       else
          return ".";
    }
@@ -597,7 +597,8 @@ DX(xdirname)
 }
 
 
-char *basename(char *fname, char *suffix)
+/* basename returns a new, managed string */
+char *basename(const char *fname, const char *suffix)
 {
 #ifdef UNIX
    if (strlen(fname) > STRING_BUFFER-4)
@@ -607,11 +608,11 @@ char *basename(char *fname, char *suffix)
       fname = s+1;
    /* Process suffix */
    if (suffix==0 || suffix[0]==0)
-      return fname;
+      return mm_strdup(fname);
    if (suffix[0]=='.')
       suffix += 1;
    if (suffix[0]==0)
-      return fname;
+      return mm_strdup(fname);
    strcpyif(string_buffer,fname);
    int sl = strlen(suffix);
    s = string_buffer + strlen(string_buffer);
@@ -620,20 +621,20 @@ char *basename(char *fname, char *suffix)
       if (s[0]=='.' && strcmp(s+1,suffix)==0)
          *s = 0;
    }
-   return string_buffer;
+   return mm_strdup(string_buffer);
 #endif
   
 #ifdef WIN32
-   char *p = fname;
-   char *s = fname;
+   const char *p = fname;
+   const char *s = fname;
    /* Special cases */
    if (fname[0] && fname[1]==':') {
       strcpyif(string_buffer,fname);
       if (fname[2]==0)
-         return string_buffer;
+         return mm_strdup(string_buffer);
       string_buffer[2] = '\\'; 
       if (fname[3]==0 && (fname[2]=='/' || fname[2]=='\\'))
-         return string_buffer;
+         return mm_strdup(string_buffer);
    }
    /* Position p after last slash */
    while (*s) {
@@ -650,18 +651,18 @@ char *basename(char *fname, char *suffix)
    *s = 0;
    /* Process suffix */
    if (suffix==0 || suffix[0]==0)
-      return string_buffer;
+      return mm_strdup(string_buffer);
    if (suffix[0]=='.')
       suffix += 1;
    if (suffix[0]==0)
-      return string_buffer;    
+      return mm_strdup(string_buffer);    
    int sl = strlen(suffix);
    if (s > string_buffer + sl) {
       s = s - (sl + 1);
       if (s[0]=='.' && stricmp(s+1,suffix)==0)
          *s = 0;
    }
-   return string_buffer;
+   return mm_strdup(string_buffer);
 #endif
 }
 
@@ -670,15 +671,15 @@ DX(xbasename)
    ALL_ARGS_EVAL;
    if (arg_number!=1) {
       ARG_NUMBER(2)
-         return new_string(basename(ASTRING(1),ASTRING(2)));
+         return new_extern(&string_class, basename(ASTRING(1),ASTRING(2)));
    } else {
       ARG_NUMBER(1);
-      return new_string(basename(ASTRING(1),NULL));
+      return new_extern(&string_class, basename(ASTRING(1),NULL));
    }
 }
 
-
-char *concat_fname(char *from, char *fname)
+/* concat_fname returns a new, managed string */
+char *concat_fname(const char *from, const char *fname)
 {
 #ifdef UNIX
    if (fname && fname[0]=='/') 
@@ -695,7 +696,7 @@ char *concat_fname(char *from, char *fname)
          while (s>string_buffer+1 && s[-1]=='/')
             s--;
          *s = 0;
-         return string_buffer;
+         return mm_strdup(string_buffer);
       }
       if (fname[0]=='.') {
          if (fname[1]=='/' || fname[1]==0) {
@@ -732,7 +733,7 @@ char *concat_fname(char *from, char *fname)
       strcpyif(string_buffer, cwd(NULL));
    char *s = string_buffer;
    if (fname==0)
-      return s;
+      return mm_strdup(s);
    /* Handle absolute part of fname */
    if (fname[0]=='/' || fname[0]=='\\') {
       if (fname[1]=='/' || fname[1]=='\\') {	    /* Case "//abcd" */
@@ -788,7 +789,7 @@ char *concat_fname(char *from, char *fname)
             *s++ = *fname++;
       *s = 0;
    }
-   return string_buffer;
+   return mm_strdup(string_buffer);
 #endif
 }
     
@@ -796,41 +797,40 @@ DX(xconcat_fname)
 {
    ALL_ARGS_EVAL;
    if (arg_number==1)
-      return new_string(concat_fname(NULL,ASTRING(1)));
+      return new_extern(&string_class, concat_fname(NULL,ASTRING(1)));
    ARG_NUMBER(2);
-   return new_string(concat_fname(ASTRING(1),ASTRING(2)));
+   return new_extern(&string_class, concat_fname(ASTRING(1),ASTRING(2)));
 }
 
 
-/** relative_fname **/
-
-char *relative_fname(char *from, char *fname)
+/* relative_fname returns a new, managed string */
+char *relative_fname(const char *from, const char *fname)
 {
    from = concat_fname(NULL,from);
    int fromlen = strlen(from);
    if (fromlen > FILELEN-1)
-      return 0;
+      return NULL;
    strcpyif(file_name, from);
    from = file_name;
    fname = concat_fname(NULL,fname);
 #ifdef UNIX
    if (fromlen>0 && !strncmp(from, fname, fromlen)) {
       if ( fname[fromlen]==0 )
-         return ".";
+         return mm_strdup(".");
       if (fname[fromlen]=='/')
-         return fname + fromlen + 1;
+         return mm_strdup(fname + fromlen + 1);
       if (fname[fromlen-1]=='/')
-         return fname + fromlen;
+         return mm_strdup(fname + fromlen);
    }
 #endif
 #ifdef WIN32
    if (fromlen>3 && !strncmp(from, fname, fromlen)) {
       if ( fname[fromlen]==0 )
-         return ".";
+         return mm_strdup(".");
       if (fname[fromlen]=='/' || fname[fromlen]=='\\')
-         return fname + fromlen + 1;
+         return mm_strdup(fname + fromlen + 1);
       if (fname[fromlen-1]=='/' || fname[fromlen-1]=='\\')
-         return fname + fromlen;
+         return mm_strdup(fname + fromlen);
    }
 #endif
    return 0;
@@ -842,9 +842,7 @@ DX(xrelative_fname)
    ARG_EVAL(1);
    ARG_EVAL(2);
    char *s = relative_fname(ASTRING(1), ASTRING(2));
-   if (s)
-      return new_string(s);
-   return NIL;
+   return s ? new_extern(&string_class, s) : NIL;
 }
 
 

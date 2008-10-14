@@ -2038,7 +2038,6 @@ DX(xto_str)
   at *p = APOINTER(1);
   
   if (STRINGP(p)) {
-     //LOCK(p);
     return p;
 
   } else if (GPTRP(p)) {
@@ -2051,7 +2050,6 @@ DX(xto_str)
     delayed_kill_list = NIL;
 
     ifn (STRINGP(q)) {
-       //UNLOCK(q);
       RAISEF("not a pointer to a string",p);
     }
     return q;
@@ -2064,7 +2062,7 @@ DX(xto_str)
   
 /* defined in module.c */
 struct module;
-extern void *dynlink_symbol(struct module *, char *, int, int);
+extern void *dynlink_symbol(struct module *, const char *, int, int);
 
 /* (to-gptr <obj>) */
 DX(xto_gptr)

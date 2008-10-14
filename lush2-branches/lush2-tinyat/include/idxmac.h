@@ -356,32 +356,32 @@ struct srg *newi = & name2(_srg_,newi)
 #define Midx_contiguep1(idx, var) \
     var = 1; if(1 != (idx)->mod[0]) var = 0;
 #define Midx_contiguep2(idx, var) \
-    var = 1; if(1 != (idx)->mod[1] || (idx)->dim[1] != (idx)->mod[0]) var = 0;
+  var = 1; if(1 != (idx)->mod[1] || ((ptrdiff_t)(idx)->dim[1]) != (idx)->mod[0]) var = 0;
 #define Midx_contiguep3(idx, var) \
-    var = 1; if(1 != (idx)->mod[2] || (idx)->dim[2] != (idx)->mod[1] || \
-    (idx)->dim[1]*(idx)->dim[2] != (idx)->mod[0]) var = 0;
+  var = 1; if(1 != (idx)->mod[2] || ((ptrdiff_t)(idx)->dim[2]) != (idx)->mod[1] || \
+              ((ptrdiff_t)(idx)->dim[1]*(idx)->dim[2]) != (idx)->mod[0]) var = 0;
 #define Midx_contiguep4(idx, var) \
-{   size_t size = 1; var = 1;\
+{   ptrdiff_t size = 1; var = 1;\
     for(int i=3;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (idx)->dim[i]; }}
 #define Midx_contiguep5(idx, var) \
-{   size_t size = 1; var = 1;\
+{   ptrdiff_t size = 1; var = 1;\
     for(int i=4;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (idx)->dim[i]; }}
 #define Midx_contiguep6(idx, var) \
-{   size_t size = 1; var = 1;\
+{   ptrdiff_t size = 1; var = 1;\
     for(int i=5;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (idx)->dim[i]; }}
 #define Midx_contiguep7(idx, var) \
-{   size_t size = 1; var = 1;\
+{   ptrdiff_t size = 1; var = 1;\
     for(int i=6;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (idx)->dim[i]; }}
 #define Midx_contiguep8(idx, var) \
-{   size_t size = 1; var = 1;\
+{   ptrdiff_t size = 1; var = 1;\
     for(int i=7;i>=0;i--) { \
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (idx)->dim[i]; }}
