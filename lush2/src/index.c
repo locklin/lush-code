@@ -2293,7 +2293,6 @@ index_t *index_reshapeD(index_t *ind, shape_t *shp)
       RAISEF("number of elements must be the same with new shape", 
              NEW_NUMBER(index_nelems(ind)));
   
-   /* ind = copy_index(ind); */
    IND_NDIMS(ind) = shp->ndims;
    ptrdiff_t size = 1;
    for (int i=shp->ndims-1; i>=0; i--) {
@@ -2859,8 +2858,84 @@ index_t *array_select(index_t *ind, int d, ptrdiff_t x)
    return arr;
 }
 
+index_t *array_take2(index_t *ind, index_t *ss)
+{
+   static char *errmsg_out_of_range = "subscript out of range";       
+   static char *errmsg_not_supported = "element-type not supported";
+   char *errmsg = NULL;
+   
+   int r = IND_NDIMS(ind);
+   int d = IND_NDIMS(ss)-1;
 
-index_t *array_take(index_t *ind, int d, index_t *ss)
+   /* check & normalize arguments */
+   ifn (IND_STTYPE(ss) == ST_INT)
+      RAISEF("subscript array must be integer", NIL);
+   ifn (d >= 0)
+      RAISEF("subscript array must not be scalar", NIL);
+   ifn (IND_DIM(ss, d) == r)
+      RAISEF("final extent of subscript array must match rank of first argument", NIL);
+   
+   /* create result array */
+   shape_t shape, *shp = shape_copy((shape_t *)ss, &shape);
+   shp->ndims -= 1;
+   index_t *res = make_array(IND_STTYPE(ind), shp, NIL);
+
+   if (index_emptyp(res))
+      goto clean_up_and_return2;
+
+   /* copy selected array contents */
+   ifn (IND_MOD(ss, d) == 1)  // when not contiguous in last dimension, make it so
+      ss = copy_array(ss);
+   
+   switch (IND_STTYPE(res)) {
+      
+#define GenericTake(Prefix,Type) 				     \
+  case name2(ST_,Prefix): {					     \
+     								     \
+    index_t *ss0 = index_select(ss, d, 0);                           \
+    Type *pi = IND_BASE_TYPED(ind, Type);			     \
+    Type *pr = IND_BASE_TYPED(res, Type);                            \
+    int *ps = IND_BASE_TYPED(ss, int);                               \
+    begin_idx_aloop2(res, ss0, resp, ss0p) {                         \
+       /* validate dimension */                                      \
+       ptrdiff_t offs = 0;                                           \
+       for (int i = 0; i < r; i++) {                                 \
+          int ii = ps[ss0p+i];                                       \
+          if (ii < 0) ii += IND_DIM(ind, i);                         \
+          if (ii<0 || ii>=IND_DIM(ind, i)) {                         \
+             errmsg = errmsg_out_of_range;                           \
+             goto clean_up_and_return2;                              \
+          }                                                          \
+          offs += IND_MOD(ind, i)*ii;                                \
+       }                                                             \
+       pr[resp] = pi[offs];                                          \
+    } end_idx_aloop2(res, ss0, resp, ss0p);                          \
+  } 								     \
+  break;
+
+      GenericTake(FLOAT, float);
+      GenericTake(DOUBLE, real);
+      GenericTake(INT, int);
+      GenericTake(SHORT, short);
+      GenericTake(BYTE, char);
+      GenericTake(UBYTE, unsigned char);
+      GenericTake(GPTR, gptr);
+
+#undef GenericTake
+      
+   default:
+      errmsg = errmsg_not_supported;
+      break;
+   }
+
+clean_up_and_return2:
+
+   /* report any errors or return result */
+   RAISEF(errmsg, NIL);
+   return index_reshapeD(res, shp);
+}
+
+index_t *array_take3(index_t *ind, int d, index_t *ss)
 {
    static char *errmsg_out_of_range = "subscript out of range";       
    static char *errmsg_not_supported = "element-type not supported";
@@ -2894,7 +2969,7 @@ index_t *array_take(index_t *ind, int d, index_t *ss)
       shp->dim[i+IND_NDIMS(ss)] = IND_DIM(ind, i+1);
 
    if (index_emptyp(res))
-      goto clean_up_and_return;
+      goto clean_up_and_return3;
 
    /* copy selected array contents */
    ptrdiff_t ii = 0;
@@ -2917,7 +2992,7 @@ index_t *array_take(index_t *ind, int d, index_t *ss)
        ii = ii<0 ? ii + indext : ii;                                 \
        if (ii<0 || ii>=indext) {                                     \
            errmsg = errmsg_out_of_range;                             \
-           goto clean_up_and_return;                                 \
+           goto clean_up_and_return3;                                \
        }                                                             \
        islice->offset = ind->offset + indmod*ii;                     \
        rslice->offset = res->offset + resmod*ir;                     \
@@ -2942,19 +3017,31 @@ index_t *array_take(index_t *ind, int d, index_t *ss)
       break;
    }
 
-clean_up_and_return:
+clean_up_and_return3:
 
    /* report any errors or return result */
    RAISEF(errmsg, NIL);
    return index_reshapeD(res, shp);
 }
 
+
 DX(xarray_take)
 {
-   ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
-   index_t *iss = as_int_array(APOINTER(3));
-   return array_take(AINDEX(1), AINTEGER(2), iss)->backptr;
+   switch (arg_number) {
+   case 2: {
+      ALL_ARGS_EVAL;
+      index_t *iss = as_int_array(APOINTER(2));
+      return array_take2(AINDEX(1), iss)->backptr;
+   }
+   case 3: {
+      ALL_ARGS_EVAL;
+      index_t *iss = as_int_array(APOINTER(3));
+      return array_take3(AINDEX(1), AINTEGER(2), iss)->backptr;
+   }
+   default:
+      ARG_NUMBER(-1);
+      return NIL;
+   }
 }
 
 /*
