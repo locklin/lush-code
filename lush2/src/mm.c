@@ -797,7 +797,8 @@ static void collect_prologue(void)
    debug("%dth collect after %d allocations:\n",
          num_collects, num_allocs);
    debug("mean alloc %.2f bytes, %d free blocks)\n",
-         ((double)vol_allocs)/num_allocs, num_free_blocks());
+         (num_allocs ? ((double)vol_allocs)/num_allocs : 0),
+         num_free_blocks());
 }
 
 static void collect_epilogue(void)
