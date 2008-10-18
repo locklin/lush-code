@@ -192,10 +192,23 @@ static char *index_name(at *p)
 
 static at *broadcast_and_put(index_t *ind, index_t *ss, index_t *vals)
 {
-   IND_NDIMS(ss) -= 1;
-   vals = index_broadcast1(ss, vals); 
-   IND_NDIMS(ss) += 1;
-   return array_put(ind, ss, vals)->backptr;
+   int d = IND_NDIMS(ind);
+   if (IND_DIM(ss, IND_NDIMS(ss)-1) == d) {
+      /* -------  Mode 1 -------- */
+      ifn (IND_STTYPE(ind) == IND_STTYPE(vals))
+         error(NIL, "element type of first and third array must match", NIL);
+      IND_NDIMS(ss) -= 1;
+      vals = index_broadcast1(ss, vals); 
+      IND_NDIMS(ss) += 1;
+      return array_put(ind, ss, vals)->backptr;
+
+   } else {
+      /* -------  Mode 2 -------- */
+      index_t *inds = index_selectS(ind, parse_subscript(ss->backptr));
+      vals = index_broadcast1(inds, vals); 
+      array_copy(vals, inds);
+      return ind->backptr;
+   }
 }
 
 static at *index_listeval(at *p, at *q)
@@ -251,10 +264,7 @@ static at *index_listeval(at *p, at *q)
 
          } else if (INDEXP(args[1])) {
             vals = Mptr(args[1]);
-            if (IND_STTYPE(ind) != IND_STTYPE(vals))
-               error(NIL, "element type of first and third array must match", q);
-            else 
-               return broadcast_and_put(ind, ss, vals);
+            return broadcast_and_put(ind, ss, vals);
             
          } else {
             error(NIL, "invalid argument for array update", args[1]);
