@@ -86,13 +86,15 @@ bool finalize_index(index_t *ind)
 static mt_t mt_index = mt_undefined;
 
 /* ------- THE CLASS FUNCTIONS ------ */
-/*
-static subscript_t *parse_subscript(at *atss, subscript_t *ss)
+
+static subscript_t *parse_subscript(at *atss)
 {
    static char errmsg_not_a_subscript[] = "not a valid subscript";
    static char errmsg_dimensions[] = "too many dimensions";
    
-   if (INDEXP(atss) && index_numericp(Mptr(atss)) {
+   subscript_t *ss = mm_malloc(sizeof(struct subscript));
+
+   if (INDEXP(atss) && index_numericp(Mptr(atss))) {
       index_t *ind = Mptr(atss);
       ifn (IND_NDIMS(ind)==1)
          error(NIL, errmsg_not_a_subscript, atss);
@@ -146,7 +148,6 @@ static subscript_t *parse_subscript(at *atss, subscript_t *ss)
       error(NIL, errmsg_not_a_subscript, atss);
    return ss;
 }
-*/
 
 static at *index_set(struct index*,at**,at*,int);
 static at *index_ref(struct index*,at**);
@@ -183,34 +184,96 @@ static char *index_name(at *p)
    return string_buffer;
 }
 
+static at *broadcast_and_put(index_t *ind, index_t *ss, index_t *vals)
+{
+   IND_NDIMS(ss) -= 1;
+   vals = index_broadcast1(ss, vals); 
+   IND_NDIMS(ss) += 1;
+   return array_put(ind, ss, vals)->backptr;
+}
+
 static at *index_listeval(at *p, at *q)
 {
-   extern at *index_set(index_t*, at**, at*, int);
-   extern at *index_ref(index_t*, at**);
-   at *myp[MAXDIMS];
    index_t *ind = Mptr(p);
    
    if (IND_UNSIZEDP(ind))
       error(NIL, "unsized index", p);
-   at *qsav = eval_a_list(Cdr(q));
-   q = qsav;
-   for (int i = 0; i < ind->ndim; i++) {
-      ifn(CONSP(q))
-         error(NIL, "not enough subscripts", qsav);
-      myp[i] = Car(q);
-      q = Cdr(q);
-   }
-   
-   ifn (q) {
-      q = index_ref(ind, myp);
-      return q;
 
-   } else if (CONSP(q) && !Cdr(q)) {
-      index_set(ind, myp, Car(q), 1);
+   /* There are two subscript modes:
+    * 1. The array-take/put-style subscription
+    * 2. select*-style subscription with a single, partial subscript
+    * 3. Single element subscription with full number of subscript indices
+    */
+
+   int d = IND_NDIMS(ind);
+   at *qsav = eval_a_list(Cdr(q));
+   at *args[MAXDIMS+1];
+   size_t n;
+
+   if (unpack_list(qsav, args, MAXDIMS+1, &n) || (n > IND_NDIMS(ind)+1)) {
+      error(NIL, "too many subscripts in subscript expression", q);
+
+   } else if (n && INDEXP(args[0])) {
+      if (IND_NDIMS(ind) == 0)
+         error(NIL, "take-style subscription not valid for scalars", q);
+ 
+      /* -------  Mode 1 -------- */
+      index_t *ss = Mptr(args[0]);
+      if (IND_NDIMS(ss)<1)
+         error(NIL, "subscript array must not be scalar", ss->backptr);
+
+      if (IND_DIM(ss, IND_NDIMS(ss)-1) > d)
+         error(NIL, "too many subscripts in subscript vector", ss->backptr);
+
+      ss = as_int_array(ss->backptr);
+      if (n == 1) {
+         if (IND_NDIMS(ss)==1 && IND_DIM(ss, 0)<d)
+            /* -------  Mode 2 -------- */
+            return index_selectS(ind, parse_subscript(ss->backptr))->backptr;
+         else
+            return array_take2(ind, ss)->backptr;
+
+      } else if (n == 2) {
+         index_t *vals = NIL;
+         if (IND_STTYPE(ind) == ST_DOUBLE) {
+            vals = as_double_array(args[1]);
+            return broadcast_and_put(ind, ss, vals);
+
+         } else if (NUMBERP(args[1])) {
+            vals = make_array(IND_STTYPE(ind), SHAPE0D, args[1]);
+            return broadcast_and_put(ind, ss, vals);
+
+         } else if (INDEXP(args[1])) {
+            vals = Mptr(args[1]);
+            if (IND_STTYPE(ind) != IND_STTYPE(vals))
+               error(NIL, "element type of first and third array must match", q);
+            else 
+               return broadcast_and_put(ind, ss, vals);
+            
+         } else {
+            error(NIL, "invalid argument for array update", args[1]);
+            return NIL;
+         }
+         
+      } else
+         error(NIL, "not a valid subscript expression", q);
+
+   } else if (n == (size_t)d) {
+      /* ------- Mode 3 -------- */ 
+      extern at *index_ref(index_t*, at**);
+      return index_ref(ind, args);
+
+   } else if (n == (size_t)(d+1)) {
+      /* ------- Mode 3 -------- */ 
+      extern at *index_set(index_t*, at**, at*, int);
+      index_set(ind, args, args[d], 1);
       return p;
+
    } else
-      error(NIL, "too many subscripts", qsav);
-}
+      error(NIL, "not a valid subscript expression (enough subscripts?)", q);
+
+   return NULL;
+}   
 
 static void index_serialize(at **pp, int code)
 {
@@ -613,6 +676,49 @@ DX(xidx_broadcastable_p)
 /* } */
 
 
+/* broadcast index blank to the shape of ref if possible or
+ * return an error
+ */
+index_t *index_broadcast1(index_t *ref, index_t *blank)
+{
+   ifn (IND_NDIMS(blank) <= IND_NDIMS(ref))
+      goto cannot_broadcast_error;
+   
+   index_t *b = copy_index(blank);
+   if (IND_NDIMS(b) < IND_NDIMS(ref)) {
+      for (int d = IND_NDIMS(ref)-1; d >= 0; d--) {
+         IND_NDIMS(b)--;
+         IND_DIM(b, d) = IND_NDIMS(b)>=0 ? IND_DIM(b, IND_NDIMS(b)) : 1;
+         IND_MOD(b, d) = IND_NDIMS(b)>=0 ? IND_MOD(b, IND_NDIMS(b)) : 0;
+      }
+      IND_NDIMS(b) = IND_NDIMS(ref);
+   }
+
+   /* expand b */
+   for (int d = IND_NDIMS(ref)-1; d >= 0; d--) {
+      if (IND_DIM(b, d) == IND_DIM(ref, d)) {
+         continue;
+      } else if (IND_DIM(b, d) == 1) {
+         IND_DIM(b, d) = IND_DIM(ref, d);
+         IND_MOD(b, d) = 0;
+      } else 
+         goto cannot_broadcast_error;
+   }
+   return b;
+
+cannot_broadcast_error:
+   error(NIL, "cannot broadcast index to desired shape", blank->backptr);
+   return b;
+}
+
+DX(xidx_broadcast1)
+{
+   ARG_NUMBER(2);
+   ALL_ARGS_EVAL;
+
+   return index_broadcast1(AINDEX(1), AINDEX(2))->backptr;
+}
+
 /* Broadcast two indexes and return the resulting shape; raise an error if
  * indexes are not compatible.
  * If *ba is NULL, create and return a new index, same for *bb. If *ba is
@@ -670,8 +776,8 @@ shape_t *index_broadcast2(index_t *a, index_t *b, index_t **ba, index_t **bb)
 }
 
 
-DX(xidx_broadcast2) {
-
+DX(xidx_broadcast2)
+{
    ARG_NUMBER(2);
    ALL_ARGS_EVAL;
 
@@ -2836,6 +2942,40 @@ DX(xidx_select)
    return index_select(AINDEX(1), AINTEGER(2), AINTEGER(3))->backptr;
 }
 
+
+index_t *index_selectS(index_t *ind, subscript_t *ss)
+{
+   if (ss->ndims > IND_NDIMS(ind))
+      RAISEF("too many subscripts", NIL);
+
+   /* create output */
+   ind = copy_index(ind);
+
+   for (int d=0; d<ss->ndims; d++) {
+      ss->dim[d] = validate_subscript(ind, d, ss->dim[d]);
+      ind->offset += IND_MOD(ind, d)*ss->dim[d];
+   }
+   int i = 0;
+   int d = ss->ndims;
+   while (d<IND_NDIMS(ind)) {
+      IND_DIM(ind, i) = IND_DIM(ind, d);
+      IND_MOD(ind, i) = IND_MOD(ind, d);
+      i++;
+      d++;
+   }
+   IND_NDIMS(ind) -= ss->ndims;
+   return ind;
+}
+
+/*
+DX(idx_selectS)
+{
+   if (arg_number < 1)
+      ARG_NUMBER(-1);
+   
+}
+*/
+
 DX(xidx_select_all)
 {
    if (arg_number<1 || arg_number>2)
@@ -3444,6 +3584,7 @@ void init_index(void)
    dx_define("idx-lift", xidx_lift);
    dx_define("idx-sink", xidx_sink);
    dx_define("idx-expand", xidx_expand);
+   dx_define("idx-broadcast1", xidx_broadcast1);
    dx_define("idx-broadcast2", xidx_broadcast2);
    dx_define("idx-shift", xidx_shift);
    dx_define("idx-trim", xidx_trim);

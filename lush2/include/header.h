@@ -113,6 +113,9 @@ LUSHAPI char *api_translate_lisp2c(const char*);
     error(api_translate_c2lisp(__func__)+1, msg, p); \
 }
 
+/* other helpers */
+at *unpack_list(at *l, at **v, size_t maxnv, size_t *n);
+
 /* OS.H ---------------------------------------------------------- */
 
 
@@ -980,8 +983,10 @@ LUSHAPI index_t *index_expand(index_t*, int d, size_t ne);
 LUSHAPI index_t *index_shift(index_t*, int d, ptrdiff_t ne);
 LUSHAPI index_t *index_shiftS(index_t*, subscript_t*);
 LUSHAPI index_t *index_select(index_t*, int d, ptrdiff_t n);
+LUSHAPI index_t *index_selectS(index_t*, subscript_t*);
 LUSHAPI index_t *index_transpose(index_t*, shape_t*);
 LUSHAPI index_t *index_reverse(index_t*, int d);
+LUSHAPI index_t *index_broadcast1(index_t*ref, index_t*blak);
 LUSHAPI shape_t *index_broadcast2(index_t*, index_t*, index_t**, index_t**);
 
 /* in-place index manipulation */
@@ -1010,6 +1015,9 @@ LUSHAPI index_t *array_copy(index_t *, index_t *);
 LUSHAPI void     array_swap(index_t*, index_t*);
 LUSHAPI index_t *array_extend(index_t*, int d, ptrdiff_t ne, at* init);
 LUSHAPI index_t *array_select(index_t*, int d, ptrdiff_t n);
+LUSHAPI index_t *array_take2(index_t*, index_t *ss);
+LUSHAPI index_t *array_take3(index_t*, int d, index_t *ss);
+LUSHAPI index_t *array_put(index_t*, index_t *ss, index_t *vals);
 
 LUSHAPI void import_raw_matrix(index_t*, FILE*, size_t);
 LUSHAPI void import_text_matrix(index_t*, FILE*);

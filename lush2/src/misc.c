@@ -85,6 +85,24 @@ char *api_translate_lisp2c(const char *lname)
 }
 
 /*
+ *  other helpers
+ */
+
+/* copy at most maxnv items from list l to at* storage v;
+ * return NIL or excess list and set n to #items copied.
+ */
+at *unpack_list(at *l, at **v, size_t maxnv, size_t *n)
+{
+   *n = 0;
+   while (CONSP(l) && (*n)<maxnv) {
+      v[*n] = Car(l);
+      l = Cdr(l);
+      *n = (*n) + 1;
+   }
+   return l;
+}
+
+/*
  * error routines: need_error... implanted in the macros  APOINTER & co
  */
 
