@@ -62,6 +62,8 @@
 #include "mm.h"
 #include <inttypes.h>
 
+typedef at* atp_t;
+
 void clear_index(index_t *ind)
 {
    ind->st = NULL;
@@ -1390,13 +1392,7 @@ static at *index_set(struct index *ind, at *p[], at *value, int mode)
 }
 
 
-
 /* ----------- THE EASY INDEX ACCESS ----------- */
-
-
-/* static struct index *lastind = NULL; */
-/* static intg lastcoord[MAXDIMS]; */
-/* static intg lastoffset; */
 
 /*
  * easy_index_check(p,ndim,dim)
@@ -1432,88 +1428,6 @@ void easy_index_check(index_t *ind, shape_t *shp)
       } else
          shp->dim[i] = IND_DIM(ind, i);
 }
-
-/*
- * easy_index_get(ind,coord)
- * easy_index_set(ind,coord,x)
- *
- *  Access data through an index.
- *  Assume that a CHECK (above) has been done before.
- *
- *  Note: The last access is cached,
- *        for speeding up the process.
- *        There is a penalty to random accesses!
- */
-
-/* static intg  */
-/* make_offset(index_t *ind, int coord[]) */
-/* { */
-/*   int i,j,k; */
-/*   intg off; */
-
-/*   int ndim = ind->ndim; */
-/*   if (ind==lastind) { */
-/*     off = lastoffset; */
-/*     for (i=0;i<ndim;i++) { */
-/*       k = lastcoord[i]; */
-/*       j = coord[i]; */
-/*       switch(j-k) { */
-/*       case 1: */
-/* 	off+=ind->mod[i]; */
-/* 	break; */
-/*       case -1: */
-/* 	off-=ind->mod[i]; */
-/* 	break; */
-/*       case 0: */
-/* 	break; */
-/*       default: */
-/* 	goto offset_byhand; */
-/*       } */
-/*       lastcoord[i] = j; */
-/*     } */
-/*     return lastoffset = off; */
-/*   } */
-/*  offset_byhand: */
-/*   off = ind->offset; */
-/*   for (i=0;i<ndim;i++) { */
-/*     k = lastcoord[i] = coord[i]; */
-/*     off += k * ind->mod[i]; */
-/*   } */
-/*   lastind = ind; */
-/*   lastoffset = off; */
-/*   return off; */
-/* } */
-
-
-/* real  */
-/* easy_index_get(index_t *ind, intg *coord) */
-/* { */
-/*   storage_t *st = IND_ST(ind); */
-/*   intg offset = make_offset(ind,coord); */
-/*   at *p = (*st->getat)(st,offset);	        /\* Horrible & Slow! *\/ */
-/*   ifn (NUMBERP(p)) */
-/*     error(NIL,"Not a number",p); */
-/*   real x = p->Number; */
-/*   UNLOCK(p); */
-/*   return x; */
-/* } */
-
-/* void  */
-/* easy_index_set(index_t *ind, intg *coord, real x) */
-/* { */
-/*   at *p = NEW_NUMBER(x); */
-/*   storage_t *st = ind->st; */
-/*   intg offset = make_offset(ind,coord);	/\* Horrible & Slow! *\/ */
-/*   (*st->setat)(st,offset,p); */
-/*   UNLOCK(p); */
-/* } */
-
-
-
-
-
-
-
 
 /*
  * index_read_idx()
@@ -1596,19 +1510,9 @@ index_t *array_copy(index_t *ind1, index_t *ind2)
       GenericCopy(I8, char);
       GenericCopy(U8, unsigned char);
       GenericCopy(GPTR, gptr);
+      GenericCopy(AT, atp_t);
 
 #undef GenericCopy
-
-   case ST_AT:
-   {
-      typedef at* atp_t;
-      atp_t *d1 = IND_BASE_TYPED(ind1, atp_t);
-      atp_t *d2 = IND_BASE_TYPED(ind2, atp_t);
-      begin_idx_aloop2(ind1,ind2,p1,p2) {
-         d2[p2] = d1[p1];
-      } end_idx_aloop2(ind1,ind2,p1,p2);
-   }
-   break;
 
    default:
    default_copy: {
@@ -1664,7 +1568,6 @@ void array_swap(index_t *ind1, index_t *ind2)
       GenericSwap(I8, char);
       GenericSwap(U8, unsigned char);
       GenericSwap(GPTR, gptr);
-      typedef at* atp_t;
       GenericSwap(AT, atp_t);
 
 #undef GenericCopy
@@ -1681,6 +1584,81 @@ DX(xarray_swap)
    array_swap(AINDEX(1), AINDEX(2));
    return NIL;
 }
+
+
+#define begin_idx_dloop(idx,ptr,dims) {                                      \
+  ptrdiff_t dims[MAXDIMS]; 						     \
+  ptrdiff_t ptr = 0;							     \
+  int _j_;                                                                   \
+  bool emptyp = false;                                                       \
+  for (_j_=0;_j_<(idx)->ndim; _j_++ ) 					     \
+    { dims[_j_]=0; emptyp = emptyp || (idx)->dim[_j_] == 0; }                \
+  _j_ = emptyp ? -1 : (idx)->ndim;					     \
+  while (_j_>=0) {
+
+#define end_idx_dloop(idx,ptr,dims)                                          \
+    _j_--; 								     \
+    do { 								     \
+      if (_j_<0) break; 						     \
+      if (++dims[_j_] < (idx)->dim[_j_]) {				     \
+	ptr+=(idx)->mod[_j_];						     \
+	_j_++;								     \
+      } else { 								     \
+	ptr -= (idx)->dim[_j_]*(idx)->mod[_j_]; 			     \
+	dims[_j_--] = -1; 						     \
+      } 								     \
+    } while (_j_<(idx)->ndim);  					     \
+  } 									     \
+}
+
+/* create array of subscripts of all nonzero elements in ind */
+index_t *array_where_nonzero(index_t *ind)
+{
+   storage_t *srg = make_storage(ST_INT, 64, NIL);
+   int n = 0;
+   int r = IND_NDIMS(ind);
+
+   switch (IND_STTYPE(ind)) {
+
+#define GenericWhere(Prefix, Type)                                      \
+   case name2(ST_,Prefix): {                                            \
+      Type *elp = IND_BASE_TYPED(ind, Type);                            \
+      begin_idx_dloop(ind, p, ds) {                                     \
+         if (elp[p]) {                                                  \
+            if (srg->size < n+r)                                        \
+               storage_realloc(srg, srg->size*2, NIL);                  \
+            for (int i = 0; i<r; i++)                                   \
+               ((int *)srg->data)[n+i] = ds[i];                         \
+            n += r;                                                     \
+         }                                                              \
+      } end_idx_dloop(ind, p, ds);                                      \
+   } break;
+
+   GenericWhere(F, float);
+   GenericWhere(D, double);
+   GenericWhere(I32, int);
+   GenericWhere(I16, short);
+   GenericWhere(I8, char);
+   GenericWhere(U8, unsigned char);
+   GenericWhere(GPTR, gptr);
+   GenericWhere(AT, atp_t);
+   
+#undef GenericWhere
+
+   default:
+      RAISEF("unknown element-type", NIL);
+   }
+      
+   return new_index(srg, SHAPE2D(n/r, r));
+}
+
+DX(xarray_where_nonzero)
+{
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+   return array_where_nonzero(AINDEX(1))->backptr;
+}
+
 
 index_t *index_copy(index_t *src, index_t *dest)
 {
@@ -3639,7 +3617,8 @@ void init_index(void)
    dx_define("array-swap", xarray_swap);
    dx_define("array-take", xarray_take);
    dx_define("array-put", xarray_put);
-   
+   dx_define("array-where-nonzero", xarray_where_nonzero);
+
    /* loops */
    dy_define("idx-eloop", yeloop);
    dy_define("idx-bloop", ybloop);
