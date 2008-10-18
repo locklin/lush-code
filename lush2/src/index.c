@@ -131,6 +131,7 @@ static subscript_t *parse_subscript(at *atss)
          }
       }
       }
+
    } else if (CONSP(atss)) {
       at *l = atss;
       int nd = 0;
@@ -144,8 +145,13 @@ static subscript_t *parse_subscript(at *atss)
          l = Cdr(l);
       }
       ss->ndims = nd;
+
+   } else if (atss == NIL) {
+      ss->ndims = 0;
+
    } else
       error(NIL, errmsg_not_a_subscript, atss);
+
    return ss;
 }
 
@@ -2967,14 +2973,21 @@ index_t *index_selectS(index_t *ind, subscript_t *ss)
    return ind;
 }
 
-/*
-DX(idx_selectS)
+DY(yidx_selectS)
 {
-   if (arg_number < 1)
-      ARG_NUMBER(-1);
+   at *p = ARG_LIST;
+   ifn (CONSP(p))
+      RAISEF("at least one argument expected", NIL);
    
+   p = eval_a_list(p);
+   ifn (INDEXP(Car(p)))
+      RAISEF("not an array", Car(ARG_LIST));
+
+   index_t *ind = Mptr(Car(p));
+   subscript_t *ss = parse_subscript(Cdr(p));
+   return index_selectS(ind, ss)->backptr;
 }
-*/
+
 
 DX(xidx_select_all)
 {
@@ -3589,6 +3602,7 @@ void init_index(void)
    dx_define("idx-shift", xidx_shift);
    dx_define("idx-trim", xidx_trim);
    dx_define("idx-select", xidx_select);
+   dy_define("idx-select*", yidx_selectS);
    dx_define("idx-select-all", xidx_select_all);
    dx_define("idx-transpose", xidx_transpose);
    dx_define("idx-reverse", xidx_reverse);
