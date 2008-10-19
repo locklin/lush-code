@@ -81,7 +81,7 @@
 #define MAX_VOLUME      0x100000    /* max volume threshold */
 #define MAN_K_UPDS      100
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
-#define NUM_IDLE_CALLS  10
+#define NUM_IDLE_CALLS  20
 
 #define MM_SIZE_MAX     (UINT32_MAX*MIN_HUNKSIZE) /* checked in alloc_variable_sized */
 
@@ -140,6 +140,7 @@ static int        num_blocks;
 static blockrec_t *blockrecs = NULL;
 static char      *heap = NULL;
 static unsigned int *restrict hmap = NULL; /* bits for heap objects */
+static bool       heap_exhausted = false;
 
 static void *    *restrict managed;
 static int        man_size;
@@ -398,7 +399,7 @@ search_in_block:
    /* search for another block with free hunks */
    ;
    int b = tr->next_b;
-   int orig_b = (b-1) % num_blocks;
+   int orig_b = (b+num_blocks-1) % num_blocks;
 
    while (b != orig_b) {
       if (blockrecs[b].t == mt_undefined) {
@@ -407,13 +408,13 @@ search_in_block:
          VALGRIND_CREATE_BLOCK(heap + a, BLOCKSIZE, types[t].name);
          tr->current_a = a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
-         tr->next_b = b + 1;
+         tr->next_b = (b == num_blocks) ? 1 : b+1;
          return true;
 
       } else if (blockrecs[b].t==t && blockrecs[b].in_use<(BLOCKSIZE/s)) {
          a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
-         tr->next_b = b + 1;
+         tr->next_b = (b == num_blocks) ? 1 : b+1;
          goto search_in_block;
       }
       b = (b+1) % num_blocks;
@@ -421,6 +422,7 @@ search_in_block:
 
    /* no free hunk found */
    assert(b == orig_b);
+   heap_exhausted = true;
    tr->current_a = 0;
    tr->current_amax = AMAX(s);
    tr->next_b = 1;
@@ -842,6 +844,7 @@ static void collect_epilogue(void)
       //mm_printf("reaped gc child %d\n", collecting_child);
       collecting_child = 0;
    }
+   heap_exhausted = false;
    collect_in_progress = false;
    compact_managed();
 }
@@ -1337,7 +1340,12 @@ void *mm_alloc(mt_t t)
       abort();
    }
    
-   void *p = alloc_fixed_size(t);
+   void *p = NULL;
+   if (heap_exhausted)
+      p = alloc_variable_sized(t, types[t].size);
+   else 
+      p = alloc_fixed_size(t);
+
    if (!p) {
       warn("allocation failed\n");
       abort();
