@@ -733,7 +733,6 @@ static void add_managed(const void *p)
    
    if (!collect_in_progress)
       update_man_k(MAN_K_UPDS);
-   
 }
 
 static void manage(const void *p)
@@ -800,7 +799,8 @@ static void collect_prologue(void)
    debug("%dth collect after %d allocations:\n",
          num_collects, num_allocs);
    debug("mean alloc %.2f bytes, %d free blocks)\n",
-         ((double)vol_allocs)/num_allocs, num_free_blocks());
+         (num_allocs ? ((double)vol_allocs)/num_allocs : 0),
+         num_free_blocks());
 }
 
 static void collect_epilogue(void)
@@ -1416,10 +1416,17 @@ void *mm_realloc(void *q, size_t s)
       /* notifiers and finalizers should not run for q  */
       /* so we clear q's notify flag and set its memory */
       /* type to mt_blob                                */
-      manage(r);
       int i = find_managed(q);
       assert(i != -1);
-      assert(managed[man_last] == r);
+      { 
+         /* this hack is to prevent add_managed from */
+         /* shuffling the managed array              */
+         bool cip = collect_in_progress;
+         collect_in_progress = true;
+         manage(r);
+         assert(managed[man_last] == r);
+         collect_in_progress = cip;
+      }
       if (NOTIFY(managed[i])) {
          MARK_NOTIFY(managed[man_last]);
          UNMARK_NOTIFY(managed[i]);

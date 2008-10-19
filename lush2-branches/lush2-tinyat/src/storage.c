@@ -530,7 +530,7 @@ void storage_malloc(storage_t *st, size_t n, at *init)
    if (st->type == ST_AT)
       st->data = mm_allocv(mt_refs, s);
    else
-      st->data = mm_allocv(mt_blob, s);
+      st->data = mm_malloc(s);
    st->flags = STS_MALLOC;
    st->size  = n;
 
@@ -566,20 +566,22 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    
    /* reallocate memory and update srg */
    size_t s = size*storage_sizeof[st->type];
-   gptr data = mm_realloc(st->data, s);
-   
-   if (data == NULL) 
+   size_t olds = st->size*storage_sizeof[st->type];
+   gptr olddata = st->data;
+   MM_ANCHOR(olddata);
+   if (st->type==ST_AT || st->type==ST_GPTR) {
+      st->data = mm_allocv(mt_refs, s);  /* aborts if OOM */
+      memcpy(st->data, olddata, olds);
+   } else
+      st->data = mm_realloc(olddata, s);
+
+   if (st->data == NULL) {
+      st->data = olddata;
       RAISEF("not enough memory", NIL);
-   st->data = data;
+   }
    size_t oldsize = st->size;
    st->size = size;
-   
-   /* clear new storage data */
-   if (st->type==ST_AT || st->type==ST_GPTR) {
-      gptr *pt = st->data;
-      for (int i=oldsize; i<size; i++) 
-         pt[i] = NULL;
-   }
+
    if (init) {
       /* temporarily clear read only flag to allow initialization */
       short flags = st->flags;

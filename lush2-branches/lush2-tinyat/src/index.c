@@ -61,6 +61,8 @@
 #include "header.h"
 #include <inttypes.h>
 
+typedef at* atp_t;
+
 void clear_index(index_t *ind)
 {
    ind->st = NULL;
@@ -85,13 +87,15 @@ bool finalize_index(index_t *ind)
 static mt_t mt_index = mt_undefined;
 
 /* ------- THE CLASS FUNCTIONS ------ */
-/*
-static subscript_t *parse_subscript(at *atss, subscript_t *ss)
+
+static subscript_t *parse_subscript(at *atss)
 {
    static char errmsg_not_a_subscript[] = "not a valid subscript";
    static char errmsg_dimensions[] = "too many dimensions";
    
-   if (INDEXP(atss) && index_numericp(Mptr(atss)) {
+   subscript_t *ss = mm_malloc(sizeof(struct subscript));
+
+   if (INDEXP(atss) && index_numericp(Mptr(atss))) {
       index_t *ind = Mptr(atss);
       ifn (IND_NDIMS(ind)==1)
          error(NIL, errmsg_not_a_subscript, atss);
@@ -128,6 +132,7 @@ static subscript_t *parse_subscript(at *atss, subscript_t *ss)
          }
       }
       }
+
    } else if (CONSP(atss)) {
       at *l = atss;
       int nd = 0;
@@ -141,11 +146,15 @@ static subscript_t *parse_subscript(at *atss, subscript_t *ss)
          l = Cdr(l);
       }
       ss->ndims = nd;
+
+   } else if (atss == NIL) {
+      ss->ndims = 0;
+
    } else
       error(NIL, errmsg_not_a_subscript, atss);
+
    return ss;
 }
-*/
 
 static at *index_set(struct index*,at**,at*,int);
 static at *index_ref(struct index*,at**);
@@ -182,34 +191,106 @@ static char *index_name(at *p)
    return string_buffer;
 }
 
+static at *broadcast_and_put(index_t *ind, index_t *ss, index_t *vals)
+{
+   int d = IND_NDIMS(ind);
+   if (IND_DIM(ss, IND_NDIMS(ss)-1) == d) {
+      /* -------  Mode 1 -------- */
+      ifn (IND_STTYPE(ind) == IND_STTYPE(vals))
+         error(NIL, "element type of first and third array must match", NIL);
+      IND_NDIMS(ss) -= 1;
+      vals = index_broadcast1(ss, vals); 
+      IND_NDIMS(ss) += 1;
+      return array_put(ind, ss, vals)->backptr;
+
+   } else {
+      /* -------  Mode 2 -------- */
+      index_t *inds = index_selectS(ind, parse_subscript(ss->backptr));
+      vals = index_broadcast1(inds, vals); 
+      array_copy(vals, inds);
+      return ind->backptr;
+   }
+}
+
 static at *index_listeval(at *p, at *q)
 {
-   extern at *index_set(index_t*, at**, at*, int);
-   extern at *index_ref(index_t*, at**);
-   at *myp[MAXDIMS];
    index_t *ind = Mptr(p);
    
    if (IND_UNSIZEDP(ind))
       error(NIL, "unsized index", p);
-   at *qsav = eval_a_list(Cdr(q));
-   q = qsav;
-   for (int i = 0; i < ind->ndim; i++) {
-      ifn(CONSP(q))
-         error(NIL, "not enough subscripts", qsav);
-      myp[i] = Car(q);
-      q = Cdr(q);
-   }
-   
-   ifn (q) {
-      q = index_ref(ind, myp);
-      return q;
 
-   } else if (CONSP(q) && !Cdr(q)) {
-      index_set(ind, myp, Car(q), 1);
+   /* There are two subscript modes:
+    * 1. The array-take/put-style subscription
+    * 2. select*-style subscription with a single, partial subscript
+    * 3. Single element subscription with full number of subscript indices
+    */
+
+   int d = IND_NDIMS(ind);
+   at *qsav = eval_a_list(Cdr(q));
+   at *args[MAXDIMS+1];
+   size_t n;
+
+   if (unpack_list(qsav, args, MAXDIMS+1, &n) || (n > IND_NDIMS(ind)+1)) {
+      error(NIL, "too many subscripts in subscript expression", q);
+
+   } else if (n && INDEXP(args[0])) {
+      if (IND_NDIMS(ind) == 0)
+         error(NIL, "take-style subscription not valid for scalars", q);
+ 
+      /* -------  Mode 1 -------- */
+      index_t *ss = Mptr(args[0]);
+      if (IND_NDIMS(ss)<1)
+         error(NIL, "subscript array must not be scalar", ss->backptr);
+
+      if (IND_DIM(ss, IND_NDIMS(ss)-1) > d)
+         error(NIL, "too many subscripts in subscript vector", ss->backptr);
+
+      ss = as_int_array(ss->backptr);
+      if (n == 1) {
+         if (IND_NDIMS(ss)==1 && IND_DIM(ss, 0)<d)
+            /* -------  Mode 2 -------- */
+            return index_selectS(ind, parse_subscript(ss->backptr))->backptr;
+         else
+            return array_take2(ind, ss)->backptr;
+
+      } else if (n == 2) {
+         index_t *vals = NIL;
+         if (IND_STTYPE(ind) == ST_DOUBLE) {
+            vals = as_double_array(args[1]);
+            return broadcast_and_put(ind, ss, vals);
+
+         } else if (NUMBERP(args[1])) {
+            vals = make_array(IND_STTYPE(ind), SHAPE0D, args[1]);
+            return broadcast_and_put(ind, ss, vals);
+
+         } else if (INDEXP(args[1])) {
+            vals = Mptr(args[1]);
+            return broadcast_and_put(ind, ss, vals);
+            
+         } else {
+            error(NIL, "invalid argument for array update", args[1]);
+            return NIL;
+         }
+         
+      } else
+         error(NIL, "not a valid subscript expression", q);
+
+   } else if (n == (size_t)d) {
+      /* ------- Mode 3 -------- */ 
+      extern at *index_ref(index_t*, at**);
+      return index_ref(ind, args);
+
+   } else if (n == (size_t)(d+1)) {
+      /* ------- Mode 3 -------- */ 
+      extern at *index_set(index_t*, at**, at*, int);
+      index_set(ind, args, args[d], 1);
       return p;
+
    } else
-      error(NIL, "too many subscripts", qsav);
-}
+      error(NIL, "not a valid subscript expression (enough subscripts?)", q);
+
+   return NULL;
+}   
 
 static void index_serialize(at **pp, int code)
 {
@@ -550,6 +631,11 @@ bool shape_equalp(shape_t *shp1, shape_t *shp2)
    return true; 
 }
 
+bool same_shape_p(index_t *ind1, index_t *ind2)
+{
+   return shape_equalp((shape_t *)ind1, (shape_t *)ind2);
+}
+
 /* true if shapes are compatible (can be broadcasted) */
 
 bool index_broadcastable_p(index_t *a, index_t *b) 
@@ -606,6 +692,49 @@ DX(xidx_broadcastable_p)
 /*   return shp; */
 /* } */
 
+
+/* broadcast index blank to the shape of ref if possible or
+ * return an error
+ */
+index_t *index_broadcast1(index_t *ref, index_t *blank)
+{
+   ifn (IND_NDIMS(blank) <= IND_NDIMS(ref))
+      goto cannot_broadcast_error;
+   
+   index_t *b = copy_index(blank);
+   if (IND_NDIMS(b) < IND_NDIMS(ref)) {
+      for (int d = IND_NDIMS(ref)-1; d >= 0; d--) {
+         IND_NDIMS(b)--;
+         IND_DIM(b, d) = IND_NDIMS(b)>=0 ? IND_DIM(b, IND_NDIMS(b)) : 1;
+         IND_MOD(b, d) = IND_NDIMS(b)>=0 ? IND_MOD(b, IND_NDIMS(b)) : 0;
+      }
+      IND_NDIMS(b) = IND_NDIMS(ref);
+   }
+
+   /* expand b */
+   for (int d = IND_NDIMS(ref)-1; d >= 0; d--) {
+      if (IND_DIM(b, d) == IND_DIM(ref, d)) {
+         continue;
+      } else if (IND_DIM(b, d) == 1) {
+         IND_DIM(b, d) = IND_DIM(ref, d);
+         IND_MOD(b, d) = 0;
+      } else 
+         goto cannot_broadcast_error;
+   }
+   return b;
+
+cannot_broadcast_error:
+   error(NIL, "cannot broadcast index to desired shape", blank->backptr);
+   return b;
+}
+
+DX(xidx_broadcast1)
+{
+   ARG_NUMBER(2);
+   ALL_ARGS_EVAL;
+
+   return index_broadcast1(AINDEX(1), AINDEX(2))->backptr;
+}
 
 /* Broadcast two indexes and return the resulting shape; raise an error if
  * indexes are not compatible.
@@ -664,8 +793,8 @@ shape_t *index_broadcast2(index_t *a, index_t *b, index_t **ba, index_t **bb)
 }
 
 
-DX(xidx_broadcast2) {
-
+DX(xidx_broadcast2)
+{
    ARG_NUMBER(2);
    ALL_ARGS_EVAL;
 
@@ -1262,13 +1391,7 @@ static at *index_set(struct index *ind, at *p[], at *value, int mode)
 }
 
 
-
 /* ----------- THE EASY INDEX ACCESS ----------- */
-
-
-/* static struct index *lastind = NULL; */
-/* static intg lastcoord[MAXDIMS]; */
-/* static intg lastoffset; */
 
 /*
  * easy_index_check(p,ndim,dim)
@@ -1304,88 +1427,6 @@ void easy_index_check(index_t *ind, shape_t *shp)
       } else
          shp->dim[i] = IND_DIM(ind, i);
 }
-
-/*
- * easy_index_get(ind,coord)
- * easy_index_set(ind,coord,x)
- *
- *  Access data through an index.
- *  Assume that a CHECK (above) has been done before.
- *
- *  Note: The last access is cached,
- *        for speeding up the process.
- *        There is a penalty to random accesses!
- */
-
-/* static intg  */
-/* make_offset(index_t *ind, int coord[]) */
-/* { */
-/*   int i,j,k; */
-/*   intg off; */
-
-/*   int ndim = ind->ndim; */
-/*   if (ind==lastind) { */
-/*     off = lastoffset; */
-/*     for (i=0;i<ndim;i++) { */
-/*       k = lastcoord[i]; */
-/*       j = coord[i]; */
-/*       switch(j-k) { */
-/*       case 1: */
-/* 	off+=ind->mod[i]; */
-/* 	break; */
-/*       case -1: */
-/* 	off-=ind->mod[i]; */
-/* 	break; */
-/*       case 0: */
-/* 	break; */
-/*       default: */
-/* 	goto offset_byhand; */
-/*       } */
-/*       lastcoord[i] = j; */
-/*     } */
-/*     return lastoffset = off; */
-/*   } */
-/*  offset_byhand: */
-/*   off = ind->offset; */
-/*   for (i=0;i<ndim;i++) { */
-/*     k = lastcoord[i] = coord[i]; */
-/*     off += k * ind->mod[i]; */
-/*   } */
-/*   lastind = ind; */
-/*   lastoffset = off; */
-/*   return off; */
-/* } */
-
-
-/* real  */
-/* easy_index_get(index_t *ind, intg *coord) */
-/* { */
-/*   storage_t *st = IND_ST(ind); */
-/*   intg offset = make_offset(ind,coord); */
-/*   at *p = (*st->getat)(st,offset);	        /\* Horrible & Slow! *\/ */
-/*   ifn (NUMBERP(p)) */
-/*     error(NIL,"Not a number",p); */
-/*   real x = p->Number; */
-/*   UNLOCK(p); */
-/*   return x; */
-/* } */
-
-/* void  */
-/* easy_index_set(index_t *ind, intg *coord, real x) */
-/* { */
-/*   at *p = NEW_NUMBER(x); */
-/*   storage_t *st = ind->st; */
-/*   intg offset = make_offset(ind,coord);	/\* Horrible & Slow! *\/ */
-/*   (*st->setat)(st,offset,p); */
-/*   UNLOCK(p); */
-/* } */
-
-
-
-
-
-
-
 
 /*
  * index_read_idx()
@@ -1468,19 +1509,9 @@ index_t *array_copy(index_t *ind1, index_t *ind2)
       GenericCopy(I8, char);
       GenericCopy(U8, unsigned char);
       GenericCopy(GPTR, gptr);
+      GenericCopy(AT, atp_t);
 
 #undef GenericCopy
-
-   case ST_AT:
-   {
-      typedef at* atp_t;
-      atp_t *d1 = IND_BASE_TYPED(ind1, atp_t);
-      atp_t *d2 = IND_BASE_TYPED(ind2, atp_t);
-      begin_idx_aloop2(ind1,ind2,p1,p2) {
-         d2[p2] = d1[p1];
-      } end_idx_aloop2(ind1,ind2,p1,p2);
-   }
-   break;
 
    default:
    default_copy: {
@@ -1536,7 +1567,6 @@ void array_swap(index_t *ind1, index_t *ind2)
       GenericSwap(I8, char);
       GenericSwap(U8, unsigned char);
       GenericSwap(GPTR, gptr);
-      typedef at* atp_t;
       GenericSwap(AT, atp_t);
 
 #undef GenericCopy
@@ -1553,6 +1583,81 @@ DX(xarray_swap)
    array_swap(AINDEX(1), AINDEX(2));
    return NIL;
 }
+
+
+#define begin_idx_dloop(idx,ptr,dims) {                                      \
+  ptrdiff_t dims[MAXDIMS]; 						     \
+  ptrdiff_t ptr = 0;							     \
+  int _j_;                                                                   \
+  bool emptyp = false;                                                       \
+  for (_j_=0;_j_<(idx)->ndim; _j_++ ) 					     \
+    { dims[_j_]=0; emptyp = emptyp || (idx)->dim[_j_] == 0; }                \
+  _j_ = emptyp ? -1 : (idx)->ndim;					     \
+  while (_j_>=0) {
+
+#define end_idx_dloop(idx,ptr,dims)                                          \
+    _j_--; 								     \
+    do { 								     \
+      if (_j_<0) break; 						     \
+      if (++dims[_j_] < (idx)->dim[_j_]) {				     \
+	ptr+=(idx)->mod[_j_];						     \
+	_j_++;								     \
+      } else { 								     \
+	ptr -= (idx)->dim[_j_]*(idx)->mod[_j_]; 			     \
+	dims[_j_--] = -1; 						     \
+      } 								     \
+    } while (_j_<(idx)->ndim);  					     \
+  } 									     \
+}
+
+/* create array of subscripts of all nonzero elements in ind */
+index_t *array_where_nonzero(index_t *ind)
+{
+   storage_t *srg = make_storage(ST_INT, 64, NIL);
+   int n = 0;
+   int r = IND_NDIMS(ind);
+
+   switch (IND_STTYPE(ind)) {
+
+#define GenericWhere(Prefix, Type)                                      \
+   case name2(ST_,Prefix): {                                            \
+      Type *elp = IND_BASE_TYPED(ind, Type);                            \
+      begin_idx_dloop(ind, p, ds) {                                     \
+         if (elp[p]) {                                                  \
+            if (srg->size < n+r)                                        \
+               storage_realloc(srg, srg->size*2, NIL);                  \
+            for (int i = 0; i<r; i++)                                   \
+               ((int *)srg->data)[n+i] = ds[i];                         \
+            n += r;                                                     \
+         }                                                              \
+      } end_idx_dloop(ind, p, ds);                                      \
+   } break;
+
+   GenericWhere(F, float);
+   GenericWhere(D, double);
+   GenericWhere(I32, int);
+   GenericWhere(I16, short);
+   GenericWhere(I8, char);
+   GenericWhere(U8, unsigned char);
+   GenericWhere(GPTR, gptr);
+   GenericWhere(AT, atp_t);
+   
+#undef GenericWhere
+
+   default:
+      RAISEF("unknown element-type", NIL);
+   }
+      
+   return new_index(srg, SHAPE2D(n/r, r));
+}
+
+DX(xarray_where_nonzero)
+{
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+   return array_where_nonzero(AINDEX(1))->backptr;
+}
+
 
 index_t *index_copy(index_t *src, index_t *dest)
 {
@@ -2292,7 +2397,6 @@ index_t *index_reshapeD(index_t *ind, shape_t *shp)
       RAISEF("number of elements must be the same with new shape", 
              NEW_NUMBER(index_nelems(ind)));
   
-   /* ind = copy_index(ind); */
    IND_NDIMS(ind) = shp->ndims;
    ptrdiff_t size = 1;
    for (int i=shp->ndims-1; i>=0; i--) {
@@ -2831,6 +2935,47 @@ DX(xidx_select)
    return index_select(AINDEX(1), AINTEGER(2), AINTEGER(3))->backptr;
 }
 
+
+index_t *index_selectS(index_t *ind, subscript_t *ss)
+{
+   if (ss->ndims > IND_NDIMS(ind))
+      RAISEF("too many subscripts", NIL);
+
+   /* create output */
+   ind = copy_index(ind);
+
+   for (int d=0; d<ss->ndims; d++) {
+      ss->dim[d] = validate_subscript(ind, d, ss->dim[d]);
+      ind->offset += IND_MOD(ind, d)*ss->dim[d];
+   }
+   int i = 0;
+   int d = ss->ndims;
+   while (d<IND_NDIMS(ind)) {
+      IND_DIM(ind, i) = IND_DIM(ind, d);
+      IND_MOD(ind, i) = IND_MOD(ind, d);
+      i++;
+      d++;
+   }
+   IND_NDIMS(ind) -= ss->ndims;
+   return ind;
+}
+
+DY(yidx_selectS)
+{
+   at *p = ARG_LIST;
+   ifn (CONSP(p))
+      RAISEF("at least one argument expected", NIL);
+   
+   p = eval_a_list(p);
+   ifn (INDEXP(Car(p)))
+      RAISEF("not an array", Car(ARG_LIST));
+
+   index_t *ind = Mptr(Car(p));
+   subscript_t *ss = parse_subscript(Cdr(p));
+   return index_selectS(ind, ss)->backptr;
+}
+
+
 DX(xidx_select_all)
 {
    if (arg_number<1 || arg_number>2)
@@ -2859,7 +3004,84 @@ index_t *array_select(index_t *ind, int d, ptrdiff_t x)
 }
 
 
-index_t *array_take(index_t *ind, int d, index_t *ss)
+index_t *array_take2(index_t *ind, index_t *ss)
+{
+   static char *errmsg_out_of_range = "subscript out of range";       
+   static char *errmsg_not_supported = "element-type not supported";
+   char *errmsg = NULL;
+   
+   int r = IND_NDIMS(ind);
+   int d = IND_NDIMS(ss)-1;
+
+   /* check & normalize arguments */
+   ifn (IND_STTYPE(ss) == ST_INT)
+      RAISEF("subscript array must be integer", NIL);
+   ifn (d >= 0)
+      RAISEF("subscript array must not be scalar", NIL);
+   ifn (IND_DIM(ss, d) == r)
+      RAISEF("final extent of subscript array must match rank of first argument", NIL);
+   
+   /* create result array */
+   shape_t shape, *shp = shape_copy((shape_t *)ss, &shape);
+   shp->ndims -= 1;
+   index_t *res = make_array(IND_STTYPE(ind), shp, NIL);
+
+   if (index_emptyp(res))
+      goto clean_up_and_return2;
+
+   /* copy selected array contents */
+   ifn (IND_MOD(ss, d) == 1)  // when not contiguous in last dimension, make it so
+      ss = copy_array(ss);
+   
+   switch (IND_STTYPE(res)) {
+      
+#define GenericTake(Prefix,Type) 				     \
+  case name2(ST_,Prefix): {					     \
+     								     \
+    index_t *ss0 = index_select(ss, d, 0);                           \
+    Type *pi = IND_BASE_TYPED(ind, Type);			     \
+    Type *pr = IND_BASE_TYPED(res, Type);                            \
+    int *ps = IND_BASE_TYPED(ss, int);                               \
+    begin_idx_aloop2(res, ss0, resp, ss0p) {                         \
+       /* validate dimension */                                      \
+       ptrdiff_t offs = 0;                                           \
+       for (int i = 0; i < r; i++) {                                 \
+          int ii = ps[ss0p+i];                                       \
+          if (ii < 0) ii += IND_DIM(ind, i);                         \
+          if (ii<0 || ii>=IND_DIM(ind, i)) {                         \
+             errmsg = errmsg_out_of_range;                           \
+             goto clean_up_and_return2;                              \
+          }                                                          \
+          offs += IND_MOD(ind, i)*ii;                                \
+       }                                                             \
+       pr[resp] = pi[offs];                                          \
+    } end_idx_aloop2(res, ss0, resp, ss0p);                          \
+  } 								     \
+  break;
+
+      GenericTake(FLOAT, float);
+      GenericTake(DOUBLE, real);
+      GenericTake(INT, int);
+      GenericTake(SHORT, short);
+      GenericTake(BYTE, char);
+      GenericTake(UBYTE, unsigned char);
+      GenericTake(GPTR, gptr);
+
+#undef GenericTake
+      
+   default:
+      errmsg = errmsg_not_supported;
+      break;
+   }
+
+clean_up_and_return2:
+   /* report any errors or return result */
+   RAISEF(errmsg, NIL);
+   return res;
+}
+
+
+index_t *array_take3(index_t *ind, int d, index_t *ss)
 {
    static char *errmsg_out_of_range = "subscript out of range";       
    static char *errmsg_not_supported = "element-type not supported";
@@ -2893,7 +3115,7 @@ index_t *array_take(index_t *ind, int d, index_t *ss)
       shp->dim[i+IND_NDIMS(ss)] = IND_DIM(ind, i+1);
 
    if (index_emptyp(res))
-      goto clean_up_and_return;
+      goto clean_up_and_return3;
 
    /* copy selected array contents */
    ptrdiff_t ii = 0;
@@ -2916,7 +3138,7 @@ index_t *array_take(index_t *ind, int d, index_t *ss)
        ii = ii<0 ? ii + indext : ii;                                 \
        if (ii<0 || ii>=indext) {                                     \
            errmsg = errmsg_out_of_range;                             \
-           goto clean_up_and_return;                                 \
+           goto clean_up_and_return3;                                \
        }                                                             \
        islice->offset = ind->offset + indmod*ii;                     \
        rslice->offset = res->offset + resmod*ir;                     \
@@ -2941,109 +3163,120 @@ index_t *array_take(index_t *ind, int d, index_t *ss)
       break;
    }
 
-clean_up_and_return:
+clean_up_and_return3:
 
    /* report any errors or return result */
    RAISEF(errmsg, NIL);
    return index_reshapeD(res, shp);
 }
 
+
 DX(xarray_take)
 {
-   ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
-   index_t *iss = as_int_array(APOINTER(3));
-   return array_take(AINDEX(1), AINTEGER(2), iss)->backptr;
+   switch (arg_number) {
+   case 2: {
+      ALL_ARGS_EVAL;
+      index_t *iss = as_int_array(APOINTER(2));
+      return array_take2(AINDEX(1), iss)->backptr;
+   }
+   case 3: {
+      ALL_ARGS_EVAL;
+      index_t *iss = as_int_array(APOINTER(3));
+      return array_take3(AINDEX(1), AINTEGER(2), iss)->backptr;
+   }
+   default:
+      ARG_NUMBER(-1);
+      return NIL;
+   }
 }
 
-/*
- * update array ind at subscipts ss with values in src
- * return the updated array ind
- */
-
-index_t *array_update(index_t *ind, index_t *ss, index_t *_src)
+index_t *array_put(index_t *ind, index_t *ss, index_t *vals)
 {
-   index_t *src = _src;
-   if (IND_NDIMS(ss)!=1 || IND_NDIMS(ind)!=1)
-      RAISEF("can only do one-dimensional arrays", NIL);
-   if (IND_NDIMS(src)==0) {
-      src = index_lift(src, SHAPE1D(IND_DIM(ind, 0)));
-   } else if (IND_NDIMS(src)!=1) {
-      RAISEF("can only do one-dimensional arrays", NIL);
-   } else if (IND_DIM(ss, 0)!=IND_DIM(src, 0))
-      RAISEF("subscript and source array have different number of elements", NIL);
-   ifn (IND_STTYPE(ss)==ST_DOUBLE || IND_STTYPE(ss)==ST_INT)
-      RAISEF("can only do double or int subscripts", NIL);
-   ifn (IND_STTYPE(ind)==IND_STTYPE(src))
-      RAISEF("target and source must be of same type", NIL);
+   static char *errmsg_out_of_range = "subscript out of range";       
+   static char *errmsg_not_supported = "element-type not supported";
+   char *errmsg = NULL;
+   
+   int r = IND_NDIMS(ind);
+   int d = IND_NDIMS(ss)-1;
 
-   double id = 0;
+   /* check & normalize arguments */
+   ifn (IND_STTYPE(ss) == ST_INT)
+      RAISEF("subscript array must be integer", NIL);
+   ifn (IND_STTYPE(ind) == IND_STTYPE(vals))
+      RAISEF("first and third array must have same element type", NIL);
+   ifn (d >= 0)
+      RAISEF("subscript array must not be scalar", NIL);
+   ifn (IND_DIM(ss, d) == r)
+      RAISEF("final extent of subscript array must match rank of first argument", NIL);
+   shape_t shape, *shp = shape_copy((shape_t *)ss, &shape);
+   shp->ndims -= 1;
+   ifn (shape_equalp(shp, (shape_t *)vals))
+      RAISEF("subscript array and value array must match in shape", NIL);
+   
+   if (index_emptyp(vals))
+      goto clean_up_and_return2;
+
+   /* copy selected array contents */
+   ifn (IND_MOD(ss, d) == 1)  // when not contiguous in last dimension, make it so
+      ss = copy_array(ss);
+   
    switch (IND_STTYPE(ind)) {
-    
+      
 #define GenericPut(Prefix,Type) 				     \
   case name2(ST_,Prefix): {					     \
      								     \
-    if (IND_STTYPE(ss)==ST_DOUBLE) {                                 \
-      Type *pind = IND_BASE_TYPED(ind, Type);                        \
-      Type *psrc = IND_BASE_TYPED(src, Type); 		             \
-      ptrdiff_t mind0 = IND_MOD(ind, 0);                             \
-      double *pss = IND_BASE_TYPED(ss, double);			     \
-      begin_idx_aloop2(src,ss,osrc,oss) { 			     \
-         id = pss[oss];                                              \
-         id = id<0 ? id + IND_DIM(ind, 0) : id;                      \
-         if (id<0 || id>=IND_DIM(ind,0)) {                           \
-           id = pss[oss];                                            \
-           goto ss_error;                                            \
-         }                                                           \
-         pind[mind0*(int)id] = psrc[osrc];		             \
-      } end_idx_aloop2(src,ss,osrc,oss);			     \
-    } else {                                                         \
-      ptrdiff_t ii = 0;                                              \
-      Type *pind = IND_BASE_TYPED(ind, Type);                        \
-      Type *psrc = IND_BASE_TYPED(src, Type); 		             \
-      ptrdiff_t mind0 = IND_MOD(ind, 0);                             \
-      int  *pss  = IND_BASE_TYPED(ss, int);			     \
-      begin_idx_aloop2(src,ss,osrc,oss) { 			     \
-         ii = pss[oss];                                              \
-         ii = ii<0 ? ii + IND_DIM(ind, 0) : ii;                      \
-         if (ii<0 || ii>=IND_DIM(ind,0)) {                           \
-           id = (double)pss[oss];                                    \
-           goto ss_error;                                            \
-         }                                                           \
-         pind[mind0*ii] = psrc[osrc];		                     \
-      } end_idx_aloop2(src,ss,osrc,oss);			     \
-    }                                                                \
+    index_t *ss0 = index_select(ss, d, 0);                           \
+    Type *pi = IND_BASE_TYPED(ind, Type);			     \
+    Type *pv = IND_BASE_TYPED(vals, Type);                           \
+    int *ps = IND_BASE_TYPED(ss, int);                               \
+    begin_idx_aloop3(ind, ss0, vals, indp, ss0p, valp) {             \
+       /* validate dimension */                                      \
+       ptrdiff_t offs = 0;                                           \
+       for (int i = 0; i < r; i++) {                                 \
+          int ii = ps[ss0p+i];                                       \
+          if (ii < 0) ii += IND_DIM(ind, i);                         \
+          if (ii<0 || ii>=IND_DIM(ind, i)) {                         \
+             errmsg = errmsg_out_of_range;                           \
+             goto clean_up_and_return2;                              \
+          }                                                          \
+          offs += IND_MOD(ind, i)*ii;                                \
+       }                                                             \
+       pi[offs] = pv[valp];                                          \
+    } end_idx_aloop3(ind, ss0, vals, indp, ss0p, valp);              \
   } 								     \
   break;
 
       GenericPut(FLOAT, float);
-      GenericPut(DOUBLE, double);
+      GenericPut(DOUBLE, real);
       GenericPut(INT, int);
       GenericPut(SHORT, short);
       GenericPut(BYTE, char);
       GenericPut(UBYTE, unsigned char);
       GenericPut(GPTR, gptr);
+
+#undef GenericTake
       
-#undef GenericPut
-
    default:
-      RAISEF("element-type not supported", NIL);
+      errmsg = errmsg_not_supported;
       break;
-
-   ss_error:
-      RAISEF("subscript out of range", NEW_NUMBER(id)); 
    }
 
+clean_up_and_return2:
+
+   /* report any errors or return result */
+   RAISEF(errmsg, NIL);
    return ind;
 }
 
-DX(xarray_update)
+DX(xarray_put)
 {
    ARG_NUMBER(3);
    ALL_ARGS_EVAL;
-   array_update(AINDEX(1), AINDEX(2), AINDEX(3));
-   return APOINTER(1);
+   
+   index_t *iss = as_int_array(APOINTER(2));
+   return array_put(AINDEX(1), iss, AINDEX(3))->backptr;
 }
+
 
 /* index_transpose */
 
@@ -3351,10 +3584,12 @@ void init_index(void)
    dx_define("idx-lift", xidx_lift);
    dx_define("idx-sink", xidx_sink);
    dx_define("idx-expand", xidx_expand);
+   dx_define("idx-broadcast1", xidx_broadcast1);
    dx_define("idx-broadcast2", xidx_broadcast2);
    dx_define("idx-shift", xidx_shift);
    dx_define("idx-trim", xidx_trim);
    dx_define("idx-select", xidx_select);
+   dy_define("idx-select*", yidx_selectS);
    dx_define("idx-select-all", xidx_select_all);
    dx_define("idx-transpose", xidx_transpose);
    dx_define("idx-reverse", xidx_reverse);
@@ -3380,8 +3615,9 @@ void init_index(void)
    dx_define("array-copy", xarray_copy);
    dx_define("array-swap", xarray_swap);
    dx_define("array-take", xarray_take);
-   dx_define("array-update", xarray_update);
-   
+   dx_define("array-put", xarray_put);
+   dx_define("array-where-nonzero", xarray_where_nonzero);
+
    /* loops */
    dy_define("idx-eloop", yeloop);
    dy_define("idx-bloop", ybloop);
