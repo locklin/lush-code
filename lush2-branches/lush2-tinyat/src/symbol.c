@@ -589,6 +589,14 @@ DX(xunlock_symbol)
    return NIL;
 }
 
+DX(xsymbol_locked_p)
+{
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+   ASYMBOL(1);
+   return SYMBOL_LOCKED_P(APOINTER(1)) ? APOINTER(1) : NIL;
+}
+
 DX(xsymbolp)
 {
    ARG_NUMBER(1);
@@ -764,6 +772,7 @@ void init_symbol(void)
    dx_define("symbolp", xsymbolp);    
    dx_define("symbol-stack", xsymbol_stack);
    dx_define("symbol-globally-bound-p", xsymbol_globally_bound_p);
+   dx_define("symbol-locked-p", xsymbol_locked_p);
 }
 
 
