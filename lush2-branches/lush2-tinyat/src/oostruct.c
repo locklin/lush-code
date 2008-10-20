@@ -913,7 +913,7 @@ bool is_of_class(at *p, class_t *cl)
    return c == cl;
 }
 
-DX(xis_of_class)
+DX(xisa)
 {
    ARG_NUMBER(2);
    ALL_ARGS_EVAL;
@@ -985,7 +985,7 @@ void init_oostruct(void)
    dx_define("methods",xmethods);
    dx_define("classname",xclassname);
    dx_define("classof",xclassof);
-   dx_define("is-of-class",xis_of_class);
+   dx_define("isa",xisa);
    dx_define("make-class",xmake_class);
    dx_define("builtin-class-p",xbuiltin_class_p);
    dy_define("new",ynew);
