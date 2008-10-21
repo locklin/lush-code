@@ -613,7 +613,7 @@
 
 #? (dhc-error <string> [<arg>])
 ;; Called when we get a syntax error in the source
-(de dhc-error(string &optional argument)
+(de dhc-error (string &optional argument)
   (printf "\n*** compiler : %s%s" (upcase (left string 1)) (mid string 2))
   (when argument (printf " : %l" argument))
   (printf "\n")
@@ -627,15 +627,14 @@
 #? (dhc-check-symbol <source>)
 ;; Take an argument source and check if it is a symbol.  If it is
 ;; return the corresponding object of class dhc-symbol.  
-(de dhc-check-symbol(source)
+(de dhc-check-symbol (source)
   (when ~(symbolp source)
         (dhc-error "Not a symbol" source) )
-  (let ((sym ()))
-    (when (not (setq sym (dhc-search-symtable source symbol-table)))
-      (when (not (setq sym (dhc-search-symtable source global-table)))
-        (dhc-error "Unknown symbol" source) ) )
+  (let ((sym (dhc-search-symtable source symbol-table)))
+    (when (null sym)
+      (setq sym (dhc-search-symtable source global-table)) )
     ;; Return the symbol object
-    sym ) )
+    sym))
 
 #? (dhc-internal-error <str>)
 ;; Called when we detect inconsistent internal state
@@ -1938,16 +1937,16 @@
 
 #? (dhc-search-symtable <symbolname> <table>)
 ;; Search a symbol table
-(de dhc-search-symtable(symbol table)
+(de dhc-search-symtable (symbol table)
   (cond
    ((listp table)
     (dhc-alist-get symbol table) )
-   ((is-of-class table |HTABLE|)
+   ((isa table |HTABLE|)
     (table symbol) )
    (t
     (error 'dhc-search-symtable 
            "Symbol table must be an alist or a htable" 
-           table) ) ) )
+           table))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -2432,10 +2431,16 @@
                    (new t-node () (new dhc-type 'dht-dhm) source))
                   ((= source t)
                    (new t-node () (new dhc-type 'dht-bool) source))
-                  ((is-of-class (eval source) |DH|)
+                  ((isa (eval source) |DH|)
                    (new t-node () 
                         (dhc-desc-to-type (dhinfo-t (eval source)))
                         source ) )
+                  ((symbol-globally-bound-p source)  ; global constant ?
+                   (let ((tn  (dhc-parse-expr-t (eval `(scope ,source))))
+                         (sym (new dhc-symbol source 0)) )
+                     (dhc-unify-types :tn:type :sym:type)
+                     (dhc-add-global-table sym)
+                     tn) )
                   (t 
                    (dhc-error "Unknown symbol" source))))
            ;; Case of a function 
@@ -2535,9 +2540,13 @@
              (dhc-parse-string-c source treetype retplace))
             ;; Case of a variable
             ((symbolp source)
-             (if (<> source t)
-                 (dhc-parse-variable-c source treetype retplace)
-               "1"))
+             (cond
+              ((= source t) 
+               "true")
+              ((dhc-search-symtable source global-table) ; global constant?
+               (dhc-parse-expr-c (eval `(scope ,source)) treetype retplace) )
+              (t 
+               (dhc-parse-variable-c source treetype retplace) )))
             ;; Other
             ((consp source)
              (let ((type :(car :treetype:tn-list):type))
