@@ -235,9 +235,12 @@ static at *index_listeval(at *p, at *q)
       error(NIL, "too many subscripts in subscript expression", q);
 
    } else if (n && INDEXP(args[0])) {
-      if (IND_NDIMS(ind) == 0)
-         error(NIL, "take-style subscription not valid for scalars", q);
- 
+      if (IND_NDIMS(ind) == 0) {
+         if (IND_STTYPE(ind) == ST_AT)
+            goto mode_3;
+         else
+            error(NIL, "take-style subscription not valid for scalars", q);
+      }
       /* -------  Mode 1 -------- */
       index_t *ss = Mptr(args[0]);
       if (IND_NDIMS(ss)<1)
@@ -283,6 +286,7 @@ static at *index_listeval(at *p, at *q)
 
    } else if (n == (size_t)(d+1)) {
       /* ------- Mode 3 -------- */ 
+   mode_3: ;
       extern at *index_set(index_t*, at**, at*, int);
       index_set(ind, args, args[d], 1);
       return p;
