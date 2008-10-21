@@ -230,12 +230,17 @@ at *dx_listeval(at *p, at *q2)
    at **arg_pos = dx_sp;
    int arg_num = 0;
    q = Cdr(q);
+parse_args:
    while (CONSP(q)) {
       arg_num++;
       if (++spbuff >= dx_stack + DXSTACKSIZE)
          error(NIL, "sorry, stack full (Merci Yann)", NIL);
       *spbuff = Car(q);
       q = Cdr(q);
+   }
+   if (SYMBOLP(q)) {
+      q = symbol_class.selfeval(q);
+      if (CONSP(q)) goto parse_args;
    }
    if (q)
       RAISEF("bad argument list", q2);
