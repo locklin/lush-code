@@ -362,9 +362,9 @@ typedef struct symbol { 	/* each symbol is an external AT which */
    at **valueptr;
 } symbol_t;
 
-#define SYMBOL_LOCKED_P(p) ((uintptr_t)(Symbol(p)->hn) & SYMBOL_LOCKED_BIT)
-#define LOCK_SYMBOL(p)     SET_PTRBIT(Symbol(p)->hn, SYMBOL_LOCKED_BIT)
-#define UNLOCK_SYMBOL(p)   UNSET_PTRBIT(Symbol(p)->hn, SYMBOL_LOCKED_BIT)
+#define SYMBOL_LOCKED_P(s) ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
+#define LOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
+#define UNLOCK_SYMBOL(s)   UNSET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
 #define SYM_HN(s)          ((struct hash_name *)CLEAR_PTR((s)->hn))
 
 /* symbol creation */
@@ -574,11 +574,11 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 #define AFLT(i)         ( rtoF(AREAL(i)) )
 #define ALIST(i)        ( ISLIST(i) ? APOINTER(i):(at*)DX_ERROR(2,i) )
 #define ACONS(i)        ( ISCONS(i) ? APOINTER(i):(at*)DX_ERROR(3,i) )
-#define ASTRING(i)      ( ISSTRING(i) ? String(APOINTER(i)) :(char*)DX_ERROR(4,i) )
-#define ASYMBOL(i)      ( ISSYMBOL(i) ? Mptr(APOINTER(i)):DX_ERROR(7,i) )
-#define ASTORAGE(i)     ( ISSTORAGE(i) ? Mptr(APOINTER(i)):DX_ERROR(10,i) )
-#define AINDEX(i)       ( ISINDEX(i) ? Mptr(APOINTER(i)):DX_ERROR(11,i) )
-#define ACLASS(i)       ( ISCLASS(i) ? Mptr(APOINTER(i)):DX_ERROR(12,i) )
+#define ASTRING(i)      ( ISSTRING(i) ? String(APOINTER(i)) : (char*)DX_ERROR(4,i) )
+#define ASYMBOL(i)      ( ISSYMBOL(i) ? Symbol(APOINTER(i)) : (symbol_t *)DX_ERROR(7,i) )
+#define ASTORAGE(i)     ( ISSTORAGE(i) ? (storage_t *)Mptr(APOINTER(i)) : (storage_t *)DX_ERROR(10,i) )
+#define AINDEX(i)       ( ISINDEX(i) ? (index_t *)Mptr(APOINTER(i)) : (index_t *)DX_ERROR(11,i) )
+#define ACLASS(i)       ( ISCLASS(i) ? (class_t *)Mptr(APOINTER(i)) : (class_t *)DX_ERROR(12,i) )
 
 #define ARG_NUMBER(i)	if (arg_number != i)  DX_ERROR(0,i);
 #define ARG_EVAL(i)	arg_eval(arg_array,i)

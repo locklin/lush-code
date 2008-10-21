@@ -1427,10 +1427,10 @@ static void module_def(at *name, at *val)
    current->defs = new_cons(new_cons(val, name), current->defs);
    /* Root definitions are also written into symbols */
    if (current == root) {
-      if (SYMBOL_LOCKED_P(name))
+      if (SYMBOL_LOCKED_P(Symbol(name)))
          RAISEF("internal error (multiple definition)", name);
       var_set(name, val);
-      LOCK_SYMBOL(name);
+      var_lock(name);
    }
 }
 

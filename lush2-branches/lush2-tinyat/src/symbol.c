@@ -385,7 +385,7 @@ at *global_defs()
             *where = new_cons(new_cons(p, val), NIL);
             where = &Cdr(*where);
             /* locked? */
-            if (SYMBOL_LOCKED_P(p)) {
+            if (SYMBOL_LOCKED_P(Symbol(p))) {
                *where = new_cons(p, NIL);
                where = &Cdr(*where);
             }
@@ -574,8 +574,7 @@ DY(yscope)
 DX(xlock_symbol)
 {
    for (int i = 1; i <= arg_number; i++) {
-      ASYMBOL(i);
-      LOCK_SYMBOL(APOINTER(i));
+      LOCK_SYMBOL(ASYMBOL(i));
    }
    return NIL;
 }
@@ -583,18 +582,9 @@ DX(xlock_symbol)
 DX(xunlock_symbol)
 {
    for (int i = 1; i <= arg_number; i++) {
-      ASYMBOL(i);
-      UNLOCK_SYMBOL(APOINTER(i));
+      UNLOCK_SYMBOL(ASYMBOL(i));
    }
    return NIL;
-}
-
-DX(xsymbol_locked_p)
-{
-   ARG_NUMBER(1);
-   ARG_EVAL(1);
-   ASYMBOL(1);
-   return SYMBOL_LOCKED_P(APOINTER(1)) ? APOINTER(1) : NIL;
 }
 
 DX(xsymbolp)
@@ -606,6 +596,7 @@ DX(xsymbolp)
 }
 
 /* for debugging purposes */
+/*
 DX(xsymbol_stack)
 {
    ARG_NUMBER(1);
@@ -620,7 +611,15 @@ DX(xsymbol_stack)
 
    return ans;
 }
+*/
    
+DX(xsymbol_locked_p)
+{
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+   return SYMBOL_LOCKED_P(ASYMBOL(1)) ? t() : NIL;
+}
+
 DX(xsymbol_globally_bound_p)
 {
    ARG_NUMBER(1);
@@ -630,6 +629,19 @@ DX(xsymbol_globally_bound_p)
    while (s->next)
       s = s->next;
    if (s->valueptr)
+      return t();
+   return NIL;
+}
+
+DX(xsymbol_globally_locked_p)
+{
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+
+   symbol_t *s = ASYMBOL(1);
+   while (s->next)
+      s = s->next;
+   if (SYMBOL_LOCKED_P(s))
       return t();
    return NIL;
 }
@@ -696,7 +708,8 @@ void var_SET(at *p, at *q)
 
 void var_lock(at *p)
 {
-   LOCK_SYMBOL(p);
+   assert(SYMBOLP(p));
+   LOCK_SYMBOL(Symbol(p));
 }
 
 
@@ -770,9 +783,10 @@ void init_symbol(void)
    dx_define("lock-symbol", xlock_symbol);
    dx_define("unlock-symbol", xunlock_symbol);
    dx_define("symbolp", xsymbolp);    
-   dx_define("symbol-stack", xsymbol_stack);
-   dx_define("symbol-globally-bound-p", xsymbol_globally_bound_p);
+   //dx_define("symbol-stack", xsymbol_stack);
    dx_define("symbol-locked-p", xsymbol_locked_p);
+   dx_define("symbol-globally-bound-p", xsymbol_globally_bound_p);
+   dx_define("symbol-globally-locked-p", xsymbol_globally_locked_p);
 }
 
 
