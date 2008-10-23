@@ -87,22 +87,10 @@
   (let (((_ name value) def))
     (list 'progn (list 'setq (list 'scope name) value) (list 'quote name)) ))
 
-(dm defconstant def
-  (let (((_ name value) def))
-    (if (and (symbol-globally-bound-p name) (= value (eval name)))
-        ;; looks like the same defconstant statement as before
-        (list 'progn 
-              (list 'lock-symbol name)
-              (list 'quote name) )
-      (when define-hook (setq def (apply define-hook def)))
-      (list 'progn (list 'setq (list 'scope name) value) 
-            (list 'lock-symbol name)
-            (list 'quote name)) )))
-
 (dm defalias def
   (when define-hook (setq def (apply define-hook def)))
   (let (((_ name value) def))
-    (if (not (symbol-globally-bound-p value))
+    (if (null (symbol-globally-bound-p value))
 	(error 'defalias "symbol not globally bound" value)
       (list 'progn (list 'setq (list 'scope name) (list 'scope value))
             (list 'putp (list 'quote name) (list 'quote 'alias) (list 'quote value))
@@ -484,6 +472,20 @@
     (data obj val)
     key ) )
 
+
+(dm defconstant def
+  (let (((_ name value) def))
+    (if (and (symbol-globally-bound-p name)
+             (symbol-globally-locked-p name) )
+        `(let ((--v0-- ,name) (--v1-- ,value))
+           (when (<> --v0-- --v1--)
+             (error "constant already defined" (quote ,name)) ))
+      (when define-hook (setq def (apply define-hook def)))
+      `(progn (setq (scope ,name) ,value)
+              (lock-symbol ,name)
+              (quote ,name)) )))
+
+(lock-symbol defconstant)
 
 ;;; --------- More control structures ---------
 
@@ -1997,6 +1999,8 @@
              find-shared-library  
              find-static-library  
              find-shared-or-static-library )
+
+;; -------------
 
 ;;; --------- autoload instructions ----------
 
