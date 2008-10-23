@@ -2069,6 +2069,7 @@ DX(ximport_raw_matrix)
          error(NIL, "not a string or read file descriptor", p);
    }
    import_raw_matrix(AINDEX(1),Mptr(p),offset);
+   lush_delete(p); /* close file */
    return APOINTER(1);
 }
 
@@ -2118,8 +2119,8 @@ DX(ximport_text_matrix)
       ifn (p && RFILEP(p))
          error(NIL, "not a string or read descriptor", p);
    }
-   
    import_text_matrix(AINDEX(1),Mptr(p));
+   lush_delete(p); /* close file */
    return APOINTER(1);
 }
 
@@ -2308,6 +2309,7 @@ DX(xload_matrix)
       }
       ans = load_matrix(Mptr(p));
    }
+   lush_delete(p); /* close file */
    return ans;
 }
 
