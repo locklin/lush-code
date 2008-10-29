@@ -503,10 +503,10 @@ void init_arith(void)
    dx_define("max", xmax);
    dx_define("min", xmin);
 
-   /* logical operations */
-   dx_define("&&", xcand);
-   dx_define("", xcor);   /* hack to enable syntax (|| a b) */
-   /* comparison operations */
+   /* C-style logical operations */
+   dx_define("cand", xcand);
+   dx_define("cor", xcor);
+   /* C-style comparison operations */
    dx_define("c==", xceq);
    dx_define("c!=", xcne);
    dx_define("c>", xcgt);
