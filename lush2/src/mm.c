@@ -2106,9 +2106,15 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    types = (typerec_t *) malloc(MIN_TYPES * sizeof(typerec_t));
    assert(types);
    types_size = MIN_TYPES;
-   assert(mt_blob == MM_REGTYPE("blob", 0, 0, 0, 0));
-   assert(mt_refs == MM_REGTYPE("refs", 0, clear_refs, mark_refs, 0));
-   assert(mt_string == MM_REGTYPE("string", MIN_STRING, 0, 0, 0));
+   {
+      mt_t mt;
+      mt = MM_REGTYPE("blob", 0, 0, 0, 0);
+      assert(mt == mt_blob);
+      mt = MM_REGTYPE("refs", 0, clear_refs, mark_refs, 0);
+      assert(mt == mt_refs);
+      mt = MM_REGTYPE("string", MIN_STRING, 0, 0, 0);
+      assert(mt = mt_string);
+   }
    assert(types_last == 2);
 
    /* set up other bookkeeping structures */
