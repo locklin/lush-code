@@ -54,33 +54,28 @@ at *(*eval_ptr) (at *);
 at *(*argeval_ptr) (at *);
 
 #define PUSH_ARGEVAL_PTR(func) {  \
-  at *(*old_eval_ptr) (at *) = argeval_ptr; \
-  argeval_ptr = func;
+   at *(*old_eval_ptr) (at *) = argeval_ptr; \
+   argeval_ptr = func;
  
 #define POP_ARGEVAL_PTR  argeval_ptr = old_eval_ptr; }
 
 #define PUSH_EVAL_PTR(func) {  \
-  at *(*old_eval_ptr) (at *) = eval_ptr; \
-  eval_ptr = func;
+   at *(*old_eval_ptr) (at *) = eval_ptr; \
+   eval_ptr = func;
  
 #define POP_EVAL_PTR  eval_ptr = old_eval_ptr; }
 
-#define ED_PUSH_CALL(p) {\
-  error_doc.this_call = new_cons(p, error_doc.this_call); \
-}
-
-#define ED_POP_CALL()   {\
-  at *q = error_doc.this_call; \
-  error_doc.this_call = Cdr(q); \
-  Cdr(q) = NIL; \
-}
+struct call_chain *top_link = NULL;
 
 at *eval_std(at *p)
 {
    extern at *generic_listeval(at *p, at *q);
 
    if (CONSP(p)) {
-      ED_PUSH_CALL(p);
+      struct call_chain link;
+      link.prev = top_link;
+      link.this_call = p;
+      top_link = &link;
       
       argeval_ptr = eval_ptr;
       CHECK_MACHINE("on");
@@ -91,12 +86,12 @@ at *eval_std(at *p)
       else
          p = generic_listeval(q, p);
 
-      ED_POP_CALL();
+      top_link = top_link->prev;
       return p;
       
    } else if (p) {
-      assert(Class(p)->selfeval);
       return Class(p)->selfeval(p);
+
    } else
       return NIL;
 }
@@ -130,10 +125,33 @@ at *eval_nothing(at *q)
  * Calls function trace-hook used for debugging 
  */
 
+/* build list of calls */
+at *call_stack(void)
+{
+   struct call_chain *link = top_link;
+   at *chain = NIL;
+   at **pc = &chain;
+   while (link) {
+      *pc = new_cons(link->this_call, NIL);
+      pc = &Cdr(*pc);
+      link = link->prev;
+   }
+   return chain;
+}
+
+DX(xcall_stack)
+{
+   ARG_NUMBER(0);
+   return call_stack();
+}
+
 static at *at_trace;
 
 static bool call_trace_hook(int tab, char *line, at *expr, at *info)
 {
+   if (tab>0 && !info)
+      info = call_stack();
+
    at *args = new_cons(NEW_NUMBER(tab),
                        new_cons(new_string(line),
                                 new_cons(expr, new_cons(info, NIL))));
@@ -154,7 +172,7 @@ at *eval_debug(at *q)
    int tab = ++error_doc.debug_tab;
    
    BLOCK_SIGINT;
-   bool flag = call_trace_hook(tab, first_line(q), q, error_doc.this_call);
+   bool flag = call_trace_hook(tab, first_line(q), q, NIL);
    UNBLOCK_SIGINT;
 
    eval_ptr = argeval_ptr = (flag ? eval_debug : eval_std);
@@ -593,6 +611,7 @@ void init_eval(void)
 
    argeval_ptr = eval_ptr = eval_std;
    dx_define("eval", xeval);
+   dx_define("call-stack", xcall_stack);
    dy_define("progn", yprogn);
    dy_define("prog1", yprog1);
    dy_define("apply", yapply);
