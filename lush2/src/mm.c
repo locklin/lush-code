@@ -466,8 +466,7 @@ static void *alloc_variable_sized(mt_t t, size_t s)
       info->t = t;
       info->nh = s/MIN_HUNKSIZE;
       
-      if (collecting_child && !gc_disabled)
-         fetch_unreachables();
+      fetch_unreachables();
       maybe_trigger_collect(s);
 
       return seal(p);
@@ -487,8 +486,8 @@ static void *alloc_fixed_size(mt_t t)
       static bool warned = false;
       if (!warned) {
          /* warn once */
-         warn("no free block found.\n");
-         warn("consider re-compiling with larger heap size.\n");
+         debug("no free block found.\n");
+         debug("consider re-compiling with larger heap size.\n");
          warned = true;
       }
       return alloc_variable_sized(t, s);
@@ -498,8 +497,7 @@ static void *alloc_fixed_size(mt_t t)
    VALGRIND_MEMPOOL_ALLOC(heap, p, s);
    blockrecs[BLOCKA(types[t].current_a)].in_use++;
    
-   if (collecting_child && !gc_disabled)
-      fetch_unreachables();
+   fetch_unreachables();
    maybe_trigger_collect(s);
 
    return p;
@@ -1376,7 +1374,6 @@ void *mm_allocv(mt_t t, size_t s)
    return p;
 }
 
-
 void *mm_malloc(size_t s)
 {
    void *p = alloc_variable_sized(mt_blob, s);
@@ -1561,8 +1558,7 @@ bool mm_ismanaged(const void *p)
 mt_t mm_typeof(const void *p)
 {
    assert(ADDRESS_VALID(p));
-   mt_t t = MM_TYPEOF(p);
-   return t;
+   return MM_TYPEOF(p);
 }
 
 
@@ -1742,7 +1738,8 @@ static int _fetch_unreachables(void *buf)
 /* return number of objects reclaimed                       */
 static int fetch_unreachables(void)
 {
-   assert(collecting_child && !gc_disabled);
+   if (!collecting_child || gc_disabled)
+      return 0;
 
    static void *buf[NUM_TRANSFER];
    static int j, n = 0;
@@ -1974,7 +1971,8 @@ bool mm_idle(void)
 
    if (collect_in_progress) {
       if (!gc_disabled) {
-         fetch_unreachables();
+         for (int i = 0; i < 50; i++)
+            fetch_unreachables();
          return true;
       } else
          return false;
