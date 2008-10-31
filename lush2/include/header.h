@@ -870,7 +870,7 @@ LUSHAPI void storage_save(storage_t*, FILE*);
 
 /* INDEX.H ---------------------------------------------- */
 
-#define MAXDIMS 7
+#define MAXDIMS 11
 
 extern LUSHAPI class_t index_class;
 
