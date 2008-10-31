@@ -1,0 +1,143 @@
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-ubyte")
+
+#? (img-gain-color <in> <out> <r> <g> <b>)
+;; changes gains on RGB components
+;; 128 = 1.0
+(de img-gain-color (in out r g b)
+    ((-idx3- (-ubyte-)) in)
+    ((-idx3- (-ubyte-)) out)
+    ((-ubyte-) r g b)
+    (cinline-idx2loop2 in "unsigned char" 
+                       out "unsigned char" "pin" "pout" "i" "j"
+      #{{ register unsigned int z;
+          z = (pin[0] * $r)>>7;
+	  pout[0] =  (unsigned char)((z > 255) ? 255 : z);
+          z = (pin[1] * $g)>>7;
+	  pout[1] =  (unsigned char)((z > 255) ? 255 : z);
+          z = (pin[2] * $b)>>7;
+	  pout[2] =  (unsigned char)((z > 255) ? 255 : z);
+       }#})
+      ())
+
+#? (rgbaim-fluminance <in> <out>)
+;; compute luminance of each pixel and put result in image <out>
+;; the formula used is lum = 0.299 * R + 0.587 * G + 0.114 * B
+(de rgbaim-fluminance (in out)
+    ((-idx3- (-ubyte-)) in)
+    ((-idx2- (-float-)) out)
+    (cinline-idx2loop2 in "unsigned char" 
+                       out "float" "pin" "pout" "i" "j"
+      #{ *pout = 0.299 * (flt)(pin[0]) + 
+                 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2]); #})
+      ()))
+
+(de fbim-beautify (in out bias)
+    ((-float-) bias)
+    ((-idx2- (-float-)) in)
+    ((-idx3- (-ubyte-)) out)
+    (cinline-idx2loop2 in "float" 
+                       out "unsigned char" "pin" "pout" "i" "j"
+      #{{ register unsigned char zout;
+          register float zin;
+	  zin = 255 - (fabs(*pin) + $bias);
+          zout = (unsigned char)( (zin > 0)? ( (zin < 256) ? zin : 255 ) : 0);
+	  pout[0] = pout[1] = pout[2] = zout; 
+       } #})
+    (if (>= (idx-dim out 2) 4) (idx-ub2fill (select out 2 3) 255))
+    ())
+
+
+;; compute square euclidean distance between
+;; pixels of <im> and <imav>. If the difference
+;; is larger than <thres> set the corresponding
+;; pixel in <rez> to <fg>, otherwise set it to <bg>.
+;; <im> must be an idx3 of ubyte, <imav> an idx3 
+;; of flt, and <rez> an idx2 of ubyte.
+(de img-flt-diffthres (im imav rez thres alpha fg bg)
+    ((-idx3- (-ubyte-)) im)
+    ((-idx2- (-ubyte-)) rez)
+    ((-idx3- (-flt-)) imav)
+    ((-flt-) thres)
+    ((-ubyte-) alpha fg bg)
+    (cidx-bloop ("i" "j" ("im" im) ("av" imav) ("rez" rez))
+       #{{ register flt dist, r;
+           r = (flt)(im[0]) - av[0];
+           dist = r*r;
+           r = (flt)(im[1]) - av[1];
+           dist += r*r;
+           r = (flt)(im[2]) - av[2];
+           dist += r*r;
+           *rez  = (dist > $thres) ? $fg : $bg;
+           } #}))
+
+;; updates a running average <imav> with a new image <im>.
+;; <imav> = <eta>*<im> + (1-<eta>)*<imav>
+;; <imav> is an idx3 of floats, <im> and idx3 of ubytes.
+;; this works with images of any depth (but not for
+;; data that are stored in less than a full byte).
+(de img-update-av (im imav eta)
+    ((-idx3- (-ubyte-)) im)
+    ((-idx3- (-flt-)) imav)
+    ((-flt-) eta)
+    (let ((meta (- 1 eta)))
+      (selectq (idx-dim imav 2)
+	(1 (cidx-bloop ("i" "j" ("im" im) ("av" imav))
+             #{ *av = $meta * (*av) + $eta * (flt)(*im);
+             #}))
+	(2 (cidx-bloop ("i" "j" ("im" im) ("av" imav))
+             #{ av[0] = $meta * av[0] + $eta * (flt)(im[0]);
+                av[1] = $meta * av[1] + $eta * (flt)(im[1]);
+             #}))
+	(3 (cidx-bloop ("i" "j" ("im" im) ("av" imav))
+             #{ av[0] = $meta * av[0] + $eta * (flt)(im[0]);
+                av[1] = $meta * av[1] + $eta * (flt)(im[1]);
+                av[2] = $meta * av[2] + $eta * (flt)(im[2]);
+             #}))
+	(t (cidx-bloop ("i" "j" "k" ("im" im) ("av" imav))
+             #{ *av = $meta * *av + $eta * (flt)(*im); 
+	     #})))))
+
+#? (img-mask <im> <mask> <bg> <alpha> <res>)
+;; composite <im> on top of <bg> using <mask>
+;; as alpha layer. Prescales values of mask
+;; by <alpha>/255.
+(de img-mask(im mask bg alpha res)
+    ((-idx2- (-ubyte-)) mask)
+    ((-idx3- (-ubyte-)) im bg res)
+    ((-ubyte-) alpha)
+    (let ((scale (* (/ (float alpha) 255) (/ 1 255))))
+      ((-float-) scale)
+      (cidx-bloop ("i" "j" ("im" im)("mask" mask)("bg" bg)("res" res))
+		#{ if (*mask==0) { 
+		   res[0] = bg[0];
+		   res[1] = bg[1];
+		   res[2] = bg[2];
+		   } else {
+		   register float a, b;
+		   a = (float)(*mask)*$scale;
+		   b = 1.0-a;
+		   res[0] = (unsigned char)(bg[0]*b+a*im[0]);
+		   res[1] = (unsigned char)(bg[1]*b+a*im[1]);
+		   res[2] = (unsigned char)(bg[2]*b+a*im[2]);
+		   }
+		 #}
+		 ) ()))
+
+;; compute difference between RGB images <m> and 
+;; <last>, add 128 and divide by 2, and put result
+;; in <z>
+(de img-diff (m last z)
+  ((-idx3- (-ubyte-)) m last z)
+  (cidx-bloop ("i" "j" ("m" m) ("z" z) ("last" last))
+                 #{
+                   z[0] = ((int)(m[0]) + 256 - (int)(last[0]))>>1 ;
+                   z[1] = ((int)(m[1]) + 256 - (int)(last[1]))>>1 ;
+                   z[2] = ((int)(m[2]) + 256 - (int)(last[2]))>>1 ;
+                 #} ) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () 
+	  rgbaim-fluminance fbim-beautify img-gain-color
+	  img-flt-diffthres img-update-av img-mask img-diff)

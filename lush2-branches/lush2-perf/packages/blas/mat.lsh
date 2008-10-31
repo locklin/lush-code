@@ -1,0 +1,145 @@
+
+(libload "blas/blas")
+(libload "libc/libc")
+
+;; demo code for the blas interface
+
+(in-namespace mat-
+
+#? (mat-id <n>)
+;; Identity matrix of size <n>x<n>.
+(defun id (n)
+  (declare (-int-) n)
+  (let ((m (double-array n n)) )
+    (for* (i 0 n)
+      (declare (-int-) i)
+      (m i i 1) )
+    m))
+
+;; helper, do half of a QR decomposition via 
+;; Householder reflections, write R to A and
+;; hyperplane normals to vs.
+(defun -house! (A W)
+  (declare (-idx2- (-double-)) A W)
+  (when (or (<> (idx-shape A 0) (idx-shape W 0))
+            (<> (idx-shape A 1) (idx-shape W 1)) )
+    (error "A and W have incompatible shapes") )
+  (let ((m (idx-shape A 0))
+        (n (idx-shape A 1))
+        (A (copy-index A))
+        (W (copy-index W)) )
+    (for* (k 0 (min m n))
+      (declare (-int-) k n)
+      (let ((x (idx-select A 1 0))
+            (v (idx-select W 1 0)) )
+        (array-copy x v)
+        (incr (v 0) (* (nrm2 x) (sgn (x 0))))
+        (scal1! v)
+        ;(let ((C (copy-array A)))
+        ;  (array-copy (ger! -2 v (gevm 1 v C) C) A) )
+        (ger! -2 v (gevm 1 v A) A)
+        (idx-trim! A 0 1) (idx-trim! A 1 1)
+        (idx-trim! W 0 1) (idx-trim! W 1 1) )))
+  ())
+
+(defun -w2q (W)
+  (declare (-idx2- (-double-)) W)
+  (let ((Q (double-array (idx-shape W 0) (idx-shape W 0))))
+    (for* (k 0 (length Q))
+      (declare (-int-) k)
+      (Q k k 1) )
+    (for* (k 0 (idx-shape W 1))
+      (declare (-int-) k)
+      (let* ((v (idx-select W 1 k))
+             (u (gemv 1 Q v)) )
+        (ger! -2 u v Q) ))
+    Q))
+
+#? (mat-qr! <m>)
+;; Compute QR decomposition of <m>, owerwrite <m>
+;; with <R> and return <Q>.
+(defun qr! (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((W (clone-array A)))
+    (array-clear W 0)
+    (-house! A W)
+    (-w2q W)))
+
+#? (mat-qr <m>)
+;; Compute QR and return <(list Q R)>.
+(defmacro qr (A)
+  `(let ((R (copy-array ,A)))
+     (let ((Q (qr! R)))
+       (list Q R)))
+  )
+
+#? (mat-power <A> <n>)
+;; <n>th power of matrix <A>.
+;;
+;; <A> is square and <n> a non-negative integer.
+(defun power (A i)
+  (declare (-idx2- (-double-)) A)
+  (declare (-int-) i)
+
+  (when (not (squarep A))
+    (error "not a square matrix") )
+  (cond
+   ((< i 0)
+    (error "negative exponent") )
+   ((= i 0)
+    (id (length A)) )
+   ((= i 1)
+    (copy-array A) )
+   (t
+    (let ((p (1- (floor (log2 (to-double i)))))
+          (m (copy-array A))
+          (r (clone-array A)) )
+      (declare (-int-) p)
+      (while (>= p 0)
+        (blas-gemm! 1 m m 0 r)
+        (rotatef r m)
+        (when (testbit i p)
+          (blas-gemm! 1 m A 0 r)
+          (rotatef r m) )
+        (decr p) )
+      m))
+   ))
+)
+
+
+(with-namespaces (mat- blas-)
+(dhc-make ()
+          mat-id
+          mat--house!
+          mat--w2q
+          mat-qr!
+          mat-power
+          )
+)
+          
+
+
+;; (defmacro -.*-result (m1 m2)
+;;   `(let ((m1 ,m1) (m2 ,m2))
+;;      (let ((m (idx-shape m1 0))
+;;            (n (idx-shape m2 1))
+;;            (o (idx-trim* m1 1 1)) )
+;;        (declare (-int-) m n)
+;;        (if (= (idx-shape m1 1) (idx-shape m2 0))
+;;            (clone-array 
+;;             (idx-expand! (idx-expand! o 0 m) 1 n) )
+;;          (ifcompiled
+;;              (error "matrix-multiply of incompatible matrices")
+;;          (error "matrix-multiply of incompatible matrices" (list ,m1 ,m2)) )))
+;;   )
+
+;; #? (mat-.* <m1> <m2> ...)
+;; ;; Matrix-multiply matrices <m1>, <m2>, ... .
+;; (defmacro .* (m1 m2 . ms)
+;;   (if (null ms)
+;;       `(let ((m1 ,m1) (m2 ,m2))
+;;          (idx-m2timesm2 m1 m2 (-.*-result m1 m2)))
+;;     `(.* (.* ,m1 ,m2) ,(car ms) ,@(cdr ms)) ))
+
+
+

@@ -1,0 +1,134 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: remote.lsh,v 1.10 2006/02/26 15:34:47 laseray Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+#? * Remote Lush Execution
+;;
+;; Lush provides facilities for controlling multiple 
+;; Lush processes running on different machines.
+;;
+;; The script <lushslave> starts Lush in slave mode.  It first prints the host
+;; name and a port number and then waits for a connection.  A master instance
+;; of Lush can use class <RemoteLush> to establish a connection, send
+;; commands, obtain the results, and check for errors.
+;;
+
+
+
+(defclass RemoteLush Object
+  name
+  info ;; (host port pid)
+  fin
+  fout
+  status
+  error )
+
+#? (new RemoteLush <host> [<port>])
+;; Creates a remote lush connection to the slave instance of Lush
+;; running on the specified <host> and <port>.  The default port is 4000.
+;; Commands can then be submitted using method <exec>.
+;;
+;; Slot <status> indicates the outcome of the last command execution.
+;; Value <ok> indicates that the command was successful. Value <error>
+;; indicates that an error was detected.  The error message is then
+;; available in slot <error>.
+;;
+;; Slot <fin> can be used in command <socketselect> in order to determine
+;; whether the command output is available, and possibly wait for several
+;; remote processes.
+
+(defmethod RemoteLush RemoteLush(host &optional (port 4000))
+  (setq name (sprintf "%s:%d" host port))
+  (setq status 'ok)
+  (when (socketopen host port 'fin 'fout) 
+    (setq info (list host port ()))
+    (rplaca (cddr info) (==> this exec '(getpid))) ) )
+
+#? (==> <remotelush> exec <command>)
+;; Executes command <command> on the remote Lush process.
+;; The lisp object <command> is evaluated in the remote Lush process.
+;; Method <exec> returns the result of this evaluation.
+;; 
+;; When the remote evaluation causes an error, method <exec>
+;; sets the slot <status> to <error> and returns the symbol <error>.
+;; The error message is then available in slot <error>.
+;; 
+;; This method works by calling methods <send> and <receive>.
+
+(defmethod RemoteLush exec(cmd)
+  (==> this send cmd)
+  (==> this receive) )
+
+#? (==> <remotelush> send <command>)
+;; Sends command <command> to the remote Lush process 
+;; and returns immediatly.  Slot <status> is set to the
+;; empty list until method <receive> is called.
+
+(defmethod RemoteLush send(cmd)
+  (when (not status) (==> this receive))
+  (while (and (socketselect fin 0) (<> (read8 fin) -1)) t)
+  (writing fout (bwrite cmd))
+  (setq status ()) )
+
+#? (==> <remotelush> receive [<nowait>])
+;; Receive the result of the remote execution of a command. 
+;;
+;; Method <receive> returns the result of the evaluation of a remote command
+;; submitted with method <send>. When the remote evaluation causes an error,
+;; method <exec> sets the slot <status> to <error> and returns the symbol
+;; <error>.  The error message is then available in slot <error>.
+;;
+;; Method <receive> usually waits for the execution of the remote command.
+;; This can be changed by setting argument <nowait> to true.  Method <receive>
+;; then immediately returns the empty list if the result is not yet available.
+;; In this case, slot <status> remains set to the empty list.
+
+(defmethod RemoteLush receive(&optional nowait)
+  (when (and (not status)
+             (or (not nowait)
+                 (socketselect fin 0) ) )
+    (let ((ans (reading fin (read))))
+      (cond
+       ((and (consp ans) (= (car ans) 'ok))
+        (setq status 'ok)
+        (setq error ()) 
+        (cdr ans) )
+       (t
+        (setq error (if (consp ans) (cdr ans) "Unknown error"))
+        (setq status 'error) ) ) ) ) )
+
+
+#? (==> <remotelush> print)
+;; Prints informative stuff.
+
+(demethod RemoteLush print()
+  (if (stringp name)
+      (printf "::remotelush:%s" name)
+    (printf "::remotelush:%l" info) ) )

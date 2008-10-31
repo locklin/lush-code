@@ -1,0 +1,254 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: classtool.lsh,v 1.3 2002/11/06 23:37:43 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;  'classtool'
+;;;  A Class Browser
+
+
+(ogre)
+
+
+(defclass c-classtool AutoWindowObject
+  the-menu
+  the-string
+  the-i-classes
+  the-i-slots
+  the-i-methods  
+  the-classes
+  the-slots
+  the-methods 
+
+  the-error-requester
+  the-class-requester
+
+  cl )
+
+
+(defmethod c-classtool c-classtool()
+  (==> this autowindowobject 0 0 600 460 "ClassTool"
+       (new column
+	    (new row
+		 (setq the-menu
+		       (new Menu "object"
+			    "Show Class"    
+			    (lambda(c) (==> thiswindowobject display-action))
+			    "Show Subtree"    
+			    (lambda(c) (==> thiswindowobject subtree-action))
+			    "Refresh" 
+			    (lambda(c) (==> thiswindowobject refresh-action))
+			    "Select"  
+			    (lambda(c) (==> the-class-requester popup))
+			    "Quit"    
+			    (lambda(c) (==> thiswindowobject delete)) ) )
+		 (setq the-string (new String "")) )
+	    (new darkspace 3)
+	    (new grid 3
+		 (new string "Sub-Classes")
+		 (new string "Slots")
+		 (new string "Methods")
+
+		 (setq the-classes 
+		       (new selector 8
+			    (lambda(c)
+			      (==> thiswindowobject classes-action c) ) 
+			    '("Nothing") ) )
+		 (setq the-slots
+		       (new selector 8
+			    (lambda(c) (==> c setdata ()))
+			    '("Nothing") ) )
+		 
+		 (setq the-methods
+		       (new selector 8
+			    (lambda(c)
+			      (==> thiswindowobject methods-action c) ) 
+			    '("Nothing") ) )
+
+		 (new string "Super-Classes")
+		 (new string "Inherited Slots")
+		 (new string "Inherited Methods")
+
+
+		 (setq the-i-classes 
+		       (new selector 8
+			    (lambda(c)
+			      (==> thiswindowobject classes-action c) ) 
+			    '("Nothing") ) )
+
+		 (setq the-i-slots
+		       (new selector 8
+			    (lambda(c) (==> c setdata ()))
+			    '("Nothing") ) )
+		 
+		 (setq the-i-methods
+		       (new selector 8
+			    (lambda(c)
+			      (==> thiswindowobject methods-action c) )
+			    '("Nothing") ) )
+		 
+		 (new emptyspace 190 2)
+		 (new emptyspace 190 2)
+		 (new emptyspace 190 2) ) ) )
+
+  (setq :the-menu:textfont font-18)
+  (==> the-menu compute-geometry)
+
+  (setq the-error-requester 
+	(new ErrorRequester this) )
+  
+  (setq the-class-requester 
+	(new YesNoRequester this
+	     (new column
+		  (new String "Type a class name")
+		  (new DarkSpace 3)
+		  (let ((x (new EditString 20)))
+		    (setq :x:regex "[A-Za-z]?[-_|A-Za-z0-9]*") x) )
+	     " Ok " "Cancel"
+	     (lambda(c) (==> thiswindowobject select-action)) ) ) )
+
+
+
+
+(defmethod c-classtool setclass(c)
+  (if (not (and c (classp c)))
+      ;; No good
+      (==> the-error-requester popup "This is not a valid class")
+
+    ;; Good
+    (==> the-string settext "<<working>>")
+    (==> this repair-damaged)
+    (let ((cn (classname c))
+	  (lck (new GeometryLock this)) )
+      (setq cl c)
+      
+      ;; The button and string
+      (==> the-menu settext (pname cn))
+      
+      ;; The class items
+      (let ((cc (mapcar (lambda(c) (pname (classname c))) (subclasses c)))
+	    (cs (mapcar pname (slots c)))
+	    (cm (mapcar pname (methods c)))
+	    (ic ()) 
+	    (is ())
+	    (im ())
+	    (imc 0)
+	    (isc 0) )
+
+        ;; Remove duplicates
+        (setq cc (sort-list cc >))
+        (let ((cp cc))
+          (while (and (consp cp) (consp (cdr cp)))
+            (if (= (car cp) (cadr cp))
+                (rplacd cp (cddr cp))
+              (setq cp (cdr cp)) ) ) )
+
+	(let ((c c)(cn ()))
+	  (while (setq c (super c))
+	    (setq cn (sprintf "====== %l" (classname c)))
+	    (setq ic (cons (pname (classname c)) ic))
+	    (let ((s (mapcar pname (slots c))))
+	      (incr isc (length s))
+	      (setq is (nconc s is)) )
+	    (setq is (cons cn is))
+	    (let ((m (sort-list (mapcar pname (methods c)) >)))
+	      (each ((s m))
+		    (when (not (or (member s im) (member s cm)))
+			  (incr imc)
+			  (setq im (cons s im)) ) ) )
+	    (setq im (cons cn im)) ) )
+	(==> the-classes setitems cc)
+	(==> the-slots setitems cs)
+	(==> the-methods setitems (sort-list cm >))
+	(==> the-i-classes setitems ic)
+	(==> the-i-slots setitems is)
+	(==> the-i-methods setitems im)
+	(==> the-string settext 
+	     (sprintf "  %l: %d+%d slots, %d+%d methods"
+		      cn (length cs) isc (length cm) imc) ) ) ) ) )
+
+  
+  
+  
+(defmethod c-classtool classes-action(c)
+  (let ((cn (==> c getdata)))
+    (==> this setclass (apply scope (list (namedclean cn)))) ) )
+
+(defmethod c-classtool methods-action(c)
+  (let ((m (==> c getdata))
+	(cl cl))
+    (when (<> (left m 5) "=====")
+	  (setq m (namedclean m))
+	  (while (and cl ~(member m (methods cl)))
+	    (setq cl (super cl)) )
+	  (when cl
+		(==> this repair-damaged)
+		(==> c setdata ())
+		(print)	(pretty-method cl m) ) ) ) )
+
+(defmethod c-classtool refresh-action()
+  (==> this setclass cl) )
+
+(defmethod c-classtool display-action()
+  (if (not (super cl))
+      (beep)
+    (print)
+    (pprint (nconc (list 'defclass (classname cl) (classname (super cl))) 
+		   (slots cl) )) ) )
+
+(defmethod c-classtool select-action()
+  (let ((cn (car (==> the-class-requester getdata))))
+    (if (regex-match "\\|.*\\|" cn)
+	(setq cn (regex-subst "^\\|(.*)\\|$" "%0" cn))
+      (setq cn (downcase cn)) )
+    (==> this setclass (apply scope (list (named cn)))) ) )
+
+
+(defmethod c-classtool subtree-action()
+  (let ((subtree (lambda(cl tb)
+		   (tab tb)
+		   (print (classname cl))
+		   (each ((c (subclasses cl)))
+			 (subtree c (+ tb 2)) ) ) ))
+    (print)
+    (subtree cl 2) ) )
+
+
+(defmethod c-classtool keypress(c x y)
+  (selectq c
+    (" " (==> the-class-requester popup))
+    (t (==> this (windowobject . keypress) c x y)) ) )
+    
+
+(de classtool( &optional (cl object) )
+    (when (symbolp cl) 
+	  (setq cl (eval cl)) )
+    (when (not (classp cl)) 
+	  (error t "Not a class" cl) )
+    (let ((w (new c-classtool)))
+      (==> w setclass cl) ) )
+  

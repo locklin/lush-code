@@ -1,0 +1,118 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: add-makehelp.lsh,v 1.3 2003/02/21 16:30:35 jhuangfu Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; read a .lsh file detect the defclass, defmethod and de 
+;; and add help entries and a dhc-make
+
+(de amh-print-file (fin fout)
+  (let* ((c (read8 fin)))
+    (while (<> c -1)
+      (write8 fout c)
+      (setq c (read8 fin)))))
+  
+(de amh-print-args (l)
+  (each ((a l)) (printf " <%s>" (pname a))))
+
+#? (add-makehelp <infile> <outfile> [<headerfile> [<extra-funcs>]])
+;; reads a .lsh file with class definitions, 
+;; variables definitions, and function definitions,
+;; and add a help entry for each and a dhc-make
+;; command with each class, method, and function.
+;; An optional header file can be prepended to 
+;; the output file. <extra-funcs> is an optional function 
+;; that will be called right after the header file has been
+;; written to the output file. Whatever this function prints
+;; will be inserted in the input file right after the header.
+(de add-makehelp (infile outfile &optional headerfile exf)
+  (let ((funcs ())
+	(classes ())
+	(vars ())
+	(e ()))
+    (reading infile
+      (while (<> (skip-char) "\e")
+	(setq e (read))
+	(cond 
+	 ((not (consp e)) ())
+	 ((= (car e) 'de)
+	  (setq funcs (cons (list (cadr e) (caddr e)) funcs)))
+	 ((= (car e) 'defvar)
+	  (setq vars (cons (cadr e) vars)))
+	 ((= (car e) 'defclass)
+	  (setq classes (cons (list (cadr e)) classes)))
+	 ((= (car e) 'defmethod)
+	  (alist-add (cadr e) 
+		     (cons (list (caddr e) (car (cdddr e))) 
+			   (alist-get (cadr e) classes))
+		     classes)))))
+    (setq funcs (reverse funcs))
+    (setq classes (reverse classes))
+    (setq vars (reverse vars))
+    (let ((fdout (open-write outfile)))
+      (writing fdout
+	(when headerfile 
+	  (let ((fdin (open-read headerfile))) (amh-print-file fdin fdout)))
+	(when (functionp exf) (exf))
+	;; (when classes (printf "#? ** Classes\n\n"))
+	(each ((x classes))
+	  (printf "#? * %s\n" (pname (car x)))
+	  (printf ";;.TYPE CLASS\n")
+	  (each ((m (reverse (cdr x))))
+	    (if (= (car m) (car x))
+		(progn
+		  (printf "#? (new %s" (pname (car x)))
+		  (amh-print-args (cadr m))
+		  (printf ">\n"))
+	      (printf "#? (==> <%s> %s" (pname (car x)) (pname (car m)))
+	      (amh-print-args (cadr m))
+	      (printf ")\n"))) (printf "\n"))
+	;; (when funcs (printf "#? ** Functions\n\n"))
+	(each ((x funcs))
+	  (printf "#? * (%s" (pname (car x)))
+	  (amh-print-args (cadr x))
+	  (printf ")\n"))
+	;; (when vars (printf "#? ** Variables\n\n"))
+	(each ((x vars))
+	  (printf "#? * %s\n" (pname x)))
+	(printf "\n")
+	(printf ";; ********************************************************\n")
+	(printf "\n")
+	(let ((fdin (open-read infile))) (amh-print-file fdin fdout))
+	(printf "\n")
+	(printf ";; ********************************************************\n")
+	(printf "\n")
+	(printf "(dhc-make-with-c++ () ()\n")
+	(each ((f funcs)) (printf "  %s\n" (pname (car f))))
+	(each ((c classes)) 
+	  (printf "  (%s" (pname (car c)))
+	  (each ((m (cdr c))) 
+	    (printf "  %s" (pname (car m))))
+	  (printf ")\n"))
+	(printf ")\n")))))
+
+    
