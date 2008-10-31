@@ -516,10 +516,13 @@ LUSHAPI at* str_utf8_to_mb(const char *s);
 
 struct cfunction {
    at *name;
-   void *call;
+   void *(*call)();
    void *info;
    char *kname;
 };
+
+#define DYCALL(cf) ((at *(*)(at*))(cf->call))
+#define DXCALL(cf) ((at *(*)(int, at**))(cf->call))
 
 typedef struct cfunction cfunction_t;
 

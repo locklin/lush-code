@@ -225,7 +225,7 @@ void init_lush(char *program_name)
  * - launch an interactive toplevel with the user
  */
 
-extern LUSHAPI at **dx_stack, **dx_sp; /* defined in src/function.c */
+extern void reset_dx_stack(void); /* defined in function.c */
 
 void start_lisp(int argc, char **argv, int quietflag)
 {
@@ -243,7 +243,7 @@ void start_lisp(int argc, char **argv, int quietflag)
    error_doc.this_call = NIL;
    error_doc.error_call = NIL;
    recur_doc_init();
-   dx_sp = dx_stack - 1;
+   reset_dx_stack();
 
    context = &first_context;
    context->next = NIL;
@@ -305,7 +305,8 @@ void start_lisp(int argc, char **argv, int quietflag)
       error_doc.error_text = NIL;
       error_doc.error_suffix = NIL;
       recur_doc_init();
-      dx_sp = dx_stack - 1;
+      reset_dx_stack();
+
       line_pos = line_buffer;
       *line_buffer = 0;
       in_bwrite = 0;
@@ -330,7 +331,8 @@ void start_lisp(int argc, char **argv, int quietflag)
       error_doc.error_text = NIL;
       error_doc.error_suffix = NIL;
       recur_doc_init();
-      dx_sp = dx_stack - 1;
+      reset_dx_stack();
+
       line_pos = line_buffer;
       *line_buffer = 0;
       in_bwrite = 0;

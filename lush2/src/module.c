@@ -916,7 +916,7 @@ static void update_exec_flag(module_t *m)
                   kdoc = cfunc->info = 0;
                } else if (Class(q)==&dh_class && cfunc->kname) {
                   kdoc = cfunc->info = dynlink_symbol(m, cfunc->kname, 0, 0);
-                  cfunc->call = kdoc->lispdata.call;
+                  cfunc->call = (void *(*)())kdoc->lispdata.call;
                } else if (cfunc->kname) {
                   kdoc = cfunc->info = dynlink_symbol(m, cfunc->kname, 1, 0);
                   cfunc->call = cfunc->info;

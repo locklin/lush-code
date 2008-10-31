@@ -227,7 +227,7 @@ at *new_dh(at *name, dhdoc_t *kdata)
    next_record(kdata->argdata);
    /* construct lisp object */
    cfunction_t *cfunc = mm_alloc(mt_cfunction);
-   cfunc->call = kdata->lispdata.call;
+   cfunc->call = (void *(*)())kdata->lispdata.call;
    cfunc->info = kdata;
    cfunc->kname = mm_strdup(kdata->lispdata.k_name);
    cfunc->name = name;

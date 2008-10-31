@@ -255,6 +255,8 @@ struct dhdoc_s
 #define DH(Xname) \
   static dharg Xname(dharg *a)
 
+#define DHCALL(cf) ((dharg (*)(dharg *))cf->call)
+
 #endif /* !NOLISP */
 
 

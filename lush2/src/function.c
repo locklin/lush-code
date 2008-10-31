@@ -215,7 +215,14 @@ at *eval_a_list(at *p)
 
 /* DX class -------------------------------------------	 */
 
-at **dx_stack, **dx_sp;
+at *dx_stack[DXSTACKSIZE];
+at **dx_sp = dx_stack;
+
+void reset_dx_stack(void)
+{
+   dx_sp = dx_stack;
+   return;
+}
 
 at *dx_listeval(at *p, at *q2)
 {
@@ -225,11 +232,11 @@ at *dx_listeval(at *p, at *q2)
    if (CONSP(f->name))
       check_primitive(f->name, f->info);
    
-   at *q = q2;
    at **spbuff = dx_sp;
    at **arg_pos = dx_sp;
+
    int arg_num = 0;
-   q = Cdr(q);
+   at *q = Cdr(q2);
 parse_args:
    while (CONSP(q)) {
       arg_num++;
@@ -245,12 +252,9 @@ parse_args:
    if (q)
       RAISEF("bad argument list", q2);
 
-   at *(*call)(int, at**) = f->call;
    dx_sp = spbuff;
-   at *ans = call(arg_num, arg_pos);
-   while (arg_pos < spbuff)
-      spbuff--;
-   dx_sp = spbuff;
+   at *ans = DXCALL(f)(arg_num, arg_pos);
+   dx_sp = arg_pos;
 
    MM_RETURN(ans);
 }
@@ -275,8 +279,7 @@ at *dy_listeval(at *p, at *q)
    if (CONSP(f->name))
       check_primitive(f->name, f->info);
    
-   at *(*call)(at*) = f->call;
-   at *ans = call(Cdr(q));
+   at *ans = DYCALL(f)(Cdr(q));
    
    MM_RETURN(ZOMBIEP(ans) ? NIL : ans);
 }
@@ -497,8 +500,6 @@ class_t dx_class, dy_class, de_class, df_class, dm_class;
 
 void init_function(void)
 {
-   if (! (dx_stack = malloc(sizeof(at *) * (DXSTACKSIZE+8))))
-      abort("Not enough memory");
    pre_init_function();
 
    /* set up function classes */

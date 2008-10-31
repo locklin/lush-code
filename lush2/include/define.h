@@ -253,7 +253,6 @@ typedef void* gptr;
 
 #define DXSTACKSIZE   (int)3000	/* max size for the DX stack */
 #define MAXARGMAPC    (int)8	/* max number of listes in MAPCAR */
-#define CONSCHUNKSIZE (int)4096	/* minimal cons allocation unit */
 #define HASHTABLESIZE (int)1024	/* symbol hashtable size */
 #define STRING_BUFFER (int)4096	/* string operations buffer size */
 #define LINE_BUFFER   (int)1024	/* line buffer length */

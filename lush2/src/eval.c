@@ -65,6 +65,16 @@ at *(*argeval_ptr) (at *);
  
 #define POP_EVAL_PTR  eval_ptr = old_eval_ptr; }
 
+#define ED_PUSH_CALL(p) {\
+  error_doc.this_call = new_cons(p, error_doc.this_call); \
+}
+
+#define ED_POP_CALL()   {\
+  at *q = error_doc.this_call; \
+  error_doc.this_call = Cdr(q); \
+  Cdr(q) = NIL; \
+}
+
 at *eval_std(at *p)
 {
    extern at *generic_listeval(at *p, at *q);
