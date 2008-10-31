@@ -37,7 +37,6 @@
 ********************************************************************** */
 
 #include "header.h"
-#include "mm.h"
 
 char *line_buffer;
 char *line_pos;
@@ -118,7 +117,7 @@ DX(xmacrochp)
    ARG_NUMBER(1);
    ARG_EVAL(1);
    ASYMBOL(1);
-   if (macrochp(nameof(APOINTER(1))))
+   if (macrochp(NAMEOF(APOINTER(1))))
       return t();
    else
       return NIL;
@@ -907,7 +906,7 @@ DY(ydmc)
    ifn (SYMBOLP(q))
       RAISEF("not a symbol", q);
 
-   dmc(nameof(q), l);
+   dmc(NAMEOF(q), l);
    return q;
 }
 
@@ -918,7 +917,7 @@ DY(ydmc)
 /*
  * print_string s prints the string s via the print_char routine.
  */
-void print_string(char *s)
+void print_string(const char *s)
 {
    if (s) {
       flockfile(context->input_file);

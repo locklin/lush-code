@@ -28,7 +28,6 @@
  **********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
@@ -710,17 +709,17 @@ static char unknown_errmsg[] = "No information on current error condition";
 static char *error_text(void)
 {
    extern char print_buffer[];
-   char *prefix = error_doc.error_prefix;
-   char *prefixsep = " : ";
-   char *text = error_doc.error_text;
-   char *textsep = " : ";
+   const char *prefix = error_doc.error_prefix;
+   const char *prefixsep = " : ";
+   const char *text = error_doc.error_text;
+   const char *textsep = " : ";
    at *suffix = error_doc.error_suffix;
    at *call = error_doc.error_call;
   
    strcpy(print_buffer, unknown_errmsg);
    
    if (!prefix && CONSP(call) && CONSP(Car(call)) && SYMBOLP(Caar(call))) {
-      prefix = nameof(Caar(call));
+      prefix = NAMEOF(Caar(call));
    }
    prefix = prefix ? prefix : "";
    text = text ? text : "";
@@ -786,7 +785,7 @@ void user_break(char *s)
 }
 
 
-void error(const char *prefix, char *text, at *suffix)
+void error(const char *prefix, const char *text, at *suffix)
 {
    if (run_time_error_flag)
       run_time_error(text);

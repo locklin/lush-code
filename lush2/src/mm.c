@@ -61,7 +61,8 @@
 #endif
 
 #define PAGEBITS        12
-#define BLOCKBITS       (PAGEBITS+1)
+//#define BLOCKBITS       (PAGEBITS+1)
+#define BLOCKBITS       PAGEBITS
 #if defined  PAGESIZE && (PAGESIZE != (1<<PAGEBITS))
 #  error "definitions related to PAGESIZE need to be updated"
 #elif !defined PAGESIZE
@@ -80,6 +81,7 @@
 #define MAX_VOLUME      0x100000    /* max volume threshold */
 #define MAN_K_UPDS      100
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
+#define NUM_IDLE_CALLS  20
 
 #define MM_SIZE_MAX     (UINT32_MAX*MIN_HUNKSIZE) /* checked in alloc_variable_sized */
 
@@ -138,6 +140,7 @@ static int        num_blocks;
 static blockrec_t *blockrecs = NULL;
 static char      *heap = NULL;
 static unsigned int *restrict hmap = NULL; /* bits for heap objects */
+static bool       heap_exhausted = false;
 
 static void *    *restrict managed;
 static int        man_size;
@@ -396,7 +399,7 @@ search_in_block:
    /* search for another block with free hunks */
    ;
    int b = tr->next_b;
-   int orig_b = (b-1) % num_blocks;
+   int orig_b = (b+num_blocks-1) % num_blocks;
 
    while (b != orig_b) {
       if (blockrecs[b].t == mt_undefined) {
@@ -405,13 +408,13 @@ search_in_block:
          VALGRIND_CREATE_BLOCK(heap + a, BLOCKSIZE, types[t].name);
          tr->current_a = a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
-         tr->next_b = b + 1;
+         tr->next_b = (b == num_blocks) ? 1 : b+1;
          return true;
 
       } else if (blockrecs[b].t==t && blockrecs[b].in_use<(BLOCKSIZE/s)) {
          a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
-         tr->next_b = b + 1;
+         tr->next_b = (b == num_blocks) ? 1 : b+1;
          goto search_in_block;
       }
       b = (b+1) % num_blocks;
@@ -419,6 +422,7 @@ search_in_block:
 
    /* no free hunk found */
    assert(b == orig_b);
+   heap_exhausted = true;
    tr->current_a = 0;
    tr->current_amax = AMAX(s);
    tr->next_b = 1;
@@ -840,6 +844,7 @@ static void collect_epilogue(void)
       //mm_printf("reaped gc child %d\n", collecting_child);
       collecting_child = 0;
    }
+   heap_exhausted = false;
    collect_in_progress = false;
    compact_managed();
 }
@@ -1335,7 +1340,12 @@ void *mm_alloc(mt_t t)
       abort();
    }
    
-   void *p = alloc_fixed_size(t);
+   void *p = NULL;
+   if (heap_exhausted)
+      p = alloc_variable_sized(t, types[t].size);
+   else 
+      p = alloc_fixed_size(t);
+
    if (!p) {
       warn("allocation failed\n");
       abort();
@@ -1704,16 +1714,11 @@ static void sweep(void)
       write(pfd_garbage[1], &buf, n*sizeof(void *));
 }
 
-/* fetch addresses of unreachable objects from garbage pipe */
-/* return number of objects reclaimed                       */
-static int fetch_unreachables(void)
+/* fill buffer */
+static int _fetch_unreachables(void *buf)
 {
-   static bool inheap = true;
-   assert(collecting_child && !gc_disabled);
-   
    errno = 0;
-   void *buf[NUM_TRANSFER];
-   int n = read(pfd_garbage[0], &buf, NUM_TRANSFER*sizeof(void *));
+   int n = read(pfd_garbage[0], buf, NUM_TRANSFER*sizeof(void *));
 
    if (n == -1) {
       if (errno != EAGAIN) {
@@ -1721,41 +1726,91 @@ static int fetch_unreachables(void)
          warn("error reading from garbage pipe\n");
          warn(errmsg);
          abort();
-      } else
-         return 0;
-
+      }
+      
    } else if (n == 0) {
       /* we're done */
       close(pfd_garbage[0]);
       collect_epilogue();
-      inheap = true;
-      return 0;
+   }
 
-   } else {
+   return n;
+}
+   
+
+/* fetch addresses of unreachable objects from garbage pipe */
+/* return number of objects reclaimed                       */
+static int fetch_unreachables(void)
+{
+   assert(collecting_child && !gc_disabled);
+
+   static void *buf[NUM_TRANSFER];
+   static int j, n = 0;
+   static bool inheap = true;
+
+   if (n) {
       /* don't need to disable gc here as gc is still
        * in progress
        */
-      assert((n%sizeof(void *)) == 0);
-      n = n/sizeof(void *);
-      int j = 0;
-      if (!inheap)
-         goto reclaim_offheap;
+      if (inheap) {
 
-      for (; j < n; j++) {
-         if (buf[j])
+         if (buf[j]) {
             reclaim_inheap(buf[j]);
-         else {
+            j++;
+         } else {
             inheap = false;
-            break;
+            j++;
          }
+         if (j == n) {
+            n = 0;
+            return 1;
+         }
+         
+         if (inheap) {
+            if (buf[j]) {
+               reclaim_inheap(buf[j]);
+               j++;
+            } else {
+               inheap = false;
+               j++;
+            }
+            if (j == n) {
+               n = 0;
+            }
+            return 2;
+         }
+
+      } else {
+
+         reclaim_offheap(buf[j++]);
+         if (j == n) {
+            n = 0;
+            return 1;
+         }
+         reclaim_offheap(buf[j++]);
+         if (j == n) {
+            n = 0;
+         }
+         return 2;
       }
-      j++;
-   reclaim_offheap:
-      for (; j < n; j++) {
-         reclaim_offheap(buf[j]);
+
+   } else if (n == 0) {
+
+      n = _fetch_unreachables(&buf);
+      
+      if (n == -1) {
+         n = 0;
+
+      } else if (n == 0) {
+         inheap = true;
+
+      } else {
+         assert((n%sizeof(void *)) == 0);
+         n = n/sizeof(void *);
+         j = 0;
       }
-      return n;
    }
+   return 0;
 }
 
 /* close all file descriptors except essential ones */
@@ -1918,9 +1973,10 @@ bool mm_idle(void)
    static int ncalls = 0;
 
    if (collect_in_progress) {
-      if (!gc_disabled)
-         return fetch_unreachables()>0;
-      else
+      if (!gc_disabled) {
+         fetch_unreachables();
+         return true;
+      } else
          return false;
 
    } else if ((man_last - man_k) > 10*MAN_K_UPDS) {
@@ -1929,7 +1985,7 @@ bool mm_idle(void)
 
    } else {
       ncalls++;
-      if (ncalls<10) {
+      if (ncalls<NUM_IDLE_CALLS) {
          return false;
       }
       /* create some work for ourselves */

@@ -87,22 +87,10 @@
   (let (((_ name value) def))
     (list 'progn (list 'setq (list 'scope name) value) (list 'quote name)) ))
 
-(dm defconstant def
-  (let (((_ name value) def))
-    (if (and (symbol-globally-bound-p name) (= value (eval name)))
-        ;; looks like the same defconstant statement as before
-        (list 'progn 
-              (list 'lock-symbol name)
-              (list 'quote name) )
-      (when define-hook (setq def (apply define-hook def)))
-      (list 'progn (list 'setq (list 'scope name) value) 
-            (list 'lock-symbol name)
-            (list 'quote name)) )))
-
 (dm defalias def
   (when define-hook (setq def (apply define-hook def)))
   (let (((_ name value) def))
-    (if (not (symbol-globally-bound-p value))
+    (if (null (symbol-globally-bound-p value))
 	(error 'defalias "symbol not globally bound" value)
       (list 'progn (list 'setq (list 'scope name) (list 'scope value))
             (list 'putp (list 'quote name) (list 'quote 'alias) (list 'quote value))
@@ -484,6 +472,20 @@
     (data obj val)
     key ) )
 
+
+(dm defconstant def
+  (let (((_ name value) def))
+    (if (and (symbol-globally-bound-p name)
+             (symbol-globally-locked-p name) )
+        `(let ((--v0-- ,name) (--v1-- ,value))
+           (when (<> --v0-- --v1--)
+             (error "constant already defined" (quote ,name)) ))
+      (when define-hook (setq def (apply define-hook def)))
+      `(progn (setq (scope ,name) ,value)
+              (lock-symbol ,name)
+              (quote ,name)) )))
+
+(lock-symbol defconstant)
 
 ;;; --------- More control structures ---------
 
@@ -1660,12 +1662,12 @@
       (lambda(where source)
         (or (let-filter (((fn (classname)) source))
               (and (symbolp classname) 
-                   (eval `(lambda(x) (is-of-class x ,classname)))) )
+                   (eval `(lambda(x) (isa x ,classname)))) )
             (error where "Illegal syntax in object type" source) ) ) )
 ;; gptr type check
 (putp '-gptr- 'type-syntax
       (lambda(where source)
-        (let ((gptrp (lambda(x) (or (not x) (is-of-class x |GPTR|)))))
+        (let ((gptrp (lambda(x) (or (not x) (isa x |GPTR|)))))
           (or (let-filter (((fn) source)) gptrp)
               (let-filter (((fn arg) source)) (and (stringp arg) gptrp))
               (let-filter (((fn (arg)) source)) (and (symbolp arg) gptrp))
@@ -1712,7 +1714,7 @@
           (let ((idxcheck 
                  (lambda(x ndim srgtype)
                    (and (indexp x) (= (idx-rank x) ndim)
-                        (is-of-class (idx-storage x) srgtype) ) ) ))
+                        (isa (idx-storage x) srgtype) ) ) ))
             (or (let-filter (((fn (base)) source))
                   (let ((srgtype (getp base 'srg-type)))
                     (when (or (not (symbolp base)) (not srgtype))
@@ -1730,7 +1732,7 @@
 	      (let ((srgtype (getp base 'srg-type)))
 		(when (or (not (symbolp base)) (not srgtype))
 		  (error where "Illegal base for storage type" source) )
-		(eval `(lambda(x) (,is-of-class x ,srgtype))) ))
+		(eval `(lambda(x) (,isa x ,srgtype))) ))
 	    (error where "Illegal syntax in storage type" source) )))
 
 ;; variable declaration
@@ -1997,6 +1999,8 @@
              find-shared-library  
              find-static-library  
              find-shared-or-static-library )
+
+;; -------------
 
 ;;; --------- autoload instructions ----------
 

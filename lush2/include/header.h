@@ -47,6 +47,8 @@ extern "C" {
 #endif
 #endif
 
+#include "mm.h"
+
 /* VERSION.H --------------------------------------------------- */
 
 #define LUSH_MAJOR  50
@@ -96,7 +98,7 @@ typedef int intg;
 
 /* lifted from TOPLEVEL.H; find better solution */
 typedef struct at at;
-LUSHAPI void error(const char *prefix, char *text, at *suffix) no_return;
+LUSHAPI void error(const char *prefix, const char *text, at *suffix) no_return;
 
 LUSHAPI char *api_translate_c2lisp(const char*);
 LUSHAPI char *api_translate_lisp2c(const char*);
@@ -122,7 +124,7 @@ at *unpack_list(at *l, at **v, size_t maxnv, size_t *n);
 #ifdef UNIX
 /* interruptions */
 extern LUSHAPI int break_attempt;
-LUSHAPI void lastchance(char *s) no_return;
+LUSHAPI void lastchance(const char *s) no_return;
 /* unix hooks */
 void init_unix(void);
 void fini_unix(void);
@@ -148,7 +150,7 @@ LUSHAPI void cygwin_fmode_binary(FILE *f);
 /* interruptions */
 extern LUSHAPI int break_attempt;
 extern LUSHAPI int kill_attempt;
-LUSHAPI void lastchance(char *s) no_return;
+LUSHAPI void lastchance(const char *s) no_return;
 /* system override */
 LUSHAPI void  win32_exit(int);
 LUSHAPI int   win32_isatty(int);
@@ -169,24 +171,27 @@ DLLEXPORT int init_user_dll(int major, int minor);
 
 /* AT.H -------------------------------------------------------- */
 
+#define NUM_PTRBITS       3
+#define PTRBITS(p)        ((uintptr_t)(p) & ((1<<NUM_PTRBITS) - 1))
+#define SET_PTRBIT(p, b)  { p = (void *)((uintptr_t)(p) | b); }
+#define UNSET_PTRBIT(p,b) { p = (void *)((uintptr_t)(p) & ~b); }
+#define CLEAR_PTR(p)      ((void *)((uintptr_t)(p)&~((1<<NUM_PTRBITS) - 1)))
+
+#define CONS_BIT          1
+#define SYMBOL_LOCKED_BIT 1
+
 typedef struct class_s class_t;
 
 extern LUSHAPI class_t class_class;
 extern LUSHAPI class_t *object_class;
-extern LUSHAPI class_t null_class;
 extern LUSHAPI class_t cons_class;
+extern LUSHAPI class_t null_class;
 extern LUSHAPI class_t number_class;
 extern LUSHAPI class_t gptr_class;
 extern LUSHAPI class_t zombie_class;
 
-#define NUM_PTRBITS       3
-#define PTRBITS(p)        ((uintptr_t)(p) & ((1<<NUM_PTRBITS) - 1))
-#define SET_PTRBIT(p, b)  { p = (void *)((uintptr_t)(p) | b); }
-#define CLEAR_PTR(p)      ((void *)((uintptr_t)(p)&~((1<<NUM_PTRBITS) - 1)))
-
 struct at {
    class_t *cl;
-   struct at *car;
    union {
       double *d;
       char   *c;
@@ -196,26 +201,25 @@ struct at {
    } payload;
 };
 
-#define Class(q)  ((q)->cl)
+#define Class(q)  (CONSP(q) ? &cons_class : (q)->cl)
 #define Number(q) (*(q)->payload.d)
 #define String(q) ((q)->payload.c)
 #define Symbol(q) ((q)->payload.s)
 #define Value(q)  (*Symbol(q)->valueptr)
-#define ValueS(s) (*s->valueptr) 
 #define Gptr(q)   ((q)->payload.p)
 #define Mptr(q)   ((q)->payload.p)
-#define Car(q)    ((q)->car)
+#define Car(q)    ((at *)CLEAR_PTR((q)->cl))
 #define Cdr(q)    ((q)->payload.cdr)
 #define Caar(q)   Car(Car(q))
 #define Cadr(q)   Car(Cdr(q))
 #define Cdar(q)   Cdr(Car(q))
 #define Cddr(q)   Cdr(Cdr(q))
 
-/* Some useful macros */
+#define AssignClass(q, _cl) ((q)->cl) = _cl
+#define AssignCar(q, _car)  (q)->cl = (class_t *)((uintptr_t)(_car) | CONS_BIT)
 
-#define ANY_CLASS       NULL
 
-#define CONSP(x)        ((x)&&(Class(x) == &cons_class))
+#define CONSP(p)        ((p)&&(((uintptr_t)((p)->cl)) & CONS_BIT))
 #define FUNCTIONP(x)    ((x)&&(Class(x)->super==&function_class))
 #define LASTCONSP(x)    (CONSP(x) && !CONSP(Cdr(x)))
 #define LISTP(x)        (!(x)||(Class(x) == &cons_class))
@@ -286,6 +290,7 @@ struct hashelem {
    int sofar;
 };
 
+
 LUSHAPI at *new_gptr(gptr x);
 LUSHAPI at *new_number(double x);
 LUSHAPI at *new_extern(class_t*, void *);
@@ -351,27 +356,28 @@ LUSHAPI void unprotect(at *q);
 extern LUSHAPI class_t symbol_class;
 
 typedef struct symbol { 	/* each symbol is an external AT which */
-   short mode;		        /* points to this structure */
    struct symbol *next;
    struct hash_name *hn;
    at *value;
    at **valueptr;
 } symbol_t;
 
-#define SYMBOL_UNUSED   0
-#define SYMBOL_LOCKED   2
-#define SYMBOL_UNLOCKED 1
+#define SYMBOL_LOCKED_P(s) ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
+#define LOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
+#define UNLOCK_SYMBOL(s)   UNSET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
+#define SYM_HN(s)          ((struct hash_name *)CLEAR_PTR((s)->hn))
 
 /* symbol creation */
-LUSHAPI at *new_symbol(char *s);
-LUSHAPI at *named(char *s);
-LUSHAPI at *namedclean(char *s);
+LUSHAPI at *new_symbol(const char *);
+LUSHAPI at *named(const char *);
+LUSHAPI at *namedclean(const char *);
 extern at *at_t; 
 #define t()           at_t
 
-LUSHAPI char *nameof(at *p);
-LUSHAPI symbol_t *symbol_push(symbol_t *sym, at *q);
-LUSHAPI symbol_t *symbol_pop(symbol_t *sym);
+LUSHAPI char *nameof(symbol_t *);
+LUSHAPI char *NAMEOF(at *);
+LUSHAPI symbol_t *symbol_push(symbol_t *, at *);
+LUSHAPI symbol_t *symbol_pop(symbol_t *);
 #define SYMBOL_PUSH(p, q) { at *__p__ = p; Mptr(__p__) = symbol_push((symbol_t*)Mptr(__p__), q); }
 #define SYMBOL_POP(p) { at *__p__ = p; Mptr(__p__) = symbol_pop((symbol_t*)Mptr(__p__)); }
 
@@ -411,8 +417,8 @@ extern LUSHAPI struct error_doc {
    /* contains info for printing error messages */
    at *this_call;
    at *error_call;
-   char *error_prefix;
-   char *error_text;
+   const char *error_prefix;
+   const char *error_text;
    at *error_suffix;
    short debug_tab;
    short ready_to_an_error;
@@ -467,7 +473,6 @@ LUSHAPI void abort (char *s) no_return;
 
 extern LUSHAPI class_t string_class;
 
-#define SADD(obj)         ((char *)(obj))
 LUSHAPI at *new_string(const char *s);
 LUSHAPI at *new_string_bylen(int n);
 LUSHAPI int str_index(char *s1, char *s2, int start);
@@ -510,7 +515,6 @@ LUSHAPI at* str_utf8_to_mb(const char *s);
  */
 
 struct cfunction {
-   int used;
    at *name;
    void *call;
    void *info;
@@ -520,7 +524,6 @@ struct cfunction {
 typedef struct cfunction cfunction_t;
 
 struct lfunction {
-   int used;
    at *formal_args;
    at *body;
 };
@@ -571,11 +574,11 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 #define AFLT(i)         ( rtoF(AREAL(i)) )
 #define ALIST(i)        ( ISLIST(i) ? APOINTER(i):(at*)DX_ERROR(2,i) )
 #define ACONS(i)        ( ISCONS(i) ? APOINTER(i):(at*)DX_ERROR(3,i) )
-#define ASTRING(i)      ( ISSTRING(i) ? String(APOINTER(i)) :(char*)DX_ERROR(4,i) )
-#define ASYMBOL(i)      ( ISSYMBOL(i) ? Mptr(APOINTER(i)):DX_ERROR(7,i) )
-#define ASTORAGE(i)     ( ISSTORAGE(i) ? Mptr(APOINTER(i)):DX_ERROR(10,i) )
-#define AINDEX(i)       ( ISINDEX(i) ? Mptr(APOINTER(i)):DX_ERROR(11,i) )
-#define ACLASS(i)       ( ISCLASS(i) ? Mptr(APOINTER(i)):DX_ERROR(12,i) )
+#define ASTRING(i)      ( ISSTRING(i) ? String(APOINTER(i)) : (char*)DX_ERROR(4,i) )
+#define ASYMBOL(i)      ( ISSYMBOL(i) ? Symbol(APOINTER(i)) : (symbol_t *)DX_ERROR(7,i) )
+#define ASTORAGE(i)     ( ISSTORAGE(i) ? (storage_t *)Mptr(APOINTER(i)) : (storage_t *)DX_ERROR(10,i) )
+#define AINDEX(i)       ( ISINDEX(i) ? (index_t *)Mptr(APOINTER(i)) : (index_t *)DX_ERROR(11,i) )
+#define ACLASS(i)       ( ISCLASS(i) ? (class_t *)Mptr(APOINTER(i)) : (class_t *)DX_ERROR(12,i) )
 
 #define ARG_NUMBER(i)	if (arg_number != i)  DX_ERROR(0,i);
 #define ARG_EVAL(i)	arg_eval(arg_array,i)
@@ -591,14 +594,14 @@ extern LUSHAPI char file_name[];
 #define OPEN_READ(f,s)  new_extern(&file_R_class,open_read(f,s))
 #define OPEN_WRITE(f,s) new_extern(&file_W_class,open_write(f,s))
 
-LUSHAPI char *cwd(char *s);
-LUSHAPI at *files(char *s);
-LUSHAPI bool dirp(char *s);
-LUSHAPI bool filep(char *s);
-LUSHAPI char *dirname(char *fname);
-LUSHAPI char *basename(char *fname, char *suffix);
-LUSHAPI char *concat_fname(char *from, char *fname);
-LUSHAPI char *relative_fname(char *from, char *fname);
+LUSHAPI char *cwd(const char *s);
+LUSHAPI at *files(const char *s);
+LUSHAPI bool dirp(const char *s);
+LUSHAPI bool filep(const char *s);
+LUSHAPI char *dirname(const char *fname);
+LUSHAPI char *basename(const char *fname, const char *suffix);
+LUSHAPI char *concat_fname(const char *from, const char *fname);
+LUSHAPI char *relative_fname(const char *from, const char *fname);
 LUSHAPI void unlink_tmp_files(void);
 LUSHAPI char *tmpname(char *s, char *suffix);
 LUSHAPI char *search_file(char *s, char *suffixes);
@@ -630,7 +633,7 @@ extern LUSHAPI char *line_buffer;
 extern LUSHAPI char *prompt_string;
 
 LUSHAPI void print_char (char c);
-LUSHAPI void print_string(char *s);
+LUSHAPI void print_string(const char *s);
 LUSHAPI void print_list(at *list);
 LUSHAPI void print_tab(int n);
 LUSHAPI char *pname(at *l);
@@ -703,20 +706,20 @@ LUSHAPI void setslot(at**, at*, at*);
 extern LUSHAPI class_t module_class;
 #define MODULEP(x)  ((x)&&Class(x) == &module_class)
 
-LUSHAPI void class_define(char *name, class_t *cl);
-LUSHAPI void dx_define(char *name, at *(*addr) (int, at **));
-LUSHAPI void dy_define(char *name, at *(*addr) (at *));
-LUSHAPI void dxmethod_define(class_t *cl, char *name, at *(*addr) (int, at **));
-LUSHAPI void dymethod_define(class_t *cl, char *name, at *(*addr) (at *));
+LUSHAPI void class_define(const char *name, class_t *cl);
+LUSHAPI void dx_define(const char *name, at *(*addr) (int, at **));
+LUSHAPI void dy_define(const char *name, at *(*addr) (at *));
+LUSHAPI void dxmethod_define(class_t *cl, const char *name, at *(*addr) (int, at **));
+LUSHAPI void dymethod_define(class_t *cl, const char *name, at *(*addr) (at *));
 
-LUSHAPI void dhclass_define(char *name, dhclassdoc_t *kclass);
-LUSHAPI void dh_define(char *name, dhdoc_t *kname);
-LUSHAPI void dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname);
+LUSHAPI void dhclass_define(const char *name, dhclassdoc_t *kclass);
+LUSHAPI void dh_define(const char *name, dhdoc_t *kname);
+LUSHAPI void dhmethod_define(dhclassdoc_t *kclass, const char *name, dhdoc_t *kname);
 
 LUSHAPI void check_primitive(at *prim, void *info);
 LUSHAPI at *find_primitive(at *module, at *name);
 LUSHAPI at *module_list(void);
-LUSHAPI at *module_load(char *filename, at *hook);
+LUSHAPI at *module_load(const char *filename, at *hook);
 LUSHAPI void module_unload(at *atmodule);
 
 
@@ -1038,7 +1041,7 @@ LUSHAPI at  *load_matrix(FILE*);
  */
 
 #define begin_idx_aloop1(idx,ptr) { 					     \
-  ptrdiff_t _d_[MAXDIMS]; 						     \
+  size_t _d_[MAXDIMS]; 						     \
   ptrdiff_t ptr = 0;							     \
   int _j_;                                                                   \
   bool emptyp = false;                                                       \
@@ -1071,8 +1074,8 @@ LUSHAPI at  *load_matrix(FILE*);
  */
 
 #define begin_idx_aloop2(idx1, idx2, ptr1, ptr2) { 			     \
-  ptrdiff_t _d1_[MAXDIMS]; 						     \
-  ptrdiff_t _d2_[MAXDIMS];						     \
+  size_t _d1_[MAXDIMS]; 						     \
+  size_t _d2_[MAXDIMS];						             \
   ptrdiff_t ptr1 = 0;							     \
   ptrdiff_t ptr2 = 0;							     \
   int _j1_, _j2_;                                                            \
@@ -1123,9 +1126,9 @@ LUSHAPI at  *load_matrix(FILE*);
  */
 
 #define begin_idx_aloop3(idx0, idx1, idx2, ptr0, ptr1, ptr2) { 	             \
-  ptrdiff_t _d0_[MAXDIMS]; 						     \
-  ptrdiff_t _d1_[MAXDIMS]; 						     \
-  ptrdiff_t _d2_[MAXDIMS]; 						     \
+  size_t _d0_[MAXDIMS]; 						     \
+  size_t _d1_[MAXDIMS]; 						     \
+  size_t _d2_[MAXDIMS]; 						     \
   ptrdiff_t ptr0 = 0;						     	     \
   ptrdiff_t ptr1 = 0;						     	     \
   ptrdiff_t ptr2 = 0;							     \
@@ -1226,7 +1229,7 @@ LUSHAPI bool lisp_owns_p(void *cptr);  /* true when interpreter owns the object 
 
 extern LUSHAPI int run_time_error_flag;
 extern LUSHAPI jmp_buf run_time_error_jump;
-LUSHAPI void run_time_error(char *s);
+LUSHAPI void run_time_error(const char *s);
 
 
 /* EVENT.H ----------------------------------------------------- */

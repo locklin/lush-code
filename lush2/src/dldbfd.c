@@ -3082,7 +3082,7 @@ dld_init (const char *exec)
 /* dld_dlopen -- replacement for DLOPEN compatible with DLD */
 
 void *
-dld_dlopen(char *path, int mode)
+dld_dlopen(const char *path, int mode)
 {
 #ifdef DLOPEN
     bfd *abfd = 0;

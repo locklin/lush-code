@@ -29,7 +29,6 @@
 
 
 #include "header.h"
-#include "mm.h"
 #include "check_func.h"
 #include "dh.h"
 
@@ -537,7 +536,7 @@ static void transmute_object_into_gptr(at *p, void *px)
     /* clean object up */
     Class(p)->dispose(Mptr(p));
     /* disguise it as a gptr */
-    Class(p) = &gptr_class;
+    AssignClass(p, &gptr_class);
     Gptr(p) = px;
   }
 }
@@ -1653,7 +1652,7 @@ static void wipe_out_temps(void)
 int     run_time_error_flag;
 jmp_buf run_time_error_jump;
 
-void run_time_error(char *s)
+void run_time_error(const char *s)
 {
   if (run_time_error_flag) {
     printf("\n\n*** lisp_c runtime error: %s\007\007\n",s);
@@ -2038,7 +2037,6 @@ DX(xto_str)
   at *p = APOINTER(1);
   
   if (STRINGP(p)) {
-     //LOCK(p);
     return p;
 
   } else if (GPTRP(p)) {
@@ -2051,7 +2049,6 @@ DX(xto_str)
     delayed_kill_list = NIL;
 
     ifn (STRINGP(q)) {
-       //UNLOCK(q);
       RAISEF("not a pointer to a string",p);
     }
     return q;
@@ -2064,7 +2061,7 @@ DX(xto_str)
   
 /* defined in module.c */
 struct module;
-extern void *dynlink_symbol(struct module *, char *, int, int);
+extern void *dynlink_symbol(struct module *, const char *, int, int);
 
 /* (to-gptr <obj>) */
 DX(xto_gptr)

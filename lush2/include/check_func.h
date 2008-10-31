@@ -48,7 +48,7 @@ extern "C" {
 
 
 struct dh_trace_stack {
-    char *info;
+    const char *info;
     struct dh_trace_stack *next;
 };
 
@@ -127,10 +127,10 @@ LUSHAPI int  test_obj_class(void *obj, void *classvtable);
 /* ---------------------------------------- */
 
 
-LUSHAPI void *lush_malloc(size_t, char *, int);
+LUSHAPI void *lush_malloc(size_t, const char *, int);
 //LUSHAPI void srg_resize_compiled(struct srg* ,size_t ,char *, int);
-LUSHAPI void srg_resize_mm(struct srg* ,size_t ,char *, int);
-LUSHAPI void srg_resize(struct srg *, size_t, char *, int );
+LUSHAPI void srg_resize_mm(struct srg* ,size_t , const char *, int);
+LUSHAPI void srg_resize(struct srg *, size_t, const char *, int );
 LUSHAPI void srg_free(struct srg *);
 
 #define Mis_sized(i1) \

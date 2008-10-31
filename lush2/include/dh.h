@@ -233,10 +233,10 @@ struct dhdoc_s
 {
   dhrecord *argdata;            /* points to the metainformation records */
   struct {
-    char *c_name;		/* string with the C_name */
-    char *m_name;		/* string with the M_name or nil */
+    const char *c_name;		/* string with the C_name */
+    const char *m_name;		/* string with the M_name or nil */
     dharg (*call)(dharg *);	/* pointer to the X_name function */
-    char *k_name;               /* string with the K_name_Rxxxxxxxx */
+    const char *k_name;         /* string with the K_name_Rxxxxxxxx */
     dhdoc_t *dhtest;            /* pointer to the dhdoc for the testfunc */ 
   } lispdata;
 };

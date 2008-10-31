@@ -28,7 +28,6 @@
  **********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 

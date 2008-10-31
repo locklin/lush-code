@@ -28,7 +28,6 @@
  **********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 #include "dh.h"
 
 /* ------- DLDBFD/NSBUNDLE HEADERS ------- */
@@ -450,8 +449,8 @@ struct module {
    int flags;
    struct module *prev;
    struct module *next;
-   char *filename;
-   char *initname;
+   const char *filename;
+   const char *initname;
    void *initaddr;
 #if NSBUNDLE
    nsbundle_t bundle;
@@ -514,7 +513,7 @@ static mt_t mt_module = mt_undefined;
 
 /* ---------- THE MODULE OBJECT ----------- */
 
-at *new_module(char *filename, at *hook)
+at *new_module(const char *filename, at *hook)
 {
    module_t *m = mm_alloc(mt_module);
    m->flags = 0;
@@ -574,7 +573,7 @@ static void module_serialize(at **pp, int code)
       if (m != root) {
          fname = relative_fname(lushdir_name, m->filename);
          if (!fname)
-            fname = m->filename;
+            fname = mm_strdup(m->filename);
       }
    }
    
@@ -764,7 +763,7 @@ static void dynlink_hook(module_t *m, char *hookname)
    }
 }
 
-void *dynlink_symbol(module_t *m, char *sname, int func, int exist)
+void *dynlink_symbol(module_t *m, const char *sname, int func, int exist)
 {
 #if DLDBFD
    if (func)
@@ -1160,14 +1159,13 @@ DX(xmodule_unload)
 
 /* --------- MODULE_LOAD --------- */
 
-at *module_load(char *filename, at *hook)
+at *module_load(const char *file, at *hook)
 {
 #if DLOPEN
    dlopen_handle_t handle = 0;
 #endif
    /* Check that file exists */
-   filename = concat_fname(NULL, filename);
-   filename = mm_strdup(filename);
+   char *filename = concat_fname(NULL, file);
    if (! filep(filename))
       RAISEF("file not found", new_string(filename));
 
@@ -1426,14 +1424,13 @@ static void module_def(at *name, at *val)
    /* Check name and add definition */
    ifn (SYMBOLP(name))
       RAISEF("internal error (symbol expected)",name);
-   current->defs = new_cons(new_cons(val, name),current->defs);
+   current->defs = new_cons(new_cons(val, name), current->defs);
    /* Root definitions are also written into symbols */
    if (current == root) {
-      symbol_t *symb = Mptr(name);
-      if (symb->mode == SYMBOL_LOCKED)
+      if (SYMBOL_LOCKED_P(Symbol(name)))
          RAISEF("internal error (multiple definition)", name);
       var_set(name, val);
-      symb->mode = SYMBOL_LOCKED;
+      var_lock(name);
    }
 }
 
@@ -1462,7 +1459,7 @@ static void module_method_def(class_t *cl, at *name, at *val)
 }
 
 
-void class_define(char *name, class_t *cl)
+void class_define(const char *name, class_t *cl)
 {
    at *symb = new_symbol(name);
    at *classat = new_extern(&class_class,cl);
@@ -1473,7 +1470,7 @@ void class_define(char *name, class_t *cl)
    current->flags |= MODULE_CLASS;
 }
 
-void dx_define(char *name, at *(*addr) (int, at **))
+void dx_define(const char *name, at *(*addr) (int, at **))
 {
    at *symb = new_symbol(name);
    at *priminame = module_priminame(symb);
@@ -1481,7 +1478,7 @@ void dx_define(char *name, at *(*addr) (int, at **))
    module_def(symb, func);
 }
 
-void dy_define(char *name, at *(*addr) (at *))
+void dy_define(const char *name, at *(*addr) (at *))
 {
    at *symb = new_symbol(name);
    at *priminame = module_priminame(symb);
@@ -1489,7 +1486,7 @@ void dy_define(char *name, at *(*addr) (at *))
    module_def(symb, func);
 }
 
-void dxmethod_define(class_t *cl, char *name, at *(*addr) (int, at **))
+void dxmethod_define(class_t *cl, const char *name, at *(*addr) (int, at **))
 {
   at *symb = new_symbol(name);
   at *priminame = module_method_priminame(cl, symb);
@@ -1498,7 +1495,7 @@ void dxmethod_define(class_t *cl, char *name, at *(*addr) (int, at **))
 }
 
 
-void dymethod_define(class_t *cl, char *name, at *(*addr) (at *))
+void dymethod_define(class_t *cl, const char *name, at *(*addr) (at *))
 {
   at *symb = new_symbol(name);
   at *priminame = module_method_priminame(cl, symb);
@@ -1507,7 +1504,7 @@ void dymethod_define(class_t *cl, char *name, at *(*addr) (at *))
 }
 
 
-void dhclass_define(char *name, dhclassdoc_t *kclass)
+void dhclass_define(const char *name, dhclassdoc_t *kclass)
 {
    at *symb = new_symbol(name);
    at *classat = new_dhclass(symb, kclass);
@@ -1518,7 +1515,7 @@ void dhclass_define(char *name, dhclassdoc_t *kclass)
 }
 
 
-void dh_define(char *name, dhdoc_t *kname)
+void dh_define(const char *name, dhdoc_t *kname)
 {
    at *symb = new_symbol(name);
    at *priminame = module_priminame(symb);
@@ -1526,7 +1523,7 @@ void dh_define(char *name, dhdoc_t *kname)
    module_def(symb, func);
 }
 
-void dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname)
+void dhmethod_define(dhclassdoc_t *kclass, const char *name, dhdoc_t *kname)
 {
    at *symb = new_symbol(name);
    if (! kclass->lispdata.atclass)

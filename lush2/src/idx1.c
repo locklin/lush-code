@@ -72,7 +72,7 @@ Xidx_po(maclearwith, Mis_sized);
 #define case_type1(storage_type, t1, FUNC_NAME) \
     unfold_switch(storage_type,t1, FUNC_NAME);
 
-Xidx_ioa(macopy, check_main_maout)
+//Xidx_ioa(macopy, check_main_maout)
 Xidx_io0(masum, check_main_m0out)
 Xidx_io0(masup, check_main_m0out)
 Xidx_io0(mainf, check_main_m0out)

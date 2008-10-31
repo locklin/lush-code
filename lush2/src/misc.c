@@ -160,7 +160,6 @@ void all_args_eval(at **arg_array, int i)
    }
 }
 
-
 /* -------------------------------------------------------------
    Local Variables:
    c-file-style: "k&r"

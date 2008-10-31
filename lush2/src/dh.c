@@ -28,7 +28,6 @@
  **********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 #include "dh.h"
 
 
@@ -295,7 +294,7 @@ static at *make_dhclass(dhclassdoc_t *kdata)
 
 LUSHAPI at *new_dhclass(at *name, dhclassdoc_t *kdata)
 {
-   if (strcmp(nameof(name), kdata->lispdata.lname))
+   if (strcmp(NAMEOF(name), kdata->lispdata.lname))
       error(NIL, "incorrect CLASSDOC: "
             "class name does not match dhclass_define", NIL);    
 
@@ -313,7 +312,7 @@ LUSHAPI at *new_dhclass(at *name, dhclassdoc_t *kdata)
 
 
 /* Remove extra chars added by enclose_in_string */
-static char *strclean(char *s)
+static const char *strclean(const char *s)
 {
    if (s != 0)
       while (*s && (*s==' ' || *s=='\t' || *s=='\n' || *s=='\r'))

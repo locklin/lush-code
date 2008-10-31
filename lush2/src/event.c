@@ -28,7 +28,6 @@
  **********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 #include "graphics.h"
 
 static at *at_handle = NIL;

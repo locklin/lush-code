@@ -28,7 +28,6 @@
  **********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 #include "graphics.h"
 
 typedef unsigned char   uchar;
@@ -82,7 +81,7 @@ static window_t *window_dispose(window_t *win)
 static char *window_name(at *p)
 {
    sprintf(string_buffer, "::%s:%s:%lx",
-           nameof(Class(p)->classname),
+           NAMEOF(Class(p)->classname),
            ((window_t *)Mptr(p))->gdriver->name,
            (long)Mptr(p));
    return string_buffer;

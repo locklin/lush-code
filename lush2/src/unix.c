@@ -134,7 +134,6 @@ typedef RETSIGTYPE (*SIGHANDLERTYPE)();
 
 /* Lush header files */
 #include "header.h"
-#include "mm.h"
 #include "lushmake.h"
 
 
@@ -245,7 +244,7 @@ break_irq(void)
 
 /* lastchance -- safety code for hopeless situations */
 
-void lastchance(char *s)
+void lastchance(const char *s)
 {
    static int already = 0;
 

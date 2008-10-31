@@ -31,7 +31,6 @@
 /* Functions that check the dimensions of index parameters */
 
 #include "header.h"
-#include "mm.h"
 #include "idxmac.h"
 #include "idxops.h"
 #include "check_func.h"
@@ -98,7 +97,7 @@ void print_dh_trace_stack(void)
     while (st) 
     {
         int lastcount = 0;
-        char *lastinfo = st->info;
+        const char *lastinfo = st->info;
         while (st && st->info==lastinfo) {
             lastcount += 1;
             st = st->next;
@@ -164,7 +163,7 @@ check_obj_class(void *obj, void *classvtable)
 
 static FILE *malloc_file = 0;
 
-void *lush_malloc(size_t x, char *file, int line)
+void *lush_malloc(size_t x, const char *file, int line)
 {
     void *z = malloc(x);
     if (malloc_file)
@@ -174,7 +173,7 @@ void *lush_malloc(size_t x, char *file, int line)
     return z;
 }
 
-static void *lush_realloc(void *x,size_t y,char *file,int line)
+static void *lush_realloc(void *x,size_t y, const char *file,int line)
 {
     void *z = (void*)realloc(x,y);
     if (malloc_file) {
@@ -186,7 +185,7 @@ static void *lush_realloc(void *x,size_t y,char *file,int line)
     return z;
 }
 
-static void lush_free(void *x,char *file,int line)
+static void lush_free(void *x, const char *file,int line)
 {
     free(x);
     if (malloc_file)
@@ -209,7 +208,7 @@ srg_resize_compiled(struct srg *sr, size_t new_size, char *file, int line)
 }
 */
 void
-srg_resize_mm(struct srg *sr, size_t new_size, char *file, int line)
+srg_resize_mm(struct srg *sr, size_t new_size, const char *file, int line)
 {
   if(sr->flags & STS_MALLOC)  {
     size_t st_size = storage_sizeof[sr->type] * new_size;
@@ -224,7 +223,7 @@ srg_resize_mm(struct srg *sr, size_t new_size, char *file, int line)
 }
 
 void
-srg_resize(struct srg *sr, size_t new_size, char *file, int line) 
+srg_resize(struct srg *sr, size_t new_size, const char *file, int line) 
 {
 #ifndef NOLISP
   if(sr->flags & STS_MALLOC) { 

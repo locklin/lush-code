@@ -36,7 +36,6 @@
  * Declarations
  */
 #include "header.h"
-#include "mm.h"
 
 #ifdef TIME_WITH_SYS_TIME
 # include <sys/times.h>
@@ -627,9 +626,9 @@ DX(xdate_extend)
    int from = -1;
    int to = -1;
    for (int i=DATE_YEAR; i<=DATE_SECOND; i++) {
-      if (!strcmp(ansidatenames[i],nameof(APOINTER(2))))
+      if (!strcmp(ansidatenames[i], NAMEOF(APOINTER(2))))
          from = i;
-      if (!strcmp(ansidatenames[i],nameof(APOINTER(3))))
+      if (!strcmp(ansidatenames[i], NAMEOF(APOINTER(3))))
          to = i;
    }
    if (from<0 || to<0 || from>DATE_SECOND || to>DATE_SECOND || from>to )
@@ -695,9 +694,9 @@ DX(xstring_to_date)
       ASYMBOL(2);
       ASYMBOL(3);
       for (int i=DATE_YEAR; i<=DATE_SECOND; i++) {
-         if (!strcmp(ansidatenames[i],nameof(APOINTER(2))))
+         if (!strcmp(ansidatenames[i], NAMEOF(APOINTER(2))))
             from = i;
-         if (!strcmp(ansidatenames[i],nameof(APOINTER(3))))
+         if (!strcmp(ansidatenames[i], NAMEOF(APOINTER(3))))
             to = i;
       }
    }

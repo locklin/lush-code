@@ -35,7 +35,6 @@
 ********************************************************************** */
 
 #include "header.h"
-#include "mm.h"
 
 #ifdef UNIX
 # include <signal.h>

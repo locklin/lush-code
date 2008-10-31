@@ -32,7 +32,6 @@
 ********************************************************************** */
 
 #include "header.h"
-#include "mm.h"
 #include "dh.h"
 
 /* objects with less or equal MIN_NUM_SLOTS slots will
@@ -218,7 +217,7 @@ static char *class_name(at *p)
    class_t *cl = Mptr(p);
    
    if (cl->classname)
-      sprintf(string_buffer, "::class:%s", nameof(cl->classname));
+      sprintf(string_buffer, "::class:%s", NAMEOF(cl->classname));
    else
       sprintf(string_buffer, "::class:%lx", (long)cl);
    
@@ -524,18 +523,16 @@ at *with_object(at *p, at *f, at *q, int howfar)
       for (int i = obj->size-1; i >= howfar; i--) {
          at *atsym = obj->slots[i].symb;
          symbol_t *sym = mm_alloc(mt_symbol);
-         sym->mode = SYMBOL_UNLOCKED;
          sym->next = Symbol(atsym);
-         sym->hn = sym->next->hn;
+         sym->hn = SYM_HN(sym->next);
          sym->valueptr = &(obj->slots[i].val);
          Mptr(atsym) = sym;
       }
 
       /* push THIS */
       symbol_t *sym = mm_alloc(mt_symbol);
-      sym->mode = SYMBOL_UNLOCKED;
       sym->next = Symbol(at_this);
-      sym->hn = sym->next->hn;
+      sym->hn = SYM_HN(sym->next);
       sym->value = p;
       sym->valueptr = &(sym->value);
       Symbol(at_this) = sym;
@@ -916,7 +913,7 @@ bool is_of_class(at *p, class_t *cl)
    return c == cl;
 }
 
-DX(xis_of_class)
+DX(xisa)
 {
    ARG_NUMBER(2);
    ALL_ARGS_EVAL;
@@ -988,7 +985,7 @@ void init_oostruct(void)
    dx_define("methods",xmethods);
    dx_define("classname",xclassname);
    dx_define("classof",xclassof);
-   dx_define("is-of-class",xis_of_class);
+   dx_define("isa",xisa);
    dx_define("make-class",xmake_class);
    dx_define("builtin-class-p",xbuiltin_class_p);
    dy_define("new",ynew);
