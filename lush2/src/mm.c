@@ -170,6 +170,7 @@ static int        num_allocs = 0;
 static int        num_collects = 0;
 static size_t     vol_allocs = 0;
 static bool       gc_disabled = false;
+static int        fetch_backlog = 0;
 static bool       collect_in_progress = false;
 static bool       mark_in_progress = false;
 static bool       collect_requested = false;
@@ -466,7 +467,8 @@ static void *alloc_variable_sized(mt_t t, size_t s)
       info->t = t;
       info->nh = s/MIN_HUNKSIZE;
       
-      fetch_unreachables();
+      if (collecting_child)
+         fetch_unreachables();
       maybe_trigger_collect(s);
 
       return seal(p);
@@ -497,7 +499,8 @@ static void *alloc_fixed_size(mt_t t)
    VALGRIND_MEMPOOL_ALLOC(heap, p, s);
    blockrecs[BLOCKA(types[t].current_a)].in_use++;
    
-   fetch_unreachables();
+   if (collecting_child)
+      fetch_unreachables();
    maybe_trigger_collect(s);
 
    return p;
@@ -844,6 +847,7 @@ static void collect_epilogue(void)
    }
    heap_exhausted = false;
    collect_in_progress = false;
+   fetch_backlog = 0;
    compact_managed();
 }
 
@@ -1738,8 +1742,12 @@ static int _fetch_unreachables(void *buf)
 /* return number of objects reclaimed                       */
 static int fetch_unreachables(void)
 {
-   if (!collecting_child || gc_disabled)
+   assert(collecting_child);
+
+   if (gc_disabled) {
+      fetch_backlog++;
       return 0;
+   }
 
    static void *buf[NUM_TRANSFER];
    static int j, n = 0;
@@ -1971,8 +1979,11 @@ bool mm_idle(void)
 
    if (collect_in_progress) {
       if (!gc_disabled) {
-         for (int i = 0; i < 50; i++)
+         int i = 50;
+         while (i>0 && collect_in_progress) {
             fetch_unreachables();
+            i--;
+         }
          return true;
       } else
          return false;
@@ -2015,6 +2026,10 @@ bool mm_begin_nogc(bool dont_block)
 void mm_end_nogc(bool nogc)
 {
    gc_disabled = nogc;
+   if (collect_in_progress && !gc_disabled && fetch_backlog) {
+      while (collect_in_progress && fetch_backlog>0)
+         fetch_backlog -= fetch_unreachables();
+   } 
    if (collect_requested && !gc_disabled)
       mm_collect();
 }
