@@ -383,18 +383,22 @@ void lside_destroy_item(void *cptr)
 	  switch (n->cinfo) {
 
 	  case CINFO_SRG:
+            assert(STORAGEP(p));
 	    ((storage_t *)Mptr(p))->cptr = NULL;
 	    break;
 	    
 	  case CINFO_OBJ:
+            assert(OBJECTP(p));
 	    ((object_t *)Mptr(p))->cptr = NULL;
 	    break;
 
 	  case CINFO_IDX:
+            assert(INDEXP(p));
             ((index_t *)Mptr(p))->cptr = NULL;
 	    break;
 
 	  case CINFO_STR:
+            assert(STRINGP(p));
              //Mptr(n->litem) = NULL;
             n->citem = NULL;
 	    break;
@@ -641,29 +645,6 @@ at *cside_find_litem(void *cptr)
   }
   return NIL;
 }
-
-
-
-/* -----------------------------------------
-   THE KILL LIST
-   ----------------------------------------- */
-
-/*
- * When we udpate the lisp objects with information stored in the C code, we
- * must replace the contents of the object slots with the new content. In the
- * process, we must reduce the counter of the old value. This may call a
- * destructor and subsequently call a DH. This a problem because DH_LISTEVAL
- * is not a nice reentrant function.
- *
- * Instead of unlocking these objects we store them in a list by stealing
- * their lock. At the end of listeval, we just UNLOCK the list.
- */
-
-static at *delayed_kill_list = 0;
-
-#define DELAYED_UNLOCK(new,old) \
-   if (new!=old) { delayed_kill_list = new_cons(old,delayed_kill_list); }
-
 
 
 
@@ -1319,9 +1300,6 @@ static void update_c_from_lisp(avlnode_t *n)
     struct oostruct *obj = Mptr(p);
 
     if (obj) {
-       // if (p->flags & C_GARBAGE)
-      //dont_warn_zombie = true;
-      
       dhclassdoc_t *cdoc = n->cmoreinfo;
       if (cdoc==0)
 	error(NIL,"lisp_c internal: corrupted class information",NIL);
@@ -1418,7 +1396,7 @@ static void update_lisp_from_c(avlnode_t *n)
     struct idx *idx = n->citem;
     struct index *ind = Mptr(n->litem);
 
-    /* copy index structure */
+    /* copy index data */
     ind->ndim = idx->ndim;
     ind->offset = idx->offset;
     for(int i=0;i<idx->ndim;i++) {
@@ -1435,10 +1413,8 @@ static void update_lisp_from_c(avlnode_t *n)
       return;
     } 
     /* plug the storage into lisp object */
-    at *origatst = IND_ATST(ind);
     at *atst = make_lisp_from_c(nst, idx->srg);
     IND_ST(ind) = Mptr(atst);
-    DELAYED_UNLOCK(atst, origatst);
     break;
   }
 
@@ -1455,9 +1431,6 @@ static void update_lisp_from_c(avlnode_t *n)
     struct oostruct *obj = Mptr(p);
     
     if (obj) {
-       //if (p->flags & C_GARBAGE)
-       //dont_warn_zombie = true;
-
       dhclassdoc_t *cdoc = n->cmoreinfo;
       if (cdoc==0)
 	error(NIL,"lisp_c internal: corrupted class information",NIL);
@@ -1491,10 +1464,10 @@ static void update_lisp_from_c(avlnode_t *n)
 	  char *pos = (char*)cptr + (unsigned long)(drec->arg);
 	  dharg tmparg;
 	  address_to_dharg(&tmparg, pos, drec+1);
-	  at *orig = obj->slots[j].val;
-	  at *new = dharg_to_at(&tmparg, drec+1, p);
-	  obj->slots[j].val = new;
-          DELAYED_UNLOCK(new, orig);
+	  //at *orig = obj->slots[j].val;
+	  //at *new = ;
+	  obj->slots[j].val = dharg_to_at(&tmparg, drec+1, p);
+          //DELAYED_UNLOCK(new, orig);
 
 	  drec = drec->end;
 	}
@@ -1680,7 +1653,7 @@ static at *_dh_listeval(at *p, at *q)
   at *atgs[MAXARGS];
   dharg args[MAXARGS];
 
-  // printf("dh_listeval: %s\n", pname(q));
+  //printf("dh_listeval: %s\n", pname(q));
   /* Find and check the DHDOC */
   struct cfunction *cfunc = Mptr(p);
   if (CONSP(cfunc->name))
@@ -1736,10 +1709,9 @@ static at *_dh_listeval(at *p, at *q)
   set_update_flag();
   full_update_c_from_lisp();
 
-  /* Prepare delayed_kill_list and environment */
+  /* Prepare environment */
   if (run_time_error_flag)
     lisp2c_warning("reentrant call to compiled code",0);
-  delayed_kill_list = NIL;
   int errflag = setjmp(run_time_error_jump);
   dh_trace_root = 0;
     
@@ -1771,9 +1743,6 @@ static at *_dh_listeval(at *p, at *q)
   full_update_lisp_from_c();
   /* Remove objects owned by LISP and not associated to LISP object */
   wipe_out_temps();
-  /* Execute pending deletions */
-  //printf("kill-list: %s\n", pname(delayed_kill_list));
-  delayed_kill_list = NIL;
 
   /* return */
   dont_warn_zombie = false;
@@ -2014,7 +1983,6 @@ DX(xto_obj)
 
     /* make lisp object */
     p = make_lisp_from_c(n, Gptr(p));
-    delayed_kill_list = NIL;
 
   } else
     error(NIL,"Expecting GPTR or OBJECT",p);
@@ -2051,7 +2019,6 @@ DX(xto_str)
 
     /* make lisp object */
     at *q = make_lisp_from_c(n, Gptr(p));
-    delayed_kill_list = NIL;
 
     ifn (STRINGP(q)) {
       RAISEF("not a pointer to a string",p);
@@ -2127,8 +2094,6 @@ DX(xto_gptr)
 
 void init_lisp_c(void)
 {
-   MM_ROOT(delayed_kill_list);
-
   init_storage_to_dht();
   dx_define("lisp-c-map", xlisp_c_map);
   dx_define("lisp-c-dont-track-cside", xlisp_c_dont_track_cside);
