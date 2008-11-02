@@ -898,6 +898,8 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     } else if (INDEXP(at_obj)) {
       /* check type and access */
       index_t *ind = Mptr(at_obj);
+      assert(mm_ismanaged(ind));
+
       if (ind->ndim != drec->ndim)
 	lisp2c_error("INDEX has wrong number of dimensions",
 		     errctx, at_obj);
@@ -1068,8 +1070,11 @@ static at *_dharg_to_at(dharg *arg, dhrecord *drec, at *errctx)
     if (arg->dh_idx_ptr==0) 
       return NIL;
     n = avl_find(arg->dh_idx_ptr);
-    if (n)
-      return make_lisp_from_c(n,arg->dh_idx_ptr);
+    if (n) {
+      at *p = make_lisp_from_c(n,arg->dh_idx_ptr);
+      assert(mm_ismanaged(p) && mm_ismanaged(Mptr(p)));
+      return p;
+    }
     if (!dont_track_cside) 
       lisp2c_warning("(out): Dangling pointer instead of IDX", errctx);
     return NEW_GPTR(arg->dh_idx_ptr);
@@ -1315,7 +1320,7 @@ static void update_c_from_lisp(avlnode_t *n)
 
     if (obj) {
        // if (p->flags & C_GARBAGE)
-      dont_warn_zombie = true;
+      //dont_warn_zombie = true;
       
       dhclassdoc_t *cdoc = n->cmoreinfo;
       if (cdoc==0)

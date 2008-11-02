@@ -189,6 +189,7 @@ extern LUSHAPI class_t null_class;
 extern LUSHAPI class_t number_class;
 extern LUSHAPI class_t gptr_class;
 extern LUSHAPI class_t zombie_class;
+extern LUSHAPI class_t window_class;
 
 struct at {
    class_t *cl;
@@ -234,6 +235,11 @@ struct at {
 #define STRINGP(x)      ((x)&&(Class(x) == &string_class))
 #define ZOMBIEP(x)      ((x)&&(Class(x) == &null_class))
 #define WINDOWP(x)      ((x)&&(Class(x) == &window_class))
+
+#define HAS_BACKPTR_P(p) ((p)&&(Class(p)==&index_class || \
+                                Class(p)->dispose==object_class->dispose || \
+                                Class(p)->super==&abstract_storage_class || \
+                                Class(p)==&window_class) )
 
 extern LUSHAPI at *(*eval_ptr) (at*);
 extern LUSHAPI at *(*argeval_ptr) (at*);
