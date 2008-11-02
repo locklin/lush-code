@@ -1667,6 +1667,7 @@ index_t *index_copy(index_t *src, index_t *dest)
 {
    memcpy(dest, src, sizeof(index_t));
    dest->backptr = new_extern(&index_class, dest);
+   dest->cptr = NULL;
    return dest; 
 }
 
