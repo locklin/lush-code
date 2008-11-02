@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.13 2007-09-19 23:15:29 profshadoko Exp $
+;;; $Id: lush.el,v 1.14 2008-11-02 05:25:48 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; this file contains useful definitions for emacs
@@ -104,8 +104,9 @@
                            (not (elt status 3)) ; inside string
                            (not (elt status 4)) ; inside comment
                            (<= (point) cur))    ; not inside the expression
-                      (let ((expr (buffer-substring
-                                   (elt status 2) (- (point) 1))))
+                      (let ((expr (buffer-substring 
+                                   (if (elt status 2) (elt status 2) (- (point) 1))
+                                   (- (point) 1))))
                         (comint-send-string proc (concat expr "\n"))
                         (comint-add-to-input-history expr)
                         (command-execute 'comint-set-process-mark))
