@@ -253,8 +253,6 @@ DX(name2(x, NAME))                                           \
   /* we encountered some index argument */                   \
   index_t *res = as_double_array(atsum);                     \
                                                              \
-  index_t ba_, *ba = &ba_;                                   \
-  index_t bb_, *bb = &bb_;                                   \
   /* pick up where you left off */                           \
   i--;                                                       \
   while (++i <= arg_number) {                                \
@@ -268,6 +266,8 @@ DX(name2(x, NAME))                                           \
                                                              \
     } else {                                                 \
       /* general case */                                     \
+      index_t *ba = NULL;                                    \
+      index_t *bb = NULL;                                    \
       shape_t *shp = index_broadcast2(a, b, &ba, &bb);       \
       ifn (shape_equalp(shp, IND_SHAPE(res))) {              \
 	res = make_array(ST_DOUBLE, shp, NIL);               \
@@ -335,8 +335,6 @@ DX(name2(x, NAME))                                           \
     copy_array((index_t *)Mptr(atsum)) :                     \
     as_double_array(atsum);                                  \
                                                              \
-  index_t ba_, *ba = &ba_;                                   \
-  index_t bb_, *bb = &bb_;                                   \
   /* pick up where you left off */                           \
   i--;                                                       \
   while (++i <= arg_number) {                                \
@@ -350,6 +348,8 @@ DX(name2(x, NAME))                                           \
                                                              \
     } else {                                                 \
       /* general case */                                     \
+      index_t *ba = NULL;                                    \
+      index_t *bb = NULL;                                    \
       shape_t *shp = index_broadcast2(a, b, &ba, &bb);       \
       ifn (shape_equalp(shp, IND_SHAPE(res))) {              \
 	res = make_array(ST_DOUBLE, shp, NIL);               \
