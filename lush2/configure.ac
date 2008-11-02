@@ -4,7 +4,7 @@
 # ----------------------------------------
 
 AC_PREREQ(2.50)
-AC_INIT(Lush, 2.0)
+AC_INIT(Lush2, 2.0)
 AC_REVISION($Id: configure.ac,v 1.54 2008/01/23 22:45:03 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
