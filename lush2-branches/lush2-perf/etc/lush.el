@@ -44,11 +44,11 @@
     (error ())))
 
 ;; call this with M-X lush
-(defun lush ()
-  "starts Lush in another subwindow"
+(defun lush2 ()
+  "starts Lush2 in another subwindow"
   (interactive)
   (switch-to-buffer-other-window "*inferior-lisp*")
-  (inferior-lisp "lush")
+  (inferior-lisp "lush2")
   (other-window -1)
   (set-buffer "*inferior-lisp*")
   (setq comint-prompt-regexp "^?")
@@ -104,9 +104,9 @@
                            (not (elt status 3)) ; inside string
                            (not (elt status 4)) ; inside comment
                            (<= (point) cur) )   ; not inside the expression
-                      (let ((expr (if (elt status 2)
-                                      (buffer-substring (elt status 2) (- (point) 1))
-                                    "")))
+                      (let ((expr (buffer-substring 
+                                   (if (elt status 2) (elt status 2) (- (point) 1))
+                                   (- (point) 1))))
                         (comint-send-string proc (concat expr "\n"))
                         (comint-add-to-input-history expr)
                         (command-execute 'comint-set-process-mark))

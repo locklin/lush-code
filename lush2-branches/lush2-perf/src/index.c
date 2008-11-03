@@ -742,24 +742,23 @@ DX(xidx_broadcast1)
 
 /* Broadcast two indexes and return the resulting shape; raise an error if
  * indexes are not compatible.
- * If *ba is NULL, create and return a new index, same for *bb. If *ba is
- * not NULL, then copy a to *ba and expand the index in-place.
+ * The broadcasted indices are returned through ba and bb, which must be
+ * addresses of pointers to index_ts.
  */
 
 shape_t *index_broadcast2(index_t *a, index_t *b, index_t **ba, index_t **bb) 
 {
    ifn (index_broadcastable_p(a, b))
       RAISEF("indexes not broadcastable", NIL);
+  
+   ifn (*ba == NULL)
+      RAISEF("*ba must be zero", NIL);
 
-   if (*ba==NULL)
-      a = *ba = copy_index(a);
-   else
-      a = index_copy(a, *ba);
+   ifn (*bb == NULL)
+      RAISEF("*bb must be zero", NIL);
 
-   if (*bb==NULL)
-      b = *bb = copy_index(b);
-   else
-      b = index_copy(b, *bb);
+   a = *ba = copy_index(a);
+   b = *bb = copy_index(b);
 
    if (IND_NDIMS(a) < IND_NDIMS(b)) {
       /* reshape a in-place */
@@ -1667,6 +1666,7 @@ index_t *index_copy(index_t *src, index_t *dest)
 {
    memcpy(dest, src, sizeof(index_t));
    dest->backptr = new_extern(&index_class, dest);
+   dest->cptr = NULL;
    return dest; 
 }
 
