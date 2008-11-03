@@ -1578,7 +1578,11 @@ void init_module(char *progname)
    module_class.dontdelete = true;
    class_define("MODULE", &module_class);
 
+#if DLDBFD
+   root->filename = mm_strdup(dld_find_executable(progname));
+#else
    root->filename = mm_strdup(progname);
+#endif  
    atroot = new_extern(&module_class, root);
    root->backptr = atroot;
 
