@@ -81,7 +81,7 @@
 #define MAX_VOLUME      0x100000    /* max volume threshold */
 #define MAN_K_UPDS      100
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
-#define NUM_IDLE_CALLS  20
+#define NUM_IDLE_CALLS  100
 
 #define MM_SIZE_MAX     (UINT32_MAX*MIN_HUNKSIZE) /* checked in alloc_variable_sized */
 
@@ -1988,10 +1988,6 @@ bool mm_idle(void)
       } else
          return false;
 
-   } else if ((man_last - man_k) > 10*MAN_K_UPDS) {
-      update_man_k(-1);
-      return true;
-
    } else {
       ncalls++;
       if (ncalls<NUM_IDLE_CALLS) {
@@ -2128,7 +2124,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
       mt = MM_REGTYPE("refs", 0, clear_refs, mark_refs, 0);
       assert(mt == mt_refs);
       mt = MM_REGTYPE("string", MIN_STRING, 0, 0, 0);
-      assert(mt = mt_string);
+      assert(mt == mt_string);
    }
    assert(types_last == 2);
 
@@ -2151,6 +2147,62 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    assert(stack_empty(transients));
 
    debug("done\n");
+}
+
+/* print diagnostic info to stdinf */
+const char *mm_info(int level)
+{
+   char buffer[2048], *buf = buffer;
+#define BPRINTF(...) { sprintf(buf, __VA_ARGS__); buf += strlen(buf); }
+   
+   if (level<=0)
+      return NULL;
+
+   int    total_blocks_in_use = 0;
+   size_t total_memory_managed = 0;
+   size_t total_memory_used_by_mm = 0;
+   size_t total_objects_managed = 0;
+   size_t total_objects_per_type[types_size];
+   memset(&total_objects_per_type, 0, types_size*sizeof(size_t));
+
+   for (int i=0; i<num_blocks; i++)
+      if (blockrecs[i].in_use)
+         total_blocks_in_use++;
+   
+   BPRINTF("Small object heap : %d blocks of size %.0f KByte (%d in use)\n",
+           num_blocks, (double)BLOCKSIZE/(1<<10), total_blocks_in_use);
+
+   DO_HEAP(a, b) {
+      total_objects_managed++;
+      mt_t t = blockrecs[b].t;
+      total_objects_per_type[t]++;
+      total_memory_managed += types[t].size;
+   } DO_HEAP_END;
+
+   DO_MANAGED(i) {
+      total_objects_managed++;
+      void *p = CLRPTR(managed[i]);
+      mt_t t  = MM_TYPEOF(p);
+      total_objects_per_type[t]++;
+      total_memory_managed += types[t].size;
+   } DO_MANAGED_END;
+
+   BPRINTF("Managed memory    : %d objects / %.2f MByte total\n",
+           total_objects_managed, ((double)total_memory_managed)/(1<<20));
+   total_memory_used_by_mm += man_size*sizeof(managed[0]);
+   total_memory_used_by_mm += types_size*sizeof(typerec_t);
+   total_memory_used_by_mm += num_blocks*sizeof(blockrec_t);
+
+   BPRINTF("Memory used by mm : %.2f MByte total\n",
+           ((double)total_memory_used_by_mm)/(1<<20));
+
+   if (collect_in_progress)
+      BPRINTF("GC in progress\n");
+   BPRINTF("\n");
+
+   //if (level<=1)
+   return (const char *)mm_strdup(buffer);
+   
 }
 
 

@@ -633,6 +633,15 @@ DX(xgc)
    return NEW_NUMBER(i);
 }
 
+DX(xgc_info)
+{
+   ARG_NUMBER(0);
+   print_char('\n');
+   print_string(mm_info(1));
+   return NIL;
+}
+
+
 DX(xpurge_names)
 {
    ARG_NUMBER(0);
@@ -952,6 +961,7 @@ void init_toplevel(void)
    result =      var_define("result");
 
    dx_define("gc", xgc);
+   dx_define("gc-info", xgc_info);
    dx_define("purge-names", xpurge_names);
    dx_define("exit", xexit);
    dx_define("load", xload);
