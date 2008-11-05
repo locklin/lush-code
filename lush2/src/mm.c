@@ -2169,8 +2169,9 @@ const char *mm_info(int level)
       if (blockrecs[i].in_use)
          total_blocks_in_use++;
    
-   BPRINTF("Small object heap : %d blocks of size %.0f KByte (%d in use)\n",
-           num_blocks, (double)BLOCKSIZE/(1<<10), total_blocks_in_use);
+   BPRINTF("Small object heap : %.2f MByte in %d blocks (%d / %.2f MB used)\n",
+           ((double)heapsize)/(1<<20), num_blocks, total_blocks_in_use,
+           ((double)total_blocks_in_use)*BLOCKSIZE/(1<<20));
 
    DO_HEAP(a, b) {
       total_objects_managed++;
@@ -2184,21 +2185,20 @@ const char *mm_info(int level)
       void *p = CLRPTR(managed[i]);
       mt_t t  = MM_TYPEOF(p);
       total_objects_per_type[t]++;
-      total_memory_managed += types[t].size;
+      total_memory_managed += MM_SIZEOF(p);
    } DO_MANAGED_END;
 
-   BPRINTF("Managed memory    : %d objects / %.2f MByte total\n",
-           total_objects_managed, ((double)total_memory_managed)/(1<<20));
+   BPRINTF("Managed memory    : %.2f MByte in %d objects\n",
+           ((double)total_memory_managed)/(1<<20), total_objects_managed);
+   total_memory_used_by_mm += hmapsize;
    total_memory_used_by_mm += man_size*sizeof(managed[0]);
    total_memory_used_by_mm += types_size*sizeof(typerec_t);
    total_memory_used_by_mm += num_blocks*sizeof(blockrec_t);
-
-   BPRINTF("Memory used by mm : %.2f MByte total\n",
+   BPRINTF("Memory used by MM : %.2f MByte total\n",
            ((double)total_memory_used_by_mm)/(1<<20));
 
    if (collect_in_progress)
-      BPRINTF("GC in progress\n");
-   BPRINTF("\n");
+      BPRINTF("*** GC in progress ***\n");
 
    //if (level<=1)
    return (const char *)mm_strdup(buffer);
