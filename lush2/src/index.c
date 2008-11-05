@@ -929,18 +929,18 @@ DX(xidx_shape)
    index_t *ind = AINDEX(1);
   
    if (arg_number==1) {
-     at *p = NIL;
-     for (int n=IND_NDIMS(ind)-1; n>=0; n--)
-        p = new_cons(NEW_NUMBER(IND_DIM(ind, n)), p);
-     return p;
-     /*
-       index_t *indres = make_array(ST_ID, SHAPE1D(IND_NDIMS(ind)), NIL);
-       id_t *dres = IND_BASE_TYPED(indres, id_t);
-       int n;
-       for (n=0; n<IND_NDIMS(ind); n++)
-       dres[n] = IND_DIM(ind, n);
-       return index2at(indres);
-     */
+      at *p = NIL;
+      for (int n=IND_NDIMS(ind)-1; n>=0; n--)
+         p = new_cons(NEW_NUMBER(IND_DIM(ind, n)), p);
+      return p;
+      /*
+        index_t *indres = make_array(ST_ID, SHAPE1D(IND_NDIMS(ind)), NIL);
+        id_t *dres = IND_BASE_TYPED(indres, id_t);
+        int n;
+        for (n=0; n<IND_NDIMS(ind); n++)
+        dres[n] = IND_DIM(ind, n);
+        return index2at(indres);
+      */
    } else /* arg_number==2 */ {
       ARG_EVAL(2);    
       int n = AINTEGER(2);
@@ -952,6 +952,21 @@ DX(xidx_shape)
    }
 }
 
+index_t *index_shape(const index_t *ind)
+{
+   index_t *shape = make_array(ST_INT, SHAPE1D(IND_NDIMS(ind)), NIL);
+   int *sp = IND_BASE(shape);
+   for (int i=0; i<IND_NDIMS(ind); i++)
+      sp[i] = (int)IND_DIM(ind, i);
+   return shape;
+}
+
+DX(xindex_shape)
+{
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+   return index_shape(AINDEX(1))->backptr;
+}
 
 DX(xidx_modulo)
 {
@@ -3551,6 +3566,7 @@ void init_index(void)
    dx_define("idx-contiguousp", xidx_contiguousp);
    dx_define("idx-rank", xidx_rank); 
    dx_define("idx-shape", xidx_shape);
+   dx_define("$", xindex_shape);
    dx_define("idx-nelems", xidx_nelems);
    dx_define("idx-storage", xidx_storage);
    dx_define("idx-offset", xidx_offset);
