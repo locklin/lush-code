@@ -41,8 +41,8 @@
 char *line_buffer;
 char *line_pos;
 int   line_flush_stdout;
-char print_buffer[LINE_BUFFER];
-char pname_buffer[LINE_BUFFER];
+char  print_buffer[LINE_BUFFER];
+char  pname_buffer[LINE_BUFFER];
 
 unsigned char char_map[256];
 
@@ -70,32 +70,7 @@ static char special[] = "\"\\\n\r\b\t\f\377";
 static char aspect[]  = "\"\\nrbtfe";
 
 
-/* --------- ALTERNATE TOUPPER TOLOWER FUNCTIONS ---------------- */
-
-#ifdef NEED_TOLOWER
-int  tolower(int c)
-{
-   if (isupper(toascii((unsigned char)c)))
-      return c - 'A' + 'a';
-   else
-      return c;
-}
-#endif
-
-#ifdef NEED_TOUPPER
-int toupper(int c)
-{
-   if (islower(toascii((unsigned char)c)))
-      return c - 'a' + 'A';
-   else
-      return c;
-}
-#endif
-
-
 /* --------- GENERAL PURPOSE ROUTINES --------- */
-
-
 
 #define set_char_map(c,f)  char_map[(unsigned char)c]=(unsigned char)(f)
 #define get_char_map(c)    (int)char_map[(unsigned char)c]
@@ -140,12 +115,9 @@ void print_char(char c)
    if (c=='\n')
       c = '\r';
 #endif
-   if (context->output_file) {
-      if (context->output_file == stdout)
-         putc(c,stdout);
-      else
-         putc(c, context->output_file);
-   }
+   if (context->output_file)
+      putc(c, context->output_file);
+
    if (isprint(toascii((unsigned char)c)))
       context->output_tab++;
    else
@@ -204,6 +176,7 @@ static void fill_line_buffer(void)
       if (feof(stdin)) {
          line_pos[0] = (char)EOF;
          line_pos[1] = 0;
+
       } else {
          *line_buffer = 0;
          TOPLEVEL_MACHINE;
@@ -230,9 +203,11 @@ char read_char(void)
    if (context->input_string) {
       if (*context->input_string)
          c = *context->input_string++;
+
    } else if (context->input_file==stdin && prompt_string) {
       fill_line_buffer();
       c = *line_pos++;
+
    } else if (context->input_file) {
       c = getc(context->input_file);
    }
@@ -254,6 +229,7 @@ char read_char(void)
          context->input_tab = 0;
          test_file_error(context->input_file);
          break;
+
       case '\t':
          context->input_tab |= 0x7;
          context->input_tab++;
@@ -264,6 +240,7 @@ char read_char(void)
          putc(c, error_doc.script_file);
          test_file_error(error_doc.script_file);
          error_doc.script_mode = SCRIPT_PROMPT;
+
       } else {
          if (error_doc.script_mode==SCRIPT_OUTPUT 
              && context->output_tab>0) {
@@ -284,7 +261,7 @@ char read_char(void)
          putc(c, error_doc.script_file);
       }
    }
-   return (char) c;
+   return (char)c;
 }
 
 
@@ -298,9 +275,11 @@ char next_char(void)
    if (context->input_string) {
       if (*context->input_string)
          c = *context->input_string;
+
    } else if (context->input_file==stdin && prompt_string) {
       fill_line_buffer();
       c = *line_pos;
+
    } else if (context->input_file) {
       c = getc(context->input_file);
       if (c != EOF)
@@ -508,8 +487,6 @@ DX(xskip_char)
 
 static at *read_string(char *s)
 {
-   MM_ENTER;
-
    char map[256];
    make_testchar_map(s, map);
    map[255] = false;
@@ -525,14 +502,12 @@ static at *read_string(char *s)
    }
    funlockfile(context->input_file);
 
-   MM_RETURN(large_string_collect(&ls));
+   return large_string_collect(&ls);
 }
 
 
 static at *read_string_n(int n)
 {
-   MM_ENTER;
-
    struct large_string ls;
    large_string_init(&ls);
    
@@ -544,7 +519,7 @@ static at *read_string_n(int n)
    }
    funlockfile(context->input_file);
    
-   MM_RETURN(large_string_collect(&ls));
+   return large_string_collect(&ls);
 }
 
 
@@ -598,6 +573,7 @@ static char *read_word(void)
          else
             goto errw2;
       }
+
    } else if (c == '\"' /*"*/) {   
       *s++ = read_char();
       until((c = read_char())=='\"' || c==(char)EOF) {  
@@ -615,14 +591,18 @@ static char *read_word(void)
       }
    } else if (get_char_map(c) & CHAR_BINARY) {
       *s++ = c;  /* Marker for binary data */
+
    } else if (get_char_map(c) & CHAR_PREFIX) {
       *s++ = read_char();
       *s++ = read_char();
+
    } else if (get_char_map(c) & CHAR_SHORT_CARET) {
       *s++ = '^';
       *s++ = read_char() + 0x40;
+
    } else if (get_char_map(c) & (CHAR_MCHAR | CHAR_SPECIAL)) {
       *s++ = read_char();
+
    } else {
       until((c = next_char(), (get_char_map(c) & CHAR_INTERWORD) ||
              (isascii((unsigned char)c) && isspace((unsigned char)c)) ||
@@ -651,12 +631,7 @@ errw2:
 }
 
 
-/*
- * read_list reads a regular lisp object:  list, string, symbol, or number
- * uses routines:  	read_list1 back_slash_copy
- * 
- */
-
+/* read_list reads a regular lisp object (list, string, symbol, number) */
 static at *rl_string(char *s)
 {
    char *d = string_buffer;
@@ -738,14 +713,13 @@ static at *rl_mchar(char *s)
          error("io", "internal mchar failure", NIL);
    }
 
-   MM_ENTER;
    at *q = named(s);
    at *p = var_get(q);
    at *(*sav_ptr) (at *) = eval_std;
    eval_ptr = eval_std;
    at *answer = apply(p, NIL);
    eval_ptr = sav_ptr;
-   MM_RETURN(answer);
+   return answer;
 }
 
 static at *rl_read(char *s)
@@ -765,13 +739,16 @@ read_again1:
       
    read_again2:
       s = read_word();
-      if (!s[0])
+      if (!s[0]) {
          goto err_read0;
-      else if (s[0] == ')' && !s[1])
+
+      } else if (s[0] == ')' && !s[1]) {
          return answer;
-      else if (! where)
+
+      } else if (! where) {
          goto err_read1;
-      else if (s[0] == '.' && !s[1]) {
+
+      } else if (s[0] == '.' && !s[1]) {
          s = read_word();
          if (! s[0])
             goto err_read0;
@@ -780,13 +757,16 @@ read_again1:
          *where = rl_read(s);
          where = NIL;
          goto read_again2;
+
       } else if (s[0] == '#') {
          at *t = rl_mchar(s);
          if (t && !CONSP(t))
             goto err_read2;
          *where = t;
-      } else
+
+      } else {
          *where = new_cons(rl_read(s), NIL);
+      }
       while (CONSP(*where))
          where = &Cdr(*where);
       goto read_again2;
@@ -846,9 +826,10 @@ err_read2:
 
 at *read_list(void)
 {
+   MM_ENTER;
    while (skip_to_expr() == ')')
       read_char();
-   return rl_read(read_word());
+   MM_RETURN(rl_read(read_word()));
 }
 
 DX(xread)
@@ -1314,7 +1295,6 @@ DX(xpname)
 void init_io(void)
 {
    line_buffer = mm_allocv(mt_blob, LINE_BUFFER);
-   assert(line_buffer);
    MM_ROOT(line_buffer);
    line_pos = line_buffer;
 
@@ -1327,7 +1307,7 @@ void init_io(void)
    set_char_map('#', CHAR_SPECIAL | CHAR_PREFIX);
 
    for (int i=0; i<' '; i++)
-      ifn(isspace(i))
+      ifn (isspace(i))
          set_char_map(i, CHAR_SHORT_CARET);
    
    set_char_map(0x9f, CHAR_BINARY);
