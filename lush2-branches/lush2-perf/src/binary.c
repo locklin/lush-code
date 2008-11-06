@@ -227,7 +227,7 @@ again:
    if (!p)
       return;
 
-   class_t *cl = Class(p);
+   const class_t *cl = Class(p);
 
    if (cl == &cons_class) {
       sweep(Car(p),code);
@@ -298,14 +298,14 @@ again:
 static int cond_set_flags(at *p)
 {
    if (p) {
-      uintptr_t bs = PTRBITS(p->cl);
+      uintptr_t bs = PTRBITS(p->head.cl);
       if (bs & MARK_BIT) {
          if (! (bs & MULTIPLE_BIT))
             insert_reloc(p);
-         SET_PTRBIT(p->cl, MULTIPLE_BIT);
+         SET_PTRBIT(p->head.cl, MULTIPLE_BIT);
          return 1;  /* stop recursion */
       }
-      SET_PTRBIT(p->cl, MARK_BIT);
+      SET_PTRBIT(p->head.cl, MARK_BIT);
       return 0;
    }
    return 1;
@@ -323,8 +323,8 @@ static void set_flags(at *p)
 
 static int cond_clear_flags(at *p)
 {
-   if (p && ((uintptr_t)(p->cl) & MARK_BIT)) {
-      p->cl = CLEAR(p->cl);
+   if (p && ((uintptr_t)(p->head.cl) & MARK_BIT)) {
+      p->head.cl = CLEAR(p->head.cl);
       return 0;
    } else
       return 1; /* stop recursion if already cleared */
@@ -432,7 +432,7 @@ static void write_card32(int x)
       check(fout);
 }
 
-static void write_buffer(void *s, int n)
+static void write_buffer(const void *s, int n)
 {
    in_bwrite += n;
    if (fwrite(s, sizeof(char), (size_t)n, fout) != (size_t)n)
@@ -545,6 +545,7 @@ void serialize_offset(ptrdiff_t *data, int code)
    }
 }
 
+/* in READ mode with maxlen==-1, serialize_string returns a managed string */
 void serialize_string(char **data, int code, int maxlen)
 {
    switch (code) {
@@ -557,16 +558,15 @@ void serialize_string(char **data, int code, int maxlen)
       l = read_card24();
       if (maxlen == -1) {
          /* automatic mallocation */
-         ifn ((buffer = malloc(l+1))) {
-            error(NIL, "out of memory", NIL);
-         }
+         buffer = mm_allocv(mt_blob, l+1);
+
       } else {
          /* user provided buffer */
          buffer = *data;
          if (l+1 >= maxlen)
             error(NIL, "serialization error (string too large)", NIL);
       }
-      read_buffer(buffer,l);
+      read_buffer(buffer, l);
       buffer[l] = 0;
       *data = buffer;
       return;
@@ -731,7 +731,7 @@ static int local_write(at *p)
       return 1;
    }
   
-   if ((uintptr_t)(p->cl) & MULTIPLE_BIT) {
+   if ((uintptr_t)(p->head.cl) & MULTIPLE_BIT) {
       int k = search_reloc(p);
       if (relocf[k]) {
          write_card8(TOK_REF);
@@ -746,7 +746,7 @@ static int local_write(at *p)
       }
    }
   
-   class_t *cl = Class(p);
+   const class_t *cl = Class(p);
    if (cl == &cons_class) {
       write_card8(TOK_CONS);
       return 0;
@@ -763,7 +763,7 @@ static int local_write(at *p)
    }
   
    if (cl == &string_class) {
-      char *s = String(p);
+      const char *s = String(p);
       int l = strlen(s);
       write_card8(TOK_STRING);
       write_card24(l);
@@ -772,7 +772,7 @@ static int local_write(at *p)
    }
   
    if (cl == &symbol_class) {
-      char *s = nameof(Symbol(p));
+      const char *s = nameof(Symbol(p));
       int l = strlen(s);
       write_card8(TOK_SYMBOL);
       write_card24(l);
@@ -1079,8 +1079,8 @@ again:
    {
       *pp = new_cons(NIL,NIL);
       //local_bread(&Car(*pp), opt);
-      local_bread((at **)&((*pp)->cl), opt);
-      SET_PTRBIT((*pp)->cl, CONS_BIT);
+      local_bread((at **)&((*pp)->head.cl), opt);
+      SET_PTRBIT((*pp)->head.cl, CONS_BIT);
       pp = &Cdr(*pp);
       ret = 0;
       goto again;
@@ -1098,7 +1098,7 @@ again:
    case TOK_STRING:
    {
       int l = read_card24();
-      *pp = new_string_bylen(l);
+      *pp = make_string_of_length(l);
       read_buffer(Mptr(*pp), l);
       return 0;
    }

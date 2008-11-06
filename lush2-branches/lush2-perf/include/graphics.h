@@ -123,27 +123,27 @@ struct event {
 
 struct gdriver {
   /**** gdriver name *** */
-  char *name;
+  const char *name;
   /**** initial routines *** */
   void  (*begin) (wptr);		/* begin(device) & end(device) */
   void  (*end) (wptr);		/* encapsulate graphics calls */
   void  (*close) (wptr);
   int   (*xsize) (wptr);
   int   (*ysize) (wptr);
-  char* (*setfont) (wptr, char*);
+  const char* (*setfont) (wptr, const char*);
   void  (*clear) (wptr);
   void  (*draw_line) (wptr, int, int, int, int);
   void  (*draw_rect) (wptr, int, int, uint, uint);
   void  (*draw_circle) (wptr, int, int, uint);
   void  (*fill_rect) (wptr, int, int, uint, uint);
   void  (*fill_circle) (wptr, int, int, uint);
-  void  (*draw_text) (wptr, int, int, char *);
+  void  (*draw_text) (wptr, int, int, const char*);
   /**** routines added for release 2 ****/
   void  (*setcolor) (wptr, int);
   int   (*alloccolor) (wptr, double, double, double);
   void  (*fill_polygon) (wptr, short (*points)[2], uint);
-  void  (*rect_text) (wptr, int, int, char*, int*, int*, int*, int*);
-  void  (*gspecial) (wptr, char*);
+  void  (*rect_text) (wptr, int, int, const char*, int*, int*, int*, int*);
+  void  (*gspecial) (wptr, const char*);
   void  (*clip) (wptr, int, int, uint, uint);
   void  (*hilite) (wptr, int, int, int, int, int);
   int   (*pixel_map) (wptr, uint*, int, int, uint, uint, uint, uint);

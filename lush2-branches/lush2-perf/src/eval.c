@@ -147,7 +147,7 @@ DX(xcall_stack)
 
 static at *at_trace;
 
-static bool call_trace_hook(int tab, char *line, at *expr, at *info)
+static bool call_trace_hook(int tab, const char *line, at *expr, at *info)
 {
    if (tab>0 && !info)
       info = call_stack();

@@ -68,7 +68,7 @@ static bool purging_symbols = false;
 /* contains the symbol names and hash */
 
 typedef struct hash_name {
-   char *name;
+   const char *name;
    at *named;
    struct hash_name *next;
    unsigned long hash;
@@ -313,7 +313,7 @@ DX(xnamedclean)
  * nameof(p) returns the name of the SYMBOL p
  */
 
-char *nameof(symbol_t *s)
+const char *nameof(symbol_t *s)
 {
    if (SYM_HN(s))
       return SYM_HN(s)->name;
@@ -321,7 +321,7 @@ char *nameof(symbol_t *s)
       return NIL;
 }
 
-char *NAMEOF(at *p)
+const char *NAMEOF(at *p)
 {
    assert(SYMBOLP(p));
    return nameof(Symbol(p));
@@ -332,7 +332,7 @@ DX(xnameof)
    ARG_NUMBER(1);
    ARG_EVAL(1);
 
-   char *s = nameof(ASYMBOL(1));
+   const char *s = nameof(ASYMBOL(1));
    if (!s)
       RAISEFX("not a symbol", APOINTER(1));
    return new_string(s);
@@ -351,7 +351,7 @@ at *global_names(void)
 
    at **where, *answer = NIL;
    iter_hash_name(j, hn) {
-      char *name = hn->name;
+      const char *name = hn->name;
       where = &answer;
       while (*where && strcmp(name, String(Car(*where))) > 0)
          where = &Cdr(*where);
@@ -423,9 +423,9 @@ DX(xoblist)
  * Class functions
  */
 
-static char *symbol_name(at *p)
+static const char *symbol_name(at *p)
 {
-   char *s = NAMEOF(p);
+   const char *s = NAMEOF(p);
    if (s)
       return s;
    else
@@ -538,7 +538,7 @@ at *new_symbol(const char *str)
       /* symbol does not exist yet, create new */
       symbol_t *s = mm_alloc(mt_symbol);
       s->hn = hn;
-      hn->named = new_extern(&symbol_class, s);
+      hn->named = new_at(&symbol_class, s);
       add_notifier(hn->named, (wr_notify_func_t *)at_symbol_notify, NULL);
    }
    return hn->named;

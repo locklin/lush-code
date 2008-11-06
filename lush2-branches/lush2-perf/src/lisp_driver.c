@@ -61,7 +61,7 @@ static at *at_set_linestyle;
 static int lisp_check(wptr info, at *method)
 {
    at *obj = info->driverdata;
-   at *p = checksend(Class(obj), method);
+   at *p = getmethod(Class(obj), method);
    if (p)
       return true;
    return false;
@@ -120,11 +120,11 @@ static int lisp_ysize(wptr info)
    error(NIL, "method 'ysize' did not return a number", p);
 }
 
-static char *lisp_setfont(wptr info, char *f)
+static const char *lisp_setfont(wptr info, const char *f)
 {
    at *q = new_cons(new_string(f),NIL);
    at *r = NIL;
-   lisp_send_maybe_ext(info,at_setfont,q, &r);
+   lisp_send_maybe_ext(info, at_setfont, q, &r);
 
    if (STRINGP(r)) {
       info->font = r;
@@ -181,7 +181,7 @@ static void lisp_fill_circle(wptr info, int x1, int y1, uint r)
    lisp_send(info,at_fill_circle,q);
 }
 
-static void lisp_draw_text(wptr info, int x, int y, char *s)
+static void lisp_draw_text(wptr info, int x, int y, const char *s)
 {
    at *q = new_cons(NEW_NUMBER(x),
                     new_cons(NEW_NUMBER(y),
@@ -189,7 +189,7 @@ static void lisp_draw_text(wptr info, int x, int y, char *s)
    lisp_send(info,at_draw_text,q);
 }
 
-static void lisp_rect_text(wptr info, int x, int y, char *s, 
+static void lisp_rect_text(wptr info, int x, int y, const char *s, 
                            int *xp, int *yp, int *wp, int *hp)
 {
    at *q = new_cons(NEW_NUMBER(x),
@@ -285,7 +285,7 @@ static void lisp_fill_polygon(wptr info, short (*points)[2], uint n)
    lisp_send(info,at_fill_polygon,q);
 }
 
-static void lisp_gspecial(wptr info, char *s)
+static void lisp_gspecial(wptr info, const char *s)
 {
    at *q = new_cons(new_string(s),NIL);
    lisp_send_maybe(info,at_gspecial,q);
@@ -452,7 +452,7 @@ static at *lisp_window(at *delegate)
    
    wptr info = mm_alloc(mt_window);
    info->used = 1;
-   info->font = new_string(FONT_STD);
+   info->font = make_string(FONT_STD);
    info->color = COLOR_FG;
    info->gdriver = &lisp_driver;
    info->clipw = 0;

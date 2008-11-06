@@ -27,18 +27,27 @@
 
 ;; stuff that was formerly in sysenv.lsh
 
-(dm array-range (_ &rest args)
+(defmacro idx-emptyp (idx)
+  `(= (idx-nelems ,idx) 0) )
+
+(defmacro idx-readonlyp (idx)
+  `(storage-readonlyp (idx-storage ,idx)))
+
+(defmacro clone-array (proto &optional init)
+  `(make-array (idx-element-type ,proto) (shape ,proto) ,init) )
+
+(defmacro array-range args
   `(let ((l (range ,@args)))
     ((double-array (length l)) () l) ) )
 
-(dm array-range* (_ &rest args)
+(defmacro array-range* args
   `(let ((l (range* ,@args)))
     ((double-array (length l)) () l) ) )
 
-(dm array-transpose (_ &rest args)
+(defmacro array-transpose args
   `(copy-array (apply idx-transpose ,args)) )
 
-(dm array-reverse (_ &rest args)
+(defmacro array-reverse args
   `(copy-array (apply idx-reverse ,args)) )
 
 (defmacro array-reduce (op m &optional (d -1))
@@ -170,7 +179,8 @@
      (if (idx-contiguousp m)
 	 m
        (copy-array m) )))
-  
+
+ 
 (dm idx-flatten (_ m &optional nd)
   (if (null nd)
       `(let ((m ,m))
@@ -188,6 +198,7 @@
              (if (< 0 nd)
                  (reshape m (cons (prod shp-head) shp-tail))
                (reshape m (nconc1 shp-head (prod shp-tail))) ))))) )))
+
   
 (defun idx-broadcast ms
   (let* ((bm (reduce> idx-broadcast2 (car ms) (cdr ms)))
@@ -247,10 +258,10 @@
       (selectq (length x)
         (3
          ;; a permutation syntax
-         (let* ((z (named (sprintf "_UNIQ_%d" (incr tmpseed)))))
+         (let* ((z (gensym)))
            (setq arglist (cons (list z (cadr x)) arglist))
            (setq letlist
-                 (cons (list (car x) (list 'select (lasta x) 0 (list z)))
+                 (cons (list (car x) (list 'idx-select (lasta x) 0 (list z)))
                        letlist))))
         (1   (setq lvar (car x)))
         (2   (setq arglist (cons x arglist)))
@@ -288,10 +299,13 @@
 	     array-reduce array-reduce* array-sum array-prod
              idx-gloop to-idx)
 
+(defalias contiguousp idx-contiguousp)
+(defalias numericp    idx-numericp)
 (defalias rank        idx-rank)
 (defalias ravel       idx-flatten)
 (defalias reshape     idx-reshape)
 (defalias shape       idx-shape)
+(defalias select      idx-select)
 (defalias squeeze     idx-squeeze-shape)
 (defalias trim        idx-trim)
 (defalias unfold      idx-unfold)
@@ -299,9 +313,21 @@
 (defalias arange      array-range)
 (defalias arange*     array-range*)
 
-(lock-symbol rank ravel reshape shape squeeze trim unfold where)
+(lock-symbol contiguousp numericp
+             rank ravel reshape select shape squeeze
+             trim unfold where)
 
 (defalias .ar array-reduce)
 (defalias .s* idx-select*)
 
+;; New Lush2 shortcuts
 
+(defalias $$ idx-rank)
+(defalias $/ idx-broadcast1)
+(defalias $* idx-nelems)
+(defalias $! idx-reshape)
+
+(defmacro $> (a) `(idx-sink ,a 1) )
+(defmacro $< (a) `(idx-lift ,a 1) )
+
+(defalias @  array-dc)

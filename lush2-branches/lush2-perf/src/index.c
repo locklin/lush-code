@@ -168,7 +168,7 @@ static index_t *index_dispose(index_t *ind)
    return NULL;
 }
 
-static char *index_name(at *p)
+static const char *index_name(at *p)
 {
    index_t *ind = Mptr(p);
    char *s = string_buffer;
@@ -188,7 +188,7 @@ static char *index_name(at *p)
       if (s[-1]=='x')
          s[-1] = '>';
    }
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
 static at *broadcast_and_put(index_t *ind, index_t *ss, index_t *vals)
@@ -527,16 +527,25 @@ static char *chk_index_consistent(index_t *ind)
    if (size_min<0 || size_max>=IND_STNELEMS(ind))
       return msg_storage_size;
    
-   return NIL;
+   return NULL;
 }
 
-static inline char *chk_contiguous(index_t *ind)
+static char *chk_contiguous(index_t *ind)
 {
    static char *msg_not_contiguous = "index is not contiguous";
    ifn (index_contiguousp(ind))
       return msg_not_contiguous;
    else
-      return NIL;
+      return NULL;
+}
+
+static char *chk_nonempty(index_t *ind)
+{
+   static char *msg_nonempty = "index is empty";
+   if (index_emptyp(ind))
+      return msg_nonempty;
+   else
+      return NULL;
 }
 
 /* static inline char * */
@@ -878,9 +887,35 @@ DX(xidx_dc)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   index_t *ind = copy_index(AINDEX(1));
-   IND_NDIMS(ind)=0;
+   index_t *ind = AINDEX(1);
+   RAISEF(chk_nonempty(ind), APOINTER(1));
+   while (IND_NDIMS(ind)>0)
+      ind = index_select(ind, 0, 0);
    return ind->backptr;
+}
+
+DX(xarray_dc)
+{
+   at *init = NIL;
+   if (arg_number == 2) {
+      ARG_EVAL(2);
+      init = APOINTER(2);
+
+   } else if (arg_number > 2)
+      ARG_NUMBER(-1);
+
+   ARG_EVAL(1);
+
+   if (init) {
+      return make_array(IND_STTYPE(AINDEX(1)), SHAPE0D, init)->backptr;
+
+   } else {
+      index_t *ind = AINDEX(1);
+      RAISEF(chk_nonempty(ind), APOINTER(1));
+      while (IND_NDIMS(ind)>0)
+         ind = index_select(ind, 0, 0);
+      return copy_array(ind)->backptr;
+   }
 }
 
 size_t index_nelems(const index_t *ind) 
@@ -929,18 +964,18 @@ DX(xidx_shape)
    index_t *ind = AINDEX(1);
   
    if (arg_number==1) {
-     at *p = NIL;
-     for (int n=IND_NDIMS(ind)-1; n>=0; n--)
-        p = new_cons(NEW_NUMBER(IND_DIM(ind, n)), p);
-     return p;
-     /*
-       index_t *indres = make_array(ST_ID, SHAPE1D(IND_NDIMS(ind)), NIL);
-       id_t *dres = IND_BASE_TYPED(indres, id_t);
-       int n;
-       for (n=0; n<IND_NDIMS(ind); n++)
-       dres[n] = IND_DIM(ind, n);
-       return index2at(indres);
-     */
+      at *p = NIL;
+      for (int n=IND_NDIMS(ind)-1; n>=0; n--)
+         p = new_cons(NEW_NUMBER(IND_DIM(ind, n)), p);
+      return p;
+      /*
+        index_t *indres = make_array(ST_ID, SHAPE1D(IND_NDIMS(ind)), NIL);
+        id_t *dres = IND_BASE_TYPED(indres, id_t);
+        int n;
+        for (n=0; n<IND_NDIMS(ind); n++)
+        dres[n] = IND_DIM(ind, n);
+        return index2at(indres);
+      */
    } else /* arg_number==2 */ {
       ARG_EVAL(2);    
       int n = AINTEGER(2);
@@ -952,6 +987,21 @@ DX(xidx_shape)
    }
 }
 
+index_t *index_shape(const index_t *ind)
+{
+   index_t *shape = make_array(ST_INT, SHAPE1D(IND_NDIMS(ind)), NIL);
+   int *sp = IND_BASE(shape);
+   for (int i=0; i<IND_NDIMS(ind); i++)
+      sp[i] = (int)IND_DIM(ind, i);
+   return shape;
+}
+
+DX(xindex_shape)
+{
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+   return index_shape(AINDEX(1))->backptr;
+}
 
 DX(xidx_modulo)
 {
@@ -1131,6 +1181,23 @@ index_t *make_array(storage_type_t type, shape_t *shp, at *init)
    storage_t *st = make_storage(type, nelems, init);
    index_t *res = new_index(st, shp);
    return res;
+}
+
+DX(xmake_array)
+{
+   ARG_NUMBER(3);
+   ALL_ARGS_EVAL;
+   
+   class_t *cl = ACLASS(1);
+   shape_t *shp   = parse_shape(APOINTER(2), NIL);
+   storage_type_t type;
+   for (type = ST_AT; type < ST_LAST; type++)
+      if (&storage_class[type] == cl)
+         break;
+   if (type == ST_LAST)
+      RAISEF("not a storage class", APOINTER(1));
+
+   return make_array(type, shp, APOINTER(3))->backptr;
 }
 
 
@@ -1846,7 +1913,7 @@ DX(xsave_matrix)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), "mat");
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && (Class(p) == &file_W_class))
@@ -1864,7 +1931,7 @@ DX(xexport_raw_matrix)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), NULL);
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && (Class(p) == &file_W_class)) 
@@ -1943,7 +2010,7 @@ DX(xsave_ascii_matrix)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), NULL);
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else if ((p = APOINTER(2)) && WFILEP(p)) {
       ans = p;
    } else {
@@ -1961,7 +2028,7 @@ DX(xexport_text_matrix)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), "mat");
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && WFILEP(p))
@@ -1980,7 +2047,7 @@ DX(xarray_export_tabular)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), "mat");
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && WFILEP(p))
@@ -2432,6 +2499,19 @@ DX(xidx_reshape)
    ALL_ARGS_EVAL;
    index_t *ind = index_reshape(AINDEX(1), parse_shape(APOINTER(2), NIL));
    return ind->backptr;
+}
+
+index_t *index_flatten(index_t *ind)
+{
+   RAISEF(chk_contiguous(ind), NIL);
+   return index_reshape(ind, SHAPE1D(index_nelems(ind)));
+}
+
+DX(xidx_flatten)
+{
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+   return index_flatten(AINDEX(1))->backptr;
 }
 
 index_t *index_nickD(index_t *ind, int d)
@@ -3551,6 +3631,7 @@ void init_index(void)
    dx_define("idx-contiguousp", xidx_contiguousp);
    dx_define("idx-rank", xidx_rank); 
    dx_define("idx-shape", xidx_shape);
+   dx_define("$", xindex_shape);
    dx_define("idx-nelems", xidx_nelems);
    dx_define("idx-storage", xidx_storage);
    dx_define("idx-offset", xidx_offset);
@@ -3561,6 +3642,7 @@ void init_index(void)
    
    /* array and index creation */
    dx_define("new-index", xnew_index);
+   dx_define("make-array", xmake_array);
    dx_define("copy-index", xcopy_index);
    dx_define("copy-array", xcopy_array);
    
@@ -3585,6 +3667,7 @@ void init_index(void)
 
    /* index manipulation */
    dx_define("idx-reshape", xidx_reshape);
+   //dx_define("idx-flatten", xidx_flatten);
    dx_define("idx-nick", xidx_nick);
    dx_define("idx-extend", xidx_extend);
    dx_define("idx-lift", xidx_lift);
@@ -3617,6 +3700,7 @@ void init_index(void)
    dx_define("idx-set-offset", xidx_set_offset);
 
    /* other array functions */
+   dx_define("array-dc", xarray_dc);
    dx_define("array-extend", xarray_extend);
    dx_define("array-copy", xarray_copy);
    dx_define("array-swap", xarray_swap);

@@ -571,9 +571,9 @@ static void module_serialize(at **pp, int code)
       m = Mptr(*pp);
       fname = "";
       if (m != root) {
-         fname = relative_fname(lushdir_name, m->filename);
+         fname = (char *)relative_fname(lushdir, m->filename);
          if (!fname)
-            fname = mm_strdup(m->filename);
+            fname = (char *)m->filename;
       }
    }
    
@@ -585,18 +585,16 @@ static void module_serialize(at **pp, int code)
       
       if (fname[0] == 0) {
       already:
-         free(fname);
          *pp = m->backptr;
          serialize_atstar(&junk, code); 
          return;
       }
-      char *aname = mm_strdup(concat_fname(lushdir_name, fname));
+      const char *aname = concat_fname(lushdir, fname);
       while ((m = m->next) != root)
          if (!strcmp(aname, m->filename))
             goto already;
       (*pp) = module_load(aname, NIL);
       m = Mptr(*pp);
-      free(fname);
       check_exec();
    }
    serialize_atstar(&(m->hook), code);  
@@ -649,7 +647,7 @@ DX(xmodule_init_function)
    if (m->initname)
       return new_string(m->initname);
    if (m == root)
-      return new_string("init_lush");
+      return make_string("init_lush");
    return NIL;
 }
 
@@ -864,9 +862,10 @@ static void cleanup_module(module_t *m)
             }
             /* temporarily enable deleting objects of this class */
             bool dontdelete = Class(q)->dontdelete;
-            Class(q)->dontdelete = false;
+            class_t *cl = (class_t *)Class(q);
+            cl->dontdelete = false;
             lush_delete(q);
-            Class(q)->dontdelete = dontdelete;
+            cl->dontdelete = dontdelete;
          }
    m->defs = NIL;
    MM_EXIT;
@@ -1165,12 +1164,12 @@ at *module_load(const char *file, at *hook)
    dlopen_handle_t handle = 0;
 #endif
    /* Check that file exists */
-   char *filename = concat_fname(NULL, file);
+   const char *filename = concat_fname(NULL, file);
    if (! filep(filename))
       RAISEF("file not found", new_string(filename));
 
    /* Check if the file extension indicates a DLL */
-   char *l = filename + strlen(filename);
+   const char *l = filename + strlen(filename);
    while (l>filename && isdigit((unsigned int)l[-1])) {
       while (l>filename && isdigit((unsigned int)l[-1]))
          l -= 1;
@@ -1222,7 +1221,7 @@ at *module_load(const char *file, at *hook)
          dynlink_error(new_string(m->filename));
 # endif
 #else
-      RAISEF("dynlinking this file is not supported (dlopen)", 
+      RAISEF("dynlinking this file is not supported (dlopen)",
              new_string(m->filename));
 #endif
       m->flags |= MODULE_SO | MODULE_STICKY;
@@ -1250,7 +1249,8 @@ at *module_load(const char *file, at *hook)
    if (! m->initaddr) {
       strcpy(string_buffer, "init_");
       strcat(string_buffer, basename(m->filename, 0));
-      if ((l = strchr(string_buffer, '.'))) l[0] = 0;
+      char *s = strchr(string_buffer, '.'); 
+      if (s) s[0] = 0;
       m->initaddr = dynlink_symbol(m, string_buffer, 1, 1);
    }
    if (m->initaddr) {
@@ -1324,7 +1324,7 @@ DX(xmod_undefined)
       p = NIL;
       where = &p;
       for (int i=0; i<dld_undefined_sym_count; i++) {
-         *where = new_cons( new_string(dld_undefined_sym_list[i]), NIL);
+         *where = new_cons(make_string(dld_undefined_sym_list[i]), NIL);
          where = &Cdr(*where);
       }
       free(dld_undefined_sym_list);
@@ -1342,7 +1342,7 @@ DX(xmod_undefined)
             nsbundle_t *def = nsbundle_hget(sname);
             if (def==&nsbundle_head || (!def && !NSIsSymbolNameDefined(sname))) {
                if (sname[0]=='_') sname += 1;
-               *where = cons( new_string((char*)sname), NIL);
+               *where = new_cons( new_string((char*)sname), NIL);
                where = &Cdr(*where);
             }
          }
@@ -1578,7 +1578,11 @@ void init_module(char *progname)
    module_class.dontdelete = true;
    class_define("MODULE", &module_class);
 
+#if DLDBFD
+   root->filename = mm_strdup(dld_find_executable(progname));
+#else
    root->filename = mm_strdup(progname);
+#endif  
    atroot = new_extern(&module_class, root);
    root->backptr = atroot;
 

@@ -314,7 +314,7 @@ static storage_t *storage_dispose(storage_t *st)
    return NULL;
 }
 
-static char *storage_name(at *p)
+static const char *storage_name(at *p)
 {
    storage_t *st = (storage_t *)Mptr(p);
  
@@ -333,7 +333,7 @@ static char *storage_name(at *p)
    else
       sprintf(string_buffer, "::%s:strange@%"PRIxPTR,
               NAMEOF(Class(p)->classname), (uintptr_t)st->data);
-   return string_buffer;
+  return mm_strdup(string_buffer);
 }
 
 static at *storage_listeval(at *p, at *q)

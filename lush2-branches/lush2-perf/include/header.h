@@ -192,35 +192,38 @@ extern LUSHAPI class_t zombie_class;
 extern LUSHAPI class_t window_class;
 
 struct at {
-   class_t *cl;
+   union {
+      class_t *cl;
+      struct at *car;
+   } head;
    union {
       double *d;
-      char   *c;
       void   *p;
+      const char *c;
       struct symbol *s;
       struct at *cdr;
    } payload;
 };
 
-#define Class(q)  (CONSP(q) ? &cons_class : (q)->cl)
+#define Class(q)  (CONSP(q) ? &cons_class : (q)->head.cl)
 #define Number(q) (*(q)->payload.d)
 #define String(q) ((q)->payload.c)
 #define Symbol(q) ((q)->payload.s)
 #define Value(q)  (*Symbol(q)->valueptr)
 #define Gptr(q)   ((q)->payload.p)
 #define Mptr(q)   ((q)->payload.p)
-#define Car(q)    ((at *)CLEAR_PTR((q)->cl))
+#define Car(q)    ((at *)CLEAR_PTR((q)->head.car))
 #define Cdr(q)    ((q)->payload.cdr)
 #define Caar(q)   Car(Car(q))
 #define Cadr(q)   Car(Cdr(q))
 #define Cdar(q)   Cdr(Car(q))
 #define Cddr(q)   Cdr(Cdr(q))
 
-#define AssignClass(q, _cl) ((q)->cl) = _cl
-#define AssignCar(q, _car)  (q)->cl = (class_t *)((uintptr_t)(_car) | CONS_BIT)
+#define AssignClass(q, _cl) ((q)->head.cl) = _cl
+#define AssignCar(q, _car)  (q)->head.car = (struct at *)((uintptr_t)(_car) | CONS_BIT)
 
 
-#define CONSP(p)        ((p)&&(((uintptr_t)((p)->cl)) & CONS_BIT))
+#define CONSP(p)        ((p)&&(((uintptr_t)((p)->head.cl)) & CONS_BIT))
 #define FUNCTIONP(x)    ((x)&&(Class(x)->super==&function_class))
 #define LASTCONSP(x)    (CONSP(x) && !CONSP(Cdr(x)))
 #define LISTP(x)        (!(x)||(Class(x) == &cons_class))
@@ -244,8 +247,6 @@ struct at {
 extern LUSHAPI at *(*eval_ptr) (at*);
 extern LUSHAPI at *(*argeval_ptr) (at*);
 
-#define NEW_NUMBER(x)   new_number((real)(x))
-#define NEW_GPTR(x)     new_gptr((gptr)(x))
 #define eval(q)         (*eval_ptr)(q)
 
 /*
@@ -259,7 +260,7 @@ struct class_s {
    /* class vectors */
    void*          (*dispose)      (void *);
    void           (*action)       (at*, void (*f)(at*));
-   char*          (*name)         (at*);
+   const char*    (*name)         (at*);
    at*            (*selfeval)     (at*);
    at*            (*listeval)     (at*, at*);
    void           (*serialize)    (at**, int);
@@ -297,12 +298,26 @@ struct hashelem {
 };
 
 
-LUSHAPI at *new_gptr(gptr x);
-LUSHAPI at *new_number(double x);
-LUSHAPI at *new_extern(class_t*, void *);
+LUSHAPI at *new_at(class_t *cl, void *obj);
 LUSHAPI at *new_cons(at *car, at *cdr);
+LUSHAPI at *new_number(double x);
+LUSHAPI static inline at *new_gptr(gptr x)
+{
+   extern class_t gptr_class;
+   return new_at(&gptr_class, x);
+}
+LUSHAPI static inline at *new_string(const char *ms)
+{  
+   extern class_t string_class;
+   return new_at(&string_class, (void *)ms);
+}
+
 LUSHAPI void zombify(at *p);
 LUSHAPI void class_init(class_t *, bool);
+
+#define new_extern      new_at 
+#define NEW_NUMBER(x)   new_number((real)(x))
+#define NEW_GPTR(x)     new_gptr((gptr)(x))
 
 /* LIST.H ----------------------------------------------------- */
 
@@ -381,8 +396,8 @@ LUSHAPI at *namedclean(const char *);
 extern at *at_t; 
 #define t()           at_t
 
-LUSHAPI char *nameof(symbol_t *);
-LUSHAPI char *NAMEOF(at *);
+LUSHAPI const char *nameof(symbol_t *);
+LUSHAPI const char *NAMEOF(at *);
 LUSHAPI symbol_t *symbol_push(symbol_t *, at *);
 LUSHAPI symbol_t *symbol_pop(symbol_t *);
 #define SYMBOL_PUSH(p, q) { at *__p__ = p; Mptr(__p__) = symbol_push((symbol_t*)Mptr(__p__), q); }
@@ -452,7 +467,7 @@ extern LUSHAPI struct error_doc {
 extern LUSHAPI struct context {
   struct context *next;
   sigjmp_buf error_jump;
-  char *input_string;
+  const char *input_string;
   FILE *input_file;
   short input_tab;
   short input_case_sensitive;
@@ -464,7 +479,7 @@ LUSHAPI int  recur_push_ok(struct recur_elt *elt, void *call, at *p);
 LUSHAPI void recur_pop(struct recur_elt *elt);
 LUSHAPI void context_push(struct context *newc);
 LUSHAPI void context_pop(void);
-LUSHAPI void toplevel(char *in, char *out, char *new_prompt);
+LUSHAPI void toplevel(const char *in, const char *out, const char *new_prompt);
 //LUSHAPI void error(char *prefix, char *text, at *suffix) no_return;
 LUSHAPI void user_break(char *s);
 LUSHAPI void init_lush (char *program_name);
@@ -476,21 +491,20 @@ LUSHAPI void abort (char *s) no_return;
 
 extern LUSHAPI class_t string_class;
 
-LUSHAPI at *new_string(const char *s);
-LUSHAPI at *new_string_bylen(int n);
-LUSHAPI int str_index(char *s1, char *s2, int start);
-LUSHAPI at *str_val(char *s);
-LUSHAPI char *str_number(double x);
-LUSHAPI char *str_number_hex(double x);
-LUSHAPI char *str_gptr(gptr x);
+LUSHAPI at *make_string(const char *s);
+LUSHAPI at *make_string_of_length(size_t n);
+LUSHAPI int str_index(const char *s1, const char *s2, int start);
+LUSHAPI at *str_val(const char *s);
+LUSHAPI const char *str_number(double x);
+LUSHAPI const char *str_number_hex(double x);
 
-LUSHAPI char *regex_compile(char *pattern, short int *bufstart, short int *bufend,
+LUSHAPI const char *regex_compile(const char *pattern, short int *bufstart, short int *bufend,
 			  int strict, int *rnum);
-LUSHAPI int regex_exec(short int *buffer, char *string, 
-		     char **regptr, int *reglen, int nregs);
-LUSHAPI int regex_seek(short int *buffer, char *string, char *seekstart, 
-		     char **regptr, int *reglen, int nregs, 
-		     char **start, char **end);
+LUSHAPI int regex_exec(short int *buffer, const char *string, 
+		     const char **regptr, int *reglen, int nregs);
+LUSHAPI int regex_seek(short int *buffer, const char *string, const char *seekstart, 
+		     const char **regptr, int *reglen, int nregs, 
+		     const char **start, const char **end);
 
 extern LUSHAPI char string_buffer[];
 extern LUSHAPI at  *null_string; 
@@ -503,7 +517,7 @@ typedef struct large_string {
 } large_string_t;
 
 LUSHAPI void large_string_init(large_string_t *ls);
-LUSHAPI void large_string_add(large_string_t *ls, char *s, int len);
+LUSHAPI void large_string_add(large_string_t *ls, const char *s, int len);
 LUSHAPI at * large_string_collect(large_string_t *ls);
 
 LUSHAPI at* str_mb_to_utf8(const char *s);
@@ -594,38 +608,34 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 /* FILEIO.H ------------------------------------------------- */
 
 extern LUSHAPI class_t file_R_class, file_W_class;
-extern LUSHAPI char lushdir_name[];
-extern LUSHAPI char file_name[];
+extern LUSHAPI char file_name[], lushdir[];
 
-#define OPEN_READ(f,s)  new_extern(&file_R_class,open_read(f,s))
-#define OPEN_WRITE(f,s) new_extern(&file_W_class,open_write(f,s))
+#define OPEN_READ(f,s)  new_at(&file_R_class,open_read(f,s))
+#define OPEN_WRITE(f,s) new_at(&file_W_class,open_write(f,s))
 
-LUSHAPI char *cwd(const char *s);
+LUSHAPI const char *cwd(const char *s);
 LUSHAPI at *files(const char *s);
 LUSHAPI bool dirp(const char *s);
 LUSHAPI bool filep(const char *s);
-LUSHAPI char *dirname(const char *fname);
-LUSHAPI char *basename(const char *fname, const char *suffix);
-LUSHAPI char *concat_fname(const char *from, const char *fname);
-LUSHAPI char *relative_fname(const char *from, const char *fname);
+LUSHAPI const char *dirname(const char *fname);
+LUSHAPI const char *basename(const char *fname, const char *suffix);
+LUSHAPI const char *concat_fname(const char *from, const char *fname);
+LUSHAPI const char *relative_fname(const char *from, const char *fname);
 LUSHAPI void unlink_tmp_files(void);
-LUSHAPI char *tmpname(char *s, char *suffix);
-LUSHAPI char *search_file(char *s, char *suffixes);
+LUSHAPI const char *tmpname(const char *s, const char *suffix);
+LUSHAPI const char *search_file(const char *s, const char *suffixes);
 LUSHAPI void test_file_error(FILE *f);
-LUSHAPI FILE *open_read(char *s, char *suffixes);
-LUSHAPI FILE *open_write(char *s, char *suffixes);
-LUSHAPI FILE *open_append(char *s, char *suffixes);
-LUSHAPI FILE *attempt_open_read(char *s, char *suffixes);
-LUSHAPI FILE *attempt_open_write(char *s, char *suffixes);
-LUSHAPI FILE *attempt_open_append(char *s, char *suffixes);
+LUSHAPI FILE *open_read(const char *s, const char *suffixes);
+LUSHAPI FILE *open_write(const char *s, const char *suffixes);
+LUSHAPI FILE *open_append(const char *s, const char *suffixes);
+LUSHAPI FILE *attempt_open_read(const char *s, const char *suffixes);
+LUSHAPI FILE *attempt_open_write(const char *s, const char *suffixes);
+LUSHAPI FILE *attempt_open_append(const char *s, const char *suffixes);
 LUSHAPI void file_close(FILE *f);
-LUSHAPI void set_script(char *s);
+LUSHAPI void set_script(const char *s);
 LUSHAPI int read4(FILE *f);
 LUSHAPI int write4(FILE *f, unsigned int l);
 LUSHAPI off_t file_size(FILE *f);
-#ifndef HAVE_STRERROR
-LUSHAPI char *strerror(int errno);
-#endif
 
 #define RFILEP(x) ((x)&&(Class(x) == &file_R_class))
 #define WFILEP(x) ((x)&&(Class(x) == &file_W_class))
@@ -642,13 +652,13 @@ LUSHAPI void print_char (char c);
 LUSHAPI void print_string(const char *s);
 LUSHAPI void print_list(at *list);
 LUSHAPI void print_tab(int n);
-LUSHAPI char *pname(at *l);
-LUSHAPI char *first_line(at *l);
+LUSHAPI const char *pname(at *l);
+LUSHAPI const char *first_line(at *l);
 LUSHAPI char read_char(void);
 LUSHAPI char next_char(void);
-LUSHAPI int  ask (char *t);
-LUSHAPI char *dmc(char *s, at *l);
-LUSHAPI char skip_char(char *s);
+LUSHAPI int  ask(const char *t);
+LUSHAPI const char *dmc(const char *s, at *l);
+LUSHAPI char skip_char(const char *s);
 LUSHAPI char skip_to_expr(void);
 LUSHAPI at *read_list(void);
 
@@ -693,17 +703,17 @@ struct oostruct {
    struct oostructitem {at *symb, *val;} slots[];
 };
 
-LUSHAPI bool builtin_class_p(class_t *cl);
-LUSHAPI at *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults);
+LUSHAPI bool builtin_class_p(const class_t *cl);
+LUSHAPI at  *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults);
 LUSHAPI void putmethod(class_t *cl, at *name, at *fun);
-LUSHAPI at *new_object(class_t *cl);
-LUSHAPI at *with_object(at *obj, at *f, at *q, int howmuch);
-LUSHAPI at *checksend(class_t *cl, at *prop);
-LUSHAPI at *send_message(at *classname, at *obj, at *method, at *args);
+LUSHAPI at  *getmethod(class_t *cl, at *prop);
+LUSHAPI at  *new_object(class_t *cl);
+LUSHAPI at  *with_object(at *obj, at *f, at *q, int howmuch);
+LUSHAPI at  *send_message(at *classname, at *obj, at *method, at *args);
 LUSHAPI class_t *classof(at *p);
-LUSHAPI bool is_of_class(at *p, class_t *cl);
+LUSHAPI bool isa(at *p, const class_t *cl);
 LUSHAPI void lush_delete(at *p);       /* avoid conflict with C++ keyword */
-LUSHAPI at *getslot(at*, at*);
+LUSHAPI at  *getslot(at*, at*);
 LUSHAPI void setslot(at**, at*, at*);
 
 
@@ -901,7 +911,6 @@ struct idx {
 typedef struct index {			
    /* Field names are similar to those of the  idx structure. */
    /* IDX macros work on index structures! */
-   
    int ndim;			/* number of dimensions */
    size_t dim[MAXDIMS];		/* array size for each dimension */
    ptrdiff_t mod[MAXDIMS];      /* stride for each dimension */

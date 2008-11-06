@@ -37,7 +37,7 @@
 
 static void clear_at(at *a)
 {
-   a->cl = &null_class;
+   a->head.cl = &null_class;
 }
 
 static void mark_at(at *a)
@@ -63,7 +63,21 @@ static void mark_at(at *a)
 mt_t mt_at = mt_undefined;
 
 
-LUSHAPI at *new_cons(at *car, at *cdr) 
+at *new_at(class_t *cl, void *obj)
+{
+   at *new = mm_alloc(mt_at);
+   Mptr(new) = obj;
+   AssignClass(new, cl);
+
+   /* This is used by 'compute_bump' */
+/*    if (compute_bump_active) { */
+/*       compute_bump_list = cons(new,compute_bump_list); */
+/*    } */
+   return new;
+}
+
+
+at *new_cons(at *car, at *cdr) 
 {
    at *new = mm_alloc(mt_at);
    AssignCar(new, car);
@@ -79,28 +93,20 @@ DX(xcons)
  }
 
 
- mt_t mt_double = mt_undefined;
+mt_t mt_double = mt_undefined;
 
- at *new_number(double x)
- {
-    double *d = mm_alloc(mt_double);
-    *d = x;
-    return new_extern(&number_class, d);
- }
+at *new_number(double x)
+{
+   double *d = mm_alloc(mt_double);
+   *d = x;
+   return new_extern(&number_class, d);
+}
 
- at *new_gptr(gptr p)
- {
-    at *new = mm_alloc(mt_at);
-    Gptr(new) = p;
-    AssignClass(new, &gptr_class);
-    return new;
- }
-
- /*
-  * This strange function allows us to compute the 'simulated
-  * bumping list' during a progn. This is used for the interpreted
-  * 'in-pool' and 'in-stack' emulation.
-  */
+/*
+ * This strange function allows us to compute the 'simulated
+ * bumping list' during a progn. This is used for the interpreted
+ * 'in-pool' and 'in-stack' emulation.
+ */
 
  /* int compute_bump_active = 0; */
  static at *compute_bump_list = 0;
@@ -147,20 +153,6 @@ DX(xcons)
   * new_extern(class,object) returns a LISP descriptor for an EXTERNAL object
   * of class class
   */
-
- at *new_extern(class_t *cl, void *obj)
- {
-    at *new = mm_alloc(mt_at);
-    Mptr(new) = obj;
-    AssignClass(new, cl);
-
-   /* This is used by 'compute_bump' */
-/*    if (compute_bump_active) { */
-/*       compute_bump_list = cons(new,compute_bump_list); */
-/*    } */
-   return new;
-}
-
 
 DX(xconsp)
 {
@@ -327,7 +319,7 @@ DX(xunode_unify)
 
 /* ----- default class definition ------ */
 
-char *generic_name(at *p)
+const char *generic_name(at *p)
 {
    if (Class(p)->classname)
       sprintf(string_buffer, "::%s:%lx", 
@@ -336,7 +328,7 @@ char *generic_name(at *p)
       sprintf(string_buffer, "::%lx:%lx", 
               (long)Class(p), (long)Mptr(p));
    
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
 at *generic_selfeval(at *p)
@@ -371,15 +363,15 @@ at *generic_listeval(at *p, at *q)
       error(pname(p), "can't evaluate this list", NIL);
 }
 
-static char *gptr_name(at *p)
+static const char *gptr_name(at *p)
 {
    sprintf(string_buffer, "#$%"PRIxPTR, (uintptr_t)Gptr(p));
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
-static char *null_name(at *p)
+static const char *null_name(at *p)
 {
-   return "( )";
+   return mm_strdup("( )");
 }
 
 static at *null_selfeval(at *p)

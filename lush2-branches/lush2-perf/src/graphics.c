@@ -78,13 +78,13 @@ static window_t *window_dispose(window_t *win)
    return win;
 }
 
-static char *window_name(at *p)
+static const char *window_name(at *p)
 {
    sprintf(string_buffer, "::%s:%s:%lx",
            NAMEOF(Class(p)->classname),
            ((window_t *)Mptr(p))->gdriver->name,
            (long)Mptr(p));
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
 
@@ -117,7 +117,7 @@ DX(xgdriver)
 {
    ARG_NUMBER(0);
    window_t *win = current_window();
-   return new_string(win->gdriver->name);
+   return make_string(win->gdriver->name);
 }
 
 DX(xxsize)
@@ -160,11 +160,11 @@ DX(xfont)
    at *oldfont = win->font;
    MM_ANCHOR(oldfont);
    at *q = oldfont;
-   char *r = 0;
+   const char *r = 0;
    if (arg_number) {
       ARG_NUMBER(1);
       ARG_EVAL(1);
-      char *s = ASTRING(1);
+      const char *s = ASTRING(1);
       q = str_mb_to_utf8(s);
       if (STRINGP(q))
          s = String(q);
@@ -315,7 +315,7 @@ DX(xdraw_text)
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
-   char *s = ASTRING(3);
+   const char *s = ASTRING(3);
    
    if (win->gdriver->draw_text) {
       (*win->gdriver->begin) (win);
@@ -334,7 +334,7 @@ DX(xrect_text)
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
-   char *s = ASTRING(3);
+   const char *s = ASTRING(3);
    int w = 0;
    int h = 0;
    if (win->gdriver->rect_text)  {

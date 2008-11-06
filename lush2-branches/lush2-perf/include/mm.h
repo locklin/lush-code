@@ -51,10 +51,13 @@ void    mm_collect(void);                // asynchronous collect
 int     mm_collect_now(void);            // synchronous collect
 bool    mm_collect_in_progress(void);    // true if gc is under way
 bool    mm_idle(void);                   // do work, return true when more work
+
 /* string utilities */
 char   *mm_strdup(const char *);         // create managed copy of string
 size_t  mm_strlen(const char *);         // length of managed string
 
+/* diagnostics */
+const char *mm_info(int);                // diagnostic message in managed string
 
 /* convenience macros */
 #define MM_MARK(p)     { if (p) mm_mark(p); }
