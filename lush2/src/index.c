@@ -527,16 +527,25 @@ static char *chk_index_consistent(index_t *ind)
    if (size_min<0 || size_max>=IND_STNELEMS(ind))
       return msg_storage_size;
    
-   return NIL;
+   return NULL;
 }
 
-static inline char *chk_contiguous(index_t *ind)
+static char *chk_contiguous(index_t *ind)
 {
    static char *msg_not_contiguous = "index is not contiguous";
    ifn (index_contiguousp(ind))
       return msg_not_contiguous;
    else
-      return NIL;
+      return NULL;
+}
+
+static char *chk_nonempty(index_t *ind)
+{
+   static char *msg_nonempty = "index is empty";
+   if (index_emptyp(ind))
+      return msg_nonempty;
+   else
+      return NULL;
 }
 
 /* static inline char * */
@@ -878,9 +887,35 @@ DX(xidx_dc)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   index_t *ind = copy_index(AINDEX(1));
-   IND_NDIMS(ind)=0;
+   index_t *ind = AINDEX(1);
+   RAISEF(chk_nonempty(ind), APOINTER(1));
+   while (IND_NDIMS(ind)>0)
+      ind = index_select(ind, 0, 0);
    return ind->backptr;
+}
+
+DX(xarray_dc)
+{
+   at *init = NIL;
+   if (arg_number == 2) {
+      ARG_EVAL(2);
+      init = APOINTER(2);
+
+   } else if (arg_number > 2)
+      ARG_NUMBER(-1);
+
+   ARG_EVAL(1);
+
+   if (init) {
+      return make_array(IND_STTYPE(AINDEX(1)), SHAPE0D, init)->backptr;
+
+   } else {
+      index_t *ind = AINDEX(1);
+      RAISEF(chk_nonempty(ind), APOINTER(1));
+      while (IND_NDIMS(ind)>0)
+         ind = index_select(ind, 0, 0);
+      return copy_array(ind)->backptr;
+   }
 }
 
 size_t index_nelems(const index_t *ind) 
@@ -3665,6 +3700,7 @@ void init_index(void)
    dx_define("idx-set-offset", xidx_set_offset);
 
    /* other array functions */
+   dx_define("array-dc", xarray_dc);
    dx_define("array-extend", xarray_extend);
    dx_define("array-copy", xarray_copy);
    dx_define("array-swap", xarray_swap);
