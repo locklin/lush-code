@@ -611,7 +611,7 @@
   (cond
    ((consp l)                        ;; l is a list
     (bsearch.list l v (length l)))
-   ((and (vectorp l) (numericp l))   ;; l is a vector
+   ((and (vectorp l) (idx-numericp l))   ;; l is a vector
     (selectq (idx-element-type l)
       ('float  (idx-f1bsearch l v))
       ('double (idx-d1bsearch l v))
@@ -752,13 +752,9 @@
     (eval 
      `(progn 
 	(de ,func-symbol (&rest shape)
-          (if (and shape (and (indexp (car shape))))
-              (make-array ,sc (car shape) ,init)
-            (make-array ,sc shape ,init)))
+          (make-array ,sc shape ,init) )
 	(de ,func*-symbol (&rest shape)
-          (if (and shape (and (indexp (car shape))))
-              (make-array ,sc (car shape) ())
-            (make-array ,sc shape ())))
+          (make-array ,sc shape ()) )
         (lock-symbol ,func-symbol ,func*-symbol) )
      )))
 
@@ -772,12 +768,12 @@
      ,arg) )
 
 (dm chk-idx-numeric (_ arg)
-  `(if (not (numericp ,arg))
+  `(if (not (idx-numericp ,arg))
        (error "not a numeric index" ,arg)
      ,arg) )
 
 (dm chk-idx-contiguous (_ arg)
-  `(if (not (contiguousp ,arg))
+  `(if (not (idx-contiguousp ,arg))
        (error "not a contiguous index" ,arg)
     ,arg) )
 
@@ -806,7 +802,7 @@
 (defun same-shape-p (a1 a2)
   (= (idx-shape a1) (idx-shape a2)) )
 
-(dm vector (_ . args)
+(defmacro vector args
   (let* ((l (length args)) (v (gensym)) (vs (.cl v)))
     (prog1 
         `(let* ((,v (double-array ,l)))
@@ -814,31 +810,14 @@
            ,v)
       (delete vs) )))
 
-(dm vectorp(_ idx)
+(defmacro vectorp (idx)
   `(let ((idx ,idx)) (and (indexp idx) (= (idx-rank idx) 1)))
   )
 
-(dm idx-emptyp (_ m)
-  `(= (idx-nelems ,m) 0) )
+(defmacro idx-element-type (idx)
+  `(storage-class-symbol (classof (idx-storage ,idx))) 
+  )
 
-(dm idx-readonlyp (_ idx)
-  `(storage-readonlyp (idx-storage ,idx)))
-
-(dm idx-element-type (_ idx)
-  `(storage-class-symbol (classof (idx-storage ,idx))) )
-
-;(de make-array (arg shp init)
-;  (new-index (make-storage arg (apply * shp) init) shp) )
-
-(dm clone-array (_ proto &optional init)
-  `(make-array (idx-element-type ,proto) (shape ,proto) ,init) )
-
-;; aliases for often used functions
-(defalias contiguousp idx-contiguousp)
-(defalias numericp    idx-numericp)
-(defalias select      idx-select)
-
-(lock_symbol numericp contiguousp select)
 ;;
 ;; printing and reading array literals
 ;;
@@ -863,7 +842,7 @@
 
      (t                    ;; all other
       (for (i 0 (1- (idx-shape m 0)))
-	   (print-array (select m 0 i)) )
+	   (print-array (idx-select m 0 i)) )
       (print) ))))
 
 
@@ -897,7 +876,7 @@
       (let ((tabnow (tab))
             (len    (- (idx-shape this 0) 1)) )
 	(for (i 0 len)
-	     (print-array-literal (select this 0 i) )
+	     (print-array-literal (idx-select this 0 i) )
 	     (when (< i len) (print) (tab tabnow)) ))
       (printf end) ))))
 
@@ -929,7 +908,7 @@
              (let ((n (length l)))
                (setq m (apply idxfun (cons n (shape (car l)))))
                (for (i 0 (1- n))
-		    (array-copy (car l) (select m 0 i))
+		    (array-copy (car l) (idx-select m 0 i))
                     (setq l (cdr l)) ))))))) 
 
     (while (not m)
