@@ -612,7 +612,7 @@ void process_pending_events(void)
          at *event = event_get(hndl, true);
          if (CONSP(event)) {
             class_t *cl = classof(hndl);
-            at *m = checksend(cl, at_handle);
+            at *m = getmethod(cl, at_handle);
             if (m) {
                at *args = new_cons(event, NIL);
                argeval_ptr = eval_nothing;
@@ -673,7 +673,7 @@ static at *event_to_list(int event, int xd, int yd, int xu, int yu, int *pmods)
       char keyevent[2];
       keyevent[0] = EVENT_TO_ASCII(event);
       keyevent[1] = 0;
-      return new_cons(new_string(keyevent), two_integers(xd,yd));
+      return new_cons(make_string(keyevent), two_integers(xd,yd));
    }
    /* events that update evshift and evcontrol */
    *pmods = 0;
@@ -818,7 +818,7 @@ DX(xcheckevent)
 DX(xeventinfo)
 {
    ARG_NUMBER(0);
-   return new_cons(new_string((char*)((evdesc) ? evdesc : "n/a")),
+   return new_cons(make_string((char*)((evdesc) ? evdesc : "n/a")),
                    new_cons(((evmods & 1) ? t() : NIL),
                             new_cons(((evmods & 2) ? t() : NIL), 
                                      NIL)));

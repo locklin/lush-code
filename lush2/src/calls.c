@@ -151,7 +151,7 @@ again:
 
 /* --------- WEIRD FUNCTIONS --------- */
 
-static int tlsizeof(char *s)
+static int tlsizeof(const char *s)
 {
    if( ! strcmp( s , "flt" ) )
       return sizeof(flt);

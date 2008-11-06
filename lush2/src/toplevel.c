@@ -107,8 +107,8 @@ int isatty (int);
 //extern int compute_bump_active;
 
 /* From DUMP.C */
-extern int isdump (char *s);
-extern void undump (char *s);
+extern int isdump (const char *s);
+extern void undump (const char *s);
 
 /* From BINARY.C */
 extern int in_bwrite;
@@ -210,7 +210,7 @@ void init_lush(char *program_name)
 #endif
    /* Very simple way to define version :-) */
    version = var_define("version");
-   p = new_string("lush2");
+   p = make_string("lush2");
    var_set(version,p);
    var_lock(version);
    MM_EXIT;
@@ -232,7 +232,7 @@ void start_lisp(int argc, char **argv, int quietflag)
    MM_ENTER;
    at *p, *q;
    at **where;
-   char *s, *r;
+   const char *s, *r;
    error_doc.script_file = NIL;
    error_doc.script_mode = SCRIPT_OFF;
    error_doc.error_prefix = NIL;
@@ -274,7 +274,7 @@ void start_lisp(int argc, char **argv, int quietflag)
 
       /* Search a dump file */
       MM_ENTER;
-      if ((r = search_file(s,"|.dump")) && isdump(r)) {
+      if ((r = search_file(s, "|.dump")) && isdump(r)) {
          error_doc.ready_to_an_error = false;
          if (! quiet) {
             FMODE_TEXT(stdout);
@@ -313,7 +313,7 @@ void start_lisp(int argc, char **argv, int quietflag)
       p = NIL;
       where = &p;
       for (int i = 1; i<argc; i++) {
-         *where = new_cons(new_string(argv[i]),NIL);
+         *where = new_cons(make_string(argv[i]),NIL);
          where = &Cdr(*where);
       }
       q = apply(at_startup,p);
@@ -481,7 +481,7 @@ void context_pop(void)
 static int discard_flag;
 static int exit_flag = 0;
 
-void toplevel(char *in, char *out, char *prompts)
+void toplevel(const char *in, const char *out, const char *prompts)
 {
    MM_ENTER;
    
@@ -501,7 +501,7 @@ void toplevel(char *in, char *out, char *prompts)
    f1 = f2 = NIL;
    if (in) {
       f1 = open_read(in, "|.lshc|.snc|.tlc|.lsh|.sn|.tl");
-      ans = new_string(file_name);
+      ans = make_string(file_name); /* fishy */
    }
    if (out)
       f2 = open_write(out, "script");
@@ -653,23 +653,18 @@ DX(xload)
 {
    ALL_ARGS_EVAL;
 
-   char *s, *prompt;
-  
    if (arg_number == 3) {
-      s = ASTRING(2);
-      prompt = ASTRING(3);
-      toplevel(ASTRING(1), s, prompt);
+      toplevel(ASTRING(1), ASTRING(2), ASTRING(3));
       
    } else if (arg_number == 2) {
-      s = ASTRING(2);
-      toplevel(ASTRING(1), s, NIL);
+      toplevel(ASTRING(1), ASTRING(2), NIL);
       
    } else {
       ARG_NUMBER(1);
       toplevel(ASTRING(1), NIL, NIL);
    }
 
-   return new_string(file_name);
+   return make_string(file_name); /* fishy */
 }
 
 /*
@@ -717,7 +712,7 @@ DX(xexit)
 
 static char unknown_errmsg[] = "No information on current error condition";
 
-static char *error_text(void)
+static const char *error_text(void)
 {
    extern char print_buffer[];
    const char *prefix = error_doc.error_prefix;
@@ -741,7 +736,7 @@ static char *error_text(void)
    sprintf(print_buffer,"%s%s%s%s%s", 
            prefix, prefixsep, text, textsep, 
            suffix ? first_line(suffix) : "" );
-   return print_buffer;
+   return mm_strdup(print_buffer);
 }
 
 
@@ -843,7 +838,7 @@ void error(const char *prefix, const char *text, at *suffix)
 DX(xerror)
 {
    at *call, *symb, *arg;
-   char *errmsg;
+   const char *errmsg;
    
    ALL_ARGS_EVAL;
    switch (arg_number) {
@@ -912,7 +907,7 @@ DX(xbtrace)
 DX(xerrname)
 {
    ARG_NUMBER(0);
-   return new_string( error_text() );
+   return new_string(error_text());
 }
 
 DX(xquiet)

@@ -494,7 +494,7 @@ DX(xhashcode)
    ARG_EVAL(1);
    unsigned long x = hash_value(APOINTER(1));
    sprintf(buffer,"%08x", (int)(x));
-   return new_string(buffer);
+   return make_string(buffer);
 }
 
 

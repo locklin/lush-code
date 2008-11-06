@@ -88,27 +88,29 @@
 
 /* --------- VARIABLES --------- */
 
-static at *at_path;
-static at *at_lushdir;
+at *at_path;
+at *at_lushdir;
 
 char file_name[FILELEN];
-char lushdir_name[FILELEN];
+char lushdir[FILELEN];
 
 
 /* --------- FILE OPERATIONS --------- */
 
-char *cwd(const char *s)
+const char *cwd(const char *s)
 {
 #ifdef UNIX
    if (s) {
       if (chdir(s)==-1)
          test_file_error(NULL);
    }
-#ifdef HAVE_GETCWD
-   return getcwd(string_buffer,STRING_BUFFER);
-#else
-   return getwd(string_buffer);
-#endif
+#  ifdef HAVE_GETCWD
+   getcwd(string_buffer,STRING_BUFFER);
+   return mm_strdup(string_buffer);
+#  else
+   getwd(string_buffer);
+   return mm_strdup(string_buffer);
+#  endif
 #endif
 #ifdef WIN32
    char drv[2];
@@ -117,7 +119,7 @@ char *cwd(const char *s)
          test_file_error(NULL);
    drv[0]='.'; drv[1]=0;
    GetFullPathName(drv, STRING_BUFFER, string_buffer, &s);
-   return string_buffer;
+   return mm_strdup(string_buffer);
 #endif
 }
 
@@ -146,8 +148,8 @@ at *files(const char *s)
       struct dirent *d;
       while ((d = readdir(dirp))) {
          int n = NAMLEN(d);
-         at *ats = new_string_bylen(n);
-         char *s = String(ats);
+         at *ats = make_string_of_length(n);
+         char *s = (char *)String(ats);
          strncpy(s, d->d_name, n); s[n] = 0;
          *where = new_cons(ats,NIL);
          where = &Cdr(*where);
@@ -242,8 +244,7 @@ DX(xunlink)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   char *s = ASTRING(1);
-   if (deletefile(s))
+   if (deletefile(ASTRING(1)))
       test_file_error(NULL);
    return NIL;
 }
@@ -506,7 +507,8 @@ static char *strcpyif(char *d, const char *s)
    return d;
 }
 
-char *dirname(const char *fname)
+/* expects a managed string & returns a managed string */
+const char *dirname(const char *fname)
 {
 #ifdef UNIX
    const char *s = fname;
@@ -519,9 +521,9 @@ char *dirname(const char *fname)
    }
    if (!p) {
       if (fname[0]=='/')
-         return mm_strdup(fname);
+         return fname;
       else
-         return ".";
+         return mm_strdup(".");
    }
    s = fname;
    if (p-s > STRING_BUFFER-1)
@@ -530,7 +532,7 @@ char *dirname(const char *fname)
       *q++ = *s++;
    } while (s<p);
    *q = 0;
-   return string_buffer;
+   return mm_strdup(string_buffer);
 #endif
 
 #ifdef WIN32
@@ -554,14 +556,14 @@ char *dirname(const char *fname)
    if (p == 0) {
       if (q>string_buffer) {
          if (fname[0]==0 || fname[0]=='/' || fname[0]=='\\')
-            return "\\\\";
+            return mm_strdup("\\\\");
          *q = 0;
-         return string_buffer;
+         return mm_strdup(string_buffer);
       } else {
          if (fname[0]=='/' || fname[0]=='\\')
-            return "\\\\";
+            return mm_strdup("\\\\");
          else
-            return ".";
+            return mm_strdup(".");
       }
    }
    /* Single leading slash */
@@ -583,7 +585,7 @@ char *dirname(const char *fname)
       *q++ = *s++;
    } while (s<p);
    *q = 0;
-   return string_buffer;
+   return mm_strdup(string_buffer);
 #endif
 }
 
@@ -597,7 +599,7 @@ DX(xdirname)
 
 
 /* basename returns a new, managed string */
-char *basename(const char *fname, const char *suffix)
+const char *basename(const char *fname, const char *suffix)
 {
 #ifdef UNIX
    if (strlen(fname) > STRING_BUFFER-4)
@@ -670,15 +672,15 @@ DX(xbasename)
    ALL_ARGS_EVAL;
    if (arg_number!=1) {
       ARG_NUMBER(2)
-         return new_extern(&string_class, basename(ASTRING(1),ASTRING(2)));
+         return new_string(basename(ASTRING(1),ASTRING(2)));
    } else {
       ARG_NUMBER(1);
-      return new_extern(&string_class, basename(ASTRING(1),NULL));
+      return new_string(basename(ASTRING(1),NULL));
    }
 }
 
 /* concat_fname returns a new, managed string */
-char *concat_fname(const char *from, const char *fname)
+const char *concat_fname(const char *from, const char *fname)
 {
 #ifdef UNIX
    if (fname && fname[0]=='/') 
@@ -796,14 +798,14 @@ DX(xconcat_fname)
 {
    ALL_ARGS_EVAL;
    if (arg_number==1)
-      return new_extern(&string_class, concat_fname(NULL,ASTRING(1)));
+      return new_string(concat_fname(NULL,ASTRING(1)));
    ARG_NUMBER(2);
-   return new_extern(&string_class, concat_fname(ASTRING(1),ASTRING(2)));
+   return new_string(concat_fname(ASTRING(1),ASTRING(2)));
 }
 
 
 /* relative_fname returns a new, managed string */
-char *relative_fname(const char *from, const char *fname)
+const char *relative_fname(const char *from, const char *fname)
 {
    from = concat_fname(NULL,from);
    int fromlen = strlen(from);
@@ -840,8 +842,8 @@ DX(xrelative_fname)
    ARG_NUMBER(2);
    ARG_EVAL(1);
    ARG_EVAL(2);
-   char *s = relative_fname(ASTRING(1), ASTRING(2));
-   return s ? new_extern(&string_class, s) : NIL;
+   const char *s = relative_fname(ASTRING(1), ASTRING(2));
+   return s ? new_string(s) : NIL;
 }
 
 
@@ -852,24 +854,26 @@ DX(xrelative_fname)
 
 static struct tmpname {
    struct tmpname *next;
-   char file[];
+   const char *file;
 } *tmpnames = 0;
 
 void clear_tmpname(struct tmpname *tn)
 {
    tn->next = NULL;
+   tn->file = NULL;
 }
 
 void mark_tmpname(struct tmpname *tn)
 {
    MM_MARK(tn->next);
+   MM_MARK(tn->file);
 }
 
 bool finalize_tmpname(struct tmpname *tn, void *_)
 {
    if (filep(tn->file)) {
       if (unlink(tn->file) == 0)
-         tn->file[0] = '\0';
+         tn->file = NULL;
       else
          return false;
    }
@@ -884,25 +888,25 @@ void unlink_tmp_files(void)
    mm_collect_now();
 }
 
-char *tmpname(char *dir, char *suffix)
+const char *tmpname(const char *dir, const char *suffix)
 {
    static int uniq = 0;
    
    /* check temp directory */
-   char *dot;
+   const char *dot;
    if (! dirp(dir)) {
       RAISEF("invalid directory", new_string(dir));
    }
    if (! suffix)
       dot = suffix = "";
    else if (strlen(suffix)>32) {
-      RAISEF("suffix is too long", new_string(suffix));
+      RAISEF("suffix is too long", make_string(suffix));
    } else
       dot = ".";
    
    /* searches free filename */
    char buffer[256];
-   char *tmp;
+   const char *tmp;
    int fd;
    do {
 #ifdef WIN32
@@ -922,12 +926,11 @@ char *tmpname(char *dir, char *suffix)
    close(fd);
 
    /* record temp file name */
-   size_t size = sizeof(struct tmpname)+strlen(tmp)+1;
-   struct tmpname *tn = mm_allocv(mt_tmpname, size);
+   struct tmpname *tn = mm_alloc(mt_tmpname);
    if (!tn)
       RAISEF("memory exhausted",NIL);
    tn->next = tmpnames;
-   strcpy(tn->file, tmp);
+   tn->file = mm_strdup(tmp);
    tmpnames = tn;
    return tn->file;
 }
@@ -949,7 +952,7 @@ DX(xtmpname)
       return new_string(tmpname(ASTRING(1), NULL));
    case 2:
       return new_string(tmpname( (APOINTER(1) ? ASTRING(1) : tempdir),
-                                 (APOINTER(2) ? ASTRING(2) : NULL) ));
+                              (APOINTER(2) ? ASTRING(2) : NULL) ));
    default:
       ARG_NUMBER(-1);
       return NIL;
@@ -959,7 +962,8 @@ DX(xtmpname)
 
 /* --------- AUTOMATIC DIRECTORY--------- */
 
-static char *search_lushdir(char *progname)
+/* return true on success */
+bool init_lushdir(const char *progname)
 {
 #ifdef UNIX
    assert(progname);
@@ -973,7 +977,7 @@ static char *search_lushdir(char *progname)
       char *s1 = getenv("PATH");
       for (;;) {
          if (! (s1 && *s1))
-            return 0;
+            return false;
          char *s2 = file_name;
          while (*s1 && *s1!=':')
             *s2++ = *s1++;
@@ -992,7 +996,7 @@ static char *search_lushdir(char *progname)
 
 #ifdef WIN32
    if (GetModuleFileName(GetModuleHandle(NULL), file_name, FILELEN-1)==0)
-      return 0;
+      return false;
 #ifdef DEBUG_DIRSEARCH
    printf("P %s\n",file_name);
 #endif
@@ -1044,7 +1048,7 @@ static char *search_lushdir(char *progname)
       strcpy(file_name,dirname(file_name));
       while (*st) 
       {
-         char *s = concat_fname(file_name,*st++);
+         const char *s = concat_fname(file_name,*st++);
 #ifdef DEBUG_DIRSEARCH
          printf("D %s\n",s);
 #endif
@@ -1052,25 +1056,20 @@ static char *search_lushdir(char *progname)
             if (access(s,R_OK)!=-1) {
                s = dirname(s);
                s = dirname(s);
-               strcpy(lushdir_name, s);
-               return lushdir_name;
+               strcpy(lushdir, s);
+               return true;
 	    }
       }
    }
    /* Failure */
-   return NULL;
+   return false;
 }
 
 /* --------- SEARCH PATH ROUTINES --------- */
 
-/*
- * add_suffix
- * - adds a suffix to variable unless
- *   variable already contains a suffix.
- *   
- */
-
-static char *add_suffix(char *q, char *suffixes)
+/* add a file-suffix to string unless it already has one */
+/* return the suffixed string as a managed string        */
+static const char *add_suffix(const char *q, const char *suffixes)
 {
    /* Trivial suffixes */
    if (!suffixes)
@@ -1079,7 +1078,7 @@ static char *add_suffix(char *q, char *suffixes)
       return q;
    
    /* Test if there is already a suffix */
-   char *s = strrchr(q,'.');
+   const char *s = strrchr(q,'.');
    if (s)
       if (!strchr(s,'/'))
 #ifdef WIN32
@@ -1087,7 +1086,7 @@ static char *add_suffix(char *q, char *suffixes)
 #endif
             return q;
 
-   /* Test if this is a old style suffix */
+   /* Test if this is an old style suffix */
    if (suffixes[0]!='.') {
       s = suffixes + strlen(suffixes);
       /* handle old macintosh syntax */
@@ -1102,12 +1101,13 @@ static char *add_suffix(char *q, char *suffixes)
    /* add suffix to file_name */
    if (strlen(q) + (s - suffixes) > FILELEN - 4)
       error(NIL,"Filename is too long",NIL);
+
    strcpy(file_name, q);
-   q = file_name + strlen(file_name);
-   *q++ = '.';
-   strncpy(q, suffixes, s - suffixes);
-   q[s-suffixes] = 0;
-   return file_name;
+   char *ss = file_name + strlen(file_name);
+   *ss++ = '.';
+   strncpy(ss, suffixes, s - suffixes);
+   ss[s - suffixes] = 0;
+   return mm_strdup(file_name);
 }
 
 
@@ -1117,25 +1117,24 @@ static char *add_suffix(char *q, char *suffixes)
  * Tests whether the name obtained by adding suffices
  * to file_name is an existing file. The first completed
  * filename of an existing file is returned and the
- * suffix completion is written to file_name. If no
- * file is found, suffixed_file return NULL.
+ * suffix completion is returned as a managed string. If
+ * no file is found, suffixed_file returns NULL.
  */
 
-static char *suffixed_file(char *suffices)
+static const char *suffixed_file(const char *suffices)
 {
    if (!suffices) {
       /* No suffix */
-      return filep(file_name) ? file_name : NULL;
+      return (filep(file_name) ? mm_strdup(file_name) : NULL);
 
    } else {
-      char *s = suffices;
+      const char *s = suffices;
       char *q = file_name + strlen(file_name);
       /* -- loop over suffix string */
       while (s) {
-         char *r = s;
+         const char *r = s;
          if (*r && *r!='|' && *r!='.')
-            error(NIL,"Illegal suffix specification",
-                  new_string(suffices));
+            error(NIL,"Illegal suffix specification", make_string(suffices));
          while (*r && *r!='|')
             r++;
          if (q + (r - s) + 1 > file_name + FILELEN)
@@ -1144,7 +1143,7 @@ static char *suffixed_file(char *suffices)
          *(q + (r-s)) = 0;
          s = (*r ? r+1 : NULL);
          if (filep(file_name))
-            return file_name;
+            return mm_strdup(file_name);
       }
       /* -- not found */
       return NULL;  
@@ -1157,11 +1156,11 @@ static char *suffixed_file(char *suffices)
  * - first in the current directory, 
  * - then along the path. 
  * - with the specified suffixes.
- * Returns the full filename in a static area.
+ * Returns the full filename as a managed string.
  */
 
 extern char *pname_buffer;
-char *search_file(char *ss, char *suffices)
+const char *search_file(const char *ss, const char *suffices)
 {
    char s[FILELEN];
   
@@ -1170,7 +1169,7 @@ char *search_file(char *ss, char *suffices)
    strcpy(s,ss);
 
    /* -- search along path */
-   char *c = 0;
+   const char *c = 0;
 #ifdef UNIX
    if (*s != '/')
 #endif
@@ -1183,8 +1182,8 @@ char *search_file(char *ss, char *suffices)
                if (strlen(c)+1 > FILELEN)
                   error(NIL,"File name is too long",NIL);
                strcpy(file_name, c);
-               if (suffixed_file(suffices))
-                  return file_name;
+               const char *sf = suffixed_file(suffices);
+               if (sf) return sf;
             }
             q = Cdr(q);
          }
@@ -1195,27 +1194,24 @@ char *search_file(char *ss, char *suffices)
       if (strlen(c)+1 > FILELEN)
          error(NIL,"File name is too long",NIL);
       strcpy(file_name,c);
-      if (suffixed_file(suffices))
-         return file_name;
+      const char *sf = suffixed_file(suffices);
+      if (sf) return sf;
    }
    /* -- fail */
-   return NIL;
+   return NULL;
 }
 
 
 DX(xfilepath)
 {
-   char *suf = "|.lshc|.snc|.tlc|.lsh|.sn|.tl";
+   const char *suf = "|.lshc|.snc|.tlc|.lsh|.sn|.tl";
    ALL_ARGS_EVAL;
    if (arg_number!=1){
      ARG_NUMBER(2);
      suf = (APOINTER(2) ? ASTRING(2) : NULL);
   }
-   char *ans = search_file(ASTRING(1),suf);
-   if (ans)
-      return new_string(ans);
-   else
-      return NIL;
+   const char *ans = search_file(ASTRING(1),suf);
+   return ans ? new_string(ans) : NIL;
 }
 
 
@@ -1281,7 +1277,7 @@ void test_file_error(FILE *f)
  * opens a file for reading
  */
 
-FILE *attempt_open_read(char *s, char *suffixes)
+FILE *attempt_open_read(const char *s, const char *suffixes)
 {
   /*** spaces in name ***/
   while (isspace((int)(unsigned char)*s))
@@ -1303,9 +1299,9 @@ FILE *attempt_open_read(char *s, char *suffixes)
   }
   
   /*** search and open ***/
-  FILE *f;
-  char *name = search_file(s, suffixes);
-  if (name && ((f = fopen(name, "rb")))) {
+  const char *name = search_file(s, suffixes);
+  FILE *f = name ? fopen(name, "rb") : NULL;
+  if (f) {
      FMODE_BINARY(f);
      return f;
   } else
@@ -1313,10 +1309,10 @@ FILE *attempt_open_read(char *s, char *suffixes)
 }
 
 
-FILE *open_read(char *s, char *suffixes)
+FILE *open_read(const char *s, const char *suffixes)
 {
-   FILE *f = attempt_open_read(s,suffixes);
-   if (! f) {
+   FILE *f = attempt_open_read(s, suffixes);
+   ifn (f) {
       test_file_error(NIL);
       RAISEF("cannot open file", new_string(s));
    }
@@ -1329,7 +1325,7 @@ FILE *open_read(char *s, char *suffixes)
  * opens a file for writing
  */
 
-FILE *attempt_open_write(char *s, char *suffixes)
+FILE *attempt_open_write(const char *s, const char *suffixes)
 {
    /*** spaces in name ***/
    while (isspace((int)(unsigned char)*s))
@@ -1355,7 +1351,7 @@ FILE *attempt_open_write(char *s, char *suffixes)
    /*** suffix ***/
    if (access(s, W_OK) == -1) {
       s = add_suffix(s, suffixes);
-      strcpy(file_name, s);
+      // strcpy(file_name, s); // why?
    }
 
    /*** open ***/
@@ -1368,10 +1364,10 @@ FILE *attempt_open_write(char *s, char *suffixes)
 }
 
 
-FILE *open_write(char *s, char *suffixes)
+FILE *open_write(const char *s, const char *suffixes)
 {
    FILE *f = attempt_open_write(s, suffixes);
-   if (! f) {
+   ifn (f) {
       test_file_error(NIL);
       RAISEF("cannot open file", new_string(s));
    }
@@ -1385,7 +1381,7 @@ FILE *open_write(char *s, char *suffixes)
  * this file must exist before
  */
 
-FILE *attempt_open_append(char *s, char *suffixes)
+FILE *attempt_open_append(const char *s, const char *suffixes)
 {
    /*** spaces in name ***/
    while (isspace((int)(unsigned char)*s))
@@ -1411,7 +1407,7 @@ FILE *attempt_open_append(char *s, char *suffixes)
    /*** suffix ***/
    if (access(s, W_OK) == -1) {
       s = add_suffix(s, suffixes);
-      strcpy(file_name, s);
+      // strcpy(file_name, s); // why ?
    }
   
    /*** open ***/
@@ -1424,12 +1420,12 @@ FILE *attempt_open_append(char *s, char *suffixes)
 }
 
 
-FILE *open_append(char *s, char *suffixes)
+FILE *open_append(const char *s, const char *suffixes)
 {
    FILE *f = attempt_open_append(s,suffixes);
-   if (! f) {
+   ifn (f) {
       test_file_error(NIL);
-      error(NIL,"Cannot open file",new_string(s));
+      RAISEF("cannot open file", new_string(s));
    }
    return f;
 }
@@ -1522,7 +1518,7 @@ void at_file_notify(at *p, void *_)
  * - sets the script file as 'filename'.
  */
 
-void set_script(char *s)
+void set_script(const char *s)
 {
    if (error_doc.script_file) {
       fputs("\n\n *** End of script ***\n", error_doc.script_file);
@@ -1833,19 +1829,15 @@ void init_fileio(char *program_name)
    at_path = var_define("*PATH");
    at_lushdir = var_define("lushdir");
 
-   char *s;
-   if (!(s=search_lushdir(program_name)))
-      if (!(s=search_lushdir("lush")))
-         abort("cannot locate library files");
+   ifn (init_lushdir(program_name) || init_lushdir("lush2"))
+      abort("cannot locate library files");
 #ifdef UNIX
-   unix_setenv("LUSHDIR",s);
+   unix_setenv("LUSHDIR",lushdir);
 #endif
-   at *q = new_string(s);
-   var_set(at_lushdir, q);
+   var_set(at_lushdir, make_string(lushdir));
    var_lock(at_lushdir);
-   s = concat_fname(String(q),"sys");
-   q = new_cons(new_string(s),NIL);
-   var_set(at_path, q);
+   const char *s = concat_fname(lushdir, "sys");
+   var_set(at_path, new_cons(new_string(s),NIL));
    
    /* setting up classes */
    class_init(&file_R_class, false);

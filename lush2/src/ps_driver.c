@@ -70,7 +70,7 @@ struct M_window {
 
 /* ============================  WINDOW CREATION */
 
-static struct M_window *ps_new_window(int x, int y, unsigned int w, unsigned int h, char *name)
+static struct M_window *ps_new_window(int x, int y, unsigned int w, unsigned int h, const char *name)
 {
    extern mt_t mt_window; // defined in graphics.c
 
@@ -78,7 +78,7 @@ static struct M_window *ps_new_window(int x, int y, unsigned int w, unsigned int
    assert(info);
    if (w ==0 || h == 0)
       w = h = 512;
-   info->filename = strdup(name);
+   info->filename = strdup(name); /* info->filename is not a maanged string */
    info->w = w;
    info->h = h;
    info->f = NIL;
@@ -208,14 +208,14 @@ static int ps_ysize(struct window *linfo)
 
 /* set the font in a window */
 
-static char *ps_setfont(struct window *linfo, char *f)
+static const char *ps_setfont(struct window *linfo, const char *f)
 {
    struct M_window *info = (struct M_window*)linfo;
    int size;
    char font[128];
    char *s;
-   if (!strcmp(f,"default"))
-      f = "Helvetica-11";
+   if (!strcmp(f, FONT_STD))
+      f = mm_strdup("Helvetica-11");
    begin(info);
    strncpy(font,f,126);
    s = font+strlen(f);
@@ -291,7 +291,7 @@ static void ps_fill_arc(struct window *linfo,
 }
 
 
-static void ps_draw_text(struct window *linfo, int x, int y, char *s)
+static void ps_draw_text(struct window *linfo, int x, int y, const char *s)
 {
    struct M_window *info = (struct M_window*)linfo;
    unsigned char c;
@@ -363,7 +363,7 @@ static int ps_alloccolor(struct window *linfo, double r, double g, double b)
 
 /***** special ****/
 
-static void ps_gspecial(struct window *linfo, char *s)
+static void ps_gspecial(struct window *linfo, const char *s)
 {
    struct M_window *info = (struct M_window*)linfo;
    begin(info);
@@ -547,12 +547,12 @@ struct gdriver ps_driver = {
 };
 
 
-static at *ps_window(int x, int y, int w, int h, char *name)
+static at *ps_window(int x, int y, int w, int h, const char *name)
 {
    struct M_window *info = ps_new_window(x,y,w,h,name);
    at *ans = new_extern( &window_class, info );
    info->lwin.used       = 1;
-   info->lwin.font       = new_string(FONT_STD);
+   info->lwin.font       = make_string(FONT_STD);
    info->lwin.color      = COLOR_FG;
    info->lwin.gdriver    = &ps_driver;
    info->lwin.clipw = 0;
@@ -564,7 +564,7 @@ static at *ps_window(int x, int y, int w, int h, char *name)
 
 DX(xps_window)
 {
-   char *name = "tloutput.ps";
+   const char *name = mm_strdup("tloutput.ps");
    int w = 512;
    int h = 512;
    

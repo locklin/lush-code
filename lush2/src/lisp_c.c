@@ -193,7 +193,7 @@ static avlnode_t *alloc_str(char *data)
   n->cinfo = CINFO_STR;
   n->cmoreinfo = 0;
   n->belong = BELONG_LISP;
-  n->citem = data;
+  n->citem = (void *)data;
   return n;
 }
 
@@ -295,7 +295,7 @@ static avlnode_t *lside_create_obj(at *p)
     
   } else {
     /* get compiled class */
-    class_t *cl = Class(p);
+    const class_t *cl = Class(p);
     while (cl && !cl->classdoc)
       cl = cl->super;
     ifn (cl)
@@ -326,7 +326,7 @@ static avlnode_t *lside_create_str(at *p)
 {
   ifn (STRINGP(p))
     error(NIL,"String expected",p);
-  char *str = String(p);
+  char *str = (char *)String(p);
   assert(str);
   avlnode_t *n = avl_find(str);
   
@@ -911,7 +911,7 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
 
     } else if (OBJECTP(at_obj)) {
       /* check type */
-      class_t *cl = Class(at_obj);
+      const class_t *cl = Class(at_obj);
       for (; cl; cl=cl->super) {
 	dhclassdoc_t *cdoc = cl->classdoc;
 	if ((cdoc) && (cdoc == (dhclassdoc_t*)(drec->arg)))
@@ -937,7 +937,8 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
 
     } else if (STRINGP(at_obj)) {
        //avlnode_t *n = lside_create_str(at_obj);
-      avlnode_t *n = alloc_str(String(at_obj));
+      char *s = (char *)String(at_obj);
+      avlnode_t *n = alloc_str(s);
       arg->dh_str_ptr = n->citem;
       
     } else
@@ -1184,12 +1185,18 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
   }
 
   case CINFO_STR: {
-    char *cs = n->citem;
-    ifn (cs)
+    ifn (n->citem) {
       lisp2c_warning("(out): found uninitialized string",0);
+      n->litem = NIL;
 
-    at *p = new_string(cs);
-    n->litem = p;
+    } else if (n->belong == BELONG_LISP) {
+      n->litem = new_string(n->citem);
+
+    } else if (n->belong == BELONG_C) {
+      n->litem = make_string(n->citem);
+    } else
+      assert(0);
+
     return n->litem;
   }
 
@@ -1992,7 +1999,7 @@ DX(xto_obj)
     ifn (OBJECTP(p))
       error(NIL, "GPTR does not point to an object", APOINTER(2));
 
-    class_t *clm = Class(p);
+    const class_t *clm = Class(p);
     while (clm && (clm != cl))
       clm = clm->super;
     if (clm != cl)

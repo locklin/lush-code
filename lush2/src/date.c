@@ -145,7 +145,7 @@ static int str_date_imp(struct date *d, char *s)
  */
 
 
-static int new_date_imp(char *s, struct date *d, int from, int to)
+static int new_date_imp(const char *s, struct date *d, int from, int to)
 {
    if (from<0 || to<0 || from>DATE_SECOND || to>DATE_SECOND || from>to)
       error(NIL, "illegal date range specification", NIL);
@@ -267,7 +267,7 @@ static void date_extend(struct date *d, struct date *nd, int nfrom, int nto)
 
 static mt_t mt_date = mt_undefined;
 
-static char *date_name(at *p)
+static const char *date_name(at *p)
 {
    struct date *d = Mptr(p);
    strcpy(string_buffer,"::DATE:");
@@ -277,7 +277,7 @@ static char *date_name(at *p)
    strcat(string_buffer,":(");
    str_date_imp(d, string_buffer+strlen(string_buffer));
    strcat(string_buffer,")");
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
 static at *copy_date(struct date *d);
@@ -377,7 +377,7 @@ at *new_date(char *s, int from, int to)
 {
    struct date buf;
    if (new_date_imp(s, &buf, from, to) == -1)
-      error(NIL, "Illegal date", new_string(s));
+      error(NIL, "Illegal date", make_string(s));
    return copy_date(&buf);
 }
   
@@ -659,12 +659,12 @@ DX(xdate_to_string)
 
    ALL_ARGS_EVAL;
    if (arg_number==1) {
-      return new_string(str_date(APOINTER(1),NULL,NULL));
+      return make_string(str_date(APOINTER(1),NULL,NULL));
 
    } else {
       ARG_NUMBER(2);
       struct date buf, *d = get_date(APOINTER(1));
-      char *format = ASTRING(2);
+      const char *format = ASTRING(2);
       date_extend(d,&buf,DATE_YEAR,DATE_SECOND);
       tm.tm_year = buf.x[DATE_YEAR];
       tm.tm_mon = buf.x[DATE_MONTH] - 1;
@@ -675,7 +675,7 @@ DX(xdate_to_string)
 
       int status = strftime(string_buffer,STRING_BUFFER,format,&tm);
       if (status)
-         return new_string(string_buffer);
+         return make_string(string_buffer);
       else
          RAISEFX("string too long",NIL);
    }
@@ -786,7 +786,7 @@ DX(xdate_add_month)
    buf = *d;
    int add = AINTEGER(2);
    if (opt) {
-      char *s = pname(opt);
+      const char *s = pname(opt);
       if (!strcmp(s, "noerror")) 
          noerror = 1; 
       else if (!strcmp(s, "no-error")) 
@@ -853,7 +853,7 @@ DX(xdate_add_year)
    buf = *d;
    int y, add = AINTEGER(2); 
    if (opt) {
-      char *s = pname(opt);
+      const char *s = pname(opt);
       if (!strcmp(s,"noerror")) 
          noerror = 1; 
       else if (!strcmp(s,"no-error")) 

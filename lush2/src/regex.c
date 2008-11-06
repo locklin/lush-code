@@ -62,7 +62,8 @@
 
 
 static sigjmp_buf rejmpbuf;
-static char  *pat, *dat, *datstart;
+static const char *pat;
+static const char *dat, *datstart;
 static unsigned short *buf;
 
 #define RE_LIT      0x0000
@@ -283,11 +284,11 @@ static void regex_alternate(bounds *ans, bounds buf, int *rnum)
    }
 }
 
-static int regex_execute(char **regsptr, int *regslen, int nregs)
+static int regex_execute(const char **regsptr, int *regslen, int nregs)
 {
    unsigned short c;
    unsigned short *buffail;
-   char  *datfail;
+   const char  *datfail;
    while ((c = *buf++)) {
 #ifdef DEBUG_REGEX
       printf("%04x (%02x)\n",(int)(c)&0xffff,(dat?*dat:0)); 
@@ -375,9 +376,9 @@ static int regex_execute(char **regsptr, int *regslen, int nregs)
 /* ----------- public routines ------------ */
 
 
-char *regex_compile(char *pattern, 
-                    short int *bufstart, short int *bufend, 
-                    int strict, int *rnum)
+const char *regex_compile(const char *pattern, 
+                          short int *bufstart, short int *bufend, 
+                          int strict, int *rnum)
 {
    int regnum = 0;
    if (!rnum) 
@@ -406,19 +407,19 @@ char *regex_compile(char *pattern,
 }
 
 
-int regex_exec(short int *buffer, char *string, 
-               char **regptr, int *reglen, int nregs)
+int regex_exec(short int *buffer, const char *string, 
+               const char **regptr, int *reglen, int nregs)
 {
    for(int c=0;c<nregs;c++)
       reglen[c] = 0;
    dat = datstart = string;
    buf = (unsigned short*) buffer;
-   return regex_execute(regptr,reglen,nregs);
+   return regex_execute(regptr, reglen, nregs);
 }
 
 
-int regex_seek(short int *buffer, char *string, char *seekstart, 
-               char **regptr, int *reglen, int nregs, char **start, char **end)
+int regex_seek(short int *buffer, const char *string, const char *seekstart, 
+               const char **regptr, int *reglen, int nregs, const char **start, const char **end)
 {
    datstart = string;
    while (*seekstart) {
@@ -426,7 +427,7 @@ int regex_seek(short int *buffer, char *string, char *seekstart,
          reglen[c] = 0;
       dat = seekstart;
       buf = (unsigned short*) buffer;
-      if (regex_execute(regptr,reglen,nregs)) {
+      if (regex_execute(regptr, reglen, nregs)) {
          *start = seekstart;
          *end = dat;
          return 1;
@@ -459,14 +460,13 @@ int regex_seek(short int *buffer, char *string, char *seekstart,
 
 DX(xregex_match)
 {
-   char *pat, *dat;
    short buffer[1024];
 
    ARG_NUMBER(2);
    ALL_ARGS_EVAL;
   
-   pat = ASTRING(1);
-   dat = ASTRING(2);
+   const char *pat = ASTRING(1);
+   const char *dat = ASTRING(2);
 
    pat = regex_compile(pat,buffer,buffer+1024,1,NULL);
    if (pat)
@@ -481,33 +481,31 @@ DX(xregex_match)
 
 DX(xregex_extract)
 {
-   char *pat, *dat;
    short buffer[1024];
    at *ans=NIL;
    at **where = &ans;
-   char **regptr;
-   int *reglen;
    int regnum = 0;
    int i;
 
    ARG_NUMBER(2);
    ALL_ARGS_EVAL;
-   pat = ASTRING(1);
-   dat = ASTRING(2);
+   const char *pat = ASTRING(1);
+   const char *dat = ASTRING(2);
    pat = regex_compile(pat,buffer,buffer+1024,1,&regnum);
    if (pat)
       error(NIL,pat,APOINTER(1));
 
-   regptr = malloc((regnum+1)*sizeof(char*));
-   reglen = malloc((regnum+1)*sizeof(int));
+   const char **regptr = malloc((regnum+1)*sizeof(char*));
+   int *reglen = malloc((regnum+1)*sizeof(int));
    if (!regptr || !reglen)
       error(NIL,"out of memory",NIL);
 
    if (regex_exec(buffer,dat,regptr,reglen,regnum)) {
       for (i=0; i<regnum; i++) {
-         at *str = new_string_bylen(reglen[i]);
-         strncpy(String(str), regptr[i], reglen[i]);
-         *where = new_cons(str,NIL);
+         at *str = make_string_of_length(reglen[i]);
+         char *s = (char *)String(str);
+         strncpy(s, regptr[i], reglen[i]);
+         *where = new_cons(str, NIL);
          where = &Cdr(*where);
       }
       if (!ans)
@@ -521,7 +519,6 @@ DX(xregex_extract)
 
 DX(xregex_seek)
 {
-   char *pat, *dat,*datstart, *start,*end;
    int n;
    short buffer[1024];
 
@@ -532,8 +529,9 @@ DX(xregex_seek)
       n = 1;
       ARG_NUMBER(2);
    }
-   pat = ASTRING(1);
-   dat = datstart = ASTRING(2);
+   const char *datstart;
+   const char *pat = ASTRING(1);
+   const char *dat = datstart = ASTRING(2);
    while (--n>0 && *dat)
       dat++;
 
@@ -541,6 +539,7 @@ DX(xregex_seek)
    if (pat)
       error(NIL,pat,APOINTER(1));
   
+   const char *start,*end;
    if (regex_seek(buffer,datstart,dat,NULL,NULL,0,&start,&end)) {
       dat = ASTRING(2);
       return new_cons(NEW_NUMBER(1+start-dat),
@@ -554,28 +553,25 @@ DX(xregex_seek)
 
 DX(xregex_subst)
 {
-   char *pat, *dat, *datstart, *str; 
-   short buffer[1024];
-   char *regptr[10];
-   int  reglen[10];
-   char *start, *end, *s1;
-   struct large_string ls;
-
-
    ARG_NUMBER(3);
    ALL_ARGS_EVAL;
-  
-   pat = ASTRING(1);
-   str = ASTRING(2);
-   dat = datstart = ASTRING(3);
-
+   const char *datstart;
+   const char *pat = ASTRING(1);
+   const char *str = ASTRING(2);
+   const char *dat = datstart = ASTRING(3);
+ 
+   short buffer[1024];
    pat = regex_compile(pat,buffer,buffer+1024,0,NULL);
    if (pat)
       error(NIL,pat,APOINTER(1));
   
+   struct large_string ls;
    large_string_init(&ls);
    do {
-      if (! regex_seek(buffer,datstart,dat,regptr,reglen,10,&start,&end))
+      int reglen[10];
+      const char *regptr[10];
+      const char *start, *end, *s1;
+      if (!regex_seek(buffer,datstart,dat,regptr,reglen,10,&start,&end))
          start = end = dat + strlen(dat);
       if (end <= dat)
          start = end = dat + 1;
@@ -600,7 +596,7 @@ DX(xregex_subst)
                }
 
             } else {
-               char *s2 = s1;
+               const char *s2 = s1;
                while (*s1 && *s1!='%')
                   s1 += 1;
                large_string_add(&ls, s2, s1-s2);

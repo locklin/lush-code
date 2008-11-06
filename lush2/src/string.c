@@ -61,28 +61,22 @@ static void make_singletons(void)
       s[0] = (char)c;
       char *ss = (char *)mm_strdup(s);
       assert(ss);
-      singletons[c] = new_extern(&string_class, ss);
+      singletons[c] = new_string(ss);
    }
 }
 
-/*
- * new_string_bylen(n)
- * returns a string for length n
- */
-at *new_string_bylen(int n)
+at *make_string_of_length(size_t n)
 {
-   assert(n>=0);
-
    char *s = mm_allocv(mt_blob, n+1);
    ifn (s)
       error(NIL, "memory exhausted", NIL);
    
    s[0] = s[n] = 0;
-   return new_extern(&string_class, s);
+   return new_string(s);
 }
 
-/* s is a nul-terminated string (a "C string") */
-at *new_string(const char *s)
+/* make a managed string for NUL-terminated string s */
+at *make_string(const char *s)
 {
    if (!s || !*s) {
       return null_string;
@@ -93,10 +87,9 @@ at *new_string(const char *s)
    } else {
       char *sd = mm_strdup(s);
       assert(sd);
-      return new_extern(&string_class, sd);
+      return new_string(sd);
    }
 }
-
 
 static at *string_listeval (at *p, at *q)
 {
@@ -120,9 +113,9 @@ static at *string_listeval (at *p, at *q)
 /*
  * string_name(p) returns the pname of extern p
  */
-static char *string_name(at *p)
+static const char *string_name(at *p)
 {
-   char *s = String(p);
+   const char *s = String(p);
    char *name = string_buffer;
 #if HAVE_MBRTOWC
    int n = mm_strlen(s);
@@ -205,7 +198,7 @@ static char *string_name(at *p)
 #endif
    *name++ = '\"';  /*"*/
    *name++ = 0;
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
 
@@ -226,7 +219,7 @@ static int string_compare(at *p, at *q, int order)
 static unsigned long string_hash(at *p)
 {
    unsigned long x = 0x12345678;
-   char *s = String(p);
+   const char *s = String(p);
    while (*s) {
       x = (x<<6) | ((x&0xfc000000)>>26);
       x ^= (*s);
@@ -245,20 +238,21 @@ void large_string_init(large_string_t *ls)
    ls->p = ls->buffer;
 }
 
-void large_string_add(large_string_t *ls, char *s, int len)
+void large_string_add(large_string_t *ls, const char *s, int len)
 {
    if (len < 0)
       len = strlen(s);
    if (ls->p > ls->buffer)
       if (ls->p + len > ls->buffer + sizeof(ls->buffer)-1) {
          *ls->p = 0;
-         *ls->where = new_cons(new_string(ls->buffer), NIL);
+         *ls->where = new_cons(make_string(ls->buffer), NIL);
          ls->where = &Cdr(*ls->where);
          ls->p = ls->buffer;
       }
    if (len > sizeof(ls->buffer)-1) {
-      at *p = new_string_bylen(len);
-      memcpy(String(p), s, len);
+      at *p = make_string_of_length(len);
+      char *ps = (char *)String(p);
+      memcpy(ps, s, len);
       *ls->where = new_cons(p, NIL);
       ls->where = &Cdr(*ls->where);
       ls->p = ls->buffer;
@@ -273,10 +267,10 @@ at *large_string_collect(large_string_t *ls)
    *ls->p = 0;
    int len = strlen(ls->buffer);
    for (at *p = ls->backup; p; p = Cdr(p))
-      len += mm_strlen(String(Car(p)));
+      len += strlen(String(Car(p)));
    
-   at *q = new_string_bylen(len);
-   char *r = String(q);
+   at *q = make_string_of_length(len);
+   char *r = (char *)String(q);
    for (at *p = ls->backup; p; p = Cdr(p)) {
       strcpy(r, String(Car(p)));
       r += strlen(r);
@@ -375,7 +369,7 @@ DX(xstr_left)
    ARG_NUMBER(2);
    ALL_ARGS_EVAL;
 
-   char *s = ASTRING(1);
+   const char *s = ASTRING(1);
    int n = AINTEGER(2);
    int l = mm_strlen(s);
  
@@ -385,8 +379,8 @@ DX(xstr_left)
    if (n > l)
       n = l;
 
-   at *p = new_string_bylen(n);
-   char *a = String(p);
+   at *p = make_string_of_length(n);
+   char *a = (char *)String(p);
    strncpy(a,s,n);
    a[n] = 0;
    return p;
@@ -401,7 +395,7 @@ DX(xstr_right)
    ARG_NUMBER(2);
    ALL_ARGS_EVAL;
    
-   char *s = ASTRING(1);
+   const char *s = ASTRING(1);
    int n = AINTEGER(2);
    int l = mm_strlen(s);
 
@@ -410,7 +404,7 @@ DX(xstr_right)
       RAISEFX(badarg, NEW_NUMBER(n));
    if (n > l)
       n = l;
-   return new_string(s+l-n);
+   return make_string(s+l-n);
 }
 
 
@@ -421,7 +415,7 @@ DX(xsubstring)
    ARG_NUMBER(3);
    ALL_ARGS_EVAL;
 
-   char *s = ASTRING(1);
+   const char *s = ASTRING(1);
    int n = AINTEGER(2);
    int m = AINTEGER(3);
    int l = mm_strlen(s);
@@ -442,8 +436,8 @@ DX(xsubstring)
 
    /* create new string of length m-n+1 */
    l = m-n;
-   at *p = new_string_bylen(l);
-   char *a = String(p);
+   at *p = make_string_of_length(l);
+   char *a = (char *)String(p);
    strncpy(a, s+n, l);
    a[l] = 0;
    return p;
@@ -452,39 +446,35 @@ DX(xsubstring)
 
 DX(xstr_mid)
 {
-   char *s, *a;
-   at *p;
-   int n,m,l;
-   
    ALL_ARGS_EVAL;
    if (arg_number == 2) {
-      s = ASTRING(1);
-      n = AINTEGER(2);
-      l = mm_strlen(s);
+      const char *s = ASTRING(1);
+      int n = AINTEGER(2);
+      int l = mm_strlen(s);
       if (n < 1)
          RAISEFX(badarg, NEW_NUMBER(n));	
       if (n > l)
          return null_string;
       else
-         return new_string(s+n-1);
+         return make_string(s+n-1);
 
    } else {
       ARG_NUMBER(3);
-      s = ASTRING(1);
-      n = AINTEGER(2);
-      m = AINTEGER(3);
+      const char *s = ASTRING(1);
+      int n = AINTEGER(2);
+      int m = AINTEGER(3);
       if (n < 1)
          RAISEFX(badarg, NEW_NUMBER(n));	
       if (m < 0)
          RAISEFX(badarg, NEW_NUMBER(m));
-      l = mm_strlen(s)-(n-1);
+      int l = mm_strlen(s)-(n-1);
       if (m > l)
          m = l;
       if (m < 1)
          return null_string;
 
-      p = new_string_bylen(m);
-      a = String(p);
+      at *p = make_string_of_length(m);
+      char *a = (char *)String(p);
       strncpy(a,s+(n-1),m);
       a[m] = 0;
       return p;
@@ -502,10 +492,10 @@ DX(xstr_concat)
    for (int i=1; i<=arg_number; i++)
       length += (int)mm_strlen(ASTRING(i));
 
-   at *p = new_string_bylen(length);
-   char *here = String(p);
+   at *p = make_string_of_length(length);
+   char *here = (char *)String(p);
    for (int i=1; i<=arg_number; i++) {
-      char *s = ASTRING(i);
+      const char *s = ASTRING(i);
       while (*s) {
          length--;
          *here++ = *s++;
@@ -520,13 +510,13 @@ DX(xstr_concat)
 /*------------------------ */
 
 
-int str_index(char *s1, char *s2, int start)
+int str_index(const char *s1, const char *s2, int start)
 {
    int indx = 1;
    while (*s2) {
       if (--start <= 0) {
-         char *sa = s2;
-         char *sb = s1;
+         const char *sa = s2;
+         const char *sb = s1;
          while (*sb && *sb == *sa++)
             sb++;
          if (*sb == 0)
@@ -548,7 +538,7 @@ DX(xstr_index)
    else
       ARG_NUMBER(2);
 
-   char *s = ASTRING(1);
+   const char *s = ASTRING(1);
    if ((start = str_index(s, ASTRING(2), start)))
       return NEW_NUMBER(start);
    else
@@ -561,7 +551,7 @@ DX(xstr_index)
 /* sscanf support for hex numbers ("0x800") seems to be missing */
 /* in earlier glibc versions. Is this a special glibc feature?  */
 
-static at *str_val_hex(char *s)
+static at *str_val_hex(const char *s)
 {
    int x = 0;
    int flag =0;
@@ -591,7 +581,7 @@ static at *str_val_hex(char *s)
    return NEW_NUMBER(flag ? -x : x);
 }
 
-at* str_val(char *s) 
+at* str_val(const char *s) 
 {
    at *p = str_val_hex(s);
    ifn (p) {
@@ -674,7 +664,7 @@ static char *nanlit = "NAN";
 static char *inflit = "INF";
 static char *ninflit = "-INF";
 
-char *str_number(double x)
+const char *str_number(double x)
 {
    char *s, *t;
    
@@ -700,7 +690,7 @@ char *str_number(double x)
          * s++ = *t++;
       *s = 0;
    }
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
 DX(xstr_number)
@@ -712,7 +702,7 @@ DX(xstr_number)
 
 /*------------------------ */
 
-char *str_number_hex(double x)
+const char *str_number_hex(double x)
 {
    int ix = (int)floor(x);
    
@@ -724,7 +714,7 @@ char *str_number_hex(double x)
       return "0";
    
    sprintf(string_buffer, "0x%x", ix);
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
 DX(xstr_number_hex)
@@ -755,7 +745,7 @@ DX(xstr_len)
 /*------------------------ */
 
 
-static at *str_del(char *s, int n, int l)
+static at *str_del(const char *s, int n, int l)
 {
    MM_ENTER;
    struct large_string ls;
@@ -784,7 +774,7 @@ DX(xstr_del)
 
 /*------------------------ */
 
-static at *str_ins(char *s, int pos, char *what)
+static at *str_ins(const char *s, int pos, const char *what)
 {
    MM_ENTER;
    struct large_string ls;
@@ -809,13 +799,13 @@ DX(xstr_ins)
 
 /*------------------------ */
 
-static at *str_subst(char *s, char *s1, char *s2)
+static at *str_subst(const char *s, const char *s1, const char *s2)
 {
    MM_ENTER;
    struct large_string ls;
    int len1 = mm_strlen(s1);
    int len2 = mm_strlen(s2);
-   char *last = s;
+   const char *last = s;
 
    large_string_init(&ls);
    while(*s) {
@@ -848,7 +838,7 @@ DX(xupcase)
    ARG_NUMBER(1);
    ARG_EVAL(1);
 
-   char *s = ASTRING(1);
+   const char *s = ASTRING(1);
    at *rr = NIL;
 
 #if HAVE_MBRTOWC
@@ -888,8 +878,8 @@ DX(xupcase)
 #else
  {
     char c, *r;
-    rr = new_string_bylen(mm_strlen(s));
-    r = String(rr);
+    rr = make_string_of_length(mm_strlen(s));
+    r = (char *)String(rr);
     while ((c = *s++)) 
        *r++ = toupper((unsigned char)c);
     *r = 0;
@@ -902,7 +892,7 @@ DX(xupcase1)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   char *s = ASTRING(1);
+   const char *s = ASTRING(1);
    at *rr = NIL;
 #if HAVE_MBRTOWC
    {
@@ -931,7 +921,7 @@ DX(xupcase1)
 #else
    {
       char *r, c;
-      rr = new_string_bylen(mm_strlen(s));
+      rr = make_string_of_length(mm_strlen(s));
       r = String(rr);
       strcpy(r,s);
       if ((c = *r))
@@ -945,7 +935,7 @@ DX(xdowncase)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   char *s = ASTRING(1);
+   const char *s = ASTRING(1);
    at *rr = NIL;
 #if HAVE_MBRTOWC
    {
@@ -983,7 +973,7 @@ DX(xdowncase)
 #else
   {
      char c, *r;
-     rr = new_string_bylen(mm_strlen(s));
+     rr = make_string_of_length(mm_strlen(s));
      r = String(rr);
      while ((c = *s++)) 
         *r++ = tolower((unsigned char)c);
@@ -1036,7 +1026,7 @@ DX(xstr_asc)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   char *s = ASTRING(1);
+   const char *s = ASTRING(1);
 #if 0 /* Disabled for compatibility reasons */
    {
       mbstate_t ps;
@@ -1070,7 +1060,7 @@ DX(xstr_chr)
    size_t m = wcrtomb(s, (wchar_t)i, &ps);
    if (m==0 || m==(size_t)-1)
       RAISEFX("out of range", APOINTER(1));
-   return new_string(s);
+   return make_string(s);
 #else
    ARG_NUMBER(1);
    ARG_EVAL(1);
@@ -1080,13 +1070,13 @@ DX(xstr_chr)
    char s[2];
    s[0]=i;
    s[1]=0;
-   return new_string(s);
+   return make_string(s);
 #endif
 }
 
 /*------------------------ */
 
-static at *explode_bytes(char *s)
+static at *explode_bytes(const char *s)
 {
    at *p = NIL;
    at **where = &p;
@@ -1099,7 +1089,7 @@ static at *explode_bytes(char *s)
    return p;
 }
 
-static at *explode_chars(char *s)
+static at *explode_chars(const char *s)
 {
 #if HAVE_MBRTOWC
    at *p = NIL;
@@ -1233,8 +1223,8 @@ DX(xvector_to_string)
       RAISEF("ubyte vector expected", APOINTER(1));
 
    ind = as_contiguous_array(ind);
-   at *p = new_string_bylen(IND_DIM(ind, 0));
-   char *s = String(p);
+   at *p = make_string_of_length(IND_DIM(ind, 0));
+   char *s = (char *)String(p);
    memcpy(s, IND_BASE(ind), IND_DIM(ind, 0));
    
    //delete_index(ind);
@@ -1250,33 +1240,34 @@ extern char print_buffer[];
 DX(xsprintf)
 {
    MM_ENTER;
-   struct large_string ls;
-   char *fmt, *buf, c;
-   int i, n, ok;
    
    if (arg_number < 1)
       error(NIL, "At least one argument expected", NIL);
    
    ALL_ARGS_EVAL;
-   fmt = ASTRING(1);
+   const char *fmt = ASTRING(1);
+
+   struct large_string ls;
    large_string_init(&ls);
-   i = 1;
+   int i = 1;
    for(;;)
    {
       /* Copy plain string */
       if (*fmt == 0)
          break;
-      buf = fmt;
-      while (*fmt != 0 && *fmt != '%')
-         fmt += 1;
-      large_string_add(&ls, buf, fmt-buf);
+      {
+         const char *tmp = fmt;
+         while (*fmt != 0 && *fmt != '%')
+            fmt += 1;
+         large_string_add(&ls, tmp, fmt-tmp);
+      }
       if (*fmt == 0)
          break;
       /* Copy format */
-      n = 0;
-      buf = print_buffer;
-      ok = 0;
-      c = 0;
+      int n = 0;
+      char *buf = print_buffer;
+      int ok = 0;
+      char c = 0;
       
       *buf++ = *fmt++;		/* copy  '%' */
       while (ok < 9) {
@@ -1414,7 +1405,7 @@ void init_string(void)
 
    /* cache some ubiquitous strings */
    make_singletons();
-   singletons[0] = null_string = new_string_bylen(0);
+   singletons[0] = null_string = make_string_of_length(0);
    MM_ROOT(singletons);
 
    dx_define("left", xstr_left);

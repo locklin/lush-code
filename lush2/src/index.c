@@ -168,7 +168,7 @@ static index_t *index_dispose(index_t *ind)
    return NULL;
 }
 
-static char *index_name(at *p)
+static const char *index_name(at *p)
 {
    index_t *ind = Mptr(p);
    char *s = string_buffer;
@@ -188,7 +188,7 @@ static char *index_name(at *p)
       if (s[-1]=='x')
          s[-1] = '>';
    }
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
 static at *broadcast_and_put(index_t *ind, index_t *ss, index_t *vals)
@@ -1861,7 +1861,7 @@ DX(xsave_matrix)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), "mat");
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && (Class(p) == &file_W_class))
@@ -1879,7 +1879,7 @@ DX(xexport_raw_matrix)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), NULL);
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && (Class(p) == &file_W_class)) 
@@ -1958,7 +1958,7 @@ DX(xsave_ascii_matrix)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), NULL);
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else if ((p = APOINTER(2)) && WFILEP(p)) {
       ans = p;
    } else {
@@ -1976,7 +1976,7 @@ DX(xexport_text_matrix)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), "mat");
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && WFILEP(p))
@@ -1995,7 +1995,7 @@ DX(xarray_export_tabular)
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), "mat");
-      ans = new_string(file_name);
+      ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && WFILEP(p))

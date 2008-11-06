@@ -45,7 +45,7 @@ void mark_cfunction(cfunction_t *f)
 
 mt_t mt_cfunction = mt_undefined;
 
-char *cfunc_name(at *p) {
+const char *func_name(at *p) {
    
    cfunction_t *func = Mptr(p);
    at *name = func->name;
@@ -65,7 +65,7 @@ char *cfunc_name(at *p) {
         strcat(string_buffer, ".");
      }
      strcat(string_buffer, NAMEOF(name));
-     return string_buffer;
+     return mm_strdup(string_buffer);
   }
   /* Kesako? */
   assert(Class(p)->name);
@@ -507,14 +507,14 @@ void init_function(void)
    class_define("FUNCTION", &function_class);
    
    class_init(&dx_class, false);
-   dx_class.name = cfunc_name;
+   dx_class.name = func_name;
    dx_class.listeval = dx_listeval;
    dx_class.super = &function_class;
    dx_class.atsuper = function_class.backptr;
    class_define("DX",&dx_class);
    
    class_init(&dy_class, false);
-   dy_class.name = cfunc_name;
+   dy_class.name = func_name;
    dy_class.listeval = dy_listeval;
    dy_class.super = &function_class;
    dy_class.atsuper = function_class.backptr;

@@ -132,7 +132,7 @@ at *eval_nothing(at *q)
 
 static at *at_trace;
 
-static bool call_trace_hook(int tab, char *line, at *expr, at *info)
+static bool call_trace_hook(int tab, const char *line, at *expr, at *info)
 {
    at *args = new_cons(NEW_NUMBER(tab),
                        new_cons(new_string(line),

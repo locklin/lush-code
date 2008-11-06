@@ -106,7 +106,7 @@ static int readmagic32(FILE *f)
 /* --------- DUMP ------------------- */
 
 /* return size of dump file */
-static off_t dump(char *s)
+static off_t dump(const char *s)
 {
    /* Build the big list */
    at *ans = NIL, **where = &ans;
@@ -161,7 +161,7 @@ DX(xdump)
 
 
 
-int isdump(char *s)
+int isdump(const char *s)
 {
    at *atf = OPEN_READ(s,0);
    FILE *f = Gptr(atf);

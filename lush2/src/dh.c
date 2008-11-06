@@ -211,7 +211,6 @@ void clean_dhrecord(dhrecord *drec)
 
 /* from function.c */
 extern mt_t mt_cfunction;
-extern char *cfunc_name(at*);
 
 /* from lisp_c.c */
 extern at *dh_listeval(at*, at*);  
@@ -433,7 +432,7 @@ static at *dhinfo_record(dhrecord *drec)
    case DHT_GPTR:
       p = NIL;
       if (drec->name)
-         p = new_cons(new_string(strclean(drec->name)),NIL);
+         p = new_cons(make_string(strclean(drec->name)),NIL);
       return new_cons(named("gptr"), p);
       
    case DHT_LIST:
@@ -487,7 +486,7 @@ static at *dhinfo_record(dhrecord *drec)
       
    case DHT_METHOD:
       p = dhinfo_record( ((dhdoc_t*)(drec->arg))->argdata );
-      return new_cons(new_string(strclean(drec->name)), new_cons(p,NIL));
+      return new_cons(make_string(strclean(drec->name)), new_cons(p,NIL));
 
    case DHT_CLASS:
       cdoc = drec->arg;
@@ -498,8 +497,8 @@ static at *dhinfo_record(dhrecord *drec)
       p = new_cons(p, new_cons( q, NIL));
       q = NIL;
       if (cdoc->lispdata.ksuper)
-         q = new_string(strclean(cdoc->lispdata.ksuper->lispdata.cname));
-      return new_cons(new_string(strclean(cdoc->lispdata.cname)),
+         q = make_string(strclean(cdoc->lispdata.ksuper->lispdata.cname));
+      return new_cons(make_string(strclean(cdoc->lispdata.cname)),
                       new_cons(q, p));
    default:
       return new_cons(named("unk"), NIL);
@@ -541,14 +540,14 @@ DX(xdhinfo_c)
       error(NIL, "internal error: dhdoc unvailable", NIL);
 
    /* collect */
-   at *cname = new_string(strclean(dhdoc->lispdata.c_name));
-   at *mname = new_string(strclean(dhdoc->lispdata.m_name));
-   at *kname = new_string(strclean(dhdoc->lispdata.k_name));
+   at *cname = make_string(strclean(dhdoc->lispdata.c_name));
+   at *mname = make_string(strclean(dhdoc->lispdata.m_name));
+   at *kname = make_string(strclean(dhdoc->lispdata.k_name));
    at *ctest, *mtest;
    if (dhdoc->lispdata.dhtest) {
       dhdoc_t *dhtest = dhdoc->lispdata.dhtest;
-      ctest = new_string(strclean(dhtest->lispdata.c_name));
-      mtest = new_string(strclean(dhtest->lispdata.m_name));
+      ctest = make_string(strclean(dhtest->lispdata.c_name));
+      mtest = make_string(strclean(dhtest->lispdata.m_name));
    } else {
       ctest = null_string;
       mtest = null_string;
@@ -590,9 +589,9 @@ DX(xclassinfo_c)
       error(NIL, "class is not compiled", p);
    if (CONSP(cl->priminame))
       check_primitive(cl->priminame, cl->classdoc);
-   at *cname = new_string(strclean(cdoc->lispdata.cname));
-   at *kname = new_string(strclean(cdoc->lispdata.k_name));
-   at *vname = new_string(strclean(cdoc->lispdata.v_name));
+   at *cname = make_string(strclean(cdoc->lispdata.cname));
+   at *kname = make_string(strclean(cdoc->lispdata.k_name));
+   at *vname = make_string(strclean(cdoc->lispdata.v_name));
    return new_cons(cname, new_cons(kname, new_cons(vname, NIL)));
 }
 
@@ -635,8 +634,9 @@ void init_dh(void)
    Kc_object.lispdata.atclass = object_class->backptr;
 
    /* setting up dh_class */
+   extern const char *func_name(at*);
    class_init(&dh_class, false);
-   dh_class.name = cfunc_name;
+   dh_class.name = func_name;
    dh_class.listeval = dh_listeval;
    dh_class.super = &function_class;
    dh_class.atsuper = function_class.backptr;

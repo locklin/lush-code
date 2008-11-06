@@ -99,7 +99,7 @@ LUSHAPI int main(int argc, char **argv)
    
    //FILE *mmlog = fopen("lushmm.log", "w");
    FILE *mmlog = NULL;
-   mm_init(10000, (notify_func_t *)run_notifiers, mmlog);
+   mm_init((1<<14), (notify_func_t *)run_notifiers, mmlog);
    MM_ENTER;
 
    init_lush(argv[0]);

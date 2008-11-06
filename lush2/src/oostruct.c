@@ -46,7 +46,7 @@ static at *at_destroy;
 static at *at_listeval;
 static at *at_unknown;
 
-static struct hashelem *getmethod(class_t *cl, at *prop);
+static struct hashelem *_getmethod(class_t *cl, at *prop);
 static at *call_method(at *obj, struct hashelem *hx, at *args);
 static void send_delete(object_t *);
 
@@ -217,7 +217,7 @@ static class_t *class_dispose(class_t *cl)
    return NULL;
 }
 
-static char *class_name(at *p)
+static const char *class_name(at *p)
 {
    class_t *cl = Mptr(p);
    
@@ -226,7 +226,7 @@ static char *class_name(at *p)
    else
       sprintf(string_buffer, "::class:%lx", (long)cl);
    
-   return string_buffer;
+   return mm_strdup(string_buffer);
 }
 
 
@@ -309,7 +309,7 @@ DX(xclassname)
 
 /* ------------- CLASS DEFINITION -------------- */
 
-bool builtin_class_p(class_t *cl) {
+bool builtin_class_p(const class_t *cl) {
    return (cl->dispose != (dispose_func_t *)oostruct_dispose);
 }
 
@@ -424,7 +424,7 @@ at *new_object(class_t *cl)
    
    /* initialize slots */
    int i = 0;
-   class_t *super = cl;
+   const class_t *super = cl;
    while (super) {
       at *p = super->keylist;
       at *q = super->defaults;
@@ -452,7 +452,7 @@ DY(ynew)
    class_t *cl = Mptr(q);
    at *ans = new_object(cl);
    
-   struct hashelem *hx = getmethod(cl, cl->classname);
+   struct hashelem *hx = _getmethod(cl, cl->classname);
    if (hx)
       call_method(ans, hx, Cdr(ARG_LIST));
    else if (Cdr(ARG_LIST))
@@ -478,7 +478,7 @@ at *getslot(at *obj, at *prop)
       return obj;
       
    } else {
-      class_t *cl = obj ? Class(obj) : NULL;
+      const class_t *cl = obj ? Class(obj) : NULL;
       ifn (cl && cl->getslot)
          error(NIL, "object does not accept scope syntax", obj);
       ifn (LISTP(prop))
@@ -494,7 +494,7 @@ void setslot(at **pobj, at *prop, at *val)
 
    } else {
       at *obj = *pobj;
-      class_t *cl = obj ? Class(obj) : NULL;
+      const class_t *cl = obj ? Class(obj) : NULL;
       ifn (cl && cl->setslot)
          error(NIL, "object does not accept scope syntax", obj);
       ifn (LISTP(prop))
@@ -577,7 +577,7 @@ DY(ywith_object)
       l = Cdr(l);
       at *q = eval(Car(l));
       if (OBJECTP(q)) {
-         class_t *cl = Class(q);
+         const class_t *cl = Class(q);
          while (cl && cl != Mptr(p))
             cl = cl->super;
          if (! cl)
@@ -709,7 +709,7 @@ restart:
    cl->hashok = 1;
 }
 
-static struct hashelem *getmethod(class_t *cl, at *prop)
+static struct hashelem *_getmethod(class_t *cl, at *prop)
 {
    if (!cl->hashok)
       update_hashtable(cl);
@@ -725,14 +725,14 @@ static struct hashelem *getmethod(class_t *cl, at *prop)
    
    if (ZOMBIEP(hx->function)) {
       clear_hashok(cl);
-      return getmethod(cl, prop);
+      return _getmethod(cl, prop);
    }
    return hx;
 }
 
-at *checksend(class_t *cl, at *prop)
+at *getmethod(class_t *cl, at *prop)
 {
-   struct hashelem *hx = getmethod(cl, prop);
+   struct hashelem *hx = _getmethod(cl, prop);
    return hx ? hx->function : NIL;
 }
 
@@ -742,7 +742,7 @@ DX(xgetmethod)
    ARG_EVAL(1);
    ARG_EVAL(2);
 
-   return checksend(ACLASS(1), APOINTER(2));
+   return getmethod(ACLASS(1), APOINTER(2));
 }
 
 
@@ -793,12 +793,12 @@ at *send_message(at *classname, at *obj, at *method, at *args)
    /* send */
    if (method == NIL)
       error(NIL, "not a method", NIL);
-   struct hashelem *hx = getmethod(cl, method);
+   struct hashelem *hx = _getmethod(cl, method);
    if (hx) 
       return call_method(obj, hx, args);
    
    /* send -unknown */
-   hx = getmethod(cl, at_unknown);
+   hx = _getmethod(cl, at_unknown);
    if (hx) {
       at *arg = new_cons(method, new_cons(args, NIL));
       return call_method(obj, hx, arg);
@@ -850,7 +850,7 @@ static void send_delete(object_t *obj)
    class_t *cl = obj->cl;
    /* Call all destructors defined in class hierarchy */
    while (cl) {
-      struct hashelem *hx = getmethod(cl, at_destroy);
+      struct hashelem *hx = _getmethod(cl, at_destroy);
       cl = cl->super;
       if (! hx)
          break;
@@ -910,7 +910,7 @@ DX(xclassof)
    return classof(APOINTER(1))->backptr;
 }
 
-bool is_of_class(at *p, class_t *cl)
+bool isa(at *p, const class_t *cl)
 {
    class_t *c = classof(p);
    while (c && c != cl)
@@ -927,7 +927,7 @@ DX(xisa)
    at *q = APOINTER(2);
    ifn (CLASSP(q))
       RAISEFX("not a class", q);
-   if (is_of_class(p, Mptr(q)))
+   if (isa(p, Mptr(q)))
       return t();
 
 #ifdef DHCLASSDOC
@@ -939,7 +939,7 @@ DX(xisa)
       if (fun && (Class(fun) == &dx_class)) {
          at *arg = new_cons(p,NIL);
          sym = apply(fun, arg);
-         flag = is_of_class(sym, Mptr(q));
+         flag = isa(sym, Mptr(q));
       }
       if (flag)
          return t();

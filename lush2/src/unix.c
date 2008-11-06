@@ -1011,7 +1011,7 @@ DX(xgetusername)
    ARG_NUMBER(0);
    struct passwd *pwd = getpwuid(getuid());
    if (pwd)
-      return new_string(pwd->pw_name);
+      return make_string(pwd->pw_name);
    return NIL;
 }
 
@@ -1088,9 +1088,12 @@ DX(xctime)
       ARG_EVAL(1);
       tl = AINTEGER(1);
    }
-   char *t = (char *)ctime(&tl);
-   t[strlen(t)-1] = 0;
-   return new_string(t);
+   char *ct = ctime(&tl);
+   size_t n = strlen(ct);
+   assert(n);
+   at *p = make_string_of_length(n-1);
+   strncpy((char *)String(p), ct, n-1);
+   return p;
 }
 
 
@@ -1132,7 +1135,7 @@ DX(xbeep)
 {
    putchar(7);
    fflush(stdout);
-   return new_string("beep");
+   return make_string("beep");
 }
 
 
@@ -1242,7 +1245,7 @@ DX(xgetenv)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   return new_string(getenv(ASTRING(1)));
+   return make_string(getenv(ASTRING(1)));
 }
 
 
@@ -1268,7 +1271,7 @@ DX(xgetconf)
    const char *k = ASTRING(1);
    for (int i = 0; confdata[i].k; i++)
       if (!strcmp(k, confdata[i].k))
-         return new_string(confdata[i].v);
+         return make_string(confdata[i].v);
    return NIL;
 }
 
@@ -1503,7 +1506,7 @@ DX(xfilteropen)
    } else
       ARG_NUMBER(1);
 
-   char *cmd = ASTRING(1);
+   const char *cmd = ASTRING(1);
    FILE *str_up, *str_dn;
    filteropen(cmd, &str_up, &str_dn);
    at *f1 = new_extern(&file_R_class, str_dn);
@@ -1593,7 +1596,7 @@ DX(xfilteropenpty)
    } else
       ARG_NUMBER(1);
 
-   char *cmd = ASTRING(1);
+   const char *cmd = ASTRING(1);
    FILE *str_up, *str_dn;
    filteropenpty(cmd, &str_up, &str_dn);
    at *f1 = new_extern(&file_R_class, str_dn);
@@ -1620,7 +1623,7 @@ DX(xsocketopen)
       p1 = APOINTER(3);
       p2 = APOINTER(4);
    }
-   char *hostname = ASTRING(1);
+   const char *hostname = ASTRING(1);
    int  portnumber = abs(AINTEGER(2));
    bool noerror = (AINTEGER(2) < 0);
 

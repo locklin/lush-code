@@ -232,7 +232,7 @@ static void  x11_init(void)
    char *dpyname = search_display_name();
    xdef.dpy = XOpenDisplay(dpyname);
    ifn (xdef.dpy)
-      error(NIL, "X11: Can't open display on", new_string(dpyname));
+      error(NIL, "X11: Can't open display on", make_string(dpyname));
 
    /* Get visual */
    XVisualInfo vinfo;
@@ -341,7 +341,7 @@ static void x11_finalize_xdef(Drawable d)
 }
 
 
-static struct X_window *x11_make_window(int x, int y, int w, int h, char *name)
+static struct X_window *x11_make_window(int x, int y, int w, int h, const char *name)
 {
    XSizeHints hints;
 #if X11RELEASE >= 4
@@ -423,14 +423,15 @@ static struct X_window *x11_make_window(int x, int y, int w, int h, char *name)
    wmhints.flags = InputHint;
    clhints.res_name = "lush";
    clhints.res_class = "Lush";
+   char **list = (char **)&name;
 # if X11RELEASE >= 6
-   if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XStdICCTextStyle, &xtpname))
+   if (XmbTextListToTextProperty(xdef.dpy, list, 1, XStdICCTextStyle, &xtpname))
 #  if X_HAVE_UTF8_STRING
-      if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XUTF8StringStyle, &xtpname))
+      if (XmbTextListToTextProperty(xdef.dpy, list, 1, XUTF8StringStyle, &xtpname))
 #  endif
-         if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XTextStyle, &xtpname))
+         if (XmbTextListToTextProperty(xdef.dpy, list, 1, XTextStyle, &xtpname))
 # else
-            if (XStringListToTextProperty(&name,1,&xtpname))
+            if (XStringListToTextProperty(list, 1, &xtpname))
 # endif
             {
                enable();
@@ -1018,10 +1019,10 @@ static int compare(const char *s, const char *q)
    return 1;
 }
 
-static int parse_psfont(char *name, char *family, int *size,
+static int parse_psfont(const char *name, char *family, int *size,
                         char **weight, char **slant, char **width)
 {
-   char *s = name;
+   const char *s = name;
    char *d = family;
    while (*s && (!isascii(*s) || isalpha(*s) || *s==' ')) {
       int c = *s++;
@@ -1067,7 +1068,7 @@ static int parse_psfont(char *name, char *family, int *size,
 
 static char fname_buffer[256];
 
-static char *psfonttoxfont(char *f)
+static const char *psfonttoxfont(const char *f)
 {
    char family[256];
    int size = 11;
@@ -1086,7 +1087,7 @@ static char *psfonttoxfont(char *f)
 }
 
 #if HAVE_XFT2
-static char *psfonttoxftfont(char *f)
+static const char *psfonttoxftfont(const char *f)
 {
    /* convert a PS name to a XFT name */
    char *d;
@@ -1245,7 +1246,7 @@ static struct X_font *getfont(const char *name, int xft)
    return fc;
 }
 
-static char *x11_setfont(window_t *linfo, char *f)
+static const char *x11_setfont(window_t *linfo, const char *f)
 {
    struct X_window *info = (struct X_window*)linfo;
    struct X_font *fc = 0;
@@ -1430,7 +1431,7 @@ static void x11_fill_polygon(window_t *linfo, short (*points)[2], unsigned int n
    grow_rect(info, xmin, ymin, xmax, ymax);
 }
 
-static void x11_draw_text(window_t *linfo, int x, int y, char *s)
+static void x11_draw_text(window_t *linfo, int x, int y, const char *s)
 {
    struct X_window *info = (struct X_window*)linfo;
    if (!s[0]) return;
@@ -1480,7 +1481,7 @@ static void x11_draw_text(window_t *linfo, int x, int y, char *s)
 }
 
 static void x11_rect_text(window_t *linfo, 
-                          int x, int y, char *s, 
+                          int x, int y, const char *s, 
                           int *xptr, int *yptr, int *wptr, int *hptr)
 {
    struct X_window *info = (struct X_window*)linfo;
@@ -1813,7 +1814,7 @@ static void x11_refresh(struct X_window *info)
    XFlush(xdef.dpy);
 }
 
-static at *x11_window(int x, int y, uint w, uint h, char *name)
+static at *x11_window(int x, int y, uint w, uint h, const char *name)
 {
    int ijunk;
    uint ujunk;
@@ -1845,7 +1846,7 @@ static at *x11_window(int x, int y, uint w, uint h, char *name)
    info->lwin.color = COLOR_FG;
    
    x11_setfont(&info->lwin, xdef.font);
-   info->lwin.font = new_string(xdef.font);
+   info->lwin.font = make_string(xdef.font);
    
    x11_clear(&info->lwin);
 
@@ -1924,9 +1925,9 @@ DX(xx11_fontname)
    ARG_NUMBER(1);
    ARG_EVAL(1);
 #if HAVE_XFT2
-   return new_string(psfonttoxftfont(ASTRING(1)));
+   return make_string(psfonttoxftfont(ASTRING(1)));
 #else
-   return new_string(psfonttoxfont(ASTRING(1)));
+   return make_string(psfonttoxfont(ASTRING(1)));
 #endif
 }
 
@@ -1941,7 +1942,7 @@ DX(xx11_configure)
       int mask = 0;
       XWindowChanges xwc;
       XWindowAttributes xwa;
-      char *name = NULL;
+      const char *name = NULL;
       struct X_window *info = (struct X_window*)w;
       if (arg_number!=0) {
          if (arg_number>6 || arg_number<5)
@@ -1980,14 +1981,15 @@ DX(xx11_configure)
       XGetWindowAttributes(xdef.dpy,info->win,&xwa);
       if (name) {
          XTextProperty xtpname;
+         char **list = (char **)&name;
 # if X11RELEASE >= 6
-         if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XStdICCTextStyle, &xtpname))
+         if (XmbTextListToTextProperty(xdef.dpy, list, 1, XStdICCTextStyle, &xtpname))
 #  if X_HAVE_UTF8_STRING
-            if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XUTF8StringStyle, &xtpname))
+            if (XmbTextListToTextProperty(xdef.dpy, list, 1, XUTF8StringStyle, &xtpname))
 #  endif
-               if (XmbTextListToTextProperty(xdef.dpy, &name, 1, XTextStyle, &xtpname))
+               if (XmbTextListToTextProperty(xdef.dpy, list, 1, XTextStyle, &xtpname))
 # else
-                  if (XStringListToTextProperty(&name,1,&xtpname))
+                  if (XStringListToTextProperty(list, 1, &xtpname))
 # endif
                   {
                      enable();
@@ -2035,14 +2037,13 @@ DX(xx11_iconify)
 
 DX(xx11_lookup_color)
 {
-   char *s;
    real rgb[3];
    XColor xc1, xc2;
    int status;
   
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   s = ASTRING(1);
+   const char *s = ASTRING(1);
    if (!Xinitialised)
       x11_init();
    disable();
@@ -2066,7 +2067,7 @@ DX(xx11_text_to_clip)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
-   char *s = ASTRING(1);
+   const char *s = ASTRING(1);
    if (!Xinitialised)
       x11_init();
    disable();
@@ -2100,8 +2101,8 @@ DX(xx11_clip_to_text)
       if (nbytes==0) {
          p = NIL;
       } else {
-         p = new_string_bylen(nbytes);
-         char *s = String(p);
+         p = make_string_of_length(nbytes);
+         char *s = (char *)String(p);
          strncpy(s, buf, nbytes);
          s[nbytes] = 0;
          XFree(buf);
