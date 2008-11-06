@@ -87,10 +87,13 @@ void ev_add(at *handler, at *event, const char *desc, int mods)
       at *d = NIL;
       if (mods == (unsigned char)mods)
          d = NEW_NUMBER(mods);
-      if (desc && d)
-         d = new_cons(new_gptr((gptr)desc), d);
-      else if (desc)
-         d = new_gptr((gptr)desc);
+      if (desc && d) {
+         gptr p = (gptr)desc;
+         d = new_cons(new_gptr(p), d);
+      } else if (desc) {
+         gptr p = (gptr)desc;
+         d = new_gptr(p);
+      }
       at *p = new_cons(new_gptr(handler), new_cons(d, event));
       add_notifier(handler, (wr_notify_func_t *)ev_notify, 0);
       Cdr(tail) = new_cons(p,NIL);
