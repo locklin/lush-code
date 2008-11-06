@@ -1148,6 +1148,23 @@ index_t *make_array(storage_type_t type, shape_t *shp, at *init)
    return res;
 }
 
+DX(xmake_array)
+{
+   ARG_NUMBER(3);
+   ALL_ARGS_EVAL;
+   
+   class_t *cl = ACLASS(1);
+   shape_t *shp   = parse_shape(APOINTER(2), NIL);
+   storage_type_t type;
+   for (type = ST_AT; type < ST_LAST; type++)
+      if (&storage_class[type] == cl)
+         break;
+   if (type == ST_LAST)
+      RAISEF("not a storage class", APOINTER(1));
+
+   return make_array(type, shp, APOINTER(3))->backptr;
+}
+
 
 /* make new array from prototype */
 
@@ -2449,6 +2466,19 @@ DX(xidx_reshape)
    return ind->backptr;
 }
 
+index_t *index_flatten(index_t *ind)
+{
+   RAISEF(chk_contiguous(ind), NIL);
+   return index_reshape(ind, SHAPE1D(index_nelems(ind)));
+}
+
+DX(xidx_flatten)
+{
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+   return index_flatten(AINDEX(1))->backptr;
+}
+
 index_t *index_nickD(index_t *ind, int d)
 {
    if (IND_NDIMS(ind)==MAXDIMS)
@@ -3577,6 +3607,7 @@ void init_index(void)
    
    /* array and index creation */
    dx_define("new-index", xnew_index);
+   dx_define("make-array", xmake_array);
    dx_define("copy-index", xcopy_index);
    dx_define("copy-array", xcopy_array);
    
@@ -3601,6 +3632,7 @@ void init_index(void)
 
    /* index manipulation */
    dx_define("idx-reshape", xidx_reshape);
+   //dx_define("idx-flatten", xidx_flatten);
    dx_define("idx-nick", xidx_nick);
    dx_define("idx-extend", xidx_extend);
    dx_define("idx-lift", xidx_lift);
