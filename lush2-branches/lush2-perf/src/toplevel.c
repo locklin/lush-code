@@ -635,9 +635,15 @@ DX(xgc)
 
 DX(xgc_info)
 {
-   ARG_NUMBER(0);
+   int level = 1;
+   if (arg_number == 1) {
+      ARG_EVAL(1);
+      level = AINTEGER(1);
+   } else if (arg_number > 1)
+      ARG_NUMBER(-1);
+
    print_char('\n');
-   print_string(mm_info(1));
+   print_string(mm_info(level));
    return NIL;
 }
 
