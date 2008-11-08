@@ -487,6 +487,48 @@
 
 (lock-symbol defconstant)
 
+;;; --------- Easy lambda expressions ---------
+
+(defconstant *lambda-positional-symbol*
+  ((htable) '$1 1 '$2 2  '$3 3  '$4 4  '$5 5  '$6 6  '$7 7  '$8 8  '$9 9) )
+
+(defun lambda-largest-positional-arg (expr)
+  (if (consp expr)
+      (apply max 0 (mapcar lambda-largest-positional-arg expr))
+    (or (*lambda-positional-symbol* expr) 0) ))
+
+(defun lambda-has-ellipsis (expr)
+  (if (consp expr)
+      (apply or (mapcar lambda-has-ellipsis expr))
+    (= expr '..) ))
+
+(defun lambda-ellipsify (expr)
+  (if (consp expr)
+      (let (((head . tail) expr))
+        (if (= head '..)
+            (if tail
+                (error 'lambdafy "syntax-error: ellipsis must terminate S-expression")
+              '..)
+          (cons head (lambda-ellipsify tail)) ))
+    expr))
+
+(defun lambdafy (expr)
+  (let ((n (lambda-largest-positional-arg expr)))
+    (if (lambda-has-ellipsis expr)
+        (if (> n 0)
+            (let ((args (domapcar ((i (range n)))
+                          (symbol-concat '$ (named (str i))))))
+              (rplacd (lastcdr args) '..)
+              `(lambda ,args ,(lambda-ellipsify expr)) )
+          `(lambda .. ,expr) )
+      `(lambda (,@(domapcar ((i (range n)))
+                    (symbol-concat '$ (named (str i)))) )
+         ,expr)
+      )))
+
+(dmc |#\|
+     (list (lambdafy (read))) )
+
 ;;; --------- More control structures ---------
 
 (defmacro for* ((i start stop . rest) . body)
