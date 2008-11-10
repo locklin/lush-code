@@ -318,6 +318,13 @@ LUSHAPI void class_init(class_t *, bool);
 #define new_extern      new_at 
 #define NEW_NUMBER(x)   new_number((real)(x))
 #define NEW_GPTR(x)     new_gptr((gptr)(x))
+#define NEW_BOOL(x)     ((x) ? t() : NIL)
+
+/* number.h */
+
+LUSHAPI bool integerp(double x);
+LUSHAPI bool oddp(double x);
+LUSHAPI bool evenp(double x);
 
 /* LIST.H ----------------------------------------------------- */
 

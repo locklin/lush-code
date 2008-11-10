@@ -62,6 +62,7 @@ extern void init_function (void);
 extern void init_at (void);
 extern void init_list(void);
 extern void init_calls (void);
+extern void init_number(void);
 extern void init_arith (void);
 extern void init_math (void);
 extern void init_string (void);
@@ -170,6 +171,7 @@ void init_lush(char *program_name)
    init_fileio(program_name);
    init_list();
    init_calls();
+   init_number();
    init_arith();
    init_math();
    init_io();
