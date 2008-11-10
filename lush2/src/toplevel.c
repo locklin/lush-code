@@ -62,6 +62,7 @@ extern void init_function (void);
 extern void init_at (void);
 extern void init_list(void);
 extern void init_calls (void);
+extern void init_number(void);
 extern void init_arith (void);
 extern void init_math (void);
 extern void init_string (void);
@@ -170,6 +171,7 @@ void init_lush(char *program_name)
    init_fileio(program_name);
    init_list();
    init_calls();
+   init_number();
    init_arith();
    init_math();
    init_io();
@@ -633,11 +635,17 @@ DX(xgc)
    return NEW_NUMBER(i);
 }
 
-DX(xgc_info)
+DX(xmeminfo)
 {
-   ARG_NUMBER(0);
+   int level = 1;
+   if (arg_number == 1) {
+      ARG_EVAL(1);
+      level = AINTEGER(1);
+   } else if (arg_number > 1)
+      ARG_NUMBER(-1);
+
    print_char('\n');
-   print_string(mm_info(1));
+   print_string(mm_info(level));
    return NIL;
 }
 
@@ -956,7 +964,7 @@ void init_toplevel(void)
    result =      var_define("result");
 
    dx_define("gc", xgc);
-   dx_define("gc-info", xgc_info);
+   dx_define("meminfo", xmeminfo);
    dx_define("purge-names", xpurge_names);
    dx_define("exit", xexit);
    dx_define("load", xload);

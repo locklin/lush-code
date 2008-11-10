@@ -396,7 +396,7 @@ search_in_block:
       return true;
    }
 
- search_for_block:
+search_for_block:
    /* search for another block with free hunks */
    ;
    int b = tr->next_b;
@@ -1070,9 +1070,8 @@ static void mark_stack(mmstack_t *st)
 
    MM_MARK(st->temp);
 
-   /* clear unused entries in current chunk */
-   int n = st->sp - CURRENT_0(st);
-   memset(st->current->elems, 0, n * sizeof(stack_elem_t));
+   if (st->sp > CURRENT_0(st))
+      *(st->sp - 1) = NULL;
 
    MM_MARK(st->current);
 }
@@ -1094,7 +1093,6 @@ static void add_chunk(mmstack_t *st)
    DISABLE_GC;
 
    stack_chunk_t *c = mm_alloc(mt_stack_chunk);
-   assert(c);
    c->prev = st->current;
    st->current = c;
    st->sp = ELT_N(c);
@@ -1123,6 +1121,7 @@ static mmstack_t *make_stack(void)
    anchor_transients = false;
 
    mmstack_t *st = mm_malloc(sizeof(mmstack_t));
+   assert(st);
    mm_type(st, mt_stack);
    memcpy(st, &stack, sizeof(mmstack_t));
 
@@ -1161,6 +1160,17 @@ static int stack_depth(mmstack_t *st)
       c = c->prev;
    }
    return d;
+}
+
+static size_t stack_sizeof(mmstack_t *st)
+{
+   size_t s = sizeof(mmstack_t);
+   stack_chunk_t *c = st->current;
+   while (c->prev) {
+      s = s + sizeof(stack_chunk_t);
+      c = c->prev;
+   }
+   return s;
 }
 
 static stack_elem_t stack_peek(mmstack_t *st)
@@ -1739,7 +1749,7 @@ static int _fetch_unreachables(void *buf)
    
 
 /* fetch addresses of unreachable objects from garbage pipe */
-/* return number of objects reclaimed                       */
+/* return number of objects reclaimed */
 static int fetch_unreachables(void)
 {
    assert(collecting_child);
@@ -1817,6 +1827,7 @@ static int fetch_unreachables(void)
    }
    return 0;
 }
+
 
 /* close all file descriptors except essential ones */
 static void close_file_descriptors(void)
@@ -2169,9 +2180,9 @@ const char *mm_info(int level)
       if (blockrecs[i].in_use)
          total_blocks_in_use++;
    
-   BPRINTF("Small object heap : %.2f MByte in %d blocks (%d / %.2f MB used)\n",
-           ((double)heapsize)/(1<<20), num_blocks, total_blocks_in_use,
-           ((double)total_blocks_in_use)*BLOCKSIZE/(1<<20));
+   BPRINTF("Small object heap: %.2f MByte in %d blocks (%.2f MB / %d used)\n",
+           ((double)heapsize)/(1<<20), num_blocks, 
+           ((double)total_blocks_in_use)*BLOCKSIZE/(1<<20), total_blocks_in_use);
 
    DO_HEAP(a, b) {
       total_objects_managed++;
@@ -2188,21 +2199,31 @@ const char *mm_info(int level)
       total_memory_managed += MM_SIZEOF(p);
    } DO_MANAGED_END;
 
-   BPRINTF("Managed memory    : %.2f MByte in %d objects\n",
+   BPRINTF("Managed memory   : %.2f MByte in %d objects\n",
            ((double)total_memory_managed)/(1<<20), total_objects_managed);
    total_memory_used_by_mm += hmapsize;
    total_memory_used_by_mm += man_size*sizeof(managed[0]);
    total_memory_used_by_mm += types_size*sizeof(typerec_t);
    total_memory_used_by_mm += num_blocks*sizeof(blockrec_t);
-   BPRINTF("Memory used by MM : %.2f MByte total\n",
+   total_memory_used_by_mm += stack_sizeof(transients);
+
+   BPRINTF("Memory used by MM: %.2f MByte total\n",
            ((double)total_memory_used_by_mm)/(1<<20));
 
    if (collect_in_progress)
       BPRINTF("*** GC in progress ***\n");
 
-   //if (level<=1)
-   return (const char *)mm_strdup(buffer);
+   if (level<=1)
+      return mm_strdup(buffer);
    
+   int active_roots = 0;
+   for (int i = 0; i<=roots_last; i++)
+      if (*roots[i])
+         active_roots++;
+
+   BPRINTF("Memory roots     : %d total, %d active\n", roots_last+1, active_roots);
+   BPRINTF("Transient stack  : %d objects\n", stack_depth(transients));
+   return mm_strdup(buffer);
 }
 
 
