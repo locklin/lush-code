@@ -296,6 +296,7 @@ DX(xcopyfile)
       while (bread > 0)
          bread -= fwrite(buffer, 1, bread, fout);
    }
+   fflush(fout);
    /* return size */
    return NEW_NUMBER(nread);
 }
