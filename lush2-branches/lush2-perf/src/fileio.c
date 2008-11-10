@@ -927,8 +927,6 @@ const char *tmpname(const char *dir, const char *suffix)
 
    /* record temp file name */
    struct tmpname *tn = mm_alloc(mt_tmpname);
-   if (!tn)
-      RAISEF("memory exhausted",NIL);
    tn->next = tmpnames;
    tn->file = mm_strdup(tmp);
    tmpnames = tn;
