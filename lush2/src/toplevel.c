@@ -242,8 +242,8 @@ void start_lisp(int argc, char **argv, int quietflag)
    error_doc.error_suffix = NIL;
    error_doc.ready_to_an_error = false;
    error_doc.debug_toplevel = false;
-   error_doc.this_call = NIL;
    error_doc.error_call = NIL;
+   top_link = NULL;
    recur_doc_init();
    reset_dx_stack();
 
@@ -301,11 +301,11 @@ void start_lisp(int argc, char **argv, int quietflag)
       /* Calls the cold startup procedure with arguments */
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = false;
-      error_doc.this_call = NIL;
       error_doc.error_call = NIL;
       error_doc.error_prefix = NIL;
       error_doc.error_text = NIL;
       error_doc.error_suffix = NIL;
+      top_link = NULL;
       recur_doc_init();
       reset_dx_stack();
 
@@ -327,11 +327,11 @@ void start_lisp(int argc, char **argv, int quietflag)
       purge_names();
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = false;
-      error_doc.this_call = NIL;
       error_doc.error_call = NIL;
       error_doc.error_prefix = NIL;
       error_doc.error_text = NIL;
       error_doc.error_suffix = NIL;
+      top_link = NULL;
       recur_doc_init();
       reset_dx_stack();
 
@@ -757,7 +757,7 @@ void user_break(char *s)
       lastchance("Break");
    
    TOPLEVEL_MACHINE;
-   error_doc.error_call = error_doc.this_call;
+   error_doc.error_call = call_stack();
    error_doc.ready_to_an_error = false;
    error_doc.error_prefix = NIL;
    error_doc.error_text = "Break";
@@ -812,7 +812,7 @@ void error(const char *prefix, const char *text, at *suffix)
       lastchance(text);
   
    TOPLEVEL_MACHINE;
-   error_doc.error_call = error_doc.this_call;
+   error_doc.error_call = call_stack();
    error_doc.ready_to_an_error = false;
    error_doc.error_prefix = (char *)prefix;
    error_doc.error_text = text;
@@ -845,13 +845,14 @@ void error(const char *prefix, const char *text, at *suffix)
 
 DX(xerror)
 {
-   at *call, *symb, *arg;
+   at *symb, *arg;
    const char *errmsg;
    
    ALL_ARGS_EVAL;
    switch (arg_number) {
    case 1:
       error(NIL, ASTRING(1), NIL);
+
    case 2:
       if (SYMBOLP(APOINTER(1))) {
          symb = APOINTER(1);
@@ -863,22 +864,23 @@ DX(xerror)
          arg = APOINTER(2);
       }
       break; 
+
    case 3: 
       ASYMBOL(1);
       symb = APOINTER(1);
       errmsg = ASTRING(2);
       arg = APOINTER(3);
       break;
+
    default:
       error(NIL,"illegal arguments",NIL);
    }
-   call = error_doc.this_call;
-   while(CONSP(call)) {
-      if (CONSP(Car(call)) && Caar(call)==symb) {
-         error_doc.this_call = call;
+
+   /* walk down the call stack until you function symbol */
+   while (top_link) {
+      if (CONSP(Car(top_link->this_call)) && Caar(top_link->this_call)==symb)
          break;
-      }
-      call = Cdr(call);
+      top_link = top_link->prev;
    }
    error(NIL, errmsg, arg);
    return NIL;
@@ -894,19 +896,19 @@ DX(xbtrace)
       ARG_NUMBER(0);
    }
    
-   at *call = error_doc.error_call;
-   if (! call)
-      call = error_doc.this_call;
+   at *calls = error_doc.error_call;
+   if (!calls)
+      calls = call_stack();
    if (n < 0)
-      return deepcopy_list(call);
+      return calls;
    
-   while (--n!=0 && CONSP(call)) {
-      if (call == error_doc.error_call)
+   while (--n!=0 && CONSP(calls)) {
+      if (calls == error_doc.error_call)
          print_string("** in:   ");
       else
          print_string("** from: ");
-      print_string(first_line(Car(call)));
-      call = Cdr(call);
+      print_string(first_line(Car(calls)));
+      calls = Cdr(calls);
       print_string("\n");
    }
    return NIL;
@@ -952,7 +954,7 @@ DX(xcasesensitive)
 
 void init_toplevel(void)
 {
-   MM_ROOT(error_doc.this_call);
+   //MM_ROOT(error_doc.this_call);
    MM_ROOT(error_doc.error_call);
    MM_ROOT(error_doc.error_suffix);
 

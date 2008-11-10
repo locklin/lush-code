@@ -358,6 +358,7 @@ LUSHAPI at *assoc(at *k, at *l);
 LUSHAPI at *eval_std(at *p);
 LUSHAPI at *eval_debug(at *q);
 LUSHAPI at *eval_nothing(at *q);
+LUSHAPI at *call_stack(void);
 LUSHAPI at *apply(at *q, at *p);
 LUSHAPI at *let(at *vardecls, at *body);
 LUSHAPI at *letS(at *vardecls, at *body);
@@ -440,10 +441,16 @@ extern LUSHAPI struct recur_doc {
    struct recur_elt **htable;
 } recur_doc;
 
+struct call_chain {
+   at *this_call;
+   struct call_chain *prev;
+};
+
+extern struct call_chain *top_link;
 
 extern LUSHAPI struct error_doc {	   
    /* contains info for printing error messages */
-   at *this_call;
+   //at *this_call;
    at *error_call;
    const char *error_prefix;
    const char *error_text;
@@ -454,16 +461,6 @@ extern LUSHAPI struct error_doc {
    short script_mode;
    FILE *script_file;
 } error_doc;
-
-#define ED_PUSH_CALL(p) {\
-  error_doc.this_call = new_cons(p, error_doc.this_call); \
-}
-
-#define ED_POP_CALL()   {\
-  at *q = error_doc.this_call; \
-  error_doc.this_call = Cdr(q); \
-  Cdr(q) = NIL; \
-}
 
 #define SCRIPT_OFF      0
 #define SCRIPT_INPUT    1

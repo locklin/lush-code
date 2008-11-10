@@ -854,12 +854,11 @@ static void collect_epilogue(void)
 /*
  * Push address onto marking stack and mark it if requested.
  */
-static inline void push(const void *p, bool push_and_mark)
+static inline void push(const void *p)
 {
    if (live(p)) return;
    
-   if (push_and_mark)
-      mark_live(p);
+   mark_live(p);
     
    assert(stack_last < stack_size);
    stack_last++;
@@ -925,7 +924,7 @@ void mm_mark(const void *p)
          abort();
       }
    }
-   push(p, true);
+   push(p);
 }
 
 
@@ -1656,7 +1655,7 @@ static void mark(void)
                  PPTR(roots[r]));
             abort();
          }
-         push(*roots[r], true);
+         push(*roots[r]);
       }
    }
    trace_from_stack();
@@ -1664,8 +1663,10 @@ static void mark(void)
    /* Mark dependencies of finalization-enabled objects */
    DO_HEAP (a, b) {
       finalize_func_t *finalize = types[blockrecs[b].t].finalize;
+      mark_func_t *mark = types[blockrecs[b].t].mark;
       if (!HMAP_LIVE(a) && finalize) {
-         push((void *)(heap + a), false);
+         void *p = heap + a;
+         if (mark) mark(p);
          trace_from_stack();
          HMAP_UNMARK_LIVE(a);  /* break cycles */
       }
@@ -1674,8 +1675,9 @@ static void mark(void)
    DO_MANAGED (i) {
       void *p = CLRPTR(managed[i]);
       finalize_func_t *finalize = types[INFO_T(p)].finalize;
+      mark_func_t *mark = types[INFO_T(p)].mark;
       if (!LIVE(managed[i]) && finalize) {
-         push(p, false);
+         if (mark) mark(p);
          trace_from_stack();
          UNMARK_LIVE(managed[i]); /* break cycles */
       }
