@@ -635,7 +635,7 @@ DX(xgc)
    return NEW_NUMBER(i);
 }
 
-DX(xgc_info)
+DX(xmeminfo)
 {
    int level = 1;
    if (arg_number == 1) {
@@ -966,7 +966,7 @@ void init_toplevel(void)
    result =      var_define("result");
 
    dx_define("gc", xgc);
-   dx_define("gc-info", xgc_info);
+   dx_define("meminfo", xmeminfo);
    dx_define("purge-names", xpurge_names);
    dx_define("exit", xexit);
    dx_define("load", xload);
