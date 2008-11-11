@@ -950,7 +950,7 @@ void console_getline(char *prompt, char *buf, int size)
    }
 }
 
-#else /* !READLINE */
+#else /* !RL_READLINE_VERSION */
 
 static void console_init(void)
 {
@@ -981,7 +981,7 @@ void console_getline(char *prompt, char *buf, int size)
 void toplevel_unix(void)
 {
    break_attempt = 0;
-#if READLINE
+#ifdef RL_READLINE_VERSION
    console_in_eventproc = 0;
    rl_deprep_terminal();
 #endif
