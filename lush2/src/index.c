@@ -199,14 +199,14 @@ static at *broadcast_and_put(index_t *ind, index_t *ss, index_t *vals)
       ifn (IND_STTYPE(ind) == IND_STTYPE(vals))
          error(NIL, "element type of first and third array must match", NIL);
       IND_NDIMS(ss) -= 1;
-      vals = index_broadcast1(ss, vals); 
+      vals = index_broadcast1(vals, ss); 
       IND_NDIMS(ss) += 1;
       return array_put(ind, ss, vals)->backptr;
 
    } else {
       /* -------  Mode 2 -------- */
       index_t *inds = index_selectS(ind, parse_subscript(ss->backptr));
-      vals = index_broadcast1(inds, vals); 
+      vals = index_broadcast1(vals, inds); 
       array_copy(vals, inds);
       return ind->backptr;
    }
