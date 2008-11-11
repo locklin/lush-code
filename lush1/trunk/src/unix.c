@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.62 2008-09-16 15:59:27 leonb Exp $
+ * $Id: unix.c,v 1.63 2008-11-11 22:20:31 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1046,7 +1046,7 @@ console_getline(char *prompt, char *buf, int size)
     }
 }
 
-#else /* !READLINE */
+#else /* !RL_READLINE_VERSION */
 
 static void
 console_init(void)
@@ -1081,7 +1081,7 @@ void
 toplevel_unix(void)
 {
   break_attempt = 0;
-#if READLINE
+#ifdef RL_READLINE_VERSION
   console_in_eventproc = 0;
   rl_deprep_terminal();
 #endif
