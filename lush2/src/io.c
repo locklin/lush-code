@@ -1303,8 +1303,8 @@ void init_io(void)
    set_char_map(';', CHAR_SPECIAL);
    set_char_map('\"' /*"*/, CHAR_SPECIAL);
    set_char_map('|', CHAR_SPECIAL);
-   set_char_map('^', CHAR_SPECIAL | CHAR_PREFIX);
-   set_char_map('#', CHAR_SPECIAL | CHAR_PREFIX);
+   set_char_map('^', CHAR_PREFIX);
+   set_char_map('#', CHAR_PREFIX);
 
    for (int i=0; i<' '; i++)
       ifn (isspace(i))
