@@ -1011,7 +1011,7 @@ LUSHAPI index_t *index_select(index_t*, int d, ptrdiff_t n);
 LUSHAPI index_t *index_selectS(index_t*, subscript_t*);
 LUSHAPI index_t *index_transpose(index_t*, shape_t*);
 LUSHAPI index_t *index_reverse(index_t*, int d);
-LUSHAPI index_t *index_broadcast1(index_t*ref, index_t*blak);
+LUSHAPI index_t *index_broadcast1(index_t*blank, index_t*ref);
 LUSHAPI shape_t *index_broadcast2(index_t*, index_t*, index_t**, index_t**);
 
 /* in-place index manipulation */

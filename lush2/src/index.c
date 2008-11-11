@@ -709,7 +709,7 @@ DX(xidx_broadcastable_p)
 /* broadcast index blank to the shape of ref if possible or
  * return an error
  */
-index_t *index_broadcast1(index_t *ref, index_t *blank)
+index_t *index_broadcast1(index_t *blank, index_t *ref)
 {
    ifn (IND_NDIMS(blank) <= IND_NDIMS(ref))
       goto cannot_broadcast_error;
@@ -998,9 +998,19 @@ index_t *index_shape(const index_t *ind)
 
 DX(xindex_shape)
 {
-   ARG_NUMBER(1);
-   ARG_EVAL(1);
-   return index_shape(AINDEX(1))->backptr;
+   ALL_ARGS_EVAL;
+   index_t *ind = NULL;
+   if (arg_number == 2) {
+      shape_t *shp = parse_shape(APOINTER(2), NULL);
+      ind = index_reshape(AINDEX(1), shp);
+
+   } else if (arg_number == 1) {
+      ind = index_shape(AINDEX(1));
+
+   } else
+      ARG_NUMBER(-1);
+
+   return ind->backptr;
 }
 
 DX(xidx_modulo)
