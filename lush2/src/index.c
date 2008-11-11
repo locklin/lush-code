@@ -2501,17 +2501,58 @@ DX(xidx_reshape)
    return ind->backptr;
 }
 
-index_t *index_flatten(index_t *ind)
+index_t *index_flatten(index_t *ind, int n)
 {
    RAISEF(chk_contiguous(ind), NIL);
-   return index_reshape(ind, SHAPE1D(index_nelems(ind)));
+
+   if (n > 0) {
+      ifn (n < IND_NDIMS(ind))
+         RAISEF("too many dimensions to collapse", NEW_NUMBER(n));
+      
+      shape_t shape, *shp = &shape;
+      shp->ndims = IND_NDIMS(ind)-n;
+      IND_DIM(shp, 0) = IND_DIM(ind, 0);
+      for (int i=1; i<n+1; i++)
+         IND_DIM(shp, 0) *= IND_DIM(ind, i);
+      for (int i=n+1; i<IND_NDIMS(ind); i++)
+         IND_DIM(shp, i-n) = IND_DIM(ind, i);
+
+      ind = index_reshape(ind, shp);
+
+   } else if (n < 0) {
+      n = -n;
+      ifn (n < IND_NDIMS(ind))
+         RAISEF("too many dimensions to collapse", NEW_NUMBER(n));
+      
+      shape_t shape, *shp = &shape;
+      int r = IND_NDIMS(ind)-n;
+      shp->ndims = r; 
+      IND_DIM(shp, r-1) = IND_DIM(ind, IND_NDIMS(ind)-1);
+      for (int i=IND_NDIMS(ind)-2; i>=r-1; i--)
+         IND_DIM(shp, r-1) *= IND_DIM(ind, i);
+      for (int i=r-2; i>=0; i--)
+         IND_DIM(shp, i-r+2) = IND_DIM(ind, i);
+
+      ind = index_reshape(ind, shp);
+
+   } else
+      ind = copy_index(ind);
+
+   return ind;
 }
 
 DX(xidx_flatten)
 {
-   ARG_NUMBER(1);
-   ARG_EVAL(1);
-   return index_flatten(AINDEX(1))->backptr;
+   ALL_ARGS_EVAL;
+   index_t *ind = NULL;
+   if (arg_number == 2)
+      ind = index_flatten(AINDEX(1), AINTEGER(2));
+   else if (arg_number == 1)
+      ind = index_flatten(AINDEX(1), IND_NDIMS(AINDEX(1))-1);
+   else
+      ARG_NUMBER(-1);
+
+   return ind->backptr;
 }
 
 index_t *index_nickD(index_t *ind, int d)
@@ -2811,8 +2852,8 @@ index_t *index_liftD(index_t *ind, shape_t *shp)
       IND_DIM(ind, i) = IND_DIM(ind, i-d);
    }
    for (int i=0; i<d; i++) {
-      IND_MOD(ind, i) = 0;
       IND_DIM(ind, i) = IND_DIM(shp, i);
+      IND_MOD(ind, i) = IND_DIM(ind,i) == 1 ? 1 : 0;
    }
    IND_NDIMS(ind) += d;
    
@@ -2863,8 +2904,8 @@ index_t *index_sinkD(index_t *ind, shape_t *shp)
       RAISEF("too many dimensions", NIL);
   
    for (int i=IND_NDIMS(ind); i<d; i++) {
-      IND_MOD(ind, i) = 0;
       IND_DIM(ind, i) = shp->dim[i-IND_NDIMS(ind)];
+      IND_MOD(ind, i) = IND_DIM(ind, i) == 1 ? 1 : 0;
    }
    IND_NDIMS(ind) = d;
    
@@ -3667,7 +3708,7 @@ void init_index(void)
 
    /* index manipulation */
    dx_define("idx-reshape", xidx_reshape);
-   //dx_define("idx-flatten", xidx_flatten);
+   dx_define("idx-flatten", xidx_flatten);
    dx_define("idx-nick", xidx_nick);
    dx_define("idx-extend", xidx_extend);
    dx_define("idx-lift", xidx_lift);
