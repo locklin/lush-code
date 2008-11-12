@@ -78,7 +78,7 @@
 #define MIN_MANAGED     0x40000
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
-#define MAX_VOLUME      0x100000    /* max volume threshold */
+#define MAX_VOLUME      0x400000    /* max volume threshold */
 #define MAN_K_UPDS      100
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
 #define NUM_IDLE_CALLS  100
