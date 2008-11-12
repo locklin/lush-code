@@ -512,15 +512,16 @@ DY(ywhile)
    at *q1 = NIL;
    at *q2 = eval(Car(ARG_LIST));
    MM_ROOT(q1);
+   MM_ENTER;
    while (q2) {
-      MM_ENTER;
       q1 = progn(Cdr(ARG_LIST));
-      CHECK_MACHINE("on");
       q2 = eval(Car(ARG_LIST));
+      if (break_attempt) break;
       MM_EXIT;
    }
    MM_ANCHOR(q1);
    MM_UNROOT(q1);
+   CHECK_MACHINE("on");
    return q1;
 }
 
@@ -533,15 +534,16 @@ DY(ydowhile)
    at *q1 = NIL;
    at *q2 = NIL;
    MM_ROOT(q1);
+   MM_ENTER;
    do {
-      MM_ENTER;
       q1 = progn(Cdr(ARG_LIST));
-      CHECK_MACHINE("on");
       q2 = eval(Car(ARG_LIST));
+      if (break_attempt) break;
       MM_EXIT;
    } while (q2);
    MM_ANCHOR(q1);
    MM_UNROOT(q1);
+   CHECK_MACHINE("on");
    return q1;
 }
 
@@ -559,12 +561,18 @@ DY(yrepeat)
       RAISEFX("out of range", q);
    }
    int i = (int)Number(q);
-   at *p = NIL;
+   at *res = NIL;
+   MM_ROOT(res);
+   MM_ENTER;
    while (i--) {
-      p = progn(Cdr(ARG_LIST));
-      CHECK_MACHINE("on");
+      res = progn(Cdr(ARG_LIST));
+      if (break_attempt) break;
+      MM_EXIT;
    }
-   return p;
+   MM_ANCHOR(res);
+   MM_UNROOT(res);
+   CHECK_MACHINE("on");
+   return res;
 }
 
 DY(yfor)
@@ -600,21 +608,29 @@ DY(yfor)
 
    SYMBOL_PUSH(sym, NIL);
    symbol_t *symbol = Mptr(sym);
-   num = NIL;
-
+   at *res = NIL;
+   MM_ROOT(res);
+   MM_ENTER;
    if ((start <= end) && (step >= 0)) {
       for (double i = start; i <= end; i += step) {
          symbol->value = NEW_NUMBER(i);
-         num = progn(Cdr(ARG_LIST));
+         res = progn(Cdr(ARG_LIST));
+         if (break_attempt) break;
+         MM_EXIT;
       }
    } else if ((start >= end) && (step <= 0)) {
       for (real i = start; i >= end; i += step) {
          symbol->value = NEW_NUMBER(i);
-         num = progn(Cdr(ARG_LIST));
+         res = progn(Cdr(ARG_LIST));
+         if (break_attempt) break;
+         MM_EXIT;
       }
    }
    SYMBOL_POP(sym);
-   return num;
+   MM_ANCHOR(res);
+   MM_UNROOT(res);
+   CHECK_MACHINE("on");
+   return res;
 }
 
 
