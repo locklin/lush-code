@@ -331,7 +331,7 @@ static avlnode_t *lside_create_str(at *p)
   avlnode_t *n = avl_find(str);
   
   if (n==0) {
-     avlnode_t *n = alloc_str(str);
+     n = alloc_str(str);
      n->litem = p;
   }
   return n;
@@ -1595,7 +1595,7 @@ static void wipe_out_temps(void)
 
     avlnode_t *n = dummy_tmps.chnxt;
 
-    if (n->belong!=BELONG_LISP || n->litem)
+    if (n->belong!=BELONG_LISP) // || n->litem)
       error(NIL,"internal error in TMPS chain",NIL);
     
     void *cptr = n->citem;
