@@ -798,7 +798,6 @@ static void collect_prologue(void)
    assert(man_k == man_last);
 
    collect_in_progress = true;
-   num_collects += 1;
    debug("%dth collect after %d allocations:\n",
          num_collects, num_allocs);
    debug("mean alloc %.2f bytes, %d free blocks)\n",
@@ -847,6 +846,7 @@ static void collect_epilogue(void)
    }
    heap_exhausted = false;
    collect_in_progress = false;
+   num_collects += 1;
    fetch_backlog = 0;
    compact_managed();
 }
@@ -1843,7 +1843,7 @@ static void close_file_descriptors(void)
    DIR *d = opendir(path);
    if (!d) {
       char *errmsg = strerror(errno);
-      warn("could not open %s:\n%s\n", path, errmsg);
+      warn("could not open %s: %s\n", path, errmsg);
       abort();
    }
    
@@ -1874,7 +1874,7 @@ static void collect(void)
    errno = 0;
    if (pipe(pfd_garbage) == -1) {
       char *errmsg = strerror(errno);
-      warn("could not set up pipe for GC:\n%s\n", errmsg);
+      warn("could not set up pipe for GC: %s\n", errmsg);
       return;
    }
 
@@ -1887,12 +1887,17 @@ static void collect(void)
    errno = 0;
    collecting_child = fork();
    if (collecting_child == -1) {
+      int _errno = errno;
       char *errmsg = strerror(errno);
-      warn("could not spawn child for GC:\n%s\n", errmsg);
+      warn("could not spawn child for GC: %s\n", errmsg);
       close(pfd_garbage[0]);
       close(pfd_garbage[1]);
       collecting_child = 0;
       collect_in_progress = false;
+      if (_errno == ENOMEM) {
+         warn("doing asynchronous collect\n");
+         mm_collect_now();
+      }
       return;
 
    } else if (collecting_child) {
