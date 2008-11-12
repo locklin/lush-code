@@ -2206,7 +2206,7 @@ const char *mm_info(int level)
       total_memory_managed += MM_SIZEOF(p);
    } DO_MANAGED_END;
 
-   BPRINTF("Managed memory   : %.2f MByte in %d objects\n",
+   BPRINTF("Managed memory   : %.2f MByte in %"PRIdPTR" objects\n",
            ((double)total_memory_managed)/(1<<20), total_objects_managed);
    total_memory_used_by_mm += hmapsize;
    total_memory_used_by_mm += man_size*sizeof(managed[0]);

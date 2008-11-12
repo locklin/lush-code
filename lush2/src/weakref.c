@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 #include "header.h"
-
+#include "inttypes.h"
 /*
  * Objects holding weak references to another object may 
  * register a "notifier function" for the referent object.
@@ -133,7 +133,7 @@ void run_notifiers(void *t)
 
 void dbg_notify(void *p, void *q)
 {
-   printf("0x%x (context 0x%x) was reclaimed\n",
+   printf("0x%"PRIxPTR" (context 0x%"PRIxPTR") was reclaimed\n",
           (uintptr_t)p, (uintptr_t) q);
 }
 
