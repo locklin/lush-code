@@ -680,7 +680,8 @@ flt Frand(void)
       inextp = 1;
    int mj = ((ma[inext] - ma[inextp]) * 84589 + 45989) & MMASK;
    ma[inext] = mj;
-   return (flt)(mj * FAC);
+   flt res = (flt)(mj * FAC);
+   return (res < 1) ? res : Frand();
 }
 
 
@@ -721,7 +722,8 @@ real Drand(void)
       inextp = 1;
    int mj = ((ma[inext] - ma[inextp]) * 84589 + 45989) & MMASK;
    ma[inext] = mj;
-   return (real)(mj * FAC);
+   real res = mj * FAC;
+   return (res < 1) ? res : Drand();
 }
 
 
