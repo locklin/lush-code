@@ -508,12 +508,19 @@ DY(ywhile)
 {
    ifn (CONSP(ARG_LIST))
       RAISEFX("syntax error", ARG_LIST);
-   
-   at *q2, *q1 = NIL;
-   while ((q2 = eval(Car(ARG_LIST)))) {
+
+   at *q1 = NIL;
+   at *q2 = eval(Car(ARG_LIST));
+   MM_ROOT(q1);
+   while (q2) {
+      MM_ENTER;
       q1 = progn(Cdr(ARG_LIST));
       CHECK_MACHINE("on");
+      q2 = eval(Car(ARG_LIST));
+      MM_EXIT;
    }
+   MM_ANCHOR(q1);
+   MM_UNROOT(q1);
    return q1;
 }
 
@@ -524,10 +531,17 @@ DY(ydowhile)
       RAISEFX("syntax error", ARG_LIST);
 
    at *q1 = NIL;
+   at *q2 = NIL;
+   MM_ROOT(q1);
    do {
+      MM_ENTER;
       q1 = progn(Cdr(ARG_LIST));
       CHECK_MACHINE("on");
-   } while (eval(Car(ARG_LIST)));
+      q2 = eval(Car(ARG_LIST));
+      MM_EXIT;
+   } while (q2);
+   MM_ANCHOR(q1);
+   MM_UNROOT(q1);
    return q1;
 }
 
@@ -552,6 +566,57 @@ DY(yrepeat)
    }
    return p;
 }
+
+DY(yfor)
+{
+   ifn(CONSP(ARG_LIST) && CONSP(Car(ARG_LIST)))
+      RAISEFX("syntax error", NIL);
+
+   at *sym, *p = Car(ARG_LIST);
+   ifn (SYMBOLP(sym = Car(p)))
+      RAISEFX("not a symbol", sym);
+
+   at *num = NIL;
+   p = Cdr(p);
+   ifn (CONSP(p) && (num = eval(Car(p))) && NUMBERP(num))
+      RAISEFX("not a number", num);
+   double start = Number(num);
+
+   p = Cdr(p);
+   ifn (CONSP(p) && (num = eval(Car(p))) && NUMBERP(num))
+      RAISEFX("not a number", num);
+   double end = Number(num);
+
+   p = Cdr(p);
+   double step = 1.0;
+   if (CONSP(p) && !Cdr(p)) {
+      ifn (CONSP(p) && (num = eval(Car(p))) && NUMBERP(num))
+         RAISEFX("not a number", num);
+      step = Number(num);
+
+   } else if (p) {
+      RAISEFX("syntax error", p);
+   }
+
+   SYMBOL_PUSH(sym, NIL);
+   symbol_t *symbol = Mptr(sym);
+   num = NIL;
+
+   if ((start <= end) && (step >= 0)) {
+      for (double i = start; i <= end; i += step) {
+         symbol->value = NEW_NUMBER(i);
+         num = progn(Cdr(ARG_LIST));
+      }
+   } else if ((start >= end) && (step <= 0)) {
+      for (real i = start; i >= end; i += step) {
+         symbol->value = NEW_NUMBER(i);
+         num = progn(Cdr(ARG_LIST));
+      }
+   }
+   SYMBOL_POP(sym);
+   return num;
+}
+
 
 /* --------- INITIALISATION CODE --------- */
 
@@ -579,6 +644,7 @@ void init_calls(void)
    dy_define("while", ywhile);
    dy_define("do-while", ydowhile);
    dy_define("repeat", yrepeat);
+   dy_define("for", yfor);
 }
 
 

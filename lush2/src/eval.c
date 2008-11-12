@@ -511,56 +511,6 @@ DY(yletS)
 }
   
 
-DY(yfor)
-{
-   ifn(CONSP(ARG_LIST) && CONSP(Car(ARG_LIST)))
-      RAISEFX("syntax error", NIL);
-
-   at *sym, *p = Car(ARG_LIST);
-   ifn (SYMBOLP(sym = Car(p)))
-      RAISEFX("not a symbol", sym);
-
-   at *num = NIL;
-   p = Cdr(p);
-   ifn (CONSP(p) && (num = eval(Car(p))) && NUMBERP(num))
-      RAISEFX("not a number", num);
-   double start = Number(num);
-
-   p = Cdr(p);
-   ifn (CONSP(p) && (num = eval(Car(p))) && NUMBERP(num))
-      RAISEFX("not a number", num);
-   double end = Number(num);
-
-   p = Cdr(p);
-   double step = 1.0;
-   if (CONSP(p) && !Cdr(p)) {
-      ifn (CONSP(p) && (num = eval(Car(p))) && NUMBERP(num))
-         RAISEFX("not a number", num);
-      step = Number(num);
-
-   } else if (p) {
-      RAISEFX("syntax error", p);
-   }
-
-   SYMBOL_PUSH(sym, NIL);
-   symbol_t *symbol = Mptr(sym);
-   num = NIL;
-
-   if ((start <= end) && (step >= 0)) {
-      for (double i = start; i <= end; i += step) {
-         symbol->value = NEW_NUMBER(i);
-         num = progn(Cdr(ARG_LIST));
-      }
-   } else if ((start >= end) && (step <= 0)) {
-      for (real i = start; i >= end; i += step) {
-         symbol->value = NEW_NUMBER(i);
-         num = progn(Cdr(ARG_LIST));
-      }
-   }
-   SYMBOL_POP(sym);
-   return num;
-}
-
 /*
  * (quote a1) returns a1 without evaluation
  */
@@ -621,7 +571,6 @@ void init_eval(void)
    dy_define("let", ylet);
    dy_define("lete", ylete);
    dy_define("let*", yletS);
-   dy_define("for", yfor);
    dx_define("quote", xquote);
    dy_define("debug", ydebug);
    dy_define("nodebug", ynodebug);
