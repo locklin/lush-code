@@ -745,7 +745,7 @@ avl_display(avlnode_t *n, int tab)
     strcat(string_buffer," ");
   if (n->avl_bf == AVLLEFTHEAVY)
     strcat(string_buffer,"<");
-  else if (n->avl_bf == AVLLEFTHEAVY)
+  else if (n->avl_bf == AVLRIGHTHEAVY)
     strcat(string_buffer,">");
   else
     strcat(string_buffer,"=");
