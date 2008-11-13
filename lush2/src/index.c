@@ -3144,7 +3144,6 @@ index_t *array_select(index_t *ind, int d, ptrdiff_t x)
 index_t *array_take2(index_t *ind, index_t *ss)
 {
    static char *errmsg_out_of_range = "subscript out of range";       
-   static char *errmsg_not_supported = "element-type not supported";
    char *errmsg = NULL;
    
    int r = IND_NDIMS(ind);
@@ -3207,7 +3206,7 @@ index_t *array_take2(index_t *ind, index_t *ss)
 #undef GenericTake
       
    default:
-      errmsg = errmsg_not_supported;
+      errmsg = "element-type not supported";
       break;
    }
 
@@ -3221,7 +3220,6 @@ clean_up_and_return2:
 index_t *array_take3(index_t *ind, int d, index_t *ss)
 {
    static char *errmsg_out_of_range = "subscript out of range";       
-   static char *errmsg_not_supported = "element-type not supported";
    char *errmsg = NULL;
    
    /* check & normalize arguments */
@@ -3296,7 +3294,7 @@ index_t *array_take3(index_t *ind, int d, index_t *ss)
 #undef GenericTake
       
    default:
-      errmsg = errmsg_not_supported;
+      errmsg = "element-type not supported";
       break;
    }
 
