@@ -511,16 +511,14 @@ DY(ywhile)
 
    at *q1 = NIL;
    at *q2 = eval(Car(ARG_LIST));
-   MM_ROOT(q1);
    MM_ENTER;
    while (q2) {
       q1 = progn(Cdr(ARG_LIST));
       q2 = eval(Car(ARG_LIST));
       if (break_attempt) break;
       MM_EXIT;
+      MM_ANCHOR(q1);
    }
-   MM_ANCHOR(q1);
-   MM_UNROOT(q1);
    CHECK_MACHINE("on");
    return q1;
 }
@@ -533,16 +531,14 @@ DY(ydowhile)
 
    at *q1 = NIL;
    at *q2 = NIL;
-   MM_ROOT(q1);
    MM_ENTER;
    do {
       q1 = progn(Cdr(ARG_LIST));
       q2 = eval(Car(ARG_LIST));
       if (break_attempt) break;
       MM_EXIT;
+      MM_ANCHOR(q1);
    } while (q2);
-   MM_ANCHOR(q1);
-   MM_UNROOT(q1);
    CHECK_MACHINE("on");
    return q1;
 }
@@ -609,7 +605,6 @@ DY(yfor)
    SYMBOL_PUSH(sym, NIL);
    symbol_t *symbol = Mptr(sym);
    at *res = NIL;
-   MM_ROOT(res);
    MM_ENTER;
    if ((start <= end) && (step >= 0)) {
       for (double i = start; i <= end; i += step) {
@@ -617,6 +612,7 @@ DY(yfor)
          res = progn(Cdr(ARG_LIST));
          if (break_attempt) break;
          MM_EXIT;
+         MM_ANCHOR(res);
       }
    } else if ((start >= end) && (step <= 0)) {
       for (real i = start; i >= end; i += step) {
@@ -624,11 +620,10 @@ DY(yfor)
          res = progn(Cdr(ARG_LIST));
          if (break_attempt) break;
          MM_EXIT;
+         MM_ANCHOR(res);
       }
    }
    SYMBOL_POP(sym);
-   MM_ANCHOR(res);
-   MM_UNROOT(res);
    CHECK_MACHINE("on");
    return res;
 }
