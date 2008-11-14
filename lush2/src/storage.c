@@ -527,10 +527,7 @@ void storage_malloc(storage_t *st, size_t n, at *init)
    
    /* allocate memory and initialize srg */
    size_t s = n*storage_sizeof[st->type];
-   if (st->type == ST_AT)
-      st->data = mm_allocv(mt_refs, s);
-   else
-      st->data = mm_malloc(s);
+   st->data  = mm_allocv(st->type==ST_AT ? mt_refs : mt_blob, s);
    st->flags = STS_MALLOC;
    st->size  = n;
 
