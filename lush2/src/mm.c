@@ -460,6 +460,14 @@ static void *alloc_variable_sized(mt_t t, size_t s)
    }
   
    void *p = malloc(s + MIN_HUNKSIZE);  // + space for info
+   if (!p && collecting_child) {
+      if (gc_disabled)
+         warn("low memory and GC disabled\n");
+      else /* try to recover */
+         while (collecting_child)
+            fetch_unreachables();
+      p = malloc(s + MIN_HUNKSIZE);
+   }
    assert(!LBITS(p));
 
    if (p) {
@@ -1895,7 +1903,7 @@ static void collect(void)
       collecting_child = 0;
       collect_in_progress = false;
       if (_errno == ENOMEM) {
-         warn("doing asynchronous collect\n");
+         warn("trying synchronous collect\n");
          mm_collect_now();
       }
       return;
