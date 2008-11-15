@@ -1,0 +1,115 @@
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; uses Jean-Luc Saillard's tinyjpegdecoder to decode a JPEG
+;; image in memory.
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libc/make")
+
+;; compile Jean-Luc's C code
+(let ((lm (new lushmake)))
+  (==> lm rule "tinyjpeg.o" '("tinyjpeg.c" "tinyjpeg-internal.h" "tinyjpeg.h"))
+  (==> lm rule "jidctflt.o" '("jidctflt.c" "tinyjpeg-internal.h" "tinyjpeg.h"))
+  (==> lm make)
+  (==> lm load))
+
+#? * jpeg decompression
+;; This set of functions provides a simple way to decode JPEG
+;; images in memory. It is based on Jean-Luc Saillard's 
+;; tinyjpegdecoder library which can be found at:
+;; http://www.saillard.org/programs_and_patches/tinyjpegdecoder .
+;; These functions are useful to decode JPEG streams from memory.
+
+#? (jpeg-decode <buffer> <image>)
+;; decode a JPEG stream in <buffer> (which must be an idx1 of ubytes
+;; into an RGB image, <image> (which must be an idx3 of ubyte). The
+;; image is automatically resized to the size of the JPEG image. If
+;; the JPEG image is grayscale, only the first component is filled.
+;; {<code>
+;;  (let ((buf (ubyte-matrix 1))
+;;        (m (ubyte-matrix 1 1 3)))
+;;    (read-file-to-idx "myimage.jpg" buf)
+;;    (jpeg-decode buf m))
+;; </code>}
+(de jpeg-decode (buffer m)
+  ((-idx1- (-ubyte-)) buffer)
+  ((-idx3- (-ubyte-)) m)
+  (cpheader "#include \"../tinyjpeg.h\"")
+  (let* ((n (idx-dim buffer 0))
+	 (err 0)
+	 (width 0)
+	 (height 0))
+    ((-int-) n err width height)
+    #{{ struct jdec_private *jdec;
+       jdec = tinyjpeg_init(); 
+       unsigned char *components[4];
+       if (jdec == NULL) {
+         printf("Not enough memory to alloc the structure need for decompressing\n");
+         $err = -1;
+       } else {
+         if (tinyjpeg_parse_header(jdec, IDX_PTR($buffer, unsigned char), $n)<0) {
+           printf("%s\n",tinyjpeg_get_errorstring(jdec));
+           $err = -2;
+         } else {
+           tinyjpeg_get_size(jdec, (unsigned int *)&$width, (unsigned int *)&$height);
+           if (tinyjpeg_decode(jdec, TINYJPEG_FMT_RGB24) < 0) {
+             printf("%s\n",tinyjpeg_get_errorstring(jdec));
+             $err = -3;
+           } else {
+             tinyjpeg_get_components(jdec, components);
+             Midx_init_dim3($m,$height,$width,3);
+             memcpy(IDX_PTR($m,unsigned char),components[0],$height*$width*3);
+           }
+         }
+       }
+     tinyjpeg_free(jdec);
+    } #}
+    err))
+
+#? (read-file-to-idx <f> <m>)
+;; read the content of a file <f> into an idx1 of ubyte <m>. 
+;; <m> is automatically resized to the proper size.
+;; Returns 0 on success, -1 if the file could not
+;; be open.
+(de read-file-to-idx (f m)
+  ((-str-) f)
+  ((-idx1- (-ubyte-)) m)
+  (let ((err 0))
+    ((-int-) err)
+    #{{long pos;
+       FILE *fp;
+       if ((fp = fopen($f->data, "rb")) == NULL) {
+         $err = -1;
+       } else {
+         fseek(fp, 0, SEEK_END);
+         pos = ftell(fp);
+         fseek(fp, 0, SEEK_SET);
+         Midx_init_dim1($m,pos);
+         fread(IDX_PTR($m, unsigned char), 1, pos, fp);
+         fclose(fp);
+      }
+    } #} err))
+
+#? (jpeg-decode-file <f>)
+;; return an RGB image (idx1 of ubyte height by width by 3)
+;; with the decoded image in JPEG file <f>.
+(de jpeg-decode-file (f)
+  ((-str-) f)
+  (let ((buf (ubyte-matrix 1))
+	(m (ubyte-matrix 1 1 3)))
+    (if (<> 0 (read-file-to-idx f buf))
+	(error "could not open file")
+      (jpeg-decode buf m) m)))
+
+
+(dhc-make () read-file-to-idx jpeg-decode jpeg-decode-file)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(de test-jpeg-decode (f)
+  (let ((buf (ubyte-matrix 1))
+	(m (ubyte-matrix 1 1 3)))
+    (read-file-to-idx f buf)
+    (print (cputime (jpeg-decode buf m)))
+    (when (not window) (new-window))
+    (rgb-draw-matrix 0 0 m)))
+

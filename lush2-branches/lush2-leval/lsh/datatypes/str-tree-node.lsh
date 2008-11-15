@@ -1,0 +1,65 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; PSU Lush
+;;;   Copyright (C) 2005 Ralf Juengling
+;;; Derived from LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/tree-node")
+
+(let ((snp (def-treenode Str -str- < > =)))
+  
+  ;; redefine (StrTreeNode . copy-item-from)
+  (defmethod StrTreeNode copy-item-from (tn)
+    (declare (-obj- (TreeNode)) tn)
+    (let ((tn (to-obj StrTreeNode tn)))
+      #{
+      char *sc = strdup($tn->item);
+      ifn (sc) run_time_error(rterr_out_of_memory);
+      cside_create_str(sc);
+      $this->item = sc;
+      #}
+      ()))
+    
+  ;; override (StrTreeNodePool . free-node)
+  (defmethod StrTreeNodePool free-node (tn)
+    (declare (-obj- (TreeNode)) tn)
+    (let ((tn (to-obj StrTreeNode tn)))
+      #{
+      cside_destroy_item($tn->item);
+      free($tn->item);
+      $tn->item = NULL;
+      #})
+    (==> this (TreeNodePool . free-node) tn) )
+
+  (defmethod StrTreeNodeIterator StrTreeNodeIterator (obj st)
+    (declare (-obj- (IterableDatatype)) obj)
+    (declare (-idx1- (-gptr-)) st)
+    (==> this DatatypeIterator obj)
+    (setq next-item "")
+    (setq stack st)
+    ())
+
+  (apply dhc-make-class () snp))
+
+(defparameter *StrTreeNodePool* (make-StrTreeNodePool))
