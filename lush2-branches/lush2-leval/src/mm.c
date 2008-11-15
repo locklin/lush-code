@@ -78,7 +78,7 @@
 #define MIN_MANAGED     0x40000
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
-#define MAX_VOLUME      0x400000    /* max volume threshold */
+#define MAX_VOLUME      0x300000    /* max volume threshold */
 #define MAN_K_UPDS      100
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
 #define NUM_IDLE_CALLS  100
@@ -1758,6 +1758,66 @@ static int _fetch_unreachables(void *buf)
 }
    
 
+/* static int fetch_unreachables(void) */
+/* { */
+/*    if (!collecting_child) */
+/*       return 0; */
+
+/*    if (gc_disabled) { */
+/*       fetch_backlog++; */
+/*       return 0; */
+/*    } */
+
+/*    static void *buf[NUM_TRANSFER]; */
+/*    static int j, n = 0; */
+/*    static bool inheap = true; */
+
+/*    if (n) { */
+/*       /\* don't need to disable gc here as gc is still */
+/*        * in progress */
+/*        *\/ */
+/*       if (inheap) { */
+
+/*          if (buf[j]) { */
+/*             reclaim_inheap(buf[j]); */
+/*             j++; */
+
+/*          } else { */
+/*             inheap = false; */
+/*             j++; */
+/*          } */
+/*          if (j == n) { */
+/*             n = 0; */
+/*          } */
+/*          return 1; */
+         
+/*       } else { */
+
+/*          reclaim_offheap(buf[j++]); */
+/*          if (j == n) { */
+/*             n = 0; */
+/*          } */
+/*          return 1; */
+/*       } */
+/*    } else if (n == 0) { */
+      
+/*       n = _fetch_unreachables(&buf); */
+      
+/*       if (n == -1) { */
+/*          n = 0; */
+
+/*       } else if (n == 0) { */
+/*          inheap = true; */
+
+/*       } else { */
+/*          assert((n%sizeof(void *)) == 0); */
+/*          n = n/sizeof(void *); */
+/*          j = 0; */
+/*       } */
+/*    } */
+/*    return 0; */
+/* } */
+
 /* fetch addresses of unreachable objects from garbage pipe */
 /* return number of objects reclaimed */
 static int fetch_unreachables(void)
@@ -1774,39 +1834,30 @@ static int fetch_unreachables(void)
    static bool inheap = true;
 
    if (n) {
-      /* don't need to disable gc here as gc is still
-       * in progress
-       */
+      /* don't need to disable gc here as gc is still in progress */
       if (inheap) {
-
-         if (buf[j]) {
+         if (buf[j])
             reclaim_inheap(buf[j]);
-            j++;
-         } else {
+         else
             inheap = false;
-            j++;
-         }
-         if (j == n) {
+
+         if (++j == n) {
             n = 0;
             return 1;
          }
          
          if (inheap) {
-            if (buf[j]) {
+            if (buf[j])
                reclaim_inheap(buf[j]);
-               j++;
-            } else {
+            else
                inheap = false;
-               j++;
-            }
-            if (j == n) {
+
+            if (++j == n)
                n = 0;
-            }
             return 2;
          }
 
       } else {
-
          reclaim_offheap(buf[j++]);
          if (j == n) {
             n = 0;
@@ -2005,7 +2056,7 @@ bool mm_idle(void)
 
    if (collect_in_progress) {
       if (!gc_disabled) {
-         int i = 50;
+         int i = 100 + fetch_backlog;
          while (i>0 && collect_in_progress) {
             fetch_unreachables();
             i--;
