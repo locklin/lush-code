@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.14 2008-11-02 05:25:48 profshadoko Exp $
+;;; $Id: lush.el,v 1.15 2008-11-17 05:24:14 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; this file contains useful definitions for emacs
@@ -37,6 +37,10 @@
 
 (defvar *lush-symbols* ())
 (defvar *lush-symbols-stale?* t)
+
+;; make this a local variable (shadow the global) and set to true when
+;; in a lush buffer to define/setup items local to the lush buffer
+(defvar *lush-buffer?* nil)
 
 (defun lush-proc ()
   (condition-case err
@@ -51,33 +55,38 @@
   (inferior-lisp "lush")
   (other-window -1)
   (set-buffer "*inferior-lisp*")
+  (set (make-local-variable '*lush-buffer?*) t)
   (setq comint-prompt-regexp "^?")
   (setq comint-get-old-input #'lush-get-incomplete-input)
   (if cache-symbols
       (progn
         ;; override comint-send-string to check for definitions/file loads
         ;; entered by hand in the repl or through the lisp-load-file command
-        (defvar prev-comint-send-string (symbol-function 'comint-send-string))
-        (defun comint-send-string (proc inp)
-          (let ((stale-re "load\\|\\^L\\|def\\|dmd\\|set\\|(d[efmz][\\t\\n ]"))
-            (if (and (eq proc (lush-proc))
-                     (string-match stale-re inp))
-                (setq *lush-symbols-stale?* t)))
-          (funcall prev-comint-send-string proc inp))
+        (defadvice comint-send-string (around lush-send-string (proc inp) activate)
+          "Overrides comint-send-string globally but executes lush specific code only when in a lush REPL buffer"
+          (if *lush-buffer?* 
+              (let ((stale-re "load\\|\\^L\\|def\\|dmd\\|set\\|(d[efmz][\\t\\n ]"))
+                (if (and (eq proc (lush-proc))
+                         (string-match stale-re inp))
+                    (setq *lush-symbols-stale?* t))))
+          ad-do-it)
 
-        ;; override comint-send-region to mark the symbol cache stale
+        ;; comint-send-region was not really meant to be overriden,
+        ;; but defadvice provides a safe means of doing so.  as-do-it
+        ;; marks where the original function (comint-send-region)
+        ;; should be called.
         ;; whenever the lisp-eval-* commands are used
-        (defvar prev-comint-send-region (symbol-function 'comint-send-region))
-        (defun comint-send-region (proc start end)
-          (setq *lush-symbols-stale?* t)
-          (funcall prev-comint-send-region proc start end))))
+        (defadvice comint-send-region (around lush-send-region activate)
+          "Overrides comint-send-region globally but executes lush specific code only when in a lush REPL buffer"
+          (if *lush-buffer?* (setq *lush-symbols-stale?* t))
+          ad-do-it)))
     
   (set (make-local-variable 'pcomplete-parse-arguments-function)
        'lush-parse-arguments)
 
   (local-set-key "\r" 'lush-filter-input)
   (local-set-key "\n" 'lush-filter-input)
-  (local-set-key "\t" 'pcomplete))
+  (local-set-key "\t" 'lush-indent-and-complete-symbol))
 
 (global-set-key "\C-xg" 'goto-line)
 
@@ -105,7 +114,7 @@
                            (not (elt status 4)) ; inside comment
                            (<= (point) cur))    ; not inside the expression
                       (let ((expr (buffer-substring 
-                                   (if (elt status 2) (elt status 2) (- (point) 1))
+                                   (or (elt status 2) (- (point) 1))
                                    (- (point) 1))))
                         (comint-send-string proc (concat expr "\n"))
                         (comint-add-to-input-history expr)
@@ -127,8 +136,8 @@
   (let ((proc (lush-proc)))
     (if proc
         (car (read-from-string
-              (car (comint-redirect-results-list-from-process
-                    proc "(symblist)" "(.*)" 0))))
+              (lush-results-from-process 
+               proc "(symblist)" "(" ")")))
       ())))
 
 (defun lush-complete (sym)
@@ -167,11 +176,25 @@
 
 (defun pcomplete/lush-complete ()
   "Complete the symbol at point"
-   (let* ((sym (cadr (car (lush-parse-arguments))))
-          (completions (lush-complete sym)))
-     (if completions
-         (throw 'pcomplete-completions completions)
-       (pcomplete-here (pcomplete-all-entries)))))
+  (let* ((sym (cadr (car (lush-parse-arguments))))
+         (completions (lush-complete sym)))
+    (if completions
+        (throw 'pcomplete-completions completions)
+      (pcomplete-here (pcomplete-all-entries)))))
+
+(defun lush-indent-and-complete-symbol ()
+  "This function is stolen from slime.el of the slie package.
+Indents the current line and performs symbol completion.  First
+indent the line. If indenting doesn't move point, complete the
+symbol.  If there's no symbol at the point, show the arglist for
+the most recently enclosed macro or function."
+  (interactive)
+  (let ((pos (point)))
+    (unless (get-text-property (line-beginning-position) 'lush-repl-prompt)
+      (lisp-indent-line))
+    (when (= pos (point))
+      (cond ((save-excursion (re-search-backward "[^() \n\t\r]+\\=" nil t))
+             (pcomplete))))))
 
 ;; detection
 (setq auto-mode-alist (cons (cons "\\.sn$" 'lisp-mode) auto-mode-alist))
@@ -255,171 +278,35 @@
    "\\<:\\sw\\sw+\\>" 0 (internal-find-face 'default) t t)
 ) )
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; some Lush-related macros
-;; Author: Jan Kreps (krepsj(at)seznam.cz)
-;; Keywords: lush
-
-;;; Hopefully, this will evolve into a minor mode. 
-;;; you can type M-x lush-new-method or set your own key
-;;; binding for it.
-
-;;; Code: Functions for inserting method declarations with comments at
-;;; once.
-
-;;; TODO: Function for commenting or uncommenting regions of code with
-;;; one keystroke according to the context. 
-;;;
-;;; Maybe rename all "internal" functions and add "lush-" prefix to
-;;; them.
-;;;
-;;; Add some nifty menu.
-;;;
-;;; Automagically switch between lisp mode and C mode
-;;; according to the currently edited content
-
-;; -----------------------------------------------------------------------
-;; Functions and variables for filling method prototype according to
-;; the last declared class name.  Basically it searches backward for
-;; string contained in variable class-identifier. After finding it we
-;; save first next word as a lush-class-name. Then it is used for
-;; constructing comment string and prototype. Comments can be turned
-;; off by setting lush-comments-on variable to nil.
-
-
-(defvar lush-class-identifier "defclass"
-  "String that identifies begin of class declaration. Default value is
-'defclass. Overwriting this variable is neither expected nor
-necessary, but is stil possible. ")
-
-(defvar lush-method-identifier "defmethod"
-  "Identifies begining of method declaration. Default value is
-'defmethod. As with 'lush-class-identifier, changes of it's value are
-not expected.")
-
-(defvar lush-class-name "lush-class-name"
-  "Variable for saving found class name. Default value is
-'lush-class-name. Used by several functions.")
-
-(defvar lush-method-name "lush-method-name"
-  "Variable for saving entered method name. Default value is
-'lush-method-name -- should be overwriten.")
-
-(defvar lush-method-params ()
-  "Variable holds list of parameters for current method. Default is
-empty list.")
-
-(defvar lush-comments-on t
-  "Variable determining whether new method/functions will be commented or
-not. Default value is 't.")
-
-
-(defun next-word ()
-  "Returns next word after current position. This position could be
-find using search functions. Purpose is to get word following the
-searched one. Words with hyphens and underscores are accepted (eg. not
-splitted) as they can be valid function names. "
-  (let (substring 		
-	start			
-	end
-	)
+;; Compare to comint-redirect-results-list - less processing required
+;; if this is all that is needed.  A regexp of (.*) running on output
+;; like: ("abe" "bat" "cat" "dat"...) will have a stack overflow with
+;; significantly large output.
+(defun lush-results-from-process (process command &optional beg-string end-string)
+  "Send COMMAND to PROCESS.
+Return the result of COMMAND starting with BEG-STRING and ending
+with END-STRING if non-nil.  If BEG-STRING is nil, the result
+string will start from (point) in the results buffer.  If
+END-STRING is nil, the result string will end at (point-max) in
+the results buffer."
+  (let ((output-buffer " *Comint Redirect Work Buffer*"))
     (save-excursion
-      (setq start (point))
-      (forward-word-dash)   	
-      (setq end (point))	
-      (setq substring (buffer-substring-no-properties start end))) 
-    substring) 				
-  )
-    
-
-(defun forward-word-dash ()
-   "Simmilar like ordinary 'forward-word but does not consider dashes
-and underscores as words separator."
-   (let (foo
-	 )
-     (forward-word 1)
-     (setq foo (char-to-string (following-char)))
-     (if (or (string= foo "-") (string= foo "_")) 
-	 (forward-word-dash) 
-       )                     
-     )
-   )
-
-
-(defun search-class-name ()
-  "Searches backward for class name. Found name is saved in
-lush-class-name variable and returned as function value as
-well. Complains if there is no preceeding defclass."
-  (save-excursion
-    (if ( not (search-backward lush-class-identifier () t)) 
-	(error "No previously declared class found")
-      (progn
-	(forward-word 1)		          
-	(skip-chars-forward " ")		  
-	(setq lush-class-name (next-word))	  
-	)
-      )
-    ;; return value purely for aesthetic reasons :-)
-    lush-class-name
-    )
-  )
-
-
-
-(defun insert-lush-method ()
-  "Begins new method declaration. First it searches backward for last
-defclass statement and finds name of this class. Then uses this name
-in declaration of actual method. Commenting of this prototype depends
-on variable lush-commnents-on. If true then first is inserted
-documentation string #? (==> lush-class-name lush-method-name). 
-Variable lush-method-name should be set prior this function is
-called."
-  (let ((args (split-string lush-method-params))
-	(comment "")
-	)
-     
-    (while (> (length args) 0)
-      (setq comment (concat comment " <" (pop args) ">"))
-      ) 
-    (if lush-comments-on
-	(progn
-	  (if (string= lush-class-name lush-method-name)  ; constructor? 	
-	      (insert "#? (new " lush-class-name  comment ")")   
-	    (insert "#? (==> " lush-class-name " "  lush-method-name  comment ")") 
-	    )
-	  (newline)
-	  (insert ";;")
-	  (newline)
-	  ) 
-      )
-    (insert "("lush-method-identifier " " lush-class-name " " lush-method-name " (" lush-method-params ")")
-    (newline)
-    )
-  )
-
-
-(defun lush-new-method ()
-  "Asks for method name and for its params. Then searches for last
-declared class, finds its name and puts new text in buffer in usual
-form:
-
-#?(==> classname methodname <foo> <bar>)
-;;
-\(defmethod classname methodname (foo bar)
-
-In case of constructor comment line will be:
-
-#? (new classname <foo> <bar>)
-
-Commenting can be turned off by setting variable 'lush-comments-on to
-nil.
-"
-  (interactive)
-
-  (setq lush-class-name (search-class-name))
-  (setq lush-method-name (read-string "Function name: ")) 
-  (setq lush-method-params (read-string "Parameters: "))  
-  (insert-lush-method)		      		      
-  )
-
+      (set-buffer (get-buffer-create output-buffer))
+      (erase-buffer)
+      (comint-redirect-send-command-to-process command
+					       output-buffer process nil t)
+      ;; Wait for the process to complete
+      (set-buffer (process-buffer process))
+      (while (null comint-redirect-completed)
+	(accept-process-output nil 1))
+      ;; Collect the output
+      (set-buffer output-buffer)
+      (goto-char (point-min))
+      ;; Skip past the command, if it was echoed
+      (and (looking-at command)
+	   (forward-line))
+      (let ((beg (if beg-string 
+                     (progn (search-forward beg-string nil t) (match-beginning 0)) 
+                   (point)))
+            (end (if end-string (search-forward end-string nil t) (point-max))))        
+        (buffer-substring-no-properties beg end)))))
