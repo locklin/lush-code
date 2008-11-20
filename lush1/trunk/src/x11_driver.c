@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.27 2006-03-29 15:15:21 leonb Exp $
+ * $Id: x11_driver.c,v 1.28 2008-11-20 20:57:35 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -236,10 +236,9 @@ x11_init(void)
 
   /* Get visual */
   xdef.screen = DefaultScreen(xdef.dpy);
-  if ( XMatchVisualInfo(xdef.dpy, xdef.screen, 32, TrueColor, &vinfo) || 
-       XMatchVisualInfo(xdef.dpy, xdef.screen, 24, TrueColor, &vinfo) ||
+  if ( XMatchVisualInfo(xdef.dpy, xdef.screen, 24, TrueColor, &vinfo) ||
        XMatchVisualInfo(xdef.dpy, xdef.screen, 16, TrueColor, &vinfo) ||
-       XMatchVisualInfo(xdef.dpy, xdef.screen, 15, TrueColor, &vinfo)   )
+       XMatchVisualInfo(xdef.dpy, xdef.screen, 15, TrueColor, &vinfo) )
     {
       xdef.visual = vinfo.visual;
       xdef.depth = vinfo.depth;
