@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.28 2008-11-20 20:57:35 leonb Exp $
+ * $Id: x11_driver.c,v 1.29 2008-11-20 21:58:07 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -73,8 +73,9 @@
 #include "header.h"
 #include "graphics.h"
 
-
-
+#ifdef class
+# undef class
+#endif
 
 /* ============================  X11DRIVER STRUCTURES */
 
@@ -226,7 +227,7 @@ x11_init(void)
   char *tempstr;
   int i;
   XColor xc;
-  XVisualInfo vinfo;
+  XVisualInfo vinfo, *vinfoptr;
 
   /* Open display */
   dpyname = search_display_name();
@@ -234,30 +235,40 @@ x11_init(void)
   ifn(xdef.dpy)
     error(NIL, "X11: Can't open display on", new_string(dpyname));
 
-  /* Get visual */
+  /* Check if default visual is good enough or look for a better one... */
   xdef.screen = DefaultScreen(xdef.dpy);
-  if ( XMatchVisualInfo(xdef.dpy, xdef.screen, 24, TrueColor, &vinfo) ||
-       XMatchVisualInfo(xdef.dpy, xdef.screen, 16, TrueColor, &vinfo) ||
-       XMatchVisualInfo(xdef.dpy, xdef.screen, 15, TrueColor, &vinfo) )
+  xdef.visual = DefaultVisual(xdef.dpy, xdef.screen);
+  xdef.depth = DisplayPlanes(xdef.dpy, xdef.screen);
+  xdef.red_mask = 0;
+  xdef.green_mask = 0;
+  xdef.blue_mask = 0;
+  xdef.cmap = DefaultColormap(xdef.dpy, xdef.screen);
+  xdef.cmapflag = 0;
+  vinfo.visualid = XVisualIDFromVisual(xdef.visual);
+  vinfoptr = XGetVisualInfo(xdef.dpy, VisualIDMask, &vinfo, &i);
+  if (vinfoptr)
     {
-      xdef.visual = vinfo.visual;
-      xdef.depth = vinfo.depth;
-      xdef.red_mask = vinfo.red_mask;
-      xdef.green_mask = vinfo.green_mask;
-      xdef.blue_mask = vinfo.blue_mask;
-      xdef.cmapflag = 1;
-      xdef.cmap =  XCreateColormap (xdef.dpy, DefaultRootWindow(xdef.dpy),
-                                    xdef.visual, AllocNone );
-    }
-  else
-    {
-      xdef.visual = DefaultVisual(xdef.dpy, xdef.screen);
-      xdef.depth = DisplayPlanes(xdef.dpy, xdef.screen);
-      xdef.red_mask = 0;
-      xdef.green_mask = 0;
-      xdef.blue_mask = 0;
-      xdef.cmap = DefaultColormap(xdef.dpy, xdef.screen);
-      xdef.cmapflag = 0;
+      vinfo = *vinfoptr;
+      XFree(vinfoptr);
+      if (vinfo.class == TrueColor || vinfo.class == DirectColor)
+        {
+          xdef.red_mask = vinfo.red_mask;
+          xdef.green_mask = vinfo.green_mask;
+          xdef.blue_mask = vinfo.blue_mask;
+        }
+      else if  (XMatchVisualInfo(xdef.dpy, xdef.screen, 24, TrueColor, &vinfo) ||
+                XMatchVisualInfo(xdef.dpy, xdef.screen, 16, TrueColor, &vinfo) ||
+                XMatchVisualInfo(xdef.dpy, xdef.screen, 15, TrueColor, &vinfo) )
+        {
+          xdef.visual = vinfo.visual;
+          xdef.depth = vinfo.depth;
+          xdef.red_mask = vinfo.red_mask;
+          xdef.green_mask = vinfo.green_mask;
+          xdef.blue_mask = vinfo.blue_mask;
+          xdef.cmapflag = 1;
+          xdef.cmap =  XCreateColormap (xdef.dpy, DefaultRootWindow(xdef.dpy),
+                                        xdef.visual, AllocNone );
+        }
     }
   
   /* Defaults */
