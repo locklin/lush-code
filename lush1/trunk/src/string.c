@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.41 2008-12-01 15:48:50 leonb Exp $
+ * $Id: string.c,v 1.42 2008-12-01 17:35:37 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1585,7 +1585,7 @@ regex_alternate(bounds *ans, bounds buf, int *rnum)
 
 
 static int
-regex_execute(char **regsptr, int *regslen, int nregs, int maxrec)
+regex_execute(char **regsptr, int *regslen, int nregs)
 {
   unsigned short c;
   unsigned short *buffail;
@@ -1640,33 +1640,36 @@ regex_execute(char **regsptr, int *regslen, int nregs, int maxrec)
     case RE_FAIL&0xf000:
       buffail = buf + c - RE_FAIL;
       datfail = dat;
-      if (!regex_execute(regsptr,regslen,nregs,maxrec-1)) {
-        if (maxrec <= 0)
-          return 0;
+      if (regex_execute(regsptr,regslen,nregs))
+        break;
 #ifdef DEBUG_REGEX
-	printf("fail\n");
+      printf("fail\n");
 #endif
-	buf = buffail;
-	dat = datfail;
-      }
+      buf = buffail;
+      dat = datfail;
       break;
-
+      
     case RE_START:
       c &= 0x00ff;
-      if (c<nregs)
-	regsptr[c] = dat;
+      if (c < nregs)
+        regsptr[nregs+c] = dat;
       break;
-
+      
     case RE_END:
       c &= 0x00ff;
-      if (c<nregs) {
-	if (dat)
-	  regslen[c] = dat-regsptr[c];
-	else if (regsptr[c])
-	  regslen[c] = strlen(regsptr[c]);
-	else
-	  regslen[c] = 0;
-      }
+      if (c >= nregs)
+        break;
+      if (regsptr[c] == dat || 
+          regsptr[nregs+c] == dat)
+        return 0; // infinite loop
+      regsptr[c] = regsptr[nregs+c];
+      regsptr[nregs+c] = 0;
+      if (dat)
+        regslen[c] = dat-regsptr[c];
+      else if (regsptr[nregs+c]) 
+        regslen[c] = strlen(regsptr[c]);
+      else
+        regslen[c] = 0;
       break;
     }
   }
@@ -1719,15 +1722,13 @@ regex_exec(short int *buffer, char *string,
 	   char **regptr, int *reglen, int nregs)
 {
   int c;
-  int l = strlen(string);
-  int maxrec = l;
-  for(c=0;buffer[c];c++)
-    maxrec += l;
+  for(c=0;c<2*nregs;c++)
+    regptr[c] = 0;
   for(c=0;c<nregs;c++)
     reglen[c] = 0;
   dat = datstart = string;
   buf = (unsigned short*) buffer;
-  return regex_execute(regptr,reglen,nregs,maxrec);
+  return regex_execute(regptr,reglen,nregs) > 0;
 }
 
 
@@ -1736,17 +1737,15 @@ regex_seek(short int *buffer, char *string, char *seekstart,
 	   char **regptr, int *reglen, int nregs, char **start, char **end)
 {
   int c; 
-  int l = strlen(string);
-  int maxrec = l;
-  for(c=0;buffer[c];c++)
-    maxrec += l;
   datstart = string;
   while (*seekstart) {
+    for(c=0;c<2*nregs;c++)
+      regptr[c] = 0;
     for(c=0;c<nregs;c++)
       reglen[c] = 0;
     dat = seekstart;
     buf = (unsigned short*) buffer;
-    if (regex_execute(regptr,reglen,nregs,maxrec)) {
+    if (regex_execute(regptr,reglen,nregs) > 0) {
       *start = seekstart;
       *end = dat;
       return 1;
@@ -1781,6 +1780,9 @@ DX(xregex_match)
 {
   char *pat, *dat;
   short buffer[1024];
+  char **regptr;
+  int *reglen;
+  int regnum = 0;
 
   ARG_NUMBER(2);
   ALL_ARGS_EVAL;
@@ -1788,11 +1790,15 @@ DX(xregex_match)
   pat = ASTRING(1);
   dat = ASTRING(2);
 
-  pat = regex_compile(pat,buffer,buffer+1024,1,NULL);
+  pat = regex_compile(pat,buffer,buffer+1024,1,&regnum);
   if (pat)
     error(NIL,pat,APOINTER(1));
+  regptr = malloc(2*regnum*sizeof(char*));
+  reglen = malloc(regnum*sizeof(int));
+  if (!regptr || !reglen)
+    error(NIL,"out of memory",NIL);
 
-  if (regex_exec(buffer,dat,NULL,NULL,0))
+  if (regex_exec(buffer,dat,regptr,reglen,regnum))
     return true();  
   else
     return NIL;
@@ -1817,9 +1823,8 @@ DX(xregex_extract)
   pat = regex_compile(pat,buffer,buffer+1024,1,&regnum);
   if (pat)
     error(NIL,pat,APOINTER(1));
-
-  regptr = malloc((regnum+1)*sizeof(char*));
-  reglen = malloc((regnum+1)*sizeof(int));
+  regptr = malloc(2*regnum*sizeof(char*));
+  reglen = malloc(regnum*sizeof(int));
   if (!regptr || !reglen)
     error(NIL,"out of memory",NIL);
 
@@ -1848,6 +1853,9 @@ DX(xregex_seek)
   char *pat, *dat,*datstart, *start,*end;
   int n;
   short buffer[1024];
+  char **regptr;
+  int *reglen;
+  int regnum = 0;
 
   ALL_ARGS_EVAL;
   if (arg_number==3)
@@ -1861,11 +1869,15 @@ DX(xregex_seek)
   while (--n>0 && *dat)
     dat++;
 
-  pat = regex_compile(pat,buffer,buffer+1024,0,NULL);
+  pat = regex_compile(pat,buffer,buffer+1024,0,&regnum);
   if (pat)
     error(NIL,pat,APOINTER(1));
+  regptr = malloc(2*regnum*sizeof(char*));
+  reglen = malloc(regnum*sizeof(int));
+  if (!regptr || !reglen)
+    error(NIL,"out of memory",NIL);
   
-  if (regex_seek(buffer,datstart,dat,NULL,NULL,0,&start,&end)) {
+  if (regex_seek(buffer,datstart,dat,regptr,reglen,regnum,&start,&end)) {
     dat = ASTRING(2);
     return cons(NEW_NUMBER(1+start-dat),
 		cons(NEW_NUMBER(end-start),
@@ -1880,8 +1892,9 @@ DX(xregex_subst)
 {
   char *pat, *dat, *datstart, *str; 
   short buffer[1024];
-  char *regptr[10];
-  int  reglen[10];
+  char **regptr;
+  int *reglen;
+  int regnum = 0;
   char *start, *end, *s1;
   struct large_string ls;
 
@@ -1893,13 +1906,17 @@ DX(xregex_subst)
   str = ASTRING(2);
   dat = datstart = ASTRING(3);
 
-  pat = regex_compile(pat,buffer,buffer+1024,0,NULL);
+  pat = regex_compile(pat,buffer,buffer+1024,0,&regnum);
   if (pat)
     error(NIL,pat,APOINTER(1));
+  regptr = malloc(2*regnum*sizeof(char*));
+  reglen = malloc(regnum*sizeof(int));
+  if (!regptr || !reglen)
+    error(NIL,"out of memory",NIL);
   
   large_string_init(&ls);
   do {
-    if (! regex_seek(buffer,datstart,dat,regptr,reglen,10,&start,&end))
+    if (! regex_seek(buffer,datstart,dat,regptr,reglen,regnum,&start,&end))
       start = end = dat + strlen(dat);
     if (end <= dat)
       start = end = dat + 1;
@@ -1919,9 +1936,10 @@ DX(xregex_subst)
                 large_string_add(&ls, s1++, 1);
               } else {
                 int reg = *s1++ - '0';
-                if (reg<0 || reg>9)
+                if (reg<0 || reg>9 || reg>=regnum)
                   error(NIL,"bad register number",APOINTER(3));
-                large_string_add(&ls, regptr[reg], reglen[reg]);
+                if (reglen[reg]>0)
+                  large_string_add(&ls, regptr[reg], reglen[reg]);
               }
             } 
           else 
