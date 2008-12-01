@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.44 2008-12-01 20:01:42 leonb Exp $
+ * $Id: string.c,v 1.45 2008-12-01 20:16:31 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1671,13 +1671,7 @@ regex_execute(char **regsptr, int *regslen, int nregs)
       if (c >= nregs)
         break;
       regsptr[c] = regsptr[nregs+c];
-      regsptr[nregs+c] = 0;
-      if (dat)
-        regslen[c] = dat-regsptr[c];
-      else if (regsptr[nregs+c]) 
-        regslen[c] = strlen(regsptr[c]);
-      else
-        regslen[c] = 0;
+      regslen[c] = dat-regsptr[c];
       break;
     }
   }
@@ -1813,8 +1807,8 @@ DX(xregex_extract)
   unsigned short buffer[1024];
   at *ans=NIL;
   at **where = &ans;
-  char **regptr;
-  int *reglen;
+  char **regptr = 0;
+  int *reglen = 0;
   int regnum = 0;
   int i;
 
@@ -1825,11 +1819,13 @@ DX(xregex_extract)
   pat = regex_compile(pat,buffer,buffer+1024,1,&regnum);
   if (pat)
     error(NIL,pat,APOINTER(1));
-  regptr = malloc(2*regnum*sizeof(char*));
-  reglen = malloc(regnum*sizeof(int));
-  if (!regptr || !reglen)
-    error(NIL,"out of memory",NIL);
-
+  if (regnum > 0)
+    {
+      regptr = malloc(2*regnum*sizeof(char*));
+      reglen = malloc(regnum*sizeof(int));
+      if (!regptr || !reglen)
+        error(NIL,"out of memory",NIL);
+    }
   if (regex_exec(buffer,dat,regptr,reglen,regnum))
     {
       for (i=0; i<regnum; i++) 
@@ -1842,8 +1838,10 @@ DX(xregex_extract)
       if (!ans)
 	*where = new_cons(APOINTER(2),NIL);
     }
-  free(regptr);
-  free(reglen);
+  if (regptr)
+    free(regptr);
+  if (regnum)
+    free(reglen);
   return ans;
 }
 
