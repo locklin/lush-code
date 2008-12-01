@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.24 2007-04-02 21:58:49 leonb Exp $
+ * $Id: io.c,v 1.25 2008-12-01 20:25:32 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1384,8 +1384,8 @@ convert(register char *s, register at *list, register char *end)
       
       mode = 0;
       if (list->flags & X_SYMBOL) {
-	for (m = n; *m; m++)
-	  if (!isascii((unsigned char)*m) || 
+        for (m = n; *m; m++)
+          if (!isascii((unsigned char)*m) || 
               iscntrl((unsigned char)*m) ||
               isupper((unsigned char)*m) ||
               (m>n && *m=='_') ||
@@ -1394,7 +1394,9 @@ convert(register char *s, register at *list, register char *end)
               mode = 1;
               break;
             }
-	if(!*n)
+        if (!mode && (q = str_val(n)))
+          mode = 1;
+        if (!mode && !*n)
 	  mode = 1;
       }
       if (mode)
@@ -1411,6 +1413,7 @@ convert(register char *s, register at *list, register char *end)
       return s;
     }
  exit_convert:
+  UNLOCK(q);
   *s = 0;
   strcpy(s, " ... ");
   return 0L;
