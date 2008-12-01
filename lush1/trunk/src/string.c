@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.40 2007-08-03 15:42:30 leonb Exp $
+ * $Id: string.c,v 1.41 2008-12-01 15:48:50 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1585,7 +1585,7 @@ regex_alternate(bounds *ans, bounds buf, int *rnum)
 
 
 static int
-regex_execute(char **regsptr, int *regslen, int nregs)
+regex_execute(char **regsptr, int *regslen, int nregs, int maxrec)
 {
   unsigned short c;
   unsigned short *buffail;
@@ -1640,7 +1640,9 @@ regex_execute(char **regsptr, int *regslen, int nregs)
     case RE_FAIL&0xf000:
       buffail = buf + c - RE_FAIL;
       datfail = dat;
-      if (!regex_execute(regsptr,regslen,nregs)) {
+      if (!regex_execute(regsptr,regslen,nregs,maxrec-1)) {
+        if (maxrec <= 0)
+          return 0;
 #ifdef DEBUG_REGEX
 	printf("fail\n");
 #endif
@@ -1717,12 +1719,15 @@ regex_exec(short int *buffer, char *string,
 	   char **regptr, int *reglen, int nregs)
 {
   int c;
-  
+  int l = strlen(string);
+  int maxrec = l;
+  for(c=0;buffer[c];c++)
+    maxrec += l;
   for(c=0;c<nregs;c++)
     reglen[c] = 0;
   dat = datstart = string;
   buf = (unsigned short*) buffer;
-  return regex_execute(regptr,reglen,nregs);
+  return regex_execute(regptr,reglen,nregs,maxrec);
 }
 
 
@@ -1730,15 +1735,18 @@ int
 regex_seek(short int *buffer, char *string, char *seekstart, 
 	   char **regptr, int *reglen, int nregs, char **start, char **end)
 {
-  int c;
-  
+  int c; 
+  int l = strlen(string);
+  int maxrec = l;
+  for(c=0;buffer[c];c++)
+    maxrec += l;
   datstart = string;
   while (*seekstart) {
     for(c=0;c<nregs;c++)
       reglen[c] = 0;
     dat = seekstart;
     buf = (unsigned short*) buffer;
-    if (regex_execute(regptr,reglen,nregs)) {
+    if (regex_execute(regptr,reglen,nregs,maxrec)) {
       *start = seekstart;
       *end = dat;
       return 1;
