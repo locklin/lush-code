@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.43 2008-12-01 19:47:26 leonb Exp $
+ * $Id: string.c,v 1.44 2008-12-01 20:01:42 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1588,8 +1588,8 @@ static int
 regex_execute(char **regsptr, int *regslen, int nregs)
 {
   unsigned short c;
-  unsigned char  *dfail[1000];
-  unsigned short *bfail[1000];
+  unsigned short *bfail[2000];
+  char  *dfail[2000];
   int sp = 0;
   while ((c = *buf++)) {
 #ifdef DEBUG_REGEX
@@ -1646,10 +1646,17 @@ regex_execute(char **regsptr, int *regslen, int nregs)
       break;
       
     case RE_FAIL&0xf000:
-      if (sp >= sizeof(dfail)/sizeof(char*))
-        goto fail; /* stack full */
-      bfail[sp] = buf + c - RE_FAIL;
       dfail[sp] = dat;
+      bfail[sp] = buf + c - RE_FAIL;
+      if (sp >= sizeof(dfail)/sizeof(char*))
+        {
+          int i,j;
+          for (i=0; i<sp; i++)
+            for (j=i+1; j<=sp; j++)
+              if (dfail[i] == dfail[j] && bfail[i] == bfail[j] )
+                goto fail;         /* infinite recursion */
+          error(NIL,"regular expression is too complex", NIL);
+        }
       sp += 1;
       break;
       
@@ -1782,7 +1789,7 @@ regex_seek(unsigned short *buffer, char *string, char *seekstart,
 DX(xregex_match)
 {
   char *pat, *dat;
-  short buffer[1024];
+  unsigned short buffer[1024];
 
   ARG_NUMBER(2);
   ALL_ARGS_EVAL;
@@ -1803,7 +1810,7 @@ DX(xregex_match)
 DX(xregex_extract)
 {
   char *pat, *dat;
-  short buffer[1024];
+  unsigned short buffer[1024];
   at *ans=NIL;
   at **where = &ans;
   char **regptr;
@@ -1847,7 +1854,7 @@ DX(xregex_seek)
 {
   char *pat, *dat,*datstart, *start,*end;
   int n;
-  short buffer[1024];
+  unsigned short buffer[1024];
 
   ALL_ARGS_EVAL;
   if (arg_number==3)
@@ -1877,7 +1884,7 @@ DX(xregex_seek)
 DX(xregex_subst)
 {
   char *pat, *dat, *datstart, *str; 
-  short buffer[1024];
+  unsigned short buffer[1024];
   char *regptr[20];
   int reglen[10];
   int regnum = 0;
