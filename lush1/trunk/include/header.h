@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.68 2007-04-02 21:58:48 leonb Exp $
+ * $Id: header.h,v 1.69 2008-12-01 19:53:27 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -537,11 +537,12 @@ TLAPI char *str_number(double x);
 TLAPI char *str_number_hex(double x);
 TLAPI char *str_gptr(gptr x);
 
-TLAPI char *regex_compile(char *pattern, short int *bufstart, short int *bufend,
+TLAPI char *regex_compile(char *pattern, 
+                          unsigned short *bufstart, unsigned short *bufend,
 			  int strict, int *rnum);
-TLAPI int regex_exec(short int *buffer, char *string, 
+TLAPI int regex_exec(unsigned short *buffer, char *string, 
 		     char **regptr, int *reglen, int nregs);
-TLAPI int regex_seek(short int *buffer, char *string, char *seekstart, 
+TLAPI int regex_seek(unsigned short *buffer, char *string, char *seekstart, 
 		     char **regptr, int *reglen, int nregs, 
 		     char **start, char **end);
 
