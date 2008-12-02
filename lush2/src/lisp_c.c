@@ -32,6 +32,9 @@
 #include "check_func.h"
 #include "dh.h"
 
+extern void get_write_permit(storage_t *); /* in storage.c */
+
+
 /* Flags */
 static bool dont_track_cside = false;
 static bool dont_warn_zombie = false;
@@ -856,8 +859,8 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
       storage_t *st = Mptr(at_obj);
       if (storage_to_dht[st->type] != (drec+1)->op)
 	lisp2c_error("STORAGE has illegal type",errctx,at_obj);
-      if ((st->flags & STF_RDONLY) && (drec->access == DHT_WRITE))
-	lisp2c_error("STORAGE is read only",errctx,at_obj);                
+      if (drec->access == DHT_WRITE)
+        get_write_permit(st);
       
       /* create object */
       avlnode_t *n = lside_create_srg(at_obj);
@@ -1236,8 +1239,6 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
 
 /* update_c_from_lisp -- copy lisp to c for a specific entry of the map */
 
-extern void get_write_permit(storage_t *);
-
 static void update_c_from_lisp(avlnode_t *n)
 {
   n->need_update = 0;
@@ -1250,8 +1251,8 @@ static void update_c_from_lisp(avlnode_t *n)
 
     /* Possibly broken code */        
     storage_t *st = Mptr(n->litem);
-    if (n->cmoreinfo)
-       get_write_permit(st);
+/*     if (n->cmoreinfo) */
+/*        get_write_permit(st); */
             
     /* Synchronize compiled object */
     struct srg *cptr = n->citem;

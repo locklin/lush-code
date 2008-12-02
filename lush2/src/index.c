@@ -1559,6 +1559,8 @@ void index_rls_idx(struct index *ind, struct idx *idx)
 }
 
 
+extern void get_write_permit(storage_t *);  /* in storage.c */
+
 /* copy array contents from ind1 to ind2, return ind2 */
 
 index_t *array_copy(index_t *ind1, index_t *ind2)
@@ -1566,9 +1568,11 @@ index_t *array_copy(index_t *ind1, index_t *ind2)
    if (index_nelems(ind1) != index_nelems(ind2))
       RAISEF("arrays have different number of elements",NIL);
   
+   get_write_permit(IND_ST(ind2));
+
    if (IND_STTYPE(ind1) != IND_STTYPE(ind2))
       goto default_copy;
-    
+   
    switch (IND_STTYPE(ind1)) {
       
 #define GenericCopy(Prefix,Type) 		  \
@@ -1625,6 +1629,9 @@ void array_swap(index_t *ind1, index_t *ind2)
    if (IND_STTYPE(ind1) != IND_STTYPE(ind2))
       RAISEF("arrays have different element-type", NIL);
     
+   get_write_permit(IND_ST(ind1));
+   get_write_permit(IND_ST(ind2));
+
    switch (IND_STTYPE(ind1)) {
     
 #define GenericSwap(Prefix,Type) 			     \
@@ -3352,6 +3359,7 @@ index_t *array_put(index_t *ind, index_t *ss, index_t *vals)
       goto clean_up_and_return2;
 
    /* copy selected array contents */
+   get_write_permit(IND_ST(ind));
    ifn (IND_MOD(ss, d) == 1)  // when not contiguous in last dimension, make it so
       ss = copy_array(ss);
    
