@@ -426,10 +426,8 @@ DX(xoblist)
 static const char *symbol_name(at *p)
 {
    const char *s = NAMEOF(p);
-   if (s)
-      return s;
-   else
-      return Class(p)->name(p);
+   assert(s);
+   return s;
 }
 
 
