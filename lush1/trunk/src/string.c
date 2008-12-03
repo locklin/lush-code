@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.45 2008-12-01 20:16:31 leonb Exp $
+ * $Id: string.c,v 1.46 2008-12-03 01:03:38 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -1588,9 +1588,17 @@ static int
 regex_execute(char **regsptr, int *regslen, int nregs)
 {
   unsigned short c;
-  unsigned short *bfail[2000];
-  char  *dfail[2000];
+  unsigned short **bfail;
+  char **dfail;
   int sp = 0;
+  int spmax = 2000;
+
+  // allocate stack
+  bfail = malloc(sizeof(short*)*spmax);
+  dfail = malloc(sizeof(char*)*spmax);
+  if (! bfail || !dfail)
+    error(NIL,"Out of memory",NIL);
+  
   while ((c = *buf++)) {
 #ifdef DEBUG_REGEX
     printf("%04x (%02x)\n",(int)(c)&0xffff,(dat?*dat:0)); 
@@ -1599,7 +1607,11 @@ regex_execute(char **regsptr, int *regslen, int nregs)
 
     fail:
       if (--sp < 0)
-        return 0;
+        {
+          free(bfail);
+          free(dfail);
+          return 0;
+        }
       buf = bfail[sp];
       dat = dfail[sp];
       break;
@@ -1646,17 +1658,17 @@ regex_execute(char **regsptr, int *regslen, int nregs)
       break;
       
     case RE_FAIL&0xf000:
+      if (sp >= spmax) { /* grow stack */
+        spmax += spmax;
+        bfail = realloc(bfail, sizeof(short*)*spmax);
+        dfail = realloc(dfail, sizeof(char*)*spmax);
+        if (! bfail || !dfail)
+          error(NIL,"Out of memory",NIL);
+      }
       dfail[sp] = dat;
       bfail[sp] = buf + c - RE_FAIL;
-      if (sp >= sizeof(dfail)/sizeof(char*))
-        {
-          int i,j;
-          for (i=0; i<sp; i++)
-            for (j=i+1; j<=sp; j++)
-              if (dfail[i] == dfail[j] && bfail[i] == bfail[j] )
-                goto fail;         /* infinite recursion */
-          error(NIL,"regular expression is too complex", NIL);
-        }
+      if (sp>0 && dfail[sp]==dfail[sp>>1] && bfail[sp] == bfail[sp>>1])
+        goto fail; /* infinite recursion. should we call error instead? */
       sp += 1;
       break;
       
@@ -1675,7 +1687,9 @@ regex_execute(char **regsptr, int *regslen, int nregs)
       break;
     }
   }
-  buf--;
+  buf -= 1;
+  free(bfail);
+  free(dfail);
   return 1;
 }
 
