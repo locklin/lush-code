@@ -288,9 +288,15 @@ static void regex_alternate(bounds *ans, bounds buf, int *rnum)
 static int regex_execute(const char **regsptr, int *regslen, int nregs)
 {
    unsigned short c;
-   unsigned short *bfail[2000];
-   const char  *dfail[2000];
    int sp = 0;
+   int spmax = 2000;
+
+   /* allocate stack */
+   unsigned short **bfail = mm_malloc(sizeof(short *)*spmax);
+   const char **dfail = mm_malloc(sizeof(char *)*spmax);
+   if (!bfail || !dfail)
+      error(NIL, "out of memory", NIL);
+   
    while ((c = *buf++)) {
 #ifdef DEBUG_REGEX
       printf("%04x (%02x)\n",(int)(c)&0xffff,(dat?*dat:0)); 
@@ -346,15 +352,15 @@ static int regex_execute(const char **regsptr, int *regslen, int nregs)
          break;
       
       case RE_FAIL&0xf000:
+         if (sp >= spmax) { /* enlarge stack */
+            spmax += spmax;
+            bfail = mm_realloc(bfail, sizeof(short *)*spmax);
+            dfail = mm_realloc(dfail, sizeof(char *)*spmax);
+            if (!bfail || !dfail)
+               error(NIL,"out of memory",NIL);
+         }
          dfail[sp] = dat;
          bfail[sp] = buf + c - RE_FAIL;
-         if (sp >= sizeof(dfail)/sizeof(char*)) {
-            for (int i=0; i<sp; i++)
-               for (int j=i+1; j<=sp; j++)
-                  if (dfail[i] == dfail[j] && bfail[i] == bfail[j] )
-                     goto fail;         /* infinite recursion */
-            error(NIL,"regular expression is too complex", NIL);
-         }
          sp += 1;
          break;
  
