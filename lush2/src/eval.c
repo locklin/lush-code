@@ -99,16 +99,23 @@ at *eval_std(at *p)
 
 DX(xeval)
 {
-   if (arg_number < 1)
-      RAISEFX("no arguments", NIL);
-   
-   for (int i = 1; i < arg_number; i++) {
-      ARG_EVAL(i);
-      eval(APOINTER(i));
-   }
-   ARG_EVAL(arg_number);
-   return eval(APOINTER(arg_number));
+   ARG_NUMBER(1);
+   ARG_EVAL(1);
+   return eval(APOINTER(1));
 }
+
+/* DX(xeval) */
+/* { */
+/*    if (arg_number < 1) */
+/*       RAISEFX("no arguments", NIL); */
+   
+/*    for (int i = 1; i < arg_number; i++) { */
+/*       ARG_EVAL(i); */
+/*       eval(APOINTER(i)); */
+/*    } */
+/*    ARG_EVAL(arg_number); */
+/*    return eval(APOINTER(arg_number)); */
+/* } */
 
 
 /* eval_nothing
@@ -515,11 +522,11 @@ DY(yletS)
  * (quote a1) returns a1 without evaluation
  */
 
-DX(xquote)
+DY(yquote)
 {
-   ARG_NUMBER(1);
-   at *q = APOINTER(1);
-   return q;
+   ifn (CONSP(ARG_LIST) && (LASTCONSP(ARG_LIST)))
+      RAISEFX("one argument expected", NIL);
+   return Car(ARG_LIST);
 }
 
 
@@ -571,7 +578,7 @@ void init_eval(void)
    dy_define("let", ylet);
    dy_define("lete", ylete);
    dy_define("let*", yletS);
-   dx_define("quote", xquote);
+   dy_define("quote", yquote);
    dy_define("debug", ydebug);
    dy_define("nodebug", ynodebug);
    

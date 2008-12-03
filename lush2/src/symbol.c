@@ -490,7 +490,7 @@ DY(ysetq)
          RAISEF("even number of arguments expected", NIL);
       at *q = Car(p);
       p = Cdr(p);
-      res = setq(q, eval(Car(p)));
+      res = setq(q, argeval_ptr(Car(p)));
       p = Cdr(p);
    }
    return res;
