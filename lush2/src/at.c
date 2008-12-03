@@ -166,7 +166,7 @@ DX(xconsp)
 }
 
 
-DX(xatomp)
+DX(xatom)
 {
    ARG_NUMBER(1);
    ARG_EVAL(1);
@@ -529,7 +529,7 @@ void init_at(void)
 
    dx_define("cons", xcons);
    dx_define("consp", xconsp);
-   dx_define("atomp", xatomp);
+   dx_define("atom", xatom);
    dx_define("numberp", xnumberp);
    dx_define("null", xnull);
    dx_define("new-unode", xnew_unode);
