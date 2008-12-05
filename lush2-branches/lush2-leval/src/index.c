@@ -226,7 +226,7 @@ static at *index_listeval(at *p, at *q)
     */
 
    int d = IND_NDIMS(ind);
-   at *qsav = eval_a_list(Cdr(q));
+   at *qsav = eval_arglist(Cdr(q));
    at *args[MAXDIMS+1];
    size_t n;
 
@@ -3110,7 +3110,7 @@ DY(yidx_selectS)
    ifn (CONSP(p))
       RAISEF("at least one argument expected", NIL);
    
-   p = eval_a_list(p);
+   p = eval_arglist(p);
    ifn (INDEXP(Car(p)))
       RAISEF("not an array", Car(ARG_LIST));
 

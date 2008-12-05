@@ -93,7 +93,7 @@ at *make_string(const char *s)
 
 static at *string_listeval (at *p, at *q)
 {
-   at *qi = eval_a_list(Cdr(q));
+   at *qi = eval_arglist(Cdr(q));
    ifn (LASTCONSP(qi))
       error(NIL, "one argument expected", NIL);
    ifn (NUMBERP(Car(qi)))

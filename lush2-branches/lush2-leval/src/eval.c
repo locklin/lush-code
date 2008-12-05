@@ -224,7 +224,7 @@ DY(yapply)
    
    at *q;
    if (Cddr(p)) {
-      at *args = eval_a_list(Cdr(p));
+      at *args = eval_arglist(Cdr(p));
       at *l1 = nfirst(length(args)-1, args);
       at *l2 = lasta(args);
       q = append(l1, l2);
@@ -379,7 +379,7 @@ at *mapcan(at *f, at *lists)
     RAISEF("arguments missing", NIL);           \
                                                 \
   at *fn = eval(Car(ARG_LIST));                 \
-  at *lists = eval_a_list(Cdr(ARG_LIST));       \
+  at *lists = eval_arglist(Cdr(ARG_LIST));      \
   if (lists==NIL)                               \
     RAISEF("list argument(s) missing", NIL);    \
                                                 \

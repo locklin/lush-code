@@ -343,7 +343,7 @@ static at *storage_listeval(at *p, at *q)
    if (!st->data)
       error(NIL, "unsized storage", p);
 
-   q = eval_a_list(Cdr(q));
+   q = eval_arglist(Cdr(q));
    ifn (CONSP(q) && Car(q) && NUMBERP(Car(q)))
       error(NIL, "illegal subscript", q);
 

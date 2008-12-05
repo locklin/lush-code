@@ -759,7 +759,7 @@ static at *call_method(at *obj, struct hashelem *hx, at *args)
    
    if (Class(fun) == &de_class) {
       // DE
-      at *p = eval_a_list(args);
+      at *p = eval_arglist(args);
       return with_object(obj, fun, p, hx->sofar);
 
    } else if (Class(fun) == &df_class) {

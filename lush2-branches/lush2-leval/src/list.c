@@ -26,14 +26,16 @@
 #include "header.h"
 #include "mm.h"
 
-/*
- * (list a1 a2 a3 a4 ) returns the list of the evaluated aN this is a simple
- * call to the routine EVAL_A_LIST defined in FUNCTION.C
- */
 
-DY(ylist) 
+DX(xlist)
 {
-   return eval_a_list(ARG_LIST);
+   ALL_ARGS_EVAL;
+   at *l = NIL;
+
+   while (arg_number)
+      l = new_cons(APOINTER(arg_number--), l);
+
+   return l;
 }
 
 
@@ -588,7 +590,7 @@ void init_list(void)
    dx_define("rplaca", xrplaca);
    dx_define("rplacd", xrplacd);
    dx_define("displace", xdisplace);
-   dy_define("list", ylist);
+   dx_define("list", xlist);
    dx_define("make-list", xmake_list);
    dx_define("listp", xlistp);
    dx_define("copy-tree", xcopy_tree);

@@ -193,7 +193,7 @@ static void  parse_optional_stuff(at *formal_list, at *real_list) {
 }
 
 
-at *eval_a_list(at *p)
+at *eval_arglist(at *p)
 {
    MM_ENTER;
 
@@ -212,47 +212,57 @@ at *eval_a_list(at *p)
    MM_RETURN(p);
 }
 
-
-/* DX class -------------------------------------------	 */
-
 at *dx_stack[DXSTACKSIZE];
 at **dx_sp = dx_stack;
 
+/* version for DXs and DHs, return old dx stack pointer */
+at **eval_arglist_dx(at *q)
+{
+   //at **spbuff = dx_sp;
+   at **arg_pos = dx_sp;
+
+   at *q2 = q;
+   while (CONSP(q)) {
+      if (++dx_sp >= dx_stack + DXSTACKSIZE)
+         error(NIL, "sorry, stack full (Merci Yann)", NIL);
+      *dx_sp = argeval_ptr(Car(q));
+      q = Cdr(q);
+   }
+   if (q)
+      q = eval(q);
+
+   while (CONSP(q)) {
+      if (++dx_sp >= dx_stack + DXSTACKSIZE)
+         error(NIL, "sorry, stack full (Merci Yann)", NIL);
+      *dx_sp = Car(q);
+      q = Cdr(q);
+   }
+   if (q)
+      RAISEF("bad argument list", q2);
+   
+   return arg_pos;
+}
+
+/* reset DX stack, used after error */
 void reset_dx_stack(void)
 {
    dx_sp = dx_stack;
    return;
 }
 
-at *dx_listeval(at *p, at *q2)
+
+/* DX class -------------------------------------------	 */
+
+at *dx_listeval(at *p, at *q)
 {
    MM_ENTER;
 
    cfunction_t *f = Mptr(p);
    if (CONSP(f->name))
       check_primitive(f->name, f->info);
-   
-   at **spbuff = dx_sp;
-   at **arg_pos = dx_sp;
 
-   int arg_num = 0;
-   at *q = Cdr(q2);
-parse_args:
-   while (CONSP(q)) {
-      arg_num++;
-      if (++spbuff >= dx_stack + DXSTACKSIZE)
-         error(NIL, "sorry, stack full (Merci Yann)", NIL);
-      *spbuff = Car(q);
-      q = Cdr(q);
-   }
-   if (SYMBOLP(q)) {
-      q = symbol_class.selfeval(q);
-      if (CONSP(q)) goto parse_args;
-   }
-   if (q)
-      RAISEF("bad argument list", q2);
-
-   dx_sp = spbuff;
+   at **arg_pos = eval_arglist_dx(Cdr(q));
+   int arg_num = (int)(dx_sp - arg_pos);
    at *ans = DXCALL(f)(arg_num, arg_pos);
    dx_sp = arg_pos;
 
@@ -329,7 +339,7 @@ at *de_listeval(at *p, at *q)
    MM_ENTER;
 
    lfunction_t *f = Mptr(p);
-   q = eval_a_list(Cdr(q));
+   q = eval_arglist(Cdr(q));
    push_args(f->formal_args, q);
    at *ans = progn(f->body);
    pop_args(f->formal_args);
