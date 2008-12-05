@@ -1235,6 +1235,8 @@ static char *convert(char *s, at *list, char *end)
             }
          if(!*n)
             mode = 1;
+         if (!mode && str_val(n))
+            mode = 1;
       }
       if (mode)
          *s++ = '|';

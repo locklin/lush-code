@@ -197,7 +197,7 @@ DX(xdisplace)
 }
 
 
-at *deepcopy_list(at *p)
+at *copy_tree(at *p)
 {
    MM_ENTER;
    
@@ -217,12 +217,12 @@ at *deepcopy_list(at *p)
          if (move_p0)
             p0 = Cdr(p0);
       }
-      *qp = deepcopy_list(p);
+      *qp = copy_tree(p);
 
       /* descend */
       p = q;
       while (CONSP(p)) {
-         AssignCar(p, deepcopy_list(Car(p)));
+         AssignCar(p, copy_tree(Car(p)));
          p = Cdr(p);
       }
       MM_RETURN(q);
@@ -231,11 +231,11 @@ at *deepcopy_list(at *p)
        MM_RETURN(p);
 }
 
-DX(xdeepcopy_list) 
+DX(xcopy_tree) 
 {
    ARG_NUMBER(1);
    ALL_ARGS_EVAL;
-   return deepcopy_list(APOINTER(1));
+   return copy_tree(APOINTER(1));
 }
 
 
@@ -591,7 +591,7 @@ void init_list(void)
    dy_define("list", ylist);
    dx_define("make-list", xmake_list);
    dx_define("listp", xlistp);
-   dx_define("deepcopy-list", xdeepcopy_list);
+   dx_define("copy-tree", xcopy_tree);
    dx_define("length", xlength);
    dx_define("lasta", xlasta);
    dx_define("lastcdr", xlastcdr);

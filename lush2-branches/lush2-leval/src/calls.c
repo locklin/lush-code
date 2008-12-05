@@ -292,30 +292,28 @@ DX(xrange_star)
  */
 
 
-DX(xand)
+DY(yand)
 {
-   if (arg_number==0)
-      return t();
-
-   at *p = NIL;
-   for (int i = 1; i <= arg_number; i++) {
-      ARG_EVAL(i);
-      ifn ((p = APOINTER(i)))
-         return NIL;
+   at *res = t();
+   at *p = ARG_LIST;
+   while (CONSP(p)) {
+      ifn ((res = argeval_ptr(Car(p))))
+         break;
+      p = Cdr(p);
    }
-   return p;
+   return res;
 }
 
-DX(xor)
+DY(yor)
 {
-   at *p = NIL;
-   for (int i = 1; i <= arg_number; i++) {
-      ARG_EVAL(i);
-      if ((p = APOINTER(i))) {
-         return p;
-      }
+   at *res = NIL;
+   at *p = ARG_LIST;
+   while (CONSP(p)) {
+      if ((res = argeval_ptr(Car(p))))
+         break;
+      p = Cdr(p);
    }
-   return NIL;
+   return res;
 }
 
 
@@ -637,8 +635,6 @@ void init_calls(void)
    dx_define("atgptr", xatgptr);
    dx_define("range", xrange);
    dx_define("range*", xrange_star);
-   dx_define("and", xand);
-   dx_define("or", xor);
    dx_define("==", xeqptr);
    dx_define("=", xeq);
    dx_define("<>", xne);
@@ -648,6 +644,9 @@ void init_calls(void)
    dx_define(">=", xge);
    dx_define("<", xlt);
    dx_define("<=", xle);
+
+   dy_define("and", yand);
+   dy_define("or", yor);
    dy_define("if", yif);
    dy_define("when", ywhen);
    dy_define("cond", ycond);

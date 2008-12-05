@@ -55,7 +55,7 @@ struct hash_name **names = NULL;
  *    not be reclaimed by purge_names.
  * 
  * 6. Safely removing unused hash_names is a bit tricky and
- *    requires doing a synchronous GC. It is implemented 
+ *    requires doing a synchronous GC. It is implemented in
  *    function purge_names.
  */
 
@@ -426,10 +426,8 @@ DX(xoblist)
 static const char *symbol_name(at *p)
 {
    const char *s = NAMEOF(p);
-   if (s)
-      return s;
-   else
-      return Class(p)->name(p);
+   assert(s);
+   return s;
 }
 
 
@@ -483,16 +481,19 @@ at *setq(at *p, at *q)
    return q;
 }
 
-DX(xsetq)
+DY(ysetq)
 {
-   if ((arg_number & 1) || (arg_number < 2))
-      RAISEF("even number of arguments expected", NIL);
-   at *q = NIL;
-   for (int i = 2; i <= arg_number; i += 2) {
-      ARG_EVAL(i);
-      q = setq(APOINTER(i-1), APOINTER(i));
+   at *p = ARG_LIST;
+   at *res = NIL;
+   while (CONSP(p)) {
+      if (LASTCONSP(p))
+         RAISEF("even number of arguments expected", NIL);
+      at *q = Car(p);
+      p = Cdr(p);
+      res = setq(q, argeval_ptr(Car(p)));
+      p = Cdr(p);
    }
-   return q;
+   return res;
 }
 
 /* reset symbols to global binding (used by error routine) */
@@ -778,7 +779,7 @@ void init_symbol(void)
    dx_define("symblist", xsymblist);
    dx_define("oblist", xoblist);
    dx_define("set", xset);
-   dx_define("setq", xsetq);
+   dy_define("setq", ysetq);
    dy_define("scope",yscope);
    dx_define("lock-symbol", xlock_symbol);
    dx_define("unlock-symbol", xunlock_symbol);

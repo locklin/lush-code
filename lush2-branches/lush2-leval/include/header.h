@@ -505,11 +505,12 @@ LUSHAPI at *str_val(const char *s);
 LUSHAPI const char *str_number(double x);
 LUSHAPI const char *str_number_hex(double x);
 
-LUSHAPI const char *regex_compile(const char *pattern, short int *bufstart, short int *bufend,
-			  int strict, int *rnum);
-LUSHAPI int regex_exec(short int *buffer, const char *string, 
+LUSHAPI const char *regex_compile(const char *pattern, 
+                                  unsigned short *bufstart, unsigned short *bufend,
+                                  int strict, int *rnum);
+LUSHAPI int regex_exec(unsigned short *buffer, const char *string, 
 		     const char **regptr, int *reglen, int nregs);
-LUSHAPI int regex_seek(short int *buffer, const char *string, const char *seekstart, 
+LUSHAPI int regex_seek(unsigned short *buffer, const char *string, const char *seekstart, 
 		     const char **regptr, int *reglen, int nregs, 
 		     const char **start, const char **end);
 
