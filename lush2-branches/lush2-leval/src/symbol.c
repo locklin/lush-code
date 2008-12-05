@@ -572,20 +572,25 @@ DY(yscope)
 }
 
 
-DX(xlock_symbol)
+DY(ylock_symbol)
 {
-   for (int i = 1; i <= arg_number; i++) {
-      LOCK_SYMBOL(ASYMBOL(i));
+   at *p = ARG_LIST;
+   while (CONSP(p)) {
+      LOCK_SYMBOL(Symbol(Car(p)));
+      p = Cdr(p);
    }
    return NIL;
 }
 
-DX(xunlock_symbol)
+DY(yunlock_symbol)
 {
-   for (int i = 1; i <= arg_number; i++) {
-      UNLOCK_SYMBOL(ASYMBOL(i));
+   at *p = ARG_LIST;
+   while (CONSP(p)) {
+      UNLOCK_SYMBOL(Symbol(Car(p)));
+      p = Cdr(p);
    }
    return NIL;
+
 }
 
 DX(xsymbolp)
@@ -781,8 +786,8 @@ void init_symbol(void)
    dx_define("set", xset);
    dy_define("setq", ysetq);
    dy_define("scope",yscope);
-   dx_define("lock-symbol", xlock_symbol);
-   dx_define("unlock-symbol", xunlock_symbol);
+   dy_define("lock-symbol", ylock_symbol);
+   dy_define("unlock-symbol", yunlock_symbol);
    dx_define("symbolp", xsymbolp);    
    //dx_define("symbol-stack", xsymbol_stack);
    dx_define("symbol-locked-p", xsymbol_locked_p);
