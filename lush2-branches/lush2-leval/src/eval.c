@@ -375,14 +375,13 @@ DYMAP(mapcar);
 DYMAP(mapcan);
 
 
-/*  unzip_and_eval: splice a list of pairs,
-    eval 2nd element of each pair             */
+/*  unzip_bindings: splice a list of pairs */
 
 static char *errmsg_vardecl1 = "not a list of pairs";
 static char *errmsg_vardecl2 = "not a valid variable declaration form";
 static char *errmsg_vardecl3 = "number of values does not match number of variables";
 
-char *unzip_and_eval_cdr(at *l, at **l1, at **l2)
+static char *unzip_bindings(at *l, at **l1, at **l2)
 {
    at **where1 = l1;
    at **where2 = l2;
@@ -397,7 +396,7 @@ char *unzip_and_eval_cdr(at *l, at **l1, at **l2)
          return errmsg_vardecl1;
       }
       *where1 = new_cons(Car(pair), NIL);
-      *where2 = new_cons(eval(Cadr(pair)), NIL);
+      *where2 = new_cons(Cadr(pair), NIL);
       where1 = &Cdr(*where1);
       where2 = &Cdr(*where2);
    }
@@ -412,10 +411,10 @@ char *unzip_and_eval_cdr(at *l, at **l1, at **l2)
 at *let(at *vardecls, at *body)
 {
    at *syms, *vals;
-   RAISEF(unzip_and_eval_cdr(vardecls, &syms, &vals), vardecls);
+   RAISEF(unzip_bindings(vardecls, &syms, &vals), vardecls);
 
-   at *func = new_df(syms, body);
-   at *result = apply(func, vals);
+   at *func = new_de(syms, body);
+   at *result = de_class.listeval(func, new_cons(func, vals));
    return result;
 }
 
@@ -429,10 +428,10 @@ DY(ylet)
 at *lete(at *vardecls, at *body)
 {
    at *syms, *vals;
-   RAISEF(unzip_and_eval_cdr(vardecls, &syms, &vals), vardecls);
+   RAISEF(unzip_bindings(vardecls, &syms, &vals), vardecls);
 
-   at *func = new_df(syms, body);
-   at *result = apply(func, vals);
+   at *func = new_de(syms, body);
+   at *result = de_class.listeval(func, new_cons(func, vals));
 
    /* before we return, explicitly delete all local variables */
    while (CONSP(vals)) {
