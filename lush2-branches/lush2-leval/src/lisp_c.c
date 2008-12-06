@@ -1653,12 +1653,13 @@ void run_time_error(const char *s)
 }
 
 
+extern at **eval_arglist_dx(at *);
+extern at **dx_sp;
+
 /* dh_listeval -- calls a compiled function */
-    
 static at *_dh_listeval(at *p, at *q)
 {
-#define MAXARGS 1024
-  at *atgs[MAXARGS];
+#define MAXARGS 256
   dharg args[MAXARGS];
 
   //printf("dh_listeval: %s\n", pname(q));
@@ -1680,26 +1681,21 @@ static at *_dh_listeval(at *p, at *q)
   if (nargs + ntemps > MAXARGS)
     error(NIL,"(lisp_c) too many arguments and temporaries",NIL);
   
-  /* Copy and evaluate arguments list */
-  for(int i=0; i<nargs; i++) {
-    q = Cdr(q);
-    ifn (CONSP(q))
-      need_error(0,nargs,NIL);
-    atgs[i] = (*argeval_ptr)(Car(q));
-  }
-  if (Cdr(q))	
+  at **arg_pos = eval_arglist_dx(Cdr(q));
+  if ((int)(dx_sp - arg_pos) != nargs)
     need_error(0,nargs,NIL);
+  arg_pos++;  /* zero-based argument indexing below */
 
   /* Make compiled version of the arguments */
   drec++;
   for (int i=0; i<nargs; i++) {
-    if (!atgs[i] && 
+    if (!arg_pos[i] && 
         drec->op!=DHT_NIL && 
         drec->op!=DHT_GPTR && 
         drec->op!=DHT_BOOL)
       error(NIL,"(lisp_c) illegal nil argument",NIL);
-    assert(!ZOMBIEP(atgs[i]));
-    at_to_dharg(atgs[i], &args[i], drec, NIL);
+    assert(!ZOMBIEP(arg_pos[i]));
+    at_to_dharg(arg_pos[i], &args[i], drec, NIL);
     drec = drec->end;
   }
 
@@ -1756,7 +1752,10 @@ static at *_dh_listeval(at *p, at *q)
   dont_warn_zombie = false;
   if (errflag)
     error(NIL,"Run-time error in compiled code",NIL);
+
+  dx_sp = arg_pos-1;
   return atfuncret;
+#undef MAXARGS
 }
 
 /* we must pause while in compiled code gc to avoid reentrant calls

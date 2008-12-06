@@ -218,7 +218,6 @@ at **dx_sp = dx_stack;
 /* version for DXs and DHs, return old dx stack pointer */
 at **eval_arglist_dx(at *q)
 {
-   //at **spbuff = dx_sp;
    at **arg_pos = dx_sp;
 
    at *q2 = q;

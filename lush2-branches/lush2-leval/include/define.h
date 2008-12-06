@@ -251,7 +251,7 @@ typedef void* gptr;
 
 /* --------- LISP CONSTANTS --------- */
 
-#define DXSTACKSIZE   (int)3000	/* max size for the DX stack */
+#define DXSTACKSIZE   (int)4096	/* max size for the DX stack */
 #define MAXARGMAPC    (int)8	/* max number of listes in MAPCAR */
 #define HASHTABLESIZE (int)1024	/* symbol hashtable size */
 #define STRING_BUFFER (int)4096	/* string operations buffer size */
