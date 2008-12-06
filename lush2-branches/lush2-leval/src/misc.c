@@ -145,21 +145,6 @@ gptr need_error(int i, int j, at **arg_array_ptr)
    return NIL;
 }
 
-void arg_eval(at **arg_array, int i)
-{
-   at *temp = arg_array[i];
-   arg_array[i] = (*argeval_ptr) (temp);
-}
-
-void all_args_eval(at **arg_array, int i)
-{
-   while (i) {
-      at *temp = *++arg_array;
-      *arg_array = (*argeval_ptr) (temp);
-      i--;
-   }
-}
-
 /* -------------------------------------------------------------
    Local Variables:
    c-file-style: "k&r"

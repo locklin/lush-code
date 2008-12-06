@@ -268,7 +268,6 @@ at *named(const char *s)
 DX(xnamed)
 {
    ARG_NUMBER(1);
-   ALL_ARGS_EVAL;
    return named(ASTRING(1));
 }
 
@@ -304,7 +303,6 @@ at *namedclean(const char *n)
 DX(xnamedclean)
 {
    ARG_NUMBER(1);
-   ALL_ARGS_EVAL;
    return namedclean(ASTRING(1));
 }
 
@@ -330,8 +328,6 @@ const char *NAMEOF(at *p)
 DX(xnameof)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    const char *s = nameof(ASYMBOL(1));
    if (!s)
       RAISEFX("not a symbol", APOINTER(1));
@@ -596,7 +592,6 @@ DY(yunlock_symbol)
 DX(xsymbolp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    return SYMBOLP(p) ? p : NIL;
 }
@@ -606,8 +601,6 @@ DX(xsymbolp)
 DX(xsymbol_stack)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    symbol_t *s = ASYMBOL(1);
    at *ans = NIL;
    do {
@@ -622,15 +615,12 @@ DX(xsymbol_stack)
 DX(xsymbol_locked_p)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return SYMBOL_LOCKED_P(ASYMBOL(1)) ? t() : NIL;
 }
 
 DX(xsymbol_globally_bound_p)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    symbol_t *s = ASYMBOL(1);
    while (s->next)
       s = s->next;
@@ -642,8 +632,6 @@ DX(xsymbol_globally_bound_p)
 DX(xsymbol_globally_locked_p)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    symbol_t *s = ASYMBOL(1);
    while (s->next)
       s = s->next;
@@ -731,7 +719,6 @@ at *var_define(char *str)
 DX(xset)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    symbol_t *s = ASYMBOL(1);
    at *q = APOINTER(2);
    sym_set(s, q, false);

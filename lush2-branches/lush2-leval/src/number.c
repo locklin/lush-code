@@ -9,7 +9,6 @@ bool integerp(double d)
 DX(xintegerp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_BOOL(integerp(AREAL(1)));
 }
 
@@ -24,7 +23,6 @@ bool oddp(double d)
 DX(xoddp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_BOOL(oddp(AREAL(1)));
 }
 
@@ -39,7 +37,6 @@ bool evenp(double d)
 DX(xevenp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_BOOL(evenp(AREAL(1)));
 }
 

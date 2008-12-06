@@ -1820,7 +1820,6 @@ DX(xlisp_c_map)
   if (arg_number == 0)
     return NEW_NUMBER(nobjects);
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   p = APOINTER(1);
   if (p==0)
     return lisp_c_map(0);
@@ -1894,7 +1893,6 @@ DY(ylisp_c_no_warnings)
 DX(xto_int)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( AINTEGER(1) );
 }
 
@@ -1902,7 +1900,6 @@ DX(xto_int)
 DX(xto_byte)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( (char)AINTEGER(1) );
 }
 
@@ -1910,7 +1907,6 @@ DX(xto_byte)
 DX(xto_ubyte)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( (unsigned char)AINTEGER(1) );
 }
 
@@ -1918,7 +1914,6 @@ DX(xto_ubyte)
 DX(xto_flt)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( Ftor( AFLT(1) ) );
 }
 
@@ -1926,7 +1921,6 @@ DX(xto_flt)
 DX(xto_real)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( AREAL(1) );
 }
 
@@ -1934,7 +1928,6 @@ DX(xto_real)
 DX(xto_number)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( AREAL(1) );
 }
 
@@ -1943,7 +1936,6 @@ DX(xto_bool)
 {
   at *p;
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   p = APOINTER(1);
   if (! p)
     return NIL;
@@ -1956,8 +1948,6 @@ DX(xto_bool)
 /* (to-obj [<class>] <gptr|obj>)  */
 DX(xto_obj)
 {
-  ALL_ARGS_EVAL;
-
   at *p = NIL;
   class_t *cl = NULL;
 
@@ -2013,8 +2003,6 @@ DX(xto_obj)
 DX(xto_str)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
-  
   at *p = APOINTER(1);
   
   if (STRINGP(p)) {
@@ -2047,8 +2035,6 @@ extern void *dynlink_symbol(struct module *, const char *, int, int);
 DX(xto_gptr)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
-
   at *p = APOINTER(1);
 
   if (p==NIL)

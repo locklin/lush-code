@@ -199,7 +199,6 @@ double eps(double x) {
 DX(xinfinityp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return isinfD(AREAL(1)) ? t() : NIL;
 }
 
@@ -215,21 +214,18 @@ DX(xinfinityp)
 DX(xnanp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return isnanD(AREAL(1)) ? t() : NIL;
 }
 
 DX(xnot_nan)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return isnanD(AREAL(1)) ? NIL : APOINTER(1);
 }
 
 DX(xeps) 
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    double x = AREAL(1);
    if (isinfD(x) || isnanD(x))
       RAISEF("eps not defined for number", NEW_NUMBER(x));

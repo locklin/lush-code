@@ -100,27 +100,10 @@ at *eval_std(at *p)
 DX(xeval)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return eval(APOINTER(1));
 }
 
-/* DX(xeval) */
-/* { */
-/*    if (arg_number < 1) */
-/*       RAISEFX("no arguments", NIL); */
-   
-/*    for (int i = 1; i < arg_number; i++) { */
-/*       ARG_EVAL(i); */
-/*       eval(APOINTER(i)); */
-/*    } */
-/*    ARG_EVAL(arg_number); */
-/*    return eval(APOINTER(arg_number)); */
-/* } */
-
-
-/* eval_nothing
- * is used to prevent argument evaluation when executing DF functions
- */
+/* eval_nothing -- used to implement apply  */
 
 at *eval_nothing(at *q)
 {

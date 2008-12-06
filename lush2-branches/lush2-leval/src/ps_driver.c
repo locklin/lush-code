@@ -568,7 +568,6 @@ DX(xps_window)
    int w = 512;
    int h = 512;
    
-   ALL_ARGS_EVAL;
    switch (arg_number) {
    case 1:
       if (APOINTER(1))

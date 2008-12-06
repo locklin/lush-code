@@ -127,7 +127,6 @@ DX(xchdir)
 {
    if (arg_number!=0) {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       return new_string(cwd(ASTRING(1)));
    } else
       return new_string(cwd(NULL));
@@ -200,7 +199,6 @@ DX(xfiles)
    if (arg_number==0)
       return files(".");
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return files(ASTRING(1));
 }
 
@@ -218,7 +216,6 @@ static int makedir(const char *s)
 DX(xmkdir)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (makedir(ASTRING(1))!=0) 
       test_file_error(NULL);
    return NIL;
@@ -243,7 +240,6 @@ static int deletefile(const char *s)
 DX(xunlink)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (deletefile(ASTRING(1)))
       test_file_error(NULL);
    return NIL;
@@ -253,7 +249,6 @@ DX(xunlink)
 DX(xrename)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    if (rename(ASTRING(1),ASTRING(2))<0)
       test_file_error(NULL);
    return NIL;
@@ -266,8 +261,6 @@ DX(xcopyfile)
 
    /* parse arguments */
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-
    at *atfin = APOINTER(1);
    if (RFILEP(atfin)) {
       // ok
@@ -353,7 +346,6 @@ static int lockfile(const char *filename)
 DX(xlockfile)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (lockfile(ASTRING(1)))
       return t();
    else
@@ -393,7 +385,6 @@ bool dirp(const char *s)
 DX(xdirp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return dirp(ASTRING(1)) ? t() : NIL;
 }
 
@@ -420,7 +411,6 @@ bool filep(const char *s)
 DX(xfilep)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return filep(ASTRING(1)) ? t() : NIL;
 }
 
@@ -431,14 +421,12 @@ DX(xfileinfo)
 #ifdef UNIX
   struct stat buf;
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   if (stat(ASTRING(1),&buf)==-1)
      return NIL;
 #endif
 #ifdef WIN32
   struct _stat buf;
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   if (_stat(ASTRING(1),&buf)==-1)
      return NIL;
 #endif
@@ -594,7 +582,6 @@ const char *dirname(const char *fname)
 DX(xdirname)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return new_string(dirname(ASTRING(1)));
 }
 
@@ -670,7 +657,6 @@ const char *basename(const char *fname, const char *suffix)
 
 DX(xbasename)
 {
-   ALL_ARGS_EVAL;
    if (arg_number!=1) {
       ARG_NUMBER(2)
          return new_string(basename(ASTRING(1),ASTRING(2)));
@@ -797,7 +783,6 @@ const char *concat_fname(const char *from, const char *fname)
     
 DX(xconcat_fname)
 {
-   ALL_ARGS_EVAL;
    if (arg_number==1)
       return new_string(concat_fname(NULL,ASTRING(1)));
    ARG_NUMBER(2);
@@ -841,8 +826,6 @@ const char *relative_fname(const char *from, const char *fname)
 DX(xrelative_fname)
 {
    ARG_NUMBER(2);
-   ARG_EVAL(1);
-   ARG_EVAL(2);
    const char *s = relative_fname(ASTRING(1), ASTRING(2));
    return s ? new_string(s) : NIL;
 }
@@ -943,7 +926,6 @@ DX(xtmpname)
 #else
    strcpy(tempdir,"/tmp");
 #endif
-   ALL_ARGS_EVAL;
    switch (arg_number) {
    case 0:
       return new_string(tmpname(tempdir, NULL));
@@ -1204,7 +1186,6 @@ const char *search_file(const char *ss, const char *suffices)
 DX(xfilepath)
 {
    const char *suf = "|.lshc|.snc|.tlc|.lsh|.sn|.tl";
-   ALL_ARGS_EVAL;
    if (arg_number!=1){
      ARG_NUMBER(2);
      suf = (APOINTER(2) ? ASTRING(2) : NULL);
@@ -1539,7 +1520,6 @@ DX(xscript)
 
    } else {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       set_script(ASTRING(1));
       return APOINTER(1);
    }
@@ -1554,8 +1534,8 @@ DX(xscript)
 
 DX(xopen_read)
 {
-   ALL_ARGS_EVAL;
    FILE *f;
+
    switch (arg_number) {
    case 1:
       f = attempt_open_read(ASTRING(1), NIL);
@@ -1580,7 +1560,6 @@ DX(xopen_write)
 {
    FILE *f;
    
-   ALL_ARGS_EVAL;
    switch (arg_number) {
    case 1:
       f = attempt_open_write(ASTRING(1), NIL);
@@ -1605,7 +1584,6 @@ DX(xopen_append)
 {
    FILE *f;
    
-   ALL_ARGS_EVAL;
    switch (arg_number) {
    case 1:
       f = attempt_open_append(ASTRING(1), NIL);
@@ -1764,7 +1742,6 @@ DY(yreading_string)
 DX(xread8)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *fdesc = APOINTER(1);
    ifn (RFILEP(fdesc))
       RAISEFX("read file descriptor expected", fdesc);
@@ -1779,8 +1756,6 @@ DX(xread8)
 DX(xwrite8)
 {
    ARG_NUMBER(2);
-   ARG_EVAL(1);
-   ARG_EVAL(2);
    at *fdesc = APOINTER(1);
    int x = AINTEGER(2);
 
@@ -1795,8 +1770,6 @@ DX(xwrite8)
 DX(xfsize)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-   
    at *p;
    if (ISSTRING(1)) {
       p = OPEN_READ(ASTRING(1), NULL);

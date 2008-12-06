@@ -88,7 +88,6 @@ at *new_cons(at *car, at *cdr)
 DX(xcons)
 {
     ARG_NUMBER(2);
-    ALL_ARGS_EVAL;
     return new_cons(APOINTER(1), APOINTER(2));
  }
 
@@ -157,8 +156,6 @@ at *new_number(double x)
 DX(xconsp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    if (CONSP(APOINTER(1))) {
       return APOINTER(1);
    } else
@@ -169,8 +166,6 @@ DX(xconsp)
 DX(xatom)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *q = APOINTER(1);
    if (!q) {
       return t();
@@ -192,7 +187,6 @@ static at *numberp(at *q)
 DX(xnumberp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return numberp(APOINTER(1));
 }
 
@@ -208,7 +202,6 @@ static at *null(at *q)
 DX(xnull)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return null(APOINTER(1));
 }
 
@@ -274,7 +267,6 @@ static at *unode_unify(at *p1, at *p2, at *combine)
 
 DX(xnew_unode)
 {
-   ALL_ARGS_EVAL;
    if (arg_number==0)
        return new_unode(NIL);
 
@@ -285,27 +277,23 @@ DX(xnew_unode)
 DX(xunode_uid)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_NUMBER((long)unode_dive(APOINTER(1)));
 }
 
 DX(xunode_val)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return unode_val(APOINTER(1));
 }
 
 DX(xunode_eq)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return unode_eq(APOINTER(1),APOINTER(2));
 }
 
 DX(xunode_unify)
 {
-   ALL_ARGS_EVAL;
    at *doc;
    if (arg_number==2)
       doc = NIL;

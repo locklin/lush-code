@@ -90,7 +90,6 @@ static bool macrochp(const char *s)
 DX(xmacrochp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    ASYMBOL(1);
    if (macrochp(NAMEOF(APOINTER(1))))
       return t();
@@ -303,7 +302,6 @@ char next_char(void)
 DX(xflush)
 {
    if (arg_number==1) {
-      ARG_EVAL(1);
       at *p = APOINTER(1);
       if (RFILEP(p)) {
          if (Gptr(p)==stdin && prompt_string)
@@ -373,7 +371,6 @@ int ask(const char *t)
 DX(xask)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (ask(ASTRING(1))==1)
       return t();
    else
@@ -473,7 +470,6 @@ DX(xskip_char)
    const char *s;
    if (arg_number) {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       s = ASTRING(1);
    } else
       s = " \n\r\t\f";
@@ -528,7 +524,6 @@ DX(xread_string)
    const char *s = "~\n\r\377";
    if (arg_number) {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       if (ISNUMBER(1))
          return read_string_n(AINTEGER(1));
       s = ASTRING(1);
@@ -927,7 +922,6 @@ DX(xtab)
 {
    if (arg_number) {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       print_tab(AINTEGER(1));
    }
    return NEW_NUMBER(context->output_tab);
@@ -993,29 +987,23 @@ void print_list(at *list)
 
 DX(xprint)
 {
-   at *q = NIL;
    for (int i = 1; i <= arg_number; i++) {
-      ARG_EVAL(i);
-      q = APOINTER(i);
-      print_list(q);
+      print_list(APOINTER(i));
       if (i<arg_number)
          print_char(' ');
    }
    print_char('\n');
-   return q;
+   return arg_number ? APOINTER(arg_number) : NIL;
 }
 
 DX(xprin)
 {
-   at *q = NIL;
    for (int i = 1; i <= arg_number; i++) {
-      ARG_EVAL(i);
-      q = APOINTER(i);
-      print_list(q);
+      print_list(APOINTER(i));
       if (i<arg_number)
          print_char(' ');
    }
-   return q;
+   return arg_number ? APOINTER(arg_number) : NIL;
 }
 
 
@@ -1030,7 +1018,6 @@ DX(xprintf)
    if (arg_number < 1)
       error(NIL, "format string expected", NIL);
 
-   ALL_ARGS_EVAL;
    const char *fmt = ASTRING(1);
 
    int i = 1;
@@ -1269,7 +1256,6 @@ const char *first_line(at *l)
 DX(xfirst_line)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return new_string(first_line(APOINTER(1)));
 }
 
@@ -1286,7 +1272,6 @@ const char *pname(at *l)
 DX(xpname)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return new_string(pname(APOINTER(1)));
 }
 

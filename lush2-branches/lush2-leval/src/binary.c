@@ -871,8 +871,6 @@ int bwrite(at *p, FILE *f, int opt)
 
 DX(xbwrite)
 {
-   ALL_ARGS_EVAL;
-
    int count = 0;
    for (int i=1; i<=arg_number; i++) 
       count += bwrite( APOINTER(i), context->output_file, false );
@@ -881,8 +879,6 @@ DX(xbwrite)
 
 DX(xbwrite_exact)
 {
-   ALL_ARGS_EVAL;
-
    int count = 0;
    for (int i=1; i<=arg_number; i++) 
       count += bwrite( APOINTER(i), context->output_file, true );

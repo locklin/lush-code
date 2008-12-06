@@ -639,7 +639,6 @@ DX(xmeminfo)
 {
    int level = 1;
    if (arg_number == 1) {
-      ARG_EVAL(1);
       level = AINTEGER(1);
    } else if (arg_number > 1)
       ARG_NUMBER(-1);
@@ -659,8 +658,6 @@ DX(xpurge_names)
 
 DX(xload)
 {
-   ALL_ARGS_EVAL;
-
    if (arg_number == 3) {
       toplevel(ASTRING(1), ASTRING(2), ASTRING(3));
       
@@ -700,7 +697,6 @@ DX(xexit)
 {
    if (arg_number==1) {
       int n = AINTEGER(1);
-      ARG_EVAL(1);
       clean_up();
       exit(n);
    }
@@ -848,7 +844,6 @@ DX(xerror)
    at *symb, *arg;
    const char *errmsg;
    
-   ALL_ARGS_EVAL;
    switch (arg_number) {
    case 1:
       error(NIL, ASTRING(1), NIL);
@@ -890,7 +885,6 @@ DX(xbtrace)
 {
    int n = 0;
    if (arg_number==1) {
-      ARG_EVAL(1);
       n = AINTEGER(1);
    } else {
       ARG_NUMBER(0);
@@ -922,7 +916,6 @@ DX(xerrname)
 
 DX(xquiet)
 {
-   ALL_ARGS_EVAL;
    if (arg_number>0)
    {
       extern int line_flush_stdout;
@@ -935,7 +928,6 @@ DX(xquiet)
 
 DX(xcasesensitive)
 {
-   ALL_ARGS_EVAL;
    if (arg_number>0) {
       ARG_NUMBER(1);
       if (APOINTER(1))

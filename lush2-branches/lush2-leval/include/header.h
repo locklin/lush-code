@@ -573,8 +573,6 @@ LUSHAPI at *new_dy(at *name, at *(*addr)(at *));
 LUSHAPI at *funcdef(at *f);
 LUSHAPI at *eval_arglist(at *p);
 LUSHAPI gptr need_error(int i, int j, at **arg_array_ptr);
-LUSHAPI void arg_eval(at **arg_array, int i);
-LUSHAPI void all_args_eval(at **arg_array, int i);
 
 /* This is the interface header builder */
 
@@ -609,10 +607,6 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 #define ACLASS(i)       ( ISCLASS(i) ? (class_t *)Mptr(APOINTER(i)) : (class_t *)DX_ERROR(12,i) )
 
 #define ARG_NUMBER(i)	if (arg_number != i)  DX_ERROR(0,i);
-#define ARG_EVAL(i)	/* noop */
-//arg_eval(arg_array,i)
-#define ALL_ARGS_EVAL	/* noop */
-//all_args_eval(arg_array,arg_number)
 
 
 /* FILEIO.H ------------------------------------------------- */

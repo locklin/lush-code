@@ -163,7 +163,6 @@ DX(xfont)
    const char *r = 0;
    if (arg_number) {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       const char *s = ASTRING(1);
       q = str_mb_to_utf8(s);
       if (STRINGP(q))
@@ -208,7 +207,6 @@ DX(xcls)
 DX(xdraw_line)
 {
    ARG_NUMBER(4);
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
@@ -228,7 +226,6 @@ DX(xdraw_line)
 DX(xdraw_rect)
 {
    ARG_NUMBER(4);
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
@@ -248,7 +245,6 @@ DX(xdraw_rect)
 DX(xdraw_circle)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
@@ -268,7 +264,6 @@ DX(xdraw_circle)
 DX(xfill_rect)
 {
    ARG_NUMBER(4);
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
@@ -288,7 +283,6 @@ DX(xfill_rect)
 DX(xfill_circle)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
@@ -311,7 +305,6 @@ DX(xfill_circle)
 DX(xdraw_text)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
@@ -330,7 +323,6 @@ DX(xdraw_text)
 DX(xrect_text)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
@@ -359,8 +351,6 @@ DX(xrect_text)
 DX(xfill_polygon)
 {
    short points[250][2];
-   
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
 
    if ((arg_number < 4) || (arg_number & 1))
@@ -389,7 +379,6 @@ DX(xfill_polygon)
 DX(xgspecial)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    window_t *win = current_window();
    if (win->gdriver->gspecial) {
       (*win->gdriver->begin) (win);
@@ -404,7 +393,6 @@ DX(xgspecial)
 DX(xhilite)
 {
    ARG_NUMBER(5);
-   ALL_ARGS_EVAL;
    int code = AINTEGER(1);
    int x = AINTEGER(2);
    int y = AINTEGER(3);
@@ -430,7 +418,6 @@ DX(xhilite)
 
 DX(xclip)
 {
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
 
    if (arg_number) {
@@ -470,7 +457,6 @@ DX(xclip)
 
 DX(xlinestyle)
 {
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
    if (arg_number>=1) {
       ARG_NUMBER(1);
@@ -490,7 +476,6 @@ DX(xcolor)
    window_t *win = current_window();
    if (arg_number) {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       int c = AINTEGER(1);
       if (c != win->color) {
          (*win->gdriver->begin) (win);
@@ -509,9 +494,8 @@ DX(xcolor)
 
 DX(xalloccolor)
 {
-   window_t *win = current_window();
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
+   window_t *win = current_window();
    double r = AREAL(1);
    double g = AREAL(2);
    double b = AREAL(3);
@@ -543,8 +527,6 @@ DX(xalloccolor)
 DX(xdraw_arc)
 {
    ARG_NUMBER(5);
-   ALL_ARGS_EVAL;
-
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
@@ -570,7 +552,6 @@ DX(xdraw_arc)
 DX(xfill_arc)
 {
    ARG_NUMBER(5);
-   ALL_ARGS_EVAL;
    window_t *win = current_window();
    int x1 = AINTEGER(1);
    int y1 = AINTEGER(2);
@@ -694,7 +675,6 @@ static void draw_value(int x, int y, double v, double maxv, int maxs)
 DX(xdraw_value)
 {
    ARG_NUMBER(5);
-   ALL_ARGS_EVAL;
    draw_value(AINTEGER(1), AINTEGER(2), AREAL(3),
               AREAL(4), AINTEGER(5));
    return NIL;
@@ -797,7 +777,6 @@ static void draw_list(int xx, int y, register at *l, int ncol,
 DX(xdraw_list)
 {
    ARG_NUMBER(7);
-   ALL_ARGS_EVAL;
    draw_list(AINTEGER(1), AINTEGER(2), ACONS(3),
              AINTEGER(4), AREAL(5), AINTEGER(6), AINTEGER(7));
    return NIL;
@@ -950,7 +929,6 @@ static void color_draw_list(int xx, int y, at *l, int ncol,
 DX(xgray_draw_list)
 {
    ARG_NUMBER(7);
-   ALL_ARGS_EVAL;
    color_draw_list(AINTEGER(1), AINTEGER(2), ACONS(3),
                    AINTEGER(4), AREAL(5), AREAL(6), AINTEGER(7),
                    allocate_grays());
@@ -961,7 +939,6 @@ DX(xgray_draw_list)
 DX(xcolor_draw_list)
 {
    ARG_NUMBER(8);
-   ALL_ARGS_EVAL;
    color_draw_list(AINTEGER(1), AINTEGER(2), ACONS(3),
                    AINTEGER(4), AREAL(5), AREAL(6), AINTEGER(7),
                    colors_from_int_matrix(APOINTER(8)) );
@@ -1135,8 +1112,6 @@ static void color_draw_matrix(int x, int y, at *p,
 
 DX(xcolor_draw_matrix)
 {
-   ALL_ARGS_EVAL;
-
    int apartx, aparty;
    at *q;
    if (arg_number == 6) {
@@ -1162,8 +1137,6 @@ DX(xcolor_draw_matrix)
 
 DX(xgray_draw_matrix)
 {
-   ALL_ARGS_EVAL;
-
    int apartx, aparty;
    if (arg_number == 5) {
       apartx = aparty = 1;
@@ -1451,7 +1424,6 @@ static void rgb_draw_matrix(int x, int y, at *p, int sx, int sy)
 
 DX(xrgb_draw_matrix)
 {
-   ALL_ARGS_EVAL;
    int sx = 1;
    int sy = 1;
    if (arg_number != 3) {
@@ -1570,7 +1542,6 @@ static void rgb_grab_matrix(int x, int y, at *p)
 
 DX(xrgb_grab_matrix)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(3);
    at *p = APOINTER(3);
    rgb_grab_matrix(AINTEGER(1),AINTEGER(2),p);
@@ -1620,7 +1591,6 @@ static at *makerect(int x, int y, int w, int h)
 
 DX(xpoint_in_rect)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(3);
    int xx = AINTEGER(1);
    int yy = AINTEGER(2);
@@ -1635,9 +1605,7 @@ DX(xpoint_in_rect)
 
 DX(xrect_in_rect)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
-
    int xx,yy,ww,hh,x,y,w,h;
    getrect(ALIST(1),&xx,&yy,&ww,&hh);
    getrect(ALIST(2),&x,&y,&w,&h);
@@ -1659,9 +1627,7 @@ DX(xrect_in_rect)
   
 DX(xcollide_rect)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
-
    int x1,y1,w1,h1,x2,y2,w2,h2;
    getrect(ALIST(1),&x1,&y1,&w1,&h1);
    getrect(ALIST(2),&x2,&y2,&w2,&h2);
@@ -1681,9 +1647,7 @@ DX(xcollide_rect)
 
 DX(xbounding_rect)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
-
    int x1,y1,w1,h1,x2,y2,w2,h2;
    getrect(ALIST(1),&x1,&y1,&w1,&h1);
    getrect(ALIST(2),&x2,&y2,&w2,&h2);
@@ -1699,9 +1663,7 @@ DX(xbounding_rect)
 
 DX(xexpand_rect)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(3);
-
    int x,y,w,h;
    getrect(ALIST(1),&x,&y,&w,&h);
    int bx = AINTEGER(2);
@@ -1713,8 +1675,6 @@ DX(xexpand_rect)
 
 DX(xdraw_round_rect)
 {
-   ALL_ARGS_EVAL;
-
    int r = 3;
    if (arg_number==5)
       r = AINTEGER(5);
@@ -1757,7 +1717,6 @@ DX(xdraw_round_rect)
 DX(xfill_round_rect)
 {
    int r = 3;
-   ALL_ARGS_EVAL;
    if (arg_number==5)
       r = AINTEGER(5);
    else
@@ -1869,7 +1828,6 @@ DY(ygsave)
 DX(xaddclip)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    window_t *win = current_window();
 
    int x1, y1, w1, h1;

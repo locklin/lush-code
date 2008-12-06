@@ -350,13 +350,11 @@ at* str_utf8_to_mb(const char *s)
 
 DX(xstr_locale_to_utf8)
 {
-   ARG_EVAL(1);
    return str_mb_to_utf8(ASTRING(1));
 }
 
 DX(xstr_utf8_to_locale)
 {
-   ARG_EVAL(1);
    return str_utf8_to_mb(ASTRING(1));
 }
 
@@ -367,8 +365,6 @@ DX(xstr_utf8_to_locale)
 DX(xstr_left)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-
    const char *s = ASTRING(1);
    int n = AINTEGER(2);
    int l = mm_strlen(s);
@@ -393,8 +389,6 @@ DX(xstr_left)
 DX(xstr_right)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   
    const char *s = ASTRING(1);
    int n = AINTEGER(2);
    int l = mm_strlen(s);
@@ -413,8 +407,6 @@ DX(xstr_right)
 DX(xsubstring)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
-
    const char *s = ASTRING(1);
    int n = AINTEGER(2);
    int m = AINTEGER(3);
@@ -446,7 +438,6 @@ DX(xsubstring)
 
 DX(xstr_mid)
 {
-   ALL_ARGS_EVAL;
    if (arg_number == 2) {
       const char *s = ASTRING(1);
       int n = AINTEGER(2);
@@ -486,8 +477,6 @@ DX(xstr_mid)
 
 DX(xstr_concat)
 {
-   ALL_ARGS_EVAL;
-
    int length = 0;
    for (int i=1; i<=arg_number; i++)
       length += (int)mm_strlen(ASTRING(i));
@@ -530,8 +519,6 @@ int str_index(const char *s1, const char *s2, int start)
 
 DX(xstr_index)
 {
-   ALL_ARGS_EVAL;
-
    int start = 1;
    if (arg_number == 3)
       start = AINTEGER(3);
@@ -654,7 +641,6 @@ at* str_val(const char *s)
 DX(xstr_val)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return str_val(ASTRING(1));
 }
 
@@ -696,7 +682,6 @@ const char *str_number(double x)
 DX(xstr_number)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return new_string(str_number(AREAL(1)));
 }
 
@@ -720,7 +705,6 @@ const char *str_number_hex(double x)
 DX(xstr_number_hex)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return new_string(str_number_hex(AREAL(1)));
 }
 
@@ -729,7 +713,6 @@ DX(xstr_number_hex)
 DX(xstr_gptr)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return new_string(gptr_class.name(APOINTER(1)));
 }
 
@@ -738,7 +721,6 @@ DX(xstr_gptr)
 DX(xstr_len)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_NUMBER(mm_strlen(ASTRING(1)));
 }
 
@@ -764,7 +746,6 @@ static at *str_del(const char *s, int n, int l)
 DX(xstr_del)
 {
    int l = -1;
-   ALL_ARGS_EVAL;
    if (arg_number != 2) {
       ARG_NUMBER(3);
       l = AINTEGER(3);
@@ -791,7 +772,6 @@ static at *str_ins(const char *s, int pos, const char *what)
 DX(xstr_ins)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    return str_ins(ASTRING(1),AINTEGER(2),ASTRING(3));
 }
 
@@ -825,7 +805,6 @@ static at *str_subst(const char *s, const char *s1, const char *s2)
 DX(xstrsubst)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    return str_subst(ASTRING(1),ASTRING(2),ASTRING(3));
 }
 
@@ -836,8 +815,6 @@ DX(xstrsubst)
 DX(xupcase)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    const char *s = ASTRING(1);
    at *rr = NIL;
 
@@ -891,7 +868,6 @@ DX(xupcase)
 DX(xupcase1)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    const char *s = ASTRING(1);
    at *rr = NIL;
 #if HAVE_MBRTOWC
@@ -934,7 +910,6 @@ DX(xupcase1)
 DX(xdowncase)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    const char *s = ASTRING(1);
    at *rr = NIL;
 #if HAVE_MBRTOWC
@@ -986,7 +961,6 @@ DX(xdowncase)
 DX(xisprint)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    uchar *s = (unsigned char*) ASTRING(1);
    if (!s || !*s)
       return NIL;
@@ -1025,7 +999,6 @@ DX(xisprint)
 DX(xstr_asc)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    const char *s = ASTRING(1);
 #if 0 /* Disabled for compatibility reasons */
    {
@@ -1053,7 +1026,6 @@ DX(xstr_chr)
    char s[MB_LEN_MAX+1];
    mbstate_t ps;
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    int i = AINTEGER(1);
    memset(s, 0, sizeof(s));
    memset(&ps, 0, sizeof(mbstate_t));
@@ -1063,7 +1035,6 @@ DX(xstr_chr)
    return make_string(s);
 #else
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    int i = AINTEGER(1);
    if (i<0 || i>255)
       error(NIL,"out of range", APOINTER(1));
@@ -1171,28 +1142,24 @@ static at *implode_chars(at *p)
 DX(xexplode_bytes)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return explode_bytes(ASTRING(1));
 }
 
 DX(xexplode_chars)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return explode_chars(ASTRING(1));
 }
 
 DX(ximplode_bytes)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return implode_bytes(APOINTER(1));
 }
 
 DX(ximplode_chars)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return implode_chars(APOINTER(1));
 }
 
@@ -1206,7 +1173,6 @@ DX(ximplode_chars)
 DX(xstringp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    if (STRINGP(p))
       return p;
@@ -1217,7 +1183,6 @@ DX(xstringp)
 DX(xvector_to_string)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    index_t *ind = AINDEX(1);
    ifn ((IND_STTYPE(ind)==ST_UBYTE) && (IND_NDIMS(ind)==1))
       RAISEF("ubyte vector expected", APOINTER(1));
@@ -1226,8 +1191,6 @@ DX(xvector_to_string)
    at *p = make_string_of_length(IND_DIM(ind, 0));
    char *s = (char *)String(p);
    memcpy(s, IND_BASE(ind), IND_DIM(ind, 0));
-   
-   //delete_index(ind);
    return p;
 }
 
@@ -1244,7 +1207,6 @@ DX(xsprintf)
    if (arg_number < 1)
       error(NIL, "At least one argument expected", NIL);
    
-   ALL_ARGS_EVAL;
    const char *fmt = ASTRING(1);
 
    struct large_string ls;

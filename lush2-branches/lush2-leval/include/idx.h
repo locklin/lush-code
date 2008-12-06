@@ -168,7 +168,6 @@
   { \
     struct idx i1; \
     struct index *ind1; \
-    ALL_ARGS_EVAL; \
     ARG_NUMBER(1); \
     ind1 = AINDEX(1); \
     index_write_idx(ind1, &i1); \
@@ -184,7 +183,6 @@
 #define Xidx_po(FUNC_NAME, CHECKFUNC) \
   DX(name2(Xidx_,FUNC_NAME)) \
   { \
-    ALL_ARGS_EVAL; \
     ARG_NUMBER(2); \
     struct index *ind1 = AINDEX(1); \
     double val = AREAL(2); \
@@ -206,7 +204,6 @@
     at *p2; \
     struct idx i1, i2; \
     struct index *ind1, *ind2; \
-    ALL_ARGS_EVAL; \
     if (arg_number==1) { \
        ind1 = AINDEX(1); \
        ind2 = make_array(IND_STTYPE(ind1), SHAPE0D, NIL); \
@@ -233,7 +230,6 @@
     at *p2; \
     struct idx i1, i2; \
     struct index *ind1, *ind2; \
-    ALL_ARGS_EVAL; \
     if (arg_number==1) { \
        ind1 = AINDEX(1); \
        p2 = CLONE_ARRAY(ind1); \
@@ -263,7 +259,6 @@
     at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
-    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -295,7 +290,6 @@
     at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
-    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -327,7 +321,6 @@
     at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
-    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -358,7 +351,6 @@
     at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
-    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -389,7 +381,6 @@
     at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
-    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -423,7 +414,6 @@
     at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
-    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \
@@ -456,7 +446,6 @@
     at *p3; \
     struct idx i1, i2, i3; \
     struct index *ind1, *ind2, *ind3; \
-    ALL_ARGS_EVAL; \
     if (arg_number==2) { \
        ind1 = AINDEX(1); \
        ind2 = AINDEX(2); \

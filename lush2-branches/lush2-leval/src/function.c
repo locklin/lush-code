@@ -481,14 +481,12 @@ at *funcdef(at *p)
 DX(xfuncdef)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return funcdef(APOINTER(1));
 }
 
 DX(xfunctionp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    return FUNCTIONP(p) ? p : NIL;
 }

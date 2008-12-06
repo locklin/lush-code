@@ -497,7 +497,6 @@ storage_t *new_storage(storage_type_t t)
 DX(xnew_storage) {
   
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    class_t *cl = ACLASS(1);
 
    storage_type_t t = ST_FIRST;
@@ -545,7 +544,6 @@ void storage_malloc(storage_t *st, size_t n, at *init)
 DX(xstorage_malloc)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    int n = AINTEGER(2);
    if (n<0)
       RAISEFX("invalid size", NEW_NUMBER(n));
@@ -592,7 +590,6 @@ DX(xstorage_realloc)
 {
    if (arg_number<2 || arg_number>3)
       ARG_NUMBER(-1);
-   ALL_ARGS_EVAL;
    at *init = arg_number==3 ? APOINTER(3) : NIL;
    storage_realloc(ASTORAGE(1), AINTEGER(2), init);
    return NIL;
@@ -644,7 +641,6 @@ void storage_clear(storage_t *st, at *init, size_t from)
 DX(xstorage_clear)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    storage_clear(ASTORAGE(1), APOINTER(2), 0);
    return NIL;
 }
@@ -700,8 +696,6 @@ DX(xstorage_mmap)
 {
    if (arg_number<2 || arg_number>3)
       ARG_NUMBER(-1);
-   ALL_ARGS_EVAL;
-   
    size_t offset = (arg_number==3) ? AINTEGER(3) : 0;
    storage_t *st = ASTORAGE(1);
    at *atf = APOINTER(2);
@@ -726,7 +720,6 @@ DX(xstorage_mmap)
 DX(xstoragep)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return STORAGEP(APOINTER(1)) ? t() : NIL;
 }
 
@@ -745,7 +738,6 @@ bool storage_classp(const at *p)
 DX(xstorage_classp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return storage_classp(APOINTER(1)) ? t() : NIL;
 }
 
@@ -757,7 +749,6 @@ bool storage_readonlyp(const storage_t *st)
 DX(xstorage_readonlyp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    storage_t *st = ASTORAGE(1);;
    return (st->flags & STF_RDONLY) ? t() : NIL;
 }
@@ -765,7 +756,6 @@ DX(xstorage_readonlyp)
 DX(xstorage_make_readonly)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    storage_t *st = ASTORAGE(1);
    st->flags |= STF_RDONLY;
    return NIL;
@@ -780,7 +770,6 @@ size_t storage_nelems(const storage_t *st)
 DX(xstorage_nelems)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_NUMBER(storage_nelems(ASTORAGE(1)));
 }
 
@@ -793,7 +782,6 @@ size_t storage_nbytes(const storage_t *st)
 DX(xstorage_nbytes)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_NUMBER(storage_nbytes(ASTORAGE(1)));
 }
 
@@ -844,7 +832,6 @@ void storage_load(storage_t *st, FILE *f)
 DX(xstorage_load)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    storage_t *st = ASTORAGE(1);
    at *atf = APOINTER(2);
    
@@ -884,7 +871,6 @@ void storage_save(storage_t *st, FILE *f)
 DX(xstorage_save)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    storage_t *st = ASTORAGE(1);
    at *atf = APOINTER(2);
 

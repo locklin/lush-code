@@ -29,12 +29,9 @@
 
 DX(xlist)
 {
-   ALL_ARGS_EVAL;
    at *l = NIL;
-
    while (arg_number)
       l = new_cons(APOINTER(arg_number--), l);
-
    return l;
 }
 
@@ -56,7 +53,6 @@ at *make_list(int n, at *v)
 DX(xmake_list)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return make_list(AINTEGER(1), APOINTER(2));
 }
 
@@ -71,7 +67,6 @@ at *car(at *q)
 DX(xcar)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return car(ALIST(1));
 }
 
@@ -86,7 +81,6 @@ at *cdr(at *q)
 DX(xcdr)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return cdr(ALIST(1));
 }
 
@@ -99,7 +93,6 @@ at *caar(at *q)
 DX(xcaar)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return caar(ALIST(1));
 }
 
@@ -112,7 +105,6 @@ at *cadr(at *q)
 DX(xcadr)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return cadr(ALIST(1));
 }
 
@@ -125,7 +117,6 @@ at *cdar(at *q)
 DX(xcdar)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return cdar(ALIST(1));
 }
 
@@ -138,7 +129,6 @@ at *cddr(at *q)
 DX(xcddr)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return cddr(ALIST(1));
 }
 
@@ -156,7 +146,6 @@ at *rplaca(at *q, at *p)
 DX(xrplaca)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return rplaca(APOINTER(1), APOINTER(2));
 }
 
@@ -174,7 +163,6 @@ at *rplacd(at *q, at *p)
 DX(xrplacd)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return rplacd(APOINTER(1), APOINTER(2));
 }
 
@@ -194,7 +182,6 @@ at *displace(at *q, at *p)
 DX(xdisplace)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return displace(APOINTER(1), APOINTER(2));
 }
 
@@ -236,7 +223,6 @@ at *copy_tree(at *p)
 DX(xcopy_tree) 
 {
    ARG_NUMBER(1);
-   ALL_ARGS_EVAL;
    return copy_tree(APOINTER(1));
 }
 
@@ -244,8 +230,6 @@ DX(xcopy_tree)
 DX(xlistp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *q = APOINTER(1);
    if (!q) {
       return t();
@@ -274,7 +258,6 @@ int length(at *p)
 DX(xlength)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (ISINDEX(1)) {
       index_t *ind = AINDEX(1);
       if (IND_NDIMS(ind)<1)
@@ -318,7 +301,6 @@ at *lasta(at *list)
 DX(xlasta)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return lasta(ALIST(1));
 }
 
@@ -344,7 +326,6 @@ at *lastcdr(at *list)
 DX(xlastcdr)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return lastcdr(ALIST(1));
 }
 
@@ -369,7 +350,6 @@ at *member(at *elem, at *list)
 DX(xmember)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return member(APOINTER(1), ALIST(2));
 }
 
@@ -404,7 +384,6 @@ at *append(at *l1, at *l2)
 
 DX(xappend)
 {
-   ALL_ARGS_EVAL;
    if (arg_number == 0)
       return NIL;
 
@@ -437,7 +416,6 @@ at *nfirst(int n, at *l)
 DX(xnfirst)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return nfirst(AINTEGER(1), APOINTER(2));
 }
 
@@ -458,7 +436,6 @@ at *nth(at *l, int n)
 DX(xnth)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return nth(ALIST(2), AINTEGER(1));
 }
 
@@ -478,7 +455,6 @@ at *nthcdr(at *l, int n)
 DX(xnthcdr)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return nthcdr(ALIST(2), AINTEGER(1));
 }
 
@@ -505,7 +481,6 @@ at *reverse(at *l)
 DX(xreverse)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return reverse(ALIST(1));
 }
 
@@ -546,7 +521,6 @@ at *flatten(at *l)
 DX(xflatten)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return flatten(APOINTER(1));
 }
 
@@ -574,7 +548,6 @@ at *assoc(at *k, at *l)
 DX(xassoc)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return assoc(APOINTER(1),APOINTER(2));
 }
 

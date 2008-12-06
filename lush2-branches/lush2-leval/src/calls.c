@@ -179,14 +179,12 @@ static int tlsizeof(const char *s)
 DX(xsizeof)
 {
    ARG_NUMBER(1);
-   ALL_ARGS_EVAL;
    return NEW_NUMBER(tlsizeof(ASTRING(1)));
 }
 
 DX(xatgptr)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return APOINTER(1) ? NEW_GPTR(APOINTER(1)) : NIL;
 }
 
@@ -201,8 +199,6 @@ DX(xatgptr)
 
 DX(xrange)
 {
-   ALL_ARGS_EVAL;
-
    real high, low = 1.0;
    real delta = 1.0;
    
@@ -243,8 +239,6 @@ DX(xrange)
 
 DX(xrange_star)
 {
-   ALL_ARGS_EVAL;
-
    real high, low = 0.0;
    real delta = 1.0;
    
@@ -326,7 +320,6 @@ DX(xeq)
       return t();
 
    if (arg_number>1) {
-      ALL_ARGS_EVAL;
       int n = 1;
       while (n<arg_number && eq_test(APOINTER(n), APOINTER(n+1)))
          n++;
@@ -342,7 +335,6 @@ DX(xeq)
 DX(xeqptr)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    if (APOINTER(1) == APOINTER(2))
       return t();
    else
@@ -352,8 +344,6 @@ DX(xeqptr)
 DX(xne)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   
    ifn (eq_test(APOINTER(1), APOINTER(2)))
       return t();
    else
@@ -363,7 +353,6 @@ DX(xne)
 DX(xeq0)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (ISNUMBER(1))
       if (AREAL(1) == 0.0)
          return NEW_NUMBER(0);
@@ -373,8 +362,6 @@ DX(xeq0)
 DX(xne0)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-   
    if (ISNUMBER(1)) {
       if (AREAL(1) == 0.0)
          return NIL;
@@ -388,8 +375,6 @@ DX(xne0)
 DX(xgt)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   
    if (comp_test(APOINTER(1), APOINTER(2)) > 0)
       return t();
    else
@@ -399,8 +384,6 @@ DX(xgt)
 DX(xge)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-
    if (comp_test(APOINTER(1), APOINTER(2)) >= 0)
       return t();
    else
@@ -410,8 +393,6 @@ DX(xge)
 DX(xlt)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   
    if (comp_test(APOINTER(1), APOINTER(2)) < 0)
       return t();
    else
@@ -421,8 +402,6 @@ DX(xlt)
 DX(xle)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-
    if (comp_test(APOINTER(1), APOINTER(2)) <= 0)
       return t();
    else

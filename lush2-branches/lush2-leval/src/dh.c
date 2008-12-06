@@ -509,8 +509,6 @@ static at *dhinfo_record(dhrecord *drec)
 DX(xdhinfo_t)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *p = APOINTER(1);
    ifn (p && (Class(p) == &dh_class))
       error(NIL, "not a DH function", p);
@@ -527,7 +525,6 @@ DX(xdhinfo_t)
 DX(xdhinfo_c)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    ifn (p && (Class(p) == &dh_class))
       error(NIL, "not a DH function", p);
@@ -561,7 +558,6 @@ DX(xdhinfo_c)
 DX(xclassinfo_t)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   at *p = APOINTER(1);
   ifn (CLASSP(p))
      error(NIL,"not a class",p);
@@ -578,7 +574,6 @@ DX(xclassinfo_t)
 DX(xclassinfo_c)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    ifn (CLASSP(p))
       error(NIL, "not a class", p);

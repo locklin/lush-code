@@ -491,7 +491,6 @@ DX(xhashcode)
 {
    char buffer[24];
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    unsigned long x = hash_value(APOINTER(1));
    sprintf(buffer,"%08x", (int)(x));
    return make_string(buffer);
@@ -521,7 +520,6 @@ DX(xnew_htable)
    if (arg_number>3)
       RAISEFX("up to three arguments expected", NIL);
 
-   ALL_ARGS_EVAL;
    int nelems = 0;
    bool pointerhashp = false;
    bool raise_keyerror_p = false;
@@ -540,8 +538,6 @@ DX(xnew_htable)
 DX(xhtable_alist)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *a = APOINTER(1);
    ifn (HTABLEP(a))
       RAISEFX("not a hash table", a);
@@ -557,8 +553,6 @@ DX(xhtable_alist)
 DX(xcopy_htable)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *p = APOINTER(1);
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
@@ -574,7 +568,6 @@ DX(xcopy_htable)
 DX(xhtable_delete)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    at *ans = APOINTER(1);
    ifn (HTABLEP(ans))
       RAISEFX("not a hash table", ans);
@@ -585,7 +578,6 @@ DX(xhtable_delete)
 DX(xhtable_clear)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *ans = APOINTER(1);
    ifn (HTABLEP(ans))
       RAISEFX("not a hash table", ans);
@@ -596,7 +588,6 @@ DX(xhtable_clear)
 DX(xhtable_update)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    at *ans = APOINTER(1);
    ifn (HTABLEP(ans))
       RAISEFX("not a hash table", ans);
@@ -615,7 +606,6 @@ DX(xhtable_update)
 DX(xhtable_keys)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
@@ -632,7 +622,6 @@ DX(xhtable_keys)
 DX(xhtable_rehash)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    ifn (HTABLEP(p))
       error(NIL,"not a hash table", p);
@@ -648,7 +637,6 @@ DX(xhtable_rehash)
 DX(xhtable_size)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
@@ -665,7 +653,6 @@ DX(xhtable_size)
 DX(xhtable_info)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);

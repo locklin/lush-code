@@ -530,7 +530,6 @@ static void day_to_date(double day, struct date *d)
 DX(xdate_to_day)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_NUMBER(date_to_day(get_date(APOINTER(1))));
 }
 
@@ -540,7 +539,6 @@ DX(xday_to_date)
    buf.from = DATE_YEAR;
    buf.to = DATE_SECOND;
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    day_to_date(AREAL(1),&buf);
    return copy_date(&buf);
 }
@@ -579,8 +577,6 @@ DX(xsplit_date)
    at **pp = &p;
    
    ARG_NUMBER(1);
-   ALL_ARGS_EVAL;
-   
    struct date *d = get_date(APOINTER(1));
    for (int i=d->from; i<=d->to; i++) {
       *pp = new_cons(new_cons(named(ansidatenames[i]),NEW_NUMBER(d->x[i])),NIL);
@@ -607,7 +603,6 @@ DX(xsplit_date)
 DX(xdate_type)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    struct date *d = get_date(APOINTER(1));
    return new_cons(named(ansidatenames[(int)(d->from)]),
                    new_cons(named(ansidatenames[(int)(d->to)]),
@@ -618,7 +613,6 @@ DX(xdate_type)
 DX(xdate_extend)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    ASYMBOL(2);
    ASYMBOL(3);
 
@@ -657,7 +651,6 @@ DX(xdate_to_string)
 {
    static struct tm tm;
 
-   ALL_ARGS_EVAL;
    if (arg_number==1) {
       return make_string(str_date(APOINTER(1),NULL,NULL));
 
@@ -684,8 +677,6 @@ DX(xdate_to_string)
 
 DX(xstring_to_date)
 {
-   ALL_ARGS_EVAL;
-
    int from = DATE_YEAR;
    int to = DATE_SECOND;
 
@@ -717,8 +708,6 @@ DX(xstring_to_date)
 DX(xdate_add_second)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   
    struct date buf, *d = get_date(APOINTER(1));
    int nd, ns, add = AINTEGER(2);
    date_to_n(d,&nd,&ns);
@@ -729,7 +718,6 @@ DX(xdate_add_second)
 DX(xdate_add_minute)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    struct date buf, *d = get_date(APOINTER(1));
    int nd, ns, add = AINTEGER(2);
    date_to_n(d,&nd,&ns);
@@ -740,7 +728,6 @@ DX(xdate_add_minute)
 DX(xdate_add_hour)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    struct date buf, *d = get_date(APOINTER(1));
    int nd, ns, add = AINTEGER(2);
    date_to_n(d,&nd,&ns);
@@ -752,7 +739,6 @@ DX(xdate_add_hour)
 DX(xdate_add_day)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    struct date buf, *d = get_date(APOINTER(1));
    int nd, ns, add = AINTEGER(2);
    date_to_n(d,&nd,&ns);
@@ -771,7 +757,6 @@ DX(xdate_add_month)
    static unsigned char mlen[] = 
       {31,28,31,30,31,30,31,31,30,31,30,31};
 
-   ALL_ARGS_EVAL;
    at *opt;
    switch (arg_number) {
    case 2:
@@ -838,7 +823,6 @@ DX(xdate_add_year)
    uchar loosely = 0;
    uchar noerror = 0;
    
-   ALL_ARGS_EVAL;
    at *opt;
    switch (arg_number) {
    case 2:
@@ -994,8 +978,6 @@ int tl_date_code(at *dt, int flag, float *m)
 DX(xdate_code)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-
    float m[10];
    int count = tl_date_code(APOINTER(1),AINTEGER(2),m);
    at *p = NIL;

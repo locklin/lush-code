@@ -1019,7 +1019,6 @@ DX(xgetusername)
 DX(xisatty)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    FILE *f = open_read(ASTRING(1),NIL);
    int fd = isatty(fileno(f));
    file_close(f);
@@ -1033,7 +1032,6 @@ DX(xisatty)
 DX(xsys)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_NUMBER(system(ASTRING(1)));
 }
 
@@ -1085,7 +1083,6 @@ DX(xctime)
       time(&tl);
    } else {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       tl = AINTEGER(1);
    }
    char *ct = ctime(&tl);
@@ -1109,7 +1106,6 @@ DX(xlocaltime)
       time(&tl);
    } else {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       tl = AINTEGER(1);
    }
    struct tm *tm = (struct tm *) localtime(&tl);
@@ -1244,7 +1240,6 @@ int unix_setenv(const char *name, const char *value)
 DX(xgetenv)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return make_string(getenv(ASTRING(1)));
 }
 
@@ -1267,7 +1262,6 @@ DX(xgetconf)
    };
 
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    const char *k = ASTRING(1);
    for (int i = 0; confdata[i].k; i++)
       if (!strcmp(k, confdata[i].k))
@@ -1491,8 +1485,6 @@ void filteropen(const char *cmd, FILE **pfw, FILE **pfr)
 
 DX(xfilteropen) 
 {
-   ALL_ARGS_EVAL;
-
    at *p1 = NIL;
    at *p2 = NIL;
    
@@ -1583,7 +1575,6 @@ void filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
 
 DX(xfilteropenpty) 
 {
-   ALL_ARGS_EVAL;
    at *p1 = NIL;
    at *p2 = NIL;
    if (arg_number==3) {
@@ -1612,8 +1603,6 @@ DX(xfilteropenpty)
 DX(xsocketopen)
 {
 #ifdef HAVE_GETHOSTBYNAME
-   ALL_ARGS_EVAL;
-
    at *p1 = NIL;
    at *p2 = NIL;
    if (arg_number != 2) {
@@ -1668,7 +1657,6 @@ DX(xsocketaccept)
 #define MAXHOSTNAMELEN 255
 #endif
    
-   ALL_ARGS_EVAL;
    if (arg_number != 1) {
       ARG_NUMBER(3);
       ASYMBOL(2);
@@ -1719,8 +1707,6 @@ DX(xsocketaccept)
 
 DX(xsocketselect)
 {
-  ALL_ARGS_EVAL;
-
   fd_set rset, wset;
   FD_ZERO(&rset);
   FD_ZERO(&wset);

@@ -467,7 +467,6 @@ static at *lisp_window(at *delegate)
 DX(xlisp_window)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    ifn (OBJECTP(p))
       error(NIL, "invalid delegate for graphic driver calls", p);
@@ -477,8 +476,6 @@ DX(xlisp_window)
 DX(xlisp_window_delegate)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *p = APOINTER(1);
    ifn (WINDOWP(p))
       error(NIL, "not a window", p);
