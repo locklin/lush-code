@@ -214,21 +214,19 @@ at *eval_arglist(at *p)
 
 at *eval_arglist_dm(at *p)
 {
-   MM_ENTER;
-
    at *list = p;
    at **now = &p;
    p = NIL;
    
    while (CONSP(list)) {
-      *now = new_cons(argeval_ptr(Car(list)), NIL);
+      *now = new_cons(Car(list), NIL);
       now = &Cdr(*now);
       list = Cdr(list);
    }
    if (list)
       *now = eval(list);
 
-   MM_RETURN(p);
+   return p;
 }
 
 at *dx_stack[DXSTACKSIZE];
@@ -391,6 +389,8 @@ at *df_listeval(at *p, at *q)
    MM_ENTER;
 
    lfunction_t *f = Mptr(p);
+   if (last(q, 0))
+      q = eval_arglist_dm(q);
    push_args(f->formal_args, Cdr(q));
    at *ans = progn(f->body);
    pop_args(f->formal_args);
@@ -424,6 +424,8 @@ at *dm_listeval(at *p, at *q)
    MM_ENTER;
 
    lfunction_t *f = Mptr(p);
+   if (last(q, 0))
+      q = eval_arglist_dm(q);
    push_args(f->formal_args, q);
    at *m = progn(f->body);
    pop_args(f->formal_args);

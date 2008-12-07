@@ -572,6 +572,8 @@ LUSHAPI at *new_dx(at *name, at *(*addr)(int,at**));
 LUSHAPI at *new_dy(at *name, at *(*addr)(at *));
 LUSHAPI at *funcdef(at *f);
 LUSHAPI at *eval_arglist(at *p);
+LUSHAPI at *eval_arglist_dm(at *p);
+LUSHAPI at **eval_arglist_dx(at *p);
 LUSHAPI gptr need_error(int i, int j, at **arg_array_ptr);
 
 /* This is the interface header builder */
