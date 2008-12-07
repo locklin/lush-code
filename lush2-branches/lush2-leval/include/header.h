@@ -345,7 +345,7 @@ LUSHAPI at *nfirst(int n, at *l);
 LUSHAPI at *nth(at *l, int n);
 LUSHAPI at *nthcdr(at *l, int n);
 LUSHAPI at *lasta(at *list);
-LUSHAPI at *lastcdr(at *list);
+LUSHAPI at *last(at *list, int n);
 LUSHAPI at *flatten(at *l);
 LUSHAPI at *append(at *l1, at *l2);
 LUSHAPI at *reverse(at *l);

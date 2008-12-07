@@ -212,6 +212,25 @@ at *eval_arglist(at *p)
    MM_RETURN(p);
 }
 
+at *eval_arglist_dm(at *p)
+{
+   MM_ENTER;
+
+   at *list = p;
+   at **now = &p;
+   p = NIL;
+   
+   while (CONSP(list)) {
+      *now = new_cons(argeval_ptr(Car(list)), NIL);
+      now = &Cdr(*now);
+      list = Cdr(list);
+   }
+   if (list)
+      *now = eval(list);
+
+   MM_RETURN(p);
+}
+
 at *dx_stack[DXSTACKSIZE];
 at **dx_sp = dx_stack;
 

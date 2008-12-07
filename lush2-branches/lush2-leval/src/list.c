@@ -305,7 +305,7 @@ DX(xlasta)
 }
 
 
-at *lastcdr(at *list)
+at *lastcons(at *list)
 {
    ifn (CONSP(list))
       return NIL;
@@ -323,10 +323,31 @@ at *lastcdr(at *list)
    return list;
 }
 
-DX(xlastcdr)
+at *last(at *p, int n)
 {
-   ARG_NUMBER(1);
-   return lastcdr(ALIST(1));
+   if (p == NIL)
+      return NIL;
+   else if (n == 1)
+      return lastcons(p);
+   else if (n == 0)
+      return Cdr(lastcons(p));  
+   else {
+      int l = length(p);
+      if (n >= l)
+         return p;
+      else
+         return nthcdr(p, l-n);
+   }
+}
+
+DX(xlast)
+{
+   int n = 1;
+   if (arg_number == 2)
+      n = AINTEGER(2);
+   else if (arg_number>2 || arg_number<1)
+      ARG_NUMBER(-1);
+   return last(ALIST(1), n);
 }
 
 
@@ -569,7 +590,7 @@ void init_list(void)
    dx_define("copy-tree", xcopy_tree);
    dx_define("length", xlength);
    dx_define("lasta", xlasta);
-   dx_define("lastcdr", xlastcdr);
+   dx_define("last", xlast);
    dx_define("member", xmember);
    dx_define("append", xappend);
    dx_define("nfirst", xnfirst);
