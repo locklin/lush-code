@@ -1653,8 +1653,7 @@ void run_time_error(const char *s)
 }
 
 
-extern at **eval_arglist_dx(at *);
-extern at **dx_sp;
+extern at **dx_sp; /* in function.c */
 
 /* dh_listeval -- calls a compiled function */
 static at *_dh_listeval(at *p, at *q)

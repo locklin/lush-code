@@ -212,6 +212,8 @@ static at *broadcast_and_put(index_t *ind, index_t *ss, index_t *vals)
    }
 }
 
+extern at **dx_sp; /* in function.c */
+
 static at *index_listeval(at *p, at *q)
 {
    index_t *ind = Mptr(p);
@@ -226,12 +228,13 @@ static at *index_listeval(at *p, at *q)
     */
 
    int d = IND_NDIMS(ind);
-   at *qsav = eval_arglist(Cdr(q));
-   at *args[MAXDIMS+1];
-   size_t n;
+   at **args = eval_arglist_dx(Cdr(q));
+   int n = (dx_sp - args);
+   dx_sp = args;
+   args++;
 
-   if (unpack_list(qsav, args, MAXDIMS+1, &n) || (n > IND_NDIMS(ind)+1)) {
-      error(NIL, "too many subscripts in subscript expression", q);
+   if (n > IND_NDIMS(ind)+1) {
+     error(NIL, "too many subscripts in subscript expression", q);
 
    } else if (n && INDEXP(args[0])) {
       if (IND_NDIMS(ind) == 0) {
