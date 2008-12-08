@@ -115,9 +115,6 @@ LUSHAPI char *api_translate_lisp2c(const char*);
     error(api_translate_c2lisp(__func__)+1, msg, p); \
 }
 
-/* other helpers */
-at *unpack_list(at *l, at **v, size_t maxnv, size_t *n);
-
 /* OS.H ---------------------------------------------------------- */
 
 

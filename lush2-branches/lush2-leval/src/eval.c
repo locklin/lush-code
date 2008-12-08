@@ -88,18 +88,10 @@ at *eval_std(at *p)
       return NIL;
 }
 
-
 DX(xeval)
 {
    ARG_NUMBER(1);
    return eval(APOINTER(1));
-}
-
-/* eval_nothing -- used to implement apply  */
-
-at *eval_nothing(at *q)
-{
-   return q;
 }
 
 
