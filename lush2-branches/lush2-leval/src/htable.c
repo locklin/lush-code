@@ -115,17 +115,15 @@ static hashtable_t *htable_dispose(hashtable_t *h)
 
 static at *htable_listeval(at *p, at *q)
 {
-   q = Cdr(q);
+   q = eval_arglist(Cdr(q));
    int nargs = length(q);
 
    if (nargs==1) {
       /* retrieve an element */
-      q = eval_arglist(q);
       p = htable_get(p, Car(q));
       
    } else if ((nargs&1)==0) {
       /* set or update key-value pair(s) */
-      q = eval_arglist(q);
       for (at *qq = q; qq; qq = Cddr(qq))
          htable_set(p, Car(qq), Cadr(qq));
 

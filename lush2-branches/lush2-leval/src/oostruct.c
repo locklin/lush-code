@@ -798,8 +798,8 @@ DY(ysend)
    at *q = ARG_LIST;
    ifn (CONSP(q) && CONSP(Cdr(q)))
       RAISEFX("arguments expected", NIL);
-   at *obj = (*argeval_ptr)(Car(q));
-   at *method = (*argeval_ptr)(Cadr(q));
+   at *obj = eval(Car(q));
+   at *method = eval(Cadr(q));
    at *args = Cddr(q);
    
    /* Send */

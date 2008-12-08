@@ -252,7 +252,7 @@ void lastchance(const char *s)
    if (!already)  {
       already = 1;
       /* Signal problem */
-      argeval_ptr = eval_ptr = eval_std;
+      eval_ptr = eval_std;
       error_doc.ready_to_an_error = false;
       fprintf(stderr, "\n\007**** GASP: Severe error : %s\n", s);
       at *q = eval(named("toplevel"));
@@ -291,7 +291,7 @@ static RETSIGTYPE gasp_irq(int sig)
    char buffer[80];
    sprintf(buffer, "Signal %d has occurred", sig);
    error_doc.ready_to_an_error = false;
-   argeval_ptr = eval_ptr = eval_std;
+   eval_ptr = eval_std;
    lastchance(buffer);
 }
 

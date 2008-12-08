@@ -747,7 +747,6 @@ static const char *error_text(void)
 void user_break(char *s)
 {
    eval_ptr = eval_std;
-   argeval_ptr = eval_std;
    //compute_bump_active = 0;
    if (error_doc.ready_to_an_error == false)
       lastchance("Break");
@@ -763,10 +762,7 @@ void user_break(char *s)
    
    if (!error_doc.debug_toplevel && strcmp(s,"on read")) {
       at *(*sav_ptr)(at *) = eval_ptr;
-      at *(*argsav_ptr)(at *) = argeval_ptr;
-      
       eval_ptr = eval_std;
-      argeval_ptr = eval_std;
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = true;
       
@@ -778,7 +774,6 @@ void user_break(char *s)
          error_doc.error_text = NIL;
          error_doc.error_suffix = NIL;
          eval_ptr = sav_ptr;
-         argeval_ptr = argsav_ptr;
          return;
       }
 
@@ -801,7 +796,6 @@ void error(const char *prefix, const char *text, at *suffix)
       run_time_error(text);
 
    eval_ptr = eval_std;
-   argeval_ptr = eval_std;
    //compute_bump_active = 0;
    
    if (error_doc.ready_to_an_error == false)
@@ -819,7 +813,6 @@ void error(const char *prefix, const char *text, at *suffix)
 
    if (! error_doc.debug_toplevel) {
       eval_ptr = eval_std;
-      argeval_ptr = eval_std;
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = true;
       apply(at_debug,NIL);

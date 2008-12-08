@@ -291,7 +291,7 @@ DY(yand)
    at *res = t();
    at *p = ARG_LIST;
    while (CONSP(p)) {
-      ifn ((res = argeval_ptr(Car(p))))
+      ifn ((res = eval(Car(p))))
          break;
       p = Cdr(p);
    }
@@ -303,7 +303,7 @@ DY(yor)
    at *res = NIL;
    at *p = ARG_LIST;
    while (CONSP(p)) {
-      if ((res = argeval_ptr(Car(p))))
+      if ((res = eval(Car(p))))
          break;
       p = Cdr(p);
    }

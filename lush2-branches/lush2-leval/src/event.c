@@ -617,10 +617,8 @@ void process_pending_events(void)
             class_t *cl = classof(hndl);
             at *m = getmethod(cl, at_handle);
             if (m) {
-               at *args = new_cons(event, NIL);
-               argeval_ptr = eval_nothing;
-               m = send_message(NIL, hndl, at_handle, args);
-               argeval_ptr = eval_std;
+               at *args = new_cons(quote(event), NIL);
+               send_message(NIL, hndl, at_handle, args);
             }
          }
          /* Check for more events */

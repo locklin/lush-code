@@ -245,9 +245,7 @@ struct at {
                                 Class(p)==&window_class) )
 
 extern LUSHAPI at *(*eval_ptr) (at*);
-extern LUSHAPI at *(*argeval_ptr) (at*);
-
-#define eval(q)         (*eval_ptr)(q)
+#define eval(q)    (*eval_ptr)(q)
 
 /*
  * The class structure defines the behavior of
@@ -357,8 +355,8 @@ LUSHAPI at *assoc(at *k, at *l);
 
 LUSHAPI at *eval_std(at *p);
 LUSHAPI at *eval_debug(at *q);
-LUSHAPI at *eval_nothing(at *q);
 LUSHAPI at *call_stack(void);
+LUSHAPI at *quote(at *p);
 LUSHAPI at *apply(at *q, at *p);
 LUSHAPI at *let(at *vardecls, at *body);
 LUSHAPI at *letS(at *vardecls, at *body);

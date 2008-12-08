@@ -51,13 +51,6 @@
  */
 
 at *(*eval_ptr) (at *);
-at *(*argeval_ptr) (at *);
-
-#define PUSH_ARGEVAL_PTR(func) {  \
-   at *(*old_eval_ptr) (at *) = argeval_ptr; \
-   argeval_ptr = func;
- 
-#define POP_ARGEVAL_PTR  argeval_ptr = old_eval_ptr; }
 
 #define PUSH_EVAL_PTR(func) {  \
    at *(*old_eval_ptr) (at *) = eval_ptr; \
@@ -77,7 +70,6 @@ at *eval_std(at *p)
       link.this_call = p;
       top_link = &link;
       
-      argeval_ptr = eval_ptr;
       CHECK_MACHINE("on");
       
       at *q = eval_std(Car(p));
@@ -165,57 +157,50 @@ at *eval_debug(at *q)
    bool flag = call_trace_hook(tab, first_line(q), q, NIL);
    UNBLOCK_SIGINT;
 
-   eval_ptr = argeval_ptr = (flag ? eval_debug : eval_std);
+   eval_ptr = (flag ? eval_debug : eval_std);
    at *ans = eval_std(q);
    
    BLOCK_SIGINT;
    flag = call_trace_hook(-tab, first_line(ans), q, ans);
    UNBLOCK_SIGINT;
 
-   eval_ptr = argeval_ptr = (flag ? eval_debug : eval_std);
+   eval_ptr = (flag ? eval_debug : eval_std);
    error_doc.debug_tab = tab-1;
    return ans;
 }
 
-/*
- * apply(f,args) C implementation eval(cons(f,arg)) LISP
- * implementation try to care about the function type.
+/* apply(f, args) apply function f to args, where args
+ * are already evaluated arguments.
  */
+
+static at *at_applystack;
 
 at *apply(at *p, at *q)
 {
    ifn (p)
       RAISEF("cannot apply nil", NIL);
    p = eval(p);
-   q = new_cons(p, q);
-   CHECK_MACHINE("on");
-   
-   at *result;
-   PUSH_ARGEVAL_PTR(eval_nothing) {
-      assert(Class(p)->listeval);
-      result = Class(p)->listeval(p, q);
-   } POP_ARGEVAL_PTR;
+   assert(Class(p)->listeval);
 
-   return result;
+   if (q) {
+      SYMBOL_PUSH(at_applystack, q);
+      at *res = Class(p)->listeval(p, new_cons(p, at_applystack));
+      SYMBOL_POP(at_applystack);
+      return res;
+   } else
+      return Class(p)->listeval(p, new_cons(p, NIL));
 }
 
-DY(yapply)
+DX(xapply)
 { 
-   at *p = ARG_LIST;
-   ifn (CONSP(p) && CONSP(Cdr(p)))
-      RAISEF("at least two arguments expected", NIL);
-   
-   at *q;
-   if (Cddr(p)) {
-      at *args = eval_arglist(Cdr(p));
-      at *l1 = nfirst(length(args)-1, args);
-      at *l2 = lasta(args);
-      q = append(l1, l2);
-   } else
-      q = eval(Cadr(p));
-   
-   p = eval(Car(p));
-   return apply(p, q);
+   if (arg_number < 2)
+      RAISEFX("at least two arguments expected", NIL);
+
+   at *p = ALIST(arg_number);
+   while (arg_number-- > 2)
+      p = new_cons(APOINTER(arg_number), p);
+
+   return apply(APOINTER(1), p);
 }
 
 /*
@@ -504,6 +489,14 @@ DY(yletS)
  * (quote a1) returns a1 without evaluation
  */
 
+static at *at_quote = NIL;
+
+at *quote(at *p)
+{
+   return new_cons(at_quote,new_cons(p, NIL));
+}
+
+
 DY(yquote)
 {
    ifn (CONSP(ARG_LIST) && (LASTCONSP(ARG_LIST)))
@@ -548,12 +541,13 @@ void init_eval(void)
    sigaddset(&sigint_mask, SIGINT);
 #endif
 
-   argeval_ptr = eval_ptr = eval_std;
+   eval_ptr = eval_std;
    dx_define("eval", xeval);
+   dx_define("apply", xapply);
    dx_define("call-stack", xcall_stack);
+
    dy_define("progn", yprogn);
    dy_define("prog1", yprog1);
-   dy_define("apply", yapply);
    dy_define("mapc", ymapc);
    dy_define("mapcar", ymapcar);
    dy_define("mapcan", ymapcan);
@@ -564,7 +558,9 @@ void init_eval(void)
    dy_define("debug", ydebug);
    dy_define("nodebug", ynodebug);
    
+   at_applystack = var_define("APPLY-STACK");
    at_trace = var_define("trace-hook");
+   at_quote = var_define("quote");
 }
 
 

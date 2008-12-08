@@ -202,7 +202,7 @@ at *eval_arglist(at *p)
    p = NIL;
    
    while (CONSP(list)) {
-      *now = new_cons(argeval_ptr(Car(list)), NIL);
+      *now = new_cons(eval(Car(list)), NIL);
       now = &Cdr(*now);
       list = Cdr(list);
    }
@@ -241,7 +241,7 @@ at **eval_arglist_dx(at *q)
    while (CONSP(q)) {
       if (++dx_sp >= dx_stack + DXSTACKSIZE)
          error(NIL, "sorry, stack full (Merci Yann)", NIL);
-      *dx_sp = argeval_ptr(Car(q));
+      *dx_sp = eval(Car(q));
       q = Cdr(q);
    }
    if (q)
@@ -302,6 +302,8 @@ at *dy_listeval(at *p, at *q)
    MM_ENTER;
    
    cfunction_t *f = Mptr(p);
+   if (last(q, 0))
+      q = eval_arglist_dm(q);
    if (CONSP(f->name))
       check_primitive(f->name, f->info);
    
