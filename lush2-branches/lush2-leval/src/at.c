@@ -323,27 +323,35 @@ at *generic_selfeval(at *p)
    return p;
 }
 
+/* at *generic_listeval(at *p, at *q) */
+/* { */
+/*    /\* looking for stacked functional values *\/ */
+/*    at *pp = Car(q);			 */
+   
+/*    /\* added stacked search on 15/7/88 *\/ */
+/*    if (SYMBOLP(pp)) { */
+/*       symbol_t *s = Symbol(pp); */
+/*       s = s->next; */
+/*       while (s && s->valueptr) { */
+/*          pp = *(s->valueptr); */
+/*          if (pp && Class(pp)->listeval != generic_listeval) { */
+/*             if (eval_ptr == eval_debug) { */
+/*                print_tab(error_doc.debug_tab); */
+/*                print_string("  !! inefficient stacked call\n"); */
+/*             } */
+/*             return Class(pp)->listeval(pp, q); */
+/*          } */
+/*          s = s->next; */
+/*       } */
+/*    } */
+/*    if (LISTP(p)) */
+/*       error("eval", "not a function call", q); */
+/*    else */
+/*       error(pname(p), "can't evaluate this list", NIL); */
+/* } */
+
 at *generic_listeval(at *p, at *q)
 {
-   /* looking for stacked functional values */
-   at *pp = Car(q);			
-   
-   /* added stacked search on 15/7/88 */
-   if (SYMBOLP(pp)) {
-      symbol_t *s = Symbol(pp);
-      s = s->next;
-      while (s && s->valueptr) {
-         pp = *(s->valueptr);
-         if (pp && Class(pp)->listeval != generic_listeval) {
-            if (eval_ptr == eval_debug) {
-               print_tab(error_doc.debug_tab);
-               print_string("  !! inefficient stacked call\n");
-            }
-            return Class(pp)->listeval(pp, q);
-         }
-         s = s->next;
-      }
-   }
    if (LISTP(p))
       error("eval", "not a function call", q);
    else
@@ -369,6 +377,7 @@ static at *null_selfeval(at *p)
 static at *null_listeval(at *p, at *q)
 {
    error(NIL, "not a function (nil)", Car(q));
+   return NIL;
 }
 
 #define generic_dispose   NULL

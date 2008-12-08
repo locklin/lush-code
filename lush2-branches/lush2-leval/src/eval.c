@@ -43,6 +43,8 @@
 # define UNBLOCK_SIGINT sigprocmask(SIG_UNBLOCK,&sigint_mask,NULL);
 #endif
 
+bool debug_mode = false;
+
 /*
  * eval(p) <=> (*eval_ptr)(p)   (MACRO)
  * 
@@ -62,8 +64,6 @@ struct call_chain *top_link = NULL;
 
 at *eval_std(at *p)
 {
-   extern at *generic_listeval(at *p, at *q);
-
    if (CONSP(p)) {
       struct call_chain link;
       link.prev = top_link;
@@ -76,7 +76,7 @@ at *eval_std(at *p)
       if (q)
          p = Class(q)->listeval(q, p);
       else
-         p = generic_listeval(q, p);
+         p = null_class.listeval(q, p);
 
       top_link = top_link->prev;
       return p;
@@ -169,6 +169,9 @@ static at *at_applystack;
 
 at *apply(at *p, at *q)
 {
+   ifn (p)
+      RAISEF("cannot apply nil", NIL);
+
    SYMBOL_PUSH(at_applystack, q);
    at *res = Class(p)->listeval(p, new_cons(p, at_applystack));
    SYMBOL_POP(at_applystack);
