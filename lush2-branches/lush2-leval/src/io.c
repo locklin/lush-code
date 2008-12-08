@@ -1106,7 +1106,7 @@ DX(xprintf)
 
       else if (c == 'p') {
          at *args = new_cons(APOINTER(i), NIL);
-         apply(at_pprint,args);
+         apply(Value(at_pprint),args);
 
       } else if (c == 'd') {
          *buf++ = 0;

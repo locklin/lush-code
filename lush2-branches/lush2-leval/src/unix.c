@@ -244,6 +244,8 @@ break_irq(void)
 
 /* lastchance -- safety code for hopeless situations */
 
+extern at *at_toplevel; /* in toplevel.c */
+
 void lastchance(const char *s)
 {
    static int already = 0;
@@ -255,7 +257,7 @@ void lastchance(const char *s)
       eval_ptr = eval_std;
       error_doc.ready_to_an_error = false;
       fprintf(stderr, "\n\007**** GASP: Severe error : %s\n", s);
-      at *q = eval(named("toplevel"));
+      at *q = Value(at_toplevel);
       if (isatty(0) && q && (Class(q) == &de_class)) {
          fprintf(stderr, "**** GASP: Trying to recover\n");
          fprintf(stderr, "**** GASP: You should save your work immediatly\n\n");

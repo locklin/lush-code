@@ -169,18 +169,10 @@ static at *at_applystack;
 
 at *apply(at *p, at *q)
 {
-   ifn (p)
-      RAISEF("cannot apply nil", NIL);
-   p = eval(p);
-   assert(Class(p)->listeval);
-
-   if (q) {
-      SYMBOL_PUSH(at_applystack, q);
-      at *res = Class(p)->listeval(p, new_cons(p, at_applystack));
-      SYMBOL_POP(at_applystack);
-      return res;
-   } else
-      return Class(p)->listeval(p, new_cons(p, NIL));
+   SYMBOL_PUSH(at_applystack, q);
+   at *res = Class(p)->listeval(p, new_cons(p, at_applystack));
+   SYMBOL_POP(at_applystack);
+   return res;
 }
 
 DX(xapply)
@@ -330,7 +322,7 @@ DX(xmapcan)
 {
    if (arg_number < 2)
       RAISEFX("arguments missing", NIL);
-   
+
    return mapcan(APOINTER(1), &APOINTER(2), arg_number-1);
 }
 

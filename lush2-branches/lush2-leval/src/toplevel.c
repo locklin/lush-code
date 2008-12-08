@@ -38,8 +38,8 @@ struct recur_doc recur_doc;
 struct context *context;
 
 static struct context first_context;
+at* at_toplevel;
 static at* at_startup;
-static at* at_toplevel;
 static at* at_break;
 static at* at_debug;
 static at* at_file;
@@ -318,7 +318,7 @@ void start_lisp(int argc, char **argv, int quietflag)
          *where = new_cons(make_string(argv[i]),NIL);
          where = &Cdr(*where);
       }
-      q = apply(at_startup,p);
+      q = apply(Value(at_startup),p);
    }
    /* No interactive loop in quiet mode */
    if (! quiet) {
@@ -341,7 +341,7 @@ void start_lisp(int argc, char **argv, int quietflag)
       for(;;) {
          MM_ENTER;
          /* Calls the interactive toplevel */
-         q = apply(at_toplevel,NIL);
+         q = apply(Value(at_toplevel),NIL);
          if (!isatty(fileno(stdin))) {
             MM_EXIT;
             break;
@@ -766,7 +766,7 @@ void user_break(char *s)
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = true;
       
-      at *q = apply(at_break,NIL);
+      at *q = apply(Value(at_break),NIL);
       ifn (q) {
          error_doc.debug_toplevel = false;
          error_doc.error_call = NIL;
@@ -815,7 +815,7 @@ void error(const char *prefix, const char *text, at *suffix)
       eval_ptr = eval_std;
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = true;
-      apply(at_debug,NIL);
+      apply(Value(at_debug),NIL);
 
    } else  {
       FILE *old;

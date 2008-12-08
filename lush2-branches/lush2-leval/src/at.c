@@ -253,12 +253,11 @@ static at *unode_unify(at *p1, at *p2, at *combine)
    if (q1 == q2)
       return NIL;
 
-   at *doc;
+   at *doc = NIL;
    if (combine) {
-      at *node = new_cons(Cdr(q1), new_cons(Cdr(q2),NIL));
+      at *node = new_cons(Cdr(q1), new_cons(Cdr(q2), NIL));
       doc = apply(combine, node);
-  } else
-     doc = NIL;
+   } 
    at *node = new_unode(doc);
    AssignCar(q1, node);
    AssignCar(q2, node);
@@ -369,7 +368,7 @@ static at *null_selfeval(at *p)
 
 static at *null_listeval(at *p, at *q)
 {
-   error("eval", "not a function (null)", Car(q));
+   error(NIL, "not a function (nil)", Car(q));
 }
 
 #define generic_dispose   NULL
