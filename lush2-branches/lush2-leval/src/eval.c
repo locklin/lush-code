@@ -257,7 +257,7 @@ DY(yprog1)
 /* compose list of cars of lists and return it */
 /* return nil if any of the lists is nil       */
 
-static inline at *next_args(at **listv, int nargs)
+static at *next_args(at **listv, int nargs)
 {
    at *args = NIL;
    at **where = &args;
@@ -275,24 +275,8 @@ static inline at *next_args(at **listv, int nargs)
    return args;
 }
 
-#define INIT_LISTV(ls, n)                      \
-  for (n=0; n<=MAXARGMAPC; n++) {              \
-    if (ls==NIL)                               \
-      break;                                   \
-    ifn (LISTP(Car(ls)))                       \
-      RAISEF("not a list", Car(ls));           \
-    listv[n] = Car(ls);                        \
-    ls = Cdr(ls);                              \
-  }                                            \
-  if (ls!=NIL)                                 \
-    RAISEF("too many arguments", NIL);
-
-at *mapc(at *f, at *lists)
+at *mapc(at *f, at **listv, int n)
 {
-   at *listv[MAXARGMAPC];
-   int n;
-   INIT_LISTV(lists, n);
-
    at *result = listv[0];
    at *args;
    while ((args = next_args(listv, n)))
@@ -301,12 +285,16 @@ at *mapc(at *f, at *lists)
    return result;
 }
 
-at *mapcar(at *f, at *lists)
+DX(xmapc)
 {
-   at *listv[MAXARGMAPC];
-   int n;
-   INIT_LISTV(lists, n);
+   if (arg_number < 2)
+      RAISEFX("arguments missing", NIL);
+   
+   return mapc(APOINTER(1), &APOINTER(2), arg_number-1);
+}
 
+at *mapcar(at *f, at **listv, int n)
+{
    at *result = NIL;
    at **where = &result;
    at *args;
@@ -317,12 +305,16 @@ at *mapcar(at *f, at *lists)
    return result;
 }
 
-at *mapcan(at *f, at *lists)
+DX(xmapcar)
 {
-   at *listv[MAXARGMAPC];
-   int n;
-   INIT_LISTV(lists, n);
+   if (arg_number < 2)
+      RAISEFX("arguments missing", NIL);
    
+   return mapcar(APOINTER(1), &APOINTER(2), arg_number-1);
+}
+
+at *mapcan(at *f, at **listv, int n)
+{
    at *result = NIL;
    at **where = &result;
    at *args;
@@ -334,23 +326,13 @@ at *mapcan(at *f, at *lists)
    return result;
 }
 
-#define DYMAP(mapx)  DY(name2(y,mapx)) {        \
-  ifn (CONSP(ARG_LIST))                         \
-    RAISEF("arguments missing", NIL);           \
-                                                \
-  at *fn = eval(Car(ARG_LIST));                 \
-  at *lists = eval_arglist(Cdr(ARG_LIST));      \
-  if (lists==NIL)                               \
-    RAISEF("list argument(s) missing", NIL);    \
-                                                \
-  at *result = mapx(fn, lists);                 \
-  return result;                                \
+DX(xmapcan)
+{
+   if (arg_number < 2)
+      RAISEFX("arguments missing", NIL);
+   
+   return mapcan(APOINTER(1), &APOINTER(2), arg_number-1);
 }
-
-DYMAP(mapc);
-DYMAP(mapcar);
-DYMAP(mapcan);
-
 
 /*  unzip_bindings: splice a list of pairs */
 
@@ -537,12 +519,12 @@ void init_eval(void)
    dx_define("eval", xeval);
    dx_define("apply", xapply);
    dx_define("call-stack", xcall_stack);
+   dx_define("mapc", xmapc);
+   dx_define("mapcar", xmapcar);
+   dx_define("mapcan", xmapcan);
 
    dy_define("progn", yprogn);
    dy_define("prog1", yprog1);
-   dy_define("mapc", ymapc);
-   dy_define("mapcar", ymapcar);
-   dy_define("mapcan", ymapcan);
    dy_define("let", ylet);
    dy_define("lete", ylete);
    dy_define("let*", yletS);

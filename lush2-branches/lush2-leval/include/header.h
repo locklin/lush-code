@@ -359,9 +359,9 @@ LUSHAPI at *let(at *vardecls, at *body);
 LUSHAPI at *letS(at *vardecls, at *body);
 LUSHAPI at *progn(at *p);
 LUSHAPI at *prog1(at *p);
-LUSHAPI at *mapc(at *f, at *lists);
-LUSHAPI at *mapcar(at *f, at *lists);
-LUSHAPI at *mapcan(at *f, at *lists);
+LUSHAPI at *mapc(at *f, at **listv, int n);
+LUSHAPI at *mapcar(at *f, at **listv, int n);
+LUSHAPI at *mapcan(at *f, at **listv, int n);
 
 
 /* weakref.h */
