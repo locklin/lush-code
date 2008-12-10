@@ -78,8 +78,7 @@
 #define MIN_MANAGED     0x40000
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
-#define MAX_VOLUME      0x300000    /* max volume threshold */
-#define MAN_K_UPDS      100
+#define MAX_VOLUME      0x240000    /* max volume threshold */
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
 #define NUM_IDLE_CALLS  100
 
@@ -553,9 +552,9 @@ static bool  poplar_sorted[MAX_POPLAR];
 
 #define SWAP(i,j)             \
 {                             \
-   void *__p = managed[i];    \
+   void *p = managed[i];      \
    managed[i] = managed[j];   \
-   managed[j] = __p;          \
+   managed[j] = p;            \
 }
 
 static void sift(int p, int q)
@@ -575,17 +574,13 @@ static void sift(int p, int q)
 
 /* increment man_k while maintaining the poplar invariant */
 /* only update if at least n updates could be done        */
-static void update_man_k(int n)
+static void update_man_k(void)
 {
    assert(!collect_in_progress);
 #  define r poplar_roots
 
-   if (man_last - man_k < n)
-      return;
-
    while (man_k < man_last) {
       man_k++;
-      n--;
       if ((man_t>=2) && (man_k-1+r[man_t-2] == 2*r[man_t-1])) {
          r[--man_t] = man_k;
          sift(r[man_t-1], man_k);
@@ -594,8 +589,6 @@ static void update_man_k(int n)
          r[++man_t] = man_k;
          poplar_sorted[man_t-1] = true;
       }
-      if (n==0)
-         break;
    }
 #  undef r
 }
@@ -634,6 +627,10 @@ static void sort_poplar(int n)
    }
    poplar_sorted[n] = true;
 }
+
+#undef A
+#undef M
+#undef SWAP
 
 /* Remove obsolete entries from managed. */
 static void compact_managed(void)
@@ -680,7 +677,7 @@ static void compact_managed(void)
 #else
    man_k = -1;
    man_t = 0;
-   update_man_k(-1);
+   update_man_k();
 #endif
 
    man_is_compact = true;
@@ -741,9 +738,6 @@ static void add_managed(const void *p)
    }
    assert(man_last < man_size);
    managed[man_last] = (void *)p;
-   
-   if (!collect_in_progress)
-      update_man_k(MAN_K_UPDS);
 }
 
 static void manage(const void *p)
@@ -800,7 +794,7 @@ static void collect_prologue(void)
       assert(no_marked_live());
    
    /* prepare managed array and poplar data */
-   update_man_k(-1);
+   update_man_k();
    for (int n = 0; n < man_t; n++)
       sort_poplar(n);
    assert(man_k == man_last);
@@ -2067,6 +2061,8 @@ bool mm_idle(void)
 
    } else {
       ncalls++;
+      if (!collect_in_progress)
+         update_man_k();
       if (ncalls<NUM_IDLE_CALLS) {
          return false;
       }
