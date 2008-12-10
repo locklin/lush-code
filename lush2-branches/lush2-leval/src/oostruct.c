@@ -37,7 +37,7 @@
 /* objects with less or equal MIN_NUM_SLOTS slots will
  * be allocated via mm_alloc.
  */
-#define MIN_NUM_SLOTS  4
+#define MIN_NUM_SLOTS  8
 
 static at *at_progn;
 static at *at_mexpand;
