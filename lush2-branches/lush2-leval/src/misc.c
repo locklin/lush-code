@@ -130,8 +130,11 @@ gptr need_error(int i, int j, at **arg_array_ptr)
 /* this is called by BLAS and LAPACK */
 int xerbla_(char *name, int *info)
 {
+   char tname[7];
+   strncpy(tname, name, 6);
+   tname[6] = '\0';
    char errmsg[200];
-   sprintf(errmsg, "%dth argument to BLAS/LAPACK-function %6s invalid\n", *info, name);
+   sprintf(errmsg, "%dth argument to BLAS/LAPACK-function %6s invalid\n", *info, tname);
    run_time_error(errmsg);
    return 0;
 }
