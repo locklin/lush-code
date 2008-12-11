@@ -1480,7 +1480,10 @@ size_t mm_strlen(const char *s)
       return strlen(s);
    
    size_t l = MM_SIZEOF(s) - MIN_HUNKSIZE;
-   l += strlen(s + l);
+   if (l <= (MIN_STRING<<2))
+      l = strlen(s);
+   else 
+      l += strlen(s + l);
    assert(l == strlen(s));
    return l;
 }

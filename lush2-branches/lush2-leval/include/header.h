@@ -333,7 +333,7 @@ LUSHAPI at *rplaca(at *q, at *p);
 LUSHAPI at *rplacd(at *q, at *p);
 LUSHAPI at *displace(at *q, at *p);
 LUSHAPI at *make_list(int n, at *v);
-LUSHAPI at *deepcopy_list(at *p);
+LUSHAPI at *copy_tree(at *p);
 LUSHAPI int length(at *p);
 LUSHAPI at *member(at *elem, at *list);
 LUSHAPI at *nfirst(int n, at *l);
