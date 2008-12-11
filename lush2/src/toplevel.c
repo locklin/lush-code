@@ -231,7 +231,6 @@ extern void reset_dx_stack(void); /* defined in function.c */
 
 void start_lisp(int argc, char **argv, int quietflag)
 {
-   MM_ENTER;
    at *p, *q;
    at **where;
    const char *s, *r;
@@ -256,6 +255,7 @@ void start_lisp(int argc, char **argv, int quietflag)
    context->output_file = stdout;
    context->output_tab = 0;
    
+   MM_ENTER;
    quiet = quietflag;
    if (! sigsetjmp(context->error_jump, 1)) {
       s = "stdenv";
@@ -275,7 +275,6 @@ void start_lisp(int argc, char **argv, int quietflag)
       }
 
       /* Search a dump file */
-      MM_ENTER;
       if ((r = search_file(s, "|.dump")) && isdump(r)) {
          error_doc.ready_to_an_error = false;
          if (! quiet) {
@@ -296,7 +295,6 @@ void start_lisp(int argc, char **argv, int quietflag)
          
       } else
          abort("Cannot locate system libraries");
-      MM_EXIT;
 
       /* Calls the cold startup procedure with arguments */
       error_doc.ready_to_an_error = true;
@@ -320,8 +318,11 @@ void start_lisp(int argc, char **argv, int quietflag)
       }
       q = apply(at_startup,p);
    }
+   MM_EXIT; /* reset transient stack after an error */
+
    /* No interactive loop in quiet mode */
    if (! quiet) {
+      MM_ENTER;
       error_doc.ready_to_an_error = false;
       reset_symbols();
       purge_names();
@@ -339,23 +340,19 @@ void start_lisp(int argc, char **argv, int quietflag)
       *line_buffer = 0;
       in_bwrite = 0;
       for(;;) {
-         MM_ENTER;
          /* Calls the interactive toplevel */
          q = apply(at_toplevel,NIL);
          if (!isatty(fileno(stdin))) {
-            MM_EXIT;
             break;
          }
          if (ask("Really quit")) {
-            MM_EXIT;
             break;
          }
-         MM_EXIT;
       }
+      MM_EXIT;
    }
    /* Finished */
    clean_up();
-   MM_EXIT;
 }
 
 
@@ -876,7 +873,7 @@ DX(xerror)
       error(NIL,"illegal arguments",NIL);
    }
 
-   /* walk down the call stack until you function symbol */
+   /* walk down the call stack until the function symbol */
    while (top_link) {
       if (CONSP(Car(top_link->this_call)) && Caar(top_link->this_call)==symb)
          break;
