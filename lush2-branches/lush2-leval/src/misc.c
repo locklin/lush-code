@@ -127,6 +127,16 @@ gptr need_error(int i, int j, at **arg_array_ptr)
    return NIL;
 }
 
+/* this is called by BLAS and LAPACK */
+int xerbla_(char *name, int *info)
+{
+   char errmsg[200];
+   sprintf(errmsg, "%dth argument to BLAS/LAPACK-function %6s invalid\n", *info, name);
+   run_time_error(errmsg);
+   return 0;
+}
+
+
 /* -------------------------------------------------------------
    Local Variables:
    c-file-style: "k&r"
