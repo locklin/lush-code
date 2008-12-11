@@ -857,11 +857,11 @@ bool index_contiguousp(const index_t *ind)
 {
    if (IND_UNSIZEDP(ind))
       RAISEF("unsized index", NIL);
-   size_t size = 1;
+   ptrdiff_t size = 1;
    for (int i=IND_NDIMS(ind)-1; i>=0; i--) {
       if (size != IND_MOD(ind, i))
          return false;
-      size *= IND_DIM(ind, i);
+      size *= (ptrdiff_t)IND_DIM(ind, i);
    }
    return true;
 }
