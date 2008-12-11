@@ -162,13 +162,13 @@
     (error "A and C not compatible") )
   (when (<> (idx-shape B 1) (idx-shape C 1))
     (error "B and C not compatible") )
-  #{ dgemm_("N","N",$c->dim+1,$c->dim,$b->dim+1,&$alpha,$(idx-base B),$b->mod,$(idx-base A),$a->mod,&$beta,$(idx-base C),$c->mod); #}
+  #{ dgemm_("N","N",$c->dim+1,$c->dim,$b->dim,&$alpha,$(idx-base B),$b->mod,$(idx-base A),$a->mod,&$beta,$(idx-base C),$c->mod); #}
   C)
 
 (defun gemm (alpha A B)
   (declare (-double-) alpha)
   (declare (-idx2- (-double-)) A B)
-  (gemm! alpha A B 0 (double-array (idx-shape A 0) (idx-shape B 1))) )
+  (gemm! alpha A B 0 (double-array* (idx-shape A 0) (idx-shape B 1))) )
 
 (defun symm! (alpha S B beta C)
   (declare (-double-) alpha beta)
@@ -176,6 +176,8 @@
   (cheader "extern void dsymm_();")
   (when (not (mat-squarep S))
     (error "S not square") )
+  (chk-ld-contiguous S)
+  (chk-ld-contiguous B)
   #{ dsymm_("R","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
   C)
     
@@ -185,8 +187,56 @@
   (cheader "extern void dsymm_();")
   (when (not (mat-squarep S))
     (error "S not square") )
+  (chk-ld-contiguous S)
+  (chk-ld-contiguous B)
   #{ dsymm_("L","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
   C)
+
+(defun utmm! (alpha U B)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) U B)
+  (cheader "extern void dtrmm_();")
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible U B)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ dtrmm_("R","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+(defun mutm! (alpha B U)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) U B)
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible B U)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ dtrmm_("L","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+(defun utsm! (alpha U B)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) U B)
+  (cheader "extern void dtrsm_();")
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible U B)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ dtrsm_("R","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+(defun muts! (alpha B U)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) U B)
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible B U)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ dtrsm_("L","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
 
 )
 
@@ -205,5 +255,6 @@
                     -blas-dger1!
 
                     -blas-dgemm! -blas-dgemm
-		    -blas-dsymm! -blas-dmsym!)
-
+		    -blas-dsymm! -blas-dmsym!
+                    -blas-dutmm! -blas-dmutm!
+                    -blas-dutsm! -blas-dmuts!)

@@ -5,7 +5,7 @@
 
 (defun asum (x)
   (declare (-idx1- (-float-)) x)
-  (cheader "extern double sasum_();")
+  (cheader "extern float sasum_();")
   (to-float #{ sasum_($x->dim,$(idx-base x),$x->mod) #}) )
 
 (defun axpy! (alpha u v)
@@ -162,13 +162,13 @@
     (error "A and C not compatible") )
   (when (<> (idx-shape B 1) (idx-shape C 1))
     (error "B and C not compatible") )
-  #{ sgemm_("N","N",$c->dim+1,$c->dim,$b->dim+1,&$alpha,$(idx-base B),$b->mod,$(idx-base A),$a->mod,&$beta,$(idx-base C),$c->mod); #}
+  #{ sgemm_("N","N",$c->dim+1,$c->dim,$b->dim,&$alpha,$(idx-base B),$b->mod,$(idx-base A),$a->mod,&$beta,$(idx-base C),$c->mod); #}
   C)
 
 (defun gemm (alpha A B)
   (declare (-float-) alpha)
   (declare (-idx2- (-float-)) A B)
-  (gemm! alpha A B 0 (float-array (idx-shape A 0) (idx-shape B 1))) )
+  (gemm! alpha A B 0 (float-array* (idx-shape A 0) (idx-shape B 1))) )
 
 (defun symm! (alpha S B beta C)
   (declare (-float-) alpha beta)
@@ -176,6 +176,8 @@
   (cheader "extern void ssymm_();")
   (when (not (mat-squarep S))
     (error "S not square") )
+  (chk-ld-contiguous S)
+  (chk-ld-contiguous B)
   #{ ssymm_("R","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
   C)
     
@@ -185,8 +187,56 @@
   (cheader "extern void ssymm_();")
   (when (not (mat-squarep S))
     (error "S not square") )
+  (chk-ld-contiguous S)
+  (chk-ld-contiguous B)
   #{ ssymm_("L","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
   C)
+
+(defun utmm! (alpha U B)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) U B)
+  (cheader "extern void strmm_();")
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible U B)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ strmm_("R","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+(defun mutm! (alpha B U)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) U B)
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible B U)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ strmm_("L","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+(defun utsm! (alpha U B)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) U B)
+  (cheader "extern void strsm_();")
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible U B)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ strsm_("R","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+(defun muts! (alpha B U)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) U B)
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible B U)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ strsm_("L","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
 
 )
 
@@ -205,4 +255,6 @@
                     -blas-sger1!
 
                     -blas-sgemm! -blas-sgemm
-		    -blas-ssymm! -blas-smsym!)
+		    -blas-ssymm! -blas-smsym!
+                    -blas-sutmm! -blas-smutm!
+                    -blas-sutsm! -blas-smuts!)
