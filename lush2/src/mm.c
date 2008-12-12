@@ -763,32 +763,41 @@ static void manage(const void *p)
       stack_push(transients, p);
 }
 
-static void unmanage(const void *p)
+static void unmanage_inheap(const void *p)
 {
-   assert(ADDRESS_VALID(p));
-   
    ptrdiff_t a = ((char *)p) - heap;
-   if (a>=0 && a<heapsize) {
-      assert(HMAP_MANAGED(a));
-      if (HMAP_NOTIFY(a)) {
-         HMAP_UNMARK_NOTIFY(a);
-         client_notify((void *)p);
-      }
-      HMAP_UNMARK_MANAGED(a);
-
-   } else {
-      int i = find_managed(p);
-      assert(!OBSOLETE(managed[i]));
-   
-      if (NOTIFY(managed[i])) {
-         UNMARK_NOTIFY(managed[i]);
-         client_notify(managed[i]);
-      }
-
-      MARK_OBSOLETE(managed[i]);
-      man_is_compact = false;
+   assert(HMAP_MANAGED(a));
+   if (HMAP_NOTIFY(a)) {
+      HMAP_UNMARK_NOTIFY(a);
+      client_notify((void *)p);
    }
+   HMAP_UNMARK_MANAGED(a);
 }
+
+static void unmanage_offheap(const void *p)
+{
+   int i = find_managed(p);
+   assert(!OBSOLETE(managed[i]));
+   
+   if (NOTIFY(managed[i])) {
+      UNMARK_NOTIFY(managed[i]);
+      client_notify(managed[i]);
+   }
+   
+   MARK_OBSOLETE(managed[i]);
+   man_is_compact = false;
+}
+
+/* static void unmanage(const void *p) */
+/* { */
+/*    assert(ADDRESS_VALID(p)); */
+   
+/*    ptrdiff_t a = ((char *)p) - heap; */
+/*    if (a>=0 && a<heapsize) */
+/*       unmanage_inheap(p); */
+/*    else */
+/*       unmanage_offheap(p); */
+/* } */
 
 static void collect_prologue(void)
 {
@@ -978,7 +987,7 @@ static void reclaim_inheap(void *q)
       if (!run_finalizer(f, q))
          return;
 
-   unmanage(q);
+   unmanage_inheap(q);
    VALGRIND_MEMPOOL_FREE(heap, q);
    
    assert(blockrecs[b].in_use > 0);
@@ -999,7 +1008,7 @@ static void reclaim_offheap(void *q)
       if (!run_finalizer(f, q))
          return;
 
-   unmanage(q);
+   unmanage_offheap(q);
    free(info_q);
 }
 
@@ -1470,7 +1479,7 @@ char *mm_string(size_t ss)
       s2 = mm_allocv(mt_string, ss+1);
 
    if (s2)
-      memset(s2, 0, ss+1);
+      s2[0] = s2[ss] = 0;
 
    return s2;
 }
