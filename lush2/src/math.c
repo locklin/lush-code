@@ -53,8 +53,6 @@
 DX(name2(x, NAME))                                           \
 {                                                            \
   ARG_NUMBER(1);                                             \
-  ARG_EVAL(1);                                               \
-                                                             \
   if (ISINDEX(1)) {                                          \
     index_t *res, *ind = AINDEX(1);                          \
     switch (IND_STTYPE(ind)) {                               \
@@ -87,8 +85,6 @@ DX(name2(x, NAME))                                           \
 DX(name2(x, NAME))                                           \
 {                                                            \
   ARG_NUMBER(1);                                             \
-  ARG_EVAL(1);                                               \
-                                                             \
   if (ISINDEX(1)) {                                          \
     index_t *res, *ind = AINDEX(1);                          \
     switch (IND_STTYPE(ind)) {                               \
@@ -168,8 +164,6 @@ DX_UNARY_FUNC_TO_INT(signbit, signbit);
 DX(xatan2)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   
    if (ISINDEX(1) || ISINDEX(2)) {
       index_t *res, *a, *b;
       index_t ba_, *ba = &ba_;
@@ -226,8 +220,6 @@ double solve_call(double x)
 DX(xfindroot)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
-   
    at *p = APOINTER(3);
    if (!FUNCTIONP(p)) {
       RAISEF("not a function", p);

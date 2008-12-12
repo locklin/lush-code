@@ -32,15 +32,12 @@
 DX(xseed)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    Dseed((int)AREAL(1));
    return NIL;
 }
 
 DX(xrand)
 {
-   ALL_ARGS_EVAL;
-
    real lo, hi;
    if (arg_number == 0) {
       lo = 0.0;
@@ -61,8 +58,6 @@ DX(xrand)
 
 DX(xgauss)
 {
-   ALL_ARGS_EVAL;
-
    real mean, sdev;
    if (arg_number == 0) {
       mean = 0.0;

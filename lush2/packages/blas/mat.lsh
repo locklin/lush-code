@@ -1,7 +1,73 @@
 
 (libload "blas/blas")
 
-;; demo code for the blas interface
+;; useful code that uses the blas interface
+
+(in-namespace* blas-
+
+;; Do half of a reduced QR factorization via Householder
+;; reflections, write R to A and hyperplane normals to W.
+(defun -house! (A W)
+  (declare (-idx2- (-double-)) A W)
+  (assert (same-shape-p A W))
+  (let ((m (idx-shape A 0))
+        (n (idx-shape A 1))
+        (R (copy-index A))
+        (W (copy-index W)) )
+    (for* (k 0 (min m n))
+      (declare (-int-) k n)
+      (let ((x (idx-select R 1 0))
+            (v (idx-select W 1 0)) )
+        (array-copy x v)
+        (incr (v 0) (* (nrm2 x) (sgn (x 0))))
+        (scal1! v)
+        (ger1! -2 v (gevm 1 v R) R)
+        (idx-trim! R 0 1) (idx-trim! R 1 1)
+        (idx-trim! W 0 1) (idx-trim! W 1 1) ))
+    ()))
+
+;; Create square Q from W.
+(defun -W2Q (W)
+  (declare (-idx2- (-double-)) W)
+  (let ((Q (mat-id (length W))))
+    (for* (k 0 (idx-shape W 1))
+      (declare (-int-) k)
+      (let* ((v (idx-select W 1 k))
+             (u (gemv 1 Q v)) )
+        (ger1! -2 u v Q) ))
+    Q))
+
+;; Compute Q times b with implicit representation of Q (W).
+;; Write result to b.
+(defun -implicit-Q.b! (W b)
+  (declare (-idx2- (-double-)) W)
+  (declare (-idx1- (-double-)) b)
+  (let ((m (idx-shape W 0))
+        (n (idx-shape W 1)) )
+    (declare (-int-) m n)
+    (assert (= (length b) m))
+    (for (k (- (min m n) 1) 0 -1)
+      (declare (-int-) k)
+      (let ((bk (idx-trim b 0 k))
+            (vk (idx-trim (idx-select W 1 k) 0 k)) )
+        (axpy! (* -2 (dot vk bk)) vk bk) ))
+    ()))
+
+;; Compute Q* times b with implicit representation of Q (W).
+;; Write result to b.
+(defun -implicit-Q*.b! (W b)
+  (declare (-idx2- (-double-)) W)
+  (declare (-idx1- (-double-)) b)
+  (let ((m (idx-shape W 0))
+        (n (idx-shape W 1)) )
+    (declare (-int-) m n)
+    (assert (= (length b) m))
+    (for* (k 0 (min m n))
+      (declare (-int-) k)
+      (let ((bk (idx-trim b 0 k))
+            (vk (idx-trim (idx-select W 1 k) 0 k)) )
+        (axpy! (* -2 (dot vk bk)) vk bk) ))
+    ()))
 
 (in-namespace mat-
 
@@ -15,59 +81,73 @@
       (m i i 1) )
     m))
 
-;; helper, do half of a QR decomposition via 
-;; Householder reflections, write R to A and
-;; hyperplane normals to vs.
-(defun -house! (A W)
-  (declare (-idx2- (-double-)) A W)
-  (when (or (<> (idx-shape A 0) (idx-shape W 0))
-            (<> (idx-shape A 1) (idx-shape W 1)) )
-    (error "A and W have incompatible shapes") )
-  (let ((m (idx-shape A 0))
-        (n (idx-shape A 1))
-        (A (copy-index A))
-        (W (copy-index W)) )
-    (for* (k 0 (min m n))
-      (declare (-int-) k n)
-      (let ((x (idx-select A 1 0))
-            (v (idx-select W 1 0)) )
-        (array-copy x v)
-        (incr (v 0) (* (nrm2 x) (sgn (x 0))))
-        (scal1! v)
-        (ger1! -2 v (gevm 1 v A) A)
-        (idx-trim! A 0 1) (idx-trim! A 1 1)
-        (idx-trim! W 0 1) (idx-trim! W 1 1) )))
-  ())
+#? (mat-vander <v> [<n>])
+;; Vandermonde matrix of vector <v>.
+;;
+;; The resulting matrix is <(length v)>x<n>, default for
+;; <n> is <(length v)>.
+(defun vander (v &optional n)
+  (when (not (vectorp v))
+    (error "not a vector" v) )
+  (let* ((n (or n (length v)))
+         (A ##($> v n))
+         (c0 (idx-trim A 1 0 1))
+         (c1 (idx-shift c0 1 1)) )
+    (array-clear c0 1)
+    (setq v ($> v))
+    (for* (i 2 n)
+      (declare (-int-) i)
+      (idx-shift! c0 1 1)
+      (idx-shift! c1 1 1)
+      (c1 [] (* c0 v)) )
+    A))
 
-(defun -w2q (W)
-  (declare (-idx2- (-double-)) W)
-  (let ((Q (double-array (idx-shape W 0) (idx-shape W 0))))
-    (for* (k 0 (length Q))
-      (declare (-int-) k)
-      (Q k k 1) )
-    (for* (k 0 (idx-shape W 1))
-      (declare (-int-) k)
-      (let* ((v (idx-select W 1 k))
-             (u (gemv 1 Q v)) )
-        (ger1! -2 u v Q) ))
-    Q))
-
-#? (mat-qr! <m>)
-;; Compute QR decomposition of <m>, owerwrite <m>
+#? (mat-qr! <A>)
+;; Compute QR factorization of <A>, owerwrite <A>
 ;; with <R> and return <Q>.
 (defun qr! (A)
   (declare (-idx2- (-double-)) A)
   (let ((W (clone-array A)))
     (array-clear W 0)
     (-house! A W)
-    (-w2q W)))
+    (-W2Q W)))
 
-#? (mat-qr <m>)
-;; Compute QR and return <(list Q R)>.
+#? (mat-qr <A>)
+;; Compute QR factorization of <A> and return <(list Q R)>.
 (defmacro qr (A)
   `(let ((R (copy-array ,A)))
      (let ((Q (qr! R)))
        (list Q R)))
+  )
+
+#? (mat-solve! <A> <b>)
+;; Solve <A>.<x> = <b> for <x> and write to <b>.
+;;
+;; Matrix <A> is written to as well.
+(defun solve! (A b)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-double-)) b)
+  (let ((W (clone-array A))
+        (m (idx-shape A 0))
+        (n (idx-shape A 1)) )
+    (declare (-int-) m n)
+    (-house! A W)          ; A <- R  , vs in W
+    (-implicit-Q*.b! W b)  ; b <- Q*b
+    (when (< m n)
+      (idx-trim! A 1 0 m)) ; make A square
+    (when (> m n)
+      (idx-trim! A 0 0 n)
+      (idx-trim! b 0 0 n) )
+    (utmsv! 1 A ($> b))
+    (idx-trim b 0 0 (idx-shape A 1)) ))
+
+#? (mat-solve <A> <b>)
+;; Solve <A>.<x> = <b> for <x> and return <x>.
+;;
+;; When <A> is square an exact solution is sought,
+;; otherwise a solution in the least squares sense.
+(defmacro solve (A b)
+  `(solve! ##A ##b)
   )
 
 #? (mat-power <A> <n>)
@@ -93,50 +173,29 @@
           (r (clone-array A)) )
       (declare (-int-) p)
       (while (>= p 0)
-        (blas-gemm! 1 m m 0 r)
+        (gemm! 1 m m 0 r)
         (rotatef r m)
         (when (testbit i p)
-          (blas-gemm! 1 m A 0 r)
+          (gemm! 1 m A 0 r)
           (rotatef r m) )
         (decr p) )
       m))
    ))
-)
 
+) ; in-namespace mat-
+) ; in-namespace* blas
 
-(with-namespaces (mat- blas-)
 (dhc-make ()
           mat-id
-          mat--house!
-          mat--w2q
+          -house!
+          -W2Q
+          -implicit-Q.b!
+          -implicit-Q*.b!
           mat-qr!
+          ;mat-solve!
           mat-power
           )
-)
-          
 
-
-;; (defmacro -.*-result (m1 m2)
-;;   `(let ((m1 ,m1) (m2 ,m2))
-;;      (let ((m (idx-shape m1 0))
-;;            (n (idx-shape m2 1))
-;;            (o (idx-trim* m1 1 1)) )
-;;        (declare (-int-) m n)
-;;        (if (= (idx-shape m1 1) (idx-shape m2 0))
-;;            (clone-array 
-;;             (idx-expand! (idx-expand! o 0 m) 1 n) )
-;;          (ifcompiled
-;;              (error "matrix-multiply of incompatible matrices")
-;;          (error "matrix-multiply of incompatible matrices" (list ,m1 ,m2)) )))
-;;   )
-
-;; #? (mat-.* <m1> <m2> ...)
-;; ;; Matrix-multiply matrices <m1>, <m2>, ... .
-;; (defmacro .* (m1 m2 . ms)
-;;   (if (null ms)
-;;       `(let ((m1 ,m1) (m2 ,m2))
-;;          (idx-m2timesm2 m1 m2 (-.*-result m1 m2)))
-;;     `(.* (.* ,m1 ,m2) ,(car ms) ,@(cdr ms)) ))
 
 
 

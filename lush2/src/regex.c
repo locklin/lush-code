@@ -480,8 +480,6 @@ DX(xregex_match)
    unsigned short buffer[1024];
 
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-  
    const char *pat = ASTRING(1);
    const char *dat = ASTRING(2);
 
@@ -505,7 +503,6 @@ DX(xregex_extract)
    int i;
 
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    const char *pat = ASTRING(1);
    const char *dat = ASTRING(2);
    pat = regex_compile(pat,buffer,buffer+1024,1,&regnum);
@@ -536,7 +533,6 @@ DX(xregex_seek)
    int n;
    unsigned short buffer[1024];
 
-   ALL_ARGS_EVAL;
    if (arg_number==3)
       n = AINTEGER(3);
    else {
@@ -568,7 +564,6 @@ DX(xregex_seek)
 DX(xregex_subst)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    const char *datstart;
    const char *pat = ASTRING(1);
    const char *str = ASTRING(2);

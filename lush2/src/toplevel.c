@@ -38,8 +38,8 @@ struct recur_doc recur_doc;
 struct context *context;
 
 static struct context first_context;
+at* at_toplevel;
 static at* at_startup;
-static at* at_toplevel;
 static at* at_break;
 static at* at_debug;
 static at* at_file;
@@ -316,7 +316,7 @@ void start_lisp(int argc, char **argv, int quietflag)
          *where = new_cons(make_string(argv[i]),NIL);
          where = &Cdr(*where);
       }
-      q = apply(at_startup,p);
+      q = apply(Value(at_startup),p);
    }
    MM_EXIT; /* reset transient stack after an error */
 
@@ -341,7 +341,7 @@ void start_lisp(int argc, char **argv, int quietflag)
       in_bwrite = 0;
       for(;;) {
          /* Calls the interactive toplevel */
-         q = apply(at_toplevel,NIL);
+         q = apply(Value(at_toplevel),NIL);
          if (!isatty(fileno(stdin))) {
             break;
          }
@@ -636,7 +636,6 @@ DX(xmeminfo)
 {
    int level = 1;
    if (arg_number == 1) {
-      ARG_EVAL(1);
       level = AINTEGER(1);
    } else if (arg_number > 1)
       ARG_NUMBER(-1);
@@ -656,8 +655,6 @@ DX(xpurge_names)
 
 DX(xload)
 {
-   ALL_ARGS_EVAL;
-
    if (arg_number == 3) {
       toplevel(ASTRING(1), ASTRING(2), ASTRING(3));
       
@@ -697,7 +694,6 @@ DX(xexit)
 {
    if (arg_number==1) {
       int n = AINTEGER(1);
-      ARG_EVAL(1);
       clean_up();
       exit(n);
    }
@@ -748,7 +744,6 @@ static const char *error_text(void)
 void user_break(char *s)
 {
    eval_ptr = eval_std;
-   argeval_ptr = eval_std;
    //compute_bump_active = 0;
    if (error_doc.ready_to_an_error == false)
       lastchance("Break");
@@ -764,14 +759,11 @@ void user_break(char *s)
    
    if (!error_doc.debug_toplevel && strcmp(s,"on read")) {
       at *(*sav_ptr)(at *) = eval_ptr;
-      at *(*argsav_ptr)(at *) = argeval_ptr;
-      
       eval_ptr = eval_std;
-      argeval_ptr = eval_std;
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = true;
       
-      at *q = apply(at_break,NIL);
+      at *q = apply(Value(at_break),NIL);
       ifn (q) {
          error_doc.debug_toplevel = false;
          error_doc.error_call = NIL;
@@ -779,7 +771,6 @@ void user_break(char *s)
          error_doc.error_text = NIL;
          error_doc.error_suffix = NIL;
          eval_ptr = sav_ptr;
-         argeval_ptr = argsav_ptr;
          return;
       }
 
@@ -802,7 +793,6 @@ void error(const char *prefix, const char *text, at *suffix)
       run_time_error(text);
 
    eval_ptr = eval_std;
-   argeval_ptr = eval_std;
    //compute_bump_active = 0;
    
    if (error_doc.ready_to_an_error == false)
@@ -820,10 +810,9 @@ void error(const char *prefix, const char *text, at *suffix)
 
    if (! error_doc.debug_toplevel) {
       eval_ptr = eval_std;
-      argeval_ptr = eval_std;
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = true;
-      apply(at_debug,NIL);
+      apply(Value(at_debug),NIL);
 
    } else  {
       FILE *old;
@@ -845,7 +834,6 @@ DX(xerror)
    at *symb, *arg;
    const char *errmsg;
    
-   ALL_ARGS_EVAL;
    switch (arg_number) {
    case 1:
       error(NIL, ASTRING(1), NIL);
@@ -887,7 +875,6 @@ DX(xbtrace)
 {
    int n = 0;
    if (arg_number==1) {
-      ARG_EVAL(1);
       n = AINTEGER(1);
    } else {
       ARG_NUMBER(0);
@@ -919,7 +906,6 @@ DX(xerrname)
 
 DX(xquiet)
 {
-   ALL_ARGS_EVAL;
    if (arg_number>0)
    {
       extern int line_flush_stdout;
@@ -932,7 +918,6 @@ DX(xquiet)
 
 DX(xcasesensitive)
 {
-   ALL_ARGS_EVAL;
    if (arg_number>0) {
       ARG_NUMBER(1);
       if (APOINTER(1))

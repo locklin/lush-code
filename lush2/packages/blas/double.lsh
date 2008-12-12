@@ -1,0 +1,260 @@
+
+(libload "blas-config.lsh")
+
+(in-namespace -blas-d
+
+(defun asum (x)
+  (declare (-idx1- (-double-)) x)
+  (cheader "extern double dasum_();")
+  (to-double #{ dasum_($x->dim,$(idx-base x),$x->mod) #}) )
+
+(defun axpy! (alpha u v)
+  (declare (-double-) alpha)
+  (declare (-idx1- (-double-)) u v)
+  (cheader "extern void daxpy_();")
+  #{ daxpy_($v->dim, &$alpha, $(idx-base u), $u->mod, $(idx-base v), $v->mod); #}
+  v)
+
+(defun dot (u v)
+  (declare (-idx1- (-double-)) u v)
+  (cheader "extern double ddot_();")
+  (to-double #{ ddot_($u->dim,$(idx-base u),$u->mod,$(idx-base v),$v->mod) #}) )
+
+(defun iamax (x)
+  (declare (-idx1- (-double-)) x)
+  (cheader "extern int idamax_();")
+  (- (to-int #{ idamax_($x->dim,$(idx-base x),$x->mod) #})
+     1) )
+
+(defun nrm2 (v)
+  (declare (-idx1- (-double-)) v)
+  (cheader "extern double dnrm2_();")
+  (to-double #{ dnrm2_($v->dim,$(idx-base v),$v->mod) #}) )
+
+(defun rotg! (abcs)
+  (declare (-idx1- (-double-)) abcs)
+  (cheader "extern void drotg_();")
+  (chk-ld-contiguous abcs)
+  (when (< (length abcs) 4)
+    (error "input array too short") )
+  #{{
+  double *dp = $(idx-base abcs);
+  drotg_(dp, dp+1, dp+2, dp+3);
+  }#}
+  ())
+
+(defun rotg (a b)
+  (declare (-double-) a b)
+  (let ((cs (double-array 4)))
+    (cs 0 a)
+    (cs 1 b)
+    (rotg! cs)
+    (idx-trim! cs 0 2 2)
+    cs))
+
+(defun rot! (x y cs)
+  (declare (-idx1- (-double-)) x y cs)
+  (cheader "extern void drot_();")
+  (when (<> (length x) (length y))
+    (error "x and y are of different length") )
+  (when (<> (length cs) 2)
+    (error "<cs> is not a two-element vector") )
+  #{{
+  double *cs = $(idx-base cs);
+  drot_($x->dim,$(idx-base x),$x->mod,$(idx-base y),$y->mod,cs,cs+1);
+  }#}
+  ())
+
+(defun scal! (alpha u)
+  (declare (-idx1- (-double-)) u)
+  (declare (-double-) alpha)
+  (cheader "extern void dscal_();")
+  #{ dscal_($u->dim,&$alpha,$(idx-base u),$u->mod); #}
+  u)
+
+(defun scal1! (u)
+  (declare (-idx1- (-double-)) u)
+  #{ 
+  double l = 1/dnrm2_($u->dim,$(idx-base u),$u->mod);
+  dscal_($u->dim,&l,$(idx-base u),$u->mod); 
+  #}
+  u)
+
+(defun swap! (x y)
+  (declare (-idx1- (-double-)) x y)
+  (cheader "extern void dswap_();")
+  (when (<> (length x) (length y))
+    (error "x and y are of different length") )
+  #{ dswap_($x->dim,$(idx-base x),$x->mod,$(idx-base y),$y->mod); #}
+  ())
+
+(defun gemv! (alpha A x beta y)
+  (declare (-double-) alpha beta)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-double-)) x y)
+  (cheader "extern void dgemv_();")
+  (when (<> (length x) (idx-shape A 1))
+    (error "u does not match row length of A") )
+  (when (<> (length y) (idx-shape A 0))
+    (error "v does not match column length of A") )
+  (chk-ld-contiguous A)
+  #{ dgemv_("T",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+  y)
+
+(defun gemv (alpha A x)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-double-)) x)
+  (when (<> (length x) (idx-shape A 1))
+    (error "u does not match row length of A") )
+  (chk-ld-contiguous A)
+  (let ((y (double-array* (idx-shape A 0)))
+        (beta 0) )
+    #{ dgemv_("T",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+    y))
+
+(defun gevm! (alpha x A beta y)
+  (declare (-double-) alpha beta)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-double-)) x y)
+  (when (<> (length x) (idx-shape A 0))
+    (error "u does not match column length of A") )
+  (when (<> (length y) (idx-shape A 1))
+    (error "v does not match row length of A") )
+  (chk-ld-contiguous A)
+  #{ dgemv_("N",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+  y)
+
+(defun gevm (alpha x A)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-double-)) x)
+  (when (<> (length x) (idx-shape A 0))
+    (error "u does not match column length of A") )
+  (chk-ld-contiguous A)
+  (let ((y (double-array* (idx-shape A 1)))
+        (beta 0) )
+    #{ dgemv_("N",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+    y))
+
+(defun ger1! (alpha u v A)
+  (declare (-double-) alpha)
+  (declare (-idx1- (-double-)) u v)
+  (declare (-idx2- (-double-)) A)
+  (cheader "extern void dger_();")
+  (chk-ld-contiguous A)
+  (when (<> (length u) (idx-shape A 0))
+    (error "u does not match column length of A") )
+  (when (<> (length v) (idx-shape A 1))
+    (error "v does not match row length of A") )
+  #{ dger_($a->dim+1,$a->dim,&$alpha,$(idx-base v),$v->mod,$(idx-base u),$u->mod,$(idx-base A),$a->mod); #}
+  A)
+
+(defun gemm! (alpha A B beta C)
+  (declare (-double-) alpha beta)
+  (declare (-idx2- (-double-)) A B C)
+  (cheader "extern void dgemm_();")
+  (chk-ld-contiguous A)
+  (chk-ld-contiguous B)
+  (chk-ld-contiguous C)
+  (chk-mm-compatible A B)
+  (when (<> (idx-shape A 0) (idx-shape C 0))
+    (error "A and C not compatible") )
+  (when (<> (idx-shape B 1) (idx-shape C 1))
+    (error "B and C not compatible") )
+  #{ dgemm_("N","N",$c->dim+1,$c->dim,$b->dim,&$alpha,$(idx-base B),$b->mod,$(idx-base A),$a->mod,&$beta,$(idx-base C),$c->mod); #}
+  C)
+
+(defun gemm (alpha A B)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) A B)
+  (gemm! alpha A B 0 (double-array* (idx-shape A 0) (idx-shape B 1))) )
+
+(defun symm! (alpha S B beta C)
+  (declare (-double-) alpha beta)
+  (declare (-idx2- (-double-)) S B C)
+  (cheader "extern void dsymm_();")
+  (when (not (mat-squarep S))
+    (error "S not square") )
+  (chk-ld-contiguous S)
+  (chk-ld-contiguous B)
+  #{ dsymm_("R","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
+  C)
+    
+(defun msym! (alpha B S beta C)
+  (declare (-double-) alpha beta)
+  (declare (-idx2- (-double-)) S B C)
+  (cheader "extern void dsymm_();")
+  (when (not (mat-squarep S))
+    (error "S not square") )
+  (chk-ld-contiguous S)
+  (chk-ld-contiguous B)
+  #{ dsymm_("L","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
+  C)
+
+(defun utmm! (alpha U B)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) U B)
+  (cheader "extern void dtrmm_();")
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible U B)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ dtrmm_("R","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+(defun mutm! (alpha B U)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) U B)
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible B U)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ dtrmm_("L","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+(defun utmsv! (alpha U B)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) U B)
+  (cheader "extern void dtrsm_();")
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible U B)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ dtrsm_("R","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+(defun mutsv! (alpha B U)
+  (declare (-double-) alpha)
+  (declare (-idx2- (-double-)) U B)
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible B U)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ dtrsm_("L","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  B)
+
+)
+
+(dhc-make-with-libs "blas_double"
+                    (list *libblas*)
+                    -blas-dasum
+                    -blas-diamax
+                    -blas-ddot 
+                    -blas-daxpy! 
+                    -blas-dnrm2 
+                    -blas-drotg! -blas-drotg -blas-drot!
+                    -blas-dscal! -blas-dscal1! -blas-dswap!
+
+                    -blas-dgemv! -blas-dgemv
+                    -blas-dgevm! -blas-dgevm
+                    -blas-dger1!
+
+                    -blas-dgemm! -blas-dgemm
+		    -blas-dsymm! -blas-dmsym!
+                    -blas-dutmm! -blas-dmutm!
+                    -blas-dutmsv! -blas-dmutsv!)

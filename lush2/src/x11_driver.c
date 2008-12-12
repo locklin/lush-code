@@ -1873,8 +1873,6 @@ static at *x11_window(int x, int y, uint w, uint h, const char *name)
 DX(xx11_window)
 {
    at *ans;
-   
-   ALL_ARGS_EVAL;
    switch (arg_number) {
    case 0:
       ans = x11_window(0, 0,
@@ -1904,7 +1902,6 @@ DX(xx11_id)
 {
    if (arg_number > 1)
       ARG_NUMBER(-1);
-   ALL_ARGS_EVAL;
    
    window_t *w;
    if (arg_number==0) {
@@ -1937,7 +1934,6 @@ DX(xx11_depth)
 DX(xx11_fontname)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
 #if HAVE_XFT2
    return make_string(psfonttoxftfont(ASTRING(1)));
 #else
@@ -1948,8 +1944,6 @@ DX(xx11_fontname)
 DX(xx11_configure)
 {
    window_t *current_window(void);
-   
-   ALL_ARGS_EVAL;
    window_t *w = current_window();
    if (w->gdriver == &x11_driver) {
 #if X11RELEASE >= 4      
@@ -2027,8 +2021,6 @@ DX(xx11_iconify)
 {
    if (arg_number > 1)
       ARG_NUMBER(-1);
-   ALL_ARGS_EVAL;
-   
    window_t *w;
    if (arg_number==0) {
       window_t *current_window(void);
@@ -2056,7 +2048,6 @@ DX(xx11_lookup_color)
    int status;
   
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    const char *s = ASTRING(1);
    if (!Xinitialised)
       x11_init();
@@ -2080,7 +2071,6 @@ DX(xx11_lookup_color)
 DX(xx11_text_to_clip)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    const char *s = ASTRING(1);
    if (!Xinitialised)
       x11_init();

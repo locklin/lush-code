@@ -212,6 +212,8 @@ static at *broadcast_and_put(index_t *ind, index_t *ss, index_t *vals)
    }
 }
 
+extern at **dx_sp; /* in function.c */
+
 static at *index_listeval(at *p, at *q)
 {
    index_t *ind = Mptr(p);
@@ -226,12 +228,13 @@ static at *index_listeval(at *p, at *q)
     */
 
    int d = IND_NDIMS(ind);
-   at *qsav = eval_a_list(Cdr(q));
-   at *args[MAXDIMS+1];
-   size_t n;
+   at **args = eval_arglist_dx(Cdr(q));
+   int n = (dx_sp - args);
+   dx_sp = args;
+   args++;
 
-   if (unpack_list(qsav, args, MAXDIMS+1, &n) || (n > IND_NDIMS(ind)+1)) {
-      error(NIL, "too many subscripts in subscript expression", q);
+   if (n > IND_NDIMS(ind)+1) {
+     error(NIL, "too many subscripts in subscript expression", q);
 
    } else if (n && INDEXP(args[0])) {
       if (IND_NDIMS(ind) == 0) {
@@ -667,8 +670,6 @@ bool index_broadcastable_p(index_t *a, index_t *b)
 DX(xidx_broadcastable_p) 
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   
    if (index_broadcastable_p(AINDEX(1), AINDEX(2)))
       return t();
    else 
@@ -744,8 +745,6 @@ cannot_broadcast_error:
 DX(xidx_broadcast1)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-
    return index_broadcast1(AINDEX(1), AINDEX(2))->backptr;
 }
 
@@ -808,8 +807,6 @@ shape_t *index_broadcast2(index_t *a, index_t *b, index_t **ba, index_t **bb)
 DX(xidx_broadcast2)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-
    index_t *ba = NULL;
    index_t *bb = NULL;
    index_broadcast2(AINDEX(1), AINDEX(2), &ba, &bb);
@@ -821,7 +818,6 @@ DX(xidx_broadcast2)
 DX(xindexp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (INDEXP(APOINTER(1)))
       return t();
    else
@@ -846,7 +842,6 @@ bool index_numericp(const index_t *ind)
 DX(xidx_numericp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (index_numericp(AINDEX(1)))
       return t();
    else
@@ -869,7 +864,6 @@ bool index_contiguousp(const index_t *ind)
 DX(xidx_contiguousp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (index_contiguousp(AINDEX(1)))
       return t();
    else
@@ -879,14 +873,12 @@ DX(xidx_contiguousp)
 DX(xidx_storage)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return IND_ATST(AINDEX(1));
 }
 
 DX(xidx_dc)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    index_t *ind = AINDEX(1);
    RAISEF(chk_nonempty(ind), APOINTER(1));
    while (IND_NDIMS(ind)>0)
@@ -898,13 +890,10 @@ DX(xarray_dc)
 {
    at *init = NIL;
    if (arg_number == 2) {
-      ARG_EVAL(2);
       init = APOINTER(2);
 
    } else if (arg_number > 2)
       ARG_NUMBER(-1);
-
-   ARG_EVAL(1);
 
    if (init) {
       return make_array(IND_STTYPE(AINDEX(1)), SHAPE0D, init)->backptr;
@@ -931,7 +920,6 @@ size_t index_nelems(const index_t *ind)
 DX(xidx_nelems)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_NUMBER(index_nelems(AINDEX(1)));
 }
 
@@ -939,7 +927,6 @@ DX(xidx_nelems)
 DX(xidx_rank)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    index_t *ind = AINDEX(1);
    if (IND_UNSIZEDP(ind))
       return NIL;
@@ -950,7 +937,6 @@ DX(xidx_rank)
 DX(xidx_offset)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    index_t *ind = AINDEX(1);  
    return NEW_NUMBER(ind->offset);
 }
@@ -960,7 +946,6 @@ DX(xidx_shape)
 {
    if (arg_number<1 || arg_number>2)
       ARG_NUMBER(-1);
-   ARG_EVAL(1);
    index_t *ind = AINDEX(1);
   
    if (arg_number==1) {
@@ -977,7 +962,6 @@ DX(xidx_shape)
         return index2at(indres);
       */
    } else /* arg_number==2 */ {
-      ARG_EVAL(2);    
       int n = AINTEGER(2);
       if (n<0)
          n += IND_NDIMS(ind);
@@ -998,7 +982,6 @@ index_t *index_shape(const index_t *ind)
 
 DX(xindex_shape)
 {
-   ALL_ARGS_EVAL;
    index_t *ind = NULL;
    if (arg_number == 2) {
       shape_t *shp = parse_shape(APOINTER(2), NULL);
@@ -1018,7 +1001,6 @@ DX(xidx_modulo)
    if (arg_number<1 || arg_number>2) 
       ARG_NUMBER(-1);
    
-   ARG_EVAL(1);
    index_t *ind = AINDEX(1);
    
    if (arg_number==1) {
@@ -1035,7 +1017,6 @@ DX(xidx_modulo)
         return index2at(indres);
       */
    } else /* arg_number==2 */ {
-      ARG_EVAL(2);    
       int n = AINTEGER(2);
       if (n<0)
          n += IND_NDIMS(ind);
@@ -1049,7 +1030,6 @@ DX(xidx_modulo)
 DX(xidx_base)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    index_t *ind = AINDEX(1);
    return NEW_GPTR(IND_BASE(ind));
 }
@@ -1158,11 +1138,9 @@ DX(xnew_index)
 {
    if (arg_number<1 || arg_number>2)
       ARG_NUMBER(-1);
-   ARG_EVAL(1);
    storage_t *st = ASTORAGE(1);
    
    if (arg_number==2) {
-      ARG_EVAL(2);
       shape_t *shp = parse_shape(APOINTER(2), NIL);
       return NEW_INDEX(st, shp);
    } else
@@ -1196,8 +1174,6 @@ index_t *make_array(storage_type_t type, shape_t *shp, at *init)
 DX(xmake_array)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
-   
    class_t *cl = ACLASS(1);
    shape_t *shp   = parse_shape(APOINTER(2), NIL);
    storage_type_t type;
@@ -1257,8 +1233,6 @@ index_t *as_double_array(at *arg)
 DX(xas_double_array) 
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-   
    index_t *ind = as_double_array(APOINTER(1));
    return ind->backptr;
 }
@@ -1290,8 +1264,6 @@ index_t *as_int_array(at *arg)
 DX(xas_int_array)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-   
    return as_int_array(APOINTER(1))->backptr;
 }
 
@@ -1323,8 +1295,6 @@ index_t *as_ubyte_array(at *arg)
 DX(xas_ubyte_array)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-   
    return as_ubyte_array(APOINTER(1))->backptr;
 }
 
@@ -1614,7 +1584,6 @@ index_t *array_copy(index_t *ind1, index_t *ind2)
 DX(xarray_copy)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    array_copy(AINDEX(1), AINDEX(2));
    return APOINTER(2);
 }
@@ -1666,7 +1635,6 @@ void array_swap(index_t *ind1, index_t *ind2)
 DX(xarray_swap)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    array_swap(AINDEX(1), AINDEX(2));
    return NIL;
 }
@@ -1741,7 +1709,6 @@ index_t *array_where_nonzero(index_t *ind)
 DX(xarray_where_nonzero)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return array_where_nonzero(AINDEX(1))->backptr;
 }
 
@@ -1763,7 +1730,6 @@ index_t *copy_index(index_t *ind)
 DX(xcopy_index)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return copy_index(AINDEX(1))->backptr;
 }
 
@@ -1777,7 +1743,6 @@ index_t *copy_array(index_t *ind)
 DX(xcopy_array)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return copy_array(AINDEX(1))->backptr;
 }
 
@@ -1926,7 +1891,6 @@ void export_matrix(index_t *ind, FILE *f)
 DX(xsave_matrix)
 {
    at *p, *ans;
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), "mat");
@@ -1944,7 +1908,6 @@ DX(xsave_matrix)
 DX(xexport_raw_matrix)
 {
    at *p, *ans;
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), NULL);
@@ -2023,7 +1986,6 @@ DX(xsave_ascii_matrix)
 {
    at *p, *ans;
    
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), NULL);
@@ -2041,7 +2003,6 @@ DX(xexport_text_matrix)
 {
    at *p, *ans;
    
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), "mat");
@@ -2060,7 +2021,6 @@ DX(xarray_export_tabular)
 {
    at *p, *ans;
    
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
       p = OPEN_WRITE(ASTRING(2), "mat");
@@ -2139,7 +2099,6 @@ DX(ximport_raw_matrix)
 {
    size_t offset = 0;
    at *p;
-   ALL_ARGS_EVAL;
    if (arg_number==3)
       offset = AINTEGER(3);
    else 
@@ -2192,9 +2151,7 @@ void import_text_matrix(index_t *ind, FILE *f)
 
 DX(ximport_text_matrix)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
-   
    at *p;
    if (ISSTRING(2)) {
       p = OPEN_READ(ASTRING(2), NULL);
@@ -2369,7 +2326,6 @@ DX(xload_matrix)
 {
    at *p, *ans;
    if (arg_number == 2) {
-      ARG_EVAL(2);
       ASYMBOL(1);
       if (ISSTRING(2)) {
          p = OPEN_READ(ASTRING(2), "mat");
@@ -2383,7 +2339,6 @@ DX(xload_matrix)
 
    } else {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       if (ISSTRING(1)) {
          p = OPEN_READ(ASTRING(1), "mat");
       } else {
@@ -2446,7 +2401,6 @@ DX(xmap_matrix)
    at *p, *ans;
    
    if (arg_number == 2) {
-      ARG_EVAL(2);
       ASYMBOL(1);
       if (ISSTRING(2)) {
          p = OPEN_READ(ASTRING(2), "mat");
@@ -2459,7 +2413,6 @@ DX(xmap_matrix)
       var_set(APOINTER(1), ans);
    } else {
       ARG_NUMBER(1);
-      ARG_EVAL(1);
       if (ISSTRING(1)) {
          p = OPEN_READ(ASTRING(1), "mat");
       } else {
@@ -2505,7 +2458,6 @@ index_t *index_reshape(index_t *ind, shape_t *shp)
 DX(xidx_reshapeD)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    index_reshapeD(AINDEX(1), parse_shape(APOINTER(2), NIL));
    return APOINTER(1);
 }
@@ -2513,7 +2465,6 @@ DX(xidx_reshapeD)
 DX(xidx_reshape)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    index_t *ind = index_reshape(AINDEX(1), parse_shape(APOINTER(2), NIL));
    return ind->backptr;
 }
@@ -2560,7 +2511,6 @@ index_t *index_flatten(index_t *ind, int n)
 
 DX(xidx_flatten)
 {
-   ALL_ARGS_EVAL;
    index_t *ind = NULL;
    if (arg_number == 2)
       ind = index_flatten(AINDEX(1), AINTEGER(2));
@@ -2595,7 +2545,6 @@ index_t *index_nick(index_t *ind, int d)
 DX(xidx_nickD)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    index_nickD(AINDEX(1), AINTEGER(2));
    return APOINTER(1);
 }
@@ -2603,7 +2552,6 @@ DX(xidx_nickD)
 DX(xidx_nick)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return index_nick(AINDEX(1), AINTEGER(2))->backptr;
 }
 
@@ -2667,7 +2615,6 @@ index_t *index_extendS(index_t *ind, subscript_t *des)
 DX(xidx_extendD)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    index_extendD(AINDEX(1), AINTEGER(2), AINTEGER(3));
    return APOINTER(1);
 }
@@ -2675,7 +2622,6 @@ DX(xidx_extendD)
 DX(xidx_extend)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    return index_extend(AINDEX(1), AINTEGER(2), AINTEGER(3))->backptr;
 }
 
@@ -2701,7 +2647,6 @@ DX(xarray_extend)
 {
    if (arg_number<3 || arg_number>4)
       ARG_NUMBER(-1);
-   ALL_ARGS_EVAL;
    at *init = arg_number==4 ? APOINTER(4) : NEW_NUMBER(0);
    return array_extend(AINDEX(1), AINTEGER(2), AINTEGER(3), init)->backptr;
 }
@@ -2728,7 +2673,6 @@ index_t *index_shift(index_t *ind, int d, ptrdiff_t ne)
 DX(xidx_shiftD)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    index_shiftD(AINDEX(1), AINTEGER(2), AINTEGER(3));
    return APOINTER(1);
 }
@@ -2736,7 +2680,6 @@ DX(xidx_shiftD)
 DX(xidx_shift)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    return index_shift(AINDEX(1), AINTEGER(2), AINTEGER(3))->backptr;
 }
 
@@ -2765,7 +2708,6 @@ index_t *index_shiftS(index_t *ind, subscript_t *des)
 /* DX(xidx_shiftSD) */
 /* { */
 /*   ARG_NUMBER(2); */
-/*   ALL_ARGS_EVAL; */
 /*   subscript_t dextents, *des = parse_subscript(APOINTER(2), &dextents); */
 /*   index_shiftSD(AINDEX(1), des); */
 /*   LOCK(APOINTER(1)); */
@@ -2775,7 +2717,6 @@ index_t *index_shiftS(index_t *ind, subscript_t *des)
 /* DX(xidx_shiftS) */
 /* { */
 /*   ARG_NUMBER(2); */
-/*   ALL_ARGS_EVAL; */
 /*   subscript_t dextents, *des = parse_subscript(APOINTER(2), &dextents); */
 /*   return index2at(index_shiftS(AINDEX(1), des)); */
 /* } */
@@ -2786,7 +2727,6 @@ index_t *index_shiftS(index_t *ind, subscript_t *des)
 
 DX(xidx_unfoldD)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(4);
    index_t *ind = AINDEX(1);
    int d = AINTEGER(2);
@@ -2841,7 +2781,6 @@ index_t *index_expand(index_t *ind, int d, size_t ne)
 DX(xidx_expandD)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    index_expandD(AINDEX(1), AINTEGER(2), AINTEGER(3));
    return APOINTER(1);
 }
@@ -2849,7 +2788,6 @@ DX(xidx_expandD)
 DX(xidx_expand)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    return index_expand(AINDEX(1), AINTEGER(2), AINTEGER(3))->backptr;
 }
 
@@ -2887,7 +2825,6 @@ DX(xidx_liftD)
    if (arg_number<1)
       ARG_NUMBER(-1);
 
-   ALL_ARGS_EVAL;
    shape_t shape, *shp = &shape;
    for (int i=2; i<=arg_number; i++)
       shp->dim[i-2] = AINTEGER(i);
@@ -2901,7 +2838,6 @@ DX(xidx_lift)
    if (arg_number<1)
       ARG_NUMBER(-1);
 
-   ALL_ARGS_EVAL;
    index_t *ind = AINDEX(1);
    shape_t shape, *shp = &shape;
    for (int i=2; i<=arg_number; i++)
@@ -2939,7 +2875,6 @@ DX(xidx_sinkD)
    if (arg_number<1)
       ARG_NUMBER(-1);
 
-   ALL_ARGS_EVAL;
    shape_t shape, *shp = &shape;
    for (int i=2; i<=arg_number; i++)
       shp->dim[i-2] = AINTEGER(i);
@@ -2953,7 +2888,6 @@ DX(xidx_sink)
    if (arg_number<1)
       ARG_NUMBER(-1);
 
-   ALL_ARGS_EVAL;
    index_t *ind = AINDEX(1);
    shape_t shape, *shp = &shape;
    for (int i=2; i<=arg_number; i++)
@@ -2988,7 +2922,6 @@ DX(xidx_trimD)
 {
    ifn (arg_number==3 || arg_number==4)
       ARG_NUMBER(-1);
-   ALL_ARGS_EVAL;
   
    /* calc parameters to index_trimD */
    index_t *ind = AINDEX(1);
@@ -3014,7 +2947,6 @@ DX(xidx_trim)
 {
    ifn (arg_number==3 || arg_number==4)
       ARG_NUMBER(-1);
-   ALL_ARGS_EVAL;
   
    /* calc parameters to index_trim */
    index_t *ind = AINDEX(1);
@@ -3038,7 +2970,6 @@ DX(xidx_trim)
 DX(xidx_narrowD)
 {
    ARG_NUMBER(4);
-   ALL_ARGS_EVAL;
    index_t *ind = AINDEX(1);
    int d = AINTEGER(2);
    size_t sz = AINTEGER(3);
@@ -3075,7 +3006,6 @@ index_t *index_select(index_t *ind, int d, ptrdiff_t s)
 DX(xidx_select)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    return index_select(AINDEX(1), AINTEGER(2), AINTEGER(3))->backptr;
 }
 
@@ -3110,7 +3040,7 @@ DY(yidx_selectS)
    ifn (CONSP(p))
       RAISEF("at least one argument expected", NIL);
    
-   p = eval_a_list(p);
+   p = eval_arglist(p);
    ifn (INDEXP(Car(p)))
       RAISEF("not an array", Car(ARG_LIST));
 
@@ -3124,7 +3054,6 @@ DX(xidx_select_all)
 {
    if (arg_number<1 || arg_number>2)
       ARG_NUMBER(-1);
-   ALL_ARGS_EVAL;
    
    index_t *ind = AINDEX(1);
    int d = (arg_number==1) ? 0 : validate_dimension(ind, AINTEGER(2));
@@ -3317,12 +3246,10 @@ DX(xarray_take)
 {
    switch (arg_number) {
    case 2: {
-      ALL_ARGS_EVAL;
       index_t *iss = as_int_array(APOINTER(2));
       return array_take2(AINDEX(1), iss)->backptr;
    }
    case 3: {
-      ALL_ARGS_EVAL;
       index_t *iss = as_int_array(APOINTER(3));
       return array_take3(AINDEX(1), AINTEGER(2), iss)->backptr;
    }
@@ -3414,8 +3341,6 @@ clean_up_and_return2:
 DX(xarray_put)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
-   
    index_t *iss = as_int_array(APOINTER(2));
    return array_put(AINDEX(1), iss, AINDEX(3))->backptr;
 }
@@ -3452,7 +3377,6 @@ index_t *index_transpose(index_t *ind, shape_t *perm) {
 DX(xidx_transpose)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    shape_t shape, *perm = parse_shape(APOINTER(2), &shape);
    return index_transpose(AINDEX(1), perm)->backptr;
 }
@@ -3475,7 +3399,6 @@ index_t *index_reverse(index_t *ind, int d)
 DX(xidx_reverseD)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    index_reverseD(AINDEX(1), AINTEGER(2));
    return APOINTER(1);
 }
@@ -3483,7 +3406,6 @@ DX(xidx_reverseD)
 DX(xidx_reverse)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    return index_reverse(AINDEX(1), AINTEGER(2))->backptr;
 }
 
@@ -3492,7 +3414,6 @@ DX(xidx_reverse)
 DX(xidx_set_dim)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    index_t *ind = AINDEX(1);
    int d = validate_dimension(ind, AINTEGER(2)); 
    size_t s = AINTEGER(3);
@@ -3513,7 +3434,6 @@ DX(xidx_set_dim)
 DX(xidx_set_mod)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    index_t *ind = AINDEX(1);
    int d = validate_dimension(ind, AINTEGER(2));
    ptrdiff_t oldmod = IND_MOD(ind, d);
@@ -3530,7 +3450,6 @@ DX(xidx_set_mod)
 DX(xidx_set_offset)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    index_t *ind = AINDEX(1);
    ptrdiff_t oldoff = ind->offset;
 

@@ -85,24 +85,6 @@ char *api_translate_lisp2c(const char *lname)
 }
 
 /*
- *  other helpers
- */
-
-/* copy at most maxnv items from list l to at* storage v;
- * return NIL or excess list and set n to #items copied.
- */
-at *unpack_list(at *l, at **v, size_t maxnv, size_t *n)
-{
-   *n = 0;
-   while (CONSP(l) && (*n)<maxnv) {
-      v[*n] = Car(l);
-      l = Cdr(l);
-      *n = (*n) + 1;
-   }
-   return l;
-}
-
-/*
  * error routines: need_error... implanted in the macros  APOINTER & co
  */
 
@@ -145,20 +127,18 @@ gptr need_error(int i, int j, at **arg_array_ptr)
    return NIL;
 }
 
-void arg_eval(at **arg_array, int i)
+/* this is called by BLAS and LAPACK */
+int xerbla_(char *name, int *info)
 {
-   at *temp = arg_array[i];
-   arg_array[i] = (*argeval_ptr) (temp);
+   char tname[7];
+   strncpy(tname, name, 6);
+   tname[6] = '\0';
+   char errmsg[200];
+   sprintf(errmsg, "%dth argument to BLAS/LAPACK-function %6s invalid\n", *info, tname);
+   run_time_error(errmsg);
+   return 0;
 }
 
-void all_args_eval(at **arg_array, int i)
-{
-   while (i) {
-      at *temp = *++arg_array;
-      *arg_array = (*argeval_ptr) (temp);
-      i--;
-   }
-}
 
 /* -------------------------------------------------------------
    Local Variables:

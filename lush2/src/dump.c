@@ -149,7 +149,6 @@ static off_t dump(const char *s)
 DX(xdump)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return NEW_NUMBER((size_t)dump(ASTRING(1)));
 }
 

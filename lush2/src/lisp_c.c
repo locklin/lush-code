@@ -1653,12 +1653,12 @@ void run_time_error(const char *s)
 }
 
 
+extern at **dx_sp; /* in function.c */
+
 /* dh_listeval -- calls a compiled function */
-    
 static at *_dh_listeval(at *p, at *q)
 {
-#define MAXARGS 1024
-  at *atgs[MAXARGS];
+#define MAXARGS 256
   dharg args[MAXARGS];
 
   //printf("dh_listeval: %s\n", pname(q));
@@ -1680,26 +1680,21 @@ static at *_dh_listeval(at *p, at *q)
   if (nargs + ntemps > MAXARGS)
     error(NIL,"(lisp_c) too many arguments and temporaries",NIL);
   
-  /* Copy and evaluate arguments list */
-  for(int i=0; i<nargs; i++) {
-    q = Cdr(q);
-    ifn (CONSP(q))
-      need_error(0,nargs,NIL);
-    atgs[i] = (*argeval_ptr)(Car(q));
-  }
-  if (Cdr(q))	
+  at **arg_pos = eval_arglist_dx(Cdr(q));
+  if ((int)(dx_sp - arg_pos) != nargs)
     need_error(0,nargs,NIL);
+  arg_pos++;  /* zero-based argument indexing below */
 
   /* Make compiled version of the arguments */
   drec++;
   for (int i=0; i<nargs; i++) {
-    if (!atgs[i] && 
+    if (!arg_pos[i] && 
         drec->op!=DHT_NIL && 
         drec->op!=DHT_GPTR && 
         drec->op!=DHT_BOOL)
       error(NIL,"(lisp_c) illegal nil argument",NIL);
-    assert(!ZOMBIEP(atgs[i]));
-    at_to_dharg(atgs[i], &args[i], drec, NIL);
+    assert(!ZOMBIEP(arg_pos[i]));
+    at_to_dharg(arg_pos[i], &args[i], drec, NIL);
     drec = drec->end;
   }
 
@@ -1756,7 +1751,10 @@ static at *_dh_listeval(at *p, at *q)
   dont_warn_zombie = false;
   if (errflag)
     error(NIL,"Run-time error in compiled code",NIL);
+
+  dx_sp = arg_pos-1;
   return atfuncret;
+#undef MAXARGS
 }
 
 /* we must pause while in compiled code gc to avoid reentrant calls
@@ -1820,7 +1818,6 @@ DX(xlisp_c_map)
   if (arg_number == 0)
     return NEW_NUMBER(nobjects);
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   p = APOINTER(1);
   if (p==0)
     return lisp_c_map(0);
@@ -1894,7 +1891,6 @@ DY(ylisp_c_no_warnings)
 DX(xto_int)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( AINTEGER(1) );
 }
 
@@ -1902,7 +1898,6 @@ DX(xto_int)
 DX(xto_byte)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( (char)AINTEGER(1) );
 }
 
@@ -1910,7 +1905,6 @@ DX(xto_byte)
 DX(xto_ubyte)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( (unsigned char)AINTEGER(1) );
 }
 
@@ -1918,7 +1912,6 @@ DX(xto_ubyte)
 DX(xto_flt)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( Ftor( AFLT(1) ) );
 }
 
@@ -1926,7 +1919,6 @@ DX(xto_flt)
 DX(xto_real)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( AREAL(1) );
 }
 
@@ -1934,7 +1926,6 @@ DX(xto_real)
 DX(xto_number)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   return NEW_NUMBER( AREAL(1) );
 }
 
@@ -1943,7 +1934,6 @@ DX(xto_bool)
 {
   at *p;
   ARG_NUMBER(1);
-  ARG_EVAL(1);
   p = APOINTER(1);
   if (! p)
     return NIL;
@@ -1956,8 +1946,6 @@ DX(xto_bool)
 /* (to-obj [<class>] <gptr|obj>)  */
 DX(xto_obj)
 {
-  ALL_ARGS_EVAL;
-
   at *p = NIL;
   class_t *cl = NULL;
 
@@ -2013,8 +2001,6 @@ DX(xto_obj)
 DX(xto_str)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
-  
   at *p = APOINTER(1);
   
   if (STRINGP(p)) {
@@ -2047,8 +2033,6 @@ extern void *dynlink_symbol(struct module *, const char *, int, int);
 DX(xto_gptr)
 {
   ARG_NUMBER(1);
-  ARG_EVAL(1);
-
   at *p = APOINTER(1);
 
   if (p==NIL)

@@ -115,9 +115,6 @@ LUSHAPI char *api_translate_lisp2c(const char*);
     error(api_translate_c2lisp(__func__)+1, msg, p); \
 }
 
-/* other helpers */
-at *unpack_list(at *l, at **v, size_t maxnv, size_t *n);
-
 /* OS.H ---------------------------------------------------------- */
 
 
@@ -245,9 +242,7 @@ struct at {
                                 Class(p)==&window_class) )
 
 extern LUSHAPI at *(*eval_ptr) (at*);
-extern LUSHAPI at *(*argeval_ptr) (at*);
-
-#define eval(q)         (*eval_ptr)(q)
+#define eval(q)    (*eval_ptr)(q)
 
 /*
  * The class structure defines the behavior of
@@ -345,7 +340,7 @@ LUSHAPI at *nfirst(int n, at *l);
 LUSHAPI at *nth(at *l, int n);
 LUSHAPI at *nthcdr(at *l, int n);
 LUSHAPI at *lasta(at *list);
-LUSHAPI at *lastcdr(at *list);
+LUSHAPI at *last(at *list, int n);
 LUSHAPI at *flatten(at *l);
 LUSHAPI at *append(at *l1, at *l2);
 LUSHAPI at *reverse(at *l);
@@ -357,16 +352,16 @@ LUSHAPI at *assoc(at *k, at *l);
 
 LUSHAPI at *eval_std(at *p);
 LUSHAPI at *eval_debug(at *q);
-LUSHAPI at *eval_nothing(at *q);
 LUSHAPI at *call_stack(void);
+LUSHAPI at *quote(at *p);
 LUSHAPI at *apply(at *q, at *p);
 LUSHAPI at *let(at *vardecls, at *body);
 LUSHAPI at *letS(at *vardecls, at *body);
 LUSHAPI at *progn(at *p);
 LUSHAPI at *prog1(at *p);
-LUSHAPI at *mapc(at *f, at *lists);
-LUSHAPI at *mapcar(at *f, at *lists);
-LUSHAPI at *mapcan(at *f, at *lists);
+LUSHAPI at *mapc(at *f, at **listv, int n);
+LUSHAPI at *mapcar(at *f, at **listv, int n);
+LUSHAPI at *mapcan(at *f, at **listv, int n);
 
 
 /* weakref.h */
@@ -571,10 +566,10 @@ LUSHAPI at *new_dm(at *formal, at *evaluable);
 LUSHAPI at *new_dx(at *name, at *(*addr)(int,at**));
 LUSHAPI at *new_dy(at *name, at *(*addr)(at *));
 LUSHAPI at *funcdef(at *f);
-LUSHAPI at *eval_a_list(at *p);
+LUSHAPI at *eval_arglist(at *p);
+LUSHAPI at *eval_arglist_dm(at *p);
+LUSHAPI at **eval_arglist_dx(at *p);
 LUSHAPI gptr need_error(int i, int j, at **arg_array_ptr);
-LUSHAPI void arg_eval(at **arg_array, int i);
-LUSHAPI void all_args_eval(at **arg_array, int i);
 
 /* This is the interface header builder */
 
@@ -609,8 +604,6 @@ LUSHAPI void all_args_eval(at **arg_array, int i);
 #define ACLASS(i)       ( ISCLASS(i) ? (class_t *)Mptr(APOINTER(i)) : (class_t *)DX_ERROR(12,i) )
 
 #define ARG_NUMBER(i)	if (arg_number != i)  DX_ERROR(0,i);
-#define ARG_EVAL(i)	arg_eval(arg_array,i)
-#define ALL_ARGS_EVAL	all_args_eval(arg_array,arg_number)
 
 
 /* FILEIO.H ------------------------------------------------- */

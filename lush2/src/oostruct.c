@@ -37,7 +37,7 @@
 /* objects with less or equal MIN_NUM_SLOTS slots will
  * be allocated via mm_alloc.
  */
-#define MIN_NUM_SLOTS  4
+#define MIN_NUM_SLOTS  8
 
 static at *at_progn;
 static at *at_mexpand;
@@ -236,8 +236,6 @@ static const char *class_name(at *p)
 DX(xslots)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    class_t *cl = ACLASS(1);
    at *ks = cl->keylist;
    at *ds = cl->defaults;
@@ -257,8 +255,6 @@ DX(xslots)
 DX(xmethods)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    class_t *cl = ACLASS(1);
    at *mthds = NIL;
    at *q = cl->methods;
@@ -275,8 +271,6 @@ DX(xmethods)
 DX(xsuper)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-   
    class_t *cl = ACLASS(1);
    return cl->atsuper;
 }
@@ -284,8 +278,6 @@ DX(xsuper)
 DX(xsubclasses)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    class_t *cl = ACLASS(1);
    cl = cl->subclasses;
    at *ans = NIL;
@@ -299,8 +291,6 @@ DX(xsubclasses)
 DX(xclassname)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    class_t *cl = ACLASS(1);
    return cl->classname;
 }
@@ -316,7 +306,6 @@ bool builtin_class_p(const class_t *cl) {
 DX(xbuiltin_class_p) 
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    if (builtin_class_p(ACLASS(1)))
       return t();
    else
@@ -389,7 +378,6 @@ DX(xmake_class)
    at *keylist = NIL;
    at *defaults = NIL;
    
-   ALL_ARGS_EVAL;
    switch (arg_number) {
    case 4:
       defaults = APOINTER(4);
@@ -464,8 +452,6 @@ DY(ynew)
 DX(xnew_empty)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    class_t *cl = ACLASS(1);
    return new_object(cl);
 }
@@ -631,7 +617,6 @@ void putmethod(class_t *cl, at *name, at *value)
 DX(xputmethod)
 {
    ARG_NUMBER(3);
-   ALL_ARGS_EVAL;
    putmethod(ACLASS(1), APOINTER(2), APOINTER(3));
    return APOINTER(2);
 }
@@ -739,12 +724,8 @@ at *getmethod(class_t *cl, at *prop)
 DX(xgetmethod)
 {
    ARG_NUMBER(2);
-   ARG_EVAL(1);
-   ARG_EVAL(2);
-
    return getmethod(ACLASS(1), APOINTER(2));
 }
-
 
 
 
@@ -759,7 +740,7 @@ static at *call_method(at *obj, struct hashelem *hx, at *args)
    
    if (Class(fun) == &de_class) {
       // DE
-      at *p = eval_a_list(args);
+      at *p = eval_arglist(args);
       return with_object(obj, fun, p, hx->sofar);
 
    } else if (Class(fun) == &df_class) {
@@ -817,8 +798,8 @@ DY(ysend)
    at *q = ARG_LIST;
    ifn (CONSP(q) && CONSP(Cdr(q)))
       RAISEFX("arguments expected", NIL);
-   at *obj = (*argeval_ptr)(Car(q));
-   at *method = (*argeval_ptr)(Cadr(q));
+   at *obj = eval(Car(q));
+   at *method = eval(Cadr(q));
    at *args = Cddr(q);
    
    /* Send */
@@ -883,8 +864,6 @@ void lush_delete(at *p)
 DX(xdelete)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    lush_delete(APOINTER(1));
    return NIL;
 }
@@ -906,7 +885,6 @@ class_t *classof(at *p)
 DX(xclassof)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return classof(APOINTER(1))->backptr;
 }
 
@@ -921,8 +899,6 @@ bool isa(at *p, const class_t *cl)
 DX(xisa)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   
    at *p = APOINTER(1);
    at *q = APOINTER(2);
    ifn (CLASSP(q))

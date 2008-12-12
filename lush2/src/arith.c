@@ -237,8 +237,6 @@ DX(xcarg)
 #define DX_COMMUTATIVE_BINARY_OP(NAME, OP, NELEM)            \
 DX(name2(x, NAME))                                           \
 {                                                            \
-  ALL_ARGS_EVAL;                                             \
-                                                             \
   double sum = NELEM;                                        \
   int i = 0;                                                 \
   while (++i <= arg_number) {                                \
@@ -302,7 +300,6 @@ DX(name2(x, NAME))                                           \
     ARG_NUMBER(-1);                                          \
                                                              \
   /* case 1: one argument */                                 \
-  ALL_ARGS_EVAL;                                             \
   if (arg_number==1)                                         \
     return name2(unary, NAME)(APOINTER(1));                  \
                                                              \
@@ -401,7 +398,6 @@ DX_COMMUTATIVE_BINARY_OP(cle, CLE, NAN);
 DX(xdivi)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    int dv = AINTEGER(2);
    if (dv == 0)
       RAISEF("divide by zero", NIL);
@@ -411,7 +407,6 @@ DX(xdivi)
 DX(xmodi)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    int dv = AINTEGER(2);
    if (dv == 0)
       RAISEF("divide by zero", NIL);
@@ -421,7 +416,6 @@ DX(xmodi)
 
 DX(xbitand)
 {
-   ALL_ARGS_EVAL;
    int x = ~0;
    for (int i=1; i<=arg_number; i++)
       x &= AINTEGER(i);
@@ -430,7 +424,6 @@ DX(xbitand)
 
 DX(xbitor)
 {
-   ALL_ARGS_EVAL;
    int x = 0;
    for (int i=1; i<=arg_number; i++)
       x |= AINTEGER(i);
@@ -439,7 +432,6 @@ DX(xbitor)
 
 DX(xbitxor)
 {
-   ALL_ARGS_EVAL;
    int x = 0;
    for (int i=1; i<=arg_number; i++)
       x ^= AINTEGER(i);
@@ -449,7 +441,6 @@ DX(xbitxor)
 DX(xbitshl)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    int x1 = AINTEGER(1);
    int x2 = AINTEGER(2);
    return NEW_NUMBER(x1 << x2);
@@ -458,7 +449,6 @@ DX(xbitshl)
 DX(xbitshr)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    int x1 = AINTEGER(1);
    int x2 = AINTEGER(2);
    return NEW_NUMBER(x1 >> x2);

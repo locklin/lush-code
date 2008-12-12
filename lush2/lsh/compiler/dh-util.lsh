@@ -1344,7 +1344,8 @@
          (unode-unify :t1:u-tclass :t2:u-tclass dhc-combine-tclass)
          (each ((s (slots dhc-type)))
            (unode-unify (apply scope (list t1 s)) 
-                        (apply scope (list t2 s)) or))) 
+                        (apply scope (list t2 s)) 
+                        (flambda (a b) (or a b)) )))
        (unode-unify :t1:u-tclass :t2:u-tclass dhc-combine-tclass)
        (setq tclass (unode-val :t1:u-tclass))
        
@@ -1578,17 +1579,17 @@
   (let ((cls-name (dhu-name ty)))
     (when (<> cls-name 'object)
       (let ((sup-type (-dhc-specialize-type (dhu-type ty) specls warn))
-            (slots (domapcar (((name . type) (dhu-temps ty)))
-                     (if (null (specls name))
-                         (cons name type)
-                       (let ((new-type :(dhc-format-to-t-node (specls name)):type))
-                         (on-error (dhc-error (sprintf "cannot specialize slot %l\n" name) (errname))
-                           (dhc-unify-types type (==> new-type copy)) ) ; check compatibility
-                         (when warn
-                           (printf "*** Warning: Compiling class %l with slot %l specialized to %l.\n"
-                                   (classname cls) name (specls name) ))
-                         (cons name new-type) )))))
-        (let ((sty (new dhc-type 'dht-class cls-name sup-type slots ())))
+            (ss (domapcar (((name . type) (dhu-temps ty)))
+                  (if (null (specls name))
+                      (cons name type)
+                    (let ((new-type :(dhc-format-to-t-node (specls name)):type))
+                      (on-error (dhc-error (sprintf "cannot specialize slot %l\n" name) (errname))
+                        (dhc-unify-types type (==> new-type copy)) ) ; check compatibility
+                      (when warn
+                        (printf "*** Warning: Compiling class %l with slot %l specialized to %l.\n"
+                                (classname cls) name (specls name) ))
+                      (cons name new-type) )))))
+        (let ((sty (new dhc-type 'dht-class cls-name sup-type ss ())))
           (setq :ty:u-type :sty:u-type)
           (setq :ty:u-temps :sty:u-temps) ))))
   ty)
@@ -1613,24 +1614,23 @@
     ()))
 
 (de dhc-obj-type-from-class(cl)
-  (let* ((slots ())
+  (let* ((ss ())
          (the-object ())
          (the-class (dhc-class-to-dhc-type cl)))
     ;; search class and all super classes for slots
     (let ((the-class the-class))
       (do-while (<> 'dht-nil (unode-val :the-class:u-tclass))
-        (setq slots (append slots
-                            (all ((u (unode-val :the-class:u-temps))) 
+        (setq ss (append ss (all ((u (unode-val :the-class:u-temps))) 
                               (cons (car u) (==> (cdr u) copy)))))
         (setq the-class (unode-val :the-class:u-type))))
     ;; check for duplicate slot names (forbidden in compiled code)
     (let ((ans ()))
-      (each ((i (mapcar car slots)))
+      (each ((i (mapcar car ss)))
         (if (null (member i ans))
             (setq ans (nconc1 ans i))
           (dhc-error "duplicate slot name found" i))))
     (setq the-object 
-          (new dhc-type 'dht-obj (==> the-class copy) slots))
+          (new dhc-type 'dht-obj (==> the-class copy) ss))
     (==> the-object access 'write)
     the-object ) )
 
@@ -2105,7 +2105,7 @@
 ;; Returns the copy.
 (de dhc-copy-source-tree (source)
   (if (consp source) 
-      (append source () (cdr (lastcdr source)))
+      (append source () (cdr (last source)))
     source ) )
 
 

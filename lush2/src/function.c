@@ -193,7 +193,7 @@ static void  parse_optional_stuff(at *formal_list, at *real_list) {
 }
 
 
-at *eval_a_list(at *p)
+at *eval_arglist(at *p)
 {
    MM_ENTER;
 
@@ -202,7 +202,7 @@ at *eval_a_list(at *p)
    p = NIL;
    
    while (CONSP(list)) {
-      *now = new_cons(argeval_ptr(Car(list)), NIL);
+      *now = new_cons(eval(Car(list)), NIL);
       now = &Cdr(*now);
       list = Cdr(list);
    }
@@ -212,47 +212,73 @@ at *eval_a_list(at *p)
    MM_RETURN(p);
 }
 
+at *eval_arglist_dm(at *p)
+{
+   at *list = p;
+   at **now = &p;
+   p = NIL;
+   
+   while (CONSP(list)) {
+      *now = new_cons(Car(list), NIL);
+      now = &Cdr(*now);
+      list = Cdr(list);
+   }
+   if (list)
+      *now = eval(list);
 
-/* DX class -------------------------------------------	 */
+   return p;
+}
 
 at *dx_stack[DXSTACKSIZE];
 at **dx_sp = dx_stack;
 
+/* version for DXs and DHs, return old dx stack pointer */
+at **eval_arglist_dx(at *q)
+{
+   at **arg_pos = dx_sp;
+
+   at *q2 = q;
+   while (CONSP(q)) {
+      if (++dx_sp >= dx_stack + DXSTACKSIZE)
+         error(NIL, "sorry, stack full (Merci Yann)", NIL);
+      *dx_sp = eval(Car(q));
+      q = Cdr(q);
+   }
+   if (q)
+      q = eval(q);
+
+   while (CONSP(q)) {
+      if (++dx_sp >= dx_stack + DXSTACKSIZE)
+         error(NIL, "sorry, stack full (Merci Yann)", NIL);
+      *dx_sp = Car(q);
+      q = Cdr(q);
+   }
+   if (q)
+      RAISEF("bad argument list", q2);
+   
+   return arg_pos;
+}
+
+/* reset DX stack, used after error */
 void reset_dx_stack(void)
 {
    dx_sp = dx_stack;
    return;
 }
 
-at *dx_listeval(at *p, at *q2)
+
+/* DX class -------------------------------------------	 */
+
+at *dx_listeval(at *p, at *q)
 {
    MM_ENTER;
 
    cfunction_t *f = Mptr(p);
    if (CONSP(f->name))
       check_primitive(f->name, f->info);
-   
-   at **spbuff = dx_sp;
-   at **arg_pos = dx_sp;
 
-   int arg_num = 0;
-   at *q = Cdr(q2);
-parse_args:
-   while (CONSP(q)) {
-      arg_num++;
-      if (++spbuff >= dx_stack + DXSTACKSIZE)
-         error(NIL, "sorry, stack full (Merci Yann)", NIL);
-      *spbuff = Car(q);
-      q = Cdr(q);
-   }
-   if (SYMBOLP(q)) {
-      q = symbol_class.selfeval(q);
-      if (CONSP(q)) goto parse_args;
-   }
-   if (q)
-      RAISEF("bad argument list", q2);
-
-   dx_sp = spbuff;
+   at **arg_pos = eval_arglist_dx(Cdr(q));
+   int arg_num = (int)(dx_sp - arg_pos);
    at *ans = DXCALL(f)(arg_num, arg_pos);
    dx_sp = arg_pos;
 
@@ -276,6 +302,8 @@ at *dy_listeval(at *p, at *q)
    MM_ENTER;
    
    cfunction_t *f = Mptr(p);
+   if (last(q, 0))
+      q = eval_arglist_dm(q);
    if (CONSP(f->name))
       check_primitive(f->name, f->info);
    
@@ -329,7 +357,7 @@ at *de_listeval(at *p, at *q)
    MM_ENTER;
 
    lfunction_t *f = Mptr(p);
-   q = eval_a_list(Cdr(q));
+   q = eval_arglist(Cdr(q));
    push_args(f->formal_args, q);
    at *ans = progn(f->body);
    pop_args(f->formal_args);
@@ -363,6 +391,8 @@ at *df_listeval(at *p, at *q)
    MM_ENTER;
 
    lfunction_t *f = Mptr(p);
+   if (last(q, 0))
+      q = eval_arglist_dm(q);
    push_args(f->formal_args, Cdr(q));
    at *ans = progn(f->body);
    pop_args(f->formal_args);
@@ -396,6 +426,8 @@ at *dm_listeval(at *p, at *q)
    MM_ENTER;
 
    lfunction_t *f = Mptr(p);
+   if (last(q, 0))
+      q = eval_arglist_dm(q);
    push_args(f->formal_args, q);
    at *m = progn(f->body);
    pop_args(f->formal_args);
@@ -471,14 +503,12 @@ at *funcdef(at *p)
 DX(xfuncdef)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return funcdef(APOINTER(1));
 }
 
 DX(xfunctionp)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    at *p = APOINTER(1);
    return FUNCTIONP(p) ? p : NIL;
 }

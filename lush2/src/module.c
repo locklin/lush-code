@@ -622,8 +622,6 @@ DX(xmodule_list)
 DX(xmodule_filename)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *p = APOINTER(1);
    ifn (MODULEP(p))
       RAISEFX("not a module", p);
@@ -637,8 +635,6 @@ DX(xmodule_filename)
 DX(xmodule_init_function)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *p = APOINTER(1);
    ifn (MODULEP(p))
       RAISEFX("not a module", p);
@@ -654,8 +650,6 @@ DX(xmodule_init_function)
 DX(xmodule_executable_p)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *p = APOINTER(1);
    ifn (MODULEP(p))
       RAISEFX("not a module", p);
@@ -669,8 +663,6 @@ DX(xmodule_executable_p)
 DX(xmodule_unloadable_p)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *p = APOINTER(1);
    ifn (MODULEP(p))
       RAISEFX("not a module", p);
@@ -684,8 +676,6 @@ DX(xmodule_unloadable_p)
 DX(xmodule_defs)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *p = APOINTER(1);
    ifn (MODULEP(p))
       error(NIL,"Not a module", p);
@@ -1043,8 +1033,6 @@ void check_primitive(at *prim, void *info)
 DX(xmodule_never_unload)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-   
    at *p = APOINTER(1);
    ifn (MODULEP(p))
       RAISEFX("not a module",p);
@@ -1057,8 +1045,6 @@ DX(xmodule_never_unload)
 DX(xmodule_depends)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
-
    at *p = APOINTER(1);
    ifn (MODULEP(p))
       RAISEFX("not a module",p);
@@ -1149,7 +1135,6 @@ void module_unload(at *atmodule)
 DX(xmodule_unload)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    module_unload(APOINTER(1));
    return NIL;
 }
@@ -1272,8 +1257,6 @@ DX(xmodule_load)
 {
    if (arg_number != 1)
       ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
-   
    at *hook = NIL;
    if (arg_number >= 2)
       hook = APOINTER(2);
@@ -1291,13 +1274,11 @@ DX(xmodule_load)
 DX(xmod_create_reference)
 {
 #if DLDBFD
-   ALL_ARGS_EVAL;
    dynlink_init();
    for (int i=1; i<=arg_number; i++)
       dld_create_reference(ASTRING(1));
    return NEW_NUMBER(dld_undefined_sym_count);
 #else
-   ALL_ARGS_EVAL;
    return NIL;
 #endif
 }
@@ -1305,7 +1286,6 @@ DX(xmod_create_reference)
 DX(xmod_compatibility_flag)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
 #if DLDBFD
    dld_compatibility_flag = ( APOINTER(1) ? 1 : 0 );
    return (dld_compatibility_flag ? t() : NIL);

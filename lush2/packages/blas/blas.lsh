@@ -25,36 +25,9 @@
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(libload "blas/double.lsh")
+(libload "blas/float.lsh")
 (libload "overload")
-(libload "libc/fortran")
-
-(defparameter *libblas* (find-shared-library "libblas"))
-
-(when (null *libblas*)
-  (printf "\n")
-  (printf "Cannot find BLAS shared library.")
-  (printf "If you have installed BLAS and still get this message,\n")
-  (printf "you need to specify the path to the shared library by hand:\n")
-  (printf "(defparameter *libblas* \"/path/to/your/libblas.so\")\n")
-  (error "cannot configure BLAS") )
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; check that array is contiguous in the last
-;; dimension (= leading dimension in fortran)
-(defmacro chk-ld-contiguous (arg)
-  (assert (symbolp arg))
-  `(when (<> 1 (idx-modulo ,arg -1))
-     (error "array must be contiguous in last dimension") )
-  )
-
-(defmacro chk-mm-compatible (A B)
-  (assert (symbolp A))
-  (assert (symbolp B))
-  `(when (<> (idx-shape ,A 1) (idx-shape ,B 0))
-     (error "matrices not compatible for matrix-multiply") )
-  )
-
 
 #? *** Basic Linear Algebra Subroutines (Namespace blas-)
 ;; Lush interface to BLAS routines.
@@ -63,39 +36,28 @@
 
 (in-namespace blas-
 
+;; define with overload all functions defined in multiple precisions
+(do (((name . _) -blas-d))
+  (eval `(defoverload ,name ,(-blas-d name) ,(-blas-s name)) ))
+
+
 #? (blas-asum <x>)
 ;; Sum of magnitudes of elements of <x>.
-(defun asum (x)
-  (declare (-idx1- (-double-)) x)
-  (cheader "extern double dasum_();")
-  (to-double #{ dasum_($x->dim,$(idx-base x),$x->mod) #}) )
+
 
 #? (blas-amax <x>)
 ;; Maximum norm of <x>.
 (defmacro amax (x)
   (if (symbolp x)
-      `(abs (,x (blas-iamax ,x)))
+      `(abs (,x (iamax ,x)))
     (let ((u (gensym)))
       `(let ((,u ,x)) (amax ,u))
       )))
 
-#? (blas-amax <x>)
-;; Maximum norm of <x>.
-(defmacro amax (x)
-  (if (symbolp x)
-      `(abs (,x (blas-iamax ,x)))
-    (let ((u (gensym)))
-      `(let ((,u ,x)) (amax ,u))
-      )))
 
 #? (blas-axpy! <alpha> <u> <v>)
 ;; Write <alpha>*<u>+<v> to <v>, and return <v>.
-(defun axpy! (alpha u v)
-  (declare (-double-) alpha)
-  (declare (-idx1- (-double-)) u v)
-  (cheader "extern void daxpy_();")
-  #{ daxpy_($v->dim, &$alpha, $(idx-base u), $u->mod, $(idx-base v), $v->mod); #}
-  v)
+
 
 #? (blas-axpy <alpha> <u> <v>)
 ;; Return sum of <alpha>*<u> and <v>.
@@ -103,78 +65,36 @@
   `(axpy! ,alpha ,u (copy-array ,v))
   )
 
+
 #? (blas-dot <u> <v>)
 ;; Dot product of vectors <u> and <v>.
-(defun dot (u v)
-  (declare (-idx1- (-double-)) u v)
-  (cheader "extern double ddot_();")
-  (to-double #{ ddot_($u->dim,$(idx-base u),$u->mod,$(idx-base v),$v->mod) #}) )
+
 
 #? (blas-iamax <x>)
 ;; Index of maximum magnitude element of <x>.
-(defun iamax (x)
-  (declare (-idx1- (-double-)) x)
-  (cheader "extern int idamax_();")
-  (- (to-int #{ idamax_($x->dim,$(idx-base x),$x->mod) #})
-     1) )
+
 
 #? (blas-nrm2 <v>)
 ;; Euclidean norm of <v>.
-(defun nrm2 (v)
-  (declare (-idx1- (-double-)) v)
-  (cheader "extern double dnrm2_();")
-  (to-double #{ dnrm2_($v->dim,$(idx-base v),$v->mod) #}) )
+
 
 #? (blas-rotg! <abcs>)
 ;; Generate plane rotation coefficients <c> and <s>
 ;; (out) from <a> and <b> (in).
-(defun rotg! (abcs)
-  (declare (-idx1- (-double-)) abcs)
-  (cheader "extern void drotg_();")
-  (chk-ld-contiguous abcs)
-  (when (< (length abcs) 4)
-    (error "input array too short") )
-  #{{
-  double *dp = $(idx-base abcs);
-  drotg_(dp, dp+1, dp+2, dp+3);
-  }#}
-  ())
+
 
 #? (blas-rotg <a> <b>)
 ;; Generate plane rotation coefficients <c> and <s>
 ;; from <a> and <b> and return in a two-element vector.
-(defun rotg (a b)
-  (declare (-double-) a b)
-  (let ((cs (double-array 4)))
-    (cs 0 a)
-    (cs 1 b)
-    (rotg! cs)
-    (idx-trim! cs 0 2 2)
-    cs))
+
 
 #? (blas-rot! <x> <y> <cs>)
 ;; Apply plane rotation <cs> to vectors <x> and <y>.
-(defun rot! (x y cs)
-  (declare (-idx1- (-double-)) x y cs)
-  (cheader "extern void drot_();")
-  (when (<> (length x) (length y))
-    (error "x and y are of different length") )
-  (when (<> (length cs) 2)
-    (error "<cs> is not a two-element vector") )
-  #{{
-  double *cs = $(idx-base cs);
-  drot_($x->dim,$(idx-base x),$x->mod,$(idx-base y),$y->mod,cs,cs+1);
-  }#}
-  ())
+
 
 #? (blas-scal! <alpha> <v>)
 ;; Scale vector <v> by <alpha> in place and return it.
-(defun scal! (alpha u)
-  (declare (-idx1- (-double-)) u)
-  (declare (-double-) alpha)
-  (cheader "extern void dscal_();")
-  #{ dscal_($u->dim,&$alpha,$(idx-base u),$u->mod); #}
-  u)
+
 
 #? (blas-scal <alpha> <v>)
 ;; Return scaled <alpha>*<v>.
@@ -182,15 +102,10 @@
   `(scal! ,alpha (copy-array ,u))
   )
 
+
 #? (blas-scal1! <v>)
 ;; Normalize vector <v> in place.
-(defun scal1! (u)
-  (declare (-idx1- (-double-)) u)
-  #{ 
-  double l = 1/dnrm2_($u->dim,$(idx-base u),$u->mod);
-  dscal_($u->dim,&l,$(idx-base u),$u->mod); 
-  #}
-  u)
+
 
 #? (blas-scal1 <v>)
 ;; Return normalized vector <v>.
@@ -198,89 +113,32 @@
   `(scal1! (copy-array ,u))
   )
 
+
 #? (blas-swap! <x> <y>)
 ;; Swap data in <x> and <y>.
-(defun swap! (x y)
-  (declare (-idx1- (-double-)) x y)
-  (cheader "extern void dswap_();")
-  (when (<> (length x) (length y))
-    (error "x and y are of different length") )
-  #{ dswap_($x->dim,$(idx-base x),$x->mod,$(idx-base y),$y->mod); #}
-  ())
+
 
 #? ** BLAS Level 2
 
 #? (blas-gemv! <alpha> <A> <u> <beta> <v>)
 ;; Update <v> with <alpha>*<A>.<u> + <beta>*<v> and return <v>.
-(defun gemv! (alpha A x beta y)
-  (declare (-double-) alpha beta)
-  (declare (-idx2- (-double-)) A)
-  (declare (-idx1- (-double-)) x y)
-  (cheader "extern void dgemv_();")
-  (when (<> (length x) (idx-shape A 1))
-    (error "u does not match row length of A") )
-  (when (<> (length y) (idx-shape A 0))
-    (error "v does not match column length of A") )
-  (chk-ld-contiguous A)
-  #{ dgemv_("T",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
-  y)
+
 
 #? (blas-gemv <alpha> <A> <u>)
 ;; Return <alpha>*<A>.<u>.
-(defun gemv (alpha A x)
-  (declare (-double-) alpha)
-  (declare (-idx2- (-double-)) A)
-  (declare (-idx1- (-double-)) x)
-  (when (<> (length x) (idx-shape A 1))
-    (error "u does not match row length of A") )
-  (chk-ld-contiguous A)
-  (let ((y (double-array* (idx-shape A 0)))
-        (beta 0) )
-    #{ dgemv_("T",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
-    y))
+
 
 #? (blas-gevm! <alpha> <u> <A> <beta> <v>)
 ;; Update <v> with <alpha>*<u>.<A> + <beta>*<v> and return <v>.
-(defun gevm! (alpha x A beta y)
-  (declare (-double-) alpha beta)
-  (declare (-idx2- (-double-)) A)
-  (declare (-idx1- (-double-)) x y)
-  (when (<> (length x) (idx-shape A 0))
-    (error "u does not match column length of A") )
-  (when (<> (length y) (idx-shape A 1))
-    (error "v does not match row length of A") )
-  (chk-ld-contiguous A)
-  #{ dgemv_("N",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
-  y)
+
 
 #? (blas-gevm <alpha> <u> <A>)
 ;; Return <alpha>*<u>.<A>.
-(defun gevm (alpha x A)
-  (declare (-double-) alpha)
-  (declare (-idx2- (-double-)) A)
-  (declare (-idx1- (-double-)) x)
-  (when (<> (length x) (idx-shape A 0))
-    (error "u does not match column length of A") )
-  (chk-ld-contiguous A)
-  (let ((y (double-array* (idx-shape A 1)))
-        (beta 0) )
-    #{ dgemv_("N",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
-    y))
+
 
 #? (blas-ger1! <alpha> <u> <v> <A>)
 ;; Update <A> with <alpha>*<u>o<v> + <A> and return <A>.
-(defun ger1! (alpha u v A)
-  (declare (-double-) alpha)
-  (declare (-idx1- (-double-)) u v)
-  (declare (-idx2- (-double-)) A)
-  (cheader "extern void dger_();")
-  (chk-ld-contiguous A)
-  (when (<> (length u) (idx-shape A 0))
-    (error "u does not match column length of A") )
-  (when (<> (length v) (idx-shape A 1))
-    (error "v does not match row length of A") )
-  #{ dger_($a->dim+1,$a->dim,&$alpha,$(idx-base v),$v->mod,$(idx-base u),$u->mod,$(idx-base A),$a->mod); #}
-  A)
+
 
 #? (blas-ger1 <alpha> <u> <v> <A>)
 ;; Return <alpha>*<u>o<v> + <A>.
@@ -288,44 +146,22 @@
   `(ger1! ,alpha ,u ,v (copy-array ,A))
   )
 
+
 #? ** BLAS Level 3
 
 #? (blas-gemm! <alpha> <A> <B> <beta> <C>)
 ;; Update <C> with <alpha>*<A>.<B> + <beta>*<C> and return <C>.
-(defun gemm! (alpha A B beta C)
-  (declare (-double-) alpha beta)
-  (declare (-idx2- (-double-)) A B C)
-  (cheader "extern void dgemm_();")
-  (chk-ld-contiguous A)
-  (chk-ld-contiguous B)
-  (chk-ld-contiguous C)
-  (chk-mm-compatible A B)
-  (when (<> (idx-shape A 0) (idx-shape C 0))
-    (error "A and C not compatible") )
-  (when (<> (idx-shape B 1) (idx-shape C 1))
-    (error "B anc C not compatible") )
-  #{ dgemm_("N","N",$c->dim+1,$c->dim,$b->dim+1,&$alpha,$(idx-base B),$b->mod,$(idx-base A),$a->mod,&$beta,$(idx-base C),$c->mod); #}
-  C)
+
 
 #? (blas-gemm <alpha> <A> <B>)
 ;; Return <alpha>*<A>.<B>.
-(defun gemm (alpha A B)
-  (declare (-double-) alpha)
-  (declare (-idx2- (-double-)) A B)
-  (gemm! alpha A B 0 (double-array (idx-shape A 0) (idx-shape B 1))) )
+
 
 #? (blas-symm! <alpha> <S> <B> <beta> <C>)
 ;; Update <C> with <alpha>*<S>.<B> + <beta>*<C> and return <C>.
 ;;
-;; <S> is symmetric, only the upper triangle is referenced.
-(defun symm! (alpha S B beta C)
-  (declare (-double-) alpha beta)
-  (declare (-idx2- (-double-)) S B C)
-  (cheader "extern void dsymm_();")
-  (when (not (mat-squarep S))
-    (error "S not square") )
-  #{ dsymm_("R","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
-  C)
+;; Matrix <S> is symmetric, only the upper triangle is referenced.
+
     
 #? (blas-symm <alpha> <S> <B>)
 ;; Return <alpha>*<S>.<B>.
@@ -337,18 +173,12 @@
 	 (symm ,alpha ,S ,BB) )
       )))
 
+
 #? (blas-msym! <alpha> <B> <S> <beta> <C>)
 ;; Update <C> with <alpha>*<B>.<S> + <beta>*<C> and return <C>.
 ;;
-;; <S> is symmetric, only the upper triangle is referenced.
-(defun msym! (alpha B S beta C)
-  (declare (-double-) alpha beta)
-  (declare (-idx2- (-double-)) S B C)
-  (cheader "extern void dsymm_();")
-  (when (not (mat-squarep S))
-    (error "S not square") )
-  #{ dsymm_("L","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
-  C)
+;; Matrix <S> is symmetric, only the upper triangle is referenced.
+
 
 #? (blas-msym <alpha> <B> <S>)
 ;; Return <alpha>*<B>.<S>.
@@ -360,24 +190,64 @@
 	 (msym ,alpha ,BB ,S) )
       )))
 
+
+#? (blas-utmm! <alpha> <U> <B>)
+;; Update <B> with <alpha>*<U>.<B> and return <B>.
+;;
+;; Matrix <U> is upper triangular.
+
+
+#? (blas-utmm <alpha> <T> <B>)
+;; Return <alpha>*<U>.<B>.
+;;
+;; Matrix <U> is upper triangular.
+(defmacro utmm (alpha U B)
+  `(utmm! ,alpha ,U (copy-array ,B)) 
+  )
+
+
+#? (blas-mutm! <alpha> <B> <U>)
+;; Update <B> with <alpha>*<B>.<U> and return <B>.
+;;
+;; Matrix <U> is upper triangular.
+
+
+#? (blas-mutm <alpha> <B> <U>)
+;; Return <alpha>*<B>.<U>.
+;;
+;; Matrix <U> is upper triangular.
+(defmacro mutm (alpha B U)
+  `(mutm! ,alpha (copy-array ,B) ,U) 
+  )
+
+
+#? (blas-utmsv! <alpha> <U> <B>)
+;; Update <B> with <alpha>*<T>^-1.<B> and return <B>.
+;;
+;; Matrix <U> is upper triangular.
+
+
+#? (blas-utmsv <alpha> <U> <B>)
+;; Return <alpha>*<U>^-1.<B>.
+;;
+;; Matrix <U> is upper triangular.
+(defmacro utmsv (alpha U B)
+  `(utmsv! ,alpha ,U (copy-array ,B)) 
+  )
+
+
+#? (blas-mutsv! <alpha> <B> <U>)
+;; Update <B> with <alpha>*<B>.<U>^-1 and return <B>.
+;;
+;; Matrix <U> is upper triangular.
+
+
+#? (blas-mutsv <alpha> <B> <U>)
+;; Return <alpha>*<B>.<U>^-1.
+;;
+;; Matrix <U> is upper triangular.
+(defmacro mutsv (alpha B U)
+  `(mutsv! ,alpha (copy-array ,B) ,U)
+  )
+
 )
-
-
-(dhc-make-with-libs ()
-                    (list *libblas*)
-                    blas-asum
-                    blas-iamax
-                    blas-dot 
-                    blas-axpy! 
-                    blas-nrm2 
-                    blas-rotg! blas-rotg blas-rot!
-                    blas-scal! blas-scal1! blas-swap!
-
-                    blas-gemv! blas-gemv
-                    blas-gevm! blas-gevm
-                    blas-ger1!
-
-                    blas-gemm! blas-gemm
-		    blas-symm! blas-msym!)
-
-

@@ -617,10 +617,8 @@ void process_pending_events(void)
             class_t *cl = classof(hndl);
             at *m = getmethod(cl, at_handle);
             if (m) {
-               at *args = new_cons(event, NIL);
-               argeval_ptr = eval_nothing;
-               m = send_message(NIL, hndl, at_handle, args);
-               argeval_ptr = eval_std;
+               at *args = new_cons(quote(event), NIL);
+               send_message(NIL, hndl, at_handle, args);
             }
          }
          /* Check for more events */
@@ -747,7 +745,6 @@ DX(xprocess_pending_events)
 DX(xseteventhandler)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    at *w = APOINTER(1);
    at *q = APOINTER(2);
    ifn (WINDOWP(w))
@@ -770,7 +767,6 @@ DX(xseteventhandler)
 DX(xsendevent)
 {
    ARG_NUMBER(2);
-   ALL_ARGS_EVAL;
    at *p1 = APOINTER(1);
    at *p2 = APOINTER(2);
    if (NUMBERP(p1) && NUMBERP(p2)) {
@@ -793,10 +789,9 @@ static at *test_event_sub(int arg_number, at **arg_array, int remove)
    at *handler = NIL;
    if (arg_number == 0)
       handler = current_window_handler();
-   else if (arg_number == 1) {
-      ARG_EVAL(1);
+   else if (arg_number == 1)
       handler = APOINTER(1);
-   } else 
+   else 
       ARG_NUMBER(-1);
 
    /* Perform */
@@ -837,7 +832,6 @@ DX(xwaitevent)
 /* Create a timer */
 DX(xcreate_timer)
 {
-   ALL_ARGS_EVAL;
    if (arg_number == 2)
       return new_gptr(timer_add(APOINTER(1),AINTEGER(2),0));
    ARG_NUMBER(3);
@@ -847,7 +841,6 @@ DX(xcreate_timer)
 /* Create a timer to a specific date */
 DX(xcreate_timer_absolute)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(2);
    return new_gptr(timer_abs(APOINTER(1),AREAL(2)));
 }
@@ -855,7 +848,6 @@ DX(xcreate_timer_absolute)
 /* Destroy a timer */
 DX(xkill_timer)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(1);
    timer_del(AGPTR(1));
    return NIL;
@@ -864,7 +856,6 @@ DX(xkill_timer)
 /* Sleep for specified time (seconds) */
 DX(xsleep)
 {
-   ALL_ARGS_EVAL;
    ARG_NUMBER(1);
    int delay = (int)(1000 * AREAL(1));
    os_wait(0, NULL, false, delay);

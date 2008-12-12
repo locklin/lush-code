@@ -43,6 +43,8 @@
 # define UNBLOCK_SIGINT sigprocmask(SIG_UNBLOCK,&sigint_mask,NULL);
 #endif
 
+bool debug_mode = false;
+
 /*
  * eval(p) <=> (*eval_ptr)(p)   (MACRO)
  * 
@@ -51,13 +53,6 @@
  */
 
 at *(*eval_ptr) (at *);
-at *(*argeval_ptr) (at *);
-
-#define PUSH_ARGEVAL_PTR(func) {  \
-   at *(*old_eval_ptr) (at *) = argeval_ptr; \
-   argeval_ptr = func;
- 
-#define POP_ARGEVAL_PTR  argeval_ptr = old_eval_ptr; }
 
 #define PUSH_EVAL_PTR(func) {  \
    at *(*old_eval_ptr) (at *) = eval_ptr; \
@@ -69,22 +64,19 @@ struct call_chain *top_link = NULL;
 
 at *eval_std(at *p)
 {
-   extern at *generic_listeval(at *p, at *q);
-
    if (CONSP(p)) {
       struct call_chain link;
       link.prev = top_link;
       link.this_call = p;
       top_link = &link;
       
-      argeval_ptr = eval_ptr;
       CHECK_MACHINE("on");
       
       at *q = eval_std(Car(p));
       if (q)
          p = Class(q)->listeval(q, p);
       else
-         p = generic_listeval(q, p);
+         p = null_class.listeval(q, p);
 
       top_link = top_link->prev;
       return p;
@@ -96,35 +88,10 @@ at *eval_std(at *p)
       return NIL;
 }
 
-
 DX(xeval)
 {
    ARG_NUMBER(1);
-   ARG_EVAL(1);
    return eval(APOINTER(1));
-}
-
-/* DX(xeval) */
-/* { */
-/*    if (arg_number < 1) */
-/*       RAISEFX("no arguments", NIL); */
-   
-/*    for (int i = 1; i < arg_number; i++) { */
-/*       ARG_EVAL(i); */
-/*       eval(APOINTER(i)); */
-/*    } */
-/*    ARG_EVAL(arg_number); */
-/*    return eval(APOINTER(arg_number)); */
-/* } */
-
-
-/* eval_nothing
- * is used to prevent argument evaluation when executing DF functions
- */
-
-at *eval_nothing(at *q)
-{
-   return q;
 }
 
 
@@ -182,57 +149,45 @@ at *eval_debug(at *q)
    bool flag = call_trace_hook(tab, first_line(q), q, NIL);
    UNBLOCK_SIGINT;
 
-   eval_ptr = argeval_ptr = (flag ? eval_debug : eval_std);
+   eval_ptr = (flag ? eval_debug : eval_std);
    at *ans = eval_std(q);
    
    BLOCK_SIGINT;
    flag = call_trace_hook(-tab, first_line(ans), q, ans);
    UNBLOCK_SIGINT;
 
-   eval_ptr = argeval_ptr = (flag ? eval_debug : eval_std);
+   eval_ptr = (flag ? eval_debug : eval_std);
    error_doc.debug_tab = tab-1;
    return ans;
 }
 
-/*
- * apply(f,args) C implementation eval(cons(f,arg)) LISP
- * implementation try to care about the function type.
+/* apply(f, args) apply function f to args, where args
+ * are already evaluated arguments.
  */
+
+static at *at_applystack;
 
 at *apply(at *p, at *q)
 {
    ifn (p)
       RAISEF("cannot apply nil", NIL);
-   p = eval(p);
-   q = new_cons(p, q);
-   CHECK_MACHINE("on");
-   
-   at *result;
-   PUSH_ARGEVAL_PTR(eval_nothing) {
-      assert(Class(p)->listeval);
-      result = Class(p)->listeval(p, q);
-   } POP_ARGEVAL_PTR;
 
-   return result;
+   SYMBOL_PUSH(at_applystack, q);
+   at *res = Class(p)->listeval(p, new_cons(p, at_applystack));
+   SYMBOL_POP(at_applystack);
+   return res;
 }
 
-DY(yapply)
+DX(xapply)
 { 
-   at *p = ARG_LIST;
-   ifn (CONSP(p) && CONSP(Cdr(p)))
-      RAISEF("at least two arguments expected", NIL);
-   
-   at *q;
-   if (Cddr(p)) {
-      at *args = eval_a_list(Cdr(p));
-      at *l1 = nfirst(length(args)-1, args);
-      at *l2 = lasta(args);
-      q = append(l1, l2);
-   } else
-      q = eval(Cadr(p));
-   
-   p = eval(Car(p));
-   return apply(p, q);
+   if (arg_number < 2)
+      RAISEFX("at least two arguments expected", NIL);
+
+   at *p = ALIST(arg_number);
+   while (arg_number-- > 2)
+      p = new_cons(APOINTER(arg_number), p);
+
+   return apply(APOINTER(1), p);
 }
 
 /*
@@ -297,7 +252,7 @@ DY(yprog1)
 /* compose list of cars of lists and return it */
 /* return nil if any of the lists is nil       */
 
-static inline at *next_args(at **listv, int nargs)
+static at *next_args(at **listv, int nargs)
 {
    at *args = NIL;
    at **where = &args;
@@ -315,24 +270,8 @@ static inline at *next_args(at **listv, int nargs)
    return args;
 }
 
-#define INIT_LISTV(ls, n)                      \
-  for (n=0; n<=MAXARGMAPC; n++) {              \
-    if (ls==NIL)                               \
-      break;                                   \
-    ifn (LISTP(Car(ls)))                       \
-      RAISEF("not a list", Car(ls));           \
-    listv[n] = Car(ls);                        \
-    ls = Cdr(ls);                              \
-  }                                            \
-  if (ls!=NIL)                                 \
-    RAISEF("too many arguments", NIL);
-
-at *mapc(at *f, at *lists)
+at *mapc(at *f, at **listv, int n)
 {
-   at *listv[MAXARGMAPC];
-   int n;
-   INIT_LISTV(lists, n);
-
    at *result = listv[0];
    at *args;
    while ((args = next_args(listv, n)))
@@ -341,12 +280,16 @@ at *mapc(at *f, at *lists)
    return result;
 }
 
-at *mapcar(at *f, at *lists)
+DX(xmapc)
 {
-   at *listv[MAXARGMAPC];
-   int n;
-   INIT_LISTV(lists, n);
+   if (arg_number < 2)
+      RAISEFX("arguments missing", NIL);
+   
+   return mapc(APOINTER(1), &APOINTER(2), arg_number-1);
+}
 
+at *mapcar(at *f, at **listv, int n)
+{
    at *result = NIL;
    at **where = &result;
    at *args;
@@ -357,12 +300,16 @@ at *mapcar(at *f, at *lists)
    return result;
 }
 
-at *mapcan(at *f, at *lists)
+DX(xmapcar)
 {
-   at *listv[MAXARGMAPC];
-   int n;
-   INIT_LISTV(lists, n);
+   if (arg_number < 2)
+      RAISEFX("arguments missing", NIL);
    
+   return mapcar(APOINTER(1), &APOINTER(2), arg_number-1);
+}
+
+at *mapcan(at *f, at **listv, int n)
+{
    at *result = NIL;
    at **where = &result;
    at *args;
@@ -374,32 +321,21 @@ at *mapcan(at *f, at *lists)
    return result;
 }
 
-#define DYMAP(mapx)  DY(name2(y,mapx)) {        \
-  ifn (CONSP(ARG_LIST))                         \
-    RAISEF("arguments missing", NIL);           \
-                                                \
-  at *fn = eval(Car(ARG_LIST));                 \
-  at *lists = eval_a_list(Cdr(ARG_LIST));       \
-  if (lists==NIL)                               \
-    RAISEF("list argument(s) missing", NIL);    \
-                                                \
-  at *result = mapx(fn, lists);                 \
-  return result;                                \
+DX(xmapcan)
+{
+   if (arg_number < 2)
+      RAISEFX("arguments missing", NIL);
+
+   return mapcan(APOINTER(1), &APOINTER(2), arg_number-1);
 }
 
-DYMAP(mapc);
-DYMAP(mapcar);
-DYMAP(mapcan);
-
-
-/*  unzip_and_eval: splice a list of pairs,
-    eval 2nd element of each pair             */
+/*  unzip_bindings: splice a list of pairs */
 
 static char *errmsg_vardecl1 = "not a list of pairs";
 static char *errmsg_vardecl2 = "not a valid variable declaration form";
 static char *errmsg_vardecl3 = "number of values does not match number of variables";
 
-char *unzip_and_eval_cdr(at *l, at **l1, at **l2)
+static char *unzip_bindings(at *l, at **l1, at **l2)
 {
    at **where1 = l1;
    at **where2 = l2;
@@ -414,7 +350,7 @@ char *unzip_and_eval_cdr(at *l, at **l1, at **l2)
          return errmsg_vardecl1;
       }
       *where1 = new_cons(Car(pair), NIL);
-      *where2 = new_cons(eval(Cadr(pair)), NIL);
+      *where2 = new_cons(Cadr(pair), NIL);
       where1 = &Cdr(*where1);
       where2 = &Cdr(*where2);
    }
@@ -429,10 +365,10 @@ char *unzip_and_eval_cdr(at *l, at **l1, at **l2)
 at *let(at *vardecls, at *body)
 {
    at *syms, *vals;
-   RAISEF(unzip_and_eval_cdr(vardecls, &syms, &vals), vardecls);
+   RAISEF(unzip_bindings(vardecls, &syms, &vals), vardecls);
 
-   at *func = new_df(syms, body);
-   at *result = apply(func, vals);
+   at *func = new_de(syms, body);
+   at *result = de_class.listeval(func, new_cons(func, vals));
    return result;
 }
 
@@ -446,10 +382,10 @@ DY(ylet)
 at *lete(at *vardecls, at *body)
 {
    at *syms, *vals;
-   RAISEF(unzip_and_eval_cdr(vardecls, &syms, &vals), vardecls);
+   RAISEF(unzip_bindings(vardecls, &syms, &vals), vardecls);
 
-   at *func = new_df(syms, body);
-   at *result = apply(func, vals);
+   at *func = new_de(syms, body);
+   at *result = de_class.listeval(func, new_cons(func, vals));
 
    /* before we return, explicitly delete all local variables */
    while (CONSP(vals)) {
@@ -522,6 +458,14 @@ DY(yletS)
  * (quote a1) returns a1 without evaluation
  */
 
+static at *at_quote = NIL;
+
+at *quote(at *p)
+{
+   return new_cons(at_quote,new_cons(p, NIL));
+}
+
+
 DY(yquote)
 {
    ifn (CONSP(ARG_LIST) && (LASTCONSP(ARG_LIST)))
@@ -566,15 +510,16 @@ void init_eval(void)
    sigaddset(&sigint_mask, SIGINT);
 #endif
 
-   argeval_ptr = eval_ptr = eval_std;
+   eval_ptr = eval_std;
    dx_define("eval", xeval);
+   dx_define("apply", xapply);
    dx_define("call-stack", xcall_stack);
+   dx_define("mapc", xmapc);
+   dx_define("mapcar", xmapcar);
+   dx_define("mapcan", xmapcan);
+
    dy_define("progn", yprogn);
    dy_define("prog1", yprog1);
-   dy_define("apply", yapply);
-   dy_define("mapc", ymapc);
-   dy_define("mapcar", ymapcar);
-   dy_define("mapcan", ymapcan);
    dy_define("let", ylet);
    dy_define("lete", ylete);
    dy_define("let*", yletS);
@@ -582,7 +527,9 @@ void init_eval(void)
    dy_define("debug", ydebug);
    dy_define("nodebug", ynodebug);
    
+   at_applystack = var_define("APPLY-STACK");
    at_trace = var_define("trace-hook");
+   at_quote = var_define("quote");
 }
 
 
