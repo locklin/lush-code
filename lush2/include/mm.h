@@ -10,6 +10,9 @@
 #ifndef MM_INCLUDED
 #define MM_INCLUDED
 
+#define MM_SIZE_MAX    (UINT32_MAX*MIN_HUNKSIZE)
+#define MM_MIN_STRING  40
+
 #define NVALGRIND
 
 #include <stddef.h>
@@ -53,8 +56,9 @@ bool    mm_collect_in_progress(void);    // true if gc is under way
 bool    mm_idle(void);                   // do work, return true when more work
 
 /* string utilities */
+char   *mm_string(size_t);               // create buffer for string of size
 char   *mm_strdup(const char *);         // create managed copy of string
-size_t  mm_strlen(const char *);         // length of managed string
+#define mm_strlen  strlen                // length of managed string
 
 /* diagnostics */
 const char *mm_info(int);                // diagnostic message in managed string

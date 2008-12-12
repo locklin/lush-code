@@ -60,33 +60,38 @@
 #  define PIPE_BUF      512
 #endif
 
+#ifndef MM_MIN_STRING
+#  error MM_MIN_STRING not defined
+#endif
+
 #define PAGEBITS        12
 //#define BLOCKBITS       (PAGEBITS+1)
 #define BLOCKBITS       PAGEBITS
 #if defined  PAGESIZE && (PAGESIZE != (1<<PAGEBITS))
-#  error "definitions related to PAGESIZE need to be updated"
+#  error Definitions related to PAGESIZE inconsistent
 #elif !defined PAGESIZE
 #  define PAGESIZE      (1<<PAGEBITS)
 #endif
 #define BLOCKSIZE       (1<<BLOCKBITS)
 
+
 #define ALIGN_NUM_BITS  3
+#define MIN_STRING      MM_MIN_STRING
 #define MIN_HUNKSIZE    (1<<ALIGN_NUM_BITS)
-#define MIN_STRING      MIN_HUNKSIZE
 #define MIN_NUMBLOCKS   0x100
 #define MIN_TYPES       0x100
 #define MIN_MANAGED     0x40000
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
-#define MAX_VOLUME      0x280000    /* max volume threshold */
+#define MAX_VOLUME      0x300000    /* max volume threshold */
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
 #define NUM_IDLE_CALLS  100
 
-#define MM_SIZE_MAX     (UINT32_MAX*MIN_HUNKSIZE) /* checked in alloc_variable_sized */
+
 
 #define HMAP_NUM_BITS   4
 
-#if !defined INT_MAX
+#ifndef INT_MAX
 #  error INT_MAX not defined.
 #elif INT_MAX == 9223372036854775807L
 #  define HMAP_EPI       16
@@ -1456,6 +1461,19 @@ void *mm_realloc(void *q, size_t s)
    return r;
 }
 
+char *mm_string(size_t ss)
+{
+   char  *s2;
+   if (ss < MIN_STRING)
+      s2 = mm_alloc(mt_string);
+   else
+      s2 = mm_allocv(mt_string, ss+1);
+
+   if (s2)
+      memset(s2, 0, ss+1);
+
+   return s2;
+}
 
 char *mm_strdup(const char *s)
 {
@@ -1474,6 +1492,7 @@ char *mm_strdup(const char *s)
 }
 
 
+/*
 size_t mm_strlen(const char *s)
 {
    if (MM_TYPEOF(s) != mt_string)
@@ -1487,7 +1506,7 @@ size_t mm_strlen(const char *s)
    assert(l == strlen(s));
    return l;
 }
-
+*/
 
 void mm_type(const void *p, mt_t t)
 {

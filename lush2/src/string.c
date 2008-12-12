@@ -67,11 +67,7 @@ static void make_singletons(void)
 
 at *make_string_of_length(size_t n)
 {
-   char *s = mm_allocv(mt_blob, n+1);
-   ifn (s)
-      error(NIL, "memory exhausted", NIL);
-   
-   s[0] = s[n] = 0;
+   char *s = mm_string(n);  /* mm_string adds one for nul-termination */
    return new_string(s);
 }
 
