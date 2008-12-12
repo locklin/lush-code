@@ -2228,8 +2228,14 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
 /* print diagnostic info to stdinf */
 const char *mm_info(int level)
 {
-   char buffer[2048], *buf = buffer;
-#define BPRINTF(...) { sprintf(buf, __VA_ARGS__); buf += strlen(buf); }
+#define PRINTBUFLEN 20000
+#define BPRINTF(...) {               \
+   sprintf(buf, __VA_ARGS__);        \
+   buf += strlen(buf);               \
+   assert((buf-buffer)<PRINTBUFLEN);\
+   }
+
+   char buffer[PRINTBUFLEN], *buf = buffer;
    
    if (level<=0)
       return NULL;
@@ -2237,9 +2243,12 @@ const char *mm_info(int level)
    int    total_blocks_in_use = 0;
    size_t total_memory_managed = 0;
    size_t total_memory_used_by_mm = 0;
-   size_t total_objects_managed = 0;
-   size_t total_objects_per_type[types_size];
-   memset(&total_objects_per_type, 0, types_size*sizeof(size_t));
+   size_t total_objects_inheap = 0;
+   size_t total_objects_offheap = 0;
+   size_t total_objects_per_type_ih[types_size];
+   size_t total_objects_per_type_oh[types_size];
+   memset(&total_objects_per_type_ih, 0, types_size*sizeof(size_t));
+   memset(&total_objects_per_type_oh, 0, types_size*sizeof(size_t));
 
    for (int i=0; i<num_blocks; i++)
       if (blockrecs[i].in_use)
@@ -2250,22 +2259,23 @@ const char *mm_info(int level)
            ((double)total_blocks_in_use)*BLOCKSIZE/(1<<20), total_blocks_in_use);
 
    DO_HEAP(a, b) {
-      total_objects_managed++;
+      total_objects_inheap++;
       mt_t t = blockrecs[b].t;
-      total_objects_per_type[t]++;
+      total_objects_per_type_ih[t]++;
       total_memory_managed += types[t].size;
    } DO_HEAP_END;
 
    DO_MANAGED(i) {
-      total_objects_managed++;
+      total_objects_offheap++;
       void *p = CLRPTR(managed[i]);
       mt_t t  = MM_TYPEOF(p);
-      total_objects_per_type[t]++;
+      total_objects_per_type_oh[t]++;
       total_memory_managed += MM_SIZEOF(p);
    } DO_MANAGED_END;
 
-   BPRINTF("Managed memory   : %.2f MByte in %"PRIdPTR" objects\n",
-           ((double)total_memory_managed)/(1<<20), total_objects_managed);
+   BPRINTF("Managed memory   : %.2f MByte in %"PRIdPTR" + %"PRIdPTR" objects\n",
+           ((double)total_memory_managed)/(1<<20),
+           total_objects_inheap, total_objects_offheap);
    total_memory_used_by_mm += hmapsize;
    total_memory_used_by_mm += man_size*sizeof(managed[0]);
    total_memory_used_by_mm += types_size*sizeof(typerec_t);
@@ -2288,6 +2298,24 @@ const char *mm_info(int level)
 
    BPRINTF("Memory roots     : %d total, %d active\n", roots_last+1, active_roots);
    BPRINTF("Transient stack  : %d objects\n", stack_depth(transients));
+   if (level<=2)
+      return mm_strdup(buffer);
+
+   BPRINTF("\n");
+   BPRINTF(" Memory type    | size  | # inheap (blocks) | # malloced \n");
+   BPRINTF("---------------------------------------------------------\n");
+   
+   for (int t = 0; t <= types_last; t++) {
+      int n = 0;
+      for (int b = 0; b < num_blocks; b++)
+         if (blockrecs[b].t == t)
+            n++;
+      BPRINTF(" %14s | %5"PRIdPTR" | %7"PRIdPTR"  (%6"PRIdPTR") |    %7"PRIdPTR" \n",
+              types[t].name,
+              types[t].size,
+              total_objects_per_type_ih[t], n,
+              total_objects_per_type_oh[t]);
+   }
    return mm_strdup(buffer);
 }
 
