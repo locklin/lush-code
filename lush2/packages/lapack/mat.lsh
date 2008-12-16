@@ -1,0 +1,122 @@
+
+(libload "blas/mat")
+(libload "lapack")
+
+;; make explicit matrices L and U from result of lapack-getrf
+(defun -mk-lu (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((m (shape A 0))
+        (n (shape A 1)) )
+    (declare (-int-) m n)
+    (if (< m n)
+        (let ((L (mat-id m)))
+          (let ((lrow (idx-trim* L 1 0))
+                (arow (idx-trim* A 1 0)) )
+            (for* (i 1 m)
+              (declare (-int-) i)
+              (idx-extend! lrow 1 1)
+              (idx-shift!  lrow 0 1)
+              (idx-extend! arow 1 1)
+              (idx-shift!  arow 0 1)
+              (array-copy  arow lrow)
+              (array-clear arow 0) )
+            (list L A)))
+      (let ((U ##(idx-trim A 0 0 n)))
+        (let ((urow (idx-trim* U 1 0))
+              (arow (idx-trim  A 0 0 1)) )
+          (for* (i 1 m)
+            (declare (-int-) i)
+            (array-clear arow 0)
+            (arow 0 0 1)
+            (idx-shift!  arow 0 1)
+            (idx-trim!   arow 1 1)
+            (when (< i n)
+              (idx-shift!  urow 0 1)
+              (idx-extend! urow 1 1)
+              (array-clear urow 0) ))
+          (list A U))))))
+
+(in-namespace mat-
+
+#? (mat-perm <p>)
+;; {<see> mat-permute}
+;; Create permutation matrix from permutation vector <p>.
+(defun perm (v)
+  (declare (-idx1- (-int-)) v)
+  (let* ((n (length v))
+         (P (double-array n n)) )
+    (for* (i 0 n)
+      (declare (-int-) i)
+      (when (or (>= (v i) n) (< (v i) 0))
+        (error "not a permutation vector") )
+      (P i (v i) 1) )
+    P))
+
+#? (mat-permute! <A> <p>)
+;; {<see> mat-perm, mat-permute}
+;; Permute rows of matrix <A> with permutation vector <p> and 
+;; return modified <A>.
+(defun permute! (A v)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-int-)) v)
+  (let* ((n (length v))
+         (col (double-array n)) )
+    (for* (i 0 n)
+      (declare (-int-) i)
+      (when (or (>= (v i) n) (< (v i) 0))
+        (error "not a permutation vector") )
+      (col (v i) 1))
+    (when (<> (blas-asum col) n)
+      (error "not a permutation vector"))
+   (for* (j 0 (idx-shape A 1))
+     (for* (i 0 n)
+       (declare (-int-) i)
+       (col i (A (v i) j)) )
+     (array-copy col (idx-select A 1 j)) ))
+  A)
+
+#? (mat-permute <A> <p>)
+;; {<see> mat-permute!, mat-perm}
+;; Create new matrix by permuting rows of <A> with <p>.
+(defmacro permute (A p)
+  `(array-take ,A 0 ,p) )
+
+#? ** Matrix factorizations
+
+#? (mat-lu <A>)
+;; {<see> lapack-getrf, mat-permute}
+;; LU factorization of <A>.
+;; 
+;; The result consists of the factors <L> and <U>, and a permutation
+;; vector <p>, such that <(mat-permute A p)> = <(mat-.* L U)>.
+(defun lu (A)
+  (declare (-idx2- (-double-)) A)
+  (let* ((p (int-array (length A)))
+         (q (clone-array p))
+         (A (lapack-getrf A p)) )
+    (print p)
+    (for* (i 0 (length q))
+      (q i i) )
+    (for* (i 0 (length p))
+      (let ((qpi (q (p i))))
+        (declare (-int-) i qpi)
+        (q (p i) (q i))
+        (q i qpi) ))
+    (nconc1 (-mk-lu A) q) ))
+
+;; current definitions are actually in blas/mat
+
+#? (mat-qr! <A>)
+;; Compute QR factorization of <A>, owerwrite <A> with <R>
+;; and return <Q>.
+
+#? (mat-qr <A>)
+;; Compute QR factorization of <A> and return <(list Q R)>.
+
+) ; in-namespace mat-
+
+(dhc-make "lapack_mat"
+          -mk-lu
+          mat-perm
+          mat-permute!
+          )

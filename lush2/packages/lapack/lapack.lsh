@@ -1,0 +1,43 @@
+
+(libload "lapack-config")
+
+
+
+(in-namespace lapack-
+
+#? *** LAPACK (Namespace lapack-)
+;; Lush interface to LAPACK routines. This interface is quite close
+;; to the original Fortran interface. See definitions in namespace
+;; <mat-> for more convenient functions implementing much of the 
+;; same functionality.
+
+#? (getrf <A> <p>)
+;; {<see> mat-lu}
+;; Compute LU factorization of matrix <A> and return compactly
+;; in a single matrix (the unit diagonal of L is understood).
+;; Row permutations are written to integer vector <p>.
+(defun getrf (A p)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-int-)) p)
+  (cheader "extern void dgetrf_();")
+  (let ((lp (min (shape A 0) (shape A 1))))
+    (declare (-int-) lp)
+    (when (< (length p) lp)
+      (error "vector <p> too short") )
+    (when (not (contiguousp p))
+      (error "<p> not contiguous") )
+    (let ((info 0)
+          (A ##(mat-transpose A)) )
+      (declare (-int-) info)
+      #{ dgetrf_($a->dim+1,$a->dim,$(idx-base A),$a->mod,$(idx-base p), &$info); #}
+      (for* (i 0 lp)
+        (declare (-int-) i)
+        (decr (p i)) )
+      (idx-trim! p 0 0 lp)
+      (mat-transpose A) )))
+
+) ; in-namespace lapack-
+
+(dhc-make-with-libs "lapack_double"
+                    (list *liblapack*)
+                    lapack-getrf)
