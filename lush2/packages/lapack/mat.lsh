@@ -3,8 +3,9 @@
 (libload "lapack")
 
 ;; make explicit matrices L and U from result of lapack-getrf
-(defun -mk-lu (A)
+(defun -mk-lu (A q)
   (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-int-)) q)
   (let ((m (shape A 0))
         (n (shape A 1)) )
     (declare (-int-) m n)
@@ -36,7 +37,23 @@
               (idx-shift!  urow 0 1)
               (idx-extend! urow 1 1)
               (array-clear urow 0) ))
-          (list A U))))))
+          (list A U q))))))
+
+;; copy upper triangle
+(defun -cp-ut (A B)
+  (declare (-idx2- (-double-)) A B)
+  (assert (same-shape-p A B))
+  (let ((arow (idx-trim A 0 0 1))
+        (brow (idx-trim B 0 0 1)) )
+    (for* (i 1 (length A))
+      (array-copy arow brow)
+      (idx-trim!  arow 1 1)
+      (idx-shift! arow 0 1)
+      (idx-trim!  brow 1 1)
+      (idx-shift! brow 0 1) )
+    (array-copy arow brow) )
+  B)
+
 
 (in-namespace mat-
 
@@ -77,13 +94,46 @@
      (array-copy col (idx-select A 1 j)) ))
   A)
 
+
 #? (mat-permute <A> <p>)
 ;; {<see> mat-permute!, mat-perm}
 ;; Create new matrix by permuting rows of <A> with <p>.
 (defmacro permute (A p)
   `(array-take ,A 0 ,p) )
 
+
+;; XXX: is there a more efficient test for pos. definiteness?
+
+#? (mat-posdef <A>)
+;; {<see> mat-cholesky}
+;; True when symmetric matrix <A> is positive definite.
+;;
+;; Note: <mat-posdef> does not check that <A> is symmetric.
+(defun posdef (A)
+  (declare (-idx2- (-double-)) A)
+  (let* ((n (length A))
+         (B (double-array n n)) )
+    (declare (-int-) n)
+    (-cp-ut A B) ; copy upper triangle
+    (lapack-potrf! B) )) 
+  
+
 #? ** Matrix factorizations
+
+#? (mat-cholesky <A>)
+;; {<see> mat-posdef, lapack-potrf!}
+;; Cholesky factorization of <A>. Return the upper triangular
+;; factor of <A> or raise an error when <A> is not positive
+;; definite.
+(defun cholesky (A)
+  (declare (-idx2- (-double-)) A)
+  (let* ((n (length A))
+         (R (double-array n n)) )
+    (declare (-int-) n)
+    (-cp-ut A R) ; copy upper triangle
+    (when (not (lapack-potrf! R))
+      (error "matrix not positive definite") )
+    R))
 
 #? (mat-lu <A>)
 ;; {<see> lapack-getrf, mat-permute}
@@ -96,7 +146,6 @@
   (let* ((p (int-array (length A)))
          (q (clone-array p))
          (A (lapack-getrf A p)) )
-    (print p)
     (for* (i 0 (length q))
       (q i i) )
     (for* (i 0 (length p))
@@ -104,7 +153,7 @@
         (declare (-int-) i qpi)
         (q (p i) (q i))
         (q i qpi) ))
-    (nconc1 (-mk-lu A) q) ))
+    (-mk-lu A q) ))
 
 ;; current definitions are actually in blas/mat
 
@@ -119,6 +168,10 @@
 
 (dhc-make "lapack_mat"
           -mk-lu
+          -cp-ut
           mat-perm
           mat-permute!
+          mat-posdef
+          mat-cholesky
+          mat-lu
           )
