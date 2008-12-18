@@ -61,7 +61,10 @@ char   *mm_strdup(const char *);         // create managed copy of string
 #define mm_strlen  strlen                // length of managed string
 
 /* diagnostics */
-const char *mm_info(int);                // diagnostic message in managed string
+char   *mm_info(int);                    // diagnostic message in managed string
+int     mm_prof_start(int *);            // start profiling, initialize histogram
+void    mm_prof_stop(int *);             // stop profiling and write data
+char  **mm_prof_key(void);               // make key for profile data
 
 /* convenience macros */
 #define MM_MARK(p)     { if (p) mm_mark(p); }

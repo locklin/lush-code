@@ -39,10 +39,11 @@ struct context *context;
 
 static struct context first_context;
 at* at_toplevel;
-static at* at_startup;
-static at* at_break;
-static at* at_debug;
-static at* at_file;
+static at *at_startup;
+static at *at_break;
+static at *at_debug;
+static at *at_file;
+static at *at_memstats;
 static at *result;
 static int quiet;
 
@@ -645,6 +646,35 @@ DX(xmeminfo)
    return NIL;
 }
 
+#define MAX_NUM_MEMTYPES 200
+
+DY(ymemprof)
+{
+   struct context c;
+   int hist[MAX_NUM_MEMTYPES];
+   int n = mm_prof_start(NULL);
+   assert(n < MAX_NUM_MEMTYPES);
+
+   context_push(&c);
+   if (sigsetjmp(context->error_jump, 1)) {
+      mm_prof_stop(hist);
+      context_pop();
+      siglongjmp(context->error_jump, -1);
+   }
+   mm_prof_start(hist);
+   at *res = progn(ARG_LIST);
+   mm_prof_stop(hist);
+   context_pop();
+   
+   /* put results in a hash table and bind *memprof-stats* to it */
+   at *stats = new_htable(n, false, true);
+   char **key = mm_prof_key();
+   for (int i=0; i<n; i++)
+      htable_set(stats, new_string(key[i]), NEW_NUMBER(hist[i]));
+   var_set(at_memstats, stats);
+   
+   return res;
+}
 
 DX(xpurge_names)
 {
@@ -945,10 +975,12 @@ void init_toplevel(void)
    at_break =    var_define("break-hook");
    at_debug =    var_define("debug-hook");
    at_file =     var_define("file-being-loaded");
+   at_memstats = var_define("*memprof-stats*");
    result =      var_define("result");
 
    dx_define("gc", xgc);
    dx_define("meminfo", xmeminfo);
+   dy_define("memprof", ymemprof);
    dx_define("purge-names", xpurge_names);
    dx_define("exit", xexit);
    dx_define("load", xload);

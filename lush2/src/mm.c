@@ -161,6 +161,8 @@ static int        roots_size;
 static typerec_t *types;
 static mt_t       types_last = -1;
 static mt_t       types_size;
+static int       *profile = NULL;
+static int        num_profiles = 0;
 
 /* the marking stack */
 static const void * *restrict stack = NULL;
@@ -745,7 +747,7 @@ static void add_managed(const void *p)
    managed[man_last] = (void *)p;
 }
 
-static void manage(const void *p)
+static void manage(const void *p, mt_t t)
 {
    assert(ADDRESS_VALID(p));
    
@@ -761,6 +763,8 @@ static void manage(const void *p)
    
    if (anchor_transients)
       stack_push(transients, p);
+   if (profile)
+      profile[t]++;
 }
 
 static void unmanage_inheap(const void *p)
@@ -1308,7 +1312,11 @@ mt_t mm_regtype(const char *n, size_t s,
       warn("first argument invalid\n");
       abort();
    }
-      
+   if (num_profiles) {
+      warn("cannot register while profiling is active\n");
+      abort();
+   }
+
    /* check if type is already registered */
    for (int t = 0; t <= types_last; t++) {
       if (0==strcmp(types[t].name, n)) {
@@ -1379,7 +1387,7 @@ void *mm_alloc(mt_t t)
    }
    if (types[t].clear)
       types[t].clear(p);
-   manage(p);
+   manage(p, t);
    return p;
 }
 
@@ -1399,14 +1407,14 @@ void *mm_allocv(mt_t t, size_t s)
    }
    if (types[t].clear)
       types[t].clear(p);
-   manage(p);
+   manage(p, t);
    return p;
 }
 
 void *mm_malloc(size_t s)
 {
    void *p = alloc_variable_sized(mt_blob, s);
-   if (p) manage(p);
+   if (p) manage(p, mt_blob);
    return p;
 }
 
@@ -1416,7 +1424,7 @@ void *mm_calloc(size_t n, size_t s)
    void *p = alloc_variable_sized(mt_blob, s);
    if (p) {
       memset(p, 0, mm_sizeof(p));
-      manage(p);
+      manage(p, mt_blob);
    }
    return p;
 }
@@ -1457,7 +1465,7 @@ void *mm_realloc(void *q, size_t s)
          /* shuffling the managed array              */
          bool cip = collect_in_progress;
          collect_in_progress = true;
-         manage(r);
+         manage(r, t);
          assert(managed[man_last] == r);
          collect_in_progress = cip;
       }
@@ -2250,11 +2258,14 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    assert(stack_works_fine(transients));
    assert(stack_empty(transients));
 
+   /* make profile a root */
+   MM_ROOT(profile);
+  
    debug("done\n");
 }
 
 /* print diagnostic info to stdinf */
-const char *mm_info(int level)
+char *mm_info(int level)
 {
 #define PRINTBUFLEN 20000
 #define BPRINTF(...) {               \
@@ -2304,15 +2315,20 @@ const char *mm_info(int level)
    BPRINTF("Managed memory   : %.2f MByte in %"PRIdPTR" + %"PRIdPTR" objects\n",
            ((double)total_memory_managed)/(1<<20),
            total_objects_inheap, total_objects_offheap);
+
    total_memory_used_by_mm += hmapsize;
    total_memory_used_by_mm += man_size*sizeof(managed[0]);
    total_memory_used_by_mm += types_size*sizeof(typerec_t);
    total_memory_used_by_mm += num_blocks*sizeof(blockrec_t);
    total_memory_used_by_mm += stack_sizeof(transients);
-
    BPRINTF("Memory used by MM: %.2f MByte total\n",
            ((double)total_memory_used_by_mm)/(1<<20));
-
+   if (level>2) {
+      BPRINTF("                 : %.2f MByte for inheap array\n",
+              ((double)hmapsize)/(1<<20));
+      BPRINTF("                 : %.2f MByte for offheap array\n",
+              ((double)man_size*sizeof(managed[0]))/(1<<20));
+   }
    if (collect_in_progress)
       BPRINTF("*** GC in progress ***\n");
 
@@ -2345,6 +2361,54 @@ const char *mm_info(int level)
               total_objects_per_type_oh[t]);
    }
    return mm_strdup(buffer);
+}
+
+/* initialize profile array */
+int mm_prof_start(int *h)
+{
+   int n = types_last+1;
+
+   if (!h)
+      return n;
+
+   if (!profile) {
+      anchor_transients = false;
+      profile = mm_calloc(mt_blob, n*sizeof(int));
+      anchor_transients = true;
+   }
+
+   /* initialize h */
+   memcpy(h, profile, n*sizeof(int));
+   num_profiles++;
+   return num_profiles;
+}
+
+/* update profile array */
+void mm_prof_stop(int *h)
+{
+   if (!num_profiles) {
+      warn("invalid call to mm_prof_stop ignored\n");
+      return;
+   }
+
+   for (int i=0; i<=types_last; i++)
+      h[i] = profile[i]-h[i];
+
+   /* stop profiling if this closes the outermost session */
+   if (--num_profiles==0)
+      profile = NULL;
+}
+
+/* create key for profile data */
+char **mm_prof_key(void)
+{
+   MM_ENTER;
+
+   char **k = mm_allocv(mt_refs, sizeof(void *)*(types_last+1));
+   for (int i=0; i<=types_last; i++)
+      k[i] = mm_strdup(types[i].name);
+
+   MM_RETURN(k);
 }
 
 
