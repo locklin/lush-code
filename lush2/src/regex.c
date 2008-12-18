@@ -285,18 +285,16 @@ static void regex_alternate(bounds *ans, bounds buf, int *rnum)
    }
 }
 
+#define MIN_EXECBUF 2000
+
 static int regex_execute(const char **regsptr, int *regslen, int nregs)
 {
-   unsigned short c;
-   int sp = 0;
-   int spmax = 2000;
+   unsigned short *bfail_buf[MIN_EXECBUF], **bfail = bfail_buf;
+   const char     *dfail_buf[MIN_EXECBUF], **dfail = dfail_buf;
 
-   /* allocate stack */
-   unsigned short **bfail = mm_malloc(sizeof(short *)*spmax);
-   const char **dfail = mm_malloc(sizeof(char *)*spmax);
-   if (!bfail || !dfail)
-      error(NIL, "out of memory", NIL);
-   
+   int sp = 0;
+   int spmax = MIN_EXECBUF;
+   unsigned short  c;
    while ((c = *buf++)) {
 #ifdef DEBUG_REGEX
       printf("%04x (%02x)\n",(int)(c)&0xffff,(dat?*dat:0)); 
@@ -354,8 +352,8 @@ static int regex_execute(const char **regsptr, int *regslen, int nregs)
       case RE_FAIL&0xf000:
          if (sp >= spmax) { /* enlarge stack */
             spmax += spmax;
-            bfail = mm_realloc(bfail, sizeof(short *)*spmax);
-            dfail = mm_realloc(dfail, sizeof(char *)*spmax);
+            bfail = mm_malloc(sizeof(short *)*spmax);
+            dfail = mm_malloc(sizeof(char *)*spmax);
             if (!bfail || !dfail)
                error(NIL,"out of memory",NIL);
          }
@@ -516,9 +514,9 @@ DX(xregex_extract)
    
    if (regex_exec(buffer,dat,regptr,reglen,regnum)) {
       for (i=0; i<regnum; i++) {
-         at *p = make_string_of_length(reglen[i]);
-         strncpy((char *)String(p), regptr[i], reglen[i]);
-         *where = new_cons(p, NIL);
+         char *s = mm_string(reglen[i]);
+         strncpy(s, regptr[i], reglen[i]);
+         *where = new_cons(new_string(s), NIL);
          where = &Cdr(*where);
       }
       if (!ans)

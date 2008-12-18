@@ -558,7 +558,7 @@ void serialize_string(char **data, int code, int maxlen)
       l = read_card24();
       if (maxlen == -1) {
          /* automatic mallocation */
-         buffer = mm_allocv(mt_blob, l+1);
+         buffer = mm_string(l);
 
       } else {
          /* user provided buffer */
