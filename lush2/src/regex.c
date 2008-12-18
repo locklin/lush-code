@@ -352,10 +352,14 @@ static int regex_execute(const char **regsptr, int *regslen, int nregs)
       case RE_FAIL&0xf000:
          if (sp >= spmax) { /* enlarge stack */
             spmax += spmax;
-            bfail = mm_malloc(sizeof(short *)*spmax);
-            dfail = mm_malloc(sizeof(char *)*spmax);
-            if (!bfail || !dfail)
+            unsigned short **bfail2 = mm_malloc(sizeof(short *)*spmax);
+            char **dfail2 = mm_malloc(sizeof(char *)*spmax);
+            if (!bfail2 || !dfail2)
                error(NIL,"out of memory",NIL);
+            memcpy(bfail2, bfail, sizeof(short *)*spmax/2);
+            memcpy(dfail2, dfail, sizeof(short *)*spmax/2);
+            bfail = bfail2;
+            dfail = (const char **)dfail2;
          }
          dfail[sp] = dat;
          bfail[sp] = buf + c - RE_FAIL;
