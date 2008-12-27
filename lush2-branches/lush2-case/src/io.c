@@ -606,8 +606,8 @@ static char *read_word(void)
          if (!isascii(c) || iscntrl(c))
             goto errw1;
          else if (s < string_buffer + STRING_BUFFER - 2) {
-            if (s > string_buffer && c == '_') 
-               c = '-';
+/*             if (s > string_buffer && c == '_')  */
+/*                c = '-'; */
             if (! context->input_case_sensitive)
                c = tolower(c);
             *s++ = c;
@@ -1215,7 +1215,7 @@ static char *convert(char *s, at *list, char *end)
             if (!isascii((unsigned char)*m) || 
                 iscntrl((unsigned char)*m) ||
                 isupper((unsigned char)*m) ||
-                (m>n && *m=='_') ||
+                /* (m>n && *m=='_') || */
                 (get_char_map(*m) & CHAR_INTERWORD) ) {
                mode = 1;
                break;
