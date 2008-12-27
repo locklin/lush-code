@@ -1,0 +1,181 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: gb-meters.lsh,v 1.3 2004/04/17 20:47:12 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? **** Meters
+;; {<author> Yann LeCun}
+;; Meters are classes used to measure the performance
+;; of learning machines. There are several types
+;; of meters for each specific situation.
+;; meters are generally assumed to have at least
+;; the following methods:
+;; {<ul>
+;;  {<li> update: updates the meter with the objects
+;;        and values passed as argument.}
+;;  {<li> clear: resets the meter, so it can be used
+;;        for a new series of measurements.}
+;;  {<li> test: simply prints performance information 
+;;        for the data passed as argument. This
+;;        does not update any internal state.}
+;; }
+;; Methods are provided to compute and display the 
+;; information measured by a meter.
+;; {<ul>
+;;  {<li> display: display performance information on the terminal}
+;;  {<li> info: returns a list of the informations printed by display}
+;; }
+
+     
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (same-class? <actual> <desired> [<dummies>])
+;; return 0 if <actual> equals -1, otherwise, return 1 if <actual>
+;; and <desired> are equal, -1 otherwise.
+(de same-class? (co cd . junk)
+  (if (= -1 co) 0 (if (= co cd) 1 -1)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** classifier-meter
+;; a class that can be used to measure the performance of
+;; classifiers. This is a simple version that does not
+;; record anything but simply computes performance measures.
+(defclass classifier-meter object
+  correctp ; a function that return 1 if the answer is considered correct,
+	   ; 0 if punt, -1 if wrong. 
+  energy
+  confidence
+
+  size
+  age
+  total-correct
+  total-error
+  total-punt
+  total-energy
+  )
+
+#? (new classifier-meter [<comparison-function>])
+;; Create a new <classifier-meter> using <comparison-function>
+;; to compare actual and desired answers. By default
+;; the <same-class?> function is used for that purpose.
+;; It takes two integer arguments, and returns 1 if they
+;; are equal, -1 if they are different, and 0 if 
+;; the first argument is -1 (which means reject).
+(defmethod classifier-meter classifier-meter (&optional cp)
+  (setq correctp (if cp cp same-class?))
+  (==> this clear))
+
+#? (==> <classifier-meter> clear)
+;; reset the meter. This must be called
+;; before a measurement campaign is started.
+(defmethod classifier-meter clear ()
+  (setq total-correct 0
+	total-error 0
+	total-punt 0
+	total-energy 0
+	age 0
+	size 0))
+        
+(defmethod classifier-meter resize (sz) ())
+
+#? (==> <classifier-meter> update <age> <actual> <desired> <energy>)
+;; update the meter with results from a new sample.
+;; <age> is the number of training iterations so far,
+;; <actual> (a <class-state>) the actual output of the machine,
+;; <desired> (an idx0 of int) the desired category, 
+;; and <energy> (an idx0-state) the energy.
+(defmethod classifier-meter update (a co cd en)
+  (let* ((crrct (correctp :co:output-class (cd))))
+    ;; (print :co:output-class (cd) crrct)
+    (setq age a)
+    (setq energy (:en:x))
+    (setq confidence :co:confidence)
+    (incr total-energy energy)
+    (selectq crrct
+	     (1  (incr total-correct))
+	     (0  (incr total-punt))
+	     (-1 (incr total-error)))
+    (incr size)
+    crrct))
+
+(defmethod classifier-meter test (co cd en)
+  (let* ((crrct (correctp :co:output-class (cd))))
+    (list crrct :co:output-class (cd) :co:confidence (:en:x))))
+
+#? (==> <classifier-meter> info)
+;; return a list with the age, the number of samples
+;; (number of calls to update since the last clear),
+;; the average energy, the percentage of correctly
+;; recognize samples, the percentage of erroneously
+;; recognized samples, and the percentage of rejected samples.
+(defmethod classifier-meter info ()
+  (list
+   age
+   size
+   (/ total-energy size) 
+   (/ (* 100 total-correct) size)
+   (/ (* 100 total-error) size)
+   (/ (* 100 total-punt) size)))
+
+(defmethod classifier-meter info-sprint ()
+  (apply sprintf 
+	 (cons "%5d %5d %10.6f %6.2f  %6.2f  %6.2f"
+	       (==> this info))))
+
+(defmethod classifier-meter info-print ()
+  (printf (==> this info-sprintf)))
+
+#? (==> <classifier-meter> display)
+;; Display the meter's information on the terminal.
+;; namely, the age, the number of samples
+;; (number of calls to update since the last clear),
+;; the average energy, the percentage of correctly
+;; recognize samples, the percentage of erroneously
+;; recognized samples, and the percentage of rejected samples.
+(defmethod classifier-meter display ()
+  (apply printf 
+	 (cons "[%5d]  size=%3d  energy=%g  correct=%3.2f%%  errors=%3.2f%%  rejects=%3.2f%%\n" 
+	       (==> this info))))
+
+(defmethod classifier-meter save (s)
+  (writing s
+    (bwrite 
+     (list
+      energy confidence size
+      total-correct total-error total-punt total-energy))))
+
+(defmethod classifier-meter load (s)
+  (let ((l (reading s (bread)))
+	(symbs '(energy confidence size  total-correct total-error
+			total-punt total-energy)))
+    (each ((s symbs) (v l)) (set s v))))
+
+
+
+

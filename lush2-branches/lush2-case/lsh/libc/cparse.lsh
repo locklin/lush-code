@@ -1,0 +1,275 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: cparse.lsh,v 1.5 2006/04/10 21:43:54 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "constants.lsh")
+
+
+(defclass cparser object
+  fd
+  newline )
+
+(defmethod cparser cparser(fn)
+  (setq fd (open-read fn))
+  (setq newline 'start) )
+
+(defmethod cparser do-string()
+  ;; Lush strings are a superset of C strings
+  (list 'quote (read)) )
+
+(defmethod cparser do-base()
+  (let ((ans 0)
+        (c (skip-char "")) )
+    (cond
+     ;; binary
+     ((index c "bB")
+      (read-string 1)
+      (setq c (skip-char ""))
+      (while (index c "01")
+        (read-string 1)
+        (setq ans (+ ans ans (if (= c "0") 0 1)))
+        (setq c (skip-char "")) ) )
+     ;; octal
+     ((index c "01234567")
+      (while (index c "01234567")
+        (read-string 1)
+        (setq ans (+ (* ans 8) (- (asc c) (asc "0"))))
+        (setq c (skip-char "")) ) )
+     ;; hexadecimal
+     ((index c "xX")
+      (read-string 1)
+      (setq ans (concat "0x" (read-string "0-9A-Fa-f")))
+      (setq ans (or (val ans) ans)) ) ) 
+    ;; return
+    ans ) )
+
+(defmethod cparser do-number()
+  (let ((ans ())
+        (c (skip-char "")))
+    (cond
+     ;; Numbers starting with zero are special
+     ((= c "0")
+      (setq ans 0)
+      (read-string 1)
+      (setq c (skip-char ""))
+      (cond
+       ((index c "xXbB01234567")
+        (setq ans (==> this do-base)) )
+       ((= c ".")
+        (setq ans (read)) ) ) )
+     ;; Period might indicate a floating point number
+     ((= c ".")
+      (read-string 1)
+      (setq c (skip-char ""))
+      (if (not (index c "0123456789"))
+          ;; not a number
+          (setq ans ".")
+        ;; float number
+        (setq ans (concat "." (read-string "0-9")))
+        (setq c (skip-char ""))
+        (when (index c "eF")
+          (setq ans (concat ans (read-string 1)))
+          (setq c (skip-char ""))
+          (when (index c "+-")
+            (setq ans (concat ans (read-string 1)))
+            (setq c (skip-char "")) )
+          (setq ans (concat ans (read-string "0-9"))) ) 
+        (setq ans (or (val ans) ans)) ) )
+     ;; Remaining cases should be handled by lush
+     (t
+      (setq ans (read)) ) )
+    ;; Handle ansi-c suffixes
+    (when (numberp ans)
+      (setq ans (list 'quote ans))
+      (while (index (skip-char "") "ulUL")
+        (read-string 1) ) )
+    ans ) )
+
+(defmethod cparser do-char-literal()
+  (read-string 1)
+  (let ((ans 0)
+        (c (skip-char "")) )
+    (while (not (index c "'\n\r\e"))
+      (if (<> c "\\")
+          (setq ans (+ (* 256 ans) (asc c)))
+        (read-string 1)
+        (setq c (skip-char ""))
+        (setq ans (* 256 ans))
+        (if (index c "xX0")
+            (incr ans (==> this do-base))
+          (let ((n (index c "nrbtf")))
+            (incr ans (asc (if n (mid "\n\r\t\b\f" n 1) c))) ) ) )
+      (read-string 1)
+      (setq c (skip-char "")) )
+    (if (<> c "'")
+        "<unterminated-literal>"
+      (read-string 1)
+      (list 'quote ans) ) ) )
+
+(defmethod cparser token()
+  (setq newline (= newline 'start))
+  (reading fd
+    (let ((again t))
+      (while again
+        (setq again ())
+        (let ((c (skip-char " \t")))
+          (cond
+           ;; number
+           ((regex-match "[0-9.]" c)
+            (==> this do-number) )
+           ;; string
+           ((= c "\"")
+            (==> this do-string) )
+           ;; character literal
+           ((= c "'")
+            (==> this do-char-literal) )
+           ;; identifier
+           ((regex-match "[A-Za-z_$]" c)
+            (read-string "A-Za-z0-9_$") )
+           ;; newline
+           ((index c "\n\r")
+            (read-string 1)
+            (setq again t)
+            (setq newline t) )
+           ;; preprocessor symbol
+           ((and newline (= c "#"))
+            (read-string 1)
+            (skip-char " \t")
+            (concat "#" (read-string "A-Za-z")) )
+           ;; escape 
+           ((= c "\\")
+            (read-string 1)
+            (when (index (skip-char " ") "\n\r")
+              (setq again t)
+              (setq newline ())
+              (read-string 1) )
+            c )
+           ;; possible comment
+           ((= c "/")
+            (read-string 1)
+            (let ((cc (skip-char "")))
+              (selectq cc
+                ("/" ;; c++ style comment
+                 (setq again t)
+                 (setq newline ())
+                 (read-string "~\n\r") )
+                ("*" ;; c style comment
+                 (setq again t)
+                 (setq newline ())
+                 (while (and (<> cc "/") (<> cc "\e"))
+                   (read-string 1)
+                   (read-string "~*\e")
+                   (read-string "*")
+                   (setq cc (skip-char "")) )
+                 (read-string 1) ) ) )
+            c )
+           ;; other
+           ((<> c "\e")
+            (read-string 1) ) ) ) ) ) ) )
+
+
+#? (cparse-extract-constants <filename> [<filter>])
+;; Analyzes the C include file <filename>
+;; and returns a <progn> expression that
+;; calls <defcconst> to define the symbolic
+;; constants extracted from the include file.
+;;
+;; Argument <filter> is a function that
+;; takes a possible constant name as input.
+;; It should return a valid symbol name for 
+;; use with <defcconst>.  Otherwise the
+;; potential definition will be ignored.
+
+(de cparse-extract-constants(filename &optional filter)
+  (setq filter (or filter (lambda(s) s)))
+  ;; start parsing
+  (let ((cp (new cparser filename))
+        (idre "[A-Za-z_$][A-Za-z0-9_$]*")
+        (defs ()) )
+    (let ((tok (==> cp token)))
+      (while tok
+        (cond
+         ;; process defines
+         ((= tok "#define")
+          (let ((sym ())(val ()))
+            (setq tok (==> cp token))
+            (when (and (stringp tok) 
+                       (not :cp:newline)
+                       (regex-match idre tok) )
+              (setq sym tok)
+              (setq tok (==> cp token))
+              (when (not :cp:newline)
+                (if (consp tok)
+                    (setq val (cadr tok))
+                  (setq val (alist-get tok defs)) )
+                (setq tok (==> cp token))
+                (when (and sym val :cp:newline)
+                  (setq defs (alist-add sym val defs)) ) ) ) ) )
+         ;; process enums
+         ((= tok "enum")
+          (setq tok (==> cp token))
+          (when (regex-match "[A-Za-z_$][A-Za-z0-9_$]*" tok)
+            (setq tok (==> cp token)) )
+          (when (= tok "{")
+            (setq tok (==> cp token))
+            (let ((val 0)
+                  (ndefs defs))
+              (while (and (numberp val) (regex-match idre tok))
+                (let ((sym tok))
+                  (setq tok (==> cp token))
+                  (when (= tok "=")
+                    (setq tok (==> cp token))
+                    (cond
+                     ((consp tok) 
+                      (setq val (cadr tok)) )
+                     ((= tok "-")
+                      (setq tok (==> cp token))
+                      (when (and (consp tok) (numberp (cadr tok)))
+                        (setq val (- (cadr tok))) ) )
+                     (t
+                      (setq val (alist-get sym defs)) ) )
+                    (setq tok (==> cp token)) )                
+                  (when (numberp val)
+                    (setq ndefs (alist-add sym val ndefs))
+                    (incr val) )
+                  (when (= tok ",")
+                    (setq tok (==> cp token)) ) ) )
+              (when (= tok "}")
+                (setq defs ndefs)
+                (setq tok (==> cp token)) ) ) ) )
+         ;; other
+         (t
+          (setq tok (==> cp token)) ) ) ) )
+    ;; call filters
+    (let ((outs (list t))
+          (symb ()) )
+      (each ((def defs))
+        (when (stringp (setq symb (filter (car def))))
+          (setq outs `((defconstant ,symb ,(cdr def)) ,@outs)) ) )
+      (cons 'progn outs) ) ) )
+

@@ -1,0 +1,64 @@
+
+(libload "lapack-config")
+
+
+
+(in-namespace lapack-
+
+#? *** LAPACK (Namespace lapack-)
+;; Lush interface to LAPACK routines. This interface is quite close
+;; to the Fortran LAPACK API. See definitions in namespace
+;; <mat-> for more convenient functions implementing much of the 
+;; same functionality.
+
+#? (lapack-getrf <A> <p>)
+;; {<see> mat-lu}
+;; Compute LU factorization of matrix <A> and return compactly
+;; in a single matrix (the unit diagonal of L is understood).
+;; Row permutations are written to integer vector <p>.
+(defun getrf (A p)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-int-)) p)
+  (cheader "extern void dgetrf_();")
+  (let ((lp (min (shape A 0) (shape A 1))))
+    (declare (-int-) lp)
+    (when (< (length p) lp)
+      (error "vector <p> too short") )
+    (when (not (contiguousp p))
+      (error "<p> not contiguous") )
+    (let ((info 0)
+          (A ##(mat-transpose A)) )
+      (declare (-int-) info)
+      #{ dgetrf_($a->dim+1,$a->dim,$(idx-base A),$a->mod,$(idx-base p), &$info); #}
+      (for* (i 0 lp)
+        (declare (-int-) i)
+        (decr (p i)) )
+      (idx-trim! p 0 0 lp)
+      (mat-transpose A) )))
+
+#? (lapack-potrf! <A>)
+;; {<see> mat-cholesky}
+;; Update <A> with the Cholesky factorization of <A> and return
+;; <t> when successful.
+;;
+;; <A> is assumed to be symmetric and only the diagonal and upper
+;; triangle entries of <A> are referenced. A symmetric matrix has a
+;; Cholesky factorization if and only if it is positive definite. Hence,
+;; <potrf!> returns <()> (false) when <A> is not positive definite.
+(defun potrf! (A)
+  (declare (-idx2- (-double-)) A)
+  (cheader "extern void dpotrf_();")
+  (let ((info 0))
+    (declare (-int-) info)
+    (when (not (mat-squarep A))
+      (error "matrix not square") )
+    #{ dpotrf_("L",$a->dim,$(idx-base A),$a->mod,&$info); #}
+    (= info 0) ))
+
+) ; in-namespace lapack-
+
+(dhc-make-with-libs "lapack_double"
+                    (list *liblapack*)
+                    lapack-getrf
+                    lapack-potrf!
+                    )

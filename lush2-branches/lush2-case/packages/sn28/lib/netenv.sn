@@ -1,0 +1,2159 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: netenv.sn,v 1.7 2005/09/30 18:33:57 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;
+;             Standard network functions.
+;                SN2...  LYB & YLC 88 
+;
+
+
+
+;================================================
+; GLOBAL VARIABLES & ALIASES
+;================================================
+
+(setq :pre-syn :amont)
+(setq :post-syn :aval)
+
+(setq
+ :theta 0                    ;; forward noise level
+ :alpha 0                    ;; momentum
+ :decay 0                    ;; decay
+ :gamma 0.05                 ;; hessian running average factor
+ :mu    0.05                 ;; levenberg parameter
+
+ :eps   0                    ;; last value for epsilon
+ :age   0                    ;; network age
+ :current-pattern 0          ;; current learning pattern
+ 
+
+ :input-layer ()             ;; remarquable layers
+ :output-layer ()
+ :desired-layer ()
+ :layer-names ()             ;; the layer symbolic names !!
+ :net-struc ()               ;; the network structure
+
+ :patt-min ()                ;; the training/test sets
+ :patt-max ()
+ :tpatt-min ()
+ :tpatt-max ()
+ :pattern-matrix ()
+ :desired-matrix ()
+
+ :disp-basic-iteration ()    ;; the basic display hooks
+ :disp-perf-iteration ()
+
+ :next-choice ()             ;; the nextcho subroutines
+ :next-pattern ()
+ 
+ :classify ()                ;; the classification criterion
+ :init-grad ()               ;; the cost function
+
+ :disp-error-max-age -1      ;; disp-error stuff
+ :disp-error-window ()
+ :disp-error-sweeps ()
+ :disp-error-maxerr ()
+ :disp-error-port ()
+
+ :confidence 90              ;; used by test-set
+
+ :out-class ()               ;; class-max stuff
+ :des-class ()
+
+ :input-noise 0              ;; noise at network input
+
+ :local-error 0              ;; the errors (test-pattern)
+ :good-answer ()
+ :global-error 0             ;; the errors (performance)
+ :good-an-num 0
+ :good-an-percent 0
+
+ :perf-file ()               ;; the mouchard
+
+ :error-plotting-window ()   ;; init-error/perf-plotting
+ :training-error-port ()
+ :test-error-port ()
+ :perf-plotting-window ()
+ :training-perf-port ()
+ :test-perf-port ()
+
+ :pnum 0                     ;; epoch size (batch-iteration)
+
+ :nlf ()                     ;; non linear function
+ :dnlf ()
+ :ddnlf () )
+    
+
+
+
+;================================================
+; Control structures, forget, epsi
+;================================================
+
+; --------------------------------
+; (all-synapse (FromSymbol ToSymbol) list1 list2 ... )
+; evaluates list1, list2,... with (FormSymbol ToSymbol) taking all the
+; possible indices of a pre- and post-synaptic cell of a synapse.
+
+(dmd all-synapse((fs ts) . l)
+    (list 'for (list ts 1 '(1- nnum))
+        (list 'each (list (list fs (list 'amont ts))) . l) ) )
+                
+
+; --------------------------------
+; (all-neuron (var) list1 list2 ... )
+; evaluates list1, list2,... with var taking all the possible
+; indices of a cell
+
+(dmd all-neuron((s) . l)
+   (list 'for (list s 0 '(1- nnum)) . l) )
+
+
+; --------------------------------
+; (epsi x) 
+; sets the epsilon of each cell to x divided by the fan-in of the cell
+
+(de epsi (x)
+    (setq eps x)
+    (all-neuron (i) 
+        (if (amont i)   
+            (Nepsilon i (/ x (Nfanin i))) ) )
+    (save-perf ";;; (epsi %l)\n" x)
+    )
+
+(df epsi-layer (n-x n-layer)
+    (let* ((x (eval n-x))
+	   (layer (eval n-layer))
+	   )
+      (each ((i layer)) 
+	    (if (amont i)
+		(Nepsilon i (/ x (Nfanin i))) ) )
+      (save-perf ";;; (epsi-layer %l %s) with %s)\n"
+		 x (left (pname n-layer) 20) (left (pname layer) 20))
+      ) )
+
+
+; --------------------------------
+; (epsi-sqrt x) 
+; sets the epsilon of each cell to x divided by the square-root
+; of thr fan-in of the cell
+
+(de epsi-sqrt (x)
+    (setq eps x)
+    (all-neuron (i) 
+         (if (amont i)   
+             (Nepsilon i (/ x (sqrt (Nfanin i)))) ) )
+    (save-perf ";;; (epsi-sqrt %l)\n" x)
+    )
+
+(df epsi-sqrt-layer (n-x n-layer)
+    (let* ((x (eval n-x))
+	   (layer (eval n-layer))
+	   )
+      (each ((i layer)) 
+	    (if (amont i)
+		(Nepsilon i (/ x (sqrt (Nfanin i)))) ) )
+      (save-perf ";;; (epsi-sqrt-layer %l %s) with %s)\n"
+		 x (left (pname n-layer) 20) (left (pname layer) 20))
+      ) )
+
+
+; --------------------------------
+; (new-mu x)
+; change mu and each epsilon so as to keep the effective epsilon constant
+; works only when 'newton-mode' active
+
+(when (newton-mode)
+
+  (de new-mu (x)
+      (setq mu x)
+      (all-neuron (i)
+		  (Nepsilon i (* (Nepsilon i)
+				 (/ (+ x (abs (Nsigma i)))
+				    (+ mu (abs (Nsigma i)))) ) ) )
+      (save-perf ";;; (mu %l)\n" x) ) )
+
+
+
+; --------------------------------
+; (forget x)
+; sets the synapses to a random value uniformly distributed between -x and x
+
+(de forget(x)
+        (all-synapse (i j)
+           (Sval i j (rand (- x) x) )
+           (Sdelta i j 0) )
+        (setq current-pattern 0)
+        (setq disp-error-max-age -1)
+        (setq age 0)
+	(save-perf ";;; (forget %l)\n" x)
+	)
+
+(df forget-layer(n-x n-layer)
+    (let* ((x (eval n-x))
+	   (layer (eval n-layer))
+	   )
+      (each ((j layer))
+	    (each ((i (amont j)))
+		    (Sval i j (rand (- x) x) )
+		    (Sdelta i j 0) ) )
+        (setq current-pattern 0)
+        (setq disp-error-max-age -1)
+        (setq age 0)
+	(save-perf ";;; (forget-layer %l %s) with %s)\n"
+		   x (left (pname n-layer) 20) (left (pname layer) 20))
+	) )
+
+
+; --------------------------------
+; (forget-sqrt x)
+; sets the synapses to a random value uniformly distributed between -x and x
+; scaled by sqare-root of fan-in
+
+(de forget-sqrt (x)  
+   (all-neuron (ri)
+      (let ((fi (Nfanin ri)))
+        (when (0<> fi) 
+          (setq fi (/ x (sqrt fi)))
+          (each ((rj (amont ri)))
+             (Sval rj ri (rand (- fi) fi )) ) ) ) )
+  
+   (setq current-pattern 0)
+   (setq disp-error-max-age -1)
+   (setq age 0)
+   (save-perf ";;; (forget-sqrt %l)\n" x)
+   )
+
+(df forget-sqrt-layer (n-x n-layer)  
+    (let* ((x (eval n-x))
+	   (layer (eval n-layer))
+	   )
+      (each ((ri layer))
+	    (let ((fi (Nfanin ri)))
+	      (when (0<> fi) 
+		    (setq fi (/ x (sqrt fi)))
+		    (each ((rj (amont ri)))
+			  (Sval rj ri (rand (- fi) fi )) ) ) ) )
+      (setq current-pattern 0)
+      (setq disp-error-max-age -1)
+      (setq age 0)
+      (save-perf ";;; (forget-sqrt-layer %l %s) with %s)\n"
+		 x (left (pname n-layer) 20) (left (pname layer) 20))
+      ) )
+
+; --------------------------------
+; (forget-inv x)
+; sets the synapses to a random value uniformly distributed between -x and x
+; scaled by fan-in
+
+(de forget-inv (x)  
+   (all-neuron (ri)
+      (let ((fi (Nfanin ri)))
+        (when (0<> fi) 
+          (setq fi (/ x fi))
+          (each ((rj (amont ri)))
+             (Sval rj ri (rand (- fi) fi )) ) ) ) )
+  
+   (setq current-pattern 0)
+   (setq disp-error-max-age -1)
+   (setq age 0)
+   (save-perf ";;; (forget-inv %l)\n" x)
+   )
+
+(df forget-inv-layer (n-x n-layer)  
+    (let* ((x (eval n-x))
+	   (layer (eval n-layer))
+	   )
+      (each ((ri layer))
+	    (let ((fi (Nfanin ri)))
+	      (when (0<> fi)
+		    (setq fi (/ x fi))
+		    (each ((rj (amont ri)))
+			  (Sval rj ri (rand (- fi) fi )) ) ) ) )
+    
+      (setq current-pattern 0)
+      (setq disp-error-max-age -1)
+      (setq age 0)
+      (save-perf ";;; (forget-inv-layer %l %s) with %s)\n"
+		 x (left (pname n-layer) 20) (left (pname layer) 20))
+      ) )
+
+; --------------------------------
+; (smartforget)
+; A smart way to initialize the weights
+
+(de smartforget()
+     (forget-sqrt 1) )
+                                        
+
+
+;================================================
+; Saving and Loading weights 
+;================================================
+
+
+
+; --------------------------------
+; (save-net "file" [ cells ] )
+; saves the weights into file 'file'
+; - as a weight matrix if no cells are specified
+; - as a network file in the opposite case
+
+(de save-net(file . cells)
+    (when (not (stringp file))
+	  (error 'save-net "Not a string" file) )
+    (if cells
+	(save-net/merge file cells)
+      (save-matrix (weight-to-matrix) (open-write file "SNWT@wei")) )
+    file )
+
+
+; --------------------------------
+; (save-ascii-net "file" [ cells ] )
+; saves the weights into file 'file'
+; - as a weight matrix if no cells are specified
+; - as a network file in the opposite case
+
+(de save-ascii-net(file . cells)
+    (when (not (stringp file))
+	  (error 'save-ascii-net "Not a string" file) )
+    (if cells
+	(save-ascii-net/merge file cells)
+      (save-ascii-matrix (weight-to-matrix) (open-write file "wei")) )
+    file )
+
+
+; --------------------------------
+; (load-net "file") 
+; loads a network file created with save-net
+; (test the format)
+
+(de load-net(file)
+    (when (not (stringp file))
+	  (error 'load-net "Not a string" file) )
+    (let ((h (merge-net file)))
+      (if h
+	  (merge-net file (range 1 (1- nnum)))
+	(setq h (load-matrix (open-read file "SNWT@wei")))
+	(when (<> (bound h) (list (if (iterative-mode) wnum snum)))
+	      (error 'load-net "Bad number of weights in file" file) )
+	(matrix-to-weight h) ) ) 
+    file )
+
+
+; --------------------------------
+; (save-weights-as-c "filename" "vectorname") 
+; Saves the weights as a C vector
+
+(de save-weights-as-c(file &optional (vector "weights"))
+    (let* ((h (weight-to-matrix))
+	   (n (car (bound h))) )
+      (writing (open-write file "c")
+	       (printf "/*** Here are the weights */\n\n")
+	       (printf "float %s[%d] = {\n  " vector n)
+	       (for (i 0 (1- n))
+		    (when (> i 0)
+			  (if (> (tab) 65) 
+			      (printf ",\n  ")
+			    (printf ", ") ) )
+		    (printf "%l" (h i)) )
+	       (printf " };\n") ) ) )
+
+
+
+;================================================
+; Network-building functions
+;================================================
+
+
+; --------------------------------
+; (make-input layer)
+; (make-output layer)
+; (make-desired layer)
+; three functions for declaring the input, the output and the desired layers
+; these functions set global variables
+
+(de make-input (l) (setq input-layer l))
+(de make-output (l) (setq output-layer l))
+(de make-desired (l) (setq desired-layer l))
+
+
+
+; --------------------------------
+; (define-net 
+;    '( (layer [itsnlfsetting]) ... ) )
+; compile the forward-prop, backward-prop code
+; defines the update-weight code
+
+
+(de define-net(defnet-arg)
+    
+    (let* (;; list of symbols
+	   (defnet-symbs   (all (((defnet-name . defnet-nlf) defnet-arg))
+				defnet-name ))
+	   
+	   ;; create the nlfs
+	   (defnet-nlfs    (all (((defnet-name . defnet-nlf) defnet-arg))
+				(if ~defnet-nlf
+				    ;; no nlf specification: use default
+				    '(nlf dnlf ddnlf)
+				  ;; nlf specified: create and record them
+				  (let ((nlf ())(dnlf ())(ddnlf ()))
+				    (apply progn defnet-nlf)
+				    (list nlf dnlf ddnlf) ) ) )) )
+      
+      ;; make net-struc (for compatibility)
+      (rplaca net-struc (all ((defnet-name defnet-symbs)) (eval defnet-name)))
+
+      ;; make layer-names (used by cooperative training...)
+      (setq layer-names defnet-symbs)
+      
+      ;; create the forward-prop, compute-err and back-prop code
+      (eval `(de forward-prop (ns)
+		 ,@(all ((i (cdr defnet-symbs))
+			 ((nlf dnlf ddnlf) (cdr defnet-nlfs)) )
+			`(update-state theta ,nlf ,i) ) ) )
+      
+      (eval `(de do-compute-err(output-layer desired-layer)
+		 (setq local-error
+		       (/ (init-grad ,(cadr (lasta defnet-nlfs))
+				     output-layer desired-layer )
+			  ,(length output-layer) ) ) ) )
+
+      (eval `(de backward-prop (ns)
+		 (do-compute-err output-layer desired-layer) 
+		 ,@(all ((i (cdr (reverse (cdr defnet-symbs))))
+			 ((nlf dnlf ddnlf) (cdr (reverse (cdr defnet-nlfs)))) )
+			`(update-gradient ,dnlf ,i) ) ) )
+      
+      (when (iterative-mode)
+	    (eval `(de forward-2-prop(ns)
+		       ,@(all ((i (cdr defnet-symbs))
+			       ((nlf dnlf ddnlf) (cdr defnet-nlfs)) )
+			      `(update-deltastate ,dnlf ,i) ) ) ) )
+      
+      (when (newton-mode)
+	    (eval `(de backward-2-prop(ns)
+		       (if lev-mar
+			   (progn
+			     ,@(all ((i (reverse (cdr defnet-symbs)))
+				     ((nlf dnlf ddnlf) (reverse (cdr defnet-nlfs))) )
+				    `(update-lmggradient ,dnlf gamma ,i) ) )
+			 (progn
+			   ,@(all ((i (reverse (cdr defnet-symbs)))
+				   ((nlf dnlf ddnlf) (reverse (cdr defnet-nlfs))) )
+				  `(update-ggradient ,dnlf ,ddnlf gamma ,i) ) ) ) ) ) )
+      
+      ;; define the update-weight code
+
+      (de do-update-weight(ns)
+	  (update-weight alpha decay) )
+
+      (when (newton-mode)
+	    (de do-update-weight-newton(ns)
+		(update-w-newton alpha decay mu) ) )
+
+      (when (iterative-mode)
+	    (de do-update-acc(ns)
+		(update-acc) ) )
+
+      (when (and (iterative-mode) (newton-mode))
+	    (de do-update-hess(ns)
+		(update-hess) ) ) ) )
+
+
+
+
+; --------------------------------
+; (build-net
+;     '( (nameoflayer size [itsnlfsetting]) .... )
+;     '( (prelayer postlayer) ... ) )
+;
+; 1- create layers 'nameoflayer of size 'size
+; 2- call define-net
+; 2- connect bias
+; 3- create full connections
+;
+; P.S. complex names 'build-net-c' avoid variable capture.
+
+
+
+(de build-net (build-net-c build-net-w)
+    (let* (;; create the layers
+	   (build-net-layers  (all (((build-net-i build-net-j . build-net-k) build-net-c))
+				   (set build-net-i (newneurons (eval build-net-j))) ))
+	   ;; create the arg for define-net
+	   (build-net-args    (all (((build-net-i build-net-j . build-net-k) build-net-c))
+				   (cons build-net-i build-net-k) )) )
+      
+      ;; make input, output and desired layer!
+      ;; make net-struc (for compatibility)
+      (make-input (car build-net-layers))
+      (make-output (lasta build-net-layers))
+      (make-desired (newneurons (length (lasta build-net-layers))))
+      (setq net-struc (cons build-net-layers desired-layer))
+      
+      ;; call define-net
+      (apply define-net (cons build-net-args ()))
+      
+      ;; connect biases
+      (each ((i (cdr build-net-layers)))
+	    (connect 0 i) )
+      
+      ;; perform full connections
+      (each (((build-net-i build-net-j) build-net-w))
+	    (connect (eval build-net-i) (eval build-net-j)) ) ) )
+
+;----------------------------------
+; (build-net-nobias ....
+; does not connect the cells to the bias
+
+(de build-net-nobias (build-net-c build-net-w)
+    (let* (;; create the layers
+	   (build-net-layers  (all (((build-net-i build-net-j . build-net-k) build-net-c))
+				   (set build-net-i (newneurons (eval build-net-j))) ))
+	   ;; create the arg for define-net
+	   (build-net-args    (all (((build-net-i build-net-j . build-net-k) build-net-c))
+				   (cons build-net-i build-net-k) )) )
+
+      ;; make input, output and desired layer!
+      ;; make net-struc (for compatibility)
+      (make-input (car build-net-layers))
+      (make-output (lasta build-net-layers))
+      (make-desired (newneurons (length (lasta build-net-layers))))
+      (setq net-struc (cons build-net-layers desired-layer))
+
+      ;; call define-net
+      (apply define-net (cons build-net-args ()))
+
+      ;; perform full connections
+      (each (((build-net-i build-net-j) build-net-w))
+	    (connect (eval build-net-i) (eval build-net-j)) ) ) )
+
+
+
+
+
+; ================================================
+; a bunch of printing and display functions
+; ================================================
+
+; ---------------------------
+; (prnet)
+; a dull printing of the network state
+
+(de prnet()
+    (printf "Age %d\n" age )
+    (prneur)
+    (prsyn) )
+
+
+; --------------------------------
+; (prneur) 
+; a dull printing of the cell states
+
+(de prneur()
+  (mapc 'print-layer (car net-struc)) )
+
+(de print-layer (layer)
+    (for (i 1 (length layer)) 
+	 (printf "-------") ) 
+    (printf "\n")
+    (printf "X  :")
+    (each ((i layer)) (printf " %6.3f" (nval i)))
+    (printf "\n")
+    (printf "Y  :")
+    (each ((i layer)) (printf " %6.3f" (ngrad i)))
+    (printf "\n") )
+
+; --------------------------------
+; (prsyn)
+; a dull printing of the synapses values
+
+(de prsyn()
+    (all-synapse (i j)
+		 (printf "%04d->%04d val%6.3f delta%6.3f\n"
+			 i j (Sval i j) (Sdelta i j) ) ) )
+
+
+; ================================================
+; Graphic functions. may be user defined
+; ================================================
+
+; --------------------------------
+; (plot-error age err)
+; this one is supposed to plot the 
+; instantaneous output error on a graph
+
+(de plot-error (age err) 
+  (when disp-error-port
+     (if (> age disp-error-max-age)
+        (init-disp-error disp-error-sweeps disp-error-maxerr) )
+     (let ((plot-port disp-error-port))
+       (plt-draw age err) ) ) )
+                 
+
+; --------------------------------
+; (init-disp-error sweep maxerr)
+; init everything for plot-error
+
+(de init-disp-error(sweep maxerr)
+    (when ~disp-error-window
+      (let ((window window))
+         (setq disp-error-window (new-window 500 300 "Instantaneous error")) ) )
+
+    (let* ((window disp-error-window)
+           (xstep  (1+ (- patt-max patt-min)))
+           (lstep  (* (1+ (div sweep 10)) xstep))
+           (maxage (+ age (* sweep xstep)))
+           (brect  (nice-brect))
+           (rrect  (list age 0 maxage maxerr)) 
+           (xlabel (range age maxage lstep))
+           (ylabel (range 0 maxerr 0.25)) )
+
+      (setq disp-error-port (new-plot-port brect rrect object-nil))
+      (setq disp-error-max-age (1- maxage))
+      (setq disp-error-sweeps sweep)
+      (setq disp-error-maxerr maxerr)
+
+      (cls)
+      (let ((plot-port disp-error-port))
+        (setq ylabel (nconc1 ylabel maxerr))
+        (draw-axes brect xlabel ylabel  "Instantaneous error vs age") ) ) )
+
+; --------------------------------
+; (draw-net net-struc pattnum)
+; that one is supposed to draw the state of the network
+; net-struc is the net structure and pattnum the index of the current pattern
+
+(de draw-net (l num) 
+    "'draw-net has not been defined yet" )
+
+
+
+; ================================================
+; DISP_XXX functions
+; ================================================
+
+; --------------------------------
+; default printing function called at each iteration
+; prints the state of the last layer, the error, the number of weight
+; modifications performed so far (age), plot the error in the
+; graphic window if any, graphically displays the network state if
+; possible.
+
+(de disp-everything (patt-num)
+  (print-layer output-layer)
+  (printf "age=%d  pattern=%d  error=%9.5f  %s\n" 
+           age patt-num local-error (if good-answer "  ok  " "**arrgh**"))
+  (plot-error age local-error)
+  (draw-net net-struc patt-num) )
+
+; --------------------------------
+; (disp-error) (disp-net) (disp-text)
+; other display functions 
+
+(de disp-error (patt-num)
+  (plot-error age local-error) )
+
+(de disp-net (patt-num)
+    (draw-net net-struc patt-num) )
+
+(de disp-text (patt-num)
+  (printf "age=%d  pattern=%d  error=%9.5f  %s\n" 
+           age patt-num local-error (if good-answer "  ok  " "**arrgh**")) )
+
+
+; --------------------------------
+; (disp-user)
+; dummy function. may be user defined
+
+(de disp-user (patt-num) 
+    () )
+
+; --------------------------------
+; (disp-nil)
+; nil function: disp nothing
+
+(de disp-nil(pn) 
+    () )
+
+; --------------------------------
+; (set-disp-XXXX)
+; convenient functions for changing the display mode
+
+(de set-disp-user () 
+  (setq disp-basic-iteration disp-user)
+  (setq disp-perf-iteration  disp-user)
+  'disp-user )
+
+(de set-disp-nil ()
+  (setq disp-basic-iteration disp-nil)
+  (setq disp-perf-iteration  disp-nil)
+  'disp-nil )
+
+(de set-disp-everything ()
+  (if disp-error-port
+    (init-disp-error disp-error-sweeps disp-error-maxerr)
+    (init-disp-error 10 4) )
+  (setq disp-basic-iteration disp-everything)
+  (setq disp-perf-iteration  disp-nil)
+  'disp-everything )
+
+(de set-disp-error()
+  (if disp-error-port
+    (init-disp-error disp-error-sweeps disp-error-maxerr)
+    (init-disp-error 10 4) )
+  (setq disp-basic-iteration disp-error) 
+  (setq disp-perf-iteration  disp-nil) 
+  'disp-error )
+
+(de set-disp-net () 
+  (setq disp-basic-iteration disp-net)
+  (setq disp-perf-iteration  disp-net)
+  'disp-net )
+
+(de set-disp-net-and-error () 
+  (if disp-error-port
+    (init-disp-error disp-error-sweeps disp-error-maxerr)
+    (init-disp-error 10 4) )
+  (setq disp-basic-iteration disp-error)
+  (setq disp-perf-iteration  disp-net)
+  'disp-net-and-error )
+
+(de set-disp-text ()
+  (setq disp-basic-iteration disp-text)
+  (setq disp-perf-iteration disp-text)
+  'disp-text )
+
+; default value
+(set-disp-nil)
+
+
+;================================================ 
+; SET_COST_XXX 
+;================================================ 
+
+; -----------------------------
+; sets the default cost function
+; the cost function is the exact mean square error
+(de set-cost-lms ()
+    (setq init-grad init-grad-lms)
+    'init-grad-lms )
+
+; -----------------------------
+; this function set the error to 0 if the actual output is above
+; the desired output and when the d.o. is greater than "threshold"
+; OR if the a.o. is under the d.o. and the d.o. is smaller than
+; "threshold". a good value for threshold is (nlf 0) (i.e the middle
+; value of the sigmoid function.
+
+(de set-cost-thlms (threshold)
+  (eval (list 'de 'init-grad '(dnlf l1 l2)
+              (list 'init-grad-thlms 'dnlf 'l1 'l2 threshold) ) ) 
+  'init-grad-thlms )
+
+
+; default setting
+(set-cost-lms)
+
+;================================================
+; SET_CLASS_XXXX
+;================================================
+
+
+; the function 'classify returns t if the output of the
+; network is considered 'good according to the current active criterion.
+; of course it returns () otherwise
+
+; -----------------------------
+; a bunch of functions for
+; setting the classifying method
+
+(de set-class-nil ()
+   (de classify (pn) t)
+   () )
+
+(de set-class-max () 
+   (de classify (pn) (class-max pn))
+   'class-max)
+
+(de set-class-sgn (tmin tmax)
+    (if (and (0= tmin)(0= tmax))
+	(progn
+	  (setq classify class-quadrant)
+	  'class-quadrant )
+      (progn
+	(eval (list 'de 'classify '(pn) 
+		    (list 'class-sgn 'pn tmin tmax) ) )
+	'class-sgn ) ) )
+
+(de set-class-lms (errmax)
+    (eval (list 'de 'classify '(pn) 
+		(list 'class-lms 'pn errmax) ) )
+    'class-lms )
+
+(de set-class-hamming (margin)
+    (eval (list 'de 'classify '(pn) 
+		(list 'class-hamming 'pn margin) ) )
+    'class-hamming )
+
+(de set-class-quadrant()
+    (setq classify class-quadrant) 
+    'class-quadrant )
+
+
+; --------------------------------
+; (rank-of-max list)
+; an intermadiate functions which returns the index(s) of the
+; greater element of a list.
+
+(de rank-of-max (l)
+  (let ((z (find-interval l (sup l))))
+    (if (cdr z) z (car z)) ) )
+
+; --------------------------------
+; (class-max patnum)
+; here is the real decision function
+; returns true if the the most active units have the same rank in
+; the desired vector and in the actual output vector
+
+(de class-max (pn)
+  (= (setq out-class (rank-of-max (state output-layer)))
+     (setq des-class (rank-of-max (state desired-layer))) ) ) 
+
+
+; --------------------------------
+; (same-side x y tmin tmax)
+; true if the desired and actual values of every output cells
+; are in the same of three regions defined by
+; tmin and tmax (it is sloooow !!)
+
+(de same-side (x y tmin tmax)
+  (and (= (sgn (- x tmin)) (sgn (- y tmin)))
+       (= (sgn (- x tmax)) (sgn (- y tmax))) ) )
+
+; --------------------------------
+; (class-sgn pn tmin tmax)
+; here is the real class-max decision function
+
+(de class-sgn (pn tmin tmax)
+  (apply and
+    (all ((x desired-layer)(y output-layer))
+         (same-side (Nval x) (Nval y) tmin tmax) ) ) )
+
+; --------------------------------
+; (class-lms pn margin)
+; true if lms less than a margin
+
+(de class-lms (pn margin)
+  (> margin (mean-sqr-dist (state desired-layer) (state output-layer))) )
+ 
+; --------------------------------
+; (class-hamming pn margin)
+; true if all the differences between 
+; every output and desired cells
+; are less than margin
+
+(de class-hamming( pn margin)
+  (0= (hamming-dist margin (state desired-layer) (state output-layer))) )
+
+; --------------------------------
+; (class-quadrant pn)
+; true if every output and desired state are in the same quadrant
+
+(de class-quadrant (pn)
+  (0= (quadrant-dist (state desired-layer) (state output-layer))) ) 
+
+
+; default setting
+(set-class-quadrant)  
+
+
+
+;================================================
+; PATTERNS CONTROL
+;================================================
+
+; --------------------------------
+; (load-patterns "xxx.pat" "xxx.des") 
+; load a pattern file and a desired output file into  memory
+; automatically creates the matrix 'pattern-matrix' for storing
+; the input patterns, as well as the the matrix 'desired-matrix'
+; for storing the desired output.
+
+(de load-patterns (pat-file des-file)
+    (load-matrix pattern-matrix pat-file)
+    (load-matrix desired-matrix des-file)
+    (when (<> (bound pattern-matrix 1) (bound desired-matrix 1))
+	  (printf "***WARNING: pattern file and desired output file have\n")
+	  (printf "            different numbers of elements\n") )
+    ;; define the current training set as the entire loaded set
+    (save-perf ";;; (load-patterns %l %l)\n" pat-file des-file)
+    (ensemble 0 (bound pattern-matrix 1))
+    )
+
+
+; -------------------------------
+; (ensemble pmin pmax)
+; defines the current training set
+
+(de ensemble (pmin pmax)
+  (if (> pmin pmax)
+    (error 'ensemble "first argument must be smaller than second one")
+    (setq patt-min pmin)
+    (setq patt-max pmax)
+    (if (> current-pattern pmax) 
+	(setq current-pattern pmin) )
+    (if (< current-pattern pmin) 
+	(setq current-pattern pmin) )
+    (save-perf ";;; (ensemble %l %l)\n" pmin pmax)
+    ) )
+
+
+; --------------------------------
+; (hoeffding 100 confidence numofexamples)
+; computes the confidence interval.
+
+(de hoeffding(tau eta n)
+  (* tau (sqrt (/ (- (log (2/ eta))) (2* n)))) )
+
+(setq confidence 90)
+
+; -------------------------------
+; (test-set pmin pmax)
+; defines the current test set
+
+(de test-set (pmin pmax)
+  (if (> pmin pmax)
+    (error 'test-set "first argument must be smaller than second one")
+    (setq tpatt-min pmin)
+    (setq tpatt-max pmax) )
+  (let ((n (1+ (- pmax pmin))))
+    (printf "** Test set size = %d, %d%% confidence interval = +-%.2f%%.\n"
+	    n confidence 
+	    (* 100 (hoeffding 1 (- 1 (/ confidence 100)) n)) ) )
+  (save-perf ";;; (test-set %l %l)\n" pmin pmax)
+  )
+
+
+
+
+;================================================
+; SET_NEXTCHO_XXX
+;================================================
+
+; functions for choosing the next pattern
+; these functions assume that the current learning set (or test set)
+; is composed of the patterns whose indices are between
+; patt-min and patt-max
+
+; declare the variable as numeric
+(setq current-pattern 0)
+
+
+; --------------------------------
+; choose the next pattern in the pattern matrix
+(de nextcho-seq (p) 
+    (if (< p patt-min) patt-min
+      (if (>= p patt-max) patt-min (1+ p)) ) )
+
+; --------------------------------
+; choose a pattern randomly
+(de nextcho-rnd (p)
+    (int (rand patt-min (1+ patt-max))) )
+
+; --------------------------------
+; a bunch of functions for setting 
+; the method for choosing the next pattern
+
+; set to sequential choice
+(de set-nextcho-seq ()
+    (setq next-choice nextcho-seq)
+    'nextcho-seq)
+
+; set to random choice
+(de set-nextcho-rnd ()
+    (setq next-choice nextcho-rnd)
+    'nextcho-rnd)
+
+; default setting
+(set-nextcho-seq)
+
+
+;================================================
+; SET_NEXTPAT_XXX
+;================================================
+
+; functions for choosing or not choosing the next pattern
+
+; --------------------------------
+; choose the next pattern in the pattern matrix
+(de nextpat-seq (p) 
+    (next-choice p) )
+
+; --------------------------------
+; stay on a pattern until it is recognized
+(de nextpat-stay (p)
+    (if good-answer (next-choice p) p) )
+
+; --------------------------------
+; a bunch of functions for setting the method for choosing the next pattern
+
+; set to sequential choice
+(de set-nextpat-seq ()
+    (setq next-pattern nextpat-seq)
+    'nextpat-seq)
+
+; set to 'stay' choice
+(de set-nextpat-stay()
+    (setq next-pattern nextpat-stay)
+    'nextpat-stay)
+
+; default setting
+(set-nextpat-seq)
+                                             
+
+
+;================================================
+; PATTERN PRESENTATION
+;================================================
+
+; --------------------------------
+; (present-pattern layer patt-num)
+; transfers a pattern from 'pattern-matrix' to 
+; the set of cells contained in the list 'layer
+; and add a zero-mean gaussian noise on the input
+
+(de present-pattern (layer patt-num)
+    (get-pattern pattern-matrix patt-num layer)
+    (if (0<> input-noise)
+	(gauss-state layer input-noise) ) )
+
+(setq input-noise 0)
+
+; --------------------------------
+; (present-desired layer patt-num)
+; transfer a desired configuration form 
+; 'desired-matrix' to the set of cells
+; contained in the list 'layer
+
+(de present-desired (layer patt-num)
+    (get-pattern desired-matrix patt-num layer) )
+
+
+;================================================
+; PERFORMANCE MEASURE
+;================================================
+
+; --------------------------------
+; (test-pattern pattnum)
+; test a pattern but don't back-prop
+; and don't update the weights
+
+(de test-pattern (patt-number)
+    (present-pattern input-layer patt-number)
+    (forward-prop net-struc)
+    (present-desired desired-layer patt-number)
+    (do-compute-err output-layer desired-layer)
+    (setq good-answer (classify patt-number))
+    (process-pending-events)
+    (disp-perf-iteration patt-number)
+    local-error )
+
+
+
+; --------------------------
+; (performance pmin pmax)
+; compute the true (mean) error function on the patterns whose indices
+; are between pmin and pmax (no learning here)
+; measures the performances of the network
+; 'global-error contains the error
+
+(de performance (pmin pmax)
+    (let ((pnum (+ 1 (- pmax pmin))))
+      (setq global-error 0)
+      (setq good-an-num 0)
+      (for (i pmin pmax)
+	   (incr global-error (test-pattern i))
+	   (if good-answer
+	       (incr good-an-num) ) )
+      (setq good-an-percent (* 100.0 (/ good-an-num pnum)))
+      (setq global-error (/ global-error pnum)) ) )
+
+
+; -------------------------------
+; (save-perf .....)
+; function which saves the performance information in a file
+; global variable perf-file contains the name of the performance file
+; if this variable is NIL or a nul-string, save-perf does not do anything.
+; save-perf can be called with any number of numerical arguments.
+
+(de save-perf l
+    (when perf-file
+	  (writing (open-append perf-file "perf")
+		   (apply printf l) ) ) )
+
+(setq perf-file ())
+
+; -------------------------------
+; (perf [pmin pmax]
+; user-callable performance evaluation function
+
+(de perf l                                          
+    (when (and l (cddr l))
+	  (error 'perf "too many arguments" ()) )
+    (let ((pmin (if l (car l) patt-min))
+          (pmax (if l (cadr l) patt-max))
+          (input-noise 0) )
+      
+      (printf "-------------------------------------------------------\n")
+      (performance pmin pmax)
+      (save-perf "%6d %10.8f %6.2f ;{%d-%d}\n"
+		 age global-error good-an-percent pmin pmax)
+      (printf "patterns{%d-%d}, age=%d, error=%g, performance=%g\n" 
+	      pmin pmax age global-error good-an-percent )
+      good-an-percent ) )
+
+
+
+;=================================================
+; PERFORMANCE DISPLAY
+;=================================================
+
+
+; -----------------------------
+; (init-error-plotting sweeps maxerr)
+; (cancel-error-plotting)
+; create/destroy port for plotting error
+
+(de init-error-plotting(sweep maxerr)
+    (when ~error-plotting-window
+	  (let ((window window))
+	    (setq error-plotting-window (new-window 500 300 "Error plotting")) ) )
+    (let* ((window error-plotting-window)
+	   (xstep  (1+ (- patt-max patt-min)))
+	   (lstep  (* (1+ (div sweep 10)) xstep))
+	   (brect  (nice-brect))
+	   (rrect  (list age 0 (+ age (* sweep xstep)) maxerr)) 
+	   (xlabel (range age (+ age (* sweep xstep)) lstep))
+	   (ylabel (range 0 maxerr 0.1)) )
+      
+      (setq training-error-port (new-plot-port brect rrect open-circle))
+      (setq test-error-port (copy-plot-port training-error-port closed-circle))
+      (let ((plot-port training-error-port))
+	(cls)     
+	(setq ylabel (nconc1 ylabel maxerr))
+	(draw-axes brect xlabel ylabel  "Average NMSE vs age" ) ) ) )
+
+(de cancel-error-plotting()
+    (setq training-error-port ())
+    (setq test-error-port ()) ) 
+
+; -----------------------------
+; (init-perf-plotting sweeps)
+; (cancel-perf-plotting)
+; create port for plotting performance
+
+(de init-perf-plotting(sweep)
+    (when ~perf-plotting-window
+	  (let ((window window))
+	    (setq perf-plotting-window (new-window 500 300 "Perf plotting")) ) )
+    (let* ((window perf-plotting-window)
+	   (xstep  (1+ (- patt-max patt-min)))
+	   (lstep  (* (1+ (div sweep 10)) xstep))
+	   (brect  (nice-brect))
+	   (rrect  (list age 0 (+ age (* sweep xstep)) 100)) 
+	   (xlabel (range age (+ age (* sweep xstep)) lstep))
+	   (ylabel (range 0 100 20)) )
+      
+      (setq training-perf-port (new-plot-port brect rrect open-circle))
+      (setq test-perf-port (copy-plot-port training-perf-port closed-circle)) 
+      (let ((plot-port training-perf-port))
+	(cls)
+	(draw-axes brect xlabel ylabel  "Performance vs age" ) ) ) )
+
+(de cancel-perf-plotting()
+    (setq training-perf-port ())
+    (setq test-perf-port ()) ) 
+
+;----------------------------------
+; These function are called by run, trun etc...
+; and perform automatic perf and error plotting
+
+(de reset-training-ports()
+    (when training-perf-port
+	  (let ((plot-port training-perf-port)) (plt-clear)) )
+    (when training-error-port
+	  (let ((plot-port training-error-port)) (plt-clear)) ) )
+
+(de reset-test-ports()
+    (when test-perf-port
+	  (let ((plot-port test-perf-port)) (plt-clear)) )
+    (when test-error-port
+	  (let ((plot-port test-error-port)) (plt-clear)) ) )
+
+(de auto-plot-training()
+    (when training-perf-port
+	  (let ((plot-port training-perf-port))
+	    (plt-draw age good-an-percent) 
+	    (plt-plot age good-an-percent) ) )
+    (when training-error-port
+	  (let ((plot-port training-error-port))
+	    (plt-draw age global-error) 
+	    (plt-plot age global-error) ) ) )
+
+(de auto-plot-test()
+    (when test-perf-port
+	  (let ((plot-port test-perf-port))
+	    (plt-draw age good-an-percent) 
+	    (plt-plot age good-an-percent) ) )
+    (when test-error-port
+	  (let ((plot-port test-error-port))
+	    (plt-draw age global-error) 
+	    (plt-plot age global-error) ) ) )
+
+
+
+
+
+;=================================================
+; BASIC ITERATION FUNCTIONS
+;=================================================
+
+; ------------------------------------
+; (basic-iteration pattnum)
+; basic learning iteration:
+; choose a pattern, transfer it to the input and desired output
+; prop, back-prop and updates weights
+; then display infos. returns the error
+; sets the global variable 'local-error to the mean (squared) error at
+; the output
+
+(de basic-iteration (patt-number)
+    (present-pattern input-layer patt-number)
+    (forward-prop net-struc)
+    (present-desired desired-layer patt-number)
+    (backward-prop net-struc)
+    (do-update-weight net-struc)
+    (incr age)
+    (setq good-answer (classify patt-number))
+    (process-pending-events)
+    (disp-basic-iteration patt-number)
+    local-error
+) 
+
+
+
+; ------------------------------------
+; (basic-newton-iteration pattnum)
+; on-line newton and levenberg-marquardt update
+
+(when (newton-mode)
+
+      (de basic-newton-iteration (patt-number)
+	  (present-pattern input-layer patt-number)
+	  (forward-prop net-struc)
+	  (present-desired desired-layer patt-number)
+	  (backward-prop net-struc)
+	  (backward-2-prop net-struc)
+	  (do-update-weight-newton net-struc)
+	  (incr age)
+	  (setq good-answer (classify patt-number))
+	  (process-pending-events)
+	  (disp-basic-iteration patt-number)
+	  local-error )
+      
+      (defvar lev-mar ()) )
+
+; --------------------------------
+; (batch-iteration from to)
+; a basic learning iteration for the OFF-LINE version
+; this works ONLY if the ITERATIVE-MODE is active, since
+; it uses the accumulators: 
+; consequently it is slower than the on-line
+; non-iterative version
+
+(when (iterative-mode)
+      
+      (de batch-iteration (from to)
+	  (setq global-error 0)
+	  (setq good-an-num 0)
+	  (setq pnum 0)
+	  (clear-acc)   ; clear the gradient accumulators
+	  (for (patt-number from to)
+	       (present-pattern input-layer patt-number)
+	       (forward-prop net-struc)
+	       (present-desired desired-layer patt-number)
+	       (backward-prop net-struc)
+	       (do-update-acc net-struc)
+	       (incr age)
+	       (incr pnum)
+	       (setq good-answer (classify patt-number))
+	       (setq global-error (+ global-error local-error))
+	       (when good-answer
+		     (incr good-an-num) )
+	       (process-pending-events)
+	       (disp-basic-iteration patt-number) )
+	  (update-delta alpha)
+	  (update-wghtonly decay)
+	  (setq good-an-percent (* 100.0 (/ good-an-num pnum)))
+	  (setq global-error (/ global-error pnum)) )
+      
+      
+; --------------------------------
+; (batch-newton-iteration from to)
+; A basic learning iteration for the BATCH-NEWTON version
+; this works ONLY if the ITERATIVE-MODE is active, since
+; it uses the accumulators: consequently it is slower than the on-line
+; non-iterative version
+     
+      (when (newton-mode)
+
+	    (de batch-newton-iteration (from to)
+		(setq gamma 1) ; sigma contain instantaneous curvature
+		(setq global-error 0)
+		(setq good-an-num 0)
+		(setq pnum 0)
+		(clear-acc)   ; clear the gradient accumulators
+		(clear-hess)  ; clear accumulated second derivatives
+		(for (patt-number from to)
+		     (present-pattern input-layer patt-number)
+		     (forward-prop net-struc)
+		     (present-desired desired-layer patt-number)
+		     (backward-prop net-struc)
+		     (backward-2-prop net-struc)
+		     (do-update-acc net-struc)
+		     (do-update-hess net-struc)
+		     (incr age)
+		     (incr pnum)
+		     (setq good-answer (classify patt-number))
+		     (setq global-error (+ global-error local-error))
+		     (when good-answer
+			   (incr good-an-num) )
+		     (process-pending-events)
+		     (disp-basic-iteration patt-number) )
+		
+		(hessian-scale mu)
+		(update-delta alpha)
+		(update-wghtonly decay)
+		
+		(setq good-an-percent (* 100.0 (/ good-an-num pnum)))
+		(setq global-error (/ global-error pnum)) )
+	    
+      ) ;;; newton-mode
+) ;;; iterative-mode
+
+
+; ----------------------------------
+; (batch-cg1-iteration from to)
+; Compute gradients into field SACC
+; (batch-cg2-iteration from to)
+; Compute curvature in DELTA direction using LM approximation.
+
+(when (iterative-mode)
+      
+      (de batch-cg1-iteration(from to)
+	  (setq global-error 0)
+	  (setq good-an-num 0)
+	  (setq pnum 0)
+	  (clear-acc)   ; clear the gradient accumulators
+	  (for (patt-number from to)
+	       (present-pattern input-layer patt-number)
+	       (forward-prop net-struc)
+	       (present-desired desired-layer patt-number)
+	       (backward-prop net-struc)
+	       (do-update-acc net-struc)
+	       (incr age)
+	       (incr pnum)
+	       (setq good-answer (classify patt-number))
+	       (setq global-error (+ global-error local-error))
+	       (when good-answer (incr good-an-num))
+	       (process-pending-events)
+	       (disp-basic-iteration patt-number) ) )
+
+      (de batch-cg2-iteration(from to)
+	  (let ((curvature 0))
+	    (for (patt-number from to)
+		 (present-pattern input-layer patt-number)
+		 (forward-prop net-struc)
+		 (set-nfield input-layer n-grad 0)
+		 (forward-2-prop net-struc)
+		 (incr curvature (sqr-dist (gradient output-layer)))
+	    	 (process-pending-events) )
+	    curvature ) )
+
+) ;;; iterative-mode
+
+
+;=================================================
+; LEARN & RUN FUNCTIONS
+;=================================================
+
+
+; --------------------------------
+; ONLINE STANDARD BACKPROP
+
+(de learn (it) 
+  (repeat it
+    (basic-iteration current-pattern)
+    (setq current-pattern (next-pattern current-pattern)) ) 
+  (list it) )
+
+(de learn-cycle (it)
+  (repeat it
+    (for (i patt-min patt-max)
+	 (basic-iteration i)) )
+  (list it) )
+
+(de run (it num)
+    (save-perf ";;; run %l %l\n" it num)
+    (perf patt-min patt-max)
+    (reset-training-ports)
+    (auto-plot-training)
+    (repeat num
+        (learn it)
+	(perf patt-min patt-max)
+        (auto-plot-training) ) )
+
+(de trun (it num)
+    (save-perf ";;; trun %l %l\n" it num)
+    (perf patt-min patt-max)
+    (reset-training-ports)
+    (auto-plot-training)
+    (perf tpatt-min tpatt-max)
+    (reset-test-ports)
+    (auto-plot-test)
+    (repeat num
+        (learn it)
+        (perf patt-min patt-max)
+        (auto-plot-training)
+        (perf tpatt-min tpatt-max)
+        (auto-plot-test) ) )
+
+
+; --------------------------------
+; ONLINE NEWTON BACKPROP
+
+(when (newton-mode)
+
+      (de learn-newton (it) 
+	  (let ((lev-mar ()))
+	    (repeat it
+		    (basic-newton-iteration current-pattern)
+		    (setq current-pattern (next-pattern current-pattern)) ) )
+	  (list it) )
+      
+      (de learn-cycle-newton (it)
+	  (let ((lev-mar ()))
+	    (repeat it
+		    (for (i patt-min patt-max) (basic-newton-iteration i)) ) )
+	  (list it) )
+      
+      (de run-newton (it num)
+	  (save-perf ";;; run-newton %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (repeat num
+		  (learn-newton it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training) ) )
+      
+      (de trun-newton (it num)
+	  (save-perf ";;; trun-newton %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (perf tpatt-min tpatt-max)
+	  (reset-test-ports)
+	  (auto-plot-test)
+	  (repeat num
+		  (learn-newton it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training)
+		  (perf tpatt-min tpatt-max)
+		  (auto-plot-test) ) )
+
+) ;; newton-mode
+
+; --------------------------------
+; ONLINE LEVENBERG-MARQUARDT BACKPROP
+
+
+(when (newton-mode)
+
+      (de learn-lm (it) 
+	  (let ((lev-mar t))
+	    (repeat it
+		    (basic-newton-iteration current-pattern)
+		    (setq current-pattern (next-pattern current-pattern)) ) ) 
+	  (list it) )
+      
+      (de learn-cycle-lm (it)
+	  (let ((lev-mar t))
+	    (repeat it
+		    (for (i patt-min patt-max) (basic-newton-iteration i)) ) ) 
+	  (list it) )
+      
+      (de run-lm (it num)
+	  (save-perf ";;; run-lm %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (repeat num
+		  (learn-lm it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training) ) )
+      
+      (de trun-lm (it num)
+	  (save-perf ";;; trun-lm %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (perf tpatt-min tpatt-max)
+	  (reset-test-ports)
+	  (auto-plot-test)
+	  (repeat num
+		  (learn-lm it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training)
+		  (perf tpatt-min tpatt-max)
+		  (auto-plot-test) ) )
+
+) ;; newton-mode
+
+
+; --------------------------------
+; BATCH STANDARD BACKPROP
+
+
+(when (iterative-mode)
+
+      (de learn-batch (n)
+	  (repeat n
+		  (batch-iteration patt-min patt-max) ) 
+	  (list n) )
+      
+      (de run-batch (it num)
+	  (save-perf ";;; run-batch %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (repeat num
+		  (learn-batch it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training) ) )
+      
+      (de trun-batch (it num)
+	  (save-perf ";;; trun-batch %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (perf tpatt-min tpatt-max)
+	  (reset-test-ports)
+	  (auto-plot-test)
+	  (repeat num
+		  (learn-batch it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training)
+		  (perf tpatt-min tpatt-max)
+		  (auto-plot-test) ) )
+
+) ;; iterative-mode
+
+; --------------------------------
+; BATCH NEWTON BACKPROP
+
+(when (and (iterative-mode) (newton-mode))
+
+      (de learn-batch-newton (n)
+	  (let ((lev-mar ()))
+	    (repeat n
+		    (batch-newton-iteration patt-min patt-max) ) ) 
+	  (list n) )
+      
+      (de run-batch-newton (it num)
+	  (save-perf ";;; run-batch-newton %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (repeat num
+		  (learn-batch-newton it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training) ) )
+      
+      (de trun-batch-newton (it num)
+	  (save-perf ";;; trun-batch-newton %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (perf tpatt-min tpatt-max)
+	  (reset-test-ports)
+	  (auto-plot-test)
+	  (repeat num
+		  (learn-batch-newton it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training)
+		  (perf tpatt-min tpatt-max)
+		  (auto-plot-test) ) )
+      
+) ;; iterative-mode and newton-mode
+
+; --------------------------------
+; BATCH LEVENBERG-MARQUARDT BACKPROP
+
+(when (and (iterative-mode) (newton-mode))
+      
+      (de learn-batch-lm (n)
+	  (let ((lev-mar t))
+	    (repeat n
+		    (batch-newton-iteration patt-min patt-max) ) ) 
+	  (list n) )
+      
+      (de run-batch-lm (it num)
+	  (save-perf ";;; run-batch-lm %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (repeat num
+		  (learn-batch-lm it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training) ) )
+      
+      (de trun-batch-lm (it num)
+	  (save-perf ";;; trun-batch-lm %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (perf tpatt-min tpatt-max)
+	  (reset-test-ports)
+	  (auto-plot-test)
+	  (repeat num
+		  (learn-batch-lm it)
+		  (perf patt-min patt-max)
+		  (auto-plot-training)
+		  (perf tpatt-min tpatt-max)
+		  (auto-plot-test) ) )
+
+) ;; iterative-mode and newton-mode
+
+
+; --------------------------------
+; BATCH CONJUGATE GRADIENT BACKPROP
+
+(when (iterative-mode)
+      
+      (de learn-batch-cg(it &optional grad1 grad2 conjgrad)
+	  (when (not grad2) 
+		(setq grad2 (float-matrix wnum)) )
+	  (epsilon 1)
+	  (let ((beta 0)
+		(curvature 0) )
+	    (repeat it
+		    ;; Compute gradients
+		    (batch-cg1-iteration patt-min patt-max)
+		    ;; Compute conjugate gradient
+		    (acc-to-matrix grad2)
+		    (if (not grad1)
+			(progn
+			  ;; Explicit restart.
+			  (setq grad1 (copy-array grad2))
+			  (setq conjgrad (copy-array grad2)) )
+		      ;; Self restarting Hestenes-Stiefel formula
+		      (setq beta (/ (- (dot-product grad2 grad2) 
+				       (dot-product grad1 grad2) )
+				    (dot-product conjgrad grad1) ) )
+		      ;; (print beta) ;; DEBUG
+		      ;; (am+bm 1 grad2 beta conjgrad conjgrad) 
+                      (idx-f1dotc conjgrad beta conjgrad)
+                      (idx-f1dotcacc grad2 1 conjgrad) )
+		    (matrix-to-delta conjgrad)
+		    (setq grad2 grad1 grad1 grad2)
+		    ;; Approximate line search 
+		    (setq curvature (batch-cg2-iteration patt-min patt-max))
+		    ;; This line avoids numerical instabilities.
+		    ;; Commented out because numerical instabilities here
+		    ;; almost surely indicate poor generalization anyway
+		    (when safe-cg (incr curvature mu))
+		    (update-wghtonly-conjgrad curvature) ) )
+	  ;; Pass current state to next epochs.
+	  (list it grad1 grad2 conjgrad) )
+
+      (de run-batch-cg (it num)
+	  (save-perf ";;; run-batch-cg %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (let ((args (list it)))
+	    (repeat num
+		    (setq args (apply learn-batch-cg args))
+		    (perf patt-min patt-max)
+		    (auto-plot-training) ) ) )
+      
+      (de trun-batch-cg (it num)
+	  (save-perf ";;; trun-batch-cg %l %l\n" it num)
+	  (perf patt-min patt-max)
+	  (reset-training-ports)
+	  (auto-plot-training)
+	  (perf tpatt-min tpatt-max)
+	  (reset-test-ports)
+	  (auto-plot-test)
+	  (let ((args (list it)))
+	    (repeat num
+		    (setq args (apply learn-batch-cg args))
+		    (perf patt-min patt-max)
+		    (auto-plot-training)
+		    (perf tpatt-min tpatt-max)
+	      (auto-plot-test) ) ) )
+      
+) ;; iterative-mode
+
+
+;=====================================================
+; Automatic training and simple architecture selection
+;=====================================================
+
+(when learn-batch-cg 
+
+  (de netenv-auto-arch (&optional check input-size output-size)
+      (when ~input-size  (setq input-size  (cadr (bound pattern-matrix))))
+      (when ~output-size (setq output-size (cadr (bound desired-matrix))))
+      (let* ((hidden-size 0)
+	     (tge ())
+	     (ag ())
+	     (hs 0)
+	     (wm ())
+	     (create-net
+	      (lambda ()
+		(alloc-net (+ input-size hidden-size (* 2 output-size) 1)
+			   (+ (* input-size hidden-size)
+			      (* hidden-size output-size)
+			      hidden-size
+			      output-size ))
+		(build-net `((input ,input-size)(hidden ,hidden-size)(output ,output-size))
+			   '((input hidden) (hidden output)) )
+		))
+	     )
+	(while (and (or ~check (check))
+		    (< (setq hidden-size (int (incr hidden-size
+						    (+ 1 (* 0.2 hidden-size)) )))
+		       (+ 10 (* 2 hs)) )
+		    (< hidden-size (+ 10 (* (+ output-size input-size)
+					    (car (bound pattern-matrix)) )))
+		    )
+	  (printf "\n-------- trying architecture with %d hidden units --------\n"
+		  hidden-size )
+	  (save-perf ";;; trying architecture with %d hidden units\n" hidden-size)
+	  (create-net)
+	  (netenv-auto-train check)
+	  (when (or ~tge (< global-error tge))
+	    (setq tge global-error)
+	    (setq hs hidden-size)
+	    (setq ag age)
+	    (setq wm (weight-to-matrix))
+	    )
+	  )
+	(when wm
+	  (printf "\n-------- back to architecture with %d hidden units --------\n\n"
+		  hs )
+	  (save-perf ";;; back to architecture with %d hidden units\n" hs)
+	  (setq hidden-size hs)
+	  (setq age ag)
+	  (create-net)
+	  (matrix-to-weight wm)
+	  ) ) )
+
+  (de netenv-auto-train (&optional check)
+      (save-perf ";;; netenv-train-net %l %l\n" it num)
+      (forget-sqrt 1)
+      (perf  tpatt-min  tpatt-max)
+      (reset-test-ports)
+      (auto-plot-test)
+      (perf   patt-min   patt-max)
+      (reset-training-ports)
+      (auto-plot-training)
+      (let* ((ok ())
+	     (lge ())
+	     (tge ())
+	     (ag  ())
+	     (wm  ())
+	     (n 2)
+	     )
+	(while (and (or ~check (check))
+		    (or ~ag (< age (* 2 ag))) )
+	  (learn-batch-cg (int n))
+	  (perf  tpatt-min  tpatt-max)
+	  (auto-plot-test)
+	  (when (or ~tge (< global-error tge))
+	    (setq tge global-error)
+	    (setq n (* n (sqrt 2)))
+	    (perf  patt-min  patt-max)
+	    (auto-plot-training)
+	    (setq lge global-error)
+	    (setq ag age)
+	    (setq wm (weight-to-matrix))
+	    )
+	  )
+	(when wm
+	  (save-perf ";;; back to age %d\n" ag)
+	  (setq age ag)
+	  (matrix-to-weight wm)
+	  (perf  patt-min  patt-max)
+	  (perf  tpatt-min  tpatt-max)
+	  tge
+	  ) ) )
+  )
+
+
+;================================================
+; OPTIMAL BRAIN DAMAGE
+;================================================
+
+
+(when (newton-mode)
+
+
+      ;; Computes the diagonal of the hessian matrix of the cost function
+      ;; measured on patterns <pmin> to <pmax>. These diagonal values are
+      ;; left in field <s-hess> of the connections or weights.
+      
+      (de obd-compute-curvature(pmin pmax)
+	  (let ((gamma 1)		; compute instantaneous sigma
+		(lev-mar ()) )		; no levembreg marquardt
+	    (clear-acc)			; clear the gradient accumulators
+	    (clear-hess)		; clear accumulated second derivatives
+	    (for (patt-number pmin pmax)
+		 (present-pattern input-layer patt-number)
+		 (forward-prop net-struc)
+		 (present-desired desired-layer patt-number)
+		 (backward-prop net-struc)
+		 (backward-2-prop net-struc)
+		 (do-update-acc net-struc)
+		 (do-update-hess net-struc)
+		 (process-pending-events)
+		 (disp-basic-iteration patt-number) ) ) ) 
+      
+      
+      ;; Prunes the connections with the lowest saliencies.  The number of
+      ;; connections is a fraction <fraction> of the total number of active
+      ;; connections.  This function returns the number of connections
+      ;; deleted.
+      
+      (de obd-prune(fractile)
+	  (let ((count 0)
+		(saliencies ())
+		(saliency-limit ()))
+	    (all-synapse(i j)
+			(let ((u (sval i j))
+			      (h (shess i j)))
+			  (setq saliencies (cons (* h u u) saliencies)) ) )
+	    (setq saliency-limit (quantile saliencies fractile))
+	    (all-synapse(i j)
+			(let ((u (sval i j))
+			      (h (shess i j)))
+			  (when (< (* h u u) saliency-limit)
+				(cut-connection i j)
+				(incr count) ) ) )
+	    count ) )
+      
+) ;; newton-mode
+
+
+;================================================
+; SYMBOLIC NAMES FOR UNIT FIELD ACCESS
+;================================================
+
+(setq :n-val 1)
+(setq :n-sum 2)
+(setq :n-grad 3)
+(setq :n-backsum 4)
+(setq :n-epsilon 5)
+(setq :n-desired 6)
+(setq :n-freedom 7)
+(setq :n-ggrad 8)
+(setq :n-sqbacksum 9)
+(setq :n-sigma 10)
+(setq :n-spare 11)
+(setq :n-spare1 11)
+(setq :n-spare2 12)
+(setq :n-spare3 13)
+
+(setq :s-val 1)
+(setq :s-delta 2)
+(setq :s-acc 3)
+(setq :s-epsilon 4)
+(setq :s-sigma 5)
+(setq :s-hess 6)
+
+
+;================================================
+; LAYER PARAMETERS ACCESS
+;================================================
+
+
+; ----------------------------
+; (mapncar ....)
+; a general function for getting/setting neuron attributes
+
+
+(de mapncar (f li)
+    (cond
+      ; no argument
+      ((= () li)
+       (mapcar f (range 0 (1- nnum))) )
+     ; a single number -> set all neuron except bias to this number
+     ; a single list   -> get a list of the values
+      ((not (cdr li))
+       (if (listp (car li))
+       	   (mapcar f (car li))
+       	   (for (i 1 (1- nnum))
+	    	(apply f (cons i li)) ) ) )
+      ; a list, a number -> set the first with the second
+      ((numberp (cadr li))
+       (each ((i (car li)))
+	     (apply f (cons i (cdr li))) ) )
+      ; two lists -> sets the first with the second
+      ((not (cddr li))
+       (mapcar f (car li) (cadr li)) )
+      ; error
+      (t
+       (error 'mapncar "bad arguments") ) ) )
+            
+
+; --------------------------------
+; A couple of functions for accessing
+; layer parameters. For instance:
+;  (state): returns a list of all the cell states
+;  (state l): returns the list of cell states contained in l
+;  (state n): set all the cell states to n
+;  (state l n): set the cell states contained in l to n
+;  (state l lv): set the cell states contained in l to the values in lv
+
+(de state l 
+    (mapncar 'nval  l))
+
+(de gradient l
+    (mapncar 'ngrad l))
+
+(de weighted-sum l 
+    (mapncar 'nsum l))
+
+(de back-sum l 
+    (mapncar 'nbacksum l))
+
+(de epsilon l 
+    (mapncar 'nepsilon l))
+
+(when (newton-mode)
+
+    (de sqback-sum l
+	(mapncar 'Nsqbacksum l))
+
+    (de ggradient l
+	(mapncar 'Nggrad l))
+    
+    (de sigma l 
+	(mapncar 'Nsigma l))  )
+
+(de spare-field  l 
+    (mapncar 'nspare l))
+
+(de spare1-field l 
+    (mapncar 'nspare1 l))
+
+(de spare2-field l 
+    (mapncar 'nspare2 l))
+
+(de spare3-field l
+    (mapncar 'nspare3 l))
+
+
+; --------------------------------
+; (real-epsilon layer)
+; returns the effective gradient step
+; for 'layer, including the effect of 
+; curvature information (newton and lm)
+
+(if (newton-mode)
+    (de real-epsilon (l)
+      (all ((x l))
+        (/ (nepsilon x) (+ mu (abs (nsigma x)))) ) )
+  (de real-epsilon(l)
+    (epsilon l) ) )
+
+; --------------------------------
+; (weight cell &optional layer)
+; returns a list of the weights of cell c
+; the list of weights is ordered now in the good order.
+;
+; When layer is specified, only the weights of connections
+; from layer to cell are taken into account. The returned list
+; has the same length as argument layer. Virtual weights have
+; () values.
+
+
+(de weight (c &optional layer)
+    (all ((x (or layer (amont c)))) 
+	 (sval x c)) )
+
+
+; --------------------------------
+; (set-weight cell list)
+; the opposite operation
+
+(de set-weight (c l)
+    (all ((x (amont c))
+	  (y l) )
+	 (sval x c y) ) )
+
+
+; --------------------------------
+; (deltaw cell)
+; returns a list of the deltaW of cell c
+
+(de deltaw (c)
+    (all ((x (amont c))) (sdelta x c)) )    
+
+
+; --------------------------------
+; (set-deltaw cell list)
+; the opposite operation
+
+(de set-deltaw (c l)
+    (all ((x (amont c))
+	  (y l) )
+	 (sdelta x c y) ) )
+
+
+; ================================================================
+; FUNCTIONS FOR DUMPING/RESTORING WEIGHTS FROM/TO LISTS
+; ================================================================
+
+; --------------------------------
+; this function returns a list of all the weights
+; and allows to restore the weights with rest-weights
+
+(de dump-weights () 
+    (mapcar weight (range 0 (1- nnum))) )
+
+; --------------------------------
+; this function restore a weight configuration previously 
+; saved with dump-weights
+
+(de rest-weights (l)
+    (mapc set-weight  (range 0 (1- nnum))  l)
+    t )
+
+
+; ================================================================
+; FUNCTIONS FOR SETTING NLFS
+; ================================================================
+
+(de nlf-tanh(mx dmin . opt)
+   (let ((scale ())
+	 (shift 0))
+     (when opt
+	   (setq scale (car opt)) )
+     (when (cdr opt)
+	   (setq shift (cadr opt)) )
+     (when (cddr opt)
+	   (error 'nlf-tanh "At most four arguments" ()) )
+     (when ~scale
+	   (setq nlf (nlf-f-tanh 1 mx dmin shift))
+	   (setq scale (/ (nlf 1))) )
+     (setq nlf (nlf-f-tanh scale mx dmin shift))
+     (setq dnlf (nlf-df-tanh scale mx dmin shift))
+     (setq ddnlf (nlf-ddf-all nlf)) ) )
+
+
+(de nlf-bell()
+    (setq nlf (nlf-f-bell))
+    (setq dnlf (nlf-df-bell))
+    (setq ddnlf (nlf-ddf-all nlf)) )
+
+
+(de nlf-bin(mx dmin . opt)
+   (let ((scale ())
+	 (shift 0))
+     (when opt
+	   (setq scale (car opt)) )
+     (when (cdr opt)
+	   (setq shift (cadr opt)) )
+     (when (cddr opt)
+	   (error 'nlf-tanh "At most four arguments" ()) )
+     (when ~scale
+	   (setq nlf (nlf-f-tanh 1 mx dmin shift))
+	   (setq scale (/ (nlf 1))) )
+     (setq nlf (nlf-f-threshold scale mx dmin shift))
+     (setq dnlf (nlf-df-tanh scale mx dmin shift))
+     (setq ddnlf (nlf-ddf-all nlf)) ) )
+
+
+(de nlf-lin(dmin dmax . th)
+    (when th
+	  (when (cdr th)
+		(error 'nlf-lin "at most 3 arguments" ()) ) 
+	  (setq th (car th)) )
+    (cond
+     ((= dmin dmax)
+      (setq nlf (nlf-f-lin dmin 1 0 0)) )
+     ((and th (> th 0))
+      (setq nlf (nlf-f-piecewise (* (- dmax dmin) th) (/ th) dmin 0)) )
+     ((>= dmax 1)
+      (setq th (/ (- 1 dmin) (- dmax dmin)))
+      (setq nlf (nlf-f-piecewise (* (- dmax dmin) th) (/ th) dmin 0)) )
+     ((<= dmax -1)
+      (setq th (/ (- -1 dmin) (- dmax dmin)))
+      (setq nlf (nlf-f-piecewise (* (- dmax dmin) th) (/ th) dmin 0)) )
+     (t
+      (error 'nlf-lin "illegal values" ())) ) 
+    (setq dnlf (nlf-df-all nlf))
+    (setq ddnlf (nlf-f-0)) )
+
+(de nlf-spline(x y)
+    (setq nlf (nlf-f-spline x y))
+    (setq dnlf (nlf-df-spline x y))
+    (setq ddnlf (nlf-ddf-spline x y)) )
+
+;--------------------------------
+;default non linear function
+
+(nlf-tanh 0.66666666 0)
+
+;;(let* ((x (range -6 6 0.2))
+;;       (y (all ((i x)) (nlf i))) )
+;;  (nlf-spline x y) )
+
+

@@ -1,0 +1,128 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: xor.lsh,v 1.3 2002/12/19 04:27:31 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a small example of how you might setup a 2-layer net to
+;; learn the infamous exclusive OR.
+
+#? Learning the proverbial XOR with backprop
+;; the content of this file is a complete example
+;; of how to build a single hidden layer backprop
+;; net to solve the XOR problem. Yeah, it's a lame
+;; example. Just have a look at the source code.
+
+;; load fully conneted net library
+(libload "gblearn2/net-ff")
+;; load trainer class
+(libload "gblearn2/gb-trainers")
+;; meters
+(libload "gblearn2/gb-meters")
+;; load fully conneted net library
+(libload "gblearn2/gb-params")
+;; load  db class
+(libload "gblearn2/data-sources")
+
+
+;; create a "param" the will be inserted in the trainer
+;; an idx1-ddparam uses the diagonal Levenberg-Marquardt algorithm
+;; (diagonal hessian estimation, then regular stochastic gradient descent).
+;; the parameters are 
+;; REAL parameters will be allocated from within this param by passing to the
+;; constructor of the various adaptive modules
+;; 0    : the initial number of parameters in the param 
+;;        (this should probably be always 0)
+;; 0.1  : the global learning rate
+;; 0.0  : the inertia (a.k.a. "momentum term")
+;; 0.02 : the running average constant for the diag hessian calculation
+;; 0.02 : the term added to the diag hessian in the denominator of the individual
+;;        learning rates (to prevent them from blowing up if 2nd deriv is 0).
+;; 1000 : the size of the param to preallocate. Making this number large enough
+;;        to old all the parameters prevents memory fragmentation due to 
+;;        reallocation when real parameters are allocated within the param.
+(setq theparam (new idx1-ddparam 0 1000))
+
+;; create the learning machine.
+;; net-ff is a one hidden layer fully connected neural network.
+;; The net-ff arguments are as follows:
+;; 2 2 2: sizes of input, hidden layer, and output
+;; 1 1 : initial size of spatial replication. net-ff can be turned into SDNN
+;;       with spatial replication, this says how much memory to preallocate
+;;       for the states (the actual size is determined by the size of the input,
+;;       and is automatically determined).
+;; theparam: the param in which all the free parameters of the network 
+;;       will be allocated. bprop messages sent to the network compute
+;;       the gradients in the param. Update messages setn to the param
+;;       compute the new weights for the network.
+(setq labels [i 0 1])
+(setq thenet
+      (new idx3-supervised-module
+	   (new net-ff 2 2 2 1 1 theparam)
+	   (new edist-cost labels 1 1 [f [1.5 -1.5][-1.5 1.5]])
+	   (new max-classer labels)))
+
+(setq thetrainer
+      (new supervised-gradient thenet theparam))
+
+; a XOR with two outputs
+(setq traindb 
+      (new dsource-idx3fl
+       [f  [ [[-1]] [[-1]] ] 
+	   [ [[-1]] [[ 1]] ] 
+	   [ [[ 1]] [[ 1]] ] 
+	   [ [[ 1]] [[-1]] ]]
+       [i 0 1 0 1 ]))
+
+;; a classifier-meter measures classification errors
+(setq trainmeter (new classifier-meter))
+
+;; initialize the network weights
+;; this method does the right thing for fanin scaling
+;; weights are picked randomly between a / fanin^(1/b)
+;; where a and b are the arguments of forget.
+(==> :thenet:machine forget 1 2)
+
+;; train until 100 percent correct for max of 1000 epochs
+(de doit (eta inertia)
+  (let ((correct 0) (i 0) (n 10))
+    (while (and (< correct 100) (< i 100))
+      (==> thetrainer compute-diaghessian traindb (==> traindb size) 0.02)
+      (repeat n (==> thetrainer train traindb trainmeter eta inertia))
+      (==> thetrainer test traindb trainmeter)
+      (==> trainmeter display)
+      (incr i)
+      (setq correct (nth 3 (==> trainmeter info))))
+    (if (= correct 100) 
+	(printf "converged in %d epochs\n" (* n i))
+      (printf "*** did not converge\n"))
+    (* i n)))
+
+(doit 0.005 0.9)
+
+
+
