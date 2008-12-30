@@ -1,9 +1,11 @@
 
 (defclass GnuplotGraph object
-  preamble
-  command
-  lines
-  objects)
+  command    ; plot command
+  preamble   ; list of preamble instructions
+  lines      ; list of plot instructions and data
+  objects    ; list of other plot elements (with data)
+  i-ls       ; next unused linestyle index
+  )
 
 #? (new GnuplotGraph <cmd>)
 (defmethod GnuplotGraph GnuplotGraph (cmd)
@@ -13,14 +15,22 @@
   (setq preamble ())
   (setq lines ())
   (setq objects ())
+  (setq i-ls 1)
   () )
 
-(defmethod GnuplotGraph add-line (text data)
-  (assert (stringp text))
+;; add a new line with plotting style <ps>, title <tl>, and <extra>
+;; instructions for data <data>. Return the linestyle index of the line.
+(defmethod GnuplotGraph add-line (ps title extra data)
+  (declare (-str-) ps title extra)
   (assert (numericp data))
-  (setq lines (nconc1 lines (cons text data)))
-  ())
+  (let ((text (sprintf "'-' title \"%s\" with %s ls %d %s" title ps i-ls extra)))
+    (setq lines (nconc1 lines (cons text data))) )
+  (when linestyles
+    (==> this add-preamble (sprintf "set style line %d %s" i-ls (next linestyles))) )
+  (incr i-ls)
+  (- i-ls 1) )
 
+;; add pair of command-text and data to objects
 (defmethod GnuplotGraph add-object (textf data)
   (assert (stringp textf))
   (assert (vectorp data))
@@ -29,20 +39,67 @@
   (setq objects (nconc1 objects (cons textf data)))
   ())
 
-(defmethod GnuplotGraph dump ()
-  (when preamble
-    (printf (str-join "\n" preamble))
-    (printf "\n") )
-  (when objects
-    (dolist ((textf . data) objects)
-      (sprintf textf (data ())) )
-    (printf "\n") )
-  (when lines
-    (sprintf "%s %s\n" command (str-join "," (mapcar car lines)))
-    (dolist (data (mapcar cdr lines))
-      (pretty data)
-      (printf "\n") ))
+;; add a command string to preamble
+(defmethod GnuplotGraph add-preamble (text)
+  (setq preamble (nconc1 preamble text))
   ())
+
+;; create sequence of commands for gnuplot
+(defmethod GnuplotGraph serialize ()
+  (append preamble
+          (when objects
+            (domapcar ((textf . data) objects)
+              (sprintf textf (data ())) ))
+          (when lines
+            (cons (sprintf "%s %s" command (str-join "," (mapcar car lines)))
+                  (mapcar cdr lines) ))
+          ))
+
+
+(defmethod GnuplotGraph dump ()
+  (let ((stringify #\(if (stringp $1) $1 (sprintf "%l" $1))))
+    (printf (str-join "\n" (mapcar stringify (==> this serialize))))
+    (printf "\n") ))
+
+
+;; --------------------------------------------
+
+(defun plot-cmd-p (s)
+  (and (stringp s) (member (left s 5) '("plot " "splot"))) )
+
+;; tell Gnuplot how to process graphs
+(defmethod Gnuplot do-graph (g)
+  (if interactive
+      (dolist (s (==> g serialize)) (this s))
+
+    ;; check for errors in non-interactive mode 
+    (this "reset errors")
+    (dolist (s (==> g serialize))
+      (cond
+       ((not (stringp s)) (this s))
+       ((plot-cmd-p s)    (this s))
+       (t (this s)
+          (let ((errmsg (gp "print GPVAL_ERRMSG")))
+            (when (> (length errmsg) 1)
+              (printf "\n")
+              (printf "*** gnuplot command : %s\n" s)
+              (printf "*** gnuplot error   : %s\n" errmsg)
+              (error "gnuplot script " g)))))
+      ())))
+
+;;   (when preamble
+;;     (printf (str-join "\n" preamble))
+;;     (printf "\n") )
+;;   (when objects
+;;     (dolist ((textf . data) objects)
+;;       (printf textf (data ())) )
+;;     (printf "\n") )
+;;   (when lines
+;;     (printf "%s %s\n" command (str-join "," (mapcar car lines)))
+;;     (dolist (data (mapcar cdr lines))
+;;       (pretty (idx-trim data 0 0 10))
+;;       (printf "...\n") ))
+;;   ())
 
 
 (defmacro chk-graph ()
