@@ -4,18 +4,28 @@
   preamble   ; list of preamble instructions
   lines      ; list of plot instructions and data
   objects    ; list of other plot elements (with data)
+  linestyles ; optional linestyles
   i-ls       ; next unused linestyle index
   )
 
-#? (new GnuplotGraph <cmd>)
-(defmethod GnuplotGraph GnuplotGraph (cmd)
+#? (new GnuplotGraph <cmd> [<linestyles>])
+;; Create an new graph based on gnuplot command <cmd> ("plot" or "splot").
+;; If a <linestyles> argument is given, use the user-defined line styles
+;; rather than gnuplot's builtin line styles.
+;;
+;; Example:
+;; {<code> (new GnuplotGraph "plot" (new GnuplotLinestyles))}
+(defmethod GnuplotGraph GnuplotGraph (cmd &optional lss)
   (when (not (member cmd (list "plot" "splot")))
     (error "not a valid gnuplot plot command" cmd) )
   (setq command cmd)
   (setq preamble ())
   (setq lines ())
   (setq objects ())
+  (setq linestyles lss)
   (setq i-ls 1)
+  (when linestyles
+    (==> this add-preamble "set style increment user") )
   () )
 
 ;; add a new line with plotting style <ps>, title <tl>, and <extra>
@@ -23,7 +33,9 @@
 (defmethod GnuplotGraph add-line (ps title extra data)
   (declare (-str-) ps title extra)
   (assert (numericp data))
-  (let ((text (sprintf "'-' title \"%s\" with %s ls %d %s" title ps i-ls extra)))
+;;   (let ((text (sprintf "'-' title \"%s\" with %s ls %d %s" title ps i-ls extra)))
+;;     (setq lines (nconc1 lines (cons text data))) )
+  (let ((text (sprintf "'-' title \"%s\" with %s %s" title ps extra)))
     (setq lines (nconc1 lines (cons text data))) )
   (when linestyles
     (==> this add-preamble (sprintf "set style line %d %s" i-ls (next linestyles))) )
@@ -45,21 +57,30 @@
   ())
 
 ;; create sequence of commands for gnuplot
+;; The last element in the list the actual plotting command
 (defmethod GnuplotGraph serialize ()
   (append preamble
           (when objects
             (domapcar ((textf . data) objects)
               (sprintf textf (data ())) ))
           (when lines
-            (cons (sprintf "%s %s" command (str-join "," (mapcar car lines)))
-                  (mapcar cdr lines) ))
+            (list (cons (sprintf "%s %s" command (str-join "," (mapcar car lines)))
+                        (mapcar cdr lines) )))
           ))
 
-(defmethod GnuplotGraph dump ()
-  (let ((stringify #\(if (stringp $1) $1 (sprintf "%l" $1))))
-    (printf (str-join "\n" (mapcar stringify (==> this serialize))))
-    (printf "\n") ))
-
+;; print the gnuplot script to the console, or, when a filename
+;; is given, write it into a file
+(defmethod GnuplotGraph dump (&optional filename)
+  (if filename
+      (writing (open-write filename) (==> this dump))
+    (dolist (s (==> this serialize))
+      (if (stringp s)
+          (printf "%s\n" s)
+        (let (((cmd . data) s))
+          (printf "%s\n" cmd)
+          (dolist (a data)
+            (print-array a) )))))
+  ())
 
 (defmacro chk-graph ()
   `(when (not (isa graph GnuplotGraph))
@@ -69,27 +90,25 @@
 
 ;; --------------------------------------------
 
-(defun plot-cmd-p (s)
-  (and (stringp s) (member (left s 5) '("plot " "splot"))) )
-
 (defmethod Gnuplot do-graph (g)
   (if interactive
       (dolist (s (==> g serialize)) (this s))
-    
-    ;; check for errors in non-interactive mode 
-    (this "reset errors")
-    (dolist (s (==> g serialize))
-      (cond
-       ((not (stringp s)) (this s))
-       ((plot-cmd-p s)    (this s))
-       (t (this s)
-          (let ((errmsg (gp "print GPVAL_ERRMSG")))
-            (when (> (length errmsg) 1)
-              (printf "\n")
-              (printf "*** gnuplot command : %s\n" s)
-              (printf "*** gnuplot error   : %s\n" errmsg)
-              (error "gnuplot script " g)))))
-      ())))
+    (let ((ans ""))
+      (this "reset errors")
+      (dolist (s (==> g serialize))
+        (if (stringp s)
+            (setq ans (this s))
+          (setq ans (apply this s))     ; s is the plot command with data
+          (setq s (car s)) )
+        ;; check for errors
+        (let ((errno (val (this "print GPVAL_ERRNO"))))
+          (when (<> errno 0)
+            (printf "\n")
+            (printf "*** An error occurred while processing gnuplot script:\n\n")
+            (printf "gnuplot> %s\n" s)
+            (printf "%s\n" ans)
+            (error "error in gnuplot script" g))) )))
+    ())
 
 
 

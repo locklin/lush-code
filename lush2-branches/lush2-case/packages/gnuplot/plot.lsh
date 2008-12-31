@@ -4,7 +4,6 @@
 (libload "gnuplot/graph")
 (libload "gnuplot/other")
 
-
 (defun validate-plot-args (args valid-ncols)
   (let (((data &optional (title "") &rest extra) args))
     (when (not (numericp data))
@@ -20,7 +19,7 @@
     (cons data (cons title extra)) ))
 
 ;;  where <style> is one of
-
+;;
 ;;       lines        dots       steps     errorbars     xerrorbar    xyerrorlines
 ;;       points       impulses   fsteps    errorlines    xerrorlines  yerrorbars
 ;;       linespoints  labels     histeps   financebars   xyerrorbars  yerrorlines
@@ -29,7 +28,7 @@
 ;;        boxes            candlesticks   image      circles
 ;;        boxerrorbars     filledcurves   rgbimage
 ;;        boxxyerrorbars   histograms     rgbalpha   pm3d
-
+;;
 ;;  The first group of styles have associated line, point, and text properties.
 ;;  The second group of styles also have fill properties.  See `fillstyle`.  Some
 ;;  styles have further sub-styles.  See `plotting styles` for details of each.
@@ -46,10 +45,10 @@
         ))
 
 #? (plot-graph <l1> .. <ln>)
-;; Make a graph object from gnuplot plot instructions <l1> .. <ln>.
+;; Compose a new graph from plot instructions <l1> .. <ln> and return it.
 (df plot-graph forms
   (with-namespace gnuplot-plot-
-    (let ((graph (new GnuplotGraph "plot")))
+    (let ((graph (new GnuplotGraph "plot" (new GnuplotLinestyles))))
       (dolist (f forms)
         (setq f (eval f))
         (when (hasmethod f '-plot)
@@ -57,20 +56,26 @@
       graph)))
 
 #? (plot <l1> .. <ln>) 
-;; Make a new <Gnuplot> object, execute plot instructions <l1> .. <ln>
-;; and return the <Gnuplot> object.
+;; {<see> Plot-line generating functions}
+;; Compose a new graph from plot instructions <l1> .. <ln>, send it
+;; to a <Gnuplot> instance, and return the <Gnuplot> instance.
+;;
+;; If symbol <plotter> is bound to a <Gnuplot> instance then <plot>
+;; sends the graph to <plotter>, otherwise it creates a new <Gnuplot>
+;; object. Note that, when providing <plotter>, <plot> does not send
+;; any extra commands to <plotter> to prepare gnuplot for a new plot
+;; (cf. help for gnuplot commands "reset" and "clear").
 (df plot forms
-  (let ((linestyles (new GnuplotLinestyles))
-        (gp (new Gnuplot 'interactive ())) )
-    (let ((g (eval `(plot-graph ,@forms))))
-      (==> gp do-graph g) )
-    gp))
+  (let ((gp (or plotter (new Gnuplot 'interactive ())))
+        (g (eval `(plot-graph ,@forms))) )
+    (==> gp do-graph g) )
+  gp))
 
 
 (in-namespace gnuplot-plot-
 
 (defun process-line-args (extra data)
-  (list (apply concat (domapcar ((x extra))
+  (list (str-join " " (domapcar ((x extra))
                         (cond
                          ((stringp x) x)
                          
@@ -95,7 +100,14 @@
                          (t (error "invalid plot-line argument" x)) )))
         data))
 
-#? ** Plot-line generating functions 
+#? * Plot-line Generators
+;; The following functions each visualize a single data set
+;; in on of the plotting styles understood by gnuplot's plot command.
+;; The functions are to be used in a <plot-graph>- or <plot>-form.
+;;
+;; Each line-generating function takes the data set (a vector or
+;; matrix), an optional legend key (a string), and other optional 
+;; line-modifying arguments (see below).
 
 #? (boxes <data> [<key> ...])
 ;; Plot data with boxes.
@@ -137,9 +149,15 @@
 (def-plot xyerrorbars (4 6))
 
 
-#? ** Plot-line modifiers
-;; The functions in this category modify an individual plot line and
-;; may appear as optional argument in a plot-line generating function.
+#? (points <data> [<key> ...])
+;; Plot data with points.
+(def-plot points (1 2))
+
+
+#? * Plot-line Modifiers
+;; The functions in this category modify a appearance of an individual
+;; line and may appear as optional argument in a plot-line generating
+;; function.
 ;;
 ;; Example:
 ;; {<code> (linespoints xy "temperature" (axes 'x1y2) (pointsize p)))
@@ -151,21 +169,21 @@
       (sprintf "axes %l" arg)
     (error "invalid axes argument" arg) ))
 
-#? (pointsize <ps>)
+#? (vps <ps>)
 ;; Make point size variable and use the relative sizes in <ps> to
 ;; scale the line points (<ps> is a vector with same length as <data>).
-(defun pointsize (arg)
+(defun vps (arg)
   ;; more processing is done in process-line-args
   (when (not (vectorp arg))
     (error "invalid argument (not a vector)" arg) )
   `(pointsize ,arg) )
 
-#? (linecolor <lc>)
-;; Make line color variable and use the rgb triplets in <lc> for color
+#? (vlc <lc>)
+;; Make line color variable and use the rgb triplets in <lc> as color
 ;; per data point (<lc> is a <n>x<3> matrix with same length as <data>).
-(defun linecolor (arg)
+(defun vlc (arg)
   ;; more processing is done in process-line-args
-  (when (not (and (numeric arg) (= (rank arg) 2) (= (shape arg 1) 3)))
+  (when (not (and (numericp arg) (= (rank arg) 2) (= (shape arg 1) 3)))
     (error "invalid argument (not a <n>x<3> matrix" arg) )
   `(linecolor ,arg) )
 
