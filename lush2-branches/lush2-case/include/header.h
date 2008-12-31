@@ -608,11 +608,14 @@ LUSHAPI gptr need_error(int i, int j, at **arg_array_ptr);
 
 /* FILEIO.H ------------------------------------------------- */
 
-extern LUSHAPI class_t file_R_class, file_W_class;
+extern LUSHAPI class_t rfile_class, wfile_class;
 extern LUSHAPI char file_name[], lushdir[];
 
-#define OPEN_READ(f,s)  new_at(&file_R_class,open_read(f,s))
-#define OPEN_WRITE(f,s) new_at(&file_W_class,open_write(f,s))
+#define OPEN_READ(f,s)  new_rfile(open_read(f,s))
+#define OPEN_WRITE(f,s) new_wfile(open_write(f,s))
+
+LUSHAPI at *new_rfile(const FILE *f);
+LUSHAPI at *new_wfile(const FILE *f);
 
 LUSHAPI const char *cwd(const char *s);
 LUSHAPI at *files(const char *s);
@@ -638,8 +641,8 @@ LUSHAPI int read4(FILE *f);
 LUSHAPI int write4(FILE *f, unsigned int l);
 LUSHAPI off_t file_size(FILE *f);
 
-#define RFILEP(x) ((x)&&(Class(x) == &file_R_class))
-#define WFILEP(x) ((x)&&(Class(x) == &file_W_class))
+#define RFILEP(x) ((x)&&(Class(x) == &rfile_class))
+#define WFILEP(x) ((x)&&(Class(x) == &wfile_class))
 
 
 /* IO.H ----------------------------------------------------- */

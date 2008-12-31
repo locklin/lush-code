@@ -1897,8 +1897,8 @@ DX(xsave_matrix)
       ans = make_string(file_name);
    } else {
       p = APOINTER(2);
-      ifn (p && (Class(p) == &file_W_class))
-         error(NIL, "not a string or write descriptor", p);
+      ifn (WFILEP(p))
+         RAISEFX("not a string or write descriptor", p);
       ans = p;
    }
    save_matrix(AINDEX(1), Mptr(p));
@@ -1914,8 +1914,8 @@ DX(xexport_raw_matrix)
       ans = make_string(file_name);
    } else {
       p = APOINTER(2);
-      ifn (p && (Class(p) == &file_W_class)) 
-         error(NIL, "not a string or write descriptor", p);
+      ifn (WFILEP(p))
+         RAISEFX("not a string or write descriptor", p);
       ans = p;
    }
    export_matrix(AINDEX(1), Mptr(p));
