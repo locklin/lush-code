@@ -1503,13 +1503,13 @@ DX(xfilteropen)
    const char *cmd = ASTRING(1);
    FILE *str_up, *str_dn;
    filteropen(cmd, &str_up, &str_dn);
-   at *f1 = new_extern(&file_R_class, str_dn);
-   at *f2 = new_extern(&file_W_class, str_up);
+   at *f1 = new_rfile(str_dn);
+   at *f2 = new_wfile(str_up);
    if (p1)
       var_set(p1, f1);
    if (p2)
       var_set(p2, f2);
-   return new_cons(f2,f1);
+   return new_cons(f2, f1);
 }
 
 
@@ -1592,8 +1592,8 @@ DX(xfilteropenpty)
    const char *cmd = ASTRING(1);
    FILE *str_up, *str_dn;
    filteropenpty(cmd, &str_up, &str_dn);
-   at *f1 = new_extern(&file_R_class, str_dn);
-   at *f2 = new_extern(&file_W_class, str_up);
+   at *f1 = new_rfile(str_dn);
+   at *f2 = new_wfile(str_up);
    if (p1)
       var_set(p1, f1);
    if (p2)
@@ -1639,8 +1639,8 @@ DX(xsocketopen)
    int sock2 = dup(sock1);
    FILE *ff1 = fdopen(sock1, "r");
    FILE *ff2 = fdopen(sock2, "w");
-   at *f1 = new_extern(&file_R_class, ff1);
-   at *f2 = new_extern(&file_W_class, ff2);
+   at *f1 = new_rfile(ff1);
+   at *f2 = new_wfile(ff2);
    if (p1)
       var_set(p1,f1);
    if (p2)
@@ -1696,8 +1696,8 @@ DX(xsocketaccept)
    sock1 = dup(sock2);
    FILE *ff1 = fdopen(sock1,"r");
    FILE *ff2 = fdopen(sock2,"w");
-   at *f1 = new_extern(&file_R_class, ff1);
-   at *f2 = new_extern(&file_W_class, ff2);
+   at *f1 = new_rfile(ff1);
+   at *f2 = new_wfile(ff2);
    var_set(APOINTER(2),f1);
    var_set(APOINTER(3),f2);
    return new_cons(f2,f1);

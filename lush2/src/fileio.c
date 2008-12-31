@@ -1491,6 +1491,20 @@ void at_file_notify(at *p, void *_)
    }
 } 
 
+at *new_rfile(const FILE *f)
+{
+   at *p = new_at(&rfile_class, (void *)f);
+   add_notifier(p, (wr_notify_func_t *)at_file_notify, NULL);
+   return p;
+}
+
+at *new_wfile(const FILE *f)
+{
+   at *p = new_at(&wfile_class, (void *)f);
+   add_notifier(p, (wr_notify_func_t *)at_file_notify, NULL);
+   return p;
+}
+
 /* --------- LISP LEVEL FILE MANIPULATION FUNCTIONS --------- */
 
 /*
@@ -1548,11 +1562,9 @@ DX(xopen_read)
       return NIL;
    }
 
-   if (f) {
-      at *p = new_extern(&file_R_class, f);
-      add_notifier(p, (wr_notify_func_t *)at_file_notify, NULL);
-      return p;
-   } else
+   if (f)
+      return new_rfile(f);
+   else
       return NIL;
 }
 
@@ -1572,11 +1584,9 @@ DX(xopen_write)
       return NIL;
    }
 
-   if (f) {
-      at *p = new_extern(&file_W_class, f);
-      add_notifier(p, (wr_notify_func_t *)at_file_notify, NULL);
-      return p;
-   } else
+   if (f)
+      return new_wfile(f);
+   else
       return NIL;
 }
 
@@ -1595,11 +1605,8 @@ DX(xopen_append)
       ARG_NUMBER(-1);
       return NIL;
    }
-   if (f) {
-      at *p = new_extern(&file_W_class, f);
-      add_notifier(p, (wr_notify_func_t *)at_file_notify, NULL);
-      return p;
-   }
+   if (f)
+      return new_wfile(f);
    else
       return NIL;
 }
@@ -1787,8 +1794,8 @@ DX(xfsize)
 /* --------- INITIALISATION CODE --------- */
 
 
-class_t file_R_class;
-class_t file_W_class;
+class_t rfile_class;
+class_t wfile_class;
 
 void init_fileio(char *program_name)
 {
@@ -1812,13 +1819,13 @@ void init_fileio(char *program_name)
    var_set(at_path, new_cons(new_string(s),NIL));
    
    /* setting up classes */
-   class_init(&file_R_class, false);
-   file_R_class.dispose = (dispose_func_t *)file_dispose;
-   class_define("FILE_RO", &file_R_class);
+   class_init(&rfile_class, false);
+   rfile_class.dispose = (dispose_func_t *)file_dispose;
+   class_define("RFILE", &rfile_class);
    
-   class_init(&file_W_class, false);
-   file_W_class.dispose = (dispose_func_t *)file_dispose;
-   class_define("FILE_WO", &file_W_class);
+   class_init(&wfile_class, false);
+   wfile_class.dispose = (dispose_func_t *)file_dispose;
+   class_define("WFILE", &wfile_class);
    
    /* DECLARE THE FUNCTIONS */
    dx_define("chdir", xchdir);
