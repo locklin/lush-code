@@ -30,12 +30,14 @@
 
 ;; add a new line with plotting style <ps>, title <tl>, and <extra>
 ;; instructions for data <data>. Return the linestyle index of the line.
-(defmethod GnuplotGraph add-line (ps title extra data)
-  (declare (-str-) ps title extra)
+(defmethod GnuplotGraph add-line (ps extra data)
+  (declare (-str-) ps extra)
   (assert (numericp data))
 ;;   (let ((text (sprintf "'-' title \"%s\" with %s ls %d %s" title ps i-ls extra)))
 ;;     (setq lines (nconc1 lines (cons text data))) )
-  (let ((text (sprintf "'-' title \"%s\" with %s %s" title ps extra)))
+  (let ((text (if (index "title" extra)
+                  (sprintf "'-' with %s %s" ps extra)
+                (sprintf "'-' notitle with %s %s" ps extra) )))
     (setq lines (nconc1 lines (cons text data))) )
   (when linestyles
     (==> this add-preamble (sprintf "set style line %d %s" i-ls (next linestyles))) )
@@ -93,21 +95,27 @@
 (defmethod Gnuplot do-graph (g)
   (if interactive
       (dolist (s (==> g serialize)) (this s))
+
     (let ((ans ""))
       (this "reset errors")
       (dolist (s (==> g serialize))
         (if (stringp s)
             (setq ans (this s))
-          (setq ans (apply this s))     ; s is the plot command with data
+          ;; s is the plot command with data
+          (setq ans (this (car s)))
+          (when (< (length ans) 2)
+            (apply this (cdr s)) )
           (setq s (car s)) )
-        ;; check for errors
-        (let ((errno (val (this "print GPVAL_ERRNO"))))
-          (when (<> errno 0)
-            (printf "\n")
-            (printf "*** An error occurred while processing gnuplot script:\n\n")
-            (printf "gnuplot> %s\n" s)
-            (printf "%s\n" ans)
-            (error "error in gnuplot script" g))) )))
+
+        (when (> (length ans) 1)
+          ;; check for an error
+          (let ((errno (val (this "print GPVAL_ERRNO"))))
+            (when (<> errno 0)
+              (printf "\n")
+              (printf "*** An error occurred while processing gnuplot script:\n\n")
+              (printf "gnuplot> %s\n" s)
+              (printf "%s\n" ans)
+              (error "error in gnuplot script" g))) ))))
     ())
 
 

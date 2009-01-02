@@ -5,7 +5,7 @@
 (libload "gnuplot/other")
 
 (defun validate-plot-args (args valid-ncols)
-  (let (((data &optional (title "") &rest extra) args))
+  (let (((data &rest extra) args))
     (when (not (numericp data))
       (error "not valid plot data (not a numeric array)" data) )
     (when (= (rank data) 1)
@@ -14,33 +14,96 @@
       (error "not valid plot data (not a matrix)" data) )
     (when (not (member (shape data 1) valid-ncols))
       (error "invalid number of data columns" (shape data 1)) )
-    (when (not (stringp title))
-      (error "not a valid title (not a string)" title) )
-    (cons data (cons title extra)) ))
+    (cons data extra) ))
 
-;;  where <style> is one of
+;; The info below is gleaned from enum PLOT_STYLE in gp_types.h.
+;; Find the latest version at
+;; http://gnuplot.cvs.sourceforge.net/viewvc/gnuplot/gnuplot/src/gp_types.h?view=markup
 ;;
-;;       lines        dots       steps     errorbars     xerrorbar    xyerrorlines
-;;       points       impulses   fsteps    errorlines    xerrorlines  yerrorbars
-;;       linespoints  labels     histeps   financebars   xyerrorbars  yerrorlines
-;;                                         vectors
-;;  or
-;;        boxes            candlesticks   image      circles
-;;        boxerrorbars     filledcurves   rgbimage
-;;        boxxyerrorbars   histograms     rgbalpha   pm3d
-;;
-;;  The first group of styles have associated line, point, and text properties.
-;;  The second group of styles also have fill properties.  See `fillstyle`.  Some
-;;  styles have further sub-styles.  See `plotting styles` for details of each.
+;; gnuplot-plot-styles encodes what styles and options apply for
+;; what 2d-plotting styles.
+;; Entries: <name> <has-line> <has-point> <has-errorbar> <has-fill> <basic-ncols>]
+(defparameter *gnuplot-plot-styles* 
+  [a[a lines           t () () () (1 2)]
+    [a points         ()  t () () (1 2)]
+    [a impulses        t () () () (1 2)]
+    [a linespoints     t  t () () (1 2)]
+    [a dots           () () () () (1 2)]
+    [a xerrorbars     ()  t  t () (3 4)]
+    [a yerrorbars     ()  t  t () (3 4)]
+    [a xyerrorbars    ()  t  t () (4 6)]
+    [a boxxyerrorbars  t () ()  t (4 6)]
+    [a boxes           t () ()  t (2 3)]
+    [a boxerrorbars    t () ()  t (3 4 5)]
+    [a steps           t () () () (1 2)]
+    [a fsteps          t () () () (1 2)]
+    [a histeps         t () () () (1 2)]
+    [a vector          t () () () (4)]
+    [a candlesticks   () ()  t  t (5)]
+    [a financebars     t () () () (5)]
+    [a xerrorlines     t  t  t () (3 4)]
+    [a yerrorlines     t  t  t () (3 4)]
+    [a xyerrorlines    t  t  t () (4 6)]
+    [a filledcurves    t () ()  t (2 3)]
+    ;[a pm3d           () () () ()]     ; splot only
+    ;[a labelpoints    () () () () (3)] ; do by hand
+    ;[a histograms     () () ()  t (1)] ; do by hand
+    ;[a image          () () () () (3)] ; do by hand
+    ;[a rgbimage       () () () () (5)] ; do by hand
+    ;[a rgbalpha       () () () () (6)] ; do by hand
+    [a circles        () () ()  t (3)]] )
+
+(defun process-line-args (style extra data)
+  (let ((args (domapcar ((x extra))
+                (if (stringp x)
+                    x
+                  (let (((f arg) x))
+                    (when (member f '(ps-variable ps pt))
+                      (when (not (has-point style))
+                        (error "plotting style has not points" style) ))
+                    (when (member f '(lc-variable lc-rgb lw lt))
+                      (when (not (has-line style))
+                        (error "plotting style has not lines" style) ))
+                    
+                    (selectq f
+                      (ps-variable 
+                       (when (<> (length data) (length arg))
+                         (error "length of pointsize vector does not match length of data" ps) )
+                       (setq data (mat-catrows data ($> arg)))
+                       "ps variable")
+
+                      (ps (sprintf "ps %l" arg))
+                      
+                      (pt (sprintf "pt %l" arg))
+                      
+                      (lc-variable
+                       (when (<> (length data) (length arg))
+                         (error "length of linecolor matrix does not match length of data" arg) )
+                       (let ((lcc ##(idx-select data 1 0)))
+                         ;; translate into gnuplot's data format
+                         (idx-bloop ((rgb arg) (lc lcc))
+                           (lc (+ (* 65536 (rgb 2)) (* 256 (rgb 1)) (rgb 0))) )
+                         (setq data (mat-catrows data ($> lcc))) )
+                       "lc rgb variable")
+                      
+                      (lc-rgb (sprintf "lc %l" arg))
+                      
+                      (lw (sprintf "lw %l" arg))
+                      
+                      (lt (sprintf "lt %l" arg))
+                    
+                      (t (error "invalid plot-line argument" (list f arg))) ))))))
+    (list (str-join " " args) data) ))
+
 
 (df def-plot (style valid-ncols)
   (assert (symbolp style))
   (assert (listp valid-ncols))
   (eval `(defun ,style args
            (chk-graph)
-           (let (((data title . extra) (validate-plot-args args ',valid-ncols)))
-             (let (((extra data) (process-line-args extra data)))
-               (==> graph add-line ,(nameof style) title extra data) ))
+           (let (((data . extra) (validate-plot-args args ',valid-ncols)))
+             (let (((extra data) (process-line-args '#:,style extra data)))
+               (==> graph add-line ,(nameof style) extra data) ))
            ())
         ))
 
@@ -54,6 +117,7 @@
         (when (hasmethod f '-plot)
           (==> f -plot) ))
       graph)))
+
 
 #? (plot <l1> .. <ln>) 
 ;; {<see> Plot-line generating functions}
@@ -72,34 +136,6 @@
   gp))
 
 
-(in-namespace gnuplot-plot-
-
-(defun process-line-args (extra data)
-  (list (str-join " " (domapcar ((x extra))
-                        (cond
-                         ((stringp x) x)
-                         
-                         ((and (consp x) (= (car x) 'pointsize))
-                          (let ((ps (cadr x)))
-                            (when (<> (length data) (length ps))
-                              (error "length of pointsize vector does not match length of data" ps) )
-                            (setq data (mat-catrows data ($> ps))) )
-                          "pointsize variable")
-                         
-                         ((and (consp x) (= (car x) 'linecolor))
-                          (let ((rgbs (cadr x)))
-                            (when (<> (length data) (length rgbs))
-                              (error "length of linecolor matrix does not match length of data" rgbs) )
-                            (let ((lcc ##(idx-select data 1 0)))
-                              ;; translate into gnuplot's data format
-                              (idx-bloop ((rgb rgbs) (lc lcc))
-                                (lc (+ (* 65536 (rgb 2)) (* 256 (rgb 1)) (rgb 0))) )
-                              (setq data (mat-catrows data ($> lcc))) ))
-                          "lc rgb variable")
-                         
-                         (t (error "invalid plot-line argument" x)) )))
-        data))
-
 #? * Plot-line Generators
 ;; The following functions each visualize a single data set
 ;; in on of the plotting styles understood by gnuplot's plot command.
@@ -109,49 +145,48 @@
 ;; matrix), an optional legend key (a string), and other optional 
 ;; line-modifying arguments (see below).
 
-#? (boxes <data> [<key> ...])
+(in-namespace gnuplot-plot-
+
+(defparameter has-point (htable 20 t t))
+(defparameter has-line  (htable 20 t t))
+(defparameter has-error (htable 20 t t))
+(defparameter has-fill  (htable 20 t t))
+
+(do ((ps *gnuplot-plot-styles*))
+  (eval `(progn
+           (has-line  ',(ps 0) ,(ps 1))
+           (has-point ',(ps 0) ,(ps 2)) 
+           (has-error ',(ps 0) ,(ps 3))
+           (has-fill  ',(ps 0) ,(ps 4))
+           (def-plot  ,(ps 0) ,(ps 5)) )
+        ))
+
+#? (boxes <data> [...])
 ;; Plot data with boxes.
-(def-plot boxes (2 3))
 
-
-#? (circles <data> [<key> ...])
+#? (circles <data> [...])
 ;; Plot data with circles.
-(def-plot circles (3))
 
-
-#? (dots <data> [<key> ...])
+#? (dots <data> [...])
 ;; Plot data with dots.
-(def-plot dots (1 2))
 
-
-#? (lines <data> [<key> ...])
+#? (lines <data> [...])
 ;; Plot data with lines.
-(def-plot lines (1 2))
 
-
-#? (linespoints <data> [<key> ...])
+#? (linespoints <data> [...])
 ;; Plot data with lines and points.
-(def-plot linespoints (1 2))
 
-
-#? (xerrorbars <data> [<key> ...])
+#? (xerrorbars <data> [...])
 ;; Plot data with dots and x-error bars.
-(def-plot xerrorbars (3 4))
 
-
-#? (yerrorbars <data> [<key> ...])
+#? (yerrorbars <data> [...])
 ;; Plot data with dots and y-error bars.
-(def-plot yerrorbars (3 4))
 
-
-#? (xyerrorbars <data> [<key> ...])
+#? (xyerrorbars <data> [...])
 ;; Plot data with dots and x/y-error bars.
-(def-plot xyerrorbars (4 6))
 
-
-#? (points <data> [<key> ...])
+#? (points <data> [...])
 ;; Plot data with points.
-(def-plot points (1 2))
 
 
 #? * Plot-line Modifiers
@@ -162,30 +197,77 @@
 ;; Example:
 ;; {<code> (linespoints xy "temperature" (axes 'x1y2) (pointsize p)))
 
+#? (key <s>)
+;; Add key <s> to legend for this plot-line.
+(defun key (arg)
+  (if (stringp arg)
+      (sprintf "title %l" arg)
+    (error "not a string" arg) ))
+
+
 #? (axes <a>)
-;; Select axes for which the plot-line should be scaled.
+;; Select axes for this plot-line.
 (defun axes (arg)
   (if (member arg '(x1y1 x1y2 x2y1 x2y2))
       (sprintf "axes %l" arg)
     (error "invalid axes argument" arg) ))
 
-#? (vps <ps>)
-;; Make point size variable and use the relative sizes in <ps> to
-;; scale the line points (<ps> is a vector with same length as <data>).
-(defun vps (arg)
-  ;; more processing is done in process-line-args
-  (when (not (vectorp arg))
-    (error "invalid argument (not a vector)" arg) )
-  `(pointsize ,arg) )
 
-#? (vlc <lc>)
-;; Make line color variable and use the rgb triplets in <lc> as color
-;; per data point (<lc> is a <n>x<3> matrix with same length as <data>).
-(defun vlc (arg)
-  ;; more processing is done in process-line-args
-  (when (not (and (numericp arg) (= (rank arg) 2) (= (shape arg 1) 3)))
-    (error "invalid argument (not a <n>x<3> matrix" arg) )
-  `(linecolor ,arg) )
+#? (lc <arg>)
+;; Choose line color for this plot-line.
+;
+;; <Arg> may be either be string (a named color) or an <n>x<3> matrix
+;; of gray-level values in the range [0..255] with same length as 
+;; <data> (variable rgb color).
+(defun lc (arg)
+  (cond
+   ((and (= (rank arg) 2) (= (shape arg 1) 3)) `(lc-variable ,arg))
+   ((stringp arg) `(lc-rgb ,arg))
+   (t (error "invalid argument" arg)) ))
+
+
+#? (lt <n>)
+;; Choose line type for this plot-line.
+;;
+;; Line type is a terminal-specific property. Send "test" to gnuplot
+;; to see available line types.
+(defun lt (arg)
+  (if (integerp arg)
+      #:`(lt ,arg)
+    (error "not an integer" arg) ))
+
+
+#? (lw <w>)
+;; Choose line width for plot-line.
+(defun lw (arg)
+  (if (numberp arg)
+      (if (< 0 arg)
+          (error "invalid line width" arg)
+        #:`(lw ,arg) )
+    (error "not a number" arg) ))
+
+
+#? (ps <arg>)
+;; Choose point size for this plot-line.
+;;
+;; <Arg> may either be a number (multiple of the global point size) or
+;; a vector with same length as <data> (variable point size).
+(defun ps (arg)
+  (cond
+   ((vectorp arg) `(ps-variable ,arg))
+   ((numberp arg) #:`(ps ,arg))
+   (t (error "invalid argument" arg)) ))
+
+
+#? (pt <n>)
+;; Choose point type for this plot-line.
+;;
+;; Point type is a terminal-specific property. Send "test" to gnuplot
+;; to see available point types.
+(defun pt (arg)
+  (if (integerp arg)
+      #:`(pt ,arg)
+    (error "not an integer" arg) ))
 
 (import all from gnuplot-other-)
 
