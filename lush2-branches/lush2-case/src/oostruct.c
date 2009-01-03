@@ -766,14 +766,16 @@ at *send_message(at *classname, at *obj, at *method, at *args)
 
    /* find superclass */
    if (classname) {
+      ifn (SYMBOLP(classname))
+         error(NIL, "not a class name", classname);
       while (cl && cl->classname != classname)
          cl = cl->super;
       ifn (cl)
          error(NIL, "cannot find class", classname);
    }
    /* send */
-   if (method == NIL)
-      error(NIL, "not a method", NIL);
+   ifn (SYMBOLP(method))
+      error(NIL, "not a method name", method);
    struct hashelem *hx = _getmethod(cl, method);
    if (hx) 
       return call_method(obj, hx, args);
@@ -785,10 +787,6 @@ at *send_message(at *classname, at *obj, at *method, at *args)
       return call_method(obj, hx, arg);
    }
    /* fail */
-   ifn (SYMBOLP(classname))
-      error(NIL, "not a class name", classname);
-   ifn (SYMBOLP(method))
-      error(NIL, "not a method name", method);
    error(NIL, "method not found", method);
 }
 
