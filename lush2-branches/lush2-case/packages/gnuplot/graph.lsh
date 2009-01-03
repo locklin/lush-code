@@ -32,9 +32,7 @@
 ;; instructions for data <data>. Return the linestyle index of the line.
 (defmethod GnuplotGraph add-line (ps extra data)
   (declare (-str-) ps extra)
-  (assert (numericp data))
-;;   (let ((text (sprintf "'-' title \"%s\" with %s ls %d %s" title ps i-ls extra)))
-;;     (setq lines (nconc1 lines (cons text data))) )
+  (assert (or  (listp data) (numericp data)))
   (let ((text (if (index "title" extra)
                   (sprintf "'-' with %s %s" ps extra)
                 (sprintf "'-' notitle with %s %s" ps extra) )))
@@ -66,8 +64,8 @@
             (domapcar ((textf . data) objects)
               (sprintf textf (data ())) ))
           (when lines
-            (list (cons (sprintf "%s %s" command (str-join "," (mapcar car lines)))
-                        (mapcar cdr lines) )))
+            (cons (sprintf "%s %s" command (str-join "," (mapcar car lines)))
+                  (mapcar cdr lines) ))
           ))
 
 ;; print the gnuplot script to the console, or, when a filename
@@ -78,10 +76,10 @@
     (dolist (s (==> this serialize))
       (if (stringp s)
           (printf "%s\n" s)
-        (let (((cmd . data) s))
-          (printf "%s\n" cmd)
-          (dolist (a data)
-            (print-array a) )))))
+        (if (indexp s)
+            (print-array s)
+          (dolist (a s) (print-array a)) )
+        (printf "e\n") )))
   ())
 
 (defmacro chk-graph ()
@@ -95,28 +93,14 @@
 (defmethod Gnuplot do-graph (g)
   (if interactive
       (dolist (s (==> g serialize)) (this s))
-
     (let ((ans ""))
       (this "reset errors")
       (dolist (s (==> g serialize))
-        (if (stringp s)
+        (if (atom s)
             (setq ans (this s))
-          ;; s is the plot command with data
-          (setq ans (this (car s)))
-          (when (< (length ans) 2)
-            (apply this (cdr s)) )
-          (setq s (car s)) )
-
+          (setq ans (apply this s)) )
         (when (> (length ans) 1)
-          ;; check for an error
-          (let ((errno (val (this "print GPVAL_ERRNO"))))
-            (when (<> errno 0)
-              (printf "\n")
-              (printf "*** An error occurred while processing gnuplot script:\n\n")
-              (printf "gnuplot> %s\n" s)
-              (printf "%s\n" ans)
-              (error "error in gnuplot script" g))) ))))
-    ())
-
-
-
+          (if (stringp s)
+              (==> this check-for-error s ans) 
+            (==> this check-for-error (sprintf "%l" s) ans) )))))
+  ())

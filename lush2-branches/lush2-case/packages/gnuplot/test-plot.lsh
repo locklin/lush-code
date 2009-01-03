@@ -1,49 +1,84 @@
 
-;; Partial translation of gnuplot/demo/finance.dem
-
 (libload "gnuplot/plot")
-(libload "color-tools")
 
-(defparameter +dtd2000+     (date-to-day (string-to-date "2000-1-1" 'year 'day)))
-(defparameter +spd+         (* 24 3600))
-(defparameter +finance.dat+ 
-  (concat-fname (dirname file-being-loaded) "finance.dat") )
+(defparameter *dtd2000*     (date-to-day (string-to-date "2000-1-1" 'year 'day)))
+(defparameter *spd*         (* 24 3600))
+(defparameter *finance.dat* (concat-fname lushdir "demos/gnuplot/finance.dat"))
+(defparameter *world.dat*   (concat-fname lushdir "demos/gnuplot/world.dat"))
+(defparameter *world.cor*   (concat-fname lushdir "demos/gnuplot/world.cor"))
+
 
 ;; read data in finance.dat
-(defun read-data ()
+(defun read-finance-data ()
   (let ((m (double-array 500 12))
         (n 0) )
-    (do ((line (iter-lines +finance.dat+)))
+    (do ((line (iter-lines *finance.dat*)))
       (let* ((ds (str-split "\t" line))
              ((mon day yr) (str-split "/" (car ds)))
              (date (string-to-date (sprintf "%s-%s-%s" yr mon day) 'year 'day))
              (row (idx-select m 0 n))
-             (d0 (* (- (date-to-day date) +dtd2000+) +spd+)) )
+             (d0 (* (- (date-to-day date) *dtd2000*) *spd*)) )
         (row () (cons n (cons d0 (mapcar val (cdr ds)))))
         (incr n)))
     (idx-trim! m 0 0 n)
     m))
 
+;; generic function
+(defun read-xyz-data (filename)
+  (let ((v ()) (m ()) (ms ()) 
+	(lastline ()) (line ()) )
+    (reading (open-read filename)
+      ;; read lines
+      (while (<> (skip-char "") "\e")
+        (setq line (strip (read-string)))
+        (read-string 1) ;; read newline character
+        (cond 
+         ;; ignore comment line
+         ((str-startswith line "#") 
+          ()) 
+         
+         ;; turn list of columns into a matrix
+         ((and (= line "") (= lastline ""))
+          (mapc idx-lift! m 1s)
+          (setq ms (cons (apply mat-catcols (reverse m)) ms))
+          (setq m ()) )
+         
+         ;; add another column-vector to m
+         ((= line "")
+          (mapc idx-lift! v 1s)
+          (setq m (cons (apply mat-catcols (reverse v)) m))
+          (setq v ()) )
+	 
+         ;; read line with xyz data
+         (t
+          (let ((i (index "#" line)))
+            (when i (setq line (left line (- i 1))) ))
+          (setq v (cons (reading-string (concat "[" line "]") (read)) v)) ))
+        (setq lastline line)) )
+    (if ms (reverse ms)
+      (if m (reverse m)
+        (mapc idx-lift! v 1s)
+        (apply mat-catcols (reverse v)) ))))
+
+;; partial translation of gnuplot/demo/finance.dem
 (defun finance-demo ()
   (let* ((gp (new Gnuplot 'interactive ()))
-         (m  (read-data))
-         (-lc (short-array (length m) 3))
-         (-ps (+ 1 (cos (/ (arange (length m)) 20))))
+         (m  (read-finance-data))
          (c05 (array-take m 1 [i 0 5]))
          (c02345 (array-take m 1 [i 0 2 3 4 5]))
+         (c08  (array-take m 1 [i 0 8]))
+         (c09  (array-take m 1 [i 0 9]))
+         (c010 (array-take m 1 [i 0 10]))
+         (c011 (array-take m 1 [i 0 11]))
          (g ()) )
 
-    ;; generate some fun colors
-    (dolist (i (range* (length m)))
-      (-lc i () (-genrgb (+ 10131 i))) )
-    
-    (setq g (plot-graph (title "Demo for plotting financial data")
-                        (xrange 50 253)
-                        (yrange 75 105)
-                        "set ytics (105, 100, 95, 90, 85, 80)"
-                        (margin 'left 0.15  'right 0.95)
-                        (linespoints c05 (ps -ps) (pt 7) (lc -lc))
-                        ))
+    (setq g (plot* (title "Demo for plotting financial data")
+                   (xrange 50 253)
+                   (yrange 75 105)
+                   (ytics [105 100 95 90 85 80])
+                   (margin 'left 0.15  'right 0.95)
+                   (lines c05)
+                   ))
     (==> gp do-graph g)
 
     (pause "Turn on grid")
@@ -51,4 +86,58 @@
     (==> g add-preamble "set title 'Turn on grid'")
     (==> gp do-graph g)
     
+    (pause "Finance Bars")
+    (setq g (plot* (title "Finance bars")
+                   (xrange 50 253)
+                   (yrange 75 105)
+                   (ytics [105 100 95 90 85 80])
+                   (margin 'left 0.15  'right 0.95)
+                   (grid)
+                   "set logscale y"
+                   (financebars c02345 (lt 8))
+                   ))
+    (gp "reset")
+    (==> gp do-graph g)
+    
+    (pause "Bolling Bands")
+    (setq g (plot* (title "Bollinger Bands")
+                   (xrange 50 253)
+                   (yrange 75 105)
+                   (ytics [105 100 95 90 85 80])
+                   (margin 'left 0.15  'right 0.95)
+                   (grid)
+                   "set logscale y"
+                   (linewidth 2)
+                   (financebars c02345 (lc "black") (lw 1))
+                   (lines c09  (lc "orange"))
+                   (lines c010 (lc "blue"))
+                   (lines c011 (lc "red"))
+                   ))
+    (gp "reset")
+    (==> gp do-graph g)
+    
+    (pause "With indicator on separate scale")
+    (==> g add-preamble "set title 'Indicator on separate scale'")
+    (==> g add-line "lines" "lc rgb \"purple\" axes x1y2" c08)
+    (gp "reset")
+    (==> gp do-graph g)
     gp))
+
+
+;; partial translation of gnuplot/demo/circles.dem
+(defun circles-demo ()
+  (let ((world (read-xyz-data *world.dat*))
+        (coord (read-xyz-data *world.cor*))
+        (plotter (new Gnuplot 'interactive ())) )
+    (let ((rs (double-array (length coord))))
+      (idx-bloop ((r rs)) (r (+ 2 (* 3 (rand)))))
+      (setq coord (mat-catrows coord ($> rs))) )
+    (plot (title "")
+          (xlabel "Note that overlapping transparent circles produce a darker area")
+          "set style fill solid 1.0 border -1"
+          "unset xtics; unset ytics"
+          "set border"
+          (yrange -70 *)
+          (filledcurves world (lc 'light-green))
+          (circles coord "fs transparent solid 0.5 noborder") )
+    ))

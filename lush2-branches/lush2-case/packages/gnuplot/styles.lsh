@@ -1,4 +1,6 @@
 
+(libload "gnuplot/graph")  ; for chk-graph
+
 (defvar *gnuplot-linetypes*   (.cl -1))
 (defvar *gnuplot-linecolors*  (.cl 'blue 'red 'green 'orange 'cyan 'brown 'black))
 (defvar *gnuplot-linewidths*  (.cl 1))
@@ -6,28 +8,27 @@
 (defvar *gnuplot-pointsizes*  (.cl 2))
 
 (defclass GnuplotLinestyles iterator
-  linetype  linecolor  linewidth  pointtype  pointsize 
-  linetypes linecolors linewidths pointtypes pointsizes)
+  lt  lc  lw  pt  ps 
+  lts lcs lws pts pss)
 
 (defmethod GnuplotLinestyles -make-next ()
-  (setq linetype  (car linetypes)  linetypes  (cdr linetypes))
-  (setq linecolor (car linecolors) linecolors (cdr linecolors))
-  (setq linewidth (car linewidths) linewidths (cdr linewidths))
-  (setq pointtype (car pointtypes) pointtypes (cdr pointtypes))
-  (setq pointsize (car pointsizes) pointsizes (cdr pointsizes))
+  (setq lt (car lts)  lts (cdr lts))
+  (setq lc (car lcs)  lcs (cdr lcs))
+  (setq lw (car lws)  lws (cdr lws))
+  (setq pt (car pts)  pts (cdr pts))
+  (setq ps (car pss)  pss (cdr pss))
   () )
 
 (defmethod GnuplotLinestyles GnuplotLinestyles ()
-  (setq linetypes  *gnuplot-linetypes*)
-  (setq linecolors *gnuplot-linecolors*)
-  (setq linewidths *gnuplot-linewidths*)
-  (setq pointtypes *gnuplot-pointtypes*)
-  (setq pointsizes *gnuplot-pointsizes*)
+  (setq lts *gnuplot-linetypes*)
+  (setq lcs *gnuplot-linecolors*)
+  (setq lws *gnuplot-linewidths*)
+  (setq pts *gnuplot-pointtypes*)
+  (setq pss *gnuplot-pointsizes*)
   (==> this -make-next) )
 
 (defmethod GnuplotLinestyles peeknext ()
-  (sprintf "lt %d lc rgb \"%l\" lw %f pt %d ps %f"
-           linetype linecolor linewidth pointtype pointsize) )
+  (sprintf "lt %d lc rgb \"%l\" lw %f pt %d ps %f" lt lc lw pt ps) )
 
 (defmethod GnuplotLinestyles next ()
   (prog1 (==> this peeknext)
@@ -37,19 +38,21 @@
   ())
 
 (defmethod GnuplotLinestyles selfcheck ()
-  (when (not (integerp linetype))
-    (error "invalid line type" linetype) )
-  (when (not (*gnuplot-colors* linecolor))
-    (error "invalid line color" linecolor) )
-  (when (not (integerp pointtype))
-    (error "invalid  linestyle point type" pointtype) )
-  (when (not (numberp pointsize))
-    (error "invalid linestyle point size" pointsize) )
+  (when (not (integerp lt))
+    (error "invalid line type" lt) )
+  (when (not (*gnuplot-colors* lc))
+    (error "invalid line color" lc) )
+  (when (not (integerp pt))
+    (error "invalid point type" pt) )
+  (when (not (numberp ps))
+    (error "invalid point size" ps) )
   ())
 
 (defmacro chk-linestyles ()
-  `(when (not (isa linestyles GnuplotLinestyles))
-     (error "linestyles undefined") )
+  `(progn
+     (chk-graph)
+     (when (not :graph:linestyles)
+       (setq :graph:linestyles (new GnuplotLinestyles)) ))
   )
 
 
@@ -104,83 +107,73 @@
 
 (in-namespace gnuplot-other- 
 
-#? (linestyle [<color> <width> <type> <pointtype> <pointsize>])
-;; Modify next linestyle and return its index.
-(defun linestyle args
-  (chk-linestyles)
-  (when args  (setq :linestyles:linecolor (car args)  args (cdr args)))
-  (when args  (setq :linestyles:linewidth (car args)  args (cdr args)))
-  (when args  (setq :linestyles:linetype  (car args)  args (cdr args)))
-  (when args  (setq :linestyles:pointtype (car args)  args (cdr args)))
-  (when args  (setq :linestyles:pointsize (car args)  args (cdr args)))
-  (when args
-    (error "too many arguments" args) )
-  (==> linestyles selfcheck)
-  :linestyles:index)
-
-
 #? (linecolor [<color> <color2> <color3> ...])
-;; {<see> linestyle}
-;; Set/query line color.
+;; Set/query line color(s).
 ;;
-;; With no arguments return color for next plot line.
+;; With no arguments return color for next plot-line. With
+;; arguments set line colors for the following lines.
 (defun linecolor colors
   (chk-linestyles)
-  (when colors
-    (setq :linestyles:linecolors (apply .cl colors))
-    (setq :linestyles:linecolor (car :linestyles:linecolors)) )
-  :linestyles:linecolor)
+  (with-object graph
+    (when colors
+      (setq :linestyles:lcs (apply .cl colors))
+      (setq :linestyles:lc (car :linestyles:lcs)) )
+    :linestyles:lc))
 
 
 #? (linewidth [<width> <width2> <width3> ...])
-;; {<see> linestyle}
-;; Set/query line width.
+;; Set/query line width(s).
 ;;
-;; With no arguments return line width for next plot line.
-(defun linewidths widths
+;; With no arguments return line width for next plot-line. With
+;; arguments set line widths for the following lines.
+(defun linewidth widths
   (chk-linestyles)
-  (when widths
-    (setq :linestyles:linewidths (apply .cl widths))
-    (setq :linestyles:linewidth (car :linestyles:linewidths)) )
-  :linestyles:linewidth)
+  (with-object graph
+    (when widths
+      (setq :linestyles:lws (apply .cl widths))
+      (setq :linestyles:lw (car :linestyles:lws)) )
+    :linestyles:lw))
 
 
 #? (linetype [<type> <type2> <type3> ...])
-;; {<see> linestyle}
-;; Set/query line type.
+;; Set/query line type(s).
 ;;
-;; With no arguments return line type for next plot line.
+;; With no arguments return line type for next plot-line. With
+;; arguments set line types for the following lines.
 (defun linetype types
   (chk-linestyles)
-  (when types
-    (setq :linestyles:linetypes (apply .cl types))
-    (setq :linestyles:linetype (car :linestyles:linestypes)) )
-  :linestyles:linetype)
+  (with-object graph
+    (when types
+      (setq :linestyles:lts (apply .cl types))
+      (setq :linestyles:lt (car :linestyles:lts)) )
+    :linestyles:lt))
 
 
-#? (pointtypes [<pt> <pt2> <pt3> ...])
-;; {<see> linestyle}
-;; Set/query linestyle point type.
+#? (pointtype [<pt> <pt2> <pt3> ...])
+;; Set/query point type(s).
 ;;
-;; With no arguments return point type for next plot line.
+;; With no arguments return point type for next plot-line. With
+;; arguments set point types for the following lines.
 (defun pointtype pts
   (chk-linestyles)
-  (when pts
-    (setq :linestyles:pointtypes (apply .cl pts))
-    (setq :linestyles:pointtype (car :linestyles:pointtypes)) )
-  :linestyles:pointtype)
+  (with-object graph
+    (when pts
+      (setq :linestyles:pts (apply .cl pts))
+      (setq :linestyles:pt (car :linestyles:pts)) )
+    :linestyles:pt))
 
 
 #? (pointsize [<ps> <ps2> <ps3> ...])
-;; {<see> linestyle}
-;; Set/query linestyle point size.
+;; Set/query point size(s).
 ;;
-;; With no arguments return point size for next plot line.
+;; With no arguments return point size for next plot-line. With
+;; arguments set point size for the following lines.
 (defun pointsize pss
   (chk-linestyles)
-  (when pss
-    (setq :linestyles:pointsizes (apply .cl pss))
-    (setq :linestyles:pointsize (car :linestyles:pointsizes)) )
-  :linestyles:pointsize)
+  (with-object graph
+    (when pss
+      (setq :linestyles:pss (apply .cl pss))
+      (setq :linestyles:ps (car :linestyles:pts)) )
+    :linestyles:ps))
 
 ) ; namespace gnuplot-other-
