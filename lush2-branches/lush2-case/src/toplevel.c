@@ -892,10 +892,12 @@ DX(xerror)
    }
 
    /* walk down the call stack until the function symbol */
-   while (top_link) {
-      if (CONSP(Car(top_link->this_call)) && Caar(top_link->this_call)==symb)
-         break;
-      top_link = top_link->prev;
+   if (symb) {
+      while (top_link) {
+         if (CONSP(top_link->this_call) && Car(top_link->this_call)==symb)
+            break;
+         top_link = top_link->prev;
+      }
    }
    error(NIL, errmsg, arg);
    return NIL;
