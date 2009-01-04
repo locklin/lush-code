@@ -6,6 +6,7 @@
   objects    ; list of other plot elements (with data)
   linestyles ; optional linestyles
   i-ls       ; next unused linestyle index
+  i-obj      ; next unused object index
   )
 
 #? (new GnuplotGraph <cmd> [<linestyles>])
@@ -24,6 +25,7 @@
   (setq objects ())
   (setq linestyles lss)
   (setq i-ls 1)
+  (setq i-obj 1)
   (when linestyles
     (==> this add-preamble "set style increment user") )
   () )
@@ -39,17 +41,20 @@
     (setq lines (nconc1 lines (cons text data))) )
   (when linestyles
     (==> this add-preamble (sprintf "set style line %d %s" i-ls (next linestyles))) )
-  (incr i-ls)
-  (- i-ls 1) )
+  (prog1 i-ls
+    (incr i-ls) ))
 
-;; add pair of command-text and data to objects
+
+;; add pair of command-text and data to objects. Return the object index.
 (defmethod GnuplotGraph add-object (textf data)
   (assert (stringp textf))
   (assert (vectorp data))
   ;; check that textf and data are compatible
-  (sprintf textf (data ()))
+  (apply sprintf textf (data ()))
+  (setq textf (concat (sprintf "set object %l " i-obj) textf))
   (setq objects (nconc1 objects (cons textf data)))
-  ())
+  (prog1 i-obj
+    (incr i-obj) ))
 
 ;; add a command string to preamble
 (defmethod GnuplotGraph add-preamble (text)
@@ -61,8 +66,8 @@
 (defmethod GnuplotGraph serialize ()
   (append preamble
           (when objects
-            (domapcar ((textf . data) objects)
-              (sprintf textf (data ())) ))
+            (domapcar (((textf . data) objects))
+              (apply sprintf textf (data ())) ))
           (when lines
             (cons (sprintf "%s %s" command (str-join "," (mapcar car lines)))
                   (mapcar cdr lines) ))

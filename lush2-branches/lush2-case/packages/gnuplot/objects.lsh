@@ -1,0 +1,127 @@
+
+(libload "gnuplot/graph")
+
+(in-namespace gnuplot-other-
+
+(defun process-object-args (type extra)
+  (let ((fs-d "") (fs-bc "") (args ()))
+    (domapc ((x extra))
+      (if (stringp x)
+          (setq args (cons x args))
+        (let (((f arg) x))
+          (selectq f
+            (fill     (setq fs-d (sprintf "transparent solid %f" arg)))
+            
+            (zp       (setq args (cons (sprintf "%l" arg) args)))
+             
+            (noborder (setq fs-bc "noborder"))
+             
+            (bw       (setq args (cons (sprintf "lw %l" arg) args)))
+
+            (bc-rgb
+             (when (not (*gnuplot-colors* arg))
+               (error 'bc "unkown color" arg) )
+             (setq fs-bc (sprintf "border rgb \"%l\"" arg)) )
+
+            (fc-rgb
+             (when (not (*gnuplot-colors* arg))
+               (error 'fc "unkown color" arg) )
+             (setq args (cons (sprintf "fc rgb \"%l\"" arg) args)) )
+                      
+            (t (error type "invalid object argument" (list f arg))) ))))
+    (setq args (str-join " " args))
+    (when (or (<> fs-d "") (<> fs-bc ""))
+      (setq args (concat args (sprintf " fs %s %s" fs-d fs-bc))) )
+    args))
+
+#? * Objects
+
+#? (add-arc <[x y r a0 a1]> [...])
+;; Add arc from angle <a0> to <a1> with radius <r> to plot at position <x,y>.
+;; Return the object id.
+(defun add-arc (data . extra)
+  (chk-graph)
+  (when (not (and (vectorp data) (= (length data) 5)))
+    (error "invalid data for this object" data) )
+  (setq extra (process-object-args 'arc extra))
+  (==> graph add-object (concat "circle at %f,%f size %f arc [%f:%f] " extra) data) )
+
+(defun add-arrow (data . extra)
+  (error "not implemented") )
+
+#? (add-circle <[x y r]> [...])
+;; Add circle with radius <r> to plot at position <x,y>.
+;; Return the object id.
+(defun add-circle (data . extra)
+  (chk-graph)
+  (when (not (and (vectorp data) (= (length data) 3)))
+    (error "invalid data for this object" data) )
+  (setq extra (process-object-args 'circle extra))
+  (==> graph add-object (concat "circle at %f,%f size %f " extra) data) )
+
+(defun add-ellipse (data . extra)
+  (error "not implemented") )
+
+(defun add-polygon (data . extra)
+  (error "not implemented") )
+
+(defun add-rectangle (data . extra)
+  (error "not implemented") )
+
+#? * Object Modifiers
+
+#? (fill <density>)
+;; Set fill density (number between 0 and 1) for this object.
+(defun fill (arg)
+  (when (not (number arg))
+    (error "not a number" arg) )
+  (when (or (> arg 1) (< arg 0))
+    (error "not a valid density value" arg) )
+  #:`(fill ,arg)
+  )
+
+#? (fc <arg>)
+;; Choose fill color for this object.
+;;
+;; Example:
+;; {<code> (fc 'purple)}
+(defun fc (arg)
+  (cond
+   ((symbolp arg) `(fc-rgb ,arg))
+   ((stringp arg) `(fc-rgb ,(named arg)))
+   (t (error "invalid argument" arg)) ))
+
+#? (bc [<arg>])
+;; Choose border color for this object. With no argument,
+;; don't draw a border.
+;;
+;; Example:
+;; {<code> (bc 'black)}
+(defun bc (&optional arg)
+  (cond
+   ((null arg)    `(noborder ()))
+   ((symbolp arg) `(bc-rgb ,arg))
+   ((stringp arg) `(bc-rgb ,(named arg)))
+   (t (error "invalid argument" arg)) ))
+
+#? (zp <which>)
+;; Choose z-position of object with respect to graph.
+;; Possible values are <'front>, <'back>, and <'behind>.
+(defun zp (arg)
+  (when (stringp arg)
+    (setq arg (named arg)) )
+  (when (not (member arg '(front back behind)))
+    (error "invalid argument" arg))
+  #:`(zp ,arg) )
+
+;; #? (bw <w>)
+;; ;; Choose border width for this object.
+;; (defun bw (arg)
+;;   (if (numberp arg)
+;;       (if (> 0 arg)
+;;           (error "invalid line width" arg)
+;;         #:`(bw ,arg) )
+;;     (error "not a number" arg) ))
+
+) ; namespace gnuplot-other-
+

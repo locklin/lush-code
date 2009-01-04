@@ -2,6 +2,7 @@
 (libload "gnuplot/gnuplot")
 (libload "gnuplot/styles")
 (libload "gnuplot/graph")
+(libload "gnuplot/objects")
 (libload "gnuplot/other")
 
 (defun validate-plot-args (args valid-ncols)
@@ -55,52 +56,68 @@
     ;[a image          () () () () (3)] ; do by hand
     ;[a rgbimage       () () () () (5)] ; do by hand
     ;[a rgbalpha       () () () () (6)] ; do by hand
-    [a circles        () () ()  t (3)]] )
+    [a circles         t () ()  t (3)]] )
 
 (defun process-line-args (style extra data)
-  (let ((args (domapcar ((x extra))
-                (if (stringp x)
-                    x
-                  (let (((f arg) x))
-                    (when (member f '(ps-variable ps pt))
-                      (when (not (has-point style))
-                        (error "plotting style has not points" style) ))
-                    (when (member f '(lc-variable lc-rgb lw lt))
-                      (when (not (has-line style))
-                        (error "plotting style has not lines" style) ))
-                    
-                    (selectq f
-                      (ps-variable 
-                       (when (<> (length data) (length arg))
-                         (error "length of pointsize vector does not match length of data" ps) )
-                       (setq data (mat-catrows data ($> arg)))
-                       "ps variable")
+  (let ((fs-d "") (fs-bc "") (args ()))
+    (domapc ((x extra))
+      (if (stringp x)
+          (setq args (cons x args))
+        (let (((f arg) x))
+          (when (member f '(ps-variable ps pt))
+            (when (not (has-point style))
+              (error f "plotting style has no points" style) ))
+          (when (member f '(lc-variable lc-rgb lw lt))
+            (when (not (has-line style))
+              (error f "plotting style has no lines" style) ))
+          (when (member f '(fill bc))
+            (when (not (has-fill style))
+              (error f "plotting style has no fill" style) ))
+          
+          (selectq f
+            (fill (setq fs-d (sprintf "transparent solid %f" arg)))
 
-                      (ps (sprintf "ps %l" arg))
+            (noborder (setq fs-bc "noborder"))
+
+            (bc-rgb
+             (when (not (*gnuplot-colors* arg))
+               (error 'bc "unkown color" arg) )
+             (setq fs-bc (sprintf "border rgb \"%l\"" arg)) )
+
+            (ps-variable 
+             (when (<> (length data) (length arg))
+               (error 'ps "length of pointsize vector does not match length of data" ps) )
+             (setq data (mat-catrows data ($> arg)))
+             (setq args (cons "ps variable" args)) )
+             
+            (ps (setq args (cons (sprintf "ps %l" arg) args)))
+            
+            (pt (setq args (cons (sprintf "pt %l" arg) args))) 
                       
-                      (pt (sprintf "pt %l" arg))
+            (lc-variable
+             (when (<> (length data) (length arg))
+               (error 'lc "length of linecolor matrix does not match length of data" arg) )
+             (let ((lcc ##(idx-select data 1 0)))
+               ;; translate into gnuplot's data format
+               (idx-bloop ((rgb arg) (lc lcc))
+                 (lc (+ (* 65536 (rgb 2)) (* 256 (rgb 1)) (rgb 0))) )
+               (setq data (mat-catrows data ($> lcc))) )
+             (setq args (cons "lc rgb variable" args)) )
                       
-                      (lc-variable
-                       (when (<> (length data) (length arg))
-                         (error "length of linecolor matrix does not match length of data" arg) )
-                       (let ((lcc ##(idx-select data 1 0)))
-                         ;; translate into gnuplot's data format
-                         (idx-bloop ((rgb arg) (lc lcc))
-                           (lc (+ (* 65536 (rgb 2)) (* 256 (rgb 1)) (rgb 0))) )
-                         (setq data (mat-catrows data ($> lcc))) )
-                       "lc rgb variable")
-                      
-                      (lc-rgb
-                       (when (not (*gnuplot-colors* arg))
-                         (error "unkown color" arg) )
-                       (sprintf "lc rgb \"%l\"" arg))
-                      
-                      (lw (sprintf "lw %l" arg))
-                      
-                      (lt (sprintf "lt %l" arg))
-                    
-                      (t (error "invalid plot-line argument" (list f arg))) ))))))
-    (list (str-join " " args) data) ))
+            (lc-rgb
+             (when (not (*gnuplot-colors* arg))
+               (error 'lc "unkown color" arg) )
+             (setq args (cons (sprintf "lc rgb \"%l\"" arg) args)) )
+            
+            (lw (setq args (cons (sprintf "lw %l" arg) args)))
+            
+            (lt (setq args (cons (sprintf "lt %l" arg) args)))
+            
+            (t (error style "invalid plot-line argument" (list f arg))) ))))
+    (setq args (str-join " " args))
+    (when (or (<> fs-d "") (<> fs-bc ""))
+      (setq args (concat args (sprintf " fs %s %s" fs-d fs-bc))) )
+    (list args data) ))
 
 
 (df def-plot (style valid-ncols)
@@ -117,9 +134,13 @@
 #? (plot* <l1> .. <ln>)
 ;; {<see> Plot-line generating functions}
 ;; Compose a new graph from plot instructions <l1> .. <ln> and return it.
+;;
+;; When already <plot*> appears within the scope of another <plot*> or
+;; <plot> then the plot instructions are added to the graph of the 
+;; enclosing <plot*>-form. 
 (df plot* forms
   (with-namespace gnuplot-plot-
-    (let ((graph (new GnuplotGraph "plot" (new GnuplotLinestyles))))
+    (let ((graph (or graph (new GnuplotGraph "plot" (new GnuplotLinestyles)))))
       (dolist (f forms)
         (setq f (eval f))
         (when (hasmethod f '-plot)
@@ -247,7 +268,7 @@
 
 
 #? (lw <w>)
-;; Choose line width for plot-line.
+;; Choose line width for this plot-line.
 (defun lw (arg)
   (if (numberp arg)
       (if (> 0 arg)
@@ -277,6 +298,31 @@
   (if (integerp arg)
       #:`(pt ,arg)
     (error "not an integer" arg) ))
+
+
+#? (fill <density>)
+;; Set fill density (number between 0 and 1) for this plot-line.
+(defun fill (arg)
+  (when (not (number arg))
+    (error "not a number" arg) )
+  (when (or (> arg 1) (< arg 0))
+    (error "not a valid density value" arg) )
+  #:`(fill ,arg)
+  )
+
+
+#? (bc [<arg>])
+;; Choose border color for this plot-line. With no argument,
+;; don't draw a border.
+;;
+;; Example:
+;; {<code> (bc 'black)}
+(defun bc (&optional arg)
+  (cond
+   ((null arg)    `(noborder ()))
+   ((symbolp arg) `(bc-rgb ,arg))
+   ((stringp arg) `(bc-rgb ,(named arg)))
+   (t (error "invalid argument" arg)) ))
 
 (import all from gnuplot-other-)
 
