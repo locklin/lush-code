@@ -28,11 +28,29 @@
                (error 'fc "unkown color" arg) )
              (setq args (cons (sprintf "fc rgb \"%l\"" arg) args)) )
                       
-            (t (error type "invalid object argument" (list f arg))) ))))
+            (t (error type "invalid object modifier" (list f arg))) ))))
     (setq args (str-join " " args))
     (when (or (<> fs-d "") (<> fs-bc ""))
       (setq args (concat args (sprintf " fs %s %s" fs-d fs-bc))) )
     args))
+
+(defun process-arrow-args (extra)
+  (let ((args (domapcar ((x extra))
+                (if (stringp x)
+                    x
+                  (let (((f arg) x))
+                    (selectq f
+                      (lc-rgb
+                       (when (not (*gnuplot-colors* arg))
+                         (error 'lc "unkown color" arg) )
+                       (sprintf "lc rgb \"%l\"" arg) )
+                      
+                      (lw (sprintf "lw %l" arg))
+                      
+                      (lt (sprintf "lt %l" arg))
+                      
+                      (t (error style "invalid arrow modifier" (list f arg))) ))))))
+    (str-join " " args) ))
 
 #? * Objects
 
@@ -46,8 +64,18 @@
   (setq extra (process-object-args 'arc extra))
   (==> graph add-object (concat "circle at %f,%f size %f arc [%f:%f] " extra) data) )
 
+#? (add-arrow <[x0 y0 x1 y1]> [...])
+;; Add an arrow prointing from <x0,y0> to <x1,y1> to plot.
+;; Return the object id.
+;;
+;; Note: Arrows have no fill and accept only the modifiers <lc> <lw> and <lt>
+;; {<see> Plot-line Modifiers}
 (defun add-arrow (data . extra)
-  (error "not implemented") )
+  (chk-graph)
+  (when (not (and (vectorp data) (= (length data) 4)))
+    (error "invalid data for this object" data) )
+  (setq extra (process-arrow-args extra))
+  (==> graph add-object (concat "arrow from %f,%f to %f,%f " extra) data) )
 
 #? (add-circle <[x y r]> [...])
 ;; Add circle with radius <r> to plot at position <x,y>.
@@ -114,14 +142,14 @@
     (error "invalid argument" arg))
   #:`(zp ,arg) )
 
-;; #? (bw <w>)
-;; ;; Choose border width for this object.
-;; (defun bw (arg)
-;;   (if (numberp arg)
-;;       (if (> 0 arg)
-;;           (error "invalid line width" arg)
-;;         #:`(bw ,arg) )
-;;     (error "not a number" arg) ))
+#? (bw <w>)
+;; Choose border width for this object.
+(defun bw (arg)
+  (if (numberp arg)
+      (if (> 0 arg)
+          (error "invalid line width" arg)
+        #:`(bw ,arg) )
+    (error "not a number" arg) ))
 
 ) ; namespace gnuplot-other-
 
