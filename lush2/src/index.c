@@ -563,7 +563,7 @@ static char *chk_nonempty(index_t *ind)
 
 /* raise error if dimension d is invalid          */
 /* yield equivalent non-negative value otherwise  */
-static inline int validate_dimension(index_t *ind, int d)
+static int validate_dimension(index_t *ind, int d)
 {
    d = d<0 ? IND_NDIMS(ind)+d : d;
    if (d<0 || d>=IND_NDIMS(ind))
@@ -574,7 +574,7 @@ static inline int validate_dimension(index_t *ind, int d)
 /* raise error if subscript s for dimension d is invalid */
 /* yield equivalent non-negative value otherwise         */
 /* NOTE: validate_subscript does not validate d          */
-static inline size_t validate_subscript(index_t *ind, int d, ptrdiff_t s)
+static size_t validate_subscript(index_t *ind, int d, ptrdiff_t s)
 {
    s = s<0 ? IND_DIM(ind, d)+s : s;
    if (s<0 || s>=IND_DIM(ind, d))
@@ -984,17 +984,27 @@ DX(xindex_shape)
 {
    index_t *ind = NULL;
    if (arg_number == 2) {
-      shape_t *shp = parse_shape(APOINTER(2), NULL);
-      ind = index_reshape(AINDEX(1), shp);
+      ind = AINDEX(1);
+      int d = validate_dimension(ind, AINTEGER(2));
+      return NEW_NUMBER(IND_DIM(ind, d));
 
    } else if (arg_number == 1) {
-      ind = index_shape(AINDEX(1));
+      return index_shape(AINDEX(1))->backptr; 
 
    } else
       ARG_NUMBER(-1);
 
+   return NIL;
+}
+
+DX(xindex_reshape)
+{
+   ARG_NUMBER(2);
+   shape_t *shp = parse_shape(APOINTER(2), NULL);
+   index_t *ind = index_reshape(AINDEX(1), shp);
    return ind->backptr;
 }
+
 
 DX(xidx_modulo)
 {
@@ -3643,6 +3653,7 @@ void init_index(void)
 
    /* index manipulation */
    dx_define("idx-reshape", xidx_reshape);
+   dx_define("$$",xindex_reshape);
    dx_define("idx-flatten", xidx_flatten);
    dx_define("idx-nick", xidx_nick);
    dx_define("idx-extend", xidx_extend);
