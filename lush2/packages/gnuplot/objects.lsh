@@ -1,0 +1,163 @@
+
+(libload "gnuplot/graph")
+
+(in-namespace gnuplot-other-
+
+(defun process-object-args (type extra)
+  (let ((fs-d "") (fs-bc "") (args ()))
+    (domapc ((x extra))
+      (if (stringp x)
+          (setq args (cons x args))
+        (let (((f arg) x))
+          (selectq f
+            (fill     (setq fs-d (sprintf "transparent solid %f" arg)))
+            
+            (zp       (setq args (cons (sprintf "%l" arg) args)))
+             
+            (noborder (setq fs-bc "noborder"))
+             
+            (bw       (setq args (cons (sprintf "lw %l" arg) args)))
+
+            (bc-rgb
+             (when (not (*gnuplot-colors* arg))
+               (error 'bc "unkown color" arg) )
+             (setq fs-bc (sprintf "border rgb \"%l\"" arg)) )
+
+            (fc-rgb
+             (when (not (*gnuplot-colors* arg))
+               (error 'fc "unkown color" arg) )
+             (setq args (cons (sprintf "fc rgb \"%l\"" arg) args)) )
+                      
+            (t (error type "invalid object modifier" (list f arg))) ))))
+    (setq args (str-join " " args))
+    (when (or (<> fs-d "") (<> fs-bc ""))
+      (setq args (concat args (sprintf " fs %s %s" fs-d fs-bc))) )
+    args))
+
+(defun process-arrow-args (extra)
+  (let ((args (domapcar ((x extra))
+                (if (stringp x)
+                    x
+                  (let (((f arg) x))
+                    (selectq f
+                      (lc-rgb
+                       (when (not (*gnuplot-colors* arg))
+                         (error 'lc "unkown color" arg) )
+                       (sprintf "lc rgb \"%l\"" arg) )
+                      
+                      (lw (sprintf "lw %l" arg))
+                      
+                      (lt (sprintf "lt %l" arg))
+                      
+                      (t (error style "invalid arrow modifier" (list f arg))) ))))))
+    (str-join " " args) ))
+
+#? * Objects
+;; You may place objects in a plot at specified positions relative to
+;; the <x1y1> axes.
+
+#? (add-arc <[x y r a0 a1]> [...])
+;; Add arc from angle <a0> to <a1> with radius <r> to plot at position <x,y>.
+;; Return the object id.
+(defun add-arc (data . extra)
+  (chk-graph)
+  (when (not (and (vectorp data) (= (length data) 5)))
+    (error "invalid data for this object" data) )
+  (setq extra (process-object-args 'arc extra))
+  (==> graph add-object (concat "circle at %f,%f size %f arc [%f:%f] " extra) data) )
+
+#? (add-arrow <[x0 y0 x1 y1]> [...])
+;; Add an arrow prointing from <x0,y0> to <x1,y1> to plot and return the
+;; object id.
+;;
+;; Note: Arrows have no fill and accept only the modifiers <lc> <lw> and <lt>
+;; {<see> Plot-line Modifiers}
+(defun add-arrow (data . extra)
+  (chk-graph)
+  (when (not (and (vectorp data) (= (length data) 4)))
+    (error "invalid data for this object" data) )
+  (setq extra (process-arrow-args extra))
+  (==> graph add-object (concat "arrow from %f,%f to %f,%f " extra) data) )
+
+#? (add-circle <[x y r]> [...])
+;; Add circle with radius <r> to plot at position <x,y> and return the
+;; object id.
+(defun add-circle (data . extra)
+  (chk-graph)
+  (when (not (and (vectorp data) (= (length data) 3)))
+    (error "invalid data for this object" data) )
+  (setq extra (process-object-args 'circle extra))
+  (==> graph add-object (concat "circle at %f,%f size %f " extra) data) )
+
+(defun add-ellipse (data . extra)
+  (error "not implemented") )
+
+(defun add-polygon (data . extra)
+  (error "not implemented") )
+
+(defun add-rectangle (data . extra)
+  (error "not implemented") )
+
+#? * Object Modifiers
+;; Functions in this category modify appearance of individual objects.
+;; Note that, like plot-line modifiers, not all object modifiers are
+;; applicable with all objects.
+;;
+;; Example:
+;; {<code> (add-circle [5 3 2.2] (fill 0.2) (fc 'blue) (bc ())) </code>}
+
+#? (fill <density>)
+;; Set fill density (number between 0 and 1) for this object.
+(defun fill (arg)
+  (when (not (number arg))
+    (error "not a number" arg) )
+  (when (or (> arg 1) (< arg 0))
+    (error "not a valid density value" arg) )
+  #:`(fill ,arg)
+  )
+
+#? (fc <arg>)
+;; Choose fill color for this object.
+;;
+;; Example:
+;; {<code> (fc 'purple) </code>}
+(defun fc (arg)
+  (cond
+   ((symbolp arg) `(fc-rgb ,arg))
+   ((stringp arg) `(fc-rgb ,(named arg)))
+   (t (error "invalid argument" arg)) ))
+
+#? (bc [<arg>])
+;; Choose border color for this object. With no argument,
+;; don't draw a border.
+;;
+;; Example:
+;; {<code> (bc 'black) </code>}
+(defun bc (&optional arg)
+  (cond
+   ((null arg)    `(noborder ()))
+   ((symbolp arg) `(bc-rgb ,arg))
+   ((stringp arg) `(bc-rgb ,(named arg)))
+   (t (error "invalid argument" arg)) ))
+
+#? (zp <which>)
+;; Choose z-position of object with respect to graph.
+;; Possible values are <'front>, <'back>, and <'behind>.
+(defun zp (arg)
+  (when (stringp arg)
+    (setq arg (named arg)) )
+  (when (not (member arg '(front back behind)))
+    (error "invalid argument" arg))
+  #:`(zp ,arg) )
+
+#? (bw <w>)
+;; Choose border width for this object.
+(defun bw (arg)
+  (if (numberp arg)
+      (if (> 0 arg)
+          (error "invalid line width" arg)
+        #:`(bw ,arg) )
+    (error "not a number" arg) ))
+
+) ; namespace gnuplot-other-
+

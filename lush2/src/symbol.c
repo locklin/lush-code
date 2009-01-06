@@ -273,7 +273,6 @@ DX(xnamed)
 
 /*
  * namedclean(s) applies standard name canonicalization
- * (lowercase, some _ become -)
  */
 
 at *namedclean(const char *n)
@@ -292,9 +291,10 @@ at *namedclean(const char *n)
 
    } else {
       for (char *s = d; *s; s++)
-         if (s>d && *s=='_')
-            *s = '-';
-         else if (isascii(*(unsigned char*)s))
+/*          if (s>d && *s=='_') */
+/*             *s = '-'; */
+/*          else  */
+         if (isascii(*(unsigned char*)s))
             *s = tolower(*(unsigned char*)s);
    }
    return new_symbol(d);
