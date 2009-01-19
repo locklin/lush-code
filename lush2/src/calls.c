@@ -285,6 +285,17 @@ DX(xrange_star)
  * and or operations logiques
  */
 
+/* parallel and */
+DX(xpand)
+{
+   at *res = t();
+   for (int i=1; i<arg_number; i++)
+      if (APOINTER(i) == NIL) {
+         res = NIL;
+         break;
+      }
+   return res;
+}
 
 DY(yand)
 {
@@ -295,6 +306,18 @@ DY(yand)
          break;
       p = Cdr(p);
    }
+   return res;
+}
+
+/* parallel or */
+DX(xpor)
+{
+   at *res = NIL;
+   for (int i=1; i<arg_number; i++)
+      if (APOINTER(i)) {
+         res = APOINTER(i);
+         break;
+      }
    return res;
 }
 
@@ -623,6 +646,8 @@ void init_calls(void)
    dx_define(">=", xge);
    dx_define("<", xlt);
    dx_define("<=", xle);
+   dx_define("pand", xpand);
+   dx_define("por", xpor);
 
    dy_define("and", yand);
    dy_define("or", yor);
