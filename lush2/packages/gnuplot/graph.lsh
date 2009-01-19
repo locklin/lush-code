@@ -1,4 +1,6 @@
 
+(libload "gnuplot")
+
 (defclass GnuplotGraph object
   command    ; plot command
   preamble   ; list of preamble instructions
@@ -46,6 +48,22 @@
   (prog1 i-ls
     (incr i-ls) ))
 
+;; add a new line for plotting style <ps> and arrange for it to be
+(defmethod GnuplotGraph add-line-binary (ps extra data)
+  (declare (-str-) ps extra)
+  (assert (or  (listp data) (numericp data)))
+  (let* ((bd (if (= (rank data) 3)
+                 (-binary-descriptor (idx-select data 2 0))
+               (-binary-descriptor data)) )
+               
+         (text (if (index "title" extra)
+                   (sprintf "'-' %s %s with %s" bd extra ps)
+                 (sprintf "'-' %s %s notitle with %s" bd extra ps) )))
+    (setq lines (nconc1 lines (cons text (new GnuplotBinary data)))) )
+  (when linestyles
+    (==> this add-preamble (sprintf "set style line %d %s" i-ls (next linestyles))) )
+  (prog1 i-ls
+    (incr i-ls) ))
 
 ;; add pair of command-text and data to objects. Return the object index.
 (defmethod GnuplotGraph add-object (textf data)
@@ -85,12 +103,13 @@
   (if filename
       (writing (open-write filename) (==> this dump))
     (dolist (s (==> this serialize))
-      (if (stringp s)
-          (printf "%s\n" s)
-        (if (indexp s)
-            (print-array s)
-          (dolist (a s) (print-array a)) )
-        (printf "e\n") )))
+      (cond
+       ((stringp s)           (printf "%s\n" s))
+       ((indexp s)            (print-array s) (printf "e\n"))
+       ((isa s GnuplotBinary) (printf "# %l\n" s))
+       ((listp s)             (dolist (a s) (print-array a) (printf "e\n")) )
+       (t (error "don't know how to dump" s)) )
+      ))
   ())
 
 (defmacro chk-graph ()
