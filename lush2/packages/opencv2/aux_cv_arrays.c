@@ -72,7 +72,6 @@ int cvmat_typecode(index_t *ind, int nchannels) {
 DX(xcvmat_typecode) {
 
   ARG_NUMBER(2);
-  ALL_ARGS_EVAL;
 
   return NEW_NUMBER(cvmat_typecode(AINDEX(1), AINTEGER(2)));
 }
