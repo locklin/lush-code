@@ -809,7 +809,9 @@ DX(xidx_broadcast2)
    ARG_NUMBER(2);
    index_t *ba = NULL;
    index_t *bb = NULL;
-   index_broadcast2(AINDEX(1), AINDEX(2), &ba, &bb);
+   index_t *a = (NUMBERP(APOINTER(1))) ? make_array(ST_DOUBLE, SHAPE0D, APOINTER(1)) : AINDEX(1);
+   index_t *b = (NUMBERP(APOINTER(2))) ? make_array(ST_DOUBLE, SHAPE0D, APOINTER(2)) : AINDEX(2);
+   index_broadcast2(a, b, &ba, &bb);
    return bb->backptr;
 }
 
