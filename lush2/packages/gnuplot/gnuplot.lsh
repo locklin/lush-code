@@ -121,7 +121,7 @@
 
 )
 	      
-(defmethod Gnuplot -read-til-next-prompt args
+(defmethod Gnuplot read-til-next-prompt ()
   (let ((txt ()) (cur ()))
     (reading fd-from (setq txt (read-string "~>:")))
     (reading fd-from (setq cur (read-string 2)))
@@ -135,33 +135,28 @@
               ;; send carriage-return and remove prompt text
               (writing fd-to (printf "\n"))
               (concat (prefix txt -21) 
-                      (==> this -read-til-next-prompt)))
+                      (==> this read-til-next-prompt)))
              
              ((= (suffix txt 10) "Help topic")
               ;; send carriage-return and remove prompt text
               (writing fd-to (printf "\n"))
               (concat (prefix txt -10) 
-                      (==> this -read-til-next-prompt)))
+                      (==> this read-til-next-prompt)))
              
              ((regex-match ".+Subtopic of (.+)$" txt)
               ;; send carriage-return and remove prompt text
               (writing fd-to (printf "\n"))
               (concat (car (regex-extract "(.+)\nSubtopic of (.+)$" txt))
-                      (==> this -read-til-next-prompt)) )
+                      (==> this read-til-next-prompt)) )
              (t 
-              (concat txt cur (==> this -read-til-next-prompt)) )))
+              (concat txt cur (==> this read-til-next-prompt)) )))
       
       (">" (let ((-txt (remove-prompt txt)))
              (if -txt
                  -txt
-               (concat txt cur (==> this -read-til-next-prompt)) )))
+               (concat txt cur (==> this read-til-next-prompt)) )))
       
       (t   (error "Don't know how I got here:" (concat txt cur)) ))) )
-
-(defmethod Gnuplot read-til-next-prompt args
-  (if (socketselect fd-from 100)
-      (apply send this ''-read-til-next-prompt args) 
-    ()))
 
 (defmethod Gnuplot print-array (m fd-log)
   (let* ((elt     (idx-element-type m))
@@ -268,20 +263,20 @@
 	(response ()))
     (cond
      ((null arg)
-      (when (socketselect fd-from 0)
-        (setq response (==> this -read-til-next-prompt)) ))
-
+      (when (socketselect fd-from 100)
+        (setq response (==> this read-til-next-prompt)) ))
+     
      ((stringp arg)
       (when logfile
 	(writing (open-append logfile) (printf "%s\n" arg)) )
       (writing fd-to 
 	(printf "%s\n" arg) (flush))
-      (when (not (or (index "exit" arg) (index "quit" arg)))
-	(setq response (==> this read-til-next-prompt))
+      (when (not (or (index "binary" arg) (index "exit" arg) (index "quit" arg)))
+        (setq response (==> this read-til-next-prompt))
         (when echo-on
           (setq response (suffix response 
-                                (- (min (1+ (length arg))
-                                        (length response)) ))) )))
+                                 (- (min (1+ (length arg))
+                                         (length response)) ))) )))
      ((indexp arg)
       (let ((fd-log (if logfile (open-append logfile) ())))
 	(writing fd-to
@@ -295,7 +290,8 @@
         (writing fd-to
           (printf "\n") (flush) )
         (while (null (socketselect fd-from 0)) ()) ; wait for gnuplot to respond
-        (setq response (==> this -read-til-next-prompt)) ))
+        (==> this read-til-next-prompt)
+        (setq response (==> this read-til-next-prompt)) ))
 
      (t
       (error "not a valid argument" arg) ))
