@@ -1,6 +1,7 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
+ *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
  *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
@@ -8,9 +9,9 @@
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ *  it under the terms of the Lesser GNU General Public License as 
+ *  published by the Free Software Foundation; either version 2 of the
+ *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -22,10 +23,6 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
  * 
  ***********************************************************************/
-
-/***********************************************************************
- * $Id: dh.c,v 1.20 2005/01/17 18:23:25 leonb Exp $
- **********************************************************************/
 
 #include "header.h"
 #include "dh.h"
