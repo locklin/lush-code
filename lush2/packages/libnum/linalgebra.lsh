@@ -214,19 +214,19 @@
 ;; <A x = b> in the least-square sense using the singular 
 ;; value decomposition. 
 (dmd solve-sv (a b)
-  `(let ((aa (copy-array ,a)) (x (double-array (idx-dim ,b 0))))
-     (when (<> 0 (solve-sv-inplace aa ,b x))
-       (error "gsl error"))
-     x))
+  `(let ((x (double-array (shape ,a 1))))
+     (solve-sv-inplace (copy-array ,a) ,b x)
+     x)
+  )
 
 #? (solve-hh <a> <b>)
 ;; This function solves the system A x = b using the
 ;; Householder transformations. The solution is returned.
 (dmd solve-hh (a b)
   `(let ((aa (copy-array ,a)) (x (copy-array ,b)))
-     (when (<> 0 (solve-hh-inplace aa x))
-       (error "gsl error"))
-     x))
+     (solve-hh-inplace aa x)
+     x)
+  )
 
 #? (solve-lu <a> <b>)
 ;; This function solves the system A x = b using the
@@ -512,14 +512,14 @@
 ;; of <a> and <L'> in the upper triangle.
 (de cholesky-decomp-inplace (a)
   ((-idx2- (-double-)) a)
-  (let ((ret 0) (n (idx-dim a 1)))
-    ((-int-) ret n)
-    (when (<> (idx-dim a 0) n)
-      (error "matrix is not square"))
-    #{{ gsl_matrix ga;
-        IDX2GSL_MATRIX($a,ga,double);
-        $ret = gsl_linalg_cholesky_decomp(&ga);
-    }#} ret))
+  (when (not (mat-squarep a))
+    (error "matrix is not square") )
+  #{
+  gsl_matrix ga;
+  IDX2GSL_MATRIX($a,ga,double);
+  #}
+  (with-check-gsl-error #{ gsl_linalg_cholesky_decomp(&ga) #})
+  )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #? ** solution of linear systems.
@@ -532,10 +532,7 @@
 ;; is written in <x>. Matrix <a> is destroyed in the process. Only non-zero
 ;; singular values are used in computing the solution. The parts of
 ;; the solution corresponding to singular values of zero are
-;; ignored. Matrix <a> must have more columns than rows
-;; (the over-determined least-square solution case is not implemented 
-;; by the current version of GSL).
-;; The error code of the GSL function <gsl_linalg_SV_solve> is returned.
+;; ignored. Matrix <a> must have at least as many columns as rows.
 (de solve-sv-inplace (a b x)
   ((-idx2- (-double-)) a)
   ((-idx1- (-double-)) b)
@@ -546,26 +543,28 @@
       (error "must have M>=N for SVD of MxN matrix"))
     (when (<> n0 (idx-dim b 0))
       (error "A and b have incompatible sizes"))
-    (let* ((v (double-array n0 n1))
+    (let* ((v (double-array n1 n1))
 	   (s (double-array n1))
-	   (w (double-array n1))
-	   (ret 0))
-      ((-int-) ret)
-      #{{ gsl_matrix ga;
-          gsl_matrix gv;
-          gsl_vector gb;
-          gsl_vector gs;
-          gsl_vector gw;
-          gsl_vector gx;
-          IDX2GSL_MATRIX($a,ga,double);
-          IDX2GSL_MATRIX($v,gv,double);
-          IDX2GSL_VECTOR($b,gb,double);
-          IDX2GSL_VECTOR($s,gs,double);
-          IDX2GSL_VECTOR($w,gw,double);
-          IDX2GSL_VECTOR($x,gx,double);
-          gsl_linalg_SV_decomp(&ga,&gv,&gs,&gw);
-          $ret = gsl_linalg_SV_solve(&ga,&gv,&gs,&gb,&gx);
-      }#} ret)))
+	   (w (double-array n1)) )
+      #{
+      gsl_matrix ga;
+      gsl_matrix gv;
+      gsl_vector gb;
+      gsl_vector gs;
+      gsl_vector gw;
+      gsl_vector gx;
+      IDX2GSL_MATRIX($a,ga,double);
+      IDX2GSL_MATRIX($v,gv,double);
+      IDX2GSL_VECTOR($b,gb,double);
+      IDX2GSL_VECTOR($s,gs,double);
+      IDX2GSL_VECTOR($w,gw,double);
+      IDX2GSL_VECTOR($x,gx,double);
+      #}
+      (with-check-gsl-error 
+       #{ gsl_linalg_SV_decomp(&ga,&gv,&gs,&gw) ||
+          gsl_linalg_SV_solve(&ga,&gv,&gs,&gb,&gx) 
+       #}) )
+    ()))
 
 #? (solve-hh-inplace <a> <b>)
 ;; This function solves the system A x = b in-place using Householder
@@ -584,6 +583,7 @@
 ;; = [-4.00  4.00 ]
 ;; </code>}
 (de solve-hh-inplace (a b)
+  ;; XXX: Need A be square?
   ((-idx2- (-double-)) a)
   ((-idx1- (-double-)) b)
   #{
