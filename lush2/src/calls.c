@@ -555,15 +555,13 @@ DY(yrepeat)
    }
    int i = (int)Number(q);
    at *res = NIL;
-   MM_ROOT(res);
    MM_ENTER;
    while (i--) {
       res = progn(Cdr(ARG_LIST));
       if (break_attempt) break;
       MM_EXIT;
+      MM_ANCHOR(res);
    }
-   MM_ANCHOR(res);
-   MM_UNROOT(res);
    CHECK_MACHINE("on");
    return res;
 }
