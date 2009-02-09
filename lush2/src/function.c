@@ -84,7 +84,7 @@ void mark_lfunction(lfunction_t *f)
 static mt_t mt_lfunction = mt_undefined;
 
 static at *at_optional, *at_rest, *at_define_hook;
-static void parse_optional_stuff(at *formal_list, at *real_list);
+static void parse_optional_stuff(at *, at *, at *);
 
 
 /* static void */
@@ -112,13 +112,13 @@ static void pop_args(at *formal_list) {
    }
 }
 
-static void push_args(at *formal_list, at *real_list) {
+static void _push_args(at *formal_list, at *real_list, at *top_formal_list) {
 
    /* fast non tail-recursive loop for parsing the trees */
    while (CONSP(formal_list) && CONSP(real_list) && 
           Car(formal_list)!=at_rest &&
           Car(formal_list)!=at_optional) {
-      push_args(Car(formal_list), Car(real_list));
+      _push_args(Car(formal_list), Car(real_list), top_formal_list);
       real_list = Cdr(real_list);
       formal_list = Cdr(formal_list);
    };
@@ -128,19 +128,23 @@ static void push_args(at *formal_list, at *real_list) {
       SYMBOL_PUSH(formal_list, real_list);
    
    } else if (CONSP(formal_list)) {
-      parse_optional_stuff(formal_list, real_list);
+      parse_optional_stuff(formal_list, real_list, top_formal_list);
 
    } else if (formal_list && !real_list) {
-      error(NIL, "missing arguments", formal_list);
+      error(NIL, "missing arguments. expected", top_formal_list);
 
    } else if (real_list && !formal_list)
-      error(NIL, "too many arguments", real_list);
+      error(NIL, "too many arguments. expected", top_formal_list);
    
    return;
 }
 
+static void push_args(at *formal_list, at *real_list) {
+   _push_args(formal_list, real_list, formal_list);
+}
 
-static void  parse_optional_stuff(at *formal_list, at *real_list) {
+
+static void  parse_optional_stuff(at *formal_list, at *real_list, at *top_formal_list) {
 
    if (CONSP(formal_list) && Car(formal_list) == at_optional) {
       push_args(at_optional, NIL);
@@ -180,11 +184,11 @@ static void  parse_optional_stuff(at *formal_list, at *real_list) {
       } else
          error(NIL, "error in &rest syntax", formal_list);
    }
-   
    if (formal_list)
-      error(NIL, "error in &optional syntax", formal_list);		
+      error(NIL, "syntax error. formal arguments", top_formal_list);		
+
    if (real_list)
-      error(NIL, "too many arguments", real_list);
+      error(NIL, "syntax error. formal arguments", top_formal_list);
 }
 
 
