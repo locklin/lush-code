@@ -1,7 +1,30 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the Lesser GNU General Public License as 
+;;; published by the Free Software Foundation; either version 2 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "gnuplot/graph")
-
-(in-namespace gnuplot-other-
 
 (defun process-object-args (type extra)
   (let ((fs-d "") (fs-bc "") (args ()))
@@ -28,7 +51,7 @@
                (error 'fc "unkown color" arg) )
              (setq args (cons (sprintf "fc rgb \"%l\"" arg) args)) )
                       
-            (t (error "invalid object modifier" (list f arg))) ))))
+            (t (error (sprintf "invalid %l modifier" type) (list f arg))) ))))
     (setq args (str-join " " args))
     (when (or (<> fs-d "") (<> fs-bc ""))
       (setq args (concat args (sprintf " fs %s %s" fs-d fs-bc))) )
@@ -54,58 +77,81 @@
                       (t (error (sprintf "invalid %l modifier" type) (list f arg))) ))))))
     (str-join " " args) ))
 
+
 #? * Objects
 ;; You may place objects in a plot at specified positions relative to
 ;; the <x1y1> axes.
 
-#? (add-arc <[x y r a0 a1]> [...])
-;; Add arc from angle <a0> to <a1> with radius <r> to plot at position <x,y>.
+(defmacro -check-list-of-numbers (l n)
+  (let ((i (gensym)))
+    `(let ((l ,l) (n ,n))
+       (when (<> (length l) n)
+         (error "syntax error (wrong number of arguments)" l))
+       (dolist (,i ',l)
+         (when (not (numberp ,i))
+           (error "not a number" ,i) )))
+    ))
+
+(in-namespace gnuplot-other-
+
+#? (add-arc <x> <y>  <r> <a0> <a1>  [...])
+;; Add arc with radius <r> from angle <a0> to <a1> at position <x>,<y>.
 ;; Return the object id.
-(defun add-arc (data . extra)
+(defun add-arc (x y  r a0 a1 . extra)
   (chk-graph)
-  (when (not (and (vectorp data) (= (length data) 5)))
-    (error "invalid data for this object" data) )
   (setq extra (process-object-args 'arc extra))
-  (==> graph add-object (concat "circle at %f,%f size %f arc [%f:%f] " extra) data) )
-
-#? (add-arrow <[x0 y0 x1 y1]> [...])
-;; Add an arrow prointing from <x0,y0> to <x1,y1> to plot and return the
-;; object id.
+  (==> graph add-object (concat "circle at %f,%f size %f arc [%f:%f] " extra)
+       (vector r a0 a1 x y) ))
+  
+#? (add-arrow <x> <y>  <a> <b> [...])
+;; Add arrow pointing in direction <a>,<b> at position <x>,<y> and
+;; return the object id.
 ;;
-;; Note: Arrows have no fill and accept only the modifiers <lc> <lw> and <lt>
-;; {<see> Plot-line Modifiers}
-(defun add-arrow (data . extra)
+;; Note: Arrows have no fill and accept only the modifiers <lc> <lw>
+;; and <lt>.
+(defun add-arrow (x y  a b . extra)
   (chk-graph)
-  (when (not (and (vectorp data) (= (length data) 4)))
-    (error "invalid data for this object" data) )
   (setq extra (process-arrow-args 'arrow extra))
-  (==> graph add-object (concat "arrow from %f,%f to %f,%f " extra) data) )
+  (==> graph add-object (concat "arrow from %f,%f to %f,%f " extra)
+       (vector x y (+ a x) (+ b y)) ))
 
-#? (add-circle <[x y r]> [...])
-;; Add circle with radius <r> to plot at position <x,y> and return the
-;; object id.
-(defun add-circle (data . extra)
+#? (add-arrow* <x> <y>  <x1> <y1> [...])
+;; Add arrow pointing from <x>,<y> to <x1>,<y1> and return
+;; the object id.
+;;
+;; Note: Arrows have no fill and accept only the modifiers <lc> <lw>
+;; and <lt>.
+(defun add-arrow* (x y x1 y1 . extra)
   (chk-graph)
-  (when (not (and (vectorp data) (= (length data) 3)))
-    (error "invalid data for this object" data) )
+  (setq extra (process-arrow-args 'arrow* extra))
+  (==> graph add-object (concat "arrow from %f,%f to %f,%f " extra)
+       (vector x y x1 y1)) )
+
+#? (add-circle <x> <y>  <r> [...])
+;; Add circle with radius <r> to plot at position <x>,<y> and return the
+;; object id.
+(defun add-circle (x y r . extra)
+  (chk-graph)
   (setq extra (process-object-args 'circle extra))
-  (==> graph add-object (concat "circle at %f,%f size %f " extra) data) )
+  (==> graph add-object (concat "circle at %f,%f size %f " extra)
+       (vector x y r) ))
 
 (defun add-ellipse (data . extra)
   (error "not implemented") )
 
-#? (add-label <s> <[x y]> [...])
+#? (add-label <x> <y>  <s> [...])
 ;; Add label with text <s> at position <x,y> and return the object id.
-(defun add-label (s pos . extra)
+(defun add-label (x y s . extra)
   (chk-graph)
   (when (not (stringp s))
     (error "not a string" s) )
-  (when (not (and (vectorp pos) (= (length pos) 2)))
-    (error "not a position vector" pos) )
+  (when (not (numberp x))
+    (error "not a number" x) )
+  (when (not (numberp y))
+    (error "not a number" y) )
   (setq extra (process-object-args 'label extra))
-  (let ((data [a 0 1 2]))
-    (data 0 s) (data 1 (pos 0)) (data 2 (pos 1))
-    (==> graph add-object (concat "label \"%s\" enhanced at %f,%f " extra) data) ))
+  (==> graph add-object (concat "label \"%s\" enhanced at %f,%f " extra)
+       (box s x y)) )
   
 (defun add-polygon (data . extra)
   (error "not implemented") )
@@ -113,53 +159,53 @@
 (defun add-rectangle (data . extra)
   (error "not implemented") )
 
-#? (add-hline <x> [...])
+#? (add-hline <y> [...])
 ;; {<see> add-vline, add-h2line}
 ;; Add a horizontal line to plot at position <y> on axis y1 and return
 ;; the object id.
-(defun add-hline (data . extra)
+(defun add-hline (y . extra)
   (chk-graph)
-  (when (not (numberp data))
-    (error "invalid data for this object" data) )
+  (when (not (numberp y))
+    (error "not a number" y) )
   (setq extra (process-arrow-args 'hline extra))
-  (setq data ($> (@ [] data) 2))
-  (==> graph add-object (concat "arrow from graph 0, first %f to graph 1, first %f nohead " extra) data) )
+  (==> graph add-object (concat "arrow from graph 0, first %f to graph 1, first %f nohead " extra)
+       (vector y y) ))
 
-#? (add-h2line <x> [...])
+#? (add-h2line <y> [...])
 ;; {<see> add-hline}
 ;; Add a horizontal line to plot at position <y> on axis y2 and return
 ;; the object id.
-(defun add-h2line (data . extra)
+(defun add-h2line (y . extra)
   (chk-graph)
-  (when (not (numberp data))
-    (error "invalid data for this object" data) )
+  (when (not (numberp y))
+    (error "not a number" y) )
   (setq extra (process-arrow-args 'h2line extra))
-  (setq data ($> (@ [] data) 2))
-  (==> graph add-object (concat "arrow from graph 0, second %f to graph 1, second %f nohead " extra) data) )
+  (==> graph add-object (concat "arrow from graph 0, second %f to graph 1, second %f nohead " extra)
+       (vector y y) ))
 
 #? (add-vline <x> [...])
 ;; {<see> add-hline, add-v2line}
 ;; Add a vertical line to plot at position <x> on axis x1 and return
 ;; the object id.
-(defun add-vline (data . extra)
+(defun add-vline (x . extra)
   (chk-graph)
-  (when (not (numberp data))
-    (error "invalid data for this object" data) )
+  (when (not (numberp x))
+    (error "not a number" x) )
   (setq extra (process-arrow-args 'vline extra))
-  (setq data ($> (@ [] data) 2))
-  (==> graph add-object (concat "arrow from %f, graph 0 to %f, graph 1 nohead " extra) data) )
+  (==> graph add-object (concat "arrow from %f, graph 0 to %f, graph 1 nohead " extra)
+       (vector x x) ))
 
 #? (add-v2line <x> [...])
 ;; {<see> add-vline}
 ;; Add a vertical line to plot at position <x> on axis x2 and return
 ;; the object id.
-(defun add-v2line (data . extra)
+(defun add-v2line (x . extra)
   (chk-graph)
-  (when (not (numberp data))
-    (error "invalid data for this object" data) )
+  (when (not (numberp x))
+    (error "not a number" x) )
   (setq extra (process-arrow-args 'v2line extra))
-  (setq data ($> (@ [] data) 2))
-  (==> graph add-object (concat "arrow from second %f, graph 0 to second %f, graph 1 nohead " extra) data) )
+  (==> graph add-object (concat "arrow from second %f, graph 0 to second %f, graph 1 nohead " extra)
+       (vector x x) ))
 
 
 #? * Object Modifiers
