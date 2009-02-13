@@ -790,6 +790,8 @@ LUSHAPI real getnanD (void);
 LUSHAPI int  isnanD(real x);
 LUSHAPI real infinityD (void);
 LUSHAPI int  isinfD(real x);
+LUSHAPI double epsD(double x);
+LUSHAPI float epsF(float x);
 
 
 /* STORAGE.H --------------------------------------------------- */

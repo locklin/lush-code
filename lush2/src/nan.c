@@ -174,9 +174,15 @@ int isnanD(real x)
 
 /* this requires C99 support */
 
-double eps(double x) {
+double epsD(double x) {
    x = copysign(x, 1.0);
    double y = nextafter(x, INFINITY);
+   return y-x;
+}
+
+float epsF(float x) {
+   x = copysignf(x, 1.0);
+   float y = nextafterf(x, INFINITY);
    return y-x;
 }
 
@@ -220,13 +226,13 @@ DX(xnot_nan)
    return isnanD(AREAL(1)) ? NIL : APOINTER(1);
 }
 
-DX(xeps) 
+DX(xeps)
 {
    ARG_NUMBER(1);
    double x = AREAL(1);
    if (isinfD(x) || isnanD(x))
       RAISEF("eps not defined for number", NEW_NUMBER(x));
-   return NEW_NUMBER(eps(x));
+   return NEW_NUMBER(epsD(x));
 }
 
 /*================
