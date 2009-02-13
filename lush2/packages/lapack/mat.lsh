@@ -1,5 +1,30 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the Lesser GNU General Public License as 
+;;; published by the Free Software Foundation; either version 2 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(libload "blas/mat")
+(libload "blas/mat")  ;; below are help texts for functions imported from blas/mat
 (libload "lapack")
 
 ;; make explicit matrices L and U from result of lapack-getrf
@@ -54,8 +79,40 @@
     (array-copy arow brow) )
   B)
 
+(defmacro -.*-result (m1 m2)
+  `(let ((m1 ,m1) (m2 ,m2))
+     ;(chk-idx-rankeq2 m2)
+     (if (= (idx-shape m1 1) (idx-shape m2 0))
+	 (clone-array 
+          (idx-expand! (idx-expand! (idx-trim* m1 1 1) 0 (idx-shape m1 0))
+                       1 (idx-shape m2 1)))
+       (ifcompiled
+           (error "matrix-multiply of incompatible matrices")
+         (error "matrix-multiply of incompatible matrices" (list ,m1 ,m2)) )))
+  )
 
 (in-namespace mat-
+
+#? (mat-condnum <A>)
+;; Condition number of <A> (ratio of largest to smallest singular value).
+(defun condnum (A)
+  (declare (-idx2- (-double-)) A)
+  (let* ((S (lapack-gesdd/n! ##A))
+         (last (- (length S) 1)) )
+    (declare (-int-) last)
+    (if (<= (S last) 0)
+        INF
+      (/ (S 0) (S last)) )))
+
+;; todo: use blas-gemm here
+
+#? (mat-.* <m1> <m2> ...)
+;; Matrix-multiply matrices <m1>, <m2>, ... .
+(defmacro .* (m1 m2 . ms)
+  (if (null ms)
+      `(let ((m1 ,m1) (m2 ,m2))
+         (idx-m2timesm2 m1 m2 (-.*-result m1 m2)))
+    `(.* (.* ,m1 ,m2) ,(car ms) ,@(cdr ms)) ))
 
 #? (mat-perm <p>)
 ;; {<see> mat-permute}
@@ -102,6 +159,33 @@
   `(array-take ,A 0 ,p) )
 
 
+#? (mat-power <A> <n>)
+;; <n>th power of matrix <A>.
+;;
+;; <A> is square and <n> a non-negative integer.
+
+
+#? (mat-singvals <A>)
+;; {<see> mat-svd}
+;; Return singular values of <A>.
+(defmacro singvals (A)
+  `(lapack-gesdd/n! (copy-array ,A))
+  )
+
+#? (mat-solve! <A> <b>)
+;; Solve <A>.<x> = <b> for <x> and write to <b>.
+;;
+;; When <A> is square an exact solution is sought,
+;; otherwise a solution in the least squares sense.
+;;
+;; Note that <mat-solve!> modifies <A> as well.
+
+
+#? (mat-solve <A> <b>)
+;; {<see> mat-solve! }
+;; Solve <A>.<x> = <b> for <x> and return <x>.
+
+
 ;; XXX: is there a more efficient test for pos. definiteness?
 
 #? (mat-posdef <A>)
@@ -116,9 +200,40 @@
     (declare (-int-) n)
     (-cp-ut A B) ; copy upper triangle
     (lapack-potrf! B) )) 
+
+
+#? (mat-rank/tol <A> <tol>)
+;; Number of singular values of <A> that are greater than <tol>.
+(defun rank/tol (A tol)
+  (declare (-idx2- (-double-)) A)
+  (declare (-double-) tol)
+  (when (emptyp A)
+    (error "rank of empty matrix not defined") )
+  (let ((S (lapack-gesdd/n! ##A))
+        (r 0) )
+    (declare (-int-) r)
+    (when (< tol 0)
+      (setq tol (* (max ($ A 0) ($ A 1)) (eps (S 0)))) )
+    (for* (i 0 (length S))
+      (declare (-int-) i)
+      (when (> (S i) tol)
+        (incr r) ))
+    r))
+
+#? (mat-rank <A>)
+;; Rank of matrix <A>.
+(defmacro rank (A)
+  `(rank/tol ,A -1)
+  )
+
+#? (mat-vander <v> [<n>])
+;; Vandermonde matrix of vector <v>.
+;;
+;; The resulting matrix is <(length v)>x<n>, default for
+;; <n> is <(length v)>.
   
 
-#? ** Matrix factorizations
+#? * Matrix factorizations
 
 #? (mat-cholesky <A>)
 ;; {<see> mat-posdef, lapack-potrf!}
@@ -155,23 +270,43 @@
         (q i qpi) ))
     (-mk-lu A q) ))
 
-;; current definitions are actually in blas/mat
 
 #? (mat-qr! <A>)
 ;; Compute QR factorization of <A>, owerwrite <A> with <R>
 ;; and return <Q>.
 
+
 #? (mat-qr <A>)
 ;; Compute QR factorization of <A> and return <(list Q R)>.
+
+
+#? (mat-svd <A>)
+;; Compute the full SVD of <A> and return <(list U S Vt)>,
+;; where matrix <U> contains the left singular values, vector
+;; <S> contains the singular values, and <Vt> is the transpose
+;; of the matrix containing the right singular values.
+;; In other words, <(mat-.* U S Vt)> evaluates to matrix <A>.
+(defun svd (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((m ($ A 0)) (n ($ A 1)))
+    (declare (-int-) m n)
+    (let ((U (double-array m m))
+          (Vt (double-array n n)) )
+      (list U (lapack-gesdd/a! ##A U Vt) Vt) ))) 
+          
+
 
 ) ; in-namespace mat-
 
 (dhc-make "lapack_mat"
           -mk-lu
           -cp-ut
+          mat-condnum
+          mat-rank/tol
           mat-perm
           mat-permute!
           mat-posdef
           mat-cholesky
           mat-lu
+          mat-svd
           )

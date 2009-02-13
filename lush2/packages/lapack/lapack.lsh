@@ -1,15 +1,32 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the Lesser GNU General Public License as 
+;;; published by the Free Software Foundation; either version 2 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (libload "lapack-config")
 
-
-
 (in-namespace lapack-
-
-#? *** LAPACK (Namespace lapack-)
-;; Lush interface to LAPACK routines. This interface is quite close
-;; to the Fortran LAPACK API. See definitions in namespace
-;; <mat-> for more convenient functions implementing much of the 
-;; same functionality.
 
 #? (lapack-getrf <A> <p>)
 ;; {<see> mat-lu}
@@ -36,6 +53,7 @@
       (idx-trim! p 0 0 lp)
       (mat-transpose A) )))
 
+
 #? (lapack-potrf! <A>)
 ;; {<see> mat-cholesky}
 ;; Update <A> with the Cholesky factorization of <A> and return
@@ -55,10 +73,101 @@
     #{ dpotrf_("L",$a->dim,$(idx-base A),$a->mod,&$info); #}
     (= info 0) ))
 
+
+#? (lapack-gesdd/a! <A> <U> <VT>)
+;; Do full, destructive SVD (<A> will be destroyed). Update matrices <U> 
+;; and <VT> with the left and right singular vectors (VT = transpose of V)
+;; and return singular values of <A>.
+(defun gesdd/a! (A U VT)
+  (declare (-idx2- (-double-)) A U VT)
+  (cheader "extern void dgesdd_();")
+  (let* ((info 0)
+         (m ($ A 0))
+         (n ($ A 1))
+         (S (double-array (min m n)))
+         (work [-1 0 0])
+         (lwork -1)
+         (iwork (int-array (* 8 (min m n)))) )
+    (declare (-int-) info m n lwork)
+    ;; argument checking
+    (when (not (contiguousp A))
+      (error "A not contiguous") )
+    (when (not (contiguousp U))
+      (error "U not contiguous") )
+    (when (not (mat-squarep U))
+      (error "U not square") )
+    (if (< ($ U 0) m)
+        (error "U too small")
+      (idx-trim! U 0 0 m)
+      (idx-trim! U 1 0 m) )
+    (when (not (contiguousp VT))
+      (error "VT not contiguous") )
+    (when (not (mat-squarep VT))
+      (error "VT not square") )
+    (if (< ($ VT 0) n)
+        (error "VT too small")
+      (idx-trim! VT 0 0 n)
+      (idx-trim! VT 1 0 n) )
+    
+    ;; since lapack uses column major order, we actually compute A^T = V.S.U^T
+    ;; first call: determine optimal workspace size
+    #{ dgesdd_("A", &$n, &$m, $(idx-base A), $a->mod, $(idx-base S), $(idx-base VT), $vt->mod, $(idx-base U), $u->mod, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
+
+    (if (= info 0)
+        (setq lwork (work 0))
+      (errorf "something went wrong, info = %d" info) )
+    (assert (> lwork 0))
+
+    ;; second call: do the svd
+    (let ((work (double-array lwork)))
+      #{ dgesdd_("A", &$n, &$m, $(idx-base A), $a->mod, $(idx-base S), $(idx-base VT), $vt->mod, $(idx-base U), $u->mod, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    S))
+
+
+#? (lapack-gesdd/n! <A>)
+;; Return singular values of <A> (<A> will be destroyed).
+(defun gesdd/n! (A)
+  (declare (-idx2- (-double-)) A)
+  (cheader "extern void dgesdd_();")
+  (let* ((info 0)
+         (m ($ A 0))
+         (n ($ A 1))
+         (S (double-array (min m n)))
+         (work [-1 0 0])
+         (lwork -1)
+         (iwork (int-array (* 8 (min m n))))
+         (dummy 1) )
+    (declare (-int-) info m n lwork dummy)
+    ;; argument checking
+    (when (not (contiguousp A))
+      (error "A not contiguous") )
+
+    ;; since lapack uses column major order, we actually compute A^T = V.S.U^T
+    ;; first call: determine optimal workspace size
+    #{ dgesdd_("N", &$n, &$m, $(idx-base A), $a->mod, $(idx-base S), NULL, &$dummy, NULL, &$dummy, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
+
+    (if (= info 0)
+        (setq lwork (work 0))
+      (errorf "something went wrong, info = %d" info) )
+    (assert (> lwork 0))
+
+    ;; second call: do the svd
+    (let ((work (double-array lwork)))
+      #{ dgesdd_("N", &$n, &$m, $(idx-base A), $a->mod, $(idx-base S), NULL, &$dummy, NULL, &$dummy, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    S))
+
+
+
 ) ; in-namespace lapack-
 
 (dhc-make-with-libs "lapack_double"
                     (list *liblapack*)
                     lapack-getrf
                     lapack-potrf!
+                    lapack-gesdd/a!
+                    lapack-gesdd/n!
                     )
