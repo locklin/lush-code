@@ -93,6 +93,39 @@
 
 (in-namespace mat-
 
+#? (mat-band <A> <i>)
+;; Return vector accessing <i>th band of matrix <A>.
+;;
+;; Band 0 is the diagonal of <A>; positive bands are
+;; above the diagonal, negative bands below the diagonal.
+(defun band (A i)
+  (declare (-idx2- (-double-)) A)
+  (declare (-int-) i)
+  (when (idx-emptyp A)
+    (error "matrix is empty") )
+  (let* ((m ($ A 0)) (n ($ A 1))
+         (s0 (idx-mod A 0)) (s1 (idx-mod A 1))
+         (offs (idx-offset A))
+         (nb (min m n))
+         (sb (+ s0 s1)) )
+    (declare (-int-) m n s0 s1 offs sb)
+    (when (< i 0)
+      (when (< (+ m i) 1)
+        (error "invalid band argument") )
+      (incr offs (* (- i) s0))
+      (setq nb (min nb (+ m i))) )
+    (when (> i 0)
+      (when (< (- n i) 1)
+        (error "invalid band argument") )
+      (incr offs (* i s1))
+      (setq nb (min nb (- n i))) )
+    (let ((b (new-index (idx-storage A) (list nb))))
+      (idx-set-offset b offs)
+      (idx-set-dim b 0 nb)
+      (idx-set-mod b 0 sb)
+      b)))
+
+
 #? (mat-condnum <A>)
 ;; Condition number of <A> (ratio of largest to smallest singular value).
 (defun condnum (A)
@@ -106,13 +139,25 @@
 
 ;; todo: use blas-gemm here
 
-#? (mat-.* <m1> <m2> ...)
-;; Matrix-multiply matrices <m1>, <m2>, ... .
+#? (mat-.* <A> <B> ...)
+;; Matrix-multiply matrices <A>, <B>, ... .
 (defmacro .* (m1 m2 . ms)
   (if (null ms)
       `(let ((m1 ,m1) (m2 ,m2))
          (idx-m2timesm2 m1 m2 (-.*-result m1 m2)))
     `(.* (.* ,m1 ,m2) ,(car ms) ,@(cdr ms)) ))
+
+
+#? (mat-eigvals <A>)
+;; {<see> mat-singvals, mat-spectral}
+;; Compute eigenvalues of symmetric matrix <A>.
+;;
+;; Note: <eigvals> does not check that <A> is symmetric
+;; and reads from the upper triangular part only.
+(defmacro eigvals (A)
+  `(lapack-gsyevd/n! (copy-array ,A))
+  )
+
 
 #? (mat-perm <p>)
 ;; {<see> mat-permute}
@@ -127,6 +172,7 @@
         (error "not a permutation vector") )
       (P i (v i) 1) )
     P))
+
 
 #? (mat-permute! <A> <p>)
 ;; {<see> mat-perm, mat-permute}
@@ -166,7 +212,7 @@
 
 
 #? (mat-singvals <A>)
-;; {<see> mat-svd}
+;; {<see> mat-svd, mat-eigvals}
 ;; Return singular values of <A>.
 (defmacro singvals (A)
   `(lapack-gesdd/n! (copy-array ,A))
@@ -250,9 +296,10 @@
       (error "matrix not positive definite") )
     R))
 
+
 #? (mat-lu <A>)
 ;; {<see> lapack-getrf, mat-permute}
-;; LU factorization of <A>.
+;; LU factorization of <A>. Return as <(list L U p)>.
 ;; 
 ;; The result consists of the factors <L> and <U>, and a permutation
 ;; vector <p>, such that <(mat-permute A p)> = <(mat-.* L U)>.
@@ -272,20 +319,50 @@
 
 
 #? (mat-qr! <A>)
-;; Compute QR factorization of <A>, owerwrite <A> with <R>
-;; and return <Q>.
+;; QR factorization of <A>. Overwrite <A> with <R> and return <Q>.
 
 
 #? (mat-qr <A>)
-;; Compute QR factorization of <A> and return <(list Q R)>.
+;; QR factorization of <A>, return as <(list Q R)>.
 
+
+#? (mat-spectral! <A>)
+;; {<see> mat-eigvals}
+;; Spectral factorization of symmetric matrix <A>. Overwrite <A> with
+;; eigenvectors and return eigenvalues.
+(defmacro spectral! (A)
+  `(lapack-gsyevd/v! ,a)
+  )
+
+#? (mat-spectral <A>)
+;; {<see> mat-eigvals, mat-spectral!}
+;; Spectral factorization of symmetric matrix <A>. Return as 
+;; <(list V ev)>, with <V> the matrix of eigenvectors.
+;; 
+;; Example how to reconstruct matrix <A> from ids spectral factorization:
+;; {<code>
+;;
+;;   (let (((V ev) (mat-spectral A))
+;;     (mat-.* V (mat-diag ev) ($t V)) )
+;; </code>}
+(defmacro spectral (A)
+  `(let ((V (copy-array ,A)))
+     (list V (lapack-gsyevd/v! V)) )
+  )
 
 #? (mat-svd <A>)
-;; Compute the full SVD of <A> and return <(list U S Vt)>,
+;; Compute the full SVD of <A> and return <(list U s Vt)>,
 ;; where matrix <U> contains the left singular values, vector
-;; <S> contains the singular values, and <Vt> is the transpose
+;; <s> contains the singular values, and <Vt> is the transpose
 ;; of the matrix containing the right singular values.
-;; In other words, <(mat-.* U S Vt)> evaluates to matrix <A>.
+;;
+;; Example how to reconstruct matrix <A> from its SVD:
+;; {<code>
+;;
+;;   (let (((U ss Vt) (mat-svd A)) (S (double-array ($ A))))
+;;     ((mat-band S 0) [] ss)
+;;     (mat-.* U S Vt) )
+;; </code>}
 (defun svd (A)
   (declare (-idx2- (-double-)) A)
   (let ((m ($ A 0)) (n ($ A 1)))
@@ -293,7 +370,7 @@
     (let ((U (double-array m m))
           (Vt (double-array n n)) )
       (list U (lapack-gesdd/a! ##A U Vt) Vt) ))) 
-          
+
 
 
 ) ; in-namespace mat-
@@ -301,6 +378,7 @@
 (dhc-make "lapack_mat"
           -mk-lu
           -cp-ut
+          mat-band
           mat-condnum
           mat-rank/tol
           mat-perm
