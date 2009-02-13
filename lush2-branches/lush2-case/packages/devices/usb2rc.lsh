@@ -1,0 +1,68 @@
+(libload "devices/serial")
+
+
+#? ** USB to Radio Control (R/C) servos and transmitter interface
+;; This class handles the control of R/C servos and PPM transmitter
+;; through the SC-8000 USB interface device from "Tom's R/C"
+;; http://www.tti-us.com/rc/
+;; This allows the control of 8 R/C servos and 4 digital outputs.
+;; The "P" version also allows the control of an R/C transmitter
+;; through the trainer port.
+;; The communication protocol is described at the following URL:
+;; http://www.tti-us.com/rc/support-prog.htm
+;; Under Linux, the device appears as a serial port, with device names
+;; like /dev/ttyUSB0. The communication is 9600 baud, No Parity, 
+;; 8 Data bits, 1 stop bit, no flow control (9600N81)
+
+(defclass tti8000 serial-port)
+
+#? (new tti8000 <port>)
+;; create a new tti8000 object on port <port>.
+;; <port> is generally of the form </dev/ttyUSB0> or
+;; </dev/ttyUSB1>, depending on which USB port the
+;; device is connected to.
+(defmethod tti8000 tti8000 (p)
+  (==> this serial-port p 9600 8 "N" 1))
+
+#? (==> <tti8000> servo-ms <servo> <ms>)
+;; Set the pulse width for servo <servo> (which must be
+;; an integer between 0 and 7) to <ms>, a double indicating
+;; the width of the pulse in milliseconds. The valid range is
+;; 0.8 to 2.2. The midpoint for most servos is 1.5ms, and the
+;; full swing is between 1.0ms and 2.0ms.
+(defmethod tti8000 servo-ms (s v)
+  ((-int-) s)
+  ((-double-) v)
+  (when (or (>= s 8) (< s 0) (> v 2.2 ) (< v 0.8))
+    (printf "servo=%d, pulse=%f\n")
+    (error "illegal values"))
+  ;; send sync bytes
+  (fd-write-byte fd 126)
+  (fd-write-byte fd 126)
+  ;; send servo mask
+  (fd-write-byte fd (bitshl 1 s))
+  ;; send digital mask
+  (fd-write-byte fd 0)
+  ;; send servo position
+  (let ((x (* v 10000)))
+    ;; send high byte
+    (fd-write-byte fd (bitshr x 8))
+    ;; send low byte
+    (fd-write-byte fd (bitand x 255)))
+  v)
+
+#? (==> <tti8000> servo <servo> <v>)
+;; Set the position for servo <servo> (which must be
+;; an integer between 0 and 7) to <v>. <v> is a number 
+;; between -1.0 and +1.0. Values between -1.2 and +1.2 are
+;; acceptable, but likely to overdrive the servo.
+(defmethod tti8000 servo (s v)
+  ((-int-) s)
+  ((-double-) v)
+  (when (or (>= s 8) (< s 0))
+    (printf "servo=%d, position=%f\n")
+    (error "illegal values"))
+  (==> this servo-ms s (min 2.2 (max 0.8 (+ 1.5 (* 0.5 v))))))
+
+
+
