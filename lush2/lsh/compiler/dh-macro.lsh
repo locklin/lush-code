@@ -1091,11 +1091,11 @@
 ;;; DHM for parsing LET and LET* ...
 ;;; ------------------------------------------------------------------------
 
-(de dhc-let-declare-var-t(dcl)
-    (when ~(and (consp dcl) (consp (cdr dcl)) (null (cddr dcl)))
-	  (dhc-error "Syntax error" dcl) )
-    (when ~(symbolp (car dcl))
-	  (dhc-error "Not a symbol" (car dcl)))
+(de dhc-let-declare-var-t (dcl)
+    (when (not (and (consp dcl) (consp (cdr dcl)) (null (cddr dcl))))
+      (dhc-error "syntax error" dcl) )
+    (when (not (symbolp (car dcl)))
+      (dhc-error "not a symbol" (car dcl)) )
     (let* ((sym (new dhc-symbol (car dcl) lex-level))
 	   (ini (cadr dcl))
 	   (node (dhc-parse-expr-t ini))
@@ -1103,7 +1103,6 @@
 			  (list (new t-node () :sym:type (car dcl) sym)
 				node)
 			  (new dhc-type 'dht-unk))))
-
       (dhc-assign-unify :sym:type :node:type)
       (setq :sym:type:u-access :node:type:u-access)
 
@@ -1118,46 +1117,44 @@
 	    (dhc-add-to-symtable new-symbol-table sym))
       treetype))
 
-(dhm-t let(source)
-       (when ~(cddr source)
-	     (dhc-error "'let syntax error"))
-       (let ((tn ())
-	     (ret ()))
-	 (dhc-push-scope-t 
-	  (setq tn (new t-node (all ((dcl (cadr source)))
-                                 (dhc-let-declare-var-t dcl))
-			(new dhc-type 'dht-unk)))
-	  (setq symbol-table new-symbol-table)
-	  (setq ret (dhc-parse-progn-t (cddr source)))
-	  (setq :ret:tn-list (cons tn :ret:tn-list))
-	  ret)))
+(dhm-t let (source)
+  (when (not (cddr source))
+    (dhc-error "'let syntax error") )
+  (let ((tn ()) (ret ()))
+    (dhc-push-scope-t 
+     (setq tn (new t-node (domapcar ((dcl (cadr source)))
+                            (dhc-let-declare-var-t dcl))
+                   (new dhc-type 'dht-unk)))
+     (setq symbol-table new-symbol-table)
+     (setq ret (dhc-parse-progn-t (cddr source)))
+     (setq :ret:tn-list (cons tn :ret:tn-list))
+     ret) ))
 
-(dhm-c let(source treetype retplace)
-  (dhc-push-scope-c 
+(dhm-c let (source treetype retplace)
+  (dhc-push-scope-c
    treetype retplace
-   (all ((decl (cadr source)) 
-         (decl-type :(cadr :treetype:tn-list):tn-list))
+   (domapcar ((decl (cadr source)) 
+              (decl-type :(cadr :treetype:tn-list):tn-list))
      (dhc-parse-expr-c (cadr decl) (cadr :decl-type:tn-list)
                        :(car :decl-type:tn-list):symbol:c-name))
    (dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace)))
 
-(dhm-t let*(source)
-  (when ~(cddr source)
-        (dhc-error "'let syntax error"))
-  (let ((tn ())
-        (ret ()))
+(dhm-t let* (source)
+  (when (not (cddr source))
+    (dhc-error "'let* syntax error") )
+  (let ((tn ()) (ret ()))
     (setq ret (dhc-push-scope-t 
-               (setq tn (new t-node 
-                             (all ((dcl (cadr source)))
-                               (prog1
-                                   (dhc-let-declare-var-t dcl)
-                                 (setq symbol-table new-symbol-table)))
+               (setq tn (new t-node (domapcar ((dcl (cadr source)))
+                                      (prog1 (dhc-let-declare-var-t dcl)
+                                        (setq symbol-table new-symbol-table) ))
                              (new dhc-type 'dht-unk)))
                (dhc-parse-progn-t (cddr source))))
     (setq :ret:tn-list (cons tn :ret:tn-list))
     ret))
 
-(dhm-c-declare let let*)
+;; XXX: do we need compiler macros for lete?
+(dhm-t-declare let lete)
+(dhm-c-declare let let* lete)
 
 
 

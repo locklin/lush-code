@@ -350,8 +350,6 @@ LUSHAPI at *eval_debug(at *q);
 LUSHAPI at *call_stack(void);
 LUSHAPI at *quote(at *p);
 LUSHAPI at *apply(at *q, at *p);
-LUSHAPI at *let(at *vardecls, at *body);
-LUSHAPI at *letS(at *vardecls, at *body);
 LUSHAPI at *progn(at *p);
 LUSHAPI at *prog1(at *p);
 LUSHAPI at *mapc(at *f, at **listv, int n);
@@ -565,6 +563,9 @@ LUSHAPI at *eval_arglist(at *p);
 LUSHAPI at *eval_arglist_dm(at *p);
 LUSHAPI at **eval_arglist_dx(at *p);
 LUSHAPI gptr need_error(int i, int j, at **arg_array_ptr);
+LUSHAPI at *let(at *vardecls, at *body);
+LUSHAPI at *letS(at *vardecls, at *body);
+LUSHAPI at *lete(at *vardecls, at *body);
 
 /* This is the interface header builder */
 
@@ -712,6 +713,7 @@ LUSHAPI at  *send_message(at *classname, at *obj, at *method, at *args);
 LUSHAPI class_t *classof(at *p);
 LUSHAPI bool isa(at *p, const class_t *cl);
 LUSHAPI void lush_delete(at *p);       /* avoid conflict with C++ keyword */
+LUSHAPI void lush_delete_maybe(at *p);
 LUSHAPI at  *getslot(at*, at*);
 LUSHAPI void setslot(at**, at*, at*);
 

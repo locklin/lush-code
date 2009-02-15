@@ -844,7 +844,7 @@ void lush_delete(at *p)
       return;
 
    if (Class(p)->dontdelete)
-        error(NIL, "cannot delete this object", p);
+      error(NIL, "cannot delete this object", p);
    
    run_notifiers(p);
 
@@ -854,6 +854,15 @@ void lush_delete(at *p)
       Mptr(p) = NULL;
    
    zombify(p);
+}
+
+/* similar to lush_delete, but don't raise error with permanent objects */
+void lush_delete_maybe(at *p)
+{
+   if (p) {
+      if (!Class(p)->dontdelete)
+         lush_delete(p);
+   }
 }
 
 DX(xdelete)
