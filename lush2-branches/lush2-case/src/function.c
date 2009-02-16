@@ -473,6 +473,145 @@ DY(ymacroexpand)
 }
 
 
+/* let, let*, lete */
+
+
+static char *errmsg_vardecl1 = "not a list of pairs";
+static char *errmsg_vardecl2 = "not a valid variable declaration form";
+static char *errmsg_vardecl3 = "number of values does not match number of variables";
+
+/*  splice a list of pairs */
+static char *unzip_bindings(at *l, at **l1, at **l2)
+{
+   at **where1 = l1;
+   at **where2 = l2;
+   at *q = l;
+   
+   *l1 = *l2 = NIL;
+   while (CONSP(q)) {
+      at *pair = Car(q);
+      q = Cdr(q);
+
+      ifn (CONSP(pair) && LASTCONSP(Cdr(pair))) {
+         return errmsg_vardecl1;
+      }
+      *where1 = new_cons(Car(pair), NIL);
+      *where2 = new_cons(Cadr(pair), NIL);
+      where1 = &Cdr(*where1);
+      where2 = &Cdr(*where2);
+   }
+   if (q) {
+      return errmsg_vardecl2;
+   }
+   return (char *)NULL;
+}
+
+/* let, let*, for, each, all */
+
+at *let(at *vardecls, at *body)
+{
+   MM_ENTER;
+
+   at *syms, *vals;
+   RAISEF(unzip_bindings(vardecls, &syms, &vals), vardecls);
+
+   push_args(syms, eval_arglist(vals));
+   at *result = progn(body);
+   pop_args(syms);
+
+   MM_RETURN(result);
+}
+
+DY(ylet)
+{
+   ifn (CONSP(ARG_LIST))
+      RAISEF("invalid 'let' form", NIL);
+   return let(Car(ARG_LIST), Cdr(ARG_LIST));
+}
+
+at *lete(at *vardecls, at *body)
+{
+   MM_ENTER;
+
+   at *syms, *vals;
+   RAISEF(unzip_bindings(vardecls, &syms, &vals), vardecls);
+
+   push_args(syms, eval_arglist(vals));
+   at *result = progn(body);
+
+   /* before we return, explicitly delete all local variables */
+   while (CONSP(syms)) {
+      lush_delete_maybe(symbol_class.selfeval(Car(syms)));
+      syms = Cdr(syms);
+   }
+   pop_args(syms);
+
+   MM_RETURN(result);
+}
+
+DY(ylete)
+{
+   ifn (CONSP(ARG_LIST))
+      RAISEF("invalid 'lete' form", NIL);
+   return lete(Car(ARG_LIST), Cdr(ARG_LIST));
+}
+
+at *letS(at *vardecls, at *body)
+{
+   MM_ENTER;
+
+   at *q;
+   for (q = vardecls; CONSP(q); q = Cdr(q)) {
+      at *pair = Car(q);
+      ifn (CONSP(pair) && LASTCONSP(Cdr(pair)))
+         RAISEF(errmsg_vardecl1, vardecls);
+
+      if (SYMBOLP(Car(pair))) {
+         at *val = eval(Cadr(pair));
+         SYMBOL_PUSH(Car(pair), val);
+         
+      } else if (CONSP(Car(pair))) {
+         at *syms = Car(pair);
+         at *vals = eval(Cadr(pair));
+         if (length(syms) != (length(vals))) {
+            RAISEF(errmsg_vardecl3, vardecls);
+         }
+         while (CONSP(syms)) {
+            SYMBOL_PUSH(Car(syms), Car(vals));
+            syms = Cdr(syms);
+            vals = Cdr(vals);
+         }
+      }
+   }
+   if (q)
+      RAISEF(errmsg_vardecl2, NIL);
+
+   at *ans = progn(body);
+
+   for (q = vardecls; q; q = Cdr(q)) {
+      if (SYMBOLP(Caar(q))) {
+         SYMBOL_POP(Caar(q));
+      } else {
+         at *syms = Caar(q);
+         while (CONSP(syms)) {
+            SYMBOL_POP(Car(syms));
+            syms = Cdr(syms);
+         }
+      }
+   }
+   MM_RETURN (ans);
+}
+
+DY(yletS)
+{
+   ifn (CONSP(ARG_LIST))
+      RAISEF("invalid 'let*' form", NIL);
+   return letS(Car(ARG_LIST), Cdr(ARG_LIST));
+}
+  
+
+
+
 /* General purpose routines -------------------	 */
 
 /*
@@ -578,6 +717,9 @@ void init_function(void)
    dy_define("mlambda", ymlambda);
    dy_define("dm", ydm);
    dy_define("macroexpand", ymacroexpand);
+   dy_define("let", ylet);
+   dy_define("lete", ylete);
+   dy_define("let*", yletS);
    dx_define("funcdef", xfuncdef);
    dx_define("functionp", xfunctionp);
 }
