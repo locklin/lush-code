@@ -1211,7 +1211,7 @@ static char *convert(char *s, at *list, char *end)
          for (const char *m = n; *m; m++)
             if (!isascii((unsigned char)*m) || 
                 iscntrl((unsigned char)*m) ||
-                isupper((unsigned char)*m) ||
+                ((!context->input_case_sensitive) && isupper((unsigned char)*m)) ||
                 /* (m>n && *m=='_') || */
                 (get_char_map(*m) & CHAR_INTERWORD) ) {
                mode = 1;
