@@ -274,7 +274,7 @@ DX(xnamed)
 
 at *namedclean(const char *n)
 {
-   char *d = strdup(n);
+   char *d = mm_strdup(n);
    if (!d)
       RAISEF("not enough memory", NIL);
 
