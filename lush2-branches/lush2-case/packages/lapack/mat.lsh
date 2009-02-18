@@ -91,6 +91,56 @@
          (error "matrix-multiply of incompatible matrices" (list ,m1 ,m2)) )))
   )
 
+;; helper for mat-exp
+(defun -pade-approx (A degree c)
+  (declare (-idx2- (-double-)) A)
+  (declare (-int-) degree)
+  (declare (-idx1- (-double-)) c)
+  (let* ((m  (length A))
+         (A2 (blas-gemm 1 A A))
+         (Ai (mat-id m))
+         (A+ (clone-array Ai))
+         (U  (double-array m m))
+         (V  (double-array m m)) )
+    (declare (-int-) m)
+    ;; compute U and V
+    (if (< degree 13)
+        (progn
+          (for (i 0 degree 2)
+            (blas-axpy! (c (+ i 1)) ($- Ai) ($- U))
+            (blas-axpy! (c i)       ($- Ai) ($- V))
+            (blas-gemm! 1 A2 Ai 0 A+)
+            (rotatef Ai A+) )
+          (setq U (blas-gemm! 1 A U 0 A+)) )
+
+      (let* ((A4 (blas-gemm 1 A2 A2))
+             (A6 (blas-gemm 1 A2 A4))
+             (U0 (double-array m m))
+             (V0 (double-array m m)) )
+        (array-clear (mat-band U0 0) (c 1))
+        (blas-axpy! (c  3) ($- A2) ($- U0))
+        (blas-axpy! (c  5) ($- A4) ($- U0))
+        (blas-axpy! (c  7) ($- A6) ($- U0))
+        (blas-axpy! (c  9) ($- A2) ($- U))
+        (blas-axpy! (c 11) ($- A4) ($- U))
+        (blas-axpy! (c 13) ($- A6) ($- U))
+        (blas-gemm! 1 A6 U 1 U0)
+        (blas-gemm! 1 A U0 0 U)
+
+        (array-clear (mat-band V 0) (c 0))
+        (blas-axpy! (c  2) ($- A2) ($- V))
+        (blas-axpy! (c  4) ($- A4) ($- V))
+        (blas-axpy! (c  6) ($- A6) ($- V))
+        (blas-axpy! (c  8) ($- A2) ($- V0))
+        (blas-axpy! (c 10) ($- A4) ($- V0))
+        (blas-axpy! (c 12) ($- A6) ($- V0))
+        (blas-gemm! 1 A6 V0 1 V)))
+    
+    (blas-axpy! 1 ($- U) ($- V))  ; V is V+U
+    (blas-scal! -2 ($- U))
+    (blas-axpy! 1 ($- V) ($- U))  ; U is V-U
+    (lapack-gesv U V)))
+
 (in-namespace mat-
 
 #? (mat-band <A> <i>)
@@ -148,15 +198,104 @@
     `(.* (.* ,m1 ,m2) ,(car ms) ,@(cdr ms)) ))
 
 
-#? (mat-eigvals <A>)
+#? (mat-eigvals <A> [<evi>])
 ;; {<see> mat-singvals, mat-spectral}
-;; Compute eigenvalues of symmetric matrix <A>.
+;; Eigenvalues of square matrix <A>.
 ;;
-;; Note: <eigvals> does not check that <A> is symmetric
-;; and reads from the upper triangular part only.
-(defmacro eigvals (A)
-  `(lapack-gsyevd/n! (copy-array ,A))
+;; With one argument, assume <A> is symmetric and return the
+;; real eigenvalues in a vector. With the second argument
+;; <evi>, assume that <A> is nonsymmetric, return the real
+;; parts of the eigenvalues and write the corresponding
+;; imaginary parts to <evi>.
+;;
+;; Note: In the symmetric case <eigvals> does not check that
+;; <A> is actually symmetric and reads from the upper 
+;; triangular part of <A> only.
+(defmacro eigvals (A &optional (evi ()))
+  (if evi
+      `(lapack-geev/n! (copy-array ,A) ,evi)
+    `(lapack-gsyevd/n! (copy-array ,A))
+    ))
+
+
+#? (mat-exp <A>)
+;; Exponential of square matrix <A>.
+(defun exp (A)
+  (declare (-idx2- (-double-)) A)
+  ;; N. J. Higham, "The Scaling and Squaring Method for the Matrix Exponential Revisited"
+  ;; SIAM J. Matrix Anal. Appl. Vol. 26, No. 4, pp 1179-1193, 2005.
+  (let ((t3  1.495585217958292e-2)
+        (t5  2.539398330063230e-1)
+        (t7  9.504178996162932e-1)
+        (t9  2.097847961257068)
+        (t13 5.371920351148152)
+        (c3  [120 60 12 1])
+        (c5  [30240 15120 3360 420 30 1])
+        (c7  [17297280 8648640 1995840 277200 25200 1512 56 1])
+        (c9  [17643225600 8821612800 2075673600 302702400 
+              30270240 2162160 110880 3960 90 1])
+        (c13 [64764752532480000 32382376266240000 7771770303897600
+              1187353796428800 129060195264000 10559470521600
+              670442572800 33522128640 1323241920 40840800 960960
+              16380 182 1])
+        (nrm1 (mat-norm/1 A))
+        (s 0) (d 0) (c []) )
+    (declare (-int-) s d)
+    (if (<= nrm1 t13)
+        (progn 
+          (cond
+           ((<= nrm1 t3) (setq d 3  c c3))
+           ((<= nrm1 t5) (setq d 5  c c5))
+           ((<= nrm1 t7) (setq d 7  c c7))
+           ((<= nrm1 t9) (setq d 9  c c9))
+           (t            (setq d 13 c c13)) )
+          (-pade-approx A d c) )
+      (while (> nrm1 t13)
+        (setq s (+ s 1)  nrm1 (/ nrm1 2)) )
+      (setq A ##A)
+      (blas-scal! (** 0.5 s) ($- A))
+      (let ((X ##(-pade-approx A 13 c13)) (X2 A))
+        (for* (i 0 s)
+          (declare (-int-) i)
+          (blas-gemm! 1 X X 0 X2)
+          (rotatef X X2) )
+        X))))
+
+
+#? (mat-norm <A>)
+;; {<see> mat-singvals, mat-norm/1, mat-norm/inf, mat-norm/frob}
+;; Largest singular value of <A> (2-norm).
+(defmacro norm (A)
+  `((mat-singvals ,A) 0)
   )
+
+#? (mat-norm/1 <A>)
+;; {<see> mat-norm}
+;; Largest absolute column sum of <A> (1-norm).
+(defun norm/1 (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((maxc 0))
+    (idx-bloop ((col ($t A)))
+      (setq maxc (max maxc (blas-asum col))) )
+    maxc))
+
+#? (mat-norm/inf <A>)
+;; {<see> mat-norm}
+;; Largest absolute row sum of <A> (supremum-norm).
+(defun norm/inf (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((maxr 0))
+    (idx-bloop ((row A))
+      (setq maxr (max maxr (blas-asum row))) )
+    maxr))
+
+#? (mat-norm/frob <A>)
+;; {<see> mat-norm}
+;; Frobenius norm of matrix <A>.
+(defun norm/frob (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((d (mat-band A 0)))
+    (sqrt (blas-dot d d)) ))
 
 
 #? (mat-perm <p>)
@@ -211,28 +350,7 @@
 ;; <A> is square and <n> a non-negative integer.
 
 
-#? (mat-singvals <A>)
-;; {<see> mat-svd, mat-eigvals}
-;; Return singular values of <A>.
-(defmacro singvals (A)
-  `(lapack-gesdd/n! (copy-array ,A))
-  )
-
-#? (mat-solve! <A> <b>)
-;; Solve <A>.<x> = <b> for <x> and write to <b>.
-;;
-;; When <A> is square an exact solution is sought,
-;; otherwise a solution in the least squares sense.
-;;
-;; Note that <mat-solve!> modifies <A> as well.
-
-
-#? (mat-solve <A> <b>)
-;; {<see> mat-solve! }
-;; Solve <A>.<x> = <b> for <x> and return <x>.
-
-
-;; XXX: is there a more efficient test for pos. definiteness?
+;; XXX: implement a more efficient test for pos. definiteness
 
 #? (mat-posdef <A>)
 ;; {<see> mat-cholesky}
@@ -271,6 +389,36 @@
 (defmacro rank (A)
   `(rank/tol ,A -1)
   )
+
+#? (mat-singvals <A>)
+;; {<see> mat-svd, mat-eigvals}
+;; Return singular values of <A>.
+(defmacro singvals (A)
+  `(lapack-gesdd/n! (copy-array ,A))
+  )
+
+#? (mat-solve! <A> <b>)
+;; Solve <A>.<x> = <b> for <x> and write to <b>.
+;;
+;; When <A> is square an exact solution is sought,
+;; otherwise a solution in the least squares sense.
+;;
+;; Note that <mat-solve!> modifies <A> as well.
+
+
+#? (mat-solve <A> <b>)
+;; {<see> mat-solve! }
+;; Solve <A>.<x> = <b> for <x> and return <x>.
+
+
+#? (mat-trace <A>)
+;; Sum of diagonal elements of square matrix <A>.
+(defun trace (A)
+  (declare (-idx2- (-double-)) A)
+  (when (not (squarep A))
+    (error "matrix not square") )
+  ((idx-sum (mat-band A 0))) )
+
 
 #? (mat-vander <v> [<n>])
 ;; Vandermonde matrix of vector <v>.
@@ -380,10 +528,17 @@
           -cp-ut
           mat-band
           mat-condnum
-          mat-rank/tol
+          mat-norm/1
+          mat-norm/inf
+          mat-norm/frob
+          -pade-approx
+          mat-exp
           mat-perm
           mat-permute!
           mat-posdef
+          mat-rank/tol
+          mat-trace 
+
           mat-cholesky
           mat-lu
           mat-svd
