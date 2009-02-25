@@ -85,8 +85,10 @@ at *eval_std(at *p)
 
 DX(xeval)
 {
-   ARG_NUMBER(1);
-   return eval(APOINTER(1));
+  at *q = NULL;
+  for (int i = 1; i <= arg_number; i++)
+     q = eval(APOINTER(i));
+  return q;
 }
 
 
