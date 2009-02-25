@@ -238,20 +238,24 @@ static bool       anchor_transients = true;
 
 #define BITL               1
 #define BITN               2
-#define BITO               4
 #define BITM               8
+
+/* Note: The same bit is used to mark an address LIVE or
+ * OBSOLETE. The LIVE bit is only needed in the marking
+ * phase and we make sure all OBSOLETES are removd before
+ * we start marking.
+ */
 
 #define LIVE(p)            (((uintptr_t)(p)) & BITL)
 #define NOTIFY(p)          (((uintptr_t)(p)) & BITN)
-#define OBSOLETE(p)        (((uintptr_t)(p)) & BITO)
+#define OBSOLETE           LIVE
 
 #define MARK_LIVE(p)       { p = (void *)((uintptr_t)(p) | BITL); }
 #define MARK_NOTIFY(p)     { p = (void *)((uintptr_t)(p) | BITN); }
-#define MARK_OBSOLETE(p)   { p = (void *)((uintptr_t)(p) | BITO); }
+#define MARK_OBSOLETE      MARK_LIVE
 
 #define UNMARK_LIVE(p)     { p = (void *)((uintptr_t)(p) & ~BITL); }
 #define UNMARK_NOTIFY(p)   { p = (void *)((uintptr_t)(p) & ~BITN); }
-#define UNMARK_OBSOLETE(p) { p = (void *)((uintptr_t)(p) & ~BITO); }
 
 #define HMAP(a, op, b) (hmap[(((uintptr_t)(a))>>(ALIGN_NUM_BITS + HMAP_EPI_BITS))] op \
                         ((b) << (((((uintptr_t)(a))>>ALIGN_NUM_BITS) & (HMAP_EPI-1)) * HMAP_NUM_BITS)))
@@ -269,7 +273,6 @@ static bool       anchor_transients = true;
 
 #define LBITS(p)           ((uintptr_t)(p) & (MIN_HUNKSIZE-1))
 #define CLRPTR(p)          ((void *)((((uintptr_t)(p)) & ~(MIN_HUNKSIZE-1))))
-#define CLRPTR2(p)         ((void *)((((uintptr_t)(p)) & ~3)))
 #define ADDRESS_VALID(p)   (!LBITS(p))
 #define TYPE_VALID(t)      ((t)>=0 && (t)<=types_last)
 #define INDEX_VALID(i)     ((i)>=0 && (i)<=man_last)
@@ -300,7 +303,7 @@ static bool       anchor_transients = true;
 
 /* loop over all other managed addresses                */
 /* NOTE: the real address is 'managed[i]', which is not */
-/* a cleared address (use CLRPTR2 to clear)             */ 
+/* a cleared address (use CLRPTR to clear)             */ 
 #define DO_MANAGED(i) { \
   int __lasti = collect_in_progress ? man_k : man_last; \
   for (int i = 0; i <= __lasti; i++) { \
@@ -312,8 +315,6 @@ static bool       anchor_transients = true;
    gc_disabled = true;
 
 #define ENABLE_GC gc_disabled = __nogc;
-
-static int find_managed(const void *p);
 
 /*
 static bool isroot(const void *p)
@@ -357,14 +358,15 @@ static int num_free_blocks(void)
    return n;
 }
 
-static inline bool live(const void *p)
+static int _find_managed(const void *p);
+static bool live(const void *p)
 {
    ptrdiff_t a = ((char *)p) - heap;
    if (a>=0 && a<heapsize) {
       assert(HMAP_MANAGED(a));
       return HMAP_LIVE(a);
    }
-   int i = find_managed(p);
+   int i = _find_managed(p);
    assert(i != -1);
    return LIVE(managed[i]);
 }
@@ -377,7 +379,7 @@ static void mark_live(const void *p)
       HMAP_MARK_LIVE(a);
       return;
    }
-   int i = find_managed(p);
+   int i = _find_managed(p);
    assert(i != -1);
    MARK_LIVE(managed[i]);
 }
@@ -550,7 +552,7 @@ static bool no_marked_live(void)
 
    for (int i = 0; i <= man_last; i++) {
       if (LIVE(managed[i])) {
-         void *p = CLRPTR2(managed[i]);
+         void *p = CLRPTR(managed[i]);
          warn("address 0x%"PRIxPTR" is marked live\n", PPTR(p));
          return false;
       }
@@ -716,17 +718,17 @@ static int bsearch_managed(const void *p, int l, int r)
       else
          r = n;
    }
-   if (CLRPTR2(managed[l]) == p)
+   if (CLRPTR(managed[l]) == p)
       return l;
 
-   else if (l<man_k && (CLRPTR2(managed[l+1]) == p))
+   else if (l<man_k && (CLRPTR(managed[l+1]) == p))
       return l+1;
 
    else 
       return -1;
 }
 
-static int find_managed(const void *p)
+static int _find_managed(const void *p)
 {
    for (int n = 0; n < man_t; n++) {
       if (!poplar_sorted[n]) sort_poplar(n);
@@ -738,10 +740,20 @@ static int find_managed(const void *p)
    if (man_k < man_last)
       /* do linear search on excess part */
       for (int i = man_last; i > man_k; i--) {
-         if (CLRPTR2(managed[i]) == p)
+         if (CLRPTR(managed[i]) == p)
             return i;
       }
    return -1;
+}
+
+/* use this one only when not marking */
+static int find_managed(const void *p)
+{
+   assert(!mark_in_progress);
+   int i = _find_managed(p);
+   if (i>-1 && OBSOLETE(managed[i]))
+      i = -1;
+   return i;
 }
 
 /*
@@ -909,7 +921,7 @@ static void recover_stack(void)
       
    DO_MANAGED(i) {
       if (LIVE(managed[i])) {
-         void *p = CLRPTR2(managed[i]);
+         void *p = CLRPTR(managed[i]);
          mt_t t  = INFO_T(p);
          if (types[t].mark)
             types[t].mark(p);
@@ -998,7 +1010,7 @@ static void reclaim_offheap(int i)
 {
    assert(!OBSOLETE(managed[i]));
 
-   void *q = CLRPTR2(managed[i]);
+   void *q = CLRPTR(managed[i]);
    info_t *info_q = unseal(q); 
    finalize_func_t *f = types[info_q->t].finalize;
    if (f)
@@ -1592,6 +1604,8 @@ bool mm_ismanaged(const void *p)
       ptrdiff_t a = ((char *)p) - heap;
       if (a>=0 && a<heapsize)
          return HMAP_MANAGED(a);
+      else if (mark_in_progress)
+         return _find_managed(p) != -1;
       else
          return find_managed(p) != -1;
    }
@@ -2413,9 +2427,8 @@ void dump_managed(mt_t t)
    for (int i = 0; i <= man_last; i++) {
       mt_t ti = mm_typeof(CLRPTR(managed[i]));
       if (t==mt_undefined || t==ti)
-         mm_printf("%4d : %16"PRIxPTR", %1s%1s%1s %20s\n", 
+         mm_printf("%4d : %16"PRIxPTR", %1s%1s %20s\n", 
                    i, PPTR(CLRPTR(managed[i])),
-                   LIVE(managed[i]) ? "l" : " ",
                    OBSOLETE(managed[i]) ? "o" : " ",
                    NOTIFY(managed[i]) ? "n" : " ",
                    types[ti].name);
