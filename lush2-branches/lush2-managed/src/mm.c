@@ -254,7 +254,7 @@ static bool       anchor_transients = true;
 
 #define MARK_LIVE(p)       { p = (void *)((uintptr_t)(p) | BITL); }
 #define MARK_NOTIFY(p)     { p = (void *)((uintptr_t)(p) | BITN); }
-#define MARK_BLOB(p)     { p = (void *)((uintptr_t)(p) | BITB); }
+#define MARK_BLOB(p)       { p = (void *)((uintptr_t)(p) | BITB); }
 #define MARK_OBSOLETE      MARK_LIVE
 
 #define UNMARK_LIVE(p)     { p = (void *)((uintptr_t)(p) & ~BITL); }
@@ -287,6 +287,9 @@ static bool       anchor_transients = true;
 #define BLOCKA(a)          (((uintptr_t)((char *)(a)))>>BLOCKBITS)
 #define INFO_S(p)          (BLOB(p) ? 0 : ((info_t *)(unseal((char *)p)))->nh*MIN_HUNKSIZE)
 #define INFO_T(p)          (BLOB(p) ? mt_blob : ((info_t *)(unseal((char *)p)))->t)
+
+#define FIX_SIZE(s)        if (s % MIN_HUNKSIZE) \
+                              s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS
 
 /* loop over all managed addresses in small object heap */
 /* NOTE: the real address is 'heap + a', b is the block */
@@ -1002,11 +1005,14 @@ static void reclaim_offheap(int i)
    assert(!OBSOLETE(managed[i]));
 
    void *q = CLRPTR(managed[i]);
-   info_t *info_q = unseal(q); 
-   finalize_func_t *f = types[info_q->t].finalize;
-   if (f)
-      if (!run_finalizer(f, q))
-         return;
+   if (!BLOB(managed[i])) {
+      info_t *info_q = unseal(q); 
+      finalize_func_t *f = types[info_q->t].finalize;
+      if (f)
+         if (!run_finalizer(f, q))
+            return;
+      q = info_q;
+   }
 
    if (NOTIFY(managed[i])) {
       UNMARK_NOTIFY(managed[i]);
@@ -1016,7 +1022,7 @@ static void reclaim_offheap(int i)
    MARK_OBSOLETE(managed[i]);
    man_is_compact = false;
 
-   free(info_q);
+   free(q);
 }
 
 static int sweep_now(void)
@@ -1390,10 +1396,8 @@ void *mm_allocv(mt_t t, size_t s)
       abort();
    }
    assert(TYPE_VALID(t));
-
-   if (s % MIN_HUNKSIZE)
-      s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS;
-
+ 
+   FIX_SIZE(s);
    void *p = alloc_variable_sized(t, s);
    if (!p) {
       warn("allocation failed\n");
@@ -1405,55 +1409,95 @@ void *mm_allocv(mt_t t, size_t s)
    return p;
 }
 
+#if 0
 void *mm_malloc(size_t s)
 {
+   FIX_SIZE(s);
    void *p = alloc_variable_sized(mt_blob, s);
    if (p) manage(p, mt_blob);
    return p;
 }
 
-
 void *mm_calloc(size_t n, size_t s)
 {
+   FIX_SIZE(s);
    void *p = alloc_variable_sized(mt_blob, s);
    if (p) {
-      memset(p, 0, mm_sizeof(p));
+      memset(p, 0, s);
       manage(p, mt_blob);
    }
    return p;
 }
+#else
+/* these versions use MIN_HUNKSIZE less memory per object
+ * but we don't maintain size information for the objects
+ * and mm_info will report less memory than actually managed
+ */
+void *mm_malloc(size_t s)
+{
+   void *p = malloc(s);
+   if (p) mm_manage(p);
+   return p;
+}
+
+void *mm_calloc(size_t n, size_t s)
+{
+   void *p = calloc(n, s);
+   if (p) mm_manage(p);
+   return p;
+}
+#endif  
+
 
 
 void *mm_realloc(void *q, size_t s)
 {
+   assert(ADDRESS_VALID(q));
+
    if (q == NULL)
       return mm_malloc(s);
 
-   assert(ADDRESS_VALID(q));
-   info_t *info_q = unseal(q);
-   mt_t t = info_q->t;
    if (INHEAP(q)) {
-      warn("address was not obtained with mm_malloc\n");
+      warn("address was not obtained with malloc or mm_malloc\n");
+      abort();
+   }
+   
+   int i = find_managed(q);
+   assert(i>-1);
+   mt_t t = mt_blob;
+   info_t *info_q = BLOB(managed[i]) ? unseal(q) : NULL;
+   if (info_q) {
+      t = info_q->t;
+      assert(TYPE_VALID(t));
+   }
+
+   FIX_SIZE(s);
+   if (s < types[t].size) {
+      warn("new size is smaller than minimum size of memory type '%s'\n",
+           types[t].name);
       abort();
    }
 
-   assert(TYPE_VALID(t));
-   if (s < types[t].size) {
-      warn("new size is smaller than size of memory type '%s'\n",
-           types[t].name);
-      abort();
-   }  
-
-   void *r = alloc_variable_sized(t, s);
+   void *r = NULL;
+   if (info_q) {
+      r = alloc_variable_sized(t, s);
+      if (r) memcpy(r, q, info_q->nh*MIN_HUNKSIZE);
+   } else {
+      /* when q was given to us per mm_manage, we need to use
+       * realloc as we don't have size info.
+       */
+      r = realloc(q, s);
+      if (r && collecting_child) {
+         fetch_unreachables();
+         maybe_trigger_collect(s);
+      }
+   }
+   
    if (r) {
-      memcpy(r, q, info_q->nh*MIN_HUNKSIZE);
-
       /* the new address r inherits q's notify flag     */
       /* notifiers and finalizers should not run for q  */
       /* so we clear q's notify flag and set its memory */
       /* type to mt_blob                                */
-      int i = find_managed(q);
-      assert(i != -1);
       { 
          /* this hack is to prevent add_managed from */
          /* shuffling the managed array              */
@@ -1467,10 +1511,30 @@ void *mm_realloc(void *q, size_t s)
          MARK_NOTIFY(managed[man_last]);
          UNMARK_NOTIFY(managed[i]);
       }
-      info_q->t = mt_blob; 
+      if (info_q)
+         info_q->t = mt_blob;
+      else
+         MARK_BLOB(managed[man_last]);
    }
    return r;
 }
+
+
+void mm_manage(const void *p)
+{
+   if (!ADDRESS_VALID(p)) {
+      warn(" 0x%"PRIxPTR" is not a valid address ", PPTR(p));
+      abort();
+   }
+   if (mm_debug)
+      if (mm_ismanaged(p)) {
+         warn(" 0x%"PRIxPTR" already is a managed address ", PPTR(p));
+         abort();
+      }
+   add_managed(p);
+   MARK_BLOB(managed[man_last]);
+}
+
 
 char *mm_string(size_t ss)
 {
@@ -1508,7 +1572,7 @@ void mm_notify(const void *p, bool set)
    assert(ADDRESS_VALID(p));
 
    if (!client_notify && set) {
-      warn("(mm_notify) no notification function specified\n");
+      warn("no notification function specified\n");
       abort();
    }
    
@@ -1516,7 +1580,7 @@ void mm_notify(const void *p, bool set)
    if (a>=0 && a<heapsize) {
          
       if (!HMAP_MANAGED(a)) {
-         warn("(mm_notify) not a managed address\n");
+         warn("not a managed address\n");
          abort();
       }
       if (set)
@@ -1529,7 +1593,7 @@ void mm_notify(const void *p, bool set)
 
    int i = managed[man_last]==p ? man_last : find_managed(p);
    if (i<0) {
-      warn("(mm_notify) not a managed address\n");
+      warn("not a managed address\n");
       abort();
    }
    if (set) {
@@ -1749,67 +1813,6 @@ static int _fetch_unreachables(void *buf)
 
    return n;
 }
-   
-
-/* static int fetch_unreachables(void) */
-/* { */
-/*    if (!collecting_child) */
-/*       return 0; */
-
-/*    if (gc_disabled) { */
-/*       fetch_backlog++; */
-/*       return 0; */
-/*    } */
-
-/*    static void *buf[NUM_TRANSFER]; */
-/*    static int j, n = 0; */
-/*    static bool inheap = true; */
-
-/*    if (n) { */
-/*       /\* don't need to disable gc here as gc is still */
-/*        * in progress */
-/*        *\/ */
-/*       if (inheap) { */
-
-/*          if (buf[j]) { */
-/*             reclaim_inheap(buf[j]); */
-/*             j++; */
-
-/*          } else { */
-/*             inheap = false; */
-/*             j++; */
-/*          } */
-/*          if (j == n) { */
-/*             n = 0; */
-/*          } */
-/*          return 1; */
-         
-/*       } else { */
-
-/*          reclaim_offheap(buf[j++]); */
-/*          if (j == n) { */
-/*             n = 0; */
-/*          } */
-/*          return 1; */
-/*       } */
-/*    } else if (n == 0) { */
-      
-/*       n = _fetch_unreachables(&buf); */
-      
-/*       if (n == -1) { */
-/*          n = 0; */
-
-/*       } else if (n == 0) { */
-/*          inheap = true; */
-
-/*       } else { */
-/*          assert((n%sizeof(void *)) == 0); */
-/*          n = n/sizeof(void *); */
-/*          j = 0; */
-/*       } */
-/*    } */
-/*    return 0; */
-/* } */
 
 /* fetch addresses of unreachable objects from garbage pipe */
 /* return number of objects reclaimed */
@@ -2268,7 +2271,8 @@ char *mm_info(int level)
       total_objects_offheap++;
       mt_t t  = INFO_T(managed[i]);
       total_objects_per_type_oh[t]++;
-      total_memory_managed += mm_sizeof(managed[i]);
+      total_memory_managed += mm_sizeof(CLRPTR(managed[i]));
+      total_memory_used_by_mm += BLOB(managed[i]) ? 0 : MIN_HUNKSIZE;
    } DO_MANAGED_END;
 
    BPRINTF("Managed memory   : %.2f MByte in %"PRIdPTR" + %"PRIdPTR" objects\n",

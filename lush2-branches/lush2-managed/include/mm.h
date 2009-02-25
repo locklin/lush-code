@@ -70,6 +70,7 @@ void   *mm_calloc(size_t, size_t);       // calloc replacement
 void   *mm_realloc(void *, size_t);      // realloc replacement
 void    mm_type(const void *, mt_t);     // set type of managed object
 void    mm_notify(const void *, bool);   // set or unset notify flag
+void    mm_manage(const void*);          // manage malloc'ed address 
 bool    mm_ismanaged(const void *);      // true if managed object
 mt_t    mm_typeof(const void *);         // type of object
 size_t  mm_sizeof(const void *);         // size of object
