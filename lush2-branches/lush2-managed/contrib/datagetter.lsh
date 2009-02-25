@@ -1,0 +1,224 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Bronze
+;;; Copyright (C) Scott Locklin, Lugos LLC
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Financial data getter 
+;; originally designed for yahoo data only, to be extended as a general
+;; set of tools for obtaining financial data online. Depends on wget 
+;;
+;; yahoo seems to have several ways to get data
+;; one of them is documented at http://www.gummy-stuff.org/Yahoo-data.htm
+
+
+#? (yahoo-get-price <ticker>)
+;; <ticker> is a string representing the stock ticker
+(de yahoo-get-price (ticker)
+  (yahoo-get-now ticker)
+  (let ((out (comma-parser (car (read-lines (concat ticker ".CSV"))) 2)))
+    (csv-junk-collector ticker)
+    out))
+
+#? (yahoo-get-dividend <ticker> <start> <finish>)
+;; gets the dividends
+(de yahoo-get-dividend (ticker start finish)
+  (sys (build-dividend-query ticker start finish))
+  (let* ((rawdata (read-lines (concat ticker ".CSV")))
+	 (lenraw (length rawdata))
+	 (cols (comma-splitter (car rawdata)))
+	 (outhash (htable)))
+    (outhash "Date" (mapfor (i lenraw 2 -1) (date-getter (nth rawdata i))))
+    (outhash "Keys" (list-delete cols 0))
+    (for (j 2 (length cols))
+	 (outhash (nth cols j)
+		  (mapfor (i lenraw 2 -1) (comma-parser (nth rawdata i) j))))
+    (csv-junk-collector ticker)
+    outhash))	 
+
+#? (yahoo-pad-dividends <ticker> <datelist>)
+;; creates a vector of dividends keyed by the dates in <datelist>, with 0's on
+;; non divedend days (for use in fromyahoo time series)
+(de yahoo-pad-dividends (ticker datelist)
+  (let* ((start (car datelist))
+	 (finish (last datelist))
+	 (numdates (length datelist))
+	 (divblok (yahoo-get-dividend ticker start finish))
+	 (dividends (divblok "Dividends"))
+	 (divdates (divblok "Date"))
+	 (out (makelist numdates 0)))
+    (cond
+     ((not (null dividends))
+      (let* ((places (find-index datelist divdates)))
+	(for (i 1 (length dividends))
+	     (setq out (list-replace out (nth dividends i) (1+ (nth places i))))))))
+    out))
+
+#? (yahoo-get-now <ticker>)
+;; returns yahoo's price for a given <ticker> now
+(de yahoo-get-now (ticker)
+  (sys (concat "wget \"http://download.finance.yahoo.com/d/table.csv" 
+	       (concat "?s=" ticker "&f=sl1d1t1c1ohgv&e=.csv\" -O " 
+		       ticker ".CSV"))))
+
+#? (yahoo-get-historical <ticker> <start> <finish>)
+;; <ticker> is a string representing the stock ticker
+;;<start> <finish> are dates
+;; returns a hashtable with the complete available data from yahoo
+(de yahoo-get-historical (ticker start finish)
+  (sys (build-yahoo-query ticker start finish))
+  (let* ((rawdata (read-lines (concat ticker ".CSV")))
+	 (lenraw (length rawdata))
+	 (cols (comma-splitter (car rawdata)))
+	 (outhash (htable)))
+    (outhash "Date" (mapfor (i lenraw 2 -1) (date-getter (nth rawdata i))))
+    (outhash "Keys" (list-delete cols 0))
+    (for (j 2 (length cols))
+	 (outhash (nth cols j)
+		  (mapfor (i lenraw 2 -1) (comma-parser (nth rawdata i) j))))
+    (csv-junk-collector ticker)
+    outhash))
+
+#? (build-yahoo-query <ticker> <start> <finish>)
+;; returns the string needed to make the query to yahoo; only split out for debugging reasons
+(de build-yahoo-query (ticker start finish)
+  (let* ((stt (date-splitter start))
+	 (fin (date-splitter finish))
+	 (sy (str (caddr stt)))
+	 (fy (str (caddr fin)))
+	 (sm (yahoo-month-fixer (car stt)))
+	 (fm (yahoo-month-fixer (car fin)))
+	 (sd (str (cadr stt)))
+	 (fd (str (cadr fin))))
+  (concat "wget \"http://ichart.finance.yahoo.com/table.csv?s=" ticker "&a=" sm "&b=" sd "&c=" sy "&d=" fm "&e=" fd "&f=" fy 
+	  "&g=d&ignore=.csv\" -O " ticker ".CSV")))
+
+#? (build-dividend-query <ticker> <start> <finish>)
+;;http://ichart.finance.yahoo.com/table.csv?s=MO&a=00&b=2&c=1970&d=08&e=27&f=2008&g=v&ignore=.csv
+(de build-dividend-query (ticker start finish)
+  (let* ((stt (date-splitter start))
+	 (fin (date-splitter finish))
+	 (sy (str (caddr stt)))
+	 (fy (str (caddr fin)))
+	 (sm (yahoo-month-fixer (car stt)))
+	 (fm (yahoo-month-fixer (car fin)))
+	 (sd (str (cadr stt)))
+	 (fd (str (cadr fin))))
+  (concat "wget \"http://ichart.finance.yahoo.com/table.csv?s=" ticker "&a=" sm "&b=" sd "&c=" sy "&d=" fm "&e=" fd "&f=" fy 
+	  "&g=v&ignore=.csv\" -O " ticker ".CSV")))
+
+#? (yahoo-month-fixer <n>)
+;; whoever was responsible for formatting the month query at yahoo needs to be clubbed to death
+;; for their fur. 
+(de yahoo-month-fixer (n)
+  (cond
+   ((>= n 11) (str (1- n)))
+   (t (concat "0" (str (1- n))))))
+
+#? (csv-junk-collector <name>)
+;; for removing ticker CSV's returned by wget
+(de csv-junk-collector (name)
+    (sys (concat "rm -f " name ".CSV")))
+
+#? (comma-parser list n)
+;; splits up a list of text into sublists by commas
+;; returns the <n> th value
+(de comma-parser (list n)
+  (val (nth (comma-splitter list) n)))
+
+(de comma-splitter (in)
+  (regex-split "[^,]+" in))
+
+#? (spdr-parser <name>)
+;; gets a spdr by <name>. spdr names are "xl()" where () can be u v k f i e p y b
+;;
+;; returns (tickers) . (fraction)
+;;
+;; spdr values can be gotten at:
+;; http://www.sectorspdr.com/content/?do=indexComposition&symbol=XLY&filetype=csv
+;;
+;; this is probably useless for anyone unless they're doing index-arb -I'll eventually make
+;; it get the data automagically
+;;
+(de spdr-parser (name)
+  (let* ((thedata (read-lines (concat "datasets/spdrs/" name ".csv")))
+	 (nlines (length thedata))
+	 (tickers (mapfor (i 2 nlines)
+		    (nth (tab-splitter (nth thedata i)) 3)))
+	 (fraction (mapfor (i 2 nlines)
+		     (/ (tab-parser (nth thedata i) 4) 100))))
+    (cons tickers fraction)))
+
+	 
+#? (tab-parser text n) 
+;; selects a numeric element from a tab seperated text
+(de tab-parser (list n)
+  (val (nth (tab-splitter list) n)))
+
+#? (tab-splitter text) 
+;; splits up some text into sublists by tab
+(de tab-splitter (in)
+  (regex-split "[^\t]+" in))
+
+#? (date-getter <line>) 
+;; changes the dates in yahoo's format on a line of its CSV to date
+;; objects
+(de date-getter (line)
+  (string-to-date (nth (regex-split  "[^-]+[^,]+" line) 1) 'year 'day))
+
+
+
+#? (date-splitter <date>)
+;; returns simple list (mm dd yyyy) from <date>
+(de date-splitter (datein)
+  (let ((dt (split-date datein)))
+ (list (alist-get 'month dt)
+       (alist-get 'day dt) 
+       (+ 1900 (alist-get 'year dt)))))
+
+
+#? (oanda-getter currency exchange start finish)
+;; gets the oanda data from the website using <currency> and <exchange> currency 
+;; with <start> <finish> being dates
+;;
+;; returns the currency pair ratio consed with the corresponding dates
+;;
+;; oanda changes a lot, so by the time you see this, it may no longer work!
+(de oanda-getter (currency exchange start finish)
+  (sys (oanda-string currency exchange (date-add-day start -1) finish))
+  (let* ((pairs (glob "(0[1-9]|1[012])[- /.](0[1-9]|[12][0-9]|3[01])[- /.](19|20)([0-9][0-9]).*$" 
+		      (read-lines (concat exchange currency ".CSV")))))
+    (csv-junk-collector (concat exchange currency))
+    (cons
+     (mapfor (i 1 (length pairs)) (comma-parser (nth pairs i) 2))
+     (mapfor (i 1 (length pairs)) 
+       (oanda-dates (car (regex-split "[^,]+" (nth pairs i))))))))
+
+
+(de oanda-dates (in)
+  (let* ((dt (regex-split "[^/]+" in))
+	 (month (nth dt 1))
+	 (day (nth dt 2))
+	 (year (nth dt 3))
+	 (dtstr (concat year "-" month "-" day)))
+    (string-to-date dtstr 'year 'day)))
+	 
+
+(de oanda-string (currency exchange start finish)
+(concat "wget \"http://www.oanda.com/convert/fxhistory?lang=en"
+	       "&date=" (date-to-oanda finish)
+	       "&margin_fixed=0&expr=" currency
+	       "&exch2=&exch=" exchange
+	       "&date1=" (date-to-oanda start) 
+	       "&format=CSV&redirected=1\" -O "
+      exchange currency ".CSV"))
+
+
+(de date-to-oanda (datein)
+  (date-to-string datein "%D"))
+    
+;;old oanda date format
+(de date-to-oanda2 (datein)
+  (let ((startsplit (date-splitter datein)))
+    (concat (str (nth 0 startsplit)) "%2F" (str (nth 1 startsplit))
+	    "%2F" (str (nth 2 startsplit)) "%2F")))

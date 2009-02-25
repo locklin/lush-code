@@ -1,0 +1,55 @@
+;; Fu Jie Huang, Feb 2003
+;; this script shows how to use data sensor to monitor the scenegraph
+;; in this case, a FieldSensor is created to observe the Camera position
+;; once the camera position changes, the sensor will be automatically triggered
+;; and the sensor will call a callback funtion to print the new camera position
+
+;; also note-worthy:  callback function compiled and registered
+;;                    a lush object created with the underlying C++ object
+
+(libload "inventor/inventor")
+(libload "inventor/inventorxt")
+
+(setq mywindow (soxt_init "lush"))
+(setq root  (new soseparator ()))
+(setq mymaterial (new somaterial ()))
+(setq mylight   (new sodirectionallight ()))
+(setq mycone (new socone ()))
+
+(==> root ref)
+(==> root addChild :mylight:p)
+(==> (==> mymaterial getmf_diffusecolor) setvalue 1.0 0.0 0.0)
+(==> root addChild :mymaterial:p)
+(==> root addChild :mycone:p)
+
+(setq myviewer (new soxtexaminerviewer mywindow "test" 1 1 1 ()))
+(==> myviewer setscenegraph :root:p)
+(==> myviewer show)
+
+(de camerachangecb ( data sensor )
+  (cpheader "#include <Inventor/nodes/SoCamera.h>")
+  (cpheader "#include <Inventor/sensors/SoSensor.h>")
+  (cpheader "#include <Inventor/SbLinear.h>")
+  ((-gptr-) data)
+  ((-gptr- "SoSensor *") sensor)
+  #{ {
+       SoCamera *viewercamera = (SoCamera *)$data;
+       SbVec3f cameraposition = viewercamera->position.getValue();
+       printf("camera position: (%g,%g,%g)\n",cameraposition[0],
+                               cameraposition[1], cameraposition[2]);
+  } #}
+  ())
+(dhc-make-with-c++ () ()  camerachangecb)
+
+;;**********************************************************************
+(setq camera (new soperspectivecamera t))
+;; camera is a lush object w/o C++ object
+(==> camera attach-cpp-obj  (==> myviewer getcamera))
+(setq tmp_pos (==> camera getsf-position))
+
+(setq mysensor (new SoFieldSensor ()  (gptr camerachangecb) :camera:p ))
+(==> mysensor attach :tmp_pos:p)
+;;**********************************************************************
+
+(soxt_show mywindow)
+
