@@ -57,7 +57,6 @@
 #endif
 
 #include <unistd.h>
-#include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
@@ -1409,46 +1408,6 @@ void *mm_allocv(mt_t t, size_t s)
    return p;
 }
 
-#if 0
-void *mm_malloc(size_t s)
-{
-   FIX_SIZE(s);
-   void *p = alloc_variable_sized(mt_blob, s);
-   if (p) manage(p, mt_blob);
-   return p;
-}
-
-void *mm_calloc(size_t n, size_t s)
-{
-   FIX_SIZE(s);
-   void *p = alloc_variable_sized(mt_blob, s);
-   if (p) {
-      memset(p, 0, s);
-      manage(p, mt_blob);
-   }
-   return p;
-}
-#else
-/* these versions use MIN_HUNKSIZE less memory per object
- * but we don't maintain size information for the objects
- * and mm_info will report less memory than actually managed
- */
-void *mm_malloc(size_t s)
-{
-   void *p = malloc(s);
-   if (p) mm_manage(p);
-   return p;
-}
-
-void *mm_calloc(size_t n, size_t s)
-{
-   void *p = calloc(n, s);
-   if (p) mm_manage(p);
-   return p;
-}
-#endif  
-
-
 
 void *mm_realloc(void *q, size_t s)
 {
@@ -1458,14 +1417,14 @@ void *mm_realloc(void *q, size_t s)
       return mm_malloc(s);
 
    if (INHEAP(q)) {
-      warn("address was not obtained with malloc or mm_malloc\n");
+      warn("cannot mm_realloc address obtained with mm_alloc\n");
       abort();
    }
    
    int i = find_managed(q);
    assert(i>-1);
    mt_t t = mt_blob;
-   info_t *info_q = BLOB(managed[i]) ? unseal(q) : NULL;
+   info_t *info_q = BLOB(managed[i]) ? NULL : unseal(q);
    if (info_q) {
       t = info_q->t;
       assert(TYPE_VALID(t));
@@ -1487,10 +1446,8 @@ void *mm_realloc(void *q, size_t s)
        * realloc as we don't have size info.
        */
       r = realloc(q, s);
-      if (r && collecting_child) {
-         fetch_unreachables();
-         maybe_trigger_collect(s);
-      }
+      if (r==q)
+         return r;
    }
    
    if (r) {
@@ -1513,8 +1470,17 @@ void *mm_realloc(void *q, size_t s)
       }
       if (info_q)
          info_q->t = mt_blob;
-      else
+      else {
+         /* old address was freed by realloc, we must remove it now */
+         debug(" substituting address 0x%"PRIxPTR" for 0x%"PRIxPTR"\n", PPTR(r), PPTR(q));
          MARK_BLOB(managed[man_last]);
+         managed[i] = managed[man_last--];
+         for (int n = 0; n < man_t; n++)
+            if (i <= poplar_roots[n+1]) {
+               poplar_sorted[n] = false;
+               break;
+            }
+      }
    }
    return r;
 }
@@ -1523,12 +1489,12 @@ void *mm_realloc(void *q, size_t s)
 void mm_manage(const void *p)
 {
    if (!ADDRESS_VALID(p)) {
-      warn(" 0x%"PRIxPTR" is not a valid address ", PPTR(p));
+      warn(" 0x%"PRIxPTR" is not a valid address\n", PPTR(p));
       abort();
    }
    if (mm_debug)
       if (mm_ismanaged(p)) {
-         warn(" 0x%"PRIxPTR" already is a managed address ", PPTR(p));
+         warn(" address 0x%"PRIxPTR" already managed\n", PPTR(p));
          abort();
       }
    add_managed(p);
