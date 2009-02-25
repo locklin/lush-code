@@ -47,7 +47,7 @@ static struct hashelem *_getmethod(class_t *cl, at *prop);
 static at *call_method(at *obj, struct hashelem *hx, at *args);
 static void send_delete(object_t *);
 
-void clear_object(object_t *obj)
+void clear_object(object_t *obj, size_t _)
 {
    obj->cl = NULL;
    obj->size = 0;
@@ -618,9 +618,9 @@ DX(xputmethod)
    return APOINTER(2);
 }
 
-void clear_method_hash(struct hashelem *ht)
+void clear_method_hash(struct hashelem *ht, size_t s)
 {
-   memset(ht, 0, mm_sizeof(ht));
+   memset(ht, 0, s);
 }
 
 void mark_method_hash(struct hashelem *ht)

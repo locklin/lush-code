@@ -32,7 +32,7 @@
 #include "header.h"
 #include <inttypes.h>
 
-static void clear_at(at *a)
+static void clear_at(at *a, size_t _)
 {
    a->head.cl = &null_class;
 }
@@ -437,7 +437,7 @@ void class_init(class_t *cl, bool managed) {
    }
 }
 
-void clear_class(class_t *cl)
+void clear_class(class_t *cl, size_t _)
 {
    cl->keylist = NULL;
    cl->defaults = NULL;

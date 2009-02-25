@@ -45,9 +45,10 @@
 #include <stdio.h>
 #include <time.h>
 
-typedef void clear_func_t(void *);
+typedef void clear_func_t(void *, size_t);
 typedef void mark_func_t(const void *);
 typedef bool finalize_func_t(void *);
+
 typedef void notify_func_t(void *);
 
 typedef short mt_t;

@@ -285,12 +285,8 @@ static bool       anchor_transients = true;
 #define BLOCK(p)           (((ptrdiff_t)((char *)(p) - heap))>>BLOCKBITS)
 #define BLOCK_ADDR(p)      (heap + BLOCKSIZE*BLOCK(p))
 #define BLOCKA(a)          (((uintptr_t)((char *)(a)))>>BLOCKBITS)
-#define INFO_S(p)          (((info_t *)(unseal((char *)p)))->nh*MIN_HUNKSIZE)
-#define INFO_T(p)          (((info_t *)(unseal((char *)p)))->t)
-#define MM_SIZEOF(p)       \
-   (INHEAP(p) ? types[blockrecs[BLOCK(p)].t].size : INFO_S(p))
-#define MM_TYPEOF(p)       \
-   (INHEAP(p) ? blockrecs[BLOCK(p)].t : INFO_T(p))
+#define INFO_S(p)          (BLOB(p) ? 0 : ((info_t *)(unseal((char *)p)))->nh*MIN_HUNKSIZE)
+#define INFO_T(p)          (BLOB(p) ? mt_blob : ((info_t *)(unseal((char *)p)))->t)
 
 /* loop over all managed addresses in small object heap */
 /* NOTE: the real address is 'heap + a', b is the block */
@@ -329,27 +325,20 @@ static bool isroot(const void *p)
 }
 */
 
-static inline void *seal(const char *p)
+static void *seal(const char *p)
 {
-   assert(!LBITS(p));
+   p = CLRPTR(p);
    VALGRIND_MAKE_MEM_NOACCESS(p, MIN_HUNKSIZE);
    p += MIN_HUNKSIZE;
    return (void *)p;
 }
 
-static inline void *unseal(const char *p)
+static void *unseal(const char *p)
 {
-   assert(!LBITS(p));
+   p = CLRPTR(p);
    p -= MIN_HUNKSIZE;
    VALGRIND_MAKE_MEM_DEFINED(p, MIN_HUNKSIZE);
    return (void *)p;
-}
-
-static inline finalize_func_t *finalizeof(const void *p)
-{
-   assert(ADDRESS_VALID(p));
-   mt_t t = MM_TYPEOF(p);
-   return types[t].finalize;
 }
 
 static int num_free_blocks(void)
@@ -477,8 +466,7 @@ static int fetch_unreachables(void);
 static void *alloc_variable_sized(mt_t t, size_t s)
 {
    /* make sure s is a multiple of MIN_HUNKSIZE */
-   if (s % MIN_HUNKSIZE)
-      s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS;
+   assert(s%MIN_HUNKSIZE == 0);
 
    if (s > MM_SIZE_MAX) {
       warn("size exceeds MM_SIZE_MAX\n");
@@ -549,6 +537,7 @@ static bool no_marked_live(void)
          if (HMAP_LIVE(a)) {
             warn("address 0x%"PRIxPTR" (in block %d) is marked live\n", PPTR(heap + a), b);
             return false;
+
          }
       }
    }
@@ -924,10 +913,9 @@ static void recover_stack(void)
       
    DO_MANAGED(i) {
       if (LIVE(managed[i])) {
-         void *p = CLRPTR(managed[i]);
-         mt_t t  = INFO_T(p);
+         mt_t t  = INFO_T(managed[i]);
          if (types[t].mark)
-            types[t].mark(p);
+            types[t].mark(CLRPTR(managed[i]));
       }
    } DO_MANAGED_END;
 }
@@ -960,7 +948,7 @@ static void trace_from_stack(void)
 process_stack:
    while (!empty()) {
       const void *p = marking_object = pop();
-      mt_t t = marking_type = MM_TYPEOF(p);
+      mt_t t = marking_type = mm_typeof(p);
       if (types[t].mark)
          types[t].mark(p);
    }
@@ -980,7 +968,7 @@ static bool run_finalizer(finalize_func_t *f, void *q)
    if (errno) {
       char *errmsg = strerror(errno);
       debug("finalizer of object 0x%"PRIxPTR" (%s) caused an error:\n%s\n",
-            PPTR(q), types[MM_TYPEOF(q)].name, errmsg);
+            PPTR(q), types[mm_typeof(q)].name, errmsg);
    }
 
    ENABLE_GC;
@@ -1389,7 +1377,7 @@ void *mm_alloc(mt_t t)
       abort();
    }
    if (types[t].clear)
-      types[t].clear(p);
+      types[t].clear(p, types[t].size);
    manage(p, t);
    return p;
 }
@@ -1403,13 +1391,16 @@ void *mm_allocv(mt_t t, size_t s)
    }
    assert(TYPE_VALID(t));
 
+   if (s % MIN_HUNKSIZE)
+      s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS;
+
    void *p = alloc_variable_sized(t, s);
    if (!p) {
       warn("allocation failed\n");
       abort();
    }
    if (types[t].clear)
-      types[t].clear(p);
+      types[t].clear(p, s);
    manage(p, t);
    return p;
 }
@@ -1512,22 +1503,6 @@ char *mm_strdup(const char *s)
 }
 
 
-/*
-size_t mm_strlen(const char *s)
-{
-   if (MM_TYPEOF(s) != mt_string)
-      return strlen(s);
-   
-   size_t l = MM_SIZEOF(s) - MIN_HUNKSIZE;
-   if (l <= (MIN_STRING<<2))
-      l = strlen(s);
-   else 
-      l += strlen(s + l);
-   assert(l == strlen(s));
-   return l;
-}
-*/
-
 void mm_notify(const void *p, bool set)
 {
    assert(ADDRESS_VALID(p));
@@ -1585,14 +1560,26 @@ bool mm_ismanaged(const void *p)
 mt_t mm_typeof(const void *p)
 {
    assert(ADDRESS_VALID(p));
-   return MM_TYPEOF(p);
+   if (INHEAP(p))
+      return blockrecs[BLOCK(p)].t;
+   else {
+      int i = _find_managed(p);
+      assert(i>-1);
+      return INFO_T(managed[i]);
+   }
 }
 
 
 size_t mm_sizeof(const void *p)
 {
    assert(ADDRESS_VALID(p));
-   return MM_SIZEOF(p);
+   if (INHEAP(p))
+      return types[blockrecs[BLOCK(p)].t].size;
+   else {
+      int i = _find_managed(p);
+      assert(i>-1);
+      return INFO_S(managed[i]);
+   }
 }
 
 
@@ -1687,11 +1674,11 @@ static void mark(void)
    } DO_HEAP_END;
    
    DO_MANAGED (i) {
-      void *p = CLRPTR(managed[i]);
-      finalize_func_t *finalize = types[INFO_T(p)].finalize;
-      mark_func_t *mark = types[INFO_T(p)].mark;
+      mt_t t = INFO_T(managed[i]);
+      finalize_func_t *finalize = types[t].finalize;
+      mark_func_t *mark = types[t].mark;
       if (!LIVE(managed[i]) && finalize) {
-         if (mark) mark(p);
+         if (mark) mark(CLRPTR(managed[i]));
          trace_from_stack();
          UNMARK_LIVE(managed[i]); /* break cycles */
       }
@@ -2122,9 +2109,9 @@ static void mark_refs(void **p)
       MM_MARK(p[i]);
 }
 
-static void clear_refs(void **p)
+static void clear_refs(void **p, size_t s)
 {
-   memset(p, 0, mm_sizeof(p));
+   memset(p, 0, s);
 }
 
 
@@ -2279,10 +2266,9 @@ char *mm_info(int level)
 
    DO_MANAGED(i) {
       total_objects_offheap++;
-      void *p = CLRPTR(managed[i]);
-      mt_t t  = MM_TYPEOF(p);
+      mt_t t  = INFO_T(managed[i]);
       total_objects_per_type_oh[t]++;
-      total_memory_managed += MM_SIZEOF(p);
+      total_memory_managed += mm_sizeof(managed[i]);
    } DO_MANAGED_END;
 
    BPRINTF("Managed memory   : %.2f MByte in %"PRIdPTR" + %"PRIdPTR" objects\n",

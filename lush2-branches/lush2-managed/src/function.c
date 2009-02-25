@@ -26,7 +26,7 @@
 
 #include "header.h"
 
-void clear_cfunction(cfunction_t *f)
+void clear_cfunction(cfunction_t *f, size_t _)
 {
    f->name = NULL;
    f->kname = NULL;
@@ -69,7 +69,7 @@ const char *func_name(at *p) {
 
 /* General lfunc routines -----------------------------	 */
 
-void clear_lfunction(lfunction_t *f)
+void clear_lfunction(lfunction_t *f, size_t _)
 {
    f->formal_args = NULL;
    f->body = NULL;
