@@ -236,22 +236,25 @@ static bool       anchor_transients = true;
  * MM's little helpers
  */
 
-#define BITL               1
-#define BITN               2
+#define BITL               1  /* LIVE/OBSOLETE address */
+#define BITN               2  /* NOTIFY                */
+#define BITB               4  /* type blob             */
 #define BITM               8
 
 /* Note: The same bit is used to mark an address LIVE or
  * OBSOLETE. The LIVE bit is only needed in the marking
- * phase and we make sure all OBSOLETES are removd before
+ * phase and we make sure all OBSOLETEs are removd before
  * we start marking.
  */
 
 #define LIVE(p)            (((uintptr_t)(p)) & BITL)
 #define NOTIFY(p)          (((uintptr_t)(p)) & BITN)
+#define BLOB(p)            (((uintptr_t)(p)) & BITB)
 #define OBSOLETE           LIVE
 
 #define MARK_LIVE(p)       { p = (void *)((uintptr_t)(p) | BITL); }
 #define MARK_NOTIFY(p)     { p = (void *)((uintptr_t)(p) | BITN); }
+#define MARK_BLOB(p)     { p = (void *)((uintptr_t)(p) | BITB); }
 #define MARK_OBSOLETE      MARK_LIVE
 
 #define UNMARK_LIVE(p)     { p = (void *)((uintptr_t)(p) & ~BITL); }
@@ -1136,16 +1139,15 @@ static void pop_chunk(mmstack_t *st)
 
 static mmstack_t *make_stack(void)
 {
-   mmstack_t stack = {0, 0, 0};
-   add_chunk(&stack);
-   
    anchor_transients = false;
+   DISABLE_GC;
 
-   mmstack_t *st = mm_malloc(sizeof(mmstack_t));
+   mmstack_t *st = mm_allocv(mt_stack, sizeof(mmstack_t));
    assert(st);
-   mm_type(st, mt_stack);
-   memcpy(st, &stack, sizeof(mmstack_t));
+   memset(st, 0, sizeof(mmstack_t));
+   add_chunk(st);
 
+   ENABLE_GC;
    anchor_transients = true;
 
    return st;
@@ -1525,38 +1527,6 @@ size_t mm_strlen(const char *s)
    return l;
 }
 */
-
-void mm_type(const void *p, mt_t t)
-{
-   assert(ADDRESS_VALID(p));
-   assert(TYPE_VALID(t));
-
-   if (INHEAP(p)) {
-      warn("address was not obtained with mm_malloc\n");
-      abort();
-   }
-
-   int i = managed[man_last]==p ? man_last : find_managed(p);
-   if (i<0) {
-      warn("(mm_type) 0x%" PRIxPTR " not a managed address\n", PPTR(p));
-      abort();
-   }
-   
-#ifdef NVALGRIND
-   mt_t pt = INFO_T(p);
-   if (t!=pt)
-      debug("changing memory type of address %" PRIxPTR " from '%s' to '%s'\n",
-            PPTR(p), types[pt].name, types[t].name);
-#endif
-   if (types[t].size > INFO_S(p)) {
-      warn("Size of new memory type may not be larger than size of old memory type.\n"); 
-      abort();
-   }
-   info_t *info = unseal(p);
-   info->t = t;
-   seal((char *)info);
-}
-
 
 void mm_notify(const void *p, bool set)
 {
