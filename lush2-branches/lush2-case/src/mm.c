@@ -240,14 +240,17 @@ static bool       anchor_transients = true;
 #define BITN               2
 #define BITO               4
 #define BITM               8
-#define MARKED_LIVE(p)     ((void *)((uintptr_t)(p) | BITL))
-#define MARK_LIVE(p)       { p = MARKED_LIVE(p); }
+
+#define LIVE(p)            (((uintptr_t)(p)) & BITL)
+#define NOTIFY(p)          (((uintptr_t)(p)) & BITN)
+#define OBSOLETE(p)        (((uintptr_t)(p)) & BITO)
+
+#define MARK_LIVE(p)       { p = (void *)((uintptr_t)(p) | BITL); }
+#define MARK_NOTIFY(p)     { p = (void *)((uintptr_t)(p) | BITN); }
+#define MARK_OBSOLETE(p)   { p = (void *)((uintptr_t)(p) | BITO); }
+
 #define UNMARK_LIVE(p)     { p = (void *)((uintptr_t)(p) & ~BITL); }
-#define MARKED_NOTIFY(p)   ((void *)((uintptr_t)(p) | BITN))
-#define MARK_NOTIFY(p)     { p = MARKED_NOTIFY(p); }
 #define UNMARK_NOTIFY(p)   { p = (void *)((uintptr_t)(p) & ~BITN); }
-#define MARKED_OBSOLETE(p) ((void *)((uintptr_t)(p) | BITO))
-#define MARK_OBSOLETE(p)   { p = MARKED_OBSOLETE(p); }
 #define UNMARK_OBSOLETE(p) { p = (void *)((uintptr_t)(p) & ~BITO); }
 
 #define HMAP(a, op, b) (hmap[(((uintptr_t)(a))>>(ALIGN_NUM_BITS + HMAP_EPI_BITS))] op \
@@ -271,9 +274,6 @@ static bool       anchor_transients = true;
 #define TYPE_VALID(t)      ((t)>=0 && (t)<=types_last)
 #define INDEX_VALID(i)     ((i)>=0 && (i)<=man_last)
 
-#define LIVE(p)            (((uintptr_t)(p)) & BITL)
-#define NOTIFY(p)          (((uintptr_t)(p)) & BITN)
-#define OBSOLETE(p)        (((uintptr_t)(p)) & BITO)
 
 #define INHEAP(p)          (((char *)(p) >= heap) && ((char *)(p) < (heap + heapsize)))
 #define BLOCK(p)           (((ptrdiff_t)((char *)(p) - heap))>>BLOCKBITS)
@@ -304,9 +304,8 @@ static bool       anchor_transients = true;
 #define DO_MANAGED(i) { \
   int __lasti = collect_in_progress ? man_k : man_last; \
   for (int i = 0; i <= __lasti; i++) { \
-     if (!OBSOLETE(managed[i])) {
 
-#define DO_MANAGED_END }}} 
+#define DO_MANAGED_END }}
 
 #define DISABLE_GC \
    bool __nogc = gc_disabled; \
@@ -315,16 +314,6 @@ static bool       anchor_transients = true;
 #define ENABLE_GC gc_disabled = __nogc;
 
 static int find_managed(const void *p);
-
-static bool obsolete(const void *p)
-{
-   ptrdiff_t a = ((char *)p) - heap;
-   if (a>=0 && a<heapsize) {
-      return !HMAP_MANAGED(a);
-   }
-   int i = find_managed(MARKED_OBSOLETE(p));
-   return i != -1;
-}
 
 /*
 static bool isroot(const void *p)
@@ -804,31 +793,6 @@ static void unmanage_inheap(const void *p)
    HMAP_UNMARK_MANAGED(a);
 }
 
-static void unmanage_offheap(const void *p)
-{
-   int i = find_managed(p);
-   assert(!OBSOLETE(managed[i]));
-   
-   if (NOTIFY(managed[i])) {
-      UNMARK_NOTIFY(managed[i]);
-      client_notify(managed[i]);
-   }
-   
-   MARK_OBSOLETE(managed[i]);
-   man_is_compact = false;
-}
-
-/* static void unmanage(const void *p) */
-/* { */
-/*    assert(ADDRESS_VALID(p)); */
-   
-/*    ptrdiff_t a = ((char *)p) - heap; */
-/*    if (a>=0 && a<heapsize) */
-/*       unmanage_inheap(p); */
-/*    else */
-/*       unmanage_offheap(p); */
-/* } */
-
 static void collect_prologue(void)
 {
    assert(!collect_in_progress);
@@ -1030,27 +994,27 @@ static void reclaim_inheap(void *q)
       types[t].next_b = b;
 }
 
-static void reclaim_offheap(void *q)
+static void reclaim_offheap(int i)
 {
+   assert(!OBSOLETE(managed[i]));
+
+   void *q = CLRPTR2(managed[i]);
    info_t *info_q = unseal(q); 
    finalize_func_t *f = types[info_q->t].finalize;
    if (f)
       if (!run_finalizer(f, q))
          return;
 
-   unmanage_offheap(q);
+   if (NOTIFY(managed[i])) {
+      UNMARK_NOTIFY(managed[i]);
+      client_notify(managed[i]);
+   }
+   
+   MARK_OBSOLETE(managed[i]);
+   man_is_compact = false;
+
    free(info_q);
 }
-
-/*
-static inline void reclaim(void *q)
-{
-   if (INHEAP(q))
-      reclaim_inheap(q);
-   else
-      reclaim_offheap(q);
-}
-*/
 
 static int sweep_now(void)
 {
@@ -1071,7 +1035,7 @@ static int sweep_now(void)
       if (LIVE(managed[i])) {
          UNMARK_LIVE(managed[i]);
       } else {
-         reclaim_offheap(CLRPTR2(managed[i]));
+         reclaim_offheap(i);
          n++;
       }
    } DO_MANAGED_END;
@@ -1286,7 +1250,6 @@ static bool stack_works_fine(mmstack_t *st)
 
    /* avoid 'defined but not used' warning */
    (void)stack_peek(st);
-   (void)obsolete(st);
 
    /* test indexing */
    for (intptr_t i = 0; i < n; i++) {
@@ -1781,7 +1744,7 @@ static void sweep(void)
    /* malloc'ed objects */
    DO_MANAGED(i) {
       if (!LIVE(managed[i])) {
-         buf[n++] = CLRPTR2(managed[i]);
+         buf[n++] = (void *)i;
          if (n == NUM_TRANSFER) {
             write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
             n = 0;
@@ -1917,12 +1880,12 @@ static int fetch_unreachables(void)
          }
 
       } else {
-         reclaim_offheap(buf[j++]);
+         reclaim_offheap((int)buf[j++]);
          if (j == n) {
             n = 0;
             return 1;
          }
-         reclaim_offheap(buf[j++]);
+         reclaim_offheap((int)buf[j++]);
          if (j == n) {
             n = 0;
          }
@@ -2448,18 +2411,14 @@ void dump_managed(mt_t t)
    mm_printf("Dumping managed list (%d of %d in poplars)...\n",
              man_k+1, man_last+1);
    for (int i = 0; i <= man_last; i++) {
-      if (!OBSOLETE(managed[i])) {
-         mt_t ti = mm_typeof(CLRPTR(managed[i]));
-         if (t==mt_undefined || t==ti)
-            mm_printf("%4d : %16"PRIxPTR", %4d  %8s %1s%1s%1s %20s\n", 
-                      i, PPTR(CLRPTR(managed[i])),
-                      INHEAP(managed[i]) ? (int)BLOCK(managed[i]) : -1,
-                      INHEAP(managed[i]) ? "inheap" : "offheap",
-                      LIVE(managed[i]) ? "l" : " ",
-                      OBSOLETE(managed[i]) ? "o" : " ",
-                      NOTIFY(managed[i]) ? "n" : " ",
-                      types[ti].name);
-      }
+      mt_t ti = mm_typeof(CLRPTR(managed[i]));
+      if (t==mt_undefined || t==ti)
+         mm_printf("%4d : %16"PRIxPTR", %1s%1s%1s %20s\n", 
+                   i, PPTR(CLRPTR(managed[i])),
+                   LIVE(managed[i]) ? "l" : " ",
+                   OBSOLETE(managed[i]) ? "o" : " ",
+                   NOTIFY(managed[i]) ? "n" : " ",
+                   types[ti].name);
    }
    mm_printf("\n");
    fflush(stdlog);
