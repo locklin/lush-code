@@ -40,12 +40,13 @@
 
 #define NVALGRIND
 
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
 
-typedef void clear_func_t(void *);
+typedef void clear_func_t(void *, size_t);
 typedef void mark_func_t(const void *);
 typedef bool finalize_func_t(void *);
 typedef void notify_func_t(void *);
@@ -64,11 +65,10 @@ void    mm_init(int, notify_func_t *, FILE *); // initialize manager
 mt_t    mm_regtype(const char *, size_t, clear_func_t, mark_func_t *, finalize_func_t *);
 void   *mm_alloc(mt_t);                  // allocate fixed-size object
 void   *mm_allocv(mt_t, size_t);         // allocate variable-sized object
-void   *mm_malloc(size_t);               // malloc replacement
-void   *mm_calloc(size_t, size_t);       // calloc replacement
 void   *mm_realloc(void *, size_t);      // realloc replacement
 void    mm_type(const void *, mt_t);     // set type of managed object
 void    mm_notify(const void *, bool);   // set or unset notify flag
+void    mm_manage(const void*);          // manage malloc'ed address 
 bool    mm_ismanaged(const void *);      // true if managed object
 mt_t    mm_typeof(const void *);         // type of object
 size_t  mm_sizeof(const void *);         // size of object
@@ -79,6 +79,21 @@ void    mm_collect(void);                // asynchronous collect
 int     mm_collect_now(void);            // synchronous collect
 bool    mm_collect_in_progress(void);    // true if gc is under way
 bool    mm_idle(void);                   // do work, return true when more work
+
+static inline void *mm_malloc(size_t s)
+{
+   void *p = malloc(s);
+   if (p) mm_manage(p);
+   return p;
+}
+
+static inline void *mm_calloc(size_t n, size_t s)
+{
+   void *p = calloc(n, s);
+   if (p) mm_manage(p);
+   return p;
+}
+
 
 /* string utilities */
 char   *mm_string(size_t);               // create buffer for string of size

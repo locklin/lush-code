@@ -48,7 +48,7 @@
 #include <sys/mman.h>
 #endif
 
-void clear_storage(storage_t *st)
+void clear_storage(storage_t *st, size_t _)
 {
    st->data = NULL;
    st->backptr = NULL;

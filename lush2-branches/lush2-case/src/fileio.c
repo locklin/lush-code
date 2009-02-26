@@ -837,7 +837,7 @@ static struct tmpname {
    const char *file;
 } *tmpnames = 0;
 
-void clear_tmpname(struct tmpname *tn)
+void clear_tmpname(struct tmpname *tn, size_t _)
 {
    tn->next = NULL;
    tn->file = NULL;

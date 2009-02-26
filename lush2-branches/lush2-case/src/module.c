@@ -470,7 +470,7 @@ static at *atroot;
 static int check_executability = false;
 static void check_exec();
 
-void clear_module(module_t *m)
+void clear_module(module_t *m, size_t _)
 {
    m->prev = 0;
    m->next = 0;

@@ -72,7 +72,7 @@ typedef struct hash_name {
 } hash_name_t;
 
 
-void clear_symbol_hash(hash_name_t *hn)
+void clear_symbol_hash(hash_name_t *hn, size_t _)
 {
    hn->name = NULL;
    hn->named = NULL;
@@ -93,7 +93,7 @@ void mark_symbol_hash(hash_name_t *hn)
 static mt_t mt_symbol_hash = mt_undefined;
 
 
-void clear_symbol(symbol_t *s)
+void clear_symbol(symbol_t *s, size_t _)
 {
    s->next = NULL;
    s->hn = NULL;

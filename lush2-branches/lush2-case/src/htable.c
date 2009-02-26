@@ -38,7 +38,7 @@ struct htpair
    at   *value;
 };
 
-static void clear_htpair(struct htpair *h)
+static void clear_htpair(struct htpair *h, size_t _)
 {
    h->next = NULL;
    h->key  = NULL;
@@ -70,7 +70,7 @@ typedef struct hashtable
    struct htpair **table;
 } hashtable_t;
 
-static void clear_hashtable(hashtable_t *h)
+static void clear_hashtable(hashtable_t *h, size_t _)
 {
    h->table = NULL;
 }

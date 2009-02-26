@@ -58,7 +58,7 @@
 
 typedef at* atp_t;
 
-void clear_index(index_t *ind)
+void clear_index(index_t *ind, size_t _)
 {
    ind->st = NULL;
    ind->backptr = NULL;
