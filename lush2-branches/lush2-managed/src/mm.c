@@ -788,17 +788,6 @@ static void manage(const void *p, mt_t t)
       profile[t]++;
 }
 
-static void unmanage_inheap(const void *p)
-{
-   ptrdiff_t a = ((char *)p) - heap;
-   assert(HMAP_MANAGED(a));
-   if (HMAP_NOTIFY(a)) {
-      HMAP_UNMARK_NOTIFY(a);
-      client_notify((void *)p);
-   }
-   HMAP_UNMARK_MANAGED(a);
-}
-
 static void collect_prologue(void)
 {
    assert(!collect_in_progress);
@@ -977,6 +966,7 @@ static bool run_finalizer(finalize_func_t *f, void *q)
    return ok;
 }
 
+
 static void reclaim_inheap(void *q)
 {
    const int b = BLOCK(q);
@@ -986,7 +976,15 @@ static void reclaim_inheap(void *q)
       if (!run_finalizer(f, q))
          return;
 
-   unmanage_inheap(q);
+   { 
+      const ptrdiff_t a = ((char *)q) - heap;
+      assert(HMAP_MANAGED(a));
+      if (HMAP_NOTIFY(a)) {
+         HMAP_UNMARK_NOTIFY(a);
+         client_notify((void *)q);
+      }
+      HMAP_UNMARK_MANAGED(a);
+   }
    VALGRIND_MEMPOOL_FREE(heap, q);
    
    assert(blockrecs[b].in_use > 0);
@@ -998,6 +996,7 @@ static void reclaim_inheap(void *q)
    if (b < types[t].next_b)
       types[t].next_b = b;
 }
+
 
 static void reclaim_offheap(int i)
 {
@@ -1023,6 +1022,7 @@ static void reclaim_offheap(int i)
 
    free(q);
 }
+
 
 static int sweep_now(void)
 {
