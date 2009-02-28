@@ -1429,7 +1429,7 @@ void *mm_calloc(size_t n, size_t s)
    FIX_SIZE(s);
    void *p = alloc_variable_sized(mt_blob, s);
    if (p) {
-      memset(p, 0, mm_sizeof(p));
+      memset(p, 0, s);
       manage(p, mt_blob);
    }
    return p;
