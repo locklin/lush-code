@@ -353,8 +353,8 @@ static int regex_execute(const char **regsptr, int *regslen, int nregs)
       case RE_FAIL&0xf000:
          if (sp >= spmax) { /* enlarge stack */
             spmax += spmax;
-            unsigned short **bfail2 = mm_malloc(sizeof(short *)*spmax);
-            char **dfail2 = mm_malloc(sizeof(char *)*spmax);
+            unsigned short **bfail2 = mm_blob(sizeof(short *)*spmax);
+            char **dfail2 = mm_blob(sizeof(char *)*spmax);
             if (!bfail2 || !dfail2)
                error(NIL,"out of memory",NIL);
             memcpy(bfail2, bfail, sizeof(short *)*spmax/2);
@@ -512,14 +512,14 @@ DX(xregex_extract)
    if (pat)
       error(NIL,pat,APOINTER(1));
 
-   const char **regptr = mm_malloc(2*regnum*sizeof(char*));
-   int *reglen = mm_malloc(regnum*sizeof(int));
+   const char **regptr = mm_blob(2*regnum*sizeof(char*));
+   int *reglen = mm_blob(regnum*sizeof(int));
    if (regnum && (!regptr || !reglen))
       error(NIL, "out of memory", NIL);
    
    if (regex_exec(buffer,dat,regptr,reglen,regnum)) {
       for (i=0; i<regnum; i++) {
-         char *s = mm_string(reglen[i]);
+         char *s = mm_blob(reglen[i]+1);
          strncpy(s, regptr[i], reglen[i]);
          s[reglen[i]] = '\0';
          *where = new_cons(new_string(s), NIL);

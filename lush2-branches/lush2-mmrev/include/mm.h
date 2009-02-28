@@ -36,15 +36,11 @@
 #define MM_INCLUDED
 
 #define MM_SIZE_MAX    (UINT32_MAX*MIN_HUNKSIZE)
-#define MM_MIN_STRING  40
 
 #define NVALGRIND
 
-#include <stdlib.h>
-#include <stddef.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <time.h>
 
 typedef void clear_func_t(void *, size_t);
 typedef void mark_func_t(const void *);
@@ -56,8 +52,14 @@ typedef short mt_t;
 /* pre-defined memory types */
 enum mt {
    mt_undefined = -1,
-   mt_blob      =  0,
-   mt_refs      =  1,
+   mt_blob8     =  0,
+   mt_blob16    =  1,
+   mt_blob32    =  2,
+   mt_blob64    =  3,
+   mt_blob128   =  4,
+   mt_blob256   =  5,
+   mt_blob      =  6,
+   mt_refs      =  7,
 };
 
 /* MM administration */
@@ -76,16 +78,12 @@ void    mm_mark(const void *);           // mark referenced object
 /* allocation functions */
 void   *mm_alloc(mt_t);                  // allocate fixed-size object
 void   *mm_allocv(mt_t, size_t);         // allocate variable-sized object
-char   *mm_blob(size_t);                 // create a blob of size
-void   *mm_malloc(size_t);               // malloc replacement
-void   *mm_calloc(size_t, size_t);       // calloc replacement
-void   *mm_realloc(void *, size_t);      // realloc replacement
-char   *mm_string(size_t);               // allocate string buffer
+void   *mm_blob(size_t);                 // allocate blob of size
 char   *mm_strdup(const char *);         // create managed copy of string
 
 /* properties of managed objects */
 bool    mm_ismanaged(const void *);      // true if managed object
-void    mm_manage(const void*);          // manage malloc'ed address 
+void    mm_manage(const void *);         // manage malloc'ed address 
 void    mm_notify(const void *, bool);   // set or unset notify flag
 size_t  mm_sizeof(const void *);         // size of object
 mt_t    mm_typeof(const void *);         // type of object

@@ -89,11 +89,9 @@ DX(xcons)
  }
 
 
-mt_t mt_double = mt_undefined;
-
 at *new_number(double x)
 {
-   double *d = mm_alloc(mt_double);
+   double *d = mm_alloc(mt_blob8);
    *d = x;
    return new_extern(&number_class, d);
 }
@@ -486,6 +484,7 @@ extern void pre_init_module(void);
 void init_at(void)
 {
    assert(sizeof(at)==2*sizeof(void *));
+   assert(sizeof(double) <= 8);
 
    mt_at = MM_REGTYPE("at", sizeof(at),
                       clear_at, mark_at, 0);
@@ -493,8 +492,6 @@ void init_at(void)
 
    mt_class = MM_REGTYPE("class", sizeof(class_t),
                          clear_class, mark_class, 0);
-
-   mt_double = MM_REGTYPE("double", sizeof(double), 0, 0, 0);
 
    /* bootstrapping the type registration */
    pre_init_symbol();

@@ -559,13 +559,15 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    size_t s = size*storage_sizeof[st->type];
    size_t olds = st->size*storage_sizeof[st->type];
    gptr olddata = st->data;
-   MM_ANCHOR(olddata);
-   if (st->type==ST_AT || st->type==ST_GPTR) {
-      st->data = mm_allocv(mt_refs, s);  /* aborts if OOM */
-      memcpy(st->data, olddata, olds);
-   } else
-      st->data = mm_realloc(olddata, s);
 
+   MM_ANCHOR(olddata);
+   if (st->type==ST_AT || st->type==ST_GPTR)
+      st->data = mm_allocv(mt_refs, s);  /* aborts if OOM */
+   else 
+      st->data = mm_blob(s);
+
+   memcpy(st->data, olddata, olds);
+   
    if (st->data == NULL) {
       st->data = olddata;
       RAISEF("not enough memory", NIL);

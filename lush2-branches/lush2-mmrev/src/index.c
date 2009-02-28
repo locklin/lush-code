@@ -88,7 +88,7 @@ static subscript_t *parse_subscript(at *atss)
    static char errmsg_not_a_subscript[] = "not a valid subscript";
    static char errmsg_dimensions[] = "too many dimensions";
    
-   subscript_t *ss = mm_malloc(sizeof(struct subscript));
+   subscript_t *ss = mm_blob(sizeof(struct subscript));
 
    if (INDEXP(atss) && index_numericp(Mptr(atss))) {
       index_t *ind = Mptr(atss);

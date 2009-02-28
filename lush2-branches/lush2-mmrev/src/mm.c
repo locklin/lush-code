@@ -57,6 +57,8 @@
 #endif
 
 #include <unistd.h>
+#include <stddef.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
@@ -85,10 +87,6 @@
 #  define PIPE_BUF      512
 #endif
 
-#ifndef MM_MIN_STRING
-#  error MM_MIN_STRING not defined
-#endif
-
 #define PAGEBITS        12
 //#define BLOCKBITS       (PAGEBITS+1)
 #define BLOCKBITS       PAGEBITS
@@ -111,8 +109,6 @@
 #define MAX_VOLUME      0x300000    /* max volume threshold */
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
 #define NUM_IDLE_CALLS  100
-
-
 
 #define HMAP_NUM_BITS   4
 
@@ -1409,121 +1405,24 @@ void *mm_allocv(mt_t t, size_t s)
 }
 
 
-char *mm_blob(size_t s)
+void *mm_blob(size_t s)
 {
-   return mm_allocv(mt_blob, s);
-}
-
-
-void *mm_malloc(size_t s)
-{
-   FIX_SIZE(s);
-   void *p = alloc_variable_sized(mt_blob, s);
-   if (p) manage(p, mt_blob);
-   return p;
-}
-
-
-void *mm_calloc(size_t n, size_t s)
-{
-   FIX_SIZE(s);
-   void *p = alloc_variable_sized(mt_blob, s);
-   if (p) {
-      memset(p, 0, mm_sizeof(p));
-      manage(p, mt_blob);
-   }
-   return p;
-}
-
-
-void *mm_realloc(void *q, size_t s)
-{
-   assert(ADDRESS_VALID(q));
-
-   if (q == NULL)
-      return mm_malloc(s);
-
-   if (INHEAP(q)) {
-      warn("cannot mm_realloc address obtained with mm_alloc\n");
-      abort();
-   }
-   
-   int i = find_managed(q);
-   assert(i>-1);
-   mt_t t = mt_blob;
-   info_t *info_q = BLOB(managed[i]) ? NULL : unseal(q);
-   if (info_q) {
-      t = info_q->t;
-      assert(TYPE_VALID(t));
-   }
-
-   FIX_SIZE(s);
-   if (s < types[t].size) {
-      warn("new size is smaller than minimum size of memory type '%s'\n",
-           types[t].name);
-      abort();
-   }
-
-   void *r = NULL;
-   if (info_q) {
-      r = alloc_variable_sized(t, s);
-      if (r) memcpy(r, q, info_q->nh*MIN_HUNKSIZE);
-   } else {
-      /* when q was given to us per mm_manage, we need to use
-       * realloc as we don't have size info.
-       */
-      r = realloc(q, s);
-      if (r==q)
-         return r;
-   }
-   
-   if (r) {
-      /* the new address r inherits q's notify flag     */
-      /* notifiers and finalizers should not run for q  */
-      /* so we clear q's notify flag and set its memory */
-      /* type to mt_blob                                */
-      { 
-         /* this hack is to prevent add_managed from */
-         /* shuffling the managed array              */
-         bool cip = collect_in_progress;
-         collect_in_progress = true;
-         manage(r, t);
-         assert(managed[man_last] == r);
-         collect_in_progress = cip;
-      }
-      if (NOTIFY(managed[i])) {
-         MARK_NOTIFY(managed[man_last]);
-         UNMARK_NOTIFY(managed[i]);
-      }
-      if (info_q)
-         info_q->t = mt_blob;
-      else {
-         /* old address was freed by realloc, we must remove it now */
-         debug(" substituting address 0x%"PRIxPTR" for 0x%"PRIxPTR"\n", PPTR(r), PPTR(q));
-         MARK_BLOB(managed[man_last]);
-         managed[i] = managed[man_last--];
-         for (int n = 0; n < man_t; n++)
-            if (i <= poplar_roots[n+1]) {
-               poplar_sorted[n] = false;
-               break;
-            }
-      }
-   }
-   return r;
-}
-
-
-char *mm_string(size_t s)
-{
-   char *str = mm_blob(s+1);
-   str[0] = '\0';
-   return str;
+   if (s <= 256) {
+      mt_t mt = mt_blob256;
+      if      (s <=  8)   mt = mt_blob8;
+      else if (s <= 16)   mt = mt_blob16;
+      else if (s <= 32)   mt = mt_blob32;
+      else if (s <= 64)   mt = mt_blob64;
+      else if (s <=128)   mt = mt_blob128;
+      return mm_alloc(mt);
+   } else 
+      return mm_allocv(mt_blob, s);
 }
 
 
 char *mm_strdup(const char *str)
 {
-   char *str2 = mm_string(strlen(str));
+   char *str2 = mm_blob(strlen(str)+1);
    return strcpy(str2, str);
 }
 
@@ -2171,12 +2070,24 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    types_size = MIN_TYPES;
    {
       mt_t mt;
+      mt = MM_REGTYPE("blob8", 8, 0, 0, 0);
+      assert(mt == mt_blob8);
+      mt = MM_REGTYPE("blob16", 16, 0, 0, 0);
+      assert(mt == mt_blob16);
+      mt = MM_REGTYPE("blob32", 32, 0, 0, 0);
+      assert(mt == mt_blob32);
+      mt = MM_REGTYPE("blob64", 64, 0, 0, 0);
+      assert(mt == mt_blob64);
+      mt = MM_REGTYPE("blob128", 128, 0, 0, 0);
+      assert(mt == mt_blob128);
+      mt = MM_REGTYPE("blob256", 256, 0, 0, 0);
+      assert(mt == mt_blob256);
       mt = MM_REGTYPE("blob", 0, 0, 0, 0);
       assert(mt == mt_blob);
       mt = MM_REGTYPE("refs", 0, clear_refs, mark_refs, 0);
       assert(mt == mt_refs);
    }
-   assert(types_last == 1);
+   assert(types_last == mt_refs);
 
    /* set up other bookkeeping structures */
    managed = (void *)malloc(MIN_MANAGED * sizeof(void *));
@@ -2311,7 +2222,8 @@ int mm_prof_start(int *h)
 
    if (!profile) {
       anchor_transients = false;
-      profile = mm_calloc(mt_blob, n*sizeof(int));
+      profile = mm_blob(n*sizeof(int));
+      memset(profile, 0, n*sizeof(int));
       anchor_transients = true;
    }
 

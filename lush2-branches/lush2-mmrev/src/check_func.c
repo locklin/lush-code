@@ -188,38 +188,30 @@ static void lush_free(void *x, const char *file,int line)
 	fprintf(malloc_file,"%p\tfree\t%d\t%s:%d\n",x,0,file,line);
 }
 
-/*
-void
-srg_resize_compiled(struct srg *sr, size_t new_size, char *file, int line)
+
+void srg_resize_mm(struct srg *sr, size_t new_size, const char *file, int line)
 {
-  if(sr->flags & STS_MALLOC)  {
-    size_t st_size = storage_sizeof[sr->type] * new_size;
-    char *malloc_ptr = lush_realloc(sr->data, st_size, file, line);
-    if ((st_size>0) && (malloc_ptr==NULL))
-       run_time_error(rterr_out_of_memory);
-    sr->data = malloc_ptr;
-    sr->size = new_size;
-  } else
-    run_time_error(rterr_cannot_realloc);
-}
-*/
-void
-srg_resize_mm(struct srg *sr, size_t new_size, const char *file, int line)
-{
-  if(sr->flags & STS_MALLOC)  {
-    size_t st_size = storage_sizeof[sr->type] * new_size;
-    char *malloc_ptr = (sr->data) ? mm_realloc(sr->data, st_size) : \
-       mm_malloc(st_size);
-    if ((st_size>0) && (malloc_ptr==NULL))
-       run_time_error(rterr_out_of_memory);
-    sr->data = malloc_ptr;
-    sr->size = new_size;
-  } else
-    run_time_error(rterr_cannot_realloc);
+   if(sr->flags & STS_MALLOC) {
+      if (new_size < sr->size && new_size > (sr->size/2)) {
+         sr->size = new_size;
+         return;
+      }
+      char *data = mm_blob(storage_sizeof[sr->type]*new_size);
+      if (sr->data) {
+         size_t n = (sr->size < new_size) ? sr->size : new_size;
+         n *= storage_sizeof[sr->type];
+         memcpy(data, sr->data, n);
+      }
+/*       if ((st_size>0) && (data==NULL)) */
+/*          run_time_error(rterr_out_of_memory); */
+      sr->data = data;
+      sr->size = new_size;
+   } else
+      run_time_error(rterr_cannot_realloc);
 }
 
-void
-srg_resize(struct srg *sr, size_t new_size, const char *file, int line) 
+
+void srg_resize(struct srg *sr, size_t new_size, const char *file, int line) 
 {
 #ifndef NOLISP
   if(sr->flags & STS_MALLOC) { 
@@ -231,8 +223,8 @@ srg_resize(struct srg *sr, size_t new_size, const char *file, int line)
 	sr->data = 0;
       } else {
         malloc_ptr = (char *) lush_realloc(sr->data, st_size, file, line); 
-        if(malloc_ptr == 0) 
-          error(NIL, rterr_out_of_memory, NIL); 
+        if(malloc_ptr == 0)
+           error(NIL, rterr_out_of_memory, NIL); 
         sr->data = malloc_ptr; 
       } 
     } else { 
@@ -349,3 +341,9 @@ check_m2in_m2in_m4out(struct idx *i0, struct idx *i1, struct idx *i2)
 
 
 
+/* -------------------------------------------------------------
+   Local Variables:
+   c-file-style: "k&r"
+   c-basic-offset: 3
+   End:
+   ------------------------------------------------------------- */
