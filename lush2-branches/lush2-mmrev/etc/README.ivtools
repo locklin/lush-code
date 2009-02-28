@@ -1,0 +1,328 @@
+
+The command <comdraw-window> launches the IVTools graphic 
+editor "comdraw" and returns a window descriptor that 
+directly draws into the comdraw editable window.
+
+IVTools is available from http://www.ivtools.org.
+This feature requires version 1.0.6 with the attached patch.
+These patches will be part of the forthcoming version 1.0.7.
+
+<----------------------------------------------------------------------------->
+
+diff -u src/ComUnidraw.orig/comeditor.c src/ComUnidraw/comeditor.c
+--- src/ComUnidraw.orig/comeditor.c	2002-11-06 17:29:25.000000000 -0500
++++ src/ComUnidraw/comeditor.c	2002-11-06 17:42:41.000000000 -0500
+@@ -149,7 +149,10 @@
+     comterp->add_command("brush", new BrushFunc(comterp, this));
+     comterp->add_command("pattern", new PatternFunc(comterp, this));
+     comterp->add_command("colors", new ColorFunc(comterp, this));
+-
++    //SECIL
++    comterp->add_command("fontbyname", new FontByNameFunc(comterp, this));
++    comterp->add_command("colorsrgb", new ColorRgbFunc(comterp, this));
++    //SECIL
+     comterp->add_command("nfonts", new NFontsFunc(comterp, this));
+     comterp->add_command("nbrushes", new NBrushesFunc(comterp, this));
+     comterp->add_command("npatterns", new NPatternsFunc(comterp, this));
+@@ -218,6 +221,9 @@
+ 
+     comterp->add_command("poke", new PixelPokeFunc(comterp, this));
+     comterp->add_command("peek", new PixelPeekFunc(comterp, this));
++    //SECIL
++    comterp->add_command("pokeline", new PixelPokeLineFunc(comterp, this));
++    //SECIL
+     comterp->add_command("pcols", new PixelColsFunc(comterp, this));
+     comterp->add_command("prows", new PixelRowsFunc(comterp, this));
+     comterp->add_command("pflush", new PixelFlushFunc(comterp, this));
+Only in src/ComUnidraw: comeditor.c.rej
+diff -u src/ComUnidraw.orig/grfunc.c src/ComUnidraw/grfunc.c
+--- src/ComUnidraw.orig/grfunc.c	2002-11-06 17:29:25.000000000 -0500
++++ src/ComUnidraw/grfunc.c	2002-11-06 17:42:41.000000000 -0500
+@@ -62,6 +62,13 @@
+ #include <Unidraw/Graphic/ellipses.h>
+ 
+ #include <InterViews/transformer.h>
++//SECIL
++#include <IV-2_6/InterViews/world.h>
++#include <IV-X11/Xlib.h>
++#include <IV-X11/xdisplay.h>
++#include <IV-X11/xfont.h>
++#include <X11/Xatom.h>
++//SECIL
+ 
+ #include <Attribute/aliterator.h>
+ #include <Attribute/attrlist.h>
+@@ -673,6 +680,143 @@
+ }
+ 
+ /*****************************************************************************/
++//SECIL
++FontByNameFunc::FontByNameFunc(ComTerp* comterp, Editor* ed) : UnidrawFunc(comterp, ed) {
++}
++
++static char  *psfonttoxfont(char* f)
++{
++  /* convert a PS name to a X... */
++  char type[10];
++  int size=0;
++  static char copy[256];
++  static char name[256];
++  static char *wght[] = { "bold","demi","light","demibold","book",0 };
++  char *s;
++
++  if (*f=='-')
++    return f;
++
++  strcpy(copy,f);
++  s = copy;
++  while (*s) {
++    *s = tolower(*s);
++    s++;
++  }
++  f = copy+strlen(copy);
++
++  s = strchr(copy,'-');
++  if (!s) {
++    strcpy(type,"medium-r");
++  } else {
++    *s=0;
++    s++;
++    for (size=0;wght[size];size++)
++      if (!strncmp(s,wght[size],strlen(wght[size]))) {
++      strcpy(type,wght[size]);
++      strcat(type,"-");
++      s+=strlen(wght[size]);
++      break;
++      }
++    if (!wght[size])
++      strcpy(type,"medium-");
++    switch (*s) {
++    case 'i':
++      strcat(type,"i");
++      break;
++    case 'o':
++      strcat(type,"o");
++      break;
++    default:
++      strcat(type,"r");
++      break;
++    }
++  }
++
++  size = 11;
++  while (f[-1]>='0' && f[-1]<='9')
++    f--;
++
++  if (*f)
++    size = atoi(f);
++  f[0] = 0;
++  if (f[-1]=='-')
++    f[-1] = 0;
++  sprintf(name,"-*-%s-%s-normal-*-%d-*",
++        copy, type, size );
++  return name;
++}
++/*****************************************************************************/
++void FontByNameFunc::execute() {
++  ComValue& fontarg = stack_arg(0);
++  const char*  fontval = fontarg.string_ptr();
++  reset_stack();
++
++  char* fontvaldup=strdup(fontval);
++  Catalog* catalog = unidraw->GetCatalog();
++  XDisplay* dpy =World::current()->display()->rep()->display_;
++  XFontStruct* xfs = XLoadQueryFont(dpy, fontvaldup);
++  PSFont* font = nil;
++
++  if (!xfs){
++    char* xfontval=psfonttoxfont(fontvaldup);
++    fontvaldup = strdup(xfontval);
++    xfs = XLoadQueryFont(dpy,xfontval);
++    if (!xfs){
++      fprintf(stderr, "Can not load font:  %s, \n", fontval);
++      fprintf(stderr, "Keeping the current font.\n");
++    }
++  }
++  if (xfs){
++    unsigned long value;
++    char fontname[CHARBUFSIZE];
++    char fontsizeptr[CHARBUFSIZE];
++    char fontfullname[CHARBUFSIZE];
++
++    XGetFontProperty(xfs, XA_FULL_NAME, &value);
++    strcpy(fontfullname, XGetAtomName(dpy, (Atom)value));
++
++    XGetFontProperty(xfs, XA_FONT_NAME, &value);
++    strcpy(fontname, XGetAtomName(dpy, (Atom)value));
++
++    XGetFontProperty(xfs,XA_POINT_SIZE, &value);
++    sprintf(fontsizeptr,"%d",(unsigned int)(value/10));
++
++    font = catalog->FindFont(fontvaldup,fontname,fontsizeptr);
++    delete fontvaldup;
++  }
++  FontCmd* cmd = nil;
++
++  if (font) {
++    cmd = new FontCmd(_ed, font);
++  }
++
++  execute_log(cmd);
++}
++/*****************************************************************************/
++ColorRgbFunc::ColorRgbFunc(ComTerp* comterp, Editor* ed) : UnidrawFunc(comterp, ed) {
++ }
++
++void ColorRgbFunc::execute() {
++  ComValue& fgarg = stack_arg(0);
++  ComValue& bgarg = stack_arg(1);
++  const char* fgname = fgarg.string_ptr();
++  const char* bgname = bgarg.string_ptr();
++  reset_stack();
++  PSColor* fgcolor=nil;
++  PSColor* bgcolor=nil;
++  Catalog* catalog = unidraw->GetCatalog();
++  fgcolor = catalog->FindColor(fgname);
++  //This comparison is made because the user can set only the foreground color by calling
++  //colorsrgb with one argument.
++  if (strcmp(bgname,"sym")!=0){
++    bgcolor = catalog->FindColor(bgname);
++  }
++  ColorCmd* cmd = new ColorCmd(_ed, fgcolor, bgcolor);
++  execute_log(cmd);
++}
++/*****************************************************************************/
++//SECIL
+ 
+ BrushFunc::BrushFunc(ComTerp* comterp, Editor* ed) : UnidrawFunc(comterp, ed) {
+ }
+Only in src/ComUnidraw: grfunc.c.orig
+Only in src/ComUnidraw: grfunc.c.rej
+diff -u src/ComUnidraw.orig/grfunc.h src/ComUnidraw/grfunc.h
+--- src/ComUnidraw.orig/grfunc.h	2002-11-06 17:29:25.000000000 -0500
++++ src/ComUnidraw/grfunc.h	2002-11-06 17:42:41.000000000 -0500
+@@ -131,6 +131,17 @@
+ 	return "%s(fontnum) -- set current font from menu order"; }
+ };
+ 
++//SECIL
++//: command for setting font state variable by  font name in comdraw.
++// fontbyname(fontname) -- set current font by name
++class FontByNameFunc : public UnidrawFunc {
++ public:
++  FontByNameFunc(ComTerp*,Editor*);
++  virtual void execute();
++  virtual const char* docstring() {
++    return "%s(fontname) -- set current font by X font name"; }
++};
++
+ //: command for setting brush state variable in comdraw.
+ // brush(brushnum) -- set current brush from menu order
+ class BrushFunc : public UnidrawFunc {
+@@ -161,6 +172,18 @@
+ 	return "%s(fgcolornum bgcolornum) -- set current colors from menu order"; }
+ };
+ 
++//SECIL
++//:comand for setting color state variables by RGB name in comdraw.
++// colors(fgcolorname bgcolorname). The colorname format is "#RRGGBB"
++class ColorRgbFunc : public UnidrawFunc {
++ public:
++  ColorRgbFunc(ComTerp*,Editor*);
++  virtual void execute();
++  virtual const char* docstring() {
++    return "%s(fgcolorname bgcolorname) -- set current colors by RGB name. The colorname format is \"#RGB\" for 4 bits, \"#RRGGBB\" for 8 bits,\"#RRRGGGBBB\" for 12 bits,\"#RRRRGGGGBBBB\" for 16 bits"; }
++};
++//SECIL
++
+ //: command to select graphics in comdraw.
+ // select([compview ...] :all :clear) -- make these graphics the current selection, 
+ // default returns current selection.
+diff -u src/ComUnidraw.orig/pixelfunc.c src/ComUnidraw/pixelfunc.c
+--- src/ComUnidraw.orig/pixelfunc.c	2002-11-06 17:29:25.000000000 -0500
++++ src/ComUnidraw/pixelfunc.c	2002-11-06 17:43:40.000000000 -0500
+@@ -28,6 +28,59 @@
+ #include <Unidraw/iterator.h>
+ #include <Unidraw/viewer.h>
+ #include <Attribute/attrlist.h>
++//SECIL
++#include <IV-2_6/InterViews/world.h>
++/*****************************************************************************/
++PixelPokeLineFunc::PixelPokeLineFunc(ComTerp* comterp, Editor* ed) : UnidrawFunc(comterp, ed) {
++}
++
++void PixelPokeLineFunc::execute() {
++  Viewer* viewer = _ed->GetViewer();
++
++  ComValue rastcompv(stack_arg(0));
++  ComValue xv(stack_arg(1));
++  ComValue yv(stack_arg(2));
++  ComValue wv(stack_arg(3));
++  ComValue vallistv(stack_arg(4));
++  int xval = xv.int_val();
++  int yval = yv.int_val();
++  int wval = wv.int_val();
++  int pixelvals[wval];
++
++  if(!vallistv.is_type(ComValue::ArrayType) || vallistv.array_len() != wval){
++    reset_stack();
++    push_stack(ComValue::nullval());
++    return;
++  }
++
++  ALIterator i;
++  AttributeValueList* avl = vallistv.array_val();
++  avl->First(i);
++  for (int j=0; j<wval && !avl->Done(i); j++){
++    pixelvals[j]= avl->GetAttrVal(i)->int_val();
++    avl->Next(i);
++  }
++  reset_stack();
++
++  RasterOvComp* rastcomp = (RasterOvComp*) rastcompv.geta(RasterOvComp::class_symid());
++  OverlayRasterRect* rastrect = rastcomp ? rastcomp->GetOverlayRasterRect() : nil;
++  OverlayRaster* raster = rastrect ? rastrect->GetOriginal() : nil;
++
++  if (raster) {
++    for(int j=0; j<wval; j++){
++      ColorIntensity r,g,b;
++      int pixelcolor = pixelvals[j];
++      char colorname[7];
++      sprintf(colorname,"#%06x",pixelcolor);
++      Color::find(World::current()->display(),colorname, r, g, b);
++      raster->poke(xval+j, yval, r, g, b, 1.0);
++    }
++    push_stack(rastcompv);
++  }
++  else
++    push_stack(ComValue::nullval());
++}
++//SECIL
+ 
+ /*****************************************************************************/
+ 
+diff -u src/ComUnidraw.orig/pixelfunc.h src/ComUnidraw/pixelfunc.h
+--- src/ComUnidraw.orig/pixelfunc.h	2002-11-06 17:29:25.000000000 -0500
++++ src/ComUnidraw/pixelfunc.h	2002-11-06 17:45:09.000000000 -0500
+@@ -26,6 +26,21 @@
+ 
+ #include <ComUnidraw/unifunc.h>
+ 
++//SECIL
++//: command to poke a line of pixel values into raster
++// pokeline(compview x y w vallist) -- poke pixel values of a line listed in vallist into raster. w is the width of the line(length of the list).
++
++class PixelPokeLineFunc : public UnidrawFunc {
++ public:
++  PixelPokeLineFunc(ComTerp*,Editor*);
++  virtual void execute();
++  virtual const char* docstring() {
++    return "%s(compview x y w vallist) -- poke pixel values of a line listed in vallist into raster. w is the width of the line(length of the list)";
++  }
++};
++
++//SECIL
++
+ //: command to poke pixel values into raster
+ // poke(compview x y val) -- poke pixel value into raster
+ class PixelPokeFunc : public UnidrawFunc {

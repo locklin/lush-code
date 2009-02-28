@@ -1,0 +1,204 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: joystick.lsh,v 1.2 2004/01/03 23:37:16 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; reading data from a joystick
+
+#? * joystick
+;; This class allows to read data from a joystick
+;; using the joystick device interface on Linux.
+;; This was tested with USB joysticks.
+;; This DOES NOT enqueue events into Lush's centralized
+;; event queue.
+;; The joystick driver is generally not loaded into the
+;; Linux kernel by default. Therefore, yo might have 
+;; to do "/sbin/insmod joydev" as root.
+(defclass joystick object
+  ((-int-) fd)  ; joystick device
+  ((-gptr- "struct js_event *") js)
+  ((-int-) dropped)
+  ((-idx1- (-int-)) axis)
+  ((-idx1- (-int-)) button)
+  ((-idx1- (-int-)) buttontoggle))
+
+#? (new joystick <device>)
+;; create a an instance of the joystick
+;; class on the device <device>.
+;; <device> must be a valid joystick device
+;; e.g.  <(new joystick "/dev/input/js0")>.
+(defmethod joystick joystick (dev)
+  ((-str-) dev)
+  (cpheader "#include <stdio.h>")
+  (cpheader "#include <stdlib.h>")
+  (cpheader "#include <string.h>")
+  (cpheader "#include <termios.h>")
+  (cpheader "#include <unistd.h>")
+  (cpheader "#include <fcntl.h>")
+  (cpheader "#include <sys/types.h>")
+  (cpheader "#include <sys/stat.h>")
+  (cpheader "#include <sys/ioctl.h>")
+  (cpheader "#include <errno.h>")
+  (cpheader "#include <linux/joystick.h>")
+  (setq fd (to-int #{ open((char *)(($dev)->data), O_RDONLY) #}))
+  (if (< (to-int fd) 0) (error "could not open joystick"))
+  #{ fcntl($fd, F_SETFL, O_NONBLOCK); 
+     $js = malloc(sizeof(struct js_event));
+  #}
+  (let ((naxis 0) (nbutton 0))
+    ((-int-) naxis nbutton)
+    #{{ char b;
+        ioctl ($fd, JSIOCGAXES, &b);
+        $naxis = (int)b;
+        ioctl ($fd, JSIOCGBUTTONS, &b);
+        $nbutton = (int)b;
+    }#}
+    (setq dropped 0)
+    (setq axis (int-matrix naxis))
+    (setq button (int-matrix nbutton))
+    (setq buttontoggle (int-matrix nbutton))) ())
+
+(defmethod joystick -destructor ()
+  #{ free($js);
+     close($fd); 
+  #} 
+  ())
+
+#? (==> <joystick> read)
+;; this method reads the joystick
+;; position and the state of the buttons.
+;; The actual values can then be obtained
+;; by looking at the axis, button and buttontoggle
+;; slots of the joystick object.
+;; Each of those is an idx of ints containing
+;; the values for each axis and button.
+(defmethod joystick read ()
+  (let ((n 0)
+	(s (to-int #{ sizeof(struct js_event) #} ))
+	(nevents 0)
+	(naxis (idx-dim axis 0))
+	(nbutton (idx-dim button 0)))
+    ((-int-) n s nevents naxis nbutton)
+    (while (= s (setq n (to-int #{ read($fd, $js, $s) #})))
+      #{{ int tp = $js->type;
+          int num = $js->number;
+          int val = $js->value;
+          int *axis;
+          int *button;
+          int *button_toggle;
+          axis = IDX_PTR($axis,int);
+          button = IDX_PTR($button,int);
+          button_toggle = IDX_PTR($buttontoggle,int);
+          if (tp & JS_EVENT_INIT) {
+           ($dropped)++;
+          } else {
+            $dropped = 0;
+            switch (tp & ~JS_EVENT_INIT) {
+              case JS_EVENT_BUTTON:
+               if ((num<0)||(num>=$nbutton)) { printf("warning: button number out of range %d\n",num); }
+               if (button[num] != val) {
+                 /* catch high-to-low edge (release of button) */
+                 if (val == 0 && button_toggle[num]==0) {
+                   button_toggle[num] =1;
+                 } else { 
+                   if (val == 0 && button_toggle[num]==1) button_toggle[num] =0;
+                 } 
+               }
+               button[num] = val;
+               break;
+              case JS_EVENT_AXIS:
+               if ((num<0)||(num>=$naxis)) { printf("warning: axis number out of range %d\n",num); }
+                axis[num] = val;
+                break;
+          }}} #}
+          (incr nevents))
+          #{ if (errno != EAGAIN) { error(NIL,"error reading joystick",NIL); } #}
+         nevents))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de draw-joystick-axis (x y v z)
+  (let ((s (abs (* z (/ v 32768)))))
+    (color-rgb 0 0 0)
+    (if (< v 0)
+	(fill-rect (- (+ x z) s) y s 20)
+      (fill-rect (+ x z) y s 20))
+    (color-rgb 1 0 0)
+    (draw-line (+ x z) y (+ x z) (+ y 20))))
+
+(de draw-joystick-button (x y v)
+    (color-rgb 0 0 0)
+    (if (= v 0)
+	(draw-rect x y 20 20)
+      (fill-rect x y 20 20)))
+
+(de joy-test1 ()
+  (let ((z (new joystick)) (c t)) 
+    (while c
+      (==> z read) 
+      (when (= 1 (:z:button 6)) (setq c ())))))
+
+#? (joy-test [<delay> [<device>])
+;; simple graphical display of joystick values and events
+;; reasonnable values for delay are 0 to 0.1.
+;; above this, event might be lost.
+;; <device> must be a valid joystick device such as
+;; "/dev/input/js0", which is the default value.
+(de joy-test (&optional (delay 0) (dev "/dev/input/js0"))
+  (when (not window) (new-window))
+  (printf "press button 7 to exit\n")
+  (let ((z (new joystick dev))
+	(continue t)
+	(n 0)
+	(x 20)
+	(y 40))
+    (==> z read)
+    (while continue
+      (setq n (==> z read))
+      (when (= 1 (:z:button 6)) (==> z read) (setq continue ()))
+      (graphics-batch
+       (cls)
+       (let ((xx x) (yy y))
+	 (color-rgb 0 0 0)
+	 (incr yy 12) (gprintf xx yy "read: %4d, dropped %4d" n :z:dropped) (incr yy 8)
+	 (for (i 0 (1- (idx-dim :z:button 0)))
+	      (draw-joystick-button xx yy (:z:button i))
+	      (incr xx 30))
+	 (incr yy 30)
+	 (setq xx x)
+	 (for (i 0 (1- (idx-dim :z:button 0)))
+	      (draw-joystick-button xx yy (:z:buttontoggle i))
+	      (incr xx 30))
+	 (incr yy 30)
+	 (setq xx x)
+	 (for (i 0 (1- (idx-dim :z:axis 0)))
+	      (draw-joystick-axis x yy (:z:axis i) 200)
+	      (incr yy 30))))
+      (sleep delay))))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () (joystick joystick -destructor read))
+      

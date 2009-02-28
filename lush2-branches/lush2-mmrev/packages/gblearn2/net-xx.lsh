@@ -1,0 +1,90 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: net-xx.lsh,v 1.3 2005/04/07 15:55:27 crispisito Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a module that contains two idx3-modules connected in sequence
+;; makes it easy to define things like 2-layer fully connected nets
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gblearn2/gb-modules-nn")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** net-xx
+;; generic <idx3-module> with two sub-modules in series.
+(defclass net-xx idx3-module
+  ((-obj- (idx3-module)) module-1)
+  ((-obj- (idx3-ddstate)) state-1)
+  ((-obj- (idx3-module)) module-2))
+
+#? (new net-xx <mod1> <thick1> <si1> <sj1> <mod2>)
+;; create new <net-xx> with <mod1> as first module
+;; and <mod2> as second module. <thick1>, <si1>, sj1>
+;; are the initial sizes of the intermediate <idx3-ddstate>
+;; which is the output of <mod1> and the input of <mod2>.
+(defmethod net-xx net-xx (mod1 thick1 si1 sj1 mod2)
+  ((-obj- (idx3-module)) mod1 mod2)
+  (-int- thick1 si1 sj1)
+  (setq module-1 mod1)
+  (setq state-1 (new idx3-ddstate thick1 si1 sj1))
+  (setq module-2 mod2)
+  ())
+
+(defmethod net-xx forget (v p)
+  (-float- v p)
+  (==> module-1 forget v p)
+  (==> module-2 forget v p)
+  ())
+
+(defmethod net-xx fprop (in out)
+  ((-obj- (idx3-state)) in)
+  ((-obj- (idx3-state)) out)
+  (==> module-1 fprop in state-1)
+  (==> module-2 fprop state-1 out)
+  ())
+
+(defmethod net-xx bprop (in out)
+  ((-obj- (idx3-dstate)) in)
+  ((-obj- (idx3-dstate)) out)
+  (==> module-2 bprop state-1 out)
+  (==> module-1 bprop in state-1)
+  ())
+
+(defmethod net-xx bbprop (in out)
+  ((-obj- (idx3-ddstate)) in)
+  ((-obj- (idx3-ddstate)) out)
+  (==> module-2 bbprop state-1 out)
+  (==> module-1 bbprop in state-1)
+  ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make () (net-xx net-xx forget fprop bprop bbprop)  )
