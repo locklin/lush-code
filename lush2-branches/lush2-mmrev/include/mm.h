@@ -67,13 +67,13 @@ void    mm_init(int, notify_func_t *, FILE *); // initialize manager
 mt_t    mm_regtype(const char *, size_t, clear_func_t, mark_func_t *, finalize_func_t *);
 void    mm_root(const void *);           // add a root location
 void    mm_unroot(const void *);         // remove a root location
-void    mm_collect(void);                // asynchronous collect
-int     mm_collect_now(void);            // synchronous collect
-bool    mm_collect_in_progress(void);    // true if gc is under way
 bool    mm_idle(void);                   // do work, return true when more work
 
 /* garbage collection */
 void    mm_mark(const void *);           // mark referenced object
+void    mm_collect(void);                // asynchronous collect
+int     mm_collect_now(void);            // synchronous collect
+bool    mm_collect_in_progress(void);    // true if gc is under way
 
 /* allocation functions */
 void   *mm_alloc(mt_t);                  // allocate fixed-size object
