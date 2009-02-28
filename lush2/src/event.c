@@ -204,7 +204,7 @@ typedef struct event_timer {
 
 static event_timer_t *timers = 0;
 
-static void clear_event_timer(event_timer_t *et)
+static void clear_event_timer(event_timer_t *et, size_t _)
 {
    et->next = NULL;
    et->handler = NULL;
@@ -402,7 +402,7 @@ static poll_functions_t *sources = 0;
 static int async_block = 0;
 static int waiting = 0;
 
-static void clear_poll_functions(poll_functions_t *pf)
+static void clear_poll_functions(poll_functions_t *pf, size_t _)
 {
    pf->next = NULL;
 }

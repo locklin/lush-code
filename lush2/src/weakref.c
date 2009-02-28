@@ -42,7 +42,7 @@ typedef struct notifier {
 
 static notifier_t **notifiers;
 
-static void clear_notifier(notifier_t *n)
+static void clear_notifier(notifier_t *n, size_t _)
 {
    n->next = NULL;
    n->context = NULL;

@@ -72,7 +72,7 @@ typedef struct hash_name {
 } hash_name_t;
 
 
-void clear_symbol_hash(hash_name_t *hn)
+void clear_symbol_hash(hash_name_t *hn, size_t _)
 {
    hn->name = NULL;
    hn->named = NULL;
@@ -93,7 +93,7 @@ void mark_symbol_hash(hash_name_t *hn)
 static mt_t mt_symbol_hash = mt_undefined;
 
 
-void clear_symbol(symbol_t *s)
+void clear_symbol(symbol_t *s, size_t _)
 {
    s->next = NULL;
    s->hn = NULL;
@@ -226,17 +226,15 @@ char *symbol_generator(const char *text, int state)
       hn = hn->next;
 
       /* compare symbol names */
-      if (text[0]=='|' || tolower(text[0])==h->name[0]) {
+      if (text[0]=='|' || text[0]==h->name[0] || tolower(text[0])==h->name[0]) {
          const uchar *a = (const uchar *) text;
          uchar *b = (uchar *) pname(h->named);
          int i = 0;
          while (a[i]) {
             uchar ac = a[i];
             uchar bc = b[i];
-            if (text[0] != '|') 
+            if (text[0] != '|' && !context->input_case_sensitive)
                ac = tolower(ac);
-            if (text[0]!='|' && ac=='_')
-               ac = '-';
             if (ac != bc) 
                break;
             i++;
@@ -286,11 +284,8 @@ at *namedclean(const char *n)
       if (s>d+1 && s[-2] == '|')
          s[-2] = 0;
 
-   } else {
+   } else if (!context->input_case_sensitive) {
       for (char *s = d; *s; s++)
-/*          if (s>d && *s=='_') */
-/*             *s = '-'; */
-/*          else  */
          if (isascii(*(unsigned char*)s))
             *s = tolower(*(unsigned char*)s);
    }

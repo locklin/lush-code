@@ -42,6 +42,20 @@
   #{ daxpy_($v->dim, &$alpha, $(idx-base u), $u->mod, $(idx-base v), $v->mod); #}
   v)
 
+(defun clr! (alpha u)
+  (declare (-double-) alpha)
+  (declare (-idx1- (-double-)) u)
+  #{ int inca = 0; dcopy_($u->dim, &$alpha, &inca, $(idx-base u), $u->mod); #}
+  u)
+
+(defun copy (u v)
+  (declare (-idx1- (-double-)) u v)
+  (cheader "extern double dcopy_();")
+  (let ((n (min (length u) (length v))))
+    (declare (-int-) n)
+    #{ dcopy_(&$n, $(idx-base u), $u->mod, $(idx-base v), $v->mod); #} )
+  v)
+
 (defun dot (u v)
   (declare (-idx1- (-double-)) u v)
   (cheader "extern double ddot_();")
@@ -127,7 +141,7 @@
   (when (<> (length y) (idx-shape A 0))
     (error "v does not match column length of A") )
   (chk-ld-contiguous A)
-  #{ dgemv_("T",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+  #{ dgemv_("T",$A->dim+1,$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
   y)
 
 (defun gemv (alpha A x)
@@ -139,7 +153,7 @@
   (chk-ld-contiguous A)
   (let ((y (double-array* (idx-shape A 0)))
         (beta 0) )
-    #{ dgemv_("T",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+    #{ dgemv_("T",$A->dim+1,$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
     y))
 
 (defun gevm! (alpha x A beta y)
@@ -151,7 +165,7 @@
   (when (<> (length y) (idx-shape A 1))
     (error "v does not match row length of A") )
   (chk-ld-contiguous A)
-  #{ dgemv_("N",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+  #{ dgemv_("N",$A->dim+1,$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
   y)
 
 (defun gevm (alpha x A)
@@ -163,7 +177,7 @@
   (chk-ld-contiguous A)
   (let ((y (double-array* (idx-shape A 1)))
         (beta 0) )
-    #{ dgemv_("N",$a->dim+1,$a->dim,&$alpha,$(idx-base A),$a->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+    #{ dgemv_("N",$A->dim+1,$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
     y))
 
 (defun ger1! (alpha u v A)
@@ -176,7 +190,7 @@
     (error "u does not match column length of A") )
   (when (<> (length v) (idx-shape A 1))
     (error "v does not match row length of A") )
-  #{ dger_($a->dim+1,$a->dim,&$alpha,$(idx-base v),$v->mod,$(idx-base u),$u->mod,$(idx-base A),$a->mod); #}
+  #{ dger_($A->dim+1,$A->dim,&$alpha,$(idx-base v),$v->mod,$(idx-base u),$u->mod,$(idx-base A),$A->mod); #}
   A)
 
 (defun utsv! (U x)
@@ -186,7 +200,7 @@
   (when (not (mat-squarep U))
     (error "U not square") )
   (chk-mv-compatible U x)
-  #{ dtrsv_("L","T","N",$u->dim,$(idx-base U),$u->mod,$(idx-base x),$x->mod); #}
+  #{ dtrsv_("L","T","N",$U->dim,$(idx-base U),$U->mod,$(idx-base x),$x->mod); #}
   x)
 
 ;; BLAS 3
@@ -203,7 +217,7 @@
     (error "A and C not compatible") )
   (when (<> (idx-shape B 1) (idx-shape C 1))
     (error "B and C not compatible") )
-  #{ dgemm_("N","N",$c->dim+1,$c->dim,$b->dim,&$alpha,$(idx-base B),$b->mod,$(idx-base A),$a->mod,&$beta,$(idx-base C),$c->mod); #}
+  #{ dgemm_("N","N",$C->dim+1,$C->dim,$B->dim,&$alpha,$(idx-base B),$B->mod,$(idx-base A),$A->mod,&$beta,$(idx-base C),$C->mod); #}
   C)
 
 (defun gemm (alpha A B)
@@ -219,7 +233,7 @@
     (error "S not square") )
   (chk-ld-contiguous S)
   (chk-ld-contiguous B)
-  #{ dsymm_("R","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
+  #{ dsymm_("R","L",$C->dim+1,$C->dim,&$alpha,$(idx-base S),$S->mod,$(idx-base B),$B->mod,&$beta,$(idx-base C),$C->mod); #}
   C)
     
 (defun msym! (alpha B S beta C)
@@ -230,7 +244,7 @@
     (error "S not square") )
   (chk-ld-contiguous S)
   (chk-ld-contiguous B)
-  #{ dsymm_("L","L",$c->dim+1,$c->dim,&$alpha,$(idx-base S),$s->mod,$(idx-base B),$b->mod,&$beta,$(idx-base C),$c->mod); #}
+  #{ dsymm_("L","L",$C->dim+1,$C->dim,&$alpha,$(idx-base S),$S->mod,$(idx-base B),$B->mod,&$beta,$(idx-base C),$C->mod); #}
   C)
 
 (defun utmm! (alpha U B)
@@ -242,7 +256,7 @@
   (chk-mm-compatible U B)
   (chk-ld-contiguous U)
   (chk-ld-contiguous B)
-  #{ dtrmm_("R","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  #{ dtrmm_("R","L","N","N",$B->dim+1,$B->dim,&$alpha,$(idx-base U),$U->mod,$(idx-base B),$B->mod); #}
   B)
 
 (defun mutm! (alpha B U)
@@ -253,7 +267,7 @@
   (chk-mm-compatible B U)
   (chk-ld-contiguous U)
   (chk-ld-contiguous B)
-  #{ dtrmm_("L","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  #{ dtrmm_("L","L","N","N",$B->dim+1,$B->dim,&$alpha,$(idx-base U),$U->mod,$(idx-base B),$B->mod); #}
   B)
 
 (defun utsm! (alpha U B)
@@ -265,7 +279,7 @@
   (chk-mm-compatible U B)
   (chk-ld-contiguous U)
   (chk-ld-contiguous B)
-  #{ dtrsm_("R","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  #{ dtrsm_("R","L","N","N",$B->dim+1,$B->dim,&$alpha,$(idx-base U),$U->mod,$(idx-base B),$B->mod); #}
   B)
 
 (defun muts! (alpha B U)
@@ -276,7 +290,7 @@
   (chk-mm-compatible B U)
   (chk-ld-contiguous U)
   (chk-ld-contiguous B)
-  #{ dtrsm_("L","L","N","N",$b->dim+1,$b->dim,&$alpha,$(idx-base U),$u->mod,$(idx-base B),$b->mod); #}
+  #{ dtrsm_("L","L","N","N",$B->dim+1,$B->dim,&$alpha,$(idx-base U),$U->mod,$(idx-base B),$B->mod); #}
   B)
 
 )
@@ -285,6 +299,8 @@
                     (list *libblas*)
                     -blas-dasum
                     -blas-diamax
+                    -blas-dclr!
+                    -blas-dcopy
                     -blas-ddot 
                     -blas-daxpy! 
                     -blas-dnrm2 

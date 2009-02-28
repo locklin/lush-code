@@ -85,8 +85,10 @@ at *eval_std(at *p)
 
 DX(xeval)
 {
-   ARG_NUMBER(1);
-   return eval(APOINTER(1));
+  at *q = NULL;
+  for (int i = 1; i <= arg_number; i++)
+     q = eval(APOINTER(i));
+  return q;
 }
 
 
@@ -343,6 +345,13 @@ DY(yquote)
    return Car(ARG_LIST);
 }
 
+/* double quote */
+DY(ydquote)
+{
+   ifn (CONSP(ARG_LIST) && (LASTCONSP(ARG_LIST)))
+      RAISEFX("one argument expected", NIL);
+   return quote(Car(ARG_LIST));
+}
 
 /*
  * (debug ...) eval lists in debug mode
@@ -390,6 +399,7 @@ void init_eval(void)
    dy_define("progn", yprogn);
    dy_define("prog1", yprog1);
    dy_define("quote", yquote);
+   dy_define("dquote", ydquote);
    dy_define("debug", ydebug);
    dy_define("nodebug", ynodebug);
    

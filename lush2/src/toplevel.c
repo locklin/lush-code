@@ -249,7 +249,7 @@ void start_lisp(int argc, char **argv, int quietflag)
    context->input_string = 0;
    context->input_file = stdin;
    context->input_tab = 0;
-   context->input_case_sensitive = 0;
+   context->input_case_sensitive = 1;
    context->output_file = stdout;
    context->output_tab = 0;
    
@@ -509,7 +509,7 @@ void toplevel(const char *in, const char *out, const char *prompts)
    if (f1) {
       context->input_file = f1;
       context->input_tab = 0;
-      context->input_case_sensitive = 0;
+      context->input_case_sensitive = 1;
    }
    if (f2) {
       context->output_file = f2;

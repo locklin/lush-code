@@ -50,17 +50,16 @@
  */
 #define Midx_offset(i) ((i)->offset)
 
-/* Dangerous hack: set storage pointer to 
+/* Dangerous hack: set storage pointer to d
+ * (d must be a managed address!) 
  */
-/*
 #define Midx_setdata(i, d, s) \
 { \
    assert((i)->srg->flags & STS_MALLOC);\
-   if ((i)->srg->data) free((i)->srg->data);\
    (i)->srg->data = (gptr)d; \
    (i)->srg->size = s; \
 }
-*/
+
 /* expect min and max to have been defined has intg */
 #define SRG_BOUNDS(idx, ndim, min, max)  \
 min = (idx)->offset; \

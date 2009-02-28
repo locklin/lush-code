@@ -62,11 +62,14 @@ static void make_singletons(void)
    }
 }
 
+
 at *make_string_of_length(size_t n)
 {
-   char *s = mm_string(n);  /* mm_string adds one for nul-termination */
+   char *s = mm_string(n);
+   s[n] = '\0';
    return new_string(s);
 }
+
 
 /* make a managed string for NUL-terminated string s */
 at *make_string(const char *s)
@@ -94,7 +97,7 @@ static at *string_listeval (at *p, at *q)
    
    char *s = Mptr(p);
    assert(s);
-   int n = mm_strlen(s);
+   int n = strlen(s);
    int i = (int)Number(Car(qi));
    i = (i < 0) ? n + i : i;
    if (i<0 || i>=n)
@@ -111,7 +114,7 @@ static const char *string_name(at *p)
    const char *s = String(p);
    char *name = string_buffer;
 #if HAVE_MBRTOWC
-   int n = mm_strlen(s);
+   int n = strlen(s);
    mbstate_t ps;
    memset(&ps, 0, sizeof(mbstate_t));
    *name++ = '\"'; 
@@ -360,7 +363,7 @@ DX(xstr_left)
    ARG_NUMBER(2);
    const char *s = ASTRING(1);
    int n = AINTEGER(2);
-   int l = mm_strlen(s);
+   int l = strlen(s);
  
    n = (n < 0) ? l+n : n;
    if (n < 0)
@@ -384,7 +387,7 @@ DX(xstr_right)
    ARG_NUMBER(2);
    const char *s = ASTRING(1);
    int n = AINTEGER(2);
-   int l = mm_strlen(s);
+   int l = strlen(s);
 
    n = (n < 0) ? l+n : n;
    if (n < 0)
@@ -403,7 +406,7 @@ DX(xsubstring)
    const char *s = ASTRING(1);
    int n = AINTEGER(2);
    int m = AINTEGER(3);
-   int l = mm_strlen(s);
+   int l = strlen(s);
 
    n = (n < 0) ? l+n : n;
    if (n < 0)
@@ -434,7 +437,7 @@ DX(xstr_mid)
    if (arg_number == 2) {
       const char *s = ASTRING(1);
       int n = AINTEGER(2);
-      int l = mm_strlen(s);
+      int l = strlen(s);
       if (n < 1)
          RAISEFX(badarg, NEW_NUMBER(n));	
       if (n > l)
@@ -451,7 +454,7 @@ DX(xstr_mid)
          RAISEFX(badarg, NEW_NUMBER(n));	
       if (m < 0)
          RAISEFX(badarg, NEW_NUMBER(m));
-      int l = mm_strlen(s)-(n-1);
+      int l = strlen(s)-(n-1);
       if (m > l)
          m = l;
       if (m < 1)
@@ -472,7 +475,7 @@ DX(xstr_concat)
 {
    int length = 0;
    for (int i=1; i<=arg_number; i++)
-      length += (int)mm_strlen(ASTRING(i));
+      length += (int)strlen(ASTRING(i));
 
    at *p = make_string_of_length(length);
    char *here = (char *)String(p);
@@ -714,7 +717,7 @@ DX(xstr_gptr)
 DX(xstr_len)
 {
    ARG_NUMBER(1);
-   return NEW_NUMBER(mm_strlen(ASTRING(1)));
+   return NEW_NUMBER(strlen(ASTRING(1)));
 }
 
 /*------------------------ */
@@ -724,7 +727,7 @@ static at *str_del(const char *s, int n, int l)
 {
    MM_ENTER;
    struct large_string ls;
-   int len = mm_strlen(s);
+   int len = strlen(s);
    n = (n>1) ? n-1 : 0;
    if (n > len)
       n = len;
@@ -752,7 +755,7 @@ static at *str_ins(const char *s, int pos, const char *what)
 {
    MM_ENTER;
    struct large_string ls;
-   int len = mm_strlen(s);
+   int len = strlen(s);
    if (pos > len)
       pos = len;
    large_string_init(&ls);
@@ -776,8 +779,8 @@ static at *str_subst(const char *s, const char *s1, const char *s2)
 {
    MM_ENTER;
    struct large_string ls;
-   int len1 = mm_strlen(s1);
-   int len2 = mm_strlen(s2);
+   int len1 = strlen(s1);
+   int len2 = strlen(s2);
    const char *last = s;
 
    large_string_init(&ls);
@@ -848,7 +851,7 @@ DX(xupcase)
 #else
  {
     char c, *r;
-    rr = make_string_of_length(mm_strlen(s));
+    rr = make_string_of_length(strlen(s));
     r = (char *)String(rr);
     while ((c = *s++)) 
        *r++ = toupper((unsigned char)c);
@@ -867,7 +870,7 @@ DX(xupcase1)
    {
       char buffer[MB_LEN_MAX];
       struct large_string ls;
-      int n = mm_strlen(s);
+      int n = strlen(s);
       int m;
       wchar_t wc;
       mbstate_t ps1;
@@ -890,7 +893,7 @@ DX(xupcase1)
 #else
    {
       char *r, c;
-      rr = make_string_of_length(mm_strlen(s));
+      rr = make_string_of_length(strlen(s));
       r = String(rr);
       strcpy(r,s);
       if ((c = *r))
@@ -911,7 +914,7 @@ DX(xdowncase)
       struct large_string ls;
       mbstate_t ps1;
       mbstate_t ps2;
-      int n = mm_strlen(s);
+      int n = strlen(s);
       memset(&ps1, 0, sizeof(mbstate_t));
       memset(&ps2, 0, sizeof(mbstate_t));
       large_string_init(&ls);
@@ -941,7 +944,7 @@ DX(xdowncase)
 #else
   {
      char c, *r;
-     rr = make_string_of_length(mm_strlen(s));
+     rr = make_string_of_length(strlen(s));
      r = String(rr);
      while ((c = *s++)) 
         *r++ = tolower((unsigned char)c);
@@ -959,7 +962,7 @@ DX(xisprint)
       return NIL;
 #if HAVE_MBRTOWC
    {
-      int n = mm_strlen((char*)s);
+      int n = strlen((char*)s);
       mbstate_t ps;
       memset(&ps, 0, sizeof(mbstate_t));
       while(n > 0) {
@@ -998,7 +1001,7 @@ DX(xstr_asc)
       mbstate_t ps;
       wchar_t wc = 0;
       memset(&ps, 0, sizeof(mbstate_t));
-      mbrtowc(&wc, s, mm_strlen(s), &ps);
+      mbrtowc(&wc, s, strlen(s), &ps);
       if (wc)
          return NEW_NUMBER(wc);
    }
@@ -1058,7 +1061,7 @@ static at *explode_chars(const char *s)
 #if HAVE_MBRTOWC
    at *p = NIL;
    at **where = &p;
-   int n = mm_strlen(s);
+   int n = strlen(s);
    mbstate_t ps;
    memset(&ps, 0, sizeof(mbstate_t));
    while (n > 0) {

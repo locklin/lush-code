@@ -31,9 +31,9 @@ typedef unsigned char   uchar;
 
 static at *at_window;
 
-void clear_window(window_t *w)
+void clear_window(window_t *w, size_t s)
 {
-   memset(w, 0, mm_sizeof(w));
+   memset(w, 0, s);
 }
 
 void mark_window(window_t *w)

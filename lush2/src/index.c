@@ -58,7 +58,7 @@
 
 typedef at* atp_t;
 
-void clear_index(index_t *ind)
+void clear_index(index_t *ind, size_t _)
 {
    ind->st = NULL;
    ind->backptr = NULL;
@@ -3696,7 +3696,7 @@ void init_index(void)
    dy_define("idx-eloop", yeloop);
    dy_define("idx-bloop", ybloop);
    
-   at* p = var_define("+maxdims+");
+   at* p = var_define("+MAXDIMS+");
    var_set(p, NEW_NUMBER(MAXDIMS));
    var_lock(p);
 }

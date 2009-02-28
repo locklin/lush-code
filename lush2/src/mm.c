@@ -57,7 +57,6 @@
 #endif
 
 #include <unistd.h>
-#include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
@@ -236,19 +235,29 @@ static bool       anchor_transients = true;
  * MM's little helpers
  */
 
-#define BITL               1
-#define BITN               2
-#define BITO               4
+#define BITL               1  /* LIVE/OBSOLETE address */
+#define BITN               2  /* NOTIFY                */
+#define BITB               4  /* type blob             */
 #define BITM               8
-#define MARKED_LIVE(p)     ((void *)((uintptr_t)(p) | BITL))
-#define MARK_LIVE(p)       { p = MARKED_LIVE(p); }
+
+/* Note: The same bit is used to mark an address LIVE or
+ * OBSOLETE. The LIVE bit is only needed in the marking
+ * phase and we make sure all OBSOLETEs are removd before
+ * we start marking.
+ */
+
+#define LIVE(p)            (((uintptr_t)(p)) & BITL)
+#define NOTIFY(p)          (((uintptr_t)(p)) & BITN)
+#define BLOB(p)            (((uintptr_t)(p)) & BITB)
+#define OBSOLETE           LIVE
+
+#define MARK_LIVE(p)       { p = (void *)((uintptr_t)(p) | BITL); }
+#define MARK_NOTIFY(p)     { p = (void *)((uintptr_t)(p) | BITN); }
+#define MARK_BLOB(p)       { p = (void *)((uintptr_t)(p) | BITB); }
+#define MARK_OBSOLETE      MARK_LIVE
+
 #define UNMARK_LIVE(p)     { p = (void *)((uintptr_t)(p) & ~BITL); }
-#define MARKED_NOTIFY(p)   ((void *)((uintptr_t)(p) | BITN))
-#define MARK_NOTIFY(p)     { p = MARKED_NOTIFY(p); }
 #define UNMARK_NOTIFY(p)   { p = (void *)((uintptr_t)(p) & ~BITN); }
-#define MARKED_OBSOLETE(p) ((void *)((uintptr_t)(p) | BITO))
-#define MARK_OBSOLETE(p)   { p = MARKED_OBSOLETE(p); }
-#define UNMARK_OBSOLETE(p) { p = (void *)((uintptr_t)(p) & ~BITO); }
 
 #define HMAP(a, op, b) (hmap[(((uintptr_t)(a))>>(ALIGN_NUM_BITS + HMAP_EPI_BITS))] op \
                         ((b) << (((((uintptr_t)(a))>>ALIGN_NUM_BITS) & (HMAP_EPI-1)) * HMAP_NUM_BITS)))
@@ -266,25 +275,20 @@ static bool       anchor_transients = true;
 
 #define LBITS(p)           ((uintptr_t)(p) & (MIN_HUNKSIZE-1))
 #define CLRPTR(p)          ((void *)((((uintptr_t)(p)) & ~(MIN_HUNKSIZE-1))))
-#define CLRPTR2(p)         ((void *)((((uintptr_t)(p)) & ~3)))
 #define ADDRESS_VALID(p)   (!LBITS(p))
 #define TYPE_VALID(t)      ((t)>=0 && (t)<=types_last)
 #define INDEX_VALID(i)     ((i)>=0 && (i)<=man_last)
 
-#define LIVE(p)            (((uintptr_t)(p)) & BITL)
-#define NOTIFY(p)          (((uintptr_t)(p)) & BITN)
-#define OBSOLETE(p)        (((uintptr_t)(p)) & BITO)
 
 #define INHEAP(p)          (((char *)(p) >= heap) && ((char *)(p) < (heap + heapsize)))
 #define BLOCK(p)           (((ptrdiff_t)((char *)(p) - heap))>>BLOCKBITS)
 #define BLOCK_ADDR(p)      (heap + BLOCKSIZE*BLOCK(p))
 #define BLOCKA(a)          (((uintptr_t)((char *)(a)))>>BLOCKBITS)
-#define INFO_S(p)          (((info_t *)(unseal((char *)p)))->nh*MIN_HUNKSIZE)
-#define INFO_T(p)          (((info_t *)(unseal((char *)p)))->t)
-#define MM_SIZEOF(p)       \
-   (INHEAP(p) ? types[blockrecs[BLOCK(p)].t].size : INFO_S(p))
-#define MM_TYPEOF(p)       \
-   (INHEAP(p) ? blockrecs[BLOCK(p)].t : INFO_T(p))
+#define INFO_S(p)          (BLOB(p) ? 0 : ((info_t *)(unseal((char *)p)))->nh*MIN_HUNKSIZE)
+#define INFO_T(p)          (BLOB(p) ? mt_blob : ((info_t *)(unseal((char *)p)))->t)
+
+#define FIX_SIZE(s)        if (s % MIN_HUNKSIZE) \
+                              s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS
 
 /* loop over all managed addresses in small object heap */
 /* NOTE: the real address is 'heap + a', b is the block */
@@ -300,31 +304,18 @@ static bool       anchor_transients = true;
 
 /* loop over all other managed addresses                */
 /* NOTE: the real address is 'managed[i]', which is not */
-/* a cleared address (use CLRPTR2 to clear)             */ 
+/* a cleared address (use CLRPTR to clear)             */ 
 #define DO_MANAGED(i) { \
   int __lasti = collect_in_progress ? man_k : man_last; \
   for (int i = 0; i <= __lasti; i++) { \
-     if (!OBSOLETE(managed[i])) {
 
-#define DO_MANAGED_END }}} 
+#define DO_MANAGED_END }}
 
 #define DISABLE_GC \
    bool __nogc = gc_disabled; \
    gc_disabled = true;
 
 #define ENABLE_GC gc_disabled = __nogc;
-
-static int find_managed(const void *p);
-
-static bool obsolete(const void *p)
-{
-   ptrdiff_t a = ((char *)p) - heap;
-   if (a>=0 && a<heapsize) {
-      return !HMAP_MANAGED(a);
-   }
-   int i = find_managed(MARKED_OBSOLETE(p));
-   return i != -1;
-}
 
 /*
 static bool isroot(const void *p)
@@ -336,27 +327,20 @@ static bool isroot(const void *p)
 }
 */
 
-static inline void *seal(const char *p)
+static void *seal(const char *p)
 {
-   assert(!LBITS(p));
+   p = CLRPTR(p);
    VALGRIND_MAKE_MEM_NOACCESS(p, MIN_HUNKSIZE);
    p += MIN_HUNKSIZE;
    return (void *)p;
 }
 
-static inline void *unseal(const char *p)
+static void *unseal(const char *p)
 {
-   assert(!LBITS(p));
+   p = CLRPTR(p);
    p -= MIN_HUNKSIZE;
    VALGRIND_MAKE_MEM_DEFINED(p, MIN_HUNKSIZE);
    return (void *)p;
-}
-
-static inline finalize_func_t *finalizeof(const void *p)
-{
-   assert(ADDRESS_VALID(p));
-   mt_t t = MM_TYPEOF(p);
-   return types[t].finalize;
 }
 
 static int num_free_blocks(void)
@@ -368,14 +352,15 @@ static int num_free_blocks(void)
    return n;
 }
 
-static inline bool live(const void *p)
+static int _find_managed(const void *p);
+static bool live(const void *p)
 {
    ptrdiff_t a = ((char *)p) - heap;
    if (a>=0 && a<heapsize) {
       assert(HMAP_MANAGED(a));
       return HMAP_LIVE(a);
    }
-   int i = find_managed(p);
+   int i = _find_managed(p);
    assert(i != -1);
    return LIVE(managed[i]);
 }
@@ -388,7 +373,7 @@ static void mark_live(const void *p)
       HMAP_MARK_LIVE(a);
       return;
    }
-   int i = find_managed(p);
+   int i = _find_managed(p);
    assert(i != -1);
    MARK_LIVE(managed[i]);
 }
@@ -483,8 +468,7 @@ static int fetch_unreachables(void);
 static void *alloc_variable_sized(mt_t t, size_t s)
 {
    /* make sure s is a multiple of MIN_HUNKSIZE */
-   if (s % MIN_HUNKSIZE)
-      s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS;
+   assert(s%MIN_HUNKSIZE == 0);
 
    if (s > MM_SIZE_MAX) {
       warn("size exceeds MM_SIZE_MAX\n");
@@ -555,13 +539,14 @@ static bool no_marked_live(void)
          if (HMAP_LIVE(a)) {
             warn("address 0x%"PRIxPTR" (in block %d) is marked live\n", PPTR(heap + a), b);
             return false;
+
          }
       }
    }
 
    for (int i = 0; i <= man_last; i++) {
       if (LIVE(managed[i])) {
-         void *p = CLRPTR2(managed[i]);
+         void *p = CLRPTR(managed[i]);
          warn("address 0x%"PRIxPTR" is marked live\n", PPTR(p));
          return false;
       }
@@ -727,17 +712,17 @@ static int bsearch_managed(const void *p, int l, int r)
       else
          r = n;
    }
-   if (CLRPTR2(managed[l]) == p)
+   if (CLRPTR(managed[l]) == p)
       return l;
 
-   else if (l<man_k && (CLRPTR2(managed[l+1]) == p))
+   else if (l<man_k && (CLRPTR(managed[l+1]) == p))
       return l+1;
 
    else 
       return -1;
 }
 
-static int find_managed(const void *p)
+static int _find_managed(const void *p)
 {
    for (int n = 0; n < man_t; n++) {
       if (!poplar_sorted[n]) sort_poplar(n);
@@ -749,10 +734,20 @@ static int find_managed(const void *p)
    if (man_k < man_last)
       /* do linear search on excess part */
       for (int i = man_last; i > man_k; i--) {
-         if (CLRPTR2(managed[i]) == p)
+         if (CLRPTR(managed[i]) == p)
             return i;
       }
    return -1;
+}
+
+/* use this one only when not marking */
+static int find_managed(const void *p)
+{
+   assert(!mark_in_progress);
+   int i = _find_managed(p);
+   if (i>-1 && OBSOLETE(managed[i]))
+      i = -1;
+   return i;
 }
 
 /*
@@ -792,42 +787,6 @@ static void manage(const void *p, mt_t t)
    if (profile)
       profile[t]++;
 }
-
-static void unmanage_inheap(const void *p)
-{
-   ptrdiff_t a = ((char *)p) - heap;
-   assert(HMAP_MANAGED(a));
-   if (HMAP_NOTIFY(a)) {
-      HMAP_UNMARK_NOTIFY(a);
-      client_notify((void *)p);
-   }
-   HMAP_UNMARK_MANAGED(a);
-}
-
-static void unmanage_offheap(const void *p)
-{
-   int i = find_managed(p);
-   assert(!OBSOLETE(managed[i]));
-   
-   if (NOTIFY(managed[i])) {
-      UNMARK_NOTIFY(managed[i]);
-      client_notify(managed[i]);
-   }
-   
-   MARK_OBSOLETE(managed[i]);
-   man_is_compact = false;
-}
-
-/* static void unmanage(const void *p) */
-/* { */
-/*    assert(ADDRESS_VALID(p)); */
-   
-/*    ptrdiff_t a = ((char *)p) - heap; */
-/*    if (a>=0 && a<heapsize) */
-/*       unmanage_inheap(p); */
-/*    else */
-/*       unmanage_offheap(p); */
-/* } */
 
 static void collect_prologue(void)
 {
@@ -945,10 +904,9 @@ static void recover_stack(void)
       
    DO_MANAGED(i) {
       if (LIVE(managed[i])) {
-         void *p = CLRPTR2(managed[i]);
-         mt_t t  = INFO_T(p);
+         mt_t t  = INFO_T(managed[i]);
          if (types[t].mark)
-            types[t].mark(p);
+            types[t].mark(CLRPTR(managed[i]));
       }
    } DO_MANAGED_END;
 }
@@ -981,7 +939,7 @@ static void trace_from_stack(void)
 process_stack:
    while (!empty()) {
       const void *p = marking_object = pop();
-      mt_t t = marking_type = MM_TYPEOF(p);
+      mt_t t = marking_type = mm_typeof(p);
       if (types[t].mark)
          types[t].mark(p);
    }
@@ -1001,12 +959,13 @@ static bool run_finalizer(finalize_func_t *f, void *q)
    if (errno) {
       char *errmsg = strerror(errno);
       debug("finalizer of object 0x%"PRIxPTR" (%s) caused an error:\n%s\n",
-            PPTR(q), types[MM_TYPEOF(q)].name, errmsg);
+            PPTR(q), types[mm_typeof(q)].name, errmsg);
    }
 
    ENABLE_GC;
    return ok;
 }
+
 
 static void reclaim_inheap(void *q)
 {
@@ -1017,7 +976,15 @@ static void reclaim_inheap(void *q)
       if (!run_finalizer(f, q))
          return;
 
-   unmanage_inheap(q);
+   { 
+      const ptrdiff_t a = ((char *)q) - heap;
+      assert(HMAP_MANAGED(a));
+      if (HMAP_NOTIFY(a)) {
+         HMAP_UNMARK_NOTIFY(a);
+         client_notify((void *)q);
+      }
+      HMAP_UNMARK_MANAGED(a);
+   }
    VALGRIND_MEMPOOL_FREE(heap, q);
    
    assert(blockrecs[b].in_use > 0);
@@ -1030,27 +997,32 @@ static void reclaim_inheap(void *q)
       types[t].next_b = b;
 }
 
-static void reclaim_offheap(void *q)
-{
-   info_t *info_q = unseal(q); 
-   finalize_func_t *f = types[info_q->t].finalize;
-   if (f)
-      if (!run_finalizer(f, q))
-         return;
 
-   unmanage_offheap(q);
-   free(info_q);
+static void reclaim_offheap(int i)
+{
+   assert(!OBSOLETE(managed[i]));
+
+   void *q = CLRPTR(managed[i]);
+   if (!BLOB(managed[i])) {
+      info_t *info_q = unseal(q); 
+      finalize_func_t *f = types[info_q->t].finalize;
+      if (f)
+         if (!run_finalizer(f, q))
+            return;
+      q = info_q;
+   }
+
+   if (NOTIFY(managed[i])) {
+      UNMARK_NOTIFY(managed[i]);
+      client_notify(managed[i]);
+   }
+   
+   MARK_OBSOLETE(managed[i]);
+   man_is_compact = false;
+
+   free(q);
 }
 
-/*
-static inline void reclaim(void *q)
-{
-   if (INHEAP(q))
-      reclaim_inheap(q);
-   else
-      reclaim_offheap(q);
-}
-*/
 
 static int sweep_now(void)
 {
@@ -1071,7 +1043,7 @@ static int sweep_now(void)
       if (LIVE(managed[i])) {
          UNMARK_LIVE(managed[i]);
       } else {
-         reclaim_offheap(CLRPTR2(managed[i]));
+         reclaim_offheap(i);
          n++;
       }
    } DO_MANAGED_END;
@@ -1160,16 +1132,15 @@ static void pop_chunk(mmstack_t *st)
 
 static mmstack_t *make_stack(void)
 {
-   mmstack_t stack = {0, 0, 0};
-   add_chunk(&stack);
-   
    anchor_transients = false;
+   DISABLE_GC;
 
-   mmstack_t *st = mm_malloc(sizeof(mmstack_t));
+   mmstack_t *st = mm_allocv(mt_stack, sizeof(mmstack_t));
    assert(st);
-   mm_type(st, mt_stack);
-   memcpy(st, &stack, sizeof(mmstack_t));
+   memset(st, 0, sizeof(mmstack_t));
+   add_chunk(st);
 
+   ENABLE_GC;
    anchor_transients = true;
 
    return st;
@@ -1286,7 +1257,6 @@ static bool stack_works_fine(mmstack_t *st)
 
    /* avoid 'defined but not used' warning */
    (void)stack_peek(st);
-   (void)obsolete(st);
 
    /* test indexing */
    for (intptr_t i = 0; i < n; i++) {
@@ -1412,7 +1382,7 @@ void *mm_alloc(mt_t t)
       abort();
    }
    if (types[t].clear)
-      types[t].clear(p);
+      types[t].clear(p, types[t].size);
    manage(p, t);
    return p;
 }
@@ -1425,20 +1395,29 @@ void *mm_allocv(mt_t t, size_t s)
       abort();
    }
    assert(TYPE_VALID(t));
-
+ 
+   FIX_SIZE(s);
    void *p = alloc_variable_sized(t, s);
    if (!p) {
       warn("allocation failed\n");
       abort();
    }
    if (types[t].clear)
-      types[t].clear(p);
+      types[t].clear(p, s);
    manage(p, t);
    return p;
 }
 
+
+char *mm_blob(size_t s)
+{
+   return mm_allocv(mt_blob, s);
+}
+
+
 void *mm_malloc(size_t s)
 {
+   FIX_SIZE(s);
    void *p = alloc_variable_sized(mt_blob, s);
    if (p) manage(p, mt_blob);
    return p;
@@ -1447,6 +1426,7 @@ void *mm_malloc(size_t s)
 
 void *mm_calloc(size_t n, size_t s)
 {
+   FIX_SIZE(s);
    void *p = alloc_variable_sized(mt_blob, s);
    if (p) {
       memset(p, 0, mm_sizeof(p));
@@ -1458,34 +1438,50 @@ void *mm_calloc(size_t n, size_t s)
 
 void *mm_realloc(void *q, size_t s)
 {
+   assert(ADDRESS_VALID(q));
+
    if (q == NULL)
       return mm_malloc(s);
 
-   assert(ADDRESS_VALID(q));
-   info_t *info_q = unseal(q);
-   mt_t t = info_q->t;
    if (INHEAP(q)) {
-      warn("address was not obtained with mm_malloc\n");
+      warn("cannot mm_realloc address obtained with mm_alloc\n");
+      abort();
+   }
+   
+   int i = find_managed(q);
+   assert(i>-1);
+   mt_t t = mt_blob;
+   info_t *info_q = BLOB(managed[i]) ? NULL : unseal(q);
+   if (info_q) {
+      t = info_q->t;
+      assert(TYPE_VALID(t));
+   }
+
+   FIX_SIZE(s);
+   if (s < types[t].size) {
+      warn("new size is smaller than minimum size of memory type '%s'\n",
+           types[t].name);
       abort();
    }
 
-   assert(TYPE_VALID(t));
-   if (s < types[t].size) {
-      warn("new size is smaller than size of memory type '%s'\n",
-           types[t].name);
-      abort();
-   }  
-
-   void *r = alloc_variable_sized(t, s);
+   void *r = NULL;
+   if (info_q) {
+      r = alloc_variable_sized(t, s);
+      if (r) memcpy(r, q, info_q->nh*MIN_HUNKSIZE);
+   } else {
+      /* when q was given to us per mm_manage, we need to use
+       * realloc as we don't have size info.
+       */
+      r = realloc(q, s);
+      if (r==q)
+         return r;
+   }
+   
    if (r) {
-      memcpy(r, q, info_q->nh*MIN_HUNKSIZE);
-
       /* the new address r inherits q's notify flag     */
       /* notifiers and finalizers should not run for q  */
       /* so we clear q's notify flag and set its memory */
       /* type to mt_blob                                */
-      int i = find_managed(q);
-      assert(i != -1);
       { 
          /* this hack is to prevent add_managed from */
          /* shuffling the managed array              */
@@ -1499,87 +1495,52 @@ void *mm_realloc(void *q, size_t s)
          MARK_NOTIFY(managed[man_last]);
          UNMARK_NOTIFY(managed[i]);
       }
-      info_q->t = mt_blob; 
+      if (info_q)
+         info_q->t = mt_blob;
+      else {
+         /* old address was freed by realloc, we must remove it now */
+         debug(" substituting address 0x%"PRIxPTR" for 0x%"PRIxPTR"\n", PPTR(r), PPTR(q));
+         MARK_BLOB(managed[man_last]);
+         managed[i] = managed[man_last--];
+         for (int n = 0; n < man_t; n++)
+            if (i <= poplar_roots[n+1]) {
+               poplar_sorted[n] = false;
+               break;
+            }
+      }
    }
    return r;
 }
 
-char *mm_string(size_t ss)
+
+char *mm_string(size_t s)
 {
-   char  *s2;
-   if (ss < MIN_STRING)
-      s2 = mm_alloc(mt_string);
-   else
-      s2 = mm_allocv(mt_string, ss+1);
-
-   if (s2)
-      s2[0] = s2[ss] = 0;
-
-   return s2;
-}
-
-char *mm_strdup(const char *s)
-{
-   size_t ss = strlen(s);
-   char  *s2;
-
-   if (ss < MIN_STRING)
-      s2 = mm_alloc(mt_string);
-   else
-      s2 = mm_allocv(mt_string, ss+1);
-
-   if (s2)
-      memcpy(s2, s, ss+1);
-
-   return s2;
+   char *str = mm_blob(s+1);
+   str[0] = '\0';
+   return str;
 }
 
 
-/*
-size_t mm_strlen(const char *s)
+char *mm_strdup(const char *str)
 {
-   if (MM_TYPEOF(s) != mt_string)
-      return strlen(s);
-   
-   size_t l = MM_SIZEOF(s) - MIN_HUNKSIZE;
-   if (l <= (MIN_STRING<<2))
-      l = strlen(s);
-   else 
-      l += strlen(s + l);
-   assert(l == strlen(s));
-   return l;
+   char *str2 = mm_string(strlen(str));
+   return strcpy(str2, str);
 }
-*/
 
-void mm_type(const void *p, mt_t t)
+
+void mm_manage(const void *p)
 {
-   assert(ADDRESS_VALID(p));
-   assert(TYPE_VALID(t));
-
-   if (INHEAP(p)) {
-      warn("address was not obtained with mm_malloc\n");
+   if (!ADDRESS_VALID(p)) {
+      warn(" 0x%"PRIxPTR" is not a valid address\n", PPTR(p));
       abort();
    }
-
-   int i = managed[man_last]==p ? man_last : find_managed(p);
-   if (i<0) {
-      warn("(mm_type) 0x%" PRIxPTR " not a managed address\n", PPTR(p));
-      abort();
-   }
-   
-#ifdef NVALGRIND
-   mt_t pt = INFO_T(p);
-   if (t!=pt)
-      debug("changing memory type of address %" PRIxPTR " from '%s' to '%s'\n",
-            PPTR(p), types[pt].name, types[t].name);
-#endif
-   if (types[t].size > INFO_S(p)) {
-      warn("Size of new memory type may not be larger than size of old memory type.\n"); 
-      abort();
-   }
-   info_t *info = unseal(p);
-   info->t = t;
-   seal((char *)info);
+   if (mm_debug)
+      if (mm_ismanaged(p)) {
+         warn(" address 0x%"PRIxPTR" already managed\n", PPTR(p));
+         abort();
+      }
+   add_managed(p);
+   MARK_BLOB(managed[man_last]);
 }
 
 
@@ -1588,7 +1549,7 @@ void mm_notify(const void *p, bool set)
    assert(ADDRESS_VALID(p));
 
    if (!client_notify && set) {
-      warn("(mm_notify) no notification function specified\n");
+      warn("no notification function specified\n");
       abort();
    }
    
@@ -1596,7 +1557,7 @@ void mm_notify(const void *p, bool set)
    if (a>=0 && a<heapsize) {
          
       if (!HMAP_MANAGED(a)) {
-         warn("(mm_notify) not a managed address\n");
+         warn("not a managed address\n");
          abort();
       }
       if (set)
@@ -1609,7 +1570,7 @@ void mm_notify(const void *p, bool set)
 
    int i = managed[man_last]==p ? man_last : find_managed(p);
    if (i<0) {
-      warn("(mm_notify) not a managed address\n");
+      warn("not a managed address\n");
       abort();
    }
    if (set) {
@@ -1629,6 +1590,8 @@ bool mm_ismanaged(const void *p)
       ptrdiff_t a = ((char *)p) - heap;
       if (a>=0 && a<heapsize)
          return HMAP_MANAGED(a);
+      else if (mark_in_progress)
+         return _find_managed(p) != -1;
       else
          return find_managed(p) != -1;
    }
@@ -1638,14 +1601,26 @@ bool mm_ismanaged(const void *p)
 mt_t mm_typeof(const void *p)
 {
    assert(ADDRESS_VALID(p));
-   return MM_TYPEOF(p);
+   if (INHEAP(p))
+      return blockrecs[BLOCK(p)].t;
+   else {
+      int i = _find_managed(p);
+      assert(i>-1);
+      return INFO_T(managed[i]);
+   }
 }
 
 
 size_t mm_sizeof(const void *p)
 {
    assert(ADDRESS_VALID(p));
-   return MM_SIZEOF(p);
+   if (INHEAP(p))
+      return types[blockrecs[BLOCK(p)].t].size;
+   else {
+      int i = _find_managed(p);
+      assert(i>-1);
+      return INFO_S(managed[i]);
+   }
 }
 
 
@@ -1740,11 +1715,11 @@ static void mark(void)
    } DO_HEAP_END;
    
    DO_MANAGED (i) {
-      void *p = CLRPTR(managed[i]);
-      finalize_func_t *finalize = types[INFO_T(p)].finalize;
-      mark_func_t *mark = types[INFO_T(p)].mark;
+      mt_t t = INFO_T(managed[i]);
+      finalize_func_t *finalize = types[t].finalize;
+      mark_func_t *mark = types[t].mark;
       if (!LIVE(managed[i]) && finalize) {
-         if (mark) mark(p);
+         if (mark) mark(CLRPTR(managed[i]));
          trace_from_stack();
          UNMARK_LIVE(managed[i]); /* break cycles */
       }
@@ -1781,7 +1756,7 @@ static void sweep(void)
    /* malloc'ed objects */
    DO_MANAGED(i) {
       if (!LIVE(managed[i])) {
-         buf[n++] = CLRPTR2(managed[i]);
+         buf[n++] = (void *)i;
          if (n == NUM_TRANSFER) {
             write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
             n = 0;
@@ -1815,67 +1790,6 @@ static int _fetch_unreachables(void *buf)
 
    return n;
 }
-   
-
-/* static int fetch_unreachables(void) */
-/* { */
-/*    if (!collecting_child) */
-/*       return 0; */
-
-/*    if (gc_disabled) { */
-/*       fetch_backlog++; */
-/*       return 0; */
-/*    } */
-
-/*    static void *buf[NUM_TRANSFER]; */
-/*    static int j, n = 0; */
-/*    static bool inheap = true; */
-
-/*    if (n) { */
-/*       /\* don't need to disable gc here as gc is still */
-/*        * in progress */
-/*        *\/ */
-/*       if (inheap) { */
-
-/*          if (buf[j]) { */
-/*             reclaim_inheap(buf[j]); */
-/*             j++; */
-
-/*          } else { */
-/*             inheap = false; */
-/*             j++; */
-/*          } */
-/*          if (j == n) { */
-/*             n = 0; */
-/*          } */
-/*          return 1; */
-         
-/*       } else { */
-
-/*          reclaim_offheap(buf[j++]); */
-/*          if (j == n) { */
-/*             n = 0; */
-/*          } */
-/*          return 1; */
-/*       } */
-/*    } else if (n == 0) { */
-      
-/*       n = _fetch_unreachables(&buf); */
-      
-/*       if (n == -1) { */
-/*          n = 0; */
-
-/*       } else if (n == 0) { */
-/*          inheap = true; */
-
-/*       } else { */
-/*          assert((n%sizeof(void *)) == 0); */
-/*          n = n/sizeof(void *); */
-/*          j = 0; */
-/*       } */
-/*    } */
-/*    return 0; */
-/* } */
 
 /* fetch addresses of unreachable objects from garbage pipe */
 /* return number of objects reclaimed */
@@ -1917,12 +1831,12 @@ static int fetch_unreachables(void)
          }
 
       } else {
-         reclaim_offheap(buf[j++]);
+         reclaim_offheap((int)buf[j++]);
          if (j == n) {
             n = 0;
             return 1;
          }
-         reclaim_offheap(buf[j++]);
+         reclaim_offheap((int)buf[j++]);
          if (j == n) {
             n = 0;
          }
@@ -2175,9 +2089,9 @@ static void mark_refs(void **p)
       MM_MARK(p[i]);
 }
 
-static void clear_refs(void **p)
+static void clear_refs(void **p, size_t s)
 {
-   memset(p, 0, mm_sizeof(p));
+   memset(p, 0, s);
 }
 
 
@@ -2261,10 +2175,8 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
       assert(mt == mt_blob);
       mt = MM_REGTYPE("refs", 0, clear_refs, mark_refs, 0);
       assert(mt == mt_refs);
-      mt = MM_REGTYPE("string", MIN_STRING, 0, 0, 0);
-      assert(mt == mt_string);
    }
-   assert(types_last == 2);
+   assert(types_last == 1);
 
    /* set up other bookkeeping structures */
    managed = (void *)malloc(MIN_MANAGED * sizeof(void *));
@@ -2332,10 +2244,10 @@ char *mm_info(int level)
 
    DO_MANAGED(i) {
       total_objects_offheap++;
-      void *p = CLRPTR(managed[i]);
-      mt_t t  = MM_TYPEOF(p);
+      mt_t t  = INFO_T(managed[i]);
       total_objects_per_type_oh[t]++;
-      total_memory_managed += MM_SIZEOF(p);
+      total_memory_managed += mm_sizeof(CLRPTR(managed[i]));
+      total_memory_used_by_mm += BLOB(managed[i]) ? 0 : MIN_HUNKSIZE;
    } DO_MANAGED_END;
 
    BPRINTF("Managed memory   : %.2f MByte in %"PRIdPTR" + %"PRIdPTR" objects\n",
@@ -2448,18 +2360,13 @@ void dump_managed(mt_t t)
    mm_printf("Dumping managed list (%d of %d in poplars)...\n",
              man_k+1, man_last+1);
    for (int i = 0; i <= man_last; i++) {
-      if (!OBSOLETE(managed[i])) {
-         mt_t ti = mm_typeof(CLRPTR(managed[i]));
-         if (t==mt_undefined || t==ti)
-            mm_printf("%4d : %16"PRIxPTR", %4d  %8s %1s%1s%1s %20s\n", 
-                      i, PPTR(CLRPTR(managed[i])),
-                      INHEAP(managed[i]) ? (int)BLOCK(managed[i]) : -1,
-                      INHEAP(managed[i]) ? "inheap" : "offheap",
-                      LIVE(managed[i]) ? "l" : " ",
-                      OBSOLETE(managed[i]) ? "o" : " ",
-                      NOTIFY(managed[i]) ? "n" : " ",
-                      types[ti].name);
-      }
+      mt_t ti = mm_typeof(CLRPTR(managed[i]));
+      if (t==mt_undefined || t==ti)
+         mm_printf("%4d : %16"PRIxPTR", %1s%1s %20s\n", 
+                   i, PPTR(CLRPTR(managed[i])),
+                   OBSOLETE(managed[i]) ? "o" : " ",
+                   NOTIFY(managed[i]) ? "n" : " ",
+                   types[ti].name);
    }
    mm_printf("\n");
    fflush(stdlog);

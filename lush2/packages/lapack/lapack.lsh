@@ -46,7 +46,7 @@
     (let ((info 0)
           (A ##(mat-transpose A)) )
       (declare (-int-) info)
-      #{ dgetrf_($a->dim+1,$a->dim,$(idx-base A),$a->mod,$(idx-base p), &$info); #}
+      #{ dgetrf_($A->dim+1,$A->dim,$(idx-base A),$A->mod,$(idx-base p), &$info); #}
       (for* (i 0 lp)
         (declare (-int-) i)
         (decr (p i)) )
@@ -70,16 +70,16 @@
     (declare (-int-) info)
     (when (not (mat-squarep A))
       (error "matrix not square") )
-    #{ dpotrf_("L",$a->dim,$(idx-base A),$a->mod,&$info); #}
+    #{ dpotrf_("L",$A->dim,$(idx-base A),$A->mod,&$info); #}
     (= info 0) ))
 
 
-#? (lapack-gesdd/a! <A> <U> <VT>)
+#? (lapack-gesdd/a! <A> <U> <Vt>)
 ;; Do full, destructive SVD (<A> will be destroyed). Update matrices <U> 
-;; and <VT> with the left and right singular vectors (VT = transpose of V)
+;; and <Vt> with the left and right singular vectors (Vt = transpose of V)
 ;; and return singular values of <A>.
-(defun gesdd/a! (A U VT)
-  (declare (-idx2- (-double-)) A U VT)
+(defun gesdd/a! (A U Vt)
+  (declare (-idx2- (-double-)) A U Vt)
   (cheader "extern void dgesdd_();")
   (let* ((info 0)
          (m ($ A 0))
@@ -100,20 +100,20 @@
         (error "U too small")
       (idx-trim! U 0 0 m)
       (idx-trim! U 1 0 m) )
-    (when (not (contiguousp VT))
-      (error "VT not contiguous") )
-    (when (not (mat-squarep VT))
-      (error "VT not square") )
-    (if (< ($ VT 0) n)
-        (error "VT too small")
-      (idx-trim! VT 0 0 n)
-      (idx-trim! VT 1 0 n) )
+    (when (not (contiguousp Vt))
+      (error "Vt not contiguous") )
+    (when (not (mat-squarep Vt))
+      (error "Vt not square") )
+    (if (< ($ Vt 0) n)
+        (error "Vt too small")
+      (idx-trim! Vt 0 0 n)
+      (idx-trim! Vt 1 0 n) )
     
     ;; see http://netlib.org/lapack/explore-html/dgesdd.f.html
 
     ;; since lapack uses column major order, we actually compute A^T = V.S.U^T
     ;; first call: determine optimal workspace size
-    #{ dgesdd_("A", &$n, &$m, $(idx-base A), $a->mod, $(idx-base S), $(idx-base VT), $vt->mod, $(idx-base U), $u->mod, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
+    #{ dgesdd_("A", &$n, &$m, $(idx-base A), $A->mod, $(idx-base S), $(idx-base Vt), $Vt->mod, $(idx-base U), $U->mod, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
 
     (if (= info 0)
         (setq lwork (work 0))
@@ -122,7 +122,7 @@
 
     ;; second call: do the svd
     (let ((work (double-array lwork)))
-      #{ dgesdd_("A", &$n, &$m, $(idx-base A), $a->mod, $(idx-base S), $(idx-base VT), $vt->mod, $(idx-base U), $u->mod, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
+      #{ dgesdd_("A", &$n, &$m, $(idx-base A), $A->mod, $(idx-base S), $(idx-base Vt), $Vt->mod, $(idx-base U), $U->mod, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
     (when (<> info 0)
       (errorf "something went wrong, info = %d" info) )
     S))
@@ -149,7 +149,7 @@
       (error "A not contiguous") )
 
     ;; first call: determine optimal workspace size
-    #{ dgesdd_("N", &$n, &$m, $(idx-base A), $a->mod, $(idx-base S), NULL, &$dummy, NULL, &$dummy, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
+    #{ dgesdd_("N", &$n, &$m, $(idx-base A), $A->mod, $(idx-base S), NULL, &$dummy, NULL, &$dummy, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
 
     (if (= info 0)
         (setq lwork (work 0))
@@ -158,7 +158,7 @@
 
     ;; second call: compute singular values
     (let ((work (double-array lwork)))
-      #{ dgesdd_("N", &$n, &$m, $(idx-base A), $a->mod, $(idx-base S), NULL, &$dummy, NULL, &$dummy, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
+      #{ dgesdd_("N", &$n, &$m, $(idx-base A), $A->mod, $(idx-base S), NULL, &$dummy, NULL, &$dummy, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
     (when (<> info 0)
       (errorf "something went wrong, info = %d" info) )
     S))
@@ -189,7 +189,7 @@
     ;; see http://netlib.org/lapack/explore-html/dsyevd.f.html
 
     ;; first call: determine optimal workspace sizes
-    #{ dsyevd_("V", "L", &$m, $(idx-base A), $a->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #}
+    #{ dsyevd_("V", "L", &$m, $(idx-base A), $A->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #}
 
     (if (= info 0)
         (setq lwork (work 0)  liwork (iwork 0))
@@ -199,7 +199,7 @@
 
     ;; second call: compute eigenvalues and eigenvectors
     (let ((work (double-array lwork)) (iwork (int-array liwork)))
-      #{ dsyevd_("V", "L", &$m, $(idx-base A), $a->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #} )
+      #{ dsyevd_("V", "L", &$m, $(idx-base A), $A->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #} )
     (when (<> info 0)
       (errorf "something went wrong, info = %d" info) )
 
@@ -210,8 +210,7 @@
     w))
 
 #? (lapack-gsyevd/n! <A>)
-;; Compute all eigenvalues of symmetric matrix <A>.
-;; Update <A> with the eigenvectors and return a vector of eigenvalues.
+;; Compute all eigenvalues of symmetric matrix <A> and return as vector.
 ;;
 ;; Note: <gsyevd/n!> does not check that <A> is symmetric and reads the
 ;; upper triangular part only. <A> will be destroyed.
@@ -233,7 +232,7 @@
       (error "matrix not square") )
 
     ;; first call: determine optimal workspace sizes
-    #{ dsyevd_("N", "L", &$m, $(idx-base A), $a->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #}
+    #{ dsyevd_("N", "L", &$m, $(idx-base A), $A->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #}
 
     (if (= info 0)
         (setq lwork (work 0)  liwork (iwork 0))
@@ -243,11 +242,77 @@
 
     ;; second call: compute eigenvalues
     (let ((work (double-array lwork)) (iwork (int-array liwork)))
-      #{ dsyevd_("N", "L", &$m, $(idx-base A), $a->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #} )
+      #{ dsyevd_("N", "L", &$m, $(idx-base A), $A->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #} )
     (when (<> info 0)
       (errorf "something went wrong, info = %d" info) )
     w))
 
+#? (lapack-geev/n! <A> <evi>)
+;; Compute all eigenvalues of nonsymmetric matrix <A>, return real parts
+;; as vector, and write imaginary parts to <evi>.
+(defun geev/n! (A wi)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-double-)) wi)
+  (cheader "extern void dgeev_();")
+  (let* ((info 0)
+         (m ($ A 0))
+         (wr  (double-array m))
+         (work [-1 0 0])
+         (lwork -1)
+         (dummy 1) )
+    (declare (-int-) info m lwork dummy)
+    ;; argument checking
+    (when (not (contiguousp A))
+      (error "matrix not contiguous") )
+    (when (not (mat-squarep A))
+      (error "matrix not square") )
+    (when (<> (length wi) m)
+      (error "arguments not compatible (lengths must match)") )
+    
+    ;; first call: determine optimal workspace size
+    #{ dgeev_("N", "N", &$m, $(idx-base A), $A->mod, $(idx-base wr), $(idx-base wi), &$dummy, &$dummy, &$dummy, &$dummy, $(idx-base work), &$lwork, &$info); #}
+    
+    (if (= info 0)
+        (setq lwork (work 0))
+      (errorf "something went wrong, info = %d" info) )
+    (assert (> lwork 0))
+    ;; second call: compute eigenvalues
+    (let ((work (double-array lwork)))
+      #{ dgeev_("N", "N", &$m, $(idx-base A), $A->mod, $(idx-base wr), $(idx-base wi), &$dummy, &$dummy, &$dummy, &$dummy, $(idx-base work), &$lwork, &$info); #} )
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    wr))
+
+#? (lapack-gesv <A> <B>)
+;; Solve linear system <A><X>=<B> and return <X>.
+;;
+;; <A> is a square <m>x<m> matrix, <B> is <m>x<n>.
+(defun gesv (A B)
+  (declare (-idx2- (-double-)) A B)
+  (cheader "extern void dgesv_();")
+  (when (not (contiguousp A))
+    (error "matrix not contiguous") )
+  (when (not (mat-squarep A))
+    (error "matrix not square") )
+  (chk-mm-compatible A B)
+  (let* ((A ##($t A))
+         (X ##($t B))
+         (m (shape A 0))
+         (n (shape B 1))
+         (info 0)
+         (ipiv (int-array m)) )
+    (declare (-int-) info m n)
+    #{ dgesv_(&$m, &$n, $(idx-base A), $A->mod, $(idx-base ipiv), $(idx-base X), $X->mod, &$info); #}
+    (when (<> info 0)
+      (error "matrix is singular") )
+    ;; transpose X in-place
+    (let ((s0 (idx-mod X 0)) (s1 (idx-mod X 1)))
+      (unprotect
+       (idx-set-dim X 0 m)
+       (idx-set-dim X 1 n)
+       (idx-set-mod X 0 s1)
+       (idx-set-mod X 1 s0) ))
+    X))
 
 ) ; in-namespace lapack-
 
@@ -259,4 +324,6 @@
                     lapack-gesdd/n!
                     lapack-gsyevd/v!
                     lapack-gsyevd/n!
+                    lapack-geev/n!
+                    lapack-gesv
                     )
