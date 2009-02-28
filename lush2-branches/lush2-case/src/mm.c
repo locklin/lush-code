@@ -1409,6 +1409,33 @@ void *mm_allocv(mt_t t, size_t s)
 }
 
 
+char *mm_blob(size_t s)
+{
+   return mm_allocv(mt_blob, s);
+}
+
+
+void *mm_malloc(size_t s)
+{
+   FIX_SIZE(s);
+   void *p = alloc_variable_sized(mt_blob, s);
+   if (p) manage(p, mt_blob);
+   return p;
+}
+
+
+void *mm_calloc(size_t n, size_t s)
+{
+   FIX_SIZE(s);
+   void *p = alloc_variable_sized(mt_blob, s);
+   if (p) {
+      memset(p, 0, mm_sizeof(p));
+      manage(p, mt_blob);
+   }
+   return p;
+}
+
+
 void *mm_realloc(void *q, size_t s)
 {
    assert(ADDRESS_VALID(q));
@@ -1486,6 +1513,21 @@ void *mm_realloc(void *q, size_t s)
 }
 
 
+char *mm_string(size_t s)
+{
+   char *str = mm_blob(s+1);
+   str[0] = '\0';
+   return str;
+}
+
+
+char *mm_strdup(const char *str)
+{
+   char *str2 = mm_string(strlen(str));
+   return strcpy(str2, str);
+}
+
+
 void mm_manage(const void *p)
 {
    if (!ADDRESS_VALID(p)) {
@@ -1499,37 +1541,6 @@ void mm_manage(const void *p)
       }
    add_managed(p);
    MARK_BLOB(managed[man_last]);
-}
-
-
-char *mm_string(size_t ss)
-{
-   char  *s2;
-   if (ss < MIN_STRING)
-      s2 = mm_alloc(mt_string);
-   else
-      s2 = mm_allocv(mt_string, ss+1);
-
-   if (s2)
-      s2[0] = s2[ss] = 0;
-
-   return s2;
-}
-
-char *mm_strdup(const char *s)
-{
-   size_t ss = strlen(s);
-   char  *s2;
-
-   if (ss < MIN_STRING)
-      s2 = mm_alloc(mt_string);
-   else
-      s2 = mm_allocv(mt_string, ss+1);
-
-   if (s2)
-      memcpy(s2, s, ss+1);
-
-   return s2;
 }
 
 
@@ -2164,10 +2175,8 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
       assert(mt == mt_blob);
       mt = MM_REGTYPE("refs", 0, clear_refs, mark_refs, 0);
       assert(mt == mt_refs);
-      mt = MM_REGTYPE("string", MIN_STRING, 0, 0, 0);
-      assert(mt == mt_string);
    }
-   assert(types_last == 2);
+   assert(types_last == 1);
 
    /* set up other bookkeeping structures */
    managed = (void *)malloc(MIN_MANAGED * sizeof(void *));

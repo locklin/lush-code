@@ -521,6 +521,7 @@ DX(xregex_extract)
       for (i=0; i<regnum; i++) {
          char *s = mm_string(reglen[i]);
          strncpy(s, regptr[i], reglen[i]);
+         s[reglen[i]] = '\0';
          *where = new_cons(new_string(s), NIL);
          where = &Cdr(*where);
       }
