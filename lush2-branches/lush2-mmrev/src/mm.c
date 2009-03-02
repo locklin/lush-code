@@ -99,7 +99,6 @@
 
 
 #define ALIGN_NUM_BITS  3
-#define MIN_STRING      MM_MIN_STRING
 #define MIN_HUNKSIZE    (1<<ALIGN_NUM_BITS)
 #define MIN_NUMBLOCKS   0x100
 #define MIN_TYPES       0x100
@@ -373,6 +372,8 @@ static void mark_live(const void *p)
    assert(i != -1);
    MARK_LIVE(managed[i]);
 }
+
+static void mm_collect(void);
 
 static void maybe_trigger_collect(size_t s)
 {
@@ -1884,7 +1885,7 @@ static void collect(void)
 }
 
 
-void mm_collect(void)
+static void mm_collect(void)
 {
    if (gc_disabled || collect_in_progress) {
       collect_requested = true;

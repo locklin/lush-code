@@ -45,6 +45,7 @@
 typedef void clear_func_t(void *, size_t);
 typedef void mark_func_t(const void *);
 typedef bool finalize_func_t(void *);
+
 typedef void notify_func_t(void *);
 
 typedef short mt_t;
@@ -71,7 +72,6 @@ bool    mm_idle(void);                   // do work, return true when more work
 
 /* garbage collection */
 void    mm_mark(const void *);           // mark referenced object
-void    mm_collect(void);                // asynchronous collect
 int     mm_collect_now(void);            // synchronous collect
 bool    mm_collect_in_progress(void);    // true if gc is under way
 
