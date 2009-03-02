@@ -262,8 +262,6 @@ static void date_extend(struct date *d, struct date *nd, int nfrom, int nto)
  * Class DATE
  */
 
-static mt_t mt_date = mt_undefined;
-
 static const char *date_name(at *p)
 {
    struct date *d = Mptr(p);
@@ -352,7 +350,7 @@ static at *copy_date(struct date *d)
    if (date_check(d)<0)
       error(NIL, "invalid date", NIL);
 
-   struct date *nd = mm_alloc(mt_date);
+   struct date *nd = mm_blob(sizeof(struct date));
    *nd = *d;
    return new_extern(&date_class, nd);
 }
@@ -994,8 +992,6 @@ class_t date_class;
 
 void init_date(void)
 {
-   mt_date = MM_REGTYPE("date", sizeof(struct date), 0, 0, 0);
-
    /* setting up date_class */
    class_init(&date_class, false);
    date_class.name = date_name;

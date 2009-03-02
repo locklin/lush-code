@@ -155,7 +155,7 @@ LUSHAPI void srg_free(struct srg *);
 	    run_time_error(rterr_not_same_dim);}
 
 #define Mstr_alloc(s, len)  \
-    s = mm_allocv(mt_blob, len*sizeof(char)); \
+    s = mm_blob(len*sizeof(char));       \
     cside_create_str_gc(s);
 
 /* s = lush_malloc(len*sizeof(char), __FILE__, __LINE__);  */

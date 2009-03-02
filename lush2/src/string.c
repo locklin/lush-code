@@ -65,8 +65,8 @@ static void make_singletons(void)
 
 at *make_string_of_length(size_t n)
 {
-   char *s = mm_string(n);
-   s[n] = '\0';
+   char *s = mm_blob(n+1);
+   s[0] = s[n] = '\0';
    return new_string(s);
 }
 
