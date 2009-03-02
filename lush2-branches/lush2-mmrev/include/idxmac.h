@@ -111,16 +111,6 @@ max = (idx)->offset; \
     } \
 }
 
-#define Midx_update_mod_from_dim_noalloc(i0) \
-{ \
-    size_t siz=1; \
-    for(int i=(i0)->ndim - 1 ;i>= 0;i--) { \
-	(i0)->mod[i] = (ptrdiff_t)siz; \
-	siz *= (i0)->dim[i]; \
-    } \
-    (i0)->offset = 0; \
-}
-
 #define Midx_setdim3(id,di0,di1,di2) \
     (id)->dim[0] = di0; \
     (id)->dim[1] = di1; \
