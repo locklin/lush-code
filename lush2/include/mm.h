@@ -65,6 +65,7 @@ enum mt {
 
 /* MM administration */
 void    mm_init(int, notify_func_t *, FILE *); // initialize manager
+void    mm_debug(bool);                  // enable/disable debug code
 mt_t    mm_regtype(const char *, size_t, clear_func_t, mark_func_t *, finalize_func_t *);
 void    mm_root(const void *);           // add a root location
 void    mm_unroot(const void *);         // remove a root location

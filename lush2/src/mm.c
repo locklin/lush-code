@@ -73,7 +73,7 @@
 #define max(x,y)        ((x)<(y) ? (y) : (x))
 #define min(x,y)        ((x)<(y) ? (x) : (y))
 #define mm_printf(...)  fprintf(stdlog, __VA_ARGS__)
-#define debug(...)      mm_debug ? (\
+#define debug(...)      mm_debug_enabled ? (\
         fprintf(stdlog, "mm(%s): ", __func__), \
         fprintf(stdlog, __VA_ARGS__), 0) : 1
 
@@ -201,7 +201,7 @@ static bool       collect_in_progress = false;
 static bool       mark_in_progress = false;
 static bool       collect_requested = false;
 static pid_t      collecting_child = 0;
-static bool       mm_debug = false;
+static bool       mm_debug_enabled = false;
 static notify_func_t *client_notify = NULL;
 static mt_t       marking_type = mt_undefined;
 static const void *marking_object = NULL;
@@ -790,7 +790,7 @@ static void collect_prologue(void)
    assert(!collect_in_progress);
    assert(!collecting_child);
    assert(!stack_overflowed2);
-   if (mm_debug)
+   if (mm_debug_enabled)
       assert(no_marked_live());
    
    /* prepare managed array and poplar data */
@@ -912,7 +912,7 @@ void mm_mark(const void *p)
 {
    if (!p) return;
    
-   if (mm_debug) {
+   if (mm_debug_enabled) {
       if (!mm_ismanaged(p)) {
          char *name = (marking_type == mt_undefined) ?
             "undefined" : types[marking_type].name;
@@ -1298,6 +1298,12 @@ void mm_anchor(void *p)
       stack_push(transients, p);
 }
 
+void mm_debug(bool e)
+{
+   mm_debug_enabled = e;
+}
+
+
 mt_t mm_regtype(const char *n, size_t s, 
                 clear_func_t c, mark_func_t *m, finalize_func_t *f)
 {
@@ -1434,7 +1440,7 @@ void mm_manage(const void *p)
       warn(" 0x%"PRIxPTR" is not a valid address\n", PPTR(p));
       abort();
    }
-   if (mm_debug)
+   if (mm_debug_enabled)
       if (mm_ismanaged(p)) {
          warn(" address 0x%"PRIxPTR" already managed\n", PPTR(p));
          abort();
@@ -2004,10 +2010,10 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    client_notify = clnotify;
    
    if (log) {
-      mm_debug = true;
+      mm_debug_enabled = true;
       stdlog = log;
    } else {
-      mm_debug = false;
+      mm_debug_enabled = false;
       stdlog = stderr;
    }
 
@@ -2179,6 +2185,12 @@ char *mm_info(int level)
       BPRINTF("                 : %.2f MByte for offheap array\n",
               ((double)man_size*sizeof(managed[0]))/(1<<20));
    }
+   if (mm_debug_enabled) {
+      BPRINTF("Debugging code   : enabled\n");
+   } else {
+      BPRINTF("Debugging code   : disabled\n");
+   }
+
    if (collect_in_progress)
       BPRINTF("*** GC in progress ***\n");
 
