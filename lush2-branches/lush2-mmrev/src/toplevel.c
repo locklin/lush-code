@@ -814,10 +814,12 @@ void user_break(char *s)
 }
 
 
+extern int lush_error_flag;  /* defined in lisp_c.c */
+
 void error(const char *prefix, const char *text, at *suffix)
 {
-   if (run_time_error_flag)
-      run_time_error(text);
+   if (lush_error_flag)
+      lush_error(text);
 
    eval_ptr = eval_std;
    //compute_bump_active = 0;

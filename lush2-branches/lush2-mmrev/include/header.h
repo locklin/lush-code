@@ -1245,10 +1245,8 @@ LUSHAPI at * cside_find_litem(void *cptr);
 
 LUSHAPI bool lisp_owns_p(void *cptr);  /* true when interpreter owns the object */
 
-extern LUSHAPI int run_time_error_flag;
-extern LUSHAPI jmp_buf run_time_error_jump;
-LUSHAPI void run_time_error(const char *s);
-
+LUSHAPI void lush_error(const char *s);
+#define run_time_error lush_error
 
 /* EVENT.H ----------------------------------------------------- */
 

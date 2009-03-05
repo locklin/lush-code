@@ -1217,7 +1217,7 @@ index_t *as_double_array(at *arg)
    if (NUMBERP(arg))
       return  make_array(ST_DOUBLE, SHAPE0D, arg);
 
-   else if (LISTP(arg)) {
+   else if (CONSP(arg)) {
       index_t *ind = make_array(ST_DOUBLE, SHAPE1D(length(arg)), NIL);
       at *myp[1] = { NIL };
       index_set(ind, myp, arg, 1);

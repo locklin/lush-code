@@ -134,7 +134,7 @@ int xerbla_(char *name, int *info)
    tname[6] = '\0';
    char errmsg[200];
    sprintf(errmsg, "%dth argument to BLAS/LAPACK-function %6s invalid\n", *info, tname);
-   run_time_error(errmsg);
+   lush_error(errmsg);
    return 0;
 }
 

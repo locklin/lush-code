@@ -3,7 +3,7 @@
 #include "header.h"
 #include "idxmac.h"
 
-void run_time_error(char *s) { printf("%s\n",s); exit(1); }
+void lush_error(char *s) { printf("%s\n",s); exit(1); }
 
 #undef popen
 #undef pclose
@@ -47,7 +47,7 @@ void *lush_malloc(int x, char *file, int line)
     if (malloc_file)
 	fprintf(malloc_file,"%p\tmalloc\t%d\t%s:%d\n",z,x,file,line);
     if (!z)
-      run_time_error ("Memory exhausted");
+      lush_error ("Memory exhausted");
     return z;
 }
 
@@ -57,7 +57,7 @@ void *lush_calloc(int x,int y,char *file,int line)
     if (malloc_file)
 	fprintf(malloc_file,"%p\tcalloc\t%d\t%s:%d\n",z,x*y,file,line);
     if (!z)
-      run_time_error ("Memory exhausted");
+      lush_error ("Memory exhausted");
     return z;
 }
 
@@ -69,7 +69,7 @@ void *lush_realloc(void *x,int y,char *file,int line)
 	fprintf(malloc_file,"%p\trealloc\t%d\t%s:%d\n",z,y,file,line);
     }
     if (!z)
-      run_time_error ("Memory exhausted");
+      lush_error ("Memory exhausted");
     return z;
 }
 

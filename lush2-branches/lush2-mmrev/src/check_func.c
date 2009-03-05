@@ -89,7 +89,7 @@ void print_dh_trace_stack(void)
 {
     struct dh_trace_stack *st = dh_trace_root;
     
-    /* Safely called from compiled code or from RUN_TIME_ERROR. */
+    /* Safely called from compiled code or from lush_error. */
     while (st) 
     {
         int lastcount = 0;
@@ -126,9 +126,9 @@ test_obj_class(void *obj, void *classvtable)
 #ifndef NOLISP
 	  dhclassdoc_t *cdoc = (dhclassdoc_t*)(vtable->Cdoc);
 	  if (! cdoc)
-	    run_time_error("Found null Cdoc in virtual table");
+	    lush_error("Found null Cdoc in virtual table");
 	  if (vtable != cdoc->lispdata.vtable)
-	    run_time_error("Found improper Cdoc in virtual table");
+	    lush_error("Found improper Cdoc in virtual table");
 	  cdoc = cdoc->lispdata.ksuper;
 	  vtable = (cdoc) ? cdoc->lispdata.vtable : 0;
 #else
@@ -145,9 +145,9 @@ void
 check_obj_class(void *obj, void *classvtable)
 {
   if (! obj)
-    run_time_error("Casting a null gptr as an object");
+    lush_error("Casting a null gptr as an object");
   if (! test_obj_class(obj, classvtable))
-    run_time_error("Illegal object cast");
+    lush_error("Illegal object cast");
 }
 
 
@@ -203,11 +203,11 @@ void srg_resize_mm(struct srg *sr, size_t new_size, const char *file, int line)
          memcpy(data, sr->data, n);
       }
 /*       if ((st_size>0) && (data==NULL)) */
-/*          run_time_error(rterr_out_of_memory); */
+/*          lush_error(rterr_out_of_memory); */
       sr->data = data;
       sr->size = new_size;
    } else
-      run_time_error(rterr_cannot_realloc);
+      lush_error(rterr_cannot_realloc);
 }
 
 
@@ -276,7 +276,7 @@ check_main_maout_any(struct idx *i1, struct idx *i2)
   if (IDX_UNSIZEDP(i2))
     {
       if (i1->ndim != i2->ndim)
-        run_time_error(rterr_not_same_dim);
+        lush_error(rterr_not_same_dim);
       Mcheck_main_maout(i1, i2);
     }
   else
@@ -287,7 +287,7 @@ check_main_maout_any(struct idx *i1, struct idx *i2)
       for (int i=0; i<i2->ndim; i++)
         n2 *= i2->dim[i];
       if (n1 != n2)
-        run_time_error(rterr_not_same_dim);
+        lush_error(rterr_not_same_dim);
     }
 }
 

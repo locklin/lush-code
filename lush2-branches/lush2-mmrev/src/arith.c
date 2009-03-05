@@ -273,7 +273,7 @@ DX(name2(x, NAME))                                           \
 
 #define DX_NONCOMMUTATIVE_BINARY_OP(NAME, OP, NELEM)         \
                                                              \
-static inline at *name2(unary, NAME)(at *arg) {              \
+static at *name2(unary, NAME)(at *arg) {                     \
                                                              \
   if (NUMBERP(arg))                                          \
     return NEW_NUMBER(OP(NELEM, Number(arg)));               \
