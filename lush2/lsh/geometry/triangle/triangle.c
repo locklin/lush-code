@@ -1407,15 +1407,17 @@ REAL area;                                      /* The area of the triangle. */
 /**                                                                         **/
 /**                                                                         **/
 
+extern void lush_error(const char *s);
+
 #ifdef ANSI_DECLARATORS
 void triexit(int status)
 #else /* not ANSI_DECLARATORS */
 void triexit(status)
 int status;
 #endif /* not ANSI_DECLARATORS */
-
 {
-  exit(status);
+   lush_error("error in triangle.o");
+     /* exit(status); */
 }
 
 #ifdef ANSI_DECLARATORS
