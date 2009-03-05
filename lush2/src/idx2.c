@@ -34,14 +34,14 @@ static char badargs[]="bad arguments";
 #define ERRBADARGS error(NIL,badargs,NIL)
 
 /* All the code below is interpreted, so all the macros such as
-   Mis_size, check_main_maout,... should not call run_time_error,
+   Mis_size, check_main_maout,... should not call lush_error,
    but error instead.  To avoid that problem once and for all
-   the following macro redefine run_time_error:
+   the following macro redefine lush_error:
    */
-#ifdef run_time_error
-#undef run_time_error
+#ifdef lush_error
+#undef lush_error
 #endif
-#define run_time_error(s) error(NIL, s, NIL);
+#define lush_error(s) error(NIL, s, NIL);
 
 /* =========== scalar functions on MA elements ================== */
 

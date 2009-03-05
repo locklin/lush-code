@@ -95,7 +95,7 @@ extern LUSHAPI char *rterr_cannot_shrink;
 extern LUSHAPI char *rterr_bad_dimensions;
 
 #define RTERR_GEN(test,errstr) \
-  if (test) { run_time_error(errstr); }
+  if (test) { lush_error(errstr); }
 #define RTERR_BOUND(test) \
   RTERR_GEN(test,rterr_bound)
 #define RTERR_RTYPE(test) \
@@ -109,7 +109,7 @@ extern LUSHAPI char *rterr_bad_dimensions;
 #define RTERR_RANGE(test) \
   RTERR_GEN(test,rterr_range)
 #define RTERR_SRG_OVERFLOW \
-  run_time_error(rterr_srg_overflow);
+  lush_error(rterr_srg_overflow);
 
 
 /* ---------------------------------------- */
@@ -132,7 +132,7 @@ LUSHAPI void srg_free(struct srg *);
 
 #define Mis_sized(i1) \
     if(IDX_UNSIZEDP(i1)) \
-        run_time_error(rterr_unsized_matrix); 
+        lush_error(rterr_unsized_matrix); 
 
 #define Mis_sized_is_sized(i1, i2) \
     Mis_sized(i1); Mis_sized(i2)
@@ -140,19 +140,19 @@ LUSHAPI void srg_free(struct srg *);
 #define Msame_size1(i1,i2) \
     Mis_sized_is_sized(i1, i2) \
     if((i1)->dim[0] != (i2)->dim[0]) \
-        run_time_error(rterr_not_same_dim);
+        lush_error(rterr_not_same_dim);
 
 #define Msame_size2(i1,i2) \
     Mis_sized_is_sized(i1, i2) \
     if(((i1)->dim[0] != (i2)->dim[0]) || ((i1)->dim[1] != (i2)->dim[1])) \
-	    run_time_error(rterr_not_same_dim);
+	    lush_error(rterr_not_same_dim);
 
 #define Msame_size(i1,i2) \
     Mis_sized_is_sized(i1, i2) \
     { \
     for(int j=0; j<(i1)->ndim; j++) \
 	if((i1)->dim[j] != (i2)->dim[j]) \
-	    run_time_error(rterr_not_same_dim);}
+	    lush_error(rterr_not_same_dim);}
 
 #define Mstr_alloc(s, len)  \
     s = mm_blob(len*sizeof(char));       \
@@ -171,7 +171,7 @@ LUSHAPI void srg_free(struct srg *);
       fprintf(stderr, "*** Warning: shrinking storage at %lx (lside: %lx)\n", \
               (long)sr, (long)cside_find_litem(sr)); \
    }
-/*       run_time_error(rterr_cannot_shrink); */
+/*       lush_error(rterr_cannot_shrink); */
 
 #define Midx_checksize0(i1) { \
     size_t siz = (i1)->offset + 1; \
@@ -209,7 +209,7 @@ LUSHAPI void srg_free(struct srg *);
         Midx_checksize1(i2);  \
     } else \
         if ((i1)->dim[0] != (i2)->dim[0]) \
-            run_time_error(rterr_bad_dimensions); 
+            lush_error(rterr_bad_dimensions); 
  
 #define Msize_or_check2(i1, i2) \
     Mis_sized(i1) \
@@ -221,7 +221,7 @@ LUSHAPI void srg_free(struct srg *);
         Midx_checksize(i2);  \
     } else \
         if (((i1)->dim[0]!=(i2)->dim[0]) || ((i1)->dim[1]!=(i2)->dim[1])) \
-            run_time_error(rterr_bad_dimensions); 
+            lush_error(rterr_bad_dimensions); 
 
 #define Msize_or_check(i1, i2) \
     Mis_sized(i1) \
@@ -235,10 +235,10 @@ LUSHAPI void srg_free(struct srg *);
         Midx_checksize(i2);  \
     } else {  /* both are dimensioned, then check */ \
         if ((i1)->ndim != (i2)->ndim) \
-          run_time_error(rterr_bad_dimensions); \
+          lush_error(rterr_bad_dimensions); \
         for (int j=0; j< (i1)->ndim; j++)  \
           if ((i1)->dim[j] != (i2)->dim[j]) \
-            run_time_error(rterr_bad_dimensions); \
+            lush_error(rterr_bad_dimensions); \
     }
 
 #define Msize_or_check_1D(dim0, i2) \
@@ -248,7 +248,7 @@ LUSHAPI void srg_free(struct srg *);
         Midx_checksize(i2);  \
     } else {  /* both are dimensioned, then check */ \
 	if ((i2)->ndim != 1 || (i2)->dim[0] != dim0) \
-            run_time_error(rterr_bad_dimensions); \
+            lush_error(rterr_bad_dimensions); \
     }
 
 #define Msize_or_check_2D(dim0, dim1, i2) \
@@ -260,7 +260,7 @@ LUSHAPI void srg_free(struct srg *);
         Midx_checksize(i2);  \
     } else {  /* both are dimensioned, then check */ \
 	if ((i2)->ndim != 2 || (i2)->dim[0] != dim0 || (i2)->dim[1] != dim1) \
-            run_time_error(rterr_bad_dimensions); \
+            lush_error(rterr_bad_dimensions); \
     }
 
 #define Mcheck_main(i1) \
@@ -318,7 +318,7 @@ LUSHAPI void srg_free(struct srg *);
         Midx_checksize(i2);  \
     } else \
         if (((i0)->dim[0]!=(i2)->dim[0]) || ((i1)->dim[0]!=(i2)->dim[1])) \
-            run_time_error(rterr_bad_dimensions); 
+            lush_error(rterr_bad_dimensions); 
 
 #define Mcheck_m2in_m2in_m4out(i0, i1, i2) \
     Mis_sized_is_sized(i0, i1); \
@@ -335,7 +335,7 @@ LUSHAPI void srg_free(struct srg *);
     } else \
         if (((i0)->dim[0]!=(i2)->dim[0]) || ((i0)->dim[1]!=(i2)->dim[1]) || \
             ((i1)->dim[0]!=(i2)->dim[2]) || ((i1)->dim[1]!=(i2)->dim[3])) \
-            run_time_error(rterr_bad_dimensions); 
+            lush_error(rterr_bad_dimensions); 
 
 /* Mcheck_m1in_m0out, Mcheck_m2in_m0out --> Mcheck_main_m0out */
 /* Mcheck_m1in_m1out, Mcheck_m2in_m2out --> Mcheck_main_maout */

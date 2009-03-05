@@ -3038,8 +3038,8 @@ define_symbol_of_main_program(const char *exec)
 void 
 __pure_virtual(void) 
 { 
-  extern void run_time_error();
-  run_time_error("Pure virtual function called"); 
+  extern void lush_error();
+  lush_error("Pure virtual function called"); 
 }
 #endif
 

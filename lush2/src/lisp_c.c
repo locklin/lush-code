@@ -1629,18 +1629,18 @@ static void wipe_out_temps(void)
 }
 
 
-/* run_time_error -- called by compiled code when an error occurs */
+/* lush_error -- called by compiled code when an error occurs */
 
-int     run_time_error_flag;
-jmp_buf run_time_error_jump;
+int lush_error_flag;
+static jmp_buf lush_error_jump;
 
-void run_time_error(const char *s)
+void lush_error(const char *s)
 {
-  if (run_time_error_flag) {
+  if (lush_error_flag) {
     printf("\n\n*** lisp_c runtime error: %s\007\007\n",s);
     print_dh_trace_stack();
     dh_trace_root = 0;
-    longjmp(run_time_error_jump,-1);
+    longjmp(lush_error_jump,-1);
 
   } else {
     dh_trace_root = 0;
@@ -1709,15 +1709,15 @@ static at *_dh_listeval(at *p, at *q)
   full_update_c_from_lisp();
 
   /* Prepare environment */
-  if (run_time_error_flag)
+  if (lush_error_flag)
     lisp2c_warning("reentrant call to compiled code",0);
-  int errflag = setjmp(run_time_error_jump);
+  int errflag = setjmp(lush_error_jump);
   dh_trace_root = 0;
     
   /* Call compiled code */
   dharg funcret;
   if (!errflag) {
-    run_time_error_flag = 1;
+    lush_error_flag = 1;
     /* Call the test function if it exists */
     if (kname->lispdata.dhtest)
       (*kname->lispdata.dhtest->lispdata.call)(args-1);
@@ -1726,7 +1726,7 @@ static at *_dh_listeval(at *p, at *q)
   }
     
   /* Prepare for the update */
-  run_time_error_flag = 0;
+  lush_error_flag = 0;
   dh_trace_root = 0;
   set_update_flag();
     
