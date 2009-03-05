@@ -502,7 +502,7 @@ static void *alloc_variable_sized(mt_t t, size_t s)
 static void *alloc_fixed_size(mt_t t)
 {
    size_t s = types[t].size;
-   if (BLOCKSIZE<(2*s))
+   if (BLOCKSIZE<(2*s) && t!=mt_stack_chunk)
       return alloc_variable_sized(t, s);
    
    if (!update_current_a(t)) {
@@ -1055,7 +1055,8 @@ static int sweep_now(void)
  * list of chunks and is itself managed.
  */
 
-#define STACK_ELTS_PER_CHUNK  255
+//#define STACK_ELTS_PER_CHUNK  255
+#define STACK_ELTS_PER_CHUNK  (BLOCKSIZE/sizeof(void *) - 1)
 
 typedef struct stack_chunk {
    struct stack_chunk  *prev;
@@ -1118,6 +1119,13 @@ static void add_chunk(mmstack_t *st)
 
 static void pop_chunk(mmstack_t *st)
 {
+   if (!collect_in_progress && INHEAP(st)) {
+      /* fast reclaim */
+      int b = BLOCK(st);
+      blockrecs[b].t = mt_undefined;
+      types[mt_stack_chunk].next_b = b;
+      types[mt_stack_chunk].current_amax = types[mt_stack_chunk].current_a = b*BLOCKSIZE;
+   }
    st->current = st->current->prev;
    if (!st->current) {
       warn("stack underflow\n");
@@ -2006,6 +2014,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    assert(sizeof(info_t) <= MIN_HUNKSIZE);
    assert(sizeof(hunk_t) <= MIN_HUNKSIZE);
    assert((1<<HMAP_EPI_BITS) == HMAP_EPI);
+   assert(sizeof(stack_chunk_t) == BLOCKSIZE);
 
    client_notify = clnotify;
    
