@@ -1552,20 +1552,20 @@ DX(xrgb_grab_matrix)
 
 
 
-static void getrect(at *pp, int *x, int *y, int *w, int *h)
+static void getrect(at *pp, double *x, double *y, double *w, double *h)
 {
    at *p = pp;
    if (CONSP(p) && NUMBERP(Car(p))) {
-      *x = (int)Number(Car(p));
+      *x = Number(Car(p));
       p = Cdr(p);
       if (CONSP(p) && NUMBERP(Car(p))) {
-         *y = (int)Number(Car(p));
+         *y = Number(Car(p));
          p = Cdr(p);
          if (CONSP(p) && NUMBERP(Car(p))) {
-            *w = (int)Number(Car(p));
+            *w = Number(Car(p));
             p = Cdr(p);
             if (CONSP(p) && NUMBERP(Car(p))) {
-               *h = (int)Number(Car(p));
+               *h = Number(Car(p));
                p = Cdr(p);
                if (! p)
                   return;
@@ -1589,9 +1589,9 @@ static at *makerect(int x, int y, int w, int h)
 DX(xpoint_in_rect)
 {
    ARG_NUMBER(3);
-   int xx = AINTEGER(1);
-   int yy = AINTEGER(2);
-   int x, y, w, h;
+   double xx = AREAL(1);
+   double yy = AREAL(2);
+   double x, y, w, h;
    getrect(ALIST(3),&x,&y,&w,&h);
    
    if (xx>=x && yy>=y && xx<x+w && yy<y+h)
@@ -1603,7 +1603,7 @@ DX(xpoint_in_rect)
 DX(xrect_in_rect)
 {
    ARG_NUMBER(2);
-   int xx,yy,ww,hh,x,y,w,h;
+   double xx,yy,ww,hh,x,y,w,h;
    getrect(ALIST(1),&xx,&yy,&ww,&hh);
    getrect(ALIST(2),&x,&y,&w,&h);
    w += x;
@@ -1625,14 +1625,14 @@ DX(xrect_in_rect)
 DX(xcollide_rect)
 {
    ARG_NUMBER(2);
-   int x1,y1,w1,h1,x2,y2,w2,h2;
+   double x1,y1,w1,h1,x2,y2,w2,h2;
    getrect(ALIST(1),&x1,&y1,&w1,&h1);
    getrect(ALIST(2),&x2,&y2,&w2,&h2);
    
-   int x = TLMAX(x1,x2);
-   int y = TLMAX(y1,y2);
-   int w = TLMIN(x1+w1,x2+w2)-x;
-   int h = TLMIN(y1+h1,y2+h2)-y;
+   double x = TLMAX(x1,x2);
+   double y = TLMAX(y1,y2);
+   double w = TLMIN(x1+w1,x2+w2)-x;
+   double h = TLMIN(y1+h1,y2+h2)-y;
   
    
    if (w>0 && h>0)
@@ -1645,14 +1645,14 @@ DX(xcollide_rect)
 DX(xbounding_rect)
 {
    ARG_NUMBER(2);
-   int x1,y1,w1,h1,x2,y2,w2,h2;
+   double x1,y1,w1,h1,x2,y2,w2,h2;
    getrect(ALIST(1),&x1,&y1,&w1,&h1);
    getrect(ALIST(2),&x2,&y2,&w2,&h2);
 
-   int x = TLMIN(x1,x2);
-   int y = TLMIN(y1,y2);
-   int w = TLMAX(x1+w1,x2+w2)-x;
-   int h = TLMAX(y1+h1,y2+h2)-y;
+   double x = TLMIN(x1,x2);
+   double y = TLMIN(y1,y2);
+   double w = TLMAX(x1+w1,x2+w2)-x;
+   double h = TLMAX(y1+h1,y2+h2)-y;
 
    return makerect(x,y,w,h);
 }
@@ -1661,10 +1661,10 @@ DX(xbounding_rect)
 DX(xexpand_rect)
 {
    ARG_NUMBER(3);
-   int x,y,w,h;
+   double x,y,w,h;
    getrect(ALIST(1),&x,&y,&w,&h);
-   int bx = AINTEGER(2);
-   int by = AINTEGER(3);
+   double bx = AREAL(2);
+   double by = AREAL(3);
 
    return makerect(x-bx,y-by,w+2*bx,h+2*by);
 }
@@ -1827,7 +1827,7 @@ DX(xaddclip)
    ARG_NUMBER(1);
    window_t *win = current_window();
 
-   int x1, y1, w1, h1;
+   double x1, y1, w1, h1;
    getrect(ALIST(1),&x1,&y1,&w1,&h1);
    
    if (win->gdriver->clip) {
