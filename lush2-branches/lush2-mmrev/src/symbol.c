@@ -48,19 +48,15 @@ struct hash_name **names = NULL;
  *    of the chain (i.e., the one with s->next == NULL) has
  *    a valueptr != NULL.
  *
- * 5. If a symbol is globally bound, its associated AT shall
- *    not be reclaimed by purge_names.
+ * 5. As long as a symbol is globally bound, its associated AT
+ *    shall not be reclaimed.
  * 
- * 6. Safely removing unused hash_names is a bit tricky and
- *    requires doing a synchronous GC. It is implemented in
- *    function purge_names.
  */
 
 /* predefined symbols */
 
 at *at_t;
 static at *at_scope;
-static bool purging_symbols = false;
 
 /* contains the symbol names and hash */
 
@@ -81,12 +77,9 @@ void clear_symbol_hash(hash_name_t *hn, size_t _)
 
 void mark_symbol_hash(hash_name_t *hn)
 {
-   MM_MARK(hn->name);
-   if (!purging_symbols) {
-      MM_MARK(hn->named);
-   } else if (hn->named) {
-      MM_MARK(Mptr(hn->named));  /* weak reference when purging */
-   }
+   mm_mark(hn->name);
+   if (hn->named)
+      MM_MARK(Mptr(hn->named));  /* weak reference to top of symbol stack */
    MM_MARK(hn->next);
 }
 
@@ -111,32 +104,32 @@ void mark_symbol(symbol_t *s)
    if (s->next)
       mm_mark(s->next);
 
-   else if (s->valueptr)
+   else if (s->valueptr) /* when a global symbol mark the AT */
       mm_mark(SYM_HN(s)->named);
 }
 
 /* 
  * When an AT referencing a symbol is reclaimed,
- * clear the back reference in the symbol hash.
+ * remove the hash_name from the symbol hash (names).
  */
-
+static hash_name_t *search_by_name(const char *, int);
 void at_symbol_notify(at *p, void *_)
 {
    symbol_t *s = Symbol(p);
    assert(s->next==NULL);
    assert(s->valueptr==NULL);
    assert(SYM_HN(s)->named == p);
-   SYM_HN(s)->named = NIL;
-   //search_by_name(s->hn->name, -1); /* done by purge_names directly */
+   search_by_name(SYM_HN(s)->name, -1);
 }   
 
 mt_t mt_symbol = mt_undefined;
 
 /*
- * search_by_name(s, mode) returns a ptr to the HASH_NAME node 
- * for name S. Returns NIL if an error occurs. If MODE is 0,
- * just search, if MODE is +1 creates if not found, and if 
- * MODE is -1 deletes it hash node.
+ * search_by_name(s, mode) 
+ * Return a ptr to the HASH_NAME node for name S. Return NIL
+ * when an error occurs. 
+ * If MODE is 0, just search, if MODE is +1 creates if not found,
+ * and if MODE is -1 delete its hash node.
  * This is the only function that directly manipulates the
  * static hash table 'names'.
  */
@@ -175,27 +168,6 @@ static hash_name_t *search_by_name(const char *s, int mode)
       hn = NULL;             // return NULL
    }
    return hn;
-}
-
-void purge_names(void)
-{
-   /* if a gc is under way, wait until done */
-   MM_NOGC;
-   MM_NOGC_END;
-
-   purging_symbols = true;
-   mm_collect_now();
-   purging_symbols = false;
-
-   for (int i = 0; i < HASHTABLESIZE; i++) {
-      hash_name_t *hn, **phn = &names[i];
-      while ((hn = *phn)) {
-         if (!hn->named) {
-            *phn = hn->next;
-         } else
-            phn = &(hn->next);
-      }
-   }
 }
 
 #if defined UNIX && HAVE_LIBREADLINE
@@ -335,6 +307,8 @@ DX(xnameof)
 
 at *global_names(void)
 {
+   mm_collect_now(); /* remove non-globals now */
+
    hash_name_t **j, *hn;
 
    at **where, *answer = NIL;
@@ -357,7 +331,7 @@ DX(xsymblist)
 /* symbols and values, not sorted */
 at *global_defs()
 {
-   purge_names();
+   mm_collect_now();  /* remove non-globals now */
 
    at *ans = NIL;
    at **where = &ans;

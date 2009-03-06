@@ -402,7 +402,6 @@ LUSHAPI at *setq(at *p, at *q);	/* Warning: Never use the result. */
 LUSHAPI at *global_names(void); 
 LUSHAPI at *global_defs(void);
 LUSHAPI at *oblist(void);
-LUSHAPI void purge_names(void);
 LUSHAPI void reset_symbols(void);
 LUSHAPI void sym_set(symbol_t *s, at *q, bool in_global_scope); 
 LUSHAPI void var_set(at *p, at *q);
