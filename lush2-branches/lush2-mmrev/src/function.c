@@ -540,9 +540,10 @@ at *lete(at *vardecls, at *body)
    at *result = progn(body);
 
    /* before we return, explicitly delete all local variables */
-   while (CONSP(syms)) {
-      lush_delete_maybe(symbol_class.selfeval(Car(syms)));
-      syms = Cdr(syms);
+   at *ss = syms;
+   while (CONSP(ss)) {
+      lush_delete_maybe(symbol_class.selfeval(Car(ss)));
+      ss = Cdr(ss);
    }
    pop_args(syms);
 
