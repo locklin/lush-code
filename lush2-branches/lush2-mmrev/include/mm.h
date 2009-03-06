@@ -109,8 +109,8 @@ char  **mm_prof_key(void);               // make key for profile data
 
 #define MM_NOGC                 bool __mm_nogc = mm_begin_nogc(false)
 #define MM_NOGC_END             mm_end_nogc(__mm_nogc)
-#define MM_PAUSEGC              bool __mm_pausegc = mm_begin_nogc(true)
-#define MM_PAUSEGC_END          mm_end_nogc(__mm_pausegc)
+#define MM_PAUSEGC              /* */
+#define MM_PAUSEGC_END          /* */
 
 
 /* quasi-private */
