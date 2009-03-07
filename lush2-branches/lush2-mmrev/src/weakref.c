@@ -25,7 +25,8 @@
  ***********************************************************************/
 
 #include "header.h"
-#include "inttypes.h"
+#include <inttypes.h>
+
 /*
  * Objects holding weak references to another object may 
  * register a "notifier function" for the referent object.

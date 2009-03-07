@@ -26,6 +26,8 @@
 
 #include "header.h"
 
+#define SYMBOL_CACHE_SIZE 255
+
 typedef unsigned char   uchar;
 
 /* globally defined names */
@@ -79,7 +81,7 @@ void mark_symbol_hash(hash_name_t *hn)
 {
    mm_mark(hn->name);
    if (hn->named)
-      MM_MARK(Mptr(hn->named));  /* weak reference to top of symbol stack */
+      mm_mark(Mptr(hn->named));  /* weak reference to top of symbol stack */
    MM_MARK(hn->next);
 }
 
@@ -88,10 +90,7 @@ static mt_t mt_symbol_hash = mt_undefined;
 
 void clear_symbol(symbol_t *s, size_t _)
 {
-   s->next = NULL;
-   s->hn = NULL;
-   s->value = NIL;
-   s->valueptr = NULL;
+   memset(s, 0, sizeof(symbol_t));
 }
 
 void mark_symbol(symbol_t *s)
@@ -475,20 +474,39 @@ void reset_symbols(void)
 }
 
 /* push the value q on the symbol stack */
-symbol_t *symbol_push(symbol_t *s, at *q)
+static symbol_t **cache = NULL;
+static int cache_index = 0;
+
+symbol_t *symbol_push(symbol_t *s, at *q, at **valueptr)
 {
-   symbol_t *sym = mm_alloc(mt_symbol);
+   symbol_t *sym = NULL;
+   if (cache_index) {
+      sym = cache[cache_index];
+      cache[cache_index--] = NULL;
+   } else
+      sym = mm_alloc(mt_symbol);
    sym->next = s;
    sym->hn = SYM_HN(s);
-   sym->value = q;
-   sym->valueptr = &(sym->value);
+   if (valueptr) {
+      sym->valueptr = valueptr;
+   } else {
+      sym->value = q;
+      sym->valueptr = &(sym->value);
+   }
    return sym;
 }
 
 /* pop a value off the symbol stack */
 symbol_t *symbol_pop(symbol_t *s)
 {
-   return s->next; 
+   if (cache_index==SYMBOL_CACHE_SIZE) {
+      return s->next;
+   } else {
+      symbol_t *next = s->next;
+      memset(s, 0, sizeof(symbol_t));
+      cache[++cache_index] = s;
+      return next;
+   }
 }
 
 at *new_symbol(const char *str)
@@ -706,6 +724,11 @@ void pre_init_symbol(void)
       size_t s = sizeof(hash_name_t *) * HASHTABLESIZE;
       names = mm_allocv(mt_refs, s);
       MM_ROOT(names);
+   }
+   if (!cache) {
+      size_t s = sizeof(void *) * (SYMBOL_CACHE_SIZE + 1);
+      cache = mm_allocv(mt_refs, s);
+      MM_ROOT(cache);
    }
 }
       

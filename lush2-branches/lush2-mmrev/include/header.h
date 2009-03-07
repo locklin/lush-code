@@ -393,10 +393,10 @@ extern at *at_t;
 
 LUSHAPI const char *nameof(symbol_t *);
 LUSHAPI const char *NAMEOF(at *);
-LUSHAPI symbol_t *symbol_push(symbol_t *, at *);
+LUSHAPI symbol_t *symbol_push(symbol_t *, at *, at **);
 LUSHAPI symbol_t *symbol_pop(symbol_t *);
-#define SYMBOL_PUSH(p, q) { at *__p__ = p; Mptr(__p__) = symbol_push((symbol_t*)Mptr(__p__), q); }
-#define SYMBOL_POP(p) { at *__p__ = p; Mptr(__p__) = symbol_pop((symbol_t*)Mptr(__p__)); }
+#define SYMBOL_PUSH(p, q) { at *__p__ = p; Symbol(__p__) = symbol_push(Symbol(__p__), q, NULL); }
+#define SYMBOL_POP(p) { at *__p__ = p; Symbol(__p__) = symbol_pop(Symbol(__p__)); }
 
 LUSHAPI at *setq(at *p, at *q);	/* Warning: Never use the result. */
 LUSHAPI at *global_names(void); 

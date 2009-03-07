@@ -43,7 +43,7 @@ static void mark_at(at *a)
       MM_MARK(Car(a));
       MM_MARK(Cdr(a));
       
-   } else if (NUMBERP(a) || OBJECTP(a)) {
+   } else if (SYMBOLP(a) || NUMBERP(a) || OBJECTP(a)) {
       mm_mark(Mptr(a));
         
    } else if (CLASSP(a)) {
