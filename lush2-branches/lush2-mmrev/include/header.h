@@ -346,6 +346,7 @@ LUSHAPI at *assoc(at *k, at *l);
 /* EVAL.H ----------------------------------------------------- */
 
 LUSHAPI at *eval_std(at *p);
+LUSHAPI at *eval_brk(at *p);
 LUSHAPI at *eval_debug(at *q);
 LUSHAPI at *call_stack(void);
 LUSHAPI at *quote(at *p);
@@ -397,6 +398,11 @@ LUSHAPI symbol_t *symbol_push(symbol_t *, at *, at **);
 LUSHAPI symbol_t *symbol_pop(symbol_t *);
 #define SYMBOL_PUSH(p, q) { at *__p__ = p; Symbol(__p__) = symbol_push(Symbol(__p__), q, NULL); }
 #define SYMBOL_POP(p) { at *__p__ = p; Symbol(__p__) = symbol_pop(Symbol(__p__)); }
+static inline at *symbol_selfeval(at *p)
+{
+   symbol_t *symb = Symbol(p);
+   return symb->valueptr ? *(symb->valueptr) : NIL;
+}
 
 LUSHAPI at *setq(at *p, at *q);	/* Warning: Never use the result. */
 LUSHAPI at *global_names(void); 

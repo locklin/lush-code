@@ -43,7 +43,8 @@ bool debug_mode = false;
 /*
  * eval(p) <=> (*eval_ptr)(p)   (MACRO)
  * 
- * when eval_ptr is eval_std: normal mode 
+ * when eval_ptr is eval_std:   normal mode 
+ * when eval_ptr is eval_brk:   user break occurred
  * when eval_ptr is eval_debug: trace mode
  */
 
@@ -65,9 +66,8 @@ at *eval_std(at *p)
       link.this_call = p;
       top_link = &link;
       
-      CHECK_MACHINE("on");
-      
-      at *q = eval_std(Car(p));
+      at *q = Car(p);
+      q = SYMBOLP(q) ? symbol_selfeval(q) : eval_std(q);
       if (q)
          p = Class(q)->listeval(q, p);
       else
@@ -82,6 +82,14 @@ at *eval_std(at *p)
    } else
       return NIL;
 }
+
+
+at *eval_brk(at *p)
+{
+   user_break("on");
+   return eval_std(p);
+}
+
 
 DX(xeval)
 {

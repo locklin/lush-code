@@ -391,7 +391,7 @@ static const char *symbol_name(at *p)
    return s;
 }
 
-
+/*
 static at *symbol_selfeval(at *p)
 {
    symbol_t *symb = Symbol(p);
@@ -404,6 +404,7 @@ static at *symbol_selfeval(at *p)
       return q;
    }
 }
+*/
 
 static unsigned long symbol_hash(at *p)
 {

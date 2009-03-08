@@ -28,13 +28,12 @@
    machine dependant code
 
    INIT_MACHINE         general initializations
-   CHECK_MACHINE        called by EVAL
+   CHECK_MACHINE        check if user break has occurred
    TOPLEVEL_MACHINE     called by TOPLEVEL
    SYS                  shell command execution
    CHDIR                current directory change
    BGROUND              executes a progn in background
    GETENV               get environment variable
-   XDMC                 Apollo: execute DM command
 
 *********************************************************************** */
 
@@ -233,6 +232,7 @@ static RETSIGTYPE
 break_irq(void)
 {
    break_attempt = 1;
+   eval_ptr = eval_brk;
 #ifdef SYSVSIGNAL
    goodsignal(SIGINT, break_irq);
 #endif

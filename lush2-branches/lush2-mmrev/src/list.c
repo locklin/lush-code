@@ -445,7 +445,7 @@ DX(xnfirst)
 at *nth(at *l, int n)
 {
    while (n>0 && CONSP(l)) {
-      //CHECK_MACHINE("on");
+      CHECK_MACHINE("on");
       n--;
       l = Cdr(l);
    }
@@ -465,6 +465,7 @@ DX(xnth)
 at *nthcdr(at *l, int n)
 {
    while (n>0 && CONSP(l)) {
+      CHECK_MACHINE("on");
       n--;
       l = Cdr(l);
    }
