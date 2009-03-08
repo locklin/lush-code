@@ -808,13 +808,13 @@ static void collect_epilogue(void)
 /*
  * Push address onto marking stack and mark it if requested.
  */
+
 static void push(const void *p)
 {
    if (live(p)) return;
    
    mark_live(p);
     
-   assert(stack_last < stack_size);
    stack_last++;
    if (stack_last == stack_size) {
       stack_overflowed = true;
@@ -1014,6 +1014,7 @@ typedef struct stack_chunk {
 
 struct stack {
    stack_ptr_t     sp;
+   stack_ptr_t     sp_min;
    stack_ptr_t     sp_max;
    stack_chunk_t  *current;
    stack_elem_t    temp;
@@ -1060,6 +1061,7 @@ static void add_chunk(mmstack_t *st)
    stack_chunk_t *c = mm_alloc(mt_stack_chunk);
    c->prev = st->current;
    st->current = c;
+   st->sp_min = ELT_0(c);
    st->sp = st->sp_max = ELT_N(c);
    
    ENABLE_GC;
@@ -1081,7 +1083,7 @@ void _mm_pop_chunk(mmstack_t *st)
       warn("stack underflow\n");
       abort();
    }
-   st->sp = ELT_0(st->current);
+   st->sp_min = st->sp = ELT_0(st->current);
    st->sp_max = ELT_N(st->current);
 }
 
@@ -1105,7 +1107,7 @@ static mmstack_t *make_stack(void)
 static void stack_push(mmstack_t *st, stack_elem_t e)
 {
    assert(e != 0);
-   if (st->sp == CURRENT_0(st)) {
+   if (st->sp == st->sp_min) {
       st->temp = e;   // save
       add_chunk(st);  // add_chunk() might trigger a collection
       st->temp = 0;   // restore
@@ -1171,7 +1173,7 @@ static inline void stack_reset(mmstack_t *st, stack_ptr_t sp)
 {
    assert(STACK_VALID(st));
 
-   while (!(st->sp <= sp && sp <= CURRENT_N(st)))
+   while (st->sp>sp || sp>st->sp_max)
       _mm_pop_chunk(st);
    st->sp = sp;
 }
@@ -1944,13 +1946,14 @@ void mm_prof_stop(int *h)
 /* create key for profile data */
 char **mm_prof_key(void)
 {
-   MM_ENTER;
-
    char **k = mm_allocv(mt_refs, sizeof(void *)*(types_last+1));
-   for (int i=0; i<=types_last; i++)
-      k[i] = mm_strdup(types[i].name);
-
-   MM_RETURN(k);
+   {
+      const void **sp = _mm_begin_anchored();
+      for (int i=0; i<=types_last; i++)
+         k[i] = mm_strdup(types[i].name);
+      _mm_end_anchored(sp);
+   }
+   return k;
 }
 
 

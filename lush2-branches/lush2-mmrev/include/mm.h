@@ -103,7 +103,7 @@ char  **mm_prof_key(void);               // make key for profile data
 
 #define MM_ENTER                const void **__mm_stack_pointer = _mm_begin_anchored()
 #define MM_EXIT                 _mm_end_anchored(__mm_stack_pointer)
-#define MM_ANCHOR(p)            mm_anchor(p)
+#define MM_ANCHOR(p)            { if (p) _mm_anchor(p); }
 #define MM_RETURN(p)            { void *pp = p; MM_EXIT; MM_ANCHOR(pp); return pp; }
 #define MM_RETURN_VOID          MM_EXIT; return
 
