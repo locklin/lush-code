@@ -57,13 +57,13 @@ void clear_object(object_t *obj, size_t _)
 void mark_object(object_t *obj)
 {
    MM_MARK(obj->cl);
-   mm_mark(obj->backptr);
+   MM_MARK(obj->backptr);
    for (int i = 0; i < obj->size; i++) {
       MM_MARK(obj->slots[i].symb);
       at *p = obj->slots[i].val;
       /* this is a hack until I figure how to do finalization right */
       if (HAS_BACKPTR_P(p))
-         mm_mark(Mptr(p));
+         MM_MARK(Mptr(p))
       else
          MM_MARK(p);
    }

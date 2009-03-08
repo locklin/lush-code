@@ -21,7 +21,7 @@ static inline void _mm_anchor(const void *p)
 
 static inline const void **_mm_begin_anchored(void)
 {
-   return _mm_transients->sp;
+   return st->sp;
 }
 
 static inline void _mm_end_anchored(const void **sp)
@@ -33,6 +33,15 @@ static inline void _mm_end_anchored(const void **sp)
    st->sp = sp;
 }
 #undef st
+
+static inline void _mm_mark(const void *p)
+{
+   extern const bool mm_debug_enabled;
+   extern void _mm_check_managed(const void *);
+   extern void _mm_push(const void *);
+   if (mm_debug_enabled) _mm_check_managed(p);
+   _mm_push(p);
+}
 
 
 /* -------------------------------------------------------------

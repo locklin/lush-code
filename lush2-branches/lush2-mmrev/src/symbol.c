@@ -79,9 +79,9 @@ void clear_symbol_hash(hash_name_t *hn, size_t _)
 
 void mark_symbol_hash(hash_name_t *hn)
 {
-   mm_mark(hn->name);
+   MM_MARK(hn->name);
    if (hn->named)
-      mm_mark(Mptr(hn->named));  /* weak reference to top of symbol stack */
+      MM_MARK(Mptr(hn->named));  /* weak reference to top of symbol stack */
    MM_MARK(hn->next);
 }
 
@@ -101,10 +101,9 @@ void mark_symbol(symbol_t *s)
       MM_MARK(*(s->valueptr));
 
    if (s->next)
-      mm_mark(s->next);
-
+      MM_MARK(s->next)
    else if (s->valueptr) /* when a global symbol mark the AT */
-      mm_mark(SYM_HN(s)->named);
+      MM_MARK(SYM_HN(s)->named);
 }
 
 /* 

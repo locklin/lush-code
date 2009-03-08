@@ -72,8 +72,7 @@ void    mm_unroot(const void *);         // remove a root location
 bool    mm_idle(void);                   // do work, return true when more work
 
 /* garbage collection */
-void    mm_mark(const void *);           // mark referenced object
-int     mm_collect_now(void);            // synchronous collect
+int     mm_collect_now(void);            // trigger garbage collection
 bool    mm_collect_in_progress(void);    // true if gc is under way
 
 /* allocation functions */
@@ -96,7 +95,7 @@ void    mm_prof_stop(int *);             // stop profiling and write data
 char  **mm_prof_key(void);               // make key for profile data
 
 /* MACROS */
-#define MM_MARK(p)              { if (p) mm_mark(p); }
+#define MM_MARK(p)              { if (p) _mm_mark(p); }
 #define MM_REGTYPE(n,s,c,m,f)   mm_regtype(n, s, (clear_func_t *)c, (mark_func_t *)m, (finalize_func_t *)f)
 #define MM_ROOT(p)              mm_root(&p)
 #define MM_UNROOT(p)            mm_unroot(&p)

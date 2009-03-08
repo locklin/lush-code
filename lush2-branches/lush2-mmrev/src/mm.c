@@ -195,11 +195,11 @@ static bool       gc_disabled = false;
 static bool       collect_in_progress = false;
 static bool       mark_in_progress = false;
 static bool       collect_requested = false;
-static bool       mm_debug_enabled = false;
 static notify_func_t *client_notify = NULL;
 static mt_t       marking_type = mt_undefined;
 static const void *marking_object = NULL;
 static FILE *     stdlog = NULL;
+bool              mm_debug_enabled = false;
 
 /* transient object stack */
 typedef const void    *stack_elem_t; 
@@ -809,12 +809,10 @@ static void collect_epilogue(void)
  * Push address onto marking stack and mark it if requested.
  */
 
-static void push(const void *p)
+static void __mm_push(const void *p)
 {
-   if (live(p)) return;
-   
    mark_live(p);
-    
+   
    stack_last++;
    if (stack_last == stack_size) {
       stack_overflowed = true;
@@ -822,6 +820,14 @@ static void push(const void *p)
    } else {
       stack[stack_last] = p;
    }
+}
+
+void _mm_push(const void *p)
+{
+   if (live(p))
+      return;
+   else
+      __mm_push(p);
 }
 
 static const void *pop(void)
@@ -860,26 +866,20 @@ static void recover_stack(void)
    } DO_MANAGED_END;
 }
 
-void mm_mark(const void *p)
+void _mm_check_managed(const void *p)
 {
-   if (!p) return;
-   
-   if (mm_debug_enabled) {
-      if (!mm_ismanaged(p)) {
-         char *name = (marking_type == mt_undefined) ?
-            "undefined" : types[marking_type].name;
-         warn("attempt to mark non-managed address\n");
-         if (marking_object)
-            warn(" 0x%"PRIxPTR" (%s) -> 0x%"PRIxPTR"\n", 
-                 PPTR(marking_object), name, PPTR(p));
-         else
-            warn(" 0x%"PRIxPTR"\n", PPTR(p));
-         abort();
-      }
+   if (!mm_ismanaged(p)) {
+      char *name = (marking_type == mt_undefined) ?
+         "undefined" : types[marking_type].name;
+      warn("attempt to mark non-managed address\n");
+      if (marking_object)
+         warn(" 0x%"PRIxPTR" (%s) -> 0x%"PRIxPTR"\n", 
+              PPTR(marking_object), name, PPTR(p));
+      else
+         warn(" 0x%"PRIxPTR"\n", PPTR(p));
+      abort();
    }
-   push(p);
 }
-
 
 /* trace starting from objects currently in the stack */
 static void trace_from_stack(void)
@@ -1034,20 +1034,20 @@ static void mark_stack(mmstack_t *st)
 {
    assert(STACK_VALID(st));
 
-   MM_MARK(st->temp);
+   if (st->temp) __mm_push(st->temp);
 
    if (st->sp > CURRENT_0(st))
       *(st->sp - 1) = NULL;
 
-   MM_MARK(st->current);
+   if (st->current) __mm_push(st->current);
 }
 
 static void mark_stack_chunk(stack_chunk_t *c)
 {
-   MM_MARK(c->prev);
+   if (c->prev) __mm_push(c->prev);
    for (int i = STACK_ELTS_PER_CHUNK-1; i >= 0; i--) {
       if (c->elems[i])
-         mm_mark(c->elems[i]);
+         __mm_push(c->elems[i]);
       else
          break;
    }
@@ -1574,7 +1574,7 @@ static void mark(void)
                  PPTR(roots[r]));
             abort();
          }
-         push(*roots[r]);
+         if (*roots[r]) __mm_push(*roots[r]);
       }
    }
    trace_from_stack();
@@ -1672,7 +1672,7 @@ static void mark_refs(void **p)
 {
    int n = mm_sizeof(p)/sizeof(void *);
    for (int i = 0; i < n; i++)
-      MM_MARK(p[i]);
+      if (p[i]) _mm_push(p[i]);
 }
 
 static void clear_refs(void **p, size_t s)
