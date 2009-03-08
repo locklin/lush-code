@@ -40,6 +40,7 @@
 #define _POSIX_C_SOURCE  199506L
 #define _XOPEN_SOURCE    500
 
+#define MM_INTERNAL 1
 #include "mm.h"
 
 #ifndef NVALGRIND
@@ -203,7 +204,7 @@ static FILE *     stdlog = NULL;
 /* transient object stack */
 typedef const void    *stack_elem_t; 
 typedef stack_elem_t  *stack_ptr_t;
-typedef struct stack   mmstack_t;      /* stack_t define in sigstack.h */
+typedef struct stack mmstack_t;
 
 static mmstack_t   *make_stack(void);
 static void         stack_push(mmstack_t *, stack_elem_t);
@@ -215,8 +216,8 @@ static stack_elem_t stack_elt(mmstack_t *, int);
 
 static mt_t       mt_stack;
 static mt_t       mt_stack_chunk;
-static mmstack_t *const transients;
 static bool       anchor_transients = true;
+mmstack_t *const _mm_transients;
 
 /*
  * MM's little helpers
@@ -749,7 +750,7 @@ static void manage(const void *p, mt_t t)
       add_managed(p);
    
    if (anchor_transients)
-      stack_push(transients, p);
+      stack_push(_mm_transients, p);
    if (profile)
       profile[t]++;
 }
@@ -1013,6 +1014,7 @@ typedef struct stack_chunk {
 
 struct stack {
    stack_ptr_t     sp;
+   stack_ptr_t     sp_max;
    stack_chunk_t  *current;
    stack_elem_t    temp;
 };
@@ -1058,14 +1060,14 @@ static void add_chunk(mmstack_t *st)
    stack_chunk_t *c = mm_alloc(mt_stack_chunk);
    c->prev = st->current;
    st->current = c;
-   st->sp = ELT_N(c);
+   st->sp = st->sp_max = ELT_N(c);
    
    ENABLE_GC;
    anchor_transients = true;
 }
 
 
-static void pop_chunk(mmstack_t *st)
+void _mm_pop_chunk(mmstack_t *st)
 {
    if (!collect_in_progress && INHEAP(st)) {
       /* fast reclaim */
@@ -1080,6 +1082,7 @@ static void pop_chunk(mmstack_t *st)
       abort();
    }
    st->sp = ELT_0(st->current);
+   st->sp_max = ELT_N(st->current);
 }
 
 
@@ -1106,7 +1109,7 @@ static void stack_push(mmstack_t *st, stack_elem_t e)
       st->temp = e;   // save
       add_chunk(st);  // add_chunk() might trigger a collection
       st->temp = 0;   // restore
-      assert(st->sp == CURRENT_N(st));
+      assert(st->sp == st->sp_max);
    }
    st->sp--;
    *(st->sp) = e;
@@ -1116,13 +1119,13 @@ static bool stack_empty(mmstack_t *st)
 {
    assert(st->current);
    return (st->current->prev==NULL && 
-           st->sp==CURRENT_N(st) &&
+           st->sp==st->sp_max &&
            !st->temp);
 }
 
 static int stack_depth(mmstack_t *st)
 {
-   int d = CURRENT_N(st) - st->sp;
+   int d = st->sp_max - st->sp;
    stack_chunk_t *c = st->current;
    while (c->prev) {
       d = d + STACK_ELTS_PER_CHUNK;
@@ -1146,7 +1149,7 @@ static stack_elem_t stack_peek(mmstack_t *st)
 {
    assert(STACK_VALID(st));
 
-   if (st->sp == CURRENT_N(st)) {
+   if (st->sp == st->sp_max) {
       assert(st->current->prev);
       stack_ptr_t sp = ELT_0(st->current->prev);
       return *sp;
@@ -1158,8 +1161,8 @@ static stack_elem_t stack_pop(mmstack_t *st)
 {
    assert(STACK_VALID(st));
 
-   if (st->sp == CURRENT_N(st))
-      pop_chunk(st);
+   if (st->sp == st->sp_max)
+      _mm_pop_chunk(st);
 
    return *(st->sp++);
 }
@@ -1169,10 +1172,8 @@ static inline void stack_reset(mmstack_t *st, stack_ptr_t sp)
    assert(STACK_VALID(st));
 
    while (!(st->sp <= sp && sp <= CURRENT_N(st)))
-      pop_chunk(st);
+      _mm_pop_chunk(st);
    st->sp = sp;
-
-   assert(STACK_VALID(st));
 }
 
 static stack_elem_t stack_elt(mmstack_t *st, int i)
@@ -1238,20 +1239,32 @@ static bool stack_works_fine(mmstack_t *st)
  * MM API
  */
 
-stack_ptr_t mm_begin_anchored(void)
+#if 1
+static stack_ptr_t _mm_begin_anchored(void)
 {
-   return transients->sp;
+   return _mm_transients->sp;
 }
 
-void mm_end_anchored(stack_ptr_t sp)
+static void  _mm_end_anchored(stack_ptr_t sp)
 {
-   stack_reset(transients, sp);
+   stack_reset(_mm_transients, sp);
+}
+#else
+stack_ptr_t _mm_begin_anchored(void)
+{
+   return _mm_transients->sp;
 }
 
-void mm_anchor(void *p)
+void _mm_end_anchored(stack_ptr_t sp)
+{
+   stack_reset(_mm_transients, sp);
+}
+#endif
+
+void mm_anchor(const void *p)
 {
    if (p)
-      stack_push(transients, p);
+      stack_push(_mm_transients, p);
 }
 
 void mm_debug(bool e)
@@ -1775,10 +1788,10 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    mt_stack = MM_REGTYPE("mm_stack", sizeof(mmstack_t), 0, mark_stack, 0);
    mt_stack_chunk = MM_REGTYPE("mm_stack_chunk", sizeof(stack_chunk_t),
                                clear_refs, mark_stack_chunk, 0);
-   *(mmstack_t **)&transients = make_stack();
-   MM_ROOT(transients);
-   assert(stack_works_fine(transients));
-   assert(stack_empty(transients));
+   *(mmstack_t **)&_mm_transients = make_stack();
+   MM_ROOT(_mm_transients);
+   assert(stack_works_fine(_mm_transients));
+   assert(stack_empty(_mm_transients));
 
    /* make profile a root */
    MM_ROOT(profile);
@@ -1842,7 +1855,7 @@ char *mm_info(int level)
    total_memory_used_by_mm += man_size*sizeof(managed[0]);
    total_memory_used_by_mm += types_size*sizeof(typerec_t);
    total_memory_used_by_mm += num_blocks*sizeof(blockrec_t);
-   total_memory_used_by_mm += stack_sizeof(transients);
+   total_memory_used_by_mm += stack_sizeof(_mm_transients);
    BPRINTF("Memory used by MM: %.2f MByte total\n",
            ((double)total_memory_used_by_mm)/(1<<20));
    if (level>2) {
@@ -1869,7 +1882,7 @@ char *mm_info(int level)
          active_roots++;
 
    BPRINTF("Memory roots     : %d total, %d active\n", roots_last+1, active_roots);
-   BPRINTF("Transient stack  : %d objects\n", stack_depth(transients));
+   BPRINTF("Transient stack  : %d objects\n", stack_depth(_mm_transients));
    if (level<=2)
       return mm_strdup(buffer);
 
@@ -1999,7 +2012,7 @@ void dump_roots(void)
 void dump_stack(mmstack_t *st)
 {
    mm_printf("Dumping %s stack...\n",
-             st == transients ? "transient" : "finalizer");
+             st == _mm_transients ? "transient" : "finalizer");
    if (st->temp)
       mm_printf("temp = 0x%"PRIxPTR"\n\n", PPTR(st->temp));
 
@@ -2013,7 +2026,7 @@ void dump_stack(mmstack_t *st)
 
 void dump_stack_depth(void)
 {
-   mm_printf("depth of transients stack: %d\n", stack_depth(transients));
+   mm_printf("depth of transients stack: %d\n", stack_depth(_mm_transients));
    mm_printf("\n");
    fflush(stdlog);
 }
@@ -2035,7 +2048,6 @@ void dump_heap_stats(void)
                 t, types[t].name, counts[t]);
    mm_printf(" total : %d, in heap %d\n\n", man_last+1, num_ih);
 }
-
 
 /* -------------------------------------------------------------
    Local Variables:

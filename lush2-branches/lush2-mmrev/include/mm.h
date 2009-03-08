@@ -101,8 +101,8 @@ char  **mm_prof_key(void);               // make key for profile data
 #define MM_ROOT(p)              mm_root(&p)
 #define MM_UNROOT(p)            mm_unroot(&p)
 
-#define MM_ENTER                const void **__mm_stack_pointer = mm_begin_anchored()
-#define MM_EXIT                 mm_end_anchored(__mm_stack_pointer)
+#define MM_ENTER                const void **__mm_stack_pointer = _mm_begin_anchored()
+#define MM_EXIT                 _mm_end_anchored(__mm_stack_pointer)
 #define MM_ANCHOR(p)            mm_anchor(p)
 #define MM_RETURN(p)            { void *pp = p; MM_EXIT; MM_ANCHOR(pp); return pp; }
 #define MM_RETURN_VOID          MM_EXIT; return
@@ -112,13 +112,20 @@ char  **mm_prof_key(void);               // make key for profile data
 #define MM_PAUSEGC              /* */
 #define MM_PAUSEGC_END          /* */
 
+void    mm_anchor(const void *);
+bool    mm_begin_nogc(bool);
+void    mm_end_nogc(bool);
 
-/* quasi-private */
-void   mm_anchor(void *);
-const void **mm_begin_anchored(void);
-void   mm_end_anchored(const void **);
-void   mm_return_anchored(void **, void *);
-bool   mm_begin_nogc(bool);
-void   mm_end_nogc(bool);
+#ifndef MM_INTERNAL
+#include "mm_private.h"
+#endif
 
 #endif /* MM_INCLUDED */
+
+
+/* -------------------------------------------------------------
+   Local Variables:
+   c-file-style: "k&r"
+   c-basic-offset: 3
+   End:
+   ------------------------------------------------------------- */
