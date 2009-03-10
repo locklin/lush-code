@@ -14,7 +14,7 @@ extern struct mm_stack *const _mm_transients;
 static inline void _mm_anchor(const void *p)
 {
    if (st->sp > st->sp_min)
-      *(st->sp--) = p;
+      *(--(st->sp)) = p;
    else
       mm_anchor(p);
 }
