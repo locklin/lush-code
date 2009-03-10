@@ -57,19 +57,13 @@
 #  define VALGRIND_DISCARD(...)
 #endif
 
-#include <unistd.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <limits.h>
-#include <ctype.h>
-#include <fcntl.h>
-#include <dirent.h>
 
 #define max(x,y)        ((x)<(y) ? (y) : (x))
 #define min(x,y)        ((x)<(y) ? (x) : (y))
@@ -1703,18 +1697,6 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    if (heap) {
       warn("mm is already initialized\n");
       return;
-   }
-
-   /* check that we have a proc file system */
-   {
-      errno = 0;
-      DIR *d = opendir("/proc");
-      if (!d) {
-         char *errmsg = strerror(errno);
-         warn("can't find proc filesystem:\n%s\n", errmsg);
-         abort();
-      }
-      closedir(d);
    }
 
    /* allocate small-object heap */
