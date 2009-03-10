@@ -398,11 +398,6 @@ LUSHAPI symbol_t *symbol_push(symbol_t *, at *, at **);
 LUSHAPI symbol_t *symbol_pop(symbol_t *);
 #define SYMBOL_PUSH(p, q) { at *__p__ = p; Symbol(__p__) = symbol_push(Symbol(__p__), q, NULL); }
 #define SYMBOL_POP(p) { at *__p__ = p; Symbol(__p__) = symbol_pop(Symbol(__p__)); }
-static inline at *symbol_selfeval(at *p)
-{
-   symbol_t *symb = Symbol(p);
-   return symb->valueptr ? *(symb->valueptr) : NIL;
-}
 
 LUSHAPI at *setq(at *p, at *q);	/* Warning: Never use the result. */
 LUSHAPI at *global_names(void); 
@@ -435,8 +430,8 @@ extern LUSHAPI struct recur_doc {
 } recur_doc;
 
 struct call_chain {
-   at *this_call;
    struct call_chain *prev;
+   at *this_call;
 };
 
 extern struct call_chain *top_link;

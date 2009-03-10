@@ -390,20 +390,13 @@ static const char *symbol_name(at *p)
    return s;
 }
 
-/*
+
 static at *symbol_selfeval(at *p)
 {
    symbol_t *symb = Symbol(p);
-   at *q = symb->valueptr ? *(symb->valueptr) : NIL;
-   
-   if (ZOMBIEP(q)) {
-      *(symb->valueptr) = NIL;
-      return NIL;
-   } else {
-      return q;
-   }
+   return symb->valueptr ? *(symb->valueptr) : NIL;
 }
-*/
+
 
 static unsigned long symbol_hash(at *p)
 {

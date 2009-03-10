@@ -67,7 +67,7 @@ at *eval_std(at *p)
       top_link = &link;
       
       at *q = Car(p);
-      q = SYMBOLP(q) ? symbol_selfeval(q) : eval_std(q);
+      q = SYMBOLP(q) ? symbol_class.selfeval(q) : eval_std(q);
       if (q)
          p = Class(q)->listeval(q, p);
       else
@@ -83,20 +83,19 @@ at *eval_std(at *p)
       return NIL;
 }
 
-
-at *eval_brk(at *p)
-{
-   user_break("on");
-   return eval_std(p);
-}
-
-
 DX(xeval)
 {
   at *q = NULL;
   for (int i = 1; i <= arg_number; i++)
      q = eval(APOINTER(i));
   return q;
+}
+
+
+at *eval_brk(at *p)
+{
+   user_break("on");
+   return eval_std(p);
 }
 
 
