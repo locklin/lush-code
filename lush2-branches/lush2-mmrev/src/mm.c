@@ -741,10 +741,12 @@ static void add_managed(const void *p)
 static void manage(const void *p, mt_t t)
 {
    assert(ADDRESS_VALID(p));
-   
+   //assert(!mark_in_progress);
+
    ptrdiff_t a = ((char *)p) - heap;
    if (a>=0 && a<heapsize) {
-      assert(!HMAP_MANAGED(a));
+      //assert(!HMAP_MANAGED(a));
+      //assert(!collect_in_progress);
       HMAP_MARK_MANAGED(a);
    } else
       add_managed(p);
@@ -1346,7 +1348,7 @@ void *mm_alloc(mt_t t)
    }
    
    void *p = NULL;
-   if (heap_exhausted)
+   if (collect_in_progress || heap_exhausted) /* alloc offheap when gc in progress */
       p = alloc_variable_sized(t, types[t].size);
    else 
       p = alloc_fixed_size(t);
