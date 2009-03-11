@@ -85,32 +85,23 @@ static mt_t mt_lfunction = mt_undefined;
 
 static at *at_optional, *at_rest, *at_define_hook;
 
-
-static void pop_args_optional (at *formal_list)
-{
-   while (CONSP(formal_list)) {
-      if (CONSP(Car(formal_list))) {
-         assert(SYMBOLP(Caar(formal_list)));
-         SYMBOL_POP(Caar(formal_list));
-      } else {
-         assert(SYMBOLP(Car(formal_list)));
-         SYMBOL_POP(Car(formal_list));
-      }
-      formal_list = Cdr(formal_list);
-   }
-   if (formal_list)
-      SYMBOL_POP(formal_list);
-}   
-
-   
 static void pop_args(at *formal_list)
 {
    while (CONSP(formal_list)) {
       if (Car(formal_list) == at_optional)  {
-         pop_args_optional(Cdr(formal_list));
-         return;
+         formal_list = Cdr(formal_list);
+         break;
       } else
          pop_args(Car(formal_list));
+      formal_list = Cdr(formal_list);
+   }
+   /* pop optional stuff */
+   while (CONSP(formal_list)) {
+      if (CONSP(Car(formal_list))) {
+         SYMBOL_POP(Caar(formal_list));
+      } else {
+         SYMBOL_POP(Car(formal_list));
+      }
       formal_list = Cdr(formal_list);
    }
    if (formal_list)
