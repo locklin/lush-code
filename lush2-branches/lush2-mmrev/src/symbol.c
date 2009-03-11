@@ -394,7 +394,13 @@ static const char *symbol_name(at *p)
 static at *symbol_selfeval(at *p)
 {
    symbol_t *symb = Symbol(p);
-   return symb->valueptr ? *(symb->valueptr) : NIL;
+   if (symb->valueptr) {
+      if (ZOMBIEP(*(symb->valueptr)))
+         *(symb->valueptr) = NIL;
+      return *(symb->valueptr);
+   } else {
+      return NIL;
+   }
 }
 
 
