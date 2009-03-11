@@ -38,8 +38,6 @@
 # define UNBLOCK_SIGINT sigprocmask(SIG_UNBLOCK,&sigint_mask,NULL);
 #endif
 
-bool debug_mode = false;
-
 /*
  * eval(p) <=> (*eval_ptr)(p)   (MACRO)
  * 

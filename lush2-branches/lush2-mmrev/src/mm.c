@@ -299,16 +299,6 @@ mmstack_t *const _mm_transients;
 
 #define ENABLE_GC gc_disabled = __nogc;
 
-/*
-static bool isroot(const void *p)
-{
-   for (int i = 0; i <= roots_last; i++)
-      if (*roots[i]==p)
-         return true;
-   return false;
-}
-*/
-
 static void *seal(const char *p)
 {
    p = CLRPTR(p);
@@ -395,7 +385,7 @@ search_in_block:
 search_for_block:
    /* search for another block with free hunks */
    ;
-   int b = tr->next_b;
+   int b = (BLOCKA(a)+1) % num_blocks;
    int orig_b = (b+num_blocks-1) % num_blocks;
 
    while (b != orig_b) {
@@ -405,13 +395,11 @@ search_for_block:
          VALGRIND_CREATE_BLOCK(heap + a, BLOCKSIZE, types[t].name);
          tr->current_a = a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
-         tr->next_b = (b == num_blocks) ? 1 : b+1;
          return true;
 
       } else if (blockrecs[b].t==t && blockrecs[b].in_use<(BLOCKSIZE/s)) {
          a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
-         tr->next_b = (b == num_blocks) ? 1 : b+1;
          goto search_in_block;
       }
       b = (b+1) % num_blocks;
@@ -422,7 +410,6 @@ search_for_block:
    heap_exhausted = true;
    tr->current_a = 0;
    tr->current_amax = AMAX(s);
-   tr->next_b = 1;
    return false;
 }
 
@@ -790,15 +777,6 @@ static void collect_epilogue(void)
    collect_in_progress = false;
    num_collects += 1;
    compact_managed();
-   
-   /* reset inheap positions for all types */ 
-   for (int t = 0; t<= types_last; t++) {
-      if (types[t].size==0)
-         continue;
-      types[t].current_a = 0;
-      types[t].current_amax = AMAX(types[t].size);
-      types[t].next_b = 1;
-   }
 }
 
 /*
@@ -1071,7 +1049,6 @@ void _mm_pop_chunk(mmstack_t *st)
       /* fast reclaim */
       int b = BLOCK(st);
       blockrecs[b].t = mt_undefined;
-      types[mt_stack_chunk].next_b = b;
       types[mt_stack_chunk].current_amax = types[mt_stack_chunk].current_a = b*BLOCKSIZE;
    }
    st->current = st->current->prev;
@@ -1318,7 +1295,6 @@ mt_t mm_regtype(const char *n, size_t s,
    if (rec->size > 0) {
       rec->current_a = 0;
       rec->current_amax = rec->current_a + AMAX(rec->size);
-      rec->next_b = types_last;
    }
    return types_last;
 }
