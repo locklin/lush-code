@@ -672,6 +672,24 @@ DY(ymemprof)
    return res;
 }
 
+DY(ywith_nogc)
+{
+   struct context c;
+   context_push(&c);
+
+   MM_NOGC;
+   if (sigsetjmp(context->error_jump, 1)) {
+      MM_NOGC_END;
+      context_pop();
+      siglongjmp(context->error_jump, -1);
+   }
+   at *result = progn(ARG_LIST);
+   context_pop();
+   MM_NOGC_END;
+   
+   return result;
+}
+
 DX(xload)
 {
    if (arg_number == 3) {
@@ -974,6 +992,7 @@ void init_toplevel(void)
    dx_define("gc", xgc);
    dx_define("meminfo", xmeminfo);
    dy_define("memprof", ymemprof);
+   dy_define("with-nogc", ywith_nogc);
    dx_define("exit", xexit);
    dx_define("load", xload);
    dy_define("discard", ydiscard);
