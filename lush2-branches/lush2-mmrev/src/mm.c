@@ -97,7 +97,7 @@
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
 #define MAX_VOLUME      0x300000    /* max volume threshold */
-#define NUM_IDLE_CALLS  1000
+#define NUM_IDLE_CALLS  100
 
 #define HMAP_NUM_BITS   4
 
@@ -648,7 +648,14 @@ static void compact_managed(void)
    man_t = 0;
    update_man_k();
 #endif
-
+   
+   /* shrink when much bigger than necessary */
+   if (man_last*4<man_size && man_size > MIN_MANAGED) {
+      man_size /= 2;
+      debug("shrinking managed table to %d\n", man_size);
+      managed = (void *)realloc(managed, man_size*sizeof(void *));
+      assert(managed);
+   }
    man_is_compact = true;
 }
 

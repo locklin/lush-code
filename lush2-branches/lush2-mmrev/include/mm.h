@@ -35,12 +35,14 @@
 #ifndef MM_INCLUDED
 #define MM_INCLUDED
 
-#define MM_SIZE_MAX    (UINT32_MAX*MIN_HUNKSIZE)
-
-#define NVALGRIND
-
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdint.h>
+
+#define NVALGRIND
+#define MM_SIZE_MAX    (UINT32_MAX*MIN_HUNKSIZE)
+
+
 
 typedef void clear_func_t(void *, size_t);
 typedef void mark_func_t(const void *);
