@@ -40,8 +40,8 @@ void mark_cfunction(cfunction_t *f)
 
 mt_t mt_cfunction = mt_undefined;
 
-const char *func_name(at *p) {
-   
+const char *func_name(at *p)
+{ 
    cfunction_t *func = Mptr(p);
    at *name = func->name;
    at *clname = NIL;
@@ -49,22 +49,22 @@ const char *func_name(at *p) {
    if (CONSP(name) && MODULEP(Car(name)))
       name = Cdr(name);
 
-  if (CONSP(name) && SYMBOLP(Car(name))) {
-     clname = Car(name);
-     name = Cdr(name);
-  }
-  if (SYMBOLP(name)) {
-     sprintf(string_buffer, "::%s:", NAMEOF(Class(p)->classname));
-     if (SYMBOLP(clname)) {
-        strcat(string_buffer, NAMEOF(clname));
-        strcat(string_buffer, ".");
-     }
-     strcat(string_buffer, NAMEOF(name));
-     return mm_strdup(string_buffer);
-  }
-  /* Kesako? */
-  assert(Class(p)->name);
-  return (Class(p)->name)(p);
+   if (CONSP(name) && SYMBOLP(Car(name))) {
+      clname = Car(name);
+      name = Cdr(name);
+   }
+   if (SYMBOLP(name)) {
+      sprintf(string_buffer, "::%s:", NAMEOF(Class(p)->classname));
+      if (SYMBOLP(clname)) {
+         strcat(string_buffer, NAMEOF(clname));
+         strcat(string_buffer, ".");
+      }
+      strcat(string_buffer, NAMEOF(name));
+      return mm_strdup(string_buffer);
+   }
+   /* Kesako? */
+   assert(Class(p)->name);
+   return (Class(p)->name)(p);
 }
 
 /* General lfunc routines -----------------------------	 */
@@ -84,40 +84,37 @@ void mark_lfunction(lfunction_t *f)
 static mt_t mt_lfunction = mt_undefined;
 
 static at *at_optional, *at_rest, *at_define_hook;
-static void parse_optional_stuff(at *, at *, at *);
 
-
-/* static void */
-/* pop_args(at *formal_list) */
-/* { */
-/*   while (CONSP(formal_list)) { */
-/*     pop_args(Car(formal_list)); */
-/*     formal_list = Cdr(formal_list); */
-/*   } */
-/*   if SYMBOLP(formal_list) */
-/*     SYMBOL_POP(formal_list); */
-/* } */
-
-static void pop_args(at *formal_list) {
-   
+static void pop_args(at *formal_list)
+{
    while (CONSP(formal_list)) {
-      pop_args(Car(formal_list));
+      if (Car(formal_list) == at_optional)  {
+         formal_list = Cdr(formal_list);
+         break;
+      } else
+         pop_args(Car(formal_list));
       formal_list = Cdr(formal_list);
    }
-   if (SYMBOLP(formal_list)) {
-      symbol_t *symb = Mptr(formal_list);
-      assert(symb);
-      if (symb->next)
-         Mptr(formal_list) = symb->next;
+   /* pop optional stuff */
+   while (CONSP(formal_list)) {
+      if (CONSP(Car(formal_list))) {
+         SYMBOL_POP(Caar(formal_list));
+      } else {
+         SYMBOL_POP(Car(formal_list));
+      }
+      formal_list = Cdr(formal_list);
    }
+   if (formal_list)
+      SYMBOL_POP(formal_list);
 }
 
-static void _push_args(at *formal_list, at *real_list, at *top_formal_list) {
+static void push_optional_stuff(at *, at *, at *);
 
+static void _push_args(at *formal_list, at *real_list, at *top_formal_list)
+{
    /* fast non tail-recursive loop for parsing the trees */
    while (CONSP(formal_list) && CONSP(real_list) && 
-          Car(formal_list)!=at_rest &&
-          Car(formal_list)!=at_optional) {
+          Car(formal_list)!=at_rest && Car(formal_list)!=at_optional) {
       _push_args(Car(formal_list), Car(real_list), top_formal_list);
       real_list = Cdr(real_list);
       formal_list = Cdr(formal_list);
@@ -128,7 +125,7 @@ static void _push_args(at *formal_list, at *real_list, at *top_formal_list) {
       SYMBOL_PUSH(formal_list, real_list);
    
    } else if (CONSP(formal_list)) {
-      parse_optional_stuff(formal_list, real_list, top_formal_list);
+      push_optional_stuff(formal_list, real_list, top_formal_list);
 
    } else if (formal_list && !real_list) {
       error(NIL, "missing arguments. expected", top_formal_list);
@@ -139,15 +136,17 @@ static void _push_args(at *formal_list, at *real_list, at *top_formal_list) {
    return;
 }
 
-static void push_args(at *formal_list, at *real_list) {
+static void push_args(at *formal_list, at *real_list)
+{
    _push_args(formal_list, real_list, formal_list);
 }
 
 
-static void  parse_optional_stuff(at *formal_list, at *real_list, at *top_formal_list) {
-
+static void  push_optional_stuff(at *formal_list, at *real_list, at *top_formal_list)
+{
+   /* &optional */
    if (CONSP(formal_list) && Car(formal_list) == at_optional) {
-      push_args(at_optional, NIL);
+      //push_args(at_optional, NIL);
       formal_list = Cdr(formal_list);
       
       while (CONSP(formal_list)) {
@@ -177,7 +176,7 @@ static void  parse_optional_stuff(at *formal_list, at *real_list, at *top_formal
    /* &rest */
    if (CONSP(formal_list) && Car(formal_list)==at_rest) {
       push_args(at_rest, NIL);
-      formal_list=Cdr(formal_list);
+      formal_list = Cdr(formal_list);
       if (LASTCONSP(formal_list) && SYMBOLP(Car(formal_list))) {
          push_args(Car(formal_list), real_list);
          return;
@@ -540,9 +539,10 @@ at *lete(at *vardecls, at *body)
    at *result = progn(body);
 
    /* before we return, explicitly delete all local variables */
-   while (CONSP(syms)) {
-      lush_delete_maybe(symbol_class.selfeval(Car(syms)));
-      syms = Cdr(syms);
+   at *ss = syms;
+   while (CONSP(ss)) {
+      lush_delete_maybe(symbol_class.selfeval(Car(ss)));
+      ss = Cdr(ss);
    }
    pop_args(syms);
 

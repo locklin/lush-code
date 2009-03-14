@@ -40,6 +40,7 @@
 #define _POSIX_C_SOURCE  199506L
 #define _XOPEN_SOURCE    500
 
+#define MM_INTERNAL 1
 #include "mm.h"
 
 #ifndef NVALGRIND
@@ -56,19 +57,13 @@
 #  define VALGRIND_DISCARD(...)
 #endif
 
-#include <unistd.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <limits.h>
-#include <ctype.h>
-#include <fcntl.h>
-#include <dirent.h>
 
 #define max(x,y)        ((x)<(y) ? (y) : (x))
 #define min(x,y)        ((x)<(y) ? (x) : (y))
@@ -82,10 +77,6 @@
         fprintf(stderr, __VA_ARGS__), fflush(stderr), 0
 
 #define PPTR(p)         ((uintptr_t)(p))
-
-#ifndef PIPE_BUF
-#  define PIPE_BUF      512
-#endif
 
 #define PAGEBITS        12
 //#define BLOCKBITS       (PAGEBITS+1)
@@ -106,7 +97,6 @@
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
 #define MAX_VOLUME      0x300000    /* max volume threshold */
-#define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
 #define NUM_IDLE_CALLS  100
 
 #define HMAP_NUM_BITS   4
@@ -196,22 +186,19 @@ static int        num_allocs = 0;
 static int        num_collects = 0;
 static size_t     vol_allocs = 0;
 static bool       gc_disabled = false;
-static int        fetch_backlog = 0;
 static bool       collect_in_progress = false;
 static bool       mark_in_progress = false;
 static bool       collect_requested = false;
-static pid_t      collecting_child = 0;
-static bool       mm_debug_enabled = false;
 static notify_func_t *client_notify = NULL;
 static mt_t       marking_type = mt_undefined;
 static const void *marking_object = NULL;
 static FILE *     stdlog = NULL;
-static int        pfd_garbage[2]; /* garbage pipe for async. collect */
+bool              mm_debug_enabled = false;
 
 /* transient object stack */
 typedef const void    *stack_elem_t; 
 typedef stack_elem_t  *stack_ptr_t;
-typedef struct stack   mmstack_t;      /* stack_t define in sigstack.h */
+typedef struct stack mmstack_t;
 
 static mmstack_t   *make_stack(void);
 static void         stack_push(mmstack_t *, stack_elem_t);
@@ -223,8 +210,8 @@ static stack_elem_t stack_elt(mmstack_t *, int);
 
 static mt_t       mt_stack;
 static mt_t       mt_stack_chunk;
-static mmstack_t *const transients;
 static bool       anchor_transients = true;
+mmstack_t *const _mm_transients;
 
 /*
  * MM's little helpers
@@ -312,16 +299,6 @@ static bool       anchor_transients = true;
 
 #define ENABLE_GC gc_disabled = __nogc;
 
-/*
-static bool isroot(const void *p)
-{
-   for (int i = 0; i <= roots_last; i++)
-      if (*roots[i]==p)
-         return true;
-   return false;
-}
-*/
-
 static void *seal(const char *p)
 {
    p = CLRPTR(p);
@@ -373,8 +350,6 @@ static void mark_live(const void *p)
    MARK_LIVE(managed[i]);
 }
 
-static void mm_collect(void);
-
 static void maybe_trigger_collect(size_t s)
 {
    num_allocs += 1;
@@ -383,10 +358,7 @@ static void maybe_trigger_collect(size_t s)
       return;
 
    if ((vol_allocs >= volume_threshold) || collect_requested) {
-      mm_collect();
-      if (!collect_in_progress)
-         /* could not spawn child, do it synchronously */
-         mm_collect_now();
+      mm_collect_now();
       num_allocs = 0;
       vol_allocs = 0;
    }
@@ -413,7 +385,7 @@ search_in_block:
 search_for_block:
    /* search for another block with free hunks */
    ;
-   int b = tr->next_b;
+   int b = (BLOCKA(a)+1) % num_blocks;
    int orig_b = (b+num_blocks-1) % num_blocks;
 
    while (b != orig_b) {
@@ -423,13 +395,11 @@ search_for_block:
          VALGRIND_CREATE_BLOCK(heap + a, BLOCKSIZE, types[t].name);
          tr->current_a = a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
-         tr->next_b = (b == num_blocks) ? 1 : b+1;
          return true;
 
       } else if (blockrecs[b].t==t && blockrecs[b].in_use<(BLOCKSIZE/s)) {
          a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
-         tr->next_b = (b == num_blocks) ? 1 : b+1;
          goto search_in_block;
       }
       b = (b+1) % num_blocks;
@@ -440,11 +410,10 @@ search_for_block:
    heap_exhausted = true;
    tr->current_a = 0;
    tr->current_amax = AMAX(s);
-   tr->next_b = 1;
    return false;
 }
 
-static inline bool update_current_a(mt_t t)
+static bool update_current_a(mt_t t)
 {
    typerec_t *tr = &types[t];
 
@@ -459,8 +428,6 @@ static inline bool update_current_a(mt_t t)
    return _update_current_a(t, tr, tr->size, tr->current_a);
 }
    
-static int fetch_unreachables(void);
-
 /* allocate with malloc */
 static void *alloc_variable_sized(mt_t t, size_t s)
 {
@@ -473,23 +440,12 @@ static void *alloc_variable_sized(mt_t t, size_t s)
    }
   
    void *p = malloc(s + MIN_HUNKSIZE);  // + space for info
-   if (!p && collecting_child) {
-      if (gc_disabled)
-         warn("low memory and GC disabled\n");
-      else /* try to recover */
-         while (collecting_child)
-            fetch_unreachables();
-      p = malloc(s + MIN_HUNKSIZE);
-   }
    assert(!LBITS(p));
 
    if (p) {
       info_t *info = p;
       info->t = t;
       info->nh = s/MIN_HUNKSIZE;
-      
-      if (collecting_child)
-         fetch_unreachables();
       maybe_trigger_collect(s);
 
       return seal(p);
@@ -502,7 +458,7 @@ static void *alloc_variable_sized(mt_t t, size_t s)
 static void *alloc_fixed_size(mt_t t)
 {
    size_t s = types[t].size;
-   if (BLOCKSIZE<(2*s))
+   if (BLOCKSIZE<(2*s) && t!=mt_stack_chunk)
       return alloc_variable_sized(t, s);
    
    if (!update_current_a(t)) {
@@ -519,9 +475,7 @@ static void *alloc_fixed_size(mt_t t)
    void *p = heap + types[t].current_a;
    VALGRIND_MEMPOOL_ALLOC(heap, p, s);
    blockrecs[BLOCKA(types[t].current_a)].in_use++;
-   
-   if (collecting_child)
-      fetch_unreachables();
+
    maybe_trigger_collect(s);
 
    return p;
@@ -694,7 +648,14 @@ static void compact_managed(void)
    man_t = 0;
    update_man_k();
 #endif
-
+   
+   /* shrink when much bigger than necessary */
+   if (man_last*4<man_size && man_size > MIN_MANAGED) {
+      man_size /= 2;
+      debug("shrinking managed table to %d\n", man_size);
+      managed = (void *)realloc(managed, man_size*sizeof(void *));
+      assert(managed);
+   }
    man_is_compact = true;
 }
 
@@ -768,19 +729,18 @@ static void add_managed(const void *p)
 static void manage(const void *p, mt_t t)
 {
    assert(ADDRESS_VALID(p));
-   
+   //assert(!mark_in_progress);
+
    ptrdiff_t a = ((char *)p) - heap;
    if (a>=0 && a<heapsize) {
-      assert(!HMAP_MANAGED(a));
+      //assert(!HMAP_MANAGED(a));
+      //assert(!collect_in_progress);
       HMAP_MARK_MANAGED(a);
-      if (mark_in_progress && !collecting_child)
-         HMAP_MARK_LIVE(a);
-
    } else
       add_managed(p);
    
    if (anchor_transients)
-      stack_push(transients, p);
+      stack_push(_mm_transients, p);
    if (profile)
       profile[t]++;
 }
@@ -788,7 +748,6 @@ static void manage(const void *p, mt_t t)
 static void collect_prologue(void)
 {
    assert(!collect_in_progress);
-   assert(!collecting_child);
    assert(!stack_overflowed2);
    if (mm_debug_enabled)
       assert(no_marked_live());
@@ -821,48 +780,20 @@ static void collect_epilogue(void)
    marking_type = mt_undefined;
    marking_object = NULL;
    collect_requested = false;
-
-   if (collecting_child) {
-      int status; 
-      if (waitpid(collecting_child, &status, 0) == -1) {
-         char *errmsg = strerror(errno);
-         warn("waiting for collecting child failed:\n%s\n", errmsg);
-         abort();
-      }
-      if (!WIFEXITED(status)) {
-         warn("collecting child terminated abnormally:\n");
-         if (WIFSIGNALED(status))
-            warn("terminated by signal %d\n", WTERMSIG(status));
-         else if (WIFSTOPPED(status))
-            warn("stopped by signal %d\n", WSTOPSIG(status));
-#ifdef WCOREDUMP
-         else if (WCOREDUMP(status))
-            warn("coredumped\n");
-#endif
-         else
-            warn("cause unknown (status = %d)\n", status);
-         abort();
-      }
-      //mm_printf("reaped gc child %d\n", collecting_child);
-      collecting_child = 0;
-   }
    heap_exhausted = false;
    collect_in_progress = false;
    num_collects += 1;
-   fetch_backlog = 0;
    compact_managed();
 }
 
 /*
  * Push address onto marking stack and mark it if requested.
  */
-static inline void push(const void *p)
+
+static void __mm_push(const void *p)
 {
-   if (live(p)) return;
-   
    mark_live(p);
-    
-   assert(stack_last < stack_size);
+   
    stack_last++;
    if (stack_last == stack_size) {
       stack_overflowed = true;
@@ -872,12 +803,20 @@ static inline void push(const void *p)
    }
 }
 
-static inline const void *pop(void)
+void _mm_push(const void *p)
+{
+   if (live(p))
+      return;
+   else
+      __mm_push(p);
+}
+
+static const void *pop(void)
 {
    return ((stack_last<0) ? NULL : stack[stack_last--]);
 }
 
-static inline bool empty(void)
+static bool empty(void)
 {
    return stack_last==-1;
 }
@@ -908,26 +847,20 @@ static void recover_stack(void)
    } DO_MANAGED_END;
 }
 
-void mm_mark(const void *p)
+void _mm_check_managed(const void *p)
 {
-   if (!p) return;
-   
-   if (mm_debug_enabled) {
-      if (!mm_ismanaged(p)) {
-         char *name = (marking_type == mt_undefined) ?
-            "undefined" : types[marking_type].name;
-         warn("attempt to mark non-managed address\n");
-         if (marking_object)
-            warn(" 0x%"PRIxPTR" (%s) -> 0x%"PRIxPTR"\n", 
-                 PPTR(marking_object), name, PPTR(p));
-         else
-            warn(" 0x%"PRIxPTR"\n", PPTR(p));
-         abort();
-      }
+   if (!mm_ismanaged(p)) {
+      char *name = (marking_type == mt_undefined) ?
+         "undefined" : types[marking_type].name;
+      warn("attempt to mark non-managed address\n");
+      if (marking_object)
+         warn(" 0x%"PRIxPTR" (%s) -> 0x%"PRIxPTR"\n", 
+              PPTR(marking_object), name, PPTR(p));
+      else
+         warn(" 0x%"PRIxPTR"\n", PPTR(p));
+      abort();
    }
-   push(p);
 }
-
 
 /* trace starting from objects currently in the stack */
 static void trace_from_stack(void)
@@ -990,8 +923,6 @@ static void reclaim_inheap(void *q)
       blockrecs[b].t = mt_undefined;
       VALGRIND_DISCARD((block_t *)BLOCK_ADDR(q));
    }
-   if (b < types[t].next_b)
-      types[t].next_b = b;
 }
 
 
@@ -1055,7 +986,7 @@ static int sweep_now(void)
  * list of chunks and is itself managed.
  */
 
-#define STACK_ELTS_PER_CHUNK  255
+#define STACK_ELTS_PER_CHUNK  (BLOCKSIZE/sizeof(void *) - 1)
 
 typedef struct stack_chunk {
    struct stack_chunk  *prev;
@@ -1064,6 +995,8 @@ typedef struct stack_chunk {
 
 struct stack {
    stack_ptr_t     sp;
+   stack_ptr_t     sp_min;
+   stack_ptr_t     sp_max;
    stack_chunk_t  *current;
    stack_elem_t    temp;
 };
@@ -1082,20 +1015,20 @@ static void mark_stack(mmstack_t *st)
 {
    assert(STACK_VALID(st));
 
-   MM_MARK(st->temp);
+   if (st->temp) __mm_push(st->temp);
 
    if (st->sp > CURRENT_0(st))
       *(st->sp - 1) = NULL;
 
-   MM_MARK(st->current);
+   if (st->current) __mm_push(st->current);
 }
 
 static void mark_stack_chunk(stack_chunk_t *c)
 {
-   MM_MARK(c->prev);
+   if (c->prev) __mm_push(c->prev);
    for (int i = STACK_ELTS_PER_CHUNK-1; i >= 0; i--) {
       if (c->elems[i])
-         mm_mark(c->elems[i]);
+         __mm_push(c->elems[i]);
       else
          break;
    }
@@ -1109,21 +1042,29 @@ static void add_chunk(mmstack_t *st)
    stack_chunk_t *c = mm_alloc(mt_stack_chunk);
    c->prev = st->current;
    st->current = c;
-   st->sp = ELT_N(c);
+   st->sp_min = ELT_0(c);
+   st->sp = st->sp_max = ELT_N(c);
    
    ENABLE_GC;
    anchor_transients = true;
 }
 
 
-static void pop_chunk(mmstack_t *st)
+void _mm_pop_chunk(mmstack_t *st)
 {
+   if (!collect_in_progress && INHEAP(st)) {
+      /* fast reclaim */
+      int b = BLOCK(st);
+      blockrecs[b].t = mt_undefined;
+      types[mt_stack_chunk].current_amax = types[mt_stack_chunk].current_a = b*BLOCKSIZE;
+   }
    st->current = st->current->prev;
    if (!st->current) {
       warn("stack underflow\n");
       abort();
    }
-   st->sp = ELT_0(st->current);
+   st->sp_min = st->sp = ELT_0(st->current);
+   st->sp_max = ELT_N(st->current);
 }
 
 
@@ -1146,11 +1087,11 @@ static mmstack_t *make_stack(void)
 static void stack_push(mmstack_t *st, stack_elem_t e)
 {
    assert(e != 0);
-   if (st->sp == CURRENT_0(st)) {
+   if (st->sp == st->sp_min) {
       st->temp = e;   // save
       add_chunk(st);  // add_chunk() might trigger a collection
       st->temp = 0;   // restore
-      assert(st->sp == CURRENT_N(st));
+      assert(st->sp == st->sp_max);
    }
    st->sp--;
    *(st->sp) = e;
@@ -1160,13 +1101,13 @@ static bool stack_empty(mmstack_t *st)
 {
    assert(st->current);
    return (st->current->prev==NULL && 
-           st->sp==CURRENT_N(st) &&
+           st->sp==st->sp_max &&
            !st->temp);
 }
 
 static int stack_depth(mmstack_t *st)
 {
-   int d = CURRENT_N(st) - st->sp;
+   int d = st->sp_max - st->sp;
    stack_chunk_t *c = st->current;
    while (c->prev) {
       d = d + STACK_ELTS_PER_CHUNK;
@@ -1190,7 +1131,7 @@ static stack_elem_t stack_peek(mmstack_t *st)
 {
    assert(STACK_VALID(st));
 
-   if (st->sp == CURRENT_N(st)) {
+   if (st->sp == st->sp_max) {
       assert(st->current->prev);
       stack_ptr_t sp = ELT_0(st->current->prev);
       return *sp;
@@ -1202,8 +1143,8 @@ static stack_elem_t stack_pop(mmstack_t *st)
 {
    assert(STACK_VALID(st));
 
-   if (st->sp == CURRENT_N(st))
-      pop_chunk(st);
+   if (st->sp == st->sp_max)
+      _mm_pop_chunk(st);
 
    return *(st->sp++);
 }
@@ -1212,11 +1153,9 @@ static inline void stack_reset(mmstack_t *st, stack_ptr_t sp)
 {
    assert(STACK_VALID(st));
 
-   while (!(st->sp <= sp && sp <= CURRENT_N(st)))
-      pop_chunk(st);
+   while (st->sp>sp || sp>st->sp_max)
+      _mm_pop_chunk(st);
    st->sp = sp;
-
-   assert(STACK_VALID(st));
 }
 
 static stack_elem_t stack_elt(mmstack_t *st, int i)
@@ -1282,20 +1221,32 @@ static bool stack_works_fine(mmstack_t *st)
  * MM API
  */
 
-stack_ptr_t mm_begin_anchored(void)
+#if 1
+static stack_ptr_t _mm_begin_anchored(void)
 {
-   return transients->sp;
+   return _mm_transients->sp;
 }
 
-void mm_end_anchored(stack_ptr_t sp)
+static void  _mm_end_anchored(stack_ptr_t sp)
 {
-   stack_reset(transients, sp);
+   stack_reset(_mm_transients, sp);
+}
+#else
+stack_ptr_t _mm_begin_anchored(void)
+{
+   return _mm_transients->sp;
 }
 
-void mm_anchor(void *p)
+void _mm_end_anchored(stack_ptr_t sp)
+{
+   stack_reset(_mm_transients, sp);
+}
+#endif
+
+void mm_anchor(const void *p)
 {
    if (p)
-      stack_push(transients, p);
+      stack_push(_mm_transients, p);
 }
 
 void mm_debug(bool e)
@@ -1351,7 +1302,6 @@ mt_t mm_regtype(const char *n, size_t s,
    if (rec->size > 0) {
       rec->current_a = 0;
       rec->current_amax = rec->current_a + AMAX(rec->size);
-      rec->next_b = types_last;
    }
    return types_last;
 }
@@ -1375,7 +1325,7 @@ void *mm_alloc(mt_t t)
    }
    
    void *p = NULL;
-   if (heap_exhausted)
+   if (collect_in_progress || heap_exhausted) /* alloc offheap when gc in progress */
       p = alloc_variable_sized(t, types[t].size);
    else 
       p = alloc_fixed_size(t);
@@ -1603,7 +1553,7 @@ static void mark(void)
                  PPTR(roots[r]));
             abort();
          }
-         push(*roots[r]);
+         if (*roots[r]) __mm_push(*roots[r]);
       }
    }
    trace_from_stack();
@@ -1634,273 +1584,6 @@ static void mark(void)
    assert(empty());
    mark_in_progress = false;
 }
-
-static void sweep(void)
-{
-   void *buf[NUM_TRANSFER];
-   assert(!collecting_child);
-
-   int n = 0;
-
-   /* objects in small object heap */
-   DO_HEAP(a, b) {
-      if (!HMAP_LIVE(a)) {
-         buf[n++] = (void *)(heap + a);
-         if (n == NUM_TRANSFER) {
-            write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
-            n = 0;
-         }
-      }
-   } DO_HEAP_END;
-
-   buf[n++] = NULL;
-   if (n == NUM_TRANSFER) {
-      write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
-      n = 0;
-   }
-
-   /* malloc'ed objects */
-   DO_MANAGED(i) {
-      if (!LIVE(managed[i])) {
-         buf[n++] = (void *)i;
-         if (n == NUM_TRANSFER) {
-            write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
-            n = 0;
-         }
-      }
-   } DO_MANAGED_END;
-   
-   if (n)
-      write(pfd_garbage[1], &buf, n*sizeof(void *));
-}
-
-/* fill buffer */
-static int _fetch_unreachables(void *buf)
-{
-   errno = 0;
-   int n = read(pfd_garbage[0], buf, NUM_TRANSFER*sizeof(void *));
-
-   if (n == -1) {
-      if (errno != EAGAIN) {
-         char *errmsg = strerror(errno);
-         warn("error reading from garbage pipe\n");
-         warn(errmsg);
-         abort();
-      }
-      
-   } else if (n == 0) {
-      /* we're done */
-      close(pfd_garbage[0]);
-      collect_epilogue();
-   }
-
-   return n;
-}
-
-/* fetch addresses of unreachable objects from garbage pipe */
-/* return number of objects reclaimed */
-static int fetch_unreachables(void)
-{
-   assert(collecting_child);
-
-   if (gc_disabled) {
-      fetch_backlog++;
-      return 0;
-   }
-
-   static void *buf[NUM_TRANSFER];
-   static int j, n = 0;
-   static bool inheap = true;
-
-   if (n) {
-      /* don't need to disable gc here as gc is still in progress */
-      if (inheap) {
-         if (buf[j])
-            reclaim_inheap(buf[j]);
-         else
-            inheap = false;
-
-         if (++j == n) {
-            n = 0;
-            return 1;
-         }
-         
-         if (inheap) {
-            if (buf[j])
-               reclaim_inheap(buf[j]);
-            else
-               inheap = false;
-
-            if (++j == n)
-               n = 0;
-            return 2;
-         }
-
-      } else {
-         reclaim_offheap((int)buf[j++]);
-         if (j == n) {
-            n = 0;
-            return 1;
-         }
-         reclaim_offheap((int)buf[j++]);
-         if (j == n) {
-            n = 0;
-         }
-         return 2;
-      }
-
-   } else if (n == 0) {
-
-      n = _fetch_unreachables(&buf);
-      
-      if (n == -1) {
-         n = 0;
-
-      } else if (n == 0) {
-         inheap = true;
-
-      } else {
-         assert((n%sizeof(void *)) == 0);
-         n = n/sizeof(void *);
-         j = 0;
-      }
-   }
-   return 0;
-}
-
-
-/* close all file descriptors except essential ones */
-static void close_file_descriptors(void)
-{
-   assert(collect_in_progress && collecting_child==0);
-
-   char path[128];
-   sprintf(path, "/proc/%d/fd", (int)getpid());
-   
-   errno = 0;
-   DIR *d = opendir(path);
-   if (!d) {
-      char *errmsg = strerror(errno);
-      warn("could not open %s: %s\n", path, errmsg);
-      abort();
-   }
-   
-   int fd_err = fileno(stderr);
-   int fd_log = fileno(stdlog);
-   int fd_parent = pfd_garbage[1];
-   errno = 0;
-   struct dirent *e = readdir(d);
-   while (e != NULL) {
-      int fd = isdigit(e->d_name[0]) ? atoi(e->d_name) : -1;
-      if (!(fd==-1 || fd==fd_err || fd==fd_log || fd==fd_parent))
-         (void)close(fd); /* ignore close errors */
-      errno = 0;
-      e = readdir(d);
-   }
-   if (errno) {
-      char *errmsg = strerror(errno);
-      debug("error while closing file descriptors:\n%s\n", errmsg);
-      /* don't abort, hopefully nothing serious */
-   }
-   closedir(d);
-}
-
-
-static void collect(void)
-{
-   /* set up pipe for garbage */
-   errno = 0;
-   if (pipe(pfd_garbage) == -1) {
-      char *errmsg = strerror(errno);
-      warn("could not set up pipe for GC: %s\n", errmsg);
-      return;
-   }
-
-   collect_prologue();
-
-   /* fork */
-   assert(!collecting_child);
-   fflush(stdout);
-   if (stdlog) fflush(stdlog);
-   errno = 0;
-   collecting_child = fork();
-   if (collecting_child == -1) {
-      int _errno = errno;
-      char *errmsg = strerror(errno);
-      warn("could not spawn child for GC: %s\n", errmsg);
-      close(pfd_garbage[0]);
-      close(pfd_garbage[1]);
-      collecting_child = 0;
-      collect_in_progress = false;
-      if (_errno == ENOMEM) {
-         warn("trying synchronous collect\n");
-         mm_collect_now();
-      }
-      return;
-
-   } else if (collecting_child) {
-      //mm_printf("spawned gc child %d\n", collecting_child);
-      close(pfd_garbage[1]);
-      int flags = fcntl(pfd_garbage[0], F_GETFL);
-      fcntl(pfd_garbage[0], F_SETFL, flags | O_NONBLOCK);
-      return;
-
-   } else {
-      /* first thing, change the signal set up */
-      struct sigaction sa;
-      memset(&sa, 0, sizeof(sa));
-      sigset_t *mask = &(sa.sa_mask);
-      assert(sigfillset(mask) != -1);
-      assert(sigprocmask(SIG_SETMASK, mask, NULL) != -1);
-
-      sa.sa_handler = SIG_IGN;
-      assert(sigaction(SIGHUP,  &sa, NULL) != -1);
-      assert(sigaction(SIGINT,  &sa, NULL) != -1);
-      assert(sigaction(SIGQUIT, &sa, NULL) != -1);
-      assert(sigaction(SIGPIPE, &sa, NULL) != -1);
-      assert(sigaction(SIGALRM, &sa, NULL) != -1);
-      assert(sigaction(SIGPWR,  &sa, NULL) != -1);
-      assert(sigaction(SIGURG,  &sa, NULL) != -1);
-      assert(sigaction(SIGPOLL, &sa, NULL) != -1);
-
-      sa.sa_handler = SIG_DFL;
-      assert(sigaction(SIGTERM, &sa, NULL) != -1);
-      assert(sigaction(SIGBUS,  &sa, NULL) != -1);
-      assert(sigaction(SIGFPE,  &sa, NULL) != -1);
-      assert(sigaction(SIGILL,  &sa, NULL) != -1);
-      assert(sigaction(SIGSEGV, &sa, NULL) != -1);
-      assert(sigaction(SIGSYS,  &sa, NULL) != -1);
-      assert(sigaction(SIGXCPU, &sa, NULL) != -1);
-      assert(sigaction(SIGXFSZ, &sa, NULL) != -1);
-      
-      assert(sigemptyset(mask) != -1);
-      sigprocmask(SIG_SETMASK, mask, NULL);
-
-      /* second thing, close unused file descriptors */
-      close_file_descriptors();
-   }
-
-   WITH_TEMP_STORAGE {
-      mark();
-      sweep();
-   } TEMP_STORAGE;
-
-   close(pfd_garbage[1]);
-   if (stdlog) fclose(stdlog);
-   _exit(0);
-}
-
-
-static void mm_collect(void)
-{
-   if (gc_disabled || collect_in_progress) {
-      collect_requested = true;
-      return;
-
-   } else
-      collect();
-}
-
 
 int mm_collect_now(void)
 {
@@ -1933,29 +1616,15 @@ bool mm_idle(void)
 {
    static int ncalls = 0;
 
-   if (collect_in_progress) {
-      if (!gc_disabled) {
-         int i = 100 + fetch_backlog;
-         while (i>0 && collect_in_progress) {
-            fetch_unreachables();
-            i--;
-         }
-         return true;
-      } else
-         return false;
-
-   } else {
-      ncalls++;
-      if (!collect_in_progress)
-         update_man_k();
-      if (ncalls<NUM_IDLE_CALLS) {
-         return false;
-      }
-      /* create some work for ourselves */
-      mm_collect();
-      ncalls = 0;
-      return true;
+   ncalls++;
+   update_man_k();
+   if (ncalls<NUM_IDLE_CALLS) {
+      return false;
    }
+   /* create some work for ourselves */
+   mm_collect_now();
+   ncalls = 0;
+   return true;
 }
 
 
@@ -1963,12 +1632,6 @@ bool mm_begin_nogc(bool dont_block)
 {
    /* block when a collect is in progress */
    if (!dont_block) {
-      if (collecting_child && gc_disabled) {
-         warn("deadlock (MM_NOGC while pending GC paused)\n");
-         abort();
-      }
-      while (collecting_child)
-         fetch_unreachables();
       assert(!collect_in_progress);
    }
 
@@ -1980,19 +1643,15 @@ bool mm_begin_nogc(bool dont_block)
 void mm_end_nogc(bool nogc)
 {
    gc_disabled = nogc;
-   if (collect_in_progress && !gc_disabled && fetch_backlog) {
-      while (collect_in_progress && fetch_backlog>0)
-         fetch_backlog -= fetch_unreachables();
-   } 
    if (collect_requested && !gc_disabled)
-      mm_collect();
+      mm_collect_now();
 }
 
 static void mark_refs(void **p)
 {
    int n = mm_sizeof(p)/sizeof(void *);
    for (int i = 0; i < n; i++)
-      MM_MARK(p[i]);
+      if (p[i]) _mm_push(p[i]);
 }
 
 static void clear_refs(void **p, size_t s)
@@ -2006,6 +1665,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    assert(sizeof(info_t) <= MIN_HUNKSIZE);
    assert(sizeof(hunk_t) <= MIN_HUNKSIZE);
    assert((1<<HMAP_EPI_BITS) == HMAP_EPI);
+   assert(sizeof(stack_chunk_t) == BLOCKSIZE);
 
    client_notify = clnotify;
    
@@ -2020,18 +1680,6 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    if (heap) {
       warn("mm is already initialized\n");
       return;
-   }
-
-   /* check that we have a proc file system */
-   {
-      errno = 0;
-      DIR *d = opendir("/proc");
-      if (!d) {
-         char *errmsg = strerror(errno);
-         warn("can't find proc filesystem:\n%s\n", errmsg);
-         abort();
-      }
-      closedir(d);
    }
 
    /* allocate small-object heap */
@@ -2109,10 +1757,10 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    mt_stack = MM_REGTYPE("mm_stack", sizeof(mmstack_t), 0, mark_stack, 0);
    mt_stack_chunk = MM_REGTYPE("mm_stack_chunk", sizeof(stack_chunk_t),
                                clear_refs, mark_stack_chunk, 0);
-   *(mmstack_t **)&transients = make_stack();
-   MM_ROOT(transients);
-   assert(stack_works_fine(transients));
-   assert(stack_empty(transients));
+   *(mmstack_t **)&_mm_transients = make_stack();
+   MM_ROOT(_mm_transients);
+   assert(stack_works_fine(_mm_transients));
+   assert(stack_empty(_mm_transients));
 
    /* make profile a root */
    MM_ROOT(profile);
@@ -2176,7 +1824,7 @@ char *mm_info(int level)
    total_memory_used_by_mm += man_size*sizeof(managed[0]);
    total_memory_used_by_mm += types_size*sizeof(typerec_t);
    total_memory_used_by_mm += num_blocks*sizeof(blockrec_t);
-   total_memory_used_by_mm += stack_sizeof(transients);
+   total_memory_used_by_mm += stack_sizeof(_mm_transients);
    BPRINTF("Memory used by MM: %.2f MByte total\n",
            ((double)total_memory_used_by_mm)/(1<<20));
    if (level>2) {
@@ -2203,7 +1851,7 @@ char *mm_info(int level)
          active_roots++;
 
    BPRINTF("Memory roots     : %d total, %d active\n", roots_last+1, active_roots);
-   BPRINTF("Transient stack  : %d objects\n", stack_depth(transients));
+   BPRINTF("Transient stack  : %d objects\n", stack_depth(_mm_transients));
    if (level<=2)
       return mm_strdup(buffer);
 
@@ -2265,13 +1913,14 @@ void mm_prof_stop(int *h)
 /* create key for profile data */
 char **mm_prof_key(void)
 {
-   MM_ENTER;
-
    char **k = mm_allocv(mt_refs, sizeof(void *)*(types_last+1));
-   for (int i=0; i<=types_last; i++)
-      k[i] = mm_strdup(types[i].name);
-
-   MM_RETURN(k);
+   {
+      const void **sp = _mm_begin_anchored();
+      for (int i=0; i<=types_last; i++)
+         k[i] = mm_strdup(types[i].name);
+      _mm_end_anchored(sp);
+   }
+   return k;
 }
 
 
@@ -2333,7 +1982,7 @@ void dump_roots(void)
 void dump_stack(mmstack_t *st)
 {
    mm_printf("Dumping %s stack...\n",
-             st == transients ? "transient" : "finalizer");
+             st == _mm_transients ? "transient" : "finalizer");
    if (st->temp)
       mm_printf("temp = 0x%"PRIxPTR"\n\n", PPTR(st->temp));
 
@@ -2347,7 +1996,7 @@ void dump_stack(mmstack_t *st)
 
 void dump_stack_depth(void)
 {
-   mm_printf("depth of transients stack: %d\n", stack_depth(transients));
+   mm_printf("depth of transients stack: %d\n", stack_depth(_mm_transients));
    mm_printf("\n");
    fflush(stdlog);
 }
@@ -2369,7 +2018,6 @@ void dump_heap_stats(void)
                 t, types[t].name, counts[t]);
    mm_printf(" total : %d, in heap %d\n\n", man_last+1, num_ih);
 }
-
 
 /* -------------------------------------------------------------
    Local Variables:

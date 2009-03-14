@@ -346,6 +346,7 @@ LUSHAPI at *assoc(at *k, at *l);
 /* EVAL.H ----------------------------------------------------- */
 
 LUSHAPI at *eval_std(at *p);
+LUSHAPI at *eval_brk(at *p);
 LUSHAPI at *eval_debug(at *q);
 LUSHAPI at *call_stack(void);
 LUSHAPI at *quote(at *p);
@@ -393,16 +394,15 @@ extern at *at_t;
 
 LUSHAPI const char *nameof(symbol_t *);
 LUSHAPI const char *NAMEOF(at *);
-LUSHAPI symbol_t *symbol_push(symbol_t *, at *);
+LUSHAPI symbol_t *symbol_push(symbol_t *, at *, at **);
 LUSHAPI symbol_t *symbol_pop(symbol_t *);
-#define SYMBOL_PUSH(p, q) { at *__p__ = p; Mptr(__p__) = symbol_push((symbol_t*)Mptr(__p__), q); }
-#define SYMBOL_POP(p) { at *__p__ = p; Mptr(__p__) = symbol_pop((symbol_t*)Mptr(__p__)); }
+#define SYMBOL_PUSH(p, q) { at *__p__ = p; Symbol(__p__) = symbol_push(Symbol(__p__), q, NULL); }
+#define SYMBOL_POP(p) { at *__p__ = p; Symbol(__p__) = symbol_pop(Symbol(__p__)); }
 
 LUSHAPI at *setq(at *p, at *q);	/* Warning: Never use the result. */
 LUSHAPI at *global_names(void); 
 LUSHAPI at *global_defs(void);
 LUSHAPI at *oblist(void);
-LUSHAPI void purge_names(void);
 LUSHAPI void reset_symbols(void);
 LUSHAPI void sym_set(symbol_t *s, at *q, bool in_global_scope); 
 LUSHAPI void var_set(at *p, at *q);
@@ -430,8 +430,8 @@ extern LUSHAPI struct recur_doc {
 } recur_doc;
 
 struct call_chain {
-   at *this_call;
    struct call_chain *prev;
+   at *this_call;
 };
 
 extern struct call_chain *top_link;

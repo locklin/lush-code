@@ -57,13 +57,13 @@ void clear_object(object_t *obj, size_t _)
 void mark_object(object_t *obj)
 {
    MM_MARK(obj->cl);
-   mm_mark(obj->backptr);
+   MM_MARK(obj->backptr);
    for (int i = 0; i < obj->size; i++) {
       MM_MARK(obj->slots[i].symb);
       at *p = obj->slots[i].val;
       /* this is a hack until I figure how to do finalization right */
       if (HAS_BACKPTR_P(p))
-         mm_mark(Mptr(p));
+         MM_MARK(Mptr(p))
       else
          MM_MARK(p);
    }
@@ -496,7 +496,6 @@ void setslot(at **pobj, at *prop, at *val)
 at *with_object(at *p, at *f, at *q, int howfar)
 {
    MM_ENTER;
-   extern mt_t mt_symbol;
 
    at *ans = NIL;
    if (OBJECTP(p)) {
@@ -506,35 +505,18 @@ at *with_object(at *p, at *f, at *q, int howfar)
          howfar = obj->size - howfar;
       else
          howfar = 0;
-      
-      /* push slots */
-      for (int i = obj->size-1; i >= howfar; i--) {
-         at *atsym = obj->slots[i].symb;
-         symbol_t *sym = mm_alloc(mt_symbol);
-         sym->next = Symbol(atsym);
-         sym->hn = SYM_HN(sym->next);
-         sym->valueptr = &(obj->slots[i].val);
-         Mptr(atsym) = sym;
-      }
 
-      /* push THIS */
-      symbol_t *sym = mm_alloc(mt_symbol);
-      sym->next = Symbol(at_this);
-      sym->hn = SYM_HN(sym->next);
-      sym->value = p;
-      sym->valueptr = &(sym->value);
-      Symbol(at_this) = sym;
+      /* push object environment */
+      for (int i = obj->size-1; i >= howfar; i--)
+         Symbol(obj->slots[i].symb) = symbol_push(Symbol(obj->slots[i].symb), 0 , &(obj->slots[i].val));
+      SYMBOL_PUSH(at_this, p);
 
       ans = apply(f, q);
       
-      /* pop THIS */
-      Mptr(at_this) = sym->next;
-      
-      /* pop SLOTS */
-      for(int i = howfar; i < obj->size; i++) {
-         at *atsym = obj->slots[i].symb;
-         Symbol(atsym) = Symbol(atsym)->next;
-     }
+      /* pop object environment */
+      SYMBOL_POP(at_this);
+      for(int i = howfar; i < obj->size; i++)
+         SYMBOL_POP(obj->slots[i].symb);
       
    } else {
       if (p == NIL)

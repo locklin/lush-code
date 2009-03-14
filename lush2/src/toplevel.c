@@ -323,7 +323,6 @@ void start_lisp(int argc, char **argv, int quietflag)
       MM_ENTER;
       error_doc.ready_to_an_error = false;
       reset_symbols();
-      purge_names();
       error_doc.ready_to_an_error = true;
       error_doc.debug_toplevel = false;
       error_doc.error_call = NIL;
@@ -673,11 +672,22 @@ DY(ymemprof)
    return res;
 }
 
-DX(xpurge_names)
+DY(ywith_nogc)
 {
-   ARG_NUMBER(0);
-   purge_names();
-   return NIL;
+   struct context c;
+   context_push(&c);
+
+   MM_NOGC;
+   if (sigsetjmp(context->error_jump, 1)) {
+      MM_NOGC_END;
+      context_pop();
+      siglongjmp(context->error_jump, -1);
+   }
+   at *result = progn(ARG_LIST);
+   context_pop();
+   MM_NOGC_END;
+   
+   return result;
 }
 
 DX(xload)
@@ -982,7 +992,7 @@ void init_toplevel(void)
    dx_define("gc", xgc);
    dx_define("meminfo", xmeminfo);
    dy_define("memprof", ymemprof);
-   dx_define("purge-names", xpurge_names);
+   dy_define("with-nogc", ywith_nogc);
    dx_define("exit", xexit);
    dx_define("load", xload);
    dy_define("discard", ydiscard);

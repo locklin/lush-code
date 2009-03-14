@@ -43,12 +43,12 @@ static void mark_at(at *a)
       MM_MARK(Car(a));
       MM_MARK(Cdr(a));
       
-   } else if (NUMBERP(a) || OBJECTP(a)) {
-      mm_mark(Mptr(a));
+   } else if (SYMBOLP(a) || NUMBERP(a) || OBJECTP(a)) {
+      MM_MARK(Mptr(a));
         
    } else if (CLASSP(a)) {
       if (((class_t *)Gptr(a))->managed)
-         mm_mark(Mptr(a));
+         MM_MARK(Mptr(a));
       
    } else if (GPTRP(a) || RFILEP(a) || WFILEP(a) || ZOMBIEP(a)) {
       // nothing to mark
