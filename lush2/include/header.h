@@ -979,6 +979,7 @@ LUSHAPI bool index_numericp(const index_t *);
 LUSHAPI bool index_readonlyp(const index_t *);
 LUSHAPI bool index_emptyp(const index_t *);
 LUSHAPI bool index_contiguousp(const index_t*);
+LUSHAPI bool index_malleablep(const index_t*);
 LUSHAPI bool index_broadcastable_p(index_t*, index_t*);
 LUSHAPI bool same_shape_p(index_t *, index_t *);
 

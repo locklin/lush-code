@@ -382,6 +382,15 @@ struct srg *newi = & name2(_srg_,newi)
 	if(size != (idx)->mod[i]) var = 0; \
 	size *= (ptrdiff_t)(idx)->dim[i]; }}
 
+#define Midx_malleablep(idx, var) \
+  { var = 1; \
+    int d = IND_NDIMS(idx)-1; \
+    ptrdiff_t size = IND_MOD(idx, d); \
+    for (int i=d; i>=0; i--) { \
+      if (size != IND_MOD(idx, i)) { var = 0; break; }  \
+      size *= (ptrdiff_t)IND_DIM(idx, i); \
+    }} 
+
 /* ============ ELOOPS, BLOOPS SUPPORT ============== */
 
 

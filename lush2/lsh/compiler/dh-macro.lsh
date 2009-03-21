@@ -1631,6 +1631,24 @@
                 mat retplace))
       retplace)))
 
+(dhm-t idx-malleablep(source)
+  (when (<> 2 (length source))
+    (dhc-error "one argument expected"))
+  (let* ((tn (dhc-parse-expr-t (cadr source)))
+         (ndim (==> :tn:type is-an-idxptr)))
+    (if ~ndim
+        (dhc-error "first argument must be an idx")
+      (new t-node (list tn) (new dhc-type 'dht-bool)))))
+
+(dhm-c idx-malleablep(source treetype retplace)
+  (let ((mat (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list)())))
+    (if :treetype:ignore ""
+      (when ~retplace
+        (setq retplace (dhc-declare-temp-var :treetype:type "_malleable")))
+      (dhc-add-c-statements
+       (sprintf "Midx_malleablep(%s,%s);" mat retplace))
+      retplace)))
+
 (dhm-t same-shape-p (source)
   (when (<> 3 (length source))
     (dhc-error "two argument expected"))
@@ -2099,10 +2117,11 @@
          (m2 (gensym))
 	 (newsrc `(let ((m ,msrc)) 
                     ,(when (not dhc-unprotect) 
-                       `(when (not (idx-contiguousp m))
-                          (error "index not contiguous") )
+                       `(when (not (idx-malleablep m))
+                          (error "index may not be reshaped") )
                        )
                     (let ((,m2 (new-index (idx-storage m) (list (idx-nelems m)))))
+                      (idx-set-mod ,m2 0 (idx-modulo m (to-int (- (idx-rank m) 1))))
                       (idx-set-offset ,m2 (idx-offset m))
                       ,m2)) ))
     (when (not (==> :m:type is-an-idxptr))

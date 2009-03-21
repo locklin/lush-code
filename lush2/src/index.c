@@ -537,6 +537,15 @@ static char *chk_contiguous(index_t *ind)
       return NULL;
 }
 
+static char *chk_malleable(index_t *ind)
+{
+   static char *msg_not_malleable = "index may not be reshaped";
+   ifn (index_malleablep(ind))
+      return msg_not_malleable;
+   else
+      return NULL;
+}
+
 static char *chk_nonempty(index_t *ind)
 {
    static char *msg_nonempty = "index is empty";
@@ -866,6 +875,35 @@ DX(xidx_contiguousp)
    else
       return NIL;
 }
+
+/* malleable is a little more general than contiguous */
+/* you may reshape a malleable index                  */
+bool index_malleablep(const index_t *ind)
+{
+   if (IND_UNSIZEDP(ind))
+      RAISEF("unsized index", NIL);
+   if (IND_NDIMS(ind)==1)
+      return true;
+   
+   int d = IND_NDIMS(ind)-1;
+   ptrdiff_t size = IND_MOD(ind, d);
+   for (int i=d; i>=0; i--) {
+      if (size != IND_MOD(ind, i))
+         return false;
+      size *= (ptrdiff_t)IND_DIM(ind, i);
+   }
+   return true;
+}
+
+DX(xidx_malleablep)
+{
+   ARG_NUMBER(1);
+   if (index_malleablep(AINDEX(1)))
+      return t();
+   else
+      return NIL;
+}
+
 
 DX(xidx_storage)
 {
@@ -2438,17 +2476,17 @@ DX(xmap_matrix)
 
 
 
-/* reshape contiguous index */
+/* reshape malleable index */
 
 index_t *index_reshapeD(index_t *ind, shape_t *shp)
 {
-   RAISEF(chk_contiguous(ind), NIL);
+   RAISEF(chk_malleable(ind), NIL);
    if (shape_nelems(shp)!=index_nelems(ind)) 
       RAISEF("number of elements must be the same with new shape", 
              NEW_NUMBER(index_nelems(ind)));
   
+   ptrdiff_t size = IND_MOD(ind, IND_NDIMS(ind)-1);
    IND_NDIMS(ind) = shp->ndims;
-   ptrdiff_t size = 1;
    for (int i=shp->ndims-1; i>=0; i--) {
       IND_DIM(ind,i) = shp->dim[i];
       IND_MOD(ind,i) = size;
@@ -2478,7 +2516,7 @@ DX(xidx_reshape)
 
 index_t *index_flatten(index_t *ind, int n)
 {
-   RAISEF(chk_contiguous(ind), NIL);
+   RAISEF(chk_malleable(ind), NIL);
 
    if (n > 0) {
       ifn (n < IND_NDIMS(ind))
@@ -2564,7 +2602,7 @@ DX(xidx_nick)
 
 index_t *index_ravelD(index_t *ind)
 {
-   ifn (index_contiguousp(ind))
+   ifn (index_malleablep(ind))
       RAISEF("cannot ravel in-place, index not contiguous", NIL);
    index_reshapeD(ind, SHAPE1D(index_nelems(ind)));
    return ind;
@@ -3612,6 +3650,7 @@ void init_index(void)
    dx_define("indexp", xindexp);
    dx_define("idx-numericp", xidx_numericp);
    dx_define("idx-contiguousp", xidx_contiguousp);
+   dx_define("idx-malleablep", xidx_malleablep);
    dx_define("idx-rank", xidx_rank); 
    dx_define("idx-shape", xidx_shape);
    dx_define("$", xindex_shape);
