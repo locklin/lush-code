@@ -262,6 +262,18 @@
         X))))
 
 
+#? (mat-inv <A>)
+;; {<see> mat-pinv, mat-solve}
+;; Inverse of square matrix <A>.
+;;
+;; When <A> is singular, <mat-inv> will raise an error.
+(defun inv (A)
+  (declare (-idx2- (-double-)) A)
+  (when (not (squarep A))
+    (error "matrix not square") )
+  (lapack-gesv A (mat-id (length A))) )
+  
+
 #? (mat-norm <A>)
 ;; {<see> mat-singvals, mat-norm/1, mat-norm/inf, mat-norm/frob}
 ;; Largest singular value of <A> (2-norm).
@@ -344,6 +356,32 @@
   `(array-take ,A 0 ,p) )
 
 
+#? (mat-pinv <A>)
+;; {<see> mat-inv, mat-solve}
+;; Pseudoinverse of matrix <A>.
+(defun pinv (A)
+  (declare (-idx2- (-double-)) A)
+  (when (emptyp A)
+    (error "pinv not defined for empty matrix") )
+  (let* ((m  ($ A 0))
+         (n  ($ A 1))
+         (U  (double-array m m))
+         (Vt (double-array n n))
+         (CA ##A)
+         (S  (lapack-gesdd/a! CA U Vt))
+         (tol (* (max ($ A 0) ($ A 1)) (eps (S 0)))) )
+    (declare (-int-) m n)
+    (for* (i 0 (length S))
+      (declare (-int-) i)
+      (if (> (S i) tol)
+          (blas-scal! (/ 1 (S i)) ($*1 U i))
+        (blas-scal! 0 ($*1 U i)) ))
+    ;; reuse CA for result
+    (idx-trim! Vt 0 0 (min m n))
+    (idx-trim! U 1 0 (min m n))
+    (blas-gemm! 1 U Vt 0 CA)
+    ($t CA) ))
+      
 #? (mat-power <A> <n>)
 ;; <n>th power of matrix <A>.
 ;;
@@ -533,8 +571,10 @@
           mat-norm/frob
           -pade-approx
           mat-exp
+          mat-inv
           mat-perm
           mat-permute!
+          mat-pinv
           mat-posdef
           mat-rank/tol
           mat-trace 
