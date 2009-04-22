@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.17 2006-11-07 20:57:43 leonb Exp $
+ * $Id: nan.c,v 1.18 2009-04-22 23:00:21 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -78,7 +78,8 @@ getnanF (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (flt*) (char*) ieee_nanf;
+  char *p = (char*) ieee_nanf;
+  return * (flt*) p;
 }
 
 flt
@@ -86,7 +87,8 @@ infinityF (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (flt*) (char*) ieee_inftyf;
+  char *p = (char*) ieee_inftyf;
+  return * (flt*) p;
 }
 
 int
@@ -126,7 +128,8 @@ getnanD (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (real*) (char*) ieee_nand;
+  char *p = (char*) ieee_nand;
+  return * (real*) p;
 }
 
 real
@@ -134,7 +137,8 @@ infinityD (void)
 {
   if (ieee_present <= 0)
     error(NIL,"IEEE754 is not supported on this computer",NIL);
-  return * (real*) (char*) ieee_inftyd;
+  char *p = (char*) ieee_inftyd;
+  return * (real*) p;
 }
 
 int
@@ -530,13 +534,18 @@ init_nan(void)
       set_fpe_irq();
       /* Check that NaN works as expected */
       if (ieee_present)
-        if (!isnanD(*(real*)(char*)ieee_nand + 3.0) ||
-            !isnanD(*(real*)(char*)ieee_nand - 3.0e40) ||
-            !isinfD(*(real*)(char*)ieee_inftyd - 3.0e40) )
-          {
-            ieee_present = 0;
-            set_fpe_irq();
-          }
+        {
+          char *nand = (char*) ieee_nand;
+          char *inftyd = (char*) ieee_inftyd;
+          
+          if (!isnanD(*(real*)nand + 3.0) ||
+              !isnanD(*(real*)nand - 3.0e40) ||
+              !isinfD(*(real*)inftyd - 3.0e40) )
+            {
+              ieee_present = 0;
+              set_fpe_irq();
+            }
+        }
     }
   /* Define functions */
   dx_define("nan"    , xnan    );
