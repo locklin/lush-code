@@ -1,0 +1,2179 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: nettool.sn,v 1.2 2003/03/21 14:05:37 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;  'nettool'
+;;;  interface for building networks
+;;;
+;;;  Copyright (C) 1990-1995 Leon Bottou Jean Bourrely & Xavier Driancourt
+;;;                          Neuristique SA
+;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;; -------
+;;; NETTOOL
+;;; -------
+
+(ogre)
+
+(de nettool() 
+    (ogre)
+    (let ((n (new c-nettool)))
+      (when (and nettool-net
+		 (= (classof nettool-net) |DE|))
+        (==> n exec-nettool-net) )
+      n ;; return value
+      ) )
+    
+
+(when (not (functionp namedclean))
+  (setq namedclean named) )
+
+
+;;; ---------
+;;; UTILITIES
+;;; ---------
+
+
+
+(de nettool-sort(list)
+    ;; Sort LIST of LAYERS 
+    (if ~(cdr list)
+      list
+      (let* ((c (car list))
+	     (ll ())
+	     (rl ())
+	     (pivx 0)
+	     (pivy 0) )
+	(let (((x y w h) :c:rect))
+	  (setq pivx x)
+	  (setq pivy y) )
+	(each ((i (cdr list)))
+	      (let (((x y w h) :i:rect))
+		(if (or (> x pivx) (and (= x pivx) (>= y pivy)))
+		    (setq rl (nconc1 rl i))
+		  (setq ll (cons i ll)) ) ) )
+	(nconc (nettool-sort ll) (cons c (nettool-sort rl)) ) ) ) )
+
+
+(de nettool-parse-sz(sz xsymb ysymb)
+    (if (stringp sz)
+	;; old-style
+	(let ((m (index "x" sz)))
+	  (if (null m)
+	      (set xsymb 1)
+	    (set xsymb (max 1 (or (val (left sz (1- m))) 1))) 
+	    (setq sz (mid sz (1+ m))) )
+	  (set ysymb (max 1 (or (val sz) 1))) )
+      ;; new style
+      (set xsymb (car sz))
+      (set ysymb (cadr sz)) ) )
+
+(de nettool-cname(lobj)
+    (when (numberp lobj)
+	  (setq lobj (str lobj)) )
+    (when (symbolp lobj)
+	  (setq lobj (pname lobj)) )
+    (setq lobj (regex-subst "-" "_" lobj) )
+    lobj )
+
+(dm nettool-parse-c(nettool-parse-c cstring)
+    (setq cstring (eval cstring))
+    (let ((regex "\\$[a-zA-Z][a-zA-Z0-9]*")
+	  (pos 1)
+	   (seek ())
+	   (output (list 'concat)) )
+      (while (setq seek (regex-seek regex cstring pos))
+	(let (((s l) seek))
+	  (when (> s pos)
+		(nconc1 output (mid cstring pos (- s pos))) )
+	  (let ((k (mid cstring (1+ s) (1- l))))
+	    (nconc1 output `(nettool-cname ,(namedclean k))) )
+	  (setq pos (+ s l)) ) )
+      (when (< pos (len cstring))
+	    (nconc1 output (mid cstring pos)) )
+      output ) )
+
+
+
+;;; -----------------------
+;;; EDITSYMBOL and EDITSIZE
+;;; -----------------------
+
+(defclass EditSymbol EditString)
+
+(defmethod EditSymbol Editsymbol()
+  (==> this EditString 18)
+  (setq regex "([A-Za-z][-A-Za-z0-9]*)?") )
+
+
+
+
+(defclass EditSize EditString)
+
+
+(defmethod EditSize EditSize(&optional sz)
+  (==> this EditString (or sz 5))
+  (setq regex "[0-9]*|[0-9]+x[0-9]*") )
+
+(defmethod EditSize setregex(rx)
+  (when (or (= rx "")
+	    (not (regex-match rx data)) )
+	(==> this (EditString . setdata) "") )
+  (if (and (= rx "") (<> regex ""))
+      (==> this disable) )
+  (if (and (<> rx "") (= regex ""))
+      (==> this enable) )
+  (setq regex rx) )
+
+(defmethod EditSize setdata(sz)
+  (let ((sx ())
+	(sy ()) )
+    (nettool-parse-sz sz 'sx 'sy)
+    (when (or (= regex (setq sz ""))
+	      (regex-match regex (setq sz (sprintf "%dx%d" sy sx)))
+	      (regex-match regex (setq sz (sprintf "%d" sy))) )
+	  (==> this (EditString . setdata) sz) ) ) )
+
+(defmethod EditSize getdata()
+  (let ((sx ())
+	(sy ())
+	(sz data) )
+    (let ((m (index "x" sz)))
+      (if ~m
+	  (setq sx 1
+		sy (max 1 (or (val sz) 1)))
+	(setq sy (max 1 (or (val (left sz (1- m))) 1))
+	      sx (max 1 (or (val (mid sz (1+ m))) 1))) ) )
+    (list sx sy) ) )
+
+
+(defclass EditPos EditSize)
+
+(defmethod EditPos EditPos (&optional sz)
+  (==> this editsize (or sz 7)) )
+
+(defmethod EditPos getdata ()
+  (when (<> "" data)
+    (let ((sx ())
+	  (sy ())
+	  (sz data) )
+      (let ((m (index "x" sz)))
+	(if ~m
+	    (setq sx ()
+		  sy (val sz) )
+	  (setq sy (val (left sz (1- m)))
+		sx (val (mid sz (1+ m))) )
+	  ) )
+      (list sx sy) ) ) )
+
+
+;;; -----------------------
+;;; Class C-CONNECTION-TYPE
+;;; -----------------------
+
+
+(defclass connection-type object
+  ;; the base function (also the menu text)
+  menutext
+  ;; textual descriptions
+  description
+  ;; a function for compiling
+  compile
+  ;; a function for verifying the sizes
+  check
+  ;; functions for computing the numbers of connections/weights
+  scount
+  wcount
+  ;; regex for the sizeitem/stepitem ("" implies disabled)
+  sizeregex
+  stepregex
+  ;; C fragment
+  cfrag )
+
+
+(defmethod connection-type connection-type (root mt de co ch sc 
+						 wc si st &optional cf)
+  ;; if a base connection type is given
+  (when root
+	(setq menutext :root:menutext)
+	(setq description :root:description)
+	(setq compile :root:compile)
+	(setq check :root:check)
+	(setq scount :root:scount)
+	(setq wcount :root:wcount)
+	(setq sizeregex :root:sizeregex)
+	(setq stepregex :root:stepregex) 
+	(setq cfrag ()) )
+
+  ;; override the root settings
+  (when mt (setq menutext mt))
+  (when de (setq description de))
+  (when co (setq compile co))
+  (when ch (setq check ch))
+  (when sc (setq scount sc))
+  (when wc (setq wcount wc))
+  (when si (setq sizeregex si))
+  (when st (setq stepregex st )) 
+  (when cf (setq cfrag cf)) )
+
+
+;;; ----------------------
+;;; BASIC CONNECTION TYPES
+;;; ----------------------
+
+;; (setq :ct-NAME (new connection-type ROOT 'NAME .... )) !!!
+
+(setq :ct-connect
+      (new connection-type () 
+	   'connect 
+	   "Full connection"
+	   (lambda(c) (list 'connect (==> c subamont) (namedclean :c:av:name)))
+	   (lambda(c) (==> c basic-check))
+	   (lambda(c) (* (1+ (- :c:tox :c:fromx))
+			 (1+ (- :c:toy :c:fromy))
+			 :c:av:sizex
+			 :c:av:sizey ))
+	   (lambda(c) (:c:conntype:scount c))
+	   "" ""
+	   
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-CONNECT from $amname to $avname */\n\
+  {  int i,j,k,l;\n\
+     float sum;\n\
+     float (*w)[$amsx][$avsy][$avsx] = (void*)(wbase + $w);\n\
+     for(i=0;i<$avsy;i++)\n\
+       for(j=0;j<$avsx;j++) {\n\
+         sum = 0.0;\n\
+         for(k=0;k<$amsy;k++)\n\
+           for(l=0;l<$amsx;l++)\n\
+             sum += w[k][l][i][j] * $amname[k+$fry][l+$frx];\n\
+         $avname[i][j] += sum;\n\
+       }\n\
+   }"))
+
+
+
+(setq :ct-local-1d-connect
+      (new connection-type ct-connect
+	   'local-1d-connect
+	   "1D Local Connection"
+	   (lambda(c)
+	     (list :c:conntype:menutext
+		   (==> c subamont) :c:am:sizey 
+		   (namedclean :c:av:name) :c:av:sizey
+		   :c:stepy :c:sizey ) )
+	   (lambda(c)
+	     (and (==> c basic-check)
+		  (= (1+ (- :c:tox :c:fromx)) 1) (= :c:av:sizex 1)
+		  (<= :c:sizey (- :c:toy :c:fromy))
+		  (= (1+ (- :c:toy :c:fromy))
+		     (+ (* :c:av:sizey :c:stepy) (- :c:sizey :c:stepy)) ) ) )
+	   (lambda(c)
+
+	     (* :c:av:sizex :c:av:sizey :c:sizex :c:sizey) )
+	   ()
+	   "[0-9]*" "[0-9]*"
+
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-LOCAL-1D-CONNECT from $amname to $avname */\n\
+  {  int i1,k1,l1;\n\
+     float sum;\n\
+     float (*w)[$csizey] = (void*)(wbase + $w);\n\
+     for(i1=k1=0; i1<$avsy; i1+=1,k1+=$cstepy) {\n\
+       sum = 0.0;\n\
+       for(l1=0;l1<$csizey;l1++)\n\
+         sum += w[i1][l1] * $amname[k1+l1+$fry][1+$frx];\n\
+       $avname[i1][1] += sum;\n\
+     }\n\
+   }"))
+
+
+
+(setq :ct-local-2d-connect
+      (new connection-type ct-local-1d-connect
+	   'local-2d-connect
+	   "2D Local Connection"
+	   (lambda(c) 
+	     (list :c:conntype:menutext
+		   (==> c subamont) :c:am:sizey :c:am:sizex
+		   (namedclean :c:av:name) :c:av:sizey :c:av:sizex
+		   :c:stepx :c:stepy :c:sizex :c:sizey ) )
+	   (lambda(c) 
+	     (and (==> c basic-check)
+		  (<= :c:sizex (1+ (- :c:tox :c:fromx)))
+		  (<= :c:sizey (1+ (- :c:toy :c:fromy)))
+		  (= (1+ (- :c:tox :c:fromx))
+		     (+ (* :c:av:sizex :c:stepx) (- :c:sizex :c:stepx)))
+		  (= (1+ (- :c:toy :c:fromy))
+		     (+ (* :c:av:sizey :c:stepy) (- :c:sizey :c:stepy))) ) )
+	   ()
+	   ()
+	   "[0-9]*(x[0-9]*)?" "[0-9]*(x[0-9]*)?"
+
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-LOCAL-2D-CONNECT from $amname to $avname */\n\
+  {  int i1,i2,k1,k2,l1,l2;\n\
+     float sum;\n\
+     float (*w)[$avsx][$csizey][$csizex] = (void*)(wbase + $w);\n\
+     for(i1=k1=0; i1<$avsy; i1+=1,k1+=$cstepy)\n\
+       for(i2=k2=0; i2<$avsx; i2+=1,k2+=$cstepx) {\n\
+         sum = 0.0;\n\
+         for(l1=0;l1<$csizey;l1++)\n\
+           for(l2=0;l2<$csizex;l2++)\n\
+             sum += w[i1][i2][l1][l2] * $amname[k1+l1+$fry][k2+l2+$frx];\n\
+         $avname[i1][i2] += sum;\n\
+       }\n\
+   }"))
+
+
+(setq :ct-local-toric-connect
+      (new connection-type ct-local-2d-connect
+	   'local-toric-connect
+	   "Toric Local Connection"
+	   ()
+	   (lambda(c) 
+	     (and (==> c basic-check)
+		  (<= :c:sizex (1+ (- :c:tox :c:fromx)))
+		  (<= :c:sizey (1+ (- :c:toy :c:fromy)))
+		  (= (1+ (- :c:tox :c:fromx)) (* :c:av:sizex :c:stepx))
+		  (= (1+ (- :c:toy :c:fromy)) (* :c:av:sizey :c:stepy)) ) )
+	   ()
+	   ()
+	   () ()
+
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-LOCAL-TORIC-CONNECT from $amname to $avname */\n\
+  {  int i1,i2,k1,k2,l1,l2;\n\
+     float sum;\n\
+     float (*w)[$avsx][$csizey][$csizex] = (void*)(wbase + $w);\n\
+     for(i1=k1=0; i1<$avsy; i1+=1,k1+=$cstepy)\n\
+       for(i2=k2=0; i2<$avsx; i2+=1,k2+=$cstepx) {\n\
+         sum = 0.0;\n\
+         for(l1=0;l1<$csizey;l1++)\n\
+           for(l2=0;l2<$csizex;l2++) {\n\
+             int kl1 = k1+l1;\n\
+             int kl2 = k2+l2;\n\
+             if (kl1>=$amsy) kl1 -= $amsy;\n\
+             if (kl2>=$amsx) kl2 -= $amsx;\n\
+             sum += w[i1][i2][l1][l2] * $amname[kl1+$fry][kl2+$frx];\n\
+           }\n\
+         $avname[i1][i2] += sum;\n\
+       }\n\
+   }"))
+
+	  
+	     
+(setq :ct-mask-1d-connect
+      (new connection-type ct-local-1d-connect
+	   'mask-1d-connect
+	   "1D Mask Connection"
+	   ()
+	   ()
+	   ()
+	   (lambda(c) (* :c:sizex :c:sizey))
+	   () ()
+
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-MASK-1D-CONNECT from $amname to $avname */\n\
+  {  int i1,k1,l1;\n\
+     float sum;\n\
+     float (*w) = (void*)(wbase + $w);\n\
+     for(i1=k1=0; i1<$avsy; i1+=1,k1+=$cstepy) {\n\
+       sum = 0.0;\n\
+       for(l1=0;l1<$csizey;l1++)\n\
+         sum += w[l1] * $amname[k1+l1+$fry][1+$frx];\n\
+       $avname[i1][1] += sum;\n\
+     }\n\
+   }"))
+
+
+(setq :ct-mask-2d-connect
+      (new connection-type ct-local-2d-connect
+	   'mask-2d-connect
+	   "2D Mask Connection"
+	   ()
+	   ()
+	   ()
+	   (lambda(c) (* :c:sizex :c:sizey))
+	   () ()
+
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-MASK-2D-CONNECT from $amname to $avname */\n\
+  {  int i1,i2,k1,k2,l1,l2;\n\
+     float sum;\n\
+     float (*w)[$csizex] = (void*)(wbase + $w);\n\
+     for(i1=k1=0; i1<$avsy; i1+=1,k1+=$cstepy)\n\
+       for(i2=k2=0; i2<$avsx; i2+=1,k2+=$cstepx) {\n\
+         sum = 0.0;\n\
+         for(l1=0;l1<$csizey;l1++)\n\
+           for(l2=0;l2<$csizex;l2++)\n\
+             sum += w[l1][l2] * $amname[k1+l1+$fry][k2+l2+$frx];\n\
+         $avname[i1][i2] += sum;\n\
+       }\n\
+   }"))
+
+
+
+(setq :ct-mask-toric-connect
+      (new connection-type ct-local-toric-connect
+	   'mask-toric-connect
+	   "Toric Mask Connection"
+	   ()
+	   ()
+	   ()
+	   (lambda(c) (* :c:sizex :c:sizey))
+	   () () 
+
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-MASK-TORIC-CONNECT from $amname to $avname */\n\
+  {  int i1,i2,k1,k2,l1,l2;\n\
+     float sum;\n\
+     float (*w)[$csizex] = (void*)(wbase + $w);\n\
+     for(i1=k1=0; i1<$avsy; i1+=1,k1+=$cstepy)\n\
+       for(i2=k2=0; i2<$avsx; i2+=1,k2+=$cstepx) {\n\
+         sum = 0.0;\n\
+         for(l1=0;l1<$csizey;l1++)\n\
+           for(l2=0;l2<$csizex;l2++) {\n\
+             int kl1 = k1+l1;\n\
+             int kl2 = k2+l2;\n\
+             if (kl1>=$amsy) kl1 -= $amsy;\n\
+             if (kl2>=$amsx) kl2 -= $amsx;\n\
+             sum += w[l1][l2] * $amname[kl1+$fry][kl2+$frx];\n\
+           }\n\
+         $avname[i1][i2] += sum;\n\
+       }\n\
+   }"))
+
+
+(setq :ct-equal-mask-1d-connect
+      (new connection-type ct-local-1d-connect
+	   'equal-mask-1d-connect
+	   "1D Averaging Connection"
+	   ()
+	   ()
+	   ()
+	   (lambda(c) 1)
+	   () () 
+
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-EQUAL-MASK-1D-CONNECT from $amname to $avname */\n\
+  {  int i1,k1,l1;\n\
+     float sum;\n\
+     float w = wbase[$w];\n\
+     for(i1=k1=0; i1<$avsy; i1+=1,k1+=$cstepy) {\n\
+       sum = 0.0;\n\
+       for(l1=0;l1<$csizey;l1++)\n\
+         sum += $amname[k1+l1+$fry][1+$frx];\n\
+       $avname[i1][1] += sum * w;\n\
+     }\n\
+   }"))
+
+
+(setq :ct-equal-mask-2d-connect
+      (new connection-type ct-local-2d-connect
+	   'equal-mask-2d-connect
+	   "2D Averaging Connection"
+	   ()
+	   ()
+	   ()
+	   (lambda(c) 1)
+	   () ()
+
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-EQUAL-MASK-2D-CONNECT from $amname to $avname */\n\
+  {  int i1,i2,k1,k2,l1,l2;\n\
+     float sum;\n\
+     float w = wbase[$w];\n\
+     for(i1=k1=0; i1<$avsy; i1+=1,k1+=$cstepy)\n\
+       for(i2=k2=0; i2<$avsx; i2+=1,k2+=$cstepx) {\n\
+         sum = 0.0;\n\
+         for(l1=0;l1<$csizey;l1++)\n\
+           for(l2=0;l2<$csizex;l2++)\n\
+             sum += $amname[k1+l1+$fry][k2+l2+$frx];\n\
+         $avname[i1][i2] += sum * w;\n\
+       }\n\
+   }"))
+
+
+	   
+
+(setq :ct-tdnn-connect
+      (new connection-type ct-connect
+	   'tdnn-connect
+	   "Time Delay Connection"
+	   (lambda(c)
+	     (list :c:conntype:menutext 
+		   (==> c subamont) :c:am:sizey :c:am:sizex
+		   (namedclean :c:av:name) :c:av:sizey :c:av:sizex
+		   :c:stepy :c:sizey ) )
+	   (lambda(c) 
+	     (and (==> c basic-check)
+		  (<= :c:sizey (1+ (- :c:toy :c:fromy)))
+		  (= :c:stepx 1) (= :c:sizex 1)
+		  (= (1+ (- :c:toy :c:fromy))
+		     (+ (* :c:av:sizey :c:stepy) 
+			(- :c:sizey :c:stepy) ) ) ) )
+	   (lambda(c)
+	     (* :c:sizey :c:av:sizex :c:av:sizey
+		(1+ (- :c:tox :c:fromx)) ) )
+	   (lambda(c)
+	     (* :c:sizey :c:av:sizex
+		(1+ (- :c:tox :c:fromx)) ) )
+	   "[0-9]*" "[0-9]*"
+
+	   ;; C-FRAGMENT
+	   "\n\
+  /* CT-TDNN-CONNECT from $amname to $avname */\n\
+  {  int i1,i2,k,l1,l2;\n\
+     float sum;\n\
+     float (*w)[$amsx][$avsx] = (void*)(wbase + $w);\n\
+     for(i1=k=0; i1<$avsy; i1+=1,k+=$cstepy)\n\
+       for(i2=0; i2<$avsx; i2+=1) {\n\
+         sum = 0.0;\n\
+         for(l1=0;l1<$csizey;l1++)\n\
+           for(l2=0;l2<$amsx;l2++)\n\
+             sum += w[l1][l2][i2] * $amname[k+l1+$fry][l2+$frx];\n\
+         $avname[i1][i2] += sum;\n\
+       }\n\
+   }"))
+
+
+
+;; Define the menus of 
+;; the connection-dialog
+
+(setq :local-menu  (list ct-connect
+			ct-local-1d-connect
+			ct-local-2d-connect
+			ct-local-toric-connect ) )
+
+(setq :shared-menu (list ct-mask-1d-connect
+			ct-mask-2d-connect
+			ct-mask-toric-connect
+			ct-equal-mask-1d-connect
+			ct-equal-mask-2d-connect
+			ct-tdnn-connect ) )
+
+
+
+
+
+;;; ------------------------
+;;; Class C-LAYER-DIALOG
+;;; -------------------------
+
+
+(defclass c-layer-dialog yesnorequester
+  target )
+
+(defmethod c-layer-dialog c-layer-dialog(w callback)
+  (==> this yesnorequester w
+       (new grid 4
+	    (new string "Name")
+	    (new editsymbol)
+	    (new string "Size")
+	    (new editsize)
+	    (new string "Bias")
+	    (new column
+		 (new radiobutton "None" ())
+		 (new radiobutton "Full" ())
+		 (new radiobutton "Shared" ())
+		 (new radiobutton "Column shared" ()) )
+	    (new string "Display")
+	    (new column
+		 (new radiobutton "None" ())
+		 (new radiobutton "Hinton" ())
+		 (new radiobutton "Gray levels" ()) ) )
+       " Ok " "Cancel" 
+       callback ) )
+
+(defmethod c-layer-dialog popup(onwhat)
+  (setq target onwhat)
+  (==> this (yesnorequester . popup) ) )
+
+
+
+;;; ----------------
+;;; Class SELECTAREA
+;;; ----------------
+
+
+(defclass selectarea string
+  father
+  selected )
+
+(defmethod selectarea repaint()
+  (let (((x y w h) rect))
+    (if color-palette
+	(progn
+	  (when selected
+	      (setcolor palette-selected)
+	      (fill-rect x y w h) )
+	  (draw-up-rect x y (1- w) (1- h))
+	  (color color-fg) )
+      (if ~selected
+	  (draw-rect x y (1- w) (1- h))
+        (fill-rect x y (1- w) (1- h))
+        (color color-bg) ) ) )
+  (==> this (string . repaint)) )
+
+(defmethod selectarea backpaint()
+  (cls) )
+
+(defmethod selectarea mouse-up(x1 y1 x2 y2)
+  (when (point-in-rect x2 y2 rect)
+    (if selected
+	(==> father popupdialog)
+      (==> thiswindowobject select father ~selected) ) ) )
+
+(defmethod selectarea setselect(t)
+  (when (<> t selected)
+	(setq selected t)
+	(==> this expose rect)   ) )
+
+(defmethod selectarea selectarea(name f)
+  (setq father f)
+  (==> this string name) )
+
+
+;;; ----------------
+;;; Class ANCHORAREA
+;;; ----------------
+
+(defclass anchorarea visualobject)
+
+(defmethod anchorarea repaint()
+  (let (((x y w h) rect))
+    (if color-palette
+	(progn
+	  (setcolor palette-left)
+	  (draw-line (+ x w -2) y x (+ y (2/ h)))
+	  (draw-line (+ x w -2) (1+ y) x (+ y 1 (2/ h)))
+	  (setcolor palette-right)
+	  (draw-line (+ x w -2) (+ y h) x (+ y 1 (2/ h))) )
+      (color color-gray)
+      (fill-polygon (+ x w) y x (+ y (2/ h)) (+ x w) (+ y h)) ) ) )
+
+(defmethod anchorarea backpaint()
+  () )
+
+(defmethod anchorarea mouse-drag(x1 y1 x2 y2)
+  (let (((x y w h) rect))
+    (setq x2 (max x2 (+ x w 3)))
+    (hilite hilite-line (+ x w) (+ y (2/ h)) x2 y2) ) )
+
+(defmethod anchorarea mouse-up(x1 y1 x2 y2)
+  (let (((x y w h) rect))
+    (setq x2 (max x2 (+ x w 3)))
+    (hilite hilite-none (+ x w) (+ y (2/ h)) x2 y2) )
+
+  (let ((am itscontainer)
+	(av ())
+	(onwhat ()) )
+    ; find on what layer we point
+    (each ((i layers))
+	  (if (point-in-rect x2 y2 :i:rect)
+	      (setq av i) ) )
+    (if ~av
+	;; point on no layer
+	(beep)
+      ;; find if this connection exists
+      (each ((i :am:aval))
+	    (when (= :i:av av)
+		  (setq onwhat i) ) )
+      ;; call the popup, or trigger the button
+      (if onwhat
+	  (==> onwhat trigger)
+	(==> connection-dialog popup (list am av)) ) ) ) )
+	
+(defmethod anchorarea anchorarea()
+  (==> this visualobject 24 12) )
+
+
+
+
+
+
+
+;;; --------------------
+;;; Class C-LAYER
+;;; --------------------
+
+;; PARSEDIALOGDATA
+;; BUILDDIALOGDATA
+;; POPUPDIALOG
+;;
+;; GET_IN
+;; GET_OUT
+;; CALCCONSTRAINT  (called by mouse-down)
+
+
+(defclass c-layer framesize
+  thislayer
+  selectitem
+  anchoritem
+  name
+  biasmode	   ; () bias-connect shared-bias-connect tdnn-bias-connect
+  drawmode         ; () draw-list gray-draw-list	  
+  sizex
+  sizey
+  (amont ())
+  (aval ()) 
+
+  flag
+  biasw )
+
+
+
+(defmethod c-layer c-layer(layerdialogdata x y w h)
+  (setq thislayer this)
+  (setq flag t)
+  (setq selectitem (new selectarea
+			(let ((sx ()) (sy ()))
+			  (nettool-parse-sz (cadr layerdialogdata) 'sx 'sy)
+			  (if (= sx 1) 
+			      (sprintf "%s (%d)" (car layerdialogdata) sy)
+			    (sprintf "%s (%dx%d)" (car layerdialogdata) sy sx) ) )
+			this ))
+  (setq anchoritem (new anchorarea) )
+  (setq x (* 10 (div (+ 5 x) 10)))
+  (setq y (* 10 (div (+ 5 y) 10)))
+  (==> this framesize x y w h anchoritem)
+  (setq :dragitem:magnet '(10 10))
+  (let ((lock (new geometrylock workspace)))
+    (==> workspace insert this)
+    (==> workspace insert selectitem)
+    (setq layers (nconc1 layers this))
+    (==> this parsedialogdata layerdialogdata) ) )
+
+
+
+(defmethod c-layer -destructor()
+  (delete selectitem)
+  (delete anchoritem)
+  (each ((i amont))
+	(delete i) )
+  (each ((i aval))
+	(delete i) ) )
+
+
+(defmethod c-layer moveresize(x y w h)
+  (==> this (framesize . moveresize) x y (max 5 w) (max 5 h)) )
+
+(defmethod c-layer front (&optional x y w h)
+  (setq flag t)
+  (==> this (framesize . front) x y w h) )
+
+
+(defmethod c-layer manage-geometry()
+  (setq flag t)
+  (each ((c amont)) (setq :c:flag t))
+  (each ((c aval)) (setq :c:flag t))
+  (==> this (framesize . manage-geometry))
+  (when anchoritem
+	(let (((x y w h) rect))
+	  (==> anchoritem geometry (+ x w -12) (+ y (div h 2) -12) 12 24) ) ) )
+
+
+(defmethod c-layer parsedialogdata((nm sz biasn biasf biass biasc drawn drawh drawg))
+  (setq :thiswindowobject:changed t)
+  (setq name nm)
+  (let* ((old-sizex sizex)
+	 (old-sizey sizey) )
+  (nettool-parse-sz sz 'sizex 'sizey)
+  (each ((i (list biasn biasf biass biasc))
+	 (j '(() bias-connect shared-bias-connect tdnn-bias-connect)) )
+	(when i (setq biasmode j)) )
+  (each ((i (list drawn drawh drawg))
+	 (j '(() draw-list gray-draw-list)) )
+	  (when i (setq drawmode j)) )
+
+  ;; adjust its components
+  (==> selectitem settext
+       (if (= sizex 1) 
+	   (sprintf "%s (%d)" name sizey)
+	 (sprintf "%s (%dx%d)" name sizey sizex) ) )
+  (if ~drawmode
+      ;; no drawing mode
+      (setq :sizeitem:formfactor ())
+    ;; drawing mode (implies form-factor)
+    (setq :sizeitem:formfactor (list sizex sizey))
+    (let (((x y w h) rect) (f ()))
+      (setq f (max 1 (div w sizex) (div h sizey)))
+      (setq f (min f (div 300 sizex) (div 300 sizey)))
+      (when (or (<> w (* f sizex)) (<> h (* f sizey)))
+	    (==> this resize (* f sizex) (* f sizey)) ) ) )
+  
+  ;; check the size of all connections
+  (each ((i amont))
+	(==> i checksize) )
+  (each ((i aval))
+        (when (and (<> sizex old-sizex) (= :i:tox (1- old-sizex)))
+	  (setq :i:tox (1- sizex)) )
+        (when (and (<> sizey old-sizey) (= :i:toy (1- old-sizey)))
+	  (setq :i:toy (1- sizey)) )
+	(==> i checksize)) ) )
+  
+
+
+(defmethod c-layer builddialogdata()
+  (append (list name (list sizex sizey))
+	  (selectq biasmode
+		   (()                    '(t () () ()))
+		   (bias-connect          '(() t () ()))
+		   (shared-bias-connect   '(() () t ()))
+		   (tdnn-bias-connect     '(() () () t)))
+	  (selectq drawmode
+		   (()                    '(t () ()))
+		   (draw-list             '(() t ()))
+		   (gray-draw-list        '(() () t))) ) )
+
+(defmethod c-layer popupdialog()
+  (==> layer-dialog setdata (==> this builddialogdata))
+  (==> layer-dialog popup this) )
+
+(defmethod c-layer get-in()
+  (let (((x y w h) rect))
+    (list x (+ y (div h 2))) ) )
+
+(defmethod c-layer get-out()
+  (let (((x y w h) rect))
+    (list (+ x w) (+ y (div h 2))) ) )
+
+(defmethod c-layer calcconstraint()
+  (let (((x y w h) :itscontainer:rect))
+    (let ((left (all ((i amont))
+		     (- (car (==> :i:am get-out)) x) ))
+	  (right (all ((i aval))
+		      (- (car (==> :i:av get-in)) x) )) )
+      (setq left (if left (sup left) x))
+      (setq left (+ x (* 10 (div (+ left 11) 10))))
+      (setq right (if right (inf right) (+ x w)))
+      (setq right (+ x (* 10 (div (- right 1) 10))))
+      (setq :dragitem:constraintrect (list left y (- right left) h)) 
+      (setq :sizeitem:constraintrect (list left y (- right left) h)) ) ) )
+
+(defmethod c-layer mouse-down(x y)
+  ;; compute the constraints each time
+  ;; we click on it.
+  (==> this calcconstraint)
+  (==> this (framesize . mouse-down) x y) )
+
+
+
+
+
+
+;;; -------------------------
+;;; Class C-CONNECTION-DIALOG
+;;; -------------------------
+
+(defclass c-connection-dialog yesnorequester
+  localmenu sharedmenu
+  sizeitem stepitem fromitem toitem
+  messagestring
+  fromtostring
+  deletebutton
+  conntype
+  target )
+
+
+(defmethod c-connection-dialog settype(i)
+  (setq conntype i)
+  (==> messagestring settext 
+       (sprintf "%s <%l>" :conntype:description :conntype:menutext) )
+  (==> sizeitem setregex :conntype:sizeregex)
+  (==> stepitem setregex :conntype:stepregex)
+  (==> fromitem setregex "[0-9]*|[0-9]+x[0-9]*")
+  (==>   toitem setregex "[0-9]*|[0-9]+x[0-9]*")
+  )
+
+
+(defmethod c-connection-dialog setdata((type size step &optional fr to))
+  (==> this settype type)
+  (==> sizeitem setdata size)
+  (==> stepitem setdata step)
+  (when fr (==> fromitem setdata fr))
+  (when to (==>   toitem setdata to))
+  )
+
+
+(defmethod c-connection-dialog getdata()
+  (let ((fr (==> fromitem getdata))
+	(to (==>   toitem getdata)) )
+    `( ,conntype 
+       ,(==> sizeitem getdata)
+       ,(==> stepitem getdata)
+       ,@(when (or (and fr (<> "" fr)) (and to (<> "" to)))
+	   (list fr to)
+	   ) ) ) )
+
+
+(defmethod c-connection-dialog popup(onwhat)
+  (setq target onwhat)
+  (==> fromtostring settext
+       (sprintf "From <%s> to <%s>:"
+		(if (listp onwhat) :(car onwhat):name :onwhat:am:name)
+		(if (listp onwhat) :(cadr onwhat):name :onwhat:av:name) ) )
+  (when (listp onwhat)
+    (==> fromitem setdata (list 0 0))
+    (==> toitem setdata (list (1- :(car onwhat):sizex) (1- :(car onwhat):sizey)))
+    )
+  (==> deletebutton enable)
+  (when (listp onwhat)
+	(==> deletebutton disable) )
+  (==> this (yesnorequester . popup)) )
+
+
+(defmethod c-connection-dialog c-connection-dialog(w callback)
+  
+  (setq messagestring (new string "Connection dialog"))
+  (setq fromtostring (new string "From ? to ?"))
+  (setq sizeitem (new editsize))
+  (setq stepitem (new editsize))
+  (setq fromitem (new editpos))
+  (setq   toitem (new editpos))
+  
+  (setq localmenu (new menu "Full/Local"))
+  (each ((i local-menu))
+	(==> localmenu insert 
+	     (new menuitem 
+		  (pname :i:menutext)
+		  (eval `(lambda (caller)
+			   (==> thisrequester settype ,i) )) ) ) )
+  
+  (setq sharedmenu (new menu "Shared"))
+  (each ((i shared-menu))
+	(==> sharedmenu insert 
+	     (new menuitem 
+		  (pname :i:menutext)
+		  (eval `(lambda (caller)
+			   (==> thisrequester settype ,i) )) ) ) )
+  
+  (==> this createbuttons " Ok " "Cancel")
+  (setq deletebutton (new stdbutton "Delete"
+			  (lambda(caller)
+			    (when ~(listp target)
+				  (delete :connection-dialog:target) )
+			    (==> thisrequester no_action) ) ))
+  
+  (setq call callback)
+  (==> this requester w
+       (new column
+	    (new row
+		 fromtostring
+		 localmenu
+		 sharedmenu)
+	    (new emptyspace 8)
+	    messagestring
+	    (new row
+		 (new string "Size")
+		 sizeitem
+		 (new string " Step")
+		 stepitem
+		 (new string " From")
+		 fromitem
+		 (new string " To")
+		 toitem
+		 )
+	    (new emptyspace 8)
+	    (new row
+		 yesbutton
+		 (new emptyspace 8)
+		 nobutton
+		 (new emptyspace 8)
+		 deletebutton) ) ) )
+
+
+
+
+;;; --------------------
+;;; Class C-CONNECTION
+;;; --------------------
+
+
+
+(defclass c-connection button
+  thisconnection
+  conntype
+  am av 
+  sizex sizey
+  stepx stepy
+  fromx fromy
+  tox   toy
+  badsize
+  flag
+  w )
+
+
+;; CHECKSIZE
+;; BASIC CHECK
+;; SUBAMONT
+;;
+;; PARSEDIALOGDATA
+;; BUILDDIALOGDATA
+;; POPUPDIALOG
+
+
+(defmethod c-connection c-connection(amont aval def)
+  (==> this button 8 8
+       (lambda(caller) (==> caller popupdialog)))
+  (setq am amont)
+  (setq av aval)
+  (setq :am:aval (cons this :am:aval))
+  (setq :av:amont (cons this :av:amont))
+  (setq flag t)
+  (==> workspace insert this)
+  (==> this parsedialogdata def) )
+
+(defmethod c-connection -destructor()
+  (let ((l ()))
+    (each ((i :am:aval))
+	  (when (<> i this)
+		(setq l (nconc1 l i)) ) )
+    (setq :am:aval l) )
+  (let ((l ()))
+    (each ((i :av:amont))
+	  (when (<> i this)
+		(setq l (nconc1 l i)) ) )
+    (setq :av:amont l) ) )
+
+(defmethod c-connection repaint()
+  (let (((x y w h) rect))
+    (if color-palette
+	(progn
+	  (if depressed 
+	      (fill-down-rect x y w h)
+	    (if ~badsize
+		(fill-up-rect x y w h)
+	      (cls)
+	      (draw-up-rect x y (1- w) (1- h)) ) ) )
+      (when depressed
+	    (color color-gray))
+      (if badsize
+	  (draw-rect x y (1- w) (1- h))
+	(fill-rect x y (1- w) (1- h))) ) ) )
+
+
+(defmethod c-connection checksize()
+  (let ((newbad ~(:conntype:check this))) 
+    (when (<> newbad badsize)
+	  (setq badsize newbad)
+	  (==> this expose rect) ) ) )
+
+
+(defmethod c-connection basic-check ()
+  ;; check that 'from' and 'to' fields are consistent.
+  (and (>= fromx 0) (< tox :am:sizex) (<= fromx tox)
+       (>= fromy 0) (< toy :am:sizey) (<= fromy toy)
+       ) )
+
+
+(defmethod c-connection subamont ()
+    (if (and (= fromx 0) (= fromy 0)
+	     (= tox (1- :am:sizex))
+	     (= toy (1- :am:sizey))
+	     )
+	(namedclean :am:name)
+      `(sublist ,(namedclean :am:name) ,:am:sizex '(,fromy ,toy) '(,fromx ,tox))
+      ) )
+
+
+(defmethod c-connection parsedialogdata((ct sz st &optional fr to))
+  (setq :thiswindowobject:changed t)
+  (setq conntype ct)
+  (nettool-parse-sz sz 'sizex 'sizey)
+  (nettool-parse-sz st 'stepx 'stepy)
+  (setq fromx (or (car  fr) 0))
+  (setq fromy (or (cadr fr) 0))
+  (setq   tox (or (car  to) (1- :am:sizex)))
+  (setq   toy (or (cadr to) (1- :am:sizey)))
+  (==> this checksize) )
+
+
+(defmethod c-connection builddialogdata()
+  (list conntype
+	(list sizex sizey)
+	(list stepx stepy)
+	(list fromx fromy)
+	(list tox   toy) ) )
+
+
+(defmethod c-connection popupdialog()
+  (==> connection-dialog setdata (==> this builddialogdata))
+  (==> connection-dialog popup this) )
+
+
+;;; ---------------
+;;; C-WORKSPACE CLASS
+;;; ---------------
+
+
+(defclass c-workspace container
+  nettool )
+
+(defmethod c-workspace c-workspace(nt)
+  (setq nettool nt)
+  (==> this container 0 0 0 0) )
+
+(defmethod c-workspace change-geometry()
+  ;; layer has changed position
+  (when ~changing-geometry
+	(setq :nettool:changed t) 
+	(==> this (container . change-geometry)) ) )
+
+(defmethod c-workspace compute-geometry()
+  (let ((newrect (list 0 0 0 0)))
+    (when window
+	  (each ((i contents))
+		(setq newrect (bounding-rect newrect (cdr i))) )
+	  (let (((x y w h) newrect))
+	    (==> this resize (max (xsize) (+ x x w w)) (max (ysize) (+ y y h h)))
+	    rect ) ) ) )
+
+
+(defmethod c-workspace manage-geometry()
+  (let (((x y w h) rect)
+	((ox oy ow oh) oldrect) 
+	(j ()) )
+    ;; REPLACE OBJECTS
+    (let ((sx (- x ox))
+	  (sy (- y oy)) )
+      (when (or (0<> sx) (0<> sy))
+	    (each (((obj x y w h) contents))
+		  (==> obj geometry (+ x sx) (+ y sy) w h) ) ) )
+    ;; RECOMPUTE POSITION
+    (each ((i contents))
+	  (setq j (car i))
+	  (let (((jx jy jw jh) :j:rect))
+	    (cond
+	     ;; Place CONNECTION
+	     ((and (is-of-class j c-connection) :j:flag)
+	      (let (((x1 y1) (==> :j:am get-out))
+		    ((x2 y2) (==> :j:av get-in)) )
+		(==> j geometry 
+		     (div (+ -14 x1 x1 x1 x2) 4)
+		     (div (+ -14 y1 y1 y1 y2) 4) 
+		     jw jh ) ) )
+	     ;; Place SELECTITEM
+	     ((and (is-of-class j c-layer) :j:flag)
+	      (let ((selectitem :j:selectitem))
+		(if selectitem
+		    (let (((x1 y1 w1 h1) :selectitem:rect))
+		      (==> selectitem front
+			   (min (+ jx jw -10 (- w1)) (- jx 10)) 
+			   (+ jy 5) w1 h1) ) ) ) ) ) ) )
+    ;; REFLAG EVERYTHING
+    (each ((i contents))
+	  (setq j (car i))
+	  (when (or (is-of-class j c-connection)
+		    (is-of-class j c-layer) )
+		(setq :j:flag ()) ) )
+    ;; REDISPLAY EVERYTHING
+    (==> this expose rect) ) )
+
+
+(defmethod c-workspace backpaint()
+  (cls)
+  (color color-fg)
+  (each ((i layers))
+	(let (((x1 y1) (==> i get-out)))
+	  (each ((j :i:aval))
+		(let (((x2 y2) (==> :j:av get-in)))
+		  (draw-line x1 y1 x2 y2) ) ) ) ) )
+
+
+;; click in workspace desselect everything
+(defmethod c-workspace mouse-up(x1 y1 x2 y2)
+  (let ((dst ()))
+    (each ((i contents))
+	  (when (point_in_rect x1 y1 (cdr i))
+		(setq dst (car i)) ) )
+    (if dst
+	(apply ==> (cons dst event))
+      (when (point-in-rect x2 y2 rect)
+	    (==> thiswindowobject set-selection ()) ) ) ) )
+
+;; key in workspace perform actions..
+(defmethod c-workspace keypress(c x y)
+  (selectq c
+	   ("n"         (==> thiswindowobject new_layer_menu))
+	   (("e" "\r")  (==> thiswindowobject edit_layer_menu))
+	   ("d"         (==> thiswindowobject duplicate_layer_menu)) ) )
+
+
+;;; ---------------
+;;; C-NETTOOL CLASS
+;;; ---------------
+
+
+;; SELECT
+;;
+;; CHECK_LAYER_NAME
+;; NEXT_LAYER_NAME
+;;
+;; NEW_MENU
+;; LOAD_ACTION
+;; SAVE_ACTION
+;;
+;; NEW_LAYER_MENU
+;; EDIT_LAYER_MENU
+;; DUPLICATE_LAYER_MENU
+;; DELETE_LAYER_MENU
+
+
+(defclass c-nettool windowobject
+  changed
+  ;; the layers in the network
+  (layers ())
+  ;; the selected layers
+  (selection ())
+  notuserselection
+  ;; the interface elements
+  themenu
+  theview
+  ;; where the layers live
+  workspace
+  ;; dialogs
+  error-dialog
+  warning-dialog
+  confirm-dialog
+  load-dialog
+  file-dialog
+  save-dialog
+  save-dialog-string
+  save-dialog-button
+  fprop-dialog
+  fprop-dialog-string
+  layer-dialog
+  connection-dialog
+
+  layer-menu)
+
+
+;;; misc methods
+
+(defmethod c-nettool check-layer-name(name)
+  (let ((ans ()))
+    (each ((i layers))
+	  (when (and i (= :i:name name))
+		(setq ans i) ) )
+    ans ) )
+
+(defmethod c-nettool next-layer-name(name)
+  (let ((i ())(j 1)(ans ()))
+    (while (setq j (index "-" name (1+ j)))
+      (setq i j) )
+    (when i
+	  (let ((tail (mid name (1+ i))))
+	    (when (and (val tail)
+		       (= tail (str (val tail))) )
+		  (setq name (left name (1- i))) ) ) )
+    (setq j 0)
+    (setq i t)
+    (while i
+      (setq i ())
+      (incr j)
+      (setq ans (concat name "-" (str j)))
+      (each ((k layers))
+	    (when (= ans :k:name)
+		  (setq i t) ) ) )
+    ans) )
+
+(defmethod c-nettool select(w d)
+  (if notuserselection
+      (==> this set-selection ()) )
+  (let ((newsel ()))
+    (each ((i selection))
+	  (if (and i (<> i w))
+	      (setq newsel (nconc1 newsel i)) ) )
+  (when d
+	(setq newsel (nconc1 newsel w)) )
+
+  (when selection
+	(==> layer-menu disable "Duplicate" "Delete")
+	(when ~(cdr selection)
+	      (==> layer-menu disable "Edit")))
+
+  (setq selection newsel)
+  (when (and w :w:selectitem)
+	(==> :w:selectitem setselect d) )
+
+  (when selection
+	(==> layer-menu enable "Duplicate" "Delete")
+	(when ~(cdr selection)
+	      (==> layer-menu enable "Edit"))) ) )
+
+
+(defmethod c-nettool set-selection(l)
+  (setq notuserselection ())
+  (each ((i selection))
+	(==> this select i ()) )
+  (each ((i l))
+	(==> this select i t) )
+  (setq notuserselection ~~l) )
+
+
+
+;;; override method delete
+
+(defmethod c-nettool delete()
+  (when (or ~changed
+	    (==> confirm-dialog ask "Network has been changed."
+		 "Quit anyway" " Cancel " 'no) )
+	(==> this (windowobject . delete)) ) )
+
+;;;; menu ops
+
+
+(defmethod c-nettool new-menu()
+  (when (or ~changed
+	    (==> confirm-dialog ask 
+		 "Unsaved changes will be lost!"
+		 "Proceed" "Cancel" 'no) )
+	;; protect workspace behaviour
+	(let ((lock (new geometrylock workspace)))
+	  ;; perform delete
+	  (each ((i layers))
+		(delete i) )
+	  (setq layers ()) )
+	(setq changed ())
+	(==> this set-selection ()) ) )
+
+
+(defmethod c-nettool new-layer-menu()
+  (let* ((data (==> layer-dialog getdata))
+	 (name (==> thiswindowobject next-layer-name (car data))) )
+    (==> layer-dialog setdata (cons name (cdr data)))
+    (==> layer-dialog popup ()) ) )
+
+
+(defmethod c-nettool edit-layer-menu()
+  (when (and selection (car selection) ~(cdr selection))
+	(==> (car selection) popupdialog)
+	(==> this set-selection ()) ) )
+
+(defmethod c-nettool delete-layer-menu()
+  (when selection
+	(when (==> confirm-dialog ask 
+		   (sprintf "Delete %d layer(s) ?" (length selection))
+		   " Yes " " No " 'yes)
+	      (let ((lock (new geometrylock workspace)))
+		(each ((i selection))
+		      (delete i) ) ) )
+	(let ((newlayers ()))
+	  (each ((i layers))
+		(when i 
+		      (setq newlayers (nconc1 newlayers i)) ) )
+	  (setq layers newlayers)
+	  (==> this set-selection ()) ) ) )
+
+
+(defmethod c-nettool duplicate-layer-menu()
+  (when selection
+	(let* ((oldlayers selection)
+	       (newlayers ())
+	       (lock (new requesterlock warning-dialog)) )
+	  (==> warning-dialog popup "Duplicating layers")
+	  ;; protect workspace behaviour
+	  (let ((lock (new geometrylock workspace))
+		(shift 0) )
+	    ;; compute shift
+	    (let ((r :(car oldlayers):rect))
+	      (each ((oldl (cdr oldlayers)))
+		    (setq r (bounding-rect r :oldl:rect)) ) 
+	      (setq shift (* 10 (div (+ (lasta r) 15) 10))) )
+	    ;; duplicate layers
+	    (each ((oldl oldlayers))
+		  (let* ((data (==> oldl builddialogdata))
+			 (name (==> this next-layer-name (car data)))
+			 (newl (let (((x y w h) :oldl:rect))
+				 (new c-layer (cons name (cdr data))
+				      x (+ y shift) w h ) )) )
+		    (setq newlayers (nconc1 newlayers newl)) ) )
+	    ;; duplicate connections
+	    (each ((oldl oldlayers)(newl newlayers))
+		  (each ((i :oldl:amont))
+			(when ~(member :i:am oldlayers)
+			      (new c-connection :i:am newl
+				   (==> i builddialogdata)) ) )
+		  (each ((i :oldl:aval))
+			(let* ((k :i:av)(h ()))
+			  (each ((oldl oldlayers)(newl newlayers))
+				(when (= k oldl) (setq h newl)) )
+			  (if h
+			      (new c-connection newl h
+				   (==> i builddialogdata))
+			    (new c-connection newl k 
+				 (==> i builddialogdata)) ) ) ) ) )
+	  (==> this set-selection newlayers) ) ) )
+
+
+(defmethod c-nettool worksize ()
+  (cddr :nettool-window:workspace:itscontainer:rect)
+  )
+
+(defmethod c-nettool c-nettool()
+
+  (==> this windowobject 0 0 800 400 "Nettool"
+       
+       (setq themenu
+	     (new row
+		  (new menu "Network"
+		       "New Network"		
+		       (lambda(caller)
+			 (==> thiswindowobject new-menu) )
+		       "Load Network"
+		       (lambda(caller)
+			 (==> load-dialog popup) )
+		       "Save or Create Network"
+		       (lambda(caller)
+			 (==> save-dialog popup) )
+		       "Generate C Function"
+		       (lambda(caller)
+			 (==> fprop-dialog popup) )
+		       "Quit"
+		       (lambda(caller)
+			 (==> thiswindowobject delete) ) )
+		  (setq layer-menu
+			(new menu "Layer"
+			     "New"
+			     (lambda(caller)
+			       (==> thiswindowobject new-layer-menu) )
+			     "Edit"
+			     (lambda(caller)
+			       (==> thiswindowobject edit-layer-menu) )
+			     "Duplicate"
+			     (lambda(caller)
+			       (==> thiswindowobject duplicate-layer-menu) )
+			     "Delete"
+			     (lambda(caller)
+			       (==> thiswindowobject delete-layer-menu) ) ) ) ) )
+       
+       (setq theview (new viewer 50 50 (setq workspace (new c-workspace this)) t t)) )
+
+  (==> layer-menu disable "Edit" "Duplicate" "Delete")
+
+  (==> :theview:hscroll setstep 10)
+  (==> :theview:vscroll setstep 10)
+  
+  (setq error-dialog (new errorrequester this))
+  (setq warning-dialog (new warningrequester this))
+  (setq confirm-dialog (new yesnorequester this  "Alors?" "yes" "no" ()))
+  (setq file-dialog (new filerequester this))
+
+  (setq layer-dialog 
+	(new c-layer-dialog this 
+	     (lambda(caller)
+	       (let* ((data (==> caller getdata))
+		      (name (car data))
+		      (chk  (==> thiswindowobject check-layer-name name))
+		      (thislayer :caller:target) )
+		 (cond
+		  ((and chk (<> thislayer chk))
+		   (==> error-dialog popup
+			"Duplicate layer name") )
+		  (thislayer
+		   ;; case1: called from C-LAYER::POPUPDIALOG
+		   (==> thislayer parsedialogdata data) )
+		  (t
+		   ;; case2: called from C-NETTOOL::NEW-LAYER-MENU
+		   (new c-layer data 
+			(rand 30 50) (rand 30 50) 80 80) ) ) ) ) ))
+  
+  (==> layer-dialog setdata '("layer-0" "4x4" () t () () () () t))
+  
+  (setq connection-dialog 
+	(new c-connection-dialog this
+	     (lambda(caller)
+	       (let* ((data (==> caller getdata))
+		      (thisconn :caller:target))
+		 (if (listp thisconn)
+		     (let (((am av) thisconn))
+		       (setq thisconn (new c-connection am av data)) )
+		   (==> thisconn parsedialogdata data) )
+		 (when :thisconn:badsize
+		       (==> warning-dialog popuplock 1
+			    "Connection/Layer sizes mismatch!") ) ) ) ))
+
+  (==> connection-dialog setdata (list ct-connect "" ""))
+
+  (setq fprop-dialog 
+	(new yesnorequester this
+	     (new column
+		  (new string "Save C routine")
+		  (new darkspace 3)
+		  (new grid 3
+		       (new string "Filename: ")
+		       (setq fprop-dialog-string (new editstring 25))
+		       (new filereqbutton "Save C code into" 
+			    fprop-dialog-string)
+		       (new string "Function name:")
+		       (new editstring 25 "fprop") )
+		  (new checkbox "Generate DX interface") )
+	     " Save " " Cancel "
+	     (lambda(caller)
+	       (==> thiswindowobject fprop-action
+		    (==> caller getdata)) ) ) )
+
+  (setq save-dialog 
+	(new yesnorequester this
+	     (new column
+		  (new column 
+		       (new radiobutton "Save network in file"
+			    (lambda(caller) 
+			      (==> save-dialog-string enable)
+			      (==> save-dialog-button enable)
+			      (==> save-dialog-string activate t) ) )
+		       (new radiobutton "Create network in memory"
+			    (lambda(caller) 
+			      (==> save-dialog-string enable)
+			      (==> save-dialog-button enable)
+			      (==> save-dialog-button disable)
+			      (==> save-dialog-string disable) ) ) )
+		  (new darkspace 3)
+		  (new emptyspace 2)
+		  (new row
+		       (new String "Filename: ")
+		       (setq save-dialog-string 
+			     (new editstring 25))
+		       (setq save-dialog-button 
+			     (new filereqbutton
+				  "Save network description into:"
+				  save-dialog-string) ) )
+		  (new checkbox "Generate <create-net>" ())
+		  (new checkbox "Generate <draw-net>" ())
+		  (new grid 3
+		       (new string "Allocate")
+		       (new editnumber 6 0)
+		       (new string "more cells")
+		       (new emptyspace 1)
+		       (new editnumber 6 0)
+		       (new string "more connections") )
+		  (new emptyspace 2) )
+	     "  Compile/Save  " " Cancel "
+	     (lambda(caller)
+	       (==> thiswindowobject save-action 
+		    (==> caller getdata)) ) ))
+  (==> save-dialog setdata (list () t "" t t 0 0))
+  (==> save-dialog-string disable)
+  (==> save-dialog-button disable)
+
+  (setq load-dialog 
+	(new filerequester this "Load network description:" 'no-newfile ()
+	     (lambda(caller)
+	       (==> thiswindowobject load-action (==> caller getdata))) ) ) )
+  
+
+(defmethod c-nettool manage-geometry()
+  (let (((x y w h) rect)
+	((x1 y1 w1 h1) :themenu:rect)
+	((x2 y2 w2 h2) :theview:rect) )
+    (==> themenu geometry 0 0 w h1)
+    (==> theview geometry 0 (1+ h1) w (- h (1+ h1))) ) )
+
+
+;;; ----------------------
+;;; C-NETTOOL::LOAD_ACTION
+;;; ----------------------
+
+
+(defmethod c-nettool load-action(filename)
+  (==> this new_menu)
+  (let ((f (open-read filename "sn")))
+    (cond
+     (~f
+      (==> error-dialog popup
+	   (sprintf "Cannot open file \"%s\"" filename) ) )
+     ((not (member (reading f (read-string)) 
+		   '(";;;NETTOOL2 CREATED" ";;;NETTOOL3 CREATED") ))
+      (==> error-dialog popup "Unrecognized Nettool File") )
+     (t
+      (setq f ())
+      (let ((nettool-net ())
+	    (create-net ())
+	    (draw-net ()) )
+	(load filename)
+	(==> this exec-nettool-net) )
+      (==> save-dialog-string setdata filename) 
+      (==> fprop-dialog-string setdata 
+	   (if (regex-match ".*\\.sn" filename)
+	       (regex-subst "\\.sn$" ".c" filename)
+	     (concat filename ".c") ) ) ) ) ) )
+
+(defmethod c-nettool exec-nettool-net()
+  (let ((debug-hook :debug-hook)
+	(lock1 (new GeometryLock workspace))
+	(lock2 (new RequesterLock warning-dialog)))
+    (==> warning-dialog popup "Loading...")
+    (nettool-net) )
+  (setq changed ()) )
+
+
+
+;;; ----------------------
+;;; C-NETTOOL::SAVE_ACTION
+;;; ----------------------
+
+
+(defmethod c-nettool save-action((tofile tomemory filename 
+					 cn dn morecell moreconn))
+  (if ~layers
+      (==> error-dialog popup "No network")
+    (let ((nettool-net ())
+	  (create-net ())
+	  (draw-net ()) )
+      (eval (==> this make-nettool-net))
+      (when cn
+	    (eval (==> this make-create-net morecell moreconn)) )
+      (when dn
+	(setq dn (==> this make-draw-net))
+	(eval (car dn))
+	)
+	
+      (when tomemory
+	  ;; put in global scope
+	  (setq :nettool-net nettool-net)
+	  (when cn
+		(setq :create-net create-net)
+		(save-perf ";;; ============ NEW NETWORK\n") )
+	  (when dn
+		(setq :draw-net draw-net)
+		(eval (cadr dn))
+		)
+	  (when cn
+		(let ((lock (new requesterlock warning-dialog))
+		      (debug-hook :debug-hook) )
+		  (==> warning-dialog popup "Creating network in memory")
+		  ;; execute <create-net>
+		  (pretty create-net)
+		  (create-net)
+		  ;; call bptool if detected
+		  (when :unique-bp-window
+			(==> :unique-bp-window net-changed) ) ) ) )
+      (when tofile
+	  (when ~filename
+	    (setq filename
+		  (ogre-ask-file thiswindowobject
+				 "Save architecture into file"
+				 'ask-oldfile
+				 (lambda (s) (= (right s 4) ".wei"))
+				 ) ) )
+	  (when filename
+	    (let ((f (open-write filename "sn")))
+	      (if ~f
+		  (==> error-dialog popup
+		       (sprintf "Cannot create file \"%s\"" filename) )
+		(writing f
+		  (printf ";;;NETTOOL3 CREATED\n\n\n")
+		  (pretty nettool-net)
+		  (when cn
+		    (printf "\n\n")
+		    (pretty create-net) )
+		  (when dn
+		    (printf "\n\n")
+		    (pretty draw-net) ) ) ) ) )
+	  (setq changed ()) ) ) ) )
+
+
+
+;;;;;;; MAKE-NETTOOL-NET
+
+
+
+(defmethod c-nettool make-nettool-net()
+  (let ((l ())
+	(c ())
+	((wx wy ww wh) :workspace:rect) )
+    (setq l 
+	  (all ((i layers))
+	       (let (((x y w h) :i:rect)
+		     (name (namedclean :i:name)) )
+		 `(,name (new c-layer ',(==> i builddialogdata)
+			      ,(- x wx) ,(- y wy) ,w ,h) ) ) ) )
+    
+    (each ((i layers))
+	  (each ((j :i:aval))
+		(let (((ct sz st &optional fr to) (==> j builddialogdata))
+		      (h ()) )
+		  (setq h 
+			`(new c-connection
+			      ,(namedclean :i:name)
+			      ,(namedclean :j:av:name)
+			      (list ,(namedclean (concat "ct-" (pname :ct:menutext)))
+				    ',sz ',st ',fr ',to ) ) )
+		  (setq c (nconc1 c h)) ) ) )
+    
+    `(de nettool-net () (let ,l ,@c)) ) )
+
+
+
+
+;;;;;;; MAKE-CREATE-NET
+
+
+
+
+(defmethod c-nettool make-create-net(morecell moreconn)
+
+  (let ((cellmax 1)
+	(connmax 0)
+	(weightmax 0)
+	(bnetarg ())
+	(biasarg ())
+	(cnectarg ()) )
+
+    ;; STEP-1:  Order layers
+    (setq layers (nettool-sort layers))
+    (each ((l layers))
+	  (setq :l:aval (nettool-sort :l:aval))
+	  (setq :l:amont (nettool-sort :l:amont)) )
+
+    
+    ;; STEP-2: count cells, connections, weights
+    (each ((i layers))
+	  (let ((size (* :i:sizex :i:sizey)))
+	    (incr cellmax size)
+	    (when :i:biasmode
+		  (incr connmax size)
+		  (incr weightmax (selectq :i:biasmode
+					   (bias-connect size)
+					   (shared-bias-connect 1)
+					   (tdnn-bias-connect :i:sizex)
+					   (() 0) )) )
+	    (each ((j :i:aval))
+		  (incr connmax (:j:conntype:scount j))
+		  (incr weightmax (:j:conntype:wcount j)) ) ) )
+
+    ;;         and add some more resources
+    (let* ((i (lasta layers))
+	   (l (* :i:sizex :i:sizey))
+	   (p 0) )
+      ;; the desired layer cells !!
+      (incr cellmax l) )
+    
+    ;; STEP-3: compute layer declaration
+    (setq bnetarg
+	  (all ((i layers))
+	       (list (namedclean :i:name) (* :i:sizex :i:sizey)) ) )
+    (setq bnetarg bnetarg)
+
+    ;; STEP-4: compute bias connections
+    (setq biasarg
+	  (all ((i layers))
+	       (selectq :i:biasmode
+			((bias-connect shared-bias-connect)
+			 (list :i:biasmode (namedclean :i:name)) )
+			((tdnn-bias-connect)
+			 (list :i:biasmode (namedclean :i:name) 
+			       :i:sizey :i:sizex ) ) ) ) )
+    (setq biasarg biasarg)
+
+    ;; STEP-5: compute standard connections
+    (each ((i layers))
+	  (each ((j :i:aval))
+		(setq cnectarg (nconc1 cnectarg (:j:conntype:compile j))) ) )
+    (setq cnectarg (append biasarg cnectarg))
+    
+    ;; STEP-6: make create-net function
+    `(de create-net ()
+	  
+	 ,(if (= connmax weightmax)
+	      `(alloc-net 
+		    (+ ,cellmax ,morecell) 
+		    (+ ,connmax ,moreconn) )
+	    `(alloc-net
+		  (+ ,cellmax ,morecell) 
+		  (+ ,connmax ,moreconn)
+		  (+ ,weightmax ,moreconn) ) )
+	 (build-net-nobias ',bnetarg
+			   () ) 
+	 ,@cnectarg ) ) )
+
+
+
+
+;;;;;;; MAKE-DRAW-NET
+
+
+
+(defmethod c-nettool make-draw-net()
+  (let (((wx wy ww wh) :workspace:rect)
+	(l1 ())
+	(l2 ()) )
+
+    (each ((i layers))
+	  (let (((x y w h) :i:rect)
+		(sx :i:sizex)
+		(sy :i:sizey)
+		(name (namedclean :i:name)) )
+
+	    (setq l1
+		  (nconc1 l1
+			  `(gprintf ,(int (- x wx)) 
+				    ,(- (int (- y wy)) 4)
+				    ,(upcase1 (pname name)) ) ) )
+	    (setq l1
+		  (nconc1 l1
+			  (selectq :i:drawmode
+				   (draw-list
+				    `(draw-list ,(int (- x wx)) ,(int (- y wy))
+						(neurval ,name)
+						,sx 1.2 
+						,(div h sy) ,(- (div h sy) 2) ) )
+				   (gray-draw-list 
+				    `(gray-draw-list ,(int (- x wx)) ,(int (- y wy))
+						     (neurval ,name)
+						     ,sx 
+						     1.2 -1.2 
+						     ,(div h sy) ) ) ) ) )
+	    (setq l2
+		  (nconc1 l2
+			  `((point-in-rect xc yc (quote ,(list (- x wx) (- y wy) w h)))
+			    (nth (+ (div (- xc ,(- x wx)) ,(div h sy))
+				    (* ,sx (div (- yc ,(- y wy)) ,(div h sy))) )
+				 ,name ) ) ) ) ) )
+
+    (list `(de draw-net (&optional l num)
+	       (when ~draw-net-windowobject
+		 (when ~net-display (libload "nettool.sn"))
+		 (setq :draw-net-windowobject
+		       (new net-display 0 0
+			    ,(+ 20 (div ww 2)) ,(+ 10 (div wh 2))
+			    "Network Window"
+			    (lambda () (graphics-batch (cls) ,@l1))
+			    (lambda (xc yc) (cond ,@l2)) ) )
+		 (setq :draw-net-window :draw-net-windowobject:window) )
+	       (==> draw-net-windowobject expose)
+	       (==> draw-net-windowobject repair-damaged)
+	       )
+	  `(when draw-net-windowobject
+	     (==> draw-net-windowobject set
+		  ,(+ 20 (div ww 2)) ,(+ 10 (div wh 2))
+		  (lambda () (graphics-batch (cls) ,@l1))
+		  (lambda (xc yc) (cond ,@l2))
+		  )) )
+    ) )
+
+
+;;; ----------------------
+;;; C-NETTOOL::FPROP_ACTION
+;;; ----------------------
+
+
+
+(if no-c-generation
+
+    (defmethod c-nettool fprop-action((filename fpropname dxp))
+      (==> error-dialog popup "C-generation is provided only with full product licence")
+      )
+
+  (defmethod c-nettool fprop-action((filename fpropname dxp))
+    (if ~layers
+	(==> error-dialog popup "No network")
+      (let ((file (open-write filename "c")))
+	(if (not file)
+	    (==> error-dialog popup
+		 (sprintf "Cannot create file \"%s\"" filename) )
+	  (writing file
+		   (==> this make-c-header)
+		   (let ((wm (==> this make-c-fprop fpropname)))
+		     (when dxp (==> this make-c-dx fpropname wm)) ) ) ) ) ) )
+  )
+
+
+;;;;;;; MAKE-HDR
+
+(defmethod c-nettool make-c-header()
+  (printf "%s" (nettool-parse-c "\n\
+/* WARNING: This file has been generated by Nettool3 */\n\
+\n\
+\n\
+/**** Here is the Non Linear Function */\n\
+\n\
+/* This is the default function:\n\
+ * Update according to the SN settings.\n\
+ */\n\
+\n\
+static double squash(x)\n\
+double x;\n\
+{\n\
+   double tanh();\n\
+   return 1.7159*tanh(x*0.6666);\n\
+}\n\
+\n\
+\n\
+/**** Here is the Forward Propagation Code */\n\
+\n" ) ) )
+  
+
+;;;;;;; MAKE-DX
+
+(defmethod c-nettool make-c-dx(name weightmax)
+  (let* ((in (car layers))
+	 (inname :in:name)
+	 (insx :in:sizex)
+	 (insy :in:sizey)
+	 (out (lasta layers))
+	 (outname :out:name)
+	 (outsx :out:sizex)
+	 (outsy :out:sizey) )
+    (printf "%s" (nettool-parse-c "\n\
+\n\
+/**** Here is the DX interface function */\n\
+\n\
+#include \"header.h\"\n\
+\n\
+DX(x$name)\n\
+{\n\
+  ARG_NUMBER(3);\n\
+  ALL_ARGS_EVAL;\n\
+  $name( get_std_matrix(APOINTER(1),$insy,$insx),\n\
+         get_std_matrix(APOINTER(2),$outsy,$outsx),\n\
+         get_std_vector(APOINTER(3),$weightmax) );\n\
+  return NIL;\n\
+}\n\
+\n" ) ) ) )
+
+
+
+;;;;;;; MAKE-FPROP
+
+(defmethod c-nettool make-c-fprop(name)
+
+  (let ((weightmax 0)
+	(program ()) )
+    
+    ;; STEP-1:  Order layers
+    (setq layers (nettool-sort layers))
+    (each ((l layers))
+	  (setq :l:aval (nettool-sort :l:aval))
+	  (setq :l:amont (nettool-sort :l:amont)) )
+
+    
+    ;; STEP-2: count cells, connections, weights
+    (each ((i layers))
+	  (let ((size (* :i:sizex :i:sizey)))
+	    (setq :i:biasw weightmax)
+	    (when :i:biasmode
+		  (incr weightmax (selectq :i:biasmode
+					   (bias-connect size)
+					   (shared-bias-connect 1)
+					   (tdnn-bias-connect :i:sizex)
+					   (() 0) )) ) ) )
+    (each ((i layers))
+	  (let ((size (* :i:sizex :i:sizey)))
+	    (each ((j :i:aval))
+		  (setq :j:w weightmax)
+		  (incr weightmax (:j:conntype:wcount j)) ) ) )
+
+    
+    ;; STEP-3: compute declaration
+    (let* ((in (car layers))
+	   (inname :in:name)
+	   (insx :in:sizex)
+	   (insy :in:sizey)
+	   (out (lasta layers))
+	   (outname :out:name)
+	   (outsx :out:sizex)
+	   (outsy :out:sizey) )
+      
+      (setq program
+	    (list
+	     (nettool-parse-c "void $name($inname, $outname, wbase)")
+	     (nettool-parse-c " float $inname[$insy][$insx];")
+	     (nettool-parse-c " float $outname[$outsy][$outsx];") 
+	     (nettool-parse-c " float wbase[$weightmax];") 
+	     "{" ) ) )
+    (each ((l (cdr (reverse (cdr (reverse layers))))))
+	  (let ((lname :l:name)
+		(lsx :l:sizex)
+		(lsy :l:sizey) )
+	    (nconc1 program
+		    (nettool-parse-c "  float $lname[$lsy][$lsx];") ) ) )
+    
+
+    
+    (all ((i layers))
+
+	 
+	 ;; STEP-4: compute bias connections
+	 (let ((name :i:name)
+	       (sx :i:sizex)
+	       (sy :i:sizey)
+	       (w  :i:biasw) )
+	   
+	   (when :i:amont
+		 (nconc1 program (nettool-parse-c "\n\
+   /**** LAYER $name *****/")) )
+		   
+	   (selectq :i:biasmode
+		    
+		    (bias-connect
+		     (nconc1 program (nettool-parse-c "\n\
+  /* BIAS-CONNECT */\n\
+  {  int i,j;\n\
+     float *w = wbase+$w;\n\
+     for (i=0; i<$sy; i++)\n\
+       for (j=0; j<$sx; j++)\n\
+          $name[i][j] = *w++;\n\
+  }") ) )
+		    
+		    (shared-bias-connect
+		     (nconc1 program (nettool-parse-c "\n\
+  /* SHARED-BIAS-CONNECT */\n\
+  {  int i,j;\n\
+     float w = wbase[$w];\n\
+     for (i=0; i<$sy; i++)\n\
+       for (j=0; j<$sx; j++)\n\
+          $name[i][j] = w;\n\
+  }") ) )
+		    
+		    (tdnn-bias-connect
+		     (nconc1 program  (nettool-parse-c "\n\
+  /* TDNN-BIAS-CONNECT */\n\
+  {  int i,j;\n\
+     float *w = wbase+$w;\n\
+     for (j=0; j<$sx; j++) {\n\
+       for (i=0; i<$sy; i++)\n\
+          $name[i][j] = *w;\n\
+       w++;\n\
+     }\n\
+  }") ) )
+		    ) ) 
+	 
+	 
+	 ;; STEP-5: compute upstream connections
+	 (each ((j :i:amont))
+	       (let ((amname :j:am:name)
+		     (amsx (1+ (- :j:tox :j:fromx)))
+		     (amsy (1+ (- :j:toy :j:fromy)))
+		     (frx :j:fromx)
+		     (fry :j:fromy)
+		     (csizex :j:sizex)
+		     (csizey :j:sizey)
+		     (cstepx :j:stepx)
+		     (cstepy :j:stepy)
+		     (avname :j:av:name)
+		     (avsx :j:av:sizex)
+		     (avsy :j:av:sizey)
+		     (w :j:w) )
+		 (nconc1 program (nettool-parse-c :j:conntype:cfrag)) ) )
+	 
+	 ;; STEP-6: compute sigmoid
+	 
+	 (when :i:amont
+	       (let ((name :i:name)
+		     (sx :i:sizex)
+		     (sy :i:sizey)
+		     (w  :i:biasw) )
+		 (nconc1 program  (nettool-parse-c "\n\
+  /* Sigmoid */\n\
+  {  int i,j;\n\
+     for (i=0; i<$sy; i++) \n\
+       for (j=0; j<$sx; j++)\n\
+          $name[i][j] = squash($name[i][j]);\n\
+  }")) ) ) )
+	 
+	 ;; STEP-7: emit data
+	 
+    (each ((l program))
+	  (printf "%s\n" l) )
+    (printf "}\n\n\n") 
+
+    ;; RETURN weightmax
+    weightmax ) )
+
+
+
+
+;;; -----------
+;;; NET_DISPLAY
+;;; -----------
+
+
+(defclass net-display windowobject
+  neurval
+  netdraw
+  pix2neur
+  )
+
+(defmethod net-display net-display (x y w h name nd p2n)
+  (==> this windowobject x y w h name)
+  (==> this set w h nd p2n) )
+
+(defmethod net-display set (w h nd p2n)
+  (graphics_batch
+    (setq neurval state)
+    (setq netdraw nd)
+    (setq pix2neur p2n)
+    (==> this resize w h)
+    (==> this expose)
+    ) )
+
+(defmethod net-display repaint ()
+  (netdraw)
+  )
+
+(defmethod net-display mouse-up (x1 y1 x2 y2)
+  (when (point-in-rect x2 y2 rect)
+	(let* ((n (pix2neur x2 y2)))
+	  (==> this set-neurval 
+	       (if n
+		   (eval `(lambda (l)
+			    (all ((w (weight ,n l)))
+				 (* (or w 0) ,(sqrt (nfanin n))) ) ))
+		 state ) ) ) )
+  )
+
+(defmethod net-display set-neurval (nv)
+  (setq neurval nv)
+  (==> this expose)
+  (==> this repair-damaged)
+  )
+

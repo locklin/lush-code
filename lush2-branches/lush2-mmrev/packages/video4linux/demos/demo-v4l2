@@ -1,0 +1,167 @@
+#!/bin/sh
+exec lush "$0" "$@"
+!#
+
+(libload "video4linux/v4l2")
+(libload "libc/stopwatch")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; process command line arguments
+
+(defparameter dev "/dev/video0")
+(defparameter width 640)
+(defparameter height 480)
+(defparameter eff ())
+(defparameter fps 30)
+(defparameter nb 4)
+(defparameter zz ())
+
+(when (or (member "-h" argv) (member "--help" argv))
+  (writing "$stderr" 
+	   (render-brace-text 0 72
+		'{<p> Synopsis: ,,(basename (or (car argv) "")) [-d device] [-s width height] [-e]<br>
+		A simple demo of video capture using the v4l2 interface
+		{<ul>
+		{<li> "-h": show this message}
+		{<li> "-d device": use <device> (default "/dev/video0")}
+		{<li> "-s width height": set width and height of image (default: 640 480)}
+		{<li> "-e": turn on edge extraction}
+		}}))
+  (exit 0))
+
+(let ((zz (member "-d" argv)))
+  (when zz
+    (if (not (cadr zz))
+	(progn
+	  (writing "$stderr" (printf "device missing\n"))
+	  (exit 1))
+      (setq dev (cadr zz)))))
+
+(let ((zz (member "-e" argv))) (when zz (setq eff t)))
+
+(let ((zz (member "-s" argv)))
+  (when zz
+    (if (not (cadr zz))
+	(progn
+	  (writing "$stderr" (printf "width missing\n"))
+	  (exit 1))
+      (setq width (val (cadr zz))))
+    (if (not (caddr zz))
+	(progn
+	  (writing "$stderr" (printf "height missing\n"))
+	  (exit 1))
+      (setq height (val (caddr zz))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; video effects
+
+(defclass effect object 
+  ((-int-) width)
+  ((-int-) height))
+
+#? (new effect <width> <height>)
+;; noop effect: simply copies the input to the output unaffected
+(defmethod effect effect (w h) 
+  ((-int-) w h)
+  (setq width w) (setq height h))
+(defmethod effect width () width)
+(defmethod effect height () height)
+(defmethod effect fprop (in out)
+  ((-idx3- (-ubyte-)) in out) 
+  (idx-copy in out) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libidx/idx-convol")
+
+;; simple edge detection
+(defclass effect-edge effect
+  ((-idx2- (-float-)) fin)
+  ((-idx2- (-float-)) fout)
+  ((-float-) bias)
+  ((-idx2- (-float-)) kernel))
+
+#? (new effect-edge <width> <height>)
+;; performs a simple edge detection by applying
+;; an on-center/off-surround convolution filter 
+;; and rectifying, amplifying and saturating the result.
+(defmethod effect-edge effect-edge (w h)
+  ((-int-) w h)
+  (setq width w) (setq height h)
+  (setq fin (float-matrix h w))
+  (setq kernel (float-matrix 5 5))
+  (idx-dotm0 
+   [f [-1 -2 -4 -2 -1]
+      [-2  2  4  2 -2]
+      [-4  4 12  4 -4]
+      [-2  2  4  2 -2]
+      [-1 -2 -4 -2 -1]]
+   ((float-matrix) 0.4) kernel)
+  (setq fout (float-matrix (1+ (- h (idx-dim kernel 0)))
+		     (1+ (- w (idx-dim kernel 1)))))
+  (setq bias -40))
+
+
+(defmethod effect-edge fprop (in out)
+  ((-idx3- (-ubyte-)) in out)
+  (let* ((oh (idx-dim fout 0))
+	 (ow (idx-dim fout 1)))
+    ;; compute luminance
+    (cidx-bloop ("i" "j" ("pin" in) ("pout" fin))
+      #{ *pout = 0.299 * (flt)(pin[0]) + 
+                 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2]); #})
+    (idx-f2convol fin kernel fout)
+    (let ((z (narrow (narrow out 0 oh 2) 1 ow 2)))
+      ;; rectify, amplify, invert, saturate
+      (cidx-bloop ("i" "j" ("pin" fout) ("pout" z))
+	#{{ register float zin;
+	    register unsigned char zout;
+ 	    zin = 255 - (fabs(*pin) + $bias);
+            zout = (unsigned char)( (zin > 0)? ( (zin < 256) ? zin : 255 ) : 0);
+  	    pout[0] = pout[1] = pout[2] = zout; 
+	    pout[3] = 255;
+          } #}) ())))
+
+(dhc-make () (effect effect fprop) (effect-edge effect-edge fprop))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; demo 
+
+(de demo (d width height eff fps nb)
+    (new-window (+ width 20) (+ height 20))
+    (let* ((evlock (new EventLock window))
+	   (event ())
+	   (stop ())
+	   (z (new v4l2device d width height fps nb))
+	   (frame-rgb (ubyte-matrix height width 3))
+	   (edge (new effect-edge width height))
+	   (frame-out (ubyte-matrix height width 3))
+	   (sw (new stopwatch))
+	   (tim 0))
+
+      (cls)
+      (setq tim (==> sw get))
+      
+      (while (and window (not stop))
+	(graphics-batch
+	 (==> z get-frame-rgb frame-rgb)
+	 (if eff
+	     (progn
+	       (==> edge fprop frame-rgb frame-out)
+	       (rgb-draw-matrix 10 10 frame-out))
+	   (rgb-draw-matrix 10 10 frame-rgb))
+	 (let ((ntim (==> sw get)))
+	   (color-rgb 0.2 0.2 1)
+	   (gprintf 12 30 "%4.1f FPS" (/ 1 (- ntim tim)))
+	   (setq tim ntim)))
+	(while (setq event (==> evlock check-event))
+	  (selectq (car event)
+	    (("q" delete) (setq stop t)))))))
+
+
+(writing "$stderr" (printf "Press 'q' to quit\n"))
+
+;; run demo
+(demo dev width height eff fps nb)
+

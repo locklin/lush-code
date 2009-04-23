@@ -1,0 +1,337 @@
+
+(libload "libidx/idx-convol") ;; for idx-diff
+(libload "libimage/show")
+
+(dmd copy-list (lst)
+  `(apply list lst) )
+
+(de as-vector (m)
+  (cond
+   ((vectorp m) m)
+   ((listp m) ((double-array (length m)) () m))
+   (t         (reshape m (list (prod (shape m))))) ))
+
+
+;; for now works for 1d-arrays only
+(de idx-diff (m)
+  (let ((out (idx-extend (clone-array m) 0 -1)))
+    (idx-d1convol m [-1 1] out) ))
+
+(de every (p &rest seqs)
+  (if (null (car seqs))
+      t
+    (and (apply p (mapcar car seqs))
+         (every p (mapcar cdr seqs)) )))
+
+(de some (p &rest seqs)
+  (if (null (car seqs))
+      nil
+    (or (apply p (mapcar car seqs))
+        (some p (mapcar cdr seqs)) )))
+
+(de chk-idx-even-extents (m &optional dims)
+  (chk-idx m)
+  (when (null dims)
+    (setq dims (range* (rank m))) )
+  (each ((d dims))
+    (let ((e (idx-dim m d)))
+      (when (oddp e)
+	(error "array extend is not even" e) ))))
+
+;;
+;; Functions for making filtering and stuff easy.
+;;
+(de array-pad.dims&widths (m widths)
+  (let ((ds ())
+	(ws ()) )
+    (domapc ((d (range* (rank m))) (w (append widths 0s)))
+      (when (< w 0)
+	(error 'array-pad "widths must be non-negative" w) )
+      (when (> w 0)
+	(setq ds (nconc1 ds d)) )
+      (setq ws (nconc1 ws w)) )
+    (delete 0s)
+    (cons ds ws) ))
+	  
+#? (array-pad <m> <widths> [<keyword-args>]])
+;; Create a copy of <m> surrounded with padding elements in each
+;; dimension. <Widths> is a list of numbers specifying the padding
+;; width in each dimension. Optional keyword arguments: 
+;; <fill>   : value to pad with (default is zero)
+;; <origin> : location of coordinate origin; either of <center>, <zero>
+;;            (default is <zero>)
+;; <out>    : output array (default is <nil>)
+;; {<ex> (let ((m (reshape (array-range 20) '(4 5)))) (array-pad m '(1 5) 'origin 'center))
+(defun array-pad (m widths &rest args)
+  (chk-idx-numeric m)
+  (let (((pdims . widths)  (array-pad.dims&widths m widths)))
+    (chk-idx-even-extents m pdims)
+    (let* ((option  (parse-kwdargs args  'fill 0.0  'origin 'zero  'out nil))
+	   (pwidths (mapcar nth pdims (.cl widths)))
+	   (exts    (mapcar nth pdims (.cl (shape m))))
+	   ;; construct the resulting array
+	   (eltype  (idx-element-type m))
+	   (shp     (mapcar + (shape m) widths widths))
+	   (result  (if (null out) 
+			(make-array eltype shp (option 'fill))
+		      (array-clear (apply idx-trim* out shp) (option 'fill))) ))
+      
+      (selectq (option 'origin)
+	('center
+	 (let* ((res* (copy-index result))
+		(dest (reduce> idx-trim! res* pdims pwidths mexts)) ) 
+	   (array-copy m dest) ))
+	('zero 
+	 (let* ((hexts (mapcar 2/ exts))
+		(mzss  (mapcar list hexts))
+		(msls  (reduce< idx-slice m pdims mzss))
+		(rzss  (mapcar list (mapcar + hexts pwidths pwidths)))
+		(rsls  (reduce< idx-slice result pdims rzss)) 
+		(copy* (lambda (src dest)
+			 (array-copy src (apply idx-trim* dest (shape src)))) ))
+	   (array-mapc copy* msls rsls) ))
+	(t
+	 (error 'array-pad "invalid value for argument 'origin'"
+		(option 'origin) )))
+      result)))
+
+
+
+
+#? (sampling-grid <shp> <d> <dx>)
+;; Create an array of shape <shp> containing sample point 
+;; coordinates for dimension <d>. The sampling is uniform with
+;; sampling interval <dx>, and the coordinate origin at index 
+;; (0,0,...) by default.
+;; {<ex> (sampling-grid '(5 6) 0 0.5)}
+;; {<see> sampling-grids} 
+(de sampling-grid (shp d dx)
+  (let* ((e  (nth d shp))         ;; extent of dimension d
+         (fr (int (/ (- 1 e) 2))) ;; from
+         (to (int (/ (- e 1) 2))) ;; to
+         (g  (array-range (* fr dx) (* to dx) dx)) ;; the grid contents
+         (ds (range 0 (- (length shp) 1)))
+         (gs (mapcar              ;; the shape we start expanding with
+              (lambda (x) (if (= x d) e 1)) ds )) )
+    (fftshift-1d-ip g)
+    (setq g (reshape g gs))
+    (reduce> idx-expand! g ds shp) ) )
+
+
+#? (sampling-grids <shp> [<dx> [<dy>...]])
+;; Create arrays of shape <shp> containing sample point coordinates,
+;; with uniform sampling in each dimension and the coordinate origin 
+;; being index (0,0,...).
+;; The result is a list of arrays of shape <shp>, one array for each
+;; dimension of <shp>. Sampling intervals <dx>... can be specified 
+;; either one for each dimension or one sampling interval for all 
+;; dimensions. The default value for <dx> is 1.0.
+;; {<ex> (sampling-grids '(5 6))}
+;; {<see> sampling-grid}
+(de sampling-grids (shp . dxs)
+  ;; normalize argument dxs
+  (cond ((null dxs)
+         (setq dxs (make-list (length shp) 1.0)) )
+        ((= (length dxs) 1) 
+         (setq dxs (make-list (length shp) (car dxs))) )
+        ((= (length dxs) (length shp))
+         () ) ;; fine, nothing to do
+        (t
+         (error 'sampling-grid "wrong number of sampling intervals" dxs) ) )
+  (let ((grids ()))
+    (each ((d (range* (length shp))) (dx dxs))
+      (setq grids (cons (sampling-grid shp d dx) grids)) )
+    (reverse grids) ))
+
+
+(defun genvars (n prfx)
+  (let ((counter *gensym-counter*)
+	(vars ()) )
+    (setq *gensym-counter* 0)
+    (setq vars (mapcar gensym (make-list n prfx)))
+    (setq *gensym-counter* counter)
+    vars))
+
+(de sample-func.generate-source (cexpr n)
+  (let* ((pivars (mapcar pname (genvars n "i")))
+	 (pxvars (mapcar pname (genvars n "x")))
+	 (gvars  (genvars n "g"))
+	 (px&gvars (mapcar list pxvars gvars)) 
+	 (typedecl (list (named (sprintf "-idx%d-" n)) '(-double-))) 
+	 (ccode (sprintf "*o= %s;" cexpr)) )
+
+    `(lambda (,@gvars)
+	 (,typedecl ,@gvars)
+       (let* ((out (clone-array g0)))
+	 (,typedecl out)
+	 (cidx-bloop (,@pivars ("o" out) ,@px&gvars)
+		     (cinline ,ccode) ) 
+	 out)) ))
+
+(defvar *sample-funcs* (htable 20))
+
+(de sample-func.make (cexpr n)
+  (let* ((funcsrc  (sample-func.generate-source cexpr n))
+	 (func     (eval funcsrc))
+	 (funcs    (list func))
+	 (funcsym  (gensym "sample-func")) )
+    (set funcsym func)
+    ;;(dhc-make-all () (list funcsym) ())
+    funcsym))
+
+#? (sample-func <func> <shp> [<dx0> [<dx1>...]])
+;; Sample function <func> on grid of shape <shp> with sampling
+;; intervals <dx0>, <dx1>, ... . 
+(de sample-func (cexpr shp . dxs)
+  
+  1)
+
+(de edist-2d (g0 g1)
+  ((-idx2- (-double-)) g0 g1)
+  (let* ((out (clone-array g0)))
+    ((-idx2- (-double-)) out)
+    (cidx-bloop ("i0" "i1" ("o" out) ("x0" g0) ("x1" g1)) 
+                (cinline "*o= sqrt((*x0)*(*x0)+(*x1)*(*x1));"))
+    out ) )
+
+(defun gauss-grad-1d (mm d s)
+  ((-idx1- (-double-)) mm)
+  ((-double-) d s)
+  (let ((out (clone-array mm)))
+    ((-idx1- (-double-)) out)
+    (cidx-bloop ("i0" ("o" out) ("r" mm)) 
+                #{ double rmdos = (*r-$d)/$s; 
+                   *o= -2*rmdos/$s*exp(-rmdos*rmdos); #} )
+    out ) )
+
+(defun gauss-1d (mm d s)
+  ((-idx1- (-double-)) mm)
+  ((-double-) d s)
+  (let ((out (clone-array mm)))
+    ((-idx1- (-double-)) out)
+    (cidx-bloop ("i0" ("o" out) ("r" mm)) 
+                #{ double rmdos = (*r-$d)/$s; 
+                   *o= exp(-rmdos*rmdos); #} )
+    out ) )
+
+(de gauss-grad (m . rest)
+  (let ((dg (distance-grid (shape m)))
+        ((d s) rest))
+    (idx-info dg)
+    (let ((gg (gauss-grad-1d (ravel dg) d s)))
+      (print (idx-inf gg) (idx-sup gg))
+      (reshape gg (shape dg)) )))
+
+(de gaussian (m . rest)
+  (let ((dg (distance-grid (shape m)))
+        ((d s) rest))
+    (idx-info dg)
+    (let ((gg (gauss-1d (ravel dg) d s)))
+      (print (idx-inf gg) (idx-sup gg))
+      (reshape gg (shape dg)) )))
+
+
+(defvar *distance-grid* ())
+#? (distance-grid <shp> [<dx> [<dy>...]])
+;; Create array of shape <shp> where each element contains the 
+;; Euclidean distance to the coordinate origin. 
+;; {<see> sampling-grid}
+(de distance-grid (shp . dxs)
+  (let ((grids (sampling-grids shp . dxs)))
+    (setq *distance-grid* (apply edist-2d grids))
+    *distance-grid*))
+
+
+;; #? (fftshift! (m &optional dims)
+;; Swap grid halfs in-place, so that DC element goes to center of grid 
+;; and vice versa. The input array must have even extents. If a list of
+;; dimensions is given as second argument, then <fftshift!> performs
+;; swapping in those dimensions only.
+;; {<see> fftshift}
+;; {<ex>  (let ((m (arange 10))) (fftshift! m) m)}
+(de fftshift! (m &optional dims)
+  (chk-idx-even-extents m dims)
+  (error "not implemented")
+  m)
+  
+
+(de fftshift.mapping (n)
+  ((-int-) n)
+  (let ((res (int-array n))
+        (nh  (ceil (/ (to-double n) 2))) )
+    ((-idx1- (-int-)) res)
+    ((-int-) nh)
+    (cidx-bloop ("i" ("r" res)) #{ *r = (i+$nh) % $n; #}) ) )
+  
+(de fftshift-2d (m)
+  ((-idx2- (-double-)) m)
+  (let ((map0 (fftshift.mapping (idx-dim m 0)))
+        (map1 (fftshift.mapping (idx-dim m 1)))
+        (out  (clone-array m))
+        (n0   (idx-dim m 0))
+        (n1   (idx-dim m 1)) )
+    ((-idx1- (-int-)) map0 map1)
+    ((-idx2- (-double-)) out)
+    ((-int-) n0 n1)
+    (for (i 0 (1- n0)) 
+      (for (j 0 (1- n1))
+	(out i j (m (map0 i) (map1 j))) ))))
+
+
+(de fftshift-2d-ip (m)
+  ((-idx2- (-double-)) m)
+  (let ((map0 (fftshift.mapping (idx-dim m 0)))
+        (map1 (fftshift.mapping (idx-dim m 1)))
+        (n0   (idx-dim m 0))
+        (n1   (idx-dim m 1)))
+    ((-idx1- (-int-)) map0 map1)
+    ((-int-) n0 n1)
+    (when (oddp n0)
+      (error "array extents are not even (can only do even extents") )
+    (for (i 0 (1- (to-int (/ n0 2)))) 
+      (for (j 0 (1- n1))
+	(let ((val (m i j)))
+	  (m i j (m (map0 i) (map1 j)))
+	  (m (map0 i) (map1 j) val) )))))
+
+(de ifftshift-2d (m)
+  ((-idx2- (-double-)) m)
+  (let ((map0 (fftshift.mapping (idx-dim m 0)))
+        (map1 (fftshift.mapping (idx-dim m 1)))
+        (out  (clone-array m)) 
+        (n0   (idx-dim m 0))
+        (n1   (idx-dim m 1)) )
+    ((-idx1- (-int-)) map0 map1)
+    ((-idx2- (-double-)) out)
+    ((-int-) n0 n1)
+    (for (i 0 (1- n0)) 
+      (for (j 0 (1- n1))
+	(out (map0 i) (map1 j) (m i j)) ))))
+ 
+(de fftshift-1d-ip (m)
+  ((-idx1- (-double-)) m)
+  (let* ((n  (idx-dim m 0))
+         (fi (floor (/ n 2)))
+         (mf (m fi)) )
+    ((-int-) n fi)
+    (for (i 0 (1- fi)) 
+         (let ((v  (m i))
+               (i2 (+ fi i)) )
+           ((-int-) i i2)
+           ((-double-) v)
+           (m i  (m i2))
+           (m i2 v) ) )
+    (when (oddp n) (m (1- n) mf)) ) 
+  ())
+
+      
+(dhc-make-sf ()
+          edist-2d
+          gauss-grad-1d
+          gauss-1d
+          fftshift.mapping
+          fftshift-2d
+	  fftshift-1d-ip
+          fftshift-2d-ip
+          ifftshift-2d
+          )
