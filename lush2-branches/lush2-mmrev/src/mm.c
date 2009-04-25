@@ -224,7 +224,7 @@ mmstack_t *const _mm_transients;
 
 /* Note: The same bit is used to mark an address LIVE or
  * OBSOLETE. The LIVE bit is only needed in the marking
- * phase and we make sure all OBSOLETEs are removd before
+ * phase and we make sure all OBSOLETEs are removed before
  * we start marking.
  */
 
@@ -1258,6 +1258,10 @@ void mm_debug(bool e)
 mt_t mm_regtype(const char *n, size_t s, 
                 clear_func_t c, mark_func_t *m, finalize_func_t *f)
 {
+   if (!heap) {
+      warn("library not initialized (call mm_init first)\n");
+      abort();
+   }
    if (!n || !n[0]) {
       warn("first argument invalid\n");
       abort();
@@ -1660,7 +1664,7 @@ static void clear_refs(void **p, size_t s)
 }
 
 
-void mm_init(int npages, notify_func_t *clnotify, FILE *log)
+void mm_init(size_t nbytes, notify_func_t *clnotify, FILE *log)
 {
    assert(sizeof(info_t) <= MIN_HUNKSIZE);
    assert(sizeof(hunk_t) <= MIN_HUNKSIZE);
@@ -1683,7 +1687,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    }
 
    /* allocate small-object heap */
-   num_blocks = max((PAGESIZE*npages)/BLOCKSIZE, MIN_NUMBLOCKS);
+   num_blocks = max(nbytes/BLOCKSIZE, MIN_NUMBLOCKS);
    heapsize = num_blocks * BLOCKSIZE;
    hmapsize = (heapsize/MIN_HUNKSIZE)/HMAP_EPI;
    volume_threshold = min(MAX_VOLUME, heapsize/20);

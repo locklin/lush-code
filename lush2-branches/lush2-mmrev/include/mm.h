@@ -42,12 +42,9 @@
 #define NVALGRIND
 #define MM_SIZE_MAX    (UINT32_MAX*MIN_HUNKSIZE)
 
-
-
 typedef void clear_func_t(void *, size_t);
 typedef void mark_func_t(const void *);
 typedef bool finalize_func_t(void *);
-
 typedef void notify_func_t(void *);
 
 typedef short mt_t;
@@ -66,7 +63,7 @@ enum mt {
 };
 
 /* MM administration */
-void    mm_init(int, notify_func_t *, FILE *); // initialize manager
+void    mm_init(size_t, notify_func_t *, FILE *); // initialize manager
 void    mm_debug(bool);                  // enable/disable debug code
 mt_t    mm_regtype(const char *, size_t, clear_func_t, mark_func_t *, finalize_func_t *);
 void    mm_root(const void *);           // add a root location
