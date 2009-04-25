@@ -858,9 +858,12 @@ int bwrite(at *p, FILE *f, int opt)
    set_flags(p);
    write_card8(BINARYSTART);
    write_card24(relocn);
+
+   MM_NOGC;
    sweep(p, SRZ_WRITE);
    clear_flags(p);
-   
+   MM_NOGC_END;
+
    int count = in_bwrite;
    in_bwrite = 0;
    return count;
