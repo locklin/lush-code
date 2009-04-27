@@ -650,9 +650,9 @@ const char *str_number(double x)
 {
    char *s, *t;
    
-   if (isnanD((real)x))
+   if (isnan((real)x))
       return nanlit;
-   if (isinfD((real)x))
+   if (isinf((real)x))
       return (x>0 ? inflit : ninflit);
   
    real y = fabs(x);
@@ -1315,12 +1315,13 @@ DX(xsprintf)
 
       } else if (c == 'e' || c == 'f' || c == 'g') {
          *buf++ = 0;
-         if (ok == 9) {
-            large_string_add(&ls, str_number(AREAL(i)), -1);
+         double d = AREAL(i);
+         if (ok == 9 || isnan(d) || isinf(d)) {
+            large_string_add(&ls, str_number(d), -1);
          } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
             goto err_printf0;
          } else {
-            sprintf(buf, print_buffer, AREAL(i));
+            sprintf(buf, print_buffer, d);
             large_string_add(&ls, buf, -1);
          }
       }
