@@ -1,0 +1,175 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: perf-file.sn,v 1.1 2003/03/18 18:17:14 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;
+; plots the perf-file infos
+;
+; LYB -- March 10, 1989
+;
+
+(de plot-perf-file(filename) 
+    (let ((perf-file-data ())
+          (perf-file-ens  ())
+          (perf-file-ages ())
+          (max-age 0)
+          (min-age 1e30)
+          (max-error 0)
+          (object-list (apply list perf-file-objects)) )
+      (load-perf-file filename)   
+      (setq perf-file-ages (age-to-labels perf-file-ages))
+      (cancel-error-plotting)
+      (cancel-perf-plotting)
+      (let ((base-perf-port (perf-file-port))
+            (base-error-port (error-file-port)) )
+                        
+         (printf "\nLegend\n------------------------------\n")
+         (each ((ens perf-file-ens))
+            (printf "%16s %l\n" ens (car object-list))
+            (perf-plot-ens ens (eval (car object-list)) base-perf-port)
+            (error-plot-ens ens (eval (car object-list)) base-error-port)
+            (setq object-list (nconc1 (cdr object-list) (car object-list))) )
+         (printf "------------------------------\n") ) ) )
+
+;;; known plot objects
+
+(setq perf-file-objects '(open-circle closed-circle open-square closed-square))
+
+;;; store in 'perf-file-data a list ( (ensemble age perf error) ... )
+;;;       in 'perf-file-ens  a list ( ens1 ens2 ens3 ... ) 
+;;;       in 'perf-file-ages a list ( age1 age2 ... ) 
+;;; and set 'max-age, 'min-age, 'max-error
+
+(de load-perf-file(s)  
+  (let ((last-age -1))
+    (reading (open-read s "perf")
+        (while (<> (skip-char " \t\n\r") "\e")
+            (let* ((age   (read))
+                   (error (read))
+                   (perf  (read))  
+                   (ens   (progn
+                            (skip-char " ;\t")
+                            (read-string "~ \t\n\r") ) ) ) 
+              (when (and (= "" ens) (= age last-age))
+                  (setq ens "Test"))
+              (setq min-age (min min-age age))
+              (setq max-age (max max-age age))
+              (setq last-age age)
+              (setq max-error (max max-error error))
+              (when ~(member ens perf-file-ens) 
+                   (setq perf-file-ens (nconc1 perf-file-ens ens)) )
+              (when ~(member age perf-file-ages) 
+                   (setq perf-file-ages (nconc1 perf-file-ages age)) )
+              (let ((data (list ens age perf error)))
+                  (setq perf-file-data (nconc1 perf-file-data data)) ) ) ) ) ) )
+
+;;; compute the initial perf-port and error-port
+
+(de perf-file-port()
+  (when ~perf-plotting-window
+      (let ((window window))
+        (setq perf-plotting-window (new-window "Perf plotting")) ) )
+  (let* ((window perf-plotting-window)
+         (brect  (nice-brect))
+         (rrect  (list min-age 0 max-age 100))
+         (xlabel perf-file-ages)
+         (ylabel (range 0 100 10))
+         (plot-port (new-plot-port brect rrect object-nil)) )
+    (cls)
+    (draw-axes brect xlabel ylabel (concat "performance from file :" filename))
+    plot-port ) )
+
+(de error-file-port()
+  (when ~error-plotting-window
+      (let ((window window))
+        (setq error-plotting-window (new-window "Error plotting")) ) )
+  (let* ((window error-plotting-window)
+         (brect  (nice-brect))
+         (rrect  (list min-age 0 max-age max-error))
+         (xlabel perf-file-ages)
+         (ylabel (range 0 max-error 0.1))
+         (plot-port (new-plot-port brect rrect object-nil)) )
+    (cls)
+    (draw-axes brect xlabel ylabel (concat "error from file :" filename))
+    plot-port ) )
+
+;;; age-to-labels
+
+(de age-to-labels(ages)
+    (setq ages (quick-sort ages))
+    (let ((ans ())                           
+          (start min-age)
+          (step (div (- max-age min-age) 12)) )
+        (each ((i ages)) 
+          (when (>= i start)
+             (setq ans (nconc1 ans i))
+             (setq start (+ i step)) ) )
+        ans ) )
+
+(de quick-sort(list)
+    (if ~(cdr list)
+        list
+        (let ((pivot (2/ (+ (sup list)(inf list))))
+              (ll ())
+              (rl ()) )                            
+            (each ((i list))
+                (if (> i pivot)
+                    (setq rl (cons i rl))
+                    (setq ll (cons i ll)) ) )
+            (nconc (quick-sort ll) (quick-sort rl)) ) ) )
+
+;;; plot a given ensemble with a given object
+                         
+(de perf-plot-ens(ens object baseport)
+    (let* ((plot-port (copy-plot-port baseport object))
+           (age-now 0) )
+        (each ((data perf-file-data))
+            (when (= ens (car data))
+                (let (((age perf error) (cdr data)))
+                    (if (<= age age-now)
+                        (plt-clear) )
+                    (plt-draw age perf)
+                    (plt-plot age perf)
+                    (setq age-now age) ) ) ) ) )
+
+(de error-plot-ens(ens object baseport)
+    (let* ((plot-port (copy-plot-port baseport object))
+           (age-now 0) )
+        (each ((data perf-file-data))
+            (when (= ens (car data))
+                (let (((age perf error) (cdr data)))
+                    (if (<= age age-now)
+                        (plt-clear) )
+                    (plt-draw age error)
+                    (plt-plot age error)
+                    (setq age-now age) ) ) ) ) )

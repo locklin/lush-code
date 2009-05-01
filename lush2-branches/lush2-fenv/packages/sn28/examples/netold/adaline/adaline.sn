@@ -1,0 +1,121 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: adaline.sn,v 1.2 2003/03/18 21:18:08 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;   Adaline
+;;;   Reference: B.Widrow & M.E.Hoff "Adaptive switching circuits" (1960)
+;;;
+;;;   (C) Copyright Neuristique, 1989
+
+
+;;; === Build a NxM adaline
+
+(de nlf-threshold(min max)
+    (nlf-bin 0.6 0 (2/ (- max min)) (2/ (+ max min))) )
+
+
+
+(de adaline-build-net(n m)
+    (nlf-threshold -1 1)            ; threshold transfert function
+    (build-net
+     '((input n) (output m))				;two layers
+     '((input output)) ) )      ;fully connected 
+
+
+;;; === Retrieval functions
+
+; The standard library function (test-pattern n)
+; needs no modification.
+
+
+;;; === Learning function: Widrow Hoff rule, 
+;;;         also called Delta rule.
+
+; We can't use (init-grad) because this function uses the derivative
+; of the transfert function for computing the gradients.
+
+(de adaline-iteration (patt-number)
+    
+    ;retrieval
+    (present-pattern input-layer patt-number)
+    (update-state output)
+    
+    ;tests and display
+    (present-desired desired-layer patt-number)
+    (setq good-answer 
+    	  (classify patt-number))
+    (setq local-error 
+    	  (2/ (mean-sqr-dist (weighted-sum output) (state desired-layer))))
+    (disp-basic-iteration patt-number) 
+    
+    ;learning
+    (incr age)
+    (copy-nfield output n-grad desired-layer n-val)
+    (op-nfield output n-grad n-sum -1 n-grad 1)
+    (update-weight) )
+
+
+(de adaline-learn(it)
+    (repeat it 
+	    (adaline-iteration current-pattern)
+	    (setq current-pattern 
+            	  (next-pattern current-pattern)) ) )
+
+
+
+;;; === EXAMPLE: LOGICAL OR
+
+
+;examples
+(setq pattern-matrix [[-1 -1][1 -1][-1 1][1 1]])
+(setq desired-matrix [[-1][1][1][1]])
+(ensemble 0 3)
+
+;network
+(alloc-net 10 100)
+(adaline-build-net 2 1)
+
+;parameters
+(epsilon 0.1)   ;set learning rate to 0.1
+(forget 0)      ;sets the weights to 0
+
+;display mode
+(set-disp-text)
+(set-class-quadrant)
+
+;let's go
+(adaline-learn 16)
+
+
+
+

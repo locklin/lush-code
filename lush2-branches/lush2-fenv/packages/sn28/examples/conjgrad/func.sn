@@ -1,0 +1,236 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: func.sn,v 1.4 2003/03/19 19:38:16 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;; THE DATASETS
+
+(dim pattern-matrix 21 1)
+(dim desired-matrix 21 1)
+
+(de carrex()
+    (for (i 0 20)
+       (let ((x (/ (- i 10) 10)))
+	 (pattern-matrix i 0 x)
+          (desired-matrix i 0 (- (* 2 x x) 1)))))))) )
+
+(de sinx()
+    (for (i 0 20)
+       (let ((x (/ (- i 10) 10)))
+      (pattern-matrix i 0 x)
+      (desired-matrix i 0 (sin (* 3.14159 x))))))))))))
+
+
+;;;;;;;;;;;; THE NETWORK
+
+(alloc-net 200 2000)
+
+(build-net '((input 1)(h1 8)(h2 8)(output 1))
+	   '((input h1)(h1 h2)(h2 output))))))
+
+(de draw-net(l pat)
+    (let ((window state-window))
+     (draw-list 100 80 (state output) 1 1.0 50 44)
+     (draw-list 100 10 (state desired-layer) 1 1.0 50 44)
+     (draw-list 10 140 (state h2) 8 1.5 30 28)  
+     (draw-list 10 190 (state h1) 8 1.5 30 28)
+     (draw-list 100 240 (state input) 1 1.0 50 44) ) )
+
+;;;;;;;;;;;; DISPLAY STUFF
+
+(when (not graph-window) 
+   (setq graph-window
+	 (new-window 410 1 400 400 "Approximation and Target Function"))))
+
+(when (not state-window) 
+    (setq state-window 
+	  (new-window 1 1 400 400 "Network States"))
+    (let ((window state-window))
+      (gprintf 160 40 "Desired value")
+      (gprintf 160 110 "Output unit")
+      (gprintf 260 170 "Hidden")
+      (gprintf 260 200 "layers")
+      (gprintf 160 270 "Input unit") ) )
+
+
+(de show()
+    (let ((window graph-window))
+      (let ((xdat ())
+            (ydat ())
+            (rdat ()) )
+        (for (i 0 20)
+           (test-pattern i)
+           (draw-net l pat)
+           (setq xdat (cons (nval (car input)) xdat))
+           (setq rdat (cons (nval (car desired_layer)) rdat))
+           (setq ydat (cons (nval (car output)) ydat)) )
+        (graphics-batch 
+          (cls)
+          (setup-axes -1 -1 1 1 0.2 0.2 "Desired and Obtained functions")
+   	  (color-rgb 1 0 0)
+          (plot-lists xdat ydat)   
+          (color-rgb 0 0 0)                   
+          (plot-lists xdat rdat) ) ) ) )
+ 
+;;;;;;;;;;;; INITIALIZATION
+
+(seed 0.87)                                
+(ensemble 0 20)
+(smartforget)
+(set-nextcho-rnd)
+(show)
+                                     
+
+;;;;;;; ONLINE GRADIENT
+
+(de go-online()
+    (smartforget)
+    (epsi-sqrt 0.1)
+    (carrex)
+    (perf 0 20)
+    (while (> global-error 0.008)
+      (learn 42)
+      (perf 0 20)
+      (show) )
+   (sinx)
+   (perf 0 20)
+   (while (> global-error 0.008)
+      (learn 63)
+      (perf 0 20)
+      (show) ) )
+
+;;;;;;; BATCH GRADIENT
+
+(de go-batch ()
+  (smartforget)
+  (epsilon 0.02)
+  (carrex)
+  (perf 0 20)
+  (while (> global-error 0.008)
+    (learn-batch 2)
+    (perf 0 20)
+    (show) )
+  (sinx)
+  (perf 0 20)
+  (while (> global-error 0.008)
+    (learn-batch 3)
+    (perf 0 20)
+    (show) ) )
+
+;;;;;;; ONLINE LEVEMBERG MARQUARDT
+
+(de go-lm()
+    (epsilon 0.01)
+    (smartforget)
+    (carrex)
+    (perf 0 20)
+    (while (> global-error 0.005)
+      (learn-lm 42)
+      (perf 0 20)
+      (show) )
+   (sinx)
+   (perf 0 20)
+   (while (> global-error 0.005)
+      (learn-lm 63)
+      (perf 0 20)
+      (show) ) )
+
+
+;;;;;;; BATCH LEVEMBERG MARQUARDT
+
+(de go-batch-lm ()
+  (smartforget)
+  (epsilon 0.02)
+  (carrex)
+  (perf 0 20)
+  (while (> global-error 0.005)
+    (learn-batch-lm 2)
+    (perf 0 20)
+    (show) )
+  (sinx)
+  (perf 0 20)
+  (while (> global-error 0.005)
+    (learn-batch-lm 3)
+    (perf 0 20)
+    (show) ) )
+
+
+;;;;;;; ONLINE CONJUGATE GRADIENT DOES NOT EXIST
+
+(de go-cg()
+    (printf "Try (go-batch-cg)\n") )
+
+
+
+;;;;;;; BATCH CONJUGATE GRADIENT 
+
+(de go-batch-cg()
+    (smartforget)
+    (carrex)
+    (perf 0 20)
+    (let ((args '(2)))			;; better than (learn-batch-cg 2)
+      (while (> global-error 0.0015)
+	(setq args (apply learn-batch-cg args))
+	(perf 0 20)
+	(show) ) )
+    (sinx)
+    (perf 0 20)
+    (let ((args '(3)))			;; better than (learn-batch-cg 3)
+      (while (> global-error 0.0015)
+	(setq args (apply learn-batch-cg args))
+	(perf 0 20)
+	(show) ) ) )
+
+
+;;;;;;; MESSAGE
+
+
+(printf (read-string "~@"))
+Type:
+  (go-online)           for a run with online gradient
+  (go-batch)            for a run with batch gradient
+  (go-lm)               for a run with online levemberg marquardt
+  (go-batch-lm)         for a run with batch levemberg marquardt
+  (go-batch-cg)         for a run with batch conjugate gradient
+
+Conjugate gradient is clearly the best method for function approximation.
+This is no longer true for pattern recognition problems where online
+gradient and online levemberg marquardt are the winners.
+
+Unfortunately, the most commonly implemented method, batch gradient,
+is by far the poorest performer for both problems.
+
+@
+
+        
+               

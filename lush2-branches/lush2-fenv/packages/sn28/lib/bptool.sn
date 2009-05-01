@@ -1,0 +1,1194 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: bptool.sn,v 1.2 2003/03/21 14:02:57 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; BPTOOL : Back-propagation
+;;;
+;;; Copyright (c) 1990 Leon Bottou & Jean Bourrely, Neuristique SA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(ogre)
+
+(de bptool(&optional noperfdialog)
+    (ogre)
+    (let ((w (new c-bptool)))
+      (when (not noperfdialog)
+        (==> :w:perf-file-dialog popup) ) 
+      w ) ) 
+
+
+;;;
+;;; ImageTool   CLASS & METHODS
+;;;
+
+
+
+
+(defclass c-bptool windowobject
+  perf-file-dialog
+  load-patterns-dialog                       
+  load-net-dialog
+  save-net-dialog
+  generate-c-dialog
+  error-dialog                     ;
+  warning-dialog                   ;
+  confirm-dialog                   ; 'popup' windows
+  forget-dialog                    ; dialogs
+  epsi-dialog                      ;
+  classify-dialog
+  plotting-dialog
+  display-dialog
+  momentum-dialog
+  mugamma-dialog
+  nlf-dialog
+  parm-menu
+
+  nettool-window
+  
+  pattmin                            
+  pattmax                          ; similar to
+  tpattmin                         ; netenv.sn
+  tpattmax
+  patternfile                      ; string for pattern-matrix file name
+  desiredfile                      ; idem for desired-matrix
+  epsi-string    
+  msg-string
+  net-size                         ; string for net size
+
+  break 
+  thesets thealgos thepane theepsi iterations
+  algo algo1 algo2 algo3 algo4 algo5 algo6
+  bplearn
+
+  stochastic                       ; t if stochastic, () if batch
+  conjugate                        ; t if second order, () if gradient
+  eps-call                         ; function called for learning rate
+  eps-x                            ; parameter for learning rate
+  breakattempt
+  inmemory
+  changed )
+
+
+(defmethod c-bptool -destructor()
+  (setq :unique-bp-window ()) )
+
+(defmethod c-bptool delete()
+  (when (==> confirm-dialog ask "Really Quit ?" "Yes" "No" 'no)
+	(==> this (windowobject . delete)) ) )
+
+(defmethod c-bptool c-bptool ()
+  (if :unique-bp-window
+      (error 'bptool "BPTool is already running." ()) )
+  
+  (setq :unique-bp-window this)
+  (setq error-dialog (new errorrequester this))
+  (setq warning-dialog (new warningrequester this))
+  (setq confirm-dialog (new yesnorequester this "alors?" "Yes" "No" ()))
+  (setq net-size (new string "[ 0 cells / 0 connections / 0 weights ]"))
+  (setq msg-string (new string (sprintf "Age = %d" age)))
+
+  (setq load-patterns-dialog 
+	(new yesnorequester this
+	     (let ((e1 ())
+		   (e2 ()) )
+	       (new grid 2
+		    (new string "Load a <pattern-matrix> file:")
+		    (new emptyspace 4)
+		    (setq e1 (new editstring 20))
+		    (new filereqbutton "Load a <pattern-matrix> file:" e1)
+		    (new string "Load a <desired-matrix> file:")
+		    (new emptyspace 4)
+		    (setq e2 (new editstring 20))
+		    (new filereqbutton "Load a <pattern-matrix> file:" e2) ) )
+	     " Load " "Cancel"
+	     (lambda(d)
+	       (==> thiswindowobject load-patterns-action (==> d getdata)) ) ))
+  
+  (setq perf-file-dialog
+	(new filerequester this
+	     "Write performance into file:"
+	     'ask-oldfile
+	     ()
+	     (lambda(d)
+	       (setq d (==> d getdata))
+	       (when (and (stringp d) (<> d perf-file))
+		     (setq perf-file d)
+		     (save-perf ";;; ============ NEW PERFORMANCE\n")
+		     ) ) ) )
+  (==> perf-file-dialog setdata "tmp.perf")
+  (setq load-net-dialog 
+	(new filerequester this
+	     "Load weights from file:"
+	     'no-newfile
+	     ()
+	     (lambda(d)
+	       (==> thiswindowobject 
+		    load-net-action (==> d getdata) ) ) ))
+
+  (setq save-net-dialog 
+	(new filerequester this
+	     "Save weights into file:"
+	     'ask-oldfile
+	     ()
+	     (lambda(d)
+	       (==> thiswindowobject 
+		    save-net-action (==> d getdata) ) ) ))
+
+  (setq generate-c-dialog 
+	(new yesnorequester this
+	     (let ((ef (new editstring 20)))
+	       (new column
+		    (new string "Generate C array into file:")
+		    (new row ef (new filereqbutton "Generate C array into file:" ef))
+		    (new string "Name of C object:")
+		    (new row (new editstring 20 "weights")) ) )
+	     " Save " "Cancel"
+	     (lambda(d)
+	       (==> thiswindowobject 
+		    generate-c-action (==> d getdata)) ) ))
+
+  (setq forget-dialog 
+	(new yesnorequester this
+	     (new column
+		  (new string "Weights Initialization")
+		  (new Darkspace 4)
+		  (new column
+		       (new radiobutton 
+			    "random [-x;x]" ())
+		       (new radiobutton 
+			    "random [-x/fanin ; +x/fanin]" ())
+		       (new radiobutton 
+			    "random [-x/sqrt(fanin) ; +x/sqrt(fanin)]" ()) )
+		  (new emptyspace 5)
+		  (new TinyButton "Default"
+		       (lambda (d)
+			 (==> thisrequester setdata '(() () t 1)) ) )
+		  (new emptyspace 5)
+		  (new row
+		       (new string "Value of parameter (x) :")
+		       (new editnumber 6 1) ) )
+	     "Apply" "Cancel"
+	     (lambda(d) (==> thiswindowobject 
+			     forget-action (==> d getdata))) ) )
+
+  (setq epsi-dialog
+	(new yesnorequester this
+	     (new column
+		  (new string "Learning Rate (epsilon)")
+		  (new Darkspace 4)
+		  (new column
+		       (new radiobutton "x" ())
+		       (new radiobutton "x/fanin" ())
+		       (new radiobutton "x/sqrt(fanin)" ())
+		       (let ((l (new radiobutton "x/sqrt(fanin*share)" ()))) 
+			 (when ~(iterative-mode)
+			       (==> l disable) )
+			 l ) )
+		  (new emptyspace 5)
+		  (new TinyButton "Default"
+		       (lambda(d)
+			 (==> thisrequester setdata 
+			      (if (iterative-mode) 
+				  '(() () () t 0.1) 
+				'(()() t () 0.1)) ) ) )
+		  (new emptyspace 5)
+		  (new row
+		       (new string "Value of parameter (x) :")
+		       (new editnumber 6 1) ) )
+	     "Apply" "Cancel"
+	     (lambda(d) (==> thiswindowobject
+			     epsi-action (==> d getdata))) ) )
+
+  (==> epsi-dialog setdata '(() () t () 0.1))
+  
+  
+  (setq momentum-dialog 
+	(new yesnorequester this
+	     (new grid 2
+		  (new string "Alpha:")
+		  (new editnumber 6 0)
+		  (new string "Decay:")
+		  (new editnumber 6 0) )
+	     "Apply" "Cancel"
+	     (lambda(d) (==> thiswindowobject 
+			     momentum-action (==> d getdata))) ) )
+  
+  (setq mugamma-dialog
+	(new yesnorequester this
+	     (new grid 2
+		  (new string "Mu:")
+		  (new editnumber 6 0.05)
+		  (new string "Gamma:")
+		  (new editnumber 6 0.05) )
+	     "Apply" "Cancel"
+	     (lambda(d) (==> thiswindowobject 
+			     mugamma-action (==> d getdata))) ) )
+  
+  (setq display-dialog
+	(new yesnorequester this
+	     (new Column
+		  (new String "Display Mode")
+		  (new Darkspace 4)
+		  (new Row
+		       (new Column
+			    (new String "when Learning:")
+			    (new Checkbox "Text" ())
+			    (new Checkbox "Error" ())
+			    (new Checkbox "Network" ()) )
+		       (new Emptyspace 10)
+		       (new Column
+			    (new String "when Measuring:")
+			    (new Checkbox "Text" ())
+			    (new Checkbox "Error" ())
+			    (new Checkbox "Network" ()) ) ) 
+		  (new Darkspace 4) )
+	     "Apply" "Cancel"
+	     (lambda(d) (==> thiswindowobject 
+			     display-action (==> d getdata))) ) )
+
+  (setq plotting-dialog
+	(new yesnorequester this
+	     (let ((ef ()))
+	       (new column
+		    (new String "Plotting Mode:")
+		    (new Darkspace 4)
+		    (new CheckBox "Error Plotting" ())
+		    (new CheckBox "Perf Plotting" ())
+		    (new Row
+			 (new String "  Number of sweeps:")
+			 (new EditNumber 6 40) )
+		    (new Darkspace 4) ) )
+	     "Initialize Plotting" "Cancel" 
+	     (lambda(d) (==> thiswindowobject 
+			     plotting-action (==> d getdata))) ) )
+  
+  (setq classify-dialog
+	(new yesnorequester this
+	     (let* ((e (new editnumber 6 0))
+		    (f (apply lambda 
+			      (list '(d)
+				    (list 'setq 'd e)
+				    '(let (((n1 n2 n3 n4 n5 n6 m)
+					    (==> thisrequester getdata)))
+				       (==> d enable)
+				       (when (or n1 n2 n3)
+					     (==> d disable) ) ) ) ) ) )
+	       (==> e disable)
+	       (new column
+		    (new string "Classification Mode")
+		    (new Darkspace 4)
+		    (new grid 3
+			 (new radiobutton "None" f)
+			 (new radiobutton "Max" f)
+			 (new radiobutton "Quadrant" f)
+			 (new radiobutton "Lms" f)
+			 (new radiobutton "Hamming" f)
+			 (new radiobutton "Sign" f) )
+		    (new row (new string "Margin:") e) ) )
+	     "Apply" "Cancel"
+	     (lambda(d) (==> thiswindowobject 
+			     classify-action (==> d getdata))) ) )
+
+  (==> classify-dialog setdata '(() t () () () () 0))
+  
+  (setq nlf-dialog (new c-nlf-dialog this
+			(lambda(d)
+			  (let ((n (==> d create-nlf-call)))
+			    (when n (eval n)) ) ) ))
+  
+  (setq epsi-string (new string "Learning rate = Undef'd"))
+  (setq pattmin (new editnumber 7))
+  (setq pattmax (new editnumber 7))
+  (setq tpattmin (new editnumber 7))
+  (setq tpattmax (new editnumber 7))
+
+  (if (numberp patt-min)
+      (==> pattmin setdata patt-min))
+  (if (numberp patt-max)
+      (==> pattmax setdata patt-max))
+  (if (numberp tpatt-min)
+      (==> tpattmin setdata tpatt-min))
+  (if (numberp tpatt-max)
+      (==> tpattmax setdata tpatt-max))
+  
+  (if ~(numericp pattern-matrix)
+    (setq patternfile (new string "Input patterns file : [ No File ]"))
+    (setq patternfile (new string "Input patterns file : pattern-matrix"))
+    (==> pattmin setdata 0)
+    (==> tpattmax setdata (bound pattern-matrix 1)))
+  
+  (if ~(numericp desired-matrix)
+    (setq desiredfile (new string "Desired outputs file : [ No File ]"))
+    (setq desiredfile (new string "Desired outputs file : desired-matrix"))
+    (==> pattmin setdata 0)
+    (==> tpattmax setdata (bound desired-matrix 1)))
+
+  (==> this windowobject 0 0 330 420 "BPtool"
+       (new column
+	    (new row
+		 (let* ((filemenu
+			 (new menu "File" 
+			      "Set Performance File"  
+                              (lambda(d)
+                                (==> perf-file-dialog popup) )
+			      "Define Network" 
+                              (lambda(d) 
+                                (or nettool-window
+                                    (setq nettool-window (nettool)) ) )
+			      "Automatic Network" 
+                              (lambda(d)
+                                (==> thiswindowobject auto-net-action) )
+			      "Load Patterns" 
+                              (lambda(d)
+                                (==> load-patterns-dialog popup) )
+			      "Load Weights"
+                              (lambda(d)
+                                (==> load-net-dialog popup) )
+			      "Save Weights" 
+                              (lambda(d)
+                                (==> save-net-dialog popup) )
+			      "Generate C Weights"
+                              (lambda(d)
+                                (==> generate-c-dialog popup) )
+			      "Quit"
+                              (lambda(d)
+                                (==> thiswindowobject delete) ) ) ) )
+		   (when ~netenv-auto-arch (==> filemenu disable "Automatic Network"))
+		   filemenu
+		   )
+		 (setq parm-menu
+		       (new menu "Parameters"
+			    "Initial weights" (lambda(d)
+						(==> forget-dialog popup) )
+			    "Learning rate"   (lambda(d)
+						(==> epsi-dialog popup) )
+			    "Alpha & Decay"   (lambda(d)
+						(==> momentum-dialog setdata
+						     (list alpha decay) )
+						(==> momentum-dialog popup) )
+			    "Mu & Gamma"      (lambda(d)
+						(==> mugamma-dialog setdata
+						     (list mu gamma) ) 
+						(==> mugamma-dialog popup) )
+			    "Transfert function" (lambda(d)
+						   (==> nlf-dialog popup) ) ) )
+		 (new menu "Settings"
+		      "Plotting..." (lambda(d)
+					     (==> plotting-dialog popup) )
+		      "Classify..." (lambda(d)
+				   	     (==> classify-dialog popup) )
+		      "Display..."  (lambda(d)
+					     (==> display-dialog popup) ) ) )
+
+
+
+	    (new Darkspace 4)
+	    patternfile
+	    desiredfile
+	    (setq thesets
+		  (new grid 4
+		       (new string "Training Set from :")
+		       pattmin
+		       (new string " to :")
+		       pattmax
+		       (new string "Test Set from :")
+		       tpattmin
+		       (new string " to :")
+		       tpattmax) )
+
+	    (new Darkspace 4)
+	    (setq thealgos
+		  (new row
+		       (new emptyspace 5)
+		       (new grid 2
+			    (setq algo1 
+				  (new radiobutton "Online Gradient" 
+				       (lambda(d)
+					 (==> parm-menu enable "Learning rate" 
+					      "Alpha & Decay" "Mu & Gamma")
+					 (==> parm-menu disable "Mu & Gamma")
+					 (setq stochastic t) 
+					 (setq conjugate ()) ) ) )
+			    (setq algo3 
+				  (new radiobutton "Online Levemberg Marquardt"
+				       (lambda(d)
+					 (==> parm-menu enable "Learning rate" 
+					      "Alpha & Decay" "Mu & Gamma")
+					 (==> parm-menu disable "Alpha & Decay")
+					 (setq stochastic t) 
+					 (setq conjugate t) ) ) )
+			    (setq algo2 
+				  (new radiobutton "Batch Gradient" 
+				       (lambda(d)
+					 (==> parm-menu enable "Learning rate"
+					      "Alpha & Decay" "Mu & Gamma")
+					 (==> parm-menu disable "Mu & Gamma")
+					 (setq stochastic ()) 
+					 (setq conjugate ()) ) ) )
+			    (setq algo4 
+				  (new radiobutton "Batch Conjugate Gradient"
+				       (lambda(d)
+					 (==> parm-menu enable "Learning rate" 
+					      "Alpha & Decay" "Mu & Gamma")
+					 (==> parm-menu disable "Learning rate" 
+					      "Alpha & Decay" "Mu & Gamma")
+					 (==> thiswindowobject setepsi () ())
+					 (setq stochastic ()) 
+					 (setq conjugate t) ) ) ) ) ) )
+	    (new Darkspace 4)
+	    (setq theepsi
+		  (new row
+		       (new TinyButton "Divide epsilon by 2"
+			    (lambda(d)
+			      (let ((x (or eps-x 0))
+				    (u (==> epsi-dialog getdata)) )
+				(when (numberp x)
+				      (rplaca (last u) (2/ x))
+				      (==> epsi-dialog setdata u) )
+				(==> thiswindowobject setepsi eps-call (2/ x)) ) ) )
+		       (new emptyspace 5)
+		       (new TinyButton "Multiply epsilon by 2"
+			    (lambda(d)
+			      (let ((x (or eps-x 0))
+				    (u (==> epsi-dialog getdata)) )
+				(when (numberp x)
+				      (rplaca (last u) (2* x))
+				      (==> epsi-dialog setdata u) )
+				(==> thiswindowobject setepsi eps-call (2* x)) ) ) ) ) )
+	    epsi-string
+	    (new Darkspace 4)
+	    (setq thepane
+		  (new grid 3
+		       (new stdbutton "Run"
+			    (lambda(d)
+			      (==> thiswindowobject 
+				   run-action)))
+		       (new stdbutton "Trun"
+			    (lambda(d)
+			      (==> thiswindowobject 
+				   trun-action)))
+		       (new stdbutton "Training Set Perf"
+			    (lambda(d)
+			      (==> thiswindowobject 
+				   perf-training-action))) 
+		       (setq break
+			     (new stdbutton "Break" 
+				  (lambda(d)
+				    (==> thiswindowobject 
+					 break-action))) )
+		       (new stdbutton "Learn"
+			    (lambda(d)
+			      (==> thiswindowobject 
+				   learn-action)))
+		       (new stdbutton "Test Set Perf"
+			    (lambda(d)
+			      (==> thiswindowobject 
+				   perf-test-action))) ) )
+	    (new row
+		 (new string "Test performance every ")
+		 (setq iterations (new editnumber 5))
+		 (new string "iterations") )
+	    (new Darkspace 4)
+	    net-size
+	    msg-string ) ) 
+  
+  (==> net-size settext
+       (sprintf "[ %d cells / %d connections / %d weights]"
+		nnum snum (if (iterative-mode) wnum snum)))
+
+  (setq eps-call ())
+  (==> epsi-string settext "Learning rate = Undef'd")
+  (==> algo1 setdata t)
+  (==> parm-menu disable "Mu & Gamma")
+  (when ~(iterative-mode)
+	(==> algo2 disable) 
+	(==> algo4 disable) )
+  (when ~(newton-mode)
+	(==> algo3 disable) )
+  (==> break disable)
+  (setq stochastic t)
+  (setq conjugate ())
+  (set-disp-nil)
+  (set-class-max)
+  (setq :draw-net-window ())
+  (setq disp-error-window ())
+  (setq disp-error-port ())
+  (cancel-error-plotting)
+  (cancel-perf-plotting)
+  (setq error-plotting-window ())
+  (setq perf-plotting-window ()) )
+
+;;;
+;;; net-changed is called by nettool when
+;;; saving a network to memory
+;;;
+
+(defmethod c-bptool net-changed()
+  (when (<> snum 0)
+	(==> warning-dialog popuplock 2 "Loading network & Clearing weights")
+	(==> msg-string settext "Net initialized & Weights cleared") )
+  (==> net-size settext
+       (sprintf "[ %d cells / %d connections / %d weights]"
+		nnum snum (if (iterative-mode) wnum snum)))
+  (setq eps-call ())
+  (==> epsi-string settext "Learning rate = Undef'd") )
+
+
+(defmethod c-bptool auto-net-action ()
+  (==> this check-matrix)
+
+  (setq eps-call api-sqrt)
+
+  (let ((safe-cg t)) ;; dirty automation ensured against 0 curvature
+    
+    (setq breakattempt ())
+    (==> algo4 execute)
+
+    (let ((lock (new disablelock thesets thealgos thepane iterations)))
+      (==> break enable)
+      (==> break enable)
+
+      (netenv-auto-arch (lambda () ~breakattempt))
+
+      ;; save weights
+      (let* ((window :thiswindowobject:window))
+	(x11-configure t () () () ())
+	)
+      (==> save-net-dialog popuplock)
+      ;; save architecture
+      (when ~nettool-window (setq nettool-window (nettool)))
+      (let* ((window :nettool-window:window))
+	(x11-configure t () () () ())
+	)
+      (let* ((is (length input-layer))              ;; input number of units
+	     (hs (length (aval (car input-layer)))) ;; hidden number of units
+	     (os (length output-layer))             ;; output number of units
+	     (ws (==> nettool-window worksize)) ;; worspace 2D size
+	     (yy (cadr ws))
+	     (us (max 1 (min (div (car ws) 11) (div (cadr ws) (max is hs os)))))
+	     (bs (div (- (car ws) (* 3 us)) 4))
+	     )
+	(setq :nettool-net
+	      (eval `(lambda ()
+		       (let ((input
+			      (new c-layer
+				   '("input" (1 ,is)
+				     t  () () () () () t)
+				   ,bs ,(* 0.5 (- yy (* us is))) ,us ,us ) )
+			     (hidden
+			      (new c-layer
+				   '("hidden" (1 ,hs) () () t  () () () t)
+				   ,(+ bs us bs) ,(* 0.5 (- yy (* us hs))) ,us ,us) )
+			     (output
+			      (new c-layer
+				   '("output" (1 ,os) () t  () () () t  ())
+				   ,(+ bs us bs us bs) ,(* 0.5 (- yy (* us os))) ,us ,us ) ) )
+			 (new c-connection input hidden (list ct-connect '(1 1) '(1 1)))
+			 (new c-connection hidden output (list ct-connect '(1 1) '(1 1)))
+			 ) ) ) ) )
+      (==> nettool-window new-menu)
+      (==> nettool-window exec-nettool-net)
+      (==> nettool-window save-action '(t () () () () 0 0))
+      )
+    (==> break disable)
+    )
+  (==> thiswindowobject perf-training-action)
+  (==> thiswindowobject perf-test-action)
+  )
+
+
+
+;;;
+;;;  Mu & Gamma action
+;;;
+
+
+(defmethod c-bptool mugamma-action((mo de))
+  (when (or (< mo 0) (> mo 1))
+	(==> warning-dialog popuplock 3 "<mu> has a strange value") )
+  (when (or (< de 0) (> de 1))
+	(==> warning-dialog popuplock 3 "<gamma> has a strange value") )
+  (setq mu de)
+  (setq gamma mo) )
+
+
+;;;
+;;; Momentum & Alpha Dialog Window
+;;;
+
+(defmethod c-bptool momentum-action((mo de))
+  (when (or (< mo 0) (> mo 1))
+	(==> warning-dialog popuplock 3 "<alpha> has a strange value") )
+  (when (or (< de 0) (> de 1))
+	(==> warning-dialog popuplock 3 "<decay> has a strange value") )
+  (setq decay de)
+  (setq alpha mo) )
+
+
+;;;
+;;; Nlf dialog window
+;;;
+
+(defclass c-nlf-dialog yesnorequester
+  nlf-call
+  plot-nlf-window
+  typemenu
+  param-string1 param-edit1
+  param-string2 param-edit2
+  param-string3 param-edit3
+  param-string4 param-edit4)
+
+(defmethod c-nlf-dialog popdown()
+  (setq plot-nlf-window ())
+  (==> this (yesnorequester . popdown) ) )
+
+(defmethod c-nlf-dialog setstrings(s1 s2 s3 s4)
+  (==> param-string1 settext s1)
+  (==> param-string2 settext s2)
+  (==> param-string3 settext s3)
+  (==> param-string4 settext s4) 
+  (==> param-edit4 enable)
+  (if (= s4 "")
+      (progn
+	(==> param-edit4 setdata ())
+	(==> param-edit4 disable) ) ) )
+
+(defmethod c-nlf-dialog create-nlf-call()
+  (let ((p1 (==> param-edit1 getdata))
+	(p2 (==> param-edit2 getdata))
+	(p3 (==> param-edit3 getdata))
+	(p4 (==> param-edit4 getdata)) )
+    (if (or 
+	 (and (or (= nlf-call 'nlf-tanh) (= nlf-call 'nlf-bin))
+	      (or (< p1 0) (< p2 0) (and p3 (< p3 0))) )
+	 (and (= nlf-call 'nlf-lin)
+	      (setq p4 ())
+	      (or (< p1 0) (< p2 p1) (= p2 0) (and p3 (<= p3 0))) ) )
+	(==> error-dialog popup "Bad NLF specification")
+      (cond
+       ((and p1 p2 p3 p4) (list nlf-call p1 p2 p3 p4))
+       ((and p1 p2 p3)    (list nlf-call p1 p2 p3)) ) ) ) )
+
+
+(defmethod c-nlf-dialog plot-nlf (x1 x2)
+  (let* ((n (==> this create-nlf-call))
+	 (nlf ())
+	 (dnlf ())
+	 (ddnlf ()) )
+    (when n
+	  (if (null plot-nlf-window)
+	      (let ((window window))
+		(setq plot-nlf-window (new-window 300 300 "NLF")) ) )
+	  (eval n)
+	  (let* ((x (range x1 (+ x2 0.1) 0.2))
+		 (y (all ((i x)) (nlf i)))
+		 (maxy (max (sup y) 1))
+		 (miny (min (inf y) -1))
+		 (maxx (max x1 x2 1))
+		 (minx (min x1 x2 -1))
+		 (xlabel (list 1 0 -1 minx maxx))
+		 (ylabel (list 1 0 -1 miny maxy))
+		 (window plot-nlf-window)
+		 (brect (list 60 (- (ysize) 30) (- (xsize) 50) 40))
+		 (rrect (list minx miny maxx maxy))
+		 (plot-port (new-plot-port brect rrect object-nil)) )
+	    (gsave
+	     (color color-fg)
+	     (cls)
+	     (draw-axes brect xlabel ylabel "Non Linear Function")
+	     (graphics_batch (plot-lists x y)) )  ) ) ) )
+
+
+(defmethod c-nlf-dialog c-nlf-dialog(win callback)
+  (setq param-string1 (new string "Gain:"))
+  (setq param-string2 (new string "Slope(infinity):"))
+  (setq param-string3 (new string "Amplitude:"))
+  (setq param-string4 (new string "Offset:"))
+  (setq param-edit1 (new editnumber 7))
+  (setq param-edit2 (new editnumber 7))
+  (setq param-edit3 (new editnumber 7))
+  (setq param-edit4 (new editnumber 7))
+  (setq call callback)
+  (==> this createbuttons "Apply" "Cancel")
+  (==> this requester win
+       (new column
+	    (setq typemenu 
+		  (new menu "Sigmoid"
+		       "Sigmoid"
+		       (lambda(d)
+			 (==> :thisrequester:typemenu settext :d:text)
+			 (setq nlf-call 'nlf-tanh)
+			 (==> thisrequester setstrings
+			      "Gain:" "Slope(infinity):" "Amplitude:" "Offset:") )
+		       "Piecewise linear"
+		       (lambda(d)
+			 (==> :thisrequester:typemenu settext :d:text)
+			 (setq nlf-call 'nlf-lin)
+			 (==> nlf-dialog setstrings
+			      "Slope(infinity):" "Slope(0):" "Threshold:" "") )
+		       "Binary threshold"
+		       (lambda(d)
+			 (==> :thisrequester:typemenu settext :d:text)
+			 (setq nlf-call 'nlf-bin)
+			 (==> nlf-dialog setstrings "PseudoGain:" 
+			      "PseudoSlope(infinity):" "Amplitude:" "Offset:") ) ) )
+	    (new Darkspace 4)
+	    (new grid 2
+		 param-string1 param-edit1
+		 param-string2 param-edit2
+		 param-string3 param-edit3
+		 param-string4 param-edit4 )
+	    (new TinyButton "Default Function"
+		 (lambda(d)
+		   (setq nlf-call 'nlf-tanh)
+		   (==> :thisrequester:typemenu settext "Sigmoid")
+		   (==> thisrequester setdata '(0.666 0 1.715 0)) ) )
+	    (new Darkspace 4)
+	    (new row
+		 yesbutton
+		 (new emptyspace 8)
+		 nobutton
+		 (new emptyspace 8)
+		 (new stdbutton "Draw"
+		      (lambda(d)
+			(==> thisrequester plot-nlf -5 5) ) ) ) ) )
+  (==> this setdata '(0.666 0 1.715 0))
+  (setq nlf-call 'nlf-tanh) )
+
+
+(defmethod c-bptool nlf-action(caller)
+  (let ((n (==> caller create-nlf-call)))
+    (when n (eval n) ) ) )
+	    
+;;;
+;;; Forget dialog window
+;;;
+
+(defmethod c-bptool forget-action ((f1 f2 f3 x))
+  (let ((f ()))
+    (each ((i (list f1 f2 f3))
+	   (j (list forget forget-inv forget-sqrt)) )
+	  (when i (setq f j)) )
+    (cond
+     ((or ~x)
+      (==> error-dialog popup "No parameter"))
+     ((= snum 0)
+      (==> error-dialog popup "Undefined network"))
+     (t
+      (when (or (< x 0) (> x 2))
+	    (==> warning-dialog popuplock 3 "Strange <forget> value!") )
+      (f x)
+      (==> msg-string settext "Age = 0")
+      (==> this plotting-action (==> plotting-dialog getdata)) ) ) ) )
+
+;;;
+;;; Epsi Dialog Window
+;;;
+
+
+(defmethod c-bptool epsi-action((f1 f2 f3 f4 x))
+  (let ((f ()))
+    (each ((i (list f1 f2 f3 f4))
+	   (j (list epsilon epsi epsi-sqrt mask-epsi)) )
+	  (when i (setq f j)) )
+    (cond
+     ((or ~x (< x 0))
+      (==> error-dialog popup "Bad parameter"))
+     ((= snum 0)
+      (==> error-dialog popup "Undefined network"))
+     (t
+      (==> thiswindowobject setepsi f x)) ) ) )
+
+
+;;;
+;;; Plotting Dialog Window
+;;;
+
+(defmethod c-bptool plotting-action((e p size &optional f name))
+  (setq patt-min (==> pattmin getdata))
+  (setq patt-max (==> pattmax getdata))
+  (if (not (and patt-min patt-max))
+      (==> error-dialog popup "Undefined training set")
+    (when e
+	(init-error-plotting size 0.5) )
+    (when p
+	(init-perf-plotting size) )
+    ) )
+
+;;;
+;;; Classify Dialog Window
+;;;
+
+(defmethod c-bptool classify-action((n m q l h s margin))
+  (if (< margin 0)
+      (==> error-dialog popup "Negative margin")
+    (cond
+     (n (set-class-nil))
+     (l (set-class-lms margin))
+     (m (set-class-max))
+     (h (set-class-hamming margin))
+     (q (set-class-quadrant))
+     (s (set-class-sgn (- margin) margin)) ) ) )
+  
+
+;;;
+;;; Displays Dialog Window
+;;; 
+
+(defmethod c-bptool display-action((lt le ln mt me mn))
+  (when (and (or le me))
+	(if disp-error-port
+	    (init-disp-error disp-error-sweeps disp-error-maxerr)
+	  (init-disp-error 10 0.5) ) )
+  (setq disp-basic-iteration
+	(apply lambda (append '((pn) ())
+			      (when lt '((disp-text pn)))
+			      (when le '((disp-error pn)))
+			      (when ln '((disp-net pn))) )) )
+  (setq disp-perf-iteration
+	(apply lambda (append '((pn) ())
+			      (when mt '((disp-text pn)))
+			      (when me '((disp-error pn)))
+			      (when mn '((disp-net pn))) )) ) )
+
+
+;;;
+;;; Load Patterns Dialog Window
+;;;
+
+(defmethod c-bptool load-patterns-action((l1 l2))
+  (when l1
+	(==> thiswindowobject setpatternfile l1))
+  (when l2
+	(==> thiswindowobject setdesiredfile l2)) )
+
+
+
+;;;
+;;; Load & Save Weights Dialog Window
+;;;
+
+(defmethod c-bptool load-net-action(f)
+  (cond
+   ((or (= snum 0) (= nnum 0))
+    (==> error-dialog popup "Undefined network") )
+   (~(open-read f "wei")
+     (==> error-dialog popup (sprintf "Cannot open file \"%s\"" f)) )
+   (t
+    (let ((debug-hook :debug-hook))
+      (apply load-net (cons f ())) )
+    (==> msg-string settext (sprintf "Age = %d" age))
+    (==> this plotting-action (==> plotting-dialog getdata)) ) ) )
+
+
+(defmethod c-bptool save-net-action(f)
+  (cond
+   ((or (= snum 0) (= nnum 0))
+    (==> error-dialog popup "Undefined network") )
+   (~(open-write f "wei")
+     (==> error-dialog popup (sprintf "Cannot open file \"%s\"" f)) )
+   (t
+    (let ((debug-hook :debug-hook))
+      (apply save-net (cons f ())) ) ) ) )
+
+
+(defmethod c-bptool generate-c-action((f v))
+  (cond
+   ((or (= snum 0) (= nnum 0))
+    (==> error-dialog popup "Undefined network") )
+   (~(open-write f "c")
+     (==> error-dialog popup (sprintf "Cannot open file \"%s\"" f)) )
+   (t
+    (let ((debug-hook :debug-hook))
+      (apply save-weights-as-c (list f v)) ) ) ) )
+
+
+;;;
+;;; BPTool METHODS
+;;;
+
+
+(defmethod c-bptool setepsi(f x)
+  (cond 
+   ((and ~f x)
+    (==> error-dialog popup "Undefined initial learning rate") )
+   ((and f (= nnum 0))
+    (==> error-dialog popup "Undefined network") )
+   (t
+    (setq eps-call f)
+    (setq eps-x x)
+    (let ((st "Undef'd"))
+      (when (= f epsilon)
+	    (setq st (str x)))
+      (when (= f epsi)
+	    (setq st (concat (str x) "/fanin")))
+      (when (= f epsi-sqrt)
+	    (setq st (concat (str x) "/sqrt(fanin)")))
+      (when (= f mask-epsi)
+	    (setq st (concat (str x) "/sqrt(fanin*share)")))
+      (==> epsi-string settext
+	   (sprintf "Learning rate = %s" st)))
+    (when (and f x)
+	  (f x) ) ) ) )
+
+
+(defmethod c-bptool check-matrix()
+  (cond
+   ((or ~pattern-matrix ~desired-matrix)
+    (==> error-dialog popup "Undefined pattern or desired matrix") ())
+   ((or (<> 2 (bound pattern-matrix 0))
+	(<> 2 (bound desired-matrix 0)) )
+    (==> error-dialog popup "Pattern and desired matrix are not 2D") ())
+   ((<> (bound pattern-matrix 1) (bound desired-matrix 1))
+    (==> error-dialog popup "Pattern and desired matrix have different length") ())
+   ((and (<> nnum 0)
+	 (<> (1+ (bound pattern-matrix 2)) (length input-layer)) )
+    (==> error-dialog popup "Pattern matrix and input layer have different sizes") ())
+   ((and (<> nnum 0)
+	 (<> (1+ (bound desired-matrix 2)) (length output-layer)) )
+    (==> error-dialog popup "Desired matrix and output layer have different sizes") ())
+   (t t) ) )
+
+(defmethod c-bptool define-learn()
+  (setq patt-min (==> pattmin getdata))
+  (setq patt-max (==> pattmax getdata))
+  (cond
+   ((or ~net-struc (= snum 0))
+    (==> error-dialog popup "Undefined network") ())
+   ((and ~eps-call (or stochastic ~conjugate))
+    (==> error-dialog popup "Undefined learning rate") ())
+   (~(and patt-min patt-max (< patt-min patt-max))
+     (==> error-dialog popup "Undefined training set") ())
+   ((or (< patt-min 0)
+	(>= patt-min patt-max)
+	(> patt-max (bound pattern-matrix 1)))
+    (==> error-dialog popup "Illegal training set bounds"))
+   (t
+    (ensemble patt-min patt-max) 
+    (if stochastic
+	(if conjugate
+	    (setq bplearn 'learn-lm)
+	  (setq bplearn 'learn) )
+      (if conjugate
+	  (setq bplearn 'learn-batch-cg)
+	(setq bplearn 'learn-batch) ) )
+    (let ((it (==> iterations getdata))
+	  (ts (1+ (- patt-max patt-min))) )
+      (if (or (not it) (< it 1))
+	  (setq it ts) )
+      (if stochastic
+	  (==> iterations setdata it) 
+	(setq it (div (+ it ts -1) ts))
+	(==> iterations setdata (* it ts)) ) 
+      (list it) ) ) ) )
+
+
+(defmethod c-bptool define-test()
+  (setq patt-min (==> pattmin getdata))
+  (setq patt-max (==> pattmax getdata))
+  (setq tpatt-min (==> tpattmin getdata))
+  (setq tpatt-max (==> tpattmax getdata))
+  (cond
+   ((or ~net-struc (= snum 0))
+    (==> error-dialog popup "Undefined network") ())
+   (~(and tpatt-min tpatt-max (<= tpatt-min tpatt-max))
+     (==> error-dialog popup "Undefined test set") ())
+   ((or (< tpatt-min 0)
+	(> tpatt-min tpatt-max)
+	(> tpatt-max (bound pattern-matrix 1)))
+    (==> error-dialog popup "Illegal test set bounds"))
+   (t
+    (when (and patt-min patt-max 
+	       (<= tpatt-min patt-max)
+	       (>= tpatt-max patt-min) )
+	  (==> warning-dialog popuplock 3
+	       "Training set and test set overlap") )
+    (test-set tpatt-min tpatt-max)
+    t ) ) )
+
+
+(defmethod c-bptool break-action()
+  (when breakattempt
+	(==> break disable)
+	(==> msg-string settext "Immediate break")
+	(let ((debug-hook :debug-hook))
+	  (error 'bptool "Immediate break" ()) ) )
+  (setq breakattempt t)
+  (==> msg-string settext "Waiting for completion of current cycle..." ) )
+
+  
+
+(defmethod c-bptool run-action()
+  (let ((it ()))
+    (when (and (==> this check-matrix)
+	       (setq it (==> this define-learn)))
+	  (setq breakattempt ())
+	  (let ((lock (new disablelock thesets thealgos thepane iterations)))
+	    (==> break enable)
+	    (==> break enable)
+	    
+	    (save-perf ";;; run-action using function '%l'...\n" bplearn)
+	    (perf patt-min patt-max)
+	    (reset-training-ports)
+	    (auto-plot-training)
+	    (==> msg-string setdata 
+		 (sprintf "Age = %d,  Training Set Perf=%l%%  Error=%l" 
+			  age good-an-percent global-error ) )
+	    (while ~breakattempt
+	      (setq it (apply (eval bplearn) it))
+	      (perf patt-min patt-max)
+	      (auto-plot-training)
+	      (==> msg-string setdata 
+		   (sprintf "Age = %d, Training Set Perf=%l%%  Error=%l" 
+			    age good-an-percent global-error ) ) ) )
+	  (save-perf ";;; break\n")
+	  (==> break disable) ) ) )
+
+
+(defmethod c-bptool trun-action()
+  (let ((it ()))
+    (when (and (==> this check-matrix)
+	       (setq it (==> this define-learn))
+	       (==> this define-test))
+	  (setq breakattempt ())
+	  (let ((lock (new disablelock thesets thealgos thepane iterations)))
+	    (==> break enable)
+	    (==> break enable)
+	    (save-perf ";;; trun-action using function '%l'...\n" bplearn)
+	    (reset-training-ports)
+	    (reset-test-ports)
+	    (perf patt-min patt-max)
+	    (auto-plot-training)
+	    (==> msg-string setdata 
+		 (sprintf "Age = %d, Training Set Perf=%l%%  Error=%l" 
+			  age good-an-percent global-error ) )
+	    (perf tpatt-min tpatt-max)
+	    (auto-plot-test)
+	    (==> msg-string setdata 
+		 (sprintf "Age = %d, Test Set Perf=%l%%  Error=%l" 
+			  age good-an-percent global-error ) )
+	    (while ~breakattempt
+	      (setq it (apply (eval bplearn) it))
+	      (perf patt-min patt-max)
+	      (auto-plot-training)
+	      (==> msg-string setdata 
+		   (sprintf "Age = %d, Training Set Perf=%l%%  Error=%l" 
+			    age good-an-percent global-error ) )
+	      (perf tpatt-min tpatt-max)
+	      (auto-plot-test)
+	      (==> msg-string setdata 
+		   (sprintf "Age = %d, Test Set Perf=%l%%  Error=%l" 
+			    age good-an-percent global-error ) ) ) )
+	  (save-perf ";;; break\n")
+	  (==> break disable) ) ) )
+
+
+(defmethod c-bptool learn-action()
+  (when (and (==> this check-matrix)
+	     (==> this define-learn) )
+	(setq breakattempt ())
+	(let ((lock (new disablelock thesets thealgos thepane iterations)))
+	  (==> break enable)
+	  (==> break enable)
+	  (save-perf ";;; learn-action using function '%l'...\n" bplearn)
+	  (==> msg-string setdata (sprintf "Learning..."))
+	  (let ((it (list 1)))
+	    (while ~breakattempt
+	      (setq it (apply (eval bplearn) it)) ) )
+	  (==> msg-string setdata (sprintf "Age = %d" age)) )
+	(save-perf ";;; break\n")
+	(==> break disable) ) )
+
+(defmethod c-bptool perf-training-action()
+  (when (and (==> this check-matrix)
+	     (==> this define-learn) )
+	(setq breakattempt t)
+	(let ((lock (new disablelock thesets thealgos thepane iterations)))
+	  (==> break enable)
+	  (==> break enable)
+	  (==> msg-string setdata (sprintf "Age = %d, Training Set Perf" age))
+	  (perf patt-min patt-max)
+	  (==> msg-string setdata (sprintf "Age = %d, Training Perf=%l%%  Error=%l" 
+			age good-an-percent global-error ) ) )
+	(save-perf ";;; break\n")
+	(==> break disable) ) )
+
+(defmethod c-bptool perf-test-action()
+  (when (and (==> this check-matrix)
+	     (==> this define-test) )
+	(setq breakattempt t)
+	(let ((lock (new disablelock thesets thealgos thepane iterations)))
+	  (==> break enable)
+	  (==> break enable)
+	  (==> msg-string setdata 
+	       (sprintf "Age = %d, Test Set Perf" age))
+	  (perf tpatt-min tpatt-max)
+	  (==> msg-string setdata 
+	       (sprintf "Age = %d, Test Set Perf=%l%%  Error=%l" 
+			age good-an-percent global-error ) ) )
+	(save-perf ";;; break\n")
+	(==> break disable) ) )
+
+(defmethod c-bptool setpatternfile(file)
+  (if (<> "" file)
+      (if (not (open-read file))
+	  (==> error-dialog popup (sprintf "Cannot open pattern File \"%s\"" file))
+	(load-matrix pattern-matrix file)
+	(if (<> (bound pattern-matrix 0) 2)
+	    (==> error-dialog popup "Illegal pattern file")
+	  (==> patternfile settext
+	       (sprintf "Input patterns file: [ %s %dx%d ]" 
+			(regex-subst "(.*)/([^/]+)" "%1" file)
+			(1+ (bound pattern-matrix 1)) 
+			(1+ (bound pattern-matrix 2)) ) )
+	  (==> pattmin setdata 0)
+	  (==> tpattmax setdata (bound pattern-matrix 1)))) ) )
+
+(defmethod c-bptool setdesiredfile(file)
+  (if (<> "" file)
+      (if (not (open-read file))
+	  (==> error-dialog popup (sprintf "Cannot open desired file \"%s\"" file))
+	  (load-matrix desired-matrix file)
+	  (if (<> (bound desired-matrix 0) 2)
+	      (==> error-dialog popup "Illegal desired file") 
+	    (==> desiredfile settext
+		 (sprintf "Desired outputs file:  [ %s %dx%d ]" 
+			  (regex-subst "(.*/)([^/]+)" "%1" file)
+			(1+ (bound desired-matrix 1)) 
+			(1+ (bound desired-matrix 2)) ) )
+	    (==> pattmin setdata 0)
+	    (==> tpattmax setdata (bound desired-matrix 1)))) ) )
+
