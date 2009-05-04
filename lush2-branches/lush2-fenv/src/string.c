@@ -687,9 +687,9 @@ const char *str_number_hex(double x)
 {
    int ix = (int)floor(x);
    
-   if (isnanD((real)x))
+   if (isnan((real)x))
       return nanlit;
-   if (isinfD((real)x))
+   if (isinf((real)x))
       return (x>0 ? inflit : ninflit);
    if (ix == 0)
       return "0";

@@ -910,8 +910,8 @@ int tl_date_code(at *dt, int flag, float *m)
          makecycle(after, before, (double)ns, &m[count]);
          count += 2;
       } else {
-         m[count++] = getnanF();
-         m[count++] = getnanF();
+         m[count++] = NAN;
+         m[count++] = NAN;
       }
    }
   
@@ -922,8 +922,8 @@ int tl_date_code(at *dt, int flag, float *m)
          makecycle(after,before, (double)(ns+86400*wday),&m[count]);
          count += 2;
       } else {
-	  m[count++] = getnanF();
-	  m[count++] = getnanF();
+         m[count++] = NAN;
+         m[count++] = NAN;
       }
    }
   
@@ -946,8 +946,8 @@ int tl_date_code(at *dt, int flag, float *m)
          makecycle(after,before,now,&m[count]);
          count += 2;
       } else {
-         m[count++] = getnanF();
-         m[count++] = getnanF();
+         m[count++] = NAN;
+         m[count++] = NAN;
       }
    }
    
@@ -962,8 +962,8 @@ int tl_date_code(at *dt, int flag, float *m)
          makecycle(after,before,now,&m[count]);
          count += 2;
       } else {
-         m[count++] = getnanF();
-         m[count++] = getnanF();
+         m[count++] = NAN;
+         m[count++] = NAN;
       }
    }
    return count;
