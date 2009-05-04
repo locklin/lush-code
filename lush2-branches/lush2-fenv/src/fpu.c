@@ -37,6 +37,7 @@
 #endif
 #include <signal.h>
 #include <fenv.h>
+#include <float.h>
 
 typedef RETSIGTYPE (*SIGHANDLERTYPE)();
 
@@ -54,14 +55,23 @@ static int fpe_inv = 0;
 static int fpe_ofl = 0;
 static fenv_t standard_fenv;
 
+#define KEY_INVALID    "invalid"
+#define KEY_DENORM     "denorm"
+#define KEY_DIVBYZERO  "div-by-zero"
+#define KEY_OVERFLOW   "overflow"
+#define KEY_UNDERFLOW  "underflow"
+#define KEY_INEXACT    "inexact"
+#define KEY_ALL_EXCEPT "all"
 
-#define KEY_INVALID    "Invalid"
-#define KEY_DENORM     "Denorm"
-#define KEY_DIVBYZERO  "DivByZero"
-#define KEY_OVERFLOW   "Overflow"
-#define KEY_UNDERFLOW  "Underflow"
-#define KEY_INEXACT    "Inexact"
-#define KEY_ALL_EXCEPT "All"
+#define KEY_DOWNWARD   "downward"
+#define KEY_TONEAREST  "to-nearest"
+#define KEY_TOWARDZERO "toward-zero"
+#define KEY_UPWARD     "upward"
+
+#define KEY_FLOAT      "float"
+#define KEY_DOUBLE     "double"
+#define KEY_EXTENDED   "extended"
+
 
 /* testing for special floating point values */
 
@@ -389,9 +399,36 @@ DX(xfpu_precision)
 /* configure FPU rounding behavior */
 DX(xfpu_round)
 {
-   RAISEFX(errmsg_unsup, NIL);
+   char *keywords = KEY_TOWARDZERO KEY_TONEAREST KEY_UPWARD KEY_DOWNWARD;
+   int mode = 0;
+   for (int i=1; i<= arg_number; i++) {
+      char *kw = strstr(keywords, nameof(ASYMBOL(i)));
+      switch (1+(kw-keywords)) {
+      case 1:
+         mode = FE_TOWARDZERO;
+         break;
+           
+      case sizeof(KEY_TOWARDZERO): 
+         mode = FE_TONEAREST; 
+         break;
+         
+      case sizeof(KEY_TOWARDZERO KEY_TONEAREST):
+         mode = FE_UPWARD;
+         break;
+
+      case sizeof(KEY_TOWARDZERO KEY_TONEAREST KEY_UPWARD):
+         mode = FE_DOWNWARD;
+         break;
+
+      default:
+         RAISEFX(errmsg_keyword, APOINTER(i));
+      }
+   }
+   if (fesetround(mode))
+      fprintf(stderr, "could not change FPU rounding mode\n");
    return NIL;
 }
+
 
 /* report in string what FPU status flags are set */
 char *sprint_excepts(char *buf, int excepts)
@@ -426,15 +463,49 @@ DX(xfpu_info)
    ARG_NUMBER(0);
    char buffer[256], *buf = buffer;
 // #pragma STDC FENV_ACCESS ON
+
+   print_char('\n');
+   print_string("Operating precision   :");
+   switch (FLT_EVAL_METHOD) {
+   case 0: print_string(" "KEY_FLOAT); break;
+   case 1: print_string(" "KEY_DOUBLE); break;
+   case 2: print_string(" "KEY_EXTENDED); break;
+   default: print_string(" Unknown"); break;
+   }
+   print_char('\n');
+
+#if 0
+   print_string("Rounding mode         :");
+   switch (FLT_ROUNDS) {
+   case 0: print_string(" "KEY_TOWARDZERO); break;
+   case 1: print_string(" "KEY_TONEAREST); break;
+   case 2: print_string(" "KEY_UPWARD); break;
+   case 3: print_string(" "KEY_DOWNWARD); break;
+   default: print_string(" Unknown"); break;
+   }
+   print_char('\n');
+#else
+   print_string("Rounding mode         :");
+   switch (fegetround()) {
+   case FE_TOWARDZERO: print_string(" "KEY_TOWARDZERO); break;
+   case FE_TONEAREST:  print_string(" "KEY_TONEAREST); break;
+   case FE_UPWARD:     print_string(" "KEY_UPWARD); break;
+   case FE_DOWNWARD:   print_string(" "KEY_DOWNWARD); break;
+   default: print_string(" Unknown"); break;
+   }
+   print_char('\n');
+#endif
+
+   print_string("FPU exceptions set    :");
+   print_string(sprint_excepts(buf, fetestexcept(FE_ALL_EXCEPT)));
+   print_char('\n');
+
 #if defined(HAVE_FEENABLEEXCEPT)
    print_string("FPU exceptions trapped:");
    print_string(sprint_excepts(buf, fegetexcept()));
    print_char('\n');
 #endif
 
-   print_string("FPU exceptions raised :");
-   print_string(sprint_excepts(buf, fetestexcept(FE_ALL_EXCEPT)));
-   print_char('\n');
 
    return NIL;
 }
@@ -455,14 +526,12 @@ void init_nan(void)
 {
    ieee_present = ( sizeof(real)==8 && sizeof(int)==4 );
 
+   /* set up and save standard fpu environment */
+   fesetenv(FE_DFL_ENV);
    configure_fpu_traps();
-   
-   /* save standard fpu environment */
-   feclearexcept(FE_ALL_EXCEPT);
    assert(fetestexcept(FE_ALL_EXCEPT)==0);
    fegetenv(&standard_fenv);
 
-   /* Define functions */
    dx_define("infinityp", xinfinityp);
    dx_define("nanp", xnanp);
    dx_define("eps", xeps);
