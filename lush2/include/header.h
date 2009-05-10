@@ -947,8 +947,6 @@ typedef struct subscript {
 #define IND_BASE(ind)      (gptr) ((char *) IND_ST(ind)->data + \
                            (ind)->offset * storage_sizeof[IND_STTYPE(ind)])
 #define IND_BASE_TYPED(ind, T) ((T *)(IND_ST(ind)->data) + (ind)->offset)
-#define IND_UNSIZEDP(ind) (IND_NDIMS(ind)==-1)
-#define IDX_UNSIZEDP(idx) IND_UNSIZEDP(idx)
 LUSHAPI size_t index_nelems(const index_t*);
 
 /* Function related to <struct index> objects */

@@ -168,21 +168,18 @@ static const char *index_name(at *p)
    index_t *ind = Mptr(p);
    char *s = string_buffer;
    
-   if (IND_UNSIZEDP(ind)) {
-      sprintf(s, "::%s:<unsized>", NAMEOF(Class(p)->classname));
-
-   } else {
-      sprintf(s, "::%s:<", NAMEOF(Class(p)->classname));
-      while (*s)
-         s++;
-      for (int d=0; d<ind->ndim; d++) {
-         sprintf(s, "%"PRIdPTR"x", ind->dim[d]);
+   assert(IND_NDIMS(ind)>=0);
+   sprintf(s, "::%s:<", NAMEOF(Class(p)->classname));
+   while (*s)
+      s++;
+   for (int d=0; d<IND_NDIMS(ind); d++) {
+      sprintf(s, "%"PRIdPTR"x", ind->dim[d]);
          while (*s)
             s++;
-      }
-      if (s[-1]=='x')
-         s[-1] = '>';
    }
+   if (s[-1]=='x')
+      s[-1] = '>';
+
    return mm_strdup(string_buffer);
 }
 
@@ -213,9 +210,6 @@ static at *index_listeval(at *p, at *q)
 {
    index_t *ind = Mptr(p);
    
-   if (IND_UNSIZEDP(ind))
-      error(NIL, "unsized index", p);
-
    /* There are two subscript modes:
     * 1. The array-take/put-style subscription
     * 2. select*-style subscription with a single, partial subscript
@@ -555,16 +549,6 @@ static char *chk_nonempty(index_t *ind)
       return NULL;
 }
 
-/* static inline char * */
-/* chk_sized(index_t *ind) */
-/* { */
-/*   static char *msg_unsized = "index is unsized"; */
-/*   if (IND_UNSIZEDP(ind)) */
-/*     return msg_unsized; */
-/*   else */
-/*     return NIL; */
-/* } */
-
 /* raise error if dimension d is invalid          */
 /* yield equivalent non-negative value otherwise  */
 static int validate_dimension(index_t *ind, int d)
@@ -856,8 +840,6 @@ DX(xidx_numericp)
 
 bool index_contiguousp(const index_t *ind)
 {
-   if (IND_UNSIZEDP(ind))
-      RAISEF("unsized index", NIL);
    ptrdiff_t size = 1;
    for (int i=IND_NDIMS(ind)-1; i>=0; i--) {
       if (size != IND_MOD(ind, i))
@@ -880,8 +862,8 @@ DX(xidx_contiguousp)
 /* you may reshape a malleable index                  */
 bool index_malleablep(const index_t *ind)
 {
-   if (IND_UNSIZEDP(ind))
-      RAISEF("unsized index", NIL);
+   if (index_emptyp(ind))
+      RAISEF("empty index", NIL);
    if (IND_NDIMS(ind)==1)
       return true;
    
@@ -944,7 +926,7 @@ DX(xarray_dc)
 
 size_t index_nelems(const index_t *ind) 
 {
-   size_t nelems = (IND_UNSIZEDP(ind)) ? 0 : 1;
+   int nelems = 1;
    for (int i=0; i<IND_NDIMS(ind); i++) {
       if (nelems==0) break;
       nelems *= IND_DIM(ind, i);
@@ -963,10 +945,7 @@ DX(xidx_rank)
 {
    ARG_NUMBER(1);
    index_t *ind = AINDEX(1);
-   if (IND_UNSIZEDP(ind))
-      return NIL;
-   else
-      return NEW_NUMBER(IND_NDIMS(ind));
+   return NEW_NUMBER(IND_NDIMS(ind));
 }
 
 DX(xidx_offset)
@@ -1505,8 +1484,8 @@ void easy_index_check(index_t *ind, shape_t *shp)
    static char message[40];
    char *msg = message;
    
-   if (IND_UNSIZEDP(ind))
-      RAISEF("index is unsized", NIL);
+   if (index_emptyp(ind))
+      RAISEF("empty index", NIL);
 
    if (shp->ndims != IND_NDIMS(ind)) {
       sprintf(msg,"%dD index expected",shp->ndims);
@@ -1554,12 +1533,6 @@ static void idx_to_index(struct idx *idx, index_t *ind)
 
 void index_read_idx(index_t *ind, struct idx *idx)
 {
-    /* A read idx CANNOT be unsized!  Don't forget that redimensioning
-       occasionally cause a reallocation.  You certainly cannot do that 
-       on a read only object.  Most (all?)  automatic redimensioning 
-       function write in the matrix they redimension. */
-   if (IND_UNSIZEDP(ind))
-      error(NIL, "unsized index",NIL);
    index_to_idx(ind, idx);
 }
 
@@ -1863,7 +1836,7 @@ int save_matrix_len(index_t *ind)
    size_t size, elsize;
    mode_check(ind, &size, &elsize);
    int ndim = ind->ndim;
-   if (IND_UNSIZEDP(ind))
+   if (index_emptyp(ind))
       return 2 * sizeof(int);
    else if (ndim==1 || ndim==2)
       return elsize * size + 5 * sizeof(int);
@@ -1900,7 +1873,8 @@ static void format_save_matrix(index_t *ind, FILE *f, bool with_header)
    FMODE_BINARY(f);
    if (with_header) {
       /* magic, ndim, dimensions */
-      int j, ndim = IND_UNSIZEDP(ind) ? -1 : IND_NDIMS(ind);
+      int j, ndim = IND_NDIMS(ind);
+      assert(ndim>=0);
       write4(f, magic);
       write4(f, ndim);
       for (j = 0; j < ndim; j++)
@@ -1911,15 +1885,13 @@ static void format_save_matrix(index_t *ind, FILE *f, bool with_header)
             write4(f, 1);
     }
    /* iterate */
-   ifn (IND_UNSIZEDP(ind)) {
-      struct idx id;
-      index_read_idx(ind,&id);
-      begin_idx_aloop1(&id, off) {
-         char *p = (char*)(id.srg->data) + storage_sizeof[st]*(id.offset + off);
-         fwrite(p, storage_sizeof[st], 1, f);
-      } end_idx_aloop1(&id, off);
-      index_rls_idx(ind,&id);
-   }
+   struct idx id;
+   index_read_idx(ind,&id);
+   begin_idx_aloop1(&id, off) {
+      char *p = (char*)(id.srg->data) + storage_sizeof[st]*(id.offset + off);
+      fwrite(p, storage_sizeof[st], 1, f);
+   } end_idx_aloop1(&id, off);
+   index_rls_idx(ind,&id);
    test_file_error(f);
 }
 
@@ -1972,8 +1944,9 @@ static void format_save_ascii_matrix(index_t *ind, FILE *f, int mode)
 {
    /* validation */  
    compatible_p();
-   if (IND_UNSIZEDP(ind))
-      error(NIL,"ascii matrix format does not support unsized matrices", ind->backptr);
+   if (index_emptyp(ind))
+      RAISEF("empty index", NIL);
+
    storage_type_t st = IND_STTYPE(ind);
    flt (*getf)(gptr,size_t) = storage_getf[st];
 
@@ -2097,9 +2070,9 @@ void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
 
    /* validate */
    mode_check(ind, &size, &elsize);
-   contiguous = index_contiguousp(ind);
-   if (IND_UNSIZEDP(ind))
+   if (index_emptyp(ind))
       return;
+   contiguous = index_contiguousp(ind);
    if (IND_STTYPE(ind) == ST_AT || IND_STTYPE(ind) == ST_GPTR )
       error(NIL,"cannot read data for this storage type", IND_ATST(ind));
    
@@ -2175,7 +2148,7 @@ void import_text_matrix(index_t *ind, FILE *f)
    storage_type_t type = IND_STTYPE(ind);
    void (*setr)(gptr,size_t,real) = storage_setr[type];
 
-   if (IND_UNSIZEDP(ind))
+   if (index_emptyp(ind))
       return;
    if (type == ST_AT || type == ST_GPTR )
       error(NIL, "cannot read data for this storage type",IND_ATST(ind));

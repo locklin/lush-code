@@ -55,7 +55,7 @@ static char badargs[]="bad arguments";
 #define case_type1(storage_type, t1, FUNC_NAME) \
     case_type2_1arg1par(storage_type, t1, t1, FUNC_NAME) 
 
-Xidx_po(maclearwith, Mis_sized);
+Xidx_po(maclearwith, Mnocheck);
 
 /******************** FUNCTION DEFINITIONS (2 arguments) ******************* */
 #undef case_type2

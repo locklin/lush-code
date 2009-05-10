@@ -85,9 +85,9 @@ extern LUSHAPI char *rterr_rtype;
 extern LUSHAPI char *rterr_dim;
 extern LUSHAPI char *rterr_loopdim;
 extern LUSHAPI char *rterr_emptystr;
+extern LUSHAPI char *rterr_emptyidx;
 extern LUSHAPI char *rterr_range;
 extern LUSHAPI char *rterr_srg_overflow;
-extern LUSHAPI char *rterr_unsized_matrix;
 extern LUSHAPI char *rterr_not_same_dim;
 extern LUSHAPI char *rterr_out_of_memory;
 extern LUSHAPI char *rterr_cannot_realloc;
@@ -130,9 +130,13 @@ LUSHAPI void srg_resize_mm(struct srg* ,size_t , const char *, int);
 LUSHAPI void srg_resize(struct srg *, size_t, const char *, int );
 LUSHAPI void srg_free(struct srg *);
 
+LUSHAPI bool idx_emptyp(struct idx *);
+
+#define Mnocheck(...)
+
 #define Mis_sized(i1) \
-    if(IDX_UNSIZEDP(i1)) \
-        lush_error(rterr_unsized_matrix); 
+  if (idx_emptyp(i1))              \
+    lush_error(rterr_emptyidx); 
 
 #define Mis_sized_is_sized(i1, i2) \
     Mis_sized(i1); Mis_sized(i2)
@@ -191,19 +195,19 @@ LUSHAPI void srg_free(struct srg *);
 }
 
 #define Mcheck0(i1) \
-    if (IDX_UNSIZEDP(i1)) { \
+    if (idx_emptyp(i1)) { \
         Midx_checksize0(i1);  \
     }
 
 #define Msize_or_check0(i1, i2) \
     Mis_sized(i1) \
-    if (IDX_UNSIZEDP(i2)) { \
+    if (idx_emptyp(i2)) { \
         Midx_checksize0(i2);  \
     }
 
 #define Msize_or_check1(i1, i2) \
     Mis_sized(i1) \
-    if (IDX_UNSIZEDP(i2)) { \
+    if (idx_emptyp(i2)) { \
         (i2)->dim[0]=(i1)->dim[0]; \
         (i2)->mod[0]=1; \
         Midx_checksize1(i2);  \
@@ -213,7 +217,7 @@ LUSHAPI void srg_free(struct srg *);
  
 #define Msize_or_check2(i1, i2) \
     Mis_sized(i1) \
-    if (IDX_UNSIZEDP(i2)) { \
+    if (idx_emptyp(i2)) { \
 	(i2)->dim[1]=(i1)->dim[1]; \
 	(i2)->mod[1]=1;  \
 	(i2)->dim[0]=(i1)->dim[0]; \
@@ -225,7 +229,7 @@ LUSHAPI void srg_free(struct srg *);
 
 #define Msize_or_check(i1, i2) \
     Mis_sized(i1) \
-    if (IDX_UNSIZEDP(i2)) { \
+    if (idx_emptyp(i2)) { \
 	size_t m=1; \
 	for (int j=(i2)->ndim-1; j>=0; --j) { \
 	  (i2)->dim[j]=(i1)->dim[j]; \
@@ -242,7 +246,7 @@ LUSHAPI void srg_free(struct srg *);
     }
 
 #define Msize_or_check_1D(dim0, i2) \
-    if (IDX_UNSIZEDP(i2)) { \
+    if (idx_emptyp(i2)) { \
 	(i2)->dim[0]=dim0; \
 	(i2)->mod[0]=1; \
         Midx_checksize(i2);  \
@@ -252,7 +256,7 @@ LUSHAPI void srg_free(struct srg *);
     }
 
 #define Msize_or_check_2D(dim0, dim1, i2) \
-    if (IDX_UNSIZEDP(i2)) { \
+    if (idx_emptyp(i2)) { \
 	(i2)->dim[1]=dim1; \
 	(i2)->mod[1]=1; \
 	(i2)->dim[0]=dim0; \
@@ -310,7 +314,7 @@ LUSHAPI void srg_free(struct srg *);
 
 #define Mcheck_m1in_m1in_m2out(i0, i1, i2) \
     Mis_sized_is_sized(i0, i1); \
-    if (IDX_UNSIZEDP(i2)) { \
+    if (idx_emptyp(i2)) { \
 	(i2)->dim[1]=(i1)->dim[0]; \
 	(i2)->mod[1]=1;  \
 	(i2)->dim[0]=(i0)->dim[0]; \
@@ -322,7 +326,7 @@ LUSHAPI void srg_free(struct srg *);
 
 #define Mcheck_m2in_m2in_m4out(i0, i1, i2) \
     Mis_sized_is_sized(i0, i1); \
-    if (IDX_UNSIZEDP(i2)) { \
+    if (idx_emptyp(i2)) { \
 	(i2)->dim[3]=(i1)->dim[1]; \
 	(i2)->mod[3]=1;  \
 	(i2)->dim[2]=(i1)->dim[0]; \
