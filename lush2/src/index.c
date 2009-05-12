@@ -862,8 +862,6 @@ DX(xidx_contiguousp)
 /* you may reshape a malleable index                  */
 bool index_malleablep(const index_t *ind)
 {
-   if (index_emptyp(ind))
-      RAISEF("empty index", NIL);
    if (IND_NDIMS(ind)==1)
       return true;
    
