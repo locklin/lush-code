@@ -239,6 +239,19 @@ break_irq(void)
 }
 
 
+/* usr1_irq -- toggle MM debug mode and return */
+
+static RETSIGTYPE usr1_irq(void)
+{
+   static bool debug_on = false;
+   debug_on = !debug_on;
+   mm_debug(debug_on);
+#ifdef SYSVSIGNAL
+   goodsignal(SIGINT, usr1_irq);
+#endif
+}
+
+
 /* lastchance -- safety code for hopeless situations */
 
 extern at *at_toplevel; /* in toplevel.c */
@@ -360,7 +373,7 @@ static void set_irq(void)
    goodsignal(SIGLOST, gasp_irq);
 #endif
 #ifdef SIGUSR1
-   goodsignal(SIGUSR1,  gasp_irq);
+   goodsignal(SIGUSR1,  usr1_irq);
 #endif
 #ifdef SIGUSR2
    goodsignal(SIGUSR2,  gasp_irq);
