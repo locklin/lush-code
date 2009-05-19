@@ -102,7 +102,6 @@
   (setq toolbar (new Column))
   (setq tns thumbnails)
   (setq keys (htable))
-  ;; 
   (let ((buttons (alist     ;; predefined buttons
 		  "Q.uit"      (lambda (x) (==> thiswindowobject delete) x)
 		  "A.utoscale" -toggle-autoscale
@@ -112,12 +111,12 @@
 		  "-."         (lambda (x) (==> ogrim decr-zoom) x) )))
     
     ;; add pre-efined buttons not defined by user
-    (each (((label . func) buttons))
+    (dolist ((label . func) buttons)
       (when (null (alist-get label nfuncs))
 	(setq nfuncs (alist-add label func nfuncs)) ))
     
     ;; create buttons and add to toolbar
-    (each ((nfunc nfuncs))
+    (dolist (nfunc nfuncs)
       (let (((label . key) (-dissect-button-label (car nfunc))))
 	(let ((iptbtn (new IPTriggerButton ogrim label (cdr nfunc))))
 	  (when key
@@ -172,6 +171,13 @@
       (draw img s) )
     win))
 
+#? *image-show-autoscale*
+;; {<see> image-disp}
+;; Boolean variable. When true, <image-show> will linearly scale
+;; graylevel images to use the full dynamic range of the display
+;; device (default: <t>).
+(defparameter *image-show-autoscale* t)
+
 #? (image-show <arg> [<label> <func> [...]])
 ;; {<see> image-disp}
 ;; Open new image viewer and display image(s). Return the viewer.
@@ -199,7 +205,8 @@
 (de image-show (arg . args)
   (let ((arg (if (stringp arg) (image-find arg) arg))
 	(title "")
-	(img ()) )
+	(img ())
+        (win ()) )
     (cond
      ((stringp arg)
       (let ((reload (lambda (img) (image-read :thiswindowobject:title))))
@@ -215,17 +222,21 @@
      (t
       (error "neither filename nor index" arg) ))
     
-    (if (listp arg)
-	(let* ((ncols 8)
-               (cb (lambda (fn)
-                     (==> thiswindowobject setdata (image-read fn))
-                     (setq :thiswindowobject:title fn)
-                     (let ((window :thiswindowobject:window))
-                       (x11-configure () () () () () fn) )))
-               (tns (new ThumbnailPanel arg cb ncols 100 100)) )
-          (when (> (length arg) 30)
-            (setq tns (new Scroller (+ 28 (* ncols 104)) 312 tns)) )
-	  (new ImageShowWindow title img tns (alist . args)) )
-      (new ImageShowWindow title img () (alist . args)) )))
 
+    (setq win (if (listp arg)
+                  (let* ((ncols 8)
+                         (cb (lambda (fn)
+                               (==> thiswindowobject setdata (image-read fn))
+                               (setq :thiswindowobject:title fn)
+                               (let ((window :thiswindowobject:window))
+                                 (x11-configure () () () () () fn) )))
+               (tns (new ThumbnailPanel arg cb ncols 100 100)) )
+                    (when (> (length arg) 30)
+                      (setq tns (new Scroller (+ 28 (* ncols 104)) 312 tns)) )
+                    (new ImageShowWindow title img tns (alist . args)) )
+                (new ImageShowWindow title img () (alist . args)) ))
+    (when *image-show-autoscale*
+      (==> win keypress "A" 0 0) )
+    win))
+  
 
