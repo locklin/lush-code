@@ -46,9 +46,9 @@ char *rterr_rtype = "invalid return type: for loop must be executed once";
 char *rterr_dim = "dimension is out of bounds";
 char *rterr_loopdim = "looping dimensions are different";
 char *rterr_emptystr = "empty string";
+char *rterr_emptyidx = "array is empty";
 char *rterr_range = "range error";
 char *rterr_srg_overflow = "change in idx could cause srg overflow";
-char *rterr_unsized_matrix = "matrix has not been sized";
 char *rterr_not_same_dim = "matrix must have same dimensions";
 char *rterr_out_of_memory = "out of memory (reallocating storage)";
 char *rterr_cannot_realloc = "cannot reallocate storage";
@@ -273,7 +273,7 @@ check_main_maout(struct idx *i1, struct idx *i2)
 void 
 check_main_maout_any(struct idx *i1, struct idx *i2)
 {
-  if (IDX_UNSIZEDP(i2))
+  if (idx_emptyp(i2))
     {
       if (i1->ndim != i2->ndim)
         lush_error(rterr_not_same_dim);
@@ -337,6 +337,14 @@ void
 check_m2in_m2in_m4out(struct idx *i0, struct idx *i1, struct idx *i2)
 {
   Mcheck_m2in_m2in_m4out(i0, i1, i2);
+}
+
+bool idx_emptyp(struct idx *i0)
+{
+   for (int i=0; i<i0->ndim; i++)
+      if (i0->dim[i] == 0)
+         return true;
+   return false;
 }
 
 

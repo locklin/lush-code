@@ -129,14 +129,11 @@
 ;; elements of an array and returns an array of results.
 
 #? (array-map <f> <a1>...<an>)
+;; {<see> array-map-to, array-mapc}
 ;; Apply function <f> to all identically subscripted elements of arrays 
 ;; <a1>...<an>, store the results in a new array and return it.
 ;; All arrays <a1>...<an> must have the same shape. 
 ;;
-;; <Array-map> has to guess the element-type of the resulting array. It
-;; chooses the element type of <a1>. If that is an inappropriate choice, 
-;; use <array-map-to> instead.
-;; {<see> array-map-to, array-mapc}
 ;; Examples:
 ;;
 ;; {<ex> (let ((m (reshape (array-range 20) '(4 5)))) 
@@ -145,9 +142,19 @@
 ;;              (bm (idx-slice m 1 '(2))) )
 ;;          (array-splice (array-map mat-fliplr bm)) )}
 (defun array-map (f &rest as) 
-  (let ((out (clone-array (car as))))
+  (let ((out ())
+        (test (apply f (mapcar #\((@ $1)) as))) )
+    ;; create output array based on types of test and first array in as.
+    (setq out (cond
+               ((and (numberp test) (idx-numericp (car as)))
+                (clone-array (car as)) )
+               ((not (numberp test))
+                (atom-array ($ (car as))) )
+               ((not (idx-numericp (car as)))
+                (double-array ($ (car as))) )
+               (t 
+                (error "should never get here") )))
     (array-map-to out f . as) ))
-
 
 #? (array-map-to <out> <f> <a1>...<an>)
 ;; Apply function <f> to all identically subscripted elements of arrays 
@@ -168,7 +175,6 @@
                      `(array-map-to ,(car lvars) ,f ,@(cdr lvars)) )))
       (apply idx-bloop lforms lbody ()) ))
   out)
-
 
 #? (array-mapc <f> <a1>...<an>)
 ;; Apply function <f> to all identically subscripted elements of 

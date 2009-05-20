@@ -259,7 +259,7 @@ again:
    } else if (cl == &index_class && !opt_bwrite) {
       index_t *ind = Mptr(p);
       if (IND_STTYPE(ind) == ST_AT)
-         if (!IND_UNSIZEDP(ind)) {
+         if (!index_emptyp(ind)) {
             at** data;
             struct idx id;
             index_read_idx(ind, &id);
