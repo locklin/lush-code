@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.25 2008-12-01 20:25:32 leonb Exp $
+ * $Id: io.c,v 1.26 2009-05-25 02:12:18 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -709,6 +709,40 @@ errw2:
  */
 
 static at *
+rl_utf8(long h)
+{
+  char ub[8];
+  char *u = ub;
+  if (h > 0x10ffff)
+    return 0;
+  else if (h > 0xffff)
+    {
+      *u++ = 0xe0 | (unsigned char)(h>>18);
+      *u++ = 0x80 | (unsigned char)((h>>12)&0x3f);
+      *u++ = 0x80 | (unsigned char)((h>>6)&0x3f);
+      *u++ = 0x80 | (unsigned char)(h&0x3f);
+    }
+  else if (h > 0x7ff)
+    {
+      *u++ = 0xe0 | (unsigned char)(h>>12);
+      *u++ = 0x80 | (unsigned char)((h>>6)&0x3f);
+      *u++ = 0x80 | (unsigned char)(h&0x3f);
+    }
+  else if (h > 0x7f)
+    {
+      *u++ = 0xc0 | (unsigned char)(h>>6);
+      *u++ = 0x80 | (unsigned char)(h&0x3f);
+    }
+  else
+    {
+      *u++ = (unsigned char)h;
+    }
+  *u++ = 0;
+  return str_utf8_to_mb(ub);
+}
+
+
+static at *
 rl_string(register char *s)
 {
   register char *d, *ind;
@@ -740,24 +774,44 @@ rl_string(register char *s)
 	  goto err_string;
 	*d++ = h;
 
+      } else if (*s == 'u' || *s == 'U') {
+	unsigned long h = 0;
+        int c = ((*s == 'u') ? 4 : 8);
+        at *m;
+	s++;
+	for (; c > 0; c--) {
+	  ind = strchr(digit_string, tolower((unsigned char)*s));
+	  if (*s && ind) {
+	    h *= 16;
+	    h += (ind - digit_string);
+	    s++;
+	  } else
+	    break;
+	}
+        m = rl_utf8(h);
+        if (! EXTERNP(m, &string_class))
+	  goto err_string;
+        strcpy(d, SADD(m->Object));
+        d += strlen(d);
+        UNLOCK(m);
+
       } else if (*s == '^' && s[1]) {	/* control */
 	*d++ = (s[1]) & (0x1f);
 	s += 2;
-	
+
       } else if (*s == '+' && s[1]) {	/* high bit latin1*/
-#if HAVE_WCRTOMB
-	wchar_t wc = s[1] | 0x80;
-	char buffer[MB_LEN_MAX];
-	int m = wcrtomb(buffer, wc, NULL);
-	if (m > 0)
-	  {
-	    memcpy(d, buffer, m);
-	    d += m;
-	  }
-	else
-#endif	
-	  *d++ = (s[1]) | (0x80);
+#if HAVE_ICONV
+        at *m = rl_utf8(s[1] | 0x80);
+        if (! EXTERNP(m, &string_class))
+	  goto err_string;
+        strcpy(d, SADD(m->Object));
+        d += strlen(d);
+        UNLOCK(m);
+#else
+        *d++ = (s[1]) | 0x80;
+#endif
 	s += 2;
+
       } else if (*s == '\n') {	/* end of line */
 	s++;
 	
