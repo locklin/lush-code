@@ -315,20 +315,17 @@ static const char *storage_name(at *p)
    storage_t *st = (storage_t *)Mptr(p);
  
   if (st->flags & STS_MALLOC)
-      sprintf(string_buffer, "::%s:ram@%"PRIxPTR":<%"PRIdPTR">", 
-              NAMEOF(Class(p)->classname), (uintptr_t)st->data, st->size);
+      sprintf(string_buffer, "::%s:ram@%p:<%"PRIdPTR">", 
+              NAMEOF(Class(p)->classname), st->data, st->size);
    else if (st->flags & STS_MMAP)
-      sprintf(string_buffer, "::%s:mmap@%"PRIxPTR":<%"PRIdPTR">", 
-              NAMEOF(Class(p)->classname), (uintptr_t)st->data, st->size);
+      sprintf(string_buffer, "::%s:mmap@%p:<%"PRIdPTR">", 
+              NAMEOF(Class(p)->classname), st->data, st->size);
    else if (st->flags & STS_STATIC)
-      sprintf(string_buffer, "::%s:static@%"PRIxPTR,
-              NAMEOF(Class(p)->classname), (uintptr_t)st->data);
-   else if (st->data == NULL)
-      sprintf(string_buffer, "::%s:unsized@%"PRIxPTR,
-              NAMEOF(Class(p)->classname), (uintptr_t)st->data);
+      sprintf(string_buffer, "::%s:static@%p",
+              NAMEOF(Class(p)->classname), st->data);
    else
-      sprintf(string_buffer, "::%s:strange@%"PRIxPTR,
-              NAMEOF(Class(p)->classname), (uintptr_t)st->data);
+      sprintf(string_buffer, "::%s:strange@%p",
+              NAMEOF(Class(p)->classname), st->data);
   return mm_strdup(string_buffer);
 }
 

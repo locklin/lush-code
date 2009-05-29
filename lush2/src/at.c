@@ -304,11 +304,9 @@ DX(xunode_unify)
 const char *generic_name(at *p)
 {
    if (Class(p)->classname)
-      sprintf(string_buffer, "::%s:%lx", 
-              NAMEOF(Class(p)->classname),(long)Mptr(p));
+      sprintf(string_buffer, "::%s:%p", NAMEOF(Class(p)->classname),Mptr(p));
    else
-      sprintf(string_buffer, "::%lx:%lx", 
-              (long)Class(p), (long)Mptr(p));
+      sprintf(string_buffer, "::%p:%p", Class(p), Mptr(p));
    
    return mm_strdup(string_buffer);
 }
@@ -355,7 +353,7 @@ at *generic_listeval(at *p, at *q)
 
 static const char *gptr_name(at *p)
 {
-   sprintf(string_buffer, "#$%"PRIxPTR, (uintptr_t)Gptr(p));
+   sprintf(string_buffer, "#$%p", Gptr(p));
    return mm_strdup(string_buffer);
 }
 

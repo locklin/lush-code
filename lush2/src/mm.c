@@ -1864,7 +1864,7 @@ char *mm_info(int level)
       for (int b = 0; b < num_blocks; b++)
          if (blockrecs[b].t == t)
             n++;
-      BPRINTF(" %14s | %5"PRIdPTR" | %7"PRIdPTR"  (%6"PRIdPTR") |    %7"PRIdPTR" \n",
+      BPRINTF(" %14s | %5"PRIdPTR" | %7"PRIdPTR"  (%6d) |    %7"PRIdPTR" \n",
               types[t].name,
               types[t].size,
               total_objects_per_type_ih[t], n,
