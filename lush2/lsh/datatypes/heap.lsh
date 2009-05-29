@@ -24,309 +24,106 @@
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(libload "datatypes/small-int-set")
+(libload "datatypes/int-heap")
+(libload "datatypes/int-set")
 
 #? ** Heap / Priority Queue
 ;; A heap can hold arbitrary many items. Each item has an associated
 ;; key (a double number). Inserting new items and finding the item
 ;; with smallest key are fast operations.
 
-(defclass IHeap -iterator
-  ((-idx1- (-double-)) keys)
-  ((-idx1- (-int-)) dir) )
+(defclass Heap -iterator
+  ((-obj- (IntHeap))  ih)   ; index heap
+  ((-obj- (IntSet)) fs)   ; free indices
+  ((-idx1- (-any-)) objs) )
 
-(in-namespace (class IHeap)
-
-(defmacro parent (i)
-  `(trunc (/ (to-double (- ,i 1)) 2)) )
-
-(defmacro left-child (i)
-  `(+ ,i ,i 1) )
-
-(defmacro right-child (i)
-  `(+ ,i ,i 2) )
-
-)
-
-#? (new IHeap <n>)
-;; Create a new min-heap with initial capacity for <n> integer
-;; items.
+#? (new Heap <n>)
+;; Create a new min-heap with initial capacity for <n> objects.
 ;;
-;; This is an implicit implementation of a binary heap storing
-;; integer items. Class <IHeap> supports the iterator protocol.
-(defmethod IHeap IHeap (size)
+;; Class <Heap> supports the iterator protocol.
+(defmethod Heap Heap (size)
   (declare (-int-) size)
-  (setq dir (int-array (max 32 size)))
-  (setq keys (double-array (max 32 size)))
-  (idx-trim! dir 0 0 0)
-  (idx-trim! keys 0 0 0)
+  (setq ih (new IntHeap size))
+  (setq fh (new IntSet))
+  (setq objs (atom-array size))
+  (==> fh insert-all (as-int-array (arange* size)))
   ())
 
-(defmethod IHeap -restore-heap-up (i)
-  (declare (-int-) i)
-  (assert (< i (length dir)))
-  (when (> i 0)
-    (let ((j (parent i)))
-      (declare (-int-) j)
-      (when (< (keys i) (keys j)) ; this is a min heap
-	(let ((keyi (keys i)) (diri (dir i)))
-	  (declare (-int-) diri)
-	  (keys i (keys j)) (keys j keyi)
-	  (dir i (dir j))   (dir j diri)
-	  (declare (-method- (IHeap) ((-int-)) (-bool-)) -restore-heap-up)
-	  (==> this -restore-heap-up j) ))))
-  ())
-
-(defmethod IHeap -restore-heap-down (i)
-  (declare (-int-) i)
-  (assert (> i -1))
-  (when (< i (length dir))
-    (let ((j (left-child i)))
-      (declare (-int-) j)
-      (when (< j (length dir))
-	(when (< (keys j) (keys i))
-	  (let ((keyi (keys i)) (diri (dir i)))
-	    (declare (-int-) diri)
-	    (keys i (keys j)) (keys j keyi)
-	    (dir i (dir j))   (dir j diri)
-	    (declare (-method- (IHeap) ((-int-)) (-bool-)) -restore-heap-down)
-	    (==> this -restore-heap-down j) ))
-	(setq j (right-child i))
-	(when (< j (length dir))
-	  (when (< (keys j) (keys i))
-	    (let ((keyi (keys i)) (diri (dir i)))
-	      (declare (-int-) diri)
-	      (keys i (keys j)) (keys j keyi)
-	      (dir i (dir j))   (dir j diri)
-	      (==> this -restore-heap-down j) ))))))
-  ())
-
-#? (==> <IHeap> insert <k> <i>)
+#? (==> <Heap> insert <k> <i>)
 ;; Insert new item <i> with key/priority <k> into the heap.
-(defmethod IHeap insert (key i)
+(defmethod Heap insert (key i)
   (declare (-double-) key)
-  (declare (-int-) i)
-  (let ((n (length dir)))
-    (declare (-int-) n)
-    (array-extend! dir 0 1 ())
-    (array-extend! keys 0 1 ())
-    (dir n i)
-    (keys n key)
-    (==> this -restore-heap-up n) ))
+  (declare (-any-) i)
+  (when (emptyp fh)
+      ;; need to extend objs
+    (let ((n (length objs)))
+      (setq objs (array-extend objs 0 n ()))
+      (==> fh insert-all (as-int-array (arange* n (* 2 n))))
+      (setq n (* 2 n)) ))
+  
+  (let ((oi (==> fh minimum)))
+    (assert (null (objs oi)))
+    (==> ih insert key oi)
+    (==> fh remove oi)
+    (objs oi i) )
+  ())
 
-#? (==> <IHeap> insert-all <ks> <is>)
+#? (==> <Heap> insert-all <ks> <is>)
 ;; Insert all items in <is> with corresponding key in <ks>.
-(defmethod IHeap insert-all (ks is)
+(defmethod Heap insert-all (ks is)
   (declare (-idx1- (-double-)) ks)
-  (declare (-idx1- (-int-)) is)
   (let ((n (length keys))
         (m (length ks)))
     (declare (-int-) n m)
-    (when (<> m (length is))
-      (error "lengths of keys and items do not match") )
-    (array-extend! dir 0 m ())
-    (array-extend! keys 0 m ())
-    (incr m n)
-    (idx-bloop ((k ks) (i is))
-      (dir n (i))
-      (keys n (k))
-      (==> this -restore-heap-up n)
-      (incr n) )
-    (assert (= m n)) )
-  ())
-      
-#? (==> <IHeap> number-of-items)
-;; Number of items in the heap.
-(defmethod IHeap number-of-items ()
-  (length dir) )
-
-#? (==> <IHeap> key)
-;; Return current minimum key.
-(defmethod IHeap key ()
-  (when (= (length dir) 0) (error "No more items"))
-  (keys 0) )
-
-#? (==> <IHeap> peeknext)
-;; Return the minimum-key item without removing it from the heap.
-(defmethod IHeap peeknext ()
-  (when (= (length dir) 0) (error "No more items"))
-  (dir 0) )
-
-#? (==> <IHeap> next)
-;; Remove the minimum-key item from the heap and return it.
-(defmethod IHeap next ()
-  (prog1 (==> this peeknext)
-    (let ((n (- (length dir) 1)))
-      (declare (-int-) n)
-      (dir 0 (dir n))
-      (keys 0 (keys n))
-      (idx-extend! dir 0 -1)
-      (idx-extend! keys 0 -1)
-      (==> this -restore-heap-down 0)
-      )))
-
-#? (==> <IHeap> drop-lt <min-key>)
-;; Remove all items with key strictly less than <min-key> and
-;; return key of new minimum item in heap or <NaN> when heap is
-;; empty.
-(defmethod IHeap drop-lt (mk)
-  (declare (-double-) mk)
-  (while (and (not (emptyp dir)) (< (keys 0) mk))
-    (==> this next) )
-  (if (emptyp dir)
-      NAN
-    (keys 0)))
-
-#? (==> <IHeap> clear)
-;; Clear heap. After calling this method the heap object is empty.
-(defmethod IHeap clear ()
-  (idx-trim! dir 0 0 0)
-  (idx-trim! keys 0 0 0)
-  ())
-
-(defmethod IHeap -emptyp ()
-  (= (length dir) 0) )
-
-(defmethod IHeap -iterate ()
-  this)
-
-
-(defclass SmallIntHeap -iterator
-  ((-obj- (IHeap))       hp)      ; the actual heap
-  ((-idx1- (-int-))      hp-dir)  ; copy of heap's dir
-  ((-idx1- (-double-))   hp-keys) ; copy of heap's keys
-  ((-obj- (SmallIntSet)) ints)    ; set of live items 
-  ((-idx1- (-double-))   keys) )  ; current keys
-
-#? (new SmallIntHeap <n>)
-;; Create a new heap for integer items in range [0..<n-1>].
-;; 
-;; A <SmallIntHeap> offers deletion of items and updating of item
-;; keys. Unlike an <IHeap>, a <SmallIntHeap> keeps only one instance
-;; of an item in the heap (items are unique). Use method <insert> to
-;; insert an new item or to change an item's key.
-;;
-;; This heap implementation requires that the possible item values
-;; are in a fixed range [0..<n-1>], where <n> must be specified at
-;; heap creation time. A <SmallIntHeap> uses memory linear in <n>.
-;; Class <SmallIntHeap> supports the iterator protocol
-(defmethod SmallIntHeap SmallIntHeap (n)
-  (declare (-int-) n)
-  (setq hp (new IHeap n))
-  (setq hp-dir :hp:dir)
-  (setq hp-keys :hp:keys)
-  (setq ints (new SmallIntSet n))
-  (setq keys (double-array n))
-  ())
-
-#? (==> <SmallIntHeap> insert <k> <i>)
-;; Insert item <i> with key <k> or update item <i>'s key to <k>.
-(defmethod SmallIntHeap insert (key i)
-  (declare (-double-) key)
-  (declare (-int-) i)
-  (if (==> ints member i)
-      (when (<> (keys i) key)
-        (keys i key)
-        (==> hp insert key i) )
-    (==> ints insert i)
-    (==> hp insert key i)
-    (keys i key)
+    (do ((k ks) (i is))
+      (==> this insert k i) )
     ()))
 
-#? (==> <SmallIntHeap> number-of-items)
-(defmethod SmallIntHeap number-of-items ()
-  (==> ints number-of-items) )
+#? (==> <Heap> number-of-items)
+;; Number of items in the heap.
+(defmethod Heap number-of-items ()
+  (==> ih number-of-items) )
 
-;; remove obsolete entries from the heap
-(defmethod SmallIntHeap -update-heap ()
-  (let ((n (length hp-dir)))
-    (declare (-int-) n)
-    (while (and (> n 0)
-                (or (not (==> ints member (hp-dir 0)))
-                    (<> (hp-keys 0) (keys (hp-dir 0))) ))
-      ;; top entry is obsolete, update
-      (decr n)
-      (hp-dir 0 (hp-dir n))
-      (hp-keys 0 (hp-keys n))
-      (idx-extend! hp-dir 0 -1)
-      (idx-extend! hp-keys 0 -1)
-      (==> hp -restore-heap-down 0) ))
-  ())
-
-#? (==> <SmallIntHeap> key)
+#? (==> <Heap> key)
 ;; Return current minimum key.
-(defmethod SmallIntHeap key ()
-  (==> this -update-heap)
-  (==> hp key) )
+(defmethod Heap key ()
+  (==> ih key) )
 
-#? (==> <SmallIntHeap> peeknext)
+#? (==> <Heap> peeknext)
 ;; Return the minimum-key item without removing it from the heap.
-(defmethod SmallIntHeap peeknext ()
-  (==> this -update-heap)
-  (==> hp peeknext) )
+(defmethod Heap peeknext ()
+  (objs (==> ih peeknext)) )
 
-#? (==> <SmallIntHeap> next)
+#? (==> <Heap> next)
 ;; Remove the minimum-key item from the heap and return it.
-(defmethod SmallIntHeap next ()
-  (==> this -update-heap)
-  (let ((i (==> hp next)))
-    (==> ints remove i)
-    i))
+(defmethod Heap next ()
+  (let ((oi (==> ih next)))
+    (prog1 (objs oi)
+      (==> fh insert oi)
+      (objs oi ())) ))
 
-#? (==> <SmallIntHeap> remove <i>)
-;; Remove item <i> from heap, return <t> on success and <()>
-;; when <i> was not in the heap.
-(defmethod SmallIntHeap remove (i)
-  (declare (-int-) i)
-  (==> ints remove i) )
-
-#? (==> <SmallIntHeap> drop-lt <min-key>)
+#? (==> <Heap> drop-lt <min-key>)
 ;; Remove all items with key strictly less than <min-key> and
 ;; return key of new minimum item in heap or <NaN> when heap is
 ;; empty.
-(defmethod SmallIntHeap drop-lt (mk)
+(defmethod Heap drop-lt (mk)
   (declare (-double-) mk)
-  (==> this -update-heap)
-  (while (and (not (emptyp ints)) (< (hp-keys 0) mk))
+  (while (and (not (emptyp ih)) (< (:ih:hp-keys 0) mk))
     (==> this next) )
-  (==> this -update-heap)
-  (if (emptyp hp-dir)
+  (if (emptyp ih)
       NAN
-    (hp-keys 0) ))
+    (==> this peeknext) ))
 
-#? (==> <SmallIntHeap> clear)
+#? (==> <Heap> clear)
 ;; Clear heap. After calling this method the heap object is empty.
-(defmethod SmallIntHeap clear ()
-  (==> hp clear)
-  (==> ints clear)
+(defmethod Heap clear ()
+  (==> ih clear)
+  (==> fh insert-all (as-int-array (arange* (length objs))))
+  (setq objs (atom-array (length objs)))
   ())
 
-(defmethod SmallIntHeap -emptyp ()
-  (==> ints -emptyp) )
+(defmethod Heap -emptyp ()
+  (==> ih -emptyp) )
 
-(defmethod SmallIntHeap -iterate ()
+(defmethod Heap -iterate ()
   this)
-
-(dhc-make-class () IHeap SmallIntHeap)
-
-
-(defun test-heap (&optional (n 10))
-  (let ((h (new IHeap n))
-	(l (domapcar ((i (range n)))
-	     (cons (rand) i)) ))
-    (dolist (p l)
-      (==> h insert (car p) (cdr p))
-      ;(pretty :h:keys) (pretty :h:dir) 
-      )
-
-    (setq l (sort-list l (lambda (a b) (> (car a) (car b)))))
-    ;(print (mapcar car l))
-    (print (mapcar cdr l))
-    (let ((l2 (iter-take n h)))
-      (when (<> l2 (mapcar cdr l))
-	(error "heap sort gave different result:\n" l2)))))
-
-
-
-  
-  
