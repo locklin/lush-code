@@ -908,8 +908,11 @@ void console_getline(char *prompt, char *buf, int size)
       fputs(prompt,stdout);
       fflush(stdout);
       if (!break_attempt)
-         if (!feof(stdin))
-            fgets(buf,size-2,stdin);
+         if (!feof(stdin)) {
+            errno = 0;
+            if (!fgets(buf,size-2,stdin))
+               fprintf(stderr, "*** Warning: %s\n", strerror(errno));
+         }
       return;
     }
    /* Problem: Readline erases previous output on the same line.
@@ -921,8 +924,11 @@ void console_getline(char *prompt, char *buf, int size)
       console_wait_for_char(false);
       if (context->output_tab > 0) {
          if (!break_attempt)
-            if (!feof(stdin))
-               fgets(buf,size-2,stdin);
+            if (!feof(stdin)) {
+               errno = 0;
+               if (!fgets(buf,size-2,stdin))
+                  fprintf(stderr, "*** Warning: %s\n", strerror(errno));
+            }
          return;
       }
    }

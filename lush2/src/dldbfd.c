@@ -39,6 +39,7 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <setjmp.h>
+#include <errno.h>
 
 #if HAVE_UNISTD_H
 # include <unistd.h>
@@ -3215,8 +3216,14 @@ dld_find_executable (const char *file)
 	while (*p && *p != ':') *next++ = *p++;
 	*next = 0;
 	if (*p) p++;
-	if (name[0] == '.' && name[1] == 0)
-          getcwd (name, sizeof(name));
+	if (name[0] == '.' && name[1] == 0) {
+          errno = 0;
+          if (!getcwd (name, sizeof(name))) {
+            fprintf(stderr, "dld_find_executable: getcwd failed (%s)\n", strerror(errno));
+            abort();
+          }
+        }
+
 	strcat (name, "/");
 	strcat (name, file);
 	if (access (name, X_OK) == 0) 

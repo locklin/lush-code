@@ -101,10 +101,10 @@ const char *cwd(const char *s)
          test_file_error(NULL);
    }
 #  ifdef HAVE_GETCWD
-   getcwd(string_buffer,STRING_BUFFER);
+   assert(getcwd(string_buffer,STRING_BUFFER));
    return mm_strdup(string_buffer);
 #  else
-   getwd(string_buffer);
+   assert(getwd(string_buffer));
    return mm_strdup(string_buffer);
 #  endif
 #endif
@@ -334,7 +334,8 @@ static int lockfile(const char *filename)
               user, computer, time(&tl));
   }
 #endif
-   write(fd, string_buffer, strlen(string_buffer));
+   if (0 > write(fd, string_buffer, strlen(string_buffer)))
+      fprintf(stderr, "*** Warning: %s\n", strerror(errno));
    close(fd);
    return 1;
 }

@@ -1655,7 +1655,8 @@ extern at **dx_sp; /* in function.c */
 static at *_dh_listeval(at *p, at *q)
 {
 #define MAXARGS 256
-  dharg args[MAXARGS];
+  dharg _args[MAXARGS+1];
+  dharg *args = _args+1;
 
   //printf("dh_listeval: %s\n", pname(q));
   /* Find and check the DHDOC */
@@ -1720,9 +1721,9 @@ static at *_dh_listeval(at *p, at *q)
     lush_error_flag = 1;
     /* Call the test function if it exists */
     if (kname->lispdata.dhtest)
-      (*kname->lispdata.dhtest->lispdata.call)(args-1);
+      (*kname->lispdata.dhtest->lispdata.call)(_args);
     /* Call to the function */
-    funcret = (*kname->lispdata.call)(args-1);
+    funcret = (*kname->lispdata.call)(_args);
   }
     
   /* Prepare for the update */
