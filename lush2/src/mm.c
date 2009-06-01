@@ -1015,20 +1015,20 @@ static void mark_stack(mmstack_t *st)
 {
    assert(STACK_VALID(st));
 
-   if (st->temp) __mm_push(st->temp);
+   if (st->temp) _mm_push(st->temp);
 
    if (st->sp > CURRENT_0(st))
       *(st->sp - 1) = NULL;
 
-   if (st->current) __mm_push(st->current);
+   if (st->current) _mm_push(st->current);
 }
 
 static void mark_stack_chunk(stack_chunk_t *c)
 {
-   if (c->prev) __mm_push(c->prev);
+   if (c->prev) _mm_push(c->prev);
    for (int i = STACK_ELTS_PER_CHUNK-1; i >= 0; i--) {
       if (c->elems[i])
-         __mm_push(c->elems[i]);
+         _mm_push(c->elems[i]);
       else
          break;
    }
