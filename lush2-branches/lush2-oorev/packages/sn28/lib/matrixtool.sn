@@ -1,0 +1,597 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: matrixtool.sn,v 1.2 2003/03/18 19:40:30 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;  MATRIXTOOL: Superclasse des tools pour matrices
+;;;  STATTOOL: Module graphique: histogramme d'une matrice
+;;;
+;;;  Copyright (C) 1990 Jean Bourrely & Leon Bottou
+;;;                     Neuristique SA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(ogre)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;  MATRIXTOOL: Superclasse des tools pour matrices
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass C-MatrixTool WindowObject
+  mat
+  changed
+  symb
+  filemenu
+  size-string
+  error-dialog
+  warning-dialog
+  confirm-dialog
+  load-dialog
+  save-dialog )
+
+
+
+(defmethod C-MatrixTool c-matrixtool() 
+  
+  (setq filemenu (new Menu "File"
+		      "Load"  (lambda(caller) 
+				(==> load-dialog popup))
+		      "Save"  (lambda(caller) 
+				(==> save-dialog popup))
+		      "Print" (lambda(caller)
+				(==> thiswindowobject print-action))
+		      "Quit"  (lambda(caller)
+				(==> thiswindowobject delete)) ))
+
+  (setq size-string (new String "No matrix loaded"))
+
+  (setq error-dialog 
+	(new ErrorRequester this))
+  (setq warning-dialog 
+	(new WarningRequester this))
+  (setq confirm-dialog 
+	(new YesNoRequester this (new String "?") "yes" "no" ()))
+
+  (setq load-dialog
+	(new YesNoRequester this
+	     (let* ((ef (new editstring 20 "pattern-matrix"))
+		    (eb (new filereqbutton "Load matrix from file:" ef)) )
+	       (==> eb disable)
+	       (new column
+		    (new String "Load matrix")
+		    (new row
+			 (new RadioButton "from file   "
+			      (eval `(lambda(c) (==> ,eb enable))) )
+			 (new RadioButton "from lisp symbol"
+			      (eval `(lambda(c) (==> ,eb disable))) ) )
+		    (new row ef eb) ) )
+	     " Load " "Cancel"
+	     (lambda(caller)
+	       (==> thiswindowobject load-action 
+		    (==> caller getdata) ) ) ) )
+  
+  (setq save-dialog
+	(new YesNoRequester this
+	     (let* ((ef (new editstring 20 "pattern-matrix"))
+		    (eb (new filereqbutton "Save matrix into file:" ef)) )
+	       (==> eb disable)
+	       (new column
+		    (new String "Save matrix")
+		    (new row
+			 (new RadioButton "to file   "
+			      (eval `(lambda(c) (==> ,eb enable))) )
+			 (new RadioButton "to lisp symbol"
+			      (eval `(lambda(c) (==> ,eb disable))) ) )
+		    (new row ef eb) ) )
+	     " Save " "Cancel"
+	     (lambda(caller)
+	       (==> thiswindowobject save-action 
+		    (==> caller getdata) ) ) ) ) )
+
+
+(defmethod C-MatrixTool setmatrix(m)
+  ;; Renvoie t si c'est bon..
+  (cond 
+   (~(numericp m)
+     (==> error-dialog popup (sprintf "Not a numeric array: %l" m))
+     () )
+   (t
+    (if (= (classof m) |MAT|)
+	(setq mat m)
+      (setq mat (apply double-array (bound m)))
+      (array-copy m mat) )
+    (==> size-string settext (sprintf "Matrix %l" (bound mat)))
+    (setq changed t) ) ) )
+
+
+(defmethod C-Matrixtool print-action()
+  (if ~mat
+      (==> error-dialog popup
+           "You must load a matrix first")
+    (matrix-print mat)
+    (print) ) )
+
+
+(defmethod C-MatrixTool load-action((r1 r2 str))
+  (when (or ~mat
+	    ~changed
+	    symb
+	    (==> confirm-dialog ask 
+		 "Changes will be lost" "Proceed" "Cancel" 'no) )
+	(when r1
+	      (if ~(open-read str "mat")
+		(==> error-dialog popup 
+		     (sprintf "Cannot find file \"%s\"" str) )
+		(when (==> this setmatrix (load-matrix str)) 
+		      (setq symb ())
+		      (==> size-string settext 
+			   (sprintf "[ Matrix %l from file \"%s\" ]"
+				    (bound mat) str) ) ) ) )
+	(when r2
+	      (when (==> this setmatrix (eval (list 'scope (named str))))
+		    (setq symb str)
+		    (==> size-string settext 
+			 (sprintf "[ Matrix %l in variable '%s ]"
+				  (bound mat) str) ) ) )
+	(setq changed ()) ) )
+
+
+
+(defmethod C-MatrixTool save-action((r1 r2 str))
+  (if ~mat
+      (==> error-dialog popup "No matrix loaded")
+
+    (when r1
+	  (if (open-write str "mat")
+	      (save-matrix mat str)
+	    (==> error-dialog popup 
+		 (sprintf "Cannot write file \"%s\"" str) ) ) )
+    (when r2
+	  (if (regex-match "([A-Za-z][-A-Za-z0-9]*)?" str)
+	      (eval (list 'setq (list 'scope (named str)) mat))
+	  (==> error-dialog popup 
+	       (sprintf "This is a strange symbol: %s" str)) ) )
+    (setq changed ()) ) )
+
+
+
+(defmethod C-MatrixTool delete()
+  (when (or ~changed
+	    symb
+	    (==> confirm-dialog ask "Matrix has been changed" 
+		 "Quit anyway" "Cancel" 'no))
+	(==> this (WindowObject . delete)) ) )
+
+
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;  STATTOOL: Module graphique: histogramme d'une matrice
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;
+;;; The DataTool entry point
+;;;
+
+(de stattool(&optional arg)
+    (let ((r (new c-stattool)))
+      (when arg
+	    (==> r setmatrix arg)
+	    (setq :r:changed ()) )
+      r ) )
+    
+
+
+;;;
+;;; The function
+;;;
+
+(de histo-mat (mat nstep minval maxval)
+    (let* ((histo (double-array nstep 2))
+	   (col (bound mat 2))
+	   (eps (/ (- maxval minval) (1- nstep))))
+      (for (i 0 (1- nstep))
+	   (histo i 0 (+ minval (* i eps))))
+      (for (i 0 col)
+	   (each ((x (mat () i)))
+		 (let ((ix (int (/ (- x minval) eps))))
+		   (histo ix 1 (1+ (histo ix 1))))))
+      (list (histo () 0)(histo () 1))))
+
+
+;;;
+;;; The interface
+;;;
+
+
+(defclass C-Stattool C-MatrixTool
+  top-area
+  hist-area
+  stat-string
+  submatrix-edit
+  step-edit
+  minmat
+  maxmat
+  sdevmat
+  meanmat )
+
+
+(defmethod C-Stattool manage-geometry()
+  (let (((x y w h) rect)
+	((x1 y1 w1 h1) :top-area:rect) 
+	((x2 y2 w2 h2) :hist-area:rect) )
+    (==> top-area geometry x y w h1)
+    (==> hist-area geometry x (+ y h1) w (- h h1)) ) )
+
+
+(defmethod C-Stattool c-stattool()
+  (==> this c-matrixtool)
+  (setq stat-string (new String "Mean=?, Sdev=?, Max=?, Min=?"))
+  (setq :stat-string:textfont font-8f)
+  (setq submatrix-edit
+	(new grid 4
+	     (new string "From column") (new EditNumber 6)
+	     (new string "To column")   (new EditNumber 6)
+	     (new string "From line")   (new EditNumber 6)
+	     (new string "To line")     (new EditNumber 6) ) )
+  (setq step-edit 
+	(new EditNumber 6 10))
+  (setq top-area
+	(new column
+	     (new row filemenu size-string )
+	     submatrix-edit
+	     (new row
+		  (new stdbutton " Statistics "
+		       (lambda(d)
+			 (==> thiswindowobject stat-action) ) )
+		  (new stdbutton " Histogram "
+		       (lambda(d)
+			 (when (==> thiswindowobject stat-action)
+			       (let ((lock (new RequesterLock warning-dialog)))
+				 (==> warning-dialog popup "Computing histogram")
+				 (==> thiswindowobject hist-action) ) ) ) )
+		  (new string " Number of buckets:")
+		  step-edit )
+	     stat-string ) )
+  (setq hist-area 
+	(new C-Histarea))
+  (==> this windowobject 0 0 500 350 "Stattool"
+       top-area hist-area) ) 
+
+
+(defmethod c-stattool setmatrix(m)
+  (if (or ~(numericp m) (= (bound m 0) 2))
+      (when (==> this (C-Matrixtool . setmatrix) m)
+	    (==> submatrix-edit setdata
+		 (list 0 (bound mat 2) 0 (bound mat 1)) ) 
+	    m )
+    (==> error-dialog popup "2D matrix expected")
+    () ) )
+
+
+(defmethod c-stattool getmatrix()
+  (let (((fromc toc froml tol) (==> submatrix-edit getdata))
+	(st (==> step-edit getdata)) )
+    (cond
+     (~mat
+      (==> error-dialog popup
+	   "You must load a matrix first") 
+      () )
+     ((or (< fromc 0) (< toc fromc) (> toc (bound mat 2)))
+      (==> error-dialog popup
+	   "from column/to column values out of range")
+      () )
+     ((or (< froml 0) (< tol fromc) (> tol (bound mat 1)))
+      (==> error-dialog popup
+	   "from line/to line values out of range")
+      () )
+     ((or (< st 2) (> st 999))
+      (==> error-dialog popup
+	   "step value out of range [0,999]")
+      () )
+     (t
+      (submatrix mat (list froml tol) (list fromc toc)) ) ) ) )
+
+
+(defmethod c-stattool hist-action()
+  (let ((m (==> this getmatrix))
+	(st (==> step-edit getdata)) )
+    (when m
+	  (let ((l (histo-mat m st minmat maxmat)))
+	    (==> hist-area settext (car l) (cadr l) ) ) ) ) )
+	   
+(defmethod c-stattool stat-action()
+  (let* ((m (==> this getmatrix)))
+    (when m
+	  (setq minmat (inf-mat m))
+	  (setq maxmat (sup-mat m))
+	  (setq meanmat (mean-mat m))
+	  (setq sdevmat (sdev-mat m)) 
+	  (==> stat-string setdata 
+	       (sprintf "Mean=%l, Sdev=%l, Min=%l, Max=%l"
+			meanmat sdevmat minmat maxmat ))
+	  m ) ) )
+  
+
+;;;
+;;; Hist-Area Class
+;;;
+
+(defclass c-histarea visualobject
+  listx
+  listy )
+
+;; create
+
+(defmethod c-histarea c-histarea()
+  (==> this visualobject 0 0) )
+
+;; data
+
+(defmethod c-histarea settext(lx ly)
+  (setq listx lx
+	listy ly )
+  (==> this expose rect) )
+
+;; repaint
+
+(defmethod c-histarea backpaint-color()
+  (let (((x y w h) rect))
+    (fill-down-rect (1+ x) (1+ y) (- w 3) (- h 3) color-bg) ) )
+
+(defmethod c-histarea repaint()
+  (when (and listx listy)
+	(let (((x y w h) rect))
+	  (incr x 4)
+	  (incr w -8)
+	  (let* ((ysize (max 8 (div (- h 20) (length listx))))
+		 (xsize (max 0 (/ (- w 100) (sup listy))))
+		 (nly (reverse listy)) )
+	    (setq nly (reverse (cons () (cons (+ (car nly) (cadr nly)) (cddr nly)))))
+	    (incr y 10)
+	    (font-8)
+	    (each ((i listx)(j nly))
+		  (incr y ysize)
+		  (gprintf (+ x 2) (+ y 4) "%f" i)
+		  (when j
+			(color color-gray)
+			(fill-rect (+ x 60) y (1+ (* j xsize)) (1- ysize))
+			(color color-fg)
+			(gprintf (+ x 65 (* j xsize))
+				 (+ y (2/ ysize) 4)
+				 "%d" j) ) ) ) ) ) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;  NORMTOOL: Module graphique de pretraitements
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;
+;;; The DataTool entry point
+;;;
+
+(de normtool( &optional arg)
+    (let ((r (new c-normtool)))
+      (when arg
+	    (==> r setmatrix arg)
+	    (setq :r:changed ()) )
+      r ) )
+
+
+
+;;;
+;;; The Functions
+;;;
+
+(de alpha-mat-plus-beta (mat alpha beta)
+    (m+c (m*c mat alpha) beta mat))
+
+(de min-max-normalization (mat minval maxval)
+    (let ((oldminval (inf-mat mat))
+          (oldmaxval (sup-mat mat)))
+      (when (> oldmaxval oldminval)
+	    (alpha-mat-plus-beta
+	     mat
+	     (/ (- maxval minval)(- oldmaxval oldminval))
+	     (/ (- (* oldmaxval minval)(* oldminval maxval))
+		(- oldmaxval oldminval) ) ) ) ) )
+
+(de mean-sdev-normalization (mat meanval sdevval)
+    (let ((oldsdevval (sdev-mat mat)))
+      (when (= oldsdevval 0)
+            (setq oldsdevval 1)
+            (setq sdevval 0))
+      (alpha-mat-plus-beta mat 1 (- (mean-mat mat)))
+      (alpha-mat-plus-beta mat (/ sdevval oldsdevval) meanval)))
+
+(de data-normalization (mat type-of-norm parametrization param1 param2)
+    (selectq parametrization
+	     (full 
+	      (selectq type-of-norm
+		       (min-max 
+			(min-max-normalization mat param1 param2))
+		       (mean-sdev
+			(mean-sdev-normalization mat param1 param2))
+		       (alpha-beta 
+			(alpha-mat-plus-beta mat param1 param2))))
+	     (column 
+	      (for (i 0 (bound mat 2))
+		   (selectq type-of-norm
+			    (min-max 
+			     (min-max-normalization 
+			      (submatrix mat () (list i i))
+			      param1 param2) )
+			    (mean-sdev
+			     (mean-sdev-normalization
+			      (submatrix mat () (list i i))
+			      param1 param2) )
+		       (alpha-beta 
+			(alpha-mat-plus-beta 
+			 (submatrix mat () (list i i))
+			 param1 param2) ) ) ) ) ) )
+
+
+
+;;;
+;;; The interface
+;;;
+
+
+(defclass C-Normtool C-MatrixTool  
+  submatrix-edit
+  parameters-edit
+  stringa
+  stringb )
+
+
+(defmethod C-Normtool c-normtool()
+  (setq parameters-edit
+	(new column
+	     (new row
+		  (new column
+		       (new radiobutton "Min/Max"
+			    (lambda(caller)
+			      (==> parameters-edit setdata '(t () () t () -1 1))
+			      (==> stringa settext "Mini")
+			      (==> stringb settext "Maxi") ) )
+		       (new radiobutton "Mean/Sdev"
+			    (lambda(caller)
+			      (==> parameters-edit setdata '(() t () t () 0 1)) 
+			      (==> stringa settext "Mean")
+			      (==> stringb settext "Sdev") ) )
+		       (new radiobutton "AX+B"
+			    (lambda(caller)
+			      (==> parameters-edit setdata '(() () t () t 1 0))
+			      (==> stringa settext "    A")
+			      (==> stringb settext "    B") ) ) )
+		  (new emptyspace 8)
+		  (new column
+		       (new radiobutton "Column by column" ())
+		       (new radiobutton "Full" ()) ) 
+		  (new emptyspace 8)
+		  (new grid 2
+		       (setq stringa (new string "    A"))
+		       (new editnumber 6)
+		       (setq stringb (new string "    B"))
+		       (new editnumber 6) ) ) ) )
+  
+  (setq submatrix-edit
+	(new row
+	     (new string "From column")
+	     (new editnumber 6)
+	     (new string "to column")
+	     (new editnumber 6) ) )
+
+  (==> this c-matrixtool)
+  (==> this windowobject 0 0 400 220 "Normtool"
+       (new column
+	    (new row filemenu size-string)
+	    (new emptyspace 5)
+	    submatrix-edit
+	    (new emptyspace 5)
+	    parameters-edit
+	    (new emptyspace 5)
+	    (new row 
+		 (new stdbutton "  Apply  "
+		      (lambda(caller)
+			(==> thiswindowobject apply-action) ) ) ) ) ) )
+
+(defmethod c-normtool setmatrix(m)
+  (if (or ~(numericp m) (= (bound m 0) 2))
+      (progn
+	(==> this (C-Matrixtool . setmatrix) m)
+	(==> submatrix-edit setdata (list 0 (bound mat 2))) 
+	m ) 
+    (==> error-dialog popup "2D matrix expected")
+    () ) )
+
+(defmethod c-normtool getmatrix()
+  (let (((fromc toc) (==> submatrix-edit getdata)))
+    (cond
+     (~mat
+       (==> error-dialog popup
+	    "You must load a matrix first") ())
+     ((or (< fromc 0) (< toc fromc) (> toc (bound mat 2)))
+      (==> error-dialog popup
+	   "from column/to column values out of range") ())
+     (t
+      (submatrix mat () (list fromc toc)) ) ) ) )
+
+
+(defmethod c-normtool apply-action()
+  (let (((m1 m2 m3 c f a b) (==> parameters-edit getdata))
+	((fromc toc) (==> submatrix-edit getdata))
+	(mode ())
+	(parm ()) )
+    (cond
+     (~mat
+      (==> error-dialog popup
+           "You must load a matrix first")  )
+     ((or (< fromc 0) (< toc fromc) (> toc (bound mat 2)))
+      (==> error-dialog popup
+           "from column / to column values are out of range") )
+     (t
+      (setq changed t)
+      (setq mode
+	    (cond (m1 'min-max)
+		  (m2 'mean-sdev)
+		  (m3 'alpha-beta) ) )
+      (setq parm
+	    (cond (c 'full)
+		  (t 'column) ) )
+      (data-normalization (submatrix mat () (list fromc toc)) 
+			  mode parm a b) ) ) ) )
+		
+	  
+
+
+
+

@@ -1,0 +1,46 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? * Stopwatch: Timer with Microsecond Accuracy
+;; stopwatch is a simple class to measure time
+;; with microsecond accuracy. This does not generate events
+;; (see the timer/event section for that), but merely
+;; provides a way to tell time. This class uses the gettimeofday
+;; system call and can be used in compiled code.
+(defclass stopwatch object 
+  ((-gptr-) tv)
+  ((-double-) secbase)
+  ((-double-) usecbase)
+  ))
+
+#? (new stopwatch)
+;; create a new stopwatch 
+(defmethod stopwatch stopwatch ()
+  (cpheader "#include <sys/time.h>")
+  (setq tv (to-gptr #{ malloc(sizeof(struct timeval)) #}))
+  (==> this reset)
+  ())
+
+#? (==> <stopwatch> get)
+;; get the time in seconds since the last call to reset,
+;; or since the creation of the stopwatch.
+;; The time is returned in seconds (with one microsecond
+;; accuracy) as a double precision floating point number. 
+(defmethod stopwatch get ()
+  #{ gettimeofday((struct timeval *)$tv, NULL); #} 
+  (to-double 
+   #{ ((double)(((struct timeval *)($tv))->tv_usec)-$usecbase)*1.0e-6 +
+      ((double)(((struct timeval *)($tv))->tv_sec)-$secbase) #}))
+
+#? (==> <stopwatch> reset)
+;; resets the reference time of the stopwatch relative
+;; to which subsequent times will be measured.
+(defmethod stopwatch reset ()
+  #{ gettimeofday((struct timeval *)$tv, NULL); #} 
+  (setq secbase (to-double #{ (double)(((struct timeval *)($tv))->tv_sec) #}))
+  (setq usecbase (to-double #{ (double)(((struct timeval *)($tv))->tv_usec) #}))
+  ())
+
+(defmethod stopwatch -destructor ()  #{ free($tv) #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () (stopwatch reset get stopwatch -destructor))

@@ -1,0 +1,223 @@
+#? *** SDL: Simple DirectMedia Layer
+.AUTHOR Yann LeCun
+Lush's interface to the popular SDL library 
+provides access to every function of the SDL API.
+It also provides a set of higher-level classes to make
+it easy to write 2D video games and other interactive
+multimedia applications. The high-level interface provides 
+classes for double-buffered SDL screens, event grabbing,
+and sprites with pixel-accurate collision detection.
+.P
+The help text associated with each low-level function
+is from the corresponding .h header file that comes
+with SDL. If you installed libSDL1.2-devel with RPM,
+you may find the API documentation in
+.HLINK file:/usr/share/doc/libSDL1.2-devel-1.2.3/index.html
+Otherwise, the documentation is available at
+.HLINK http://www.libsdl.org
+.P
+The Tutorial section of the Lush manual contains
+a tutorial on how to write simple video games with Lush
+and SDL.
+.HLINK Tutorial: Writing Games with Lush and SDL.
+
+#? ** Installing SDL
+To make the SDL interface work with Lush, you need:
+.LI
+The SDL libraries (libSDL1.2)
+.LI
+The SDL development libraries and include files (libSDL1.2-devel)
+.LI
+The SDL_image library (libSDL_image1.2-devel)
+.LI
+The SDL_image development libraries and include files (libSDL_image1.2_devel)
+.P
+Those are generally available as RPMs or APTs for most Linux
+distributions. Otherwise, you can download the latest version from 
+.HLINK http://www.libsdl.org
+.P
+By default, Lush looks for the SDL .so libraries in "/usr/lib". 
+It expects to find "libSDL-1.2.so.0" and "libSDL_image-1.2.so.0".
+If these libraries are installed someplace else on your system,
+you must edit packages/sdl/sdl-config.lsh.
+
+#? ** Introduction to Lush's "SDL screen classes"
+
+The present section is a quick introduction to the <libsdl> library.
+Loading and initializing the <libsdl> library is performed with:
+{<code>
+  (libload "sdl/libsdl")
+  (sdl-initialize)
+</code>}
+Next, we can open an SDL screen. <libsdl> provides three kinds of SDL screen classes.
+{<ul>
+ {<li> The first kind, <sdl-screen> is prefered if you intend to draw on the screen
+  using <libsdl>'s sprite class, or using SDL's low-level drawing functions.}
+ {<li> The second  kind, <sdlgl-screen> is prefered if you intend draw 3D graphics
+  using OpenGL.}
+ {<li> The third kind, <sdlidx-screen> is prefered if you want to draw your images into
+  a regular Lush matrix, and quickly update an SDL screen with the content of that matrix.}
+}
+
+#? sdlidx-screen class: Mapping the Contents of an IDX to an SDL Screen
+
+Let's start by describing the <sdlidx-screen> class.  Opening an
+<sdlidx-screen> is done by first allocating a <ubyte-array> of size
+HxWx4, and then creating an <sdlidx-screen> with this matrix as
+argument. This will open an SDL screen of width W and height H:
+{<code>
+  (setq depth 3)
+  (setq m (ubyte-array 480 640 depth))
+  (setq screen (new sdlidx-screen m "my title"))
+</code>}
+If the <depth> parameter is 3, each element of matrix <m> is a
+component of an RGB pixel.  So for example {<c> (m y x 0)} is the R
+component of pixel (x,y) (from the top left of the screen).  If the
+<depth> parameter is 4, each element of <m> is a component of an RGBA
+pixel. The A component is the Alpha channel (transparency). An alpha
+value of 255 is opaque, while 128 is half transparent. The matrix <m>
+can be seen as the "back buffer" of a double-buffered screen. Changing
+values in <m> will not immediately change the corresponding pixel on
+the screen. Once the desired RGBA image has been written in <m>,
+slapping it on the screen can be done with {<c> (==> screen flip)}. If
+the screen was opened with <depth>=4, the image displayed will be an
+alpha-blended mixture of the previously displayed image and the
+content of <m>. Here is a complete example:
+{<code>
+  (libload "sdl/libsdl")
+  (libload "libimage/image-io")
+  (libload "libimage/rgbaimage")
+  (sdl-initialize)
+  (setq m (ubyte-array 480 640 3))
+  (setq screen (new sdlidx-screen m "my picture"))
+  (setq photo (rgbaim-resize (image-read-rgba "mypicture.jpg") 640 480 0))
+  (array-copy (idx-trim photo 2 0 3) m)
+  (==> screen flip)
+</code>}
+Subsequent calls to {<c> (==> screen flip)} will refresh the screen
+with the content of <m>.  Note that SDL screens (unlike regular Lush
+graphic windows) are not automatically refreshed when uncovered from
+behind other windows. That is why SDL screens should be used only for
+animated graphics and games. Refresh rates on SDL screens are likely
+to be faster than with regular Lush graphic windows.
+
+#? sdl-screen class: Doubled Buffered Animations
+
+The <sdl-screen> class is intended for double-buffered animations
+using sprites (movable screen objects). This situation is primarily
+encountered when writing video games and other interactive multimedia
+applications.
+
+Opening an <sdl-screen> is simply done with {<c> (setq screen (new
+sdl-screen 800 600 "the title"))}.  Drawing into an <sdl-screen> is
+made very simple by the <sdl-sprite> class (as explained below), but
+low-level SDL drawing can be performed by creating <SDL_surface>
+objects and calling <SDL_BlitSurface> on the <p> slot of the
+<sdl-screen>.
+
+#? sdl-sprite: Movable Animated Objects
+
+Interactive multimedia applications often involve drawing movable
+objects on the screen.  This can be performed using Lush's sdl-sprite
+class, defined also in <sdl/libsdl>.  Creating a sprite for drawing on
+the sdl-screen <screen>, and loading an image into it is done as
+follows: 
+{<code>
+  (setq sprite (new sdl-sprite screen 1))
+  (==> sprite load-frame "mysprite.png" 0 0 0)
+</code>}
+This creates a new <sdl-sprite> with id number 1 on screen <screen>,
+and loads frame 0 of this sprite with the image in file "mysprite.png"
+(the image can be in any format accepted by the SDL-image library
+dstributed with SDL). The three numerical arguments (all zeros in the
+example) are the frame number to be loaded, and the coordinates of the
+"handle" or "hot-point" of the sprite relative to the top-left corner.
+
+Sprites can be moved around and drawn on the screen with:
+{<code>
+  (==> sprite move x y)
+  (==> sprite draw)
+  (==> screen flip)
+</code>}
+All drawing operations occur in the back buffer (not on the visible
+screen) until the call to {<c> (==> screen flip)}.
+
+The main loop of a typical application will look something like this:
+{<code>
+  (while (not stop)
+    [get user input, update coordinates, and such]
+    (==> screen clear)
+    (==> sprite1 move x1 y1)
+    (==> sprite2 move x2 y2)
+    (==> sprite1 draw)
+    (==> sprite2 draw)
+    (==> screen flip))
+</code>}
+Sprites can have multiple frames. Switching between frames provides a
+mechanism for animating sprites.  More details on how to write such
+applications (including reading keyboard events, animation and such)
+are given in the tutorial {<hlink> "Tutorial: Writing Games with Lush
+and SDL."}. The code for that tutorial is available at
+{<c> ,(concat lushdir "/packages/sdl/demos/tutorial.lsh")}.
+
+#? sdlgl-screen class: OpenGL 3D Graphics in SDL Screens
+
+The <sdlgl-screen> class is designed to allow OpenGL 3D graphics in an
+SDL screen. OpenGL graphics can be done in such an SDL screen, or can
+be done directly in GLUT windows. The <sdlgl-screen> should be used
+when SDL functionalities are used. Opening an <sdlgl-screen> can be
+done just like opening an <sdl-screen>:
+{<code>
+  (setq screen (new sdlgl-screen 640 480 "my title"))
+</code>}
+An example of use of <sdlgl-screen> is available at
+{<c> ,(concat lushdir "/packages/sdl/demos/sdlgl-demos-01.lsh")}.
+
+
+#? ** SDL Demos
+#? * << sdl/demos/lander-simple.lsh
+#? * << sdl/demos/libsdl-demo.lsh
+#? ** << sdl/libsdl.lsh
+#? ** Low-Level Interface to SDL
+#? * sdl/SDL.lsh
+#?  << sdl/SDL.lsh
+#? * sdl/SDL_active.lsh
+#?  << sdl/SDL_active.lsh
+#? * sdl/SDL_audio.lsh
+#?  << sdl/SDL_audio.lsh
+#? * sdl/SDL_byteorder.lsh
+#?  << sdl/SDL_byteorder.lsh
+#? * sdl/SDL_cdrom.lsh
+#?  << sdl/SDL_cdrom.lsh
+#? * sdl/SDL_endian.lsh
+#?  << sdl/SDL_endian.lsh
+#? * sdl/SDL_error.lsh
+#?  << sdl/SDL_error.lsh
+#? * sdl/SDL_events.lsh
+#?  << sdl/SDL_events.lsh
+#? * sdl/SDL_getenv.lsh
+#?  << sdl/SDL_getenv.lsh
+#? * sdl/SDL_image.lsh
+#?  << sdl/SDL_image.lsh
+#? * sdl/SDL_joystick.lsh
+#?  << sdl/SDL_joystick.lsh
+#? * sdl/SDL_keyboard.lsh
+#?  << sdl/SDL_keyboard.lsh
+#? * sdl/SDL_keysym.lsh
+#?  << sdl/SDL_keysym.lsh
+#? * sdl/SDL_mouse.lsh
+#?  << sdl/SDL_mouse.lsh
+#? * sdl/SDL_mutex.lsh
+#?  << sdl/SDL_mutex.lsh
+#? * sdl/SDL_rwops.lsh
+#?  << sdl/SDL_rwops.lsh
+#? * sdl/SDL_syswm.lsh
+#?  << sdl/SDL_syswm.lsh
+#? * sdl/SDL_thread.lsh
+#?  << sdl/SDL_thread.lsh
+#? * sdl/SDL_timer.lsh
+#?  << sdl/SDL_timer.lsh
+#? * sdl/SDL_version.lsh
+#?  << sdl/SDL_version.lsh
+#? * sdl/SDL_video.lsh
+#?  << sdl/SDL_video.lsh

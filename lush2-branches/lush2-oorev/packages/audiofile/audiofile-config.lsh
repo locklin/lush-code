@@ -1,0 +1,87 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: audiofile-config.lsh,v 1.2 2005/05/09 01:21:56 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar audiofile-libaudiofile ())
+(defvar audiofile-libaudiofile-loaded ())
+(defvar audiofile-cpheader-cmd ())
+
+(when (not audiofile-libaudiofile-loaded)
+
+  ;; find audiofile library
+  (cond
+   ;; audiofile-lib was already defined, don't touch it
+   (audiofile-libaudiofile t)
+   ;; look for dynamic libaudiofile.so installed through packages
+   ((progn
+      (let* ((lib (find-shared-library "libaudiofile")))
+	(when (and lib (filep lib)) (setq audiofile-libaudiofile lib)))))
+   ;; look for static libaudiofile.a installed through packages
+   ((progn
+      (let* ((lib (find-static-library "libaudiofile")))
+	(when (and lib (filep lib)) (setq audiofile-libaudiofile lib)))))
+   ;; couldn't find it, complain loudly.
+   (t (printf "neither the libaudiofile.so not libaudiofile.a could be found\n")
+      (printf "You should install the libaudiofile and libaudiofile-devel")
+      (printf "packages from your operating system distribution.\n")
+      (printf "Alternatively, you can download audiofile from\n")
+      (printf "http://sources.redhat.com/audiofile, compile it, and install it\n")
+      (printf "by hand (e.g. in /usr/local/lib). If you have installed audiofile\n")
+      (printf "and still get this message, please do\n")
+      (printf "(defparameter audiofile-libaudiofile \"youraudiofilelibrary\")\n")
+      (printf "before loading this file\n")      
+      (printf "(see %s for more details)\n" file-being-loaded)
+      (error "cannot configure audiofile")))
+
+
+  ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  (libload "libc/shell")
+
+  (let ((dlist c-include-path)
+	(hlist ()))
+    (while (and dlist (not hlist))
+      (setq hlist (when (filep (concat-fname (car dlist) "audiofile.h")) 
+		    (concat-fname (car dlist) "audiofile.h")))
+      (setq dlist (cdr dlist)))
+    (if (not hlist)
+	(progn
+	  (printf "could not find audiofile include file\n")
+	  (printf "please make sure you have installed the\n")
+	  (printf "audiofile development packages\n")
+	  (error "cannot find audiofile header files"))
+      (setq audiofile-cpheader-cmd '(cpheader "#include <audiofile.h>"))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; load libraries
+
+  ;; THIS IS COMPLETELY WRONG
+  ;; THE ALSA INTERFACE SHOULD USE DHC-MAKE-WITH-LIBS INSTEAD OF THIS HACK
+  (mod-load audiofile-libaudiofile)
+  (setq audiofile-libaudiofile-loaded t)
+  )
