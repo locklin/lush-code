@@ -688,7 +688,7 @@ static void draw_list(int xx, int y, register at *l, int ncol,
    int x = xx;
    window_t *win = current_window();
    if (maxv == 0)
-      RAISEFX("scaling factor must non-zero", NEW_NUMBER(maxv));
+      RAISEFX("scaling factor is zero", NEW_NUMBER(maxv));
    if (ncol <= 0)
       RAISEFX("invalid number of columns", NEW_NUMBER(ncol));
    int nlin = (len + ncol - 1) / ncol;
@@ -697,7 +697,6 @@ static void draw_list(int xx, int y, register at *l, int ncol,
        (*win->gdriver->hinton_map) (win, NIL, xx, y, ncol, nlin, len, apart)) {
       
       /* special hinton_map call */
-      
       if (imagesize != sizeof(int) * len) {
          if (imagesize)
             free(image);
@@ -1303,9 +1302,9 @@ int rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
          int off1 = off2;
          int xx = x;
          for (int i = 0; i < d1; i++, off1 += m1) {
-            int r = (*getf)(data,off1) / 255.0;
-            int g = (*getf)(data,off1 + m3) / 255.0;
-            int b = (*getf)(data,off1 + m3 + m3) / 255.0;
+            flt r = (*getf)(data,off1) / 255.0;
+            flt g = (*getf)(data,off1 + m3) / 255.0;
+            flt b = (*getf)(data,off1 + m3 + m3) / 255.0;
             int v = (*alloccolor)(win, r, g, b);
             (*setcolor)(win, v);
             (*fill_rect) (win, xx, y, sx, sy);
@@ -1397,26 +1396,27 @@ static void rgb_draw_matrix(int x, int y, at *p, int sx, int sy)
     int error_flag = rgb_draw_idx(x, y, &idx, sx, sy);
     index_rls_idx(ind,&idx);
 
-    if(error_flag)
-       switch(error_flag) {
-       case 1:
-          current_window(); /* will be an error */
-       case 2:
-          error(NIL,"Graphic driver does not support pixel-map",NIL);
-       case 3:
-          error(NIL,"Last dimension shouls be three (or more)",p);
-       case 4:
-          error(NIL,"2D or 3D index expected",p);
-       case 5:
-          error(NIL, "cannot allocate enough colors", NIL);
-       case 6:
-          error(NIL, "machine does not support dithering", NIL);
-       case 7:
-          error(NIL, "not enough memory", NIL);
-       case 8:
-          error(NIL,"Graphic driver does not support "
-                "alloccolor, setcolor or fill_rect",p);
-       }
+    switch (error_flag) {
+    case 0:
+       break;
+    case 1:
+       current_window(); /* will be an error */
+    case 2:
+       error(NIL,"Graphic driver does not support pixel-map",NIL);
+    case 3:
+       error(NIL,"Last dimension shouls be three (or more)",p);
+    case 4:
+       error(NIL,"2D or 3D index expected",p);
+    case 5:
+       error(NIL, "cannot allocate enough colors", NIL);
+    case 6:
+       error(NIL, "machine does not support dithering", NIL);
+    case 7:
+       error(NIL, "not enough memory", NIL);
+    case 8:
+       error(NIL,"Graphic driver does not support "
+             "alloccolor, setcolor or fill_rect",p);
+    }
 }
 
 DX(xrgb_draw_matrix)
