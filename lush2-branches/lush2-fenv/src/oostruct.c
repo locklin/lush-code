@@ -221,7 +221,7 @@ static const char *class_name(at *p)
    if (cl->classname)
       sprintf(string_buffer, "::class:%s", NAMEOF(cl->classname));
    else
-      sprintf(string_buffer, "::class:%lx", (long)cl);
+      sprintf(string_buffer, "::class:%p", cl);
    
    return mm_strdup(string_buffer);
 }

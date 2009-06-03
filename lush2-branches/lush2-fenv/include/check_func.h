@@ -134,25 +134,26 @@ LUSHAPI bool idx_emptyp(struct idx *);
 
 #define Mnocheck(...)
 
-#define Mis_sized(i1) \
+#define Mis_nonempty(i1) \
   if (idx_emptyp(i1))              \
     lush_error(rterr_emptyidx); 
 
-#define Mis_sized_is_sized(i1, i2) \
-    Mis_sized(i1); Mis_sized(i2)
+#define Mis_sized Mis_nonempty
+
+#define Mis_nonempty_is_nonempty(i1, i2) \
+    Mis_nonempty(i1); Mis_nonempty(i2)
+
+#define Mis_sized Mis_nonempty
 
 #define Msame_size1(i1,i2) \
-    Mis_sized_is_sized(i1, i2) \
     if((i1)->dim[0] != (i2)->dim[0]) \
         lush_error(rterr_not_same_dim);
 
 #define Msame_size2(i1,i2) \
-    Mis_sized_is_sized(i1, i2) \
     if(((i1)->dim[0] != (i2)->dim[0]) || ((i1)->dim[1] != (i2)->dim[1])) \
 	    lush_error(rterr_not_same_dim);
 
 #define Msame_size(i1,i2) \
-    Mis_sized_is_sized(i1, i2) \
     { \
     for(int j=0; j<(i1)->ndim; j++) \
 	if((i1)->dim[j] != (i2)->dim[j]) \
@@ -200,13 +201,11 @@ LUSHAPI bool idx_emptyp(struct idx *);
     }
 
 #define Msize_or_check0(i1, i2) \
-    Mis_sized(i1) \
     if (idx_emptyp(i2)) { \
         Midx_checksize0(i2);  \
     }
 
 #define Msize_or_check1(i1, i2) \
-    Mis_sized(i1) \
     if (idx_emptyp(i2)) { \
         (i2)->dim[0]=(i1)->dim[0]; \
         (i2)->mod[0]=1; \
@@ -216,7 +215,6 @@ LUSHAPI bool idx_emptyp(struct idx *);
             lush_error(rterr_bad_dimensions); 
  
 #define Msize_or_check2(i1, i2) \
-    Mis_sized(i1) \
     if (idx_emptyp(i2)) { \
 	(i2)->dim[1]=(i1)->dim[1]; \
 	(i2)->mod[1]=1;  \
@@ -228,7 +226,6 @@ LUSHAPI bool idx_emptyp(struct idx *);
             lush_error(rterr_bad_dimensions); 
 
 #define Msize_or_check(i1, i2) \
-    Mis_sized(i1) \
     if (idx_emptyp(i2)) { \
 	size_t m=1; \
 	for (int j=(i2)->ndim-1; j>=0; --j) { \
@@ -268,52 +265,43 @@ LUSHAPI bool idx_emptyp(struct idx *);
     }
 
 #define Mcheck_main(i1) \
-    Mis_sized(i1);
+  /* Mis_sized(i1); */
 
 #define Mcheck_main_maout(i1, i2) \
-    Mis_sized(i1); \
     Msize_or_check(i1,i2);
 
 #define Mcheck_main_main_maout(i0, i1, i2) \
-    Mis_sized_is_sized(i0, i1); \
     Msame_size(i0, i1); \
     Msize_or_check(i1, i2);
 
 #define Mcheck_main_main_maout2(i0, i1, i2) \
-    Mis_sized_is_sized(i0, i1); \
     Msize_or_check(i1, i2);
 
 #define Mcheck_main_main_maout_dot21(i0, i1, i2) \
-    Mis_sized_is_sized(i0, i1); \
     Msize_or_check_1D((i0)->dim[1], i1); \
     Msize_or_check_1D((i0)->dim[0], i2);
 
 #define Mcheck_main_main_maout_dot42(i0, i1, i2) \
-    Mis_sized_is_sized(i0, i1); \
     Msize_or_check_2D((i0)->dim[2], (i0)->dim[3], i1); \
     Msize_or_check_2D((i0)->dim[0], (i0)->dim[1], i2);
 
 #define Mcheck_main_m0out(i1, i2) \
-    Mis_sized(i1); \
     Mcheck0(i2);
 
 #define Mcheck_main_main_m0out(i0, i1, i2) \
-    Mis_sized_is_sized(i0, i1); \
     Msame_size(i0, i1); \
     Mcheck0(i2);    
 
 #define Mcheck_main_m0in_maout(i0, i1, i2) \
-    Mis_sized_is_sized(i0, i1); \
     Msize_or_check(i0, i2);
 
 #define Mcheck_m0in_m0out(i1, i2) \
     Msize_or_check0(i1,i2)
 
 #define Mcheck_m1out(i1) \
-    Mis_sized(i1);
+  /* Mis_sized(i1); */
 
 #define Mcheck_m1in_m1in_m2out(i0, i1, i2) \
-    Mis_sized_is_sized(i0, i1); \
     if (idx_emptyp(i2)) { \
 	(i2)->dim[1]=(i1)->dim[0]; \
 	(i2)->mod[1]=1;  \
@@ -325,7 +313,6 @@ LUSHAPI bool idx_emptyp(struct idx *);
             lush_error(rterr_bad_dimensions); 
 
 #define Mcheck_m2in_m2in_m4out(i0, i1, i2) \
-    Mis_sized_is_sized(i0, i1); \
     if (idx_emptyp(i2)) { \
 	(i2)->dim[3]=(i1)->dim[1]; \
 	(i2)->mod[3]=1;  \

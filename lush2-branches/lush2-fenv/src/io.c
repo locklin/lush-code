@@ -622,6 +622,34 @@ errw2:
    error("read", "string too long", NIL);
 }
 
+static at *rl_utf8(long h)
+{
+   char ub[8];
+   char *u = ub;
+   if (h > 0x10ffff)
+      return 0;
+
+   else if (h > 0xffff) {
+      *u++ = 0xe0 | (unsigned char)(h>>18);
+      *u++ = 0x80 | (unsigned char)((h>>12)&0x3f);
+      *u++ = 0x80 | (unsigned char)((h>>6)&0x3f);
+      *u++ = 0x80 | (unsigned char)(h&0x3f);
+
+   } else if (h > 0x7ff) {
+      *u++ = 0xe0 | (unsigned char)(h>>12);
+      *u++ = 0x80 | (unsigned char)((h>>6)&0x3f);
+      *u++ = 0x80 | (unsigned char)(h&0x3f);
+
+   } else if (h > 0x7f) {
+      *u++ = 0xc0 | (unsigned char)(h>>6);
+      *u++ = 0x80 | (unsigned char)(h&0x3f);
+   } else {
+      *u++ = (unsigned char)h;
+   }
+   *u++ = 0;
+   return str_utf8_to_mb(ub);
+}
+ 
 
 /* read_list reads a regular lisp object (list, string, symbol, number) */
 static at *rl_string(char *s)
@@ -651,23 +679,42 @@ static at *rl_string(char *s)
                goto err_string;
             *d++ = h;
             
+         } else if (*s == 'u' || *s == 'U') {
+            unsigned long h = 0;
+            int c = ((*s == 'u') ? 4 : 8);
+            at *m;
+            s++;
+            for (; c > 0; c--) {
+               ind = strchr(xdigit, tolower((unsigned char)*s));
+               if (*s && ind) {
+                  h *= 16;
+                  h += (ind - xdigit);
+                  s++;
+               } else
+                  break;
+            }
+            m = rl_utf8(h);
+            ifn (STRINGP(m))
+               goto err_string;
+            strcpy(d, String(m));
+            d += strlen(d);
+            
          } else if (*s == '^' && s[1]) {	/* control */
             *d++ = (s[1]) & (0x1f);
             s += 2;
             
          } else if (*s == '+' && s[1]) {	/* high bit latin1*/
-#if HAVE_WCRTOMB
-            wchar_t wc = s[1] | 0x80;
-            char buffer[MB_LEN_MAX];
-            int m = wcrtomb(buffer, wc, NULL);
-            if (m > 0) {
-               memcpy(d, buffer, m);
-               d += m;
-            }
-            else
-#endif	
-               *d++ = (s[1]) | (0x80);
+#if HAVE_ICONV
+            at *m = rl_utf8(s[1] | 0x80);
+            ifn (STRINGP(m))
+               goto err_string;
+            strcpy(d, String(m));
+            d += strlen(d);
+#else
+            *d++ = (s[1]) | 0x80;
+#endif
             s += 2;
+
          } else if (*s == '\n') {	/* end of line */
             s++;
             

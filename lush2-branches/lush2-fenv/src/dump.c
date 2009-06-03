@@ -181,8 +181,8 @@ void undump(char *s)
       error(NIL, "dump file format version not supported", NIL);
    
    /* The macro character map */
-   fread(char_map,1,256,f);
-   if (feof(f) || ferror(f))
+   size_t sr = fread(char_map,1,256,f);
+   if (sr < 256 || feof(f) || ferror(f))
       error(NIL, "corrupted dump file (1)",NIL);
    
    /* The unified list */

@@ -24,21 +24,35 @@
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-#? (do-vertices (<u> adjacent-to <v>) . <body>)
-;; Iterate over adjacent vertices. 
-(defmacro do-vertices ((u at v) . body)
-  (when (not (symbolp u))
-    (error "do-vertices: syntax error") )
-  (when (<> at 'adjacent-to) 
-    (error "do-vertices: syntax error") )
-  (let (((vv a) (gensyms 2)))
-    `(let ((,vv ,v))
-       (declare (-int-) ,vv)
-       (do-set (,a arcs (ipair ,vv +int-min+))
-         (declare (-double-) ,a)
-         (if (<> (ipi1 ,a) ,vv)
-             (setq continue ())
-           (let ((,u (ipi2 ,a)))
-             ,@body))))
-    ))
+(defvar *gnuplot-cmd* (reading "| which gnuplot" (read-string)))
 
+(when (not (filep *gnuplot-cmd*))
+  (error "Cannot find gnuplot") )
+
+(let ((gp-version (reading "| gnuplot --version" (read-string))))
+  (defparameter *gnuplot-version-string* gp-version)
+  (when (< (val (cadr (str-split " " gp-version))) 4)
+    (printf "*** Warning: Gnuplot interface has not been tested with gnuplot prior to version 4.0.\n")
+    (printf "*** Warning: Version found is '%s'\n" gp-version)) )
+
+(defun test-gnuplot-install ()  
+  (let (((to . from) (filteropen (sprintf "%s - 2>&1" *gnuplot-cmd*)))
+        (txt ())
+        (cur ()) )
+    (printf "reading   ")
+    (reading from (setq txt (read-string "~>")))
+    (reading from (setq cur (read-string 2)))
+    (print (concat txt cur))
+
+    (printf "sending...\n")  
+    (writing to
+      (printf "show xrange\n") )
+
+    (printf "reading   ")
+    (reading from (setq txt (read-string "~>")))
+    (reading from (setq cur (read-string 2)))
+    (print (concat txt cur))
+    
+    (writing to
+      (printf "exit\n") )
+    ()))

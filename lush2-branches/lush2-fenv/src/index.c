@@ -522,6 +522,7 @@ static char *chk_index_consistent(index_t *ind)
    return NULL;
 }
 
+/*
 static char *chk_contiguous(index_t *ind)
 {
    static char *msg_not_contiguous = "index is not contiguous";
@@ -530,6 +531,7 @@ static char *chk_contiguous(index_t *ind)
    else
       return NULL;
 }
+*/
 
 static char *chk_malleable(index_t *ind)
 {
