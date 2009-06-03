@@ -30,13 +30,12 @@
 # include <fpu_control.h>
 #elif HAVE___SETFPUCW
 # define _FPU_SETCW(cw) __setfpucw(cw)
+typedef int fpu_control_t;
 #endif
 
-#ifdef WIN32
-# include <float.h>
-#endif
-#include <signal.h>
+#define _GNU_SOURCE
 #include <fenv.h>
+#include <signal.h>
 #include <float.h>
 
 typedef RETSIGTYPE (*SIGHANDLERTYPE)();
@@ -68,7 +67,7 @@ static fenv_t standard_fenv;
 #define KEY_TOWARDZERO "toward-zero"
 #define KEY_UPWARD     "upward"
 
-#define KEY_FLOAT      "float"
+#define KEY_SINGLE     "single"
 #define KEY_DOUBLE     "double"
 #define KEY_EXTENDED   "extended"
 
@@ -181,7 +180,7 @@ int setup_fpu(int doINV, int doOFL)
 
    /* Older GLIBC */
   
-   int mask = 0;
+   fpu_control_t mask = 0;
    fpe_inv = doINV;
    fpe_ofl = doOFL;
    
@@ -300,6 +299,27 @@ static void configure_fpu_traps(void)
 }
 
 
+#ifdef _FPU_GETCW
+DY(ywith_fpu_env)
+{
+   struct context mycontext;
+   fpu_control_t saved_fenv;
+
+   _FPU_GETCW(saved_fenv);
+   context_push(&mycontext);
+   if (sigsetjmp(context->error_jump, 1)) {
+      _FPU_SETCW(saved_fenv);
+      context_pop();
+      siglongjmp(context->error_jump, -1L);
+   }
+
+   at *answer = progn(ARG_LIST);
+
+   context_pop();
+   _FPU_SETCW(saved_fenv);
+   return answer;
+}
+#else
 DY(ywith_fpu_env)
 {
    struct context mycontext;
@@ -323,8 +343,8 @@ DY(ywith_fpu_env)
    fesetenv(saved_fenv);
    return answer;
 }
+#endif
 
-static const char *errmsg_unsup = "function not implemented or supported on this platform";
 static const char *errmsg_keyword = "not a valid keyword";
 
 static int parse_excepts(int arg_number, at **arg_array)
@@ -368,11 +388,15 @@ static int parse_excepts(int arg_number, at **arg_array)
 /* mask some or all exceptions */
 DX(xfpu_mask)
 {
-   int excepts = parse_excepts(arg_number, arg_array);
 #ifdef HAVE_FEENABLEEXCEPT
+   int excepts = parse_excepts(arg_number, arg_array);
    fedisableexcept(excepts | ~fegetexcept());
 #else
-   RAISEFX(errmsg_unsup, NIL);
+   static bool not_warned = true;
+   if (not_warned) {
+      fprintf(stderr, "*** Warning: setting FPU exception mask not supported on this platform\n");
+      not_warned = false;
+   }
 #endif
    return NIL;
 }
@@ -380,19 +404,63 @@ DX(xfpu_mask)
 /* trap some or all exceptions */
 DX(xfpu_unmask)
 {
-   int excepts = parse_excepts(arg_number, arg_array);
 #ifdef HAVE_FEENABLEEXCEPT
+   int excepts = parse_excepts(arg_number, arg_array);
    feenableexcept(excepts | fegetexcept());
 #else
-   RAISEFX(errmsg_unsup, NIL);
+   static bool not_warned = true;
+   if (not_warned) {
+      fprintf(stderr, "*** Warning: setting FPU exception mask not supported on this platform\n");
+      not_warned = false;
+   }
 #endif
    return NIL;
 }
 
+
+void set_fpu_precision(fpu_control_t prec)
+{
+#ifdef _FPU_GETCW
+   fpu_control_t mode; 
+   _FPU_GETCW(mode);
+   mode &= ~(_FPU_SINGLE | _FPU_DOUBLE | _FPU_EXTENDED);
+   mode |= prec;
+   _FPU_SETCW(mode);
+#else
+   static bool not_warned = true;
+   if (not_warned) {
+      fprintf(stderr, "*** Warning: setting FPU precision not supported on this platform\n");
+      not_warned = false;
+   }
+#endif
+}
+
+
 /* configure FPU internal precision */
 DX(xfpu_precision)
 {
-   RAISEFX(errmsg_unsup, NIL);
+   char *keywords = KEY_SINGLE KEY_DOUBLE KEY_EXTENDED;
+   fpu_control_t mode = 0;
+   for (int i=1; i<= arg_number; i++) {
+      char *kw = strstr(keywords, nameof(ASYMBOL(i)));
+      switch (1+(kw-keywords)) {
+      case 1:
+         mode = _FPU_SINGLE;
+         break;
+         
+      case sizeof(KEY_SINGLE): 
+         mode = _FPU_DOUBLE;
+         break;
+         
+      case sizeof(KEY_SINGLE KEY_DOUBLE):
+         mode = _FPU_EXTENDED;
+         break;
+         
+      default:
+         RAISEFX(errmsg_keyword, APOINTER(i));
+      }
+   }
+   set_fpu_precision(mode);
    return NIL;
 }
 
@@ -464,17 +532,31 @@ DX(xfpu_info)
    char buffer[256], *buf = buffer;
 // #pragma STDC FENV_ACCESS ON
 
+#ifdef _FPU_GETCW
+   print_char('\n');
+   print_string("Operating precision   :");
+   fpu_control_t mode;
+   _FPU_GETCW(mode);
+   switch (mode & (_FPU_SINGLE | _FPU_DOUBLE | _FPU_EXTENDED)) {
+   case _FPU_SINGLE  : print_string(" "KEY_SINGLE); break;
+   case _FPU_DOUBLE  : print_string(" "KEY_DOUBLE); break;
+   case _FPU_EXTENDED: print_string(" "KEY_EXTENDED); break;
+   default: print_string(" Unknown"); break;
+   }
+#else
    print_char('\n');
    print_string("Operating precision   :");
    switch (FLT_EVAL_METHOD) {
-   case 0: print_string(" "KEY_FLOAT); break;
+   case 0: print_string(" "KEY_SINGLE); break;
    case 1: print_string(" "KEY_DOUBLE); break;
    case 2: print_string(" "KEY_EXTENDED); break;
    default: print_string(" Unknown"); break;
    }
-   print_char('\n');
+#endif   
+
 
 #if 0
+   print_char('\n');
    print_string("Rounding mode         :");
    switch (FLT_ROUNDS) {
    case 0: print_string(" "KEY_TOWARDZERO); break;
@@ -483,8 +565,8 @@ DX(xfpu_info)
    case 3: print_string(" "KEY_DOWNWARD); break;
    default: print_string(" Unknown"); break;
    }
-   print_char('\n');
 #else
+   print_char('\n');
    print_string("Rounding mode         :");
    switch (fegetround()) {
    case FE_TOWARDZERO: print_string(" "KEY_TOWARDZERO); break;
@@ -493,9 +575,9 @@ DX(xfpu_info)
    case FE_DOWNWARD:   print_string(" "KEY_DOWNWARD); break;
    default: print_string(" Unknown"); break;
    }
-   print_char('\n');
 #endif
 
+   print_char('\n');
    print_string("FPU exceptions set    :");
    print_string(sprint_excepts(buf, fetestexcept(FE_ALL_EXCEPT)));
    print_char('\n');
@@ -506,13 +588,15 @@ DX(xfpu_info)
    print_char('\n');
 #endif
 
-
    return NIL;
 }
 
 void fpu_reset(void)
 {
    fesetenv(&standard_fenv);
+#ifdef _FPU_GETCW
+   set_fpu_precision(_FPU_EXTENDED);
+#endif
 }
 
 DX(xfpu_reset)
