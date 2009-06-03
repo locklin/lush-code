@@ -782,19 +782,11 @@ LUSHAPI void serialize_double(double *data, int code);
 LUSHAPI int  serialize_atstar(at **data, int code);
 LUSHAPI FILE *serialization_file_descriptor(int code);
 
-/* NAN.H -------------------------------------------------------- */
+/* FPU.H -------------------------------------------------------- */
 
-LUSHAPI flt getnanF (void);
-LUSHAPI int isnanF(flt x);
-LUSHAPI flt infinityF (void);
-LUSHAPI int isinfF(flt x);
-LUSHAPI real getnanD (void);
-LUSHAPI int  isnanD(real x);
-LUSHAPI real infinityD (void);
-LUSHAPI int  isinfD(real x);
-LUSHAPI double epsD(double x);
-LUSHAPI float epsF(float x);
-
+LUSHAPI double eps(double x);
+LUSHAPI float epsf(float x);
+LUSHAPI void fpu_reset(void);
 
 /* STORAGE.H --------------------------------------------------- */
 

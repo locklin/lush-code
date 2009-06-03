@@ -316,7 +316,7 @@ void start_lisp(int argc, char **argv, int quietflag)
       }
       q = apply(Value(at_startup),p);
    }
-   MM_EXIT; /* reset transient stack after an error */
+   MM_EXIT;     /* reset transient stack after an error */
 
    /* No interactive loop in quiet mode */
    if (! quiet) {
@@ -332,6 +332,7 @@ void start_lisp(int argc, char **argv, int quietflag)
       top_link = NULL;
       recur_doc_init();
       reset_dx_stack();
+      fpu_reset();
 
       line_pos = line_buffer;
       *line_buffer = 0;

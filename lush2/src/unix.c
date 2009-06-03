@@ -184,10 +184,9 @@ void cygwin_fmode_binary(FILE *f)
 
 int break_attempt;
 
-
 /* goodsignal -- sets signal using POSIX or BSD when available */
 
-void goodsignal(int sig, SIGHANDLERTYPE vec)
+void goodsignal(int signo, SIGHANDLERTYPE vec)
 {
 #ifdef POSIXSIGNAL
    struct sigaction act;
@@ -197,7 +196,9 @@ void goodsignal(int sig, SIGHANDLERTYPE vec)
 #ifdef SA_INTERRUPT
    act.sa_flags |= SA_INTERRUPT;
 #endif
-   sigaction(sig, &act, NULL);
+   if (signo == SIGFPE)
+      act.sa_flags |= SA_SIGINFO;
+   sigaction(signo, &act, NULL);
 #endif /* POSIXSIGNAL */
 #ifdef BSDSIGNAL
    struct sigvec act;
@@ -207,10 +208,10 @@ void goodsignal(int sig, SIGHANDLERTYPE vec)
 #ifdef SV_BSDSIG
    sv.sv_mask = SV_BSDSIG;
 #endif
-   sigvec(sig, &act, NULL);
+   sigvec(signo, &act, NULL);
 #endif /* BSDSIGNAL */
 #ifdef SYSVSIGNAL
-   signal(sig, vec);
+   signal(signo, vec);
 #endif /* SYSVSIGNAL */
 }
 
@@ -228,8 +229,7 @@ static RETSIGTYPE quit_irq(void)
 
 /* break_irq -- signal handler for Control-C */
 
-static RETSIGTYPE
-break_irq(void)
+static RETSIGTYPE break_irq(void)
 {
    break_attempt = 1;
    eval_ptr = eval_brk;
@@ -250,6 +250,55 @@ static RETSIGTYPE usr1_irq(void)
    goodsignal(SIGINT, usr1_irq);
 #endif
 }
+
+
+/* fpe_irq -- signal handler for floating point exception */
+
+#if defined(POSIXSIGNAL)
+static void fpe_irq(int signo, siginfo_t *siginf, void *c)
+{
+   char *reason;
+   switch (siginf->si_code)
+   {
+   case FPE_INTDIV:
+      reason = "IntegerDivByZero";
+      break;
+   case FPE_INTOVF:
+      reason = "IntegerOverflow";
+      break;
+   case FPE_FLTDIV:
+      reason = "DivByZero";
+      break;
+   case FPE_FLTOVF:
+      reason = "Overflow";
+      break;
+   case FPE_FLTUND:
+      reason = "Underflow";
+      break;
+   case FPE_FLTRES:
+      reason = "Inexact";
+      break;
+   case FPE_FLTINV:
+      reason = "Invalid";
+      break;
+   case FPE_FLTSUB:
+      reason = "Subscript";
+      break;
+   default:
+      reason = "Unknown";
+      fprintf(stderr, "(Unknown si_code %d)\n", siginf->si_code);
+   }
+   char errmsg[120];
+   sprintf(errmsg, "Floating exception %s at %p", 
+           reason, siginf->si_addr);
+   error(NIL, errmsg, NIL);
+}
+#else
+static RETSIGTYPE fpe_irq(void)
+{
+   error(NIL, "Floating exception", NIL);
+}
+#endif
 
 
 /* lastchance -- safety code for hopeless situations */
@@ -337,7 +386,7 @@ static void set_irq(void)
    goodsignal(SIGBUS,  gasp_irq);
 #endif
 #ifdef SIGFPE
-  /* set below */
+   goodsignal(SIGFPE, fpe_irq);
 #endif
 #ifdef SIGKILL
   /* cannot change */
