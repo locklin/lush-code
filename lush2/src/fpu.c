@@ -303,12 +303,15 @@ static void configure_fpu_traps(void)
 DY(ywith_fpu_env)
 {
    struct context mycontext;
-   fpu_control_t saved_fenv;
+   fpu_control_t control;
+   fexcept_t status;
+   _FPU_GETCW(control);
+   fegetexceptflag(&status, FE_ALL_EXCEPT);
 
-   _FPU_GETCW(saved_fenv);
    context_push(&mycontext);
    if (sigsetjmp(context->error_jump, 1)) {
-      _FPU_SETCW(saved_fenv);
+      _FPU_SETCW(control);
+      fesetexceptflag(&status, FE_ALL_EXCEPT);
       context_pop();
       siglongjmp(context->error_jump, -1L);
    }
@@ -316,7 +319,8 @@ DY(ywith_fpu_env)
    at *answer = progn(ARG_LIST);
 
    context_pop();
-   _FPU_SETCW(saved_fenv);
+   _FPU_SETCW(control);
+   fesetexceptflag(&status, FE_ALL_EXCEPT);
    return answer;
 }
 #else
@@ -412,6 +416,7 @@ DX(xfpu_trap)
 {
 #ifdef HAVE_FEENABLEEXCEPT
    int excepts = parse_excepts(arg_number, arg_array);
+   feclearexcept(excepts);
    feenableexcept(excepts | fegetexcept());
 #else
    static bool not_warned = true;

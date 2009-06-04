@@ -261,42 +261,42 @@ static void fpe_irq(int signo, siginfo_t *siginf, void *c)
    switch (siginf->si_code)
    {
    case FPE_INTDIV:
-      reason = "IntegerDivByZero";
+      reason = "div-by-zero (integer)";
       break;
    case FPE_INTOVF:
-      reason = "IntegerOverflow";
+      reason = "overflow (integer)";
       break;
    case FPE_FLTDIV:
-      reason = "DivByZero";
+      reason = "div-by-zero";
       break;
    case FPE_FLTOVF:
-      reason = "Overflow";
+      reason = "overflow";
       break;
    case FPE_FLTUND:
-      reason = "Underflow";
+      reason = "underflow";
       break;
    case FPE_FLTRES:
-      reason = "Inexact";
+      reason = "inexact";
       break;
    case FPE_FLTINV:
-      reason = "Invalid";
+      reason = "invalid";
       break;
    case FPE_FLTSUB:
-      reason = "Subscript";
+      reason = "subscript";
       break;
    default:
-      reason = "Unknown";
+      reason = "unknown";
       fprintf(stderr, "(Unknown si_code %d)\n", siginf->si_code);
    }
    char errmsg[120];
-   sprintf(errmsg, "Floating exception %s at %p", 
+   sprintf(errmsg, "FPU exception '%s' at %p", 
            reason, siginf->si_addr);
    error(NIL, errmsg, NIL);
 }
 #else
 static RETSIGTYPE fpe_irq(void)
 {
-   error(NIL, "Floating exception", NIL);
+   error(NIL, "FPU exception", NIL);
 }
 #endif
 
