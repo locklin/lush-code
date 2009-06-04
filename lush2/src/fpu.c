@@ -379,30 +379,36 @@ static int parse_excepts(int arg_number, at **arg_array)
          break;
 
       default:
-         RAISEFX(errmsg_keyword, APOINTER(i));
+         RAISEF(errmsg_keyword, APOINTER(i));
       }
    }
    return excepts;
 }
 
-/* mask some or all exceptions */
-DX(xfpu_mask)
+static at *unparse_excepts(int excepts)
 {
-#ifdef HAVE_FEENABLEEXCEPT
-   int excepts = parse_excepts(arg_number, arg_array);
-   fedisableexcept(excepts | ~fegetexcept());
-#else
-   static bool not_warned = true;
-   if (not_warned) {
-      fprintf(stderr, "*** Warning: setting FPU exception mask not supported on this platform\n");
-      not_warned = false;
-   }
-#endif
-   return NIL;
+   at *es = NIL;
+   
+   if (excepts & FE_INEXACT)
+      es = new_cons(new_symbol(KEY_INEXACT), es);
+
+   if (excepts & FE_UNDERFLOW)
+      es = new_cons(new_symbol(KEY_UNDERFLOW), es);
+
+   if (excepts & FE_OVERFLOW)
+      es = new_cons(new_symbol(KEY_OVERFLOW), es);
+
+   if (excepts & FE_DIVBYZERO)
+      es = new_cons(new_symbol(KEY_DIVBYZERO), es);
+
+   if (excepts & FE_INVALID)
+      es = new_cons(new_symbol(KEY_INVALID), es);
+   
+   return es;
 }
 
 /* trap some or all exceptions */
-DX(xfpu_unmask)
+DX(xfpu_trap)
 {
 #ifdef HAVE_FEENABLEEXCEPT
    int excepts = parse_excepts(arg_number, arg_array);
@@ -410,15 +416,47 @@ DX(xfpu_unmask)
 #else
    static bool not_warned = true;
    if (not_warned) {
-      fprintf(stderr, "*** Warning: setting FPU exception mask not supported on this platform\n");
+      fprintf(stderr, "*** Warning: trapping FPU exceptions not supported on this platform\n");
       not_warned = false;
    }
 #endif
    return NIL;
 }
 
+/* mask some or all exceptions */
+DX(xfpu_untrap)
+{
+#ifdef HAVE_FEENABLEEXCEPT
+   int excepts = parse_excepts(arg_number, arg_array);
+   fedisableexcept(excepts | ~fegetexcept());
+#else
+   static bool not_warned = true;
+   if (not_warned) {
+      fprintf(stderr, "*** Warning: trapping FPU exceptions not supported on this platform\n");
+      not_warned = false;
+   }
+#endif
+   return NIL;
+}
 
-void set_fpu_precision(fpu_control_t prec)
+/* test for named exceptions flags */
+DX(xfpu_test)
+{
+   int excepts = parse_excepts(arg_number, arg_array);
+   excepts = fetestexcept(excepts);
+   return unparse_excepts(excepts);
+}
+
+/* clear named exception flags */
+DX(xfpu_clear)
+{
+   int excepts = parse_excepts(arg_number, arg_array);
+   feclearexcept(excepts);
+   return NIL;
+}
+
+
+static void set_fpu_precision(fpu_control_t prec)
 {
 #ifdef _FPU_GETCW
    fpu_control_t mode; 
@@ -503,26 +541,21 @@ char *sprint_excepts(char *buf, int excepts)
 {
    buf[0] = '\0';
 
-#ifdef FE_DIVBYZERO
    if (excepts & FE_DIVBYZERO)
       buf = strcat(buf, " "KEY_DIVBYZERO);
-#endif
-#ifdef FE_INVALID
+
    if (excepts & FE_INVALID)
       buf = strcat(buf, " "KEY_INVALID);
-#endif
-#ifdef FE_INEXACT
+
    if (excepts & FE_INEXACT)
       buf = strcat(buf, " "KEY_INEXACT);
-#endif
-#ifdef FE_OVERFLOW
+
    if (excepts & FE_OVERFLOW)
       buf = strcat(buf, " "KEY_OVERFLOW);
-#endif
-#ifdef FE_UNDERFLOW
+
    if (excepts & FE_UNDERFLOW)
       buf = strcat(buf, " "KEY_UNDERFLOW);
-#endif
+
    return buf;
 }
 
@@ -608,7 +641,9 @@ DX(xfpu_reset)
 
 void init_nan(void)
 {
-   ieee_present = ( sizeof(real)==8 && sizeof(int)==4 );
+#ifdef __STDC_IEC_559__
+   ieee_present = 1;
+#endif
 
    /* set up and save standard fpu environment */
    fesetenv(FE_DFL_ENV);
@@ -622,8 +657,10 @@ void init_nan(void)
    dy_define("with-fpu-env", ywith_fpu_env);
    dx_define("fpu-info", xfpu_info);
    dx_define("fpu-reset", xfpu_reset);
-   dx_define("fpu-mask", xfpu_mask);
-   dx_define("fpu-unmask", xfpu_unmask);
+   dx_define("fpu-trap", xfpu_trap);
+   dx_define("fpu-untrap", xfpu_untrap);
+   dx_define("fpu-test", xfpu_test);
+   dx_define("fpu-clear", xfpu_clear);
    dx_define("fpu-round", xfpu_round);
    dx_define("fpu-precision", xfpu_precision);
 }

@@ -27,7 +27,7 @@
 #include "header.h"
 #include "check_func.h"
 #include "dh.h"
-#include <fenv.h>
+// #include <fenv.h>
 
 extern void get_write_permit(storage_t *); /* in storage.c */
 
@@ -1765,7 +1765,7 @@ at *dh_listeval(at *p, at *q)
   MM_PAUSEGC;
   context_push(&c);
   
-  int fpu_status = fetestexcept(FE_ALL_EXCEPT & ~FE_INEXACT);
+  /* int fpu_status = fetestexcept(FE_ALL_EXCEPT & ~FE_INEXACT); */
   if (sigsetjmp(context->error_jump, 1)) {
     MM_PAUSEGC_END;
     context_pop();
@@ -1773,13 +1773,13 @@ at *dh_listeval(at *p, at *q)
   }
   at *result = _dh_listeval(p, q);
 
-  if (fpu_status != fetestexcept(FE_ALL_EXCEPT & ~FE_INEXACT)) {
-    char buffer[100];
-    extern char *sprint_excepts(char *, int);
-    sprint_excepts(buffer, fetestexcept(FE_ALL_EXCEPT & ~FE_INEXACT));
-    fprintf(stderr, "*** Warning: call to %s changed FPU state to '%s'\n",
-            pname(p), buffer);
-  }
+/*   if (fpu_status != fetestexcept(FE_ALL_EXCEPT & ~FE_INEXACT)) { */
+/*     char buffer[100]; */
+/*     extern char *sprint_excepts(char *, int); */
+/*     sprint_excepts(buffer, fetestexcept(FE_ALL_EXCEPT & ~FE_INEXACT)); */
+/*     fprintf(stderr, "*** Warning: call to %s changed FPU state to '%s'\n", */
+/*             pname(p), buffer); */
+/*   } */
   MM_PAUSEGC_END;
   context_pop();
 

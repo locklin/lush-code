@@ -25,6 +25,7 @@
  ***********************************************************************/
 
 #include "header.h"
+#include <fenv.h>
 
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
@@ -698,12 +699,27 @@ DX(xload)
       
    } else if (arg_number == 2) {
       toplevel(ASTRING(1), ASTRING(2), NIL);
-      
+
    } else {
       ARG_NUMBER(1);
-      toplevel(ASTRING(1), NIL, NIL);
-   }
 
+      static int excepts = 0;
+      excepts = fetestexcept(FE_ALL_EXCEPT & ~FE_INEXACT);
+#ifdef HAVE_FEENABLEEXCEPT
+      static int traps = 0;
+      traps = fegetexcept();
+#endif
+      toplevel(ASTRING(1), NIL, NIL);
+      bool fpu_changed = excepts != fetestexcept(FE_ALL_EXCEPT & ~FE_INEXACT);
+#ifdef HAVE_FEENABLEEXCEPT
+      fpu_changed |= traps != fegetexcept();
+#endif
+      if (fpu_changed) {
+         fprintf(stderr, "*** Warning: FPU state changed while loading file\n");
+         fprintf(stderr, "***        : '%s'\n", ASTRING(1));
+      }
+   }
+   
    return make_string(file_name); /* fishy */
 }
 
