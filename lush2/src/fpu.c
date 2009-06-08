@@ -27,18 +27,24 @@
 #include "header.h"
 
 #ifdef HAVE_FPU_CONTROL_H
-# include <fpu_control.h>
-#elif HAVE___SETFPUCW
-# define _FPU_SETCW(cw) __setfpucw(cw)
-typedef int fpu_control_t;
+#  include <fpu_control.h>
+#else
+#  ifdef HAVE___SETFPUCW
+#    define _FPU_SETCW(cw) __setfpucw(cw)
+#  endif 
+#  define fpu_control_t unsigned int
+#  define _FPU_SINGLE   0
+#  define _FPU_DOUBLE   1
+#  define _FPU_EXTENDED 2
 #endif
 
 #define _GNU_SOURCE
 #include <fenv.h>
 #include <signal.h>
 #include <float.h>
-
-typedef RETSIGTYPE (*SIGHANDLERTYPE)();
+#if defined(__MACOSX__) && defined(__SSE__)
+#  include <xmmintrin.h>
+#endif
 
 #ifdef linux
 # ifdef __hppa__          /* Checked (debian) 2003-07-14 */
@@ -49,9 +55,6 @@ typedef RETSIGTYPE (*SIGHANDLERTYPE)();
 # endif
 #endif
 
-static int ieee_present = 0;
-static int fpe_inv = 0;
-static int fpe_ofl = 0;
 static fenv_t standard_fenv;
 
 #define KEY_INVALID    "invalid"
@@ -106,196 +109,6 @@ DX(xeps)
    ifn (isfinite(x))
       RAISEF("eps not defined for number", NEW_NUMBER(x));
    return NEW_NUMBER(eps(x));
-}
-
-
-/* setup_fpu -- configure FPU exception mask */
-
-int setup_fpu(int doINV, int doOFL)
-{
-   
-#if defined(WIN32)
-   
-   /* Win32 uses _controlfp() */
-   unsigned int mask = _controlfp(0,0);
-   fpe_inv = doINV;
-   fpe_ofl = doOFL;
-   if (doINV) mask&=(~_EM_INVALID); else mask|=(_EM_INVALID);
-   if (doOFL) mask&=(~_EM_OVERFLOW); else mask|=(_EM_OVERFLOW);
-   if (doOFL) mask&=(~_EM_ZERODIVIDE); else mask|=(_EM_ZERODIVIDE);
-   _controlfp(mask, _MCW_EM);
-   return 1;
-
-#elif defined(HAVE_FPSETMASK)
-
-   /* SysVr4 defines fpsetmask() */
-   
-   int mask = 0;
-   fpe_inv = doINV;
-   fpe_ofl = doOFL;
-#ifdef FP_X_INV
-   if (doINV) mask |= FP_X_INV;
-#endif
-#ifdef FP_X_OFL
-   if (doOFL) mask |= FP_X_OFL;
-#endif
-#ifdef FP_X_DZ
-   if (doOFL) mask |= FP_X_DZ;
-#endif
-   fpsetmask( mask );
-   return 1;
-  
-#elif defined(HAVE_FEENABLEEXCEPT)
-
-   /* GLIBC-2.2 model */
-   
-   int mask1 = 0;
-   int mask2 = 0;
-   fpe_inv = doINV;
-   fpe_ofl = doOFL;
-
-#ifdef FE_INVALID
-   if (doINV) 
-      mask1 |= FE_INVALID;
-   else
-      mask2 |= FE_INVALID;    
-#endif
-#ifdef FE_DIVBYZERO
-   if (doOFL) 
-      mask1 |= FE_DIVBYZERO;
-   else
-      mask2 |= FE_DIVBYZERO;    
-#endif
-#ifdef FE_OVERFLOW
-   if (doOFL) 
-      mask1 |= FE_OVERFLOW;
-   else
-      mask2 |= FE_OVERFLOW;    
-#endif
-   feenableexcept(mask1);
-   fedisableexcept(mask2);
-   return 1;
-
-#elif defined(HAVE_FPU_CONTROL_H)
-
-   /* Older GLIBC */
-  
-   fpu_control_t mask = 0;
-   fpe_inv = doINV;
-   fpe_ofl = doOFL;
-   
-#ifdef _FPU_DEFAULT
-   mask = _FPU_DEFAULT;
-#endif
-  
-#define DO(c,f) mask=((c)?(mask|(f)):(mask&~(f)));
-
-#if defined(__i386__) || defined(__alpha__)
-#ifdef _FPU_MASK_IM
-   DO(!doINV, _FPU_MASK_IM);
-#endif
-#ifdef _FPU_MASK_OM
-   DO(!doOFL, _FPU_MASK_OM);
-#endif
-#ifdef _FPU_MASK_ZM
-   DO(!doOFL, _FPU_MASK_ZM);
-#endif
-#else
-#ifdef _FPU_MASK_IM
-   DO(doINV, _FPU_MASK_IM);
-#endif
-#ifdef _FPU_MASK_OM
-   DO(doOFL, _FPU_MASK_OM);
-#endif
-#ifdef _FPU_MASK_ZM
-   DO(doOFL, _FPU_MASK_ZM);
-#endif
-#ifdef _FPU_MASK_V
-   DO(doINV, _FPU_MASK_V);
-#endif
-#ifdef _FPU_MASK_O
-   DO(doOFL, _FPU_MASK_O);
-#endif
-#ifdef _FPU_MASK_Z
-   DO(doOFL, _FPU_MASK_Z);
-#endif
-#ifdef _FPU_MASK_OPERR
-   DO(doINV, _FPU_MASK_OPERR);
-#endif
-#ifdef _FPU_MASK_OVFL
-   DO(doOFL, _FPU_MASK_OPERR);
-#endif
-#ifdef _FPU_MASK_DZ
-   DO(doOFL, _FPU_MASK_DZ);
-#endif
-#endif
-  /* continue */
-
-#ifdef _FPU_SETCW
-   _FPU_SETCW( mask );
-   return 1;
-#undef DO
-#endif
-
-#endif
-   
-   /* Default */
-   return 0;
-}
-
-
-/* probe_fpe_irq -- signal handler for testing SIGFPE */
-
-static int fpe_flag;
-static int fpe_isnan;
-
-static RETSIGTYPE probe_fpe_irq(void)
-{
-#ifdef WIN32
-   _clearfp();
-#endif
-   fpe_flag = 1;
-   /* Avoid incorrect restarts */
-   signal(SIGFPE, SIG_IGN);
-}
-
-static void probe_fpe(void)
-{
-   signal(SIGFPE, (SIGHANDLERTYPE)probe_fpe_irq);
-   fpe_isnan = isnan(3.0 + NAN);
-#ifdef __alpha__
-   asm ("trapb");
-#endif
-   signal(SIGFPE, SIG_IGN);
-}
-
-/* configure_fpu_traps -- decide what FPU exceptions to trap on */
-
-static void configure_fpu_traps(void)
-{
-   /* Setup fpu exceptions */
-   setup_fpu(true, true);
-
-   /* Check NAN behavior */
-   while (ieee_present) {
-      signal(SIGFPE, SIG_IGN);
-      /* Check whether "INV" exception must be masked */
-      fpe_flag = 0;
-      probe_fpe();
-      if (! fpe_flag) break;
-      /* Check whether all exceptions must be masked */
-      fpe_flag = 0;
-      setup_fpu(false, true);
-      probe_fpe();
-      if (! fpe_flag) break;
-      /* Check whether signal must be ignored */
-      fpe_flag = 0;
-      setup_fpu(false, false);
-      probe_fpe();
-      if (! fpe_flag) break;
-      fpe_flag = 0;
-      return;
-   }
 }
 
 
@@ -411,36 +224,63 @@ static at *unparse_excepts(int excepts)
    return es;
 }
 
+static void warn_notrap(void)
+{
+   static int not_warned = 3;
+   if (not_warned) {
+      fprintf(stderr, "*** Warning: trapping FPU exceptions not supported on this platform\n");
+      not_warned--;
+   }
+}
+
+static void fpu_trap (int excepts)
+{
+#ifdef HAVE_FEENABLEEXCEPT
+   feclearexcept(excepts);
+   feenableexcept(excepts | fegetexcept());
+#elif defined(__MACOSX__) && defined(__SSE__)
+   unsigned int es = _MM_GET_EXCEPTION_MASK();
+   if (excepts & FE_INEXACT)    es &= ~_MM_MASK_INEXACT;
+   if (excepts & FE_UNDERFLOW)  es &= ~_MM_MASK_UNDERFLOW;
+   if (excepts & FE_OVERFLOW)   es &= ~_MM_MASK_OVERFLOW;
+   if (excepts & FE_DIVBYZERO)  es &= ~_MM_MASK_DIV_ZERO;
+   if (excepts & FE_INVALID)    es &= ~_MM_MASK_INVALID;
+   _MM_SET_EXCEPTION_MASK(es);
+#else
+   warn_notrap();
+#endif
+}
+
+static void fpu_untrap(int excepts)
+{
+#ifdef HAVE_FEENABLEEXCEPT
+   fedisableexcept(excepts | ~fegetexcept());
+#elif defined(__MACOSX__) && defined(__SSE__)
+   unsigned int es = _MM_GET_EXCEPTION_MASK();
+   if (excepts & FE_INEXACT)    es |= _MM_MASK_INEXACT;
+   if (excepts & FE_UNDERFLOW)  es |= _MM_MASK_UNDERFLOW;
+   if (excepts & FE_OVERFLOW)   es |= _MM_MASK_OVERFLOW;
+   if (excepts & FE_DIVBYZERO)  es |= _MM_MASK_DIV_ZERO;
+   if (excepts & FE_INVALID)    es |= _MM_MASK_INVALID;
+   _MM_SET_EXCEPTION_MASK(es);
+#else
+   warn_notrap();
+#endif
+}
+
 /* trap some or all exceptions */
 DX(xfpu_trap)
 {
-#ifdef HAVE_FEENABLEEXCEPT
    int excepts = parse_excepts(arg_number, arg_array);
-   feclearexcept(excepts);
-   feenableexcept(excepts | fegetexcept());
-#else
-   static bool not_warned = true;
-   if (not_warned) {
-      fprintf(stderr, "*** Warning: trapping FPU exceptions not supported on this platform\n");
-      not_warned = false;
-   }
-#endif
+   fpu_trap(excepts);
    return NIL;
 }
 
 /* mask some or all exceptions */
 DX(xfpu_untrap)
 {
-#ifdef HAVE_FEENABLEEXCEPT
    int excepts = parse_excepts(arg_number, arg_array);
-   fedisableexcept(excepts | ~fegetexcept());
-#else
-   static bool not_warned = true;
-   if (not_warned) {
-      fprintf(stderr, "*** Warning: trapping FPU exceptions not supported on this platform\n");
-      not_warned = false;
-   }
-#endif
+   fpu_untrap(excepts);
    return NIL;
 }
 
@@ -470,10 +310,10 @@ static void set_fpu_precision(fpu_control_t prec)
    mode |= prec;
    _FPU_SETCW(mode);
 #else
-   static bool not_warned = true;
+   static int not_warned = 3;
    if (not_warned) {
-      fprintf(stderr, "*** Warning: setting FPU precision not supported on this platform\n");
-      not_warned = false;
+      fprintf(stderr, "*** Warning: Setting FPU precision not supported on this platform\n");
+      not_warned--;
    }
 #endif
 }
@@ -536,7 +376,7 @@ DX(xfpu_round)
       }
    }
    if (fesetround(mode))
-      fprintf(stderr, "could not change FPU rounding mode\n");
+      fprintf(stderr, "*** Warning: Could not change FPU rounding mode\n");
    return NIL;
 }
 
@@ -624,8 +464,18 @@ DX(xfpu_info)
    print_string("FPU exceptions trapped:");
    print_string(sprint_excepts(buf, fegetexcept()));
    print_char('\n');
+#elif defined(__MACOSX__) && defined(__SSE__)
+   print_string("FPU exceptions trapped:");
+   int excepts = FE_ALL_EXCEPT;
+   unsigned int es = _MM_GET_EXCEPTION_MASK();
+   if (es & _MM_MASK_INEXACT)   excepts &= ~FE_INEXACT;
+   if (es & _MM_MASK_UNDERFLOW) excepts &= ~FE_UNDERFLOW;
+   if (es & _MM_MASK_OVERFLOW)  excepts &= ~FE_OVERFLOW;
+   if (es & _MM_MASK_DIV_ZERO)  excepts &= ~FE_DIVBYZERO;
+   if (es & _MM_MASK_INVALID)   excepts &= ~FE_INVALID;
+   print_string(sprint_excepts(buf, excepts));
+   print_char('\n');
 #endif
-
    return NIL;
 }
 
@@ -646,13 +496,9 @@ DX(xfpu_reset)
 
 void init_nan(void)
 {
-#ifdef __STDC_IEC_559__
-   ieee_present = 1;
-#endif
-
    /* set up and save standard fpu environment */
    fesetenv(FE_DFL_ENV);
-   configure_fpu_traps();
+   fpu_untrap(FE_ALL_EXCEPT);
    assert(fetestexcept(FE_ALL_EXCEPT)==0);
    fegetenv(&standard_fenv);
 

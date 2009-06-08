@@ -39,6 +39,11 @@
 # endif
 #endif
 
+#if defined(__APPLE__) && defined(__MACH__) &&  (defined (__i686__) || defined(__i386__))
+#  define __MACOSX__  1
+#endif
+
+
 /* --------- GENERAL PURPOSE DEFINITIONS ---------- */
 
 #if HAVE_SYS_TYPES_H 
