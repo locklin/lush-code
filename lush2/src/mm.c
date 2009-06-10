@@ -541,8 +541,7 @@ static void sift(int p, int q)
    }
 }
 
-/* increment man_k while maintaining the poplar invariant */
-/* only update if at least n updates could be done        */
+/* increment man_k to man_last while maintaining the poplar invariant */
 static void update_man_k(void)
 {
    assert(!collect_in_progress);
@@ -1768,7 +1767,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    debug("done\n");
 }
 
-/* print diagnostic info to stdinf */
+/* print diagnostic info to string */
 char *mm_info(int level)
 {
 #define PRINTBUFLEN 20000
@@ -1808,6 +1807,7 @@ char *mm_info(int level)
       total_memory_managed += types[t].size;
    } DO_HEAP_END;
 
+   update_man_k();
    DO_MANAGED(i) {
       total_objects_offheap++;
       mt_t t  = INFO_T(managed[i]);
