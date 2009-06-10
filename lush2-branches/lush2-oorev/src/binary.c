@@ -247,7 +247,7 @@ again:
 	sweep(c->slots[i].symb, code);
 	sweep(c->slots[i].val, code);
       }
-   } else if (cl == &class_class) {
+   } else if (cl == class_class) {
       class_t *clcl = Mptr(p);
       sweep(clcl->priminame, code);
       if (!builtin_class_p(clcl) && !clcl->classdoc) {
@@ -784,7 +784,7 @@ static int local_write(at *p)
       return 0;
    }
   
-   if (cl == &class_class) {
+   if (cl == class_class) {
       class_t *c = Mptr(p);
       if (!builtin_class_p(c) && !c->classdoc)
          write_card8(TOK_CLASS);	

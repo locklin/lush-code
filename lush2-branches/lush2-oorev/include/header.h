@@ -174,13 +174,12 @@ DLLEXPORT int init_user_dll(int major, int minor);
 
 typedef struct class_s class_t;
 
-extern LUSHAPI class_t class_class;
+extern LUSHAPI class_t *class_class;
 extern LUSHAPI class_t *object_class;
 extern LUSHAPI class_t cons_class;
 extern LUSHAPI class_t null_class;
 extern LUSHAPI class_t number_class;
 extern LUSHAPI class_t gptr_class;
-extern LUSHAPI class_t zombie_class;
 extern LUSHAPI class_t window_class;
 
 struct at {
@@ -223,7 +222,7 @@ struct at {
 #define GPTRP(x)	((x)&&(Class(x) == &gptr_class))
 #define MPTRP(x)	((x)&&(Class(x) == &gptr_class))
 #define OBJECTP(x)      ((x)&&(Class(x)->dispose == object_class->dispose))
-#define CLASSP(x)       ((x)&&(Class(x) == &class_class))
+#define CLASSP(x)       ((x)&&(Class(x) == class_class))
 #define SYMBOLP(x)      ((x)&&(Class(x) == &symbol_class))
 #define STORAGEP(x)     ((x)&&(Class(x)->super == &abstract_storage_class))
 #define INDEXP(x)       ((x)&&(Class(x) == &index_class))
@@ -704,6 +703,7 @@ struct oostruct {
 };
 
 LUSHAPI bool builtin_class_p(const class_t *cl);
+LUSHAPI at  *new_class(class_t *cl);
 LUSHAPI at  *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults);
 LUSHAPI void putmethod(class_t *cl, at *name, at *fun);
 LUSHAPI at  *getmethod(class_t *cl, at *prop);

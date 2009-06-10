@@ -77,7 +77,6 @@ bool finalize_object(object_t *obj)
 }
 
 static mt_t mt_object = mt_undefined;
-extern mt_t mt_class; /* in at.c */
 
 /* ------ OBJECT CLASS DEFINITION -------- */
 
@@ -183,7 +182,159 @@ void oostruct_setslot(at *p, at *prop, at *val)
 
 /* ------ CLASS CLASS DEFINITION -------- */
 
+static const char *generic_name(at *p)
+{
+   if (Class(p)->classname)
+      sprintf(string_buffer, "::%s:%p", NAMEOF(Class(p)->classname),Mptr(p));
+   else
+      sprintf(string_buffer, "::%p:%p", Class(p), Mptr(p));
+   
+   return mm_strdup(string_buffer);
+}
 
+static at *generic_selfeval(at *p)
+{
+   return p;
+}
+
+/* at *generic_listeval(at *p, at *q) */
+/* { */
+/*    /\* looking for stacked functional values *\/ */
+/*    at *pp = Car(q);			 */
+   
+/*    /\* added stacked search on 15/7/88 *\/ */
+/*    if (SYMBOLP(pp)) { */
+/*       symbol_t *s = Symbol(pp); */
+/*       s = s->next; */
+/*       while (s && s->valueptr) { */
+/*          pp = *(s->valueptr); */
+/*          if (pp && Class(pp)->listeval != generic_listeval) { */
+/*             if (eval_ptr == eval_debug) { */
+/*                print_tab(error_doc.debug_tab); */
+/*                print_string("  !! inefficient stacked call\n"); */
+/*             } */
+/*             return Class(pp)->listeval(pp, q); */
+/*          } */
+/*          s = s->next; */
+/*       } */
+/*    } */
+/*    if (LISTP(p)) */
+/*       error("eval", "not a function call", q); */
+/*    else */
+/*       error(pname(p), "can't evaluate this list", NIL); */
+/* } */
+
+static at *generic_listeval(at *p, at *q)
+{
+   if (LISTP(p))
+      error("eval", "not a function call", q);
+   else
+      error(pname(p), "can't evaluate this list", NIL);
+}
+#define generic_dispose   NULL
+#define generic_action    NULL
+#define generic_serialize NULL
+#define generic_compare   NULL
+#define generic_hash      NULL
+#define generic_getslot   NULL
+#define generic_setslot   NULL
+
+void class_init(class_t *cl, bool managed) {
+
+   /* initialize class functions */
+   cl->dispose = generic_dispose;
+   cl->action = generic_action;
+   cl->name = generic_name;
+   cl->selfeval = generic_selfeval;
+   cl->listeval = generic_listeval;
+   cl->serialize = generic_serialize;
+   cl->compare = generic_compare;
+   cl->hash = generic_hash;
+   cl->getslot = generic_getslot;
+   cl->setslot = generic_setslot;
+
+   /* initialize class data */
+   cl->classname = NIL;
+   cl->priminame = NIL;
+   cl->backptr = NIL;
+   cl->atsuper = NIL;
+   cl->super = NULL;
+   cl->subclasses = NULL;
+   cl->nextclass = NULL;
+   
+   cl->slotssofar = 0;
+   cl->keylist = NIL;
+   cl->defaults = NIL;
+   cl->methods = NIL;
+   cl->hashtable = NULL;
+   cl->hashsize = 0;
+   cl->hashok = false;
+   cl->managed = managed;
+   cl->dontdelete = false;
+   cl->live = true;
+   cl->classdoc = NULL;
+   cl->kname = NULL;
+
+   /* static classes may reference managed objects */
+   if (!managed) {
+      //MM_ROOT(cl->keylist);    /* NULL for static classes */
+      //MM_ROOT(cl->defaults);   /* ! */
+      //MM_ROOT(cl->super);      /* ! */
+      //MM_ROOT(cl->subclasses); /* ! */
+      //MM_ROOT(cl->nextclass);  /* ! */
+      MM_ROOT(cl->classname);
+      MM_ROOT(cl->priminame);
+      MM_ROOT(cl->backptr);
+      MM_ROOT(cl->methods);
+      MM_ROOT(cl->hashtable);
+      MM_ROOT(cl->kname);
+   }
+}
+
+void clear_class(class_t *cl, size_t _)
+{
+   cl->keylist = NULL;
+   cl->defaults = NULL;
+   cl->super = NULL;
+   cl->subclasses = NULL;
+   cl->nextclass = NULL;
+   cl->classname = NULL;
+   cl->priminame = NULL;
+   cl->backptr = NULL;
+   cl->methods = NULL;
+   cl->hashtable = NULL;
+   cl->kname = NULL;
+}
+
+void mark_class(class_t *cl)
+{
+   MM_MARK(cl->keylist);
+   MM_MARK(cl->defaults);
+   MM_MARK(cl->super);
+   MM_MARK(cl->subclasses);
+   MM_MARK(cl->nextclass);
+   MM_MARK(cl->classname);
+   MM_MARK(cl->priminame);
+   MM_MARK(cl->backptr);
+   MM_MARK(cl->methods);
+   MM_MARK(cl->hashtable);
+   MM_MARK(cl->kname);
+}
+
+bool finalize_class(class_t *cl)
+{
+   class_class->dispose(cl);
+   return true;
+}
+
+static mt_t mt_class = mt_undefined;
+
+
+at *new_class(class_t *cl)
+{
+   assert(class_class);
+   return new_at(class_class, cl);
+}
 
 static void clear_hashok(class_t *cl)
 {
@@ -364,7 +515,7 @@ at *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
    cl->kname = 0;
    
    /* Create AT and returns it */
-   cl->backptr = new_extern(&class_class,cl);
+   cl->backptr = new_class(cl);
    return cl->backptr;
 }
 
@@ -422,7 +573,7 @@ at *new_object(class_t *cl)
       }
       super = super->super;
    }
-   obj->backptr = new_extern(cl, obj);
+   obj->backptr = new_at(cl, obj);
    return obj->backptr;
 }
 
@@ -911,11 +1062,23 @@ DX(xisa)
 }
 
 
+void pre_init_oostruct(void)
+{
+   if (mt_class == mt_undefined)
+      mt_class = MM_REGTYPE("class", sizeof(class_t),
+                            clear_class, mark_class, 0);
+   if (!class_class) {
+      class_class = mm_alloc(mt_class);
+      class_init(class_class, true);
+      class_class->dispose = (dispose_func_t *)class_dispose;
+      class_class->name = class_name;
+      class_class->dontdelete = true;
+   }
+}
 
 /* --------- INITIALISATION CODE --------- */
 
-class_t class_class, zombie_class;
-class_t *object_class;
+class_t *object_class, *class_class = NULL;
 
 #define SIZEOF_OBJECT  (sizeof(object_t) + MIN_NUM_SLOTS*sizeof(struct oostructitem))
 
@@ -926,6 +1089,9 @@ void init_oostruct(void)
    mt_method_hash = 
       MM_REGTYPE("method-hash", 0, 
                  clear_method_hash, mark_method_hash, 0);
+
+   pre_init_oostruct();
+   class_define("class", class_class);
 
    /* 
     * mm_alloc object_class to avoid hickup in mark_class
@@ -939,12 +1105,6 @@ void init_oostruct(void)
    object_class->getslot = oostruct_getslot;
    object_class->setslot = oostruct_setslot;
    class_define("object", object_class);  
-   
-   class_init(&class_class, false);
-   class_class.dispose = (dispose_func_t *)class_dispose;
-   class_class.name = class_name;
-   class_class.dontdelete = true;
-   class_define("class",&class_class);
    
    dx_define("slots",xslots);
    dx_define("super",xsuper);

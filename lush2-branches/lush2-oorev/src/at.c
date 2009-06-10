@@ -93,7 +93,7 @@ at *new_number(double x)
 {
    double *d = mm_alloc(mt_blob8);
    *d = x;
-   return new_extern(&number_class, d);
+   return new_at(&number_class, d);
 }
 
 /*
@@ -298,58 +298,7 @@ DX(xunode_unify)
    return unode_unify(APOINTER(1),APOINTER(2),doc);
 }
 
-
-/* ----- default class definition ------ */
-
-const char *generic_name(at *p)
-{
-   if (Class(p)->classname)
-      sprintf(string_buffer, "::%s:%p", NAMEOF(Class(p)->classname),Mptr(p));
-   else
-      sprintf(string_buffer, "::%p:%p", Class(p), Mptr(p));
-   
-   return mm_strdup(string_buffer);
-}
-
-at *generic_selfeval(at *p)
-{
-   return p;
-}
-
-/* at *generic_listeval(at *p, at *q) */
-/* { */
-/*    /\* looking for stacked functional values *\/ */
-/*    at *pp = Car(q);			 */
-   
-/*    /\* added stacked search on 15/7/88 *\/ */
-/*    if (SYMBOLP(pp)) { */
-/*       symbol_t *s = Symbol(pp); */
-/*       s = s->next; */
-/*       while (s && s->valueptr) { */
-/*          pp = *(s->valueptr); */
-/*          if (pp && Class(pp)->listeval != generic_listeval) { */
-/*             if (eval_ptr == eval_debug) { */
-/*                print_tab(error_doc.debug_tab); */
-/*                print_string("  !! inefficient stacked call\n"); */
-/*             } */
-/*             return Class(pp)->listeval(pp, q); */
-/*          } */
-/*          s = s->next; */
-/*       } */
-/*    } */
-/*    if (LISTP(p)) */
-/*       error("eval", "not a function call", q); */
-/*    else */
-/*       error(pname(p), "can't evaluate this list", NIL); */
-/* } */
-
-at *generic_listeval(at *p, at *q)
-{
-   if (LISTP(p))
-      error("eval", "not a function call", q);
-   else
-      error(pname(p), "can't evaluate this list", NIL);
-}
+/* -------- definitions for this module's classes -------- */
 
 static const char *gptr_name(at *p)
 {
@@ -373,103 +322,6 @@ static at *null_listeval(at *p, at *q)
    return NIL;
 }
 
-#define generic_dispose   NULL
-#define generic_action    NULL
-#define generic_serialize NULL
-#define generic_compare   NULL
-#define generic_hash      NULL
-#define generic_getslot   NULL
-#define generic_setslot   NULL
-
-void class_init(class_t *cl, bool managed) {
-
-   /* initialize class functions */
-   cl->dispose = generic_dispose;
-   cl->action = generic_action;
-   cl->name = generic_name;
-   cl->selfeval = generic_selfeval;
-   cl->listeval = generic_listeval;
-   cl->serialize = generic_serialize;
-   cl->compare = generic_compare;
-   cl->hash = generic_hash;
-   cl->getslot = generic_getslot;
-   cl->setslot = generic_setslot;
-
-   /* initialize class data */
-   cl->classname = NIL;
-   cl->priminame = NIL;
-   cl->backptr = NIL;
-   cl->atsuper = NIL;
-   cl->super = NULL;
-   cl->subclasses = NULL;
-   cl->nextclass = NULL;
-   
-   cl->slotssofar = 0;
-   cl->keylist = NIL;
-   cl->defaults = NIL;
-   cl->methods = NIL;
-   cl->hashtable = NULL;
-   cl->hashsize = 0;
-   cl->hashok = false;
-   cl->managed = managed;
-   cl->dontdelete = false;
-   cl->live = true;
-   cl->classdoc = NULL;
-   cl->kname = NULL;
-
-   /* static classes may reference managed objects */
-   if (!managed) {
-      //MM_ROOT(cl->keylist);    /* NULL for static classes */
-      //MM_ROOT(cl->defaults);   /* ! */
-      //MM_ROOT(cl->super);      /* ! */
-      //MM_ROOT(cl->subclasses); /* ! */
-      //MM_ROOT(cl->nextclass);  /* ! */
-      MM_ROOT(cl->classname);
-      MM_ROOT(cl->priminame);
-      MM_ROOT(cl->backptr);
-      MM_ROOT(cl->methods);
-      MM_ROOT(cl->hashtable);
-      MM_ROOT(cl->kname);
-   }
-}
-
-void clear_class(class_t *cl, size_t _)
-{
-   cl->keylist = NULL;
-   cl->defaults = NULL;
-   cl->super = NULL;
-   cl->subclasses = NULL;
-   cl->nextclass = NULL;
-   cl->classname = NULL;
-   cl->priminame = NULL;
-   cl->backptr = NULL;
-   cl->methods = NULL;
-   cl->hashtable = NULL;
-   cl->kname = NULL;
-}
-
-void mark_class(class_t *cl)
-{
-   MM_MARK(cl->keylist);
-   MM_MARK(cl->defaults);
-   MM_MARK(cl->super);
-   MM_MARK(cl->subclasses);
-   MM_MARK(cl->nextclass);
-   MM_MARK(cl->classname);
-   MM_MARK(cl->priminame);
-   MM_MARK(cl->backptr);
-   MM_MARK(cl->methods);
-   MM_MARK(cl->hashtable);
-   MM_MARK(cl->kname);
-}
-
-bool finalize_class(class_t *cl)
-{
-   class_class.dispose(cl);
-   return true;
-}
-
-mt_t mt_class = mt_undefined;
 
 /* --------- INITIALISATION CODE --------- */
 
@@ -478,6 +330,7 @@ class_t number_class, gptr_class, cons_class, null_class;
 extern void pre_init_symbol(void);
 extern void pre_init_function(void);
 extern void pre_init_module(void);
+extern void pre_init_oostruct(void);
 
 void init_at(void)
 {
@@ -488,10 +341,8 @@ void init_at(void)
                       clear_at, mark_at, 0);
    MM_ROOT(compute_bump_list);
 
-   mt_class = MM_REGTYPE("class", sizeof(class_t),
-                         clear_class, mark_class, 0);
-
    /* bootstrapping the type registration */
+   pre_init_oostruct();
    pre_init_symbol();
    pre_init_function();
    pre_init_module();

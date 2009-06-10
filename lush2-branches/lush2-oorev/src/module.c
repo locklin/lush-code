@@ -517,7 +517,7 @@ at *new_module(const char *filename, at *hook)
    m->initaddr = 0;
    m->filename = filename; // filename must be managed
    m->hook = hook;
-   at *ans = new_extern(&module_class, m);
+   at *ans = new_at(&module_class, m);
    m->backptr = ans;
    return ans;
 }
@@ -1439,7 +1439,7 @@ static void module_method_def(class_t *cl, at *name, at *val)
 void class_define(const char *name, class_t *cl)
 {
    at *symb = new_symbol(name);
-   at *classat = new_extern(&class_class,cl);
+   at *classat = new_class(cl);
    cl->classname = symb;
    cl->priminame = module_priminame(symb);
    cl->backptr = classat;
@@ -1560,7 +1560,7 @@ void init_module(char *progname)
 #else
    root->filename = mm_strdup(progname);
 #endif  
-   atroot = new_extern(&module_class, root);
+   atroot = new_at(&module_class, root);
    root->backptr = atroot;
 
    /* Functions */
