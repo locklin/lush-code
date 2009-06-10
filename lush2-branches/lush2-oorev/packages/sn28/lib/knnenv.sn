@@ -1,0 +1,919 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: knnenv.sn,v 1.2 2003/06/05 18:07:54 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;; ----------------------------------------
+;; ----------------------------------------
+;;            CODEBOOK PACKAGE
+;; ----------------------------------------
+;; ----------------------------------------
+
+
+
+;* (==> <codebook> pretty)
+;; Pretty printer for codebooks
+
+(defmethod |CODEBOOK| pretty()
+  (printf "'%l\n" this)
+  (for (i 0 (bound (codebook-word this) 1))
+       (printf ";; ")
+       (index-print (submatrix (codebook-word this) i ()))
+       (printf " Class %d\n" (codebook-label this i)) ) )
+
+
+;* (patdes-to-codebook <patternmatrix> <desiredmatrix>)
+;; Converts a pattern-matrix and a desired-matrix 
+;; file into a codebook.
+
+(de patdes-to-codebook (pattern desired)
+    (let* ((codebook (new-codebook pattern)) )
+      (for (i 0 (bound pattern 1))
+	   (codebook-label codebook i (rank-of-max (desired i ()))) )
+      codebook ) )
+
+
+;* (codebook-to-patdes <codebook>)
+;; Converts a codebook into a pattern-matrix and a desired-matrix.
+;; This function returns a list (pattern-matrix desired-matrix)
+
+(de codebook-to-patdes(cb)
+    (let* ((labels (codebook-labels cb))
+	   (pattern (codebook-word cb))
+	   (maxlabel (sup labels))
+	   (desired (double-array (1+ (bound pattern 1)) (1+ maxlabel))) )
+      (desired () () -1)
+      (for (i 0 (bound pattern 1))
+	   (desired i (codebook-label cb i) 1))
+      (list pattern desired) ) )
+
+
+;* (load-iris)
+;; Loads Fisher's iris database
+
+(de load-iris()
+  (setq iris_a (load-ascii-codebook 
+                (concat-fname lushdir "packages/sn28/examples/knnenv/iris_train") ))
+  (setq iris_t (load-ascii-codebook 
+                (concat-fname lushdir "packages/sn28/examples/knnenv/iris_test") )) )
+
+
+
+;; ----------------------------------------
+;; ----------------------------------------
+;;         KNN PACKAGE
+;; ----------------------------------------
+;; ----------------------------------------
+
+
+
+
+;* (test-knn <cbdata> <n> <cbref> <k>)
+;; Tests word <n> of codebook <cbdata> using 
+;; kNN with parameter <k>. Rather slow...
+
+(de test-knn(cbdata n cbref &optional (k 1))
+    (= (codebook-label cbdata n)
+       (knn-class (codebook-word cbdata n) cbref k)) )
+
+
+
+;* (confusion-knn <cbdata> <cbref> <k>)
+;; Computes the confusion matrix of kNN
+
+(de confusion-knn(cbdata cbref &optional (k 1))
+    (let* ((maxclass (1+ (max (sup (codebook-labels cbdata))
+			      (sup (codebook-labels cbref)) )))
+	   (confmat (double-array maxclass maxclass)) )
+      (for (i 0 (bound (codebook-word cbdata) 1))
+	   (let* ((r (codebook-label cbdata i))
+		  (c (knn-class (codebook-word cbdata i) cbref k)))
+	     (confmat r c (1+ (confmat r c))) ) )
+      confmat ) )
+
+
+
+;* (codebook-dist-and-labels <x> <cbref>)
+;; Returns both the distances and classes in a
+;; two columnmatrix.
+
+
+(de codebook-dist-and-labels (x cbref)
+    (let* ((dist (codebook-distances x cbref))
+	   (answ (double-array (1+ (bound dist 1)) 2)) )
+      (array-copy dist (submatrix answ () 0))
+      (array-copy (codebook-label cbref) (submatrix answ () 1))
+      answ) )
+
+
+
+
+
+
+;; ----------------------------------------
+;; ----------------------------------------
+;;         MULTIEDIT/CONDENSE PACKAGE
+;; ----------------------------------------
+;; ----------------------------------------
+
+
+
+;* (multiedit <cb> <n> [<verbose>])
+;; Applied algorithm "multiedit" to codebook <cb>.
+;; Argument <n> specify the number of partitions.
+
+(de multiedit(cb &optional (n 3) verbose)
+    (when (< n 3)
+	  (error 'multiedit "three subsets are required" n) )
+    
+    (let ((mark (+ 10 (sup (codebook-labels cb))))
+	  (again t)
+	  (subset (atom-array n))
+	  (subdel (atom-array n)))
+      
+      (while again
+	(setq again ())
+	(let* ((ncode (bound (codebook-word cb) 1))
+	       (nset (/ (1+ ncode) n)))
+	  
+	  ;; prints
+	  (when verbose
+		(printf "restarting with %d elements\n" (1+ ncode)) )
+	  
+	  ;; compute subsets
+	  (for (i 0 (1- n))
+	       (subset i 
+		       (codebook-split cb (int (* nset i))
+				       (min ncode 
+					    (1- (int (* nset (1+ i)))) ) )) )
+	  ;; classify subsets
+	  (for (i 0 (1- n))
+	       (let* ((lst ())
+		      (test (subset i))
+		      (train (subset (mod (1+ i) n))) )
+		 (for (j 0 (bound (codebook-word test) 1))
+		      (let ((c (knn-class (codebook-word test j) train 1)))
+			(when (<> c (codebook-label test j))
+			      (setq again t)
+			      (setq lst (cons j lst)) ) ) )
+		 (subdel i lst) ) )
+	  
+	  ;; discard
+	  (for (i 0 (1- n))
+	       (let ((lst (subdel i))
+		     (set (subset i)))
+		 (each ((j lst))
+		       (codebook-label set j mark) ) ) )
+	  (setq cb 
+		(apply codebook-select
+		       (cons (lambda(c) (<> c mark)) 
+			     (subset ()) ) ) ) ) ) )
+    cb )
+
+
+
+
+
+;* (condense <cb>)
+;; Applies algorithm "condense" to codebook <cb>
+
+(de condense(cb &optional verbose)
+    (let ((newcb (codebook-split cb 0 0))
+	  (again t))
+      (while again
+	(setq again ())
+	(when verbose
+	      (printf "restarting with %d element(s)\n" 
+		      (1+ (bound (codebook-word newcb) 1)) ) )
+	(for (i 0 (bound (codebook-word cb) 1))
+	     (let ((k (car (knn (codebook-word cb i) newcb 1))))
+	       (when (<> (codebook-label cb i)
+			 (codebook-label newcb k))
+		     (setq newcb (codebook-merge newcb (codebook-split cb i i)))
+		     (setq again t) ) ) ) )
+      newcb ) )
+
+
+
+
+;; ----------------------------------------
+;; ----------------------------------------
+;;            KMEANS PACKAGE
+;; ----------------------------------------
+;; ----------------------------------------
+
+
+
+;* (k-means-class <cbdata> <k> [<classes>])
+;; Performs a K-means on the codebook <cbdata>, with 
+;; <k> references per class on all classes specified
+;; by the list of integers <classes>
+;;
+;; When <classes> is unspecified, all classes in 
+;; the codebook are considered.
+
+
+(de k-means-class(cbdata k &optional classes)
+    (when (not classes)
+	  (setq classes (codebook-labels cbdata)) )
+    (apply codebook-merge
+	   (all ((c classes))
+		(let* ((cb (codebook-select (lambda(i) (= i c)) cbdata))
+		       (cr (k-means cb k)) )
+		  cr ) ) ) )
+
+
+	       
+
+;; ----------------------------------------
+
+
+;* (codebook-assign-labels <cbdata> <cbref> [<k>])
+;; Assign classes to the references in <cbref> order
+;; to minimize the <k>NN error on codebook <cbdata>.
+;;
+;; This function is used by <init-lvq>.
+
+(de codebook-assign-labels(cbdata cbref &optional (k 1))
+    (let* ((maxclass (sup (codebook-labels cbdata)))
+	   (maxref   (bound (codebook-word cbref) 1))
+	   (maxdata  (bound (codebook-word cbdata) 1))
+	   (votes    (double-array (1+ maxref) (1+ maxclass))) )
+      ;; gathers class information
+      (for (i 0 maxdata)
+	   (let* ((vector (codebook-word cbdata i))
+		  (nearest (knn vector cbref k))
+		  (class (codebook-label cbdata i)) )
+	     (each ((x nearest))
+		   (votes x class (1+ (votes x class))) ) ) )
+      ;; vote
+      (for (i 0 maxref)
+	   (let* ((l (votes i ()))
+		  (z (find-interval l (sup l))) )
+	     (if (cdr z)
+		 (setq z (nth (int (rand 0 (length z))) z))
+	       (setq z (car z)) )
+	     (codebook-label cbref i z) ) ) )
+    cbref )
+
+
+
+
+
+
+;; ----------------------------------------
+;; ----------------------------------------
+;;            LVQ PACKAGE
+;; ----------------------------------------
+;; ----------------------------------------
+
+
+
+;* (init-lvq <cbdata> <k>)
+;; Returns <k> starting references for LVQ,
+;; using unsupervised kmeans on dataset <cbdata>.
+;; Labelling is achieved by a majority scheme.
+
+(de init-lvq(cbdata k)
+    (let ((cbref (k-means cbdata k)))
+      (codebook-assign-labels cbdata cbref)
+      cbref ) )
+
+
+
+
+;; ----------------------------------------
+
+;* (init-lvq-class <cbdata> <k>)
+;; Returns <k> starting references per class for LVQ,
+;; using supervised kmeans on dataset <cbdata>.
+
+(de init-lvq-class(cbdata k)
+    (k-means-class cbdata k) )
+
+
+
+
+
+      
+;; ----------------------------------------
+;; ----------------------------------------
+;;            RBF PACKAGE
+;; ----------------------------------------
+;; ----------------------------------------
+
+
+
+
+;;; ----------------------------------------
+
+;* rbf-codebook
+;; The rbf codebook.
+
+(setq :rbf-codebook ())
+
+
+;;; ----------------------------------------
+
+;* rbf_classes.
+;; The classes in the rbf codebook.
+
+(setq :rbf-classes ())
+
+
+
+;* (init-rbf <cbdata> <k>)
+;; Initialises a RBF network with <k> RBF per class
+;; using supervised kmeans on dataset <cbdata>.
+;; This function allocates a two layer network.
+
+
+;;; ----------------------------------------
+
+(de init-rbf(cbdata k)
+
+    (setq age 0)
+    (setq rbf-classes  (codebook-labels cbdata))
+
+    (setq rbf-codebook
+    	  (cond
+     	   ((numberp k)
+              (k-means-class cbdata k) )
+	   ((= (classof k) |CODEBOOK|)
+	      k)
+	   (t
+	      (error 'init-rbf "Not a number or a codebook" k) ) ) )
+    
+    (let* ((nclass (length rbf-classes))
+	   (nrbf   (1+ (bound (codebook-word rbf-codebook) 1))) )
+      
+      (alloc-net (+ 1 nrbf nrbf nclass nclass)
+		 (+ nrbf (* (1+ nrbf) nclass)) )
+      (build-net-nobias
+       '((input-layer nrbf)
+	 (bell-layer nrbf (nlf-bell))
+	 (output-layer nclass) )
+       '() )
+      
+      ;; Connect sigmas
+      (each ((i input-layer)
+	     (j bell-layer) )
+	    (connect i j) )
+
+      ;; Connect output-layer
+      (bias-connect output-layer)
+      (connect bell-layer output-layer) )
+
+    
+    ;; Initialize sigmas
+    ;; by polling the distance between samples
+    (let ((meand 0))
+      (repeat 100
+	      (let* ((i (rand 0 (car (bound (codebook-word cbdata)))))
+		     (v (submatrix (codebook-word cbdata) i ())) 
+		     (d (codebook-distances v cbdata)) )
+		(d i (sup-mat d))
+		(incr meand (mean-mat d)) ) )
+      (setq meand (/ 50 meand))
+      (each ((i input-layer)
+	     (j bell-layer) )
+	    (sval i j meand) ) )
+    
+    t )
+
+
+
+;;; ----------------------------------------
+
+;* (rbf-present-pattern <layer> <pnum>)
+;; copies the distances between the <pnum>th 
+;; vector of <rbf-cbdata> and the reference codebook
+;; <rbf-codebook> into the layer <layer>.
+;;
+;; This function is used by <rbf-learn> and <rbf-perf>.
+
+(de rbf-present-pattern(layer pnum)
+    (get_pattern_2 
+     (codebook-distances (submatrix (codebook-word rbf-cbdata) pnum ())
+			 rbf-codebook )
+     layer ) )
+
+
+
+;;; ----------------------------------------
+
+;* (rbf-present-desired <layer> <pnum>)
+;; copies a standard desired vector matching the class
+;; of the <pnum>th vector of <rbf-cbdata> into the layer <layer>.
+;;
+;; This function is used by <rbf-learn> and <rbf-perf>.
+
+(de rbf-present-desired(layer pnum)
+    (let ((cl (codebook-label rbf-cbdata pnum)))
+      (each ((c desired-layer)
+	     (k rbf-classes) )
+	    (if (= k cl)
+		(nval c 1)
+	      (nval c -1) ) ) ) )
+
+
+
+;;; ----------------------------------------
+
+;* (learn-rbf <cbdata> <niter> [<epssigma> <epsclass>])
+;; Train the rbf network on dataset <cbdata>
+
+(de learn-rbf(cbdata niter &optional epssigma epsclass)
+    
+    (when (not epssigma)
+	  (setq epssigma 
+		(* 0.02 (mean (flatten (all ((i bell-layer))
+					   (weight i) )))) ) )
+    (when (not epsclass)
+	  (setq epsclass 
+		(/ 0.02 (sqrt (length bell-layer))) ) )
+	  
+    (let ((rbf-cbdata cbdata)
+	  (present-pattern rbf-present-pattern)	
+	  (present-desired rbf-present-desired)
+	  (epssigma-adj (/ (- epssigma) niter))
+	  (epsclass-adj (/ (- epsclass) niter))
+	  (patt-min 0)
+	  (patt-max (bound (codebook-word cbdata) 1)) )
+      
+      (repeat niter
+	      (epsilon bell-layer epssigma)
+	      (epsilon output-layer epsclass)
+	      (for (i patt-min patt-max)
+		   (basic-iteration i) )
+	      (incr epssigma epssigma-adj)
+	      (incr epsclass epsclass-adj) ) ) 
+    t )
+	      
+
+
+
+;;; ----------------------------------------
+
+;* (perf-rbf <cbdata>)
+;; Test the RBF network on dataset <cbdata>
+
+(de perf-rbf(cbdata)
+    (let ((rbf-cbdata cbdata)
+	  (present-pattern rbf-present-pattern)	
+	  (present-desired rbf-present-desired)
+	  (patt-min 0)
+	  (patt-max (bound (codebook-word cbdata) 1)) )
+      (set-class-max)
+      (perf) ) )
+
+
+
+
+
+;; ----------------------------------------
+;; ----------------------------------------
+;;         BIDIM PACKAGE
+;; ----------------------------------------
+;; ----------------------------------------
+
+;; Miscellaneous routines for bidimensional data
+
+;; All these routines (except bidim-query) might also be used
+;; with multidimensional codebooks. They only work on the first
+;; two dimensions anyway.
+
+;; These routines are mostly useful for TMAP.
+;; They may be used with other KNNENV functions as well.
+
+
+;; ----------------------------------------
+
+;; Subroutine for displaying a bidim codebook as dots
+
+(de bidim-display-dots(cb xmin ymin xmax ymax)
+    (let ((plot-port ()))
+      (setq plot-port (new-plot-port (list 0 (ysize) (xsize) 0) 
+				     (list xmin ymin xmax ymax)
+				     open-circle ) )
+      (for (i 0 (bound (codebook-word cb) 1))
+	   (plt-plot (cb i 0) (cb i 1)) ) ) )
+
+
+
+;; Subroutine for displaying a bidim codebook as a line
+
+(de bidim-display-1d(cb xmin ymin xmax ymax)
+    (let ((plot-port ())
+	  (size (bound (codebook-word cb) 1)) )
+      (setq plot-port (new-plot-port (list 0 (ysize) (xsize) 0) 
+				     (list xmin ymin xmax ymax)
+				     open-circle ) )
+      (plt-move (cb 0 0) (cb 0 1))
+      (for (i 1 size)
+	   (plt-draw (cb i 0) (cb i 1)) ) ) )
+
+
+;; Subroutine for displaying a bidim codebook as a ring
+
+(de bidim-display-ring(cb xmin ymin xmax ymax)
+    (let ((plot-port ())
+	  (size (bound (codebook-word cb) 1)) )
+      (setq plot-port (new-plot-port (list 0 (ysize) (xsize) 0) 
+				     (list xmin ymin xmax ymax)
+				     open-circle ) )
+      (plt-move (cb size 0) (cb size 1))
+      (for (i 0 size)
+	   (plt-draw (cb i 0) (cb i 1)) ) ) )
+
+
+;; Subroutine for displaying a bidim codebook a 2d grid
+
+(de bidim-display-2d(cb n m xmin ymin xmax ymax)
+    (let ((plot-port ())
+	  (mat (double-array n m 2)) )
+      (copy-any-matrix (submatrix (codebook-word cb) () '(0 1)) mat)
+      (setq plot-port (new-plot-port (list 0 (ysize) (xsize) 0) 
+				     (list xmin ymin xmax ymax)
+				     open-circle ) )
+      (for (i 0 (1- n))	
+	   (plt-move (mat i 0 0) (mat i 0 1))
+	   (for (j 1 (1- m))
+		(plt-draw (mat i j 0) (mat i j 1)) ) )
+      (for (j 0 (1- m))
+	   (plt-move (mat 0 j 0) (mat 0 j 1))
+	   (for (i 1 (1- n))
+		(plt-draw (mat i j 0) (mat i j 1)) ) ) ) )
+      
+
+
+;; ----------------------------------------
+
+;; Subroutine for entering a bidim codebook
+
+(de bidim-query(string &optional xmin ymin xmax ymax)
+    (when (not xmin)
+	  (setq xmin -1 ymin -1 xmax 1 ymax 1) )
+    (cls)
+    (gprintf 5 12 string)
+    (draw-line 0 15 (xsize) 15)
+    (let ((points ()) 
+	  (xfun (lambda(x) (+ xmin (/ (* x (- xmax xmin)) (xsize)))))
+	  (yfun (lambda(y) (- ymax (/ (* y (- ymax ymin)) (ysize)))))
+	  (ok t))
+      (while ok
+	(setq ok (get-click))
+	(let (((x y) ok))
+	  (if (< y 15)
+	      (setq ok ())
+	    (draw-circle x y 3)
+	    (setq points (nconc1 points (list (xfun x) (yfun y)))) ) ) )
+      (let ((cbdata (new-codebook (length points) 2)))
+	((codebook-word cbdata) () () points) 
+	cbdata ) ) )
+
+
+
+;; ----------------------------------------
+
+;; Initializing a codebook with a ring
+
+(de bidim-init-ring(cbdata nrefs)
+    (let* ((cmatrix (codebook-word cbdata))
+	   (mx (mean-mat (submatrix cmatrix () 0)))
+	   (my (mean-mat (submatrix cmatrix () 1)))
+	   (s  (2* (sdev-mat cmatrix)))
+	   (cbref (new-codebook nrefs (1+ (bound (codebook-word cbdata) 2))))
+	   (angle 0)
+	   (astep (/ 6.28 nrefs)) )
+      (for (i 0 (1- nrefs))
+	   ((codebook-word cbref i) () 
+	    (list (+ mx (* s (cos angle))) (+ my (* s (sin angle)))) )
+	   (incr angle astep) )
+      cbref ) )
+
+
+;; Initializing a codebook with a 2d grid
+
+(de bidim-init-2d(cbdata n m)
+    (let* ((cmatrix (codebook-word cbdata))
+	   (sx (2* (sdev-mat (submatrix cmatrix () 0))))
+	   (sy (2* (sdev-mat (submatrix cmatrix () 1))))
+	   (mx (- (mean-mat (submatrix cmatrix () 0)) sx))
+	   (my (- (mean-mat (submatrix cmatrix () 1)) sy))
+	   (cbref (new-codebook (* n m) (1+ (bound (codebook-word cbdata) 2))))
+	   (k -1) )
+      (setq sx (* sx (/ 2 (1- m))))
+      (setq sy (* sy (/ 2 (1- n))))
+      (for (i 0 (1- n))
+	   (for (j 0 (1- m))
+		(incr k)
+		(cbref k 0 (+ mx (* sx j)))
+		(cbref k 1 (+ my (* sy i))) ) )
+      cbref ) )
+
+
+
+
+
+      
+;; ----------------------------------------
+;; ----------------------------------------
+;;         TOPOLOGICAL MAPS PACKAGE
+;; ----------------------------------------
+;; ----------------------------------------
+
+
+
+;;; ----------------------------------------
+
+;* (learn-tmap <cbdata> <cbref> <niter>
+;;	       <topo-func> <epsi-func> <dst-func> [<display-func>] )
+;;
+;; Train a topological map with weights <cbref> on data <cbdata>
+;; durint <niter> iterations.
+;;.IP
+;; <(topo-func n mat)> returns into <mat> the distances between
+;; the <nth> element of <cbref> and the other elements.
+;; each element of cbref.
+;;.IP
+;; <(epsi-func coeff)> returns the learning rate for
+;; iteration such that <tmax>-<tnow>/<tmax> = <coeff>
+;;.IP
+;; <(dst-func d coeff)> returns the decay factor for a
+;; cell located at distance <d> in the grid
+;;.IP
+;; <(display-func cbdata cbref t)> is called after every iteration
+
+	       
+(de learn-tmap(cbdata cbref tmax
+		      topofunc epsifunc dstfunc
+		      &optional displayfunc)
+
+    (let* ((dnum (bound (codebook-word cbdata) 1))
+	   (rnum (bound (codebook-word cbref) 1))
+	   (mat  (double-array (1+ rnum))) )
+
+      (for (tnow 0 (1- tmax))
+	   (for (i 0 dnum)
+		(let* ((mdata (codebook-word cbdata i))
+		       (iref  (car (knn mdata cbref 1)))
+		       (coeff (/ (- tmax tnow) tmax))
+		       (eps (epsifunc coeff)) )
+		  (topofunc iref mat)
+		  (for (j 0 rnum)
+		       (let ((dst  (dstfunc (mat j) coeff))
+			     (mref (codebook-word cbref j)) )
+			 (when dst
+			       (setq dst (* dst eps))
+			       ;; (am+bm (- 1 dst) mref dst mdata mref)
+                               (idx-f1dotc mref (- 1 dst) mref)
+                               (idx-f1dotcacc mdata dst mref)
+                               ;; END
+                               ) ) ) ) )
+	   
+	   (when displayfunc
+		 (displayfunc cbdata cbref tnow) ) ) ) )
+
+
+;;; ----------------------------------------
+;;; TOPO META FUNCTIONS
+
+
+(de tmap-topo-1d(n)
+    (let ((z (double-array (2* n))))
+      (for (i 0 (1- (2* n)))
+	   (z i (abs (- n i))) )
+      (eval `(lambda(i mat)
+	       (array-copy 
+		(submatrix ,z (list (- ,n i) (- ,(1- (2* n)) i))) 
+		mat) )) ) )
+
+
+(de tmap-topo-ring(n)
+    (let ((z (double-array (2* n))))
+      (for (i 0 (1- (2* n)))
+	   (z i (min i (abs (- n i)) (abs (- (2* n) i)))) )
+      (eval `(lambda(i mat)
+	       (array-copy
+		(submatrix ,z (list (- ,n i) (- ,(1- (2* n)) i))) 
+		mat) )) ) )
+
+
+(de tmap-topo-2d(n m)
+    (let ((z (double-array (2* n) (2* m))))
+      (for (i 0 (1- (2* n)))
+	   (for (j 0 (1- (2* m)))
+		(z i j (+ (abs (- i n)) (abs (- j m))))) )
+      (eval `(lambda(i mat)
+	       (let ((in (div i ,m))
+		     (im (mod i ,m)))
+		 (array-copy 
+		  (submatrix ,z (list (- ,n in) (- ,(1- (2* n)) in)) (list (- ,m im) (- ,(1- (2* m)) im)))
+		  mat ) ) ) ) ) )
+
+
+(de tmap-topo-3d(n m p)
+    (let ((z (double-array (2* n) (2* m) (2* p))))
+      ;; Fill in the matrix with squared distance
+      (for (i 0 (1- (2* n)))
+	   (let ((zz (submatrix z i () ())))
+	     (m+c zz (abs (- i n)) zz) ) )
+      (for (i 0 (1- (2* m)))
+	   (let ((zz (submatrix z () i ())))
+	     (m+c zz (abs (- i m)) zz) ) )
+      (for (i 0 (1- (2* p)))
+	   (let ((zz (submatrix z () () i)))
+	     (m+c zz (abs (- i p)) zz) ) )
+      ;; Return a suitable topology function
+      (let ((nl ()))
+	(setq nl (list `(let* ((in (div i ,(* m p))))
+			  (setq i (- i (* in ,(* m p))))
+			  (list (- ,n in) (- ,(1- (2* n)) in)) )
+		       `(let* ((in (div i ,p)))
+			  (setq i (- i (* in ,p)))
+			  (list (- ,m in) (- ,(1- (2* m)) in)) )
+		       `(let* ((in i))
+			  (list (- ,p in) (- ,(1- (2* p)) in)) ) ))
+	(eval `(lambda(i mat)
+		 (array-copy (submatrix ,z ,@nl) mat) )) ) ) )
+
+
+(de tmap-topo-kd dims
+    (let ((nd (length dims))
+	  (z (apply double-array (all ((d dims)) (2* d)))) )
+      ;; Fill in the matrix with squared distance
+      (for (d 0 (1- nd))
+	   (let* ((nl (makelist nd ())))
+	     (rplaca (nthcdr d nl) 'i)
+	     (eval `(for (i 0 ,(1- (2* (nth d dims))))
+			  (let ((zz (submatrix z ,@nl)))
+			    (m+c zz (abs (- i ,(nth d dims))) zz) ) )) ) )
+      ;; Return a suitable topology function
+      (let* ((nl ()))
+	(for (d 0 (1- nd))
+	     (setq nl (nconc1 nl 
+		`(let* ((in (div i ,(apply * (nthcdr (1+ d) dims)))))
+		   (setq i (- i (* in ,(apply * (nthcdr (1+ d) dims)))))
+		   (list (- ,(nth d dims) in)
+			 (- ,(1- (2* (nth d dims))) in) ) ) ) ) )
+	(eval `(lambda(i mat)
+		 (array-copy (submatrix ,z ,@nl) mat) )) ) ) )
+
+
+
+;;; ----------------------------------------
+;;; EPSI META FUNCTIONS
+
+
+(de tmap-epsi-const(ieps)
+    (eval `(lambda(coeff) ,ieps)) )
+
+(de tmap-epsi-lin(ieps)
+    (eval `(lambda(coeff)
+	     (* coeff ,ieps) )) )
+
+
+;;; ----------------------------------------
+;;; DST META FUNCTIONS
+
+(de tmap-dst-const(idist)
+    (eval `(lambda(dnow coeff)
+	     (when (<= dnow ,idist) 1) )) )
+
+(de tmap-dst-lin(idist)
+    (eval `(lambda(dnow coeff)
+	     (when (<= dnow (* ,idist coeff)) 1) )) )
+
+
+
+;;; ----------------------------------------
+;;; 2D DISPLAY META FUNCTIONS
+
+
+(de tmap-display-bidim-1d(&optional xmin ymin xmax ymax)
+    (when (not xmin)
+	  (setq xmin -1 ymin -1 xmax 1 ymax 1) )
+    (eval `(lambda(cbd cbr tnow)
+	     (graphics-batch
+	      (cls)
+	      (gprintf 10 10 "Iteration %d" tnow)
+	      (bidim-display-dots cbd ,xmin ,ymin ,xmax ,ymax)
+	      (bidim-display-1d cbr ,xmin ,ymin ,xmax ,ymax) ) )) )
+
+(de tmap-display-bidim-ring(&optional xmin ymin xmax ymax)
+    (when (not xmin)
+	  (setq xmin -1 ymin -1 xmax 1 ymax 1) )
+    (eval `(lambda(cbd cbr tnow)
+	     (graphics-batch
+	      (cls)
+	      (gprintf 10 10 "Iteration %d" tnow)
+	      (bidim-display-dots cbd ,xmin ,ymin ,xmax ,ymax)
+	      (bidim-display-ring cbr ,xmin ,ymin ,xmax ,ymax) ) )) )
+
+(de tmap-display-bidim-2d(n m &optional xmin ymin xmax ymax)
+    (when (not xmin)
+	  (setq xmin -1 ymin -1 xmax 1 ymax 1) )
+    (eval `(lambda(cbd cbr tnow)
+	     (graphics-batch
+	      (cls)
+	      (gprintf 10 10 "Iteration %d" tnow)
+	      (bidim-display-dots cbd ,xmin ,ymin ,xmax ,ymax)
+	      (bidim-display-2d cbr ,n ,m ,xmin ,ymin ,xmax ,ymax) ) )) )
+
+
+
+
+
+
+;; ----------------------------------------
+;; TOPOLOGICAL MAPS DEMO PACKAGE
+;; 1-  Travelling  Salesman  Problem
+;; 2-  Mapping Grids
+
+
+
+(de tsp-demo(&optional niter (epsi 0.33))
+
+    ;; Create window, 
+    ;; Acquire cities,
+    ;; Initialize the topological map
+    (let ((window ()))
+      (new-window)
+      (let* ((cbdata  (bidim-query "Enter cities then click here."))
+	     (ncities (car (bound (codebook-word cbdata)))) 
+	     (nrefs   (2* ncities))
+	     (cbref   (bidim-init-ring cbdata nrefs)) )
+	
+	;; Compute the solution	
+	(learn-tmap cbdata cbref (or niter ncities)
+		    (tmap-topo-ring nrefs)
+		    (tmap-epsi-const epsi)
+		    (tmap-dst-lin (2/ ncities))
+		    (tmap-display-bidim-ring) )
+	
+	;; Move the nodes on the closest city
+	;; Note that epsilon=1!
+	(learn-tmap cbdata cbref 1
+		    (tmap-topo-ring nrefs)
+		    (tmap-epsi-const 1)
+		    (tmap-dst-const 0)
+		    (tmap-display-bidim-ring) ) ) 
+      window ) )
+    
+
+
+
+(de grid-demo()
+    ;; Create window, 
+    ;; Acquire cities,
+    ;; Initialize the topological map
+    (let ((window ()))
+      (new-window)
+      (let* ((cbdata  (bidim-query "Enter cities then click here."))
+	     (ncities (car (bound (codebook-word cbdata)))) 
+	     (nrefs   (int (sqrt (+ 4 (2/ ncities)))))
+	     (cbref   (bidim-init-2d cbdata nrefs nrefs)) )
+	
+	;; Compute the solution	
+	(bidim-display-2d cbref nrefs nrefs 0 0 (xsize) (ysize))
+	(learn-tmap cbdata cbref 30
+		    (tmap-topo-2d nrefs nrefs)
+		    (tmap-epsi-lin 0.1)
+		    (tmap-dst-lin (/ nrefs 4))
+		    (tmap-display-bidim-2d nrefs nrefs) ) )
+
+      window ) )
+
+

@@ -1,0 +1,38 @@
+
+;; by Fu Jie Huang, Jan 2003
+
+;; combine stuff from d04_video.lsh and d02_cannyedge.lsh 
+;; do pyramid smoothing, canny edge detection, and morphology processing
+(libload "video4linux/v4l")
+(libload "opencv/opencv")
+
+(de opencv-canny-demo ()
+  (let* ((width 640) (height 480)
+	 (webcam (new v4ldevice 
+		      "/dev/video0" "NTSC" 0 width height))
+	 (captimg (ubyte-matrix height width 3))
+	 (bufimg (new cvimage width height @IPL_DEPTH_8U 3))
+	 (roirect (new cvrect 0 0 width height))
+	 (grayimg (new cvimage width height @IPL_DEPTH_8U 1))
+	 (edgeimg (new cvimage width height @IPL_DEPTH_8U 1))
+	 (halfimg (new cvimage (/ width 2) (/ height 2) 
+		       @IPL_DEPTH_8U 3))
+	 )
+    (new-window 0 0 width height "Lush/OpenCV Edge Demo")
+    (printf "type CTRL-C to stop\n")
+    (while t
+      (==> webcam grab-into-rgb captimg)
+      (idx8u_ipl  captimg  :bufimg:p)
+
+      (cvPyrDown :bufimg:p  :halfimg:p  7)
+      (cvPyrUp   :halfimg:p :bufimg:p   7)
+
+      (cvSetImageCOI  :bufimg:p 1)
+      (cvSetImageROI  :bufimg:p :roirect:p)
+      (cvCopy     :bufimg:p  :grayimg:p  (gptr ()) )
+
+      (cvCanny  :grayimg:p    :edgeimg:p  0 50 3)
+      (cvDilate :edgeimg:p    :edgeimg:p  (gptr ()) 1)
+      (cvimage-draw 0 0 edgeimg))))
+
+(opencv-canny-demo)
