@@ -1152,7 +1152,7 @@ index_t *new_index(storage_t *st, shape_t *shp)
    IND_ST(ind) = st;
    ind->offset = 0;
    ind->cptr = NULL;
-   ind->backptr = new_extern(&index_class, ind);
+   ind->backptr = new_at(index_class, ind);
    if (shp->ndims != 1) 
       ind = index_reshapeD(ind, shp);
    return ind;
@@ -1202,7 +1202,7 @@ DX(xmake_array)
    shape_t *shp   = parse_shape(APOINTER(2), NIL);
    storage_type_t type;
    for (type = ST_AT; type < ST_LAST; type++)
-      if (&storage_class[type] == cl)
+      if (storage_class[type] == cl)
          break;
    if (type == ST_LAST)
       RAISEF("not a storage class", APOINTER(1));
@@ -1734,7 +1734,7 @@ DX(xarray_where_nonzero)
 index_t *index_copy(index_t *src, index_t *dest)
 {
    memcpy(dest, src, sizeof(index_t));
-   dest->backptr = new_extern(&index_class, dest);
+   dest->backptr = new_at(index_class, dest);
    dest->cptr = NULL;
    return dest; 
 }
@@ -3600,7 +3600,7 @@ DY(ybloop)
 
 
 
-class_t index_class;
+class_t *index_class;
 
 void init_index(void)
 {
@@ -3608,16 +3608,16 @@ void init_index(void)
                          clear_index, mark_index, finalize_index);
 
    /* setting up index_class */
-   class_init(&index_class, false);
-   index_class.dispose = (dispose_func_t *)index_dispose;
-   index_class.name = index_name;
-   index_class.listeval = index_listeval;
-   index_class.serialize = index_serialize;
-   index_class.compare = index_compare;
-   index_class.hash = index_hash;
-   index_class.getslot = index_getslot;
-   index_class.setslot = index_setslot;
-   class_define("INDEX",&index_class);
+   new_builtin_class(&index_class, NIL);
+   index_class->dispose = (dispose_func_t *)index_dispose;
+   index_class->name = index_name;
+   index_class->listeval = index_listeval;
+   index_class->serialize = index_serialize;
+   index_class->compare = index_compare;
+   index_class->hash = index_hash;
+   index_class->getslot = index_getslot;
+   index_class->setslot = index_setslot;
+   class_define("INDEX", index_class);
 
    /* info */
    dx_define("indexp", xindexp);

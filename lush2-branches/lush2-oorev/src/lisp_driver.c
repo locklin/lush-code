@@ -460,7 +460,7 @@ static at *lisp_window(at *delegate)
    info->clipw = 0;
    info->cliph = 0;
    info->linestyle = 0;
-   at *ans = new_extern(&window_class, info);
+   at *ans = new_at(window_class, info);
    info->driverdata = delegate;
    info->backptr = ans;
    return ans;

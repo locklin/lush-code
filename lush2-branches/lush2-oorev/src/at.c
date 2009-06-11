@@ -34,27 +34,30 @@
 
 static void clear_at(at *a, size_t _)
 {
-   a->head.cl = &null_class;
+   a->head.cl = null_class;
 }
 
 static void mark_at(at *a)
 {
-   if (CONSP(a)) {
-      MM_MARK(Car(a));
-      MM_MARK(Cdr(a));
-      
-   } else if (SYMBOLP(a) || NUMBERP(a) || OBJECTP(a)) {
-      MM_MARK(Mptr(a));
-        
-   } else if (CLASSP(a)) {
-      if (((class_t *)Gptr(a))->managed)
-         MM_MARK(Mptr(a));
-      
-   } else if (GPTRP(a) || RFILEP(a) || WFILEP(a) || ZOMBIEP(a)) {
-      // nothing to mark
+   Class(a)->mark_at(a);
 
-   } else 
-      MM_MARK(Mptr(a));
+/*    if (CONSP(a)) { */
+/*       MM_MARK(Car(a)); */
+/*       MM_MARK(Cdr(a)); */
+      
+/*    } else if (SYMBOLP(a) || NUMBERP(a) || OBJECTP(a)) { */
+/*       MM_MARK(Mptr(a)); */
+        
+/*    } else if (CLASSP(a)) { */
+/*       if (((class_t *)Gptr(a))->managed) */
+/*          MM_MARK(Mptr(a)); */
+      
+/*    } else if (GPTRP(a) || RFILEP(a) || WFILEP(a) || ZOMBIEP(a)) { */
+/*       // nothing to mark */
+
+/*    } else  */
+/*       MM_MARK(Mptr(a)); */
+
 }
 
 mt_t mt_at = mt_undefined;
@@ -93,7 +96,7 @@ at *new_number(double x)
 {
    double *d = mm_alloc(mt_blob8);
    *d = x;
-   return new_at(&number_class, d);
+   return new_at(number_class, d);
 }
 
 /*
@@ -203,7 +206,7 @@ DX(xnull)
 void zombify(at *p)
 {
    if (p)
-      AssignClass(p, &null_class);
+      AssignClass(p, null_class);
 }
 
 /* ----- unodes ------ */
@@ -306,6 +309,17 @@ static const char *gptr_name(at *p)
    return mm_strdup(string_buffer);
 }
 
+static void cons_mark_at(at *a)
+{
+   MM_MARK(Car(a));
+   MM_MARK(Cdr(a));
+}
+
+static void null_mark_at(at *a)
+{
+   return;
+}
+
 static const char *null_name(at *p)
 {
    return mm_strdup("( )");
@@ -325,7 +339,7 @@ static at *null_listeval(at *p, at *q)
 
 /* --------- INITIALISATION CODE --------- */
 
-class_t number_class, gptr_class, cons_class, null_class;
+class_t *number_class, *gptr_class, *cons_class, *null_class;
 
 extern void pre_init_symbol(void);
 extern void pre_init_function(void);
@@ -348,21 +362,24 @@ void init_at(void)
    pre_init_module();
 
    /* set up builtin classes */
-   class_init(&number_class, false);
-   class_define("NUMBER", &number_class);
+   new_builtin_class(&number_class, NIL);
+   class_define("NUMBER", number_class);
+
+   new_builtin_class(&gptr_class, NIL);
+   gptr_class->name = gptr_name;
+   gptr_class->mark_at = null_mark_at;
+   class_define("GPTR", gptr_class);
+
+   new_builtin_class(&cons_class, NIL);
+   cons_class->mark_at = cons_mark_at;
+   class_define("CONS", cons_class);
    
-   class_init(&gptr_class, false);
-   gptr_class.name = gptr_name;
-   class_define("GPTR", &gptr_class);
-
-   class_init(&cons_class, false);
-   class_define("CONS", &cons_class);
-
-   class_init(&null_class, false);
-   null_class.name = null_name;
-   null_class.selfeval = null_selfeval;
-   null_class.listeval = null_listeval;
-   class_define("NULL", &null_class);
+   new_builtin_class(&null_class, NIL);
+   null_class->mark_at = null_mark_at;
+   null_class->name = null_name;
+   null_class->selfeval = null_selfeval;
+   null_class->listeval = null_listeval;
+   class_define("NULL", null_class);
 
   //dy_define("compute-bump", ycompute_bump);
 

@@ -518,7 +518,7 @@ at *new_symbol(const char *str)
       /* symbol does not exist yet, create new */
       symbol_t *s = mm_alloc(mt_symbol);
       s->hn = hn;
-      hn->named = new_at(&symbol_class, s);
+      hn->named = new_at(symbol_class, s);
       add_notifier(hn->named, (wr_notify_func_t *)at_symbol_notify, NULL);
    }
    return hn->named;
@@ -729,11 +729,18 @@ void pre_init_symbol(void)
       cache = mm_allocv(mt_refs, s);
       MM_ROOT(cache);
    }
+   if (!symbol_class) {
+      new_builtin_class(&symbol_class, NIL);
+      symbol_class->name = symbol_name;
+      symbol_class->selfeval = symbol_selfeval;
+      symbol_class->hash = symbol_hash;
+      symbol_class->dontdelete = true;
+   }
 }
       
 /* --------- INITIALISATION CODE --------- */
 
-class_t symbol_class;
+class_t *symbol_class = NULL;
 
 void init_symbol(void)
 {
@@ -745,12 +752,7 @@ void init_symbol(void)
    var_lock(at_t);
    
    /* set up symbol_class */
-   class_init(&symbol_class, false);
-   symbol_class.name = symbol_name;
-   symbol_class.selfeval = symbol_selfeval;
-   symbol_class.hash = symbol_hash;
-   symbol_class.dontdelete = true;
-   class_define("SYMBOL", &symbol_class);
+   class_define("SYMBOL", symbol_class);
    
    dx_define("global-defs", xglobal_defs);
    dx_define("namedclean", xnamedclean);

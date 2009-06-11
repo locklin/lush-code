@@ -547,21 +547,21 @@ struct gdriver ps_driver = {
 static at *ps_window(int x, int y, int w, int h, const char *name)
 {
    struct M_window *info = ps_new_window(x,y,w,h,name);
-   at *ans = new_extern( &window_class, info );
-   info->lwin.used       = 1;
-   info->lwin.font       = make_string(FONT_STD);
-   info->lwin.color      = COLOR_FG;
-   info->lwin.gdriver    = &ps_driver;
+   at *ans = new_at(window_class, info );
+   info->lwin.used = 1;
+   info->lwin.font = make_string(FONT_STD);
+   info->lwin.color = COLOR_FG;
+   info->lwin.gdriver = &ps_driver;
    info->lwin.clipw = 0;
    info->lwin.cliph = 0;
    info->lwin.linestyle = 0;
-   info->lwin.backptr    = ans;
+   info->lwin.backptr = ans;
    return ans;
 }
 
 DX(xps_window)
 {
-   const char *name = mm_strdup("tloutput.ps");
+   const char *name = mm_strdup("lush_output.ps");
    int w = 512;
    int h = 512;
    

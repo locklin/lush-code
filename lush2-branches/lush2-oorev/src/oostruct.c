@@ -182,6 +182,11 @@ void oostruct_setslot(at *p, at *prop, at *val)
 
 /* ------ CLASS CLASS DEFINITION -------- */
 
+static void generic_mark_at(at *a)
+{
+   MM_MARK(Mptr(a));
+}
+
 static const char *generic_name(at *p)
 {
    if (Class(p)->classname)
@@ -232,18 +237,17 @@ static at *generic_listeval(at *p, at *q)
       error(pname(p), "can't evaluate this list", NIL);
 }
 #define generic_dispose   NULL
-#define generic_action    NULL
 #define generic_serialize NULL
 #define generic_compare   NULL
 #define generic_hash      NULL
 #define generic_getslot   NULL
 #define generic_setslot   NULL
 
-void class_init(class_t *cl, bool managed) {
+void class_init(class_t *cl) {
 
    /* initialize class functions */
    cl->dispose = generic_dispose;
-   cl->action = generic_action;
+   cl->mark_at = generic_mark_at;
    cl->name = generic_name;
    cl->selfeval = generic_selfeval;
    cl->listeval = generic_listeval;
@@ -269,26 +273,10 @@ void class_init(class_t *cl, bool managed) {
    cl->hashtable = NULL;
    cl->hashsize = 0;
    cl->hashok = false;
-   cl->managed = managed;
    cl->dontdelete = false;
    cl->live = true;
    cl->classdoc = NULL;
    cl->kname = NULL;
-
-   /* static classes may reference managed objects */
-   if (!managed) {
-      //MM_ROOT(cl->keylist);    /* NULL for static classes */
-      //MM_ROOT(cl->defaults);   /* ! */
-      //MM_ROOT(cl->super);      /* ! */
-      //MM_ROOT(cl->subclasses); /* ! */
-      //MM_ROOT(cl->nextclass);  /* ! */
-      MM_ROOT(cl->classname);
-      MM_ROOT(cl->priminame);
-      MM_ROOT(cl->backptr);
-      MM_ROOT(cl->methods);
-      MM_ROOT(cl->hashtable);
-      MM_ROOT(cl->kname);
-   }
 }
 
 void clear_class(class_t *cl, size_t _)
@@ -330,12 +318,6 @@ bool finalize_class(class_t *cl)
 static mt_t mt_class = mt_undefined;
 
 
-at *new_class(class_t *cl)
-{
-   assert(class_class);
-   return new_at(class_class, cl);
-}
-
 static void clear_hashok(class_t *cl)
 {
    cl->hashok = 0;
@@ -374,6 +356,9 @@ static const char *class_name(at *p)
    else
       sprintf(string_buffer, "::class:%p", cl);
    
+   if (!cl->live)
+      strcat(string_buffer, " (obsolete)");
+
    return mm_strdup(string_buffer);
 }
 
@@ -460,6 +445,24 @@ DX(xbuiltin_class_p)
       return NIL;
 }
 
+/* allocate and initialize new builtin class */
+at *new_builtin_class(class_t **pcl, class_t *super)
+{
+   extern void dbg_notify(void *, void *);
+
+   class_t *cl = mm_alloc(mt_class);
+   add_notifier(cl, dbg_notify, NULL);
+   class_init(cl);
+   if (super) {
+      cl->super = super;
+      cl->atsuper = super->backptr;
+   }
+   assert(class_class);
+   cl->backptr = new_at(class_class, cl);
+   *pcl = cl;
+   return cl->backptr;
+}
+
 at *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
 {
    ifn (SYMBOLP(classname))
@@ -515,7 +518,8 @@ at *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
    cl->kname = 0;
    
    /* Create AT and returns it */
-   cl->backptr = new_class(cl);
+   assert(class_class);
+   cl->backptr = new_at(class_class, cl);
    return cl->backptr;
 }
 
@@ -702,7 +706,7 @@ DY(ywith_object)
       }
    }
    //at *q = eval(at_progn);
-   at *q = symbol_class.selfeval(at_progn);
+   at *q = symbol_class->selfeval(at_progn);
    return with_object(p, q, Cdr(l), howfar);
 }
 
@@ -868,16 +872,16 @@ static at *call_method(at *obj, struct hashelem *hx, at *args)
    at *fun = hx->function;
    assert(FUNCTIONP(fun));
    
-   if (Class(fun) == &de_class) {
+   if (Class(fun) == de_class) {
       // DE
       at *p = eval_arglist(args);
       return with_object(obj, fun, p, hx->sofar);
 
-   } else if (Class(fun) == &df_class) {
+   } else if (Class(fun) == df_class) {
       // DF
       return with_object(obj, fun, args, hx->sofar);
 
-   } else if (Class(fun) == &dm_class) {
+   } else if (Class(fun) == dm_class) {
       // DM
       at *p = new_cons(new_cons(fun, args), NIL);
       at *q = with_object(obj, at_mexpand, p, hx->sofar);
@@ -1016,7 +1020,7 @@ DX(xdelete)
 
 class_t *classof(at *p)
 {
-   return p ? Class(p) : &null_class;
+   return p ? Class(p) : null_class;
 }
 
 DX(xclassof)
@@ -1049,7 +1053,7 @@ DX(xisa)
       int flag = 0;
       at *sym = named("to-obj");
       at *fun = find_primitive(0, sym);
-      if (fun && (Class(fun) == &dx_class)) {
+      if (fun && (Class(fun) == dx_class)) {
          at *arg = new_cons(p,NIL);
          sym = apply(fun, arg);
          flag = isa(sym, Mptr(q));
@@ -1069,7 +1073,7 @@ void pre_init_oostruct(void)
                             clear_class, mark_class, 0);
    if (!class_class) {
       class_class = mm_alloc(mt_class);
-      class_init(class_class, true);
+      class_init(class_class);
       class_class->dispose = (dispose_func_t *)class_dispose;
       class_class->name = class_name;
       class_class->dontdelete = true;
@@ -1091,13 +1095,13 @@ void init_oostruct(void)
                  clear_method_hash, mark_method_hash, 0);
 
    pre_init_oostruct();
+   class_class->backptr = new_at(class_class, class_class);
    class_define("class", class_class);
 
    /* 
     * mm_alloc object_class to avoid hickup in mark_class
     */
-   object_class = mm_alloc(mt_class);
-   class_init(object_class, true);
+   new_builtin_class(&object_class, NIL);
    object_class->dispose = (dispose_func_t *)oostruct_dispose;
    object_class->listeval = oostruct_listeval;
    object_class->compare = oostruct_compare;

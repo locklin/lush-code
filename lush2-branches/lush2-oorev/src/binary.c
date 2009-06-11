@@ -226,7 +226,7 @@ again:
 
    const class_t *cl = Class(p);
 
-   if (cl == &cons_class) {
+   if (cl == cons_class) {
       sweep(Car(p),code);
       p = Cdr(p);
       goto again;
@@ -234,7 +234,7 @@ again:
    } 
    cl = CLEAR(cl);
 
-   if (cl==&number_class || cl==&gptr_class) {
+   if (cl==number_class || cl==gptr_class) {
       return;
 
    } else if (cl->dispose == object_class->dispose) {
@@ -256,7 +256,7 @@ again:
          sweep(clcl->defaults, code);
       }
       sweep(clcl->methods, code);
-   } else if (cl == &index_class && !opt_bwrite) {
+   } else if (cl == index_class && !opt_bwrite) {
       index_t *ind = Mptr(p);
       if (IND_STTYPE(ind) == ST_AT)
          if (!index_emptyp(ind)) {
@@ -269,12 +269,12 @@ again:
             } end_idx_aloop1(&id, off);
             index_rls_idx(ind, &id);
          }
-   } else if (cl == &de_class || cl == &df_class || cl == &dm_class ) {
+   } else if (cl == de_class || cl == df_class || cl == dm_class ) {
       lfunction_t *f = Mptr(p);
       sweep(f->formal_args, code);
       sweep(f->body, code);
       
-   } else if (cl == &dx_class || cl == &dy_class || cl == &dh_class ) {
+   } else if (cl == dx_class || cl == dy_class || cl == dh_class ) {
       cfunction_t *f = Mptr(p);
       sweep(f->name, code);
       
@@ -744,13 +744,13 @@ static int local_write(at *p)
    }
   
    const class_t *cl = Class(p);
-   if (cl == &cons_class) {
+   if (cl == cons_class) {
       write_card8(TOK_CONS);
       return 0;
    }
    cl = CLEAR(cl);
   
-   if (cl == &number_class) {
+   if (cl == number_class) {
       double x = Number(p);
       write_card8(TOK_NUMBER);
       if (swapflag)
@@ -759,7 +759,7 @@ static int local_write(at *p)
       return 1;
    }
   
-   if (cl == &string_class) {
+   if (cl == string_class) {
       const char *s = String(p);
       int l = strlen(s);
       write_card8(TOK_STRING);
@@ -768,7 +768,7 @@ static int local_write(at *p)
       return 1;
    }
   
-   if (cl == &symbol_class) {
+   if (cl == symbol_class) {
       const char *s = nameof(Symbol(p));
       int l = strlen(s);
       write_card8(TOK_SYMBOL);
@@ -793,7 +793,7 @@ static int local_write(at *p)
       return 0;
    }
   
-   if (cl==&index_class && !opt_bwrite) {
+   if (cl == index_class && !opt_bwrite) {
       index_t *arr = Mptr(p);
       if (arr->st->type == ST_AT) {
          int ndim = arr->ndim;
@@ -813,22 +813,22 @@ static int local_write(at *p)
       }
    }
   
-   if (cl == &de_class) {
+   if (cl == de_class) {
       write_card8(TOK_DE);
       return 0;
    }
   
-   if (cl == &df_class) {
+   if (cl == df_class) {
       write_card8(TOK_DF);
       return 0;
    }
   
-   if (cl == &dm_class) {
+   if (cl == dm_class) {
       write_card8(TOK_DM);
       return 0;
    }
   
-   if (cl == &dx_class || cl == &dy_class || cl == &dh_class) {
+   if (cl == dx_class || cl == dy_class || cl == dh_class) {
       write_card8(TOK_CFUNC);
       return 0;
    }

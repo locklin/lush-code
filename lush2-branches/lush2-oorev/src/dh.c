@@ -227,7 +227,7 @@ at *new_dh(at *name, dhdoc_t *kdata)
    cfunc->info = kdata;
    cfunc->kname = mm_strdup(kdata->lispdata.k_name);
    cfunc->name = name;
-   return new_extern(&dh_class, cfunc);
+   return new_at(dh_class, cfunc);
 }
 
 
@@ -507,7 +507,7 @@ DX(xdhinfo_t)
 {
    ARG_NUMBER(1);
    at *p = APOINTER(1);
-   ifn (p && (Class(p) == &dh_class))
+   ifn (p && (Class(p) == dh_class))
       error(NIL, "not a DH function", p);
    cfunction_t *cfunc = Mptr(p);
    if (CONSP(cfunc->name))
@@ -523,7 +523,7 @@ DX(xdhinfo_c)
 {
    ARG_NUMBER(1);
    at *p = APOINTER(1);
-   ifn (p && (Class(p) == &dh_class))
+   ifn (p && (Class(p) == dh_class))
       error(NIL, "not a DH function", p);
 
    cfunction_t *cfunc = Mptr(p);
@@ -617,7 +617,7 @@ DHCLASSDOC(Kc_object, NULL, object, "object", Vt_object, 0) =
    INITIALIZATION
    --------------------------------------------- */
 
-class_t dh_class;
+class_t *dh_class;
 
 void init_dh(void)
 {
@@ -627,12 +627,10 @@ void init_dh(void)
 
    /* setting up dh_class */
    extern const char *func_name(at*);
-   class_init(&dh_class, false);
-   dh_class.name = func_name;
-   dh_class.listeval = dh_listeval;
-   dh_class.super = &function_class;
-   dh_class.atsuper = function_class.backptr;
-   class_define("DH", &dh_class);
+   new_builtin_class(&dh_class, function_class);
+   dh_class->name = func_name;
+   dh_class->listeval = dh_listeval;
+   class_define("DH", dh_class);
 
    /* primitives */
    dx_define("dhinfo-t",xdhinfo_t);

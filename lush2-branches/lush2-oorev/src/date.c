@@ -56,7 +56,7 @@ struct date {
    char str[24];
 };
 
-#define DATEP(x)  ((x)&&(Class(x) == &date_class))
+#define DATEP(x)  ((x)&&(Class(x) == date_class))
  
 /* ----------------------------------------
  * Ansi conversion strings
@@ -352,7 +352,7 @@ static at *copy_date(struct date *d)
 
    struct date *nd = mm_blob(sizeof(struct date));
    *nd = *d;
-   return new_extern(&date_class, nd);
+   return new_at(date_class, nd);
 }
 
 
@@ -988,17 +988,17 @@ DX(xdate_code)
 /* --------- INITIALISATION CODE --------- */
 
 
-class_t date_class;
+class_t *date_class;
 
 void init_date(void)
 {
    /* setting up date_class */
-   class_init(&date_class, false);
-   date_class.name = date_name;
-   date_class.serialize = date_serialize;
-   date_class.compare = date_compare;
-   date_class.hash = date_hash;
-   class_define("DATE", &date_class);
+   new_builtin_class(&date_class, NIL);
+   date_class->name = date_name;
+   date_class->serialize = date_serialize;
+   date_class->compare = date_compare;
+   date_class->hash = date_hash;
+   class_define("DATE", date_class);
   
    dx_define("date-to-day",xdate_to_day);
    dx_define("day-to-date",xday_to_date);

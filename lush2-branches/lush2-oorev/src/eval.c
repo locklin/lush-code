@@ -65,11 +65,11 @@ at *eval_std(at *p)
       top_link = &link;
       
       at *q = Car(p);
-      q = SYMBOLP(q) ? symbol_class.selfeval(q) : eval_std(q);
+      q = SYMBOLP(q) ? symbol_class->selfeval(q) : eval_std(q);
       if (q)
          p = Class(q)->listeval(q, p);
       else
-         p = null_class.listeval(q, p);
+         p = null_class->listeval(q, p);
 
       top_link = top_link->prev;
       return p;

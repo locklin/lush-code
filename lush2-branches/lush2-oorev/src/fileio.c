@@ -1490,14 +1490,14 @@ void at_file_notify(at *p, void *_)
 
 at *new_rfile(const FILE *f)
 {
-   at *p = new_at(&rfile_class, (void *)f);
+   at *p = new_at(rfile_class, (void *)f);
    add_notifier(p, (wr_notify_func_t *)at_file_notify, NULL);
    return p;
 }
 
 at *new_wfile(const FILE *f)
 {
-   at *p = new_at(&wfile_class, (void *)f);
+   at *p = new_at(wfile_class, (void *)f);
    add_notifier(p, (wr_notify_func_t *)at_file_notify, NULL);
    return p;
 }
@@ -1790,9 +1790,7 @@ DX(xfsize)
 
 /* --------- INITIALISATION CODE --------- */
 
-
-class_t rfile_class;
-class_t wfile_class;
+class_t *rfile_class, *wfile_class;
 
 void init_fileio(char *program_name)
 {
@@ -1816,13 +1814,15 @@ void init_fileio(char *program_name)
    var_set(at_path, new_cons(new_string(s),NIL));
    
    /* setting up classes */
-   class_init(&rfile_class, false);
-   rfile_class.dispose = (dispose_func_t *)file_dispose;
-   class_define("RFILE", &rfile_class);
+   new_builtin_class(&rfile_class, NIL);
+   rfile_class->mark_at = null_class->mark_at;
+   rfile_class->dispose = (dispose_func_t *)file_dispose;
+   class_define("RFILE", rfile_class);
    
-   class_init(&wfile_class, false);
-   wfile_class.dispose = (dispose_func_t *)file_dispose;
-   class_define("WFILE", &wfile_class);
+   new_builtin_class(&wfile_class, NIL);
+   wfile_class->mark_at = null_class->mark_at;
+   wfile_class->dispose = (dispose_func_t *)file_dispose;
+   class_define("WFILE", wfile_class);
    
    /* DECLARE THE FUNCTIONS */
    dx_define("chdir", xchdir);

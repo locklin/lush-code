@@ -1850,7 +1850,7 @@ static at *x11_window(int x, int y, uint w, uint h, const char *name)
    info->lwin.cliph = 0;
    info->lwin.linestyle = 0;
    
-   at *ans = new_extern(&window_class, info);
+   at *ans = new_at(window_class, info);
    info->lwin.backptr = ans;
    
    x11_setcolor(&info->lwin, COLOR_FG);

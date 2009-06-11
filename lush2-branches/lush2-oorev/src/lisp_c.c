@@ -540,7 +540,7 @@ static void transmute_object_into_gptr(at *p, void *px)
     /* clean object up */
     Class(p)->dispose(Mptr(p));
     /* disguise it as a gptr */
-    AssignClass(p, &gptr_class);
+    AssignClass(p, gptr_class);
     Gptr(p) = px;
   }
 }
@@ -2065,7 +2065,7 @@ DX(xto_gptr)
     avlnode_t *n = lside_create_str(p);
     return NEW_GPTR(n->citem);
 
-  } else if (p && (Class(p) == &dh_class)) {
+  } else if (p && (Class(p) == dh_class)) {
     struct cfunction *cfunc = Mptr(p);
     if (CONSP(cfunc->name))
       check_primitive(cfunc->name, cfunc->info);

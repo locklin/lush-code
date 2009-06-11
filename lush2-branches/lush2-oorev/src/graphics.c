@@ -1879,17 +1879,17 @@ DX(xaddclip)
 /* INITIALISATION                       */
 /* ------------------------------------ */     
 
-class_t window_class;
+class_t *window_class;
 
 void init_graphics(void)
 {
    mt_window = MM_REGTYPE("window", sizeof(window_t),
                           clear_window, mark_window, finalize_window);
    /* WINDOW */
-   class_init(&window_class, false);
-   window_class.dispose = (dispose_func_t *)window_dispose;
-   window_class.name = window_name;
-   class_define("WINDOW", &window_class);
+   new_builtin_class(&window_class, NIL);
+   window_class->dispose = (dispose_func_t *)window_dispose;
+   window_class->name = window_name;
+   class_define("WINDOW", window_class);
    at_window = var_define("window");
 
    /* RELEASE 1 */
