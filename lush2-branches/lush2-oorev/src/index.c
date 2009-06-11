@@ -423,70 +423,6 @@ static unsigned long index_hash(at *p)
 }
 
 
-/* Scoping functions 
- * for accessing arrays and matrix using the following syntax:
- *
- *  :m:(i j)
- *  (setq :m:(i j) 3)
- */
-
-static at *index_getslot(at *obj, at *prop)
-{ 
-   index_t *ind = Mptr(obj);
-   
-   /* Checks */
-   at *p = Car(prop);
-   ifn (LISTP(p))
-      error(NIL, "subscript(s) expected with this object", obj);
-
-   for (int i=0; i<IND_NDIMS(ind); i++) {
-      ifn (CONSP(p))
-         error(NIL, "not enough subscripts for array access", obj);
-      p = Cdr(p);
-   }
-   if (p)
-      error(NIL,"Too many subscripts for array access",obj);
-
-  /* Access */
-   at *arg = new_cons(obj, Cdr(prop));
-   at *ans = Class(obj)->listeval(obj, arg);
-   if (Cdr(prop)) {
-      p = ans;
-      ans = getslot(p, Cdr(prop));
-   }
-   return ans;
-}
-
-static void index_setslot(at *obj, at *prop, at *val)
-{
-   struct index *arr = Mptr(obj);
-
-   /* Build listeval argument */
-   at *p = Car(prop);
-   if (!LISTP(p))
-      error(NIL,"Subscript(s) expected with this object",obj);
-   at *arg = new_cons(obj,NIL);
-   at **where = &Cdr(arg);
-   for (int i=0; i<arr->ndim; i++) {
-      if (!CONSP(p)) 
-         error(NIL,"not enough subscripts for array access",obj);
-      *where = new_cons(Car(p), NIL);
-      where = &Cdr(*where);
-      p = Cdr(p);
-   }
-   if (p)
-      error(NIL,"too many subscripts for array access",obj);
-   /* Access */
-   if (Cdr(prop)) {
-      p = Class(obj)->listeval(obj, arg);
-      setslot(&p, Cdr(prop), val);
-
-   } else {
-      *where = new_cons(val,NIL);
-      Class(obj)->listeval(obj, arg);
-   }
-}
-
 /* ---------- Argument checking ----------- */
 
 /* chk-* functions check for an index property and return an      */
@@ -3615,8 +3551,6 @@ void init_index(void)
    index_class->serialize = index_serialize;
    index_class->compare = index_compare;
    index_class->hash = index_hash;
-   index_class->getslot = index_getslot;
-   index_class->setslot = index_setslot;
    class_define("INDEX", index_class);
 
    /* info */

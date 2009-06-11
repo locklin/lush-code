@@ -413,6 +413,37 @@ static unsigned long symbol_hash(at *p)
 
 /* Others functions on symbols	 */
 
+at *getslot(at *obj, at *prop)
+{
+   if (!prop) {
+      return obj;
+      
+   } else {
+      const class_t *cl = classof(obj);
+      ifn (cl->getslot)
+         error(NIL, "object does not accept scope syntax", obj);
+      ifn (LISTP(prop))
+         error(NIL, "illegal scope specification", prop);
+      return (*cl->getslot)(obj, prop);
+   }
+}
+
+void setslot(at **pobj, at *prop, at *val)
+{
+   if (!prop) {
+      *pobj = val;
+
+   } else {
+      at *obj = *pobj;
+      const class_t *cl = classof(obj);
+      ifn (cl->setslot)
+         error(NIL, "object does not accept scope syntax", obj);
+      ifn (LISTP(prop))
+         error(NIL, "illegal scope specification", prop);
+      (*cl->setslot)(obj, prop, val);    
+   }
+}
+
 at *setq(at *p, at *q)
 {
    if (SYMBOLP(p)) {             /* (setq symbol value) */

@@ -196,7 +196,7 @@ struct at {
    } payload;
 };
 
-#define Class(q)  (CONSP(q) ? cons_class : (q)->head.cl)
+#define Class(q)  classof(q)
 #define Number(q) (*(q)->payload.d)
 #define String(q) ((q)->payload.c)
 #define Symbol(q) ((q)->payload.s)
@@ -385,7 +385,7 @@ typedef struct symbol { 	/* each symbol is an external AT which */
 LUSHAPI at *new_symbol(const char *);
 LUSHAPI at *named(const char *);
 LUSHAPI at *namedclean(const char *);
-extern at *at_t; 
+extern  at *at_t; 
 #define t()           at_t
 
 LUSHAPI const char *nameof(symbol_t *);
@@ -395,18 +395,20 @@ LUSHAPI symbol_t *symbol_pop(symbol_t *);
 #define SYMBOL_PUSH(p, q) { at *__p__ = p; Symbol(__p__) = symbol_push(Symbol(__p__), q, NULL); }
 #define SYMBOL_POP(p) { at *__p__ = p; Symbol(__p__) = symbol_pop(Symbol(__p__)); }
 
-LUSHAPI at *setq(at *p, at *q);	/* Warning: Never use the result. */
-LUSHAPI at *global_names(void); 
-LUSHAPI at *global_defs(void);
-LUSHAPI at *oblist(void);
-LUSHAPI void reset_symbols(void);
-LUSHAPI void sym_set(symbol_t *s, at *q, bool in_global_scope); 
-LUSHAPI void var_set(at *p, at *q);
-LUSHAPI void var_SET(at *p, at *q); /* Set variable regardless of lock mode */
-LUSHAPI void var_lock(at *p);
-LUSHAPI at *sym_get(symbol_t *s, bool in_global_scope);
-LUSHAPI at *var_get(at *p);
-LUSHAPI at *var_define(char *s);
+LUSHAPI at   *getslot(at*, at*);
+LUSHAPI void  setslot(at**, at*, at*);
+LUSHAPI at   *setq(at *p, at *q);
+LUSHAPI at   *global_names(void); 
+LUSHAPI at   *global_defs(void);
+LUSHAPI at   *oblist(void);
+LUSHAPI void  reset_symbols(void);
+LUSHAPI void  sym_set(symbol_t *s, at *q, bool in_global_scope); 
+LUSHAPI void  var_set(at *p, at *q);
+LUSHAPI void  var_SET(at *p, at *q); /* Set variable regardless of lock mode */
+LUSHAPI void  var_lock(at *p);
+LUSHAPI at   *sym_get(symbol_t *s, bool in_global_scope);
+LUSHAPI at   *var_get(at *p);
+LUSHAPI at   *var_define(char *s);
 
 
 
@@ -707,12 +709,16 @@ LUSHAPI at  *getmethod(class_t *cl, at *prop);
 LUSHAPI at  *new_object(class_t *cl);
 LUSHAPI at  *with_object(at *obj, at *f, at *q, int howmuch);
 LUSHAPI at  *send_message(at *classname, at *obj, at *method, at *args);
-LUSHAPI class_t *classof(at *p);
 LUSHAPI bool isa(at *p, const class_t *cl);
 LUSHAPI void lush_delete(at *p);       /* avoid conflict with C++ keyword */
 LUSHAPI void lush_delete_maybe(at *p);
-LUSHAPI at  *getslot(at*, at*);
-LUSHAPI void setslot(at**, at*, at*);
+LUSHAPI static inline class_t *classof(const at *p)
+{
+   if (p)
+      return CONSP(p) ? cons_class : p->head.cl;
+   else
+      return null_class;
+}
 
 
 /* MODULE.H --------------------------------------------------- */
@@ -725,11 +731,9 @@ LUSHAPI void dx_define(const char *name, at *(*addr) (int, at **));
 LUSHAPI void dy_define(const char *name, at *(*addr) (at *));
 LUSHAPI void dxmethod_define(class_t *cl, const char *name, at *(*addr) (int, at **));
 LUSHAPI void dymethod_define(class_t *cl, const char *name, at *(*addr) (at *));
-
 LUSHAPI void dhclass_define(const char *name, dhclassdoc_t *kclass);
 LUSHAPI void dh_define(const char *name, dhdoc_t *kname);
 LUSHAPI void dhmethod_define(dhclassdoc_t *kclass, const char *name, dhdoc_t *kname);
-
 LUSHAPI void check_primitive(at *prim, void *info);
 LUSHAPI at *find_primitive(at *module, at *name);
 LUSHAPI at *module_list(void);

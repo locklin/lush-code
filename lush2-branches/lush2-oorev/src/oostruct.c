@@ -155,7 +155,7 @@ at *oostruct_getslot(at *p, at *prop)
       error(NIL,"not a slot name", slot);
 
    object_t *obj = Mptr(p);
-   for(int i=0; i<obj->size; i++)
+   for (int i=0; i<obj->size; i++)
       if (slot == obj->slots[i].symb)
          return getslot(obj->slots[i].val, Cdr(prop));
    
@@ -608,43 +608,6 @@ DX(xnew_empty)
    return new_object(cl);
 }
 
-/* ---------- SCOPE OPERATOR -------------- */
-
-at *getslot(at *obj, at *prop)
-{
-   if (!prop) {
-      return obj;
-      
-   } else {
-      const class_t *cl = obj ? Class(obj) : NULL;
-      ifn (cl && cl->getslot)
-         error(NIL, "object does not accept scope syntax", obj);
-      ifn (LISTP(prop))
-         error(NIL, "illegal scope specification", prop);
-      return (*cl->getslot)(obj, prop);
-   }
-}
-
-void setslot(at **pobj, at *prop, at *val)
-{
-   if (!prop) {
-      *pobj = val;
-
-   } else {
-      at *obj = *pobj;
-      const class_t *cl = obj ? Class(obj) : NULL;
-      ifn (cl && cl->setslot)
-         error(NIL, "object does not accept scope syntax", obj);
-      ifn (LISTP(prop))
-         error(NIL, "illegal scope specification", prop);
-      (*cl->setslot)(obj, prop, val);    
-   }
-}
-
-
-
-
-
 /* ---------- OBJECT CONTEXT -------------- */
 
 
@@ -1012,16 +975,6 @@ DX(xdelete)
 
 
 /* ---------------- MISC ------------------ */
-
-/*
- * classof( p ) returns the class of the object P.
- */
-
-
-class_t *classof(at *p)
-{
-   return p ? Class(p) : null_class;
-}
 
 DX(xclassof)
 {
