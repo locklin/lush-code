@@ -948,8 +948,8 @@ int color_draw_idx(int x, int y, struct idx *idx,
    window_t *win = current_window_no_error();
    if(win==NIL)
       return 1;
-   if (maxv - minv == 0)
-      return 2;
+/*    if (maxv - minv == 0) */
+/*       return 2; */
 
    int d1, d2, m1, m2;
    if (idx->ndim == 1) {
@@ -993,7 +993,7 @@ int color_draw_idx(int x, int y, struct idx *idx,
          for (int j = 0; j < d2; j++, off2 += m2) {
 	    int off1 = off2;
 	    for (int i = 0; i < d1; i++, off1 += m1) {
-               int v = 64 * (data[off1] - dm) / dv;
+               int v = dv ? 64 * (data[off1] - dm) / dv : 32;
                if (v > 63)
                   v = 63;
                if (v < 0)
@@ -1012,7 +1012,7 @@ int color_draw_idx(int x, int y, struct idx *idx,
 	    int off1 = off2;
 	    for (int i = 0; i < d1; i++, off1 += m1) {
                flt w = (*getf)(data,off1);
-               int v = 64 * (w - dm) / dv;
+               int v = dv ? 64 * (w - dm) / dv : 32;
                if (v > 63)
                   v = 63;
                if (v < 0)
@@ -1050,7 +1050,7 @@ int color_draw_idx(int x, int y, struct idx *idx,
          int xx = x;
          for (int i = 0; i < d1; i++, off1 += m1) {
             flt w = (*getf)(data,off1);
-            int v = 64 * (w - dm) / dv;
+            int v = dv ? 64 * (w - dm) / dv : 32;
             if (v > 63)
                v = 63;
             if (v < 0)
@@ -1879,17 +1879,17 @@ DX(xaddclip)
 /* INITIALISATION                       */
 /* ------------------------------------ */     
 
-class_t window_class;
+class_t *window_class;
 
 void init_graphics(void)
 {
    mt_window = MM_REGTYPE("window", sizeof(window_t),
                           clear_window, mark_window, finalize_window);
    /* WINDOW */
-   class_init(&window_class, false);
-   window_class.dispose = (dispose_func_t *)window_dispose;
-   window_class.name = window_name;
-   class_define("WINDOW", &window_class);
+   new_builtin_class(&window_class, NIL);
+   window_class->dispose = (dispose_func_t *)window_dispose;
+   window_class->name = window_name;
+   class_define("WINDOW", window_class);
    at_window = var_define("window");
 
    /* RELEASE 1 */
