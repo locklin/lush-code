@@ -1322,7 +1322,6 @@ static void update_c_from_lisp(avlnode_t *n)
       class_t *cl = Class(obj->backptr);
       if (sl > cl->num_slots)
 	error(NIL, "lisp_c internal: class slot mismatch", p);
-      sl = cl->num_slots;
 
       int j = 0;
       int nsl = 0;
@@ -1455,7 +1454,6 @@ static void update_lisp_from_c(avlnode_t *n)
       class_t *cl = Class(obj->backptr);
       if (sl > cl->num_slots)
 	error(NIL,"lisp_c internal: class slot mismatch",n->litem);
-      sl = cl->num_slots;
 
       int j = 0;
       int nsl = 0;
