@@ -192,11 +192,6 @@ void oostruct_setslot(at *p, at *prop, at *val)
 
 /* ------ CLASS CLASS DEFINITION -------- */
 
-static void generic_mark_at(at *a)
-{
-   MM_MARK(Mptr(a));
-}
-
 static const char *generic_name(at *p)
 {
    if (Class(p)->classname)
@@ -257,7 +252,6 @@ void class_init(class_t *cl)
 {
    /* initialize class functions */
    cl->dispose = generic_dispose;
-   cl->mark_at = generic_mark_at;
    cl->name = generic_name;
    cl->selfeval = generic_selfeval;
    cl->listeval = generic_listeval;
@@ -287,6 +281,7 @@ void class_init(class_t *cl)
    cl->hashok = false;
    cl->dontdelete = false;
    cl->live = true;
+   cl->managed = true;
    cl->classdoc = NULL;
    cl->kname = NULL;
 }

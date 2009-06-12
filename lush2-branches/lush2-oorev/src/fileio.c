@@ -1815,13 +1815,13 @@ void init_fileio(char *program_name)
    
    /* setting up classes */
    new_builtin_class(&rfile_class, NIL);
-   rfile_class->mark_at = null_class->mark_at;
    rfile_class->dispose = (dispose_func_t *)file_dispose;
+   rfile_class->managed = false;
    class_define("RFILE", rfile_class);
    
    new_builtin_class(&wfile_class, NIL);
-   wfile_class->mark_at = null_class->mark_at;
    wfile_class->dispose = (dispose_func_t *)file_dispose;
+   wfile_class->managed = false;
    class_define("WFILE", wfile_class);
    
    /* DECLARE THE FUNCTIONS */

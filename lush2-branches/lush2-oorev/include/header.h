@@ -170,6 +170,7 @@ DLLEXPORT int init_user_dll(int major, int minor);
 #define CLEAR_PTR(p)      ((void *)((uintptr_t)(p)&~((1<<NUM_PTRBITS) - 1)))
 
 #define CONS_BIT          1
+#define MANAGED_BIT       2
 #define SYMBOL_LOCKED_BIT 1
 
 typedef struct class_s class_t;
@@ -234,6 +235,7 @@ struct at {
                                 Class(p)->dispose == object_class->dispose || \
                                 Class(p)->super == abstract_storage_class || \
                                 Class(p) == window_class) )
+#define MANAGEDP(p)     ((p)&&(((uintptr_t)((p)->head.cl)) & MANAGED_BIT))
 
 extern LUSHAPI at *(*eval_ptr) (at*);
 #define eval(q)    (*eval_ptr)(q)
@@ -247,7 +249,6 @@ typedef void *dispose_func_t(void *);
 struct class_s {
    /* class vectors */
    void*          (*dispose)      (void *);
-   void           (*mark_at)      (at *);
    const char*    (*name)         (at*);
    at*            (*selfeval)     (at*);
    at*            (*listeval)     (at*, at*);
@@ -275,6 +276,7 @@ struct class_s {
    bool	    	    hashok;      /* is the hash table up-to-date */
    bool 	    dontdelete;  /* instances should not be deleted */
    bool             live;        /* true if class is current */
+   bool             managed;     /* object address is a managed address */
    /* additional info for dhclasses */
    dhclassdoc_t    *classdoc;  
    char            *kname;

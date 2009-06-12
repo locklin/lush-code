@@ -39,25 +39,12 @@ static void clear_at(at *a, size_t _)
 
 static void mark_at(at *a)
 {
-   Class(a)->mark_at(a);
+   if (CONSP(a)) {
+      MM_MARK(Car(a));
+      MM_MARK(Cdr(a));
 
-/*    if (CONSP(a)) { */
-/*       MM_MARK(Car(a)); */
-/*       MM_MARK(Cdr(a)); */
-      
-/*    } else if (SYMBOLP(a) || NUMBERP(a) || OBJECTP(a)) { */
-/*       MM_MARK(Mptr(a)); */
-        
-/*    } else if (CLASSP(a)) { */
-/*       if (((class_t *)Gptr(a))->managed) */
-/*          MM_MARK(Mptr(a)); */
-      
-/*    } else if (GPTRP(a) || RFILEP(a) || WFILEP(a) || ZOMBIEP(a)) { */
-/*       // nothing to mark */
-
-/*    } else  */
-/*       MM_MARK(Mptr(a)); */
-
+   } else if (Class(a)->managed)
+      MM_MARK(Mptr(a));
 }
 
 mt_t mt_at = mt_undefined;
@@ -305,19 +292,8 @@ DX(xunode_unify)
 
 static const char *gptr_name(at *p)
 {
-   sprintf(string_buffer, "#$%p", Gptr(p));
+   sprintf(string_buffer, "%p", Gptr(p));
    return mm_strdup(string_buffer);
-}
-
-static void cons_mark_at(at *a)
-{
-   MM_MARK(Car(a));
-   MM_MARK(Cdr(a));
-}
-
-static void null_mark_at(at *a)
-{
-   return;
 }
 
 static const char *null_name(at *p)
@@ -339,7 +315,7 @@ static at *null_listeval(at *p, at *q)
 
 /* --------- INITIALISATION CODE --------- */
 
-class_t *number_class, *gptr_class, *cons_class, *null_class;
+class_t *number_class, *gptr_class, *mptr_class, *cons_class, *null_class;
 
 extern void pre_init_symbol(void);
 extern void pre_init_function(void);
@@ -367,18 +343,21 @@ void init_at(void)
 
    new_builtin_class(&gptr_class, NIL);
    gptr_class->name = gptr_name;
-   gptr_class->mark_at = null_mark_at;
+   gptr_class->managed = false;
    class_define("GPTR", gptr_class);
 
+   new_builtin_class(&mptr_class, NIL);
+   mptr_class->name = gptr_name;
+   class_define("MPTR", mptr_class);
+
    new_builtin_class(&cons_class, NIL);
-   cons_class->mark_at = cons_mark_at;
    class_define("CONS", cons_class);
    
    new_builtin_class(&null_class, NIL);
-   null_class->mark_at = null_mark_at;
    null_class->name = null_name;
    null_class->selfeval = null_selfeval;
    null_class->listeval = null_listeval;
+   null_class->managed = false;
    class_define("NULL", null_class);
 
   //dy_define("compute-bump", ycompute_bump);
