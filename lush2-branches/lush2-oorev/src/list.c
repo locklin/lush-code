@@ -27,6 +27,18 @@
 #include "header.h"
 #include "mm.h"
 
+/* make a list from a vector of objects */
+at *vector2list(int n, at **vec)
+{
+   MM_ENTER;
+   at *l = NIL;
+   at **where = &l;
+   for (int i=0; i<n;i++) {
+      *where = new_cons(vec[i], NIL);
+      where = &Cdr(*where);
+   }
+   MM_RETURN(l);
+}
 
 DX(xlist)
 {

@@ -245,7 +245,6 @@ extern LUSHAPI at *(*eval_ptr) (at*);
 
 typedef void *dispose_func_t(void *);
 struct class_s {
-   double           dummy;       /* force alignment of static class structs */
    /* class vectors */
    void*          (*dispose)      (void *);
    void           (*mark_at)      (at *);
@@ -265,9 +264,11 @@ struct class_s {
    struct class_s*  super;	 /* link to superclass */
    struct class_s*  subclasses;	 /* link to subclasses */
    struct class_s*  nextclass;	 /* next subclass of the same superclass */
-   int              slotssofar;  /* number of fields */  
-   at*              keylist;     /* field names */
-   at*              defaults;    /* default field values */
+   at*             *slots;       /* names (symbols) of all slots */
+   at*             *defaults;    /* defaults for all slots */
+   int              num_slots;   /* number of slots */  
+   at*              myslots;     /* symbols of slots excluding superclass's */
+   at*              mydefaults;  /* default values excluding superclass's */
    at*              methods;     /* alist of methods */
    struct hashelem* hashtable;   /* buckets for hashed methods */
    int              hashsize;    /* number of buckets */
@@ -324,6 +325,7 @@ LUSHAPI at *rplaca(at *q, at *p);
 LUSHAPI at *rplacd(at *q, at *p);
 LUSHAPI at *displace(at *q, at *p);
 LUSHAPI at *make_list(int n, at *v);
+LUSHAPI at *vector2list(int n, at **v);
 LUSHAPI at *copy_tree(at *p);
 LUSHAPI int length(at *p);
 LUSHAPI at *member(at *elem, at *list);
@@ -691,15 +693,11 @@ LUSHAPI complexreal get_complex(at*);
 
 /* OOSTRUCT.H ----------------------------------------------------- */
 
-typedef struct oostruct object_t;
-
-struct oostruct {
-   class_t *cl;
-   int     size;
+typedef struct object_s {
    at      *backptr;
    void    *cptr;
-   struct oostructitem {at *symb, *val;} slots[];
-};
+   at      *slots[];
+} object_t;
 
 LUSHAPI bool builtin_class_p(const class_t *cl);
 LUSHAPI at  *new_builtin_class(class_t **pcl, class_t *super);

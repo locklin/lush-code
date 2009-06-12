@@ -47,20 +47,18 @@ static struct hashelem *_getmethod(class_t *cl, at *prop);
 static at *call_method(at *obj, struct hashelem *hx, at *args);
 static void send_delete(object_t *);
 
-void clear_object(object_t *obj, size_t _)
+static void clear_object(object_t *obj, size_t _)
 {
-   obj->cl = NULL;
-   obj->size = 0;
    obj->backptr = NULL;
 }
 
-void mark_object(object_t *obj)
+static void mark_object(object_t *obj)
 {
-   MM_MARK(obj->cl);
    MM_MARK(obj->backptr);
-   for (int i = 0; i < obj->size; i++) {
-      MM_MARK(obj->slots[i].symb);
-      at *p = obj->slots[i].val;
+   class_t *cl = Class(obj->backptr);
+   MM_MARK(cl);
+   for (int i = 0; i < cl->num_slots; i++) {
+      at *p = obj->slots[i];
       /* this is a hack until I figure how to do finalization right */
       if (HAS_BACKPTR_P(p))
          MM_MARK(Mptr(p))
@@ -69,10 +67,9 @@ void mark_object(object_t *obj)
    }
 }
 
-bool finalize_object(object_t *obj)
+static bool finalize_object(object_t *obj)
 {
-   if (obj->cl)
-      object_class->dispose(obj);
+   object_class->dispose(obj);
    return true;
 }
 
@@ -83,7 +80,7 @@ static mt_t mt_object = mt_undefined;
 
 object_t *oostruct_dispose(object_t *obj)
 {
-   if (!obj->cl)
+   if (ZOMBIEP(obj->backptr))
       return obj;
 
    int oldready = error_doc.ready_to_an_error;
@@ -94,7 +91,7 @@ object_t *oostruct_dispose(object_t *obj)
   
    int errflag = sigsetjmp(context->error_jump,1);
    /* when obj->cl is clear, destructor was already called */
-   if (errflag==0 && obj->cl)
+   if (errflag==0)
       send_delete(obj);
    
    context_pop();
@@ -105,7 +102,7 @@ object_t *oostruct_dispose(object_t *obj)
       obj->cptr = NULL;
    }
    zombify(obj->backptr);
-   obj->cl = NULL;
+
    if (errflag) {
       if (mm_collect_in_progress())
          /* we cannot longjump when called by a finalizer */
@@ -128,10 +125,21 @@ static int oostruct_compare(at *p, at *q, int order)
 
    object_t *obj1 = Mptr(p);
    object_t *obj2 = Mptr(q);
-  
-   for(int i=0; i<obj1->size; i++)
-      if (!eq_test(obj1->slots[i].val, obj2->slots[i].val))
+   class_t *cl1 = Class(obj1->backptr);
+   class_t *cl2 = Class(obj2->backptr);
+   
+   if (cl1->num_slots != cl2->num_slots)
+      return 1;
+   
+   /* check that slots names match before comparing values */
+   for (int i=0; i<cl1->num_slots; i++)
+      if (cl1->slots[i] != cl2->slots[i])
          return 1;
+
+   for(int i=0; i<cl1->num_slots; i++) {
+      if (!eq_test(obj1->slots[i], obj2->slots[i]))
+         return 1;
+   }
    return 0;
 }
 
@@ -139,11 +147,11 @@ static unsigned long oostruct_hash(at *p)
 {
    unsigned long x = 0x87654321;
    object_t *obj = Mptr(p);
-
-   x ^= hash_pointer((void*)Class(p));
-   for(int i=0; i<obj->size; i++) {
+   class_t *cl = Class(p);
+   x ^= hash_pointer((void*)cl);
+   for(int i=0; i<cl->num_slots; i++) {
       x = (x<<1) | ((long)x<0 ? 1 : 0);
-      x ^= hash_value(obj->slots[i].val);
+      x ^= hash_value(obj->slots[i]);
    }
    return x;
 }
@@ -155,9 +163,10 @@ at *oostruct_getslot(at *p, at *prop)
       error(NIL,"not a slot name", slot);
 
    object_t *obj = Mptr(p);
-   for (int i=0; i<obj->size; i++)
-      if (slot == obj->slots[i].symb)
-         return getslot(obj->slots[i].val, Cdr(prop));
+   class_t *cl = Class(obj->backptr);
+   for (int i=0; i<cl->num_slots; i++)
+      if (slot == cl->slots[i])
+         return getslot(obj->slots[i], Cdr(prop));
    
    error(NIL, "not a slot", slot);
    return NIL;
@@ -171,9 +180,10 @@ void oostruct_setslot(at *p, at *prop, at *val)
       error(NIL, "not a slot name", slot);
 
    object_t *obj = Mptr(p);
-   for(int i=0; i<obj->size; i++)
-      if (slot == obj->slots[i].symb) {
-         setslot(&obj->slots[i].val, Cdr(prop), val);
+   class_t *cl = Class(obj->backptr);
+   for(int i=0; i<cl->num_slots; i++)
+      if (slot == cl->slots[i]) {
+         setslot(&obj->slots[i], Cdr(prop), val);
          return;
       }
    error(NIL, "not a slot", slot);
@@ -243,8 +253,8 @@ static at *generic_listeval(at *p, at *q)
 #define generic_getslot   NULL
 #define generic_setslot   NULL
 
-void class_init(class_t *cl) {
-
+void class_init(class_t *cl)
+{
    /* initialize class functions */
    cl->dispose = generic_dispose;
    cl->mark_at = generic_mark_at;
@@ -266,9 +276,11 @@ void class_init(class_t *cl) {
    cl->subclasses = NULL;
    cl->nextclass = NULL;
    
-   cl->slotssofar = 0;
-   cl->keylist = NIL;
+   cl->slots = NIL;
    cl->defaults = NIL;
+   cl->num_slots = 0;
+   cl->myslots = NIL;
+   cl->mydefaults = NIL;
    cl->methods = NIL;
    cl->hashtable = NULL;
    cl->hashsize = 0;
@@ -281,8 +293,10 @@ void class_init(class_t *cl) {
 
 void clear_class(class_t *cl, size_t _)
 {
-   cl->keylist = NULL;
+   cl->slots = NULL;
    cl->defaults = NULL;
+   cl->myslots = NULL;
+   cl->mydefaults = NULL;
    cl->super = NULL;
    cl->subclasses = NULL;
    cl->nextclass = NULL;
@@ -296,8 +310,10 @@ void clear_class(class_t *cl, size_t _)
 
 void mark_class(class_t *cl)
 {
-   MM_MARK(cl->keylist);
+   MM_MARK(cl->slots);
    MM_MARK(cl->defaults);
+   MM_MARK(cl->myslots);
+   MM_MARK(cl->mydefaults);
    MM_MARK(cl->super);
    MM_MARK(cl->subclasses);
    MM_MARK(cl->nextclass);
@@ -366,23 +382,18 @@ static const char *class_name(at *p)
 
 /* ---------- CLASS ACCESSSES --------------- */
 
+DX(xallslots)
+{
+   ARG_NUMBER(1);
+   class_t *cl = ACLASS(1);
+   return vector2list(cl->num_slots, cl->slots);
+}
+
 DX(xslots)
 {
    ARG_NUMBER(1);
    class_t *cl = ACLASS(1);
-   at *ks = cl->keylist;
-   at *ds = cl->defaults;
-   at *ans = NIL;
-   while (CONSP(ks) && (CONSP(ds))) {
-      if (Car(ds))
-         ans = new_cons(
-            new_cons(Car(ks), new_cons(Car(ds), NIL)), ans);
-      else
-         ans = new_cons(Car(ks), ans);
-      ks = Cdr(ks);
-      ds = Cdr(ds);
-   }
-   return ans;
+   return cl->myslots;
 }
 
 DX(xmethods)
@@ -463,49 +474,72 @@ at *new_builtin_class(class_t **pcl, class_t *super)
    return cl->backptr;
 }
 
-at *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults)
+at *new_ooclass(at *classname, at *atsuper, at *new_slots, at *defaults)
 {
    ifn (SYMBOLP(classname))
       error(NIL, "not a valid class name", classname);
-  
-   at *p = keylist;
+   ifn (length(new_slots) == length(defaults))
+      error(NIL, "number of slots must match number of defaults", NIL);
+   ifn (CLASSP(atsuper))
+      error(NIL, "not a class", atsuper);
+
+   class_t *super = Mptr(atsuper);
+   if (builtin_class_p(super))
+      error(NIL, "superclass not descendend of class <object>", atsuper);
+
+   at *p = new_slots;
    at *q = defaults;
-   int i = 0;
+   int n = 0;
    while (CONSP(p) && CONSP(q)) {
       ifn (SYMBOLP(Car(p)))
          error(NIL, "not a symbol", Car(p));
+      for (int i=0; i<super->num_slots; i++)
+         if (Car(p) == super->slots[i])
+            error(NIL, "a superclass has slot of this name", Car(p));
       p = Cdr(p);
       q = Cdr(q);
-      i++;
+      n++;
    }
-   if (p || q)
-      error(NIL, "slots and defaults not of same length", NIL);
+   assert(!p && !q);
   
    /* builds the new class */
-   ifn (CLASSP(superclass))
-      error(NIL, "not a class", superclass);
-   class_t *super = Mptr(superclass);
-   if (builtin_class_p(super))
-      error(NIL, "superclass not descendend of class <object>", superclass);
-
    class_t *cl = mm_alloc(mt_class);
    *cl = *object_class;
-   cl->slotssofar = super->slotssofar+i;
-   
+   if (new_slots) {
+      int num_slots = n + super->num_slots;
+      cl->slots = mm_allocv(mt_refs, num_slots*sizeof(at *));
+      cl->defaults = mm_allocv(mt_refs, num_slots*sizeof(at *));
+      int i = 0;
+      for (; i<super->num_slots; i++) {
+         cl->slots[i] = super->slots[i];
+         cl->defaults[i] = super->defaults[i];
+      }
+      for (at *s = new_slots, *d = defaults; CONSP(s); i++, s = Cdr(s), d = Cdr(d)) {
+         cl->slots[i] = Car(s);
+         cl->defaults[i] = Car(d);
+      }
+      assert(i == num_slots);
+      cl->num_slots = num_slots;
+   } else {
+      cl->slots = super->slots;
+      cl->defaults = super->defaults;
+      cl->num_slots = super->num_slots;
+   }
+
    /* Sets up classname */
    cl->classname = classname;
    cl->priminame = classname;
    
    /* Sets up lists */
    cl->super = super;
-   cl->atsuper = superclass;
+   cl->atsuper = atsuper;
    cl->nextclass = super->subclasses;
    cl->subclasses = 0L;
    super->subclasses = cl;
   
    /* Initialize the slots */
-   cl->keylist = keylist;
-   cl->defaults = defaults;
+   cl->myslots = new_slots;
+   cl->mydefaults = defaults;
    
    /* Initialize the methods and hash table */
    cl->methods = NIL;
@@ -532,8 +566,8 @@ DX(xmake_class)
    
    switch (arg_number) {
    case 4:
-      defaults = APOINTER(4);
-      keylist = APOINTER(3);
+      defaults = ALIST(4);
+      keylist = ALIST(3);
    case 2:
       superclass = APOINTER(2);
       classname = APOINTER(1);
@@ -552,31 +586,15 @@ at *new_object(class_t *cl)
    if (builtin_class_p(cl))
       error(NIL, "not a subclass of ::class:object", cl->backptr);
    
-   int len = cl->slotssofar;
-   size_t s = sizeof(object_t)+len*sizeof(struct oostructitem);
-   object_t *obj = (len <= MIN_NUM_SLOTS) ?
+   size_t s = sizeof(object_t)+cl->num_slots*sizeof(at *);
+   object_t *obj = (cl->num_slots <= MIN_NUM_SLOTS) ?
       mm_alloc(mt_object) : mm_allocv(mt_object, s);
-   if (!obj)
-      error(NIL, "not enough memory", NIL);
-   obj->cl = cl;
-   obj->size = len;
    obj->cptr = NULL;
    
    /* initialize slots */
-   int i = 0;
-   const class_t *super = cl;
-   while (super) {
-      at *p = super->keylist;
-      at *q = super->defaults;
-      while (CONSP(p) && CONSP(q)) {
-         obj->slots[i].symb = Car(p);
-         obj->slots[i].val = Car(q);
-         p = Cdr(p);
-         q = Cdr(q);
-         i++;
-      }
-      super = super->super;
-   }
+   for (int i=0; i<cl->num_slots; i++)
+      obj->slots[i] = cl->defaults[i];
+
    obj->backptr = new_at(cl, obj);
    return obj->backptr;
 }
@@ -613,28 +631,27 @@ DX(xnew_empty)
 
 at *with_object(at *p, at *f, at *q, int howfar)
 {
-   MM_ENTER;
+   assert(howfar>=0);
 
+   MM_ENTER;
    at *ans = NIL;
    if (OBJECTP(p)) {
       object_t *obj = Mptr(p);
-     
-      if (howfar > 0)
-         howfar = obj->size - howfar;
-      else
-         howfar = 0;
+      class_t *cl = Class(obj->backptr);
+      if (howfar > cl->num_slots)
+         howfar = cl->num_slots;
 
       /* push object environment */
-      for (int i = obj->size-1; i >= howfar; i--)
-         Symbol(obj->slots[i].symb) = symbol_push(Symbol(obj->slots[i].symb), 0 , &(obj->slots[i].val));
+      for (int i = 0; i<howfar; i++)
+         Symbol(cl->slots[i]) = symbol_push(Symbol(cl->slots[i]), 0 , &(obj->slots[i]));
       SYMBOL_PUSH(at_this, p);
 
       ans = apply(f, q);
       
       /* pop object environment */
       SYMBOL_POP(at_this);
-      for(int i = howfar; i < obj->size; i++)
-         SYMBOL_POP(obj->slots[i].symb);
+      for (int i = 0; i<howfar; i++)
+         SYMBOL_POP(cl->slots[i]);
       
    } else {
       if (p == NIL)
@@ -652,7 +669,7 @@ DY(ywith_object)
    ifn (CONSP(ARG_LIST))
       RAISEF("no arguments", NIL);
 
-   int howfar = -1;
+   int howfar = 0;
    at *l = ARG_LIST;
    at *p = eval(Car(l));
    
@@ -665,7 +682,7 @@ DY(ywith_object)
             cl = cl->super;
          if (! cl)
             RAISEFX("object not an instance of this superclass", p);
-         howfar = cl->slotssofar;
+         howfar = cl->num_slots;
       }
    }
    //at *q = eval(at_progn);
@@ -782,7 +799,7 @@ restart:
          if (! q) {
             cl->hashtable[hx].symbol = prop;
             cl->hashtable[hx].function = value;
-            cl->hashtable[hx].sofar = c->slotssofar;
+            cl->hashtable[hx].sofar = c->num_slots;
          }
       }
       c = c->super;
@@ -923,7 +940,7 @@ static void send_delete(object_t *obj)
       return;
    
    at *f = NIL;
-   class_t *cl = obj->cl;
+   class_t *cl = Class(obj->backptr);
    /* Call all destructors defined in class hierarchy */
    while (cl) {
       struct hashelem *hx = _getmethod(cl, at_destroy);
@@ -1037,7 +1054,7 @@ void pre_init_oostruct(void)
 
 class_t *object_class, *class_class = NULL;
 
-#define SIZEOF_OBJECT  (sizeof(object_t) + MIN_NUM_SLOTS*sizeof(struct oostructitem))
+#define SIZEOF_OBJECT  (sizeof(object_t) + MIN_NUM_SLOTS*sizeof(at *))
 
 void init_oostruct(void)
 {
@@ -1063,6 +1080,7 @@ void init_oostruct(void)
    object_class->setslot = oostruct_setslot;
    class_define("object", object_class);  
    
+   dx_define("allslots", xallslots);
    dx_define("slots",xslots);
    dx_define("super",xsuper);
    dx_define("subclasses",xsubclasses);

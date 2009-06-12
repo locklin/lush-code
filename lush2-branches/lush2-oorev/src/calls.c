@@ -135,7 +135,7 @@ again:
    } else if (Class(p)==Class(q) && Class(p)->compare) {
       struct recur_elt elt;
       if (recur_push_ok(&elt, &eq_test, p)) {
-         ans = ! Class(p)->compare(p,q,false);
+         ans = !Class(p)->compare(p,q,false);
          recur_pop(&elt);
       }
       return ans;
