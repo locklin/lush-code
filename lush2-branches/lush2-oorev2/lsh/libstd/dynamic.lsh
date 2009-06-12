@@ -1,0 +1,573 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the Lesser GNU General Public License as 
+;;; published by the Free Software Foundation; either version 2 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? * Dynamic Allocation with Memory Pools.
+;; The file <"dynamic.lsh"> implements functions for handling dynamical 
+;; structures within Lush. We provide a class <MemoryPool> implementing
+;; an object stack, and a way to create objects on a given pool.
+;;
+;; We provide functions for allocating objects or arrays in a pool. A
+;; pool is created using <(new MemoryPool)>. Objects might be allocated
+;; on this pool using function <in-pool>. All the objects and arrays
+;; allocated on a pool can be freed at once by sending message <free>
+;; to the pool object.
+
+(libload "compiler/dh-compile")
+
+#? (pool-debug-file <fname>)
+;; Logs pool allocation and deallocations into the specified file.
+;; Stops logging if <fname> is an empty string.
+(de pool-debug-file(fname)
+    (declare (-str-) fname)
+    (cheader "static FILE *pool_debug_file = NULL;")
+    #{{
+       char *fname = (char *) $fname;
+       if (pool_debug_file)
+         fclose(pool_debug_file);
+       pool_debug_file = 0;
+       if (fname[0])
+         pool_debug_file = fopen(fname,"w");
+    }#}
+    fname )
+
+
+#? (new MemoryPool)
+;; Creates a new object for allocating memory by small pieces
+;; and deallocating these pieces as a whole. 
+
+(dm pool-chunk-size (_)      4080)
+(dm pool-threshold-size (_)  2008)
+
+(defclass MemoryPool object
+  ((-gptr-) glink)          ; list of blocks of size > pool-threshold-size
+  ((-gptr-) slink)          ; list of chunks
+  ((-int-)  curpos)         ; position in current chunk
+  ((-gptr-) destroychain) ) ; list of destructors
+
+
+(defmethod MemoryPool MemoryPool ()
+  (setq glink (gptr ()))
+  (setq slink (gptr ())) 
+  (setq curpos 0)
+  (setq destroychain (gptr ())) 
+  ;;; debugging code
+  #{
+#ifndef NOLISP
+     if (pool_debug_file) {
+       fprintf(pool_debug_file, "%lx pool create\n",
+         (unsigned long)$this);
+       print_dh_recent(4,pool_debug_file);
+       fflush(pool_debug_file);
+     }
+#endif
+  #}
+  ())
+
+
+#? (==> <MemoryPool> alloc <size>)
+;; Allocate block of <size> bytes of memory in the pool and
+;; return the address of the first byte (a GPTR). 
+
+(defmethod MemoryPool alloc (size)
+  (declare (-int-) size)
+  ;; Assumption:  All objects can be legally aligned 
+  ;; on addresses multiple of the size of two pointers
+  ;; which should be a power of two.
+  #{
+     void **p;
+     if ($size > $(pool-threshold-size)) {
+#ifndef NOLISP
+       if (pool_debug_file) {
+         fprintf(pool_debug_file, "%lx attempting alloc (%d bytes) ",
+           (unsigned long)$this, $size);
+         print_dh_recent(4,pool_debug_file);
+         fflush(pool_debug_file);
+       }
+#endif
+       p = (void**)malloc(2*sizeof(void*) + $size); /* two ptrs + data */
+       if (!p) 
+         run_time_error("Out of memory");
+       p[0] = $this->glink;
+       p[1] = (void*)(unsigned long)(2*sizeof(void*) + $size);
+       $this->glink = (gptr) p;
+       p = &p[2]; /* after the two ptrs */
+     } else {
+       if (!$this->slink || ($this->curpos+$size > $(pool-chunk-size))) {
+         $this->curpos = 2*sizeof(void*);
+#ifndef NOLISP
+         if (pool_debug_file) {
+           fprintf(pool_debug_file, "%lx allocating new chunk ", (unsigned long)$this);
+           print_dh_recent(4,pool_debug_file);
+           fflush(pool_debug_file);
+         }
+#endif
+	 p = (void**)malloc($(pool-chunk-size));
+	 if (!p) 
+           run_time_error("Out of memory");
+	 p[0] = $this->slink;
+         p[1] = (void*)(unsigned long)($(pool-chunk-size));
+	 $this->slink = (gptr) p;
+       }
+       p = (void**)((char*)($this->slink) + $this->curpos);
+       $this->curpos = $this->curpos + $size;
+       $this->curpos = ($this->curpos+2*sizeof(void*)-1) & ~(2*sizeof(void*)-1);
+     }
+  #}
+  (gptr #{ p #}) )
+
+
+
+#? (==> <MemoryPool> destroyhook <funcall> <argmt>)
+;; Registers a destructor called when the pool is freed.
+
+(defmethod MemoryPool destroyhook (funcall argmt)
+  (declare (-gptr-) funcall)
+  (declare (-gptr-) argmt)
+  #{
+      void **p = (void **) C_alloc_C_MemoryPool($this, 3*sizeof(void**));
+      p[0] = $this->destroychain;
+      p[1] = $funcall;
+      p[2] = $argmt;
+      $this->destroychain = p;
+  #}
+  (int 0) )
+
+
+
+#? (==> <MemoryPool> free)
+;; Free at once all objects allocated in the pool.
+
+(defmethod MemoryPool free ()
+  #{
+     void **p, **np;
+#ifndef NOLISP
+     for (p= (void **)$this->slink; p; p=np) {
+       np = (void **) p[0];
+       cside_destroy_range(p, (char*)p + $(pool-chunk-size));
+     }
+     for (p= (void **)$this->glink; p; p=np) {
+       np = (void **) p[0];
+       cside_destroy_range(p, (char*)p + $(pool-threshold-size));
+     }
+#endif
+     for (p= (void **)$this->destroychain; p; p=np) {
+       if (p[1]) (* (void (*)()) (p[1]) )(p[2]);
+       np = (void **) p[0];
+     }
+     $this->destroychain = 0;
+     for (p= (void **)$this->glink; p; p=np) {
+       np = (void **) p[0];
+       free(p);
+     }
+     $this->glink = (gptr) 0;
+     for (p= (void **)$this->slink; p; p=np) {
+       np = (void **) p[0];
+       free(p);
+     }
+     $this->slink = (gptr) 0;
+     $this->curpos = 0;
+  #}
+  ;;; debugging code
+  #{
+#ifndef NOLISP
+     if (pool_debug_file) {
+       fprintf(pool_debug_file, "%lx pool free   ", 
+         (unsigned long)$this);
+       print_dh_recent(4,pool_debug_file);
+       fflush(pool_debug_file);
+     }
+#endif
+  #}
+  () )
+
+
+;; This is used for allocating storages in <in-pool>.
+;; NEVER USE THIS METHOD DIRECTLY.
+
+(defmethod MemoryPool allocsrg ()
+  #{
+    struct srg *p = (struct srg *) C_alloc_C_MemoryPool($this, sizeof(struct srg));
+#ifdef NOLISP
+    extern void srg_free();
+    C_destroyhook_C_memorypool($this,srg_free,p);
+#else
+    cside_create_srg(p);
+#endif
+  #}
+  (gptr #{ p #}) )
+
+(defmethod MemoryPool allocidx (n)
+  (declare (-int-) n)
+  #{
+    struct idx *x = (struct idx *) C_alloc_C_MemoryPool($this, sizeof(struct idx));
+    x->ndim = $n;
+    if ($n>0) {
+      x->dim = (size_t *) C_alloc_C_MemoryPool($this,$n*sizeof(size_t));
+      x->mod = (ptrdiff_t *) C_alloc_C_MemoryPool($this,$n*sizeof(ptrdiff_t));
+    }
+#ifndef NOLISP
+    cside_create_idx(x);
+#endif
+  #}
+  (gptr #{ x #}) )
+
+(defmethod MemoryPool allocobj (size vtbl)
+  (declare (-int-) size)
+  (declare (-gptr-) vtbl)
+  #{
+    gptr p = C_alloc_C_MemoryPool($this, $size);
+    ((struct CClass_object*)p)->Vtbl = $vtbl;
+#ifdef NOLISP
+    C_destroyhook_C_MemoryPool($this, 
+       (gptr)(((struct VClass_object*)$vtbl)->Cdestroy), p);
+#else
+    cside_create_obj(p, *((dhclassdoc_t**)$vtbl));
+#endif
+  #}
+  (gptr #{ p #}) )
+  
+(defmethod MemoryPool memuse ()
+  (let ((srguse 0) (induse 0) (memuse 0))
+    (declare (-int-) srguse induse memuse)
+  #{{
+     void **p;
+     extern void srg_free();
+     for (p= (void **)$this->destroychain; p; p= (void **)p[0]) {
+       if (p[1] == srg_free) {
+         struct srg *sr = (struct srg *) p[2];
+         $srguse += storage_sizeof[sr->type] * sr->size;
+       } else if (p[1] == C_free_C_MemoryPool) 
+         $induse = C_memuse_C_MemoryPool((struct CClass_MemoryPool *) p[2]);
+     }
+     for (p= (void **)$this->glink; p; p= (void **)p[0]) 
+       $memuse += (unsigned long)p[1];
+     for (p= (void **)$this->slink; p; p= (void **)p[0])
+       $memuse += (unsigned long)p[1];
+  }#}
+  (+ memuse induse srguse) ) )
+
+
+#? (create-pool)
+;; A convenient constructor function for C programmers. (No args, no temps.)
+;; Probably not useful from within the interpreter.
+(de create-pool ()
+  (let ((out (gptr ())))
+    (declare (-gptr-) out)
+    #{ {
+         extern_c struct VClass_MemoryPool Vt_MemoryPool;
+         struct CClass_MemoryPool* p = (struct CClass_MemoryPool*)
+           malloc(sizeof(struct CClass_MemoryPool));
+         p->Vtbl = &Vt_MemoryPool;
+         C_MemoryPool_C_MemoryPool (p);
+         $out = p;
+       }
+    #}
+    out))
+
+#? (destroy-pool <MemoryPool>)
+;; A convenient destructor function for C programmers.
+;; Probably not useful from within the interpreter.
+(de destroy-pool (p)
+  (declare (-obj- (MemoryPool)) p)
+  #{
+     C_free_C_MemoryPool($p);
+     free($p);
+  #}
+  ())
+
+#? (simulate-pool-in <MemoryPool> <atptr>)
+;; This function protects lisp objects and manages them
+;; as if they were belonging to the pool. This is used
+;; in the lisp implementation of <in-pool>.
+
+(de simulate-pool-out (atptr)
+    (declare (-gptr-) atptr)
+    #{
+#ifndef NOLISP
+       int flag = 1;
+       at **where, *temp, *p = $atptr;
+       unprotect(p);
+       MM_NOGC;
+       while (flag) {
+         flag = 0;
+         where = &p;
+         while (CONSP(*where)) {
+            if (Car(*where) && mm_ismanaged(Car(*where))) { 
+                where = &Cdr(*where);
+            } else {
+                flag = 1;
+                temp = *where;
+                *where = Cdr(*where);
+                Cdr(temp) = NIL;
+            }
+         }
+       }
+       MM_NOGC_END;
+       if (p) {
+            printf("*** lisp_c warning: Found lisp reference to objects\n");
+            printf("***    allocated in a pool being currently destroyed.\007\n");
+            while (CONSP(p)) {
+              printf("*** %s\n", pname(Car(p)));
+              p = Cdr(p);
+            }
+            p = $atptr;
+       }  
+#endif
+    #}
+    () )
+
+
+(de simulate-pool-in (apool atptr)
+    (declare (-obj- (MemoryPool)) apool)
+    (declare (-gptr-) atptr)
+    #{
+#ifndef NOLISP
+       if ($atptr) {
+         protect($atptr);
+         C_destroyhook_C_MemoryPool($apool,C_simulate_pool_out,$atptr);
+       }
+#endif
+    #} 
+    () )
+
+
+(defmethod MemoryPool -destructor()
+  (ifcompiled (==> this free)
+    (lisp-c-no-warnings (==> this free)) ) )
+
+;; Compile pools
+(dhc-make ()
+	  pool-debug-file
+	  (MemoryPool MemoryPool alloc free 
+		      allocsrg allocidx allocobj 
+		      destroyhook memuse -destructor )
+	  create-pool
+	  destroy-pool
+	  simulate-pool-out
+	  simulate-pool-in)
+
+
+;; the counterpart 'dhc-declare-var' is in compiler/dh-util.lsh
+;; this is the version for allocating in a pool
+(de dhc-declare-var-in-pool (p name type)
+  (cond 
+   ((or (==> type is-a-simple) 
+        (==> type is-a-ptr) )
+    (dhc-add-c-declarations 
+     (concat (dhc-type-to-c-decl type)
+             (sprintf " %s;" name) ) ) )
+   
+   ((==> type is-an-idx) 
+    (let ((ndim (unode-val :type:u-ndim)))
+      (dhc-add-c-declarations (sprintf "struct idx *%s;" name) )
+      (dhc-add-c-externs 
+       "extern_c gptr C_allocidx_C_MemoryPool(struct CClass_memorypool*, int);")
+      (dhc-add-c-statements 
+       (sprintf "%s = C_allocidx_C_MemoryPool(%s,%d);" name p ndim) )))
+   
+   ((==> type is-an-obj)
+    (let* ((ctype (dhu-type type))
+           (cname (dhc-lisp-to-c-name (dhu-name ctype)))
+           (kname (dhc-kname ctype cname)) )
+      (when (dhu-class ctype)
+        (dhc-add-c-metaexterns (sprintf "extern_c dhclassdoc_t %s;" kname))
+        (dhc-add-c-depends kname)
+        (dhc-add-c-externs (sprintf "extern_c struct VClass_%s Vt_%s;" cname cname))
+	(when (<> (dhu-class ctype) :object) 
+	  (dhc-add-c-externs (dhc-class-to-struct-decl ctype)) ))
+	   
+      (dhc-add-c-declarations (sprintf "%s *%s;" (dhc-type-to-c-decl type) name))
+      (dhc-add-c-externs 
+       "extern_c gptr C_allocobj_C_MemoryPool(struct CClass_MemoryPool*, int, gptr);") 
+      (dhc-add-c-statements 
+       (sprintf "%s = C_allocobj_C_MemoryPool(%s,sizeof(%s),&Vt_%s);"
+                name p (dhc-type-to-c-decl type) cname ) ) ) )
+   
+   ((==> type is-a-list)
+    (dhc-error "in-pool creation of lists not supported")
+    ())
+
+   ((==> type is-a-str)
+    (dhc-error "in-pool creation of strings not supported")
+    ())
+
+   ((==> type is-a-srg) 
+    (dhc-add-c-declarations (sprintf "struct srg *%s;" name) )
+    (dhc-add-c-externs "extern_c gptr C_allocsrg_C_MemoryPool(struct CClass_MemoryPool*);")
+    (dhc-add-c-statements (sprintf "%s = C_allocsrg_C_MemoryPool(%s);" name p) )
+    (dhc-add-c-statements (sprintf "Msrg_init(%s,%s);" 
+				   name (dhc-type-to-srg-type (unode-val :type:u-type)) )))
+   
+   (t (dhc-error "Unknown type")) ))
+
+
+#? (in-pool <pool> <...prog...>)
+;; Evaluates expression <...prog...> and returns the last result.  Every
+;; object allocated during the evaluation of <...prog...> and "bumped"
+;; outside the scope defined by <in-pool> will be allocated on pool
+;; <pool> instead of following the usual Lush rules.
+;;
+;; This magic function allows a few useful constructions:
+;;.IP
+;; Allocating specific objects on a pool.
+;;.VP
+;;   (in-pool myobst (double-array 5 5))
+;;   (in-pool myobst (new myclass myarg))
+;;.IP
+;; Protecting against implicit allocation while working
+;; on the slots of an object located within a pool
+;;.VP
+;;   (defmethod myclass run()
+;;      ;; this object is allocated on pool 'some-obst
+;;      (in-pool some-obst
+;;         (setq some-slot (m+m some-slot some-other-slot)) ) ) )
+;;         ;; the matrix implicitely allocated by function 'm+m
+;;         ;; will be allocated on pool 'some-obst.
+;;         ;; This is safer than allocating it on the program stack
+;;         ;; because the object outlives the program stack.
+;;.PP
+;;
+;; WARNING: When you use <in-pool>, you must ensure yourself
+;; that you stop using objects created on the pool before
+;; freeing or destroying the pool. The Lush compiler
+;; becomes as stupid as a C compiler when you bypass its
+;; allocation strategies.
+
+;; These functions use support function in DH-UTIL.SN:
+;; - dhc-declare-var-in-stack
+;; - dhc-declare-var-in-pool
+;; - dhc-declare-var
+
+
+(df in-pool(__pool__ . __args__)
+  (let ((ans (apply compute-bump __args__)))
+    (simulate-pool-in (eval __pool__) (atgptr (cdr ans)))
+    (car ans) ) )
+
+(dhm-t in-pool ((_ p . body))
+  (when (not body)
+    (dhc-error "syntax error (pool argument missing?)") )
+  
+  ;; Check Pool argument
+  (let ((xn (dhc-parse-expr-t p)))
+    (when (or (not (==> :xn:type is-an-objptr))
+              (<> 'MemoryPool (dhu-name (dhu-type (dhu-type :xn:type))) ))
+      (dhc-error "Argument 1 must be a pool" p) )
+    
+    ;; Derived from DHC-PUSH-SCOPE-T
+    (let* ((lex-level (+ lex-level 1))
+           (bump-list ())
+           (treetype (dhc-parse-progn-t body)) )
+      (setq :treetype:tn-list (cons xn :treetype:tn-list))
+      (cond
+       ((==> :treetype:type is-a-simple)
+        (setq :treetype:type (==> :treetype:type copy)))
+       ((==> :treetype:type is-a-ptr)
+        (setq :treetype:type (new dhc-type 'dht-ptr (dhu-type :treetype:type))) ))
+      
+      (==> :treetype:type bump-level (- lex-level 1))
+      
+      ;; Store bump-list in treetype
+      (setq :treetype:symbol bump-list)
+      treetype)))
+
+(dhm-c in-pool((_ p . body) treetype retplace)
+  (let* ((xn (cadr :treetype:tn-list))
+	 (xe (dhc-parse-expr-c p xn ()))
+         (old-dhc-declare-var dhc-declare-var)
+         ;; temporarily override DHC-DECLARE-VAR
+         (dhc-declare-var (eval 
+			   `(lambda (name type) 
+			      (dhc-declare-var-in-pool ,xe name type) )
+			   ))
+	 (pool-type (dhc-class-to-dhc-type MemoryPool)) )
+
+    (dhc-add-c-externs (dhc-class-to-struct-decl pool-type))
+    (dhc-push-scope-c
+     treetype retplace
+     ;; Restore DHC-DECLARE-VAR before generating C
+     (let ((dhc-declare-var old-dhc-declare-var))
+       (dhc-parse-progn-c body
+                          (cdr :treetype:tn-list) 
+                          retplace)))))
+
+#? (in-stack <...prog...>)
+;; Evaluates expression <...prog...> and returns the last result.  Every
+;; object allocated during the evaluation of <...prog...> and "bumped"
+;; outside the scope defined by <in-pool> will be allocated on the stack
+;; immediatly instead of following the usual Lush rules.
+;;
+;; This means that no temporary arguments will be generated at all.  It also
+;; means that no object or matrix allocated within the <in-stack> can be used
+;; outside. Beware!
+
+(df in-stack __args__
+  (let ((ans (apply compute-bump __args__)))
+    (when (cdr ans)
+      (printf "*** in-stack warning: Garbage collector tells us that\n")
+      (printf "***     the following objects are used somewhere but would\n")
+      (printf "***     be destroyed when returning from 'in-stack'.\x07\n")
+      (dolist (m (cdr ans))
+	(printf "*** %s\n" (pname m))) )
+    (car ans) ))
+
+(dhm-t in-stack(source)
+  (when (not (cdr source))
+    (dhc-error "syntax error") )
+  ;; Derived from DHC-PUSH-SCOPE-T
+  (let ((treetype ())
+	(lex-level (1+ lex-level))
+	(bump-list ()) )
+    ;; Handle return value (cf PUSH_SCOPE_T in DH-UTIL.SN)
+    (setq treetype (dhc-parse-progn-t (cdr source)))
+    ;; If the value is copied in a temp, de-unify (so do not bump)
+    (if (==> :treetype:type is-a-simple)
+	(setq :treetype:type (==> :treetype:type copy)))
+    (if (==> :treetype:type is-a-ptr)
+	(setq :treetype:type 
+	      (new dhc-type 'dht-ptr
+		   (dhu-type :treetype:type) ) ) )
+    (==> :treetype:type bump-level (1- lex-level))
+    ;; Store bump-list in treetype
+    (setq :treetype:symbol bump-list) 
+    treetype ) )
+
+(dhm-c in-stack(source treetype retplace)
+  (let ((old-dhc-declare-var dhc-declare-var)
+	(dhc-declare-var (eval 
+			  '(lambda(name type) 
+			     (dhc-declare-var-in-stack name type) )
+			  )) )
+    (dhc-push-scope-c 
+     treetype retplace
+     ;; Restore DHC-DECLARE-VAR before generating C
+     (let ((dhc-declare-var old-dhc-declare-var))
+       (dhc-parse-progn-c (cdr source) 
+                          (cdr :treetype:tn-list) 
+                          retplace)))))
+
+
