@@ -481,7 +481,7 @@ storage_t *new_storage(storage_type_t t)
    st->flags = 0;
    st->size = 0;
    //st->data = NULL; // set by mm_alloc
-   st->backptr = new_extern(&storage_class[st->type], st);
+   st->backptr = new_at(storage_class[st->type], st);
    st->cptr = NULL;
    //add_notifier(st, dbg_notify, NULL);
    return st;
@@ -494,7 +494,7 @@ DX(xnew_storage) {
 
    storage_type_t t = ST_FIRST;
    for (; t < ST_LAST; t++)
-      if (cl==&storage_class[t]) break;
+      if (cl==storage_class[t]) break;
    if (t == ST_LAST)
       RAISEF("not a storage class", APOINTER(1));
    return NEW_STORAGE(t);
@@ -725,7 +725,7 @@ bool storage_classp(const at *p)
    class_t *cl = Mptr(p);
 
    for (storage_type_t t = ST_FIRST; t < ST_LAST; t++)
-      if (cl == &storage_class[t]) 
+      if (cl == storage_class[t]) 
          return true;
    return false;
 }
@@ -884,18 +884,16 @@ DX(xstorage_save)
 
 /* ------------ THE INITIALIZATION ------------ */
 
-class_t abstract_storage_class;
-class_t storage_class[ST_LAST];
+class_t *abstract_storage_class;
+class_t *storage_class[ST_LAST];
 
 #define Generic_storage_class_init(tok)		                     \
-  class_init(&(storage_class[ST_ ## tok]), false);    			     \
-  (storage_class[ST_ ## tok]).dispose = (dispose_func_t *)storage_dispose;	     \
-  (storage_class[ST_ ## tok]).name = storage_name;		     \
-  (storage_class[ST_ ## tok]).listeval = storage_listeval;	     \
-  (storage_class[ST_ ## tok]).serialize = storage_serialize;	     \
-  (storage_class[ST_ ## tok]).super = &abstract_storage_class;	     \
-  (storage_class[ST_ ## tok]).atsuper = abstract_storage_class.backptr; \
-  class_define(#tok "STORAGE", &(storage_class[ST_ ## tok]));
+   new_builtin_class(&(storage_class[ST_ ## tok]), abstract_storage_class); \
+   (storage_class[ST_ ## tok])->dispose = (dispose_func_t *)storage_dispose; \
+   (storage_class[ST_ ## tok])->name = storage_name;                     \
+   (storage_class[ST_ ## tok])->listeval = storage_listeval;             \
+   (storage_class[ST_ ## tok])->serialize = storage_serialize;           \
+   class_define(#tok "STORAGE", (storage_class[ST_ ## tok]));
 
 
 void init_storage()
@@ -904,8 +902,8 @@ void init_storage()
                            clear_storage, mark_storage, finalize_storage);
 
    /* set up storage_classes */
-   class_init(&abstract_storage_class, false);
-   class_define("STORAGE",&abstract_storage_class);
+   new_builtin_class(&abstract_storage_class, NIL);
+   class_define("STORAGE", abstract_storage_class);
    Generic_storage_class_init(AT);
    Generic_storage_class_init(F);
    Generic_storage_class_init(D);

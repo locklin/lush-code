@@ -226,7 +226,7 @@ again:
 
    const class_t *cl = Class(p);
 
-   if (cl == &cons_class) {
+   if (cl == cons_class) {
       sweep(Car(p),code);
       p = Cdr(p);
       goto again;
@@ -234,29 +234,30 @@ again:
    } 
    cl = CLEAR(cl);
 
-   if (cl==&number_class || cl==&gptr_class) {
+   if (cl==number_class || cl==gptr_class) {
       return;
 
    } else if (cl->dispose == object_class->dispose) {
-      object_t *c = Mptr(p);
+      object_t *obj = Mptr(p);
       if (opt_bwrite)
          sweep(cl->backptr, code);
       else
          sweep(cl->classname, code);
-      for(int i=0; i<c->size; i++) {
-	sweep(c->slots[i].symb, code);
-	sweep(c->slots[i].val, code);
+      for (int i=0; i<cl->num_slots; i++) {
+         sweep(obj->slots[i], code);
       }
-   } else if (cl == &class_class) {
+
+   } else if (cl == class_class) {
       class_t *clcl = Mptr(p);
       sweep(clcl->priminame, code);
       if (!builtin_class_p(clcl) && !clcl->classdoc) {
          sweep(clcl->atsuper, code);
-         sweep(clcl->keylist, code);
-         sweep(clcl->defaults, code);
+         sweep(clcl->myslots, code);
+         sweep(clcl->mydefaults, code);
       }
       sweep(clcl->methods, code);
-   } else if (cl == &index_class && !opt_bwrite) {
+
+   } else if (cl == index_class && !opt_bwrite) {
       index_t *ind = Mptr(p);
       if (IND_STTYPE(ind) == ST_AT)
          if (!index_emptyp(ind)) {
@@ -269,12 +270,13 @@ again:
             } end_idx_aloop1(&id, off);
             index_rls_idx(ind, &id);
          }
-   } else if (cl == &de_class || cl == &df_class || cl == &dm_class ) {
+
+   } else if (cl == de_class || cl == df_class || cl == dm_class ) {
       lfunction_t *f = Mptr(p);
       sweep(f->formal_args, code);
       sweep(f->body, code);
       
-   } else if (cl == &dx_class || cl == &dy_class || cl == &dh_class ) {
+   } else if (cl == dx_class || cl == dy_class || cl == dh_class ) {
       cfunction_t *f = Mptr(p);
       sweep(f->name, code);
       
@@ -744,13 +746,13 @@ static int local_write(at *p)
    }
   
    const class_t *cl = Class(p);
-   if (cl == &cons_class) {
+   if (cl == cons_class) {
       write_card8(TOK_CONS);
       return 0;
    }
    cl = CLEAR(cl);
   
-   if (cl == &number_class) {
+   if (cl == number_class) {
       double x = Number(p);
       write_card8(TOK_NUMBER);
       if (swapflag)
@@ -759,7 +761,7 @@ static int local_write(at *p)
       return 1;
    }
   
-   if (cl == &string_class) {
+   if (cl == string_class) {
       const char *s = String(p);
       int l = strlen(s);
       write_card8(TOK_STRING);
@@ -768,7 +770,7 @@ static int local_write(at *p)
       return 1;
    }
   
-   if (cl == &symbol_class) {
+   if (cl == symbol_class) {
       const char *s = nameof(Symbol(p));
       int l = strlen(s);
       write_card8(TOK_SYMBOL);
@@ -778,13 +780,12 @@ static int local_write(at *p)
    }
   
    if (cl->dispose == object_class->dispose) {
-      object_t *o = Mptr(p);
       write_card8(TOK_OBJECT);
-      write_card24(o->size);
+      write_card24(cl->num_slots);
       return 0;
    }
   
-   if (cl == &class_class) {
+   if (cl == class_class) {
       class_t *c = Mptr(p);
       if (!builtin_class_p(c) && !c->classdoc)
          write_card8(TOK_CLASS);	
@@ -793,7 +794,7 @@ static int local_write(at *p)
       return 0;
    }
   
-   if (cl==&index_class && !opt_bwrite) {
+   if (cl == index_class && !opt_bwrite) {
       index_t *arr = Mptr(p);
       if (arr->st->type == ST_AT) {
          int ndim = arr->ndim;
@@ -813,22 +814,22 @@ static int local_write(at *p)
       }
    }
   
-   if (cl == &de_class) {
+   if (cl == de_class) {
       write_card8(TOK_DE);
       return 0;
    }
   
-   if (cl == &df_class) {
+   if (cl == df_class) {
       write_card8(TOK_DF);
       return 0;
    }
   
-   if (cl == &dm_class) {
+   if (cl == dm_class) {
       write_card8(TOK_DM);
       return 0;
    }
   
-   if (cl == &dx_class || cl == &dy_class || cl == &dh_class) {
+   if (cl == dx_class || cl == dy_class || cl == dh_class) {
       write_card8(TOK_CFUNC);
       return 0;
    }
@@ -927,39 +928,31 @@ static void local_bread_object(at **pp,  int opt)
   
    class_t *cl = Mptr(cptr);
    *pp = new_object(cl);     /* create structure */
-   object_t *s = Mptr(*pp);
-   if (size > s->size) 
+   if (size > cl->num_slots)
       error(NIL, "class definition has less slots than expected",cname);
-   else  if ( (size < s->size) && opt)
+   else  if ( (size < cl->num_slots) && opt)
       error(NIL,"class definition has more slots than expected",cname);  
    
-   at *name;
+   object_t *obj = Mptr(*pp);
    for(int i=0; i<size; i++) {
-      if (local_bread(&name, NIL))
-         error(NIL,"corrupted file (accessing slot name)",cname);
-      ifn (SYMBOLP(name))
-         error(NIL,"corrupted binary file (slot name expected)",cname);
-      int j = i;
-      if (name!=s->slots[j].symb) {
-         for (j=(i+1) % size; j!=i; j++)
-            if (name==s->slots[j].symb) break;
-         if (j==i) 
-            error(NIL, "incompatible class definition",cname);
-      }
-      s->slots[j].val = NIL;
-      local_bread(&(s->slots[j].val), NIL);
+      obj->slots[i] = NIL;
+      local_bread(&(obj->slots[i]), NIL);
    }
 }
 
 static void local_bread_class(at **pp)
 {
-   at *name, *super, *key, *def;
-   if (local_bread(&name, NIL) || 
-       local_bread(&super, NIL) || 
-       local_bread(&key, NIL) || 
-       local_bread(&def, NIL) )
-      error(NIL, "corrupted file (unresolved critical class component)", NIL);
-   *pp = new_ooclass(name,super,key,def);
+   at *name, *super, *myslots, *mydefs;
+   if (local_bread(&name, NIL))
+      error(NIL, "corrupted file (reading class name)", NIL);
+   if (local_bread(&super, NIL))
+      error(NIL, "corrupted file (reading superclass name)", NIL);
+   if (local_bread(&myslots, NIL))
+      error(NIL, "corrupted file (reading slots)", NIL);
+   if (local_bread(&mydefs, NIL))
+      error(NIL, "corrupted file (reading defaults)", NIL);
+
+   *pp = new_ooclass(name, super, myslots, mydefs);
    class_t *cl = Mptr(*pp);
    local_bread(&cl->methods, NIL);
    cl->hashok = false;

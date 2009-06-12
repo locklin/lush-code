@@ -317,7 +317,7 @@ void lastchance(const char *s)
       error_doc.ready_to_an_error = false;
       fprintf(stderr, "\n\007**** GASP: Severe error : %s\n", s);
       at *q = Value(at_toplevel);
-      if (isatty(0) && q && (Class(q) == &de_class)) {
+      if (isatty(0) && q && (Class(q) == de_class)) {
          fprintf(stderr, "**** GASP: Trying to recover\n");
          fprintf(stderr, "**** GASP: You should save your work immediatly\n\n");
          /* Sanitize IO */

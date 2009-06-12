@@ -77,7 +77,7 @@ typedef struct window  window_t;
 
 /* Functions and Definitions */
 
-extern LUSHAPI class_t window_class;
+extern LUSHAPI class_t *window_class;
 LUSHAPI struct window *current_window(void);
 LUSHAPI struct window *current_window_no_error(void);
 

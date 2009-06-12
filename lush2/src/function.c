@@ -289,7 +289,7 @@ at *new_dx(at *name, at *(*addr)(int, at **))
    f->call = f->info = addr;
    f->name = name;
    f->kname = 0;
-   return new_extern(&dx_class, f);
+   return new_at(dx_class, f);
 }
 
 
@@ -317,7 +317,7 @@ at *new_dy(at *name, at *(*addr)(at *))
    f->call = f->info = addr;
    f->name = name;
    f->kname = 0;
-   return new_extern(&dy_class, f);
+   return new_at(dy_class, f);
 }
 
 
@@ -368,7 +368,7 @@ at *new_de(at *formal, at *body)
    lfunction_t *f = mm_alloc(mt_lfunction);
    f->formal_args = formal;
    f->body = body;
-   return new_extern(&de_class, f);
+   return new_at(de_class, f);
 }
 
 DY(ylambda)
@@ -400,10 +400,10 @@ at *df_listeval(at *p, at *q)
 
 at *new_df(at *formal, at *body)
 {
-  lfunction_t *f = mm_alloc(mt_lfunction);
-  f->formal_args = formal;
-  f->body = body;
-  return new_extern(&df_class, f);
+   lfunction_t *f = mm_alloc(mt_lfunction);
+   f->formal_args = formal;
+   f->body = body;
+   return new_at(df_class, f);
 }
 
 DY(yflambda)
@@ -438,7 +438,7 @@ at *new_dm(at *formal, at *body)
    lfunction_t *f = mm_alloc(mt_lfunction);
    f->formal_args = formal;
    f->body = body;
-   return new_extern(&dm_class, f);
+   return new_at(dm_class, f);
 }
 
 DY(ymlambda)
@@ -453,7 +453,7 @@ DY_DEF(dm);
 
 static at *macroexpand(at *p, at *q)
 {
-   ifn (p && Class(p) == &dm_class)
+   ifn (p && Class(p) == dm_class)
       RAISEF("not a macro", p);
 
    lfunction_t *f = Mptr(p);
@@ -540,7 +540,7 @@ at *lete(at *vardecls, at *body)
    /* before we return, explicitly delete all local variables */
    at *ss = syms;
    while (CONSP(ss)) {
-      lush_delete_maybe(symbol_class.selfeval(Car(ss)));
+      lush_delete_maybe(symbol_class->selfeval(Car(ss)));
       ss = Cdr(ss);
    }
    pop_args(syms);
@@ -602,11 +602,11 @@ at *funcdef(at *p)
 {
    char *s = NIL;
    
-   if (Class(p) == &de_class)
+   if (Class(p) == de_class)
       s = "lambda";
-   if (Class(p) == &df_class)
+   if (Class(p) == df_class)
       s = "flambda";
-   if (Class(p) == &dm_class)
+   if (Class(p) == dm_class)
       s = "mlambda";
    if (!s)
       return NIL;
@@ -628,6 +628,10 @@ DX(xfunctionp)
    return FUNCTIONP(p) ? p : NIL;
 }
 
+class_t *function_class = NULL;
+class_t *dx_class = NULL;
+class_t *dy_class = NULL;
+
 void pre_init_function(void)
 {
    if (mt_cfunction == mt_undefined)
@@ -638,50 +642,44 @@ void pre_init_function(void)
       mt_lfunction =
          MM_REGTYPE("lfunction", sizeof(lfunction_t),
                     clear_lfunction, mark_lfunction, 0);
+
+   if (!function_class) {
+      new_builtin_class(&function_class, NIL);
+   }
+   if (!dx_class) {
+      new_builtin_class(&dx_class, function_class);
+      dx_class->name = func_name;
+      dx_class->listeval = dx_listeval;
+   }
+   if (!dy_class) {
+      new_builtin_class(&dy_class, function_class);
+      dy_class->name = func_name;
+      dy_class->listeval = dy_listeval;
+   }
 }
 
-class_t function_class;
-class_t dx_class, dy_class, de_class, df_class, dm_class;
+class_t *de_class, *df_class, *dm_class;
 
 void init_function(void)
 {
+   /* set up function classes */
    pre_init_function();
 
-   /* set up function classes */
-   class_init(&function_class, false);
-   class_define("FUNCTION", &function_class);
-   
-   class_init(&dx_class, false);
-   dx_class.name = func_name;
-   dx_class.listeval = dx_listeval;
-   dx_class.super = &function_class;
-   dx_class.atsuper = function_class.backptr;
-   class_define("DX",&dx_class);
-   
-   class_init(&dy_class, false);
-   dy_class.name = func_name;
-   dy_class.listeval = dy_listeval;
-   dy_class.super = &function_class;
-   dy_class.atsuper = function_class.backptr;
-   class_define("DY",&dy_class);
-   
-   class_init(&de_class, false);
-   de_class.listeval = de_listeval;
-   de_class.super = &function_class;
-   de_class.atsuper = function_class.backptr;
-   class_define("DE",&de_class);
+   class_define("FUNCTION", function_class);
+   class_define("DX", dx_class);
+   class_define("DY", dy_class);
 
-   class_init(&df_class, false);
-   df_class.listeval = df_listeval;
-   df_class.super = &function_class;
-   df_class.atsuper = function_class.backptr;
-   class_define("DF",&df_class);
+   new_builtin_class(&de_class, function_class);
+   de_class->listeval = de_listeval;
+   class_define("DE", de_class);
 
-   class_init(&dm_class, false);
-   dm_class.listeval = dm_listeval;
-   dm_class.super = &function_class;
-   dm_class.atsuper = function_class.backptr;
-   class_define("DM",&dm_class);
+   new_builtin_class(&df_class, function_class);
+   df_class->listeval = df_listeval;
+   class_define("DF", df_class);
+
+   new_builtin_class(&dm_class, function_class);
+   dm_class->listeval = dm_listeval;
+   class_define("DM", dm_class);
 
    at_optional = var_define("&optional");
    at_rest = var_define("&rest");

@@ -506,7 +506,7 @@ LUSHAPI at *new_htable(int nelems, bool pointerhashp, bool raise_keyerror_p)
    ht->raise_keyerror_p = raise_keyerror_p;
    ht->table = mm_allocv(mt_refs, s);
    assert(ht->table);
-   return new_extern(&htable_class, ht);
+   return new_at(htable_class, ht);
 }
 
 
@@ -690,7 +690,7 @@ DX(xhtable_info)
 
 /* --- INITIALISATION SECTION --- */
 
-class_t htable_class;
+class_t *htable_class;
 
 void init_htable(void)
 {
@@ -705,13 +705,13 @@ void init_htable(void)
                  clear_hashtable, mark_hashtable, finalize_hashtable);
    
    /* setting up htable_class */
-   class_init(&htable_class, false);
-   htable_class.dispose = (dispose_func_t *)htable_dispose;
-   htable_class.listeval = htable_listeval;
-   htable_class.serialize = htable_serialize;
-   htable_class.compare = htable_compare;
-   htable_class.hash = htable_hash;
-   class_define("HTABLE", &htable_class);
+   new_builtin_class(&htable_class, NIL);
+   htable_class->dispose = (dispose_func_t *)htable_dispose;
+   htable_class->listeval = htable_listeval;
+   htable_class->serialize = htable_serialize;
+   htable_class->compare = htable_compare;
+   htable_class->hash = htable_hash;
+   class_define("HTABLE", htable_class);
    
    dx_define("hashcode",xhashcode);
    dx_define("htable",xnew_htable);

@@ -283,7 +283,7 @@ static avlnode_t *lside_create_obj(at *p)
   /* check type */
   ifn (OBJECTP(p))
     error(NIL,"Object expected",p);
-  struct oostruct *obj = Mptr(p);
+  object_t *obj = Mptr(p);
   
   if (obj && obj->cptr) {
     avlnode_t *n = avl_find(obj->cptr);
@@ -540,7 +540,7 @@ static void transmute_object_into_gptr(at *p, void *px)
     /* clean object up */
     Class(p)->dispose(Mptr(p));
     /* disguise it as a gptr */
-    AssignClass(p, &gptr_class);
+    AssignClass(p, gptr_class);
     Gptr(p) = px;
   }
 }
@@ -569,7 +569,7 @@ static void cside_destroy_node(avlnode_t *n)
       break;
 
     case CINFO_OBJ:
-      ((struct oostruct*)Mptr(p))->cptr = 0;
+      ((object_t *)Mptr(p))->cptr = 0;
       transmute_object_into_gptr(n->litem, n->citem);
       break;
 
@@ -1177,7 +1177,7 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
 
     /* Update avlnode_t */
     n->litem = new_object(Mptr(classdoc->lispdata.atclass));
-    ((struct oostruct*)Mptr(n->litem))->cptr = n->citem;
+    ((object_t *)Mptr(n->litem))->cptr = n->citem;
     mark_for_update(n);
     /* Update object */
     update_lisp_from_c(n);
@@ -1302,7 +1302,7 @@ static void update_c_from_lisp(avlnode_t *n)
 
     void *cptr = n->citem;
     at *p = n->litem;
-    struct oostruct *obj = Mptr(p);
+    object_t *obj = Mptr(p);
 
     if (obj) {
       dhclassdoc_t *cdoc = n->cmoreinfo;
@@ -1319,15 +1319,17 @@ static void update_c_from_lisp(avlnode_t *n)
 	super = super->lispdata.ksuper;
       }
       
-      if (sl > obj->size)
+      class_t *cl = Class(obj->backptr);
+      if (sl > cl->num_slots)
 	error(NIL, "lisp_c internal: class slot mismatch", p);
-      sl = obj->size;
 
+      int j = 0;
+      int nsl = 0;
       while (k--) {
 	super = class_list[k];
-	int nsl = sl - super->argdata->ndim;
+	nsl += super->argdata->ndim;
 	dhrecord *drec = super->argdata + 1;
-	for (int j=nsl; j<sl; j++) {
+	for (; j<nsl; j++) {
 	  /* quick check of slot name */
 	  //symbol_t *symb = obj->slots[j].symb->Object;
 	  //if (symb->hn->name[0] != drec->name[0])
@@ -1335,14 +1337,13 @@ static void update_c_from_lisp(avlnode_t *n)
 	
 	  /* copy field described by current record */
 	  dharg tmparg;
-	  at_to_dharg(obj->slots[j].val, &tmparg, drec+1, p);
+	  at_to_dharg(obj->slots[j], &tmparg, drec+1, p);
 	  char *pos = (char*)cptr + (unsigned long)(drec->arg);
 	  dharg_to_address(&tmparg, pos, drec+1);
-	  
 	  drec = drec->end;
 	}
-	sl = nsl;
       }
+      assert(sl == nsl);
     }
     break;
   }
@@ -1433,7 +1434,7 @@ static void update_lisp_from_c(avlnode_t *n)
 
     void *cptr = n->citem;
     at* p = n->litem;
-    struct oostruct *obj = Mptr(p);
+    object_t *obj = Mptr(p);
     
     if (obj) {
       dhclassdoc_t *cdoc = n->cmoreinfo;
@@ -1450,16 +1451,17 @@ static void update_lisp_from_c(avlnode_t *n)
 	super = super->lispdata.ksuper;
       }
 
-      if (sl > obj->size)
+      class_t *cl = Class(obj->backptr);
+      if (sl > cl->num_slots)
 	error(NIL,"lisp_c internal: class slot mismatch",n->litem);
-      sl = obj->size;
 
+      int j = 0;
+      int nsl = 0;
       while (k--) {
 	super = class_list[k];
-	int nsl = sl - super->argdata->ndim;
+	nsl += super->argdata->ndim;
 	dhrecord *drec = super->argdata + 1;
-
-	for (int j=nsl; j<sl; j++) {
+	for (; j<nsl; j++) {
 	  /* quick check of slot name */
 	  //symbol_t *symb = obj->slots[j].symb->Object;
 	  //if (symb->hn->name[0] != drec->name[0])
@@ -1471,13 +1473,12 @@ static void update_lisp_from_c(avlnode_t *n)
 	  address_to_dharg(&tmparg, pos, drec+1);
 	  //at *orig = obj->slots[j].val;
 	  //at *new = ;
-	  obj->slots[j].val = dharg_to_at(&tmparg, drec+1, p);
+	  obj->slots[j] = dharg_to_at(&tmparg, drec+1, p);
           //DELAYED_UNLOCK(new, orig);
-
 	  drec = drec->end;
 	}
-	sl = nsl;
       }
+      assert(sl == nsl);
     }
     break;
   }
@@ -1831,7 +1832,7 @@ DX(xlisp_c_map)
   else if (NUMBERP(p))
     return lisp_c_map((void*)(unsigned long)Number(p));
   else if (OBJECTP(p))
-    cptr = ((struct oostruct *)Mptr(p))->cptr;
+    cptr = ((object_t *)Mptr(p))->cptr;
   else if (INDEXP(p))
     cptr = ((struct index *)Mptr(p))->cptr;
   else if (STORAGEP(p))
@@ -2065,7 +2066,7 @@ DX(xto_gptr)
     avlnode_t *n = lside_create_str(p);
     return NEW_GPTR(n->citem);
 
-  } else if (p && (Class(p) == &dh_class)) {
+  } else if (p && (Class(p) == dh_class)) {
     struct cfunction *cfunc = Mptr(p);
     if (CONSP(cfunc->name))
       check_primitive(cfunc->name, cfunc->info);

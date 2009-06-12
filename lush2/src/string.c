@@ -709,7 +709,7 @@ DX(xstr_number_hex)
 DX(xstr_gptr)
 {
    ARG_NUMBER(1);
-   return new_string(gptr_class.name(APOINTER(1)));
+   return new_string(gptr_class->name(APOINTER(1)));
 }
 
 /*------------------------ */
@@ -1350,17 +1350,17 @@ err_printf1:
   STRING.C (C) /// initialisation ////
 ************************************************************************/
 
-class_t string_class;
+class_t *string_class;
 
 void init_string(void)
 {
    /* set up string_class */
-   class_init(&string_class, false);
-   string_class.listeval = string_listeval;
-   string_class.name = string_name;
-   string_class.compare = string_compare;
-   string_class.hash = string_hash;
-   class_define("STRING", &string_class);
+   new_builtin_class(&string_class, NIL);
+   string_class->listeval = string_listeval;
+   string_class->name = string_name;
+   string_class->compare = string_compare;
+   string_class->hash = string_hash;
+   class_define("STRING", string_class);
 
    /* cache some ubiquitous strings */
    make_singletons();

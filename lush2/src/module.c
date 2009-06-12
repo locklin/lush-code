@@ -502,7 +502,7 @@ void mark_module(module_t *m)
 
 bool finalize_module(module_t *m)
 {
-   module_class.dispose(m);
+   module_class->dispose(m);
    return true;
 }
 
@@ -517,7 +517,7 @@ at *new_module(const char *filename, at *hook)
    m->initaddr = 0;
    m->filename = filename; // filename must be managed
    m->hook = hook;
-   at *ans = new_extern(&module_class, m);
+   at *ans = new_at(module_class, m);
    m->backptr = ans;
    return ans;
 }
@@ -817,7 +817,7 @@ static void cleanup_module(module_t *m)
       at *q = Car(p);
       if (CLASSP(q)) {
          class_t *cl = Mptr(q);
-         if (!cl->managed)
+         if (builtin_class_p(cl))
             cl->live = false;
       }
    }
@@ -844,7 +844,7 @@ static void cleanup_module(module_t *m)
             at *q = Caar(p);
             if (CLASSP(q)) {
                class_t *cl = Mptr(q);
-               if (cl->managed)
+               if (!builtin_class_p(cl))
                   continue;
             }
             /* temporarily enable deleting objects of this class */
@@ -900,7 +900,7 @@ static void update_exec_flag(module_t *m)
                struct cfunction *cfunc = Mptr(q);
                if (!newstate) {
                   kdoc = cfunc->info = 0;
-               } else if (Class(q)==&dh_class && cfunc->kname) {
+               } else if (Class(q)==dh_class && cfunc->kname) {
                   kdoc = cfunc->info = dynlink_symbol(m, cfunc->kname, 0, 0);
                   cfunc->call = (void *(*)())kdoc->lispdata.call;
                } else if (cfunc->kname) {
@@ -1439,11 +1439,9 @@ static void module_method_def(class_t *cl, at *name, at *val)
 void class_define(const char *name, class_t *cl)
 {
    at *symb = new_symbol(name);
-   at *classat = new_extern(&class_class,cl);
    cl->classname = symb;
    cl->priminame = module_priminame(symb);
-   cl->backptr = classat;
-   module_def(symb, classat);
+   module_def(symb, cl->backptr);
    current->flags |= MODULE_CLASS;
 }
 
@@ -1542,25 +1540,25 @@ void pre_init_module(void)
 }
 
 
-class_t module_class;
+class_t *module_class;
 
 void init_module(char *progname)
 {
    pre_init_module();
 
    /* set up module_class */
-   class_init(&module_class, false);
-   module_class.dispose = (dispose_func_t *)module_dispose;
-   module_class.serialize = module_serialize;
-   module_class.dontdelete = true;
-   class_define("MODULE", &module_class);
+   new_builtin_class(&module_class, NIL);
+   module_class->dispose = (dispose_func_t *)module_dispose;
+   module_class->serialize = module_serialize;
+   module_class->dontdelete = true;
+   class_define("MODULE", module_class);
 
 #if DLDBFD
    root->filename = mm_strdup(dld_find_executable(progname));
 #else
    root->filename = mm_strdup(progname);
 #endif  
-   atroot = new_extern(&module_class, root);
+   atroot = new_at(module_class, root);
    root->backptr = atroot;
 
    /* Functions */
