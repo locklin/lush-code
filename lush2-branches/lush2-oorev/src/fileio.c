@@ -494,7 +494,7 @@ static char *strcpyif(char *d, const char *s)
 }
 
 /* expects a managed string & returns a managed string */
-const char *dirname(const char *fname)
+const char *lush_dirname(const char *fname)
 {
 #ifdef UNIX
    const char *s = fname;
@@ -579,12 +579,12 @@ const char *dirname(const char *fname)
 DX(xdirname)
 {
    ARG_NUMBER(1);
-   return new_string(dirname(ASTRING(1)));
+   return new_string(lush_dirname(ASTRING(1)));
 }
 
 
-/* basename returns a new, managed string */
-const char *basename(const char *fname, const char *suffix)
+/* lush_basename returns a new, managed string */
+const char *lush_basename(const char *fname, const char *suffix)
 {
 #ifdef UNIX
    if (strlen(fname) > STRING_BUFFER-4)
@@ -656,10 +656,10 @@ DX(xbasename)
 {
    if (arg_number!=1) {
       ARG_NUMBER(2)
-         return new_string(basename(ASTRING(1),ASTRING(2)));
+         return new_string(lush_basename(ASTRING(1),ASTRING(2)));
    } else {
       ARG_NUMBER(1);
-      return new_string(basename(ASTRING(1),NULL));
+      return new_string(lush_basename(ASTRING(1),NULL));
    }
 }
 
@@ -758,7 +758,7 @@ const char *concat_fname(const char *from, const char *fname)
          if (fname[1]=='.')
             if (fname[2]=='/' || fname[2]=='\\' || fname[2]==0) {
                fname += 2;
-               strcpyif(string_buffer, dirname(string_buffer));
+               strcpyif(string_buffer, lush_dirname(string_buffer));
                s = string_buffer;
                continue;
             }
@@ -987,7 +987,7 @@ bool init_lushdir(const char *progname)
       char buffer[FILELEN];
       while ((len=readlink(file_name,buffer,FILELEN)) > 0) {
          buffer[len]=0;
-         strcpy(file_name, dirname(file_name));
+         strcpy(file_name, lush_dirname(file_name));
          strcpy(file_name, concat_fname(file_name,buffer));
 #ifdef DEBUG_DIRSEARCH
          printf("L %s\n",file_name);
@@ -1023,7 +1023,7 @@ bool init_lushdir(const char *progname)
          0L,
       };
       char **st = trials;
-      strcpy(file_name,dirname(file_name));
+      strcpy(file_name, lush_dirname(file_name));
       while (*st) 
       {
          const char *s = concat_fname(file_name,*st++);
@@ -1032,8 +1032,8 @@ bool init_lushdir(const char *progname)
 #endif
          if (filep(s))
             if (access(s,R_OK)!=-1) {
-               s = dirname(s);
-               s = dirname(s);
+               s = lush_dirname(s);
+               s = lush_dirname(s);
                strcpy(lushdir, s);
                return true;
 	    }

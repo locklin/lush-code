@@ -1230,7 +1230,7 @@ at *module_load(const char *file, at *hook)
 #endif
    if (! m->initaddr) {
       strcpy(string_buffer, "init_");
-      strcat(string_buffer, basename(m->filename, 0));
+      strcat(string_buffer, lush_basename(m->filename, 0));
       char *s = strchr(string_buffer, '.'); 
       if (s) s[0] = 0;
       m->initaddr = dynlink_symbol(m, string_buffer, 1, 1);

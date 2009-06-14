@@ -68,14 +68,6 @@ typedef void* gptr;
 # define INF INFINITY
 #endif
 
-/* --------- UNFORTUNATE NAMES -------- */
-
-#define abort     TLabort
-#define error     TLerror
-//#define class     TLclass
-// #define true      TLtrue
-#define basename  TLbasename
-#define dirname   TLdirname
 
 /* --------- MACHINE DEPENDANT STUFF -------- */
 
