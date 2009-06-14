@@ -964,7 +964,7 @@ static void local_bread_array(at **pp)
    int ndims = read_card24();
    if (ndims == 0xFFFFFF) 
       /* THIS IS AN UNSIZED ARRAY */
-      *pp = NEW_INDEX(new_storage(ST_AT), NIL);
+      *pp = NEW_INDEX(Mptr(new_storage(ST_AT)), NIL);
    
    else if (ndims < MAXDIMS) {
       /* THIS IS A NORMAL ARRAY */

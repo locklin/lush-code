@@ -1113,7 +1113,7 @@ DX(xnew_index)
 
 index_t *new_index_for_cdata(storage_type_t type, shape_t *shp, void *data)
 {
-   storage_t *st = new_storage(type);
+   storage_t *st = Mptr(new_storage(type));
    st->data = data;
    st->flags = STS_MALLOC;
    st->size = shape_nelems(shp);
@@ -1126,7 +1126,7 @@ index_t *make_array(storage_type_t type, shape_t *shp, at *init)
    /* create a storage of the right size */
    size_t nelems = shape_nelems(shp);
    nelems = (nelems<MINSTORAGE) ? MINSTORAGE : nelems;
-   storage_t *st = make_storage(type, nelems, init);
+   storage_t *st = Mptr(make_storage(type, nelems, init));
    index_t *res = new_index(st, shp);
    return res;
 }
@@ -1622,7 +1622,7 @@ DX(xarray_swap)
 /* create array of subscripts of all nonzero elements in ind */
 index_t *array_where_nonzero(index_t *ind)
 {
-   storage_t *srg = make_storage(ST_INT, 64, NIL);
+   storage_t *srg = Mptr(make_storage(ST_INT, 64, NIL));
    int n = 0;
    int r = IND_NDIMS(ind);
 
@@ -2330,12 +2330,12 @@ at *map_matrix(FILE *f)
    /* Create storage */
    storage_t *st;
    switch(magic) {
-   case BINARY_MATRIX:  st = new_storage(ST_F);   break;
-   case DOUBLE_MATRIX:  st = new_storage(ST_D);   break;
-   case INTEGER_MATRIX: st = new_storage(ST_I32); break;
-   case SHORT_MATRIX:   st = new_storage(ST_I16); break;
-   case SHORT8_MATRIX:  st = new_storage(ST_I8);  break;
-   case BYTE_MATRIX:    st = new_storage(ST_U8);  break;
+   case BINARY_MATRIX:  st = Mptr(new_storage(ST_F));   break;
+   case DOUBLE_MATRIX:  st = Mptr(new_storage(ST_D));   break;
+   case INTEGER_MATRIX: st = Mptr(new_storage(ST_I32)); break;
+   case SHORT_MATRIX:   st = Mptr(new_storage(ST_I16)); break;
+   case SHORT8_MATRIX:  st = Mptr(new_storage(ST_I8));  break;
+   case BYTE_MATRIX:    st = Mptr(new_storage(ST_U8));  break;
    default:
       error(NIL, "cannot map ascii matrix files", NIL);
    }

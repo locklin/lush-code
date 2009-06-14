@@ -323,6 +323,9 @@ static const char *storage_name(at *p)
    else if (st->flags & STS_STATIC)
       sprintf(string_buffer, "::%s:static@%p",
               NAMEOF(Class(p)->classname), st->data);
+   else if (st->data == NULL)
+      sprintf(string_buffer, "::%s:unallocated",
+              NAMEOF(Class(p)->classname));
    else
       sprintf(string_buffer, "::%s:strange@%p",
               NAMEOF(Class(p)->classname), st->data);
@@ -384,7 +387,7 @@ static void storage_serialize(at **pp, int code)
 
    // Create storage if needed
    if (code == SRZ_READ)
-      *pp = MAKE_STORAGE(type, size, NIL);
+      *pp = make_storage(type, size, NIL);
    
    // Read/write storage data
    st = Mptr(*pp);
@@ -474,7 +477,7 @@ static void storage_serialize(at **pp, int code)
 
 extern void dbg_notify(void *, void *);
 
-storage_t *new_storage(storage_type_t t)
+at *new_storage(storage_type_t t)
 {
    storage_t *st = mm_alloc(mt_storage);
    st->type = t;
@@ -484,7 +487,7 @@ storage_t *new_storage(storage_type_t t)
    st->backptr = new_at(storage_class[st->type], st);
    st->cptr = NULL;
    //add_notifier(st, dbg_notify, NULL);
-   return st;
+   return st->backptr;
 }
 
 DX(xnew_storage) {
@@ -497,22 +500,22 @@ DX(xnew_storage) {
       if (cl==storage_class[t]) break;
    if (t == ST_LAST)
       RAISEF("not a storage class", APOINTER(1));
-   return NEW_STORAGE(t);
+   return new_storage(t);
 }
 
-storage_t *make_storage(storage_type_t t, size_t n, at *init)
+at *make_storage(storage_type_t t, size_t n, at *init)
 {
    if (n<0)
       RAISEF("invalid size", NEW_NUMBER(n));
    
-   storage_t *st = new_storage(t);
-   storage_malloc(st, n, init);
-   return st;
+   at *p = new_storage(t);
+   storage_alloc(Mptr(p), n, init);
+   return p;
 }
 
 /* ------------ ALLOCATION: MALLOC ------------ */
 
-void storage_malloc(storage_t *st, size_t n, at *init)
+void storage_alloc(storage_t *st, size_t n, at *init)
 {
    ifn (st->data == NULL)
       RAISEF("storage must be unsized", st->backptr);
@@ -534,13 +537,13 @@ void storage_malloc(storage_t *st, size_t n, at *init)
    }
 }
 
-DX(xstorage_malloc)
+DX(xstorage_alloc)
 {
    ARG_NUMBER(3);
    int n = AINTEGER(2);
    if (n<0)
       RAISEFX("invalid size", NEW_NUMBER(n));
-   storage_malloc(ASTORAGE(1), n, APOINTER(3));
+   storage_alloc(ASTORAGE(1), n, APOINTER(3));
    return NIL;
 }
 
@@ -813,7 +816,7 @@ void storage_load(storage_t *st, FILE *f)
       if (len==0) 
          return;
       else
-         storage_malloc(st,(size_t)len/storage_sizeof[st->type],0);
+         storage_alloc(st,(size_t)len/storage_sizeof[st->type],0);
    }
    
    get_write_permit(st);
@@ -914,7 +917,7 @@ void init_storage()
    Generic_storage_class_init(GPTR);
 
    dx_define("new-storage", xnew_storage);
-   dx_define("storage-malloc",xstorage_malloc);
+   dx_define("storage-alloc",xstorage_alloc);
    dx_define("storage-realloc",xstorage_realloc);
    dx_define("storage-clear",xstorage_clear);
 #ifdef HAVE_MMAP

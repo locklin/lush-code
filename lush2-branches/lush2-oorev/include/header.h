@@ -297,11 +297,6 @@ LUSHAPI static inline at *new_gptr(gptr x)
    extern class_t *gptr_class;
    return new_at(gptr_class, x);
 }
-LUSHAPI static inline at *new_string(const char *ms)
-{  
-   extern class_t *string_class;
-   return new_at(string_class, (void *)ms);
-}
 
 LUSHAPI void zombify(at *p);
 
@@ -488,6 +483,11 @@ LUSHAPI void abort (char *s) no_return;
 
 extern LUSHAPI class_t *string_class;
 
+LUSHAPI static inline at *new_string(const char *ms)
+{  
+   extern class_t *string_class;
+   return new_at(string_class, (void *)ms);
+}
 LUSHAPI at *make_string(const char *s);
 LUSHAPI at *make_string_of_length(size_t n);
 LUSHAPI int str_index(const char *s1, const char *s2, int start);
@@ -861,10 +861,8 @@ extern LUSHAPI at *  (*storage_getat[ST_LAST])(storage_t *, size_t);
 extern LUSHAPI void  (*storage_setat[ST_LAST])(storage_t *, size_t, at *);
 
 /* storage creation */
-LUSHAPI storage_t *new_storage(storage_type_t);
-LUSHAPI storage_t *make_storage(storage_type_t, size_t, at*);
-#define NEW_STORAGE(t)        (new_storage(t)->backptr)
-#define MAKE_STORAGE(t, n, i) (make_storage(t, n, i)->backptr)
+LUSHAPI at *new_storage(storage_type_t);
+LUSHAPI at *make_storage(storage_type_t, size_t, at*);
 
 /* storage properties */
 LUSHAPI bool   storage_classp(const at*);
@@ -873,7 +871,7 @@ LUSHAPI size_t storage_nelems(const storage_t *);
 LUSHAPI size_t storage_nbytes(const storage_t *);
 
 /* storage manipulation */
-LUSHAPI void storage_malloc(storage_t*, size_t, at*);
+LUSHAPI void storage_alloc(storage_t*, size_t, at*);
 LUSHAPI void storage_realloc(storage_t*, size_t, at*);
 LUSHAPI void storage_clear(storage_t*, at*, size_t);
 LUSHAPI void storage_mmap(storage_t*, FILE*, size_t);

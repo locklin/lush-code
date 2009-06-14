@@ -1148,7 +1148,7 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
 
   case CINFO_SRG: {
     struct srg *srg = n->citem;
-    storage_t *st = new_storage(srg->type);
+    storage_t *st = Mptr(new_storage(srg->type));
 
     if (n->belong == BELONG_LISP) {
       /* If this object belong to LISP and was not previously
