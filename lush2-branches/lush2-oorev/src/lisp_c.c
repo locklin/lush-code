@@ -938,9 +938,10 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     } else if (STRINGP(at_obj)) {
        //avlnode_t *n = lside_create_str(at_obj);
       char *s = (char *)String(at_obj);
-      avlnode_t *n = alloc_str(s);
-      arg->dh_str_ptr = n->citem;
-      
+      //avlnode_t *n = alloc_str(s);
+      //arg->dh_str_ptr = n->citem;
+      arg->dh_str_ptr = s;
+
     } else
       lisp2c_error("STRING expected",errctx,at_obj);
     break;
@@ -1074,12 +1075,16 @@ static at *_dharg_to_at(dharg *arg, dhrecord *drec, at *errctx)
   case DHT_STR:
     if (arg->dh_str_ptr==0) 
       return NIL;
-    n = avl_find(arg->dh_str_ptr);
-    if (n)
-      return make_lisp_from_c(n,arg->dh_str_ptr);
-    if (!dont_track_cside) 
-      lisp2c_warning("(out): Dangling pointer instead of STR", errctx);
-    return NEW_GPTR(arg->dh_str_ptr);
+/*     n = avl_find(arg->dh_str_ptr); */
+/*     if (n) */
+/*       return make_lisp_from_c(n,arg->dh_str_ptr); */
+/*     if (!dont_track_cside)  */
+/*       lisp2c_warning("(out): Dangling pointer instead of STR", errctx); */
+/*     return NEW_GPTR(arg->dh_str_ptr); */
+    if (mm_ismanaged(arg->dh_str_ptr))
+      return new_string(arg->dh_str_ptr);
+    else
+      return new_string(mm_strdup(arg->dh_str_ptr));
         
   case DHT_LIST:
     if (arg->dh_srg_ptr==0)
