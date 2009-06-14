@@ -336,7 +336,7 @@ void lastchance(const char *s)
          time(&clock);
          fprintf(stderr,"**** GASP: %s", ctime(&clock));
       }
-      abort("gasp handler");
+      lush_abort("gasp handler");
       
    } else {
       fprintf(stderr,"**** GASP: recursive error: %s\n", s);

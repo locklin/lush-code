@@ -1222,7 +1222,7 @@ void test_file_error(FILE *f)
    }
    if (f==stdin) {
       if (stdin_errors > 8)
-         abort("ABORT -- STDIN failure");
+         lush_abort("ABORT -- STDIN failure");
       else {
          clearerr(stdin);
          errno = 0;
@@ -1231,7 +1231,7 @@ void test_file_error(FILE *f)
       }
    } else if (f==stdout || f==stderr) {
       if (stdout_errors > 8)
-         abort("ABORT -- STDOUT failure");
+         lush_abort("ABORT -- STDOUT failure");
       else {
          clearerr(stdout);      
          clearerr(stderr);
@@ -1804,7 +1804,7 @@ void init_fileio(char *program_name)
    at_lushdir = var_define("lushdir");
 
    ifn (init_lushdir(program_name) || init_lushdir("lush2"))
-      abort("cannot locate library files");
+      lush_abort("cannot locate library files");
 #ifdef UNIX
    unix_setenv("LUSHDIR",lushdir);
 #endif

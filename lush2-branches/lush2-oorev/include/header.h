@@ -477,7 +477,7 @@ LUSHAPI void user_break(char *s);
 LUSHAPI void init_lush (char *program_name);
 LUSHAPI void start_lisp(int argc, char **argv, int quiet);
 LUSHAPI void clean_up(void);
-LUSHAPI void abort (char *s) no_return;
+LUSHAPI void lush_abort (char *s) no_return;
 
 /* STRING.H ---------------------------------------------------- */
 

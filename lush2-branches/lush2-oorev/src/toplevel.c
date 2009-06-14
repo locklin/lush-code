@@ -123,7 +123,7 @@ static void recur_doc_init(void);
  * Exiting Lush quickly
  */
 
-void abort(char *s)
+void lush_abort(char *s)
 {
    unlink_tmp_files();
    FINI_MACHINE;
@@ -293,7 +293,7 @@ void start_lisp(int argc, char **argv, int quietflag)
          toplevel(r, NIL, NIL);
          
       } else
-         abort("Cannot locate system libraries");
+         lush_abort("Cannot locate system libraries");
 
       /* Calls the cold startup procedure with arguments */
       error_doc.ready_to_an_error = true;
