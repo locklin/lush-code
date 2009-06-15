@@ -205,8 +205,7 @@
           (list "" "#endif" "") ) )
    
    ;; CLEANUPS
-   (each ((type treetype-list))
-     (delete type) )
+   (setq :treetype-list treetype-list)
    (let ((global-alist global-table))
      (when (is-of-class global-alist |HTABLE|)
        (setq global-alist (htable-alist global-alist)) )
@@ -441,8 +440,29 @@
        (sprintf "DH_REFER(%s)," name) )
      (list "DH_NIL" "};" ) ) ) )
 
-
-
+;; generate a function with target signature 'at *_getslot(obj_t *obj, int i)'
+;; to be added to as a hidden method to class <cls>
+(defun dhc-make-getslot-method (type)
+  (when (<> 'dht-class (unode-val :type:u-tclass))
+    (dhc-error "type is not a class") )
+  (let* ((cl-name (dhu-name type))
+         (classes ())
+         (t type)
+         (arg (gensym))
+         (i -1) )
+    (while (<> 'dht-nil (unode-val :t:u-tclass))
+      (setq classes (cons t classes))
+      (setq t (unode-val :t:u-type)) ) 
+    `(defmethod ,cl-name -getslot (,arg)
+       (declare (-int-) ,arg)
+       (selectq ,arg
+         ,@(domapcan ((cl (cdr classes)))
+             (domapcar (((slot . type) (unode-val :cl:u-temps)))
+               (incr i)
+               `(,i (to-gptr ,(dhc-type-to-getslot-expr type slot)))
+               ))
+         (t (error "invalid slot number") (to-gptr ())) ))
+    ))
 
 ;;; ------------------------------------------------------------------------
 ;;; PARSING A CLASS
@@ -461,9 +481,10 @@
            (sup-cls (super cls))
 	   (sup-name (nameof (classname sup-cls))) 
            (sup-type ()) )
+
       ;; Basic checks
       (when (classinfo-t (eval `:,fname))
-        (error 'dhc-compile-class-t "class has already been compiled" fname))
+        (dhc-error "class has already been compiled" fname))
       (when (and (slots cls) (not tslots))
         (dhc-error "slots are not typed" fname) )
       (if  (and (not (classinfo-t sup-cls))
@@ -480,7 +501,7 @@
       (setq sup-type (dhc-class-to-dhc-type sup-cls))
       (when specializations
         (setq sup-type (dhc-specialize-type sup-type specializations t)) )
-        
+      
       ;; Determine slot types
       (dolist (slot-decl tslots)
         (when (not (and (consp slot-decl) (consp (car slot-decl))))
@@ -508,6 +529,11 @@
 	(dhc-unify-types class-type :sym:type)
 	(setq :sym:c-name cname)
 	(dhc-add-global-table sym) )
+
+      ;; Add hidden methods
+;;       (when slot-dhc-types
+;;         (eval (dhc-make-getslot-method class-type))
+;;         (setq method-list (cons '-getslot method-list)) )
 
       ;; Warn when destructor is not compiled
       (when (and (member '-destructor (methods cls))

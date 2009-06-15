@@ -52,13 +52,12 @@ void clear_storage(storage_t *st, size_t _)
 {
    st->data = NULL;
    st->backptr = NULL;
-   st->cptr = NULL;
 }
 
 void mark_storage(storage_t *st)
 {
    MM_MARK(st->backptr);
-   if (!st->cptr || lisp_owns_p(st->cptr))
+   if (st->flags & STS_MM)
       MM_MARK(st->data);
 }
 
@@ -66,7 +65,7 @@ static storage_t *storage_dispose(storage_t *);
 
 bool finalize_storage(storage_t *st)
 {
-   //printf("finalize_storage(0x%x)\n", (unsigned int)st);
+   //printf("finalize_storage(%p)\n", st);
    storage_dispose(st);
    return true;
 }
@@ -232,6 +231,9 @@ static at *AT_getat(storage_t *st, size_t off)
 
 static at *N_getat(storage_t *st, size_t off)
 {
+   assert(mm_ismanaged(st));
+   if (st->flags & STS_MM)
+      assert(mm_ismanaged(st->data));
    real (*get)(gptr,size_t) = storage_getr[st->type];
    return NEW_NUMBER( (*get)(st->data, off) );
 }
@@ -287,66 +289,67 @@ void (*storage_setat[ST_LAST])(storage_t *, size_t, at *) = {
 
 static storage_t *storage_dispose(storage_t *st)
 {
-   if (st) {
-      if (st->cptr)
-         lside_destroy_item(st->cptr);
-
+   if (ZOMBIEP(st->backptr))
+      return st;
+   
+   short kind = st->flags & STS_MASK;
+   if (kind == STS_MALLOC) {
+      free(st->data);
+      st->data = NULL;
+   }
+   
 #ifdef HAVE_MMAP
-      if (st->flags & STS_MMAP) {
-         if (st->mmap_addr) {
+   if (kind == STS_MMAP) {
+      if (st->mmap_addr) {
 #ifdef UNIX
-            munmap(st->mmap_addr, st->mmap_len);
+         munmap(st->mmap_addr, st->mmap_len);
 #endif
 #ifdef WIN32
-            UnmapViewOfFile(st->mmap_addr);
-            CloseHandle((HANDLE)(st->mmap_xtra));
+         UnmapViewOfFile(st->mmap_addr);
+         CloseHandle((HANDLE)(st->mmap_xtra));
 #endif
-            st->mmap_addr = NULL;
-         }
+         st->mmap_addr = NULL;
       }
-#endif // HAVE_MMAP
-      zombify(st->backptr);
    }
-   return NULL;
+#endif // HAVE_MMAP
+   zombify(st->backptr);
+   return st;
 }
 
 static const char *storage_name(at *p)
 {
    storage_t *st = (storage_t *)Mptr(p);
- 
-  if (st->flags & STS_MALLOC)
-      sprintf(string_buffer, "::%s:ram@%p:<%"PRIdPTR">", 
-              NAMEOF(Class(p)->classname), st->data, st->size);
-   else if (st->flags & STS_MMAP)
-      sprintf(string_buffer, "::%s:mmap@%p:<%"PRIdPTR">", 
-              NAMEOF(Class(p)->classname), st->data, st->size);
-   else if (st->flags & STS_STATIC)
-      sprintf(string_buffer, "::%s:static@%p",
-              NAMEOF(Class(p)->classname), st->data);
-   else if (st->data == NULL)
-      sprintf(string_buffer, "::%s:unallocated",
-              NAMEOF(Class(p)->classname));
-   else
-      sprintf(string_buffer, "::%s:strange@%p",
-              NAMEOF(Class(p)->classname), st->data);
-  return mm_strdup(string_buffer);
+   char *kind = "";
+   switch (st->flags & STS_MASK) {
+   case 0:          kind = "unallocated"; break;
+   case STS_MM:     kind = "managed"; break;
+   case STS_MALLOC: kind = "malloc"; break;
+   case STS_MMAP:   kind = "mmap"; break;
+   case STS_STATIC: kind = "static"; break;
+   default:
+      fprintf(stderr, "internal error: invalid storage kind");
+      abort();
+   }
+   const char *clname = nameof(Symbol(Class(p)->classname));
+   sprintf(string_buffer, "::%s:%s@%p:<%"PRIdPTR">", clname, kind, st->data, st->size);
+   return mm_strdup(string_buffer);
 }
 
 static at *storage_listeval(at *p, at *q)
 {
    storage_t *st = Mptr(p);
-
+   
    if (!st->data)
       error(NIL, "unsized storage", p);
-
+   
    q = eval_arglist(Cdr(q));
    ifn (CONSP(q) && Car(q) && NUMBERP(Car(q)))
       error(NIL, "illegal subscript", q);
-
+   
    size_t off = Number(Car(q));
    if (off<0 || off>=st->size)
       error(NIL, "subscript out of range", q);
-
+   
    if (Cdr(q)) {
       ifn (CONSP(Cdr(q)) && !Cddr(q))
          error(NIL,"bad value",q);
@@ -416,65 +419,6 @@ static void storage_serialize(at **pp, int code)
    }
 }
 
-
-/* ----------- VECTORIZED FUNCTIONS ------------- */
-
-/*
- * storage_read_srg()
- * storage_write_srg()
- * storage_rls_srg()
- *
- * Given the storage, these function return a
- * srg structure pointing to the data area;
- */
-
-
-/* void storage_read_srg(storage_t *st) */
-/* { */
-/*    if (st->data == NULL) */
-/*       error(NIL, "unsized storage", NIL); */
-/*    (st->read_srg)(st); */
-/* } */
-
-/* void storage_write_srg(storage_t *st) */
-/* { */
-/*    (st->write_srg)(st); */
-/* } */
-
-/* void storage_rls_srg(storage_t *st) */
-/* { */
-/*    (st->rls_srg)(st); */
-/* } */
-
-
-/* /\* STS_MALLOC and STS_MMAP read_srg *\/ */
-
-/* static void simple_read_srg(storage_t *st) */
-/* { */
-/*    if(st->srg.flags & STS_MALLOC) */
-/*       st->srg.data = st->addr; */
-/* } */
-
-/* /\* STS_MALLOC and STS_MMAP write_srg *\/ */
-
-/* static void simple_write_srg(storage_t *st) */
-/* { */
-/*    if (st->srg.flags & STF_RDONLY) */
-/*       error(NIL, "read only storage", NIL); */
-/*    if(st->srg.flags & STS_MALLOC) */
-/*       st->srg.data = st->addr; */
-/* } */
-
-/* /\* STS_MALLOC and STS_MMAP rls_srg *\/ */
-
-/* static void simple_rls_srg(storage_t *st) */
-/* { */
-/*    if (st->srg.flags & STS_MALLOC) */
-/*       st->addr = st->srg.data; */
-/* } */
-
-/* ------- CREATION OF UNSIZED STORAGES ------- */
-
 extern void dbg_notify(void *, void *);
 
 at *new_storage(storage_type_t t)
@@ -483,9 +427,8 @@ at *new_storage(storage_type_t t)
    st->type = t;
    st->flags = 0;
    st->size = 0;
-   //st->data = NULL; // set by mm_alloc
+   st->data = NULL;
    st->backptr = new_at(storage_class[st->type], st);
-   st->cptr = NULL;
    //add_notifier(st, dbg_notify, NULL);
    return st->backptr;
 }
@@ -522,10 +465,13 @@ void storage_alloc(storage_t *st, size_t n, at *init)
    
    /* allocate memory and initialize srg */
    size_t s = n*storage_sizeof[st->type];
-   st->data  = mm_allocv(st->type==ST_AT ? mt_refs : mt_blob, s);
-   st->flags = STS_MALLOC;
+   if (st->type==ST_AT || st->type==ST_GPTR)
+      st->data = mm_allocv(mt_refs, s);
+   else 
+      st->data = mm_blob(s);
+   st->flags = STS_MM;
    st->size  = n;
-
+   
    /* clear gptr storage data (ATs are cleared by mm) */
    if (init && n>0)
       storage_clear(st, init, 0);
@@ -552,29 +498,44 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    if (size < st->size)
       RAISEF("storage size cannot be reduced", st->backptr);
    
-   ifn (st->flags & STS_MALLOC)
-      RAISEF("only RAM based storages can be enlarged", st->backptr);
-   
-   /* reallocate memory and update srg */
+   short kind = st->flags & STS_MASK;
    size_t s = size*storage_sizeof[st->type];
    size_t olds = st->size*storage_sizeof[st->type];
    gptr olddata = st->data;
 
-   MM_ANCHOR(olddata);
-   if (st->type==ST_AT || st->type==ST_GPTR)
-      st->data = mm_allocv(mt_refs, s);  /* aborts if OOM */
-   else 
-      st->data = mm_blob(s);
+   /* empty storage */
+   if (kind == 0) {
+      assert(st->data == NULL);
+      storage_alloc(st, size, init);
+      return;
 
-   memcpy(st->data, olddata, olds);
+   } else if (kind == STS_MM || kind == STS_FOREIGN || kind == STS_MALLOC) {
+      /* reallocate memory and update srg */
+      MM_ANCHOR(olddata);
+      if (st->type==ST_AT || st->type==ST_GPTR)
+         st->data = mm_allocv(mt_refs, s);
+      else 
+         st->data = mm_blob(s);
+      
+      if (st->data) {
+         memcpy(st->data, olddata, olds);
+         if (kind == STS_MALLOC)
+            free(olddata);
+         st->flags &= ~STS_MASK;
+         st->flags |= STS_MM;
+      }
+      
+   } else
+      RAISEF("only RAM based storages can be enlarged", st->backptr);
    
    if (st->data == NULL) {
       st->data = olddata;
       RAISEF("not enough memory", NIL);
    }
+   
    size_t oldsize = st->size;
    st->size = size;
-
+   
    if (init) {
       /* temporarily clear read only flag to allow initialization */
       short flags = st->flags;
@@ -618,7 +579,8 @@ void storage_clear(storage_t *st, at *init, size_t from)
       
    } else if (storage_setat[st->type] == N_setat) {
       get_write_permit(st);
-      if (st->flags & STS_MALLOC) {
+      short kind = st->flags & STS_MASK;
+      if (kind==STS_MM || kind==STS_MALLOC) {
          void (*set)(gptr, size_t, real);
          set = storage_setr[st->type];
          for (int off = from; off < size; off++)

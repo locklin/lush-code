@@ -209,7 +209,7 @@ extern at **dx_sp; /* in function.c */
 static at *index_listeval(at *p, at *q)
 {
    index_t *ind = Mptr(p);
-   
+
    /* There are two subscript modes:
     * 1. The array-take/put-style subscription
     * 2. select*-style subscription with a single, partial subscript
@@ -1454,7 +1454,7 @@ static void index_to_idx(index_t *ind, struct idx *idx)
    idx->dim = ind->dim;
    idx->mod = ind->mod;
    idx->offset = ind->offset;
-   idx->srg = (struct srg *)ind->st;
+   idx->srg = ind->st;
 }
 
 static void idx_to_index(struct idx *idx, index_t *ind)
@@ -1465,6 +1465,7 @@ static void idx_to_index(struct idx *idx, index_t *ind)
       ind->dim[i] = idx->dim[i];
    }
    ind->offset = idx->offset;
+   ind->st = idx->srg;
 }
 
 void index_read_idx(index_t *ind, struct idx *idx)

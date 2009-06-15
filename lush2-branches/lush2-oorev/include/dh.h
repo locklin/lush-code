@@ -40,7 +40,7 @@
 #ifndef NOLISP
 #ifndef HEADER_H
 /* Should be replaced by minimal definitions:
- * - struct srg, struct idx, etc... 
+ * - struct idx, etc... 
  */
 #include "header.h"
 #endif
@@ -217,7 +217,7 @@ typedef union
   real          dh_real;
   gptr		dh_gptr;
   struct idx   *dh_idx_ptr;
-  struct srg   *dh_srg_ptr;
+  storage_t    *dh_srg_ptr;
   char         *dh_str_ptr;
   int          *dh_obj_ptr;
 } dharg;

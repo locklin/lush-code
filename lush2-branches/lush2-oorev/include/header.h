@@ -297,6 +297,11 @@ LUSHAPI static inline at *new_gptr(gptr x)
    extern class_t *gptr_class;
    return new_at(gptr_class, x);
 }
+LUSHAPI static inline at *new_mptr(gptr x)
+{
+   extern class_t *mptr_class;
+   return new_at(mptr_class, x);
+}
 
 LUSHAPI void zombify(at *p);
 
@@ -820,25 +825,21 @@ typedef enum storage_type {
  * nature of the storage (STS)
  */
 
-#define STS_MALLOC    (1<<1)	/* in memory via malloc */
-#define STS_MMAP      (1<<2)	/* mapped via mmap */
+
+#define STS_MM        (1<<0)    /* memory managed by MM */
+#define STS_MALLOC    (1<<1)	/* pointer given to us, lush will free */
+#define STS_FOREIGN   (1<<2)    /* pointer given to us, lush won't free */
+#define STS_MMAP      (1<<3)	/* memory mapped via mmap */
 #define STS_STATIC    (1<<5)	/* in data segment */
+#define STS_MASK      255
 #define STF_RDONLY    (1<<15)	/* read only storage */
 
-#define SRG_FIELDS \
-   short  flags;   \
-   short  type;    \
-   size_t size;    \
-   gptr   data
-
-struct srg {
-   SRG_FIELDS;
-};
-
 struct storage {
-   SRG_FIELDS;
-   at     *backptr;        /* pointer to the at referencing this srg*/
-   void   *cptr;           /* pointer to cside representation */
+   at    *backptr;
+   short  flags;
+   short  type;
+   size_t size;
+   gptr   data;
 #ifdef HAVE_MMAP
    gptr   mmap_addr;
    size_t mmap_len;
@@ -891,7 +892,8 @@ struct idx {
    size_t *dim;
    ptrdiff_t *mod;
    ptrdiff_t offset;	
-   struct srg *srg;
+   storage_t *srg;
+   at *backptr;
 };
 
 #define IDX_BASE(idx)   (gptr) ((char *) (idx)->srg->data + \
@@ -911,7 +913,7 @@ typedef struct index {
    ptrdiff_t offset;		/* in element size */
    storage_t  *st;		/* a pointer to the storage */
    struct idx *cptr;            /* struct idx for the C side (lisp_c) */
-   at *backptr;                 /* back reference to at */
+   at *backptr;
 } index_t;
 
 /* shape_t and subscript_t are used as argument types in the index 
@@ -931,7 +933,7 @@ typedef struct subscript {
 #define IND_ATST(ind)      (((index_t *)ind)->st->backptr)
 #define IND_STTYPE(ind)    (IND_ST(ind)->type)
 #define IND_STNELEMS(ind)  (IND_ST(ind)->size)
-#define IND_SHAPE(ind)     ((shape_t *)ind)
+#define IND_SHAPE(ind)     ((shape_t *)&(ind->ndim))
 #define IND_NDIMS(ind)     ((ind)->ndim)
 #define IND_DIM(ind, n)   ((ind)->dim[n])
 #define IND_MOD(ind, n)   ((ind)->mod[n])
@@ -1224,11 +1226,6 @@ LUSHAPI at *new_dhclass(at *name, dhclassdoc_t *kdata);
 LUSHAPI int  lside_mark_unlinked(gptr);
 LUSHAPI void lside_destroy_item(gptr);
 
-LUSHAPI void cside_create_str(void *cptr);
-LUSHAPI void cside_create_str_gc(void *cptr);
-LUSHAPI void cside_create_idx(void *cptr);
-LUSHAPI void cside_create_srg(void *cptr);
-LUSHAPI void cside_create_obj(void *cptr, dhclassdoc_t *);
 LUSHAPI void cside_destroy_item(void *cptr);
 LUSHAPI void cside_destroy_range(void *from, void *to);
 LUSHAPI at * cside_find_litem(void *cptr);

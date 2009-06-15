@@ -99,40 +99,6 @@ inline static void mark_for_update(avlnode_t *n)
 
 
 
-/* alloc_srg -- allocate space for a SRG */
-
-static avlnode_t *alloc_srg(storage_type_t type)
-{
-  /* A Lisp owned SRG associated to a Lisp object directly points into the
-   * data area of the Lisp object.
-   *
-   * A Lisp owned SRG not associated to a Lisp storage (e.g. a temporary)
-   * owns its data block. It must be freed when the object is freed or
-   * disowned when we associate a lisp storage (make_lisp_from_c)
-   *
-   * For your information, a C owned SRG manages completely its data
-   * block. These SRG are not allocated with this function and are not freed
-   * by any function in this file. The data must be copied back and forth when 
-   * synchronizing the L and C sides.
-   */
-  struct srg *cptr = malloc(sizeof(struct srg));
-  if (!cptr) 
-    error(NIL,"Out of memory",NIL);
-  cptr->size = 0;
-  cptr->type = (char)type;
-  cptr->data = 0;
-  cptr->flags = STS_MALLOC;
-
-  avlnode_t *n = avl_add(cptr);
-  if (n==0)
-    error(NIL,"lisp_c internal: cannot add element to item map",NIL);
-  n->cinfo = CINFO_SRG;
-  n->belong = BELONG_LISP;
-  n->cmoreinfo = 0;
-  return n;
-}
-
-
 /* alloc_idx -- allocate space for an IDX */
 
 static avlnode_t *alloc_idx(int ndim)
@@ -147,6 +113,7 @@ static avlnode_t *alloc_idx(int ndim)
   cptr->ndim = ndim;
   cptr->dim = (size_t *)(cptr+1);
   cptr->mod = (ptrdiff_t *)cptr->dim + ndim;
+  cptr->srg = NULL;
 
   avlnode_t *n = avl_add(cptr);
   if (n==0)
@@ -178,26 +145,6 @@ static avlnode_t *alloc_obj(dhclassdoc_t *classdoc)
   return n;
 }
 
-
-/* alloc_str -- allocate a string */
-
-static avlnode_t *alloc_str(char *data)
-{
-  /* A string is represented as a ubyte storage.
-   * The storage points to the same data as the
-   * lisp side string.
-   */
-  avlnode_t *n = avl_add(data);
-  ifn (n)
-    error(NIL, "lisp_c internal: cannot add element to item map", NIL);
-  n->cinfo = CINFO_STR;
-  n->cmoreinfo = 0;
-  n->belong = BELONG_LISP;
-  n->citem = (void *)data;
-  return n;
-}
-
-
 /* alloc_list -- allocate a list */
 
 static avlnode_t *alloc_list(int len)
@@ -206,12 +153,11 @@ static avlnode_t *alloc_list(int len)
    * Space for this copy is allocated using srg_resize. 
    * We must free it with srg_free. 
    */ 
-  avlnode_t *n = alloc_srg(ST_U8);
+  storage_t *st = Mptr(new_storage(ST_U8));
+  avlnode_t *n = avl_add(st);
   n->cinfo = CINFO_LIST;
 
-  struct srg *s = n->citem;
-  srg_resize(s, len*sizeof(dharg),__FILE__,__LINE__);
-  memset(s->data, 0, len*sizeof(dharg));
+  storage_alloc(st, len*sizeof(dharg), NIL);
   return n;
 }
 
@@ -219,37 +165,6 @@ static avlnode_t *alloc_list(int len)
 /* Forward */
 static void update_c_from_lisp();
 static void update_lisp_from_c();
-
-
-/* lside_create_srg -- call this for creating an SRG from interpreted code */
-
-static avlnode_t *lside_create_srg(at *p)
-{
-  ifn (STORAGEP(p))
-    error(NIL,"not a storage", p);
-  storage_t *st = Mptr(p);
-
-  if (st->cptr) {
-    avlnode_t *n = avl_find(st->cptr);
-    if (n==0)
-      error(NIL, "lisp_c internal: cannot find srg", st->backptr);
-    return n;
-    
-  } else {
-    /* allocate */
-    avlnode_t *n = alloc_srg(st->type);
-    n->litem = p;
-    st->cptr = n->citem;
-    mark_for_update(n);
-    
-    /* special marker for read-only storages */
-    if (st->flags & STF_RDONLY)
-      n->cmoreinfo = st;
-    /* update c object */
-    update_c_from_lisp(n);
-    return n;
-  }
-}
 
 
 /* lside_create_idx -- call this for creating an IDX from interpreted code */
@@ -320,24 +235,6 @@ static avlnode_t *lside_create_obj(at *p)
 }
   
   
-/* lside_create_str -- creates a string */
-
-static avlnode_t *lside_create_str(at *p)
-{
-  ifn (STRINGP(p))
-    error(NIL,"String expected",p);
-  char *str = (char *)String(p);
-  assert(str);
-  avlnode_t *n = avl_find(str);
-  
-  if (n==0) {
-     n = alloc_str(str);
-     n->litem = p;
-  }
-  return n;
-}
-
-
 /* lisp_owns_p -- check that object belongs to lisp */
   
 bool lisp_owns_p(void *cptr)
@@ -384,7 +281,7 @@ void lside_destroy_item(void *cptr)
 
 	  case CINFO_SRG:
             assert(STORAGEP(p));
-	    ((storage_t *)Mptr(p))->cptr = NULL;
+            fprintf(stderr, "lisp_c: should never get here\n"); abort();
 	    break;
 	    
 	  case CINFO_OBJ:
@@ -394,11 +291,14 @@ void lside_destroy_item(void *cptr)
 
 	  case CINFO_IDX:
             assert(INDEXP(p));
-            ((index_t *)Mptr(p))->cptr = NULL;
+            index_t *ind = Mptr(p);
+            //fprintf(stderr, "destroying index with storage at %p\n", ind->st);
+            ind->cptr = NULL;
 	    break;
 
 	  case CINFO_STR:
             assert(STRINGP(p));
+            fprintf(stderr, "lisp_c: should never get here\n"); abort();
              //Mptr(n->litem) = NULL;
             n->citem = NULL;
 	    break;
@@ -451,88 +351,6 @@ int lside_mark_unlinked(void *cdoc)
 
 
 
-/* -------------------------------------------------
-   ROUTINES MANAGING THE AVL TREE FROM COMPILED CODE
-   ------------------------------------------------- */
-
-
-/* cside_create_idx -- call this when creating an IDX from C code */
-
-void cside_create_idx(void *cptr)
-{
-  if (!dont_track_cside) {
-    avlnode_t *n = avl_add(cptr);
-    if (n) {
-      n->cinfo = CINFO_IDX;
-      n->belong = BELONG_C;
-    } else
-      error(NIL,"lisp_c internal : idx created twice",NIL);
-  }
-}
-
-/* cside_create_srg -- call this when creating an SRG from C code */
-
-void cside_create_srg(void *cptr)
-{
-  if (!dont_track_cside) {
-    avlnode_t *n = avl_add(cptr);
-    if (n) {
-      n->cinfo = CINFO_SRG;
-      n->belong = BELONG_C;
-    } else
-      error(NIL,"lisp_c internal : srg created twice",NIL);
-  }
-}
-
-/* cside_create_obj -- call this when creating an object from C code */
-
-void cside_create_obj(void *cptr, dhclassdoc_t *kname)
-{
-  if (!dont_track_cside) {
-    avlnode_t *n = avl_add(cptr);
-    if (n) {
-      n->cinfo = CINFO_OBJ;
-      n->cmoreinfo = kname;
-      n->belong = BELONG_C;
-    } else
-      error(NIL,"lisp_c internal : obj created twice",NIL);
-  }
-}
-
-/* cside_create_str -- call this when creating an STR from C code */
-
-void cside_create_str(void *cptr)
-{
-  if (!dont_track_cside) {
-    avlnode_t *n = avl_add(cptr);
-    if (n) {
-      n->cinfo = CINFO_STR;
-      n->belong = BELONG_C;
-    } else
-      error(NIL,"lisp_c internal : str created twice",NIL);
-  }
-}
-
-
-/* cside_create_str_gc -- create an STR from C code but it *
- *                        shall belong to LISP             */
-
-void cside_create_str_gc(void *cptr)
-{
-  if (!dont_track_cside) {
-    avlnode_t *n = avl_add(cptr);
-    if (n) {
-      n->cinfo = CINFO_STR;
-      n->belong = BELONG_LISP;
-    } else
-      error(NIL,"lisp_c internal : str created twice",NIL);
-    mark_temporary(n); // string might be just temporary
-  }
-}
-
-/* transmute_object_into_gptr -- 
-   trick a lisp object into a gptr */
-
 static void transmute_object_into_gptr(at *p, void *px)
 {
   /* This is bad practice */
@@ -564,7 +382,8 @@ static void cside_destroy_node(avlnode_t *n)
     switch (n->cinfo) {
 
     case CINFO_SRG:
-      ((struct storage *)Mptr(p))->cptr = 0;
+      fprintf(stderr, "lisp_c: should never get here"); abort();
+        //((struct storage *)Mptr(p))->cptr = 0;
       update_lisp_from_c(n);
       break;
 
@@ -593,7 +412,8 @@ static void cside_destroy_node(avlnode_t *n)
     switch (n->cinfo) {
       
     case CINFO_SRG:
-      srg_free(n->citem);
+      fprintf(stderr, "lisp_c: should never get here"); abort();
+      //srg_free(n->citem);
       break;
       
     case CINFO_OBJ:
@@ -848,9 +668,6 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
 	lisp2c_warning("(in): found GPTR instead of SRG", errctx);
       arg->dh_srg_ptr = Gptr(at_obj);
       
-    } else if (ZOMBIEP(at_obj) && dont_warn_zombie) {
-      arg->dh_srg_ptr = 0;
-      
     } else if (STORAGEP(at_obj)) {
       /* check type and access */
       storage_t *st = Mptr(at_obj);
@@ -858,11 +675,9 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
 	lisp2c_error("STORAGE has illegal type",errctx,at_obj);
       if (drec->access == DHT_WRITE)
         get_write_permit(st);
+      fprintf(stderr, "creating storage dharg at %p\n", st);
+      arg->dh_srg_ptr = Mptr(at_obj);
       
-      /* create object */
-      avlnode_t *n = lside_create_srg(at_obj);
-      (arg->dh_srg_ptr) = (struct srg *)(n->citem);
-
     } else
       lisp2c_error("STORAGE expected",errctx,at_obj);
     break;
@@ -967,8 +782,8 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
       mark_temporary(n);
 
       /* fill the list elements */
-      struct srg *srg = n->citem;
-      dharg *larg = srg->data;
+      storage_t *st = n->citem;
+      dharg *larg = st->data;
       at *p = at_obj;
       int i = drec->ndim;
       drec++;
@@ -978,7 +793,7 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
 	larg += 1;
 	p = Cdr(p);
       }
-      (arg->dh_srg_ptr) = srg;
+      (arg->dh_srg_ptr) = st;
       
     } else
       lisp2c_error("LIST expected", errctx, at_obj);
@@ -1042,13 +857,16 @@ static at *_dharg_to_at(dharg *arg, dhrecord *drec, at *errctx)
   case DHT_SRG:
     if (arg->dh_srg_ptr==0) 
       return NIL;
-    n = avl_find(arg->dh_srg_ptr);
-    if (n)
-      return make_lisp_from_c(n,arg->dh_srg_ptr);
-    if (!dont_track_cside)
-      lisp2c_warning("(out): Dangling pointer instead of SRG", errctx);
-    return NEW_GPTR(arg->dh_srg_ptr);
-        
+/*     n = avl_find(arg->dh_srg_ptr); */
+/*     if (n) */
+/*       return make_lisp_from_c(n,arg->dh_srg_ptr); */
+/*     if (!dont_track_cside) */
+/*       lisp2c_warning("(out): Dangling pointer instead of SRG", errctx); */
+/*     return NEW_GPTR(arg->dh_srg_ptr); */
+    assert(mm_ismanaged(arg->dh_srg_ptr));
+    storage_t *st = (storage_t *)arg->dh_srg_ptr;
+    return st->backptr;
+
   case DHT_IDX:
     if (arg->dh_idx_ptr==0) 
       return NIL;
@@ -1136,9 +954,9 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
     
   case CINFO_IDX: {
     struct idx *idx = n->citem;
-    avlnode_t *nst = avl_find(idx->srg);
-    at *atst = make_lisp_from_c(nst, idx->srg);
-    index_t *ind = new_index(Mptr(atst), NIL);
+    storage_t *st = idx->srg;
+    //at *atst = make_lisp_from_c(nst, idx->srg);
+    index_t *ind = new_index(st, NIL);
     ind->cptr = idx;
     n->litem = ind->backptr;
     mark_for_update(n);
@@ -1147,7 +965,8 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
   }
 
   case CINFO_SRG: {
-    struct srg *srg = n->citem;
+    fprintf(stderr, "lisp_c: should never get here\n"); abort();
+    storage_t *srg = n->citem;
     storage_t *st = Mptr(new_storage(srg->type));
 
     if (n->belong == BELONG_LISP) {
@@ -1155,7 +974,7 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
        * associated to a lisp storage, we must transfer the ownership
        * of the data block of the C object to the Lisp storage.
        */
-       *(struct srg *)st = *srg;
+       *st = *srg;
 
     } else {
       /* We patch the flag STS_MALLOC in order to allow
@@ -1167,7 +986,7 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
       st->flags = STS_MALLOC;
     }
     /* We can now update the avl tree */
-    st->cptr = srg;
+    //st->cptr = srg;
     n->litem = st->backptr;
     mark_for_update(n);
     update_lisp_from_c(n);
@@ -1210,7 +1029,7 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
      * for these partially supported objects.
      * They do not last between DH calls.
      */
-    struct srg *srg = n->citem;
+    storage_t *srg = n->citem;
     dharg *arg = srg->data;
     dhrecord *drec = n->cmoreinfo;
     if (drec==0 || drec->op!=DHT_LIST)
@@ -1250,28 +1069,28 @@ static void update_c_from_lisp(avlnode_t *n)
   switch (n->cinfo) {
       
   case CINFO_SRG: {
-
+    fprintf(stderr, "lisp_c: should never get here\n"); abort();
     /* Possibly broken code */        
     storage_t *st = Mptr(n->litem);
 /*     if (n->cmoreinfo) */
 /*        get_write_permit(st); */
             
     /* Synchronize compiled object */
-    struct srg *cptr = n->citem;
+    storage_t *cptr = n->citem;
     if (n->belong==BELONG_C) {
       /* C allocated SRG manage their own data block */
       ifn (st->flags & STS_MALLOC)
 	error(NIL,"lisp_c internal: expected ram storage",n->litem);
 
-      if (cptr->size < st->size) 
-        srg_resize(cptr,st->size,__FILE__,__LINE__);
+/*       if (cptr->size < st->size)  */
+/*         srg_resize(cptr,st->size,__FILE__,__LINE__); */
       size_t bytes = cptr->size * storage_sizeof[cptr->type];
       if (bytes>0 && cptr->data && st->data)
 	memcpy(cptr->data, st->data, bytes);
 
     } else {
        /* Other SRG point to the same data area */
-       *cptr = *(struct srg *)st;
+       *cptr = *st;
     } 
     break;
   }
@@ -1282,12 +1101,13 @@ static void update_c_from_lisp(avlnode_t *n)
     struct index *ind = Mptr(n->litem);
     
     /* setup storage */
-    avlnode_t *nst = lside_create_srg(IND_ATST(ind));
-    idx->srg = nst->citem;
+    storage_t *st = IND_ST(ind);
+    idx->srg = st;
     /* copy index structure:
      * we cannot use index_to_idx because it overwrites
      * the DIM and MOD pointers instead of copying the values
      */
+    assert(ind->ndim < MAXDIMS);
     idx->ndim = ind->ndim;
     idx->offset = ind->offset;
     for (int i=0; i<ind->ndim; i++) {
@@ -1377,23 +1197,24 @@ static void update_lisp_from_c(avlnode_t *n)
   switch (n->cinfo) {
 
   case CINFO_SRG: {
-    struct srg *cptr = n->citem;
-    struct storage *st = Mptr(n->litem);
+    fprintf(stderr, "lisp_c: should never get here\n"); abort();
+    storage_t *cptr = n->citem;
+    storage_t *st = Mptr(n->litem);
 
     if (n->belong == BELONG_C) {
       /* C allocated SRG manage their own data block */
       ifn (st->flags & STS_MALLOC)
 	error(NIL,"lisp_c internal: expected ram storage",n->litem);
 
-      if (st->size < cptr->size)
-         srg_resize((struct srg *)st, cptr->size,__FILE__,__LINE__);
+/*       if (st->size < cptr->size) */
+/*          srg_resize((struct srg *)st, cptr->size,__FILE__,__LINE__); */
       size_t nbytes = st->size * storage_sizeof[st->type];
       if (nbytes>0)
 	memcpy(st->data, cptr->data, nbytes);
 
     } else {
       /* Other SRG share their data block */
-       *(struct srg *)st = *cptr;
+       *st = *cptr;
        if (st->flags & STF_RDONLY)
           n->cmoreinfo = st;
     } 
@@ -1415,17 +1236,18 @@ static void update_lisp_from_c(avlnode_t *n)
       ind->dim[i] = idx->dim[i];
     }
     /* find the storage */
-    avlnode_t *nst = avl_find(idx->srg);
-    if (nst==0) {
-      /* danger: storage has been deallocated! */
-      lisp2c_warning("(out) : Found idx with dangling storage!",0);
-      lush_delete(n->litem);
-      n->litem = NIL;
-      return;
-    } 
+/*     avlnode_t *nst = avl_find(idx->srg); */
+/*     if (nst==0) { */
+/*       /\* danger: storage has been deallocated! *\/ */
+/*       lisp2c_warning("(out) : Found idx with dangling storage!",0); */
+/*       lush_delete(n->litem); */
+/*       n->litem = NIL; */
+/*       return; */
+/*     }  */
     /* plug the storage into lisp object */
-    at *atst = make_lisp_from_c(nst, idx->srg);
-    IND_ST(ind) = Mptr(atst);
+    //at *atst = make_lisp_from_c(nst, idx->srg);
+    //IND_ST(ind) = Mptr(atst);
+    IND_ST(ind) = idx->srg;
     break;
   }
 
@@ -1509,13 +1331,15 @@ static void update_lisp_from_c(avlnode_t *n)
 
 static void build_at_temporary(dhrecord *drec, dharg *arg)
 {
-  avlnode_t *n;
+  extern void dbg_notify(void *, void *);
+  avlnode_t *n = NULL;
 
   switch (drec->op) {
   
   case DHT_SRG: {
-    n = alloc_srg(dht_to_storage[(drec+1)->op]);
-    arg->dh_srg_ptr = n->citem;
+    //n = alloc_srg(dht_to_storage[(drec+1)->op]);
+    arg->dh_srg_ptr = Mptr(new_storage(dht_to_storage[(drec+1)->op]));
+    //fprintf(stderr, "creating temporary storage (%p)\n", arg->dh_srg_ptr);
     break;
   }
   case DHT_IDX: {
@@ -1542,7 +1366,8 @@ static void build_at_temporary(dhrecord *drec, dharg *arg)
   default:
     error(NIL,"lisp_c internal: unknown temporary style",NIL);
   }
-  mark_temporary(n);
+  if (n)
+    mark_temporary(n);
 }
 
 
@@ -1841,7 +1666,7 @@ DX(xlisp_c_map)
   else if (INDEXP(p))
     cptr = ((struct index *)Mptr(p))->cptr;
   else if (STORAGEP(p))
-    cptr = ((struct storage *)Mptr(p))->cptr;
+    cptr = Mptr(p);
   else if (GPTRP(p))
     cptr = Gptr(p);
   if (cptr) {
@@ -2064,12 +1889,7 @@ DX(xto_gptr)
     return NEW_GPTR(n->citem);
 
   } else if (STORAGEP(p)) {
-    avlnode_t *n = lside_create_srg(p);
-    return NEW_GPTR(n->citem);
-
-  } else if (STRINGP(p)) {
-    avlnode_t *n = lside_create_str(p);
-    return NEW_GPTR(n->citem);
+    return new_mptr(Mptr(p));
 
   } else if (p && (Class(p) == dh_class)) {
     struct cfunction *cfunc = Mptr(p);

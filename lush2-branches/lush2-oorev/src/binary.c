@@ -261,14 +261,10 @@ again:
       index_t *ind = Mptr(p);
       if (IND_STTYPE(ind) == ST_AT)
          if (!index_emptyp(ind)) {
-            at** data;
-            struct idx id;
-            index_read_idx(ind, &id);
-            data = IDX_DATA_PTR(&id);
-            begin_idx_aloop1(&id, off) {
+            at** data = IND_BASE(ind);
+            begin_idx_aloop1(ind, off) {
                sweep(data[off], code);
-            } end_idx_aloop1(&id, off);
-            index_rls_idx(ind, &id);
+            } end_idx_aloop1(ind, off);
          }
 
    } else if (cl == de_class || cl == df_class || cl == dm_class ) {

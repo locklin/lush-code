@@ -33,7 +33,7 @@
 #define IDX_PTR  IDX_BASE_TYPED
 
 #define L_ACCESS(lname, n) \
-    ((int *) ((char *) (((struct srg *) (lname))->data) + sizeof(dharg) * (n)))
+    ((int *) ((char *) (((storage_t *) (lname))->data) + sizeof(dharg) * (n)))
 
 /* ============== IDX STRUCTURE DIRECT MANIPULATION =========== */
 
@@ -55,9 +55,9 @@
  */
 #define Midx_setdata(i, d, s) \
 { \
-   assert((i)->srg->flags & STS_MALLOC);\
    (i)->srg->data = (gptr)d; \
    (i)->srg->size = s; \
+   (i)->srg->flags = STS_MALLOC;\
 }
 
 /* expect min and max to have been defined has intg */
@@ -75,7 +75,7 @@ max = (idx)->offset; \
 /* ============== IDX CREATION AND INITIALISATION ============== */
 
 /* Following macros depend on MAXDIM */
-#define Midx_copy_dim0(ni,i) 
+#define Midx_copy_dim0(ni,i)
 #define Midx_copy_dim1(ni,i) \
     (ni)->dim[0] = (i)->dim[0]; (ni)->mod[0] = (i)->mod[0]; 
 #define Midx_copy_dim2(ni,i) Midx_copy_dim1((ni),i); \
@@ -252,22 +252,19 @@ struct idx *newi = &name2(_idx_,newi)
 
 /* Declare new srg newi  */
 #define Msrg_declare(newi) \
-struct srg name2(_srg_,newi); \
-struct srg *newi = & name2(_srg_,newi)
+storage_t name2(_srg_,newi); \
+storage_t *newi = & name2(_srg_,newi)
 
 #define Msrg_init(newi, srg_type) \
-    (newi)->size = 0; \
-    (newi)->data = NULL; \
-    (newi)->type = srg_type; \
-    (newi)->flags = STS_MALLOC;
+  (newi)->backptr = (void *)0x99; \
+        (newi)->size = 0;         \
+        (newi)->data = NULL;      \
+        (newi)->type = srg_type;  \
+        (newi)->flags = 0;
 
 #define Msrg_free(newi)   /* nothing */
 
-/*
-#define Msrg_free(newi) \
-    if(newi->size != 0 && ((newi)->flags & STS_MALLOC)) \
-        free(newi->data);
-*/
+
 /* Define new index newi as a clone of index i */
 
 #define Midx_short_clone(newi, i) \

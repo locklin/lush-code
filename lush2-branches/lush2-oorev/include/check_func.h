@@ -125,11 +125,8 @@ LUSHAPI int  test_obj_class(void *obj, void *classvtable);
 
 
 LUSHAPI void *lush_malloc(size_t, const char *, int);
-//LUSHAPI void srg_resize_compiled(struct srg* ,size_t ,char *, int);
-LUSHAPI void srg_resize_mm(struct srg* ,size_t , const char *, int);
-LUSHAPI void srg_resize(struct srg *, size_t, const char *, int );
-LUSHAPI void srg_free(struct srg *);
-
+//LUSHAPI void srg_resize_mm(storage_t *,size_t , const char *, int);
+#define srg_resize_mm(st, s, f, l)  storage_realloc(st, s, 0)
 LUSHAPI bool idx_emptyp(struct idx *);
 
 #define Mnocheck(...)
@@ -160,8 +157,7 @@ LUSHAPI bool idx_emptyp(struct idx *);
 	    lush_error(rterr_not_same_dim);}
 
 #define Mstr_alloc(s, len)  \
-    s = mm_blob(len*sizeof(char));       \
-    cside_create_str_gc(s);
+    s = mm_blob(len*sizeof(char)); 
 
 /* s = lush_malloc(len*sizeof(char), __FILE__, __LINE__);  */
 
@@ -173,8 +169,7 @@ LUSHAPI bool idx_emptyp(struct idx *);
       srg_resize_mm(sr, new_size, __FILE__, __LINE__); \
    } else if ((sr)->size > (size_t)(new_size)) { \
       srg_resize_mm(sr, new_size, __FILE__, __LINE__); \
-      fprintf(stderr, "*** Warning: shrinking storage at %lx (lside: %lx)\n", \
-              (long)sr, (long)cside_find_litem(sr)); \
+      fprintf(stderr, "*** Warning: shrinking storage at %p\n", sr); \
    }
 /*       lush_error(rterr_cannot_shrink); */
 
