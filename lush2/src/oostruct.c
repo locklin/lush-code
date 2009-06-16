@@ -669,9 +669,9 @@ DY(ywith_object)
    ifn (CONSP(ARG_LIST))
       RAISEF("no arguments", NIL);
 
-   int howfar = 0;
    at *l = ARG_LIST;
    at *p = eval(Car(l));
+   int howfar = Class(p)->num_slots;
    
    if (CLASSP(p)) {
       l = Cdr(l);
