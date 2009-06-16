@@ -896,10 +896,10 @@ const char *dmc(const char *s, at *l)
       type = CHAR_MCHAR;
       c = s[0];
       if (s[1] || (get_char_map(s[0]) & CHAR_SPECIAL))
-         RAISEF("illegal macro-character", new_string(s));
+         RAISEF("illegal macro-character", NEW_STRING(s));
    }
    if ((get_char_map(c) & CHAR_SPECIAL))
-      RAISEF("illegal macro-character", new_string(s));
+      RAISEF("illegal macro-character", NEW_STRING(s));
 
    at *q = named(s);
    ifn (SYMBOLP(q))
@@ -1300,7 +1300,7 @@ const char *first_line(at *l)
 DX(xfirst_line)
 {
    ARG_NUMBER(1);
-   return new_string(first_line(APOINTER(1)));
+   return NEW_STRING(first_line(APOINTER(1)));
 }
 
 
@@ -1316,7 +1316,7 @@ const char *pname(at *l)
 DX(xpname)
 {
    ARG_NUMBER(1);
-   return new_string(pname(APOINTER(1)));
+   return NEW_STRING(pname(APOINTER(1)));
 }
 
 

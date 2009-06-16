@@ -58,7 +58,7 @@ static void make_singletons(void)
       s[0] = (char)c;
       char *ss = (char *)mm_strdup(s);
       assert(ss);
-      singletons[c] = new_string(ss);
+      singletons[c] = NEW_STRING(ss);
    }
 }
 
@@ -67,7 +67,7 @@ at *make_string_of_length(size_t n)
 {
    char *s = mm_blob(n+1);
    s[0] = s[n] = '\0';
-   return new_string(s);
+   return NEW_STRING(s);
 }
 
 
@@ -83,7 +83,7 @@ at *make_string(const char *s)
    } else {
       char *sd = mm_strdup(s);
       assert(sd);
-      return new_string(sd);
+      return NEW_STRING(sd);
    }
 }
 
@@ -324,7 +324,7 @@ at* str_mb_to_utf8(const char *s)
    if ((ans = recode(s, "", "UTF-8")))
       return ans;
 #endif
-   return new_string(s);
+   return NEW_STRING(s);
 }
 
 at* str_utf8_to_mb(const char *s)
@@ -341,7 +341,7 @@ at* str_utf8_to_mb(const char *s)
    if ((ans = recode(s, "UTF-8", "")))
       return ans;
 #endif
-   return new_string(s);
+   return NEW_STRING(s);
 }
 
 DX(xstr_locale_to_utf8)
@@ -678,7 +678,7 @@ const char *str_number(double x)
 DX(xstr_number)
 {
    ARG_NUMBER(1);
-   return new_string(str_number(AREAL(1)));
+   return NEW_STRING(str_number(AREAL(1)));
 }
 
 /*------------------------ */
@@ -701,7 +701,7 @@ const char *str_number_hex(double x)
 DX(xstr_number_hex)
 {
    ARG_NUMBER(1);
-   return new_string(str_number_hex(AREAL(1)));
+   return NEW_STRING(str_number_hex(AREAL(1)));
 }
 
 /*------------------------ */
@@ -709,7 +709,7 @@ DX(xstr_number_hex)
 DX(xstr_gptr)
 {
    ARG_NUMBER(1);
-   return new_string(gptr_class->name(APOINTER(1)));
+   return NEW_STRING(gptr_class->name(APOINTER(1)));
 }
 
 /*------------------------ */
@@ -1355,7 +1355,7 @@ class_t *string_class;
 void init_string(void)
 {
    /* set up string_class */
-   new_builtin_class(&string_class, NIL);
+   string_class = new_builtin_class(NIL);
    string_class->listeval = string_listeval;
    string_class->name = string_name;
    string_class->compare = string_compare;

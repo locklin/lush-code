@@ -293,7 +293,7 @@ DX(xnameof)
    const char *s = nameof(ASYMBOL(1));
    if (!s)
       RAISEFX("not a symbol", APOINTER(1));
-   return new_string(s);
+   return NEW_STRING(s);
 }
 
 
@@ -315,7 +315,7 @@ at *global_names(void)
       where = &answer;
       while (*where && strcmp(name, String(Car(*where))) > 0)
          where = &Cdr(*where);
-      *where = new_cons(new_string(name), *where);
+      *where = new_cons(NEW_STRING(name), *where);
    }
    return answer;
 }
@@ -542,7 +542,7 @@ symbol_t *symbol_pop(symbol_t *s)
 at *new_symbol(const char *str)
 {
    if (str[0] == ':' && str[1] == ':')
-      error(NIL, "belongs to a reserved package... ", new_string(str));
+      error(NIL, "belongs to a reserved package... ", NEW_STRING(str));
    
    hash_name_t *hn = search_by_name(str, 1);
    ifn (hn->named) {
@@ -761,7 +761,7 @@ void pre_init_symbol(void)
       MM_ROOT(cache);
    }
    if (!symbol_class) {
-      new_builtin_class(&symbol_class, NIL);
+      symbol_class = new_builtin_class(NIL);
       symbol_class->name = symbol_name;
       symbol_class->selfeval = symbol_selfeval;
       symbol_class->hash = symbol_hash;

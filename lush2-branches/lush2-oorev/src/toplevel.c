@@ -668,7 +668,7 @@ DY(ymemprof)
    at *stats = new_htable(n, false, true);
    char **key = mm_prof_key();
    for (int i=0; i<n; i++)
-      htable_set(stats, new_string(key[i]), NEW_NUMBER(hist[i]));
+      htable_set(stats, NEW_STRING(key[i]), NEW_NUMBER(hist[i]));
    var_set(at_memstats, stats);
    
    return res;
@@ -959,7 +959,7 @@ DX(xbtrace)
 DX(xerrname)
 {
    ARG_NUMBER(0);
-   return new_string(error_text());
+   return NEW_STRING(error_text());
 }
 
 DX(xquiet)

@@ -159,13 +159,13 @@ check_obj_class(void *obj, void *classvtable)
 
 
 void 
-check_main_maout(struct idx *i1, struct idx *i2)
+check_main_maout(index_t *i1, index_t *i2)
 {
   Mcheck_main_maout(i1, i2);
 }
 
 void 
-check_main_maout_any(struct idx *i1, struct idx *i2)
+check_main_maout_any(index_t *i1, index_t *i2)
 {
   if (idx_emptyp(i2))
     {
@@ -186,54 +186,54 @@ check_main_maout_any(struct idx *i1, struct idx *i2)
 }
 
 void 
-check_main_main_maout(struct idx *i0, struct idx *i1, struct idx *i2)
+check_main_main_maout(index_t *i0, index_t *i1, index_t *i2)
 {
   Mcheck_main_main_maout(i0, i1, i2);
 }
 
 void 
-check_main_m0out(struct idx *i1, struct idx *i2)
+check_main_m0out(index_t *i1, index_t *i2)
 {
   Mcheck_main_m0out(i1, i2);
 }
 
 void 
-check_main_main_m0out(struct idx *i0, struct idx *i1, struct idx *i2)
+check_main_main_m0out(index_t *i0, index_t *i1, index_t *i2)
 {
   Mcheck_main_main_m0out(i0, i1, i2);
 }
 
 void 
-check_main_m0in_maout(struct idx *i0, struct idx *i1, struct idx *i2)
+check_main_m0in_maout(index_t *i0, index_t *i1, index_t *i2)
 {
   Mcheck_main_m0in_maout(i0, i1, i2);
 }
 
 void 
-check_main_main_maout_dot21(struct idx *i0, struct idx *i1, struct idx *i2)
+check_main_main_maout_dot21(index_t *i0, index_t *i1, index_t *i2)
 {
   Mcheck_main_main_maout_dot21(i0, i1, i2);
 }
 
 void 
-check_main_main_maout_dot42(struct idx *i0, struct idx *i1, struct idx *i2)
+check_main_main_maout_dot42(index_t *i0, index_t *i1, index_t *i2)
 {
   Mcheck_main_main_maout_dot42(i0, i1, i2);
 }
 
 void 
-check_m1in_m1in_m2out(struct idx *i0, struct idx *i1, struct idx *i2)
+check_m1in_m1in_m2out(index_t *i0, index_t *i1, index_t *i2)
 {
   Mcheck_m1in_m1in_m2out(i0, i1, i2);
 }
 
 void 
-check_m2in_m2in_m4out(struct idx *i0, struct idx *i1, struct idx *i2)
+check_m2in_m2in_m4out(index_t *i0, index_t *i1, index_t *i2)
 {
   Mcheck_m2in_m2in_m4out(i0, i1, i2);
 }
 
-bool idx_emptyp(struct idx *i0)
+bool idx_emptyp(index_t *i0)
 {
    for (int i=0; i<i0->ndim; i++)
       if (i0->dim[i] == 0)

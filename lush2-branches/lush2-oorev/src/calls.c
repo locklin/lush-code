@@ -172,7 +172,7 @@ static int tlsizeof(const char *s)
       return sizeof(at);
    if( ! strcmp(s, "object"))
       return sizeof(object_t);
-   error(NIL,"unsupported C type",new_string(s));
+   error(NIL,"unsupported C type", NEW_STRING(s));
 }
 
 DX(xsizeof)

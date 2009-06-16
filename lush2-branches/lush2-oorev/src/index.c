@@ -24,59 +24,21 @@
  * 
  ***********************************************************************/
 
-/******************************************************************************
- *
- *	INDEX.C.  Accessing storages as matrices...
- *
- ******************************************************************************/
-
-/*
- * An index is a way to access a storage as a multi-dimensional object.
- * There are two kind of indexes:
- * 
- * 1) <struct index> are index on an arbitrary storage. They describe the
- *    starting offset, the dimensions, and their modulos.  
- * 
- *    The easiest way to access an index element consists in computing
- *    its offset, and using the <(*st->getat)> and <(*st->setat)> routines 
- *    of the related storage. This SLOW task is easily performed with the
- *    <easy_index_{check,set,get}()> routines.
- * 
- *    The second way consists in creating a <struct idx> for reading or
- *    for writing, with the <index_{read,write}_idx()> functions. After
- *    having used these idxs, a call to <index_rls_idx()> function releases
- *    them. 
- * 
- * 2) <struct X_idx> are "light" indexes that always refer to a piece of 
- *    memory. They describe the type of the objects, the starting address,
- *    the dimensions and the modulos, as well as two vectors setf and getf
- *    for accessing the data independently of the type.
- */
-
 #include "header.h"
 #include <inttypes.h>
 
 typedef at* atp_t;
 
-void clear_index(index_t *ind, size_t _)
+static void clear_index(index_t *ind, size_t _)
 {
    ind->st = NULL;
    ind->backptr = NULL;
 }
 
-void mark_index(index_t *ind)
+static void mark_index(index_t *ind)
 {
    MM_MARK(ind->st);
    MM_MARK(ind->backptr);
-}
-
-static index_t *index_dispose(index_t *);
-
-bool finalize_index(index_t *ind)
-{
-   /* XXX may go away when lisp_c is obsolete */
-   index_dispose(ind);
-   return true;
 }
 
 static mt_t mt_index = mt_undefined;
@@ -157,8 +119,6 @@ static shape_t *parse_shape(at *, shape_t *);
 
 static index_t *index_dispose(index_t *ind)
 {
-   if (ind->cptr)
-      lside_destroy_item(ind->cptr);
    zombify(ind->backptr);
    return NULL;
 }
@@ -333,32 +293,29 @@ static int index_compare(at *p, at *q, int order)
          return 1;
 
    /* iterate */
-   struct idx id1, id2;
-   index_read_idx(ind1,&id1);
-   index_read_idx(ind2,&id2);
-   gptr *base1 = IDX_BASE(&id1);
-   gptr *base2 = IDX_BASE(&id2);
+   gptr *base1 = IND_BASE(ind1);
+   gptr *base2 = IND_BASE(ind2);
    int ret = 1;
 
    switch (type1) {
    case ST_AT: {
-      begin_idx_aloop2(&id1, &id2, off1, off2) {
+      begin_idx_aloop2(ind1, ind2, off1, off2) {
          ifn (eq_test( ((at**)base1)[off1], ((at**)base2)[off2]))
             goto fail;
-      } end_idx_aloop2(&id1, &id2, off1, off2); 
+      } end_idx_aloop2(ind1, ind2, off1, off2); 
       ret = 0;
    }
    case ST_GPTR: {
-      begin_idx_aloop2(&id1, &id2, off1, off2) {
+      begin_idx_aloop2(ind1, ind2, off1, off2) {
          ifn (((gptr*)base1)[off1]==((gptr*)base2)[off2])
             goto fail;
-      } end_idx_aloop2(&id1, &id2, off1, off2); 
+      } end_idx_aloop2(ind1, ind2, off1, off2); 
       ret = 0;
    }
    default: {
       real (*get1)(gptr,size_t) = *storage_getr[type1];
       real (*get2)(gptr,size_t) = *storage_getr[type2];
-      begin_idx_aloop2(&id1, &id2, off1, off2) {
+      begin_idx_aloop2(ind1, ind2, off1, off2) {
          real r1 = (*get1)(base1, off1);
          real r2 = (*get2)(base2, off2);
          if (r1 != r2)
@@ -370,13 +327,11 @@ static int index_compare(at *p, at *q, int order)
                goto fail;
          }
 #endif
-      } end_idx_aloop2(&id1, &id2, off1, off2); 
+      } end_idx_aloop2(ind1, ind2, off1, off2); 
       ret = 0;
    }
    }
 fail:
-   index_rls_idx(ind1,&id1);
-   index_rls_idx(ind2,&id2);
    return ret; 
 }
 
@@ -384,41 +339,38 @@ fail:
 static unsigned long index_hash(at *p)
 { 
    index_t *ind = Mptr(p);
-   struct idx idx;
-   index_read_idx(ind,&idx);
-   gptr *base = IDX_BASE(&idx);
+   gptr *base = IND_BASE(ind);
    unsigned long x = 0;
    
    switch IND_STTYPE(ind) {
    case ST_AT: {
-      begin_idx_aloop1(&idx, off) {
+      begin_idx_aloop1(ind, off) {
          x = (x<<1) | ((long)x<0 ? 0:1);
          x ^= hash_value( ((at**)base)[off] );
-      } end_idx_aloop1(&idx, off);
+      } end_idx_aloop1(ind, off);
       break;
    }          
    case ST_GPTR: {
-      begin_idx_aloop1(&idx, off) {
+      begin_idx_aloop1(ind, off) {
          x = (x<<1) | ((long)x<0 ? 0:1);
          x ^= (unsigned long) ( ((gptr*)base)[off] );
-      } end_idx_aloop1(&idx, off);
+      } end_idx_aloop1(ind, off);
       break;
    } 
    default: {
       union { real r; long l[2]; } u;
       real (*getr)(gptr,size_t) = *storage_getr[IND_STTYPE(ind)];
       
-      begin_idx_aloop1(&idx, off) {
+      begin_idx_aloop1(ind, off) {
          x = (x<<1) | ((long)x<0 ? 0:1);
          u.r = (*getr)(base, off);
          x ^= u.l[0];
          if (sizeof(real) >= 2*sizeof(unsigned long))
             x ^= u.l[1];
-      } end_idx_aloop1(&idx, off);      
+      } end_idx_aloop1(ind, off);      
       break;
    }
    }
-   index_rls_idx(ind,&idx);
    return x; 
 }
 
@@ -1067,7 +1019,7 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
 /* create new index for storage st */ 
 index_t *new_index(storage_t *st, shape_t *shp)
 {
-   size_t stnelems = st->size;
+   size_t stnelems = st ? st->size : 0;
    size_t shpnelems = shp ? shape_nelems(shp) : stnelems;
    if (shp==NIL)
       shp = SHAPE1D(stnelems);
@@ -1075,9 +1027,11 @@ index_t *new_index(storage_t *st, shape_t *shp)
    else if (shpnelems>stnelems)
       RAISEF("storage too small for new index", NEW_NUMBER(stnelems));
    
-   
    index_t *ind = mm_alloc(mt_index);
-   if (st->data==NULL) {
+   if (st == NULL) {
+      IND_NDIMS(ind) = 0;
+
+   } else  if (st->data == NULL) {
       assert(stnelems==0);
       IND_NDIMS(ind) = -1;
    } else {
@@ -1087,7 +1041,6 @@ index_t *new_index(storage_t *st, shape_t *shp)
    }
    IND_ST(ind) = st;
    ind->offset = 0;
-   ind->cptr = NULL;
    ind->backptr = new_at(index_class, ind);
    if (shp->ndims != 1) 
       ind = index_reshapeD(ind, shp);
@@ -1113,7 +1066,7 @@ DX(xnew_index)
 
 index_t *new_index_for_cdata(storage_type_t type, shape_t *shp, void *data)
 {
-   storage_t *st = Mptr(new_storage(type));
+   storage_t *st = new_storage(type);
    st->data = data;
    st->flags = STS_MALLOC;
    st->size = shape_nelems(shp);
@@ -1126,7 +1079,7 @@ index_t *make_array(storage_type_t type, shape_t *shp, at *init)
    /* create a storage of the right size */
    size_t nelems = shape_nelems(shp);
    nelems = (nelems<MINSTORAGE) ? MINSTORAGE : nelems;
-   storage_t *st = Mptr(make_storage(type, nelems, init));
+   storage_t *st = make_storage(type, nelems, init);
    index_t *res = new_index(st, shp);
    return res;
 }
@@ -1437,53 +1390,6 @@ void easy_index_check(index_t *ind, shape_t *shp)
       } else
          shp->dim[i] = IND_DIM(ind, i);
 }
-
-/*
- * index_read_idx()
- * index_write_idx()
- * index_rls_idx()
- *
- * Given the index, these function return a
- * idx structure pointing to the data area;
- */
-
-
-static void index_to_idx(index_t *ind, struct idx *idx)
-{
-   idx->ndim = ind->ndim;
-   idx->dim = ind->dim;
-   idx->mod = ind->mod;
-   idx->offset = ind->offset;
-   idx->srg = ind->st;
-}
-
-static void idx_to_index(struct idx *idx, index_t *ind)
-{
-   ind->ndim = idx->ndim;
-   for(int i=0;i<idx->ndim;i++) {
-      ind->mod[i] = idx->mod[i];
-      ind->dim[i] = idx->dim[i];
-   }
-   ind->offset = idx->offset;
-   ind->st = idx->srg;
-}
-
-void index_read_idx(index_t *ind, struct idx *idx)
-{
-   index_to_idx(ind, idx);
-}
-
-void index_write_idx(index_t *ind, struct idx *idx)
-{
-   index_to_idx(ind, idx);
-}
-
-void index_rls_idx(struct index *ind, struct idx *idx)
-{
-   idx_to_index(idx, ind);
-}
-
-
 extern void get_write_permit(storage_t *);  /* in storage.c */
 
 /* copy array contents from ind1 to ind2, return ind2 */
@@ -1623,7 +1529,7 @@ DX(xarray_swap)
 /* create array of subscripts of all nonzero elements in ind */
 index_t *array_where_nonzero(index_t *ind)
 {
-   storage_t *srg = Mptr(make_storage(ST_INT, 64, NIL));
+   storage_t *srg = make_storage(ST_INT, 64, NIL);
    int n = 0;
    int r = IND_NDIMS(ind);
 
@@ -1672,7 +1578,6 @@ index_t *index_copy(index_t *src, index_t *dest)
 {
    memcpy(dest, src, sizeof(index_t));
    dest->backptr = new_at(index_class, dest);
-   dest->cptr = NULL;
    return dest; 
 }
 
@@ -1822,13 +1727,10 @@ static void format_save_matrix(index_t *ind, FILE *f, bool with_header)
             write4(f, 1);
     }
    /* iterate */
-   struct idx id;
-   index_read_idx(ind,&id);
-   begin_idx_aloop1(&id, off) {
-      char *p = (char*)(id.srg->data) + storage_sizeof[st]*(id.offset + off);
+   begin_idx_aloop1(ind, off) {
+      char *p = (char*)(ind->st->data) + storage_sizeof[st]*(ind->offset + off);
       fwrite(p, storage_sizeof[st], 1, f);
-   } end_idx_aloop1(&id, off);
-   index_rls_idx(ind,&id);
+   } end_idx_aloop1(ind, off);
    test_file_error(f);
 }
 
@@ -1899,29 +1801,23 @@ static void format_save_ascii_matrix(index_t *ind, FILE *f, int mode)
    
    /* iterate */
    if (mode<2) {
-      struct idx id;
-      index_read_idx(ind,&id);
-      gptr base = IDX_DATA_PTR(&id);
-      begin_idx_aloop1(&id, off) {
+      gptr base = IND_BASE(ind);
+      begin_idx_aloop1(ind, off) {
          flt x = (*getf)(base, off);
          fprintf(f, "%10.5f\n", x);
-      } end_idx_aloop1(&id, off);
-      index_rls_idx(ind,&id);
+      } end_idx_aloop1(ind, off);
       FMODE_BINARY(f);
 
    } else if (mode==2) {
       int d = IND_NDIMS(ind);
-      struct idx id;
-      index_read_idx(ind,&id);
-      gptr base = IDX_DATA_PTR(&id);
-      begin_idx_aloop1(&id, off) {
+      gptr base = IND_BASE(ind);
+      begin_idx_aloop1(ind, off) {
          flt x = (*getf)(base, off);
          fprintf(f, "%10.5f ", x);
          for (int i=0; i<d-1; i++)
             if ((off+1)%IND_MOD(ind, i)==0)
                fprintf(f, "\n");
-      } end_idx_aloop1(&id, off);
-      index_rls_idx(ind,&id);
+      } end_idx_aloop1(ind, off);
       FMODE_BINARY(f);
    }
    test_file_error(f);
@@ -2000,7 +1896,6 @@ DX(xarray_export_tabular)
 
 void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
 {
-   struct idx id;
    size_t size, elsize, rsize;
    char *pntr;
    int contiguous;
@@ -2024,12 +1919,10 @@ void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
    }
    
    /* read */
-   index_write_idx(ind, &id);
-   pntr = IDX_DATA_PTR(&id);
+   char *p = IND_BASE(ind);
    if (contiguous) {
       /* fast read of contiguous matrices */
-      rsize = fread(pntr, elsize, size, f);
-      index_rls_idx(ind,&id);
+      rsize = fread(p, elsize, size, f);
       if (rsize < 0)
          test_file_error(NIL);
       else if (rsize < size)
@@ -2038,11 +1931,10 @@ void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
    } else {
       /* must loop on each element */
       rsize = 1;
-      begin_idx_aloop1(&id, off) {
+      begin_idx_aloop1(ind, off) {
          if (rsize == 1)
-            rsize = fread(pntr + (off * elsize), elsize, 1, f);
-      } end_idx_aloop1(&id, off);
-      index_rls_idx(ind,&id);
+            rsize = fread(p + (off * elsize), elsize, 1, f);
+      } end_idx_aloop1(ind, off);
       if (rsize < 0)
          test_file_error(NIL);
       else if (rsize < 1)
@@ -2074,9 +1966,7 @@ DX(ximport_raw_matrix)
 
 void import_text_matrix(index_t *ind, FILE *f)
 {
-   struct idx id;
    size_t size, elsize;
-   char *pntr;
    real x;
    /* validate */
    mode_check(ind, &size, &elsize);
@@ -2091,16 +1981,13 @@ void import_text_matrix(index_t *ind, FILE *f)
       error(NIL, "cannot read data for this storage type",IND_ATST(ind));
    
    /* load */
-   index_write_idx(ind, &id);
-   pntr = IDX_DATA_PTR(&id);
-   begin_idx_aloop1(&id, off) {
+   char *p = IND_BASE(ind);
+   begin_idx_aloop1(ind, off) {
       if (fscanf(f, " %lf ", &x) != 1) {
-         index_rls_idx(ind,&id);
          error(NIL,"Cannot read a number",NIL);
       }
-      (*setr)(pntr, off, x);
-   } end_idx_aloop1(&id, off);
-   index_rls_idx(ind,&id);
+      (*setr)(p, off, x);
+   } end_idx_aloop1(ind, off);
 }
 
 
@@ -2262,16 +2149,10 @@ at *load_matrix(FILE *f)
          import_raw_matrix(ind,f,0);
       /* Swap when needed */
       if (swapflag) {
-         struct idx id;
          size_t size, elsize;
-         char *pntr;
          mode_check(ind, &size, &elsize);
-         if (elsize > 1) {
-            index_write_idx(ind, &id);
-            pntr = IDX_DATA_PTR(&id);
-            swap_buffer(pntr, size, elsize);
-            index_rls_idx(ind,&id);
-         }
+         if (elsize > 1)
+            swap_buffer(IND_BASE(ind), size, elsize);
       }
    }
    return ind->backptr;
@@ -2331,12 +2212,12 @@ at *map_matrix(FILE *f)
    /* Create storage */
    storage_t *st;
    switch(magic) {
-   case BINARY_MATRIX:  st = Mptr(new_storage(ST_F));   break;
-   case DOUBLE_MATRIX:  st = Mptr(new_storage(ST_D));   break;
-   case INTEGER_MATRIX: st = Mptr(new_storage(ST_I32)); break;
-   case SHORT_MATRIX:   st = Mptr(new_storage(ST_I16)); break;
-   case SHORT8_MATRIX:  st = Mptr(new_storage(ST_I8));  break;
-   case BYTE_MATRIX:    st = Mptr(new_storage(ST_U8));  break;
+   case BINARY_MATRIX:  st = new_storage(ST_F);   break;
+   case DOUBLE_MATRIX:  st = new_storage(ST_D);   break;
+   case INTEGER_MATRIX: st = new_storage(ST_I32); break;
+   case SHORT_MATRIX:   st = new_storage(ST_I16); break;
+   case SHORT8_MATRIX:  st = new_storage(ST_I8);  break;
+   case BYTE_MATRIX:    st = new_storage(ST_U8);  break;
    default:
       error(NIL, "cannot map ascii matrix files", NIL);
    }
@@ -3542,10 +3423,10 @@ class_t *index_class;
 void init_index(void)
 {
    mt_index = MM_REGTYPE("index", sizeof(index_t),
-                         clear_index, mark_index, finalize_index);
+                         clear_index, mark_index, 0);
 
    /* setting up index_class */
-   new_builtin_class(&index_class, NIL);
+   index_class = new_builtin_class(NIL);
    index_class->dispose = (dispose_func_t *)index_dispose;
    index_class->name = index_name;
    index_class->listeval = index_listeval;

@@ -644,15 +644,15 @@ void pre_init_function(void)
                     clear_lfunction, mark_lfunction, 0);
 
    if (!function_class) {
-      new_builtin_class(&function_class, NIL);
+      function_class = new_builtin_class(NIL);
    }
    if (!dx_class) {
-      new_builtin_class(&dx_class, function_class);
+      dx_class = new_builtin_class(function_class);
       dx_class->name = func_name;
       dx_class->listeval = dx_listeval;
    }
    if (!dy_class) {
-      new_builtin_class(&dy_class, function_class);
+      dy_class = new_builtin_class(function_class);
       dy_class->name = func_name;
       dy_class->listeval = dy_listeval;
    }
@@ -669,15 +669,15 @@ void init_function(void)
    class_define("DX", dx_class);
    class_define("DY", dy_class);
 
-   new_builtin_class(&de_class, function_class);
+   de_class = new_builtin_class(function_class);
    de_class->listeval = de_listeval;
    class_define("DE", de_class);
 
-   new_builtin_class(&df_class, function_class);
+   df_class = new_builtin_class(function_class);
    df_class->listeval = df_listeval;
    class_define("DF", df_class);
 
-   new_builtin_class(&dm_class, function_class);
+   dm_class = new_builtin_class(function_class);
    dm_class->listeval = dm_listeval;
    class_define("DM", dm_class);
 

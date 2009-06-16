@@ -124,7 +124,7 @@ static int lisp_ysize(wptr info)
 
 static const char *lisp_setfont(wptr info, const char *f)
 {
-   at *q = new_cons(new_string(f),NIL);
+   at *q = new_cons(NEW_STRING(f),NIL);
    at *r = NIL;
    lisp_send_maybe_ext(info, at_setfont, q, &r);
 
@@ -187,7 +187,7 @@ static void lisp_draw_text(wptr info, int x, int y, const char *s)
 {
    at *q = new_cons(NEW_NUMBER(x),
                     new_cons(NEW_NUMBER(y),
-                             new_cons(new_string(s),NIL)));
+                             new_cons(NEW_STRING(s),NIL)));
    lisp_send(info,at_draw_text,q);
 }
 
@@ -196,7 +196,7 @@ static void lisp_rect_text(wptr info, int x, int y, const char *s,
 {
    at *q = new_cons(NEW_NUMBER(x),
                     new_cons(NEW_NUMBER(y),
-                             new_cons(new_string(s),NIL)));
+                             new_cons(NEW_STRING(s),NIL)));
    at *p = lisp_send(info,at_rect_text,q);
    at *r = p;
    if (CONSP(p) && NUMBERP(Car(p))) { 
@@ -289,7 +289,7 @@ static void lisp_fill_polygon(wptr info, short (*points)[2], uint n)
 
 static void lisp_gspecial(wptr info, const char *s)
 {
-   at *q = new_cons(new_string(s),NIL);
+   at *q = new_cons(NEW_STRING(s),NIL);
    lisp_send_maybe(info,at_gspecial,q);
 }
 

@@ -625,7 +625,7 @@ DX(xmodule_filename)
    
    module_t *m = Mptr(p);
    if (m->filename)
-      return new_string(m->filename);
+      return NEW_STRING(m->filename);
    return NIL;
 }
 
@@ -638,7 +638,7 @@ DX(xmodule_init_function)
 
    module_t *m = Mptr(p);
    if (m->initname)
-      return new_string(m->initname);
+      return NEW_STRING(m->initname);
    if (m == root)
       return make_string("init_lush");
    return NIL;
@@ -1096,20 +1096,20 @@ static char *module_maybe_unload(module_t *m)
 #if DLOPEN
    if (m->flags & MODULE_SO)
       if (dlclose(m->handle))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #endif
 #if DLDBFD
    if (m->flags & MODULE_O)
       if (dld_unlink_by_file(m->filename, 1))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #endif
 #if NSBUNDLE
    if (m->flags & MODULE_O)
       if (nsbundle_unload(&m->bundle) < 0)
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
    if (m->flags & MODULE_SO) 
       if (nsbundle_update() < 0)
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #endif
    check_executability = true;
    /* Remove the module from the chain */
@@ -1148,7 +1148,7 @@ at *module_load(const char *file, at *hook)
    /* Check that file exists */
    const char *filename = concat_fname(NULL, file);
    if (! filep(filename))
-      RAISEF("file not found", new_string(filename));
+      RAISEF("file not found", NEW_STRING(filename));
 
    /* Check if the file extension indicates a DLL */
    const char *l = filename + strlen(filename);
@@ -1193,31 +1193,31 @@ at *module_load(const char *file, at *hook)
 #if DLOPEN
 # if DLDBFD
       if (! (handle = dld_dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 # else
       if (! (handle = dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 # endif
 # if NSBUNDLE
       if (nsbundle_exec_all_but(NULL) < 0 || nsbundle_update() < 0)
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 # endif
 #else
       RAISEF("dynlinking this file is not supported (dlopen)",
-             new_string(m->filename));
+             NEW_STRING(m->filename));
 #endif
       m->flags |= MODULE_SO | MODULE_STICKY;
       
    } else {
 #if DLDBFD
       if (dld_link(m->filename))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #elif NSBUNDLE
       if (nsbundle_load(m->filename, &m->bundle))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #else
       RAISEF("dynlinking this file is not supported (bfd)", 
-             new_string(m->filename));
+             NEW_STRING(m->filename));
 #endif      
       m->flags |= MODULE_O;
    }
@@ -1319,7 +1319,7 @@ DX(xmod_undefined)
             nsbundle_t *def = nsbundle_hget(sname);
             if (def==&nsbundle_head || (!def && !NSIsSymbolNameDefined(sname))) {
                if (sname[0]=='_') sname += 1;
-               *where = new_cons( new_string((char*)sname), NIL);
+               *where = new_cons( NEW_STRING((char*)sname), NIL);
                where = &Cdr(*where);
             }
          }
@@ -1547,7 +1547,7 @@ void init_module(char *progname)
    pre_init_module();
 
    /* set up module_class */
-   new_builtin_class(&module_class, NIL);
+   module_class = new_builtin_class(NIL);
    module_class->dispose = (dispose_func_t *)module_dispose;
    module_class->serialize = module_serialize;
    module_class->dontdelete = true;

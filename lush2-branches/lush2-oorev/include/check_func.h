@@ -127,7 +127,7 @@ LUSHAPI int  test_obj_class(void *obj, void *classvtable);
 LUSHAPI void *lush_malloc(size_t, const char *, int);
 //LUSHAPI void srg_resize_mm(storage_t *,size_t , const char *, int);
 #define srg_resize_mm(st, s, f, l)  storage_realloc(st, s, 0)
-LUSHAPI bool idx_emptyp(struct idx *);
+LUSHAPI bool idx_emptyp(index_t *);
 
 #define Mnocheck(...)
 
@@ -175,19 +175,19 @@ LUSHAPI bool idx_emptyp(struct idx *);
 
 #define Midx_checksize0(i1) { \
     size_t siz = (i1)->offset + 1; \
-    Msrg_resize((i1)->srg, siz) \
+    Msrg_resize((i1)->st, siz) \
 }
 
 #define Midx_checksize1(i1) { \
     size_t siz = 1 + (i1)->offset + ((i1)->dim[0] - 1) * (i1)->mod[0]; \
-    Msrg_resize((i1)->srg, siz) \
+    Msrg_resize((i1)->st, siz) \
 }
 
 #define Midx_checksize(i1) { \
     size_t siz=(i1)->offset+1; \
     for(int j=0; j<(i1)->ndim; j++) \
 	siz += ((i1)->dim[j] - 1) * (i1)->mod[j]; \
-    Msrg_resize((i1)->srg, siz); \
+    Msrg_resize((i1)->st, siz); \
 }
 
 #define Mcheck0(i1) \
@@ -328,25 +328,25 @@ LUSHAPI bool idx_emptyp(struct idx *);
 /* Mcheck_m1in_m0in_m1out, Mcheck_m2in_m0in_m2out --> Mcheck_main_m0in_maout */
 /* Mcheck_m1in_m1in_m1out, Mcheck_m2in_m2in_m2out --> Mcheck_main_main_maout */
 
-LUSHAPI void check_main_maout(struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_maout(index_t *i1, index_t *i2);
 
-LUSHAPI void check_main_maout_any(struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_maout_any(index_t *i1, index_t *i2);
 
-LUSHAPI void check_main_main_maout(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_m0out(struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_m0out(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_m0in_maout(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_maout_dot21(struct idx *i0, 
-                                         struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_maout_dot42(struct idx *i0, 
-                                         struct idx *i1, struct idx *i2);
-LUSHAPI void check_m1in_m1in_m2out(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
-LUSHAPI void check_m2in_m2in_m4out(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_maout(index_t *i0, 
+                                   index_t *i1, index_t *i2);
+LUSHAPI void check_main_m0out(index_t *i1, index_t *i2);
+LUSHAPI void check_main_main_m0out(index_t *i0, 
+                                   index_t *i1, index_t *i2);
+LUSHAPI void check_main_m0in_maout(index_t *i0, 
+                                   index_t *i1, index_t *i2);
+LUSHAPI void check_main_main_maout_dot21(index_t *i0, 
+                                         index_t *i1, index_t *i2);
+LUSHAPI void check_main_main_maout_dot42(index_t *i0, 
+                                         index_t *i1, index_t *i2);
+LUSHAPI void check_m1in_m1in_m2out(index_t *i0, 
+                                   index_t *i1, index_t *i2);
+LUSHAPI void check_m2in_m2in_m4out(index_t *i0, 
+                                   index_t *i1, index_t *i2);
 
 
 /* ---------------------------------------- */

@@ -216,7 +216,7 @@ typedef union
   flt           dh_flt;
   real          dh_real;
   gptr		dh_gptr;
-  struct idx   *dh_idx_ptr;
+  index_t      *dh_idx_ptr;
   storage_t    *dh_srg_ptr;
   char         *dh_str_ptr;
   int          *dh_obj_ptr;

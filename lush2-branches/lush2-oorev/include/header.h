@@ -289,15 +289,15 @@ struct hashelem {
 };
 
 
-LUSHAPI at *new_at(class_t *cl, void *obj);
 LUSHAPI at *new_cons(at *car, at *cdr);
-LUSHAPI at *new_number(double x);
-LUSHAPI static inline at *new_gptr(gptr x)
+LUSHAPI at *new_at(class_t *cl, void *obj);
+LUSHAPI at *new_at_number(double x);
+LUSHAPI static inline at *new_at_gptr(gptr x)
 {
    extern class_t *gptr_class;
    return new_at(gptr_class, x);
 }
-LUSHAPI static inline at *new_mptr(gptr x)
+LUSHAPI static inline at *new_at_mptr(gptr x)
 {
    extern class_t *mptr_class;
    return new_at(mptr_class, x);
@@ -305,8 +305,9 @@ LUSHAPI static inline at *new_mptr(gptr x)
 
 LUSHAPI void zombify(at *p);
 
-#define NEW_NUMBER(x)   new_number((real)(x))
-#define NEW_GPTR(x)     new_gptr((gptr)(x))
+#define NEW_NUMBER(x)   new_at_number((real)(x))
+#define NEW_GPTR(x)     new_at_gptr((gptr)(x))
+#define NEW_MPTR(x)     new_at_mptr((gptr)(x))
 #define NEW_BOOL(x)     ((x) ? t() : NIL)
 
 /* number.h */
@@ -488,11 +489,13 @@ LUSHAPI void lush_abort (char *s) no_return;
 
 extern LUSHAPI class_t *string_class;
 
-LUSHAPI static inline at *new_string(const char *ms)
+LUSHAPI static inline at *new_at_string(const char *ms)
 {  
    extern class_t *string_class;
    return new_at(string_class, (void *)ms);
 }
+#define NEW_STRING new_at_string
+
 LUSHAPI at *make_string(const char *s);
 LUSHAPI at *make_string_of_length(size_t n);
 LUSHAPI int str_index(const char *s1, const char *s2, int start);
@@ -706,12 +709,13 @@ typedef struct object_s {
    at      *slots[];
 } object_t;
 
+LUSHAPI class_t  *new_builtin_class(class_t *super);
+LUSHAPI class_t  *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults);
+LUSHAPI object_t *new_object(class_t *cl);
+#define NEW_OBJECT(cl) new_object(cl)->backptr
 LUSHAPI bool builtin_class_p(const class_t *cl);
-LUSHAPI at  *new_builtin_class(class_t **pcl, class_t *super);
-LUSHAPI at  *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults);
 LUSHAPI void putmethod(class_t *cl, at *name, at *fun);
 LUSHAPI at  *getmethod(class_t *cl, at *prop);
-LUSHAPI at  *new_object(class_t *cl);
 LUSHAPI at  *with_object(at *obj, at *f, at *q, int howmuch);
 LUSHAPI at  *send_message(at *classname, at *obj, at *method, at *args);
 LUSHAPI bool isa(at *p, const class_t *cl);
@@ -862,8 +866,9 @@ extern LUSHAPI at *  (*storage_getat[ST_LAST])(storage_t *, size_t);
 extern LUSHAPI void  (*storage_setat[ST_LAST])(storage_t *, size_t, at *);
 
 /* storage creation */
-LUSHAPI at *new_storage(storage_type_t);
-LUSHAPI at *make_storage(storage_type_t, size_t, at*);
+LUSHAPI storage_t *new_storage(storage_type_t);
+LUSHAPI storage_t *make_storage(storage_type_t, size_t, at*);
+#define NEW_STORAGE(st)  new_storage(st)->backptr
 
 /* storage properties */
 LUSHAPI bool   storage_classp(const at*);
@@ -885,35 +890,13 @@ LUSHAPI void storage_save(storage_t*, FILE*);
 
 extern LUSHAPI class_t *index_class;
 
-/* The "light" idx structure */
-
-struct idx {	
-   int ndim;
-   size_t *dim;
-   ptrdiff_t *mod;
-   ptrdiff_t offset;	
-   storage_t *srg;
-   at *backptr;
-};
-
-#define IDX_BASE(idx)   (gptr) ((char *) (idx)->srg->data + \
-	                (idx)->offset * storage_sizeof[(idx)->srg->type])
-#define IDX_BASE_TYPED(idx, Type) \
-                        (((Type *)((idx)->srg->data)) + (idx)->offset)
-#define IDX_DATA_PTR  IDX_BASE
-
-/* The "heavy" index structure */
-
 typedef struct index {			
-   /* Field names are similar to those of the  idx structure. */
-   /* IDX macros work on index structures! */
+   at *backptr;
    int ndim;			/* number of dimensions */
    size_t dim[MAXDIMS];		/* array size for each dimension */
    ptrdiff_t mod[MAXDIMS];      /* stride for each dimension */
    ptrdiff_t offset;		/* in element size */
-   storage_t  *st;		/* a pointer to the storage */
-   struct idx *cptr;            /* struct idx for the C side (lisp_c) */
-   at *backptr;
+   storage_t *st;		/* a pointer to the storage */
 } index_t;
 
 /* shape_t and subscript_t are used as argument types in the index 
@@ -946,7 +929,6 @@ LUSHAPI size_t index_nelems(const index_t*);
 
 /* index and array creation */
 LUSHAPI index_t *new_index(storage_t*, shape_t*);
-LUSHAPI index_t *new_index_for_cdata(storage_type_t, shape_t *, void*);
 LUSHAPI index_t *make_array(storage_type_t, shape_t*, at*);
 LUSHAPI index_t *clone_array(index_t*);
 LUSHAPI index_t *copy_index(index_t*);
@@ -1016,11 +998,6 @@ LUSHAPI index_t *index_reverseD(index_t*, int d);
 LUSHAPI void easy_index_check(index_t*, shape_t*);
 //LUSHAPI real easy_index_get(index_t*, size_t*);
 //LUSHAPI void easy_index_set(index_t*, size_t*, real);
-
-/* Functions related to <struct idx> objects */
-LUSHAPI void index_read_idx(index_t*, struct idx *);
-LUSHAPI void index_write_idx(index_t*, struct idx *);
-LUSHAPI void index_rls_idx(index_t*, struct idx *);
 
 /* Other functions */
 LUSHAPI index_t *index_copy(index_t *, index_t *);

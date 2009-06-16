@@ -452,7 +452,7 @@ DX(xbuiltin_class_p)
 }
 
 /* allocate and initialize new builtin class */
-at *new_builtin_class(class_t **pcl, class_t *super)
+class_t *new_builtin_class(class_t *super)
 {
    extern void dbg_notify(void *, void *);
 
@@ -465,11 +465,10 @@ at *new_builtin_class(class_t **pcl, class_t *super)
    }
    assert(class_class);
    cl->backptr = new_at(class_class, cl);
-   *pcl = cl;
-   return cl->backptr;
+   return cl;
 }
 
-at *new_ooclass(at *classname, at *atsuper, at *new_slots, at *defaults)
+class_t *new_ooclass(at *classname, at *atsuper, at *new_slots, at *defaults)
 {
    ifn (SYMBOLP(classname))
       error(NIL, "not a valid class name", classname);
@@ -549,7 +548,7 @@ at *new_ooclass(at *classname, at *atsuper, at *new_slots, at *defaults)
    /* Create AT and returns it */
    assert(class_class);
    cl->backptr = new_at(class_class, cl);
-   return cl->backptr;
+   return cl;
 }
 
 DX(xmake_class)
@@ -570,13 +569,13 @@ DX(xmake_class)
    default:
       ARG_NUMBER(4);
    }
-   return new_ooclass(classname, superclass, keylist, defaults);
+   return new_ooclass(classname, superclass, keylist, defaults)->backptr;
 }
 
 
 /* -------- OBJECT DEFINITION ----------- */
 
-at *new_object(class_t *cl)
+object_t *new_object(class_t *cl)
 {
    if (builtin_class_p(cl))
       error(NIL, "not a subclass of ::class:object", cl->backptr);
@@ -591,7 +590,7 @@ at *new_object(class_t *cl)
       obj->slots[i] = cl->defaults[i];
 
    obj->backptr = new_at(cl, obj);
-   return obj->backptr;
+   return obj;
 }
 
 DY(ynew)
@@ -603,7 +602,7 @@ DY(ynew)
    ifn (CLASSP(q))
       RAISEFX("not a class", q);
    class_t *cl = Mptr(q);
-   at *ans = new_object(cl);
+   at *ans = NEW_OBJECT(cl);
    
    struct hashelem *hx = _getmethod(cl, cl->classname);
    if (hx)
@@ -618,7 +617,7 @@ DX(xnew_empty)
 {
    ARG_NUMBER(1);
    class_t *cl = ACLASS(1);
-   return new_object(cl);
+   return NEW_OBJECT(cl);
 }
 
 /* ---------- OBJECT CONTEXT -------------- */
@@ -664,9 +663,9 @@ DY(ywith_object)
    ifn (CONSP(ARG_LIST))
       RAISEF("no arguments", NIL);
 
-   int howfar = 0;
    at *l = ARG_LIST;
    at *p = eval(Car(l));
+   int howfar = Class(p)->num_slots;
    
    if (CLASSP(p)) {
       l = Cdr(l);
@@ -1066,7 +1065,7 @@ void init_oostruct(void)
    /* 
     * mm_alloc object_class to avoid hickup in mark_class
     */
-   new_builtin_class(&object_class, NIL);
+   object_class = new_builtin_class(NIL);
    object_class->dispose = (dispose_func_t *)oostruct_dispose;
    object_class->listeval = oostruct_listeval;
    object_class->compare = oostruct_compare;

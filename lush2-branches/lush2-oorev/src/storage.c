@@ -48,13 +48,13 @@
 #include <sys/mman.h>
 #endif
 
-void clear_storage(storage_t *st, size_t _)
+static void clear_storage(storage_t *st, size_t _)
 {
    st->data = NULL;
    st->backptr = NULL;
 }
 
-void mark_storage(storage_t *st)
+static void mark_storage(storage_t *st)
 {
    MM_MARK(st->backptr);
    if (st->flags & STS_MM)
@@ -63,7 +63,7 @@ void mark_storage(storage_t *st)
 
 static storage_t *storage_dispose(storage_t *);
 
-bool finalize_storage(storage_t *st)
+static bool finalize_storage(storage_t *st)
 {
    //printf("finalize_storage(%p)\n", st);
    storage_dispose(st);
@@ -231,9 +231,6 @@ static at *AT_getat(storage_t *st, size_t off)
 
 static at *N_getat(storage_t *st, size_t off)
 {
-   assert(mm_ismanaged(st));
-   if (st->flags & STS_MM)
-      assert(mm_ismanaged(st->data));
    real (*get)(gptr,size_t) = storage_getr[st->type];
    return NEW_NUMBER( (*get)(st->data, off) );
 }
@@ -241,7 +238,7 @@ static at *N_getat(storage_t *st, size_t off)
 static at *GPTR_getat(storage_t *st, size_t off)
 {
    gptr *pt = st->data;
-   return new_gptr(pt[off]);
+   return NEW_GPTR(pt[off]);
 }
 
 at *(*storage_getat[ST_LAST])(storage_t *, size_t) = {
@@ -389,9 +386,11 @@ static void storage_serialize(at **pp, int code)
    serialize_size(&size, code);
 
    // Create storage if needed
-   if (code == SRZ_READ)
-      *pp = make_storage(type, size, NIL);
-   
+   if (code == SRZ_READ) {
+      st = make_storage(type, size, NIL);
+      *pp = st->backptr;
+   }
+
    // Read/write storage data
    st = Mptr(*pp);
    if (type == ST_AT) {
@@ -410,7 +409,6 @@ static void storage_serialize(at **pp, int code)
       } else if (code == SRZ_READ) {
          int magic = read4(f);
          storage_load(st, f);
-         st = Mptr(*pp);
          if (magic == STORAGE_SWAPPED)
             swap_buffer(st->data, size, storage_sizeof[type]);
          else if (magic != STORAGE_NORMAL)
@@ -421,7 +419,7 @@ static void storage_serialize(at **pp, int code)
 
 extern void dbg_notify(void *, void *);
 
-at *new_storage(storage_type_t t)
+storage_t *new_storage(storage_type_t t)
 {
    storage_t *st = mm_alloc(mt_storage);
    st->type = t;
@@ -430,7 +428,7 @@ at *new_storage(storage_type_t t)
    st->data = NULL;
    st->backptr = new_at(storage_class[st->type], st);
    //add_notifier(st, dbg_notify, NULL);
-   return st->backptr;
+   return st;
 }
 
 DX(xnew_storage) {
@@ -443,17 +441,17 @@ DX(xnew_storage) {
       if (cl==storage_class[t]) break;
    if (t == ST_LAST)
       RAISEF("not a storage class", APOINTER(1));
-   return new_storage(t);
+   return NEW_STORAGE(t);
 }
 
-at *make_storage(storage_type_t t, size_t n, at *init)
+storage_t *make_storage(storage_type_t t, size_t n, at *init)
 {
    if (n<0)
       RAISEF("invalid size", NEW_NUMBER(n));
    
-   at *p = new_storage(t);
-   storage_alloc(Mptr(p), n, init);
-   return p;
+   storage_t *st = new_storage(t);
+   storage_alloc(st, n, init);
+   return st;
 }
 
 /* ------------ ALLOCATION: MALLOC ------------ */
@@ -852,13 +850,13 @@ DX(xstorage_save)
 class_t *abstract_storage_class;
 class_t *storage_class[ST_LAST];
 
-#define Generic_storage_class_init(tok)		                     \
-   new_builtin_class(&(storage_class[ST_ ## tok]), abstract_storage_class); \
+#define Generic_storage_class_init(tok)                                 \
+   (storage_class[ST_ ## tok]) = new_builtin_class(abstract_storage_class); \
    (storage_class[ST_ ## tok])->dispose = (dispose_func_t *)storage_dispose; \
-   (storage_class[ST_ ## tok])->name = storage_name;                     \
-   (storage_class[ST_ ## tok])->listeval = storage_listeval;             \
-   (storage_class[ST_ ## tok])->serialize = storage_serialize;           \
-   class_define(#tok "STORAGE", (storage_class[ST_ ## tok]));
+   (storage_class[ST_ ## tok])->name = storage_name;                    \
+   (storage_class[ST_ ## tok])->listeval = storage_listeval;            \
+   (storage_class[ST_ ## tok])->serialize = storage_serialize;          \
+   class_define(#tok "STORAGE", (storage_class[ST_ ## tok]))
 
 
 void init_storage()
@@ -867,7 +865,7 @@ void init_storage()
                            clear_storage, mark_storage, finalize_storage);
 
    /* set up storage_classes */
-   new_builtin_class(&abstract_storage_class, NIL);
+   abstract_storage_class = new_builtin_class(NIL);
    class_define("STORAGE", abstract_storage_class);
    Generic_storage_class_init(AT);
    Generic_storage_class_init(F);

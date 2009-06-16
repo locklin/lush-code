@@ -923,7 +923,7 @@ static void local_bread_object(at **pp,  int opt)
    }
   
    class_t *cl = Mptr(cptr);
-   *pp = new_object(cl);     /* create structure */
+   *pp = NEW_OBJECT(cl);     /* create structure */
    if (size > cl->num_slots)
       error(NIL, "class definition has less slots than expected",cname);
    else  if ( (size < cl->num_slots) && opt)
@@ -948,8 +948,8 @@ static void local_bread_class(at **pp)
    if (local_bread(&mydefs, NIL))
       error(NIL, "corrupted file (reading defaults)", NIL);
 
-   *pp = new_ooclass(name, super, myslots, mydefs);
-   class_t *cl = Mptr(*pp);
+   class_t *cl = new_ooclass(name, super, myslots, mydefs);
+   *pp = cl->backptr;
    local_bread(&cl->methods, NIL);
    cl->hashok = false;
 }
@@ -958,12 +958,8 @@ static void local_bread_class(at **pp)
 static void local_bread_array(at **pp)
 {
    int ndims = read_card24();
-   if (ndims == 0xFFFFFF) 
-      /* THIS IS AN UNSIZED ARRAY */
-      *pp = NEW_INDEX(Mptr(new_storage(ST_AT)), NIL);
-   
-   else if (ndims < MAXDIMS) {
-      /* THIS IS A NORMAL ARRAY */
+
+   if (0<=ndims && ndims<MAXDIMS) {
       shape_t shape = {0, {}};  
       size_t size = 1;
       for (int i=0; i<ndims; i++) 
@@ -971,13 +967,10 @@ static void local_bread_array(at **pp)
       shape.ndims = ndims;
       *pp = MAKE_ARRAY(ST_AT, &shape, NIL);
       index_t *ind = Mptr(*pp);
-      struct idx id;
-      index_write_idx(ind, &id);
-      pp = IDX_DATA_PTR(&id);
+      pp = IND_BASE(ind);
       for (int i=0; i<size; i++)
          local_bread(pp++, NIL);
-      index_rls_idx(ind,&id);
-
+      
    } else
       error(NIL, "corrupted binary file", NIL);
 }
@@ -1070,7 +1063,7 @@ again:
       
    case TOK_NUMBER:
    {
-      *pp = new_number(0.0);
+      *pp = NEW_NUMBER(0.0);
       read_buffer(&Number(*pp), sizeof(real));
       if (swapflag)
          swap_buffer(&Number(*pp), 1, sizeof(real));

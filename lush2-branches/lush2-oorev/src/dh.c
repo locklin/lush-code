@@ -279,12 +279,11 @@ static at *make_dhclass(dhclassdoc_t *kdata)
    if (!superclass)
       superclass = object_class->backptr;
    /* create ooclass */
-   at *p = new_ooclass(classname, superclass, keylist, defaults);
-   class_t *cl = Mptr(p);
+   class_t *cl = new_ooclass(classname, superclass, keylist, defaults);
    cl->classdoc = kdata;
    cl->kname = mm_strdup(kdata->lispdata.k_name);
-   kdata->lispdata.atclass = p;
-   return p;
+   kdata->lispdata.atclass = cl->backptr;
+   return cl->backptr;
 }
 
 
@@ -627,7 +626,7 @@ void init_dh(void)
 
    /* setting up dh_class */
    extern const char *func_name(at*);
-   new_builtin_class(&dh_class, function_class);
+   dh_class = new_builtin_class(function_class);
    dh_class->name = func_name;
    dh_class->listeval = dh_listeval;
    class_define("DH", dh_class);

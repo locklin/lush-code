@@ -86,12 +86,12 @@ void ev_add(at *handler, at *event, const char *desc, int mods)
          d = NEW_NUMBER(mods);
       if (desc && d) {
          gptr p = (gptr)desc;
-         d = new_cons(new_gptr(p), d);
+         d = new_cons(NEW_GPTR(p), d);
       } else if (desc) {
          gptr p = (gptr)desc;
-         d = new_gptr(p);
+         d = NEW_GPTR(p);
       }
-      at *p = new_cons(new_gptr(handler), new_cons(d, event));
+      at *p = new_cons(NEW_GPTR(handler), new_cons(d, event));
       add_notifier(handler, (wr_notify_func_t *)ev_notify, 0);
       Cdr(tail) = new_cons(p,NIL);
       tail = Cdr(tail);
@@ -361,7 +361,7 @@ int timer_fire(void)
    while (timers && evtime_cmp(&now,&timers->date)>=0) {
       event_timer_t *ti = timers;
       at *p = new_cons(named("timer"), 
-                       new_cons(new_gptr(ti), NIL));
+                       new_cons(NEW_GPTR(ti), NIL));
       timers = ti->next;
       event_add(ti->handler, p);
       
@@ -830,16 +830,16 @@ DX(xwaitevent)
 DX(xcreate_timer)
 {
    if (arg_number == 2)
-      return new_gptr(timer_add(APOINTER(1),AINTEGER(2),0));
+      return NEW_GPTR(timer_add(APOINTER(1),AINTEGER(2),0));
    ARG_NUMBER(3);
-   return new_gptr(timer_add(APOINTER(1), AINTEGER(2), AINTEGER(3)));  
+   return NEW_GPTR(timer_add(APOINTER(1), AINTEGER(2), AINTEGER(3)));  
 }
 
 /* Create a timer to a specific date */
 DX(xcreate_timer_absolute)
 {
    ARG_NUMBER(2);
-   return new_gptr(timer_abs(APOINTER(1),AREAL(2)));
+   return NEW_GPTR(timer_abs(APOINTER(1),AREAL(2)));
 }
 
 /* Destroy a timer */

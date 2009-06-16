@@ -79,7 +79,7 @@ DX(xcons)
  }
 
 
-at *new_number(double x)
+at *new_at_number(double x)
 {
    double *d = mm_alloc(mt_blob8);
    *d = x;
@@ -338,22 +338,22 @@ void init_at(void)
    pre_init_module();
 
    /* set up builtin classes */
-   new_builtin_class(&number_class, NIL);
+   number_class = new_builtin_class(NIL);
    class_define("NUMBER", number_class);
 
-   new_builtin_class(&gptr_class, NIL);
+   gptr_class = new_builtin_class(NIL);
    gptr_class->name = gptr_name;
    gptr_class->managed = false;
    class_define("GPTR", gptr_class);
 
-   new_builtin_class(&mptr_class, NIL);
+   mptr_class = new_builtin_class(NIL);
    mptr_class->name = gptr_name;
    class_define("MPTR", mptr_class);
 
-   new_builtin_class(&cons_class, NIL);
+   cons_class = new_builtin_class(NIL);
    class_define("CONS", cons_class);
    
-   new_builtin_class(&null_class, NIL);
+   null_class = new_builtin_class(NIL);
    null_class->name = null_name;
    null_class->selfeval = null_selfeval;
    null_class->listeval = null_listeval;
