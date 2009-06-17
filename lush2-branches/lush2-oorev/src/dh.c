@@ -282,6 +282,11 @@ static at *make_dhclass(dhclassdoc_t *kdata)
    class_t *cl = new_ooclass(classname, superclass, keylist, defaults);
    cl->classdoc = kdata;
    cl->kname = mm_strdup(kdata->lispdata.k_name);
+   cl->num_cslots = length(keylist);
+   if (superclass) {
+      class_t *super = Mptr(superclass);
+      cl->num_cslots += super->num_cslots;
+   }
    kdata->lispdata.atclass = cl->backptr;
    return cl->backptr;
 }

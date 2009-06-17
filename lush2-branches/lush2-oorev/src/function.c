@@ -343,7 +343,7 @@ DY(name2(y,NAME)) \
     RAISEF("syntax error in definition: not a symbol", Car(q)); \
   at *p = Car(q); \
   at *func = name2(new_,NAME)(Cadr(q), Cddr(q)); \
-  sym_set(Symbol(p), func, true); \
+  var_set(p, func); \
   return p; \
 }
 

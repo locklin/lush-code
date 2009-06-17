@@ -1152,7 +1152,7 @@ const char *search_file(const char *ss, const char *suffices)
    if (*s != '/')
 #endif
       if (SYMBOLP(at_path)) {
-         at *q = sym_get(Symbol(at_path), true);
+         at *q = var_get(at_path);
          
          while (CONSP(q)) {
             if (STRINGP(Car(q))) {

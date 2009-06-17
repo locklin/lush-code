@@ -1404,7 +1404,7 @@ static void module_def(at *name, at *val)
    current->defs = new_cons(new_cons(val, name), current->defs);
    /* Root definitions are also written into symbols */
    if (current == root) {
-      if (SYMBOL_LOCKED_P(Symbol(name)))
+      if (symbol_locked_p(Symbol(name)))
          RAISEF("internal error (multiple definition)", name);
       var_set(name, val);
       var_lock(name);
