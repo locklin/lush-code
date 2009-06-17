@@ -401,7 +401,7 @@ LUSHAPI symbol_t *symbol_pop(symbol_t *);
 LUSHAPI at   *getslot(at*, at*);
 LUSHAPI void  setslot(at**, at*, at*);
 LUSHAPI at   *setq(at *p, at *q);
-LUSHAPI at   *global_names(void); 
+LUSHAPI at   *global_names(void);
 LUSHAPI at   *global_defs(void);
 LUSHAPI at   *oblist(void);
 LUSHAPI void  reset_symbols(void);

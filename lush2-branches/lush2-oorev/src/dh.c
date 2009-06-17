@@ -231,7 +231,27 @@ at *new_dh(at *name, dhdoc_t *kdata)
 }
 
 
+int dht_from_cname(symbol_t *s)
+{
+   const char *name = nameof(s);
+   switch (name[0]) {
+   case 'b': return DHT_BOOL;
+   case 'c': return DHT_BYTE;
+   case 'i': switch (name[1]) {
+             case 'n': return (name[2]=='d' ? DHT_IDX : DHT_INT);
+             case 'd': return DHT_IDX;
+             default : goto invalid_error; 
+             }
+   case 's': switch (name[1]) {
+             case 't': return (name[2]=='r' ? DHT_STR : DHT_SRG);
+             case 'r': return DHT_SRG;
+             default : goto invalid_error;
+             }
+   }
 
+invalid_error:
+   error(NIL, "not a type name", new_at(symbol_class, s));
+}
 
 /* ---------------------------------------------
    DH CLASSES

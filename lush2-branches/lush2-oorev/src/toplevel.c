@@ -56,6 +56,7 @@ extern void init_win32(void);
 #endif
 extern void init_oostruct (void);
 extern void init_symbol (void);
+extern void init_cref(void);
 extern void init_eval (void);
 extern void init_function (void);
 extern void init_at (void);
@@ -162,6 +163,7 @@ void init_lush(char *program_name)
    init_weakref();
    init_at();
    init_symbol();
+   init_cref();
    init_oostruct();
    init_eval();
    init_function();
