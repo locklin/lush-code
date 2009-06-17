@@ -269,6 +269,7 @@ static at *make_dhclass(dhclassdoc_t *kdata)
       *klwhere = new_cons(named(drec->name),NIL);
       klwhere = &Cdr(*klwhere);
       drec = drec->end;
+      
    }
 
    /* create class object */
@@ -283,6 +284,11 @@ static at *make_dhclass(dhclassdoc_t *kdata)
    class_t *cl = Mptr(p);
    cl->classdoc = kdata;
    cl->kname = mm_strdup(kdata->lispdata.k_name);
+   cl->num_cslots = length(keylist);
+   if (superclass) {
+      class_t *super = Mptr(superclass);
+      cl->num_cslots += super->num_cslots;
+   }
    kdata->lispdata.atclass = p;
    return p;
 }

@@ -170,7 +170,6 @@ DLLEXPORT int init_user_dll(int major, int minor);
 #define CLEAR_PTR(p)      ((void *)((uintptr_t)(p)&~((1<<NUM_PTRBITS) - 1)))
 
 #define CONS_BIT          1
-#define SYMBOL_LOCKED_BIT 1
 
 typedef struct class_s class_t;
 
@@ -267,6 +266,7 @@ struct class_s {
    at*             *slots;       /* names (symbols) of all slots */
    at*             *defaults;    /* defaults for all slots */
    int              num_slots;   /* number of slots */  
+   int              num_cslots;  /* number of slots in compiled object */  
    at*              myslots;     /* symbols of slots excluding superclass's */
    at*              mydefaults;  /* default values excluding superclass's */
    at*              methods;     /* alist of methods */
@@ -378,10 +378,9 @@ typedef struct symbol { 	/* each symbol is an external AT which */
    at **valueptr;
 } symbol_t;
 
-#define SYMBOL_LOCKED_P(s) ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
-#define LOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
-#define UNLOCK_SYMBOL(s)   UNSET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
-#define SYM_HN(s)          ((struct hash_name *)CLEAR_PTR((s)->hn))
+
+#define SYMBOL_LOCKED_BIT      1
+#define SYMBOL_TYPELOCKED_BIT  2
 
 /* symbol creation */
 LUSHAPI at *new_symbol(const char *);
@@ -404,14 +403,13 @@ LUSHAPI at   *global_names(void);
 LUSHAPI at   *global_defs(void);
 LUSHAPI at   *oblist(void);
 LUSHAPI void  reset_symbols(void);
-LUSHAPI void  sym_set(symbol_t *s, at *q, bool in_global_scope); 
 LUSHAPI void  var_set(at *p, at *q);
 LUSHAPI void  var_SET(at *p, at *q); /* Set variable regardless of lock mode */
 LUSHAPI void  var_lock(at *p);
-LUSHAPI at   *sym_get(symbol_t *s, bool in_global_scope);
 LUSHAPI at   *var_get(at *p);
 LUSHAPI at   *var_define(char *s);
-
+LUSHAPI bool  symbol_locked_p(symbol_t *);
+LUSHAPI bool  symbol_typelocked_p(symbol_t *);
 
 
 /* TOPLEVEL.H ------------------------------------------------- */

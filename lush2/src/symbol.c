@@ -28,6 +28,14 @@
 
 #define SYMBOL_CACHE_SIZE 255
 
+#define SYMBOL_LOCKED_P(s)     ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
+#define SYMBOL_TYPELOCKED_P(s) ((uintptr_t)(s->hn) & SYMBOL_TYPELOCKED_BIT)
+#define LOCK_SYMBOL(s)         SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
+#define UNLOCK_SYMBOL(s)       UNSET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
+#define TYPELOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
+#define TYPEUNLOCK_SYMBOL(s)   UNSET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
+#define SYM_HN(s)              ((struct hash_name *)CLEAR_PTR((s)->hn))
+
 typedef unsigned char   uchar;
 
 /* globally defined names */
@@ -444,6 +452,9 @@ void setslot(at **pobj, at *prop, at *val)
    }
 }
 
+
+static void sym_set(symbol_t *, at *, bool);
+
 at *setq(at *p, at *q)
 {
    if (SYMBOLP(p)) {             /* (setq symbol value) */
@@ -685,12 +696,17 @@ void sym_set(symbol_t *s, at *q, bool in_global_scope)
       while (s->next)
          s = s->next;
 
-   if ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
-      error(NIL, "locked symbol", SYM_HN(s)->named);
-  
+   if (SYMBOL_LOCKED_P(s))
+      error(NIL, "symbol locked", SYM_HN(s)->named);
+
    ifn (s->valueptr) {
       s->value = NIL;
       s->valueptr = &(s->value);
+   }
+   if (SYMBOL_TYPELOCKED_P(s)) {
+      class_t *cl = classof(*(s->valueptr));
+      ifn (isa(q, cl))
+         error(NIL, "invalid assignment to type-locked symbol", SYM_HN(s)->named);
    }
    *(s->valueptr) = q;
 }
@@ -699,7 +715,7 @@ void var_set(at *p, at *q)
 {
    ifn (SYMBOLP(p))
       RAISEF("not a symbol", p);
-   sym_set(Symbol(p), q, false);
+   sym_set(Symbol(p), q, true);
 }
 
 /* set, even is symbol is locked */
@@ -727,6 +743,16 @@ at *var_define(char *str)
    symbol_t *s = Symbol(p);
    s->valueptr = &(s->value);
    return p;
+}
+
+bool symbol_locked_p(symbol_t *s)
+{
+   return SYMBOL_LOCKED_P(s);
+}
+
+bool symbol_typelocked_p(symbol_t *s)
+{
+   return SYMBOL_TYPELOCKED_P(s);
 }
 
 

@@ -178,12 +178,22 @@ void oostruct_setslot(at *p, at *prop, at *val)
    at *slot = Car(prop);
    ifn (SYMBOLP(slot))
       error(NIL, "not a slot name", slot);
+   prop = Cdr(prop);
 
    object_t *obj = Mptr(p);
    class_t *cl = Class(obj->backptr);
    for(int i=0; i<cl->num_slots; i++)
       if (slot == cl->slots[i]) {
-         setslot(&obj->slots[i], Cdr(prop), val);
+         if (prop)
+            setslot(&obj->slots[i], prop, val);
+         else {
+            if (i<cl->num_cslots) {
+               class_t *cl = classof(obj->slots[i]);
+               ifn (isa(val, cl))
+                  error(NIL, "invalid assignment to typed slot", slot);
+            }
+            obj->slots[i] = val;
+         }
          return;
       }
    error(NIL, "not a slot", slot);
@@ -279,6 +289,7 @@ void class_init(class_t *cl)
    cl->slots = NIL;
    cl->defaults = NIL;
    cl->num_slots = 0;
+   cl->num_cslots = 0;
    cl->myslots = NIL;
    cl->mydefaults = NIL;
    cl->methods = NIL;
@@ -628,11 +639,14 @@ DX(xnew_empty)
 
 /* ---------- OBJECT CONTEXT -------------- */
 
+/* copied from symbol.c */
+
+#define LOCK_SYMBOL(s)         SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
+#define TYPELOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
 
 at *with_object(at *p, at *f, at *q, int howfar)
 {
    assert(howfar>=0);
-
    MM_ENTER;
    at *ans = NIL;
    if (OBJECTP(p)) {
@@ -640,11 +654,15 @@ at *with_object(at *p, at *f, at *q, int howfar)
       class_t *cl = Class(obj->backptr);
       if (howfar > cl->num_slots)
          howfar = cl->num_slots;
-
+      
       /* push object environment */
-      for (int i = 0; i<howfar; i++)
+      for (int i = 0; i<howfar; i++) {
          Symbol(cl->slots[i]) = symbol_push(Symbol(cl->slots[i]), 0 , &(obj->slots[i]));
+         if (i < cl->num_cslots)
+            TYPELOCK_SYMBOL(Symbol(cl->slots[i]));
+      }
       SYMBOL_PUSH(at_this, p);
+      LOCK_SYMBOL(Symbol(at_this));
 
       ans = apply(f, q);
       
@@ -684,6 +702,7 @@ DY(ywith_object)
             RAISEFX("object not an instance of this superclass", p);
          howfar = cl->num_slots;
       }
+      p = q;
    }
    //at *q = eval(at_progn);
    at *q = symbol_class->selfeval(at_progn);
@@ -914,6 +933,9 @@ DY(ysend)
    at *method = eval(Cadr(q));
    at *args = Cddr(q);
    
+   if (!obj)
+      fprintf(stderr, "*** Warning: sending %s to nil\n", pname(method));
+
    /* Send */
    return (CONSP(method) ? 
            send_message(Car(method), obj, Cdr(method), args) :
