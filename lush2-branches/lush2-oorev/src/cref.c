@@ -40,7 +40,7 @@ typedef unsigned char   uchar;
       if (slot)                                                         \
          error(NIL, "object does not accept scope syntax", self);       \
       ifn (NUMBERP(val))                                                \
-         error(NIL, "invalid value for assignment to cref", val);       \
+         error(NIL, "type mismatch in assignment", val);                \
       void *p = Gptr(self);                                             \
       *((type *)p) = Number(val);                                       \
    }                                                                    \
@@ -64,8 +64,10 @@ static void cref_str_setslot(at *self, at *slot, at *val)
    if (slot)
       error(NIL, "object does not accept scope syntax", self);
    ifn (STRINGP(val))
-      error(NIL, "invalid value for assignment to cref", val);
+      error(NIL, "type mismatch in assignment", val);
+
    const char **dest = Gptr(self);
+   /* what to do when *dest==NULL ? */
    if (mm_ismanaged(*dest))
       *dest = String(val);
    else {
@@ -75,6 +77,76 @@ static void cref_str_setslot(at *self, at *slot, at *val)
 }
 
 class_t *cref_str_class;
+
+
+static at *cref_index_selfeval(at *p)
+{
+   return (*((index_t **)Gptr(p)))->backptr;
+}
+
+static void cref_index_setslot(at *self, at *slot, at *val)
+{
+   if (slot)
+      error(NIL, "object does not accept scope syntax", self);
+   ifn (INDEXP(val))
+      error(NIL, "type mismatch in assignment", val);
+   
+   index_t **dest = Gptr(self);
+   if (IND_STTYPE(*dest) != IND_STTYPE((index_t *)Mptr(val)))
+      error(NIL, "type mismatch in assignment (wrong storage type)", val);
+   *dest = Mptr(val);
+}
+
+class_t *cref_index_class;
+
+
+/* this one is for indexes of fixed rank  */
+
+static at *cref_idx_selfeval(at *p)
+{
+   return (*((index_t **)Gptr(p)))->backptr;
+}
+
+static void cref_idx_setslot(at *self, at *slot, at *val)
+{
+   if (slot)
+      error(NIL, "object does not accept scope syntax", self);
+   ifn (INDEXP(val))
+      error(NIL, "type mismatch in assignment", val);
+   
+   index_t **dest = Gptr(self);
+   if (IND_STTYPE(*dest) != IND_STTYPE((index_t *)Mptr(val)))
+      error(NIL, "type mismatch in assignment (wrong storage type)", val);
+   if (IND_NDIMS(*dest) != IND_NDIMS((index_t *)Mptr(val)))
+      error(NIL, "type mismatch in assignment (wrong rank)", val);
+   *dest = Mptr(val);
+}
+
+class_t *cref_idx_class;
+
+
+
+static at *cref_storage_selfeval(at *p)
+{
+   return (*((storage_t **)Gptr(p)))->backptr;
+}
+
+static void cref_storage_setslot(at *self, at *slot, at *val)
+{
+   if (slot)
+      error(NIL, "object does not accept scope syntax", self);
+   ifn (STORAGEP(val))
+      error(NIL, "type mismatch in assignment", val);
+   
+   storage_t **dest = Gptr(self);
+   if ((*dest)->type != ((storage_t *)Mptr(val))->type)
+      error(NIL, "type mismatch in assignment (wrong storage type)", val);
+   *dest = Mptr(val);
+}
+
+class_t *cref_storage_class;
+
+
 
 at *new_cref(int dht, void *p) 
 {
@@ -86,6 +158,28 @@ at *new_cref(int dht, void *p)
    case DHT_FLOAT : return new_at(cref_float_class, p);
    case DHT_DOUBLE: return new_at(cref_double_class, p);
    case DHT_STR   : return new_at(cref_str_class, p);
+   case DHT_INDEX :
+   {
+      void **dest = p;
+      ifn (mm_ismanaged(*dest))
+         error(NIL, "storage does not hold managed address", p);
+      return new_at(cref_index_class, p);
+   }
+
+   case DHT_IDX   :
+   {
+      void **dest = p;
+      ifn (mm_ismanaged(*dest))
+         error(NIL, "storage does not hold managed address", p);
+      return new_at(cref_idx_class, p);
+   }
+   case DHT_STORAGE:
+   {
+      void **dest = p;
+      ifn (mm_ismanaged(*dest))
+         error(NIL, "storage does not hold managed address", p);
+      return new_at(cref_storage_class, p);
+   }
    default:
       error(NIL, "unsupported type", NEW_NUMBER(dht));
    }
@@ -188,6 +282,21 @@ void init_cref(void)
    cref_str_class->setslot = cref_str_setslot;
    cref_str_class->managed = false;
    class_define("cref<str>", cref_str_class);
+
+   cref_index_class = new_builtin_class(abstract_cref_class);
+   cref_index_class->selfeval = cref_index_selfeval;
+   cref_index_class->setslot = cref_index_setslot;
+   class_define("cref<index>", cref_index_class);
+
+   cref_idx_class = new_builtin_class(abstract_cref_class);
+   cref_idx_class->selfeval = cref_idx_selfeval;
+   cref_idx_class->setslot = cref_idx_setslot;
+   class_define("cref<idx>", cref_idx_class);
+
+   cref_storage_class = new_builtin_class(abstract_cref_class);
+   cref_storage_class->selfeval = cref_storage_selfeval;
+   cref_storage_class->setslot = cref_storage_setslot;
+   class_define("cref<storage>", cref_storage_class);
 
    dx_define("new-cref", xnew_cref);
    dx_define("to-gptr", xto_gptr);

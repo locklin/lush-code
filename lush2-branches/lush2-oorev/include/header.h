@@ -373,6 +373,7 @@ LUSHAPI void unprotect(at *q);
 
 extern LUSHAPI class_t *abstract_cref_class;
 #define CREFP(x) ((x)&&(Class(x)->super == abstract_cref_class))
+LUSHAPI at *new_cref(int, void *);
 
 
 /* SYMBOL.H ---------------------------------------------------- */

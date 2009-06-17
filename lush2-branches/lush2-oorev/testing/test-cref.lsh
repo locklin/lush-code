@@ -1,6 +1,27 @@
 
 (libload "testing/tools")
 
+(defclass TestClass object
+  ((-idx1- (-double-))  v)
+  ((-srg-  (-uchar-)) st) )
+
+(defmethod TestClass TestClass (u s)
+  (declare (-idx1- (-double-)) u)
+  (declare (-srg- (-uchar-)) s)
+  (setq v u)
+  (setq st s)
+  ())
+
+(defmethod TestClass address-of-slot (i)
+  (declare (-int-) i)
+  (selectq i
+    (1 (to-gptr #{ &($v) #}))
+    (2 (to-gptr #{ &($st) #}))
+    (t (error "invalid slot number")
+       (to-gptr ()) )
+    ))
+
+
 ;; Test reference types for accessing C data
 
 (defun address-of-var (i)
@@ -15,19 +36,25 @@
     (7 (to-gptr #{ &var7 #})) ))
 
 (defun test-cref-eval ()
-  (printf "Testing cref evaluation...\n")
+  (printf "Testing cref eval...\n")
   (test-pred (= (eval (new-cref 'char  (address-of-var 1)))  ("A" 0)) 'char)
   (test-pred (= (eval (new-cref 'uchar (address-of-var 2)))  200)     'uchar)
   (test-pred (= (eval (new-cref 'short (address-of-var 3)))  3000)    'short)
   (test-pred (= (eval (new-cref 'int   (address-of-var 4)))  4e4)     'int)
   (test-pred (= (eval (new-cref 'float (address-of-var 5)))  5e5)     'float)
-  (test-pred (= (eval (new-cref 'double (address-of-var 6))) 6e6)    'double)
+  (test-pred (= (eval (new-cref 'double (address-of-var 6))) 6e6)     'double)
   (test-pred (= (eval (new-cref 'str   (address-of-var 7))) "good luck") 'str)
+  (let* ((a [1 2 3 4]) (st (idx-storage [u 5 6 7 8]))
+         (obj (new TestClass a st))
+         (addr1 (==> obj address-of-slot 1))
+         (addr2 (==> obj address-of-slot 2)) )
+    (test-pred (= (eval (new-cref 'idx addr1)) a) 'idx)
+    (test-pred (= (eval (new-cref 'srg addr2)) st) 'srg) )
   (printf "\n")
   ())
 
 (defun test-cref-assign ()
-  (printf "Testing cref assignment (and evaluation)...\n")
+  (printf "Testing cref assignment (and eval)...\n")
   (let ((cr (new-cref 'char (address-of-var 1))))
     (assign cr ("B" 0))
     (test-pred (= (eval cr) ("B" 0)) 'char) )
@@ -56,6 +83,20 @@
         (s  "thank you") )
     (assign cr s)
     (test-pred (= (eval cr) s) 'str) )
+
+  (let* ((a [1 2 3 4]) (b ##a)
+         (st (idx-storage [u 5 6 7 8]))
+         (st2 (idx-storage [u 6 7 8 9]))
+         (obj (new TestClass a st))
+         (addr1 (==> obj address-of-slot 1)) 
+         (cr1 (new-cref 'idx addr1))
+         (addr2 (==> obj address-of-slot 2))
+         (cr2 (new-cref 'srg addr2)) )
+     (assign cr1 b)
+     (test-pred (= (eval (new-cref 'idx addr1)) b) 'idx)
+     (assign cr2 st2)
+     (test-pred (= (eval (new-cref 'srg addr2)) st2) 'srg) )
+  (printf "\n")  
   ())
 
 (dhc-make ()
@@ -68,7 +109,9 @@
           double var6 = 6e6;
           char *var7 = "good luck";
           #}
+          (TestClass TestClass address-of-slot)
           address-of-var)
+
 
 (test-cref-eval)
 (test-cref-assign)

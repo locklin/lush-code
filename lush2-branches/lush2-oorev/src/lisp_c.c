@@ -626,7 +626,6 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
 	lisp2c_error("STORAGE has illegal type",errctx,at_obj);
       if (drec->access == DHT_WRITE)
         get_write_permit(st);
-      fprintf(stderr, "creating storage dharg at %p\n", st);
       arg->dh_srg_ptr = Mptr(at_obj);
       
     } else

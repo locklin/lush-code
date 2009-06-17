@@ -272,10 +272,9 @@ int dht_from_cname(symbol_t *s)
    case 'i':
       if (strcmp(name, "int")==0)
          return DHT_INT;
-      else if (strcmp(name, "idx")==0) {
-         fprintf(stderr, "*** Warning: deprecated name 'idx' (use 'index')\n");
-         return DHT_INDEX;
-      } else if (strcmp(name, "index")==0)
+      else if (strcmp(name, "idx")==0)
+         return DHT_IDX;
+      else if (strcmp(name, "index")==0)
          return DHT_INDEX;
       else
          goto invalid_error;
@@ -285,10 +284,9 @@ int dht_from_cname(symbol_t *s)
          return DHT_STR;
       else if (strcmp(name, "short")==0)
          return DHT_SHORT;
-      else if (strcmp(name, "srg")==0) {
-         fprintf(stderr, "*** Warning: deprecated name 'srg' (use 'storage')\n");
+      else if (strcmp(name, "srg")==0)
          return DHT_STORAGE;
-      } else if (strcmp(name, "storage")==0)
+      else if (strcmp(name, "storage")==0)
          return DHT_STORAGE;
       else
          goto invalid_error;
@@ -308,11 +306,13 @@ int dht_from_cname(symbol_t *s)
       else
          return DHT_GPTR;
 
-   case 'o': return DHT_OBJ;
-      if (strcmp(name, "object"))
-         goto invalid_error;
-      else
+   case 'o':
+      if (strcmp(name, "obj")==0)
          return DHT_OBJECT;
+      else if (strcmp(name, "object")==0)
+         return DHT_OBJECT;
+      else
+         goto invalid_error;
    }
 invalid_error:
    error(NIL, "not a type name", new_at(symbol_class, s));

@@ -93,7 +93,8 @@ enum dht_type {
     DHT_FLT,	    /* type */
     DHT_REAL,	    /* type */
     DHT_GPTR,	    /* type */
-    DHT_IDX,   	    /* type (+ srg type) */
+    DHT_INDEX,      /* array of any rank */
+    DHT_IDX,   	    /* array of fixed rank */
     DHT_SRG,   	    /* type (+ base type) */
     DHT_LIST,	    /* type (+ component types + end_list */
     DHT_END_LIST,   /* type terminator */
@@ -118,7 +119,6 @@ enum dht_type {
 #define DHT_DOUBLE  DHT_REAL
 #define DHT_FLOAT   DHT_FLT
 #define DHT_OBJECT  DHT_OBJ
-#define DHT_INDEX   DHT_IDX
 #define DHT_STORAGE DHT_SRG
 
 /* dhrecord --- 
