@@ -1009,10 +1009,17 @@ DX(xdelete)
 
 /* ---------------- MISC ------------------ */
 
-DX(xclassof)
+DY(yclassof)
 {
-   ARG_NUMBER(1);
-   return classof(APOINTER(1))->backptr;
+   at *q = ARG_LIST;
+   ifn (LASTCONSP(q))
+      RAISEFX("syntax error", new_cons(NEW_SYMBOL("classof"), q));
+
+   at *obj = Car(q);
+   if (SYMBOLP(obj))
+      return classof(Value(obj))->backptr;
+   else
+      return classof(eval(obj))->backptr;
 }
 
 bool isa(at *p, const class_t *cl)
@@ -1102,7 +1109,7 @@ void init_oostruct(void)
    dx_define("subclasses",xsubclasses);
    dx_define("methods",xmethods);
    dx_define("classname",xclassname);
-   dx_define("classof",xclassof);
+   dy_define("classof", yclassof);
    dx_define("isa",xisa);
    dx_define("make-class",xmake_class);
    dx_define("builtin-class-p",xbuiltin_class_p);

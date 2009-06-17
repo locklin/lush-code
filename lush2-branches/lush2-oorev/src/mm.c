@@ -1447,8 +1447,10 @@ bool mm_ismanaged(const void *p)
          return HMAP_MANAGED(a);
       else if (mark_in_progress)
          return _find_managed(p) != -1;
-      else
+      else {
+         update_man_k();
          return find_managed(p) != -1;
+      }
    }
 }
 

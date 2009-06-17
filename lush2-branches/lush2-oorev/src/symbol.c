@@ -30,6 +30,8 @@
 
 #define SYMBOL_LOCKED_P(s)     ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
 #define SYMBOL_TYPELOCKED_P(s) ((uintptr_t)(s->hn) & SYMBOL_TYPELOCKED_BIT)
+#define SYMBOL_VARIABLE_P(s)   ((uintptr_t)(s->hn) & SYMBOL_VARIABLE_BIT)
+#define MAKEVAR_SYMBOL(s)      SET_PTRBIT(s->hn, SYMBOL_VARIABLE_BIT)
 #define LOCK_SYMBOL(s)         SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
 #define UNLOCK_SYMBOL(s)       UNSET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
 #define TYPELOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
@@ -235,7 +237,7 @@ char *symbol_generator(const char *text, int state)
 
 at *named(const char *s)
 {
-   return new_symbol(s);
+   return SYM_HN(new_symbol(s))->named;
 }
 
 DX(xnamed)
@@ -267,7 +269,7 @@ at *namedclean(const char *n)
          if (isascii(*(unsigned char*)s))
             *s = tolower(*(unsigned char*)s);
    }
-   return new_symbol(d);
+   return NEW_SYMBOL(d);
 }
 
 DX(xnamedclean)
@@ -401,11 +403,17 @@ static const char *symbol_name(at *p)
 
 static at *symbol_selfeval(at *p)
 {
-   symbol_t *symb = Symbol(p);
-   if (symb->valueptr) {
-      if (ZOMBIEP(*(symb->valueptr)))
-         *(symb->valueptr) = NIL;
-      return *(symb->valueptr);
+   symbol_t *s = Symbol(p);
+
+   if (SYMBOL_VARIABLE_P(s)) {
+      class_t *cl = classof(*(s->valueptr));
+      return cl->selfeval(*(s->valueptr));
+
+   } else if (s->valueptr) {
+      if (ZOMBIEP(*(s->valueptr)))
+         *(s->valueptr) = NIL;
+      return *(s->valueptr);
+
    } else {
       return NIL;
    }
@@ -459,6 +467,12 @@ at *setq(at *p, at *q)
 {
    if (SYMBOLP(p)) {             /* (setq symbol value) */
       symbol_t *s = Symbol(p);
+      
+      if (SYMBOL_VARIABLE_P(s)) {
+         class_t *cl = classof(*(s->valueptr));
+         cl->setslot(*(s->valueptr), NIL, q);
+         return q;
+      }
       ifn (s->valueptr)
          fprintf(stderr, "+++ Warning: use <defvar> to declare global variable <%s>.\n",
                  SYM_HN(s)->name ? SYM_HN(s)->name : "??" );
@@ -550,7 +564,7 @@ symbol_t *symbol_pop(symbol_t *s)
    }
 }
 
-at *new_symbol(const char *str)
+symbol_t *new_symbol(const char *str)
 {
    if (str[0] == ':' && str[1] == ':')
       error(NIL, "belongs to a reserved package... ", NEW_STRING(str));
@@ -562,8 +576,9 @@ at *new_symbol(const char *str)
       s->hn = hn;
       hn->named = new_at(symbol_class, s);
       add_notifier(hn->named, (wr_notify_func_t *)at_symbol_notify, NULL);
+      return s;
    }
-   return hn->named;
+   return Symbol(hn->named);
 }
 
 DY(yscope)

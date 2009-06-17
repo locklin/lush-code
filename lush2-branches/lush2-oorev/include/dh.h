@@ -113,7 +113,13 @@ enum dht_type {
     DHT_LAST        /* TAG */
 };
 
-
+#define DHT_CHAR    DHT_BYTE
+#define DHT_UCHAR   DHT_UBYTE
+#define DHT_DOUBLE  DHT_REAL
+#define DHT_FLOAT   DHT_FLT
+#define DHT_OBJECT  DHT_OBJ
+#define DHT_INDEX   DHT_IDX
+#define DHT_STORAGE DHT_SRG
 
 /* dhrecord --- 
  * The basic data structure for metainformation in compiled code.
@@ -328,6 +334,7 @@ struct dhclassdoc_s
 
 #endif
 
+int dht_from_cname(symbol_t *);
 
 
 /* ----------------------------------------------- */

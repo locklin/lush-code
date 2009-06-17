@@ -1438,7 +1438,7 @@ static void module_method_def(class_t *cl, at *name, at *val)
 
 void class_define(const char *name, class_t *cl)
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    cl->classname = symb;
    cl->priminame = module_priminame(symb);
    module_def(symb, cl->backptr);
@@ -1447,7 +1447,7 @@ void class_define(const char *name, class_t *cl)
 
 void dx_define(const char *name, at *(*addr) (int, at **))
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    at *priminame = module_priminame(symb);
    at *func = new_dx(priminame, addr);
    module_def(symb, func);
@@ -1455,7 +1455,7 @@ void dx_define(const char *name, at *(*addr) (int, at **))
 
 void dy_define(const char *name, at *(*addr) (at *))
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    at *priminame = module_priminame(symb);
    at *func = new_dy(priminame, addr);
    module_def(symb, func);
@@ -1463,7 +1463,7 @@ void dy_define(const char *name, at *(*addr) (at *))
 
 void dxmethod_define(class_t *cl, const char *name, at *(*addr) (int, at **))
 {
-  at *symb = new_symbol(name);
+  at *symb = NEW_SYMBOL(name);
   at *priminame = module_method_priminame(cl, symb);
   at *func = new_dx(priminame, addr);
   module_method_def(cl, symb, func);
@@ -1472,7 +1472,7 @@ void dxmethod_define(class_t *cl, const char *name, at *(*addr) (int, at **))
 
 void dymethod_define(class_t *cl, const char *name, at *(*addr) (at *))
 {
-  at *symb = new_symbol(name);
+  at *symb = NEW_SYMBOL(name);
   at *priminame = module_method_priminame(cl, symb);
   at *func = new_dy(priminame, addr);
   module_method_def(cl, symb, func);
@@ -1481,7 +1481,7 @@ void dymethod_define(class_t *cl, const char *name, at *(*addr) (at *))
 
 void dhclass_define(const char *name, dhclassdoc_t *kclass)
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    at *classat = new_dhclass(symb, kclass);
    class_t *cl = Mptr(classat);
    cl->priminame = module_priminame(symb); 
@@ -1492,7 +1492,7 @@ void dhclass_define(const char *name, dhclassdoc_t *kclass)
 
 void dh_define(const char *name, dhdoc_t *kname)
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    at *priminame = module_priminame(symb);
    at *func = new_dh(priminame, kname);
    module_def(symb, func);
@@ -1500,7 +1500,7 @@ void dh_define(const char *name, dhdoc_t *kname)
 
 void dhmethod_define(dhclassdoc_t *kclass, const char *name, dhdoc_t *kname)
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    if (! kclass->lispdata.atclass)
       error(NIL,"internal: dhmethod_define called before dhclass_define", symb);
    

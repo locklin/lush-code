@@ -369,6 +369,12 @@ LUSHAPI void protect(at *q);
 LUSHAPI void unprotect(at *q);
 
 
+/* cref.h */
+
+extern LUSHAPI class_t *abstract_cref_class;
+#define CREFP(x) ((x)&&(Class(x)->super == abstract_cref_class))
+
+
 /* SYMBOL.H ---------------------------------------------------- */
 
 extern LUSHAPI class_t *symbol_class;
@@ -383,13 +389,15 @@ typedef struct symbol { 	/* each symbol is an external AT which */
 
 #define SYMBOL_LOCKED_BIT      1
 #define SYMBOL_TYPELOCKED_BIT  2
+#define SYMBOL_VARIABLE_BIT    4
 
 /* symbol creation */
-LUSHAPI at *new_symbol(const char *);
+LUSHAPI symbol_t *new_symbol(const char *);
 LUSHAPI at *named(const char *);
 LUSHAPI at *namedclean(const char *);
 extern  at *at_t; 
 #define t()           at_t
+#define NEW_SYMBOL(s)  named(s)
 
 LUSHAPI const char *nameof(symbol_t *);
 LUSHAPI const char *NAMEOF(at *);

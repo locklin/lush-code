@@ -846,11 +846,11 @@ read_again1:
   
    /* QUOTED SYMBOL */
    if (s[0] == '|')
-      return new_symbol(s + 1);
+      return NEW_SYMBOL(s + 1);
    
    /* SYMBOL */
    if (s[0])
-      return new_symbol(s);
+      return NEW_SYMBOL(s);
   
    /* EOF */
    return NIL;

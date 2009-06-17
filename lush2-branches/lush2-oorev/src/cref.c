@@ -27,73 +27,171 @@
 #include "header.h"
 #include "dh.h"
 
-struct cref {
-   void *mobj;           /* non-NULL when cobj points into managed object */
-   void *cobj;           /* reference to C object                         */
-};
+typedef unsigned char   uchar;
 
-typedef struct cref cref_t;
+#define DEF_NUMBER_CREF(type)                     \
+   static at *cref_##type##_selfeval(at *p)       \
+   {                                              \
+      return NEW_NUMBER(*((type *)Gptr(p)));      \
+   }                                              \
+                                                  \
+   static void cref_##type##_setslot(at *self, at *slot, at *val)       \
+   {                                                                    \
+      if (slot)                                                         \
+         error(NIL, "object does not accept scope syntax", self);       \
+      ifn (NUMBERP(val))                                                \
+         error(NIL, "invalid value for assignment to cref", val);       \
+      void *p = Gptr(self);                                             \
+      *((type *)p) = Number(val);                                       \
+   }                                                                    \
+                                                                        \
+   class_t *cref_##type##_class
 
-static void clear_cref(cref_t *cr, size_t _)
+DEF_NUMBER_CREF(char);
+DEF_NUMBER_CREF(uchar);
+DEF_NUMBER_CREF(short);
+DEF_NUMBER_CREF(int);
+DEF_NUMBER_CREF(float);
+DEF_NUMBER_CREF(double);
+
+static at *cref_str_selfeval(at *p)
 {
-   cr->mobj = NULL;
+   return NEW_STRING(mm_strdup(*((const char **)Gptr(p))));
 }
 
-static void mark_cref(cref_t *cr, size_t _)
+static void cref_str_setslot(at *self, at *slot, at *val)
 {
-   MM_MARK(cr->mobj);
-}
-
-mt_t mt_cref = mt_undefined;
-
-
-/* DHT_DOUBLE */
-
-static at *cref_double_selfeval(at *p)
-{
-   cref_t *cr = Mptr(p);
-   return NEW_NUMBER(*((double *)cr->cobj));
-}
-
-static void cref_double_setslot(at *p, at *slot, at *val)
-{
-   cref_t *cr = Mptr(p);
    if (slot)
-      error(NIL, "object does not accept scope syntax", p);
-   ifn (NUMBERP(val))
-      error(NIL, "invalid value for assignment", val);
-   *((double *)cr->cobj) = Number(val);
+      error(NIL, "object does not accept scope syntax", self);
+   ifn (STRINGP(val))
+      error(NIL, "invalid value for assignment to cref", val);
+   const char **dest = Gptr(self);
+   if (mm_ismanaged(*dest))
+      *dest = String(val);
+   else {
+      fprintf(stderr, "*** Warning: possibly leaked memory at %p\n", *dest);
+      *dest = strdup(String(val));
+   }
 }
 
-class_t *cref_double_class;
-
-
-
+class_t *cref_str_class;
 
 at *new_cref(int dht, void *p) 
 {
-   cref_t *cr = mm_alloc(mt_cref);
-   cr->cobj = p;
-
    switch (dht) {
-   case DHT_REAL: return new_at(cref_double_class, cr);
-
+   case DHT_CHAR  : return new_at(cref_char_class, p);
+   case DHT_UCHAR : return new_at(cref_uchar_class, p);
+   case DHT_SHORT : return new_at(cref_short_class, p);
+   case DHT_INT   : return new_at(cref_int_class, p);
+   case DHT_FLOAT : return new_at(cref_float_class, p);
+   case DHT_DOUBLE: return new_at(cref_double_class, p);
+   case DHT_STR   : return new_at(cref_str_class, p);
    default:
       error(NIL, "unsupported type", NEW_NUMBER(dht));
    }
 }
 
+DX(xnew_cref)
+{
+   ARG_NUMBER(2);
+   return new_cref(dht_from_cname(ASYMBOL(1)), AGPTR(2));
+}
 
+DX(xassign)
+{
+   ARG_NUMBER(2);
+   ifn (CREFP(APOINTER(1)))
+      RAISEFX("not a cref", APOINTER(1));
+
+   class_t *cl = classof(APOINTER(1));
+   cl->setslot(APOINTER(1), NIL, APOINTER(2));
+   return APOINTER(2);
+}
+
+
+/* defined in module.c */
+struct module;
+extern void *dynlink_symbol(struct module *, const char *, int, int);
+
+DX(xto_gptr)
+{
+   ARG_NUMBER(1);
+   at *p = APOINTER(1);
+   
+   if (p==NIL)
+      return NIL;
+   
+   else if (CREFP(p)) {
+      return NEW_GPTR(Gptr(p));
+      
+   } else if (NUMBERP(p)) {
+      return NEW_GPTR(Mptr(p));
+      
+   } else if (GPTRP(p)) {
+      //LOCK(p);
+      return p;
+      
+   } else if (MPTRP(p)) {
+      return NEW_GPTR(Mptr(p));
+      
+   } else if (INDEXP(p)) {
+      return NEW_GPTR(Mptr(p));
+      
+   } else if (OBJECTP(p)) {
+      error(NIL, "not supported", NIL);
+      //return NEW_GPTR(n->citem);
+      
+   } else if (STORAGEP(p)) {
+      return NEW_GPTR(Mptr(p));
+      
+   } else if (p && (Class(p) == dh_class)) {
+      struct cfunction *cfunc = Mptr(p);
+      if (CONSP(cfunc->name))
+         check_primitive(cfunc->name, cfunc->info);
+      
+      assert(MODULEP(Car(cfunc->name)));
+      struct module *m = Mptr(Car(cfunc->name));
+      dhdoc_t *dhdoc;
+      if (( dhdoc = (dhdoc_t*)(cfunc->info) )) {
+         void *q = dynlink_symbol(m, dhdoc->lispdata.c_name, 1, 1);
+         ifn (q)
+            RAISEF("could not find function pointer\n", p);
+         return NEW_GPTR(q);
+      }
+   }
+   error(NIL,"Cannot make a compiled version of this lisp object",p);
+}
+
+
+class_t *abstract_cref_class;
+
+#define INIT_NUMBER_CREF(type)                                    \
+   cref_##type##_class = new_builtin_class(abstract_cref_class);  \
+   cref_##type##_class->selfeval = cref_##type##_selfeval;        \
+   cref_##type##_class->setslot = cref_##type##_setslot;          \
+   cref_##type##_class->managed = false;                          \
+   class_define("cref<"#type">", cref_##type##_class);
 
 void init_cref(void)
 {
-   mt_cref = MM_REGTYPE("cref", sizeof(cref_t), clear_cref, mark_cref, 0);
-   
-   cref_double_class = new_builtin_class(NIL);
-   cref_double_class->selfeval = cref_double_selfeval;
-   cref_double_class->setslot = cref_double_setslot;
-   class_define("cref<double>", cref_double_class);
+   abstract_cref_class = new_builtin_class(NIL);
 
+   INIT_NUMBER_CREF(char);
+   INIT_NUMBER_CREF(uchar);
+   INIT_NUMBER_CREF(short);
+   INIT_NUMBER_CREF(int);
+   INIT_NUMBER_CREF(float);
+   INIT_NUMBER_CREF(double);
+
+   cref_str_class = new_builtin_class(abstract_cref_class);
+   cref_str_class->selfeval = cref_str_selfeval;
+   cref_str_class->setslot = cref_str_setslot;
+   cref_str_class->managed = false;
+   class_define("cref<str>", cref_str_class);
+
+   dx_define("new-cref", xnew_cref);
+   dx_define("to-gptr", xto_gptr);
+   dx_define("assign", xassign);
 }
    
 

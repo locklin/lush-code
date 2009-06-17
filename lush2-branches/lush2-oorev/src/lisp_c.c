@@ -1817,55 +1817,6 @@ DX(xto_str)
 
   return NIL;
 }
-  
-/* defined in module.c */
-struct module;
-extern void *dynlink_symbol(struct module *, const char *, int, int);
-
-/* (to-gptr <obj>) */
-DX(xto_gptr)
-{
-  ARG_NUMBER(1);
-  at *p = APOINTER(1);
-
-  if (p==NIL)
-    return NIL;
-
-  else if (GPTRP(p)) {
-     //LOCK(p);
-    return p;
-    
-  } else if (INDEXP(p)) {
-    //avlnode_t *n = lside_create_idx(p);
-    return NEW_MPTR(Mptr(p));
-
-  } else if (OBJECTP(p)) {
-    avlnode_t *n = lside_create_obj(p);
-    return NEW_GPTR(n->citem);
-
-  } else if (STORAGEP(p)) {
-    return NEW_MPTR(Mptr(p));
-
-  } else if (p && (Class(p) == dh_class)) {
-    struct cfunction *cfunc = Mptr(p);
-    if (CONSP(cfunc->name))
-      check_primitive(cfunc->name, cfunc->info);
-    
-    assert(MODULEP(Car(cfunc->name)));
-    struct module *m = Mptr(Car(cfunc->name));
-    dhdoc_t *dhdoc;
-    if (( dhdoc = (dhdoc_t*)(cfunc->info) )) {
-      void *q = dynlink_symbol(m, dhdoc->lispdata.c_name, 1, 1);
-      ifn (q)
-	RAISEF("could not find function pointer\n", p);
-      return NEW_GPTR(q);
-    }
-  }
-  error(NIL,"Cannot make a compiled version of this lisp object",p);
-}
-
-
-
 
 /* -----------------------------------------
    INITIALIZATION
@@ -1886,7 +1837,6 @@ void init_lisp_c(void)
   dx_define("to-number", xto_number);
   dx_define("to-bool", xto_bool);
   dx_define("to-str", xto_str);
-  dx_define("to-gptr", xto_gptr);
   dx_define("to-obj", xto_obj);
 }
 

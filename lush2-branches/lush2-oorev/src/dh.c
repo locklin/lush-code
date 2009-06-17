@@ -234,21 +234,86 @@ at *new_dh(at *name, dhdoc_t *kdata)
 int dht_from_cname(symbol_t *s)
 {
    const char *name = nameof(s);
-   switch (name[0]) {
-   case 'b': return DHT_BOOL;
-   case 'c': return DHT_BYTE;
-   case 'i': switch (name[1]) {
-             case 'n': return (name[2]=='d' ? DHT_IDX : DHT_INT);
-             case 'd': return DHT_IDX;
-             default : goto invalid_error; 
-             }
-   case 's': switch (name[1]) {
-             case 't': return (name[2]=='r' ? DHT_STR : DHT_SRG);
-             case 'r': return DHT_SRG;
-             default : goto invalid_error;
-             }
-   }
+   ifn (strlen(name)>2)
+      goto invalid_error;
 
+   int c0 = tolower(name[0]);
+
+   switch (c0) {
+   case 'd': 
+      if (strcmp(name, "double"))
+         goto invalid_error;
+      else
+         return DHT_DOUBLE;
+      
+   case 'f':
+      if (strcmp(name, "float"))
+         goto invalid_error;
+      else
+         return DHT_FLOAT;
+
+   case 'b':
+      if (strcmp(name, "bool")==0)
+         return DHT_BOOL;
+      else if (strcmp(name, "byte")==0) {
+         fprintf(stderr, "*** Warning: deprecated name 'byte' (use 'char')\n");
+         return DHT_CHAR;
+      } else
+         goto invalid_error;
+
+   case 'c':
+      if (strcmp(name, "char")==0)
+         return DHT_CHAR;
+      else if (strcmp(name, "class")==0)
+         return DHT_CLASS;
+      else
+         goto invalid_error;
+      
+   case 'i':
+      if (strcmp(name, "int")==0)
+         return DHT_INT;
+      else if (strcmp(name, "idx")==0) {
+         fprintf(stderr, "*** Warning: deprecated name 'idx' (use 'index')\n");
+         return DHT_INDEX;
+      } else if (strcmp(name, "index")==0)
+         return DHT_INDEX;
+      else
+         goto invalid_error;
+                 
+   case 's': 
+      if (strcmp(name, "str")==0)
+         return DHT_STR;
+      else if (strcmp(name, "short")==0)
+         return DHT_SHORT;
+      else if (strcmp(name, "srg")==0) {
+         fprintf(stderr, "*** Warning: deprecated name 'srg' (use 'storage')\n");
+         return DHT_STORAGE;
+      } else if (strcmp(name, "storage")==0)
+         return DHT_STORAGE;
+      else
+         goto invalid_error;
+
+   case 'u':
+      if (strcmp(name, "uchar")==0)
+         return DHT_UCHAR;
+      else if (strcmp(name, "ubyte")==0) {
+         fprintf(stderr, "*** Warning: deprecated name 'ubyte' (use 'uchar')\n");
+         return DHT_UCHAR;
+      } else
+         goto invalid_error;
+      
+   case 'g': 
+      if (strcmp(name, "gptr"))
+         goto invalid_error;
+      else
+         return DHT_GPTR;
+
+   case 'o': return DHT_OBJ;
+      if (strcmp(name, "object"))
+         goto invalid_error;
+      else
+         return DHT_OBJECT;
+   }
 invalid_error:
    error(NIL, "not a type name", new_at(symbol_class, s));
 }
