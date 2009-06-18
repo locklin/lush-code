@@ -470,7 +470,7 @@ static at *atroot;
 static int check_executability = false;
 static void check_exec();
 
-void clear_module(module_t *m, size_t _)
+static void clear_module(module_t *m, size_t _)
 {
    m->prev = 0;
    m->next = 0;
@@ -489,7 +489,7 @@ void clear_module(module_t *m, size_t _)
    m->hook = 0;
 }
 
-void mark_module(module_t *m)
+static void mark_module(module_t *m)
 {
    MM_MARK(m->prev);
    MM_MARK(m->next);
@@ -500,7 +500,7 @@ void mark_module(module_t *m)
    MM_MARK(m->hook);
 }
 
-bool finalize_module(module_t *m)
+static bool finalize_module(module_t *m)
 {
    module_class->dispose(m);
    return true;
@@ -510,7 +510,7 @@ static mt_t mt_module = mt_undefined;
 
 /* ---------- THE MODULE OBJECT ----------- */
 
-at *new_module(const char *filename, at *hook)
+static at *new_module(const char *filename, at *hook)
 {
    module_t *m = mm_alloc(mt_module);
    m->flags = 0;
@@ -1363,8 +1363,8 @@ at *find_primitive(at *module, at *name)
            /* Looking for a method:
               - names must match, 
               - clname must match class. */
-           if ( CONSP(Cdr(q)) && Cddr(q) == name && CLASSP(Cadr(q)) &&
-                ((class_t *)Mptr(Cadr(q)))->classname == clname)
+           if (CONSP(Cdr(q)) && Cddr(q) == name && 
+               CLASSP(Cadr(q)) && ((class_t *)Mptr(Cadr(q)))->classname == clname)
               break;
         } else {
            /* Looking for a function: 
@@ -1526,7 +1526,7 @@ void pre_init_module(void)
 {
    if (mt_module == mt_undefined)
       mt_module = MM_REGTYPE("module", sizeof(module_t),
-                             clear_module, mark_module, 0);
+                             clear_module, mark_module, finalize_module);
    /* create root module */
    if (!root) {
       root = mm_alloc(mt_module);

@@ -853,15 +853,16 @@ void error(const char *prefix, const char *text, at *suffix)
    eval_ptr = eval_std;
    //compute_bump_active = 0;
    
+   error_doc.error_prefix = (char *)prefix;
+   error_doc.error_text = text;
+   error_doc.error_suffix = suffix;
+
    if (error_doc.ready_to_an_error == false)
-      lastchance(text);
+      lastchance(error_text());
   
    TOPLEVEL_MACHINE;
    error_doc.error_call = call_stack();
    error_doc.ready_to_an_error = false;
-   error_doc.error_prefix = (char *)prefix;
-   error_doc.error_text = text;
-   error_doc.error_suffix = suffix;
    recur_doc_init();
    line_pos = line_buffer;
    *line_buffer = 0;

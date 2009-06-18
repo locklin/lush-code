@@ -284,15 +284,20 @@ struct dhdoc_s
  *
  */
 
-struct VClass_object 
-{
-  void *Cdoc;
-  void (*Cdestroy)(gptr);
-};
+struct VClass_object;
 
 struct CClass_object {
   struct VClass_object *Vtbl;
+  object_t             *__lptr;
 };
+
+struct VClass_object 
+{
+  void  *Cdoc;
+  void (*Cdestroy)(gptr);
+  void (*__mark)(struct CClass_object *obj);
+};
+
 
 
 /* dhclassconstraint ---

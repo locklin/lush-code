@@ -242,8 +242,7 @@ void lside_destroy_item(void *cptr)
 
 	  case CINFO_IDX:
             assert(INDEXP(p));
-            index_t *ind = Mptr(p);
-            //fprintf(stderr, "destroying index with storage at %p\n", ind->st);
+            fprintf(stderr, "lisp_c: should never get here\n"); abort();
 	    break;
 
 	  case CINFO_STR:

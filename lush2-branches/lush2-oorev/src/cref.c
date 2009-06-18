@@ -54,6 +54,9 @@ DEF_NUMBER_CREF(int);
 DEF_NUMBER_CREF(float);
 DEF_NUMBER_CREF(double);
 
+
+/* pointer to managed string */
+
 static at *cref_str_selfeval(at *p)
 {
    return NEW_STRING(mm_strdup(*((const char **)Gptr(p))));
@@ -67,13 +70,7 @@ static void cref_str_setslot(at *self, at *slot, at *val)
       error(NIL, "type mismatch in assignment", val);
 
    const char **dest = Gptr(self);
-   /* what to do when *dest==NULL ? */
-   if (mm_ismanaged(*dest))
-      *dest = String(val);
-   else {
-      fprintf(stderr, "*** Warning: possibly leaked memory at %p\n", *dest);
-      *dest = strdup(String(val));
-   }
+   *dest = String(val);
 }
 
 class_t *cref_str_class;
@@ -150,6 +147,9 @@ class_t *cref_storage_class;
 
 at *new_cref(int dht, void *p) 
 {
+   if (!p)
+      RAISEF("not an address", p);
+
    switch (dht) {
    case DHT_CHAR  : return new_at(cref_char_class, p);
    case DHT_UCHAR : return new_at(cref_uchar_class, p);
@@ -157,11 +157,21 @@ at *new_cref(int dht, void *p)
    case DHT_INT   : return new_at(cref_int_class, p);
    case DHT_FLOAT : return new_at(cref_float_class, p);
    case DHT_DOUBLE: return new_at(cref_double_class, p);
-   case DHT_STR   : return new_at(cref_str_class, p);
+   case DHT_STR   :
+   {
+      void **dest = p;
+      /*
+       * NULL must be allowed as crefs are created during object
+       * construction, before the class constructor is called
+       */
+      ifn (*dest==NULL || mm_ismanaged(*dest))
+         error(NIL, "storage does not hold managed address", p);
+      return new_at(cref_str_class, p);
+   }
    case DHT_INDEX :
    {
       void **dest = p;
-      ifn (mm_ismanaged(*dest))
+      ifn (*dest==NULL || mm_ismanaged(*dest))
          error(NIL, "storage does not hold managed address", p);
       return new_at(cref_index_class, p);
    }
@@ -169,14 +179,14 @@ at *new_cref(int dht, void *p)
    case DHT_IDX   :
    {
       void **dest = p;
-      ifn (mm_ismanaged(*dest))
+      ifn (*dest==NULL || mm_ismanaged(*dest))
          error(NIL, "storage does not hold managed address", p);
       return new_at(cref_idx_class, p);
    }
    case DHT_STORAGE:
    {
       void **dest = p;
-      ifn (mm_ismanaged(*dest))
+      ifn (*dest==NULL || mm_ismanaged(*dest))
          error(NIL, "storage does not hold managed address", p);
       return new_at(cref_storage_class, p);
    }
@@ -191,15 +201,20 @@ DX(xnew_cref)
    return new_cref(dht_from_cname(ASYMBOL(1)), AGPTR(2));
 }
 
+at *assign(at *p, at *q)
+{
+   ifn (CREFP(p))
+      RAISEF("not a cref", p);
+
+   class_t *cl = classof(p);
+   cl->setslot(p, NIL, q);
+   return q;
+} 
+
 DX(xassign)
 {
    ARG_NUMBER(2);
-   ifn (CREFP(APOINTER(1)))
-      RAISEFX("not a cref", APOINTER(1));
-
-   class_t *cl = classof(APOINTER(1));
-   cl->setslot(APOINTER(1), NIL, APOINTER(2));
-   return APOINTER(2);
+   return assign(APOINTER(1), APOINTER(2));
 }
 
 

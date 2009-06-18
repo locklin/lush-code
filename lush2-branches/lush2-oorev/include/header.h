@@ -277,6 +277,7 @@ struct class_s {
    bool             live;        /* true if class is current */
    bool             managed;     /* object address is a managed address */
    /* additional info for dhclasses */
+   bool             has_compiled_part;
    dhclassdoc_t    *classdoc;  
    char            *kname;
 };
@@ -374,6 +375,7 @@ LUSHAPI void unprotect(at *q);
 extern LUSHAPI class_t *abstract_cref_class;
 #define CREFP(x) ((x)&&(Class(x)->super == abstract_cref_class))
 LUSHAPI at *new_cref(int, void *);
+LUSHAPI at *assign(at *, at *);
 
 
 /* SYMBOL.H ---------------------------------------------------- */
@@ -709,7 +711,7 @@ LUSHAPI complexreal get_complex(at*);
 
 /* OOSTRUCT.H ----------------------------------------------------- */
 
-typedef struct object_s {
+typedef struct object {
    at      *backptr;
    void    *cptr;
    at      *slots[];

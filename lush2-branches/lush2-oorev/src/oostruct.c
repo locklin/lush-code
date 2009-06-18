@@ -50,14 +50,16 @@ static void send_delete(object_t *);
 static void clear_object(object_t *obj, size_t _)
 {
    obj->backptr = NULL;
+   obj->cptr = NULL;
 }
 
 static void mark_object(object_t *obj)
 {
    MM_MARK(obj->backptr);
+   MM_MARK(obj->cptr);
    class_t *cl = Class(obj->backptr);
    MM_MARK(cl);
-   for (int i = 0; i < cl->num_slots; i++) {
+   for (int i = cl->num_cslots; i < cl->num_slots; i++) {
       at *p = obj->slots[i];
       /* this is a hack until I figure how to do finalization right */
       if (HAS_BACKPTR_P(p))
@@ -75,8 +77,22 @@ static bool finalize_object(object_t *obj)
 
 static mt_t mt_object = mt_undefined;
 
-/* ------ OBJECT CLASS DEFINITION -------- */
+static void clear_cobject(void *p, size_t s)
+{
+   memset(p, 0, s);
+}
 
+static void mark_cobject(struct CClass_object *obj)
+{
+   MM_MARK(obj->__lptr);
+   if (obj->Vtbl->__mark)
+      obj->Vtbl->__mark(obj);
+}
+
+static mt_t mt_cobject = mt_undefined;
+
+
+/* ------ OBJECT CLASS DEFINITION -------- */
 
 object_t *oostruct_dispose(object_t *obj)
 {
@@ -90,17 +106,13 @@ object_t *oostruct_dispose(object_t *obj)
    context_push(&mycontext);
   
    int errflag = sigsetjmp(context->error_jump,1);
-   /* when obj->cl is clear, destructor was already called */
    if (errflag==0)
       send_delete(obj);
    
    context_pop();
    error_doc.ready_to_an_error = oldready;
    
-   if (obj->cptr) {
-      lside_destroy_item(obj->cptr);
-      obj->cptr = NULL;
-   }
+   obj->cptr = NULL;
    zombify(obj->backptr);
 
    if (errflag) {
@@ -293,6 +305,8 @@ void class_init(class_t *cl)
    cl->dontdelete = false;
    cl->live = true;
    cl->managed = true;
+
+   cl->has_compiled_part = false;
    cl->classdoc = NULL;
    cl->kname = NULL;
 }
@@ -553,6 +567,7 @@ class_t *new_ooclass(at *classname, at *atsuper, at *new_slots, at *defaults)
    cl->hashok = 0;
    
    /* Initialize DHCLASS stuff */
+   cl->has_compiled_part = super->has_compiled_part;
    cl->classdoc = 0;
    cl->kname = 0;
    
@@ -595,9 +610,42 @@ object_t *new_object(class_t *cl)
    object_t *obj = (cl->num_slots <= MIN_NUM_SLOTS) ?
       mm_alloc(mt_object) : mm_allocv(mt_object, s);
    obj->cptr = NULL;
-   
-   /* initialize slots */
-   for (int i=0; i<cl->num_slots; i++)
+
+   /* if this or a superclass is compiled, create C object now */
+   if (cl->has_compiled_part) {
+      const class_t *c = cl;
+      while (c && !c->classdoc) 
+         c = c->super;
+      assert(c);
+      if (CONSP(c->priminame))
+         check_primitive(c->priminame, c->classdoc);
+      void **cptr = obj->cptr = mm_blob(c->classdoc->lispdata.size);
+      *(cptr) = (void *)c->classdoc->lispdata.vtable;
+      *(cptr+1) = obj;
+      
+      /* initialize compiled slots */
+      int k = cl->num_cslots;
+      int j = cl->num_cslots;
+      while (c) {
+         /* do slots declare in this class */
+         dhrecord *drec = c->classdoc->argdata;
+         j -= drec->ndim;
+         assert(j>=0);
+         drec++;
+         for (int i=j; j<k; i++) {
+            void *p = (char *)(obj->cptr)+(ptrdiff_t)(drec->arg);
+            cl->slots[i] = new_cref((drec+1)->op, p);
+            //assign(cl->slots[i], cl->defaults[i]);
+            drec = drec->end;
+         }
+         c = c->super;
+         k = j;
+      }
+      assert(j==0);
+   }
+
+   /* initialize non-compiled slots */
+   for (int i=cl->num_cslots; i<cl->num_slots; i++)
       obj->slots[i] = cl->defaults[i];
 
    obj->backptr = new_at(cl, obj);
@@ -1083,6 +1131,8 @@ void init_oostruct(void)
 {
    mt_object = MM_REGTYPE("object", SIZEOF_OBJECT,
                           clear_object, mark_object, finalize_object);
+   mt_cobject = MM_REGTYPE("cobject", sizeof(struct CClass_object),
+                           clear_cobject, mark_cobject, 0);
    mt_method_hash = 
       MM_REGTYPE("method-hash", 0, 
                  clear_method_hash, mark_method_hash, 0);

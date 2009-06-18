@@ -440,29 +440,6 @@
        (sprintf "DH_REFER(%s)," name) )
      (list "DH_NIL" "};" ) ) ) )
 
-;; generate a function with target signature 'at *_getslot(obj_t *obj, int i)'
-;; to be added to as a hidden method to class <cls>
-(defun dhc-make-getslot-method (type)
-  (when (<> 'dht-class (unode-val :type:u-tclass))
-    (dhc-error "type is not a class") )
-  (let* ((cl-name (dhu-name type))
-         (classes ())
-         (t type)
-         (arg (gensym))
-         (i -1) )
-    (while (<> 'dht-nil (unode-val :t:u-tclass))
-      (setq classes (cons t classes))
-      (setq t (unode-val :t:u-type)) ) 
-    `(defmethod ,cl-name -getslot (,arg)
-       (declare (-int-) ,arg)
-       (selectq ,arg
-         ,@(domapcan ((cl (cdr classes)))
-             (domapcar (((slot . type) (unode-val :cl:u-temps)))
-               (incr i)
-               `(,i (to-gptr ,(dhc-type-to-getslot-expr type slot)))
-               ))
-         (t (error "invalid slot number") (to-gptr ())) ))
-    ))
 
 ;;; ------------------------------------------------------------------------
 ;;; PARSING A CLASS
@@ -530,11 +507,6 @@
 	(setq :sym:c-name cname)
 	(dhc-add-global-table sym) )
 
-      ;; Add hidden methods
-      (when slot-dhc-types
-        (eval (dhc-make-getslot-method class-type))
-        (setq method-list (cons '-getslot method-list)) )
-
       ;; Warn when destructor is not compiled
       (when (and (member '-destructor (methods cls))
                  (not (member '-destructor method-list)) )
@@ -551,8 +523,8 @@
         ;; REGULAR METHOD
         ;; --  install slots in symbol table
         (let ((symbol-table  symbol-table)
-              (slot-list     (dhu-temps (dhc-obj-type-from-class cls))))
-          (each (((slot-sym . slot-type) slot-list))
+              (slot-list     (dhu-temps (dhc-obj-type-from-class cls))) )
+          (dolist ((slot-sym . slot-type) slot-list)
             (let ((sym (new dhc-symbol slot-sym 0)))
               (dhc-unify-types slot-type :sym:type) 
               (setq :sym:c-name
@@ -717,12 +689,43 @@
              (when vtsupername
                (list "super->Cdestroy(g);") )
              (list "}") ) )
+    
+    ;; generate mark method
+    (let* ((type class-dhc-type)
+           (cl-name (dhu-name type))
+           (classes ())
+           (t type) )
+      (while (<> 'dht-nil (unode-val :t:u-tclass))
+        (setq classes (cons t classes))
+        (setq t (unode-val :t:u-type)) )
+      (dhc-add-program
+       (append
+        (list "" "/*" (sprintf " * METHOD FUNCTION __mark (class %s)" cname) " */")
+        (list (sprintf "static void C__mark_C_%s(struct CClass_%s *obj)\n" cname cname))
+        (list "{")
+        (or 
+         (domapcan ((cl (cdr classes)))
+           (domapcar (((slot . type) (unode-val :cl:u-temps)))
+             (if (or (==> type is-an-idx)
+                     (==> type is-a-srg)
+                     (==> type is-an-obj)
+                     (==> type is-a-str)
+                     ;;         ((==> type is-an-mptr)
+                     ;;          `(cinline "NEW_GPTR(%s)" ,slot) )
+                     (==> type is-a-ptr) )
+                 (sprintf "   MM_MARK(obj->%l);" slot)
+               "")))
+         "")
+        (list "}")
+        )))
+
     ;; generate vtable
     (dhc-add-program
      (append (list  "" "/*" (sprintf " * CLASS %l VTABLE" fname) " */")
              (list  (sprintf "struct VClass_%s %s = {" cname vtname)
                     (sprintf "(void*)&%s," (or vtsupername "Vt_object"))
-		    (sprintf "&Cdestroy_C_%s," cname) )
+		    (sprintf "&Cdestroy_C_%s," cname)
+                    (sprintf "&C__mark_C_%s," cname) )
              (all (((method-cname . method-type) method-list))
                (let* ((method-fullname ())
                       (cltype (dhu-type (dhu-type (car (dhu-extra method-type)))))
@@ -735,6 +738,7 @@
                   (concat "extern_c " (dhc-compose-prototype method-type method-fullname)) )
                  (sprintf "&%s," method-fullname) ))
              (list "};") ))
+
     ;; generate dhclassdoc
     (dhc-add-metaprogram
      (append (list  "" "/*" (sprintf " * CLASS %l DHCLASSDOC" fname) " */")

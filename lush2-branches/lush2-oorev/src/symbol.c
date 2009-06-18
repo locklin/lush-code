@@ -774,10 +774,8 @@ bool symbol_typelocked_p(symbol_t *s)
 DX(xset)
 {
    ARG_NUMBER(2);
-   symbol_t *s = ASYMBOL(1);
-   at *q = APOINTER(2);
-   sym_set(s, q, false);
-   return q;
+   ASYMBOL(1);
+   return setq(APOINTER(1), APOINTER(2));
 }
 
 

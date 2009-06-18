@@ -1897,7 +1897,6 @@ DX(xarray_export_tabular)
 void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
 {
    size_t size, elsize, rsize;
-   char *pntr;
    int contiguous;
 
    /* validate */

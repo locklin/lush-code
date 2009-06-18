@@ -365,6 +365,7 @@ static at *make_dhclass(dhclassdoc_t *kdata)
       superclass = object_class->backptr;
    /* create ooclass */
    class_t *cl = new_ooclass(classname, superclass, keylist, defaults);
+   cl->has_compiled_part = true;
    cl->classdoc = kdata;
    cl->kname = mm_strdup(kdata->lispdata.k_name);
    cl->num_cslots = length(keylist);

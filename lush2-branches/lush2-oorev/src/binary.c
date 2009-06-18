@@ -997,6 +997,7 @@ static void local_bread_primitive(at **pp)
    } else 
       p = find_primitive(NIL,q);
 
+   
    if (! p)
       error(NIL, "cannot find primitive", q);
    *pp = p;
