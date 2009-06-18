@@ -59,7 +59,7 @@ static void mark_object(object_t *obj)
    MM_MARK(obj->cptr);
    class_t *cl = Class(obj->backptr);
    MM_MARK(cl);
-   for (int i = cl->num_cslots; i < cl->num_slots; i++) {
+   for (int i = 0; i < cl->num_slots; i++) {
       at *p = obj->slots[i];
       /* this is a hack until I figure how to do finalization right */
       if (HAS_BACKPTR_P(p))
@@ -173,12 +173,20 @@ at *oostruct_getslot(at *p, at *prop)
    at *slot = Car(prop);
    ifn (SYMBOLP(slot))
       error(NIL,"not a slot name", slot);
+   prop = Cdr(prop);
 
    object_t *obj = Mptr(p);
    class_t *cl = Class(obj->backptr);
    for (int i=0; i<cl->num_slots; i++)
-      if (slot == cl->slots[i])
-         return getslot(obj->slots[i], Cdr(prop));
+      if (slot == cl->slots[i]) {
+         if (prop)
+            return getslot(obj->slots[i], prop);
+         else if (i<cl->num_cslots) {
+            cl = classof(obj->slots[i]);
+            return cl->selfeval(obj->slots[i]);
+         } else
+            return obj->slots[i];
+      }
    
    error(NIL, "not a slot", slot);
    return NIL;
@@ -198,14 +206,11 @@ void oostruct_setslot(at *p, at *prop, at *val)
       if (slot == cl->slots[i]) {
          if (prop)
             setslot(&obj->slots[i], prop, val);
-         else {
-            if (i<cl->num_cslots) {
-               class_t *cl = classof(obj->slots[i]);
-               ifn (isa(val, cl))
-                  error(NIL, "invalid assignment to typed slot", slot);
-            }
+         else if (i<cl->num_cslots) {
+            class_t *cl = classof(obj->slots[i]);
+            cl->setslot(obj->slots[i], NIL, val);
+         } else
             obj->slots[i] = val;
-         }
          return;
       }
    error(NIL, "not a slot", slot);
@@ -476,11 +481,11 @@ DX(xbuiltin_class_p)
       return NIL;
 }
 
+extern void dbg_notify(void *, void *);
+
 /* allocate and initialize new builtin class */
 class_t *new_builtin_class(class_t *super)
 {
-   extern void dbg_notify(void *, void *);
-
    class_t *cl = mm_alloc(mt_class);
    add_notifier(cl, dbg_notify, NULL);
    class_init(cl);
@@ -568,6 +573,7 @@ class_t *new_ooclass(at *classname, at *atsuper, at *new_slots, at *defaults)
    
    /* Initialize DHCLASS stuff */
    cl->has_compiled_part = super->has_compiled_part;
+   cl->num_cslots = super->num_cslots;
    cl->classdoc = 0;
    cl->kname = 0;
    
@@ -603,8 +609,9 @@ DX(xmake_class)
 
 object_t *new_object(class_t *cl)
 {
+   MM_ENTER;
    if (builtin_class_p(cl))
-      error(NIL, "not a subclass of ::class:object", cl->backptr);
+      error(NIL, "not a subclass of class 'object'", cl->backptr);
    
    size_t s = sizeof(object_t)+cl->num_slots*sizeof(at *);
    object_t *obj = (cl->num_slots <= MIN_NUM_SLOTS) ?
@@ -619,9 +626,9 @@ object_t *new_object(class_t *cl)
       assert(c);
       if (CONSP(c->priminame))
          check_primitive(c->priminame, c->classdoc);
-      void **cptr = obj->cptr = mm_blob(c->classdoc->lispdata.size);
-      *(cptr) = (void *)c->classdoc->lispdata.vtable;
-      *(cptr+1) = obj;
+      obj->cptr = mm_allocv(mt_cobject, c->classdoc->lispdata.size);
+      obj->cptr->Vtbl = c->classdoc->lispdata.vtable;
+      obj->cptr->__lptr = obj;
       
       /* initialize compiled slots */
       int k = cl->num_cslots;
@@ -631,13 +638,15 @@ object_t *new_object(class_t *cl)
          dhrecord *drec = c->classdoc->argdata;
          j -= drec->ndim;
          assert(j>=0);
-         drec++;
-         for (int i=j; j<k; i++) {
+         drec = drec + 1;
+         for (int i=j; i<k; i++) {
+            assert(drec->op == DHT_NAME);
             void *p = (char *)(obj->cptr)+(ptrdiff_t)(drec->arg);
-            cl->slots[i] = new_cref((drec+1)->op, p);
+            obj->slots[i] = new_cref((drec+1)->op, p);
             //assign(cl->slots[i], cl->defaults[i]);
             drec = drec->end;
          }
+         assert(drec->op == DHT_END_CLASS);
          c = c->super;
          k = j;
       }
@@ -649,7 +658,8 @@ object_t *new_object(class_t *cl)
       obj->slots[i] = cl->defaults[i];
 
    obj->backptr = new_at(cl, obj);
-   return obj;
+
+   MM_RETURN(obj);
 }
 
 DY(ynew)
@@ -685,6 +695,7 @@ DX(xnew_empty)
 
 #define LOCK_SYMBOL(s)         SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
 #define TYPELOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
+#define MARKVAR_SYMBOL(s)      SET_PTRBIT(s->hn, SYMBOL_VARIABLE_BIT)
 
 at *with_object(at *p, at *f, at *q, int howfar)
 {
@@ -701,7 +712,7 @@ at *with_object(at *p, at *f, at *q, int howfar)
       for (int i = 0; i<howfar; i++) {
          Symbol(cl->slots[i]) = symbol_push(Symbol(cl->slots[i]), 0 , &(obj->slots[i]));
          if (i < cl->num_cslots)
-            TYPELOCK_SYMBOL(Symbol(cl->slots[i]));
+            MARKVAR_SYMBOL(Symbol(cl->slots[i]));
       }
       SYMBOL_PUSH(at_this, p);
       LOCK_SYMBOL(Symbol(at_this));

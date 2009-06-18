@@ -830,11 +830,16 @@ static int local_write(at *p)
       return 0;
    }
   
+   if (cl == gptr_class && Gptr(p) == NULL) {
+      write_card8(TOK_NULL);
+      return 0;
+   }
+      
    if (cl->serialize) {
       write_card8(TOK_COBJECT);
       return 0;
    }
-
+   
    error(NIL, "cannot save this object", p);
 }
 
@@ -1014,6 +1019,12 @@ again:
    tok = read_card8();
 
    switch (tok) {
+   case TOK_NULL:
+   {
+      *pp = NEW_GPTR(0);
+      return 0;
+   }
+
    case TOK_DEF:
    {
       int xdef = read_card24();

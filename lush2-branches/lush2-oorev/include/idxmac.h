@@ -57,7 +57,6 @@
 { \
    (i)->st->data = (gptr)d; \
    (i)->st->size = s; \
-   (i)->st->flags = STS_MALLOC;\
 }
 
 /* expect min and max to have been defined has intg */

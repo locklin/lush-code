@@ -99,27 +99,6 @@ inline static void mark_for_update(avlnode_t *n)
 
 
 
-/* alloc_obj -- allocate an object */
-
-static avlnode_t *alloc_obj(dhclassdoc_t *classdoc)
-{
-  /* Object allocation is plain vanilla :-)
-   */
-  void *cptr = malloc(classdoc->lispdata.size);
-  if (!cptr) 
-    error(NIL,"Out of memory",NIL);
-  memset(cptr,0,classdoc->lispdata.size);
-  *((void**)cptr) = (void*)(classdoc->lispdata.vtable);
-
-  avlnode_t *n = avl_add(cptr);
-  if (n==0)
-    error(NIL,"lisp_c internal: cannot add element to item map",NIL);
-  n->belong = BELONG_LISP;
-  n->cinfo = CINFO_OBJ;
-  n->cmoreinfo = classdoc;
-  return n;
-}
-
 /* alloc_list -- allocate a list */
 
 static avlnode_t *alloc_list(int len)
@@ -144,7 +123,7 @@ static void update_lisp_from_c();
 
 /* lside_create_obj -- call this for creating an object from interpreted code */
   
-static avlnode_t *lside_create_obj(at *p)
+static avlnode_t *_lside_create_obj(at *p)
 {
   /* check type */
   ifn (OBJECTP(p))
@@ -171,7 +150,8 @@ static avlnode_t *lside_create_obj(at *p)
     if (CONSP(cl->priminame))
       check_primitive(cl->priminame, cl->classdoc);
     
-    avlnode_t *n = alloc_obj(cl->classdoc);
+    //avlnode_t *n = alloc_obj(cl->classdoc);
+    avlnode_t *n = avl_find(obj->cptr); // just to make it compile
     if (obj) {
       n->litem = p;
       obj->cptr = n->citem;
@@ -446,12 +426,13 @@ static void lisp2c_warning(char *s, at *errctx)
 static inline void dharg_to_address(dharg *arg, char *addr, dhrecord *drec)
 {
   switch(drec->op) {
-  case DHT_BYTE:
+  case DHT_CHAR:
+    *((char *) addr) = arg->dh_char;
   case DHT_BOOL:
   case DHT_NIL:
-    *((char *) addr) = arg->dh_char;
+    *((bool *) addr) = arg->dh_bool;
     break;
-  case DHT_UBYTE:
+  case DHT_UCHAR:
     *((unsigned char *) addr) = arg->dh_uchar;
     break;
   case DHT_SHORT:
@@ -461,10 +442,10 @@ static inline void dharg_to_address(dharg *arg, char *addr, dhrecord *drec)
     *((int *) addr) = arg->dh_int;
     break;
   case DHT_FLT:
-    *((flt *) addr) = arg->dh_flt;
+    *((flt *) addr) = arg->dh_float;
     break;
   case DHT_REAL:
-    *((real *) addr) = arg->dh_real;
+    *((real *) addr) = arg->dh_double;
     break;
   case DHT_GPTR:
     *((gptr *) addr) = arg->dh_gptr;
@@ -481,10 +462,11 @@ static inline void dharg_to_address(dharg *arg, char *addr, dhrecord *drec)
 static inline void address_to_dharg(dharg *arg, char *addr, dhrecord *drec)
 {
   switch(drec->op) {
-  case DHT_BYTE:
+  case DHT_CHAR:
+    arg->dh_char = *((char *) addr);
   case DHT_BOOL:
   case DHT_NIL:
-    arg->dh_char = *((char *) addr);
+    arg->dh_bool = *((bool *) addr);
     break;
   case DHT_UBYTE:
     arg->dh_uchar = *((unsigned char *) addr);
@@ -495,11 +477,11 @@ static inline void address_to_dharg(dharg *arg, char *addr, dhrecord *drec)
   case DHT_INT:
     arg->dh_int = *((int *) addr);
     break;
-  case DHT_FLT:
-    arg->dh_flt = *((flt *) addr);
+  case DHT_FLOAT:
+    arg->dh_float = *((flt *) addr);
     break;
-  case DHT_REAL:
-    arg->dh_real = *((real *) addr);
+  case DHT_DOUBLE:
+    arg->dh_double = *((real *) addr);
     break;
   default:
     arg->dh_gptr = *((gptr *) addr);
@@ -532,9 +514,9 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
   if (at_obj==NIL) {
     switch(drec->op) {
     case DHT_FLT: 
-      arg->dh_flt = 0; break;
+      arg->dh_float = 0; break;
     case DHT_REAL: 
-      arg->dh_real = 0; break;
+      arg->dh_double = 0; break;
     default:
       arg->dh_gptr = 0; break;
     }
@@ -550,14 +532,14 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
   
   case DHT_FLT:
     if (NUMBERP(at_obj))
-      arg->dh_flt = (flt)Number(at_obj); 
+      arg->dh_float = (flt)Number(at_obj); 
     else
       lisp2c_error("FLT expected",errctx,at_obj);
     break;
 
   case DHT_REAL:
     if (NUMBERP(at_obj))
-      arg->dh_real = (real)Number(at_obj); 
+      arg->dh_double = (real)Number(at_obj); 
     else
       lisp2c_error("REAL expected",errctx,at_obj);
     break;
@@ -607,7 +589,7 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
   
   case DHT_BOOL:
     if (at_obj == at_t)
-      arg->dh_char = 1;
+      arg->dh_bool = 1;
     else
       lisp2c_error("BOOL expected",errctx,at_obj);
     break;
@@ -676,16 +658,22 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
     } else if (OBJECTP(at_obj)) {
       /* check type */
       const class_t *cl = Class(at_obj);
+      object_t *obj = Mptr(at_obj);
+      ifn (cl->has_compiled_part)
+        error(NIL,"not an instance of a compiled class", at_obj);
+      else
+        assert(obj->cptr);
+
       for (; cl; cl=cl->super) {
 	dhclassdoc_t *cdoc = cl->classdoc;
 	if ((cdoc) && (cdoc == (dhclassdoc_t*)(drec->arg)))
 	  break;
       }
       if (cl==NULL)
-	lisp2c_error("OBJECT has illegal type",errctx,at_obj);
+	lisp2c_error("object has wrong type",errctx,at_obj);
       /* create object */
-      avlnode_t *n = lside_create_obj(at_obj);
-      (arg->dh_obj_ptr) = n->citem;
+      //avlnode_t *n = lside_create_obj(at_obj);
+      (arg->dh_obj_ptr) = obj->cptr;
     } else
       lisp2c_error("OBJECT expected", errctx, at_obj);
     break;
@@ -755,7 +743,6 @@ static void _at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
 
 /* dharg_to_at -- builds at object from dharg */
 
-static at *_dharg_to_at();
 static at *make_lisp_from_c(avlnode_t *n, void *px);
 
 static inline at *dharg_to_at(dharg *arg, dhrecord *drec, at *errctx)
@@ -767,90 +754,57 @@ static inline at *dharg_to_at(dharg *arg, dhrecord *drec, at *errctx)
 
   case DHT_INT:
     return NEW_NUMBER(arg->dh_int);
+    
+  case DHT_DOUBLE:
+    return NEW_NUMBER(arg->dh_double);
 
-  case DHT_REAL:
-    return NEW_NUMBER(arg->dh_real);
-
-  case DHT_FLT:
-    return NEW_NUMBER(arg->dh_flt);
+  case DHT_FLOAT:
+    return NEW_NUMBER(arg->dh_float);
 
   case DHT_GPTR:
-    if (!arg->dh_gptr)
-      return NIL;
-    return NEW_GPTR(arg->dh_gptr);
+    return (arg->dh_gptr) ? NEW_GPTR(arg->dh_gptr) : at_NULL;
 
   case DHT_BOOL:
-    return (arg->dh_char==0) ? NIL : t();
-
+    return NEW_BOOL(arg->dh_bool);
+    
   case DHT_BYTE:
     return NEW_NUMBER(arg->dh_char);
-
+    
   case DHT_UBYTE:
     return NEW_NUMBER(arg->dh_uchar);
-
+    
   case DHT_SHORT:
     return NEW_NUMBER(arg->dh_short);
-
-  default:
-    return _dharg_to_at(arg, drec, errctx);
-  }
-}
-
-/* don't call _dharg_to_at directly */
-static at *_dharg_to_at(dharg *arg, dhrecord *drec, at *errctx)
-{
-  avlnode_t *n;
-
-  switch(drec->op) {
+    
+  case DHT_STR:
+    {
+      assert(arg->dh_str_ptr);
+      return NEW_STRING(arg->dh_str_ptr);
+    }
 
   case DHT_SRG:
-    if (arg->dh_srg_ptr==0) 
-      return NIL;
-/*     n = avl_find(arg->dh_srg_ptr); */
-/*     if (n) */
-/*       return make_lisp_from_c(n,arg->dh_srg_ptr); */
-/*     if (!dont_track_cside) */
-/*       lisp2c_warning("(out): Dangling pointer instead of SRG", errctx); */
-/*     return NEW_GPTR(arg->dh_srg_ptr); */
-    storage_t *st = arg->dh_srg_ptr;
-    assert(mm_ismanaged(st));
-    return st->backptr;
-
+    {
+      assert(arg->dh_srg_ptr);
+      return arg->dh_srg_ptr->backptr;
+    }
+    
   case DHT_IDX:
-    if (arg->dh_idx_ptr==0) 
-      return NIL;
-    index_t *ind = arg->dh_idx_ptr;
-    assert(mm_ismanaged(ind));
-    return ind->backptr;
+    {
+      assert(arg->dh_idx_ptr);
+      return arg->dh_idx_ptr->backptr;
+    }
 
   case DHT_OBJ:
-    if (arg->dh_obj_ptr==0) 
-      return NIL;
-    n = avl_find(arg->dh_obj_ptr);
-    if (n)
-      return make_lisp_from_c(n,arg->dh_obj_ptr);
-    if (!dont_track_cside)
-      lisp2c_warning("(out): Dangling pointer instead of OBJ", errctx);
-    return NEW_GPTR(arg->dh_obj_ptr);
-        
-  case DHT_STR:
-    if (arg->dh_str_ptr==0) 
-      return NIL;
-/*     n = avl_find(arg->dh_str_ptr); */
-/*     if (n) */
-/*       return make_lisp_from_c(n,arg->dh_str_ptr); */
-/*     if (!dont_track_cside)  */
-/*       lisp2c_warning("(out): Dangling pointer instead of STR", errctx); */
-/*     return NEW_GPTR(arg->dh_str_ptr); */
-    if (mm_ismanaged(arg->dh_str_ptr))
-      return NEW_STRING(arg->dh_str_ptr);
-    else
-      return NEW_STRING(mm_strdup(arg->dh_str_ptr));
-        
+    {
+      assert(arg->dh_obj_ptr);
+      assert(arg->dh_obj_ptr->__lptr);
+      return arg->dh_obj_ptr->__lptr->backptr;
+    }
+
   case DHT_LIST:
     if (arg->dh_srg_ptr==0)
       return NIL;
-    n = avl_find(arg->dh_srg_ptr);
+    avlnode_t *n = avl_find(arg->dh_srg_ptr);
     if (n && n->cmoreinfo==0)
       n->cmoreinfo = drec;
     if (n)
@@ -863,7 +817,6 @@ static at *_dharg_to_at(dharg *arg, dhrecord *drec, at *errctx)
     error(NIL,"lisp_c internal: unknown op in dhrecord",NIL);
   }
 }
-
 
 /* -----------------------------------------
    SYNCHRONIZE LISP AND C SIDES
@@ -895,80 +848,12 @@ static at *make_lisp_from_c(avlnode_t *n, void *px)
   /* Create lisp object when it does not exist */
   switch (n->cinfo) {
     
-  case CINFO_IDX: {
-    fprintf(stderr, "lisp_c: should never get here\n"); abort();
-    //struct idx *idx = n->citem;
-    //storage_t *st = idx->srg;
-    //at *atst = make_lisp_from_c(nst, idx->srg);
-    //index_t *ind = new_index(st, NIL);
-    //ind->cptr = idx;
-    //n->litem = ind->backptr;
-    mark_for_update(n);
-    update_lisp_from_c(n);
-    return n->litem;
-  }
+  case CINFO_OBJ:
+    fprintf(stderr, "should never get here (CINFO_OBJ)\n");
+    abort();
 
-  case CINFO_SRG: {
-    fprintf(stderr, "lisp_c: should never get here\n"); abort();
-    storage_t *srg = n->citem;
-    storage_t *st = new_storage(srg->type);
-
-    if (n->belong == BELONG_LISP) {
-      /* If this object belong to LISP and was not previously
-       * associated to a lisp storage, we must transfer the ownership
-       * of the data block of the C object to the Lisp storage.
-       */
-       *st = *srg;
-
-    } else {
-      /* We patch the flag STS_MALLOC in order to allow
-       * function srg_resize (update_lisp_from_c) to work.
-       */
-      if (st->data || st->size)
-	error(NIL,"lisp_c internal: new storage non zero size", st->backptr);
-      assert(!mm_ismanaged(st->data));
-      st->flags = STS_MALLOC;
-    }
-    /* We can now update the avl tree */
-    //st->cptr = srg;
-    n->litem = st->backptr;
-    mark_for_update(n);
-    update_lisp_from_c(n);
-    return n->litem;
-  }
-
-  case CINFO_OBJ: {
-    dhclassdoc_t *classdoc = n->cmoreinfo;
-    ifn (classdoc->lispdata.atclass)
-      error(NIL,"lisp_c internal: "
-	    "classdoc appears to be uninitialized",NIL);
-
-    /* Update avlnode_t */
-    n->litem = NEW_OBJECT(Mptr(classdoc->lispdata.atclass));
-    ((object_t *)Mptr(n->litem))->cptr = n->citem;
-    mark_for_update(n);
-    /* Update object */
-    update_lisp_from_c(n);
-    return n->litem;
-  }
-
-  case CINFO_STR: {
-    ifn (n->citem) {
-      lisp2c_warning("(out): found uninitialized string",0);
-      n->litem = NIL;
-
-    } else if (n->belong == BELONG_LISP) {
-      n->litem = NEW_STRING(n->citem);
-
-    } else if (n->belong == BELONG_C) {
-      n->litem = make_string(n->citem);
-    } else
-      assert(0);
-
-    return n->litem;
-  }
-
-  case CINFO_LIST: {
+  case CINFO_LIST: 
+    {
     /* We do not update the LITEM field
      * for these partially supported objects.
      * They do not last between DH calls.
@@ -1012,55 +897,6 @@ static void update_c_from_lisp(avlnode_t *n)
 
   switch (n->cinfo) {
       
-  case CINFO_SRG: {
-    fprintf(stderr, "lisp_c: should never get here\n"); abort();
-    /* Possibly broken code */        
-    storage_t *st = Mptr(n->litem);
-/*     if (n->cmoreinfo) */
-/*        get_write_permit(st); */
-            
-    /* Synchronize compiled object */
-    storage_t *cptr = n->citem;
-    if (n->belong==BELONG_C) {
-      /* C allocated SRG manage their own data block */
-      ifn (st->flags & STS_MALLOC)
-	error(NIL,"lisp_c internal: expected ram storage",n->litem);
-
-/*       if (cptr->size < st->size)  */
-/*         srg_resize(cptr,st->size,__FILE__,__LINE__); */
-      size_t bytes = cptr->size * storage_sizeof[cptr->type];
-      if (bytes>0 && cptr->data && st->data)
-	memcpy(cptr->data, st->data, bytes);
-
-    } else {
-       /* Other SRG point to the same data area */
-       *cptr = *st;
-    } 
-    break;
-  }
-    
-  case CINFO_IDX: {
-    fprintf(stderr, "lisp_c: should never get here\n"); abort();
-/*     struct idx *idx = n->citem; */
-/*     struct index *ind = Mptr(n->litem); */
-    
-/*     /\* setup storage *\/ */
-/*     storage_t *st = IND_ST(ind); */
-/*     idx->srg = st; */
-/*     /\* copy index structure: */
-/*      * we cannot use index_to_idx because it overwrites */
-/*      * the DIM and MOD pointers instead of copying the values */
-/*      *\/ */
-/*     assert(ind->ndim < MAXDIMS); */
-/*     idx->ndim = ind->ndim; */
-/*     idx->offset = ind->offset; */
-/*     for (int i=0; i<ind->ndim; i++) { */
-/*       idx->dim[i] = ind->dim[i]; */
-/*       idx->mod[i] = ind->mod[i]; */
-/*     } */
-    break;
-  }
-    
   case CINFO_UNLINKED:
 #if LISP_C_VERBOSE
     lisp2c_warning("(in): Found object with unlinked class",0);
@@ -1068,6 +904,7 @@ static void update_c_from_lisp(avlnode_t *n)
     break;
     
   case CINFO_OBJ: {
+    fprintf(stderr, "should never get here (CINFO_OBJ, 2)\n");
 
     void *cptr = n->citem;
     at *p = n->litem;
@@ -1140,61 +977,6 @@ static void update_lisp_from_c(avlnode_t *n)
 
   switch (n->cinfo) {
 
-  case CINFO_SRG: {
-    fprintf(stderr, "lisp_c: should never get here\n"); abort();
-    storage_t *cptr = n->citem;
-    storage_t *st = Mptr(n->litem);
-
-    if (n->belong == BELONG_C) {
-      /* C allocated SRG manage their own data block */
-      ifn (st->flags & STS_MALLOC)
-	error(NIL,"lisp_c internal: expected ram storage",n->litem);
-
-/*       if (st->size < cptr->size) */
-/*          srg_resize((struct srg *)st, cptr->size,__FILE__,__LINE__); */
-      size_t nbytes = st->size * storage_sizeof[st->type];
-      if (nbytes>0)
-	memcpy(st->data, cptr->data, nbytes);
-
-    } else {
-      /* Other SRG share their data block */
-       *st = *cptr;
-       if (st->flags & STF_RDONLY)
-          n->cmoreinfo = st;
-    } 
-    /* possibly broken code */ 
-    //storage_rls_srg(st); 
-    break;
-  }
-
-  case CINFO_IDX: {
-    fprintf(stderr, "lisp_c: should never get here\n"); abort();
-/*     struct idx *idx = n->citem; */
-/*     struct index *ind = Mptr(n->litem); */
-
-/*     /\* copy index data *\/ */
-/*     ind->ndim = idx->ndim; */
-/*     ind->offset = idx->offset; */
-/*     for(int i=0;i<idx->ndim;i++) { */
-/*       ind->mod[i] = idx->mod[i]; */
-/*       ind->dim[i] = idx->dim[i]; */
-/*     } */
-    /* find the storage */
-/*     avlnode_t *nst = avl_find(idx->srg); */
-/*     if (nst==0) { */
-/*       /\* danger: storage has been deallocated! *\/ */
-/*       lisp2c_warning("(out) : Found idx with dangling storage!",0); */
-/*       lush_delete(n->litem); */
-/*       n->litem = NIL; */
-/*       return; */
-/*     }  */
-    /* plug the storage into lisp object */
-    //at *atst = make_lisp_from_c(nst, idx->srg);
-    //IND_ST(ind) = Mptr(atst);
-    //IND_ST(ind) = idx->srg;
-    break;
-  }
-
   case CINFO_UNLINKED:
 #if LISP_C_VERBOSE
     lisp2c_warning("(out) : Found C object with unlinked class",0);
@@ -1202,7 +984,7 @@ static void update_lisp_from_c(avlnode_t *n)
     break;
 
   case CINFO_OBJ: {
-
+    fprintf(stderr, "should never get here (CINFO_OBJ, 3)\n");
     void *cptr = n->citem;
     at* p = n->litem;
     object_t *obj = Mptr(p);
@@ -1302,8 +1084,9 @@ static void build_at_temporary(dhrecord *drec, dharg *arg)
   }
   case DHT_OBJ: {
     dhclassdoc_t *classdoc = (dhclassdoc_t*)(drec->arg);
-    n = alloc_obj(classdoc);
-    arg->dh_obj_ptr = n->citem;
+    assert(classdoc->lispdata.atclass);
+    object_t *obj = new_object(Mptr(classdoc->lispdata.atclass));
+    arg->dh_obj_ptr = obj->cptr;
     break;
   }
   case DHT_STR: {
@@ -1491,8 +1274,8 @@ static at *_dh_listeval(at *p, at *q)
   }
     
   /* Synchronize all compiled objects */
-  set_update_flag();
-  full_update_c_from_lisp();
+  //set_update_flag();
+  //full_update_c_from_lisp();
 
   /* Prepare environment */
   if (lush_error_flag)
@@ -1525,7 +1308,7 @@ static at *_dh_listeval(at *p, at *q)
   }
   
   /* Synchronize all compiled objects */
-  full_update_lisp_from_c();
+  //full_update_lisp_from_c();
   /* Remove objects owned by LISP and not associated to LISP object */
   wipe_out_temps();
 

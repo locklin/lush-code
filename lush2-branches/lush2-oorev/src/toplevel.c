@@ -230,7 +230,7 @@ void init_lush(char *program_name)
 
 extern void reset_dx_stack(void); /* defined in function.c */
 
-void start_lisp(int argc, char **argv, int quietflag)
+void start_lisp(int argc, char **argv, int quiet)
 {
    at *p, *q;
    at **where;
@@ -257,7 +257,6 @@ void start_lisp(int argc, char **argv, int quietflag)
    context->output_tab = 0;
    
    MM_ENTER;
-   quiet = quietflag;
    if (! sigsetjmp(context->error_jump, 1)) {
       s = "stdenv";
       /* Check @-argument */
@@ -853,14 +852,13 @@ void error(const char *prefix, const char *text, at *suffix)
    eval_ptr = eval_std;
    //compute_bump_active = 0;
    
+   if (error_doc.ready_to_an_error == false)
+      lastchance(text);
+  
+   TOPLEVEL_MACHINE;
    error_doc.error_prefix = (char *)prefix;
    error_doc.error_text = text;
    error_doc.error_suffix = suffix;
-
-   if (error_doc.ready_to_an_error == false)
-      lastchance(error_text());
-  
-   TOPLEVEL_MACHINE;
    error_doc.error_call = call_stack();
    error_doc.ready_to_an_error = false;
    recur_doc_init();

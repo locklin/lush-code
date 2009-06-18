@@ -39,7 +39,7 @@
  */
 
 #define DUMPMAGIC  0x44454d50
-#define DUMPVERSION 3
+#define DUMPVERSION 4
 
 typedef unsigned char   uchar;
 
@@ -129,9 +129,12 @@ static off_t dump(const char *s)
    fwrite(char_map,1,256,f);
    if (ferror(f))
       test_file_error(f);
-
+   
    /* Write the big list */
+   bool oldready = error_doc.ready_to_an_error;
+   error_doc.ready_to_an_error = false;
    bwrite(ans, f, true);
+   error_doc.ready_to_an_error = oldready;
    lush_delete(atf);     /* close file */
 
    /* get file size */

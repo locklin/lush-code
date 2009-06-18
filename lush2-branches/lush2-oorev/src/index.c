@@ -2929,7 +2929,7 @@ index_t *array_take2(index_t *ind, index_t *ss)
       RAISEF("final extent of subscript array must match rank of first argument", NIL);
    
    /* create result array */
-   shape_t shape, *shp = shape_copy((shape_t *)ss, &shape);
+   shape_t shape, *shp = shape_copy(IND_SHAPE(ss), &shape);
    shp->ndims -= 1;
    index_t *res = make_array(IND_STTYPE(ind), shp, NIL);
 
@@ -3006,7 +3006,7 @@ index_t *array_take3(index_t *ind, int d, index_t *ss)
    size_t td = IND_DIM(ind, d); 
    IND_DIM(ind, d) = index_nelems(iss);
    index_t *res = clone_array(ind);
-   shape_t shape, *shp = shape_copy((shape_t *)res, &shape);
+   shape_t shape, *shp = shape_copy(IND_SHAPE(res), &shape);
    index_t *islice = NIL;
    index_t *rslice = NIL;
    IND_DIM(ind, d) = td;

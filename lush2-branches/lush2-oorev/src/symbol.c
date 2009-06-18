@@ -31,7 +31,7 @@
 #define SYMBOL_LOCKED_P(s)     ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
 #define SYMBOL_TYPELOCKED_P(s) ((uintptr_t)(s->hn) & SYMBOL_TYPELOCKED_BIT)
 #define SYMBOL_VARIABLE_P(s)   ((uintptr_t)(s->hn) & SYMBOL_VARIABLE_BIT)
-#define MAKEVAR_SYMBOL(s)      SET_PTRBIT(s->hn, SYMBOL_VARIABLE_BIT)
+#define MARKVAR_SYMBOL(s)      SET_PTRBIT(s->hn, SYMBOL_VARIABLE_BIT)
 #define LOCK_SYMBOL(s)         SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
 #define UNLOCK_SYMBOL(s)       UNSET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
 #define TYPELOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
@@ -178,8 +178,6 @@ static hash_name_t *search_by_name(const char *s, int mode)
    return hn;
 }
 
-#if defined UNIX && HAVE_LIBREADLINE
-
 /* used for readline completion in unix.c */
 char *symbol_generator(const char *text, int state)
 {
@@ -225,8 +223,6 @@ char *symbol_generator(const char *text, int state)
    }
    return 0;
 }
-
-#endif // UNIX
 
 
 /*

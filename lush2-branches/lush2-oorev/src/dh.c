@@ -368,11 +368,7 @@ static at *make_dhclass(dhclassdoc_t *kdata)
    cl->has_compiled_part = true;
    cl->classdoc = kdata;
    cl->kname = mm_strdup(kdata->lispdata.k_name);
-   cl->num_cslots = length(keylist);
-   if (superclass) {
-      class_t *super = Mptr(superclass);
-      cl->num_cslots += super->num_cslots;
-   }
+   cl->num_cslots += length(keylist);
    kdata->lispdata.atclass = cl->backptr;
    return cl->backptr;
 }
@@ -493,10 +489,10 @@ static at *dhinfo_record(dhrecord *drec)
       return new_cons(named("bool"),NIL);
 
    case DHT_BYTE: 
-      return new_cons(named("byte"),NIL);
+      return new_cons(named("char"),NIL);
 
    case DHT_UBYTE: 
-      return new_cons(named("ubyte"),NIL);
+      return new_cons(named("uchar"),NIL);
 
    case DHT_SHORT: 
       return new_cons(named("short"),NIL);
@@ -505,10 +501,10 @@ static at *dhinfo_record(dhrecord *drec)
       return new_cons(named("int"),NIL);
 
    case DHT_FLT: 
-      return new_cons(named("flt"),NIL);
+      return new_cons(named("float"),NIL);
 
    case DHT_REAL: 
-      return new_cons(named("real"),NIL);
+      return new_cons(named("double"),NIL);
       
    case DHT_STR: 
       return new_cons(named("str"),NIL);
@@ -692,6 +688,7 @@ static void Cdestroy_C_object(gptr p)
 struct VClass_object Vt_object = { 
    (void*)&Kc_object, 
    &Cdestroy_C_object,
+   NULL
 };
 
 DHCLASSDOC(Kc_object, NULL, object, "object", Vt_object, 0) =

@@ -304,6 +304,7 @@ LUSHAPI static inline at *new_at_mptr(gptr x)
 }
 
 LUSHAPI void zombify(at *p);
+extern  at  *at_NULL; 
 
 #define NEW_NUMBER(x)   new_at_number((real)(x))
 #define NEW_GPTR(x)     new_at_gptr((gptr)(x))
@@ -711,10 +712,12 @@ LUSHAPI complexreal get_complex(at*);
 
 /* OOSTRUCT.H ----------------------------------------------------- */
 
+struct CClass_object;
+
 typedef struct object {
-   at      *backptr;
-   void    *cptr;
-   at      *slots[];
+   at *backptr;
+   struct CClass_object *cptr;
+   at *slots[];
 } object_t;
 
 LUSHAPI class_t  *new_builtin_class(class_t *super);

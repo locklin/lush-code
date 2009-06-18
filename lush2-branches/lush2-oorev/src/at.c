@@ -316,6 +316,7 @@ static at *null_listeval(at *p, at *q)
 /* --------- INITIALISATION CODE --------- */
 
 class_t *number_class, *gptr_class, *mptr_class, *cons_class, *null_class;
+at *at_NULL;
 
 extern void pre_init_symbol(void);
 extern void pre_init_function(void);
@@ -358,7 +359,12 @@ void init_at(void)
    null_class->selfeval = null_selfeval;
    null_class->listeval = null_listeval;
    null_class->managed = false;
-   class_define("NULL", null_class);
+   class_define("Null", null_class);
+
+   /* define NULL pointer */
+   at_NULL = var_define("NULL");
+   var_set(at_NULL, NEW_GPTR(0));
+   var_lock(at_NULL);
 
   //dy_define("compute-bump", ycompute_bump);
 

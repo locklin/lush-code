@@ -375,7 +375,7 @@ static bool _update_current_a(mt_t t, typerec_t *tr, uintptr_t s, uintptr_t a)
 
 search_in_block:
    /* search for next free hunk in block */
-   while (HMAP_MANAGED(a) && a <= tr->current_amax)
+   while (a <= tr->current_amax && HMAP_MANAGED(a))
       a += s;
    if (a <= tr->current_amax) {
       tr->current_a = a;

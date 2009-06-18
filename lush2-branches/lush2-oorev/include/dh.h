@@ -93,6 +93,7 @@ enum dht_type {
     DHT_FLT,	    /* type */
     DHT_REAL,	    /* type */
     DHT_GPTR,	    /* type */
+    DHT_MPTR,
     DHT_INDEX,      /* array of any rank */
     DHT_IDX,   	    /* array of fixed rank */
     DHT_SRG,   	    /* type (+ base type) */
@@ -146,18 +147,18 @@ typedef struct s_dhrecord
         {DHT_END_FUNC}
 #define DH_BOOL \
 	{DHT_BOOL}
-#define DH_BYTE \
-	{DHT_BYTE}
-#define DH_UBYTE \
-	{DHT_UBYTE}
+#define DH_CHAR \
+	{DHT_CHAR}
+#define DH_UCHAR \
+	{DHT_UCHAR}
 #define DH_SHORT \
 	{DHT_SHORT}
 #define DH_INT \
         {DHT_INT}
-#define DH_FLT \
-        {DHT_FLT}
-#define DH_REAL \
-        {DHT_REAL}
+#define DH_FLOAT \
+        {DHT_FLOAT}
+#define DH_DOUBLE \
+        {DHT_DOUBLE}
 #define DH_GPTR(s) \
         {DHT_GPTR,0,0,s}
 #define DH_STR \
@@ -211,21 +212,22 @@ typedef struct s_dhrecord
  * Variant datatype for passing args to the Xname function
  */
 
+struct CClass_object;
+
 typedef union 
 {
   char          dh_char;
   unsigned char dh_uchar;
   short         dh_short;
-  intg          dh_ord;
-  intg          dh_int;
-  int           dh_bool;
-  flt           dh_flt;
-  real          dh_real;
+  int           dh_int;
+  bool          dh_bool;
+  float         dh_float;
+  double        dh_double;
   gptr		dh_gptr;
   index_t      *dh_idx_ptr;
   storage_t    *dh_srg_ptr;
   char         *dh_str_ptr;
-  int          *dh_obj_ptr;
+  struct CClass_object *dh_obj_ptr;
 } dharg;
 
 
@@ -284,18 +286,16 @@ struct dhdoc_s
  *
  */
 
-struct VClass_object;
-
-struct CClass_object {
-  struct VClass_object *Vtbl;
-  object_t             *__lptr;
-};
-
 struct VClass_object 
 {
   void  *Cdoc;
   void (*Cdestroy)(gptr);
   void (*__mark)(struct CClass_object *obj);
+};
+
+struct CClass_object {
+  struct VClass_object *Vtbl;
+  object_t             *__lptr;
 };
 
 
@@ -318,7 +318,7 @@ struct dhclassdoc_s
                                    (K_name_Rxxxxxxxx) */
     int size;                   /* data size */
     int nmet;                   /* number of methods */
-    void *vtable;               /* virtual table pointer */
+    struct VClass_object *vtable;  /* virtual table pointer */
     
 #ifndef NOLISP
     at *atclass;                /* lisp object for this class */
@@ -329,12 +329,13 @@ struct dhclassdoc_s
 #ifndef NOLISP
 
 #define DHCLASSDOC(Kname,superKname,Cname,LnameStr,Vname,nmet) \
-  staticref_c dhrecord name2(K,Kname)[]; \
+  staticref_c dhrecord name2(K,Kname)[];                       \
   extern_c dhclassdoc_t Kname; \
   dhclassdoc_t Kname = { name2(K,Kname), \
    { superKname, LnameStr, enclose_in_string(Cname), \
      enclose_in_string(Vname), enclose_in_string(Kname), \
-     sizeof(struct name2(CClass_,Cname)), nmet, &Vname } }; \
+     sizeof(struct name2(CClass_,Cname)), nmet, \
+     (struct VClass_object *)(void *)&Vname } };        \
   staticdef_c dhrecord name2(K,Kname)[]
 
 #endif
