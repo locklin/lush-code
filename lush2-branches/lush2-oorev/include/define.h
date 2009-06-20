@@ -62,6 +62,10 @@
 
 /* untyped pointer */
 typedef void* gptr;
+typedef void* mptr;  /* for managed addresses */
+#ifndef uchar
+  typedef unsigned char uchar;
+#endif
 #define NIL 0L
 
 #ifndef INF

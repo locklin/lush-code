@@ -34,8 +34,6 @@
 # include <errno.h>
 #endif
 
-typedef unsigned char   uchar;
-
 #define NUM_SINGLETONS 128
 
 char string_buffer[STRING_BUFFER];
@@ -1180,7 +1178,7 @@ DX(xvector_to_string)
 {
    ARG_NUMBER(1);
    index_t *ind = AINDEX(1);
-   ifn ((IND_STTYPE(ind)==ST_UBYTE) && (IND_NDIMS(ind)==1))
+   ifn ((IND_STTYPE(ind)==ST_UCHAR) && (IND_NDIMS(ind)==1))
       RAISEF("ubyte vector expected", APOINTER(1));
 
    ind = as_contiguous_array(ind);

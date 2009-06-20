@@ -81,25 +81,31 @@ extern "C" {
 
 /* Values for the "op" field */
 enum dht_type {
-    DHT_NIL,
+    DHT_NIL = -1,
     
-    DHT_FUNC,       /* function (+ arg types + temps + return ) */
+    /* scalar types */
     DHT_BOOL,       /* type */
-    DHT_BYTE,       /* type */
-    DHT_UBYTE,      /* type */
+    DHT_CHAR,       /* type */
+    DHT_UCHAR,      /* type */
     DHT_SHORT,      /* type */
     DHT_INT,        /* type */
-    DHT_STR,        /* type */
-    DHT_FLT,	    /* type */
-    DHT_REAL,	    /* type */
+    DHT_FLOAT,	    /* type */
+    DHT_DOUBLE,	    /* type */
     DHT_GPTR,	    /* type */
     DHT_MPTR,
+    DHT_AT,         /* currently not used */
+    DHT_STR,        /* type */
+
+    /* structured types */
     DHT_INDEX,      /* array of any rank */
     DHT_IDX,   	    /* array of fixed rank */
     DHT_SRG,   	    /* type (+ base type) */
     DHT_LIST,	    /* type (+ component types + end_list */
     DHT_END_LIST,   /* type terminator */
     DHT_OBJ,        /* type */
+
+    /* functions and classes */
+    DHT_FUNC,       /* function (+ arg types + temps + return ) */
     DHT_TEMPS,      /* temps (+ types for temps) */
     DHT_END_TEMPS,  /* temps terminator */
     DHT_RETURN,     /* return type (+ return type) */
@@ -115,10 +121,10 @@ enum dht_type {
     DHT_LAST        /* TAG */
 };
 
-#define DHT_CHAR    DHT_BYTE
-#define DHT_UCHAR   DHT_UBYTE
-#define DHT_DOUBLE  DHT_REAL
-#define DHT_FLOAT   DHT_FLT
+#define DHT_BYTE    DHT_CHAR
+#define DHT_UBYTE   DHT_UCHAR
+#define DHT_REAL    DHT_DOUBLE
+#define DHT_FLT     DHT_FLOAT
 #define DHT_OBJECT  DHT_OBJ
 #define DHT_STORAGE DHT_SRG
 
@@ -140,7 +146,6 @@ typedef struct s_dhrecord
 
 #define DH_NIL \
 	{DHT_NIL}		/* Nothing (end mark, usually) */
-
 #define DH_FUNC(n) \
         {DHT_FUNC, DHT_READ, n}
 #define DH_END_FUNC \
@@ -161,6 +166,8 @@ typedef struct s_dhrecord
         {DHT_DOUBLE}
 #define DH_GPTR(s) \
         {DHT_GPTR,0,0,s}
+#define DH_MPTR(s) \
+        {DHT_MPTR,0,0,s}
 #define DH_STR \
         {DHT_STR}		
 #define DH_LIST(n) \
@@ -224,6 +231,7 @@ typedef union
   float         dh_float;
   double        dh_double;
   gptr		dh_gptr;
+  mptr          dh_mptr;
   index_t      *dh_idx_ptr;
   storage_t    *dh_srg_ptr;
   char         *dh_str_ptr;
@@ -340,7 +348,15 @@ struct dhclassdoc_s
 
 #endif
 
-int dht_from_cname(symbol_t *);
+
+extern LUSHAPI class_t *dh_class;
+extern LUSHAPI bool in_compiled_code;
+
+LUSHAPI at  *new_dh(at *name, dhdoc_t *kdata);
+LUSHAPI at  *new_dhclass(at *name, dhclassdoc_t *kdata);
+LUSHAPI int  dht_from_cname(symbol_t *);
+LUSHAPI void lush_error(const char *s);
+#define run_time_error lush_error
 
 
 /* ----------------------------------------------- */

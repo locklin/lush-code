@@ -71,6 +71,8 @@ static void mark_object(object_t *obj)
 
 static bool finalize_object(object_t *obj)
 {
+   if (in_compiled_code)
+      return false;
    object_class->dispose(obj);
    return true;
 }
@@ -118,9 +120,8 @@ object_t *oostruct_dispose(object_t *obj)
    if (errflag) {
       if (mm_collect_in_progress())
          /* we cannot longjump when called by a finalizer */
-         fprintf(stderr, "*** Warning: error occurred in finalizer\n");
-      else
-         siglongjmp(context->error_jump, -1L);
+         fprintf(stderr, "*** Warning: error occurred while gc in progress\n");
+      siglongjmp(context->error_jump, -1L);
    }
    return obj;
 }
@@ -385,7 +386,7 @@ static class_t *class_dispose(class_t *cl)
       cl->super = NULL;
    }
    zombify(cl->backptr);
-   return NULL;
+   return cl;
 }
 
 static const char *class_name(at *p)
@@ -442,6 +443,17 @@ DX(xsuper)
    ARG_NUMBER(1);
    class_t *cl = ACLASS(1);
    return cl->atsuper;
+}
+
+/* mark dead all subclasses of class cl */
+void zombify_subclasses(class_t *cl)
+{
+   class_t *subs = cl->subclasses;
+   while (subs) {
+      subs->live = false;
+      zombify_subclasses(subs);
+      subs = subs->nextclass;
+   }
 }
 
 DX(xsubclasses)
@@ -614,8 +626,7 @@ object_t *new_object(class_t *cl)
       error(NIL, "not a subclass of class 'object'", cl->backptr);
    
    size_t s = sizeof(object_t)+cl->num_slots*sizeof(at *);
-   object_t *obj = (cl->num_slots <= MIN_NUM_SLOTS) ?
-      mm_alloc(mt_object) : mm_allocv(mt_object, s);
+   object_t *obj = mm_allocv(mt_object, s);
    obj->cptr = NULL;
 
    /* if this or a superclass is compiled, create C object now */
@@ -1010,12 +1021,13 @@ DX(xsender)
 
 static void send_delete(object_t *obj)
 {
-   /* Only send destructor to objects owned by lisp */
-   ifn (lisp_owns_p(obj->cptr))
-      return;
-   
    at *f = NIL;
    class_t *cl = Class(obj->backptr);
+   
+   /* return if cl or a superclass has become non-executable */
+   ifn (cl->live)
+      return;
+
    /* Call all destructors defined in class hierarchy */
    while (cl) {
       struct hashelem *hx = _getmethod(cl, at_destroy);
@@ -1098,22 +1110,6 @@ DX(xisa)
       RAISEFX("not a class", q);
    if (isa(p, Mptr(q)))
       return t();
-
-#ifdef DHCLASSDOC
-   if (GPTRP(p)) {
-      /* Handle gptrs by calling to-obj behind the scenes. Ugly. */
-      int flag = 0;
-      at *sym = named("to-obj");
-      at *fun = find_primitive(0, sym);
-      if (fun && (Class(fun) == dx_class)) {
-         at *arg = new_cons(p,NIL);
-         sym = apply(fun, arg);
-         flag = isa(sym, Mptr(q));
-      }
-      if (flag)
-         return t();
-   }
-#endif
    return NIL;
 }
 
@@ -1137,12 +1133,13 @@ void pre_init_oostruct(void)
 class_t *object_class, *class_class = NULL;
 
 #define SIZEOF_OBJECT  (sizeof(object_t) + MIN_NUM_SLOTS*sizeof(at *))
+#define SIZEOF_COBJECT (sizeof(struct CClass_object) + MIN_NUM_SLOTS*sizeof(mptr))
 
 void init_oostruct(void)
 {
    mt_object = MM_REGTYPE("object", SIZEOF_OBJECT,
                           clear_object, mark_object, finalize_object);
-   mt_cobject = MM_REGTYPE("cobject", sizeof(struct CClass_object),
+   mt_cobject = MM_REGTYPE("cobject", SIZEOF_COBJECT,
                            clear_cobject, mark_cobject, 0);
    mt_method_hash = 
       MM_REGTYPE("method-hash", 0, 

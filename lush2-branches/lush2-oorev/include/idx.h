@@ -63,20 +63,20 @@
 #ifdef SHORT_IDX
 #define switch_type2(t1, FUNC_NAME) \
     switch((ind2)->st->type) { \
-    case_type2(ST_I32, t1, int, FUNC_NAME) \
-    case_type2(ST_F, t1, flt, FUNC_NAME) \
+    case_type2(ST_INT, t1, int, FUNC_NAME) \
+    case_type2(ST_FLOAT, t1, float, FUNC_NAME) \
     default: \
       error(NIL, "Unknown type for second argument", NIL); \
     } 
 #else
 #define switch_type2(t1, FUNC_NAME) \
     switch((ind2)->st->type) { \
-    case_type2(ST_U8, t1, unsigned char, FUNC_NAME) \
-    case_type2(ST_I8, t1, char, FUNC_NAME) \
-    case_type2(ST_I16, t1, short, FUNC_NAME) \
-    case_type2(ST_I32, t1, int, FUNC_NAME) \
-    case_type2(ST_F, t1, flt, FUNC_NAME) \
-    case_type2(ST_D, t1, real, FUNC_NAME) \
+    case_type2(ST_UCHAR, t1, unsigned char, FUNC_NAME) \
+    case_type2(ST_CHAR, t1, char, FUNC_NAME) \
+    case_type2(ST_SHORT, t1, short, FUNC_NAME) \
+    case_type2(ST_INT, t1, int, FUNC_NAME) \
+    case_type2(ST_FLOAT, t1, float, FUNC_NAME) \
+    case_type2(ST_DOUBLE, t1, double, FUNC_NAME) \
     default: \
       error(NIL, "Unknown type for second argument", NIL); \
     } 
@@ -85,20 +85,20 @@
 #ifdef SHORT_IDX
 #define switch_type3(t1, FUNC_NAME) \
     switch((ind3)->st->type) { \
-    case_type2(ST_I32, t1, int, FUNC_NAME) \
-    case_type2(ST_F, t1, flt, FUNC_NAME) \
+    case_type2(ST_INT, t1, int, FUNC_NAME) \
+      case_type2(ST_FLOAT, t1, float, FUNC_NAME)    \
     default: \
       error(NIL, "Unknown type for second argument", NIL); \
     } 
 #else
 #define switch_type3(t1, FUNC_NAME) \
     switch((ind3)->st->type) { \
-    case_type2(ST_U8, t1, unsigned char, FUNC_NAME) \
-    case_type2(ST_I8, t1, char, FUNC_NAME) \
-    case_type2(ST_I16, t1, short, FUNC_NAME) \
-    case_type2(ST_I32, t1, int, FUNC_NAME) \
-    case_type2(ST_F, t1, flt, FUNC_NAME) \
-    case_type2(ST_D, t1, real, FUNC_NAME) \
+    case_type2(ST_UCHAR, t1, unsigned char, FUNC_NAME) \
+    case_type2(ST_CHAR, t1, char, FUNC_NAME) \
+    case_type2(ST_SHORT, t1, short, FUNC_NAME) \
+    case_type2(ST_INT, t1, int, FUNC_NAME) \
+    case_type2(ST_FLOAT, t1, float, FUNC_NAME) \
+    case_type2(ST_DOUBLE, t1, double, FUNC_NAME) \
     default: \
       error(NIL, "Unknown type for second argument", NIL); \
     } 
@@ -138,20 +138,20 @@
 #ifdef SHORT_IDX
 #define switch_type1(FUNC_NAME) \
     switch((ind1)->st->type) { \
-    case_type1(ST_I32, int, FUNC_NAME) \
-    case_type1(ST_F, flt, FUNC_NAME) \
+    case_type1(ST_INT, int, FUNC_NAME) \
+    case_type1(ST_FLOAT, float, FUNC_NAME) \
     default: \
       error(NIL, "Unknown type for first argument", NIL); \
     } 
 #else
 #define switch_type1(FUNC_NAME) \
     switch((ind1)->st->type) { \
-    case_type1(ST_U8, unsigned char, FUNC_NAME) \
-    case_type1(ST_I8, char, FUNC_NAME) \
-    case_type1(ST_I16, short, FUNC_NAME) \
-    case_type1(ST_I32, int, FUNC_NAME) \
-    case_type1(ST_F, flt, FUNC_NAME) \
-    case_type1(ST_D, real, FUNC_NAME) \
+    case_type1(ST_UCHAR, unsigned char, FUNC_NAME) \
+    case_type1(ST_CHAR, char, FUNC_NAME) \
+    case_type1(ST_SHORT, short, FUNC_NAME) \
+    case_type1(ST_INT, int, FUNC_NAME) \
+    case_type1(ST_FLOAT, float, FUNC_NAME) \
+    case_type1(ST_DOUBLE, double, FUNC_NAME) \
     default: \
       error(NIL, "Unknown type for first argument", NIL); \
     } 

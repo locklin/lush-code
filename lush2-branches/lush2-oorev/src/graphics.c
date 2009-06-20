@@ -27,7 +27,6 @@
 #include "header.h"
 #include "graphics.h"
 
-typedef unsigned char   uchar;
 
 static at *at_window;
 
@@ -805,7 +804,7 @@ static int *colors_from_int_matrix(at *p)
    ifn (INDEXP(p))
       RAISEF("not an index", p);
    index_t *ind = Mptr(p);
-   ifn (IND_STTYPE(ind)==ST_I32) 
+   ifn (IND_STTYPE(ind)==DHT_INT) 
       RAISEF("not an integer array", p);
    easy_index_check(ind, SHAPE1D(64));
 
@@ -984,7 +983,7 @@ int color_draw_idx(int x, int y, index_t *idx,
       }
       unsigned int *im = image;
       
-      if (idx->st->type == ST_F) {
+      if (idx->st->type == DHT_FLOAT) {
          /* fast routine for flts.. */
          flt dm = minv;
          flt dv = maxv - minv;
@@ -1327,7 +1326,7 @@ int rgb_draw_idx(int x, int y, index_t *idx, int sx, int sy)
       }
       unsigned int *im = (unsigned int*)image;
       /* Copy RGB into pixel image */
-      if (idx->st->type==ST_U8 && 
+      if (idx->st->type==DHT_UCHAR && 
           red_mask==0xff && green_mask==0xff00 && blue_mask==0xff0000) {
          unsigned char *data = IND_BASE(idx);
          int off2 = 0;
@@ -1340,7 +1339,7 @@ int rgb_draw_idx(int x, int y, index_t *idx, int sx, int sy)
                *im++ = r | ((g | (b << 8)) << 8);
             }
          }
-      } else if (idx->st->type==ST_U8 && 
+      } else if (idx->st->type==DHT_UCHAR && 
                  red_mask==0xff0000 && green_mask==0xff00 && blue_mask==0xff) {
          unsigned char *data = IND_BASE(idx);
          int off2 = 0;

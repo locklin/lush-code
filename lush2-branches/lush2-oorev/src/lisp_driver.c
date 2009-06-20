@@ -316,7 +316,7 @@ static at *lisp_make_i32matrix(uint *data, int w, int h)
 {
    /* would be better to avoid copying
       by direct pointer manipulation */
-   index_t *ind = make_array(ST_I32, SHAPE2D(h, w), NIL);
+   index_t *ind = make_array(ST_INT, SHAPE2D(h, w), NIL);
    uint *data2 = IND_BASE_TYPED(ind, uint);
 
    if (data)

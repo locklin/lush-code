@@ -26,8 +26,6 @@
 
 #include "header.h"
 
-typedef unsigned char   uchar;
-
 #define BINARYSTART     (0x9f)
 
 enum binarytokens {

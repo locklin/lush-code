@@ -61,7 +61,7 @@ static subscript_t *parse_subscript(at *atss)
          error(NIL, errmsg_dimensions, atss);
       
       switch (IND_STTYPE(ind)) {
-      case ST_I32: {
+      case ST_INT: {
          int *b = IND_BASE_TYPED(ind, int);
          for (int i=0; i<ss->ndims; i++, b+=ind->mod[0])
             if (*b<0) 
@@ -70,7 +70,7 @@ static subscript_t *parse_subscript(at *atss)
                ss->dim[i] = *b;
          break;
       }
-      case ST_D: {
+      case ST_DOUBLE: {
          double *b = IND_BASE_TYPED(ind, double);
          for (int i=0; i<ss->ndims; i++, b+=ind->mod[0])
             if (*b<0) 
@@ -81,9 +81,9 @@ static subscript_t *parse_subscript(at *atss)
       }
       default: {
          gptr *b = IND_BASE(ind);
-         double (*getr)(gptr,size_t) = storage_getr[IND_STTYPE(ind)];
+         double (*getd)(gptr,size_t) = storage_getd[IND_STTYPE(ind)];
          for (int i=0; i<ss->ndims; i++) {
-            ss->dim[i] = (int)(*getr)(b, i*ind->mod[0]);
+            ss->dim[i] = (int)(*getd)(b, i*ind->mod[0]);
             if (ss->dim[i]<0) 
                error(NIL, errmsg_not_a_subscript, atss);
          }
@@ -313,8 +313,8 @@ static int index_compare(at *p, at *q, int order)
       ret = 0;
    }
    default: {
-      real (*get1)(gptr,size_t) = *storage_getr[type1];
-      real (*get2)(gptr,size_t) = *storage_getr[type2];
+      real (*get1)(gptr,size_t) = *storage_getd[type1];
+      real (*get2)(gptr,size_t) = *storage_getd[type2];
       begin_idx_aloop2(ind1, ind2, off1, off2) {
          real r1 = (*get1)(base1, off1);
          real r2 = (*get2)(base2, off2);
@@ -359,11 +359,11 @@ static unsigned long index_hash(at *p)
    } 
    default: {
       union { real r; long l[2]; } u;
-      real (*getr)(gptr,size_t) = *storage_getr[IND_STTYPE(ind)];
+      real (*getd)(gptr,size_t) = *storage_getd[IND_STTYPE(ind)];
       
       begin_idx_aloop1(ind, off) {
          x = (x<<1) | ((long)x<0 ? 0:1);
-         u.r = (*getr)(base, off);
+         u.r = (*getd)(base, off);
          x ^= u.l[0];
          if (sizeof(real) >= 2*sizeof(unsigned long))
             x ^= u.l[1];
@@ -967,7 +967,7 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
          error(NIL, errmsg_dimensions, atshp);
 
       switch (IND_STTYPE(ind)) {
-      case ST_I32: {
+      case ST_INT: {
          int *b = IND_BASE_TYPED(ind, int);
          for (int i=0; i<shp->ndims; i++, b+=ind->mod[0])
             if (*b<0) 
@@ -976,7 +976,7 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
                shp->dim[i] = *b;
          break;
       }
-      case ST_F: {
+      case ST_FLOAT: {
          flt *b = IND_BASE_TYPED(ind, flt);
          for (int i=0; i<shp->ndims; i++, b+=ind->mod[0])
             if (*b<0) 
@@ -987,9 +987,9 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
       }
       default: {
          gptr *b = IND_BASE(ind);
-         real (*getr)(gptr,size_t) = storage_getr[IND_STTYPE(ind)];
+         real (*getd)(gptr,size_t) = storage_getd[IND_STTYPE(ind)];
          for (int i=0; i<shp->ndims; i++) {
-            shp->dim[i] = (int)(*getr)(b, i*ind->mod[0]);
+            shp->dim[i] = (int)(*getd)(b, i*ind->mod[0]);
             if (shp->dim[i]<0) 
                error(NIL, errmsg_not_a_shape, atshp);
          }
@@ -1088,9 +1088,9 @@ DX(xmake_array)
 {
    ARG_NUMBER(3);
    class_t *cl = ACLASS(1);
-   shape_t *shp   = parse_shape(APOINTER(2), NIL);
+   shape_t *shp = parse_shape(APOINTER(2), NIL);
    storage_type_t type;
-   for (type = ST_AT; type < ST_LAST; type++)
+   for (type = ST_FIRST; type < ST_LAST; type++)
       if (storage_class[type] == cl)
          break;
    if (type == ST_LAST)
@@ -1184,20 +1184,20 @@ DX(xas_int_array)
 index_t *as_ubyte_array(at *arg) 
 {
    if (NUMBERP(arg))
-      return  make_array(ST_U8, SHAPE0D, arg);
+      return  make_array(ST_UCHAR, SHAPE0D, arg);
 
    else if (LISTP(arg)) {
-      index_t *ind = make_array(ST_U8, SHAPE1D(length(arg)), NIL);
+      index_t *ind = make_array(ST_UCHAR, SHAPE1D(length(arg)), NIL);
       at *myp[1] = { NIL };
       index_set(ind, myp, arg, 1);
       return ind;
       
    } else if (INDEXP(arg)) {
       index_t *ind = Mptr(arg);
-      if (IND_STTYPE(ind)==ST_U8)
+      if (IND_STTYPE(ind)==ST_UCHAR)
          return copy_index(ind);
       else
-         return array_copy(ind, make_array(ST_U8, IND_SHAPE(ind), NIL));
+         return array_copy(ind, make_array(ST_UCHAR, IND_SHAPE(ind), NIL));
       
    } else
       RAISEF("not a number, list, or index", arg);
@@ -1390,7 +1390,6 @@ void easy_index_check(index_t *ind, shape_t *shp)
       } else
          shp->dim[i] = IND_DIM(ind, i);
 }
-extern void get_write_permit(storage_t *);  /* in storage.c */
 
 /* copy array contents from ind1 to ind2, return ind2 */
 
@@ -1417,12 +1416,12 @@ index_t *array_copy(index_t *ind1, index_t *ind2)
     } 						  \
     break;
 
-      GenericCopy(F, flt);
-      GenericCopy(D, real);
-      GenericCopy(I32, int);
-      GenericCopy(I16, short);
-      GenericCopy(I8, char);
-      GenericCopy(U8, unsigned char);
+      GenericCopy(FLOAT, flt);
+      GenericCopy(DOUBLE, real);
+      GenericCopy(INT, int);
+      GenericCopy(SHORT, short);
+      GenericCopy(CHAR, char);
+      GenericCopy(UCHAR, unsigned char);
       GenericCopy(GPTR, gptr);
       GenericCopy(AT, atp_t);
 
@@ -1477,12 +1476,12 @@ void array_swap(index_t *ind1, index_t *ind2)
     } 							     \
     break;
 
-      GenericSwap(F, flt);
-      GenericSwap(D, real);
-      GenericSwap(I32, int);
-      GenericSwap(I16, short);
-      GenericSwap(I8, char);
-      GenericSwap(U8, unsigned char);
+      GenericSwap(FLOAT, flt);
+      GenericSwap(DOUBLE, real);
+      GenericSwap(INT, int);
+      GenericSwap(SHORT, short);
+      GenericSwap(CHAR, char);
+      GenericSwap(UCHAR, unsigned char);
       GenericSwap(GPTR, gptr);
       GenericSwap(AT, atp_t);
 
@@ -1549,12 +1548,12 @@ index_t *array_where_nonzero(index_t *ind)
       } end_idx_dloop(ind, p, ds);                                      \
    } break;
 
-   GenericWhere(F, float);
-   GenericWhere(D, double);
-   GenericWhere(I32, int);
-   GenericWhere(I16, short);
-   GenericWhere(I8, char);
-   GenericWhere(U8, unsigned char);
+   GenericWhere(FLOAT, float);
+   GenericWhere(DOUBLE, double);
+   GenericWhere(INT, int);
+   GenericWhere(SHORT, short);
+   GenericWhere(CHAR, char);
+   GenericWhere(UCHAR, unsigned char);
    GenericWhere(GPTR, gptr);
    GenericWhere(AT, atp_t);
    
@@ -1701,12 +1700,12 @@ static void format_save_matrix(index_t *ind, FILE *f, bool with_header)
    /* magic */
    int magic;
    switch(st) {
-   case ST_F:    magic=BINARY_MATRIX  ; break;
-   case ST_D:    magic=DOUBLE_MATRIX  ; break;
-   case ST_I32:  magic=INTEGER_MATRIX ; break;
-   case ST_I16:  magic=SHORT_MATRIX   ; break;
-   case ST_I8:   magic=SHORT8_MATRIX  ; break;
-   case ST_U8:   magic=BYTE_MATRIX    ; break;
+   case ST_FLOAT:  magic=BINARY_MATRIX  ; break;
+   case ST_DOUBLE: magic=DOUBLE_MATRIX  ; break;
+   case ST_INT:    magic=INTEGER_MATRIX ; break;
+   case ST_SHORT:  magic=SHORT_MATRIX   ; break;
+   case ST_CHAR:   magic=SHORT8_MATRIX  ; break;
+   case ST_UCHAR:  magic=BYTE_MATRIX    ; break;
    default:      
       error(NIL, "cannot save an index this storage",IND_ATST(ind));
    }
@@ -1972,7 +1971,7 @@ void import_text_matrix(index_t *ind, FILE *f)
    ifn (index_contiguousp(ind))
       error(NIL, "index not contiguous", NIL);
    storage_type_t type = IND_STTYPE(ind);
-   void (*setr)(gptr,size_t,real) = storage_setr[type];
+   void (*setd)(gptr,size_t,real) = storage_setd[type];
 
    if (index_emptyp(ind))
       return;
@@ -1985,7 +1984,7 @@ void import_text_matrix(index_t *ind, FILE *f)
       if (fscanf(f, " %lf ", &x) != 1) {
          error(NIL,"Cannot read a number",NIL);
       }
-      (*setr)(p, off, x);
+      (*setd)(p, off, x);
    } end_idx_aloop1(ind, off);
 }
 
@@ -2118,23 +2117,23 @@ at *load_matrix(FILE *f)
    /* Create */
    switch (magic) {
    case BINARY_MATRIX:
-      ind = make_array(ST_F, &shape, NIL);
+      ind = make_array(ST_FLOAT, &shape, NIL);
       break;
    case ASCII_MATRIX:
    case DOUBLE_MATRIX:
-      ind = make_array(ST_D, &shape, NIL);;
+      ind = make_array(ST_DOUBLE, &shape, NIL);;
       break;
    case INTEGER_MATRIX:
-      ind = make_array(ST_I32, &shape, NIL);;
+      ind = make_array(ST_INT, &shape, NIL);;
       break;
    case SHORT_MATRIX:
-      ind = make_array(ST_I16, &shape, NIL);
+      ind = make_array(ST_SHORT, &shape, NIL);
       break;
    case SHORT8_MATRIX:
-      ind = make_array(ST_I8, &shape, NIL);
+      ind = make_array(ST_CHAR, &shape, NIL);
       break;
    case BYTE_MATRIX:
-      ind = make_array(ST_U8, &shape, NIL);
+      ind = make_array(ST_UCHAR, &shape, NIL);
       break;
    default:
       RAISEF("unknown format", NIL);
@@ -2211,12 +2210,12 @@ at *map_matrix(FILE *f)
    /* Create storage */
    storage_t *st;
    switch(magic) {
-   case BINARY_MATRIX:  st = new_storage(ST_F);   break;
-   case DOUBLE_MATRIX:  st = new_storage(ST_D);   break;
-   case INTEGER_MATRIX: st = new_storage(ST_I32); break;
-   case SHORT_MATRIX:   st = new_storage(ST_I16); break;
-   case SHORT8_MATRIX:  st = new_storage(ST_I8);  break;
-   case BYTE_MATRIX:    st = new_storage(ST_U8);  break;
+   case BINARY_MATRIX:  st = new_storage(ST_FLOAT);  break;
+   case DOUBLE_MATRIX:  st = new_storage(ST_DOUBLE); break;
+   case INTEGER_MATRIX: st = new_storage(ST_INT);    break;
+   case SHORT_MATRIX:   st = new_storage(ST_SHORT);  break;
+   case SHORT8_MATRIX:  st = new_storage(ST_CHAR);   break;
+   case BYTE_MATRIX:    st = new_storage(ST_UCHAR);  break;
    default:
       error(NIL, "cannot map ascii matrix files", NIL);
    }
@@ -2970,8 +2969,8 @@ index_t *array_take2(index_t *ind, index_t *ss)
       GenericTake(DOUBLE, real);
       GenericTake(INT, int);
       GenericTake(SHORT, short);
-      GenericTake(BYTE, char);
-      GenericTake(UBYTE, unsigned char);
+      GenericTake(CHAR, char);
+      GenericTake(UCHAR, unsigned char);
       GenericTake(GPTR, gptr);
 
 #undef GenericTake
@@ -3058,8 +3057,8 @@ index_t *array_take3(index_t *ind, int d, index_t *ss)
       GenericTake(DOUBLE, real);
       GenericTake(INT, int);
       GenericTake(SHORT, short);
-      GenericTake(BYTE, char);
-      GenericTake(UBYTE, unsigned char);
+      GenericTake(CHAR, char);
+      GenericTake(UCHAR, unsigned char);
       GenericTake(GPTR, gptr);
 
 #undef GenericTake
@@ -3155,8 +3154,8 @@ index_t *array_put(index_t *ind, index_t *ss, index_t *vals)
       GenericPut(DOUBLE, real);
       GenericPut(INT, int);
       GenericPut(SHORT, short);
-      GenericPut(BYTE, char);
-      GenericPut(UBYTE, unsigned char);
+      GenericPut(CHAR, char);
+      GenericPut(UCHAR, unsigned char);
       GenericPut(GPTR, gptr);
 
 #undef GenericTake

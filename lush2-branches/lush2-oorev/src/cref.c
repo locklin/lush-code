@@ -25,9 +25,6 @@
  ***********************************************************************/
 
 #include "header.h"
-#include "dh.h"
-
-typedef unsigned char   uchar;
 
 
 static at *cref_bool_selfeval(at *p)
@@ -66,7 +63,7 @@ class_t *cref_bool_class;
       ifn (NUMBERP(val))                                                \
          error(NIL, "type mismatch in assignment", val);                \
       void *p = Gptr(self);                                             \
-      *((type *)p) = Number(val);                                       \
+      *((type *)p) = (type)Number(val);                                 \
    }                                                                    \
                                                                         \
    class_t *cref_##type##_class
@@ -231,8 +228,13 @@ static void cref_object_setslot(at *self, at *slot, at *val)
 
 class_t *cref_object_class;
 
+
+
+
 at *new_cref(int dht, void *p) 
 {
+   const char *errmsg_nonmanaged = "storage does not hold managed a address";
+
    if (!p)
       RAISEF("not an address", p);
 
@@ -245,7 +247,13 @@ at *new_cref(int dht, void *p)
    case DHT_FLOAT : return new_at(cref_float_class, p);
    case DHT_DOUBLE: return new_at(cref_double_class, p);
    case DHT_GPTR  : return new_at(cref_gptr_class, p);
-   case DHT_MPTR  : return new_at(cref_mptr_class, p);
+   case DHT_MPTR  :
+   {
+      void **dest = p;
+      ifn (*dest==NULL || mm_ismanaged(*dest))
+         error(NIL, errmsg_nonmanaged, p);
+      return new_at(cref_mptr_class, p);
+   }
    case DHT_STR   :
    {
       void **dest = p;
@@ -254,35 +262,35 @@ at *new_cref(int dht, void *p)
        * construction, before the class constructor is called
        */
       ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, "storage does not hold managed address", p);
+         error(NIL, errmsg_nonmanaged, p);
       return new_at(cref_str_class, p);
    }
    case DHT_INDEX :
    {
       void **dest = p;
       ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, "storage does not hold managed address", p);
+         error(NIL, errmsg_nonmanaged, p);
       return new_at(cref_index_class, p);
    }
    case DHT_IDX   :
    {
       void **dest = p;
       ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, "storage does not hold managed address", p);
+         error(NIL, errmsg_nonmanaged, p);
       return new_at(cref_idx_class, p);
    }
    case DHT_STORAGE:
    {
       void **dest = p;
       ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, "storage does not hold managed address", p);
+         error(NIL, errmsg_nonmanaged, p);
       return new_at(cref_storage_class, p);
    }
    case DHT_OBJ:
    {
       void **dest = p;
       ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, "storage does not hold managed address", p);
+         error(NIL, errmsg_nonmanaged, p);
       return new_at(cref_object_class, p);
    }
    default:
@@ -313,6 +321,10 @@ DX(xassign)
 }
 
 
+/*
+ *  Casting functions
+ */
+
 /* defined in module.c */
 struct module;
 extern void *dynlink_symbol(struct module *, const char *, int, int);
@@ -322,31 +334,30 @@ DX(xto_gptr)
    ARG_NUMBER(1);
    at *p = APOINTER(1);
    
-   if (p==NIL)
-      return NIL;
+   if (p==at_NULL)
+      return at_NULL;
    
    else if (CREFP(p)) {
       return NEW_GPTR(Gptr(p));
       
    } else if (NUMBERP(p)) {
-      return NEW_GPTR(Gptr(p));
+      return NEW_GPTR(Mptr(p));
       
    } else if (GPTRP(p)) {
-      //LOCK(p);
       return p;
       
    } else if (MPTRP(p)) {
-      return NEW_GPTR(Gptr(p));
+      return NEW_GPTR(Mptr(p));
       
    } else if (INDEXP(p)) {
-      return NEW_GPTR(Gptr(p));
+      return NEW_GPTR(Mptr(p));
       
    } else if (OBJECTP(p)) {
-      error(NIL, "not supported", NIL);
-      //return NEW_GPTR(n->citem);
-      
+      object_t *obj = Mptr(p);
+      return NEW_GPTR(obj->cptr);
+
    } else if (STORAGEP(p)) {
-      return NEW_GPTR(Gptr(p));
+      return NEW_GPTR(Mptr(p));
       
    } else if (p && (Class(p) == dh_class)) {
       struct cfunction *cfunc = Gptr(p);
@@ -359,13 +370,162 @@ DX(xto_gptr)
       if (( dhdoc = (dhdoc_t*)(cfunc->info) )) {
          void *q = dynlink_symbol(m, dhdoc->lispdata.c_name, 1, 1);
          ifn (q)
-            RAISEF("could not find function pointer\n", p);
+            RAISEF("could not find function pointer", p);
          return NEW_GPTR(q);
       }
    }
-   error(NIL,"Cannot make a compiled version of this lisp object",p);
+   error(NIL, "cannot cast to C object", p);
 }
 
+
+DX(xto_mptr)
+{
+   ARG_NUMBER(1);
+   at *p = APOINTER(1);
+   
+   if (p==at_NULL)
+      return NEW_MPTR(Gptr(at_NULL));
+   
+   else if (CREFP(p) || GPTRP(p)) {
+      if (mm_ismanaged(Gptr(p)))
+         return NEW_MPTR(Mptr(p));
+      else
+         RAISEF("not a managed address", NEW_GPTR(Gptr(p)));
+      
+   } else if (NUMBERP(p)) {
+      return NEW_MPTR(Mptr(p));
+      
+   } else if (MPTRP(p)) {
+      return p;
+      
+   } else if (INDEXP(p)) {
+      return NEW_MPTR(Mptr(p));
+      
+   } else if (OBJECTP(p)) {
+      object_t *obj = Mptr(p);
+      return NEW_MPTR(obj->cptr);
+      
+   } else if (STORAGEP(p)) {
+      return NEW_MPTR(Mptr(p));
+      
+   } else if (p && (Class(p) == dh_class)) {
+      RAISEF("DH-functions are not in managed memory", p);
+   }
+   error(NIL, "cannot cast to C object", p);
+}
+
+DX(xto_int)
+{
+   ARG_NUMBER(1);
+   return NEW_NUMBER(AINTEGER(1));
+}
+
+DX(xto_char)
+{
+   ARG_NUMBER(1);
+   return NEW_NUMBER((char)AINTEGER(1));
+}
+
+DX(xto_uchar)
+{
+   ARG_NUMBER(1);
+   return NEW_NUMBER((uchar)AINTEGER(1));
+}
+
+DX(xto_float)
+{
+   ARG_NUMBER(1);
+   return NEW_NUMBER(Ftor(AFLOAT(1)));
+}
+
+DX(xto_double)
+{
+   ARG_NUMBER(1);
+   return NEW_NUMBER(ADOUBLE(1));
+}
+
+DX(xto_bool)
+{
+   ARG_NUMBER(1);
+   at *p = APOINTER(1);
+   if (!p)
+      return NIL;
+   /* C semantics */
+   if (NUMBERP(p) && Number(p)==0)
+      return NIL;
+   return t();
+}
+
+DX(xto_obj)
+{
+   at *p = NIL;
+   class_t *cl = NULL;
+   
+   switch (arg_number) {
+   case 1:
+      p = APOINTER(1);
+      break;
+
+   case 2:
+      p = APOINTER(1);
+      ifn (CLASSP(p))
+         error(NIL,"not a class", p);
+      cl = Mptr(p);
+      p = APOINTER(2);
+      break;
+
+   default:
+      ARG_NUMBER(-1);
+   }
+
+   if (!p) {
+      return p;
+
+   }  else if (OBJECTP(p)) {
+      /* nothing to do */
+
+   } else if (GPTRP(p) || MPTRP(p)) {
+      struct CClass_object *obj = Gptr(p);
+      if (obj && mm_ismanaged(obj) && 
+          obj->__lptr && mm_ismanaged(obj->__lptr) && 
+          obj->__lptr->backptr && mm_ismanaged(obj->__lptr->backptr) && OBJECTP(obj->__lptr->backptr) )
+         p = obj->__lptr->backptr;
+      else
+         error(NIL, "not pointer to an object", p);
+
+   } else
+      error(NIL, "not a GPTR or object", p);
+   
+   /* check class */
+   if (cl) {
+      const class_t *clm = Class(p);
+      while (clm && (clm != cl))
+         clm = clm->super;
+      if (clm != cl)
+         error(NIL, "GPTR does not point to an object of this class", cl->backptr);
+   }
+   return p;
+}
+
+DX(xto_str)
+{
+   ARG_NUMBER(1);
+   at *p = APOINTER(1);
+  
+   if (STRINGP(p)) {
+      return p;
+
+   } else if (GPTRP(p) || MPTRP(p)) {
+      const char *s = String(p);
+      if (s && mm_ismanaged(s) && mm_typeof(s)==mt_blob)
+         return NEW_STRING(s);
+      else
+         RAISEF("not pointer to a string", p);
+   } else
+      RAISEF("not a pointer or string", p);
+
+   return NIL;
+}
 
 class_t *abstract_cref_class;
 
@@ -396,8 +556,19 @@ void init_cref(void)
    INIT_CREF(object);
 
    dx_define("new-cref", xnew_cref);
-   dx_define("to-gptr", xto_gptr);
    dx_define("assign", xassign);
+
+   dx_define("to-bool", xto_bool);
+   dx_define("to-char", xto_char);
+   dx_define("to-uchar", xto_uchar);
+   dx_define("to-int", xto_int);
+   dx_define("to-float", xto_float);
+   dx_define("to-double", xto_double);
+   dx_define("to-number", xto_double);
+   dx_define("to-str", xto_str);
+   dx_define("to-gptr", xto_gptr);
+   dx_define("to-mptr", xto_mptr);
+   dx_define("to-obj", xto_obj);
 }
    
 

@@ -606,10 +606,11 @@ LUSHAPI at *lete(at *vardecls, at *body);
 #define DX_ERROR(i,j)   (need_error(i,j,arg_array))
 
 #define APOINTER(i)     ( arg_array[i] )
-#define AREAL(i)        ( ISNUMBER(i) ? Number(APOINTER(i)) :(long)DX_ERROR(1,i))
+#define ADOUBLE(i)      ( ISNUMBER(i) ? Number(APOINTER(i)) :(long)DX_ERROR(1,i))
+#define AREAL           ADOUBLE
 #define AGPTR(i)        ( ISGPTR(i) ? Gptr(APOINTER(i)):(gptr)DX_ERROR(9,i))
 #define AINTEGER(i)     ( (intg) AREAL(i) )
-#define AFLT(i)         ( rtoF(AREAL(i)) )
+#define AFLOAT(i)       ( rtoF(AREAL(i)) )
 #define ALIST(i)        ( ISLIST(i) ? APOINTER(i):(at*)DX_ERROR(2,i) )
 #define ACONS(i)        ( ISCONS(i) ? APOINTER(i):(at*)DX_ERROR(3,i) )
 #define ASTRING(i)      ( ISSTRING(i) ? String(APOINTER(i)) : (char*)DX_ERROR(4,i) )
@@ -732,6 +733,7 @@ LUSHAPI at  *send_message(at *classname, at *obj, at *method, at *args);
 LUSHAPI bool isa(at *p, const class_t *cl);
 LUSHAPI void lush_delete(at *p);       /* avoid conflict with C++ keyword */
 LUSHAPI void lush_delete_maybe(at *p);
+LUSHAPI void zombify_subclasses(class_t *);
 LUSHAPI static inline class_t *classof(const at *p)
 {
    if (p)
@@ -809,31 +811,37 @@ LUSHAPI double eps(double x);
 LUSHAPI float epsf(float x);
 LUSHAPI void fpu_reset(void);
 
+
+/* DH.H -------------------------------------------------- */
+
+typedef struct index index_t;
+typedef struct storage storage_t;
+
+#include "dh.h"
+
+
 /* STORAGE.H --------------------------------------------------- */
 
 /* 
  * The field 'type' of a storage defines the type of the elements.
  * Integer type ST_ID should be used for indexing.
  */
-  
-typedef enum storage_type {
-   ST_AT,
-   ST_F, ST_D,
-   ST_I32, ST_I16, ST_I8, ST_U8,
-   ST_GPTR,
-   /* TAG */
-   ST_LAST
-} storage_type_t;
 
-#define ST_FIRST      ST_AT
-#define ST_ID         ST_I32
-#define ST_FLOAT      ST_F
-#define ST_DOUBLE     ST_D
-#define ST_INT        ST_I32
-#define ST_SHORT      ST_I16
-#define ST_BYTE       ST_I8
-#define ST_UBYTE      ST_U8
-#define id_t          int
+typedef enum dht_type storage_type_t;
+
+#define ST_BOOL       DHT_BOOL
+#define ST_CHAR       DHT_CHAR
+#define ST_UCHAR      DHT_UCHAR
+#define ST_SHORT      DHT_SHORT
+#define ST_INT        DHT_INT
+#define ST_FLOAT      DHT_FLOAT
+#define ST_DOUBLE     DHT_DOUBLE
+#define ST_GPTR       DHT_GPTR
+#define ST_MPTR       DHT_MPTR
+#define ST_AT         DHT_AT
+
+#define ST_FIRST      ST_BOOL
+#define ST_LAST       (ST_AT + 1)
 
 /*
  * The other flags define the
@@ -864,17 +872,17 @@ struct storage {
 #endif
 };
 
-typedef struct storage  storage_t;
+/* typedef struct storage  storage_t; // defined above */ 
 
 extern LUSHAPI class_t *abstract_storage_class;
 extern LUSHAPI class_t *storage_class[ST_LAST];
-extern LUSHAPI size_t  storage_sizeof[ST_LAST];
-extern LUSHAPI flt   (*storage_getf[ST_LAST])(gptr, size_t);
-extern LUSHAPI void  (*storage_setf[ST_LAST])(gptr, size_t, flt);
-extern LUSHAPI real  (*storage_getr[ST_LAST])(gptr, size_t);
-extern LUSHAPI void  (*storage_setr[ST_LAST])(gptr, size_t, real);
-extern LUSHAPI at *  (*storage_getat[ST_LAST])(storage_t *, size_t);
-extern LUSHAPI void  (*storage_setat[ST_LAST])(storage_t *, size_t, at *);
+extern LUSHAPI size_t   storage_sizeof[ST_LAST];
+extern LUSHAPI flt    (*storage_getf[ST_LAST])(gptr, size_t);
+extern LUSHAPI void   (*storage_setf[ST_LAST])(gptr, size_t, flt);
+extern LUSHAPI real   (*storage_getd[ST_LAST])(gptr, size_t);
+extern LUSHAPI void   (*storage_setd[ST_LAST])(gptr, size_t, real);
+extern LUSHAPI at *   (*storage_getat[ST_LAST])(storage_t *, size_t);
+extern LUSHAPI void   (*storage_setat[ST_LAST])(storage_t *, size_t, at *);
 
 /* storage creation */
 LUSHAPI storage_t *new_storage(storage_type_t);
@@ -888,6 +896,8 @@ LUSHAPI size_t storage_nelems(const storage_t *);
 LUSHAPI size_t storage_nbytes(const storage_t *);
 
 /* storage manipulation */
+
+LUSHAPI void get_write_permit(storage_t *);
 LUSHAPI void storage_alloc(storage_t*, size_t, at*);
 LUSHAPI void storage_realloc(storage_t*, size_t, at*);
 LUSHAPI void storage_clear(storage_t*, at*, size_t);
@@ -901,14 +911,14 @@ LUSHAPI void storage_save(storage_t*, FILE*);
 
 extern LUSHAPI class_t *index_class;
 
-typedef struct index {			
+struct index {			
    at *backptr;
    int ndim;			/* number of dimensions */
    size_t dim[MAXDIMS];		/* array size for each dimension */
    ptrdiff_t mod[MAXDIMS];      /* stride for each dimension */
    ptrdiff_t offset;		/* in element size */
    storage_t *st;		/* a pointer to the storage */
-} index_t;
+};
 
 /* shape_t and subscript_t are used as argument types in the index 
    C API. shape_t coincides with the head of the index structure. */
@@ -1194,34 +1204,6 @@ LUSHAPI at  *load_matrix(FILE*);
 #endif
 
 
-
-/* DH.H -------------------------------------------------- */
-
-/*
- * DH are C functions working on matrices and numbers.
- * They may be compiled using 'dh-compile'.
- */
-
-extern LUSHAPI class_t *dh_class;
-
-LUSHAPI at *new_dh(at *name, dhdoc_t *kdata);
-LUSHAPI at *new_dhclass(at *name, dhclassdoc_t *kdata);
-
-
-
-/* LISP_C.H ---------------------------------------------- */
-
-LUSHAPI int  lside_mark_unlinked(gptr);
-LUSHAPI void lside_destroy_item(gptr);
-
-LUSHAPI void cside_destroy_item(void *cptr);
-LUSHAPI void cside_destroy_range(void *from, void *to);
-LUSHAPI at * cside_find_litem(void *cptr);
-
-LUSHAPI bool lisp_owns_p(void *cptr);  /* true when interpreter owns the object */
-
-LUSHAPI void lush_error(const char *s);
-#define run_time_error lush_error
 
 /* EVENT.H ----------------------------------------------------- */
 

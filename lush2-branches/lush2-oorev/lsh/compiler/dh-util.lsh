@@ -339,8 +339,7 @@
                                   (if (consp (car slot))  ;; why?
                                       (nameof (caar slot))
                                     (nameof (car slot)))) ";"))))
-    (concat the-struct "\n};")))
-
+    (concat the-struct "\n};") ))
 
 #? (dhc-class-to-vtable-decl <type>)
 ;; Returns a string containing the C structure declaration
@@ -375,8 +374,8 @@
         ((==> type is-a-ubyte) "unsigned char")
         ((==> type is-a-bool)  "bool")
         ((==> type is-a-str)   "char*")
-        ((==> type is-a-gptr)
-         (or (dhu-name type) "gptr") )
+        ((==> type is-a-gptr)  (or (dhu-name type) "gptr"))
+        ((==> type is-a-mptr)  (or (dhu-name type) "mptr"))
         ((==> type is-an-obj)
          (let ((class-cname (dhc-lisp-to-c-name (dhu-name (dhu-type type)))))
            (sprintf "struct CClass_%s" class-cname) ))
@@ -401,26 +400,32 @@
    ((==> type is-a-real)   "dh_double")
    ((==> type is-a-str)    "dh_str_ptr")
    ((==> type is-a-gptr)   "dh_gptr")
+   ((==> type is-a-mptr)   "dh_mptr")
    ((==> type is-a-bool)   "dh_bool")
    (t (dhc-error "Argument type is unknown"))))
 
 (de dhc-type-to-srg-type (ty)
   (selectq (unode-val :ty:u-tclass)
-    (dht-float   "ST_F")
-    (dht-double  "ST_D")
-    (dht-int   "ST_I32")
-    (dht-short "ST_I16")
-    (dht-ptr   "ST_AT")
-    (dht-uchar "ST_U8")
-    (dht-char  "ST_I8")
-    (dht-gptr  "ST_GPTR")
+    (dht-bool    "ST_BOOL")
+    (dht-float   "ST_FLOAT")
+    (dht-double  "ST_DOUBLE")
+    (dht-int     "ST_INT")
+    (dht-short   "ST_SHORT")
+    (dht-ptr     "ST_AT")
+    (dht-uchar   "ST_UCHAR")
+    (dht-char    "ST_CHAR")
+    (dht-gptr    "ST_GPTR")
+    (dht-mptr    "ST_MPTR")
     (t (dhc-error "not a know type of matrix"))))
+
+(de dhc-gormptr (type)
+  (or (==> type is-a-gptr) (==> type is-a-mptr)) )
 
 (de dhc-ptr-cast(expr type &optional type2)
   (let ((cast expr))
     ;; GPTRs
-    (when (and (==> type is-a-gptr)
-               (or (not type2) (==> type2 is-a-gptr)) )
+    (when (and (dhc-gormptr type)
+               (or (not type2) (dhc-gormptr type2)) )
       (when (<> (dhu-name type) (when type2 (dhu-name type2)))
         (setq cast (concat "(" (dhc-type-to-c-decl type) ")"))
         (when expr (setq cast (concat cast "(" expr ")"))) ) )
@@ -690,7 +695,7 @@
   u-bump    ; lexical level (start with ())
   u-access  ; 'read if the object is read only, 'write otherwise
   u-name    ; for class: name of class
-            ; for gptr: optional name of pointer C type
+            ; for gptr/mptr: optional name of pointer C type
   ;; Cached hash code
   u-hash
 )			
@@ -700,10 +705,9 @@
 (defvar dhc-simple-types 
   '(dht-dc dht-unk dht-int dht-float dht-bool dht-nil
     dht-short dht-char dht-uchar dht-double 
-    dht-str dht-gptr dht-number dht-dhm))
+    dht-str dht-gptr dht-mptr dht-number dht-dhm))
 (defvar dhc-complex-types 
-  '(dht-idx dht-srg dht-obj dht-class
-    dht-func dht-ptr dht-list))
+  '(dht-idx dht-srg dht-obj dht-class dht-func dht-ptr dht-list))
 (defvar dhc-int-types
   (reverse '(dht-int dht-short dht-char dht-uchar)))
 (defvar dhc-int-types*
@@ -799,6 +803,9 @@
        (add (==> (unode-val u-type) type-to-desc)) )
       ;; gptr
       (dht-gptr
+       (when (unode-val u-name) (add (unode-val u-name))) )
+      ;; mptr
+      (dht-mptr
        (when (unode-val u-name) (add (unode-val u-name))) )
       ;; lists
       (dht-list 
@@ -935,6 +942,8 @@
   (= (unode-val u-tclass) 'dht-str))
 (defmethod dhc-type is-a-gptr()
   (= (unode-val u-tclass) 'dht-gptr))
+(defmethod dhc-type is-a-mptr()
+  (= (unode-val u-tclass) 'dht-mptr))
 (defmethod dhc-type is-a-number()
   (member (unode-val u-tclass) dhc-number-types))
 
@@ -953,6 +962,10 @@
   (let ((ty (cond
              ;; gptr
              ((==> this is-a-gptr)
+              (new dhc-type (unode-val u-tclass) 
+                   (when u-name (unode-val u-name))) )
+             ;; mptr
+             ((==> this is-a-mptr)
               (new dhc-type (unode-val u-tclass) 
                    (when u-name (unode-val u-name))) )
              ;; simple types
@@ -1190,7 +1203,7 @@
     ;; pointer type
     (dht-ptr
      (when (null a1)
-       (dhc-error "ptr must point on something"))
+       (dhc-error "ptr must point to something"))
      (setq u-type (new-unode a1)))
     ;; storage type
     (dht-srg
@@ -1233,6 +1246,11 @@
        (dhc-internal-error "no args expected")))
     ;; gptr type
     (dht-gptr 
+     (when a1 (setq u-name (new-unode a1)))
+     (when (or a2 a3)
+       (dhc-internal-error "at most one arg expected")) )
+    ;; mptr type
+    (dht-mptr 
      (when a1 (setq u-name (new-unode a1)))
      (when (or a2 a3)
        (dhc-internal-error "at most one arg expected")) )
@@ -1358,6 +1376,16 @@
                (unode-unify :t1:u-name :t2:u-name por) )
               (t 
                (dhc-unif-error "incompatible gptrs")) )))
+          ;; mptr
+          ((= tclass 'dht-mptr)
+           (let ((ct1 (unode-val :t1:u-name))
+                 (ct2 (unode-val :t2:u-name)) )
+             (cond
+              ((= ct1 ct2) ())
+              ((or (null ct1) (null ct2))
+               (unode-unify :t1:u-name :t2:u-name por) )
+              (t 
+               (dhc-unif-error "incompatible mptrs")) )))
           ;; simple types
           ((member tclass dhc-simple-types) ())
           ;; complex types
@@ -1512,6 +1540,9 @@
      ;; gptr
      ((= tclass 'gptr)
       (new dhc-type 'dht-gptr (cadr desc)) )
+     ;; mptr
+     ((= tclass 'mptr)
+      (new dhc-type 'dht-mptr (cadr desc)) )
      ;; simple types
      ((member dht dhc-simple-types)
       (new dhc-type dht) )
@@ -1682,6 +1713,10 @@
       (if (cdr desc)
           (list (sprintf "DH_GPTR(%l)," (cadr desc)))
         (list "DH_GPTR(0),") ) )
+     ((= tclass 'mptr)
+      (if (cdr desc)
+          (list (sprintf "DH_MPTR(%l)," (cadr desc)))
+        (list "DH_MPTR(0),") ) )
      ((= tclass 'list)
       (append (list (sprintf "DH_LIST(%d)," (length (cdr desc))))
               (apply append (mapcar dhc-d-to-doc (cdr desc)))
@@ -2432,6 +2467,9 @@
                ((= source t)
                 (new t-node () (new dhc-type 'dht-bool) source))
                
+               ((= source 'NULL)
+                (new t-node () (new dhc-type 'dht-mptr) source) )
+               
                ((isa (eval source) |DH|)
                 (new t-node () 
                      (dhc-desc-to-type (dhinfo-t (eval source)))
@@ -2548,8 +2586,10 @@
             ;; Case of a variable
             ((symbolp source)
              (cond
-              ((= source t) 
+              ((= source t)      
                "true")
+              ((= source 'NULL)
+               "NULL")
               ((getp (dhc-search-symtable source global-table) 'defconstant)
                (let ((c (car (getp (dhc-search-symtable source global-table) 'defconstant))))
                  (dhc-parse-expr-c c treetype retplace) ))
@@ -2718,13 +2758,14 @@
   (let* ((cls (classof srg)))
     (new dhc-type
          (cond
-          ((= cls |DSTORAGE|)    'dht-double)
-          ((= cls |FSTORAGE|)    'dht-float)
-          ((= cls |I32STORAGE|)  'dht-int)
-          ((= cls |I16STORAGE|)  'dht-short)
-          ((= cls |I8STORAGE|)   'dht-char)
-          ((= cls |U8STORAGE|)   'dht-uchar)
-          ((= cls |GPTRSTORAGE|) 'dht-gptr)
+          ((= cls double-storage) 'dht-double)
+          ((= cls float-storage)  'dht-float)
+          ((= cls int-storage)    'dht-int)
+          ((= cls short-storage)  'dht-short)
+          ((= cls char-storage)   'dht-char)
+          ((= cls uchar-storage)  'dht-uchar)
+          ((= cls gptr-storage)   'dht-gptr)
+          ((= cls mptr-storage)   'dht-mptr)
           (t (dhc-error "Illegal literal storage type")) ) ) ) )
 
 
@@ -2913,7 +2954,9 @@
               (all ((arg args)
                     (argtype (dhu-extra functype))
                     (argnode (cdr :treetype:tn-list)) )
-                (if (or (==> argtype is-an-objptr) (==> argtype is-a-gptr))
+                (if (or (==> argtype is-an-objptr) 
+                        (==> argtype is-a-gptr)
+                        (==> argtype is-a-mptr) )
                     (dhc-ptr-cast arg argtype :argnode:type) 
                   arg  ) ) ) )
       ;; Update extern declaration and dependencies

@@ -41,7 +41,6 @@
 #define DUMPMAGIC  0x44454d50
 #define DUMPVERSION 4
 
-typedef unsigned char   uchar;
 
 /* From IO.C */
 extern unsigned char char_map[];

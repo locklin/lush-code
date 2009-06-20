@@ -76,7 +76,8 @@
                 (list '-list-   'dht-list)
 		(list '-func-   'dht-func)
 		(list '-method- 'dht-func)
-                (list '-gptr-   'dht-gptr) ) ) )
+                (list '-gptr-   'dht-gptr)
+                (list '-mptr-   'dht-mptr) )))
 
 (de dhc-format-to-t-node ((type . params))
   (let* ((dhassoc (assoc type dhc-type-to-dht-alist))
@@ -289,7 +290,7 @@
   (dhc-cast-c source "char *" treetype retplace))
 
 (dhm-t to-gptr(source)
-  (dhc-cast-t source 'dht-gptr '(dht-gptr dht-ptr dht-nil dht-func dht-dc)) )
+  (dhc-cast-t source 'dht-gptr '(dht-gptr dht-mptr dht-ptr dht-str dht-func dht-dc)) )
 
 (dhm-c to-gptr(source treetype retplace)
   (let ((argtype :(cadr :treetype:tn-list):type))
@@ -312,6 +313,30 @@
          (concat "extern_c " (dhc-compose-prototype argtype cfunc) ";") )
         (sprintf "(gptr)&(%s)" cfunc) ) ) ) )
 
+
+(dhm-t to-mptr(source)
+  (dhc-cast-t source 'dht-mptr '(dht-mptr dht-gptr dht-ptr dht-str)) )
+
+(dhm-c to-mptr(source treetype retplace)
+  (let ((argtype :(cadr :treetype:tn-list):type))
+    (if (<> (dhu-tclass argtype) 'dht-func)
+        ;; simple cast
+        (dhc-cast-c source "mptr" treetype retplace)
+      ;; function cast
+      (let* ((name (cadr source))
+             (symbol (dhc-search-symtable name global-table))
+             (cfunc ()) )
+        (cond
+         (symbol
+          (setq cfunc (concat "C_" :symbol:c-name)) )
+         ((symbolp name)
+          (setq cfunc (car (dhinfo-c (eval `:,name)))) )
+         (t
+          (setq cfunc (car (dhinfo-c name))) ) )
+        ;; extern
+        (dhc-add-c-externs
+         (concat "extern_c " (dhc-compose-prototype argtype cfunc) ";") )
+        (sprintf "(mptr)&(%s)" cfunc) ) ) ) )
 
 (defvar nils (.cl ()))
 (defvar ts (.cl t))
@@ -862,6 +887,9 @@
     (when (and ~(and (==> t1 is-a-number) (==> t2 is-a-number))
                ~(and (==> t1 is-a-bool) (==> t2 is-a-bool))
                ~(and (==> t1 is-a-gptr) (==> t2 is-a-gptr))
+               ~(and (==> t1 is-a-gptr) (==> t2 is-a-mptr))
+               ~(and (==> t1 is-a-mptr) (==> t2 is-a-gptr))
+               ~(and (==> t1 is-a-mptr) (==> t2 is-a-mptr))
                ~(and (==> t1 is-a-str) (==> t2 is-a-str))
                ~(and (==> t1 is-an-objptr) (==> t2 is-an-objptr) 
                      (or (= cop "==") (= cop "!="))) )
@@ -2203,13 +2231,14 @@
 ;;; ------------------------------------------------------------------------
 
 (defvar dhc-type-to-array-name 
-  '((dht-uchar ubyte-array* ubyte-array)
-    (dht-char byte-array* byte-array)
+  '((dht-uchar uchar-array* uchar-array)
+    (dht-char char-array* char-array)
     (dht-int int-array* int-array)
     (dht-short short-array* short-array)
     (dht-float float-array* float-array)
     (dht-double double-array* double-array)
-    (dht-gptr gptr-array* gptr-array) ) )
+    (dht-gptr gptr-array* gptr-array)
+    (dht-mptr mptr-array* mptr-array) ))
 
 (defvar dhc-type-to-array 
   (mapcar (lambda ((x y z)) (cons x (eval `(list :,y :,z))))
@@ -2245,7 +2274,7 @@
 
 (dhm-t-declare float-array float-array* ubyte-array ubyte-array* byte-array byte-array*
 	       short-array short-array* int-array int-array* double-array double-array*
-	       gptr-array gptr-array*)
+	       gptr-array gptr-array* mptr-array mptr-array*)
 
 (dhm-c float-array(source treetype retplace)
   (let (((idx-symb srg-symb) :treetype:transfer)
@@ -2282,7 +2311,7 @@
 
 (dhm-c-declare float-array float-array* ubyte-array ubyte-array* byte-array byte-array*
 	       short-array short-array* int-array int-array* double-array double-array*
-	       gptr-array gptr-array*)
+	       gptr-array gptr-array* mptr-array mptr-array*)
 
 (dhm-t clone-array(source)
   (when (<> 2 (length source))
@@ -3971,9 +4000,9 @@
          (tn ()) )
     ;; check argument
     (when (not (or (==> :xnode:type is-a-dc)
-                   (==> :xnode:type is-a-gptr)
+                   (==> :xnode:type is-a-mptr)
                    (==> :xnode:type is-an-objptr) ))
-      (dhc-error "A gptr or an object is expected" source) )
+      (dhc-error "An mptr or an object is expected" source) )
     ;; check subclass relationship when possible
     (when (==> :xnode:type is-an-objptr)
       (let ((tname (dhu-name ctype))

@@ -83,7 +83,6 @@ extern void init_idx2 (void);
 extern void init_idx3 (void);
 extern void init_idx4 (void);
 extern void init_dh (void);
-extern void init_lisp_c (void);
 extern void init_event (void);
 extern void init_graphics (void);
 extern void init_ps_driver (void);
@@ -189,7 +188,6 @@ void init_lush(char *program_name)
    init_idx3();
    init_idx4();
    init_dh();
-   init_lisp_c();
    init_lushrng();
    init_dump();
    init_event();
@@ -842,11 +840,9 @@ void user_break(char *s)
 }
 
 
-extern int lush_error_flag;  /* defined in lisp_c.c */
-
 void error(const char *prefix, const char *text, at *suffix)
 {
-   if (lush_error_flag)
+   if (in_compiled_code)
       lush_error(text);
 
    eval_ptr = eval_std;

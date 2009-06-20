@@ -292,7 +292,13 @@ DX(xunode_unify)
 
 static const char *gptr_name(at *p)
 {
-   sprintf(string_buffer, "%p", Gptr(p));
+   sprintf(string_buffer, "::gptr:%p", Gptr(p));
+   return mm_strdup(string_buffer);
+}
+
+static const char *mptr_name(at *p)
+{
+   sprintf(string_buffer, "::mptr:%p", Mptr(p));
    return mm_strdup(string_buffer);
 }
 
@@ -328,8 +334,7 @@ void init_at(void)
    assert(sizeof(at)==2*sizeof(void *));
    assert(sizeof(double) <= 8);
 
-   mt_at = MM_REGTYPE("at", sizeof(at),
-                      clear_at, mark_at, 0);
+   mt_at = MM_REGTYPE("at", sizeof(at), clear_at, mark_at, 0);
    MM_ROOT(compute_bump_list);
 
    /* bootstrapping the type registration */
@@ -348,7 +353,7 @@ void init_at(void)
    class_define("GPTR", gptr_class);
 
    mptr_class = new_builtin_class(NIL);
-   mptr_class->name = gptr_name;
+   mptr_class->name = mptr_name;
    class_define("MPTR", mptr_class);
 
    cons_class = new_builtin_class(NIL);

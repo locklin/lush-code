@@ -25,8 +25,6 @@
  ***********************************************************************/
 
 #include "header.h"
-#include "dh.h"
-
 
 /* ---------------------------------------------
    UTILITIES
@@ -52,6 +50,7 @@ static dhrecord *next_record(dhrecord *drec)
    case DHT_FLT:
    case DHT_REAL:
    case DHT_GPTR:
+   case DHT_MPTR:
    case DHT_STR:
    case DHT_OBJ:
       return (drec->end = drec+1);
@@ -205,17 +204,12 @@ void clean_dhrecord(dhrecord *drec)
    DH FUNCTIONS
    --------------------------------------------- */
 
-
-/* from function.c */
-extern mt_t mt_cfunction;
-
-/* from lisp_c.c */
-extern at *dh_listeval(at*, at*);  
-
-
 /* create a new dh function */
 at *new_dh(at *name, dhdoc_t *kdata)
 {
+   /* from function.c */
+   extern mt_t mt_cfunction;
+
    /* update next record pointer in dhdoc */
    if (kdata->argdata->op != DHT_FUNC)
       error(NIL,"malformed DHDOC: "
@@ -488,10 +482,10 @@ static at *dhinfo_record(dhrecord *drec)
    case DHT_BOOL: 
       return new_cons(named("bool"),NIL);
 
-   case DHT_BYTE: 
+   case DHT_CHAR: 
       return new_cons(named("char"),NIL);
 
-   case DHT_UBYTE: 
+   case DHT_UCHAR: 
       return new_cons(named("uchar"),NIL);
 
    case DHT_SHORT: 
@@ -500,10 +494,10 @@ static at *dhinfo_record(dhrecord *drec)
    case DHT_INT: 
       return new_cons(named("int"),NIL);
 
-   case DHT_FLT: 
+   case DHT_FLOAT: 
       return new_cons(named("float"),NIL);
 
-   case DHT_REAL: 
+   case DHT_DOUBLE: 
       return new_cons(named("double"),NIL);
       
    case DHT_STR: 
@@ -518,6 +512,12 @@ static at *dhinfo_record(dhrecord *drec)
          p = new_cons(make_string(strclean(drec->name)),NIL);
       return new_cons(named("gptr"), p);
       
+   case DHT_MPTR:
+      p = NIL;
+      if (drec->name)
+         p = new_cons(make_string(strclean(drec->name)),NIL);
+      return new_cons(named("mptr"), p);
+
    case DHT_LIST:
       p = dhinfo_chain(drec+1, drec->ndim, dhinfo_record);
       p = new_cons(named("list"), p);
@@ -674,6 +674,406 @@ DX(xclassinfo_c)
 }
 
 
+/* lush_error -- called by compiled code when an error occurs */
+
+bool in_compiled_code;
+static jmp_buf lush_error_jump;
+
+void lush_error(const char *s)
+{
+   if (in_compiled_code) {
+      printf("\n\n*** lush runtime error: %s\007\007\n",s);
+      print_dh_trace_stack();
+      dh_trace_root = 0;
+      longjmp(lush_error_jump, -1);
+      
+   } else {
+      dh_trace_root = 0;
+      error(NIL, s, NIL);
+   }
+}
+
+static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errctx)
+{
+   switch(drec->op) {
+   case DHT_FLOAT:
+      if (NUMBERP(at_obj))
+         arg->dh_float = (float)Number(at_obj); 
+      else
+         error(NIL, "invalid argument (float expected)",at_obj);
+      break;
+
+   case DHT_DOUBLE:
+      if (NUMBERP(at_obj))
+         arg->dh_double = Number(at_obj); 
+      else
+         error(NIL, "invalid argument (double expected)",at_obj);
+      break;
+  
+   case DHT_INT:
+      if (NUMBERP(at_obj) && (Number(at_obj) == (int)Number(at_obj)))
+         arg->dh_int = (int)Number(at_obj);
+      else
+         error(NIL, "invalid argument (int expected)",at_obj);
+      break;
+      
+   case DHT_SHORT:
+      if (NUMBERP(at_obj) && (Number(at_obj) == (short)Number(at_obj)))
+         arg->dh_short = (short)Number(at_obj); 
+      else
+         error(NIL, "invalid argument (short expected)",at_obj);
+      break;
+  
+   case DHT_CHAR:
+      if (NUMBERP(at_obj) && (Number(at_obj) == (char)(Number(at_obj))))
+         arg->dh_char = (char)Number(at_obj); 
+      else
+         error(NIL, "invalid argument (char expected)",at_obj);
+    break;
+  
+  case DHT_UBYTE:
+     if (NUMBERP(at_obj) && (Number(at_obj) == (unsigned char)(Number(at_obj))) )
+        arg->dh_uchar = (unsigned char)Number(at_obj); 
+     else
+        error(NIL, "invalid argument (uchar expected)",at_obj);
+     break;
+  
+   case DHT_GPTR:
+      if (GPTRP(at_obj))
+         arg->dh_gptr = Gptr(at_obj);             
+      else
+         error(NIL, "invalid argument (Gptr expected)",at_obj);
+      break;
+      
+   case DHT_NIL:
+      if (!at_obj)
+         arg->dh_bool = false;
+      else
+         error(NIL, "invalid argument (nil expected)",at_obj);
+      break;
+  
+   case DHT_BOOL:
+      if (at_obj == at_t)
+         arg->dh_bool = true;
+      else
+         error(NIL, "invalid argument (bool expected)",at_obj);
+      break;
+  
+   case DHT_SRG:
+      if (STORAGEP(at_obj)) {
+         /* check type and access */
+         storage_t *st = Mptr(at_obj);
+         if (st->type != (drec+1)->op)
+            error(NIL, "invald storage argument (wrong type)", at_obj);
+         if (drec->access == DHT_WRITE)
+            get_write_permit(st);
+         arg->dh_srg_ptr = Mptr(at_obj);
+      } else
+         error(NIL, "invalid argument (storage expected)",at_obj);
+      break;
+  
+  case DHT_IDX:
+     if (INDEXP(at_obj)) {
+        /* check type and access */
+        index_t *ind = Mptr(at_obj);
+        if (ind->ndim != drec->ndim)
+           error(NIL, "invalid index argument (wrong number of dimensions)", at_obj);
+        if (ind->st->type != (drec+2)->op)
+           error(NIL, "invalid index argument (wrong storage type)", at_obj);
+        if ((ind->st->flags & STF_RDONLY) && (drec->access == DHT_WRITE))
+           error(NIL, "invalid index argument (read-only storage)", at_obj);
+
+        arg->dh_idx_ptr = Mptr(at_obj);
+     } else
+        error(NIL, "invalid argument (index expected)",at_obj);
+     break;
+        
+   case DHT_OBJ:
+      if (OBJECTP(at_obj)) {
+         const class_t *cl = Class(at_obj);
+         object_t *obj = Mptr(at_obj);
+         ifn (cl->has_compiled_part)
+            error(NIL, "not an instance of a compiled class", at_obj);
+         ifn (cl->live)
+            error(NIL, "class or a superclass has become non-executable", at_obj);
+
+         assert(obj->cptr);
+         for (; cl; cl=cl->super) {
+            dhclassdoc_t *cdoc = cl->classdoc;
+            if ((cdoc) && (cdoc == (dhclassdoc_t*)(drec->arg)))
+               break;
+         }
+         if (cl==NULL)
+            error(NIL, "invalid argument (object has wrong type)", at_obj);
+         arg->dh_obj_ptr = obj->cptr;
+      } else
+         error(NIL, "invalid argument (object expected)", at_obj);
+      break;
+    
+   case DHT_STR:
+      if (STRINGP(at_obj))
+         arg->dh_str_ptr = (char *)String(at_obj);
+      else
+         error(NIL, "invalid argument (string expected)", at_obj);
+      break;
+
+   case DHT_LIST:
+      /* 
+       * We write list elements into a storage. This is an exception
+       * to the general rule. Strings and compiled lists are immutable!
+       */
+      if (CONSP(at_obj)) {
+         if (length(at_obj) != drec->ndim)
+            error(NIL, "invalid argument (list has wrong length)", at_obj);
+
+         /* C side representation is a storage */
+         storage_t *st = new_storage(DHT_UCHAR);
+         storage_alloc(st, drec->ndim*(sizeof(dharg)), 0);
+         dharg *larg = st->data;
+         at *p = at_obj;
+         int i = drec->ndim;
+         drec++;
+         while (--i >= 0) {
+            at_to_dharg(Car(p), larg, drec, at_obj);
+            drec = drec->end;
+            larg += 1;
+            p = Cdr(p);
+         }
+         arg->dh_srg_ptr = st;
+         
+      } else
+         error(NIL, "invalid argument (string expected)", at_obj);
+      break;
+      
+   default:
+      error(NIL, "internal error (unknown op in DHDOC)", at_obj);
+   }
+}
+
+static void make_temporary(dhrecord *drec, dharg *arg)
+{
+   switch (drec->op) {
+   case DHT_SRG:
+      arg->dh_srg_ptr = new_storage((drec+1)->op);
+      break;
+
+   case DHT_IDX:
+   {
+      index_t *ind = new_index(NULL, NULL);
+      IND_NDIMS(ind) = drec->ndim;
+      arg->dh_idx_ptr = ind;
+      break;
+   }
+   case DHT_OBJ:
+   {
+      dhclassdoc_t *classdoc = (dhclassdoc_t*)(drec->arg);
+      assert(classdoc->lispdata.atclass);
+      object_t *obj = new_object(Mptr(classdoc->lispdata.atclass));
+      arg->dh_obj_ptr = obj->cptr;
+      break;
+   }  
+   case DHT_STR:
+      error(NIL, "string temporary (should never get here)", NIL);
+      break;
+
+   case DHT_LIST:
+      arg->dh_srg_ptr = new_storage(DHT_UCHAR);
+      storage_alloc(arg->dh_srg_ptr, drec->ndim*(sizeof(dharg)), 0);
+      break;
+
+   default:
+      error(NIL, "internal error (unsupported type for temporary)", dhinfo_record(drec));
+   }
+}
+
+static inline at *dharg_to_at(dharg *arg, dhrecord *drec)
+{
+   switch(drec->op) {
+   case DHT_NIL:
+      return NIL;
+      
+   case DHT_INT:
+      return NEW_NUMBER(arg->dh_int);
+    
+   case DHT_DOUBLE:
+      return NEW_NUMBER(arg->dh_double);
+
+   case DHT_FLOAT:
+      return NEW_NUMBER(arg->dh_float);
+
+   case DHT_GPTR:
+      return (arg->dh_gptr) ? NEW_GPTR(arg->dh_gptr) : at_NULL;
+
+   case DHT_BOOL:
+      return NEW_BOOL(arg->dh_bool);
+      
+   case DHT_CHAR:
+      return NEW_NUMBER(arg->dh_char);
+    
+   case DHT_UCHAR:
+      return NEW_NUMBER(arg->dh_uchar);
+      
+   case DHT_SHORT:
+      return NEW_NUMBER(arg->dh_short);
+    
+   case DHT_STR:
+   {
+      assert(arg->dh_str_ptr);
+      return NEW_STRING(arg->dh_str_ptr);
+   }
+   case DHT_SRG:
+   {
+      assert(arg->dh_srg_ptr);
+      return arg->dh_srg_ptr->backptr;
+   }
+   case DHT_IDX:
+   {
+      assert(arg->dh_idx_ptr);
+      return arg->dh_idx_ptr->backptr;
+   }
+   case DHT_OBJ:
+   {
+      assert(arg->dh_obj_ptr);
+      assert(arg->dh_obj_ptr->__lptr);
+      return arg->dh_obj_ptr->__lptr->backptr;
+   }
+   case DHT_LIST:
+   {
+      if (arg->dh_srg_ptr==0)
+         return NIL;
+      storage_t *st = arg->dh_srg_ptr;
+      int ndim = drec->ndim;
+      if (ndim * sizeof(dharg) != st->size)
+         error(NIL,"internal error (list size mismatch)", NIL);
+
+      at *p = NIL;
+      at **where = &p;
+      drec++;
+      for (int i=0; i<ndim; i++) {
+         *where = new_cons(dharg_to_at(arg,drec),NIL);
+         arg += 1;
+         drec = drec->end;
+         where = &Cdr(*where);
+      }
+      return p;
+   }
+   default:
+      error(NIL, "internal error (unknown op in DHDOC)", dhinfo_record(drec));
+   }
+}
+
+extern at **dx_sp; /* in function.c */
+
+/* dh_listeval -- calls a compiled function */
+static at *_dh_listeval(at *p, at *q)
+{
+#define MAXARGS 256
+   dharg _args[MAXARGS+1];
+   dharg *args = _args+1;
+
+   //printf("dh_listeval: %s\n", pname(q));
+   /* Find and check the DHDOC */
+   struct cfunction *cfunc = Mptr(p);
+   if (CONSP(cfunc->name))
+      check_primitive(cfunc->name, cfunc->info);
+
+   dhdoc_t *kname = cfunc->info;
+   dhrecord *drec = kname->argdata;
+   if (drec->op != DHT_FUNC)
+      error(NIL, "not a function", p);
+  
+   /* Count the arguments */
+   int nargs = drec->ndim;
+   int ntemps = ((dhrecord *) drec->name)->ndim;
+   if (nargs + ntemps > MAXARGS)
+      error(NIL,"too many arguments and temporaries", NIL);
+  
+   at **arg_pos = eval_arglist_dx(Cdr(q));
+   if ((int)(dx_sp - arg_pos) != nargs)
+      need_error(0, nargs, NIL);
+   arg_pos++;  /* zero-based argument indexing below */
+   
+   /* Make compiled version of the arguments */
+   drec++;
+   for (int i=0; i<nargs; i++) {
+      if (!arg_pos[i] && drec->op!=DHT_BOOL)
+         error(NIL, "illegal nil argument, expected", dhinfo_record(drec));
+      at_to_dharg(arg_pos[i], &args[i], drec, NIL);
+      drec = drec->end;
+   }
+
+   /* Prepare temporaries */
+   if (ntemps != 0) {
+      drec++;
+      for(int i=nargs; i<nargs+ntemps; i++) {
+         make_temporary(drec, &args[i]);
+         drec = drec->end;
+      }
+      drec++;
+   }
+    
+   /* Prepare environment */
+   if (in_compiled_code)
+      fprintf(stderr, "*** Warning: reentrant call to compiled code\n");
+   int errflag = setjmp(lush_error_jump);
+   dh_trace_root = 0;
+   
+   /* Call compiled code */
+   dharg funcret;
+   if (!errflag) {
+      in_compiled_code = true;
+      /* Call the test function if it exists */
+      if (kname->lispdata.dhtest)
+         (*kname->lispdata.dhtest->lispdata.call)(_args);
+      /* Call to the function */
+      funcret = (*kname->lispdata.call)(_args);
+   }
+   
+   /* Prepare for the update */
+   in_compiled_code = false;
+   dh_trace_root = 0;
+    
+   /* Build return value */
+   at *atfuncret = NIL;
+   if (!errflag) {
+      if (drec->op != DHT_RETURN)
+         error(NIL, "internal error (cannot find DHT_RETURN in DHDOC", NIL);
+      atfuncret = dharg_to_at(&funcret, drec+1);
+   }
+  
+   /* return */
+   if (errflag)
+      error(NIL,"Run-time error in compiled code",NIL);
+
+   dx_sp = arg_pos-1;
+   return atfuncret;
+#undef MAXARGS
+}
+
+/* we must pause while in compiled code gc to avoid reentrant calls
+ * to dh_listeval by finalizers 
+ */
+at *dh_listeval(at *p, at *q)
+{
+   struct context c;
+   MM_ENTER;
+   MM_PAUSEGC;
+   context_push(&c);
+  
+   if (sigsetjmp(context->error_jump, 1)) {
+      MM_PAUSEGC_END;
+      context_pop();
+      siglongjmp(context->error_jump, -1);
+   }
+   at *result = _dh_listeval(p, q);
+   
+   MM_PAUSEGC_END;
+   context_pop();
+   
+   MM_RETURN(result);
+}
+
+
 
 /* ---------------------------------------------
    CLASSDOC FOR OBJECT CLASS
@@ -708,6 +1108,17 @@ class_t *dh_class;
 
 void init_dh(void)
 {
+   /* check the mapping is as we think it is */
+   assert(ST_BOOL  == DHT_BOOL);
+   assert(ST_CHAR  == DHT_CHAR);
+   assert(ST_UCHAR == DHT_UCHAR);
+   assert(ST_SHORT == DHT_SHORT);
+   assert(ST_INT   == DHT_INT);
+   assert(ST_FLOAT == DHT_FLOAT);
+   assert(ST_DOUBLE== DHT_DOUBLE);
+   assert(ST_GPTR  == DHT_GPTR);
+   assert(ST_MPTR  == DHT_MPTR);
+
    /* setup object class */
    object_class->classdoc = &Kc_object;
    Kc_object.lispdata.atclass = object_class->backptr;

@@ -767,18 +767,20 @@ void *dynlink_symbol(module_t *m, const char *sname, int func, int exist)
 /* --------- CLEANUP DANGLING PRIMITIVES AND OBJECTS --------- */
 
 
-static void cleanup_defs(at **pcls, module_t *mc)
+static at *module_class_defs(module_t *mc)
 {
    at *p = mc->defs;
+   at *pcls = NIL;
    while (CONSP(p)) {
       if (CONSP(Car(p))) {
          at *q = Caar(p);
          if (CLASSP(q)) {
-            *pcls = new_cons(q, *pcls);
+            pcls = new_cons(q, pcls);
          }
       }
       p = Cdr(p);
    }
+   return pcls;
 }
 
 static void cleanup_module(module_t *m)
@@ -797,7 +799,7 @@ static void cleanup_module(module_t *m)
       for (module_t *mc = root->next; mc != root; mc = mc->next)
          if (mc->initname && mc->defs && (mc->flags & MODULE_CLASS))
             if (! dld_function_executable_p(mc->initname))
-               cleanup_defs(&classes, mc);
+               classes = module_class_defs(mc);
       dld_simulate_unlink_by_file(0);
    }
 #endif
@@ -807,7 +809,7 @@ static void cleanup_module(module_t *m)
       for (module_t *mc = root->next; mc != root; mc = mc->next)
          if (mc->initname && mc->defs)
             if (mc == m || mc->bundle.executable < 0)
-               cleanup_defs(&classes, mc);
+               classes = module_class_defs(mc);
       nsbundle_exec_all_but(NULL);
    }
 #endif
@@ -817,36 +819,20 @@ static void cleanup_module(module_t *m)
       at *q = Car(p);
       if (CLASSP(q)) {
          class_t *cl = Mptr(q);
-         if (builtin_class_p(cl))
-            cl->live = false;
+         fprintf(stderr,"*** Warning: unlinking compiled class %s\n", pname(q));
+         cl->live = false;
+         zombify_subclasses(cl);
       }
    }
-
-  for (at *p = classes; CONSP(p); p = Cdr(p)) {
-     at *q = Car(p);
-     if (CLASSP(q)) {
-        class_t *cl = Mptr(q);
-        if (cl->classdoc) {
-           int n = lside_mark_unlinked(cl->classdoc);
-           cl->classdoc = 0;
-           if (n > 0)
-              fprintf(stderr,"+++ Warning: "
-                      "unlinked %d instances of compiled class %s\n", 
-                      n, pname(q));
-        }
-     }
-  }
 
    /* 4 --- Zap primitives defined by this module. */
    if (m->defs)
       for (at *p = m->defs; CONSP(p); p = Cdr(p))
          if (CONSP(Car(p)) && Caar(p)) {
             at *q = Caar(p);
-            if (CLASSP(q)) {
-               class_t *cl = Mptr(q);
-               if (!builtin_class_p(cl))
-                  continue;
-            }
+            if (CLASSP(q))
+               zombify(q);
+
             /* temporarily enable deleting objects of this class */
             bool dontdelete = Class(q)->dontdelete;
             class_t *cl = (class_t *)Class(q);

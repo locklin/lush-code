@@ -55,14 +55,15 @@ typedef short mt_t;
 /* pre-defined memory types */
 enum mt {
    mt_undefined = -1,
-   mt_blob8     =  0,
-   mt_blob16    =  1,
-   mt_blob32    =  2,
-   mt_blob64    =  3,
-   mt_blob128   =  4,
-   mt_blob256   =  5,
-   mt_blob      =  6,
-   mt_refs      =  7,
+   /* 0 & 1 for internal use */
+   mt_blob8     =  2,
+   mt_blob16    =  3,
+   mt_blob32    =  4,
+   mt_blob64    =  5,
+   mt_blob128   =  6,
+   mt_blob256   =  7,
+   mt_blob      =  8,
+   mt_refs      =  9,
 };
 
 /* MM administration */

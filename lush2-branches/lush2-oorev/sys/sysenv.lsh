@@ -757,23 +757,21 @@
 ;;;; --------- Storage utilities ----------
 
 (defvar storage-classes 
-  (list |ATSTORAGE| |FSTORAGE| |DSTORAGE| |I32STORAGE|
-        |I16STORAGE| |I8STORAGE| |U8STORAGE| |GPTRSTORAGE| ))
+  (list bool-storage char-storage uchar-storage short-storage
+        int-storage float-storage double-storage gptr-storage
+        mptr-storage at-storage) )
 
 ;; we make these symbols reserved symbols
 (let* ((storage-class-symbols 
-       (list 'atom 'float 'double 'int 'short 'byte 'ubyte 'gptr) )
+        (list 'bool 'char 'uchar 'short 'int 'float 'double 'gptr 'mptr 'atom))
        (htlen (* 2 (length storage-classes))) )
-      (defvar storage-class (htable htlen))          ;; map class symbol to class
-      (defvar storage-class-symbol (htable htlen))   ;; map class to class symbol
-      (domapc ((scs storage-class-symbols) (sc storage-classes))
-        (storage-class-symbol sc scs)
-        (storage-class scs sc)
-        (storage-class (named (left (pname scs) 1)) sc)
-      ;;(putp sc 'symbol scs)
-      ;;(storage-class 'flt (storage-class 'float))
-      ;;(storage-class 'real (storage-class 'double)) 
-         ) )
+  (defvar storage-class (htable htlen))        ;; map class symbol to class
+  (defvar storage-class-symbol (htable htlen))  ;; map class to class symbol
+  (domapc ((scs storage-class-symbols) (sc storage-classes))
+    (storage-class-symbol sc scs)
+    (storage-class scs sc)
+    (storage-class (named (left (pname scs) 1)) sc)
+    ))
 
 ;; redefine new-storage to allow for element type symbols
 (unlock-symbol new-storage)
@@ -801,7 +799,7 @@
          (func-symbol (named (concat (pname scs) "-array")))
 	 (func*-symbol (named (concat (pname scs) "-array*")))
          (init        (if (member scs '(atom gptr)) nil 0.0)) )
-    (eval 
+    (eval
      `(progn 
 	(de ,func-symbol (&rest shape)
           (cond ((null shape)         (make-array ,sc () ,init))
@@ -968,7 +966,8 @@
     m ))
 
 (dmc |[| 
-     (let* ((sc  (storage-class (named (skip-char))))
+     (let* ((c   (named (skip-char)))
+            (sc  (storage-class c))
             (sc2 (or sc (storage-class 'double))) )
        (when sc (read-string 1))
        (read-array-literal (lambda (&rest shp) (make-array sc2 shp nil)))) ))
@@ -1663,18 +1662,20 @@
     result ) )
 
 ;; idx base types
-(putp '-int-    'srg-type I32STORAGE)
-(putp '-short-  'srg-type I16STORAGE)
-(putp '-byte-   'srg-type I8STORAGE)
-(putp '-char-   'srg-type I8STORAGE)
-(putp '-ubyte-  'srg-type U8STORAGE)
-(putp '-uchar-  'srg-type U8STORAGE)
-(putp '-flt-    'srg-type FSTORAGE)
-(putp '-float-  'srg-type FSTORAGE)
-(putp '-real-   'srg-type DSTORAGE)
-(putp '-double- 'srg-type DSTORAGE)
-(putp '-gptr-   'srg-type GPTRSTORAGE)
-(putp '-any-    'srg-type STORAGE)
+(putp '-bool-   'srg-type bool-storage)
+(putp '-int-    'srg-type int-storage)
+(putp '-short-  'srg-type short-storage)
+(putp '-byte-   'srg-type char-storage)
+(putp '-char-   'srg-type char-storage)
+(putp '-ubyte-  'srg-type uchar-storage)
+(putp '-uchar-  'srg-type uchar-storage)
+(putp '-flt-    'srg-type float-storage)
+(putp '-float-  'srg-type float-storage)
+(putp '-real-   'srg-type double-storage)
+(putp '-double- 'srg-type double-storage)
+(putp '-gptr-   'srg-type gptr-storage)
+(putp '-mptr-   'srg-type mptr-storage)
+(putp '-any-    'srg-type storage)
 
 ;; no type check
 (putp '-any- 'type-syntax
@@ -1692,7 +1693,7 @@
         (or (let-filter (((fn) source)) stringp)
             (error where "Illegal syntax in string type" source) ) ) )
 ;; numeric type check
-(domapc ((fn '(-ubyte- -byte- -short- -int- -flt- -float- -real- -double-)))
+(domapc ((fn '(-byte- -char- -ubyte- -uchar- -short- -int- -flt- -float- -real- -double-)))
   (putp fn 'type-syntax
         (lambda(where source)
           (or (let-filter (((fn) source)) numberp)
@@ -1707,11 +1708,19 @@
 ;; gptr type check
 (putp '-gptr- 'type-syntax
       (lambda(where source)
-        (let ((gptrp (lambda(x) (or (not x) (isa x |GPTR|)))))
+        (let ((gptrp (lambda(x) (or (not x) (isa x GPTR)))))
           (or (let-filter (((fn) source)) gptrp)
               (let-filter (((fn arg) source)) (and (stringp arg) gptrp))
               (let-filter (((fn (arg)) source)) (and (symbolp arg) gptrp))
               (error where "Illegal syntax in gptr type" source) ) ) ) )
+;; mptr type check
+(putp '-mptr- 'type-syntax
+      (lambda(where source)
+        (let ((mptrp (lambda(x) (or (not x) (isa x MPTR)))))
+          (or (let-filter (((fn) source)) mptrp)
+              (let-filter (((fn arg) source)) (and (stringp arg) mptrp))
+              (let-filter (((fn (arg)) source)) (and (symbolp arg) mptrp))
+              (error where "Illegal syntax in mptr type" source) ) ) ) )
 ;; list type check
 (putp '-list- 'type-syntax
       (lambda(where source)
@@ -1788,7 +1797,14 @@
 (lock-symbol verify-type-decl-format 
              verify-type-decl-format.table declare)
 
-
+;; backward compatibility
+(storage-class 'b (storage-class 'c))
+(defalias to-byte      to-char)
+(defalias to-ubyte     to-uchar)
+(defalias byte-array   char-array)
+(defalias byte-array*  char-array*)
+(defalias ubyte-array  uchar-array)
+(defalias ubyte-array* uchar-array*)
 
 
 ;;; --------- Misc compiler support ---------
@@ -1987,7 +2003,6 @@
   (printf "Enter ^A<topic> for console-based topic help.\n"))
 
 
-
 ;;; --------- File searching -----------
 
 (de find-file (dirlist file &optional extlist)
@@ -2076,3 +2091,4 @@
          (printf "... dumping to \"%s\" (%d KB).\n"
                  ,(lasta argv) (/ (dump ,(lasta argv)) 1024) )
          (exit 0) ) ) ) )
+

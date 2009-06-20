@@ -38,8 +38,6 @@
 #define TYPEUNLOCK_SYMBOL(s)   UNSET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
 #define SYM_HN(s)              ((struct hash_name *)CLEAR_PTR((s)->hn))
 
-typedef unsigned char   uchar;
-
 /* globally defined names */
 
 struct hash_name **names = NULL;

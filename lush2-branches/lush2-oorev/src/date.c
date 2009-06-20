@@ -45,8 +45,6 @@
 # endif
 #endif
 
-typedef unsigned char   uchar;
-
 #define MINDATE 0
 #define MAXDATE 6
 
