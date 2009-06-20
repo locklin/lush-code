@@ -93,6 +93,7 @@ size_t storage_sizeof[ST_LAST] = {
    sizeof(float),
    sizeof(double),
    sizeof(gptr),
+   sizeof(mptr),
    sizeof(at*),
 };
 
@@ -518,7 +519,7 @@ void storage_alloc(storage_t *st, size_t n, at *init)
    st->flags = STS_MM;
    st->size  = n;
    
-   /* clear gptr storage data (ATs are cleared by mm) */
+   /* clear gptr storage data (ATs and MPTRs are cleared by mm) */
    if (init && n>0)
       storage_clear(st, init, 0);
 

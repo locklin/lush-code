@@ -1348,7 +1348,11 @@ void *mm_allocv(mt_t t, size_t s)
       abort();
    }
    assert(TYPE_VALID(t));
- 
+   if (s == 0) {
+      warn("attempt to allocate object of size zero\n");
+      abort();
+   }
+   
    FIX_SIZE(s);
    void *p = alloc_variable_sized(t, s);
    if (!p) {
