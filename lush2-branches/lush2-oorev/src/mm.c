@@ -359,8 +359,8 @@ static void maybe_trigger_collect(size_t s)
 
    if ((vol_allocs >= volume_threshold) || collect_requested) {
       mm_collect_now();
-      num_allocs = 0;
-      vol_allocs = 0;
+      //num_allocs = 0; // reset in collect_epilogue
+      //vol_allocs = 0;
    }
 }
 
@@ -788,6 +788,8 @@ static void collect_epilogue(void)
    heap_exhausted = false;
    collect_in_progress = false;
    num_collects += 1;
+   num_allocs = 0;
+   vol_allocs = 0;
    compact_managed();
 }
 
@@ -1615,7 +1617,6 @@ int mm_collect_now(void)
    } TEMP_STORAGE;
 
    collect_epilogue();
-
    return n;
 }
 
