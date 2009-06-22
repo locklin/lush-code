@@ -157,6 +157,7 @@ void clean_up(void)
 
 void init_lush(char *program_name)
 {
+   MM_ENTER;
    MM_NOGC;
    at *p,*version;
    init_weakref();
@@ -215,6 +216,7 @@ void init_lush(char *program_name)
    var_set(version,p);
    var_lock(version);
    MM_NOGC_END;
+   MM_EXIT;
 }
 
 
