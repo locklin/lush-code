@@ -411,7 +411,7 @@
     (dht-double  "ST_DOUBLE")
     (dht-int     "ST_INT")
     (dht-short   "ST_SHORT")
-    (dht-ptr     "ST_AT")
+    ;(dht-ptr     "ST_MPTR")
     (dht-uchar   "ST_UCHAR")
     (dht-char    "ST_CHAR")
     (dht-gptr    "ST_GPTR")
@@ -449,7 +449,7 @@
 ;; initialize it, and free it on exit.
 
 (de dhc-declare-var(name type)
-  (dhc-declare-var-in-stack name type) )
+  (dhc-declare-var-dynamic name type) )
 
 ;; here is the version for allocating in the stack...
 (de dhc-declare-var-in-stack (name type)
@@ -504,6 +504,42 @@
      (sprintf "Msrg_free(%s);" name)))
    (t (dhc-error "Unknown type"))))
 
+;; this is the version for allocating from the lush runtime
+(de dhc-declare-var-dynamic (name type)
+  (cond 
+   ((or (==> type is-a-simple) (==> type is-a-ptr))
+    (dhc-add-c-declarations 
+     (sprintf "%s %s;" (dhc-type-to-c-decl type) name)) )
+   
+   ((==> type is-an-idx) 
+    (let ((ndim (unode-val :type:u-ndim)))
+      (dhc-add-c-declarations (sprintf "index_t *%s = new_index(NULL, NULL);" name) )
+      (dhc-add-c-statements (sprintf "IND_NDIMS(%s) = %d;" name ndim) )))
+   
+   ((==> type is-an-obj)
+    (let* ((ctype (dhu-type type))
+           (cname (dhc-lisp-to-c-name (dhu-name ctype)))
+           (kname (dhc-kname ctype cname)) )
+      (when (dhu-class ctype)
+        (dhc-add-c-metaexterns (sprintf "extern_c dhclassdoc_t %s;" kname))
+        (dhc-add-c-depends kname)
+        (dhc-add-c-externs (sprintf "extern_c struct VClass_%s Vt_%s;" cname cname))
+	(when (<> (dhu-class ctype) :object) 
+	  (dhc-add-c-externs (dhc-class-to-struct-decl ctype)) ))
+      (dhc-add-c-statements
+       (sprintf "%s *%s = (void *)new_cobject((dhclassdoc_t *)Vt_%s.Cdoc);"
+                (dhc-type-to-c-decl type) name cname)) ))
+   
+   ((==> type is-a-srg) 
+    (let ((srg-type (dhc-type-to-srg-type (unode-val :type:u-type))))
+      (dhc-add-c-statements (sprintf "storage_t *%s = new_storage(%s);" name srg-type)) ))
+
+   ((==> type is-a-list)
+    (dhc-error "dynamic creation of lists not supported")
+    ())
+   
+   (t (dhc-error "unknown type")) ))
+
 
 #? (dhc-declare-temp-var <type> [<clue>])
 ;; Uses <tmpnames-seed> to generate a unique temp variable
@@ -522,7 +558,8 @@
 ;; initialized, bumped and freed automatically.  For any variable
 ;; in the scope, just add the dhc-symbol entry in to the list:
 ;; (setq bump-list (nconc1 bump-list symbol))
-(dm dhc-push-scope-t (f . instr-list)
+
+(dm -dhc-push-scope-t (f . instr-list)
   `(let ((|_Split| ())
          (|_Treetype| ()))
      (let ((new-symbol-table symbol-table)
@@ -549,14 +586,36 @@
      (setq bump-list (append bump-list |_Split|))
      |_Treetype|))
 
-(dm dhc-bumped-block (f treetype retplace . instr-list)
+(dm dhc-push-scope-t (_ . body)
+  `(let ((__split__ ())
+         (__treetype__ ()) )
+     (let ((new-symbol-table symbol-table)
+           (symbol-table symbol-table)
+           (lex-level (+ lex-level 1))
+           (bump-list ()) )
+       (setq __treetype__ ,(cons 'progn body))
+       (let ((type :__treetype__:type))
+         (cond
+          ((==> type is-a-simple)
+           (setq :__treetype__:type (==> type copy)) )
+          ((==> type is-a-ptr)
+           (setq :__treetype__:type (new dhc-type 'dht-ptr (dhu-type type)))
+           t () )))
+
+       ;; store bump-list in return value
+       (==> :__treetype__:type bump-level (- lex-level 1))
+       (setq :__treetype__:symbol bump-list))
+     __treetype__)
+  )
+
+(dm dhc-bumped-block (_ treetype retplace . body)
   `(let ((block ())
          (retexpr ()))
      (let ((c-statements ())
            (c-declarations ())
            (c-epilog ())
            (bump-list :,treetype:symbol))
-       (each ((temp bump-list))
+       (dolist (temp bump-list)
          (if (and (consp :temp:no-declare) 
                   (= (car :temp:no-declare) 'no-declare)
                   :(cdr :temp:no-declare):ignore)
@@ -571,12 +630,12 @@
                             (dhc-postincr tmpnames-seed)
                             (dhc-lisp-to-c-name (nameof :temp:lisp-name))))
              (dhc-declare-var :temp:c-name :temp:type))))
-       (setq retexpr ,(cons 'progn instr-list))
+       (setq retexpr ,(cons 'progn body))
        (setq block (append c-declarations c-statements c-epilog)))
      (setq c-statements (nconc c-statements block))
      retexpr))
 
-(dm dhc-push-scope-c(f treetype retplace . instr-list)
+(dm dhc-push-scope-c (_ treetype retplace . body)
   `(let ((tmpvar ())
          (retexpr ()))
      ;; If a return value is expected, 
@@ -588,16 +647,17 @@
        (setq retplace (dhc-declare-temp-var :treetype:type)))
      (dhc-add-c-statements "{")
      (setq retexpr ,(append (list 'dhc-bumped-block 'treetype 'retplace)
-                            instr-list))
+                            body))
      (if (and retplace (<> retexpr retplace))
          (dhc-add-c-statements (sprintf "%s = %s;" retplace retexpr)))
      (dhc-add-c-statements "}")
-     ;; not necessary when instr-list contains dhc-parse-expr-c (but see bloop)
+     ;; not necessary when body contains dhc-parse-expr-c (but see bloop)
      (if (and retplace (<> retexpr retplace))
          retplace
        (if (==> :treetype:type is-a-simple)
            retplace
-         retexpr))))
+         retexpr)))
+  )
 
 
 

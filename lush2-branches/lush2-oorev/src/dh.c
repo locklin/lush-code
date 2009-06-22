@@ -850,6 +850,14 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
    }
 }
 
+
+struct CClass_object *new_cobject(dhclassdoc_t *cdoc)
+{
+   assert(cdoc->lispdata.atclass);
+   object_t *obj = new_object(Mptr(cdoc->lispdata.atclass));
+   return obj->cptr;
+}
+
 static void make_temporary(dhrecord *drec, dharg *arg)
 {
    switch (drec->op) {
@@ -866,10 +874,7 @@ static void make_temporary(dhrecord *drec, dharg *arg)
    }
    case DHT_OBJ:
    {
-      dhclassdoc_t *classdoc = (dhclassdoc_t*)(drec->arg);
-      assert(classdoc->lispdata.atclass);
-      object_t *obj = new_object(Mptr(classdoc->lispdata.atclass));
-      arg->dh_obj_ptr = obj->cptr;
+      arg->dh_obj_ptr = new_cobject((dhclassdoc_t*)(drec->arg));
       break;
    }  
    case DHT_STR:

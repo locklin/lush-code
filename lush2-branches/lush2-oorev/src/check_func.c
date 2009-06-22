@@ -24,7 +24,7 @@
  * 
  ***********************************************************************/
 
-/* Functions that check the dimensions of index parameters */
+/* some additional functions needed by the lush compiler */
 
 #include "header.h"
 #include "idxmac.h"
@@ -39,8 +39,6 @@
  *
  ******************************************************************************/
 
-
-
 char *rterr_bound = "indices are out of bound";
 char *rterr_rtype = "invalid return type: for loop must be executed once";
 char *rterr_dim = "dimension is out of bounds";
@@ -54,7 +52,6 @@ char *rterr_out_of_memory = "out of memory (reallocating storage)";
 char *rterr_cannot_realloc = "cannot reallocate storage";
 char *rterr_cannot_shrink = "cannot decrease storage size";
 char *rterr_bad_dimensions = "arguments have the wrong dimensions";
-
 
 
 /******************************************************************************
@@ -113,41 +110,39 @@ void print_dh_trace_stack(void)
  *
  *****************************************************************************/
 
-int
-test_obj_class(void *obj, void *classvtable)
+int test_obj_class(void *obj, void *classvtable)
 {
-  if (obj)
-    {
+   if (obj) {
+
       struct VClass_object *vtable = *(struct VClass_object**)obj;
       while (vtable && vtable != classvtable)
-        {
+      {
 	  /* This is tricky because Cdoc contains
 	     different things in the NOLISP case. */
 #ifndef NOLISP
-	  dhclassdoc_t *cdoc = (dhclassdoc_t*)(vtable->Cdoc);
-	  if (! cdoc)
+         dhclassdoc_t *cdoc = (dhclassdoc_t*)(vtable->Cdoc);
+         if (! cdoc)
 	    lush_error("Found null Cdoc in virtual table");
-	  if (vtable != cdoc->lispdata.vtable)
+         if (vtable != cdoc->lispdata.vtable)
 	    lush_error("Found improper Cdoc in virtual table");
-	  cdoc = cdoc->lispdata.ksuper;
-	  vtable = (cdoc) ? cdoc->lispdata.vtable : 0;
+         cdoc = cdoc->lispdata.ksuper;
+         vtable = (cdoc) ? cdoc->lispdata.vtable : 0;
 #else
-	  vtable = (struct VClass_object*)(vtable->Cdoc);
+         vtable = (struct VClass_object*)(vtable->Cdoc);
 #endif
-	}
+      }
       if (vtable && vtable == classvtable)
-	return 1;
-    }
+         return 1;
+   }
   return 0;
 }
 
-void
-check_obj_class(void *obj, void *classvtable)
+void check_obj_class(void *obj, void *classvtable)
 {
-  if (! obj)
-    lush_error("Casting a null gptr as an object");
-  if (! test_obj_class(obj, classvtable))
-    lush_error("Illegal object cast");
+   if (! obj)
+      lush_error("Casting a null gptr as an object");
+   if (! test_obj_class(obj, classvtable))
+      lush_error("Illegal object cast");
 }
 
 
@@ -158,79 +153,69 @@ check_obj_class(void *obj, void *classvtable)
  *****************************************************************************/
 
 
-void 
-check_main_maout(index_t *i1, index_t *i2)
+void check_main_maout(index_t *i1, index_t *i2)
 {
-  Mcheck_main_maout(i1, i2);
+   Mcheck_main_maout(i1, i2);
 }
 
-void 
-check_main_maout_any(index_t *i1, index_t *i2)
+void check_main_maout_any(index_t *i1, index_t *i2)
 {
-  if (idx_emptyp(i2))
-    {
+   if (idx_emptyp(i2))
+   {
       if (i1->ndim != i2->ndim)
-        lush_error(rterr_not_same_dim);
+         lush_error(rterr_not_same_dim);
       Mcheck_main_maout(i1, i2);
-    }
-  else
-    {
+   }
+   else
+   {
       size_t n1=1, n2=1;
       for (int i=0; i<i1->ndim; i++)
-        n1 *= i1->dim[i];
+         n1 *= i1->dim[i];
       for (int i=0; i<i2->ndim; i++)
         n2 *= i2->dim[i];
       if (n1 != n2)
-        lush_error(rterr_not_same_dim);
-    }
+         lush_error(rterr_not_same_dim);
+   }
 }
 
-void 
-check_main_main_maout(index_t *i0, index_t *i1, index_t *i2)
+void check_main_main_maout(index_t *i0, index_t *i1, index_t *i2)
 {
-  Mcheck_main_main_maout(i0, i1, i2);
+   Mcheck_main_main_maout(i0, i1, i2);
 }
 
-void 
-check_main_m0out(index_t *i1, index_t *i2)
+void check_main_m0out(index_t *i1, index_t *i2)
 {
-  Mcheck_main_m0out(i1, i2);
+   Mcheck_main_m0out(i1, i2);
 }
 
-void 
-check_main_main_m0out(index_t *i0, index_t *i1, index_t *i2)
+void check_main_main_m0out(index_t *i0, index_t *i1, index_t *i2)
 {
-  Mcheck_main_main_m0out(i0, i1, i2);
+   Mcheck_main_main_m0out(i0, i1, i2);
 }
 
-void 
-check_main_m0in_maout(index_t *i0, index_t *i1, index_t *i2)
+void check_main_m0in_maout(index_t *i0, index_t *i1, index_t *i2)
 {
-  Mcheck_main_m0in_maout(i0, i1, i2);
+   Mcheck_main_m0in_maout(i0, i1, i2);
 }
 
-void 
-check_main_main_maout_dot21(index_t *i0, index_t *i1, index_t *i2)
+void check_main_main_maout_dot21(index_t *i0, index_t *i1, index_t *i2)
 {
-  Mcheck_main_main_maout_dot21(i0, i1, i2);
+   Mcheck_main_main_maout_dot21(i0, i1, i2);
 }
 
-void 
-check_main_main_maout_dot42(index_t *i0, index_t *i1, index_t *i2)
+void check_main_main_maout_dot42(index_t *i0, index_t *i1, index_t *i2)
 {
-  Mcheck_main_main_maout_dot42(i0, i1, i2);
+   Mcheck_main_main_maout_dot42(i0, i1, i2);
 }
 
-void 
-check_m1in_m1in_m2out(index_t *i0, index_t *i1, index_t *i2)
+void check_m1in_m1in_m2out(index_t *i0, index_t *i1, index_t *i2)
 {
-  Mcheck_m1in_m1in_m2out(i0, i1, i2);
+   Mcheck_m1in_m1in_m2out(i0, i1, i2);
 }
 
-void 
-check_m2in_m2in_m4out(index_t *i0, index_t *i1, index_t *i2)
+void check_m2in_m2in_m4out(index_t *i0, index_t *i1, index_t *i2)
 {
-  Mcheck_m2in_m2in_m4out(i0, i1, i2);
+   Mcheck_m2in_m2in_m4out(i0, i1, i2);
 }
 
 bool idx_emptyp(index_t *i0)
