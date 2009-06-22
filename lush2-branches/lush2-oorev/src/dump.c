@@ -202,6 +202,8 @@ void undump(char *s)
       p = Cdr(p);
       Cdr(val) = NIL;
    }
+   /* define special symbols */
+   at_NULL = var_get(named("NULL"));
    MM_NOGC_END;
 }
 

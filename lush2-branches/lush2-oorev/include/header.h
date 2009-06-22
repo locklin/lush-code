@@ -179,6 +179,7 @@ extern LUSHAPI class_t *cons_class;
 extern LUSHAPI class_t *null_class;
 extern LUSHAPI class_t *number_class;
 extern LUSHAPI class_t *gptr_class;
+extern LUSHAPI class_t *mptr_class;
 extern LUSHAPI class_t *window_class;
 
 struct at {
@@ -219,7 +220,7 @@ struct at {
 #define LISTP(x)        (!(x)||(Class(x) == cons_class))
 #define NUMBERP(x)	((x)&&(Class(x) == number_class))
 #define GPTRP(x)	((x)&&(Class(x) == gptr_class))
-#define MPTRP(x)	((x)&&(Class(x) == gptr_class))
+#define MPTRP(x)	((x)&&(Class(x) == mptr_class))
 #define OBJECTP(x)      ((x)&&(Class(x)->dispose == object_class->dispose))
 #define CLASSP(x)       ((x)&&(Class(x) == class_class))
 #define SYMBOLP(x)      ((x)&&(Class(x) == symbol_class))
@@ -304,7 +305,7 @@ LUSHAPI static inline at *new_at_mptr(gptr x)
 }
 
 LUSHAPI void zombify(at *p);
-extern  at  *at_NULL; 
+extern  at  *at_NULL;
 
 #define NEW_NUMBER(x)   new_at_number((real)(x))
 #define NEW_GPTR(x)     new_at_gptr((gptr)(x))

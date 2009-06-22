@@ -229,15 +229,15 @@ static void cref_object_setslot(at *self, at *slot, at *val)
 class_t *cref_object_class;
 
 
-
-
 at *new_cref(int dht, void *p) 
 {
    const char *errmsg_nonmanaged = "storage does not hold managed a address";
 
    if (!p)
       RAISEF("not an address", p);
-
+   
+   class_t *cl = NULL;
+   
    switch (dht) {
    case DHT_BOOL  : return new_at(cref_bool_class, p);
    case DHT_CHAR  : return new_at(cref_char_class, p);
@@ -247,55 +247,27 @@ at *new_cref(int dht, void *p)
    case DHT_FLOAT : return new_at(cref_float_class, p);
    case DHT_DOUBLE: return new_at(cref_double_class, p);
    case DHT_GPTR  : return new_at(cref_gptr_class, p);
-   case DHT_MPTR  :
-   {
-      void **dest = p;
-      ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, errmsg_nonmanaged, p);
-      return new_at(cref_mptr_class, p);
+      
+   case DHT_MPTR  : cl = cref_mptr_class; break;
+   case DHT_STR   : cl = cref_str_class; break;
+   case DHT_INDEX : cl = cref_index_class; break;
+   case DHT_IDX   : cl = cref_idx_class; break;
+   case DHT_STORAGE: cl = cref_storage_class; break;
+   case DHT_OBJ   : cl = cref_object_class; break;
+   default:
+      error(NIL, "unsupported type", NEW_NUMBER(dht));
    }
-   case DHT_STR   :
-   {
-      void **dest = p;
+   if (cl) {
       /*
        * NULL must be allowed as crefs are created during object
        * construction, before the class constructor is called
        */
-      ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, errmsg_nonmanaged, p);
-      return new_at(cref_str_class, p);
-   }
-   case DHT_INDEX :
-   {
       void **dest = p;
       ifn (*dest==NULL || mm_ismanaged(*dest))
          error(NIL, errmsg_nonmanaged, p);
-      return new_at(cref_index_class, p);
-   }
-   case DHT_IDX   :
-   {
-      void **dest = p;
-      ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, errmsg_nonmanaged, p);
-      return new_at(cref_idx_class, p);
-   }
-   case DHT_STORAGE:
-   {
-      void **dest = p;
-      ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, errmsg_nonmanaged, p);
-      return new_at(cref_storage_class, p);
-   }
-   case DHT_OBJ:
-   {
-      void **dest = p;
-      ifn (*dest==NULL || mm_ismanaged(*dest))
-         error(NIL, errmsg_nonmanaged, p);
-      return new_at(cref_object_class, p);
-   }
-   default:
-      error(NIL, "unsupported type", NEW_NUMBER(dht));
-   }
+      return new_at(cl, p);
+   } else
+      abort();
 }
 
 DX(xnew_cref)
@@ -338,7 +310,24 @@ DX(xto_gptr)
       return at_NULL;
    
    else if (CREFP(p)) {
-      return NEW_GPTR(Gptr(p));
+      void *ptr = Gptr(p);
+      class_t *cl = Class(p);
+      if (cl==cref_bool_class   ||
+          cl==cref_char_class   ||
+          cl==cref_uchar_class  ||
+          cl==cref_short_class  ||
+          cl==cref_int_class    ||
+          cl==cref_float_class  ||
+          cl==cref_double_class )  return NEW_GPTR(ptr);
+      
+      void **dest = (void **)ptr;
+      if (cl==cref_gptr_class   ||
+          cl==cref_mptr_class   ||
+          cl==cref_str_class    ||
+          cl==cref_index_class  ||
+          cl==cref_idx_class    ||
+          cl==cref_storage_class||
+          cl==cref_object_class )  return NEW_GPTR(*dest);
       
    } else if (NUMBERP(p)) {
       return NEW_GPTR(Mptr(p));
@@ -359,6 +348,9 @@ DX(xto_gptr)
    } else if (STORAGEP(p)) {
       return NEW_GPTR(Mptr(p));
       
+   } else if (STRINGP(p)) {
+      return NEW_GPTR(String(p));
+
    } else if (p && (Class(p) == dh_class)) {
       struct cfunction *cfunc = Gptr(p);
       if (CONSP(cfunc->name))
@@ -377,16 +369,43 @@ DX(xto_gptr)
    error(NIL, "cannot cast to C object", p);
 }
 
-
 DX(xto_mptr)
 {
    ARG_NUMBER(1);
    at *p = APOINTER(1);
    
-   if (p==at_NULL)
+   if (p==at_NULL) {
       return NEW_MPTR(Gptr(at_NULL));
    
-   else if (CREFP(p) || GPTRP(p)) {
+   } else if (CREFP(p)) {
+      void *ptr = Gptr(p);
+      class_t *cl = Class(p);
+      if (cl==cref_bool_class   ||
+          cl==cref_char_class   ||
+          cl==cref_uchar_class  ||
+          cl==cref_short_class  ||
+          cl==cref_int_class    ||
+          cl==cref_float_class  ||
+          cl==cref_double_class ) {
+         if (mm_ismanaged(ptr))
+            return NEW_MPTR(ptr);
+      }
+      void **dest = (void **)ptr;
+      if (cl==cref_gptr_class) {
+         if (mm_ismanaged(*dest))
+            return NEW_MPTR(*dest);
+      }
+      if (cl==cref_mptr_class   ||
+          cl==cref_str_class    ||
+          cl==cref_index_class  ||
+          cl==cref_idx_class    ||
+          cl==cref_storage_class||
+          cl==cref_object_class )
+         return NEW_MPTR(*dest);
+      
+      RAISEF("not a managed address", NEW_GPTR(p));
+
+   } else if (GPTRP(p)) {
       if (mm_ismanaged(Gptr(p)))
          return NEW_MPTR(Mptr(p));
       else
@@ -408,6 +427,9 @@ DX(xto_mptr)
    } else if (STORAGEP(p)) {
       return NEW_MPTR(Mptr(p));
       
+   } else if (STRINGP(p)) {
+      return NEW_MPTR(String(p));
+
    } else if (p && (Class(p) == dh_class)) {
       RAISEF("DH-functions are not in managed memory", p);
    }
@@ -517,10 +539,10 @@ DX(xto_str)
 
    } else if (GPTRP(p) || MPTRP(p)) {
       const char *s = String(p);
-      if (s && mm_ismanaged(s) && mm_typeof(s)==mt_blob)
+      if (s && mm_ismanaged(s)) // && mm_typeof(s)==mt_blob)
          return NEW_STRING(s);
       else
-         RAISEF("not pointer to a string", p);
+         RAISEF("not a managed address", p);
    } else
       RAISEF("not a pointer or string", p);
 
