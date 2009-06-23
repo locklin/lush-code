@@ -116,17 +116,10 @@ extern LUSHAPI char *rterr_bad_dimensions;
 /* CHECKING OBJECTS                         */
 /* ---------------------------------------- */
 
-LUSHAPI void check_obj_class(void *obj, void *classvtable);
-LUSHAPI int  test_obj_class(void *obj, void *classvtable);
-
 /* ---------------------------------------- */
 /* CHECKING MATRICES                        */
 /* ---------------------------------------- */
 
-
-LUSHAPI void *lush_malloc(size_t, const char *, int);
-//LUSHAPI void srg_resize_mm(storage_t *,size_t , const char *, int);
-#define srg_resize_mm(st, s, f, l)  storage_realloc(st, s, 0)
 LUSHAPI bool idx_emptyp(index_t *);
 
 #define Mnocheck(...)
@@ -156,22 +149,13 @@ LUSHAPI bool idx_emptyp(index_t *);
 	if((i1)->dim[j] != (i2)->dim[j]) \
 	    lush_error(rterr_not_same_dim);}
 
-#define Mstr_alloc(s, len)  \
-    s = mm_blob(len*sizeof(char)); 
-
-/* s = lush_malloc(len*sizeof(char), __FILE__, __LINE__);  */
-
-/* #define Msrg_resize(sr, new_size) \ */
-/*       srg_resize_compiled(sr, new_size, __FILE__, __LINE__);  */
-
-#define Msrg_resize(sr, new_size) \
-   if((sr)->size < (size_t)(new_size)) { \
-      srg_resize_mm(sr, new_size, __FILE__, __LINE__); \
-   } else if ((sr)->size > (size_t)(new_size)) { \
-      srg_resize_mm(sr, new_size, __FILE__, __LINE__); \
+#define Msrg_resize(sr, new_size)                                    \
+   if((sr)->size < (size_t)(new_size)) {                             \
+      storage_realloc(sr, new_size, 0);                              \
+   } else if ((sr)->size > (size_t)(new_size)) {                     \
+      storage_realloc(sr, new_size, 0);                              \
       fprintf(stderr, "*** Warning: shrinking storage at %p\n", sr); \
    }
-/*       lush_error(rterr_cannot_shrink); */
 
 #define Midx_checksize0(i1) { \
     size_t siz = (i1)->offset + 1; \
@@ -360,7 +344,7 @@ LUSHAPI void check_m2in_m2in_m4out(index_t *i0,
 
 /* -------------------------------------------------------------
    Local Variables:
-   c-font-lock-extra-types: (
-     "FILE" "\\sw+_t" "at" "gptr" "real" "flt" "intg" )
+   c-file-style: "k&r"
+   c-basic-offset: 3
    End:
    ------------------------------------------------------------- */

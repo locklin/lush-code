@@ -850,6 +850,12 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
    }
 }
 
+index_t *new_empty_index(int r)
+{
+   index_t *ind = new_index(NULL, NULL);
+   IND_NDIMS(ind) = r;
+   return ind;
+}
 
 struct CClass_object *new_cobject(dhclassdoc_t *cdoc)
 {
@@ -1103,6 +1109,40 @@ DHCLASSDOC(Kc_object, NULL, object, "object", Vt_object, 0) =
    DH_NIL
 };
 
+
+int test_obj_class(void *obj, void *classvtable)
+{
+   if (obj) {
+
+      struct VClass_object *vtable = *(struct VClass_object**)obj;
+      while (vtable && vtable != classvtable) {
+         /* This is tricky because Cdoc contains
+            different things in the NOLISP case. */
+#ifndef NOLISP
+         dhclassdoc_t *cdoc = (dhclassdoc_t*)(vtable->Cdoc);
+         if (! cdoc)
+	    lush_error("Found null Cdoc in virtual table");
+         if (vtable != cdoc->lispdata.vtable)
+	    lush_error("Found improper Cdoc in virtual table");
+         cdoc = cdoc->lispdata.ksuper;
+         vtable = (cdoc) ? cdoc->lispdata.vtable : 0;
+#else
+         vtable = (struct VClass_object*)(vtable->Cdoc);
+#endif
+      }
+      if (vtable && vtable == classvtable)
+         return 1;
+   }
+  return 0;
+}
+
+void check_obj_class(void *obj, void *classvtable)
+{
+   if (! obj)
+      lush_error("Casting a null gptr as an object");
+   if (! test_obj_class(obj, classvtable))
+      lush_error("Illegal object cast");
+}
 
 
 /* ---------------------------------------------

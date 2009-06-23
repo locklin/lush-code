@@ -251,7 +251,6 @@ max = (idx)->offset; \
   storage_t *newi = &name2(_st_,newi)
 
 #define Msrg_init(newi, st_type)  \
-  (newi)->backptr = (void *)0;    \
         (newi)->size = 0;         \
         (newi)->data = NULL;      \
         (newi)->type = st_type;   \
