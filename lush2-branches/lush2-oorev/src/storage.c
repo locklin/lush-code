@@ -61,15 +61,6 @@ static void mark_storage(storage_t *st)
       MM_MARK(st->data);
 }
 
-static storage_t *storage_dispose(storage_t *);
-
-static bool finalize_storage(storage_t *st)
-{
-   //printf("finalize_storage(%p)\n", st);
-   storage_dispose(st);
-   return true;
-}
-
 static mt_t mt_storage = mt_undefined;
 
 
@@ -333,35 +324,6 @@ void (*storage_setat[ST_LAST])(storage_t *, size_t, at *) = {
 
 /* ------- THE CLASS FUNCTIONS ------ */
 
-static storage_t *storage_dispose(storage_t *st)
-{
-   if (ZOMBIEP(st->backptr))
-      return st;
-   
-   short kind = st->flags & STS_MASK;
-   if (kind == STS_MALLOC) {
-      free(st->data);
-      st->data = NULL;
-   }
-   
-#ifdef HAVE_MMAP
-   if (kind == STS_MMAP) {
-      if (st->mmap_addr) {
-#ifdef UNIX
-         munmap(st->mmap_addr, st->mmap_len);
-#endif
-#ifdef WIN32
-         UnmapViewOfFile(st->mmap_addr);
-         CloseHandle((HANDLE)(st->mmap_xtra));
-#endif
-         st->mmap_addr = NULL;
-      }
-   }
-#endif // HAVE_MMAP
-   zombify(st->backptr);
-   return st;
-}
-
 static const char *storage_name(at *p)
 {
    storage_t *st = (storage_t *)Mptr(p);
@@ -476,7 +438,6 @@ storage_t *new_storage(storage_type_t t)
    st->size = 0;
    st->data = NULL;
    st->backptr = new_at(storage_class[st->type], st);
-   //add_notifier(st, dbg_notify, NULL);
    return st;
 }
 
@@ -664,6 +625,26 @@ DX(xstorage_clear)
 
 #ifdef HAVE_MMAP
 
+static void storage_notify(storage_t *st, void *_)
+{
+   short kind = st->flags & STS_MASK;
+
+#ifdef HAVE_MMAP
+   if (kind == STS_MMAP) {
+      if (st->mmap_addr) {
+#ifdef UNIX
+         munmap(st->mmap_addr, st->mmap_len);
+#endif
+#ifdef WIN32
+         UnmapViewOfFile(st->mmap_addr);
+         CloseHandle((HANDLE)(st->mmap_xtra));
+#endif
+         st->mmap_addr = NULL;
+      }
+   }
+#endif // HAVE_MMAP
+}
+
 void storage_mmap(storage_t *st, FILE *f, size_t offset)
 {
 #if HAVE_FSEEKO
@@ -679,10 +660,12 @@ void storage_mmap(storage_t *st, FILE *f, size_t offset)
    size_t len = (size_t)ftell(f);
 #endif
    rewind(f);
-   if (st->type == ST_AT)
-      RAISEF("cannot map an AT storage", st->backptr);
+   if (st->type==ST_MPTR || st->type==ST_GPTR)
+      RAISEF("cannot mmap a pointer storage", st->backptr);
+   if (st->type==ST_AT)
+      RAISEF("cannot mmap an atom-storage", st->backptr);
    ifn (st->data == NULL)
-      RAISEF("unsized storage required", st->backptr);
+      RAISEF("not an unallocated storage", st->backptr);
 #ifdef UNIX
    gptr addr = mmap(0,len,PROT_READ,MAP_SHARED,fileno(f),0);
    if (addr == (void*)-1L)
@@ -703,6 +686,7 @@ void storage_mmap(storage_t *st, FILE *f, size_t offset)
    st->mmap_addr = addr;
    st->size = (len - offset) / storage_sizeof[st->type];
    st->data = (char *)(st->mmap_addr)+offset;
+   add_notifier(st, (wr_notify_func_t *)storage_notify, NULL);
 }
 
 DX(xstorage_mmap)
@@ -907,7 +891,6 @@ class_t *storage_class[ST_LAST];
 
 #define Generic_storage_class_init(tok, type)                           \
    (storage_class[ST_ ## tok]) = new_builtin_class(abstract_storage_class); \
-   (storage_class[ST_ ## tok])->dispose = (dispose_func_t *)storage_dispose; \
    (storage_class[ST_ ## tok])->name = storage_name;                    \
    (storage_class[ST_ ## tok])->listeval = storage_listeval;            \
    (storage_class[ST_ ## tok])->serialize = storage_serialize;          \
@@ -920,7 +903,7 @@ void init_storage()
    assert(sizeof(char)==sizeof(uchar));
 
    mt_storage = MM_REGTYPE("storage", sizeof(storage_t),
-                           clear_storage, mark_storage, finalize_storage);
+                           clear_storage, mark_storage, 0);
 
    /* set up storage_classes */
    abstract_storage_class = new_builtin_class(NIL);
