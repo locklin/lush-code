@@ -84,8 +84,6 @@ static hashtable_t *htable_dispose(hashtable_t *h);
 
 static bool finalize_hashtable(hashtable_t *h)
 {
-   //printf("finalizer for hash table at 0x%x invoked\n",
-   //       (unsigned int) h);
    htable_dispose(h);
    return true;
 }
@@ -103,8 +101,7 @@ static mt_t mt_hashtable = mt_undefined;
 static hashtable_t *htable_dispose(hashtable_t *h)
 {
    if (h->table) {
-      ifn (h->keylockp)    /* we used weak references */
-         del_notifiers_with_context(h);
+      del_notifiers_with_context(h);
       h->table = NULL;
    }
    return h;

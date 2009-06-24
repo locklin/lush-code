@@ -29,9 +29,15 @@
 
 /*
  * Objects holding weak references to another object may 
- * register a "notifier function" for the referent object.
+ * register a "notify function" for the referent object.
  * When the memory manager reclaims the referent object,
  * the notifier function gets called.
+ *
+ * The notification mechanism may hold an optional context
+ * pointer to be provided to the notify function. When the
+ * context becomes obsolete, the notifier hash needs to
+ * be cleared of the corresponding entries 
+ * (del_notifiers_with_context).
  */
 
 typedef struct notifier {
@@ -46,13 +52,11 @@ static notifier_t **notifiers;
 static void clear_notifier(notifier_t *n, size_t _)
 {
    n->next = NULL;
-   n->context = NULL;
 }
 
 static void mark_notifier(notifier_t *n)
 {
    MM_MARK(n->next);
-   MM_MARK(n->context);
 }
 
 static mt_t mt_notifier = mt_undefined;
