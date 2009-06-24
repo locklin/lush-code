@@ -968,16 +968,17 @@ static inline at *dharg_to_at(dharg *arg, dhrecord *drec)
    }
 }
 
-extern at **dx_sp; /* in function.c */
-
 /* dh_listeval -- calls a compiled function */
-static at *_dh_listeval(at *p, at *q)
+static at *dh_listeval(at *p, at *q)
 {
+   extern at **dx_sp; /* in function.c */
+
 #define MAXARGS 256
    dharg _args[MAXARGS+1];
    dharg *args = _args+1;
 
-   //printf("dh_listeval: %s\n", pname(q));
+   MM_ENTER;
+
    /* Find and check the DHDOC */
    struct cfunction *cfunc = Mptr(p);
    if (CONSP(cfunc->name))
@@ -1052,33 +1053,10 @@ static at *_dh_listeval(at *p, at *q)
       error(NIL,"Run-time error in compiled code",NIL);
 
    dx_sp = arg_pos-1;
-   return atfuncret;
+
+   MM_RETURN(atfuncret);
 #undef MAXARGS
 }
-
-/* we must pause while in compiled code gc to avoid reentrant calls
- * to dh_listeval by finalizers 
- */
-at *dh_listeval(at *p, at *q)
-{
-   struct context c;
-   MM_ENTER;
-   MM_PAUSEGC;
-   context_push(&c);
-  
-   if (sigsetjmp(context->error_jump, 1)) {
-      MM_PAUSEGC_END;
-      context_pop();
-      siglongjmp(context->error_jump, -1);
-   }
-   at *result = _dh_listeval(p, q);
-   
-   MM_PAUSEGC_END;
-   context_pop();
-   
-   MM_RETURN(result);
-}
-
 
 
 /* ---------------------------------------------
