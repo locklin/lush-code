@@ -130,6 +130,7 @@ object_t *oostruct_dispose(object_t *obj)
       class_t *cl = Class(obj->backptr);
       while (cl) {
          struct hashelem *hx = _getmethod(cl, at_destroy);
+         cl = cl->super;
          if (! hx)
             break;
          else if (hx->function == f)
@@ -138,7 +139,6 @@ object_t *oostruct_dispose(object_t *obj)
             break;
          call_method(obj->backptr, hx, NIL);
          f = hx->function;
-         cl = cl->super;
       }
    }
    
