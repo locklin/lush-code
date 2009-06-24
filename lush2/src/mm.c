@@ -96,7 +96,7 @@
 #define MIN_MANAGED     0x40000
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
-#define MAX_VOLUME      0x300000    /* max volume threshold */
+#define MAX_VOLUME      (0xC0000*sizeof(void *))    /* max volume threshold */
 #define NUM_IDLE_CALLS  100
 
 #define HMAP_NUM_BITS   4
@@ -1833,6 +1833,11 @@ char *mm_info(int level)
       BPRINTF("                 : %.2f MByte for offheap array\n",
               ((double)man_size*sizeof(managed[0]))/(1<<20));
    }
+
+   if (level<=1)
+      return mm_strdup(buffer);
+
+   BPRINTF("GC threshold     : %.2f MByte\n", (double)volume_threshold/(1<<20));
    if (mm_debug_enabled) {
       BPRINTF("Debugging code   : enabled\n");
    } else {
@@ -1842,9 +1847,6 @@ char *mm_info(int level)
    if (collect_in_progress)
       BPRINTF("*** GC in progress ***\n");
 
-   if (level<=1)
-      return mm_strdup(buffer);
-   
    int active_roots = 0;
    for (int i = 0; i<=roots_last; i++)
       if (*roots[i])
