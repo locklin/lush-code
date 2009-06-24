@@ -674,20 +674,22 @@
     ;; generate destructor (null for now)
     (dhc-add-program
      (append (list  "" "/*" (sprintf " * CLASS %l DESTROY" fname) " */")
-             (list (sprintf "static void Cdestroy_C_%s(gptr g)\n" cname) "{")
+             (list (sprintf "static void Cdestroy_C_%s(struct CClass_%s *g)\n" cname cname) "{")
+             (list "assert(g->Vtbl);")
              (when vtsupername ;; call successive destructors
-               (list (concat "struct VClass_object *super = "
-                             "(struct VClass_object*)(char*)(&"
-                             vtsupername ");" )) )
+               (list (sprintf "struct VClass_object *super = (struct VClass_object *)(char*)(&%s);"
+                             vtsupername)) )
              (let ((dtype ()))
-               (each ((treetype (cadr treetype)))
+               (dolist (treetype (cadr treetype))
                  (when (= (car treetype) '-destructor)
                    (setq dtype treetype) ) )
                (when dtype ;; found destructor
                  (list (sprintf "C_%s_C_%s((struct CClass_%s*)g);"
                                 "_destructor" cname cname )) ) )
              (when vtsupername
-               (list "super->Cdestroy(g);") )
+               (list "super->Cdestroy((struct CClass_object *)g);") )
+             ;; set Vtbl pointer to NULL so that we notice when called twice
+             (list "g->Vtbl = NULL;")  
              (list "}") ) )
     
     ;; generate mark method

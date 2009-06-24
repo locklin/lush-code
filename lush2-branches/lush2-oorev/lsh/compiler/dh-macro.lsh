@@ -1184,9 +1184,20 @@
     (setq :ret:tn-list (cons tn :ret:tn-list))
     ret))
 
-;; XXX: do we need compiler macros for lete?
-(dhm-t-declare let lete)
-(dhm-c-declare let let* lete)
+(dhm-t lete (source)
+  (when (not (cddr source))
+    (dhc-error "'lete syntax error") )
+  (let ((syms (mapcar car (cadr source))))
+    (dhc-parse-replacement-source-t
+     source
+     `(let ,(cadr source)
+        (prog1 (progn ,@(cddr source))
+          ,@(domapcar ((sym syms))
+             `(delete ,sym)) ))
+     )))
+
+(dhm-t-declare let)
+(dhm-c-declare let let*)
 
 
 
@@ -3901,6 +3912,35 @@
           ,@(cddr source)))
      )))
 
+(dhm-t delete (source)
+  (when (<> (length source) 2)
+    (dhc-error "one argument expected"))
+  (let ((tn (dhc-parse-expr-t (cadr source))))
+    (new t-node (list tn) (new dhc-type 'dht-nil)) ))
+
+(dhm-c delete (source treetype retplace)
+  (let* ((tn (cadr :treetype:tn-list))
+         (ty :tn:type)
+         (src (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ())))
+    (when (==> ty is-a-ptr)
+      (setq ty (==> ty is-a-ptr)) )
+    (dhc-add-c-statements 
+     (cond
+      ((==> ty is-an-obj)
+       (sprintf "{ struct CClass_object *obj = (void *)%s; obj->Vtbl->Cdestroy(obj); }" src) )
+      ((==> ty is-a-str)
+       "/* delete a string */" ) ; ignore
+      ((==> ty is-an-idx)
+       (sprintf "lush_delete(*((at **)%s));" src) )
+      ((==> ty is-a-srg)
+       (sprintf "lush_delete(*((at **)%s));" src) )
+      ((==> ty is-a-number)
+       "/* delete a number */" ) ; ignore
+      ((==> ty is-a-bool)
+       "/* delete a bool */" ) ; ignore
+      (t
+       (dhc-error "cannot delete object in compiled code" (cadr source)) )))))
+
 ;; (dhm-t with-object(source)
 ;;   (when (> 1 (length source))
 ;;     (dhc-error "one or more arguments expected"))
@@ -3937,6 +3977,7 @@
 ;;          (sprintf "extern_c dhclassdoc_t %s;" kname))
 ;;         (dhc-add-c-depends kname) ) )
 ;;     ret ) )
+
 
 (dhm-t scope(source)
   (when (> 3 (length source))

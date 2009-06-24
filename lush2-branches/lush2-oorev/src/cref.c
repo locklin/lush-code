@@ -205,7 +205,11 @@ class_t *cref_mptr_class;
 
 static at *cref_object_selfeval(at *p)
 {
-   return (*((struct CClass_object **)Gptr(p)))->__lptr->backptr;
+   struct CClass_object *cobj = *((struct CClass_object **)Gptr(p));
+   if (cobj->__lptr)
+      return cobj->__lptr->backptr;
+   else
+      return new_object_from_cobject(cobj)->backptr;
 }
 
 static void cref_object_setslot(at *self, at *slot, at *val)

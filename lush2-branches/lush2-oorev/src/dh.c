@@ -857,13 +857,6 @@ index_t *new_empty_index(int r)
    return ind;
 }
 
-struct CClass_object *new_cobject(dhclassdoc_t *cdoc)
-{
-   assert(cdoc->lispdata.atclass);
-   object_t *obj = new_object(Mptr(cdoc->lispdata.atclass));
-   return obj->cptr;
-}
-
 static void make_temporary(dhrecord *drec, dharg *arg)
 {
    switch (drec->op) {
@@ -945,8 +938,10 @@ static inline at *dharg_to_at(dharg *arg, dhrecord *drec)
    case DHT_OBJ:
    {
       assert(arg->dh_obj_ptr);
-      assert(arg->dh_obj_ptr->__lptr);
-      return arg->dh_obj_ptr->__lptr->backptr;
+      if (arg->dh_obj_ptr->__lptr)
+         return arg->dh_obj_ptr->__lptr->backptr;
+      else
+         return new_object_from_cobject(arg->dh_obj_ptr)->backptr;
    }
    case DHT_LIST:
    {
@@ -1092,12 +1087,14 @@ at *dh_listeval(at *p, at *q)
 
 dhclassdoc_t Kc_object;
 
-static void Cdestroy_C_object(gptr p)
+static void Cdestroy_C_object(struct CClass_object *cobj)
 {
+   if (cobj->__lptr)
+      cobj->__lptr->cptr = NULL;
 }
 
 struct VClass_object Vt_object = { 
-   (void*)&Kc_object, 
+   (void*)&Kc_object,
    &Cdestroy_C_object,
    NULL
 };
@@ -1108,6 +1105,44 @@ DHCLASSDOC(Kc_object, NULL, object, "object", Vt_object, 0) =
    DH_END_CLASS, 
    DH_NIL
 };
+
+/* cobject memory type */
+
+static void clear_cobject(void *p, size_t n)
+{
+   memset(p, 0, n);
+}
+
+/* if Vtbl is NULL, object has been destructed */
+
+static void mark_cobject(struct CClass_object *cobj)
+{
+   if (cobj->__lcl->live && cobj->Vtbl) {
+      MM_MARK(cobj->__lcl);
+      if (cobj->Vtbl->__mark)
+         cobj->Vtbl->__mark(cobj);
+   }
+}
+
+static bool finalize_cobject(struct CClass_object *cobj)
+{
+   if (cobj->__lcl->live && cobj->Vtbl) {
+      cobj->Vtbl->Cdestroy(cobj);
+   }
+   return true;
+}
+
+static mt_t mt_cobject = mt_undefined;
+
+
+struct CClass_object *new_cobject(dhclassdoc_t *cdoc)
+{
+   struct CClass_object *cobj = mm_allocv(mt_cobject, cdoc->lispdata.size);
+   cobj->Vtbl = cdoc->lispdata.vtable;
+   cobj->__lcl = Mptr(cdoc->lispdata.atclass);
+   cobj->__lptr = NULL;
+   return cobj;
+}
 
 
 int test_obj_class(void *obj, void *classvtable)
@@ -1138,10 +1173,14 @@ int test_obj_class(void *obj, void *classvtable)
 
 void check_obj_class(void *obj, void *classvtable)
 {
+   struct CClass_object *cobj = obj;
    if (! obj)
-      lush_error("Casting a null gptr as an object");
-   if (! test_obj_class(obj, classvtable))
+      lush_error("Attempt to cast NULL-pointer to object");
+   if (! cobj->Vtbl)
+      lush_error("Attempt to cast zombie to object");
+   if (! test_obj_class(obj, classvtable)) {
       lush_error("Illegal object cast");
+   }
 }
 
 
@@ -1150,6 +1189,8 @@ void check_obj_class(void *obj, void *classvtable)
    --------------------------------------------- */
 
 class_t *dh_class;
+
+#define SIZEOF_COBJECT (sizeof(struct CClass_object) + MIN_NUM_SLOTS*sizeof(mptr))
 
 void init_dh(void)
 {
@@ -1164,6 +1205,8 @@ void init_dh(void)
    assert(ST_GPTR  == DHT_GPTR);
    assert(ST_MPTR  == DHT_MPTR);
 
+   mt_cobject = MM_REGTYPE("cobject", SIZEOF_COBJECT,
+                           clear_cobject, mark_cobject, finalize_cobject);
    /* setup object class */
    object_class->classdoc = &Kc_object;
    Kc_object.lispdata.atclass = object_class->backptr;

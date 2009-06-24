@@ -31,10 +31,36 @@
 #include "header.h"
 #include "dh.h"
 
-/* objects with less or equal MIN_NUM_SLOTS slots will
- * be allocated via mm_alloc.
+/* Notes on the object implementation:
+ *
+ * 1. An object of a compiled class or which has a compiled
+ *    superclass has a "compiled part". The compiled part is
+ *    the C-side representation of the object that is passed
+ *    to compiled functions and methods.
+ * 
+ * 2. When the interpreter creates an OO object it also
+ *    creates its compiled part (in new_object) and creates
+ *    cref objects for all compiled slots. There is no copying
+ *    of data for compiled slots, the data is in the compiled
+ *    part and is being accessed through the cref objects.
+ * 
+ * 3. When OO objects are being created in compiled code, they
+ *    are being created without the representation for the
+ *    interpreter (new_cobject in dh.c). The part for the 
+ *    interpreter is being created when necessary by the
+ *    dh-interface.
+ * 
+ * 4. The OO objects used by the interpreter keep the compiled
+ *    parts alive but not the other way around. Thus, the 
+ *    finalizer for object_t objects must NULLify the C-side 
+ *    __lptr.
+ *
+ * 5. Both the compiled representation and the interpreter
+ *    representation need finalizers since C-side objects
+ *    may exist without the interpreter counterpart. To ensure
+ *    that compiled destructors are not called twice, compiled
+ *    destructors NULLify the Vtbl-pointer when done.
  */
-#define MIN_NUM_SLOTS  8
 
 static at *at_progn;
 static at *at_mexpand;
@@ -45,12 +71,11 @@ static at *at_unknown;
 
 static struct hashelem *_getmethod(class_t *cl, at *prop);
 static at *call_method(at *obj, struct hashelem *hx, at *args);
-static void send_delete(object_t *);
 
-static void clear_object(object_t *obj, size_t _)
+
+static void clear_object(void *obj, size_t n)
 {
-   obj->backptr = NULL;
-   obj->cptr = NULL;
+   memset(obj, 0, n);
 }
 
 static void mark_object(object_t *obj)
@@ -59,14 +84,17 @@ static void mark_object(object_t *obj)
    MM_MARK(obj->cptr);
    class_t *cl = Class(obj->backptr);
    MM_MARK(cl);
-   for (int i = 0; i < cl->num_slots; i++) {
+   for (int i = 0; i < cl->num_cslots; i++)
+      MM_MARK(obj->slots[i]);
+
+   for (int i = cl->num_cslots; i < cl->num_slots; i++) {
       at *p = obj->slots[i];
-      /* this is a hack until I figure how to do finalization right */
       if (HAS_BACKPTR_P(p))
          MM_MARK(Mptr(p))
       else
          MM_MARK(p);
    }
+
 }
 
 static bool finalize_object(object_t *obj)
@@ -78,20 +106,6 @@ static bool finalize_object(object_t *obj)
 }
 
 static mt_t mt_object = mt_undefined;
-
-static void clear_cobject(void *p, size_t s)
-{
-   memset(p, 0, s);
-}
-
-static void mark_cobject(struct CClass_object *obj)
-{
-   MM_MARK(obj->__lptr);
-   if (obj->Vtbl->__mark)
-      obj->Vtbl->__mark(obj);
-}
-
-static mt_t mt_cobject = mt_undefined;
 
 
 /* ------ OBJECT CLASS DEFINITION -------- */
@@ -108,13 +122,31 @@ object_t *oostruct_dispose(object_t *obj)
    context_push(&mycontext);
   
    int errflag = sigsetjmp(context->error_jump,1);
-   if (errflag==0)
-      send_delete(obj);
+   if (errflag==0) {
+      /* call all destructors for interpreted part */
+      /* destructors for compiled part are called  */
+      /* by finalizer for compiled part            */
+      at *f = NIL;
+      class_t *cl = Class(obj->backptr);
+      while (cl) {
+         struct hashelem *hx = _getmethod(cl, at_destroy);
+         if (! hx)
+            break;
+         else if (hx->function == f)
+            continue;
+         else if (classof(hx->function) == dh_class)
+            break;
+         call_method(obj->backptr, hx, NIL);
+         f = hx->function;
+         cl = cl->super;
+      }
+   }
    
    context_pop();
    error_doc.ready_to_an_error = oldready;
    
-   obj->cptr = NULL;
+   if (obj->cptr)
+      obj->cptr->__lptr = NULL;
    zombify(obj->backptr);
 
    if (errflag) {
@@ -399,7 +431,7 @@ static const char *class_name(at *p)
       sprintf(string_buffer, "::class:%p", cl);
    
    if (!cl->live)
-      strcat(string_buffer, " (obsolete)");
+      strcat(string_buffer, " (unlinked)");
 
    return mm_strdup(string_buffer);
 }
@@ -619,7 +651,36 @@ DX(xmake_class)
 
 /* -------- OBJECT DEFINITION ----------- */
 
-object_t *new_object(class_t *cl)
+static void make_cref_slots(object_t *obj)
+{
+   assert(obj->cptr);
+   dhclassdoc_t *cdoc = obj->cptr->Vtbl->Cdoc;
+   const class_t *cl = Mptr(cdoc->lispdata.atclass);
+
+   /* initialize compiled slots */
+   int k = cl->num_cslots;
+   int j = cl->num_cslots;
+   while (cl) {
+      /* do slots declare in this class */
+      dhrecord *drec = cl->classdoc->argdata;
+      j -= drec->ndim;
+      assert(j>=0);
+      drec = drec + 1;
+      for (int i=j; i<k; i++) {
+         assert(drec->op == DHT_NAME);
+         void *p = (char *)(obj->cptr)+(ptrdiff_t)(drec->arg);
+         obj->slots[i] = new_cref((drec+1)->op, p);
+         //assign(cl->slots[i], cl->defaults[i]);
+         drec = drec->end;
+      }
+      assert(drec->op == DHT_END_CLASS);
+      cl = cl->super;
+      k = j;
+   }
+   assert(j==0);
+}
+
+static object_t *_new_object(class_t *cl, struct CClass_object *cobj)
 {
    MM_ENTER;
    if (builtin_class_p(cl))
@@ -629,41 +690,26 @@ object_t *new_object(class_t *cl)
    object_t *obj = mm_allocv(mt_object, s);
    obj->cptr = NULL;
 
-   /* if this or a superclass is compiled, create C object now */
    if (cl->has_compiled_part) {
-      const class_t *c = cl;
-      while (c && !c->classdoc) 
-         c = c->super;
-      assert(c);
-      if (CONSP(c->priminame))
-         check_primitive(c->priminame, c->classdoc);
-      obj->cptr = mm_allocv(mt_cobject, c->classdoc->lispdata.size);
-      obj->cptr->Vtbl = c->classdoc->lispdata.vtable;
-      obj->cptr->__lptr = obj;
-      
-      /* initialize compiled slots */
-      int k = cl->num_cslots;
-      int j = cl->num_cslots;
-      while (c) {
-         /* do slots declare in this class */
-         dhrecord *drec = c->classdoc->argdata;
-         j -= drec->ndim;
-         assert(j>=0);
-         drec = drec + 1;
-         for (int i=j; i<k; i++) {
-            assert(drec->op == DHT_NAME);
-            void *p = (char *)(obj->cptr)+(ptrdiff_t)(drec->arg);
-            obj->slots[i] = new_cref((drec+1)->op, p);
-            //assign(cl->slots[i], cl->defaults[i]);
-            drec = drec->end;
-         }
-         assert(drec->op == DHT_END_CLASS);
-         c = c->super;
-         k = j;
-      }
-      assert(j==0);
-   }
+      if (cobj) {
+         assert(cobj->Vtbl); /* if NULL, object has been destructed */
+         assert(cobj->__lcl==cl);
+         obj->cptr = cobj;
+         cobj->__lptr = obj;
+         make_cref_slots(obj);
 
+      } else {
+         const class_t *c = cl;
+         while (c && !c->classdoc) 
+            c = c->super;
+         assert(c);
+         if (CONSP(c->priminame))
+            check_primitive(c->priminame, c->classdoc);
+         obj->cptr = new_cobject(c->classdoc);
+         obj->cptr->__lptr = obj;
+         make_cref_slots(obj);
+      }
+   }
    /* initialize non-compiled slots */
    for (int i=cl->num_cslots; i<cl->num_slots; i++)
       obj->slots[i] = cl->defaults[i];
@@ -672,6 +718,23 @@ object_t *new_object(class_t *cl)
 
    MM_RETURN(obj);
 }
+
+object_t *new_object(class_t *cl)
+{
+   ifn (cl->live)
+      error(NIL, "class or one of its superclasses is unlinked", NIL);
+   return _new_object(cl, NULL);
+}
+
+object_t *new_object_from_cobject(struct CClass_object *cobj)
+{
+   ifn (cobj->__lcl->live)
+      error(NIL, "attempt to access instance of unlinked class", NIL);
+   assert(cobj->Vtbl);
+   class_t *cl = Mptr(cobj->Vtbl->Cdoc->lispdata.atclass);
+   return _new_object(cl, cobj);
+}
+
 
 DY(ynew)
 {
@@ -1019,44 +1082,32 @@ DX(xsender)
 
 /* ---------------- DELETE ---------------- */
 
-static void send_delete(object_t *obj)
-{
-   at *f = NIL;
-   class_t *cl = Class(obj->backptr);
-   
-   /* return if cl or a superclass has become non-executable */
-   ifn (cl->live)
-      return;
-
-   /* Call all destructors defined in class hierarchy */
-   while (cl) {
-      struct hashelem *hx = _getmethod(cl, at_destroy);
-      cl = cl->super;
-      if (! hx)
-         break;
-      else if (hx->function == f)
-         continue;
-      call_method(obj->backptr, hx, NIL);
-      f = hx->function;
-   }
-}
-
-
 void lush_delete(at *p)
 {
    if (!p || ZOMBIEP(p))
       return;
 
-   if (Class(p)->dontdelete)
+   class_t *cl = classof(p);
+   if (cl->dontdelete)
       error(NIL, "cannot delete this object", p);
    
    run_notifiers(p);
-
-   if (Class(p)->dispose)
-      Mptr(p) = Class(p)->dispose(Mptr(p));
-   else
-      Mptr(p) = NULL;
    
+   if (cl->has_compiled_part) {
+      assert(isa(p, object_class));
+      /* OO objects may have two parts          */
+      /* lush_delete has to delete both of them */
+      object_t *obj = Mptr(p);
+      struct CClass_object *cobj = obj->cptr;
+      oostruct_dispose(obj);
+      cobj->Vtbl->Cdestroy(cobj);
+      
+   } else {
+      if (Class(p)->dispose)
+         Mptr(p) = Class(p)->dispose(Mptr(p));
+      else
+         Mptr(p) = NULL;
+   }
    zombify(p);
 }
 
@@ -1133,14 +1184,11 @@ void pre_init_oostruct(void)
 class_t *object_class, *class_class = NULL;
 
 #define SIZEOF_OBJECT  (sizeof(object_t) + MIN_NUM_SLOTS*sizeof(at *))
-#define SIZEOF_COBJECT (sizeof(struct CClass_object) + MIN_NUM_SLOTS*sizeof(mptr))
 
 void init_oostruct(void)
 {
    mt_object = MM_REGTYPE("object", SIZEOF_OBJECT,
                           clear_object, mark_object, finalize_object);
-   mt_cobject = MM_REGTYPE("cobject", SIZEOF_COBJECT,
-                           clear_cobject, mark_cobject, 0);
    mt_method_hash = 
       MM_REGTYPE("method-hash", 0, 
                  clear_method_hash, mark_method_hash, 0);

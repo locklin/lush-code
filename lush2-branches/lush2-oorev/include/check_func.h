@@ -149,6 +149,9 @@ LUSHAPI bool idx_emptyp(index_t *);
 	if((i1)->dim[j] != (i2)->dim[j]) \
 	    lush_error(rterr_not_same_dim);}
 
+#define Mstr_alloc(s, len)  \
+    s = mm_blob(len*sizeof(char)); 
+
 #define Msrg_resize(sr, new_size)                                    \
    if((sr)->size < (size_t)(new_size)) {                             \
       storage_realloc(sr, new_size, 0);                              \

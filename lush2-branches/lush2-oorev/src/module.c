@@ -819,7 +819,7 @@ static void cleanup_module(module_t *m)
       at *q = Car(p);
       if (CLASSP(q)) {
          class_t *cl = Mptr(q);
-         fprintf(stderr,"*** Warning: unlinking compiled class %s\n", pname(q));
+         //fprintf(stderr,"*** Warning: unlinking compiled class %s\n", pname(q));
          cl->live = false;
          zombify_subclasses(cl);
       }

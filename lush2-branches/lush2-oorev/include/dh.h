@@ -46,6 +46,11 @@
 #endif
 #endif
 
+/* objects with less or equal MIN_NUM_SLOTS slots will
+ * be allocated via mm_alloc.
+ */
+#define MIN_NUM_SLOTS  8
+
 
 /* ----------------------------------------------- */
 /* C++                                             */
@@ -294,15 +299,18 @@ struct dhdoc_s
  *
  */
 
+struct dhclassdoc_s;
+
 struct VClass_object 
 {
-  void  *Cdoc;
-  void (*Cdestroy)(gptr);
-  void (*__mark)(struct CClass_object *obj);
+  struct dhclassdoc_s *Cdoc;
+  void (*Cdestroy)(struct CClass_object *);
+  void (*__mark)(struct CClass_object *);
 };
 
 struct CClass_object {
   struct VClass_object *Vtbl;
+  class_t              *__lcl;
   object_t             *__lptr;
 };
 
