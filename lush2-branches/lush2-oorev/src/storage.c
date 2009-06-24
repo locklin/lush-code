@@ -559,7 +559,7 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    } else if (kind == STS_MM || kind == STS_FOREIGN || kind == STS_MALLOC) {
       /* reallocate memory and update srg */
       MM_ANCHOR(olddata);
-      if (st->type==ST_AT || st->type==ST_GPTR)
+      if (st->type==ST_AT || st->type==ST_MPTR)
          st->data = mm_allocv(mt_refs, s);
       else 
          st->data = mm_blob(s);

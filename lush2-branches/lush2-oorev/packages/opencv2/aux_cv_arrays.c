@@ -26,6 +26,7 @@
  ***********************************************************************/
 
 #include "header.h"
+#undef uchar
 #include <cxtypes.h>
 
 
@@ -54,11 +55,11 @@ int cvmat_typecode(index_t *ind, int nchannels) {
     typecode = CV_MAKE_TYPE(CV_16S, nchannels);
     break;
 
-  case ST_BYTE:
+  case ST_CHAR:
     typecode = CV_MAKE_TYPE(CV_8S, nchannels);
     break;
 
-  case ST_UBYTE:
+  case ST_UCHAR:
     typecode = CV_MAKE_TYPE(CV_8U, nchannels);
     break;
   
