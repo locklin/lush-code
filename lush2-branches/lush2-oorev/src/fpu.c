@@ -115,7 +115,7 @@ DX(xeps)
 #ifdef _FPU_GETCW
 DY(ywith_fpu_env)
 {
-   struct context mycontext;
+   struct lush_context mycontext;
    fpu_control_t control;
    fexcept_t status;
    _FPU_GETCW(control);
@@ -139,7 +139,7 @@ DY(ywith_fpu_env)
 #else
 DY(ywith_fpu_env)
 {
-   struct context mycontext;
+   struct lush_context mycontext;
    fenv_t current_fenv, *saved_fenv = &current_fenv;
 
    if (fegetenv(saved_fenv)) {

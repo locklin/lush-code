@@ -1632,7 +1632,7 @@ DY(yreading)
    else
       RAISEFX("file name or read descriptor expected", fdesc);
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
    context->input_tab = 0;
    context->input_case_sensitive = 0;
@@ -1678,7 +1678,7 @@ DY(ywriting)
    else
       RAISEFX("file name or write descriptor expected", fdesc);
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
    context->output_tab = 0;
    context->output_file = f;
@@ -1722,7 +1722,7 @@ DY(yreading_string)
    ifn (STRINGP(p))
       RAISEFX("string expected", p);
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
    context->input_tab = 0;
    context->input_case_sensitive = 0;

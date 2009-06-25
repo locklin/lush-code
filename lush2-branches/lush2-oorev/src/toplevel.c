@@ -33,9 +33,9 @@
 
 struct error_doc error_doc;
 struct recur_doc recur_doc;
-struct context *context;
+struct lush_context *context;
 
-static struct context first_context;
+static struct lush_context first_context;
 at* at_toplevel;
 static at *at_startup;
 static at *at_break;
@@ -448,7 +448,7 @@ void recur_pop(struct recur_elt *elt)
  * context stack handling context_push(s) context_pop()
  */
 
-void context_push(struct context *newc)
+void context_push(struct lush_context *newc)
 {
    *newc = *context;
    newc->next = context;
@@ -457,7 +457,7 @@ void context_push(struct context *newc)
 
 void context_pop(void)
 {
-   struct context *oldcontext = context;
+   struct lush_context *oldcontext = context;
    if (context->next)
       context = context->next;
    if (oldcontext->input_string && context->input_string)
@@ -491,7 +491,7 @@ void toplevel(const char *in, const char *out, const char *prompts)
    char *ps2 = 0;
    char *ps3 = 0;
    char *saved_prompt = prompt_string;
-   struct context mycontext;
+   struct lush_context mycontext;
 
    /* save debug_tab */
    int debug_tab = error_doc.debug_tab;
@@ -649,7 +649,7 @@ DX(xmeminfo)
 
 DY(ymemprof)
 {
-   struct context c;
+   struct lush_context c;
    int hist[MAX_NUM_MEMTYPES];
    int n = mm_prof_start(NULL);
    assert(n < MAX_NUM_MEMTYPES);
@@ -677,7 +677,7 @@ DY(ymemprof)
 
 DY(ywith_nogc)
 {
-   struct context c;
+   struct lush_context c;
    context_push(&c);
 
    MM_NOGC;

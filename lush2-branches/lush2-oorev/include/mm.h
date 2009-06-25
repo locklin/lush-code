@@ -39,7 +39,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-//#define NVALGRIND
+#define NVALGRIND
 #define MM_SIZE_MAX    (UINT32_MAX*MIN_HUNKSIZE)
 
 

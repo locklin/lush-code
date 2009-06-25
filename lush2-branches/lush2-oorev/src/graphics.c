@@ -150,7 +150,7 @@ DX(xysize)
 
 DX(xfont)
 {
-   struct context mycontext;
+   struct lush_context mycontext;
    
    window_t *win = current_window();
    at *oldfont = win->font;
@@ -586,7 +586,7 @@ DY(ygraphics_batch)
   
    window_t *win = current_window();
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
    (*win->gdriver->begin) (win);
 
@@ -1756,7 +1756,7 @@ DY(ygsave)
    short oldh = win->cliph;
    short oldl = win->linestyle;
 
-   struct context mycontext;
+   struct lush_context mycontext;
    int errorflag = 0;
    at *ans = NIL;
    MM_ANCHOR(oldfont);

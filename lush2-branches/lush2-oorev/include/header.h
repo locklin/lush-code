@@ -191,7 +191,7 @@ struct at {
       double *d;
       void   *p;
       const char *c;
-      struct symbol *s;
+      struct lush_symbol *s;
       struct at *cdr;
    } payload;
 };
@@ -384,8 +384,8 @@ LUSHAPI at *assign(at *, at *);
 
 extern LUSHAPI class_t *symbol_class;
 
-typedef struct symbol { 	/* each symbol is an external AT which */
-   struct symbol *next;
+typedef struct lush_symbol { 	/* each symbol is an external AT which */
+   struct lush_symbol *next;
    struct hash_name *hn;
    at *value;
    at **valueptr;
@@ -393,7 +393,6 @@ typedef struct symbol { 	/* each symbol is an external AT which */
 
 
 #define SYMBOL_LOCKED_BIT      1
-#define SYMBOL_TYPELOCKED_BIT  2
 #define SYMBOL_VARIABLE_BIT    4
 
 /* symbol creation */
@@ -424,8 +423,6 @@ LUSHAPI void  var_lock(at *p);
 LUSHAPI at   *var_get(at *p);
 LUSHAPI at   *var_define(char *s);
 LUSHAPI bool  symbol_locked_p(symbol_t *);
-LUSHAPI bool  symbol_typelocked_p(symbol_t *);
-
 
 /* TOPLEVEL.H ------------------------------------------------- */
 
@@ -472,8 +469,8 @@ extern LUSHAPI struct error_doc {
  * This structure is used to handle exception in the C code.
  */
 
-extern LUSHAPI struct context {
-  struct context *next;
+extern LUSHAPI struct lush_context {
+  struct lush_context *next;
   sigjmp_buf error_jump;
   const char *input_string;
   FILE *input_file;
@@ -485,7 +482,7 @@ extern LUSHAPI struct context {
 
 LUSHAPI int  recur_push_ok(struct recur_elt *elt, void *call, at *p);
 LUSHAPI void recur_pop(struct recur_elt *elt);
-LUSHAPI void context_push(struct context *newc);
+LUSHAPI void context_push(struct lush_context *newc);
 LUSHAPI void context_pop(void);
 LUSHAPI void toplevel(const char *in, const char *out, const char *new_prompt);
 //LUSHAPI void error(char *prefix, char *text, at *suffix) no_return;

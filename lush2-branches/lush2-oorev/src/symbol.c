@@ -28,6 +28,8 @@
 
 #define SYMBOL_CACHE_SIZE 255
 
+#define SYMBOL_TYPELOCKED_BIT  2
+
 #define SYMBOL_LOCKED_P(s)     ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
 #define SYMBOL_TYPELOCKED_P(s) ((uintptr_t)(s->hn) & SYMBOL_TYPELOCKED_BIT)
 #define SYMBOL_VARIABLE_P(s)   ((uintptr_t)(s->hn) & SYMBOL_VARIABLE_BIT)

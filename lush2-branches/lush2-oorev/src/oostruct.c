@@ -118,7 +118,7 @@ object_t *oostruct_dispose(object_t *obj)
    int oldready = error_doc.ready_to_an_error;
    error_doc.ready_to_an_error = true;
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
   
    int errflag = sigsetjmp(context->error_jump,1);
@@ -153,7 +153,8 @@ object_t *oostruct_dispose(object_t *obj)
       if (mm_collect_in_progress())
          /* we cannot longjump when called by a finalizer */
          fprintf(stderr, "*** Warning: error occurred while gc in progress\n");
-      siglongjmp(context->error_jump, -1L);
+      else
+         siglongjmp(context->error_jump, -1L);
    }
    return obj;
 }
@@ -768,7 +769,6 @@ DX(xnew_empty)
 /* copied from symbol.c */
 
 #define LOCK_SYMBOL(s)         SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
-#define TYPELOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
 #define MARKVAR_SYMBOL(s)      SET_PTRBIT(s->hn, SYMBOL_VARIABLE_BIT)
 
 at *with_object(at *p, at *f, at *q, int howfar)
