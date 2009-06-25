@@ -1175,13 +1175,13 @@ static stack_elem_t stack_elt(mmstack_t *st, int i)
    return sp[i];
 }
 
-/* push two chunks worth of numbers on stack,
+/* push five chunks worth of numbers on stack,
  * index, and pop.
  */
 
 static bool stack_works_fine(mmstack_t *st)
 {
-   intptr_t n = 2*STACK_ELTS_PER_CHUNK+2;
+   intptr_t n = 5*STACK_ELTS_PER_CHUNK+2;
    
    assert(sizeof(stack_chunk_t) ==
           (STACK_ELTS_PER_CHUNK+1)*sizeof(stack_elem_t));
@@ -1196,22 +1196,30 @@ static bool stack_works_fine(mmstack_t *st)
    /* test indexing */
    for (intptr_t i = 0; i < n; i++) {
       if ((n-i) != (intptr_t)stack_elt(st, i)) {
-         mm_printf("unexpected element on stack: %" PRIdPTR " (should be %" PRIdPTR")\n",
-                   (intptr_t)stack_elt(st,i), (n-i));
+         warn("unexpected element on stack: %" PRIdPTR " (should be %" PRIdPTR")\n",
+              (intptr_t)stack_elt(st,i), (n-i));
          return false;
       }
    }
 
    /* test popping and stack_empty */
-   n--;
    while (!stack_empty(st)) {
-      intptr_t i = (intptr_t)stack_pop(st)-1;
+      intptr_t i = (intptr_t)stack_pop(st);
       if (n != i) {
-         mm_printf("unexpected element on stack: %" PRIdPTR " (should be %" PRIdPTR ")\n",
+         warn("unexpected element on stack: %" PRIdPTR " (should be %" PRIdPTR ")\n",
                    i, n);
          return false;
       }
       n--;
+      if (stack_depth(st)!=n) {
+         warn("stack_depth reports wrong depth: %d (should be %" PRIdPTR ")\n",
+              stack_depth(st), n);
+         return false;
+      }
+   }
+   if (n) {
+      mm_printf("inconsistent element count: %" PRIdPTR " (should be 0)\n", n);
+      return false;
    }
    return true;
 }
