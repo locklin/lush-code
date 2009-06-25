@@ -714,11 +714,11 @@ void sym_set(symbol_t *s, at *q, bool in_global_scope)
       s->value = NIL;
       s->valueptr = &(s->value);
    }
-   if (SYMBOL_TYPELOCKED_P(s)) {
-      class_t *cl = classof(*(s->valueptr));
-      ifn (isa(q, cl))
-         error(NIL, "invalid assignment to type-locked symbol", SYM_HN(s)->named);
-   }
+/*    if (SYMBOL_TYPELOCKED_P(s)) { */
+/*       class_t *cl = classof(*(s->valueptr)); */
+/*       ifn (isa(q, cl)) */
+/*          error(NIL, "invalid assignment to type-locked symbol", SYM_HN(s)->named); */
+/*    } */
    *(s->valueptr) = q;
 }
 
@@ -761,10 +761,10 @@ bool symbol_locked_p(symbol_t *s)
    return SYMBOL_LOCKED_P(s);
 }
 
-bool symbol_typelocked_p(symbol_t *s)
-{
-   return SYMBOL_TYPELOCKED_P(s);
-}
+/* bool symbol_typelocked_p(symbol_t *s) */
+/* { */
+/*    return SYMBOL_TYPELOCKED_P(s); */
+/* } */
 
 
 DX(xset)
