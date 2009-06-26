@@ -103,9 +103,6 @@ extern void init_win_driver(void);
 int isatty (int);
 #endif
 
-/* From AT.C */
-//extern int compute_bump_active;
-
 /* From DUMP.C */
 extern int isdump (const char *s);
 extern void undump (const char *s);
@@ -799,7 +796,6 @@ static const char *error_text(void)
 void user_break(char *s)
 {
    eval_ptr = eval_std;
-   //compute_bump_active = 0;
    if (error_doc.ready_to_an_error == false)
       lastchance("Break");
    
@@ -848,7 +844,6 @@ void error(const char *prefix, const char *text, at *suffix)
       lush_error(text);
 
    eval_ptr = eval_std;
-   //compute_bump_active = 0;
    
    if (error_doc.ready_to_an_error == false)
       lastchance(text);

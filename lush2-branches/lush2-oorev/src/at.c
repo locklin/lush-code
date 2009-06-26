@@ -56,10 +56,6 @@ at *new_at(class_t *cl, void *obj)
    Mptr(new) = obj;
    AssignClass(new, cl);
 
-   /* This is used by 'compute_bump' */
-/*    if (compute_bump_active) { */
-/*       compute_bump_list = cons(new,compute_bump_list); */
-/*    } */
    return new;
 }
 
@@ -78,65 +74,6 @@ DX(xcons)
     return new_cons(APOINTER(1), APOINTER(2));
  }
 
-
-at *new_at_number(double x)
-{
-   double *d = mm_alloc(mt_blob8);
-   *d = x;
-   return new_at(number_class, d);
-}
-
-/*
- * This strange function allows us to compute the 'simulated
- * bumping list' during a progn. This is used for the interpreted
- * 'in-pool' and 'in-stack' emulation.
- */
-
- /* int compute_bump_active = 0; */
- static at *compute_bump_list = 0;
-
- /* DY(ycompute_bump) */
- /* { */
- /*    at *ans; */
- /*    at *bump; */
- /*    at *temp; */
- /*    at *sav_compute_bump_list = compute_bump_list; */
- /*    int sav_compute_bump_active = compute_bump_active; */
-
- /*    /\* execute program in compute_bump mode *\/ */
- /*    compute_bump_active = 1; */
- /*    compute_bump_list = NIL; */
- /*    at *ans = progn(ARG_LIST); */
- /*    at *bump = compute_bump_list; */
- /*    compute_bump_list = sav_compute_bump_list; */
- /*    compute_bump_active = sav_compute_bump_active; */
-
- /*    /\* remove objects with trivial count *\/ */
- /*    int flag = 1; */
- /*    while (flag) { */
- /*       flag = 0; */
- /*       at **where = &bump; */
-
- /*       while (CONSP(*where)) { */
- /*          if ((*where)->Car && (*where)->Car->count>1) { */
- /*             where = &((*where)->Cdr); */
- /*          } else { */
- /*             flag = 1; */
- /*             at* temp = *where; */
- /*             *where = (*where)->Cdr; */
- /*             temp->Cdr = NIL; */
- /*          } */
- /*       } */
- /*    } */
- /*    /\* return everything *\/ */
- /*    return new_cons(ans, bump); */
- /* } */
-
-
- /*
-  * new_extern(class,object) returns a LISP descriptor for an EXTERNAL object
-  * of class class
-  */
 
 DX(xconsp)
 {
@@ -158,6 +95,14 @@ DX(xatom)
       return q;
    } else
       return NIL;
+}
+
+
+at *new_at_number(double x)
+{
+   double *d = mm_alloc(mt_blob8);
+   *d = x;
+   return new_at(number_class, d);
 }
 
 
@@ -335,7 +280,6 @@ void init_at(void)
    assert(sizeof(double) <= 8);
 
    mt_at = MM_REGTYPE("at", sizeof(at), clear_at, mark_at, 0);
-   MM_ROOT(compute_bump_list);
 
    /* bootstrapping the type registration */
    pre_init_oostruct();
@@ -371,13 +315,12 @@ void init_at(void)
    var_set(at_NULL, NEW_GPTR(0));
    var_lock(at_NULL);
 
-  //dy_define("compute-bump", ycompute_bump);
-
    dx_define("cons", xcons);
    dx_define("consp", xconsp);
    dx_define("atom", xatom);
    dx_define("numberp", xnumberp);
    dx_define("null", xnull);
+
    dx_define("new-unode", xnew_unode);
    dx_define("unode-val", xunode_val);
    dx_define("unode-uid", xunode_uid);	
