@@ -68,10 +68,6 @@ typedef void* mptr;  /* for managed addresses */
 #endif
 #define NIL 0L
 
-#ifndef INF
-# define INF INFINITY
-#endif
-
 
 /* --------- MACHINE DEPENDANT STUFF -------- */
 
