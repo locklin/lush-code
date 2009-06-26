@@ -1011,6 +1011,8 @@ static at *dh_listeval(at *p, at *q)
 
    /* Prepare temporaries */
    if (ntemps != 0) {
+      fprintf(stderr, "*** Warning: function %s takes hidden arguments\n",
+              pname(p));
       drec++;
       for(int i=nargs; i<nargs+ntemps; i++) {
          make_temporary(drec, &args[i]);
