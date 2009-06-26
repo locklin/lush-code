@@ -828,7 +828,7 @@ static int local_write(at *p)
       return 0;
    }
   
-   if (cl == gptr_class && Gptr(p) == NULL) {
+   if (cl == mptr_class && Mptr(p) == NULL) {
       write_card8(TOK_NULL);
       return 0;
    }
@@ -1019,7 +1019,7 @@ again:
    switch (tok) {
    case TOK_NULL:
    {
-      *pp = NEW_GPTR(0);
+      *pp = NEW_MPTR(NULL);
       return 0;
    }
 

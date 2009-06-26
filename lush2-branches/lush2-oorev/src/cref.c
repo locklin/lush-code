@@ -310,8 +310,8 @@ DX(xto_gptr)
    ARG_NUMBER(1);
    at *p = APOINTER(1);
    
-   if (p==at_NULL)
-      return at_NULL;
+   if (!p || p==at_NULL)
+      return NEW_GPTR(Mptr(at_NULL));
    
    else if (CREFP(p)) {
       void *ptr = Gptr(p);
@@ -378,8 +378,8 @@ DX(xto_mptr)
    ARG_NUMBER(1);
    at *p = APOINTER(1);
    
-   if (p==at_NULL) {
-      return NEW_MPTR(Gptr(at_NULL));
+   if (!p || p==at_NULL) {
+      return at_NULL;
    
    } else if (CREFP(p)) {
       void *ptr = Gptr(p);

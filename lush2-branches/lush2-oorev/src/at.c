@@ -312,7 +312,7 @@ void init_at(void)
 
    /* define NULL pointer */
    at_NULL = var_define("NULL");
-   var_set(at_NULL, NEW_GPTR(0));
+   var_set(at_NULL, NEW_MPTR(NULL));
    var_lock(at_NULL);
 
    dx_define("cons", xcons);
