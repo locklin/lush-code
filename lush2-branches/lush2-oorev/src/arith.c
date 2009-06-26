@@ -409,6 +409,42 @@ DX(xmodi)
 }
 
 
+DX(xgptrplus)
+{
+   ARG_NUMBER(2);
+   at *a = APOINTER(1);
+   ifn (GPTRP(a) || MPTRP(a))
+      error(NIL, "not a pointer", a);
+
+   char *p = Gptr(a);
+   int i = AINTEGER(2);
+   return NEW_GPTR(p+i);
+}
+
+DX(xgptrminus)
+{
+   ARG_NUMBER(2);
+   at *a = APOINTER(1);
+   at *b = APOINTER(2);
+   ifn (GPTRP(a) || MPTRP(a))
+      error(NIL, "not a pointer", a);
+   ifn (GPTRP(b) || MPTRP(b))
+      error(NIL, "not a pointer", b);
+
+   char *p = Gptr(a);
+   char *q = Gptr(b);
+   return NEW_NUMBER((int)(p-q));
+}
+
+
+DX(xtestbit)
+{
+   ARG_NUMBER(2);
+   int v = AINTEGER(1);
+   int b = AINTEGER(2);
+   return NEW_BOOL(v & (1<<b));
+}
+
 DX(xbitand)
 {
    int x = ~0;
@@ -498,7 +534,13 @@ void init_arith(void)
    dx_define("c<", xclt);
    dx_define("c>=", xcge);
    dx_define("c<=", xcle);
+
+   /* pointer arithmetic */
+   dx_define("gptr+", xgptrplus);
+   dx_define("gptr-", xgptrminus);
+
    /* Bit operations */
+   dx_define("testbit", xtestbit);
    dx_define("bitand", xbitand);
    dx_define("bitor", xbitor);
    dx_define("bitxor", xbitxor);
