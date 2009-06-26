@@ -99,11 +99,11 @@ enum dht_type {
     DHT_GPTR,	    /* type */
     DHT_MPTR,
     DHT_AT,         /* currently not used */
-    DHT_STR,        /* type */
+    DHT_STR,        /* also a pointer */
 
     /* structured types */
     DHT_INDEX,      /* array of any rank */
-    DHT_IDX,   	    /* array of fixed rank */
+    DHT_IDX,   	    /* array of specific rank */
     DHT_SRG,   	    /* type (+ base type) */
     DHT_LIST,	    /* type (+ component types + end_list */
     DHT_END_LIST,   /* type terminator */

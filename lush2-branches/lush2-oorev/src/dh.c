@@ -47,8 +47,8 @@ static dhrecord *next_record(dhrecord *drec)
    case DHT_UBYTE:
    case DHT_SHORT:
    case DHT_INT:
-   case DHT_FLT:
-   case DHT_REAL:
+   case DHT_FLOAT:
+   case DHT_DOUBLE:
    case DHT_GPTR:
    case DHT_MPTR:
    case DHT_STR:
