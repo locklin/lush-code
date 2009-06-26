@@ -67,6 +67,7 @@ static at *at_mexpand;
 static at *at_this;
 static at *at_destroy;
 static at *at_listeval;
+static at *at_emptyp;
 static at *at_unknown;
 
 static struct hashelem *_getmethod(class_t *cl, at *prop);
@@ -1164,6 +1165,13 @@ DX(xisa)
    return NIL;
 }
 
+DX(xemptyp)
+{
+   ARG_NUMBER(1);
+   at *obj = APOINTER(1);
+   return obj ? send_message(NIL, obj, at_emptyp, NIL) : at_t;
+}
+
 
 void pre_init_oostruct(void)
 {
@@ -1217,6 +1225,7 @@ void init_oostruct(void)
    dx_define("classname",xclassname);
    dy_define("classof", yclassof);
    dx_define("isa",xisa);
+   dx_define("emptyp",xemptyp);
    dx_define("make-class",xmake_class);
    dx_define("builtin-class-p",xbuiltin_class_p);
    dy_define("new",ynew);
@@ -1232,6 +1241,7 @@ void init_oostruct(void)
    at_progn = var_define("progn");
    at_destroy = var_define("-destructor");
    at_listeval = var_define("-listeval");
+   at_emptyp = var_define("-emptyp"); 
    at_mexpand = var_define("macroexpand");
    at_unknown = var_define("-unknown");
 }
