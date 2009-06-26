@@ -1815,9 +1815,8 @@ char *mm_info(int level)
       if (blockrecs[i].in_use)
          total_blocks_in_use++;
    
-   BPRINTF("Small object heap: %.2f MByte in %d blocks (%.2f MB / %d used)\n",
-           ((double)heapsize)/(1<<20), num_blocks, 
-           ((double)total_blocks_in_use)*BLOCKSIZE/(1<<20), total_blocks_in_use);
+   BPRINTF("Small object heap: %.2f MByte in %d blocks (%d used)\n",
+           ((double)heapsize)/(1<<20), num_blocks, total_blocks_in_use);
 
    DO_HEAP(a, b) {
       total_objects_inheap++;
