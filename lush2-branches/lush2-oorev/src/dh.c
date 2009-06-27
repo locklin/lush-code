@@ -731,7 +731,7 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
          error(NIL, "invalid argument (char expected)",at_obj);
     break;
   
-  case DHT_UBYTE:
+  case DHT_UCHAR:
      if (NUMBERP(at_obj) && (Number(at_obj) == (unsigned char)(Number(at_obj))) )
         arg->dh_uchar = (unsigned char)Number(at_obj); 
      else
@@ -741,8 +741,17 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
    case DHT_GPTR:
       if (GPTRP(at_obj))
          arg->dh_gptr = Gptr(at_obj);             
+      else if (MPTRP(at_obj))
+         arg->dh_gptr = Mptr(at_obj);
       else
-         error(NIL, "invalid argument (Gptr expected)",at_obj);
+         error(NIL, "invalid argument (gptr expected)",at_obj);
+      break;
+      
+   case DHT_MPTR:
+      if (MPTRP(at_obj))
+         arg->dh_mptr = Mptr(at_obj);             
+      else
+         error(NIL, "invalid argument (mptr expected)",at_obj);
       break;
       
    case DHT_NIL:

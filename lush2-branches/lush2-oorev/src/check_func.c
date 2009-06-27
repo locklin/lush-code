@@ -48,6 +48,7 @@ char *rterr_emptyidx = "array is empty";
 char *rterr_range = "range error";
 char *rterr_srg_overflow = "change in idx could cause srg overflow";
 char *rterr_not_same_dim = "matrix must have same dimensions";
+char *rterr_unmanaged = "not a managed address";
 char *rterr_out_of_memory = "out of memory (reallocating storage)";
 char *rterr_cannot_realloc = "cannot reallocate storage";
 char *rterr_cannot_shrink = "cannot decrease storage size";

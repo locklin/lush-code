@@ -89,6 +89,7 @@ extern LUSHAPI char *rterr_emptyidx;
 extern LUSHAPI char *rterr_range;
 extern LUSHAPI char *rterr_srg_overflow;
 extern LUSHAPI char *rterr_not_same_dim;
+extern LUSHAPI char *rterr_unmanaged;
 extern LUSHAPI char *rterr_out_of_memory;
 extern LUSHAPI char *rterr_cannot_realloc;
 extern LUSHAPI char *rterr_cannot_shrink;
