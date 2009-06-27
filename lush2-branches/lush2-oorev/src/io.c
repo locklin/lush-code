@@ -1148,9 +1148,22 @@ DX(xprintf)
       if (c == 'l')
          print_list(APOINTER(i));
 
+/*       else if (c == 'p') { */
+/*          at *args = new_cons(APOINTER(i), NIL); */
+/*          apply(Value(at_pprint),args); */
+
       else if (c == 'p') {
-         at *args = new_cons(APOINTER(i), NIL);
-         apply(Value(at_pprint),args);
+         *buf++ = 0;
+         at *a = APOINTER(i);
+         ifn (GPTRP(a) || MPTRP(a)) AGPTR(i);
+         if (ok == 9) {
+            print_string(str_number_hex((double)(intptr_t)Gptr(a)));
+         } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+            goto err_printf0;
+         } else {
+            sprintf(buf, print_buffer, Gptr(a));
+            print_string(buf);
+         }
 
       } else if (c == 'd') {
          *buf++ = 0;
