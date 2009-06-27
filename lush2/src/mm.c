@@ -96,7 +96,8 @@
 #define MIN_MANAGED     0x40000
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
-#define MAX_VOLUME      (0xC0000*sizeof(void *))    /* max volume threshold */
+#define MAX_VOLUME      (0x800000*sizeof(void *))    /* max volume threshold */
+#define MAX_BLOCKS      (200*sizeof(void *))
 #define NUM_IDLE_CALLS  100
 
 #define HMAP_NUM_BITS   4
@@ -150,6 +151,7 @@ typedef struct typerec {
 static size_t     heapsize;
 static size_t     hmapsize;
 static size_t     volume_threshold;
+static int        block_threshold;
 static int        num_blocks;
 static blockrec_t *blockrecs = NULL;
 static char      *heap = NULL;
@@ -183,6 +185,7 @@ static bool       stack_overflowed2 = false;
 
 /* other state variables */
 static int        num_allocs = 0;
+static int        num_alloc_blocks = 0;
 static int        num_collects = 0;
 static size_t     vol_allocs = 0;
 static bool       gc_disabled = false;
@@ -357,7 +360,9 @@ static void maybe_trigger_collect(size_t s)
    if (gc_disabled || collect_in_progress)
       return;
 
-   if ((vol_allocs >= volume_threshold) || collect_requested) {
+   if (num_alloc_blocks >= block_threshold || 
+       vol_allocs >= volume_threshold      ||
+       collect_requested) {
       mm_collect_now();
       num_allocs = 0;
       vol_allocs = 0;
@@ -395,6 +400,7 @@ search_for_block:
          VALGRIND_CREATE_BLOCK(heap + a, BLOCKSIZE, types[t].name);
          tr->current_a = a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
+         num_alloc_blocks++;
          return true;
 
       } else if (blockrecs[b].t==t && blockrecs[b].in_use<(BLOCKSIZE/s)) {
@@ -760,9 +766,9 @@ static void collect_prologue(void)
    collect_in_progress = true;
    debug("%dth collect after %d allocations:\n",
          num_collects, num_allocs);
-   debug("mean alloc %.2f bytes, %d free blocks)\n",
+   debug("mean alloc %.2f bytes, %d free blocks, down %d blocks)\n",
          (num_allocs ? ((double)vol_allocs)/num_allocs : 0),
-         num_free_blocks());
+         num_free_blocks(), num_alloc_blocks);
 }
 
 static void collect_epilogue(void)
@@ -781,6 +787,7 @@ static void collect_epilogue(void)
    collect_requested = false;
    heap_exhausted = false;
    collect_in_progress = false;
+   num_alloc_blocks = 0;
    num_collects += 1;
    compact_managed();
 }
@@ -1693,7 +1700,9 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    num_blocks = max((PAGESIZE*npages)/BLOCKSIZE, MIN_NUMBLOCKS);
    heapsize = num_blocks * BLOCKSIZE;
    hmapsize = (heapsize/MIN_HUNKSIZE)/HMAP_EPI;
-   volume_threshold = min(MAX_VOLUME, heapsize/20);
+   block_threshold = min(MAX_BLOCKS, num_blocks/3);
+   //volume_threshold = min(MAX_VOLUME, heapsize/2);
+   volume_threshold = heapsize;
 
    blockrecs = (blockrec_t *)malloc(num_blocks * sizeof(blockrec_t));
    assert(blockrecs);
@@ -1845,7 +1854,8 @@ char *mm_info(int level)
    if (level<=1)
       return mm_strdup(buffer);
 
-   BPRINTF("GC threshold     : %.2f MByte\n", (double)volume_threshold/(1<<20));
+   BPRINTF("GC threshold     : %d blocks / %.2f MByte\n", 
+           block_threshold, (double)volume_threshold/(1<<20));
    if (mm_debug_enabled) {
       BPRINTF("Debugging code   : enabled\n");
    } else {
