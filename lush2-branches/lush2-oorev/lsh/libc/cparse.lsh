@@ -37,9 +37,9 @@
   newline
   next-item)
 
-(defmethod CTokens CTokens (filename)
+(defmethod CTokens CTokens (f)
   (==> this iterator)
-  (setq fd (open-read filename))
+  (setq fd (or (and (isa f RFILE) f) (open-read f)))
   (setq newline 'start)
   ())
 
@@ -378,6 +378,18 @@
       (cons 'progn outs) ) ) )
 
 #? (cparse-extract-struct-decl <filename> <tag>)
-;; 
-(defun cparse-extract-struct-decl (filename tag)
-  ())
+;; Parse the struct declaration of struct <tag> in file
+;; <filename> and return as an alist mapping field
+;; names to types.
+(defun cparse-extract-struct-decl (filename tag &optional pp)
+  (when (not (symbolp tag))
+    (error "not a symbol" tag) )
+  (when (not (filep filename))
+    (error "file not found" filename) )
+  (let* ((f (if pp
+                (open-read (sprintf "| %s -E %s" (getconf "CC") filename))
+              filename))
+         ((decls) (cparse f struct-decl))
+         (decl    (filter #\(<> $1 ";") (decls tag))) )
+    (assert (evenp (length decl)))
+    (reverse (apply alist (mapcar make-symbol (reverse decl)))) ))
