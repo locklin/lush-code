@@ -527,7 +527,7 @@ bool shape_equalp(shape_t *shp1, shape_t *shp2)
 
 bool same_shape_p(index_t *ind1, index_t *ind2)
 {
-   return shape_equalp((shape_t *)ind1, (shape_t *)ind2);
+   return shape_equalp(IND_SHAPE(ind1), IND_SHAPE(ind2));
 }
 
 /* true if shapes are compatible (can be broadcasted) */
@@ -3111,9 +3111,9 @@ index_t *array_put(index_t *ind, index_t *ss, index_t *vals)
       RAISEF("subscript array must not be scalar", NIL);
    ifn (IND_DIM(ss, d) == r)
       RAISEF("final extent of subscript array must match rank of first argument", NIL);
-   shape_t shape, *shp = shape_copy((shape_t *)ss, &shape);
+   shape_t shape, *shp = shape_copy(IND_SHAPE(ss), &shape);
    shp->ndims -= 1;
-   ifn (shape_equalp(shp, (shape_t *)vals))
+   ifn (shape_equalp(shp, IND_SHAPE(vals)))
       RAISEF("subscript array and value array must match in shape", NIL);
    
    if (index_emptyp(vals))
