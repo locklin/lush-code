@@ -804,7 +804,7 @@ static int *colors_from_int_matrix(at *p)
    ifn (INDEXP(p))
       RAISEF("not an index", p);
    index_t *ind = Mptr(p);
-   ifn (IND_STTYPE(ind)==DHT_INT) 
+   ifn (IND_STTYPE(ind)==ST_INT) 
       RAISEF("not an integer array", p);
    easy_index_check(ind, SHAPE1D(64));
 
@@ -947,8 +947,8 @@ int color_draw_idx(int x, int y, index_t *idx,
    window_t *win = current_window_no_error();
    if(win==NIL)
       return 1;
-   if (maxv - minv == 0)
-      return 2;
+/*    if (maxv - minv == 0) */
+/*       return 2; */
 
    int d1, d2, m1, m2;
    if (idx->ndim == 1) {
@@ -983,7 +983,7 @@ int color_draw_idx(int x, int y, index_t *idx,
       }
       unsigned int *im = image;
       
-      if (idx->st->type == DHT_FLOAT) {
+      if (idx->st->type == ST_FLOAT) {
          /* fast routine for flts.. */
          flt dm = minv;
          flt dv = maxv - minv;
@@ -992,7 +992,7 @@ int color_draw_idx(int x, int y, index_t *idx,
          for (int j = 0; j < d2; j++, off2 += m2) {
 	    int off1 = off2;
 	    for (int i = 0; i < d1; i++, off1 += m1) {
-               int v = 64 * (data[off1] - dm) / dv;
+               int v = dv ? 64 * (data[off1] - dm) / dv : 32;
                if (v > 63)
                   v = 63;
                if (v < 0)
@@ -1011,7 +1011,7 @@ int color_draw_idx(int x, int y, index_t *idx,
 	    int off1 = off2;
 	    for (int i = 0; i < d1; i++, off1 += m1) {
                flt w = (*getf)(data,off1);
-               int v = 64 * (w - dm) / dv;
+               int v = dv ? 64 * (w - dm) / dv : 32;
                if (v > 63)
                   v = 63;
                if (v < 0)
@@ -1049,7 +1049,7 @@ int color_draw_idx(int x, int y, index_t *idx,
          int xx = x;
          for (int i = 0; i < d1; i++, off1 += m1) {
             flt w = (*getf)(data,off1);
-            int v = 64 * (w - dm) / dv;
+            int v = dv ? 64 * (w - dm) / dv : 32;
             if (v > 63)
                v = 63;
             if (v < 0)
@@ -1326,7 +1326,7 @@ int rgb_draw_idx(int x, int y, index_t *idx, int sx, int sy)
       }
       unsigned int *im = (unsigned int*)image;
       /* Copy RGB into pixel image */
-      if (idx->st->type==DHT_UCHAR && 
+      if (idx->st->type==ST_UCHAR && 
           red_mask==0xff && green_mask==0xff00 && blue_mask==0xff0000) {
          unsigned char *data = IND_BASE(idx);
          int off2 = 0;
@@ -1339,7 +1339,7 @@ int rgb_draw_idx(int x, int y, index_t *idx, int sx, int sy)
                *im++ = r | ((g | (b << 8)) << 8);
             }
          }
-      } else if (idx->st->type==DHT_UCHAR && 
+      } else if (idx->st->type==ST_UCHAR && 
                  red_mask==0xff0000 && green_mask==0xff00 && blue_mask==0xff) {
          unsigned char *data = IND_BASE(idx);
          int off2 = 0;
