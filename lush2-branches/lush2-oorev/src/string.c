@@ -641,17 +641,17 @@ DX(xstr_val)
 /*------------------------ */
 
 static char *nanlit = "NAN";
-static char *inflit = "INF";
-static char *ninflit = "-INF";
+static char *inflit = "INFINITY";
+static char *ninflit = "-INFINITY";
 
 const char *str_number(double x)
 {
    char *s, *t;
    
    if (isnan((real)x))
-      return nanlit;
+      return mm_strdup(nanlit);
    if (isinf((real)x))
-      return (x>0 ? inflit : ninflit);
+      return mm_strdup((x>0 ? inflit : ninflit));
   
    real y = fabs(x);
    if (y<1e-3 || y>1e10)
@@ -686,11 +686,11 @@ const char *str_number_hex(double x)
    int ix = (int)floor(x);
    
    if (isnan((real)x))
-      return nanlit;
+      return mm_strdup(nanlit);
    if (isinf((real)x))
-      return (x>0 ? inflit : ninflit);
+      return mm_strdup((x>0 ? inflit : ninflit));
    if (ix == 0)
-      return "0";
+      return mm_strdup("0");
    
    sprintf(string_buffer, "0x%x", ix);
    return mm_strdup(string_buffer);
