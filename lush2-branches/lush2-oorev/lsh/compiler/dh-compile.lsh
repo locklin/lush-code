@@ -351,6 +351,7 @@
   (let* ((functype :treetype:type)
          (rettype (unode-val :functype:u-type))
          (temp-list :(cadr :treetype:tn-list):symbol)
+         ;(temp-list ())
          (temp-list-type (all ((x temp-list)) :x:type))
          (arg-list (all ((x :(cadr :treetype:tn-list):tn-list)) :x:symbol))
          (arg-list-type (all ((x arg-list)) :x:type )) )
@@ -383,9 +384,9 @@
         ((_ _ . body-treetype) :treetype:tn-list)
         (rettype (dhu-type :treetype:type))
         (retplace ())
-        (fmt-prologue "TRACE_PUSH(\"%s\");") )
+        ;; we don't want function to have hidden arguments
+        (dhc-declare-var dhc-declare-var-dynamic) )
     
-    (setq c-prologue (dhc-generate-prologue cname treetype))
     ;; Allocate a temporary variable for return value
     (when (not (==> rettype is-a-nil))
       (setq retplace (dhc-declare-temp-var rettype)) )
@@ -393,19 +394,22 @@
     (let ((ret (dhc-bumped-block treetype ()
                                  (dhc-parse-progn-c (cddr source)
                                                     body-treetype retplace))))
+      ;; now drop the hidden arguments
+      (setq :treetype:symbol ())
+      (setq c-prologue (dhc-generate-prologue cname treetype))
+
       (cond
        ((==> rettype is-a-nil)
-        (setq c-epilog (nconc1 c-epilog "return 0;")) )
+        (setq c-epilog (nconc1 c-epilog "MM_EXIT; return 0;")) )
        ((or (==> rettype is-a-ptr) (==> rettype is-a-mptr))
-        (setq fmt-prologue "MM_ENTER; TRACE_PUSH(\"%s\");")
         (setq c-epilog (nconc1 c-epilog 
                                (sprintf "MM_EXIT; MM_ANCHOR(%s); return %s;" ret ret))) )
        (t
-        (setq c-epilog (nconc1 c-epilog (sprintf "return %s;" ret))) )))
+        (setq c-epilog (nconc1 c-epilog (sprintf "MM_EXIT; return %s;" ret))) )))
       
     ;; Return program (as a list of lines)
     (append (list c-prologue)
-            (list "{" (sprintf fmt-prologue cname) "{")
+            (list "{" (sprintf "TRACE_PUSH(\"%s\"); MM_ENTER;" cname) "{")
             c-declarations 
             c-statements 
             (list (sprintf "TRACE_POP(\"%s\");" cname))
