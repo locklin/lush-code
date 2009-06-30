@@ -60,8 +60,8 @@ class_t *cref_bool_class;
    {                                                                    \
       if (slot)                                                         \
          error(NIL, "object does not accept scope syntax", self);       \
-      ifn (NUMBERP(val))                                                \
-         error(NIL, "type mismatch in assignment", val);                \
+      ifn (NUMBERP(val) && (Number(val) == (type)(Number(val))))        \
+         error(NIL, "type mismatch in assignment (not a " #type ")", val); \
       void *p = Gptr(self);                                             \
       *((type *)p) = (type)Number(val);                                 \
    }                                                                    \
@@ -235,7 +235,7 @@ class_t *cref_object_class;
 
 at *new_cref(int dht, void *p) 
 {
-   const char *errmsg_nonmanaged = "storage does not hold managed a address";
+   const char *errmsg_nonmanaged = "storage does not hold a managed address";
 
    if (!p)
       RAISEF("not an address", p);
@@ -259,7 +259,7 @@ at *new_cref(int dht, void *p)
    case DHT_STORAGE: cl = cref_storage_class; break;
    case DHT_OBJ   : cl = cref_object_class; break;
    default:
-      error(NIL, "unsupported type", NEW_NUMBER(dht));
+      RAISEF("unsupported type", NEW_NUMBER(dht));
    }
    if (cl) {
       /*
@@ -353,7 +353,7 @@ DX(xto_gptr)
       return NEW_GPTR(Mptr(p));
       
    } else if (STRINGP(p)) {
-      return NEW_GPTR(String(p));
+      return NEW_GPTR((void *)String(p));
 
    } else if (p && (Class(p) == dh_class)) {
       struct cfunction *cfunc = Gptr(p);
@@ -432,7 +432,7 @@ DX(xto_mptr)
       return NEW_MPTR(Mptr(p));
       
    } else if (STRINGP(p)) {
-      return NEW_MPTR(String(p));
+      return NEW_MPTR((void *)String(p));
 
    } else if (p && (Class(p) == dh_class)) {
       RAISEF("DH-functions are not in managed memory", p);
