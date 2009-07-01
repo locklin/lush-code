@@ -980,12 +980,16 @@ LUSHAPI bool same_shape_p(index_t *, index_t *);
 LUSHAPI bool   shape_equalp(shape_t *, shape_t *);
 LUSHAPI size_t shape_nelems(shape_t*);
 LUSHAPI shape_t *shape_copy(shape_t*, shape_t*);
-LUSHAPI shape_t* shape_set(shape_t*, int, size_t, size_t, size_t, size_t);
-#define SHAPE0D                 shape_set(NIL, 0, 0, 0, 0, 0)
-#define SHAPE1D(d1)             shape_set(NIL, 1, d1, 0, 0, 0)
-#define SHAPE2D(d1, d2)         shape_set(NIL, 2, d1, d2, 0, 0)
-#define SHAPE3D(d1, d2, d3)     shape_set(NIL, 3, d1, d2, d3, 0)
-#define SHAPE4D(d1, d2, d3, d4) shape_set(NIL, 4, d1, d2, d3, d4)
+LUSHAPI shape_t* shape_set(shape_t*, int, size_t, size_t, size_t, size_t, size_t, size_t);
+#define SHAPE0D                 shape_set(NIL, 0, 0, 0, 0, 0, 0, 0)
+#define SHAPE1D(d1)             shape_set(NIL, 1, d1, 0, 0, 0, 0, 0)
+#define SHAPE2D(d1, d2)         shape_set(NIL, 2, d1, d2, 0, 0, 0, 0)
+#define SHAPE3D(d1, d2, d3)     shape_set(NIL, 3, d1, d2, d3, 0, 0, 0)
+#define SHAPE4D(d1, d2, d3, d4) shape_set(NIL, 4, d1, d2, d3, d4, 0, 0)
+#define SHAPE5D(d1, d2, d3, d4, d5) \
+   shape_set(NIL, 5, d1, d2, d3, d4, d5, 0)
+#define SHAPE6D(d1, d2, d3, d4, d5, d6) \
+   shape_set(NIL, 6, d1, d2, d3, d4, d5, d6)
 
 /* index manipulation */
 LUSHAPI index_t *index_reshape(index_t*, shape_t*);
@@ -995,10 +999,16 @@ LUSHAPI index_t *index_trim_to_shape(index_t*, shape_t*);
 LUSHAPI index_t *index_extend(index_t*, int d, ptrdiff_t ne);
 LUSHAPI index_t *index_extendS(index_t*, subscript_t*);
 LUSHAPI index_t *index_expand(index_t*, int d, size_t ne);
+LUSHAPI index_t *index_liftD(index_t*, shape_t*);
+LUSHAPI index_t *index_lift(index_t*, shape_t*);
+LUSHAPI index_t *index_nickD(index_t*, int);
+LUSHAPI index_t *index_nick(index_t*, int);
 LUSHAPI index_t *index_shift(index_t*, int d, ptrdiff_t ne);
 LUSHAPI index_t *index_shiftS(index_t*, subscript_t*);
 LUSHAPI index_t *index_select(index_t*, int d, ptrdiff_t n);
 LUSHAPI index_t *index_selectS(index_t*, subscript_t*);
+LUSHAPI index_t *index_sinkD(index_t *, shape_t *);
+LUSHAPI index_t *index_sink(index_t *, shape_t *);
 LUSHAPI index_t *index_transpose(index_t*, shape_t*);
 LUSHAPI index_t *index_reverse(index_t*, int d);
 LUSHAPI index_t *index_broadcast1(index_t*blank, index_t*ref);

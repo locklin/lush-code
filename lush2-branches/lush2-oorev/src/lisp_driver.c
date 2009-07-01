@@ -395,7 +395,7 @@ static void lisp_get_image(wptr info, uint *data, int x, int y, uint w, uint h)
       at *p = lisp_send(info, at_get_image, q);
       ifn (INDEXP(p))
          RAISEF("not an index", p);
-      shape_t shape, *shp = shape_set(&shape, 2, 0, 0, 0, 0);
+      shape_t *shp = SHAPE2D(0, 0);
       easy_index_check((index_t *)Mptr(p), shp);
       if (shp->dim[0]!=h || shp->dim[0]!=w)
          error(NIL, "method 'get-image' returned something invalid", p);

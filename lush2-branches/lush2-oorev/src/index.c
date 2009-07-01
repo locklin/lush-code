@@ -463,7 +463,8 @@ static size_t validate_subscript(index_t *ind, int d, ptrdiff_t s)
 
 /* -------- Shape auxiliaries  -------- */
 
-shape_t *shape_set(shape_t *shp, int ndims, size_t d1, size_t d2, size_t d3, size_t d4) 
+shape_t *shape_set(shape_t *shp, int ndims, \
+                   size_t d1, size_t d2, size_t d3, size_t d4, size_t d5, size_t d6) 
 {
    static shape_t shape;
    
@@ -477,6 +478,8 @@ shape_t *shape_set(shape_t *shp, int ndims, size_t d1, size_t d2, size_t d3, siz
    if (ndims>1) shp->dim[1] = d2;
    if (ndims>2) shp->dim[2] = d3;
    if (ndims>3) shp->dim[3] = d4;
+   if (ndims>4) shp->dim[4] = d5;
+   if (ndims>5) shp->dim[5] = d6;
    
    return shp;
 }
