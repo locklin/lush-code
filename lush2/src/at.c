@@ -39,25 +39,12 @@ static void clear_at(at *a, size_t _)
 
 static void mark_at(at *a)
 {
-   Class(a)->mark_at(a);
+   if (CONSP(a)) {
+      MM_MARK(Car(a));
+      MM_MARK(Cdr(a));
 
-/*    if (CONSP(a)) { */
-/*       MM_MARK(Car(a)); */
-/*       MM_MARK(Cdr(a)); */
-      
-/*    } else if (SYMBOLP(a) || NUMBERP(a) || OBJECTP(a)) { */
-/*       MM_MARK(Mptr(a)); */
-        
-/*    } else if (CLASSP(a)) { */
-/*       if (((class_t *)Gptr(a))->managed) */
-/*          MM_MARK(Mptr(a)); */
-      
-/*    } else if (GPTRP(a) || RFILEP(a) || WFILEP(a) || ZOMBIEP(a)) { */
-/*       // nothing to mark */
-
-/*    } else  */
-/*       MM_MARK(Mptr(a)); */
-
+   } else if (Class(a)->managed)
+      MM_MARK(Mptr(a));
 }
 
 mt_t mt_at = mt_undefined;
@@ -69,10 +56,6 @@ at *new_at(class_t *cl, void *obj)
    Mptr(new) = obj;
    AssignClass(new, cl);
 
-   /* This is used by 'compute_bump' */
-/*    if (compute_bump_active) { */
-/*       compute_bump_list = cons(new,compute_bump_list); */
-/*    } */
    return new;
 }
 
@@ -91,65 +74,6 @@ DX(xcons)
     return new_cons(APOINTER(1), APOINTER(2));
  }
 
-
-at *new_number(double x)
-{
-   double *d = mm_alloc(mt_blob8);
-   *d = x;
-   return new_at(number_class, d);
-}
-
-/*
- * This strange function allows us to compute the 'simulated
- * bumping list' during a progn. This is used for the interpreted
- * 'in-pool' and 'in-stack' emulation.
- */
-
- /* int compute_bump_active = 0; */
- static at *compute_bump_list = 0;
-
- /* DY(ycompute_bump) */
- /* { */
- /*    at *ans; */
- /*    at *bump; */
- /*    at *temp; */
- /*    at *sav_compute_bump_list = compute_bump_list; */
- /*    int sav_compute_bump_active = compute_bump_active; */
-
- /*    /\* execute program in compute_bump mode *\/ */
- /*    compute_bump_active = 1; */
- /*    compute_bump_list = NIL; */
- /*    at *ans = progn(ARG_LIST); */
- /*    at *bump = compute_bump_list; */
- /*    compute_bump_list = sav_compute_bump_list; */
- /*    compute_bump_active = sav_compute_bump_active; */
-
- /*    /\* remove objects with trivial count *\/ */
- /*    int flag = 1; */
- /*    while (flag) { */
- /*       flag = 0; */
- /*       at **where = &bump; */
-
- /*       while (CONSP(*where)) { */
- /*          if ((*where)->Car && (*where)->Car->count>1) { */
- /*             where = &((*where)->Cdr); */
- /*          } else { */
- /*             flag = 1; */
- /*             at* temp = *where; */
- /*             *where = (*where)->Cdr; */
- /*             temp->Cdr = NIL; */
- /*          } */
- /*       } */
- /*    } */
- /*    /\* return everything *\/ */
- /*    return new_cons(ans, bump); */
- /* } */
-
-
- /*
-  * new_extern(class,object) returns a LISP descriptor for an EXTERNAL object
-  * of class class
-  */
 
 DX(xconsp)
 {
@@ -171,6 +95,14 @@ DX(xatom)
       return q;
    } else
       return NIL;
+}
+
+
+at *new_at_number(double x)
+{
+   double *d = mm_alloc(mt_blob8);
+   *d = x;
+   return new_at(number_class, d);
 }
 
 
@@ -305,19 +237,14 @@ DX(xunode_unify)
 
 static const char *gptr_name(at *p)
 {
-   sprintf(string_buffer, "#$%p", Gptr(p));
+   sprintf(string_buffer, "::gptr:%p", Gptr(p));
    return mm_strdup(string_buffer);
 }
 
-static void cons_mark_at(at *a)
+static const char *mptr_name(at *p)
 {
-   MM_MARK(Car(a));
-   MM_MARK(Cdr(a));
-}
-
-static void null_mark_at(at *a)
-{
-   return;
+   sprintf(string_buffer, "::mptr:%p", Mptr(p));
+   return mm_strdup(string_buffer);
 }
 
 static const char *null_name(at *p)
@@ -339,7 +266,8 @@ static at *null_listeval(at *p, at *q)
 
 /* --------- INITIALISATION CODE --------- */
 
-class_t *number_class, *gptr_class, *cons_class, *null_class;
+class_t *number_class, *gptr_class, *mptr_class, *cons_class, *null_class;
+at *at_NULL;
 
 extern void pre_init_symbol(void);
 extern void pre_init_function(void);
@@ -351,9 +279,7 @@ void init_at(void)
    assert(sizeof(at)==2*sizeof(void *));
    assert(sizeof(double) <= 8);
 
-   mt_at = MM_REGTYPE("at", sizeof(at),
-                      clear_at, mark_at, 0);
-   MM_ROOT(compute_bump_list);
+   mt_at = MM_REGTYPE("at", sizeof(at), clear_at, mark_at, 0);
 
    /* bootstrapping the type registration */
    pre_init_oostruct();
@@ -362,32 +288,39 @@ void init_at(void)
    pre_init_module();
 
    /* set up builtin classes */
-   new_builtin_class(&number_class, NIL);
+   number_class = new_builtin_class(NIL);
    class_define("NUMBER", number_class);
 
-   new_builtin_class(&gptr_class, NIL);
+   gptr_class = new_builtin_class(NIL);
    gptr_class->name = gptr_name;
-   gptr_class->mark_at = null_mark_at;
+   gptr_class->managed = false;
    class_define("GPTR", gptr_class);
 
-   new_builtin_class(&cons_class, NIL);
-   cons_class->mark_at = cons_mark_at;
+   mptr_class = new_builtin_class(NIL);
+   mptr_class->name = mptr_name;
+   class_define("MPTR", mptr_class);
+
+   cons_class = new_builtin_class(NIL);
    class_define("CONS", cons_class);
    
-   new_builtin_class(&null_class, NIL);
-   null_class->mark_at = null_mark_at;
+   null_class = new_builtin_class(NIL);
    null_class->name = null_name;
    null_class->selfeval = null_selfeval;
    null_class->listeval = null_listeval;
-   class_define("NULL", null_class);
+   null_class->managed = false;
+   class_define("Null", null_class);
 
-  //dy_define("compute-bump", ycompute_bump);
+   /* define NULL pointer */
+   at_NULL = var_define("NULL");
+   var_set(at_NULL, NEW_MPTR(NULL));
+   var_lock(at_NULL);
 
    dx_define("cons", xcons);
    dx_define("consp", xconsp);
    dx_define("atom", xatom);
    dx_define("numberp", xnumberp);
    dx_define("null", xnull);
+
    dx_define("new-unode", xnew_unode);
    dx_define("unode-val", xunode_val);
    dx_define("unode-uid", xunode_uid);	

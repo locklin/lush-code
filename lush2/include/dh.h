@@ -40,11 +40,16 @@
 #ifndef NOLISP
 #ifndef HEADER_H
 /* Should be replaced by minimal definitions:
- * - struct srg, struct idx, etc... 
+ * - struct idx, etc... 
  */
 #include "header.h"
 #endif
 #endif
+
+/* objects with less or equal MIN_NUM_SLOTS slots will
+ * be allocated via mm_alloc.
+ */
+#define MIN_NUM_SLOTS  8
 
 
 /* ----------------------------------------------- */
@@ -81,23 +86,31 @@ extern "C" {
 
 /* Values for the "op" field */
 enum dht_type {
-    DHT_NIL,
+    DHT_NIL = -1,
     
-    DHT_FUNC,       /* function (+ arg types + temps + return ) */
+    /* scalar types */
     DHT_BOOL,       /* type */
-    DHT_BYTE,       /* type */
-    DHT_UBYTE,      /* type */
+    DHT_CHAR,       /* type */
+    DHT_UCHAR,      /* type */
     DHT_SHORT,      /* type */
     DHT_INT,        /* type */
-    DHT_STR,        /* type */
-    DHT_FLT,	    /* type */
-    DHT_REAL,	    /* type */
+    DHT_FLOAT,	    /* type */
+    DHT_DOUBLE,	    /* type */
     DHT_GPTR,	    /* type */
-    DHT_IDX,   	    /* type (+ srg type) */
+    DHT_MPTR,
+    DHT_AT,         /* currently not used */
+    DHT_STR,        /* also a pointer */
+
+    /* structured types */
+    DHT_INDEX,      /* array of any rank */
+    DHT_IDX,   	    /* array of specific rank */
     DHT_SRG,   	    /* type (+ base type) */
     DHT_LIST,	    /* type (+ component types + end_list */
     DHT_END_LIST,   /* type terminator */
     DHT_OBJ,        /* type */
+
+    /* functions and classes */
+    DHT_FUNC,       /* function (+ arg types + temps + return ) */
     DHT_TEMPS,      /* temps (+ types for temps) */
     DHT_END_TEMPS,  /* temps terminator */
     DHT_RETURN,     /* return type (+ return type) */
@@ -113,7 +126,12 @@ enum dht_type {
     DHT_LAST        /* TAG */
 };
 
-
+#define DHT_BYTE    DHT_CHAR
+#define DHT_UBYTE   DHT_UCHAR
+#define DHT_REAL    DHT_DOUBLE
+#define DHT_FLT     DHT_FLOAT
+#define DHT_OBJECT  DHT_OBJ
+#define DHT_STORAGE DHT_SRG
 
 /* dhrecord --- 
  * The basic data structure for metainformation in compiled code.
@@ -133,27 +151,28 @@ typedef struct s_dhrecord
 
 #define DH_NIL \
 	{DHT_NIL}		/* Nothing (end mark, usually) */
-
 #define DH_FUNC(n) \
         {DHT_FUNC, DHT_READ, n}
 #define DH_END_FUNC \
         {DHT_END_FUNC}
 #define DH_BOOL \
 	{DHT_BOOL}
-#define DH_BYTE \
-	{DHT_BYTE}
-#define DH_UBYTE \
-	{DHT_UBYTE}
+#define DH_CHAR \
+	{DHT_CHAR}
+#define DH_UCHAR \
+	{DHT_UCHAR}
 #define DH_SHORT \
 	{DHT_SHORT}
 #define DH_INT \
         {DHT_INT}
-#define DH_FLT \
-        {DHT_FLT}
-#define DH_REAL \
-        {DHT_REAL}
+#define DH_FLOAT \
+        {DHT_FLOAT}
+#define DH_DOUBLE \
+        {DHT_DOUBLE}
 #define DH_GPTR(s) \
         {DHT_GPTR,0,0,s}
+#define DH_MPTR(s) \
+        {DHT_MPTR,0,0,s}
 #define DH_STR \
         {DHT_STR}		
 #define DH_LIST(n) \
@@ -205,21 +224,23 @@ typedef struct s_dhrecord
  * Variant datatype for passing args to the Xname function
  */
 
+struct CClass_object;
+
 typedef union 
 {
   char          dh_char;
   unsigned char dh_uchar;
   short         dh_short;
-  intg          dh_ord;
-  intg          dh_int;
-  int           dh_bool;
-  flt           dh_flt;
-  real          dh_real;
+  int           dh_int;
+  bool          dh_bool;
+  float         dh_float;
+  double        dh_double;
   gptr		dh_gptr;
-  struct idx   *dh_idx_ptr;
-  struct srg   *dh_srg_ptr;
+  mptr          dh_mptr;
+  index_t      *dh_idx_ptr;
+  storage_t    *dh_srg_ptr;
   char         *dh_str_ptr;
-  int          *dh_obj_ptr;
+  struct CClass_object *dh_obj_ptr;
 } dharg;
 
 
@@ -278,15 +299,21 @@ struct dhdoc_s
  *
  */
 
+struct dhclassdoc_s;
+
 struct VClass_object 
 {
-  void *Cdoc;
-  void (*Cdestroy)(gptr);
+  struct dhclassdoc_s *Cdoc;
+  void (*Cdestroy)(struct CClass_object *);
+  void (*__mark)(struct CClass_object *);
 };
 
 struct CClass_object {
   struct VClass_object *Vtbl;
+  class_t              *__lcl;
+  object_t             *__lptr;
 };
+
 
 
 /* dhclassconstraint ---
@@ -307,7 +334,7 @@ struct dhclassdoc_s
                                    (K_name_Rxxxxxxxx) */
     int size;                   /* data size */
     int nmet;                   /* number of methods */
-    void *vtable;               /* virtual table pointer */
+    struct VClass_object *vtable;  /* virtual table pointer */
     
 #ifndef NOLISP
     at *atclass;                /* lisp object for this class */
@@ -318,16 +345,32 @@ struct dhclassdoc_s
 #ifndef NOLISP
 
 #define DHCLASSDOC(Kname,superKname,Cname,LnameStr,Vname,nmet) \
-  staticref_c dhrecord name2(K,Kname)[]; \
+  staticref_c dhrecord name2(K,Kname)[];                       \
   extern_c dhclassdoc_t Kname; \
   dhclassdoc_t Kname = { name2(K,Kname), \
    { superKname, LnameStr, enclose_in_string(Cname), \
      enclose_in_string(Vname), enclose_in_string(Kname), \
-     sizeof(struct name2(CClass_,Cname)), nmet, &Vname } }; \
+     sizeof(struct name2(CClass_,Cname)), nmet, \
+     (struct VClass_object *)(void *)&Vname } };        \
   staticdef_c dhrecord name2(K,Kname)[]
 
 #endif
 
+
+extern LUSHAPI class_t *dh_class;
+extern LUSHAPI bool in_compiled_code;
+
+LUSHAPI at  *new_dh(at *name, dhdoc_t *kdata);
+LUSHAPI at  *new_dhclass(at *name, dhclassdoc_t *kdata);
+LUSHAPI int  dht_from_cname(symbol_t *);
+LUSHAPI void lush_error(const char *s);
+LUSHAPI struct CClass_object *new_cobject(dhclassdoc_t *cdoc);
+LUSHAPI index_t *new_empty_index(int);
+LUSHAPI void check_obj_class(void *obj, void *classvtable);
+LUSHAPI int  test_obj_class(void *obj, void *classvtable);
+
+
+#define run_time_error lush_error
 
 
 /* ----------------------------------------------- */

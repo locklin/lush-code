@@ -34,8 +34,6 @@
 # include <errno.h>
 #endif
 
-typedef unsigned char   uchar;
-
 #define NUM_SINGLETONS 128
 
 char string_buffer[STRING_BUFFER];
@@ -58,7 +56,7 @@ static void make_singletons(void)
       s[0] = (char)c;
       char *ss = (char *)mm_strdup(s);
       assert(ss);
-      singletons[c] = new_string(ss);
+      singletons[c] = NEW_STRING(ss);
    }
 }
 
@@ -67,7 +65,7 @@ at *make_string_of_length(size_t n)
 {
    char *s = mm_blob(n+1);
    s[0] = s[n] = '\0';
-   return new_string(s);
+   return NEW_STRING(s);
 }
 
 
@@ -83,7 +81,7 @@ at *make_string(const char *s)
    } else {
       char *sd = mm_strdup(s);
       assert(sd);
-      return new_string(sd);
+      return NEW_STRING(sd);
    }
 }
 
@@ -324,7 +322,7 @@ at* str_mb_to_utf8(const char *s)
    if ((ans = recode(s, "", "UTF-8")))
       return ans;
 #endif
-   return new_string(s);
+   return NEW_STRING(s);
 }
 
 at* str_utf8_to_mb(const char *s)
@@ -341,7 +339,7 @@ at* str_utf8_to_mb(const char *s)
    if ((ans = recode(s, "UTF-8", "")))
       return ans;
 #endif
-   return new_string(s);
+   return NEW_STRING(s);
 }
 
 DX(xstr_locale_to_utf8)
@@ -643,17 +641,17 @@ DX(xstr_val)
 /*------------------------ */
 
 static char *nanlit = "NAN";
-static char *inflit = "INF";
-static char *ninflit = "-INF";
+static char *inflit = "INFINITY";
+static char *ninflit = "-INFINITY";
 
 const char *str_number(double x)
 {
    char *s, *t;
    
    if (isnan((real)x))
-      return nanlit;
+      return mm_strdup(nanlit);
    if (isinf((real)x))
-      return (x>0 ? inflit : ninflit);
+      return mm_strdup((x>0 ? inflit : ninflit));
   
    real y = fabs(x);
    if (y<1e-3 || y>1e10)
@@ -678,7 +676,7 @@ const char *str_number(double x)
 DX(xstr_number)
 {
    ARG_NUMBER(1);
-   return new_string(str_number(AREAL(1)));
+   return NEW_STRING(str_number(AREAL(1)));
 }
 
 /*------------------------ */
@@ -688,11 +686,11 @@ const char *str_number_hex(double x)
    int ix = (int)floor(x);
    
    if (isnan((real)x))
-      return nanlit;
+      return mm_strdup(nanlit);
    if (isinf((real)x))
-      return (x>0 ? inflit : ninflit);
+      return mm_strdup((x>0 ? inflit : ninflit));
    if (ix == 0)
-      return "0";
+      return mm_strdup("0");
    
    sprintf(string_buffer, "0x%x", ix);
    return mm_strdup(string_buffer);
@@ -701,7 +699,7 @@ const char *str_number_hex(double x)
 DX(xstr_number_hex)
 {
    ARG_NUMBER(1);
-   return new_string(str_number_hex(AREAL(1)));
+   return NEW_STRING(str_number_hex(AREAL(1)));
 }
 
 /*------------------------ */
@@ -709,7 +707,7 @@ DX(xstr_number_hex)
 DX(xstr_gptr)
 {
    ARG_NUMBER(1);
-   return new_string(gptr_class->name(APOINTER(1)));
+   return NEW_STRING(gptr_class->name(APOINTER(1)));
 }
 
 /*------------------------ */
@@ -1180,7 +1178,7 @@ DX(xvector_to_string)
 {
    ARG_NUMBER(1);
    index_t *ind = AINDEX(1);
-   ifn ((IND_STTYPE(ind)==ST_UBYTE) && (IND_NDIMS(ind)==1))
+   ifn ((IND_STTYPE(ind)==ST_UCHAR) && (IND_NDIMS(ind)==1))
       RAISEF("ubyte vector expected", APOINTER(1));
 
    ind = as_contiguous_array(ind);
@@ -1355,7 +1353,7 @@ class_t *string_class;
 void init_string(void)
 {
    /* set up string_class */
-   new_builtin_class(&string_class, NIL);
+   string_class = new_builtin_class(NIL);
    string_class->listeval = string_listeval;
    string_class->name = string_name;
    string_class->compare = string_compare;

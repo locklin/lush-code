@@ -33,7 +33,7 @@
 (libload "ffmpeg-enum")
 (libload "libidx/idx-macros")
 (libload "libidx/idx-ubyte")
-(libload "libc/libc")
+;(libload "libc/libc")
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -84,7 +84,7 @@
 	  (ns (==> ai get-number-of-streams)))
       ((-int-) vs ns)
       (while (and (< vs ns) 
-		  (<> (==> ai get-stream-codec-type vs) @CODEC_TYPE_VIDEO))
+		  (<> (==> ai get-stream-codec-type vs) CODEC_TYPE_VIDEO))
 	(incr vs) )
       (when (>= vs ns)
 	(error "No video stream in this file") )
@@ -107,7 +107,7 @@
 	  (ns (==> ai get-number-of-streams)))
       ((-int-) vs ns)
       (while (and (< vs ns) 
-		  (<> (==> ai get-stream-codec-type vs) @CODEC_TYPE_AUDIO))
+		  (<> (==> ai get-stream-codec-type vs) CODEC_TYPE_AUDIO))
 	(incr vs) )
       (when (>= vs ns)
 	(error "No video stream in this file") )
@@ -133,7 +133,7 @@
 ;; }
 ;; {<ul>
 ;;   {<li>
-;;     Slots <audio-streams> and <video-streams> contain the number of
+;;     Slots <audio_streams> and <video_streams> contain the number of
 ;;     streams of each type.
 ;;   }
 ;;   {<li>
@@ -145,11 +145,11 @@
 ;;     stream are stored in slots <audio-sample-rate> and <audio-channels>.
 ;;   }
 ;; }
-(defclass AvInputFile Object
+(defclass AvInputFile object
   ((-gptr-) ic)
   ((-bool-) gotpacket)
   ((-gptr-) curpacket)
-  ((-idx1- (-gptr-)) sources)
+  ((-idx1- (-mptr-)) sources)
   ((-gptr-) image_format) 
   ((-gptr-) file_iformat)
   ((-int-)  audio_streams)
@@ -177,12 +177,12 @@
 ;;   calling <open>.
 ;; }
 (defmethod AvInputFile AvInputFile()
-  (setq ic (gptr ()))
+  (setq ic NULL)
   (setq gotpacket ())
   (setq curpacket (to-gptr #{ av_mallocz(sizeof(AVPacket)) #}))
-  (setq sources (gptr-matrix 4))
-  (setq image_format (gptr ())) 	;ffmpeg opt_image_format: -img
-  (setq file_iformat (gptr ()))		;ffmpeg opt_format: -f
+  (setq sources (mptr-array 4))
+  (setq image_format NULL) 	;ffmpeg opt_image_format: -img
+  (setq file_iformat NULL)		;ffmpeg opt_format: -f
   (setq audio_streams 0)
   (setq video_streams 0)
   (setq audio_channels 1)		;ffmpeg opt_audio_channels: -ac
@@ -190,7 +190,7 @@
   (setq frame_height 128)		;ffmpeg opt_frame_size: -s
   (setq frame_width 160)		;ffmpeg opt_frame_size: -s
   (setq frame_aspect_ratio 0)		;ffmpeg opt_frame_aspect_ratio: -aspect
-  (setq frame_pix_fmt @PIX_FMT_YUV420P)	;ffmpeg opt_frame_pix_fmt:  -pix_fmt
+  (setq frame_pix_fmt PIX_FMT_YUV420P)	;ffmpeg opt_frame_pix_fmt:  -pix_fmt
   (setq frame_rate 25)			;ffmpeg opt_frame_rate: -r
   (setq workaround_bugs 1) 		;ffmpeg opt_workaround_bug: -bug
   (setq error_resilience 2)		;ffmpeg opt_error_resilience: -er
@@ -209,7 +209,7 @@
     #{ av_free($curpacket); #} )
   (when ic
     #{ av_close_input_file((AVFormatContext*)$ic); #} 
-    (setq ic (gptr ())) )
+    (setq ic NULL) )
   () )
 
 #? (==> <avinputfile> get-number-of-streams)
@@ -217,17 +217,17 @@
 ;;   Return the total number of streams in the multimedia file.
 ;; }
 (defmethod AvInputFile get-number-of-streams()
-  (+ audio-streams video-streams) )
+  (+ audio_streams video_streams) )
 
 #? (==> <avinputfile> get-stream-codec-type <n>)
 ;; {<p>
 ;;   Returns the type of the stream number <n>. The return value is one of
-;;   the constants named <@CODEC_TYPE_XXX>. This includes 
-;;   <@CODEC_TYPE_VIDEO> or <@CODEC_TYPE_AUDIO>.
+;;   the constants named <CODEC_TYPE_XXX>. This includes 
+;;   <CODEC_TYPE_VIDEO> or <CODEC_TYPE_AUDIO>.
 ;; }
 (defmethod AvInputFile get-stream-codec-type(n)
   ((-int-) n)
-  (when (or (< n 0) (>= n (+ audio-streams video-streams)))
+  (when (or (< n 0) (>= n (+ audio_streams video_streams)))
     (error "Illegal stream number") )
   (to-int #{ ((AVFormatContext*)($this->ic))->streams[$n]
                            ->codec->codec_type #}) )
@@ -235,11 +235,11 @@
 #? (==> <avinputfile> get-stream-codec-id <n>)
 ;; {<p>
 ;;   Returns the identifier of the codec for stream number <n>. The return
-;;   value is one of the constants named <@CODEC_ID_XXX>.
+;;   value is one of the constants named <CODEC_ID_XXX>.
 ;; }
 (defmethod AvInputFile get-stream-codec-id(n)
   ((-int-) n)
-  (when (or (< n 0) (>= n (+ audio-streams video-streams)))
+  (when (or (< n 0) (>= n (+ audio_streams video_streams)))
     (error "Illegal stream number") )
   (to-int #{ ((AVFormatContext*)($this->ic))->streams[$n]
                            ->codec->codec_id #}) )
@@ -250,7 +250,7 @@
 ;; }
 (defmethod AvInputFile get-format-name()
   (if file_iformat
-      (ptr-str (to-gptr #{ ((AVInputFormat*)($file_iformat))->name #} ))
+      (to-str #{ mm_strdup(((AVInputFormat*)($file_iformat))->name) #} ))
     "<?>" ) )
 
 #? (==> <avinputfile> get-start-time)
@@ -294,7 +294,7 @@
         AVInputFormat *ifmt = (AVInputFormat*)($ai->file_iformat);
         int err, i, ret;
         AVRational rfps;
-        char *filename = $s->data;
+        char *filename = $s;
 
         if (!strcmp(filename, "$stdin"))
            filename = "pipe:";
@@ -364,7 +364,7 @@
     }#} 
     )
   ;; resize source vector
-  (idx-g1resize sources (==> this get-number-of-streams))
+  (idx-m1resize sources (==> this get-number-of-streams))
   this )
 
 #? (==> <avinputfile> pump)
@@ -387,7 +387,7 @@
   ;; Signal avsources
   (when gotpacket
     (let ((n (to-int #{ ((AVPacket*)$curpacket)->stream_index #})))
-      (when (sources n)
+      (when (<> (sources n) NULL)
         (==> (to-obj AVSource (sources n)) process) ) )
     t ) )
 
@@ -399,15 +399,15 @@
 
 ;;; This class is private
 
-(defclass AvPacketList Object
+(defclass AvPacketList object
   ((-gptr-) head)
   ((-gptr-) tail)
   ((-int-)  count)
 )
 
 (defmethod AvPacketList AvPacketList()
-  (setq head (gptr ()))
-  (setq tail (gptr ())) 
+  (setq head NULL)
+  (setq tail NULL) 
   (setq count 0) )
 
 (defmethod AvPacketList put(p)
@@ -442,7 +442,7 @@
   count )
 
 (defmethod AvPacketList peek()
-  (let ((p (gptr ())))
+  (let ((p NULL))
     (when tail
       #{ $p = (gptr)&((AVPLElt*)$tail)->pkt; #} )
     p ) )
@@ -488,12 +488,12 @@
   (setq ai avfile)
   (setq data (new AvPacketList))
   (setq streamno n)
-  (setq st (gptr ()))
+  (setq st NULL)
   (setq audio_channels 1)
   (setq audio_sample_rate 44100)
   (when (or (< n 0) (>= n (==> avfile get-number-of-streams)))
     (error "Illegal stream number") )
-  (when (<> (==> avfile get-stream-codec-type n) @CODEC_TYPE_AUDIO)
+  (when (<> (==> avfile get-stream-codec-type n) CODEC_TYPE_AUDIO)
     (error "Not an audio stream") )
   #{ $st = (gptr)( ((AVFormatContext*)($ai->ic))->streams[$n] ); #}
   (when (not st) 
@@ -512,7 +512,7 @@
     $audio_channels = enc->channels;
     $audio_sample_rate = enc->sample_rate;
   }#}
-  (:ai:sources streamno (gptr this))
+  (:ai:sources streamno (to-mptr this))
   () )
 
 (defmethod AvAudioSource process()
@@ -525,7 +525,7 @@
 
 (defmethod AvAudioSource -destructor()
   (when (and (to-gptr ai) (to-gptr :ai:sources))
-    (:ai:sources streamno (gptr ())) ) 
+    (:ai:sources streamno NULL) ) 
   () )
 
 #? (==> <avaudiosource> get-codec-name)
@@ -533,12 +533,12 @@
 ;;   Returns a string containing the name of the codec for this audio stream.
 ;; }
 (defmethod AvAudioSource get-codec-name()
-  (ptr-str (to-gptr #{ ((AVStream*)($st))->codec->codec->name #})) )
+  (to-str #{ mm_strdup(((AVStream*)($st))->codec->codec->name) #})) )
 
 #? (==> <avaudiosource> get-codec-id)
 ;; {<p>
 ;;   Returns the identifier of the codec for this audio stream. This
-;;   function returns one of the <@CODEC_ID_XXX> constant.
+;;   function returns one of the <CODEC_ID_XXX> constant.
 ;; }
 (defmethod AvAudioSource get-codec-id()
   (==> ai get-stream-codec-id streamno) )
@@ -611,12 +611,12 @@
   (setq ai avfile)
   (setq data (new AvPacketList))
   (setq streamno n)
-  (setq st (gptr ()))
+  (setq st NULL)
   ;; frame
   (setq gotcurframe ())
   (setq curframe (to-gptr #{ av_mallocz(sizeof(AVFrame)) #}))
   (when (not curframe) (error "Out of memory"))
-  (setq curptr (gptr ()))
+  (setq curptr NULL)
   (setq curlen 0)
   (setq curpts -1)
   (setq curno -1)
@@ -624,13 +624,13 @@
   (setq frame_height 128)
   (setq frame_width 160)
   (setq frame_aspect_ratio 0)
-  (setq frame_pix_fmt @PIX_FMT_YUV420P)
+  (setq frame_pix_fmt PIX_FMT_YUV420P)
   (setq frame_rate 25)
   (setq frame_rate_base 1)
   ;; checks
   (when (or (< n 0) (>= n (==> avfile get-number-of-streams)))
     (error "Illegal stream number") )
-  (when (<> (==> avfile get-stream-codec-type n) @CODEC_TYPE_VIDEO)
+  (when (<> (==> avfile get-stream-codec-type n) CODEC_TYPE_VIDEO)
     (error "Not a video stream") )
   #{ $st = (gptr)( ((AVFormatContext*)($ai->ic))->streams[$n] ); #}
   (when (not st) 
@@ -650,7 +650,7 @@
     $frame_rate = av_q2d(st->r_frame_rate);
     $curpts = st->start_time/AV_TIME_BASE;
   }#}
-  (:ai:sources streamno (gptr this))
+  (:ai:sources streamno (to-mptr this))
   () )
 
 (defmethod AvVideoSource process()
@@ -661,7 +661,7 @@
 
 (defmethod AvVideoSource -destructor()
   (when (and (to-gptr ai) (to-gptr :ai:sources))
-    (:ai:sources streamno (gptr ())) )
+    (:ai:sources streamno NULL) )
   (when curframe #{ av_free($curframe); #})
   () )
 
@@ -671,13 +671,13 @@
 ;;   Returns a string containing the name of the codec for this video stream.
 ;; }
 (defmethod AvVideoSource get-codec-name()
-  (ptr-str (to-gptr #{ ((AVStream*)($st))->codec->codec->name #})) )
+  (to-str #{ mm_strdup(((AVStream*)($st))->codec->codec->name) #})) )
 
 #? (==> <avvideosource> get-codec-id)
 ;;
 ;; {<p>
 ;;   Returns the identifier of the codec for this video stream. This
-;;   function returns one of the <@CODEC_ID_XXX> constant.
+;;   function returns one of the <CODEC_ID_XXX> constant.
 ;; }
 (defmethod AvVideoSource get-codec-id()
   (==> ai get-stream-codec-id streamno) )
@@ -753,7 +753,7 @@
 	(while (and again (<= :data:count 0))
 	  (setq again (==> ai pump)) )
 	(let ((pkt (==> data peek)))
-	  (when pkt
+	  (when (<> pkt NULL)
 	    #{{
 	        AVPacket *pkt = (AVPacket*)$pkt;
 	        $curlen = pkt->size;
@@ -807,7 +807,7 @@
 ;; }
 (defmethod AvVideoSource get-frame-gray()
   (when (not gotcurframe) (error "No current frame"))
-  (let ((image (ubyte-matrix-nc frame_height frame_width)))
+  (let ((image (ubyte-array* frame_height frame_width)))
     #{{
         AVPicture pic;
         AVPicture *curframe = (AVPicture*)$curframe;
@@ -829,7 +829,7 @@
 ;; }
 (defmethod AvVideoSource get-frame-rgba()
   (when (not gotcurframe) (error "No current frame"))
-  (let ((image (ubyte-matrix-nc frame_height frame_width 4)))
+  (let ((image (ubyte-array* frame_height frame_width 4)))
     #{{
         AVPicture pic;
         AVPicture *curframe = (AVPicture*)$curframe;
@@ -854,7 +854,7 @@
 ;; }
 (defmethod AvVideoSource get-frame-yuv()
   (when (not gotcurframe) (error "No current frame"))
-  (let ((image (ubyte-matrix-nc 3 frame_height frame_width)))
+  (let ((image (ubyte-array* 3 frame_height frame_width)))
     #{{
         AVPicture pic;
         AVPicture *curframe = (AVPicture*)$curframe;
@@ -875,6 +875,8 @@
 ;;; MAKE
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+
+(with-namespace lush1-
 
 (let ((dhc-make-lushflags (concat dhc-make-lushflags ffmpeg-cflags)))
 
@@ -920,3 +922,4 @@
         av-open-input-file 
         av-open-video-source 
         av-open-audio-source ) )
+)

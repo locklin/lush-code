@@ -40,7 +40,7 @@
 
 
 #include "header.h"
-#include "check_func.h"
+#include "dh.h"
 #include <inttypes.h>
 
 #ifdef HAVE_MMAP
@@ -48,27 +48,17 @@
 #include <sys/mman.h>
 #endif
 
-void clear_storage(storage_t *st, size_t _)
+static void clear_storage(storage_t *st, size_t _)
 {
    st->data = NULL;
    st->backptr = NULL;
-   st->cptr = NULL;
 }
 
-void mark_storage(storage_t *st)
+static void mark_storage(storage_t *st)
 {
    MM_MARK(st->backptr);
-   if (!st->cptr || lisp_owns_p(st->cptr))
+   if (st->flags & STS_MM)
       MM_MARK(st->data);
-}
-
-static storage_t *storage_dispose(storage_t *);
-
-bool finalize_storage(storage_t *st)
-{
-   //printf("finalize_storage(0x%x)\n", (unsigned int)st);
-   storage_dispose(st);
-   return true;
 }
 
 static mt_t mt_storage = mt_undefined;
@@ -86,81 +76,90 @@ static mt_t mt_storage = mt_undefined;
  */
 
 size_t storage_sizeof[ST_LAST] = {
-   sizeof(at*),           /* atom   */
-   sizeof(flt),           /* float  */
-   sizeof(real),          /* double */
-   sizeof(int),           /* int    */
-   sizeof(short),         /* short  */
-   sizeof(char),          /* byte   */
-   sizeof(unsigned char), /* ubyte  */
-   sizeof(gptr),          /* gptr   */
+   sizeof(bool),
+   sizeof(char),
+   sizeof(unsigned char),
+   sizeof(short),
+   sizeof(int),
+   sizeof(float),
+   sizeof(double),
+   sizeof(gptr),
+   sizeof(mptr),
+   sizeof(at*),
 };
 
 
-static flt AT_getf(gptr pt, size_t off)
+static float at_getf(gptr pt, size_t off)
 {
    at *p = ((at **)pt)[off];
-   ifn (p && NUMBERP(p))
+   ifn (NUMBERP(p))
       error(NIL, "accessed element is not a number", p);
    return Number(p);
 }
 
-static flt GPTR_getf(gptr pt, size_t off)
+static float gptr_getf(gptr pt, size_t off)
 {
    error(NIL, "accessed element is not a number", NIL);
 }
 
-#define Generic_getf(Prefix,Type)   					     \
-static flt name2(Prefix,_getf)(gptr pt, size_t off)        		     \
-{   									     \
-  return (flt)(((Type*)pt)[off]);  					     \
-}
-
-Generic_getf(F, flt)
-Generic_getf(D, real)
-Generic_getf(I32, int)
-Generic_getf(I16, short)
-Generic_getf(I8, char)
-Generic_getf(U8, unsigned char)
-#undef Generic_getf
-
-flt (*storage_getf[ST_LAST])(gptr, size_t) = {
-   AT_getf, F_getf, D_getf, I32_getf, I16_getf, I8_getf, U8_getf, GPTR_getf,
-};
-
-
-
-static void AT_setf(gptr pt, size_t off, flt x)
+static void at_setf(gptr pt, size_t off, float x)
 {
    ((at **)pt)[off] = NEW_NUMBER(x);
 }
 
-static void GPTR_setf(gptr pt, size_t off, flt x)
+static void gptr_setf(gptr pt, size_t off, float x)
 {
    error(NIL, "gptr arrays do not contain numbers", NIL);
 }
 
-#define Generic_setf(Prefix,Type)   					     \
-static void name2(Prefix,_setf)(gptr pt, size_t off, flt x)		     \
-{   									     \
-  ((Type *)pt)[off] = x; 						     \
-}
-    
-Generic_setf(F, flt)
-Generic_setf(D, real)
-Generic_setf(I32, int)
-Generic_setf(I16, short)
-Generic_setf(I8, char)
-Generic_setf(U8, unsigned char)
-#undef Generic_setf
+#define Generic_getf_setf(type)                           \
+   static float type##_getf(gptr pt, size_t off)          \
+   {                                                      \
+      return (float)(((type *)pt)[off]);                  \
+   }                                                      \
+                                                          \
+   static void type##_setf(gptr pt, size_t off, float x)  \
+   {                                                      \
+      ((type *)pt)[off] = x;                              \
+   }
 
-void (*storage_setf[ST_LAST])(gptr, size_t, flt) = {
-   AT_setf, F_setf, D_setf, I32_setf, I16_setf, I8_setf, U8_setf, GPTR_setf,
+Generic_getf_setf(bool)
+Generic_getf_setf(char)
+Generic_getf_setf(uchar)
+Generic_getf_setf(short)
+Generic_getf_setf(int)
+Generic_getf_setf(float)
+Generic_getf_setf(double)
+#undef Generic_getf_setf
+
+float (*storage_getf[ST_LAST])(gptr, size_t) = {
+   bool_getf,
+   char_getf,
+   uchar_getf,
+   short_getf,
+   int_getf,
+   float_getf,
+   double_getf,
+   gptr_getf,
+   gptr_getf,  /* ST_MPTR */
+   at_getf,
+};
+
+void (*storage_setf[ST_LAST])(gptr, size_t, float) = {
+   bool_setf,
+   char_setf,
+   uchar_setf,
+   short_setf,
+   int_setf,
+   float_setf,
+   double_setf,
+   gptr_setf,
+   gptr_setf,  /* ST_MPTR */
+   at_setf
 };
 
 
-
-static real AT_getr(gptr pt, size_t off)
+static double at_getd(gptr pt, size_t off)
 {
    at *p = ((at **)pt)[off];
    ifn (p && NUMBERP(p))
@@ -168,82 +167,104 @@ static real AT_getr(gptr pt, size_t off)
    return Number(p);
 }
 
-static real GPTR_getr(gptr pt, size_t off)
+static double gptr_getd(gptr pt, size_t off)
 {
    error(NIL, "accessed element is not a number", NIL);
 }
 
-#define Generic_getr(Prefix,Type)   					     \
-static real name2(Prefix,_getr)(gptr pt, size_t off)        		     \
-{   									     \
-  return (real)(((Type*)pt)[off]);   					     \
-}
-
-Generic_getr(F, flt)
-Generic_getr(D, real)
-Generic_getr(I32, int)
-Generic_getr(I16, short)
-Generic_getr(I8, char)
-Generic_getr(U8, unsigned char)
-#undef Generic_getr
-
-real (*storage_getr[ST_LAST])(gptr, size_t) = {
-   AT_getr, F_getr, D_getr, I32_getr, I16_getr, I8_getr, U8_getr, GPTR_getr,
-};
-
-
-
-static void AT_setr(gptr pt, size_t off, real x)
+static void at_setd(gptr pt, size_t off, double x)
 {
    ((at **)pt)[off] = NEW_NUMBER(x);
 }
 
-static void GPTR_setr(gptr pt, size_t off, real x)
+static void gptr_setd(gptr pt, size_t off, double x)
 {
    error(NIL, "gptr arrays do not contain numbers", NIL);
 }
 
-#define Generic_setr(Prefix,Type)                             \
-static void name2(Prefix,_setr)(gptr pt, size_t off, real x)  \
-{   						      	      \
-  ((Type *)pt)[off] = x;   				      \
-}
-    
-Generic_setr(F, flt)
-Generic_setr(D, real)
-Generic_setr(I32, int)
-Generic_setr(I16, short)
-Generic_setr(I8, char)
-Generic_setr(U8, unsigned char)
-#undef Generic_setr
+#define Generic_getd_setd(type)                            \
+   static double type##_getd(gptr pt, size_t off)          \
+   {                                                       \
+      return (double)(((type *)pt)[off]);                  \
+   }                                                       \
+                                                           \
+   static void type##_setd(gptr pt, size_t off, double x)  \
+   {                                                       \
+      ((type *)pt)[off] = x;                               \
+   }
 
-void (*storage_setr[ST_LAST])(gptr, size_t, real) = {
-   AT_setr, F_setr, D_setr, I32_setr, I16_setr, I8_setr, U8_setr, GPTR_setr,
+Generic_getd_setd(bool)
+Generic_getd_setd(char)
+Generic_getd_setd(uchar)
+Generic_getd_setd(short)
+Generic_getd_setd(int)
+Generic_getd_setd(float)
+Generic_getd_setd(double)
+#undef Generic_getd_setd
+
+double (*storage_getd[ST_LAST])(gptr, size_t) = {
+   bool_getd,
+   char_getd,
+   uchar_getd,
+   short_getd,
+   int_getd,
+   float_getd,
+   double_getd,
+   gptr_getd,
+   gptr_getd,  /* ST_MPTR */
+   at_getd
+};
+
+void (*storage_setd[ST_LAST])(gptr, size_t, double) = {
+   bool_setd,
+   char_setd,
+   uchar_setd,
+   short_setd,
+   int_setd,
+   float_setd,
+   double_setd,
+   gptr_setd,
+   gptr_setd,  /* ST_MPTR */
+   at_setd
 };
 
 
+static at *Number_getat(storage_t *st, size_t off)
+{
+   double (*get)(gptr,size_t) = storage_getd[st->type];
+   return NEW_NUMBER( (*get)(st->data, off) );
+}
 
-static at *AT_getat(storage_t *st, size_t off)
+static at *gptr_getat(storage_t *st, size_t off)
+{
+   gptr *pt = st->data;
+   return NEW_GPTR(pt[off]);
+}
+
+static at *mptr_getat(storage_t *st, size_t off)
+{
+   gptr *pt = st->data;
+   return NEW_MPTR(pt[off]);
+}
+
+static at *at_getat(storage_t *st, size_t off)
 {
    at **pt = st->data;
    at *p = pt[off];
    return p;
 }
 
-static at *N_getat(storage_t *st, size_t off)
-{
-   real (*get)(gptr,size_t) = storage_getr[st->type];
-   return NEW_NUMBER( (*get)(st->data, off) );
-}
-
-static at *GPTR_getat(storage_t *st, size_t off)
-{
-   gptr *pt = st->data;
-   return new_gptr(pt[off]);
-}
-
 at *(*storage_getat[ST_LAST])(storage_t *, size_t) = {
-   AT_getat, N_getat, N_getat, N_getat, N_getat, N_getat, N_getat, GPTR_getat
+   Number_getat,
+   Number_getat,
+   Number_getat,
+   Number_getat,
+   Number_getat,
+   Number_getat,
+   Number_getat,
+   gptr_getat,
+   mptr_getat,
+   at_getat
 };
 
 
@@ -253,23 +274,16 @@ void get_write_permit(storage_t *st)
       error(NIL, "read only storage", NIL);
 }
 
-static void AT_setat(storage_t *st, size_t off, at *x)
-{
-   get_write_permit(st);
-   at **pt = st->data;
-   pt[off] = x;
-}
-
-static void N_setat(storage_t *st, size_t off, at *x)
+static void Number_setat(storage_t *st, size_t off, at *x)
 {
    get_write_permit(st);
    ifn (NUMBERP(x))
       error(NIL, "not a number", x);
-   void (*set)(gptr,size_t,real) = storage_setr[st->type];
+   void (*set)(gptr,size_t,real) = storage_setd[st->type];
    (*set)(st->data, off, Number(x));
 }
 
-static void GPTR_setat(storage_t *st, size_t off, at *x)
+static void gptr_setat(storage_t *st, size_t off, at *x)
 {
    get_write_permit(st);
    ifn (GPTRP(x))
@@ -278,72 +292,72 @@ static void GPTR_setat(storage_t *st, size_t off, at *x)
    pt[off] = Gptr(x);
 }
 
+static void mptr_setat(storage_t *st, size_t off, at *x)
+{
+   get_write_permit(st);
+   ifn (MPTRP(x))
+      error(NIL, "not an mptr", x);
+   gptr *pt = st->data;
+   pt[off] = Mptr(x);
+}
+
+static void at_setat(storage_t *st, size_t off, at *x)
+{
+   get_write_permit(st);
+   at **pt = st->data;
+   pt[off] = x;
+}
+
 void (*storage_setat[ST_LAST])(storage_t *, size_t, at *) = {
-   AT_setat, N_setat, N_setat, N_setat, N_setat, N_setat, N_setat, GPTR_setat
+   Number_setat,
+   Number_setat,
+   Number_setat,
+   Number_setat,
+   Number_setat,
+   Number_setat,
+   Number_setat,
+   gptr_setat,
+   mptr_setat,
+   at_setat
 };
 
 
 /* ------- THE CLASS FUNCTIONS ------ */
 
-static storage_t *storage_dispose(storage_t *st)
-{
-   if (st) {
-      if (st->cptr)
-         lside_destroy_item(st->cptr);
-
-#ifdef HAVE_MMAP
-      if (st->flags & STS_MMAP) {
-         if (st->mmap_addr) {
-#ifdef UNIX
-            munmap(st->mmap_addr, st->mmap_len);
-#endif
-#ifdef WIN32
-            UnmapViewOfFile(st->mmap_addr);
-            CloseHandle((HANDLE)(st->mmap_xtra));
-#endif
-            st->mmap_addr = NULL;
-         }
-      }
-#endif // HAVE_MMAP
-      zombify(st->backptr);
-   }
-   return NULL;
-}
-
 static const char *storage_name(at *p)
 {
    storage_t *st = (storage_t *)Mptr(p);
- 
-  if (st->flags & STS_MALLOC)
-      sprintf(string_buffer, "::%s:ram@%p:<%"PRIdPTR">", 
-              NAMEOF(Class(p)->classname), st->data, st->size);
-   else if (st->flags & STS_MMAP)
-      sprintf(string_buffer, "::%s:mmap@%p:<%"PRIdPTR">", 
-              NAMEOF(Class(p)->classname), st->data, st->size);
-   else if (st->flags & STS_STATIC)
-      sprintf(string_buffer, "::%s:static@%p",
-              NAMEOF(Class(p)->classname), st->data);
-   else
-      sprintf(string_buffer, "::%s:strange@%p",
-              NAMEOF(Class(p)->classname), st->data);
-  return mm_strdup(string_buffer);
+   char *kind = "";
+   switch (st->flags & STS_MASK) {
+   case 0:          kind = "unallocated"; break;
+   case STS_MM:     kind = "managed"; break;
+   case STS_MALLOC: kind = "malloc"; break;
+   case STS_MMAP:   kind = "mmap"; break;
+   case STS_STATIC: kind = "static"; break;
+   default:
+      fprintf(stderr, "internal error: invalid storage kind");
+      abort();
+   }
+   const char *clname = nameof(Symbol(Class(p)->classname));
+   sprintf(string_buffer, "::%s:%s@%p:<%"PRIdPTR">", clname, kind, st->data, st->size);
+   return mm_strdup(string_buffer);
 }
 
 static at *storage_listeval(at *p, at *q)
 {
    storage_t *st = Mptr(p);
-
+   
    if (!st->data)
       error(NIL, "unsized storage", p);
-
+   
    q = eval_arglist(Cdr(q));
    ifn (CONSP(q) && Car(q) && NUMBERP(Car(q)))
       error(NIL, "illegal subscript", q);
-
+   
    size_t off = Number(Car(q));
    if (off<0 || off>=st->size)
       error(NIL, "subscript out of range", q);
-
+   
    if (Cdr(q)) {
       ifn (CONSP(Cdr(q)) && !Cddr(q))
          error(NIL,"bad value",q);
@@ -383,9 +397,11 @@ static void storage_serialize(at **pp, int code)
    serialize_size(&size, code);
 
    // Create storage if needed
-   if (code == SRZ_READ)
-      *pp = MAKE_STORAGE(type, size, NIL);
-   
+   if (code == SRZ_READ) {
+      st = make_storage(type, size, NIL);
+      *pp = st->backptr;
+   }
+
    // Read/write storage data
    st = Mptr(*pp);
    if (type == ST_AT) {
@@ -404,7 +420,6 @@ static void storage_serialize(at **pp, int code)
       } else if (code == SRZ_READ) {
          int magic = read4(f);
          storage_load(st, f);
-         st = Mptr(*pp);
          if (magic == STORAGE_SWAPPED)
             swap_buffer(st->data, size, storage_sizeof[type]);
          else if (magic != STORAGE_NORMAL)
@@ -412,65 +427,6 @@ static void storage_serialize(at **pp, int code)
       }
    }
 }
-
-
-/* ----------- VECTORIZED FUNCTIONS ------------- */
-
-/*
- * storage_read_srg()
- * storage_write_srg()
- * storage_rls_srg()
- *
- * Given the storage, these function return a
- * srg structure pointing to the data area;
- */
-
-
-/* void storage_read_srg(storage_t *st) */
-/* { */
-/*    if (st->data == NULL) */
-/*       error(NIL, "unsized storage", NIL); */
-/*    (st->read_srg)(st); */
-/* } */
-
-/* void storage_write_srg(storage_t *st) */
-/* { */
-/*    (st->write_srg)(st); */
-/* } */
-
-/* void storage_rls_srg(storage_t *st) */
-/* { */
-/*    (st->rls_srg)(st); */
-/* } */
-
-
-/* /\* STS_MALLOC and STS_MMAP read_srg *\/ */
-
-/* static void simple_read_srg(storage_t *st) */
-/* { */
-/*    if(st->srg.flags & STS_MALLOC) */
-/*       st->srg.data = st->addr; */
-/* } */
-
-/* /\* STS_MALLOC and STS_MMAP write_srg *\/ */
-
-/* static void simple_write_srg(storage_t *st) */
-/* { */
-/*    if (st->srg.flags & STF_RDONLY) */
-/*       error(NIL, "read only storage", NIL); */
-/*    if(st->srg.flags & STS_MALLOC) */
-/*       st->srg.data = st->addr; */
-/* } */
-
-/* /\* STS_MALLOC and STS_MMAP rls_srg *\/ */
-
-/* static void simple_rls_srg(storage_t *st) */
-/* { */
-/*    if (st->srg.flags & STS_MALLOC) */
-/*       st->addr = st->srg.data; */
-/* } */
-
-/* ------- CREATION OF UNSIZED STORAGES ------- */
 
 extern void dbg_notify(void *, void *);
 
@@ -480,10 +436,8 @@ storage_t *new_storage(storage_type_t t)
    st->type = t;
    st->flags = 0;
    st->size = 0;
-   //st->data = NULL; // set by mm_alloc
+   st->data = NULL;
    st->backptr = new_at(storage_class[st->type], st);
-   st->cptr = NULL;
-   //add_notifier(st, dbg_notify, NULL);
    return st;
 }
 
@@ -506,24 +460,27 @@ storage_t *make_storage(storage_type_t t, size_t n, at *init)
       RAISEF("invalid size", NEW_NUMBER(n));
    
    storage_t *st = new_storage(t);
-   storage_malloc(st, n, init);
+   storage_alloc(st, n, init);
    return st;
 }
 
 /* ------------ ALLOCATION: MALLOC ------------ */
 
-void storage_malloc(storage_t *st, size_t n, at *init)
+void storage_alloc(storage_t *st, size_t n, at *init)
 {
    ifn (st->data == NULL)
       RAISEF("storage must be unsized", st->backptr);
    
    /* allocate memory and initialize srg */
    size_t s = n*storage_sizeof[st->type];
-   st->data  = mm_allocv(st->type==ST_AT ? mt_refs : mt_blob, s);
-   st->flags = STS_MALLOC;
+   if (st->type==ST_AT || st->type==ST_MPTR)
+      st->data = mm_allocv(mt_refs, s);
+   else 
+      st->data = mm_blob(s);
+   st->flags = STS_MM;
    st->size  = n;
-
-   /* clear gptr storage data (ATs are cleared by mm) */
+   
+   /* clear gptr storage data (ATs and MPTRs are cleared by mm) */
    if (init && n>0)
       storage_clear(st, init, 0);
 
@@ -534,13 +491,13 @@ void storage_malloc(storage_t *st, size_t n, at *init)
    }
 }
 
-DX(xstorage_malloc)
+DX(xstorage_alloc)
 {
    ARG_NUMBER(3);
    int n = AINTEGER(2);
    if (n<0)
       RAISEFX("invalid size", NEW_NUMBER(n));
-   storage_malloc(ASTORAGE(1), n, APOINTER(3));
+   storage_alloc(ASTORAGE(1), n, APOINTER(3));
    return NIL;
 }
 
@@ -549,29 +506,44 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    if (size < st->size)
       RAISEF("storage size cannot be reduced", st->backptr);
    
-   ifn (st->flags & STS_MALLOC)
-      RAISEF("only RAM based storages can be enlarged", st->backptr);
-   
-   /* reallocate memory and update srg */
+   short kind = st->flags & STS_MASK;
    size_t s = size*storage_sizeof[st->type];
    size_t olds = st->size*storage_sizeof[st->type];
    gptr olddata = st->data;
 
-   MM_ANCHOR(olddata);
-   if (st->type==ST_AT || st->type==ST_GPTR)
-      st->data = mm_allocv(mt_refs, s);  /* aborts if OOM */
-   else 
-      st->data = mm_blob(s);
+   /* empty storage */
+   if (kind == 0) {
+      assert(st->data == NULL);
+      storage_alloc(st, size, init);
+      return;
 
-   memcpy(st->data, olddata, olds);
+   } else if (kind == STS_MM || kind == STS_FOREIGN || kind == STS_MALLOC) {
+      /* reallocate memory and update srg */
+      MM_ANCHOR(olddata);
+      if (st->type==ST_AT || st->type==ST_MPTR)
+         st->data = mm_allocv(mt_refs, s);
+      else 
+         st->data = mm_blob(s);
+      
+      if (st->data) {
+         memcpy(st->data, olddata, olds);
+         if (kind == STS_MALLOC)
+            free(olddata);
+         st->flags &= ~STS_MASK;
+         st->flags |= STS_MM;
+      }
+      
+   } else
+      RAISEF("only RAM based storages can be enlarged", st->backptr);
    
    if (st->data == NULL) {
       st->data = olddata;
       RAISEF("not enough memory", NIL);
    }
+   
    size_t oldsize = st->size;
    st->size = size;
-
+   
    if (init) {
       /* temporarily clear read only flag to allow initialization */
       short flags = st->flags;
@@ -613,22 +585,29 @@ void storage_clear(storage_t *st, at *init, size_t from)
       for (int off = from; off < size; off++)
          (storage_setat[st->type])(st, off, init);
       
-   } else if (storage_setat[st->type] == N_setat) {
+   } else if (storage_setat[st->type] == Number_setat) {
       get_write_permit(st);
-      if (st->flags & STS_MALLOC) {
+      short kind = st->flags & STS_MASK;
+      if (kind==STS_MM || kind==STS_MALLOC) {
          void (*set)(gptr, size_t, real);
-         set = storage_setr[st->type];
+         set = storage_setd[st->type];
          for (int off = from; off < size; off++)
             (*set)(st->data, off, Number(init));
       } else
          for (int off = from; off<size; off++)
-            N_setat(st, off, init);
+            Number_setat(st, off, init);
       
-   } else if (storage_setat[st->type] == GPTR_setat) {
+   } else if (storage_setat[st->type] == gptr_setat) {
       get_write_permit(st);
       gptr *pt = st->data;
       for (int off=from; off<size; off++)
          pt[off] = Gptr(init);
+
+   } else if (storage_setat[st->type] == mptr_setat) {
+      get_write_permit(st);
+      gptr *pt = st->data;
+      for (int off=from; off<size; off++)
+         pt[off] = Mptr(init);
    } else
       RAISEF("don't know how to clear this storage", st->backptr);
 }
@@ -646,6 +625,26 @@ DX(xstorage_clear)
 
 #ifdef HAVE_MMAP
 
+static void storage_notify(storage_t *st, void *_)
+{
+   short kind = st->flags & STS_MASK;
+
+#ifdef HAVE_MMAP
+   if (kind == STS_MMAP) {
+      if (st->mmap_addr) {
+#ifdef UNIX
+         munmap(st->mmap_addr, st->mmap_len);
+#endif
+#ifdef WIN32
+         UnmapViewOfFile(st->mmap_addr);
+         CloseHandle((HANDLE)(st->mmap_xtra));
+#endif
+         st->mmap_addr = NULL;
+      }
+   }
+#endif // HAVE_MMAP
+}
+
 void storage_mmap(storage_t *st, FILE *f, size_t offset)
 {
 #if HAVE_FSEEKO
@@ -661,10 +660,12 @@ void storage_mmap(storage_t *st, FILE *f, size_t offset)
    size_t len = (size_t)ftell(f);
 #endif
    rewind(f);
-   if (st->type == ST_AT)
-      RAISEF("cannot map an AT storage", st->backptr);
+   if (st->type==ST_MPTR || st->type==ST_GPTR)
+      RAISEF("cannot mmap a pointer storage", st->backptr);
+   if (st->type==ST_AT)
+      RAISEF("cannot mmap an atom-storage", st->backptr);
    ifn (st->data == NULL)
-      RAISEF("unsized storage required", st->backptr);
+      RAISEF("not an unallocated storage", st->backptr);
 #ifdef UNIX
    gptr addr = mmap(0,len,PROT_READ,MAP_SHARED,fileno(f),0);
    if (addr == (void*)-1L)
@@ -685,6 +686,7 @@ void storage_mmap(storage_t *st, FILE *f, size_t offset)
    st->mmap_addr = addr;
    st->size = (len - offset) / storage_sizeof[st->type];
    st->data = (char *)(st->mmap_addr)+offset;
+   add_notifier(st, (wr_notify_func_t *)storage_notify, NULL);
 }
 
 DX(xstorage_mmap)
@@ -813,7 +815,7 @@ void storage_load(storage_t *st, FILE *f)
       if (len==0) 
          return;
       else
-         storage_malloc(st,(size_t)len/storage_sizeof[st->type],0);
+         storage_alloc(st,(size_t)len/storage_sizeof[st->type],0);
    }
    
    get_write_permit(st);
@@ -887,34 +889,38 @@ DX(xstorage_save)
 class_t *abstract_storage_class;
 class_t *storage_class[ST_LAST];
 
-#define Generic_storage_class_init(tok)		                     \
-   new_builtin_class(&(storage_class[ST_ ## tok]), abstract_storage_class); \
-   (storage_class[ST_ ## tok])->dispose = (dispose_func_t *)storage_dispose; \
-   (storage_class[ST_ ## tok])->name = storage_name;                     \
-   (storage_class[ST_ ## tok])->listeval = storage_listeval;             \
-   (storage_class[ST_ ## tok])->serialize = storage_serialize;           \
-   class_define(#tok "STORAGE", (storage_class[ST_ ## tok]));
+#define Generic_storage_class_init(tok, type)                           \
+   (storage_class[ST_ ## tok]) = new_builtin_class(abstract_storage_class); \
+   (storage_class[ST_ ## tok])->name = storage_name;                    \
+   (storage_class[ST_ ## tok])->listeval = storage_listeval;            \
+   (storage_class[ST_ ## tok])->serialize = storage_serialize;          \
+   class_define(#type "-storage", (storage_class[ST_ ## tok]))
 
 
 void init_storage()
 {
+   assert(ST_FIRST==0);
+   assert(sizeof(char)==sizeof(uchar));
+
    mt_storage = MM_REGTYPE("storage", sizeof(storage_t),
-                           clear_storage, mark_storage, finalize_storage);
+                           clear_storage, mark_storage, 0);
 
    /* set up storage_classes */
-   new_builtin_class(&abstract_storage_class, NIL);
-   class_define("STORAGE", abstract_storage_class);
-   Generic_storage_class_init(AT);
-   Generic_storage_class_init(F);
-   Generic_storage_class_init(D);
-   Generic_storage_class_init(I32);
-   Generic_storage_class_init(I16);
-   Generic_storage_class_init(I8);
-   Generic_storage_class_init(U8);
-   Generic_storage_class_init(GPTR);
+   abstract_storage_class = new_builtin_class(NIL);
+   class_define("storage", abstract_storage_class);
+   Generic_storage_class_init(BOOL, bool);
+   Generic_storage_class_init(AT, at);
+   Generic_storage_class_init(FLOAT, float);
+   Generic_storage_class_init(DOUBLE, double);
+   Generic_storage_class_init(INT, int);
+   Generic_storage_class_init(SHORT, short);
+   Generic_storage_class_init(CHAR, char);
+   Generic_storage_class_init(UCHAR, uchar);
+   Generic_storage_class_init(GPTR, gptr);
+   Generic_storage_class_init(MPTR, mptr);
 
    dx_define("new-storage", xnew_storage);
-   dx_define("storage-malloc",xstorage_malloc);
+   dx_define("storage-alloc",xstorage_alloc);
    dx_define("storage-realloc",xstorage_realloc);
    dx_define("storage-clear",xstorage_clear);
 #ifdef HAVE_MMAP

@@ -45,8 +45,6 @@
 # endif
 #endif
 
-typedef unsigned char   uchar;
-
 #define MINDATE 0
 #define MAXDATE 6
 
@@ -993,7 +991,7 @@ class_t *date_class;
 void init_date(void)
 {
    /* setting up date_class */
-   new_builtin_class(&date_class, NIL);
+   date_class = new_builtin_class(NIL);
    date_class->name = date_name;
    date_class->serialize = date_serialize;
    date_class->compare = date_compare;

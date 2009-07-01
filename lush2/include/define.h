@@ -39,7 +39,7 @@
 # endif
 #endif
 
-#if defined(__APPLE__) && defined(__MACH__) &&  (defined (__i686__) || defined(__i386__))
+#if defined(__APPLE__) && defined(__MACH__) && (defined (__i686__) || defined(__i386__))
 #  define __MACOSX__  1
 #endif
 
@@ -62,20 +62,12 @@
 
 /* untyped pointer */
 typedef void* gptr;
+typedef void* mptr;  /* for managed addresses */
+#ifndef uchar
+#  define uchar unsigned char
+#endif
 #define NIL 0L
 
-#ifndef INF
-# define INF INFINITY
-#endif
-
-/* --------- UNFORTUNATE NAMES -------- */
-
-#define abort     TLabort
-#define error     TLerror
-//#define class     TLclass
-// #define true      TLtrue
-#define basename  TLbasename
-#define dirname   TLdirname
 
 /* --------- MACHINE DEPENDANT STUFF -------- */
 

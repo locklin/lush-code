@@ -1,8 +1,7 @@
 /***********************************************************************
  * 
- *  PSU Lush
- *    Copyright (C) Ralf Juengling.
- *  Derived from LUSH Lisp Universal Shell
+ *  LUSH Lisp Universal Shell
+ *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
  *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
@@ -10,9 +9,9 @@
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ *  it under the terms of the Lesser GNU General Public License as 
+ *  published by the Free Software Foundation; either version 2 of the
+ *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,6 +25,7 @@
  ***********************************************************************/
 
 #include "header.h"
+#undef uchar
 #include <cxtypes.h>
 
 
@@ -54,11 +54,11 @@ int cvmat_typecode(index_t *ind, int nchannels) {
     typecode = CV_MAKE_TYPE(CV_16S, nchannels);
     break;
 
-  case ST_BYTE:
+  case ST_CHAR:
     typecode = CV_MAKE_TYPE(CV_8S, nchannels);
     break;
 
-  case ST_UBYTE:
+  case ST_UCHAR:
     typecode = CV_MAKE_TYPE(CV_8U, nchannels);
     break;
   

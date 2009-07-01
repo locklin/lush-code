@@ -336,7 +336,7 @@ void lastchance(const char *s)
          time(&clock);
          fprintf(stderr,"**** GASP: %s", ctime(&clock));
       }
-      abort("gasp handler");
+      lush_abort("gasp handler");
       
    } else {
       fprintf(stderr,"**** GASP: recursive error: %s\n", s);
@@ -849,10 +849,10 @@ static int console_getc(FILE *f)
    return rl_getc(f);
 }
 
-extern char *symbol_generator(const char *, int); // in symbol.c
-
 #if RL_READLINE_VERSION > 0x400
  
+extern char *symbol_generator(const char *, int); // in symbol.c
+
 static char **console_complete(const char *text, int start, int end)
 {
    int state = 0;

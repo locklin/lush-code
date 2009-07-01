@@ -25,6 +25,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
+;; global switch; when true, compiler generates no hidden arguments
+(defvar *dhc-no-hidden-args* t)
+
 
 ;;; ------------------------------------------------------------------------
 ;;; ------------------------------------------------------------------------
@@ -57,17 +60,6 @@
 ;;; GENERAL FUNCTIONS
 ;;; ------------------------------------------------------------------------
 
-
-#? (dhc-insert-op <l> <op>)
-;; Concatenate all strings in <l> separated with <op>.
-;;.VP
-;;? (insert-op '("3" "4" "5") "*")
-;;= "3*4*5"
-(de dhc-insert-op (l op)
-  (let ((n (when l (list (car l)))))
-    (each ((s (cdr l)))
-      (setq n (cons s (cons op n))) )
-    (apply concat (reverse n)) ) )
 
 #? (dhc-nolast <l>)
 ;; Remove last element of list.
@@ -181,6 +173,9 @@
      ;; force type1 to be a number if type2 is
      ((==> type2 is-a-number)
       (dhc-unify-types type1 (new dhc-type 'dht-number)))
+     ;; assigning an mptr to a gptr is dangerous but ok 
+     ((and (==> type2 is-a-mptr) (==> type1 is-a-gptr))
+      type1)
      ;; if simple, must be of same type but not unified!
      ((==> type2 is-a-simple)
       (dhc-unify-types type1 type2-copy))
@@ -318,19 +313,21 @@
 ;; for objects of class <type>.
 (de dhc-class-to-struct-decl (type)
   (when ~(= 'dht-class (unode-val :type:u-tclass))
-        (dhc-error "type is not a class in dhc-class-to-struct-decl"))
+    (dhc-error "type is not a class") )
   (let* ((class-cname (dhc-lisp-to-c-name (dhu-name type)))
          (the-struct (sprintf (concat "struct CClass_%s {\n"
-                                      "  struct VClass_%s *Vtbl;" )
+                                      "  struct VClass_%s *Vtbl;"
+                                      "  class_t  *__lcl;"
+                                      "  object_t *__lptr;")
                               class-cname class-cname))
          (class-ladder ())
-         (type type))
-    (while (<> 'dht-nil (unode-val :type:u-tclass))
-      (setq class-ladder (cons type class-ladder))
-      (setq type (unode-val :type:u-type)))
+         (t type))
+    (while (<> 'dht-nil (unode-val :t:u-tclass))
+      (setq class-ladder (cons t class-ladder))
+      (setq t (unode-val :t:u-type)))
     
-    (each ((type (cdr class-ladder)))
-      (each ((slot (unode-val :type:u-temps)))
+    (dolist (t (cdr class-ladder))
+      (dolist (slot (unode-val :t:u-temps))
         (setq the-struct (concat the-struct "\n"
                                  (dhc-type-to-c-decl (cdr slot))
                                  " " 
@@ -338,7 +335,7 @@
                                   (if (consp (car slot))  ;; why?
                                       (nameof (caar slot))
                                     (nameof (car slot)))) ";"))))
-    (concat the-struct "\n};")))
+    (concat the-struct "\n};") ))
 
 #? (dhc-class-to-vtable-decl <type>)
 ;; Returns a string containing the C structure declaration
@@ -349,8 +346,9 @@
   (let* ((cname (dhc-lisp-to-c-name (dhu-name type)))
          (struct (sprintf (concat "struct VClass_%s {\n"
                                   "  void *Cdoc;\n"
-                                  "  void (*Cdestroy)(gptr);")
-                          cname))
+                                  "  void (*Cdestroy)(struct CClass_%s *);"
+                                  "  void (*__mark)(struct CClass_%s *);")
+                          cname cname cname))
          (alist (dhc-methods-of-class type)) )
     ;; generate vtable entries
     (let ((ms (domapcar (((name . type) alist))
@@ -362,25 +360,25 @@
 #? (dhc-type-to-c-decl <type>)
 ;; Returns a short string with the C equivalent of type <type>.
 (de dhc-type-to-c-decl (type)
-    (cond ((==> type is-an-idx)  "struct idx")
-	  ((==> type is-a-srg)   "struct srg")
-	  ((==> type is-a-flt)   "flt")
-	  ((==> type is-a-real)  "real")
-	  ((==> type is-an-int)  "int")
-	  ((==> type is-a-short) "short")
-	  ((==> type is-a-byte)  "char")
-	  ((==> type is-a-ubyte) "unsigned char")
-	  ((==> type is-a-bool)  "bool")
-	  ((==> type is-a-str)   "char*")
-	  ((==> type is-a-gptr)
-           (or (dhu-name type) "gptr") )
-	  ((==> type is-an-obj)
-           (let ((class-cname (dhc-lisp-to-c-name (dhu-name (dhu-type type)))))
-             (sprintf "struct CClass_%s" class-cname) ))
-	  ((==> type is-a-ptr)  
-           (concat (dhc-type-to-c-decl (dhu-type type)) "*"))
-	  (t 
-           (dhc-error "Unknown Type") ) ) )
+  (cond ((==> type is-an-idx)  "index_t")
+        ((==> type is-a-srg)   "storage_t")
+        ((==> type is-a-flt)   "float")
+        ((==> type is-a-real)  "double")
+        ((==> type is-an-int)  "int")
+        ((==> type is-a-short) "short")
+        ((==> type is-a-byte)  "char")
+        ((==> type is-a-ubyte) "unsigned char")
+        ((==> type is-a-bool)  "bool")
+        ((==> type is-a-str)   "char*")
+        ((==> type is-a-gptr)  (or (dhu-name type) "gptr"))
+        ((==> type is-a-mptr)  (or (dhu-name type) "mptr"))
+        ((==> type is-an-obj)
+         (let ((class-cname (dhc-lisp-to-c-name (dhu-name (dhu-type type)))))
+           (sprintf "struct CClass_%s" class-cname) ))
+        ((==> type is-a-ptr)  
+         (concat (dhc-type-to-c-decl (dhu-type type)) "*"))
+        (t 
+         (dhc-error "Unknown Type") ) ) )
 
 (de dhc-arg-format (type)
   (cond  
@@ -390,34 +388,40 @@
      ((==> (unode-val :type:u-type) is-a-srg)  "dh_srg_ptr")
      ((==> (unode-val :type:u-type) is-an-obj) "dh_obj_ptr")
      (t (dhc-error "Argument pointer type is unknown")) ) )
-   ((==> type is-a-flt)    "dh_flt")
+   ((==> type is-a-flt)    "dh_float")
    ((==> type is-a-short)  "dh_short")
    ((==> type is-a-byte)   "dh_char")
    ((==> type is-a-ubyte)  "dh_uchar")
    ((==> type is-an-int)   "dh_int")
-   ((==> type is-a-real)   "dh_real")
+   ((==> type is-a-real)   "dh_double")
    ((==> type is-a-str)    "dh_str_ptr")
    ((==> type is-a-gptr)   "dh_gptr")
-   ((==> type is-a-bool)   "dh_char")
+   ((==> type is-a-mptr)   "dh_mptr")
+   ((==> type is-a-bool)   "dh_bool")
    (t (dhc-error "Argument type is unknown"))))
 
 (de dhc-type-to-srg-type (ty)
   (selectq (unode-val :ty:u-tclass)
-    (dht-flt   "ST_F")
-    (dht-real  "ST_D")
-    (dht-int   "ST_I32")
-    (dht-short "ST_I16")
-    (dht-ptr   "ST_AT")
-    (dht-ubyte "ST_U8")
-    (dht-byte  "ST_I8")
-    (dht-gptr  "ST_GPTR")
+    (dht-bool    "ST_BOOL")
+    (dht-float   "ST_FLOAT")
+    (dht-double  "ST_DOUBLE")
+    (dht-int     "ST_INT")
+    (dht-short   "ST_SHORT")
+    ;(dht-ptr     "ST_MPTR")
+    (dht-uchar   "ST_UCHAR")
+    (dht-char    "ST_CHAR")
+    (dht-gptr    "ST_GPTR")
+    (dht-mptr    "ST_MPTR")
     (t (dhc-error "not a know type of matrix"))))
+
+(de dhc-gormptr (type)
+  (or (==> type is-a-gptr) (==> type is-a-mptr)) )
 
 (de dhc-ptr-cast(expr type &optional type2)
   (let ((cast expr))
     ;; GPTRs
-    (when (and (==> type is-a-gptr)
-               (or (not type2) (==> type2 is-a-gptr)) )
+    (when (and (dhc-gormptr type)
+               (or (not type2) (dhc-gormptr type2)) )
       (when (<> (dhu-name type) (when type2 (dhu-name type2)))
         (setq cast (concat "(" (dhc-type-to-c-decl type) ")"))
         (when expr (setq cast (concat cast "(" expr ")"))) ) )
@@ -484,7 +488,7 @@
        (sprintf "memset(%s, 0, sizeof(%s));" name tname)
        (sprintf "%s->Vtbl = &Vt_%s;" name cname) )
       (dhc-add-c-epilog
-       (sprintf "(%s->Vtbl->Cdestroy)((gptr)(%s));" name name) ) ) )
+       (sprintf "if (%s->Vtbl) (%s->Vtbl->Cdestroy)((gptr)(%s));" name name name) ) ) )
    
    ((==> type is-a-srg) 
     (dhc-add-c-declarations 
@@ -495,6 +499,41 @@
     (dhc-add-c-epilog 
      (sprintf "Msrg_free(%s);" name)))
    (t (dhc-error "Unknown type"))))
+
+;; this is the version for allocating from the lush runtime
+(de dhc-declare-var-dynamic (name type)
+  (cond 
+   ((or (==> type is-a-simple) (==> type is-a-ptr))
+    (dhc-add-c-declarations 
+     (sprintf "%s %s;" (dhc-type-to-c-decl type) name)) )
+   
+   ((==> type is-an-idx) 
+    (let ((ndim (unode-val :type:u-ndim)))
+      (dhc-add-c-declarations (sprintf "index_t *%s = new_empty_index(%d);" name ndim)) ))
+   
+   ((==> type is-an-obj)
+    (let* ((ctype (dhu-type type))
+           (cname (dhc-lisp-to-c-name (dhu-name ctype)))
+           (kname (dhc-kname ctype cname)) )
+      (when (dhu-class ctype)
+        (dhc-add-c-metaexterns (sprintf "extern_c dhclassdoc_t %s;" kname))
+        (dhc-add-c-depends kname)
+        (dhc-add-c-externs (sprintf "extern_c struct VClass_%s Vt_%s;" cname cname))
+	(when (<> (dhu-class ctype) :object) 
+	  (dhc-add-c-externs (dhc-class-to-struct-decl ctype)) ))
+      (dhc-add-c-statements
+       (sprintf "%s *%s = (void *)new_cobject((dhclassdoc_t *)Vt_%s.Cdoc);"
+                (dhc-type-to-c-decl type) name cname)) ))
+   
+   ((==> type is-a-srg) 
+    (let ((srg-type (dhc-type-to-srg-type (unode-val :type:u-type))))
+      (dhc-add-c-statements (sprintf "storage_t *%s = new_storage(%s);" name srg-type)) ))
+
+   ((==> type is-a-list)
+    (dhc-error "dynamic creation of lists not supported")
+    ())
+   
+   (t (dhc-error "unknown type")) ))
 
 
 #? (dhc-declare-temp-var <type> [<clue>])
@@ -514,7 +553,8 @@
 ;; initialized, bumped and freed automatically.  For any variable
 ;; in the scope, just add the dhc-symbol entry in to the list:
 ;; (setq bump-list (nconc1 bump-list symbol))
-(dm dhc-push-scope-t (f . instr-list)
+
+(dm dhc-push-scope-t (_ . instr-list)
   `(let ((|_Split| ())
          (|_Treetype| ()))
      (let ((new-symbol-table symbol-table)
@@ -541,14 +581,14 @@
      (setq bump-list (append bump-list |_Split|))
      |_Treetype|))
 
-(dm dhc-bumped-block (f treetype retplace . instr-list)
+(dm dhc-bumped-block (_ treetype retplace . body)
   `(let ((block ())
          (retexpr ()))
      (let ((c-statements ())
            (c-declarations ())
            (c-epilog ())
            (bump-list :,treetype:symbol))
-       (each ((temp bump-list))
+       (dolist (temp bump-list)
          (if (and (consp :temp:no-declare) 
                   (= (car :temp:no-declare) 'no-declare)
                   :(cdr :temp:no-declare):ignore)
@@ -563,12 +603,12 @@
                             (dhc-postincr tmpnames-seed)
                             (dhc-lisp-to-c-name (nameof :temp:lisp-name))))
              (dhc-declare-var :temp:c-name :temp:type))))
-       (setq retexpr ,(cons 'progn instr-list))
+       (setq retexpr ,(cons 'progn body))
        (setq block (append c-declarations c-statements c-epilog)))
      (setq c-statements (nconc c-statements block))
      retexpr))
 
-(dm dhc-push-scope-c(f treetype retplace . instr-list)
+(dm dhc-push-scope-c (_ treetype retplace . body)
   `(let ((tmpvar ())
          (retexpr ()))
      ;; If a return value is expected, 
@@ -580,16 +620,17 @@
        (setq retplace (dhc-declare-temp-var :treetype:type)))
      (dhc-add-c-statements "{")
      (setq retexpr ,(append (list 'dhc-bumped-block 'treetype 'retplace)
-                            instr-list))
+                            body))
      (if (and retplace (<> retexpr retplace))
          (dhc-add-c-statements (sprintf "%s = %s;" retplace retexpr)))
      (dhc-add-c-statements "}")
-     ;; not necessary when instr-list contains dhc-parse-expr-c (but see bloop)
+     ;; not necessary when body contains dhc-parse-expr-c (but see bloop)
      (if (and retplace (<> retexpr retplace))
          retplace
        (if (==> :treetype:type is-a-simple)
            retplace
-         retexpr))))
+         retexpr)))
+  )
 
 
 
@@ -687,7 +728,7 @@
   u-bump    ; lexical level (start with ())
   u-access  ; 'read if the object is read only, 'write otherwise
   u-name    ; for class: name of class
-            ; for gptr: optional name of pointer C type
+            ; for gptr/mptr: optional name of pointer C type
   ;; Cached hash code
   u-hash
 )			
@@ -695,20 +736,19 @@
 ;; order is important in following lists 
 ;; because it determine numeric promotions
 (defvar dhc-simple-types 
-  '(dht-dc dht-unk dht-int dht-flt dht-bool dht-nil
-    dht-short dht-byte dht-ubyte dht-real 
-    dht-str dht-gptr dht-number dht-dhm))
+  '(dht-dc dht-unk dht-int dht-float dht-bool dht-nil
+    dht-short dht-char dht-uchar dht-double 
+    dht-str dht-gptr dht-mptr dht-number dht-dhm))
 (defvar dhc-complex-types 
-  '(dht-idx dht-srg dht-obj dht-class
-    dht-func dht-ptr dht-list))
+  '(dht-idx dht-srg dht-obj dht-class dht-func dht-ptr dht-list))
 (defvar dhc-int-types
-  (reverse '(dht-int dht-short dht-byte dht-ubyte)))
+  (reverse '(dht-int dht-short dht-char dht-uchar)))
 (defvar dhc-int-types*
   (cons 'dht-bool dhc-int-types))
 (defvar dhc-number-types 
-  (append dhc-int-types '(dht-number dht-flt dht-real)) )
+  (append dhc-int-types '(dht-number dht-float dht-double)) )
 (defvar dhc-number-types*
-  (append dhc-int-types* '(dht-number dht-flt dht-real)) )
+  (append dhc-int-types* '(dht-number dht-float dht-double)) )
 (defvar dhc-all-types 
   (append dhc-simple-types dhc-complex-types))
 
@@ -744,7 +784,9 @@
                    ('dht-func
                     (hashcode (list 'dht-func
                                     (domapcar ((u (unode-val u-extra))) (==> u hashcode))
-                                    (domapcar ((u (unode-val u-temps))) (==> u hashcode))
+                                    (if *dhc-no-hidden-args* 
+                                        () 
+                                      (domapcar ((u (unode-val u-temps))) (==> u hashcode)) )
                                     (==> (unode-val u-type) hashcode) )))
 
                    ('dht-class
@@ -756,7 +798,7 @@
                                     (domapcar (((nam . typ) (unode-val u-extra))) 
                                       (list nam (==> typ hashcode)) ))))
                    ('dht-number
-                    (hashcode 'dht-real) )
+                    (hashcode 'dht-double) )
 
                    ('dht-nil
                     (hashcode 'dht-bool) )
@@ -792,10 +834,15 @@
       ;; functions
       (dht-func 
        (add (all ((u (unode-val u-extra))) (==> u type-to-desc)))
-       (add (all ((u (unode-val u-temps))) (==> u type-to-desc)))
+       (if *dhc-no-hidden-args*
+           (add ())
+         (add (all ((u (unode-val u-temps))) (==> u type-to-desc))) )
        (add (==> (unode-val u-type) type-to-desc)) )
       ;; gptr
       (dht-gptr
+       (when (unode-val u-name) (add (unode-val u-name))) )
+      ;; mptr
+      (dht-mptr
        (when (unode-val u-name) (add (unode-val u-name))) )
       ;; lists
       (dht-list 
@@ -901,9 +948,9 @@
   (let ((tclass (unode-val u-tclass)))
     (if (consp l) (member tclass l) (= tclass l)) ) )
 (defmethod dhc-type is-a-flt()
-  (= (unode-val u-tclass) 'dht-flt))
+  (= (unode-val u-tclass) 'dht-float))
 (defmethod dhc-type is-a-real()
-  (member (unode-val u-tclass) '(dht-real dht-number)))
+  (member (unode-val u-tclass) '(dht-double dht-number)))
 (defmethod dhc-type is-a-bool()
   (member (unode-val u-tclass) '(dht-bool dht-nil)))
 (defmethod dhc-type is-a-nil()
@@ -915,9 +962,9 @@
 (defmethod dhc-type is-a-short()
   (= (unode-val u-tclass) 'dht-short)))
 (defmethod dhc-type is-a-byte()
-  (= (unode-val u-tclass) 'dht-byte)))
+  (= (unode-val u-tclass) 'dht-char)))
 (defmethod dhc-type is-a-ubyte()
-  (= (unode-val u-tclass) 'dht-ubyte))
+  (= (unode-val u-tclass) 'dht-uchar))
 (defmethod dhc-type is-an-integer()
   (member (unode-val u-tclass) dhc-int-types))
 (defmethod dhc-type is-a-dhm()
@@ -932,6 +979,8 @@
   (= (unode-val u-tclass) 'dht-str))
 (defmethod dhc-type is-a-gptr()
   (= (unode-val u-tclass) 'dht-gptr))
+(defmethod dhc-type is-a-mptr()
+  (= (unode-val u-tclass) 'dht-mptr))
 (defmethod dhc-type is-a-number()
   (member (unode-val u-tclass) dhc-number-types))
 
@@ -950,6 +999,10 @@
   (let ((ty (cond
              ;; gptr
              ((==> this is-a-gptr)
+              (new dhc-type (unode-val u-tclass) 
+                   (when u-name (unode-val u-name))) )
+             ;; mptr
+             ((==> this is-a-mptr)
               (new dhc-type (unode-val u-tclass) 
                    (when u-name (unode-val u-name))) )
              ;; simple types
@@ -1159,10 +1212,10 @@
 #? (new dhc-type <class> [<a1>] [<a2>])
 ;;.IP 
 ;; Declaration of simple types: (new dhc-type <type>).  Where <type> is
-;; a symbol from like, 'dht-flt 'dht-bool, 'dht-nil, etc...
+;; a symbol from like, 'dht-float 'dht-bool, 'dht-nil, etc...
 ;;.IP 
 ;; Declaration of arrays: (new dhc-type 'dht-out <ndim> [<type>])
-;; Where <type> can be any type (default is (new dhc-type 'dht-flt)).
+;; Where <type> can be any type (default is (new dhc-type 'dht-float)).
 ;; <ndim> is an integer.
 ;;.IP
 ;; Declaration of object: (new dhc-type 'dht-obj <type-list>)
@@ -1175,8 +1228,8 @@
 (defmethod dhc-type dhc-type(tc &optional a1 a2 a3 a4 a5)
   (each ((s (slots dhc-type)))
 	(set s (new-unode)))
-  (when (= tc 'dht-double) (setq tc 'dht-real))
-  (when (= tc 'dht-float) (setq tc 'dht-flt))
+  (when (= tc 'dht-double) (setq tc 'dht-double))
+  (when (= tc 'dht-float) (setq tc 'dht-float))
   (selectq tc
     ;; idx type
     (dht-idx
@@ -1187,16 +1240,16 @@
     ;; pointer type
     (dht-ptr
      (when (null a1)
-       (dhc-error "ptr must point on something"))
+       (dhc-error "ptr must point to something"))
      (setq u-type (new-unode a1)))
     ;; storage type
     (dht-srg
-     (setq u-type (new-unode (if a1 a1 (new dhc-type 'dht-flt)))) )
+     (setq u-type (new-unode (if a1 a1 (new dhc-type 'dht-float)))) )
     ;; list type
     (dht-list
      (when (not a1)
        (error 'dhc-type "missing list arguments" ()) )
-     (setq u-type (new-unode (new dhc-type 'dht-ubyte)))
+     (setq u-type (new-unode (new dhc-type 'dht-uchar)))
      (setq u-extra (new-unode a1))
      (setq u-ndim (new-unode (length a1))) )
     ;; class type
@@ -1230,6 +1283,11 @@
        (dhc-internal-error "no args expected")))
     ;; gptr type
     (dht-gptr 
+     (when a1 (setq u-name (new-unode a1)))
+     (when (or a2 a3)
+       (dhc-internal-error "at most one arg expected")) )
+    ;; mptr type
+    (dht-mptr 
      (when a1 (setq u-name (new-unode a1)))
      (when (or a2 a3)
        (dhc-internal-error "at most one arg expected")) )
@@ -1355,6 +1413,16 @@
                (unode-unify :t1:u-name :t2:u-name por) )
               (t 
                (dhc-unif-error "incompatible gptrs")) )))
+          ;; mptr
+          ((= tclass 'dht-mptr)
+           (let ((ct1 (unode-val :t1:u-name))
+                 (ct2 (unode-val :t2:u-name)) )
+             (cond
+              ((= ct1 ct2) ())
+              ((or (null ct1) (null ct2))
+               (unode-unify :t1:u-name :t2:u-name por) )
+              (t 
+               (dhc-unif-error "incompatible mptrs")) )))
           ;; simple types
           ((member tclass dhc-simple-types) ())
           ;; complex types
@@ -1509,6 +1577,9 @@
      ;; gptr
      ((= tclass 'gptr)
       (new dhc-type 'dht-gptr (cadr desc)) )
+     ;; mptr
+     ((= tclass 'mptr)
+      (new dhc-type 'dht-mptr (cadr desc)) )
      ;; simple types
      ((member dht dhc-simple-types)
       (new dhc-type dht) )
@@ -1674,11 +1745,15 @@
     (cond 
      ;; special
      ((= tclass 'number)
-      (list "DH_REAL,"))
+      (list "DH_DOUBLE,"))
      ((= tclass 'gptr)
       (if (cdr desc)
           (list (sprintf "DH_GPTR(%l)," (cadr desc)))
         (list "DH_GPTR(0),") ) )
+     ((= tclass 'mptr)
+      (if (cdr desc)
+          (list (sprintf "DH_MPTR(%l)," (cadr desc)))
+        (list "DH_MPTR(0),") ) )
      ((= tclass 'list)
       (append (list (sprintf "DH_LIST(%d)," (length (cdr desc))))
               (apply append (mapcar dhc-d-to-doc (cdr desc)))
@@ -1746,7 +1821,7 @@
      (append
       (list (sprintf "DH_FUNC(%d)," (length arg1)))
       (apply append (mapcar dhc-d-to-doc arg1))
-      (when arg2 
+      (when arg2
         (apply append 
                (list (list (sprintf "DH_TEMPS(%d)," (length arg2)))
                      (flatten (mapcar dhc-d-to-doc-temp arg2))
@@ -2429,6 +2504,9 @@
                ((= source t)
                 (new t-node () (new dhc-type 'dht-bool) source))
                
+               ((= source 'NULL)
+                (new t-node () (new dhc-type 'dht-mptr) source) )
+               
                ((isa (eval source) |DH|)
                 (new t-node () 
                      (dhc-desc-to-type (dhinfo-t (eval source)))
@@ -2545,8 +2623,10 @@
             ;; Case of a variable
             ((symbolp source)
              (cond
-              ((= source t) 
+              ((= source t)      
                "true")
+              ((= source 'NULL)
+               "NULL")
               ((getp (dhc-search-symtable source global-table) 'defconstant)
                (let ((c (car (getp (dhc-search-symtable source global-table) 'defconstant))))
                  (dhc-parse-expr-c c treetype retplace) ))
@@ -2664,10 +2744,10 @@
          (inds (all ((so inds-so) (tn inds-tn))
                  (dhc-parse-expr-for-multi-use-c so tn ())))
          (num -1)
-         (mlist (dhc-insert-op 
+         (mlist (str-join "+"
                  (all ((x inds)) 
                    (sprintf "(%s)->mod[%d]*((int)%s)" mat (incr num) x))
-                 "+")) )
+                 )) )
     (setq num -1)
     (when (> ndim 0)
       (each ((x inds) (xtn inds-tn) (so inds-so))
@@ -2715,15 +2795,18 @@
   (let* ((cls (classof srg)))
     (new dhc-type
          (cond
-          ((= cls |DSTORAGE|)    'dht-real)
-          ((= cls |FSTORAGE|)    'dht-flt)
-          ((= cls |I32STORAGE|)  'dht-int)
-          ((= cls |I16STORAGE|)  'dht-short)
-          ((= cls |I8STORAGE|)   'dht-byte)
-          ((= cls |U8STORAGE|)   'dht-ubyte)
-          ((= cls |GPTRSTORAGE|) 'dht-gptr)
+          ((= cls double-storage) 'dht-double)
+          ((= cls float-storage)  'dht-float)
+          ((= cls int-storage)    'dht-int)
+          ((= cls short-storage)  'dht-short)
+          ((= cls char-storage)   'dht-char)
+          ((= cls uchar-storage)  'dht-uchar)
+          ((= cls gptr-storage)   'dht-gptr)
+          ((= cls mptr-storage)   'dht-mptr)
           (t (dhc-error "Illegal literal storage type")) ) ) ) )
 
+(de dhc-idx-storage (type)
+  (unode-val :(unode-val :type:u-type):u-type) )
 
 (de dhc-parse-matrix-t (source)
   (let* ((ndim (idx-rank source))
@@ -2768,7 +2851,7 @@
     (if (> size 0)
         (dhc-add-c-declarations (concat s (sprintf "%l}; " (temp-mat -1))))
       (dhc-add-c-declarations (concat s "};")) )
-    (dhc-add-c-statements (sprintf "(%s)->srg = %s;" :idx-symb:c-name :srg-symb:c-name))
+    (dhc-add-c-statements (sprintf "(%s)->st = %s;" :idx-symb:c-name :srg-symb:c-name))
     ;(dhc-add-c-statements (sprintf "(%s)->flags &= ~IDF_UNSIZED;" :idx-symb:c-name))
     (dhc-add-c-statements (sprintf "(%s)->offset = 0;" :idx-symb:c-name))
     (let ((siz 1))
@@ -2778,7 +2861,7 @@
              (dhc-add-c-statements (sprintf "(%s)->mod[%d] = %d;" :idx-symb:c-name i siz))
              (setq siz (* siz nd)) ) )
       (dhc-add-c-statements (sprintf "(%s)->size = %d;" :srg-symb:c-name siz)) )
-    (dhc-add-c-statements (sprintf "(%s)->flags &= ~STS_MALLOC;" :srg-symb:c-name))
+    (dhc-add-c-statements (sprintf "(%s)->flags &= ~STS_MASK;" :srg-symb:c-name))
     (dhc-add-c-statements (sprintf "(%s)->flags |= STS_STATIC;" :srg-symb:c-name))
     (dhc-add-c-statements (sprintf "(%s)->data = %s;" :srg-symb:c-name constant-name))
     :idx-symb:c-name))
@@ -2800,9 +2883,9 @@
     (if (integerp source) ; important since array index numbers
         (:str source)      ; may be parsed as dht-number
       (sprintf (selectq tclass
-                 (dht-flt "%.24f")
-                 ((dht-int dht-short dht-byte dht-ubyte) "%l")
-                 ((dht-real dht-number) "%.48f")
+                 (dht-float "%.24f")
+                 ((dht-int dht-short dht-char dht-uchar) "%l")
+                 ((dht-double dht-number) "%.48f")
                  (t (dhc-error "don't know this kind of number")))
                source))))
 
@@ -2835,7 +2918,7 @@
          (func-type (if symbol 
                         (==> :symbol:type copy)
                       (dhc-desc-to-type (dhinfo-t dhfunc))))
-         (func-temps (unode-val :func-type:u-temps))
+         (func-temps (if *dhc-no-hidden-args* () (unode-val :func-type:u-temps)))
          (return-type (unode-val :func-type:u-type))
          (func-arg  (unode-val :func-type:u-extra))
          (tnl (mapcar dhc-parse-expr-t (cdr source)))
@@ -2865,7 +2948,7 @@
 (de dhc-compose-prototype(functype cname)
   (let ((output ())
         (args (dhu-extra functype))
-        (tmps (dhu-temps functype)) )
+        (tmps (if *dhc-no-hidden-args* () (dhu-temps functype))) )
     ;; check externs
     (each ((arg (append args tmps)))
       (when (==> arg is-an-objptr)
@@ -2888,7 +2971,7 @@
     (apply concat
            (append (list (dhc-type-to-c-decl (dhu-type functype)))
                    (list " " cname " ( " )
-                   (list (dhc-insert-op output ", "))
+                   (list (str-join ", " output))
                    (list " );") ) ) ) )
 
 (de dhc-parse-dh-c(source treetype retplace)
@@ -2910,7 +2993,9 @@
               (all ((arg args)
                     (argtype (dhu-extra functype))
                     (argnode (cdr :treetype:tn-list)) )
-                (if (or (==> argtype is-an-objptr) (==> argtype is-a-gptr))
+                (if (or (==> argtype is-an-objptr) 
+                        (==> argtype is-a-gptr)
+                        (==> argtype is-a-mptr) )
                     (dhc-ptr-cast arg argtype :argnode:type) 
                   arg  ) ) ) )
       ;; Update extern declaration and dependencies
@@ -2924,10 +3009,10 @@
           (dhc-add-c-externs
            (concat "extern_c " (dhc-compose-prototype ftype ctest)) )))
       ;; Prepare args
-      (setq args (dhc-insert-op
-                  (append args (all ((sym :treetype:transfer)) 
-                                 :sym:c-name))
-                  ", "))
+      (when (not *dhc-no-hidden-args*)
+        (setq args (append args (all ((sym :treetype:transfer)) :sym:c-name))) )
+      (setq args (str-join ", " args))
+
       (when (<> ctest "")
         (dhc-add-c-statements 
          (concat (if (<> mtest "") mtest ctest) 

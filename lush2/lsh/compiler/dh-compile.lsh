@@ -205,8 +205,7 @@
           (list "" "#endif" "") ) )
    
    ;; CLEANUPS
-   (each ((type treetype-list))
-     (delete type) )
+   (setq :treetype-list treetype-list)
    (let ((global-alist global-table))
      (when (is-of-class global-alist |HTABLE|)
        (setq global-alist (htable-alist global-alist)) )
@@ -240,7 +239,8 @@
                   "#include \"dh.h\""
                   "#include \"idxmac.h\""
                   "#include \"idxops.h\""
-                  "#include \"check_func.h\"" ) )
+                  "#include \"check_func.h\""
+                  "#undef uchar") )
      ;; other headers
      (if c-header
          (nconc (list "/*" " * USER DEFINED HEADERS" " */")
@@ -309,7 +309,7 @@
 		       (dhc-gather-types :symb:type ())) ))
 	(dolist (point returnpoint)
 	  (==> point bump-level 0) ))
-      (setq split-bumps 
+      (setq split-bumps
 	    (dhc-split-list bump-list 
 			    (lambda (x) (< (==> :x:type bump-level)
 					   lex-level )) ) )
@@ -324,10 +324,9 @@
     ;; Make function type
     (setq :treetype:type (new dhc-type 'dht-func
 			      (all ((symb arg-list)) :symb:type)
-			      (all ((symb bump-list))
-				:symb:type)
+			      (all ((symb bump-list)) :symb:type)
 			      return-type))
-
+    
     ;; The variables which are bumped out are stored in symbol of args.
     (setq :treetype:tn-list 
 	  (cons (new t-node arg-treetype (new dhc-type 'dht-unk) 
@@ -348,7 +347,7 @@
 (de dhc-generate-prologue(c-name treetype)
   (let* ((functype :treetype:type)
          (rettype (unode-val :functype:u-type))
-         (temp-list :(cadr :treetype:tn-list):symbol)
+         (temp-list (if *dhc-no-hidden-args* () :(cadr :treetype:tn-list):symbol))
          (temp-list-type (all ((x temp-list)) :x:type))
          (arg-list (all ((x :(cadr :treetype:tn-list):tn-list)) :x:symbol))
          (arg-list-type (all ((x arg-list)) :x:type )) )
@@ -362,40 +361,55 @@
     (concat "extern_c "
             (dhc-type-to-c-decl rettype) 
             " " c-name "("
-            (dhc-insert-op 
+            (str-join ","
              (all ((symb-name (append arg-list temp-list))
                    (symb-type (append arg-list-type temp-list-type)) )
-               (concat (dhc-type-to-c-decl symb-type) " " :symb-name:c-name) )
-             "," ) 
+               (concat (dhc-type-to-c-decl symb-type) " " :symb-name:c-name) ))
             ")"  ) ) )
 
 ;; This is the main entry point of the 
 ;; code generation in the compiler...
 (de dhc-generate-compiled-func(cname source treetype)
-  (let ((c-prologue ())	
-        (c-declarations ())
-        (c-statements ())
-        (c-epilog ())
-        (tmpnames-seed tmpnames-seed)
-        (label-seed 0)
-        ((_ _ . body-treetype) :treetype:tn-list)
-        (rettype (dhu-type :treetype:type))
-        (retplace ()) )
+  (let* ((c-prologue ())	
+         (c-declarations ())
+         (c-statements ())
+         (c-epilog ())
+         (tmpnames-seed tmpnames-seed)
+         (label-seed 0)
+         ((_ arg-list . body-treetype) :treetype:tn-list)
+         (rettype (dhu-type :treetype:type))
+         (retplace ())
+         (temp-list (and arg-list :arg-list:symbol)) )
     
-    (setq c-prologue (dhc-generate-prologue cname treetype))
     ;; Allocate a temporary variable for return value
     (when (not (==> rettype is-a-nil))
       (setq retplace (dhc-declare-temp-var rettype)) )
+    
+    ;; Declare bumped vars dynamically to avoid hidden args
+    (when (and temp-list *dhc-no-hidden-args*)
+      (dolist (temp temp-list)
+        (dhc-declare-var-dynamic :temp:c-name :temp:type) ) 
+      )
+    
+    (setq c-prologue (dhc-generate-prologue cname treetype))
+
     ;; generate return statement
     (let ((ret (dhc-bumped-block treetype ()
                                  (dhc-parse-progn-c (cddr source)
                                                     body-treetype retplace))))
-      (if (==> rettype is-a-nil)
-          (setq c-epilog (nconc1 c-epilog "return 0;"))
-        (setq c-epilog (nconc1 c-epilog (sprintf "return %s;" ret))) ) )
+
+      (cond
+       ((==> rettype is-a-nil)
+        (setq c-epilog (nconc1 c-epilog "MM_EXIT; return 0;")) )
+       ((or (==> rettype is-a-ptr) (==> rettype is-a-mptr))
+        (setq c-epilog (nconc1 c-epilog 
+                               (sprintf "MM_EXIT; MM_ANCHOR(%s); return %s;" ret ret))) )
+       (t
+        (setq c-epilog (nconc1 c-epilog (sprintf "MM_EXIT; return %s;" ret))) )))
+      
     ;; Return program (as a list of lines)
     (append (list c-prologue)
-            (list "{" (sprintf "TRACE_PUSH(\"%s\");" cname) "{")
+            (list "{" (sprintf "TRACE_PUSH(\"%s\"); MM_ENTER;" cname) "{")
             c-declarations 
             c-statements 
             (list (sprintf "TRACE_POP(\"%s\");" cname))
@@ -409,23 +423,24 @@
                     (dhc-arg-format (dhu-type :treetype:type)) 
                     " = "
                     (if (==> (dhu-type :treetype:type) is-an-objptr) 
-                        "(int *)" "" )
+                        "(struct CClass_object *)" "" )
                     " C_" c-name "(" ))
         ((_ args . body-treetype) :treetype:tn-list)
         (arg-list ())
         (num 0) )
     ;; take care arguments and temporaries
-    (each ((sym (all ((x :args:tn-list)) :x:symbol)))
+    (dolist (sym (domapcar ((x :args:tn-list)) :x:symbol))
       (let* ((cast (or (dhc-ptr-cast () :sym:type) ""))
              (format (concat cast "a[%d]." (dhc-arg-format :sym:type))))
         (setq arg-list (nconc1 arg-list (sprintf format (incr num))))))
-    (each ((sym :(cadr :treetype:tn-list):symbol))
-      (let* ((type (if (==> :sym:type is-a-ptr) :sym:type 
-                     (new dhc-type 'dht-ptr :sym:type))) 
-             (cast (or (dhc-ptr-cast () type) ""))
-             (format  (concat cast "a[%d]." (dhc-arg-format type))) )
-        (setq arg-list (nconc1 arg-list (sprintf format (incr num))))))
-    (setq call (nconc1 call (dhc-insert-op arg-list ", ")))
+    (when (not *dhc-no-hidden-args*)
+      (dolist (sym :args:symbol)
+        (let* ((type (if (==> :sym:type is-a-ptr) :sym:type 
+                       (new dhc-type 'dht-ptr :sym:type))) 
+               (cast (or (dhc-ptr-cast () type) ""))
+               (format  (concat cast "a[%d]." (dhc-arg-format type))) )
+          (setq arg-list (nconc1 arg-list (sprintf format (incr num)))))) )
+    (setq call (nconc1 call (str-join ", " arg-list)))
     (list pro "{" "dharg ret;" (concat (apply concat call) ");") 
           "return ret;" "}" ) ) )
 
@@ -440,8 +455,6 @@
      (all ((name (reverse c-depends)))
        (sprintf "DH_REFER(%s)," name) )
      (list "DH_NIL" "};" ) ) ) )
-
-
 
 
 ;;; ------------------------------------------------------------------------
@@ -461,9 +474,10 @@
            (sup-cls (super cls))
 	   (sup-name (nameof (classname sup-cls))) 
            (sup-type ()) )
+
       ;; Basic checks
       (when (classinfo-t (eval `:,fname))
-        (error 'dhc-compile-class-t "class has already been compiled" fname))
+        (dhc-error "class has already been compiled" fname))
       (when (and (slots cls) (not tslots))
         (dhc-error "slots are not typed" fname) )
       (if  (and (not (classinfo-t sup-cls))
@@ -480,7 +494,7 @@
       (setq sup-type (dhc-class-to-dhc-type sup-cls))
       (when specializations
         (setq sup-type (dhc-specialize-type sup-type specializations t)) )
-        
+      
       ;; Determine slot types
       (dolist (slot-decl tslots)
         (when (not (and (consp slot-decl) (consp (car slot-decl))))
@@ -525,8 +539,8 @@
         ;; REGULAR METHOD
         ;; --  install slots in symbol table
         (let ((symbol-table  symbol-table)
-              (slot-list     (dhu-temps (dhc-obj-type-from-class cls))))
-          (each (((slot-sym . slot-type) slot-list))
+              (slot-list     (dhu-temps (dhc-obj-type-from-class cls))) )
+          (dolist ((slot-sym . slot-type) slot-list)
             (let ((sym (new dhc-symbol slot-sym 0)))
               (dhc-unify-types slot-type :sym:type) 
               (setq :sym:c-name
@@ -588,16 +602,17 @@
 		    ;; Unify return
 		    (dhc-unify-types (dhu-type sup-method) (dhu-type :tnode:type))
 		    ;; Unify temps
-		    (when (<> (length (dhu-temps sup-method))
-			      (length (dhu-temps :tnode:type)))
-		      (printf "\n*** compiler: A superclass defines method <%l> with a" method)
-		      (dhc-error "different number of hidden arguments.\n") )
-		    (each ((temp-sup (cdr (dhu-temps sup-method)))
-			   (temp-sub (cdr (dhu-temps :tnode:type))))
-		      (let ((tsup (==> temp-sup copy))
-			    (tsub (==> temp-sub copy)))
-			(dhc-unify-types tsup tsub)
-			(dhc-unify-types tsub tsup) ) ) ) ) 
+                    (when (not *dhc-no-hidden-args*)
+                      (when (<> (length (dhu-temps sup-method) )
+                                (length (dhu-temps :tnode:type)))
+                        (printf "\n*** compiler: A superclass defines method <%l> with a" method)
+                        (dhc-error "different number of hidden arguments.\n") )
+                      (each ((temp-sup (cdr (dhu-temps sup-method)))
+                             (temp-sub (cdr (dhu-temps :tnode:type))))
+                        (let ((tsup (==> temp-sup copy))
+                              (tsub (==> temp-sub copy)))
+                          (dhc-unify-types tsup tsub)
+                          (dhc-unify-types tsub tsup) ) ) ) ) )
 		;; -- install into class type
 		(dhc-add-method-to-class-type class-type methodname :tnode:type t) )
 	       ))))))
@@ -676,27 +691,59 @@
     ;; generate destructor (null for now)
     (dhc-add-program
      (append (list  "" "/*" (sprintf " * CLASS %l DESTROY" fname) " */")
-             (list (sprintf "static void Cdestroy_C_%s(gptr g)\n" cname) "{")
+             (list (sprintf "static void Cdestroy_C_%s(struct CClass_%s *g)\n" cname cname) "{")
+             (list "assert(g->Vtbl);")
              (when vtsupername ;; call successive destructors
-               (list (concat "struct VClass_object *super = "
-                             "(struct VClass_object*)(char*)(&"
-                             vtsupername ");" )) )
+               (list (sprintf "struct VClass_object *super = (struct VClass_object *)(char*)(&%s);"
+                             vtsupername)) )
              (let ((dtype ()))
-               (each ((treetype (cadr treetype)))
+               (dolist (treetype (cadr treetype))
                  (when (= (car treetype) '-destructor)
                    (setq dtype treetype) ) )
                (when dtype ;; found destructor
                  (list (sprintf "C_%s_C_%s((struct CClass_%s*)g);"
                                 "_destructor" cname cname )) ) )
              (when vtsupername
-               (list "super->Cdestroy(g);") )
+               (list "super->Cdestroy((struct CClass_object *)g);") )
+             ;; set Vtbl pointer to NULL so that we notice when called twice
+             (list "g->Vtbl = NULL;")  
              (list "}") ) )
+    
+    ;; generate mark method
+    (let* ((type class-dhc-type)
+           (cl-name (dhu-name type))
+           (classes ())
+           (t type) )
+      (while (<> 'dht-nil (unode-val :t:u-tclass))
+        (setq classes (cons t classes))
+        (setq t (unode-val :t:u-type)) )
+      (dhc-add-program
+       (append
+        (list "" "/*" (sprintf " * METHOD FUNCTION __mark (class %s)" cname) " */")
+        (list (sprintf "static void C__mark_C_%s(struct CClass_%s *obj)\n" cname cname))
+        (list "{")
+        (or 
+         (domapcan ((cl (cdr classes)))
+           (domapcar (((slot . type) (unode-val :cl:u-temps)))
+             (if (or (==> type is-an-idx)
+                     (==> type is-a-srg)
+                     (==> type is-an-obj)
+                     (==> type is-a-str)
+                     (==> type is-a-mptr)
+                     (==> type is-a-ptr) )
+                 (sprintf "   MM_MARK(obj->%s);" (dhc-lisp-to-c-slot-name slot))
+               "")))
+         (list ""))
+        (list "}")
+        )))
+
     ;; generate vtable
     (dhc-add-program
      (append (list  "" "/*" (sprintf " * CLASS %l VTABLE" fname) " */")
              (list  (sprintf "struct VClass_%s %s = {" cname vtname)
                     (sprintf "(void*)&%s," (or vtsupername "Vt_object"))
-		    (sprintf "&Cdestroy_C_%s," cname) )
+		    (sprintf "&Cdestroy_C_%s," cname)
+                    (sprintf "&C__mark_C_%s," cname) )
              (all (((method-cname . method-type) method-list))
                (let* ((method-fullname ())
                       (cltype (dhu-type (dhu-type (car (dhu-extra method-type)))))
@@ -709,6 +756,7 @@
                   (concat "extern_c " (dhc-compose-prototype method-type method-fullname)) )
                  (sprintf "&%s," method-fullname) ))
              (list "};") ))
+
     ;; generate dhclassdoc
     (dhc-add-metaprogram
      (append (list  "" "/*" (sprintf " * CLASS %l DHCLASSDOC" fname) " */")

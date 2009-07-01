@@ -100,7 +100,7 @@ Xidx_2i2i4o(m2extm2acc, Mcheck_m2in_m2in_m4out)
 #undef case_type1
 #define case_type1(storage_type, t1, FUNC_NAME) \
     case storage_type: \
-      if((&i2)->srg->type != ST_I32) \
+      if((&i2)->srg->type != ST_INT) \
         error(NIL, "Permutation index must be of integer (I32) type", NIL); \
       if((&i1)->srg->type != (&i3)->srg->type) \
         error(NIL, "Input and output idxs must be of the same type", NIL); \

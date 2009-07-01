@@ -42,8 +42,6 @@
 
 #include "header.h"
 
-typedef unsigned char   uchar;
-
 static char table_c2lisp[256];
 static char table_lisp2c[256];
 static char* c_special    = "_DPS";

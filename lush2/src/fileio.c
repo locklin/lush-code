@@ -123,9 +123,9 @@ DX(xchdir)
 {
    if (arg_number!=0) {
       ARG_NUMBER(1);
-      return new_string(cwd(ASTRING(1)));
+      return NEW_STRING(cwd(ASTRING(1)));
    } else
-      return new_string(cwd(NULL));
+      return NEW_STRING(cwd(NULL));
 }
 
 
@@ -494,7 +494,7 @@ static char *strcpyif(char *d, const char *s)
 }
 
 /* expects a managed string & returns a managed string */
-const char *dirname(const char *fname)
+const char *lush_dirname(const char *fname)
 {
 #ifdef UNIX
    const char *s = fname;
@@ -579,12 +579,12 @@ const char *dirname(const char *fname)
 DX(xdirname)
 {
    ARG_NUMBER(1);
-   return new_string(dirname(ASTRING(1)));
+   return NEW_STRING(lush_dirname(ASTRING(1)));
 }
 
 
-/* basename returns a new, managed string */
-const char *basename(const char *fname, const char *suffix)
+/* lush_basename returns a new, managed string */
+const char *lush_basename(const char *fname, const char *suffix)
 {
 #ifdef UNIX
    if (strlen(fname) > STRING_BUFFER-4)
@@ -656,10 +656,10 @@ DX(xbasename)
 {
    if (arg_number!=1) {
       ARG_NUMBER(2)
-         return new_string(basename(ASTRING(1),ASTRING(2)));
+         return NEW_STRING(lush_basename(ASTRING(1),ASTRING(2)));
    } else {
       ARG_NUMBER(1);
-      return new_string(basename(ASTRING(1),NULL));
+      return NEW_STRING(lush_basename(ASTRING(1),NULL));
    }
 }
 
@@ -758,7 +758,7 @@ const char *concat_fname(const char *from, const char *fname)
          if (fname[1]=='.')
             if (fname[2]=='/' || fname[2]=='\\' || fname[2]==0) {
                fname += 2;
-               strcpyif(string_buffer, dirname(string_buffer));
+               strcpyif(string_buffer, lush_dirname(string_buffer));
                s = string_buffer;
                continue;
             }
@@ -781,9 +781,9 @@ const char *concat_fname(const char *from, const char *fname)
 DX(xconcat_fname)
 {
    if (arg_number==1)
-      return new_string(concat_fname(NULL,ASTRING(1)));
+      return NEW_STRING(concat_fname(NULL,ASTRING(1)));
    ARG_NUMBER(2);
-   return new_string(concat_fname(ASTRING(1),ASTRING(2)));
+   return NEW_STRING(concat_fname(ASTRING(1),ASTRING(2)));
 }
 
 
@@ -824,7 +824,7 @@ DX(xrelative_fname)
 {
    ARG_NUMBER(2);
    const char *s = relative_fname(ASTRING(1), ASTRING(2));
-   return s ? new_string(s) : NIL;
+   return s ? NEW_STRING(s) : NIL;
 }
 
 
@@ -876,7 +876,7 @@ const char *tmpname(const char *dir, const char *suffix)
    /* check temp directory */
    const char *dot;
    if (! dirp(dir)) {
-      RAISEF("invalid directory", new_string(dir));
+      RAISEF("invalid directory", NEW_STRING(dir));
    }
    if (! suffix)
       dot = suffix = "";
@@ -925,12 +925,12 @@ DX(xtmpname)
 #endif
    switch (arg_number) {
    case 0:
-      return new_string(tmpname(tempdir, NULL));
+      return NEW_STRING(tmpname(tempdir, NULL));
    case 1:
-      return new_string(tmpname(ASTRING(1), NULL));
+      return NEW_STRING(tmpname(ASTRING(1), NULL));
    case 2:
-      return new_string(tmpname( (APOINTER(1) ? ASTRING(1) : tempdir),
-                              (APOINTER(2) ? ASTRING(2) : NULL) ));
+      return NEW_STRING(tmpname((APOINTER(1) ? ASTRING(1) : tempdir),
+                                (APOINTER(2) ? ASTRING(2) : NULL) ));
    default:
       ARG_NUMBER(-1);
       return NIL;
@@ -987,7 +987,7 @@ bool init_lushdir(const char *progname)
       char buffer[FILELEN];
       while ((len=readlink(file_name,buffer,FILELEN)) > 0) {
          buffer[len]=0;
-         strcpy(file_name, dirname(file_name));
+         strcpy(file_name, lush_dirname(file_name));
          strcpy(file_name, concat_fname(file_name,buffer));
 #ifdef DEBUG_DIRSEARCH
          printf("L %s\n",file_name);
@@ -1023,7 +1023,7 @@ bool init_lushdir(const char *progname)
          0L,
       };
       char **st = trials;
-      strcpy(file_name,dirname(file_name));
+      strcpy(file_name, lush_dirname(file_name));
       while (*st) 
       {
          const char *s = concat_fname(file_name,*st++);
@@ -1032,8 +1032,8 @@ bool init_lushdir(const char *progname)
 #endif
          if (filep(s))
             if (access(s,R_OK)!=-1) {
-               s = dirname(s);
-               s = dirname(s);
+               s = lush_dirname(s);
+               s = lush_dirname(s);
                strcpy(lushdir, s);
                return true;
 	    }
@@ -1188,7 +1188,7 @@ DX(xfilepath)
      suf = (APOINTER(2) ? ASTRING(2) : NULL);
   }
    const char *ans = search_file(ASTRING(1),suf);
-   return ans ? new_string(ans) : NIL;
+   return ans ? NEW_STRING(ans) : NIL;
 }
 
 
@@ -1222,7 +1222,7 @@ void test_file_error(FILE *f)
    }
    if (f==stdin) {
       if (stdin_errors > 8)
-         abort("ABORT -- STDIN failure");
+         lush_abort("ABORT -- STDIN failure");
       else {
          clearerr(stdin);
          errno = 0;
@@ -1231,7 +1231,7 @@ void test_file_error(FILE *f)
       }
    } else if (f==stdout || f==stderr) {
       if (stdout_errors > 8)
-         abort("ABORT -- STDOUT failure");
+         lush_abort("ABORT -- STDOUT failure");
       else {
          clearerr(stdout);      
          clearerr(stderr);
@@ -1291,7 +1291,7 @@ FILE *open_read(const char *s, const char *suffixes)
    FILE *f = attempt_open_read(s, suffixes);
    ifn (f) {
       test_file_error(NIL);
-      RAISEF("cannot open file", new_string(s));
+      RAISEF("cannot open file", NEW_STRING(s));
    }
    return f;
 }
@@ -1346,7 +1346,7 @@ FILE *open_write(const char *s, const char *suffixes)
    FILE *f = attempt_open_write(s, suffixes);
    ifn (f) {
       test_file_error(NIL);
-      RAISEF("cannot open file", new_string(s));
+      RAISEF("cannot open file", NEW_STRING(s));
    }
    return f;
 }
@@ -1402,7 +1402,7 @@ FILE *open_append(const char *s, const char *suffixes)
    FILE *f = attempt_open_append(s,suffixes);
    ifn (f) {
       test_file_error(NIL);
-      RAISEF("cannot open file", new_string(s));
+      RAISEF("cannot open file", NEW_STRING(s));
    }
    return f;
 }
@@ -1632,7 +1632,7 @@ DY(yreading)
    else
       RAISEFX("file name or read descriptor expected", fdesc);
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
    context->input_tab = 0;
    context->input_case_sensitive = 0;
@@ -1678,7 +1678,7 @@ DY(ywriting)
    else
       RAISEFX("file name or write descriptor expected", fdesc);
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
    context->output_tab = 0;
    context->output_file = f;
@@ -1722,7 +1722,7 @@ DY(yreading_string)
    ifn (STRINGP(p))
       RAISEFX("string expected", p);
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
    context->input_tab = 0;
    context->input_case_sensitive = 0;
@@ -1804,24 +1804,24 @@ void init_fileio(char *program_name)
    at_lushdir = var_define("lushdir");
 
    ifn (init_lushdir(program_name) || init_lushdir("lush2"))
-      abort("cannot locate library files");
+      lush_abort("cannot locate library files");
 #ifdef UNIX
    unix_setenv("LUSHDIR",lushdir);
 #endif
    var_set(at_lushdir, make_string(lushdir));
    var_lock(at_lushdir);
    const char *s = concat_fname(lushdir, "sys");
-   var_set(at_path, new_cons(new_string(s),NIL));
+   var_set(at_path, new_cons(NEW_STRING(s),NIL));
    
    /* setting up classes */
-   new_builtin_class(&rfile_class, NIL);
-   rfile_class->mark_at = null_class->mark_at;
+   rfile_class = new_builtin_class(NIL);
    rfile_class->dispose = (dispose_func_t *)file_dispose;
+   rfile_class->managed = false;
    class_define("RFILE", rfile_class);
    
-   new_builtin_class(&wfile_class, NIL);
-   wfile_class->mark_at = null_class->mark_at;
+   wfile_class = new_builtin_class(NIL);
    wfile_class->dispose = (dispose_func_t *)file_dispose;
+   wfile_class->managed = false;
    class_define("WFILE", wfile_class);
    
    /* DECLARE THE FUNCTIONS */

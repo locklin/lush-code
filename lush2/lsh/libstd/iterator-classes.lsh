@@ -99,7 +99,6 @@
   ())
 
 
-
 (defclass Range*Iterator RangeIterator)
 
 (defmethod Range*Iterator -make-next ()
@@ -197,9 +196,48 @@
     (incr i))
   ())
 
-(defmethod |STORAGE| -iterate ()
+(defmethod storage -iterate ()
   (new StorageIterator this))
 	   
+
+(defclass FibonacciIterator iterator
+  ((-int-) f)
+  ((-int-) next-item) )
+
+(defmethod FibonacciIterator FibonacciIterator ()
+  (==> this iterator)
+  (setq f 1  next-item 0  next-item-valid t) )
+
+(defmethod FibonacciIterator -make-next ()
+  (let ((g (+ next-item f)))
+    (declare (-int-) g)
+    (setq next-item f  next-item-valid t  f g)
+    ()))
+
+
+(defclass RangeShuffledIterator iterator
+  ((-int-) next-item from to x N A B count) )
+
+(defmethod RangeShuffledIterator RangeShuffledIterator (from to)
+  (declare (-int-) from to)
+  (==> this iterator)
+  (setq :this:from from  :this:to to)
+  (setq N (max 0 (- to from)))
+  (setq count N)
+  (let ((fib (new FibonacciIterator)))
+    (while (< (==> fib peeknext) N) (==> fib next))
+    (setq B (==> fib next))
+    (setq A (==> fib next)) )
+  (setq x 0)
+  ())
+
+(defmethod RangeShuffledIterator -make-next ()
+  (when (> count 0)
+    (do-while (>= x N)
+      (setq x (mod (+ x A) B)) )
+    (setq next-item (+ x from)  next-item-valid t)
+    (decr count) )
+  ())
 
 
 (defclass LinesIterator iterator
@@ -237,7 +275,7 @@
   (cheader "#include <stdint.h>")
   (cheader "#include <errno.h>")
   (cheader "#include <stdio.h>")
-  #{ 
+  #{
   assert($filename!=NULL);
 
   $f = fopen($filename, "r");
@@ -255,14 +293,15 @@
   if (len>PTRDIFF_MAX)
     run_time_error("file too big for scanning");
 
-  $srg->data = $base = mmap(0, len, PROT_READ, MAP_SHARED, fileno($f), 0);
-  if ($srg->data==MAP_FAILED) {
+  $base = mmap(0, len, PROT_READ, MAP_SHARED, fileno($f), 0);
+  if ($base==MAP_FAILED) {
     $srg->data = NULL;
     run_time_error("error when mmapping file");
 
   } else {
     $srg->size = len;
     $srg->flags = STS_MMAP + STF_RDONLY;
+    $srg->data = $base;
   }
   #}
   ())
@@ -291,6 +330,9 @@
         $ni->dim[0] = n;
         $valid = (nmax>0);
       #} )
+    (if valid
+        (printf "next item valid\n")
+      (printf "next item not valid\n") )
     (setq next-item-valid valid)
     () ))
 
@@ -312,4 +354,6 @@
 (dhc-make-class () 
                 RangeIterator 
                 Range*Iterator 
+                FibonacciIterator
+                RangeShuffledIterator
                 Lines*Iterator)

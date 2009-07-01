@@ -364,8 +364,8 @@ static void maybe_trigger_collect(size_t s)
        vol_allocs >= volume_threshold      ||
        collect_requested) {
       mm_collect_now();
-      num_allocs = 0;
-      vol_allocs = 0;
+      //num_allocs = 0; // reset in collect_epilogue
+      //vol_allocs = 0;
    }
 }
 
@@ -380,7 +380,7 @@ static bool _update_current_a(mt_t t, typerec_t *tr, uintptr_t s, uintptr_t a)
 
 search_in_block:
    /* search for next free hunk in block */
-   while (HMAP_MANAGED(a) && a <= tr->current_amax)
+   while (a <= tr->current_amax && HMAP_MANAGED(a))
       a += s;
    if (a <= tr->current_amax) {
       tr->current_a = a;
@@ -434,6 +434,32 @@ static bool update_current_a(mt_t t)
    return _update_current_a(t, tr, tr->size, tr->current_a);
 }
    
+/* allocate from small-object heap if possible */
+static void *alloc_fixed_size(mt_t t)
+{
+   if (collect_in_progress || heap_exhausted)
+      return NULL;
+
+   if (!update_current_a(t)) {
+      static bool warned = false;
+      if (!warned) {
+         /* warn once */
+         debug("no free block found.\n");
+         debug("consider re-compiling with larger heap size.\n");
+         warned = true;
+      }
+      return NULL;
+   }   
+   
+   void *p = heap + types[t].current_a;
+   VALGRIND_MEMPOOL_ALLOC(heap, p, types[t].size);
+   blockrecs[BLOCKA(types[t].current_a)].in_use++;
+   
+   maybe_trigger_collect(types[t].size);
+   
+   return p;
+}
+
 /* allocate with malloc */
 static void *alloc_variable_sized(mt_t t, size_t s)
 {
@@ -445,7 +471,14 @@ static void *alloc_variable_sized(mt_t t, size_t s)
       abort();
    }
   
-   void *p = malloc(s + MIN_HUNKSIZE);  // + space for info
+   void *p = NULL;
+   /* don't allocate from heap when t==mt_stack */
+   if (t && types[t].size>=s && BLOCKSIZE>=s)
+      p = alloc_fixed_size(t);
+   if (p)
+      return p;
+   
+   p = malloc(s + MIN_HUNKSIZE);  // + space for info
    assert(!LBITS(p));
 
    if (p) {
@@ -458,33 +491,6 @@ static void *alloc_variable_sized(mt_t t, size_t s)
 
    } else
       return NULL;
-}
-
-/* allocate from small-object heap if possible */
-static void *alloc_fixed_size(mt_t t)
-{
-   size_t s = types[t].size;
-   if (BLOCKSIZE<(2*s) && t!=mt_stack_chunk)
-      return alloc_variable_sized(t, s);
-   
-   if (!update_current_a(t)) {
-      static bool warned = false;
-      if (!warned) {
-         /* warn once */
-         debug("no free block found.\n");
-         debug("consider re-compiling with larger heap size.\n");
-         warned = true;
-      }
-      return alloc_variable_sized(t, s);
-   }   
-
-   void *p = heap + types[t].current_a;
-   VALGRIND_MEMPOOL_ALLOC(heap, p, s);
-   blockrecs[BLOCKA(types[t].current_a)].in_use++;
-
-   maybe_trigger_collect(s);
-
-   return p;
 }
 
 static bool no_marked_live(void)
@@ -789,6 +795,8 @@ static void collect_epilogue(void)
    collect_in_progress = false;
    num_alloc_blocks = 0;
    num_collects += 1;
+   num_allocs = 0;
+   vol_allocs = 0;
    compact_managed();
 }
 
@@ -1338,12 +1346,7 @@ void *mm_alloc(mt_t t)
       abort();
    }
    
-   void *p = NULL;
-   if (collect_in_progress || heap_exhausted) /* alloc offheap when gc in progress */
-      p = alloc_variable_sized(t, types[t].size);
-   else 
-      p = alloc_fixed_size(t);
-
+   void *p = alloc_variable_sized(t, types[t].size);
    if (!p) {
       warn("allocation failed\n");
       abort();
@@ -1362,7 +1365,11 @@ void *mm_allocv(mt_t t, size_t s)
       abort();
    }
    assert(TYPE_VALID(t));
- 
+   if (s == 0) {
+      warn("attempt to allocate object of size zero\n");
+      abort();
+   }
+   
    FIX_SIZE(s);
    void *p = alloc_variable_sized(t, s);
    if (!p) {
@@ -1462,8 +1469,10 @@ bool mm_ismanaged(const void *p)
          return HMAP_MANAGED(a);
       else if (mark_in_progress)
          return _find_managed(p) != -1;
-      else
+      else {
+         update_man_k();
          return find_managed(p) != -1;
+      }
    }
 }
 
@@ -1615,7 +1624,6 @@ int mm_collect_now(void)
    } TEMP_STORAGE;
 
    collect_epilogue();
-
    return n;
 }
 
@@ -1740,7 +1748,13 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    assert(types);
    types_size = MIN_TYPES;
    {
+      /* register internal and pre-defined types */
       mt_t mt;
+      mt_stack = MM_REGTYPE("mm_stack", sizeof(mmstack_t), 0, mark_stack, 0);
+      assert(mt_stack == 0);
+      mt_stack_chunk = MM_REGTYPE("mm_stack_chunk", sizeof(stack_chunk_t),
+                                  clear_refs, mark_stack_chunk, 0);
+      assert(mt_stack_chunk == 1);
       mt = MM_REGTYPE("blob8", 8, 0, 0, 0);
       assert(mt == mt_blob8);
       mt = MM_REGTYPE("blob16", 16, 0, 0, 0);
@@ -1769,10 +1783,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    assert(roots);
    roots_size = MIN_ROOTS;
 
-   /* initialize transient object stack */
-   mt_stack = MM_REGTYPE("mm_stack", sizeof(mmstack_t), 0, mark_stack, 0);
-   mt_stack_chunk = MM_REGTYPE("mm_stack_chunk", sizeof(stack_chunk_t),
-                               clear_refs, mark_stack_chunk, 0);
+   /* set up transient object stack */
    *(mmstack_t **)&_mm_transients = make_stack();
    MM_ROOT(_mm_transients);
    assert(stack_works_fine(_mm_transients));
@@ -1813,9 +1824,8 @@ char *mm_info(int level)
       if (blockrecs[i].in_use)
          total_blocks_in_use++;
    
-   BPRINTF("Small object heap: %.2f MByte in %d blocks (%.2f MB / %d used)\n",
-           ((double)heapsize)/(1<<20), num_blocks, 
-           ((double)total_blocks_in_use)*BLOCKSIZE/(1<<20), total_blocks_in_use);
+   BPRINTF("Small object heap: %.2f MByte in %d blocks (%d used)\n",
+           ((double)heapsize)/(1<<20), num_blocks, total_blocks_in_use);
 
    DO_HEAP(a, b) {
       total_objects_inheap++;

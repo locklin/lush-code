@@ -115,7 +115,7 @@ DX(xeps)
 #ifdef _FPU_GETCW
 DY(ywith_fpu_env)
 {
-   struct context mycontext;
+   struct lush_context mycontext;
    fpu_control_t control;
    fexcept_t status;
    _FPU_GETCW(control);
@@ -139,7 +139,7 @@ DY(ywith_fpu_env)
 #else
 DY(ywith_fpu_env)
 {
-   struct context mycontext;
+   struct lush_context mycontext;
    fenv_t current_fenv, *saved_fenv = &current_fenv;
 
    if (fegetenv(saved_fenv)) {
@@ -207,19 +207,19 @@ static at *unparse_excepts(int excepts)
    at *es = NIL;
    
    if (excepts & FE_INEXACT)
-      es = new_cons(new_symbol(KEY_INEXACT), es);
+      es = new_cons(NEW_SYMBOL(KEY_INEXACT), es);
 
    if (excepts & FE_UNDERFLOW)
-      es = new_cons(new_symbol(KEY_UNDERFLOW), es);
+      es = new_cons(NEW_SYMBOL(KEY_UNDERFLOW), es);
 
    if (excepts & FE_OVERFLOW)
-      es = new_cons(new_symbol(KEY_OVERFLOW), es);
+      es = new_cons(NEW_SYMBOL(KEY_OVERFLOW), es);
 
    if (excepts & FE_DIVBYZERO)
-      es = new_cons(new_symbol(KEY_DIVBYZERO), es);
+      es = new_cons(NEW_SYMBOL(KEY_DIVBYZERO), es);
 
    if (excepts & FE_INVALID)
-      es = new_cons(new_symbol(KEY_INVALID), es);
+      es = new_cons(NEW_SYMBOL(KEY_INVALID), es);
    
    return es;
 }

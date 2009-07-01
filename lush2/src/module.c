@@ -470,7 +470,7 @@ static at *atroot;
 static int check_executability = false;
 static void check_exec();
 
-void clear_module(module_t *m, size_t _)
+static void clear_module(module_t *m, size_t _)
 {
    m->prev = 0;
    m->next = 0;
@@ -489,7 +489,7 @@ void clear_module(module_t *m, size_t _)
    m->hook = 0;
 }
 
-void mark_module(module_t *m)
+static void mark_module(module_t *m)
 {
    MM_MARK(m->prev);
    MM_MARK(m->next);
@@ -500,7 +500,7 @@ void mark_module(module_t *m)
    MM_MARK(m->hook);
 }
 
-bool finalize_module(module_t *m)
+static bool finalize_module(module_t *m)
 {
    module_class->dispose(m);
    return true;
@@ -510,7 +510,7 @@ static mt_t mt_module = mt_undefined;
 
 /* ---------- THE MODULE OBJECT ----------- */
 
-at *new_module(const char *filename, at *hook)
+static at *new_module(const char *filename, at *hook)
 {
    module_t *m = mm_alloc(mt_module);
    m->flags = 0;
@@ -625,7 +625,7 @@ DX(xmodule_filename)
    
    module_t *m = Mptr(p);
    if (m->filename)
-      return new_string(m->filename);
+      return NEW_STRING(m->filename);
    return NIL;
 }
 
@@ -638,7 +638,7 @@ DX(xmodule_init_function)
 
    module_t *m = Mptr(p);
    if (m->initname)
-      return new_string(m->initname);
+      return NEW_STRING(m->initname);
    if (m == root)
       return make_string("init_lush");
    return NIL;
@@ -767,18 +767,20 @@ void *dynlink_symbol(module_t *m, const char *sname, int func, int exist)
 /* --------- CLEANUP DANGLING PRIMITIVES AND OBJECTS --------- */
 
 
-static void cleanup_defs(at **pcls, module_t *mc)
+static at *module_class_defs(module_t *mc)
 {
    at *p = mc->defs;
+   at *pcls = NIL;
    while (CONSP(p)) {
       if (CONSP(Car(p))) {
          at *q = Caar(p);
          if (CLASSP(q)) {
-            *pcls = new_cons(q, *pcls);
+            pcls = new_cons(q, pcls);
          }
       }
       p = Cdr(p);
    }
+   return pcls;
 }
 
 static void cleanup_module(module_t *m)
@@ -797,7 +799,7 @@ static void cleanup_module(module_t *m)
       for (module_t *mc = root->next; mc != root; mc = mc->next)
          if (mc->initname && mc->defs && (mc->flags & MODULE_CLASS))
             if (! dld_function_executable_p(mc->initname))
-               cleanup_defs(&classes, mc);
+               classes = module_class_defs(mc);
       dld_simulate_unlink_by_file(0);
    }
 #endif
@@ -807,7 +809,7 @@ static void cleanup_module(module_t *m)
       for (module_t *mc = root->next; mc != root; mc = mc->next)
          if (mc->initname && mc->defs)
             if (mc == m || mc->bundle.executable < 0)
-               cleanup_defs(&classes, mc);
+               classes = module_class_defs(mc);
       nsbundle_exec_all_but(NULL);
    }
 #endif
@@ -817,36 +819,20 @@ static void cleanup_module(module_t *m)
       at *q = Car(p);
       if (CLASSP(q)) {
          class_t *cl = Mptr(q);
-         if (builtin_class_p(cl))
-            cl->live = false;
+         //fprintf(stderr,"*** Warning: unlinking compiled class %s\n", pname(q));
+         cl->live = false;
+         zombify_subclasses(cl);
       }
    }
-
-  for (at *p = classes; CONSP(p); p = Cdr(p)) {
-     at *q = Car(p);
-     if (CLASSP(q)) {
-        class_t *cl = Mptr(q);
-        if (cl->classdoc) {
-           int n = lside_mark_unlinked(cl->classdoc);
-           cl->classdoc = 0;
-           if (n > 0)
-              fprintf(stderr,"+++ Warning: "
-                      "unlinked %d instances of compiled class %s\n", 
-                      n, pname(q));
-        }
-     }
-  }
 
    /* 4 --- Zap primitives defined by this module. */
    if (m->defs)
       for (at *p = m->defs; CONSP(p); p = Cdr(p))
          if (CONSP(Car(p)) && Caar(p)) {
             at *q = Caar(p);
-            if (CLASSP(q)) {
-               class_t *cl = Mptr(q);
-               if (!builtin_class_p(cl))
-                  continue;
-            }
+            if (CLASSP(q))
+               zombify(q);
+
             /* temporarily enable deleting objects of this class */
             bool dontdelete = Class(q)->dontdelete;
             class_t *cl = (class_t *)Class(q);
@@ -1096,20 +1082,20 @@ static char *module_maybe_unload(module_t *m)
 #if DLOPEN
    if (m->flags & MODULE_SO)
       if (dlclose(m->handle))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #endif
 #if DLDBFD
    if (m->flags & MODULE_O)
       if (dld_unlink_by_file(m->filename, 1))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #endif
 #if NSBUNDLE
    if (m->flags & MODULE_O)
       if (nsbundle_unload(&m->bundle) < 0)
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
    if (m->flags & MODULE_SO) 
       if (nsbundle_update() < 0)
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #endif
    check_executability = true;
    /* Remove the module from the chain */
@@ -1148,7 +1134,7 @@ at *module_load(const char *file, at *hook)
    /* Check that file exists */
    const char *filename = concat_fname(NULL, file);
    if (! filep(filename))
-      RAISEF("file not found", new_string(filename));
+      RAISEF("file not found", NEW_STRING(filename));
 
    /* Check if the file extension indicates a DLL */
    const char *l = filename + strlen(filename);
@@ -1193,31 +1179,31 @@ at *module_load(const char *file, at *hook)
 #if DLOPEN
 # if DLDBFD
       if (! (handle = dld_dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 # else
       if (! (handle = dlopen(m->filename, RTLD_NOW|RTLD_GLOBAL)))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 # endif
 # if NSBUNDLE
       if (nsbundle_exec_all_but(NULL) < 0 || nsbundle_update() < 0)
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 # endif
 #else
       RAISEF("dynlinking this file is not supported (dlopen)",
-             new_string(m->filename));
+             NEW_STRING(m->filename));
 #endif
       m->flags |= MODULE_SO | MODULE_STICKY;
       
    } else {
 #if DLDBFD
       if (dld_link(m->filename))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #elif NSBUNDLE
       if (nsbundle_load(m->filename, &m->bundle))
-         dynlink_error(new_string(m->filename));
+         dynlink_error(NEW_STRING(m->filename));
 #else
       RAISEF("dynlinking this file is not supported (bfd)", 
-             new_string(m->filename));
+             NEW_STRING(m->filename));
 #endif      
       m->flags |= MODULE_O;
    }
@@ -1230,7 +1216,7 @@ at *module_load(const char *file, at *hook)
 #endif
    if (! m->initaddr) {
       strcpy(string_buffer, "init_");
-      strcat(string_buffer, basename(m->filename, 0));
+      strcat(string_buffer, lush_basename(m->filename, 0));
       char *s = strchr(string_buffer, '.'); 
       if (s) s[0] = 0;
       m->initaddr = dynlink_symbol(m, string_buffer, 1, 1);
@@ -1319,7 +1305,7 @@ DX(xmod_undefined)
             nsbundle_t *def = nsbundle_hget(sname);
             if (def==&nsbundle_head || (!def && !NSIsSymbolNameDefined(sname))) {
                if (sname[0]=='_') sname += 1;
-               *where = new_cons( new_string((char*)sname), NIL);
+               *where = new_cons( NEW_STRING((char*)sname), NIL);
                where = &Cdr(*where);
             }
          }
@@ -1363,8 +1349,8 @@ at *find_primitive(at *module, at *name)
            /* Looking for a method:
               - names must match, 
               - clname must match class. */
-           if ( CONSP(Cdr(q)) && Cddr(q) == name && CLASSP(Cadr(q)) &&
-                ((class_t *)Mptr(Cadr(q)))->classname == clname)
+           if (CONSP(Cdr(q)) && Cddr(q) == name && 
+               CLASSP(Cadr(q)) && ((class_t *)Mptr(Cadr(q)))->classname == clname)
               break;
         } else {
            /* Looking for a function: 
@@ -1438,7 +1424,7 @@ static void module_method_def(class_t *cl, at *name, at *val)
 
 void class_define(const char *name, class_t *cl)
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    cl->classname = symb;
    cl->priminame = module_priminame(symb);
    module_def(symb, cl->backptr);
@@ -1447,7 +1433,7 @@ void class_define(const char *name, class_t *cl)
 
 void dx_define(const char *name, at *(*addr) (int, at **))
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    at *priminame = module_priminame(symb);
    at *func = new_dx(priminame, addr);
    module_def(symb, func);
@@ -1455,7 +1441,7 @@ void dx_define(const char *name, at *(*addr) (int, at **))
 
 void dy_define(const char *name, at *(*addr) (at *))
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    at *priminame = module_priminame(symb);
    at *func = new_dy(priminame, addr);
    module_def(symb, func);
@@ -1463,7 +1449,7 @@ void dy_define(const char *name, at *(*addr) (at *))
 
 void dxmethod_define(class_t *cl, const char *name, at *(*addr) (int, at **))
 {
-  at *symb = new_symbol(name);
+  at *symb = NEW_SYMBOL(name);
   at *priminame = module_method_priminame(cl, symb);
   at *func = new_dx(priminame, addr);
   module_method_def(cl, symb, func);
@@ -1472,7 +1458,7 @@ void dxmethod_define(class_t *cl, const char *name, at *(*addr) (int, at **))
 
 void dymethod_define(class_t *cl, const char *name, at *(*addr) (at *))
 {
-  at *symb = new_symbol(name);
+  at *symb = NEW_SYMBOL(name);
   at *priminame = module_method_priminame(cl, symb);
   at *func = new_dy(priminame, addr);
   module_method_def(cl, symb, func);
@@ -1481,7 +1467,7 @@ void dymethod_define(class_t *cl, const char *name, at *(*addr) (at *))
 
 void dhclass_define(const char *name, dhclassdoc_t *kclass)
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    at *classat = new_dhclass(symb, kclass);
    class_t *cl = Mptr(classat);
    cl->priminame = module_priminame(symb); 
@@ -1492,7 +1478,7 @@ void dhclass_define(const char *name, dhclassdoc_t *kclass)
 
 void dh_define(const char *name, dhdoc_t *kname)
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    at *priminame = module_priminame(symb);
    at *func = new_dh(priminame, kname);
    module_def(symb, func);
@@ -1500,7 +1486,7 @@ void dh_define(const char *name, dhdoc_t *kname)
 
 void dhmethod_define(dhclassdoc_t *kclass, const char *name, dhdoc_t *kname)
 {
-   at *symb = new_symbol(name);
+   at *symb = NEW_SYMBOL(name);
    if (! kclass->lispdata.atclass)
       error(NIL,"internal: dhmethod_define called before dhclass_define", symb);
    
@@ -1526,7 +1512,7 @@ void pre_init_module(void)
 {
    if (mt_module == mt_undefined)
       mt_module = MM_REGTYPE("module", sizeof(module_t),
-                             clear_module, mark_module, 0);
+                             clear_module, mark_module, finalize_module);
    /* create root module */
    if (!root) {
       root = mm_alloc(mt_module);
@@ -1547,7 +1533,7 @@ void init_module(char *progname)
    pre_init_module();
 
    /* set up module_class */
-   new_builtin_class(&module_class, NIL);
+   module_class = new_builtin_class(NIL);
    module_class->dispose = (dispose_func_t *)module_dispose;
    module_class->serialize = module_serialize;
    module_class->dontdelete = true;

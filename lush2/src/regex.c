@@ -522,7 +522,7 @@ DX(xregex_extract)
          char *s = mm_blob(reglen[i]+1);
          strncpy(s, regptr[i], reglen[i]);
          s[reglen[i]] = '\0';
-         *where = new_cons(new_string(s), NIL);
+         *where = new_cons(NEW_STRING(s), NIL);
          where = &Cdr(*where);
       }
       if (!ans)

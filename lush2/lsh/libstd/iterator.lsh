@@ -27,7 +27,7 @@
 (libload "compiler/dh-compile")
 (libload "iterator-classes")
 
-#? *** Iterable objects and Iterators
+#? *** Iterables and Iterators
 ;; Iterators are an abstraction for sequential data access
 ;; and deferred computation (akin to "lazy evaluation"). A stock
 ;; of generic iterator functions brings the convenience of 
@@ -63,16 +63,12 @@
 ;; always return the same item. Function <emptyp> finally tests
 ;; whether there are any more items.
 
-#? ** Writing generic iterator functions
+#? ** Writing Generic Iterator Functions
 ;; A function that uses only the four functions <iterate>,
 ;; <emptyp>, <next>, and <peeknext> to access items of an
 ;; iterable object is "generic" in that it works with all
 ;; iterable objects. Code that uses only generic functions
 ;; is also generic.
-;;
-;; The four functions that make up the iterator protocol plus
-;; the <do> form are defined in the global namespace. More
-;; generic iterator functions are defined in namespace <iter->.
 
 #? (iterate <obj> [<arg>])
 ;; Return an iterator for object <obj> or raise an error when <obj>
@@ -86,10 +82,10 @@
 ;; Examples:
 ;; {<code>
 ;;
-;; ? (iter-take 8 (iterate rand))
+;; ? (take 8 (iterate rand))
 ;; = (0.4579 0.2628 0.1898 0.3359 0.6329 0.0636 0.5097 0.4751)
 ;; 
-;; ? (iter-take 10 (iterate (lambda (x) (+ x x)) 1))
+;; ? (take 10 (iterate (lambda (x) (+ x x)) 1))
 ;; = (2 4 8 16 32 64 128 256 512 1024)
 ;; </code>}
 (defmacro iterate (obj . args)
@@ -113,30 +109,6 @@
 		     (dhc-error "can't compile form" source) ))))
     (dhc-parse-replacement-source-t source src) ))
 
-#? (emptyp <it>)
-;; True when iterator is empty.
-
-;; the emptyp macro is in sys/sysenv.lsh
-
-(dhm-t emptyp (source)
-  (when (<> 2 (length source))
-    (dhc-error "one argument expected") )
-  (let* ((it (cadr source))
-	 (tn (dhc-parse-expr-t/nb it))
-	 (src (cond ((==> :tn:type is-an-idxptr)
-		     `(idx-emptyp ,it) )
-		    ((==> :tn:type is-a-str)
-		     `(= (len ,it) 0) )
-		    ((==> :tn:type is-an-objptr)
-		     `(==> ,it -emptyp) )
-		    ((==> :tn:type is-a-srgptr)
-		     `(= (storage-nelems ,it) 0) )
-		    ((==> :tn:type is-a-listptr)
-		     `(= (length ,it) 0) )
-		    (t
-		     (dhc-error "can't compile form" source) ))))
-    (dhc-parse-replacement-source-t source src) ))
-  
 
 #? (next <it>)
 ;; Extract next item from iterator <it> and return it.
@@ -182,6 +154,8 @@
 		     (dhc-error "can't compile form" source) ))))
     (dhc-parse-replacement-source-t source src) ))
 
+#? ** Generic Iterator Functions
+
 #? (do ((<i1> <obj1>) ... (<in> <objn>)) [while <cond>] . <body>)
 ;; Iterate objects <obj1> to <objn> in parallel until any object
 ;; is empty. If an optional condition <cond> is given, then also 
@@ -191,7 +165,7 @@
 ;; false in <body>.
 ;; Examples:
 ;; {<code>
-;; (do ((ln (iter-range 1 1000)) (line (iter-lines "readme.txt")))
+;; (do ((ln (range 1 1000)) (line (lines "readme.txt")))
 ;;   (printf "%3d :  %s\n" ln line) )
 ;; 
 ;; (do ((i hp)) while (<> i -1)
@@ -215,23 +189,17 @@
              ,@body)))
       )))
 
-(in-namespace iter-
-
-#? ** Namespace iter-
-
-#? * Generic iterator functions
-
-#? (iter-take <n> <obj>)
+#? (take <n> <obj>)
 ;; Take up to <n> items from <obj> and return in a list.
 (defmacro take (n obj)
   `(==> (iterate ,obj) -take ,n) )
 
-#? (iter-atake <n> <obj> [<element-type>])
+#? (atake <n> <obj> [<element-type>])
 ;; Take up to <n> items from <obj> and return in a vector. Example:
 ;; {<code>
-;; ? (iter-atake 10 1s)
+;; ? (atake 10 1s)
 ;; = [a 1 1 1 1 1 1 1 1 1 1]
-;; ? (iter-atake 10 1s 'double)
+;; ? (atake 10 1s 'double)
 ;; = [d  1.00  1.00  1.00  1.00  1.00  1.00  1.00  1.00  1.00  1.00]
 ;; </code>}
 (defmacro atake (-n obj &optional (sc 'atom))
@@ -250,7 +218,7 @@
          (idx-trim ,a 0 0 ,i) )
       )))
 
-#? (iter-drop <n> <obj>)
+#? (drop <n> <obj>)
 ;; Drop up to <n> items and return the iterator.
 (defmacro drop (n obj)
   `(==> (iterate ,obj) -drop ,n) )
@@ -281,7 +249,7 @@
       (dhc-parse-replacement-source-t source src) )))
 
 
-#? (iter-take-while <p> <obj>)
+#? (take-while <p> <obj>)
 ;; Take items from <obj> as long as (<p> <item>) is true;
 ;; return the items in a list.
 (defun take-while (p obj)
@@ -293,7 +261,7 @@
       (setq tail (cdr (rplacd tail (cons (==> p next) nil)))) )
     l))
 
-#? (iter-drop-while <p> <obj>)
+#? (drop-while <p> <obj>)
 ;; Drop items from <obj> as long as (<p> <item>) is true;
 ;; return the iterator.
 (defmacro drop-while (p obj)
@@ -304,7 +272,7 @@
        ,it)
     ))
 
-#? (iter-take-until <x> <obj>)
+#? (take-until <x> <obj>)
 ;; Take items from <obj> until item <x>; return the items
 ;; in a list (including <x>).
 (defun take-until (x obj)
@@ -316,7 +284,7 @@
       (setq tail (cdr (rplacd tail (cons (==> it next) nil)))) )
     l))
 
-#? (iter-take-until* <x> <obj>)
+#? (take-until* <x> <obj>)
 ;; Take items from <obj> until item <x>; return the items
 ;; in a list (not including <x>).
 (defun take-until* (x obj)
@@ -328,7 +296,7 @@
       (setq tail (cdr (rplacd tail (cons (==> it next) nil)))) )
     l))
 
-#? (iter-drop-until <x> <obj>)
+#? (drop-until <x> <obj>)
 ;; Drop items from <obj> until item <x>; return the iterator.
 ;; The last item returned by the iterator was <x>.
 (defmacro drop-until (x obj)
@@ -344,7 +312,7 @@
          ,it)
       )))
 
-#? (iter-drop-until* <x> <obj>)
+#? (drop-until* <x> <obj>)
 ;; Drop items from <obj> until item <x>; return the iterator.
 ;; The next item delivered by the iterator will be <x>.
 (defmacro drop-until* (x obj)
@@ -360,11 +328,29 @@
          ,it)
       )))
 
-#? * Builtin iterators
+#? * Builtin Iterables and Iterators
 
-#? (iter-range [<from>] <to> [<step>])
+#? 0s
+;; Iterable generating <0>.
+
+#? 1s
+;; Iterable generating <1>.
+
+#? nils
+;; Iterable generating <()>.
+
+#? ts
+;; Iterable generating <t>.
+
+#? (ints)
+;; Iterator generating the numbers 0, 1, 2, ...
+(defmacro ints ()
+  `(irange 0 ,:+int-max+)
+  )
+
+#? (irange [<from>] <to> [<step>])
 ;; Like <range> but returns an iterator, not a list.
-(defmacro range args
+(defmacro irange args
   (selectq (length args)
     (1 (let (((to) args)) 
 	 `(new RangeIterator 0 ,to 1)) )
@@ -374,9 +360,9 @@
 	 `(new RangeIterator ,from ,to ,step) ))
     (t (error "wrong number of arguments") )))
 
-#? (iter-range* [<from>] <to> [<step>])
+#? (irange* [<from>] <to> [<step>])
 ;; Like <range*> but returns an iterator, not a list.
-(defmacro range* args
+(defmacro irange* args
   (selectq (length args)
     (1 (let (((to) args)) 
 	 `(new Range*Iterator 0 ,to 1) ))
@@ -386,31 +372,31 @@
 	 `(new Range*Iterator ,from ,to ,step) ))
     (t (error "wrong number of arguments") )))
 
-#? (iter-range*/s [<from>] <to>)
+#? (irange*/s [<from>] <to>)
 ;; Generate integers from <from> to <to> but shuffled.
 ;; Example:
 ;;
 ;; {<code>
-;; (with-namespace iter- (take 10 (range*/s 10)))
+;; (take 10 (irange*/s 10)))
 ;; = (8 3 6 1 9 4 7 2 5 0)
 ;; </code>}
+(defmacro irange*/s args
+  (selectq (length args)
+    (1 (let (((to) args))
+         `(iterate (new RangeShuffledIterator 0 ,to))
+         ))
+    (2 (let (((from to) args))
+         `(iterate (new RangeShuffledIterator ,from ,to))
+         ))
+    (t
+     (error "wrong number of arguments") )))
 
 
-#? (iter-ints)
-;; Create an iterator for the numbers 0, 1, 2, ...
-(defmacro ints ()
-  `(range 0 ,:+int-max+)
-  )
-
-#? (iter-lines <filename>)
-;; Return a line iterator for text file <filename>.
+#? (lines <filename>)
+;; Iterator generating the lines of file <filename>.
 (defun lines (filename)
   (new LinesIterator filename))
 
 (defmacro lines* (filename)
   `(new Lines*Iterator ,filename) 
   )
-
-) ; namespace iter-
-
-(libload "more-iterator-classes")

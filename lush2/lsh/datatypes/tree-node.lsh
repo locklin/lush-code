@@ -27,17 +27,16 @@
 (libload "datatypes/iterable-datatype")
 (libload "datatypes/stack")
 (libload "iterator")
-(libload "dynamic")
 
 (deftemplate TreeNode object
-  ((-gptr-) left)
-  ((-gptr-) right)
+  ((-mptr-) left)
+  ((-mptr-) right)
   ((-any-)  item) )
 
 (in-namespace (class TreeNode)
 
 (defmacro nullp (p)
-  `(= ,p (to-gptr ())) )
+  `(= ,p NULL) )
 
 (defmacro to-node (p)
   `(to-obj (classof this) ,p)
@@ -45,8 +44,28 @@
 ) ; in-namespace
 
 (defmethod TreeNode TreeNode ()
-  (setq left (to-gptr ()))
-  (setq right (to-gptr ())) )
+  (setq left NULL)
+  (setq right NULL)
+  ())
+
+(defmethod TreeNode clear ()
+  (setq left NULL)
+  (setq right NULL)
+  ()) 
+
+(defmethod TreeNode clear-tree ()
+  (declare (-method- (TreeNode) () (-bool-)) clear-tree)
+  (when (not (nullp left))
+    (==> (to-node left) clear-tree)
+    (setq left NULL) )
+  (when (not (nullp right))
+    (==> (to-node right) clear-tree)
+    (setq right NULL) )
+  ())
+           
+(defmethod TreeNode clone ()
+  (error "abstract method") 
+  (new TreeNode) )
 
 (defmethod TreeNode copy-item-from (tn)
   (declare (-obj- (TreeNode)) tn)
@@ -81,14 +100,14 @@
   (when (nullp left) (error "no left node"))
   (let ((ln (to-node left)))
     (setq left :ln:right)
-    (setq :ln:right (to-gptr this))
+    (setq :ln:right (to-mptr this))
     ln))
     
 (defmethod TreeNode rotate-left ()
   (when (nullp right) (error "no right node"))
   (let ((rn (to-node right)))
     (setq right :rn:left)
-    (setq :rn:left (to-gptr this))
+    (setq :rn:left (to-mptr this))
     rn))
 
 ;; find first in tree
@@ -100,9 +119,9 @@
 
 ;; find first in tree, write path to stack
 (defmethod TreeNode symmetric-order-first* (st)
-  (declare (-idx1- (-gptr-)) st)
+  (declare (-idx1- (-mptr-)) st)
   (let ((tn this))
-    (push st (to-gptr tn))
+    (push st (to-mptr tn))
     (while (not (nullp :tn:left))
       (push st :tn:left)
       (setq tn (to-node :tn:left)) )
@@ -117,9 +136,9 @@
 
 ;; find last in tree, write path to stack
 (defmethod TreeNode symmetric-order-last* (st)
-  (declare (-idx1- (-gptr-)) st)
+  (declare (-idx1- (-mptr-)) st)
   (let ((tn this))
-    (push st (to-gptr tn))
+    (push st (to-mptr tn))
     (while (not (nullp :tn:right))
       (push st :tn:right)
       (setq tn (to-node :tn:right)) )
@@ -169,7 +188,7 @@
         (if (nullp :r:left)
             (setq tail r  rem :r:right  n (+ n 1))
           (setq r (==> r rotate-right))
-          (setq rem (to-gptr r)  :tail:right rem) )))
+          (setq rem (to-mptr r)  :tail:right rem) )))
     n))
 
 (defmethod TreeNode vine-count ()
@@ -192,7 +211,7 @@
       (setq :s:right :c:right)
       (setq s (to-node :s:right))
       (setq :c:right :s:left)
-      (setq :s:left (to-gptr c)) ))
+      (setq :s:left (to-mptr c)) ))
   ())
 
 ;; convert vine to tree, return height of tree
@@ -216,99 +235,17 @@
 (defmacro rebalance-tree! (r)
   (when (not (symbolp r))
     (error "root argument must be a variable"))
-  `(let ((tn (in-stack (new (classof ,r)))))
-     (setq :tn:right (to-gptr ,r))
+  `(let ((tn (new (classof ,r))))
+     (setq :tn:right (to-mptr ,r))
      (==> tn vine-to-tree (==> tn tree-to-vine))
      (setq ,r (to-obj (classof ,r) :tn:right))
      ())
   )
 
-(defclass TNFreeList object
-  ((-gptr- (TreeNode)) first)  ; first in list of unused nodes
-  ((-int-) n) )                ; number of items in free list
-
-(in-namespace (class TNFreeList)
-(import (nullp) from (class TreeNode))
-)
-
-(defmethod TNFreeList TNFreeList ()
-  (setq first (to-gptr ()))
-  (setq n 0)
-  ())
-
-(defmethod TNFreeList push (tn)
-  (declare (-obj- (TreeNode)) tn)
-  (setq :tn:left first)
-  (setq :tn:right (to-gptr ()))
-  (setq first (to-gptr tn))
-  (incr n)
-  ())
-
-(defmethod TNFreeList pop ()
-  (assert (not (nullp first)))
-  (let ((tn (to-obj TreeNode first)))
-    (setq first :tn:left)
-    (setq :tn:left (to-gptr ()))
-    (decr n)
-    tn))
-
-(defmethod TNFreeList -emptyp ()
-  (nullp first) )
-
-;; do a self-check
-(defmethod TNFreeList check ()
-  (if (nullp first)
-      (printf "0 items in free-list (should be %d)\n" n)
-    (let ((tn (to-obj TreeNode first)) (i 1))
-      (declare (-int-) i)
-      (while (not (nullp :tn:left))
-        (setq tn (to-obj TreeNode :tn:left))
-        (incr i) )
-      (printf "%d items in free-list (should be %d)\n" i n) ))
-  ())
-
-
-;; dynamic pool of treenodes
-
-(deftemplate TreeNodePool object
-  ((-obj- (MemoryPool)) pool)
-  ((-obj- (TNFreeList)) fl)
-  ((-gptr-) make)
-  ((-obj- (TreeNode)) tn) )   ; dummy slot, gets spezialized in subclasses
-
-(in-namespace (class TreeNodePool)
-(import (nullp) from (class TreeNode))
-)
-
-(defmethod TreeNodePool TreeNodePool (p)
-  (declare (-gptr-) p)
-  (setq fl (new TNFreeList))
-  (setq pool (new MemoryPool))
-  (setq make p)
-  (setq tn (in-pool pool (new TreeNode)))
-  ())
-
-(defmethod TreeNodePool new-node ()
-  (error "abstract method")
-  (in-pool pool (new TreeNode)) )
-
-(defmethod TreeNodePool free-node (n)
-  (declare (-obj- (TreeNode)) n)
-  (==> fl push n)
-  ())
-
-(defmethod TreeNodePool -destructor ()
-  #{ 
-  if ($make!=NULL)
-     *(struct CClass_treenodepool **)$make = NULL; 
-  #}
-  ())
-
-
 ;; symmetric order tree iterator
 
 (deftemplate TreeNodeIterator DatatypeIterator
-  ((-idx1- (-gptr-)) stack)
+  ((-idx1- (-mptr-)) stack)
   ((-obj- (TreeNode)) tn) ; dummy, just for the type
   ((-any-) next-item) )
 
@@ -321,7 +258,7 @@
 
 (defmethod TreeNodeIterator TreeNodeIterator (obj st)
   (declare (-obj- (IterableDatatype)) obj)
-  (declare (-idx1- (-gptr-)) st)
+  (declare (-idx1- (-mptr-)) st)
   (unprotect) ; don't warn about tn not being initialized
   (==> this DatatypeIterator obj)
   (setq stack st)
@@ -340,13 +277,45 @@
   ())
 
 (defmethod TreeNodeIterator -destructor ()
-  (clear-stack stack) )
+  (clear-stack stack)
+  () )
 
-(dhc-make-class () TreeNode TNFreeList TreeNodePool 
-                (TreeNodeIterator TreeNodeIterator -make-next-stack -destructor) )
+(defun copy-ordered-tree (tn)
+  (declare (-obj- (TreeNode)) tn)
+  (let ((dummy (new IterableDatatype)))
+    (let* ((st (make-stack 32 mptr))
+           (it (new TreeNodeIterator dummy st))
+           (pseudo (==> tn clone))
+           (tail pseudo)
+           (n 0) )
+      (declare (-int-) n)
+      ;; traverse input tree in symmetric order and create a vine
+      (==> tn symmetric-order-first* st)
+      (while (not (emptyp st))
+        (==> it -make-next-stack)
+        (incr n)
+        (let ((nn (==> tn clone)))
+          (setq :tail:right (to-mptr nn))
+          (==> nn copy-item-from :it:tn)
+          (setq tail nn) ))
+      (setq :tail:right NULL)
+      
+      ;; create tree from vine and return
+      (==> pseudo vine-to-tree n)
+      (prog1 (to-obj TreeNode :pseudo:right)
+        (==> pseudo clear) )
+      )))
+
+
+(dhc-make-class () TreeNode
+                (TreeNodeIterator TreeNodeIterator -make-next-stack -destructor)
+                copy-ordered-tree)
 
 
 ;; template methods for TreeNode
+
+(defmethod TreeNode clone ()
+  (new (classof this)) )
 
 (defmethod TreeNode copy-item-from (tn)
   (declare (-obj- (TreeNode)) tn)
@@ -368,24 +337,24 @@
 ;; visiting the node with item <i>.
 (defmethod TreeNode find (i st trav)
   (declare (-typeof- item) i)
-  (declare (-idx1- (-gptr-)) st)
+  (declare (-idx1- (-mptr-)) st)
   (declare (-bool-) trav)
   (when (not (emptyp st))
     (error "stack not empty") )
-  (let ((m this) (pm (to-gptr this)))
+  (let ((m this) (pm (to-mptr this)))
     (while (not (nullp pm))
       (push st pm)
       (cond
        ((eq i :m:item)
-        (setq pm (to-gptr ())) )
+        (setq pm NULL))
        ((lt i :m:item)
         (if (nullp :m:left) 
-            (setq pm (to-gptr ()))
+            (setq pm NULL)
           (setq pm :m:left  m (to-node :m:left)) ))
        ((gt i :m:item)
         (when trav (pop st))
         (if (nullp :m:right)
-            (setq pm (to-gptr ()))
+            (setq pm NULL)
           (setq pm :m:right  m (to-node :m:right)) ))
        (t
         (error "items neither lt, gt, nor eq") )))
@@ -411,32 +380,32 @@
       (cond
        ((lt i :m:item)
 	(if (nullp :m:left)
-	    (setq :r:left (to-gptr m)  r m  m n)
+	    (setq :r:left (to-mptr m)  r m  m n)
 	  (let ((ml (to-node :m:left)))
 	    (cond
 	     ((lt i :ml:item)
 	      (==> m rotate-right)
-	      (setq :r:left (to-gptr ml)  r ml)
+	      (setq :r:left (to-mptr ml)  r ml)
 	      (setq m (if (nullp :ml:left) n (to-node :ml:left))) )
 	     ((gt i :ml:item)
-	      (setq :r:left (to-gptr m)  r m  :l:right (to-gptr ml)  l ml)
+	      (setq :r:left (to-mptr m)  r m  :l:right (to-mptr ml)  l ml)
 	      (setq m (if (nullp :ml:right) n (to-node :ml:right))) )
 	     (t
-	      (setq :r:left (to-gptr m)  r m  m ml) )))))
+	      (setq :r:left (to-mptr m)  r m  m ml) )))))
        ((gt i :m:item)
 	(if (nullp :m:right)
-	    (setq :l:right (to-gptr m)  l m  m n)
-	  (let ((mr (to-obj (classof this) :m:right)))
+	    (setq :l:right (to-mptr m)  l m  m n)
+	  (let ((mr (to-node :m:right)))
 	    (cond
 	     ((gt i :mr:item)
 	      (==> m rotate-left)
-	      (setq :l:right (to-gptr mr)  l mr)
+	      (setq :l:right (to-mptr mr)  l mr)
 	      (setq m (if (nullp :mr:right) n (to-node :mr:right))) )
 	     ((lt i :mr:item)
-	      (setq :l:right (to-gptr m)  l m  :r:left (to-gptr mr)  r mr)
+	      (setq :l:right (to-mptr m)  l m  :r:left (to-mptr mr)  r mr)
 	      (setq m (if (nullp :mr:left) n (to-node :mr:left))) )
 	     (t
-	      (setq :l:right (to-gptr m)  l m  m mr) )))))
+	      (setq :l:right (to-mptr m)  l m  m mr) )))))
 
        (t
 	(error "items neither lt, gt, nor eq") )))
@@ -446,28 +415,17 @@
         (if (not link)
             (cond
              ((not (== l n))
-              (setq :l:right :n:left  :r:left (to-gptr ())  m (to-node :n:right)) )
+              (setq :l:right :n:left  :r:left NULL  m (to-node :n:right)) )
              ((not (== r n))
-              (setq :r:left :n:right  :l:right (to-gptr ()) m (to-node :n:left)) )
+              (setq :r:left :n:right  :l:right NULL  m (to-node :n:left)) )
              (t
               (error "internal error (should never get here")) )
-          (setq :l:right (to-gptr ())  :r:left (to-gptr ()))
+          (setq :l:right NULL  :r:left NULL)
 	  (rotatef :m:left :m:right) )
       (setq :l:right :m:left  :r:left :m:right)
       (setq :m:left :n:right  :m:right :n:left) )
     m))
 
-
-;; template methods for TreeNodePool
-
-(defmethod TreeNodePool new-node ()
-  (if (emptyp fl)
-      (in-pool pool
-        (new (classof tn)) )
-    (let ((n (to-obj (classof tn) (==> fl pop))))
-      (assert (nullp :n:left))
-      (assert (nullp :n:right))
-      n)))
 
 ;; template methods for TreeNodeIterator
 
@@ -483,37 +441,9 @@
 ;; functions dealing with trees
 
 #? (copy-ordered-tree <tn> <pool>)
-;; Copy whole tree rooted a TreeNode <tn>. Take new TreeNodes
-;; from TreeNodePool <pool>.
+;; Copy whole tree rooted a TreeNode <tn>.
 ;; The new tree does not have the same structure as the input
 ;; tree, but it is in symmetric order.
-(defun copy-ordered-tree (tn pool)
-  (declare (-obj- (TreeNode)) tn)
-  (declare (-obj- (TreeNodePool)) pool)
-  (let ((dummy (new IterableDatatype)))
-    (let* ((st (make-stack 32 gptr))
-           (it (new TreeNodeIterator dummy st))
-           (pseudo (==> pool new-node))
-           (tail pseudo)
-           (n 0) )
-      (declare (-int-) n)
-      ;; traverse input tree in symmetric order and create a vine
-      (==> tn symmetric-order-first* st)
-      (while (not (emptyp st))
-        (==> it -make-next-stack)
-        (incr n)
-        (let ((nn (==> pool new-node)))
-          (setq :tail:right (to-gptr nn))
-          (==> nn copy-item-from :it:tn)
-          (setq tail nn) ))
-      (setq :tail:right (to-gptr ()))
-      
-      ;; create tree from vine and return
-      (==> pseudo vine-to-tree n)
-      (prog1 (to-obj TreeNode :pseudo:right)
-        (==> pool (TreeNodePool . free-node) pseudo) ))))
-
-(dhc-make "tree_funcs" copy-ordered-tree)
 
 ;;#? (def-treenode <prefix> <item-type> <lt> <gt> <eq>)
 ;; Define TreeNode class for type <item-type> along
@@ -523,8 +453,6 @@
   (when (not (symbolp pfx))
     (error "not a symbol" pfx) )
   (let* ((nclsym (symbol-concat pfx 'TreeNode))
-         (pclsym (symbol-concat pfx 'TreeNodePool))
-         (pfcsym (symbol-concat 'make- pclsym))
          (iclsym (symbol-concat pfx 'TreeNodeIterator))
          (type (if (consp type) type (list type))) )
     (eval
@@ -538,21 +466,8 @@
         (defparameter eq ,eq) )
      )
     (eval
-     `(defclass ,pclsym TreeNodePool 
-        (specialize (-obj- (,nclsym)) tn) )
-     )
-    (eval
-     `(defun ,pfcsym ()
-        #{ static struct CClass_treenodepool *p=NULL; #}
-        (if (to-bool #{ p!=NULL #})
-            (to-obj ,pclsym #{ p #})
-          (let ((p (new ,pclsym #{ &p #})))
-            #{ p = (struct CClass_treenodepool *)$p; #}
-            p)))
-     )
-    (eval
      `(defclass ,iclsym TreeNodeIterator
         (specialize (-obj- (,nclsym)) tn)
         (,type next-item) )
      )
-    (list nclsym pclsym iclsym pfcsym) ))
+    (list nclsym iclsym) ))

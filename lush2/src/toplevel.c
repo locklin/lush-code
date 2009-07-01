@@ -33,9 +33,9 @@
 
 struct error_doc error_doc;
 struct recur_doc recur_doc;
-struct context *context;
+struct lush_context *context;
 
-static struct context first_context;
+static struct lush_context first_context;
 at* at_toplevel;
 static at *at_startup;
 static at *at_break;
@@ -56,6 +56,7 @@ extern void init_win32(void);
 #endif
 extern void init_oostruct (void);
 extern void init_symbol (void);
+extern void init_cref(void);
 extern void init_eval (void);
 extern void init_function (void);
 extern void init_at (void);
@@ -82,7 +83,6 @@ extern void init_idx2 (void);
 extern void init_idx3 (void);
 extern void init_idx4 (void);
 extern void init_dh (void);
-extern void init_lisp_c (void);
 extern void init_event (void);
 extern void init_graphics (void);
 extern void init_ps_driver (void);
@@ -103,9 +103,6 @@ extern void init_win_driver(void);
 int isatty (int);
 #endif
 
-/* From AT.C */
-//extern int compute_bump_active;
-
 /* From DUMP.C */
 extern int isdump (const char *s);
 extern void undump (const char *s);
@@ -123,7 +120,7 @@ static void recur_doc_init(void);
  * Exiting Lush quickly
  */
 
-void abort(char *s)
+void lush_abort(char *s)
 {
    unlink_tmp_files();
    FINI_MACHINE;
@@ -163,6 +160,7 @@ void init_lush(char *program_name)
    init_weakref();
    init_at();
    init_symbol();
+   init_cref();
    init_oostruct();
    init_eval();
    init_function();
@@ -188,7 +186,6 @@ void init_lush(char *program_name)
    init_idx3();
    init_idx4();
    init_dh();
-   init_lisp_c();
    init_lushrng();
    init_dump();
    init_event();
@@ -230,7 +227,7 @@ void init_lush(char *program_name)
 
 extern void reset_dx_stack(void); /* defined in function.c */
 
-void start_lisp(int argc, char **argv, int quietflag)
+void start_lisp(int argc, char **argv, int quiet)
 {
    at *p, *q;
    at **where;
@@ -257,7 +254,6 @@ void start_lisp(int argc, char **argv, int quietflag)
    context->output_tab = 0;
    
    MM_ENTER;
-   quiet = quietflag;
    if (! sigsetjmp(context->error_jump, 1)) {
       s = "stdenv";
       /* Check @-argument */
@@ -295,7 +291,7 @@ void start_lisp(int argc, char **argv, int quietflag)
          toplevel(r, NIL, NIL);
          
       } else
-         abort("Cannot locate system libraries");
+         lush_abort("Cannot locate system libraries");
 
       /* Calls the cold startup procedure with arguments */
       error_doc.ready_to_an_error = true;
@@ -449,7 +445,7 @@ void recur_pop(struct recur_elt *elt)
  * context stack handling context_push(s) context_pop()
  */
 
-void context_push(struct context *newc)
+void context_push(struct lush_context *newc)
 {
    *newc = *context;
    newc->next = context;
@@ -458,7 +454,7 @@ void context_push(struct context *newc)
 
 void context_pop(void)
 {
-   struct context *oldcontext = context;
+   struct lush_context *oldcontext = context;
    if (context->next)
       context = context->next;
    if (oldcontext->input_string && context->input_string)
@@ -492,7 +488,7 @@ void toplevel(const char *in, const char *out, const char *prompts)
    char *ps2 = 0;
    char *ps3 = 0;
    char *saved_prompt = prompt_string;
-   struct context mycontext;
+   struct lush_context mycontext;
 
    /* save debug_tab */
    int debug_tab = error_doc.debug_tab;
@@ -650,7 +646,7 @@ DX(xmeminfo)
 
 DY(ymemprof)
 {
-   struct context c;
+   struct lush_context c;
    int hist[MAX_NUM_MEMTYPES];
    int n = mm_prof_start(NULL);
    assert(n < MAX_NUM_MEMTYPES);
@@ -670,7 +666,7 @@ DY(ymemprof)
    at *stats = new_htable(n, false, true);
    char **key = mm_prof_key();
    for (int i=0; i<n; i++)
-      htable_set(stats, new_string(key[i]), NEW_NUMBER(hist[i]));
+      htable_set(stats, NEW_STRING(key[i]), NEW_NUMBER(hist[i]));
    var_set(at_memstats, stats);
    
    return res;
@@ -678,7 +674,7 @@ DY(ymemprof)
 
 DY(ywith_nogc)
 {
-   struct context c;
+   struct lush_context c;
    context_push(&c);
 
    MM_NOGC;
@@ -800,7 +796,6 @@ static const char *error_text(void)
 void user_break(char *s)
 {
    eval_ptr = eval_std;
-   //compute_bump_active = 0;
    if (error_doc.ready_to_an_error == false)
       lastchance("Break");
    
@@ -843,25 +838,22 @@ void user_break(char *s)
 }
 
 
-extern int lush_error_flag;  /* defined in lisp_c.c */
-
 void error(const char *prefix, const char *text, at *suffix)
 {
-   if (lush_error_flag)
+   if (in_compiled_code)
       lush_error(text);
 
    eval_ptr = eval_std;
-   //compute_bump_active = 0;
    
    if (error_doc.ready_to_an_error == false)
       lastchance(text);
   
    TOPLEVEL_MACHINE;
-   error_doc.error_call = call_stack();
-   error_doc.ready_to_an_error = false;
    error_doc.error_prefix = (char *)prefix;
    error_doc.error_text = text;
    error_doc.error_suffix = suffix;
+   error_doc.error_call = call_stack();
+   error_doc.ready_to_an_error = false;
    recur_doc_init();
    line_pos = line_buffer;
    *line_buffer = 0;
@@ -961,7 +953,7 @@ DX(xbtrace)
 DX(xerrname)
 {
    ARG_NUMBER(0);
-   return new_string(error_text());
+   return NEW_STRING(error_text());
 }
 
 DX(xquiet)

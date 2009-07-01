@@ -31,52 +31,85 @@
 #include "header.h"
 #include "dh.h"
 
-/* objects with less or equal MIN_NUM_SLOTS slots will
- * be allocated via mm_alloc.
+/* Notes on the object implementation:
+ *
+ * 1. An object of a compiled class or which has a compiled
+ *    superclass has a "compiled part". The compiled part is
+ *    the C-side representation of the object that is passed
+ *    to compiled functions and methods.
+ * 
+ * 2. When the interpreter creates an OO object it also
+ *    creates its compiled part (in new_object) and creates
+ *    cref objects for all compiled slots. There is no copying
+ *    of data for compiled slots, the data is in the compiled
+ *    part and is being accessed through the cref objects.
+ * 
+ * 3. When OO objects are being created in compiled code, they
+ *    are being created without the representation for the
+ *    interpreter (new_cobject in dh.c). The part for the 
+ *    interpreter is being created when necessary by the
+ *    dh-interface.
+ * 
+ * 4. The OO objects used by the interpreter keep the compiled
+ *    parts alive but not the other way around. Thus, the 
+ *    finalizer for object_t objects must NULLify the C-side 
+ *    __lptr.
+ *
+ * 5. Both the compiled representation and the interpreter
+ *    representation need finalizers since C-side objects
+ *    may exist without the interpreter counterpart. To ensure
+ *    that compiled destructors are not called twice, compiled
+ *    destructors NULLify the Vtbl-pointer when done.
  */
-#define MIN_NUM_SLOTS  8
 
 static at *at_progn;
 static at *at_mexpand;
 static at *at_this;
 static at *at_destroy;
 static at *at_listeval;
+static at *at_emptyp;
 static at *at_unknown;
 
 static struct hashelem *_getmethod(class_t *cl, at *prop);
 static at *call_method(at *obj, struct hashelem *hx, at *args);
-static void send_delete(object_t *);
 
-static void clear_object(object_t *obj, size_t _)
+
+static void clear_object(void *obj, size_t n)
 {
-   obj->backptr = NULL;
+   memset(obj, 0, n);
 }
 
 static void mark_object(object_t *obj)
 {
    MM_MARK(obj->backptr);
+   MM_MARK(obj->cptr);
    class_t *cl = Class(obj->backptr);
    MM_MARK(cl);
-   for (int i = 0; i < cl->num_slots; i++) {
+   for (int i = 0; i < cl->num_cslots; i++)
+      MM_MARK(obj->slots[i]);
+
+   for (int i = cl->num_cslots; i < cl->num_slots; i++) {
       at *p = obj->slots[i];
-      /* this is a hack until I figure how to do finalization right */
       if (HAS_BACKPTR_P(p))
          MM_MARK(Mptr(p))
       else
          MM_MARK(p);
    }
+
 }
 
 static bool finalize_object(object_t *obj)
 {
+   if (in_compiled_code)
+      return false;
    object_class->dispose(obj);
    return true;
 }
 
 static mt_t mt_object = mt_undefined;
 
-/* ------ OBJECT CLASS DEFINITION -------- */
 
+/* ------ OBJECT CLASS DEFINITION -------- */
 
 object_t *oostruct_dispose(object_t *obj)
 {
@@ -86,27 +119,41 @@ object_t *oostruct_dispose(object_t *obj)
    int oldready = error_doc.ready_to_an_error;
    error_doc.ready_to_an_error = true;
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
   
    int errflag = sigsetjmp(context->error_jump,1);
-   /* when obj->cl is clear, destructor was already called */
-   if (errflag==0)
-      send_delete(obj);
+   if (errflag==0) {
+      /* call all destructors for interpreted part */
+      /* destructors for compiled part are called  */
+      /* by finalizer for compiled part            */
+      at *f = NIL;
+      class_t *cl = Class(obj->backptr);
+      while (cl) {
+         struct hashelem *hx = _getmethod(cl, at_destroy);
+         cl = cl->super;
+         if (! hx)
+            break;
+         else if (hx->function == f)
+            continue;
+         else if (classof(hx->function) == dh_class)
+            break;
+         call_method(obj->backptr, hx, NIL);
+         f = hx->function;
+      }
+   }
    
    context_pop();
    error_doc.ready_to_an_error = oldready;
    
-   if (obj->cptr) {
-      lside_destroy_item(obj->cptr);
-      obj->cptr = NULL;
-   }
+   if (obj->cptr)
+      obj->cptr->__lptr = NULL;
    zombify(obj->backptr);
 
    if (errflag) {
       if (mm_collect_in_progress())
          /* we cannot longjump when called by a finalizer */
-         fprintf(stderr, "*** Warning: error occurred in finalizer\n");
+         fprintf(stderr, "*** Warning: error occurred while gc in progress\n");
       else
          siglongjmp(context->error_jump, -1L);
    }
@@ -161,12 +208,20 @@ at *oostruct_getslot(at *p, at *prop)
    at *slot = Car(prop);
    ifn (SYMBOLP(slot))
       error(NIL,"not a slot name", slot);
+   prop = Cdr(prop);
 
    object_t *obj = Mptr(p);
    class_t *cl = Class(obj->backptr);
    for (int i=0; i<cl->num_slots; i++)
-      if (slot == cl->slots[i])
-         return getslot(obj->slots[i], Cdr(prop));
+      if (slot == cl->slots[i]) {
+         if (prop)
+            return getslot(obj->slots[i], prop);
+         else if (i<cl->num_cslots) {
+            cl = classof(obj->slots[i]);
+            return cl->selfeval(obj->slots[i]);
+         } else
+            return obj->slots[i];
+      }
    
    error(NIL, "not a slot", slot);
    return NIL;
@@ -186,14 +241,11 @@ void oostruct_setslot(at *p, at *prop, at *val)
       if (slot == cl->slots[i]) {
          if (prop)
             setslot(&obj->slots[i], prop, val);
-         else {
-            if (i<cl->num_cslots) {
-               class_t *cl = classof(obj->slots[i]);
-               ifn (isa(val, cl))
-                  error(NIL, "invalid assignment to typed slot", slot);
-            }
+         else if (i<cl->num_cslots) {
+            class_t *cl = classof(obj->slots[i]);
+            cl->setslot(obj->slots[i], NIL, val);
+         } else
             obj->slots[i] = val;
-         }
          return;
       }
    error(NIL, "not a slot", slot);
@@ -201,11 +253,6 @@ void oostruct_setslot(at *p, at *prop, at *val)
 
 
 /* ------ CLASS CLASS DEFINITION -------- */
-
-static void generic_mark_at(at *a)
-{
-   MM_MARK(Mptr(a));
-}
 
 static const char *generic_name(at *p)
 {
@@ -267,7 +314,6 @@ void class_init(class_t *cl)
 {
    /* initialize class functions */
    cl->dispose = generic_dispose;
-   cl->mark_at = generic_mark_at;
    cl->name = generic_name;
    cl->selfeval = generic_selfeval;
    cl->listeval = generic_listeval;
@@ -298,6 +344,9 @@ void class_init(class_t *cl)
    cl->hashok = false;
    cl->dontdelete = false;
    cl->live = true;
+   cl->managed = true;
+
+   cl->has_compiled_part = false;
    cl->classdoc = NULL;
    cl->kname = NULL;
 }
@@ -371,7 +420,7 @@ static class_t *class_dispose(class_t *cl)
       cl->super = NULL;
    }
    zombify(cl->backptr);
-   return NULL;
+   return cl;
 }
 
 static const char *class_name(at *p)
@@ -384,7 +433,7 @@ static const char *class_name(at *p)
       sprintf(string_buffer, "::class:%p", cl);
    
    if (!cl->live)
-      strcat(string_buffer, " (obsolete)");
+      strcat(string_buffer, " (unlinked)");
 
    return mm_strdup(string_buffer);
 }
@@ -430,6 +479,17 @@ DX(xsuper)
    return cl->atsuper;
 }
 
+/* mark dead all subclasses of class cl */
+void zombify_subclasses(class_t *cl)
+{
+   class_t *subs = cl->subclasses;
+   while (subs) {
+      subs->live = false;
+      zombify_subclasses(subs);
+      subs = subs->nextclass;
+   }
+}
+
 DX(xsubclasses)
 {
    ARG_NUMBER(1);
@@ -467,11 +527,11 @@ DX(xbuiltin_class_p)
       return NIL;
 }
 
-/* allocate and initialize new builtin class */
-at *new_builtin_class(class_t **pcl, class_t *super)
-{
-   extern void dbg_notify(void *, void *);
+extern void dbg_notify(void *, void *);
 
+/* allocate and initialize new builtin class */
+class_t *new_builtin_class(class_t *super)
+{
    class_t *cl = mm_alloc(mt_class);
    add_notifier(cl, dbg_notify, NULL);
    class_init(cl);
@@ -481,11 +541,10 @@ at *new_builtin_class(class_t **pcl, class_t *super)
    }
    assert(class_class);
    cl->backptr = new_at(class_class, cl);
-   *pcl = cl;
-   return cl->backptr;
+   return cl;
 }
 
-at *new_ooclass(at *classname, at *atsuper, at *new_slots, at *defaults)
+class_t *new_ooclass(at *classname, at *atsuper, at *new_slots, at *defaults)
 {
    ifn (SYMBOLP(classname))
       error(NIL, "not a valid class name", classname);
@@ -559,13 +618,15 @@ at *new_ooclass(at *classname, at *atsuper, at *new_slots, at *defaults)
    cl->hashok = 0;
    
    /* Initialize DHCLASS stuff */
+   cl->has_compiled_part = super->has_compiled_part;
+   cl->num_cslots = super->num_cslots;
    cl->classdoc = 0;
    cl->kname = 0;
    
    /* Create AT and returns it */
    assert(class_class);
    cl->backptr = new_at(class_class, cl);
-   return cl->backptr;
+   return cl;
 }
 
 DX(xmake_class)
@@ -586,29 +647,96 @@ DX(xmake_class)
    default:
       ARG_NUMBER(4);
    }
-   return new_ooclass(classname, superclass, keylist, defaults);
+   return new_ooclass(classname, superclass, keylist, defaults)->backptr;
 }
 
 
 /* -------- OBJECT DEFINITION ----------- */
 
-at *new_object(class_t *cl)
+static void make_cref_slots(object_t *obj)
 {
+   assert(obj->cptr);
+   dhclassdoc_t *cdoc = obj->cptr->Vtbl->Cdoc;
+   const class_t *cl = Mptr(cdoc->lispdata.atclass);
+
+   /* initialize compiled slots */
+   int k = cl->num_cslots;
+   int j = cl->num_cslots;
+   while (cl) {
+      /* do slots declare in this class */
+      dhrecord *drec = cl->classdoc->argdata;
+      j -= drec->ndim;
+      assert(j>=0);
+      drec = drec + 1;
+      for (int i=j; i<k; i++) {
+         assert(drec->op == DHT_NAME);
+         void *p = (char *)(obj->cptr)+(ptrdiff_t)(drec->arg);
+         obj->slots[i] = new_cref((drec+1)->op, p);
+         //assign(cl->slots[i], cl->defaults[i]);
+         drec = drec->end;
+      }
+      assert(drec->op == DHT_END_CLASS);
+      cl = cl->super;
+      k = j;
+   }
+   assert(j==0);
+}
+
+static object_t *_new_object(class_t *cl, struct CClass_object *cobj)
+{
+   MM_ENTER;
    if (builtin_class_p(cl))
-      error(NIL, "not a subclass of ::class:object", cl->backptr);
+      error(NIL, "not a subclass of class 'object'", cl->backptr);
    
    size_t s = sizeof(object_t)+cl->num_slots*sizeof(at *);
-   object_t *obj = (cl->num_slots <= MIN_NUM_SLOTS) ?
-      mm_alloc(mt_object) : mm_allocv(mt_object, s);
+   object_t *obj = mm_allocv(mt_object, s);
    obj->cptr = NULL;
-   
-   /* initialize slots */
-   for (int i=0; i<cl->num_slots; i++)
+
+   if (cl->has_compiled_part) {
+      if (cobj) {
+         assert(cobj->Vtbl); /* if NULL, object has been destructed */
+         assert(cobj->__lcl==cl);
+         obj->cptr = cobj;
+         cobj->__lptr = obj;
+         make_cref_slots(obj);
+
+      } else {
+         const class_t *c = cl;
+         while (c && !c->classdoc) 
+            c = c->super;
+         assert(c);
+         if (CONSP(c->priminame))
+            check_primitive(c->priminame, c->classdoc);
+         obj->cptr = new_cobject(c->classdoc);
+         obj->cptr->__lptr = obj;
+         make_cref_slots(obj);
+      }
+   }
+   /* initialize non-compiled slots */
+   for (int i=cl->num_cslots; i<cl->num_slots; i++)
       obj->slots[i] = cl->defaults[i];
 
    obj->backptr = new_at(cl, obj);
-   return obj->backptr;
+
+   MM_RETURN(obj);
 }
+
+object_t *new_object(class_t *cl)
+{
+   ifn (cl->live)
+      error(NIL, "class or one of its superclasses is unlinked", NIL);
+   return _new_object(cl, NULL);
+}
+
+object_t *new_object_from_cobject(struct CClass_object *cobj)
+{
+   ifn (cobj->__lcl->live)
+      error(NIL, "attempt to access instance of unlinked class", NIL);
+   assert(cobj->Vtbl);
+   class_t *cl = Mptr(cobj->Vtbl->Cdoc->lispdata.atclass);
+   return _new_object(cl, cobj);
+}
+
 
 DY(ynew)
 {
@@ -619,7 +747,7 @@ DY(ynew)
    ifn (CLASSP(q))
       RAISEFX("not a class", q);
    class_t *cl = Mptr(q);
-   at *ans = new_object(cl);
+   at *ans = NEW_OBJECT(cl);
    
    struct hashelem *hx = _getmethod(cl, cl->classname);
    if (hx)
@@ -634,7 +762,7 @@ DX(xnew_empty)
 {
    ARG_NUMBER(1);
    class_t *cl = ACLASS(1);
-   return new_object(cl);
+   return NEW_OBJECT(cl);
 }
 
 /* ---------- OBJECT CONTEXT -------------- */
@@ -642,7 +770,7 @@ DX(xnew_empty)
 /* copied from symbol.c */
 
 #define LOCK_SYMBOL(s)         SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
-#define TYPELOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
+#define MARKVAR_SYMBOL(s)      SET_PTRBIT(s->hn, SYMBOL_VARIABLE_BIT)
 
 at *with_object(at *p, at *f, at *q, int howfar)
 {
@@ -659,7 +787,7 @@ at *with_object(at *p, at *f, at *q, int howfar)
       for (int i = 0; i<howfar; i++) {
          Symbol(cl->slots[i]) = symbol_push(Symbol(cl->slots[i]), 0 , &(obj->slots[i]));
          if (i < cl->num_cslots)
-            TYPELOCK_SYMBOL(Symbol(cl->slots[i]));
+            MARKVAR_SYMBOL(Symbol(cl->slots[i]));
       }
       SYMBOL_PUSH(at_this, p);
       LOCK_SYMBOL(Symbol(at_this));
@@ -955,43 +1083,32 @@ DX(xsender)
 
 /* ---------------- DELETE ---------------- */
 
-static void send_delete(object_t *obj)
-{
-   /* Only send destructor to objects owned by lisp */
-   ifn (lisp_owns_p(obj->cptr))
-      return;
-   
-   at *f = NIL;
-   class_t *cl = Class(obj->backptr);
-   /* Call all destructors defined in class hierarchy */
-   while (cl) {
-      struct hashelem *hx = _getmethod(cl, at_destroy);
-      cl = cl->super;
-      if (! hx)
-         break;
-      else if (hx->function == f)
-         continue;
-      call_method(obj->backptr, hx, NIL);
-      f = hx->function;
-   }
-}
-
-
 void lush_delete(at *p)
 {
    if (!p || ZOMBIEP(p))
       return;
 
-   if (Class(p)->dontdelete)
+   class_t *cl = classof(p);
+   if (cl->dontdelete)
       error(NIL, "cannot delete this object", p);
    
    run_notifiers(p);
-
-   if (Class(p)->dispose)
-      Mptr(p) = Class(p)->dispose(Mptr(p));
-   else
-      Mptr(p) = NULL;
    
+   if (cl->has_compiled_part) {
+      assert(isa(p, object_class));
+      /* OO objects may have two parts          */
+      /* lush_delete has to delete both of them */
+      object_t *obj = Mptr(p);
+      struct CClass_object *cobj = obj->cptr;
+      oostruct_dispose(obj);
+      cobj->Vtbl->Cdestroy(cobj);
+      
+   } else {
+      if (Class(p)->dispose)
+         Mptr(p) = Class(p)->dispose(Mptr(p));
+      else
+         Mptr(p) = NULL;
+   }
    zombify(p);
 }
 
@@ -1015,10 +1132,17 @@ DX(xdelete)
 
 /* ---------------- MISC ------------------ */
 
-DX(xclassof)
+DY(yclassof)
 {
-   ARG_NUMBER(1);
-   return classof(APOINTER(1))->backptr;
+   at *q = ARG_LIST;
+   ifn (LASTCONSP(q))
+      RAISEFX("syntax error", new_cons(NEW_SYMBOL("classof"), q));
+
+   at *obj = Car(q);
+   if (SYMBOLP(obj))
+      return classof(Value(obj))->backptr;
+   else
+      return classof(eval(obj))->backptr;
 }
 
 bool isa(at *p, const class_t *cl)
@@ -1038,23 +1162,14 @@ DX(xisa)
       RAISEFX("not a class", q);
    if (isa(p, Mptr(q)))
       return t();
-
-#ifdef DHCLASSDOC
-   if (GPTRP(p)) {
-      /* Handle gptrs by calling to-obj behind the scenes. Ugly. */
-      int flag = 0;
-      at *sym = named("to-obj");
-      at *fun = find_primitive(0, sym);
-      if (fun && (Class(fun) == dx_class)) {
-         at *arg = new_cons(p,NIL);
-         sym = apply(fun, arg);
-         flag = isa(sym, Mptr(q));
-      }
-      if (flag)
-         return t();
-   }
-#endif
    return NIL;
+}
+
+DX(xemptyp)
+{
+   ARG_NUMBER(1);
+   at *obj = APOINTER(1);
+   return obj ? send_message(NIL, obj, at_emptyp, NIL) : at_t;
 }
 
 
@@ -1093,7 +1208,7 @@ void init_oostruct(void)
    /* 
     * mm_alloc object_class to avoid hickup in mark_class
     */
-   new_builtin_class(&object_class, NIL);
+   object_class = new_builtin_class(NIL);
    object_class->dispose = (dispose_func_t *)oostruct_dispose;
    object_class->listeval = oostruct_listeval;
    object_class->compare = oostruct_compare;
@@ -1108,8 +1223,9 @@ void init_oostruct(void)
    dx_define("subclasses",xsubclasses);
    dx_define("methods",xmethods);
    dx_define("classname",xclassname);
-   dx_define("classof",xclassof);
+   dy_define("classof", yclassof);
    dx_define("isa",xisa);
+   dx_define("emptyp",xemptyp);
    dx_define("make-class",xmake_class);
    dx_define("builtin-class-p",xbuiltin_class_p);
    dy_define("new",ynew);
@@ -1125,6 +1241,7 @@ void init_oostruct(void)
    at_progn = var_define("progn");
    at_destroy = var_define("-destructor");
    at_listeval = var_define("-listeval");
+   at_emptyp = var_define("-emptyp"); 
    at_mexpand = var_define("macroexpand");
    at_unknown = var_define("-unknown");
 }

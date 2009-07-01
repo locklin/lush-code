@@ -34,9 +34,8 @@
 ;; over sets proceeds from smallest to largest item.
 
 (deftemplate OrderedSet IterableDatatype
-  ((-obj- (TreeNodePool)) pool) ; pool of unused nodes
   ((-obj- (TreeNode)) root)     ; root node, only valid when n>0
-  ((-idx1- (-gptr-)) stack)     ; node stack (workspace for some methods)
+  ((-idx1- (-mptr-)) stack)     ; node stack (workspace for some methods)
   ((-int-) n)                   ; number of items in tree
   )
 
@@ -65,14 +64,9 @@
   n)
 
 (defmethod OrderedSet -free-nodes ()
-  (when (> n 0)
-    (let ((l (in-stack (new TreeNode))))
-      (setq :l:right (to-gptr root))
-      (==> l tree-to-vine)
-      (while (not (nullp :l:right))
-        (let ((tn (to-node :l:right)))
-          (setq :l:right :tn:right)
-          (==> pool free-node tn) ))))
+  (when (> n 1)
+    (==> root clear-tree) )
+  (setq stack (make-stack 32 mptr))
   ())
 
 #? (==> <OrderedSet> clear)
@@ -80,6 +74,7 @@
 ;; After invoking this method the set is empty.
 (defmethod OrderedSet clear ()
   (==> this -free-nodes)
+  (setq n 0)
   this)
 
 (defmethod OrderedSet -deepcopy (clone)
@@ -87,11 +82,10 @@
   ;; super-class slots
   (setq :clone:refcount 0)
   ;; this classes slots
-  (setq :clone:pool pool)
-  (setq :clone:root (copy-ordered-tree root pool))
+  (setq :clone:root (copy-ordered-tree root))
   (when (not (emptyp stack))
     (printf "*** Warning (deepcopy set): not copying current stack state\n"))
-  (setq :clone:stack (make-stack 32 gptr))
+  (setq :clone:stack (make-stack 32 mptr))
   (setq :clone:n n)
   ())
 
@@ -99,7 +93,7 @@
 ;; return node.
 (defmethod OrderedSet -remove (m p)
   (declare (-obj- (TreeNode)) m)
-  (declare (-gptr-) p)
+  (declare (-mptr-) p)
   (let ((r m))
     (if (nullp p)                           ; m has no parent
         (progn
@@ -117,14 +111,14 @@
       (let ((p (to-node p)))                ; m's parent
         (cond
          ((nullp :m:left)
-          (if (= :p:left (to-gptr m))
+          (if (= :p:left (to-mptr m))
               (setq :p:left :m:right)
-            (assert (= :p:right (to-gptr m)))
+            (assert (= :p:right (to-mptr m)))
             (setq :p:right :m:right) ))
          ((nullp :m:right)
-          (if (= :p:left (to-gptr m))
+          (if (= :p:left (to-mptr m))
               (setq :p:left :m:left)
-            (assert (= :p:right (to-gptr m)))
+            (assert (= :p:right (to-mptr m)))
             (setq :p:right :m:left) ))
          (t
           (setq r (to-node (==> m symmetric-order-predecessor t)))
@@ -138,10 +132,10 @@
 ;; <st> is a regular stack, <st2> is a SO traversal stack.
 ;; return removed node.
 (defmethod OrderedSet -remove-next (st st2)
-  (declare (-idx1- (-gptr-)) st st2)
+  (declare (-idx1- (-mptr-)) st st2)
   (let* ((m (to-node (pop st)))
          (r m))
-    (assert (= (to-gptr m) (pop st2)))
+    (assert (= (to-mptr m) (pop st2)))
     (if (emptyp st)                       ; m has no parent
         (progn
           (assert (= m root))
@@ -161,20 +155,20 @@
            (t
             (setq r (to-node (==> m symmetric-order-successor t)))
             (==> m swap-items r)
-            (push st (to-gptr m))
-            (push st2 (to-gptr m)) )))
+            (push st (to-mptr m))
+            (push st2 (to-mptr m)) )))
 
       (let ((p (to-node (peek-stack st))))    ; m's parent
         (cond
          ((nullp :m:left)
-          (if (= :p:left (to-gptr m))
+          (if (= :p:left (to-mptr m))
               (progn
                 (setq :p:left :m:right)
                 (while (not (nullp :p:left))
                   (push st :p:left)
                   (push st2 :p:left)
                   (setq p (to-node :p:left)) ))
-            (assert (= :p:right (to-gptr m)))
+            (assert (= :p:right (to-mptr m)))
             (setq :p:right :m:right)
             (if (nullp :p:right)
                 (if (emptyp st2)
@@ -190,9 +184,9 @@
                 (setq p (to-node :p:left)) )))
           (setq r m) )
          ((nullp :m:right)
-          (if (= :p:left (to-gptr m))
+          (if (= :p:left (to-mptr m))
               (setq :p:left :m:left)
-            (assert (= :p:right (to-gptr m)))
+            (assert (= :p:right (to-mptr m)))
             (setq :p:right :m:left)
             (if (emptyp st2)
                 (clear-stack st)
@@ -202,8 +196,8 @@
          (t
           (setq r (to-node (==> m symmetric-order-successor t)))
           (==> m swap-items r)
-          (push st (to-gptr m))
-          (push st2 (to-gptr m)) ))))
+          (push st (to-mptr m))
+          (push st2 (to-mptr m)) ))))
     (decr n)
     r))
 
@@ -214,7 +208,6 @@
       (declare (-int-) m)
       (when (<> m n)
         (printf "node count insconsistent: %d (should be %d)\n" m n) )))
-  (==> :pool:fl check)
   ())
       
 ;; optimize tree
@@ -223,10 +216,8 @@
     (rebalance-tree! root)))
 
 (defmethod OrderedSet -destructor ()
-  (if (to-bool #{ ((*((struct CClass_treenodepool **)$pool->make))==NULL) #})
-      (printf "*** Warning: node pool doesn't exist anymore\n")
-    (==> this -free-nodes) )
-  ())
+  (==> this -free-nodes)
+  () )
 
 (dhc-make-class () OrderedSet)
 
@@ -236,18 +227,17 @@
 
 (defmethod OrderedSet OrderedSet ()
   (==> this IterableDatatype)
-  (setq pool (make-pool))
   (setq root (new (classof root)))  ; this node will never be used
-  (setq stack (make-stack 32 gptr))
+  (setq stack (make-stack 32 mptr))
   (setq n 0)
   ())
 
 (defmethod OrderedSet -iterate-with-stack (st)
-  (declare (-idx1- (-gptr-)) st)
+  (declare (-idx1- (-mptr-)) st)
   (make-iterator st) )              ; destructor of iterator will clear stack
   
 (defmethod OrderedSet -iterate ()
-  (let ((st (make-stack 32 gptr)))
+  (let ((st (make-stack 32 mptr)))
     (when (> n 0)
       (==> root symmetric-order-first* st) )
     (make-iterator st) ))           ; destructor of iterator will clear stack
@@ -260,15 +250,14 @@
   (check-mutability)
   (if (= n 0)
       (progn
-        (setq root (==> pool new-node))
+        (setq root (==> root clone))
 	(setq :root:item i)
 	(incr n)
 	t)
-    (let ((l (==> pool new-node)))
+    (let ((l (==> root clone)))
       (setq root (==> root find-and-splay i l t))
-      (if (== root l)
-	  (incr n)
-	(==> pool (TreeNodePool . free-node) l) )
+      (when (== root l)
+        (incr n) )
       (== root l))))
 
 #? (==> <OrderedSet> insert-all <is>)
@@ -276,19 +265,18 @@
 (defmethod OrderedSet insert-all (items)
   (declare (-idx1- (-typeof- :root:item)) items)
   ;; we insert items in shuffled order to avoid building up 
-  ;; a pathologic tree
+  ;; a pathological tree
   (when (not (emptyp items))
     (check-mutability)
-    (let ((l (==> pool new-node))
-          (is (iter-range*/s (length items))) ) ; shuffled indices
-      (==> this insert (items (next is)))       ; in case n=0
+    (let ((l (==> root clone))
+          (is (irange*/s (length items))) ) ; shuffled indices
+      (==> this insert (items (next is)))   ; in case n=0
       (do ((i is))
         (declare (-int-) i)
         (setq root (==> root find-and-splay (items i) l t))
         (when (== root l)
           (incr n)
-          (setq l (==> pool new-node)) ))
-      (==> pool (TreeNodePool . free-node) l) ))
+          (setq l (==> root clone)) ))))
   ())
 
 #? (==> <OrderedSet> remove <i>)
@@ -304,14 +292,15 @@
       (assert (emptyp stack))
       (when (==> root find i stack ())
         (let ((m (to-node (pop stack))))
-          (==> pool free-node (if (emptyp stack)
-                                  (==> this -remove m (to-gptr ()))
-                                (==> this -remove m (peek-stack stack)) ))
+          (==> (if (emptyp stack)
+                   (==> this -remove m NULL)
+                 (==> this -remove m (peek-stack stack)))
+               clear)
           (setq success t) ))
       (clear-stack stack) )
      ((= n 1)
       (when (eq i :root:item)
-        (==> pool free-node root)
+        (==> root clear)
         (decr n)
         (setq success t) ))
      ((< n 0)
@@ -329,7 +318,7 @@
     (cond
      ((> n 1)
       (assert (emptyp stack))
-      (let ((st2 (make-stack 16 gptr)))
+      (let ((st2 (make-stack 16 mptr)))
         (==> root find from stack ())
         (==> root find from st2 t)
         (when (not (emptyp st2))
@@ -338,14 +327,14 @@
         (while (not (emptyp st2))
           (let ((m (to-node (peek-stack st2))))
             (if (not (gt :m:item to))
-                (==> pool free-node (==> this -remove-next stack st2))
+                (==> (==> this -remove-next stack st2) clear)
               (clear-stack st2) ))))
       (clear-stack stack) )
      ((= n 1)
       (when (and (not (lt :root:item from))
                  (not (gt :root:item to)) )
-        (decr n)
-        (==> pool free-node root)))
+        (decr n) 
+        (==> root clear) ))
      ((< n 0)
       (error "internal error (invalid item count)") ))
     (- nn n) ))
@@ -357,13 +346,13 @@
   (check-mutability)
   (let* ((nn n) 
          (rs (new (classof this)))
-         (vine (in-stack (new TreeNode))) ; create a vine ...
+         (vine (new TreeNode)) ; create a vine ...
          (tail vine) )
     (declare (-int-) nn)
     (cond
      ((> n 1)
       (assert (emptyp stack))
-      (let ((st2 (make-stack 16 gptr)))
+      (let ((st2 (make-stack 16 mptr)))
         (==> root find from stack ())
         (==> root find from st2 t)
         (when (not (emptyp st2))
@@ -373,13 +362,13 @@
           (let ((m (to-node (peek-stack st2))))
             (if (gt :m:item to)
                 (clear-stack st2)
-              (setq :tail:right (to-gptr (==> this -remove-next stack st2)))
-              (setq :tail:left (to-gptr ()))
+              (setq :tail:right (to-mptr (==> this -remove-next stack st2)))
+              (setq :tail:left NULL)
               (setq tail (to-obj TreeNode :tail:right)) ))))
       (clear-stack stack)
       (when (not (== tail vine))
-        (setq :tail:right (to-gptr ()))
-        (setq :tail:left (to-gptr ()))
+        (setq :tail:right NULL)
+        (setq :tail:left NULL)
         (==> vine vine-to-tree (- nn n))   ; ... and turn it finally into tree
         (setq :rs:root (to-node :vine:right))
         (setq :rs:n (- nn n)) ))
@@ -398,9 +387,9 @@
   (declare (-typeof- :root:item) i)
   (assert (> n 0))
   (if (mutablep)
-      (let ((l (in-stack (new (classof root)))))
+      (let ((l (==> root clone)))
         (setq root (to-node (==> root find-and-splay i l ()))) )
-    (let ((st (if (emptyp stack) stack (make-stack 16 gptr))))
+    (let ((st (if (emptyp stack) stack (make-stack 16 mptr))))
       (prog1 (if (==> root find i st ())
                  (to-node (pop st))
                root)
@@ -459,17 +448,13 @@
 (df def-set (pfx pi)
   (let ((sclsym (symbol-concat pfx 'Set))
         (nclsym (symbol-concat pfx 'TreeNode))
-        (pclsym (symbol-concat pfx 'TreeNodePool))
-        (pfcsym (symbol-concat 'make- pfx 'TreeNodePool))
         (iclsym (symbol-concat pfx 'TreeNodeIterator)) )
     (eval
      `(progn
         (defclass ,sclsym OrderedSet
-          (specialize (-obj- (,pclsym)) pool)
           (specialize (-obj- (,nclsym)) root) )
         (in-namespace (class ,sclsym) 
           (import (lt gt eq) from ,nclsym)            
-          (defalias make-pool ,pfcsym)
           (defmacro make-iterator (stack) (list 'new ',iclsym 'this stack))
           (defparameter print-item ,pi) )
         )

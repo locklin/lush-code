@@ -124,7 +124,7 @@ static int lisp_ysize(wptr info)
 
 static const char *lisp_setfont(wptr info, const char *f)
 {
-   at *q = new_cons(new_string(f),NIL);
+   at *q = new_cons(NEW_STRING(f),NIL);
    at *r = NIL;
    lisp_send_maybe_ext(info, at_setfont, q, &r);
 
@@ -187,7 +187,7 @@ static void lisp_draw_text(wptr info, int x, int y, const char *s)
 {
    at *q = new_cons(NEW_NUMBER(x),
                     new_cons(NEW_NUMBER(y),
-                             new_cons(new_string(s),NIL)));
+                             new_cons(NEW_STRING(s),NIL)));
    lisp_send(info,at_draw_text,q);
 }
 
@@ -196,7 +196,7 @@ static void lisp_rect_text(wptr info, int x, int y, const char *s,
 {
    at *q = new_cons(NEW_NUMBER(x),
                     new_cons(NEW_NUMBER(y),
-                             new_cons(new_string(s),NIL)));
+                             new_cons(NEW_STRING(s),NIL)));
    at *p = lisp_send(info,at_rect_text,q);
    at *r = p;
    if (CONSP(p) && NUMBERP(Car(p))) { 
@@ -289,7 +289,7 @@ static void lisp_fill_polygon(wptr info, short (*points)[2], uint n)
 
 static void lisp_gspecial(wptr info, const char *s)
 {
-   at *q = new_cons(new_string(s),NIL);
+   at *q = new_cons(NEW_STRING(s),NIL);
    lisp_send_maybe(info,at_gspecial,q);
 }
 
@@ -316,7 +316,7 @@ static at *lisp_make_i32matrix(uint *data, int w, int h)
 {
    /* would be better to avoid copying
       by direct pointer manipulation */
-   index_t *ind = make_array(ST_I32, SHAPE2D(h, w), NIL);
+   index_t *ind = make_array(ST_INT, SHAPE2D(h, w), NIL);
    uint *data2 = IND_BASE_TYPED(ind, uint);
 
    if (data)
@@ -395,7 +395,7 @@ static void lisp_get_image(wptr info, uint *data, int x, int y, uint w, uint h)
       at *p = lisp_send(info, at_get_image, q);
       ifn (INDEXP(p))
          RAISEF("not an index", p);
-      shape_t shape, *shp = shape_set(&shape, 2, 0, 0, 0, 0);
+      shape_t *shp = SHAPE2D(0, 0);
       easy_index_check((index_t *)Mptr(p), shp);
       if (shp->dim[0]!=h || shp->dim[0]!=w)
          error(NIL, "method 'get-image' returned something invalid", p);

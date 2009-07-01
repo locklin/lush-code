@@ -25,93 +25,53 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;; ----------------------------------------
-;;; Casts
-
-;; Yann
-(defvar to-float  to-flt)
-(defvar to-double to-real)
-
-;; SN3
-(defvar flt       to-flt)
-(defvar float     to-float)
-(defvar real      to-real)
-(defvar double    to-double)
-(defvar bool      to-bool)
-(defvar gptr      to-gptr)
-(defvar number    to-number)
-(defvar obj       to-obj)
-(defvar obj-super to-obj)
-
-
-;;; ----------------------------------------
-;;; pbloops, peloops
-
-(defvar idx-pbloop idx-bloop)
-(defvar idx-peloop idx-eloop)
-
-
-;;; ----------------------------------------
-;;; Scheme pseudo-compatibility
-
-(defvar set! setq)
-(defvar begin progn)
-(defvar else t)
-(defvar equal? =)
-(defvar eqv? =)
-(defvar eq? ==)
-(defvar define defvar)
-(defvar map mapcar)
-;;(defvar for-each mapc)
-(de boolean? (a) (or (= a ()) (= a t)))
-(de null? (a) (= a ()))
-(defvar pair? consp)
-(defvar number? numberp)
-(defvar string? stringp)
-(defvar vector? indexp)
-(defvar symbol? symbolp)
-(defvar procedure? functionp)
-(defvar set-car! rplaca)
-(defvar set-cdr! rplacd)
-(defvar symbol->string nameof)
-(defvar string->symbol named)
-
-
-;;; ----------------------------------------
 ;;; Backward compatibility with Lush 1.x
 
-(defalias idx-dim idx-shape)
-(defalias idx-mod idx-modulo)
+(defalias idx-dim  idx-shape)
+(defalias idx-mod  idx-modulo)
 
 ;; things that have a different name in lush 2
-(defnamespace lush1- '((array            atom-array)
-                       (matrix           double-array)
-                       (idx-transclone   idx-transpose)
-                       (idx-ptr          idx-base)
-                       (letslot          with-object)
-                       (check==>         getmethod)
-                       (atomp            atom)
-                       (Pool             MemoryPool)) )
+(defnamespace lush1-
+  '((array            atom-array)
+    (matrix           double-array)
+    (idx-transclone   idx-transpose)
+    (idx-ptr          idx-base)
+    (letslot          with-object)
+    (check==>         getmethod)
+    (atomp            atom)
+    (to-real          to-double)
+    (to-flt           to-float)
+    (flt              to-float)
+    (float-matrix     float-array)
+    (double-matrix    double-array)
+    (int-matrix       int-array)
+    (short-matrix     short-array)
+    (byte-matrix      char-array)
+    (ubyte-matrix     uchar-array)
+    (gptr-matrix      gptr-array)
+    (is-of-class      isa)
+    (gptr             to-gptr)) )
 
 (in-namespace lush1-
 
 (dm atom-storage (_ &optional (n 0)) 
-  (list 'make-storage '|ATSTORAGE| n ()) )
+  (list 'make-storage 'at-storage n ()) )
 (dm packed-storage (_ &optional (n 0)) 
-  (list 'make-storage '|PSTORAGE| n 0) )
+  (error "packed-storage not supported") )
 (dm float-storage (_ &optional (n 0))
-  (list 'make-storage '|FSTORAGE| n 0.0) )
+  (list 'make-storage 'float-storage n 0.0) )
 (dm double-storage (_ &optional (n 0))
-  (list 'make-storage '|DSTORAGE| n 0.0) )
+  (list 'make-storage 'double-storage n 0.0) )
 (dm int-storage (_ &optional (n 0))
-  (list 'make-storage '|I32STORAGE| n 0) )
+  (list 'make-storage 'int-storage n 0) )
 (dm short-storage (_ &optional (n 0))
-  (list 'make-storage '|I16STORAGE| n 0) )
+  (list 'make-storage 'short-storage n 0) )
 (dm byte-storage (_ &optional (n 0))
-  (list 'make-storage '|I8STORAGE| n 0) )
+  (list 'make-storage 'char-storage n 0) )
 (dm ubyte-storage (_ &optional (n 0))
-  (list 'make-storage '|U8STORAGE| n 0) )
+  (list 'make-storage 'uchar-storage n 0) )
 (dm gptr-storage (_ &optional (n 0))
-  (list 'make-storage '|GPTRSTORAGE| n ()) )
+  (list 'make-storage 'gptr-storage n ()) )
 
 (defmacro narrow (idx d n o)
   `(let ((__m (copy-index ,idx))) (idx-trim! __m ,d ,o ,n) __m ))
@@ -140,16 +100,6 @@
 
 ;(defmacro inf l `(apply min ,@l)) ; does not work since 'inf' is a number
 (defmacro sup l `(apply max ,@l))
-
-(defalias float-matrix  float-array)
-(defalias double-matrix double-array)
-(defalias int-matrix    int-array)
-(defalias short-matrix  short-array)
-(defalias byte-matrix   byte-array)
-(defalias ubyte-matrix  ubyte-array)
-(defalias gptr-matrix   gptr-array)
-
-(defalias is-of-class   isa)
 
 (defmacro progn-without-fpe body
   `(with-fpu-env (fpu-untrap 'all)
@@ -208,7 +158,6 @@
 (defvar mload libload)
 (defvar map-pmatrix map-matrix)
 (defvar save-flt-matrix save-matrix)
-(defvar save-packed-matrix save-matrix)
 
 ;; From SN1
 (dm dim(f v . l) `(setq :,v (float-matrix ,@l)))
@@ -226,17 +175,6 @@
 
 (de load-matrix-into (f x) 
   (let ((m (load-matrix f))) (array-copy m x)))
-
-;; (dmd scalar (typ v) 
-;;   (selectq typ
-;;     ((d -double-) `((double-matrix) ,v))
-;;     ((f -float-) `((float-matrix) ,v))
-;;     ((i -int-) `((int-matrix) ,v))
-;;     ((s -short-) `((short-matrix) ,v))
-;;     ((b -byte-) `((byte-matrix) ,v))
-;;     ((u -ubyte-) `((ubyte-matrix) ,v))
-;;     ((g -gptr-) `((gptr-matrix) ,v))
-;;     (a `((atom-matrix) ,v))))
 
 (dmd idx-m2timesm2 (a b c)
   `(let ((aa ,a)) (idx-eloop ((bi ,b) (ci ,c)) (idx-m2dotm1 aa bi ci)))))
@@ -299,20 +237,20 @@
 ;;; ----------------------------------------
 ;; SN3 backquote
 
-(progn
-  (unlock-symbol |'|)
-  (dmc |'|
-       (backquote-subst
-        (let* ((|'|
-                (lambda()
-                  (list (quote quote) (read)) ) )
-               (|`| 
-                (lambda() 
-                  (printf "*** Warning\007: old style backquote macro : %l\n"
-                          (basename file-being-loaded) )
-                  (backquote-macro) ) ) )
-          (read) ) ) )
-  (lock-symbol |'|) )
+;; (progn
+;;   (unlock-symbol |'|)
+;;   (dmc |'|
+;;        (backquote-subst
+;;         (let* ((|'|
+;;                 (lambda()
+;;                   (list (quote quote) (read)) ) )
+;;                (|`| 
+;;                 (lambda() 
+;;                   (printf "*** Warning\007: old style backquote macro : %l\n"
+;;                           (basename file-being-loaded) )
+;;                   (backquote-macro) ) ) )
+;;           (read) ) ) )
+;;   (lock-symbol |'|) )
 
 
 

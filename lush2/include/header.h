@@ -179,6 +179,7 @@ extern LUSHAPI class_t *cons_class;
 extern LUSHAPI class_t *null_class;
 extern LUSHAPI class_t *number_class;
 extern LUSHAPI class_t *gptr_class;
+extern LUSHAPI class_t *mptr_class;
 extern LUSHAPI class_t *window_class;
 
 struct at {
@@ -190,7 +191,7 @@ struct at {
       double *d;
       void   *p;
       const char *c;
-      struct symbol *s;
+      struct lush_symbol *s;
       struct at *cdr;
    } payload;
 };
@@ -219,7 +220,7 @@ struct at {
 #define LISTP(x)        (!(x)||(Class(x) == cons_class))
 #define NUMBERP(x)	((x)&&(Class(x) == number_class))
 #define GPTRP(x)	((x)&&(Class(x) == gptr_class))
-#define MPTRP(x)	((x)&&(Class(x) == gptr_class))
+#define MPTRP(x)	((x)&&(Class(x) == mptr_class))
 #define OBJECTP(x)      ((x)&&(Class(x)->dispose == object_class->dispose))
 #define CLASSP(x)       ((x)&&(Class(x) == class_class))
 #define SYMBOLP(x)      ((x)&&(Class(x) == symbol_class))
@@ -233,6 +234,7 @@ struct at {
                                 Class(p)->dispose == object_class->dispose || \
                                 Class(p)->super == abstract_storage_class || \
                                 Class(p) == window_class) )
+#define MANAGEDP(p)     ((p)&&(((uintptr_t)((p)->head.cl)) & MANAGED_BIT))
 
 extern LUSHAPI at *(*eval_ptr) (at*);
 #define eval(q)    (*eval_ptr)(q)
@@ -246,7 +248,6 @@ typedef void *dispose_func_t(void *);
 struct class_s {
    /* class vectors */
    void*          (*dispose)      (void *);
-   void           (*mark_at)      (at *);
    const char*    (*name)         (at*);
    at*            (*selfeval)     (at*);
    at*            (*listeval)     (at*, at*);
@@ -275,7 +276,9 @@ struct class_s {
    bool	    	    hashok;      /* is the hash table up-to-date */
    bool 	    dontdelete;  /* instances should not be deleted */
    bool             live;        /* true if class is current */
+   bool             managed;     /* object address is a managed address */
    /* additional info for dhclasses */
+   bool             has_compiled_part;
    dhclassdoc_t    *classdoc;  
    char            *kname;
 };
@@ -287,24 +290,26 @@ struct hashelem {
 };
 
 
-LUSHAPI at *new_at(class_t *cl, void *obj);
 LUSHAPI at *new_cons(at *car, at *cdr);
-LUSHAPI at *new_number(double x);
-LUSHAPI static inline at *new_gptr(gptr x)
+LUSHAPI at *new_at(class_t *cl, void *obj);
+LUSHAPI at *new_at_number(double x);
+LUSHAPI static inline at *new_at_gptr(gptr x)
 {
    extern class_t *gptr_class;
    return new_at(gptr_class, x);
 }
-LUSHAPI static inline at *new_string(const char *ms)
-{  
-   extern class_t *string_class;
-   return new_at(string_class, (void *)ms);
+LUSHAPI static inline at *new_at_mptr(gptr x)
+{
+   extern class_t *mptr_class;
+   return new_at(mptr_class, x);
 }
 
 LUSHAPI void zombify(at *p);
+extern  at  *at_NULL;
 
-#define NEW_NUMBER(x)   new_number((real)(x))
-#define NEW_GPTR(x)     new_gptr((gptr)(x))
+#define NEW_NUMBER(x)   new_at_number((real)(x))
+#define NEW_GPTR(x)     new_at_gptr((gptr)(x))
+#define NEW_MPTR(x)     new_at_mptr((gptr)(x))
 #define NEW_BOOL(x)     ((x) ? t() : NIL)
 
 /* number.h */
@@ -367,12 +372,20 @@ LUSHAPI void protect(at *q);
 LUSHAPI void unprotect(at *q);
 
 
+/* cref.h */
+
+extern LUSHAPI class_t *abstract_cref_class;
+#define CREFP(x) ((x)&&(Class(x)->super == abstract_cref_class))
+LUSHAPI at *new_cref(int, void *);
+LUSHAPI at *assign(at *, at *);
+
+
 /* SYMBOL.H ---------------------------------------------------- */
 
 extern LUSHAPI class_t *symbol_class;
 
-typedef struct symbol { 	/* each symbol is an external AT which */
-   struct symbol *next;
+typedef struct lush_symbol { 	/* each symbol is an external AT which */
+   struct lush_symbol *next;
    struct hash_name *hn;
    at *value;
    at **valueptr;
@@ -380,14 +393,15 @@ typedef struct symbol { 	/* each symbol is an external AT which */
 
 
 #define SYMBOL_LOCKED_BIT      1
-#define SYMBOL_TYPELOCKED_BIT  2
+#define SYMBOL_VARIABLE_BIT    4
 
 /* symbol creation */
-LUSHAPI at *new_symbol(const char *);
+LUSHAPI symbol_t *new_symbol(const char *);
 LUSHAPI at *named(const char *);
 LUSHAPI at *namedclean(const char *);
 extern  at *at_t; 
 #define t()           at_t
+#define NEW_SYMBOL(s)  named(s)
 
 LUSHAPI const char *nameof(symbol_t *);
 LUSHAPI const char *NAMEOF(at *);
@@ -399,7 +413,7 @@ LUSHAPI symbol_t *symbol_pop(symbol_t *);
 LUSHAPI at   *getslot(at*, at*);
 LUSHAPI void  setslot(at**, at*, at*);
 LUSHAPI at   *setq(at *p, at *q);
-LUSHAPI at   *global_names(void); 
+LUSHAPI at   *global_names(void);
 LUSHAPI at   *global_defs(void);
 LUSHAPI at   *oblist(void);
 LUSHAPI void  reset_symbols(void);
@@ -409,8 +423,6 @@ LUSHAPI void  var_lock(at *p);
 LUSHAPI at   *var_get(at *p);
 LUSHAPI at   *var_define(char *s);
 LUSHAPI bool  symbol_locked_p(symbol_t *);
-LUSHAPI bool  symbol_typelocked_p(symbol_t *);
-
 
 /* TOPLEVEL.H ------------------------------------------------- */
 
@@ -457,8 +469,8 @@ extern LUSHAPI struct error_doc {
  * This structure is used to handle exception in the C code.
  */
 
-extern LUSHAPI struct context {
-  struct context *next;
+extern LUSHAPI struct lush_context {
+  struct lush_context *next;
   sigjmp_buf error_jump;
   const char *input_string;
   FILE *input_file;
@@ -470,7 +482,7 @@ extern LUSHAPI struct context {
 
 LUSHAPI int  recur_push_ok(struct recur_elt *elt, void *call, at *p);
 LUSHAPI void recur_pop(struct recur_elt *elt);
-LUSHAPI void context_push(struct context *newc);
+LUSHAPI void context_push(struct lush_context *newc);
 LUSHAPI void context_pop(void);
 LUSHAPI void toplevel(const char *in, const char *out, const char *new_prompt);
 //LUSHAPI void error(char *prefix, char *text, at *suffix) no_return;
@@ -478,11 +490,18 @@ LUSHAPI void user_break(char *s);
 LUSHAPI void init_lush (char *program_name);
 LUSHAPI void start_lisp(int argc, char **argv, int quiet);
 LUSHAPI void clean_up(void);
-LUSHAPI void abort (char *s) no_return;
+LUSHAPI void lush_abort (char *s) no_return;
 
 /* STRING.H ---------------------------------------------------- */
 
 extern LUSHAPI class_t *string_class;
+
+LUSHAPI static inline at *new_at_string(const char *ms)
+{  
+   extern class_t *string_class;
+   return new_at(string_class, (void *)ms);
+}
+#define NEW_STRING new_at_string
 
 LUSHAPI at *make_string(const char *s);
 LUSHAPI at *make_string_of_length(size_t n);
@@ -585,10 +604,11 @@ LUSHAPI at *lete(at *vardecls, at *body);
 #define DX_ERROR(i,j)   (need_error(i,j,arg_array))
 
 #define APOINTER(i)     ( arg_array[i] )
-#define AREAL(i)        ( ISNUMBER(i) ? Number(APOINTER(i)) :(long)DX_ERROR(1,i))
+#define ADOUBLE(i)      ( ISNUMBER(i) ? Number(APOINTER(i)) :(long)DX_ERROR(1,i))
+#define AREAL           ADOUBLE
 #define AGPTR(i)        ( ISGPTR(i) ? Gptr(APOINTER(i)):(gptr)DX_ERROR(9,i))
 #define AINTEGER(i)     ( (intg) AREAL(i) )
-#define AFLT(i)         ( rtoF(AREAL(i)) )
+#define AFLOAT(i)       ( rtoF(AREAL(i)) )
 #define ALIST(i)        ( ISLIST(i) ? APOINTER(i):(at*)DX_ERROR(2,i) )
 #define ACONS(i)        ( ISCONS(i) ? APOINTER(i):(at*)DX_ERROR(3,i) )
 #define ASTRING(i)      ( ISSTRING(i) ? String(APOINTER(i)) : (char*)DX_ERROR(4,i) )
@@ -615,8 +635,8 @@ LUSHAPI const char *cwd(const char *s);
 LUSHAPI at *files(const char *s);
 LUSHAPI bool dirp(const char *s);
 LUSHAPI bool filep(const char *s);
-LUSHAPI const char *dirname(const char *fname);
-LUSHAPI const char *basename(const char *fname, const char *suffix);
+LUSHAPI const char *lush_dirname(const char *fname);
+LUSHAPI const char *lush_basename(const char *fname, const char *suffix);
 LUSHAPI const char *concat_fname(const char *from, const char *fname);
 LUSHAPI const char *relative_fname(const char *from, const char *fname);
 LUSHAPI void unlink_tmp_files(void);
@@ -691,23 +711,28 @@ LUSHAPI complexreal get_complex(at*);
 
 /* OOSTRUCT.H ----------------------------------------------------- */
 
-typedef struct object_s {
-   at      *backptr;
-   void    *cptr;
-   at      *slots[];
+struct CClass_object;
+
+typedef struct object {
+   at *backptr;
+   struct CClass_object *cptr;
+   at *slots[];
 } object_t;
 
+LUSHAPI class_t  *new_builtin_class(class_t *super);
+LUSHAPI class_t  *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults);
+LUSHAPI object_t *new_object(class_t *cl);
+LUSHAPI object_t *new_object_from_cobject(struct CClass_object *);
+#define NEW_OBJECT(cl) new_object(cl)->backptr
 LUSHAPI bool builtin_class_p(const class_t *cl);
-LUSHAPI at  *new_builtin_class(class_t **pcl, class_t *super);
-LUSHAPI at  *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults);
 LUSHAPI void putmethod(class_t *cl, at *name, at *fun);
 LUSHAPI at  *getmethod(class_t *cl, at *prop);
-LUSHAPI at  *new_object(class_t *cl);
 LUSHAPI at  *with_object(at *obj, at *f, at *q, int howmuch);
 LUSHAPI at  *send_message(at *classname, at *obj, at *method, at *args);
 LUSHAPI bool isa(at *p, const class_t *cl);
 LUSHAPI void lush_delete(at *p);       /* avoid conflict with C++ keyword */
 LUSHAPI void lush_delete_maybe(at *p);
+LUSHAPI void zombify_subclasses(class_t *);
 LUSHAPI static inline class_t *classof(const at *p)
 {
    if (p)
@@ -785,56 +810,58 @@ LUSHAPI double eps(double x);
 LUSHAPI float epsf(float x);
 LUSHAPI void fpu_reset(void);
 
+
+/* DH.H -------------------------------------------------- */
+
+typedef struct index index_t;
+typedef struct storage storage_t;
+
+#include "dh.h"
+
+
 /* STORAGE.H --------------------------------------------------- */
 
 /* 
  * The field 'type' of a storage defines the type of the elements.
  * Integer type ST_ID should be used for indexing.
  */
-  
-typedef enum storage_type {
-   ST_AT,
-   ST_F, ST_D,
-   ST_I32, ST_I16, ST_I8, ST_U8,
-   ST_GPTR,
-   /* TAG */
-   ST_LAST
-} storage_type_t;
 
-#define ST_FIRST      ST_AT
-#define ST_ID         ST_I32
-#define ST_FLOAT      ST_F
-#define ST_DOUBLE     ST_D
-#define ST_INT        ST_I32
-#define ST_SHORT      ST_I16
-#define ST_BYTE       ST_I8
-#define ST_UBYTE      ST_U8
-#define id_t          int
+typedef enum dht_type storage_type_t;
+
+#define ST_BOOL       DHT_BOOL
+#define ST_CHAR       DHT_CHAR
+#define ST_UCHAR      DHT_UCHAR
+#define ST_SHORT      DHT_SHORT
+#define ST_INT        DHT_INT
+#define ST_FLOAT      DHT_FLOAT
+#define ST_DOUBLE     DHT_DOUBLE
+#define ST_GPTR       DHT_GPTR
+#define ST_MPTR       DHT_MPTR
+#define ST_AT         DHT_AT
+
+#define ST_FIRST      ST_BOOL
+#define ST_LAST       (ST_AT + 1)
 
 /*
  * The other flags define the
  * nature of the storage (STS)
  */
 
-#define STS_MALLOC    (1<<1)	/* in memory via malloc */
-#define STS_MMAP      (1<<2)	/* mapped via mmap */
+
+#define STS_MM        (1<<0)    /* memory managed by MM */
+#define STS_MALLOC    (1<<1)	/* pointer given to us, lush will free */
+#define STS_FOREIGN   (1<<2)    /* pointer given to us, lush won't free */
+#define STS_MMAP      (1<<3)	/* memory mapped via mmap */
 #define STS_STATIC    (1<<5)	/* in data segment */
+#define STS_MASK      255
 #define STF_RDONLY    (1<<15)	/* read only storage */
 
-#define SRG_FIELDS \
-   short  flags;   \
-   short  type;    \
-   size_t size;    \
-   gptr   data
-
-struct srg {
-   SRG_FIELDS;
-};
-
 struct storage {
-   SRG_FIELDS;
-   at     *backptr;        /* pointer to the at referencing this srg*/
-   void   *cptr;           /* pointer to cside representation */
+   at    *backptr;
+   short  flags;
+   short  type;
+   size_t size;
+   gptr   data;
 #ifdef HAVE_MMAP
    gptr   mmap_addr;
    size_t mmap_len;
@@ -844,23 +871,22 @@ struct storage {
 #endif
 };
 
-typedef struct storage  storage_t;
+/* typedef struct storage  storage_t; // defined above */ 
 
 extern LUSHAPI class_t *abstract_storage_class;
 extern LUSHAPI class_t *storage_class[ST_LAST];
-extern LUSHAPI size_t  storage_sizeof[ST_LAST];
-extern LUSHAPI flt   (*storage_getf[ST_LAST])(gptr, size_t);
-extern LUSHAPI void  (*storage_setf[ST_LAST])(gptr, size_t, flt);
-extern LUSHAPI real  (*storage_getr[ST_LAST])(gptr, size_t);
-extern LUSHAPI void  (*storage_setr[ST_LAST])(gptr, size_t, real);
-extern LUSHAPI at *  (*storage_getat[ST_LAST])(storage_t *, size_t);
-extern LUSHAPI void  (*storage_setat[ST_LAST])(storage_t *, size_t, at *);
+extern LUSHAPI size_t   storage_sizeof[ST_LAST];
+extern LUSHAPI flt    (*storage_getf[ST_LAST])(gptr, size_t);
+extern LUSHAPI void   (*storage_setf[ST_LAST])(gptr, size_t, flt);
+extern LUSHAPI real   (*storage_getd[ST_LAST])(gptr, size_t);
+extern LUSHAPI void   (*storage_setd[ST_LAST])(gptr, size_t, real);
+extern LUSHAPI at *   (*storage_getat[ST_LAST])(storage_t *, size_t);
+extern LUSHAPI void   (*storage_setat[ST_LAST])(storage_t *, size_t, at *);
 
 /* storage creation */
 LUSHAPI storage_t *new_storage(storage_type_t);
 LUSHAPI storage_t *make_storage(storage_type_t, size_t, at*);
-#define NEW_STORAGE(t)        (new_storage(t)->backptr)
-#define MAKE_STORAGE(t, n, i) (make_storage(t, n, i)->backptr)
+#define NEW_STORAGE(st)  new_storage(st)->backptr
 
 /* storage properties */
 LUSHAPI bool   storage_classp(const at*);
@@ -869,7 +895,9 @@ LUSHAPI size_t storage_nelems(const storage_t *);
 LUSHAPI size_t storage_nbytes(const storage_t *);
 
 /* storage manipulation */
-LUSHAPI void storage_malloc(storage_t*, size_t, at*);
+
+LUSHAPI void get_write_permit(storage_t *);
+LUSHAPI void storage_alloc(storage_t*, size_t, at*);
 LUSHAPI void storage_realloc(storage_t*, size_t, at*);
 LUSHAPI void storage_clear(storage_t*, at*, size_t);
 LUSHAPI void storage_mmap(storage_t*, FILE*, size_t);
@@ -882,35 +910,14 @@ LUSHAPI void storage_save(storage_t*, FILE*);
 
 extern LUSHAPI class_t *index_class;
 
-/* The "light" idx structure */
-
-struct idx {	
-   int ndim;
-   size_t *dim;
-   ptrdiff_t *mod;
-   ptrdiff_t offset;	
-   struct srg *srg;
-};
-
-#define IDX_BASE(idx)   (gptr) ((char *) (idx)->srg->data + \
-	                (idx)->offset * storage_sizeof[(idx)->srg->type])
-#define IDX_BASE_TYPED(idx, Type) \
-                        (((Type *)((idx)->srg->data)) + (idx)->offset)
-#define IDX_DATA_PTR  IDX_BASE
-
-/* The "heavy" index structure */
-
-typedef struct index {			
-   /* Field names are similar to those of the  idx structure. */
-   /* IDX macros work on index structures! */
+struct index {			
+   at *backptr;
    int ndim;			/* number of dimensions */
    size_t dim[MAXDIMS];		/* array size for each dimension */
    ptrdiff_t mod[MAXDIMS];      /* stride for each dimension */
    ptrdiff_t offset;		/* in element size */
-   storage_t  *st;		/* a pointer to the storage */
-   struct idx *cptr;            /* struct idx for the C side (lisp_c) */
-   at *backptr;                 /* back reference to at */
-} index_t;
+   storage_t *st;		/* a pointer to the storage */
+};
 
 /* shape_t and subscript_t are used as argument types in the index 
    C API. shape_t coincides with the head of the index structure. */
@@ -929,7 +936,7 @@ typedef struct subscript {
 #define IND_ATST(ind)      (((index_t *)ind)->st->backptr)
 #define IND_STTYPE(ind)    (IND_ST(ind)->type)
 #define IND_STNELEMS(ind)  (IND_ST(ind)->size)
-#define IND_SHAPE(ind)     ((shape_t *)ind)
+#define IND_SHAPE(ind)     ((shape_t *)&(ind->ndim))
 #define IND_NDIMS(ind)     ((ind)->ndim)
 #define IND_DIM(ind, n)   ((ind)->dim[n])
 #define IND_MOD(ind, n)   ((ind)->mod[n])
@@ -942,7 +949,6 @@ LUSHAPI size_t index_nelems(const index_t*);
 
 /* index and array creation */
 LUSHAPI index_t *new_index(storage_t*, shape_t*);
-LUSHAPI index_t *new_index_for_cdata(storage_type_t, shape_t *, void*);
 LUSHAPI index_t *make_array(storage_type_t, shape_t*, at*);
 LUSHAPI index_t *clone_array(index_t*);
 LUSHAPI index_t *copy_index(index_t*);
@@ -974,12 +980,16 @@ LUSHAPI bool same_shape_p(index_t *, index_t *);
 LUSHAPI bool   shape_equalp(shape_t *, shape_t *);
 LUSHAPI size_t shape_nelems(shape_t*);
 LUSHAPI shape_t *shape_copy(shape_t*, shape_t*);
-LUSHAPI shape_t* shape_set(shape_t*, int, size_t, size_t, size_t, size_t);
-#define SHAPE0D                 shape_set(NIL, 0, 0, 0, 0, 0)
-#define SHAPE1D(d1)             shape_set(NIL, 1, d1, 0, 0, 0)
-#define SHAPE2D(d1, d2)         shape_set(NIL, 2, d1, d2, 0, 0)
-#define SHAPE3D(d1, d2, d3)     shape_set(NIL, 3, d1, d2, d3, 0)
-#define SHAPE4D(d1, d2, d3, d4) shape_set(NIL, 4, d1, d2, d3, d4)
+LUSHAPI shape_t* shape_set(shape_t*, int, size_t, size_t, size_t, size_t, size_t, size_t);
+#define SHAPE0D                 shape_set(NIL, 0, 0, 0, 0, 0, 0, 0)
+#define SHAPE1D(d1)             shape_set(NIL, 1, d1, 0, 0, 0, 0, 0)
+#define SHAPE2D(d1, d2)         shape_set(NIL, 2, d1, d2, 0, 0, 0, 0)
+#define SHAPE3D(d1, d2, d3)     shape_set(NIL, 3, d1, d2, d3, 0, 0, 0)
+#define SHAPE4D(d1, d2, d3, d4) shape_set(NIL, 4, d1, d2, d3, d4, 0, 0)
+#define SHAPE5D(d1, d2, d3, d4, d5) \
+   shape_set(NIL, 5, d1, d2, d3, d4, d5, 0)
+#define SHAPE6D(d1, d2, d3, d4, d5, d6) \
+   shape_set(NIL, 6, d1, d2, d3, d4, d5, d6)
 
 /* index manipulation */
 LUSHAPI index_t *index_reshape(index_t*, shape_t*);
@@ -989,10 +999,16 @@ LUSHAPI index_t *index_trim_to_shape(index_t*, shape_t*);
 LUSHAPI index_t *index_extend(index_t*, int d, ptrdiff_t ne);
 LUSHAPI index_t *index_extendS(index_t*, subscript_t*);
 LUSHAPI index_t *index_expand(index_t*, int d, size_t ne);
+LUSHAPI index_t *index_liftD(index_t*, shape_t*);
+LUSHAPI index_t *index_lift(index_t*, shape_t*);
+LUSHAPI index_t *index_nickD(index_t*, int);
+LUSHAPI index_t *index_nick(index_t*, int);
 LUSHAPI index_t *index_shift(index_t*, int d, ptrdiff_t ne);
 LUSHAPI index_t *index_shiftS(index_t*, subscript_t*);
 LUSHAPI index_t *index_select(index_t*, int d, ptrdiff_t n);
 LUSHAPI index_t *index_selectS(index_t*, subscript_t*);
+LUSHAPI index_t *index_sinkD(index_t *, shape_t *);
+LUSHAPI index_t *index_sink(index_t *, shape_t *);
 LUSHAPI index_t *index_transpose(index_t*, shape_t*);
 LUSHAPI index_t *index_reverse(index_t*, int d);
 LUSHAPI index_t *index_broadcast1(index_t*blank, index_t*ref);
@@ -1012,11 +1028,6 @@ LUSHAPI index_t *index_reverseD(index_t*, int d);
 LUSHAPI void easy_index_check(index_t*, shape_t*);
 //LUSHAPI real easy_index_get(index_t*, size_t*);
 //LUSHAPI void easy_index_set(index_t*, size_t*, real);
-
-/* Functions related to <struct idx> objects */
-LUSHAPI void index_read_idx(index_t*, struct idx *);
-LUSHAPI void index_write_idx(index_t*, struct idx *);
-LUSHAPI void index_rls_idx(index_t*, struct idx *);
 
 /* Other functions */
 LUSHAPI index_t *index_copy(index_t *, index_t *);
@@ -1202,39 +1213,6 @@ LUSHAPI at  *load_matrix(FILE*);
 #endif
 
 
-
-/* DH.H -------------------------------------------------- */
-
-/*
- * DH are C functions working on matrices and numbers.
- * They may be compiled using 'dh-compile'.
- */
-
-extern LUSHAPI class_t *dh_class;
-
-LUSHAPI at *new_dh(at *name, dhdoc_t *kdata);
-LUSHAPI at *new_dhclass(at *name, dhclassdoc_t *kdata);
-
-
-
-/* LISP_C.H ---------------------------------------------- */
-
-LUSHAPI int  lside_mark_unlinked(gptr);
-LUSHAPI void lside_destroy_item(gptr);
-
-LUSHAPI void cside_create_str(void *cptr);
-LUSHAPI void cside_create_str_gc(void *cptr);
-LUSHAPI void cside_create_idx(void *cptr);
-LUSHAPI void cside_create_srg(void *cptr);
-LUSHAPI void cside_create_obj(void *cptr, dhclassdoc_t *);
-LUSHAPI void cside_destroy_item(void *cptr);
-LUSHAPI void cside_destroy_range(void *from, void *to);
-LUSHAPI at * cside_find_litem(void *cptr);
-
-LUSHAPI bool lisp_owns_p(void *cptr);  /* true when interpreter owns the object */
-
-LUSHAPI void lush_error(const char *s);
-#define run_time_error lush_error
 
 /* EVENT.H ----------------------------------------------------- */
 

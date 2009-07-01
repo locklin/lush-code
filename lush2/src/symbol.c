@@ -28,15 +28,17 @@
 
 #define SYMBOL_CACHE_SIZE 255
 
+#define SYMBOL_TYPELOCKED_BIT  2
+
 #define SYMBOL_LOCKED_P(s)     ((uintptr_t)(s->hn) & SYMBOL_LOCKED_BIT)
 #define SYMBOL_TYPELOCKED_P(s) ((uintptr_t)(s->hn) & SYMBOL_TYPELOCKED_BIT)
+#define SYMBOL_VARIABLE_P(s)   ((uintptr_t)(s->hn) & SYMBOL_VARIABLE_BIT)
+#define MARKVAR_SYMBOL(s)      SET_PTRBIT(s->hn, SYMBOL_VARIABLE_BIT)
 #define LOCK_SYMBOL(s)         SET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
 #define UNLOCK_SYMBOL(s)       UNSET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
 #define TYPELOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
 #define TYPEUNLOCK_SYMBOL(s)   UNSET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
 #define SYM_HN(s)              ((struct hash_name *)CLEAR_PTR((s)->hn))
-
-typedef unsigned char   uchar;
 
 /* globally defined names */
 
@@ -176,8 +178,6 @@ static hash_name_t *search_by_name(const char *s, int mode)
    return hn;
 }
 
-#if defined UNIX && HAVE_LIBREADLINE
-
 /* used for readline completion in unix.c */
 char *symbol_generator(const char *text, int state)
 {
@@ -224,8 +224,6 @@ char *symbol_generator(const char *text, int state)
    return 0;
 }
 
-#endif // UNIX
-
 
 /*
  * named(s) finds the SYMBOL named S. Actually does the same job as
@@ -235,7 +233,7 @@ char *symbol_generator(const char *text, int state)
 
 at *named(const char *s)
 {
-   return new_symbol(s);
+   return SYM_HN(new_symbol(s))->named;
 }
 
 DX(xnamed)
@@ -267,7 +265,7 @@ at *namedclean(const char *n)
          if (isascii(*(unsigned char*)s))
             *s = tolower(*(unsigned char*)s);
    }
-   return new_symbol(d);
+   return NEW_SYMBOL(d);
 }
 
 DX(xnamedclean)
@@ -301,7 +299,7 @@ DX(xnameof)
    const char *s = nameof(ASYMBOL(1));
    if (!s)
       RAISEFX("not a symbol", APOINTER(1));
-   return new_string(s);
+   return NEW_STRING(s);
 }
 
 
@@ -323,7 +321,7 @@ at *global_names(void)
       where = &answer;
       while (*where && strcmp(name, String(Car(*where))) > 0)
          where = &Cdr(*where);
-      *where = new_cons(new_string(name), *where);
+      *where = new_cons(NEW_STRING(name), *where);
    }
    return answer;
 }
@@ -401,11 +399,17 @@ static const char *symbol_name(at *p)
 
 static at *symbol_selfeval(at *p)
 {
-   symbol_t *symb = Symbol(p);
-   if (symb->valueptr) {
-      if (ZOMBIEP(*(symb->valueptr)))
-         *(symb->valueptr) = NIL;
-      return *(symb->valueptr);
+   symbol_t *s = Symbol(p);
+
+   if (SYMBOL_VARIABLE_P(s)) {
+      class_t *cl = classof(*(s->valueptr));
+      return cl->selfeval(*(s->valueptr));
+
+   } else if (s->valueptr) {
+      if (ZOMBIEP(*(s->valueptr)))
+         *(s->valueptr) = NIL;
+      return *(s->valueptr);
+
    } else {
       return NIL;
    }
@@ -459,6 +463,12 @@ at *setq(at *p, at *q)
 {
    if (SYMBOLP(p)) {             /* (setq symbol value) */
       symbol_t *s = Symbol(p);
+      
+      if (SYMBOL_VARIABLE_P(s)) {
+         class_t *cl = classof(*(s->valueptr));
+         cl->setslot(*(s->valueptr), NIL, q);
+         return q;
+      }
       ifn (s->valueptr)
          fprintf(stderr, "+++ Warning: use <defvar> to declare global variable <%s>.\n",
                  SYM_HN(s)->name ? SYM_HN(s)->name : "??" );
@@ -550,10 +560,10 @@ symbol_t *symbol_pop(symbol_t *s)
    }
 }
 
-at *new_symbol(const char *str)
+symbol_t *new_symbol(const char *str)
 {
    if (str[0] == ':' && str[1] == ':')
-      error(NIL, "belongs to a reserved package... ", new_string(str));
+      error(NIL, "belongs to a reserved package... ", NEW_STRING(str));
    
    hash_name_t *hn = search_by_name(str, 1);
    ifn (hn->named) {
@@ -562,8 +572,9 @@ at *new_symbol(const char *str)
       s->hn = hn;
       hn->named = new_at(symbol_class, s);
       add_notifier(hn->named, (wr_notify_func_t *)at_symbol_notify, NULL);
+      return s;
    }
-   return hn->named;
+   return Symbol(hn->named);
 }
 
 DY(yscope)
@@ -703,11 +714,11 @@ void sym_set(symbol_t *s, at *q, bool in_global_scope)
       s->value = NIL;
       s->valueptr = &(s->value);
    }
-   if (SYMBOL_TYPELOCKED_P(s)) {
-      class_t *cl = classof(*(s->valueptr));
-      ifn (isa(q, cl))
-         error(NIL, "invalid assignment to type-locked symbol", SYM_HN(s)->named);
-   }
+/*    if (SYMBOL_TYPELOCKED_P(s)) { */
+/*       class_t *cl = classof(*(s->valueptr)); */
+/*       ifn (isa(q, cl)) */
+/*          error(NIL, "invalid assignment to type-locked symbol", SYM_HN(s)->named); */
+/*    } */
    *(s->valueptr) = q;
 }
 
@@ -750,19 +761,17 @@ bool symbol_locked_p(symbol_t *s)
    return SYMBOL_LOCKED_P(s);
 }
 
-bool symbol_typelocked_p(symbol_t *s)
-{
-   return SYMBOL_TYPELOCKED_P(s);
-}
+/* bool symbol_typelocked_p(symbol_t *s) */
+/* { */
+/*    return SYMBOL_TYPELOCKED_P(s); */
+/* } */
 
 
 DX(xset)
 {
    ARG_NUMBER(2);
-   symbol_t *s = ASYMBOL(1);
-   at *q = APOINTER(2);
-   sym_set(s, q, false);
-   return q;
+   ASYMBOL(1);
+   return setq(APOINTER(1), APOINTER(2));
 }
 
 
@@ -787,7 +796,7 @@ void pre_init_symbol(void)
       MM_ROOT(cache);
    }
    if (!symbol_class) {
-      new_builtin_class(&symbol_class, NIL);
+      symbol_class = new_builtin_class(NIL);
       symbol_class->name = symbol_name;
       symbol_class->selfeval = symbol_selfeval;
       symbol_class->hash = symbol_hash;

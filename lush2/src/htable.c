@@ -702,7 +702,7 @@ void init_htable(void)
                  clear_hashtable, mark_hashtable, finalize_hashtable);
    
    /* setting up htable_class */
-   new_builtin_class(&htable_class, NIL);
+   htable_class = new_builtin_class(NIL);
    htable_class->dispose = (dispose_func_t *)htable_dispose;
    htable_class->listeval = htable_listeval;
    htable_class->serialize = htable_serialize;

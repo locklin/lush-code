@@ -633,14 +633,14 @@
 	    (if (comp p1 piv)
 		(setq piv p1 p1 piv) ) )
 	  ;; Go pivoting for quicksort
-	  (each ((i l))
-		(cond 
-		 ((= i piv)
-		  (setq pl (cons i pl)) )
-		 ((comp i piv)
-		  (setq rl (cons i rl)) )
-		 (t 
-		  (setq ll (cons i ll)) ) ) )
+	  (dolist (i l)
+            (cond 
+             ((= i piv)
+              (setq pl (cons i pl)) )
+             ((comp i piv)
+              (setq rl (cons i rl)) )
+             (t 
+              (setq ll (cons i ll)) ) ) )
 	  (nconc (sort-list ll comp) (nconc pl (sort-list rl comp))) )
       l ) )
 
@@ -673,12 +673,12 @@
 
 (de filter (f l)
   (let ((r ()))
-    (each ((x l)) (when (f x) (setq r (cons x r))))
+    (dolist (x l) (when (f x) (setq r (cons x r))))
     (reverse r)))
 
 (de hset(l &optional flag)
   (let ((r (htable)))
-    (each ((x l))
+    (dolist (x l)
       (r x (or (not flag) (1+ (or (r x) 0)))) )
     r ) )
 
@@ -686,16 +686,16 @@
   (let ((r (htable)))
     (when (< (htable-size ht2) (htable-size ht1))
       (setq ht1 ht2 ht2 ht1) )
-    (each ((key (htable-keys ht1)))
+    (dolist (key (htable-keys ht1))
       (when (ht2 key)
 	(r key t) ) )
     r ) )
 
 (de hset-or(ht1 ht2)
   (let ((r (htable)))
-    (each ((key (htable-keys ht1)))
+    (dolist (key (htable-keys ht1))
       (r key t) )
-    (each ((key (htable-keys ht2)))
+    (dolist (key (htable-keys ht2))
       (r key t) ) 
     r ) )
 
@@ -757,23 +757,21 @@
 ;;;; --------- Storage utilities ----------
 
 (defvar storage-classes 
-  (list |ATSTORAGE| |FSTORAGE| |DSTORAGE| |I32STORAGE|
-        |I16STORAGE| |I8STORAGE| |U8STORAGE| |GPTRSTORAGE| ))
+  (list bool-storage char-storage uchar-storage short-storage
+        int-storage float-storage double-storage gptr-storage
+        mptr-storage at-storage) )
 
 ;; we make these symbols reserved symbols
 (let* ((storage-class-symbols 
-       (list 'atom 'float 'double 'int 'short 'byte 'ubyte 'gptr) )
+        (list 'bool 'char 'uchar 'short 'int 'float 'double 'gptr 'mptr 'atom))
        (htlen (* 2 (length storage-classes))) )
-      (defvar storage-class (htable htlen))          ;; map class symbol to class
-      (defvar storage-class-symbol (htable htlen))   ;; map class to class symbol
-      (each ((scs storage-class-symbols) (sc storage-classes) )
-        (storage-class-symbol sc scs)
-        (storage-class scs sc)
-        (storage-class (named (left (pname scs) 1)) sc)
-      ;;(putp sc 'symbol scs)
-      ;;(storage-class 'flt (storage-class 'float))
-      ;;(storage-class 'real (storage-class 'double)) 
-         ) )
+  (defvar storage-class (htable htlen))        ;; map class symbol to class
+  (defvar storage-class-symbol (htable htlen))  ;; map class to class symbol
+  (domapc ((scs storage-class-symbols) (sc storage-classes))
+    (storage-class-symbol sc scs)
+    (storage-class scs sc)
+    (storage-class (named (left (pname scs) 1)) sc)
+    ))
 
 ;; redefine new-storage to allow for element type symbols
 (unlock-symbol new-storage)
@@ -801,7 +799,7 @@
          (func-symbol (named (concat (pname scs) "-array")))
 	 (func*-symbol (named (concat (pname scs) "-array*")))
          (init        (if (member scs '(atom gptr)) nil 0.0)) )
-    (eval 
+    (eval
      `(progn 
 	(de ,func-symbol (&rest shape)
           (cond ((null shape)         (make-array ,sc () ,init))
@@ -968,7 +966,8 @@
     m ))
 
 (dmc |[| 
-     (let* ((sc  (storage-class (named (skip-char))))
+     (let* ((c   (named (skip-char)))
+            (sc  (storage-class c))
             (sc2 (or sc (storage-class 'double))) )
        (when sc (read-string 1))
        (read-array-literal (lambda (&rest shp) (make-array sc2 shp nil)))) ))
@@ -1114,7 +1113,7 @@
   (if (not dirs)
       (scope |*PATH|)
     (let ((newpath (list ".")))
-      (each ((dir dirs))
+      (dolist (dir dirs)
         (when (not (stringp dir))
           (error 'path "Not a string" dir) )
         (when (<> dir ".")
@@ -1137,17 +1136,17 @@
 
 ;;; --------- pprin, pprint ----------
 
-(each ((sym '( progn graphics-batch debug nodebug )))
+(dolist (sym '( progn graphics-batch debug nodebug ))
   (putp sym 'pprint-type 0) )
-(each ((sym '( when while do-while for mapfor mapwhile repeat )))
+(dolist (sym '( when while do-while for mapfor mapwhile repeat ))
   (putp sym 'pprint-type 1) )
-(each ((sym '( lambda flambda mlambda zlambda writing reading )))
+(dolist (sym '( lambda flambda mlambda zlambda writing reading ))
   (putp sym 'pprint-type 1) )  
-(each ((sym '( de df dm dz dmd defclass dhm-t dhm-c )))
+(dolist (sym '( de df dm dz dmd defclass dhm-t dhm-c ))
   (putp sym 'pprint-type 2) )
-(each ((sym '( defmethod demethod dfmethod dmmethod )))
+(dolist (sym '( defmethod demethod dfmethod dmmethod ))
   (putp sym 'pprint-type 3) )
-(each ((sym '( let let* let-filter each all idx-bloop idx-eloop idx-gloop )))
+(dolist (sym '( let let* let-filter each all idx-bloop idx-eloop idx-gloop ))
   (putp sym 'pprint-type '(0 let)) )
 
 (putp 'if        'pprint-type '(1 indent))
@@ -1479,7 +1478,7 @@
       (setq p (car p)) 
       (setq p "") ) 
    (let ((pos 0)) 
-        (each ((i (symblist))) 
+        (dolist (i (symblist))
            (when (index p i) 
               (printf "%s" (left i 17)) 
               (setq pos (if (< pos 50) 
@@ -1502,8 +1501,9 @@
 (defparameter 0s (.cl 0))
 (defparameter 1s (.cl 1))
 (defparameter nils (.cl ()))
+(defparameter ts (.cl t))
 
-(lock-symbol .cl .v 0s 1s nils)
+(lock-symbol .cl .v 0s 1s nils ts)
 
 ;;; --------- Numbers ----------
 
@@ -1547,55 +1547,55 @@
   (cond
    ;; ON INIT
    ((= what 'init)
-    (each ((pair (module-defs m)))
+    (dolist ((obj . name) (module-defs m))
       (cond
        ;; global definition
-       ((symbolp (cdr pair))
-        (let ((old (eval `:,(cdr pair))))
+       ((symbolp name)
+        (let ((oldobj (eval `(scope ,name))))
           ;; - save old definition when precious is set
-          (when (and old (getp old 'precious))
-            (putp (car pair) 'saved old)
+          (when (and oldobj (getp oldobj 'precious))
+            (putp obj 'saved oldobj)
             ;; - functions: save source
-            (when (functionp old)
-              (putp (car pair) 'source (funcdef old)) )
+            (when (functionp oldobj)
+              (putp obj 'source (funcdef oldobj)) )
             ;; - classes: copy methods
-            (when (and (classp old) (classp (car pair)))
-              (each ((m (methods old)))
-                (putmethod (car pair) m (getmethod old m)) ) ) ) )
+            (when (and (classp oldobj) (classp obj))
+              (dolist (m (methods oldobj))
+                (putmethod obj m (getmethod oldobj m)) ))))
         ;; - perform definition
-        (eval `(setq :,(cdr pair) ',(car pair))) ) 
+        (eval `(setq (scope ,name) ',obj)) )
        ;; method definiton
-       ((consp (cdr pair))
+       ((consp name)
         ;; - perform definition
-        (when (and (classp (cadr pair)) (symbolp (cddr pair)))
-          (putmethod (cadr pair) (cddr pair) (car pair)) ) ) ) ) )
+        (when (and (classp (car name)) (symbolp (cdr name)))
+          (putmethod (car name) (cdr name) obj) )))))
    ;; ON UNLINK
    ((= what 'unlink)
-    (each ((pair (module-defs m)))
+    (dolist ((obj . name) (module-defs m))
       (cond
        ;; global definition
-       ((symbolp (cdr pair))
-        (let ((old (getp (car pair) 'saved)))
-          (when (and old (== (car pair) (eval `:,(cdr pair))))
-	    (if (not (and (classp old) (classp (car pair))))
+       ((symbolp name)
+        (let ((oldobj (getp obj 'saved)))
+          (when (and oldobj (== obj (eval `(scope ,name))))
+	    (if (not (and (classp oldobj) (classp obj)))
 		;; non class: undo global definition
-		(eval `(setq :,(cdr pair) ',old))
+		(eval `(setq (scope ,name) ',oldobj))
 	      ;; class: copy saved methods
-	      (putp (car pair) 'saved ())
-	      (putp (car pair) 'precious (getp old 'precious))
-	      (each ((m (methods old)))
-		(putmethod (car pair) m (getmethod old m)) ) ) ) ) ) ) ) ) ) )
+	      (putp obj 'saved ())
+	      (putp obj 'precious (getp oldobj 'precious))
+	      (dolist (mt (methods oldobj))
+		(putmethod obj  mt (getmethod oldobj mt)) ))))))))))
 
 (de mod-search(name)
   (let ((found ())
         (n (concat-fname name))
         (l (module-list)))
-    (each ((m l))
+    (dolist (m l)
       (when (= name (module-filename m))
         (setq found m) ) )
     (when (not found)
       (setq name (basename name))
-      (each ((m l))
+      (dolist (m l)
         (when (= name (basename (module-filename m)))
           (setq found (cons m found)) ) )
       (if (and found (not (cdr found)))
@@ -1607,7 +1607,7 @@
   (mapcar module-filename (module-list)) )
 
 (de mod-status()
-  (each ((m (module-list)))
+  (dolist (m (module-list))
     (==> m pretty) ) )
 
 (de mod-inquire(name)
@@ -1624,8 +1624,7 @@
               (mapcar cdr (module-defs m)) ) ) ) ) )
 
 (de mod-load(name)
-  (let ((hook (lambda args (and module.hook (apply module.hook args)))))
-    (module-filename (module-load name hook)) ) )
+  (module-filename (module-load name module.hook)) )
 
 (de mod-unload(name)
   (let ((m (mod-search name)))
@@ -1664,16 +1663,20 @@
     result ) )
 
 ;; idx base types
-(putp '-int-    'srg-type |I32STORAGE|)
-(putp '-short-  'srg-type |I16STORAGE|)
-(putp '-byte-   'srg-type |I8STORAGE|)
-(putp '-ubyte-  'srg-type |U8STORAGE|)
-(putp '-flt-    'srg-type |FSTORAGE|)
-(putp '-float-  'srg-type |FSTORAGE|)
-(putp '-real-   'srg-type |DSTORAGE|)
-(putp '-double- 'srg-type |DSTORAGE|)
-(putp '-gptr-   'srg-type |GPTRSTORAGE|)
-(putp '-any-    'srg-type |STORAGE|)
+(putp '-bool-   'srg-type bool-storage)
+(putp '-int-    'srg-type int-storage)
+(putp '-short-  'srg-type short-storage)
+(putp '-byte-   'srg-type char-storage)
+(putp '-char-   'srg-type char-storage)
+(putp '-ubyte-  'srg-type uchar-storage)
+(putp '-uchar-  'srg-type uchar-storage)
+(putp '-flt-    'srg-type float-storage)
+(putp '-float-  'srg-type float-storage)
+(putp '-real-   'srg-type double-storage)
+(putp '-double- 'srg-type double-storage)
+(putp '-gptr-   'srg-type gptr-storage)
+(putp '-mptr-   'srg-type mptr-storage)
+(putp '-any-    'srg-type storage)
 
 ;; no type check
 (putp '-any- 'type-syntax
@@ -1691,7 +1694,7 @@
         (or (let-filter (((fn) source)) stringp)
             (error where "Illegal syntax in string type" source) ) ) )
 ;; numeric type check
-(domapc ((fn '(-ubyte- -byte- -short- -int- -flt- -float- -real- -double-)))
+(domapc ((fn '(-byte- -char- -ubyte- -uchar- -short- -int- -flt- -float- -real- -double-)))
   (putp fn 'type-syntax
         (lambda(where source)
           (or (let-filter (((fn) source)) numberp)
@@ -1706,11 +1709,19 @@
 ;; gptr type check
 (putp '-gptr- 'type-syntax
       (lambda(where source)
-        (let ((gptrp (lambda(x) (or (not x) (isa x |GPTR|)))))
+        (let ((gptrp (lambda(x) (or (not x) (isa x GPTR)))))
           (or (let-filter (((fn) source)) gptrp)
               (let-filter (((fn arg) source)) (and (stringp arg) gptrp))
               (let-filter (((fn (arg)) source)) (and (symbolp arg) gptrp))
               (error where "Illegal syntax in gptr type" source) ) ) ) )
+;; mptr type check
+(putp '-mptr- 'type-syntax
+      (lambda(where source)
+        (let ((mptrp (lambda(x) (or (not x) (isa x MPTR)))))
+          (or (let-filter (((fn) source)) mptrp)
+              (let-filter (((fn arg) source)) (and (stringp arg) mptrp))
+              (let-filter (((fn (arg)) source)) (and (symbolp arg) mptrp))
+              (error where "Illegal syntax in mptr type" source) ) ) ) )
 ;; list type check
 (putp '-list- 'type-syntax
       (lambda(where source)
@@ -1722,7 +1733,7 @@
                              (setq chk (cdr chk))
                              (setq x (cdr x)) )
                            (and okay (not x) (not chk)) ) )))
-          (each ((arg (cdr source)))
+          (dolist (arg (cdr source))
             (setq chk (nconc1 chk (verify-type-decl-format arg where))) )
           (eval `(lambda(x) (,listchk x ',chk))) ) ) )
 ;; function type check
@@ -1778,7 +1789,7 @@
 ;; variable declaration
 (df declare (|Type| . |Syms|)
   (setq |Type| (verify-type-decl-format |Type|))
-  (each ((|Sym| |Syms|))
+  (dolist (|Sym| |Syms|)
     (when (not (symbolp |Sym|))
       (error 'declare "not a symbol" |Sym|) )
     (when (not (eval (list |Type| |Sym|)))
@@ -1787,7 +1798,14 @@
 (lock-symbol verify-type-decl-format 
              verify-type-decl-format.table declare)
 
-
+;; backward compatibility
+(storage-class 'b (storage-class 'c))
+(defalias to-byte      to-char)
+(defalias to-ubyte     to-uchar)
+(defalias byte-array   char-array)
+(defalias byte-array*  char-array*)
+(defalias ubyte-array  uchar-array)
+(defalias ubyte-array* uchar-array*)
 
 
 ;;; --------- Misc compiler support ---------
@@ -1986,7 +2004,6 @@
   (printf "Enter ^A<topic> for console-based topic help.\n"))
 
 
-
 ;;; --------- File searching -----------
 
 (de find-file (dirlist file &optional extlist)
@@ -2044,7 +2061,6 @@
 
 ;;; --------- autoload instructions ----------
 
-(autoload "libc/libc" testbit)
 (autoload "libidx/idx-sort" idx-f1bsearch idx-d1bsearch idx-i1bsearch)
 
 ;;; --------- Boostrap startup -----------
@@ -2075,3 +2091,4 @@
          (printf "... dumping to \"%s\" (%d KB).\n"
                  ,(lasta argv) (/ (dump ,(lasta argv)) 1024) )
          (exit 0) ) ) ) )
+

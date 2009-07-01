@@ -89,6 +89,7 @@ extern LUSHAPI char *rterr_emptyidx;
 extern LUSHAPI char *rterr_range;
 extern LUSHAPI char *rterr_srg_overflow;
 extern LUSHAPI char *rterr_not_same_dim;
+extern LUSHAPI char *rterr_unmanaged;
 extern LUSHAPI char *rterr_out_of_memory;
 extern LUSHAPI char *rterr_cannot_realloc;
 extern LUSHAPI char *rterr_cannot_shrink;
@@ -116,21 +117,11 @@ extern LUSHAPI char *rterr_bad_dimensions;
 /* CHECKING OBJECTS                         */
 /* ---------------------------------------- */
 
-LUSHAPI void check_obj_class(void *obj, void *classvtable);
-LUSHAPI int  test_obj_class(void *obj, void *classvtable);
-
 /* ---------------------------------------- */
 /* CHECKING MATRICES                        */
 /* ---------------------------------------- */
 
-
-LUSHAPI void *lush_malloc(size_t, const char *, int);
-//LUSHAPI void srg_resize_compiled(struct srg* ,size_t ,char *, int);
-LUSHAPI void srg_resize_mm(struct srg* ,size_t , const char *, int);
-LUSHAPI void srg_resize(struct srg *, size_t, const char *, int );
-LUSHAPI void srg_free(struct srg *);
-
-LUSHAPI bool idx_emptyp(struct idx *);
+LUSHAPI bool idx_emptyp(index_t *);
 
 #define Mnocheck(...)
 
@@ -160,39 +151,31 @@ LUSHAPI bool idx_emptyp(struct idx *);
 	    lush_error(rterr_not_same_dim);}
 
 #define Mstr_alloc(s, len)  \
-    s = mm_blob(len*sizeof(char));       \
-    cside_create_str_gc(s);
+    s = mm_blob(len*sizeof(char)); 
 
-/* s = lush_malloc(len*sizeof(char), __FILE__, __LINE__);  */
-
-/* #define Msrg_resize(sr, new_size) \ */
-/*       srg_resize_compiled(sr, new_size, __FILE__, __LINE__);  */
-
-#define Msrg_resize(sr, new_size) \
-   if((sr)->size < (size_t)(new_size)) { \
-      srg_resize_mm(sr, new_size, __FILE__, __LINE__); \
-   } else if ((sr)->size > (size_t)(new_size)) { \
-      srg_resize_mm(sr, new_size, __FILE__, __LINE__); \
-      fprintf(stderr, "*** Warning: shrinking storage at %lx (lside: %lx)\n", \
-              (long)sr, (long)cside_find_litem(sr)); \
+#define Msrg_resize(sr, new_size)                                    \
+   if((sr)->size < (size_t)(new_size)) {                             \
+      storage_realloc(sr, new_size, 0);                              \
+   } else if ((sr)->size > (size_t)(new_size)) {                     \
+      storage_realloc(sr, new_size, 0);                              \
+      fprintf(stderr, "*** Warning: shrinking storage at %p\n", sr); \
    }
-/*       lush_error(rterr_cannot_shrink); */
 
 #define Midx_checksize0(i1) { \
     size_t siz = (i1)->offset + 1; \
-    Msrg_resize((i1)->srg, siz) \
+    Msrg_resize((i1)->st, siz) \
 }
 
 #define Midx_checksize1(i1) { \
     size_t siz = 1 + (i1)->offset + ((i1)->dim[0] - 1) * (i1)->mod[0]; \
-    Msrg_resize((i1)->srg, siz) \
+    Msrg_resize((i1)->st, siz) \
 }
 
 #define Midx_checksize(i1) { \
     size_t siz=(i1)->offset+1; \
     for(int j=0; j<(i1)->ndim; j++) \
 	siz += ((i1)->dim[j] - 1) * (i1)->mod[j]; \
-    Msrg_resize((i1)->srg, siz); \
+    Msrg_resize((i1)->st, siz); \
 }
 
 #define Mcheck0(i1) \
@@ -333,25 +316,25 @@ LUSHAPI bool idx_emptyp(struct idx *);
 /* Mcheck_m1in_m0in_m1out, Mcheck_m2in_m0in_m2out --> Mcheck_main_m0in_maout */
 /* Mcheck_m1in_m1in_m1out, Mcheck_m2in_m2in_m2out --> Mcheck_main_main_maout */
 
-LUSHAPI void check_main_maout(struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_maout(index_t *i1, index_t *i2);
 
-LUSHAPI void check_main_maout_any(struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_maout_any(index_t *i1, index_t *i2);
 
-LUSHAPI void check_main_main_maout(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_m0out(struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_m0out(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_m0in_maout(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_maout_dot21(struct idx *i0, 
-                                         struct idx *i1, struct idx *i2);
-LUSHAPI void check_main_main_maout_dot42(struct idx *i0, 
-                                         struct idx *i1, struct idx *i2);
-LUSHAPI void check_m1in_m1in_m2out(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
-LUSHAPI void check_m2in_m2in_m4out(struct idx *i0, 
-                                   struct idx *i1, struct idx *i2);
+LUSHAPI void check_main_main_maout(index_t *i0, 
+                                   index_t *i1, index_t *i2);
+LUSHAPI void check_main_m0out(index_t *i1, index_t *i2);
+LUSHAPI void check_main_main_m0out(index_t *i0, 
+                                   index_t *i1, index_t *i2);
+LUSHAPI void check_main_m0in_maout(index_t *i0, 
+                                   index_t *i1, index_t *i2);
+LUSHAPI void check_main_main_maout_dot21(index_t *i0, 
+                                         index_t *i1, index_t *i2);
+LUSHAPI void check_main_main_maout_dot42(index_t *i0, 
+                                         index_t *i1, index_t *i2);
+LUSHAPI void check_m1in_m1in_m2out(index_t *i0, 
+                                   index_t *i1, index_t *i2);
+LUSHAPI void check_m2in_m2in_m4out(index_t *i0, 
+                                   index_t *i1, index_t *i2);
 
 
 /* ---------------------------------------- */
@@ -365,7 +348,7 @@ LUSHAPI void check_m2in_m2in_m4out(struct idx *i0,
 
 /* -------------------------------------------------------------
    Local Variables:
-   c-font-lock-extra-types: (
-     "FILE" "\\sw+_t" "at" "gptr" "real" "flt" "intg" )
+   c-file-style: "k&r"
+   c-basic-offset: 3
    End:
    ------------------------------------------------------------- */

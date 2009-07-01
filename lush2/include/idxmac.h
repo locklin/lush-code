@@ -30,10 +30,10 @@
 
 /* ================= IDX and LIST ACCESS TO THE DATA =================== */
 
-#define IDX_PTR  IDX_BASE_TYPED
+#define IDX_PTR  IND_BASE_TYPED
 
 #define L_ACCESS(lname, n) \
-    ((int *) ((char *) (((struct srg *) (lname))->data) + sizeof(dharg) * (n)))
+    ((int *) ((char *) (((storage_t *) (lname))->data) + sizeof(dharg) * (n)))
 
 /* ============== IDX STRUCTURE DIRECT MANIPULATION =========== */
 
@@ -55,9 +55,8 @@
  */
 #define Midx_setdata(i, d, s) \
 { \
-   assert((i)->srg->flags & STS_MALLOC);\
-   (i)->srg->data = (gptr)d; \
-   (i)->srg->size = s; \
+   (i)->st->data = (gptr)d; \
+   (i)->st->size = s; \
 }
 
 /* expect min and max to have been defined has intg */
@@ -75,7 +74,7 @@ max = (idx)->offset; \
 /* ============== IDX CREATION AND INITIALISATION ============== */
 
 /* Following macros depend on MAXDIM */
-#define Midx_copy_dim0(ni,i) 
+#define Midx_copy_dim0(ni,i)
 #define Midx_copy_dim1(ni,i) \
     (ni)->dim[0] = (i)->dim[0]; (ni)->mod[0] = (i)->mod[0]; 
 #define Midx_copy_dim2(ni,i) Midx_copy_dim1((ni),i); \
@@ -106,8 +105,8 @@ max = (idx)->offset; \
 	siz *= (i0)->dim[i]; \
     } \
     (i0)->offset = 0; \
-    if ((i0)->srg->size < siz) {\
-       Msrg_resize((i0)->srg, siz); \
+    if ((i0)->st->size < siz) {\
+       Msrg_resize((i0)->st, siz); \
     } \
 }
 
@@ -203,7 +202,7 @@ max = (idx)->offset; \
   int temp = ((i)->ndim)-1; \
   (newi)->offset = (i)->offset + nn*((i)->mod[dd]); \
   (newi)->ndim = temp; \
-  (newi)->srg = (i)->srg; \
+  (newi)->st = (i)->st; \
   for (int j=0;j<(dd);j++) { \
     (newi)->dim[j] = (i)->dim[j]; \
     (newi)->mod[j] = (i)->mod[j]; \
@@ -235,45 +234,37 @@ max = (idx)->offset; \
 
 
 /* Declare new index newi (for clone & transclone) */
-#define Midx_declare0(newi) \
-struct idx name2(_idx_,newi); \
-struct idx *newi = &name2(_idx_,newi)
+#define Midx_declare0(newi)                     \
+  index_t name2(_idx_,newi);                    \
+  index_t *newi = &name2(_idx_,newi)
 
-#define Midx_declare(newi, ndim) \
-size_t name2(_dim_,newi)[ndim]; \
-ptrdiff_t name2(_mod_,newi)[ndim]; \
-struct idx name2(_idx_,newi); \
-struct idx *newi = &name2(_idx_,newi)
+#define Midx_declare(newi, ndim)                \
+  index_t name2(_idx_,newi);                    \
+  index_t *newi = &name2(_idx_,newi)
 
-#define Midx_init(newi, new_dim) \
-    (newi)->ndim = new_dim; \
-    (newi)->dim = name2(_dim_,newi); \
-    (newi)->mod = name2(_mod_,newi); 
+#define Midx_init(newi, new_dim)                \
+  (newi)->ndim = new_dim
 
-/* Declare new srg newi  */
-#define Msrg_declare(newi) \
-struct srg name2(_srg_,newi); \
-struct srg *newi = & name2(_srg_,newi)
+/* Declare new st newi  */
+#define Msrg_declare(newi)                     \
+  storage_t name2(_st_,newi);                  \
+  storage_t *newi = &name2(_st_,newi)
 
-#define Msrg_init(newi, srg_type) \
-    (newi)->size = 0; \
-    (newi)->data = NULL; \
-    (newi)->type = srg_type; \
-    (newi)->flags = STS_MALLOC;
+#define Msrg_init(newi, st_type)  \
+        (newi)->size = 0;         \
+        (newi)->data = NULL;      \
+        (newi)->type = st_type;   \
+        (newi)->flags = 0
 
 #define Msrg_free(newi)   /* nothing */
 
-/*
-#define Msrg_free(newi) \
-    if(newi->size != 0 && ((newi)->flags & STS_MALLOC)) \
-        free(newi->data);
-*/
+
 /* Define new index newi as a clone of index i */
 
 #define Midx_short_clone(newi, i) \
 { newi->ndim = (i)->ndim; \
   newi->offset = (i)->offset; \
-  newi->srg = (i)->srg; 
+  newi->st = (i)->st; 
 
 #define Midx_clone0(ni,i) Midx_short_clone(ni,i);Midx_copy_dim0(ni,i)}
 #define Midx_clone1(ni,i) Midx_short_clone(ni,i);Midx_copy_dim1(ni,i)}
@@ -291,7 +282,7 @@ struct srg *newi = & name2(_srg_,newi)
 { \
   newi->ndim = (i)->ndim; \
   newi->offset = (i)->offset; \
-  newi->srg = (i)->srg; \
+  newi->st = (i)->st; \
   for (int j=0;j<(i)->ndim;j++) { \
     newi->dim[j] = (i)->dim[j]; \
     newi->mod[j] = (i)->mod[j]; \
@@ -305,7 +296,7 @@ struct srg *newi = & name2(_srg_,newi)
   (newi)->type = (i)->type; \
   (newi)->ndim = (i)->ndim; \
   (newi)->offset = (i)->offset; \
-  (newi)->srg = (i)->srg; \
+  (newi)->st = (i)->st; \
   for (int j=0;j<(i)->ndim;j++) { \
     (newi)->dim[j] = (i)->dim[j]; \
     (newi)->mod[j] = (i)->mod[j]; \
@@ -321,7 +312,7 @@ struct srg *newi = & name2(_srg_,newi)
   /* newi.type = (i).type;*/ \
   newi->ndim = (i)->ndim; \
   newi->offset = (i)->offset; \
-  newi->srg = (i)->srg; \
+  newi->st = (i)->st; \
   for (int j=0;j<(i)->ndim;j++) { \
     (newi)->dim[j] = (i)->dim[p[j]]; \
     (newi)->mod[j] = (i)->mod[p[j]]; \
@@ -336,7 +327,7 @@ struct srg *newi = & name2(_srg_,newi)
   /* newi.type = (i).type;*/ \
   newi->ndim = (i)->ndim-d+1; \
   newi->offset = (i)->offset; \
-  newi->srg = (i)->srg; \
+  newi->st = (i)->st; \
   for (int j=0;j<(newi)->ndim;j++) \
     (newi)->dim[j] = (i)->dim[j]; \
   for (int j=0;j<(newi)->ndim;j++) \
@@ -404,35 +395,38 @@ struct srg *newi = & name2(_srg_,newi)
   size_t _sz = (a1)->dim[(a1)->ndim - 1]
 
 /* BREAKING CONVENTION to save indirection overhead in bloops.
- *   'anl' token will represent a struct idx, not a pointer.
+ *   'anl' token will represent a index_t, not a pointer.
  *   'clone',  and 'advance' macros are modified to 
  *   support this.
  */
-#define Midxlow_declare(an, anl) \
-  struct idx anl; \
-  intg name2(anl,_Inc)
+#define Midxlow_declare(an, anl)                \
+  index_t anl;                                  \
+  ptrdiff_t name2(anl,_Inc)
 
-#define Midxlow_bclone(an, anl) \
-  (&anl)->ndim = (an)->ndim - 1; \
-  (&anl)->dim = (an)->dim + 1; \
-  (&anl)->mod = (an)->mod + 1; \
-  (&anl)->offset = (an)->offset; \
-  (&anl)->srg = (an)->srg; \
+#define Midxlow_bclone(an, anl)            \
+  (&anl)->ndim = (an)->ndim - 1;           \
+  for (int i=0; i<(&anl)->ndim; i++) {     \
+    (&anl)->dim[i] = (an)->dim[i+1];       \
+    (&anl)->mod[i] = (an)->mod[i+1];       \
+  }                                        \
+  (&anl)->offset = (an)->offset;           \
+  (&anl)->st = (an)->st;                   \
   name2(anl,_Inc) = (an)->mod[0]
 
-#define Midxlow_eclone(an, anl) \
-/*  (&anl).type = (an).type; */ \
-  (&anl)->ndim = (an)->ndim - 1; \
-  (&anl)->dim = (an)->dim; \
-  (&anl)->mod = (an)->mod; \
-  (&anl)->offset = (an)->offset; \
-  (&anl)->srg = (an)->srg; \
+#define Midxlow_eclone(an, anl)                 \
+  (&anl)->ndim = (an)->ndim - 1;                \
+  for (int i=0; i<(&anl)->ndim; i++) {          \
+    (&anl)->dim[i] = (an)->dim[i];              \
+    (&anl)->mod[i] = (an)->mod[i];              \
+  }                                             \
+  (&anl)->offset = (an)->offset;                \
+  (&anl)->st = (an)->st;                        \
   name2(anl,_Inc) = (an)->mod[(an)->ndim - 1]
 
-#define Midxlow_loop() \
-  for(size_t _i=0; _i<_sz; _i++) 
+#define Midxlow_loop()                          \
+  for (size_t _i=0; _i<_sz; _i++) 
 
-#define Midxlow_advance(an, anl, Type) \
+#define Midxlow_advance(an, anl, Type)          \
   (&anl)->offset += name2(anl,_Inc)  
 
 

@@ -27,7 +27,6 @@
 #include "header.h"
 #include "graphics.h"
 
-typedef unsigned char   uchar;
 
 static at *at_window;
 
@@ -151,7 +150,7 @@ DX(xysize)
 
 DX(xfont)
 {
-   struct context mycontext;
+   struct lush_context mycontext;
    
    window_t *win = current_window();
    at *oldfont = win->font;
@@ -587,7 +586,7 @@ DY(ygraphics_batch)
   
    window_t *win = current_window();
 
-   struct context mycontext;
+   struct lush_context mycontext;
    context_push(&mycontext);
    (*win->gdriver->begin) (win);
 
@@ -805,7 +804,7 @@ static int *colors_from_int_matrix(at *p)
    ifn (INDEXP(p))
       RAISEF("not an index", p);
    index_t *ind = Mptr(p);
-   ifn (IND_STTYPE(ind)==ST_I32) 
+   ifn (IND_STTYPE(ind)==ST_INT) 
       RAISEF("not an integer array", p);
    easy_index_check(ind, SHAPE1D(64));
 
@@ -941,7 +940,7 @@ DX(xcolor_draw_list)
    return NIL;
 }
 
-int color_draw_idx(int x, int y, struct idx *idx, 
+int color_draw_idx(int x, int y, index_t *idx, 
                    real minv, real maxv, int apartx, int aparty, 
                    int *colors)
 {
@@ -984,11 +983,11 @@ int color_draw_idx(int x, int y, struct idx *idx,
       }
       unsigned int *im = image;
       
-      if (idx->srg->type == ST_F) {
+      if (idx->st->type == ST_FLOAT) {
          /* fast routine for flts.. */
          flt dm = minv;
          flt dv = maxv - minv;
-         flt *data = IDX_DATA_PTR(idx);
+         flt *data = IND_BASE(idx);
          int off2 = 0;
          for (int j = 0; j < d2; j++, off2 += m2) {
 	    int off1 = off2;
@@ -1003,8 +1002,8 @@ int color_draw_idx(int x, int y, struct idx *idx,
          }
       } else {
          /* generic routine */
-         flt (*getf)(gptr,size_t) = storage_getf[idx->srg->type];
-         gptr data = IDX_DATA_PTR(idx);
+         flt (*getf)(gptr,size_t) = storage_getf[idx->st->type];
+         gptr data = IND_BASE(idx);
          flt dm = minv;
          flt dv = maxv - minv;
          int off2 = 0;
@@ -1037,8 +1036,8 @@ int color_draw_idx(int x, int y, struct idx *idx,
          return 6;
       }
       
-      gptr data = IDX_DATA_PTR(idx);
-      flt (*getf)(gptr,size_t) = storage_getf[idx->srg->type];
+      gptr data = IND_BASE(idx);
+      flt (*getf)(gptr,size_t) = storage_getf[idx->st->type];
       flt dm = minv;
       flt dv = maxv - minv;
 
@@ -1070,7 +1069,7 @@ int color_draw_idx(int x, int y, struct idx *idx,
    return 0;
 }
 
-int gray_draw_idx(int x, int y, struct idx *idx, 
+int gray_draw_idx(int x, int y, index_t *idx, 
                   real minv, real maxv, int apartx, int aparty)
 {
    return color_draw_idx(x, y, idx, minv, maxv, apartx, aparty, 0);
@@ -1083,11 +1082,7 @@ static void color_draw_matrix(int x, int y, at *p,
    ifn (INDEXP(p))
       error(NIL, "not an index", p);
    index_t *ind = Mptr(p);
-   
-   struct idx idx;
-   index_read_idx(ind,&idx);
-   int error_flag = color_draw_idx(x, y, &idx, minv, maxv, apartx, aparty, colors);
-   index_rls_idx(ind,&idx);
+   int error_flag = color_draw_idx(x, y, ind, minv, maxv, apartx, aparty, colors);
    
    if(error_flag)
       switch(error_flag) {
@@ -1159,7 +1154,7 @@ DX(xgray_draw_matrix)
 /*     RGB DRAW MATRIX                          */
 /* -------------------------------------------- */
 
-int rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
+int rgb_draw_idx(int x, int y, index_t *idx, int sx, int sy)
 {
    /* Check window characteristics */
    window_t *win = current_window_no_error();
@@ -1214,8 +1209,8 @@ int rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
       }
       /* Copy image and zoom */
       unsigned char *im = (unsigned char*)image;
-      gptr data = IDX_DATA_PTR(idx);
-      flt (*getf)(gptr,size_t) = storage_getf[idx->srg->type];
+      gptr data = IND_BASE(idx);
+      flt (*getf)(gptr,size_t) = storage_getf[idx->st->type];
       int off2 = 0;
       for (int j = 0; j < d2; j++, off2 += m2) 
          for (int zj=0; zj<sy; zj++) {
@@ -1294,8 +1289,8 @@ int rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
          return 8;
       }
       /* Go looping */
-      gptr data = IDX_DATA_PTR(idx);
-      flt (*getf)(gptr,size_t) = storage_getf[idx->srg->type];
+      gptr data = IND_BASE(idx);
+      flt (*getf)(gptr,size_t) = storage_getf[idx->st->type];
       (*win->gdriver->begin) (win);      
       int off2 = 0;
       for (int j = 0; j < d2; j++, off2 += m2) {
@@ -1331,9 +1326,9 @@ int rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
       }
       unsigned int *im = (unsigned int*)image;
       /* Copy RGB into pixel image */
-      if (idx->srg->type==ST_U8 && 
+      if (idx->st->type==ST_UCHAR && 
           red_mask==0xff && green_mask==0xff00 && blue_mask==0xff0000) {
-         unsigned char *data = IDX_DATA_PTR(idx);
+         unsigned char *data = IND_BASE(idx);
          int off2 = 0;
          for (int j = 0; j < d2; j++, off2 += m2) {
             int off1 = off2;
@@ -1344,9 +1339,9 @@ int rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
                *im++ = r | ((g | (b << 8)) << 8);
             }
          }
-      } else if (idx->srg->type==ST_U8 && 
+      } else if (idx->st->type==ST_UCHAR && 
                  red_mask==0xff0000 && green_mask==0xff00 && blue_mask==0xff) {
-         unsigned char *data = IDX_DATA_PTR(idx);
+         unsigned char *data = IND_BASE(idx);
          int off2 = 0;
          for (int j = 0; j < d2; j++, off2 += m2) {
             int off1 = off2;
@@ -1359,8 +1354,8 @@ int rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
          }
       } else  {
          /* Generic transcription routine */
-         flt (*getf)(gptr,size_t) = storage_getf[idx->srg->type];
-         gptr data = IDX_DATA_PTR(idx);
+         flt (*getf)(gptr,size_t) = storage_getf[idx->st->type];
+         gptr data = IND_BASE(idx);
          int off2 = 0;
          for (int j = 0; j < d2; j++, off2 += m2) {
             int off1 = off2;
@@ -1390,11 +1385,7 @@ static void rgb_draw_matrix(int x, int y, at *p, int sx, int sy)
     ifn (INDEXP(p))
        error(NIL, "not an index", p);
     index_t *ind = Mptr(p);
-
-    struct idx idx;
-    index_read_idx(ind,&idx);
-    int error_flag = rgb_draw_idx(x, y, &idx, sx, sy);
-    index_rls_idx(ind,&idx);
+    int error_flag = rgb_draw_idx(x, y, ind, sx, sy);
 
     switch (error_flag) {
     case 0:
@@ -1443,7 +1434,7 @@ DX(xrgb_draw_matrix)
 /*     RGB GRAB MATRIX                          */
 /* -------------------------------------------- */
 
-int rgb_grab_idx(int x, int y, struct idx *idx)
+int rgb_grab_idx(int x, int y, index_t *idx)
 {
    window_t *win = current_window_no_error();
    if(win==NULL)
@@ -1486,8 +1477,8 @@ int rgb_grab_idx(int x, int y, struct idx *idx)
    (win->gdriver->get_image) (win, im, x, y, d1, d2);
    (win->gdriver->end) (win);
    
-   gptr data = IDX_DATA_PTR(idx);
-   void (*setf)(gptr,size_t,flt) = storage_setf[idx->srg->type];
+   gptr data = IND_BASE(idx);
+   void (*setf)(gptr,size_t,flt) = storage_setf[idx->st->type];
    int off2 = 0;
    for (int j = 0; j < d2; j++, off2 += m2) {
       int off1 = off2;
@@ -1513,11 +1504,8 @@ static void rgb_grab_matrix(int x, int y, at *p)
    ifn (INDEXP(p))
       error(NIL, "not an index", p);
    index_t *ind = Mptr(p);
-   
-   struct idx idx;
-   index_read_idx(ind,&idx);
-   int error_flag = rgb_grab_idx(x, y, &idx);
-   index_rls_idx(ind,&idx);
+   int error_flag = rgb_grab_idx(x, y, ind);
+
    if(error_flag)
       switch(error_flag) {
       case 1:
@@ -1768,7 +1756,7 @@ DY(ygsave)
    short oldh = win->cliph;
    short oldl = win->linestyle;
 
-   struct context mycontext;
+   struct lush_context mycontext;
    int errorflag = 0;
    at *ans = NIL;
    MM_ANCHOR(oldfont);
@@ -1886,7 +1874,7 @@ void init_graphics(void)
    mt_window = MM_REGTYPE("window", sizeof(window_t),
                           clear_window, mark_window, finalize_window);
    /* WINDOW */
-   new_builtin_class(&window_class, NIL);
+   window_class = new_builtin_class(NIL);
    window_class->dispose = (dispose_func_t *)window_dispose;
    window_class->name = window_name;
    class_define("WINDOW", window_class);

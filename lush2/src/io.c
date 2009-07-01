@@ -846,11 +846,11 @@ read_again1:
   
    /* QUOTED SYMBOL */
    if (s[0] == '|')
-      return new_symbol(s + 1);
+      return NEW_SYMBOL(s + 1);
    
    /* SYMBOL */
    if (s[0])
-      return new_symbol(s);
+      return NEW_SYMBOL(s);
   
    /* EOF */
    return NIL;
@@ -896,10 +896,10 @@ const char *dmc(const char *s, at *l)
       type = CHAR_MCHAR;
       c = s[0];
       if (s[1] || (get_char_map(s[0]) & CHAR_SPECIAL))
-         RAISEF("illegal macro-character", new_string(s));
+         RAISEF("illegal macro-character", NEW_STRING(s));
    }
    if ((get_char_map(c) & CHAR_SPECIAL))
-      RAISEF("illegal macro-character", new_string(s));
+      RAISEF("illegal macro-character", NEW_STRING(s));
 
    at *q = named(s);
    ifn (SYMBOLP(q))
@@ -1148,9 +1148,22 @@ DX(xprintf)
       if (c == 'l')
          print_list(APOINTER(i));
 
+/*       else if (c == 'p') { */
+/*          at *args = new_cons(APOINTER(i), NIL); */
+/*          apply(Value(at_pprint),args); */
+
       else if (c == 'p') {
-         at *args = new_cons(APOINTER(i), NIL);
-         apply(Value(at_pprint),args);
+         *buf++ = 0;
+         at *a = APOINTER(i);
+         ifn (GPTRP(a) || MPTRP(a)) AGPTR(i);
+         if (ok == 9) {
+            print_string(str_number_hex((double)(intptr_t)Gptr(a)));
+         } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+            goto err_printf0;
+         } else {
+            sprintf(buf, print_buffer, Gptr(a));
+            print_string(buf);
+         }
 
       } else if (c == 'd') {
          *buf++ = 0;
@@ -1300,7 +1313,7 @@ const char *first_line(at *l)
 DX(xfirst_line)
 {
    ARG_NUMBER(1);
-   return new_string(first_line(APOINTER(1)));
+   return NEW_STRING(first_line(APOINTER(1)));
 }
 
 
@@ -1316,7 +1329,7 @@ const char *pname(at *l)
 DX(xpname)
 {
    ARG_NUMBER(1);
-   return new_string(pname(APOINTER(1)));
+   return NEW_STRING(pname(APOINTER(1)));
 }
 
 

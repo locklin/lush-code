@@ -162,17 +162,17 @@ struct gdriver {
 /* ---------------------------------------- */
 
 LUSHAPI int  gray_draw_idx(int x, int y, 
-                           struct idx *idx, real minv, real maxv, 
+                           index_t *idx, real minv, real maxv, 
                            int apartx, int aparty);
 LUSHAPI int  color_draw_idx(int x, int y, 
-                            struct idx *idx, real minv, real maxv, 
+                            index_t *idx, real minv, real maxv, 
                             int apartx, int aparty, int *colors);
 
 LUSHAPI int  rgb_draw_idx(int x, int y, 
-                          struct idx *idx, int sx, int sy);
+                          index_t *idx, int sx, int sy);
 
 LUSHAPI int  rgb_grab_idx(int x, int y, 
-                          struct idx *idx);
+                          index_t *idx);
 
 
 
