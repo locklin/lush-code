@@ -628,9 +628,9 @@
     ;; is not typed, so we can't create a retplace
     ;; if return value is not ignored, we must return inline
     (if ~:treetype:ignore
-        (sprintf "%s(%s)" name (dhc-insert-op args ","))
+        (sprintf "%s(%s)" name (str-join "," args))
       (dhc-add-c-statements
-       (sprintf "%s(%s);" name (dhc-insert-op args ",")))
+       (sprintf "%s(%s);" name (str-join "," args)) )
       "" )))
 
 (dhm-t cinline(source)
@@ -1216,16 +1216,16 @@
     (new t-node types (new dhc-type rtyp))))
 
 (de process-numerical-args-c (source treetype func-string)
-  (concat "(" (dhc-insert-op 
+  (concat "(" (str-join func-string
                (all ((so (cdr source)) (ty (cdr :treetype:tn-list)))
-                 (dhc-parse-expr-c so ty ()))
-               func-string) ")"))
+                 (dhc-parse-expr-c so ty ())) )
+          ")"))
 
 (de process-numerical-args-with-cast-c (source treetype cast func-string)
-  (concat "(" (dhc-insert-op 
+  (concat "(" (str-join func-string 
                (all ((so (cdr source)) (ty (cdr :treetype:tn-list)))
-                 (concat "((" cast ")" (dhc-parse-expr-c so ty ()) ")") )
-               func-string) ")"))
+                 (concat "((" cast ")" (dhc-parse-expr-c so ty ()) ")") ))
+               ")"))
 
 
 ;;; N-ADIC FUNCTIONS
@@ -1948,7 +1948,8 @@
          (tn (new t-node tnl rettype)) )
     (when (= nd -1)
       (dhc-error "not an array" (cadr source)) )
-    (when (not (==> :(cadr tnl):type is-an-integer))
+    (when (not (or (==> :(cadr tnl):type is-an-integer)
+                   (and (numberp (caddr source)) (integerp (caddr source))) ))
       (dhc-error "not a integral number" (caddr source)) )
     (when (> (+ nd 1) +MAXDIMS+)
       (dhc-error "new index would have too many dimensions") )
@@ -2295,12 +2296,11 @@
       (dhc-add-c-statements (sprintf "Midx_init_dim%d(%s, %s);"
                                      ndim
                                      :idx-symb:c-name
-                                     (dhc-insert-op 
+                                     (str-join ","
                                       (all ((so (cdr source)) 
                                             (ty (cdr :treetype:tn-list))
                                             (i (range 0 (1- ndim))))
-                                        (dhc-parse-expr-c so ty ()))
-                                      ",")))
+                                        (dhc-parse-expr-c so ty ())) )))
       (for (i 0 (1- ndim))
 	   (dhc-add-c-statements (sprintf "RTERR_DIM(%s->dim[%d]<0);"
                                      :idx-symb:c-name i )) ) )
@@ -2674,7 +2674,7 @@
                  (dhc-parse-expr-for-multi-use-c so ty ()))))
     (dhc-add-c-statements
      "static int permlist[] = {"
-     (dhc-insert-op plist ", ")
+     (str-join ", " plist)
      "};")
     "permlist"))
 
@@ -2871,7 +2871,7 @@
                       (sprintf "%s != (%s)->dim[%d]"
                                arg1str nm
                                (getdim :tn:type dim)))) )
-      (setq arglist (dhc-insert-op arglist " || "))
+      (setq arglist (str-join " || " arglist))
       (if ~dhc-unprotect
           (dhc-add-c-statements (sprintf "RTERR_LOOPDIM(%s);" arglist))) )))
 
@@ -3936,13 +3936,15 @@
     (dhc-add-c-statements 
      (cond
       ((==> ty is-an-obj)
-       (sprintf "{ struct CClass_object *obj = (void *)%s; obj->Vtbl->Cdestroy(obj); }" src) )
+       (sprintf "{ struct CClass_object *obj = (void *)%s; if (obj->Vtbl) obj->Vtbl->Cdestroy(obj); }" src) )
       ((==> ty is-a-str)
        "/* delete a string */" ) ; ignore
       ((==> ty is-an-idx)
-       (sprintf "lush_delete(*((at **)%s));" src) )
+       "/* delete an idx */" ) ; ignore
+       ;(sprintf "lush_delete((%s)->backptr);" src) )
       ((==> ty is-a-srg)
-       (sprintf "lush_delete(*((at **)%s));" src) )
+       "/* delete an srg */" ) ; ignore
+       ;(sprintf "lush_delete((%s)->backptr);" src) )
       ((==> ty is-a-number)
        "/* delete a number */" ) ; ignore
       ((==> ty is-a-bool)
@@ -4327,7 +4329,7 @@
       
       ;; the following is derived from dhc-parse-dh-c
       (let* ((func-arg (dhu-extra method-type))
-             (func-temps (dhu-temps method-type))
+             (func-temps (if *dhc-no-hidden-args* () (dhu-temps method-type)))
              (return-type (dhu-type method-type))
              (tnl (cons obj-tnode args))
              (call-arg (all ((tynl tnl)) :tynl:type))
@@ -4427,7 +4429,7 @@
             (sprintf "Vt_%s.M_%s(" cname method-cname)
           ;; call via object vtable
           (sprintf "(%s)->Vtbl->M_%s(" objname method-cname) )
-        (dhc-insert-op (append args auxargs) ", ")
+        (str-join ", " (append args auxargs))
         ");" ) ) )
     ;; The end
     retplace ) )

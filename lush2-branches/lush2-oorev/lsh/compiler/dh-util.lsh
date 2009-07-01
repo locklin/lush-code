@@ -25,6 +25,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
+;; global switch; when true, compiler generates no hidden arguments
+(defvar *dhc-no-hidden-args* t)
+
 
 ;;; ------------------------------------------------------------------------
 ;;; ------------------------------------------------------------------------
@@ -57,17 +60,6 @@
 ;;; GENERAL FUNCTIONS
 ;;; ------------------------------------------------------------------------
 
-
-#? (dhc-insert-op <l> <op>)
-;; Concatenate all strings in <l> separated with <op>.
-;;.VP
-;;? (insert-op '("3" "4" "5") "*")
-;;= "3*4*5"
-(de dhc-insert-op (l op)
-  (let ((n (when l (list (car l)))))
-    (each ((s (cdr l)))
-      (setq n (cons s (cons op n))) )
-    (apply concat (reverse n)) ) )
 
 #? (dhc-nolast <l>)
 ;; Remove last element of list.
@@ -496,7 +488,7 @@
        (sprintf "memset(%s, 0, sizeof(%s));" name tname)
        (sprintf "%s->Vtbl = &Vt_%s;" name cname) )
       (dhc-add-c-epilog
-       (sprintf "(%s->Vtbl->Cdestroy)((gptr)(%s));" name name) ) ) )
+       (sprintf "if (%s->Vtbl) (%s->Vtbl->Cdestroy)((gptr)(%s));" name name name) ) ) )
    
    ((==> type is-a-srg) 
     (dhc-add-c-declarations 
@@ -792,7 +784,9 @@
                    ('dht-func
                     (hashcode (list 'dht-func
                                     (domapcar ((u (unode-val u-extra))) (==> u hashcode))
-                                    (domapcar ((u (unode-val u-temps))) (==> u hashcode))
+                                    (if *dhc-no-hidden-args* 
+                                        () 
+                                      (domapcar ((u (unode-val u-temps))) (==> u hashcode)) )
                                     (==> (unode-val u-type) hashcode) )))
 
                    ('dht-class
@@ -840,7 +834,9 @@
       ;; functions
       (dht-func 
        (add (all ((u (unode-val u-extra))) (==> u type-to-desc)))
-       (add (all ((u (unode-val u-temps))) (==> u type-to-desc)))
+       (if *dhc-no-hidden-args*
+           (add ())
+         (add (all ((u (unode-val u-temps))) (==> u type-to-desc))) )
        (add (==> (unode-val u-type) type-to-desc)) )
       ;; gptr
       (dht-gptr
@@ -1825,7 +1821,7 @@
      (append
       (list (sprintf "DH_FUNC(%d)," (length arg1)))
       (apply append (mapcar dhc-d-to-doc arg1))
-      (when arg2 
+      (when arg2
         (apply append 
                (list (list (sprintf "DH_TEMPS(%d)," (length arg2)))
                      (flatten (mapcar dhc-d-to-doc-temp arg2))
@@ -2748,10 +2744,10 @@
          (inds (all ((so inds-so) (tn inds-tn))
                  (dhc-parse-expr-for-multi-use-c so tn ())))
          (num -1)
-         (mlist (dhc-insert-op 
+         (mlist (str-join "+"
                  (all ((x inds)) 
                    (sprintf "(%s)->mod[%d]*((int)%s)" mat (incr num) x))
-                 "+")) )
+                 )) )
     (setq num -1)
     (when (> ndim 0)
       (each ((x inds) (xtn inds-tn) (so inds-so))
@@ -2922,7 +2918,7 @@
          (func-type (if symbol 
                         (==> :symbol:type copy)
                       (dhc-desc-to-type (dhinfo-t dhfunc))))
-         (func-temps (unode-val :func-type:u-temps))
+         (func-temps (if *dhc-no-hidden-args* () (unode-val :func-type:u-temps)))
          (return-type (unode-val :func-type:u-type))
          (func-arg  (unode-val :func-type:u-extra))
          (tnl (mapcar dhc-parse-expr-t (cdr source)))
@@ -2952,7 +2948,7 @@
 (de dhc-compose-prototype(functype cname)
   (let ((output ())
         (args (dhu-extra functype))
-        (tmps (dhu-temps functype)) )
+        (tmps (if *dhc-no-hidden-args* () (dhu-temps functype))) )
     ;; check externs
     (each ((arg (append args tmps)))
       (when (==> arg is-an-objptr)
@@ -2975,7 +2971,7 @@
     (apply concat
            (append (list (dhc-type-to-c-decl (dhu-type functype)))
                    (list " " cname " ( " )
-                   (list (dhc-insert-op output ", "))
+                   (list (str-join ", " output))
                    (list " );") ) ) ) )
 
 (de dhc-parse-dh-c(source treetype retplace)
@@ -3013,10 +3009,10 @@
           (dhc-add-c-externs
            (concat "extern_c " (dhc-compose-prototype ftype ctest)) )))
       ;; Prepare args
-      (setq args (dhc-insert-op
-                  (append args (all ((sym :treetype:transfer)) 
-                                 :sym:c-name))
-                  ", "))
+      (when (not *dhc-no-hidden-args*)
+        (setq args (append args (all ((sym :treetype:transfer)) :sym:c-name))) )
+      (setq args (str-join ", " args))
+
       (when (<> ctest "")
         (dhc-add-c-statements 
          (concat (if (<> mtest "") mtest ctest) 
