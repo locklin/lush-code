@@ -498,8 +498,9 @@ void init_nan(void)
 {
    /* set up and save standard fpu environment */
    fesetenv(FE_DFL_ENV);
-   fpu_untrap(FE_ALL_EXCEPT);
    assert(fetestexcept(FE_ALL_EXCEPT)==0);
+   fpu_untrap(FE_ALL_EXCEPT);
+   fpu_trap(FE_OVERFLOW);
    fegetenv(&standard_fenv);
 
    dx_define("infinityp", xinfinityp);
