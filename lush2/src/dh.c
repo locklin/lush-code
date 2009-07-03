@@ -957,6 +957,7 @@ static inline at *dharg_to_at(dharg *arg, dhrecord *drec)
       if (arg->dh_srg_ptr==0)
          return NIL;
       storage_t *st = arg->dh_srg_ptr;
+      arg = (dharg *)st->data;
       int ndim = drec->ndim;
       if (ndim * sizeof(dharg) != st->size)
          error(NIL,"internal error (list size mismatch)", NIL);
@@ -1031,8 +1032,8 @@ static at *dh_listeval(at *p, at *q)
    }
     
    /* Prepare environment */
-   if (in_compiled_code)
-      fprintf(stderr, "*** Warning: reentrant call to compiled code\n");
+/*    if (in_compiled_code) */
+/*       fprintf(stderr, "*** Warning: reentrant call to compiled code\n"); */
    int errflag = setjmp(lush_error_jump);
    dh_trace_root = 0;
    
