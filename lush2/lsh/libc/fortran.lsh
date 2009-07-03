@@ -53,6 +53,10 @@
 
 (defvar fortran-libs-static-p ())
 
+#? fortran-compiler
+;;.TYPE VAR
+;; Name of the fortran compiler on this system.
+(defvar fortran-compiler ())
 
 ;;; ----------------------------------------
 ;;; LOCATE FORTRAN SUPPORT LIBRARIES
@@ -71,12 +75,16 @@
       ;; Search shared lib in libgcc path
       ;; Note: libg77 is a wild guess for future versions of g77
       (let ((shared-library-path (list (dirname libgcc))))
-        (setq libg77 (or (find-shared-library "libg77")
+        (setq libg77 (or (find-shared-library "libgfortran")
+                         (find-shared-library "libg77")
                          (find-shared-library "libg2c") ) ) )
       ;; Decide g77 support library name
       (when (not libg77)
-        (when (filep (concat-fname (dirname libgcc) "libg77.a"))
-          (setq libg77name "libg77") ) ) )
+        (cond
+         ((filep (concat-fname (dirname libgcc) "libgfortran.a"))
+          (setq libg77name "libgfortran") )
+         ((filep (concat-fname (dirname libgcc) "libg77.a"))
+          (setq libg77name "libg77") ))) )
     ;; Search shared library
     (when (not libg77)
       (setq libg77 (find-shared-library libg77name)) )
@@ -101,8 +109,12 @@
       (printf "***   Fortran support will be incomplete and/or unreliable\n") )
     ;; Store
     (when (and (stringp libg77) (filep libg77))
-      (setq fortran-libs (list libg77)) ) ) )
-    
+      (setq fortran-libs (list libg77))
+      (setq fortran-compiler (cond
+                              ((str-index "gfortran" libg77) "gfortran")
+                              ((str-index "g77" libg77) "g77")
+                              (t "f77") )))
+    ))
 
 ;;; CODE FOR NON-GCC OR NON-G77
 (when (not fortran-libs)
