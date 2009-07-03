@@ -31,6 +31,7 @@ double cg_value_adaptor(double *x, int n)
    static at *call = NIL;
    static int nx = -1;
    static storage_t *st = NULL;
+   static at *(*listeval)(at *, at *) = NULL;
 
    if (n == -1) {
       /* initialize */
@@ -44,6 +45,7 @@ double cg_value_adaptor(double *x, int n)
       ifn (f)
          error(NIL, "f not found", NIL);
 
+      listeval = Class(f)->listeval;
       index_t *ind = Mptr(x0);
       nx = storage_nelems(IND_ST(ind));
       st = new_storage(ST_DOUBLE);
@@ -58,10 +60,7 @@ double cg_value_adaptor(double *x, int n)
       if (n != nx)
          error(NIL, "vector of different size expected", NEW_NUMBER(n));
       st->data = x;
-      MM_ENTER;
-      double d = Number(eval(call));
-      MM_EXIT;
-      return d;
+      return Number(listeval(Car(call), call));
    }
 }
 
@@ -71,6 +70,7 @@ void cg_grad_adaptor(double *g, double *x, int n)
    static int nx = -1;
    static storage_t *stx = NULL;
    static storage_t *stg = NULL;
+   static at *(*listeval)(at *, at *) = NULL;
 
    if (n == -1) {
       /* initialize */
@@ -84,6 +84,7 @@ void cg_grad_adaptor(double *g, double *x, int n)
       ifn (g)
          error(NIL, "g not found", NIL);
       
+      listeval = Class(g)->listeval;
       index_t *ind = Mptr(x0);
       nx = storage_nelems(IND_ST(ind));
       stx = new_storage(ST_DOUBLE);
@@ -104,9 +105,7 @@ void cg_grad_adaptor(double *g, double *x, int n)
          error(NIL, "vector of different size expected", NEW_NUMBER(n));
       stx->data = x;
       stg->data = g;
-      MM_ENTER;
-      eval(call);
-      MM_EXIT;
+      listeval(Car(call), call);
    }
 }
 
