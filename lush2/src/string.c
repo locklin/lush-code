@@ -704,14 +704,6 @@ DX(xstr_number_hex)
 
 /*------------------------ */
 
-DX(xstr_gptr)
-{
-   ARG_NUMBER(1);
-   return NEW_STRING(gptr_class->name(APOINTER(1)));
-}
-
-/*------------------------ */
-
 DX(xstr_len)
 {
    ARG_NUMBER(1);
@@ -1365,20 +1357,19 @@ void init_string(void)
    singletons[0] = null_string = make_string_of_length(0);
    MM_ROOT(singletons);
 
-   dx_define("left", xstr_left);
-   dx_define("right", xstr_right);
-   dx_define("mid", xstr_mid);
+   dx_define("str-left", xstr_left);
+   dx_define("str-right", xstr_right);
+   dx_define("str-mid", xstr_mid);
    dx_define("substring", xsubstring);
    dx_define("concat", xstr_concat);
-   dx_define("index", xstr_index);
+   dx_define("str-index", xstr_index);
    dx_define("val", xstr_val);
    dx_define("str", xstr_number);
    dx_define("strhex", xstr_number_hex);
-   dx_define("strgptr", xstr_gptr);
-   dx_define("len", xstr_len);
-   dx_define("strins", xstr_ins);
-   dx_define("strdel", xstr_del);
-   dx_define("strsubst", xstrsubst);
+   dx_define("str-len", xstr_len);
+   dx_define("str-insert", xstr_ins);
+   dx_define("str-del", xstr_del);
+   dx_define("str-subst", xstrsubst);
    dx_define("upcase", xupcase);
    dx_define("upcase1", xupcase1);
    dx_define("downcase", xdowncase);
