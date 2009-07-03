@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define INT long int
+//#define INT long int
+#define INT int
 #define INT_INF LONG_MAX
 #define INF DBL_MAX
 
@@ -30,7 +31,7 @@ typedef struct cg_parameter_struct /* user controlled parameters */
        F => no printout of statistics */
     int PrintFinal ;
 
-    /* Level 0  = no printing), ... , Level 3 = maximum printing */
+    /* Level 0  = no printing, ... , Level 3 = maximum printing */
     int PrintLevel ;
 
     /* T => print parameters values
@@ -48,7 +49,7 @@ typedef struct cg_parameter_struct /* user controlled parameters */
     double Qdecay ;
 
     /* Stop Rules:
-       T => ||proj_grad||_infty <= max(grad_tol,initial ||grad||_infty*StopFact)
+       T => ||proj_grad||_infty <= max(grad_tol,initial ||grad||_infty*StopFac)
        F => ||proj_grad||_infty <= grad_tol*(1 + |f_k|) */
     int    StopRule ;
     double StopFac ;
