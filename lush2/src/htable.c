@@ -59,8 +59,9 @@ static void mark_htpair_wk(struct htpair *h)
    MM_MARK(h->value);
 }
 
-typedef struct hashtable
+struct htable
 {
+   at    *backptr;
    int   size;
    int   nelems;
    bool  pointerhashp;
@@ -68,21 +69,23 @@ typedef struct hashtable
    bool  rehashp;
    bool  raise_keyerror_p;
    struct htpair **table;
-} hashtable_t;
+};
 
-static void clear_hashtable(hashtable_t *h, size_t _)
+static void clear_htable(htable_t *h, size_t _)
 {
+   h->backptr = NULL;
    h->table = NULL;
 }
 
-static void mark_hashtable(hashtable_t *h)
+static void mark_htable(htable_t *h)
 {
+   MM_MARK(h->backptr);
    MM_MARK(h->table);
 }
 
-static hashtable_t *htable_dispose(hashtable_t *h);
+static htable_t *htable_dispose(htable_t *h);
 
-static bool finalize_hashtable(hashtable_t *h)
+static bool finalize_htable(htable_t *h)
 {
    htable_dispose(h);
    return true;
@@ -90,7 +93,7 @@ static bool finalize_hashtable(hashtable_t *h)
 
 static mt_t mt_htpair = mt_undefined;
 static mt_t mt_htpair_wk = mt_undefined;
-static mt_t mt_hashtable = mt_undefined;
+static mt_t mt_htable = mt_undefined;
 
 
 
@@ -98,12 +101,14 @@ static mt_t mt_hashtable = mt_undefined;
 
 /* HASHTABLE CLASS FUNCTIONS */
 
-static hashtable_t *htable_dispose(hashtable_t *h)
+static htable_t *htable_dispose(htable_t *h)
 {
-   if (h->table) {
-      del_notifiers_with_context(h);
-      h->table = NULL;
-   }
+   if (ZOMBIEP(h->backptr))
+      return h;
+
+   zombify(h->backptr);
+   del_notifiers_with_context(h);
+   h->table = NULL; 
    return h;
 }
 
@@ -114,12 +119,12 @@ static at *htable_listeval(at *p, at *q)
 
    if (nargs==1) {
       /* retrieve an element */
-      p = htable_get(p, Car(q));
+      p = htable_get(Mptr(p), Car(q));
       
    } else if ((nargs&1)==0) {
       /* set or update key-value pair(s) */
       for (at *qq = q; qq; qq = Cddr(qq))
-         htable_set(p, Car(qq), Cadr(qq));
+         htable_set(Mptr(p), Car(qq), Cadr(qq));
 
    } else
       error(NIL, "one argument or even number of arguments expected", q);
@@ -137,10 +142,10 @@ static void htable_serialize(at **pp, int code)
       serialize_int(&pointerhashp, code);
       serialize_int(&nelems, code);
 
-      (*pp) = new_htable(nelems, (bool)pointerhashp, (bool)raise_keyerror_p);
-      struct hashtable *ht = Mptr(*pp);
+      htable_t *ht = new_htable(nelems, (bool)pointerhashp, (bool)raise_keyerror_p);
       ht->rehashp = true;
       ht->keylockp = true;
+      (*pp) = ht->backptr;
       
       for (int i=0; i<nelems; i++)   {
          struct htpair *p = mm_alloc(mt_htpair);
@@ -153,7 +158,7 @@ static void htable_serialize(at **pp, int code)
       }
       
    } else {
-      struct hashtable *ht = Mptr(*pp);
+      htable_t *ht = Mptr(*pp);
       int i = (int)ht->raise_keyerror_p;
       serialize_int(&i, code);
       i = (int)ht->pointerhashp;
@@ -173,10 +178,10 @@ static void htable_serialize(at **pp, int code)
 static int htable_compare(at *p, at *q, int order)
 {
   if (order)
-     error(NIL,"cannot rank hashtables",NIL);
+     error(NIL,"cannot rank hash tables",NIL);
   
-  hashtable_t *htp = Mptr(p);
-  hashtable_t *htq = Mptr(q);
+  htable_t *htp = Mptr(p);
+  htable_t *htq = Mptr(q);
   
   if (htp->nelems != htq->nelems)
      return 1;
@@ -185,7 +190,7 @@ static int htable_compare(at *p, at *q, int order)
   for (int i=0; i<htp->size; i++) {
      struct htpair *n;
      for (n=htp->table[i]; n; n=n->next) {
-        at *val = htable_get(q, n->key);
+        at *val = htable_get(htq, n->key);
         if (!val && n->value)
            return 1;
         if (!eq_test(val,n->value))
@@ -199,7 +204,7 @@ static int htable_compare(at *p, at *q, int order)
 static unsigned long htable_hash(at *p)
 {
    unsigned long x = 0;
-   struct hashtable *ht = Mptr(p);
+   htable_t *ht = Mptr(p);
 
    for (int i=0; i<ht->size; i++) {
       for (struct htpair *n=ht->table[i]; n; n=n->next) {
@@ -280,7 +285,7 @@ again:
 
 /* htable_resize -- extend hash table */
 
-static void htable_resize(hashtable_t *ht, int newsize)
+static void htable_resize(htable_t *ht, int newsize)
 {
    size_t s = sizeof(struct htpair*) * newsize;
    struct htpair **newtable = mm_allocv(mt_refs, s);
@@ -305,7 +310,7 @@ static void htable_resize(hashtable_t *ht, int newsize)
 
 static void htable_notify(at *k, void *table)
 {
-   hashtable_t *ht = table;
+   htable_t *ht = table;
    unsigned long hash = hash_pointer(k);
 
    struct htpair *n, **np = &(ht->table[hash % ht->size]);
@@ -321,7 +326,7 @@ static void htable_notify(at *k, void *table)
 
 /* htable_rehash -- rehash an existing hash table */
 
-static void htable_rehash(hashtable_t *ht)
+static void htable_rehash(htable_t *ht)
 {
    /* turn off keylockp when pointerhashp is true */
    if (ht->pointerhashp && ht->keylockp) {
@@ -361,17 +366,14 @@ static void htable_rehash(hashtable_t *ht)
 
 /* htable_set -- set element by key */
 
-LUSHAPI void htable_set(at *hta, at *key, at *value)
+LUSHAPI void htable_set(htable_t *ht, at *key, at *value)
 {
-   ifn (HTABLEP(hta))
-      error(NIL,"not a hash table", hta);
    if (ZOMBIEP(value))
       value = NIL;
    if (ZOMBIEP(key))
       return;
 
    /* check hash table */
-   hashtable_t *ht = Mptr(hta);
    if (ht->rehashp)
       htable_rehash(ht);
    
@@ -419,20 +421,18 @@ LUSHAPI void htable_set(at *hta, at *key, at *value)
 
 /* delete element with key */
 
-LUSHAPI void htable_delete(at *hta, at *key)
+LUSHAPI void htable_delete(htable_t *ht, at *key)
 {
-   hashtable_t *ht = Mptr(hta);
    bool raise_keyerror_p = ht->raise_keyerror_p;
    ht->raise_keyerror_p = false;
-   htable_set(hta, key, NIL);
+   htable_set(ht, key, NIL);
    ht->raise_keyerror_p = raise_keyerror_p;
 }
 
 /* delete all contents */
 
-LUSHAPI void htable_clear(at *hta)
+LUSHAPI void htable_clear(htable_t *ht)
 {
-   hashtable_t *ht = Mptr(hta);
    for (int i=0; i<ht->size; i++) {
       struct htpair *n = ht->table[i];
       while (n) {
@@ -446,16 +446,11 @@ LUSHAPI void htable_clear(at *hta)
 
 /* htable_get -- get element by key */
 
-LUSHAPI at *htable_get(at *hta, at *key)
+LUSHAPI at *htable_get(htable_t *ht, at *key)
 {
-   ifn (HTABLEP(hta))
-      error(NIL, "not a hash table", hta);
-   
-   hashtable_t *ht = Mptr(hta);
    if (ht->rehashp)
       htable_rehash(ht);
-   unsigned long hash = ht->pointerhashp ?
-      hash_pointer(key) : hash_value(key);
+   unsigned long hash = ht->pointerhashp ? hash_pointer(key) : hash_value(key);
 
    struct htpair *n, **np = &ht->table[hash % ht->size];
    while ((n = *np)) {
@@ -489,11 +484,11 @@ DX(xhashcode)
 }
 
 
-LUSHAPI at *new_htable(int nelems, bool pointerhashp, bool raise_keyerror_p)
+LUSHAPI htable_t *new_htable(int nelems, bool pointerhashp, bool raise_keyerror_p)
 { 
    int size = (nelems<16 ? 31 : nelems * 2 - 1);
    size_t s = size * sizeof(struct htpair*);
-   hashtable_t *ht = mm_alloc(mt_hashtable);
+   htable_t *ht = mm_alloc(mt_htable);
    assert(ht);
    ht->nelems = 0;
    ht->size = size;
@@ -502,8 +497,8 @@ LUSHAPI at *new_htable(int nelems, bool pointerhashp, bool raise_keyerror_p)
    ht->rehashp = false;
    ht->raise_keyerror_p = raise_keyerror_p;
    ht->table = mm_allocv(mt_refs, s);
-   assert(ht->table);
-   return new_at(htable_class, ht);
+   ht->backptr = new_at(htable_class, ht);
+   return ht;
 }
 
 
@@ -523,7 +518,7 @@ DX(xnew_htable)
    if (arg_number>=3)
       raise_keyerror_p = APOINTER(3) != NIL;
 
-   return new_htable(nelems, pointerhashp, raise_keyerror_p);
+   return NEW_HTABLE(nelems, pointerhashp, raise_keyerror_p);
 }
 
 
@@ -533,7 +528,7 @@ DX(xhtable_alist)
    at *a = APOINTER(1);
    ifn (HTABLEP(a))
       RAISEFX("not a hash table", a);
-   hashtable_t *ht = Mptr(a);
+   htable_t *ht = Mptr(a);
    
    a = NIL;
    for (int i=0; i<ht->size; i++)
@@ -548,13 +543,13 @@ DX(xcopy_htable)
    at *p = APOINTER(1);
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
-   hashtable_t *ht = Mptr(p);
+   htable_t *ht = Mptr(p);
 
-   at* ans = new_htable(ht->size, ht->pointerhashp, ht->raise_keyerror_p);
+   htable_t *htc = new_htable(ht->size, ht->pointerhashp, ht->raise_keyerror_p);
    for (int i=0; i<ht->size; i++)
       for (struct htpair *n=ht->table[i]; n; n=n->next)
-         htable_set(ans, n->key, n->value);
-   return ans;
+         htable_set(htc, n->key, n->value);
+   return htc->backptr;
 }
 
 DX(xhtable_delete)
@@ -563,7 +558,7 @@ DX(xhtable_delete)
    at *ans = APOINTER(1);
    ifn (HTABLEP(ans))
       RAISEFX("not a hash table", ans);
-   htable_delete(ans, APOINTER(2));
+   htable_delete(Mptr(ans), APOINTER(2));
    return ans;
 }
 
@@ -573,8 +568,16 @@ DX(xhtable_clear)
    at *ans = APOINTER(1);
    ifn (HTABLEP(ans))
       RAISEFX("not a hash table", ans);
-   htable_clear(ans);
+   htable_clear(Mptr(ans));
    return ans;
+}
+
+
+void htable_update(htable_t *ht1, htable_t *ht2)
+{
+   for (int i=0; i<ht2->size; i++)
+      for (struct htpair *n = ht2->table[i]; n; n = n->next)
+         htable_set(ht1, n->key, n->value);
 }
 
 DX(xhtable_update)
@@ -586,11 +589,7 @@ DX(xhtable_update)
    at *other = APOINTER(2);
    ifn (HTABLEP(other))
       RAISEFX("not a hash table", other);
-  
-   hashtable_t *ht = Mptr(other);
-   for (int i=0; i<ht->size; i++)
-      for (struct htpair *n = ht->table[i]; n; n = n->next)
-         htable_set(ans, n->key, n->value);
+   htable_update(Mptr(ans), Mptr(other));
    return ans;
 }
   
@@ -602,7 +601,7 @@ DX(xhtable_keys)
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
 
-   hashtable_t *ht = Mptr(p);
+   htable_t *ht = Mptr(p);
    at *ans = NIL;
    for (int i=0; i<ht->size; i++)
       for (struct htpair *n=ht->table[i]; n; n=n->next)
@@ -618,7 +617,7 @@ DX(xhtable_rehash)
    ifn (HTABLEP(p))
       error(NIL,"not a hash table", p);
 
-   hashtable_t *ht = Mptr(p);
+   htable_t *ht = Mptr(p);
    ht->rehashp = true;
    return NEW_NUMBER(ht->nelems);
 }
@@ -633,7 +632,7 @@ DX(xhtable_size)
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
 
-   hashtable_t *ht = Mptr(p);
+   htable_t *ht = Mptr(p);
    return NEW_NUMBER(ht->nelems);
 }
 
@@ -649,7 +648,7 @@ DX(xhtable_info)
    ifn (HTABLEP(p))
       RAISEFX("not a hash table", p);
 
-   struct hashtable *ht = Mptr(p);
+   htable_t *ht = Mptr(p);
    if (ht->rehashp)
       htable_rehash(ht);
 
@@ -697,9 +696,9 @@ void init_htable(void)
    mt_htpair_wk =
       MM_REGTYPE("htpair_wk", sizeof(struct htpair),
                  clear_htpair, mark_htpair_wk, 0);
-   mt_hashtable =
-      MM_REGTYPE("hashtable", sizeof(hashtable_t),
-                 clear_hashtable, mark_hashtable, finalize_hashtable);
+   mt_htable =
+      MM_REGTYPE("htable", sizeof(htable_t),
+                 clear_htable, mark_htable, finalize_htable);
    
    /* setting up htable_class */
    htable_class = new_builtin_class(NIL);

@@ -687,11 +687,18 @@ LUSHAPI at *read_list(void);
 extern LUSHAPI class_t *htable_class;
 #define HTABLEP(x)   ((x)&&(Class(x) == htable_class))
 
+struct htable;
+typedef struct htable htable_t;
+
 LUSHAPI unsigned long hash_value(at *);
 LUSHAPI unsigned long hash_pointer(at *);
-LUSHAPI at  *new_htable(int, bool, bool);
-LUSHAPI void htable_set(at *htable, at *key, at *value);
-LUSHAPI at  *htable_get(at *htable, at *key);
+LUSHAPI htable_t *new_htable(int, bool, bool);
+#define NEW_HTABLE(a,b,c) (new_htable(a,b,c)->backptr)
+LUSHAPI void htable_clear(htable_t *ht);
+LUSHAPI void htable_delete(htable_t *ht, at *key);
+LUSHAPI at  *htable_get(htable_t *ht, at *key);
+LUSHAPI void htable_set(htable_t *ht, at *key, at *value);
+LUSHAPI void htable_update(htable_t *ht1, htable_t *ht2);
 
 
 /* CALLS.H ----------------------------------------------------- */
