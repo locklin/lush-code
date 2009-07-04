@@ -644,6 +644,8 @@ DX(xmeminfo)
 
 #define MAX_NUM_MEMTYPES 200
 
+struct htable { at *backptr; };
+
 DY(ymemprof)
 {
    struct lush_context c;
@@ -663,11 +665,11 @@ DY(ymemprof)
    context_pop();
    
    /* put results in a hash table and bind *memprof-stats* to it */
-   at *stats = new_htable(n, false, true);
+   htable_t *stats = new_htable(n, false, true);
    char **key = mm_prof_key();
    for (int i=0; i<n; i++)
       htable_set(stats, NEW_STRING(key[i]), NEW_NUMBER(hist[i]));
-   var_set(at_memstats, stats);
+   var_set(at_memstats, stats->backptr);
    
    return res;
 }
