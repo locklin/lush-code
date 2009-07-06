@@ -1,0 +1,85 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the Lesser GNU General Public License as 
+;;; published by the Free Software Foundation; either version 2 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libc/make")
+(libload "blas/blas-config")
+
+#? ** Limited-Memory BFGS
+
+;; This is an interface to Jorg Nocedal's Limited Memory
+;; BFGS (Quasi-Newton) algorithm.
+
+(defvar *lbfgs-dir* (concat-fname (dirname file-being-loaded) "lbfgs_um"))
+
+;; Load blas as lbfgs has some dependencies
+(mod-load *libblas*)
+
+;; Make and load lbfgs code
+(when (null (domapcan ((m (module-list))) 
+              (str-index "lbfgs.o" (module-filename m)) ))
+  (sys (sprintf "%s -c %s/lbfgs.f -o %s/lbfgs.o" 
+                fortran-compiler *lbfgs-dir* *lbfgs-dir*)) )
+(mod-load (concat-fname *lbfgs-dir* "lbfgs.o"))
+
+;; Make and load interface code
+(let ((m (new LushMake *lbfgs-dir*)))
+  (==> m rule "lbfgs_interface.o" `("lbfgs-interface.c"))
+  (==> m setflags "-O2 -Wall")
+  (==> m make)
+  (==> m load) )
+
+
+#? (lbfgs <x0> <f> <g> <gtol> [<params> <arg0> <arg1> ...])
+;; Minimize <f> by L-BFGS. Start from <x0> and return the minimizer.
+;;
+;; Argument <x0> is a double array, and <f> and <g> are functions
+;; computing the objective function value and its gradient,
+;; respectively. Argument <gtol> is used in the stopping criterion
+;; (<lbfgs> terminates when the gradient's Euclidean norm drops
+;; below <gtol> or below <f(x)>*<gtol>).
+;;
+;; Function <f> takes the arguments <x>, <arg0>, <arg1>, ... and
+;; returns a double.
+;;
+;; Function <g> takes the arguments <gx>, <x>, <arg0>, <arg1>, ..., 
+;; writes the gradient at <x> into <gx> and returns nothing.
+;;
+;; Aspects of the algorithm's search behavior may be controlled
+;; through entries in the htable <params>. If <params> is not provided,
+;; <lbfgs> will use the default values returned by <lbfgs-params>.
+;;
+;; After terminating <lbfgs> assigns a return code to <*lbfgs-errno*>
+;; (see lbfgs_um/lbfgs.f for more info).
+
+
+#? (lbfgs-params)
+;; Make new default parameters for <lbfgs>.
+
+
+#? *lbfgs-errno*
+;; Failure code from most recent execution of <lbfgs>.
+;; Zero means success. See <lbfgs_um/lbfgs.f> for more info.
+(defvar *lbfgs-errno* ())
