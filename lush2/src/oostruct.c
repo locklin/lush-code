@@ -100,8 +100,6 @@ static void mark_object(object_t *obj)
 
 static bool finalize_object(object_t *obj)
 {
-   if (in_compiled_code)
-      return false;
    object_class->dispose(obj);
    return true;
 }
