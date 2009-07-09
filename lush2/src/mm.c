@@ -1470,7 +1470,8 @@ bool mm_ismanaged(const void *p)
       else if (mark_in_progress)
          return _find_managed(p) != -1;
       else {
-         update_man_k();
+         if (!collect_in_progress)
+            update_man_k();
          return find_managed(p) != -1;
       }
    }
