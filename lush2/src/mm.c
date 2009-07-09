@@ -97,7 +97,7 @@
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
 #define MAX_VOLUME      (0x800000*sizeof(void *))    /* max volume threshold */
-#define MAX_BLOCKS      (200*sizeof(void *))
+#define MAX_BLOCKS      (150*sizeof(void *))
 #define NUM_IDLE_CALLS  100
 
 #define HMAP_NUM_BITS   4
@@ -1066,11 +1066,13 @@ static void add_chunk(mmstack_t *st)
 
 void _mm_pop_chunk(mmstack_t *st)
 {
-   if (!collect_in_progress && INHEAP(st)) {
-      /* fast reclaim */
-      int b = BLOCK(st);
+   if (!collect_in_progress && INHEAP(st->current)) {
+      /* reclaim stack chunks immediately */
+      int b = BLOCK(st->current);
+      HMAP_UNMARK_MANAGED(b*BLOCKSIZE);
       blockrecs[b].t = mt_undefined;
-      types[mt_stack_chunk].current_amax = types[mt_stack_chunk].current_a = b*BLOCKSIZE;
+      blockrecs[b].in_use = 0;
+      types[mt_stack_chunk].next_b = b;
    }
    st->current = st->current->prev;
    if (!st->current) {
