@@ -104,7 +104,7 @@ static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
    int diagco = false;
    double *diag = mm_blob(n*sizeof(double));
    double *w = mm_blob((n*(m+m+1)+m+m)*sizeof(double));
-   double xtol = eps(0);
+   double xtol = eps(1); /* machine precision */
    int iflag = 0;
 
    ifn (n>0)
