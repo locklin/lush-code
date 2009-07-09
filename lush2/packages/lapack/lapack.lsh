@@ -314,27 +314,27 @@
        (idx-set-mod X 1 s0) ))
     X))
 
-#? (lapack-gelsd <A> <b>)
-;; Return solution of linear-least-squares problem <A><x>=<b>.
+#? (lapack-gelsd <A> <B>)
+;; Return solution of linear least-squares problem <A><X>=<B>.
 ;;
 ;; The system may be over- or under-determined. (When under-determined,
-;; or <A> is rank-deficient, the "minimum norm least squares" solution
+;; or <A> is rank-deficient, the "minimum norm least-squares" solution
 ;; is sought.)
-(defun gelsd (A b)
-  (declare (-idx2- (-double-)) A)
-  (declare (-idx1- (-double-)) b)
+(defun gelsd (A B)
+  (declare (-idx2- (-double-)) A B)
   (cheader "extern void dgelsd_();")
   (when (not (contiguousp A))
     (error "matrix not contiguous") )
-  (when (<> (length A) (length b))
+  (when (<> (length A) (length B))
     (error "arguments not compatible (lengths must match)") )
 
   (let* ((info 0)
-         (m ($ A 0)) (n ($ A 1)) (nrhs 1) (rank 0)
+         (m ($ A 0)) (n ($ A 1)) 
+         (nrhs ($ B 1)) (rank 0)
          (A ##($t A))
          (minmn (min m n))
          (nlvl (ceil (+ (log2 minmn) 1)))
-         (x (double-array (max m n)))
+         (X (double-array (max m n) nrhs))
          (s (double-array minmn)) 
          (work [-1 0 0])
          (lwork -1)
@@ -343,7 +343,7 @@
     (declare (-int-) info m n nrhs rank lwork)
     
     ;; first call: determine optimal workspace size
-    #{ dgelsd_(&$m, &$n, &$nrhs, $(idx-base A), $A->mod, $(idx-base x), $x->dim, $(idx-base s), &$rcond, &$rank, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
+    #{ dgelsd_(&$m, &$n, &$nrhs, $(idx-base A), $A->mod, $(idx-base X), $X->dim, $(idx-base s), &$rcond, &$rank, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
 
     (if (= info 0)
         (setq lwork (work 0))
@@ -351,14 +351,52 @@
     (assert (> lwork 0))
 
     ;; second call: compute solution
-    (array-copy b (idx-trim x 0 0 (length b)))
+    (array-copy B (idx-trim X 0 0 m))
     (let ((work (double-array lwork)))
-      #{ dgelsd_(&$m, &$n, &$nrhs, $(idx-base A), $A->mod, $(idx-base x), $x->dim, $(idx-base s), &$rcond, &$rank, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
+      #{ dgelsd_(&$m, &$n, &$nrhs, $(idx-base A), $A->mod, $(idx-base X), $X->dim, $(idx-base s), &$rcond, &$rank, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
     (when (<> info 0)
       (errorf "something went wrong, info = %d" info) )
-    (idx-trim! x 0 0 m)
-    x))
+    (idx-trim! X 0 0 n)
+    X))
 
+(defun trtrs (A B upper)
+  (declare (-idx2- (-double-)) A B)
+  (declare (-bool-) upper)
+  (cheader "extern void dtrtrs_();")
+  (when (not (mat-squarep A))
+    (error "matrix not square") )
+  (when (not (contiguousp A))
+    (error "matrix not contiguous") )
+  (when (<> (length A) (length B))
+    (error "arguments not compatible (lengths must match)") )
+  
+  (let* ((info 0)
+         (m ($ A 0))
+         (nrhs ($ B 1))
+         (X (copy-array B)) )
+    (declare (-int-) info m nrhs)
+    
+    ;; first call: determine optimal workspace size
+    (if upper
+        #{ dtrtrs_("L", "T", "N", &$m, &$nrhs, $(idx-base A), $A->mod, $(idx-base X), $X->dim, &$info); #}
+        #{ dtrtrs_("U", "T", "N", &$m, &$nrhs, $(idx-base A), $A->mod, $(idx-base X), $X->dim, &$info); #} )
+
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    X))
+
+#? (lapack-utrtrs <A> <B>)
+;; Return solution of upper tridiagonal system <A><X>=<B>.
+(defmacro utrtrs (A B)
+  `(trtrs ,A ,B t) 
+  )
+
+#? (lapack-ltrtrs <A> <B>)
+;; Return solution of lower tridiagonal system <A><X>=<B>.
+(defmacro ltrtrs (A B)
+  `(trtrs ,A ,B ()) 
+  )
+  
 ) ; in-namespace lapack-
 
 (dhc-make-with-libs "lapack_double"
@@ -372,4 +410,5 @@
                     lapack-geev/n!
                     lapack-gesv
                     lapack-gelsd
+                    lapack-trtrs
                     )
