@@ -764,8 +764,10 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
    case DHT_BOOL:
       if (at_obj == at_t)
          arg->dh_bool = true;
+      else if (at_obj == NIL)
+         arg->dh_bool = false;
       else
-         error(NIL, "invalid argument (bool expected)",at_obj);
+         error(NIL, "invalid argument (bool expected)", at_obj);
       break;
   
    case DHT_SRG:
