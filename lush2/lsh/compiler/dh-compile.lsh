@@ -379,7 +379,8 @@
          ((_ arg-list . body-treetype) :treetype:tn-list)
          (rettype (dhu-type :treetype:type))
          (retplace ())
-         (temp-list (and arg-list :arg-list:symbol)) )
+         (temp-list (and arg-list :arg-list:symbol))
+         (anchor-return ()) )
     
     ;; Allocate a temporary variable for return value
     (when (not (==> rettype is-a-nil))
@@ -387,6 +388,9 @@
     
     ;; Declare bumped vars dynamically to avoid hidden args
     (when (and temp-list *dhc-no-hidden-args*)
+      ;; this is not quite correct; we need to anchor only when
+      ;; the returned object is in the temp-list. But how determine this?
+      (setq anchor-return t)
       (dolist (temp temp-list)
         (dhc-declare-var-dynamic :temp:c-name :temp:type) ) 
       )
@@ -401,7 +405,7 @@
       (cond
        ((==> rettype is-a-nil)
         (setq c-epilog (nconc1 c-epilog "MM_EXIT; return 0;")) )
-       ((or (==> rettype is-a-ptr) (==> rettype is-a-mptr))
+       ((and anchor-return (or (==> rettype is-a-ptr) (==> rettype is-a-mptr)))
         (setq c-epilog (nconc1 c-epilog 
                                (sprintf "MM_EXIT; MM_ANCHOR(%s); return %s;" ret ret))) )
        (t
