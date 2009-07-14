@@ -312,7 +312,7 @@ DY(yand)
 DX(xpor)
 {
    at *res = NIL;
-   for (int i=1; i<arg_number; i++)
+   for (int i=1; i<=arg_number; i++)
       if (APOINTER(i)) {
          res = APOINTER(i);
          break;
