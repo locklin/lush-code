@@ -533,6 +533,24 @@ DX(xto_obj)
    return p;
 }
 
+DX(xto_index)
+{
+   ARG_NUMBER(1);
+   at *p = APOINTER(1);
+   ifn (GPTRP(p) || MPTRP(p))
+      RAISEFX("not a pointer", p);
+
+   index_t * ind = Mptr(p);
+   ifn (mm_ismanaged(ind) || !mm_ismanaged(ind->backptr))
+      RAISEFX("not pointer to a lush object", p);
+   
+   p = ind->backptr;
+   ifn (isa(p, index_class))
+      RAISEFX("not pointer to an index", APOINTER(1));
+
+   return p;
+}
+
 DX(xto_str)
 {
    ARG_NUMBER(1);
@@ -595,6 +613,7 @@ void init_cref(void)
    dx_define("to-gptr", xto_gptr);
    dx_define("to-mptr", xto_mptr);
    dx_define("to-obj", xto_obj);
+   dx_define("to-index", xto_index);
 }
    
 
