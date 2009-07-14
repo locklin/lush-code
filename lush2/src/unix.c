@@ -1141,6 +1141,15 @@ DY(ycputime)
    return NEW_NUMBER((newtime-oldtime) / (double) ticks);
 }
 
+
+DX(xtime)
+{
+   ARG_NUMBER(0);
+   int s, ms;
+   os_curtime(&s, &ms);
+   return NEW_NUMBER( s + (double) ms * 0.001 );
+}
+
 /* ctime -- returns string with current time */
 
 DX(xctime)
@@ -1873,6 +1882,7 @@ void init_unix(void)
    dy_define("bground", ybground);
    dy_define("realtime", yrealtime);
    dy_define("cputime", ycputime);
+   dx_define("time", xtime);
    dx_define("ctime", xctime);
    dx_define("localtime", xlocaltime);
    dx_define("beep", xbeep);
