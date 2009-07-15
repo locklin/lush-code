@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: v4l2.lsh,v 1.4 2007-10-11 21:26:05 profshadoko Exp $
+;;; $Id: v4l2.lsh,v 1.5 2009-07-15 20:00:06 profshadoko Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -196,7 +196,10 @@
 	(printf "map buffer %d\n" (- (+ 1000 ret)))
 	(==> this cleanup)
 	(error "could not map v4l2 buffer"))
-      ())))
+      ;; set auto exposure
+      ;; (==> this set-exposure -1)
+      ;; (if (< (==> this set-gain -1) 0) (==> this set-gain 200))
+      ()))
 
 #? (==> <v4l2device> set-input <n>)
 ;; Set active input to <n>.
@@ -204,6 +207,94 @@
 (defmethod v4l2device set-input (n)
   ((-int-) n)
   (to-int #{ ioctl($fd, VIDIOC_S_INPUT, &$n) #}))
+
+#? (==> <v4l2device> set-exposure <n>)
+;; Set exposure  to <n>.
+;; a Negative number sets to auto exposure,
+;; while a positive number sets to absolute exposure.
+;; return 0 on success, -1 on failure.
+(defmethod v4l2device set-exposure (n)
+  ((-int-) n)
+  (let ((ret 0) (ret2 0))
+    ((-int-) ret ret2)
+    (if (< n 0)
+	(progn
+          #{{ struct v4l2_control control;
+              memset (&control, 0, sizeof (control));
+              control.id = V4L2_CID_EXPOSURE_AUTO;
+              control.value = 1;
+              $ret = ioctl($fd, VIDIOC_S_CTRL, &control);
+          }#} ())
+      #{{ struct v4l2_control control;
+          memset (&control, 0, sizeof (control));
+          control.id = V4L2_CID_EXPOSURE_AUTO;
+          control.value = 0;
+          $ret = ioctl($fd, VIDIOC_S_CTRL, &control);
+          memset (&control, 0, sizeof (control));
+          control.id = V4L2_CID_EXPOSURE_ABSOLUTE;
+          control.value = $n;
+          $ret2 = ioctl($fd, VIDIOC_S_CTRL, &control);
+          }#} ())
+    (+ ret (* 2 ret2))))
+
+#? (==> <v4l2device> set-gain <n>)
+;; Set exposure  to <n>.
+;; a Negative number sets to auto gain,
+;; while a positive number sets to absolute gain.
+;; return 0 on success, -1 on failure.
+(defmethod v4l2device set-gain (n)
+  ((-int-) n)
+  (let ((ret 0) (ret2 0))
+    ((-int-) ret ret2)
+    (if (< n 0)
+	(progn
+          #{{ struct v4l2_control control;
+              memset (&control, 0, sizeof (control));
+              control.id = V4L2_CID_AUTOGAIN;
+              control.value = 1;
+              $ret = ioctl($fd, VIDIOC_S_CTRL, &control);
+          }#} ())
+      #{{ struct v4l2_control control;
+          memset (&control, 0, sizeof (control));
+          control.id = V4L2_CID_AUTOGAIN;
+          control.value = 0;
+          $ret = ioctl($fd, VIDIOC_S_CTRL, &control);
+          memset (&control, 0, sizeof (control));
+          control.id = V4L2_CID_GAIN;
+          control.value = $n;
+          $ret2 = ioctl($fd, VIDIOC_S_CTRL, &control);
+          }#} ())
+    (+ ret (* 2 ret2))))
+
+#? (==> <v4l2device> set-brightness <n>)
+;; Set brightness to <n>.
+;; return 0 on success, -1 on failure.
+(defmethod v4l2device set-brightness (n)
+  ((-int-) n)
+  (let ((ret 0))
+    ((-int-) ret)
+    #{{ struct v4l2_control control;
+        memset (&control, 0, sizeof (control));
+        control.id = V4L2_CID_BRIGHTNESS;
+        control.value = $n;
+        $ret = ioctl($fd, VIDIOC_S_CTRL, &control);
+    }#}
+    ret))
+
+#? (==> <v4l2device> set-contrast <n>)
+;; Set brightness to <n>.
+;; return 0 on success, -1 on failure.
+(defmethod v4l2device set-contrast (n)
+  ((-int-) n)
+  (let ((ret 0))
+    ((-int-) ret)
+    #{{ struct v4l2_control control;
+        memset (&control, 0, sizeof (control));
+        control.id = V4L2_CID_CONTRAST;
+        control.value = $n;
+        $ret = ioctl($fd, VIDIOC_S_CTRL, &control);
+    }#}
+    ret))
 
 
 #? (==> <v4l2device> get-frame-rgb <frame>)
@@ -450,6 +541,17 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? * v4l2 utilities
+
+#? (find-video-devices)
+;; return a list of all available video devices,
+;; i.e. files of the form </dev/videoXX>.
+(de find-video-devices () 
+  (mapcar (concat "/dev/" (glob "video.*" (ls "/dev")))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; demo/test
 
 #? * v4l2 demos
@@ -509,8 +611,6 @@
 	 (gprintf 12 30 "%4.1f FPS" (/ 1 (- ntim tim)))
 	 (setq tim ntim))))))
 
-  
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (dhc-make 
  ()
@@ -526,6 +626,8 @@
     #include <asm/types.h>          /* for videodev2.h */
     #include <linux/videodev2.h>
   #}
- (v4l2device start stop cleanup v4l2device -destructor set-input
+ (v4l2device start stop cleanup 
+	     set-exposure set-gain set-brightness set-contrast
+	     v4l2device -destructor set-input 
 	     get-frame-yuv422 get-frame-grey get-frame-yuv get-frame-rgb)
  )
