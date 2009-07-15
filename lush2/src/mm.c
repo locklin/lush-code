@@ -481,16 +481,22 @@ static void *alloc_variable_sized(mt_t t, size_t s)
    p = malloc(s + MIN_HUNKSIZE);  // + space for info
    assert(!LBITS(p));
 
-   if (p) {
-      info_t *info = p;
-      info->t = t;
-      info->nh = s/MIN_HUNKSIZE;
-      maybe_trigger_collect(s);
-
-      return seal(p);
-
-   } else
+   if (!p) {
+      /* try to recover */
+      if (!collect_in_progress) {
+         mm_collect_now();
+         p = malloc(s + MIN_HUNKSIZE);
+         assert(!LBITS(p));
+      }
+   }
+   if (!p)
       return NULL;
+
+   info_t *info = p;
+   info->t = t;
+   info->nh = s/MIN_HUNKSIZE;
+   maybe_trigger_collect(s);
+   return seal(p);
 }
 
 static bool no_marked_live(void)
