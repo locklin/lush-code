@@ -441,11 +441,17 @@
 
 #? (dhc-declare-var <name> <type>)
 ;; generate C code to declare variable of 
-;; name <name> of type <type> in the current block,
-;; initialize it, and free it on exit.
-
+;; name <name> of type <type> in the current block.
+;; initialize it, and free it on exit if on stack,
+;; or leave it to the gc when allocated dynamically.
 (de dhc-declare-var(name type)
+;;   (if (==> type dynamic)
+;;       (dhc-declare-var-dynamic name type)
+;;     (dhc-declare-var-in-stack name type) ))
+  (when (member (dhu-tclass type) '(dht-ptr dht-srg dht-idx dht-idx))
+    (assert (not (==> type dynamic))) )
   (dhc-declare-var-in-stack name type) )
+  
 
 ;; here is the version for allocating in the stack...
 (de dhc-declare-var-in-stack (name type)
@@ -723,6 +729,7 @@
   u-extra    ; for classes: a list of pairs (methodnamestr . methodtype)
              ; for lists: a list of types
 	     ; for functions: a list of dhc-type for the arguments
+             ; for ptrs/obj/idx/srg: flag whether to declare dynamically
   u-class    ; for classes: the lisp class (optional)
   ;; Memory access fields
   u-bump    ; lexical level (start with ())
@@ -1113,6 +1120,26 @@
 	 (lambda (x) (unode-unify :x:u-bump 
                                   (new-unode lex)
 				  dhc-combine-u-bump)))))
+
+;; flag that object must be declared dynamically
+;; XXX: this is currently not used
+(defmethod dhc-type dynamic args
+  (if args
+      (let (((arg) args))
+        (selectq (unode-val u-tclass) 
+          (dht-ptr (let ((un (new-unode arg)))
+                     (unode-unify u-extra un por)
+                     (unode-unify :(unode-val u-type):u-extra un por)
+                     () ))
+          (t       (dhc-error "not a ptr" this)) ))
+    ;; return value
+    (selectq (unode-val u-tclass)
+      (dht-ptr (unode-val u-extra))
+      (dht-obj (unode-val u-extra))
+      (dht-idx (unode-val u-extra))
+      (dht-srg (unode-val u-extra))
+      (t ()) )))
+  
 
 ;; Keep a track of all the different types found in 
 ;; a function prototype and unifies all identical types.
@@ -2706,7 +2733,7 @@
 (de dhc-listeval-index-t(idx-tn source)
   (let* ((ndim (==> :idx-tn:type is-an-idxptr))
 	 (args (cdr source))
-	 (tnl (all ((so args)) (dhc-parse-expr-t so)))
+	 (tnl (mapcar dhc-parse-expr-t args))
 	 (el-type (new dhc-type (==> :idx-tn:type get-element-type)))
 	 (dims-tnlist ()) )
     
@@ -2716,10 +2743,16 @@
       (dhc-error "Not enough dimensions"))
     (if (= (length args) ndim)
         (setq dims-tnlist tnl)
+      ;; assignment
       (setq dims-tnlist (dhc-nolast tnl))
       (==> (dhu-type (dhu-type :idx-tn:type)) access 'write)
-      (dhc-assign-unify el-type :(lasta tnl):type))
-    (each ((val dims-tnlist))
+      (dhc-assign-unify el-type :(lasta tnl):type)
+      ;; bump rhs when this is an mptr-array 
+      (when (==> el-type is-a-mptr)
+        (unode-unify :(lasta tnl):type:u-bump 
+                     :(unode-val :idx-tn:type:u-type):u-bump
+                     dhc-combine-u-bump) ))
+    (dolist (val dims-tnlist)
       (dhc-unify-types :val:type (new dhc-type 'dht-number)) )
     (setq tnl (cons idx-tn tnl))
     (if (= (length args) ndim)
