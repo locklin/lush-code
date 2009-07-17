@@ -251,6 +251,34 @@ DY(yprog1)
  */
 
 
+static at *circular_list(at *a)
+{
+   at *p = new_cons(a, NIL);
+   Cdr(p) = p;
+   return p;
+}
+
+/* turn everything not a cons or NIL into a circular list */
+static bool prep_args(at **listv, int nargs)
+{
+   bool any_list = false;
+   for (int i=0; i<nargs; i++) {
+      if (listv[i]==NIL || CONSP(listv[i])) {
+         any_list = true;
+         break;
+      }
+   }
+   ifn (any_list)
+      return false;
+
+   for (int i=0; i<nargs; i++) {
+      ifn (listv[i]==NIL || CONSP(listv[i]))
+         listv[i] = circular_list(listv[i]);
+   }
+   
+   return any_list;
+}
+
 /* compose list of cars of lists and return it */
 /* return nil if any of the lists is nil       */
 
@@ -266,7 +294,7 @@ static at *next_args(at **listv, int nargs)
          *where = new_cons(Car(listv[i]), NIL);
          where = &Cdr(*where);
          ifn (CONSP(listv[i]))
-            error(NIL, "some argument is not a proper list", NIL); 
+            error(NIL, "some argument is not a proper list", NIL);
          listv[i] = Cdr(listv[i]);
       }
    return args;
@@ -276,6 +304,8 @@ at *mapc(at *f, at **listv, int n)
 {
    at *result = listv[0];
    at *args;
+   ifn (prep_args(listv, n))
+      RAISEF("at least one argument must be a list", NIL);
    while ((args = next_args(listv, n)))
       apply(f, args);
 
@@ -295,6 +325,8 @@ at *mapcar(at *f, at **listv, int n)
    at *result = NIL;
    at **where = &result;
    at *args;
+   ifn (prep_args(listv, n))
+      RAISEF("at least one argument must be a list", NIL);
    while ((args = next_args(listv, n))) {
       *where = new_cons(apply(f, args), NIL);
       where = &Cdr(*where);
@@ -315,6 +347,8 @@ at *mapcan(at *f, at **listv, int n)
    at *result = NIL;
    at **where = &result;
    at *args;
+   ifn (prep_args(listv, n))
+      RAISEF("at least one argument must be a list", NIL);
    while ((args = next_args(listv, n))) {
       while (CONSP(*where))
          where = &Cdr(*where);
