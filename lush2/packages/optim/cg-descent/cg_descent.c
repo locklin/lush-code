@@ -65,7 +65,7 @@ int cg_descent /*  return:
     double         *Work  /* either size 4n work array or NULL */
 )
 {
-    INT     n5, iter, maxit, nrestart, i ;
+  INT     n5, maxit, nrestart, i,iter = 0;
     int     status, StopRule ;
     double  delta2, eta_sq, Qk, Ck,
             f, ftemp, gnorm, xnorm, gnorm2, dnorm2, denom,
@@ -959,7 +959,7 @@ int cg_line
     INT n, iter ;
     int i, nsecant, nshrink, ngrow, status ;
     double a, dphia, b, dphib, c, alpha, phi, dphi,
-           a0, da0, b0, db0, width, fquad, rho, *x, *xtemp, *d, *gtemp ;
+      a0, da0, b0, db0, width, rho, *x, *xtemp, *d, *gtemp, fquad = 0;
     cg_parameter *Parm ;
 
     Parm = Com->Parm ;
@@ -1186,8 +1186,8 @@ int cg_lineW
     INT n, iter ;
     int i, nsecant, nshrink, ngrow, status ;
     double a, dpsia, b, dpsib, c, alpha, phi, dphi,
-           a0, da0, b0, db0, width, fquad, rho, psi, dpsi,
-           *x, *xtemp, *d, *gtemp ;
+           a0, da0, b0, db0, width, rho, psi, dpsi,
+           *x, *xtemp, *d, *gtemp, fquad = 0;
     cg_parameter *Parm ;
 
     Parm = Com->Parm ;
