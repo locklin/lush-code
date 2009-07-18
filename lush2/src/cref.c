@@ -347,7 +347,8 @@ DX(xto_gptr)
       
    } else if (OBJECTP(p)) {
       object_t *obj = Mptr(p);
-      return NEW_GPTR(obj->cptr);
+      if (obj->cptr)
+         return NEW_GPTR(obj->cptr);
 
    } else if (STORAGEP(p)) {
       return NEW_GPTR(Mptr(p));
@@ -426,7 +427,8 @@ DX(xto_mptr)
       
    } else if (OBJECTP(p)) {
       object_t *obj = Mptr(p);
-      return NEW_MPTR(obj->cptr);
+      if (obj->cptr)
+         return NEW_MPTR(obj->cptr);
       
    } else if (STORAGEP(p)) {
       return NEW_MPTR(Mptr(p));
