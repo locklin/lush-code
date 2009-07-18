@@ -512,12 +512,13 @@ DX(xto_obj)
 
    } else if (GPTRP(p) || MPTRP(p)) {
       struct CClass_object *obj = Gptr(p);
-      if (obj && mm_ismanaged(obj) && 
-          obj->__lptr && mm_ismanaged(obj->__lptr) && 
-          obj->__lptr->backptr && mm_ismanaged(obj->__lptr->backptr) && OBJECTP(obj->__lptr->backptr) )
+      ifn (obj && mm_ismanaged(obj))
+         error(NIL, "not pointer to an object", p);
+
+      if (obj->__lptr)
          p = obj->__lptr->backptr;
       else
-         error(NIL, "not pointer to an object", p);
+         p = new_object_from_cobject(obj)->backptr;
 
    } else
       error(NIL, "not a GPTR or object", p);
