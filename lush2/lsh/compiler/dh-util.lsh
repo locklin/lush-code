@@ -104,21 +104,6 @@
       (incr s) )
     (reverse r) ) )
 
-#? (dhc-split-list <l> <test>)
-;; Returns two list containing the element of list <l>.  
-;; The first list contains the element of <l> that pass 
-;; the test <test>, the second list the remaining elements.
-;;.CODE
-;;  ? (dhc-split-list '(1 4 2 6 4 3 2 3 2 1 3) (lambda (x) (= 3 x)))
-;;  = ((3 3 3) (1 4 2 6 4 2 2 1))
-(de dhc-split-list (l test)
-  (let ((yes ()) (no ()))
-    (dolist (l l)
-      (if (test l) 
-	  (setq yes (cons l yes))
-        (setq no (cons l no))))
-    (cons (reverse yes) (reverse no)) ))
-
 #? (dhc-postincr <symb>)
 ;; Increments variable <symb> by one 
 ;; and returns the value of the variable
@@ -560,32 +545,33 @@
 ;; in the scope, just add the dhc-symbol entry in to the list:
 ;; (setq bump-list (nconc1 bump-list symbol))
 
-(dm dhc-push-scope-t (_ . instr-list)
-  `(let ((|_Split| ())
-         (|_Treetype| ()))
-     (let ((new-symbol-table symbol-table)
-           (symbol-table symbol-table)
-           (lex-level (1+ lex-level))
-           (bump-list ()))
-       (setq |_Treetype| ,(cons progn instr-list))
-       ;; If the value is copied in a temp, de-unify (so do not bump)
-       (let ((type :|_Treetype|:type))
-         (cond
-          ((==> type is-a-simple)
-           (setq :|_Treetype|:type (==> type copy)))
-          ((==> type is-a-ptr)
-           (setq :|_Treetype|:type (new dhc-type (dhu-tclass type) (dhu-type type)))
-           t ) ) )
-       ;; bump return value
-       (==> :|_Treetype|:type bump-level (1- lex-level))
-       (setq |_Split| 
-             (dhc-split-list bump-list 
-                             (lambda (x) (< (==> :x:type bump-level)
-                                            lex-level))))
-       (setq :|_Treetype|:symbol (cdr |_Split|))
-       (setq |_Split| (car |_Split|)))
-     (setq bump-list (append bump-list |_Split|))
-     |_Treetype|))
+(dm dhc-push-scope-t (_ . body)
+  `(let ((treetype ()))
+     (setq bump-list
+           (append bump-list (let ((new-symbol-table symbol-table)
+                                   (symbol-table symbol-table)
+                                   (lex-level (1+ lex-level))
+                                   (bump-list ()))
+                               (setq treetype ,(cons 'progn body))
+                               ;; if value is copied in a temp, de-unify 
+                               (let ((type :treetype:type))
+                                 (cond
+                                  ((==> type is-a-simple)
+                                   (setq :treetype:type (==> type copy)))
+                                  ((==> type is-a-ptr)
+                                   (setq :treetype:type (new dhc-type (dhu-tclass type) (dhu-type type))) ))
+                                 )
+                               ;; bump return value
+                               (==> :treetype:type bump-level (- lex-level 1))
+                               (let (((up here) (filter* (lambda (x)
+                                                           (< (==> :x:type bump-level) lex-level))
+                                                         bump-list)))
+                                 (setq :treetype:symbol here)
+                                 up))
+                   ))
+     
+     treetype)
+  )
 
 (dm dhc-bumped-block (_ treetype retplace . body)
   `(let ((block ())
