@@ -200,7 +200,7 @@ struct at {
 #define Number(q) (*(q)->payload.d)
 #define String(q) ((q)->payload.c)
 #define Symbol(q) ((q)->payload.s)
-#define Value(q)  (*Symbol(q)->valueptr)
+#define Value(q)  (Symbol(q)->valueptr ? *Symbol(q)->valueptr : NIL)
 #define Gptr(q)   ((q)->payload.p)
 #define Mptr(q)   ((q)->payload.p)
 #define Car(q)    ((at *)CLEAR_PTR((q)->head.car))
