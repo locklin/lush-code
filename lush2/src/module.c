@@ -767,10 +767,10 @@ void *dynlink_symbol(module_t *m, const char *sname, int func, int exist)
 /* --------- CLEANUP DANGLING PRIMITIVES AND OBJECTS --------- */
 
 
-static at *module_class_defs(module_t *mc)
+static at *module_class_defs(at *l, module_t *mc)
 {
    at *p = mc->defs;
-   at *pcls = NIL;
+   at *pcls = l;
    while (CONSP(p)) {
       if (CONSP(Car(p))) {
          at *q = Caar(p);
@@ -799,7 +799,7 @@ static void cleanup_module(module_t *m)
       for (module_t *mc = root->next; mc != root; mc = mc->next)
          if (mc->initname && mc->defs && (mc->flags & MODULE_CLASS))
             if (! dld_function_executable_p(mc->initname))
-               classes = module_class_defs(mc);
+               classes = module_class_defs(classes, mc);
       dld_simulate_unlink_by_file(0);
    }
 #endif
@@ -809,7 +809,7 @@ static void cleanup_module(module_t *m)
       for (module_t *mc = root->next; mc != root; mc = mc->next)
          if (mc->initname && mc->defs)
             if (mc == m || mc->bundle.executable < 0)
-               classes = module_class_defs(mc);
+               classes = module_class_defs(classes, mc);
       nsbundle_exec_all_but(NULL);
    }
 #endif
@@ -819,7 +819,7 @@ static void cleanup_module(module_t *m)
       at *q = Car(p);
       if (CLASSP(q)) {
          class_t *cl = Mptr(q);
-         //fprintf(stderr,"*** Warning: unlinking compiled class %s\n", pname(q));
+         //fprintf(stderr,"*** Warning: unlinking compiled class %s and subclasses\n", pname(q));
          cl->live = false;
          zombify_subclasses(cl);
       }
@@ -929,7 +929,7 @@ static void update_init_flag(module_t *m)
       return;
    if (! (m->initaddr && m->initname))
       return;
-  
+   
    /* Simulate unlink if we already have definitions */
    if (m->defs) {
       dynlink_hook(m, "unlink");
