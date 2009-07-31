@@ -722,7 +722,7 @@ static object_t *_new_object(class_t *cl, struct CClass_object *cobj)
 object_t *new_object(class_t *cl)
 {
    ifn (cl->live)
-      error(NIL, "class or one of its superclasses is unlinked", NIL);
+      error(NIL, "class is obsolete", cl->classname);
    return _new_object(cl, NULL);
 }
 
@@ -1137,10 +1137,8 @@ DY(yclassof)
       RAISEFX("syntax error", new_cons(NEW_SYMBOL("classof"), q));
 
    at *obj = Car(q);
-   if (SYMBOLP(obj))
-      return classof(Value(obj))->backptr;
-   else
-      return classof(eval(obj))->backptr;
+   class_t *cl = SYMBOLP(obj) ? classof(Value(obj)) : classof(eval(obj));
+   return cl->backptr;
 }
 
 bool isa(at *p, const class_t *cl)

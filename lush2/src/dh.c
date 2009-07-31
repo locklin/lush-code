@@ -1129,9 +1129,12 @@ static mt_t mt_cobject = mt_undefined;
 
 struct CClass_object *new_cobject(dhclassdoc_t *cdoc)
 {
+   class_t *cl = Mptr(cdoc->lispdata.atclass);
+   ifn (cl->live)
+      error(NIL, "class is obsolete", cl->classname);
    struct CClass_object *cobj = mm_allocv(mt_cobject, cdoc->lispdata.size);
    cobj->Vtbl = cdoc->lispdata.vtable;
-   cobj->__lcl = Mptr(cdoc->lispdata.atclass);
+   cobj->__lcl = cl;
    cobj->__lptr = NULL;
    return cobj;
 }
