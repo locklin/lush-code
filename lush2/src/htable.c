@@ -501,6 +501,11 @@ LUSHAPI htable_t *new_htable(int nelems, bool pointerhashp, bool raise_keyerror_
    return ht;
 }
 
+LUSHAPI at *NEW_HTABLE(int n, bool p, bool r)
+{
+   return new_htable(n, p, r)->backptr;
+}
+
 
 DX(xnew_htable)
 {

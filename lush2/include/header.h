@@ -693,7 +693,7 @@ typedef struct htable htable_t;
 LUSHAPI unsigned long hash_value(at *);
 LUSHAPI unsigned long hash_pointer(at *);
 LUSHAPI htable_t *new_htable(int, bool, bool);
-#define NEW_HTABLE(a,b,c) (new_htable(a,b,c)->backptr)
+LUSHAPI at  *NEW_HTABLE(int, bool, bool);
 LUSHAPI void htable_clear(htable_t *ht);
 LUSHAPI void htable_delete(htable_t *ht, at *key);
 LUSHAPI at  *htable_get(htable_t *ht, at *key);
