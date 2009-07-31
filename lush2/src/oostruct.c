@@ -417,6 +417,9 @@ static class_t *class_dispose(class_t *cl)
          *p = cl->nextclass;
       cl->super = NULL;
    }
+   /* mark class and all subclasses as obsolete */
+   zombify_subclasses(cl);
+   cl->live = false;
    zombify(cl->backptr);
    return cl;
 }
