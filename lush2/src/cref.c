@@ -206,10 +206,7 @@ class_t *cref_mptr_class;
 static at *cref_object_selfeval(at *p)
 {
    struct CClass_object *cobj = *((struct CClass_object **)Gptr(p));
-   if (cobj->__lptr)
-      return cobj->__lptr->backptr;
-   else
-      return new_object_from_cobject(cobj)->backptr;
+   return object_from_cobject(cobj)->backptr;
 }
 
 static void cref_object_setslot(at *self, at *slot, at *val)
@@ -516,11 +513,7 @@ DX(xto_obj)
       struct CClass_object *obj = Gptr(p);
       ifn (obj && mm_ismanaged(obj))
          error(NIL, "not pointer to an object", p);
-
-      if (obj->__lptr)
-         p = obj->__lptr->backptr;
-      else
-         p = new_object_from_cobject(obj)->backptr;
+      p = object_from_cobject(obj)->backptr;
 
    } else
       error(NIL, "not a GPTR or object", p);

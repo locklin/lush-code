@@ -729,7 +729,7 @@ typedef struct object {
 LUSHAPI class_t  *new_builtin_class(class_t *super);
 LUSHAPI class_t  *new_ooclass(at *classname, at *superclass, at *keylist, at *defaults);
 LUSHAPI object_t *new_object(class_t *cl);
-LUSHAPI object_t *new_object_from_cobject(struct CClass_object *);
+LUSHAPI object_t *object_from_cobject(struct CClass_object *);
 #define NEW_OBJECT(cl) new_object(cl)->backptr
 LUSHAPI bool builtin_class_p(const class_t *cl);
 LUSHAPI void putmethod(class_t *cl, at *name, at *fun);

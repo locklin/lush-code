@@ -729,13 +729,18 @@ object_t *new_object(class_t *cl)
    return _new_object(cl, NULL);
 }
 
-object_t *new_object_from_cobject(struct CClass_object *cobj)
+object_t *object_from_cobject(struct CClass_object *cobj)
 {
    ifn (cobj->__lcl->live)
       error(NIL, "attempt to access instance of unlinked class", NIL);
    assert(cobj->Vtbl);
-   class_t *cl = Mptr(cobj->Vtbl->Cdoc->lispdata.atclass);
-   return _new_object(cl, cobj);
+   
+   object_t *obj = cobj->__lptr;
+   ifn (obj) {
+      class_t *cl = Mptr(cobj->Vtbl->Cdoc->lispdata.atclass);
+      obj = _new_object(cl, cobj);
+   }
+   return obj;
 }
 
 

@@ -949,10 +949,7 @@ static inline at *dharg_to_at(dharg *arg, dhrecord *drec)
    case DHT_OBJ:
    {
       assert(arg->dh_obj_ptr);
-      if (arg->dh_obj_ptr->__lptr)
-         return arg->dh_obj_ptr->__lptr->backptr;
-      else
-         return new_object_from_cobject(arg->dh_obj_ptr)->backptr;
+      return object_from_cobject(arg->dh_obj_ptr)->backptr;
    }
    case DHT_LIST:
    {
