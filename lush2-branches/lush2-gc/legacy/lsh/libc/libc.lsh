@@ -1,0 +1,277 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the Lesser GNU General Public License as 
+;;; published by the Free Software Foundation; either version 2 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? *** C Interface Utilities
+
+#? ** Libc Interface
+;; this provides an interface to several commonly used
+;; functions from the standard C library.
+
+#? (malloc <n>)
+;; malloc <n> bytes of memory and return a gptr to it.
+(de malloc (n) 
+  ((-int-) n) 
+  (cpheader "#include <stdlib.h>")
+  (cpheader "#include <string.h>")
+  (to-gptr #{ malloc($n) #}))
+
+#? (free <p>)
+;; free malloc'ed memory area pointed to by gptr <p>.
+(de free (p) ((-gptr-) p) #{ if ($p) free($p); #} ())
+
+#? (memcpy <dest> <src> <size>)
+;; copies <size> bytes from memory pointed to 
+;; by <src> to memory pointed to by <dst>,
+;; both of which must be <gptr>.
+;; The function returns nil.
+(de memcpy (dest src size) 
+  ((-gptr-) dest src)
+  ((-int-) size)
+  #{ memcpy($dest,$src,$size) #} ())
+
+#? (little-endianp)
+;; return t if the CPU is little endian (e.g. x86).
+;; and nil if it is not little endian (like sparcs).
+(de little-endianp ()
+  (cheader "static int endiantest = 1;")
+  (cheader "#define little_endian_p (*(char*)&endiantest)")
+  (to-bool #{ little_endian_p #} ) )
+
+#? (testbit <v> <b>)
+;; test if bit <b> of integer <v> is on.
+;; <b> must be between 0 and 31.
+(de testbit (v b)
+    ((-int-) v b)
+    (bool #{ (int)($v & (1<<$b)) #}))
+
+
+#? ** Pointer Manipulation/Dereferencing
+
+#? (gptr+ <p> <n>)
+;; add <n> to generic pointer <p>.
+;; The returned pointer points <n> 
+;; bytes higher than <p>.
+(de gptr+ (p n)
+  ((-gptr-) p) ((-int-) n)
+  (to-gptr #{ (gptr)((char*)($p) + ($n)) #}))
+
+#? (gptr- <p1> <p2>)
+;; returns the distance between
+;; two pointers (in bytes).
+(de gptr- (p1 p2)
+  ((-gptr-) p1 p2)
+  (to-int #{ (int)((char*)($p2) - (char*)($p1)) #}))
+
+
+#? (ptr-str <g>)
+;; returns a string from a generic pointer to a
+;; zero terminated sequence of characters.
+(de ptr-str(g)
+  ((-gptr-) g)
+  (if (null g)
+      "(nil)"
+    #{
+      char *s = strdup((char *)$g);
+      cside_create_str_gc(s);
+    #}
+    (to-str #{ s #}) ))
+
+
+#? (str-ptr <s>)
+;; return a generic pointer to the data of string <s>
+;; (i.e. a pointer to a C-style null-terminated string).
+;; This must be used with caution because the data pointed 
+;; to by the pointer may be garbage collected.
+(de str-ptr (s)
+  ((-str-) s)
+  (to-gptr #{ $s #}))
+
+#? (idx-ptr <idx>)
+;; return a <gptr> that points to the first element of <m>.  This must be
+;; used with caution because the data pointed to by the pointer may be
+;; garbage collected (when <m> is destroyed), or even displaced (when <m>
+;; is resized).  <idx-ptr> is primarily used when calling C function that
+;; require a pointer to numerical data.
+
+
+#? * Peek/Poke/Sizeof
+;; A number of functions are provided to dereference
+;; pointers to various numerical types and either get
+;; the value they point to, or set the value at the
+;; address they point to.
+;; They are of the form: 
+;;.CODE
+;;  (peek-TYPE <ptr>)
+;;  (poke-TYPE <ptr> <value>)
+;;.P
+;; where TYPE can be any Lush numerical type (ubyte, short, int, float,
+;; double, gptr). The first form returns the value pointed to by <ptr>,
+;; while the second form sets the value.
+;; Another set of functions, <(sizeof-TYPE)> returns
+;; the size of the corresponding type.
+;;.P
+;; These function are useful for accessing values in a pre-existing
+;; C structure (allocated by a C function). Creating a numerical 
+;; variable from Lush is better done by first creating an idx0
+;; of the appropriate type, and then getting a pointer to the data
+;; through <idx-ptr>. Example:
+;;.CODE
+;; (setq z (double-array))
+;; (my-c-function-that-takes-a-ptr-to-a-double (idx-ptr z))
+;;.P
+#? (peek-ubyte <s>) 
+#? (poke-ubyte <s> <v>) 
+#? (sizeof-ubyte)
+#? (peek-short <s>) 
+#? (poke-short <s> <v>) 
+#? (sizeof-short)
+#? (peek-int <s>) 
+#? (poke-int <s> <v>) 
+#? (sizeof-int)
+#? (peek-float <s>) 
+#? (poke-float <s> <v>) 
+#? (sizeof-float)
+#? (peek-double <s>) 
+#? (poke-double <s> <v>) 
+#? (sizeof-double)
+#? (peek-gptr <s>) 
+#? (poke-gptr <s> <v>) 
+#? (sizeof-gptr)
+
+(de peek-ubyte (s) 
+  ((-gptr- "unsigned char *") s)
+  (to-int #{ *(unsigned char *)($s) #}))
+(de poke-ubyte (s v) 
+  ((-gptr- "unsigned char *") s) ((-ubyte-) v) 
+  (to-int #{ *(unsigned char *)($s) = (unsigned char)$v #}))
+(de sizeof-ubyte () (to-int #{ sizeof(unsigned char) #}))
+
+(de peek-short (s) 
+  ((-gptr- "short *") s)
+  (to-int #{ *(short *)($s) #}))
+(de poke-short (s v) 
+  ((-gptr- "short *") s) ((-short-) v) 
+  (to-int #{ *(short *)($s) = (short)$v #}))
+(de sizeof-short () (to-int #{ sizeof(short) #}))
+
+(de peek-int (s) 
+  ((-gptr- "int *") s)
+  (to-int #{ *(int *)($s) #}))
+(de poke-int (s v) 
+  ((-gptr- "int *") s) ((-int-) v) 
+  (to-int #{ *(int *)($s) = (int)$v #}))
+(de sizeof-int () (to-int #{ sizeof(int) #}))
+
+(de peek-float (s) 
+  ((-gptr- "float *") s)
+  (to-float #{ *(float *)($s) #}))
+(de poke-float (s v) 
+  ((-gptr- "float *") s) ((-float-) v) 
+  (to-float #{ *(float *)($s) = (float)$v #}))
+(de sizeof-float () (to-int #{ sizeof(float) #}))
+
+(de peek-double (s) 
+  ((-gptr- "double *") s)
+  (to-double #{ *(double *)($s) #}))
+(de poke-double (s v) 
+  ((-gptr- "double *") s) ((-double-) v) 
+  (to-double #{ *(double *)($s) = (double)$v #}))
+(de sizeof-double () (to-int #{ sizeof(double) #}))
+
+(de peek-gptr (s) 
+  ((-gptr- "gptr *") s)
+  (to-gptr #{ *(gptr *)($s) #}))
+(de poke-gptr (s v) 
+  ((-gptr- "gptr *") s) ((-gptr-) v) 
+  (to-gptr #{ *(gptr *)($s) = (gptr)$v #}))
+(de sizeof-gptr () (to-int #{ sizeof(gptr) #}))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; fields is a hash table whose keys are field names
+;; and values are pairs (ctype . offset)
+(defclass cstruct object
+  type					; pointer to the ctype
+  data					; storage that contains the object
+  )
+
+(defmethod cstruct get (fld)
+  (==> get (:type:field fld)))
+
+(defclass ctype object
+  size
+  fields)
+
+;; take a list of strings that define C slots
+;; generate a C function that returns an array
+;; with the offsets and sizes of the slots.
+(de get-ctype-info (flist) ())
+
+;; to get the offset of a field in a C struct:
+;; #include <stddef.h>
+;; #ifndef offsetof
+;; #define offsetof(type, mem) ((size_t) \
+;;		((char *)&((type *) 0)->mem - (char *)((type *) 0)))
+;; #endif
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make-sf 
+ () 
+ little-endianp 
+ malloc 
+ free 
+ testbit 
+ ptr-str
+ str-ptr
+ memcpy 
+ gptr+ 
+ gptr-
+ peek-ubyte
+ poke-ubyte
+ sizeof-ubyte
+ peek-short
+ poke-short
+ sizeof-short
+ peek-int
+ poke-int
+ sizeof-int
+ peek-float
+ poke-float
+ sizeof-float
+ peek-double
+ poke-double
+ sizeof-double
+ peek-gptr
+ poke-gptr
+ sizeof-gptr)
+
+
+
+

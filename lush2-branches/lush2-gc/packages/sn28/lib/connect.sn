@@ -1,0 +1,543 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: connect.sn,v 1.1 2003/03/18 18:17:13 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; these functions are a toolbox for
+;;; creating a locally connected network,
+;;; or a network with shared weight
+                      
+;;; Examples can be found in the
+;;; demo-char demonstration.
+
+;;; (C) LYB -- Jan 26,1989
+;;;     JB  -- Jul 23,1990
+
+
+
+
+
+
+
+
+;;; ========== functions for locally connecting layers ========
+
+
+
+                      
+
+
+
+
+;;; local-1d-connect. l1 is a layer with n1 units
+;;;                   l2 is a layer with n2 units
+;;;     connects each cell in l2 to a 'size' wide area in l1
+;;;     areas are stepped by 'step'
+
+(de local-1d-connect(layer1 n1
+                     layer2 n2
+                     step size )
+
+  (when (<> n1 (+ (* (1- n2) step) size))
+       (printf "local-1d-connect:[warning]:inexact layer size.\n") )
+  (incr size -1)
+  (let ((a1 ((atom-array n1) () layer1))
+        (a2 ((atom-array n2) () layer2))
+        (lx (list 0 size)) )
+      (for (i 0 (1- n2))
+           (connect (a1 lx) (a2 i))
+           (setq lx (local-next lx step n1)) ) ) )
+
+ 
+
+
+
+
+
+
+
+
+
+
+;;; local-2d-connect. l1 is a (lin1 x col1) layer
+;;;                   l2 is a (lin2 x col2) layer
+;;;     connects each cell in l2 to a (y-size x x-size) area in l1
+;;;     areas are stepped by y-step and x-step.
+
+(de local-2d-connect(layer1 lin1 col1 
+                    layer2 lin2 col2
+                    x-step y-step x-size y-size)
+
+  (when (or (<> lin1 (+ (* (1- lin2) y-step) y-size))
+            (<> col1 (+ (* (1- col2) x-step) x-size)) )
+       (printf "local-2d-connect:[warning]:inexact layer size.\n") )
+
+  (incr x-size -1)
+  (incr y-size -1)
+  (let ((a1 ((atom-array lin1 col1) () () layer1))
+        (a2 ((atom-array lin2 col2) () () layer2))
+        (lx ())(ly ()) )
+
+        (setq ly (list 0 y-size))
+        (for (i 0 (1- lin2))
+           (setq lx (list 0 x-size))
+           (for (j 0 (1- col2))
+              (connect (a1 ly lx) (a2 i j) )
+              (setq lx (local-next lx x-step col1)) )
+           (setq ly (local-next ly y-step lin1)) ) ) )
+
+ 
+
+
+
+
+
+
+
+
+
+
+;;; local-toric-connect. l1 is a (lin1 x col1) layer
+;;;                   l2 is a (lin2 x col2) layer
+;;;     connects each cell in l2 to a (y-size x x-size) area in l1
+;;;     areas are stepped by y-step and x-step.
+;;;  Exceeding connections are wrapped around l1
+
+(de local-toric-connect(layer1 lin1 col1 
+                    layer2 lin2 col2
+                    x-step y-step x-size y-size)
+
+  (when (or (<> lin1 (* lin2 y-step))
+            (<> col1 (* col2 x-step)) )
+       (printf "local-toric-connect:[warning]:inexact layer size.\n") )
+
+  (let* ((y-bound (+ lin1 (- y-size y-step)))
+         (x-bound (+ col1 (- x-size x-step)))
+         (a1 ((atom-array y-bound x-bound)
+                (list 0 (1- lin1))
+                (list 0 (1- col1)) 
+                layer1 ) )
+         (a2 ((atom-array lin2 col2)
+                ()
+                () 
+                layer2 ) )
+         (lx ())
+         (ly ()) )
+         
+        (incr x-size -1)
+        (incr y-size -1)
+        (a1  (list lin1 (1- y-bound)) () (a1 (list 0 (- (1- y-bound) lin1)) ()))
+        (a1  () (list col1 (1- x-bound)) (a1 () (list 0 (- (1- x-bound) col1))))
+
+        (setq ly (list 0 y-size))
+        (for (i 0 (1- lin2))
+           (setq lx (list 0 x-size))
+           (for (j 0 (1- col2))
+              (connect (a1 ly lx) (a2 i j) )
+              (setq lx (local-next lx x-step x-bound)) )
+           (setq ly (local-next ly y-step y-bound)) ) ) )
+
+       
+
+
+
+
+
+
+
+;;; ====== functions for locally connecting layers with shared weights =====
+
+
+ 
+
+
+
+
+
+
+;;; mask-1d-connect. l1 is a layer with n1 units
+;;;                   l2 is a layer with n2 units
+;;;     connects each cell in l2 to a 'size' wide area in l1 
+;;;     through a size wide mask.
+;;;     areas are stepped by 'step'
+
+(de mask-1d-connect(layer1 n1
+                     layer2 n2
+                     step size )
+
+  (when (<> n1 (+ (* (1- n2) step) size))
+       (printf "mask-1d-connect:[warning]:inexact layer size.\n") )
+  (incr size -1)
+  (let* ((a1 ((atom-array n1) () layer1))
+         (a2 ((atom-array n2) () layer2))
+         (lx (list 0 size))
+         (so1 (a1 lx))
+         (so2 (a2 0)) )
+      (connect so1 so2)
+      (for (i 1 (1- n2))
+           (setq lx (local-next lx step n1))
+           (dup-connection so1 so2 (a1 lx) (a2 i)) ) ) )
+
+
+ 
+;;; equal-mask-1d-connect. l1 is a n1 layer
+;;;                        l2 is a n2 layer
+;;;     connects each cell in l2 to a (size) area in l1
+;;;     through a (size) equal mask 
+;;;     areas are stepped by (step)
+
+
+(de equal-mask-1d-connect(layer1 n1
+                    layer2 n2
+                    step size )
+
+    (when (<> n1 (+ (* (1- n2) step) size))
+       	  (printf "mask-1d-connect:[warning]:inexact layer size.\n") )
+    (incr size -1)
+    (let* ((a1 ((atom-array n1) () layer1))
+           (a2 ((atom-array n2) () layer2))
+           (lx (list 0 size))
+           (so1 (a1 lx))
+           (so2 (a2 0)) )
+      (connect (car so1) so2)
+      (each ((i (cdr so1)))
+	    (dup-connection (car so1) so2 i so2) )
+      (for (i 1 (1- n2))
+           (setq lx (local-next lx step n1))
+           (dup-connection so1 so2 (a1 lx) (a2 i)) ) ) )
+
+
+
+
+
+
+;;; mask-2d-connect. l1 is a (lin1 x col1) layer
+;;;                   l2 is a (lin2 x col2) layer
+;;;     connects each cell in l2 to a (y-size x x-size) area in l1
+;;;     through a (y-size x x-size) mask
+;;;     areas are stepped by y-step and x-step.
+
+(de mask-2d-connect(layer1 lin1 col1 
+                    layer2 lin2 col2
+                    x-step y-step x-size y-size)
+
+  (when (or (<> lin1 (+ (* (1- lin2) y-step) y-size))
+            (<> col1 (+ (* (1- col2) x-step) x-size)) )
+       (printf "mask-2d-connect:[warning]:inexact layer size.\n") )
+
+  (incr x-size -1)
+  (incr y-size -1)
+  (let* ((a1 ((atom-array lin1 col1) () () layer1))
+         (a2 ((atom-array lin2 col2) () () layer2))
+         (lx ())(ly ()) 
+         (so1 (a1 (list 0 y-size) (list 0 x-size)))
+         (so2 (a2 0 0)) )
+                  
+        (connect so1 so2)                        ;build the source connection
+        
+        (setq ly (list 0 y-size))     
+        (for (i 0 (1- lin2))                     ;copy it evrywhere
+           (setq lx (list 0 x-size))
+           (for (j 0 (1- col2)) 
+              (when (or (0<> i) (0<> j))
+                 (dup-connection so1 so2 (a1 ly lx) (a2 i j)) )
+              (setq lx (local-next lx x-step col1)) )
+           (setq ly (local-next ly y-step lin1)) ) ) )
+
+ 
+
+
+
+       
+
+;;; equal-mask-2d-connect. l1 is a (lin1 x col1) layer
+;;;                        l2 is a (lin2 x col2) layer
+;;;     connects each cell in l2 to a (y-size x x-size) area in l1
+;;;     through a (y-size x x-size) equal mask 
+;;;     areas are stepped by y-step and x-step.
+
+(de equal-mask-2d-connect(layer1 lin1 col1 
+                          layer2 lin2 col2
+                          x-step y-step x-size y-size)
+
+  (when (or (<> lin1 (+ (* (1- lin2) y-step) y-size))
+            (<> col1 (+ (* (1- col2) x-step) x-size)) )
+       (printf "mask-2d-connect:[warning]:inexact layer size.\n") )
+
+  (incr x-size -1)
+  (incr y-size -1)
+  (let* ((a1 ((atom-array lin1 col1) () () layer1))
+         (a2 ((atom-array lin2 col2) () () layer2))
+         (lx ())(ly ()) 
+         (so1 (a1 (list 0 y-size) (list 0 x-size)))
+         (so2 (a2 0 0))  )
+	 
+    (connect (a1 0 0) so2)
+    (each ((j so1))                         ;build the source connection
+	  (each ((i j))
+		(when (<> i (a1 0 0))
+		      (dup-connection (a1 0 0) so2
+				      i so2)) ) )
+        	
+    (setq ly (list 0 y-size))     
+    (for (i 0 (1- lin2))                     ;copy it evrywhere
+	 (setq lx (list 0 x-size))
+	 (for (j 0 (1- col2)) 
+	      (when (or (0<> i) (0<> j))
+		    (dup-connection so1 so2 (a1 ly lx) (a2 i j)) )
+              (setq lx (local-next lx x-step col1)) )
+	 (setq ly (local-next ly y-step lin1)) ) ) )
+
+
+
+
+;;; mask-toric-connect. l1 is a (lin1 x col1) layer
+;;;                   l2 is a (lin2 x col2) layer
+;;;     connects each cell in l2 to a (y-size x x-size) area in l1
+;;;     areas are stepped by y-step and x-step.
+;;; Exceeding connections are wrapped around l1
+
+(de mask-toric-connect(layer1 lin1 col1 
+                    layer2 lin2 col2
+                    x-step y-step x-size y-size)
+
+  (when (or (<> lin1 (* lin2 y-step))
+            (<> col1 (* col2 x-step)) )
+	(printf "mask-toric-connect:[warning]:inexact layer size.\n") )
+
+  (let* ((y-bound (+ lin1 (- y-size y-step)))
+         (x-bound (+ col1 (- x-size x-step)))
+         (a1 ((atom-array y-bound x-bound)
+                (list 0 (1- lin1))
+                (list 0 (1- col1)) 
+                layer1 ) )
+         (a2 ((atom-array lin2 col2)
+                ()
+                () 
+                layer2 ) )
+         (lx ())
+         (ly ())
+         (so1 (a1 (list 0 (1- y-size)) (list 0 (1- x-size))))
+         (so2 (a2 0 0)) ) 
+
+        (a1  (list lin1 (1- y-bound)) () (a1 (list 0 (- (1- y-bound) lin1)) ()))
+        (a1  () (list col1 (1- x-bound)) (a1 () (list 0 (- (1- x-bound) col1))))
+
+        (incr x-size -1)
+        (incr y-size -1)
+        (connect so1 so2)
+         
+        (setq ly (list 0 y-size))
+        (for (i 0 (1- lin2))
+           (setq lx (list 0 x-size))
+           (for (j 0 (1- col2))
+              (when (or (0<> i) (0<> j))
+                 (dup-connection so1 so2 (a1 ly lx) (a2 i j)) )
+              (setq lx (local-next lx x-step x-bound)) )
+           (setq ly (local-next ly y-step y-bound)) ) ) )
+
+
+
+
+
+
+              
+
+
+
+
+
+;;; mask-2d-reverse.  l1 is a (lin1 x col1) layer
+;;;                   l2 is a (lin2 x col2) layer
+;;;     connects a (y-size x x-size) area in l2 to each l1 cell
+;;;     areas are stepped by y-step and x-step.
+
+(de mask-2d-reverse(layer2 lin2 col2 
+                    layer1 lin1 col1
+                    x-step y-step x-size y-size)
+
+  (when (or (<> lin1 (+ (* (1- lin2) y-step) y-size))
+            (<> col1 (+ (* (1- col2) x-step) x-size)) )
+       (printf "mask-2d-reverse:[warning]:inexact layer size.\n") )
+
+  (incr x-size -1)
+  (incr y-size -1)
+  (let* ((a1 ((atom-array lin1 col1) () () layer1))
+         (a2 ((atom-array lin2 col2) () () layer2))
+         (lx ())(ly ()) 
+         (so1 (a1 (list 0 y-size) (list 0 x-size)))
+         (so2 (a2 0 0)) )
+                  
+        (connect so2 so1)                        ;build the source connection
+        
+        (setq ly (list 0 y-size))     
+        (for (i 0 (1- lin2))                     ;copy it evrywhere
+           (setq lx (list 0 x-size))
+           (for (j 0 (1- col2)) 
+              (if (or (0<> i) (0<> j))
+                 (dup-connection so2 so1 (a2 i j) (a1 ly lx)) )
+              (setq lx (local-next lx x-step col1)) )
+           (setq ly (local-next ly y-step lin1)) ) ) )
+
+
+
+
+
+
+
+
+
+
+;;; tdnn-connect.   layer1 is a (ntraits1 x nframes1) layer
+;;;                 layer2 is a (ntraits2 x nframes2) layer
+;;; connects 'size' frames in l1 to one frame in l2
+;;; replicate the connections for each frame in l2, stepping 
+;;; input window by 'step'.
+
+(de tdnn-connect(layer1 nframes1 ntraits1 
+                 layer2 nframes2 ntraits2
+                 step size)
+  (when (<> nframes1 (+ (* (1- nframes2) step) size))
+       (printf "tdnn-connect:[benign warning] bad frame numbers.\n") )
+  (incr size -1)
+  (let* ((a1 ((atom-array nframes1 ntraits1) () () layer1))
+         (a2 ((atom-array nframes2 ntraits2) () () layer2))
+         (index (list 0 size))
+         (so1 (a1 index ()))
+         (so2 (a2 0 ())) )
+      
+     (connect so1 so2) 
+     (for (i 1 (1- nframes2)) 
+        (setq index (local-next index step nframes1))
+        (dup-connection so1 so2 (a1 index ()) (a2 i ())) ) ) )
+
+
+
+
+
+
+
+
+; ====== a modified set-epsi-XX function that we would like to use
+   
+
+
+
+;;; mask-epsi(s)
+;;; sets the epsilon for each cell to s divided by
+;;; the square root of the cell's fanin, and by the
+;;; square root of the number of connections sharing
+;;; the weight of one of the incoming connections.
+
+(de mask-epsi(s)
+   (epsi-sqrt s)
+   (all-neuron (i)
+     (when (amont i)
+        (nepsilon i (/ (nepsilon i)
+                       (sqrt (scounter (lasta (amont i)) i)) )) ) ) )  
+
+
+
+
+   
+; ======= functions used above ========
+
+
+
+;;; local-next. 
+;;; (a b),step,max ---> (a+step b+step) bounded by max-1
+
+(de local-next((a b) step max)
+    (incr a step)
+    (incr b step)
+    (while (>= b max)
+      (incr a -1)
+      (incr b -1) )
+    (list a b) )
+
+
+
+
+
+
+
+; ====== function for connecting the biases (for using with build-net-nobias)
+
+
+
+
+
+;;; bias-connect
+;;; connects each cell in 'layer' to the bias unit.
+
+(de bias-connect(layer)
+     (connect 0 layer) )
+
+
+
+
+
+
+
+
+;;; shared-bias-connect
+;;; connects each cell in 'layer' to the bias unit,
+;;; with the same bias !
+
+(de shared-bias-connect(layer)
+     (let ((ref (car layer)))
+       (connect 0 ref)
+       (each ((i (cdr layer)))
+          (dup-connection 0 ref 0 i) ) ) )
+  
+
+
+
+
+
+
+;;; tdnn-bias-connect
+;;; connects each unit in 'layer' to the bias unit,
+;;; with the same shared bias for each trait
+
+(de tdnn-bias-connect(layer nframes ntraits)
+     (let* ((a ((atom-array nframes ntraits) () () layer))
+            (ref (a 0 ())) )
+       (connect 0 ref)
+       (for (i 1 (1- nframes))
+          (dup-connection 0 ref 0 (a i ())) ) ) )
+
+
+
+
+
+

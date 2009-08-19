@@ -1,0 +1,261 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Serial port output.
+;; Yann LeCun, June 2004.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Serial Port
+;; This package provides a simple interface for
+;; writing data to a serial port.
+;; It does not yet provide functions 
+;; for reading from the serial port.
+
+(de serial-dummy ()
+  (cpheader "#include <sys/types.h>")
+  (cpheader "#include <sys/stat.h>")
+  (cpheader "#include <fcntl.h>")
+  (cpheader "#include <termios.h>")
+  (cpheader "#include <stdio.h>")
+  (cpheader "#include <errno.h>")
+  (cpheader "#include <unistd.h>")
+  ())
+
+
+#? ** low-level serial port functions
+;; These functions provide a low-level interface
+;; to the serial port.
+
+#? (serial-close <fd>)
+;; close file descriptor <fd>. 
+(de serial-close (fd) ((-int-) fd) #{ close($fd); #} ())
+
+#? (serial-open <port> <speed> <bits> <parity> <stop>)
+;; Open a serial port for writing.
+;; <port> can be any serial device, e.g. "/dev/ttyS0", or
+;; "/dev/ttyS1".
+;; <speed>: baud rate, which can take one of the following values: 
+;; 0 50 75 110 134 150 200 300 600 1200 1800 2400 4800 9600 19200 38400
+;; 57600 115200.
+;; <bits>: number of data bits. Can be between 5 and 8.
+;; <parity>: parity mode, can be "N" (no parity), "E" (even), or "O" (odd).
+;; <stop>: number of stop bits. Can be 1 or 2.
+(de serial-open (port speed bits parity stop)
+  ((-str-) port)
+  ((-int-) speed)
+  ((-int-) bits)
+  ((-str-) parity)
+  ((-int-) stop)
+  (when (or (> bits 8) (< bits 5)) 
+    (error "number of bits should be between 5 and 8"))
+  (when (and (<> stop 1) (<> stop 2))
+    (error "number of stop bits should be 1 or 2"))
+  (let* ((fd 0)
+	 (par 0))
+    ((-int-) fd)
+    ((-int-) par)
+    (selectq parity
+      ("N" (setq par 0))
+      ("E" (setq par 1))
+      ("O" (setq par 2))
+      (t (error "parity should be a one-character string containing N, E or O")))
+    #{ {struct termios  term;
+        long flags;
+        int sp = B0;
+        $fd = open( $port->data, O_RDWR + O_NOCTTY + O_NDELAY);
+        if ($fd < 0) { 
+          printf("port=[%s]\n",(unsigned char *)($port->data));
+          run_time_error("could not open serial port"); 
+        }
+        if (((flags = fcntl($fd, F_GETFL, 0)) < 0) ||
+            (fcntl($fd, F_SETFL, flags & ~O_NONBLOCK) < 0) ) {
+          close($fd);
+          run_time_error("cannot set blocking IO on serial port");
+        }
+        tcgetattr($fd ,&term);    
+        switch ($speed) {
+          case 0: sp=B0; break;
+          case 50 : sp=B50; break;
+          case 75 : sp=B75; break;
+          case 110 : sp=B110; break;
+          case 134: sp=B134; break;
+          case 150 : sp=B150; break;
+          case 200 : sp=B200; break;
+          case 300 : sp=B300; break;
+          case 600 : sp=B600; break;
+          case 1200 : sp=B1200; break;
+          case 1800 : sp=B1800; break;
+          case 2400 : sp=B2400; break;
+          case 4800 : sp=B4800; break;
+          case 9600 : sp=B9600; break;
+          case 19200 : sp=B19200; break;
+          case 38400 : sp=B38400; break;
+          case 57600 : sp=B57600; break;
+          case 115200 : sp=B115200; break;
+          default: run_time_error("illegal baud rate for serial port");
+        }
+        cfsetospeed(&term, sp);
+        cfsetispeed(&term, sp);
+        switch ($par) {
+          case 0:  term.c_cflag &= ~PARENB; break;
+          case 1:  term.c_cflag |= PARENB; term.c_cflag &= ~PARODD; break;
+          case 2:  term.c_cflag |= PARENB; term.c_cflag |= PARODD; break;
+          default: run_time_error("serial-open internal error 1");
+        }
+        switch ($bits) {
+          case 5: term.c_cflag &= ~CSIZE; term.c_cflag |= CS5; break;
+          case 6: term.c_cflag &= ~CSIZE; term.c_cflag |= CS6; break;
+          case 7: term.c_cflag &= ~CSIZE; term.c_cflag |= CS7; break;
+          case 8: term.c_cflag &= ~CSIZE; term.c_cflag |= CS8; break;
+          default: run_time_error("serial-open internal error 2");
+        }
+        switch ($stop) {
+          case 1: term.c_cflag &= ~CSTOPB; break;
+          case 2: term.c_cflag |= CSTOPB; break;
+          default: run_time_error("serial-open internal error 3");
+        }
+        tcsetattr($fd, TCSANOW, &term);
+    } #} 
+    fd))
+  
+
+#? (fd-write-byte <fd> <c>)
+;; write unsigned byte <c> to file descriptor <fd>.
+(de fd-write-byte (fd c) 
+  ((-int-) fd)
+  ((-ubyte-) c)
+  (to-int #{ write($fd, &$c, 1) #}))
+
+#? (fd-write-string <fd> <s>)
+;; write string <s> to file descriptor <fd>.
+(de fd-write-string (fd s)
+  ((-int-) fd)
+  ((-str-) s)
+  (let* ((l (len s)))
+    (to-int #{ write($fd,($s)->data,$l) #})))
+
+
+#? (fd-read-byte <fd> <c>)
+;; Read one unsigned byte <c> from file descriptor <fd>.
+;; When not data is available, this function waits until
+;; at least one byte is received. Returns -1 if an error occurs.
+(de fd-read-byte (fd) 
+  ((-int-) fd)
+  (let ((c 0)(s -1))
+    ((-ubyte-) c)
+    ((-int-) s)
+    (setq s (to-int #{ read($fd, &$c, 1) #}))
+    (if (< s 0) -1 (to-int c)) ) )
+
+#? (fd-read-test <fd>)
+;; Test if data is available for reading on file descriptor <fd>
+;; using the unix function select(2).
+(de fd-read-test(fd)
+   ((-int-) fd)
+   (let ((r ()))
+     ((-bool-) r)
+     (cpheader "#include <sys/select.h>")
+     #{
+         fd_set s;
+         struct timeval tm;
+         int i;
+         tm.tv_sec = 0;
+         tm.tv_usec = 10;
+         FD_ZERO(&s);
+	 FD_SET($fd,&s);
+         i = select($fd+1, &s, NULL, NULL, &tm);
+         $r = (i >= 0);
+     #} 
+     r ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** serial-port
+;; A class for writing to a serial port.
+(defclass serial-port object ((-int-) fd))
+
+#? (new serial-port <port> <speed> <bits> <parity> <stop>)
+;; Create a new serial-port object. 
+;; <port> can be any serial device, e.g. "/dev/ttyS0", or
+;; "/dev/ttyS1".
+;; <speed>: baud rate, which can take one of the following values: 
+;; 0 50 75 110 134 150 200 300 600 1200 1800 2400 4800 9600 19200 38400
+;; 57600 115200.
+;; <bits>: number of data bits. Can be between 5 and 8.
+;; <parity>: parity mode, can be "N" (no parity), "E" (even), or "O" (odd).
+;; <stop>: number of stop bits. Can be 1 or 2.
+;; The serial port is closed automatically upon destruction of the object.
+(defmethod serial-port serial-port (f speed bits parity stop)
+  ((-str-) f)
+  ((-int-) speed bits stop)
+  ((-str-) parity)
+  (setq fd -1)
+  (setq fd (serial-open f speed bits parity stop)) ())
+
+(defmethod serial-port -destructor () 
+  (when (<> fd -1) (serial-close fd)) (setq fd -1) ())
+
+#? (==> <serial-port> write-byte <b>)
+;; write unsigned byte <b> to serial port.
+(defmethod serial-port write-byte (b)
+  ((-ubyte-) b)
+  (let ((n (fd-write-byte fd b)))
+    (when (< n 0) 
+      (printf "ERRNO=%d\n" (to-int #{ errno #}))
+      (error "error occured while writing"))
+    (when (<> n 1) (error "could not write 1 byte"))
+    ()))
+
+#? (==> <serial-port> write-string <s>)
+;; write string <s> to serial port.
+(defmethod serial-port write-string (s)
+  ((-str-) s)
+  (let* ((l (len s))
+	 (n (to-int #{ write($fd,($s)->data,$l) #})))
+    (when (< n 0) 
+      (printf "ERRNO=%d\n" (to-int #{ errno #}))
+      (error "error occured while writing"))
+    (when (<> n l) (error "could not write all bytes"))
+    ()))
+        
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () serial-dummy serial-open serial-close 
+          fd-write-byte fd-write-string
+          fd-read-byte fd-read-test
+	  (serial-port serial-port -destructor 
+                       write-byte write-string))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; simple test using the serial-port class
+;; (serial-test0 "hello world\n")
+(de serial-test0 (s)
+  (let* ((ser (new serial-port "/dev/ttyS0" 9600 8 "N" 1)))
+    (==> ser write-string s)))
+
+;; simple test using low-level string-writing function
+;; (serial-test1 "hello world\n")
+(de serial-test1 (s)
+  (let* ((ser (serial-open "/dev/ttyS0" 9600 8 "N" 1)))
+    (fd-write-string ser s)
+    (serial-close ser)))
+
+;; simple test: write characters in a string byte-by-byte
+;; (serial-test2 "hello world\n")
+(de serial-test2 (s)
+  (let* ((ser (serial-open "/dev/ttyS0" 9600 8 "N" 1))
+	 (n (len s)))
+    (for (i 1 n) (fd-write-byte ser (asc (mid s i 1))))
+    (serial-close ser)))
+
+;; simple test: write ubytes from an idx
+;; (serial-test3 [u 104 101 108 108 111  32 119 111 114 108 100  10])
+(de serial-test3 (s)
+  (let* ((ser (serial-open "/dev/ttyS0" 9600 8 "N" 1)))
+    (idx-bloop ((c s)) (fd-write-byte ser (c)))
+    (serial-close ser)))
+
+
+
+
+

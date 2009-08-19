@@ -1,0 +1,94 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: net-cscfe.lsh,v 1.2 2002/12/19 04:27:25 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a lenet5 with the "RBF" layer on top
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gblearn2/gb-modules-nn")
+(libload "gblearn2/net-cscf")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? ** net-cscfe
+;;.AUTHOR Yann LeCun
+;; convolutional net where the layers are
+;; convolution, subsampling, convolution, 
+;; full connect, and euclidean distance RBF.
+(defclass net-cscfe idx3-module
+  ((-obj- (net-cscf)) net)
+  ((-obj- (idx3-ddstate)) netout)
+  ((-obj- (e-layer)) rbf))
+
+#? (new net-cscfe <n> <e> <thick> <si> <sj>)
+;; <n> is a net-cscf, <e> is an e-dist layer,
+;; <thick> is the number of outputs.
+;; <si>,<sj> are the initial replication factors.
+(defmethod net-cscfe net-cscfe (n e thick si sj)
+  ((-obj- (net-cscf)) n)
+  ((-obj- (e-layer)) e)
+  ((-int-) thick si sj)
+  (setq net n)
+  (setq netout (new idx3-ddstate thick si sj))
+  (setq rbf e)
+  ())
+
+(defmethod net-cscfe fprop (in out)
+  ((-obj- (idx3-state)) in)
+  ((-obj- (idx3-state)) out)
+  (==> net fprop in netout)
+  (==> rbf fprop netout out)
+  ())
+
+(defmethod net-cscfe bprop (in out)
+  ((-obj- (idx3-dstate)) in)
+  ((-obj- (idx3-dstate)) out)
+  (==> rbf bprop netout out)
+  (==> net bprop in netout)
+  ())
+
+(defmethod net-cscfe bbprop (in out)
+  ((-obj- (idx3-ddstate)) in)
+  ((-obj- (idx3-ddstate)) out)
+  (==> rbf bbprop netout out)
+  (==> net bbprop in netout)
+  ())
+  
+(defmethod net-cscfe forget (v p)
+  ((-flt-) v p)
+  (==> net forget v p)
+  (==> rbf forget v p)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make () (net-cscfe net-cscfe fprop bprop bbprop forget))
+
+

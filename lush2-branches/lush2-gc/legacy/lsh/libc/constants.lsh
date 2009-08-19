@@ -1,0 +1,109 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the Lesser GNU General Public License as 
+;;; published by the Free Software Foundation; either version 2 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? *** Symbolic Constants
+;; header files of C libraries are often filled with large 
+;; amounts of #define directives that define numerical macros, 
+;; flags and other constants. Interfacing these libraries
+;; to Lush requires to turn those constants into Lisp 
+;; symbols. Lush contains a mechanism for defining such
+;; constants without filling up the global variable name space
+;; and risquing name clashes.
+;; Constants can be defined with the <(defcconst "constant-name" value)>
+;; directive. Constants can later be accessed using the <@constant-name> macro
+;; or the <@@constant-name> macro. The <@> macro expands into
+;; a macro that evaluates to the value, while <@@> directly expands
+;; to the value at read time.
+;;.SEE @<identifier>
+;;.SEE (defcconst <identifier> <val>)
+
+(defvar |*CONSTANTS| (htable))
+
+#? (defcconst <identifier> <val>)
+;; Defines a symbolic constant named <identifier> and equal to <val>.
+;; Argument <identifier> must be a string or a symbol.
+;; Argument <val> must be a number or a string.
+;; These constant values are not accessible as variables
+;; but are accessible using the |@| macro-character.
+(dm defcconst(fn var val)
+  (when (symbolp var)
+    (setq var (pname var)) )
+  (when (not (stringp var))
+    (error 'defcconst "Constant name is not a string or a symbol" var) )
+  `(let ((val ,val))
+     (when (not (or (numberp val) (stringp val)
+                    (= (classof val) |GPTR|) (not val) ))
+       (error 'defcconst "Constant value has illegal type" ',var) )
+     (|*CONSTANTS| ',var val) 
+     ',var ) )
+
+
+#? @<identifier> @@<identifier>
+;; These macro-character expand to a expressions that retrieve 
+;; the value of the symbolic constant named <identifier>.
+;; The <@> form causes the retrieval to occur at macro-expansion time. 
+;; while the <@@> form causes the retrieval to occur at read time.
+;; These macros are particularly useful for using symbolic constants 
+;; in compiled code.
+;;
+;; Argument <identifier> must be a legal C identifier name.
+;;
+;; Compatibility notes:
+;;.IP
+;; If <identifier> has not been defined using <defcconst>,
+;; the global value of the symbol named <identifier> is used.
+;;.IP
+;; If the macro-character <|@|> cannot read a legal C identifier name, 
+;; it reads a lisp expression and arranges for that expression to 
+;; be evaluated during the macro expansion time.
+;;.IP
+;; The expansion of the <@@> form depends on the execution of the 
+;; previous expressions, which may cause discrepancies when loading
+;; tokenized files. However, the <@@> is more efficient in interpreted
+;; mode since the expansion occurs in advance of execution.
+(dmc |@|
+     (let ((scndat (read-string "@"))
+	   (expr (read-string "A-Za-z_$")))
+       (cond
+        ;; found a legal c identifier
+        ((<> expr "")
+         (setq expr (concat expr (read-string "A-Za-z0-9_$")))
+         (when (not (index (skip-char "") " \t\n\r()[];"))
+           (printf "*** Warning\007: unexpected character after @%s\n" expr) 
+           (printf "*** Warning\007: insert a space to remove this warning\n") )
+	 (if (= scndat "@")
+	     (or (:|*CONSTANTS| expr) 
+		 (apply scope (list (namedclean expr))))
+	   (list (eval `(mlambda |_Args| 
+			  (or (:|*CONSTANTS| ,expr) 
+			      (apply scope (cons (namedclean ,expr) ())))))) ))
+        ;; found an expression
+        (t
+	 (if (= scndat "@")
+	     (eval (read))
+	   (setq expr (read))
+	   (list (eval `(mlambda |_Args| ,expr))) ) ) ) ))

@@ -1,0 +1,151 @@
+#;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#;;;
+#;;; LUSH Lisp Universal Shell
+#;;;   Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
+#;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+#;;; Includes parts of TL3:
+#;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+#;;; Includes selected parts of SN3.2:
+#;;;   Copyright (C) 1991-2001 AT&T Corp.
+#;;;
+#;;; This program is free software; you can redistribute it and/or modify
+#;;; it under the terms of the Lesser GNU General Public License as 
+#;;; published by the Free Software Foundation; either version 2 of the
+#;;; License, or (at your option) any later version.
+#;;;
+#;;; This program is distributed in the hope that it will be useful,
+#;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+#;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#;;; GNU General Public License for more details.
+#;;;
+#;;; You should have received a copy of the GNU General Public License
+#;;; along with this program; if not, write to the Free Software
+#;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+#;;;
+#;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+@SET_MAKE@
+SHELL = @SHELL@
+VPATH = @srcdir@
+srcdir = @srcdir@
+top_srcdir = @top_srcdir@
+top_builddir = .
+mybindir = ./bin/@host@
+mysysdir = ./sys
+mydocdir = ./doc
+myetcdir = ./etc
+
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+bindir = @bindir@
+datarootdir = @datarootdir@
+datadir = @datadir@
+libdir = @libdir@
+mandir = @mandir@
+
+MV = @MV@
+M = @RM@
+LN_S = @LN_S@
+INSTALL = @INSTALL@
+
+#;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+SUBDIRS=src
+
+world: all ${mybindir}/lush2 ${mysysdir}/stdenv.dump ${mydocdir}/lush-manual.pdf
+	@echo "-------------------------------------------------------"
+	@echo "Congratulations: the compilation was successful!"
+	@echo ""
+	@echo "Lush is designed to run from the compilation directory."
+	@echo "Simply include" `pwd`"/bin in your shell search path,"
+	@echo "or create a symlink to the executable" `pwd`"/bin/lush2."
+	@echo ""
+	@echo "If you have root permissions, you can also perform a"
+	@echo "system wide installation by typing 'make install'"
+	@echo "-------------------------------------------------------"
+
+nodoc: all ${mybindir}/lush2 ${mysysdir}/stdenv.dump
+
+${mybindir}/lush2: all FORCE
+	@test -d ${mybindir} || mkdir ${mybindir}
+	@test -r ${mybindir}/lush2.~3 && \
+	  ${MV} ${mybindir}/lush2.~3 ${mybindir}/lush2.~4 || true
+	@test -r ${mybindir}/lush2.~2 && \
+	  ${MV} ${mybindir}/lush2.~2 ${mybindir}/lush2.~3 || true
+	@test -r ${mybindir}/lush2.~1 && \
+	  ${MV} ${mybindir}/lush2.~1 ${mybindir}/lush2.~2 || true
+	@test -r ${mybindir}/lush2 && \
+          ${MV} ${mybindir}/lush2 ${mybindir}/lush2.~1 || true
+	${INSTALL} -m 755 src/lush2 ${mybindir}
+
+${mysysdir}/stdenv.dump: all ${mybindir}/lush2 FORCE
+	${mybindir}/lush2 @sysenv stdenv -- ${mysysdir}/stdenv.dump
+
+${mydocdir}/lush-manual.pdf: ${mysysdir}/stdenv.dump
+	${mybindir}/lush2 ${myetcdir}/make-pdf-manual
+
+cleanse: FORCE
+	-for dir in `find . -type d -name 'C' -print -prune` ; \
+	  do ${RM} -rf $$dir ; done 
+
+all depend clean distclean: FORCE
+	for d in ${SUBDIRS} ; \
+	  do ( cd $$d && ${MAKE} $@ ) || exit ; done
+	${MAKE} post-$@
+
+post-all: FORCE
+	@echo Compilation Done.
+
+post-depend: FORCE
+	@echo Done.
+
+post-clean: cleanse FORCE
+	-${RM} 2>/dev/null ${mysysdir}/stdenv.dump
+
+post-distclean: post-clean FORCE
+	-${RM} 2>/dev/null include/lushconf.h include/lushmake.h 
+	-${RM} 2>/dev/null -rf autom4te.cache
+	-${RM} 2>/dev/null -rf ${mybindir}/lush2 ${mybindir}/lush2~[0-9]
+	-${RM} 2>/dev/null Makefile config.log config.status
+	-${RM} 2>/dev/null doc/lush-manual.pdf
+	-${RM} 2>/dev/null doc/latex/*
+	-${RM} 2>/dev/null doc/html/*
+
+INSTALLDIRS =  etc include src sys lsh packages data demos doc
+FINDDIRS  = -type d -name C\* -prune -o -type d -print
+FINDFILES = -type d -name C\* -prune -o -type f -print
+
+install-sub: FORCE
+	@echo "-- Installing executable"
+	${INSTALL} -d ${DESTDIR}${bindir}
+	${INSTALL} -m 755 src/lush2 ${DESTDIR}${bindir}
+	@echo "-- Installing manpage"
+	${INSTALL} -d ${DESTDIR}${mandir}/man1
+	${INSTALL} ${srcdir}/etc/lush2.1 ${DESTDIR}${mandir}/man1
+	@echo "-- Creating data directories"
+	${INSTALL} -d ${DESTDIR}${datadir}/lush2
+	cd ${srcdir} ;\
+	for subdir in ${INSTALLDIRS} ; do \
+	  for f in `find $$subdir ${FINDDIRS}` ; do \
+	    ${INSTALL} -d  ${DESTDIR}${datadir}/lush2/$$f ; done ; done
+	@echo "-- Creating data files"
+	cd ${srcdir} ;\
+	for subdir in  ${INSTALLDIRS} ; do \
+	  for f in `find $$subdir ${FINDFILES}` ; do \
+	    ${INSTALL} ${srcdir}/$$f ${DESTDIR}${datadir}/lush2/$$f ; done ; done
+
+# The dump must be regenerated on the basis of the installed 
+# lush files in order to get the time stamps right.
+install-dump: FORCE
+	${DESTDIR}${bindir}/lush2 @sysenv stdenv -- ${DESTDIR}${datadir}/lush2/sys/stdenv.dump
+	chmod 644  ${DESTDIR}${datadir}/lush2/sys/stdenv.dump
+
+install-nolink: install-sub install-dump
+	@echo "-- Install done."
+
+install: all install-sub install-dump
+	@echo "-- Install done."
+
+FORCE:
+
+.PHONY: FORCE
