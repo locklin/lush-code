@@ -24,6 +24,32 @@
  * 
  ***********************************************************************/
 
+/* Notes on the symbol implementation:
+ *
+ * 1. For every symbol there is a unique hash_name in names
+ *    and a unique AT (hn->named).
+ *
+ * 2. All live hash_names are in names, which is a memory root.
+ *
+ * 3. Symbol bindings are represented by a chain of objects
+ *    of type symbol_t (a misnomer, should have been called
+ *    binding_t). This chain is sometimes referred to as the
+ *    "symbol stack".
+ *
+ * 4. A symbol is globally bound if the symbol_t at the end
+ *    of the chain (i.e., the one with s->next == NULL) has
+ *    a valueptr != NULL.
+ *
+ * 5. As long as a symbol is globally bound, its associated AT
+ *    shall not be reclaimed.
+ *
+ * 6. When a hash_name is found to be unreachable, it is
+ *    tentatively moved into the purgatory. It may be resurrected
+ *    from there when a search for it occurs before the next gc.
+ *    (The purgatory is necessary for asynchronous gc to work
+ *    correctly).
+ */
+
 #include "header.h"
 
 #define SYMBOL_CACHE_SIZE 255
@@ -38,32 +64,20 @@
 #define UNLOCK_SYMBOL(s)       UNSET_PTRBIT(s->hn, SYMBOL_LOCKED_BIT)
 #define TYPELOCK_SYMBOL(s)     SET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
 #define TYPEUNLOCK_SYMBOL(s)   UNSET_PTRBIT(s->hn, SYMBOL_TYPELOCKED_BIT)
-#define SYM_HN(s)              ((struct hash_name *)CLEAR_PTR((s)->hn))
+#define SYM_HN(s)              ((hash_name_t *)CLEAR_PTR((s)->hn))
+#define SYM_AT(s)              (SYM_HN(s)->backptr)
 
 /* globally defined names */
 
-struct hash_name **names = NULL;
+typedef struct hash_name {
+   const char *name;
+   at *backptr;
+   struct hash_name *next;
+   unsigned long hash;
+} hash_name_t;
 
-/* Notes on the symbol implementation:
- *
- * 1. For every symbol there is a unique hash_name in names
- *    and a unique AT (hn->named).
- *
- * 2. All hash_name are in names, which is a memory root.
- *
- * 3. Symbol bindings are represented by a chain of objects
- *    of type symbol_t (a misnomer, should have been called
- *    binding_t). This chain is sometimes referred to as the
- *    "symbol stack".
- *
- * 4. A symbol is globally bound if the symbol_t at the end
- *    of the chain (i.e., the one with s->next == NULL) has
- *    a valueptr != NULL.
- *
- * 5. As long as a symbol is globally bound, its associated AT
- *    shall not be reclaimed.
- * 
- */
+static hash_name_t **live_names = NULL;
+static hash_name_t **purgatory = NULL;
 
 /* predefined symbols */
 
@@ -72,38 +86,30 @@ static at *at_scope;
 
 /* contains the symbol names and hash */
 
-typedef struct hash_name {
-   const char *name;
-   at *named;
-   struct hash_name *next;
-   unsigned long hash;
-} hash_name_t;
-
-
-void clear_symbol_hash(hash_name_t *hn, size_t _)
+static void clear_symbol_hash(hash_name_t *hn, size_t _)
 {
    hn->name = NULL;
-   hn->named = NULL;
+   hn->backptr = NULL;
    hn->next = NULL;
 }
 
-void mark_symbol_hash(hash_name_t *hn)
+static void mark_symbol_hash(hash_name_t *hn)
 {
    MM_MARK(hn->name);
-   if (hn->named)
-      MM_MARK(Mptr(hn->named));  /* weak reference to top of symbol stack */
+   if (hn->backptr)
+      MM_MARK(Mptr(hn->backptr));  /* weak reference to top of symbol stack */
    MM_MARK(hn->next);
 }
 
 static mt_t mt_symbol_hash = mt_undefined;
 
 
-void clear_symbol(symbol_t *s, size_t _)
+static void clear_symbol(symbol_t *s, size_t _)
 {
    memset(s, 0, sizeof(symbol_t));
 }
 
-void mark_symbol(symbol_t *s)
+static void mark_symbol(symbol_t *s)
 {
    //MM_MARK(s->hn); /* not necessary, all hns are in names */
 
@@ -113,36 +119,40 @@ void mark_symbol(symbol_t *s)
    if (s->next)
       MM_MARK(s->next)
    else if (s->valueptr) /* when a global symbol mark the AT */
-      MM_MARK(SYM_HN(s)->named);
+      MM_MARK(SYM_AT(s));
 }
 
 /* 
  * When an AT referencing a symbol is reclaimed,
  * remove the hash_name from the symbol hash (names).
  */
-static hash_name_t *search_by_name(const char *, int);
-void at_symbol_notify(at *p, void *_)
-{
-   symbol_t *s = Symbol(p);
-   assert(s->next==NULL);
-   assert(s->valueptr==NULL);
-   assert(SYM_HN(s)->named == p);
-   search_by_name(SYM_HN(s)->name, -1);
-}   
 
-mt_t mt_symbol = mt_undefined;
+static mt_t mt_symbol = mt_undefined;
 
 /*
- * search_by_name(s, mode) 
- * Return a ptr to the HASH_NAME node for name S. Return NIL
- * when an error occurs. 
- * If MODE is 0, just search, if MODE is +1 creates if not found,
- * and if MODE is -1 delete its hash node.
- * This is the only function that directly manipulates the
- * static hash table 'names'.
+ * Return a pointer to a hash node for name <s> or NULL when
+ * no such names was found in <names>.
+ * 
+ * When <mode>==0 just search, when <mode>==1 create new hash node
+ * if not found, when <mode>==-1 unlink if found.
+ *
  */
 
-static hash_name_t *search_by_name(const char *s, int mode)
+static void clear_at_symbol(at *a, size_t _)
+{
+   a->head.cl = symbol_class;
+   Symbol(a) = NULL;
+}
+
+static void mark_at_symbol(at *a)
+{
+   MM_MARK(Symbol(a));
+}
+
+static mt_t mt_at_symbol = mt_undefined;
+
+
+static hash_name_t *get_symbol_hash_by_name(const char *s)
 {
    /* Calculate hash value */
    unsigned long hash = 0;
@@ -154,29 +164,99 @@ static hash_name_t *search_by_name(const char *s, int mode)
       hash = (hash<<6) | ((hash&0xfc000000)>>26);
       hash ^= c;
    }
-   hash_name_t **lasthn = names + (hash % (HASHTABLESIZE-1));
    
-   /* Search in list and operate */
+   /* Search in live_names */
+   hash_name_t **lasthn = live_names + (hash % (HASHTABLESIZE-1));
    hash_name_t *hn = *lasthn;
    while (hn && strcmp(s, hn->name)) {
       lasthn = &(hn->next);
       hn = *lasthn;
    }
-   if (hn && !hn->named)
-      printf("search_by_name turned up unused symbol (%s)\n",
-             hn->name);
-   if (!hn && mode==1) {
-      hn = mm_alloc(mt_symbol_hash);
-      hn->hash = hash;
-      hn->name = mm_strdup(s);
-      *lasthn = hn;
-      
-   } else if (hn && mode==-1) {
-      *lasthn = hn->next;    // unlink this hn
-      hn = NULL;             // return NULL
+   
+   if (hn) {
+      assert(hn->backptr);
+
+   } else {
+      /* if not found, check purgatory before creating new */  
+      hash_name_t **lastpurg = purgatory + (hash % (HASHTABLESIZE-1));
+      hn = *lastpurg;
+      while (hn && strcmp(s, hn->name)) {
+         lastpurg = &(hn->next);
+         hn = *lastpurg;
+      }
+      if (hn) {
+         /* unlink and move to live_names */
+         *lastpurg = hn->next;
+         hn->next = NULL;
+         *lasthn = hn;
+      } else {
+         hn = mm_alloc(mt_symbol_hash);
+         hn->hash = hash;
+         hn->name = mm_strdup(s);
+         hn->backptr = mm_alloc(mt_at_symbol);
+         assert(hn->next==NULL);
+         AssignClass(hn->backptr, symbol_class);
+         Symbol(hn->backptr) = mm_alloc(mt_symbol);
+         Symbol(hn->backptr)->hn = hn;
+         /* link in at front of bucket */
+         lasthn = live_names + (hash % (HASHTABLESIZE-1));
+         hn->next = *lasthn;
+         *lasthn = hn;
+      }
    }
    return hn;
 }
+
+/* 
+ * If symbol hash is in live_names, move it to purgatory and
+ * return false. If it is in purgatory, unlink it and return true.
+ */
+static bool unlink_symbol_hash(hash_name_t *hn)
+{
+   hash_name_t **lasthn = live_names + (hn->hash % (HASHTABLESIZE-1));
+   hash_name_t **lastpurg = purgatory + (hn->hash % (HASHTABLESIZE-1));
+   hash_name_t *lhn = *lasthn;
+
+   while (lhn && (lhn != hn)) {
+      lasthn = &(lhn->next);
+      lhn = *lasthn;
+   }
+
+   if (lhn) {
+      /* found, move to purgatory */
+      *lasthn = lhn->next;
+      lhn->next = *lastpurg;
+      *lastpurg = lhn;
+      return false;
+
+   } else {
+      /* it must be in purgatory then */
+      lhn = *lastpurg;
+      while (lhn && (lhn != hn)) {
+         lastpurg = &(lhn->next);
+         lhn = *lastpurg;
+      }
+      assert(lhn);
+      *lastpurg = lhn->next;
+      lhn->next = NULL;
+      return true;
+   }
+}
+  
+
+/* ats for symbols are special, they need a finalizer */
+
+static bool finalize_at_symbol(at *a)
+{
+   symbol_t *s = Symbol(a);
+   assert(s->next==NULL);
+   assert(s->valueptr==NULL);
+   assert(SYM_AT(s)==a);
+
+   return unlink_symbol_hash(SYM_HN(s));
+}   
+
+
 
 /* used for readline completion in unix.c */
 char *symbol_generator(const char *text, int state)
@@ -193,20 +273,22 @@ char *symbol_generator(const char *text, int state)
    while (hni < HASHTABLESIZE) {
       /* move to next */
       if (!hn)  {
-         hn = names[hni];
+         hn = live_names[hni];
          hni++;
          continue;
-      } else if (!hn->named) {
-         hn = hn->next;
-         continue;
-      }
+      } else
+         assert(hn->backptr);
+/*          if (!hn->backptr) { */
+/*          hn = hn->next; */
+/*          continue; */
+/*       } */
       hash_name_t *h = hn;
       hn = hn->next;
 
       /* compare symbol names */
       if (text[0]=='|' || text[0]==h->name[0] || tolower(text[0])==h->name[0]) {
          const uchar *a = (const uchar *) text;
-         uchar *b = (uchar *) pname(h->named);
+         uchar *b = (uchar *) pname(h->backptr);
          int i = 0;
          while (a[i]) {
             uchar ac = a[i];
@@ -233,7 +315,7 @@ char *symbol_generator(const char *text, int state)
 
 at *named(const char *s)
 {
-   return SYM_HN(new_symbol(s))->named;
+   return SYM_AT(new_symbol(s));
 }
 
 DX(xnamed)
@@ -304,7 +386,7 @@ DX(xnameof)
 
 
 #define iter_hash_name(i,hn) \
-  for (i=names; i<names+HASHTABLESIZE; i++) \
+  for (i=live_names; i<live_names+HASHTABLESIZE; i++) \
   for (hn= *i; hn; hn = hn->next)
 
 /* sorted list of globally defined symbols */
@@ -340,9 +422,10 @@ at *global_defs()
    at *ans = NIL;
    at **where = &ans;
    hash_name_t **j, *hn;
-   iter_hash_name(j, hn)
-      if (SYMBOLP(hn->named)) {
-         at *p = hn->named;
+   iter_hash_name(j, hn) {
+      assert(SYMBOLP(hn->backptr));
+      if (SYMBOLP(hn->backptr)) {
+         at *p = hn->backptr;
          symbol_t *symb = Symbol(p);
          while (symb->next)
             symb = symb->next;
@@ -357,6 +440,7 @@ at *global_defs()
             }
          }
       }
+   }
    return ans;
 }
 
@@ -373,8 +457,9 @@ at *oblist(void)
    
    at *answer = NIL;
    iter_hash_name(j, hn) {
-      if (hn->named)
-         answer = new_cons(hn->named, answer);
+      assert(hn->backptr);
+      if (hn->backptr)
+         answer = new_cons(hn->backptr, answer);
    }
    return answer;
 }
@@ -514,7 +599,7 @@ void reset_symbols(void)
    hash_name_t **j, *hn;
 
    iter_hash_name(j, hn) {
-      at *p = hn->named;
+      at *p = hn->backptr;
       if (p) {
          symbol_t *s = Symbol(p);
          while (s->next)
@@ -560,21 +645,14 @@ symbol_t *symbol_pop(symbol_t *s)
    }
 }
 
-symbol_t *new_symbol(const char *str)
+symbol_t *new_symbol(const char *name)
 {
-   if (str[0] == ':' && str[1] == ':')
-      error(NIL, "belongs to a reserved package... ", NEW_STRING(str));
+   if (name[0] == ':' && name[1] == ':')
+      error(NIL, "belongs to a reserved package... ", NEW_STRING(name));
    
-   hash_name_t *hn = search_by_name(str, 1);
-   ifn (hn->named) {
-      /* symbol does not exist yet, create new */
-      symbol_t *s = mm_alloc(mt_symbol);
-      s->hn = hn;
-      hn->named = new_at(symbol_class, s);
-      add_notifier(hn->named, (wr_notify_func_t *)at_symbol_notify, NULL);
-      return s;
-   }
-   return Symbol(hn->named);
+   hash_name_t *hn = get_symbol_hash_by_name(name);
+   assert(hn->backptr);
+   return Symbol(hn->backptr);
 }
 
 DY(yscope)
@@ -708,7 +786,7 @@ void sym_set(symbol_t *s, at *q, bool in_global_scope)
          s = s->next;
 
    if (SYMBOL_LOCKED_P(s))
-      error(NIL, "symbol locked", SYM_HN(s)->named);
+      error(NIL, "symbol locked", SYM_AT(s));
 
    ifn (s->valueptr) {
       s->value = NIL;
@@ -781,14 +859,24 @@ void pre_init_symbol(void)
       mt_symbol_hash =
          MM_REGTYPE("symbol-hash", sizeof(hash_name_t),
                     clear_symbol_hash, mark_symbol_hash, 0);
+
    if (mt_symbol == mt_undefined)
       mt_symbol = MM_REGTYPE("symbol", sizeof(symbol_t),
                              clear_symbol, mark_symbol, 0);
+
+   if (mt_at_symbol == mt_undefined)
+      mt_at_symbol = MM_REGTYPE("at-symbol", sizeof(struct at),
+                                clear_at_symbol, mark_at_symbol, finalize_at_symbol);
    
-   if (!names) {
+   if (!live_names) {
       size_t s = sizeof(hash_name_t *) * HASHTABLESIZE;
-      names = mm_allocv(mt_refs, s);
-      MM_ROOT(names);
+      live_names = mm_allocv(mt_refs, s);
+      MM_ROOT(live_names);
+   }
+   if (!purgatory) {
+      size_t s = sizeof(hash_name_t *) * HASHTABLESIZE;
+      purgatory = mm_allocv(mt_refs, s);
+      MM_ROOT(purgatory);
    }
    if (!cache) {
       size_t s = sizeof(void *) * (SYMBOL_CACHE_SIZE + 1);

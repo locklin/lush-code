@@ -384,7 +384,7 @@ LUSHAPI at *assign(at *, at *);
 
 extern LUSHAPI class_t *symbol_class;
 
-typedef struct lush_symbol { 	/* each symbol is an external AT which */
+typedef struct lush_symbol {
    struct lush_symbol *next;
    struct hash_name *hn;
    at *value;
