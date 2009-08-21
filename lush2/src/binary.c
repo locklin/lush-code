@@ -25,6 +25,7 @@
  ***********************************************************************/
 
 #include "header.h"
+#include <errno.h>
 
 #define BINARYSTART     (0x9f)
 
@@ -64,6 +65,11 @@ int          in_bwrite = 0;
 static int   opt_bwrite = 0;
 static FILE *fin;
 static FILE *fout;
+static const char *safe_error_prefix;
+static const char *safe_error_text;
+static at   *safe_error_object;
+static bool safe_error_ready = false; 
+static sigjmp_buf safe_error_jump;
 
 
 /*** THE RELOCATION STRUCTURE **********/
@@ -76,6 +82,37 @@ static char *relocf = 0;
 #define R_EMPTY   0
 #define R_REFD    1
 #define R_DEFD    2
+
+
+/* we can't simply call error out of a sweep because the ATs
+ * are unusable because of the the bit-magic happening 
+ * during a sweep
+ */
+
+#define prep_safe_error() \
+   ((safe_error_prefix = NULL), (safe_error_text = NULL), (safe_error_object = NIL), \
+    (safe_error_ready = true), sigsetjmp(safe_error_jump, 1))
+
+static void safe_error(const char *, const char *, at *) no_return;
+
+static void safe_error(const char *prefix, const char *text, at *object)
+{
+   safe_error_prefix = prefix;
+   safe_error_text = text;
+   safe_error_object = object;
+   if (safe_error_ready) {
+      safe_error_ready = false;
+      siglongjmp(safe_error_jump, -1);
+   } else {
+      error_doc.ready_to_an_error = false;
+      error(prefix, text, object);
+   }
+}
+
+static void complete_safe_error(void)
+{
+   error(safe_error_prefix, safe_error_text, safe_error_object);
+}
 
 
 static void check_reloc_size(int m)
@@ -104,7 +141,7 @@ static void check_reloc_size(int m)
       relocf = 0;
       relocp = 0;
       relocm = 0;
-      error(NIL, "not enough memory", NIL);
+      safe_error(NIL, "not enough memory", NIL);
    }
 }
 
@@ -134,7 +171,7 @@ static void insert_reloc(void *p)
       i--;
    }
    if (relocp[i]==p)
-      error(NIL, "internal error: relocation requested twice",NIL);
+      safe_error(NIL, "internal error: relocation requested twice",NIL);
    relocp[i] = p;
    relocf[i] = R_EMPTY;
 }
@@ -154,7 +191,7 @@ static int search_reloc(void *p)
       else
          return k;
    }
-   error(NIL, "internal error: relocation search failed", NIL);
+   safe_error(NIL, "internal error: relocation search failed", NIL);
 }
 
 
@@ -179,7 +216,7 @@ static void forbid_refd_reloc(void)
          define_refd_reloc(i,NIL);
    }
    if (flag)
-      error(NIL, "corrupted binary file (unresolved relocs)", NIL);
+      safe_error(NIL, "corrupted binary file (unresolved relocs)", NIL);
 }
 
 
@@ -216,7 +253,7 @@ again:
          return;
       break;
    default:
-      error(NIL, "internal error (unknown serialization action)", NIL);
+      safe_error(NIL, "internal error (unknown serialization action)", NIL);
    }
    
    if (!p)
@@ -335,7 +372,7 @@ static void clear_flags(at *p)
 static void check(FILE *f)
 {
    if (feof(f))
-      error(NIL, "end of file during bread", NIL);
+      safe_error(NIL, "end of file during bread", NIL);
    if (ferror(f))
       test_file_error(NULL);
 }
@@ -547,7 +584,7 @@ void serialize_string(char **data, int code, int maxlen)
 
    case SRZ_READ:
       if (read_card8() != 's')
-         error(NIL,"serialization error (string expected)",NIL);
+         safe_error(NIL,"serialization error (string expected)",NIL);
       l = read_card24();
       if (maxlen == -1) {
          /* automatic mallocation */
@@ -557,7 +594,7 @@ void serialize_string(char **data, int code, int maxlen)
          /* user provided buffer */
          buffer = *data;
          if (l+1 >= maxlen)
-            error(NIL, "serialization error (string too large)", NIL);
+            safe_error(NIL, "serialization error (string too large)", NIL);
       }
       read_buffer(buffer, l);
       buffer[l] = 0;
@@ -581,18 +618,18 @@ void serialize_chars(void **data, int code, int thelen)
 
    case SRZ_READ:
       if (read_card8() != 's')
-         error(NIL, "serialization error (string expected)",NIL);
+         safe_error(NIL, "serialization error (string expected)",NIL);
       l = read_card32();
       if (thelen == -1) {
          /* automatic mallocation */
          ifn ((buffer = malloc(l))) {
-            error(NIL, "out of memory", NIL);
+            safe_error(NIL, "out of memory", NIL);
          }
       } else {
          /* user provided buffer */
          buffer = *data;
          if (l != thelen)
-            error(NIL,"serialization error (lengths mismatch)",NIL);
+            safe_error(NIL,"serialization error (lengths mismatch)",NIL);
       }
       read_buffer(buffer,l);
       *data = buffer;
@@ -701,7 +738,7 @@ int serialize_atstar(at **data, int code)
 
    case SRZ_READ:
       if (read_card8() != 'p')
-         error(NIL, "serialization error (pointer expected)", NIL);
+         safe_error(NIL, "serialization error (pointer expected)", NIL);
       return local_bread(data, NIL);
 
    case SRZ_WRITE:
@@ -709,7 +746,7 @@ int serialize_atstar(at **data, int code)
       sweep(*data, code);
       return 0;
    }
-   error(NIL,"binary internal: wrong serialization mode",NIL);
+   safe_error(NIL,"binary internal: wrong serialization mode",NIL);
 }
 
 
@@ -802,7 +839,7 @@ static int local_write(at *p)
          write_card8(TOK_MATRIX);
          in_bwrite += save_matrix_len(arr);
          if (arr->st->type == ST_GPTR)
-            error(NIL,"cannot save a gptr array",p);
+            safe_error(NIL,"cannot save a gptr array", p);
          save_matrix(arr, fout);
          return 1;
       }
@@ -838,7 +875,7 @@ static int local_write(at *p)
       return 0;
    }
    
-   error(NIL, "cannot save this object", p);
+   safe_error(NIL, "cannot save this object", p);
 }
 
 
@@ -855,12 +892,32 @@ int bwrite(at *p, FILE *f, int opt)
    fout = f;
    in_bwrite = 0;
    clear_reloc(0);
+
+   /* store file position in case an error occurs */
+   errno = 0;
+   fpos_t fpos;
+   bool fpos_ok = fgetpos(f, &fpos)==0;
+   if (!fpos_ok) {
+      char *errmsg = strerror(errno);
+      fprintf(stderr, "*** Warning: could not save file position (bwrite)\n");
+      fprintf(stderr, "***        : %s\n", errmsg);
+   }
+
+   if (prep_safe_error()) {
+      if (fpos_ok)
+         fsetpos(f, &fpos);
+      clear_flags(p);
+      complete_safe_error();
+   }
+
+   /* go */
    set_flags(p);
    write_card8(BINARYSTART);
    write_card24(relocn);
    sweep(p, SRZ_WRITE);
    clear_flags(p);
-   
+   safe_error_ready = false;
+
    int count = in_bwrite;
    in_bwrite = 0;
    return count;
@@ -891,7 +948,7 @@ static void local_bread_cobject(at **pp)
 {
    at *cname;
    if (local_bread(&cname, NIL))
-      error(NIL,"Corrupted file (unresolved class)",NIL);
+      safe_error(NIL,"Corrupted file (unresolved class)",NIL);
    at *name = cname;
    at *cptr = NIL;
    if (CONSP(cname))
@@ -899,13 +956,13 @@ static void local_bread_cobject(at **pp)
    if (!cptr)
       cptr = find_primitive(NIL, name);
    if (!SYMBOLP(name))
-      error(NIL, "corrupted file (expecting class name)", NIL);
+      safe_error(NIL, "corrupted file (expecting class name)", NIL);
    if (!CLASSP(cptr))
-      error(NIL, "cannot find primitive class", name);
+      safe_error(NIL, "cannot find primitive class", name);
   
    class_t *cl = Mptr(cptr);
    if (! cl->serialize)
-      error(NIL, "serialization error (undefined serialization)", name);
+      safe_error(NIL, "serialization error (undefined serialization)", name);
    *pp = 0;
    (*cl->serialize)(pp, SRZ_READ);
 }
@@ -915,12 +972,12 @@ static void local_bread_object(at **pp,  int opt)
    int size = read_card24();
    at *cptr;
    if (local_bread(&cptr, NIL))
-      error(NIL,"Corrupted file (unresolved class)",NIL);
+      safe_error(NIL,"Corrupted file (unresolved class)",NIL);
    at *cname = cptr;
    if (SYMBOLP(cname))
       cptr = var_get(cname);
    if (! CLASSP(cptr))
-      error(NIL,"corrupted binary file (class expected)",cname);    
+      safe_error(NIL,"corrupted binary file (class expected)",cname);    
    if (cname == cptr) {
       cname = ((class_t *)Mptr(cptr))->classname;
    }
@@ -928,9 +985,9 @@ static void local_bread_object(at **pp,  int opt)
    class_t *cl = Mptr(cptr);
    *pp = NEW_OBJECT(cl);     /* create structure */
    if (size > cl->num_slots)
-      error(NIL, "class definition has less slots than expected",cname);
+      safe_error(NIL, "class definition has less slots than expected",cname);
    else  if ( (size < cl->num_slots) && opt)
-      error(NIL,"class definition has more slots than expected",cname);  
+      safe_error(NIL,"class definition has more slots than expected",cname);  
    
    object_t *obj = Mptr(*pp);
    for(int i=0; i<size; i++) {
@@ -943,13 +1000,13 @@ static void local_bread_class(at **pp)
 {
    at *name, *super, *myslots, *mydefs;
    if (local_bread(&name, NIL))
-      error(NIL, "corrupted file (reading class name)", NIL);
+      safe_error(NIL, "corrupted file (reading class name)", NIL);
    if (local_bread(&super, NIL))
-      error(NIL, "corrupted file (reading superclass name)", NIL);
+      safe_error(NIL, "corrupted file (reading superclass name)", NIL);
    if (local_bread(&myslots, NIL))
-      error(NIL, "corrupted file (reading slots)", NIL);
+      safe_error(NIL, "corrupted file (reading slots)", NIL);
    if (local_bread(&mydefs, NIL))
-      error(NIL, "corrupted file (reading defaults)", NIL);
+      safe_error(NIL, "corrupted file (reading defaults)", NIL);
 
    class_t *cl = new_ooclass(name, super, myslots, mydefs);
    *pp = cl->backptr;
@@ -975,7 +1032,7 @@ static void local_bread_array(at **pp)
          local_bread(pp++, NIL);
       
    } else
-      error(NIL, "corrupted binary file", NIL);
+      safe_error(NIL, "corrupted binary file", NIL);
 }
 
 
@@ -992,7 +1049,7 @@ static void local_bread_primitive(at **pp)
 {
    at *p, *q;
    if (local_bread(&q, NIL))
-      error(NIL, "corrupted file (unresolved symbol!)", NIL);
+      safe_error(NIL, "corrupted file (unresolved symbol!)", NIL);
    if (CONSP(q)) {
       p = find_primitive(Car(q), Cdr(q));
       if (! p)
@@ -1002,7 +1059,7 @@ static void local_bread_primitive(at **pp)
 
    
    if (! p)
-      error(NIL, "cannot find primitive", q);
+      safe_error(NIL, "cannot find primitive", q);
    *pp = p;
 }
 
@@ -1027,9 +1084,9 @@ again:
    {
       int xdef = read_card24();
       if (local_bread(pp, opt))
-         error(NIL, "corrupted binary file (unresolved ref follows def)", NIL);
+         safe_error(NIL, "corrupted binary file (unresolved ref follows def)", NIL);
       if (relocf[xdef] == R_DEFD)
-         error(NIL, "corrupted binary file (duplicate reloc definition)", NIL);
+         safe_error(NIL, "corrupted binary file (duplicate reloc definition)", NIL);
       if (relocf[xdef] == R_REFD)
          define_refd_reloc(xdef,*pp);
       relocf[xdef] = R_DEFD;
@@ -1041,7 +1098,7 @@ again:
    {
       int xdef = read_card24();
       if (xdef<0 || xdef>=relocn)
-         error(NIL, "corrupted binary file (illegal ref)", NIL);
+         safe_error(NIL, "corrupted binary file (illegal ref)", NIL);
       if (relocf[xdef] == R_DEFD) {
          *pp = relocp[xdef];
          return 0;
@@ -1161,7 +1218,7 @@ again:
    }
    
    default:
-      error(NIL, "corrupted binary file (illegal token in file)", NEW_NUMBER(tok));
+      safe_error(NIL, "corrupted binary file (illegal token in file)", NEW_NUMBER(tok));
    }
 }
 
@@ -1183,9 +1240,16 @@ at *bread(FILE *f, int opt)
    clear_reloc(tok);
 
    at *ans = NIL;
+
+   if (prep_safe_error()) {
+      complete_safe_error();
+   }
+      
    local_bread(&ans, opt);
    forbid_refd_reloc();
    in_bwrite = 0;
+   safe_error_ready = false;
+
    return ans;
 }
 
