@@ -150,6 +150,8 @@ again:
 
 static int tlsizeof(const char *s)
 {
+   if (!strcmp(s, "bool"))
+      return sizeof(bool);
    if( ! strcmp( s , "flt" ) )
       return sizeof(flt);
    if( ! strcmp( s , "float" ) )

@@ -27,7 +27,7 @@
 #include "header.h"
 #include <errno.h>
 
-#define BINARYSTART     (0x9f)
+#define BINARYSTART     (0xAf)
 
 enum binarytokens {
    TOK_NULL,
@@ -48,6 +48,7 @@ enum binarytokens {
    TOK_CFUNC,
    TOK_CCLASS,
    TOK_COBJECT,
+   TOK_CREF,
 };
 
 
@@ -311,6 +312,10 @@ again:
       cfunction_t *f = Mptr(p);
       sweep(f->name, code);
       
+   } else if (cl->super == cref_class) {
+      sweep(cl->classname, code);
+      sweep(cl->selfeval(p), code);
+
    } else if (cl->serialize) {
       sweep(cl->classname, code);
       (cl->serialize) (&p, code);
@@ -510,7 +515,33 @@ FILE *serialization_file_descriptor(int code)
    }
 }
 
+void serialize_bool(bool *data, int code)
+{
+   switch (code) {
+   case SRZ_READ:
+      *data = read_card8();
+      return;
+
+   case SRZ_WRITE:
+      write_card8(*data);
+      return;
+   }
+}
+
 void serialize_char(char *data, int code)
+{
+   switch (code) {
+   case SRZ_READ:
+      *data = read_card8();
+      return;
+
+   case SRZ_WRITE:
+      write_card8(*data);
+      return;
+   }
+}
+
+void serialize_uchar(uchar *data, int code)
 {
    switch (code) {
    case SRZ_READ:
@@ -643,27 +674,6 @@ void serialize_chars(void **data, int code, int thelen)
    }
 }
 
-void serialize_flt(flt *data, int code)
-{
-   switch (code) {
-      flt x;
-
-   case SRZ_READ:
-      read_buffer(&x, sizeof(flt));
-      if (swapflag)
-         swap_buffer(&x,1,sizeof(flt));
-      *data = x;
-      return;
-
-   case SRZ_WRITE:
-      x = *data;
-      if (swapflag)
-         swap_buffer(&x,1,sizeof(flt));
-      write_buffer(&x, sizeof(flt));
-      return;
-   }
-}
-
 void serialize_float(float *data, int code)
 {
    switch (code) {
@@ -681,27 +691,6 @@ void serialize_float(float *data, int code)
       if (swapflag)
          swap_buffer(&x,1,sizeof(float));
       write_buffer(&x, sizeof(float));
-      return;
-   }
-}
-
-void serialize_real(real *data, int code)
-{
-   switch (code) {
-      real x;
-
-   case SRZ_READ:
-      read_buffer(&x, sizeof(real));
-      if (swapflag)
-         swap_buffer(&x,1,sizeof(real));
-      *data = x;
-      return;
-
-   case SRZ_WRITE:
-      x = *data;
-      if (swapflag)
-         swap_buffer(&x,1,sizeof(real));
-      write_buffer(&x, sizeof(real));
       return;
    }
 }
@@ -739,7 +728,7 @@ int serialize_atstar(at **data, int code)
    case SRZ_READ:
       if (read_card8() != 'p')
          safe_error(NIL, "serialization error (pointer expected)", NIL);
-      return local_bread(data, NIL);
+      return local_bread(data, 0);
 
    case SRZ_WRITE:
       write_card8('p');
@@ -870,6 +859,11 @@ static int local_write(at *p)
       return 0;
    }
       
+   if (cl->super == cref_class) {
+      write_card8(TOK_CREF);
+      return 0;
+   }
+   
    if (cl->serialize) {
       write_card8(TOK_COBJECT);
       return 0;
@@ -947,8 +941,8 @@ DX(xbwrite_exact)
 static void local_bread_cobject(at **pp)
 {
    at *cname;
-   if (local_bread(&cname, NIL))
-      safe_error(NIL,"Corrupted file (unresolved class)",NIL);
+   if (local_bread(&cname, 0))
+      safe_error(NIL,"corrupted file (unresolved class)",NIL);
    at *name = cname;
    at *cptr = NIL;
    if (CONSP(cname))
@@ -966,6 +960,36 @@ static void local_bread_cobject(at **pp)
    *pp = 0;
    (*cl->serialize)(pp, SRZ_READ);
 }
+
+static void local_bread_cref(at **pp)
+{
+   at *cname;
+   if (local_bread(&cname, 0))
+      safe_error(NIL,"corrupted file (unresolved class)",NIL);
+   at *name = cname;
+   at *cptr = NIL;
+   if (CONSP(cname))
+      cptr = find_primitive(Car(cname), (name = Cdr(cname)));
+   if (!cptr)
+      cptr = find_primitive(NIL, name);
+   if (!SYMBOLP(name))
+      safe_error(NIL, "corrupted file (expecting class name)", name);
+   if (!CLASSP(cptr))
+      safe_error(NIL, "cannot find primitive class", name);
+  
+   class_t *cl = Mptr(cptr);
+   if (cl->super != cref_class)
+      safe_error(NIL, "corrupted file (expecting cref class)", cptr); 
+   ifn (classof(*pp)==cl)
+      safe_error(NIL, "corrupted file (not a cref class or wrong cref class)", classof(*pp)->backptr);
+      
+   at *obj = NIL;
+   if (local_bread(&obj, 0))
+      safe_error(NIL, "corrupted file", NIL);
+   /* assign(*pp, obj); */
+   cl->setslot(*pp, NIL, obj);
+}
+
 
 static void local_bread_object(at **pp,  int opt)
 {
@@ -990,9 +1014,8 @@ static void local_bread_object(at **pp,  int opt)
       safe_error(NIL,"class definition has more slots than expected",cname);  
    
    object_t *obj = Mptr(*pp);
-   for(int i=0; i<size; i++) {
-      obj->slots[i] = NIL;
-      local_bread(&(obj->slots[i]), NIL);
+   for (int i=0; i<size; i++) {
+      local_bread(&(obj->slots[i]), 0);
    }
 }
 
@@ -1217,6 +1240,12 @@ again:
       return 0;
    }
    
+   case TOK_CREF:
+   {
+      local_bread_cref(pp);
+      return 0;
+   }
+  
    default:
       safe_error(NIL, "corrupted binary file (illegal token in file)", NEW_NUMBER(tok));
    }

@@ -374,8 +374,8 @@ LUSHAPI void unprotect(at *q);
 
 /* cref.h */
 
-extern LUSHAPI class_t *abstract_cref_class;
-#define CREFP(x) ((x)&&(Class(x)->super == abstract_cref_class))
+extern LUSHAPI class_t *cref_class;
+#define CREFP(x) ((x)&&(Class(x)->super == cref_class))
 LUSHAPI at *new_cref(int, void *);
 LUSHAPI at *assign(at *, at *);
 
@@ -797,15 +797,15 @@ LUSHAPI int bwrite(at *p, FILE *f, int opt);
 LUSHAPI at *bread(FILE *f, int opt);
 
 /* serialization functions */
+LUSHAPI void serialize_bool(bool *data, int code);
 LUSHAPI void serialize_char(char *data, int code);
+LUSHAPI void serialize_uchar(uchar *data, int code);
 LUSHAPI void serialize_short(short int *data, int code);
 LUSHAPI void serialize_int(int *data, int code);
 LUSHAPI void serialize_size(size_t *data, int code);
 LUSHAPI void serialize_offset(ptrdiff_t *data, int code);
 LUSHAPI void serialize_string(char **data, int code, int maxlen);
 LUSHAPI void serialize_chars(void **data, int code, int len);
-LUSHAPI void serialize_flt(flt *data, int code);
-LUSHAPI void serialize_real(real *data, int code);
 LUSHAPI void serialize_float(float *data, int code);
 LUSHAPI void serialize_double(double *data, int code);
 LUSHAPI int  serialize_atstar(at **data, int code);

@@ -133,9 +133,9 @@ static void cref_idx_setslot(at *self, at *slot, at *val)
       error(NIL, "type mismatch in assignment", val);
    
    index_t **dest = Gptr(self);
-   if (IND_STTYPE(*dest) != IND_STTYPE((index_t *)Gptr(val)))
+   if (*dest && (IND_STTYPE(*dest) != IND_STTYPE((index_t *)Gptr(val))))
       error(NIL, "type mismatch in assignment (wrong storage type)", val);
-   if (IND_NDIMS(*dest) != IND_NDIMS((index_t *)Gptr(val)))
+   if (*dest && (IND_NDIMS(*dest) != IND_NDIMS((index_t *)Gptr(val))))
       error(NIL, "type mismatch in assignment (wrong rank)", val);
    *dest = Gptr(val);
 }
@@ -157,7 +157,7 @@ static void cref_storage_setslot(at *self, at *slot, at *val)
       error(NIL, "type mismatch in assignment", val);
    
    storage_t **dest = Gptr(self);
-   if ((*dest)->type != ((storage_t *)Gptr(val))->type)
+   if (*dest && ((*dest)->type != ((storage_t *)Gptr(val))->type))
       error(NIL, "type mismatch in assignment (wrong storage type)", val);
    *dest = Gptr(val);
 }
@@ -567,10 +567,10 @@ DX(xto_str)
    return NIL;
 }
 
-class_t *abstract_cref_class;
+class_t *cref_class;
 
 #define INIT_CREF(type)                                           \
-   cref_##type##_class = new_builtin_class(abstract_cref_class);  \
+   cref_##type##_class = new_builtin_class(cref_class);           \
    cref_##type##_class->selfeval = cref_##type##_selfeval;        \
    cref_##type##_class->setslot = cref_##type##_setslot;          \
    cref_##type##_class->managed = false;                          \
@@ -578,7 +578,7 @@ class_t *abstract_cref_class;
 
 void init_cref(void)
 {
-   abstract_cref_class = new_builtin_class(NIL);
+   cref_class = new_builtin_class(NIL);
 
    INIT_CREF(bool);
    INIT_CREF(char);
