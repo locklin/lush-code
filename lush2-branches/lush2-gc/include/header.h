@@ -397,11 +397,11 @@ typedef struct lush_symbol {
 
 /* symbol creation */
 LUSHAPI symbol_t *new_symbol(const char *);
+LUSHAPI at *NEW_SYMBOL(const char *);
 LUSHAPI at *named(const char *);
 LUSHAPI at *namedclean(const char *);
 extern  at *at_t; 
 #define t()           at_t
-#define NEW_SYMBOL(s)  named(s)
 
 LUSHAPI const char *nameof(symbol_t *);
 LUSHAPI const char *NAMEOF(at *);

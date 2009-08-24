@@ -846,11 +846,11 @@ read_again1:
   
    /* QUOTED SYMBOL */
    if (s[0] == '|')
-      return NEW_SYMBOL(s + 1);
+      return named(s + 1);
    
    /* SYMBOL */
    if (s[0])
-      return NEW_SYMBOL(s);
+      return named(s);
   
    /* EOF */
    return NIL;
@@ -901,7 +901,7 @@ const char *dmc(const char *s, at *l)
    if ((get_char_map(c) & CHAR_SPECIAL))
       RAISEF("illegal macro-character", NEW_STRING(s));
 
-   at *q = named(s);
+   at *q = NEW_SYMBOL(s);
    ifn (SYMBOLP(q))
       RAISEF("can't define this symbol", NIL);
 

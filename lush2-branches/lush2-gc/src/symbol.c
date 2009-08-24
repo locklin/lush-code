@@ -192,7 +192,7 @@ static hash_name_t *get_symbol_hash_by_name(const char *s)
       } else {
          hn = mm_alloc(mt_symbol_hash);
          hn->hash = hash;
-         hn->name = mm_strdup(s);
+         hn->name = s;
          hn->backptr = mm_alloc(mt_at_symbol);
          assert(hn->next==NULL);
          AssignClass(hn->backptr, symbol_class);
@@ -249,9 +249,9 @@ static bool unlink_symbol_hash(hash_name_t *hn)
 static bool finalize_at_symbol(at *a)
 {
    symbol_t *s = Symbol(a);
-   assert(s->next==NULL);
-   assert(s->valueptr==NULL);
-   assert(SYM_AT(s)==a);
+/*    assert(s->next==NULL); */
+/*    assert(s->valueptr==NULL); */
+/*    assert(SYM_AT(s)==a); */
 
    return unlink_symbol_hash(SYM_HN(s));
 }   
@@ -308,20 +308,19 @@ char *symbol_generator(const char *text, int state)
 
 
 /*
- * named(s) finds the SYMBOL named S. Actually does the same job as
- * new_symbol. doesn't return NIL if the symbol doesn't exists, but creates
- * it.
+ * named(s) finds the SYMBOL named S. NEW_SYMBOL is similar but requires
+ * that the argument be a managed string.
  */
 
 at *named(const char *s)
 {
-   return SYM_AT(new_symbol(s));
+   return NEW_SYMBOL(mm_strdup(s));
 }
 
 DX(xnamed)
 {
    ARG_NUMBER(1);
-   return named(ASTRING(1));
+   return NEW_SYMBOL(ASTRING(1));
 }
 
 /*
@@ -647,6 +646,7 @@ symbol_t *symbol_pop(symbol_t *s)
 
 symbol_t *new_symbol(const char *name)
 {
+   assert(mm_ismanaged(name));
    if (name[0] == ':' && name[1] == ':')
       error(NIL, "belongs to a reserved package... ", NEW_STRING(name));
    
@@ -654,6 +654,12 @@ symbol_t *new_symbol(const char *name)
    assert(hn->backptr);
    return Symbol(hn->backptr);
 }
+
+at *NEW_SYMBOL(const char *name)
+{
+   return SYM_AT(new_symbol(name));
+}
+
 
 DY(yscope)
 {
