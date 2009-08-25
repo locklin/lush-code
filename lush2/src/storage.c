@@ -466,6 +466,8 @@ storage_t *make_storage(storage_type_t t, size_t n, at *init)
 
 /* ------------ ALLOCATION: MALLOC ------------ */
 
+#define LARGE_ALLOC (2<<18)
+
 void storage_alloc(storage_t *st, size_t n, at *init)
 {
    ifn (st->data == NULL)
@@ -475,8 +477,18 @@ void storage_alloc(storage_t *st, size_t n, at *init)
    size_t s = n*storage_sizeof[st->type];
    if (st->type==ST_AT || st->type==ST_MPTR)
       st->data = mm_allocv(mt_refs, s);
-   else 
-      st->data = mm_blob(s);
+   else {
+      void *data = NULL;
+      if (s >= LARGE_ALLOC) {
+         data = malloc(s);
+         if (data)
+            mm_manage(data);
+         else
+            RAISEF("not enough memory for storage of size (bytes)", NEW_NUMBER(s));
+      } else
+         data = mm_blob(s);
+      st->data = data;
+   }
    st->flags = STS_MM;
    st->size  = n;
    
