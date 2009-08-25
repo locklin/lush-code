@@ -57,13 +57,19 @@
 #  define VALGRIND_DISCARD(...)
 #endif
 
+#include <unistd.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <limits.h>
+#include <ctype.h>
+#include <fcntl.h>
+#include <dirent.h>
 
 #define max(x,y)        ((x)<(y) ? (y) : (x))
 #define min(x,y)        ((x)<(y) ? (x) : (y))
@@ -98,6 +104,7 @@
 #define MIN_STACK       0x1000
 #define MAX_VOLUME      (0x800000*sizeof(void *))    /* max volume threshold */
 #define MAX_BLOCKS      (150*sizeof(void *))
+#define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
 #define NUM_IDLE_CALLS  100
 
 #define HMAP_NUM_BITS   4
@@ -189,13 +196,16 @@ static int        num_alloc_blocks = 0;
 static int        num_collects = 0;
 static size_t     vol_allocs = 0;
 static bool       gc_disabled = false;
+static int        fetch_backlog = 0;
 static bool       collect_in_progress = false;
 static bool       mark_in_progress = false;
 static bool       collect_requested = false;
+static pid_t      collecting_child = 0;
 static notify_func_t *client_notify = NULL;
 static mt_t       marking_type = mt_undefined;
 static const void *marking_object = NULL;
 static FILE *     stdlog = NULL;
+static int        pfd_garbage[2];   /* garbage pipe for async. collect */
 bool              mm_debug_enabled = false;
 
 /* transient object stack */
@@ -353,6 +363,8 @@ static void mark_live(const void *p)
    MARK_LIVE(managed[i]);
 }
 
+static void mm_collect(void);
+
 static void maybe_trigger_collect(size_t s)
 {
    num_allocs += 1;
@@ -363,9 +375,10 @@ static void maybe_trigger_collect(size_t s)
    if (num_alloc_blocks >= block_threshold || 
        vol_allocs >= volume_threshold      ||
        collect_requested) {
-      mm_collect_now();
-      //num_allocs = 0; // reset in collect_epilogue
-      //vol_allocs = 0;
+      mm_collect();
+      if (!collect_in_progress)
+         /* could not spawn child, do it synchronously */
+         mm_collect_now();
    }
 }
 
@@ -433,6 +446,8 @@ static bool update_current_a(mt_t t)
    }   
    return _update_current_a(t, tr, tr->size, tr->current_a);
 }
+
+static int fetch_unreachables(void);
    
 /* allocate from small-object heap if possible */
 static void *alloc_fixed_size(mt_t t)
@@ -455,6 +470,8 @@ static void *alloc_fixed_size(mt_t t)
    VALGRIND_MEMPOOL_ALLOC(heap, p, types[t].size);
    blockrecs[BLOCKA(types[t].current_a)].in_use++;
    
+   if (collecting_child)
+      fetch_unreachables();
    maybe_trigger_collect(types[t].size);
    
    return p;
@@ -479,22 +496,26 @@ static void *alloc_variable_sized(mt_t t, size_t s)
       return p;
    
    p = malloc(s + MIN_HUNKSIZE);  // + space for info
-   assert(!LBITS(p));
 
-   if (!p) {
-      /* try to recover */
-      if (!collect_in_progress) {
-         mm_collect_now();
-         p = malloc(s + MIN_HUNKSIZE);
-         assert(!LBITS(p));
-      }
+   if (!p && collecting_child) {
+      if (gc_disabled)
+         warn("low memory and GC disabled\n");
+      else /* try to recover */
+         while (collecting_child)
+            fetch_unreachables();
+      p = malloc(s + MIN_HUNKSIZE);
    }
    if (!p)
       return NULL;
 
+   assert(!LBITS(p));
+
    info_t *info = p;
    info->t = t;
    info->nh = s/MIN_HUNKSIZE;
+
+   if (collecting_child)
+      fetch_unreachables();
    maybe_trigger_collect(s);
    return seal(p);
 }
@@ -699,20 +720,21 @@ static int bsearch_managed(const void *p, int l, int r)
 
 static int _find_managed(const void *p)
 {
-   for (int n = 0; n < man_t; n++) {
+   int i = -1;
+   for (int n = 0; n<man_t && i<0; n++) {
       if (!poplar_sorted[n]) sort_poplar(n);
-      int i = bsearch_managed(p, poplar_roots[n]+1, poplar_roots[n+1]+1);
-      if (i >= 0)
-         return i;
+      i = bsearch_managed(p, poplar_roots[n]+1, poplar_roots[n+1]+1);
    }
-   
-   if (man_k < man_last)
+
+   if (i==-1 || collect_in_progress) {
       /* do linear search on excess part */
-      for (int i = man_last; i > man_k; i--) {
-         if (CLRPTR(managed[i]) == p)
-            return i;
-      }
-   return -1;
+      for (int n = man_last; n > man_k; n--)
+         if (CLRPTR(managed[n]) == p) {
+            i = n;
+            break;
+         }
+   }
+   return i;
 }
 
 /* use this one only when not marking */
@@ -765,6 +787,7 @@ static void manage(const void *p, mt_t t)
 static void collect_prologue(void)
 {
    assert(!collect_in_progress);
+   assert(!collecting_child);
    assert(!stack_overflowed2);
    if (mm_debug_enabled)
       assert(no_marked_live());
@@ -797,12 +820,38 @@ static void collect_epilogue(void)
    marking_type = mt_undefined;
    marking_object = NULL;
    collect_requested = false;
+
+   if (collecting_child) {
+      int status; 
+      if (waitpid(collecting_child, &status, 0) == -1) {
+         char *errmsg = strerror(errno);
+         warn("waiting for collecting child failed:\n%s\n", errmsg);
+         abort();
+      }
+      if (!WIFEXITED(status)) {
+         warn("collecting child terminated abnormally:\n");
+         if (WIFSIGNALED(status))
+            warn("terminated by signal %d\n", WTERMSIG(status));
+         else if (WIFSTOPPED(status))
+            warn("stopped by signal %d\n", WSTOPSIG(status));
+#ifdef WCOREDUMP
+         else if (WCOREDUMP(status))
+            warn("coredumped\n");
+#endif
+         else
+            warn("cause unknown (status = %d)\n", status);
+         abort();
+      }
+      //mm_printf("reaped gc child %d\n", collecting_child);
+      collecting_child = 0;
+   }
    heap_exhausted = false;
    collect_in_progress = false;
    num_alloc_blocks = 0;
    num_collects += 1;
    num_allocs = 0;
    vol_allocs = 0;
+   fetch_backlog = 0;
    compact_managed();
 }
 
@@ -1617,6 +1666,275 @@ static void mark(void)
    mark_in_progress = false;
 }
 
+static void sweep(void)
+{
+   void *buf[NUM_TRANSFER];
+   assert(!collecting_child);
+
+   int n = 0;
+
+   /* objects in small object heap */
+   DO_HEAP(a, b) {
+      if (!HMAP_LIVE(a)) {
+         buf[n++] = (void *)(heap + a);
+         if (n == NUM_TRANSFER) {
+            write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+            n = 0;
+         }
+      }
+   } DO_HEAP_END;
+
+   buf[n++] = NULL;
+   if (n == NUM_TRANSFER) {
+      write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+      n = 0;
+   }
+
+   /* malloc'ed objects */
+   DO_MANAGED(i) {
+      if (!LIVE(managed[i])) {
+         buf[n++] = (void *)i;
+         if (n == NUM_TRANSFER) {
+            write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+            n = 0;
+         }
+      }
+   } DO_MANAGED_END;
+   
+   if (n)
+      write(pfd_garbage[1], &buf, n*sizeof(void *));
+}
+
+
+/* fill buffer */
+static int _fetch_unreachables(void *buf)
+{
+   errno = 0;
+   int n = read(pfd_garbage[0], buf, NUM_TRANSFER*sizeof(void *));
+
+   if (n == -1) {
+      if (errno != EAGAIN) {
+         char *errmsg = strerror(errno);
+         warn("error reading from garbage pipe\n");
+         warn(errmsg);
+         abort();
+      }
+      
+   } else if (n == 0) {
+      /* we're done */
+      close(pfd_garbage[0]);
+      collect_epilogue();
+   }
+
+   return n;
+}
+
+/* fetch addresses of unreachable objects from garbage pipe */
+/* return number of objects reclaimed */
+static int fetch_unreachables(void)
+{
+   assert(collecting_child);
+
+   if (gc_disabled) {
+      fetch_backlog++;
+      return 0;
+   }
+
+   static void *buf[NUM_TRANSFER];
+   static int j, n = 0;
+   static bool inheap = true;
+
+   if (n) {
+      /* don't need to disable gc here as gc is still in progress */
+      if (inheap) {
+         if (buf[j])
+            reclaim_inheap(buf[j]);
+         else
+            inheap = false;
+
+         if (++j == n) {
+            n = 0;
+            return 1;
+         }
+         
+         if (inheap) {
+            if (buf[j])
+               reclaim_inheap(buf[j]);
+            else
+               inheap = false;
+
+            if (++j == n)
+               n = 0;
+            return 2;
+         }
+
+      } else {
+         reclaim_offheap((int)buf[j++]);
+         if (j == n) {
+            n = 0;
+            return 1;
+         }
+         reclaim_offheap((int)buf[j++]);
+         if (j == n) {
+            n = 0;
+         }
+         return 2;
+      }
+
+   } else if (n == 0) {
+
+      n = _fetch_unreachables(&buf);
+      
+      if (n == -1) {
+         n = 0;
+
+      } else if (n == 0) {
+         inheap = true;
+
+      } else {
+         assert((n%sizeof(void *)) == 0);
+         n = n/sizeof(void *);
+         j = 0;
+      }
+   }
+   return 0;
+}
+
+
+/* close all file descriptors except essential ones */
+static void close_file_descriptors(void)
+{
+   assert(collect_in_progress && collecting_child==0);
+
+   char path[128];
+   sprintf(path, "/proc/%d/fd", (int)getpid());
+   
+   errno = 0;
+   DIR *d = opendir(path);
+   if (!d) {
+      char *errmsg = strerror(errno);
+      warn("could not open %s: %s\n", path, errmsg);
+      abort();
+   }
+   
+   int fd_err = fileno(stderr);
+   int fd_log = fileno(stdlog);
+   int fd_parent = pfd_garbage[1];
+   errno = 0;
+   struct dirent *e = readdir(d);
+   while (e != NULL) {
+      int fd = isdigit(e->d_name[0]) ? atoi(e->d_name) : -1;
+      if (!(fd==-1 || fd==fd_err || fd==fd_log || fd==fd_parent))
+         (void)close(fd); /* ignore close errors */
+      errno = 0;
+      e = readdir(d);
+   }
+   if (errno) {
+      char *errmsg = strerror(errno);
+      debug("error while closing file descriptors:\n%s\n", errmsg);
+      /* don't abort, hopefully nothing serious */
+   }
+   closedir(d);
+}
+
+
+static void collect(void)
+{
+   /* set up pipe for garbage */
+   errno = 0;
+   if (pipe(pfd_garbage) == -1) {
+      char *errmsg = strerror(errno);
+      warn("could not set up pipe for GC: %s\n", errmsg);
+      return;
+   }
+
+   collect_prologue();
+
+   /* fork */
+   assert(!collecting_child);
+   fflush(stdout);
+   if (stdlog) fflush(stdlog);
+   errno = 0;
+   collecting_child = fork();
+   if (collecting_child == -1) {
+      int _errno = errno;
+      char *errmsg = strerror(errno);
+      warn("could not spawn child for GC: %s\n", errmsg);
+      //fprintf(stderr, "could not spawn child for GC: %s\n", errmsg);
+      close(pfd_garbage[0]);
+      close(pfd_garbage[1]);
+      collecting_child = 0;
+      collect_in_progress = false;
+      if (_errno == ENOMEM) {
+         warn("trying synchronous collect\n");
+         mm_collect_now();
+      }
+      return;
+
+   } else if (collecting_child) {
+      //mm_printf("spawned gc child %d\n", collecting_child);
+      close(pfd_garbage[1]);
+      int flags = fcntl(pfd_garbage[0], F_GETFL);
+      fcntl(pfd_garbage[0], F_SETFL, flags | O_NONBLOCK);
+      return;
+
+   } else {
+      /* first thing, change the signal set up */
+      struct sigaction sa;
+      memset(&sa, 0, sizeof(sa));
+      sigset_t *mask = &(sa.sa_mask);
+      assert(sigfillset(mask) != -1);
+      assert(sigprocmask(SIG_SETMASK, mask, NULL) != -1);
+
+      sa.sa_handler = SIG_IGN;
+      assert(sigaction(SIGHUP,  &sa, NULL) != -1);
+      assert(sigaction(SIGINT,  &sa, NULL) != -1);
+      assert(sigaction(SIGQUIT, &sa, NULL) != -1);
+      assert(sigaction(SIGPIPE, &sa, NULL) != -1);
+      assert(sigaction(SIGALRM, &sa, NULL) != -1);
+      assert(sigaction(SIGPWR,  &sa, NULL) != -1);
+      assert(sigaction(SIGURG,  &sa, NULL) != -1);
+      assert(sigaction(SIGPOLL, &sa, NULL) != -1);
+
+      sa.sa_handler = SIG_DFL;
+      assert(sigaction(SIGTERM, &sa, NULL) != -1);
+      assert(sigaction(SIGBUS,  &sa, NULL) != -1);
+      assert(sigaction(SIGFPE,  &sa, NULL) != -1);
+      assert(sigaction(SIGILL,  &sa, NULL) != -1);
+      assert(sigaction(SIGSEGV, &sa, NULL) != -1);
+      assert(sigaction(SIGSYS,  &sa, NULL) != -1);
+      assert(sigaction(SIGXCPU, &sa, NULL) != -1);
+      assert(sigaction(SIGXFSZ, &sa, NULL) != -1);
+      
+      assert(sigemptyset(mask) != -1);
+      sigprocmask(SIG_SETMASK, mask, NULL);
+
+      /* second thing, close unused file descriptors */
+      close_file_descriptors();
+   }
+
+   WITH_TEMP_STORAGE {
+      mark();
+      sweep();
+   } TEMP_STORAGE;
+
+   close(pfd_garbage[1]);
+   if (stdlog) fclose(stdlog);
+   _exit(0);
+}
+
+
+static void mm_collect(void)
+{
+   if (gc_disabled || collect_in_progress) {
+      collect_requested = true;
+      return;
+
+   } else
+      collect();
+}
+
+
 int mm_collect_now(void)
 {
    if (gc_disabled || collect_in_progress) {
@@ -1647,15 +1965,29 @@ bool mm_idle(void)
 {
    static int ncalls = 0;
 
-   ncalls++;
-   update_man_k();
-   if (ncalls<NUM_IDLE_CALLS) {
-      return false;
+   if (collect_in_progress) {
+      if (!gc_disabled) {
+         int i = 100 + fetch_backlog;
+         while (i>0 && collect_in_progress) {
+            fetch_unreachables();
+            i--;
+         }
+         return true;
+      } else
+         return false;
+
+   } else {
+      ncalls++;
+      if (!collect_in_progress)
+         update_man_k();
+      if (ncalls<NUM_IDLE_CALLS) {
+         return false;
+      }
+      /* create some work for ourselves */
+      mm_collect();
+      ncalls = 0;
+      return true;
    }
-   /* create some work for ourselves */
-   mm_collect_now();
-   ncalls = 0;
-   return true;
 }
 
 
@@ -1663,6 +1995,12 @@ bool mm_begin_nogc(bool dont_block)
 {
    /* block when a collect is in progress */
    if (!dont_block) {
+      if (collecting_child && gc_disabled) {
+         warn("deadlock (MM_NOGC while pending GC paused)\n");
+         abort();
+      }
+      while (collecting_child)
+         fetch_unreachables();
       assert(!collect_in_progress);
    }
 
@@ -1671,11 +2009,16 @@ bool mm_begin_nogc(bool dont_block)
    return nogc;
 }
 
+
 void mm_end_nogc(bool nogc)
 {
    gc_disabled = nogc;
+   if (collect_in_progress && !gc_disabled && fetch_backlog) {
+      while (collect_in_progress && fetch_backlog>0)
+         fetch_backlog -= fetch_unreachables();
+   } 
    if (collect_requested && !gc_disabled)
-      mm_collect_now();
+      mm_collect();
 }
 
 static void mark_refs(void **p)
@@ -1843,7 +2186,9 @@ char *mm_info(int level)
       total_memory_managed += types[t].size;
    } DO_HEAP_END;
 
-   update_man_k();
+   if (!collect_in_progress)
+      update_man_k();
+
    DO_MANAGED(i) {
       total_objects_offheap++;
       mt_t t  = INFO_T(managed[i]);
