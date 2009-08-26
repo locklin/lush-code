@@ -52,7 +52,7 @@
 
 #include "header.h"
 
-#define SYMBOL_CACHE_SIZE 255
+#define SYMBOL_CACHE_SIZE      256
 
 #define SYMBOL_TYPELOCKED_BIT  2
 
@@ -76,15 +76,23 @@ typedef struct hash_name {
    unsigned long hash;
 } hash_name_t;
 
+/* hash table of currently used symbol names */
 static hash_name_t **live_names = NULL;
 static hash_name_t **purgatory = NULL;
 
-/* predefined symbols */
+/* cache for bindings */
+static symbol_t **cache = NULL;
+static int cache_index = 0;
 
+/* predefined symbols */
 at *at_t;
 static at *at_scope;
 
-/* contains the symbol names and hash */
+/* forward declarations */
+static bool unlink_symbol_hash(hash_name_t *);
+static hash_name_t *resurrect_or_new_symbol_hash(const char *, unsigned long);
+static hash_name_t *get_symbol_hash_by_name(const char *);
+
 
 static void clear_symbol_hash(hash_name_t *hn, size_t _)
 {
@@ -149,63 +157,17 @@ static void mark_at_symbol(at *a)
    MM_MARK(Symbol(a));
 }
 
-static mt_t mt_at_symbol = mt_undefined;
-
-
-static hash_name_t *get_symbol_hash_by_name(const char *s)
+/* ats for symbols are special, they need a finalizer */
+static bool finalize_at_symbol(at *a)
 {
-   /* Calculate hash value */
-   unsigned long hash = 0;
-   const uchar *ss = (const uchar *)s;
-   while (*ss) {
-      uchar c = *ss++;
-      if (! c)
-         break;
-      hash = (hash<<6) | ((hash&0xfc000000)>>26);
-      hash ^= c;
-   }
-   
-   /* Search in live_names */
-   hash_name_t **lasthn = live_names + (hash % (HASHTABLESIZE-1));
-   hash_name_t *hn = *lasthn;
-   while (hn && strcmp(s, hn->name)) {
-      lasthn = &(hn->next);
-      hn = *lasthn;
-   }
-   
-   if (hn) {
-      assert(hn->backptr);
-
-   } else {
-      /* if not found, check purgatory before creating new */  
-      hash_name_t **lastpurg = purgatory + (hash % (HASHTABLESIZE-1));
-      hn = *lastpurg;
-      while (hn && strcmp(s, hn->name)) {
-         lastpurg = &(hn->next);
-         hn = *lastpurg;
-      }
-      if (hn) {
-         /* unlink and move to live_names */
-         *lastpurg = hn->next;
-         hn->next = NULL;
-         *lasthn = hn;
-      } else {
-         hn = mm_alloc(mt_symbol_hash);
-         hn->hash = hash;
-         hn->name = s;
-         hn->backptr = mm_alloc(mt_at_symbol);
-         assert(hn->next==NULL);
-         AssignClass(hn->backptr, symbol_class);
-         Symbol(hn->backptr) = mm_alloc(mt_symbol);
-         Symbol(hn->backptr)->hn = hn;
-         /* link in at front of bucket */
-         lasthn = live_names + (hash % (HASHTABLESIZE-1));
-         hn->next = *lasthn;
-         *lasthn = hn;
-      }
-   }
-   return hn;
+   symbol_t *s = Symbol(a);
+/*    assert(s->next==NULL); */
+/*    assert(s->valueptr==NULL); */
+/*    assert(SYM_AT(s)==a); */
+   return unlink_symbol_hash(SYM_HN(s));
 }
+
+static mt_t mt_at_symbol = mt_undefined;
 
 /* 
  * If symbol hash is in live_names, move it to purgatory and
@@ -242,20 +204,114 @@ static bool unlink_symbol_hash(hash_name_t *hn)
       return true;
    }
 }
-  
 
-/* ats for symbols are special, they need a finalizer */
-
-static bool finalize_at_symbol(at *a)
+at *NEW_SYMBOL(const char *name)
 {
-   symbol_t *s = Symbol(a);
-/*    assert(s->next==NULL); */
-/*    assert(s->valueptr==NULL); */
-/*    assert(SYM_AT(s)==a); */
+   return SYM_AT(new_symbol(name));
+}
 
-   return unlink_symbol_hash(SYM_HN(s));
-}   
+symbol_t *new_symbol(const char *name)
+{
+   assert(mm_ismanaged(name));
+   if (name[0] == ':' && name[1] == ':')
+      error(NIL, "belongs to a reserved package... ", NEW_STRING(name));
+   
+   hash_name_t *hn = get_symbol_hash_by_name(name);
+   assert(hn->backptr);
+   return Symbol(hn->backptr);
+}
 
+static hash_name_t *get_symbol_hash_by_name(const char *s)
+{
+   /* Calculate hash value */
+   unsigned long hash = 0;
+   const uchar *ss = (const uchar *)s;
+   while (*ss) {
+      uchar c = *ss++;
+      if (! c)
+         break;
+      hash = (hash<<6) | ((hash&0xfc000000)>>26);
+      hash ^= c;
+   }
+   
+   /* Search in live_names */
+   hash_name_t **lasthn = live_names + (hash % (HASHTABLESIZE-1));
+   hash_name_t *hn = *lasthn;
+   while (hn && strcmp(s, hn->name)) {
+      lasthn = &(hn->next);
+      hn = *lasthn;
+   }
+
+   return hn ? hn : resurrect_or_new_symbol_hash(s, hash);
+}
+
+static hash_name_t *resurrect_or_new_symbol_hash(const char *s, unsigned long hash)
+{
+   /* check purgatory, create new if not found there */  
+   hash_name_t **lastpurg = purgatory + (hash % (HASHTABLESIZE-1));
+   hash_name_t *hn = *lastpurg;
+   while (hn && strcmp(s, hn->name)) {
+      lastpurg = &(hn->next);
+      hn = *lastpurg;
+   }
+   if (hn) {
+      /* unlink and move to live_names */
+      *lastpurg = hn->next;
+   } else {
+      hn = mm_alloc(mt_symbol_hash);
+      hn->hash = hash;
+      hn->name = s;
+      hn->backptr = mm_alloc(mt_at_symbol);
+      AssignClass(hn->backptr, symbol_class);
+      if (cache_index) {
+         Symbol(hn->backptr) = cache[cache_index];
+         cache[cache_index--] = NULL;
+      } else
+         Symbol(hn->backptr) = mm_alloc(mt_symbol);
+      Symbol(hn->backptr)->hn = hn;
+   }
+
+   /* link in at front of bucket */
+   hash_name_t **lasthn = live_names + (hash % (HASHTABLESIZE-1));
+   hn->next = *lasthn;
+   *lasthn = hn;
+   return hn;
+}
+
+
+/* push the value q on the symbol stack */
+
+symbol_t *symbol_push(symbol_t *s, at *q, at **valueptr)
+{
+   symbol_t *sym = NULL;
+   if (cache_index) {
+      sym = cache[cache_index];
+      cache[cache_index--] = NULL;
+   } else
+      sym = mm_alloc(mt_symbol);
+   sym->next = s;
+   sym->hn = SYM_HN(s);
+   if (valueptr) {
+      sym->valueptr = valueptr;
+   } else {
+      sym->value = q;
+      sym->valueptr = &(sym->value);
+   }
+   return sym;
+}
+
+/* pop a value off the symbol stack */
+symbol_t *symbol_pop(symbol_t *s)
+{
+   if (cache_index==SYMBOL_CACHE_SIZE) {
+      return s->next;
+   } else {
+      symbol_t *next = s->next;
+      memset(s, 0, sizeof(symbol_t));
+      cache[++cache_index] = s;
+      return next;
+   }
+}
 
 
 /* used for readline completion in unix.c */
@@ -606,58 +662,6 @@ void reset_symbols(void)
          Symbol(p) = s;
       }
    }
-}
-
-/* push the value q on the symbol stack */
-static symbol_t **cache = NULL;
-static int cache_index = 0;
-
-symbol_t *symbol_push(symbol_t *s, at *q, at **valueptr)
-{
-   symbol_t *sym = NULL;
-   if (cache_index) {
-      sym = cache[cache_index];
-      cache[cache_index--] = NULL;
-   } else
-      sym = mm_alloc(mt_symbol);
-   sym->next = s;
-   sym->hn = SYM_HN(s);
-   if (valueptr) {
-      sym->valueptr = valueptr;
-   } else {
-      sym->value = q;
-      sym->valueptr = &(sym->value);
-   }
-   return sym;
-}
-
-/* pop a value off the symbol stack */
-symbol_t *symbol_pop(symbol_t *s)
-{
-   if (cache_index==SYMBOL_CACHE_SIZE) {
-      return s->next;
-   } else {
-      symbol_t *next = s->next;
-      memset(s, 0, sizeof(symbol_t));
-      cache[++cache_index] = s;
-      return next;
-   }
-}
-
-symbol_t *new_symbol(const char *name)
-{
-   assert(mm_ismanaged(name));
-   if (name[0] == ':' && name[1] == ':')
-      error(NIL, "belongs to a reserved package... ", NEW_STRING(name));
-   
-   hash_name_t *hn = get_symbol_hash_by_name(name);
-   assert(hn->backptr);
-   return Symbol(hn->backptr);
-}
-
-at *NEW_SYMBOL(const char *name)
-{
-   return SYM_AT(new_symbol(name));
 }
 
 
