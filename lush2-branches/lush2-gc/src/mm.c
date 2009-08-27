@@ -403,7 +403,7 @@ search_in_block:
 search_for_block:
    /* search for another block with free hunks */
    ;
-   int b = (BLOCKA(a)+1) % num_blocks;
+   int b = tr->next_b;
    int orig_b = (b+num_blocks-1) % num_blocks;
 
    while (b != orig_b) {
@@ -413,12 +413,14 @@ search_for_block:
          VALGRIND_CREATE_BLOCK(heap + a, BLOCKSIZE, types[t].name);
          tr->current_a = a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
+         tr->next_b = (b == num_blocks) ? 1 : b+1;
          num_alloc_blocks++;
          return true;
 
       } else if (blockrecs[b].t==t && blockrecs[b].in_use<(BLOCKSIZE/s)) {
          a = b*BLOCKSIZE;
          tr->current_amax = a + AMAX(s);
+         tr->next_b = (b == num_blocks) ? 1 : b+1;
          goto search_in_block;
       }
       b = (b+1) % num_blocks;
@@ -429,6 +431,7 @@ search_for_block:
    heap_exhausted = true;
    tr->current_a = 0;
    tr->current_amax = AMAX(s);
+   tr->next_b = 0;
    return false;
 }
 
@@ -452,27 +455,14 @@ static int fetch_unreachables(void);
 /* allocate from small-object heap if possible */
 static void *alloc_fixed_size(mt_t t)
 {
-   if (collect_in_progress || heap_exhausted)
+//  if (collect_in_progress) return NULL;  // why?
+
+   if (heap_exhausted || !update_current_a(t))
       return NULL;
 
-   if (!update_current_a(t)) {
-      static bool warned = false;
-      if (!warned) {
-         /* warn once */
-         debug("no free block found.\n");
-         debug("consider re-compiling with larger heap size.\n");
-         warned = true;
-      }
-      return NULL;
-   }   
-   
    void *p = heap + types[t].current_a;
    VALGRIND_MEMPOOL_ALLOC(heap, p, types[t].size);
    blockrecs[BLOCKA(types[t].current_a)].in_use++;
-   
-   if (collecting_child)
-      fetch_unreachables();
-   maybe_trigger_collect(types[t].size);
    
    return p;
 }
@@ -491,10 +481,10 @@ static void *alloc_variable_sized(mt_t t, size_t s)
    void *p = NULL;
    /* don't allocate from heap when t==mt_stack */
    if (t && types[t].size>=s && BLOCKSIZE>=s)
-      p = alloc_fixed_size(t);
-   if (p)
-      return p;
+      if ((p = alloc_fixed_size(t)))
+         goto fetch_and_return;
    
+malloc:
    p = malloc(s + MIN_HUNKSIZE);  // + space for info
 
    if (!p && collecting_child) {
@@ -503,7 +493,7 @@ static void *alloc_variable_sized(mt_t t, size_t s)
       else /* try to recover */
          while (collecting_child)
             fetch_unreachables();
-      p = malloc(s + MIN_HUNKSIZE);
+      goto malloc; 
    }
    if (!p)
       return NULL;
@@ -513,11 +503,13 @@ static void *alloc_variable_sized(mt_t t, size_t s)
    info_t *info = p;
    info->t = t;
    info->nh = s/MIN_HUNKSIZE;
+   p = seal(p);
 
+fetch_and_return:
    if (collecting_child)
       fetch_unreachables();
    maybe_trigger_collect(s);
-   return seal(p);
+   return p;
 }
 
 static bool no_marked_live(void)
@@ -992,6 +984,8 @@ static void reclaim_inheap(void *q)
       blockrecs[b].t = mt_undefined;
       VALGRIND_DISCARD((block_t *)BLOCK_ADDR(q));
    }
+   if (b < types[t].next_b)
+      types[t].next_b = b;
 }
 
 
@@ -1381,6 +1375,7 @@ mt_t mm_regtype(const char *n, size_t s,
    if (rec->size > 0) {
       rec->current_a = 0;
       rec->current_amax = rec->current_a + AMAX(rec->size);
+      rec->next_b = types_last;
    }
    return types_last;
 }
