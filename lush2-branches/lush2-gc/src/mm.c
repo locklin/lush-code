@@ -455,7 +455,8 @@ static int fetch_unreachables(void);
 /* allocate from small-object heap if possible */
 static void *alloc_fixed_size(mt_t t)
 {
-//  if (collect_in_progress) return NULL;  // why?
+   if (collect_in_progress && !collecting_child)
+      return NULL;
 
    if (heap_exhausted || !update_current_a(t))
       return NULL;
@@ -791,11 +792,13 @@ static void collect_prologue(void)
    assert(man_k == man_last);
 
    collect_in_progress = true;
-   debug("%dth collect after %d allocations:\n",
-         num_collects, num_allocs);
-   debug("mean alloc %.2f bytes, %d free blocks, down %d blocks)\n",
-         (num_allocs ? ((double)vol_allocs)/num_allocs : 0),
-         num_free_blocks(), num_alloc_blocks);
+   if (mm_debug_enabled) {
+      debug("%dth collect after %d allocations:\n",
+            num_collects, num_allocs);
+      debug("mean alloc %.2f bytes, %d free blocks, down %d blocks)\n",
+            (num_allocs ? ((double)vol_allocs)/num_allocs : 0),
+            num_free_blocks(), num_alloc_blocks);
+   }
 }
 
 static void collect_epilogue(void)
@@ -1852,18 +1855,14 @@ static void collect(void)
    errno = 0;
    collecting_child = fork();
    if (collecting_child == -1) {
-      int _errno = errno;
       char *errmsg = strerror(errno);
-      warn("could not spawn child for GC: %s\n", errmsg);
+      warn("could not spawn child for GC (%s)\n", errmsg);
+      warn("trying synchronous collect\n"); /* in maybe_trigger_collect */
       //fprintf(stderr, "could not spawn child for GC: %s\n", errmsg);
       close(pfd_garbage[0]);
       close(pfd_garbage[1]);
       collecting_child = 0;
       collect_in_progress = false;
-      if (_errno == ENOMEM) {
-         warn("trying synchronous collect\n");
-         mm_collect_now();
-      }
       return;
 
    } else if (collecting_child) {
