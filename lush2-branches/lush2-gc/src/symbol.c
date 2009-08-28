@@ -52,7 +52,7 @@
 
 #include "header.h"
 
-#define SYMBOL_CACHE_SIZE      256
+#define SYMBOL_CACHE_SIZE      128
 
 #define SYMBOL_TYPELOCKED_BIT  2
 
@@ -879,20 +879,14 @@ void pre_init_symbol(void)
                                 clear_at_symbol, mark_at_symbol, finalize_at_symbol);
    
    if (!live_names) {
-      size_t s = sizeof(hash_name_t *) * HASHTABLESIZE;
-      live_names = mm_allocv(mt_refs, s);
+      size_t s = sizeof(hash_name_t *) * HASHTABLESIZE + \
+         sizeof(void *) * (SYMBOL_CACHE_SIZE + 1);
+      live_names = mm_allocv(mt_refs, 2*s);
+      purgatory = &(live_names[HASHTABLESIZE]);
+      cache = (void *) (&live_names[2*HASHTABLESIZE]);
       MM_ROOT(live_names);
    }
-   if (!purgatory) {
-      size_t s = sizeof(hash_name_t *) * HASHTABLESIZE;
-      purgatory = mm_allocv(mt_refs, s);
-      MM_ROOT(purgatory);
-   }
-   if (!cache) {
-      size_t s = sizeof(void *) * (SYMBOL_CACHE_SIZE + 1);
-      cache = mm_allocv(mt_refs, s);
-      MM_ROOT(cache);
-   }
+
    if (!symbol_class) {
       symbol_class = new_builtin_class(NIL);
       symbol_class->name = symbol_name;
