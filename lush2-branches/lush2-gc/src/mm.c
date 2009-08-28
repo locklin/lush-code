@@ -223,7 +223,6 @@ static stack_elem_t stack_elt(mmstack_t *, int);
 
 static mt_t       mt_stack;
 static mt_t       mt_stack_chunk;
-static bool       anchor_transients = true;
 mmstack_t *const _mm_transients;
 
 /*
@@ -284,6 +283,8 @@ mmstack_t *const _mm_transients;
 
 #define FIX_SIZE(s)        if (s % MIN_HUNKSIZE) \
                               s = ((s>>ALIGN_NUM_BITS)+1)<<ALIGN_NUM_BITS
+
+#define ABORT_WHEN_OOM(p)  if (!(p)) { warn("allocation failed\n"); abort(); }
 
 /* loop over all managed addresses in small object heap */
 /* NOTE: the real address is 'heap + a', b is the block */
@@ -751,8 +752,7 @@ static void add_managed(const void *p)
       man_size *= 2;
       debug("enlarging managed table to %d\n", man_size);
       managed = (void *)realloc(managed, man_size*sizeof(void *));
-      assert(managed);
-      /* XXX: try mm_collect_now before aborting? */
+      ABORT_WHEN_OOM(managed);
    }
    assert(man_last < man_size);
    managed[man_last] = (void *)p;
@@ -761,18 +761,16 @@ static void add_managed(const void *p)
 static void manage(const void *p, mt_t t)
 {
    assert(ADDRESS_VALID(p));
-   //assert(!mark_in_progress);
 
    ptrdiff_t a = ((char *)p) - heap;
    if (a>=0 && a<heapsize) {
-      //assert(!HMAP_MANAGED(a));
-      //assert(!collect_in_progress);
+      assert(!HMAP_MANAGED(a));
       HMAP_MARK_MANAGED(a);
    } else
       add_managed(p);
    
-   if (anchor_transients)
-      stack_push(_mm_transients, p);
+   stack_push(_mm_transients, p);
+
    if (profile)
       profile[t]++;
 }
@@ -1102,23 +1100,29 @@ static void mark_stack_chunk(stack_chunk_t *c)
 
 static void add_chunk(mmstack_t *st)
 {
-   anchor_transients = false;
-   DISABLE_GC;
-
-   stack_chunk_t *c = mm_alloc(mt_stack_chunk);
+   /* We're not using mm_alloc, so we don't trigger a collection.
+    * Also, stack_chunk allocation is hidden from profiling.
+    */
+   stack_chunk_t *c = NULL;
+   if ((c = alloc_variable_sized(mt_stack_chunk, sizeof(stack_chunk_t)))) {
+      ptrdiff_t a = ((char *)c) - heap;
+      if (a>=0 && a<heapsize)
+         HMAP_MARK_MANAGED(a);
+      else
+         add_managed(c);
+   }
+   ABORT_WHEN_OOM(c);
+   memset(c, 0, sizeof(stack_chunk_t));
    c->prev = st->current;
    st->current = c;
    st->sp_min = ELT_0(c);
    st->sp = st->sp_max = ELT_N(c);
-   
-   ENABLE_GC;
-   anchor_transients = true;
 }
 
 
 void _mm_pop_chunk(mmstack_t *st)
 {
-   if (!collect_in_progress && INHEAP(st->current)) {
+   if (INHEAP(st->current)) {
       /* reclaim stack chunks immediately */
       int b = BLOCK(st->current);
       HMAP_UNMARK_MANAGED(b*BLOCKSIZE);
@@ -1138,17 +1142,17 @@ void _mm_pop_chunk(mmstack_t *st)
 
 static mmstack_t *make_stack(void)
 {
-   anchor_transients = false;
    DISABLE_GC;
-
-   mmstack_t *st = mm_allocv(mt_stack, sizeof(mmstack_t));
-   assert(st);
+   
+   size_t s = MIN_HUNKSIZE*(1+(sizeof(mmstack_t)/MIN_HUNKSIZE));
+   mmstack_t *st = alloc_variable_sized(mt_stack, s);
+   ABORT_WHEN_OOM(st);
+   assert(st && !INHEAP(st));
    memset(st, 0, sizeof(mmstack_t));
+   add_managed(st);
    add_chunk(st);
 
    ENABLE_GC;
-   anchor_transients = true;
-
    return st;
 }
 
@@ -1402,10 +1406,8 @@ void *mm_alloc(mt_t t)
    }
    
    void *p = alloc_variable_sized(t, types[t].size);
-   if (!p) {
-      warn("allocation failed\n");
-      abort();
-   }
+   ABORT_WHEN_OOM(p);
+
    if (types[t].clear)
       types[t].clear(p, types[t].size);
    manage(p, t);
@@ -1427,10 +1429,8 @@ void *mm_allocv(mt_t t, size_t s)
    
    FIX_SIZE(s);
    void *p = alloc_variable_sized(t, s);
-   if (!p) {
-      warn("allocation failed\n");
-      abort();
-   }
+   ABORT_WHEN_OOM(p);
+
    if (types[t].clear)
       types[t].clear(p, s);
    manage(p, t);
@@ -1448,7 +1448,7 @@ void *mm_blob(size_t s)
       else if (s <= 64)   mt = mt_blob64;
       else if (s <=128)   mt = mt_blob128;
       return mm_alloc(mt);
-   } else 
+   } else
       return mm_allocv(mt_blob, s);
 }
 
@@ -1674,6 +1674,8 @@ static void sweep(void)
    /* objects in small object heap */
    DO_HEAP(a, b) {
       if (!HMAP_LIVE(a)) {
+         if (blockrecs[b].t == mt_stack_chunk) /* ignore stack chunks */
+            continue;
          buf[n++] = (void *)(heap + a);
          if (n == NUM_TRANSFER) {
             write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
@@ -2135,9 +2137,6 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    assert(stack_works_fine(_mm_transients));
    assert(stack_empty(_mm_transients));
 
-   /* make profile a root */
-   MM_ROOT(profile);
-  
    debug("done\n");
 }
 
@@ -2260,10 +2259,9 @@ int mm_prof_start(int *h)
       return n;
 
    if (!profile) {
-      anchor_transients = false;
-      profile = mm_blob(n*sizeof(int));
+      profile = malloc(n*sizeof(int));
+      ABORT_WHEN_OOM(profile);
       memset(profile, 0, n*sizeof(int));
-      anchor_transients = true;
    }
 
    /* initialize h */
@@ -2284,8 +2282,10 @@ void mm_prof_stop(int *h)
       h[i] = profile[i]-h[i];
 
    /* stop profiling if this closes the outermost session */
-   if (--num_profiles==0)
+   if (--num_profiles==0) {
+      free(profile);
       profile = NULL;
+   }
 }
 
 /* create key for profile data */
