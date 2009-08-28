@@ -27,7 +27,7 @@
 #include "header.h"
 #include <errno.h>
 
-#define BINARYSTART     (0xAf)
+#define BINARYSTART     (0x9f)
 
 enum binarytokens {
    TOK_NULL,
