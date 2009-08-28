@@ -1002,7 +1002,7 @@ LUSHAPI shape_t* shape_set(shape_t*, int, size_t, size_t, size_t, size_t, size_t
 LUSHAPI index_t *index_reshape(index_t*, shape_t*);
 LUSHAPI index_t *index_ravel(index_t *);
 LUSHAPI index_t *index_trim(index_t*, int d, ptrdiff_t nz, size_t ne);
-LUSHAPI index_t *index_trim_to_shape(index_t*, shape_t*);
+LUSHAPI index_t *index_strim(index_t *, int, size_t);
 LUSHAPI index_t *index_extend(index_t*, int d, ptrdiff_t ne);
 LUSHAPI index_t *index_extendS(index_t*, subscript_t*);
 LUSHAPI index_t *index_expand(index_t*, int d, size_t ne);
@@ -1024,7 +1024,7 @@ LUSHAPI shape_t *index_broadcast2(index_t*, index_t*, index_t**, index_t**);
 /* in-place index manipulation */
 LUSHAPI index_t *index_reshapeD(index_t*, shape_t *);
 LUSHAPI index_t *index_trimD(index_t*, int d, ptrdiff_t nz, size_t ne);
-LUSHAPI index_t *index_trim_to_shapeD(index_t*, shape_t*);
+LUSHAPI index_t *index_strimD(index_t *, int, size_t);
 LUSHAPI index_t *index_extendD(index_t*, int d, ptrdiff_t ne);
 LUSHAPI index_t *index_extendSD(index_t*, subscript_t*);
 LUSHAPI index_t *index_expandD(index_t*, int d, size_t ne);

@@ -2804,6 +2804,51 @@ DX(xidx_trim)
 }
 
 
+/* index_strim symmetric trim */
+
+index_t *index_strimD(index_t *ind, int d, size_t delta)
+{
+   d = validate_dimension(ind, d);
+   if (IND_DIM(ind, d) < 2*delta)
+      RAISEF("invalid trim value", NEW_NUMBER(delta));
+   IND_DIM(ind, d) -= 2*delta;
+   ind->offset += delta * ind->mod[d];
+   return ind;
+}
+
+index_t *index_strim(index_t *ind, int d, size_t delta)
+{
+   return index_strimD(copy_index(ind), d, delta);
+}
+
+DX(xidx_strimD)
+{
+   ARG_NUMBER(3);
+  
+   /* calc parameters to index_trimD */
+   index_t *ind = AINDEX(1);
+   int d = validate_dimension(ind, AINTEGER(2));
+   int delta = AINTEGER(3);
+   if (delta<0)
+      RAISEFX("invalid trim value", NEW_NUMBER(delta));
+   index_strimD(ind, d, (size_t)delta);
+   return APOINTER(1);
+}
+
+DX(xidx_strim)
+{
+   ARG_NUMBER(3);
+  
+   /* calc parameters to index_trim */
+   index_t *ind = AINDEX(1);
+   int d = validate_dimension(ind, AINTEGER(2));
+   int delta = AINTEGER(3);
+   if (delta<0)
+      RAISEFX("invalid trim value", NEW_NUMBER(delta));
+   return index_strim(ind, d, (size_t)delta)->backptr;
+}
+
+
 DX(xidx_narrowD)
 {
    ARG_NUMBER(4);
@@ -3490,6 +3535,7 @@ void init_index(void)
    dx_define("idx-broadcast2", xidx_broadcast2);
    dx_define("idx-shift", xidx_shift);
    dx_define("idx-trim", xidx_trim);
+   dx_define("idx-strim", xidx_strim);
    dx_define("idx-select", xidx_select);
    dy_define("idx-select*", yidx_selectS);
    dx_define("idx-select-all", xidx_select_all);
@@ -3506,6 +3552,7 @@ void init_index(void)
    dx_define("idx-expand!", xidx_expandD);
    dx_define("idx-shift!", xidx_shiftD);
    dx_define("idx-trim!", xidx_trimD);
+   dx_define("idx-strim!", xidx_strimD);
    dx_define("idx-narrow!", xidx_narrowD);
    dx_define("idx-reverse!", xidx_reverseD);
    dx_define("idx-set-dim", xidx_set_dim);
