@@ -638,6 +638,8 @@ DX(xmeminfo)
       ARG_NUMBER(-1);
 
    print_char('\n');
+   MM_NOGC;
+   MM_NOGC_END;
    print_string(mm_info(level));
    return NIL;
 }

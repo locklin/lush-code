@@ -57,6 +57,16 @@ esac
 # Overrides
 # ----------------------------------------
 
+ac_with_snapshot_gc=no
+AC_ARG_WITH(snapshot-gc,
+    AC_HELP_STRING([--with-snapshot-gc], [Spawn child process for garbage collection]),
+    [ if test $withval != no ; then
+        ac_with_snapshot_gc=yes
+    fi ])
+if test $ac_with_snapshot_gc = yes ; then
+    AC_DEFINE(MM_SNAPSHOT_GC,1,[Define when compiling MM with snapshot GC.])
+fi
+    
 ac_have_mpi=no
 AC_ARG_WITH(mpi,
             AC_HELP_STRING([--with-mpi],

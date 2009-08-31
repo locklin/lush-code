@@ -309,7 +309,7 @@ int dht_from_cname(symbol_t *s)
          goto invalid_error;
    }
 invalid_error:
-   error(NIL, "not a type name", new_at(symbol_class, s));
+   error(NIL, "not a type name", named(name));
 }
 
 /* ---------------------------------------------

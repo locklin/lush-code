@@ -384,11 +384,11 @@ LUSHAPI at *assign(at *, at *);
 
 extern LUSHAPI class_t *symbol_class;
 
-typedef struct lush_symbol { 	/* each symbol is an external AT which */
+typedef struct lush_symbol {
    struct lush_symbol *next;
    struct hash_name *hn;
-   at *value;
    at **valueptr;
+   at *value;
 } symbol_t;
 
 
@@ -397,11 +397,11 @@ typedef struct lush_symbol { 	/* each symbol is an external AT which */
 
 /* symbol creation */
 LUSHAPI symbol_t *new_symbol(const char *);
+LUSHAPI at *NEW_SYMBOL(const char *);
 LUSHAPI at *named(const char *);
 LUSHAPI at *namedclean(const char *);
 extern  at *at_t; 
 #define t()           at_t
-#define NEW_SYMBOL(s)  named(s)
 
 LUSHAPI const char *nameof(symbol_t *);
 LUSHAPI const char *NAMEOF(at *);
