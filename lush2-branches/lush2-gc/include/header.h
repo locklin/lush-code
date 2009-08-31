@@ -387,8 +387,8 @@ extern LUSHAPI class_t *symbol_class;
 typedef struct lush_symbol {
    struct lush_symbol *next;
    struct hash_name *hn;
-   at *value;
    at **valueptr;
+   at *value;
 } symbol_t;
 
 

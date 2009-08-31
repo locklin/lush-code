@@ -42,6 +42,7 @@
 
 #define MM_INTERNAL 1
 #include "mm.h"
+#include "lushconf.h"
 
 #ifndef NVALGRIND
 #  include <valgrind/memcheck.h>
@@ -64,12 +65,14 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <limits.h>
-#include <ctype.h>
-#include <fcntl.h>
-#include <dirent.h>
+#ifdef MM_SNAPSHOT_GC
+#  include <sys/types.h>
+#  include <sys/wait.h>
+#  include <ctype.h>
+#  include <fcntl.h>
+#  include <dirent.h>
+#endif
 
 #define max(x,y)        ((x)<(y) ? (y) : (x))
 #define min(x,y)        ((x)<(y) ? (x) : (y))
@@ -85,7 +88,6 @@
 #define PPTR(p)         ((uintptr_t)(p))
 
 #define PAGEBITS        12
-//#define BLOCKBITS       (PAGEBITS+1)
 #define BLOCKBITS       PAGEBITS
 #if defined  PAGESIZE && (PAGESIZE != (1<<PAGEBITS))
 #  error Definitions related to PAGESIZE inconsistent
@@ -184,7 +186,7 @@ static int       *profile = NULL;
 static int        num_profiles = 0;
 
 /* the marking stack */
-static const void * *restrict stack = NULL;
+static const void *restrict *stack = NULL;
 static int        stack_size = MIN_STACK;
 static int        stack_last = -1;
 static bool       stack_overflowed  = false;
@@ -205,7 +207,6 @@ static notify_func_t *client_notify = NULL;
 static mt_t       marking_type = mt_undefined;
 static const void *marking_object = NULL;
 static FILE *     stdlog = NULL;
-static int        pfd_garbage[2];   /* garbage pipe for async. collect */
 bool              mm_debug_enabled = false;
 
 /* transient object stack */
@@ -313,6 +314,14 @@ mmstack_t *const _mm_transients;
 
 #define ENABLE_GC gc_disabled = __nogc;
 
+#ifdef MM_SNAPSHOT_GC
+static void mm_collect(void);
+static int fetch_unreachables(void);
+#else
+#  define mm_collect()          /* noop */
+#  define fetch_unreachables()  /* noop */
+#endif
+
 static void *seal(const char *p)
 {
    p = CLRPTR(p);
@@ -363,8 +372,6 @@ static void mark_live(const void *p)
    assert(i != -1);
    MARK_LIVE(managed[i]);
 }
-
-static void mm_collect(void);
 
 static void maybe_trigger_collect(size_t s)
 {
@@ -451,8 +458,6 @@ static bool update_current_a(mt_t t)
    return _update_current_a(t, tr, tr->size, tr->current_a);
 }
 
-static int fetch_unreachables(void);
-   
 /* allocate from small-object heap if possible */
 static void *alloc_fixed_size(mt_t t)
 {
@@ -508,8 +513,10 @@ malloc:
    p = seal(p);
 
 fetch_and_return:
+#ifdef MM_SNAPSHOT_GC
    if (collecting_child)
       fetch_unreachables();
+#endif
    maybe_trigger_collect(s);
    return p;
 }
@@ -814,6 +821,7 @@ static void collect_epilogue(void)
    marking_object = NULL;
    collect_requested = false;
 
+#ifdef MM_SNAPSHOT_GC
    if (collecting_child) {
       int status; 
       if (waitpid(collecting_child, &status, 0) == -1) {
@@ -827,10 +835,10 @@ static void collect_epilogue(void)
             warn("terminated by signal %d\n", WTERMSIG(status));
          else if (WIFSTOPPED(status))
             warn("stopped by signal %d\n", WSTOPSIG(status));
-#ifdef WCOREDUMP
+#  ifdef WCOREDUMP
          else if (WCOREDUMP(status))
             warn("coredumped\n");
-#endif
+#  endif
          else
             warn("cause unknown (status = %d)\n", status);
          abort();
@@ -838,6 +846,7 @@ static void collect_epilogue(void)
       //mm_printf("reaped gc child %d\n", collecting_child);
       collecting_child = 0;
    }
+#endif
    heap_exhausted = false;
    collect_in_progress = false;
    num_alloc_blocks = 0;
@@ -1664,6 +1673,10 @@ static void mark(void)
    mark_in_progress = false;
 }
 
+#ifdef MM_SNAPSHOT_GC
+
+static int pfd_garbage[2];  /* garbage pipe for async. collect */
+
 static void sweep(void)
 {
    void *buf[NUM_TRANSFER];
@@ -1733,8 +1746,6 @@ static int _fetch_unreachables(void *buf)
 /* return number of objects reclaimed */
 static int fetch_unreachables(void)
 {
-   assert(collecting_child);
-
    if (gc_disabled) {
       fetch_backlog++;
       return 0;
@@ -1799,7 +1810,6 @@ static int fetch_unreachables(void)
    }
    return 0;
 }
-
 
 /* close all file descriptors except essential ones */
 static void close_file_descriptors(void)
@@ -1930,6 +1940,7 @@ static void mm_collect(void)
       collect();
 }
 
+#endif  /* MM_SNAPSHOT_GC */
 
 int mm_collect_now(void)
 {
@@ -1991,12 +2002,14 @@ bool mm_begin_nogc(bool dont_block)
 {
    /* block when a collect is in progress */
    if (!dont_block) {
+#ifdef MM_SNAPSHOT_GC
       if (collecting_child && gc_disabled) {
          warn("deadlock (MM_NOGC while pending GC paused)\n");
          abort();
       }
       while (collecting_child)
          fetch_unreachables();
+#endif
       assert(!collect_in_progress);
    }
 
@@ -2009,10 +2022,12 @@ bool mm_begin_nogc(bool dont_block)
 void mm_end_nogc(bool nogc)
 {
    gc_disabled = nogc;
+#ifdef MM_SNAPSHOT_GC
    if (collect_in_progress && !gc_disabled && fetch_backlog) {
       while (collect_in_progress && fetch_backlog>0)
          fetch_backlog -= fetch_unreachables();
    } 
+#endif
    if (collect_requested && !gc_disabled)
       mm_collect();
 }
@@ -2057,8 +2072,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    heapsize = num_blocks * BLOCKSIZE;
    hmapsize = (heapsize/MIN_HUNKSIZE)/HMAP_EPI;
    block_threshold = min(MAX_BLOCKS, num_blocks/3);
-   //volume_threshold = min(MAX_VOLUME, heapsize/2);
-   volume_threshold = heapsize;
+   volume_threshold = heapsize/2;
 
    blockrecs = (blockrec_t *)malloc(num_blocks * sizeof(blockrec_t));
    assert(blockrecs);
