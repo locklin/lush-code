@@ -732,24 +732,6 @@ DX(xstoragep)
    return STORAGEP(APOINTER(1)) ? t() : NIL;
 }
 
-bool storage_classp(const at *p)
-{
-   ifn (CLASSP(p))
-      return false;
-   class_t *cl = Mptr(p);
-
-   for (storage_type_t t = ST_FIRST; t < ST_LAST; t++)
-      if (cl == storage_class[t]) 
-         return true;
-   return false;
-}
-
-DX(xstorage_classp)
-{
-   ARG_NUMBER(1);
-   return storage_classp(APOINTER(1)) ? t() : NIL;
-}
-
 bool storage_readonlyp(const storage_t *st) 
 {
    return (st->flags & STF_RDONLY);
@@ -762,7 +744,7 @@ DX(xstorage_readonlyp)
    return (st->flags & STF_RDONLY) ? t() : NIL;
 }
 
-DX(xstorage_make_readonly)
+DX(xstorage_set_readonly)
 {
    ARG_NUMBER(1);
    storage_t *st = ASTORAGE(1);
@@ -939,9 +921,8 @@ void init_storage()
    dx_define("storage-mmap",xstorage_mmap);
 #endif
    dx_define("storagep",xstoragep);
-   dx_define("storage-classp", xstorage_classp);
    dx_define("storage-readonlyp",xstorage_readonlyp);
-   dx_define("storage-make-readonly", xstorage_make_readonly);
+   dx_define("storage-set-readonly", xstorage_set_readonly);
    dx_define("storage-load",xstorage_load);
    dx_define("storage-save",xstorage_save);
    dx_define("storage-nelems",xstorage_nelems);
