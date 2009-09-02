@@ -1052,7 +1052,7 @@ DX(xprin)
 
 
 /*
- * printf C'printf interface. format: %{-}{n}{.{m}}{d|s|f|e|g|l|p}  ( l for
+ * printf C'printf interface. format: %{-}{n}{.{m}}{c|d|s|f|e|g|l|p}  ( l for
  * list, p for pretty ) or   : %%
  */
 
@@ -1111,6 +1111,7 @@ DX(xprintf)
                ok = 10;
             break;
          case 'd':
+         case 'c':
          case 's':
             if (ok >= 5)
                goto err_printf0;
@@ -1162,6 +1163,17 @@ DX(xprintf)
             goto err_printf0;
          } else {
             sprintf(buf, print_buffer, Gptr(a));
+            print_string(buf);
+         }
+
+      } else if (c == 'c') {
+         *buf++ = 0;
+         if (ok == 9) {
+            print_char((char)AINTEGER(i));
+         } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+            goto err_printf0;
+         } else {
+            sprintf(buf, print_buffer, (char)AINTEGER(i));
             print_string(buf);
          }
 
