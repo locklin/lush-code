@@ -1215,6 +1215,9 @@ err_printf1:
 
 static char *convert(char *s, at *list, char *end)
 {
+   if (s > end - 8 )
+      goto exit_convert;
+
    ifn (list) {			/* PNAME :   NIL    =>   '()'	 */
       *s++ = '(';
       *s++ = ')';
