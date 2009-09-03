@@ -961,6 +961,8 @@ static void local_bread_cobject(at **pp)
    (*cl->serialize)(pp, SRZ_READ);
 }
 
+static const char *reading_slot = NULL;
+
 static void local_bread_cref(at **pp)
 {
    at *cname;
@@ -980,9 +982,15 @@ static void local_bread_cref(at **pp)
    class_t *cl = Mptr(cptr);
    if (cl->super != cref_class)
       safe_error(NIL, "corrupted file (expecting cref class)", cptr); 
-   ifn (classof(*pp)==cl)
-      safe_error(NIL, "corrupted file (not a cref class or wrong cref class)", classof(*pp)->backptr);
-      
+   ifn (classof(*pp)==cl) {
+      if (reading_slot) {
+         fprintf(stderr, "*** error while reading slot '%s' of class '%s'\n",
+                 reading_slot, pname(name));
+         reading_slot = NULL;
+         safe_error(NIL, "expected slot data for compiled object (cref class), found instead", classof(*pp)->backptr);
+      } else
+         safe_error(NIL, "corrupted file (not a cref class or wrong cref class)", classof(*pp)->backptr);
+   }
    at *obj = NIL;
    if (local_bread(&obj, 0))
       safe_error(NIL, "corrupted file", NIL);
@@ -1015,7 +1023,9 @@ static void local_bread_object(at **pp,  int opt)
    
    object_t *obj = Mptr(*pp);
    for (int i=0; i<size; i++) {
+      reading_slot = nameof(cl->slots[i]);
       local_bread(&(obj->slots[i]), 0);
+      reading_slot = NULL;
    }
 }
 
