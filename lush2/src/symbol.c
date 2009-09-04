@@ -207,7 +207,7 @@ static bool unlink_symbol_hash(hash_name_t *hn)
 
 at *NEW_SYMBOL(const char *name)
 {
-   return SYM_AT(new_symbol(name));
+   return SYM_AT(new_symbol(mm_strdup(name)));
 }
 
 symbol_t *new_symbol(const char *name)
@@ -370,13 +370,13 @@ char *symbol_generator(const char *text, int state)
 
 at *named(const char *s)
 {
-   return NEW_SYMBOL(mm_strdup(s));
+   return NEW_SYMBOL(s);
 }
 
 DX(xnamed)
 {
    ARG_NUMBER(1);
-   return NEW_SYMBOL(ASTRING(1));
+   return SYM_AT(new_symbol(ASTRING(1)));
 }
 
 /*

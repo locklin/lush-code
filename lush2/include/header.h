@@ -396,8 +396,8 @@ typedef struct lush_symbol {
 #define SYMBOL_VARIABLE_BIT    4
 
 /* symbol creation */
-LUSHAPI symbol_t *new_symbol(const char *);
-LUSHAPI at *NEW_SYMBOL(const char *);
+LUSHAPI symbol_t *new_symbol(const char *);  /* new_symbol expects a managed string */
+LUSHAPI at *NEW_SYMBOL(const char *);        /* NEW_SYMBOL takes any string */
 LUSHAPI at *named(const char *);
 LUSHAPI at *namedclean(const char *);
 extern  at *at_t; 
