@@ -1023,7 +1023,7 @@ static void local_bread_object(at **pp,  int opt)
    
    object_t *obj = Mptr(*pp);
    for (int i=0; i<size; i++) {
-      reading_slot = nameof(cl->slots[i]);
+      reading_slot = NAMEOF(cl->slots[i]);
       local_bread(&(obj->slots[i]), 0);
       reading_slot = NULL;
    }
