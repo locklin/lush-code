@@ -129,7 +129,11 @@ static const char *index_name(at *p)
    char *s = string_buffer;
    
    assert(IND_NDIMS(ind)>=0);
-   sprintf(s, "::%s:<", NAMEOF(Class(p)->classname));
+   sprintf(s, "::%s:", NAMEOF(Class(p)->classname));
+   while (*s)
+      s++;
+   const char *storage_clname = nameof(Symbol(Class(IND_ATST(ind))->classname));
+   sprintf(s, "%s:<", storage_clname);
    while (*s)
       s++;
    for (int d=0; d<IND_NDIMS(ind); d++) {
