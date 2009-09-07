@@ -176,7 +176,7 @@ typedef struct class_s class_t;
 extern LUSHAPI class_t *class_class;
 extern LUSHAPI class_t *object_class;
 extern LUSHAPI class_t *cons_class;
-extern LUSHAPI class_t *null_class;
+extern LUSHAPI class_t *nil_class;
 extern LUSHAPI class_t *number_class;
 extern LUSHAPI class_t *gptr_class;
 extern LUSHAPI class_t *mptr_class;
@@ -227,7 +227,7 @@ struct at {
 #define STORAGEP(x)     ((x)&&(Class(x)->super == abstract_storage_class))
 #define INDEXP(x)       ((x)&&(Class(x) == index_class))
 #define STRINGP(x)      ((x)&&(Class(x) == string_class))
-#define ZOMBIEP(x)      ((x)&&(Class(x) == null_class))
+#define ZOMBIEP(x)      ((x)&&(Class(x) == nil_class))
 #define WINDOWP(x)      ((x)&&(Class(x) == window_class))
 
 #define HAS_BACKPTR_P(p) ((p)&&(Class(p)== index_class || \
@@ -745,7 +745,7 @@ LUSHAPI static inline class_t *classof(const at *p)
    if (p)
       return CONSP(p) ? cons_class : p->head.cl;
    else
-      return null_class;
+      return nil_class;
 }
 
 

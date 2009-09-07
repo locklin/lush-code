@@ -69,7 +69,7 @@ at *eval_std(at *p)
       if (q)
          p = Class(q)->listeval(q, p);
       else
-         p = null_class->listeval(q, p);
+         p = nil_class->listeval(q, p);
 
       top_link = top_link->prev;
       return p;

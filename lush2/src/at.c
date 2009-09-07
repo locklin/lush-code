@@ -34,7 +34,7 @@
 
 static void clear_at(at *a, size_t _)
 {
-   a->head.cl = null_class;
+   a->head.cl = nil_class;
 }
 
 static void mark_at(at *a)
@@ -138,7 +138,7 @@ DX(xnull)
 void zombify(at *p)
 {
    if (p)
-      AssignClass(p, null_class);
+      AssignClass(p, nil_class);
 }
 
 /* ----- unodes ------ */
@@ -247,17 +247,17 @@ static const char *mptr_name(at *p)
    return mm_strdup(string_buffer);
 }
 
-static const char *null_name(at *p)
+static const char *nil_name(at *p)
 {
    return mm_strdup("( )");
 }
 
-static at *null_selfeval(at *p)
+static at *nil_selfeval(at *p)
 {
    return NIL;
 }
 
-static at *null_listeval(at *p, at *q)
+static at *nil_listeval(at *p, at *q)
 {
    error(NIL, "not a function (nil)", Car(q));
    return NIL;
@@ -266,7 +266,7 @@ static at *null_listeval(at *p, at *q)
 
 /* --------- INITIALISATION CODE --------- */
 
-class_t *number_class, *gptr_class, *mptr_class, *cons_class, *null_class;
+class_t *number_class, *gptr_class, *mptr_class, *cons_class, *nil_class;
 at *at_NULL;
 
 extern void pre_init_symbol(void);
@@ -303,12 +303,12 @@ void init_at(void)
    cons_class = new_builtin_class(NIL);
    class_define("CONS", cons_class);
    
-   null_class = new_builtin_class(NIL);
-   null_class->name = null_name;
-   null_class->selfeval = null_selfeval;
-   null_class->listeval = null_listeval;
-   null_class->managed = false;
-   class_define("Null", null_class);
+   nil_class = new_builtin_class(NIL);
+   nil_class->name = nil_name;
+   nil_class->selfeval = nil_selfeval;
+   nil_class->listeval = nil_listeval;
+   nil_class->managed = false;
+   class_define("Nil", nil_class);
 
    /* define NULL pointer */
    at_NULL = var_define("NULL");
