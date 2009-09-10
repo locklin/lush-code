@@ -504,6 +504,22 @@ static char *unzip_bindings(at *l, at **l1, at **l2)
    return (char *)NULL;
 }
 
+/* replace all array objects in list by copies */
+static void protect_array_literals(at *l)
+{
+   while (CONSP(l)) {
+      if (CONSP(Car(l))) {
+         AssignCar(l, copy_tree(Car(l)));
+         protect_array_literals(Car(l));
+
+      } else if (INDEXP(Car(l))) {
+         AssignCar(l, COPY_ARRAY(Mptr(Car(l))));
+      }
+
+      l = Cdr(l);
+   }
+}
+
 /* let, let*, for, each, all */
 
 at *let(at *vardecls, at *body)
@@ -512,6 +528,7 @@ at *let(at *vardecls, at *body)
 
    at *syms, *vals;
    RAISEF(unzip_bindings(vardecls, &syms, &vals), vardecls);
+   protect_array_literals(vals);
 
    push_args(syms, eval_arglist(vals));
    at *result = progn(body);
@@ -533,6 +550,7 @@ at *lete(at *vardecls, at *body)
 
    at *syms, *vals;
    RAISEF(unzip_bindings(vardecls, &syms, &vals), vardecls);
+   protect_array_literals(vals);
 
    push_args(syms, eval_arglist(vals));
    at *result = progn(body);
@@ -561,6 +579,7 @@ at *letS(at *vardecls, at *body)
 
    at *syms, *vals;
    RAISEF(unzip_bindings(vardecls, &syms, &vals), vardecls);
+   protect_array_literals(vals);
 
    at *syms2 = syms;
    at *vals2 = vals;
