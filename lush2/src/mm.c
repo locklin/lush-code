@@ -959,8 +959,10 @@ static bool run_finalizer(finalize_func_t *f, void *q)
    bool ok = f(q);
    if (errno) {
       char *errmsg = strerror(errno);
-      debug("finalizer of object 0x%"PRIxPTR" (%s) caused an error:\n%s\n",
-            PPTR(q), types[mm_typeof(q)].name, errmsg);
+      warn("finalizer of object 0x%"PRIxPTR" (%s) caused an error:\n%s\n",
+           PPTR(q), types[mm_typeof(q)].name, errmsg);
+      /* harsh, but this is most likely a bug in the finalizers */
+      abort();
    }
 
    ENABLE_GC;
