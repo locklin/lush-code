@@ -771,18 +771,32 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
       break;
   
    case DHT_SRG:
-      if (STORAGEP(at_obj)) {
-         /* check type and access */
-         storage_t *st = Mptr(at_obj);
+      /* Here we make an exception to the general pattern and  */
+      /* accept a compatible index when a storage is expected. */
+      /* For this to make sense we require that the index is   */
+      /* contiguous and has a zero offset.                     */
+   {
+      storage_t *st = NULL;
+      if (STORAGEP(at_obj)) 
+         st = (storage_t *)Mptr(at_obj);
+      else if (INDEXP(at_obj)) {
+         index_t *ind = Mptr(at_obj);
+         if (ind->offset)
+            error(NIL, "invalid index for storage argument (nonzero offset)", at_obj);
+         ifn (index_contiguousp(ind))
+            error(NIL, "invalid index for storage argument (not contiguous)", at_obj);
+         st = ind->st;
+      }
+      if (st) {
          if (st->type != (drec+1)->op)
             error(NIL, "invald storage argument (wrong type)", at_obj);
          if (drec->access == DHT_WRITE)
             get_write_permit(st);
-         arg->dh_srg_ptr = Mptr(at_obj);
+         arg->dh_srg_ptr = st;
       } else
-         error(NIL, "invalid argument (storage expected)",at_obj);
+         error(NIL, "invalid argument (index or storage expected)",at_obj);
       break;
-  
+   }
   case DHT_IDX:
      if (INDEXP(at_obj)) {
         /* check type and access */
