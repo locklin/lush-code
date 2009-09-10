@@ -38,7 +38,7 @@ struct htable {
    at *backptr;
 };
 
-static htable_t *lbfgs_parameters()
+static htable_t *lbfgs_params(void)
 {
    htable_t *p = new_htable(31, false, false);
 
@@ -60,11 +60,11 @@ static htable_t *lbfgs_parameters()
 DX(xlbfgs_params)
 {
    ARG_NUMBER(0);
-   return lbfgs_parameters()->backptr;
+   return lbfgs_params()->backptr;
 }
 
 
-/* interface running calling into the fortran routine */
+/* interface calling into the fortran routine */
 static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
 {
    /* argument checking and setup */
@@ -88,7 +88,7 @@ static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
    at *callf = new_cons(f, new_cons(x0->backptr, vargs));
    at *callg = new_cons(g, new_cons(gx, new_cons(x0->backptr, vargs)));
 
-   htable_t *params = lbfgs_parameters();
+   htable_t *params = lbfgs_params();
    if (p) htable_update(params, p);
    int iprint[2];
    iprint[0] = (int)Number(htable_get(params, NEW_SYMBOL("iprint-1")));
