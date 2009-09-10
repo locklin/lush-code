@@ -101,7 +101,7 @@ static void mark_object(object_t *obj)
 static bool finalize_object(object_t *obj)
 {
    object_class->dispose(obj);
-   return true;
+   return ZOMBIEP(obj->backptr);
 }
 
 static mt_t mt_object = mt_undefined;
@@ -144,10 +144,6 @@ object_t *oostruct_dispose(object_t *obj)
    context_pop();
    error_doc.ready_to_an_error = oldready;
    
-   if (obj->cptr)
-      obj->cptr->__lptr = NULL;
-   zombify(obj->backptr);
-
    if (errflag) {
       if (mm_collect_in_progress())
          /* we cannot longjump when called by a finalizer */
@@ -155,6 +151,11 @@ object_t *oostruct_dispose(object_t *obj)
       else
          siglongjmp(context->error_jump, -1L);
    }
+
+   if (obj->cptr)
+      obj->cptr->__lptr = NULL;
+   zombify(obj->backptr);
+
    return obj;
 }
 

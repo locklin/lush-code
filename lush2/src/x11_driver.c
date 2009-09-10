@@ -69,6 +69,7 @@
 
 #include "header.h"
 #include "graphics.h"
+#include <errno.h>
 
 #ifdef class
 # undef class
@@ -624,6 +625,7 @@ static void handle_async_events(void)
             break;
          }
    }
+   errno = 0;
 }
 
 static int handle_sync_events(void)
@@ -643,7 +645,7 @@ static int handle_sync_events(void)
                           info->sizx, info->sizy, 0,0 );
          info->resizestate = false;
       }
-  
+
    /* search for other X events */
    while (XPending(xdef.dpy)) {
       XEvent ev;
@@ -793,6 +795,7 @@ static int handle_sync_events(void)
 #endif
       }
    }
+   errno = 0;
    return 0;
 }
 
@@ -874,7 +877,8 @@ static void x11_close(window_t *linfo)
    XUndefineCursor( xdef.dpy, info->win);
    XUnmapWindow(xdef.dpy, info->win);
    XDestroyWindow(xdef.dpy, info->win);
-   XFlush(xdef.dpy);
+   XSync(xdef.dpy, True);
+   errno = 0; /* call to XSync may change errno */
 
    unchain_xwin(info);
    info->lwin.used = 0;

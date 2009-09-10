@@ -477,11 +477,17 @@ static int trigger_fds[MAX_TRIGGER_NFDS];
 /* trigger_handle -- function called when trigger is run */
 static void (*trigger_handler)(void);
 
+#define PRINT_ERRNO(where) \
+   if (errno) { printf("*** %s: %d (%s)\n", where, errno, strerror(errno)); errno = 0;}
+
+
 /* trigger_irq -- signal handler for trigger */
 static RETSIGTYPE trigger_irq(void)
 {
+   errno = 0;
    if (trigger_handler)
       (*trigger_handler)();
+   PRINT_ERRNO("trigger_irq (trigger_handler)");
    if (trigger_signal < 0)
       return;
    /* reset trigger signal */
@@ -491,11 +497,13 @@ static RETSIGTYPE trigger_irq(void)
 #ifndef BROKEN_ALARM
    if (trigger_mode == MODE_ALARM)
       alarm(1);
+   PRINT_ERRNO("trigger_irq (alarm)");
 #endif
 #ifndef BROKEN_TIMER
    if (trigger_mode == MODE_ITIMER) {
       static struct itimerval delay = {{0,0},{0,500000}};
       setitimer(ITIMER_REAL,&delay,0);
+      PRINT_ERRNO("trigger_irq (setitimer)");
    }
 #endif
 }
@@ -510,7 +518,9 @@ static void unblock_async_trigger(void)
          sigset_t sset;
          sigemptyset(&sset);
          sigaddset(&sset, trigger_signal);
-         sigprocmask(SIG_UNBLOCK,&sset,NULL);
+         assert(sigprocmask(SIG_UNBLOCK,&sset,NULL)==0);
+         /* errno is sometimes nonzero after this call */
+         errno = 0;
 #endif
 #ifdef BSDSIGNAL
          sigsetmask(sigblock(0)&~(sigmask(trigger_signal)));
