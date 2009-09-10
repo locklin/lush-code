@@ -785,7 +785,10 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
             error(NIL, "invalid index for storage argument (nonzero offset)", at_obj);
          ifn (index_contiguousp(ind))
             error(NIL, "invalid index for storage argument (not contiguous)", at_obj);
-         st = ind->st;
+         st = new_storage(ind->st->type);
+         st->flags = ind->st->flags;
+         st->data = ind->st->data;
+         st->size = index_nelems(ind); /* ! */
       }
       if (st) {
          if (st->type != (drec+1)->op)
