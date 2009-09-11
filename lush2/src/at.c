@@ -301,7 +301,7 @@ void init_at(void)
    class_define("MPTR", mptr_class);
 
    cons_class = new_builtin_class(NIL);
-   class_define("CONS", cons_class);
+   class_define("Cons", cons_class);
    
    nil_class = new_builtin_class(NIL);
    nil_class->name = nil_name;
