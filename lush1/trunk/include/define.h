@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: define.h,v 1.15 2005-06-03 04:10:09 leonb Exp $
+ * $Id: define.h,v 1.16 2009-09-11 23:25:26 leonb Exp $
  **********************************************************************/
 
 #ifndef DEFINE_H
@@ -174,6 +174,7 @@ typedef void* gptr;
 #endif
 
 #ifndef STDC_HEADERS
+#ifndef __APPLE__
 # ifdef toupper
 #  undef toupper
 # endif
@@ -182,6 +183,7 @@ typedef void* gptr;
 # endif
 # define NEED_TOUPPER
 # define NEED_TOLOWER
+#endif
 #endif
 
 #ifdef HAVE_WCHAR_H
