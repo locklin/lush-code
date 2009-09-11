@@ -1153,6 +1153,9 @@ const char *search_file(const char *ss, const char *suffices)
       error(NIL,"File name is too long",NIL);
    strcpy(s,ss);
 
+   if (filep(ss))
+      return mm_strdup(ss);
+
    /* -- search along path */
    const char *c = 0;
 #ifdef UNIX
