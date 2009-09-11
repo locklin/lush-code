@@ -389,10 +389,16 @@ DX(xdirp)
 bool filep(const char *s)
 {
 #ifdef UNIX
+   errno = 0;
    struct stat buf;
-   if (stat(s,&buf)==-1)
+   if (stat(s,&buf)==-1) {
+      if (errno!=ENOENT) {
+         char *errmsg = strerror(errno);
+         fprintf(stderr, "*** Warning: error in '(filep \"%s\")'\n%s\n", s, errmsg);
+      }
       return false;
-   if (buf.st_mode & S_IFDIR) 
+
+   } else if (buf.st_mode & S_IFDIR) 
       return false;
 #endif
 #ifdef WIN32
@@ -402,6 +408,7 @@ bool filep(const char *s)
    if (buf.st_mode & S_IFDIR) 
       return false;
 #endif
+   errno = 0; /* filep is used in tmpname finalizer */
    return true;
 }
 
