@@ -2169,7 +2169,7 @@ DX(xload_matrix)
    if (arg_number == 2) {
       ASYMBOL(1);
       if (ISSTRING(2)) {
-         p = OPEN_READ(ASTRING(2), "mat");
+         p = OPEN_READ(ASTRING(2), "|.mat");
       } else {
       p = APOINTER(2);
       ifn (p && RFILEP(p))
@@ -2181,7 +2181,7 @@ DX(xload_matrix)
    } else {
       ARG_NUMBER(1);
       if (ISSTRING(1)) {
-         p = OPEN_READ(ASTRING(1), "mat");
+         p = OPEN_READ(ASTRING(1), "|.mat");
       } else {
          p = APOINTER(1);
          ifn (p && RFILEP(p))
@@ -2215,14 +2215,14 @@ at *map_matrix(FILE *f)
    if (swapflag && magic!=BYTE_MATRIX && magic!=SHORT8_MATRIX)
       error(NIL,"cannot map this byteswapped matrix",NIL);
    /* Create storage */
-   storage_t *st;
+   storage_type_t t = ST_LAST;
    switch(magic) {
-   case BINARY_MATRIX:  st = new_storage(ST_FLOAT);  break;
-   case DOUBLE_MATRIX:  st = new_storage(ST_DOUBLE); break;
-   case INTEGER_MATRIX: st = new_storage(ST_INT);    break;
-   case SHORT_MATRIX:   st = new_storage(ST_SHORT);  break;
-   case SHORT8_MATRIX:  st = new_storage(ST_CHAR);   break;
-   case BYTE_MATRIX:    st = new_storage(ST_UCHAR);  break;
+   case BINARY_MATRIX:  t = ST_FLOAT;  break;
+   case DOUBLE_MATRIX:  t = ST_DOUBLE; break;
+   case INTEGER_MATRIX: t = ST_INT;    break;
+   case SHORT_MATRIX:   t = ST_SHORT;  break;
+   case SHORT8_MATRIX:  t = ST_CHAR;   break;
+   case BYTE_MATRIX:    t = ST_UCHAR;  break;
    default:
       error(NIL, "cannot map ascii matrix files", NIL);
    }
@@ -2233,7 +2233,7 @@ at *map_matrix(FILE *f)
    if ((pos = ftell(f)) < 0)
 #endif
       error(NIL, "cannot seek through this file", NIL);
-   storage_mmap(st, f, pos);
+   storage_t *st = new_storage_mmap(t, f, pos, true);
    return NEW_INDEX(st, &shape);
 }
 
@@ -2244,7 +2244,7 @@ DX(xmap_matrix)
    if (arg_number == 2) {
       ASYMBOL(1);
       if (ISSTRING(2)) {
-         p = OPEN_READ(ASTRING(2), "mat");
+         p = OPEN_READ(ASTRING(2), "|.mat");
       } else {
          p = APOINTER(2);
          ifn (p && RFILEP(p))
@@ -2255,7 +2255,7 @@ DX(xmap_matrix)
    } else {
       ARG_NUMBER(1);
       if (ISSTRING(1)) {
-         p = OPEN_READ(ASTRING(1), "mat");
+         p = OPEN_READ(ASTRING(1), "|.mat");
       } else {
          p = APOINTER(1);
          ifn (p && RFILEP(p))

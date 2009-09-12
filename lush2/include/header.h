@@ -892,6 +892,7 @@ extern LUSHAPI void   (*storage_setat[ST_LAST])(storage_t *, size_t, at *);
 
 /* storage creation */
 LUSHAPI storage_t *new_storage(storage_type_t);
+LUSHAPI storage_t *new_storage_mmap(storage_type_t, FILE*, size_t, bool);
 LUSHAPI storage_t *make_storage(storage_type_t, size_t, at*);
 #define NEW_STORAGE(st)  new_storage(st)->backptr
 
@@ -907,7 +908,6 @@ LUSHAPI void get_write_permit(storage_t *);
 LUSHAPI void storage_alloc(storage_t*, size_t, at*);
 LUSHAPI void storage_realloc(storage_t*, size_t, at*);
 LUSHAPI void storage_clear(storage_t*, at*, size_t);
-LUSHAPI void storage_mmap(storage_t*, FILE*, size_t);
 LUSHAPI void storage_load(storage_t*, FILE*);
 LUSHAPI void storage_save(storage_t*, FILE*);
 

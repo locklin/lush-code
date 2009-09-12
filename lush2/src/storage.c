@@ -428,8 +428,6 @@ static void storage_serialize(at **pp, int code)
    }
 }
 
-extern void dbg_notify(void *, void *);
-
 storage_t *new_storage(storage_type_t t)
 {
    storage_t *st = mm_alloc(mt_storage);
@@ -441,18 +439,109 @@ storage_t *new_storage(storage_type_t t)
    return st;
 }
 
-DX(xnew_storage) {
-  
+DX(xnew_storage) 
+{
    ARG_NUMBER(1);
-   class_t *cl = ACLASS(1);
-
-   storage_type_t t = ST_FIRST;
-   for (; t < ST_LAST; t++)
-      if (cl==storage_class[t]) break;
-   if (t == ST_LAST)
+   storage_type_t t = dht_from_cname(ASYMBOL(1));
+   ifn (t < ST_LAST)
       RAISEF("not a storage class", APOINTER(1));
    return NEW_STORAGE(t);
 }
+
+
+#ifdef HAVE_MMAP
+
+static void storage_notify(storage_t *st, void *_)
+{
+   short kind = st->flags & STS_MASK;
+
+   if (kind == STS_MMAP) {
+      if (st->mmap_addr) {
+#ifdef UNIX
+         munmap(st->mmap_addr, st->mmap_len);
+#endif
+#ifdef WIN32
+         UnmapViewOfFile(st->mmap_addr);
+         CloseHandle((HANDLE)(st->mmap_xtra));
+#endif
+         st->mmap_addr = NULL;
+      }
+   }
+}
+
+storage_t *new_storage_mmap(storage_type_t t, FILE *f, size_t offs, bool ro)
+{
+   storage_t *st = mm_allocv(mt_storage, sizeof(storage_t));
+   
+#if HAVE_FSEEKO
+   if (fseeko(f,(off_t)0,SEEK_END)==-1)
+      test_file_error(NIL);
+#else
+   if (fseek(f,0,SEEK_END)==-1)
+      test_file_error(NIL);
+#endif
+#if HAVE_FTELLO
+   size_t len = (size_t)ftello(f);
+#else
+   size_t len = (size_t)ftell(f);
+#endif
+   rewind(f);
+   if (t==ST_MPTR || t==ST_GPTR)
+      RAISEF("cannot mmap a pointer storage", st->backptr);
+   if (t==ST_AT)
+      RAISEF("cannot mmap an atom-storage", st->backptr);
+#ifdef UNIX
+   gptr addr = mmap(0,len,(ro ? PROT_READ : PROT_WRITE),MAP_SHARED,fileno(f),0);
+   if (addr == (void*)-1L)
+      test_file_error(NIL);
+#endif
+#ifdef WIN32
+   gptr xtra, addr;
+   if (! (xtra = (gptr)CreateFileMapping((HANDLE)(_get_osfhandle(fd)), 
+                                         NULL, PAGE_READONLY, 0, len, NULL)))
+      RAISEF("cannot create file mapping",NIL);
+   if (! (addr = (gptr)MapViewOfFile((HANDLE)(xtra), 
+                                     FILE_MAP_READ, 0, 0, size + pos)))
+      RAISEF("cannot create view on mapped file",NIL);
+   st->mmap_xtra = xtra;
+#endif
+   st->type = t;
+   st->flags = STS_MMAP;
+   if (ro)
+      st->flags |= STF_RDONLY;
+   st->mmap_len = len;
+   st->mmap_addr = addr;
+   st->size = (len - offs) / storage_sizeof[st->type];
+   st->data = (char *)(st->mmap_addr)+offs;
+   st->backptr = new_at(storage_class[st->type], st);
+   add_notifier(st, (wr_notify_func_t *)storage_notify, NULL);
+   return st;
+}
+
+DX(xnew_storage_mmap)
+{
+   if (arg_number<3 || arg_number>4)
+      ARG_NUMBER(-1);
+
+   storage_type_t t = dht_from_cname(ASYMBOL(1));
+   ifn (t < ST_LAST)
+      RAISEF("not a storage class", APOINTER(1));
+   size_t offset = AINTEGER(3);
+   bool readonly = (arg_number==3) ? (APOINTER(4)!=NIL) : true;
+
+   at *atf = APOINTER(2);
+   if (RFILEP(atf) && !readonly) {
+      RAISEF("file not writeable", atf);
+
+   } else if (STRINGP(atf)) {
+      atf = readonly ? OPEN_READ(String(atf), NULL) : OPEN_WRITE(String(atf), NULL);
+   } else
+      RAISEF("neither a string nor a file descriptor", atf);
+   
+   return new_storage_mmap(t, Gptr(atf), offset, readonly)->backptr;
+}
+
+#endif // HAVE_MMAP
 
 storage_t *make_storage(storage_type_t t, size_t n, at *init)
 {
@@ -630,98 +719,6 @@ DX(xstorage_clear)
    storage_clear(ASTORAGE(1), APOINTER(2), 0);
    return NIL;
 }
-
-
-/* ------------ ALLOCATION: MMAP ------------ */
-
-
-#ifdef HAVE_MMAP
-
-static void storage_notify(storage_t *st, void *_)
-{
-   short kind = st->flags & STS_MASK;
-
-#ifdef HAVE_MMAP
-   if (kind == STS_MMAP) {
-      if (st->mmap_addr) {
-#ifdef UNIX
-         munmap(st->mmap_addr, st->mmap_len);
-#endif
-#ifdef WIN32
-         UnmapViewOfFile(st->mmap_addr);
-         CloseHandle((HANDLE)(st->mmap_xtra));
-#endif
-         st->mmap_addr = NULL;
-      }
-   }
-#endif // HAVE_MMAP
-}
-
-void storage_mmap(storage_t *st, FILE *f, size_t offset)
-{
-#if HAVE_FSEEKO
-   if (fseeko(f,(off_t)0,SEEK_END)==-1)
-      test_file_error(NIL);
-#else
-   if (fseek(f,0,SEEK_END)==-1)
-      test_file_error(NIL);
-#endif
-#if HAVE_FTELLO
-   size_t len = (size_t)ftello(f);
-#else
-   size_t len = (size_t)ftell(f);
-#endif
-   rewind(f);
-   if (st->type==ST_MPTR || st->type==ST_GPTR)
-      RAISEF("cannot mmap a pointer storage", st->backptr);
-   if (st->type==ST_AT)
-      RAISEF("cannot mmap an atom-storage", st->backptr);
-   ifn (st->data == NULL)
-      RAISEF("not an unallocated storage", st->backptr);
-#ifdef UNIX
-   gptr addr = mmap(0,len,PROT_READ,MAP_SHARED,fileno(f),0);
-   if (addr == (void*)-1L)
-      test_file_error(NIL);
-#endif
-#ifdef WIN32
-   gptr xtra, addr;
-   if (! (xtra = (gptr)CreateFileMapping((HANDLE)(_get_osfhandle(fd)), 
-                                         NULL, PAGE_READONLY, 0, len, NULL)))
-      RAISEF("cannot create file mapping",NIL);
-   if (! (addr = (gptr)MapViewOfFile((HANDLE)(xtra), 
-                                     FILE_MAP_READ, 0, 0, size + pos)))
-      RAISEF("cannot create view on mapped file",NIL);
-   st->mmap_xtra = xtra;
-#endif
-   st->flags = STS_MMAP | STF_RDONLY;
-   st->mmap_len = len;
-   st->mmap_addr = addr;
-   st->size = (len - offset) / storage_sizeof[st->type];
-   st->data = (char *)(st->mmap_addr)+offset;
-   add_notifier(st, (wr_notify_func_t *)storage_notify, NULL);
-}
-
-DX(xstorage_mmap)
-{
-   if (arg_number<2 || arg_number>3)
-      ARG_NUMBER(-1);
-   size_t offset = (arg_number==3) ? AINTEGER(3) : 0;
-   storage_t *st = ASTORAGE(1);
-   at *atf = APOINTER(2);
-
-   if (RFILEP(atf)) {
-      // fine
-   } else if (STRINGP(atf)) {
-      atf = OPEN_READ(String(atf), NULL);
-   } else
-      RAISEF("neither a string nor a file descriptor", atf);
-   
-   storage_mmap(st, Gptr(atf), offset);
-   return NIL;
-}
-
-
-#endif
 
 
 /* ============== Lush FUNCTIONS ================= */
@@ -914,12 +911,12 @@ void init_storage()
    Generic_storage_class_init(MPTR, mptr);
 
    dx_define("new-storage", xnew_storage);
+#ifdef HAVE_MMAP
+   dx_define("new-storage-mmap",xnew_storage_mmap);
+#endif
    dx_define("storage-alloc",xstorage_alloc);
    dx_define("storage-realloc",xstorage_realloc);
    dx_define("storage-clear",xstorage_clear);
-#ifdef HAVE_MMAP
-   dx_define("storage-mmap",xstorage_mmap);
-#endif
    dx_define("storagep",xstoragep);
    dx_define("storage-readonlyp",xstorage_readonlyp);
    dx_define("storage-set-readonly", xstorage_set_readonly);
