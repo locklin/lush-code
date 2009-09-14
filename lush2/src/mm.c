@@ -2227,6 +2227,8 @@ char *mm_info(int level)
    if (level<=1)
       return mm_strdup(buffer);
 
+   BPRINTF("Page size        : %d bytes\n", PAGESIZE);
+   BPRINTF("Block size       : %d bytes\n", BLOCKSIZE);
    BPRINTF("GC threshold     : %d blocks / %.2f MByte\n", 
            block_threshold, (double)volume_threshold/(1<<20));
    if (mm_debug_enabled) {
