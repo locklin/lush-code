@@ -446,7 +446,7 @@ DX(xnameof)
 
 /* sorted list of globally defined symbols */
 
-at *global_names(void)
+static at *global_names(void)
 {
    mm_collect_now(); /* remove non-globals now */
 
@@ -458,12 +458,12 @@ at *global_names(void)
       where = &answer;
       while (*where && strcmp(name, String(Car(*where))) > 0)
          where = &Cdr(*where);
-      *where = new_cons(NEW_STRING(name), *where);
+      *where = new_cons(hn->backptr, *where);
    }
    return answer;
 }
 
-DX(xsymblist)
+DX(xsymbols)
 {
    ARG_NUMBER(0);
    return global_names();
@@ -505,25 +505,6 @@ DX(xglobal_defs)
    return global_defs();
 }
 
-
-at *oblist(void)
-{
-   hash_name_t **j, *hn;
-   
-   at *answer = NIL;
-   iter_hash_name(j, hn) {
-      assert(hn->backptr);
-      if (hn->backptr)
-         answer = new_cons(hn->backptr, answer);
-   }
-   return answer;
-}
-
-DX(xoblist)
-{
-   ARG_NUMBER(0);
-   return oblist();
-}
 
 /*
  * Class functions
@@ -916,8 +897,7 @@ void init_symbol(void)
    dx_define("namedclean", xnamedclean);
    dx_define("named", xnamed);
    dx_define("nameof", xnameof);
-   dx_define("symblist", xsymblist);
-   dx_define("oblist", xoblist);
+   dx_define("symbols", xsymbols);
    dx_define("set", xset);
    dy_define("setq", ysetq);
    dy_define("scope",yscope);
