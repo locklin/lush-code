@@ -842,20 +842,8 @@ DX(xrelative_fname)
 
 static struct tmpname {
    struct tmpname *next;
-   const char *file;
-} *tmpnames = 0;
-
-void clear_tmpname(struct tmpname *tn, size_t _)
-{
-   tn->next = NULL;
-   tn->file = NULL;
-}
-
-void mark_tmpname(struct tmpname *tn)
-{
-   MM_MARK(tn->next);
-   MM_MARK(tn->file);
-}
+   char *file;
+} *tmpnames = NULL;
 
 bool finalize_tmpname(struct tmpname *tn, void *_)
 {
@@ -868,12 +856,24 @@ bool finalize_tmpname(struct tmpname *tn, void *_)
    return true;
 }
 
-static mt_t mt_tmpname = mt_undefined;
-
 void unlink_tmp_files(void)
 {
-   tmpnames = NULL;
-   mm_collect_now();
+   struct tmpname *tn = tmpnames;
+   while (tn) {
+      struct tmpname *tnext = tn->next;
+      if (filep(tn->file)) {
+         if (unlink(tn->file) == -1) {
+            if (errno!=ENOENT) {
+               const char *errmsg = strerror(errno);
+               fprintf(stderr, "*** Warning: could not remove temp file '%s'\n%s\n",
+                       tn->file, errmsg);
+            }
+         }
+      }
+      free(tn->file);
+      free(tn);
+      tn = tnext;
+   }
 }
 
 const char *tmpname(const char *dir, const char *suffix)
@@ -914,11 +914,11 @@ const char *tmpname(const char *dir, const char *suffix)
    close(fd);
 
    /* record temp file name */
-   struct tmpname *tn = mm_alloc(mt_tmpname);
+   struct tmpname *tn = malloc(sizeof(struct tmpname));
    tn->next = tmpnames;
-   tn->file = mm_strdup(tmp);
+   tn->file = strdup(tmp);
    tmpnames = tn;
-   return tn->file;
+   return mm_strdup(tn->file);
 }
 
 
@@ -1801,11 +1801,6 @@ class_t *rfile_class, *wfile_class;
 
 void init_fileio(char *program_name)
 {
-   mt_tmpname = 
-      MM_REGTYPE("tmpname", sizeof(struct tmpname),
-                 clear_tmpname, mark_tmpname, finalize_tmpname);
-   MM_ROOT(tmpnames);
-   
    /** SETUP PATH */
    at_path = var_define("*PATH");
    at_lushdir = var_define("lushdir");
