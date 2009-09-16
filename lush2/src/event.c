@@ -402,18 +402,6 @@ static poll_functions_t *sources = 0;
 static int async_block = 0;
 static int waiting = 0;
 
-static void clear_poll_functions(poll_functions_t *pf, size_t _)
-{
-   pf->next = NULL;
-}
-
-static void mark_poll_functions(poll_functions_t *pf)
-{
-   MM_MARK(pf->next);
-}
-
-static mt_t mt_poll_functions = mt_undefined;
-
 static int call_spoll(void)
 {
    int timeout = 24*3600*1000;
@@ -480,6 +468,7 @@ void unregister_poll_functions(void *handle)
    if (!src)
       return;
    *p = src->next;
+   free(src);
    async_poll_setup();
 }
 
@@ -516,7 +505,7 @@ void *register_poll_functions(int  (*spoll)(void),
                               int fd)
 
 {
-   poll_functions_t *src = mm_alloc(mt_poll_functions);
+   poll_functions_t *src = malloc(sizeof(struct poll_functions));
    assert(src);
    src->fd = fd;
    src->spoll = spoll;
@@ -869,11 +858,8 @@ void init_event(void)
    mt_event_timer =
       MM_REGTYPE("event_timer", sizeof(event_timer_t),
                  clear_event_timer, mark_event_timer, 0);
-   mt_poll_functions =
-      MM_REGTYPE("poll_functions", sizeof(poll_functions_t),
-                 clear_poll_functions, mark_poll_functions, 0);
+
    MM_ROOT(timers);
-   MM_ROOT(sources);
    
    /* set up event queue */
    MM_ROOT(head);
