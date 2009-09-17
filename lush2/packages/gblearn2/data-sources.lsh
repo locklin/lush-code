@@ -75,7 +75,7 @@
 #? (==> <dsource> seek <i>) 
 ;; set pointer to <i>-th item
 (defmethod dsource seek (i) 
-  ((-int-) i) 
+  (declare (-int-) i) 
   (if (or (< i 0) (> i (1- (==> this size))))
       (error "data source item index out of bound")
     (setq current i)))
@@ -114,8 +114,8 @@
 ;; <out> (an idx3-state) and the corresponding 
 ;; label into <lbl> (and idx0 of int).
 (defmethod dsource-idx3l fprop (out lbl)
-  ((-obj- (idx3-state)) out)
-  ((-idx0- (-int-)) lbl) 
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl) 
   ())
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -139,8 +139,8 @@
 ;; dimensions simply setq Y and/or X to 1 (i.e. <inp> 
 ;; would be a PxDx1x1 matrix).
 (defmethod dsource-idx3fl dsource-idx3fl (inp lbl)
-  ((-idx4- (-float-)) inp)
-  ((-idx1- (-int-)) lbl)
+  (declare (-idx4- (-float-)) inp)
+  (declare (-idx1- (-int-)) lbl)
   (setq current 0)
   (setq inputs inp)
   (setq labels lbl) ())
@@ -152,8 +152,8 @@
 ;; <out> (an idx3-state) and the corresponding 
 ;; label into <lbl> (and idx0 of int).
 (defmethod dsource-idx3fl fprop (out lbl)
-  ((-obj- (idx3-state)) out)
-  ((-idx0- (-int-)) lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
   (==> out resize (idx-dim inputs 1) (idx-dim inputs 2) (idx-dim inputs 3))
   (array-copy (select inputs 0 current) :out:x) 
   (array-copy (select labels 0 current) lbl) ())
@@ -189,9 +189,9 @@
 ;; and multiplied by <coeff> before being copied
 ;; into the destination by <fprop>.
 (defmethod dsource-idx3ul dsource-idx3ul (inp lbl b c)
-  ((-idx4- (-ubyte-)) inp)
-  ((-idx1- (-int-)) lbl)
-  ((-float-) b c)
+  (declare (-idx4- (-ubyte-)) inp)
+  (declare (-idx1- (-int-)) lbl)
+  (declare (-float-) b c)
   (setq bias b)
   (setq coeff c)
   (setq current 0)
@@ -208,8 +208,8 @@
 ;; and multiplied by the <coeff> parameter before 
 ;; being copied into the x slot of <out>.
 (defmethod dsource-idx3ul fprop (out lbl)
-  ((-obj- (idx3-state)) out)
-  ((-idx0- (-int-)) lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
   (==> out resize (idx-dim inputs 1) (idx-dim inputs 2) (idx-dim inputs 3))
   (let ((outx :out:x))
     (array-copy (select inputs 0 current) outx) 
@@ -242,19 +242,19 @@
 ;; When accessing an item, the values are
 ;; shifted by <bias> and multiplied by <coeff>.
 (defmethod dsource-image dsource-image (b c)
-  ((-float-) b c)
+  (declare (-float-) b c)
   (setq bias b)
   (setq coeff c)
   (setq current 0)
-  (setq labels (int-matrix 1))
-  (setq images (ubyte-matrix 1))
-  (setq starts (int-matrix 1))
-  (setq sizes (int-matrix 1 1)) ())
+  (setq labels (int-array 1))
+  (setq images (ubyte-array 1))
+  (setq starts (int-array 1))
+  (setq sizes (int-array 1 1)) ())
 
 #? (==> <dsource-image> size)
 ;; reutnrs the size of the database
 (defmethod dsource-image size () 
-  (let ((z (idx-dim starts 0))) ((-int-) z) z))
+  (let ((z (idx-dim starts 0))) (declare (-int-) z) z))
 
 #? (==> <dsource-image> fprop <dest> <lbl>)
 ;; writes the current item into the x slot of <dest>
@@ -262,14 +262,14 @@
 ;; <lbl> (and idx0 of int). <dest> is automatically 
 ;; resized to the size of the current item.
 (defmethod dsource-image fprop (out lbl)
-  ((-obj- (idx3-state)) out)
-  ((-idx0- (-int-)) lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
   (let* ((ni (sizes current 0))
          (nj (sizes current 1))
          (nk (sizes current 2))
          (np (* ni nj nk))
          (start (starts current))
-         (image (reshape (narrow images 0 np start) (list ni nj nk))))
+         (image (reshape (idx-trim images 0 start np) (list ni nj nk))))
     (idx-set-offset image start)
     (==> out resize ni nj nk)
     (let ((outx :out:x))
@@ -300,7 +300,7 @@
       (each ((m ims) (f flist))
         ;; (infos i f)
         (setq s (idx-nelems m) )
-        (array-copy m (narrow images 0 s p))
+        (array-copy m (idx-trim images 0 p s))
         (starts i p)
         (sizes i 0 (idx-dim m 0))
         (sizes i 1 (idx-dim m 1))
@@ -330,7 +330,7 @@
     (let ((p 0) (s 0) (i 0))
       (each ((m ims))
         (setq s (idx-nelems m))
-        (array-copy m (narrow images 0 s p))
+        (array-copy m (idx-trim images 0 p s))
         (starts i p)
         (sizes i 0 (idx-dim m 0))
         (sizes i 1 (idx-dim m 1))
@@ -349,7 +349,7 @@
 ;; <basename>images.idx, <basename>starts.idx,
 ;; <basename>sizes.idx, and <basename>labels.idx
 (defmethod dsource-image save (basename)
-  ((-str-) basename)
+  (declare (-str-) basename)
   (save-idx1-ubyte (concat basename "images.idx") images)
   (save-idx1-int (concat basename "starts.idx") starts)
   (save-idx2-int (concat basename "sizes.idx") sizes)
@@ -363,7 +363,7 @@
 ;; <basename>images.idx, <basename>starts.idx,
 ;; <basename>sizes.idx, and <basename>labels.idx
 (defmethod dsource-image load (basename)
-  ((-str-) basename)
+  (declare (-str-) basename)
   (load-idx1-ubyte (concat basename "images.idx") images)
   (load-idx1-int (concat basename "starts.idx") starts)
   (load-idx2-int (concat basename "sizes.idx") sizes)
@@ -401,8 +401,8 @@
 ;; from the data source passed as argument, starting
 ;; at item <offset>.
 (defmethod dsource-idx3l-narrow dsource-idx3l-narrow (b siz off)
-  ((-obj- (dsource-idx3l)) b)
-  ((-int-) siz off)
+  (declare (-obj- (dsource-idx3l)) b)
+  (declare (-int-) siz off)
   (when (> (+ siz off) (==> b size)) (error "illegal range for narrow-db"))
   (when (or (< off 0) (< siz 0)) 
     (error "offset and size of narrow-db must be positive"))
@@ -416,8 +416,8 @@
 #? (==> <dsource-idx3l-permute> fprop <out> <lbl>)
 ;; copy current item and label into <out> and <lbl>.
 (defmethod dsource-idx3l-narrow fprop (out lbl)
-  ((-obj- (idx3-state)) out)
-  ((-idx0- (-int-)) lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
   (==> base seek (+ offset current))
   (==> base fprop out lbl) ())
 
@@ -437,9 +437,9 @@
 ;; into a random order by calling the <shuffle>
 ;; method.
 (defmethod dsource-idx3l-permute dsource-idx3l-permute (b)
-  ((-obj- (dsource-idx3l)) b)
+  (declare (-obj- (dsource-idx3l)) b)
   (setq base b)
-  (setq map (int-matrix (==> base size)))
+  (setq map (int-array (==> base size)))
   (idx-i1fill-with-index map)
   (setq current 0) ())
 
@@ -448,8 +448,8 @@
 #? (==> <dsource-idx3l-permute> fprop <out> <lbl>)
 ;; copy current item and label into <out> and <lbl>.
 (defmethod dsource-idx3l-permute fprop (out lbl)
-  ((-obj- (idx3-state)) out)
-  ((-idx0- (-int-)) lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
   (==> base seek (map current))
   (==> base fprop out lbl) ())
 
@@ -457,11 +457,11 @@
 ;; randomly shuffles the samples of the db.
 (defmethod dsource-idx3l-permute shuffle ()
   (let ((n (idx-dim map 0)))
-    ((-int-) n)
+    (declare (-int-) n)
     (for (i 0 (- n 2))
 	 (let ((j (int (rand i (- n 0.01))))
 	       (v (map i)))
-	   ((-int-) j v)
+	   (declare (-int-) j v)
 	   (map i (map j))
 	   (map j v)))) ())
 
@@ -482,7 +482,7 @@
 ;; the Two data sources must be <dsource-idx3l>
 ;; or subclasses thereof.
 (defmethod dsource-idx3l-concat dsource-idx3l-concat (b1 b2)
-  ((-obj- (dsource-idx3l)) b1 b2)
+  (declare (-obj- (dsource-idx3l)) b1 b2)
   (setq base1 b1)
   (setq base2 b2)
   (setq size1 (==> base1 size))
@@ -493,8 +493,8 @@
 #? (==> <dsource-idx3l-concat> fprop <out> <lbl>)
 ;; copy item and label into <out> and <lbl>.
 (defmethod dsource-idx3l-concat fprop (out lbl)
-  ((-obj- (idx3-state)) out)
-  ((-idx0- (-int-)) lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
   (if (< current size1)
       (progn
 	(==> base1 seek current)
