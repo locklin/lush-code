@@ -2569,13 +2569,17 @@
                   dhm-t-node))
 
                ((==> car-type is-a-func)
-                (dhc-parse-dh-t source))
+                (dhc-parse-dh-t source) )
 
                ((==> car-type is-an-idxptr)
-                (dhc-listeval-index-t tn source))
-
+                (dhc-listeval-index-t tn source) )
+               
+               ((==> car-type is-a-srgptr)
+                (dhc-listeval-storage-t tn source) )
+               
 	       ((==> car-type is-a-str)
 		(dhc-listeval-string-t tn source) )
+
                ;; Error
                (t
                 (dhc-error "Not a compilable function" (car source)) ) )))
@@ -2659,6 +2663,9 @@
 
                 ((==> type is-an-idxptr)
                  (dhc-listeval-index-c source treetype retplace))
+
+                ((==> type is-a-srgptr)
+                 (dhc-listeval-storage-c source treetype retplace))
 
                 ((==> type is-a-str)
                  (dhc-listeval-string-c source treetype retplace))
@@ -2802,6 +2809,65 @@
       
       mat ) ) )
 
+
+(de dhc-listeval-storage-t (srg-tn source)
+  (let* ((srg-type (==> :srg-tn:type is-a-srgptr))
+	 (args (cdr source))
+	 (arg0-tn (dhc-parse-expr-t (car args)))
+         (arg1-tn ())
+	 (el-type (new dhc-type (==> :srg-tn:type get-element-type)))
+         )
+    (when (> (length args) 2)
+      (dhc-error "Too many arguments" source))
+    (when (< (length args) 1)
+      (dhc-error "At least one argument expected" source))
+    
+    (when (= (length args) 2)
+      ;; assignment
+      (setq arg1-tn (dhc-parse-expr-t (cadr args)))
+      (==> (dhu-type (dhu-type :srg-tn:type)) access 'write)
+      (dhc-assign-unify el-type :arg1-tn:type)
+      ;; bump rhs when this is an mptr-storage
+      (when (==> el-type is-a-mptr)
+        (unode-unify :arg1-tn:type:u-bump 
+                     :(unode-val :srg-tn:type:u-type):u-bump
+                     dhc-combine-u-bump) ))
+    (dhc-unify-types :arg0-tn:type (new dhc-type 'dht-number))
+    (if (= (length args) 1)
+        (new t-node (list srg-tn arg0-tn) el-type source)
+      (new t-node (list srg-tn arg0-tn arg1-tn) :srg-tn:type source) )))
+
+(de dhc-listeval-storage-c (source treetype retplace)
+  (let* ((srg-tn  (car :treetype:tn-list))
+         (arg0-tn (cadr :treetype:tn-list))
+         (arg0    (dhc-parse-expr-for-multi-use-c (cadr source) arg0-tn ()))
+         (arg1-tn (if (= (length source) 3)
+                      (caddr :treetype:tn-list)
+                    () ))
+         (arg1    (if arg1-tn
+                      (dhc-parse-expr-for-multi-use-c (caddr source) arg1-tn ())
+                    () ))
+         (srg     (dhc-parse-expr-for-multi-use-c 
+                   (car source) srg-tn (if arg1-tn retplace) ))
+         (el-decl (==> :srg-tn:type get-element-decl)) )
+    
+;;     (if ~(numberp (cadr source))
+;;       (if ~dhc-unprotect
+;;           (dhc-add-c-statements
+;;            (sprintf "RTERR_BOUND(%s<0 || %s>=(%s)->size);" arg0 arg0 srg)
+;;            )
+;;         ;; else
+;;         (when (< (cadr source) 0)
+;;           (dhc-error "index out of bounds" source) )
+;;         (if ~dhc-unprotect
+;;             (dhc-add-c-statements
+;;              (sprintf "RTERR_BOUND(%s>=(%s)->size);" arg0 srg)
+;;              ))))
+    (if (= (length source) 2)
+        (sprintf "((%s *)(%s)->data)[(int)%s]" el-decl srg arg0)
+      (dhc-add-c-statements
+       (sprintf "((%s *)(%s)->data)[(int)%s] = (%s);" el-decl srg arg0 arg1) )
+      srg)))
 
 
 ;;; ------------------------------------------------------------------------

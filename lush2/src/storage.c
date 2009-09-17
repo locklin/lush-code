@@ -360,10 +360,11 @@ static at *storage_listeval(at *p, at *q)
    
    if (Cdr(q)) {
       ifn (CONSP(Cdr(q)) && !Cddr(q))
-         error(NIL,"bad value",q);
+         error(NIL, "one or two arguments expected",q);
       storage_setat[st->type](st, off, Cadr(q));
-   }
-   return storage_getat[st->type](st, off);
+      return st->backptr;
+   } else
+      return storage_getat[st->type](st, off);
 }
 
 
