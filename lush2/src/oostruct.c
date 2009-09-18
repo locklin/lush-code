@@ -213,17 +213,15 @@ at *oostruct_getslot(at *p, at *prop)
    class_t *cl = Class(obj->backptr);
    for (int i=0; i<cl->num_slots; i++)
       if (slot == cl->slots[i]) {
+         at *sloti = obj->slots[i];
+         if (i<cl->num_cslots)
+            sloti = eval(sloti);
          if (prop)
-            return getslot(obj->slots[i], prop);
-         else if (i<cl->num_cslots) {
-            cl = classof(obj->slots[i]);
-            return cl->selfeval(obj->slots[i]);
-         } else
-            return obj->slots[i];
+            return getslot(sloti, prop);
+         else 
+            return sloti;
       }
-   
    error(NIL, "not a slot", slot);
-   return NIL;
 }
 
 
