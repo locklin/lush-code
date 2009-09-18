@@ -407,8 +407,19 @@ LUSHAPI const char *nameof(symbol_t *);
 LUSHAPI const char *NAMEOF(at *);
 LUSHAPI symbol_t *symbol_push(symbol_t *, at *, at **);
 LUSHAPI symbol_t *symbol_pop(symbol_t *);
-#define SYMBOL_PUSH(p, q) { at *__p__ = p; Symbol(__p__) = symbol_push(Symbol(__p__), q, NULL); }
-#define SYMBOL_POP(p) { at *__p__ = p; Symbol(__p__) = symbol_pop(Symbol(__p__)); }
+static inline void SYMBOL_PUSH(at *p, at *q)
+{
+   Symbol(p) = symbol_push(Symbol(p), q, NULL);
+}
+static inline void SYMBOL_POP(at *p)
+{ 
+   //const char *name = NAMEOF(p);
+   symbol_t *sym = symbol_pop(Symbol(p));
+   if (sym)
+      Symbol(p) = sym;
+   //else
+   //   printf("FIXME: popping %s too many (self-modifying code ?)\n", name);
+}
 
 LUSHAPI at   *getslot(at*, at*);
 LUSHAPI void  setslot(at**, at*, at*);
