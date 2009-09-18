@@ -424,19 +424,17 @@
     cast ) )
 
 
-#? (dhc-declare-var <name> <type>)
+;; #? (dhc-declare-var <name> <type>)
 ;; generate C code to declare variable of 
 ;; name <name> of type <type> in the current block.
 ;; initialize it, and free it on exit if on stack,
 ;; or leave it to the gc when allocated dynamically.
-(de dhc-declare-var(name type)
-;;   (if (==> type dynamic)
-;;       (dhc-declare-var-dynamic name type)
-;;     (dhc-declare-var-in-stack name type) ))
-  (when (member (dhu-tclass type) '(dht-ptr dht-srg dht-idx dht-idx))
-    (assert (not (==> type dynamic))) )
-  (dhc-declare-var-in-stack name type) )
-  
+;(de dhc-declare-var(name type)
+;  (dhc-declare-var-in-stack name type) )
+
+;; dhc-declare-var is obsolete
+;; use (==> symbol declare) instead
+
 
 ;; here is the version for allocating in the stack...
 (de dhc-declare-var-in-stack (name type)
@@ -491,6 +489,7 @@
      (sprintf "Msrg_free(%s);" name)))
    (t (dhc-error "Unknown type"))))
 
+
 ;; this is the version for allocating from the lush runtime
 (de dhc-declare-var-dynamic (name type)
   (cond 
@@ -532,7 +531,7 @@
 ;; of type <type>.  Returns the C string representation.
 (de dhc-declare-temp-var (type &optional (clue ""))
   (let ((tmpvar (sprintf "L_Tmp%d%s" (dhc-postincr tmpnames-seed) clue) ))
-    (dhc-declare-var tmpvar type)
+    (dhc-declare-var-in-stack tmpvar type)
     tmpvar))
 
 ;;#? (dhc-push-scope-t <l_1>....<l_n>)
@@ -544,7 +543,6 @@
 ;; initialized, bumped and freed automatically.  For any variable
 ;; in the scope, just add the dhc-symbol entry in to the list:
 ;; (setq bump-list (nconc1 bump-list symbol))
-
 (dm dhc-push-scope-t (_ . body)
   `(let ((treetype ()))
      (setq bump-list
@@ -573,9 +571,34 @@
      treetype)
   )
 
+(dm dhc-push-loop-scope-t (_ . body)
+  `(let ((treetype ())
+         (new-symbol-table symbol-table)
+         (symbol-table symbol-table)
+         (lex-level (1+ lex-level))
+         (bump-list ()))
+     (setq treetype ,(cons 'progn body))
+     ;; if value is copied in a temp, de-unify 
+     (let ((type :treetype:type))
+       (cond
+        ((==> type is-a-simple)
+         (setq :treetype:type (==> type copy)))
+        ((==> type is-a-ptr)
+         (setq :treetype:type (new dhc-type (dhu-tclass type) (dhu-type type))) ))
+       )
+     (==> :treetype:type bump-level (- lex-level 1))
+     ;; mark bumped variables for dynamic declaration
+     (let (((up here) (filter* (lambda (x)
+                                 (< (==> :x:type bump-level) lex-level))
+                               bump-list)))
+       (dolist (sym up)
+         (setq :sym:dynamic t) ))
+     (setq :treetype:symbol bump-list)
+     treetype)
+  )
+
 (dm dhc-bumped-block (_ treetype retplace . body)
-  `(let ((block ())
-         (retexpr ()))
+  `(let ((block ()) (retexpr ()))
      (let ((c-statements ())
            (c-declarations ())
            (c-epilog ())
@@ -594,15 +617,14 @@
                    (sprintf "L%d_%d_%s" :temp:lex-level
                             (dhc-postincr tmpnames-seed)
                             (dhc-lisp-to-c-name (nameof :temp:lisp-name))))
-             (dhc-declare-var :temp:c-name :temp:type))))
+             (==> temp declare) )))
        (setq retexpr ,(cons 'progn body))
        (setq block (append c-declarations c-statements c-epilog)))
      (setq c-statements (nconc c-statements block))
      retexpr))
 
 (dm dhc-push-scope-c (_ treetype retplace . body)
-  `(let ((tmpvar ())
-         (retexpr ()))
+  `(let ((tmpvar ()) (retexpr ()))
      ;; If a return value is expected, 
      ;; allocate a temporary variable
      (when (and (or (==> :treetype:type is-a-simple)
@@ -715,7 +737,6 @@
   u-extra    ; for classes: a list of pairs (methodnamestr . methodtype)
              ; for lists: a list of types
 	     ; for functions: a list of dhc-type for the arguments
-             ; for ptrs/obj/idx/srg: flag whether to declare dynamically
   u-class    ; for classes: the lisp class (optional)
   ;; Memory access fields
   u-bump    ; lexical level (start with ())
@@ -1107,43 +1128,23 @@
                                   (new-unode lex)
 				  dhc-combine-u-bump)))))
 
-;; flag that object must be declared dynamically
-;; XXX: this is currently not used
-(defmethod dhc-type dynamic args
-  (if args
-      (let (((arg) args))
-        (selectq (unode-val u-tclass) 
-          (dht-ptr (let ((un (new-unode arg)))
-                     (unode-unify u-extra un por)
-                     (unode-unify :(unode-val u-type):u-extra un por)
-                     () ))
-          (t       (dhc-error "not a ptr" this)) ))
-    ;; return value
-    (selectq (unode-val u-tclass)
-      (dht-ptr (unode-val u-extra))
-      (dht-obj (unode-val u-extra))
-      (dht-idx (unode-val u-extra))
-      (dht-srg (unode-val u-extra))
-      (t ()) )))
-  
-
 ;; Keep a track of all the different types found in 
 ;; a function prototype and unifies all identical types.
 (de dhc-unify-all-dh (args temps return)
   (let ((entrypoint ())
         (returnpoint ()) 
         (alist ()) )
-    (each ((ty args))
+    (dolist (ty args)
       (setq entrypoint (nconc entrypoint (dhc-gather-types ty t)))
       (setq returnpoint (nconc returnpoint (dhc-gather-types ty ()))) )
-    (each ((ty temps))
+    (dolist (ty temps)
       (setq entrypoint (nconc entrypoint (dhc-gather-types ty t))) )
     (let ((ty return))
       (setq returnpoint (nconc returnpoint (dhc-gather-types ty t))) )
     (setq entrypoint (dhc-remove-eqdup entrypoint))
     (setq returnpoint (dhc-remove-eqdup returnpoint))
     ;; build alist
-    (each ((point returnpoint))
+    (dolist (point returnpoint)
       (let* ((key (dhc-type-key point))
              (typ (dhc-alist-get key alist)) )
         (if (not typ)
@@ -1151,7 +1152,7 @@
           (unode-unify :point:u-bump :typ:u-bump
                        dhc-combine-u-bump ) ) ) )
     ;; match return points
-    (each ((point entrypoint))
+    (dolist (point entrypoint)
       (let ((key ())
             (typ ()) )
         (cond
@@ -1200,20 +1201,20 @@
         (setq ans (nconc1 ans (dhu-type ty))) ))
      ((==> ty is-a-list)
       (when allp (setq ans (nconc1 ans ty)))
-      (each ((aty (dhu-extra ty)))
+      (dolist (aty (dhu-extra ty))
         (setq ans (nconc ans (dhc-gather-types aty allp))) ))
      ((==> ty is-a-func)
       (when allp
         (setq ans (nconc1 ans ty))
         (setq ans (nconc1 ans (dhu-type ty))) )
-      (each ((aty (dhu-extra ty)))
+      (dolist (aty (dhu-extra ty))
         (setq ans (nconc ans (dhc-gather-types aty allp))) ))
      ((==> ty is-a-srg)
       (when allp (setq ans (nconc1 ans ty))) )
      ((==> ty is-an-obj)
       (when allp (setq ans (nconc1 ans ty)))
       (let ((nallp (or allp (= (dhu-access ty) 'write))))
-        (each ((aslot (dhu-temps ty)))
+        (dolist (aslot (dhu-temps ty))
           (setq ans (nconc ans (dhc-gather-types (cdr aslot) nallp))) )))
      (t
       (error "unknown type") ) ) 
@@ -1902,22 +1903,27 @@
   lex-level		; Depth. Depth 0 marks the arguments
   c-name		; The name in the C code
   type                  ; type of symbol
+  dynamic
   no-declare )          ; symbol should not be declared as a variable)
 
 
-(defmethod dhc-symbol dhc-symbol(name lex &optional (fmt "L%d_%s"))
+(defmethod dhc-symbol dhc-symbol (name lex &optional (fmt "L%d_%s"))
   (setq lisp-name name)
   (setq lex-level lex)
   (setq c-name (sprintf fmt lex (dhc-lisp-to-c-name (nameof name))))
   (setq type (new dhc-type 'dht-unk))
+  (setq dynamic ())
   (setq :type:u-bump (new-unode lex)))
 
 
-;;; ------------------------------------------------------------------------
+(defmethod dhc-symbol print()
+  (printf "<SYMBOL,%l@%d,%s,%l>" lisp-name lex-level c-name type) )
 
-#@ (defmethod dhc-symbol print()
-     (printf "<SYMBOL,%l@%d,%s,%l>" lisp-name lex-level c-name type) )
 
+(defmethod dhc-symbol declare ()
+  (if dynamic
+      (dhc-declare-var-dynamic c-name type)
+    (dhc-declare-var-in-stack c-name type) ))
 
 
 ;;; ------------------------------------------------------------------------
@@ -2729,7 +2735,6 @@
 	 (tnl (mapcar dhc-parse-expr-t args))
 	 (el-type (new dhc-type (==> :idx-tn:type get-element-type)))
 	 (dims-tnlist ()) )
-    
     (when (> (length args) (1+ ndim))
       (dhc-error "Too many dimensions"))
     (when (< (length args) ndim)
@@ -2748,6 +2753,7 @@
     (dolist (val dims-tnlist)
       (dhc-unify-types :val:type (new dhc-type 'dht-number)) )
     (setq tnl (cons idx-tn tnl))
+    ;(pause)
     (if (= (length args) ndim)
         (new t-node tnl el-type source)
       (new t-node tnl :idx-tn:type source))))

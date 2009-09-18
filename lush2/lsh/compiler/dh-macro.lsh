@@ -1022,7 +1022,7 @@
       (setq conds (cdr conds)))
     (dhc-parse-replacement-source-t source expr)))
 
-(dhm-t selectq(source)
+(dhm-t selectq (source)
   (when (or ~(cdr source) ~(cddr source)
             (apply or (mapcar null (cddr source))))                     
     (dhc-error "selectq : Bad 'selectq' construction"))
@@ -1041,19 +1041,21 @@
     (setq expr `(let ((selectQTMP ,(cadr source))) ,expr))
     (dhc-parse-replacement-source-t source expr)))
 
-(dhm-t while(source)
+(dhm-t while (source)
   (when (< (length source) 2)
     (dhc-error "while : Bad 'while' construction"))
-  (let ((tn-cond (dhc-parse-expr-t (cadr source)))
-	(tn-body (dhc-parse-progn-t (cddr source))) )
-    (when (<> 'dht-gptr (dhu-tclass :tn-cond:type))
-      (dhc-unify-types :tn-cond:type (new dhc-type 'dht-bool)) )
-    (setq :tn-body:tn-list (cons tn-cond :tn-body:tn-list))
-    tn-body))
+  (let ((tn-cond (dhc-parse-expr-t (cadr source))))
+    (dhc-push-loop-scope-t 
+     (let ((tn-body (dhc-parse-progn-t (cddr source))))
+       (when (not (member (dhu-tclass :tn-cond:type) '(dht-gptr dht-mptr)))
+         (dhc-unify-types :tn-cond:type (new dhc-type 'dht-bool)) )
+       (setq :tn-body:tn-list (cons tn-cond :tn-body:tn-list))
+       tn-body)
+     )))
 
 (dhm-t-declare while do-while)
 
-(dhm-c while(source treetype retplace)
+(dhm-c while (source treetype retplace)
   (when ~:treetype:ignore
     (when ~retplace
       (setq retplace (dhc-declare-temp-var :treetype:type)))
@@ -1068,13 +1070,14 @@
     (dhc-add-c-statements
      "/* While loop */\n"
      (sprintf "goto %s;\n" label2)
-     (sprintf "%s:\n" label1)
-     "{")
-    (setq ret (dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace))
+     (sprintf "%s:\n" label1) )
+    (dhc-push-scope-c
+     treetype retplace
+     (setq ret (dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace))
+     )
 
     ;; loop test
     (dhc-add-c-statements 
-     "}\n"
      "/* While loop test*/\n"
      (sprintf "%s:\n" label2)
      "{")
@@ -1083,10 +1086,9 @@
      (let ((testexpr  (dhc-parse-expr-c test testT ())))
        (sprintf "if (%s) goto %s;\n" testexpr label1))
      "}")
-
     ret))
 
-(dhm-c do-while(source treetype retplace)
+(dhm-c do-while (source treetype retplace)
   (when ~:treetype:ignore
     (when ~retplace
       (setq retplace (dhc-declare-temp-var :treetype:type)))
@@ -1099,13 +1101,13 @@
     ;; loop body
     (dhc-add-c-statements
      "/* Do-while loop */\n"
-     (sprintf "%s:\n" label1)
-     "{")
-    (setq ret (dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace))
-
+     (sprintf "%s:\n" label1) )
+    (dhc-push-scope-c
+     treetype retplace
+     (setq ret (dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace))
+     )
     ;; loop test
     (dhc-add-c-statements 
-     "}\n"
      "/* Do-while loop test*/\n"
      "{")
     (dhc-add-c-statements
@@ -1211,7 +1213,7 @@
 ;; type of the return value in <rettype>.
 ;;
 (de process-numerical-args-t (arglist &optional forcertyp)
-  ;; determin the natural type of each arglist, except if rettype is
+  ;; determine the natural type of each arglist, except if rettype is
   (let* ((types (all ((x arglist)) (dhc-parse-expr-t x)))
          (rtyp (1+ (length dhc-number-types))))
     ;; determine return type of arglist. Casting is: number->int ->float ->double
