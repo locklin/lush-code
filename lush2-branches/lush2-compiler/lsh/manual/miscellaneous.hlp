@@ -1,0 +1,1166 @@
+$Id: miscellaneous.hlp,v 1.16 2006/02/26 15:34:46 laseray Exp $
+#? *** Miscellaneous
+
+#? ** << libstd/dbg.lsh
+
+#? ** Error handling functions
+
+#? (error  [<symb>] <string> [<l>])
+
+Causes an error whose text is given by <symb>, <string> and <l>.  When
+<symb> is provided, <error> rewinds the evaluation stack until it
+reaches a call to a function named <symb>. The error message then
+displays the stack relative to that function call. When <symb> is
+omitted, the stack is not displayed.
+
+Example:
+.CODE
+? (error 'myfunc "bad number" 4)
+*** myfunc : Bad number : 4
+Debug toplevel [y/n] ?
+.PP
+
+#? (errorf <format> <arg1> .. <argn>)
+Raise an error message, where <format> is an sprintf-like format
+string followed by any number of arguments.
+
+
+#? (assert <test> [<error-form>])
+Raise an error when <test> evaluates to (), return () otherwise.
+The optional <error-form> must evaluate to a string.
+
+#? (pause <string>)
+print <string> and start a toplevel prompt.
+Inserting a <(pause <string>)> expression in
+a function allows to stop the execution and get
+a prompt in the context of the <pause>. 
+This allows to examine and/or modify variable
+values etc.
+
+#? (debug  <l1> ... <ln>)
+.SEE (trace-hook <level> <line> <expr> <info>)
+Evaluates <l1> to <ln>, in debug mode. When in debug mode, Lush
+calls function <trace-hook> before and after each evaluation. The default
+<trace-hook> function just prints an indented trace of each evaluator call, as well as each
+value.
+
+Example:
+.CODE
+?  (debug (* (+ 3 4) a)))
+-> (* (+ 3 4) a)
+ -> (+ 3 4)
+  -> 3
+  <- 3
+  -> 4
+  <- 4
+ <- 7
+ -> a
+ <- 8
+<- 56
+= 56
+.PP
+
+#? (nodebug  <l1> ... <ln>)
+
+Calls function <progn> on expression <l1> to <ln> without displaying a
+trace, even if this function is called inside a call to function <debug>.
+Functions like <pretty> and <save> use this function to produce clean output
+in debug mode.
+
+#? (btrace [<n>])
+.SEE Interruptions in Lush.
+.SEE Errors in Lush.
+
+Print current evaluation stack. When <n> is given and non-negative,
+print only top <n> expressions on the stack. When <n> is negative,
+don't print but return the whole stack.
+
+
+#? (on-error <p> <l1> ... <ln>)
+.SEE Errors in Lush.
+
+This function evaluates lists <l1> to <ln> and returns the last result
+like function <progn>.  If however an errors occur during these
+evaluations, the expression <p> is evaluated before the usual error
+processing.
+
+The function <on-error> does not stop the error processing, but allows
+for performing cleanup tasks, or for printing a custom error
+message.
+
+
+#? (on-error-macro <pm> <l1> ... <ln>)
+.SEE Errors in Lush.
+.SEE (on-error <p> <l1> ... <ln>)
+
+This function first evaluates list <pm> and stores the result
+which is usually an expression to be evaluated if an error occurs.
+It evaluates then lists <l1> to <ln> and returns 
+the last result like function <progn>.  
+If however an errors occur during these
+evaluations, the result of the initial evaluation of <pm>
+is evaluated before the usual error processing.
+
+Actually, this function works like <on-error>, 
+except the expression which will be executed in case of error
+is the result of the evaluation of <pm> in the call context
+of <on-error-macro> i.e. before <l1>...<ln> are evaluated.
+
+This allows a safer behaviour than <on-error>, since
+the evaluation of <pm> is made in the call context
+instead of being made in the error context. Indeed,
+the error context may have values pushed on the
+stacks by functions called in <l1>...<ln>,
+therefore hiding the expected values.
+
+.CODE
+(let* ((my-window (new windowobject 100 100 200 100 "Handler"
+		       (new string "processing...")))
+       (errq (new errorrequester my-window)))
+  (on-error-macro 
+   `(==> ,errq popup (errname))
+   (let* ((errq ()))
+     (error "this is is a programmed error\nused as test."))))
+.PP
+
+
+#? (on-break <p> <l1> ... <ln>)
+.SEE Interruptions in Lush.
+
+This function evaluates lists <l1> to <ln> and returns the last result
+like function <progn>. If however the user interrupts the evaluation
+by depressing <Ctrl-C>, the expression <p> is evaluated before the
+usual interruption processing.
+
+The function <on-break> does not stop the interruption processing, but
+allows for performing cleanup tasks, or for printing a custom error
+message.
+
+
+#? (on-break-macro <pm> <l1> ... <ln>)
+.SEE Errors in Lush.
+.SEE on-break, on-error-macro
+
+Same as <on-error-macro> for user breaks.
+
+
+#? (on-interrupt <p> <l1> ... <ln>)
+.SEE on-error, on-break
+
+Evaluate lists <l1> to <ln> and return result of <ln>. If an error
+or user interrupt occurs, evaluate expresssion <p> before starting
+the usual interrupt processing.
+
+
+#? (on-interrupt-macro <p> <l1> ... <ln>)
+.SEE on-interrupt, on-error-macro
+
+Same as <on-error-macro> but works for both errors and user breaks.
+
+
+#? (errname)
+
+This function returns the last error message as a string. This
+function is usually called by the <break-hook> or <debug-hook>
+functions, whenever an error or an interruption occurs.
+
+#? ** Memory Management
+
+The Lush interpreter is implemented atop a memory manager for C
+programs. For all Lush objects there is an "associated memory
+type" known by the memory manager. When a new Lush object is to
+be created, Lush requests memory of the associated memory type
+for the new object.  It is sometimes interesting to investigate
+the allocation behavior of performace critical sections of code.
+The <memprof>-form may help with this.
+
+
+#? (gc)
+
+Trigger an instantaneous garbage collection and return the number
+of objects reclaimed.
+
+
+#? (meminfo [<level>])
+
+Print information about current memory consumption to console.
+
+.EX (meminfo)
+
+#? (memprof <l1> ... <ln>)
+.SEE memprof/p
+Evaluate forms <l1> ... <ln> and count all allocations during
+those evaluations. After evaluation of <ln>, update global 
+variable <*memprof-stats*> with the allocation counts.
+Memprof may not be called from within compiled code.
+
+.EX (memprof (concat "a" "b"))
+.EX (*memprof-stats* "blob")
+
+#? (memprof/p <l1> ... <ln>)
+.SEE memprof
+Same as <memprof>, but also print profile data to console after
+evaluation.
+
+.EX (memprof/p (concat "a" "b"))
+
+
+#? (with-nogc <l1> ... <ln>)
+.SEE memprof
+Evaluate forms <l1> ... <ln> without doing garbage collections.
+
+Use this form with caution. Since memory reclamation is temporarily
+suspended, the memory required to evaluate <l1> ... <ln> must be
+limited or the interpeter will crash. The form is useful for timing
+or debugging code.
+
+
+#? ** Querying the runtime environment
+
+#? (print-symbols  <str>)
+.TYPE DE
+.FILE sysenv.lsh
+.SEE ^S <str>, symbols
+
+Prints all the symbols whose name contains the string <str>. This is
+especially useful if you don't remember the exact spelling of a
+function or variable.
+
+#? ^S <str>
+.TYPE DMC
+.FILE sysenv.lsh
+.SEE (symbols  <str>)
+
+Macro-character for function <symbols>
+
+
+#? (sizeof <c_type>)
+Returns the number of bytes needed to implement a C item of C type named <c_type>.
+Supported types are signed numerical types and pointer type <"gptr">.
+
+.EX (sizeof "double")
+.EX (sizeof "gptr")
+.EX (sizeof "short")
+.PP
+
+This function is mainly used for formated I/O.
+
+#? (used)
+
+Returns the number of currently used Lush cells.  This function is
+especially useful to track underlocks and overlocks when debugging a
+new Lush primitive written in C.
+
+#? result
+.TYPE VAR
+The last result produced by the toplevel is always stored in the
+variable result.
+
+Example:
+.CODE
+? (sqrt 81)
+= 9
+? (* result result)
+= 81
+
+#? version
+.TYPE VAR
+
+This symbol contains a string, whose contents is the full name of the
+Lush based program you are running.
+
+#? lushdir
+.TYPE VAR
+
+This variable contains the filename of the root of the Lush tree.
+
+#? (exit [<n>])
+.SEE Lush Startup.
+
+This functions exits the current toplevel, as if a <Ctrl-D> had been
+typed. When the optional argument <n> is given, function <exit> quits
+the Lush process with return code <n>.
+
+#? (discard  <l1> ... <ln>)
+
+Evaluates <l1> to <ln> like <progn>, but prevents the entire result to
+be printed by the toplevel. It will print its first line instead.
+This function is useful for working quietly on very long lists.
+
+#? (startup <...argv...>)
+.TYPE DE
+.FILE sysenv.lsh
+.SEE Lush Startup.
+
+Lush calls this function once during the startup procedure as soon as the
+system library <"stdenv.lsh"> or <"stdenv.dump"> has been loaded.  
+The behavior of the default <startup> procedure is explained in 
+section "Lush Startup.".
+
+The arguments <argv> are the command line arguments.  Neither 
+the executable name nor the magic first command line argument 
+are passed to <startup>.
+
+
+#? (toplevel)
+.TYPE DE
+.FILE sysenv.lsh
+.SEE Lush Startup.
+
+This function usually is defined by <"sysenv.lsh"> and is called after
+function <startup> during the startup process. This function is
+restarted whenever an error occurs.
+
+
+#? (debug-hook)
+.TYPE DE
+.FILE sysenv.lsh
+.SEE Errors in Lush.
+
+This function is defined by <"sysenv.lsh"> and is called
+whenever an error occurs.  Use care when modifying this function,
+since an incorrect <debug-hook> function may result into a deadly
+infinite loop!.
+
+
+#? (break-hook)
+.TYPE DE
+.FILE sysenv.lsh
+.SEE Interruptions in Lush.
+These functions is defined by <"sysenv.lsh"> and is called whenever the
+user causes an interruption by depressing <Ctrl-C>.
+
+
+#? (trace-hook <level> <line> <expr> <info>)
+.SEE (debug  <l1> ... <ln>)
+
+This function is called before and after each evaluation
+when the Lush kernel runs in debug mode (see function <debug>).
+Redefining this function allows interactive Lush debugger
+to execute programs step by step.
+.IP
+When <trace-hook> is called before an evaluation, argument <level>
+is a positive number indicating the number of recursive calls to the
+evaluator since Lush entered the debug mode. Argument <line> is 
+a string displaying the first line of the expression being evaluated.
+Argument <expr> is the expression being evaluated. Argument <info>
+is the list of the expressions whose recursive evaluation led to the
+evaluation of <expr>. 
+
+If function <trace-hook> returns <()>, the evaluation will continue
+without calling <trace-hook> for recursive evaluations. The next call to
+<trace-hook> will occur after the current evaluation returns. If function
+<trace-hook> returns <t>, the recursive calls to the evaluator 
+(calls performed while evaluating the current expression)
+will be traced.
+
+.IP
+When <trace-hook> is called after an evaluation, argument <level>
+is a negative number representing the opposite of the number of
+recursive calls to the evaluator since Lush entered the debug mode.
+Argument <line> is a string representing the first line of the returned
+value. Argument <expr> is the expression being evaluated. Argument <info>
+is the value returned by the evaluation.
+
+If function <trace-hook> returns <()>, the remaining evaluations 
+will continue without calling <trace-hook> until an evaluation with
+a smaller recursion level returns. If function <trace-hook> 
+returns <t>, the next evaluations will be traced normally.
+
+
+
+
+#? ** System
+
+A few functions are strongly related to the operating system.
+The quality of the implementation however depends on the quality of
+the underlying operating system.
+
+Some functions are not available under all operating systems:
+.IP
+The function <bground> is only available on Unix system.
+.IP
+The function <xdmc> is only available on Apollo 
+Domain/OS computers.
+.IP
+The functions <winlushp>, <winsys> and <winedit> are only available 
+under Windows/95 and Windows/NT.
+.P
+
+#? (beep)
+Function <beep> is self explanatory.
+
+#? (sleep <n>)
+Function <sleep> waits <n> seconds and returns.
+
+#? (wait <obj>)
+This function (defined in <libogre/ogre.lsh>) is an event processing loop.
+It keep processing events until its argument becomes nil (presumably
+as the result of processing an event). This function's primary use is
+to allow Lush scripts that run Ogre GUI applications to run until
+their main window is closed. Here is an example:
+{<code>
+  #!/bin/sh
+  exec lush "$0" "$@"
+  !#
+  (ogre)
+  (wait (new autowindowobject 10 10 100 100 "Simple Lush GUI Demo" 
+            (new stdbutton "    hit me    " (lambda (c) (printf "OUCH\n")))))
+</code>}
+
+
+
+#? (sys <shellcmd>)
+.SEE (sysf <format> <arg1> .. <argn>)
+.SEE #$ <shellcmd>
+.SEE (open-write <s> [<suffix>])
+.SEE (open-read <s> [<suffix>])
+
+Execute shell command and return process exit code.
+
+Example (Unix):
+.CODE
+? (sys "pwd")
+/home/toto/bip
+= 0
+.PP
+
+The implementation of function <sys> and of the pipe convention in 
+filenames (see <open-read> and <open-write>) is highly system dependent.
+.IP
+This implementation is extremely reliable on Unix systems. Using pipes 
+and forking background processes has been the tradition of Unix since 
+the origins. 
+
+Function <sys> will always wait until the spawned process exits and
+return the process exit code.
+
+.IP
+This implementation is much less reliable under Windows 95 or NT.
+You can indeed run very different kinds of programs, including
+legacy MSDOS and WIN16 programs. A number of programs running under
+Windows have been written with the assumption that they would run
+using a MSDOS style console. Running them as background processes 
+or with standard handles redirected to pipes will cause problems.
+
+If you are running the Console based version of Lush, function <sys>
+replicates as well as possible the behavior of the Unix version. The
+spawned process inherits the Lush console and may be controlled by the user.
+If you are running a MSDOS or WIN32 Console application, function <sys>
+returns when the application exits. If you are running a Windows 3.1 or
+WIN32 GUI application, function <sys> returns immediately.
+
+If you are running the GUI based version of Lush, the spawned processed
+no longer inherit a MSDOS console. We have chosen to handle MSDOS and WIN32
+Console application like a GUI application. Function <sys> will create a new
+console for the process and return immediately regardless of 
+the application type.
+
+Using pipes is reasonably reliable under the Console based version of Lush.
+It becomes very adventurous under the GUI version of Lush because
+we do not want to create a console and let the user interact with the program.
+Bugs in Windows 95 make pipes so dangerous that we just forbid them.
+
+Please investigate function <winsys> to start a new process with a collection
+of refined options (redirecting standard handles, using the command interpreter,
+detaching the process, waiting until the process exits). You should nevertheless
+remember that these options do not work welle with all application types.
+
+
+#? (sysf <format> <arg1> .. <argn>)
+.SEE (sys <cmd>)
+Execute shell command and return process exit code. <format> is an
+sprintf-like format string followed by any number of arguments.
+
+
+#? #$ <shellcmd>
+.TYPE DMC
+.FILE  	sysenv.lsh
+.SEE (sys <shellcmd>)
+Macro-character for function <sys>.
+.CODE
+? #$pwd
+/home/toto/bip
+= 0
+.PP
+
+#? (chdir [<s>])
+.SEE (path  <s1>...<sn>)
+.SEE (sys <shellcmd>)
+
+If the string <s> is provided, this function sets the current working
+directory to directory <s>. This function returns the current working
+directory name.
+
+The current directory specified with <chdir> is used by all shell
+commands launched with function <sys>.  When accessing a file, Lush
+also searches the current directory before the directories specified
+by function <path>.
+
+Example:
+.EX (chdir)
+
+#? (getpid)
+Returns the process ID of this process.
+
+Example:
+.EX (getpid)
+
+#? (getuid)
+Returns the user ID of this process.
+
+Example:
+.EX (getuid)
+
+#? (getusername)
+Returns the user name for this process.
+
+Example:
+.EX (getusername)
+
+#? (edit <file> [<createp>])
+.TYPE DE
+.FILE sysenv.lsh
+.SEE ^E <file>
+
+Calls the standard editor on file <file>. If the file does not exist in
+the current directory, it is searched for in Lush's directory structure
+(using <libload.search>). If no file was found, <edit> raises an error
+unless the optional flag <createp> is true. 
+The editor name is stored in the symbol <edit-call>, and is initialized
+by looking at the environment variable <EDITOR> or <VISUAL>.
+
+#? ^E <file>
+.TYPE DMC
+.FILE sysenv.lsh
+.SEE (edit  <file>)
+Macro-character for function <edit>.
+
+#? edit-call
+.TYPE VAR
+.FILE sysenv.lsh
+This variable contains the name of the editor command.
+
+#? (fedit <func>)
+.TYPE DE
+.FILE sysenv.lsh
+.SEE ^F <func>
+
+Copies an indented definition version of <func> in a temporary file
+and calls the function <edit> on this file. When the editor returns,
+the edited definition of <func> is loaded.
+
+
+#? ^F <func>
+.TYPE DMC
+.FILE sysenv.lsh
+.SEE (fedit <func>)
+Macro-character for function <fedit>.
+
+#? (getconf <varname>)
+Obtains the value of variables determined by the
+shell script <configure>.  String argument <varname>
+can take the following values:
+.IP <"SHELL">
+The shell interpretor, 
+e.g <"/bin/sh">.
+.IP <"OPTS">
+The optimization options for the compilers, 
+e.g. <"-DNO_DEBUG -O2">.
+.IP <"DEFS">
+The symbol definition options for the compilers,
+e.g. <"-DHAVE_CONFIG_H">
+.IP <"LIBS">
+Libraries used for linking the main executable,
+e.g. <"-lbfd -liberty -ldl -lm">.
+.IP <"host">
+String describing the host computer,
+e.g. <"i686-pc-linux-gnu">.
+.IP <"CPP">
+Command for running the C preprocessor,
+e.g. <"gcc -E">.
+.IP <"CPPFLAGS">
+The preprocessing options for the compilers.
+.IP <"CC">
+Command for running the C compiler,
+e.g. <"gcc">.
+.IP <"CFLAGS">
+The C specific compiler options besides
+those specified in <CPPFLAGS>, <OPTS> and <DEFS>.
+.IP <"CXX">
+Command for running the C++ compiler,
+e.g. <"g++">.
+.IP <"CXXFLAGS">
+The C++ specific compiler options besides
+those specified in <CPPFLAGS>, <OPTS> and <DEFS>.
+.IP <"F77">
+Command for running the Fortran compiler,
+e.g. <"g++">.
+.IP <"FFLAGS">
+The Fortran specific compiler options besides
+those specified in <CPPFLAGS>, <OPTS> and <DEFS>.
+.IP <"LDCC">
+Command for linking executables,
+e.g. <"g++">.
+.IP <"LDFLAGS">
+Options for linking executables.
+.IP <"PTHREAD_FLAGS">
+Flags for compiling or linking programs
+that use the Posix thread library.
+.IP <"PTHREAD_LIBS">
+Libraries for linking programs
+that use the Posix thread library.
+.IP <"AR">
+Command for creating static libraries,
+e.g. <"/usr/bin/ar">.
+.IP <"MV">
+Command for renaming and moving files,
+e.g. <"/bin/mv">.
+.IP <"CP">
+Command for copying files,
+e.g. <"/bin/cp">.
+.IP <"LN_S">
+Command for creating symbolic links,
+e.g. <"ln -s">.
+.IP <"TOUCH">
+Command for updating the modification time of a file,
+e.g. <"/bin/touch">.
+.IP <"INDENT">
+Command for running the GNU indent program.
+.IP <"RANLIB">
+Command for creating the table of contents of a
+static library created with <AR>,
+e.g. <"ranlib">.
+.IP <"X_LIBS">
+Options for linking executables using the X11 library,
+e.g. <"-L/usr/X11R6/lib  -lSM -lICE -lX11">.
+.IP <"X_CFLAGS">
+Options for compiling programs using the X11 library,
+e.g. <"-I/usr/X11R6/include">.
+.IP <"CC_PIC_FLAG">
+Compiler flag for producing position independent code
+appropriate for creating shared libraries,
+e.g. <"-fPIC">.
+.IP <"CC_EXP_FLAG">
+Linker flag for linking executables that export their
+symbol tables to resolve undefined symbols in
+shared libraries,
+e.g. <"-Wl,-export-dynamic">.
+.IP <"MAKESO">
+Command for creating a shared library,
+e.g. <"gcc -shared -o">.
+.IP <"EXEEXT">
+Filename extension for executable programs,
+e.g. <""> or <"exe">.
+.IP <"OBJEXT">
+Filename extension for object files,
+e.g. <"o"> or <"obj">.
+.IP <"SOEXT">
+Filename extension for shared libraries,
+e.g. <"so"> or <"sl"> or <"dll">.
+.IP <"LUSH_MAJOR">
+The major version of Lush specified in loadable modules.
+.IP <"LUSH_MINOR">
+The minor version of Lush specified in loadable modules.
+.IP <"LUSH_DATE">
+The date lush was compiled.
+
+#? (getenv <s>)
+Returns the value of the environment variable whose name is <s>.
+
+Example:
+.EX (getenv "HOME")
+
+#? (getconf <s>) 
+
+Returns the value of the autoconf variable determined at compilation
+time.  These variables indicate how the lisp interpreter was compiled.
+See file <"include/autoconf.h.in"> for a list of variables.  
+
+Example:
+.EX (getconf "CC")
+.EX (getconf "CFLAGS")
+
+#? (time)
+Returns real time spent (in seconds)
+since a system dependent date.
+
+Note: The deprecated form
+.VP 
+  (time <l1...ln>)
+.PP
+is equivalent to function <cputime>
+but prints a warning message.
+
+
+#? (cputime <l1....ln>)
+Returns the CPU time (in seconds) scheduled by
+the operating system for evaluation expressions
+<l1> to <ln>.  
+
+Example:
+.EX (cputime (repeat 40000 (sqrt 2)))
+
+On uniprocessor systems, this
+is alway smaller than the real time since the
+processor might be also used for other tasks.
+
+On multiprocessor systems, this function adds 
+the times spent by each CPU. If the evaluation
+of <l1>...<ln> involves several threads,
+the returned value might be greater than
+the real time.
+
+#? (realtime <l1....ln>)
+Returns the real time (in seconds) elapsed 
+during the evaluation of expressions
+<l1> to <ln>.
+
+Example:
+.EX (realtime (repeat 40000 (sqrt 2)))
+
+#? (ctime)
+This function is identical to the Unix <ctime> function.  It returns
+date and time as a 26 character string.
+
+Example:
+.EX (ctime)
+
+
+#? (localtime)
+
+This function is identical to the Unix <localtime> function.  It
+returns a list of the following form:
+.CODE
+      ( tm_isdst <day light saving time>
+        tm_yday  <day of the year (0..365)>
+        tm_wdat  <day of the week (sunday=0)>
+        tm_mon   <month number (0..11)>
+        tm_mday  <day of the month (1..31)>
+        tm_hour  <hour (0..23)>
+        tm_min   <minutes (0..59)>
+        tm_sec   <seconds (0..59)> )
+.PP
+Example:
+.EX (localtime)
+
+
+#? (isatty <filename>)
+
+Returns <t> if file <filename> is an interactive terminal.
+
+#? (bground  <s> <l1> ... <ln>)
+
+Creates a background process which evaluates expressions <l1> to <ln>
+and exits. The output of this process is redirected to a file named
+<s>. A suffix <".job"> is concatenated to filename <s> when necessary.
+
+
+#? (lush-is-quiet [<flag>])
+.SEE Lush Startup.
+
+This function returns <t> if the Lush interpreter runs in script mode and <()>
+if the Lush interpreter runs in interactive mode.  This function is useful to
+print less information when running in script mode.
+
+Lush starts in script mode when arguments are passed on the command line.  The
+initial banner is suppressed. The lush file named as first argument is
+loaded. Lush terminates as soon as it either reaches the end of file or
+encounters an error.
+
+Lush starts in interactive mode when no arguments are passed on the command
+line. It displays a startup banner and generally prints more verbose
+messages. Then it enters the interactive toplevel loop (read-eval-print)
+and restarts the toplevel loop whenever an error occurs.
+
+Switching mode changes the verbosity of the various messages.  Switching to
+interactive mode also causes Lush to enter the interactive toplevel loop when
+it would otherwise exit (i.e. when reaching an end-of-file or encountering an
+error).
+
+#? (winlushp)
+
+This function is only available under Windows. 
+It returns <()> if you are running the console version of Tlisp.
+It returns <t> if you are running the GUI version of Tlisp.
+
+Examples:
+.CODE
+  ;; You can test if you are running under windows as follows.
+  (cond
+	((not winlushp)
+		(printf "Not running under Windows\n") )
+	((winlushp)
+		(printf "Running WinLush (GUI version of Lush under WIN32)\n") )
+	(t
+		(printf "Running Lush (Console version of Lush under WIN32)\n") ) )
+
+
+
+#? (winedit <filename> [<as-untitled>])
+
+This function is only available when you are running the GUI
+version of Lush for Windows (WinLush).
+
+Function <winedit> opens a text editor window for the file 
+named <filename>.  If the name <filename> ends with suffix <".lsh">, 
+WinLush will allow syntax coloring and automatic indentation.
+
+The optional flag <as-untitled> tells WinLush to open the file
+as an untitled window. 
+.IP
+If flag <as-untitled> is the empty list, WinLush first searches
+an already open text editor window for this file.  If such a window
+already exists, WinLush just pops up the window.  Otherwise, WinLush
+creates a new window and loads the file. This mode is convenient 
+for editing well defined files.
+.IP
+If flag <as-untitled> is not nil, WinLush creates a new untitled
+window and transfers the contents of the file. The new editor window
+will not remember the file name. This mode is convenient when you
+are using a temporary text file for transfering some text into an editor.
+.IP
+If you do not specify argument <as-untitled>, WinLush makes a decision
+on the basis of the file location. If the file is located under the 
+system temporary directory, WinLush creates an untitled editor window.
+Otherwise, WinLush creates a regular text editor window.
+
+
+
+#? (winsys <stdin> <stdout> <stderr> <commandp> <detachp> <waitp> <cmdline>)
+.SEE (sys <shellcmd>)
+
+This function is available when you are running Lush under
+Windows 95 or NT.
+
+Function <winsys> creates a process for the program specified by 
+command line <cmdline>. The other arguments allow you to tune finely
+the process parameters. 
+
+The legal and reliable combinations depend on:
+.IP
+whether you are running the console based (Lush) or GUI based (WinLush)
+version of Lush,
+.IP
+whether you are running Windows 95 or Windows NT,
+.IP
+whether you are executing a MSDOS application, WIN16 application,
+WIN32 Console based application, WIN32 GUI application, OS2 2.1 application
+(under NT) or Posix application (under NT).
+.PP
+
+Arguments <stdin>, <stdout> and <stderr> allow you to define the standard
+input, output and error handles of the program. These argulents may be <()>,
+<t> or a variable name. 
+.IP
+Value <()> represents an invalid handle. Therefore the process will
+not be able to use the corresponding standard handle. This may
+cause Windows to create a MSDOS console as a replacement.
+.IP
+Value <t> represents the handle inherited from the Lush process.
+Under WinLush, this value redirects the standard output or standard error
+to the WinLush console.
+.IP
+A variable name tells Lush to pass one end of the pipe to the process.
+The other end of the pipe will stored into the specified variable as
+a Lush file descriptor. If you specify the same variable name for
+the standard output and error, Lush will use a single pipe for both
+standard handles.
+.PP
+
+Flag <commandp> is used to determine how the command line is processed.
+If this flag is set, the command line is passed to the command interpreter.
+You can thus run the internal commands implemented by CMD.EXE (Windows NT)
+or COMMAND.COM (Windows 95 - an MSDOS program!!). If this flag is not set, 
+the command line is directly interpreted by WIN32's CreateProcess function.
+
+Flag <detachp> is used to run a process in the background. This flag
+should prevent Windows to create a console or inherit the console handles.
+It is rather buggy under Windows 95.
+
+Flags <waitp> tells if function <winsys> must wait until termination
+of the process and return the process exit code. If this flag is unset,
+the function returns immeditely.
+
+Examples:
+.CODE
+;; Here is an alias for function SYS under WinLush
+(winsys () () () t () () cmdline)
+;; Here is an alias for function SYS under Console Lush
+(winsys t t t t () t cmdline)
+;; Here is a way to open a read pipe
+(winsys () 'readpipe t () t () cmdline)
+
+
+
+#? (win-show-workbench <flag>)
+.SEE (wbm-window  [[[<x> <y>] <w> <h>] <name>])
+.SEE (wbm-toplevel-window  [[[<x> <y>] <w> <h>] <name>])
+
+This function is available when you are running Lush under
+Windows 95 or NT. This function controls the visibility of
+the graphical interface of the GUI version Lush for Windows (WinLush).
+Calling this function does nothing if you are running the console
+version of Lush for Windows.
+
+When argument <flag> is the empty list, WinLush switches
+to ``hidden'' mode. The main WinLush window (containing the Lush 
+console, the text editor windows, and possibly a few graphical windows)
+disappears from the computer screen.  
+
+WinLush reverts to normal mode when function <win-show-workbench>
+is called again with a non nil argument. There is also a safety 
+feature that automatically reverts WinLush normal mode when some 
+user input is required on the Lush console. 
+
+When WinLush runs in ``hidden'' mode, function <wbm-window>
+works like function <wbm-toplevel-window>. 
+Instead of creating a child window
+of the invisible main WinLush window, <wbm-window> creates a toplevel
+window which directly appears on the Windows desktop.
+
+It is possible to directly start WinLush in ``hidden'' mode by
+specifying option <"-hide"> as the first command line argument.
+The remaining argument are interpreted as usual.
+This command line argument allows for creating self contained
+WinLush applications.
+
+You can for instance create a file <"c:/calctoolapp.lsh">
+containing the following three lines:
+.CODE
+    (setq mainwnd (calctool))
+    (while mainwnd (waitevent) (process-pending-events))
+    (exit 0)
+.PP
+You can then start WinLush with the following command line:
+.CODE
+    winlush -hide stdenv c:/calctoolapp.lsh
+.PP
+This command starts WinLush in hidden mode (<"-hide">). 
+WinLush will first load the standard environment (<"stdenv">)
+and then load our example file (<"c:/calctoolapp.lsh">).
+This file will create a calculator window on the Windows desktop,
+processes graphical events, and terminates execution when the 
+user closes the calculator window.
+
+The user will only see the calculator window. The WinLush main window 
+never appears on the screen because WinLush remains in ``hidden'' mode
+as long as there is no need for user input on the Lush console.
+
+#? ** Copying Lush Objects
+
+There are many type-specific copy functions, like <copy-list>,
+<copy-array>, <copy-object>, etc. These typically create a "shallow
+copy" of the argument. To create a "deep copy", use the generic 
+function <deepcopy>. If objects of user-defined defined classes have
+an intricate structure, it might be necessary to override the generic
+deepcopy behavior. This can be done by providing a special method
+<-deepcopy>.
+
+#? (deepcopy <obj>)
+.SEE  -deepcopy, special methods
+.FILE libstd/oo.lsh
+
+Create a deep copy of <obj>.
+
+The argument <obj> may be any list object. By default,
+<deepcopy> recursively copies all components or data
+members of <obj>, assuming a tree structure. 
+
+If the object
+is an instance of a user-defined class, and the class provides
+a special method <-deepcopy>, then <(deepcopy obj)> is
+equivalent to:
+.CODE
+(let ((clone (new-empty (classof obj))))
+  (==> obj -deepcopy clone)
+  clone)
+.PP
+
+
+#? ** Special Numerical Values (IEEE754)
+
+This section is valid on computers supporting the IEEE754 floating
+point representation scheme. Most computers and compilers nowadays
+support this.
+
+
+Numerical computations may encounter three kinds of problems:
+.IP
+Problems arise when we attempt to perform a clearly forbidden operation, 
+such as taking the logarithm of a negative operand. This attempt 
+causes a low level floating exception which generates a Lush error.
+.IP
+A computation may return a number too large or too small to be represented
+by the usual floating point data types. Too small number are approximated 
+by zero. Too large numbers are represented using special bit patterns
+for representing infinities.
+.IP
+Special bit patterns are used to represent infinities or missing data.
+The special bit pattern representing missing data is called ``NaN'' 
+(NaN stands for ``Not a Number''). Computations involving NaNs 
+usually return NaNs.
+.PP
+The special bit patterns representing infinities or NaNs are still Lush
+numbers and <numberp> will always return <t> when applyed on a NaN.
+However NaNs and Infinities do not behave like regular numbers.
+
+Special bit patterns have no litteral representation for the Lush reader.
+Most machines however print them as <"Nan"> or <"Inf"> or <"-Inf">. 
+You should not save these bit patterns into ascii format files because 
+the reader  will not be able to read them back. 
+You must save them into binary files.
+
+According to IEEE specifications, testing the equality of two 
+special bit patterns should always return false. Comparing two bit 
+patterns should cause a floating exception. Major operating systems 
+and compilers do not abide with this specification. For instance
+the Microsoft Visual C++ 4.2 compiler considers that NaNs are equal
+to anything. It is unclear if this is a bug or a speed compromise
+(comparisons of actual number are much more frequent).
+
+These problems make us unable to comply fully with the standard.
+Portable programs can only rely on the following garantees:
+.IP
+NaNs and Infinities are different from regular numbers. 
+The equality test will return false (we had to hand code
+this with Visual C++ in the Windoze version of TL3!).
+.IP
+The Negative Infinity is smaller than any regular number.
+The Positive Infinity is greater than any regular number.
+.IP
+Overflows may produce a floating point exception or return an
+Infinity. This is operating system and compiler dependent.
+.IP
+Illegal operations (eg. comparing NaNs) are likely to cause
+a floating exception. They may however return NaNs without
+causing a floating exception on certain systems.
+.PP
+NaNs and Infinities however can be safely manipulated
+and tested by the following functions:
+
+#? (nanp <x>)
+True if <x> is a NaN.
+
+#? (infinityp <x>)
+True if <t> is an inifinite number (positive or negative).
+
+#? (isfinite <x>)
+Return a nonzero integer if <x> is neither a NaN nor an infinite value,
+and zero otherwise.
+
+#? (isnan <x>)
+Return a nonzero integer if <x> is a NaN and zero otherwise.
+
+#? (isinf <x>)
+Return a nonzero integer if <x> is an infinite value and zero otherwise.
+
+#? (isnormal <x>)
+Return a nonzero integer if <x> is a normal floating point value and 
+zero otherwise.
+
+#? (signbit <x>)
+Return a nonzero integer if <x> is negative and zero otherwise.
+
+#? (eps <x>)
+Distance to next larger magnitude double precision floating point number.
+.EX (eps 1.0)
+
+#? ** Floating Point Environment
+
+IEEE754-conforming FPUs can be configured with respect to
+.IP
+The internal precision for floating point operations (e.g.,
+compute with double precision even though the operands are
+single precision).
+.IP
+The rounding mode for floating point operations (e.g., nearest or
+always towards zero).
+.IP
+Which floating point exceptions to ignore and for which to raise
+an error (e.g., error on divide-by-zero vs. returning Inf on 
+divide-by-zero).
+.PP
+The complete state of the FPU is also sometimes referred to as
+the "Floating Point Environment".
+
+When starting a new toplevel, Lush configures the FPU to compute 
+with <extended> precision, to round <to-nearest>, and to raise 
+errors on <overflow> events. You may change this behavior with the
+<fpu->functions listed below. Third-party library code may also
+reconfigure the FPU. Remember that you may always set the FPU
+back to its initial state by calling <fpu-reset>.
+
+#? (fpu-reset)
+Set FPU to its initial state.
+
+#? (fpu-info)
+Print current FPU state.
+
+#? (with-fpu-env <l1>..<ln>)
+Evaluate forms in dedicated floating point environment and return
+last value.
+.PP
+<With-fpu-env> copies the current floating point enviroment, 
+evaluates the forms <l1>..<ln> as <progn> would do, but resets to 
+the copied environment before return the value of <ln>.
+
+.EX (- (with-fpu-env (fpu-round 'upward) (/ 1 3))
+       (with-fpu-env (fpu-round 'downward) (/ 1 3)) )
+
+#? (fpu-trap <e1>..<en>)
+.SEE fpu-untrap, fpu-clear, fpu-test
+Clear status flags of named exceptions and configure FPU to trap
+the named exceptions.
+.PP
+After evaluating <fpu-trap>, the floating point exceptions
+corresponding to arguments <e1>..<en> will trigger an error. 
+Possible argument values are the symbols <invalid>, <div-by-zero>,
+<overflow>, <underflow>, <inexact>, or <all> for all exceptions.
+
+#? (fpu-untrap <e1>..<en>)
+.SEE fpu-trap, fpu-test
+Ignore named floating point exceptions.
+.PP
+Possible argument values are the symbols <invalid>, <div-by-zero>,
+<overflow>, <underflow>, <inexact>, or <all> for all exceptions.
+.PP
+After evaluating <fpu-untrap>, the floating point exceptions
+corresponding to arguments <e1>..<en> will not trigger an error.
+However, the FPU still records occurrence of exceptions by 
+setting corresponding exception status flags. 
+Use <fpu-test> to find out what exception status flags are 
+currently set.
+
+#? (fpu-test <e1>..<en>)
+.SEE fpu-clear, fpu-trap
+Return all of the named exceptions status flags currently flagged.
+.PP
+Possible argument values are the symbols <invalid>, <div-by-zero>,
+<overflow>, <underflow>, <inexact>, or <all> for all exceptions.
+
+#? (fpu-clear <e1>..<en>)
+.SEE fpu-test
+Clear the named exception status flags.
+.PP
+Possible argument values are the symbols <invalid>, <div-by-zero>,
+<overflow>, <underflow>, <inexact>, or <all> for all exceptions.
+
+#? (fpu-precision <prec>)
+Set operating precision of FPU.
+.PP
+Possible arguments values are <single>, <double> and <extended>.
+
+#? (fpu-round <mode>)
+Set rounding mode of FPU.
+.PP
+Possible argument values are <toward-zero>, <to-nearest>, <upward>,
+and <downward>.
+ 
+
+
+
+
+
+
+

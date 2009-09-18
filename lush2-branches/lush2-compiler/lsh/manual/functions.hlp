@@ -1,0 +1,519 @@
+$Id: functions.hlp,v 1.6 2006/02/26 15:34:46 laseray Exp $
+#? *** Functions
+
+A Lush function is an unnamed object which defines how to evaluate a
+list whose first element evaluates to this function. Functions are
+usually stored in the value field of a symbol usually referred to as
+the function name.
+
+There are thus two equivalent ways to define with global scope a 
+function named <square> which computes the square of its argument:
+.CODE
+(defvar square (lambda(x) (* x x)))
+or
+.CODE
+(de square(x) (* x x))
+.PP
+The evaluation of the list <(lambda...)> returns a function that
+<setq> stores into symbol <square> in the global environment. The 
+function <de> is a shorthand for this manipulation.
+
+A function behaves as any atom does. Its class however defines how to
+evaluate a list whose first element evaluation returns that function.
+The evaluation of a list whose first element is a symbol, the value of
+which is a function, thus simply calls that function.  The evaluation
+of the following list then returns 25
+.CODE
+ (square 5)
+.PP
+But the evaluation of the following list also returns 25 
+.CODE
+ ((lambda(x) (* x x)) 5)
+.PP
+
+There are several kinds of functions in Lush; briefly 
+described hereafter:
+.IP
+ DX functions are written in C, using the standard Lisp to C interface
+package. Most of the C functions are written as DX.
+.IP
+ DY functions are directly written in C. These functions are usually
+control structures, like <cond>, <progn>, etc...
+.IP
+ DE functions are written in Lisp. These functions evaluate their
+arguments before calling their body. Most Lisp functions are DE
+functions.
+.IP
+ DF functions are also written in Lisp. They do not however evaluate
+their arguments before giving control to the function body.
+.IP
+ DM functions are also known as ``macro functions''. They are written
+in Lisp.  Their argument list includes the function name itself, and
+its elements are not evaluated. The body of the function is supposed
+to return an evaluable list, known as the macro expansion. This list
+is then evaluated in the calling context, and gives the result of the
+function call.
+.IP
+ DMD functions are a refinement of DM functions.  Unlike the DM
+functions, their argument list does not include the function name. The
+result of the body evaluation replaces the calling form itself in the
+calling context. The evaluation process is then restarted.  This
+replacement process happens just once, because the code is physically
+replaced by the result of the macro expansion during the first call.
+.IP
+ DMC are known as ``macro characters''. These are not real function.
+They are bound to a single character name and take no arguments. Once
+the Lush reader reaches such a character, it calls the function body
+and substitutes the result to the macro-character.
+.PP
+
+#? ** Argument List
+
+A formal argument list is associated to each each Lush function (i.e.
+DE, DF, DM or DMD) This argument list defines which symbols will be
+bound to the actual argument of the function, while evaluating its
+body.
+
+Valid formal argument lists may be a single symbol, a list of symbols,
+or something more complex like <(a b (c d) . f)>, or <(a b &optional c d)>.
+
+If the formal argument list is a single symbol, it will be bound to
+the list of arguments when the function is called.  
+
+If the formal argument list is a list, its ``car'' will be matched
+against the ``car'' of the actual arguments, and its ``cdr'' will be
+matched against the ``cdr'' of the actual arguments.
+
+Example:
+.CODE
+? (de surface((x1 y1) (x2 y2) )
+	(* (- x1 x1) (- y2 y2)) )
+= surface
+? (surface '(4 5) '(8 10))
+= 40
+.PP
+
+Moreover, two symbols <&optional> and <&rest> in argument lists have a
+special meaning, similar to the Common Lisp conventions. 
+
+Only symbols and lists composed of a symbol and a default value may
+follow the <&optional> symbol in the formal argument list.  These
+symbols are optional arguments. If they are omitted, they are bound to
+their default value, or the empty list.
+
+Example:
+.CODE
+? (de printline(s &optional (indent 0) (terminate "."))
+	(tab indent)
+	(printf "%s%s\n" s terminate) )
+= printline
+? (printline "hello")
+hello.
+= ()
+? (printline "hello" 6)
+      hello.
+= ()
+? (printline "hello" 6 "@")
+      hello@
+= ()
+.PP
+
+Finally, the formal argument list may be terminated by <&rest>
+followed by another symbol. The list of all remaining actual arguments
+will be bound to that symbol.
+
+
+#? ** Compact Lambda Expressions
+
+Anonymous functions (lambda expressions) are often used in
+combination with higher-order functions like <mapcar> or <filter>.
+
+.CODE (filter (lambda (f) (str-endswith f "jpg")) (ls "data/images"))
+
+.PP
+Lush allows to define lambda expression more compactly using the
+macro-character <'#\'>. The macro character must be followed by 
+a lisp form, the body of the lambda expression. Positional 
+arguments to the lambda have the canonical names <$1>, <$2>, and
+so on. The highest-numbered symbol of the form <$i> determines 
+the number of arguments of the lambda expression (i less than 10).
+
+.CODE (filter #\(str-endswith $1 "jpg") (ls "data/images"))
+.PP
+.CODE (#\(- $5 $3) 10 11 12 13 14)
+
+.PP
+The positional arguments may be followed by an arbitrary number of
+optional arguments. The optional arguments are referred to with the
+ellipsis, <..>.
+
+.CODE (#\(+ $3 ..) 1 2 3 4 5)  ; ignore first two
+.PP
+.CODE (#\(/ (+ ..) (length (list ..))) 1 2 3 4 3)  ; average
+
+#? ** Defining a Function
+
+#? (de <symb> <args> . <body>) 
+.SEE Argument List.
+
+Creates a new function which evaluates its arguments (DE) and binds it
+to the symbol <symb> in the global environment.
+
+A valid argument list <args> may be a single symbol, a list of symbols
+or something more complex like <(a b (c d) . f)>. A valid function
+body <body> is a list of Lush expressions which are evaluated
+whenever the function is called.
+
+Whenever a DE function is called, 
+.IP
+The previous values of the argument names are saved,
+.IP
+The actual arguments are evaluated and 
+stored in the corresponding argument names,
+.IP
+Each expression in the function body is 
+evaluated and the last result is saved,
+.IP
+The previous values of the argument names are restored,
+.IP
+The saved result is returned.
+.PP
+
+Example: 
+.CODE
+? (de square (x) (* x x)) 
+= square 
+? (square 9) 
+= 81 
+? (de first-arg l
+  	(car l) )
+= first-arg
+? (first-arg 'a 'b)
+= a
+? (first-arg 'prems 'deuse 'troise 'quatrz)
+= prems
+.PP
+
+#? (df <symb> <args> . <body>)
+.SEE Argument List.
+.SEE (dm <symb> <args> . <body>) 
+
+Creates a new function which does not evaluates its arguments (DF) and
+binds it to the symbol <symb> in the global environment.
+
+A valid argument list <args> may be a single symbol, a list of symbols
+or something more complex like <(a b (c d) . f)>. A valid function
+body <body> is a list of Lush expressions which are evaluated
+whenever the function is called.
+
+Whenever a DF function is called, 
+.IP
+The previous values of the argument names are saved,
+.IP
+The actual arguments are not evaluated but directly 
+stored in the corresponding argument names,
+.IP
+Each expression in the function body is evaluated and the last result is saved,
+.IP
+The previous values of the argument names are restored,
+.IP
+The saved result is returned.
+.PP
+
+Example: Defining a control structure
+.CODE
+? (df ifn(cond no . yes)
+      (if (not (eval cond))
+          (eval no)
+        (apply progn yes)) )
+= ifn
+? (ifn (= 2 3) 1 2))
+= 2
+.PP
+Such a definition causes problems if some subexpression depend on a
+the value of a symbol named like a function argument.
+.CODE
+? (ifn (= 2 3) cond 2)
+= (= 2 3)
+.PP
+The previous expression should indeed return the value of symbol
+<cond> in the current context rather than the value of symbol <cond>
+in the context of function <ifn>.
+
+This problem is alleviated by using ``macro functions''.
+
+
+#? (dm <symb> <args> . <body>)
+.SEE Argument List.
+
+Creates a macro-function (DM) and stores binds it to symbol <symb> in
+the global environment. The <body> of a DM function actually computes
+the expression which will be evaluated in the calling context. This
+expression can be found with the function <macroexpand>.
+
+A valid argument list <args> may be a single symbol, a list of symbols
+or something more complex like <(a b (c d) . f)>. A valid function
+body <body> is a list of Lush expressions which are evaluated
+whenever the function is called.
+
+Whenever a DM function is called, 
+.IP
+The previous values of the argument names are saved,
+.IP
+The elements of the entire calling expression, including the
+function name, are stored in the corresponding argument names,
+.IP
+Each expression in the function body is 
+evaluated and the last result (known as the macro expansion) is saved,
+.IP
+The previous values of the argument names are restored,
+.IP
+The saved macro-expansion is evaluated,
+.IP
+The result is returned.
+.PP
+Example:
+.CODE
+? (dm ifn(fname cond . rest) 
+      (list 'if (list 'not cond) . rest) )
+= ifn
+? (ifn (= 2 3) "yes" "no")
+= "yes"
+? (setq cond "yes")
+= "yes"
+? (ifn (= 2 3) cond)
+= "yes"
+.PP
+
+
+#? (macroexpand <macrocall>) 
+.SEE (dm <symb> <args> . <body>) 
+Returns the ``expansion'' of a call to a DM function. 
+
+Example:
+.CODE
+? (dm ifn(fname cond . rest) 
+      (list 'if (list 'not cond) . rest) )
+= ifn
+? (macroexpand (ifn (= 2 3) "yes" "no"))
+= (if (not (= 2 3)) "yes" "no")
+.PP
+
+
+#? (dmd  <symb> <args> . <body>)
+.TYPE DM
+.FILE sysenv.lsh
+.SEE Argument List.
+.SEE (dm <symb> <args> . <body>) 
+
+Creates a DMD function and binds it to symbol <symb> in the global
+environment. DMD functions display two differences with DM functions:
+.IP
+Unlike the DM functions, their argument list does 
+not include the function name. 
+.IP
+The result of the body evaluation replaces the calling form itself in
+the calling context.
+.PP
+A valid argument list <args> may be a single symbol, a list of symbols
+or something more complex like <(a b (c d) . f)>. A valid function
+body <body> is a list of Lush expressions which are evaluated
+whenever the function is called.
+
+Whenever a DMD function is called, 
+.IP
+The previous values of the argument names are saved,
+.IP
+The arguments are stored in the corresponding argument names,
+.IP
+Each expression in the function body is 
+evaluated and the last result (known as the macro expansion) is saved,
+.IP
+The previous values of the argument names are restored,
+.IP
+The macro expansion is physically installed in the calling form using
+function <displace>, replacing forever the call to the DMD function 
+in the calling code,
+.IP
+The saved macro-expansion is evaluated,
+.IP
+The result is returned.
+.PP
+Example:
+.CODE
+? (dmd ifn(cond . rest)
+       (list 'if (list 'not cond) . rest) )
+= ifn
+? (de if-test(n)
+       (ifn (= n 2) "yes" "no") )
+= if-test
+? (if-test 2)
+= "no"
+? (pretty if-test)
+(de if-test(n)
+   (if (not (= n 2)) "yes" "no") )
+= (if-test)
+.PP
+
+
+
+#? (dmc <symb> . <body>)
+
+Defines a macro-character <symb>. A macro-character is not really
+functions, since it interacts only with the Lisp reader.
+
+There are three kinds of macro-characters:
+.IP
+The first ones are single character macro-characters. When the Lush
+reader encounters one of them, it immediately calls the associated DMC
+function and returns its result.
+.IP
+Caret macro-characters have a two character name, whose first
+character is a caret <^>. A caret DMC behaves exactly like a single
+characters DMC: When the reader encounters a caret followed by another 
+character, it immediately calls the associated DMC function and 
+returns its result.
+
+Caret macro-character may also be abbreviated by typing the corresponding
+control character (if this control character exists and is not intercepted
+by the operating system). If you are running WinLush, the fastest method
+consists in typing <Ctrl+Shift+Letter>. It is always possible however 
+to type the caret followed by the character. 
+.IP
+Hash macro-characters are also two character macro-characters, whose
+first character is a hash sign <#>. If their body returns (), nothing
+is read.  If it returns a one element list, this element is read. If
+it returns anything else, an error is signaled. 
+
+Hash macro characters are useful for conditionally reading certain 
+pieces of code. 
+
+.PP
+Since the reader performs special actions whenever it encounters a
+macro-character, it is advisable to surround the name of symbol <symb>
+with vertical bars <|>.
+
+Examples:
+
+The macro character <'> which expands into a call
+to function <quote> is defined as :
+.CODE
+(dmc |'| (list 'quote (read)))
+.PP
+The macro character <^P> which expands into a call
+to function <pretty> is defined as :
+.CODE
+(dmc |^P| (list 'pretty (read)))
+.PP
+The following macro-character <#!> could be used to signal
+debug instructions that will be not read if variable <ndebug> is set.
+.CODE
+(dmc |#!| (let ((inst (read))) (when (not ndebug) inst)))
+
+
+
+#? (lambda  <args> . <body>)
+.SEE Argument List.
+.SEE (de <symb> <args> . <body>) 
+
+Returns a function which evaluates its arguments (DE). 
+This function operates like function <de> but does not
+store the function in a particuler symbol.
+
+Example:
+.EX ((lambda (x) (* x x)) (+ 4 5))
+
+
+
+#? (flambda  <args> . <body>)
+.SEE Argument List.
+.SEE (df <symb> <args> . <body>) 
+
+Returns a function which does not evaluates its arguments (DF). 
+This function operates like function <df> but does not
+store the function in a particuler symbol.
+
+Example:
+.EX ((flambda(x) (print x)) (+ 4 5))
+
+
+#? (mlambda  <args> . <body>)
+.SEE Argument List.
+.SEE (dm <symb> <args> . <body>) 
+
+Returns a macro-function (DM).
+This function operates like function <dm> but does not
+store the function in a particuler symbol.
+
+#? (funcdef <n>)
+Returns a list which defines the function <n>.
+This works for DEs, DFs, DMs and other interpreted
+functions, but returns nil for DH, DX, DY, and other 
+compiled or intrinsic functions.
+
+Example:
+.EX (funcdef caddr)
+
+
+#? (pretty <f>)
+.TYPE DM
+.FILE sysenv.lsh
+Display a nicely indented definition of function <f>.
+
+Actually, <pretty> sends a pretty message to <f>. Each class defines
+how an instance of that class will be displayed.  In particular,
+functions are displayed by printing an indented version of the
+definition of the functions f1 to fn.  
+
+Example
+.EX (pretty caddr)
+
+
+#? ^P <function>
+.TYPE DMC
+.FILE sysenv.lsh
+.SEE (pretty <f>)
+This macro character expands into a call of function <pretty>.
+
+Example:
+.CODE
+? ^Paddpath
+(de addpath (dir)
+  (setq dir (concat_fname dir))
+  (let ((oldpath (path))
+        (newpath (list dir)) )
+    (while oldpath
+      (when (<> dir (car oldpath))
+        (setq newpath (nconc1 newpath (car oldpath))) )
+      (setq oldpath (cdr oldpath)) )
+    (apply path newpath) ) )
+= ()
+.PP
+
+
+#? (defun <name> <args> ...<body>...)
+.TYPE DM
+.FILE sysenv.lsh
+.SEE (de <symb> <args> . <body>) 
+.SEE (defmacro <name> <args> ...<body>...)
+.SEE (defvar <name> [<val>])
+
+Function <defun> defines a global DE function named <name>.
+Whereas function <de> defines symbol <name> in the current scope,
+function <defun> defines symbol <name> in the global scope.
+
+
+#? (defmacro <name> <args> ...<body>...)
+.TYPE DM
+.FILE sysenv.lsh
+.SEE (de <symb> <args> . <body>) 
+.SEE (defun <name> <args> ...<body>...)
+.SEE (defvar <name> [<val>])
+
+Function <defun> defines a global DM function named <name>.
+Whereas function <dm> defines symbol <name> in the current scope,
+function <defun> defines symbol <name> in the global scope.
+The argument list <args> only matches the arguments of the macro.
+It should not contain a symbol for matching the function name itself.
+
+#? ** << libstd/kwdargs.lsh
