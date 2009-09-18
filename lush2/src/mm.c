@@ -1993,7 +1993,11 @@ bool mm_idle(void)
          return false;
       }
       /* create some work for ourselves */
+#ifdef MM_SNAPSHOT_GC
       mm_collect();
+#else
+      mm_collect_now();
+#endif
       ncalls = 0;
       return true;
    }
@@ -2223,7 +2227,9 @@ char *mm_info(int level)
       BPRINTF("                 : %.2f MByte for offheap array\n",
               ((double)man_size*sizeof(managed[0]))/(1<<20));
    }
-
+   if (gc_disabled)
+      BPRINTF("!!! Garbage collection is disabled !!!\n");
+   
    if (level<=1)
       return mm_strdup(buffer);
 
@@ -2232,9 +2238,9 @@ char *mm_info(int level)
    BPRINTF("GC threshold     : %d blocks / %.2f MByte\n", 
            block_threshold, (double)volume_threshold/(1<<20));
    if (mm_debug_enabled) {
-      BPRINTF("Debugging code   : enabled\n");
+      BPRINTF("Debug code       : enabled\n");
    } else {
-      BPRINTF("Debugging code   : disabled\n");
+      BPRINTF("Debug code       : disabled\n");
    }
 
    if (collect_in_progress)
