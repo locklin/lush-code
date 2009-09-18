@@ -215,15 +215,16 @@ static void cref_object_setslot(at *self, at *slot, at *val)
       error(NIL, "object does not accept scope syntax", self);
    
    /* this is not what we want, but we don't know the type */
-   at *_self = cref_object_selfeval(self);
-   ifn (isa(val, Class(_self)))
-      error(NIL, "type mismatch in assignment", val);
-   
+   void **dest = Gptr(self);
+   if (*dest){
+      at *_self = cref_object_selfeval(self);
+      ifn (isa(val, Class(_self)))
+         error(NIL, "type mismatch in assignment", val);
+   }
    struct CClass_object *cobj = ((object_t *)Mptr(val))->cptr;
    ifn (cobj)
       error(NIL, "object has no compiled part", val);
 
-   void **dest = Gptr(self);
    *dest = (void *)cobj;
 }
 
