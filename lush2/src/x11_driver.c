@@ -645,7 +645,7 @@ static int handle_sync_events(void)
                           info->sizx, info->sizy, 0,0 );
          info->resizestate = false;
       }
-
+   
    /* search for other X events */
    while (XPending(xdef.dpy)) {
       XEvent ev;
@@ -657,6 +657,9 @@ static int handle_sync_events(void)
             break;
       if (!info)
          continue;
+      if (ZOMBIEP(info->lwin.eventhandler))
+         info->lwin.eventhandler = NIL;
+
       switch (ev.type) {
       case MappingNotify:
          XRefreshKeyboardMapping( (XMappingEvent*) &ev );
