@@ -1250,7 +1250,7 @@ LUSHAPI int   timer_fire(void);
 LUSHAPI void  event_add(at *handler, at *event);
 LUSHAPI at   *event_peek(void);
 LUSHAPI at   *event_get(void *handler, bool remove);
-LUSHAPI at   *event_wait(int console);
+LUSHAPI at   *event_wait(bool console);
 LUSHAPI void  process_pending_events(void);
 
 /* Compatible event queue functions */
