@@ -2034,8 +2034,12 @@ void mm_end_nogc(bool nogc)
          fetch_backlog -= fetch_unreachables();
    } 
 #endif
-   if (collect_requested && !gc_disabled)
+   if (collect_requested && !gc_disabled) {
       mm_collect();
+      if (!collect_in_progress)
+         /* could not spawn child, do it synchronously */
+         mm_collect_now();
+   }
 }
 
 static void mark_refs(void **p)
