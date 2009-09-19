@@ -812,7 +812,8 @@ int os_wait(int nfds, int* fds, bool console, unsigned long ms)
    tv.tv_sec = ms/1000;
    tv.tv_usec = (ms%1000)*1000;
    block_async_poll();
-   if (select(maxfd+1, &set, 0, 0, &tv) == -1) {
+   if (select(maxfd+1, &set, 0, 0, &tv)==-1 && errno!=EINTR) {
+      
       char *errmsg = strerror(errno);
       fprintf(stderr, "*** Warning (os_wait): %s\b", errmsg);
    }
