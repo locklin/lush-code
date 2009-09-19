@@ -546,7 +546,7 @@ void unblock_async_poll(void)
  * Returns handler of first available event.
  * Also wait for console input if <console> is true.
  */
-at *event_wait(int console)
+at *event_wait(bool console)
 {
    at *hndl = 0;
    int cinput = 0;
