@@ -28,26 +28,15 @@
 ;; Forms like <defvar>, <defun>, and <defclass> create a new object
 ;; and bind a symbol in the global namespace to it.
 ;; Technically, Lush has only this one global namespace (exceptions
-;; are slot names and method names).
+;; are slot names and method names). The namespace facility helps with
+;; avoiding name clashes. It offers a mechanisms to systematically
+;; modify the names (symbols) new objects are bound to and to
+;; manage sets of names.
 ;;
-;; To avoid name clashes
-;; names must be chosen carefully. As an example, the functions
-;; named <idx-rank> and <mat-rank> both map a matrix to a number
-;; but the numbers mean different things. Since the name <rank> can 
-;; only denote one thing, the name was extended by prefixes to
-;; indicate which function is referred to.
-;; 
-;; Avoiding name clashes by adding a prefix to a name is common
-;; practice. It is also customary to use the same prefix in naming
-;; functions that belong together logically (for example, besides
-;; <mat-rank>, there are <mat-transpose>, <mat-fliplr>, etc.; these
-;; functions all deal with matrices).
-;; 
-;; Lush provides a mechanism that makes giving common prefix names
-;; to many objects easier. This mechanism is the <in-namespace> 
-;; form. All names occurring in definitions enclosed by 
-;; <in-namespace> are prepended with the common prefix. For example,
-;; evaluating the form
+;; The first mechanism, the <in-namespace> form, is to give a number
+;; of names a common prefix. All names occurring in definitions 
+;; enclosed by <in-namespace> are prefixed by the namespace name.
+;; For example, evaluating the form
 ;; {<code>
 ;; (in-namespace aaa- 
 ;;
@@ -113,11 +102,18 @@
 ;; (defnamespace my-custom-ns (join-namespaces mat- mut- meat-))
 ;; </code>}
 ;;
-;; Finally, you may use <defnamespace> to declare any mapping from
+;; You may also use <defnamespace> to declare any mapping from
 ;; symbols to symbols a namespace. Example:
 ;; {<code>
 ;; (defnamespace abc- '((a apples) (b beets) (c chicory)))
 ;; </code>}
+;;
+;; Finally, <delete-namespace> deletes all objects bound to the
+;; qualified names of a namespace, then undefines the namespace.
+;; One use case is to put in a namespace all auxiliary 
+;; definitions that are required for compilation of some code,
+;; then delete the namespace after compilation is completed.
+
 
 #? Class namespaces
 ;; Every class defined with <defclass> has an associated
@@ -322,10 +318,10 @@
     (alist-get ns :*class-namespaces*) )
    ((symbolp ns)
     (alist-get ns :*namespaces*))
-   ((is-of-class ns |HTABLE|)
+   ((isa ns |HTABLE|)
     ns)
-   (t
-    (error "not a namespace" ns) )))
+   (t ()) 
+   ))
 
 
 #? (with-namespace <ns> <l1> <l2> ...)
@@ -340,7 +336,7 @@
 (dm with-namespace (_ |__ns__| . body)
   (let ((nsdict (or (namespace |__ns__|) (namespace (eval |__ns__|))))
 	(namemap ()) )
-    (when (not (is-of-class nsdict |HTABLE|))
+    (when (not (isa nsdict |HTABLE|))
       (error "not a namespace" |__ns__|) )
     (dolist (key (htable-keys nsdict))
       (when (not (symbolp key))
@@ -360,6 +356,31 @@
 
 (defun clear-namespace (ns)
   (htable-clear (namespace ns)) )
+
+#? (delete-namespace <ns>)
+;; Delete all objects bound to the qualified names of <ns>, then
+;; undefine <ns> itself.
+(defun delete-namespace (ns)
+  (let ((nsdict (namespace ns)))
+    (when nsdict
+      (dolist ((name . qname) (htable-alist nsdict))
+        (if (symbol-globally-locked-p qname)
+            (printf "*** Warning: skipping globally locked name '%s'\n" qname)
+          (eval `(delete (scope ,qname)))
+          )) 
+      (clear-namespace nsdict)
+      ;; finally, remove nsdict from *namespaces*
+      (let ((ns ()) (namespaces (alist)))
+        (dolist ((n . d) :*namespaces*)
+          (when (<> d nsdict)
+            (setq namespaces (alist-add n d namespaces))
+            (setq ns n) )
+          )
+        (when ns
+          (unlock-symbol *namespaces*)
+          (setq :*namespaces* namespaces)
+          (lock-symbol *namespaces) ))
+      )))
 
 #? (join-namespaces <ns1> <ns2> ...)
 ;; Create a new namespace including all the names of the given
@@ -407,7 +428,7 @@
   (let ((nsdict (or (namespace |__ns__|) (namespace (eval |__ns__|))))
         (anames (and rest (cadr rest)))
         (aliases ()) )
-    (when (not (is-of-class nsdict |HTABLE|))
+    (when (not (isa nsdict |HTABLE|))
       (error "not a namespace" |__ns__|) )
     (when (symbolp names)
       (when (<> 'all names)
@@ -428,7 +449,7 @@
         (when (not (nsdict name))
           (error (sprintf "symbol '%s' not in namespace" (nameof name)) |__ns__|) )
         (setq aliases (cons (list name (nsdict name)) aliases)) ))
-    `(prog1 ',(mapcar car aliases) ,@(all ((a aliases)) (cons 'defalias a)))
+    `(prog1 ',(mapcar car aliases) ,@(domapcar ((a aliases)) (cons 'defalias a)))
     ))
 
 #? (defnamespace <name> '((<n1> <qn1>) (<n2> <qn2>) ...))
@@ -451,7 +472,7 @@
     (when (not (symbolp ns))
       (error "syntax error, not a symbol" ns) )
     (setq namess (eval namess))
-    (if (is-of-class namess (classof nsdict))
+    (if (isa namess (classof nsdict))
         ;; namess already is a namespace
         (setq nsdict namess)
       ;; namess is a list of name pairs, check it
