@@ -1751,6 +1751,37 @@
     ;; reversing restores proper method order.
     (reverse alist) ))
 
+
+;; return list of types of all slots of this class
+(defun dhc-all-slot-types (cls)
+  (when (not (isa cls class))
+    (error "not a class" cls) )
+  (let* ((saved (getp cls 'saved))
+         (specs (or (getp cls 'specials) (getp saved 'specials)))
+         (slot-types (dhu-temps (dhc-class-to-dhc-type cls)))
+         (sup-types ()) )
+    (when (super cls)
+      (setq sup-types (dhc-class-to-dhc-type (super cls)))
+      (when specs
+        (setq sup-types (dhc-specialize-type sup-types specs ())) )
+      (setq sup-types (dhu-temps sup-types))
+      (when (super (super cls))
+        (setq sup-types
+              (append (dhc-all-slot-types (super (super cls))) sup-types) ))
+      )
+    (append sup-types slot-types) ))
+
+
+;; true when any slot is an object
+(defun dhc-class-has-ptr-slots-p (cls)
+  (let ((slot-types (dhc-all-slot-types cls))
+        (has ()) )
+    (dolist ((name . type) slot-types)
+      (when (==> type is-a-ptr)
+        (setq has t) ))
+    has))
+
+
  ;; Produce a list of string suitable to be in a DHDOC
 (de dhc-d-to-doc (desc)
   (let* ((tclass (car desc))
@@ -2710,7 +2741,7 @@
 ;; parse a list of expression and return the last one
 (de dhc-parse-progn-t(source)
   (if (consp source)
-      (let ((treetype-list (append (all ((so (dhc-nolast source)))
+      (let ((treetype-list (append (domapcar ((so (dhc-nolast source)))
                                      (dhc-parse-expr-t so t))
                                    (list (dhc-parse-expr-t (lasta source)
                                                            ignore)))))
