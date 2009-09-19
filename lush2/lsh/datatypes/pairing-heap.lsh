@@ -26,9 +26,13 @@
 
 (libload "datatypes/tree-node")
 
+(defconstant +pairing-heap-cache-size+ 32)
+
 (deftemplate PairingHeap iterator
   ((-obj- (TreeNode)) root)     ; root to node, only valid when n>0
-  ((-srg- (-mptr-)) work)       ; work space for delete-min
+  ((-srg- (-mptr-))   work)     ; work space for delete-min
+  ((-srg- (-mptr-))  cache)     ; node cache
+  ((-int-)  ncache)             ; number of nodes in cache
   ((-int-)  n)                  ; number of items in tree
   )
 
@@ -67,10 +71,10 @@
 
 (defmethod PairingHeap -deepcopy (clone)
   (declare (-obj- (PairingHeap)) clone)
-  ;; super-class slots
-  ;; this classes slots
   (setq :clone:root (copy-ordered-tree root))
   (setq :clone:work (idx-storage (mptr-array 32)))
+  (setq :clone:cache (idx-storage (mptr-array +pairing-heap-cache-size+)))
+  (setq :clone:ncache 0)
   (setq :clone:n n)
   ())
 
@@ -148,6 +152,8 @@
 (defmethod PairingHeap PairingHeap ()
   (setq root (new (-classof- root)))
   (setq work (idx-storage (mptr-array 32)))
+  (setq cache (idx-storage (mptr-array +pairing-heap-cache-size+)))
+  (setq ncache 0)
   (setq n 0)
   () )
 
@@ -158,7 +164,10 @@
   (declare (-typeof- :root:item) i)
   (if (= n 0)
       (progn
-        (setq root (==> root clone))
+        (if (= ncache 0)
+            (setq root (==> root clone))
+          (setq root (to-node (cache ncache)))
+          (decr ncache) )
         (setq :root:key k  :root:item i)
         )
     (let ((tn (==> root clone)))
@@ -198,6 +207,10 @@
   (when (= n 0)
     (error "no more items") )
   (let ((tn (to-obj (-classof- root) (==> this -delete-min))))
+    (when (< ncache (storage-nelems cache))
+      (setq :tn:left NULL  :tn:right NULL)
+      (cache ncache (to-mptr tn))
+      (incr ncache) )
     :tn:item) )
 
 #? (==> <PairingHeap> drop-lt <min-key>)
