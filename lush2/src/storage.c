@@ -571,9 +571,10 @@ void storage_alloc(storage_t *st, size_t n, at *init)
       void *data = NULL;
       if (s >= LARGE_ALLOC) {
          data = malloc(s);
-         if (data)
+         if (data) {
             mm_manage(data);
-         else
+            MM_ANCHOR(data);
+         } else
             RAISEF("not enough memory for storage of size (bytes)", NEW_NUMBER(s));
       } else
          data = mm_blob(s);
