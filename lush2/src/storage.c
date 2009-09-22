@@ -882,12 +882,12 @@ DX(xstorage_save)
 class_t *abstract_storage_class;
 class_t *storage_class[ST_LAST];
 
-#define Generic_storage_class_init(tok, type)                           \
-   (storage_class[ST_ ## tok]) = new_builtin_class(abstract_storage_class); \
-   (storage_class[ST_ ## tok])->name = storage_name;                    \
-   (storage_class[ST_ ## tok])->listeval = storage_listeval;            \
-   (storage_class[ST_ ## tok])->serialize = storage_serialize;          \
-   class_define(#type "-storage", (storage_class[ST_ ## tok]))
+#define Generic_storage_class_init(st, lname)                       \
+   (storage_class[st]) = new_builtin_class(abstract_storage_class); \
+   (storage_class[st])->name = storage_name;                        \
+   (storage_class[st])->listeval = storage_listeval;                \
+   (storage_class[st])->serialize = storage_serialize;              \
+   class_define(#lname "Storage", (storage_class[st]))
 
 
 void init_storage()
@@ -901,16 +901,23 @@ void init_storage()
    /* set up storage_classes */
    abstract_storage_class = new_builtin_class(NIL);
    class_define("storage", abstract_storage_class);
-   Generic_storage_class_init(BOOL, bool);
-   Generic_storage_class_init(AT, at);
-   Generic_storage_class_init(FLOAT, float);
-   Generic_storage_class_init(DOUBLE, double);
-   Generic_storage_class_init(INT, int);
-   Generic_storage_class_init(SHORT, short);
-   Generic_storage_class_init(CHAR, char);
-   Generic_storage_class_init(UCHAR, uchar);
-   Generic_storage_class_init(GPTR, gptr);
-   Generic_storage_class_init(MPTR, mptr);
+   Generic_storage_class_init(ST_BOOL, Bool);
+   Generic_storage_class_init(ST_AT, Atom);
+   Generic_storage_class_init(ST_FLOAT, Float);
+   Generic_storage_class_init(ST_DOUBLE, Double);
+   Generic_storage_class_init(ST_INT, Int);
+   Generic_storage_class_init(ST_SHORT, Short);
+   Generic_storage_class_init(ST_CHAR, Char);
+   Generic_storage_class_init(ST_UCHAR, UChar);
+   Generic_storage_class_init(ST_GPTR, Gptr);
+   Generic_storage_class_init(ST_MPTR, Mptr);
+
+   at *p = var_define("storage-classes");
+   at *l = NIL;
+   for (storage_type_t st=ST_FIRST; st<ST_LAST; st++)
+      l = new_cons(storage_class[st]->backptr, l);
+   var_set(p, reverse(l));
+   var_lock(p);
 
    dx_define("new-storage", xnew_storage);
 #ifdef HAVE_MMAP
