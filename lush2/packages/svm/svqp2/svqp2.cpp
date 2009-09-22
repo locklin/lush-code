@@ -253,7 +253,9 @@ SVQP2::cache_init()
 	  p = new Arow(ai);
 #if HMG
           p->diag = (*Afunction)(ai, ai, Aclosure);
+# if KSTATS
           SVQP2::kcalcs += 1;
+# endif
 #endif
 	  p->next = c[h];
 	  c[h] = p;
