@@ -173,8 +173,7 @@
 ;; Return deficiency set of vertex <v> (an arc table).
 (defmethod IntGraph deficiency (v)
   (declare (-int-) v)
-  (when (not (==> vertices member v))
-    (errorf "not a vertex (%d)" v) )
+  (check-vertex v)
   (let ((adjs (make-stack 32 int)))
     (do-vertices (w adjacent-to v)
       (declare (-int-) w)
@@ -240,14 +239,10 @@
       ds)))
 
 #? (==> <IntGraph> insert-vertices <vs>)
-;; Insert vertices (integers) in table <vs> into graph and  return <()>.
-;; A vertex id must be in the range 0...65535.
+;; Insert vertices (integers) in table <vs> into graph and return <()>.
 (defmethod IntGraph insert-vertices (vs)
   (declare (-idx1- (-int-)) vs)
-  ;; check values is valid
-  (for* (i 0 (length vs))
-    (declare (-int-) i)
-    (==> vertices insert-all vs) ))
+  (==> vertices insert-all vs) )
 
 
 (defmethod IntGraph -insert-edge (v0 v1 di)
@@ -256,36 +251,35 @@
   (check-vertex v0)
   (check-vertex v1)
   ;; add adjacencies (two directed edges per edge)
-  (let ((a01 (ipair v0 v1)))
-    (when (not (==> arcs member a01))
-      (assert (==> arcs insert a01)) )
+  (let ((result ())
+        (a01 (ipair v0 v1)))
+    (setq result (==> arcs insert a01))
     (if di
         (setq undirected ())
-      (==> arcs insert (iprot a01)) )
-    a01))
+      (setq result (or (==> arcs insert (iprot a01)) result)) )
+    result))
+
 
 #? (==> <IntGraph> insert-edge <v0> <v1>)
-;; Insert edge <(v0,v1)> and return it.
-;; Raise an error when either vertex is not in the graph.
+;; Insert edge <(v0,v1)> and return <t> when it is a new edge.
 (defmethod IntGraph insert-edge (v0 v1)
   (declare (-int-) v0 v1)
   (==> this -insert-edge v0 v1 ()) )
 
+
 #? (==> <IntGraph> insert-edge* <v0> <v1>)
-;; Insert edge <(v0,v1)> and return it.
+;; Insert edge <(v0,v1)> and return <t> when it is a new edge.
 ;;
 ;; Unlike <insert-edge> this method does not check existence
 ;; of the vertices <v0> and <v1>.
 (defmethod IntGraph insert-edge* (v0 v1)
   (declare (-int-) v0 v1)
   (let ((a01 (ipair v0 v1)))
-    (when (not (==> arcs member a01))
-      (assert (==> arcs insert a01))
-      (==> arcs insert (iprot a01)) )
-    a01))
+    (or (==> arcs insert a01)
+        (==> arcs insert (iprot a01)))))
 
 #? (==> <IntGraph> insert-arc <v0> <v1>)
-;; Insert arc <(v0,v1)> and return it.
+;; Insert arc <(v0,v1)> and return <t> when it is a new arc.
 ;; Raise an error when either vertex is not in the graph.
 (defmethod IntGraph insert-arc (v0 v1)
   (declare (-int-) v0 v1)
@@ -308,7 +302,7 @@
   (declare (-idx2- (-int-)) edges)
   (declare (-bool-) di)
   (when (<> (idx-shape edges 1) 2)
-    (error "Not a valid edge table") )
+    (error "not a valid edge table") )
   ;; insert edges into graph
   (for* (i 0 (length edges))
     (declare (-int-) i)
@@ -317,7 +311,6 @@
 
 #? (==> <IntGraph> insert-edges <edges>)
 ;; Insert edges in table <edges> into graph and return <()>.
-;; Print a warning when an edge in <edges> already exists in the graph.
 (defmethod IntGraph insert-edges (edges)
   (declare (-idx2- (-int-)) edges)
   (==> this -insert-edges edges ())
@@ -325,7 +318,6 @@
 
 #? (==> <IntGraph> insert-arcs <arcs>)
 ;; Insert arcs in table <arcs> into graph and return <()>.
-;; Print a warning when an edge in <edges> already exists in the graph.
 (defmethod IntGraph insert-arcs (edges)
   (declare (-idx2- (-int-)) edges)
   (==> this -insert-edges edges t)
@@ -343,8 +335,7 @@
   () )
 
 (defmethod IntGraph -check-undirected ()
-  (let ((ud t)
-        (it (iterate arcs)) )
+  (lete ((ud t) (it (iterate arcs)))
     (while (and ud (not (emptyp it)))
       (setq ud (==> arcs member (iprot (next it)))) )
     (setq undirected ud) )
