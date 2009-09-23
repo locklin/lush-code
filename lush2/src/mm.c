@@ -1552,7 +1552,10 @@ mt_t mm_typeof(const void *p)
    else {
       int i = _find_managed(p);
       assert(i>-1);
-      return INFO_T(managed[i]);
+      if (BLOB(managed[i]))
+         return mt_blob;
+      else
+         return INFO_T(managed[i]);
    }
 }
 
@@ -1565,7 +1568,10 @@ size_t mm_sizeof(const void *p)
    else {
       int i = _find_managed(p);
       assert(i>-1);
-      return INFO_S(managed[i]);
+      if (BLOB(managed[i]))
+         return 0;
+      else
+         return INFO_S(managed[i]);
    }
 }
 
