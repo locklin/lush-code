@@ -1,0 +1,350 @@
+$Id: htable.hlp,v 1.3 2006/02/26 15:34:46 laseray Exp $
+
+#? ** Hash Tables
+
+{<p>
+Hash tables provide a powerful data structure to maintain associations
+between lisp objects. These data structures behave like arrays except 
+that any lisp object is an acceptable subscript. This simple and flexible access makes hash tables extremely convenient.
+}
+{<p>
+They are so convenient that you will be quickly tempted to use 
+them everywhere. However, keep in mind that a simple array requires
+less memory (about five times less) and less processor cycles than
+a hash table.
+}
+
+
+#? * Representing Associations with Hash Tables
+
+{<see> (= <n1> <n2>) }
+{<see> (== <n1> <n2>) }
+
+{<p>
+A hash table is an instance of class <HTable>. Like most lisp objects,
+hash tables can be compared using function <=> and saved using function
+<bwrite>.
+}
+{<p>
+A hash table maintains a set of associations between two lisp objects,
+namely a key and a value. This set is organized in a way that allows 
+fast retrieval of the value associated to a given key. 
+}
+{<p>
+Hash table queries search an association whose key is equal to the queried
+key. Since there are two ways to test equality (i.e. functions <=> and
+<==>), there are two kinds of hash tables.
+}
+{<p>
+The most useful hash tables use the logical equality, as implemented by
+function <=>. Two objects are logically equal if they convey the same 
+useful information. These hash table work properly as long as you do not
+modify the objects used as keys by the hash table.  This can happen if 
+you used arrays or custom objects as keys in your hash table. See the
+description of function <htable-rehash> for more information about this
+point.
+}
+{<p>
+Hash tables can also rely on pointer equality, as implemented by function
+<==>.  These hash tables are useful to associate a piece of information
+with a particular lisp object.  Functions <getp> and <putp>, for instance,
+make use of pointer-equality hash tables.  The associations of a pointer-equality hash table are automatically removed when the key object
+is deallocated.
+}
+
+#? (htable [<nelem> [<==-equality> [<keyerror-flag>]]])
+
+{<p>
+Function <htable> returns a new empty hash table. The arguments
+<nelem>, <equality-flag> and <keyerror-flag> are optional, default
+values are 31, <nil>, and <nil>, respectively.
+}
+{<p>
+Argument <nelem> specifies an estimate of the number of elements in
+the hash table. This estimate is useful for saving a few processor
+cycles when filling the table.
+}
+{<p>
+Argument <==-equality> is a boolean flag specifying whether the
+hash table will use logical equality ("=-equality") or pointer 
+equality ("==-equality"), the default is <()>. With pointer equality
+references to objects used as keys are weak references.
+}
+{<p>
+Argument <keyerror-flag> is a boolean flag specifying whether the
+hash table will raise an error when a query with a non-existent key
+is made (default is <()>).
+}
+
+#? (<htable> <key>)
+
+{<p>
+This expression returns the value associated with key <key> in hash
+table <htable>. Expression <key> can be any lisp object. If no
+association is defined for key <key>, the empty list is returned.
+}
+
+#? (<htable> <key> <value> [<key2> <value2> ...])
+
+{<p>
+This expression associates each <value> to each <key> in the 
+hash table <htable>. The value can be subsequently retrieved by
+expression <(htable key)>.
+}
+{<p>
+This operation is performed in two logical steps:
+(a) any existing association matching key <key> is first deleted,
+and (b) a new association is created if argument <value> is not 
+the empty list.
+}
+{<p>
+Example:
+{<br>}
+{<code>
+? (setq a (htable))
+= ::HTable:6f3cac
+? (a 'hello "hi"  '(3 4) "ho")
+= ::HTable:6f3cac
+? (a 'hello)
+= "hi"
+? (a '(3 4 5))
+= ()
+? (a '(3 4))
+= "ho"
+  </code>}
+}
+
+
+#? (htable-update <ht1> <ht2>)
+Update <ht1> with key-value pairs in <ht2> and return the modified
+htable <ht1>.
+
+
+#? (htable-size <htable>)
+
+{<p>
+Function <htable-size> returns the number of associations 
+managed by the hash table. 
+}
+
+
+#? (htable-keys <htable>)
+
+{<p>
+Function <htable-keys> returns a list of the keys of all the associations
+managed by the hash table. It is guaranteed that querying these keys will
+eturn a non nil result.
+  {<br>}
+  {<code>
+? (setq a (htable))
+= ::HTable:6f43c
+? (for (i 0 10) (a i (sqrt i))
+= ::HTable:6f43c
+? (htable-keys a)
+= (7 6 3 10 5 9 8 4 2 0 1)
+  </code>}
+}
+
+#? (copy-htable <ht>)
+;; Create a new htable with the same keys and values as <ht>
+;; and return it.
+
+
+#? (htable-alist <htable>)
+
+{<see> (assoc <key> <alist>) }
+
+{<p>
+Function <htable-alist> returns an alist representing all 
+associations managed by the hash table. This function also
+provide a way to iterate over all associations:
+  {<br>}
+  {<code>
+? (setq a (htable))
+= ::HTable:6f43c
+? (for (i 0 10) (a i (sqrt i))
+= ::HTable:6f43c
+?  (each (((key . value) (htable-alist a))) 
+     (printf "%4d %6.4f\n" key value))))
+   7 2.6458
+   6 2.4495
+   3 1.7321
+  10 3.1623
+   5 2.2361
+   9 3.0000
+   8 2.8284
+   4 2.0000
+   2 1.4142
+   0 0.0000
+   1 1.0000
+= ()
+  </code>}
+}
+
+#? (htable-delete <ht> <k>)
+;; Remove item with key <k> from htable <ht>. Return the modified htable.
+
+#? (htable-rehash <htable>)
+
+{<p>
+Each association managed by a hash table contains a pointer to the key
+object and a pointer to the value object. Functions that modify the values
+of these objects also modify the state of the hash table.
+}
+{<p>
+Hash table queries search an association whose key is logically equal to
+the queried key (unless pointer equality was specified when creating the
+hash table). The hash table works by storing each association in locations
+depending on the information conveyed by the key objects.
+}
+{<p>
+Modifying the object used as a key creates a lot of problems. The
+corresponding association is no longer stored in a location corresponding
+to the new information conveyed by the key objects. The hash table state
+is no longer consistent. 
+}
+{<p>
+Function <htable-rehash> triggers the relocation of all associations of
+the hash table <htable> to the location corresponding to the new values 
+of the key objects. You can then reliably use the hash table again.
+  {<br>}
+  {<code>
+? (setq a (htable))
+= ::HTable:6f32c
+? (setq m [1 2])
+= [1 2]
+? (a m 3)
+= ::HTable:6f32c
+? (a [1 2])
+= 3
+? (m 0 0)
+= [ 0.00 2.00 ]
+? (a [1 2])
+= ()      ;; we lost it
+? (a [0 2])
+= ()      ;; result is undefined
+? (htable-rehash a)
+= 1
+? (a [0 2])
+= 3       ;; entry is no longer lost
+? (a [1 2])
+= ()      ;; this key no longer exists
+  </code>}
+  {<br>}
+The relocation of the hash table entries actually happens when you first
+access the hash table after calling <htable-rehash>. You can call function
+<htable-rehash> several times in a row. The cost of relocating all the hash
+table entries will be only incurred once when you will access the hash
+table again.
+}
+
+
+#? (htable-info <htable>)
+
+{<p>
+Function <htable-info> returns a list containing statistical information
+about the hash table. This list is an alist with the following form:
+  {<br>}
+  {<code>
+((size . 1294) (buckets . 3841) (hits 1132 145 14 3))
+  </code>}
+  {<br>}
+In this example, the hash table contains 1294 associations. Associations
+are stored into 3841 buckets. Out of the 1294 associations, 1132 canbe
+retrieved directly, 145 require one extra search iteration, 14 require
+two extra search iteration, etc.
+}
+
+
+#? * Representing Sets with Hash Tables
+
+{<p>
+Sets are easily represented by creating a hash table and defining
+associations whose keys are the set elements and whose value is non nil.
+Here are some of the basic hash table expressions that can be used:
+}
+{<ul>
+  {<li>
+<(htable element)> returns a non nil result
+if element <element> belongs to the set represented by <htable>.
+  }
+  {<li>
+<(htable element t)> adds element <element>
+to the set represented by <htable>.
+  }
+  {<li>
+<(htable element ())> removes element <element>
+from the set represented by <htable>.
+  }
+  {<li>
+<(htable-keys htable)> returns a list of
+all the elements of the set represented by <htable>.
+  }
+}
+
+{<p>
+Other functions given in this section perform additional operations on sets
+represented by hash tables.
+}
+
+
+#? (hset <eltlist> [<flag>])
+
+{<type> DE}
+{<location> sysenv.lsh}
+{<author> Raymond Martin (count flag part)}
+{<p>
+Function <hset> returns a hash table representing the set of all elements
+of list <eltlist> (as a set, the elements are only entered once). The
+hash table associations are not returned in any particular order
+(e.g. when using <htable-keys>, <htable-alist>, etc.), use <sort-list> 
+or other function to get a sorted or ordered list or other representation.
+}
+{<p>
+Argument <flag> is a boolean value specifying whether or not the hash table
+will maintain a count as the value of the same elements encountered when
+building the hash table (as opposed to <t> when <flag> is <nil>). By default, <flag> is <nil>.
+}
+{<p>
+These counts can be useful for performing statistics or other calculations.
+  {<br>}
+  {<code>
+? (setq a (hset '(1 2 3 4 5 4 3 2 1 5 4 2 6) t ))
+= ::HTable:6f43c
+? (each (((elem . value) (htable-alist a))) 
+     (printf "%4d %4d\n" elem value))))
+   4   3
+   2   3
+   1   2
+   6   1
+   3   2
+   5   2
+= ()
+  </code>}
+}
+
+
+#? (hset-and <htable1> <htable2>)
+
+{<type> DE}
+{<location> sysenv.lsh}
+{<p>
+Function <hset-and> returns a new hash table representing the intersection
+of the sets represented by hash tables <htable1> and <htable2>.
+}
+{<ex>
+(htable-keys (hset-and (hset '(1 2 3 4)) (hset '(2 4 5 6))))))
+}
+
+
+#? (hset-or <htable1> <htable2>)
+
+{<type> DE}
+{<location> sysenv.lsh}
+{<p>
+Function <hset-or> returns a new hash table representing the union of
+the sets represented by hash tables <htable1> and <htable2>.
+}
+{<ex>
+(htable-keys (hset-or (hset '(1 2 3 4)) (hset '(2 4 5 6))))))
+}

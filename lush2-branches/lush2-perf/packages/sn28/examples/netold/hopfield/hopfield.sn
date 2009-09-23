@@ -1,0 +1,116 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: hopfield.sn,v 1.2 2003/03/18 21:18:29 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;   Hopfield Net
+;;;   Reference: 
+;;;
+;;;   (C) Copyright Neuristique, 1989
+
+
+;;; === Build a N cells Hopfield Net
+
+(de nlf-threshold(min max)
+    (nlf-bin 0.6 0 (2/ (- max min)) (2/ (+ max min))) )
+
+
+(de Hopfield-build-net(n)
+    (nlf-threshold -1 1)            ; threshold transfert function
+    (alloc-net (1+ n) (* n n))
+    (setq network (newneurons n))
+    (connect network network)       ; fully connected
+    (forget 0)
+    (epsilon 1) )                   ; anything but zero
+
+
+;;; === Retrieval function (with noise)
+
+
+(de Hopfield-recall(patt-number noise)
+    (get_pattern pattern-matrix patt-number network)
+    (flip-state network noise)
+    (let ((oldstate ()))
+      (while (<> oldstate (state network))
+      	     (setq oldstate (state network))
+      	     (draw-net network patt-number)
+      	     (update-state network) ) ) )
+
+
+;;; === Learning function: Hebbian rule
+
+(de Hopfield-learn-pattern (patt-number)
+    (get_pattern pattern-matrix patt-number network)
+    (draw-net network patt-number)
+    (copy-nfield network n-grad network n-val)
+    (incr age)
+    (update-weight) )
+
+(de Hopfield-learn()
+    (for (i patt-min patt-max)
+   	 (Hopfield-learn-pattern i) ) )
+
+
+
+;;; === EXAMPLE: GRAPHIC PATTERNS ASSOCIATOR
+
+
+;examples
+(load-matrix pattern-matrix "patterns.mat")
+(ensemble 0 9)
+
+;network
+(Hopfield-build-net 36)
+
+;draw-net
+(de draw-net(net num)
+    (when (not draw-net-window)
+    	  (setq draw-net-window (new-window 250 50 512 512))
+    	  (gprintf 100 20 "Reseau")
+    	  (gprintf 100 380 "Pattern") )
+    (setq window draw-net-window)
+    (draw-list 100 40 (state network) 6 1 50 40)
+    (draw-list 100 400 (pattern-matrix num ()) 6 1 10 8)
+    )
+
+;learn all
+(printf "LEARNING ......\n\n")
+(Hopfield-learn)
+
+; and test
+(printf "TESTING ON NOISY PATTERNS ......\n\n")
+(for (n 0 0.4 0.05)
+     (printf "noise %f\n" n)
+     (for (i patt-min patt-max)
+    	  (printf "  pattern %d\n" i)
+    	  (Hopfield-recall i n)
+	  (sleep 0.25) ) )

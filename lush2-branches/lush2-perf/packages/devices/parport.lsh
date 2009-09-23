@@ -1,0 +1,236 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: parport.lsh,v 1.5 2005/06/08 04:44:42 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; reading/writing data from/to the parallel port
+
+(libload "libc/stopwatch")
+
+;; for info, see:
+;; http://www.sephail.net/c/lpif/lpif.c
+;; http://www.linuxfocus.org/common/src/article205/ppdev.html
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** parallel port device
+;; This package allows to read and write data to the parallel 
+;; port through the "ppdev" driver.
+;; The parport driver may not be loaded into the
+;; Linux kernel by default. Therefore, you might have 
+;; to do "/sbin/insmod ppdev" as root before using this
+;; class and functions
+
+#? * parport
+;; this class allows easy access to the 
+;; parallel port device.
+(defclass parport object
+  ((-str-) dev)
+  ((-int-) fd)
+  ((-int-) reverse)
+  )
+
+#? (new parport <d>)
+;; create new parport object on parport device <d>.
+;; example:
+;;{<code>
+;;  (setq z (new parport "/dev/parport0"))
+;; </code>}
+;; The parport driver may not be loaded into the
+;; Linux kernel by default. Therefore, you might have 
+;; to do "/sbin/insmod ppdev" as root.
+(defmethod parport parport (d)
+  ((-str-) d)
+  (setq dev d)
+  (when (= -1 (setq fd (parport-open dev)))
+    (printf "could not open parallel port %s\n" d)
+    (delete this))
+  (when (<> 0 (parport-claim fd))
+    (printf "could not claim ownership of parport %s\n" dev)
+    (delete this)) 
+  (setq reverse 0)
+  (parport-datadir fd reverse) ())
+
+(defmethod parport -destructor ()
+  (parport-release fd)
+  (parport-close fd)
+  ())
+
+#? (==> <parport> write <b>)
+;; write unsigned byte <b> to parport
+(defmethod parport write (b) 
+  (when (<> 0 reverse) 
+    (setq reverse 0)
+    (parport-datadir fd reverse))
+  (parport-write fd b))
+
+#? (==> <parport> read)
+;; read unsigned byte from parport
+(defmethod parport read ()
+  (when (= 0 reverse) 
+    (setq reverse 255)
+    (parport-datadir fd reverse))
+  (parport-read fd))
+
+#? (==> <parport> control <b>)
+;; write unsigned byte <b> to control lines of parport
+;; The control bits are STROBE (0x01, pin 1, inverted),
+;; AUTOFEED (0x02, pin 14, inverted), INITIALIZE
+;; (0x04, pin 16, not inverted), and SELECT
+;; (0x08, pin 17, inverted).
+;; The STROBE, AUTOFEED, and SELECT bits are inverted
+;; by this function to compensate for the hardware inversion.
+;; Return non-zero integer on error.
+(defmethod parport control (b) (parport-control fd b))
+
+#? (==> <parport> status)
+;; return status of parport
+(defmethod parport status () (parport-status fd))
+
+#? (==> <parport> pulse <n> <time> <p>)
+;; send byte <n> to parport, then wait for <time> seconds
+;; (this is a blocking wait), then send byte <p> and return.
+;; This can be used to control R/C servos.
+(defmethod parport pulse (n time p)
+  (let ((sw (new stopwatch)))
+    (==> sw reset)
+    (parport-write fd n)
+    (while (< (==> sw get) time) ())
+    (parport-write fd p)))
+
+(defmethod parport wave (n)
+  (repeat n (parport-write fd 0) (repeat 1000 ())(parport-write fd 255)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; low level compiled functions
+
+#? * low-level parport functions
+;; These functions provide a simple interface to
+;; some of the ioctl commands to handle the ppdev parport device.
+;; More info on these ioctl commands can be found at:
+;; http://www.kernelnewbies.org/documents/kdoc/parportbook/x623.html
+
+#? (parport-open <s>)
+;; open the parallel port device (e.g. "/dev/parport0"), 
+;; and return an integer handle.
+(de parport-open (s) ((-str-) s) 
+    (to-int #{ open( (char *)($s)->data, O_RDWR) #} ))
+
+#? (parport-close <fd>)
+;; close parport device <fd>.
+;; <d> is an integer returned by <parport-open>.
+(de parport-close (fd) 
+  ((-int-) fd) 
+  (to-int #{ close( $fd) #}))
+
+#? (parport-claim <fd>)
+;; claim parport <fd>, using <ioctl(fd,PPCLAIM)>.
+(de parport-claim (fd)
+  ((-int-) fd)
+  (to-int #{ (ioctl ($fd, PPCLAIM)) #}))
+
+#? (parport-release <fd>)
+;; release parport <fd>, using <ioctl(fd,PRELEASE)>.
+(de parport-release (fd)
+  ((-int-) fd)
+  (to-int #{ (ioctl ($fd, PPRELEASE)) #}))
+
+#? (parport-datadir <fd> <b>)
+;; set the direction of the data pins.
+;; <b> is an int.
+;; <b>=0 for output, <b>=255 for input.
+;; This uses <ioctl(fd,PPDATADIR,b)>.
+(de parport-datadir (fd b)
+  ((-int-) fd)
+  ((-int-) b)
+  (to-int #{ ioctl($fd, PPDATADIR, &$b) #}))
+
+#? (parport-write <fd> <b>)
+;; write unsigned byte <b> to the parport <fd>
+;; using <ioctl(fd,PPWDATA,b)>.
+(de parport-write (fd b)
+  ((-int-) fd)
+  ((-ubyte-) b)
+  (to-int #{ ioctl($fd, PPWDATA, &$b) #}))
+
+#? (parport-read <fd> )
+;; read unsigned byte from the parport <fd>
+;; using <ioctl(fd,PPRDATA,b)>.
+(de parport-read (fd)
+  ((-int-) fd)
+  (let ((b 0))
+    ((-ubyte-) b)
+    (to-int #{ ioctl($fd, PPRDATA, &$b) #})
+    (to-double b)))
+
+#? (parport-control <fd> <b>)
+;; write unsigned byte <b> to the control lines
+;; of parport <fd> using <ioctl(fd,PPWCONTROL,b)>.
+;; The control bits are STROBE (0x01, pin 1, inverted),
+;; AUTOFEED (0x02, pin 14, inverted), INITIALIZE
+;; (0x04, pin 16, not inverted), and SELECT
+;; (0x08, pin 17, inverted).
+;; The STROBE, AUTOFEED, and SELECT bits are inverted
+;; by this function to compensate for the hardware inversion.
+;; Return non-zero integer on error.
+(de parport-control (fd b)
+  ((-int-) fd)
+  ((-ubyte-) b)
+  (let ((status 0))
+    ((-int-) status)
+    #{ { unsigned char bb = 0x0f & ($b ^ 0x0b); 
+        $status = ioctl($fd, PPWCONTROL, &bb); 
+    } #}
+    status))
+
+
+#? (parport-status <fd>)
+;; return status lines of parport <fd>.
+;; using <ioctl(fd,PPRSTATUS,result)>.
+(de parport-status (fd)
+  ((-int-) fd)
+  (let ((r 0))
+    ((-ubyte-) r)
+    #{ ioctl($fd, PPRSTATUS, &$r) #}
+    (to-double r)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make () 
+          #{
+	   #include <unistd.h>
+	   #include <sys/types.h>
+           #include <sys/stat.h>
+	   #include <sys/ioctl.h>
+	   #include <fcntl.h>
+           #include <linux/parport.h>
+	   #include <linux/ppdev.h>
+          #}
+	  parport-open parport-claim 
+	  parport-close parport-release
+	  parport-datadir parport-read
+	  parport-write parport-control
+	  parport-status
+	  (parport))

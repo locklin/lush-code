@@ -1,0 +1,187 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: kanerva.sn,v 1.2 2003/03/18 21:18:30 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;   Kanerva
+;;;   Reference: P.Kanerva
+;;;    J . Bourrely
+;;;
+;;;   (C) Copyright Neuristique, 1989
+
+
+;;; === Build a network NxMxP with N addresses, M memory locations,
+;;;     and P bit data
+
+(de Kanerva-build-net (n m p)
+    (build-net 
+     '((input n)(memory m)(output p))
+     '((input memory)(memory output)) ) 
+    (epsilon 1) )
+
+;;; === a new forget that only changes the last layer weights
+
+(de kanerva-forget()
+    (setq age 0)
+    (setq current-pattern 0)
+    (each ((i input))
+      	  (each ((j memory))
+         	(sval i j (sgn (rand 1))) ) ) 
+    (each ((i memory))
+      	  (each ((j output))
+         	(sval i j 0) ) ) )
+
+;;; === set the hamming distance threshold for the memory
+;;;     and output layers
+
+(de kanerva-d (d e)
+    (let ((c (- (2* d) (length input))))
+      (each ((i memory))
+            (sval 0 i c) ) 
+      (each ((i output))
+            (sval 0 i e) )) )
+
+;;; === update states
+
+(de nlf-threshold(min max)
+    (nlf-bin 0.6 0 (2/ (- max min)) (2/ (+ max min))) )
+
+(de kanerva-update-state ()
+    (nlf-threshold 0 1) 
+    (update-state memory)
+    (nlf-threshold -1 1)
+    (update-state output) )
+
+;;; === Retrieval functions
+
+(de kanerva-recall(patt-number noise)
+    (present-pattern  input-layer patt-number)
+    (flip-state input-layer noise)
+    (kanerva-update-state)
+    (present-desired desired-layer patt-number) 
+    (setq good-answer 
+      	  (classify patt-number))
+    (setq local-error 
+      	  (2/ (mean-sqr-dist (state output) (state desired-layer))))
+    (disp-perf-iteration patt-number) 
+    local-error )
+
+
+;;; === Learning function: Hebbian rule between memory and output, 
+
+; We can't use (init-grad) because this function uses the derivative
+; of the transfert function for computing the gradients.
+
+(de kanerva-iteration (patt-number)
+    
+    ;retrieval
+    (present-pattern input-layer patt-number) 
+    (kanerva-update-state) 
+    
+    ;tests and display
+    (present-desired desired-layer patt-number)
+    (setq good-answer 
+    	  (classify patt-number))
+    (setq local-error 
+    	  (2/ (mean-sqr-dist 
+               (state output-layer) 
+               (state desired-layer)) ) )
+    
+    ;learning
+    (copy-nfield output-layer n-grad desired-layer n-val)
+    (update-weight)
+    (incr age)
+    ;display
+    (disp-basic-iteration patt-number) )
+
+
+(de kanerva-learn()
+    (for (patt patt-min patt-max)
+	 (kanerva-iteration patt) ) )
+
+
+;;; === EXAMPLE: 6x6 GRAPHIC PATTERNS AUTOASSOCIATOR
+
+
+;loads the examples
+(load-matrix pattern-matrix "addresses.mat")
+(load-matrix desired-matrix "addresses.mat")
+(ensemble 0 9)
+
+;shows the examples
+(de show-patterns()
+    (setq patterns-window (new-window 450 10 420 100 "examples patterns"))
+    (let ((window patterns-window))
+      (for (i patt-min patt-max)
+	   (draw-list (+ (* 40 i) 10) 30 (pattern-matrix i ()) 6 1.0 5 4) ) ) )
+
+(show-patterns)
+
+; builds the network
+(alloc-net 500 20000)
+(kanerva-build-net 36 200 36)
+
+; a draw-net function
+(de draw-net (l num)
+    (when (not draw-net-window)
+      	  (setq draw-net-window (new-window 10 200 450 600 "network")) 
+      	  (gprintf 10 180 "Addresses")
+      	  (gprintf 150 80 "Memory")
+      	  (gprintf 300 180 "Data") )
+    (setq window draw-net-window)
+    
+    (draw-list 10 200 (state input) 6 1.0 18 16)
+    (draw-list 150 100 (state memory) 6 1.0 10 8)
+    (draw-list 300 200 (state output) 6 1.0 18 16) )
+   
+
+; sets the parameters
+(kanerva-forget)
+(kanerva-d 13 0)
+
+; sets the display
+(set-disp-net)
+
+; sets the classification criterion
+(set-class-quadrant)
+
+; let's learn
+(printf "LEARNING ......\n\n")
+(kanerva-learn)
+
+; and test
+(printf "TESTING ON NOISY PATTERNS ......\n\n")
+(for (n 0 0.2 0.05)
+     (printf "noise %f\n" n)
+     (for (i patt-min patt-max)
+    	  (Kanerva-recall i n)
+	  (sleep 0.25)))

@@ -1,0 +1,201 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; Includes information derived from the GSL (Gnu Scientific Library)
+;;;   header files which are copyrighted and distributed under the GPL
+;;;   by their respective authors.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+
+
+
+#? *** statistics
+
+;; dummy function that adds OpenCV C header files in C file
+(eval `(de dummy_cv_statistics () ,cv-cpheader-cmd ()))
+
+;; #? * (dummy_statistics)
+;; #? * (cvsum <array> <s>)
+;; #? * (cvcountnonzero <array>)
+;; #? * (cvavg <array> <mask> <s>)
+;; #? * (cvavgsdv <array> <mean> <std_dev> <mask>)
+;; #? * (cvminmaxloc <array> <min_val> <max_val> <min_loc> <max_loc> <mask>)
+
+;; ********************************************************
+
+;;  /****************************************************************************************\
+;;  *      Image statistics functions support the next image formats:                        *
+;;  *         single-channel: IPL_DEPTH_8U, IPL_DEPTH_8S, IPL_DEPTH_32F                      *
+;;  *         three-channel: IPL_DEPTH_8U, IPL_DEPTH_8S, IPL_DEPTH_32F (COI must be != 0)    *
+;;  \****************************************************************************************/
+
+#? (cvSum  <array> <s>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //
+;;  //    Name:    cvSum
+;;  //    Purpose:
+;;  //      Sums all the elements in the image ROI or in the matrix
+;;  //    Context:
+;;  //    Parameters:
+;;  //        array - image or matrix.
+;;  //    Returns:
+;;  //        sum of every channel.
+;;  //    Note:
+;;  //        In case of COI is set the sum over the selected channel is saved
+;;  //        if the 0-th element of the returned CvScalar structure.
+;;  //F*/
+;;  OPENCVAPI  CvScalar  cvSum( const CvArr* array );
+
+(de cvSum (array s)
+    ((-gptr- "const CvArr *") array)
+    ((-gptr- "CvScalar *") s)
+    #{ {
+    CvScalar tmp;
+    tmp=cvSum($array);
+    memcpy($s,&tmp,sizeof(CvScalar));
+    } #}
+    ())
+    
+#? (cvCountNonZero <array>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //
+;;  //    Name:    cvCountNonZero
+;;  //    Purpose:
+;;  //        Counts all the non-zero elements in the image ROI or in the matrix
+;;  //    Context:
+;;  //    Parameters:
+;;  //        array - image or matrix.
+;;  //    Returns:
+;;  //        count of non-zero pixels
+;;  //    Note:
+;;  //        For multi-channel images COI must be set.
+;;  //F*/
+;;  OPENCVAPI  int  cvCountNonZero( const CvArr* array );
+
+(de cvCountNonZero(array)
+    ((-gptr- "const CvArr *") array)
+    (let ((s 0))
+      ((-int-) s)
+      #{ $s = cvCountNonZero($array); #}
+      s))
+
+#? (cvAvg <array> <mask> <s>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //
+;;  //    Name:    cvAvg
+;;  //    Purpose:
+;;  //      Calculates average value of the image region or the matrix.
+;;  //    Context:
+;;  //    Parameters:
+;;  //        array - input image or matrix.
+;;  //        mask - optional parameter: 8uC1 or 8sC1 array that specifies
+;;  //               the processed region of the input array
+;;  //    Returns:
+;;  //        average value for every channel. In case of COI is set, average value
+;;  //        of the selected COI is stored into 0-th element
+;;  //        of the returned CvScalar structure
+;;  //F*/
+;;  OPENCVAPI  CvScalar  cvAvg( const CvArr* array, const CvArr* mask CV_DEFAULT(0) );
+
+(de cvAvg(array mask s)
+    ((-gptr- "const CvArr *") array)
+    ((-gptr- "const CvArr *") mask)
+    ((-gptr- "CvScalar *") s)
+    #{ { CvScalar tmp;
+    tmp = cvAvg($array, $mask);
+    memcpy($s, &tmp, sizeof(CvScalar));
+    } #}
+    ())
+
+#? (cvAvgSdv  <array> <mean> <std_dev> <mask>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //
+;;  //    Name:    cvAvgSdv
+;;  //    Purpose:
+;;  //      Calculates mean and standard deviation of pixels in the image region
+;;  //    Context:
+;;  //    Parameters:
+;;  //        img - input image.
+;;  //        mean - mean value
+;;  //        std_dev - standard deviation
+;;  //        mask - mask(byte-depth, single channel)
+;;  //    Returns:
+;;  //
+;;  //F*/
+;;  OPENCVAPI  void  cvAvgSdv( const CvArr* array, CvScalar* mean, CvScalar* std_dev,
+;;                             const CvArr* mask CV_DEFAULT(0) );
+
+(de cvAvgSdv( array mean std_dev mask)
+    ((-gptr- "const CvArr *") array mask)
+    ((-gptr- "CvScalar *") mean std_dev)
+    #{ cvAvgSdv($array, $mean, $std_dev, $mask); #}
+    ())
+ 
+#? (cvMinMaxLoc  <array> <min_val> <max_val> <min_loc> <max_loc> <mask>)
+;;.VP
+;;  /*F///////////////////////////////////////////////////////////////////////////////////////
+;;  //
+;;  //    Name:    cvMinMaxLoc
+;;  //    Purpose:
+;;  //      Finds minimum and maximum pixel values in the image region
+;;  //      and determines their locations.
+;;  //    Context:
+;;  //    Parameters:
+;;  //        img - input image.
+;;  //        minVal - minimum value
+;;  //        maxVal - maximum value
+;;  //        minLoc - location of the minimum
+;;  //        maxLoc - location of the maximum
+;;  //        mask - mask(byte-depth, single channel)
+;;  //    Returns:
+;;  //    Note:
+;;  //      If there are several global minimums and/or maximums,
+;;  //      function returns the most top-left extremums.
+;;  //F*/
+;;  OPENCVAPI  void  cvMinMaxLoc( const CvArr* array, double* min_val, double* max_val,
+;;                                CvPoint* min_loc CV_DEFAULT(0),
+;;                                CvPoint* max_loc CV_DEFAULT(0),
+;;                                const CvArr* mask CV_DEFAULT(0) );
+
+(de cvMinMaxLoc (array min_val max_val min_loc max_loc mask)
+    ((-gptr- "const CvArr *") array mask)
+    ((-gptr- "double *") min_val max_val)
+    ((-gptr- "CvPoint *") min_loc max_loc)
+    #{ cvMinMaxLoc($array, $min_val, $max_val, $min_loc, $max_loc, $mask);  #}
+    ())
+;; ********************************************************
+
+(dhc-make-sf ()
+  dummy_cv_statistics
+  cvsum
+  cvcountnonzero
+  cvavg
+  cvavgsdv
+  cvminmaxloc
+)
