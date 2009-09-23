@@ -289,16 +289,16 @@ void init_at(void)
 
    /* set up builtin classes */
    number_class = new_builtin_class(NIL);
-   class_define("NUMBER", number_class);
+   class_define("Number", number_class);
 
    gptr_class = new_builtin_class(NIL);
    gptr_class->name = gptr_name;
    gptr_class->managed = false;
-   class_define("GPTR", gptr_class);
+   class_define("Gptr", gptr_class);
 
    mptr_class = new_builtin_class(NIL);
    mptr_class->name = mptr_name;
-   class_define("MPTR", mptr_class);
+   class_define("Mptr", mptr_class);
 
    cons_class = new_builtin_class(NIL);
    class_define("Cons", cons_class);

@@ -684,7 +684,7 @@ void init_function(void)
    /* set up function classes */
    pre_init_function();
 
-   class_define("FUNCTION", function_class);
+   class_define("function", function_class);
    class_define("DX", dx_class);
    class_define("DY", dy_class);
 

@@ -25,11 +25,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun classp (q)
-  (isa q :class) )
+  (isa q :Class) )
 
-(defmacro is-of-class args
-  `(isa ,@args)
-  )
+(defalias is-of-class isa)
 
 (defmacro ==> (obj method . args)
   `(send ,obj ',method ,@args)
@@ -99,7 +97,7 @@
 
 (dm defclass def
   (when define-hook (setq def (apply define-hook def)))
-  (let (((_ name |__super__| . body) def)
+  (let (((_ name __super__ . body) def)
 	(defaults (htable 11 t t))
 	(slots (htable 11 t t))
         (slot-names ())
@@ -107,7 +105,7 @@
 	(constructor-defined ())
 	(method-defs ())
 	(super-class ()) )
-    (setq super-class (eval |__super__|))
+    (setq super-class (eval __super__))
     ;; see if we inherit any definitions textually
     (when (or (getp super-class 'template-class)
 	      (getp (getp super-class 'saved) 'template-class) )
@@ -126,20 +124,20 @@
 	(domapc ((method (reverse (methods super-class))))
           (let* ((method-def (getmethod super-class method))
                  (method-text (funcdef method-def))
-                 (method (if (= method |__super__|) name method)) ) ; inheriting the constructor
+                 (method (if (= method __super__) name method)) ) ; inheriting the constructor
             (when (= method name)
-              (setq constructor-defined (not (is-of-class method-def |DH|))) )
+              (setq constructor-defined (not (isa method-def DH))) )
             (cond
-             ((is-of-class method-def |DE|)
+             ((isa method-def DE)
               (setq method-defs
                     (cons `(defmethod ,name ,method ,@(cdr method-text)) method-defs) ))
-             ((is-of-class method-def |DF|)
+             ((isa method-def DF)
               (setq method-defs
                     (cons `(dfmethod ,name ,method ,@(cdr method-text)) method-defs) ))
-             ((is-of-class method-def |DM|)
+             ((isa method-def DM)
               (setq method-defs
                     (cons `(dmmethod ,name ,method ,@(cdr method-text)) method-defs) ))
-             ((is-of-class method-def |DH|)
+             ((isa method-def DH)
                 ; ignore
               )
              (t 
@@ -177,9 +175,9 @@
     
     ;; create default constructor
     (when (and (not constructor-defined) 
-               (getmethod super-class |__super__|) )
-      (let* ((supercc (or (funcdef (getmethod super-class |__super__|))
-                          (funcdef (getmethod (getp super-class 'saved) |__super__|)) ))
+               (getmethod super-class __super__) )
+      (let* ((supercc (or (funcdef (getmethod super-class __super__))
+                          (funcdef (getmethod (getp super-class 'saved) __super__)) ))
 	     (arglist (cadr supercc))
 	     (body (cddr supercc))
 	     (declrs ()) )
@@ -300,11 +298,11 @@
       (setq mthds (append mthds (methods cl)) cl (super cl)) )
     mthds))
 
-(defmacro copy-object (|__src__| &optional |__dest__|)
-  (let ((cl (classof (eval |__src__|)))
+(defmacro copy-object (__src__ &optional __dest__)
+  (let ((cl (classof (eval __src__)))
 	(copy-slot (lambda (slot) `((scope clone ,slot) (scope obj ,slot)))) )
-    `(let ((obj ,|__src__|)
-	   (clone ,(if |__dest__| |__dest__| `(new-empty ,cl))) )
+    `(let ((obj ,__src__)
+	   (clone ,(if __dest__ __dest__ `(new-empty ,cl))) )
        ,(cons 'setq (mapcan copy-slot (allslots cl)))
        clone)
     ))
@@ -352,8 +350,8 @@
 
     ;; builtin types
     (selectq (classname (classof arg))
-      ((NUMBER STRING SYMBOL Nil) arg) ;; immutable types
-      (INDEX (if (isa (idx-storage arg) AtomStorage)
+      ((Number String Symbol Nil) arg) ;; immutable types
+      (Index (if (isa (idx-storage arg) AtomStorage)
 		   (array-map deepcopy arg)
 		 (copy-array arg) ))
       (Cons  (cons (deepcopy (car arg)) (deepcopy (cdr arg))))
@@ -384,10 +382,10 @@
 (defmethod object -emptyp ()
   (error "emptyp not defined for object" this))
 
-(defmethod |NUMBER| -emptyp ()
+(defmethod Number -emptyp ()
   (error "emptyp not defined for object" this))
 
-(defmethod |INDEX| -emptyp () 
+(defmethod Index -emptyp () 
   (idx-emptyp this) )
 
 (defmethod storage -emptyp ()
@@ -399,16 +397,16 @@
 (defmethod Cons -emptyp ()
   ())
 
-(defmethod |STRING| -emptyp ()
+(defmethod String -emptyp ()
   (= this "") )
 
-(defmethod |HTABLE| -emptyp ()
+(defmethod HTable -emptyp ()
   (= (htable-size this) 0) )
 
 
 ;;; -------------- print ----------------
 
-(defmethod |INDEX| print()
+(defmethod Index print()
   (if (and (indexp this) (< (idx-nelems this) 200))
       (print-array-literal this)
     (printf "%s" (pname this)) ) )
@@ -431,17 +429,17 @@
          (dj (funcdef j)) )
     (pretty-print
      (cond
-      ((is-of-class j |DE|) 
+      ((isa j DE) 
        `(demethod ,(classname class) ,method ,@(cdr dj)) )
-      ((is-of-class j |DF|) 
+      ((isa j DF) 
        `(dfmethod ,(classname class) ,method ,@(cdr dj)) )
-      ((is-of-class j |DM|) 
+      ((isa j DM) 
        `(dmmethod ,(classname class) ,method ,@(cdr dj)) ) 
-      ((and (is-of-class j |DH|) 
+      ((and (isa j DH) 
             (setq dj (getp class 'saved))
             (member method (methods dj))
             (setq dj (getmethod dj method))
-            (is-of-class dj |DE|)
+            (isa dj DE)
             (setq dj (funcdef dj)) )
        (printf ";; Source code for %l\n" j)
        `(demethod ,(classname class) ,method ,@(cdr dj)) )
@@ -455,7 +453,7 @@
   (printf "%l\n    " this)
   (-pretty-slots this) )
 
-(demethod class pretty ()
+(demethod Class pretty ()
   (let* ((saved (getp this 'saved))
 	 (slots (or (getp this 'slots) (getp saved 'slots)))
 	 (template (or (getp this 'template-class) (getp saved 'template-class)))
@@ -476,7 +474,7 @@
     (print)
     (pretty-method this i) ))
 
-(demethod |SYMBOL| pretty()
+(demethod Symbol pretty()
   (if (== this 'this)
       (printf "'%l\n" this)
     (let* ((e (eval this))
@@ -506,37 +504,37 @@
 (demethod Cons pretty()
   (pretty-print this) )
 
-(demethod |DE| pretty()
+(demethod DE pretty()
   (pretty-print (funcdef this)) )
 
-(demethod |DF| pretty()
+(demethod DF pretty()
   (pretty-print (funcdef this)) )
 
-(demethod |DM| pretty()
+(demethod DM pretty()
   (pretty-print (funcdef this)) )
 
-(demethod |DX| pretty()
+(demethod DX pretty()
   (printf "%l ; DX-type intrinsic function\n" this) )
 
-(demethod |DY| pretty()
+(demethod DY pretty()
   (printf "%l ; DY-type intrinsic function\n" this) )
 
-(demethod |DH| pretty()
+(demethod DH pretty()
   (let ((src (getp this 'saved)))
     (pretty-print (funcdef src)) ))
 
-(demethod |INDEX| pretty()
+(demethod Index pretty()
   (print-array-literal this) 
   (print)
   t)
 
-(demethod |HTABLE| pretty()
+(demethod HTable pretty()
   (printf "\n")
   (domapc (((key . val) (htable-alist this)))
     (printf " %-17s --> %s\n" (pname key) (pname val)) )
   t)
 
-(demethod |MODULE| pretty()
+(demethod Module pretty()
   (printf "%l " this)
   (let ((tb (tab)))
     (printf ";; module %l\n" (module-filename this))

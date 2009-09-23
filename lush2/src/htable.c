@@ -712,7 +712,7 @@ void init_htable(void)
    htable_class->serialize = htable_serialize;
    htable_class->compare = htable_compare;
    htable_class->hash = htable_hash;
-   class_define("HTABLE", htable_class);
+   class_define("HTable", htable_class);
    
    dx_define("hashcode",xhashcode);
    dx_define("htable",xnew_htable);

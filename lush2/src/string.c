@@ -1350,7 +1350,7 @@ void init_string(void)
    string_class->name = string_name;
    string_class->compare = string_compare;
    string_class->hash = string_hash;
-   class_define("STRING", string_class);
+   class_define("String", string_class);
 
    /* cache some ubiquitous strings */
    make_singletons();

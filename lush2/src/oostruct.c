@@ -1206,7 +1206,7 @@ void init_oostruct(void)
 
    pre_init_oostruct();
    class_class->backptr = new_at(class_class, class_class);
-   class_define("class", class_class);
+   class_define("Class", class_class);
 
    /* 
     * mm_alloc object_class to avoid hickup in mark_class

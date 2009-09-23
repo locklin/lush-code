@@ -891,7 +891,7 @@ void init_symbol(void)
    var_lock(at_t);
    
    /* set up symbol_class */
-   class_define("SYMBOL", symbol_class);
+   class_define("Symbol", symbol_class);
    
    dx_define("global-defs", xglobal_defs);
    dx_define("namedclean", xnamedclean);

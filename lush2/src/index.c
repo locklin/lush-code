@@ -3483,7 +3483,7 @@ void init_index(void)
    index_class->serialize = index_serialize;
    index_class->compare = index_compare;
    index_class->hash = index_hash;
-   class_define("INDEX", index_class);
+   class_define("Index", index_class);
 
    /* info */
    dx_define("indexp", xindexp);

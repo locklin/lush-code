@@ -1877,7 +1877,7 @@ void init_graphics(void)
    window_class = new_builtin_class(NIL);
    window_class->dispose = (dispose_func_t *)window_dispose;
    window_class->name = window_name;
-   class_define("WINDOW", window_class);
+   class_define("Window", window_class);
    at_window = var_define("window");
 
    /* RELEASE 1 */

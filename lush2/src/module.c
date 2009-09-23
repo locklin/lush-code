@@ -1537,7 +1537,7 @@ void init_module(char *progname)
    module_class->dispose = (dispose_func_t *)module_dispose;
    module_class->serialize = module_serialize;
    module_class->dontdelete = true;
-   class_define("MODULE", module_class);
+   class_define("Module", module_class);
 
 #if DLDBFD
    root->filename = mm_strdup(dld_find_executable(progname));

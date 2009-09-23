@@ -1819,12 +1819,12 @@ void init_fileio(char *program_name)
    rfile_class = new_builtin_class(NIL);
    rfile_class->dispose = (dispose_func_t *)file_dispose;
    rfile_class->managed = false;
-   class_define("RFILE", rfile_class);
+   class_define("RFile", rfile_class);
    
    wfile_class = new_builtin_class(NIL);
    wfile_class->dispose = (dispose_func_t *)file_dispose;
    wfile_class->managed = false;
-   class_define("WFILE", wfile_class);
+   class_define("WFile", wfile_class);
    
    /* DECLARE THE FUNCTIONS */
    dx_define("chdir", xchdir);
