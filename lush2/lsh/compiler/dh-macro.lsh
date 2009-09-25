@@ -540,40 +540,42 @@
     (dhc-assign-unify :loop:type :start:type)
     (setq bump-list (append bump-list (list loop)))
     (setq :treetype:ignore t)
-    (setq new-symbol-table 
-          (dhc-add-to-symtable new-symbol-table loop))
+    (setq new-symbol-table (dhc-add-to-symtable new-symbol-table loop))
     treetype))
 
-(dhm-t for(source)
-  (when (or (< (length source) 2)
-            ~(consp (cadr source)))
-    (dhc-error "for : Bad 'for' construction"))
-  (let ((tn ())
-        (tn2 ()))
-    (dhc-push-scope-t
-     (setq tn2 (dhc-for-declare-var-t (cadr source)))
+(dhm-t for (source)
+  (when (< (length source) 2)
+    (dhc-error "syntax error" source) )
+  (when (not (consp (cadr source)))
+    (dhc-error "syntax error" (list (car source) (cadr source) '...)) )
+  (dhc-push-scope-t
+   (let ((tn-loop (dhc-for-declare-var-t (cadr source))))
      (setq symbol-table new-symbol-table)
-     (setq tn (dhc-parse-progn-t (cddr source)))
-     (setq :tn:tn-list (cons tn2 :tn:tn-list))
-     (setq :tn:transfer ignore)
-     tn)))
+     (dhc-push-loop-scope-t
+      (let ((tn-body (dhc-parse-progn-t (cddr source))))
+        (setq :tn-body:tn-list (cons tn-loop :tn-body:tn-list))
+        (setq :tn-body:transfer ignore)
+        tn-body)
+      ))))
 
 (dhm-c for (source treetype retplace)
-  (let (( (loop start end &optional step) (cadr source))
-        ( (loopT startT endT &optional stepT)
-          :(cadr :treetype:tn-list):tn-list)
-        (loopN ())
-        (endN ())
-        (stepN ()))
+  (let (((loop start end &optional step) (cadr source))
+        ((loopT startT endT &optional stepT) :(cadr :treetype:tn-list):tn-list)
+        (loopN ()) (endN ()) (stepN ())
+        ((loop-sym . other-syms) :treetype:symbol) )
     (when ~step
       (setq step 1)
       (setq stepT (dhc-parse-expr-t 1)))
-    
-    (dhc-push-scope-c 
+
+    ;; hack: because dhc-push-scope-c cannot be nested, we need to
+    ;; manipulate :treetype:symbol to get the declarations in
+    ;; the right places
+    (setq :treetype:symbol (list loop-sym))
+    (dhc-push-scope-c
      treetype retplace
      (setq endN (dhc-parse-expr-for-multi-use-c end endT ()))
      (setq stepN (dhc-parse-expr-for-multi-use-c step stepT ()))
-     (setq loopN (scope :loopT:symbol c-name))
+     (setq loopN :loopT:symbol:c-name)
      (dhc-parse-expr-for-multi-use-c start startT loopN)
      (if (not (or dhc-unprotect :treetype:transfer))
          (dhc-add-c-statements
@@ -583,13 +585,14 @@
       (sprintf "for(;")
       (sprintf "((%s>0)?(%s<=%s):(%s>=%s));"
                stepN loopN endN loopN endN )
-      (sprintf "(%s)+=%s ) {" loopN stepN )
+      (sprintf "(%s)+=%s )" loopN stepN )
       )
-     (setq retplace (dhc-parse-progn-c (cddr source)
-                                       (cddr :treetype:tn-list)
-                                       retplace))
-     (dhc-add-c-statements "}")
-     retplace )))
+     ;; hack, part 2
+     (setq :treetype:symbol other-syms)
+     (dhc-push-scope-c
+      treetype retplace
+      (dhc-parse-progn-c (cddr source) (cddr :treetype:tn-list) retplace))
+     )))
 
 (dhm-t protect (source)
   (let ((dhc-unprotect ()))
