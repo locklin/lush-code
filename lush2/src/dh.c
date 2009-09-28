@@ -1123,7 +1123,7 @@ static void clear_cobject(void *p, size_t n)
 
 static void mark_cobject(struct CClass_object *cobj)
 {
-   if (cobj->__lcl->live && cobj->Vtbl) {
+   if (cobj->__lcl && cobj->__lcl->live && cobj->Vtbl) {
       MM_MARK(cobj->__lcl);
       if (cobj->Vtbl->__mark)
          cobj->Vtbl->__mark(cobj);
