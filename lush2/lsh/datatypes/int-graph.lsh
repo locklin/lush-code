@@ -121,6 +121,12 @@
   (declare (-int-) v)
   (==> vertices insert v) )
 
+#? (==> <IntGraph> insert-vertices <vs>)
+;; Insert vertices (integers) in table <vs> into graph and return <()>.
+(defmethod IntGraph insert-vertices (vs)
+  (declare (-idx1- (-int-)) vs)
+  (==> vertices insert-all vs) )
+
 #? (==> <IntGraph> insert-vertex-range <v0> <v1>)
 ;; Insert vertices [<v0>..<v1>], return <()>.
 (defmethod IntGraph insert-vertex-range (v0 v1)
@@ -129,6 +135,12 @@
     (declare (-int-) v)
     (==> vertices insert v) )
   ())
+
+#? (==> <IntGraph> has-vertex <v>)
+;; True when <v> is a vertex in the graph.
+(defmethod IntGraph has-vertex (v)
+  (declare (-int-) v)
+  (==> vertices member v) )
 
 #? (==> <IntGraph> remove-vertex <v>)
 ;; Remove vertex <v> and all edges incident with <v>. Return <t> on success
@@ -148,14 +160,15 @@
     t))
 
 #? (==> <IntGraph> eliminate-vertex <v>)
-;; Eliminate vertex <v> and return <()>. Raise an error if the 
-;; vertex does not exist.
+;; Eliminate vertex <v> and return the set of new arcs added to the
+;; graph. Raise an error if vertex <v> does not exist.
 (defmethod IntGraph eliminate-vertex (v)
   (declare (-int-) v)
   (check-vertex v)
   (when (not undirected)
     (error "vertex elimination not implemented for directed graphs") )
-  (let ((adjs (make-stack 32 int)))
+  (let ((adjs (make-stack 32 int))
+        (newarcs (new IPairSet)) )
     (do-vertices (w adjacent-to v)
       (declare (-int-) w)
       (push adjs w) )
@@ -164,10 +177,42 @@
       (==> arcs remove (ipair (adjs i) v))
       (for* (j (+ i 1) (length adjs))
         (declare (-int-) i j)
-        (==> arcs insert (ipair (adjs i) (adjs j)))
-        (==> arcs insert (ipair (adjs j) (adjs i))) )))
-  (==> vertices remove v)
-  ())
+        (let ((eij (ipair (adjs i) (adjs j)))
+              (eji (ipair (adjs j) (adjs i))) )
+          (when (==> arcs insert eij)
+            (==> newarcs insert eij) )
+          (when (==> arcs insert eji)
+            (==> newarcs insert eji) ) )))
+    (==> vertices remove v)
+  newarcs))
+
+#? (==> <IntGraph> merge-vertices <v0> <v1>)
+;; Merge vertices <v0> and <v1> or raise an error when there
+;; is no edge linking <v0> and <v1>. Return the set of new
+;; arcs added to the graph.
+;;
+;; The resulting vertex is identified with <v0>, <v1> is not
+;; a vertex of the graph after completing this operation.
+(defmethod IntGraph merge-vertices (v0 v1)
+  (declare (-int-) v0 v1)
+  (check-vertex v0)
+  (check-vertex v1)
+  (when (not (and (==> arcs member (ipair v0 v1))
+                  (==> arcs member (ipair v1 v0)) ))
+    (error "vertices are not mutual neighbors") )
+  (==> arcs remove (ipair v0 v1))
+  (==> arcs remove (ipair v1 v0))
+  (let ((newarcs (new IPairSet)))
+    (do-vertices (u adjacent-to v1)
+      (let ((uv (ipair u v0)) (vu (ipair v0 u)))
+        (when (not (==> arcs member uv))
+          (==> newarcs insert uv) )
+        (when (not (==> arcs member vu))
+          (==> newarcs insert vu) ) ))
+    (==> this remove-vertex v1)
+    (do-set (uv newarcs)
+      (==> arcs insert uv) )
+    newarcs))
 
 #? (==> <IntGraph> deficiency <v>)
 ;; Return deficiency set of vertex <v> (an arc table).
@@ -212,7 +257,7 @@
     d))
 
 #? (==> <IntGraph> neighbors <v>)
-;; Return all neighbors of vertex <v>.
+;; Return all neighbors of vertex <v> as a set.
 (defmethod IntGraph neighbors (v)
   (declare (-int-) v)
   (check-vertex v)
@@ -238,13 +283,6 @@
         (incr (ds i)) )
       ds)))
 
-#? (==> <IntGraph> insert-vertices <vs>)
-;; Insert vertices (integers) in table <vs> into graph and return <()>.
-(defmethod IntGraph insert-vertices (vs)
-  (declare (-idx1- (-int-)) vs)
-  (==> vertices insert-all vs) )
-
-
 (defmethod IntGraph -insert-edge (v0 v1 di)
   (declare (-int-) v0 v1)
   (declare (-bool-) di)
@@ -259,13 +297,11 @@
       (setq result (or (==> arcs insert (iprot a01)) result)) )
     result))
 
-
 #? (==> <IntGraph> insert-edge <v0> <v1>)
 ;; Insert edge <(v0,v1)> and return <t> when it is a new edge.
 (defmethod IntGraph insert-edge (v0 v1)
   (declare (-int-) v0 v1)
   (==> this -insert-edge v0 v1 ()) )
-
 
 #? (==> <IntGraph> insert-edge* <v0> <v1>)
 ;; Insert edge <(v0,v1)> and return <t> when it is a new edge.
@@ -277,6 +313,36 @@
   (let ((a01 (ipair v0 v1)))
     (or (==> arcs insert a01)
         (==> arcs insert (iprot a01)))))
+
+#? (==> <IntGraph> has-edge <v0> <v1>)
+;; True when edge <(v0,v1)> is in the graph.
+(defmethod IntGraph has-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (and (==> arcs member (ipair v0 v1))
+       (==> arcs member (ipair v1 v0)) ))
+
+#? (==> <IntGraph> remove-edge <v0> <v1)
+;; Remove edge <(v0,v1)> and return <t> when it was in the graph.
+(defmethod IntGraph remove-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (and (==> arcs remove (ipair v0 v1))
+       (==> arcs remove (ipair v1 v0))))
+
+;; #? (==> <IntGraph> all-edges)
+;; Return all edges as a table (matrix).
+(defmethod IntGraph all-edges ()
+  (let ((edges (int-array (==> this number-of-edges) 2))
+        (arcs2 (deepcopy arcs))
+        (i 0) )
+    (declare (-int-) i)
+    (do-set (a arcs)
+      (when (==> arcs2 member (iprot a))
+        (edges i 0 (ipi1 a))
+        (edges i 1 (ipi2 a))
+        (==> arcs2 remove a)
+        (incr i) ))
+    (assert (= i (length edges)))
+    edges) )
 
 #? (==> <IntGraph> insert-arc <v0> <v1>)
 ;; Insert arc <(v0,v1)> and return <t> when it is a new arc.
@@ -291,12 +357,11 @@
   (declare (-int-) v0 v1)
   (==> arcs member (ipair v0 v1)) )
 
-#? (==> <IntGraph> has-edge <v0> <v1>)
-;; True when edge <(v0,v1)> is in the graph.
-(defmethod IntGraph has-edge (v0 v1)
+#? (==> <IntGraph> remove-arc <v0> <v1)
+;; Remove arc <(v0,v1)> and return <t> when it was in the graph.
+(defmethod IntGraph remove-arc (v0 v1)
   (declare (-int-) v0 v1)
-  (and (==> arcs member (ipair v0 v1))
-       (==> arcs member (ipair v1 v0)) ))
+  (==> arcs remove (ipair v0 v1)) )
 
 (defmethod IntGraph -insert-edges (edges di)
   (declare (-idx2- (-int-)) edges)
