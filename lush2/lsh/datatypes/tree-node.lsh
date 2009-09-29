@@ -73,6 +73,16 @@
   (error "abstract method")
   () )
 
+(defmethod TreeNode copy-tree ()
+  (declare (-method- (TreeNode) () (-obj- (TreeNode))) copy-tree)
+  (let ((tn (==> this clone)))
+    (==> tn copy-item-from this)
+    (when (not (nullp left))
+      (setq :tn:left (to-mptr (==> (to-node left) copy-tree))) )
+    (when (not (nullp right))
+      (setq :tn:right (to-mptr (==> (to-node right) copy-tree))) )
+    tn))
+
 (defmethod TreeNode swap-items (tn)
   (declare (-obj- (TreeNode)) tn)
   (error "abstract method")
@@ -231,12 +241,12 @@
       (==> this v2t-compress n) )
     h))
 
-#? (rebalance-tree! <r>)
-;; Rebalance tree with rooted at <r>.
+;; #? (rebalance-tree! <r>)
+;; Rebalance tree rooted at <r>.
 (defmacro rebalance-tree! (r)
   (when (not (symbolp r))
     (error "root argument must be a variable"))
-  `(let ((tn (new (classof ,r))))
+  `(let ((tn (==> ,r clone)))
      (setq :tn:right (to-mptr ,r))
      (==> tn vine-to-tree (==> tn tree-to-vine))
      (setq ,r (to-obj (classof ,r) :tn:right))
@@ -281,37 +291,9 @@
   (clear-stack* stack)
   () )
 
-(defun copy-ordered-tree (tn)
-  (declare (-obj- (TreeNode)) tn)
-  (let ((dummy (new IterableDatatype)))
-    (let* ((st (make-stack 32 mptr))
-           (it (new TreeNodeIterator dummy st))
-           (pseudo (==> tn clone))
-           (tail pseudo)
-           (n 0) )
-      (declare (-int-) n)
-      ;; traverse input tree in symmetric order and create a vine
-      (==> tn symmetric-order-first* st)
-      (while (not (emptyp st))
-        (==> it -make-next-stack)
-        (incr n)
-        (let ((nn (==> tn clone)))
-          (setq :tail:right (to-mptr nn))
-          (==> nn copy-item-from :it:tn)
-          (setq tail nn) ))
-      (setq :tail:right NULL)
-      (delete it)
-      ;; create tree from vine and return
-      (==> pseudo vine-to-tree n)
-      (prog1 (to-obj TreeNode :pseudo:right)
-        (==> pseudo clear) )
-      )))
-
-
 (dhc-make-class () TreeNode
                 (TreeNodeIterator TreeNodeIterator -make-next-stack -destructor)
-                copy-ordered-tree)
-
+                )
 
 ;; template methods for TreeNode
 
@@ -440,11 +422,6 @@
 
 
 ;; functions dealing with trees
-
-#? (copy-ordered-tree <tn> <pool>)
-;; Copy whole tree rooted a TreeNode <tn>.
-;; The new tree does not have the same structure as the input
-;; tree, but it is in symmetric order.
 
 ;;#? (def-treenode <prefix> <item-type> <lt> <gt> <eq>)
 ;; Define TreeNode class for type <item-type> along
