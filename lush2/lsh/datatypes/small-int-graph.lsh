@@ -140,6 +140,21 @@
   (declare (-int-) v)
   (==> vertices member v) )
 
+(defmethod SmallIntGraph remove-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (check-vertex v0)
+  (check-vertex v1)
+  (let ((arcsv0 (to-set (arcs v0)))
+        (arcsv1 (to-set (arcs v1))) )
+    (and (==> arcsv0 remove v1)
+         (==> arcsv1 remove v0))
+    ))
+
+(defmethod SmallIntGraph neighbors (v)
+  (declare (-int-) v)
+  (check-vertex v)
+  (deepcopy (to-set (arcs v))) )
+
 #? (==> <SmallIntGraph> remove-vertex <v>)
 ;; Remove vertex <v> and all edges incident with <v>. Return <t> on
 ;; success and <()> when <v> was not an existing vertex.
@@ -147,21 +162,16 @@
   (declare (-int-) v)
   (if (not (==> vertices member v))
       (progn (printf "*** Warning: vertex %d does not exist\n" v) ())
-    (if undirected
-        (progn
-          (assert (not (nullp (arcs v))))
-          (let ((arcsv (to-set (arcs v))))
-            (do ((i arcsv))
-              (declare (-int-) i)
-              (assert (not (nullp (arcs i))))
-              (let ((arcsi (to-set (arcs i))))
-                (==> arcsi remove v) ))
-            (arcs v NULL) )
-          )
-      (error "vertex removal not implemented for directed graphs") )
-    (==> vertices remove v)
-    t))
-       
+    (let* ((ns (==> this neighbors v))
+           (self this) ) ; 'do-set' expands to 'with-object ...'
+      (do-set (u ns)
+        (declare (-int-) u)
+        (==> self remove-edge v u)
+        )
+      (assert (emptyp (to-set (arcs v))))
+      (arcs v NULL)
+      (==> vertices remove v)
+      t)))
 
 #? (==> <SmallIntGraph> eliminate-vertex <v>)
 ;; Eliminate vertex <v> and return the set of new arcs added to the
@@ -233,10 +243,6 @@
       
 #? (==> <SmallIntGraph> neighbors <v>)
 ;; Return all neighbors of vertex <v> as a set.
-(defmethod SmallIntGraph neighbors (v)
-  (declare (-int-) v)
-  (check-vertex v)
-  (deepcopy (to-set (arcs v))) )
 
 (defmethod SmallIntGraph -insert-edge (v0 v1 di)
   (declare (-int-) v0 v1)
@@ -272,15 +278,6 @@
 
 #? (==> <SmallIntGraph> remove-edge <v0> <v1)
 ;; Remove edge <(v0,v1)> and return <t> when it was in the graph.
-(defmethod SmallIntGraph remove-edge (v0 v1)
-  (declare (-int-) v0 v1)
-  (check-vertex v0)
-  (check-vertex v1)
-  (let ((arcsv0 (to-set (arcs v0)))
-        (arcsv1 (to-set (arcs v1))) )
-    (and (==> arcsv0 remove v1)
-         (==> arcsv1 remove v0))
-    ))
 
 #? (==> <SmallIntGraph> all-edges)
 ;; Return all edges as a table (matrix).
