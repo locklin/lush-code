@@ -560,26 +560,24 @@ storage_t *make_storage(storage_type_t t, size_t n, at *init)
 
 void storage_alloc(storage_t *st, size_t n, at *init)
 {
+   char errmsg[200];
+
    ifn (st->data == NULL)
       RAISEF("storage must be unsized", st->backptr);
    
    /* allocate memory and initialize srg */
    size_t s = n*storage_sizeof[st->type];
+   void *data = NULL;
    if (st->type==ST_AT || st->type==ST_MPTR)
-      st->data = mm_allocv(mt_refs, s);
-   else {
-      void *data = NULL;
-      if (s >= LARGE_ALLOC) {
-         data = malloc(s);
-         if (data) {
-            mm_manage(data);
-            MM_ANCHOR(data);
-         } else
-            RAISEF("not enough memory for storage of size (bytes)", NEW_NUMBER(s));
-      } else
-         data = mm_blob(s);
-      st->data = data;
+      data = mm_malloc(mt_refs, s);
+   else
+      data = mm_malloc(mt_blob, s);
+
+   if (!data) {
+      sprintf(errmsg, "not enough memory for storage of size %.1f MByte", ((double)s)/(2<<20));
+      RAISEF(errmsg, NIL);
    }
+   st->data = data;
    st->flags = STS_MM;
    st->size  = n;
    

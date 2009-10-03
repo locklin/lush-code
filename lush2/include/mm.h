@@ -81,6 +81,7 @@ bool    mm_collect_in_progress(void);    // true if gc is under way
 /* allocation functions */
 void   *mm_alloc(mt_t);                  // allocate fixed-size object
 void   *mm_allocv(mt_t, size_t);         // allocate variable-sized object
+void   *mm_malloc(mt_t, size_t);         // allocate variable-sized object
 void   *mm_blob(size_t);                 // allocate blob of size
 char   *mm_strdup(const char *);         // create managed copy of string
 

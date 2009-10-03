@@ -1426,7 +1426,7 @@ void *mm_alloc(mt_t t)
 }
 
 
-void *mm_allocv(mt_t t, size_t s)
+void *mm_malloc(mt_t t, size_t s)
 {
    if (t == mt_undefined) {
       warn("attempt to allocate with undefined memory type\n");
@@ -1440,11 +1440,19 @@ void *mm_allocv(mt_t t, size_t s)
    
    FIX_SIZE(s);
    void *p = alloc_variable_sized(t, s);
-   ABORT_WHEN_OOM(p);
+   if (p) {
+      if (types[t].clear)
+         types[t].clear(p, s);
+      manage(p, t);
+   }
+   return p;
+}
 
-   if (types[t].clear)
-      types[t].clear(p, s);
-   manage(p, t);
+
+void *mm_allocv(mt_t t, size_t s)
+{
+   void *p = mm_malloc(t, s);
+   ABORT_WHEN_OOM(p);
    return p;
 }
 
