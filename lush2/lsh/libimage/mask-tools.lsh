@@ -133,7 +133,21 @@
         ))
     lt-mask))
 
-
+;; helper for region-bounding-boxes
+(defun enlarge-bounding-boxes! (bbs n)
+  (declare (-idx2- (-int-)) bbs)
+  (declare (-int-) n)
+  (let ((n0 (length bbs)))
+    (declare (-int-) n0)
+    (array-extend! bbs 0 n)
+    (setq bbs (idx-trim bbs 0 n0))
+    ;; initialize with out-of-bound index values
+    (array-clear ($*1 bbs 0) +int-max+)
+    (array-clear ($*1 bbs 1) +int-max+)
+    (array-clear ($*1 bbs 2) -1)
+    (array-clear ($*1 bbs 3) -1)
+    ()))
+  
 #? (region-bounding-boxes <mask>)
 ;; Compute bounding boxes for all regions and return in a table.
 ;;
@@ -142,20 +156,16 @@
 ;; in the bounding box.
 (defun region-bounding-boxes (mask)
   (declare (-idx2- (-int-)) mask)
-  (let ((bbs (int-array* +max-region-index+ 4))
+  (let ((bbs (int-array* 0 4))
         (maxi 0) )
     (declare (-int-) maxi)
-
-    ;; initialize with out-of-bound index values
-    (array-clear ($*1 bbs 0) ($ mask 0))
-    (array-clear ($*1 bbs 1) ($ mask 1))
-    (array-clear ($*1 bbs 2) -1)
-    (array-clear ($*1 bbs 3) -1)
-
+    (enlarge-bounding-boxes! bbs +max-region-index+)
     ;; scan mask and update entries in table as you go
     (for* (i 0 ($ mask 0))
       (for* (j 0 ($ mask 1))
         (declare (-int-) i j)
+        (while (>= (mask i j) (length bbs))
+          (enlarge-bounding-boxes! bbs (length bbs)) )
         (let ((bb ($*0 bbs (mask i j))))
           (when (< i (bb 0)) (bb 0 i))
           (when (< j (bb 1)) (bb 1 j))
@@ -189,7 +199,7 @@
   (let* ((m ($ mask 0))
          (n ($ mask 1))
          (fmask (frame-mask mask))
-         (rag (new SmallIntGraph +max-region-index+))
+         (rag (new SmallIntGraph (+ (max-region-index mask) 1)))
          (wm  (idx-trim* fmask 2 2)) )
     (declare (-int-) m n)
     (idx-shift! wm 0 -1)
@@ -224,16 +234,13 @@
 ;; region size. 
 (defun region-size-histogram (mask)
   (declare (-idx2- (-int-)) mask)
-  (let ((h (int-array +max-region-index+))
-        (maxr 0) )
-    (declare (-int-) maxr)
-    (let ((msrg (idx-storage mask)))
-      (for* (i 0 (storage-nelems msrg))
-        (let ((r (msrg i)))
-          (declare (-int-) i r)
-          (setq maxr (max maxr r))
-          (incr (h r)) )))
-    (idx-trim h 0 0 (+ maxr 1)) ))
+  (let ((h (int-array (+ (max-region-index mask) 1)))
+        (msrg (idx-storage mask)) )
+    (for* (i 0 (storage-nelems msrg))
+      (let ((r (msrg i)))
+        (declare (-int-) i r)
+        (incr (h r)) ))
+    h))
 
 
 ;; helper for colorizable-vertex-ordering
@@ -334,7 +341,7 @@
     (==> five insert 5)
     
     ;; create the mapping
-    (while (> i 0)
+    (while (>= i 0)
       (declare (-int-) i)
       (let ((v (abs (ord i))) (cols (deepcopy five)))
         (do-set (u (==> rag neighbors v))
@@ -363,13 +370,14 @@
 
 (dhc-make ()
           frame-mask
+          max-region-index
+          enlarge-bounding-boxes!
           region-bounding-boxes
           region-adjacency-graph*
           normalize-mask!
           remove-isolated-regions!
           total-boundary-length
           region-size-histogram
-          max-region-index
           remove-vertex-and-update-heap
           colorizable-vertex-ordering
           colorize-mask
