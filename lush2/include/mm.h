@@ -99,6 +99,8 @@ void    mm_prof_stop(int *);             // stop profiling and write data
 char  **mm_prof_key(void);               // make key for profile data
 
 /* MACROS */
+#define MM_INIT(n,nf,f)         { mm_record_cstack_ptr(); mm_init(n,nf,f); }
+
 #define MM_MARK(p)              { if (p) _mm_mark(p); }
 #define MM_REGTYPE(n,s,c,m,f)   mm_regtype(n, s, (clear_func_t *)c, (mark_func_t *)m, (finalize_func_t *)f)
 #define MM_ROOT(p)              mm_root(&p)
@@ -115,6 +117,7 @@ char  **mm_prof_key(void);               // make key for profile data
 #define MM_PAUSEGC              bool __mm_pausegc = mm_begin_nogc(true)
 #define MM_PAUSEGC_END          mm_end_nogc(__mm_pausegc)
 
+void    mm_record_cstack_ptr(void);
 void    mm_anchor(const void *);
 bool    mm_begin_nogc(bool);
 void    mm_end_nogc(bool);

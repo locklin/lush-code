@@ -208,6 +208,8 @@ static mt_t       marking_type = mt_undefined;
 static const void *marking_object = NULL;
 static FILE *     stdlog = NULL;
 bool              mm_debug_enabled = false;
+static void      *cstack_ptr_high = NULL;
+static void      *cstack_ptr_low = NULL;
 
 /* transient object stack */
 typedef const void    *stack_elem_t; 
@@ -795,7 +797,13 @@ static void collect_prologue(void)
    for (int n = 0; n < man_t; n++)
       sort_poplar(n);
    assert(man_k == man_last);
-
+   
+   if (cstack_ptr_high) {
+      char here;
+      cstack_ptr_low = &here;
+      assert(cstack_ptr_low < cstack_ptr_high);
+   }
+   
    collect_in_progress = true;
    if (mm_debug_enabled) {
       debug("%dth collect after %d allocations:\n",
@@ -876,6 +884,9 @@ static void __mm_push(const void *p)
 
 void _mm_push(const void *p)
 {
+   if (cstack_ptr_high)
+      if (cstack_ptr_low<=p && p<=cstack_ptr_high) // ignore objects on stack
+         return;
    if (live(p))
       return;
    else
@@ -940,6 +951,10 @@ static void trace_from_stack(void)
 process_stack:
    while (!empty()) {
       const void *p = marking_object = pop();
+      if (cstack_ptr_high) {
+         if (cstack_ptr_low<=p && p<=cstack_ptr_high) // ignore objects on stack
+            continue;
+      }
       mt_t t = marking_type = mm_typeof(p);
       if (types[t].mark)
          types[t].mark(p);
@@ -2069,6 +2084,11 @@ static void clear_refs(void **p, size_t s)
    memset(p, 0, s);
 }
 
+void mm_record_cstack_ptr(void)
+{
+   char here;
+   cstack_ptr_high = &here;
+}
 
 void mm_init(int npages, notify_func_t *clnotify, FILE *log)
 {
