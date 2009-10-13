@@ -1492,6 +1492,7 @@ void mm_manage(const void *p)
       }
    add_managed(p);
    MARK_BLOB(managed[man_last]);
+   mm_anchor(p);
 }
 
 
