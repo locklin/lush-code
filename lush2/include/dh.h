@@ -142,7 +142,7 @@ typedef struct s_dhrecord
   enum dht_type op;	    /* Type of the record */
   short access;             /* Type of access */
   short ndim;		    /* number of dimensions/fields */
-  char *name;               /* field name */
+  const char *name;         /* field name */
   void *arg;                /* field argument */
   struct s_dhrecord *end;   /* point on the next dhrecord. */
 } dhrecord;
@@ -325,12 +325,12 @@ struct dhclassdoc_s
   dhrecord *argdata;            /* points to the metainformation records */
   struct {
     dhclassdoc_t *ksuper;       /* dhclassdoc for the superclass */
-    char *lname;                /* string with the lisp class name */
-    char *cname;                /* string with the c class name 
+    const char *lname;          /* string with the lisp class name */
+    const char *cname;          /* string with the c class name 
                                    (prepend CClass_ or VClass_) */
-    char *v_name;               /* string with the name of the vtable 
+    const char *v_name;         /* string with the name of the vtable 
                                    (V_name_Rxxxxxxxx) */
-    char *k_name;               /* string with the name of the classdoc 
+    const char *k_name;         /* string with the name of the classdoc 
                                    (K_name_Rxxxxxxxx) */
     int size;                   /* data size */
     int nmet;                   /* number of methods */
