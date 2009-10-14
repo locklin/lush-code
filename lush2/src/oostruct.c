@@ -695,7 +695,6 @@ static object_t *_new_object(class_t *cl, struct CClass_object *cobj)
    if (cl->has_compiled_part) {
       if (cobj) {
          assert(cobj->Vtbl); /* if NULL, object has been destructed */
-         assert(cobj->__lcl==cl);
          obj->cptr = cobj;
          cobj->__lptr = obj;
          make_cref_slots(obj);
@@ -730,7 +729,7 @@ object_t *new_object(class_t *cl)
 
 object_t *object_from_cobject(struct CClass_object *cobj)
 {
-   ifn (cobj->__lcl->live)
+   ifn (cobj->Vtbl && cobj->Vtbl->Cdoc && cobj->Vtbl->Cdoc->lispdata.atclass)
       error(NIL, "attempt to access instance of unlinked class", NIL);
    assert(cobj->Vtbl);
    

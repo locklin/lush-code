@@ -1123,17 +1123,22 @@ static void clear_cobject(void *p, size_t n)
 
 static void mark_cobject(struct CClass_object *cobj)
 {
-   if (cobj->__lcl && cobj->__lcl->live && cobj->Vtbl) {
-      MM_MARK(cobj->__lcl);
-      if (cobj->Vtbl->__mark)
-         cobj->Vtbl->__mark(cobj);
+   if (cobj->Vtbl) {
+      at *p = cobj->Vtbl->Cdoc->lispdata.atclass;
+      if (p) {
+         MM_MARK(Mptr(p));
+         if (cobj->Vtbl->__mark)
+            cobj->Vtbl->__mark(cobj);
+      }
    }
 }
 
 static bool finalize_cobject(struct CClass_object *cobj)
 {
-   if (cobj->__lcl->live && cobj->Vtbl) {
-      cobj->Vtbl->Cdestroy(cobj);
+   if (cobj->Vtbl) {
+      at *p = cobj->Vtbl->Cdoc->lispdata.atclass;
+      if (p)
+         cobj->Vtbl->Cdestroy(cobj);
    }
    return true;
 }
@@ -1148,7 +1153,6 @@ struct CClass_object *new_cobject(dhclassdoc_t *cdoc)
       error(NIL, "class is obsolete", cl->classname);
    struct CClass_object *cobj = mm_allocv(mt_cobject, cdoc->lispdata.size);
    cobj->Vtbl = cdoc->lispdata.vtable;
-   cobj->__lcl = cl;
    cobj->__lptr = NULL;
    return cobj;
 }

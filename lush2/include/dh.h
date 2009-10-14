@@ -310,7 +310,6 @@ struct VClass_object
 
 struct CClass_object {
   struct VClass_object *Vtbl;
-  class_t              *__lcl;
   object_t             *__lptr;
 };
 
