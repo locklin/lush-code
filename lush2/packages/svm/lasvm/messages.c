@@ -45,8 +45,8 @@ defaultproc(lasvm_message_t level, const char *fmt, va_list ap)
 #ifdef LUSH
   if (level <= LASVM_ERROR)
     {
-      extern void run_time_error(const char *s);
-      run_time_error("lasvm error");
+      extern void lush_error(const char *s);
+      lush_error("lasvm error");
     }
 #endif
   if (level <= LASVM_ERROR)

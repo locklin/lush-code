@@ -105,19 +105,19 @@ template <class S, class T> inline void clone(T*& dst, S* src, int n)
 #define Malloc(type,n) (type *)xmalloc((n)*sizeof(type))
 #define Realloc(type,p,n) (type *)xrealloc((void*)p, (n)*sizeof(type))
 
-extern "C" void run_time_error(const char *s);
+extern "C" void lush_error(const char *s);
 
 void *xmalloc(int n) 
 {
 	void *p = malloc(n);
-	if (! p) run_time_error("Out of memory");
+	if (! p) lush_error("Out of memory");
 	return p;
 }
 
 void *xrealloc(void *q, int n) 
 {
 	void *p = realloc(q, n);
-	if (! p) run_time_error("Out of memory");
+	if (! p) lush_error("Out of memory");
 	return p;
 }
 

@@ -32,7 +32,6 @@
 (libload "libidx/idx-ubyte")
 (libload "libc/libc")
 (libload "libc/make")
-(libload "libc/constants")
 (libload "kernel")
 
 ;; ----------------------------------------
@@ -76,13 +75,13 @@
 
 
 
-(defcconst "C_SVC" 0)
-(defcconst "NU_SVC" 1)
-(defcconst "ONE_CLASS" 2)
-(defcconst "EPSILON_SVR" 3)
-(defcconst "NU_SVR" 4)
+(defconstant C_SVC 0)
+(defconstant NU_SVC 1)
+(defconstant ONE_CLASS 2)
+(defconstant EPSILON_SVR 3)
+(defconstant NU_SVR 4)
 
-(defclass LibSVM Object
+(defclass LibSVM object
   ;; data
   ((-idx1- (-int-)) x)
   ((-idx1- (-double-)) y)
@@ -91,9 +90,9 @@
   ((-int-) svm_type)			; svm_train option -s
   ((-double-) cache_size)  		; svm_train option -m
   ((-double-) eps)			; svm_train option -e
-  ((-double-) C)                        ; svm_train option -c
+  ((-double-) c)                        ; svm_train option -c
   ((-idx1- (-double-)) weight)		; svm_train option -wi
-  ((-idx1- (-int-)) weight-label)	; svm_train option -wi
+  ((-idx1- (-int-)) weight_label)	; svm_train option -wi
   ((-double-) nu)			; svm_train option -n
   ((-double-) p)			; svm_train option -p
   ((-bool-) shrinking)			; svm_train option -h
@@ -105,8 +104,8 @@
   ((-gptr-) node2)
   ;; results
   ((-gptr-) model) 
-  ((-int-)  nr-class) 
-  ((-int-)  nr-sv) )
+  ((-int-)  nr_class) 
+  ((-int-)  nr_sv) )
 
 
 (defmethod LibSVM LibSVM(ik n)
@@ -116,14 +115,14 @@
   (setq y (double-array n))
   (setq kernel ik)
   (for (i 0 (1- n)) ((-int-) i) (x i i))
-  (setq svm-type @C_SVC)
-  (setq cache-size 256)
+  (setq svm_type C_SVC)
+  (setq cache_size 256)
   (setq eps 0.001)
   (setq c 1)
   (setq weight (double-array 1))
-  (setq weight-label (int-array 1))
+  (setq weight_label (int-array 1))
   (weight 0 1)
-  (weight-label 0 0)
+  (weight_label 0 0)
   (setq nu 0.5)
   (setq p 0.1)
   (setq shrinking t)
@@ -133,8 +132,8 @@
   (setq node1 (gptr ()))
   (setq node2 (gptr ()))
   (setq model (gptr ())) 
-  (setq nr-class 0)
-  (setq nr-sv 0)
+  (setq nr_class 0)
+  (setq nr_sv 0)
   () )
 
 (defmethod LibSVM cleanup()
@@ -170,13 +169,13 @@
   (==> this cleanup)
   (when (<> (idx-dim x 0) (idx-dim y 0))
     (error "Matrix x and y have different sizes") )
-  (when (<> (idx-dim weight 0) (idx-dim weight-label 0))
+  (when (<> (idx-dim weight 0) (idx-dim weight_label 0))
     (error "Matrix weight and weight-label have different sizes") )
   (when (<> (idx-modulo y 0) 1)
     (error "Matrix y must be contiguous") )
   (when (<> (idx-modulo weight 0) 1)
     (error "Matrix weight must be contiguous") )
-  (when (<> (idx-modulo weight-label 0) 1)
+  (when (<> (idx-modulo weight_label 0) 1)
     (error "Matrix weight-label must be contiguous") )
 
   #{{
@@ -219,7 +218,7 @@
     problem->x = node2;
 
     const char *s = svm_check_parameter(problem, param);
-    if (s) run_time_error((char*)s);
+    if (s) lush_error((char*)s);
     svm_model *model = svm_train(problem, param);
     $model = model;
     $nr_class = model->nr_class;
@@ -317,9 +316,9 @@
 
 (defmethod LibSVM get-expansion-n(n)
   ((-int-) n)
-  (when (or (= svm-type @ONE_CLASS)
-	    (= svm-type @EPSILON_SVR)
-	    (= svm-type @NU_SVR) )
+  (when (or (= svm_type ONE_CLASS)
+	    (= svm_type EPSILON_SVR)
+	    (= svm_type NU_SVR) )
     (error "Use get-expansion with one-class-svm or sv-regressions") )
   (let ((nsv (==> this get-nsv))
 	(posclass 0)
@@ -330,20 +329,20 @@
 	(cj 0) )
     ((-int-) posclass negclass si sj ci cj)
     ;; search partition
-    (let ((start (int-array nr-class)))
+    (let ((start (int-array nr_class)))
       (start 0 0)
-      (for (i 1 (1- nr-class))
+      (for (i 1 (1- nr_class))
 	   ((-int-) i)
 	   (start i (+ (start (1- i)) (nsv (1- i)))) )
       (let ((p 0)
-	    (a (1- nr-class)))
+	    (a (1- nr_class)))
 	((-int-) p a)
 	(while (and (> a 0) (>= n (+ p a)))
 	  (incr p a)
 	  (incr a -1) 
 	  (incr posclass) )
 	(setq negclass (+ 1 posclass (- n p))) )
-      (when (or (>= posclass nr-class) (>= negclass nr-class))
+      (when (or (>= posclass nr_class) (>= negclass nr_class))
 	(error "Invalid argument to get-expansion-n") )
       (setq si (start posclass))
       (setq sj (start negclass))
@@ -374,7 +373,7 @@
 	r ) ) ) )
 
 (defmethod LibSVM get-expansion()
-  (when (<> nr-class 2)
+  (when (<> nr_class 2)
     (error "Use get-expansion-n for multiclass c-svm or nu-svm"))
   (let ((r (new SVMExpansion kernel (==> this get-sv)
 		(select (==> this get-alpha) 0 0) )))
@@ -394,7 +393,7 @@
 (with-namespace lush1-
 
 (let ((cmd (regex-subst "\\$CC" "$CXX" dhc-make-command))
-      (lm (new lushmake (concat-fname (dirname file-being-loaded) "libsvm"))) )
+      (lm (new LushMake (concat-fname (dirname file-being-loaded) "libsvm"))) )
   (==> lm rule "svm.o" '("svm.cpp" "svm.h") cmd)
   (==> lm make)
   (==> lm load) 
@@ -407,7 +406,7 @@
          #{
    	   static double unikernel(const svm_node *x, const svm_node *y) 
 	   {
-	     CClass_svmkernel * k = (CClass_svmkernel*)(x->pdata);
+	     CClass_SVMKernel * k = (CClass_SVMKernel*)(x->pdata);
 	     return (*k->Vtbl->M_call)(k, x->idata, y->idata);
 	   }
 	 #}
