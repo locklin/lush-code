@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: symbol.c,v 1.10 2006-02-20 16:04:00 leonb Exp $
+ * $Id: symbol.c,v 1.11 2009-10-16 16:07:05 leonb Exp $
  **********************************************************************/
 
 
@@ -59,9 +59,9 @@ struct alloc_root hash_name_alloc =
  */
 
 static struct hash_name *
-search_by_name(unsigned char *s, int mode)
+search_by_name(const unsigned char *s, int mode)
 {
-  unsigned char *ss;
+  const unsigned char *ss;
   unsigned long hash;
   struct hash_name **lasthn;
   struct hash_name *hn;
@@ -129,7 +129,7 @@ kill_name(struct hash_name *hn)
  */
 
 at *
-named(char *s)
+named(const char *s)
 {
   return new_symbol(s);
 }
@@ -147,7 +147,7 @@ DX(xnamed)
  */
 
 at *
-namedclean(char *n)
+namedclean(const char *n)
 {
   at *ans;
   char *s, *d;
@@ -511,7 +511,7 @@ symbol_pop(at *p)
  */
 
 at *
-new_symbol(char *s)
+new_symbol(const char *s)
 {
   at *p;
   struct symbol *symb;
@@ -520,7 +520,7 @@ new_symbol(char *s)
   if (s[0] == ':' && s[1] == ':')
     error(s, "belongs to a reserved package... ", NIL);
 
-  hn = search_by_name((unsigned char *) s, (int) 1);
+  hn = search_by_name((const unsigned char *) s, (int) 1);
   if (hn->named) {		/* symbol exists	 */
     LOCK(hn->named);		/* don't create it !	 */
     return hn->named;
@@ -689,7 +689,7 @@ var_lock(at *p)
 
 
 at *
-var_define(char *s)
+var_define(const char *s)
 {
   at *p;
   struct symbol *symb;

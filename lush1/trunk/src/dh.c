@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.c,v 1.20 2005-01-17 18:23:25 leonb Exp $
+ * $Id: dh.c,v 1.21 2009-10-16 16:07:05 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -361,8 +361,8 @@ new_dhclass(at *name, dhclassdoc_t *kdata)
 
 
 /* Remove extra chars added by enclose_in_string */
-static char *
-strclean(char *s)
+static const char *
+strclean(const char *s)
 {
   if (s != 0)
     while (*s && (*s==' ' || *s=='\t' || *s=='\n' || *s=='\r'))

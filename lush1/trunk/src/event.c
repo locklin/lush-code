@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.21 2004-02-04 19:52:17 leonb Exp $
+ * $Id: event.c,v 1.22 2009-10-16 16:07:05 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -780,7 +780,7 @@ event_to_list(int event, int xd, int yd, int xu, int yu, int *pmods)
 
 void
 enqueue_eventdesc(at *handler, int event, 
-                  int xd, int yd, int xu, int yu, char *desc)
+                  int xd, int yd, int xu, int yu, const char *desc)
 {
   int mods = -1;
   at *ev = event_to_list(event, xd, yd, xu, yu, &mods);

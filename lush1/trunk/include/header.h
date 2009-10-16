@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.69 2008-12-01 19:53:27 leonb Exp $
+ * $Id: header.h,v 1.70 2009-10-16 16:07:04 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -98,7 +98,7 @@ typedef int intg;
 #ifdef UNIX
 /* interruptions */
 extern TLAPI int break_attempt;
-TLAPI void lastchance(char *s) no_return;
+TLAPI void lastchance(const char *s) no_return;
 /* unix hooks */
 void init_unix(void);
 void fini_unix(void);
@@ -367,12 +367,12 @@ LUSHAPI void del_finalizers(void*);
 TLAPI void garbage(int flag);
 
 /* Allocation functions */
-LUSHAPI void *lush_malloc(int,char*,int);
-LUSHAPI void *lush_calloc(int,int,char*,int);
-LUSHAPI void *lush_realloc(gptr,int,char*,int);
-LUSHAPI void lush_free(gptr,char*,int);
-LUSHAPI void lush_cfree(gptr,char*,int);
-LUSHAPI void set_malloc_file(char*);
+LUSHAPI void *lush_malloc(int,const char*,int);
+LUSHAPI void *lush_calloc(int,int,const char*,int);
+LUSHAPI void *lush_realloc(gptr,int,const char*,int);
+LUSHAPI void lush_free(gptr,const char*,int);
+LUSHAPI void lush_cfree(gptr,const char*,int);
+LUSHAPI void set_malloc_file(const char*);
 
 /* Malloc debug file (from sn3.2) */
 #define malloc(x)    lush_malloc(x,__FILE__,__LINE__)
@@ -430,9 +430,9 @@ struct symbol {			/* each symbol is an external AT which */
 #define SYMBOL_UNLOCKED 1
 
 
-TLAPI at *new_symbol(char *s);
-TLAPI at *named(char *s);
-TLAPI at *namedclean(char *s);
+TLAPI at *new_symbol(const char *s);
+TLAPI at *named(const char *s);
+TLAPI at *namedclean(const char *s);
 TLAPI char *nameof(at *p);
 TLAPI void symbol_push (at *p, at *q);
 TLAPI void symbol_pop (at *p);
@@ -444,7 +444,7 @@ TLAPI void var_set(at *p, at *q);
 TLAPI void var_SET(at *p, at *q); /* Set variable regardless of lock mode */
 TLAPI void var_lock(at *p);
 TLAPI at *var_get(at *p);
-TLAPI at *var_define(char *s);
+TLAPI at *var_define(const char *s);
 
 
 
@@ -470,8 +470,8 @@ extern TLAPI struct error_doc {
   /* contains info for printing error messages */
   at *this_call;
   at *error_call;
-  char *error_prefix;
-  char *error_text;
+  const char *error_prefix;
+  const char *error_text;
   at *error_suffix;
   short debug_tab;
   short ready_to_an_error;
@@ -504,8 +504,8 @@ TLAPI void context_push(struct context *newc);
 TLAPI void context_pop(void);
 TLAPI int  recur_push_ok(struct recur_elt *elt, void *call, at *p);
 TLAPI void recur_pop(struct recur_elt *elt);
-TLAPI void toplevel(char *in, char *out, char *new_prompt);
-TLAPI void error(char *prefix, char *text, at *suffix) no_return;
+TLAPI void toplevel(const char *in, const char *out, const char *new_prompt);
+TLAPI void error(const char *prefix, const char *text, at *suffix) no_return;
 TLAPI void user_break(char *s);
 TLAPI void init_lush (char *program_name);
 TLAPI void start_lisp(int argc, char **argv, int quiet);
@@ -653,31 +653,31 @@ extern TLAPI char file_name[];
 #define OPEN_READ(f,s)  new_extern(&file_R_class,open_read(f,s))
 #define OPEN_WRITE(f,s) new_extern(&file_W_class,open_write(f,s))
 
-TLAPI char *cwd(char *s);
-TLAPI at *files(char *s);
-TLAPI int dirp(char *s);
-TLAPI int filep(char *s);
-TLAPI char *dirname(char *fname);
-TLAPI char *basename(char *fname, char *suffix);
-TLAPI char *concat_fname(char *from, char *fname);
-TLAPI char *relative_fname(char *from, char *fname);
+TLAPI char *cwd(const char *s);
+TLAPI at *files(const char *s);
+TLAPI int dirp(const char *s);
+TLAPI int filep(const char *s);
+TLAPI const char *dirname(const char *fname);
+TLAPI const char *basename(const char *fname, const char *suffix);
+TLAPI const char *concat_fname(const char *from, const char *fname);
+TLAPI const char *relative_fname(const char *from, const char *fname);
 TLAPI void clean_tmp_files(void);
-TLAPI char *tmpname(char *s, char *suffix);
-TLAPI char *search_file(char *s, char *suffixes);
+TLAPI const char *tmpname(const char *s, const char *suffix);
+TLAPI const char *search_file(const char *s, const char *suffixes);
 TLAPI void test_file_error(FILE *f);
-TLAPI FILE *open_read(char *s, char *suffixes);
-TLAPI FILE *open_write(char *s, char *suffixes);
-TLAPI FILE *open_append(char *s, char *suffixes);
-TLAPI FILE *attempt_open_read(char *s, char *suffixes);
-TLAPI FILE *attempt_open_write(char *s, char *suffixes);
-TLAPI FILE *attempt_open_append(char *s, char *suffixes);
+TLAPI FILE *open_read(const char *s, const char *suffixes);
+TLAPI FILE *open_write(const char *s, const char *suffixes);
+TLAPI FILE *open_append(const char *s, const char *suffixes);
+TLAPI FILE *attempt_open_read(const char *s, const char *suffixes);
+TLAPI FILE *attempt_open_write(const char *s, const char *suffixes);
+TLAPI FILE *attempt_open_append(const char *s, const char *suffixes);
 TLAPI void file_close(FILE *f);
-TLAPI void set_script(char *s);
+TLAPI void set_script(const char *s);
 TLAPI int read4(FILE *f);
 TLAPI int write4(FILE *f, unsigned int l);
 TLAPI off_t file_size(FILE *f);
 #ifndef HAVE_STRERROR
-TLAPI char *strerror(int errno);
+TLAPI const char *strerror(int errno);
 #endif
 
 
@@ -689,7 +689,7 @@ extern TLAPI char *line_buffer;
 extern TLAPI char *prompt_string;
 
 TLAPI void print_char (char c);
-TLAPI void print_string(char *s);
+TLAPI void print_string(const char *s);
 TLAPI void print_list(at *list);
 TLAPI void print_tab(int n);
 TLAPI char *pname(at *l);
@@ -698,7 +698,7 @@ TLAPI char read_char(void);
 TLAPI char next_char(void);
 TLAPI int  ask (char *t);
 TLAPI char *dmc(char *s, at *l);
-TLAPI char skip_char(char *s);
+TLAPI char skip_char(const char *s);
 TLAPI char skip_to_expr(void);
 TLAPI at *read_list(void);
 
@@ -785,20 +785,20 @@ TLAPI void setslot(at**, at*, at*);
 
 extern LUSHAPI class module_class;
 
-TLAPI void class_define(char *name, class *cl);
-TLAPI void dx_define(char *name, at *(*addr) (int, at **));
-TLAPI void dy_define(char *name, at *(*addr) (at *));
-LUSHAPI void dxmethod_define(class *cl, char *name, at *(*addr) (int, at **));
-LUSHAPI void dymethod_define(class *cl, char *name, at *(*addr) (at *));
+TLAPI void class_define(const char *name, class *cl);
+TLAPI void dx_define(const char *name, at *(*addr) (int, at **));
+TLAPI void dy_define(const char *name, at *(*addr) (at *));
+LUSHAPI void dxmethod_define(class *cl, const char *name, at *(*addr) (int, at **));
+LUSHAPI void dymethod_define(class *cl, const char *name, at *(*addr) (at *));
 
-LUSHAPI void dhclass_define(char *name, dhclassdoc_t *kclass);
-LUSHAPI void dh_define(char *name, dhdoc_t *kname);
-LUSHAPI void dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname);
+LUSHAPI void dhclass_define(const char *name, dhclassdoc_t *kclass);
+LUSHAPI void dh_define(const char *name, dhdoc_t *kname);
+LUSHAPI void dhmethod_define(dhclassdoc_t *kclass, const char *name, dhdoc_t *kname);
 
 LUSHAPI void check_primitive(at *prim, void *info);
 LUSHAPI at *find_primitive(at *module, at *name);
 LUSHAPI at *module_list(void);
-LUSHAPI at *module_load(char *filename, at *hook);
+LUSHAPI at *module_load(const char *filename, at *hook);
 LUSHAPI void module_unload(at *atmodule);
 
 
@@ -1286,7 +1286,7 @@ LUSHAPI at * cside_find_litem(void *cptr);
 
 extern LUSHAPI int run_time_error_flag;
 extern LUSHAPI jmp_buf run_time_error_jump;
-LUSHAPI void run_time_error(char *s);
+LUSHAPI void run_time_error(const char *s);
 
 
 /* EVENT.H ----------------------------------------------------- */
@@ -1314,7 +1314,7 @@ LUSHAPI void  process_pending_events(void);
 
 /* Compatible event queue functions */
 LUSHAPI void  enqueue_event(at*, int event, int, int, int, int);
-LUSHAPI void  enqueue_eventdesc(at*, int event, int, int, int, int, char*);
+LUSHAPI void  enqueue_eventdesc(at*, int event, int, int, int, int, const char*);
 #define EVENT_NONE        (-1L)
 #define EVENT_ASCII_MIN   (0L)
 #define EVENT_ASCII_MAX   (255L)

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.27 2007-04-02 21:58:49 leonb Exp $
+ * $Id: fileio.c,v 1.28 2009-10-16 16:07:05 leonb Exp $
  **********************************************************************/
 
 
@@ -102,7 +102,7 @@ char lushdir_name[FILELEN];
 /** cwd **/
 
 char *
-cwd(char *s)
+cwd(const char *s)
 {
 #ifdef UNIX
   if (s)
@@ -142,7 +142,7 @@ DX(xchdir)
 /** files **/
 
 at *
-files(char *s)
+files(const char *s)
 {
   at *ans = NIL;
   at **where = &ans;
@@ -214,7 +214,7 @@ DX(xfiles)
 
 
 static int 
-makedir(char *s)
+makedir(const char *s)
 {
 #ifdef UNIX
   return mkdir(s,0777);
@@ -235,7 +235,7 @@ DX(xmkdir)
 
 
 static int 
-deletefile(char *s)
+deletefile(const char *s)
 {
 #ifdef WIN32
    if (dirp(s))
@@ -319,7 +319,7 @@ DX(xcopyfile)
  * using O_EXCL */
    
 static int 
-lockfile(char *filename)
+lockfile(const char *filename)
 {
   int fd;
   time_t tl;
@@ -384,7 +384,7 @@ DX(xlockfile)
 /** dirp **/
 
 int 
-dirp(char *s)
+dirp(const char *s)
 {
   /* UNIX implementation */
 #ifdef UNIX
@@ -426,7 +426,7 @@ DX(xdirp)
 /** filep **/
 
 int 
-filep(char *s)
+filep(const char *s)
 {
 #ifdef UNIX
   struct stat buf;
@@ -545,13 +545,13 @@ strcpyif(char *d, const char *s)
 
 /** dirname **/
 
-char *
-dirname(char *fname)
+const char *
+dirname(const char *fname)
 {
   /* UNIX implementation */  
 #ifdef UNIX
-  char *s = fname;
-  char *p = 0;
+  const char *s = fname;
+  const char *p = 0;
   char *q = string_buffer;
   while (*s) {
     if (s[0]=='/' && s[1])
@@ -585,7 +585,7 @@ dirname(char *fname)
   }
   /* Search last non terminal / or \ */
   p = 0;
-  s = fname;
+  s = (char*)fname;
   while (*s) {
     if (s[0]=='\\' || s[0]=='/')
       if (s[1] && s[1]!='/' && s[1]!='\\')
@@ -641,8 +641,8 @@ DX(xdirname)
 
 /** basename **/
 
-char *
-basename(char *fname, char *suffix)
+const char *
+basename(const char *fname, const char *suffix)
 {
   /* UNIX implementation */
 #ifdef UNIX
@@ -674,8 +674,8 @@ basename(char *fname, char *suffix)
   /* WIN32 implementation */
 #ifdef WIN32
   int sl;
-  char *p = fname;
-  char *s = fname;
+  char *p = (char*)fname;
+  char *s = (char*)fname;
   /* Special cases */
   if (fname[0] && fname[1]==':') {
     strcpyif(string_buffer,fname);
@@ -729,8 +729,8 @@ DX(xbasename)
 
 /** concat_fname **/
 
-char *
-concat_fname(char *from, char *fname)
+const char *
+concat_fname(const char *from, const char *fname)
 {
   /* UNIX implementation */
 #ifdef UNIX
@@ -862,8 +862,8 @@ DX(xconcat_fname)
 
 /** relative_fname **/
 
-char *
-relative_fname(char *from, char *fname)
+const char *
+relative_fname(const char *from, const char *fname)
 {
   int fromlen;
   from = concat_fname(NULL,from);
@@ -900,7 +900,7 @@ relative_fname(char *from, char *fname)
 
 DX(xrelative_fname)
 {
-  char *s;
+  const char *s;
   ARG_NUMBER(2);
   ARG_EVAL(1);
   ARG_EVAL(2);
@@ -934,12 +934,12 @@ clean_tmp_files(void)
   }
 }
 
-char *
-tmpname(char *dir, char *suffix)
+const char *
+tmpname(const char *dir, const char *suffix)
 {
   char buffer[64];
-  char *tmp;
-  char *dot;
+  const char *tmp;
+  const char *dot;
   struct tmpname *tm;
   static int uniq = 0;
   int fd;
@@ -1076,7 +1076,7 @@ search_lushdir(char *progname)
 
   /* Searches auxilliary files */
   {
-    static char *trials[] = {
+    static const char *trials[] = {
       "stdenv.dump",
       "sys/stdenv.dump",
       "sys/stdenv.lshc",
@@ -1100,11 +1100,11 @@ search_lushdir(char *progname)
 #endif
       0L,
     };
-    char **st = trials;
+    const char **st = trials;
     strcpy(file_name,dirname(file_name));
     while (*st) 
       {
-	char *s = concat_fname(file_name,*st++);
+	const char *s = concat_fname(file_name,*st++);
 #ifdef DEBUG_DIRSEARCH
 	printf("D %s\n",s);
 #endif
@@ -1136,10 +1136,11 @@ search_lushdir(char *progname)
  *   
  */
 
-static char *
-add_suffix(char *q, char *suffixes)
+static const char *
+add_suffix(const char *q, const char *suffixes)
 {
-  char *s;
+  char *d;
+  const char *s;
   /* Trivial suffixes */
   if (!suffixes)
     return q;
@@ -1173,10 +1174,10 @@ add_suffix(char *q, char *suffixes)
   if (strlen(q) + (s - suffixes) > FILELEN - 4)
     error(NIL,"Filename is too long",NIL);
   strcpy(file_name, q);
-  q = file_name + strlen(file_name);
-  *q++ = '.';
-  strncpy(q, suffixes, s - suffixes);
-  q[s-suffixes] = 0;
+  d = file_name + strlen(file_name);
+  *d++ = '.';
+  strncpy(d, suffixes, s - suffixes);
+  d[s-suffixes] = 0;
   return file_name;
 }
 
@@ -1190,7 +1191,7 @@ add_suffix(char *q, char *suffixes)
  */
 
 static int
-test_suffixes(char *suffixes)
+test_suffixes(const char *suffixes)
 {
   if (!suffixes)
   {
@@ -1218,9 +1219,9 @@ test_suffixes(char *suffixes)
   else
   {
     /* New style suffix */
-    char *s = suffixes;
+    const char *s = suffixes;
+    const char *r;
     char *q = file_name + strlen(file_name);
-    char *r;
     /* -- loop over suffix string */
     while (s)
     {
@@ -1251,10 +1252,10 @@ test_suffixes(char *suffixes)
  * Returns the full filename in a static area.
  */
 
-char *
-search_file(char *ss, char *suffixes)
+const char *
+search_file(const char *ss, const char *suffixes)
 {
-  char *c;
+  const char *c;
   char s[FILELEN];
   
   /* -- copy ss into static buffer */
@@ -1306,8 +1307,8 @@ search_file(char *ss, char *suffixes)
 
 DX(xfilepath)
 {
-  char *suf = "|.lshc|.snc|.tlc|.lsh|.sn|.tl";
-  char *ans;
+  const char *suf = "|.lshc|.snc|.tlc|.lsh|.sn|.tl";
+  const char *ans;
   ALL_ARGS_EVAL;
   if (arg_number!=1)
   {
@@ -1335,7 +1336,7 @@ int stdin_errors = 0;
 int stdout_errors = 0;
 
 #ifndef HAVE_STRERROR
-char *
+const char *
 strerror(int errno)
 {
 
@@ -1406,10 +1407,10 @@ test_file_error(FILE *f)
  */
 
 FILE *
-attempt_open_read(char *s, char *suffixes)
+attempt_open_read(const char *s, const char *suffixes)
 {
   FILE *f;
-  char *name;
+  const char *name;
 
   /*** spaces in name ***/
   while (isspace((int)(unsigned char)*s))
@@ -1442,7 +1443,7 @@ attempt_open_read(char *s, char *suffixes)
 
 
 FILE *
-open_read(char *s, char *suffixes)
+open_read(const char *s, const char *suffixes)
 {
   FILE *f;
   
@@ -1463,7 +1464,7 @@ open_read(char *s, char *suffixes)
  */
 
 FILE *
-attempt_open_write(char *s, char *suffixes)
+attempt_open_write(const char *s, const char *suffixes)
 {
   FILE *f;
 
@@ -1514,7 +1515,7 @@ attempt_open_write(char *s, char *suffixes)
 
 
 FILE *
-open_write(char *s, char *suffixes)
+open_write(const char *s, const char *suffixes)
 {
   FILE *f;
   
@@ -1534,7 +1535,7 @@ open_write(char *s, char *suffixes)
  */
 
 FILE *
-attempt_open_append(char *s, char *suffixes)
+attempt_open_append(const char *s, const char *suffixes)
 {
   FILE *f;
 
@@ -1580,7 +1581,7 @@ attempt_open_append(char *s, char *suffixes)
 
 
 FILE *
-open_append(char *s, char *suffixes)
+open_append(const char *s, const char *suffixes)
 {
   FILE *f;
   
@@ -1700,7 +1701,7 @@ class file_W_class =
  */
 
 void 
-set_script(char *s)
+set_script(const char *s)
 {
   if (error_doc.script_file) {
     fputs("\n\n *** End of script ***\n", error_doc.script_file);
@@ -2019,7 +2020,7 @@ void
 init_fileio(char *program_name)
 {
   at *q;
-  char *s;
+  const char *s;
 
   /** SETUP PATH */
   at_path = var_define("*PATH");

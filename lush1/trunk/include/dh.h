@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dh.h,v 1.20 2004-10-23 01:23:55 leonb Exp $
+ * $Id: dh.h,v 1.21 2009-10-16 16:07:04 leonb Exp $
  **********************************************************************/
 #ifndef DH_H
 #define DH_H
@@ -126,7 +126,7 @@ typedef struct s_dhrecord
   enum dht_type op;	    /* Type of the record */
   short access;             /* Type of access */
   short ndim;		    /* number of dimensions/fields */
-  char *name;               /* field name */
+  const char *name;         /* field name */
   void *arg;                /* field argument */
   struct s_dhrecord *end;   /* point on the next dhrecord. */
 } dhrecord;
@@ -233,10 +233,10 @@ struct dhdoc_s
 {
   dhrecord *argdata;            /* points to the metainformation records */
   struct {
-    char *c_name;		/* string with the C_name */
-    char *m_name;		/* string with the M_name or nil */
+    const char *c_name;		/* string with the C_name */
+    const char *m_name;		/* string with the M_name or nil */
     dharg (*call)(dharg *);	/* pointer to the X_name function */
-    char *k_name;               /* string with the K_name_Rxxxxxxxx */
+    const char *k_name;         /* string with the K_name_Rxxxxxxxx */
     dhdoc_t *dhtest;            /* pointer to the dhdoc for the testfunc */ 
   } lispdata;
 };
@@ -298,12 +298,12 @@ struct dhclassdoc_s
   dhrecord *argdata;            /* points to the metainformation records */
   struct {
     dhclassdoc_t *ksuper;       /* dhclassdoc for the superclass */
-    char *lname;                /* string with the lisp class name */
-    char *cname;                /* string with the c class name 
+    const char *lname;          /* string with the lisp class name */
+    const char *cname;          /* string with the c class name 
                                    (prepend CClass_ or VClass_) */
-    char *v_name;               /* string with the name of the vtable 
+    const char *v_name;         /* string with the name of the vtable 
                                    (V_name_Rxxxxxxxx) */
-    char *k_name;               /* string with the name of the classdoc 
+    const char *k_name;         /* string with the name of the classdoc 
                                    (K_name_Rxxxxxxxx) */
     int size;                   /* data size */
     int nmet;                   /* number of methods */

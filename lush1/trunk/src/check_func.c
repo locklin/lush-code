@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.c,v 1.6 2004-04-16 14:42:58 leonb Exp $
+ * $Id: check_func.c,v 1.7 2009-10-16 16:07:05 leonb Exp $
  **********************************************************************/
 
 /* Functions that check the dimensions of index parameters */
@@ -93,7 +93,7 @@ print_dh_recent(int n, FILE *f)
 void print_dh_trace_stack(void)
 {
     struct dh_trace_stack *st = dh_trace_root;
-    char *lastinfo;
+    const char *lastinfo;
     int lastcount;
     
     /* Safely called from compiled code or from RUN_TIME_ERROR. */
@@ -166,7 +166,7 @@ check_obj_class(void *obj, void *classvtable)
  *****************************************************************************/
 
 void
-srg_resize_compiled(struct srg *sr, int new_size, char *file, int line) 
+srg_resize_compiled(struct srg *sr, int new_size, const char *file, int line) 
 {
   if(sr->flags & STS_MALLOC)  { 
     char *malloc_ptr; 
@@ -196,7 +196,7 @@ srg_resize_compiled(struct srg *sr, int new_size, char *file, int line)
 }
 
 void
-srg_resize(struct srg *sr, int new_size, char *file, int line) 
+srg_resize(struct srg *sr, int new_size, const char *file, int line) 
 {
 #ifndef NOLISP
   if(sr->flags & STS_MALLOC) { 

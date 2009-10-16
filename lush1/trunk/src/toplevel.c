@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: toplevel.c,v 1.40 2008-05-26 17:22:23 leonb Exp $
+ * $Id: toplevel.c,v 1.41 2009-10-16 16:07:05 leonb Exp $
  **********************************************************************/
 
 
@@ -105,8 +105,8 @@ int isatty (int);
 extern int compute_bump_active;
 
 /* From DUMP.C */
-extern int isdump (char *s);
-extern void undump (char *s);
+extern int isdump (const char *s);
+extern void undump (const char *s);
 
 /* From BINARY.C */
 extern int in_bwrite;
@@ -228,7 +228,7 @@ start_lisp(int argc, char **argv, int quietflag)
   at *p, *q;
   at **where;
   int i;
-  char *s, *r;
+  const char *s, *r;
   error_doc.script_file = NIL;
   error_doc.script_mode = SCRIPT_OFF;
   error_doc.error_prefix = NIL;
@@ -485,7 +485,7 @@ static int discard_flag;
 static int exit_flag = 0;
 
 void 
-toplevel(char *in, char *out, char *prompts)
+toplevel(const char *in, const char *out, const char *prompts)
 {
   FILE *f1, *f2;
   at *ans = NIL;
@@ -687,10 +687,10 @@ static char *
 error_text(void)
 {
   extern char *print_buffer;
-  char *prefix = error_doc.error_prefix;
-  char *prefixsep = " : ";
-  char *text = error_doc.error_text;
-  char *textsep = " : ";
+  const char *prefix = error_doc.error_prefix;
+  const char *prefixsep = " : ";
+  const char *text = error_doc.error_text;
+  const char *textsep = " : ";
   at *suffix = error_doc.error_suffix;
   at *call = error_doc.error_call;
   
@@ -771,7 +771,7 @@ user_break(char *s)
 
 
 void 
-error(char *prefix, char *text, at *suffix)
+error(const char *prefix, const char *text, at *suffix)
 {
   if (run_time_error_flag)
     run_time_error(text);

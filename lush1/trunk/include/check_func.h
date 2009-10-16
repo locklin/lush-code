@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: check_func.h,v 1.10 2004-10-23 01:23:55 leonb Exp $
+ * $Id: check_func.h,v 1.11 2009-10-16 16:07:04 leonb Exp $
  **********************************************************************/
 
 #ifndef CHECK_FUNC_H
@@ -49,7 +49,7 @@ extern "C" {
 
 
 struct dh_trace_stack {
-    char *info;
+    const char *info;
     struct dh_trace_stack *next;
 };
 
@@ -127,8 +127,8 @@ LUSHAPI int  test_obj_class(void *obj, void *classvtable);
 /* ---------------------------------------- */
 
 
-LUSHAPI void srg_resize_compiled(struct srg* ,intg ,char *, int);
-LUSHAPI void srg_resize(struct srg *, intg , char *, int );
+LUSHAPI void srg_resize_compiled(struct srg* ,intg, const char *, int);
+LUSHAPI void srg_resize(struct srg *, intg , const char *, int );
 LUSHAPI void srg_free(struct srg *);
 
 #define Mis_sized(i1) \

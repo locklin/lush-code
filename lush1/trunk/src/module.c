@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.79 2007-12-20 03:46:18 leonb Exp $
+ * $Id: module.c,v 1.80 2009-10-16 16:07:05 leonb Exp $
  **********************************************************************/
 
 
@@ -542,7 +542,7 @@ module_serialize(at **pp, int code)
       m = (*pp)->Object;
       fname = "";
       if (m != &root)
-        if (! (fname = relative_fname(lushdir_name, m->filename)))
+        if (! (fname = (char*)relative_fname(lushdir_name, m->filename)))
           fname = m->filename;
     }
   serialize_string(&fname, code, -1);
@@ -1215,9 +1215,9 @@ DX(xmodule_unload)
 
 
 at *
-module_load(char *filename, at *hook)
+module_load(const char *fname, at *hook)
 {
-  char *l;
+  const char *l;
   int len;
   at *ans;
   struct module *m;
@@ -1226,7 +1226,7 @@ module_load(char *filename, at *hook)
   dlopen_handle_t handle = 0;
 #endif
   /* Check that file exists */
-  filename = concat_fname(NULL, filename);
+  const char *filename = concat_fname(NULL, fname);
   ans = new_string(filename);
   filename = SADD(ans->Object);
   if (! filep(filename))
@@ -1275,7 +1275,7 @@ module_load(char *filename, at *hook)
   m->bundle.nsimage = 0;
   m->bundle.nsmodule = 0;
 #endif
-  m->filename = filename = strdup(filename);
+  filename = m->filename = strdup(filename);
   m->initname = 0;
   m->initaddr = 0;
   m->defs = 0;
@@ -1332,9 +1332,11 @@ module_load(char *filename, at *hook)
 #endif
   if (! m->initaddr)
     {
+      char *tmp;
       strcpy(string_buffer, "init_");
       strcat(string_buffer, basename(m->filename, 0));
-      if ((l = strchr(string_buffer, '.'))) l[0] = 0;
+      if ((tmp = strchr(string_buffer, '.'))) 
+        *tmp = 0;
       m->initaddr = dynlink_symbol(m, string_buffer, 1, 1);
     }
   if (m->initaddr)
@@ -1583,7 +1585,7 @@ module_method_def(class *cl, at *name, at *val)
 
 
 void 
-class_define(char *name, class *cl)
+class_define(const char *name, class *cl)
 {
   at *symb;
   at *classat;
@@ -1605,7 +1607,7 @@ class_define(char *name, class *cl)
 }
 
 void 
-dx_define(char *name, at *(*addr) (int, at **))
+dx_define(const char *name, at *(*addr) (int, at **))
 {
   at *symb = new_symbol(name);
   at *priminame = module_priminame(symb);
@@ -1617,7 +1619,7 @@ dx_define(char *name, at *(*addr) (int, at **))
 }
 
 void 
-dy_define(char *name, at *(*addr) (at *))
+dy_define(const char *name, at *(*addr) (at *))
 {
   at *symb = new_symbol(name);
   at *priminame = module_priminame(symb);
@@ -1629,7 +1631,7 @@ dy_define(char *name, at *(*addr) (at *))
 }
 
 void 
-dxmethod_define(class *cl, char *name, at *(*addr) (int, at **))
+dxmethod_define(class *cl, const char *name, at *(*addr) (int, at **))
 {
   at *symb = new_symbol(name);
   at *priminame = module_method_priminame(cl, symb);
@@ -1642,7 +1644,7 @@ dxmethod_define(class *cl, char *name, at *(*addr) (int, at **))
 
 
 void 
-dymethod_define(class *cl, char *name, at *(*addr) (at *))
+dymethod_define(class *cl, const char *name, at *(*addr) (at *))
 {
   at *symb = new_symbol(name);
   at *priminame = module_method_priminame(cl, symb);
@@ -1655,7 +1657,7 @@ dymethod_define(class *cl, char *name, at *(*addr) (at *))
 
 
 void 
-dhclass_define(char *name, dhclassdoc_t *kclass)
+dhclass_define(const char *name, dhclassdoc_t *kclass)
 {
   at *symb;
   at *classat;
@@ -1674,7 +1676,7 @@ dhclass_define(char *name, dhclassdoc_t *kclass)
 
 
 void 
-dh_define(char *name, dhdoc_t *kname)
+dh_define(const char *name, dhdoc_t *kname)
 {
   at *symb = new_symbol(name);
   at *priminame = module_priminame(symb);
@@ -1686,7 +1688,7 @@ dh_define(char *name, dhdoc_t *kname)
 }
 
 void 
-dhmethod_define(dhclassdoc_t *kclass, char *name, dhdoc_t *kname)
+dhmethod_define(dhclassdoc_t *kclass, const char *name, dhdoc_t *kname)
 {
   at *symb, *priminame, *func;
   dhrecord *drec;

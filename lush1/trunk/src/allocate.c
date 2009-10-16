@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: allocate.c,v 1.15 2004-02-07 01:32:49 leonb Exp $
+ * $Id: allocate.c,v 1.16 2009-10-16 16:07:05 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -474,7 +474,7 @@ garbage(int flag)
 
 static FILE *malloc_file = 0;
 
-void set_malloc_file(char *s)
+void set_malloc_file(const char *s)
 {
     if (malloc_file) 
 	fclose(malloc_file);
@@ -485,7 +485,7 @@ void set_malloc_file(char *s)
 }
 
 
-void *lush_malloc(int x, char *file, int line)
+void *lush_malloc(int x, const char *file, int line)
 {
     void *z = malloc(x);
     if (malloc_file)
@@ -496,7 +496,7 @@ void *lush_malloc(int x, char *file, int line)
 }
 
 
-void *lush_calloc(int x,int y,char *file,int line)
+void *lush_calloc(int x,int y,const char *file,int line)
 {
     void *z = calloc(x,y);
     if (malloc_file)
@@ -506,7 +506,7 @@ void *lush_calloc(int x,int y,char *file,int line)
     return z;
 }
 
-void *lush_realloc(void *x,int y,char *file,int line)
+void *lush_realloc(void *x,int y,const char *file,int line)
 {
     void *z = (void*)realloc(x,y);
     if (malloc_file) {
@@ -519,14 +519,14 @@ void *lush_realloc(void *x,int y,char *file,int line)
 }
 
 
-void lush_free(void *x,char *file,int line)
+void lush_free(void *x,const char *file,int line)
 {
     free(x);
     if (malloc_file)
 	fprintf(malloc_file,"%p\tfree\t%d\t%s:%d\n",x,0,file,line);
 }
 
-void lush_cfree(void *x,char *file,int line)
+void lush_cfree(void *x,const char *file,int line)
 {
 #if HAVE_CFREE
     cfree(x);

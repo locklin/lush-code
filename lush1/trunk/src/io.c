@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.26 2009-05-25 02:12:18 leonb Exp $
+ * $Id: io.c,v 1.27 2009-10-16 16:07:05 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -424,7 +424,7 @@ DX(xask)
  * make_testchar_map(s,buf[256])
  */
 static void
-make_testchar_map(char *s, char *buf)
+make_testchar_map(const char *s, char *buf)
 {
   memset(buf, 0, 256);
   if (s)
@@ -461,7 +461,7 @@ make_testchar_map(char *s, char *buf)
  * available
  */
 char 
-skip_char(char *s)
+skip_char(const char *s)
 {
   int c;
   char map[256];
@@ -1051,7 +1051,7 @@ DY(ydmc)
  * print_string s prints the string s via the print_char routine.
  */
 void 
-print_string(register char *s)
+print_string(const char *s)
 {
   if (s)
     {
