@@ -2928,8 +2928,7 @@
       ;; loop var is not returnable!
       ;; (setq bump-list (append bump-list (list sym)))
       (setq :treetype:ignore t)
-      (setq new-symbol-table 
-            (dhc-add-to-symtable new-symbol-table sym))
+      (setq new-symbol-table (dhc-add-to-symtable new-symbol-table sym))
       treetype)))
 
 (dhm-t idx-bloop(source)
@@ -2937,20 +2936,18 @@
         (dhc-error "idx-[be]loop syntax error"))
   (when (> (length (cadr source)) 12)
     (dhc-error "Cannot loop on more than 12 indexes"))
-  (let ((li ())
-        (tn ())
-        (ret ())
-        (ignore t)					;; changed-returning 0
-        (tmp ()))
+  (let ((ignore t))					;; changed-returning 0
     (dhc-push-scope-t
-     (setq li (all ((dcl (cadr source)))
-                (dhc-idxloop-declare-var-t dcl)))
-     (setq symbol-table new-symbol-table)
-     (setq tn (new t-node li (new dhc-type 'dht-unk)))
-     (setq ret (dhc-parse-progn-t (cddr source)))
-     (setq :ret:tn-list (cons tn :ret:tn-list))
-     (setq :ret:type :(cadr :(lasta li):tn-list):type)
-     ret)))
+     (let* ((tn-lvars (domapcar ((dcl (cadr source)))
+                        (dhc-idxloop-declare-var-t dcl)) )
+            (tn (new t-node tn-lvars (new dhc-type 'dht-unk))) )
+       (setq symbol-table new-symbol-table)
+       (dhc-push-loop-scope-t
+        (let ((tn-body (dhc-parse-progn-t (cddr source))))
+          (setq :tn-body:tn-list (cons tn :tn-body:tn-list))
+          (setq :tn-body:type :(cadr :(lasta tn-lvars):tn-list):type)
+          tn-body)))))
+  )
 
 ;; lays down a run-time check that the dim dimensions of
 ;; the elements in tnlist are equal
@@ -2978,7 +2975,13 @@
          (ini-tnl ())
          (ret-expr ())
          (str (if  (= (get-dhm-target source) :idx-bloop) "b" "e"))
-         (check-dim (if (= str "b") 0 -1)) )
+         (check-dim (if (= str "b") 0 -1))
+         (lvar-syms ())
+         (body-syms :treetype:symbol) )
+    (while (null (getp body-syms 'loop-bumps))
+      (setq lvar-syms (cons (car body-syms) lvar-syms_))
+      (setq body-syms (cdr body-syms)) )
+    (setq :treetype:symbol lvar-syms)  ; similar hack as in dhm-c for
     (dhc-push-scope-c
      treetype retplace
      (each ((decl (cadr source))
@@ -3003,13 +3006,20 @@
      (setq arglist (concat arglist (dhc-type-to-c-decl
                                     (new dhc-type (car el-types)))))
      (dhc-add-c-statements
-      (sprintf "Midx_begin_%sloop%d(%s) {"
+      (sprintf "Midx_begin_%sloop%d(%s)"
                str
                (length (cadr source)) arglist))
-     (dhc-parse-progn-c (cddr source)
-                        (cddr :treetype:tn-list) ())
+     (setq :treetype:symbol body-syms)    ; hack, part 2
+     (setq :treetype:ignore t)
+     (let ((retplace ()))
+       (dhc-push-scope-c
+        treetype retplace
+        (dhc-parse-progn-c (cddr source)
+                           (cddr :treetype:tn-list) ())
+        ))
+     (setq :treetype:ignore ())
      (dhc-add-c-statements
-      (sprintf "} Midx_end_%sloop%d(%s);"
+      (sprintf "Midx_end_%sloop%d(%s);"
                str
                (length (cadr source)) arglist))
      ret-expr)))
