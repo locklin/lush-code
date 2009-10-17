@@ -1540,7 +1540,9 @@ void init_module(char *progname)
    class_define("Module", module_class);
 
 #if DLDBFD
-   root->filename = mm_strdup(dld_find_executable(progname));
+   char *filename = dld_find_executable(progname);
+   root->filename = mm_strdup(filename);
+   free(filename);
 #else
    root->filename = mm_strdup(progname);
 #endif  
