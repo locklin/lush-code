@@ -162,6 +162,7 @@ static size_t     hmapsize;
 static size_t     volume_threshold;
 static int        block_threshold;
 static int        num_blocks;
+static int        num_free_blocks;
 static blockrec_t *blockrecs = NULL;
 static char      *heap = NULL;
 static unsigned int *restrict hmap = NULL; /* bits for heap objects */
@@ -340,13 +341,13 @@ static void *unseal(const char *p)
    return (void *)p;
 }
 
-static int num_free_blocks(void)
+static void check_num_free_blocks(void)
 {
    int n = 0;
    for (int b=0; b < num_blocks; b++)
      if (blockrecs[b].t == mt_undefined)
         n++;
-   return n;
+   assert(n==num_free_blocks);
 }
 
 static int _find_managed(const void *p);
@@ -385,10 +386,19 @@ static void maybe_trigger_collect(size_t s)
    if (num_alloc_blocks >= block_threshold || 
        vol_allocs >= volume_threshold      ||
        collect_requested) {
-      mm_collect();
-      if (!collect_in_progress)
-         /* could not spawn child, do it synchronously */
+#ifdef MM_SNAPSHOT_GC      
+      if (num_free_blocks < block_threshold) {
+         warn("running low on memory, doing synchronous GC\n");
          mm_collect_now();
+      } else {
+         mm_collect();
+         if (!collect_in_progress)
+            /* could not spawn child, do it synchronously */
+            mm_collect_now();
+      }
+#else
+      mm_collect_now();
+#endif
    }
 }
 
@@ -425,6 +435,7 @@ search_for_block:
          tr->current_amax = a + AMAX(s);
          tr->next_b = (b == num_blocks) ? 1 : b+1;
          num_alloc_blocks++;
+         num_free_blocks--;
          return true;
 
       } else if (blockrecs[b].t==t && blockrecs[b].in_use<(BLOCKSIZE/s)) {
@@ -806,11 +817,12 @@ static void collect_prologue(void)
    
    collect_in_progress = true;
    if (mm_debug_enabled) {
+      check_num_free_blocks();
       debug("%dth collect after %d allocations:\n",
             num_collects, num_allocs);
       debug("mean alloc %.2f bytes, %d free blocks, down %d blocks)\n",
             (num_allocs ? ((double)vol_allocs)/num_allocs : 0),
-            num_free_blocks(), num_alloc_blocks);
+            num_free_blocks, num_alloc_blocks);
    }
 }
 
@@ -1009,6 +1021,7 @@ static void reclaim_inheap(void *q)
    blockrecs[b].in_use--;      
    if (blockrecs[b].in_use == 0) {
       blockrecs[b].t = mt_undefined;
+      num_free_blocks++;
       VALGRIND_DISCARD((block_t *)BLOCK_ADDR(q));
    }
    if (b < types[t].next_b)
@@ -1154,6 +1167,7 @@ void _mm_pop_chunk(mmstack_t *st)
       HMAP_UNMARK_MANAGED(b*BLOCKSIZE);
       blockrecs[b].t = mt_undefined;
       blockrecs[b].in_use = 0;
+      num_free_blocks++;
       types[mt_stack_chunk].next_b = b;
    }
    st->current = st->current->prev;
@@ -2114,6 +2128,7 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
 
    /* allocate small-object heap */
    num_blocks = max((PAGESIZE*npages)/BLOCKSIZE, MIN_NUMBLOCKS);
+   num_free_blocks = num_blocks;
    heapsize = num_blocks * BLOCKSIZE;
    hmapsize = (heapsize/MIN_HUNKSIZE)/HMAP_EPI;
    block_threshold = min(MAX_BLOCKS, num_blocks/3);
