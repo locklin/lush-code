@@ -1,0 +1,78 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: example.sn,v 1.2 2003/03/18 21:14:59 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;; ----------------------------------------
+(printf "Setting up an OCR network.\n")
+(load "bignet.sn")
+(create-net) 
+(load-patterns "../examples/bptool/dig.pat" "../examples/bptool/dig.des")
+(ensemble 0 319)
+(test-set 320 479)
+(set-class-max)
+
+;;; ----------------------------------------
+(printf "\n\n* Start training network with stochastic gradient.\n\n")
+
+(forget-sqrt 1)				; stochgrad standard parameters
+(epsi-sqrt 0.1)
+(setq alpha 0)
+(setq decay 0)
+
+(run 640 4)
+(epsi-sqrt 0.05)
+(run 640 4)
+(epsi-sqrt 0.01)
+(run 640 4)
+(perf tpatt-min tpatt-max) 
+
+;;; ----------------------------------------
+(printf "\n\n* Deeper training with conjugate gradient\n")
+(printf "  albeit a slight overtraining occurs ...\n\n")
+
+(run-batch-cg 4 8)
+(perf tpatt-min tpatt-max)
+(save-net "bignet.wei")
+
+;;; ----------------------------------------
+
+(repeat 4	
+	(printf "\n\n* Prune 10%% connections.\n\n")
+	(obd-compute-curvature patt-min patt-max)
+	(setq count (obd-prune 0.1))	
+	(printf "Pruned %d connections, retraining\n" count)
+	(epsi-sqrt 0.01)
+	(run 640 4)
+	(run-batch-cg 4 4)
+	(perf tpatt-min tpatt-max) )

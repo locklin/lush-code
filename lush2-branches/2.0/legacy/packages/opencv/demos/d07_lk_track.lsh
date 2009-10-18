@@ -1,0 +1,171 @@
+;; Lukas-Kanade tracking demo.
+;; by Fu Jie Huang, Jan 2003
+;;  updated Oct 2006
+;; updated by  Yann LeCun March 2007.
+
+;; when all the points are lost in the tracking,
+;; the program does nothing but displaying the frame
+
+(libload "video4linux/v4l")
+(libload "opencv/opencv")
+(libload "opencv/aux_object")
+(libload "libc/libc")
+
+
+(de put_dots ( img dots n )
+  (let ((ipoint   (new cvpoint 0 0))
+	(fpoint   (new cvpoint2d32f 0 0))
+	(dotcolor (new cvscalar 0 0 255 0)))
+    (for (i 0 (1- n))
+	 (==> fpoint copy (==> dots ptr_nth i))
+	 (==> ipoint set_x (cvround (==> fpoint get_x)))
+	 (==> ipoint set_y (cvround (==> fpoint get_y)))
+	 (cvCircle  :img:p  
+		    :ipoint:p  
+		    2 
+		    :dotcolor:p
+		    3
+		    8       ;; line type (default)
+		    0)      ;; shift (default)
+	 ())
+    ()))
+
+(de find_dots ( img dots count )
+  (let* ((width  (==> img get_width))
+	 (height (==> img get_height))
+	 (grayimg (new cvimage width height 8 1))
+	 (eigimg  (new cvimage width height 32 1))
+	 (tempimg (new cvimage width height 32 1)) )
+    (cvSetImageCOI  :img:p 1)
+    (cvCopy  :img:p  :grayimg:p  (gptr ())  )
+    (cvGoodFeaturesToTrack  :grayimg:p   :eigimg:p   
+			    :tempimg:p   
+			    :dots:p  
+			    :count:p  
+			    0.1  
+			    10  
+			    (gptr ())
+			    3
+			    0
+			    0.04)
+    ()))
+  
+(de update_dots ( dots status n)
+  ((-gptr- "CvPoint2D32f *") dots)
+  ((-gptr- "char *") status)
+  ((-int-) n)
+  (let ((r 0))
+    ((-int-) r)
+    #{ 
+        int i=0;
+        int k=0;
+        for(i=0; i<$n; i++)
+         {
+            if(! $status[i])
+               continue;
+            $dots[k++] = $dots[i];
+         }
+        $r = k;
+     #}
+    r))
+
+(dhc-make () 
+	  #{ #include <cv.h> #}
+	  update_dots)
+
+
+(let* ((width 640) (height 480)
+       (webcam (new v4ldevice "/dev/video0" "NTSC" 0 width height))
+       (captimg (ubyte-matrix height width 3))
+       (bufimg (new cvimage width height 8 3))
+       (nextimg (new cvimage width height 8 3))
+       (bufgray (new cvimage width height 8 1))
+       (nextgray (new cvimage width height 8 1))
+       (pyramid (new cvimage width height 8 1))
+       (nextpyr (new cvimage width height 8 1))
+       (disimg (new cvimage width height 8 3))
+       (corners (new cvsmobarray (memsize_cvpoint2d32f) 300))
+       (nextcorners (new cvsmobarray (memsize_cvpoint2d32f) 300))
+       (count  (new cvsmobarray 4 1))
+       (numpoints 0)
+
+       (status   (new cvsmobarray 1 300))
+       (winsize  (new cvsize 10 10))
+       (criteria (new cvtermcriteria 
+		      (bitor @CV_TERMCRIT_ITER  
+			     @CV_TERMCRIT_EPS)  
+		      20  0.03 ))
+       (flag 0))
+
+  (new-window 0 0 width height "Lush/OpenCV Tracking demo")
+
+  (poke-int (==> count ptr_nth 0) 1000)	;; maximum
+  (==> webcam grab-into-rgb captimg)
+  (idx8u_ipl  captimg  :bufimg:p)
+  (find_dots bufimg corners count)
+  (setq  numpoints (peek-int (==> count ptr_nth 0)))
+  (idx8u_ipl  captimg  :disimg:p)
+  (put_dots disimg corners  numpoints)
+  (cvimage-show disimg) 
+  ;; (idx8u_ipl  captimg  :bufimg:p)
+  (setq  numpoints (peek-int (==> count ptr_nth 0)))
+
+  (while t 
+    (==> webcam grab-into-rgb captimg)
+    (idx8u_ipl   captimg  :disimg:p)
+ 
+    (when (and (= flag 0)
+	       (<> numpoints 0))
+      (idx8u_ipl  captimg  :nextimg:p)
+      (cvSetImageCOI  :nextimg:p 1)
+      (cvcopy :nextimg:p   :nextgray:p (gptr ()) )
+      (cvsetimagecoi  :bufimg:p  1)
+      (cvcopy :bufimg:p    :bufgray:p (gptr ()) )
+      (cvcalcOpticalFlowPyrLK  :bufgray:p  
+			       :nextgray:p  
+			       :pyramid:p
+			       :nextpyr:p
+			       :corners:p  
+			       :nextcorners:p 
+			       numpoints
+			       :winsize:p  
+			       3
+			       :status:p   
+			       (gptr ())
+			       :criteria:p 
+			       0)
+      (setq flag 1) 
+      (setq numpoints (update_dots :nextcorners:p :status:p numpoints))
+      (put_dots    disimg  nextcorners  numpoints))
+ 
+    (when (and (= flag 1)
+	       (<> numpoints 0))
+      (idx8u_ipl  captimg  :bufimg:p)
+      (cvSetImageCOI  :bufimg:p 1)
+      (cvSetImageCOI  :nextimg:p 1)
+      (cvcopy :nextimg:p   :nextgray:p (gptr ()) )
+      (cvcopy :bufimg:p    :bufgray:p (gptr ()) )
+      (cvcalcOpticalFlowPyrLK  :nextgray:p  
+			       :bufgray:p  
+			       :nextpyr:p
+			       :pyramid:p
+			       :nextcorners:p  
+			       :corners:p 
+			       numpoints
+			       :winsize:p  
+			       3
+			       :status:p   
+			       (gptr ())
+			       :criteria:p 
+			       0)
+      (setq flag 0) 
+      (setq numpoints (update_dots :corners:p :status:p numpoints))
+      (put_dots    disimg  corners  numpoints))    
+  
+    (cvimage-draw 0 0 disimg)))
+
+
+    
+    
+    
+  
