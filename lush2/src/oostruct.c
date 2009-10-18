@@ -31,6 +31,9 @@
 #include "header.h"
 #include "dh.h"
 
+#define SIZEOF_OBJECT  (sizeof(object_t) + MIN_NUM_SLOTS*sizeof(at *))
+#define SIZEOF_OBJECT2  (sizeof(object_t) + 2*MIN_NUM_SLOTS*sizeof(at *))
+
 /* Notes on the object implementation:
  *
  * 1. An object of a compiled class or which has a compiled
@@ -105,6 +108,7 @@ static bool finalize_object(object_t *obj)
 }
 
 static mt_t mt_object = mt_undefined;
+static mt_t mt_object2 = mt_undefined;
 
 
 /* ------ OBJECT CLASS DEFINITION -------- */
@@ -689,8 +693,11 @@ static object_t *_new_object(class_t *cl, struct CClass_object *cobj)
       error(NIL, "not a subclass of class 'object'", cl->backptr);
    
    size_t s = sizeof(object_t)+cl->num_slots*sizeof(at *);
-   object_t *obj = mm_allocv(mt_object, s);
-   obj->cptr = NULL;
+   object_t *obj = NULL;
+   if (s <= SIZEOF_OBJECT)
+      obj = mm_alloc(mt_object);
+   else
+      obj = mm_allocv(mt_object2, s);
 
    if (cl->has_compiled_part) {
       if (cobj) {
@@ -1193,11 +1200,12 @@ void pre_init_oostruct(void)
 
 class_t *object_class, *class_class = NULL;
 
-#define SIZEOF_OBJECT  (sizeof(object_t) + MIN_NUM_SLOTS*sizeof(at *))
 
 void init_oostruct(void)
 {
    mt_object = MM_REGTYPE("object", SIZEOF_OBJECT,
+                          clear_object, mark_object, finalize_object);
+   mt_object2 = MM_REGTYPE("object2", SIZEOF_OBJECT2,
                           clear_object, mark_object, finalize_object);
    mt_method_hash = 
       MM_REGTYPE("method-hash", 0, 

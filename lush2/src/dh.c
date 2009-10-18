@@ -30,6 +30,9 @@
    UTILITIES
    --------------------------------------------- */
 
+#define SIZEOF_COBJECT (sizeof(struct CClass_object) + MIN_NUM_SLOTS*sizeof(mptr))
+#define SIZEOF_COBJECT2 (sizeof(struct CClass_object) + 2*MIN_NUM_SLOTS*sizeof(mptr))
+
 
 /* next_record --
    complete next record pointer in dhdoc. */
@@ -1144,6 +1147,7 @@ static bool finalize_cobject(struct CClass_object *cobj)
 }
 
 static mt_t mt_cobject = mt_undefined;
+static mt_t mt_cobject2 = mt_undefined;
 
 
 struct CClass_object *new_cobject(dhclassdoc_t *cdoc)
@@ -1151,7 +1155,11 @@ struct CClass_object *new_cobject(dhclassdoc_t *cdoc)
    class_t *cl = Mptr(cdoc->lispdata.atclass);
    ifn (cl->live)
       error(NIL, "class is obsolete", cl->classname);
-   struct CClass_object *cobj = mm_allocv(mt_cobject, cdoc->lispdata.size);
+   struct CClass_object *cobj = NULL;
+   if (cdoc->lispdata.size <= SIZEOF_COBJECT)
+      cobj = mm_alloc(mt_cobject);
+   else
+      cobj = mm_allocv(mt_cobject2, cdoc->lispdata.size);
    cobj->Vtbl = cdoc->lispdata.vtable;
    cobj->__lptr = NULL;
    return cobj;
@@ -1203,8 +1211,6 @@ void check_obj_class(void *obj, void *classvtable)
 
 class_t *dh_class;
 
-#define SIZEOF_COBJECT (sizeof(struct CClass_object) + MIN_NUM_SLOTS*sizeof(mptr))
-
 void init_dh(void)
 {
    /* check the mapping is as we think it is */
@@ -1219,6 +1225,8 @@ void init_dh(void)
    assert(ST_MPTR  == DHT_MPTR);
 
    mt_cobject = MM_REGTYPE("cobject", SIZEOF_COBJECT,
+                           clear_cobject, mark_cobject, finalize_cobject);
+   mt_cobject2 = MM_REGTYPE("cobject2", SIZEOF_COBJECT2,
                            clear_cobject, mark_cobject, finalize_cobject);
    /* setup object class */
    object_class->classdoc = &Kc_object;
