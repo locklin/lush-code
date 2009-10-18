@@ -2117,7 +2117,10 @@ void mm_init(int npages, notify_func_t *clnotify, FILE *log)
    heapsize = num_blocks * BLOCKSIZE;
    hmapsize = (heapsize/MIN_HUNKSIZE)/HMAP_EPI;
    block_threshold = min(MAX_BLOCKS, num_blocks/3);
-   volume_threshold = heapsize/2;
+   volume_threshold = min(MAX_VOLUME, heapsize/2);
+#ifdef MM_SNAPSHOT_GC
+   block_threshold -= (block_threshold/3);
+#endif
 
    blockrecs = (blockrec_t *)malloc(num_blocks * sizeof(blockrec_t));
    assert(blockrecs);
