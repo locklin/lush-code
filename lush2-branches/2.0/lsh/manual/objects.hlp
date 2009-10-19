@@ -1,0 +1,971 @@
+$Id: objects.hlp,v 1.11 2007/03/26 21:11:08 leonb Exp $
+
+#? *** Objects
+
+{<p>
+  Every Lush object has an associated type which may be queried
+  with function <classof>. The type may either by a 
+  {<i> builtin type} (also {<i> builtin class}) or a 
+  {<i> user-defined class}. 
+  This section talks about {<i> objects} in the narrower,
+  object-oriented sense, as a thing whose type is a user-defined 
+  class.
+}
+
+
+#? ** Object Terminology
+
+{<p>
+  A class defines two major kinds of information:
+}
+{<ul>
+  {<li>
+    An atom can contain storage for one or several lisp objects. Such
+    storage areas are called {<i> slots}, and have symbolic names. A class
+    defines the number of slots allocated in a new atom as well as their
+    names. This slot information is statically defined by the <defclass>
+    function during class definition;
+  }
+  {<li>
+    Atoms can receive messages sent with the function {<i> ==>}. Messages 
+    are identified by a symbol called the {<i> message selector}. A class 
+    defines the possible message selectors and functions (i.e methods) to 
+    execute when it receives such messages. These {<i> methods} are
+    dynamically defined with the <putmethod> function.
+  }
+}
+
+{<p>
+  In addition, predefined classes associated with standard Lush objects
+  often have hidden properties. Such classes are special and do not inherit
+  from the <object> class. For example, a symbol has some storage for
+  its value; the storage is not a slot. A symbol also returns its value
+  when it is evaluated; this behavior is not a method.
+}
+
+
+#? ** Inheritance
+
+{<p>
+  New classes defined with the <defclass> function are always subclasses
+  of another class (i.e. its superclass). The superclass itself may have
+  its own superclasses. In this way:
+}
+{<ul>
+  {<li>
+    {<i> A class inherits the slots of its superclasses}. When a new object
+    is created, space is allocated for the slots defined by its class and
+    also for the slots defined by all of its superclasses;
+  }
+  {<li>
+    {<i> A class inherits the methods of its superclasses}. When an object
+    receives a message with a given selector, it searches the methods
+    defined by its class for the selector. If no method is found that
+    matches the selector it searches the methods of its superclass, the
+    methods of the superclass of its superclass, and so on. When it
+    reaches a matching method it executes the associated function in the
+    context of the class that defines the matching method.
+  }
+}
+
+
+#? ** Predefined Classes
+
+{<p>
+  Here is a compact list of the main predefined classes. Most of them are
+  named using uppercase symbols, which ought to be surrounded with bars
+  to avoid the usual lowercase conversion:
+}
+{<ul>
+  {<li>
+    <object>: the root class of most user defined classes;
+  }
+  {<li>
+    <Class>: classes are actually lisp objects, instance of the <Class>
+    class. Thus, class <Class> is an instance of itself;
+  }
+  {<li>
+    <Number>: the class of the numbers;
+  }
+  {<li>
+    <Cons>: the class of the pairs used for building lists;
+  }
+  {<li>
+    <Symbol>: the class of the symbols;
+  }
+  {<li>
+    <String>: the class of the strings;
+  }
+  {<li>
+    <DE> <DF> <DM> <DX> <DY>: the classes of functions;
+  }
+  {<li>
+    and so on.
+  }
+}
+
+{<p>
+  All user defined classes must be direct or indirect subclasses of the
+  class <object>. You cannot inherit a predefined class like <|SYMB|>,
+  it is not a subclass of <object>. The <object> class defines a regular 
+  lisp object with no hidden properties. Instances of subclasses of the 
+  class <object> are easily created with the function <new>.
+}
+
+
+#? ** Defining a Class
+
+#? (defclass <name> <superclass> <s1> ... <sn>)
+
+{<p>
+  Define a subclass of class <superclass> with slots <s1> ... <sn>.
+  The class is stored into symbol <name>, which is returned.  
+  Slot specifications <s1> ... <sn> can be symbols or lists <(symbol
+  default)> which indicate initial values assigned to the slots of a new
+  object.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;;; Creates a class <rect> with two slots: <width> and <height>.
+ ? (defclass rect object
+     width height )
+ = rect
+ ;;; Creates a subclass of <rect>,
+ ;;; plus an additional slot <name> with default value <"noname">.
+ ? (defclass namedrect rect
+     (name "noname") )
+ = namedrect
+  </code>}
+}
+
+
+#? (makeclass <classname> <superclass> <slotnamelist> <slotdefaultlist>)
+
+{<p>
+  This a lower-level function to create a new class named <classname>.  
+  Most user will prefer to use <defclass> instead. The new class inherits
+  class <superclass>. List <slotnamelist> contains the names of the
+  additional slots defined by the new class. List <slotdefaultlist> 
+  contains the default values for these slots. Both lists are in reverse
+  order (i.e. the first slot in the list appears last when pretty-printing
+  the class). This function does not set the value of symbol <classname>,
+  use the macro function <defclass> for that purpose.
+}
+
+
+#? (classname <cl>)
+
+{<p>
+  Return the name of class <cl> (a symbol).
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ? (classname rect)
+ = rect
+  </code>}
+}
+
+
+#? (slots <cl>)
+{<see> allslots}
+{<p>
+  Return the list of slots defined for class <cl>.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ? (slots rect)
+ = (width height)
+ ? (slots namedrect)
+ = ((name "noname"))
+  </code>}
+}
+
+#? (allslots <cl>)
+{<see> slots}
+{<p>
+  Return list of all slots owned by objects of class <cl>.
+}
+
+#? (methods <cl>)
+{<see> allmethods}
+{<p>
+  Return the list of method names defined for class <cl>
+  (a list of symbols).
+}
+
+#? (allmethods <cl>)
+{<see> methods}
+{<p>
+  Return the list of names of all the methods that class <cl>
+  can receive (a list of symbols).
+}
+
+
+#? (super <cl>)
+
+{<p>
+  Return the superclass of class <cl>. Return <nil> if <cl> 
+  has no superclass.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ? (super rect)
+ = ::class:object
+ ? (classname (super namedrect))
+ = rect
+  </code>}
+}
+
+
+#? (subclasses <cl>)
+
+{<p>
+  Return the list of all subclasses of class <cl>. When argument <cl> is 
+  the empty list <subclasses> return the list of root classes (classes
+  without superclass).
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ (subclasses object)
+  </code>}
+}
+
+
+#? ** Creating Objects
+
+
+#? (new <cl> ... <args> ...)
+
+{<type> DY}
+
+{<p>
+  Create new instance of class <cl>.
+}
+{<p>
+  If no constructor method is defined for class <cl> the constructor
+  of its superclass is used by default. The constructor of class
+  <object> takes no arguments and does nothing.
+}
+
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;; Classes <rect> and <namedrect> are defined as examples for <defclass>.
+ ;; Creates instances of classes <rect> and <namedrect>.
+ ? (setq r (new rect))
+ = ::rect:06fa0
+ ? (setq nr (new namedrect))
+ = ::namedrect:06fe8
+  </code>}
+  {<br>}
+  This function only works when creating instances of subclasses of
+  class <object>. It is not possible to directly create instances of
+  subclasses of other predefined classes.
+}
+
+
+#? (new-empty <cl>)
+
+{<p>
+  Create new instance of class <cl> without calling the constructor.
+  All slots are initialized to <nil>.  
+}
+{<p>
+  Use this function with care because the empty object might trump 
+  the expectations of other code working with this class.
+}
+
+
+#? (copy-object <src> [<dest>])
+
+{<p>
+  Create a new instance with the same instance variables as object <src>.
+  When object <dest> is given, don't create a new instance but copy to <dest>.
+  Return the new object or <dest>, respectively.
+
+  The copy is an instance of the same class with all slots initialized
+  to the same values. The contents of the slots are not copied. That
+  is, <copy-obj> equivalent to:
+  {<br>}
+  {<code>
+ (let* ((cl (classof obj))
+        (dest (new-empty cl)) )
+   (setq :src:slot1 :dest:slot1)
+   (setq :src:slot2 :dest:slot2)
+   ...
+   (setq :src:slotN :dest:slotN)		
+   n )
+  </code>}
+  {<br>}
+  Use this function with care because other code working with this
+  class might not be able to deal with multiple copies of the
+  same object. Calls to destructors are particularly problematic.
+}
+
+
+#? (delete <obj>)
+
+{<p>
+  Delete object <obj>.
+}
+{<p>
+  The operation of this function is somewhat tricky because all other
+  references to object <obj> must be converted to references to the
+  empty list.  
+}
+{<p>
+  If destructor methods are defined for an object then destruction messages
+  are sent. Object <oj> is then converted to an instance of the class
+  <|ZOMBIE|>. During its normal operation, the interpreter recognizes 
+  these zombies and always replaces a reference to a zombie by a reference
+  to the empty list.
+}
+
+
+#? (classof <obj>)
+
+{<p>
+  Return the class of an object <obj>.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ (classof (new object))
+  </code>}
+}
+
+
+#? (isa <obj> <cl>)
+{<p>
+  True when <obj> is of class <cl>.
+}
+
+#? ** Accessing Slots
+
+{<p>
+  There are various ways to read or change the values stored in the slots
+  of an object. Changing the value stored in a slot changes the object
+  in a way comparable to <rplaca> and <rplacd>, in the case of lists.
+  This change will be reflected through all pointers referring to 
+  the same object.
+}
+{<see> (== <n1> <n2>)}
+
+
+#? :<obj>:<slot1>...:<slotn>
+
+{<type> DMC}
+{<location> sysenv.lsh}
+{<see> (scope <obj> <slot1> ... <slotn>)}
+{<see> (scope <symb>)}
+
+{<p>
+  This macro character is expanded as a call to the <scope> function.
+}
+
+
+#? (scope <obj> <slot1> ... <slotn>)
+
+{<see> :<obj>:<slot1>...:<slotn>}
+{<see> (scope <symb>)}
+
+{<p>
+  The simplest method for setting or getting the slots of an object is
+  called the {<i> scope macro}. The syntax <:obj:slot> refers to the slot
+  <slot> of object <obj>. Actually, the scope macro character converts
+  expression <:obj:slot> into a list <(scope obj slot)>.
+}
+{<p>
+  When this list is evaluated the <scope> function returns the value of
+  slot <slot> of object <obj>. Moreover, most functions that affect the
+  value of a symbol recognize such a list as a reference to slot <slot>
+  of object <obj>.
+}
+{<p>
+  Nested scope macros are allowed: <:obj:slot_1:slot2> refers to
+  slot <slot2> of the object contained in slot <slot1> of object <obj>.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;; Classes <rect> and <namedrect> are defined as examples for <defclass>.
+ ;; Objects <r> and <nr> are defined as examples for <new>.
+ ? (setq :nr:name "myrectangle")
+ = "myrectangle"
+ ? (setq :nr:width  8 
+         :nr:height 6 )
+ = 6
+ ? (print :nr:width :nr:height :nr:name)
+ 8 6 "myrectangle"
+ = "myrectangle"
+  </code>}
+}
+
+
+#? (scope <symb>)
+
+{<see> (scope <obj> <slot1> ... <slotn>)}
+{<see> :<obj>:<slot1>...:<slotn>}
+
+{<p>
+The scope macro has another important use as the {<i> unary scope macro}.
+Expression <:symb> is converted into list <(scope symb)> which refers
+to the global value of symbol <symb>.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ? (defvar x 3)
+ = 3
+ ? (let ((x 8))
+     (print :x)
+     (setq :x 6)
+     (print x) )
+ 3
+ 8
+ = 8
+ ? x
+ = 6
+  </code>}
+}
+
+
+#? (with-object [<cl>] <obj> <l1> ... <ln>)
+
+{<see> (scope <obj> <slot1> ... <slotn>)}
+{<see> this}
+
+{<p>
+  Calls function <progn> on <l1> ... <ln>, within the scope of object
+  <obj>, and returns the last result. Within the object scope each
+  slot of the object, either defined by its class or inherited from its
+  superclasses, can be directly accessed as the value of its symbolic 
+  slot name.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;; Classes <rect> and <namedrect> are defined as examples for <defclass>.
+ ;; Objects <r> and <nr> are defined as examples for <new>.
+ ? (setq width ())
+ = ()
+ ? (with-object r
+     (setq width 4)
+     (setq height 5) )
+ = 5
+ ? width
+ = ()
+ ? (with-object r (* width height))
+ = 20
+  </code>}
+  {<br>}
+  Within an object scope the symbol <this> always refers to object itself.
+}
+{<p>
+  The optional argument <cl> must be the object class or one of its
+  superclasses. The only visible slots are then defined by class <cl>
+  and its superclasses. This can make a difference when <obj> is an 
+  instance of a subclass of <cl>.
+}
+
+
+#? ** Defining Methods
+
+
+#? (defmethod <cl> <symb> <args> . <body>)
+
+{<type> DM}
+{<location> sysenv.lsh}
+{<see> Argument List}
+{<see> (==> <obj> <symb> ... <args> ... )}
+
+{<p>
+  Defines a method named <symb> for class <cl>. Argument <symb> must
+  be a symbol and is not evaluated. Argument <args> must be a valid
+  argument list.
+}
+{<p>
+  When an instance of class <cl> receives a message whose selector is
+  <symb> the body <body> of the method is executed with a call to function
+  <progn>. During this execution the slots defined by <cl> and its
+  superclasses are bound to their symbolic names, as in <with-object>, and 
+  the arguments of the message are evaluated and bound to the symbols in
+  argumentlist <args>.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;; Classes <rect> and <namedrect> are defined as examples for <defclass>.
+ ;; Objects <r> and <nr> are defined as examples for <new>.
+ ;;
+ ;; This is a method for computing the surface of a rect.
+ ? (defmethod rect surface()
+     (* width height) )
+ = surface
+ ;; a method for printing  n times the name of a namedrect
+ ? (defmethod namedrect showname(n)
+     (repeat n (print name)) )
+ = showname
+  </code>}
+}
+
+
+#? (demethod <cl> <symb> <args> . <body>)
+
+{<type> DM}
+{<location> sysenv.lsh}
+{<p>
+  Identical to <defmethod>.
+}
+
+
+#? (dfmethod <cl> <symb> <args> . <body>)
+
+{<type> DM}
+{<location> sysenv.lsh}
+{<p>
+  Defines an flambda-method named <symb> for class <cl>. flambda-methods
+  do not evaluate their arguments, unlike regular methods defined with
+  demethod or defmethod.
+}
+
+
+#? (dmmethod <cl> <symb> <args> . <body>)
+
+{<type> DM}
+{<location> sysenv.lsh}
+{<p>
+  Defines an mlambda-method named <symb> for class <cl>. mlambda-methods
+  are to regular methods what macros (defined with <dm> or <mlambda>) are 
+  to regular functions (defined with <de> or <lambda>).
+}
+
+
+#? (putmethod <cl> <symb> <func>)
+
+{<type> DX}
+
+{<p>
+  Add method <symb> to class <cl>. <func> must be a lambda, flmabda,
+  or mlambda.
+}
+
+
+#? (pretty-method <cl> <symb>)
+
+{<type> DE}
+{<location> sysenv.lsh}
+{<p>
+  Prints a nicely indented definition of method <symb> of class <cl>.
+}
+
+
+#? ** Sending Messages
+
+
+#? (send <obj> <method> ... <args> ... )
+
+{<p>
+  Invoke <method> of object <obj> with arguments <args>.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;; Classes <rect> and <namedrect> are defined as examples for <defclass>.
+ ;; Objects <r> and <nr> are defined as examples for <new>.
+ ;; Method <surface> is defined as an example for <defmethod>.
+ ;;
+ ;; Send a surface message to rect <r>
+ ? (send r 'surface)
+ = 20
+ ;; Send a showname message to namedrect <nr>
+ ? (send nr 'showname 2)
+ "myrectangle"
+ "myrectangle"
+ = "myrectangle"
+ ;; Send a surface message to namedrect <nr>
+ ;; The method is inherited from superclass <rect>
+ ? (send nr 'surface)
+ = 48
+  </code>}
+  {<br>}
+  When an object receives a message its method is executed in the
+  object scope defined by the class that owns the method. If the method
+  is defined by a superclass only the slots of that superclass and of
+  its superclasses may be directly referred to by their names.
+}
+{<p>
+  When method <method> is not defined by the class or any of its
+  superclasses, a method named <-unknown> is searched for. 
+  If found, the <-unknown> method is executed with two arguments: 
+  the initial method name and the list of the evaluated arguments
+  <args>. An error occurs if method <-unknown> is not defined.
+}
+
+
+#? (==> <obj> <name> ... <args> ... )
+
+{<p>
+  Invoke method named <name> of object <obj> with arguments <args>. In 
+  contrast to <send>, this macro does not evaluate its second argument,
+  thus, <name> must the name of a method.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;; Classes <rect> and <namedrect> are defined as examples for <defclass>.
+ ;; Objects <r> and <nr> are defined as examples for <new>.
+ ;; Method <surface> is defined as an example for <defmethod>.
+ ;;
+ ;; Send a surface message to rect <r>
+ ? (==> r surface)
+ = 20
+ ;; Send a showname message to namedrect <nr>
+ ? (==> nr showname 2)
+ "myrectangle"
+ "myrectangle"
+ = "myrectangle"
+ ;; Send a surface message to namedrect <nr>
+ ;; The method is inherited from superclass <rect>
+ ? (==> nr surface)
+ = 48
+  </code>}
+}
+
+
+#? (==> <obj> (<cl> . <name>) ... <args> ... )
+
+{<p>
+  This construction is known as a {<i> cast-and-send}. A message with
+  selector <name> and arguments <args> is sent to the object <obj>,
+  considered as an instance of class <cl>. Methods are searched for
+  in class <cl> and its superclasses, instead of the class of <obj> 
+  and its superclasses.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;; Classes <rect> and <namedrect> are defined as examples for <defclass>.
+ ;; Objects <r> and <nr> are defined as examples for <new>.
+ ;; Method <surface> is defined as an example for <defmethod>.
+ ;;
+ ;; Override surface method of class rect
+ ? (defmethod namedrect surface()
+        ;; prints the name by sending a showname message
+        (==> this showname 1)
+        ;; returns 1+ the result of the surface method of class rect
+        (1+ (==> this (rect . surface))) )
+ = surface
+ ? (==> nr surface)
+ "myrectangle"
+ = 49
+ ;; Still call the surface method of class rect
+ ? (==> nr (rect . surface))
+ = 48
+  </code>}
+}
+
+
+#? this
+
+{<see> (with-object <obj> <l1> ... <ln>)}
+{<see> (==> <obj> <symb> ... <args> ... )}
+
+{<p>
+  While Lush is executing a method you can use symbol <this> to refer
+  to the object receiving the message.
+}
+
+
+#? (getmethod <cl> <name>)
+
+{<p>
+  Searches class <cl> and its superclasses for a method called
+  <name> (a symbol). If a matching method exists this function
+  returns the method as a DF function.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;; Classes <rect> and <namedrect> are defined as examples for <defclass>.
+ ;; Objects <r> and <nr> are defined as examples for <new>.
+ ;; Method <surface> is defined as an example for <defmethod>.
+ ;;
+ ;; There is no method yoyo in rect
+ ? (getmethod rect 'yoyo)
+ = ()
+ ;; there is a method surface in rect
+ ? (getmethod rect 'surface)
+ = DF:0604c
+  </code>}
+}
+
+
+#? ** Other Special Methods
+
+{<p>
+  Special methods are methods that can be called implicitly by other 
+  functions or macros. An example is the special method <-destructor>
+  which gets called by <delete>. Another special method is <-listeval>
+  which lets objects behave as functions.
+}
+
+#? (==> <obj> -listeval ... <args> ...)
+{<p>
+  Method <-listeval> method is called implicitly when Lush evaluates a 
+  list whose first element is an object. 
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+? (defclass A Object)
+= a
+? (defmethod A -listeval args
+     (printf "I got %d arguments\n" (length args)))
+= -listeval
+? ((new A) 1 2 3 4)
+I got 4 arguments
+= ()
+  </code>}
+}
+
+#? (==> <obj> -emptyp)
+{<p>
+  Return true when <obj> is empty.
+  This method is used by <emptyp>.
+}
+
+#? (==> <obj> pname)
+
+{<type> MSG}
+{<see> (pname <l>)}
+
+{<p>
+  The function <pname> returns a string that describes a lisp object. 
+  When executing this function Lush searches the object for a method 
+  <pname> before applying the hardcoded defaults. Overriding method 
+  <pname> lets you redefine how Lush prints certain objects.
+}
+{<p>
+  Example:
+  {<br>}
+  {<code>
+ ;; Classes <rect> and <namedrect> are defined as examples for <defclass>.
+ ;; Objects <r> and <nr> are defined as examples for <new>.
+ ;; Method <surface> is defined as an example for <defmethod>.
+ ;;
+ ;; Defines a pname function for the rect class
+ ? (defmethod rect pname()
+     (sprintf "<rectangle %d by %d>" width height) )
+ = pname
+ ? (new rect 8 6)
+ = <rectangle 8 by 6>
+  </code>}
+}
+
+
+#? (==> <obj> print)
+
+{<type> MSG}
+{<see> (prin <l1> ... <ln>)}
+
+{<p>
+  When Lush prints an object with function <prin> or <print> it searches
+  for a method <print> before applying hardcoded defaults based on function
+  <pname>.
+}
+{<p>
+  It is a good idea to override method <print> instead of method <pname> 
+  when large amounts of text are necessary (e.g. in the case of matrices).
+}
+
+
+#? (==> <obj> pprint)
+
+{<type> MSG}
+{<see> (pprin <l1> ... <ln>)}
+
+{<p>
+  When Lush prints an atom with function <pprin> or <pprint> it searches 
+  for a method <pprint> before applying the hardcoded defaults.
+}
+
+
+#? (==> <obj> pretty)
+
+{<type> MSG}
+{<see> (pretty <f>)}
+
+{<p>
+  Function <pretty> displays an object by sending them a message <pretty>.
+  The default method <pretty> defined by class <object> displays the slots
+  of the object. Specific <pretty> methods are also defined for functions,
+  symbols, classes, and so forth.
+}
+
+#? (==> <obj> -deepcopy <clone>)
+{<see> deepcopy}
+{<p>
+  Make <clone> and independent copy of <obj> and return <()>.
+}
+
+
+#? (==> <obj> -destructor)
+
+{<type> MSG}
+{<see> Constructors and Destructors}
+
+{<p>
+  This method is invoked when the object is destroyed.
+  {<br>}
+  Note: Never explicitly call the destructor method of 
+        the super class. Lush does this implicitly.
+}
+
+
+#? (==> <obj> -unknown <symb> <args>)
+
+{<type> MSG}
+{<see> Sending Messages}
+
+{<p>
+  This method is invoked when a message <symb> 
+  is sent to an object <obj> whose class or superclasses
+  do not define a suitable method. Argument <args> is the 
+  list of message arguments the object is destroyed.
+  An error message is produced when this method is not defined.
+}
+
+#? ** Template classes
+
+Template classes are a way to define template code for
+classes. Good examples for the use of template classes are
+container datatypes. A template class differs from a regular
+classes in a number of ways:
+
+{<ul>
+  {<li>
+     The defining form is <deftemplate> instead of <defclass>.
+  }
+  {<li>
+     A template class is not meant to be instantiated but is
+     meant to be used as a superclass.
+  }
+  {<li>
+     The type of some slots may be declared <-any->, which
+     effectively leaves the slot type unspecified. These
+     slots are called {<i> template slots}.
+  }
+  {<li>
+     Those methods that do not make references to slots of
+     unspecified type may be compiled, others may not be
+     compiled. Compiled methods are inherited the regular
+     way by subclasses, non-compiled methods are called
+     {<i> template methods} and are inherited {<i> as source}.
+     The class itself always has to be compiled.
+  }
+}
+
+The type of template slots has to be declared in subclasses.
+There are two ways of referring to the type of template slots
+in template methods. In type declarations, use <-typeof->
+in conjunction with the template slot name. In all other
+places use <classof>. The following example defines a template
+for stack classes.
+
+{<code>
+(deftemplate Stack object
+  ((-idx1- (-any-)) st)   ; stack data
+  ((-any-) el) )          ; stack element (dummy slot)
+
+(defmethod Stack hashcode ()
+  (sprintf "%10d" (to-int #{ $this #})) )
+
+(defmethod Stack Stack ()
+  (let ((v (double-array* 8)))
+    (setq st (clone-array (to-obj (classof st) (to-gptr v)))) )
+  (idx-trim! st 0 0 0)
+  (setq el 0)
+  ())
+
+(defmethod Stack push (i)
+  (declare (-typeof- el) i)
+  (let ((n (length st)))
+    (declare (-int-) n)
+    (array-extend! st 0 1)
+    (st n i) )
+  ())
+
+(defmethod Stack pop ()
+  (when (idx-emptyp st)
+    (error "stack is empty") )
+  (let ((n (length st)))
+    (declare (-int-) n)
+    (prog1 (st (- n 1))
+      (idx-extend! st 0 -1) )))
+
+(defmethod Stack -emptyp ()
+  (idx-emptyp st) )
+
+</code>}
+
+In this example <st> and <el> are template slots. Note that
+the value of template slot <el> is never being used. It was
+included in the definition for its type only (which is 
+referred to in the definition of method <push>).
+
+Method <hashcode> does not refer to template slots, so
+we may compile it. All other methods are template methods.
+
+{<code>
+  (dhc-make "stack_template" (Stack hashcode))
+</code>}
+
+Now we may define stack classes for specific types.
+
+{<code>
+(defclass ByteStack Stack
+  ((-idx1- (-byte-)) st)
+  ((-byte-) el) )
+
+(defclass DoubleStack Stack
+  ((-idx1- (-double-)) st)
+  ((-double-) el) )
+
+(defclass IntStack Stack
+  ((-idx1- (-int-)) st)
+  ((-int-) el) )
+
+(dhc-make-class () DoubleStack ByteStack IntStack)
+</code>}
+
+Note that all three stack classes share the implementation
+of method <hashcode> but have specific implementations for
+all other methods.
+
+#? (deftemplate <name> <super> <s1>...<sn>)
+{<p>
+Define a template class with superclass <super> and slots
+<s1>...<sn>.
+}

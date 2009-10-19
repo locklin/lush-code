@@ -1,0 +1,211 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Lush/SN interface to SDL.
+;; This requires that Lush be linked with libpthread!!!
+;;
+;; /*
+;;     SDL - Simple DirectMedia Layer
+;;     Copyright (C) 1997, 1998, 1999, 2000, 2001  Sam Lantinga
+;; 
+;;     This library is free software; you can redistribute it and/or
+;;     modify it under the terms of the GNU Library General Public
+;;     License as published by the Free Software Foundation; either
+;;     version 2 of the License, or (at your option) any later version.
+;; 
+;;     This library is distributed in the hope that it will be useful,
+;;     but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+;;     Library General Public License for more details.
+;; 
+;;     You should have received a copy of the GNU Library General Public
+;;     License along with this library; if not, write to the Free
+;;     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+;; 
+;;     Sam Lantinga
+;;     slouken@devolution.com
+;; */
+
+(libload "sdl/sdl-config")
+
+;; this doesn't work
+;; (dm sdlheader (c a) (concat  "#include " SDLsn_location "/include/SDL/" a))
+;; dummy function to load the header
+(de SDL_dummy () (cpheader  "#include <SDL/SDL.h>") ())
+
+(df rem l ())
+
+(defparameter sdl-funcs ())
+(df sdladdfuncs l (setq sdl-funcs (nconc sdl-funcs l)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; #ifdef SAVE_RCSID
+;; static char rcsid =
+;;  "@(#) $Id: SDL.lsh,v 1.4 2005/04/26 00:58:36 leonb Exp $";
+;; #endif
+;; 
+;; /* Main include header for the SDL library */
+;; 
+
+;; #include "begin_code.h"
+;; /* Set up for C function definitions, even when using C++ */
+;; #ifdef __cplusplus
+;; extern "C" {
+;; #endif
+;; 
+;; /* As of version 0.5, SDL is loaded dynamically into the application */
+;; 
+;; /* These are the flags which may be passed to SDL_Init() -- you should
+;;    specify the subsystems which you will be using in your application.
+;; */
+
+(defconstant SDL_INIT_TIMER	0x00000001)
+(defconstant SDL_INIT_AUDIO	0x00000010)
+(defconstant SDL_INIT_VIDEO	0x00000020)
+(defconstant SDL_INIT_CDROM	0x00000100)
+(defconstant SDL_INIT_JOYSTICK    0x00000200)
+(defconstant SDL_INIT_NOPARACHUTE 0x00100000)	; /* don't catch fatal signals */
+(defconstant SDL_INIT_EVENTTHREAD 0x01000000)	; /* Not supported on all OS's */)
+(defconstant SDL_INIT_EVERYTHING 0x0000FFFF)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; types
+(defnamespace sdltypes- '((SDL_bool -bool-)
+                          (Uint8    -ubyte-)
+                          (Sint8    -byte-)
+                          (Uint16   -short-)
+                          (Sint16   -short-)
+                          (Uint32    -int-)
+                          (Sint32    -int-)) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(in-namespace* sdltypes-
+#? (SDL_Init <flags>)
+;;.PRE
+;; /* This function loads the SDL dynamically linked library and initializes 
+;;  * the subsystems specified by 'flags' (and those satisfying dependencies)
+;;  * Unless the SDL_INIT_NOPARACHUTE flag is set, it will install cleanup
+;;  * signal handlers for some commonly ignored fatal signals (like SIGSEGV)
+;;  */
+;; extern DECLSPEC int SDL_Init(Uint32 flags);
+;; Flags are:
+;; SDL_INIT_TIMER	 0x00000001
+;; SDL_INIT_AUDIO	 0x00000010
+;; SDL_INIT_VIDEO	 0x00000020
+;; SDL_INIT_CDROM	 0x00000100
+;; SDL_INIT_JOYSTICK	 0x00000200
+;; SDL_INIT_NOPARACHUTE	 0x00100000  /* don't catch fatal signals */
+;; SDL_INIT_EVENTTHREAD  0x01000000) /* Not supported on all OS's */)
+;; SDL_INIT_EVERYTHING   0x0000FFFF
+(de SDL_Init (flags)
+    ((Uint32)  flags)
+    (ifdef (regex-match ".*-darwin.*" (or (getconf "host") ""))
+	#{ { extern void SDLmain(void); SDLmain(); } #} )
+    (int #{ SDL_Init($flags) #}))
+
+
+#? (SDL_InitSubSystem <flags>)
+;;.PRE
+;; /* This function initializes specific SDL subsystems */
+;; extern DECLSPEC int SDL_InitSubSystem(Uint32 flags);
+(de SDL_InitSubSystem(flags)
+  ((Uint32) flags)
+  (int #{ SDL_InitSubSystem($flags) #}))
+
+#? (SDL_QuitSubSystem <flags>)
+;;.PRE
+;; /* This function cleans up specific SDL subsystems */
+;; extern DECLSPEC void SDL_QuitSubSystem(Uint32 flags);
+(de SDL_QuitSubSystem(flags)
+  ((Uint32) flags)
+  #{ SDL_QuitSubSystem($flags) #} ())
+
+#? (SDL_WasInit <flags>)
+;;.PRE
+;; /* This function returns mask of the specified subsystems which have
+;;    been initialized.
+;;    If 'flags' is 0, it returns a mask of all initialized subsystems.
+;; */
+;; extern DECLSPEC Uint32 SDL_WasInit(Uint32 flags);
+(de SDL_WasInit(flags)
+  ((Uint32) flags)
+  #{ SDL_WasInit($flags) #} ())
+
+#? (SDL_Quit)
+;;.PRE
+;; /* This function cleans up all initialized subsystems and unloads the
+;;  * dynamically linked library.  You should call it upon all exit conditions.
+;;  */
+;; extern DECLSPEC void SDL_Quit(void);
+(de SDL_Quit() #{ SDL_Quit() #} ())
+
+;; /* Ends C function definitions when using C++ */
+;; #ifdef __cplusplus
+;; }
+;; #endif
+;; #include "close_code.h"
+;; 
+;; #endif /* _SDL_H */
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(sdladdfuncs SDL_dummy SDL_Init SDL_InitSubSystem 
+             SDL_QuitSubSystem SDL_WasInit SDL_Quit)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; We must force loading these files
+;; because we need to construct the sdl-funcs list!
+(libload "SDL_active"    t)
+(libload "SDL_audio"     t)
+(libload "SDL_byteorder" t)
+(libload "SDL_cdrom"     t)
+(libload "SDL_copying"   t)
+(libload "SDL_endian"    t)
+(libload "SDL_error"     t)
+(libload "SDL_events"    t)
+(libload "SDL_getenv"    t)
+(libload "SDL_joystick"  t)
+(libload "SDL_keyboard"  t)
+(libload "SDL_keysym"    t)
+(libload "SDL_main"      t)
+(libload "SDL_mouse"     t)
+(libload "SDL_mutex"     t)
+(libload "SDL_quit"      t)
+(libload "SDL_rwops"     t)
+(libload "SDL_syswm"     t)
+(libload "SDL_thread"    t)
+(libload "SDL_timer"     t)
+(libload "SDL_types"     t)
+(libload "SDL_version"   t)
+(libload "SDL_video"     t)
+;; not technically part of SDL proper
+(libload "SDL_image"     t) )
+
+) ; in-namespace*
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(let ((dhc-make-lushflags (concat dhc-make-lushflags sdl-cflags)))
+  ;; OS X hack
+  (when (regex-match ".*-darwin.*" (or (getconf "host") ""))
+    (libload "libc/make.lsh")
+    (let ((lm (new LushMake)))
+      (==> lm rule "SDLMain.o" '("SDLMain.m"))
+      (==> lm make)
+      (==> lm load) 
+      (module-never-unload (mod-search "SDLMain.o")) ) )
+  ;; Back to normal
+  (with-namespace lush1-
+    (dhc-make-all () sdl-funcs sdl-libs) ))
+
+(defconstant SDL_BYTEORDER (SDL_byteorder))
+
+;; /* Native audio byte ordering */
+(if (= SDL_BYTEORDER SDL_LIL_ENDIAN)
+    (progn
+      (defconstant AUDIO_U16SYS	AUDIO_U16LSB)
+      (defconstant AUDIO_S16SYS	AUDIO_S16LSB))
+  (assert (= SDL_BYTEORDER SDL_BIG_ENDIAN)) 
+  (defconstant AUDIO_U16SYS AUDIO_U16MSB)
+  (defconstant AUDIO_S16SYS AUDIO_S16MSB))
+
+
+
