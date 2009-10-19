@@ -4,7 +4,7 @@ Lush has a powerful mechanism for manipulating tabular data such
 as scalars, vectors, matrices, and higher dimensional arrays.
 
 The basic Lush object for accessing tabular data is called an index,
-and is of type <INDEX>. An index is merely an access structure, the
+and is of type <Index>. An index is merely an access structure, the
 actual data is stored in a storage referenced by the index. The data
 contained in a storage and accessed with an index can be of numeric
 type like <double>, <float>, <int>, etc. The data may also be pointers,
@@ -99,10 +99,10 @@ is <nil> and the array element values are undefined.
 
 Examples:
 {<code>
-? (make-array float-storage '(100 100) 0) ;; initialize with 3.1415 instead
-= ::INDEX:<100x100>
-? (make-array float-storage '(100 100) 3.1415)
-= ::INDEX:<100x100>
+? (make-array FloatStorage '(100 100) 0) ;; initialize with 3.1415 instead
+= ::Index:<100x100>
+? (make-array FloatStorage '(100 100) 3.1415)
+= ::Index:<100x100>
 ?
 </code>}
 
@@ -122,20 +122,20 @@ the extents of the new array. The array content is undefined.
 Create an <n>-dimensional atom array of <nil>s. The arguments <e1>...<en>
 are the extents of the new array. 
 
-#? (array-range [<n1>] <n2> [<delta>])
-{<see> range, array-range*}
+#? (arange [<n1>] <n2> [<delta>])
+{<see> range, arange*}
 Similiar to <range> but the result is a one-dimensional double array 
 instead of a list. Example:
 
-{<ex> (array-range 2 5)}
+{<ex> (arange 2 5)}
 
 
-#? (array-range* [<n1>] <n2> [<delta>])
+#? (arange* [<n1>] <n2> [<delta>])
 {<see> range*, array-range}
 Similiar to <range*> but the result is a one-dimensional double array
 instead of a list. Example:
 
-{<ex> (array-range* 2 5)}
+{<ex> (arange* 2 5)}
 
 
 #? (vector ... <args> ...)
@@ -222,41 +222,6 @@ Here are examples for each storage element type:
   (setq s [a@ "choucroute"])
 </code>}
 
-#? ** Array Literals as Local Variables in Functions
-
-A very important fact about array literals created as local variables within 
-functions is that they are "static" variables (a bit like closures in 
-lexically-bound Lisps). Here is an example:
-{<code>
-  ? (de foo () (let ((v [0 1])) (v 0 (+ (v 0) 1)) v))
-  = foo
-  ? (foo)
-  = [d  1.00  1.00]
-  ? (foo)
-  = [d  2.00  1.00]
-</code>}
-The array values are retained from one call to the next. This is true in 
-interpreted mode and in compiled mode. Preventing this behavior can be done 
-by copying the literal each time the function is called:
-{<code>
-  (de foo () (let ((v (copy-array [0 1]))) (v 0 (+ (v 0) 1)) v))
-</code>}
-
-#? ** Array Literals as Closures
-
-Being dynamically bound, Lush has no lexical closure mechanism. However, 
-array literals provide a way to emulate the behavior of lexical closures 
-(i.e., bundling "static" variables within a function):
-{<code>
-  ? (de new-counter () (lambda () (let ((v [@ 0])) (v (1+ (v))) (v))))
-  = new-counter
-  ? (setq c (new-counter))
-  = ::DE:8805898
-  ? (c)
-  = 1
-  ? (c)
-  = 2
-</code>}
 
 #? *** Index Properties and Predicates
 
@@ -285,6 +250,8 @@ return the extent of <m> in its <d>-th dimension (starting at zero).
 
 {<ex> (shape [[2 3 4][5 6 7]])}
 
+#? ($ <a> [<d>])
+Shape of array <a> as a vector, or extend in dimension <d>.
 
 #? (idx-rank <m>)
 Return rank (the number of dimensions) of index <m>.
@@ -345,7 +312,7 @@ mathematical functions from Section "Numbers" (<abs>, <sin>, <exp>, etc.)
 may be applied to arrays as well. If applied to an array, the result is 
 a double array of the same shape as the input array.
 
-{<ex> (let ((m (reshape (arange 20) '(4 5))))
+{<ex> (let ((m ($$ (arange 20) '(4 5))))
         (+ (** (cos m) 2) (** (sin m) 2)) ) }
 
 If the input array to a function (<sin>, <cos>, etc.) is of a floating 
@@ -355,13 +322,13 @@ point type, then the output array is of the same type.
 
 When more than one array is passed to an arithmetic function, then not
 all arrays need to have the same shape. The indexes must be <broadcastable> 
-to the same shape, however. The result then has then same shape as the 
+to the same shape, however. The result then has same shape as the 
 broadcasted input indexes. In this example, both indexes are of
 equal rank:
 
 {<code> 
 ? (let ((v (vector 1 2 3)))
-      (+ (reshape v '(1 3)) (reshape v '(3 1))) )
+      (+ ($< v) ($> v)) )
 = [d[d  2.00  3.00  4.00]
     [d  3.00  4.00  5.00]
     [d  4.00  5.00  6.00]]
@@ -371,7 +338,7 @@ But equal rank is not a necessary condition as these examples show:
 
 {<code>
 ? (let ((v (vector 1 2 3)))
-      (+ v (reshape v '(3 1))) )
+      (+ v ($> v)) )
 = [d[d  2.00  3.00  4.00]
     [d  3.00  4.00  5.00]
     [d  4.00  5.00  6.00]]
@@ -383,13 +350,13 @@ But equal rank is not a necessary condition as these examples show:
     [d  5.00  5.00  5.00  5.00]]
 ?
 ? (let ((m (double-array 3 4)))
-      (+ m (reshape (vector 1 2 3) '(3 1))) )
+      (+ m ($> [1 2 3])) )
 = [d[d  1.00  1.00  1.00  1.00]
     [d  2.00  2.00  2.00  2.00]
     [d  3.00  3.00  3.00  3.00]]
 ?
 ? (let ((m (double-array 3 4)))
-      (+ m (reshape (vector 1 2 3 4) '(1 4))) )
+      (+ m ($< [1 2 3 4])) )
 = [d[d  1.00  2.00  3.00  4.00]
     [d  1.00  2.00  3.00  4.00]
     [d  1.00  2.00  3.00  4.00]]
@@ -432,9 +399,9 @@ Numbers are treated as scalars.
 {<see> Index Broadcasting}
 True if indexes <a1> and <a2> are broadcastable.
 
-{<ex> (let ((m (reshape (arange 20) '(5 4))))
+{<ex> (let ((m ($$ (arange 20) '(5 4))))
         (idx-broadcastable-p m (vector 4 3 2 1)) )}
-{<ex> (let ((m (reshape (arange 20) '(5 4))))
+{<ex> (let ((m ($$ (arange 20) '(5 4))))
         (idx-broadcastable-p m (vector 5 4 3 2 1)) )}
 
 #? (idx-broadcast <m0> ... <mn>)
@@ -443,7 +410,7 @@ Return list of broadcasted indexes <m0>...<mn>. Raise an error if
 the indexes are not broadcastable.
 Numbers are treated as scalars.
 
-{<ex> (let ((m (reshape (arange 12) '(4 3))))
+{<ex> (let ((m ($$ (arange 12) '(4 3))))
         (idx-broadcast m (vector 3 2 1) [@5]) )}
 
 
@@ -471,6 +438,8 @@ elements with the new shape.
 
 {<ex> (idx-reshape (array-range 20) '(4 5))}
 
+#? ($$ <a> <shp>)
+Reshape array <a> to have shape <shp>.
 
 #? (idx-nick <m> <d>)
 {<see> idx-nick!}
@@ -493,6 +462,9 @@ Reshape index <m> by collapsing the first <n> dimensions (default
 is <(rank m) - 1>), or raise an error when <m> is not contiguous.
 When <n> is negative, the last <n> dimensions of <m> are collapsed.
 
+#? ($- <a>)
+Flatten array <a>.
+
 
 #? (idx-select <m> <d> <s>)
 {<see> idx-select*}
@@ -506,15 +478,17 @@ the <s>-th "slice" of <m>, in the <d>-th dimension.
   = [ 2.00 12.00 ]
 </code>}
 
+#? ($*0 <a> <s>)
+Select slice <s> of <a> in dimension 0.
 
-#? (idx-select-all <m> [<d>])
-{<see> idx-select}
-Return list of all "slices" of <m> along dimension <d>. Default for
-<d> is zero. Example:
+#? ($*1 <a> <s>)
+Select slice <s> of <a> in dimension 0.
 
-{<ex> (let ((m (reshape (arange 20) '(4 5))))
-        (idx-select-all m) )}
+#? ($*2 <a> <s>)
+Select slice <s> of <a> in dimension 0.
 
+#? ($*3 <a> <s>)
+Select slice <s> of <a> in dimension 0.
 
 #? (idx-select* <m> <s0> <s1> ...)
 {<see> idx-select}
@@ -527,7 +501,6 @@ Recursively select index with argument <si> for dimension <i> of <m>.
   = [@d 12.00]
 </code>}
 
-
 #? (idx-lift <m> <e1>...<en>)
 {<see> array-lift, idx-sink}
 Create a new index with <n>+<(rank m)> dimensions, where the first <n>
@@ -538,6 +511,9 @@ to the resulting array yields an index equivalent to <m>.
              (m* (idx-lift m 2)))
         (list (shape m) (shape m*) m*))}
 
+#? ($< <a> <e1>...<en>)
+{<see> idx-lift}
+Lift index <a>.
 
 #? (array-lift <m> <e1>...<en>)
 {<see> idx-lift, array-sink}
@@ -560,6 +536,9 @@ new dimensions are added to the end of <m>'s shape.
              (m* (idx-sink m 2)))
         (list (shape m) (shape m*) m*))}
 
+$? ($> <a> <e1>...<en>)
+{<see> idx-sink}
+Sink index <a>.
 
 #? (array-sink <m> <e1>...<en>)
 {<see> array-lift}
@@ -842,11 +821,6 @@ The above function work just as well is <v1> and <v2> are
 dimensional tensors as arguments.
 
 
-#? (idx-pbloop ((<symb1> <idx1>) [ (symb2> <idx2>) [...(<symbn> <idxn>) ]]) <body>)
-Works just like idx-bloop, but the multiple evaluations of the
-body may be executed in parallel on some implementations of Lush.
-
-
 #? (idx-eloop ((<symb1> <idx1>) [ (symb2> <idx2>) [...(<symbn> <idxn>) ]]) <body>)
 Make each <symbi> be an idx that loops over the last dimension of its
 corresponding <idxi>. Execute <body> for each value.
@@ -859,11 +833,6 @@ instead of the first. For example, the matrix product operation
 </code>}
 where <idx-m2dotm1> is the usual matrix-vector product. The <idx-eloop>
 construct simultaneously iterates over all columns of <B> and <C>.
-
-
-#? (idx-peloop ((<symb1> <idx1>) [ (symb2> <idx2>) [...(<symbn> <idxn>) ]]) <body>)
-Works just like idx-pbloop, but the multiple evaluations of the
-body may be executed in parallel on some implementations of Lush.
 
 
 #? (cidx-bloop (<i_1> [<i_2>...<i_n>] (<c_1> <l_1>) [(<c_1> <l_1>)...(<c_m> <l_m>)) <p_1> [<p_2>...])
@@ -1431,30 +1400,3 @@ R_ij + = M1_i * M_j
 #? (idx-m2extm2acc <m1> <m2> [<r>])
 outer product between matrices with accumulation. 
 Gives a 4-tensor: R_ijkl += M1_ij * M2_kl
-
-
-#? *** Backward Compatibility Functions
-These functions are here for historical reasons.
-
-#? (dot-product <a> <b>)
-return the dot product of <a> and <b>
-
-#? (m*m <a> <b> [<c>])
-obsolete and non-compilable matrix product function.
-
-#? (m+m <a> <b> [<c>])
-obsolete and non-compilable matrix addition function.
-
-#? (mxm <a> <b> [<c>])
-obsolete and non-compilable component-wise matrix multiply function.
-
-#? (m-m <a> <b> [<c>])
-obsolete and non-compilable matrix subtraction function.
-
-#? (m*c <a> <b> [<c>])
-obsolete and non-compilable multiplication of
-a matrix by a scalar.
-
-#? (m+c <a> <b> [<c>])
-obsolete and non-compilable addition of a scalar
-to the elements of a matrix.
