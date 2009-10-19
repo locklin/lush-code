@@ -546,11 +546,8 @@ DX(xnew_storage_mmap)
 
 storage_t *make_storage(storage_type_t t, size_t n, at *init)
 {
-   if (n<0)
-      RAISEF("invalid size", NEW_NUMBER(n));
-   
    storage_t *st = new_storage(t);
-   storage_alloc(st, n, init);
+   if (n) storage_alloc(st, n, init);
    return st;
 }
 
@@ -598,7 +595,7 @@ DX(xstorage_alloc)
    int n = AINTEGER(2);
    if (n<0)
       RAISEFX("invalid size", NEW_NUMBER(n));
-   storage_alloc(ASTORAGE(1), n, APOINTER(3));
+   if (n) storage_alloc(ASTORAGE(1), n, APOINTER(3));
    return NIL;
 }
 

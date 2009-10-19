@@ -1031,9 +1031,13 @@ index_t *new_index(storage_t *st, shape_t *shp)
    if (shp==NIL)
       shp = SHAPE1D(stnelems);
    
-   else if (shpnelems>stnelems)
-      RAISEF("storage too small for new index", NEW_NUMBER(stnelems));
-   
+   else if (shpnelems>stnelems) {
+      if (st->data) {
+         RAISEF("storage too small for new index", NEW_NUMBER(stnelems));
+      } else {
+         storage_alloc(st, shpnelems, NEW_NUMBER(0));
+      }
+   }
    index_t *ind = mm_alloc(mt_index);
    if (st == NULL) {
       IND_NDIMS(ind) = 0;
