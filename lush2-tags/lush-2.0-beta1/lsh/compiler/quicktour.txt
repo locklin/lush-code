@@ -1,0 +1,237 @@
+
+This file contains a summary description of 
+the Lush compiler internals. This overview
+hopefully helps making sense of the comments
+in the code and of the code itself.
+
+The compiler was started in 1991 by Leon Bottou,
+completed in 1992 by Yann LeCun, redesigned in 1995-1996 by 
+Patrice Simard, and slightly refreshed in 2002 by Leon Bottou.
+The present overview was written in 2009 by Leon Bottou.
+Please allow for some memory lapses...
+
+The compiler is implemented in three files 
+<"dh-util.lsh">, <"dh-macro.lsh">, and <"dh-compiler.lsh">.
+Each file is neatly separated in sections using large comments.
+
+
+FILE DH-UTIL.LSH
+----------------
+
+File <"dh-util.lsh"> contains the following sections:
+
+- Section UTILITIES contains small utilities:
+  list manipulation functions, accessors for type fields,
+  helpers for generating code, etc.
+
+- Section TYPE INFERENCE defines an object class to 
+  represent types. Most fields of a type object 
+  are represented by "unodes" in order to support 
+  type inference. The unode functions are defined in at.c
+  but I cannot find their documentation.
+
+  Basically unodes are lisp trees that can be 
+  attached together using physical list manipulation.
+  They are created using function <new-unode>.
+  Each unode has a value accessed with function <unode-val>.
+  Example:
+  ? (setq ua (new-unode 1))
+  = (() . 1)
+  ? (setq ub (new-unode 2))
+  = (() . 2)
+  ? (setq uc (new-unode 3)))
+  = (() . 3)
+  ? (unode-val ua)
+  = 1
+  ? (unode-val ub)
+  = 2
+  ? (unode-val uc)
+  = 3
+  Unodes can be "unified" with function <unode-unify>.
+  The third argument of <unode-unify> is a function
+  that merges the values of both unodes.
+  ? (unode-unify ub uc min)
+  ? (unode-val ua)
+  = 1
+  ? (unode-val ub)
+  = 2
+  ? (unode-val uc)
+  = 2  ;<<<<< CHANGED 
+  and function <unode-eq> tests if unodes have been unified.
+  ? (if (unode-eq ua ub) 't)
+  = ()
+  ? (if (unode-eq uc ub) 't)
+  = t
+  Unification works by joining the unode trees
+  with a common new pair containing the unified 
+  value of both unodes.
+  ? ub
+  = ((() . 2) . 2)
+  ? uc
+  = ((() . 2) . 3)
+  ? (== (car ub) (car uc))
+  = t
+  Unification is transitive.
+  In the following example, since ub and uc are unified,
+  unifying ub and ua also unifies ua and uc:
+  ? (unode-unify ub ua min)
+  ? (if (unode-eq ua uc) 't)
+  = t
+  ? (unode-val uc)
+  = 1 ;<<<<<< CHANGED  
+
+  For the little history, when lush was still called "sn",
+  there used to be a package "prolog.sn" implementing 
+  a prolog-like rule system using unodes. 
+
+  The file <"dh-util.lsh"> defines a number of functions that
+  are used to compute the unified values of various
+  fields of the type structure.  These functions
+  are often called <dhc-combine-xxx>.
+  All this is usually called through function <dhc-unify-t> 
+  which unifies all the fields of two type objects or 
+  complain when the types are incompatible.
+
+  The fields <u-bump> and <u-access> are unusual for type structures.
+  The value of field <u-access> records whether a variablas been written to.
+  The value of field <u-bump> is the outermost lexical level inside a function
+  where the type has been encountered.  These are the key components
+  of the escape analysis mechanism for identifying which objects allocated 
+  inside a function need to be preserved after the function returns.
+  Such things were quite rare in 1995.
+
+  When compiling a function (or a class) the compiler
+  uses function <dhc-gather-type> to collect all the types
+  associated with stuff returned by the function 
+  such as the return value, but also all the slots of objects
+  passed as arguments when they have been written to.
+  The compiler then unifies their u-bump field with value 0 to 
+  indicate that their values can be used outside the function.
+  This propagates to all types that have ever been unified
+  with these return points, and in particular to the types
+  of all objects allocated inside the function.  Those
+  with lexical level zero are then changed into hidden
+  function argument in the hope that they will not escape 
+  the calling function.  This happens in <"dh-compiler.lsh">.
+
+  Note that unification (a transitive equivalence relation) 
+  is a bit too strong for this use. In theory it would have been
+  sufficient to implement an antisymmetric order relation
+  between types. As a result the compiler sometimes bumps
+  variables it could have discarded. On the other hand,
+  the compilation speed is vastly improved because the
+  unode system works very efficiently.
+
+- See below the discussion of section SYMBOL TABLE.
+
+- Section PARSER is the one I understand the least.
+  It defines the structure t-node representing the nodes
+  of the parse tree. In general the t-node for an evaluatable
+  list contains the type of the return value and
+  a list <tn-list> containing one t-node for each list 
+  element, including the function name.
+  Slot <tranfer> in the t-node is used as a placeholder
+  for information passed to the code generator.
+  Slot <ignore> is used to disable some error 
+  checks (function <unprotect>) but I believe this is 
+  now deprecated.
+
+  The parser section also defines the functions <dhm-t>, <dhm-c> and <dhm-pp>.
+  These functions provide easy means to define lisp code that the
+  compiler calls when it encounters a particular function.
+  Code defined with <dhm-pp> is called when performing the 
+  macro expansion.  Code defined with <dhm-t> is called when building
+  the parse tree.  Code defined with <dhm-c> is called when generating
+  the C code, even though this is not really part of the parser.
+  File <"dhc-macro.lsh"> defines lots of such DHM functions.
+
+  In general functions whose name ends with suffix <-t> are called 
+  when building the parse tree and functions whose name ends with suffix <-c>
+  are called when generating the C code. 
+  For instance function <dhc-parse-expr-t> takes a lisp 
+  expression and constructs the t-node for that expression.
+  This function often ends up calling the right DHM-T function
+  to do the actual work.
+
+  The corresponding function <dhc-parse-expr-c> takes a lisp 
+  expression and its parse tree, generates the corresponding c code,
+  and returns a string representing the C expression for the return value.
+  The last argument <retplace> is indicates a variable name for 
+  the return value of the expression. This argument is also found in
+  all the DHM-C functions called from this function. 
+  When <retplace> is nonnull, the C code must store the return value 
+  in that variable and the function returns <retplace>.  
+  When <retplace> is nil, the function is free to either 
+  return a C expression or allocate a variable for holding 
+  the return value and return that variable name.
+  The code for a C block delimited by braces is recorded in list of 
+  strings via functions <dhc-add-c-declarations>, <dhc-add-c-statements>, 
+  and <dhc-add-c-epilog>.  Function <dhc-push-scope-c> is called whenever
+  one wants to create a new C block.  See the DHM-C for function <let>
+  in file <"dh-macros.lsh">.
+  
+
+- Section SYMBOL TABLE first defines a structure for representing symbols.
+  In fact the symbol tables are simply alists associating the symbol name
+  to the symbol structure. This is convenient because the function <let>
+  for instance, simply extends the symbol table by prepending new alist
+  elements for the symbols it defines.  When we leave the function, 
+  we can simply restore the previous pointer.
+  This is encapsulated in macro <dhc-push-scope-t>.
+  See the DHM-T function for function <let> in <"dh-macros.lsh">.
+
+
+
+
+
+FILE DH-COMPILER.LSH
+--------------------
+
+- Section CODE GENERATION contains the essential function <dhc-generate-c>.
+  Function <dhc-generate-c> performs two passes
+  on the functions and classes listed as argument to function <dhc-make>.   
+
+  The first pass first expands all macros,
+  possibly calling the functions declared with <dhc-pp> and, 
+  in the case of a function, calls <dhc-parse-expr-t> to parse the lambda 
+  expression for each function.  All the parsing work is then done
+  by the DHM-T for <lambda> defined below.  Classes are handled with    
+  the helper function <dhc-compile-class-t> because things are 
+  a bit more complicated.  The local variable <treetype-list> accumulate
+  the list of parse trees, the local variable <global-table> contains
+  the global symbol table, and the local variable <symbol-table> contains
+  the local symbol table and is rebound whenever one calls <dhc-push-scope-t>.
+  As you can see, the compiler makes extensive use of the dynamical symbol
+  binding semantics of lush (which is precisely what it cannot compile...)
+
+  The second pass then generate the c code for all functions.
+  This is accumulated into the list of strings <c-pheader>, <c-header>
+  for the file headers, <program> for the function C code, and <metaprogram>
+  for the DHDOC information. There is also <external-symbols> and 
+  <external-metasymbols> for declaring symbols defined in other compilation
+  units, <initialization-calls> for the dh_define calls, and <c-depends> for 
+  recording the hash codes of all external dependencies. File <"dhc-util.lsh">
+  defines a number of <dhc-add-xxxx> functions to add stuff to these lists.
+  Then the pass assemble the final C code by concatenating all these
+  lists of strings in the right order...
+
+
+- Section CONTROL contains the logic that starts with function <dhc-make>
+  and eventually calls function <dhc-generate-c>.
+  This is quite well described by the "compiler internals" section 
+  of the lush documentation.
+
+
+
+
+FILE DH-MACRO.LSH
+-----------------
+
+This file defines DHM functions for all the compilable constructions....
+
+
+
+
+
+
+ 
