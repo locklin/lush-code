@@ -132,7 +132,7 @@ static bool call_trace_hook(int tab, const char *line, at *expr, at *info)
                        new_cons(NEW_STRING(line),
                                 new_cons(expr, new_cons(info, NIL))));
    eval_ptr = eval_std;
-   at *ans = apply(at_trace, args);
+   at *ans = eval(new_cons(at_trace, args));
    return (ans != NIL);
 }
 
