@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;  $Id: sysenv.lsh,v 1.126 2008-01-25 22:59:47 profshadoko Exp $
+;;;  $Id: sysenv.lsh,v 1.127 2009-10-23 21:50:36 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1747,25 +1747,39 @@
       (setq extlist (list (concat "." (or (getconf "AEXT") "a")))) ) )
   (find-file static-library-path name extlist) )
 
+(de find-shared-library.parse(file p)
+  (when (filep file)
+    (reading file
+      (while (<> (skip-char "\n\r\t ") "\e")
+        (let ((d (read-string "~\n\r\t\b")))
+          (cond 
+           ((regex-match " *include +.+" d)
+            (reading (concat "|" (regex-subst " *include" "echo" d))
+              (while (<> (skip-char) "\e")
+                (setq p (find-shared-library.parse (read-string "~\n\r\t\b ") p)) ) ) )
+           ((and (dirp d) (not (member d p)))
+            (setq p (nconc1 p d)) ) ) ) ) ) )
+  p )
+
+(de find-shared-library.linux()
+  ;; maybe expand dirs with cpuflags here?
+  (find-shared-library.parse "/etc/ld.so.conf" ()) )
+
 (de find-shared-library(name &optional extlist)
-  (let ((p shared-library-path))
-    (when (not extlist)
-      (setq extlist '(""))
-      (when (not (index "." (basename name)))
-        (setq extlist (list (concat "." (or (getconf "SOEXT") "so")))) ) )
-    (when (filep "/etc/ld.so.conf")
-      (reading "/etc/ld.so.conf"
-	(while (<> (skip-char) "\e")
-	  (let ((d (read-string "~\n\r\t\b ")))
-	    (when (and (dirp d) (not (member d p)))
-	      (setq p (cons d p)) ) ) ) ) )
-    (find-file (reverse p) name extlist) ) )
+  (when (not extlist)
+    (setq extlist '(""))
+    (when (not (index "." (basename name)))
+      (setq extlist (list (concat "." (or (getconf "SOEXT") "so")))) ) )
+  (let ((p (nconc (find-shared-library.linux) shared-library-path)))
+    (find-file p name extlist) ) )
 
 (de find-shared-or-static-library(name &optional extlist)
   (or (find-shared-library name extlist)
       (find-static-library name) ) )
 
 (lock-symbol find-c-include
+             find-shared-library.parse  
+             find-shared-library.linux
              find-shared-library  
              find-static-library  
              find-shared-or-static-library )
