@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: fortran.lsh,v 1.4 2009-10-23 21:09:10 leonb Exp $
+;;; $Id: fortran.lsh,v 1.5 2009-10-23 22:50:15 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -67,28 +67,24 @@
 (when (= (getconf "GCC") "yes")
   (let ((cc (getconf "CC"))
         (f77 (getconf "F77"))
-        (libgcc-gcc ())
-        (libgcc-f77 ())
+        (exists (lambda(s) (when (filep s) s)))
+        (libgcc ())
         (libf77 ()) )
     ;; Locate libgcc
-    (reading (concat "| " cc " --print-file-name=libgcc.a")
-      (setq libgcc-gcc (read-string)) )
     (reading (concat "| " f77 " --print-file-name=libgcc.a")
-      (setq libgcc-f77 (read-string)) )
-    (when (and (filep libgcc-gcc) (filep libgcc-f77) (<> libgcc-gcc libgcc-f77))
-      (printf "*** Warning: C and fortran compilers use different versions of libgcc\n")
-      (printf "***  Fortran support might be unreliable\n") )
+      (setq libgcc (or libgcc (exists (read-string)))) )
+    (reading (concat "| " cc " --print-file-name=libgcc.a")
+      (setq libgcc (or libgcc (exists (read-string)))) )
     ;; Search fortran lib
-    (when (filep libgcc-f77)
-      (let* ((gcc-dir (dirname libgcc-f77))
-             (shared-library-path (list gcc-dir)) 
-             (exists (lambda(s) (when (filep s) s))) )
+    (when (filep libgcc)
+      (let* ((libgcc-dir (dirname libgcc))
+             (shared-library-path (list libgcc-dir)) )
         (setq libf77 (or (find-shared-library "libgfortran")
                          (find-shared-library "libg2c") ) )
         (when (not libf77)
           (when (setq libf77 
-                      (or (exists (filep (concat-fname gcc-dir "libgfortran.a")))
-                          (exists (filep (concat-fname gcc-dir "libg2c.a"))) ) )
+                      (or (exists (concat-fname libgcc-dir "libgfortran.a"))
+                          (exists (concat-fname libgcc-dir "libg2c.a")) ) )
             (setq fortran-libs-static-p t) ) ) ) )
     ;; Keep searching
     (when (and (not libf77) (not (= f77 "g77")))
