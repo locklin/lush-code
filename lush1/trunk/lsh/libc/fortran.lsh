@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: fortran.lsh,v 1.3 2003-01-02 20:13:59 leonb Exp $
+;;; $Id: fortran.lsh,v 1.4 2009-10-23 21:09:10 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -65,50 +65,58 @@
 
 ;;;; SPECIAL CODE FOR GCC
 (when (= (getconf "GCC") "yes")
-  (let ((libgcc ())
-        (libg77 ())
-        (libg77name "libg2c") )
+  (let ((cc (getconf "CC"))
+        (f77 (getconf "F77"))
+        (libgcc-gcc ())
+        (libgcc-f77 ())
+        (libf77 ()) )
     ;; Locate libgcc
-    (reading (concat "| " (getconf "CC") " --print-file-name=libgcc.a")
-      (setq libgcc (read-string)) )
-    (when (filep libgcc)
-      ;; Search shared lib in libgcc path
-      ;; Note: libg77 is a wild guess for future versions of g77
-      (let ((shared-library-path (list (dirname libgcc))))
-        (setq libg77 (or (find-shared-library "libg77")
-                         (find-shared-library "libg2c") ) ) )
-      ;; Decide g77 support library name
-      (when (not libg77)
-        (when (filep (concat-fname (dirname libgcc) "libg77.a"))
-          (setq libg77name "libg77") ) ) )
-    ;; Search shared library
-    (when (not libg77)
-      (setq libg77 (find-shared-library libg77name)) )
-    ;; Search static library
-    (when (not libg77)
-      (let ((static-library-path static-library-path))
-        (when (filep libgcc)
-          (setq static-library-path (cons (dirname libgcc) static-library-path)) )
-        (when (setq libg77 (find-static-library libg77name))
+    (reading (concat "| " cc " --print-file-name=libgcc.a")
+      (setq libgcc-gcc (read-string)) )
+    (reading (concat "| " f77 " --print-file-name=libgcc.a")
+      (setq libgcc-f77 (read-string)) )
+    (when (and (filep libgcc-gcc) (filep libgcc-f77) (<> libgcc-gcc libgcc-f77))
+      (printf "*** Warning: C and fortran compilers use different versions of libgcc\n")
+      (printf "***  Fortran support might be unreliable\n") )
+    ;; Search fortran lib
+    (when (filep libgcc-f77)
+      (let* ((gcc-dir (dirname libgcc-f77))
+             (shared-library-path (list gcc-dir)) 
+             (exists (lambda(s) (when (filep s) s))) )
+        (setq libf77 (or (find-shared-library "libgfortran")
+                         (find-shared-library "libg2c") ) )
+        (when (not libf77)
+          (when (setq libf77 
+                      (or (exists (filep (concat-fname gcc-dir "libgfortran.a")))
+                          (exists (filep (concat-fname gcc-dir "libg2c.a"))) ) )
+            (setq fortran-libs-static-p t) ) ) ) )
+    ;; Keep searching
+    (when (and (not libf77) (not (= f77 "g77")))
+      (when (not (setq libf77 (find-shared-library "libgfortran")))
+        (when (setq libf77 (find-static-library "libgfortran"))
+          (setq fortran-libs-static-p t) ) ) )
+    (when (and (not libf77) (not (= f77 "gfortran")))
+      (when (not (setq libf77 (find-shared-library "libg2c")))
+        (when (setq libf77 (find-static-library "libg2c"))
           (setq fortran-libs-static-p t) ) ) )
     ;; Trouble
-    (when (not libg77)
-      (when (not (setq libg77 (find-shared-library "libf2c")))
-        (when (setq libg77 (find-static-library "libf2c"))
+    (when (and (not libf77) (not (= f77 "gfortran")))
+      (when (not (setq libf77 (find-shared-library "libf2c")))
+        (when (setq libf77 (find-static-library "libf2c"))
           (setq fortran-libs-static-p t) ) )
-      (when libg77
+      (when libf77
         (printf "*** Warning: Cannot find libg2c. Found libf2c instead\n")
         (printf "***   Fortran support might be incomplete and/or unreliable\n") ) )
     ;; Big trouble
-    (when (not libg77)
-      (printf "*** Warning: Cannot find libg2c.\n")
+    (when (not libf77)
+      (printf "*** Warning: Cannot find fortran support library.\n")
       (printf "***   Fortran support will be incomplete and/or unreliable\n") )
     ;; Store
-    (when (and (stringp libg77) (filep libg77))
-      (setq fortran-libs (list libg77)) ) ) )
-    
+    (when (and (stringp libf77) (filep libf77))
+      (setq fortran-libs (list libf77)) ) ) )
 
-;;; CODE FOR NON-GCC OR NON-G77
+
+;;; CODE FOR NON-GCC OR NON-GFORTRAN
 (when (not fortran-libs)
   (each ((lib (list "libF77" "libV77")))  ;; insert more
     (let ((fname ()))
