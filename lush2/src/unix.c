@@ -1730,9 +1730,9 @@ DX(xsocketopen)
    at *f1 = new_rfile(ff1);
    at *f2 = new_wfile(ff2);
    if (p1)
-      var_set(p1,f1);
+      setq(p1,f1);
    if (p2)
-      var_set(p2,f2);
+      setq(p2,f2);
    return new_cons(f2, f1);
 #else
    RAISEFX("sockets are not supported on this machine", NIL);
