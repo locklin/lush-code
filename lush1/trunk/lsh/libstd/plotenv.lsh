@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: plotenv.lsh,v 1.29 2008-01-11 17:38:01 leonb Exp $
+;;; $Id: plotenv.lsh,v 1.30 2009-10-31 03:38:46 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;    Standard functions for plotting curves.
@@ -252,10 +252,12 @@
   xlabels ylabels           ;; label interval (or list of values)
   xgrid ygrid 		    ;; flag telling whether grid lines must be drawn
   xlabel2str ylabel2str     ;; functions to convert values into labels
+  legend                    ;; position of the legend
   ;; computed values
   cmargintop cmarginbottom cmarginleft cmarginright crect
   cxmin cymin cxmax cymax rbx rby
-  cxticks cyticks cxlabels cylabels )
+  cxticks cyticks cxlabels cylabels 
+  legendrect legendlineh legendlogow legendlinex)
 
 (defmethod PlotContext -destructor()
   (delete plotwindow)
@@ -293,7 +295,7 @@
              (stem (regex-subst " *[0-9]+$" "" name))
              (count 0) )
         (while (member name names)
-          (setq name (sprintf "%s%d" stem (incr count))) )
+          (setq name (sprintf "%s %d" stem (incr count))) )
         (setq :curve:name name)
         (setq names (cons name names)) ) ) ) )
 
@@ -426,6 +428,20 @@
     (setq crect (list (+ x cmarginleft) (+ y cmargintop)
 		      (max 0 (- w (+ cmarginleft cmarginright)))
 		      (max 0 (- h (+ cmargintop cmarginbottom))) )) )
+  ;; legend
+  (when legend
+    (let ((lw 0)(lh 0)(ln 0))
+    (each ((curve curves))
+      (setq lh (max lh (==> this text-height :curve:name plot-context-labels)))
+      (setq lw (max lw (==> this text-width :curve:name plot-context-labels)))
+      (incr ln) )
+    (setq legendlineh lh)
+    (setq legendlogow (* 4 lh))
+    (setq legendlinex (* 5 lh))
+    (setq lw (+ lw (* lh 6)))
+    (setq lh (* lh (1+ ln)))
+    (let (((x y w h) crect))
+      (setq legendrect (list (- (+ x w) lw) y lw lh)) ) ) )
   ;; rbx
   (let (((cx cy cw ch) crect))
     (setq rbx cx)
@@ -543,6 +559,19 @@
            (each ((curve curves))
              (graphics-batch 
               (==> curve execute rbx rby this) ) ) )
+         ;; draw legend
+         (when legend
+           (let (((x y w h) legendrect))
+             (gsave
+              (color color-bg) (fill-rect x y w h)
+              (color color-fg) (draw-rect x y w h)
+              (incr x (* 0.5 legendlineh))
+              (incr y (* 1.5 legendlineh))
+              (plot-context-labels)
+              (each ((curve curves))
+                (==> curve logo x (- y legendlineh) legendlogow legendlineh)
+                (gprintf (+ x legendlinex) y "%s" :curve:name)
+                (incr y legendlineh) ) ) ) )
          ;; draw title
          (when title
            (gsave
@@ -568,6 +597,10 @@
 ;; and <bounds> to compute its bounding rectangle.
 (defclass PlotGenericCurve Object
   name )
+
+(defmethod PlotGenericCurve set-name(n)
+  (when (stringp n) (setq name n)) )
+
 
 #? PlotCurve
 ;; The only curve type currently implemented.
@@ -703,6 +736,23 @@
 	   (setq ymax (max (or ymax y) (+ y v))) ) ) ) )
     (when (and xmin ymin xmax ymax)
       (list xmin ymin xmax ymax) ) ) )
+
+(defmethod PlotCurve logo rect
+  (gsave
+   (when (addclip rect)
+     (color -1)
+     (linestyle 0)
+     (let ((current-object open-square)
+           (object-size 3)
+	   (sd-bar-size 3))
+       (each ((cmd (reverse cmds)))
+	 (when (member (car cmd) '(color color-rgb linestyle setq))
+           (eval cmd) ) )
+       (let (((x y w h) rect))
+         (incr y (2/ h))
+         (draw-line x y (+ x w) y)
+         (incr x (2/ w))
+         (current-object x y) ) ) ) ) )
 
 (defmethod PlotCurve set-color(c)
   (when (not (numberp c))
@@ -895,19 +945,23 @@
 ;; in the plot setup dialog.
 
 (defclass PlotDataSetup Form
-  titleedit )
+  titleedit 
+  legendbox )
 
 (defmethod PlotDataSetup PlotDataSetup()
   (==> this form
        (new column 
-            (setq titleedit (new editstring 30)) ) ) )
+            (setq titleedit (new editstring 30)) 
+            (setq legendbox (new checkbox "Display legend") ) ) ) )
 
 (defmethod PlotDataSetup load(plot)
-  (==> titleedit setdata (or :plot:title "")) )
+  (==> titleedit setdata (or :plot:title "")) 
+  (==> legendbox setdata :plot:legend) )
 
 (defmethod PlotDataSetup save(plot)
   (let ((s (==> titleedit getdata)))
-    (setq :plot:title (when (<> s "") s)) ) )
+    (setq :plot:title (when (<> s "") s)) )
+  (setq :plot:legend (==> legendbox getdata)) )
 
 (defmethod PlotDataSetup name()
   "Title" )
@@ -1502,7 +1556,7 @@
 
 (let ((f (lambda(pw pp pc k s)
            (letslot pp (set k (not (not s))) t) )))
-  (each ((k '(xlog ylog xgrid ygrid)))
+  (each ((k '(xlog ylog xgrid ygrid legend)))
     (putp k 'graph-options f) ) )
 
 (let ((f (lambda(pw pp pc k s)
@@ -1529,11 +1583,11 @@
 
 (let ((f (lambda(pw pp pc k . args)
            (setq k (namedclean (concat "set-" (nameof k))))
-           (if (and pc (check==> (classof pc) k))
-               (eval (list ==> pc k . args))
-             (printf "+++ warning: unrecognized option: %l\n"
-                     (cons k args)) ) )))
-  (each ((k '(color color-rgb linestyle object object-size sd-bar-size)))
+           (if  (and pc (check==> (classof pc) k))
+               (prog1 (eval (list ==> pc k . args))
+                 (when (= k 'set-name) (==> pp make-unique-names)) )
+             (printf "+++ warning: unrecognized option: %l\n" (cons k args)) ) )))
+  (each ((k '(color color-rgb linestyle object object-size sd-bar-size name)))
     (putp k 'graph-options f) ) )
 
 (de graph-options args
