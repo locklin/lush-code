@@ -859,16 +859,17 @@ typedef enum dht_type storage_type_t;
 #define ST_LAST       (ST_AT + 1)
 
 /*
- * The other flags define the
- * nature of the storage (STS)
+ * The other flags define the nature of the storage (STS).
  */
 
+enum storage_kind {
+   STS_NULL = 0,           /* storage object without memory */
+   STS_MANAGED,            /* memory managed by lush runtime */
+   STS_FOREIGN,            /* pointer given to us, lush won't free */
+   STS_MMAP,               /* memory mapped via mmap */
+   STS_STATIC,             /* memory in data segment */
+};
 
-#define STS_MM        (1<<0)    /* memory managed by MM */
-#define STS_MALLOC    (1<<1)	/* pointer given to us, lush will free */
-#define STS_FOREIGN   (1<<2)    /* pointer given to us, lush won't free */
-#define STS_MMAP      (1<<3)	/* memory mapped via mmap */
-#define STS_STATIC    (1<<5)	/* in data segment */
 #define STS_MASK      255
 #define STF_RDONLY    (1<<15)	/* read only storage */
 
@@ -901,9 +902,10 @@ extern LUSHAPI void   (*storage_setat[ST_LAST])(storage_t *, size_t, at *);
 
 /* storage creation */
 LUSHAPI storage_t *new_storage(storage_type_t);
+LUSHAPI storage_t *new_storage_managed(storage_type_t, size_t, at*);
+LUSHAPI storage_t *new_storage_foreign(storage_type_t, size_t, void *, bool);
 LUSHAPI storage_t *new_storage_mmap(storage_type_t, FILE*, size_t, bool);
-LUSHAPI storage_t *make_storage(storage_type_t, size_t, at*);
-#define NEW_STORAGE(st)  new_storage(st)->backptr
+LUSHAPI storage_t *new_storage_static(storage_type_t, size_t, const void *);
 
 /* storage properties */
 LUSHAPI bool   storage_classp(const at*);

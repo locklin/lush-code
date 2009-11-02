@@ -1075,22 +1075,12 @@ DX(xnew_index)
  * Create an index referencing contiguous data
  */
 
-index_t *new_index_for_cdata(storage_type_t type, shape_t *shp, void *data)
-{
-   storage_t *st = new_storage(type);
-   st->data = data;
-   st->flags = STS_MALLOC;
-   st->size = shape_nelems(shp);
-   
-   return new_index(st, shp);
-}
-
 index_t *make_array(storage_type_t type, shape_t *shp, at *init)
 {
    /* create a storage of the right size */
    size_t nelems = shape_nelems(shp);
    nelems = (nelems<MINSTORAGE) ? MINSTORAGE : nelems;
-   storage_t *st = make_storage(type, nelems, init);
+   storage_t *st = new_storage_managed(type, nelems, init);
    index_t *res = new_index(st, shp);
    return res;
 }
@@ -1539,7 +1529,7 @@ DX(xarray_swap)
 /* create array of subscripts of all nonzero elements in ind */
 index_t *array_where_nonzero(index_t *ind)
 {
-   storage_t *srg = make_storage(ST_INT, 64, NIL);
+   storage_t *srg = new_storage_managed(ST_INT, 64, NIL);
    int n = 0;
    int r = IND_NDIMS(ind);
 

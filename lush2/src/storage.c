@@ -57,7 +57,7 @@ static void clear_storage(storage_t *st, size_t _)
 static void mark_storage(storage_t *st)
 {
    MM_MARK(st->backptr);
-   if (st->flags & STS_MM)
+   if (st->flags & STS_MANAGED)
       MM_MARK(st->data);
 }
 
@@ -329,11 +329,11 @@ static const char *storage_name(at *p)
    storage_t *st = (storage_t *)Mptr(p);
    char *kind = "";
    switch (st->flags & STS_MASK) {
-   case 0:          kind = "unallocated"; break;
-   case STS_MM:     kind = "managed"; break;
-   case STS_MALLOC: kind = "malloc"; break;
-   case STS_MMAP:   kind = "mmap"; break;
-   case STS_STATIC: kind = "static"; break;
+   case STS_NULL:    kind = "unallocated"; break;
+   case STS_MANAGED: kind = "managed"; break;
+   case STS_FOREIGN: kind = "foreign"; break;
+   case STS_MMAP:    kind = "mmap"; break;
+   case STS_STATIC:  kind = "static"; break;
    default:
       fprintf(stderr, "internal error: invalid storage kind");
       abort();
@@ -399,7 +399,7 @@ static void storage_serialize(at **pp, int code)
 
    // Create storage if needed
    if (code == SRZ_READ) {
-      st = make_storage(type, size, NIL);
+      st = new_storage_managed(type, size, NIL);
       *pp = st->backptr;
    }
 
@@ -433,7 +433,7 @@ storage_t *new_storage(storage_type_t t)
 {
    storage_t *st = mm_alloc(mt_storage);
    st->type = t;
-   st->flags = 0;
+   st->flags = STS_NULL;
    st->size = 0;
    st->data = NULL;
    st->backptr = new_at(storage_class[st->type], st);
@@ -446,9 +446,75 @@ DX(xnew_storage)
    storage_type_t t = dht_from_cname(ASYMBOL(1));
    ifn (t < ST_LAST)
       RAISEF("not a storage class", APOINTER(1));
-   return NEW_STORAGE(t);
+   return new_storage(t)->backptr;
 }
 
+
+storage_t *new_storage_managed(storage_type_t t, size_t n, at *init)
+{
+   storage_t *st = new_storage(t);
+   if (n) storage_alloc(st, n, init);
+   return st;
+}
+
+DX(xnew_storage_managed)
+{
+   if (arg_number<2 || arg_number>3)
+      ARG_NUMBER(-1);
+
+   storage_type_t t = dht_from_cname(ASYMBOL(1));
+   ifn (t < ST_LAST)
+      RAISEF("not a storage class", APOINTER(1));
+   int n = AINTEGER(2);
+   at *init = NIL;
+   if (arg_number == 3) {
+      if (t <= ST_DOUBLE)
+         ADOUBLE(3);
+      init = APOINTER(3);
+   }
+   return new_storage_managed(t, n, init)->backptr;
+}
+
+
+storage_t *new_storage_foreign(storage_type_t t, size_t n, void *p, bool readonly)
+{
+   storage_t *st = mm_alloc(mt_storage);
+   st->type = t;
+   st->flags = STS_FOREIGN;
+   if (readonly) st->flags |= STF_RDONLY;
+   st->size = n;
+   st->data = (void *)p;
+   st->backptr = new_at(storage_class[st->type], st);
+   return st;
+}
+
+DX(xnew_storage_foreign)
+{
+   if (arg_number<3 || arg_number>4)
+      ARG_NUMBER(-1);
+
+   storage_type_t t = dht_from_cname(ASYMBOL(1));
+   ifn (t < ST_LAST)
+      RAISEF("not a storage class", APOINTER(1));
+   int n = AINTEGER(2);
+   void *p = AGPTR(3);
+   bool readonly = (arg_number>3) ? (APOINTER(4)!=NIL) : true;
+   
+   return new_storage_foreign(t, n, p, readonly)->backptr;
+}
+
+
+/* new storage with <n> elements of type <t> at <p> */
+storage_t *new_storage_static(storage_type_t t, size_t n, const void *p)
+{
+   storage_t *st = mm_alloc(mt_storage);
+   st->type = t;
+   st->flags = STS_STATIC | STF_RDONLY;
+   st->size = n;
+   st->data = (void *)p;
+   st->backptr = new_at(storage_class[st->type], st);
+   return st;
+}
 
 #ifdef HAVE_MMAP
 
@@ -521,14 +587,14 @@ storage_t *new_storage_mmap(storage_type_t t, FILE *f, size_t offs, bool ro)
 
 DX(xnew_storage_mmap)
 {
-   if (arg_number<3 || arg_number>4)
+   if (arg_number<2 || arg_number>4)
       ARG_NUMBER(-1);
 
    storage_type_t t = dht_from_cname(ASYMBOL(1));
    ifn (t < ST_LAST)
       RAISEF("not a storage class", APOINTER(1));
-   size_t offset = AINTEGER(3);
-   bool readonly = (arg_number==3) ? (APOINTER(4)!=NIL) : true;
+   size_t offset = (arg_number>2) ? AINTEGER(3) : 0;
+   bool readonly = (arg_number>3) ? (APOINTER(4)!=NIL) : true;
 
    at *atf = APOINTER(2);
    if (RFILEP(atf) && !readonly) {
@@ -544,20 +610,11 @@ DX(xnew_storage_mmap)
 
 #endif // HAVE_MMAP
 
-storage_t *make_storage(storage_type_t t, size_t n, at *init)
-{
-   storage_t *st = new_storage(t);
-   if (n) storage_alloc(st, n, init);
-   return st;
-}
-
 /* ------------ ALLOCATION: MALLOC ------------ */
-
-#define LARGE_ALLOC (2<<18)
 
 void storage_alloc(storage_t *st, size_t n, at *init)
 {
-   char errmsg[200];
+   char _errmsg[200], *errmsg = &_errmsg[0];
 
    ifn (st->data == NULL)
       RAISEF("storage must be unsized", st->backptr);
@@ -575,7 +632,7 @@ void storage_alloc(storage_t *st, size_t n, at *init)
       RAISEF(errmsg, NIL);
    }
    st->data = data;
-   st->flags = STS_MM;
+   st->flags = STS_MANAGED;
    st->size  = n;
    
    /* clear gptr storage data (ATs and MPTRs are cleared by mm) */
@@ -609,15 +666,16 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    size_t olds = st->size*storage_sizeof[st->type];
    gptr olddata = st->data;
 
-   /* empty storage */
    if (kind == 0) {
+      /* empty storage */
       assert(st->data == NULL);
       storage_alloc(st, size, init);
       return;
 
-   } else if (kind == STS_MM || kind == STS_FOREIGN || kind == STS_MALLOC) {
+   } else {
       /* reallocate memory and update srg */
-      MM_ANCHOR(olddata);
+      if (kind == STS_MANAGED)
+         MM_ANCHOR(olddata);
       if (st->type==ST_AT || st->type==ST_MPTR)
          st->data = mm_allocv(mt_refs, s);
       else 
@@ -625,14 +683,10 @@ void storage_realloc(storage_t *st, size_t size, at *init)
       
       if (st->data) {
          memcpy(st->data, olddata, olds);
-         if (kind == STS_MALLOC)
-            free(olddata);
          st->flags &= ~STS_MASK;
-         st->flags |= STS_MM;
+         st->flags |= STS_MANAGED;
       }
-      
-   } else
-      RAISEF("only RAM based storages can be enlarged", st->backptr);
+   }
    
    if (st->data == NULL) {
       st->data = olddata;
@@ -662,14 +716,6 @@ DX(xstorage_realloc)
 
 /* ------------ STORAGE_CLEAR ------------ */
 
-
-/* 
- * clear strategy: AT:         use <*st->setat>
- *                 STS_MALLOC: do it directly!
- *                 other:      use <*st->setat>
- *
- */
-
 void storage_clear(storage_t *st, at *init, size_t from)
 {
    /* don't need to check read-only status here because 
@@ -685,16 +731,10 @@ void storage_clear(storage_t *st, at *init, size_t from)
       
    } else if (storage_setat[st->type] == Number_setat) {
       get_write_permit(st);
-      short kind = st->flags & STS_MASK;
-      if (kind==STS_MM || kind==STS_MALLOC) {
-         void (*set)(gptr, size_t, real);
-         set = storage_setd[st->type];
-         for (int off = from; off < size; off++)
-            (*set)(st->data, off, Number(init));
-      } else
-         for (int off = from; off<size; off++)
-            Number_setat(st, off, init);
-      
+      void (*set)(gptr, size_t, real) = storage_setd[st->type];
+      for (int off = from; off < size; off++)
+         set(st->data, off, Number(init));
+
    } else if (storage_setat[st->type] == gptr_setat) {
       get_write_permit(st);
       gptr *pt = st->data;
@@ -920,6 +960,8 @@ void init_storage()
    var_lock(p);
 
    dx_define("new-storage", xnew_storage);
+   dx_define("new-storage/managed", xnew_storage_managed);
+   dx_define("new-storage/foreign", xnew_storage_foreign);
 #ifdef HAVE_MMAP
    dx_define("new-storage-mmap",xnew_storage_mmap);
 #endif
