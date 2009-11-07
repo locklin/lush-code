@@ -27,6 +27,7 @@
 #include "header.h"
 #include "graphics.h"
 
+#define uint unsigned int 
 #define wptr struct window *
 
 /* ===================================================================== */

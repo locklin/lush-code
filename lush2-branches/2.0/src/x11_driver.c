@@ -31,6 +31,8 @@
 #ifdef HAVE_CONFIG_H
 # include "lushconf.h"
 #endif
+#include "header.h"
+#include "graphics.h"
 
 #ifndef X_DISPLAY_MISSING
 /* ============================================================ */
@@ -67,8 +69,6 @@
 # endif
 #endif
 
-#include "header.h"
-#include "graphics.h"
 #include <errno.h>
 
 #ifdef class

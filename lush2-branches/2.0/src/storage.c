@@ -38,15 +38,14 @@
  * See "index.c" to get more details on the <struct idx>.
  */
 
-
 #include "header.h"
 #include "dh.h"
-#include <inttypes.h>
 
+#include <inttypes.h>
 #ifdef HAVE_MMAP
-#include <sys/types.h>
-#include <sys/mman.h>
+# include <sys/mman.h>
 #endif
+
 
 static void clear_storage(storage_t *st, size_t _)
 {

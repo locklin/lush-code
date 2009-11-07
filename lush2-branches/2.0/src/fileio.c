@@ -24,6 +24,8 @@
  * 
  ***********************************************************************/
 
+#include "header.h"
+
 #ifdef HAVE_CONFIG_H
 # include "lushconf.h"
 #endif
@@ -45,7 +47,6 @@
 
 #ifdef UNIX
 # include <errno.h>
-# include <sys/types.h>
 # include <sys/stat.h>
 #ifdef TIME_WITH_SYS_TIME
 # include <sys/time.h>
@@ -79,8 +80,6 @@
 #  endif
 # endif
 #endif
-
-#include "header.h"
 
 /* --------- VARIABLES --------- */
 

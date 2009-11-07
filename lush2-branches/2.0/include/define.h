@@ -46,8 +46,14 @@
 
 /* --------- GENERAL PURPOSE DEFINITIONS ---------- */
 
+#define _POSIX_SOURCE
+#define _POSIX_C_SOURCE  199506L
+#define _XOPEN_SOURCE    600
+
 #if HAVE_SYS_TYPES_H 
 # include <sys/types.h>
+  /* Solaris defines index_t in <sys/types.h> */
+# define index_t TLindex_t
 #endif
 
 #include <setjmp.h>

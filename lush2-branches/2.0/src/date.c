@@ -867,16 +867,10 @@ DX(xdate_add_year)
 
 static void makecycle(double after, double before, double here, float *m)
 {
-   double s, c, ratio = (here-before)/(after-before);
-#ifdef HAVE_SINCOS
-   sincos( 6.283185308*ratio, &s, &c );
-#else
+   double ratio = (here-before)/(after-before);
    ratio *= 6.283185308;
-   s = sin(ratio);
-   c = cos(ratio);
-#endif
-   m[0] = (float)c;
-   m[1] = (float)s;
+   m[0] = (float)sin(ratio);
+   m[1] = (float)cos(ratio);
 }
 
 #define FLAGLINEAR 	1
