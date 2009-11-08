@@ -26,6 +26,9 @@
 
 #include "header.h"
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define BINARYSTART     (0x9f)
 
@@ -879,24 +882,31 @@ static int local_write(at *p)
 
 int bwrite(at *p, FILE *f, int opt)
 {
+   int fno = fileno(f);
+   if (fno==-1)
+      RAISEF("internal error (bwrite: bad file descriptor)", NIL);
+
    if (in_bwrite!=0)
       error(NIL,"Recursive binary read/write are forbidden",NIL);
    opt_bwrite = opt;
-   
+  
    fout = f;
    in_bwrite = 0;
    clear_reloc(0);
 
-   /* store file position in case an error occurs */
-   errno = 0;
+   /* if possible store file position in case an error occurs */
    fpos_t fpos;
-   bool fpos_ok = fgetpos(f, &fpos)==0;
-   if (!fpos_ok) {
-      char *errmsg = strerror(errno);
-      fprintf(stderr, "*** Warning: could not save file position (bwrite)\n");
-      fprintf(stderr, "***        : %s\n", errmsg);
+   bool fpos_ok = false;
+   struct stat sb;
+   if (!fstat(fno, &sb) && (S_ISREG(sb.st_mode)||S_ISBLK(sb.st_mode))) {
+      errno = 0;
+      fpos_ok = fgetpos(f, &fpos)==0;
+      if (!fpos_ok) {
+         char *errmsg = strerror(errno);
+         fprintf(stderr, "*** Warning: could not save file position (bwrite)\n");
+         fprintf(stderr, "***        : %s\n", errmsg);
+      }
    }
-
    if (prep_safe_error()) {
       if (fpos_ok)
          fsetpos(f, &fpos);
