@@ -42,12 +42,13 @@
 #ifdef HAVE_CONFIG_H
 # include "lushconf.h"
 #endif
+#include "header.h"
+#include "lushmake.h"
 
 /* UNIX header files */
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/types.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <limits.h>
@@ -127,10 +128,6 @@
 #endif
 
 typedef RETSIGTYPE (*SIGHANDLERTYPE)();
-
-/* Lush header files */
-#include "header.h"
-#include "lushmake.h"
 
 
 /* ---------------------------------------- */
@@ -934,16 +931,16 @@ static void console_init(void)
    /* callbacks */
    rl_getc_function = console_getc;
    /* completion */
+   rl_special_prefixes = special_prefixes;
 #if RL_READLINE_VERSION > 0x400
-  rl_special_prefixes = special_prefixes;
-  rl_basic_quote_characters = quote_characters;
-  rl_basic_word_break_characters = word_break_characters;
-  rl_attempted_completion_function = console_complete;
+   rl_basic_quote_characters = quote_characters;
+   rl_basic_word_break_characters = word_break_characters;
+   rl_attempted_completion_function = console_complete;
 #else
-  rl_special_prefixes = special_prefixes;
-  rl_completer_quote_characters = quote_characters;
-  rl_completer_word_break_characters = word_break_characters;
-  rl_completion_entry_function = symbol_generator;
+   rl_special_prefixes = special_prefixes;
+   rl_completer_quote_characters = quote_characters;
+   rl_completer_word_break_characters = word_break_characters;
+   rl_completion_entry_function = symbol_generator;
 #endif
    /* matching parenthesis */
 #if RL_READLINE_VERSION > 0x402

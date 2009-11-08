@@ -478,7 +478,7 @@ extern LUSHAPI struct error_doc {
  * This structure is used to handle exception in the C code.
  */
 
-extern LUSHAPI struct lush_context {
+struct lush_context {
   struct lush_context *next;
   sigjmp_buf error_jump;
   const char *input_string;
@@ -487,7 +487,8 @@ extern LUSHAPI struct lush_context {
   short input_case_sensitive;
   FILE *output_file;
   short output_tab;
-} *context;
+};
+extern LUSHAPI struct lush_context *context;
 
 LUSHAPI int  recur_push_ok(struct recur_elt *elt, void *call, at *p);
 LUSHAPI void recur_pop(struct recur_elt *elt);

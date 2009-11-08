@@ -38,11 +38,11 @@
 
 #define _POSIX_SOURCE
 #define _POSIX_C_SOURCE  199506L
-#define _XOPEN_SOURCE    500
+#define _XOPEN_SOURCE    600
 
 #define MM_INTERNAL 1
-#include "mm.h"
 #include "lushconf.h"
+#include "mm.h"
 
 #ifndef NVALGRIND
 #  include <valgrind/memcheck.h>

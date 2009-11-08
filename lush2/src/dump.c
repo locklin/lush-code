@@ -25,7 +25,7 @@
  ***********************************************************************/
 
 #include "header.h"
-#include <sys/types.h>
+
 #include <sys/stat.h>
 
 /* Format of a dump file: 

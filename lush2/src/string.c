@@ -287,7 +287,7 @@ static at *recode(const char *s, const char *fromcode, const char *tocode)
    iconv_t conv = iconv_open(tocode, fromcode);
 
    if (conv) {
-      char *ibuf = (char*)s;
+      const char *ibuf = s;
       size_t ilen = strlen(s);
       large_string_init(ls);
       for(;;) {

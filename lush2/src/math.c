@@ -24,8 +24,8 @@
  * 
  ***********************************************************************/
 
-#include <tgmath.h>
 #include "header.h"
+#include <tgmath.h>
 
 /* output may have different type than input */
 #define UNARY_FUNC(i, o, Ti, To, FUNC) \
