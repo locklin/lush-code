@@ -293,7 +293,7 @@ static at *recode(const char *s, const char *fromcode, const char *tocode)
       for(;;) {
          char *obuf = buffer;
          size_t olen = sizeof(buffer);
-         iconv(conv, &ibuf, &ilen, &obuf, &olen);
+         iconv(conv, (char **)&ibuf, &ilen, &obuf, &olen);
          if (obuf > buffer)
             large_string_add(ls, buffer, obuf-buffer);
          if (ilen==0 || errno!=E2BIG)
