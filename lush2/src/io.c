@@ -34,6 +34,7 @@
 ********************************************************************** */
 
 #include "header.h"
+#include <errno.h>
 
 char *line_buffer;
 char *line_pos;
@@ -124,7 +125,7 @@ void print_char(char c)
       case '\n':
          context->output_tab = 0;
          if (context->output_file)
-            test_file_error(context->output_file);
+            test_file_error(context->output_file, 0);
          if (line_flush_stdout && context->output_file==stdout)
             fflush(stdout);
          break;
@@ -150,8 +151,9 @@ void print_char(char c)
       }
       putc(c, error_doc.script_file);
       if (c == '\n') {
+         errno = 0;
          fflush(error_doc.script_file);
-         test_file_error(error_doc.script_file);
+         test_file_error(error_doc.script_file, errno);
       }
    }
 }
@@ -223,7 +225,7 @@ char read_char(void)
       switch (c) {
       case '\n':
          context->input_tab = 0;
-         test_file_error(context->input_file);
+         test_file_error(context->input_file, 0);
          break;
 
       case '\t':
@@ -234,7 +236,7 @@ char read_char(void)
    if (error_doc.script_file) {
       if (c == '\n') {
          putc(c, error_doc.script_file);
-         test_file_error(error_doc.script_file);
+         test_file_error(error_doc.script_file, 0);
          error_doc.script_mode = SCRIPT_PROMPT;
 
       } else {
@@ -426,6 +428,7 @@ char skip_char(const char *s)
    } else {
       /* Go as fast as we can */
       c = EOF;
+      errno = 0;
       if (context->input_file) {
          flockfile(context->input_file);
          c = getc_unlocked(context->input_file);
@@ -453,7 +456,7 @@ char skip_char(const char *s)
                clearerr(context->input_file);
             else
 #endif
-               test_file_error(context->input_file);
+               test_file_error(context->input_file, errno);
          }
          if (c != EOF)
             ungetc(c, context->input_file);

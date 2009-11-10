@@ -96,8 +96,9 @@ const char *cwd(const char *s)
 {
 #ifdef UNIX
    if (s) {
+      errno = 0;
       if (chdir(s)==-1)
-         test_file_error(NULL);
+         test_file_error(NULL, errno);
    }
 #  ifdef HAVE_GETCWD
    assert(getcwd(string_buffer,STRING_BUFFER));
@@ -110,8 +111,9 @@ const char *cwd(const char *s)
 #ifdef WIN32
    char drv[2];
    if (s)
+      errno = 0;
       if (_chdir(s)==-1)
-         test_file_error(NULL);
+         test_file_error(NULL, errno);
    drv[0]='.'; drv[1]=0;
    GetFullPathName(drv, STRING_BUFFER, string_buffer, &s);
    return mm_strdup(string_buffer);
@@ -211,8 +213,9 @@ static int makedir(const char *s)
 DX(xmkdir)
 {
    ARG_NUMBER(1);
+   errno = 0;
    if (makedir(ASTRING(1))!=0) 
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    return NIL;
 }
 
@@ -235,8 +238,9 @@ static int deletefile(const char *s)
 DX(xunlink)
 {
    ARG_NUMBER(1);
+   errno = 0;
    if (deletefile(ASTRING(1)))
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    return NIL;
 }
 
@@ -244,8 +248,9 @@ DX(xunlink)
 DX(xrename)
 {
    ARG_NUMBER(2);
+   errno = 0;
    if (rename(ASTRING(1),ASTRING(2))<0)
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    return NIL;
 }
 
@@ -294,6 +299,7 @@ DX(xcopyfile)
    
 static int lockfile(const char *filename)
 {
+   errno = 0;
 #ifdef WIN32
    int fd = _open(filename, _O_RDWR|_O_CREAT|_O_EXCL, 0644);
 #else
@@ -303,7 +309,7 @@ static int lockfile(const char *filename)
       if (errno==EEXIST)
          return 0;
       else
-         test_file_error(NULL);
+         test_file_error(NULL, errno);
    }
    time_t tl;
    time(&tl);
@@ -895,6 +901,7 @@ const char *tmpname(const char *dir, const char *suffix)
    char buffer[256];
    const char *tmp;
    int fd;
+   errno = 0;
    do {
 #ifdef WIN32
       sprintf(buffer,"lush%d%s%s", ++uniq, dot, suffix);
@@ -909,7 +916,7 @@ const char *tmpname(const char *dir, const char *suffix)
 
    /* test for error and close file */
    if (fd<0)
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    close(fd);
 
    /* record temp file name */
@@ -1208,46 +1215,48 @@ DX(xfilepath)
 int stdin_errors = 0;
 int stdout_errors = 0;
 
-void test_file_error(FILE *f)
+void test_file_error(FILE *f, int _errno)
 {
    char *s = NIL;
    char buffer[200];
-   
-   if (f && !ferror(f)) {
-      if (f == stdin)
-         stdin_errors = 0;
-      if (f==stdout || f==stderr)
-         stdout_errors = 0;
-      return;
-   }
-   if (f && f == error_doc.script_file) {
-      file_close(f);
-      error_doc.script_file = NIL;
-      set_script(NIL);
-      s = "SCRIPT";
-   }
-   if (f==stdin) {
-      if (stdin_errors > 8)
-         lush_abort("ABORT -- STDIN failure");
-      else {
-         clearerr(stdin);
-         errno = 0;
-         stdin_errors++;
+
+   if (f) {
+      if (!ferror(f)) {
+         if (f == stdin)
+            stdin_errors = 0;
+         if (f==stdout || f==stderr)
+            stdout_errors = 0;
          return;
       }
-   } else if (f==stdout || f==stderr) {
-      if (stdout_errors > 8)
-         lush_abort("ABORT -- STDOUT failure");
-      else {
-         clearerr(stdout);      
-         clearerr(stderr);
-         errno = 0;
-         stdout_errors++;
-         return;
+      if (f==error_doc.script_file) {
+         file_close(f);
+         error_doc.script_file = NIL;
+         set_script(NIL);
+         s = "SCRIPT";
       }
-   }
-   if (errno) {
-      sprintf(buffer,"%s (errno=%d)",strerror(errno),errno);
+      if (f==stdin) {
+         if (stdin_errors > 8)
+            lush_abort("ABORT -- STDIN failure");
+         else {
+            clearerr(stdin);
+            _errno = 0;
+            stdin_errors++;
+            return;
+         }
+      } else if (f==stdout || f==stderr) {
+         if (stdout_errors > 8)
+            lush_abort("ABORT -- STDOUT failure");
+         else {
+            clearerr(stdout);      
+            clearerr(stderr);
+            _errno = 0;
+            stdout_errors++;
+            return;
+         }
+      }
+   } 
+   if (_errno) {
+      sprintf(buffer,"%s (errno=%d)",strerror(_errno),_errno);
       error(s,buffer,NIL);
    }
 }
@@ -1283,6 +1292,7 @@ FILE *attempt_open_read(const char *s, const char *suffixes)
   
   /*** search and open ***/
   const char *name = search_file(s, suffixes);
+  errno = 0;
   FILE *f = name ? fopen(name, "rb") : NULL;
   if (f) {
      FMODE_BINARY(f);
@@ -1296,7 +1306,7 @@ FILE *open_read(const char *s, const char *suffixes)
 {
    FILE *f = attempt_open_read(s, suffixes);
    ifn (f) {
-      test_file_error(NIL);
+      test_file_error(NULL, errno);
       RAISEF("cannot open file", NEW_STRING(s));
    }
    return f;
@@ -1338,6 +1348,7 @@ FILE *attempt_open_write(const char *s, const char *suffixes)
    }
 
    /*** open ***/
+   errno = 0;
    FILE *f = fopen(s, "w"); 
    if (f) {
       FMODE_BINARY(f);
@@ -1351,7 +1362,7 @@ FILE *open_write(const char *s, const char *suffixes)
 {
    FILE *f = attempt_open_write(s, suffixes);
    ifn (f) {
-      test_file_error(NIL);
+      test_file_error(NULL, errno);
       RAISEF("cannot open file", NEW_STRING(s));
    }
    return f;
@@ -1394,6 +1405,7 @@ FILE *attempt_open_append(const char *s, const char *suffixes)
    }
   
    /*** open ***/
+   errno = 0;
    FILE *f = fopen(s, "a");
    if (f) {
       FMODE_BINARY(f);
@@ -1407,7 +1419,7 @@ FILE *open_append(const char *s, const char *suffixes)
 {
    FILE *f = attempt_open_append(s,suffixes);
    ifn (f) {
-      test_file_error(NIL);
+      test_file_error(NULL, errno);
       RAISEF("cannot open file", NEW_STRING(s));
    }
    return f;
@@ -1417,8 +1429,9 @@ FILE *open_append(const char *s, const char *suffixes)
 void file_close(FILE *f)
 {
    if (f!=stdin && f!=stdout && f!=stderr && f) {
+      errno = 0;
       if (pclose(f)<0 && fclose(f)<0)
-         test_file_error(f);
+         test_file_error(f, errno);
    }
 }
 
@@ -1430,17 +1443,19 @@ void file_close(FILE *f)
 int read4(FILE *f)
 {
    int i;
+   errno = 0;
    int status = fread(&i, sizeof(int), 1, f);
    if (status != 1)
-      test_file_error(f);
+      test_file_error(f, errno);
    return i;
 }
 
 int write4(FILE *f, unsigned int l)
 {
+   errno = 0;
    int status = fwrite(&l, sizeof(int), 1, f);
    if (status != 1)
-      test_file_error(f);
+      test_file_error(f, errno);
    return l;
 }
 

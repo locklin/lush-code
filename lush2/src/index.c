@@ -25,6 +25,7 @@
  ***********************************************************************/
 
 #include "header.h"
+#include <errno.h>
 #include <inttypes.h>
 
 typedef at* atp_t;
@@ -1729,9 +1730,11 @@ static void format_save_matrix(index_t *ind, FILE *f, bool with_header)
    /* iterate */
    begin_idx_aloop1(ind, off) {
       char *p = (char*)(ind->st->data) + storage_sizeof[st]*(ind->offset + off);
-      fwrite(p, storage_sizeof[st], 1, f);
+      errno = 0;
+      if (fwrite(p, storage_sizeof[st], 1, f) != 1)
+         break;
    } end_idx_aloop1(ind, off);
-   test_file_error(f);
+   test_file_error(f, errno);
 }
 
 void save_matrix(index_t *ind, FILE *f)
@@ -1791,6 +1794,7 @@ static void format_save_ascii_matrix(index_t *ind, FILE *f, int mode)
 
    /* header */
    FMODE_TEXT(f);
+   errno = 0;
    if (mode==1) {
       /* ascii matrix with header */
       fprintf(f, ".MAT %d", ind->ndim); 
@@ -1820,7 +1824,7 @@ static void format_save_ascii_matrix(index_t *ind, FILE *f, int mode)
       } end_idx_aloop1(ind, off);
       FMODE_BINARY(f);
    }
-   test_file_error(f);
+   test_file_error(f, errno);
 }
 
 void save_ascii_matrix(index_t *ind, FILE *f)
@@ -1909,21 +1913,23 @@ void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
    
    /* skip */
    if (offset != 0) {
+      errno = 0;
 #if HAVE_FSEEKO
       if (fseeko(f, (off_t)offset, SEEK_CUR) < 0)
 #else
          if (fseek(f, offset, SEEK_CUR) < 0)
 #endif
-            test_file_error(NIL);
+            test_file_error(NULL, errno);
    }
    
    /* read */
    char *p = IND_BASE(ind);
    if (contiguous) {
       /* fast read of contiguous matrices */
+      errno = 0;
       rsize = fread(p, elsize, size, f);
       if (rsize < 0)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
       else if (rsize < size)
          error(NIL, "file is too short", NIL); 
 
@@ -1931,11 +1937,13 @@ void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
       /* must loop on each element */
       rsize = 1;
       begin_idx_aloop1(ind, off) {
-         if (rsize == 1)
+         if (rsize == 1) {
+            errno = 0;
             rsize = fread(p + (off * elsize), elsize, 1, f);
+         }
       } end_idx_aloop1(ind, off);
       if (rsize < 0)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
       else if (rsize < 1)
          error(NIL, "file too short", NIL); 
     }
@@ -2084,8 +2092,10 @@ static void load_matrix_header(FILE *f, int *magic_p, int *swap_p, shape_t *shp)
          default: magic = 0;
          }
          if (magic && shp->ndims>=1 && shp->ndims<=3) {
-            for (i=0; i<shp->ndims; i++)
+            for (i=0; i<shp->ndims; i++) {
+               errno = 0;
                shp->dim[i] = read4(f);
+            }
             if (swapflag)
                for (i=0; i<shp->ndims; i++)
                   shp->dim[i] = SWAP(shp->dim[i]);
@@ -2095,7 +2105,7 @@ static void load_matrix_header(FILE *f, int *magic_p, int *swap_p, shape_t *shp)
 #endif
       error(NIL, "not a recognized matrix file", NIL);
    trouble:
-      test_file_error(f);
+      test_file_error(f, errno);
       error(NIL, "corrupted matrix file",NIL);
    }
   

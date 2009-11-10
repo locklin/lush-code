@@ -652,7 +652,7 @@ LUSHAPI const char *relative_fname(const char *from, const char *fname);
 LUSHAPI void unlink_tmp_files(void);
 LUSHAPI const char *tmpname(const char *s, const char *suffix);
 LUSHAPI const char *search_file(const char *s, const char *suffixes);
-LUSHAPI void test_file_error(FILE *f);
+LUSHAPI void test_file_error(FILE *f, int errno);
 LUSHAPI FILE *open_read(const char *s, const char *suffixes);
 LUSHAPI FILE *open_write(const char *s, const char *suffixes);
 LUSHAPI FILE *open_append(const char *s, const char *suffixes);

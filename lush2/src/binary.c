@@ -377,12 +377,12 @@ static void clear_flags(at *p)
 
 /*** LOW LEVEL CHECK/READ/WRITE ***/
 
-static void check(FILE *f)
+static void check(FILE *f, int _errno)
 {
    if (feof(f))
-      safe_error(NIL, "end of file during bread", NIL);
-   if (ferror(f))
-      test_file_error(NULL);
+      error(NIL,"end of file during bread",NIL);
+   else
+      test_file_error(f, _errno);                        \
 }
 
 /* read */
@@ -390,39 +390,44 @@ static void check(FILE *f)
 static int read_card8(void)
 {
    uchar c[1];
+   errno = 0;
    if (fread(c, sizeof(char), 1, fin) != 1)
-      check(fin);
+      check(fin, errno);
    return c[0];
 }
 
 static int read_card16(void)
 {
    uchar c[2];
+   errno = 0;
    if (fread(c, sizeof(char), 2, fin) != 2)
-      check(fin);
+      check(fin, errno);
    return (c[0]<<8)+c[1];
 }
 
 static int read_card24(void)
 {
    uchar c[3];
+   errno = 0;
    if (fread(c, sizeof(char), 3, fin) != 3)
-      check(fin);
+      check(fin, errno);
    return (((c[0]<<8)+c[1])<<8)+c[2];
 }
 
 static int read_card32(void)
 {
    uchar c[4];
+   errno = 0;
    if (fread(c, sizeof(char), 4, fin) != 4)
-      check(fin);
+      check(fin, errno);
    return (((((c[0]<<8)+c[1])<<8)+c[2])<<8)+c[3];
 }
 
-static inline void read_buffer(void *s, int n)
+static void read_buffer(void *s, int n)
 {
+   errno = 0;
    if (fread(s, sizeof(char), (size_t)n, fin) != (size_t)n)
-      check(fin);
+      check(fin, errno);
 }
 
 
@@ -433,8 +438,9 @@ static void write_card8(int x)
    char c[1];
    in_bwrite += 1;
    c[0] = x;
+   errno = 0;
    if (fwrite(&c, sizeof(char), 1, fout) != 1)
-      check(fout);
+      check(fout, errno);
 }
 
 static void write_card16(int x)
@@ -443,8 +449,9 @@ static void write_card16(int x)
    in_bwrite += 2;
    c[0] = x>>8;
    c[1] = x;
+   errno = 0;
    if (fwrite(&c, sizeof(char), 2, fout) != 2)
-      check(fout);
+      check(fout, errno);
 }
 
 static void write_card24(int x)
@@ -454,8 +461,9 @@ static void write_card24(int x)
    c[0] = x>>16;
    c[1] = x>>8;
    c[2] = x;
+   errno = 0;
    if (fwrite(&c, sizeof(char), 3, fout) != 3)
-     check(fout);
+      check(fout, errno);
 }
 
 static void write_card32(int x)
@@ -466,15 +474,17 @@ static void write_card32(int x)
    c[1] = x>>16;
    c[2] = x>>8;
    c[3] = x;
+   errno = 0;
    if (fwrite(&c, sizeof(char), 4, fout) != 4)
-      check(fout);
+      check(fout, errno);
 }
 
 static void write_buffer(const void *s, int n)
 {
    in_bwrite += n;
+   errno = 0;
    if (fwrite(s, sizeof(char), (size_t)n, fout) != (size_t)n)
-      check(fout);
+      check(fout, errno);
 }
 
 

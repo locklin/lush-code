@@ -41,6 +41,7 @@
 #include "header.h"
 #include "dh.h"
 
+#include <errno.h>
 #include <inttypes.h>
 #ifdef HAVE_MMAP
 # include <sys/mman.h>
@@ -538,13 +539,13 @@ static void storage_notify(storage_t *st, void *_)
 storage_t *new_storage_mmap(storage_type_t t, FILE *f, size_t offs, bool ro)
 {
    storage_t *st = mm_allocv(mt_storage, sizeof(storage_t));
-   
+   errno = 0;
 #if HAVE_FSEEKO
    if (fseeko(f,(off_t)0,SEEK_END)==-1)
-      test_file_error(NIL);
+      test_file_error(NULL, errno);
 #else
    if (fseek(f,0,SEEK_END)==-1)
-      test_file_error(NIL);
+      test_file_error(NULL, errno);
 #endif
 #if HAVE_FTELLO
    size_t len = (size_t)ftello(f);
@@ -557,9 +558,10 @@ storage_t *new_storage_mmap(storage_type_t t, FILE *f, size_t offs, bool ro)
    if (t==ST_AT)
       RAISEF("cannot mmap an atom-storage", st->backptr);
 #ifdef UNIX
+   errno = 0;
    gptr addr = mmap(0,len,(ro ? PROT_READ : PROT_WRITE),MAP_SHARED,fileno(f),0);
    if (addr == (void*)-1L)
-      test_file_error(NIL);
+      test_file_error(NULL, errno);
 #endif
 #ifdef WIN32
    gptr xtra, addr;
@@ -826,18 +828,22 @@ void storage_load(storage_t *st, FILE *f)
     
 #if HAVE_FSEEKO
       off_t here = ftello(f);
+      errno = 0;
       if (fseeko(f,0,SEEK_END)==-1)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
       off_t len = ftello(f);
+      errno = 0;
       if (fseeko(f,here,SEEK_SET)==-1)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
 #else
       off_t here = ftell(f);
+      errno = 0;
       if (fseek(f,0,SEEK_END)==-1)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
       int len = ftell(f);
+      errno = 0;
       if (fseek(f,here,SEEK_SET)==-1)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
 #endif
       if (len==0) 
          return;
@@ -847,10 +853,11 @@ void storage_load(storage_t *st, FILE *f)
    
    get_write_permit(st);
    char *pt = st->data;
+   errno = 0;
    int nrec = fread(pt, storage_sizeof[st->type], st->size, f);
    if (nrec < st->size)
       RAISEF("file is too small",NIL);
-   test_file_error(f);
+   test_file_error(f, errno);
 }
 
 DX(xstorage_load)
@@ -886,8 +893,9 @@ void storage_save(storage_t *st, FILE *f)
       RAISEF("cannot save an unsized storage",NIL);
   
    char *pt = st->data;
+   errno = 0;
    int nrec = fwrite(pt, storage_sizeof[st->type], st->size, f);
-   test_file_error(f);
+   test_file_error(f, errno);
    if (nrec < st->size)
       RAISEF("storage could not be saved completely",NIL);
 }
