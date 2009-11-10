@@ -1990,11 +1990,21 @@ static void mm_collect(void)
 
 int mm_collect_now(void)
 {
-   if (gc_disabled || collect_in_progress) {
+   if (gc_disabled) {
       collect_requested = true;
       return 0;
+   } 
+#ifdef MM_SNAPSHOT_GC   
+   else if (collect_in_progress) {
+      int n = 0;
+      while (collect_in_progress)
+         n += fetch_unreachables();
+      return n;
    }
-   
+#else
+   assert(!collect_in_progress);
+#endif
+
    collect_prologue();
 
    int n = 0;

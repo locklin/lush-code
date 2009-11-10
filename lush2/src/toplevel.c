@@ -623,10 +623,7 @@ void toplevel(const char *in, const char *out, const char *prompts)
 DX(xgc)
 {
    ARG_NUMBER(0);
-   MM_NOGC;
-   MM_NOGC_END;
-   int i = mm_collect_now();
-   return NEW_NUMBER(i);
+   return NEW_NUMBER(mm_collect_now());
 }
 
 DX(xmeminfo)
@@ -638,8 +635,6 @@ DX(xmeminfo)
       ARG_NUMBER(-1);
 
    print_char('\n');
-   MM_NOGC;
-   MM_NOGC_END;
    print_string(mm_info(level));
    return NIL;
 }
