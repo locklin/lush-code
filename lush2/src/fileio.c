@@ -1283,22 +1283,34 @@ FILE *attempt_open_read(const char *s, const char *suffixes)
   if (*s == '|') {
      errno = 0;
      FILE *f = popen(s + 1, "r");
+     if (!f && errno==EMFILE) {
+        mm_collect_now();
+        errno = 0;
+        f = popen(s + 1, "r");
+     }
      if (f) {
         FMODE_BINARY(f);
         return f;
      } else
-        return NIL;
+        return NULL;
   }
   
   /*** search and open ***/
   const char *name = search_file(s, suffixes);
-  errno = 0;
-  FILE *f = name ? fopen(name, "rb") : NULL;
-  if (f) {
-     FMODE_BINARY(f);
-     return f;
-  } else
-     return NULL;
+  if (name) {
+     errno = 0;
+     FILE *f = fopen(name, "rb");
+     if (!f && errno==EMFILE) {
+        mm_collect_now();
+        errno = 0;
+        f = fopen(name, "rb");
+     }
+     if (f) {
+        FMODE_BINARY(f);
+        return f;
+     }
+  }
+  return NULL;
 }
 
 
@@ -1334,27 +1346,37 @@ FILE *attempt_open_write(const char *s, const char *suffixes)
    if (*s == '|') {
       errno = 0;
       FILE *f = popen(s + 1, "w");
+      if (!f && errno==EMFILE) {
+         mm_collect_now();
+         errno = 0;
+         f = popen(s + 1, "w");
+      }
       if (f) {
          FMODE_BINARY(f);
          return f;
       } else
-         return NIL;
+         return NULL;
    }
-
+   
    /*** suffix ***/
    if (access(s, W_OK) == -1) {
       s = add_suffix(s, suffixes);
-      // strcpy(file_name, s); // why?
+      strcpy(file_name, s); // why?
    }
 
    /*** open ***/
    errno = 0;
    FILE *f = fopen(s, "w"); 
+   if (!f && errno==EMFILE) {
+      mm_collect_now();
+      errno = 0;
+      f = fopen(s, "w");
+   }
    if (f) {
       FMODE_BINARY(f);
       return f;
-   } else
-      return NIL;
+   }
+   return NULL;
 }
 
 
@@ -1391,27 +1413,37 @@ FILE *attempt_open_append(const char *s, const char *suffixes)
    if (*s == '|') {
       errno = 0;
       FILE *f = popen(s + 1, "w");
+     if (!f && errno==EMFILE) {
+        mm_collect_now();
+        errno = 0;
+        f = popen(s + 1, "w");
+     }
       if (f) {
          FMODE_BINARY(f);
          return f;
       } else
-         return NIL;
+         return NULL;
    }
 
    /*** suffix ***/
    if (access(s, W_OK) == -1) {
       s = add_suffix(s, suffixes);
-      // strcpy(file_name, s); // why ?
+      strcpy(file_name, s); // why ?
    }
   
    /*** open ***/
    errno = 0;
    FILE *f = fopen(s, "a");
+   if (!f && errno==EMFILE) {
+      mm_collect_now();
+      errno = 0;
+      f = fopen(s, "a");
+   }
    if (f) {
       FMODE_BINARY(f);
       return f;
-   } else
-      return NIL;
+   }
+   return NULL;
 }
 
 
