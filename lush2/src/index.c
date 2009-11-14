@@ -1213,13 +1213,17 @@ DX(xas_ubyte_array)
    return as_ubyte_array(APOINTER(1))->backptr;
 }
 
+/* create a vector with values from <from> to <to>, <step> apart */
+/* if <step> is NAN, use 1.0 or -1.0 for step, as appropriate    */
 index_t *array_range(double from, double to, double step)
 {
-   if (step==0)
+   if (isnan(step)) /* auto-select step */
+      step = to<from ? -1.0 : 1.0;
+   else if (step==0)
       RAISEF("step is zero", NIL);
-   if (((to-from)/step) < 0)
+   else if (((to-from)/step) < 0)
       return make_array(ST_DOUBLE, SHAPE1D(0), NIL);
-      //RAISEF("invalid arguments", NIL);
+
    int n = ceil(fabs((to-from)/step))+1;
    index_t *ind = make_array(ST_DOUBLE, SHAPE1D(n), NIL);
    double *d = IND_BASE_TYPED(ind, double);
@@ -1237,30 +1241,33 @@ index_t *array_range(double from, double to, double step)
 
 DX(xarray_range)
 {
-   if (arg_number==3) {
+   if (arg_number==3)
       return array_range(ADOUBLE(1), ADOUBLE(2), ADOUBLE(3))->backptr;
 
-   } else if (arg_number==2) {
-      double step = copysign(1.0, ADOUBLE(2)-ADOUBLE(1));
-      return array_range(ADOUBLE(1), ADOUBLE(2), step)->backptr;
+   else if (arg_number==2)
+      return array_range(ADOUBLE(1), ADOUBLE(2), NAN)->backptr;
 
-   } else if (arg_number==1) {
-      return array_range(1.0, ADOUBLE(1), 1.0)->backptr;
+   else if (arg_number==1)
+      return array_range(1.0, ADOUBLE(1), NAN)->backptr;
 
-   } else
+   else
       ARG_NUMBER(-1);
 
    return NIL;
 }
 
 
+/* create a vector with values from <from> to <to>, <step> apart */
+/* if <step> is NAN, use 1.0 or -1.0 for step, as appropriate    */
 index_t *array_rangeS(double from, double to, double step)
 {
-   if (step==0)
+   if (isnan(step))
+      step = to<from ? -1.0 : 1.0;
+   else if (step==0)
       RAISEF("step is zero", NIL);
-   if (((to-from)/step) < 0)
+   else if (((to-from)/step) < 0)
       return make_array(ST_DOUBLE, SHAPE1D(0), NIL);
-      //RAISEF("invalid arguments", NIL);
+
    int n = ceil(fabs((to-from)/step))+1;
    index_t *ind = make_array(ST_DOUBLE, SHAPE1D(n), NIL);
    double *d = IND_BASE_TYPED(ind, double);
@@ -1278,17 +1285,16 @@ index_t *array_rangeS(double from, double to, double step)
 
 DX(xarray_rangeS)
 {
-   if (arg_number==3) {
+   if (arg_number==3)
       return array_rangeS(ADOUBLE(1), ADOUBLE(2), ADOUBLE(3))->backptr;
 
-   } else if (arg_number==2) {
-      double step = ADOUBLE(2)<ADOUBLE(1) ? -1.0 : 1.0;
-      return array_rangeS(ADOUBLE(1), ADOUBLE(2), step)->backptr;
+   else if (arg_number==2)
+      return array_rangeS(ADOUBLE(1), ADOUBLE(2), NAN)->backptr;
 
-   } else if (arg_number==1) {
-      return array_rangeS(0.0, ADOUBLE(1), 1.0)->backptr;
+   else if (arg_number==1)
+      return array_rangeS(0.0, ADOUBLE(1), NAN)->backptr;
 
-   } else
+   else
       ARG_NUMBER(-1);
 
    return NIL;

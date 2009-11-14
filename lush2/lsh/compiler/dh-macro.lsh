@@ -2366,7 +2366,7 @@
 
 (dhm-t float-array(source)
   (let* ((arglist (cdr source))
-         (types (all ((x arglist)) (dhc-parse-expr-t x)))
+         (types (mapcar dhc-parse-expr-t arglist))
          (mtype (cdr (assoc (get-dhm-target source) dhc-array-to-type)))
          (srg-type (new dhc-type 'dht-srg (new dhc-type mtype)))
          (idx-type (new dhc-type 'dht-idx (length arglist) srg-type))
@@ -2706,6 +2706,46 @@
               mat d sz st el-decl))
     "0"))
 
+(dhm-t array-range (source)
+  (let* ((args (cdr source))
+         (tns  (mapcar dhc-parse-expr-t args))
+         (srg-type (new dhc-type 'dht-srg (new dhc-type 'dht-double)))
+         (idx-type (new dhc-type 'dht-idx 1 srg-type))
+         (ret-type (new dhc-type 'dht-ptr idx-type)) )
+    (domapc ((tn (cdr tns)) (arg args))
+      (when (not (==> :tn:type is-a-number))
+        (dhc-error "not a number" arg) ))
+    (when (< (length args) 1)
+      (dhc-error "not enough arguments" source) )
+    (when (> (length args) 3)
+      (dhc-error "too many arguments" source) )
+    ;; we don't need to bump anything since we're always
+    ;; allocating dynamically
+    (new t-node tns ret-type) ))
+
+(dhm-t-declare array-range array-range*)
+
+(dhm-c array-range (source treetype retplace)
+  (let ((args (mapcar dhc-parse-expr-c (cdr source) (cdr :treetype:tn-list) nils))
+        (type (dhc-type-to-c-decl :treetype:type)) )
+    (sprintf (selectq (length args)
+               (1 "(%s) array_range(1.0,%s, NAN)")
+               (2 "(%s) array_range(%s, %s, NAN)")
+               (3 "(%s) array_range(%s, %s, %s)")
+               (t (dhc-error "internal error") ))
+             type . args)))
+
+(dhm-c array-range* (source treetype retplace)
+  (let ((args (mapcar dhc-parse-expr-c (cdr source) (cdr :treetype:tn-list) nils))
+        (type (dhc-type-to-c-decl :treetype:type)) )
+    (sprintf (selectq (length args)
+               (1 "(%s) array_rangeS(0.0,%s, NAN)")
+               (2 "(%s) array_rangeS(%s, %s, NAN)")
+               (3 "(%s) array_rangeS(%s, %s, %s)")
+               (t (dhc-error "internal error") ))
+             type . args)))
+
+
 ;; todos: get this right (plus support negative d, and nz arguments)
 (dhm-t idx-trim! (source)
   (selectq (length source) 
@@ -2823,98 +2863,6 @@
               (==> :mattn:type get-element-decl))
      "}")
     :idx-symb:c-name))
-
-;; (dhm-t idx-transpose(source)
-;;   (when (<> 3 (length source))
-;;     (dhc-error "three arguments expected"))
-;;   (let* ((mat (dhc-parse-expr-t (cadr source)))
-;;          (ndim (==> :mat:type is-an-idxptr))
-;;          (bogus (when ~ndim (dhc-error "first argument must be an idx")))
-;;          (tnl (list mat (dhc-parse-permlist-t (caddr source) ndim))))
-;;     (new t-node tnl (new dhc-type 'dht-bool)) ) )
-
-;; (dhm-c idx-transpose(source treetype retplace)
-;;   (let* ((mattn (cadr :treetype:tn-list))
-;;          (mat (dhc-parse-expr-c (cadr source) mattn ()))
-;;          (plist ()))
-;;     (dhc-add-c-statements "{")
-;;     (setq plist (dhc-parse-permlist-c (caddr source)
-;;                                       (caddr :treetype:tn-list) ()))
-;;     (dhc-add-c-statements
-;;      (sprintf "Midx_transpose(%s, %s, %s);"
-;;               mat plist (==> :mattn:type get-element-decl) ) )
-;;     (dhc-add-c-statements "}")
-;;     "0" ) )
-
-;; (dhm-t idx-transpose2(source)
-;;   (when (<> 4 (length source))
-;;     (dhc-error "two arguments expected"))
-;;   (let* ((tnl (all ((so (cdr source))) (dhc-parse-expr-t so)))
-;; 	 (mat (car tnl))
-;;          (ndim (==> :mat:type is-an-idxptr)) )
-;;     (when (not ndim)
-;;       (dhc-error "first argument must be an idx"))
-;;     (each ((n (cddr source)))
-;;       (when (numberp n)
-;; 	(if (or (< n 0) (>= n ndim))
-;; 	    (dhc-error "Illegal dimension for idx" n) ) ) )
-;;     (all ((tn (cdr tnl)))
-;;       (dhc-unify-types :tn:type (new dhc-type 'dht-number)))
-;;     (new t-node tnl (new dhc-type 'dht-bool)) ) )
-
-;; (dhm-c idx-transpose2(source treetype retplace)
-;;   (let* ((cexps (all ((tn (cdr :treetype:tn-list))
-;; 		      (so (cdr source)) )
-;; 		  (dhc-parse-expr-c so tn ()) ))
-;; 	 (mattn (cadr :treetype:tn-list))
-;; 	 (mat (car cexps)) 
-;; 	 (ndim (==> :mattn:type is-an-idxptr)) )
-;;     (when (not dhc-unprotect)
-;;       (each ((so (cddr source))
-;; 	     (cexp (cdr cexps)) )
-;; 	(when (not (numberp so))
-;; 	  (dhc-add-c-statements
-;; 	   (sprintf "RTERR_DIM(%s < 0 || %s >= %d);" 
-;; 		    cexp cexp (==> :mattn:type is-an-idxptr) ) ) ) ) )
-;;     (dhc-add-c-statements    
-;;      (sprintf "Midx_transpose2(%s, %s, %s, %s);"
-;;               mat (cadr cexps) (caddr cexps) 
-;; 	      (==> :mattn:type get-element-decl) ) )
-;;     "0" ) )
-
-;; (dhm-t submatrix(source)
-;;   (let (((func mat . dims) source)
-;;         (expr ())
-;;         (cur ())
-;;         (taken-dim 0))
-;;     (setq expr mat)
-;;     (for (i 0 (1- (length dims)))
-;;          (setq cur (nth i dims))
-;;          (cond ((null cur))
-;;                ((and (listp cur) (= (car cur) 'list) (= (length cur) 3))
-;;                 (setq expr `(narrow 
-;;                              ,expr ,(- i taken-dim) 
-;;                              (1+ (- ,(caddr cur)
-;;                                     ,(cadr cur)))
-;;                              ,(cadr cur)) ))
-;;                ((and (listp cur) (= (car cur) 'quote))
-;;                 (setq cur (cadr cur))
-;;                 (if (not (and (numberp (car cur)) (numberp (cadr cur))
-;;                               (null (cddr cur))))
-;;                     (dhc-error "submatrix: bad argument" cur))
-;;                 (setq expr `(narrow 
-;;                              ,expr ,(- i taken-dim) 
-;;                              (1+ (- ,(cadr cur) ,(car cur)))
-;;                              ,(car cur))))
-;;                (t
-;;                 (setq expr (list 'select expr
-;;                                  (- i taken-dim) cur))
-;;                 (incr taken-dim))))
-;;     (dhc-parse-replacement-source-t source expr) ) )
-
-
-
-
 
 ;;; ------------------------------------------------------------------------
 ;;; DHM FOR PARSING IDX LOOPS
