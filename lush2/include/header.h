@@ -98,17 +98,15 @@ LUSHAPI void error(const char *prefix, const char *text, at *suffix) no_return;
 LUSHAPI char *api_translate_c2lisp(const char*);
 LUSHAPI char *api_translate_lisp2c(const char*);
 
-#define RAISE(caller, msg, p) {                    \
-  if (msg) error(caller, msg, p);                  \
-}
-#define RAISEF(msg, p) {                           \
-  if (msg)                                         \
-    error(api_translate_c2lisp(__func__), msg, p); \
-}
-#define RAISEFX(msg, p) {                           \
-  if (msg)                                         \
-    error(api_translate_c2lisp(__func__)+1, msg, p); \
-}
+#define RAISE(caller, msg, p)   \
+   ((msg) ? error(caller, msg, p) : 0) 
+
+#define RAISEF(msg, p) \
+   ((msg) ? error(api_translate_c2lisp(__func__), msg, p) : 0)
+
+#define RAISEFX(msg, p) \
+   ((msg) ? error(api_translate_c2lisp(__func__)+1, msg, p) : 0)
+
 
 /* OS.H ---------------------------------------------------------- */
 
