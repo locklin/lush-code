@@ -191,93 +191,6 @@ DX(xatgptr)
 
 
 
-/* --------- MAKELIST FUNCTIONS --------- */
-
-/*
- * range ex: (range 1 5) gives (1 2 3 4 5) and (range 2 4 .3) gives (2  2.3
- * 2.6  2.9  3.2  3.5  3.8)
- */
-
-DX(xrange)
-{
-   real high, low = 1.0;
-   real delta = 1.0;
-   
-   if (arg_number == 3) {
-      low = AREAL(1);
-      high = AREAL(2);
-      delta = AREAL(3);
-   } else if (arg_number == 2) {
-      low = AREAL(1);
-      high = AREAL(2);
-   } else {
-      ARG_NUMBER(1);
-      high = AREAL(1);
-   }
-  
-   if (arg_number==2)
-      if (delta * (high - low) <= 0)
-         delta = -delta;
-   if (! delta)
-      error(NIL, "illegal arguments", NIL);
-   
-   at *answer = NIL;
-   at **where = &answer;
-
-   if (delta > 0) {
-      for (real i=low; i<=high; i+=delta) {
-         *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &Cdr(*where);
-      }
-   } else {
-      for (real i=low; i>=high; i+=delta) {
-         *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &Cdr(*where);
-      }
-   }
-   return answer;
-}
-
-DX(xrange_star)
-{
-   real high, low = 0.0;
-   real delta = 1.0;
-   
-   if (arg_number == 3) {
-      low = AREAL(1);
-      high = AREAL(2);
-      delta = AREAL(3);
-   } else if (arg_number == 2) {
-      low = AREAL(1);
-      high = AREAL(2);
-   } else {
-      ARG_NUMBER(1);
-      high = AREAL(1);
-   }
-  
-   if (arg_number==2)
-      if (delta * (high - low) <= 0)
-         delta = -delta;
-   if (! delta)
-      error(NIL, "illegal arguments", NIL);
-  
-   at *answer = NIL;
-   at **where = &answer;
-   if (delta > 0) {
-      for (real i=low; i<high; i+=delta) {
-         *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &Cdr(*where);
-      }
-   } else {
-      for (real i=low; i>high; i+=delta) {
-         *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &Cdr(*where);
-      }
-   }
-   return answer;
-}
-
-
 /* --------- LOGICAL FUNCTIONS --------- */
 
 
@@ -634,8 +547,6 @@ void init_calls(void)
 {
    dx_define("sizeof", xsizeof);
    dx_define("atgptr", xatgptr);
-   dx_define("range", xrange);
-   dx_define("range*", xrange_star);
    dx_define("==", xeqptr);
    dx_define("=", xeq);
    dx_define("<>", xne);

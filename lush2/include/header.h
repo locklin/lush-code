@@ -1057,6 +1057,8 @@ LUSHAPI index_t *array_select(index_t*, int d, ptrdiff_t n);
 LUSHAPI index_t *array_take2(index_t*, index_t *ss);
 LUSHAPI index_t *array_take3(index_t*, int d, index_t *ss);
 LUSHAPI index_t *array_put(index_t*, index_t *ss, index_t *vals);
+LUSHAPI index_t *array_range(double, double, double);
+LUSHAPI index_t *array_rangeS(double, double, double);
 
 LUSHAPI void import_raw_matrix(index_t*, FILE*, size_t);
 LUSHAPI void import_text_matrix(index_t*, FILE*);

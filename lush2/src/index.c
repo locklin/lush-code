@@ -175,7 +175,7 @@ static at *index_listeval(at *p, at *q)
 {
    index_t *ind = Mptr(p);
 
-   /* There are two subscript modes:
+   /* There are three subscript modes:
     * 1. The array-take/put-style subscription
     * 2. select*-style subscription with a single, partial subscript
     * 3. Single element subscription with full number of subscript indices
@@ -1211,6 +1211,87 @@ DX(xas_ubyte_array)
 {
    ARG_NUMBER(1);
    return as_ubyte_array(APOINTER(1))->backptr;
+}
+
+index_t *array_range(double from, double to, double step)
+{
+   if (step==0)
+      RAISEF("step is zero", NIL);
+   if (((to-from)/step) < 0)
+      return make_array(ST_DOUBLE, SHAPE1D(0), NIL);
+      //RAISEF("invalid arguments", NIL);
+   int n = ceil(fabs((to-from)/step))+1;
+   index_t *ind = make_array(ST_DOUBLE, SHAPE1D(n), NIL);
+   double *d = IND_BASE_TYPED(ind, double);
+   n = 0;
+   if (step > 0) {
+      for (double v=from; v<=to; v+=step)
+         d[n++] = v;
+   } else {
+      for (double v=from; v>=to; v+=step)
+         d[n++] = v;
+   }
+   IND_DIM(ind, 0) = n;
+   return ind;
+}
+
+DX(xarray_range)
+{
+   if (arg_number==3) {
+      return array_range(ADOUBLE(1), ADOUBLE(2), ADOUBLE(3))->backptr;
+
+   } else if (arg_number==2) {
+      double step = copysign(1.0, ADOUBLE(2)-ADOUBLE(1));
+      return array_range(ADOUBLE(1), ADOUBLE(2), step)->backptr;
+
+   } else if (arg_number==1) {
+      return array_range(1.0, ADOUBLE(1), 1.0)->backptr;
+
+   } else
+      ARG_NUMBER(-1);
+
+   return NIL;
+}
+
+
+index_t *array_rangeS(double from, double to, double step)
+{
+   if (step==0)
+      RAISEF("step is zero", NIL);
+   if (((to-from)/step) < 0)
+      return make_array(ST_DOUBLE, SHAPE1D(0), NIL);
+      //RAISEF("invalid arguments", NIL);
+   int n = ceil(fabs((to-from)/step))+1;
+   index_t *ind = make_array(ST_DOUBLE, SHAPE1D(n), NIL);
+   double *d = IND_BASE_TYPED(ind, double);
+   n = 0;
+   if (step > 0) {
+      for (double v=from; v<to; v+=step)
+         d[n++] = v;
+   } else {
+      for (double v=from; v>to; v+=step)
+         d[n++] = v;
+   }
+   IND_DIM(ind, 0) = n;
+   return ind;
+}
+
+DX(xarray_rangeS)
+{
+   if (arg_number==3) {
+      return array_rangeS(ADOUBLE(1), ADOUBLE(2), ADOUBLE(3))->backptr;
+
+   } else if (arg_number==2) {
+      double step = ADOUBLE(2)<ADOUBLE(1) ? -1.0 : 1.0;
+      return array_rangeS(ADOUBLE(1), ADOUBLE(2), step)->backptr;
+
+   } else if (arg_number==1) {
+      return array_rangeS(0.0, ADOUBLE(1), 1.0)->backptr;
+
+   } else
+      ARG_NUMBER(-1);
+
+   return NIL;
 }
 
 /* -------- THE REF/SET FUNCTIONS ------- */
@@ -3575,6 +3656,8 @@ void init_index(void)
    dx_define("array-take", xarray_take);
    dx_define("array-put", xarray_put);
    dx_define("array-where-nonzero", xarray_where_nonzero);
+   dx_define("array-range", xarray_range);
+   dx_define("array-range*", xarray_rangeS);
 
    /* loops */
    dy_define("idx-eloop", yeloop);
