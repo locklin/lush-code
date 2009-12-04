@@ -42,7 +42,7 @@ extern "C" {
 #endif
 #endif
 
-#include "mm.h"
+#include "cmm.h"
 
 /* VERSION.H --------------------------------------------------- */
 

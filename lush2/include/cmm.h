@@ -123,7 +123,7 @@ bool    mm_begin_nogc(bool);
 void    mm_end_nogc(bool);
 
 #ifndef MM_INTERNAL
-#include "mm_private.h"
+#include "cmm_private.h"
 #endif
 
 #endif /* MM_INCLUDED */

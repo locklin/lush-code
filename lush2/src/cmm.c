@@ -43,7 +43,7 @@
 
 #define MM_INTERNAL 1
 #include "lushconf.h"
-#include "mm.h"
+#include "cmm.h"
 
 #ifndef NVALGRIND
 #  include <valgrind/memcheck.h>

@@ -26,7 +26,6 @@
  ***********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 
 /* make a list from a vector of objects */
 at *vector2list(int n, at **vec)
