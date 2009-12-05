@@ -1074,7 +1074,7 @@ static void local_bread_array(at **pp)
    int ndims = read_card24();
 
    if (0<=ndims && ndims<MAXDIMS) {
-      shape_t shape = {0, {}};  
+      shape_t shape = {0};
       size_t size = 1;
       for (int i=0; i<ndims; i++) 
          size *= ( shape.dim[i] = read_card32() );

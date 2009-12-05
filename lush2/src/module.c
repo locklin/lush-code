@@ -760,8 +760,9 @@ void *dynlink_symbol(module_t *m, const char *sname, int func, int exist)
    return nsbundle_lookup(sname, exist);
 #elif DLOPEN
    return dlsym(m->handle, sname);
-#endif
+#else
    return NULL;
+#endif
 }
 
 
@@ -891,8 +892,8 @@ static void update_exec_flag(module_t *m)
                   kdoc = cfunc->info = dynlink_symbol(m, cfunc->kname, 0, 0);
                   cfunc->call = (void *(*)())kdoc->lispdata.call;
                } else if (cfunc->kname) {
-                  kdoc = cfunc->info = dynlink_symbol(m, cfunc->kname, 1, 0);
-                  cfunc->call = cfunc->info;
+		  cfunc->call = (void *(*)())dynlink_symbol(m, cfunc->kname, 1, 0);
+		  kdoc = cfunc->info = (void *)cfunc->call;
                }
                if (kdoc)
                   clean_dhrecord(kdoc->argdata);

@@ -186,7 +186,7 @@ static void unchain_xwin(struct X_window *w)
          where = &((*where)->next);
    }
    assert(0);
-};
+}
 
 /* ============================  INITIALISATION & DEFAULTS */
 

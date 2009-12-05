@@ -993,7 +993,7 @@ void print_list(at *list)
       struct recur_elt elt;
       print_char('(');
       for(;;) {
-         if (recur_push_ok(&elt,&print_list, Car(l))) {
+         if (recur_push_ok(&elt, (void *)&print_list, Car(l))) {
             print_list(Car(l));
             recur_pop(&elt);
          } else
@@ -1023,7 +1023,7 @@ void print_list(at *list)
       struct recur_elt elt;
       class_t *cl = classof(list);
       at *l = getmethod(cl, at_print);
-      if (l && recur_push_ok(&elt,&print_string,list)) {
+      if (l && recur_push_ok(&elt, (void *)&print_string,list)) {
          list = send_message(NIL, list, at_print, NIL);
          recur_pop(&elt);
          MM_RETURN_VOID;

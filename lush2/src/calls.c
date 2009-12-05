@@ -67,7 +67,7 @@ int comp_test(at *p, at *q)
       } else if (Class(p)==Class(q) && Class(p)->compare) {
          int ans = 0;
          struct recur_elt elt;
-         if (recur_push_ok(&elt, &comp_test, p)) {
+         if (recur_push_ok(&elt, (void *)&comp_test, p)) {
             ans = Class(p)->compare(p,q,true);
             recur_pop(&elt);
          }
@@ -99,7 +99,7 @@ again:
    /* List */
    else if (CONSP(p) && CONSP(q)) {
       struct recur_elt elt;
-      if (recur_push_ok(&elt, &eq_test, p)) {
+      if (recur_push_ok(&elt, (void *)&eq_test, p)) {
          ans = eq_test(Car(p), Car(q));
          recur_pop(&elt);
       }
@@ -135,7 +135,7 @@ again:
       /* Comparison method provided */
    } else if (Class(p)==Class(q) && Class(p)->compare) {
       struct recur_elt elt;
-      if (recur_push_ok(&elt, &eq_test, p)) {
+      if (recur_push_ok(&elt, (void *)&eq_test, p)) {
          ans = !Class(p)->compare(p,q,false);
          recur_pop(&elt);
       }

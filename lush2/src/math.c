@@ -120,49 +120,49 @@ DX(name2(x, NAME))                                           \
 #define MUL2(x) (x * 2.0)
 #define DIV2(x) (x / 2.0)
 
-DX_UNARY_FUNC(piece, PIECE);
-DX_UNARY_FUNC(rect, RECT);
-DX_UNARY_FUNC(sgn, SGN);
-DX_UNARY_FUNC(abs, fabs);
-DX_UNARY_FUNC(ceil, ceil);
-DX_UNARY_FUNC(floor, floor);
-DX_UNARY_FUNC(round, round);
-DX_UNARY_FUNC(trunc, trunc);
-DX_UNARY_FUNC(sqrt, sqrt);
-DX_UNARY_FUNC(cbrt, cbrt);
-DX_UNARY_FUNC(sin, sin);
-DX_UNARY_FUNC(cos, cos);
-DX_UNARY_FUNC(tan, tan);
-DX_UNARY_FUNC(asin, asin);
-DX_UNARY_FUNC(acos, acos);
-DX_UNARY_FUNC(atan, atan);
-DX_UNARY_FUNC(exp, exp);
-DX_UNARY_FUNC(exp2, exp2);
-DX_UNARY_FUNC(gamma, tgamma);
-DX_UNARY_FUNC(lgamma, lgamma);
-DX_UNARY_FUNC(expm1, expm1);
-DX_UNARY_FUNC(log, log);
-DX_UNARY_FUNC(log10, log10);
-DX_UNARY_FUNC(log2, log2);
-DX_UNARY_FUNC(log1p, log1p);
-DX_UNARY_FUNC(sinh, sinh);
-DX_UNARY_FUNC(cosh, cosh);
-DX_UNARY_FUNC(tanh, tanh);
-DX_UNARY_FUNC(asinh, asinh);
-DX_UNARY_FUNC(acosh, acosh);
-DX_UNARY_FUNC(atanh, atanh);
+DX_UNARY_FUNC(piece, PIECE)
+DX_UNARY_FUNC(rect, RECT)
+DX_UNARY_FUNC(sgn, SGN)
+DX_UNARY_FUNC(abs, fabs)
+DX_UNARY_FUNC(ceil, ceil)
+DX_UNARY_FUNC(floor, floor)
+DX_UNARY_FUNC(round, round)
+DX_UNARY_FUNC(trunc, trunc)
+DX_UNARY_FUNC(sqrt, sqrt)
+DX_UNARY_FUNC(cbrt, cbrt)
+DX_UNARY_FUNC(sin, sin)
+DX_UNARY_FUNC(cos, cos)
+DX_UNARY_FUNC(tan, tan)
+DX_UNARY_FUNC(asin, asin)
+DX_UNARY_FUNC(acos, acos)
+DX_UNARY_FUNC(atan, atan)
+DX_UNARY_FUNC(exp, exp)
+DX_UNARY_FUNC(exp2, exp2)
+DX_UNARY_FUNC(gamma, tgamma)
+DX_UNARY_FUNC(lgamma, lgamma)
+DX_UNARY_FUNC(expm1, expm1)
+DX_UNARY_FUNC(log, log)
+DX_UNARY_FUNC(log10, log10)
+DX_UNARY_FUNC(log2, log2)
+DX_UNARY_FUNC(log1p, log1p)
+DX_UNARY_FUNC(sinh, sinh)
+DX_UNARY_FUNC(cosh, cosh)
+DX_UNARY_FUNC(tanh, tanh)
+DX_UNARY_FUNC(asinh, asinh)
+DX_UNARY_FUNC(acosh, acosh)
+DX_UNARY_FUNC(atanh, atanh)
 
-DX_UNARY_FUNC(add1, ADD1);
-DX_UNARY_FUNC(sub1, SUB1);
-DX_UNARY_FUNC(mul2, MUL2);
-DX_UNARY_FUNC(div2, DIV2);
+DX_UNARY_FUNC(add1, ADD1)
+DX_UNARY_FUNC(sub1, SUB1)
+DX_UNARY_FUNC(mul2, MUL2)
+DX_UNARY_FUNC(div2, DIV2)
 
 // C99 FP functions
-DX_UNARY_FUNC_TO_INT(isfinite, isfinite);
-DX_UNARY_FUNC_TO_INT(isinf, isinf);
-DX_UNARY_FUNC_TO_INT(isnan, isnan);
-DX_UNARY_FUNC_TO_INT(isnormal, isnormal);
-DX_UNARY_FUNC_TO_INT(signbit, signbit);
+DX_UNARY_FUNC_TO_INT(isfinite, isfinite)
+DX_UNARY_FUNC_TO_INT(isinf, isinf)
+DX_UNARY_FUNC_TO_INT(isnan, isnan)
+DX_UNARY_FUNC_TO_INT(isnormal, isnormal)
+DX_UNARY_FUNC_TO_INT(signbit, signbit)
 
 DX(xatan2)
 {

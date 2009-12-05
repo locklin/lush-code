@@ -527,7 +527,7 @@ static at **flat1(at *l, at **where)
    struct recur_elt elt;
    
    while (CONSP(l)) {
-      ifn (recur_push_ok(&elt, &flat1, Car(l)))
+      ifn (recur_push_ok(&elt, (void *)&flat1, Car(l)))
          error("flatten", "cannot flatten circular list",NIL);
       where = flat1(Car(l), where);
       recur_pop(&elt);

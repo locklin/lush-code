@@ -32,6 +32,10 @@
 /* ---------------------------------------- */
 /* INCLUDES */
 
+#ifndef _XOPEN_SOURCE
+# define _XOPEN_SOURCE    600
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/file.h>
@@ -2289,7 +2293,8 @@ apply_relocations(module_entry *module, int externalp)
 		  if ((hsym->flags & DLDF_DEFD) && !( hsym->flags & DLDF_ALLOC))
 		    {
 		      void **stub = 0;
-		      bfd_byte *data = vmaptr(p->vma) + reloc->address;
+		      bfd_byte *data = vmaptr(p->vma);
+		      data += reloc->address;
 #ifdef __x86_64__
 		      bfd_byte opcode = data[-1];
 		      if ((opcode==0xe8) || (opcode==0xe9))

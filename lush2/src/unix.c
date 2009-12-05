@@ -684,15 +684,12 @@ static void setup_trigger_signal()
 #endif
 #endif
 #endif /* !BROKEN_SETSIG */
-#ifndef BROKEN_TIMER
-#ifdef ITIMER_REAL
+#if !defined(BROKEN_TIMER) && defined(ITIMER_REAL)
         trigger_mode = MODE_ITIMER;
         trigger_signal = SIGALRM;
         setup_signal_once();
         break;
-#endif
-#endif /* !BROKEN_TIMER */
-#ifndef BROKEN_ALARM
+#elif !defined(BROKEN_ALARM)
         trigger_mode = MODE_ALARM;
         trigger_signal = SIGALRM;
         setup_signal_once();

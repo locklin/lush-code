@@ -287,7 +287,8 @@ at *dx_listeval(at *p, at *q)
 at *new_dx(at *name, at *(*addr)(int, at **))
 {
    cfunction_t *f = mm_alloc(mt_cfunction);
-   f->call = f->info = addr;
+   f->call = (void *(*)())addr;
+   f->info = (void *)addr;
    f->name = name;
    f->kname = 0;
    return new_at(dx_class, f);
@@ -315,7 +316,8 @@ at *dy_listeval(at *p, at *q)
 at *new_dy(at *name, at *(*addr)(at *))
 {
    cfunction_t *f = mm_alloc(mt_cfunction);
-   f->call = f->info = addr;
+   f->call = (void *(*)())addr;
+   f->info = (void *)addr;
    f->name = name;
    f->kname = 0;
    return new_at(dy_class, f);
@@ -337,7 +339,7 @@ at *new_dy(at *name, at *(*addr)(at *))
 DY(name2(y,NAME)) \
 { \
   at *q = ARG_LIST; \
-  TRANSFORM_DEF(q, enclose_in_string(NAME)); \
+  TRANSFORM_DEF(q, enclose_in_string(NAME)) \
   ifn (CONSP(q) && CONSP(Cdr(q))) \
     RAISEF("syntax error", new_cons(named(enclose_in_string(NAME)), q)); \
   ifn (SYMBOLP(Car(q))) \
@@ -380,7 +382,7 @@ DY(ylambda)
   return new_de(Car(q), Cdr(q));
 }
 
-DY_DEF(de);
+DY_DEF(de)
 
 
 /* DF class -------------------------------------------	 */
@@ -415,7 +417,7 @@ DY(yflambda)
    return new_df(Car(q), Cdr(q));
 }
 
-DY_DEF(df);
+DY_DEF(df)
 
 /* DM class -------------------------------------------	 */
 
@@ -450,7 +452,7 @@ DY(ymlambda)
    return new_dm(Car(q), Cdr(q));
 }
 
-DY_DEF(dm);
+DY_DEF(dm)
 
 static at *macroexpand(at *p, at *q)
 {

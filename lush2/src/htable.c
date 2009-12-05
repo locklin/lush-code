@@ -253,7 +253,7 @@ again:
       
    } else if (CONSP(p)) {
       x ^= 0x2020;
-      if (recur_push_ok(&elt, &hash_value, Car(p))) {
+      if (recur_push_ok(&elt, (void *)&hash_value, Car(p))) {
          x ^= hash_value(Car(p));
          recur_pop(&elt);
       }
@@ -268,7 +268,7 @@ again:
 
    } else if (Class(p)->hash) {
       x ^= 0x3030;
-      if (recur_push_ok(&elt, &hash_pointer, p)) {
+      if (recur_push_ok(&elt, (void *)&hash_pointer, p)) {
          x ^= Class(p)->hash(p);
          recur_pop(&elt);
       }
