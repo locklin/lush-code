@@ -1364,7 +1364,7 @@ void init_string(void)
    dx_define("substring", xsubstring);
    dx_define("concat", xstr_concat);
    dx_define("str-index", xstr_index);
-   dx_define("val", xstr_val);
+   dx_define("str-val", xstr_val);
    dx_define("str", xstr_number);
    dx_define("strhex", xstr_number_hex);
    dx_define("str-len", xstr_len);

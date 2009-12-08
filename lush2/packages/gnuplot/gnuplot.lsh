@@ -91,11 +91,6 @@
 (dm escape-%s (_ s)
   `(regex-subst "%" "%%%%" ,s))
 
-(defalias str-val val)
-(defalias str-index index)
-(defalias prefix  left)
-(defalias suffix  right)
-
 ;; auxiliary for method 'read-til-next-prompt'
 ;; remove suffix from txt if it is a gnuplot prompt
 (defun remove-prompt (txt &optional (prompts ("gnuplot" "multiplot" "input data ('e' ends) ")) )
@@ -103,8 +98,8 @@
       ()
     (let* ((prompt (car prompts))
 	   (lenp   (length prompt)) )
-      (if (and (>= (length txt) lenp)  (= (suffix txt lenp) prompt))
-	  (prefix txt (- lenp))
+      (if (and (>= (length txt) lenp)  (= (str-right txt lenp) prompt))
+	  (str-left txt (- lenp))
 	(remove-prompt txt (cdr prompts)) ))))
 
 (defmacro with-fd-log (fd-log . body)
@@ -121,18 +116,18 @@
       (writing (open-append logfile) 
         (printf "%s" (concat txt cur)) (flush)) )
     
-    (selectq (prefix cur 1)
+    (selectq (str-left cur 1)
       (":"  (cond 
-             ((= (suffix txt 21) "Press return for more")
+             ((= (str-right txt 21) "Press return for more")
               ;; send carriage-return and remove prompt text
               (writing fd-to (printf "\n"))
-              (concat (prefix txt -21) 
+              (concat (str-left txt -21) 
                       (==> this read-til-next-prompt)))
              
-             ((= (suffix txt 10) "Help topic")
+             ((= (str-right txt 10) "Help topic")
               ;; send carriage-return and remove prompt text
               (writing fd-to (printf "\n"))
-              (concat (prefix txt -10) 
+              (concat (str-left txt -10) 
                       (==> this read-til-next-prompt)))
              
              ((regex-match ".+Subtopic of (.+)$" txt)
@@ -233,7 +228,7 @@
       (let (((name r g b) (or (regex-extract " +([^ ]+)[ #0-9a-f]+ = +([0-9]+) +([0-9]+) +([0-9]+)" s)
                               '(() () () ()) )))
         (when name
-          (cs (make-symbol name) (list (val r) (val g) (val b))) )))
+          (cs (make-symbol name) (list (str-val r) (str-val g) (str-val b))) )))
     (setq interactive ia)
     cs))
 
@@ -266,7 +261,7 @@
       (when (not (or (index "binary" arg) (index "exit" arg) (index "quit" arg)))
         (setq response (==> this read-til-next-prompt))
         (when echo-on
-          (setq response (suffix response 
+          (setq response (str-right response 
                                  (- (min (1+ (length arg))
                                          (length response)) ))) )))
      ((indexp arg)
@@ -301,9 +296,9 @@
 (defmethod Gnuplot check-for-error (last-cmd last-ans)
   (while (this) ())
   (let* ((cmd "if (exists(\"GPVAL_ERRNO\")) print GPVAL_ERRNO; else print -1")
-         (errno (val (this cmd))) )
+         (errno (str-val (this cmd))) )
     (while (null errno)
-      (setq errno (val (this))) )
+      (setq errno (str-val (this))) )
     (when (> errno 0)
       (printf "\n")
       (printf "*** An error occurred while processing gnuplot script:\n\n")
