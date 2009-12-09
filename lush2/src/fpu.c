@@ -39,21 +39,15 @@
 #  define _FPU_EXTENDED 2
 #endif
 
-#define _GNU_SOURCE
+#ifdef HAVE_IEEEFP_H
+# include <ieeefp.h>
+#endif
+
 #include <fenv.h>
 #include <signal.h>
 #include <float.h>
 #if defined(__MACOSX__) && defined(__SSE__)
 #  include <xmmintrin.h>
-#endif
-
-#ifdef linux
-# ifdef __hppa__          /* Checked (debian) 2003-07-14 */
-#  define BROKEN_SIGFPE
-# endif
-# ifdef __mips__          /* Checked (debian) 2004-03-06 */
-#   define BROKEN_SIGFPE
-# endif
 #endif
 
 static fenv_t standard_fenv;
@@ -247,6 +241,14 @@ static void fpu_trap (int excepts)
    if (excepts & FE_DIVBYZERO)  es &= ~_MM_MASK_DIV_ZERO;
    if (excepts & FE_INVALID)    es &= ~_MM_MASK_INVALID;
    _MM_SET_EXCEPTION_MASK(es);
+#elif HAVE_FPSETMASK
+   fp_except es = fpgetmask();
+   if (excepts & FE_INEXACT)    es |= FP_X_IMP;
+   if (excepts & FE_UNDERFLOW)  es |= FP_X_UFL;
+   if (excepts & FE_OVERFLOW)   es |= FP_X_OFL;
+   if (excepts & FE_DIVBYZERO)  es |= FP_X_DZ;
+   if (excepts & FE_INVALID)    es |= FP_X_INV;
+   fpsetmask(es);
 #else
    warn_notrap();
 #endif
@@ -264,6 +266,14 @@ static void fpu_untrap(int excepts)
    if (excepts & FE_DIVBYZERO)  es |= _MM_MASK_DIV_ZERO;
    if (excepts & FE_INVALID)    es |= _MM_MASK_INVALID;
    _MM_SET_EXCEPTION_MASK(es);
+#elif HAVE_FPSETMASK
+   fp_except es = fpgetmask();
+   if (excepts & FE_INEXACT)    es &= ~FP_X_IMP;
+   if (excepts & FE_UNDERFLOW)  es &= ~FP_X_UFL;
+   if (excepts & FE_OVERFLOW)   es &= ~FP_X_OFL;
+   if (excepts & FE_DIVBYZERO)  es &= ~FP_X_DZ;
+   if (excepts & FE_INVALID)    es &= ~FP_X_INV;
+   fpsetmask(es);
 #else
    warn_notrap();
 #endif
@@ -409,7 +419,6 @@ DX(xfpu_info)
 {
    ARG_NUMBER(0);
    char buffer[256], *buf = buffer;
-// #pragma STDC FENV_ACCESS ON
 
 #ifdef _FPU_GETCW
    print_char('\n');
@@ -437,6 +446,7 @@ DX(xfpu_info)
 #if 0
    print_char('\n');
    print_string("Rounding mode         :");
+#pragma STDC FENV_ACCESS ON
    switch (FLT_ROUNDS) {
    case 0: print_string(" "KEY_TOWARDZERO); break;
    case 1: print_string(" "KEY_TONEAREST); break;
@@ -461,7 +471,7 @@ DX(xfpu_info)
    print_string(sprint_excepts(buf, fetestexcept(FE_ALL_EXCEPT)));
    print_char('\n');
 
-#if defined(HAVE_FEENABLEEXCEPT)
+#if HAVE_FEENABLEEXCEPT
    print_string("FPU exceptions trapped:");
    print_string(sprint_excepts(buf, fegetexcept()));
    print_char('\n');
@@ -476,13 +486,26 @@ DX(xfpu_info)
    if (es & _MM_MASK_INVALID)   excepts &= ~FE_INVALID;
    print_string(sprint_excepts(buf, excepts));
    print_char('\n');
+#elif HAVE_FPSETMASK
+   print_string("FPU exceptions trapped:");
+   fp_except es = fpgetmask();
+   int excepts = 0;
+   if (es & FP_X_IMP) excepts |= FE_INEXACT;
+   if (es & FP_X_UFL) excepts |= FE_UNDERFLOW;
+   if (es & FP_X_OFL) excepts |= FE_OVERFLOW;
+   if (es & FP_X_DZ)  excepts |= FE_DIVBYZERO;
+   if (es & FP_X_INV) excepts |= FE_INVALID;
+   print_string(sprint_excepts(buf, excepts));
+   print_char('\n');
 #endif
    return NIL;
 }
 
 void fpu_reset(void)
 {
-   fesetenv(&standard_fenv);
+#pragma STDC FENV_ACCESS ON
+   fesetenv(FE_DFL_ENV);
+   fpu_trap(FE_OVERFLOW);
 #ifdef _FPU_GETCW
    set_fpu_precision(_FPU_EXTENDED);
 #endif
@@ -498,11 +521,7 @@ DX(xfpu_reset)
 void init_nan(void)
 {
    /* set up and save standard fpu environment */
-   fesetenv(FE_DFL_ENV);
-   assert(fetestexcept(FE_ALL_EXCEPT)==0);
-   fpu_untrap(FE_ALL_EXCEPT);
-   fpu_trap(FE_OVERFLOW);
-   fegetenv(&standard_fenv);
+   fpu_reset();
 
    dx_define("infinityp", xinfinityp);
    dx_define("nanp", xnanp);

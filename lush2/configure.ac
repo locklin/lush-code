@@ -301,8 +301,8 @@ AC_FUNC_MMAP
 AC_FUNC_FORK
 AC_FUNC_STRFTIME
 AC_CHECK_FUNCS(strchr memcpy sigaction sigvec strerror getcwd)
-AC_CHECK_FUNCS(feenableexcept ieee_handler fpsetmask __setfpucw)
-AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp waitpid openpty)
+AC_CHECK_FUNCS(feenableexcept fpsetmask fpsetround fpgetsticky __setfpucw)
+AC_CHECK_FUNCS(tanh dlopen sigsetjmp waitpid openpty)
 AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
 AC_CHECK_FUNCS(setenv putenv fseeko ftello)
