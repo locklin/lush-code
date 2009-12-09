@@ -50,8 +50,6 @@
 #  include <xmmintrin.h>
 #endif
 
-static fenv_t standard_fenv;
-
 #define KEY_INVALID    "invalid"
 #define KEY_DENORM     "denorm"
 #define KEY_DIVBYZERO  "div-by-zero"
@@ -503,7 +501,7 @@ DX(xfpu_info)
 
 void fpu_reset(void)
 {
-#pragma STDC FENV_ACCESS ON
+//#pragma STDC FENV_ACCESS ON
    fesetenv(FE_DFL_ENV);
    fpu_trap(FE_OVERFLOW);
 #ifdef _FPU_GETCW
