@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.15 2008-11-17 05:24:14 profshadoko Exp $
+;;; $Id: lush.el,v 1.16 2009-12-13 21:59:55 ysulsky Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; this file contains useful definitions for emacs
@@ -118,12 +118,14 @@
                                    (- (point) 1))))
                         (comint-send-string proc (concat expr "\n"))
                         (comint-add-to-input-history expr)
+                        (setq comint-input-ring-index nil)
                         (command-execute 'comint-set-process-mark))
                     (goto-char cur)))
               ;; just send the input to lush
               (let ((expr (buffer-substring-no-properties mark (- end 1))))
                 (comint-send-string proc (concat expr "\n"))
                 (comint-add-to-input-history expr)
+                (setq comint-input-ring-index nil)
                 (command-execute 'comint-set-process-mark))))))))
 
 (defun filter (p lst)
