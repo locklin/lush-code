@@ -148,6 +148,56 @@
 ;; These functions perform 1D and 2D FFTs
 ;; from complex to complex, and real to complex.
 
+#? (fftw-dct-1d (in out forward norm)
+;; compute the 1D DCT-II transform of vector <in>,
+;; and put result in <out>. <forward> is an integer which
+;; should be set to 1 for a forward transform and
+;; to -1 for an inverse transform. <norm> is a 
+;; boolean that should be set to nil for no
+;; normalization and t for normalization.
+(de fftw-dct-1d (in out forward norm)
+  ((-idx1- (-double-)) in out)
+  ((-int-) forward)
+  ((-bool-) norm)
+  (when (<> (idx-dim in 0) (idx-dim out 0)) (error "input and output have different sizes"))
+  (when (or (not (contiguousp in)) (not (contiguousp out))) (error "vector not contiguous"))
+  (let ((n (idx-dim in 0)))
+    ((-int-) n)
+    #{{ fftw_plan p;
+        p = fftw_plan_r2r_1d($n, IDX_PTR($in,double), IDX_PTR($out,double), 
+                             (($forward>0)?FFTW_REDFT10:FFTW_REDFT01), FFTW_ESTIMATE);
+        fftw_execute(p);
+        fftw_destroy_plan(p);
+     }#}
+    (when norm
+      (let ((s (/ 0.5 (to-double n)))) ; extra factor of 2 in the DCT
+	((-double-) s)
+	(cidx-bloop ("i" ("out" out)) #{ *out *= $s; #} ))) ()))
+    
+
+#? (fftw-dht-1d <in> <out> <norm>)
+;; computes the discrete hartley transform of <in>
+;; and puts the result into <out>. <norm> is a boolean
+;; that should be set to t to divide the output by its
+;; length.
+(de fftw-dht-1d (in out norm)
+  ((-idx1- (-double-)) in out)
+  ((-bool-) norm)
+  (when (<> (idx-dim in 0) (idx-dim out 0)) (error "input and output have different sizes"))
+  (when (or (not (contiguousp in)) (not (contiguousp out))) (error "vector not contiguous"))
+  (let ((n (idx-dim in 0)))
+    ((-int-) n)
+    #{{ fftw_plan p;
+        p = fftw_plan_r2r_1d($n, IDX_PTR($in,double), IDX_PTR($out,double), 
+                             FFTW_DHT, FFTW_ESTIMATE);
+        fftw_execute(p);
+        fftw_destroy_plan(p);
+     }#}
+    (when norm
+      (let ((s (/ 1 (to-double n))))
+	((-double-) s)
+	(cidx-bloop ("i" ("out" out)) #{ *out *= $s; #} ))) ()))
+    
 
 #? (fftw-dft-c2c-1d <in> <out> <forward> <norm>)
 ;; compute the complex-to-complex 1D fourier 
@@ -380,6 +430,8 @@
    ;; Headers
    #{ #include <fftw3.h> #}
    ;; functions
+   fftw-dct-1d
+   fftw-dht-1d
    fftw-dft-c2c-1d
    fftw-dft-r2c-1d
    fftw-dft-c2r-1d
