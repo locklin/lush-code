@@ -513,7 +513,7 @@ LUSHAPI static inline at *new_at_string(const char *ms)
 
 LUSHAPI at *make_string(const char *s);
 LUSHAPI at *make_string_of_length(size_t n);
-LUSHAPI int str_index(const char *s1, const char *s2, int start);
+LUSHAPI int str_find(const char *s1, const char *s2, int start);
 LUSHAPI at *str_val(const char *s);
 LUSHAPI const char *str_number(double x);
 LUSHAPI const char *str_number_hex(double x);

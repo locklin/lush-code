@@ -263,7 +263,7 @@
       (when (or (not fout) (not (regex-match ".*\\.(lsh|tl|sn)" fout)))
 	(error 'tokenize "Cannot find Lush library file named" fin) )
       (setq fin fout)
-      (setq fout (concat fout "c")) )
+      (setq fout (str-cat fout "c")) )
     (let ((tokens (list 'progn)))
       (reading (open-read fin ".lsh|.tl|")
 	       (while (<> (skip-char) "\e")
@@ -815,8 +815,8 @@
 ;; create XXX-array constructors
 (domapc ((sc storage-classes))
   (let* ((scs         (storage-class-symbol sc))
-         (func-symbol (named (concat (pname scs) "-array")))
-	 (func*-symbol (named (concat (pname scs) "-array*")))
+         (func-symbol (named (str-cat (pname scs) "-array")))
+	 (func*-symbol (named (str-cat (pname scs) "-array*")))
          (init        (if (member scs '(atom gptr mptr)) nil 0.0)) )
     (eval
      `(progn 
@@ -923,7 +923,7 @@
 
 (de print-array-literal (this)
   (let* ((elt     (idx-element-type this))
-	 (begin   (concat "[" (str-left (pname elt) 1)))
+	 (begin   (str-cat "[" (str-left (pname elt) 1)))
 	 (end     "]")
 	 (pf-at   (lambda (i) (printf " ") (prin (this i)) ))
 	 (pf-real (lambda (i) (printf " %8.4f" (this i))))
@@ -1370,12 +1370,12 @@
 (de edit (fn &optional createp)
   ;; libload.search raises an error if file not found
   (when createp
-    (sys (concat "touch " fn)) ) ;; this is unix only
+    (sys (str-cat "touch " fn)) ) ;; this is unix only
   (let ((fn (or (and (filep fn) fn)
                 (and (filep (libload.search fn)) (libload.search fn))) ))
     (cond
-     (edit-call  (sys (concat edit-call " " fn)) )
-     (xdmc       (xdmc (concat "ce " fn)) )
+     (edit-call  (sys (str-cat edit-call " " fn)) )
+     (xdmc       (xdmc (str-cat "ce " fn)) )
      (winedit    (winedit fn) )) ))
 
 (de fedit(_s_)
@@ -1396,7 +1396,7 @@
 (defun make-string (n c)
   (let ((s "") (p (ceil (log2 n))))
     (while (>= p 0)
-      (setq s (concat s s (if (testbit n p) c "")))
+      (setq s (str-cat s s (if (testbit n p) c "")))
       (decr p) )
     s))
 
@@ -1412,17 +1412,17 @@
   (if (null ss)
       ""
     (let ((args (list (car ss))))
-      (apply concat 
+      (apply str-cat 
              (prog1 args
                (dolist (s (cdr ss))
                  (setq args (last args))
                  (rplacd args (list j s)) ))))))
 
-(defmacro str-split (sep s)
+(defmacro str-split (s sep)
   `(regex-split ,sep ,s () () t) )
 
 (de str-strip (s) 
-  (stripl (stripr s)) )
+  (str-stripl (str-stripr s)) )
 
 (de str-stripl(s) 
   (regex-subst "^( )+" "" s) )
@@ -1441,12 +1441,12 @@
     (when (and l gr)
       (let* ((ll l) (x 1))
 	(while ll
-	  (when (not (regex-match gr (str-mid s x (- (caar ll) x))))
+	  (when (not (regex-match gr (mid s x (- (caar ll) x))))
             (setq l () ll ()) )
 	  (setq x (caar ll))
 	  (setq ll (cdr ll)) )
 	(when (< n 0)
-	  (when ~(regex-match gr (str-mid s (apply + (lasta l))))
+	  (when ~(regex-match gr (mid s (apply + (lasta l))))
 		(setq l () ll ()) ) ) ) )
     l ))
 
@@ -1455,16 +1455,16 @@
   (if (<= n 0)
       s
     (let* ((l (regex-rseek r s n gr)))
-      (when l (str-mid s (if neg (car (lasta l)) (apply + (lasta l))))))))
+      (when l (mid s (if neg (car (lasta l)) (apply + (lasta l))))))))
 
 (de regex-split (r s &optional n gr neg)
   (let* ((l (regex-rseek r s n gr)))
     (if neg
 	(let* ((y 1))
 	  (nconc
-	   (all (((x i) l)) (prog1 (str-mid s y (- x y)) (setq y (+ x i))))
-	   (if n () (list (str-mid s y)))))
-      (all (((x i) l)) (str-mid s x i)))))
+	   (all (((x i) l)) (prog1 (mid s y (- x y)) (setq y (+ x i))))
+	   (if n () (list (mid s y)))))
+      (all (((x i) l)) (mid s x i)))))
 
 (de regex-count (r s) 
   (length (regex-rseek r s)) )
@@ -1498,7 +1498,7 @@
     (setq p "") ) 
   (let ((pos 0)) 
     (dolist (i (mapcar nameof (symbols)))
-      (when (str-index p i) 
+      (when (str-find p i) 
         (printf "%s" (str-left i 17)) 
         (setq pos (if (< pos 50) 
                       (+ pos 19) 
@@ -1865,9 +1865,9 @@
      ((= nextchar "#")
       (read-string 1)
       (if (<> (skip-char "") "}") "#" (read-string 1) "#}") )
-     ((index nextchar " \t\n\r")
+     ((str-find nextchar " \t\n\r")
       (read-string " \t\n\r") )
-     ((index nextchar "\"'")
+     ((str-find nextchar "\"'")
       (cmacro.read-string (read-string 1)) )
      ((= nextchar "/")
       (cmacro.read-comment))
@@ -1879,12 +1879,12 @@
 	(cc (skip-char "")) )
     (selectq cc
       ("/" ;; c++ style comment
-       (setq c (concat c (read-string "~\n\r") "\n")) )
+       (setq c (str-cat c (read-string "~\n\r") "\n")) )
       ("*" ;; c style comment
        (while (and (<> cc "/") (<> cc "\e"))
-	 (setq c (concat c (read-string "~*\e") (read-string "*")))
+	 (setq c (str-cat c (read-string "~*\e") (read-string "*")))
 	 (setq cc (skip-char "")) )
-       (setq c (concat c (read-string 1))) ) )
+       (setq c (str-cat c (read-string 1))) ) )
     c) )
 
 (de cmacro.read-string(delim)
@@ -1892,14 +1892,14 @@
         (str ())
         (ok t))
     (while ok
-      (setq str (read-string (concat "~\e\\" delim)))
+      (setq str (read-string (str-cat "~\e\\" delim)))
       (setq dat (nconc1 dat str))
       (if (= (skip-char "") "\\")
           (setq dat (nconc1 dat (read-string 2)))
         (setq ok ()) ) )
     (if (= (skip-char "") delim)
         (setq dat (nconc1 dat (read-string 1))) )
-    (apply concat dat) ) )
+    (apply str-cat dat) ) )
 
 (de cmacro.read-dollar()
   (read-string 1)
@@ -1937,7 +1937,7 @@
 	    (setq exprs (nconc1 exprs item)) )))))
     (let ((l (last stmts)))
       (rplaca l (regex-subst "[ \t\n\r]*$" "" (car l)))
-      `(cinline ,(apply concat stmts) ,@exprs) )))
+      `(cinline ,(apply str-cat stmts) ,@exprs) )))
 
 (defmacro defcmacro def
   (when define-hook (setq def (apply define-hook def)))
@@ -1992,7 +1992,7 @@
 	  (setq expr (nconc1 expr item)) ) ) ) )
     (let ((l (last stmt)))
       (rplaca l (regex-subst "[ \t\n\r]*$" "" (car l))) )
-    (list  `(cinline ,(apply concat stmt) ,@expr)) ) )
+    (list  `(cinline ,(apply str-cat stmt) ,@expr)) ) )
 
 (lock-symbol breakp protect unprotect 
              cinline ifdef ifcompiled
@@ -2033,7 +2033,7 @@
       (setq d (car dirlist))
       (setq e extlist)
       (while (and keepgoing e)
-        (setq f (concat-fname d (concat file (car e))))
+        (setq f (concat-fname d (str-cat file (car e))))
         (when (filep f)
           (setq r f) (setq keepgoing ()))
         (setq e (cdr e)))
@@ -2050,16 +2050,16 @@
 (de find-static-library(name &optional extlist)
   (when (not extlist)
     (setq extlist '(""))
-    (when (not (index "." (basename name)))
-      (setq extlist (list (concat "." (or (getconf "AEXT") "a")))) ) )
+    (when (not (str-find "." (basename name)))
+      (setq extlist (list (str-cat "." (or (getconf "AEXT") "a")))) ) )
   (find-file static-library-path name extlist) )
 
 (de find-shared-library(name &optional extlist)
   (let ((p shared-library-path))
     (when (not extlist)
       (setq extlist '(""))
-      (when (not (index "." (basename name)))
-        (setq extlist (list (concat "." (or (getconf "SOEXT") "so")))) ) )
+      (when (not (str-find "." (basename name)))
+        (setq extlist (list (str-cat "." (or (getconf "SOEXT") "so")))) ) )
     (when (filep "/etc/ld.so.conf")
       (reading "/etc/ld.so.conf"
 	(while (<> (skip-char) "\e")
