@@ -1279,8 +1279,21 @@ DX(xsprintf)
       *buf = 0;
       if (c != '%' && ++i > arg_number)
          goto err_printf1;
-      if (c == 'l' || c == 'p') {
+      if (c == 'l') {
          large_string_add(&ls, pname(APOINTER(i)), -1);
+
+      } else if (c == 'p') {
+         *buf++ = 0;
+         at *a = APOINTER(i);
+         ifn (GPTRP(a) || MPTRP(a)) AGPTR(i);
+         if (ok == 9) {
+            large_string_add(&ls, str_number_hex((double)(intptr_t)Gptr(a)), -1);
+         } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+            goto err_printf0;
+         } else {
+            sprintf(buf, print_buffer, Gptr(a));
+            large_string_add(&ls, buf, -1);
+         }
 
       } else if (c == 'd') {
          *buf++ = 0;
