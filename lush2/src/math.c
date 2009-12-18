@@ -26,91 +26,8 @@
  ***********************************************************************/
 
 #include "header.h"
+#include "amath-macros.h"
 #include <tgmath.h>
-
-/* output may have different type than input */
-#define UNARY_FUNC(i, o, Ti, To, FUNC) \
-{ \
-  Ti *ip = IND_BASE_TYPED((i), Ti); \
-  To *op = IND_BASE_TYPED((o), To); \
-  begin_idx_aloop2((i), (o), k, l) { \
-      op[l] = FUNC(ip[k]); \
-  } end_idx_aloop2((i), (o), k, l) \
-}
-
-/* output may have different type than input */
-#define BINARY_FUNC(i1, i2, o, Ti, To, FUNC) \
-{ \
-  Ti *i1p = IND_BASE_TYPED((i1), Ti); \
-  Ti *i2p = IND_BASE_TYPED((i2), Ti); \
-  To *op = IND_BASE_TYPED((o), To); \
-  begin_idx_aloop3((i1), (i2), (o), j, k, l) { \
-      op[l] = FUNC(i1p[j], i2p[k]); \
-  } end_idx_aloop3((i1), (i2), (o), j, k, l) \
-}
-
-#define DX_UNARY_FUNC(NAME, FUNC)                            \
-DX(name2(x, NAME))                                           \
-{                                                            \
-  ARG_NUMBER(1);                                             \
-  if (ISINDEX(1)) {                                          \
-    index_t *res, *ind = AINDEX(1);                          \
-    switch (IND_STTYPE(ind)) {                               \
-                                                             \
-    case ST_FLOAT:                                           \
-      res = clone_array(ind);                                \
-      UNARY_FUNC(ind, res, float, float, FUNC);              \
-      break;                                                 \
-                                                             \
-    case ST_DOUBLE:                                          \
-      res = clone_array(ind);                                \
-      UNARY_FUNC(ind, res, double, double, FUNC);            \
-      break;                                                 \
-                                                             \
-    default: {                                               \
-      index_t *dind = as_double_array(APOINTER(1));          \
-      res = clone_array(dind);                               \
-      UNARY_FUNC(dind, res, double, double, FUNC);           \
-    }}                                                       \
-    return res->backptr;                                     \
-  } else if (ISNUMBER(1)) {                                  \
-    return NEW_NUMBER(FUNC(AREAL(1)));                       \
-  } else                                                     \
-    RAISEF("not an index nor a number", APOINTER(1));        \
-  return NIL;                                                \
-}
-
-/* result of these is of type int */
-#define DX_UNARY_FUNC_TO_INT(NAME, FUNC)                     \
-DX(name2(x, NAME))                                           \
-{                                                            \
-  ARG_NUMBER(1);                                             \
-  if (ISINDEX(1)) {                                          \
-    index_t *res, *ind = AINDEX(1);                          \
-    switch (IND_STTYPE(ind)) {                               \
-                                                             \
-    case ST_FLOAT:                                           \
-      res = make_array(ST_INT, IND_SHAPE(ind), NIL);         \
-      UNARY_FUNC(ind, res, float, int, FUNC);                \
-      break;                                                 \
-                                                             \
-    case ST_DOUBLE:                                          \
-      res = make_array(ST_INT, IND_SHAPE(ind), NIL);         \
-      UNARY_FUNC(ind, res, double, int, FUNC);               \
-      break;                                                 \
-                                                             \
-    default: {                                               \
-      index_t *dind = as_double_array(APOINTER(1));          \
-      res = make_array(ST_INT, IND_SHAPE(dind), NIL);        \
-      UNARY_FUNC(dind, res, double, int, FUNC);              \
-    }}                                                       \
-    return res->backptr;                                     \
-  } else if (ISNUMBER(1)) {                                  \
-    return NEW_NUMBER(FUNC(AREAL(1)));                       \
-  } else                                                     \
-    RAISEF("not an index nor a number", APOINTER(1));        \
-  return NIL;                                                \
-}
 
 #define SGN(x) (x < 0.0 ? -1.0 : (x > 0.0 ? 1.0 : 0.0))
 #define PIECE(x) (x < 0.0 ? 0.0 : (x > 1.0 ? 1.0 : x))
@@ -188,7 +105,7 @@ DX(xatan2)
 
 /* --------- SOLVE --------- */
 
-double solve(real x1, real x2, double (*f)(double))
+static double solve(real x1, real x2, double (*f)(double))
 {
    double y1 = (*f) (x1);
    double y2 = (*f) (x2);
