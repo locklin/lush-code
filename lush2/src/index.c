@@ -806,9 +806,9 @@ DX(xarray_dc)
    if (arg_number == 2) {
       init = APOINTER(2);
 
-   } else if (arg_number > 2)
+   } else if (arg_number<1 || arg_number>2)
       ARG_NUMBER(-1);
-
+   
    if (init) {
       return make_array(IND_STTYPE(AINDEX(1)), SHAPE0D, init)->backptr;
 
