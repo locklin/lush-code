@@ -731,6 +731,7 @@ struct CClass_object;
 typedef struct object {
    at *backptr;
    struct CClass_object *cptr;
+   struct object *next_unreachable;
    at *slots[];
 } object_t;
 
