@@ -29,6 +29,9 @@
 #include <errno.h>
 #include <inttypes.h>
 
+#define SHP0(S)  ((S)->ndims = 0, S)
+
+
 typedef at* atp_t;
 
 static void clear_index(index_t *ind, size_t _)
@@ -964,8 +967,10 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
    static char errmsg_dimensions[] = "too many dimensions";
    static shape_t shape;
   
-   if (shp==NIL)
+   if (shp==NIL) {
       shp = &shape;
+      shape_set(shp, 0, 0, 0, 0, 0, 0, 0);
+   }
    
    if (INDEXP(atshp) && index_numericp(Mptr(atshp))) {
       index_t *ind = Mptr(atshp);
@@ -2753,16 +2758,29 @@ index_t *index_lift(index_t *ind, shape_t *shp)
    return index_liftD(copy_index(ind), shp);
 }
 
+// parse shape in or from argument N, write to S
+#define PARSE_SHAPE(S, N)                       \
+   if (arg_number>1) {                          \
+      if (ISNUMBER(N)) {                        \
+         for (int i=N; i<=arg_number; i++)      \
+            S->dim[i-N] = AINTEGER(i);          \
+         S->ndims = arg_number-N+1;             \
+      } else {                                  \
+         ARG_NUMBER(N);                         \
+         parse_shape(APOINTER(N), S);           \
+      }                                         \
+   }                                            \
+   0
+
 DX(xidx_liftD)
 {
    if (arg_number<1)
       ARG_NUMBER(-1);
-
-   shape_t shape, *shp = &shape;
-   for (int i=2; i<=arg_number; i++)
-      shp->dim[i-2] = AINTEGER(i);
-   shp->ndims = arg_number-1;
-   index_liftD(AINDEX(1), shp);
+   
+   index_t *ind = AINDEX(1);
+   shape_t shape, *shp = SHP0(&shape);
+   PARSE_SHAPE(shp, 2);
+   index_liftD(ind, shp);
    return APOINTER(1);
 }
 
@@ -2772,11 +2790,9 @@ DX(xidx_lift)
       ARG_NUMBER(-1);
 
    index_t *ind = AINDEX(1);
-   shape_t shape, *shp = &shape;
-   for (int i=2; i<=arg_number; i++)
-      shp->dim[i-2] = AINTEGER(i);
-   shp->ndims = arg_number-1;
-   ind = index_lift(AINDEX(1), shp);
+   shape_t shape, *shp = SHP0(&shape);
+   PARSE_SHAPE(shp, 2);
+   ind = index_lift(ind, shp);
    return ind->backptr;
 }
 
@@ -2808,11 +2824,10 @@ DX(xidx_sinkD)
    if (arg_number<1)
       ARG_NUMBER(-1);
 
-   shape_t shape, *shp = &shape;
-   for (int i=2; i<=arg_number; i++)
-      shp->dim[i-2] = AINTEGER(i);
-   shp->ndims = arg_number-1;
-   index_sinkD(AINDEX(1), shp);
+   index_t *ind = AINDEX(1);
+   shape_t shape, *shp = SHP0(&shape);
+   PARSE_SHAPE(shp, 2);
+   index_sinkD(ind, shp);
    return APOINTER(1);
 }
 
@@ -2822,11 +2837,9 @@ DX(xidx_sink)
       ARG_NUMBER(-1);
 
    index_t *ind = AINDEX(1);
-   shape_t shape, *shp = &shape;
-   for (int i=2; i<=arg_number; i++)
-      shp->dim[i-2] = AINTEGER(i);
-   shp->ndims = arg_number-1;
-   ind = index_sink(AINDEX(1), shp);
+   shape_t shape, *shp = SHP0(&shape);
+   PARSE_SHAPE(shp, 2);
+   ind = index_sink(ind, shp);
    return ind->backptr;
 }
 
