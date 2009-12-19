@@ -1189,7 +1189,7 @@ DX(xas_int_array)
 }
 
 
-index_t *as_ubyte_array(at *arg) 
+index_t *as_uchar_array(at *arg) 
 {
    if (NUMBERP(arg))
       return  make_array(ST_UCHAR, SHAPE0D, arg);
@@ -1213,10 +1213,10 @@ index_t *as_ubyte_array(at *arg)
    return NULL;  
 }
 
-DX(xas_ubyte_array)
+DX(xas_uchar_array)
 {
    ARG_NUMBER(1);
-   return as_ubyte_array(APOINTER(1))->backptr;
+   return as_uchar_array(APOINTER(1))->backptr;
 }
 
 /* create a vector with values from <from> to <to>, <step> apart */
@@ -3615,7 +3615,7 @@ void init_index(void)
    /* argument processing */
    dx_define("as-double-array", xas_double_array);
    dx_define("as-int-array", xas_int_array);
-   dx_define("as-ubyte-array", xas_ubyte_array);
+   dx_define("as-uchar-array", xas_uchar_array);
 
    /* matrix files */
    dx_define("save-matrix", xsave_matrix);
