@@ -137,7 +137,7 @@ DY(ywith_fpu_env)
 
    if (fegetenv(saved_fenv)) {
       fprintf(stderr, "*** Warning: could not save FPU environment, restoring standard environment\n");
-      saved_fenv = &standard_fenv;
+      saved_fenv = NULL;
    }
 
    context_push(&mycontext);
@@ -150,7 +150,7 @@ DY(ywith_fpu_env)
    at *answer = progn(ARG_LIST);
 
    context_pop();
-   fesetenv(saved_fenv);
+   if (saved_fenv) fesetenv(saved_fenv);
    return answer;
 }
 #endif
