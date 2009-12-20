@@ -228,8 +228,8 @@ static void warn_notrap(void)
 
 static void fpu_trap (int excepts)
 {
-#ifdef HAVE_FEENABLEEXCEPT
    feclearexcept(excepts);
+#ifdef HAVE_FEENABLEEXCEPT
    feenableexcept(excepts | fegetexcept());
 #elif defined(__MACOSX__) && defined(__SSE__)
    unsigned int es = _MM_GET_EXCEPTION_MASK();
