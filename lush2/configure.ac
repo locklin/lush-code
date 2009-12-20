@@ -264,7 +264,7 @@ AC_HEADER_DIRENT
 AC_HEADER_TIME
 AC_HEADER_SYS_WAIT     
 AC_CHECK_HEADERS(wchar.h wctype.h langinfo.h iconv.h)
-AC_CHECK_HEADERS(memory.h string.h strings.h limits.h alloca.h)
+AC_CHECK_HEADERS(memory.h string.h strings.h limits.h)
 AC_CHECK_HEADERS(unistd.h sys/mman.h termios.h pty.h util.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/types.h sys/ttold.h)
@@ -301,7 +301,7 @@ AC_FUNC_MMAP
 AC_FUNC_FORK
 AC_FUNC_STRFTIME
 AC_CHECK_FUNCS(strchr memcpy sigaction sigvec strerror getcwd)
-AC_CHECK_FUNCS(feenableexcept fpsetmask fpsetround fpgetsticky __setfpucw)
+AC_CHECK_FUNCS(feenableexcept fpsetmask __setfpucw)
 AC_CHECK_FUNCS(tanh dlopen sigsetjmp waitpid openpty)
 AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
@@ -319,7 +319,7 @@ AC_TRY_LINK([#include "iconv.h"],
 AC_MSG_RESULT($ac_has_iconv)
 if test x$ac_has_iconv = xyes ; then
     AC_DEFINE(HAVE_ICONV,1,
-        [Define to 1 if you have the `iconv' function.])
+        [Define to 1 if you have the 'iconv' function.])
 fi
 
 
