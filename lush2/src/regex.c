@@ -540,13 +540,13 @@ DX(xregex_seek)
    if (arg_number==3)
       n = AINTEGER(3);
    else {
-      n = 1;
+      n = 0;
       ARG_NUMBER(2);
    }
    const char *datstart;
    const char *pat = ASTRING(1);
    const char *dat = datstart = ASTRING(2);
-   while (--n>0 && *dat)
+   while (--n>=0 && *dat)
       dat++;
 
    pat = regex_compile(pat,buffer,buffer+1024,0,NULL);
@@ -556,7 +556,7 @@ DX(xregex_seek)
    const char *start,*end;
    if (regex_seek(buffer,datstart,dat,NULL,NULL,0,&start,&end)) {
       dat = ASTRING(2);
-      return new_cons(NEW_NUMBER(1+start-dat),
+      return new_cons(NEW_NUMBER(start-dat),
                       new_cons(NEW_NUMBER(end-start),
                                NIL ) );
    }
