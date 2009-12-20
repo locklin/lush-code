@@ -41,6 +41,7 @@
 
 #if defined(__APPLE__) && defined(__MACH__) && (defined (__i686__) || defined(__i386__))
 #  define __MACOSX__  1
+#  define _DARWIN_C_SOURCE 1
 #endif
 
 
