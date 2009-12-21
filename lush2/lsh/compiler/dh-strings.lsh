@@ -228,10 +228,10 @@
   (let (((r s . n)
 	 (mapcar dhc-parse-expr-c (cdr source) (cdr :treetype:tn-list) nils))
 	(type (dhc-type-to-c-decl :treetype:type)) )
-    (setq n (or (car n) "1"))
+    (setq n (or (car n) "0"))
     ;;(dhc-add-c-externs (sprintf "extern_c int str_find();"))
     (when (not dhc-unprotect)
-      (dhc-add-c-statements (sprintf "RTERR_RANGE((int)%s<1);" n)) )
+      (dhc-add-c-statements (sprintf "RTERR_RANGE((int)%s<0);" n)) )
     (sprintf "(%s) str_find(%s,%s,%s)" type r s n) ))
 
 	 
@@ -309,14 +309,14 @@
     (when (not dhc-unprotect)
       (if l
 	  (dhc-add-c-statements
-	   (sprintf "RTERR_RANGE((int)%s<1);" n)
+	   (sprintf "RTERR_RANGE((int)%s<0);" n)
 	   (sprintf "RTERR_RANGE((int)%s<0);" l)
-	   (sprintf "RTERR_RANGE((int)%s+(int)%s-1>strlen(%s))" n l s) )
+	   (sprintf "RTERR_RANGE((int)%s+(int)%s>strlen(%s))" n l s) )
 	(dhc-add-c-statements
-	 (sprintf "RTERR_RANGE((int)%s<1);" n)
-	 (sprintf "RTERR_RANGE((int)%s-1>strlen(%s))" n s) )))
+	 (sprintf "RTERR_RANGE((int)%s<0);" n)
+	 (sprintf "RTERR_RANGE((int)%s>=strlen(%s))" n s) )))
     (dhc-add-c-statements
-     (sprintf "char *%s = mm_strdup(%s+(int)%s-1);" :symb:c-name s n) )
+     (sprintf "char *%s = mm_strdup(%s+(int)%s);" :symb:c-name s n) )
     (when l
       (dhc-add-c-statements
        (sprintf "%s[(int)%s] = '\\0';" :symb:c-name l) ))
@@ -354,8 +354,8 @@
     (while (and pos (< i nargs))
       (setq pos (search pos))
       (when (consp pos)
-        (setq stype (mid source (car pos) (cadr pos)))
-        (if (not (selectq (right stype 1)
+        (setq stype (str-mid source (car pos) (cadr pos)))
+        (if (not (selectq (str-right stype 1)
                    ("d" 
                     (member (car types) (cons 'dht-number dhc-int-types*)) )
                    (("f" "e" "g")
@@ -369,12 +369,12 @@
 		    (dhc-error (concat "unknown type \" " stype "\"")) )))
             (dhc-error (concat "type mismatch: "
 			       (pname :(nth i tnodes):source) " -> "  stype)))
-        (when (<> "%" (right stype 1))
+        (when (<> "%" (str-right stype 1))
           (setq types (cdr types))
           (setq i (+ 1 i)) )))
     (if (or (<> i nargs)
             (and pos (setq pos (search pos))
-                 (<> "%%" (mid source (car pos) (cadr pos)))))
+                 (<> "%%" (str-mid source (car pos) (cadr pos)))))
         (dhc-error "number of arguments disagrees with number in format string") )))
 
 (dhm-t printf (source)
@@ -498,32 +498,6 @@
      (sprintf "strcpy((char*)(%s),tmpchar);}" :symb:c-name) )
     :symb:c-name))
 
-(dhm-t strhex (source)
-  (when (<> 2 (length source))
-    (dhc-error "one argument expected"))
-  (let* ((tn (dhc-parse-expr-t (cadr source)))
-	 (rettype (new dhc-type 'dht-str))
-	 (symbol (new dhc-symbol (named (sprintf "%d_str" tmpnames-seed))
-		      lex-level))
-	 (tret (new t-node (list tn) rettype ())) )
-    (when (not (==> :tn:type is-a-number))
-      (dhc-error "argument must be a number"))
-    (incr tmpnames-seed)
-    (dhc-unify-types :symbol:type rettype)
-    (setq :tret:transfer (list symbol))
-    tret))
-
-(dhm-c strhex (source treetype retplace)
-  (let ((symb (car :treetype:transfer))
-	(val (dhc-parse-expr-c (cadr source) (cadr :treetype:tn-list) ())) )
-    (dhc-add-c-statements
-     (sprintf "char *%s;" :symb:c-name)
-     (sprintf "{\nchar tmpchar[STRING_BUFFER];")
-     (sprintf "sprintf(tmpchar,\"0x%%x\",(int)(%s));" val)
-     (sprintf "Mstr_alloc(%s, strlen(tmpchar));" :symb:c-name)
-     (sprintf "strcpy((char*)(%s),tmpchar);}" :symb:c-name) )
-    :symb:c-name))
-
 (dhm-t str-del (source)
   (when (<> 4 (length source))
     (dhc-error "three arguments expected"))
@@ -550,13 +524,13 @@
     
     (when (not dhc-unprotect)
       (dhc-add-c-statements
-       (sprintf "RTERR_RANGE((int)%s<1);" n)
-       (sprintf "RTERR_RANGE((int)%s>strlen(%s));" n s)
+       (sprintf "RTERR_RANGE((int)%s<0);" n)
+       (sprintf "RTERR_RANGE((int)%s>=strlen(%s));" n s)
        (sprintf "RTERR_RANGE((int)%s<0);" l) ))
 
     (dhc-add-c-statements
      (sprintf "char *%s = mm_strdup(%s);" :symb:c-name s)
-     (sprintf "strcpy(%s+%s-1, %s+%s+%s-1);" :symb:c-name n s n l) )
+     (sprintf "strcpy(%s+%s, %s+%s+%s);" :symb:c-name n s n l) )
     :symb:c-name))
 
 
