@@ -1292,15 +1292,35 @@ DX(xstringp)
 DX(xvector_to_string)
 {
    ARG_NUMBER(1);
-   index_t *ind = AINDEX(1);
-   ifn ((IND_STTYPE(ind)==ST_UCHAR) && (IND_NDIMS(ind)==1))
-      RAISEF("ubyte vector expected", APOINTER(1));
-
-   ind = as_contiguous_array(ind);
+   index_t *ind = as_contiguous_array(AINDEX(1));
+   ifn ((IND_STTYPE(ind)==ST_INT) && (IND_NDIMS(ind)==1))
+      RAISEF("int vector expected", APOINTER(1));
+   
+   /* check that these are all valid ASCII codes */
+   int *vp = IND_BASE_TYPED(ind, int);
+   for (int i=0; i<IND_DIM(ind,0); i++)
+      if (!isascii(vp[i])) {
+         fprintf(stderr, "*** Warning: not all values are character codes\n");
+         break;
+      }
+ 
    at *p = make_string_of_length(IND_DIM(ind, 0));
-   char *s = (char *)String(p);
-   memcpy(s, IND_BASE(ind), IND_DIM(ind, 0));
+   unsigned char *s = (unsigned char *)String(p);
+   for (int i=0; i<IND_DIM(ind,0); i++)
+      s[i] = (unsigned char)vp[i];
    return p;
+}
+
+DX(xstring_to_vector)
+{
+   ARG_NUMBER(1);
+   const char *s = ASTRING(1);
+   int n = strlen(s);
+   storage_t *st = new_storage_managed(ST_INT, n, NIL);
+   int *stp = st->data;
+   for (int i=0; i<n; i++)
+      stp[i] = (int)s[i];
+   return new_index(st, NULL)->backptr;
 }
 
 /***********************************************************************
@@ -1520,6 +1540,7 @@ void init_string(void)
    dx_define("utf8-to-locale", xstr_utf8_to_locale);
    dx_define("stringp", xstringp);
    dx_define("vector-to-string", xvector_to_string);
+   dx_define("string-to-vector", xstring_to_vector);
    dx_define("sprintf", xsprintf);
 
    /* deprecated functions */
