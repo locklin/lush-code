@@ -1,27 +1,28 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 /***********************************************************************
@@ -66,7 +67,7 @@ int comp_test(at *p, at *q)
       } else if (Class(p)==Class(q) && Class(p)->compare) {
          int ans = 0;
          struct recur_elt elt;
-         if (recur_push_ok(&elt, &comp_test, p)) {
+         if (recur_push_ok(&elt, (void *)&comp_test, p)) {
             ans = Class(p)->compare(p,q,true);
             recur_pop(&elt);
          }
@@ -98,7 +99,7 @@ again:
    /* List */
    else if (CONSP(p) && CONSP(q)) {
       struct recur_elt elt;
-      if (recur_push_ok(&elt, &eq_test, p)) {
+      if (recur_push_ok(&elt, (void *)&eq_test, p)) {
          ans = eq_test(Car(p), Car(q));
          recur_pop(&elt);
       }
@@ -134,7 +135,7 @@ again:
       /* Comparison method provided */
    } else if (Class(p)==Class(q) && Class(p)->compare) {
       struct recur_elt elt;
-      if (recur_push_ok(&elt, &eq_test, p)) {
+      if (recur_push_ok(&elt, (void *)&eq_test, p)) {
          ans = !Class(p)->compare(p,q,false);
          recur_pop(&elt);
       }
@@ -189,93 +190,6 @@ DX(xatgptr)
    return APOINTER(1) ? NEW_GPTR(APOINTER(1)) : NIL;
 }
 
-
-
-/* --------- MAKELIST FUNCTIONS --------- */
-
-/*
- * range ex: (range 1 5) gives (1 2 3 4 5) and (range 2 4 .3) gives (2  2.3
- * 2.6  2.9  3.2  3.5  3.8)
- */
-
-DX(xrange)
-{
-   real high, low = 1.0;
-   real delta = 1.0;
-   
-   if (arg_number == 3) {
-      low = AREAL(1);
-      high = AREAL(2);
-      delta = AREAL(3);
-   } else if (arg_number == 2) {
-      low = AREAL(1);
-      high = AREAL(2);
-   } else {
-      ARG_NUMBER(1);
-      high = AREAL(1);
-   }
-  
-   if (arg_number==2)
-      if (delta * (high - low) <= 0)
-         delta = -delta;
-   if (! delta)
-      error(NIL, "illegal arguments", NIL);
-   
-   at *answer = NIL;
-   at **where = &answer;
-
-   if (delta > 0) {
-      for (real i=low; i<=high; i+=delta) {
-         *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &Cdr(*where);
-      }
-   } else {
-      for (real i=low; i>=high; i+=delta) {
-         *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &Cdr(*where);
-      }
-   }
-   return answer;
-}
-
-DX(xrange_star)
-{
-   real high, low = 0.0;
-   real delta = 1.0;
-   
-   if (arg_number == 3) {
-      low = AREAL(1);
-      high = AREAL(2);
-      delta = AREAL(3);
-   } else if (arg_number == 2) {
-      low = AREAL(1);
-      high = AREAL(2);
-   } else {
-      ARG_NUMBER(1);
-      high = AREAL(1);
-   }
-  
-   if (arg_number==2)
-      if (delta * (high - low) <= 0)
-         delta = -delta;
-   if (! delta)
-      error(NIL, "illegal arguments", NIL);
-  
-   at *answer = NIL;
-   at **where = &answer;
-   if (delta > 0) {
-      for (real i=low; i<high; i+=delta) {
-         *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &Cdr(*where);
-      }
-   } else {
-      for (real i=low; i>high; i+=delta) {
-         *where = new_cons(NEW_NUMBER(i), NIL);
-         where = &Cdr(*where);
-      }
-   }
-   return answer;
-}
 
 
 /* --------- LOGICAL FUNCTIONS --------- */
@@ -634,8 +548,6 @@ void init_calls(void)
 {
    dx_define("sizeof", xsizeof);
    dx_define("atgptr", xatgptr);
-   dx_define("range", xrange);
-   dx_define("range*", xrange_star);
    dx_define("==", xeqptr);
    dx_define("=", xeq);
    dx_define("<>", xne);

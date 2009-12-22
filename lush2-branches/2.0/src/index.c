@@ -1,31 +1,36 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 #include "header.h"
+#include <errno.h>
 #include <inttypes.h>
+
+#define SHP0(S)  ((S)->ndims = 0, S)
+
 
 typedef at* atp_t;
 
@@ -174,7 +179,7 @@ static at *index_listeval(at *p, at *q)
 {
    index_t *ind = Mptr(p);
 
-   /* There are two subscript modes:
+   /* There are three subscript modes:
     * 1. The array-take/put-style subscription
     * 2. select*-style subscription with a single, partial subscript
     * 3. Single element subscription with full number of subscript indices
@@ -804,9 +809,9 @@ DX(xarray_dc)
    if (arg_number == 2) {
       init = APOINTER(2);
 
-   } else if (arg_number > 2)
+   } else if (arg_number<1 || arg_number>2)
       ARG_NUMBER(-1);
-
+   
    if (init) {
       return make_array(IND_STTYPE(AINDEX(1)), SHAPE0D, init)->backptr;
 
@@ -962,8 +967,10 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
    static char errmsg_dimensions[] = "too many dimensions";
    static shape_t shape;
   
-   if (shp==NIL)
+   if (shp==NIL) {
       shp = &shape;
+      shape_set(shp, 0, 0, 0, 0, 0, 0, 0);
+   }
    
    if (INDEXP(atshp) && index_numericp(Mptr(atshp))) {
       index_t *ind = Mptr(atshp);
@@ -1075,22 +1082,12 @@ DX(xnew_index)
  * Create an index referencing contiguous data
  */
 
-index_t *new_index_for_cdata(storage_type_t type, shape_t *shp, void *data)
-{
-   storage_t *st = new_storage(type);
-   st->data = data;
-   st->flags = STS_MALLOC;
-   st->size = shape_nelems(shp);
-   
-   return new_index(st, shp);
-}
-
 index_t *make_array(storage_type_t type, shape_t *shp, at *init)
 {
    /* create a storage of the right size */
    size_t nelems = shape_nelems(shp);
    nelems = (nelems<MINSTORAGE) ? MINSTORAGE : nelems;
-   storage_t *st = make_storage(type, nelems, init);
+   storage_t *st = new_storage_managed(type, nelems, init);
    index_t *res = new_index(st, shp);
    return res;
 }
@@ -1192,7 +1189,7 @@ DX(xas_int_array)
 }
 
 
-index_t *as_ubyte_array(at *arg) 
+index_t *as_uchar_array(at *arg) 
 {
    if (NUMBERP(arg))
       return  make_array(ST_UCHAR, SHAPE0D, arg);
@@ -1216,10 +1213,97 @@ index_t *as_ubyte_array(at *arg)
    return NULL;  
 }
 
-DX(xas_ubyte_array)
+DX(xas_uchar_array)
 {
    ARG_NUMBER(1);
-   return as_ubyte_array(APOINTER(1))->backptr;
+   return as_uchar_array(APOINTER(1))->backptr;
+}
+
+/* create a vector with values from <from> to <to>, <step> apart */
+/* if <step> is NAN, use 1.0 or -1.0 for step, as appropriate    */
+index_t *array_range(double from, double to, double step)
+{
+   if (isnan(step)) /* auto-select step */
+      step = to<from ? -1.0 : 1.0;
+   else if (step==0)
+      RAISEF("step is zero", NIL);
+   else if (((to-from)/step) < 0)
+      return make_array(ST_DOUBLE, SHAPE1D(0), NIL);
+
+   int n = ceil(fabs((to-from)/step))+1;
+   index_t *ind = make_array(ST_DOUBLE, SHAPE1D(n), NIL);
+   double *d = IND_BASE_TYPED(ind, double);
+   n = 0;
+   if (step > 0) {
+      for (double v=from; v<=to; v+=step)
+         d[n++] = v;
+   } else {
+      for (double v=from; v>=to; v+=step)
+         d[n++] = v;
+   }
+   IND_DIM(ind, 0) = n;
+   return ind;
+}
+
+DX(xarray_range)
+{
+   if (arg_number==3)
+      return array_range(ADOUBLE(1), ADOUBLE(2), ADOUBLE(3))->backptr;
+
+   else if (arg_number==2)
+      return array_range(ADOUBLE(1), ADOUBLE(2), NAN)->backptr;
+
+   else if (arg_number==1)
+      return array_range(1.0, ADOUBLE(1), NAN)->backptr;
+
+   else
+      ARG_NUMBER(-1);
+
+   return NIL;
+}
+
+
+/* create a vector with values from <from> to <to>, <step> apart */
+/* if <step> is NAN, use 1.0 or -1.0 for step, as appropriate    */
+index_t *array_rangeS(double from, double to, double step)
+{
+   if (isnan(step))
+      step = to<from ? -1.0 : 1.0;
+   else if (step==0)
+      RAISEF("step is zero", NIL);
+   else if (((to-from)/step) < 0)
+      return make_array(ST_DOUBLE, SHAPE1D(0), NIL);
+
+   int n = ceil(fabs((to-from)/step))+1;
+   index_t *ind = make_array(ST_DOUBLE, SHAPE1D(n), NIL);
+   double *d = IND_BASE_TYPED(ind, double);
+   n = 0;
+   if (step > 0) {
+      for (double v=from; v<to; v+=step)
+         d[n++] = v;
+   } else {
+      for (double v=from; v>to; v+=step)
+         d[n++] = v;
+   }
+   IND_DIM(ind, 0) = n;
+   return ind;
+}
+
+DX(xarray_rangeS)
+{
+   if (arg_number==3)
+      return array_rangeS(ADOUBLE(1), ADOUBLE(2), ADOUBLE(3))->backptr;
+
+   else if (arg_number==2)
+      return array_rangeS(ADOUBLE(1), ADOUBLE(2), NAN)->backptr;
+
+   else if (arg_number==1)
+      return array_rangeS(0.0, ADOUBLE(1), NAN)->backptr;
+
+   else
+      ARG_NUMBER(-1);
+
+   return NIL;
 }
 
 /* -------- THE REF/SET FUNCTIONS ------- */
@@ -1539,7 +1623,7 @@ DX(xarray_swap)
 /* create array of subscripts of all nonzero elements in ind */
 index_t *array_where_nonzero(index_t *ind)
 {
-   storage_t *srg = make_storage(ST_INT, 64, NIL);
+   storage_t *srg = new_storage_managed(ST_INT, 64, NIL);
    int n = 0;
    int r = IND_NDIMS(ind);
 
@@ -1739,9 +1823,11 @@ static void format_save_matrix(index_t *ind, FILE *f, bool with_header)
    /* iterate */
    begin_idx_aloop1(ind, off) {
       char *p = (char*)(ind->st->data) + storage_sizeof[st]*(ind->offset + off);
-      fwrite(p, storage_sizeof[st], 1, f);
+      errno = 0;
+      if (fwrite(p, storage_sizeof[st], 1, f) != 1)
+         break;
    } end_idx_aloop1(ind, off);
-   test_file_error(f);
+   test_file_error(f, errno);
 }
 
 void save_matrix(index_t *ind, FILE *f)
@@ -1801,6 +1887,7 @@ static void format_save_ascii_matrix(index_t *ind, FILE *f, int mode)
 
    /* header */
    FMODE_TEXT(f);
+   errno = 0;
    if (mode==1) {
       /* ascii matrix with header */
       fprintf(f, ".MAT %d", ind->ndim); 
@@ -1830,7 +1917,7 @@ static void format_save_ascii_matrix(index_t *ind, FILE *f, int mode)
       } end_idx_aloop1(ind, off);
       FMODE_BINARY(f);
    }
-   test_file_error(f);
+   test_file_error(f, errno);
 }
 
 void save_ascii_matrix(index_t *ind, FILE *f)
@@ -1919,21 +2006,23 @@ void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
    
    /* skip */
    if (offset != 0) {
+      errno = 0;
 #if HAVE_FSEEKO
       if (fseeko(f, (off_t)offset, SEEK_CUR) < 0)
 #else
          if (fseek(f, offset, SEEK_CUR) < 0)
 #endif
-            test_file_error(NIL);
+            test_file_error(NULL, errno);
    }
    
    /* read */
    char *p = IND_BASE(ind);
    if (contiguous) {
       /* fast read of contiguous matrices */
+      errno = 0;
       rsize = fread(p, elsize, size, f);
       if (rsize < 0)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
       else if (rsize < size)
          error(NIL, "file is too short", NIL); 
 
@@ -1941,11 +2030,13 @@ void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
       /* must loop on each element */
       rsize = 1;
       begin_idx_aloop1(ind, off) {
-         if (rsize == 1)
+         if (rsize == 1) {
+            errno = 0;
             rsize = fread(p + (off * elsize), elsize, 1, f);
+         }
       } end_idx_aloop1(ind, off);
       if (rsize < 0)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
       else if (rsize < 1)
          error(NIL, "file too short", NIL); 
     }
@@ -2094,8 +2185,10 @@ static void load_matrix_header(FILE *f, int *magic_p, int *swap_p, shape_t *shp)
          default: magic = 0;
          }
          if (magic && shp->ndims>=1 && shp->ndims<=3) {
-            for (i=0; i<shp->ndims; i++)
+            for (i=0; i<shp->ndims; i++) {
+               errno = 0;
                shp->dim[i] = read4(f);
+            }
             if (swapflag)
                for (i=0; i<shp->ndims; i++)
                   shp->dim[i] = SWAP(shp->dim[i]);
@@ -2105,7 +2198,7 @@ static void load_matrix_header(FILE *f, int *magic_p, int *swap_p, shape_t *shp)
 #endif
       error(NIL, "not a recognized matrix file", NIL);
    trouble:
-      test_file_error(f);
+      test_file_error(f, errno);
       error(NIL, "corrupted matrix file",NIL);
    }
   
@@ -2665,16 +2758,29 @@ index_t *index_lift(index_t *ind, shape_t *shp)
    return index_liftD(copy_index(ind), shp);
 }
 
+// parse shape in or from argument N, write to S
+#define PARSE_SHAPE(S, N)                       \
+   if (arg_number>1) {                          \
+      if (ISNUMBER(N)) {                        \
+         for (int i=N; i<=arg_number; i++)      \
+            S->dim[i-N] = AINTEGER(i);          \
+         S->ndims = arg_number-N+1;             \
+      } else {                                  \
+         ARG_NUMBER(N);                         \
+         parse_shape(APOINTER(N), S);           \
+      }                                         \
+   }                                            \
+   0
+
 DX(xidx_liftD)
 {
    if (arg_number<1)
       ARG_NUMBER(-1);
-
-   shape_t shape, *shp = &shape;
-   for (int i=2; i<=arg_number; i++)
-      shp->dim[i-2] = AINTEGER(i);
-   shp->ndims = arg_number-1;
-   index_liftD(AINDEX(1), shp);
+   
+   index_t *ind = AINDEX(1);
+   shape_t shape, *shp = SHP0(&shape);
+   PARSE_SHAPE(shp, 2);
+   index_liftD(ind, shp);
    return APOINTER(1);
 }
 
@@ -2684,11 +2790,9 @@ DX(xidx_lift)
       ARG_NUMBER(-1);
 
    index_t *ind = AINDEX(1);
-   shape_t shape, *shp = &shape;
-   for (int i=2; i<=arg_number; i++)
-      shp->dim[i-2] = AINTEGER(i);
-   shp->ndims = arg_number-1;
-   ind = index_lift(AINDEX(1), shp);
+   shape_t shape, *shp = SHP0(&shape);
+   PARSE_SHAPE(shp, 2);
+   ind = index_lift(ind, shp);
    return ind->backptr;
 }
 
@@ -2720,11 +2824,10 @@ DX(xidx_sinkD)
    if (arg_number<1)
       ARG_NUMBER(-1);
 
-   shape_t shape, *shp = &shape;
-   for (int i=2; i<=arg_number; i++)
-      shp->dim[i-2] = AINTEGER(i);
-   shp->ndims = arg_number-1;
-   index_sinkD(AINDEX(1), shp);
+   index_t *ind = AINDEX(1);
+   shape_t shape, *shp = SHP0(&shape);
+   PARSE_SHAPE(shp, 2);
+   index_sinkD(ind, shp);
    return APOINTER(1);
 }
 
@@ -2734,11 +2837,9 @@ DX(xidx_sink)
       ARG_NUMBER(-1);
 
    index_t *ind = AINDEX(1);
-   shape_t shape, *shp = &shape;
-   for (int i=2; i<=arg_number; i++)
-      shp->dim[i-2] = AINTEGER(i);
-   shp->ndims = arg_number-1;
-   ind = index_sink(AINDEX(1), shp);
+   shape_t shape, *shp = SHP0(&shape);
+   PARSE_SHAPE(shp, 2);
+   ind = index_sink(ind, shp);
    return ind->backptr;
 }
 
@@ -3514,7 +3615,7 @@ void init_index(void)
    /* argument processing */
    dx_define("as-double-array", xas_double_array);
    dx_define("as-int-array", xas_int_array);
-   dx_define("as-ubyte-array", xas_ubyte_array);
+   dx_define("as-uchar-array", xas_uchar_array);
 
    /* matrix files */
    dx_define("save-matrix", xsave_matrix);
@@ -3575,6 +3676,8 @@ void init_index(void)
    dx_define("array-take", xarray_take);
    dx_define("array-put", xarray_put);
    dx_define("array-where-nonzero", xarray_where_nonzero);
+   dx_define("array-range", xarray_range);
+   dx_define("array-range*", xarray_rangeS);
 
    /* loops */
    dy_define("idx-eloop", yeloop);

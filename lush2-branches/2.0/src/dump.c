@@ -1,31 +1,32 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 #include "header.h"
-
+#include <errno.h>
 #include <sys/stat.h>
 
 /* Format of a dump file: 
@@ -48,14 +49,13 @@ extern unsigned char char_map[];
 
 /* --------- UTILS ------------------- */
 
-
-static void check(FILE *f)
-{
-   if (feof(f))
-      error(NIL,"end of file during bread",NIL);
-   if (ferror(f))
-      test_file_error(NULL);
-}
+#define CHECK(f)                                        \
+   {                                                    \
+      if (feof(f))                                      \
+         error(NIL,"end of file during bread",NIL);     \
+      else                                              \
+         test_file_error(f, errno);                     \
+   }
 
 static void write32(FILE *f, int x)
 {
@@ -64,36 +64,41 @@ static void write32(FILE *f, int x)
    c[1] = x>>16;
    c[2] = x>>8;
    c[3] = x;
+   errno = 0;
    if (fwrite(&c, sizeof(char), 4, f) != 4)
-      test_file_error(f);
+      test_file_error(f, errno);
 }
 
 static int read32(FILE *f)
 {
    uchar c[4];
+   errno = 0;
    if (fread(c, sizeof(char), 4, f) != 4)
-      check(f);
+      CHECK(f);
    return (((((c[0]<<8)+c[1])<<8)+c[2])<<8)+c[3];
 }
 
 static int readmagic32(FILE *f)
 {
    uchar c[4];
+   errno = 0;
    if (fread(c, sizeof(char), 2, f) != 2)
-      check(f);
+      CHECK(f);
    if (c[0]=='#' && c[1]=='!') {
+      errno = 0;
       int x = getc(f);
       while (x != '\n' && x != '\r' && x != EOF)
          x = getc(f);
       while (x == '\n' || x == '\r')
          x = getc(f);
-      if (x == EOF) 
-         check(f);
+      if (x == EOF)
+         CHECK(f);
       c[0] = x;
       c[1] = getc(f);
    }
+   errno = 0;
    if (fread(c+2, sizeof(char), 2, f) != 2)
-      check(f);
+      CHECK(f);
    return (((((c[0]<<8)+c[1])<<8)+c[2])<<8)+c[3];
 }
 
@@ -125,9 +130,9 @@ static off_t dump(const char *s)
    write32(f, DUMPVERSION);
 
    /* The macro character map */
+   errno = 0;
    fwrite(char_map,1,256,f);
-   if (ferror(f))
-      test_file_error(f);
+   test_file_error(f, errno);
    
    /* Write the big list */
    bool oldready = error_doc.ready_to_an_error;

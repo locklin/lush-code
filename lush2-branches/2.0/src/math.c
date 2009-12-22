@@ -1,115 +1,33 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 #include "header.h"
+#include "amath-macros.h"
 #include <tgmath.h>
-
-/* output may have different type than input */
-#define UNARY_FUNC(i, o, Ti, To, FUNC) \
-{ \
-  Ti *ip = IND_BASE_TYPED((i), Ti); \
-  To *op = IND_BASE_TYPED((o), To); \
-  begin_idx_aloop2((i), (o), k, l) { \
-      op[l] = FUNC(ip[k]); \
-  } end_idx_aloop2((i), (o), k, l) \
-}
-
-/* output may have different type than input */
-#define BINARY_FUNC(i1, i2, o, Ti, To, FUNC) \
-{ \
-  Ti *i1p = IND_BASE_TYPED((i1), Ti); \
-  Ti *i2p = IND_BASE_TYPED((i2), Ti); \
-  To *op = IND_BASE_TYPED((o), To); \
-  begin_idx_aloop3((i1), (i2), (o), j, k, l) { \
-      op[l] = FUNC(i1p[j], i2p[k]); \
-  } end_idx_aloop3((i1), (i2), (o), j, k, l) \
-}
-
-#define DX_UNARY_FUNC(NAME, FUNC)                            \
-DX(name2(x, NAME))                                           \
-{                                                            \
-  ARG_NUMBER(1);                                             \
-  if (ISINDEX(1)) {                                          \
-    index_t *res, *ind = AINDEX(1);                          \
-    switch (IND_STTYPE(ind)) {                               \
-                                                             \
-    case ST_FLOAT:                                           \
-      res = clone_array(ind);                                \
-      UNARY_FUNC(ind, res, float, float, FUNC);              \
-      break;                                                 \
-                                                             \
-    case ST_DOUBLE:                                          \
-      res = clone_array(ind);                                \
-      UNARY_FUNC(ind, res, double, double, FUNC);            \
-      break;                                                 \
-                                                             \
-    default: {                                               \
-      index_t *dind = as_double_array(APOINTER(1));          \
-      res = clone_array(dind);                               \
-      UNARY_FUNC(dind, res, double, double, FUNC);           \
-    }}                                                       \
-    return res->backptr;                                     \
-  } else if (ISNUMBER(1)) {                                  \
-    return NEW_NUMBER(FUNC(AREAL(1)));                       \
-  } else                                                     \
-    RAISEF("not an index nor a number", APOINTER(1));        \
-  return NIL;                                                \
-}
-
-/* result of these is of type int */
-#define DX_UNARY_FUNC_TO_INT(NAME, FUNC)                     \
-DX(name2(x, NAME))                                           \
-{                                                            \
-  ARG_NUMBER(1);                                             \
-  if (ISINDEX(1)) {                                          \
-    index_t *res, *ind = AINDEX(1);                          \
-    switch (IND_STTYPE(ind)) {                               \
-                                                             \
-    case ST_FLOAT:                                           \
-      res = make_array(ST_INT, IND_SHAPE(ind), NIL);         \
-      UNARY_FUNC(ind, res, float, int, FUNC);                \
-      break;                                                 \
-                                                             \
-    case ST_DOUBLE:                                          \
-      res = make_array(ST_INT, IND_SHAPE(ind), NIL);         \
-      UNARY_FUNC(ind, res, double, int, FUNC);               \
-      break;                                                 \
-                                                             \
-    default: {                                               \
-      index_t *dind = as_double_array(APOINTER(1));          \
-      res = make_array(ST_INT, IND_SHAPE(dind), NIL);        \
-      UNARY_FUNC(dind, res, double, int, FUNC);              \
-    }}                                                       \
-    return res->backptr;                                     \
-  } else if (ISNUMBER(1)) {                                  \
-    return NEW_NUMBER(FUNC(AREAL(1)));                       \
-  } else                                                     \
-    RAISEF("not an index nor a number", APOINTER(1));        \
-  return NIL;                                                \
-}
 
 #define SGN(x) (x < 0.0 ? -1.0 : (x > 0.0 ? 1.0 : 0.0))
 #define PIECE(x) (x < 0.0 ? 0.0 : (x > 1.0 ? 1.0 : x))
@@ -119,49 +37,49 @@ DX(name2(x, NAME))                                           \
 #define MUL2(x) (x * 2.0)
 #define DIV2(x) (x / 2.0)
 
-DX_UNARY_FUNC(piece, PIECE);
-DX_UNARY_FUNC(rect, RECT);
-DX_UNARY_FUNC(sgn, SGN);
-DX_UNARY_FUNC(abs, fabs);
-DX_UNARY_FUNC(ceil, ceil);
-DX_UNARY_FUNC(floor, floor);
-DX_UNARY_FUNC(round, round);
-DX_UNARY_FUNC(trunc, trunc);
-DX_UNARY_FUNC(sqrt, sqrt);
-DX_UNARY_FUNC(cbrt, cbrt);
-DX_UNARY_FUNC(sin, sin);
-DX_UNARY_FUNC(cos, cos);
-DX_UNARY_FUNC(tan, tan);
-DX_UNARY_FUNC(asin, asin);
-DX_UNARY_FUNC(acos, acos);
-DX_UNARY_FUNC(atan, atan);
-DX_UNARY_FUNC(exp, exp);
-DX_UNARY_FUNC(exp2, exp2);
-DX_UNARY_FUNC(gamma, tgamma);
-DX_UNARY_FUNC(lgamma, lgamma);
-DX_UNARY_FUNC(expm1, expm1);
-DX_UNARY_FUNC(log, log);
-DX_UNARY_FUNC(log10, log10);
-DX_UNARY_FUNC(log2, log2);
-DX_UNARY_FUNC(log1p, log1p);
-DX_UNARY_FUNC(sinh, sinh);
-DX_UNARY_FUNC(cosh, cosh);
-DX_UNARY_FUNC(tanh, tanh);
-DX_UNARY_FUNC(asinh, asinh);
-DX_UNARY_FUNC(acosh, acosh);
-DX_UNARY_FUNC(atanh, atanh);
+DX_UNARY_FUNC(piece, PIECE)
+DX_UNARY_FUNC(rect, RECT)
+DX_UNARY_FUNC(sgn, SGN)
+DX_UNARY_FUNC(abs, fabs)
+DX_UNARY_FUNC(ceil, ceil)
+DX_UNARY_FUNC(floor, floor)
+DX_UNARY_FUNC(round, round)
+DX_UNARY_FUNC(trunc, trunc)
+DX_UNARY_FUNC(sqrt, sqrt)
+DX_UNARY_FUNC(cbrt, cbrt)
+DX_UNARY_FUNC(sin, sin)
+DX_UNARY_FUNC(cos, cos)
+DX_UNARY_FUNC(tan, tan)
+DX_UNARY_FUNC(asin, asin)
+DX_UNARY_FUNC(acos, acos)
+DX_UNARY_FUNC(atan, atan)
+DX_UNARY_FUNC(exp, exp)
+DX_UNARY_FUNC(exp2, exp2)
+DX_UNARY_FUNC(gamma, tgamma)
+DX_UNARY_FUNC(lgamma, lgamma)
+DX_UNARY_FUNC(expm1, expm1)
+DX_UNARY_FUNC(log, log)
+DX_UNARY_FUNC(log10, log10)
+DX_UNARY_FUNC(log2, log2)
+DX_UNARY_FUNC(log1p, log1p)
+DX_UNARY_FUNC(sinh, sinh)
+DX_UNARY_FUNC(cosh, cosh)
+DX_UNARY_FUNC(tanh, tanh)
+DX_UNARY_FUNC(asinh, asinh)
+DX_UNARY_FUNC(acosh, acosh)
+DX_UNARY_FUNC(atanh, atanh)
 
-DX_UNARY_FUNC(add1, ADD1);
-DX_UNARY_FUNC(sub1, SUB1);
-DX_UNARY_FUNC(mul2, MUL2);
-DX_UNARY_FUNC(div2, DIV2);
+DX_UNARY_FUNC(add1, ADD1)
+DX_UNARY_FUNC(sub1, SUB1)
+DX_UNARY_FUNC(mul2, MUL2)
+DX_UNARY_FUNC(div2, DIV2)
 
 // C99 FP functions
-DX_UNARY_FUNC_TO_INT(isfinite, isfinite);
-DX_UNARY_FUNC_TO_INT(isinf, isinf);
-DX_UNARY_FUNC_TO_INT(isnan, isnan);
-DX_UNARY_FUNC_TO_INT(isnormal, isnormal);
-DX_UNARY_FUNC_TO_INT(signbit, signbit);
+DX_UNARY_FUNC_TO_INT(isfinite, isfinite)
+DX_UNARY_FUNC_TO_INT(isinf, isinf)
+DX_UNARY_FUNC_TO_INT(isnan, isnan)
+DX_UNARY_FUNC_TO_INT(isnormal, isnormal)
+DX_UNARY_FUNC_TO_INT(signbit, signbit)
 
 DX(xatan2)
 {
@@ -187,7 +105,7 @@ DX(xatan2)
 
 /* --------- SOLVE --------- */
 
-double solve(real x1, real x2, double (*f)(double))
+static double solve(real x1, real x2, double (*f)(double))
 {
    double y1 = (*f) (x1);
    double y2 = (*f) (x2);

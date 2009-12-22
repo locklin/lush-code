@@ -1,27 +1,28 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 /* A storage is a one dimensional area
@@ -41,6 +42,7 @@
 #include "header.h"
 #include "dh.h"
 
+#include <errno.h>
 #include <inttypes.h>
 #ifdef HAVE_MMAP
 # include <sys/mman.h>
@@ -56,7 +58,7 @@ static void clear_storage(storage_t *st, size_t _)
 static void mark_storage(storage_t *st)
 {
    MM_MARK(st->backptr);
-   if (st->flags & STS_MM)
+   if (st->flags & STS_MANAGED)
       MM_MARK(st->data);
 }
 
@@ -328,11 +330,11 @@ static const char *storage_name(at *p)
    storage_t *st = (storage_t *)Mptr(p);
    char *kind = "";
    switch (st->flags & STS_MASK) {
-   case 0:          kind = "unallocated"; break;
-   case STS_MM:     kind = "managed"; break;
-   case STS_MALLOC: kind = "malloc"; break;
-   case STS_MMAP:   kind = "mmap"; break;
-   case STS_STATIC: kind = "static"; break;
+   case STS_NULL:    kind = "unallocated"; break;
+   case STS_MANAGED: kind = "managed"; break;
+   case STS_FOREIGN: kind = "foreign"; break;
+   case STS_MMAP:    kind = "mmap"; break;
+   case STS_STATIC:  kind = "static"; break;
    default:
       fprintf(stderr, "internal error: invalid storage kind");
       abort();
@@ -398,7 +400,7 @@ static void storage_serialize(at **pp, int code)
 
    // Create storage if needed
    if (code == SRZ_READ) {
-      st = make_storage(type, size, NIL);
+      st = new_storage_managed(type, size, NIL);
       *pp = st->backptr;
    }
 
@@ -432,7 +434,7 @@ storage_t *new_storage(storage_type_t t)
 {
    storage_t *st = mm_alloc(mt_storage);
    st->type = t;
-   st->flags = 0;
+   st->flags = STS_NULL;
    st->size = 0;
    st->data = NULL;
    st->backptr = new_at(storage_class[st->type], st);
@@ -445,9 +447,75 @@ DX(xnew_storage)
    storage_type_t t = dht_from_cname(ASYMBOL(1));
    ifn (t < ST_LAST)
       RAISEF("not a storage class", APOINTER(1));
-   return NEW_STORAGE(t);
+   return new_storage(t)->backptr;
 }
 
+
+storage_t *new_storage_managed(storage_type_t t, size_t n, at *init)
+{
+   storage_t *st = new_storage(t);
+   if (n) storage_alloc(st, n, init);
+   return st;
+}
+
+DX(xnew_storage_managed)
+{
+   if (arg_number<2 || arg_number>3)
+      ARG_NUMBER(-1);
+
+   storage_type_t t = dht_from_cname(ASYMBOL(1));
+   ifn (t < ST_LAST)
+      RAISEF("not a storage class", APOINTER(1));
+   int n = AINTEGER(2);
+   at *init = NIL;
+   if (arg_number == 3) {
+      if (t <= ST_DOUBLE)
+         ADOUBLE(3);
+      init = APOINTER(3);
+   }
+   return new_storage_managed(t, n, init)->backptr;
+}
+
+
+storage_t *new_storage_foreign(storage_type_t t, size_t n, void *p, bool readonly)
+{
+   storage_t *st = mm_alloc(mt_storage);
+   st->type = t;
+   st->flags = STS_FOREIGN;
+   if (readonly) st->flags |= STF_RDONLY;
+   st->size = n;
+   st->data = (void *)p;
+   st->backptr = new_at(storage_class[st->type], st);
+   return st;
+}
+
+DX(xnew_storage_foreign)
+{
+   if (arg_number<3 || arg_number>4)
+      ARG_NUMBER(-1);
+
+   storage_type_t t = dht_from_cname(ASYMBOL(1));
+   ifn (t < ST_LAST)
+      RAISEF("not a storage class", APOINTER(1));
+   int n = AINTEGER(2);
+   void *p = AGPTR(3);
+   bool readonly = (arg_number>3) ? (APOINTER(4)!=NIL) : true;
+   
+   return new_storage_foreign(t, n, p, readonly)->backptr;
+}
+
+
+/* new storage with <n> elements of type <t> at <p> */
+storage_t *new_storage_static(storage_type_t t, size_t n, const void *p)
+{
+   storage_t *st = mm_alloc(mt_storage);
+   st->type = t;
+   st->flags = STS_STATIC | STF_RDONLY;
+   st->size = n;
+   st->data = (void *)p;
+   st->backptr = new_at(storage_class[st->type], st);
+   return st;
+}
 
 #ifdef HAVE_MMAP
 
@@ -472,13 +540,13 @@ static void storage_notify(storage_t *st, void *_)
 storage_t *new_storage_mmap(storage_type_t t, FILE *f, size_t offs, bool ro)
 {
    storage_t *st = mm_allocv(mt_storage, sizeof(storage_t));
-   
+   errno = 0;
 #if HAVE_FSEEKO
    if (fseeko(f,(off_t)0,SEEK_END)==-1)
-      test_file_error(NIL);
+      test_file_error(NULL, errno);
 #else
    if (fseek(f,0,SEEK_END)==-1)
-      test_file_error(NIL);
+      test_file_error(NULL, errno);
 #endif
 #if HAVE_FTELLO
    size_t len = (size_t)ftello(f);
@@ -491,9 +559,10 @@ storage_t *new_storage_mmap(storage_type_t t, FILE *f, size_t offs, bool ro)
    if (t==ST_AT)
       RAISEF("cannot mmap an atom-storage", st->backptr);
 #ifdef UNIX
+   errno = 0;
    gptr addr = mmap(0,len,(ro ? PROT_READ : PROT_WRITE),MAP_SHARED,fileno(f),0);
    if (addr == (void*)-1L)
-      test_file_error(NIL);
+      test_file_error(NULL, errno);
 #endif
 #ifdef WIN32
    gptr xtra, addr;
@@ -520,14 +589,14 @@ storage_t *new_storage_mmap(storage_type_t t, FILE *f, size_t offs, bool ro)
 
 DX(xnew_storage_mmap)
 {
-   if (arg_number<3 || arg_number>4)
+   if (arg_number<2 || arg_number>4)
       ARG_NUMBER(-1);
 
    storage_type_t t = dht_from_cname(ASYMBOL(1));
    ifn (t < ST_LAST)
       RAISEF("not a storage class", APOINTER(1));
-   size_t offset = AINTEGER(3);
-   bool readonly = (arg_number==3) ? (APOINTER(4)!=NIL) : true;
+   size_t offset = (arg_number>2) ? AINTEGER(3) : 0;
+   bool readonly = (arg_number>3) ? (APOINTER(4)!=NIL) : true;
 
    at *atf = APOINTER(2);
    if (RFILEP(atf) && !readonly) {
@@ -543,20 +612,11 @@ DX(xnew_storage_mmap)
 
 #endif // HAVE_MMAP
 
-storage_t *make_storage(storage_type_t t, size_t n, at *init)
-{
-   storage_t *st = new_storage(t);
-   if (n) storage_alloc(st, n, init);
-   return st;
-}
-
 /* ------------ ALLOCATION: MALLOC ------------ */
-
-#define LARGE_ALLOC (2<<18)
 
 void storage_alloc(storage_t *st, size_t n, at *init)
 {
-   char errmsg[200];
+   char _errmsg[200], *errmsg = &_errmsg[0];
 
    ifn (st->data == NULL)
       RAISEF("storage must be unsized", st->backptr);
@@ -574,7 +634,7 @@ void storage_alloc(storage_t *st, size_t n, at *init)
       RAISEF(errmsg, NIL);
    }
    st->data = data;
-   st->flags = STS_MM;
+   st->flags = STS_MANAGED;
    st->size  = n;
    
    /* clear gptr storage data (ATs and MPTRs are cleared by mm) */
@@ -608,15 +668,16 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    size_t olds = st->size*storage_sizeof[st->type];
    gptr olddata = st->data;
 
-   /* empty storage */
    if (kind == 0) {
+      /* empty storage */
       assert(st->data == NULL);
       storage_alloc(st, size, init);
       return;
 
-   } else if (kind == STS_MM || kind == STS_FOREIGN || kind == STS_MALLOC) {
+   } else {
       /* reallocate memory and update srg */
-      MM_ANCHOR(olddata);
+      if (kind == STS_MANAGED)
+         MM_ANCHOR(olddata);
       if (st->type==ST_AT || st->type==ST_MPTR)
          st->data = mm_allocv(mt_refs, s);
       else 
@@ -624,14 +685,10 @@ void storage_realloc(storage_t *st, size_t size, at *init)
       
       if (st->data) {
          memcpy(st->data, olddata, olds);
-         if (kind == STS_MALLOC)
-            free(olddata);
          st->flags &= ~STS_MASK;
-         st->flags |= STS_MM;
+         st->flags |= STS_MANAGED;
       }
-      
-   } else
-      RAISEF("only RAM based storages can be enlarged", st->backptr);
+   }
    
    if (st->data == NULL) {
       st->data = olddata;
@@ -661,14 +718,6 @@ DX(xstorage_realloc)
 
 /* ------------ STORAGE_CLEAR ------------ */
 
-
-/* 
- * clear strategy: AT:         use <*st->setat>
- *                 STS_MALLOC: do it directly!
- *                 other:      use <*st->setat>
- *
- */
-
 void storage_clear(storage_t *st, at *init, size_t from)
 {
    /* don't need to check read-only status here because 
@@ -684,16 +733,10 @@ void storage_clear(storage_t *st, at *init, size_t from)
       
    } else if (storage_setat[st->type] == Number_setat) {
       get_write_permit(st);
-      short kind = st->flags & STS_MASK;
-      if (kind==STS_MM || kind==STS_MALLOC) {
-         void (*set)(gptr, size_t, real);
-         set = storage_setd[st->type];
-         for (int off = from; off < size; off++)
-            (*set)(st->data, off, Number(init));
-      } else
-         for (int off = from; off<size; off++)
-            Number_setat(st, off, init);
-      
+      void (*set)(gptr, size_t, real) = storage_setd[st->type];
+      for (int off = from; off < size; off++)
+         set(st->data, off, Number(init));
+
    } else if (storage_setat[st->type] == gptr_setat) {
       get_write_permit(st);
       gptr *pt = st->data;
@@ -786,18 +829,22 @@ void storage_load(storage_t *st, FILE *f)
     
 #if HAVE_FSEEKO
       off_t here = ftello(f);
+      errno = 0;
       if (fseeko(f,0,SEEK_END)==-1)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
       off_t len = ftello(f);
+      errno = 0;
       if (fseeko(f,here,SEEK_SET)==-1)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
 #else
       off_t here = ftell(f);
+      errno = 0;
       if (fseek(f,0,SEEK_END)==-1)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
       int len = ftell(f);
+      errno = 0;
       if (fseek(f,here,SEEK_SET)==-1)
-         test_file_error(NIL);
+         test_file_error(NULL, errno);
 #endif
       if (len==0) 
          return;
@@ -807,10 +854,11 @@ void storage_load(storage_t *st, FILE *f)
    
    get_write_permit(st);
    char *pt = st->data;
+   errno = 0;
    int nrec = fread(pt, storage_sizeof[st->type], st->size, f);
    if (nrec < st->size)
       RAISEF("file is too small",NIL);
-   test_file_error(f);
+   test_file_error(f, errno);
 }
 
 DX(xstorage_load)
@@ -846,8 +894,9 @@ void storage_save(storage_t *st, FILE *f)
       RAISEF("cannot save an unsized storage",NIL);
   
    char *pt = st->data;
+   errno = 0;
    int nrec = fwrite(pt, storage_sizeof[st->type], st->size, f);
-   test_file_error(f);
+   test_file_error(f, errno);
    if (nrec < st->size)
       RAISEF("storage could not be saved completely",NIL);
 }
@@ -889,7 +938,12 @@ void init_storage()
    assert(ST_FIRST==0);
    assert(sizeof(char)==sizeof(uchar));
 
-   mt_storage = MM_REGTYPE("storage", sizeof(storage_t),
+   mt_storage = MM_REGTYPE("storage", 
+#ifdef HAVE_MMAP                           
+                           offsetof(storage_t, mmap_addr),
+#else
+                           sizeof(storage_t),
+#endif
                            clear_storage, mark_storage, 0);
 
    /* set up storage_classes */
@@ -914,6 +968,8 @@ void init_storage()
    var_lock(p);
 
    dx_define("new-storage", xnew_storage);
+   dx_define("new-storage/managed", xnew_storage_managed);
+   dx_define("new-storage/foreign", xnew_storage_foreign);
 #ifdef HAVE_MMAP
    dx_define("new-storage-mmap",xnew_storage_mmap);
 #endif

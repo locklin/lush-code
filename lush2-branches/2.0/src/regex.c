@@ -1,31 +1,31 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 #include "header.h"
-#include "mm.h"
 
 /***********************************************************************
   REGEX.C (C) LYB 1991
@@ -540,13 +540,13 @@ DX(xregex_seek)
    if (arg_number==3)
       n = AINTEGER(3);
    else {
-      n = 1;
+      n = 0;
       ARG_NUMBER(2);
    }
    const char *datstart;
    const char *pat = ASTRING(1);
    const char *dat = datstart = ASTRING(2);
-   while (--n>0 && *dat)
+   while (--n>=0 && *dat)
       dat++;
 
    pat = regex_compile(pat,buffer,buffer+1024,0,NULL);
@@ -556,7 +556,7 @@ DX(xregex_seek)
    const char *start,*end;
    if (regex_seek(buffer,datstart,dat,NULL,NULL,0,&start,&end)) {
       dat = ASTRING(2);
-      return new_cons(NEW_NUMBER(1+start-dat),
+      return new_cons(NEW_NUMBER(start-dat),
                       new_cons(NEW_NUMBER(end-start),
                                NIL ) );
    }

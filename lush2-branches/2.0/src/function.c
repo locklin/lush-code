@@ -1,27 +1,28 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 #include "header.h"
@@ -286,7 +287,8 @@ at *dx_listeval(at *p, at *q)
 at *new_dx(at *name, at *(*addr)(int, at **))
 {
    cfunction_t *f = mm_alloc(mt_cfunction);
-   f->call = f->info = addr;
+   f->call = (void *(*)())addr;
+   f->info = (void *)addr;
    f->name = name;
    f->kname = 0;
    return new_at(dx_class, f);
@@ -314,7 +316,8 @@ at *dy_listeval(at *p, at *q)
 at *new_dy(at *name, at *(*addr)(at *))
 {
    cfunction_t *f = mm_alloc(mt_cfunction);
-   f->call = f->info = addr;
+   f->call = (void *(*)())addr;
+   f->info = (void *)addr;
    f->name = name;
    f->kname = 0;
    return new_at(dy_class, f);
@@ -336,7 +339,7 @@ at *new_dy(at *name, at *(*addr)(at *))
 DY(name2(y,NAME)) \
 { \
   at *q = ARG_LIST; \
-  TRANSFORM_DEF(q, enclose_in_string(NAME)); \
+  TRANSFORM_DEF(q, enclose_in_string(NAME)) \
   ifn (CONSP(q) && CONSP(Cdr(q))) \
     RAISEF("syntax error", new_cons(named(enclose_in_string(NAME)), q)); \
   ifn (SYMBOLP(Car(q))) \
@@ -379,7 +382,7 @@ DY(ylambda)
   return new_de(Car(q), Cdr(q));
 }
 
-DY_DEF(de);
+DY_DEF(de)
 
 
 /* DF class -------------------------------------------	 */
@@ -414,7 +417,7 @@ DY(yflambda)
    return new_df(Car(q), Cdr(q));
 }
 
-DY_DEF(df);
+DY_DEF(df)
 
 /* DM class -------------------------------------------	 */
 
@@ -449,7 +452,7 @@ DY(ymlambda)
    return new_dm(Car(q), Cdr(q));
 }
 
-DY_DEF(dm);
+DY_DEF(dm)
 
 static at *macroexpand(at *p, at *q)
 {

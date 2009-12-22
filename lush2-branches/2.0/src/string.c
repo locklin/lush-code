@@ -1,30 +1,33 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 #include "header.h"
+
+#define NOWARN_DEPRECATED 1
 
 #if HAVE_LANGINFO_H
 # include <langinfo.h>
@@ -293,7 +296,7 @@ static at *recode(const char *s, const char *fromcode, const char *tocode)
       for(;;) {
          char *obuf = buffer;
          size_t olen = sizeof(buffer);
-         iconv(conv, &ibuf, &ilen, &obuf, &olen);
+         iconv(conv, (char **)&ibuf, &ilen, &obuf, &olen);
          if (obuf > buffer)
             large_string_add(ls, buffer, obuf-buffer);
          if (ilen==0 || errno!=E2BIG)
@@ -436,6 +439,50 @@ DX(xstr_mid)
       const char *s = ASTRING(1);
       int n = AINTEGER(2);
       int l = strlen(s);
+      if (n < 0)
+         RAISEFX(badarg, NEW_NUMBER(n));	
+      if (n >= l)
+         return null_string;
+      else
+         return make_string(s+n);
+
+   } else {
+      ARG_NUMBER(3);
+      const char *s = ASTRING(1);
+      int n = AINTEGER(2);
+      int m = AINTEGER(3);
+      if (n < 0)
+         RAISEFX(badarg, NEW_NUMBER(n));	
+      if (m < 0)
+         RAISEFX(badarg, NEW_NUMBER(m));
+      int l = strlen(s)-n;
+      if (m > l)
+         m = l;
+      if (m < 1)
+         return null_string;
+
+      at *p = make_string_of_length(m);
+      char *a = (char *)String(p);
+      strncpy(a,s+n,m);
+      a[m] = 0;
+      return p;
+   }
+}
+
+/* obsolete version */
+DX(xmid)
+{
+#ifndef NOWARN_DEPRECATED
+  static bool warned = false;
+   if (!warned) {
+      fprintf(stderr, "*** Warning: 'mid' is deprecated, use 'str-mid'\n");
+      warned = true;
+   }
+#endif
+   if (arg_number == 2) {
+      const char *s = ASTRING(1);
+      int n = AINTEGER(2);
+      int l = strlen(s);
       if (n < 1)
          RAISEFX(badarg, NEW_NUMBER(n));	
       if (n > l)
@@ -469,7 +516,7 @@ DX(xstr_mid)
 /*------------------------ */
 
 
-DX(xstr_concat)
+DX(xstr_cat)
 {
    int length = 0;
    for (int i=1; i<=arg_number; i++)
@@ -493,7 +540,7 @@ DX(xstr_concat)
 /*------------------------ */
 
 
-int str_index(const char *s1, const char *s2, int start)
+static int str_index(const char *s1, const char *s2, int start)
 {
    int indx = 1;
    while (*s2) {
@@ -513,6 +560,13 @@ int str_index(const char *s1, const char *s2, int start)
 
 DX(xstr_index)
 {
+#ifndef NOWARN_DEPRECATED
+   static bool warned = false;
+   if (!warned) {
+      fprintf(stderr, "*** Warning: 'index' is deprecated, use 'str-find'\n");
+      warned = true;
+   }
+#endif
    int start = 1;
    if (arg_number == 3)
       start = AINTEGER(3);
@@ -521,6 +575,39 @@ DX(xstr_index)
 
    const char *s = ASTRING(1);
    if ((start = str_index(s, ASTRING(2), start)))
+      return NEW_NUMBER(start);
+   else
+      return NIL;
+}
+
+int str_find(const char *s1, const char *s2, int start)
+{
+   int indx = 0;
+   while (*s2) {
+      if (start <= 0) {
+         const char *sa = s2;
+         const char *sb = s1;
+         while (*sb && *sb == *sa++)
+            sb++;
+         if (*sb == 0)
+            return indx;
+      }
+      indx++;
+      s2++;
+   }
+   return -1;
+}
+
+DX(xstr_find)
+{
+   int start = 0;
+   if (arg_number == 3)
+      start = AINTEGER(3);
+   else
+      ARG_NUMBER(2);
+
+   const char *s = ASTRING(1);
+   if ((start = str_find(s, ASTRING(2), start)) != -1)
       return NEW_NUMBER(start);
    else
       return NIL;
@@ -718,8 +805,8 @@ static at *str_del(const char *s, int n, int l)
    MM_ENTER;
    struct large_string ls;
    int len = strlen(s);
-   n = (n>1) ? n-1 : 0;
-   if (n > len)
+   n = (n<0) ? 0: n;
+   if (n >= len)
       n = len;
    if (l< 0 || n+l > len)
       l = len - n;
@@ -739,9 +826,45 @@ DX(xstr_del)
    return str_del(ASTRING(1), AINTEGER(2), l);
 }
 
+
+static at *strdel(const char *s, int n, int l)
+{
+   MM_ENTER;
+   struct large_string ls;
+   int len = strlen(s);
+   n = (n>1) ? n-1 : 0;
+   if (n > len)
+      n = len;
+   if (l< 0 || n+l > len)
+      l = len - n;
+   large_string_init(&ls);
+   large_string_add(&ls, s, n);
+   large_string_add(&ls, s+n+l, -1);
+   MM_RETURN(large_string_collect(&ls));
+}
+
+
+DX(xstrdel)
+{
+#ifndef NOWARN_DEPRECATED
+   static bool warned = false;
+   if (!warned) {
+      fprintf(stderr, "*** Warning: 'strdel' is deprecated, use 'str-del'\n");
+      warned = true;
+   }
+#endif
+   int l = -1;
+   if (arg_number != 2) {
+      ARG_NUMBER(3);
+      l = AINTEGER(3);
+   }
+   return strdel(ASTRING(1), AINTEGER(2), l);
+}
+
+
 /*------------------------ */
 
-static at *str_ins(const char *s, int pos, const char *what)
+static at *str_insert(const char *s, int pos, const char *what)
 {
    MM_ENTER;
    struct large_string ls;
@@ -755,10 +878,10 @@ static at *str_ins(const char *s, int pos, const char *what)
    MM_RETURN(large_string_collect(&ls));
 }
 
-DX(xstr_ins)
+DX(xstr_insert)
 {
    ARG_NUMBER(3);
-   return str_ins(ASTRING(1),AINTEGER(2),ASTRING(3));
+   return str_insert(ASTRING(1),AINTEGER(2),ASTRING(3));
 }
 
 
@@ -788,7 +911,7 @@ static at *str_subst(const char *s, const char *s1, const char *s2)
    MM_RETURN(large_string_collect(&ls));
 }
 
-DX(xstrsubst)
+DX(xstr_subst)
 {
    ARG_NUMBER(3);
    return str_subst(ASTRING(1),ASTRING(2),ASTRING(3));
@@ -1169,15 +1292,35 @@ DX(xstringp)
 DX(xvector_to_string)
 {
    ARG_NUMBER(1);
-   index_t *ind = AINDEX(1);
-   ifn ((IND_STTYPE(ind)==ST_UCHAR) && (IND_NDIMS(ind)==1))
-      RAISEF("ubyte vector expected", APOINTER(1));
-
-   ind = as_contiguous_array(ind);
+   index_t *ind = as_contiguous_array(AINDEX(1));
+   ifn ((IND_STTYPE(ind)==ST_INT) && (IND_NDIMS(ind)==1))
+      RAISEF("int vector expected", APOINTER(1));
+   
+   /* check that these are all valid ASCII codes */
+   int *vp = IND_BASE_TYPED(ind, int);
+   for (int i=0; i<IND_DIM(ind,0); i++)
+      if (!isascii(vp[i])) {
+         fprintf(stderr, "*** Warning: not all values are character codes\n");
+         break;
+      }
+ 
    at *p = make_string_of_length(IND_DIM(ind, 0));
-   char *s = (char *)String(p);
-   memcpy(s, IND_BASE(ind), IND_DIM(ind, 0));
+   unsigned char *s = (unsigned char *)String(p);
+   for (int i=0; i<IND_DIM(ind,0); i++)
+      s[i] = (unsigned char)vp[i];
    return p;
+}
+
+DX(xstring_to_vector)
+{
+   ARG_NUMBER(1);
+   const char *s = ASTRING(1);
+   int n = strlen(s);
+   storage_t *st = new_storage_managed(ST_INT, n, NIL);
+   int *stp = st->data;
+   for (int i=0; i<n; i++)
+      stp[i] = (int)s[i];
+   return new_index(st, NULL)->backptr;
 }
 
 /***********************************************************************
@@ -1278,8 +1421,21 @@ DX(xsprintf)
       *buf = 0;
       if (c != '%' && ++i > arg_number)
          goto err_printf1;
-      if (c == 'l' || c == 'p') {
+      if (c == 'l') {
          large_string_add(&ls, pname(APOINTER(i)), -1);
+
+      } else if (c == 'p') {
+         *buf++ = 0;
+         at *a = APOINTER(i);
+         ifn (GPTRP(a) || MPTRP(a)) AGPTR(i);
+         if (ok == 9) {
+            large_string_add(&ls, str_number_hex((double)(intptr_t)Gptr(a)), -1);
+         } else if (n > print_buffer + LINE_BUFFER - buf - 1) {
+            goto err_printf0;
+         } else {
+            sprintf(buf, print_buffer, Gptr(a));
+            large_string_add(&ls, buf, -1);
+         }
 
       } else if (c == 'd') {
          *buf++ = 0;
@@ -1361,15 +1517,15 @@ void init_string(void)
    dx_define("str-right", xstr_right);
    dx_define("str-mid", xstr_mid);
    dx_define("substring", xsubstring);
-   dx_define("concat", xstr_concat);
-   dx_define("str-index", xstr_index);
-   dx_define("val", xstr_val);
+   dx_define("str-cat", xstr_cat);
+   dx_define("str-find", xstr_find);
+   dx_define("str-val", xstr_val);
    dx_define("str", xstr_number);
    dx_define("strhex", xstr_number_hex);
    dx_define("str-len", xstr_len);
-   dx_define("str-insert", xstr_ins);
+   dx_define("str-insert", xstr_insert);
    dx_define("str-del", xstr_del);
-   dx_define("str-subst", xstrsubst);
+   dx_define("str-subst", xstr_subst);
    dx_define("upcase", xupcase);
    dx_define("upcase1", xupcase1);
    dx_define("downcase", xdowncase);
@@ -1384,7 +1540,13 @@ void init_string(void)
    dx_define("utf8-to-locale", xstr_utf8_to_locale);
    dx_define("stringp", xstringp);
    dx_define("vector-to-string", xvector_to_string);
+   dx_define("string-to-vector", xstring_to_vector);
    dx_define("sprintf", xsprintf);
+
+   /* deprecated functions */
+   dx_define("mid", xmid);  
+   dx_define("strdel", xstrdel);
+   dx_define("index", xstr_index);
 }
 
 

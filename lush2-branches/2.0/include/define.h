@@ -41,14 +41,21 @@
 
 #if defined(__APPLE__) && defined(__MACH__) && (defined (__i686__) || defined(__i386__))
 #  define __MACOSX__  1
+#  define _DARWIN_C_SOURCE 1
 #endif
 
 
 /* --------- GENERAL PURPOSE DEFINITIONS ---------- */
 
-#define _POSIX_SOURCE
-#define _POSIX_C_SOURCE  199506L
-#define _XOPEN_SOURCE    600
+#ifndef _POSIX_SOURCE
+# define _POSIX_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
+# define _POSIX_C_SOURCE  199506L
+#endif
+#ifndef _XOPEN_SOURCE
+# define _XOPEN_SOURCE    600
+#endif
 
 #if HAVE_SYS_TYPES_H 
 # include <sys/types.h>

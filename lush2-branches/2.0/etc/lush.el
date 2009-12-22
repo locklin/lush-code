@@ -118,12 +118,14 @@
                                    (- (point) 1))))
                         (comint-send-string proc (concat expr "\n"))
                         (comint-add-to-input-history expr)
+                        (setq comint-input-ring-index nil)
                         (command-execute 'comint-set-process-mark))
                     (goto-char cur)))
               ;; just send the input to lush
               (let ((expr (buffer-substring-no-properties mark (- end 1))))
                 (comint-send-string proc (concat expr "\n"))
                 (comint-add-to-input-history expr)
+                (setq comint-input-ring-index nil)
                 (command-execute 'comint-set-process-mark))))))))
 
 (defun filter (p lst)

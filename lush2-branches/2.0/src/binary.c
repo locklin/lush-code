@@ -1,31 +1,35 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 #include "header.h"
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define BINARYSTART     (0x9f)
 
@@ -374,12 +378,12 @@ static void clear_flags(at *p)
 
 /*** LOW LEVEL CHECK/READ/WRITE ***/
 
-static void check(FILE *f)
+static void check(FILE *f, int _errno)
 {
    if (feof(f))
-      safe_error(NIL, "end of file during bread", NIL);
-   if (ferror(f))
-      test_file_error(NULL);
+      error(NIL,"end of file during bread",NIL);
+   else
+      test_file_error(f, _errno);                        \
 }
 
 /* read */
@@ -387,39 +391,44 @@ static void check(FILE *f)
 static int read_card8(void)
 {
    uchar c[1];
+   errno = 0;
    if (fread(c, sizeof(char), 1, fin) != 1)
-      check(fin);
+      check(fin, errno);
    return c[0];
 }
 
 static int read_card16(void)
 {
    uchar c[2];
+   errno = 0;
    if (fread(c, sizeof(char), 2, fin) != 2)
-      check(fin);
+      check(fin, errno);
    return (c[0]<<8)+c[1];
 }
 
 static int read_card24(void)
 {
    uchar c[3];
+   errno = 0;
    if (fread(c, sizeof(char), 3, fin) != 3)
-      check(fin);
+      check(fin, errno);
    return (((c[0]<<8)+c[1])<<8)+c[2];
 }
 
 static int read_card32(void)
 {
    uchar c[4];
+   errno = 0;
    if (fread(c, sizeof(char), 4, fin) != 4)
-      check(fin);
+      check(fin, errno);
    return (((((c[0]<<8)+c[1])<<8)+c[2])<<8)+c[3];
 }
 
-static inline void read_buffer(void *s, int n)
+static void read_buffer(void *s, int n)
 {
+   errno = 0;
    if (fread(s, sizeof(char), (size_t)n, fin) != (size_t)n)
-      check(fin);
+      check(fin, errno);
 }
 
 
@@ -430,8 +439,9 @@ static void write_card8(int x)
    char c[1];
    in_bwrite += 1;
    c[0] = x;
+   errno = 0;
    if (fwrite(&c, sizeof(char), 1, fout) != 1)
-      check(fout);
+      check(fout, errno);
 }
 
 static void write_card16(int x)
@@ -440,8 +450,9 @@ static void write_card16(int x)
    in_bwrite += 2;
    c[0] = x>>8;
    c[1] = x;
+   errno = 0;
    if (fwrite(&c, sizeof(char), 2, fout) != 2)
-      check(fout);
+      check(fout, errno);
 }
 
 static void write_card24(int x)
@@ -451,8 +462,9 @@ static void write_card24(int x)
    c[0] = x>>16;
    c[1] = x>>8;
    c[2] = x;
+   errno = 0;
    if (fwrite(&c, sizeof(char), 3, fout) != 3)
-     check(fout);
+      check(fout, errno);
 }
 
 static void write_card32(int x)
@@ -463,15 +475,17 @@ static void write_card32(int x)
    c[1] = x>>16;
    c[2] = x>>8;
    c[3] = x;
+   errno = 0;
    if (fwrite(&c, sizeof(char), 4, fout) != 4)
-      check(fout);
+      check(fout, errno);
 }
 
 static void write_buffer(const void *s, int n)
 {
    in_bwrite += n;
+   errno = 0;
    if (fwrite(s, sizeof(char), (size_t)n, fout) != (size_t)n)
-      check(fout);
+      check(fout, errno);
 }
 
 
@@ -879,24 +893,31 @@ static int local_write(at *p)
 
 int bwrite(at *p, FILE *f, int opt)
 {
+   int fno = fileno(f);
+   if (fno==-1)
+      RAISEF("internal error (bwrite: bad file descriptor)", NIL);
+
    if (in_bwrite!=0)
       error(NIL,"Recursive binary read/write are forbidden",NIL);
    opt_bwrite = opt;
-   
+  
    fout = f;
    in_bwrite = 0;
    clear_reloc(0);
 
-   /* store file position in case an error occurs */
-   errno = 0;
+   /* if possible store file position in case an error occurs */
    fpos_t fpos;
-   bool fpos_ok = fgetpos(f, &fpos)==0;
-   if (!fpos_ok) {
-      char *errmsg = strerror(errno);
-      fprintf(stderr, "*** Warning: could not save file position (bwrite)\n");
-      fprintf(stderr, "***        : %s\n", errmsg);
+   bool fpos_ok = false;
+   struct stat sb;
+   if (!fstat(fno, &sb) && (S_ISREG(sb.st_mode)||S_ISBLK(sb.st_mode))) {
+      errno = 0;
+      fpos_ok = fgetpos(f, &fpos)==0;
+      if (!fpos_ok) {
+         char *errmsg = strerror(errno);
+         fprintf(stderr, "*** Warning: could not save file position (bwrite)\n");
+         fprintf(stderr, "***        : %s\n", errmsg);
+      }
    }
-
    if (prep_safe_error()) {
       if (fpos_ok)
          fsetpos(f, &fpos);
@@ -1053,7 +1074,7 @@ static void local_bread_array(at **pp)
    int ndims = read_card24();
 
    if (0<=ndims && ndims<MAXDIMS) {
-      shape_t shape = {0, {}};  
+      shape_t shape = {0};
       size_t size = 1;
       for (int i=0; i<ndims; i++) 
          size *= ( shape.dim[i] = read_card32() );

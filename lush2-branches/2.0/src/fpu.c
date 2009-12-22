@@ -1,27 +1,28 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 #include "header.h"
@@ -38,24 +39,16 @@
 #  define _FPU_EXTENDED 2
 #endif
 
-#define _GNU_SOURCE
+#ifdef HAVE_IEEEFP_H
+# include <ieeefp.h>
+#endif
+
 #include <fenv.h>
 #include <signal.h>
 #include <float.h>
 #if defined(__MACOSX__) && defined(__SSE__)
 #  include <xmmintrin.h>
 #endif
-
-#ifdef linux
-# ifdef __hppa__          /* Checked (debian) 2003-07-14 */
-#  define BROKEN_SIGFPE
-# endif
-# ifdef __mips__          /* Checked (debian) 2004-03-06 */
-#   define BROKEN_SIGFPE
-# endif
-#endif
-
-static fenv_t standard_fenv;
 
 #define KEY_INVALID    "invalid"
 #define KEY_DENORM     "denorm"
@@ -144,7 +137,7 @@ DY(ywith_fpu_env)
 
    if (fegetenv(saved_fenv)) {
       fprintf(stderr, "*** Warning: could not save FPU environment, restoring standard environment\n");
-      saved_fenv = &standard_fenv;
+      saved_fenv = NULL;
    }
 
    context_push(&mycontext);
@@ -157,7 +150,7 @@ DY(ywith_fpu_env)
    at *answer = progn(ARG_LIST);
 
    context_pop();
-   fesetenv(saved_fenv);
+   if (saved_fenv) fesetenv(saved_fenv);
    return answer;
 }
 #endif
@@ -235,8 +228,8 @@ static void warn_notrap(void)
 
 static void fpu_trap (int excepts)
 {
-#ifdef HAVE_FEENABLEEXCEPT
    feclearexcept(excepts);
+#ifdef HAVE_FEENABLEEXCEPT
    feenableexcept(excepts | fegetexcept());
 #elif defined(__MACOSX__) && defined(__SSE__)
    unsigned int es = _MM_GET_EXCEPTION_MASK();
@@ -246,6 +239,14 @@ static void fpu_trap (int excepts)
    if (excepts & FE_DIVBYZERO)  es &= ~_MM_MASK_DIV_ZERO;
    if (excepts & FE_INVALID)    es &= ~_MM_MASK_INVALID;
    _MM_SET_EXCEPTION_MASK(es);
+#elif HAVE_FPSETMASK
+   fp_except es = fpgetmask();
+   if (excepts & FE_INEXACT)    es |= FP_X_IMP;
+   if (excepts & FE_UNDERFLOW)  es |= FP_X_UFL;
+   if (excepts & FE_OVERFLOW)   es |= FP_X_OFL;
+   if (excepts & FE_DIVBYZERO)  es |= FP_X_DZ;
+   if (excepts & FE_INVALID)    es |= FP_X_INV;
+   fpsetmask(es);
 #else
    warn_notrap();
 #endif
@@ -263,6 +264,14 @@ static void fpu_untrap(int excepts)
    if (excepts & FE_DIVBYZERO)  es |= _MM_MASK_DIV_ZERO;
    if (excepts & FE_INVALID)    es |= _MM_MASK_INVALID;
    _MM_SET_EXCEPTION_MASK(es);
+#elif HAVE_FPSETMASK
+   fp_except es = fpgetmask();
+   if (excepts & FE_INEXACT)    es &= ~FP_X_IMP;
+   if (excepts & FE_UNDERFLOW)  es &= ~FP_X_UFL;
+   if (excepts & FE_OVERFLOW)   es &= ~FP_X_OFL;
+   if (excepts & FE_DIVBYZERO)  es &= ~FP_X_DZ;
+   if (excepts & FE_INVALID)    es &= ~FP_X_INV;
+   fpsetmask(es);
 #else
    warn_notrap();
 #endif
@@ -408,7 +417,6 @@ DX(xfpu_info)
 {
    ARG_NUMBER(0);
    char buffer[256], *buf = buffer;
-// #pragma STDC FENV_ACCESS ON
 
 #ifdef _FPU_GETCW
    print_char('\n');
@@ -436,6 +444,7 @@ DX(xfpu_info)
 #if 0
    print_char('\n');
    print_string("Rounding mode         :");
+#pragma STDC FENV_ACCESS ON
    switch (FLT_ROUNDS) {
    case 0: print_string(" "KEY_TOWARDZERO); break;
    case 1: print_string(" "KEY_TONEAREST); break;
@@ -460,7 +469,7 @@ DX(xfpu_info)
    print_string(sprint_excepts(buf, fetestexcept(FE_ALL_EXCEPT)));
    print_char('\n');
 
-#if defined(HAVE_FEENABLEEXCEPT)
+#if HAVE_FEENABLEEXCEPT
    print_string("FPU exceptions trapped:");
    print_string(sprint_excepts(buf, fegetexcept()));
    print_char('\n');
@@ -475,13 +484,26 @@ DX(xfpu_info)
    if (es & _MM_MASK_INVALID)   excepts &= ~FE_INVALID;
    print_string(sprint_excepts(buf, excepts));
    print_char('\n');
+#elif HAVE_FPSETMASK
+   print_string("FPU exceptions trapped:");
+   fp_except es = fpgetmask();
+   int excepts = 0;
+   if (es & FP_X_IMP) excepts |= FE_INEXACT;
+   if (es & FP_X_UFL) excepts |= FE_UNDERFLOW;
+   if (es & FP_X_OFL) excepts |= FE_OVERFLOW;
+   if (es & FP_X_DZ)  excepts |= FE_DIVBYZERO;
+   if (es & FP_X_INV) excepts |= FE_INVALID;
+   print_string(sprint_excepts(buf, excepts));
+   print_char('\n');
 #endif
    return NIL;
 }
 
 void fpu_reset(void)
 {
-   fesetenv(&standard_fenv);
+//#pragma STDC FENV_ACCESS ON
+   fesetenv(FE_DFL_ENV);
+   fpu_trap(FE_OVERFLOW);
 #ifdef _FPU_GETCW
    set_fpu_precision(_FPU_EXTENDED);
 #endif
@@ -497,11 +519,7 @@ DX(xfpu_reset)
 void init_nan(void)
 {
    /* set up and save standard fpu environment */
-   fesetenv(FE_DFL_ENV);
-   assert(fetestexcept(FE_ALL_EXCEPT)==0);
-   fpu_untrap(FE_ALL_EXCEPT);
-   fpu_trap(FE_OVERFLOW);
-   fegetenv(&standard_fenv);
+   fpu_reset();
 
    dx_define("infinityp", xinfinityp);
    dx_define("nanp", xnanp);

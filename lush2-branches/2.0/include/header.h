@@ -42,7 +42,7 @@ extern "C" {
 #endif
 #endif
 
-#include "mm.h"
+#include "cmm.h"
 
 /* VERSION.H --------------------------------------------------- */
 
@@ -98,17 +98,15 @@ LUSHAPI void error(const char *prefix, const char *text, at *suffix) no_return;
 LUSHAPI char *api_translate_c2lisp(const char*);
 LUSHAPI char *api_translate_lisp2c(const char*);
 
-#define RAISE(caller, msg, p) {                    \
-  if (msg) error(caller, msg, p);                  \
-}
-#define RAISEF(msg, p) {                           \
-  if (msg)                                         \
-    error(api_translate_c2lisp(__func__), msg, p); \
-}
-#define RAISEFX(msg, p) {                           \
-  if (msg)                                         \
-    error(api_translate_c2lisp(__func__)+1, msg, p); \
-}
+#define RAISE(caller, msg, p)   \
+  ((msg) ? (error(caller, msg, p),0) : 0) 
+
+#define RAISEF(msg, p) \
+  ((msg) ? (error(api_translate_c2lisp(__func__), msg, p),0) : 0)
+
+#define RAISEFX(msg, p) \
+  ((msg) ? (error(api_translate_c2lisp(__func__)+1, msg, p),0) : 0)
+
 
 /* OS.H ---------------------------------------------------------- */
 
@@ -515,7 +513,7 @@ LUSHAPI static inline at *new_at_string(const char *ms)
 
 LUSHAPI at *make_string(const char *s);
 LUSHAPI at *make_string_of_length(size_t n);
-LUSHAPI int str_index(const char *s1, const char *s2, int start);
+LUSHAPI int str_find(const char *s1, const char *s2, int start);
 LUSHAPI at *str_val(const char *s);
 LUSHAPI const char *str_number(double x);
 LUSHAPI const char *str_number_hex(double x);
@@ -652,7 +650,7 @@ LUSHAPI const char *relative_fname(const char *from, const char *fname);
 LUSHAPI void unlink_tmp_files(void);
 LUSHAPI const char *tmpname(const char *s, const char *suffix);
 LUSHAPI const char *search_file(const char *s, const char *suffixes);
-LUSHAPI void test_file_error(FILE *f);
+LUSHAPI void test_file_error(FILE *f, int errno);
 LUSHAPI FILE *open_read(const char *s, const char *suffixes);
 LUSHAPI FILE *open_write(const char *s, const char *suffixes);
 LUSHAPI FILE *open_append(const char *s, const char *suffixes);
@@ -733,6 +731,7 @@ struct CClass_object;
 typedef struct object {
    at *backptr;
    struct CClass_object *cptr;
+   struct object *next_unreachable;
    at *slots[];
 } object_t;
 
@@ -860,16 +859,17 @@ typedef enum dht_type storage_type_t;
 #define ST_LAST       (ST_AT + 1)
 
 /*
- * The other flags define the
- * nature of the storage (STS)
+ * The other flags define the nature of the storage (STS).
  */
 
+enum storage_kind {
+   STS_NULL = 0,           /* storage object without memory */
+   STS_MANAGED,            /* memory managed by lush runtime */
+   STS_FOREIGN,            /* pointer given to us, lush won't free */
+   STS_MMAP,               /* memory mapped via mmap */
+   STS_STATIC,             /* memory in data segment */
+};
 
-#define STS_MM        (1<<0)    /* memory managed by MM */
-#define STS_MALLOC    (1<<1)	/* pointer given to us, lush will free */
-#define STS_FOREIGN   (1<<2)    /* pointer given to us, lush won't free */
-#define STS_MMAP      (1<<3)	/* memory mapped via mmap */
-#define STS_STATIC    (1<<5)	/* in data segment */
 #define STS_MASK      255
 #define STF_RDONLY    (1<<15)	/* read only storage */
 
@@ -902,9 +902,10 @@ extern LUSHAPI void   (*storage_setat[ST_LAST])(storage_t *, size_t, at *);
 
 /* storage creation */
 LUSHAPI storage_t *new_storage(storage_type_t);
+LUSHAPI storage_t *new_storage_managed(storage_type_t, size_t, at*);
+LUSHAPI storage_t *new_storage_foreign(storage_type_t, size_t, void *, bool);
 LUSHAPI storage_t *new_storage_mmap(storage_type_t, FILE*, size_t, bool);
-LUSHAPI storage_t *make_storage(storage_type_t, size_t, at*);
-#define NEW_STORAGE(st)  new_storage(st)->backptr
+LUSHAPI storage_t *new_storage_static(storage_type_t, size_t, const void *);
 
 /* storage properties */
 LUSHAPI bool   storage_classp(const at*);
@@ -1055,6 +1056,8 @@ LUSHAPI index_t *array_select(index_t*, int d, ptrdiff_t n);
 LUSHAPI index_t *array_take2(index_t*, index_t *ss);
 LUSHAPI index_t *array_take3(index_t*, int d, index_t *ss);
 LUSHAPI index_t *array_put(index_t*, index_t *ss, index_t *vals);
+LUSHAPI index_t *array_range(double, double, double);
+LUSHAPI index_t *array_rangeS(double, double, double);
 
 LUSHAPI void import_raw_matrix(index_t*, FILE*, size_t);
 LUSHAPI void import_text_matrix(index_t*, FILE*);

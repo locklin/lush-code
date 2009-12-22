@@ -42,13 +42,14 @@ element-type symbols to storage class objects:
 
 Depending on the element type a storage is created for, its class is one
 of a few possible <storage-classes> (see below). The storage creation 
-functions <new-storage> and <make-storage> take a symbol indicating 
+functions <new-storage> and <new-storage/managed> take a symbol indicating 
 the element-type.
 
 #? (new-storage <et>)
-Create a new empty, unsized storage with element-type <et>.
-The storage can be subsequently allocated in memory with <storage-alloc>
-See also <make-storage>. 
+Create an empty storage object for element-type <et>.
+
+Memory may be allocated for this storage object with <storage-alloc>.
+See also <new-storage/managed>.
 Examples:
 {<code> 
 
@@ -62,30 +63,49 @@ Examples:
 </code>}
 
 
-#? (new-storage-mmap <et> <file> <offs> [<readonly>])
+#? (new-storage/managed <et> <n> [<init>])
 {<location> storage.c}
-{<see> new-storage, storage-readonlyp}
+Create a storage object for element-type <et> and allocate memory
+for <n> elements.
+
+The memory is managed by the Lush runtime. If <init> is given and
+is not <()>, all elements of the storage will be initialized  
+with <init>.
+Examples:
+{<code> 
+
+? (new-storage/managed 'float 100)
+= ::FloatStorage:managed@0x827b2d8:<100>
+</code>}
+
+
+#? (new-storage/mmap <et> <file> [<offs> [<readonly>]])
+{<location> storage.c}
+{<see> storage-readonlyp}
 Map <file> into memory and associate that memory with a storage
 with element-type <et>; return the storage. 
 
 <File> may be a file descriptor or a string containing a filename. 
 Each element of the file starting at byte <offs> is made accessible
 through the corresponding element of the storage <srg>. Storages of 
-storage class <AtomStorage> cannot be memory mapped. Mapped storages
-are readonly by default (pass <()> as fourth argument to create a
-writeable mmapped storage).
+storage class <AtomStorage> or <MptrStorage> cannot be memory mapped.
+Mapped storages are readonly by default (pass <()> as fourth 
+argument to create a writeable mmapped storage).
 
 
-#? (make-storage <et> <n> <init>)
-{<location> sysenv.lsh}
-Create a storage of class <storage-class> and allocate memory for <n>
-elements. If <init> is not <nil>, all elements of the storage get 
-initialized with <init>. Examples:
-{<code> 
+#? (new-storage/foreign <et> <n> <p> [<readonly>])
+Create a storage object for element-type <et> and <n> and use
+the memory at address <p>. 
 
-? (make-storage 'float 100 ())
-= ::FloatStorage:managed@0x827b2d8:<100>
-</code>}
+The memory at <p> is not managed by the lush runtime;
+the user, providing the address <p>, is
+responsible for managing it. The storage object may be tagged
+for readonly accesses via the fourth argument <readonly>.
+
+Warning: Lush will segfault if the storage object is used to access
+invalid memory. This may happen if <p> is not a valid address (not
+and address to readable/writable memory), or if <n> was chosen too
+large to prevent out-of-bounds memory accesses.
 
 
 #? (storage-alloc <srg> <n> <init>)

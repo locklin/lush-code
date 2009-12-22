@@ -1,27 +1,28 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 /***********************************************************************
@@ -45,7 +46,8 @@
  *    creates its compiled part (in new_object) and creates
  *    cref objects for all compiled slots. There is no copying
  *    of data for compiled slots, the data is in the compiled
- *    part and is being accessed through the cref objects.
+ *    part and is being accessed from lisp code through the 
+ *    cref objects.
  * 
  * 3. When OO objects are being created in compiled code, they
  *    are being created without the representation for the
@@ -63,6 +65,14 @@
  *    may exist without the interpreter counterpart. To ensure
  *    that compiled destructors are not called twice, compiled
  *    destructors NULLify the Vtbl-pointer when done.
+ *
+ * 6. Evaluating the destructor of an object may cause an
+ *    an error. Calling the destructor code from a finalizer
+ *    directly is therefore not an option (the error function
+ *    longjumps and leaves cmm in undefined state). The finalizer
+ *    for objects therefore puts unreachable objects in a queue
+ *    to delay execution of the destructor until it is safe to
+ *    do so (when no garbage collection is under way).
  */
 
 static at *at_progn;
@@ -72,6 +82,7 @@ static at *at_destroy;
 static at *at_listeval;
 static at *at_emptyp;
 static at *at_unknown;
+object_t *unreachables = NULL;
 
 static struct hashelem *_getmethod(class_t *cl, at *prop);
 static at *call_method(at *obj, struct hashelem *hx, at *args);
@@ -86,6 +97,7 @@ static void mark_object(object_t *obj)
 {
    MM_MARK(obj->backptr);
    MM_MARK(obj->cptr);
+   MM_MARK(obj->next_unreachable);
    class_t *cl = Class(obj->backptr);
    MM_MARK(cl);
    for (int i = 0; i < cl->num_cslots; i++)
@@ -101,29 +113,34 @@ static void mark_object(object_t *obj)
 
 }
 
+static object_t *oostruct_dispose(object_t *);
 static bool finalize_object(object_t *obj)
 {
-   object_class->dispose(obj);
-   return ZOMBIEP(obj->backptr);
+   if (ZOMBIEP(obj->backptr))
+      return true;
+   
+   /* enqueue object to be destructed later */
+   obj->next_unreachable = unreachables;
+   unreachables = obj;
+   return false;
 }
 
 static mt_t mt_object = mt_undefined;
 static mt_t mt_object2 = mt_undefined;
 
 
-/* ------ OBJECT CLASS DEFINITION -------- */
-
-object_t *oostruct_dispose(object_t *obj)
+static object_t *oostruct_dispose(object_t *obj)
 {
-   if (ZOMBIEP(obj->backptr))
-      return obj;
+   /* oostruct gets called only once */
+   assert(!ZOMBIEP(obj->backptr));
+
+   obj->next_unreachable = NULL;
 
    int oldready = error_doc.ready_to_an_error;
    error_doc.ready_to_an_error = true;
-
    struct lush_context mycontext;
    context_push(&mycontext);
-  
+   
    int errflag = sigsetjmp(context->error_jump,1);
    if (errflag==0) {
       /* call all destructors for interpreted part */
@@ -147,18 +164,12 @@ object_t *oostruct_dispose(object_t *obj)
    
    context_pop();
    error_doc.ready_to_an_error = oldready;
-   
-   if (errflag) {
-      if (mm_collect_in_progress())
-         /* we cannot longjump when called by a finalizer */
-         fprintf(stderr, "*** Warning: error occurred while gc in progress\n");
-      else
-         siglongjmp(context->error_jump, -1L);
-   }
-
    if (obj->cptr)
       obj->cptr->__lptr = NULL;
    zombify(obj->backptr);
+   
+   if (errflag)
+      siglongjmp(context->error_jump, -1L);
 
    return obj;
 }
@@ -729,8 +740,16 @@ static object_t *_new_object(class_t *cl, struct CClass_object *cobj)
 
 object_t *new_object(class_t *cl)
 {
+   int n = 0;
+   while (unreachables && n++<10) {
+      object_t *obj = unreachables;
+      unreachables = obj->next_unreachable;
+      object_class->dispose(obj);
+   }
+
    ifn (cl->live)
       error(NIL, "class is obsolete", cl->classname);
+   
    return _new_object(cl, NULL);
 }
 
@@ -747,7 +766,6 @@ object_t *object_from_cobject(struct CClass_object *cobj)
    }
    return obj;
 }
-
 
 DY(ynew)
 {
@@ -1212,6 +1230,7 @@ void init_oostruct(void)
                  clear_method_hash, mark_method_hash, 0);
 
    pre_init_oostruct();
+   MM_ROOT(unreachables);
    class_class->backptr = new_at(class_class, class_class);
    class_define("Class", class_class);
 
@@ -1246,7 +1265,7 @@ void init_oostruct(void)
    dx_define("putmethod",xputmethod);
    dy_define("send",ysend);
    dx_define("sender",xsender);
-   
+
    at_this = var_define("this");
    at_progn = var_define("progn");
    at_destroy = var_define("-destructor");

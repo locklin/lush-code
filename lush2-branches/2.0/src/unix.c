@@ -1,27 +1,28 @@
 /***********************************************************************
  * 
  *  LUSH Lisp Universal Shell
- *    Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
- *    Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+ *    Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+ *    Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
  *  Includes parts of TL3:
  *    Copyright (C) 1987-1999 Leon Bottou and Neuristique.
  *  Includes selected parts of SN3.2:
  *    Copyright (C) 1991-2001 AT&T Corp.
  * 
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the Lesser GNU General Public License as 
- *  published by the Free Software Foundation; either version 2 of the
+ *  it under the terms of the GNU Lesser General Public License as 
+ *  published by the Free Software Foundation; either version 2.1 of the
  *  License, or (at your option) any later version.
  * 
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  * 
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
- * 
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+ *  MA  02110-1301  USA
+ *
  ***********************************************************************/
 
 /************************************************************************
@@ -683,15 +684,12 @@ static void setup_trigger_signal()
 #endif
 #endif
 #endif /* !BROKEN_SETSIG */
-#ifndef BROKEN_TIMER
-#ifdef ITIMER_REAL
+#if !defined(BROKEN_TIMER) && defined(ITIMER_REAL)
         trigger_mode = MODE_ITIMER;
         trigger_signal = SIGALRM;
         setup_signal_once();
         break;
-#endif
-#endif /* !BROKEN_TIMER */
-#ifndef BROKEN_ALARM
+#elif !defined(BROKEN_ALARM)
         trigger_mode = MODE_ALARM;
         trigger_signal = SIGALRM;
         setup_signal_once();
@@ -1234,9 +1232,10 @@ DY(ybground)
    if (isatty(0) && ask("Launch a background job")==0)
       RAISEFX("background launch aborted", NIL);
    
+   errno = 0;
    int f = open(String(fname), O_WRONLY|O_TRUNC|O_CREAT, 0666);
    if (f<0)
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    fflush(stdin);
    fflush(stdout);
    fflush(stderr);
@@ -1410,8 +1409,9 @@ FILE* unix_popen(const char *cmd, const char *mode)
 
    /* Create pipe */
    int p[2];
+   errno = 0;
    if (pipe(p) < 0) 
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
 
    int rd = (mode[0]=='r');
    int parent_fd = (rd ? p[0] : p[1]);
@@ -1505,12 +1505,14 @@ void filteropen(const char *cmd, FILE **pfw, FILE **pfr)
    sprintf(string_buffer, "exec %s", cmd);
 
    int fd_up[2], fd_dn[2];
+   errno = 0;
    if (pipe(fd_up) < 0) 
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    if (pipe(fd_dn) < 0) {
+      errno = 0;
       close(fd_up[0]);
       close(fd_up[1]);
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    }
 
 #ifdef HAVE_VFORK
@@ -1519,11 +1521,12 @@ void filteropen(const char *cmd, FILE **pfw, FILE **pfr)
    pid_t pid = fork();
 #endif
    if (pid < 0) {
+      errno = 0;
       close(fd_up[0]);
       close(fd_up[1]);
       close(fd_dn[0]);
       close(fd_dn[1]);
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    } else if (pid == 0) {
       /* Child process */
       close(fd_up[1]);
@@ -1563,10 +1566,12 @@ void filteropen(const char *cmd, FILE **pfw, FILE **pfr)
    if (kidpidalloc(fd_dn[0]))
       kidpid[fd_dn[0]] = pid;
 #endif
+   errno = 0;
    ifn ((*pfw = fdopen(fd_up[1], "w")))
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
+   errno = 0;
    ifn ((*pfr = fdopen(fd_dn[0], "r")))
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
 }
 
 
@@ -1605,17 +1610,19 @@ void filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
    sprintf(string_buffer, "exec %s", cmd);
 
    int master, slave;
+   errno = 0;
    if (openpty(&master, &slave, 0, 0, 0) < 0)
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
 # ifdef HAVE_VFORK
    pid_t pid = vfork();
 # else
    pid_t pid = fork();
 # endif
    if (pid < 0) {
+      errno = 0;
       close(master);
       close(slave);
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    
    } else if (pid == 0) {
       /* Child process */
@@ -1650,10 +1657,12 @@ void filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
    if (kidpidalloc(slave))
       kidpid[slave] = pid;
 # endif
+   errno = 0;
    if (! (*pfw = fdopen(master, "w")))
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
+   errno = 0;
    if (! (*pfr = fdopen(slave, "r")))
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
 #else
    RAISEF("filteropenpty is not supported on this system", NIL);
 #endif
@@ -1707,18 +1716,20 @@ DX(xsocketopen)
    if (!hp) 
       RAISEFX("unknown host", APOINTER(1));
    int sock1 = socket(AF_INET, SOCK_STREAM, 0);
+   errno = 0;
    if (sock1<0)
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
 
    struct sockaddr_in server;
    server.sin_family = AF_INET;
    memcpy(&server.sin_addr, hp->h_addr, hp->h_length);
    server.sin_port = htons(portnumber);
+   errno = 0;
    if (connect(sock1, (struct sockaddr*)&server, sizeof(server)) < 0) {
       close(sock1);
       if (noerror)
          return NIL;
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    }
 
    int sock2 = dup(sock1);
@@ -1727,9 +1738,9 @@ DX(xsocketopen)
    at *f1 = new_rfile(ff1);
    at *f2 = new_wfile(ff2);
    if (p1)
-      var_set(p1,f1);
+      setq(p1,f1);
    if (p2)
-      var_set(p2,f2);
+      setq(p2,f2);
    return new_cons(f2, f1);
 #else
    RAISEFX("sockets are not supported on this machine", NIL);
@@ -1753,12 +1764,14 @@ DX(xsocketaccept)
    char hostname[MAXHOSTNAMELEN+1];
    gethostname(hostname, MAXHOSTNAMELEN);
    int portnumber = AINTEGER(1);
+   errno = 0;
    struct hostent *hp = gethostbyname(hostname);
    if (!hp)
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
+   errno = 0;
    int sock1 = socket( AF_INET, SOCK_STREAM, 0);
    if (sock1<0)
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
    
    struct sockaddr_in server;
    server.sin_family = AF_INET;
@@ -1774,10 +1787,11 @@ DX(xsocketaccept)
       return t();
    }
    
+   errno = 0;
    int sock2 = accept(sock1, NULL, NULL);
-   close(sock1);
    if (sock2 < 0)
-      test_file_error(NULL);
+      test_file_error(NULL, errno);
+   close(sock1);
    sock1 = dup(sock2);
    FILE *ff1 = fdopen(sock1,"r");
    FILE *ff2 = fdopen(sock2,"w");
