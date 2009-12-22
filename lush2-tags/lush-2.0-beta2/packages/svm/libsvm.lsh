@@ -1,0 +1,421 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: libsvm.lsh,v 1.11 2006/03/01 16:00:35 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-ubyte")
+(libload "libc/libc")
+(libload "libc/make")
+(libload "kernel")
+
+;; ----------------------------------------
+;; WARNING. 
+;; This interface works with LIBSVM-2.5.
+;; The latest versions available on Chih-Jen Lin's site
+;; are significantly improved.
+
+
+;; ----------------------------------------
+;; Old names for kernel code
+
+(defvar LibSVMKernel SVMKernel)
+(putmethod LibSVMKernel 'LibSVMKernel 
+	   (getmethod SVMKernel 'SVMKernel))
+
+(defvar LibSVMVectorKernel SVMVectorKernel)
+(putmethod LibSVMVectorKernel 'LibSVMVectorKernel 
+	   (getmethod SVMVectorKernel 'SVMVectorKernel))
+
+(defvar LibSVMLinearKernel SVMLinearKernel)
+(putmethod LibSVMLinearKernel 'LibSVMLinearKernel 
+	   (getmethod SVMLinearKernel 'SVMLinearKernel))
+
+(defvar LibSVMPolynomialKernel SVMPolynomialKernel)
+(putmethod LibSVMPolynomialKernel 'LibSVMPolynomialKernel 
+	   (getmethod SVMPolynomialKernel 'SVMPolynomialKernel))
+
+(defvar LibSVMRBFKernel SVMRBFKernel)
+(putmethod LibSVMRBFKernel 'LibSVMRBFKernel 
+	   (getmethod SVMRBFKernel 'SVMRBFKernel))
+
+
+;; ----------------------------------------
+
+#? *** LIBSVM interface.
+;; This is a Lush interface for the LIBSVM-2.5 optimizer.
+;;
+;; The LIBSVM code has been modified in order to
+;; provide a mean to define the kernels using Lush.
+
+
+
+(defconstant C_SVC 0)
+(defconstant NU_SVC 1)
+(defconstant ONE_CLASS 2)
+(defconstant EPSILON_SVR 3)
+(defconstant NU_SVR 4)
+
+(defclass LibSVM object
+  ;; data
+  ((-idx1- (-int-)) x)
+  ((-idx1- (-double-)) y)
+  ((-obj- (SVMKernel)) kernel)
+  ;; parameters
+  ((-int-) svm_type)			; svm_train option -s
+  ((-double-) cache_size)  		; svm_train option -m
+  ((-double-) eps)			; svm_train option -e
+  ((-double-) c)                        ; svm_train option -c
+  ((-idx1- (-double-)) weight)		; svm_train option -wi
+  ((-idx1- (-int-)) weight_label)	; svm_train option -wi
+  ((-double-) nu)			; svm_train option -n
+  ((-double-) p)			; svm_train option -p
+  ((-bool-) shrinking)			; svm_train option -h
+  ((-bool-) verbose)			; verbosity.
+  ;; temporaries
+  ((-gptr-) param)
+  ((-gptr-) problem)
+  ((-gptr-) node1)
+  ((-gptr-) node2)
+  ;; results
+  ((-gptr-) model) 
+  ((-int-)  nr_class) 
+  ((-int-)  nr_sv) )
+
+
+(defmethod LibSVM LibSVM(ik n)
+  ((-obj- (SVMKernel)) ik)
+  ((-int-) n)
+  (setq x (int-array n))
+  (setq y (double-array n))
+  (setq kernel ik)
+  (for (i 0 (1- n)) ((-int-) i) (x i i))
+  (setq svm_type C_SVC)
+  (setq cache_size 256)
+  (setq eps 0.001)
+  (setq c 1)
+  (setq weight (double-array 1))
+  (setq weight_label (int-array 1))
+  (weight 0 1)
+  (weight_label 0 0)
+  (setq nu 0.5)
+  (setq p 0.1)
+  (setq shrinking t)
+  (setq verbose ())
+  (setq param (gptr ()))
+  (setq problem (gptr ()))
+  (setq node1 (gptr ()))
+  (setq node2 (gptr ()))
+  (setq model (gptr ())) 
+  (setq nr_class 0)
+  (setq nr_sv 0)
+  () )
+
+(defmethod LibSVM cleanup()
+  #{ 
+     delete (svm_parameter*)$param;
+     delete (svm_problem*)$problem;
+     delete [] (svm_node*)$node1;
+     delete [] (svm_node**)$node2;
+     if ($model) svm_destroy_model((svm_model*)$model); 
+  #}
+  (setq param (gptr ()))
+  (setq problem (gptr ()))
+  (setq node1 (gptr ()))
+  (setq node2 (gptr ()))
+  (setq model (gptr ())) 
+  () )
+  
+(defmethod LibSVM -destructor()
+  (==> this cleanup) )
+
+(defmethod LibSVM set-xy(lx ly)
+  (let ((l1 (len lx))
+        (l2 (len ly)) )
+    (when (<> l1 l2)
+      (error "List lengths do not match") )
+    (idx-i1resize x l1)
+    (idx-d1resize y l2)
+    (x () lx)
+    (y () ly) )
+  t )
+
+(defmethod LibSVM run()
+  (==> this cleanup)
+  (when (<> (idx-dim x 0) (idx-dim y 0))
+    (error "Matrix x and y have different sizes") )
+  (when (<> (idx-dim weight 0) (idx-dim weight_label 0))
+    (error "Matrix weight and weight-label have different sizes") )
+  (when (<> (idx-modulo y 0) 1)
+    (error "Matrix y must be contiguous") )
+  (when (<> (idx-modulo weight 0) 1)
+    (error "Matrix weight must be contiguous") )
+  (when (<> (idx-modulo weight_label 0) 1)
+    (error "Matrix weight-label must be contiguous") )
+
+  #{{
+    svm_parameter *param = new svm_parameter;
+    param->svm_type = $svm_type;
+    param->kernel_function = unikernel;
+    param->cache_size = $cache_size;
+    param->eps = $eps;
+    param->C = $c;
+    param->nr_weight = $(idx-dim weight 0);
+    param->weight = IDX_PTR($weight, double);
+    param->weight_label = IDX_PTR($weight_label, int);
+    if (param->nr_weight==1 && param->weight[0]==1) param->nr_weight=0;
+    param->nu = $nu;
+    param->p = $p;
+    param->shrinking = (($shrinking) ? 1 : 0);
+    svm_set_verbosity( (($verbose) ? 1 : 0) );
+    $param = (void*) param;
+
+    /* Handle NU=0 in NU-SVC */
+    if (param->svm_type == NU_SVC &&  param->nu == 0) {
+       param->svm_type = C_SVC;
+       param->C = 1e38;
+    }
+
+    int l = $(idx-dim x 0);
+    svm_node *node1 = new svm_node[l];
+    svm_node **node2 = new svm_node* [l];
+    $node1 = (void*) node1;
+    $node2 = (void*) node2;
+    for (int i=0; i<l; i++) {
+      node2[i] = &node1[i];
+      node1[i].idata = IDX_PTR($x, int) [ i * $x->mod[0] ];
+      node1[i].pdata = (void*) $kernel;
+    }
+
+    svm_problem *problem = new svm_problem;
+    problem->l = $(idx-dim x 0);
+    problem->y = IDX_PTR($y, double);
+    problem->x = node2;
+
+    const char *s = svm_check_parameter(problem, param);
+    if (s) lush_error((char*)s);
+    svm_model *model = svm_train(problem, param);
+    $model = model;
+    $nr_class = model->nr_class;
+    $nr_sv = model->l;
+  }#}
+  
+  (when (not model)
+    (error "Error during execution of the libsvm solver") )
+  t )
+
+(defmethod LibSVM get-labels()
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
+	 (m (int-array nc)))
+    ((-int-) nc)
+    #{ svm_get_labels((svm_model*)$model, IDX_PTR($m,int)); #}
+    m ) )
+
+(defmethod LibSVM get-nsv()
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
+	 (m (int-array nc)))
+    ((-int-) nc)
+    (cinline-idx1loop m "int" "p" "s"
+       #{ *p = ((svm_model*)$model)->nSV[s]; #} )
+    m ) )
+
+(defmethod LibSVM get-sv()
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((sv (to-int #{ ((svm_model*)$model)->l #}))
+	 (m (int-array sv)) )
+    ((-int-) sv)
+    (cinline-idx1loop m "int" "p" "s"
+       #{ *p = ((svm_model*)$model)->SV[s]->idata; #} )
+    m ) )
+
+(defmethod LibSVM get-alpha()
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
+	 (sv (to-int #{ ((svm_model*)$model)->l #}))
+	 (m (double-array (1- nc) sv)) )
+    ((-int-) nc sv)
+    (cinline-idx2loop m "double" "p" "n" "s"
+       #{ *p = ((svm_model*)$model)->sv_coef[n][s]; #} )
+    m ) )
+
+(defmethod LibSVM get-rho()
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
+	 (m (double-array (int (2/ (* nc (1- nc)))))) )
+    (cinline-idx1loop m "double" "p" "i"
+       #{ *p = ((svm_model*)$model)->rho[i]; #} )
+    m ) )
+
+(defmethod LibSVM predict-values(xi)
+  ((-int-) xi)
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let* ((nc (to-int #{ ((svm_model*)$model)->nr_class #}))
+	 (m (double-array (int (2/ (* nc (1- nc)))))) )
+    ((-int-) nc)
+    #{{
+        svm_node node;
+        node.idata = $xi;
+        node.pdata = (void*) $kernel;
+        svm_predict_values((svm_model*)$model, &node, IDX_PTR($m,double));
+    }#} 
+    m ) )
+
+(defmethod LibSVM predict(xi)
+  ((-int-) xi)
+  (when (not model)
+    (error "Must call 'run' first") )
+  (let ((yval (to-real 0)))
+    #{{
+        svm_node node;
+        node.idata = $xi;
+        node.pdata = (void*) $kernel;
+        $yval = svm_predict((svm_model*)$model, &node);
+    }#}
+    yval ) )
+
+(defmethod LibSVM call-kernel(xi xj)
+  ((-int-) xi xj)
+  (==> kernel call xi xj) )
+
+
+;; ----------------------------------------
+
+
+(defmethod LibSVM get-expansion-n(n)
+  ((-int-) n)
+  (when (or (= svm_type ONE_CLASS)
+	    (= svm_type EPSILON_SVR)
+	    (= svm_type NU_SVR) )
+    (error "Use get-expansion with one-class-svm or sv-regressions") )
+  (let ((nsv (==> this get-nsv))
+	(posclass 0)
+	(negclass 0)
+	(si 0)
+	(sj 0)
+	(ci 0)
+	(cj 0) )
+    ((-int-) posclass negclass si sj ci cj)
+    ;; search partition
+    (let ((start (int-array nr_class)))
+      (start 0 0)
+      (for (i 1 (1- nr_class))
+	   ((-int-) i)
+	   (start i (+ (start (1- i)) (nsv (1- i)))) )
+      (let ((p 0)
+	    (a (1- nr_class)))
+	((-int-) p a)
+	(while (and (> a 0) (>= n (+ p a)))
+	  (incr p a)
+	  (incr a -1) 
+	  (incr posclass) )
+	(setq negclass (+ 1 posclass (- n p))) )
+      (when (or (>= posclass nr_class) (>= negclass nr_class))
+	(error "Invalid argument to get-expansion-n") )
+      (setq si (start posclass))
+      (setq sj (start negclass))
+      (setq ci (nsv posclass))
+      (setq cj (nsv negclass)) )
+    ;; build
+    (let* ((sv (==> this get-sv))
+	   (alpha (==> this get-alpha))
+	   (alpha1 (select alpha 0 (1- negclass)))
+	   (alpha2 (select alpha 0 posclass))
+	   (rho (==> this get-rho))
+	   (esv (int-array (+ ci cj)))
+	   (ealpha (double-array (+ ci cj))) )
+      (for (k 0 (1- ci))
+	   ((-int-) k)
+	   (esv    k (sv (+ si k)))
+	   (ealpha k (alpha1 (+ si k))) )
+      (for (k 0 (1- cj))
+	   ((-int-) k)
+	   (esv    (+ ci k) (sv (+ sj k)))
+	   (ealpha (+ ci k) (alpha2 (+ sj k))) )
+      ;; create
+      (let ((r (new SVMExpansion kernel esv ealpha))
+	    (l (==> this get-labels)) )
+	(setq :r:b (rho n))
+	(setq :r:positive-class (l posclass))
+	(setq :r:negative-class (l negclass))
+	r ) ) ) )
+
+(defmethod LibSVM get-expansion()
+  (when (<> nr_class 2)
+    (error "Use get-expansion-n for multiclass c-svm or nu-svm"))
+  (let ((r (new SVMExpansion kernel (==> this get-sv)
+		(select (==> this get-alpha) 0 0) )))
+    (setq :r:b ((==> this get-rho) 0))
+    (let ((l (==> this get-labels)))
+      (setq :r:positive-class (l 0))
+      (setq :r:negative-class (l 1)) 
+      (when (> :r:negative-class :r:positive-class)
+	(==> r negate) ) )
+    r ) )
+
+
+
+
+;; ----------------------------------------
+
+(with-namespace lush1-
+
+(let ((cmd (regex-subst "\\$CC" "$CXX" dhc-make-command))
+      (lm (new LushMake (concat-fname (dirname file-being-loaded) "libsvm"))) )
+  (==> lm rule "svm.o" '("svm.cpp" "svm.h") cmd)
+  (==> lm make)
+  (==> lm load) 
+
+  (let ((dhc-make-lushflags (concat dhc-make-lushflags " -I" :lm:srcdir)))
+     (dhc-make-with-c++ () ()
+         #{ 
+	   #include "svm.h" 
+         #}
+         #{
+   	   static double unikernel(const svm_node *x, const svm_node *y) 
+	   {
+	     CClass_SVMKernel * k = (CClass_SVMKernel*)(x->pdata);
+	     return (*k->Vtbl->M_call)(k, x->idata, y->idata);
+	   }
+	 #}
+         (LibSVM LibSVM cleanup -destructor run
+                 get-labels get-nsv get-sv get-alpha get-rho
+                 predict-values predict call-kernel
+		 get-expansion-n get-expansion)
+         
+         ) ) )
+) ; lush1-

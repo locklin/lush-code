@@ -1,0 +1,379 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: lasvmvector.lsh,v 1.9 2006/01/25 15:18:49 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libc/make")
+(libload "libidx/idx-double")
+(libload "libidx/idx-int")
+(libload "kernel")
+(libload "lasvmload")
+
+
+;; -------------------------------- sparsevector
+
+(defclass SparseVector object
+  ((-gptr-) p) )
+
+(defmethod SparseVector SparseVector()
+  #{ $p = lasvm_sparsevector_create(); #}
+  () )
+
+(defmethod SparseVector -destructor()
+  #{ if ($p) lasvm_sparsevector_destroy($p); #}
+  () )
+
+(defmethod SparseVector get(i)
+  ((-int-) i)
+  (to-real #{ lasvm_sparsevector_get($p,$i) #}) )
+
+(defmethod SparseVector clear()
+  #{ lasvm_sparsevector_clear($p); #}
+  0 )
+
+(defmethod SparseVector set(i v)
+  ((-int-) i)
+  ((-double-) v)
+  #{ lasvm_sparsevector_set($p,$i,$v); #}
+  v )
+
+(defmethod SparseVector maxindex()
+  (let ((s (to-int 0)))
+    #{{ 
+        lasvm_sparsevector_t *v = (lasvm_sparsevector_t*)($p);
+        if (v->size > 0) { $s = v->pairs[v->size-1].index; }
+    }#} 
+    s ) )
+
+(defmethod SparseVector pairs()
+  (to-int #{ ((lasvm_sparsevector_t*)($p))->size #}) )
+
+(defmethod SparseVector contents(ivec dvec)
+  ((-idx1- (-int-)) ivec)
+  ((-idx1- (-double-)) dvec)
+  (let* ((n (==> this pairs)))
+    (idx-i1resize ivec (max 1 n))
+    (idx-d1resize dvec (max 1 n))
+    #{{
+       int *iv = IDX_PTR($ivec, int);
+       double *dv = IDX_PTR($dvec, double);
+       lasvm_sparsevector_t *v = (lasvm_sparsevector_t*)$p;
+       lasvm_sparsevector_pair_t *p;
+       lasvm_sparsevector_foreach(p,v)
+       {  
+         *iv = p->index;
+         *dv = p->value;
+         iv += $ivec->mod[0];
+         dv += $dvec->mod[0];
+       }
+    }#}
+    n ) )
+
+(defmethod SparseVector build(ivec dvec)
+  ((-idx1- (-int-)) ivec)
+  ((-idx1- (-double-)) dvec)
+  (let ((n (idx-dim ivec 0)))
+    (when (<> (idx-dim dvec 0) n)
+      (error "dimension mismatch") )
+    (==> this clear)
+    (for (i 0 (1- n))
+         ((-int-) i n)
+         (==> this set (ivec i) (dvec i)) ) )
+  this )
+
+(defmethod SparseVector unpack(n)
+  ((-int-) n)
+  (let ((m (double-array n)))
+    #{{
+       double *dv = IDX_PTR($m, double);
+       lasvm_sparsevector_t *v = (lasvm_sparsevector_t*)$p;
+       lasvm_sparsevector_pair_t *p;
+       lasvm_sparsevector_foreach(p,v)
+       {  
+         if (p->index >= $n) break;
+         dv[p->index] = p->value;
+       }
+    }#}
+    m ) )
+
+(defmethod SparseVector parse(s)
+  ((-str-) s)
+  (==> this clear)
+  (let ((ans t))
+    #{{ int i;
+        int n = 0;
+        double x;
+        char *s = (char*)$s;
+        while (*s && sscanf(s, " %d:%lf%n", &i, &x, &n)>1 && n>0) {
+          lasvm_sparsevector_set($p,i,x);     
+          s += n;
+        }
+        while (*s==' ' || *s=='\t' || *s=='\n' || *s=='\r') s++;
+        if (*s) $ans = 0;
+    }#}
+    ans ) )
+
+
+(de sparsevector-lincomb(v1 a1 v2 a2)
+  ((-double-) a1 a2)
+  ((-obj- (SparseVector)) v1 v2)
+  (let ((v (new SparseVector)))
+    #{{ lasvm_sparsevector_t *old = $v->p;
+        $v->p = lasvm_sparsevector_combine($v1->p, $a1, $v2->p, $a2);
+        lasvm_sparsevector_destroy(old);
+    }#}
+    v ) )
+
+(de sparsevector-dot(v1 v2)
+  ((-obj- (SparseVector)) v1 v2)
+  (to-real #{ lasvm_sparsevector_dot_product($v1->p, $v2->p) #}) )
+
+(de sparsevector-print(v)
+  (printf ":sparsevector:%l"
+	  (when (> (==> v pairs) 0)
+	    (let ((n (==> v pairs))
+		  (ivec (int-array 1))
+		  (dvec (double-array 1)))
+	      (==> v contents ivec dvec)
+	      (mapfor (i 0 (1- n))
+		(list (ivec i) (dvec i)) ) ) ) ) )
+
+(defmethod SparseVector pretty()
+  (sparsevector-print this)
+  (print) )
+
+(dm sparsevector-make(f . args)
+  `(let ((|_SV_| (new sparsevector)))
+     ,@(all (((i v) args)) `(==> |_SV_| set ,i ,v))
+     |_SV_| ) )
+
+
+
+;; -------------------------------- sparsevectorcollection
+
+
+
+(defclass SparseVectorCollection object
+  ((-idx1- (-mptr-)) arr) )
+
+(defmethod SparseVectorCollection SparseVectorCollection(n)
+  ((-int-) n)
+  (setq arr (mptr-array n))
+  (for (i 0 (1- n))
+       (let ((sv (new SparseVector)))
+	 (arr i (to-mptr sv)) ) )
+  () )
+
+(defmethod SparseVectorCollection vector(i)
+  ((-int-) i)
+  (to-obj SparseVector (arr i)) )
+
+
+(de save-sparsevectorcollection(data fname)
+  (let ((n (idx-dim :data:arr 0)))
+    (writing fname
+      (bwrite n)
+      (for (i 0 (1- n))
+           (let ((v (==> data vector i)))
+             (if (> (==> v pairs) 0)
+                 (let ((ivec (int-matrix 1))
+                       (dvec (double-matrix 1)))
+                   (==> v contents ivec dvec)
+                   (bwrite (cons ivec dvec)) )
+               (bwrite ()) ) ) )
+      data ) ) )
+
+(de load-sparsevectorcollection(fname)
+  (reading fname
+    (let* ((n (bread))
+           (c (new sparsevectorcollection n)))
+      (for (i 0 (1- n))
+           (let ((x (bread)))
+             (when (consp x)
+               (let (((ivec . dvec) x) (v (==> c vector i)))
+                 (==> v build ivec dvec) ) ) ) )
+      c ) ) )
+
+
+;; -------------------------------- sparsekernel
+
+
+(defclass SVMSparseKernel SVMKernel
+  ((-obj- (SparseVectorCollection)) vec)
+  ((-idx1- (-double-)) lab)
+  ((-bool-) changed) )
+
+(defmethod SVMSparseKernel SVMSparseKernel(n)
+  ((-int-) n)
+  (setq vec (new SparseVectorCollection n))
+  (setq lab (double-array n))
+  (setq changed t)
+  () )
+
+(defmethod SVMSparseKernel set-label(i y)
+  ((-int-) i)
+  ((-double-) y)
+  (lab i y) )
+
+(defmethod SVMSparseKernel label(i)
+  ((-int-) i)
+  (lab i) )
+
+(defmethod SVMSparseKernel set-data(i j x)
+  ((-int-) i j)
+  ((-double-) x)
+  (let ((sv (==> vec vector i)))
+    (==> sv set j x) )
+  (setq changed t) )
+
+(defmethod SVMSparseKernel data(i)
+  ((-int-) i)
+  (==> vec vector i) )
+
+(defmethod SVMSparseKernel dot(i j)
+  ((-int-) i j)
+  (let ((sv1 (to-obj SparseVector (:vec:arr i)))
+	(sv2 (to-obj SparseVector (:vec:arr j))) )
+    (sparsevector-dot sv1 sv2) ) )
+
+(defmethod SVMSparseKernel shuffle()
+  (let* ((arr :vec:arr)
+	 (n (idx-dim arr 0)))
+    ((-int-) n)
+    (when (>= n 2)
+      (for (i 0 (- n 2))
+	   (let ((j (+ 1 i (int (* (rand) (- n (1+ i)))))))
+	     ((-int-) i j)
+	     (let ((p (arr i))
+		   (l (lab i)) )
+	       (arr i (arr j))
+	       (lab i (lab j))
+	       (arr j p)
+	       (lab j l) ) ) ) 
+      (setq changed t) )
+    n ) )
+
+
+;; --------------------- sparselinearkernel
+
+
+(defclass SVMSparseLinearKernel SVMSparseKernel)
+
+(defmethod SVMSparseLinearKernel SVMSparseLinearKernel(n)
+  ((-int-) n) 
+  (setq vec (new SparseVectorCollection n))
+  (setq lab (double-array n))
+  (setq changed t)
+  () )
+
+(defmethod SVMSparseLinearKernel call(i j)
+  ((-int-) i j)
+  (==> this dot i j) )
+
+
+;; --------------------- sparserbfkernel
+
+(defclass SVMSparseRBFKernel SVMSparseKernel
+  ((-idx1- (-double-)) norm) 
+  ((-double-) gamma) )
+
+(defmethod SVMSparseRBFKernel SVMSparseRBFKernel(n)
+  ((-int-) n) 
+  (setq vec (new SparseVectorCollection n))
+  (setq lab (double-array n))
+  (setq gamma 1)
+  (setq norm (double-array n))
+  (setq changed t) )
+
+(defmethod SVMSparseRBFKernel prep()
+  (for (i 0 (1- (idx-dim norm 0)))
+       (norm i (==> this dot i i)) )
+  (setq changed ()) )
+
+(defmethod SVMSparseRBFKernel call(i j)
+  ((-int-) i j)
+  (when changed (==> this prep))
+  (qexpmx (* gamma (+ (norm i) (norm j) (* -2 (==> this dot i j))))) )
+
+
+;; --------------------- libsvm files
+
+(defmethod SVMSparseKernel load(fname &optional (pos 0))
+  (reading fname
+    (let ((count 1))
+      (while (<> (skip-char) "\e")
+	(let ((y (read))
+	      (s (read-string))
+	      (v ()) )
+	  (when (> pos (idx-dim lab 0))
+	    (error '==> "Too many libsvm records" count) )
+	  (setq v (==> this data pos))
+	  (==> v clear)
+	  (when (not (==> v parse s))
+	    (==> v clear)
+	    (error '==> "Corrupted libsvm record" count) )
+	  (lab pos y)
+	  (incr count)
+	  (incr pos) ) ) 
+      pos ) ) )
+
+(defmethod SVMSparseKernel save(fname size &optional (pos 0))
+  (writing fname
+    (for (i pos (+ pos size -1))
+	 (printf "%l " (lab i))
+	 (let ((v (==> this data i))
+	       (ivec (int-array 1))
+	       (dvec (double-array 1)))
+	   (==> v contents ivec dvec)
+	   (for (j 0 (1- (idx-dim ivec 0)))
+		(printf " %d:%.5e" (ivec j) (dvec j)) )
+	   (printf "\n") ) ) )
+  fname )
+
+;; ----------------------------------------
+;; COMPILE
+
+(with-namespace lush1-
+
+(let* ((lasvmdir (concat-fname (dirname file-being-loaded) "lasvm"))
+       (dhc-make-lushflags (concat dhc-make-lushflags " -I" lasvmdir)))
+  (dhc-make ()
+	    #{ #include "vector.h" #}
+	    (SparseVector SparseVector -destructor 
+			  clear maxindex pairs get set contents build 
+                          unpack parse)
+	    sparsevector-lincomb sparsevector-dot 
+	    (SparseVectorCollection SparseVectorCollection vector)
+	    (SVMSparseKernel SVMSparseKernel 
+			     set-label label set-data data dot shuffle)
+	    (SVMSparseLinearKernel SVMSparseLinearKernel call)
+	    (SVMSparseRBFKernel SVMSparseRBFKernel prep call) ) )
+
+) ; lush1-

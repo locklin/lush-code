@@ -1,0 +1,1348 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: libsdl.lsh,v 1.16 2006/09/04 15:19:27 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a library of utilities to ease the use of SDL from Lush
+
+#? **** LibSDL: High-level Interface to SDL
+;; libsdl is a library of "high level" functions and
+;; classes built on top of the SDL (Simple Directmedia Layer) 
+;; library to facilitate its use from Lush.
+;; It includes objects such as screens and sprites with
+;; pixel-accurate collision detection. It also includes
+;; access functions to keyboard and mouse events, as well
+;; as to several common SDL data structures.
+
+(libload "libc/libc")
+(libload "idx-macros")
+(libload "idx-int")
+(libload "libimage/rgbaimage")
+(libload "sdl/SDL")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; constant
+
+
+(de libsdl-dummy () (cpheader "#include <SDL/SDL.h>") ())
+
+(defvar *sdl-initialized* ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (sdl-initialize)
+;; initializes the SDL engine with all its
+;; subsystems (timer, audio, video, cdrom, joystick).
+;; This function MUST BE CALLED before any other SDL
+;; function or the interpreter will probably crash.
+;;
+;; this function sets the global variable *sdl-initialized*
+;; to true, and only executes the initialization code if
+;; this variable is nil. Returns true on success.
+;; If you want to initialize only certain subsystems,
+;; call the lower-level function SDL_Init with the
+;; appropriate flags and set *sdl-initialized* to true
+;; before opening an sdl-screen.
+(de sdl-initialize ()
+    (when (not *sdl-initialized*) 
+      (if (< (SDL_Init SDL_INIT_EVERYTHING) 0)
+	  (error "Unable to init SDL")
+	(setq *sdl-initialized* t))))
+
+#? (sdl-terminate)
+;; This shuts down the SDL subsystem.
+;; <sdl-initialize> must be called before any
+;; new SDL call can be performed again.
+;; A call to <sdl-terminate> will close any
+;; open SDL screen. In fact, calling <sdl-terminate>
+;; is the only way to close an SDL screen.
+(de sdl-terminate () 
+  (when *sdl-initialized* 
+    (SDL_Quit)
+    (setq *sdl-initialized* ())))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; screen
+#? ** sdl-screen 
+;; a class that creates and manipulates SDL Screens.
+;; This class can handle pixel-accurate collision detection.
+;; It maintains a timer that measures the time between
+;; screen flips. This allows to do time-accurate
+;; real-time physical simulation.
+;; An SDL Screens is not closed when the corresponding 
+;; <sdl-screen> object is freed. Closing a screen can be
+;; done with a call to <(sdl-terminate)>.
+(defclass sdl-screen object 
+  ((-gptr- "SDL_Surface *") p)
+  ((-idx3- (-int-)) collision)
+  ((-flt-) deltat)
+  ((-int-) ticks)
+)
+
+#? (new sdl-screen <w> <h> <cap>)
+;; open a new SDL Screen of size <w>,<h>
+;; with title <cap>. This attempts to open 
+;; a double-buffered 32 bit-per-pixel surface
+;; in the video hardware. It reverts to 
+;; 24 or 16 bits (with 32 bit emulation)
+;; if a 32 bit screen cannot be allocated.
+;; The function sdl-intialize MUST be called
+;; before opening an sdl-screen, or the
+;; interpreter will crash!
+(defmethod sdl-screen sdl-screen (w h cap)
+  ((-int-) w h)
+  ((-str-) cap)
+  (SDL_WM_SetCaption cap cap)	; set window title
+  ;; see if we can open a 32 bit screen
+  (let* ((flags (to-int #{ SDL_HWSURFACE + SDL_DOUBLEBUF #}))
+         (depth (SDL_VideoModeOK w h 32 flags)))
+    ((-int-) flags)
+      (cond 
+       ((= depth 32) (printf "32 bit mode\n"))
+       ((= depth 24) (printf "24 bit mode\n"))
+       ((= depth 16) (printf "16 bit mode\n"))
+       (t (setq depth 32) (printf "bitdepth=%d, emulating 32 bits\n" depth)))
+      (setq p (SDL_SetVideoMode w h depth flags))
+      (when (= (gptr ()) p) (error "could not open screen"))
+      (setq collision (int-array h w 1))
+      (setq ticks 0)
+      (setq deltat (/ 1 60))))
+
+#? (==> <sdl-screen> flip)
+;; flip the buffers. The content of the visible
+;; screen is replaced by the content of the
+;; back buffer (in which drawing operations are
+;; performed). This returns the time since the last
+;; call to flip in seconds (as a floating point number).
+;; The collision detection array is cleared by this call.
+(defmethod sdl-screen flip () 
+  (SDL_Flip p)
+  (let ((newticks (SDL_GetTicks)))
+    (when (<> 0 ticks) (setq deltat (/ (- newticks ticks) 1000)))
+    (setq ticks newticks))
+  (idx-clear collision)
+  ticks)
+
+#? (==> <sdl-screen> toggle-fullscreen)
+;; Toggle full screen mode. Returns 1 on success, 0 on failure.
+(defmethod sdl-screen toggle-fullscreen ()
+  (to-int #{ SDL_WM_ToggleFullScreen($p) #}))
+
+#? (==> <sdl-screen> clear)
+;; fill the screen with back. Nothing actually happens
+;; on the screen until the next call to flip.
+(defmethod sdl-screen clear ()
+  (SDL_FillRect p (gptr ()) 0))
+
+(defmethod sdl-screen free () 
+  (when p (SDL_FreeSurface p) ()))
+
+(defmethod sdl-screen -destructor ()
+  (when p (SDL_FreeSurface p) ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass sdlgl-screen sdl-screen)
+
+#? (new sdlgl-screen <w> <h> <cap>)
+;; just like sdl-screen, except that OpenGL
+;; drawing is enabled. Always opens a 32 bit window.
+(defmethod sdlgl-screen sdlgl-screen (w h cap)
+  ((-int-) w h)
+  ((-str-) cap)
+  ;; see if we can open a 32 bit screen
+  (SDL_GL_SetAttribute SDL_GL_DOUBLEBUFFER 1)
+  (SDL_GL_SetAttribute SDL_GL_RED_SIZE 8)
+  (SDL_GL_SetAttribute SDL_GL_GREEN_SIZE 8)
+  (SDL_GL_SetAttribute SDL_GL_BLUE_SIZE 8)
+  (setq p (SDL_SetVideoMode w h 32 SDL_OPENGL))
+  (when (= (gptr ()) p) (error "could not open sdlgl-screen"))
+  (SDL_WM_SetCaption cap cap)
+  (setq collision (int-array 1 1 1)) ;; dummy
+  (setq ticks 0)
+  (setq deltat (/ 1 60)))
+
+(defmethod sdlgl-screen flip () 
+  (SDL_GL_SwapBuffers)
+  (let ((newticks (SDL_GetTicks)))
+    (when (<> 0 ticks) (setq deltat (/ (- newticks ticks) 1000)))
+    (setq ticks newticks))
+  ticks)
+
+(defmethod sdlgl-screen -destructor ()
+  () )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** sdlidx-screen
+;; A subclass of sdl-screen that associates an SDL screen with 
+;; an IDX of the same size. Whatever is contained in the IDX 
+;; can drawn on the screen by calling the "flip" method.
+;; Unlike sdl-screen, this class does not use SDL's
+;; double buffering mechanism, but uses its own back 
+;; buffer in which all drawing operations take place.
+;; sdlidx-screen can be used with sprites. Sprites
+;; drawn into the screen will appear in the IDX.
+;; No collision detection between sprites and the 
+;; background directly drawn into the IDX can be 
+;; performed (but it works between sprites).
+(defclass sdlidx-screen sdl-screen
+  ((-gptr- "SDL_Surface *") screen)
+  ((-idx3- (-ubyte-)) image)		; idx 
+  )
+
+#? (new sdlidx-screen <m> <caption>)
+;; opens a new SDL screen where IDX <m> 
+;; (and idx3 of ubytes) is used as a back buffer 
+;; in which images can be drawn. The last dimension of
+;; <m> should be 3 or 4. If it is 3, the RGB image in
+;; <m> will be drawn opaque, if it is 4, the RGBA image
+;; in <m> will be drawn on top of the current image
+;; using the A channel as transparency.
+;; The screen is updated by a call to the method flip.
+(defmethod sdlidx-screen sdlidx-screen (m cap)
+  ((-idx3- (-ubyte-)) m)
+  ((-str-) cap)
+  (cpheader "#include <SDL/SDL.h>")
+  (setq image m)
+  (setq p (sdl-surface-ptr-idx image))
+  (when (< (idx-dim m 2) 4) (SDL_SetAlpha p 0 255))
+  ;; see if we can open a 32 bit screen
+  (let* ((flags (int #{ SDL_HWSURFACE #}))
+	 (w (idx-dim m 1))
+	 (h (idx-dim m 0))
+         (depth (SDL_VideoModeOK w h 32 flags)))
+    ((-int-) flags w h depth)
+      (cond 
+       ((= depth 32) (printf "32 bit mode\n"))
+       ((= depth 24) (printf "24 bit mode\n"))
+       ((= depth 16) (printf "16 bit mode\n"))
+       (t (setq depth 32) (printf "bitdepth=%d, emulating 32 bits\n" depth)))
+    (setq screen (SDL_SetVideoMode w h depth flags))
+    (when (= (gptr ()) screen) (error "could not open screen"))
+    (setq collision (int-array h w 1))
+    (setq ticks 0)
+    (setq deltat (/ 1 60))))
+
+(defmethod sdlidx-screen free ()
+  (when p (SDL_FreeSurface p))
+  (when screen (SDL_FreeSurface screen)) ())
+
+(defmethod sdlidx-screen -destructor ()
+   (when screen (SDL_FreeSurface screen))
+   () )
+
+#? (==> <sdlidx-screen> flip)
+;; Update screen with content of the IDX back buffer.
+;; return number of milliseconds since the last call to flip.
+(defmethod sdlidx-screen flip ()
+  (SDL_BlitSurface p (gptr ()) screen (gptr ()))
+  (SDL_UpdateRect screen 0 0 0 0) ()
+  (let ((newticks (SDL_GetTicks)))
+    (when (<> 0 ticks) (setq deltat (/ (- newticks ticks) 1000)))
+    (setq ticks newticks))
+  (idx-clear collision)
+  ticks)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** sdl-event
+;; a high-level class to manipulate SDL events.
+(defclass sdl-event object ((-gptr- "SDL_Event *") e))
+
+#? (new sdl-event)
+;; create a new sdl-event object.
+(defmethod sdl-event sdl-event () (setq e (gptr #{ (SDL_Event *)malloc(sizeof(SDL_Event)) #})))
+
+#? (==> <sdle> type)
+;; return type of sdl-even <sdle>.
+(defmethod sdl-event type () (int #{ $e->type #}))
+
+#? (==> <sdle> key-keysym-sym)
+;; return symbol of keyboard key symbol of an sdl-event.
+(defmethod sdl-event key-keysym-sym () (int #{ $e->key.keysym.sym #}))
+
+#? (==> <sdle> button-x)
+;; return mouse button 1 value of an sdl-event.
+(defmethod sdl-event button-x () (int #{ $e->button.x #}))
+
+#? (==> <sdle> button-y)
+;; return mouse button 2 value of an sdl-event.
+(defmethod sdl-event button-y () (int #{ $e->button.y #}))
+
+#? (==> <sdle> motion-x)
+;; return horizontal mouse motion of an sdl-event.
+(defmethod sdl-event motion-x () (int #{ $e->motion.x #}))
+
+#? (==> <sdle> motion-y)
+;; return vertical mouse motion of an sdl-event.
+(defmethod sdl-event motion-y () (int #{ $e->motion.y #}))
+
+#? (==> <sdle> free)
+;; sdl-event destructor
+(defmethod sdl-event free () (when e (free (to-gptr e))))
+
+(defmethod sdl-event -destructor () (==> this free))
+
+#? (==> <sdl-event> get-arrows <xyk>)
+;; xyk is an idx1 of ints of size 3.
+;; (xyk 0) is set to +1 if right-arrow is pressed and -1 if left-arrow is pressed
+;; (xyk 1) is set to +1 if up-arrow is pressed and -1 if down-arrow is pressed
+;; (xyk 2) is set to the keysym of any other key that's pressed
+(defmethod sdl-event get-arrows (xyk)
+  ((-idx1- (-int-)) xyk)
+  (while (<> 0 (SDL_PollEvent e))
+    (let ((type (sdl-event-type e)))
+      (cond 
+       ((= type SDL_KEYDOWN)
+	(let ((key (sdl-event-key-keysym-sym e)))
+	  (xyk 2 key)
+	  (cond
+	   ((= key SDLK_LEFT) (xyk 0 -1))
+	   ((= key SDLK_RIGHT) (xyk 0 1))
+	   ((= key SDLK_UP) (xyk 1 -1))
+	   ((= key SDLK_DOWN) (xyk 1 1))
+	   (t ()))))
+       ((= type SDL_KEYUP)
+	(let ((key (sdl-event-key-keysym-sym e)))
+	  (xyk 2 0)
+	  (cond
+	   ((= key SDLK_LEFT) (when (< (xyk 0) 0) (xyk 0 0)))
+	   ((= key SDLK_RIGHT) (when (> (xyk 0) 0) (xyk 0 0)))
+	   ((= key SDLK_UP) (when (< (xyk 1) 0) (xyk 1 0)))
+	   ((= key SDLK_DOWN) (when (> (xyk 1) 0) (xyk 1 0)))
+	   (t ()))))))) ())
+
+#? (==> <sdl-event> get-keys <keymap> <keystate>)
+;; <keymap> is an idx1 of -int- containing a list
+;; keys to be polled. The keys are identified by their
+;; SDLK code. 
+;; <keystate> is an -idx1- of
+;; -int- of the same size. Upon exit, each element of
+;; <keystate> whose corresponding key (as specified in 
+;; keymap) is pressed down is set to 1.
+;; If the corresponding key is not pressed, it is
+;; set to 0.
+;; This method can be used for games when simultaneous 
+;; keypresses of all the keys specified in <keymap> must 
+;; be detected.
+;; {<code>
+;;  (libload "sdl/libsdl")
+;;  (sdl-initialize)
+;;  (setq scr (new sdl-screen 640 480 "Key Test"))
+;;  (setq ev (new sdl-event))
+;;  (setq kmap (int-matrix 4))
+;;  (kmap () '(SDLK_a SDLK_d SDLK_w SDLK_s))
+;;  (setq ks (int-array 4))
+;;  (while t
+;;    (==> ev get-keys kmap ks)
+;;    (when (<> 0 ((idx-sum ks)))
+;;     (print ks)
+;;     (sleep 0.25)))
+;; </code>}
+(defmethod sdl-event get-keys (keymap keystate)
+  ((-idx1- (-int-)) keymap keystate)
+  (while (<> 0 (SDL_PollEvent e))
+    (let ((type (sdl-event-type e)))
+      (cond 
+       ((= type SDL_KEYDOWN)
+	(let ((key (sdl-event-key-keysym-sym e)))
+	  (idx-bloop ((k keymap) (s keystate)) 
+	    (when (= key (k)) (s (+ 1 (s)))))))
+       ((= type SDL_KEYUP)
+	(let ((key (sdl-event-key-keysym-sym e)))
+	  (idx-bloop ((k keymap) (s keystate)) 
+	    (when (= key (k)) (s 0)))))))) ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; sdl-sprite
+
+#? ** sdl-sprite
+;; a sdl-sprite class for drawing movable objects
+;; in an SDL screen with pixel-accurate collision
+;; detection. Sprites can contain multiple frames
+;; that can be flipped through to make animations.
+;; or rotations. Each sprite object can be given 
+;; an ID (which is preferably between 1 and 32, 
+;; but can be larger), which identifies it during
+;; collision detection. For example, all background
+;; sprites can be given ID 1, spaceship 1 ID 2, 
+;; spaceship 2 ID 3, and missiles, ID 4. IDs do not
+;; need to be unique (several sprites can share the 
+;; same ID), but then the collision detection mechanism
+;; won't be able to distinguish them.
+(defclass sdl-sprite object 
+  ((-idx1- (-gptr-)) p)
+  ((-idx1- (-gptr-)) idmask)
+  ((-obj- (sdl-screen)) win)
+  ((-int-) id)
+  ((-idx1- (-int-)) collided)
+  ((-idx1- (-int-)) hotx)
+  ((-idx1- (-int-)) hoty)
+  ((-gptr- "SDL_Rect *") rect)
+  ((-flt-) x y)
+  ((-int-) frame))
+
+#? (==> <sdl-sprite> set-hotpoint <hx> <hy>) 
+;; sets the "hot point" (the handle) of 
+;; the sprite to coordinates <hx>,<hy>.
+(defmethod sdl-sprite set-hotpoint (hx hy) 
+  ((-int-) hx hy)
+  (hotx frame hx) (hoty frame hy) ())
+
+#? (==> <sdl-sprite> get-hotpoint)
+;; get the "hot point" (the handle) of 
+;; the sprite as a list (<hx>,<hy>).
+(defmethod sdl-sprite get-hotpoint () (list (hotx frame) (hoty frame)))
+
+#? (==> <sdl-sprite> get-width)
+;; return width of current frame
+(defmethod sdl-sprite get-width () (sdl_surface_w (p frame)))
+
+#? (==> <sdl-sprite> get-height)
+;; return height of current frame
+(defmethod sdl-sprite get-height () (sdl_surface_w (p frame)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; allocation.creation/image setting
+
+#? (new sdl-sprite <screen> <id>)
+;; create a new sprite on screen <screen>
+;; with ID <id>.
+(defmethod sdl-sprite sdl-sprite (lwin lid)
+  ((-int-) lid)
+  ((-obj- (sdl-screen)) lwin)
+  (setq win lwin)
+  (setq p (gptr-array 8))
+  (setq idmask (gptr-array 8))
+  (setq hotx (int-array 8))
+  (setq hoty (int-array 8))
+  (setq id lid)
+  (setq collided (int-array (idx-dim :lwin:collision 2)))
+  (setq x 0) (setq y 0)
+  (setq frame -1)
+  (setq rect (new-sdl-rect 0 0 0 0)))
+
+#? (==> <sdl-sprite> alloc-frame)
+;; private method for allocating new frames in a sprite
+(defmethod sdl-sprite alloc-frame (i)
+  ((-int-) i)
+  (let ((s (idx-dim p 0))
+        (n (1+ i)))
+    (when (> n s)
+      (idx-g1resize p n)
+      (idx-g1resize idmask n)
+      (idx-i1resize hotx n)
+      (idx-i1resize hoty n)
+      (for (j s (1- n))
+        ((-int-) j)
+        (p j (gptr ()))
+        (idmask j (gptr ()))
+        (hotx j 0)
+        (hoty j 0)))
+      n))
+
+#? (==> <sdl-sprite> make-frame <img> <i> <hx> <hy>)
+;; private method to set frame <i> to SDL_Surface <img>.
+;; the screen must be initialized before calling this.
+(defmethod sdl-sprite make-frame (image i hx hy)
+  ((-gptr- "SDL_Surface *") image)
+  ((-int-) i hx hy)
+  (==> this alloc-frame i)
+  ;; 81920 means (+ SDL_SRCALPHA SDL_RLEACCEL)
+  (SDL_SetAlpha image 81920 255)
+  (when (<> (idmask i) (gptr ())) (free (idmask i)))
+  (idmask i (rle-encode-alpha image 10))
+  (when (<> (p i) (gptr ())) (SDL_FreeSurface (p i)))
+  (p i (SDL_DisplayFormatAlpha image))
+  (hotx i hx) (hoty i hy)
+  (setq frame i))
+
+#? (==> <sdl-sprite> load-frame <file> <i> <hx> <hy>)
+;; load image file <file> into frame <i>, and set
+;; the hot point (handle) to <hx> <hy>.
+;; The images file can be in any format that
+;; sdlimage can handle (see IMG_Load).
+;; The screen must be initialized before calling this
+(defmethod sdl-sprite load-frame (f i hx hy)
+  ((-str-) f) ((-int-) i hx hy)
+  (let ((image (IMG_Load f)))
+    (when (not image) (error " could not load image"))
+    (==> this make-frame image i hx hy)
+    (SDL_FreeSurface image)))
+
+#? (==> <sdl-sprite> rotscale-frame <src> <dst> <angle> <coeff>)
+;; take frame <src>, rotate it by <angle> degreed, and
+;; scale it by coefficient <coeff>, then sets the <dst>-th
+;; frame to the resulting image.
+;; This function is convenient for generating views of
+;; a sprite at all possible angles automatically. 
+;; This must be done in advance as this functions is
+;; too slow to generate frames on-the-fly while the 
+;; game is running.
+(defmethod sdl-sprite rotscale-frame (src dst angle coeff)
+  ((-int-) src dst)
+  ((-flt-) angle coeff)
+  (let* ((m (sdl-surface-to-idx (p src)))
+         (w (idx-dim m 1))
+         (h (idx-dim m 0))
+	 (cx (hotx src))
+	 (cy (hoty src))
+         (wh (int-array 2))
+         (cxcy (float-array 2))
+         (bg (ubyte-array 4)) )
+    ((-int-) w h)
+    (rgbaim-rotscale-rect w h cx cy angle coeff wh cxcy)
+    (let ((z (ubyte-array (wh 1) (wh 0) 4)))
+      (rgbaim-rotscale m cx cy z (cxcy 0) (cxcy 1) angle coeff bg)
+      (==> this make-frame-idx z dst (int (cxcy 0)) (int (cxcy 1))))) ())
+
+#? (==> <sdl-sprite> make-frame-idx <m> <i> <hx> <hy>)
+;; set frame <i> to the image contained in idx <m>.
+;; The idx will be interpreted as an heightxwidthx4 
+;; idx of ubytes containing an RGBA images.
+;; NOTE: the alpha channel of <m> must be set to 255 
+;; for opaque pixels. If <m> was filled up with 
+;; image-read-rgb the alpha channel is likely to be all zero.
+;; The screen must be initialized before calling this
+(defmethod sdl-sprite make-frame-idx (m i hx hy)
+  ((-idx3- (-ubyte-)) m) ((-int-) i hx hy)
+  (let ((image (idx-to-sdl-surface m)))
+    (when (not image) (error " could not convert idx to sdl-surface"))
+    (==> this make-frame image i hx hy)
+    (SDL_FreeSurface image)))
+
+#? (==> <sdl-sprite> get-frame-idx <i>)
+;; Return an idx containing the image of the <i>-th frame.
+(defmethod sdl-sprite get-frame-idx (i)
+  ((-int-) i)
+  (sdl-surface-to-idx (p i)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; set/get/the state
+
+#? (==> <sdl-sprite> set-frame <i>)
+;; make frame <i> the current frame
+;; (i.e. the one that will be drawn next).
+(defmethod sdl-sprite set-frame (i)
+  ((-int-) i)
+  (when (> i (1- (idx-dim p 0))) (error "illegal frame number"))
+  (when (not (p i)) (error "frame has no image"))
+  (setq frame i))
+
+#? (==> <sdl-sprite> get-frame)
+;; return index of current frame.
+(defmethod sdl-sprite get-frame () frame)
+
+#? (==> <sdl-sprite> move <lx> <ly>)
+;; move sprite to <lx>,<ly>. 
+;; This does not actually draw anything.
+(defmethod sdl-sprite move (lx ly)
+  ((-flt-) lx ly)
+  (setq x lx)
+  (setq y ly))
+
+#? (==> <sdl-sprite> moverel <dx> <dy>)
+;; move sprite by <dx>,<dy> relative
+;; to the current position.
+;; This does not actually draw anything.
+(defmethod sdl-sprite moverel (dx dy)
+  ((-flt-) dx dy)
+  (incr x dx) (incr y dy))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; animation NOT FINISHED
+
+;; #? (==> <sdl-sprite> set-animation <anim-script>)
+(defmethod sdl-sprite set-animation (as)
+  ((-idx2- (-int-)) as)
+  (setq anim-script as)
+  ;; total length of animation is sum of delays
+  (let ((s 0)) 
+    (idx-bloop ((x as)) 
+      (incr s (x 1)) (x 1 s)
+      (when (> (x 0) (1- (idx-dim p 0))) (error "illegal frame number"))
+      (when (not (p (x 0))) (error "frame has no image"))))
+  (setq anim-length (as (1- idx-dim as) 1)))
+
+(defmethod sdl-sprite start-animation ()
+  (setq anim-start (SDL_GetTicks)))
+
+;; #? (==> <sdl-sprite> animate)
+;; sets the frame to the appropriate frame
+;; chosen by the animation script a the current time.
+;; this will fail if the SDL library runs for more than 49 days.
+(defmethod sdl-sprite animate ()
+  (let* ((ticks (SDL_GetTicks))
+	 (d (mod (- ticks anim-start) anim-length)))
+    ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (==> <sdl-sprite> draw)
+;; draw the sprite on the screen using the current frame and position.
+;; This does not do any collision detection.
+(defmethod sdl-sprite draw ()
+  (let* ((s (p frame))
+	 (w (sdl_surface_w s))
+	 (h (sdl_surface_h s)))
+    (set-sdl-rect rect (int (- x (hotx frame))) (int (- y (hoty frame))) w h)
+    (let ((c (SDL_BlitSurface s (gptr ()) :win:p rect)))
+      (if (<> c 0) (error "error occured while blitting sprite")))) ())
+
+
+#? (==> <sdl-sprite> drawc)
+;; draw the sprite on the screen using the current frame and position.
+;; This performs all the operation necessary to do pixel-accurate
+;; collision detection. Any pixel with a non-zero alpha value 
+;; drawn on top of another previously drawn object triggers
+;; the collision detection.
+(defmethod sdl-sprite drawc ()
+  (let* ((s (p frame))
+	 (w (sdl_surface_w s))
+	 (h (sdl_surface_h s)))
+    (set-sdl-rect rect (int (- x (hotx frame))) (int (- y (hoty frame))) w h)
+    (let ((c (SDL_BlitSurface s (gptr ()) :win:p rect)))
+      (if (<> c 0) (error "error occured while blitting sprite"))
+      ;; rect is set by BlitSurface to the actual blitting rectangle
+      (idx-clear collided)
+      (sdl-collide id (idmask frame) (gptr ()) :win:collision rect collided))) ())
+
+#? (==> <sdl-sprite> test-collision)
+;; Prepare to test if the sprite would collide with any sprite already 
+;; drawn on the screen. Unlike <drawc>, this method
+;; does not draw the sprite and does not modify the screen's
+;; collision map. It provides a way to test for collision and
+;; take actions before the collisio actually happens.
+;; The function <collided> must be subsequently called to
+;; actually test if the current sprite would have collided 
+;; with any other already drawn sprites.
+(defmethod sdl-sprite test-collision ()
+  (let* ((s (p frame))
+	 (w (sdl_surface_w s))
+	 (h (sdl_surface_h s)))
+    (set-sdl-rect rect (int (- x (hotx frame))) (int (- y (hoty frame))) w h)
+    (idx-clear collided)
+    (sdl-test-collision id (idmask frame) (gptr ()) :win:collision rect collided)) ())
+
+(defmethod sdl-sprite free ()
+  (when rect (free (to-gptr rect)))
+  (idx-bloop ((s p) (i idmask))
+	     (when (s) (SDL_FreeSurface (s)) (s (gptr ())))
+             (when (i) (free (i)) (i (gptr ())))) ())
+
+(defmethod sdl-sprite -destructor () (==> this free))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; collision
+
+#? * (collided <sp1> <sp2>)
+;; returns true any sprite with the same id as <sp1>
+;; has collided with any sprite with the same id as <sp2>.
+;; For this to return a meaningful result, both sprites must 
+;; have been drawn with the <drawc>, or the one must have been
+;; drawn with <drawc>, and the other one must have been
+;; sent the message <test-collision>.
+;; This must be called before the screen flip
+;; (but after the calls to <drawc> or <test-collision>)
+;; since the screen flip clears the collision detection array.
+(de collided (sp1 sp2)
+  ((-obj- (sdl-sprite)) sp1 sp2)
+  (let* ((id1 :sp1:id)
+         (id2 :sp2:id)
+         (co1 :sp1:collided)
+         (co2 :sp2:collided)
+         (r 0))
+    ((-int-) r)
+    (when (<> (idx-dim co1 0) (idx-dim co2 0)) (error "collision arrays must have the same dimension"))
+    #{ { 
+         int *co1ptr = IDX_PTR($co1,int);
+         int *co2ptr = IDX_PTR($co2,int);
+         int bit1, bit2;
+         int iid1 = $id1;
+         int iid2 = $id2;
+         int word1 = iid1 / 32;
+         int word2 = iid2 / 32;
+         bit1  = 1<<(iid1 % 32);
+         bit2  = 1<<(iid2 % 32);
+         if ( word1 > $co1->dim[0] ){ run_time_error("sprite id too large for collision map"); }
+         if ( word2 > $co2->dim[0] ){ run_time_error("sprite id too large for collision map"); }
+
+         $r = (co1ptr[word2]&bit2) + (co2ptr[word1]&bit1);
+     } #} r))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** mover
+;; a class that can move sprites according to
+;; 2D Newtonian dynamics. The simplest use consists
+;; in creating a mover, then go around a loop that:
+;;.VP
+;; - gets input from the keyboard, mouse or joystick.
+;; - calls the mover methods push, and update
+;; - calls the mover method move with a sprite as argument
+;; - draws the sprite
+;; - flips the screen
+;; - sets the deltat of the mover to the value
+;;   returned by the screen flip method.
+(defclass mover object
+   ((-flt-) x y vx vy ax ay mass mass-inv deltat))
+
+#? (==> <mover> set-mass <m>)
+;; set the mass of the mover.
+(defmethod mover set-mass (m)
+  ((-flt-) m)
+  (when (= m 0) (error "mass of mover cannot be 0"))
+  (setq mass m) (setq mass-inv (/ 1 m))
+  m)
+
+#? (==> <mover> get-mass)
+;; return mass of mover
+(defmethod mover get-mass () mass)
+
+#? (==> <mover> set-deltat <dt>)
+;; sets the time increment between updates
+;; (in seconds) to <dt>.
+(defmethod mover set-deltat (dt)
+  ((-flt-) dt)
+  (when (= dt 0) (error "deltat of mover cannot be 0"))
+  (setq deltat dt) ())
+
+#? (==> <mover> get-deltat)
+;; gets the time increment between updates.
+(defmethod mover get-deltat () deltat)
+
+#? (==> <mover> set-state <lx> <ly> <lvx> <lvy> <lax> <lay>)
+(defmethod mover set-state (lx ly lvx lvy lax lay)
+  ((-flt-) lx ly lvx lvy lax lay)
+  (setq ax lax) (setq ay lay)
+  (setq vx lvx) (setq vy lvy)
+  (setq x lx) (setq y ly) ())
+
+#? (==> <mover> get-state)
+(defmethod mover get-state () (list x y vx vy ax ay))
+
+#? (==> <mover> set-state <x> <y> <vx> <vy> <ax> <ay> <mass> <deltat>)
+;; create a new sprite mover with initial position <x>,<y>, 
+;; initial velocity <vx>,<vy>, initial acceleration <ax>,<ay>,
+;; mass <mass>, and time increment <deltat>.
+(defmethod mover mover (lx ly lvx lvy lax lay lm ld)
+  ((-flt-) lx ly lvx lvy lax lay lm ld)
+  (==> this set-state lx ly lvx lvy lax lay)
+  (==> this set-mass lm)
+  (==> this set-deltat ld) ())
+  
+(defmethod mover set-position (lx ly)
+  ((-flt-) lx ly)
+  (setq x lx)
+  (setq y ly) ())
+
+(defmethod mover set-velocity (lvx lvy)
+  ((-flt-) lvx lvy)
+  (setq vx lvx)
+  (setq vy lvy) ())
+
+(defmethod mover set-accel (lax lay)
+  ((-flt-) lax lay)
+  (setq ax lax) (setq ay lay) ())
+
+(defmethod mover moverel (dx dy)
+  ((-flt-) dx dy)
+  (incr x dx) (incr y dy) ())
+
+#? (==> <mover> push <fx> <fy>)
+;; apply a force vector <fx><fy> to the mover.
+;; the unit is mass untis times pixels per second per second.
+;; In other words, a mover of mass 1, with a force vector
+;; of length 1, will accelerate 1 pixel per second 
+;; per second (assuming the time increment is correct).
+(defmethod mover push (fx fy)
+  ((-flt-) fx fy)
+  (setq ax (* fx mass-inv))
+  (setq ay (* fy mass-inv)) ())
+
+#? (==> <mover> update)
+;; updates the positions and velocity according to 2D Newtonian mechanics.
+(defmethod mover update ()
+  (incr vx (* ax deltat))
+  (incr vy (* ay deltat))
+  (incr x (* vx deltat))
+  (incr y (* vy deltat)) ())
+
+#? (==> <mover> move-sprite <sp>)
+;; move sprite <sp> to the position of the mover.
+(defmethod mover move-sprite (sp)
+  ((-obj- (sdl-sprite)) sp)  
+  (==> sp move x y) ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; lower level stuff
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** SDL_Rect function
+;; functions to manipulate SDL_Rect structures
+;; Most users will prefer to use the higher 
+;; level sdl-rect class rather than these functions
+
+#? * low-level functions on SDL-Rect
+
+#? (new-sdl-rect <x> <y> <w> <h>)
+;; allocate a new SDL_Rect structure, fill it
+;; up with <x>,<y>,<w>,<h> (position, width, height),
+;; and return a gptr to it.
+;; The result must be freed with free-sdl-rect.
+(de new-sdl-rect (x y w h)
+  ((-int-) x y w h)
+  (let ((r (gptr ())))
+   #{ $r = (SDL_Rect *)malloc(sizeof(SDL_Rect));
+      ((SDL_Rect *)$r)->x =$x; ((SDL_Rect *)$r)->y =$y; 
+      ((SDL_Rect *)$r)->w =$w; ((SDL_Rect *)$r)->h =$h;
+      #} r))
+
+#? (set-sdl-rect <r> <x> <y> <w> <h>)
+;; sets the position width and height of SDL_Rect
+;; pointed to by <r> to the arguments.
+(de set-sdl-rect (r x y w h)
+    ((-gptr- "SDL_Rect *") r)
+    ((-int-) x y w h)
+    #{ ((SDL_Rect *)$r)->x =$x; ((SDL_Rect *)$r)->y =$y; 
+        ((SDL_Rect *)$r)->w =$w; ((SDL_Rect *)$r)->h =$h; #} 
+        ())
+
+#? (free-sdl-rect <r>)
+;; deallocate SDL_Rect structure pointed to by <r>.
+(de free-sdl-rect (rect)
+    ((-gptr- "SDL_Rect *") rect)
+    #{ free(((SDL_Rect *)$rect)) #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; higher-level stuff (objects etc)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? * sdl-rect 
+;; a high-level class to manipulate SDL_Rect with automatic
+;; garbage collection and the like.
+(defclass sdl-rect object ((-gptr- "SDL_Rect *") p))
+
+#? (new sdl-rect <x> <y> <w> <h>)
+;; create a new sdl-rect.
+(defmethod sdl-rect sdl-rect (x y w h)
+  ((-int-) x y w h)
+  (let ((r (gptr ())))
+    #{ $r = (SDL_Rect *)malloc(sizeof(SDL_Rect));
+       ((SDL_Rect *)$r)->x =$x; ((SDL_Rect *)$r)->y =$y; 
+       ((SDL_Rect *)$r)->w =$w; ((SDL_Rect *)$r)->h =$h;
+    #} 
+    (setq p r)))
+
+(defmethod sdl-rect set (x y w h)
+    ((-int-) x y w h)
+    #{ ((SDL_Rect *)$p)->x =$x; ((SDL_Rect *)$p)->y =$y; 
+       ((SDL_Rect *)$p)->w =$w; ((SDL_Rect *)$p)->h =$h; #} 
+       ())
+
+(defmethod sdl-rect free () (when p #{ free(((SDL_Rect *)$p)) #} ()))
+
+(defmethod sdl-rect -destructor () (==> this free))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** SDL_Surface
+;; manipulating SDL_Surface structures
+
+#? low level functions on SDL_Surface
+
+#? (sdl-surface-w <s>)
+;; return width of SDL_Surface pointed to by <s>.
+(de sdl_surface_w (s)
+    ((-gptr- "SDL_Surface *") s)
+    (int #{  $s->w #}))
+
+#? (sdl-surface-h <s>)
+;; return height of SDL_Surface pointed to by <s>.
+(de sdl_surface_h (s)
+    ((-gptr- "SDL_Surface *") s)
+    (int #{ $s->h #}))
+
+#? (sdl-surface-pitch <s>)
+;; return pitch of SDL_Surface pointed to by <s>.
+(de sdl_surface_pitch (s)
+    ((-gptr- "SDL_Surface *") s)
+    (int #{ $s->pitch #}))
+
+#? (sdl-surface-pixels <s>)
+;; return a pointer to the pixel data of the 
+;; SDL_Surface pointed to by <s>.
+(de sdl_surface_pixels (s)
+    ((-gptr- "SDL_Surface *") s)
+    (gptr #{ $s->pixels #}))
+
+#? (sdl-surface-offset <s>)
+; return offset of SDL_Surface pointed to by <s>.
+(de sdl_surface_offset (s)
+    ((-gptr- "SDL_Surface *") s)
+    (int #{ $s->offset #}))
+
+#? (sdl-surface-ptr-idx <m>)
+;; create an SDL_Surface from an IDX.
+;; the pixel area of the SDL_Surface points
+;; to the data of the IDX.
+;; CAUTION: this function is a bit dangerous because the idx can 
+;; be deallocated without the sdl_surface knowing about it.
+(de sdl-surface-ptr-idx (m)
+  ((-idx3- (-ubyte-)) m)
+  (let ((depth (* 8 (idx-dim m 2)))
+	(w (idx-dim m 1))
+	(h (idx-dim m 0))
+	(pitch (idx-modulo m 0)))
+    (when (> depth 32) (error "last dimension of idx must be less than 4"))
+    (gptr #{ SDL_CreateRGBSurfaceFrom(IDX_PTR($m,unsigned char), $w, $h, $depth, $pitch, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000) #})))
+
+#? (idx-to-sdl-surface <m>)
+;; Return an RGB SDL_Surface whose pixels 
+;; are filled up with the content of IDX <m>.
+;; <m> must be an idx3 of ubyte whose last dimension
+;; must be 4. It will be interpreted as an RGBA image.
+(de idx-to-sdl-surface (m)
+    ((-idx3- (-ubyte-)) m)
+    (let* ((image (gptr ())))
+      #{ { int rmask, gmask, bmask, amask;
+           SDL_Surface *im;
+           int x,y, w, h, bpp, pitch;
+           Uint8 *p, *z, *pres, locked=0;
+           pres = IDX_PTR($m,unsigned char);
+
+           if (SDL_BYTEORDER == SDL_BIG_ENDIAN) {
+             rmask=0xff000000; gmask=0x00ff0000;
+             bmask=0x0000ff00; amask=0x000000ff;
+           } else {
+             rmask=0x000000ff; gmask=0x0000ff00;
+             bmask=0x00ff0000; amask=0xff000000;
+           }
+           im = SDL_CreateRGBSurface(0,$m->dim[1],$m->dim[0],8*($m->dim[2]),
+                                     rmask,gmask,bmask,amask);
+           if (im == NULL) { run_time_error("could not create RGB surface"); }
+           w=im->w, h=im->h; bpp=im->format->BytesPerPixel; pitch=im->pitch;
+           if (SDL_MUSTLOCK(im)) { 
+             if (SDL_LockSurface(im)!=0) { 
+               run_time_error("could not lock surface"); }
+             locked=1;
+           }
+           for (y=0; y<h; y++){
+             z = pres;
+             for (x=0; x<w; x++){
+               p = (Uint8 *)(im->pixels) + y * pitch + x * bpp;
+               *( (int *)p ) = *( (int *)z );
+               z += $m->mod[1];
+             }
+             pres += $m->mod[0];
+           }
+           if (locked) { SDL_UnlockSurface(im); }
+           $image = im;
+         } #}
+     image))
+
+#? (sdl-surface-to-idx <surface>)
+;; returns an idx3 of ubytes filled up with the RGBA
+;; pixel values of SDL_surface <surface>.
+(de sdl-surface-to-idx (image)
+    ((-gptr- "SDL_Surface *") image)
+    (when (= image (gptr ())) (error "sdl-surface-to-idx sdl_surface pointer is null"))
+    (let ((res (ubyte-array (sdl_surface_h image) (sdl_surface_w image) 4)))
+      #{ { int bpp = $image->format->BytesPerPixel;
+           int x,y, w= $image->w, h=$image->h;
+           Uint8 locked=0, *p, *z, *pres = IDX_PTR($res, unsigned char);
+           if (SDL_MUSTLOCK($image)) { 
+             if (SDL_LockSurface($image)!=0) { run_time_error("could not lock surface"); }
+             locked=1;
+           }
+           for (y=0; y<h; y++){
+             z = pres;
+             for (x=0; x<w; x++){
+               p = (Uint8 *)$image->pixels + y * $image->pitch + x * bpp;
+               switch(bpp) {
+                 case 4: SDL_GetRGBA(*(Uint32 *)p, $image->format, z, z+1, z+2, z+3); break;
+                 case 1: SDL_GetRGBA(*(Uint8 *)p, $image->format, z, z+1, z+2, z+3); break;
+                 case 2: SDL_GetRGBA(*(Uint16 *)p, $image->format, z, z+1, z+2, z+3); break;
+                 case 3: if(SDL_BYTEORDER == SDL_BIG_ENDIAN)
+                     SDL_GetRGBA(p[0]<<16|p[1]<<8|p[2], $image->format, z, z+1, z+2, z+3);
+                   else
+                     SDL_GetRGBA(p[0]|p[1]<<8|p[2]<<16, $image->format, z, z+1, z+2, z+3);
+                   break;
+                 default: run_time_error("internal error (case in sdl-surface-to-idx)");
+               }
+               z += $res->mod[1];
+             }
+             pres += $res->mod[0];
+           }
+           if (locked) { SDL_UnlockSurface($image); }
+         } #}
+     res))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** SDL Drawing Functions
+;; to draw into SDL_Surfaces.
+
+#? (sdl-fill-rect <dst> <x> <y> <w> <h> <r> <g> <b)
+;; fills a rectangle defined by  <x> <y> <w> <h>
+;; of an SDL_Surface <dst> with RGB values <r> <g> <b).
+(de sdl-fill-rect (dst x y w h r g b)
+    ((-gptr- "SDL_Surface *") dst)
+    ((-int-) x y w h r g b)
+    (let ((rec (new-sdl-rect x y w h))
+          (res 0))
+      ((-int-) res)
+      #{ { int c = SDL_MapRGB($dst->format, $r, $g, $b);
+           $res = SDL_FillRect($dst, $rec, c);  } #}
+      (free (to-gptr rec))
+      res))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** Collision Detection (low level functions)
+;; a set of function to manage pixel-accurate collision
+;; detection between object drawn on an SDL_Surface.
+
+
+#? (sdl-collide <id> <src> <srcrect> <dst> <dstrect> <coll>)
+;; this is a low-level function for pixel-accurate collision
+;; detection. The arguments <src> <srcrect> <dst> <dstrect>
+;; play the samee role as the corresponding arguments of
+;; SDL_BlitSurface. <dst> is an idx3 of ints. The vector of
+;; ints obtained by fixing the first two indexes and varying
+;; the last is interpreted as a bitmap. The <id>-th bit of
+;; the bitmap at location <i>,<j> is set when a non-transparent
+;; pixel of an object whose ID is <id> has been painted at the 
+;; corresponding location. <src> is an RLE-encoded mask of an
+;; object (a list of runs) as returned by rle-encode-alpha
+;; which indicates which pixels trigger collision.
+;; <srcrect> is a subrectangle in <src> that is actually painted
+;; (must be NULL in current implementation). <dstrect> is the
+;; clipping rectangle in <dst>. <coll> is an idx1 of int interpreted
+;; as a bitmap, which on exit contains a set bit for every 
+;; already painted object that collided with the current object.
+(de sdl-collide (id src srcrect dst dstrect coll)
+    (cpheader "#include <SDL/SDL.h>") 
+    ((-gptr- "SDL_Rect *") srcrect dstrect)
+    ((-gptr- "int *") src)
+    ((-idx3- (-int-)) dst)
+    ((-idx1- (-int-)) coll)
+    ((-int-) id)
+      #{{
+         int nruns = *$src;
+         int i;
+         int dstx1, dsty1, dstx2, dsty2, *dstptr, dstpitch, dstdepth;
+         int dstword, dstbit, *collword;
+
+         dstpitch = $dst->mod[0];
+         dstdepth = $dst->mod[1];
+         dstptr = IDX_PTR($dst,int);
+         dstword = $id / 32;
+         dstbit  = 1<<($id % 32);
+         /* printf("dstword=%d, dstbit=%d\n", dstword, dstbit); */
+         if ( dstword > dstdepth-1 ){ run_time_error("sprite id too large for collision map"); }
+         collword = IDX_PTR($coll,int) + dstword;
+
+         $src++; /* skip run count and point to first run */
+         if ($srcrect != NULL) {
+           run_time_error("collision detection with non-null srcrect no yet implemented");
+         }
+         if ($dstrect == NULL) {
+           run_time_error("destination rect must be set for collision detection");
+         }
+         /* printf("dstrect x=%d,y=%d,w=%d,h=%d\n",$dstrect->x,$dstrect->y,$dstrect->w,$dstrect->h); */
+         dstx1= (int)($dstrect->x); dsty1= (int)($dstrect->y);
+         dstx2= dstx1+(int)($dstrect->w); dsty2=dsty1+(int)($dstrect->h);
+         /* these clippings are not supposed to be necessary */
+         dstx1 = (dstx1<0)?0:( (dstx1>$dst->dim[1])?$dst->dim[1]:dstx1 ); 
+         dsty1 = (dsty1<0)?0:( (dsty1>$dst->dim[0])?$dst->dim[0]:dsty1 ); 
+         dstx2 = (dstx2<0)?0:( (dstx2>$dst->dim[1])?$dst->dim[1]:dstx2 ); 
+         dsty2 = (dsty2<0)?0:( (dsty2>$dst->dim[0])?$dst->dim[0]:dsty2 ); 
+
+         /* printf("dstx1=%d, dsty1=%d, dstx2=%d, dsty2=%d\n",dstx1, dsty1, dstx2, dsty2); */
+         for (i=0; i<nruns; i++) {
+           int sy=$src[0], dy=sy+dsty1;
+           if ((dy>dsty1)&&(dy<dsty2)) {
+             int *p, j, x1, x2, dx1=$src[1]+dstx1, dx2=$src[2]+dstx1;
+             x1 = (dx1<dstx1)?dstx1:( (dx1>dstx2)?dstx2:dx1 );
+             x2 = (dx2<dstx1)?dstx1:( (dx2>dstx2)?dstx2:dx2 );
+             p = dstptr+(dy*dstpitch)+x1*dstdepth + dstword;
+             for (j=x1; j<x2; j++) { *collword |= *p; *p |= dstbit; p++; }
+           }
+           $src += 3;
+         }
+      } #} ())
+
+#? (sdl-test-collision <id> <src> <srcrect> <dst> <dstrect> <coll>)
+;; this is a low-level function for pixel-accurate collision
+;; detection. This function is essentially identical to <sdl-collide>,
+;; except it doesn't modify the destination bitmap <dst>.
+;; This function can be used to get a list of which sprites would
+;; be collided if a sprite were drawn.
+;; On output, the i-th bit of <coll> (idx1 of ubyte) is set if 
+;; the any pixel of <src> would collide with any non-transparent
+;; pixel of <dst>.
+;; The arguments <src> <srcrect> <dst> <dstrect>
+;; play the samee role as the corresponding arguments of
+;; SDL_BlitSurface. <dst> is an idx3 of ints. The vector of
+;; ints obtained by fixing the first two indexes and varying
+;; the last is interpreted as a bitmap. <src> is an RLE-encoded mask of 
+;; an object (a list of runs) as returned by rle-encode-alpha
+;; which indicates which pixels trigger collision.
+;; <srcrect> is a subrectangle in <src> that is actually painted
+;; (must be NULL in current implementation). <dstrect> is the
+;; clipping rectangle in <dst>. <coll> is an idx1 of int interpreted
+;; as a bitmap, which on exit contains a set bit for every 
+;; already painted object that collided with the current object.
+(de sdl-test-collision (id src srcrect dst dstrect coll)
+    (cpheader "#include <SDL/SDL.h>") 
+    ((-gptr- "SDL_Rect *") srcrect dstrect)
+    ((-gptr- "int *") src)
+    ((-idx3- (-int-)) dst)
+    ((-idx1- (-int-)) coll)
+    ((-int-) id)
+      #{{
+         int nruns = *$src;
+         int i;
+         int dstx1, dsty1, dstx2, dsty2, *dstptr, dstpitch, dstdepth;
+         int dstword, dstbit, *collword;
+
+         dstpitch = $dst->mod[0];
+         dstdepth = $dst->mod[1];
+         dstptr = IDX_PTR($dst,int);
+         dstword = $id / 32;
+         dstbit  = 1<<($id % 32);
+         /* printf("dstword=%d, dstbit=%d\n", dstword, dstbit); */
+         if ( dstword > dstdepth-1 ){ run_time_error("sprite id too large for collision map"); }
+         collword = IDX_PTR($coll,int) + dstword;
+
+         $src++; /* skip run count and point to first run */
+         if ($srcrect != NULL) {
+           run_time_error("collision detection with non-null srcrect no yet implemented");
+         }
+         if ($dstrect == NULL) {
+           run_time_error("destination rect must be set for collision detection");
+         }
+         /* printf("dstrect x=%d,y=%d,w=%d,h=%d\n",$dstrect->x,$dstrect->y,$dstrect->w,$dstrect->h); */
+         dstx1= (int)($dstrect->x); dsty1= (int)($dstrect->y);
+         dstx2= dstx1+(int)($dstrect->w); dsty2=dsty1+(int)($dstrect->h);
+         /* these clippings are not supposed to be necessary */
+         dstx1 = (dstx1<0)?0:( (dstx1>$dst->dim[1])?$dst->dim[1]:dstx1 ); 
+         dsty1 = (dsty1<0)?0:( (dsty1>$dst->dim[0])?$dst->dim[0]:dsty1 ); 
+         dstx2 = (dstx2<0)?0:( (dstx2>$dst->dim[1])?$dst->dim[1]:dstx2 ); 
+         dsty2 = (dsty2<0)?0:( (dsty2>$dst->dim[0])?$dst->dim[0]:dsty2 ); 
+
+         /* printf("dstx1=%d, dsty1=%d, dstx2=%d, dsty2=%d\n",dstx1, dsty1, dstx2, dsty2); */
+         for (i=0; i<nruns; i++) {
+           int sy=$src[0], dy=sy+dsty1;
+           if ((dy>dsty1)&&(dy<dsty2)) {
+             int *p, j, x1, x2, dx1=$src[1]+dstx1, dx2=$src[2]+dstx1;
+             x1 = (dx1<dstx1)?dstx1:( (dx1>dstx2)?dstx2:dx1 );
+             x2 = (dx2<dstx1)?dstx1:( (dx2>dstx2)?dstx2:dx2 );
+             p = dstptr+(dy*dstpitch)+x1*dstdepth + dstword;
+             for (j=x1; j<x2; j++) { *collword |= *p; p++; }
+           }
+           $src += 3;
+         }
+      } #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** SDL_Event manipulation
+;; functions to create and manipulate SDL_Event structures
+;; for keyboard/mouse/joystick event grabbing.
+
+#? * low level access to SDL_event structures
+
+#? (new-sdl-event)
+;; allocate and return a pointer to a new SDL_Event structure.
+(de new-sdl-event ()
+   (gptr #{ (SDL_Event *)malloc(sizeof(SDL_Event)) #}))
+
+#? (sdl-event-type <e>)
+;; return the type field of an SDL_Event pointed to by <e>.
+(de sdl-event-type (e)
+    ((-gptr- "SDL_Event *") e)
+    (int #{ $e->type #}))
+
+#? (sdl-event-key-keysym-sym <e>)
+;; return the field key.keysym.sym of an SDL_Event pointed to by <e>.
+(de sdl-event-key-keysym-sym (e)
+    ((-gptr- "SDL_Event *") e)
+    (int #{ $e->key.keysym.sym #}))
+
+#? (sdl-event-button-x <e>)
+;; return the button.x field of an SDL_Event pointed to by <e>.
+(de sdl-event-button-x (e)
+    ((-gptr- "SDL_Event *") e)
+    (int #{ $e->button.x #}))
+
+#? (sdl-event-button-y <e>)
+;; return the button.y field of an SDL_Event pointed to by <e>.
+(de sdl-event-button-y (e)
+    ((-gptr- "SDL_Event *") e)
+    (int #{ $e->button.y #}))
+
+#? (sdl-event-motion-x <e>)
+;; return the motion.x field of an SDL_Event pointed to by <e>.
+(de sdl-event-motion-x (e)
+    ((-gptr- "SDL_Event *") e)
+    (int #{ $e->motion.x #}))
+
+#? (sdl-event-motion-y <e>)
+;; return the motion.y field of an SDL_Event pointed to by <e>.
+(de sdl-event-motion-y (e)
+    ((-gptr- "SDL_Event *") e)
+    (int #{ $e->motion.y #}))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** Miscellaneous/internal functions
+;; these are not meant to be called directly.
+
+#? (rle-encode-alpha <image> <thres>)
+;; private
+;; returns a gptr on an RLE-encoded binary mask
+;; (used for collision detection) where any pixel of 
+;; SDL_Surface <image> whose alpha value is less than 
+;; <thres> is considered transparent
+(de rle-encode-alpha (image thres)
+    ((-gptr- "SDL_Surface *") image)
+    ((-int-) thres)
+    (let ((rle (gptr ())))
+    #{ { int bpp = $image->format->BytesPerPixel;
+         int w= $image->w, h=$image->h;
+         int x=0 ,y=0;
+         int n=0, last=0;
+         int *q;
+         Uint8 *msk=malloc(w*h);
+         Uint8 *z = msk;
+         Uint8 *p, locked=0;
+         Uint8 r,g,b;
+         if (msk == NULL) run_time_error("could not allocate temporary mask image");
+         if (SDL_MUSTLOCK($image)) { 
+           if (SDL_LockSurface($image)!=0) { run_time_error("could not lock surface"); }
+           locked=1;
+         }
+         for (y=0; y<h; y++){
+           for (x=0; x<w; x++){
+             p = (Uint8 *)$image->pixels + y * $image->pitch + x * bpp;
+             switch(bpp) {
+               case 4: SDL_GetRGBA(*(Uint32 *)p, $image->format, &r, &g, &b, z); break;
+               case 1: SDL_GetRGBA(*(Uint8 *)p, $image->format, &r, &g, &b, z); break;
+               case 2: SDL_GetRGBA(*(Uint16 *)p, $image->format, &r, &g, &b, z); break;
+               case 3: if(SDL_BYTEORDER == SDL_BIG_ENDIAN)
+                   SDL_GetRGBA(p[0]<<16|p[1]<<8|p[2], $image->format, &r, &g, &b, z); 
+                 else
+                   SDL_GetRGBA(p[0]|p[1]<<8|p[2]<<16, $image->format, &r, &g, &b, z); 
+                 break;
+               default: run_time_error("internal error (case in rle-encode-alpha)");
+               }
+             if ((last == 0)&&(*z >= $thres)) { last=1; n++; }
+             else if ((last == 1)&&(*z < $thres)) { last=0; }
+             /* if (*z != 0) { printf("1"); } else { printf("0"); } */
+             z++;
+           }
+           /* printf(" %d\n",n); */
+           last=0; 
+         }
+         last=0;
+         if (locked) { SDL_UnlockSurface($image); }
+         $rle = (int *)malloc( sizeof(int)*(1+3*n) ); 
+         if ( $rle == NULL) run_time_error("could not allocate RLE array");
+         /* printf(" n=%d, w=%d, h=%d\n",n,w,h); */
+         *((int *)$rle)=n; q = ((int *)$rle)+1;
+         z = msk; last=0;
+         for (y=0; y<h; y++){
+           for (x=0; x<w; x++){
+             if ((last==0)&&(*z >= $thres)) { last=1; q[0]=y;q[1]=x; }
+             else if ((last==1)&&(*z < $thres)) { 
+               /* printf("%d y=%d, x1=%d, x2=%d\n",(q-(int *)$rle-1)/3,q[0],q[1],x); */
+               last=0; q[2]=x; q+=3; 
+               }
+             z++;
+           }
+           if (last==1) { 
+             /* printf("%d y=%d, x1=%d, x2=%d (eol)\n",(q-(int *)$rle-1)/3,q[0],q[1],x); */
+             last=0; q[2]=x; q+=3; }
+         }
+         if (last==1) { 
+           /* printf("%d y=%d, x1=%d, x2=%d (eof)\n",(q-(int *)$rle-1)/3,q[0],q[1],x); */
+           last=0; q[2]=x; q+=3; }
+         if (q != (int *)$rle+1+3*n) { 
+           printf("q=%d, rle+1+3n=%d, n=%d\n", (int)q, (int)((int *)$rle+1+3*n), n);
+           run_time_error("something fishy in RLE"); }
+         free(msk);
+       } #}
+       rle))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make-sf ()  
+	  libsdl-dummy 
+
+          new-sdl-rect free-sdl-rect set-sdl-rect 
+
+          sdl_surface_w sdl_surface_h sdl_surface_pixels 
+	  sdl_surface_pitch sdl_surface_offset
+	  idx-to-sdl-surface sdl-surface-to-idx
+          sdl-surface-ptr-idx
+          sdl-fill-rect
+          sdl-collide
+          sdl-test-collision
+
+	  new-sdl-event sdl-event-type sdl-event-key-keysym-sym
+	  sdl-event-button-x sdl-event-button-y  sdl-event-motion-x
+	  sdl-event-motion-y
+
+          (sdl-event sdl-event type key-keysym-sym button-x button-y 
+           motion-x motion-y free get-arrows get-keys -destructor)
+
+          rle-encode-alpha
+
+	  (sdl-rect sdl-rect set free -destructor)
+          
+          (sdl-screen sdl-screen flip clear toggle-fullscreen free -destructor)
+          (sdlgl-screen sdlgl-screen flip -destructor)
+	  (sdlidx-screen sdlidx-screen free flip -destructor)
+
+          (sdl-sprite set-hotpoint get-hotpoint sdl-sprite 
+	   get-width get-height alloc-frame make-frame load-frame
+	   make-frame-idx rotscale-frame
+           get-frame-idx set-frame get-frame move moverel 
+	   draw drawc test-collision free -destructor)
+
+          collided
+
+          (mover set-mass get-mass set-deltat get-deltat 
+                 set-state get-state mover 
+                 set-position set-velocity set-accel 
+                 moverel push update move-sprite)
+
+          )

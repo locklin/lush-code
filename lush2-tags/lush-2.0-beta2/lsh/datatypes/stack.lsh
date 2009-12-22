@@ -1,0 +1,107 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; PSU Lush
+;;;   Copyright (C) 2005 Ralf Juengling
+;;; Derived from LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Stack (LIFO)
+;; A stack is an abstract data type which can hold an arbitrary
+;; number of items. Items may be "pushed" onto the stack or 
+;; "popped" off the stack. Items pushed last are popped first.
+;; {<code>
+;;   ? (let ((s (make-stack))) 
+;;       (push s 2)
+;;       (push s "three")
+;;       (push s "four")
+;;       (pop s))
+;;  = "four"
+;;  </code>}
+;;
+;; The stack functions are implemented as macros and may be compiled
+;; if the stack is specialized to hold items a particular item-type
+;; only.
+
+
+#? (make-stack <n> [<item-type>])
+;; Create an empty stack with initial capacity <n> for items of
+;; type <item-type> (default <atom>).
+;; Any storage class symbol is a valid <item-type> (e.g., <short>,
+;; <int>, <gptr>, etc.).
+(defmacro make-stack (n &optional (item-type atom))
+  (let ((constructor (symbol-concat item-type '-array)))
+    `(unprotect (idx-trim (,constructor (max ,n 16)) 0 0 0))
+    ))
+
+#? (emptyp <stack>)
+;; True if <stack> is empty.
+
+#? (push <stack> <item>)
+;; Push an item onto stack.
+(defmacro push (stack item)
+  (when (not (symbolp stack)) 
+    (error "not a symbol" stack))
+  (let (((n m st) (gensyms 3)))
+    `(unprotect
+      (let* ((,n (length ,stack))
+             (,st (idx-storage ,stack))
+             (,m (storage-nelems ,st)) )
+        (declare (-int-) ,n ,m)
+        (when (= ,n ,m) (storage-realloc ,st (+ ,m ,m)))
+        (idx-extend! ,stack 0 1)
+        (,stack ,n ,item)
+        ())
+      )
+    ))
+
+#? (pop <stack>)
+;; Pop item from stack.
+(defmacro pop (stack)
+  `(unprotect
+    (prog1 (peek-stack ,stack)
+      (idx-extend! ,stack 0 -1) ))
+  )
+
+#? (peek-stack <stack>)
+;; Return next item on <stack> without popping it.
+(defmacro peek-stack (stack)
+  (when (not (symbolp stack))
+    (error "not a symbol" stack))
+  (let ((n (gensym)))
+    `(let ((,n (length ,stack)))
+       (when (= ,n 0) 
+         (error "stack empty"))
+       (,stack (- ,n 1)) )
+    ))
+
+#? (clear-stack <stack>)
+;; Make stack empty.
+(defmacro clear-stack (stack)
+  `(idx-trim! ,stack 0 0 0)
+  )
+
+#? (clear-stack* <stack>)
+;; Make pointer-stack empty.
+(defmacro clear-stack* (stack)
+  `(idx-trim! (array-clear ,stack NULL) 0 0 0)
+  )

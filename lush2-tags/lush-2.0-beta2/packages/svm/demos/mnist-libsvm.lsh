@@ -1,0 +1,100 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: mnist-libsvm.lsh,v 1.5 2005/05/09 01:21:58 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "svm/demos/mnist-kernel")
+(libload "svm/libsvm")
+
+(defvar mnist-svm ())
+(defvar mnist-confusion ())
+
+(de run-all()
+  (printf "--------------------\nLoading data\n")
+  (load-mnist)
+  (setq mnist-svm (new LibSVM mnist-kernel 60000) )
+  (for (i 0 (1- (idx-dim :mnist-svm:x 0)))
+       (:mnist-svm:x i i)
+       (:mnist-svm:y i (==> mnist-kernel label i)) )
+  (setq :mnist-svm:cache_size 400)
+  (setq :mnist-svm:c 10)
+
+  (printf "--------------------\nTraining 10*9/2 = 45 C-SVC ... Wait\n")
+  (let ((delay (cputime (==> mnist-svm run))))
+    (printf "Total time: %l cpu seconds\n" delay) )
+
+  (printf "--------------------\nTesting on 10K examples ... Wait\n")
+  (setq mnist-confusion (double-array 10 10))
+  (for (i 60000 69999)
+       (let ((d (==> mnist-kernel label i))
+	     (s (==> mnist-svm predict i)) )
+	 (mnist-confusion d s (1+ (mnist-confusion d s))) ) )
+  (m*c mnist-confusion (/ 100 10000) mnist-confusion)
+  (printf "--------------------\nConfusion matrix\n" )
+  (pretty mnist-confusion)
+  (let ((dsum 0))
+    (for* (i 0 10)
+      (incr dsum (mnist-confusion i i)) )
+    (printf "\n--------------------\nTotal errors=%l%%\n"
+            (- 100 dsum) )))
+
+
+
+(de run-pair(c1 c2)
+  (printf "--------------------\nLoading data\n")
+  (load-mnist)
+  (setq mnist-svm (new LibSVM mnist-kernel 20000) )
+  (let ((k 0))
+    (for (i 0 59999)
+	 (let ((y (==> mnist-kernel label i)))
+	   (when (or (= y c1) (= y c2))
+	     (:mnist-svm:x k i)
+	     (:mnist-svm:y k y)
+	     (incr k) ) ) )
+    (idx-i1resize :mnist-svm:x k)
+    (idx-d1resize :mnist-svm:y k)
+    (printf "%d examples\n" k) )
+  (setq :mnist-svm:cache_size 400)
+  (setq :mnist-svm:c 10)
+  
+  (printf "--------------------\nTraining 1 C-SVC ... Wait\n")
+  (let ((delay (cputime (==> mnist-svm run))))
+    (printf "Total time: %l cpu seconds\n" delay) )
+
+  (printf "--------------------\nTesting on 10K test set ... Wait\n")
+  (let ((nex 0)
+	(nerror 0))
+    (for (i 60000 69999)
+	 (let ((y (==> mnist-kernel label i)))
+	   (when (or (= y c1) (= y c2))
+	     (let ((s (==> mnist-svm predict i)))
+	       (incr nex)
+	       (when (<> s y) (incr nerror)) ) ) ) )
+    (printf "%d/%d errors (%l%%)\n" nerror nex (* 100 (/ nerror nex))) ) )

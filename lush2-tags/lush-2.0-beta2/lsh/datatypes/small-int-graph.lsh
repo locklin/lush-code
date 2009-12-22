@@ -1,0 +1,395 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/small-int-set")
+(libload "datatypes/int-set")
+(libload "datatypes/ipair-set")
+
+
+#? ** SmallIntGraph
+;; This class is a faster alternative to <IntGraph> which
+;; may be used when the vertex identifiers are in a range
+;; [0..<n>-1], where <n> is known when the graph is created.
+
+(defclass SmallIntGraph object
+  ((-obj-  (SmallIntSet)) vertices)
+  ((-idx1- (-mptr-))      arcs)
+  ((-bool-)               undirected)
+  )
+
+(in-namespace (class SmallIntGraph)
+(libload "datatypes/small-int-graph-utils" t)
+
+(defmacro nullp (p)
+  `(= ,p NULL)
+  )
+(defmacro check-vertex (v)
+  `(when (not (==> vertices member ,v))
+     (errorf "not a vertex (%d)" ,v) )
+  )
+(defmacro to-set (arg)
+  `(to-obj IntSet ,arg)
+  )
+)
+
+#? (new <SmallIntGraph> <n>)
+;; Create new empty graph for vertices in the range [0..<n>-1].
+(defmethod SmallIntGraph SmallIntGraph (size)
+  (declare (-int-) size)
+  (setq vertices (new SmallIntSet size))
+  (setq arcs (mptr-array size))
+  (setq undirected t)
+  ())
+
+(defmethod SmallIntGraph -emptyp ()
+  (==> vertices -emptyp) )
+
+(defmethod SmallIntGraph -deepcopy (clone)
+  (declare (-obj- (SmallIntGraph)) clone)
+  (setq :clone:vertices (deepcopy vertices))
+  (setq :clone:arcs (mptr-array (length arcs)))
+  (for* (i 0 (length arcs))
+    (declare (-int-) i)
+    (when (not (nullp (arcs i)))
+      (let ((is (deepcopy (to-set (arcs i)))))
+        (:clone:arcs i (to-mptr is)) ))
+    )
+  (setq :clone:undirected undirected)
+  ())
+
+#? (==> <SmallIntGraph> clear)
+(defmethod SmallIntGraph clear ()
+  (array-clear arcs NULL)
+  (==> vertices clear)
+  (setq undirected t)
+  ())
+
+#? (==> <SmallIntGraph> number-of-vertices)
+(defmethod SmallIntGraph number-of-vertices ()
+  (==> vertices number-of-items) )
+
+#? (==> <SmallIntGraph> number-of-edges)
+(defmethod SmallIntGraph number-of-edges ()
+  (let ((n 0))
+    (declare (-int-) n)
+    (if undirected
+        (do ((v vertices))
+          (declare (-int-) v)
+          (assert (not (nullp (arcs v))))
+          (incr n (==> (to-set (arcs v)) number-of-items)) )
+      (do ((v vertices))
+        (declare (-int-) v)
+        (assert (not (nullp (arcs v))))
+        (let ((arcsv (to-set (arcs v))))
+          (do ((a arcsv))
+            (declare (-int-) a)
+            (when (not (nullp (arcs a)))
+              (when (==> (to-set (arcs a)) member v)
+                (incr n) )))))
+      )
+    (assert (evenp n))
+    (to-int (/ n 2)) ))
+
+#? (==> <SmallIntGraph> number-of-arcs)
+(defmethod SmallIntGraph number-of-arcs ()
+  (let ((n 0))
+    (declare (-int-) n)
+    (do ((v vertices))
+      (declare (-int-) v)
+      (assert (not (nullp (arcs v))))
+      (incr n (==> (to-set (arcs v)) number-of-items)) )
+    n))
+
+#? (==> <SmallIntGraph> insert-vertex <v>)
+;; Insert vertex <v> into graph, return <t> on success and <()> when <v>
+;; was already in the graph.
+(defmethod SmallIntGraph insert-vertex (v)
+  (declare (-int-) v)
+  (if (==> vertices insert v)
+      (progn
+        (assert (nullp (arcs v)))
+        (arcs v (to-mptr (new IntSet)))
+        t)
+    ()))
+
+#? (==> <SmallIntGraph insert-vertices <vs>)
+;; Insert vertices in table <vs> into graph and return <()>.
+(defmethod SmallIntGraph insert-vertices (vs)
+  (declare (-idx1- (-int-)) vs)
+  (==> vertices insert-all vs) )
+
+#? (==> <SmallIntGraph> has-vertex <v>)
+;; True when <v> is a vertex in the graph.
+(defmethod SmallIntGraph has-vertex (v)
+  (declare (-int-) v)
+  (==> vertices member v) )
+
+(defmethod SmallIntGraph remove-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (check-vertex v0)
+  (check-vertex v1)
+  (let ((arcsv0 (to-set (arcs v0)))
+        (arcsv1 (to-set (arcs v1))) )
+    (and (==> arcsv0 remove v1)
+         (==> arcsv1 remove v0))
+    ))
+
+(defmethod SmallIntGraph neighbors (v)
+  (declare (-int-) v)
+  (check-vertex v)
+  (deepcopy (to-set (arcs v))) )
+
+#? (==> <SmallIntGraph> remove-vertex <v>)
+;; Remove vertex <v> and all edges incident with <v>. Return <t> on
+;; success and <()> when <v> was not an existing vertex.
+(defmethod SmallIntGraph remove-vertex (v)
+  (declare (-int-) v)
+  (if (not (==> vertices member v))
+      (progn (printf "*** Warning: vertex %d does not exist\n" v) ())
+    (let* ((ns (==> this neighbors v))
+           (self this) ) ; 'do-set' expands to 'with-object ...'
+      (do-set (u ns)
+        (declare (-int-) u)
+        (==> self remove-edge v u)
+        )
+      (assert (emptyp (to-set (arcs v))))
+      (arcs v NULL)
+      (==> vertices remove v)
+      t)))
+
+#? (==> <SmallIntGraph> eliminate-vertex <v>)
+;; Eliminate vertex <v> and return the set of new arcs added to the
+;; graph. Raise an error if vertex <v> does not exist.
+(defmethod SmallIntGraph eliminate-vertex (v)
+  (declare (-int-) v)
+  (check-vertex v)
+  (when (not undirected)
+    (error "vertex elimination not implemented for directed graphs") )
+  (assert (not (nullp (arcs v))))
+  (let ((adjs (make-stack 32 int))
+        (arcsv (to-set (arcs v)))
+        (newarcs (new IPairSet)) )
+    (do-vertices (w adjacent-to v)
+      (declare (-int-) w)
+      (push adjs w) )
+    ;; remove arcs
+    (for* (i 0 (length adjs))
+      (declare (-int-) i)
+      (assert (not (nullp (arcs (adjs i)))))
+      (let ((arcsi (to-set (arcs (adjs i)))))
+        (==> arcsv remove (adjs i))
+        (==> arcsi remove v)
+        (for* (j (+ i 1) (length adjs))
+          (declare (-int-) j)
+          (assert (not (nullp (arcs (adjs j)))))
+          (let ((arcsj (to-set (arcs (adjs j)))))
+            (when (==> arcsi insert (adjs j))
+              (==> newarcs insert (ipair (adjs i) (adjs j))) )
+            (when (==> arcsj insert (adjs i))
+              (==> newarcs insert (ipair (adjs j) (adjs i))) )))))
+    (==> vertices remove v)
+    newarcs))
+
+
+#? (==> <SmallIntGraph> merge-vertices <v0> <v1>)
+;; Merge vertices <v0> and <v1> or raise an error when there
+;; is no edge linking <v0> and <v1>. Return the set of new
+;; arcs added to the graph.
+;;
+;; The resulting vertex is identified with <v0>, <v1> is not
+;; a vertex of the graph after completing this operation.
+(defmethod SmallIntGraph merge-vertices (v0 v1)
+  (declare (-int-) v0 v1)
+  (check-vertex v0)
+  (check-vertex v1)
+  (let ((n0s (to-set (arcs v0)))
+        (n1s (to-set (arcs v1))) )
+    (when (not (and (==> n1s member v0) (==> n0s member v1)))
+      (error "vertices are not mutual neighbors") )
+    (==> n0s remove v1)
+    (==> n1s remove v0)
+    (let ((newarcs (new IPairSet)))
+      (do-vertices (u adjacent-to v1)
+        (declare (-int-) u)
+        (when (==> n0s insert u)
+          (==> newarcs insert (ipair v0 u)) )
+        (when (==> (to-set (arcs u)) insert v0)
+          (==> newarcs insert (ipair u v0)) ) )
+      (==> this remove-vertex v1)
+      newarcs)))
+
+#? (==> <SmallIntGraph> degree <v>)
+;; Return out-degree of vertex <v>.
+(defmethod SmallIntGraph degree (v)
+  (declare (-int-) v)
+  (check-vertex v)
+  (==> (to-set (arcs v)) number-of-items) )
+      
+#? (==> <SmallIntGraph> neighbors <v>)
+;; Return all neighbors of vertex <v> as a set.
+
+(defmethod SmallIntGraph -insert-edge (v0 v1 di)
+  (declare (-int-) v0 v1)
+  (declare (-bool-) di)
+  (check-vertex v0)
+  (check-vertex v1)
+  ;; add adjacencies (two directed edges per edge)
+  (let ((result ())
+        (arcsv0 (to-set (arcs v0))))
+    (setq result (==> arcsv0 insert v1))
+    (if di
+        (setq undirected ())
+      (let ((arcsv1 (to-set (arcs v1))))
+        (setq result (or (==> arcsv1 insert v0) result)) ))
+    result))
+
+#? (==> <SmallIntGraph> insert-edge <v0> <v1>)
+;; Insert edge <(v0,v1)> and return <t> when it is a new edge.
+(defmethod SmallIntGraph insert-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (==> this -insert-edge v0 v1 ()) )
+
+#? (==> <SmallIntGraph> has-edge <v0> <v1>)
+;; True when edge <(v0,v1)> is in the graph.
+(defmethod SmallIntGraph has-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (check-vertex v0)
+  (check-vertex v1)
+  (let ((arcsv0 (to-set (arcs v0)))
+        (arcsv1 (to-set (arcs v1))) )
+    (and (==> arcsv0 member v1)
+         (==> arcsv1 member v0) )))
+
+#? (==> <SmallIntGraph> remove-edge <v0> <v1)
+;; Remove edge <(v0,v1)> and return <t> when it was in the graph.
+
+#? (==> <SmallIntGraph> all-edges)
+;; Return all edges as a table (matrix).
+(defmethod SmallIntGraph all-edges ()
+  (let ((edges (int-array (==> this number-of-edges) 2))
+        (clone (deepcopy this))
+        (i 0) )
+    (declare (-int-) i)
+    (do-set (v vertices)
+      (declare (-int-) v)
+      (do-vertices (u adjacent-to v)
+        (declare (-int-) u)
+        (let ((arcsv (to-set (:clone:arcs v)))
+              (arcsu (to-set (:clone:arcs u))) )
+          (when (==> arcsu member v)
+            (edges i 0 u)
+            (edges i 1 v)
+            (==> arcsv remove u)
+            (incr i) ))))
+    (assert (= i (length edges)))
+    (==> clone clear)
+    edges))
+
+#? (==> <SmallIntGraph> insert-arc <v0> <v1>)
+;; Insert arc <(v0,v1)> and return <t> when it is a new arc.
+;; Raise an error when either vertex is not in the graph.
+(defmethod SmallIntGraph insert-arc (v0 v1)
+  (declare (-int-) v0 v1)
+  (==> this -insert-edge v0 v1 t) )
+
+#? (==> <SmallIntGraph> has-arc <v0> <v1>)
+;; True when arc <(v0,v1)> is in the graph.
+(defmethod SmallIntGraph has-arc (v0 v1)
+  (declare (-int-) v0 v1)
+  (check-vertex v0)
+  (check-vertex v1)
+  (let ((arcsv0 (to-set (arcs v0))))
+    (==> arcsv0 member v1) ))
+
+#? (==> <SmallIntGraph> remove-arc <v0> <v1)
+;; Remove arc <(v0,v1)> and return <t> when it was in the graph.
+(defmethod SmallIntGraph remove-arc (v0 v1)
+  (declare (-int-) v0 v1)
+  (check-vertex v0)
+  (check-vertex v1)
+  (let ((arcsv0 (to-set (arcs v0))))
+    (==> arcsv0 remove v1) ))
+        
+(defmethod SmallIntGraph -insert-edges (edges di)
+  (declare (-idx2- (-int-)) edges)
+  (declare (-bool-) di)
+  (when (<> (idx-shape edges 1) 2)
+    (error "not a valid edge table") )
+  ;; insert edges into graph
+  (for* (i 0 (length edges))
+    (declare (-int-) i)
+    (==> this -insert-edge (edges i 0) (edges i 1) di) )
+  ())
+
+#? (==> <SmallIntGraph> insert-edges <edges>)
+;; Insert edges in table <edges> into graph and return <()>.
+(defmethod SmallIntGraph insert-edges (edges)
+  (declare (-idx2- (-int-)) edges)
+  (==> this -insert-edges edges ())
+  ())
+
+#? (==> <SmallIntGraph> insert-arcs <arcs>)
+;; Insert arcs in table <arcs> into graph and return <()>.
+(defmethod SmallIntGraph insert-arcs (edges)
+  (declare (-idx2- (-int-)) edges)
+  (==> this -insert-edges edges t)
+  ())
+
+(defmethod SmallIntGraph -check-undirected ()
+  (lete ((ud t) (it (iterate vertices)))
+    (while (and ud (not (emptyp it)))
+      (let* ((v (next it))
+             (arcsv (to-set (arcs v))) )
+        (declare (-int-) v)
+        (do-set (u arcsv)
+          (declare (-int-) u)
+          (setq ud (and ud (==> (to-set (arcs u)) member v))) )))
+    (setq undirected ud) )
+  ())
+
+#? (==> <SmallIntGraph> undirected)
+;; True if an undirected graph.
+(defmethod SmallIntGraph undirected ()
+  (when (not undirected)
+    (==> this -check-undirected) )
+  undirected)
+
+
+(defmethod SmallIntGraph pretty ()
+  (printf "Graph with %d vertices\n" (==> vertices number-of-items))
+  (printf "Vertex | Adjacent vertices\n")
+  (printf "--------------------------------------------------\n")
+  (do ((v vertices))
+    (declare (-int-) v)
+    (printf "%5d  |" v)
+    (do-vertices (u adjacent-to v)
+      (declare (-int-) u)
+      (printf " %3d" u) )
+    (printf "\n") )
+  ())
+
+(dhc-make-class () SmallIntGraph)

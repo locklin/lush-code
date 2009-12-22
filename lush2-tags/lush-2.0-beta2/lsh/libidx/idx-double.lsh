@@ -1,0 +1,856 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? *** IDX of Double Precision Floating Point Numbers
+;; Basic operations on vectors, matrices, and tensors of doubles
+
+(libload "idx-macros")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; matrix multiplication macro
+
+#? (idx-d2timesd2 <A> <B> <C>)
+;; 2d x 2d matrix multiply: C = A * B
+(de idx-d2timesd2 (a b c)
+  ((-idx2- (-double-)) a b c)
+  (idx-m2timesm2 a b c))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; reverse order of elements
+
+#? (idx-d1reverse <vector>)
+;; Reverses in-place the order of the elements of a <vector>.
+;; not very efficient, but I didn't have time to re-write a faster 
+;; one for SN3.1
+(de idx-d1reverse (vec) ((-idx1- (-double-)) vec)
+    (let*((n-el (idx-dim vec 0))
+	  (n-eld1 (- n-el 1))
+	  (half-n-el (/ n-el 2))
+	  (half-d1 (- half-n-el 1)))
+      (for (i 0 half-d1)
+	(let*((buffer (vec i))
+	      (j (- n-eld1 i)))
+	  (vec i (vec j))
+	  (vec j buffer))) ()))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; fills
+
+#? (idx-d1fill <m> <f>)
+;; fill elements of <m> with double <f>.
+(de idx-d1fill  (m c) ((-idx1- (-double-)) m) ((-double-) c)
+    (cinline-idx1loop m "double" "mp" "i" 
+      (cinline "*mp = (%s)" c)) ())
+	 
+#? (idx-d2fill <m> <f>)
+;; fill idx2 <m> with value <f>
+(de idx-d2fill (m v) ((-idx2- (-double-)) m) ((-double-) v) (idx-bloop ((lm m)) (idx-d1fill lm v)))
+
+#? (idx-d3fill <m> <f>)
+;; fill idx3 <m> with value <f>
+(de idx-d3fill (m v) ((-idx3- (-double-)) m) ((-double-) v) 
+    (idx-bloop ((lm m)) (idx-bloop ((llm lm)) (idx-d1fill llm v))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; dotc
+
+#? (idx-d1dotc <m> <f> <q>)
+;; multiply elements of <m> by double <f>, put result in <q>
+(de idx-d1dotc  (m c o) ((-idx1- (-double-)) m o) ((-double-) c)
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "double" o "double" "mp" "op" "i" 
+      (cinline "*op = *mp * (%s)" c)) ())
+
+#? (idx-d2dotc <m> <f> <q>)
+;; multiply elements of <m> by double <f>, put result in <q>
+(de idx-d2dotc (m f q) ((-idx2- (-double-)) m q) ((-double-) f)
+    (idx-bloop ((lm m) (lq q)) (idx-d1dotc lm f lq)))
+
+#? (idx-d3dotc <m> <f> <q>)
+;; multiply elements of <m> by double <f>, put result in <q>
+(de idx-d3dotc (m f q) ((-idx3- (-double-)) m q) ((-double-) f)
+    (idx-bloop ((lm m) (lq q)) 
+      (idx-bloop ((llm lm) (llq lq)) 
+	(idx-d1dotc llm f llq))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; dotcacc
+
+#? (idx-d1dotcacc <m> <f> <q>)
+;; multiply elements of <m> by double <f>, accumulate result in <q>
+(de idx-d1dotcacc  (m c o) ((-idx1- (-double-)) m o) ((-double-) c)
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "double" o "double" "mp" "op" "i" 
+      (cinline "*op += *mp * (%s)" c)) ())
+
+#? (idx-d2dotcacc <m> <f> <q>)
+;; multiply elements of <m> by double <f>, accumulate result in <q>
+(de idx-d2dotcacc (m f q) ((-idx2- (-double-)) m q) ((-double-) f)
+    (idx-bloop ((lm m) (lq q)) (idx-d1dotcacc lm f lq)))
+
+#? (idx-d3dotcacc <m> <f> <q>)
+;; multiply elements of <m> by double <f>, accumulate result in <q>
+(de idx-d3dotcacc (m f q) ((-idx3- (-double-)) m q) ((-double-) f)
+    (idx-bloop ((lm m) (lq q)) 
+      (idx-bloop ((llm lm) (llq lq)) 
+	(idx-d1dotcacc llm f llq))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; addc
+
+#? (idx-d1addc <m> <f> <q>)
+;; add elements of <m> to double <f>, put result in <q>
+(de idx-d1addc  (m c o) ((-idx1- (-double-)) m o) ((-double-) c)
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "double" o "double" "mp" "op" "i" 
+      (cinline "*op = *mp + (%s)" c)) ())
+
+#? (idx-d2addc <m> <f> <q>)
+;; add elements of <m> by double <f>, put result in <q>
+(de idx-d2addc (m f q) ((-idx2- (-double-)) m q) ((-double-) f)
+    (idx-bloop ((lm m) (lq q)) (idx-d1addc lm f lq)))
+
+#? (idx-d3addc <m> <f> <q>)
+;; add elements of <m> by double <f>, put result in <q>
+(de idx-d3addc (m f q) ((-idx3- (-double-)) m q) ((-double-) f)
+    (idx-bloop ((lm m) (lq q)) 
+      (idx-bloop ((llm lm) (llq lq)) 
+	(idx-d1addc llm f llq))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (idx-d1lincomb <x> <cx> <y> <cy> <z>)
+;; performs a linear combination of vectors <x> and <y> using coefficients
+;; <cx> and <cy>. Put result in <z>.
+(de idx-d1lincomb (x cx y cy z) ((-idx1- (-double-)) x y z) ((-double-) cx cy)
+    (cinline "Msame_size1(%s,%s); " x y)
+    (cinline "Msame_size1(%s,%s); " x z)
+    (cinline-idx1loop3 x "double" y "double" z "double" "xp" "yp" "zp" "i" 
+		       (cinline "*zp = %s*(*xp) + %s*(*yp)" cx cy)) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; various scalar functions on idx1
+
+#? (idx-d1tanh <x1> <y1>)
+;; Computes the regular tanh of <x1> element by element, result in <y1>.
+(de idx-d1tanh (x y) ((-idx1- (-double-)) x y) 
+    (cinline "Msame_size1(%s,%s); " x y)
+    (cinline-idx1loop2 x "double" y "double" "xp" "yp" "i" 
+      (cinline "*yp = Dtanh(*xp)")) ())
+
+#? (idx-d1inv <x1> <y1>)
+;; puts inverse of each element of <x1> into corresponding elements in <y1>
+(de idx-d1inv (x y) ((-idx1- (-double-)) x y) 
+    (cinline "Msame_size1(%s,%s); " x y)
+    (cinline-idx1loop2 x "double" y "double" "xp" "yp" "i" 
+      (cinline "*yp = 1.0/(*xp)")) ())
+
+#? (idx-d1sign <x> <y>)
+;; Elements of <y> are set to the sgn function of elements of <x>.
+(de idx-d1sign (m o) ((-idx1- (-double-)) m o) 
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "double" o "double" "mp" "op" "i" 
+      (cinline "*op = ((*mp>0) ? 1 : -1)")) ())
+
+#? (idx-d1clip <x> <y>)
+; clip negative values in vector <x> and put result in vector <y>.
+(de idx-d1clip (m o)
+    ((-idx1- (-double-)) m o) 
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "double" o "double" "mp" "op" "i" 
+      (cinline "*op = ((*mp>0) ? *mp : 0)")) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; min and max of idx1
+
+#? (idx-d1sup <m>)
+;; returns largest element in <m>
+(de idx-d1sup (m)
+    ((-idx1- (-double-)) m)
+    (let ((v (m 0)))
+      ((-double-) v)
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "if ((*mp)>(%s)) { %s = *mp; }" v v))
+      v))
+
+#? (idx-d1max <m> [<r>])
+;; if <r> is present, put largest element of idx1 <m> into idx0 <r>
+;; otherwise returns largest element.
+(dmd idx-d1max (m . r)  
+     (if r
+	 `(progn (,(car r) (idx-d1sup ,m)) ())
+       `(idx-d1sup ,m)))
+
+#? (idx-d2max <m> [<r>])
+;; if <r> is present, put largest element of idx1 <m> into idx0 <r>
+;; otherwise returns largest element.
+(dmd idx-d2max (m . r)  
+     (if r
+	 `(let ((a (,m 0 0)))
+	    (idx-bloop ((lm ,m))
+	      (let ((z (idx-d1max lm))) (when (> z a) (setq a z)))) (,(car r) a) ())
+       `(let ((a (,m 0 0)))
+	  (idx-bloop ((lm ,m))
+	    (let ((z (idx-d1max lm))) (when (> z a) (setq a z)))) a)))
+
+#? (idx-d1inf <m>)
+;; returns smallest element in <m>
+(de idx-d1inf (m)  
+    ((-idx1- (-double-)) m)
+    (let ((v (m 0)))
+      ((-double-) v)
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" v v))
+      v))
+
+#? (idx-d1min <m> [<r>])
+;; if <r> is present, put smallest element of idx1 <m> into idx0 <r>
+;; otherwise returns smallest element.
+(dmd idx-d1min (m . r)  
+     (if r
+	 `(progn (,(car r) (idx-d1inf ,m)) ())
+       `(idx-d1inf ,m)))
+
+
+#? (idx-d1range <v>)
+;; Return min and max of double-vector <v>.
+(de idx-d1range (m)
+  (declare (-idx1- (-double-)) m)
+  (let ((minm (m 0)) (maxm (m 0))
+	(res (double-array 2)) )
+    (declare (-double-) minm maxm)
+    (cinline-idx1loop m "double" "mp" "i"
+      (cinline "if ((*mp)<(%s)) { %s = *mp; }" minm minm)
+      (cinline "if ((*mp)>(%s)) { %s = *mp; }" maxm maxm) )
+    (res 0 minm)
+    (res 1 maxm)
+    res))
+
+
+#? (idx-d2min <m> [<r>])
+;; if <r> is present, put smallest element of idx1 <m> into idx0 <r>
+;; otherwise returns smallest element.
+(dmd idx-d2min (m . r)  
+     (if r
+	 `(let ((a (,m 0 0)))
+	    (idx-bloop ((lm ,m))
+	      (let ((z (idx-d1min lm))) (when (< z a) (setq a z)))) (,(car r) a) ())
+       `(let ((a (,m 0 0)))
+	  (idx-bloop ((lm ,m))
+	    (let ((z (idx-d1min lm))) (when (< z a) (setq a z)))) a)))
+
+#? (idx-d1indexmax <m>)
+;; returns index (int) of largest element in <m>
+(de idx-d1indexmax (m)  ((-idx1- (-double-)) m)
+    (let ((n 0) (v (m 0)))
+      ((-int-) n)
+      ((-double-) v)
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "if ((*mp)>(%s)) { %s = *mp; %s = i; }" v v n))
+      n))
+
+#? (idx-d1indexmin <m>)
+;; returns index (int) of smallest element in <m>
+(de idx-d1indexmin (m)  ((-idx1- (-double-)) m)
+    (let ((n 0) (v (m 0)))
+      ((-int-) n)
+      ((-double-) v)
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; %s = i; }" v v n))
+      n))
+
+#? (index-of-max <m>)
+;; return index of largest element in idx1 <m>
+(dmd index-of-max (m) `(idx-d1indexmax ,m))
+
+#? (idx-d1fill-with-index <m>)
+;; fill the elements of idx1 <m> with their index.
+(de idx-d1fill-with-index (m)  ((-idx1- (-double-)) m) 
+    (cinline-idx1loop m "double" "mp" "i" (cinline "*mp = (double)i")) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; some really specialized functions, someone needed these ones.
+
+#? (idx-d1avg <vector>)
+;; Returns the average of the numbers in the input <vector>.
+(de idx-d1avg (m) ((-idx1- (-double-)) m)
+    (let ((v 0) (n (idx-dim m 0)))
+      ((-double-) v)
+      (cinline-idx1loop m "double" "mp" "i" (cinline "%s += (*mp)" v))
+      (/ v n)))
+
+#? (idx-d1prod <vec>)
+;; returns the product of the elements of the input vector <vec>,
+(de idx-d1prod (m) ((-idx1- (-double-)) m)
+    (let ((v 1))
+      ((-double-) v)
+      (cinline-idx1loop m "double" "mp" "i" (cinline "%s = %s*(*mp)" v v))
+      v))
+
+#? (idx-d1logsum <m>)
+;; computes a "log-add" of the elements in <m>, i.e. 
+;; -log( 1/n Sum_i ( exp( - m_i ) ))
+;; where n is the dimension of <m>.
+;; This is the wrong logsum advocated by Yann.
+;; Use idx-d1logadd instead.
+(de idx-d1logsum (m)
+    ((-idx1- (-double-)) m)
+    (let ((exp-offset (m 0))
+	  (n (idx-dim m 0))
+	  (r 0))
+      ((-double-) exp-offset r n)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "%s += Dexp( %s - *mp)" r exp-offset))
+      (- exp-offset (log (/ r n)))))
+
+#? (idx-d2logsum <m>)
+;; same as idx-d1logsum, but in 2 dimensions
+;; -log( 1/n Sum_ij ( exp( - m_ij ) ))
+;; where n is the number of elements in <m>
+;; This is the wrong logsum advocated by Yann.
+;; Use idx-d2logadd instead.
+(de idx-d2logsum (m)
+    ((-idx2- (-double-)) m)
+    (let ((exp-offset (m 0 0))
+	  (n (* (idx-dim m 1) (idx-dim m 0)))
+	  (r 0))
+      ((-double-) exp-offset r n)
+      ;; first compute smallest element of m
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "double" "mp" "i"
+	  (cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset)))
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "double" "mp" "i"
+	  (cinline "%s += Dexp( %s - *mp)" r exp-offset)))
+      (- exp-offset (log (/ r n)))))
+
+#? (idx-d1logadd <m>)
+;; computes a "log-add" of the elements in <m>, i.e. 
+;; -log( Sum_i ( exp( - m_i ) ))
+(de idx-d1logadd (m)
+    ((-idx1- (-double-)) m)
+    (let ((exp-offset (m 0))
+	  (r 0))
+      ((-double-) exp-offset r)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "%s += Dexp( %s - *mp)" r exp-offset))
+      (- exp-offset (log r))))
+
+#? (idx-d2logadd <m>)
+;; same as idx-d1logadd, but in 2 dimensions
+;; -log( Sum_ij ( exp( - m_ij ) ))
+(de idx-d2logadd (m)
+    ((-idx2- (-double-)) m)
+    (let ((exp-offset (m 0 0))
+	  (r 0))
+      ((-double-) exp-offset r)
+      ;; first compute smallest element of m
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "double" "mp" "i"
+	  (cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset)))
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "double" "mp" "i"
+	  (cinline "%s += Dexp( %s - *mp)" r exp-offset)))
+      (- exp-offset (log r)) ) )
+
+#? (idx-d1logaddb <m> <beta>)
+;; computes a "log-add" with inverse temperature <b>
+;; of the elements in <m>, i.e. 
+;; -1/beta log ( Sum_i ( exp( - beta*m_i ) ))
+(de idx-d1logaddb (m beta)
+    ((-idx1- (-double-)) m)
+    ((-double-) beta)
+    (let ((exp-offset (m 0))
+	  (r 0))
+      ((-double-) exp-offset r)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "%s += Dexp( %s*(%s - *mp))" r beta exp-offset))
+      (- exp-offset (/ (log r) beta))))
+
+#? (idx-d2logaddb <m> <beta>)
+;; same as idx-f1logaddb, but in 2 dimensions
+;; -1/beta log( Sum_ij ( exp( - beta*m_ij ) ))
+(de idx-d2logaddb (m beta)
+    ((-idx2- (-double-)) m)
+    ((-double-) beta)
+    (let ((exp-offset (m 0 0))
+	  (r 0))
+      ((-double-) exp-offset r)
+      ;; first compute smallest element of m
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "double" "mp" "i"
+	  (cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset)))
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "double" "mp" "i"
+	  (cinline "%s += Dexp( %s*(%s - *mp) )" r beta exp-offset)))
+      (- exp-offset (/ (log r) beta)) ) )
+
+#? (idx-d1logdotd1 <m> <p>)
+;; computes a "log-add" of term-by-termt products
+;; of elements in <m> and <p>, i.e. 
+;; -log( p_i Sum_i ( exp( - m_i ) ))
+;; <p> should be a normalized probability vector
+;; for this to be meaningful
+(de idx-d1logdotd1 (m p)
+    ((-idx1- (-double-)) m p)
+    (let ((exp-offset (m 0))
+	  (r 0))
+      ((-double-) exp-offset r)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      (cinline-idx1loop2 m "double" p "double" "mp" "pp" "i" 
+	(cinline "%s += *pp * Dexp( %s - *mp)" r exp-offset))
+      (- exp-offset (log r))))
+
+#? (idx-d2logdotd2 <m>)
+;; same as idx-d1logdotd1, but in 2 dimensions
+(de idx-d2logdotd2  (m p)
+    ((-idx2- (-double-)) m p)
+    (let ((exp-offset (m 0 0))
+	  (r 0))
+      ((-double-) exp-offset r)
+      ;; first compute smallest element of m
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "double" "mp" "i"
+	  (cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset)))
+      (idx-bloop ((m m) (p p))
+	(cinline-idx1loop2 m "double" p "double" "mp" "pp" "i" 
+	  (cinline "%s += *pp * Dexp( %s - *mp)" r exp-offset)))
+      (- exp-offset (log r))))
+
+#? (idx-d1blogdotd1 <m> <p> <out>)
+;; This is the "bprop" corresponding to idx-d1logdotd1
+;; <m> is the input (preferably positive costs), <p> is
+;; the prior vector, and on output <out> is the vector
+;; of partial derivatives of (idx1-d1logdotd1 <m> <p>) with
+;; respect to each element of <m>.
+(de idx-d1blogdotd1 (m p out)
+    ((-idx1- (-double-)) m p out)
+    (let ((exp-offset (m 0))
+	  (r 0))
+      ((-double-) exp-offset r)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "double" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      ;; compute all shifted exponentials
+      (cinline-idx1loop3 m "double" p "double" out "double" "mp" "pp" "op" "i" 
+	(cinline "*op = *pp * Dexp( %s - *mp)" exp-offset))
+      ;; now compute "soft-min"
+      (let ((sum-exp 0)) 
+	((-double-) sum-exp)
+	(cinline-idx1loop out "double" "op" "i" (cinline "%s += *op;" sum-exp))
+	(setq sum-exp (/ 1 sum-exp))
+	(cinline-idx1loop out "double" "op" "i" (cinline "*op = *op * %s;" sum-exp)))))
+
+
+#? (idx-d1subextd1 <x> <y> <z>)
+;; Computes the external subtraction
+;; z[i,j] = x[i] - y[j]
+(de idx-d1subextd1 (x y z) ((-idx1- (-double-)) x y) ((-idx2- (-double-)) z)
+    (idx-bloop ((xi x)(zi z))
+      (let ((x (xi)))
+	(cinline-idx1loop2 y "double" zi "double" "yi" "zij" "i" 
+	  (cinline "*zij = %s - *yi" x)))) ())
+
+;; for compatibility with an old version
+(dmd idx-extd1sub (x y z) `(idx-d1subextd1 ,x ,y ,z))
+
+#? (idx-d1subd0 <x1> <y0> <z1>)
+;; Substracts (<y0>) from elements of vector <x1>. Results in vector <z1>.
+(de idx-d1subd0 (m y o) ((-idx1- (-double-)) m o) ((-idx0- (-double-)) y)
+    ((-idx1- (-double-)) m o) 
+    (let ((v (y)))
+      (cinline "Msame_size1(%s,%s); " m o)
+      (cinline-idx1loop2 m "double" o "double" "mp" "op" "i" 
+	(cinline "*op = *mp - %s" v))) ())
+
+#? (idx-d1mulacc <x1> <y1> <z1>)
+;; z1[i] += x1[i] * y1[i].
+;; not efficient. Could be improved a lot.
+(de idx-d1mulacc (x y z) ((-idx1- (-double-)) x y z)
+    (idx-bloop ((xi x)(yi y)(zi z)) (zi (+ (zi)(* (xi)(yi))))))
+
+#? (idx-d1entropy <m> <c>)
+;; computes the entropy of a vector (- sum Pi log Pi )
+;; this does a normalization and adds a constant <c>
+;; to all the elements (so it does not crash of they are 0)
+(de idx-d1entropy (m c)
+    ((-idx1- (-double-)) m)
+    ((-double-) c)
+    (let ((s 0) (r 0))
+      ((-double-) s r)
+      (cinline-idx1loop m "double" "p" "i" #{ 
+        $s += *p; 
+        #})
+      (setq s (/ 1 s))
+      (cinline-idx1loop m "double" "p" "i" #{{
+        double z;
+        z = ((double)((*p) + $c)) * $s;
+        $r += z * log(z);
+        } #})
+      (- r)))
+
+#? (idx-d1subsample-fast <in> <nlin>)
+;; subsamples vector (considered as a signal)
+;; by integer factor <nlin>
+;; the returned output is a vector whose
+;; size is int(N/<nlin>) where N is the 
+;; size of <in>.
+;; there is a idx-d1subsample defined in libconvol.sn,
+;; it is a little slower and takes 3 parameters.
+(de idx-d1subsample-fast (in nlin)
+    ((-idx1- (-double-)) in)
+    ((-int-) nlin)
+    (let* ((h (idx-dim in 0))
+           (nh (int (/ h nlin)))
+           (inp (narrow in 0 (* nlin nh) 0))
+           (out (double-array nh)))
+      #{{
+      double *pin;
+      double *pout;
+      int i, imax = ($out)->dim[0];
+      int inp_mod = ($inp)->mod[0];
+      int out_mod = ($out)->mod[0];
+      double norm = 1.0/(double)($nlin);
+      register int k;
+      pin = IDX_PTR (($inp), double);
+      pout = IDX_PTR (($out), double);
+      for (i = 0; i < imax; i++) {
+        register double acc0 = 0;
+        for (k=0; k<$nlin; k++) {
+             acc0 += *pin;
+             pin += inp_mod;
+             }
+        *pout = acc0*norm;
+        pout += out_mod;
+      }} #}
+  out))
+
+
+#? (idx-f4dotd3 <x> <y> <z>)
+;; z[i] = sum_jkl x[i,j,k,l]*y[j,k,l]
+(de idx-f4dotd3 (x y z) 
+  ((-idx4- (-double-)) x)((-idx3- (-double-)) y)((-idx1- (-double-)) z)
+  (idx-bloop ((z-i z)(x-i x))
+    (let*((r 0))
+      (idx-bloop ((y-j y)(x-ij x-i))
+	(idx-bloop ((y-jk y-j)(x-ijk x-ij))
+	  (idx-bloop ((y-jkl y-jk)(x-ijkl x-ijk))
+	    (incr r (* (y-jkl)(x-ijkl))))))
+      (z-i r))))
+
+#? (idx-d3extd1 <x> <y> <z>)
+;; External (or cross-) product of 3d <x> with 1d <y> to yield 4d <z>.
+;; z[i,j,k,l] = x[i,j,k]*y[l]
+(de idx-d3extd1 (x y z) 
+  ((-idx3- (-double-)) x)((-idx1- (-double-)) y)((-idx4- (-double-)) z)
+  (idx-bloop ((xi x)(zi z))
+    (idx-bloop ((xij xi)(zij zi))
+      (idx-bloop ((xijk xij)(zijk zij))
+	(idx-bloop ((yl y)(zijkl zijk))
+	  (zijkl (* (xijk)(yl))))))))
+
+#? (idx-d1extd3 <x> <y> <z>)
+;; External (or cross-) product of 1d <x> with 3d <y> to yield 4d <z>.
+;; z[i,j,k,l] = x[i]*y[j,k,l]
+(de idx-d1extd3 (x y z) 
+  ((-idx1- (-double-)) x)((-idx3- (-double-)) y)((-idx4- (-double-)) z)
+  (idx-bloop ((xi x)(zi z))
+    (let*((x-i (xi)))
+      (idx-bloop ((yi y)(zij zi))
+	(idx-bloop ((yij yi)(zijk zij))
+	  (idx-bloop ((yijk yij)(zijkl zijk))
+	    (zijkl (* x-i (yijk)))))))))
+
+
+#? (idx-d3dotd3 <a> <b> <c>)
+;; <c> is an idx0 which will contain the sum of all the products
+;; of elements from <a> and <b>.
+(de idx-d3dotd3 (a b c) 
+  ((-idx3- (-double-)) a b)((-idx0- (-double-)) c)
+  (let*((r 0))
+    (idx-bloop ((ai a)(bi b))
+      (idx-bloop ((aij ai)(bij bi))
+	(idx-bloop ((aijk aij)(bijk bij))
+	  (incr r (* (aijk)(bijk))))))
+    (c r)
+    r))
+
+#? (idx-d3dotd2 <x> <y> <z>)
+;; z[i] = sum_jk x[i,j,k]*y[j,k]
+(de idx-d3dotd2 (x y z) 
+  ((-idx3- (-double-)) x)((-idx2- (-double-)) y)((-idx1- (-double-)) z)
+  (idx-bloop ((z-i z)(x-i x))
+    (let*((r 0))
+      (idx-bloop ((y-j y)(x-ij x-i))
+	(idx-bloop ((y-jk y-j)(x-ijk x-ij))
+	  (incr r (* (y-jk)(x-ijk)))))
+      (z-i r))))
+
+#? (idx-d4dotd1 <x> <y> <z>)
+;; z[j,k,l] = sum_i x[i,j,k,l]*y[i]
+(de idx-d4dotd1 (x y z) 
+  ((-idx4- (-double-)) x)((-idx1- (-double-)) y)((-idx3- (-double-)) z)
+  (idx-clear z)
+  (idx-bloop ((y-i y)(x-i x))
+    (let*((yi (y-i)))
+      (idx-bloop ((z-j z)(x-ij x-i))
+	(idx-bloop ((z-jk z-j)(x-ijk x-ij))
+	  (idx-bloop ((z-jkl z-jk)(x-ijkl x-ijk))
+	    (z-jkl (+ (z-jkl)(* yi (x-ijkl))))))))))
+
+#? (idx-d4dotd1acc <x> <y> <z>)
+;; z[j,k,l] += sum_i x[i,j,k,l]*y[i]
+(de idx-d4dotd1acc (x y z) 
+  ((-idx4- (-double-)) x)((-idx1- (-double-)) y)((-idx3- (-double-)) z)
+  (idx-bloop ((y-i y)(x-i x))
+    (let*((yi (y-i)))
+      (idx-bloop ((z-j z)(x-ij x-i))
+	(idx-bloop ((z-jk z-j)(x-ijk x-ij))
+	  (idx-bloop ((z-jkl z-jk)(x-ijkl x-ijk))
+	    (z-jkl (+ (z-jkl)(* yi (x-ijkl))))))))))
+
+#? (idx-d1extd2 <x> <y> <z>)
+;; External (or cross-) product of 1d <x> with 2d <y> to yield 3d <z>.
+;; z[i,j,k] = x[i]*y[j,k]
+(de idx-d1extd2 (x y z) 
+  ((-idx1- (-double-)) x)((-idx2- (-double-)) y)((-idx3- (-double-)) z)
+  (idx-bloop ((xi x)(zi z))
+    (let*((x-i (xi)))
+      (idx-bloop ((yj y)(zij zi))
+	(idx-bloop ((yjk yj)(zijk zij))
+	  (zijk (* x-i (yjk))))))))
+
+#? (idx-d3dotd1 <x> <y> <z>)
+;; z[j,k] = sum_i x[i,j,k]*y[i]
+(de idx-d3dotd1 (x y z) 
+  ((-idx3- (-double-)) x)((-idx1- (-double-)) y)((-idx2- (-double-)) z)
+  (idx-clear z)
+  (idx-bloop ((y-i y)(x-i x))
+    (let*((yi (y-i)))
+      (idx-bloop ((z-j z)(x-ij x-i))
+	(idx-bloop ((z-jk z-j)(x-ijk x-ij))
+	  (z-jk (+ (z-jk)(* yi (x-ijk)))))))))
+
+#? (idx-d3dotd1acc <x> <y> <z>)
+;; z[j,k] += sum_i x[i,j,k]*y[i]
+(de idx-d3dotd1acc (x y z) 
+  ((-idx3- (-double-)) x)((-idx1- (-double-)) y)((-idx2- (-double-)) z)
+  (idx-bloop ((y-i y)(x-i x))
+    (let*((yi (y-i)))
+      (idx-bloop ((z-j z)(x-ij x-i))
+	(idx-bloop ((z-jk z-j)(x-ijk x-ij))
+	  (z-jk (+ (z-jk)(* yi (x-ijk)))))))))
+
+
+;; make a place-code target matrix
+#? (make-d2-place-target <n>)
+;; return an <n>x<n> matrix with 1s on the diagonal and -1s everywhere else.
+(de make-d2-place-target (n)
+    ((-int-) n)
+    (let ((m (double-array n n)))
+      (idx-d2fill m -1)
+      (for (i 0 (1- n)) (m i i 1))
+      m))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (idx-d1squextd1 <m1> <m2> <m3>)
+;; square outer product of <m1> and <m2>.
+;; M3ij = M1i * M2j^2
+(de idx-d1squextd1 (m1 m2 m3)
+    ((-idx1- (-double-)) m1 m2)
+    ((-idx2- (-double-)) m3)
+    (cheader "#include \"idxsquops.h\"")
+    #{ Midx_m1squextm1($m1,$m2,$m3,double,double,double);
+    #} ())
+
+#? (idx-d2squextd2 <m1> <m2> <m3>)
+;; square outer product of <m1> and <m2>.
+;; M3ijkl = M1ij * M2kl^2
+(de idx-d2squextd2 (m1 m2 m3)
+    ((-idx2- (-double-)) m1 m2)
+    ((-idx4- (-double-)) m3)
+    #{ Midx_m2squextm2($m1,$m2,$m3,double,double,double);
+    #} ())
+
+#? (idx-d1squextd1acc <m1> <m2> <m3>)
+;; square outer product of <m1> and <m2>.
+;; M3ij += M1i * M2j^2
+(de idx-d1squextd1acc (m1 m2 m3)
+    ((-idx1- (-double-)) m1 m2)
+    ((-idx2- (-double-)) m3)
+    #{ Midx_m1squextm1acc($m1,$m2,$m3,double,double,double);
+    #} ())
+
+#? (idx-d2squextd2acc <m1> <m2> <m3>)
+;; square outer product of <m1> and <m2>.
+;; M3ijkl += M1ij * M2kl^2
+(de idx-d2squextd2acc (m1 m2 m3)
+    ((-idx2- (-double-)) m1 m2)
+    ((-idx4- (-double-)) m3)
+    #{ Midx_m2squextm2acc($m1,$m2,$m3,double,double,double);
+    #} ())
+
+#? (idx-d2squdotd1 <m1> <m2> <m3>)
+;; multiply vector <m2> by matrix <m1>
+;; using square of <m1> elements
+;; M3i = sum_j M1ij^2 * M2j
+(de idx-d2squdotd1 (m1 m2 m3)
+    ((-idx2- (-double-)) m1)
+    ((-idx1- (-double-)) m2 m3)
+    #{ Midx_m2squdotm1($m1,$m2,$m3,double,double,double);
+    #} ())
+
+#? (idx-d4squdotd2 <m1> <m2> <m3>)
+;; multiply matrix <m2> by tensor <m1>
+;; using square of <m1> elements
+;; M3ij = sum_kl M1ijkl^2 * M2kl
+(de idx-d4squdotd2 (m1 m2 m3)
+    ((-idx4- (-double-)) m1)
+    ((-idx2- (-double-)) m2 m3)
+    #{ Midx_m4squdotm2($m1,$m2,$m3,double,double,double);
+    #} ())
+
+#? (idx-d2squdotd1acc <m1> <m2> <m3>)
+;; multiply vector <m2> by matrix <m1>
+;; using square of <m1> elements
+;; M3i += sum_j M1ij^2 * M2j
+(de idx-d2squdotd1acc (m1 m2 m3)
+    ((-idx2- (-double-)) m1)
+    ((-idx1- (-double-)) m2 m3)
+    #{ Midx_m2squdotm1acc($m1,$m2,$m3,double,double,double);
+    #} ())
+
+#? (idx-d4squdotd2acc <m1> <m2> <m3>)
+;; multiply matrix <m2> by tensor <m1>
+;; using square of <m1> elements
+;; M3ij += sum_kl M1ijkl^2 * M2kl
+(de idx-d4squdotd2acc (m1 m2 m3)
+    ((-idx4- (-double-)) m1)
+    ((-idx2- (-double-)) m2 m3)
+    #{ Midx_m4squdotm2acc($m1,$m2,$m3,double,double,double);
+    #} ())
+
+#? (idx-d1squdotd1acc <m1> <m2> <m3>)
+;; dot product between <m1> and <m2>, except
+;; square of terms of <m1> are used:
+;; M3 += sum_i M1i^2 * M2i
+(de idx-d1squdotd1acc (m1 m2 m3)
+    ((-idx1- (-double-)) m1 m2)
+    ((-idx0- (-double-)) m3)
+    #{ Midx_m1squdotm1acc($m1,$m2,$m3,double,double,double);
+    #} ())
+
+#? (idx-d2squdotd2acc <m1> <m2> <m3>)
+;; dot product between matrices <m1> and 
+;; <m2>, except square of terms of <m1> 
+;; are used:
+;; M3 += sum_ij M1ij^2 * M2ij
+(de idx-d2squdotd2acc (m1 m2 m3)
+    ((-idx2- (-double-)) m1 m2)
+    ((-idx0- (-double-)) m3)
+    #{ Midx_m2squdotm2acc($m1,$m2,$m3,double,double,double);
+    #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (idx-d1cumsum <v1> <v2>)
+;; Write cumulative sum of vector <v1> to <v2>.
+(de idx-d1cumsum (v out)
+  ((-idx1- (-double-)) v out)
+  (let ((cs 0))
+    (idx-bloop ((pv v)(pout out))
+      (incr cs (pv))
+      (pout cs) ))
+  out)
+
+#? (idx-d1cumsum! <v>)
+;; Replace contents of vector <v> by its cumulative sum.
+(de idx-d1cumsum! (v)
+  ((-idx1- (-double-)) v)
+  (let ((cs 0))
+    (idx-bloop ((pv v))
+      (incr cs (pv))
+      (pv cs) ))
+  v)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make-sf ()
+	  idx-d2timesd2
+	  idx-d1reverse 
+	  idx-d1fill idx-d2fill idx-d3fill idx-d1dotc idx-d2dotc
+	  idx-d3dotc idx-d1dotcacc idx-d2dotcacc idx-d3dotcacc idx-d1addc
+	  idx-d2addc idx-d3addc 
+	  idx-d1lincomb
+	  idx-d1tanh idx-d1inv idx-d1sign idx-d1clip 
+	  idx-d1sup idx-d1inf idx-d1range
+	  idx-d1indexmax idx-d1indexmin idx-d1fill-with-index 
+	  idx-d1avg idx-d1prod 
+	  idx-d1logsum idx-d2logsum
+	  idx-d1logadd idx-d2logadd
+	  idx-d1logaddb idx-d2logaddb
+	  idx-d1logdotd1 idx-d1blogdotd1 idx-d2logdotd2
+	  idx-d1subextd1 idx-d1subd0 idx-d1mulacc
+          idx-d1entropy idx-d1subsample-fast
+          idx-d3dotd3
+          idx-d3dotd2
+          idx-d3dotd1
+          idx-d3dotd1acc
+          idx-d3extd1
+          idx-d1extd3
+          idx-d1extd2
+          idx-d4dotd1
+          idx-d4dotd1acc
+	  make-d2-place-target
+
+	  idx-d1squextd1
+	  idx-d2squextd2
+	  idx-d1squextd1acc
+	  idx-d2squextd2acc
+	  idx-d2squdotd1
+	  idx-d4squdotd2
+	  idx-d2squdotd1acc
+	  idx-d4squdotd2acc
+	  idx-d1squdotd1acc
+	  idx-d2squdotd2acc
+	  idx-d1cumsum
+	  idx-d1cumsum!
+)

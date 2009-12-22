@@ -1,0 +1,324 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Reading/Writing Image Files to/from IDX
+;; Functions to read/write image files into/from
+;; an IDX. Image files can be in any format that
+;; ImageMagick's convert command can handle.
+;; The type of the input image is determined
+;; automatically. 
+
+(libload "libimage/pnm")
+
+;; configure
+(defvar *convert-cmd* (reading "| which convert" (read-string)))
+(defvar *identify-cmd* (reading "| which identify" (read-string)))
+(defvar *file-cmd* (reading "| which file" (read-string)))
+(defvar *data-dir* (concat-fname lushdir "data"))
+(defvar *images-dir* (concat-fname *data-dir* "images"))
+
+(when (not (filep *convert-cmd*)) 
+  (printf "cannot find the convert command\n")
+  (printf "please install ImageMagick\n")
+  (error "could not find convert"))
+
+#? (image-info <f>)
+;; Determine image characteristics from the image file and return
+;; them as an <htable> object. The entries in the hash table have
+;; the following meaning:
+;;.VP
+;; -----------------------------------------------------------------
+;; Key             | Meaning
+;; -----------------------------------------------------------------
+;; format          | Image format
+;; width           | Width in number of pixels
+;; height          | Height in number of pixels
+;; n-images        | Number of "scenes" or frames
+;; n-colors-used   | Number of different colors in the image
+;;                 | (Not the same as the size of the colorspace!)
+;; depth           | Number of bits per channel
+;; label           | An embedded label string ("" if not present)
+;; comment         | An embedded comment string ("" of not present)
+;; colorspace      | Color space ("RGB", "Gray", "CMYK", ...).
+;; palette-image-p | True if image is saved as a palette image
+;; has-matte-p     | True if image has matte data
+;;.PP
+;; A palette image is a storage format where for each pixel there 
+;; is an index into a color table (or "palette"). The color table 
+;; is also included in the image file. Currently, reading in the 
+;; index values nor reading in the color table is supported by Lush.
+;; Instead, when you load a palette image, the data gets 
+;; automatically translated into RGB or grayscale values by
+;; <image-read-rgb>, <image-read-rgba>, or <image-read-ubim>, 
+;; respectively.
+;;.PP
+;; The size of the color space (that is, the number of different
+;; possible color values representable in that space) is
+;; <2^depth> times <number of channels> (where depth is the bit
+;; depth of each channel). For instance, there are 3*2^8 different
+;; colors in RGB with bit depth 8. Note, however, that in a palette
+;; image the number of different possible colors is restricted
+;; to the size of the color table.
+;;.PP
+;;.SEE image-read-rgb, image-read-rgba, image-read-ubim
+
+(de image-info (fname)
+  (setq fname (image-find fname))
+  (when (not (filep fname))
+    (error "File not found:" fname))
+
+  ;; based on source file magick/utility.c of ImageMagick 5.5.7
+  ;; see also documentation of the MIFF file format
+  (let* ((re-r (concat
+		"(Undefined|DirectClass|PseudoClass)"
+		"(undefined|RGB|Gray|Transparent|OHTA|XYZ|YCbCr|YCC|YIQ|YPbPr|YUV|CMYK|sRGB)"
+		"(Matte)?") )
+	 (fmtcs (list "%r" "%m" "%w" "%h" "%n" "%z" "label:%l" "comment:%c" "%k"))
+	 (fmts  (str-join "\n" fmtcs))
+	 (f     (open-read (sprintf "| %s -ping -format \"%s\" %s" *identify-cmd* fmts fname))) 
+	 (lines (prog1 (read-lines f) (delete f))) )
+    
+    (let ((info  (htable 0 t t))
+	  ((image-class colorspace matte) (regex-extract re-r (car lines))) )
+      ;; set up the info table
+      (info 'format (nth 1 lines))
+      (info 'width  (val (nth 2 lines)))
+      (info 'height (val (nth 3 lines)))
+      (info 'n-images (val (nth 4 lines)))
+      (info 'n-colors-used (val (nth 8 lines))) ;; not the size of the colorspace!
+      (info 'depth (val (nth 5 lines)))
+      (info 'label (right (nth 6 lines) (- (len "label:"))))
+      (info 'comment (right (nth 7 lines) (- (len "comment:"))))
+      (info 'colorspace colorspace)
+      (info 'palette-image-p (= image-class "PseudoClass"))
+      (if (not (info 'palette-image-p))
+          (info 'has-matte-p (= matte "Matte"))
+        (info 'has-matte-p ()) )
+      info)))
+
+
+#? (image-read-rgb <f>)
+;; read an image file (in any format), and return
+;; an rgbimage with the image in it
+;; (IDX3 of ubytes with last dimension=3).
+;; Accepted format are whatever ImageMagick's convert
+;; command can convert to PPM.
+;; The type of the input image is determined
+;; automatically. In case it is not, the the type
+;; can be prepended to the filename with a colon.
+;; Command line options prepended to the argument
+;; are passed to convert.
+;;.P
+;; Example:
+;;.CODE
+;; (setq img (image-read-rgb "myimage.png"))
+;; (setq img (image-read-rgb "TIFF:myimage.dunno"))
+;; (setq img (image-read-rgb "-geometry 50x50% myimage.jpg"))
+(de image-read-rgb (s)
+  ((-str-) s)
+  ;; the "-compress lossless" option is to force convert
+  ;; to produce a RAW PNM file.
+  (let ((f (popen (sprintf "%s -compress lossless -depth 8 %s PPM:-" #.*convert-cmd* s) "r")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (prog1 (pnm-fread-rgb f) (pclose f))))
+
+#? (image-read-rgba <f>)
+;; read an image file (in any format), and return
+;; an rgbaimage with the image in it
+;; (IDX3 of ubytes with last dimension=4).
+;; The alpha channel is filled if the image being read has one.
+;; An alpha value of 0 means opaque and 255 means fully transparent
+;; (this is backward to many conventions in other places in the
+;; Lush library).
+;; Accepted format are whatever ImageMagick's convert
+;; command can convert to PPM.
+;; The type of the input image is determined
+;; automatically. In case it is not, the the type
+;; can be prepended to the filename with a colon
+;; Command line options prepended to the argument
+;; are passed to convert.
+;;.P
+;; Example:
+;;.CODE
+;; (setq img (image-read-rgba "-geometry 50x50% myimage.png"))
+;; (setq img (image-read-rgba "-geometry 50x50% PNG:myimage"))
+(de image-read-rgba (s)
+  ((-str-) s)
+  (let ((f (popen (sprintf "%s -compress lossless -depth 8 %s PPM:-" #.*convert-cmd* s) "r")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (let ((r (pnm-fread-rgba f)))
+      (pclose f)
+      (setq f (popen (sprintf "%s -compress lossless -depth 8 -channel Matte %s PGM:-"
+                              #.*convert-cmd* s) "r"))
+      (when (not f) (error "couldn't open alpha channel pipe file"))
+      (pnm-fread-into-ubim f (select r 2 3))
+      (pclose f) r)))
+
+
+#? (image-read-ubim <f>)
+;; read an image file (in any format), and return
+;; a ubimage with the image in it (IDX2 of ubytes)
+;; Accepted format are whatever ImageMagick's convert
+;; command can convert to PPM. Conversion to gryscale
+;; is performed by Lush, since convert doesn't convert
+;; to PGM.
+(de image-read-ubim (s)
+  ((-str-) s)
+  (let* ((f (popen (sprintf "%s -compress lossless -depth 8 %s PPM:-" #.*convert-cmd* s) "r")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (prog1 (pnm-fread-ubim f) (pclose f))))
+
+
+#? (image-read <filename>)
+;; Read an image (in any format) and return as scalar image (ubimage) 
+;; if it is gray-scale, as RGBA if it contains alpha channel data, and 
+;; as RGB otherwise. <image-read> finds images using <image-find>.
+(defun image-read (filename)
+  (let* ((filename (image-find filename))
+         (info (image-info filename)) )
+    (cond
+     ((info 'has-matte-p)
+      (image-read-rgba filename))
+
+     ((= (info 'colorspace) "Gray") 
+      (image-read-ubim filename))
+
+     (t
+      (when (<> (info 'colorspace) "RGB")
+        (printf "*** converting colors from %s to RGB...\n" (info 'colorspace)) )
+      (image-read-rgb filename) ))))
+
+
+#? (image-file-p <filename>)
+;; True if file <filename> is an image file.
+(defun image-file-p (filename)
+  (when (null *file-cmd*)
+    (error "'file' command not found"))
+  (let ((fileblurb (reading (sprintf "| %s %s" *file-cmd* filename) (read-string))))
+    (and (or (regex-seek "image data" fileblurb)
+             (regex-seek "bitmap data" fileblurb)
+             (regex-seek "PNG image" fileblurb)  ; accomodate file versions 4.26++
+             )
+         t)))
+
+#? (image-find <name>)
+;; Find an image or a set of images.
+;; If <name> is a filename, search for the image in the current directory 
+;; and in Lush's images directory and return the full filename.
+;; If <name> is a directory name, identify all image files in <name> and
+;; return their full filenames in a list.
+(defun image-find (name)
+  (cond
+   ((filep name)
+    (let ((filename (concat-fname (pwd) name)))
+      (when (not (image-file-p filename))
+	(error "not an image file" filename))
+      filename))
+   ((filep (concat-fname *images-dir* name))
+    (let ((filename (concat-fname *images-dir* name)))
+      (when (not (image-file-p filename))
+	(error "not an image file" filename))
+      filename))
+   ((dirp name)
+    (let* ((dirname (concat-fname (pwd) name))
+           (cache-file (concat-fname dirname ".image-find-files")) )
+      (if (and (filep cache-file) (file-newer? cache-file dirname))
+          (reading (open-read cache-file) (bread))
+        (let ((filenames (filter image-file-p (mapcar concat-fname (.cl dirname) (ls name)))))
+          (when (open-write cache-file)
+            (writing (open-write cache-file) (bwrite filenames)) )
+          filenames))))
+   (t
+    (error "file not found" name))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (image-write-rgb <f> <im>)
+;; Writes an image stored in an IDX3 of ubytes into
+;; an image file (in any format).
+;; The type of the output image file is determined
+;; by a string prepended to the filename with a colon.
+;; Command line options prepended to the argument
+;; are passed to the convert command
+;;.P
+;; Example:
+;;.CODE
+;;  (image-write-rgb "TIFF:myimage.tiff" m))
+(de image-write-rgb (s im)
+    ((-str-) s)
+    ((-idx3- (-ubyte-)) im)
+  (let ((f (popen (sprintf "%s PPM:- %s" #.*convert-cmd* s) "w")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (prog1 (ppm-fwrite-rgb f im) (pclose f))))
+
+
+#? (image-write-ubim <f> <im>)
+;; Writes an image stored in an IDX2 of ubytes into
+;; an grayscale image file (in any format).
+;; The type of the output image file is determined
+;; by a string prepended to the filename with a colon.
+;; Command line options prepended to the argument
+;; are passed to the convert command
+;;.P
+;; Example:
+;;.CODE
+;;  (image-write-ubim "myimage.png"))
+(de image-write-ubim (s im)
+    ((-str-) s)
+    ((-idx2- (-ubyte-)) im)
+  (let ((f (popen (sprintf "%s PGM:- %s" #.*convert-cmd* s) "w")))
+    (when (not f) (error "couldn't open convert pipe file"))
+    (prog1 (pgm-fwrite-ubim f im) (pclose f))))
+
+#? (as-image <m>)
+;; Rescale and quantize double-matrix <m> to an uchar-image.
+;;
+;; The values of <m> are shifted and rescaled so that the
+;; values in the resulting uchar-matrix use the whole range 0..255.
+(defun as-image (m)
+  (declare (-idx2- (-double-)) m)
+  (let* ((min ((idx-inf m)))
+         (max ((idx-sup m)))
+         (img (uchar-array ($ m 0) ($ m 1)))
+         (mv  ($- m))
+         (isrg (idx-storage img))
+         (s (/ 255 (- max min))) )
+    (for* (i 0 (storage-nelems isrg))
+      (declare (-int-) i)
+      (let ((val (- (mv i) min)))
+        (isrg i (to-uchar (* s val)))) )
+    img))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make-sf ()
+	  image-read-rgb
+	  image-read-rgba
+	  image-read-ubim
+	  image-write-rgb
+	  image-write-ubim
+          as-image)
+)

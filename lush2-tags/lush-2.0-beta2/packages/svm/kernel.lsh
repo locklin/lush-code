@@ -1,0 +1,252 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: kernel.lsh,v 1.8 2005/05/10 15:00:21 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-ubyte")
+
+
+#? ** SVM building blocks.
+;; This file defines a number of classes
+;; shared by all SVM solvers proposed by lush.
+
+
+;; ----------------------------------------
+
+#? * SVMKernel.
+;; Abstract kernel interface.
+;; The class has access to all the examples (x_i).
+;; It computes the value of K(x_i,x_j).
+
+(defclass SVMKernel object)
+
+(defmethod SVMKernel SVMKernel() ())
+
+#? (==> <SVMKernel> call <i> <j>)
+;; Returns the value of the kernel dot-product
+;; on patterns numbered <i> and <j>.
+
+(defmethod SVMKernel call(i j)
+  ((-int-) i j)
+  (error "Not implemented")
+  (to-real 0) )
+
+#? (==> <SVMKernel> label <i>)
+;; SVM kernels can keep track of a single label per example.
+;; This is useful for storing output values.
+
+(defmethod SVMKernel label(i) 
+  ((-int-) i) 
+  (error "Not implemented")
+  (to-real 0) )
+
+
+;; ----------------------------------------
+
+#? * SVMVectorKernel
+;; Kernel operating on data represented by float vectors.
+
+(defclass SVMVectorKernel SVMKernel
+  ((-idx2- (-float-)) data) )
+
+(defmethod SVMVectorKernel SVMVectorKernel(x)
+  ((-idx2- (-float-)) x)
+  (setq data x) )
+
+
+#? * SVMLinearKernel.
+;; Simple linear kernel.
+;; Subclass of <SVMVectorKernel>.
+;;.VP
+;;  K(x_i,x_j) = x_i . x_j
+
+(defclass SVMLinearKernel SVMVectorKernel)
+
+(defmethod SVMLinearKernel SVMLinearKernel(x)
+  ((-idx2- (-float-)) x)
+  (setq data x) )
+
+(defmethod SVMLinearKernel call(i j)
+  ((-int-) i j)
+  (let ((dp (idx-dot (select data 0 i) (select data 0 j))))
+    (to-real (dp)) ) )
+
+
+#? SVMPolynomial Kernel.
+;; Simple polynomial kernel.
+;; Subclass of <SVMVectorKernel>.
+;;.VP
+;;  K(x_i,x_j) = (coeff0 + gamma . x_i . x_j ) ^ degree
+
+(defclass SVMPolynomialKernel SVMVectorKernel
+  ((-double-) degree) 
+  ((-double-) gamma) 
+  ((-double-) coeff0) )
+
+(defmethod SVMPolynomialKernel SVMPolynomialKernel(x d g c)
+  ((-idx2- (-float-)) x)
+  ((-double-) d g c)
+  (setq data x) 
+  (setq degree d)
+  (setq gamma g)
+  (setq coeff0 c) )
+
+(defmethod SVMPolynomialKernel call(i j)
+  ((-int-) i j)
+  (let ((dp (idx-dot (select data 0 i) (select data 0 j))))
+    (** (+ coeff0 (* gamma (to-real (dp)))) degree) ) )
+
+
+#? * SVMRBFKernel.
+;; Simple rbf kernel.
+;; Subclass of <SVMVectorKernel>.
+;;.VP
+;;  K(x_i,x_j) = exp( - gamma . (x_i - x_j)^2 )
+
+(defclass SVMRBFKernel SVMVectorKernel
+  ((-double-) gamma) )
+
+(defmethod SVMRBFKernel SVMRBFKernel(x g)
+  ((-idx2- (-float-)) x)
+  ((-double-) g)
+  (setq data x) 
+  (setq gamma g) )
+
+(defmethod SVMRBFKernel call(i j)
+  ((-int-) i j)
+  (let* ((dp (idx-sqrdist (select data 0 i) (select data 0 j))))
+    (exp (* -1 gamma (to-real (dp)))) ) )
+
+
+
+;; ----------------------------------------
+
+
+(defclass SVMExpansion object
+  ((-obj- (SVMKernel))  kernel)
+  ((-idx1- (-int-))     sv)
+  ((-idx1- (-double-))  alpha)
+  ((-double-)           b)
+  ((-double-)           scale)
+  ((-double-)           postb)
+  ((-int-)              positive-class)
+  ((-int-)              negative-class)
+  ((-idx1- (-double-))  userdata) )
+
+
+(defmethod SVMExpansion SVMExpansion(k s a)
+  ((-obj- (SVMKernel)) k)
+  ((-idx1- (-int-))    s)
+  ((-idx1- (-double-))  a)
+  (setq kernel k)
+  (setq sv s)
+  (setq alpha a)
+  (setq b 0)
+  (setq scale 1)
+  (setq postb 0)
+  (setq positive-class 0)
+  (setq negative-class 0)
+  (setq userdata (double-array 1)) )
+
+(defmethod SVMExpansion predict(xi)
+  ((-int-) xi)
+  (let ((m (double-array (idx-dim alpha 0)))
+	(r (double-array)) )
+    (idx-bloop ((sv1 sv)(m1 m))
+      (m1 (==> kernel call xi (sv1))) )
+    (idx-dot m alpha r)
+    (- (* scale (- (r) b)) postb) ) )
+
+(defmethod SVMExpansion predict-many(xm)
+  ((-idx1- (-int-)) xm)
+  (let ((r (double-array (idx-dim xm 0))))
+    (idx-bloop ((r1 r)(xm1 xm))
+      (r1 (==> this predict (xm1))) )
+    r ) )
+
+(defmethod SVMExpansion negate()
+  (let ((p positive-class)
+	(n negative-class))
+    (setq positive-class n)
+    (setq negative-class p)
+    (setq b (- b))
+    (idx-dotm0 alpha [@ -1] alpha)
+    t ) )
+
+(defmethod SVMExpansion save(filename)
+  (save-svm-expansion this filename) )
+
+(de save-svm-expansion(fun filename)
+  (declare (-obj- (SVMExpansion)) fun)
+  (writing (open-write filename "svm")
+    (bwrite (list :fun:sv :fun:alpha :fun:b 
+		  :fun:positive-class :fun:negative-class
+		  :fun:scale :fun:postb :fun:userdata)) )
+  filename )
+
+(de load-svm-expansion(kernel filename)
+  (declare (-obj- (SVMKernel)) kernel)
+  (let (((sv alpha b pos neg . aux) 
+	 (reading (open-read filename "svm") (read)) ))
+    (let ((r (new SVMExpansion kernel sv alpha)))
+      (setq :r:b b)
+      (setq :r:positive-class pos)
+      (setq :r:negative-class neg)
+      (when (and aux (numberp (car aux)))
+	(setq :r:scale (car aux))
+	(setq aux (cdr aux))
+	(when (and aux (numberp (car aux)))
+	  (setq :r:postb (car aux))
+          (setq aux (cdr aux))
+          (when (and aux (matrixp (car aux)))
+            (setq :r:userdata (car aux))
+            (setq aux (cdr aux)) ) ) )
+      r ) ) )
+
+
+
+
+
+;; ----------------------------------------
+
+(with-namespace lush1-
+
+(dhc-make ()
+	  (SVMKernel SVMKernel call label)
+	  (SVMVectorKernel SVMVectorKernel)
+	  (SVMLinearKernel SVMLinearKernel call)
+	  (SVMPolynomialKernel SVMPolynomialKernel call)
+	  (SVMRBFKernel SVMRBFKernel call) 
+	  (SVMExpansion SVMExpansion negate predict predict-many) )
+
+) ; lush1-
+

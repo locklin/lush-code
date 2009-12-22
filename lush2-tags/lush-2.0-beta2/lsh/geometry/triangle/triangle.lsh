@@ -1,0 +1,224 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Lush interface to the Triangle code by Jonathan Richard Shewchuk
+;; See 'triangle.c' for more information.
+
+(libload "libc/make")
+
+(let ((tlib (new LushMake (dirname file-being-loaded))))
+  ;; make triangle object file and load it
+  (==> tlib rule "trilibrary.o" '("triangle.c"))
+  ;;(==> tlib setflags "-DREDUCED -DTRILIBRARY")
+  (==> tlib setflags "-DTRILIBRARY -DLINUX -DNO_TIMER") ;; see triangle.c 
+  (==> tlib make)
+  (==> tlib load) )
+
+(defclass triangulateio object
+  ((-idx2- (-double-)) pointlist)
+  ((-idx1- (-double-)) pointattributelist)
+  ((-idx1- (-int-)) pointmarkerlist)
+  ((-idx2- (-int-)) trianglelist)
+  ((-idx1- (-double-)) triangleattributelist)
+  ((-idx1- (-double-)) trianglearealist)
+  ((-idx2- (-int-)) neighborlist)
+  ((-idx2- (-int-)) segmentlist)
+  ((-idx1- (-int-)) segmentmarkerlist)
+  ((-idx2- (-double-)) holelist)
+  ((-idx1- (-double-)) regionlist)
+  ((-idx2- (-int-)) edgelist)
+  ((-idx1- (-int-)) edgemarkerlist)
+  ((-idx2- (-double-)) normlist)
+  )
+
+;; intialize all slots
+(defmethod triangulateio triangulateio ()
+  (setq pointlist (double-array 0 2))
+  (setq pointattributelist (double-array 0))
+  (setq pointmarkerlist (int-array 0))
+  (setq trianglelist (int-array 0 3))
+  (setq triangleattributelist (double-array 0))
+  (setq trianglearealist (double-array 0))
+  (setq neighborlist (int-array 0 3))
+  (setq segmentlist (int-array 0 2))
+  (setq segmentmarkerlist (int-array 0))
+  (setq holelist (double-array 0 2))
+  (setq regionlist (double-array 0))
+  (setq edgelist (int-array 0 2))
+  (setq edgemarkerlist (int-array 0))
+  (setq normlist (double-array 0 2)) )
+
+
+(defcmacro SETCPTR (p "name")
+  "$p->name = $(idx-emptyp name) ? NULL : IND_BASE($name)")
+
+(eval
+
+ `(defmethod triangulateio lisp2c (tio)
+    (declare (-gptr- "struct triangulateio *") tio)
+    (cpheader "#include \"triangle.h\"")
+    ,@(domapcar ((slot (slots triangulateio))) `(SETCPTR tio ,(nameof slot)))
+    #{
+    $tio->numberofpoints = $(length pointlist);
+    $tio->numberofpointattributes = $(length pointattributelist);
+    $tio->numberoftriangles = $(length trianglelist);
+    $tio->numberofcorners = $(idx-shape trianglelist 1);
+    $tio->numberoftriangleattributes = $(length triangleattributelist);
+    $tio->numberofsegments = $(length segmentlist);
+    $tio->numberofholes = $(length holelist);
+    $tio->numberofregions = $(length regionlist);
+    $tio->numberofedges = $(length edgelist);
+    #}
+    ())
+
+ `(defmethod triangulateio -emptyp ()
+    (and ,@(domapcar ((slot (slots triangulateio))) `(idx-emptyp ,slot))) )
+ )
+
+(defcmacro TIOPTR (plist p "name")
+  "$plist = $p->name;")
+
+(defcmacro SETIDX (p "name" "numberof")
+  "if ($p->name) { int nelems = 1; $name->dim[0] = $p->numberof; { int d = $name->ndim; while (d) nelems *= $name->dim[--d];} Midx_setdata($name, $p->name, nelems); mm_manage($p->name); Midx_update_mod_from_dim($name); }")
+
+(defmacro -csetidx (tio name numberof in)
+  (let ((name-symbol (make-symbol name)))
+    `(if (= (idx-base (scope ,in ,name-symbol)) (progn (TIOPTR plist ,tio ,name) plist))
+    (setq (scope this ,name-symbol) (scope ,in ,name-symbol))
+       (SETIDX ,tio ,name ,numberof) )
+    ))
+  
+(defmethod triangulateio c2lisp (tio in)
+  (declare (-gptr- "struct triangulateio *") tio)
+  (declare (-obj- (triangulateio)) in)
+  (assert (==> this -emptyp) "triangulateio object must be empty for c2lisp")
+
+  (let ((plist (to-gptr NULL)))
+    (declare (-gptr- "void *") plist)
+
+    (-csetidx tio "pointlist" "numberofpoints" in)
+    (-csetidx tio "pointattributelist" "numberofpointattributes" in)
+    (-csetidx tio "pointmarkerlist" "numberofpoints" in)
+    #{
+    Midx_dim($trianglelist, 1) = $tio->numberofcorners;
+    #}
+    (-csetidx tio "trianglelist" "numberoftriangles" in)
+    (-csetidx tio "triangleattributelist" "numberoftriangleattributes" in)
+    (-csetidx tio "trianglearealist" "numberoftriangles" in)
+    (-csetidx tio "neighborlist" "numberoftriangles" in)
+    (-csetidx tio "segmentlist" "numberofsegments" in)
+    (-csetidx tio "segmentmarkerlist" "numberofsegments" in)
+    (-csetidx tio "holelist" "numberofholes" in)
+    (-csetidx tio "regionlist" "numberofregions" in)
+    (-csetidx tio "edgelist" "numberofedges" in)
+    (-csetidx tio "edgemarkerlist" "numberofedges" in)
+    (-csetidx tio "normlist" "numberofedges" in) )
+  ())
+
+;; for debugging
+(defmethod triangulateio print-struct (tio)
+  (declare (-gptr- "struct triangulateio *") tio)
+  #{
+  printf("p->pointlist : %p\n", $tio->pointlist);
+  printf("p->pointattributelist : %p\n", $tio->pointattributelist);
+  printf("p->pointmarkerlist : %p\n", $tio->pointmarkerlist);
+  printf("p->numberofpoints : %d\n", $tio->numberofpoints);
+  printf("p->numberofpointattributes : %d\n", $tio->numberofpointattributes);
+  
+  printf("p->trianglelist : %p\n", $tio->trianglelist);
+  printf("p->triangleattributelist : %p\n", $tio->triangleattributelist);
+  printf("p->trianglearealist : %p\n", $tio->trianglearealist);
+  printf("p->neighborlist : %p\n", $tio->neighborlist);
+  printf("p->numberoftriangles : %d\n", $tio->numberoftriangles);
+  printf("p->numberofcorners : %d\n", $tio->numberofcorners);
+  printf("p->numberoftriangleattributes : %d\n", $tio->numberoftriangleattributes);
+  
+  printf("p->segmentlist : %p\n", $tio->segmentlist);
+  printf("p->segmentmarkerlist : %p\n", $tio->segmentmarkerlist);
+  printf("p->numberofsegments : %d\n", $tio->numberofsegments);
+  
+  printf("p->holelist : %p\n", $tio->holelist);
+  printf("p->numberofholes : %d\n", $tio->numberofholes);
+  
+  printf("p->edgelist : %p\n", $tio->edgelist);
+  printf("p->edgemarkerlist : %p\n", $tio->edgemarkerlist);
+  printf("p->normlist : %p\n", $tio->normlist);
+  printf("p->numberofedges : %d\n", $tio->numberofedges);
+  printf("--------------------------------------------------------\n");
+  #}
+  ())
+
+(defun triangulate (switches in)
+  (declare (-str-) switches)
+  (declare (-obj- (triangulateio)) in)
+  (let ((out (new triangulateio)))
+    #{ 
+    static struct triangulateio tio_in, tio_out;
+    struct triangulateio *in = &tio_in;
+    struct triangulateio *out = &tio_out;
+    #}
+    (==> out lisp2c #{ out #}) ; initialize tio_out with NULLs
+    (==> in lisp2c #{ in #})   ; initialize tio_in with in data
+    #{
+    triangulate($switches, in, out, NULL);
+    #}
+    (==> out c2lisp #{ out #} in) ; get hold of results
+    ;(==> in print-struct #{ in #})
+    ;(==> out print-struct #{ out #})
+    out))
+
+
+(defun triangulate-voronoi (switches in)
+  (declare (-str-) switches)
+  (declare (-obj- (triangulateio)) in)
+  (let ((out (new triangulateio))
+        (vor (new triangulateio)) )
+    #{
+    static struct triangulateio tio_in, tio_out, tio_vor;
+    struct triangulateio *in = &tio_in;
+    struct triangulateio *out = &tio_out;
+    struct triangulateio *vor = &tio_vor;
+    #}
+    (==> out lisp2c #{ out #}) ; initialize tio_out with NULLs
+    (==> vor lisp2c #{ vor #}) ; dito for tio_vor
+    (==> in lisp2c #{ in #})   ; initialize tio_in with in data
+    #{
+    triangulate($switches, in, out, vor);
+    #}
+    (==> out c2lisp #{ out #} in)
+    (==> vor c2lisp #{ vor #} in)
+    ;(==> in print-struct #{ in #})
+    ;(==> out print-struct #{ out #})
+    ;(==> vor print-struct #{ vor #})
+    vor))
+
+(defparameter *triangle-make-flags* (sprintf " -I%s" (concat-fname lushdir "lsh/geometry/triangle")))
+
+(let ((dhc-make-lushflags (concat dhc-make-lushflags *triangle-make-flags*)))
+  (dhc-make () (triangulateio triangulateio lisp2c -emptyp c2lisp print-struct) 
+            triangulate triangulate-voronoi)
+  )

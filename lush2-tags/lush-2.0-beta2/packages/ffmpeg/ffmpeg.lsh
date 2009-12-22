@@ -1,0 +1,927 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: ffmpeg.lsh,v 1.13 2006/04/10 22:19:22 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "avsource")
+(libload "ffmpeg-config")
+(libload "ffmpeg-enum")
+(libload "libidx/idx-macros")
+(libload "libidx/idx-ubyte")
+;(libload "libc/libc")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; FUNCTIONS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? ** FFmpeg Decoding Interface
+
+(de av-init()
+  #{{
+    static int av_init = 0;
+    if (! av_init) {
+      av_init = 1;
+      av_register_all();
+    }
+  }#}
+  t
+)
+
+#? (av-open-input-file <filename>)
+;; {<see> AvInputFile}
+;;
+;; {<p>
+;;   Open the multimedia file <filename> using the FFmpeg library and
+;;   returns an instance of class <AvInputFile>.
+;; }
+(de av-open-input-file(s)
+  ((-str-) s)
+  (let ((ai (new AvInputFile)))
+    (==> ai open s)
+    ai ) )
+
+#? (av-open-video-source <filename>)
+;; {<see> VideoSource}
+;; {<see> AvVideoSource}
+;;
+;; {<p>
+;;   Open the multimedia file <filename> using the FFmpeg library and
+;;   returns a <AvVideoSource> object connected to the first video stream in
+;;   the file.
+;; }
+(de av-open-video-source(s)
+  ((-str-) s)
+  (let ((ai (new AvInputFile)))
+    (==> ai open s)
+    (let ((vs 0)
+	  (ns (==> ai get-number-of-streams)))
+      ((-int-) vs ns)
+      (while (and (< vs ns) 
+		  (<> (==> ai get-stream-codec-type vs) CODEC_TYPE_VIDEO))
+	(incr vs) )
+      (when (>= vs ns)
+	(error "No video stream in this file") )
+      (new AvVideoSource ai vs) ) ) )
+
+#? (av-open-audio-source <filename>)
+;; {<see> AudioSource}
+;; {<see> AvAudioSource}
+;;
+;; {<p>
+;;   Open the multimedia file <filename> using the FFmpeg library and
+;;   returns a <AvAudioSource> object connected to the first audio stream in
+;;   the file.
+;; }
+(de av-open-audio-source(s)
+  ((-str-) s)
+  (let ((ai (new AvInputFile)))
+    (==> ai open s)
+    (let ((vs 0)
+	  (ns (==> ai get-number-of-streams)))
+      ((-int-) vs ns)
+      (while (and (< vs ns) 
+		  (<> (==> ai get-stream-codec-type vs) CODEC_TYPE_AUDIO))
+	(incr vs) )
+      (when (>= vs ns)
+	(error "No video stream in this file") )
+      (new AvAudioSource ai vs) ) ) )
+
+	   
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; AVINPUTFILE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? * AvInputFile
+;; {<see> (av-open-input-file <filename>)}
+;;
+;; {<p>
+;;   Class <AvInputFile> is a handle for reading a multimedia file. It is
+;;   best created using the utility function <av-open-input-file>. Each
+;;   multimedia file contains one or more streams. Each stream is either an
+;;   audio stream or a video stream.
+;; }
+;; {<p>
+;;   This class defines several useful slots:
+;; }
+;; {<ul>
+;;   {<li>
+;;     Slots <audio_streams> and <video_streams> contain the number of
+;;     streams of each type.
+;;   }
+;;   {<li>
+;;     The geometry of the first video stream is stored in fields 
+;;     <frame-height>, <frame-width>, <frame-aspect-ratio>.
+;;   }
+;;   {<li>
+;;     The sampling rate and the number of channels of the first audio
+;;     stream are stored in slots <audio-sample-rate> and <audio-channels>.
+;;   }
+;; }
+(defclass AvInputFile object
+  ((-gptr-) ic)
+  ((-bool-) gotpacket)
+  ((-gptr-) curpacket)
+  ((-idx1- (-mptr-)) sources)
+  ((-gptr-) image_format) 
+  ((-gptr-) file_iformat)
+  ((-int-)  audio_streams)
+  ((-int-)  video_streams)
+  ((-int-)  audio_channels)
+  ((-int-)  audio_sample_rate)
+  ((-int-)  frame_height)
+  ((-int-)  frame_width)
+  ((-real-) frame_aspect_ratio)
+  ((-int-)  frame_pix_fmt)
+  ((-real-) frame_rate)
+  ((-int-)  workaround_bugs)
+  ((-int-)  error_resilience)
+  ((-int-)  error_concealment)
+  ((-int-)  idct_algo)
+  ((-int-)  bitexact)
+  ((-int-)  debug)
+  )
+
+#? (new AvInputFile)
+;; {<p>
+;;   Create a new empty instance of class <AvInputFile>. Calling method
+;;   <open> associates this handle with a multimedia file. Various FFmpeg
+;;   options can be set by defining certain slots of this object before
+;;   calling <open>.
+;; }
+(defmethod AvInputFile AvInputFile()
+  (setq ic NULL)
+  (setq gotpacket ())
+  (setq curpacket (to-gptr #{ av_mallocz(sizeof(AVPacket)) #}))
+  (setq sources (mptr-array 4))
+  (setq image_format NULL) 	;ffmpeg opt_image_format: -img
+  (setq file_iformat NULL)		;ffmpeg opt_format: -f
+  (setq audio_streams 0)
+  (setq video_streams 0)
+  (setq audio_channels 1)		;ffmpeg opt_audio_channels: -ac
+  (setq audio_sample_rate 44100)	;ffmpeg opt_audio_rate: -ar
+  (setq frame_height 128)		;ffmpeg opt_frame_size: -s
+  (setq frame_width 160)		;ffmpeg opt_frame_size: -s
+  (setq frame_aspect_ratio 0)		;ffmpeg opt_frame_aspect_ratio: -aspect
+  (setq frame_pix_fmt PIX_FMT_YUV420P)	;ffmpeg opt_frame_pix_fmt:  -pix_fmt
+  (setq frame_rate 25)			;ffmpeg opt_frame_rate: -r
+  (setq workaround_bugs 1) 		;ffmpeg opt_workaround_bug: -bug
+  (setq error_resilience 2)		;ffmpeg opt_error_resilience: -er
+  (setq error_concealment 3)		;ffmpef opt_error_concealment: -ec
+  (setq idct_algo 0)			;ffmpeg opt_idct_algo: -idct_algo
+  (setq bitexact 0)			;ffmpeg opt_bitexact: -bitexatc
+  (setq debug 0)			;ffmpef opt_debug: -debug
+  (when (not curpacket)
+    (error "out of memory") )
+  () )
+
+(defmethod AvInputFile -destructor()
+  (when curpacket
+    (when gotpacket
+      #{ av_free_packet((AVPacket*)$curpacket); #} )
+    #{ av_free($curpacket); #} )
+  (when ic
+    #{ av_close_input_file((AVFormatContext*)$ic); #} 
+    (setq ic NULL) )
+  () )
+
+#? (==> <avinputfile> get-number-of-streams)
+;; {<p>
+;;   Return the total number of streams in the multimedia file.
+;; }
+(defmethod AvInputFile get-number-of-streams()
+  (+ audio_streams video_streams) )
+
+#? (==> <avinputfile> get-stream-codec-type <n>)
+;; {<p>
+;;   Returns the type of the stream number <n>. The return value is one of
+;;   the constants named <CODEC_TYPE_XXX>. This includes 
+;;   <CODEC_TYPE_VIDEO> or <CODEC_TYPE_AUDIO>.
+;; }
+(defmethod AvInputFile get-stream-codec-type(n)
+  ((-int-) n)
+  (when (or (< n 0) (>= n (+ audio_streams video_streams)))
+    (error "Illegal stream number") )
+  (to-int #{ ((AVFormatContext*)($this->ic))->streams[$n]
+                           ->codec->codec_type #}) )
+
+#? (==> <avinputfile> get-stream-codec-id <n>)
+;; {<p>
+;;   Returns the identifier of the codec for stream number <n>. The return
+;;   value is one of the constants named <CODEC_ID_XXX>.
+;; }
+(defmethod AvInputFile get-stream-codec-id(n)
+  ((-int-) n)
+  (when (or (< n 0) (>= n (+ audio_streams video_streams)))
+    (error "Illegal stream number") )
+  (to-int #{ ((AVFormatContext*)($this->ic))->streams[$n]
+                           ->codec->codec_id #}) )
+
+#? (==> <avinputfile> get-format-name)
+;; {<p>
+;;   Returns a string describing the multimedia file format.
+;; }
+(defmethod AvInputFile get-format-name()
+  (if file_iformat
+      (to-str #{ mm_strdup(((AVInputFormat*)($file_iformat))->name) #} ))
+    "<?>" ) )
+
+#? (==> <avinputfile> get-start-time)
+;; {<p>
+;;   Returns the first presentation time stamp for the multimedia file.
+;;   Presentation time stamps are real numbers expressed in seconds.
+;; }
+(defmethod AvInputFile get-start-time()
+  (if ic
+      (to-real #{ (double)(((AVFormatContext*)($ic))->start_time)/AV_TIME_BASE #})
+    0 ) )
+
+#? (==> <avinputfile> get-duration)
+;; {<p>
+;;   Returns the duration of the multimedia file expressed in seconds.
+;;  }
+(defmethod AvInputFile get-duration()
+  (if ic
+      (to-real #{ (double)(((AVFormatContext*)($ic))->duration)/AV_TIME_BASE #})
+    0 ) )
+
+
+#? (==> <avinputfile> open <filename>)
+;; {<p>
+;;   Associate the empty <avinputfile> object with the multimedia file named
+;;   <filename>. This function checks the file format and the file codecs.
+;;   It causes an error if the file cannot be decoded by the ffmpeg library.
+;;  }
+(defmethod AvInputFile open(s)
+  ((-str-) s)
+  (av-init)
+  (when ic (error "Already open"))
+  (let ((ai this))
+    #{{
+        /* ------------------------------------------------- */
+        /* This is derived from 'opt_input_file' in ffmpeg.c */
+        /* ------------------------------------------------- */
+        AVFormatParameters params;
+        AVFormatParameters *ap = &params;
+        AVFormatContext *ic = 0;
+        AVInputFormat *ifmt = (AVInputFormat*)($ai->file_iformat);
+        int err, i, ret;
+        AVRational rfps;
+        char *filename = $s;
+
+        if (!strcmp(filename, "$stdin"))
+           filename = "pipe:";
+
+        /* get default parameters from command line */ 
+        memset(ap, 0, sizeof(*ap));
+        ap->sample_rate = $ai->audio_sample_rate;
+        ap->channels = $ai->audio_channels;
+        ap->width = $ai->frame_width;
+        ap->height = $ai->frame_height;
+        ap->image_format = $ai->image_format;
+        ap->pix_fmt = $ai->frame_pix_fmt;
+        
+        /* open the input file with generic libav function */
+        err = av_open_input_file(&ic,filename,ifmt,0,ap);
+        if (err < 0) {
+           fprintf(stderr, "%s: Error %d while opening file\n", filename, err);
+           run_time_error("FFmpeg returned an error code");
+        }
+        $ai->ic = (gptr)(ic);
+        $ai->file_iformat = (gptr)(ic->iformat);
+
+        /* If not enough info to get the stream parameters, we decode the
+           first frames to get it. (used in mpeg case for example) */
+        ret = av_find_stream_info(ic);
+        if (ret < 0) {
+           fprintf(stderr, "%s: could not find codec parameters\n", filename);
+           run_time_error("FFmpeg returned an error code");
+        }
+    
+        /* update the current parameters so that they match 
+           the one of the input stream */
+        $ai->audio_streams = 0;
+        $ai->video_streams = 0;
+        for(i=0;i<ic->nb_streams;i++) {
+           AVCodecContext *enc = ic->streams[i]->codec;
+           switch(enc->codec_type) {
+           case CODEC_TYPE_AUDIO:
+             $ai->audio_streams += 1;
+             $ai->audio_channels = enc->channels;
+             $ai->audio_sample_rate = enc->sample_rate;
+             break;
+           case CODEC_TYPE_VIDEO:
+             $ai->video_streams += 1;
+             $ai->frame_height = enc->height;
+             $ai->frame_width = enc->width;
+	     $ai->frame_aspect_ratio = av_q2d(enc->sample_aspect_ratio) * enc->width / enc->height;
+	     $ai->frame_pix_fmt = enc->pix_fmt;
+             rfps      = ic->streams[i]->r_frame_rate;
+             enc->workaround_bugs = $ai->workaround_bugs;
+             enc->error_resilience = $ai->error_resilience;
+             enc->error_concealment = $ai->error_concealment;
+             enc->idct_algo = $ai->idct_algo;
+             enc->debug = $ai->debug;
+             if(enc->codec_id==CODEC_ID_MPEG1VIDEO || enc->codec_id==CODEC_ID_H264)
+                enc->flags |= CODEC_FLAG_TRUNCATED;
+             if ($ai->bitexact)
+                enc->flags |= CODEC_FLAG_BITEXACT;
+             /* update the current frame rate to match the stream frame rate */
+             $ai->frame_rate      = av_q2d(rfps);
+             enc->rate_emu = 0;
+             break;
+           default:
+             break;
+        }
+      }
+    }#} 
+    )
+  ;; resize source vector
+  (idx-m1resize sources (==> this get-number-of-streams))
+  this )
+
+#? (==> <avinputfile> pump)
+;;
+;; {<p>
+;;   Method <pump> reads data from the multimedia file and distributes it to
+;;   the various streams.
+;; }
+(defmethod AvInputFile pump()
+  ;; Get rid of current packet
+  (when gotpacket
+    #{ av_free_packet((AVPacket*)$curpacket); #}
+    (setq gotpacket ()) )
+  #{{
+     AVFormatContext *ic = (AVFormatContext*)$ic;
+     AVPacket *pkt = (AVPacket*)$curpacket;
+     if (av_read_packet(ic, pkt) >= 0)
+        $gotpacket = 1;
+  }#}
+  ;; Signal avsources
+  (when gotpacket
+    (let ((n (to-int #{ ((AVPacket*)$curpacket)->stream_index #})))
+      (when (<> (sources n) NULL)
+        (==> (to-obj AVSource (sources n)) process) ) )
+    t ) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; AVPACKETLIST
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; This class is private
+
+(defclass AvPacketList object
+  ((-gptr-) head)
+  ((-gptr-) tail)
+  ((-int-)  count)
+)
+
+(defmethod AvPacketList AvPacketList()
+  (setq head NULL)
+  (setq tail NULL) 
+  (setq count 0) )
+
+(defmethod AvPacketList put(p)
+  ((-gptr-) p)
+  #{{ 
+     AVPLElt *z = (AVPLElt*)av_malloc(sizeof(AVPLElt));
+     if (!z) run_time_error("Out of memory");
+     z->next = (AVPLElt*)$head;
+     z->prev = 0;
+     z->pkt = *(AVPacket*)$p;
+     if (z->next) 
+       z->next->prev = z;
+     else
+       $tail = (gptr)z;
+     $head = (gptr)z;
+  }#}
+  (incr count) )
+
+(defmethod AvPacketList pop()
+  (when tail
+    #{{
+       AVPLElt *z = (AVPLElt*)$tail;
+       $tail = (gptr)(z->prev);
+       if (z->prev)
+         z->prev->next = 0;
+       else
+         $head = 0;
+       av_free_packet(&z->pkt);
+       av_free(z);
+    }#} 
+    (incr count -1) )
+  count )
+
+(defmethod AvPacketList peek()
+  (let ((p NULL))
+    (when tail
+      #{ $p = (gptr)&((AVPLElt*)$tail)->pkt; #} )
+    p ) )
+
+(defmethod AvPacketList -destructor()
+  (while (> count 0)
+    (==> this pop) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; AVAUDIOSOURCE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? * AvAudioSource
+;; {<see> AudioSource}
+;;
+;; {<p>
+;;   This subclass of <AudioSource> provides access to the audio streams of
+;;   a multimedia file represented by an instance of <AvInputFile>.
+;;
+;; {<b> WARNING}: Currently, this class is not usable.
+;; }
+(defclass AvAudioSource AudioSource
+  ((-obj- (AvInputFile)) ai)
+  ((-obj- (AvPacketList)) data)
+  ((-int-) streamno)
+  ((-gptr-) st) 
+  ;; information
+  ((-int-)  audio_channels)
+  ((-int-)  audio_sample_rate) )
+
+
+#? (new AvAudioSource <avinputfile> <n>)
+;; {<p>
+;;   Creates a new <AvAudioSource> object for accessing stream number <n> in
+;;   the multimedia file <avinputfile>. Stream number <n> must of course be
+;;   an audio stream.
+;; }
+(defmethod AvAudioSource AvAudioSource(avfile n)
+  ((-obj- (AvInputFile)) avfile)
+  ((-int-) n)
+  (setq ai avfile)
+  (setq data (new AvPacketList))
+  (setq streamno n)
+  (setq st NULL)
+  (setq audio_channels 1)
+  (setq audio_sample_rate 44100)
+  (when (or (< n 0) (>= n (==> avfile get-number-of-streams)))
+    (error "Illegal stream number") )
+  (when (<> (==> avfile get-stream-codec-type n) CODEC_TYPE_AUDIO)
+    (error "Not an audio stream") )
+  #{ $st = (gptr)( ((AVFormatContext*)($ai->ic))->streams[$n] ); #}
+  (when (not st) 
+    (error "Stream not found")) 
+  #{{
+    AVStream *st = (AVStream*)($st);
+    AVCodec *codec = avcodec_find_decoder(st->codec->codec_id);
+    if (!codec)
+       run_time_error("FFmpeg error: unsupported codec");
+    if (avcodec_open(st->codec, codec) < 0) 
+       run_time_error("FFmpeg error: error while opening codec");
+  }#}
+  #{{
+    AVStream *st = (AVStream*)($st);
+    AVCodecContext *enc = st->codec;
+    $audio_channels = enc->channels;
+    $audio_sample_rate = enc->sample_rate;
+  }#}
+  (:ai:sources streamno (to-mptr this))
+  () )
+
+(defmethod AvAudioSource process()
+  ;; This is disabled for now because 
+  ;; AudioSource is not implemented yet.
+  (when (and () :ai:gotpacket)
+    (==> data put :ai:curpacket)
+    (setq :ai:gotpacket ())
+    t ) )
+
+(defmethod AvAudioSource -destructor()
+  (when (and (to-gptr ai) (to-gptr :ai:sources))
+    (:ai:sources streamno NULL) ) 
+  () )
+
+#? (==> <avaudiosource> get-codec-name)
+;; {<p>
+;;   Returns a string containing the name of the codec for this audio stream.
+;; }
+(defmethod AvAudioSource get-codec-name()
+  (to-str #{ mm_strdup(((AVStream*)($st))->codec->codec->name) #})) )
+
+#? (==> <avaudiosource> get-codec-id)
+;; {<p>
+;;   Returns the identifier of the codec for this audio stream. This
+;;   function returns one of the <CODEC_ID_XXX> constant.
+;; }
+(defmethod AvAudioSource get-codec-id()
+  (==> ai get-stream-codec-id streamno) )
+
+#? (==> <avaudiosource> get-start-time)
+;; {<p>
+;;   Returns the first presentation time stamp for this audio stream.
+;;   Presentation time stamps are real numbers expressed in seconds.
+;; }
+(defmethod AvAudioSource get-start-time()
+  (to-real #{ (double)(((AVStream*)($st))->start_time)/AV_TIME_BASE #}) )
+
+#? (==> <avaudiosource> get-duration)
+;; {<p>
+;;   Returns the duration of this audio stream expressed in seconds.
+;; }
+(defmethod AvAudioSource get-duration()
+  (to-real #{ (double)(((AVStream*)($st))->duration)/AV_TIME_BASE #}) )
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; AVVIDEOSOURCE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? * AvVideoSource
+;; {<see> VideoSource}
+;;
+;; {<p>
+;;   This subclass of <VideoSource> provides access to the audio streams of
+;;   a multimedia file represented by an instance of <AvInputFile>.
+;;
+;;   The current frame geometry is available in slots <frame-height>,
+;;   <frame-width>, and <frame-aspect-ratio>.
+;; }
+(defclass AvVideoSource VideoSource
+  ((-obj- (AvInputFile)) ai)
+  ((-obj- (AvPacketList)) data)
+  ((-int-) streamno)
+  ((-gptr-) st)
+  ;; frames
+  ((-bool-) gotcurframe)
+  ((-gptr-) curframe)
+  ((-gptr-) curptr)
+  ((-int-)  curlen)
+  ((-real-) curpts)
+  ((-int-)  curno)
+  ;; information...
+  ((-int-)  frame_height)
+  ((-int-)  frame_width)
+  ((-real-) frame_aspect_ratio)
+  ((-int-)  frame_pix_fmt)
+  ((-int-)  frame_rate)
+  ((-int-)  frame_rate_base) 
+  )
+
+
+#? (new AvVideoSource <avinputfile> <n>)
+;; {<p>
+;;   Creates a new <AvVideoSource> object for accessing stream number <n> in
+;;   the multimedia file <avinputfile>. Stream number <n> must of course be
+;;   a video stream.
+;; }
+(defmethod AvVideoSource AvVideoSource(avfile n)
+  ((-obj- (AvInputFile)) avfile)
+  ((-int-) n)
+  (setq ai avfile)
+  (setq data (new AvPacketList))
+  (setq streamno n)
+  (setq st NULL)
+  ;; frame
+  (setq gotcurframe ())
+  (setq curframe (to-gptr #{ av_mallocz(sizeof(AVFrame)) #}))
+  (when (not curframe) (error "Out of memory"))
+  (setq curptr NULL)
+  (setq curlen 0)
+  (setq curpts -1)
+  (setq curno -1)
+  ;; information
+  (setq frame_height 128)
+  (setq frame_width 160)
+  (setq frame_aspect_ratio 0)
+  (setq frame_pix_fmt PIX_FMT_YUV420P)
+  (setq frame_rate 25)
+  (setq frame_rate_base 1)
+  ;; checks
+  (when (or (< n 0) (>= n (==> avfile get-number-of-streams)))
+    (error "Illegal stream number") )
+  (when (<> (==> avfile get-stream-codec-type n) CODEC_TYPE_VIDEO)
+    (error "Not a video stream") )
+  #{ $st = (gptr)( ((AVFormatContext*)($ai->ic))->streams[$n] ); #}
+  (when (not st) 
+    (error "Stream not found") ) 
+  #{{
+    AVStream *st = (AVStream*)($st);
+    AVCodecContext *enc = st->codec;
+    AVCodec *codec = avcodec_find_decoder(enc->codec_id);
+    if (!codec)
+       run_time_error("FFmpeg error: unsupported codec");
+    if (avcodec_open(st->codec, codec) < 0) 
+       run_time_error("FFmpeg error: error while opening codec");
+    $frame_height = enc->height;
+    $frame_width = enc->width;
+    $frame_aspect_ratio = av_q2d(enc->sample_aspect_ratio) * enc->width / enc->height;
+    $frame_pix_fmt = enc->pix_fmt;
+    $frame_rate = av_q2d(st->r_frame_rate);
+    $curpts = st->start_time/AV_TIME_BASE;
+  }#}
+  (:ai:sources streamno (to-mptr this))
+  () )
+
+(defmethod AvVideoSource process()
+  (when :ai:gotpacket
+    (==> data put :ai:curpacket)
+    (setq :ai:gotpacket ())
+    t ) )
+
+(defmethod AvVideoSource -destructor()
+  (when (and (to-gptr ai) (to-gptr :ai:sources))
+    (:ai:sources streamno NULL) )
+  (when curframe #{ av_free($curframe); #})
+  () )
+
+#? (==> <avvideosource> get-codec-name)
+;;
+;; {<p>
+;;   Returns a string containing the name of the codec for this video stream.
+;; }
+(defmethod AvVideoSource get-codec-name()
+  (to-str #{ mm_strdup(((AVStream*)($st))->codec->codec->name) #})) )
+
+#? (==> <avvideosource> get-codec-id)
+;;
+;; {<p>
+;;   Returns the identifier of the codec for this video stream. This
+;;   function returns one of the <CODEC_ID_XXX> constant.
+;; }
+(defmethod AvVideoSource get-codec-id()
+  (==> ai get-stream-codec-id streamno) )
+
+#? (==> <avvideosource> get-start-time)
+;; {<p>
+;;   Returns the first presentation time stamp for this video stream.
+;;   Presentation time stamps are real numbers expressed in seconds.
+;; }
+(defmethod AvVideoSource get-start-time()
+  (to-real #{ (double)(((AVStream*)($st))->start_time)/AV_TIME_BASE #}) )
+
+#? (==> <avvideosource> get-duration)
+;; {<p>
+;;   Returns the duration of this video stream expressed in seconds.
+;; }
+(defmethod AvVideoSource get-duration()
+  (to-real #{ (double)(((AVStream*)($st))->duration)/AV_TIME_BASE #}) )
+
+#? (==> <avvideosource> get-frame-rate)
+;; {<p>
+;;   Returns the frame rate of this video stream expressed in frames per
+;;   seconds.
+;; }
+(defmethod AvVideoSource get-frame-rate()
+  (to-real #{ av_q2d(((AVStream*)($st))->r_frame_rate) #}) )
+
+#? (==> <avvideosource> get-frame-period)
+;;
+;; {<p>
+;; Returns the delay between consecutive frames expressed in seconds.
+;; This is the inverse of the frame rate.
+
+(defmethod AvVideoSource get-frame-period()
+  (/ (==> this get-frame-rate)) )
+
+#? (==> <avvideosource> get-number-of-frames)
+;; {<p>
+;;   Returns the number of frames estimated from the frame rate and stream
+;;   duration.  This is only an estimate because certain files have variable
+;;   frame rate, and because certain frames last more than one period.
+;; }
+(defmethod AvVideoSource get-number-of-frames()
+  (* (==> this get-duration) (==> this get-frame-rate)) )
+
+#? (==> <avvideosource> nextframe)
+;; {<p>
+;;   Method <nextframe> obtains the next video frame. It returns <t> if a
+;;   new frame can be accessed, using the frame access methods 
+;;   <get-frame-xxx>, and returns <()> when reaching the end of the video
+;;   stream.  
+;; }
+;; {<p>
+;;   After initializing the video source, this method must be called once in
+;;   order to access the first video frame.
+;; }
+(defmethod AvVideoSource nextframe()
+  (let ((again t))
+    ;; increment curpts
+    (when (>= curno 0)
+      (let ((period (==> this get-frame-period))) 
+	(incr curpts period)
+	(when gotcurframe
+	  (let ((rpt (to-int #{ ((AVFrame*)$curframe)->repeat_pict #})))
+	    (when (> rpt 0)
+	      (incr curpts (* period rpt 0.5)) ) ) ) ) )
+    ;; continue decoding
+    (setq gotcurframe ())
+    (while (and again (not gotcurframe))
+      ;; pump data
+      (when (<= curlen 0)
+	(==> data pop)
+	(while (and again (<= :data:count 0))
+	  (setq again (==> ai pump)) )
+	(let ((pkt (==> data peek)))
+	  (when (<> pkt NULL)
+	    #{{
+	        AVPacket *pkt = (AVPacket*)$pkt;
+	        $curlen = pkt->size;
+	        $curptr = (gptr) pkt->data;
+	    }#} ) ) )
+      ;; call decoder
+      (when (> curlen 0)
+	#{{
+            AVStream *st = (AVStream*)$st;
+	    AVFrame *curframe = (AVFrame*)$curframe;
+	    int gotpic = 0;
+	    int ret = avcodec_decode_video(st->codec, curframe, &gotpic, $curptr, $curlen);
+	    if (ret < 0) run_time_error("FFmpeg returned an error code while decoding");
+	    $curptr = (gptr) (((const char*)$curptr) + ret);
+	    $curlen = $curlen - ret;
+	    if (gotpic) {
+	      $gotcurframe = 1;
+              $frame_height = st->codec->height;
+              $frame_width = st->codec->width;
+              $frame_aspect_ratio = av_q2d(st->codec->sample_aspect_ratio) 
+                     * st->codec->width / st->codec->height;
+              $frame_pix_fmt = st->codec->pix_fmt;
+	    }
+	}#} ) ) 
+    (when gotcurframe
+      (incr curno) 
+      t ) ) )
+
+#? (==> <avvideosource> get-frame-pts)
+;; {<p>
+;;   Returns the presentation time stamp of the current frame. The
+;;   presentation time stamp is a real number expressed in seconds.
+;;   Calling this function before the first call to <nextframe> gives the
+;;   starting time of the movie.
+;; }
+(defmethod AvVideoSource get-frame-pts()
+  curpts )
+
+#? (==> <avvideosource> get-frame-number)
+;; {<p>
+;;   Returns the presentation frame number of the current frame.
+;; }
+(defmethod AvVideoSource get-frame-number()
+  (when (not gotcurframe) (error "No current frame"))
+  curno )
+
+#? (==> <avvideosource> get-frame-gray)
+;; {<p>
+;;   Returns the gray level image associated with the current frame as a two
+;;   dimensional matrix of unsigned bytes.
+;; }
+(defmethod AvVideoSource get-frame-gray()
+  (when (not gotcurframe) (error "No current frame"))
+  (let ((image (ubyte-array* frame_height frame_width)))
+    #{{
+        AVPicture pic;
+        AVPicture *curframe = (AVPicture*)$curframe;
+        pic.data[0] = IDX_PTR($image, unsigned char);
+        pic.data[1] = pic.data[2] = 0;
+        pic.linesize[0] = $image->mod[0];
+        pic.linesize[1] = pic.linesize[2] = 0;
+        if (img_convert(&pic, PIX_FMT_GRAY8, curframe, 
+                        $frame_pix_fmt, $frame_width, $frame_height) < 0)
+           run_time_error("FFmpeg image type conversion not supported");
+    }#}
+    image ) )
+
+#? (==> <avvideosource> get-frame-rgba)
+;; {<p>
+;;   Returns the RBGA image associated with the current frame as a three
+;;   dimensional matrix of unsigned bytes. The last dimentsion contains four
+;;   elements: three color components (R, G, B) and one alpha channel (A).
+;; }
+(defmethod AvVideoSource get-frame-rgba()
+  (when (not gotcurframe) (error "No current frame"))
+  (let ((image (ubyte-array* frame_height frame_width 4)))
+    #{{
+        AVPicture pic;
+        AVPicture *curframe = (AVPicture*)$curframe;
+        pic.data[0] = IDX_PTR($image, unsigned char);
+        pic.data[1] = pic.data[2] = 0;
+        pic.linesize[0] = $image->mod[0];
+        pic.linesize[1] = pic.linesize[2] = 0;
+        if (img_convert(&pic, PIX_FMT_RGBA32, curframe, 
+                        $frame_pix_fmt, $frame_width, $frame_height) < 0)
+           run_time_error("FFmpeg image type conversion not supported");
+    }#}
+    ;; Stupid ffmpeg says RGBA but generates BGRA!
+    (cinline-idx2loop image "unsigned char" "p" "i" "j"
+       #{{ unsigned char r = p[0]; p[0]=p[2]; p[2]=r; }#} )
+    image ) )
+
+#? (==> <avvideosource> get-frame-yuv)
+;; {<p>
+;;   Returns the YUV image associated with the current frame as a three
+;;   dimensional matrix of unsigned bytes. The last dimentsion contains
+;;   three elements, one per color component (Y, U, V).
+;; }
+(defmethod AvVideoSource get-frame-yuv()
+  (when (not gotcurframe) (error "No current frame"))
+  (let ((image (ubyte-array* 3 frame_height frame_width)))
+    #{{
+        AVPicture pic;
+        AVPicture *curframe = (AVPicture*)$curframe;
+        pic.data[0] = IDX_PTR($image, unsigned char);
+        pic.data[1] = pic.data[0] + $image->mod[0];
+        pic.data[2] = pic.data[1] + $image->mod[0];
+        pic.linesize[0] = $image->mod[1];
+        pic.linesize[1] = $image->mod[1];
+        pic.linesize[2] = $image->mod[1];
+        if (img_convert(&pic, PIX_FMT_YUVJ444P, curframe, 
+                        $frame_pix_fmt, $frame_width, $frame_height) < 0)
+           run_time_error("FFmpeg image type conversion not supported");
+    }#}
+    (idx-transclone image '(1 2 0)) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; MAKE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(with-namespace lush1-
+
+(let ((dhc-make-lushflags (concat dhc-make-lushflags ffmpeg-cflags)))
+
+  (each ((lib ffmpeg-libs))
+    (libload-add-dependency lib) )
+
+  (dhc-make-with-libs () ffmpeg-libs
+	#{ 
+	   #include <ffmpeg/avformat.h>
+	   #include <ffmpeg/avcodec.h>
+	   #define assert(x) do{if(!(x))\
+              run_time_error("Assertion failed: " #x);}while(0)
+           typedef struct AVPLElt_s {
+             struct AVPLElt_s *prev;
+             struct AVPLElt_s *next;
+             AVPacket pkt;
+           } AVPLElt;
+	#}
+        av-init
+        (AvInputFile AvInputFile 
+                     -destructor 
+                     get-format-name
+                     get-number-of-streams
+                     get-stream-codec-type
+                     get-stream-codec-id
+                     get-start-time
+                     get-duration
+                     open pump )
+        (AvPacketList AvPacketList
+                      put pop peek -destructor )
+        (AvAudioSource AvAudioSource 
+                       process -destructor
+                       get-codec-name get-codec-id 
+                       get-start-time get-duration )
+        (AvVideoSource AvVideoSource
+                       process -destructor
+                       get-codec-name get-codec-id 
+                       get-start-time get-duration
+                       get-frame-rate get-frame-period get-number-of-frames
+		       nextframe
+		       get-frame-pts get-frame-number
+		       get-frame-gray get-frame-rgba get-frame-yuv )
+        av-open-input-file 
+        av-open-video-source 
+        av-open-audio-source ) )
+)

@@ -1,0 +1,144 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? *** Rotating Teapot Demo with GLUT 
+;;.AUTHOR Leon Bottou and Yann LeCun
+;; This demo shows how to use GLUT and OpenGL to open
+;; a window and play a animated 3D while still having
+;; access to the Lush prompt. 
+;;.P 
+;; This demo uses timer events to draw the next frame
+;; while giving the user access to the Lush prompt
+;; between frame renderings. This mechanism is much
+;; superior to the conventional "main loop" call
+;; that would take over control of the Lush thread.
+
+
+(libload "opengl/glut")
+
+(defclass GlutDemoWindow GlutWindow
+  ((-float-) d ax ay az theta) )
+
+(defmethod GlutDemoWindow teapot(x y z theta phi rho)
+    ((-float-) x y z theta phi rho)
+    (let ((mat (float-matrix 4)))
+      (glPushMatrix)
+      (glTranslatef x y z)
+      (glRotatef theta phi rho 1)
+      (mat 0 0.1745) 
+      (mat 1 0.01175) 
+      (mat 2 0.01175) 
+      (mat 3 1.0)
+      (glMaterialfv GL_FRONT GL_AMBIENT mat)
+      (mat 0 0.61424) 
+      (mat 1 0.04136) 
+      (mat 2 0.04136)       
+      (glMaterialfv GL_FRONT GL_DIFFUSE mat)
+      (mat 0 0.727811) 
+      (mat 1 0.626959) 
+      (mat 2 0.626959)
+      (glMaterialfv GL_FRONT GL_SPECULAR mat)
+      (glMaterialf  GL_FRONT GL_SHININESS (* 0.6 128.0))
+      (glColor3f 1 1 1)
+      (glut-solid-teapot 1.0)
+      (glPopMatrix) ) )
+
+(defmethod GlutDemoWindow GlutDemoWindow()
+  (setq d 0)
+  (setq ax 0)
+  (setq ay 0)
+  (setq az 0)
+  (setq theta 0)
+  (glut-init-display-mode (bitor GLUT_RGBA GLUT_DEPTH GLUT_DOUBLE))
+  (==> this create 0 0 400 400 "GlutDemo: teapot")
+  (let ((position [f 0.0 3.0 3.0 0.0])
+        (localview [f 0.0 ]) )
+    (glEnable GL_DEPTH_TEST)
+    (glDepthFunc GL_LESS)
+    (glLightfv GL_LIGHT0 GL_POSITION position)
+    (glLightModelfv GL_LIGHT_MODEL_LOCAL_VIEWER localview)
+    (glFrontFace GL_CW)
+    (glEnable GL_LIGHTING)
+    (glEnable GL_LIGHT0)
+    (glEnable GL_AUTO_NORMAL)
+    (glEnable GL_NORMALIZE)
+    (glClearColor 0.5 0.5 0.5 1.0) ) )
+  
+(defmethod GlutDemoWindow glut-reshape(w h)
+  ((-int-) w h)
+  (glViewport 0 0 w h)
+  (glMatrixMode GL_PROJECTION)
+  (glLoadIdentity)
+  (gluPerspective 60 (/ (to-real w) (to-real h)) 0.5 20)
+  (glMatrixMode GL_MODELVIEW)
+  (glLoadIdentity) )
+
+(defmethod GlutDemoWindow glut-display()
+  (let ((pos [f 0 0 3 0]))
+    (pos 0 (* 3 (sin (* theta 0.0174533))))
+    (pos 1 (* 3 (cos (* theta 0.0174533))))
+    (glClear (bitor GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT))
+    (glLightfv GL_LIGHT0 GL_POSITION pos)
+    (==> this teapot 0.0 -0.5 (to-flt (+ (* 1 (sin (* 0.0174533 d))) -5)) ax ay az)
+    (glFlush)
+    (glut-swap-buffers) ) )
+
+(defmethod GlutDemoWindow glut-timer()
+  (when (> (glut-get-window) 0)
+    (incr theta 10)
+    (incr d 10)
+    (incr ax 4)
+    (incr ay 7)
+    (incr az 11) 
+    (glut-post-redisplay) ) )
+
+(defvar glut-demo-win ())
+(defvar glut-demo-timer ())
+
+(de glut-demo-start()
+  (glut-demo-stop)
+  (setq :glut-demo-win (new GlutDemoWindow))
+  (setq :glut-demo-timer (new Timer 250 10
+                             (lambda(c) (==> :glut-demo-win glut-timer)) )) )
+
+(de glut-demo-stop()
+  (delete :glut-demo-timer)
+  (delete :glut-demo-win) )
+
+(with-namespace lush1-
+(dhc-make-class () GlutDemoWindow)
+)
+
+(printf "\n")
+(printf "Type (glut-demo-start) to start the demo\n")
+(printf "Type (==> glut-demo-timer set 0 1) to run at maximum frame rate\n")
+(printf "Type (==> glut-demo-timer set 0 n) to wait n milliseconds between frames\n")
+(printf "Type (glut-demo-stop) to terminate the demo\n")
+
+
+

@@ -1,0 +1,155 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Processing optional keywords arguments
+;; Unlike Common Lisp, Lush does not have special syntax for keyword arguments.
+;; But using the function <parse-kwdargs> it is easy to process optional keyword 
+;; arguments that are given as an alternating list of keywords (symbols) and
+;; values. For example, a function <make-rect> may take four regular,
+;; positional arguments <x>, <y>, <w>, and <h>, and two optional keyword
+;; arguments <color>, and <filled>. Typical incovations of <make-rect> would 
+;; look like this:
+;;
+;; {<code>
+;;   (make-rect 10 10 100 200)
+;;   (make-rect 10 10 100 200 'color 'green)
+;;   (make-rect 0 0 500 500 'filled t 'color 'blue)
+;; </code>}
+;;
+;; Keyword arguments may appear in any order and combination after the 
+;; positional arguments. Since they are optional, there must be a default 
+;; value specified for each of them. Let's assume the default values for 
+;; <color> and <filled> in our example are <black> , and <t>, respectively. 
+;; The definition of <make-rect> then might look like this:
+;;
+;; {<code>
+;;   (de draw-rect (x y w h &rest args)
+;;     (let* ((kwddefs  (alist 'filled t  'color 'black))
+;;            (arglist  (apply alist args))
+;;            (option   (lambda (kwd) (alist-get kwd arglist))) )
+;;       (when (< (length kwddefs) (length arglist))
+;;         (error "unknown keyword argument") )
+;;       (set-color (option 'color))
+;;       (draw-rectangle x y w h)
+;;       (when (option 'filled)
+;;         (fill-region (1+ x) (1+ y)) )))
+;; </code>}
+;;
+;; Function <parse-kwdargs> implements this common keyword processing pattern
+;; and creates a hash table of key-value pairs. It also raises an error with
+;; a specific error message when an unkown keyword is passed to a function. 
+;; Using <parse-kwdargs> the above function would be written like this:
+;;
+;; {<code>
+;;   (de draw-rect (x y w h &rest args)
+;;     (let ((option (parse-kwdargs args  'filled t  'color 'black)))
+;;       (set-color (option 'color))
+;;       (draw-rectangle x y w h)
+;;       (when (option 'filled)
+;;         (fill-region (1+ x) (1+ y)) )))
+;; </code>}
+
+
+#? (parse-kwdargs <args> <kwd1> <val1> ... <kwdn> <valn>)
+;; {<see> Processing optional keyword arguments}
+;; {<see> parse-kwdargs*}
+;; Parse keyword argument list.
+;; For each atom with odd index in list <args> raise an error if it is not 
+;; in the set <kwd1>...<kwdn>. Create a hash table with keys <kwd1>...<kwdn>
+;; and return it. For each key <kwdi> the associated value is either <vali>,
+;; or, if <kwdi> is present in <args>, is the item following <kwdi> in <args>.
+;; Example:
+;;
+;; {<code> 
+;; ? (let ((args '(filled t  color black)))
+;;     (parse-kwdargs args 'filled () 'color 'white) )
+;; = ::HTable:938a158
+;; </code>}
+(defun parse-kwdargs (args . defaults)
+  (let ((ht (htable 5 t t)))
+    (ht . defaults)
+    ;; test keywords
+    (let ((validates (.cl ht identity)))
+      (domapc ((arg args) (validate validates))
+        (validate arg))
+      (delete validates) )
+    (ht . args)
+    ht))
+
+
+#? (parse-kwdargs* <args> <kwd1> <val1> ... <kwdn> <valn>)
+;; {<see> Processing optional keyword arguments}
+;; {<see> parse-kwdargs}
+;; Parse keyword argument list.
+;; Like <parse-kwdargs> but does not raise an error when an unkown keyword
+;; is encountered.
+(defun parse-kwdargs* (args . defaults)
+  (let ((ht (htable 5 t t)))
+    (ht . defaults)
+    (ht . args)
+    ht))
+
+#? (remove-kwdargs <args> <kwd1>..<kwdn>)
+;; {<see> Processing optional keyword arguments}
+;; {<see> parse-kwdargs}
+;; Remove arguments from keyword argument list.
+;; With <args> a list of alternating keywords and values, and <kwd1>...<kwdn>
+;; being keyword symbols, remove symbols <kwd1>...<kwdn> and their subsequent
+;; values, respectively, and return the shortened argument list. Example:
+;;
+;; {<code> 
+;; ? (let ((args '(filled t  color black)))
+;;     (remove-kwdargs args 'color) )
+;; = (filled t)
+;; </code>}
+(defun remove-kwdargs (args . kwds)
+  (if (null args)
+      nil
+    (let (((key val . args) args))
+      (if (member key kwds)
+	  (remove-kwdargs args . kwds)
+	(cons key (cons val (remove-kwdargs args . kwds))) ))))
+
+#? (update-kwdargs <args> <kwd> <val> [<kwd2> <val2> ...])
+;; {<see> Processing optional keyword arguments}
+;; {<see> parse-kwdargs}
+;; Set or update arguments in keyword argument list.
+;; With <args> a list of alternating keywords and values, <update-args> 
+;; replaces the value of keyword <kwd> by <val> when <kwd> is in <args>,
+;; or adds the pair <kwd> <val> to the list when <kwd> is not in <args>.
+;; Example:
+;;
+;; {<code> 
+;; ? (let ((args '(filled t  color black)))
+;;     (update-kwdargs args 'color 'yellow 'area 24) )
+;; = (area 24 color yellow filled t)
+;; </code>}
+(defun update-kwdargs (args kwd val . kwdargs)
+  (setq args (cons kwd (cons val (remove-kwdargs args kwd))))
+  (if kwdargs
+      (update-kwdargs args . kwdargs)
+    args))

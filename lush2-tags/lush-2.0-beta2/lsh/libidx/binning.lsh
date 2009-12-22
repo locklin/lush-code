@@ -1,0 +1,106 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libidx/idx-double")
+(libload "libidx/idx-sort")
+
+#? *** Array binning
+;; These functions create frequency vectors (histograms) of array values. 
+(defun -vector-bin (m bins hist)
+  (declare (-idx1- (-double-)) m bins)
+  (declare (-idx1- (-int-)) hist)
+  (assert (= (- (length bins) 1) (length hist)))
+  
+  (let ((maxv (bins (- (length bins) 1)))
+	(minv (bins 0)) )
+    
+    (for* (j 0 (length m))
+      (when (and (< (m j) maxv) (>= (m j) minv))
+	(let ((b (idx-d1bsearch bins (m j))))
+	  (hist b (+ (hist b) 1)) )))
+    hist))
+
+#? (vector-bin <v> <bs> [<fs>])
+;; {<see> vector-bin*}
+;; Bin values in vector <v> into bins <bs> and return a
+;; vector of frequencies. Optionally, write the output to <fs>
+;; accumulatively.
+;; Example:
+;; {<code>
+;; ? (let ((v (double-array 100)))
+;;     (for* (i 0 100) (v i (rand)))
+;;     (vector-bin v [0.0 0.1 0.3 0.5 0.7 1.0]) )
+;; = [i     7    24    19    18    32]
+;; </code>}
+(defmacro vector-bin (m bins &optional hist)
+  (if hist
+      `(-vector-bin ,m ,bins ,hist)
+    `(let* ((bins ,bins) (hist (int-array (- (length bins) 1))))
+       (-vector-bin ,m bins hist) )
+    ))
+
+(defun -vector-bin* (m n mrange)
+  (declare (-idx1- (-double-)) m mrange)
+  (declare (-int-) n)
+  (let ((bin-width (/ (- (mrange 1) (mrange 0)) n))
+	(bins (double-array (+ n 1)))
+	(bv (mrange 0)) )
+    (idx-bloop ((b bins))
+      (b bv) 
+      (incr bv bin-width) )
+    (let ((hist (vector-bin m bins))
+	  (bin-centers (idx-extend! bins 0 -1))
+	  (hbw (/ bin-width 2)) )
+      (idx-bloop ((bc bin-centers)) (bc (+ (bc) hbw)))
+      (list bin-centers hist))))
+
+#? (vector-bin* <v> <n> [<range>])
+;; {<see> vector-bin, histo>}
+;; Create histogram of values in vector <v> with <n> equally
+;; wide bins; return the bin centers and the histogram.
+;; With no <range> argument given the bins cover the range of
+;; values in <v>.
+;; Example:
+;; {<code>
+;; ? (let ((v (double-array 100)))
+;;     (for* (i 0 100) (v i (rand)))
+;;     (vector-bin* v 4) )
+;; = ([d  0.13  0.38  0.63  0.88] [i    27    24    24    24])
+;; </code>}
+(defmacro vector-bin* (m n &optional range)
+  (when (null range)
+    (setq range `(idx-d1range m)) )
+  `(let ((m ,m))
+     (-vector-bin* m ,n ,range))
+  )
+
+(dhc-make ()
+	  -vector-bin
+	  -vector-bin*)
+
+
+    

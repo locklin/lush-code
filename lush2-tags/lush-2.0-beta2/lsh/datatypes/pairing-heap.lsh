@@ -1,0 +1,225 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/tree-node")
+
+(defconstant +pairing-heap-cache-size+ 16)
+
+(deftemplate PairingHeap iterator
+  ((-obj- (TreeNode)) root)     ; root to node, only valid when n>0
+  ((-srg- (-mptr-))   work)     ; work space for delete-min
+  ((-srg- (-mptr-))  cache)     ; node cache
+  ((-int-)  ncache)             ; number of nodes in cache
+  ((-int-)  n)                  ; number of items in tree
+  )
+
+(putmethod PairingHeap 'PairingHeap ()) ; remove default constructor
+(putmethod PairingHeap 'peeknext ())    ; remove as slot 'next-item' is not
+(putmethod PairingHeap 'next ())        ; declared
+
+(in-namespace (class PairingHeap)
+(import (nullp) from (class TreeNode))
+
+(defmacro to-node (p)
+  `(to-obj (classof root) ,p)
+  )
+)
+
+(defmethod PairingHeap -emptyp ()
+  (= n 0) )
+
+(defmethod PairingHeap number-of-items ()
+  n)
+
+(defmethod PairingHeap key ()
+  (when (= n 0)
+    (error "No more items") )
+  :root:key)
+
+(defmethod PairingHeap -free-nodes ()
+  (when (> n 1)
+    (==> root clear-tree) )
+  ())
+
+(defmethod PairingHeap clear ()
+  (==> this -free-nodes)
+  (setq n 0)
+  this)
+
+(defmethod PairingHeap -deepcopy (clone)
+  (declare (-obj- (PairingHeap)) clone)
+  (setq :clone:root (==> root copy-tree))
+  (setq :clone:work (mptr-storage 32))
+  (setq :clone:cache (mptr-storage +pairing-heap-cache-size+))
+  (setq :clone:ncache 0)
+  (setq :clone:n n)
+  ())
+
+;; do a self-check
+(defmethod PairingHeap check ()
+  (when (not (nullp :root:right))
+    (printf "root has a sibling\n") )
+  (when (> n 0)
+    (let ((m (==> root count)))
+      (declare (-int-) m)
+      (when (<> m n)
+        (printf "node count inconsistent: %d (should be %d)\n" m n) )))
+  ())
+
+(defmethod PairingHeap -destructor ()
+  (==> this -free-nodes)
+  () )
+
+;; link tree <tn> with tree <root>
+(defmethod PairingHeap -link (tn)
+  (declare (-obj- (TreeNode)) tn)
+  (assert (nullp :tn:right)) ; this is a root node
+  (if (< :tn:key :root:key)
+      ;; new key is smaller -> tn becomes root
+      (let ((tnleft :tn:left))
+        (setq :tn:left (to-mptr root))
+        (setq :root:right tnleft)
+        (setq root tn) )
+    ;; root key is smaller -> root stays root
+    (setq :tn:right :root:left)
+    (setq :root:left (to-mptr tn)) )
+  ())
+
+;; delete minimum-key node (root) and return it
+(defmethod PairingHeap -delete-min ()
+  (when (= n 0)
+    (error "no more items") )
+  (prog1 root
+    ;; pair children trees from left to right
+    (let ((i 0) (child :root:left) (right NULL))
+      (declare (-int-) i)
+      (while (not (nullp child))
+        (setq root (to-node child))
+        (setq child :root:right  :root:right NULL)
+        (when (not (nullp child))
+          (let ((tn (to-node child)))
+            (setq child :tn:right  :tn:right NULL)
+            (==> this -link tn) ))
+        (work i (to-mptr root))
+        (incr i)
+        (when (= i (storage-nelems work))
+          (storage-realloc work (* 2 i)) )
+        )
+      ;; link all paired trees to root, right to left
+      (decr i)
+      (work i NULL)
+      (while (> i 0)
+        (decr i)
+        (==> this -link (to-node (work i)))
+        (work i NULL) )
+      (decr n) )
+    ))
+
+(defmethod PairingHeap drop-lt (mk)
+  (declare (-double-) mk)
+  (while (and (> n 0) (< :root:key mk))
+    (==> this -delete-min) )
+  (if (= n 0)
+      NAN
+    :root:key) )
+
+(dhc-make-class () PairingHeap)
+
+
+(defmethod PairingHeap PairingHeap ()
+  (setq root (new (-classof- root)))
+  (setq work (mptr-storage 32))
+  (setq cache (mptr-storage +pairing-heap-cache-size+))
+  (setq ncache 0)
+  (setq n 0)
+  () )
+
+#? (==> <PairingHeap> insert <k> <i>)
+;; Insert new item <i> with key/priority <k> into the heap.
+(defmethod PairingHeap insert (k i)
+  (declare (-double-) k)
+  (declare (-typeof- :root:item) i)
+  (if (= n 0)
+      (progn
+        (setq root (==> root clone))
+        (setq :root:key k  :root:item i)
+        )
+    (let ((tn (if (= ncache 0)
+                  (==> root clone)
+                (decr ncache) 
+                (prog1 (to-node (cache ncache))
+                  (cache ncache NULL) ))))
+      (setq :tn:key k  :tn:item i)
+      (==> this -link tn) ))
+  (incr n)
+  ())
+
+#? (==> <PairingHeap> insert-all <ks> <is>)
+;; Insert all items in <is> with corresponding key in <ks>.
+(defmethod PairingHeap insert-all (ks is)
+  (declare (-idx1- (-double-)) ks)
+  (declare (-idx1- (-typeof- :root:item)) is)
+  (when (<> (length ks) (length is))
+    (error "lengths of keys and items do not match") )
+  ;; FIXME: speed this up
+  (idx-bloop ((k ks) (i is))
+    (==> this insert (k) (i)) )
+  ())
+
+#? (==> <PairingHeap> number-of-items)
+;; Number of items in the heap.
+
+#? (==> <PairingHeap> key)
+;; Return current minimum key.
+
+#? (==> <PairingHeap> peeknext)
+;; Return the minimum-key item without removing it from the heap.
+(defmethod PairingHeap peeknext ()
+  (when (= n 0)
+    (error "no more items") )
+  :root:item)
+
+#? (==> <PairingHeap> next)
+;; Remove the minimum-key item from the heap and return it.
+(defmethod PairingHeap next ()
+  (when (= n 0)
+    (error "no more items") )
+  (let ((tn (to-obj (-classof- root) (==> this -delete-min))))
+    (==> tn clear)
+    (when (< ncache (storage-nelems cache))
+      (cache ncache (to-mptr tn))
+      (incr ncache) )
+    :tn:item) )
+
+#? (==> <PairingHeap> drop-lt <min-key>)
+;; Remove all items with key strictly less than <min-key> and
+;; return key of new minimum item in heap or <NaN> when heap is
+;; empty.
+
+
+(defmethod PairingHeap -iterate ()
+  this)

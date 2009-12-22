@@ -1,0 +1,357 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "blas-config.lsh")
+
+(in-namespace -blas-s
+
+;; BLAS 1
+
+(defun asum (x)
+  (declare (-idx1- (-float-)) x)
+  (cheader "extern float sasum_();")
+  (to-float #{ sasum_($x->dim,$(idx-base x),$x->mod) #}) )
+
+(defun axpy! (alpha u v)
+  (declare (-float-) alpha)
+  (declare (-idx1- (-float-)) u v)
+  (cheader "extern void saxpy_();")
+  #{ saxpy_($v->dim, &$alpha, $(idx-base u), $u->mod, $(idx-base v), $v->mod); #}
+  ())
+
+(defun clr! (alpha u)
+  (declare (-float-) alpha)
+  (declare (-idx1- (-float-)) u)
+  #{ int inca = 0; scopy_($u->dim, &$alpha, &inca, $(idx-base u), $u->mod); #}
+  ())
+
+(defun copy (u v)
+  (declare (-idx1- (-float-)) u v)
+  (cheader "extern void scopy_();")
+  (let ((n (min (length u) (length v))))
+    (declare (-int-) n)
+    #{ scopy_(&$n, $(idx-base u), $u->mod, $(idx-base v), $v->mod); #} )
+  ())
+
+(defun dot (u v)
+  (declare (-idx1- (-float-)) u v)
+  (cheader "extern float sdot_();")
+  (when (<> (length u) (length v))
+    (error "vectors have different lengths") )
+  (to-float #{ sdot_($u->dim,$(idx-base u),$u->mod,$(idx-base v),$v->mod) #}) )
+
+(defun iamax (x)
+  (declare (-idx1- (-float-)) x)
+  (cheader "extern int isamax_();")
+  (- (to-int #{ isamax_($x->dim,$(idx-base x),$x->mod) #})
+     1) )
+
+(defun nrm2 (v)
+  (declare (-idx1- (-float-)) v)
+  (cheader "extern float snrm2_();")
+  (to-float #{ snrm2_($v->dim,$(idx-base v),$v->mod) #}) )
+
+(defun rotg! (abcs)
+  (declare (-idx1- (-float-)) abcs)
+  (cheader "extern void srotg_();")
+  (chk-ld-contiguous abcs)
+  (when (< (length abcs) 4)
+    (error "input array too short") )
+  #{{
+  float *dp = $(idx-base abcs);
+  srotg_(dp, dp+1, dp+2, dp+3);
+  }#}
+  ())
+
+(defun rotg (a b)
+  (declare (-float-) a b)
+  (let ((cs (float-array 4)))
+    (cs 0 a)
+    (cs 1 b)
+    (rotg! cs)
+    (idx-trim! cs 0 2 2)
+    cs))
+
+(defun rot! (x y cs)
+  (declare (-idx1- (-float-)) x y cs)
+  (cheader "extern void srot_();")
+  (when (<> (length x) (length y))
+    (error "x and y are of different length") )
+  (when (<> (length cs) 2)
+    (error "<cs> is not a two-element vector") )
+  #{{
+  float *cs = $(idx-base cs);
+  srot_($x->dim,$(idx-base x),$x->mod,$(idx-base y),$y->mod,cs,cs+1);
+  }#}
+  ())
+
+(defun scal! (alpha u)
+  (declare (-idx1- (-float-)) u)
+  (declare (-float-) alpha)
+  (cheader "extern void sscal_();")
+  #{ sscal_($u->dim,&$alpha,$(idx-base u),$u->mod); #}
+  ())
+
+(defun scal1! (u)
+  (declare (-idx1- (-float-)) u)
+  #{ 
+  float l = 1/snrm2_($u->dim,$(idx-base u),$u->mod);
+  sscal_($u->dim,&l,$(idx-base u),$u->mod); 
+  #}
+  ())
+
+(defun swap (x y)
+  (declare (-idx1- (-float-)) x y)
+  (cheader "extern void sswap_();")
+  (when (<> (length x) (length y))
+    (error "x and y are of different length") )
+  #{ sswap_($x->dim,$(idx-base x),$x->mod,$(idx-base y),$y->mod); #}
+  ())
+
+(defun sum (u)
+  (declare (-idx1- (-float-)) u)
+  #{ const int incv = 0; const float v = 1; #}
+  (to-double #{ sdot_($u->dim,$(idx-base u),$u->mod, &v , &incv) #}) )
+
+;; BLAS 2
+
+(defun gemv! (alpha A x beta y)
+  (declare (-float-) alpha beta)
+  (declare (-idx2- (-float-)) A)
+  (declare (-idx1- (-float-)) x y)
+  (cheader "extern void sgemv_();")
+  (when (<> (length x) (idx-shape A 1))
+    (error "u does not match row length of A") )
+  (when (<> (length y) (idx-shape A 0))
+    (error "v does not match column length of A") )
+  (chk-ld-contiguous A)
+  #{ sgemv_("T",$A->dim+1,$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+  ())
+
+(defun symv! (alpha A x beta y)
+  (declare (-float-) alpha beta)
+  (declare (-idx2- (-float-)) A)
+  (declare (-idx1- (-float-)) x y)
+  (cheader "extern void ssymv_();")
+  (when (<> (length x) (idx-shape A 1))
+    (error "u does not match row length of A") )
+  (when (<> (length y) (idx-shape A 0))
+    (error "v does not match column length of A") )
+  (chk-ld-contiguous A)
+  #{ ssymv_("L",$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+  ())
+
+(defun gemv (alpha A x)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) A)
+  (declare (-idx1- (-float-)) x)
+  (when (<> (length x) (idx-shape A 1))
+    (error "u does not match row length of A") )
+  (chk-ld-contiguous A)
+  (let ((y (float-array* (idx-shape A 0)))
+        (beta 0) )
+    #{ sgemv_("T",$A->dim+1,$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+    y))
+
+(defun symv (alpha A x)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) A)
+  (declare (-idx1- (-float-)) x)
+  (when (not (mat-squarep A))
+    (error "A not square") )
+  (when (<> (length x) (idx-shape A 1))
+    (error "u does not match row length of A") )
+  (chk-ld-contiguous A)
+  (let ((y (float-array* (idx-shape A 0)))
+        (beta 0) )
+    (declare (-float-) beta)
+    #{ ssymv_("L",$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+    y))
+
+(defun gevm! (alpha x A beta y)
+  (declare (-float-) alpha beta)
+  (declare (-idx2- (-float-)) A)
+  (declare (-idx1- (-float-)) x y)
+  (when (<> (length x) (idx-shape A 0))
+    (error "u does not match column length of A") )
+  (when (<> (length y) (idx-shape A 1))
+    (error "v does not match row length of A") )
+  (chk-ld-contiguous A)
+  #{ sgemv_("N",$A->dim+1,$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+  ())
+
+(defun gevm (alpha x A)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) A)
+  (declare (-idx1- (-float-)) x)
+  (when (<> (length x) (idx-shape A 0))
+    (error "u does not match column length of A") )
+  (chk-ld-contiguous A)
+  (let ((y (float-array* (idx-shape A 1)))
+        (beta 0) )
+    #{ sgemv_("N",$A->dim+1,$A->dim,&$alpha,$(idx-base A),$A->mod,$(idx-base x),$x->mod,&$beta,$(idx-base y),$y->mod); #}
+    y))
+
+(defun ger1! (alpha u v A)
+  (declare (-float-) alpha)
+  (declare (-idx1- (-float-)) u v)
+  (declare (-idx2- (-float-)) A)
+  (cheader "extern void sger_();")
+  (chk-ld-contiguous A)
+  (when (<> (length u) (idx-shape A 0))
+    (error "u does not match column length of A") )
+  (when (<> (length v) (idx-shape A 1))
+    (error "v does not match row length of A") )
+  #{ sger_($A->dim+1,$A->dim,&$alpha,$(idx-base v),$v->mod,$(idx-base u),$u->mod,$(idx-base A),$A->mod); #}
+  ())
+
+(defun utsv! (U x)
+  (declare (-idx2- (-float-)) U)
+  (declare (-idx1- (-float-)) x)
+  (cheader "extern void strsv_();")
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mv-compatible U x)
+  #{ strsv_("L","T","N",$U->dim,$(idx-base U),$U->mod,$(idx-base x),$x->mod); #}
+  ())
+
+;; BLAS 3
+
+(defun gemm! (alpha A B beta C)
+  (declare (-float-) alpha beta)
+  (declare (-idx2- (-float-)) A B C)
+  (cheader "extern void sgemm_();")
+  (chk-ld-contiguous A)
+  (chk-ld-contiguous B)
+  (chk-ld-contiguous C)
+  (chk-mm-compatible A B)
+  (when (<> (idx-shape A 0) (idx-shape C 0))
+    (error "A and C not compatible") )
+  (when (<> (idx-shape B 1) (idx-shape C 1))
+    (error "B and C not compatible") )
+  #{ sgemm_("N","N",$C->dim+1,$C->dim,$B->dim,&$alpha,$(idx-base B),$B->mod,$(idx-base A),$A->mod,&$beta,$(idx-base C),$C->mod); #}
+  ())
+
+(defun gemm (alpha A B)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) A B)
+  (gemm! alpha A B 0 (float-array* (idx-shape A 0) (idx-shape B 1))) )
+
+(defun symm! (alpha S B beta C)
+  (declare (-float-) alpha beta)
+  (declare (-idx2- (-float-)) S B C)
+  (cheader "extern void ssymm_();")
+  (when (not (mat-squarep S))
+    (error "S not square") )
+  (chk-ld-contiguous S)
+  (chk-ld-contiguous B)
+  #{ ssymm_("R","L",$C->dim+1,$C->dim,&$alpha,$(idx-base S),$S->mod,$(idx-base B),$B->mod,&$beta,$(idx-base C),$C->mod); #}
+  ())
+    
+(defun msym! (alpha B S beta C)
+  (declare (-float-) alpha beta)
+  (declare (-idx2- (-float-)) S B C)
+  (cheader "extern void ssymm_();")
+  (when (not (mat-squarep S))
+    (error "S not square") )
+  (chk-ld-contiguous S)
+  (chk-ld-contiguous B)
+  #{ ssymm_("L","L",$C->dim+1,$C->dim,&$alpha,$(idx-base S),$S->mod,$(idx-base B),$B->mod,&$beta,$(idx-base C),$C->mod); #}
+  ())
+
+(defun utmm! (alpha U B)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) U B)
+  (cheader "extern void strmm_();")
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible U B)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ strmm_("R","L","N","N",$B->dim+1,$B->dim,&$alpha,$(idx-base U),$U->mod,$(idx-base B),$B->mod); #}
+  ())
+
+(defun mutm! (alpha B U)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) U B)
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible B U)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ strmm_("L","L","N","N",$B->dim+1,$B->dim,&$alpha,$(idx-base U),$U->mod,$(idx-base B),$B->mod); #}
+  ())
+
+(defun utsm! (alpha U B)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) U B)
+  (cheader "extern void strsm_();")
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible U B)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ strsm_("R","L","N","N",$B->dim+1,$B->dim,&$alpha,$(idx-base U),$U->mod,$(idx-base B),$B->mod); #}
+  ())
+
+(defun muts! (alpha B U)
+  (declare (-float-) alpha)
+  (declare (-idx2- (-float-)) U B)
+  (when (not (mat-squarep U))
+    (error "U not square") )
+  (chk-mm-compatible B U)
+  (chk-ld-contiguous U)
+  (chk-ld-contiguous B)
+  #{ strsm_("L","L","N","N",$B->dim+1,$B->dim,&$alpha,$(idx-base U),$U->mod,$(idx-base B),$B->mod); #}
+  ())
+
+)
+
+(dhc-make-with-libs "blas_float"
+                    (list *libblas*)
+                    -blas-sasum
+                    -blas-siamax
+                    -blas-sclr!
+                    -blas-scopy
+                    -blas-sdot 
+                    -blas-saxpy! 
+                    -blas-snrm2 
+                    -blas-srotg! -blas-srotg -blas-srot!
+                    -blas-sscal! -blas-sscal1!
+                    -blas-sswap
+                    -blas-ssum
+
+                    -blas-sgemv! -blas-sgemv
+                    -blas-sgevm! -blas-sgevm
+                    -blas-sger1!
+                    -blas-ssymv! -blas-ssymv
+                    -blas-sutsv!
+
+                    -blas-sgemm! -blas-sgemm
+		    -blas-ssymm! -blas-smsym!
+                    -blas-sutmm! -blas-smutm!
+                    -blas-sutsm! -blas-smuts!)

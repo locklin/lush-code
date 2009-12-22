@@ -1,0 +1,190 @@
+#? *** Storages
+
+A storage is a "chunk of memory" which holds objects of the 
+same type. Storages use less main memory and provide faster 
+access than lists; they are mainly used as data storage 
+areas for numerical objects like scalars, vectors, matrices,
+tensors. There are a few predefined element types for which
+storages can be created (e.g., float, int).
+
+Storage objects allow only simple, "flat" access, that is,
+objects are accessed by one-dimensional indices. Therefore, 
+data in a storage is usually accessed by means of an IDX object, 
+which provides customized access by multi-dimensional indices. 
+Several IDXs can point to (parts of) the same storage, allowing
+access of the data in multiple ways simultaneously. Storages 
+can be resized/reallocated without adverse effects on the IDX 
+that point to them.
+
+The data in a storage can reside in memory (a memory storage)
+or on disk (a memory-mapped storage). Disk files can be memory
+mapped into a storage and accessed element by element or byte 
+by byte through storage or IDX access functions.
+
+
+#? ** Predefined element types, storage classes
+
+The hash table <storage-class> provides a mapping from
+element-type symbols to storage class objects:
+{<ul> 
+{<li> <'atom> -> <IntStorage>: Elements are Lisp objects.}
+{<li> <'float> -> <FloatStorage>: Elements are single precision floats (4 bytes).}
+{<li> <'double> -> <DoubleStorage>: Elements are double precision floats (8 bytes).}
+{<li> <'int> -> <IntStorage>: Elements are 4 byte signed integers.}
+{<li> <'short> -> <ShortStorage>: Elements are 2 byte signed integers.}
+{<li> <'char> -> <CharStorage>: Elements are single-byte signed integers.}
+{<li> <'uchar> -> <UcharStorage>: Elements are single-byte unsigned integers.}
+{<li> <'gptr> -> <GptrStorage>: Elements are pointers to unmanaged memory.}
+{<li> <'mptr> -> <MptrStorage>: Elements are pointers to managed memory.}
+}
+
+#? ** Storage Creation and Allocation
+
+Depending on the element type a storage is created for, its class is one
+of a few possible <storage-classes> (see below). The storage creation 
+functions <new-storage> and <new-storage/managed> take a symbol indicating 
+the element-type.
+
+#? (new-storage <et>)
+Create an empty storage object for element-type <et>.
+
+Memory may be allocated for this storage object with <storage-alloc>.
+See also <new-storage/managed>.
+Examples:
+{<code> 
+
+? (new-storage 'int)
+= ::IntStorage:unallocated@(nil):<0>
+
+? (new-storage 'short)
+= ::ShortStorage:unallocated@(nil):<0>
+
+? 
+</code>}
+
+
+#? (new-storage/managed <et> <n> [<init>])
+{<location> storage.c}
+Create a storage object for element-type <et> and allocate memory
+for <n> elements.
+
+The memory is managed by the Lush runtime. If <init> is given and
+is not <()>, all elements of the storage will be initialized  
+with <init>.
+Examples:
+{<code> 
+
+? (new-storage/managed 'float 100)
+= ::FloatStorage:managed@0x827b2d8:<100>
+</code>}
+
+
+#? (new-storage/mmap <et> <file> [<offs> [<readonly>]])
+{<location> storage.c}
+{<see> storage-readonlyp}
+Map <file> into memory and associate that memory with a storage
+with element-type <et>; return the storage. 
+
+<File> may be a file descriptor or a string containing a filename. 
+Each element of the file starting at byte <offs> is made accessible
+through the corresponding element of the storage <srg>. Storages of 
+storage class <AtomStorage> or <MptrStorage> cannot be memory mapped.
+Mapped storages are readonly by default (pass <()> as fourth 
+argument to create a writeable mmapped storage).
+
+
+#? (new-storage/foreign <et> <n> <p> [<readonly>])
+Create a storage object for element-type <et> and <n> and use
+the memory at address <p>. 
+
+The memory at <p> is not managed by the lush runtime;
+the user, providing the address <p>, is
+responsible for managing it. The storage object may be tagged
+for readonly accesses via the fourth argument <readonly>.
+
+Warning: Lush will segfault if the storage object is used to access
+invalid memory. This may happen if <p> is not a valid address (not
+and address to readable/writable memory), or if <n> was chosen too
+large to prevent out-of-bounds memory accesses.
+
+
+#? (storage-alloc <srg> <n> <init>)
+{<location> storage.c}
+Allocate memory for <n> elements, initialize them to <init>, return <()>.
+If <init> is <()>, don't initialize; the storage content is undefined in 
+this case. Storage <srg> must be unallocated (as returned by <new-storage>).
+
+
+#? (storage-realloc <srg> <n> [<init>])
+{<location> storage.c}
+Enlarge the storage <srg> to <n> elements, set new elements to <init>,
+and return <()>. Don't initialize when <init> is <()> (default).
+IDXs that point to <srg> are not affected, that is, they point to the 
+right place and their content data is unchanged. The newly allocated
+data segment is initialized to <init>.
+
+
+#? ** Storage Access
+
+Storage elements can be read and set as if the storage were an IDX with one 
+dimension (a vector). In other words <(s 3)> returns the value of element 3 
+of storage <s>. <(s 3 5)> sets it to 5. The function <storage-clear> sets
+all elements of a storage to the same value.
+
+
+#? ** Miscellaneous Atorage Functions
+
+#? (storage-clear <srg> <init>)
+{<location> storage.c}
+Set all elements in storage <srg> to <init>; return <nil>.
+
+
+#? (storage-save <srg> <file>)
+{<location> storage.c}
+Save the content of storage <srg> into file <file>; return <nil>.
+<file> may be a string containing a filename or a file descriptor. Data 
+is written raw, without a header, and in the native format of the machine
+(multibyte elements will not be portable between big and small-endian machines).
+
+
+#? (storage-load <srg> <file>)
+{<location> storage.c}
+Load content of file <file> into storage <srg>; return <nil>.
+If <srg> is an unsized storage, alloc a storage that fits the contents
+of the file. If <srg> is a sized storage, attempt to read 
+(storage-nelems <srg>) elements from <file>; raise an error if <file> is 
+too small. <file> may be a filename or a file descriptor.
+
+
+#? (storage-set-readonly <srg>)
+{<location> storage.c}
+Mark storage <srg> readonly; return <nil>. 
+No Lisp function can write into <srg> after this.
+
+
+#? (storage-readonlyp <srg>)
+{<location> storage.c}
+Return <t> if <arg> is a storage and is readonly, return <nil> if 
+<arg> is a storage and is writable. Raise an error if <arg> is not a 
+storage.
+
+
+#? (storagep <srg>)
+{<location> storage.c}
+Return <t> if <arg> is a storage and <nil> otherwise.
+
+
+#? (storage-nelems <srg>)
+{<location> storage.c}
+Return the number of elements in storage <srg>. Return 0 if the storage 
+is unsized.
+
+
+#? (storage-nbytes <srg>)
+{<location> storage.c}
+Return the number of bytes occupied by storage <srg>. Return 0 if the 
+storage is unsized.
+
+
+
+

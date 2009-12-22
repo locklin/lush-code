@@ -1,0 +1,385 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Written by Ralf Juengling.
+
+(libload "libimage/segment-config")
+(libload "datatypes/small-int-graph")
+(libload "datatypes/int-heap")
+
+;; +max-region-index+ and +neighborhood-size+ are defined
+;; segment-config.lsh
+
+
+#? * Region Masks
+;; One way to represent the segmentation of an image
+;; is by a region mask. A region mask is a matrix with
+;; the same number of rows and columns as the image.
+;; Each cell of the mask holds an integer which identifies
+;; the region the corresponding pixel belongs to.
+;; The following set of functions deal with such region masks.
+
+(defun frame-mask (mask)
+  (declare (-idx2- (-int-)) mask)
+  (let ((fmask (int-array* (+ ($ mask 0) 2) (+ ($ mask 1) 2))))
+    (array-clear fmask 0)
+    (idx-trim! fmask 0 1 ($ mask 0))
+    (idx-trim! fmask 1 1 ($ mask 1))
+    (array-copy mask fmask)
+    fmask))
+
+
+#? (normalize-mask! <mask>)
+;; Reassign region indices so they are in the range 1..<nr>,
+;; and return the number of regions <nr>.
+(defun normalize-mask! (mask)
+  (declare (-idx2- (-int-)) mask)
+  (let* ((msrg (idx-storage mask))
+         (map (int-array (+ (storage-nelems msrg) 1)))
+         (j 0) )
+    (declare (-int-) j)
+    (for* (i 0 (storage-nelems msrg))
+      (declare (-int-) i)
+      (when (= (map (msrg i)) 0)
+        (incr j)
+        (map (msrg i) j) )
+      (msrg i (map (msrg i))) )
+    j))
+
+
+#? (remove-isolated-regions! <mask>)
+;; Remove regions which have only one neighboring region.
+;; Return the new number of regions in mask.
+;;
+;; The resulting region is normal.
+(defun remove-isolated-regions! (mask)
+  (declare (-idx2- (-int-)) mask)
+  (let ((rag (region-adjacency-graph* mask))
+        (map (int-array +max-region-index+))
+        (n 0) )
+    ;; build map
+    (do ((i :rag:vertices))
+      (declare (-int-) i)
+      (map i i)
+      (when (= (==> rag degree i) 1)
+        (let ((j (==> (==> rag neighbors i) minimum)))
+          (declare (-int-) j)
+          (incr n)
+          (map i j) )))
+    ;; remove isolated regions
+    (let ((msrg (idx-storage mask)))
+      (for* (i 0 (storage-nelems msrg))
+        (declare (-int-) i)
+        (msrg i (map (msrg i))) ))
+    
+    (- (==> :rag:vertices number-of-items) 1 n) ))
+
+
+#? (max-region-index <mask>)
+;; Largest index used in <mask>.
+(defun max-region-index (mask)
+  (declare (-idx2- (-int-)) mask)
+  (let ((maxr 0)
+        (msrg (idx-storage mask)) )
+    (declare (-int-) maxr)
+    (for* (i 0 (storage-nelems msrg))
+      (declare (-int-) i)
+      (setq maxr (max maxr (msrg i))) )
+    maxr))
+
+
+#? (total-boundary-length <mask>)
+;; Compute the total boundary length of this mask.
+;;
+;; Boundaries to the surrounding region 0 is not included
+;; in the tally.
+(defun total-boundary-length (mask)
+  (declare (-idx2- (-int-)) mask)
+  (let ((lt-mask 0))
+    (declare (-int-) lt-mask)
+    (for (i 0 (- ($ mask 0) 2))
+      (for (j 0 (- ($ mask 1) 2))
+        (declare (-int-) i j)
+        (when (<> (mask i j) (mask i (+ j 1)))
+          (incr lt-mask) )
+        (when (<> (mask i j) (mask (+ i 1) j))
+          (incr lt-mask) )
+        (when (= +neighborhood-size+ 8)
+          (when (<> (mask i j) (mask (+ i 1) (+ j 1)))
+            (incr lt-mask) ))
+        ))
+    lt-mask))
+
+;; helper for region-bounding-boxes
+(defun enlarge-bounding-boxes! (bbs n)
+  (declare (-idx2- (-int-)) bbs)
+  (declare (-int-) n)
+  (let ((n0 (length bbs)))
+    (declare (-int-) n0)
+    (array-extend! bbs 0 n)
+    (setq bbs (idx-trim bbs 0 n0))
+    ;; initialize with out-of-bound index values
+    (array-clear ($*1 bbs 0) +int-max+)
+    (array-clear ($*1 bbs 1) +int-max+)
+    (array-clear ($*1 bbs 2) -1)
+    (array-clear ($*1 bbs 3) -1)
+    ()))
+  
+#? (region-bounding-boxes <mask>)
+;; Compute bounding boxes for all regions and return in a table.
+;;
+;; Each entry in the table consists of four numbers, the
+;; indices of the upper left cell and of the lower right cell
+;; in the bounding box.
+(defun region-bounding-boxes (mask)
+  (declare (-idx2- (-int-)) mask)
+  (let ((bbs (int-array* 0 4))
+        (maxi 0) )
+    (declare (-int-) maxi)
+    (enlarge-bounding-boxes! bbs +max-region-index+)
+    ;; scan mask and update entries in table as you go
+    (for* (i 0 ($ mask 0))
+      (for* (j 0 ($ mask 1))
+        (declare (-int-) i j)
+        (while (>= (mask i j) (length bbs))
+          (enlarge-bounding-boxes! bbs (length bbs)) )
+        (let ((bb ($*0 bbs (mask i j))))
+          (when (< i (bb 0)) (bb 0 i))
+          (when (< j (bb 1)) (bb 1 j))
+          (when (< (bb 2) i) (bb 2 i))
+          (when (< (bb 3) j) (bb 3 j)) )
+        (setq maxi (max maxi (mask i j)))
+        ))
+    (idx-trim! bbs 0 0 (+ maxi 1))
+    bbs))
+
+
+#? (region-adjacency-graph <mask>)
+;; Create region-adjacency graph from <mask> and return it.
+(defmacro region-adjacency-graph (mask)
+  `(let ((rag (region-adjacency-graph* ,mask)))
+     (==> rag remove-vertex 0)
+     rag)
+  )
+
+
+#? (region-adjacency-graph* <mask>)
+;; Create augmented region-adjacency graph from <mask> and return it.
+;; 
+;; Vertex <0> in the resulting RAG identifies the imaginary region 
+;; surrounding the mask. That is, having region 0 as neighbor means
+;; a region is at the mask boundary.
+(defun region-adjacency-graph* (mask)
+  (declare (-idx2- (-int-)) mask)
+  ;; simply scan all pixels and add vertices (regions) and
+  ;; edges (pairs or neighboring regions) as you go
+  (let* ((m ($ mask 0))
+         (n ($ mask 1))
+         (fmask (frame-mask mask))
+         (rag (new SmallIntGraph (+ (max-region-index mask) 1)))
+         (wm  (idx-trim* fmask 2 2)) )
+    (declare (-int-) m n)
+    (idx-shift! wm 0 -1)
+    (idx-shift! wm 1 -1)
+
+    (==> rag insert-vertex 0)
+    (unprotect
+    (for (i 0 m)
+      (for (j 0 n)
+        (declare (-int-) i j)
+        (when (<> (wm 1 1) (wm 0 1))
+          (==> rag insert-vertex (wm 1 1))
+          (==> rag insert-edge (wm 1 1) (wm 0 1)) )
+        (when (<> (wm 1 1) (wm 1 0))
+          (==> rag insert-edge (wm 1 1) (wm 1 0)) )
+        (when (= +neighborhood-size+ 8)
+          (when (<> (wm 1 1) (wm 0 0))
+            (==> rag insert-edge (wm 1 1) (wm 0 0)) ))
+        (idx-shift! wm 1 1)
+        )
+      (idx-shift! wm 1 1) )
+    )
+    (unprotect (idx-shift! wm 1 -2))
+    (assert (= (wm 0 0) (mask (- m 1) (- n 1))))
+    rag))
+
+
+#? (region-size-histogram <mask>)
+;; Create a histogram of region sizes in number of cells.
+;;
+;; The result is an int-vector mapping region index to
+;; region size. 
+(defun region-size-histogram (mask)
+  (declare (-idx2- (-int-)) mask)
+  (let ((h (int-array (+ (max-region-index mask) 1)))
+        (msrg (idx-storage mask)) )
+    (for* (i 0 (storage-nelems msrg))
+      (let ((r (msrg i)))
+        (declare (-int-) i r)
+        (incr (h r)) ))
+    h))
+
+
+;; helper for colorizable-vertex-ordering
+(defun remove-vertex-and-update-heap (rag v hp)
+  (declare (-obj- (SmallIntGraph)) rag)
+  (declare (-int-) v)
+  (declare (-obj- (SmallIntHeap)) hp)
+  (let ((us (==> rag neighbors v)))
+    (==> rag remove-vertex v)
+    (do-set (u us)
+      (declare (-int-) u)
+      (==> hp insert (to-double (==> rag degree u)) u) )
+    ()))
+  
+;; helper for colorize-mask: find an ordering of the vertices
+;; that is easy to colorize
+(defun colorizable-vertex-ordering (mask)
+  (declare (-idx2- (-int-)) mask)
+  (let* ((rag  (region-adjacency-graph mask))
+         (nr   (==> rag number-of-vertices))
+         (maxi (==> :rag:vertices maximum))
+         (hp   (new SmallIntHeap (+ maxi 1)))
+         (ord  (int-array nr))
+         (i 0) )
+    (declare (-int-) nr maxi i)
+    ;; fill heap
+    (do-set (v :rag:vertices)
+      (declare (-int-) v)
+      (==> hp insert (to-double (==> rag degree v)) v) )
+    (while (not (emptyp hp))
+      ;; take vertices while degree is less than five
+      (if (< (==> hp key) 5)
+          (progn
+            (ord i (next hp))
+            (remove-vertex-and-update-heap rag (ord i) hp)
+            (incr i)
+            )
+        ;; look for a degree-five node u with two non-adjacent
+        ;; neighbors v & w of degree less than eight
+        ;; v and w need to be assigned the same color, which we
+        ;; signal by writing v and -w to <ord>
+        (let ((u 0) (v 0) (w 0))
+          (do-set (x :rag:vertices)
+            (declare (-int-) u v w x)
+            (when (= (==> rag degree x) 5)
+              (while (= u 0)
+                (do-set (y (==> rag neighbors x))
+                  (declare (-int-) y)
+                  (when (< (==> rag degree y) 8)
+                    (if (= v 0)
+                        (setq v y)
+                      (when (not (==> rag has-arc v y))
+                        ;; found a triple, stop searching
+                        (setq u x  w y  continue ()) ))))
+                (when (= u 0)
+                  (setq v 0) ))))
+          (assert (> u 0))
+          (ord i u)
+          (incr i)
+          (ord i v)
+          (incr i)
+          (ord i (- w))
+          (incr i)
+          (remove-vertex-and-update-heap rag u hp)
+          (==> rag insert-edge v w)
+          (==> rag merge-vertices v w)
+          (remove-vertex-and-update-heap rag v hp)
+          (==> hp remove u)
+          (==> hp remove w)
+          (==> hp remove v)
+          )))
+    (assert (= i nr))
+    ord))
+
+
+#? (colorize-mask <mask>)
+;; Colorize the region map <mask> with five colors and return
+;; a palette image <cmask>.
+;;
+;; To create an RGB image from the result <cmask>, do
+;;
+;; {<code> (array-take <palette> 0 <cmask>) </code>}
+(defun colorize-mask (mask)
+  (declare (-idx2- (-int-)) mask)
+  (let* ((rag  (region-adjacency-graph mask))
+         (maxi (==> :rag:vertices maximum))
+         (ord  (colorizable-vertex-ordering mask))
+         (nr   (length ord))
+         (col  (int-array* (+ maxi 1)))
+         (five (new IntSet))
+         (i    (- nr 1)) )
+    (declare (-int-) maxi nr i)
+    (array-clear col -1)
+    (==> five insert 1)
+    (==> five insert 2)
+    (==> five insert 3)
+    (==> five insert 4)
+    (==> five insert 5)
+    
+    ;; create the mapping
+    (while (>= i 0)
+      (declare (-int-) i)
+      (let ((v (abs (ord i))) (cols (deepcopy five)))
+        (do-set (u (==> rag neighbors v))
+                (declare (-int-) v u)
+          (when (> (col u) -1)
+            (==> cols remove (col u)) ))
+        (assert (not (emptyp cols)))
+        (col v (==> cols minimum))
+        (when (< (ord i) 0)
+          (decr i)
+          (assert (> i 0))
+          (assert (> (ord i) 0))
+          (col (ord i) (col v)) ) ; same color as v
+        (decr i) ))
+
+    ;; create the colorized mask
+    (let* ((cmask ##mask)
+           (srg (idx-storage cmask)) )
+      (for* (i 0 (storage-nelems srg))
+        (declare (-int-) i)
+        (srg i (col (srg i))) )
+      cmask)))
+      
+    
+
+
+(dhc-make ()
+          frame-mask
+          max-region-index
+          enlarge-bounding-boxes!
+          region-bounding-boxes
+          region-adjacency-graph*
+          normalize-mask!
+          remove-isolated-regions!
+          total-boundary-length
+          region-size-histogram
+          remove-vertex-and-update-heap
+          colorizable-vertex-ordering
+          colorize-mask
+          )

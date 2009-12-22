@@ -1,0 +1,139 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libdb/db")
+
+
+#? * Dataset example: MNIST OCR data.
+;; This example illustrates how to use <"db.lsh"> to access the 
+;; MNIST database of handwritten digits.
+;; <http://yann.lecun.com/exdb/mnist/>
+
+#? db-mnist-dir
+;;.TYPE VAR
+;; This variable must be initialized with the directory
+;; name containing the MNIST files.
+
+(defvar db-mnist-dir 
+  (let ((d (concat-fname (getenv "HOME") "DATASETS/mnist")))
+    (cond
+     ((filep (concat-fname d "train-images-idx3-ubyte")) d)
+     (t (concat-fname lushdir "local/mnist")) ) ) )
+
+
+;; Load data
+(de db-mnist-load()
+  (when (not :db-mnist-train-x)
+    (setq :db-mnist-train-x 
+	  (map-matrix (concat-fname db-mnist-dir "train-images-idx3-ubyte")) ) )
+  (when (not :db-mnist-train-y)
+    (setq :db-mnist-train-y 
+	  (load-matrix (concat-fname db-mnist-dir "train-labels-idx1-ubyte")) ) )
+  (when (not :db-mnist-test-x)
+    (setq :db-mnist-test-x 
+	  (map-matrix (concat-fname db-mnist-dir "t10k-images-idx3-ubyte")) ) )
+  (when (not :db-mnist-test-y)
+    (setq :db-mnist-test-y 
+	  (load-matrix (concat-fname db-mnist-dir "t10k-labels-idx1-ubyte")) ) ) )
+
+
+;; --------------------------------------------------
+
+#? (db-mnist-create-raw)
+;; Creates datasets <db-mnist-train> and <db-mnist-test> 
+;; containing the MNIST data.
+
+(de db-mnist-make-raw(x y)
+  (let* ((n (idx-dim y 0))
+	 (xmat (new-index (idx-storage x) (list n (* 28 28))))
+	 (ymat (new-index (idx-storage y) (list n 1))) 
+	 (d (new db-bbmatrix xmat ymat)) )
+    ;; accessors
+    (==> d set-key 'x
+	 (lambda(this n)
+	   (let ((f (ubyte-array (* 28 28))))
+	     (==> this getx-ubyte n f)
+	     f ) ) )
+    (==> d set-key 'image
+	 (lambda(this n)
+	   (let ((f (ubyte-array (* 28 28))))
+	     (==> this getx-ubyte n f)
+	     (new-index (idx-storage f) (list 28 28)) ) ) )
+    (==> d set-key 'class
+	 (lambda(this n)
+	   (==> this get-label n) ) )
+    (==> d set-key 'class-as-string
+	 (lambda(this n)
+	   (chr (+ (asc "0") (==> this get-label n))) ) )
+    ;; return
+    d ) )
+
+(de db-mnist-create-raw()
+  (db-mnist-load)
+  (list
+   (setq db-mnist-train 
+	 (db-mnist-make-raw :db-mnist-train-x :db-mnist-train-y))
+   (setq db-mnist-test 
+	 (db-mnist-make-raw :db-mnist-test-x :db-mnist-test-y) ) ) )
+
+
+;; --------------------------------------------------
+
+#? (db-mnist-create-scaled [<bias> <scale>])
+;; Creates datasets <db-mnist-scaled-train> 
+;; and <db-mnist-scaled-test> containing the MNIST data.
+;; When arguments <bias> and <scale> are not provided,
+;; the image data is scaled to range -1 to +1.
+
+(de db-mnist-make-scaled(d bias scale)
+  (let ((d (new db-scale d -128 (/ 1 128))))
+    ;; redefine image accessor to return float-array
+    (==> d set-key 'x
+	 (lambda(this n)
+	   (let ((f (float-array (* 28 28))))
+	     (==> this getx n f)
+	     f ) ) )
+    (==> d set-key 'image
+	 (lambda(this n)
+	   (let ((f (float-array (* 28 28))))
+	     (==> this getx n f)
+	     (new-index (idx-storage f) (list 28 28)) ) ) )
+    ;; return
+    d ) )
+
+(de db-mnist-create-scaled(&optional bias scale)
+  (db-mnist-create-raw)
+  (setq bias (or bias -128))
+  (setq scale (or scale (/ 128)))
+  (list
+   (setq db-mnist-scaled-train 
+	 (db-mnist-make-scaled db-mnist-train bias scale))
+   (setq db-mnist-scaled-test 
+	 (db-mnist-make-scaled db-mnist-test bias scale)) ) )
+
+
+

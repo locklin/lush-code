@@ -1,0 +1,961 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libc/cparse")
+(libload "openglu")
+
+
+(eval (cparse-extract-constants opengl-glut-h))
+
+;; (progn
+;;   ;; Hack for bitmap fonts
+;;   (defconstant GLUT_BITMAP_9_BY_15 0)		;(&glutBitmap9By15)
+;;   (defconstant GLUT_BITMAP_8_BY_13 1)		;(&glutBitmap8By13)
+;;   (defconstant GLUT_BITMAP_TIMES_ROMAN_10 2)	;(&glutBitmapTimesRoman10)
+;;   (defconstant GLUT_BITMAP_TIMES_ROMAN_24 3)	;(&glutBitmapTimesRoman24)
+;;   (defconstant GLUT_BITMAP_HELVETICA_10 4)	;(&glutBitmapHelvetica10)
+;;   (defconstant GLUT_BITMAP_HELVETICA_12 5)	;(&glutBitmapHelvetica12)
+;;   (defconstant GLUT_BITMAP_HELVETICA_18 6)	;(&glutBitmapHelvetica18)
+
+
+
+
+;; ----------------------------------------
+;; INTERNAL FUNCTIONS
+;; ----------------------------------------
+
+
+(de glutint-poll()
+  ;; This function is quite dependent on the internals of GLUT-3.7. 
+  ;; But this is mostly for implementing timers.
+  (let ((ms (* 24 3600 1000)))
+    ((-int-) ms)
+    #{{
+        long msec;
+      #ifdef FREEGLUT
+        if (glutGet(GLUT_INIT_STATE)) {
+          glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE,GLUT_ACTION_CONTINUE_EXECUTION);
+      # ifdef GLUT_IDLE_TIME
+          while (! (msec = glutGet(GLUT_IDLE_TIME)))
+            glutMainLoopEvent();
+      # else   
+          glutMainLoopEvent();
+          msec = 200;
+      # endif
+          if (msec < (long)$ms)
+            $ms = msec;
+        }
+      #else
+        if (__glutDisplay && __glutWindowListSize) {
+          do {
+           do {
+             Atom saved = __glutWMDeleteWindow;
+             if (! setjmp(glut_event_jmp) ) {
+               __glutWMDeleteWindow = (Atom)0; /* Otherwise Glut calls exit! */
+               glutIdleFunc(glut_idle_jmp);
+               glutMainLoop();
+             } 
+             __glutWMDeleteWindow = saved;
+             glutIdleFunc(0);
+           } while (__glutWindowWorkList);
+           if (__glutTimerList) {
+             struct timeval tv;
+             gettimeofday(&tv, 0);
+             $ms = ((int)__glutTimerList->tv.tv_sec - (int)tv.tv_sec - 1) * 1000 
+                 + (1000000 + (int)__glutTimerList->tv.tv_usec - (int)tv.tv_usec)/1000;
+           }
+         } while ($ms < 0);
+        }
+      #endif
+       msec = 0;
+     }#}
+    ms ) )
+
+(de glutint-init()
+  (let ((flag ()))
+    ((-bool-) flag)
+    #{
+       #ifdef FREEGLUT
+         if (! glutGet(GLUT_INIT_STATE)) {
+       #else
+         if (! __glutDisplay) {
+       #endif
+           int cn;
+           char *argv[2];
+           int argc = 1;
+           argv[0] = "lush2";
+           argv[1] = 0;
+           glutInit(&argc, argv);
+       #ifdef FREEGLUT
+       # ifdef GLUT_CONNECTION
+           cn = glutGet(GLUT_CONNECTION);
+       # else
+           cn = ConnectionNumber(pFgDisplay->dpy);
+       # endif
+       #else
+           cn = ConnectionNumber(__glutDisplay);
+       #endif
+           register_poll_functions( C_glutint_poll, 0, 0, 0, cn );
+           $flag = 1;
+         }
+         if (! glhandlers) {
+           glhandle = var_define("glhandle");
+           glhandlers = NEW_HTABLE(7,false,false);
+           protect(glhandlers);
+         }
+    #}
+   flag ) )
+
+(de glutint-check()
+  (let ((flag ()))
+    ((-bool-) flag)
+    #{
+       #ifdef FREEGLUT
+         $flag = glutGet(GLUT_INIT_STATE);
+       #else
+         $flag = !! __glutDisplay;
+       #endif
+         /**/
+    #}
+    (when (not flag)
+      (error "Glut is not initialized") )
+  () ) )
+
+(de glutint-font(glutfont)
+  ((-int-) glutfont)
+  (let ((fptr (to-gptr ())))
+    #{ if ($glutfont<0 || $glutfont>6)
+         lush_error("Unknown glut font");
+       $fptr = glutFonts[$glutfont];
+    #}
+    fptr ) )
+
+
+
+;; ----------------------------------------
+;; GLUT API FUNCTIONS
+;; ----------------------------------------
+
+
+(de glut-init-display-mode(mode)
+  ((-int-) mode)
+  #{ glutInitDisplayMode($mode) #}
+  t )
+
+(de glut-init-window-size(w h)
+  ((-int-) w h)
+  #{ glutInitWindowSize($w, $h) #}
+  t )
+
+(de glut-init-window-position(x y)
+  ((-int-) x y)
+  #{ glutInitWindowPosition($x, $y) #}
+  t )
+
+(de glut-main-loop()
+  (error "Calling glutMainLoop() from Lush is forbidden")
+  () )
+
+(de glut-create-window(name)
+  ((-str-) name)
+  (glutint-check)
+  (cheader "static void glclear(void) { glClear(GL_COLOR_BUFFER_BIT); }")
+  (let ((wid (to-int #{ glutCreateWindow($name) #})))
+    #{ glutDisplayFunc(glclear); #}
+    wid ) ) )
+
+(de glut-create-sub-window(win x y w h)
+  ((-int-) win x y w h)
+  (glutint-check)
+  (let ((wid (to-int #{ glutCreateSubWindow($win, $x, $y, $w, $h) #})))
+    #{ glutDisplayFunc(glclear); #}
+    wid ) ) )
+
+(de glut-set-window(win)
+  ((-int-) win)
+  #{ glutSetWindow($win); 
+     $win = glutGetWindow(); #}
+  win )
+
+(de glut-get-window()
+  (to-int #{ glutGetWindow() #}) )
+
+(de glut-destroy-window(win)
+  ((-int-) win)
+  #{ glutDestroyWindow($win); #}
+  () )
+
+(de glut-post-redisplay()
+  #{ glutPostRedisplay(); #}
+  () )
+
+(de glut-swap-buffers()
+  #{ glutSwapBuffers(); #}
+  () )
+
+(de glut-set-window-title(title)
+  ((-str-) title)
+  #{ glutSetWindowTitle($title); #}
+  () )
+
+(de glut-set-icon-title(title)
+  ((-str-) title)
+  #{ glutSetIconTitle($title); #}
+  () )
+
+(de glut-position-window(x y)
+  ((-int-) x y)
+  #{ glutPositionWindow($x, $y); #}
+  () )
+
+(de glut-reshape-window(w h)
+  ((-int-) w h)
+  #{ glutReshapeWindow($w, $h); #}
+  () )
+
+(de glut-pop-window()
+  #{ glutPopWindow(); #}
+  () )
+
+(de glut-push-window()
+  #{ glutPushWindow(); #}
+  () )
+
+(de glut-iconify-window()
+  #{ glutIconifyWindow(); #}
+  () )
+
+(de glut-show-window()
+  #{ glutShowWindow(); #}
+  () )
+
+(de glut-hide-window()
+  #{ glutHideWindow(); #}
+  () )
+
+(de glut-full-screen()
+  #{ glutFullScreen(); #}
+  () )
+
+(de glut-set-cursor(cursor)
+  ((-int-) cursor)
+  #{ glutSetCursor($cursor); #}
+  () )
+
+(de glut-establish-overlay()
+  #{ glutEstablishOverlay(); #}
+  () )
+
+(de glut-remove-overlay()
+  #{ glutRemoveOverlay(); #}
+  () )
+
+(de glut-use-layer(layer)
+  ((-int-) layer)
+  #{ glutUseLayer($layer); #}
+  () )
+
+(de glut-post-overlay-redisplay()
+  #{ glutPostOverlayRedisplay(); #}
+  () )
+
+(de glut-show-overlay()
+  #{ glutRemoveOverlay(); #}
+  () )
+
+(de glut-hide-overlay()
+  #{ glutRemoveOverlay(); #}
+  () )
+
+(de glut-create-menu(func)
+  ((-gptr-) func)
+  (to-int #{ glutCreateMenu($func) #}) )
+
+(de glut-destroy-menu(menu)
+  ((-int-) menu)
+  #{ glutDestroyMenu($menu); #}
+  () )
+
+(de glut-get-menu()
+  (to-int #{ glutGetMenu() #}) )
+
+(de glut-set-menu(menu)
+  ((-int-) menu)
+  #{ glutSetMenu($menu); #}
+  () )
+
+(de glut-add-menu-entry(label value)
+  ((-str-) label)
+  ((-int-) value)
+  #{ glutAddMenuEntry($label, $value); #}
+  () )
+
+(de glut-add-sub-menu(label submenu)
+  ((-str-) label)
+  ((-int-) submenu)
+  #{ glutAddSubMenu($label, $submenu); #}
+  () )
+
+(de glut-change-to-menu-entry(entry label value)
+  ((-int-) entry)
+  ((-str-) label)
+  ((-int-) value)
+  #{ glutChangeToMenuEntry($entry, $label, $value); #}
+  () )
+
+(de glut-change-to-sub-menu(entry label submenu)
+  ((-int-) entry)
+  ((-str-) label)
+  ((-int-) submenu)
+  #{ glutChangeToSubMenu($entry, $label, $submenu); #}
+  () )
+
+(de glut-remove-menu-item(item)
+  ((-int-) item)
+  #{ glutRemoveMenuItem($item); #}
+  () )
+
+(de glut-attach-menu(button)
+  ((-int-) button)
+  #{ glutAttachMenu($button); #}
+  () )
+
+(de glut-detach-menu(button)
+  ((-int-) button)
+  #{ glutDetachMenu($button); #}
+  () )
+
+(de glut-display-func(func)
+  ((-gptr-) func)
+  #{ glutDisplayFunc($func); #}
+  () )
+
+(de glut-reshape-func(func)
+  ((-gptr-) func)
+  #{ glutReshapeFunc($func); #}
+  () )
+
+(de glut-keyboard-func(func)
+  ((-gptr-) func)
+  #{ glutKeyboardFunc($func); #}
+  () )
+
+(de glut-mouse-func(func)
+  ((-gptr-) func)
+  #{ glutMouseFunc($func); #}
+  () )
+
+(de glut-motion-func(func)
+  ((-gptr-) func)
+  #{ glutMotionFunc($func); #}
+  () )
+
+(de glut-passive-motion-func(func)
+  ((-gptr-) func)
+  #{ glutPassiveMotionFunc($func); #}
+  () )
+
+(de glut-entry-func(func)
+  ((-gptr-) func)
+  #{ glutEntryFunc($func); #}
+  () )
+
+(de glut-visibility-func(func)
+  ((-gptr-) func)
+  #{ glutVisibilityFunc($func); #}
+  () )
+
+(de glut-idle-func(func)
+  ((-gptr-) func)
+  (error "Calling glutIdleFunc() from Lush is forbidden")
+  () )
+
+(de glut-timer-func(millis func value)
+  ((-int-) millis value)
+  ((-gptr-) func)
+  #{ glutTimerFunc($millis, $func, $value); #}
+  () )
+
+(de glut-menu-state-func(func)
+  ((-gptr-) func)
+  #{ glutMenuStateFunc($func); #}
+  () )
+
+(de glut-special-func(func)
+  ((-gptr-) func)
+  #{ glutSpecialFunc($func); #}
+  () )
+
+(de glut-spaceball-motion-func(func)
+  ((-gptr-) func)
+  #{ glutSpaceballMotionFunc($func); #}
+  () )
+
+(de glut-spaceball-rotate-func(func)
+  ((-gptr-) func)
+  #{ glutSpaceballRotateFunc($func); #}
+  () )
+
+(de glut-spaceball-button-func(func)
+  ((-gptr-) func)
+  #{ glutSpaceballButtonFunc($func); #}
+  () )
+
+(de glut-button-box-func(func)
+  ((-gptr-) func)
+  #{ glutButtonBoxFunc($func); #}
+  () )
+
+(de glut-dials-func(func)
+  ((-gptr-) func)
+  #{ glutDialsFunc($func); #}
+  () )
+
+(de glut-tablet-motion-func(func)
+  ((-gptr-) func)
+  #{ glutTabletMotionFunc($func); #}
+  () )
+
+(de glut-tablet-button-func(func)
+  ((-gptr-) func)
+  #{ glutTabletButtonFunc($func); #}
+  () )
+
+(de glut-menu-status-func(func)
+  ((-gptr-) func)
+  #{ glutMenuStatusFunc($func); #}
+  () )
+
+(de glut-overlay-display-func(func)
+  ((-gptr-) func)
+  #{ glutOverlayDisplayFunc($func); #}
+  () )
+
+(de glut-set-color(cell r g b)
+  ((-int-) cell)
+  ((-flt-) r g b)
+  #{  glutSetColor($cell, $r, $g, $b); #}
+  () )
+
+(de glut-get-color(cell comp)
+  ((-int-) cell comp)
+  (to-flt #{ glutGetColor($cell, $comp) #} ) )
+
+(de glut-copy-colormap(win)
+  ((-int-) win)
+  #{ glutCopyColormap($win); #}
+  () )
+
+(de glut-get(type)
+  ((-int-) type)
+  (to-int #{ glutGet($type) #} ) )
+
+(de glut-device-get(type)
+  ((-int-) type)
+  (to-int #{ glutDeviceGet($type) #} ) )
+
+(de glut-layer-get(type)
+  ((-int-) type)
+  (to-int #{ glutLayerGet($type) #} ) )
+
+(de glut-extension-supported(name)
+  ((-str-) name)
+  (to-int #{ glutExtensionSupported($name) #} ) )
+
+(de glut-get-modifiers()
+  (to-int #{ glutGetModifiers() #}) )
+
+(de glut-bitmap-character(font char)
+  ((-int-) font char)
+  #{ glutBitmapCharacter( $(glutint-font font), $char ); #}
+  () )
+
+(de glut-bitmap-width(font char)
+  ((-int-) font char)
+  (to-int #{ glutBitmapWidth( $(glutint-font font), $char ) #}) )
+
+(de glut-stroke-character(font char)
+  ((-int-) font char)
+  #{ glutStrokeCharacter( $(glutint-font font), $char ); #}
+  () )
+
+(de glut-stroke-width(font char)
+  ((-int-) font char)
+  (to-int #{ glutStrokeWidth( $(glutint-font font), $char ) #}) )
+
+(de glut-wire-sphere(radius slices stacks)
+  ((-real-) radius)
+  ((-int-) slices stacks)
+  #{ glutWireSphere($radius, $slices, $stacks); #}
+  () )
+
+(de glut-solid-sphere(radius slices stacks)
+  ((-real-) radius)
+  ((-int-) slices stacks)
+  #{ glutSolidSphere($radius, $slices, $stacks); #}
+  () )
+
+(de glut-wire-cone(base height slices stacks)
+  ((-real-) base height)
+  ((-int-) slices stacks)
+  #{ glutWireCone($base, $height, $slices, $stacks); #}
+  () )
+
+(de glut-solid-cone(base height slices stacks)
+  ((-real-) base height)
+  ((-int-) slices stacks)
+  #{ glutSolidCone($base, $height, $slices, $stacks); #}
+  () )
+
+(de glut-wire-cube(size)
+  ((-real-) size)
+  #{ glutWireCube($size); #}
+  () )
+
+(de glut-solid-cube(size)
+  ((-real-) size)
+  #{ glutSolidCube($size); #}
+  () )
+
+(de glut-wire-torus(innerRadius outerRadius sides ringssize)
+  ((-real-) innerRadius outerRadius)
+  ((-int-) sides ringssize)
+  #{ glutWireTorus($innerRadius, $outerRadius, $sides, $ringssize); #}
+  () )
+
+(de glut-solid-torus(innerRadius outerRadius sides ringssize)
+  ((-real-) innerRadius outerRadius)
+  ((-int-) sides ringssize)
+  #{ glutSolidTorus($innerRadius, $outerRadius, $sides, $ringssize); #}
+  () )
+
+(de glut-wire-teapot(size)
+  ((-real-) size)
+  #{ glutWireTeapot($size); #}
+  () )
+
+(de glut-solid-teapot(size)
+  ((-real-) size)
+  #{ glutSolidTeapot($size); #}
+  () )
+
+(de glut-wire-dodecahedron()
+  #{ glutWireDodecahedron(); #}
+  () )
+
+(de glut-solid-dodecahedron()
+  #{ glutSolidDodecahedron(); #}
+  () )
+
+(de glut-wire-octahedron()
+  #{ glutWireOctahedron(); #}
+  () )
+
+(de glut-solid-octahedron()
+  #{ glutSolidOctahedron(); #}
+  () )
+
+(de glut-wire-tetrahedron()
+  #{ glutWireTetrahedron(); #}
+  () )
+
+(de glut-solid-tetrahedron()
+  #{ glutSolidTetrahedron(); #}
+  () )
+
+(de glut-wire-icosahedron()
+  #{ glutWireIcosahedron(); #}
+  () )
+
+(de glut-solid-icosahedron()
+  #{ glutSolidIcosahedron(); #}
+  () )
+
+
+;; ----------------------------------------
+;; GLUT_WINDOW
+;; ----------------------------------------
+
+;; documentation is in opengl.hlp
+
+;; #? ** GlutWindow class.
+;; The following class provides an easy way
+;; to create glut windows and handle glut callbacks.
+(defclass GlutWindow object
+  ((-int-) id) )
+
+;; #? (new GlutWindow)
+;; Constructs an empty <GlutWindow>.
+;; You must call method <create> to actually create the window.
+(defmethod GlutWindow glutwindow()
+  (setq id -1) )
+
+;; #? (==> <glutwindow> set-callbacks <pasvmotion>)
+;; Establishes the various callbacks for the Glut window <glutwindow>.
+;; The mouse passive motion callback is only set when boolean
+;; <pasvmotion> is true.
+(defmethod GlutWindow set-callbacks(pasvmotion)
+  ((-bool-) pasvmotion)
+  ;; See code inlined in dhc-make...
+  #{
+    glutDisplayFunc(gDisplay);
+    glutReshapeFunc(gReshape);
+    glutKeyboardFunc(gKeyboard);
+    glutMouseFunc(gMouse);
+    glutMotionFunc(gMotion);
+    glutPassiveMotionFunc($pasvmotion ? gPassiveMotion : 0);
+    glutEntryFunc(gEntry);
+    glutVisibilityFunc(gVisibility);
+    glutMenuStateFunc(gMenuState);
+    glutSpecialFunc(gSpecial);
+    glutSpaceballButtonFunc(gSpaceballButton);
+    glutSpaceballMotionFunc(gSpaceballMotion);
+    glutSpaceballRotateFunc(gSpaceballRotate);
+    glutButtonBoxFunc(gButtonBox);
+    glutDialsFunc(gDials);
+    glutTabletButtonFunc(gTabletButton);
+    glutTabletMotionFunc(gTabletMotion);
+    glutMenuStatusFunc(gMenuStatus);
+    if (glutLayerGet(GLUT_HAS_OVERLAY)) 
+      glutOverlayDisplayFunc(gOverlayDisplay);
+  #}
+  () )
+
+;; #? (==> <glutwindow> destroy)
+;; Destroys the actual glut window 
+;; associated with <glutwindow>.
+(defmethod GlutWindow destroy()
+  (when (> id 0)
+    #{{ at *wid = NEW_NUMBER($id);
+        htable_set(Mptr(glhandlers), wid, NIL);
+    }#}
+    (glut-destroy-window id) )
+  (setq id -1) )
+
+;; #? (==> <glutwindow> create <x> <y> <w> <h> <name>)
+;; Creates the actual glut window associated with the object <glutwindow>.  
+;; Arguments <x>, <y>, <w>, <h> specify the window location and size.  
+;; Argument <name> specify the window name.
+;; Passing zero leaves the argument unspecified
+(defmethod GlutWindow create(x y w h name)
+  ((-int-) x y w h)
+  ((-str-) name)
+  (when (> id 0)
+    (==> this destroy) )
+  (when (and (> x 0) (> y 0))
+    (glut-init-window-position x y) )
+  (when (and (> w 0) (> h 0))
+    (glut-init-window-size w h) )
+  (setq id (glut-create-window name))
+  #{{ at *wid = NEW_NUMBER($id);
+      object_t *obj = object_from_cobject((struct CClass_object *)$this);
+      htable_set(Mptr(glhandlers), wid, obj->backptr);
+  }#}
+  (==> this set-callbacks ())
+  id ) 
+
+
+;; #? (==> <glutwindow> set-event-handler <handler>)
+;; Sets the event handler used for posting glut events
+
+(defvar glutwindow-handlers (htable 7 t))
+
+(defmethod GlutWindow set-event-handler(handler)
+  (:glutwindow-handlers this handler) )
+
+(defmethod GlutWindow -destructor()
+  (==> this destroy) )
+
+;; #? (==> <glutwindow> glhandle <...glcallback...>)
+;; This function gets called whenever a 
+;; callback for window <glutwindow> is called.
+;; The default implementation immediatly calls
+;; methods <glut-reshape>, <glut-display> or <glut-overlay-display>
+;; in order to benefit from Glut optimizations.
+;; All other callbacks are added to the Lush event queue.
+;;
+;; Note: This method is not and cannot be compiled.
+(defmethod GlutWindow glhandle glfunc
+  (let ((handler (or (glutwindow-handlers this) this)))
+    (when (consp glfunc)
+      (if (member (car glfunc) '(glut-reshape glut-display glut-overlay-display))
+          (if (getmethod (classof handler) (car glfunc))
+              (apply ==> handler (car glfunc) (cdr glfunc))
+            (apply ==> this (car glfunc) (cdr glfunc)) ) 
+        (if (symbolp (car glfunc))
+            (sendevent (or (glutwindow-handlers this) this) glfunc)) ) ) ) )
+
+;; #? (==> <glutwindow> handle <event>)
+;; This function is called to handle glut events posted by <glhandle>.
+;; Unless a different event handler is set using method <set-event-handler>,
+;; glut messages are processed by this function 
+;; when <process-pending-events> is called.
+(defmethod GlutWindow handle(event)
+  (when (and (consp event) (getmethod (classof this) (car event)))
+    (let ((oid (glut-get-window)))
+      (when (and (> id 0) (> (glut-set-window id) 0))
+        (apply ==> this (car event) (cdr event))
+        (when (> oid 0) (glut-set-window oid)) ) ) ) )
+
+(defmethod GlutWindow glut-display()
+  (glClear GL_COLOR_BUFFER_BIT) )
+
+(defmethod GlutWindow glut-reshape(w h)
+  () )
+
+(defmethod GlutWindow glut-keyboard(key x y)
+  () )
+
+(defmethod GlutWindow glut-mouse(n state x y)
+  () )
+
+(defmethod GlutWindow glut-motion(x y)
+  () )
+
+(defmethod GlutWindow glut-passive-motion(x y)
+  () )
+
+(defmethod GlutWindow glut-entry(state)
+  () )
+
+(defmethod GlutWindow glut-visibility(state)
+  () )
+
+(defmethod GlutWindow glut-menu-state(state)
+  () )
+
+(defmethod GlutWindow glut-special(key x y)
+  () )
+
+(defmethod GlutWindow glut-spaceball-button(btn state)
+  () )
+
+(defmethod GlutWindow glut-spaceball-motion(x y z)
+  () )
+
+(defmethod GlutWindow glut-spaceball-rotate(x y z)
+  () )
+
+(defmethod GlutWindow glut-button-box(btn state)
+  () )
+
+(defmethod GlutWindow glut-dials(dial val)
+  () )
+
+(defmethod GlutWindow glut-tablet-button(btn state x y)
+  () )
+
+(defmethod GlutWindow glut-tablet-motion(x y)
+  () )
+
+(defmethod GlutWindow glut-tablet-motion(status x y)
+  () )
+
+(defmethod GlutWindow glut-overlay-display()
+  () )
+
+
+
+
+;; ----------------------------------------
+;; MAKE
+;; ----------------------------------------
+(with-namespace lush1-
+(let ((m (mod-search "glut.o")))
+  (if (and m (module-executable-p m))
+      ;; Attempt to reload glut.o
+      ;; Repair damage and cause an error
+      (progn
+        (module.hook 'init m)
+        (error "Module \"glut.o\" can only be loaded once") )
+    ;; Compile
+    (let ((dhc-make-lushflags (concat dhc-make-lushflags opengl-cflags)))
+      (dhc-make-with-libs () 
+                          (list opengl-libgl opengl-libglu . opengl-libglut)
+          ;; Headers
+          #{
+             #include <X11/Xlib.h>
+             #include <X11/Xutil.h>
+             #include <sys/time.h>
+             #include <GL/glut.h>
+	     #ifdef FREEGLUT
+	     # include <GL/freeglut_ext.h>
+	     #endif
+          #}
+          ;; Helpers
+          #{
+             #ifdef FREEGLUT
+               extern struct fgdisplay { Display *dpy; /*...*/ } fgDisplay;
+               static struct fgdisplay * volatile pFgDisplay = &fgDisplay;
+             #else
+               jmp_buf glut_event_jmp;
+               void glut_idle_jmp(void) { longjmp(glut_event_jmp, 1); }
+               extern Atom __glutWMDeleteWindow;
+               extern Display *__glutDisplay;
+               extern int __glutWindowListSize;
+               extern void *__glutWindowWorkList;
+               extern struct { void *next; struct timeval tv;} *__glutTimerList;
+             #endif
+             static at *glhandlers = 0;
+             static at *glhandle = 0;
+             static void * volatile glutFonts[7] = { 
+                &glutBitmap9By15, &glutBitmap8By13, &glutBitmapTimesRoman10,
+                &glutBitmapTimesRoman24, &glutBitmapHelvetica10,
+                &glutBitmapHelvetica12, &glutBitmapHelvetica18 };
+          #}
+          ;; Utilities
+          glutint-poll glutint-init glutint-check glutint-font
+          ;; Glut API
+          glut-init-display-mode
+          glut-init-window-size
+          glut-init-window-position glut-main-loop
+          glut-create-window
+          glut-create-sub-window glut-get-window
+          glut-set-window glut-destroy-window
+          glut-post-redisplay glut-swap-buffers
+          glut-set-window-title
+          glut-set-icon-title glut-position-window
+          glut-reshape-window glut-pop-window
+          glut-push-window glut-iconify-window
+          glut-show-window glut-hide-window
+          glut-full-screen glut-set-cursor
+          glut-establish-overlay
+          glut-remove-overlay glut-use-layer
+          glut-post-overlay-redisplay
+          glut-show-overlay glut-hide-overlay
+          glut-create-menu glut-destroy-menu
+          glut-get-menu glut-set-menu
+          glut-add-menu-entry glut-add-sub-menu
+          glut-change-to-menu-entry
+          glut-change-to-sub-menu
+          glut-remove-menu-item glut-attach-menu
+          glut-detach-menu glut-display-func
+          glut-reshape-func glut-keyboard-func
+          glut-mouse-func glut-motion-func
+          glut-passive-motion-func glut-entry-func
+          glut-visibility-func glut-idle-func
+          glut-timer-func glut-menu-state-func
+          glut-special-func
+          glut-spaceball-motion-func
+          glut-spaceball-rotate-func
+          glut-spaceball-button-func
+          glut-button-box-func glut-dials-func
+          glut-tablet-motion-func
+          glut-tablet-button-func
+          glut-menu-status-func
+          glut-overlay-display-func glut-set-color
+          glut-get-color glut-copy-colormap
+          glut-get glut-device-get glut-layer-get
+          glut-extension-supported
+          glut-get-modifiers glut-bitmap-character
+          glut-bitmap-width glut-stroke-character
+          glut-stroke-width glut-wire-sphere
+          glut-solid-sphere glut-wire-cone
+          glut-solid-cone glut-wire-cube
+          glut-solid-cube glut-wire-torus
+          glut-solid-torus glut-wire-teapot
+          glut-solid-teapot glut-wire-dodecahedron
+          glut-solid-dodecahedron
+          glut-wire-octahedron
+          glut-solid-octahedron
+          glut-wire-tetrahedron
+          glut-solid-tetrahedron
+          glut-wire-icosahedron
+          glut-solid-icosahedron
+          ;; Glut window support
+          #{
+             static void glutsend(char *name, at *args)
+             { 
+               if (HTABLEP(glhandlers)) {
+                 at *w = NEW_NUMBER(glutGetWindow());
+                 at *h = htable_get(Mptr(glhandlers), w); 
+                 if (h) {
+                   at *m = getmethod(Class(h), glhandle);
+                   if (m) {
+                     args = new_cons(quote(named(name)),args);
+                     send_message(NIL,h,glhandle,args);
+                   }
+                 }
+               }
+             }
+             static at *make1i(int x)
+               { return new_cons(NEW_NUMBER(x),NIL);}
+             static at *make2i(int x, int y)
+               { return new_cons(NEW_NUMBER(x),make1i(y));}
+             static at *make3i(int x, int y, int z)
+               { return new_cons(NEW_NUMBER(x),make2i(y,z));}
+             static at *make4i(int x, int y, int z, int k)
+               { return new_cons(NEW_NUMBER(x),make3i(y,z,k));}
+             // Callbacks
+             static void gDisplay(void)
+               { glutsend("glut-display",NIL);}
+             static void gReshape(int w, int h)
+               { glutsend("glut-reshape", make2i(w,h));}
+             static void gKeyboard(unsigned char key, int x, int y)
+               { glutsend("glut-keyboard", make3i(key,x,y));}
+             static void gMouse(int btn, int state, int x, int y)
+               { glutsend("glut-mouse", make4i(btn,state,x,y));}
+             static void gMotion(int x, int y)
+               { glutsend("glut-motion", make2i(x,y));}
+             static void gPassiveMotion(int x, int y)
+               { glutsend("glut-passive-motion", make2i(x,y));}
+             static void gEntry(int state)
+               { glutsend("glut-entry", make1i(state));}
+             static void gVisibility(int state)
+               { glutsend("glut-visibility", make1i(state));}
+             static void gMenuState(int state)
+               { glutsend("glut-menu-state", make1i(state));}
+             static void gSpecial(int key, int x, int y)
+               { glutsend("glut-special", make3i(key,x,y));}
+             static void gSpaceballMotion(int x, int y, int z)
+               { glutsend("glut-spaceball-motion", make3i(x,y,z));}
+             static void gSpaceballRotate(int x, int y, int z)
+               { glutsend("glut-spaceball-rotate", make3i(x,y,z));}
+             static void gSpaceballButton(int btn, int state)
+               { glutsend("glut-spaceball-button", make2i(btn,state));}
+             static void gButtonBox(int btn, int state)
+               { glutsend("glut-button-box", make2i(btn,state));}
+             static void gDials(int dial, int val)
+               { glutsend("glut-dials", make2i(dial,val));}
+             static void gTabletMotion(int x, int y)
+               { glutsend("glut-tablet-motion", make2i(x,y));}
+             static void gTabletButton(int btn, int state, int x, int y)
+               { glutsend("glut-tablet-button", make4i(btn,state,x,y));}
+             static void gMenuStatus(int status, int x, int y)
+               { glutsend("glut-menu-status", make3i(status,x,y));}
+             static void gOverlayDisplay(void)
+               { glutsend("glut-overlay-display",NIL);}
+          #}
+          ;; Glut window
+          (GlutWindow glutwindow set-callbacks 
+                      destroy create -destructor) )
+      ;; Init
+      (module-never-unload (mod-search "glut.o"))
+      (glutint-init) ) ) )
+
+) ; with-namespace
+

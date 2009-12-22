@@ -1,0 +1,1789 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: gb-modules.lsh,v 1.5 2004/04/17 20:45:36 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a few predefined gradient-based learning modules for Lush
+
+(libload "gblearn2/gb-config")
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-float")
+(libload "libidx/idx-double")
+(libload "libidx/idx-int")
+(libload "libidx/idx-sort")
+(libload "gblearn2/gb-states")
+(libload "gblearn2/gb-params")
+
+(in-namespace* gblearn-
+
+(eval `(de dummy-gb-modules () (cpheader ,gbtype-deftype) ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; modules
+
+#? *** modules
+;;.AUTHOR Yann LeCun
+;; In Lush, building and training a complex system is done by assembling
+;; basic blocks, called modules. Modules are subclasses of the
+;; class gb-module.
+;; Though there are several predefined module classes, you can define your 
+;; own pretty easily.
+;; modules must understand 2 basic methods, fprop and bprop, whose arguments
+;; are the inputs and outputs of the module.
+;; Optionally most module should understand a bbprop method for computing
+;; diagonal second derivatives.
+;; Modules can have as many input/output "ports" as desired.
+;; these "ports" are passed as arguments to the methods that require them, 
+;; such as fprop and bprop. In most cases, these arguments belong to the
+;; class idx-state, or one of its subclasses.
+;; Some modules may have internal trainable parameters. When this is the case, 
+;; an idx3-ddparam object must be passed to the constructor.
+;; Internal parameters will then be allocated in that param.
+;; the bprop and bbprop methods ACCUMULATE gradients in these parameters
+;; so multiple modules can share a single parameter and automatically
+;; compute the correct gradient. Gradients on input ports are NOT accumulated.
+;;.P
+;; A special class called trainer provides a convenient way to train
+;; and test a module combined with pre- and post-processors.
+;; Once a module has been created, inserting it in an instance of
+;; the trainer class is the easiest and fastest way to train it on a 
+;; database and to measure its performance.
+;; the trainer class understands methods such as train, test etc...
+;; Most of these methods take instances of database as argument.
+;; They also take another argument called a meter. A meter is an
+;; object whose role is to keep track of the performance of the
+;; machine during a training or test session.
+;; trainers, meters, and databases can be put in an instance
+;; of workbench that handles standard learning sequences (estimate 
+;; second derivatives, train, test....)
+;;.P
+;; A certain number of predefined basic modules are provided in modules.sn.
+;; This includes idx3-module, a "root" class of moduless with one input and
+;; one output, both of type idx3-state. Many predefined modules are subclasses
+;; of idx3-module. Also included are idx3-squasher (sigmoid layer),
+;; logadd-layer (transforms a idx3-state into an idx1-state by log-adding over
+;; the 2 spatial dimensions), mle-cost (cost module for minimizing the cost
+;; of the desired output).
+
+#? ** gb-module
+;; The class gb-module is the basic class for objects that can be used
+;; with the library of training routines.
+;; Specific trainable modules and cost functions etc... are subclasses of
+;; <gb-module> and can be combined to build complex adaptive machines.
+;; <gb-module> are expected to accept at least the methods <fprop>, <bprop>,
+;; and optionally the following methods: <bbprop>, <load>, and <save>.
+;; the external "plugs" of a <gb-module> are passed as argument to the
+;; methods. For example, the <fprop> method of a module with one input 
+;; vector and one output vector, and one parameter vector can be called with
+;;{<code>
+;;  (==> <gb-module> fprop <input> <parameter> <output>)
+;;</code>}
+;; where <input>, <parameter> and <output> are instances of the 
+;; <gb-state> or one of its subclasses. 
+;; As a convention, the methods <fprop>, <bprop>, and <bbprop> take 
+;; the same arguments in the same order.
+;; Results of these methods are accumulated in the appropriate
+;; slot of the objects passed as paramters. This allows modules
+;; to share inputs and outputs while preserving the correctness
+;; of forward and backward propagations
+;;
+;; a few convenient subclasses of <gb-module> are predefined in the
+;; <gblearn2> library. This includes cost functions, classifiers,
+;; and others. 
+(defclass gb-module object)
+
+
+#? (==> <gb-module> fprop [<args>])
+;; performs a forward propagation on the <gb-module>.
+;; <args> are optional arguments which represent the external "plugs"
+;; of the module. When possible, modules with variable size outputs
+;; resize their output ports automatically.
+;;.SEE (==> <gb-module> bprop [<args>])
+;;.SEE (==> <gb-module> bbprop [<args>])
+
+
+#? (==> <gb-module> bprop [<args>])
+;; performs a backward propagation on the <gb-module> (propagates derivatives).
+;; <args> are optional arguments which represent the external "plugs"
+;; of the module. By convention, the list of <args> is the same as for 
+;; the fprop method. bprop assumes fprop has been called beforehand.
+;; If the module has internal parameters, the bprop method will ACCUMULATE 
+;; the gradients in it, so that multiple modules can share the same parameters
+;;.SEE (==> <gb-module> fprop [<args>])
+;;.SEE (==> <gb-module> bbprop [<args>])
+
+
+#? (==> <gb-module> bbprop [<args>])
+;; performs a backward propagation of second derivatives on the <gb-module>
+;; <args> are optional arguments which represent the external "plugs"
+;; of the module. By convention, the list of <args> is the same as for 
+;; the fprop method. bbprop assumes fprop and bprop have been run beforehand.
+;; If the module has internal parameters, the bbprop method will ACCUMULATE 
+;; second derivatives in it, so that multiple modules can share the same 
+;; parameters
+;;.SEE (==> <gb-module> fprop [<args>])
+;;.SEE (==> <gb-module> bprop [<args>])
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** noop-module
+;; a module that does not do anything
+;; (a place-holder). This is NOT an identity-function module
+;; not compilable
+;;.SEE id-module
+;;.SEE gb-module
+(defclass noop-module gb-module)
+
+(defmethod noop-module fprop l ())
+(defmethod noop-module bprop l ())
+(defmethod noop-module bbprop l ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** id-module
+;; identity function module.
+;; It's a straight pass-through forward and backward.
+;; arguments must be idx-ddstates
+;; non compilable.
+(defclass id-module gb-module)
+
+(defmethod id-module id-module () ())
+(defmethod id-module fprop (in out) (array-copy :in:x :out:x))
+(defmethod id-module bprop (in out) (array-copy :out:dx :in:dx))
+(defmethod id-module bbprop (in out) (array-copy :out:ddx :in:ddx))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx4-module
+;; a basic "root" class for modules that have one single idx-state input
+;; and one single idx4-state output.
+;; the fprop, bprop and bbprop methods of this root class merely
+;; act as identity functions
+(defclass idx4-module gb-module)
+
+(defmethod idx4-module idx4-module () ())
+
+(defmethod idx4-module save (f) ())
+(defmethod idx4-module load (f) ())
+
+(defmethod idx4-module fprop (in out)
+  (declare (-obj- (idx4-state)) in)
+  (declare (-obj- (idx4-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0) (idx-dim inx 1) (idx-dim inx 2) (idx-dim inx 3))
+    (array-copy inx :out:x)
+    ()))
+
+(defmethod idx4-module bprop (in out)
+  (declare (-obj- (idx4-dstate)) in)
+  (declare (-obj- (idx4-dstate)) out)
+  (array-copy :out:dx :in:dx)
+  ())
+
+(defmethod idx4-module bbprop (in out)
+  (declare (-obj- (idx4-ddstate)) in)
+  (declare (-obj- (idx4-ddstate)) out)
+  (array-copy :out:ddx :in:ddx)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx3-module
+;; a basic "root" class for modules that have one single idx-state input
+;; and one single idx3-state output.
+;; the fprop, bprop and bbprop methods of this root class merely
+;; act as identity functions
+(defclass idx3-module gb-module)
+
+(defmethod idx3-module idx3-module () ())
+
+(defmethod idx3-module save (f) ())
+(defmethod idx3-module load (f) ())
+
+(defmethod idx3-module forget (v p) (declare (-float-) v p) ())
+
+(defmethod idx3-module fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0) (idx-dim inx 1) (idx-dim inx 2))
+    (array-copy inx :out:x)
+    ()))
+
+(defmethod idx3-module bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx3-dstate)) out)
+  (array-copy :out:dx :in:dx)
+  ())
+
+(defmethod idx3-module bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  (array-copy :out:ddx :in:ddx)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx2-module
+;; a basic "root" class for modules that have one single idx-state input
+;; and one single idx2-state output.
+;; the fprop, bprop and bbprop methods of this root class merely
+;; act as identity functions
+(defclass idx2-module gb-module)
+
+(defmethod idx2-module idx2-module () ())
+
+(defmethod idx2-module save (f) ())
+(defmethod idx2-module load (f) ())
+
+(defmethod idx2-module fprop (in out)
+  (declare (-obj- (idx2-state)) in)
+  (declare (-obj- (idx2-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0) (idx-dim inx 1))
+    (array-copy inx :out:x)
+    ()))
+
+(defmethod idx2-module bprop (in out)
+  (declare (-obj- (idx2-dstate)) in)
+  (declare (-obj- (idx2-dstate)) out)
+  (array-copy :out:dx :in:dx)
+  ())
+
+(defmethod idx2-module bbprop (in out)
+  (declare (-obj- (idx2-ddstate)) in)
+  (declare (-obj- (idx2-ddstate)) out)
+  (array-copy :out:ddx :in:ddx)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx1-module
+;; a basic "root" class for modules that have one single idx-state input
+;; and one single idx1-state output.
+;; the fprop, bprop and bbprop methods of this root class merely
+;; act as identity functions
+(defclass idx1-module gb-module)
+
+(defmethod idx1-module idx1-module () ())
+
+(defmethod idx1-module save (f) ())
+(defmethod idx1-module load (f) ())
+
+(defmethod idx1-module fprop (in out)
+  (declare (-obj- (idx1-state)) in)
+  (declare (-obj- (idx1-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0))
+    (array-copy inx :out:x)
+    ()))
+
+(defmethod idx1-module bprop (in out)
+  (declare (-obj- (idx1-dstate)) in)
+  (declare (-obj- (idx1-dstate)) out)
+  (array-copy :out:dx :in:dx)
+  ())
+
+(defmethod idx1-module bbprop (in out)
+  (declare (-obj- (idx1-ddstate)) in)
+  (declare (-obj- (idx1-ddstate)) out)
+  (array-copy :out:ddx :in:ddx)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx4-squasher
+;; a basic squashing function layer for idx4-state
+;; you can udefine subclasses of this to change the squashing function
+(defclass idx4-squasher idx4-module)
+
+(defmethod idx4-squasher idx4-squasher () ())
+
+(defmethod idx4-squasher fprop (in out)
+  (declare (-obj- (idx4-state)) in)
+  (declare (-obj- (idx4-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0) (idx-dim inx 1) (idx-dim inx 2) (idx-dim inx 3))
+    (idx-stdsigmoid inx :out:x))
+  ())
+
+(defmethod idx4-squasher bprop (in out)
+  (declare (-obj- (idx4-dstate)) in)
+  (declare (-obj- (idx4-dstate)) out)
+  (idx-bloop ((inx :in:x) (indx :in:dx) (outdx :out:dx)) 
+    (idx-dstdsigmoid inx indx)
+    (idx-mul indx outdx indx))
+  ())
+
+(defmethod idx4-squasher bbprop (in out)
+  (declare (-obj- (idx4-ddstate)) in)
+  (declare (-obj- (idx4-ddstate)) out)
+  (idx-bloop ((inx :in:x) (inddx :in:ddx) (outddx :out:ddx)) 
+    (idx-dstdsigmoid inx inddx)
+    (idx-mul inddx inddx inddx)
+    (idx-mul inddx outddx inddx))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx3-squasher
+;; a basic squashing function layer for idx3-state
+;; you can udefine subclasses of this to change the squashing function
+(defclass idx3-squasher idx3-module)
+
+(defmethod idx3-squasher idx3-squasher () ())
+
+(defmethod idx3-squasher fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0) (idx-dim inx 1) (idx-dim inx 2))
+    (idx-stdsigmoid inx :out:x))
+  ())
+
+(defmethod idx3-squasher bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx3-dstate)) out)
+  (idx-bloop ((inx :in:x) (indx :in:dx) (outdx :out:dx)) 
+    (idx-dstdsigmoid inx indx)
+    (idx-mul indx outdx indx))
+  ())
+
+(defmethod idx3-squasher bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  (idx-bloop ((inx :in:x) (inddx :in:ddx) (outddx :out:ddx)) 
+    (idx-dstdsigmoid inx inddx)
+    (idx-mul inddx inddx inddx)
+    (idx-mul inddx outddx inddx))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx4-sqsquasher
+;; square of hyperbolic tangent (or a rational approximation to it).
+(defclass idx4-sqsquasher idx4-module)
+
+(defmethod idx4-sqsquasher idx4-sqsquasher () ())
+
+(defmethod idx4-sqsquasher fprop (in out)
+  (declare (-obj- (idx4-state)) in)
+  (declare (-obj- (idx4-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0) (idx-dim inx 1) (idx-dim inx 2) (idx-dim inx 3))
+    (cidx-bloop ("i" "j" "k" "l" ("in" inx) ("out" :out:x))
+      #{ { register float v = FQtanh(*in); *out = v*v; } #}))
+  ())
+
+(defmethod idx4-sqsquasher bprop (in out)
+  (declare (-obj- (idx4-dstate)) in)
+  (declare (-obj- (idx4-dstate)) out)
+  (cidx-bloop ("i" "j" "k" "l" ("in" :in:x) ("ind" :in:dx) ("outd" :out:dx))
+    #{ *ind = *outd * 2 * FQtanh(*in) * FQDtanh(*in); #})
+  ())
+
+(defmethod idx4-sqsquasher bbprop (in out)
+  (declare (-obj- (idx4-ddstate)) in)
+  (declare (-obj- (idx4-ddstate)) out)
+  (cidx-bloop ("i" "j" "k" "l" ("in" :in:x) ("ind" :in:ddx) ("outd" :out:ddx))
+    #{ { register float v = 2 * FQtanh(*in) * FQDtanh(*in); *ind = *outd * v * v; } #})
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx3-sqsquasher
+;; square of hyperbolic tangent (or a rational approximation to it).
+(defclass idx3-sqsquasher idx3-module)
+
+(defmethod idx3-sqsquasher idx3-sqsquasher () ())
+
+(defmethod idx3-sqsquasher fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0) (idx-dim inx 1) (idx-dim inx 2))
+    (cidx-bloop ("i" "j" "k" ("in" inx) ("out" :out:x))
+      #{ { register float v = FQtanh(*in); *out = v*v; } #}))
+  ())
+
+(defmethod idx3-sqsquasher bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx3-dstate)) out)
+  (cidx-bloop ("i" "j" "k" ("in" :in:x) ("ind" :in:dx) ("outd" :out:dx))
+    #{ *ind = *outd * 2 * FQtanh(*in) * FQDtanh(*in); #})
+  ())
+
+(defmethod idx3-sqsquasher bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  (cidx-bloop ("i" "j" "k" ("in" :in:x) ("ind" :in:ddx) ("outd" :out:ddx))
+    #{ { register float v = 2 * FQtanh(*in) * FQDtanh(*in); *ind = *outd * v * v; } #})
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx4-halfsquare
+;; takes half square of each component.
+(defclass idx4-halfsquare idx4-squasher)
+
+(defmethod idx4-halfsquare idx4-halfsquare () ())
+
+(defmethod idx4-halfsquare fprop (in out)
+  (declare (-obj- (idx4-state)) in)
+  (declare (-obj- (idx4-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0) (idx-dim inx 1) (idx-dim inx 2) (idx-dim inx 3))
+    (idx-bloop ((inx inx) (outx :out:x)) 
+      (idx-bloop ((inx inx) (outx :out:x)) 
+	(idx-bloop ((inx inx) (outx outx)) 
+	  (cinline-idx1loop2 inx "gbtype" outx "gbtype" "ip" "op" "i" 
+			     (cinline " {register gbtype n= *op; *ip = 0.5*n*n; }"))))))
+  ())
+
+(defmethod idx4-halfsquare bprop (in out)
+  (declare (-obj- (idx4-dstate)) in)
+  (declare (-obj- (idx4-dstate)) out)
+  (idx-mul :in:x :out:dx :in:dx)
+  ())
+
+(defmethod idx4-halfsquare bbprop (in out)
+  (declare (-obj- (idx4-ddstate)) in)
+  (declare (-obj- (idx4-ddstate)) out)
+  (idx-mul :in:x :out:ddx :in:ddx)
+  (idx-add :in:ddx :out:dx :in:ddx)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx3-halfsquare
+;; takes half square of each component.
+(defclass idx3-halfsquare idx3-squasher)
+
+(defmethod idx3-halfsquare idx3-halfsquare () ())
+
+(defmethod idx3-halfsquare fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  (let ((inx :in:x))
+    (==> out resize (idx-dim inx 0) (idx-dim inx 1) (idx-dim inx 2))
+    (idx-bloop ((inx inx) (outx :out:x)) 
+      (idx-bloop ((inx inx) (outx outx)) 
+	(cinline-idx1loop2 inx "gbtype" outx "gbtype" "ip" "op" "i" 
+	  (cinline " {register gbtype n= *op; *ip = 0.5*n*n; }")))))
+  ())
+
+(defmethod idx3-halfsquare bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx3-dstate)) out)
+  (idx-mul :in:x :out:dx :in:dx)
+  ())
+
+(defmethod idx3-halfsquare bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  (idx-mul :in:x :out:ddx :in:ddx)
+  (idx-add :in:ddx :out:dx :in:ddx)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** logadd-layer
+;; performs a log-add over spatial dimensions of an idx3-state
+;; output is an idx1-state
+(defclass logadd-layer gb-module
+  ((-idx3- (-gbtype-)) expdist)
+  ((-idx1- (-gbtype-)) sumexp))
+
+(defmethod logadd-layer logadd-layer (thick si sj)
+  (declare (-int-) thick si sj)
+  (setq expdist (gbtype-matrix thick si sj))
+  (setq sumexp (gbtype-matrix thick))		; scaled partition function
+  ())
+
+(defmethod logadd-layer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx1-state)) out)
+  (let* ((inx :in:x)
+	 (outx :out:x)
+	 (thick (idx-dim inx 0))
+	 (si (idx-dim inx 1))
+	 (sj (idx-dim inx 2)))
+    (declare (-int-) thick si sj)
+    (idx-f3resize expdist thick si sj)
+    (idx-f1resize outx thick)
+    (if (= 1 (* si sj))
+	;; save time and precision if no replication
+	(let ((m (select (select inx 2 0) 1 0))
+	      (expdist (select (select expdist 2 0) 1 0)))
+	  (idx-f1fill expdist 1)
+	  (idx-f1fill sumexp 1)
+	  (array-copy m outx) ())
+      ;; spatially replicated 
+      ;; loop over output units
+      (idx-bloop ((m inx) (out outx) (expdist expdist) (sumexp sumexp))
+	;; first compute smallest element of m
+	(let ((mini (m 0 0)))
+	  (declare (-gbtype-) mini)
+	  (idx-bloop ((m m))
+	    (cinline-idx1loop m "gbtype" "mp" "i"
+	      (cinline "if ((*mp)<(%s)) { %s = *mp; }" mini mini)))
+	  ;; now do log-add, and save exponentials
+	  (let ((r 0)
+		(w (/ 1 (* si sj))))
+	    (declare (-gbtype-) r w)
+	    (idx-bloop ((m m) (expdist expdist))
+	      (cinline-idx1loop2 m "gbtype" expdist "gbtype" "mp" "ep" "i"
+		(cinline "%s += *ep = %s * Fexp( %s - *mp)" r w mini)))
+	    (sumexp r)
+	    ;; put result in output
+	    (out (- mini (log r))))))))
+  ())
+
+(defmethod logadd-layer bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx1-dstate)) out)
+  (let* ((indx :in:dx)
+	 (outdx :out:dx)
+	 (si (idx-dim indx 1))
+	 (sj (idx-dim indx 2)))
+    (declare (-int-) si sj)
+    (if (= 1 (* si sj))
+	;; save time and precision if no replication
+	(let ((m (select (select indx 2 0) 1 0)))
+	  (array-copy outdx m) ())
+      ;; spatially replicated 
+      ;; loop over output units
+      (idx-bloop ((m indx) (out outdx) (expdist expdist) (sumexp sumexp))
+	(idx-bloop ((m m) (expdist expdist))
+	  (cinline-idx1loop2 m "gbtype" expdist "gbtype" "mp" "ep" "i"
+	    (cinline "*mp = *ep * %s / %s " (out) (sumexp)))))))
+  ())
+
+;; this is not algebraically correct, but it's
+;; numerically more stable (at least, I think so).
+(defmethod logadd-layer bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx1-ddstate)) out)
+  (idx-bloop ((out :out:ddx) (in :in:ddx))
+    (idx-f2fill in (out)))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? cost
+;; costs are a special type of modules (although there is no definite
+;; subclass for them) with two inputs and one output.
+;; the output is an idx0-ddstate which stores a cost or energy.
+;; one of the inputs is meant to be the output of another module (e.g.
+;; a network), and the other input a desired output (or any kind
+;; of supervisor signal like a reinforcement).
+;; the gradient slot (dx) of the output state is generally filled
+;; with +1. That way, the bprop method of the cost module 
+;; automatically computes the gradient.
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; return a class index from a label, or -1
+;; the label is unknown
+(de get-classindex (des label2index)
+    (declare (-int-) des)
+    (declare (-idx1- (-int-)) label2index)
+    ;; look if desired output is one of the legal classes, 
+    ;; or junk (-1 means junk)
+    (if (and (< des (idx-dim label2index 0)) (>= des 0))
+	(label2index des) -1))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx3-cost
+;; abstract class for a cost function that takes
+;; an idx3-state as input, an int as desired output,
+;; and an idx0-state as energy.
+(defclass idx3-cost gb-module)
+
+(defmethod idx3-cost fprop (in desired energy)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-state)) energy)
+  ())
+
+(defmethod idx3-cost bprop (in desired energy)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  ())
+
+(defmethod idx3-cost bbprop (in desired energy)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-ddstate)) energy)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** mle-cost
+;; a cost module that propagates the output corresponding to the
+;; desired label. If the output is interpreted as a negative
+;; log likelihood, minimizing this output is equivalent to
+;; maximizing the likelihood.
+;; outputs are log-added over spatial dimensions in case of spatial
+;; replication.
+(defclass mle-cost idx3-cost
+  ((-obj- (logadd-layer)) logadder)
+  ((-obj- (idx1-ddstate)) logadded-dist)
+  ((-idx1- (-int-)) label2classindex))
+
+#? (new mle-cost <classes> <si> <sj>)
+;; make a new mle-cost. <classes> is an integer vector
+;; which contains the labels associated with each output.
+;; From that vector, the reverse table is constructed
+;; to map labels to class indices.
+;; Elements in <classes> must be positive or 0, and
+;; not be too large, as a table as large as the
+;; maximum value is allocated.
+;; <si> and <sj> are the expected maximum sizes in
+;; the spatial dimensions (used for preallocation to
+;; prevent memory fragmentation).
+(defmethod mle-cost mle-cost (classes ini inj)
+  (declare (-idx1- (-int-)) classes)
+  (declare (-int-) ini inj)
+  (let ((cdim0 (idx-dim classes 0))
+	(imax (idx-i1max classes))
+	(imin (idx-i1min classes)))
+    (declare (-int-) cdim0 imax imin)
+    (when (< imin 0) (error "[mle-cost] labels must be positive"))
+    (when (> imax 100000) (printf "warning: [mle-cost] largest label is huuuge\n"))
+    (setq label2classindex (int-array (1+ imax)))
+    (idx-bloop ((v label2classindex)) (v -1))
+    (for (i 0 (1- cdim0)) (label2classindex (classes i) i))
+    (setq logadder (new logadd-layer cdim0 ini inj))
+    (setq logadded-dist (new idx1-ddstate cdim0)))
+  ())
+
+;; this does not do anything when the desired label 
+;; is not a known one. The energy is 0 in this case,
+;; and no gradient will be backpropagated
+(defmethod mle-cost fprop (in desired energy)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-state)) energy)
+  (==> logadder fprop in logadded-dist)
+  (let ((clindex (get-classindex (desired) label2classindex))) 
+    (declare (-int-) clindex)
+    (if (<> clindex -1)
+	(array-copy (select :logadded-dist:x 0 clindex) :energy:x)
+      (:energy:x 0)))
+  ())
+
+(defmethod mle-cost bprop (in desired energy)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  (array-clear :logadded-dist:dx 0)
+  (let ((clindex (get-classindex (desired) label2classindex))) 
+    (declare (-int-) clindex)
+    (when (<> clindex -1)
+      (array-copy :energy:dx (select :logadded-dist:dx 0 clindex))))
+  (==> logadder bprop in logadded-dist)
+  ())
+
+(defmethod mle-cost bbprop (in desired energy)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-ddstate)) energy)
+  (array-clear :logadded-dist:ddx 0)
+  (let ((clindex (get-classindex (desired) label2classindex))) 
+    (declare (-int-) clindex)
+    (when (<> clindex -1)
+      (array-copy :energy:ddx (select :logadded-dist:ddx 0 clindex))))
+  (==> logadder bbprop in logadded-dist)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** mmi-cost
+;; a cost function that maximizes the mutual information
+;; between the actual output and the desired output.
+;; This assumes that the outputs are costs, or negative
+;; log likelihoods.
+;; this modules accepts spatially replicated inputs.
+(defclass mmi-cost mle-cost
+  ((-obj- (idx0-ddstate)) junk-param)
+  ((-obj- (idx1-ddstate)) junk-dist)
+  ((-idx1- (-gbtype-)) priors))
+
+#? (new mmi-cost <classes> <priors> <si> <sj> <prm>)
+;; make a new mmi-cost. <classes> is an integer vector
+;; which contains the labels associated with each output.
+;; From that vector, the reverse table is constructed
+;; to map labels to class indices.
+;; Elements in <classes> must be positive or 0, and
+;; not be too large, as a table as large as the
+;; maximum value is allocated.
+;; <priors>: an idx1 of gbtypes, whose size must be the size of
+;; <classes>+1. It specifies the prior probability for each class,
+;; and for the junk class. The prior for the junk class must be in the last
+;; element. In absence of a better guess, the prior vector should be filled
+;; with 1/n, where n is its size.
+;; <si> and <sj> are the expected maximum sizes in
+;; the spatial dimensions (used for preallocation to
+;; prevent memory fragmentation).
+;; <prm> is an idx1-ddparam in which the value that determines the 
+;; constant cost of the junk class will be stored.
+;; If the system is to be trained without junk examples, 
+;; this parameter can be set to a very large value, and not
+;; be trained. The effect of setting this parameter to 
+;; a fixed value is to softly saturate the costs of all the class
+;; to the half-square of that value (the overall energy will never be 
+;; significantly larger then the half-square of the set value), and to 
+;; softly clip the gradients, i.e. the units whose cost is higher than the
+;; half-square of the set value will receive negligible gradients. The 
+;; parameter can be learned ONLY IF junk examples (with label -1) are present 
+;; in the training set.
+;; There is a method, called set-junk-cost that allows to directly set the value 
+;; of the junk without having to figure out the half-square business.
+(defmethod mmi-cost mmi-cost (classes pr ini inj prm)
+  (declare (-idx1- (-int-)) classes)
+  (declare (-idx1- (-gbtype-)) pr)  
+  (declare (-int-) ini inj)
+  (declare (-obj- (idx1-ddparam)) prm)
+  (setq junk-param (==> prm alloc-idx0-ddstate))
+  (let ((cdim0 (idx-dim classes 0))
+	(imax (idx-i1max classes))
+	(imin (idx-i1min classes)))
+    (declare (-int-) cdim0 imax imin)
+    (when (<> (1+ cdim0) (idx-dim pr 0)) 
+      (error "[mmi-cost] priors and classes have incompatible sizes"))
+    (when (< imin 0) (error "[mmi-cost] labels must be positive"))
+    (when (> imax 100000) (printf "warning: [mmi-cost] largest label is huuuge\n"))
+    (setq priors pr)
+    (setq label2classindex (int-array (1+ imax)))
+    (idx-bloop ((v label2classindex)) (v -1))
+    (for (i 0 (1- cdim0)) (label2classindex (classes i) i))
+    (setq logadder (new logadd-layer cdim0 ini inj))
+    (setq logadded-dist (new idx1-ddstate cdim0))
+    (setq junk-dist (new idx1-ddstate (1+ cdim0))))
+  ())
+
+
+#? (==> <mmi-cost> set-junk-cost <c>)
+;; set the constant cost of the junk class to <c>.
+;; the underlying parameter is given the value
+;; (sqrt (* 2 <c>)), so <c> must be positive.
+(defmethod mmi-cost set-junk-cost (c)
+  (declare (-gbtype-) c) (:junk-param:x (sqrt (* 2 c))))
+
+(defmethod mmi-cost fprop (in desired energy)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-state)) energy)
+  ;; logadd over spatial dimensions
+  (==> logadder fprop in logadded-dist)
+  ;; logadd over classes for unconstrained cost
+  (let* ((lax :logadded-dist:x)
+	 (lajx :junk-dist:x)
+	 (s (idx-dim lax 0)))
+    (declare (-int-) s)
+    (array-copy lax (idx-trim lajx 0 0 s))
+    ;; junk score is appended at the end of tmp
+    ;; score for junk is half square of junk parameter
+    (let ((jpx (:junk-param:x))) (lajx s (* 0.5 jpx jpx)))
+    (let* ((e (- (idx-f1logdotf1 lajx priors)))  ; unconstrained score
+	   ;; get index of desired class
+	   (clindex (get-classindex (desired) label2classindex))) 
+      (declare (-int-) clindex)
+      ;; add score of desired class (possibly junk) to energy
+      (incr e (if (= clindex -1) 
+		  (- (lajx s) (log (priors s))) 
+		(- (lajx clindex) (log (priors clindex)))))
+      (:energy:x e)))
+  ())
+
+(defmethod mmi-cost bprop (in desired energy)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  (let* ((lajx :junk-dist:x)
+	 (lajdx :junk-dist:dx)
+	 (ladx :logadded-dist:dx)
+	 (edx (:energy:dx))
+	 (s (idx-dim ladx 0)))
+    ;; compute unconstrained part of the gradient 
+    ;; right before the before the logadd
+    (idx-f1blogdotf1 lajx priors lajdx)
+    (idx-f1dotc lajdx (- edx) lajdx)
+    ;; add constrained (postive) part of the gradient
+    (let ((clindex (get-classindex (desired) label2classindex))) 
+      (declare (-int-) clindex)
+      (if (= clindex -1)
+	  (lajdx s (+ (lajdx s) edx))
+	(lajdx clindex (+ (lajdx clindex) edx))))
+    ;; copy first gradients to logadd-dist
+    (array-copy (idx-trim lajdx 0 0 s) ladx)
+    ;; backprop to junk parameter
+    (:junk-param:dx (* (:junk-param:x) (lajdx s))))
+  ;; backprop through spatial logadder
+  (==> logadder bprop in logadded-dist)
+  ())
+
+(defmethod mmi-cost bbprop (in desired energy)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-ddstate)) energy)
+  (idx-f1fill :logadded-dist:ddx (:energy:ddx))
+  (==> logadder bbprop in logadded-dist)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** fed-cost
+;; a replicable cost module that computes
+;; difference between the desired output
+;; (interpreted as a cost, log-summed over space)
+;; and the free energy of the set of outputs (i.e. the logsum 
+;; of all the outputs over all locations). A label of -1 indicates
+;; that the sample is "junk" (none of the above).
+;; This cost module makes sense if it follows a 
+;; an e-layer.
+;; FED stands for "free energy difference".
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** crossentropy-cost 
+;; a replicable cross-entropy cost function.
+;; computes the log-sum over the 2D spatial output
+;; of the log cross-entropy between the desired distribution
+;; over output classes and the actual distribution
+;; over output classes produced by the network.
+;; This is designed to 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? ** edist-cost
+;; a replicable Euclidean distance cost function.
+;; computes the log-sum over the 2D spatial output of
+;; the half squared error between the output and the
+;; prototype with the desired label.
+;; this does not generate gradients on the prototypes
+(defclass edist-cost idx3-cost
+  ((-obj- (logadd-layer)) logadder)
+  ((-obj- (idx3-ddstate)) dist)
+  ((-obj- (idx1-ddstate)) logadded-dist)
+  ((-idx2- (-gbtype-)) proto)
+  ((-idx1- (-int-)) label2classindex))
+
+
+#? (new edist-cost <classes> <si> <sj> <p>)
+;; make a new edist-cost. <classes> is an integer vector
+;; which contains the labels associated with each output.
+;; From that vector, the reverse table is constructed
+;; to map labels to class indices.
+;; Elements in <classes> must be positive or 0, and
+;; not be too large, as a table as large as the
+;; maximum value is allocated.
+;; <si> and <sj> are the expected maximum sizes in
+;; the spatial dimensions (used for preallocation to
+;; prevent memory fragmentation).
+;; <p> is an idx2 containing the prototype for each
+;; class label. The first dimension of <p> should be
+;; equal to the dimension of <classes>.
+;; the second dimension of <p> should be equal to the 
+;; number of outputs of the previous module.
+;; The costs are "log-summed" over spatial dimensions
+(defmethod edist-cost edist-cost (classes ini inj p)
+  (declare (-idx2- (-gbtype-)) p)
+  (declare (-idx1- (-int-)) classes)
+  (declare (-int-) ini inj)
+  (let ((imax (idx-i1max classes))
+	(imin (idx-i1min classes)))
+    (declare (-int-) imax imin)
+    (when (< imin 0) (error "labels must be positive"))
+    (when (> imax 100000) (printf "warning: [edist-cost] largest label is huuuge\n"))
+    (setq label2classindex (int-array (1+ imax)))
+    (idx-bloop ((v label2classindex)) (v -1))
+    (for (i 0 (1- (idx-dim classes 0))) (label2classindex (classes i) i)))
+  (setq dist (new idx3-ddstate 1 ini inj))
+  (setq logadder (new logadd-layer 1 ini inj))
+  (setq logadded-dist (new idx1-ddstate 1))
+  (setq proto p)
+  ())
+
+(defmethod edist-cost fprop (in desired energy)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-state)) energy)
+  (let* ((inx :in:x)
+	 (p (select proto 0 (label2classindex (desired))))
+	 (ini (idx-dim inx 1))
+	 (inj (idx-dim inx 2)))
+    (declare (-int-) ini inj)
+    (==> dist resize 1 ini inj)
+    (let ((inx (idx-transpose inx '(1 2 0)))
+	  (distx (select :dist:x 0 0)))
+      ;; loop over spatial dimensions
+      (idx-bloop ((inx inx) (distx distx))
+	(idx-bloop ((inx inx) (distx distx))      
+	  ;; distance between desired prototype and output 
+	  ;; at current location
+	  (idx-sqrdist p inx distx)))
+      (idx-f2dotc distx .5 distx))
+    (==> logadder fprop dist logadded-dist)
+    (:energy:x (:logadded-dist:x 0)))
+  ())
+
+(defmethod edist-cost  bprop (in desired energy)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  (let* ((inx :in:x)
+	 (indx :in:dx)
+	 (p (select proto 0 (label2classindex (desired))))
+	 (ini (idx-dim inx 1))
+	 (inj (idx-dim inx 2)))
+    (declare (-int-) ini inj)
+    (let ((z 0))
+      ;; backprop through logadder
+      (:logadded-dist:dx 0 (:energy:dx))
+      (==> logadder bprop dist logadded-dist)
+      ;; backprop through Euclidean distance
+      (let ((inx (idx-transpose inx '(1 2 0)))
+	    (indx (idx-transpose indx '(1 2 0)))
+	    (distdx (select :dist:dx 0 0)))
+	;; loop over last two dimensions
+	(idx-bloop ((linx inx) (lindx indx) (ldistdx distdx))
+	  (idx-bloop ((llinx linx) (llindx lindx) (lldistdx ldistdx))
+	    (idx-sub llinx p llindx)
+	    (idx-dotm0 llindx lldistdx llindx))))))
+  ())
+
+(defmethod edist-cost bbprop (in desired energy)
+  ;; mse has this funny property that the bbprop method mixes up the
+  ;; the first derivative after with the second derivative before, and
+  ;; vice versa. Only the first combination is used here.
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  ;; don't bother bbproping through the logadder
+  ;; we would ignore its output anyway
+  (idx-f3fill :in:ddx (:energy:dx))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** wedist-cost
+;; a replicable weighted Euclidean distance cost function.
+;; computes the log-sum over the 2D spatial output of
+;; the weighted half squared error between the output and the
+;; prototype with the desired label.
+;; this does not generate gradients on the prototypes. 
+(defclass wedist-cost idx3-cost
+  ((-obj- (logadd-layer)) logadder)
+  ((-obj- (idx3-ddstate)) dist)
+  ((-obj- (idx1-ddstate)) logadded-dist)
+  ((-idx2- (-gbtype-)) proto weights) ;; one weight per prototype and output
+  ((-idx1- (-int-)) label2classindex))
+
+#? (new wedist-cost <classes> <si> <sj> <p> <w>)
+;; make a new wedist-cost. <classes> is an integer vector
+;; which contains the labels associated with each output.
+;; From that vector, the reverse table is constructed
+;; to map labels to class indices.
+;; Elements in <classes> must be positive or 0, and
+;; not be too large, as a table as large as the
+;; maximum value is allocated.
+;; <si> and <sj> are the expected maximum sizes in
+;; the spatial dimensions (used for preallocation to
+;; prevent memory fragmentation).
+;; <p> is an idx2 containing the prototype for each
+;; class label, and <w> is an idx2 with a single weight
+;; for each of these prototype and each of its elements.
+;; The first dimension of <p> (and <w>) should be
+;; equal to the dimension of <classes>.
+;; the second dimension of <p> (and <w>) should be equal to the 
+;; number of outputs of the previous module.
+;; The costs are "log-summed" over spatial dimensions
+(defmethod wedist-cost wedist-cost (classes ini inj p w)
+  (declare (-idx2- (-gbtype-)) p w)
+  (declare (-idx1- (-int-)) classes)
+  (declare (-int-) ini inj)
+  (let ((imax (idx-i1max classes))
+	(imin (idx-i1min classes)))
+    (declare (-int-) imax imin)
+    (when (< imin 0) (error "labels must be positive"))
+    (when (> imax 100000) (printf "warning: [wedist-cost] largest label is huuuge\n"))
+    (setq label2classindex (int-array (1+ imax)))
+    (idx-bloop ((v label2classindex)) (v -1))
+    (for (i 0 (1- (idx-dim classes 0))) (label2classindex (classes i) i)))
+  (setq dist (new idx3-ddstate 1 ini inj))
+  (setq logadder (new logadd-layer 1 ini inj))
+  (setq logadded-dist (new idx1-ddstate 1))
+  (setq proto p)
+  (setq weights w)
+  ())
+
+(defmethod wedist-cost fprop (in desired energy)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-state)) energy)
+  (let* ((inx :in:x)
+	 (index (label2classindex (desired)))
+	 (p (select proto 0 index))
+	 (w (select weights 0 index))
+	 (ini (idx-dim inx 1))
+	 (inj (idx-dim inx 2)))
+    (declare (-int-) ini inj)
+    (==> dist resize 1 ini inj)
+    (let ((inx (idx-transpose inx '(1 2 0)))
+	  (distx (select :dist:x 0 0)))
+      ;; loop over spatial dimensions
+      (idx-bloop ((inx inx) (distx distx))
+	(idx-bloop ((inx inx) (distx distx))      
+	  ;; weighted distance between desired prototype and output 
+	  ;; at current location
+	  (let ((s 0))
+            (cidx-bloop ("i" ("p" p)("w" w)("inx" inx))
+                      #{ 
+                         { register double dif = *inx - *p;
+                           $s += *w * dif * dif;
+                         }
+                      #})
+            (distx s))
+          ;; while cidx-bloop gets fixed:
+          ; (in-stack
+          ;  (let*((temp (gbtype-matrix (idx-dim p 0))))
+          ;    (idx-sub inx p temp)
+          ;    (idx-mul temp temp temp)
+          ;    (idx-mul temp w temp)
+          ;    (idx-dot temp temp distx)
+          ;    ))
+          ;;
+          ))
+      (idx-f2dotc distx .5 distx))
+    (==> logadder fprop dist logadded-dist)
+    (:energy:x (:logadded-dist:x 0)))
+  ())
+
+(defmethod wedist-cost  bprop (in desired energy)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  (let* ((inx :in:x)
+	 (indx :in:dx)
+	 (index (label2classindex (desired)))
+	 (p (select proto 0 index))
+	 (w (select weights 0 index))
+         )
+    ;; backprop through logadder
+    (:logadded-dist:dx 0 (:energy:dx))
+    (==> logadder bprop dist logadded-dist)
+    ;; backprop through Euclidean distance
+    (let ((inx (idx-transpose inx '(1 2 0)))
+          (indx (idx-transpose indx '(1 2 0)))
+          (distdx (select :dist:dx 0 0)))
+      ;; loop over last two dimensions
+      (idx-bloop ((linx inx) (lindx indx) (ldistdx distdx))
+        (idx-bloop ((llinx linx) (llindx lindx) (lldistdx ldistdx))
+          (idx-sub llinx p llindx)
+          (idx-mul llindx w llindx)
+          (idx-dotm0 llindx lldistdx llindx)))))
+  ())
+
+(defmethod wedist-cost bbprop (in desired energy)
+  ;; mse has this funny property that the bbprop method mixes up the
+  ;; the first derivative after with the second derivative before, and
+  ;; vice versa. Only the first combination is used here.
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-idx0- (-int-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  ;; don't bother bbproping through the logadder
+  ;; we would ignore its output anyway
+  (let* ((inddx :in:ddx)
+         (edx (:energy:dx))
+	 (index (label2classindex (desired)))
+	 (p (select proto 0 index))
+	 (w (select weights 0 index))
+         (inddx (idx-transpose inddx '(1 2 0))))
+    ;; loop over last two dimensions
+    (idx-bloop ((linddx inddx))
+      (idx-bloop ((llinddx linddx))
+        (idx-f1dotc w edx llinddx)))
+    ()))
+        
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** weighted-mse-cost
+;; This is similar to wedist-cost but the weights matrix
+;; may run over patterns. The desired output vector has
+;; size two: the first element gives the class label, and
+;; the second element gives the position (row) in the weights matrix
+;; to use for the weighted euclidean distance.
+;; It is a replicable weighted Euclidean distance cost function.
+;; computes the log-sum over the 2D spatial output of
+;; the weighted half squared error between the output and the
+;; prototype with the desired label.
+;; this does not generate gradients on the prototypes
+(defclass weighted-mse-cost gb-module
+  ((-obj- (logadd-layer)) logadder)
+  ((-obj- (idx3-ddstate)) dist)
+  ((-obj- (idx1-ddstate)) logadded-dist)
+  ((-idx2- (-gbtype-)) proto weights) ;; one weight per  and output
+  ((-idx1- (-int-)) label2classindex)
+  ((-idx1- (-gbtype-)) unity-weights))
+
+
+#? (new weighted-mse-cost <classes> <si> <sj> <p> <w>)
+;; make a new weighted-mse-cost. <classes> is an integer vector
+;; which contains the labels associated with each output.
+;; From that vector, the reverse table is constructed
+;; to map labels to class indices.
+;; Elements in <classes> must be positive or 0, and
+;; not be too large, as a table as large as the
+;; maximum value is allocated.
+;; <si> and <sj> are the expected maximum sizes in
+;; the spatial dimensions (used for preallocation to
+;; prevent memory fragmentation).
+;; <p> is an idx2 containing the prototype for each
+;; class label, and <w> is an idx2 with a single weight
+;; for each of these prototype and each of its elements.
+;; The first dimension of <p> (and <w>) should be
+;; equal to the dimension of <classes>.
+;; the second dimension of <p> (and <w>) should be equal to the 
+;; number of outputs of the previous module.
+;; The costs are "log-summed" over spatial dimensions
+(defmethod weighted-mse-cost weighted-mse-cost (classes ini inj p w)
+  (declare (-idx2- (-gbtype-)) p w)
+  (declare (-idx1- (-int-)) classes)
+  (declare (-int-) ini inj)
+
+  (let ((imax (idx-i1max classes))
+	(imin (idx-i1min classes)))
+    (declare (-int-) imax imin)
+    (when (< imin 0) (error "labels must be positive"))
+    (when (> imax 100000) (printf "warning: [wedist-cost] largest label is huuuge\n"))
+    (setq label2classindex (int-array (1+ imax)))
+    (idx-bloop ((v label2classindex)) (v -1))
+    (for (i 0 (1- (idx-dim classes 0))) (label2classindex (classes i) i)))
+
+  (setq dist (new idx3-ddstate 1 ini inj))
+  (setq logadder (new logadd-layer 1 ini inj))
+  (setq logadded-dist (new idx1-ddstate 1))
+  (setq proto p)
+  (setq weights w)
+  (setq unity-weights (gbtype-matrix (idx-dim p 1)))
+  (idx-f1fill unity-weights 1)
+  ())
+
+(defmethod weighted-mse-cost fprop (in desired energy)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-idx1- (-int-)) desired)
+  (declare (-obj- (idx0-state)) energy)
+  (let* ((inx :in:x)
+	 (index (label2classindex (desired 0)))
+	 (p (select proto 0 index))
+         (i (desired 1))
+	 (w (if (>= i 0) 
+                (select weights 0 i)
+              unity-weights))
+	 (ini (idx-dim inx 1))
+	 (inj (idx-dim inx 2)))
+    (declare (-int-) ini inj i)
+    (==> dist resize 1 ini inj)
+    (let ((inx (idx-transpose inx '(1 2 0)))
+	  (distx (select :dist:x 0 0)))
+      ;; loop over spatial dimensions
+      (idx-bloop ((inx inx) (distx distx))
+	(idx-bloop ((inx inx) (distx distx))      
+	  ;; weighted distance between desired prototype and output 
+	  ;; at current location
+	  (let ((s 0))
+            (cidx-bloop ("i" ("p" p)("w" w)("inx" inx))
+                      #{ 
+                         { register double dif = *inx - *p;
+                           $s += *w * dif * dif;
+                         }
+                        #})
+            (distx s))
+          ;; while cidx-bloop gets fixed:
+          ; (in-stack
+          ;  (let*((temp (gbtype-matrix (idx-dim p 0))))
+          ;    (idx-sub inx p temp)
+          ;    (idx-mul temp temp temp)
+          ;    (idx-mul temp w temp)
+          ;    (idx-dot temp temp distx)
+          ;    ))
+          ;;
+          ))
+      (idx-f2dotc distx .5 distx))
+    (==> logadder fprop dist logadded-dist)
+    (:energy:x (:logadded-dist:x 0)))
+  ())
+
+(defmethod weighted-mse-cost  bprop (in desired energy)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-idx1- (-int-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  (let* ((inx :in:x)
+	 (indx :in:dx)
+	 (index (label2classindex (desired 0)))
+	 (p (select proto 0 index))
+         (i (desired 1))
+	 (w (if (>= i 0) 
+                (select weights 0 i)
+              unity-weights))
+         )
+    (declare (-int-) i)
+    ;; backprop through logadder
+    (:logadded-dist:dx 0 (:energy:dx))
+    (==> logadder bprop dist logadded-dist)
+    ;; backprop through Euclidean distance
+    (let ((inx (idx-transpose inx '(1 2 0)))
+          (indx (idx-transpose indx '(1 2 0)))
+          (distdx (select :dist:dx 0 0)))
+      ;; loop over last two dimensions
+      (idx-bloop ((linx inx) (lindx indx) (ldistdx distdx))
+        (idx-bloop ((llinx linx) (llindx lindx) (lldistdx ldistdx))
+          (idx-sub llinx p llindx)
+          (idx-mul llindx w llindx)
+          (idx-dotm0 llindx lldistdx llindx)))))
+  ())
+
+(defmethod weighted-mse-cost bbprop (in desired energy)
+  ;; mse has this funny property that the bbprop method mixes up the
+  ;; the first derivative after with the second derivative before, and
+  ;; vice versa. Only the first combination is used here.
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-idx1- (-int-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  ;; don't bother bbproping through the logadder
+  ;; we would ignore its output anyway
+  (let* ((inddx :in:ddx)
+         (edx (:energy:dx))
+	 (index (label2classindex (desired 0)))
+	 (p (select proto 0 index))
+         (i (desired 1))
+	 (w (if (>= i 0) 
+                (select weights 0 i)
+              unity-weights))
+         (inddx (idx-transpose inddx '(1 2 0))))
+    (declare (-int-) i)
+    ;; loop over last two dimensions
+    (idx-bloop ((linddx inddx))
+      (idx-bloop ((llinddx linddx))
+        (idx-f1dotc w edx llinddx)))
+    ()))
+        
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** ledist-cost
+;; a replicable Euclidean distance cost function
+;; with LOCAL TARGETS at each position. Target prototypes
+;; are associated to classes. The cost is the sum over the 2D
+;; output of the half squared error between the local output and the
+;; prototype with the desired label at that position.
+;; This does not generate gradients on the prototypes
+(defclass ledist-cost gb-module
+  ((-idx2- (-gbtype-)) proto)
+  ((-idx1- (-int-)) label2classindex)
+  ((-idx0- (-gbtype-)) d)
+)
+
+
+
+#? (new ledist-cost <classes> <p>)
+;; make a new ledist-cost. <classes> is an integer vector
+;; which contains the labels associated with each output.
+;; From that vector, the reverse table is constructed
+;; to map labels to class indices.
+;; Elements in <classes> must be positive or 0, and
+;; not be too large, as a table as large as the
+;; maximum value is allocated.
+;; <p> is an idx2 containing the prototype for each
+;; class label. The first dimension of <p> should be
+;; equal to the dimension of <classes>.
+;; the second dimension of <p> should be equal to the 
+;; number of outputs of the previous module.
+;; The costs are summed over spatial dimensions.
+(defmethod ledist-cost ledist-cost (classes p)
+  (declare (-idx2- (-gbtype-)) p)
+  (declare (-idx1- (-int-)) classes)
+  (let ((imax (idx-i1max classes))
+	(imin (idx-i1min classes)))
+    (declare (-int-) imax imin)
+    (when (< imin 0) (error "labels must be positive"))
+    (when (> imax 100000) 
+      (printf "warning: [ledist-cost] largest label is huuuge\n"))
+    (setq label2classindex (int-array (1+ imax)))
+    (idx-bloop ((v label2classindex)) (v -1))
+    (for (i 0 (1- (idx-dim classes 0))) (label2classindex (classes i) i)))
+  (setq proto p)
+  (setq d (gbtype-matrix))
+  ())
+
+(defmethod ledist-cost fprop (in desired energy)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-idx2- (-gbtype-)) desired)
+  (declare (-obj- (idx0-state)) energy)
+  (let* ((inx :in:x)
+         (total-cost 0))
+    (idx-eloop ((inx-j inx)(des-j desired))
+      (idx-eloop ((inx-ij inx-j)(des-ij des-j))
+        (let*((p (select proto 0 (label2classindex (des-ij)))))
+	  ;; distance between desired prototype and output 
+	  ;; at current location
+	  (idx-sqrdist p inx-ij d)
+          (incr total-cost (d)))))
+    (:energy:x (* 0.5 (d)))
+    ()))
+
+(defmethod ledist-cost  bprop (in desired energy)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-idx2- (-gbtype-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  (let* ((inx :in:x)
+	 (indx :in:dx)
+         )
+    (idx-eloop ((inx-j inx)(indx-j indx)(des-j desired))
+      (idx-eloop ((inx-ij inx-j)(indx-ij indx-j)(des-ij des-j))
+        (let*((p (select proto 0 (label2classindex (des-ij)))))
+	  ;; distance between desired prototype and output 
+	  ;; at current location
+          (idx-sub inx-ij p indx-ij)
+          )))
+    ()))
+
+(defmethod ledist-cost bbprop (in desired energy)
+  ;; mse has this funny property that the bbprop method mixes up the
+  ;; the first derivative after with the second derivative before, and
+  ;; vice versa. Only the first combination is used here.
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-idx2- (-gbtype-)) desired)
+  (declare (-obj- (idx0-dstate)) energy)
+  (idx-f3fill :in:ddx (:energy:dx))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; classifiers
+;;
+
+#? *** Classifiers
+
+#? ** idx3-classifier
+;; The <idx3-classifier> module take an <idx3-state> as input and produce
+;; a <class-state> on output. A <class-state> is used to represent
+;; the output of classifiers with a discrete set of class labels.
+(defclass idx3-classer gb-module)
+
+(defmethod idx3-classer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (class-state)) out)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** min-classer
+;; a module that takes an idx3-state, finds the lowest value
+;; and output the label associated with the index (in the first dimension
+;; of the state) of this lowest value.
+;; It actually sorts the labels according to their score (or costs)
+;; and outputs the sorted list.
+(defclass min-classer idx3-classer
+  ((-idx1- (-int-)) classindex2label))	; a vector that maps output unit index to a label
+
+
+#? (new min-classer <classes>)
+;; makes a new min-classer. <classes> is an integer vector
+;; which contains the labels associated with each output.
+(defmethod min-classer min-classer (classes)
+  (declare (-idx1- (-int-)) classes)
+  (setq classindex2label classes)
+  ())
+
+(defmethod min-classer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (class-state)) out)
+  (let* ((inx :in:x)
+	 (n (idx-dim inx 0)))
+    (idx-i1resize :out:sorted-classes n)
+    (midx-m1resize :out:sorted-scores n)
+    (idx-bloop ((sc :out:sorted-scores) (insc inx)) (idx-inf insc sc))
+    (array-copy classindex2label :out:sorted-classes)
+    (idx-f1i1sortup :out:sorted-scores :out:sorted-classes)
+    (setq :out:output-class (:out:sorted-classes 0))
+    (setq :out:confidence (:out:sorted-scores 0))
+    ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** max-classer
+;; a module that takes an idx3-state, finds the lowest value
+;; and output the label associated with the index (in the first dimension
+;; of the state) of this lowest value.
+;; It actually sorts the labels according to their score (or costs)
+;; and outputs the sorted list.
+(defclass max-classer idx3-classer
+  ((-idx1- (-int-)) classindex2label))	; a vector that maps output unit index to a label
+
+
+#? (new max-classer <classes>)
+;; makes a new max-classer. <classes> is an integer vector
+;; which contains the labels associated with each output.
+(defmethod max-classer max-classer (classes)
+  (declare (-idx1- (-int-)) classes)
+  (setq classindex2label classes)
+  ())
+
+(defmethod max-classer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (class-state)) out)
+  (let* ((inx :in:x)
+	 (n (idx-dim inx 0)))
+    (idx-i1resize :out:sorted-classes n)
+    (midx-m1resize :out:sorted-scores n)
+    (idx-bloop ((sc :out:sorted-scores) (insc inx)) (idx-sup insc sc))
+    (array-copy classindex2label :out:sorted-classes)
+    (idx-f1i1sortdown :out:sorted-scores :out:sorted-classes)
+    (setq :out:output-class (:out:sorted-classes 0))
+    (setq :out:confidence (:out:sorted-scores 0))
+    ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** edist-classer
+;; a replicable Euclidean distance pattern matcher,
+;; which finds the class prototype "closest" to the output,
+;; where "close" is based on the log-added euclidean 
+;; distances between the prototype and the output at
+;; various positions. This corresponds to finding the
+;; class whose a-posteriori probability is largest,
+;; when P(c|data) = sum_[position=x] P(c at x |data at x) / n_positions
+;; and the priors over classes are uniform, and the
+;; local class likelihoods P(data at x | c at x) are
+;; Gaussian with unit variance and mean = prototype(c).
+(defclass edist-classer idx3-classer
+  ((-obj- (logadd-layer)) logadder)
+  ((-obj- (idx3-ddstate)) dist)
+  ((-obj- (idx1-ddstate)) logadded-dist)
+  ((-idx2- (-gbtype-)) proto)
+  ((-idx1- (-int-)) label2classindex)
+  ((-idx1- (-int-)) classindex2label)
+  )
+
+(defmethod edist-classer edist-classer (classes si sj p) 
+  (declare (-idx1- (-int-)) classes)
+  (declare (-idx2- (-gbtype-)) p) 
+  (declare (-int-) si sj)
+  (let ((imax (idx-i1max classes))
+	(imin (idx-i1min classes)))
+    (declare (-int-) imax imin)
+    (when (< imin 0) (error "labels must be positive"))
+    (when (> imax 100000) (printf "warning: [edist-cost] largest label is huuuge\n"))
+    (setq label2classindex (int-array (1+ imax)))
+    (idx-bloop ((v label2classindex)) (v -1))
+    (for (i 0 (1- (idx-dim classes 0))) (label2classindex (classes i) i)))
+  (setq dist (new idx3-ddstate 1 si sj))
+  (setq logadder (new logadd-layer 1 si sj))
+  (setq logadded-dist (new idx1-ddstate (idx-dim p 0)))
+  (setq classindex2label classes)
+  (setq proto p)
+  ())
+
+(defmethod edist-classer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (class-state)) out)
+  (let* ((inx :in:x)
+	 (ini (idx-dim inx 1))
+	 (inj (idx-dim inx 2))
+         (nproto (idx-dim proto 0)))
+    (declare (-int-) ini inj)
+    (idx-i1resize :out:sorted-classes nproto)
+    (midx-m1resize :out:sorted-scores nproto)
+    (==> dist resize nproto ini inj)
+    (let ((inx (idx-transpose inx '(1 2 0))))
+      ;; loop over prototypes, i.e., classes
+      (idx-bloop ((p proto)(distx :dist:x))
+          ;; loop over spatial dimensions
+          (idx-bloop ((inx inx) (distx distx))
+               (idx-bloop ((inx inx) (distx distx))      
+                    ;; distance between desired prototype and output 
+                    ;; at current location
+                    (idx-sqrdist p inx distx)))
+          (idx-f2dotc distx .5 distx)))
+    (==> logadder fprop dist logadded-dist)
+    (array-copy :logadded-dist:x :out:sorted-scores)
+    (array-copy classindex2label :out:sorted-classes)
+    (idx-f1i1sortup :out:sorted-scores :out:sorted-classes)
+    (setq :out:output-class (:out:sorted-classes 0))
+    (setq :out:confidence (:out:sorted-scores 0))
+  ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** ledist-classer
+;; a replicable Euclidean distance pattern matcher,
+;; which finds the class prototype closest to the output
+;; for the vectors at each position in the output image.
+(defclass ledist-classer gb-module
+  ((-idx1- (-int-)) classindex2label)	; a vector that maps output unit index to a label
+  ((-idx2- (-gbtype-)) proto)
+  )
+
+#? (new ledist-classer <classes> <p>)
+;; make a new ledist-classer. <classes> is an integer vector
+;; which contains the labels associated with each prototype.
+;; <p> is an idx2 containing the prototype for each
+;; class label. The first dimension of <p> should be
+;; equal to the dimension of <classes>.
+;; the second dimension of <p> should be equal to the 
+;; number of outputs of the previous module.
+(defmethod ledist-classer ledist-classer (classes p) 
+  (declare (-idx2- (-gbtype-)) p) 
+  (declare (-idx1- (-int-)) classes)
+  (setq classindex2label classes)
+  (setq proto p)
+  ())
+
+(defmethod ledist-classer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (lclass-state)) out)
+  (let*((inx :in:x))
+    (==> out resize (idx-dim inx 1) (idx-dim inx 2))
+    (idx-eloop ((inx-j inx)(out-j :out:output-class)
+                (score-j :out:sorted-scores)
+                (classes-j :out:sorted-classes)
+                (class-j :out:output-class)(conf-j :out:confidence))
+      (idx-eloop ((inx-ij inx-j)(out-ij out-j)(score-ij score-j)
+                  (classes-ij classes-j)(class-ij class-j)(conf-ij conf-j))
+        (idx-bloop ((score-cij score-ij)(p-c proto))
+          (idx-sqrdist p-c inx-ij score-cij)
+          (score-cij (- (* 0.5 (score-cij)))))
+        (array-copy classindex2label classes-ij)
+        (idx-f1i1sortdown score-ij classes-ij)
+        (class-ij (classes-ij 0))
+        (conf-ij (score-ij 0)))))
+  ())
+        
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** mmi-classer
+;; a classifier that computes class scores based on 
+;; an MMI type criterion (a kind of softmax in log)
+;; It gives scores (cost) for all classes including junk.
+;; It should be used in conjunction with mmi-cost.
+;; This assumes that the output of the previous module
+;; are costs, or negative log likelihoods.
+;; this modules accepts spatially replicated inputs.
+(defclass mmi-classer idx3-classer
+  ((-idx1- (-int-)) classindex2label)
+  ((-obj- (logadd-layer)) logadder)
+  ((-obj- (idx1-ddstate)) logadded-dist)
+  ((-obj- (idx0-ddstate)) junk-param)
+  ((-obj- (idx1-ddstate)) junk-dist)
+  ((-idx1- (-gbtype-)) priors))
+
+#? (new mmi-classer <classes> <priors> <si> <sj> <prm>)
+;; makes a new mmi-classer. The arguments are identical
+;; to that of mmi-cost. In fact if an mmi-classer is to
+;; used in conjunction with an mmi-cost, they should share
+;; the prior vector and the parameter.
+;; sharing the parameter can be done by first building the
+;; classer, then reducing the size of the parameter by one,
+;; then creating the cost.
+(defmethod mmi-classer mmi-classer (classes pr ini inj prm)
+  (declare (-idx1- (-int-)) classes)
+  (declare (-idx1- (-gbtype-)) pr)  
+  (declare (-int-) ini inj)
+  (declare (-obj- (idx1-ddparam)) prm)
+  (setq junk-param (==> prm alloc-idx0-ddstate))
+  (let ((cdim0 (idx-dim classes 0)))
+    (declare (-int-) cdim0)
+    (when (<> (1+ cdim0) (idx-dim pr 0)) 
+      (error "[mmi-classer] priors and classes have incompatible sizes"))
+    (setq priors pr)
+    (setq classindex2label classes)
+    (setq logadder (new logadd-layer cdim0 ini inj))
+    (setq logadded-dist (new idx1-ddstate cdim0))
+    (setq junk-dist (new idx1-ddstate (1+ cdim0))))
+  ())
+  
+#? (==> <mmi-classer> set-junk-cost <c>)
+;; set the constant cost of the junk class to <c>.
+;; the underlying parameter is given the value
+;; (sqrt (* 2 <c>)), so <c> must be positive.
+;; BE CAREFUL that the junk parameter of an mmi-classer
+;; is usually shared by an mmi-cost, changing one
+;; will change the other.
+(defmethod mmi-classer set-junk-cost (c)
+  (declare (-gbtype-) c) (:junk-param:x (sqrt (* 2 c))))
+
+(defmethod mmi-classer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (class-state)) out)
+  ;; logadd over spatial dimensions
+  (==> logadder fprop in logadded-dist)
+  (let* ((lax :logadded-dist:x)
+	 (lajx :junk-dist:x)
+	 (s (idx-dim lax 0)))
+    (declare (-int-) s)
+    ;; resize output
+    (idx-i1resize :out:sorted-classes (1+ s))
+    (midx-m1resize :out:sorted-scores (1+ s))
+    (array-copy classindex2label (idx-trim :out:sorted-classes 0 0 s))
+    ;; write label for junk class
+    (:out:sorted-classes s -1)
+    (array-copy lax (idx-trim lajx 0 0 s))
+    ;; junk score is appended at the end of tmp
+    ;; score for junk is half square of junk parameter
+    (let ((jpx (:junk-param:x))) (lajx s (* 0.5 jpx jpx)))
+    ;; compute unconstrained score (normalization constant)
+    (let* ((e (- (idx-f1logdotf1 lajx priors))))
+      (idx-bloop ((sc :out:sorted-scores) (d lajx) (p priors))
+	(sc (+ e (d) (- (log (p)))))))
+    (idx-f1i1sortup :out:sorted-scores :out:sorted-classes)
+    (setq :out:output-class (:out:sorted-classes 0))
+    (setq :out:confidence (:out:sorted-scores 0))
+    ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (build-ascii-proto <targets> <charset>)
+(de build-ascii-proto (targets charset)
+    (let* ((n (len charset))
+           (m (int-array n))
+	   (s (apply * (cdr (idx-dim targets))))
+	   (trgt (reshape targets (list (idx-dim targets 0) s)))
+           (proto (gbtype-matrix  n s)))
+      (for (i 0 (1- n))
+	(let ((c (asc (mid charset (1+ i) 1))))
+	  (m i c)
+	  (array-copy (select trgt 0 c) (select proto 0 i))))
+      (list proto m)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** idx3-supervised-module
+;; a module that takes an idx3 as input, runs it through
+;; a machine, and runs the output of the machine through
+;; a cost function whose second output is the desired label
+;; stored in an idx0 of int.
+(defclass idx3-supervised-module gb-module
+  ((-obj- (idx3-module)) machine)
+  ((-obj- (idx3-ddstate)) mout)
+  ((-obj- (idx3-cost)) cost)
+  ((-obj- (idx3-classer)) classifier)
+)
+
+(defmethod idx3-supervised-module idx3-supervised-module (m c cl)
+  (declare (-obj- (idx3-module)) m)
+  (declare (-obj- (idx3-cost)) c)
+  (declare (-obj- (idx3-classer)) cl)
+  (setq mout (new idx3-ddstate 1 1 1))
+  (setq machine m)
+  (setq cost c)
+  (setq classifier cl) ())
+
+(defmethod idx3-supervised-module fprop (input output desired energy)
+  (declare (-obj- (idx3-state)) input)
+  (declare (-obj- (class-state)) output)
+  (declare (-obj- (idx0-state)) energy)
+  (declare (-idx0- (-int-)) desired)
+  (==> machine fprop input mout)
+  (==> classifier fprop mout output)
+  (==> cost fprop mout desired energy)
+  ())
+
+(defmethod idx3-supervised-module use (input output)
+  (declare (-obj- (idx3-state)) input)
+  (declare (-obj- (class-state)) output)
+  (==> machine fprop input mout)
+  (==> classifier fprop mout output)
+  ())
+
+(defmethod idx3-supervised-module bprop (input output desired energy)
+  (declare (-obj- (idx3-dstate)) input)
+  (declare (-obj- (class-state)) output)
+  (declare (-obj- (idx0-dstate)) energy)
+  (declare (-idx0- (-int-)) desired)
+  (==> cost bprop mout desired energy)
+  (==> machine bprop input mout)
+  ())
+
+(defmethod idx3-supervised-module bbprop (input output desired energy)
+  (declare (-obj- (idx3-ddstate)) input)
+  (declare (-obj- (class-state)) output)
+  (declare (-obj- (idx0-ddstate)) energy)
+  (declare (-idx0- (-int-)) desired)
+  (==> cost bbprop mout desired energy)
+  (==> machine bbprop input mout)
+  ())
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+) ; in-namespace gblearn-
+
+(dhc-make ()
+	  dummy-gb-modules
+	  (gb-module)
+	  (idx4-module idx4-module fprop bprop bbprop)
+	  (idx3-module idx3-module fprop bprop bbprop forget)
+	  (idx2-module idx2-module fprop bprop bbprop)
+	  (idx1-module idx1-module fprop bprop bbprop)
+	  (idx3-squasher idx3-squasher fprop bprop bbprop)
+	  (idx3-sqsquasher idx3-sqsquasher fprop bprop bbprop)
+	  (idx3-halfsquare idx3-halfsquare fprop bprop bbprop)
+	  (logadd-layer logadd-layer fprop bprop bbprop)
+	  get-classindex
+
+	  (idx3-cost fprop bprop bbprop)
+	  (mle-cost mle-cost fprop bprop bbprop)
+	  (mmi-cost mmi-cost set-junk-cost fprop bprop bbprop)
+	  (edist-cost edist-cost fprop bprop bbprop)
+	  (weighted-mse-cost weighted-mse-cost fprop bprop bbprop)
+	  (wedist-cost wedist-cost fprop bprop bbprop)
+	  (ledist-cost ledist-cost fprop bprop bbprop)
+
+	  (idx3-classer fprop)
+	  (min-classer min-classer fprop)
+	  (max-classer max-classer fprop)
+	  (mmi-classer mmi-classer set-junk-cost fprop)
+	  (edist-classer edist-classer fprop)
+	  (ledist-classer ledist-classer fprop)
+
+	  (idx3-supervised-module idx3-supervised-module fprop use bprop bbprop))
+
+
+  

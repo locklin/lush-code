@@ -1,0 +1,3824 @@
+
+#? ***** Lush Interpreter Internals
+
+This manual describes the internals of TL3, which is a precursor of the Lush lisp
+interpreter. Most of the information still applies with the notable exception of 
+the matrix data structures and the dynamic code loader.
+
+
+#? **** Introduction
+
+Lush includes numerous primitives and provides a 
+complete development language.
+However the full power of Lush lies in its ability
+to take advantage of subroutines and data structures 
+written in the C language.
+Indeed, there are many reasons for extending Lush with C
+subroutines.
+.IP
+Speed is certainly an issue. A C subroutine runs
+orders of magnitude faster than a Lush interpreted program.
+On the other hand, a C subroutine is also more difficult
+to write and to debug.
+.IP
+You might already have developed C subroutines 
+that fit your specific needs. These subroutines 
+may perform tasks that are not well suited for
+the Lush language.
+.PP
+
+The TL/Open protocol provides tools for interfacing C code 
+with Lush. These powerful tools allow you to call 
+both your C functions and your C data structures 
+like ordinary Lush functions and objects.
+
+
+
+#? *** Prerequisites
+
+This documentation is by no means a C manual.
+You should have a significant experience of programming in C
+before attempting to use the TL/Open protocol.
+
+The Windows version of TL/Open (TL/Open for WinLush) requires the 
+Microsoft Visual C++ 4.x compiler. Other compilers (e.g. Watcom, 
+Borland, ...) may be supported in the future.
+
+The Unix version of Lush requires a properly installed ANSI C compiler. 
+We recommend using the freely available GNU GCC compiler on 
+supported platforms. 
+We also support the native ANSI C compiler of each platform 
+when it comes with the operating system.
+
+
+#? *** How to Read this Section of the Manual
+
+Chapter "Interfacing a C Function with Lush"
+gives a step by step recipe for adding a new primitive function
+to the Lush interpreter. Although this chapter does not describe 
+much of the internals of Lush, the information provided here
+is sufficient for many users.
+
+Chapter "Lush Internal Architecture" explains a lot of facts
+about the Lush internal mechanisms.
+This background helps understanding the odds of TL/Open.
+This information is necessary for accessing most Lush 
+objects and implementing advanced 
+extensions to the Lush system.
+
+Chapter "TL/Open Examples" comments the examples provided with
+TL/Open. Three examples are provided with various levels
+of complexity.
+
+Chapter "Installing TL/Open Extensions" explains where to 
+install TL/Open extension in the Lush directories. 
+
+
+#? **** Interfacing a C Function to Lush
+.SEE (mod-load <dllname>)
+
+There are two ways to interface a C function with Lush:
+.IP
+The simplest method, namely the Dynamical Link method, 
+consists in having Lush load your C function at runtime.
+This manual explains how to prepare a dynamically linkable file, 
+named Dynamic Link Library (DLL file) under Windows and Shared 
+Object (SO file) under Unix. You can then load
+this file using the Lush function <mod-load> and call your functions.
+.IP
+The most portable method, namely the Static Link method, 
+consists in creating a new executable file containing
+the Lush interpreter and your functions. This possibility is only
+offered under Unix for backward compatibility purposes.
+.PP
+This manual focuses on the Dynamical Link method. 
+Additional comments explain how the Static Link method 
+diverges from the Dynamical Link method.
+
+
+#? *** Preparations to Compile C Code
+
+
+#? ** Setting up a Compilation Project Workspace with Visual C++ (Windows).
+
+You must start up Microsoft Visual C++ 4.x or 5.x and select the item
+<New> in menu <File>. The ``document type selection'' window pops
+up. Select <Project Workspace> and click <OK>.  The ``new project''
+window pops up.  You must select the ``TLOpen Wizard'', type the
+project name and the project directory in the usual edit fields, and
+click <Create>.
+
+Troubleshooting: if you do not find the TLOpen wizard icon in the
+``new project'' window, make sure that TL/Open and Visual C++ have
+been properly installed.  You may run again the WinLush installation
+program and check the installation options.
+
+The TL/Open wizard just displays a confirmation window describing the
+project type and locating the various directories containing include
+files and libraries.  Visual C++ creates and open the project when you
+click button <OK>.
+
+The new project contains just one file named <"user_dll.c">.  This
+skeleton file defines a simple function <hypot> which returns the
+square root of the sum of the squares of two numbers.  is created and
+Click <OK>.
+
+Pressing key <F7> builds a dynamical library file (DLL) in the
+subdirectory <"Debug"> located under your compilation directory.  This
+file is easy to locate because of the suffix <".DLL">.
+
+You can debug your function by pressing key <F5>.  Visual C++ asks you
+the name of the debug executable.  You must enter there the path of
+the WinLush main executable.  This executable is located in the
+subdirectory <"bin"> of the WinLush installation directory.  If you
+have installed WinLush in the default location, you must type
+<"c:\program files\winlush\winlush\bin\winlush.exe">.
+
+If you mistype this filename, Visual C++ will signal an error, but
+will no longer offer you to enter the debug executable path by just
+pressing key <F5>. You will have to change this filename in the
+project settings by typing key <Alt-F7> and selecting tab <Debug>.
+
+WinLush will eventually start and Visual C++ will turn into debug mode.
+Type the following command in the WinLush console:
+.VP
+   ? (mod-load "<your-dir>/Debug/<your-project-name>.dll")
+.PP
+This command loads the dynamical library and declares the 
+new function to the Lush interpreter. You can now type:
+.VP
+   ? (hypot 3 4)
+   = 5
+.PP
+Using the Visual C++ debugger, you can set breakpoints in 
+the C function <"xhypot"> and see the actual computations 
+taking place in your TL/Open extension.
+
+
+
+#? ** Setting up a Compilation Directory under Unix (or Cygwin).
+
+Unix supports dynamic linking as well as static.
+The dynamic link method consists in creating a shared object that 
+you can load at runtime into your version of Lush.
+The static link method consists in creating a private executable
+containing both Lush (or SN28) and your C functions.
+.VP
+[ THIS PART NEED REWRITING ]
+
+STATIC LINK --> Use the source compilation tree, 
+		Install your extensions in file 'user.c'
+		(equivalent to 'user_dll.c' for shared objects.
+
+DYNAMIC LINK --> Copy template from <"<prefix>/lush/open/unix">.
+		 Follow instructions below.
+.PP
+The template contains a a skeleton file named <"user_dll.c">.
+This file shows the generic structure of the Lush
+extension files. This file defines a simple function <hypot> which
+returns the square root of the sum of the squares of two numbers.
+.PP
+You can start the compilation by:
+.VP
+% make
+.PP
+This generates a shared library named <"module.so"> (or <module.sl> on
+HP/UX, <module.dll> on Cygwin).  You can now run <"lush"> and check
+that function <hypot> is not defined :
+.VP
+   ? hypot
+   = ()
+.PP
+This can be changed by loading the shared object in the running
+instance of Lush:
+.VP
+   ? (mod-load "module")
+.PP
+Function <hypot> is now defined as a DX.
+.VP
+   ? hypot
+   = ::DX:hypot
+   ? (hypot 3 4)
+   = 5
+.PP
+
+#? *** Writing a New Function
+
+
+#? ** user_dll.c File
+
+The file <"user_dll.c"> should be used as a skeleton for inserting 
+your C functions. In particular, it contains a function <init_user_dll> 
+which is called when Lush loads the dynamical library.
+
+File <"user_dll.c"> is composed of three sections:
+.IP
+The ``header section'' essentially consists
+of preprocessor directives for including the file <"header.h">.
+This file describes all the information required by the C compiler
+about the internal data structures of Lush. 
+.VP
+    /* --- HEADER SECTION --- 
+     * This section loads the appropriate header files
+     * (WIN32 details are specific to Visual C++ 4.x.)
+     */
+
+    #include "tlopen.h"
+
+.IP
+The ``primitive section'' contains the primitives implemented 
+by this source file.  In file <"user_dll.c">, this section 
+only contains a simple interface function implementing a new 
+primitive <xhypot> which computes the square root 
+if the sum of the squares of two numbers.
+.VP
+    /* --- PRIMITIVE SECTION --- 
+     * This section contains your new Lush primitives.
+     * You may also choose to implement them in auxiliary files.
+     */
+
+    DX(xhypot)
+    {
+      real x, y;
+      ARG_NUMBER(2);
+      ALL_ARGS_EVAL;
+      x = AREAL(1);
+      y = AREAL(2);
+      return NEW_NUMBER(sqrt(x*x + y*y));
+    }
+.IP
+The ``initialization section'' only contains function <init_user_dll()>.
+Lush kernel calls this function once when you load the module into Lush.
+using the Lush function <mod-load>. 
+
+This function performs three tasks:
+.IP
+It calls the initialisation functions of 
+other C files that you may create.
+.IP
+It allocates and initializes global data 
+structures defined in this file.
+.IP
+It declares each new primitive that you define in this file
+using function <dx_define> or <dy_define>.
+.VP
+    /* --- INITIALISATION SECTION --- 
+     * Function 'init_user_dll' is called when loading extension.
+     * -- perform your initializations here
+     * -- allocate and initialize global data structures.
+     * -- declare your primitives here
+     */
+    int init_user_dll(int major, int minor)
+    {
+      /* Check version */
+      if (major!=TLOPEN_MAJOR || minor<TLOPEN_MINOR)
+        return -2;
+      /* Perform initializations */
+      /* Declare primitives */
+      dx_define("hypot", xhypot);
+      return 0;
+    }
+.PP
+The first two lines test the version of the module against
+the version of the Lush interpreter. The macros <TLOPEN_MAJOR>
+and <TLOPEN_MINOR> represent the version number of the
+interpreter for which this module is compiled. 
+The arguments <major> and <minor> represent the version number 
+of the running interpreter. The running interpreter must have 
+the same major version number and a greater or equal minor 
+version number than the interpreter for which the module is 
+compiled. 
+
+A return value of <-2> means that the extension is incompatible
+with the current version of Lush. The interpreter then unloads
+the module and displays an appropriate error message.
+
+A return value of <-1> means that the initialization failed. 
+The TL/Open extension is then unloaded and an error is reported.
+You should print an explanation because the error message
+only states that the module initialization failed.
+
+This function must return <0> when the initialization succeeds. 
+
+
+
+#? ** Where to Write Primitives
+
+There are in fact two strategies for implementing your primitives.
+
+You may directly insert the C code of your primitives 
+in file <"user_dll.c">. This is handy (only) for testing 
+small primitives. You may also create a new C file with a 
+convenient name, like <"myfile.c">.
+
+#? * Writing Primitives Outside user_dll.c
+
+First you have to create an alternate file and write your 
+functions. We suggest you to clearly identify several
+sections: a header section, a primitive section and 
+an initialization section.
+.VP
+    /* ------ HEADER SECTION
+     * (copied from user_dll.c) 
+     */
+
+    #include "tlopen.h"
+    
+    /* ------ PRIMITIVE SECTION
+     * (write your functions here)
+     */
+    
+    /* ------ INITIALISATION SECTION 
+     * (write your initialization code here) 
+     */
+
+    void init_myfile()
+    {
+    }
+.PP
+Second you must ensure that the initialisation function 
+<init_myfile()> will be called during the initialisation of Lush.
+To achieve this, insert a call to <init_myfile()>
+in the initialisation function of file <"user_dll.c">.
+Since Lush calls the function <init_user_dll()> during the 
+initialisation process, it will also run <init_myfile()>.
+
+Third you must update the list of object files into the Makefile:
+.IP
+Under Windows, you must add <"myfile.c"> in the project using the 
+item ``Files into Project'' of menu ``Insert''.  
+You can then press key <F7> to build your 
+customized dynamic link library.
+.IP
+Under Unix, you must insert filename <"myfile.o"> after 
+each occurrence of the filename <"user_dll.o"> in the 
+file <"Makefile">. You can then invoke the 
+program <make> to build your customized shared object.
+.PP
+
+
+#? ** Checks and Error Handling
+
+.PP
+Since you are programming at the C level, no checks are 
+made at run time.  If there is a run time memory integrity error 
+in your function, Lush crashes. Therefore, it is sound to include 
+multiple checks in your function.  In particular, you must check 
+thoroughly the validity of the arguments.
+If you detect an inconsistency, you must call function <error()>.
+
+
+#? error ( char *where , char *text , at *arg )
+
+The function <error()> returns the control to Lush.
+It prints an error message composed of
+string <where>, string <text> and Lush object <arg>.
+The default value for <where> (used when <where> is equal to <NIL>)
+is the name of your primitive as declared 
+with <dx_define()> or <dy_define()>.
+
+.SEE Error Recovery.
+.SEE A Complete TL/Open Example.
+
+
+#? ** C Function Example
+
+In the following example function, we write a function
+for capitalizing the nth character of a string.  
+You can test this example by inserting this function after 
+the definition of <xhypot> in the 
+file <"user_dll.c">.
+
+The first call to <error()> just prints an error text.
+The second call to <error()> passes the illegal argument 
+as a Lush object. It uses the macro <NEW_NUMBER()> which 
+converts a number into a Lush object.
+.VP
+char *capitalize_nth(s,n)
+char *s;
+int n;
+{
+  static char buffer[256];
+  char c;
+  int i;
+
+  /* Checks */
+  i = strlen(s);
+  if (i>255)
+    error(NIL,"string is too long",NIL);
+  if (n<0 || n>=i)
+    error(NIL,"no nth character", NEW_NUMBER(n));
+
+  /* Action */
+  strcpy( buffer, s);
+  c = buffer[n];
+  if (c>='a' && c<='z')
+    buffer[n] = c+'A'-'a';
+
+  /* Return result in a static area */
+  return buffer;
+}
+
+
+
+#? *** Writing an Interface Function
+
+Once the C low-level function is written, you must define 
+an interface function.  The interface function must 
+(a) parse the argument list, (b) convert the Lush 
+objects to the right C data structures, (c) call 
+the C function, and (d) convert the return value to a Lush object.
+.PP
+There are two kinds of interface functions in Lush.
+.IP
+DX interface functions are easier to use and more powerful.
+Several macros are provided to help defining DX interface functions.
+.IP
+DY interface functions are a low level method frequently used
+for implementing control structures, like <if>, <let>, or <cond>.
+They require explicit programming for parsing the argument list.
+.PP
+
+
+#? ** DX Interface Functions
+
+DX interface functions are the right choice for most applications.
+Several utilities have been designed to help the programmer.
+
+#? * Example
+
+Here is a simple DX interface function for our 
+function <capitalize_nth()>.  This function is usually 
+inserted just after the C function itself
+in the primitive section of your file.
+.VP
+DX(xcapitalize_nth)
+{
+  ARG_NUMBER(2);
+  ALL_ARGS_EVAL;
+  return new_string(
+       capitalize_nth(ASTRING(1),AINTEGER(2)) );
+.PP
+Let us give a few explanations:
+.IP
+The macro <DX(xcapitalize_nth)> generates the header of a 
+DX interface function whose name is <xcapitalize_nth>.
+Conventionally, the name of the DX interface function is built
+by prepending the character 'x' to the name of the function.
+.IP
+The macro <ARG_NUMBER(2)> check that two arguments have 
+been provided. If a different number of arguments are provided, 
+an appropriate error message is reported to the user.
+.IP
+The macro <ALL_ARGS_EVAL> evaluates all the arguments.
+.IP
+The macro <ASTRING(1)> returns the first argument
+as a zero-terminated string of characters.
+If this argument is not a Lush string,
+an appropriate error message is generated.
+.IP
+The macro <AINTEGER(2)> converts the first argument as an integer.
+If this argument is not a Lush number, 
+an appropriate error message is generated.
+.IP
+The function <new_string()> creates a new Lush string.
+.PP
+
+
+#? * Prototypes
+
+In fact, the Lush kernel passes an array of Lush arguments 
+to the DX interface functions.
+This technique is similar to the <main(argc,argv)> method
+for passing arguments to a C program.
+The macro <DX()> generates the following header for the 
+DX interface function:
+.VP
+at *xcapitalize_nth(int arg_number,
+                    at **arg_array )
+.IP
+Argument <arg_number> contains the number of Lush arguments.
+.IP
+Argument <arg_array> points to the table of the Lush arguments.
+The Lush arguments are stored in array <arg_array>.
+The first element of this array (i.e. <arg_array[0]>) is undefined.
+The effective arguments are numbered from <1> to <arg_number>.
+.PP
+We suggest to always use the macro <DX()> for generating this header.
+Therefore, your programs will resist a future change
+in the implementation of these macros.
+
+
+#? * Argument Number Checking
+
+The macro <ARG_NUMBER()> is the preferred way to check the number 
+of arguments, because it generates standard error messages.
+
+It is possible however to check the number of arguments
+by testing directly the value of variable <arg_number>.
+In this case you might call <ARG_NUMBER(-1)>
+to generate a standard error message about the number 
+of arguments.
+
+#? ARG_NUMBER( int n )
+.TYPE  #define
+
+The macro function <ARG_NUMBER()> checks that the current 
+DX interface function has been called with exactly <n> arguments.
+It generates an appropriate error message when 
+this is not true.
+
+
+#? * Argument Evaluation
+
+When the DX interface function is called, arguments are 
+still unevaluated. For instance a symbol has not been replaced 
+by its value yet. Two macros are provided for controlling 
+this evaluation:
+
+#? ARG_EVAL( int n )
+.TYPE  #define
+The macro function <ARG_EVAL()> evaluates the <n>th argument 
+of a DX interface function. It calls the Lush evaluator and plugs 
+the result in array <arg_array>.
+
+#? ALL_ARGS_EVAL
+.TYPE #define
+The macro instruction <ALL_ARGS_EVAL> evaluates all the arguments
+of a DX interface function.
+It calls the Lush evaluator and plugs the results in array <arg_array>.
+
+
+#? * Argument Translation
+
+The following macro functions translate the <i>th 
+argument of a DX as standard C objects.
+They generate standard error message if the type of 
+the Lush object is inadequate.
+
+The complex structures are manipulated by using 
+first <APOINTER()> to get a Lush object
+and then by accessing the fields of the Lush object as described
+in chapter ``Lush Internals''.
+
+#? AREAL( int i )
+.TYPE  #define
+This macro function translates the <i>th argument of a DX
+and returns a <real> (usually <double>).
+
+#? AINTEGER( int i )
+.TYPE  #define
+This macro function translates the <i>th argument of a DX
+and returns a <int>. Floating point numbers are rounded
+to the nearest integer.
+
+#? AFLT( int i )
+.TYPE  #define
+This macro function translates the <i>th argument of a DX
+and returns a <flt> (usually <float>).
+
+#? ASTRING( int i )
+.TYPE  #define
+This macro function translates the <i>th argument of a DX
+and returns a zero-terminated array of <char>.
+
+#? APOINTER( int i )
+.TYPE  #define
+This macro function fetches the <i>th argument of a DX
+and returns a pointer to the Lush object without 
+checking anything.
+
+#? ACONS( int i )
+.TYPE  #define
+This macro function fetches the <i>th argument of a DX
+and checks that this argument is a pointer to a non empty list.
+
+#? ALIST( int i )
+.TYPE  #define
+This macro function translates the <i>th argument of a DX
+and checks that this argument is a pointer to a possibly empty list.
+.PP
+
+
+#? * Returning from DX Interface Functions
+
+A DX interface function must always return a Lush object.
+
+The simplest method consists in using one of the following alternatives:
+.VP
+return NIL;
+.PP
+returns the empty list which usually means ``false''.
+.VP
+return TLtrue();
+.PP
+returns the symbol t which usually means ``true''.
+.VP
+return NEW_NUMBER(real n);
+return NEW_NUMBER(int n);
+.PP
+returns a Lush object representing the number <n>.
+.VP
+return new_string(char *s);
+.PP
+returns a Lush object representing a copy of the zero 
+terminated string <s>.
+
+
+#? * Complex Argument Syntax Parsing
+
+In certain cases, it is useful to parse optional arguments
+or to test the type of the arguments in the DX interface function.
+
+For example, here is an alternate definition of the DX interface function
+of our primitive <capitalize_nth()>.  This new definition checks whether
+one or two arguments have been provided. If one argument only is provided, 
+this function capitalizes the first character of the string.
+.VP
+DX(xcapitalize_nth)
+{
+  char *s;
+  ALL_ARGS_EVAL;
+  switch(arg_number) {
+  case 1:
+    s = capitalize_nth( ASTRING(1), 0 );
+    break;
+  case 2:
+    s = capitalize_nth( ASTRING(1), AINTEGER(2) );
+  break;
+  default:
+    ARG_NUMBER(-1);  /* never return */
+  }
+  return new_string(s);
+}
+.PP
+
+This is easily achieved by testing directly the value of <arg_number>
+and by using the following macros.
+
+#? ISNUMBER( int i )
+.TYPE  #define
+This macro function tests if the <i>th 
+argument of the DX fucntion is a number.
+
+#? ISSTRING( int i )
+.TYPE  #define
+This macro function tests if the <i>th 
+argument of the DX fucntion is a string.
+
+#? ISCONS( int i )
+.TYPE  #define
+This macro function tests if the <i>th 
+argument of the DX fucntion is a non empty list.
+
+#? ISLIST( int i )
+.TYPE  #define
+This macro function tests if the <i>th 
+argument of the DX fucntion is a list.
+
+
+#? ** DY Interface Functions
+
+We give just a brief explanation about the DY interface functions.
+A DY interface function takes a list of Lush objects as unique argument.
+The function header of a DY interface function is thus:
+.VP
+at yname(ARG_LIST)
+at *ARG_LIST;
+.PP
+This header should be generated using the <DY(yname)> macro.
+Like DX interface functions, DY interface functions must 
+check the number of arguments, evaluate the arguments, check 
+the type of the arguments, call the C function
+and return a Lush object.
+
+No macro or predefined function have been defined 
+for making this task easier.
+Therefore, DY interface functions are rarely used.
+They are mostly used for implementing control 
+structures, like <if>, <let>, or <cond>.
+
+
+#? *** New Function Declaration
+
+Finally, you must declare your interface function to the Lush kernel.
+This is achieved by inserting a call to function <dx_define> 
+or <dy_define> in the initialisation function of your C file.
+
+#? dx_define( char *name, at *(*xfunc)() )
+
+This function declares a new primitive named <name> to the Lush kernel.
+This primitive is identified by its DX interface function <xfunc>.
+The function <dx_define> must be called during the initialisation 
+process. This function should not be called twice with the same 
+identifier string <*name>.
+
+#? dy_define( char *name, at *(*yfunc)() )
+
+This function declares a new primitive named <name> to the Lush kernel.
+This primitive is identified by its DY interface function <yfunc>.
+The function <dy_define> must be called during the initialisation 
+process. This function should not be called twice with the same 
+identifier string <*name>.
+
+
+#? *** Compiling and Debugging
+
+You can then compile your TL/Open extension using 
+command <make> under Unix or key F7 under Visual C++ for Windows. 
+Please refer to the section describing compilation directories 
+for more information about running and debugging your code.
+
+.SEE Setting up a Compilation Project Workspace under Windows.
+.SEE Setting up a Compilation Directory under Unix.
+
+
+
+
+
+#? **** Lush Internals
+
+This part of the documentation reviews several aspects of 
+the implementation of the Lush interpreter. 
+These aspects are relevant to the creation
+of more sophisticated TL/Open extensions.
+
+Here are the main points of this chapter:
+.IP
+Some elementary C types are defined in order to improve
+the portability of the source code.
+.IP
+The fundamental type of Lush objects is the <at> polymorph structure.
+Every Lush object is represented by a pointer to an <at> structure.
+Every <at> structure contains a reference count.
+You must be aware of certain rules for incrementing or 
+decrementing this reference count.
+.IP
+The <at> structure sometimes contains a pointer to another C
+structure according to the object class: array, matrix, string, 
+symbol, function.  Each class comes with functions implementing 
+standard functionalities (testing the
+object type, creating an object) and specific functions.
+.IP
+It is possible to define new primitive classes
+by providing a few functions for interfacing the Lush interpreter
+and garbage collecting system.
+
+
+#? *** Elementary C Types and Functions
+
+A few elementary C types are defined by the header file <"header.h">
+in order to improve the portability of the source code.
+They correspond to various C fundamental types which vary from 
+a machine to another.
+
+
+#? ** Universal Pointer Type
+
+#? ptr
+.TYPE #define
+
+The type <ptr> is a generic pointer similar to the ANSI C type <void*>.
+This macro has been defined to accommodate very old C compilers that did 
+not implement type <void*>. The habit of using <ptr> instead of <void*>
+has survived.
+
+#? ** Floating Point Types
+
+There are two floating point number types in Lush.
+These types are usually defined as:
+.VP
+#define real double
+#define flt  float
+.PP
+Instances of these types can be manipulated
+by the standard C operators. The type <flt> however 
+is better to be handled by specific macros.
+
+
+
+#? real
+.TYPE #define
+
+The type <real> is a floating point type able to represent
+double precision numbers. This is defined as <double> on most
+machines available today (Crays are different!). 
+We recommend to handle this type as a floating point type 
+distinct from both <double> and <float>.
+Explicit casts will not hurt.
+.VP
+(double)My_real;
+(float)My_real;
+(real)My_float;
+(real)My_double;
+.PP
+
+
+#? flt
+.TYPE #define
+ 
+On modern computers, the type <flt> is always defined as <float>
+and could be handled by the usual operators. 
+
+There is however a long forgotten possibility to compile a 
+version of Lush based on fixed point arithmetic. 
+Type <flt> is then defined 
+as <long> and the usual arithmetic operators do not work.
+Conscientious programmers therefore use the following macros
+for dealing with <flt> numbers. It is however unlikely
+that you will get into trouble if you do not use them.
+
+#? rtoF(x)
+.TYPE #define
+The macro function <rtoF> casts a <real> to a <flt>.
+
+#? dtoF(x)
+.TYPE #define
+The macro function <dtoF> casts a <double> to a <flt>.
+
+#? Ftor(x)
+.TYPE #define
+The macro function <Ftor> casts a <flt> to a <real>.
+
+#? Ftod(x)
+.TYPE #define
+The macro function <Ftod> casts a <flt> to a <double>.
+
+#? Fadd(x,y)
+.TYPE #define
+The macro function <Fadd> adds two <flt> numbers <x> and <y>.
+
+#? Fsub(x,y)
+.TYPE #define
+The macro function <Fsub> subtracts two <flt> numbers <x> and <y>.
+
+#? Fmul(x,y)
+The macro function <Fmul> multiplies two <flt> numbers <x> and <y>.
+.TYPE #define
+
+#? Fdiv(x,y)
+.TYPE #define
+The macro function <Fdiv> divides <flt> numbers <x> and <y>.
+
+#? Fzero
+.TYPE #define
+The macro constant <Fzero> represents
+value <0> for <flt> numbers.
+
+#? Fone
+.TYPE #define
+The macro constant <Fone> represents 
+value <1> for <flt> numbers.
+
+#? Ftwo
+.TYPE #define
+The macro constant <Ftwo> represents 
+value <2> for <flt> numbers.
+
+#? Fminus
+.TYPE #define
+The macro constant <Fminus> represents 
+value <-1> for <flt> numbers.
+
+#? Fhalf
+.TYPE #define
+The macro constant <Fhalf> represents 
+value <0.5> for <flt> numbers.
+
+#? Fsqrt(x)
+.TYPE #define
+The macro function <Fsqrt> returns 
+the square root of a <flt> number <x>.
+
+#? Fsin(x)
+.TYPE #define
+The macro function <Fsin> returns the sinus of a <flt> number <x>.
+
+#? Fcos(x)
+.TYPE #define
+The macro function <Fcos> returns 
+the cosinus of a <flt> number <x>.
+
+#? Ftan(x)
+.TYPE #define
+The macro function <Ftan> returns 
+the tangent of a <flt> number <x>.
+
+#? Fatn(x)
+.TYPE #define
+The macro function <Fatn> returns 
+the arc-tangent of a <flt> number <x>.
+
+#? Fsinh(x)
+.TYPE #define
+The macro function <Fsinh> returns 
+the hyperbolic sine of a <flt> number <x>.
+
+#? Fcosh(x)
+.TYPE #define
+The macro function <Fcosh> returns 
+the hyperbolic cosine of a <flt> number <x>.
+
+#? Ftanh(x)
+.TYPE #define
+The macro function <Ftanh> returns 
+the hyperbolic tangent of a <flt> number <x>.
+
+#? Flog(x)
+.TYPE #define
+The macro function <Flog> returns 
+the natural logarithm of a <flt> number <x>.
+
+#? Fexp(x)
+.TYPE #define
+The macro function <Fexp> returns the exponential of a <flt> number <x>.
+.PP
+
+
+#? ** Input/Output Functions
+
+The following functions are useful to print data 
+to the console or to a file and to read data from 
+the console or from a file. These functions convert newline
+characters to whatever representation is usual under
+the operating system  (CRLF, CR or LF).
+
+#? void print_char (char c)
+
+This function prints character <c> on the current output file defined
+by the Lush interpreter.
+
+#? void print_string(char *s)
+
+This function prints the zero terminated character string <s> on 
+the current output file defined by the Lush interpreter.
+
+#? char read_char(void)
+
+This function reads the next character available on the
+current input file defined by the Lush interpreter.
+This function returns character <"\e"> (ascii code 255)
+when the end of the file is reached.
+
+#? char next_char(void)
+
+This function returns the next character available on the
+current input file defined by the Lush interpreter. 
+This function returns character <"\e"> (ascii code 255)
+when the end of the file is reached.
+
+Unlike function <read_char>, this function leaves the character
+on the pending character queue. The next call to <read_char>
+or <next_char> will return the same character.
+
+
+
+#? *** Lush Objects
+
+#? ** <at> Fundamental Structure
+
+The fundamental data type of the Lush interpreter is a 
+structure named <at>.  All Lush objects are represented by 
+pointer of type <at*>. This structure provides fields 
+describing both the type and the data associated with 
+a Lush object. It also stores informnation used by the 
+garbage collector.
+
+Here is the C definition of the type <at>.
+.VP
+typedef struct at; {
+
+  unsigned int count;
+  unsigned short flags;
+  unsigned short ident;
+
+  union {
+
+    struct {           /* cons */
+      struct at *at_car;
+      struct at *at_cdr;
+    } at_cons;
+
+    real at_number;   /* number */
+
+    struct {          /* external */
+      ptr at_object;
+      struct class *at_class;
+    } at_extern;
+
+  } at_union;
+} at;
+.PP
+In other words, the <at> structure contains a reference counter <count>,
+a couple of flags <flags> and a three way union named <at_union>.
+.IP
+The empty list is represented by pointer <NIL> whose value is <0>.
+.IP
+A Lush number is represented by a pointer <p> to an <at> structure.
+Its numerical value is stored in the field:
+.VP
+p->at_union.at_number
+.IP
+A list is also represented by a pointer <p> to an <at> structure.
+The ``car'' and the ``cdr'' of the list are stored in the fields:
+.VP
+p->at_union.at_cons.at_car
+p->at_union.at_cons.at_cdr
+.PP
+.IP
+All other Lush objects are represented by a pointer to an at structure
+containing a pointer to the object class and a pointer 
+to the object instance. Matrices, windows, functions and symbols 
+are good examples of such external objects.
+The class and instance pointers are stored in fields:
+.VP
+p->at_union.at_extern.at_class
+p->at_union.at_extern.at_object
+.PP
+In order to simplify programming, a few shorthands have been defined.
+For instance, you can write <p->Car> instead 
+of <p->at_union.at_cons.at_car>.
+.VP
+#define Number  at_union.at_number
+#define Cdr     at_union.at_cons.at_cdr
+#define Car     at_union.at_cons.at_car
+#define Object  at_union.at_extern.at_object
+#define Class   at_union.at_extern.at_class
+.PP
+
+
+#? ** Generic Operations on Lush Objects
+
+The Lush kernel provides utility functions that performs the same
+task than several primitive functions of the interpreter. 
+The prototypes can be found in the TL/Open header file  <"header.h">.
+
+We document here a few utility functions that are useful for
+all Lush objects regardless of their type:
+
+#? char *print_list(at *p)
+
+This function prints a textual representation of object <p>
+to the current output defined by the Lush interpreter.
+Circular references are detected.
+This is similar to the Lush function <prin>.
+
+#? char *pname(at *p)
+
+This function returns a pointer to a static area containing
+a textual representation of object <p>. The size of the textual
+representation is limited to a few lines.
+This is similar to the Lush function <pname>.
+
+#? at *read_list(void)
+
+This function parses the textual representation of a lisp object
+on the current input file and returns a new lisp object
+This is similar to the Lush function <read>.
+
+#? int eq_test(at *p, at *q)
+
+This function returns a non zero result if the Lush objects <p>
+and <q> are logically equal. 
+This is similar to the Lush function <=>.
+
+#? int comp_test(at *p, at *q)
+
+This function compares objects <p> and <q> and returns 
+<-1> is <p> is less than <q>,
+<0> if <p> is greater than <q>, 
+and <0> if <p> and <q> are logically equal.
+This function causes an error if objects <p> and <q> cannot be compared.
+This is similar to the Lush comparison functions.
+
+
+
+#? *** Garbage Collection
+
+An important feature of the Lush kernel is its ability to
+recycle perempted Lush objects. 
+This feature is called ``Garbage Collection''.
+Lush relies two very simple garbage collection strategies.
+.IP
+The basic garbage collection is light and fast. It relies on a
+reference counter stored in field <count> of each <at> structure.
+This basic algorithm is unable to reclaim memory used by self-referencing
+objects. Its operation requires that all C functions dealing 
+with lisp object comply with a few simple locking conventions.
+.IP
+The full garbage collection occurs whenever a Lush error is triggered.
+This algorithm reclaims the memory used by all pepreemptedbjects, 
+recomputes the counters of all objects in use, and checks 
+the consistency of all Lush data structure.
+
+
+#? ** Managing Counters in an <at> Structure
+
+Every <at> structure contains a reference count which records
+how many pointers to this Lush object are held by other Lush objects, 
+by active C functions, or by the Lush kernel itself.
+This counter is manipulated by the <LOCK()> and <UNLOCK()> macros.
+This locking mechanism is the basis of the basic garbage 
+collecting system.  It relies on a set of conventions which allow 
+the garbage collector to work.
+
+#? LOCK(at *p)
+.TYPE  #define
+
+This macro increases the counter of the at structure <*p> by one.
+
+For your information, here is the full definition of this macro:
+.PP
+#define LOCK(x)   {if (x) (x)->count++;}
+
+
+
+#? UNLOCK(at *p)
+.TYPE #define
+
+This macro decrease this counter of the at structure <*p> by one.
+If the counter reaches zero, the object is destroyed
+and its memory is returned to a free memory pool.
+
+For your information, here is the full definition of this macro:
+.PP
+#define UNLOCK(x) {if ((x)&&--((x)->count)==0) purge(x);}
+
+
+
+#? ** Locking Conventions
+
+These conventions have been designed in such a way 
+that you should not worry about them if you are only 
+browsing Lush objects. 
+You must however strictly obey these conventions when creating,
+modifying or destroying Lush objects.
+
+There are three conventions
+.IP
+[a] arguments,
+.IP
+[b] adding or deleting pointers and
+.IP
+[c] return values
+.PP
+and one important exception
+.IP
+[d] function <cons()> is special.
+
+
+#? Locking Convention [a]: Arguments
+
+The reference count of the arguments of a C function should 
+not be changed, unless the conditions of conventions [b] or [c] are met.
+
+
+#? Locking Convention [b]: Adding or Deleting Pointers
+
+Every C function calls <LOCK()> or <UNLOCK()> on a Lush object
+if it directly affects the number of pointers held by other 
+Lush objects.
+
+This happens when you change the value of a pointer 
+managed by another Lush object. For example, if you change 
+the value of the pointer to the ``Car'' of a list,
+you must lock the new value and unlock the old value.
+.VP
+void myrplaca(p,q)
+at *p, *q;
+{
+ LOCK(q);
+ UNLOCK(p->Car);
+ p->Car = q;
+}
+.PP
+However, if you affect this pointer via another C function, 
+like <rplaca()>, the reference count will be managed by this 
+other C function.
+.VP
+at *myrplaca(p,q)
+at *p, *q;
+{
+ return rplaca(p,q);
+}
+.PP
+
+
+#? Locking Convention [c]: Return Values
+
+A C function which returns a pointer to an <at> structure
+always returns a locked Lush object.
+
+This rule has two sides:
+.IP
+If you call a function returning a pointer to an <at> structure,
+you must consider this pointer as a ``hot'' potatoe.
+You must return it or unlock it by hand.
+Once you have unlocked this Lush object you must stop accessing it, 
+because it may have been destroyed during the unlock operation.
+.IP
+If you write a function returning a pointer to an <at> structure,
+you must either return a pointer returned by another function
+(ie. already locked) or exexplicitlyock the pointer.
+.PP
+Therefore, it is safe to return directly a pointer returned 
+by another C function:
+.VP
+at *abc()
+{
+ return new_string("abc");
+}
+.PP
+In all other cases, you must lock this pointer by hand.
+.VP
+at *myidentity(p)
+at *p;
+{
+ LOCK(p);
+ return p;
+}
+
+at *mycar(p)
+at *p;
+{
+ at *q = p->Car;
+ LOCK(q);
+ return q;
+}
+.PP
+
+
+#? Locking Convention [d]: Function <cons()> Is Special
+
+The regular function <new_cons()> creates a new dotted pair
+and handles the reference counters according to the usual conventions.
+A special function <cons()> also creates a new dotted pair,
+but it does not lock its arguments as required by convention [b].
+
+This exception is designed to overcome a potential inefficiency of 
+convention [c] which leads to unnecessary lock/unlock sequences.
+For instance, the following function creates the list <(1 2 3 4)>
+with the regular function <new_cons()>:
+.VP
+at *ret1234a()
+{
+ at *c1, *c2, *c3, *c4;
+ at *n1, *n2, *n3, *n4;
+ n1 = NEW_NUMBER(1);
+ n2 = NEW_NUMBER(2);
+ n3 = NEW_NUMBER(3);
+ n4 = NEW_NUMBER(4);
+ c4 = new_cons(n4, NIL);
+ UNLOCK(n4);             /* hot and no longer used */
+ c3 = new_cons(n3, c4);
+ UNLOCK(n3); UNLOCK(c4); /* hot and no longer used */
+ c2 = new_cons(n2, c3);
+ UNLOCK(n2); UNLOCK(c3); /* hot and no longer used */
+ c1 = new_cons(n1, c2);
+ UNLOCK(n1); UNLOCK(c2); /* hot and no longer used */
+ return c1; /* already locked */
+}
+.PP
+The same task is easily achieved with the function <cons()>,
+because the <at> structures returned by the macro <NEW_NUMBER()> 
+are already locked.
+.VP
+at *ret1234b()
+{
+ return cons(NEW_NUMBER(1),
+             cons(NEW_NUMBER(2),
+                  cons(NEW_NUMBER(3),
+                       cons(NEW_NUMBER(4), NIL ))));
+
+}
+.PP
+
+
+#? ** Error Recovery
+
+Each time a Lush error occurs, the stack is rewound
+and the counters set by locking convention [c] are no longer exact.
+When you exit the ``debug toplevel'' an alternate mechanism
+resets all the reference counts to their right values.
+
+This alternate mechanism finds the set of used objects,
+invokes the destructors on unneeded objects,
+computes the correct reference counts,
+returns the unused memory to the pool
+and finally calls Lush function <toplevel>
+to reenter the interpreter interactive loop.
+
+.SEE Locking Conventions.
+.SEE error (  char *where , char *text , at *arg )
+
+
+#? ** Finding Locking Bugs
+
+Locking conventions are the major cause of bugs in Lush.
+Two kind of bugs occurs when the locking conventions are violated:
+.IP
+An overlock occurs when a reference count is larger 
+than the correct value.
+The memory associated to an overlocked object
+will not be freed until a Lush error occurs.
+
+This condition has little consequence during interactive sessions
+because Lush errors always occur from time to time. The
+error garbage collector will then recompute the counters
+and clear the problem. An overlock however may cause 
+to a memory overflow when a Lush program runs continuously.
+.IP
+An underlock occurs when a reference count is smaller than the 
+correct value. The memory associated to an underlocked object will 
+be returned to the pool too early. 
+
+Unlike overlocks, underlocks always cause
+to deadly bugs involving the corruption of the pool.
+Lush might crash when you invoke your new primitive
+or crash later when it tries to print the underlocked object.
+Sometimes it does not crashes, but performs random changes
+in the existing Lush structures.
+.PP
+It is therefore important to check the validity of your C 
+functions as early as possible. As a rule of thumb, 
+you should rather risk an overlock than an underlock. 
+You can then use the Lush function <used>
+to identify the potential overlock.
+Here is a simple procedure:
+
+(A) Causing an error will invoke the error garbage collector
+and make sure that all counters are correct
+at this point.
+.VP
+? (())   
+*** read : Cannot evaluate list
+** in: (load "$stdin" "$stdout")
+** from: (let ((break-hook (lambda () (beep) ...
+Debug toplevel [y/n] ?n
+.PP
+You can then count the number of Lush objects minus 
+the number of symbols, run your new primitive function,
+and count again the number of Lush objects minus 
+the number of symbols.
+.VP
+? (- (used) (length (oblist)))
+= 15843
+? (my-beautiful-c-function)
+= t
+? (- (used) (length (oblist)))
+= 15847 
+.PP
+Changes represent objects that have been created or 
+destroyed by your function. You can check that this
+new count is correct by causing a new error.
+.VP
+? (())   
+
+*** read : Cannot evaluate list
+** in: (load "$stdin" "$stdout")
+** from: (let ((break-hook (lambda () (beep) ...
+Debug toplevel [y/n] ?n
+
+? (- (used) (length (oblist)))
+= 15847
+.PP
+You must get *exactly* the same number here.
+.IP
+An overlock in your function would leave unneeded objects.
+Since the error garbage collector destroys these objects,
+the new object count would be smaller.
+.IP
+An underlock in your function would prematurely destroy
+objects referenced elsewhere. Lush would probably crash
+during the execution of the error garbage collector.
+.PP
+Note: Function <used> returns the number of currently
+used Lush objects. The error garbage collector however
+destroys all unreferenced symbols whose value is <()>.
+We subtract the number of symbols from the number of 
+objects in order to obtain a quantity that do not depend
+on this process.
+
+
+#? *** Lists/Numbers/External Objects
+
+As previously introduced, elementary Lush objects are lists and numbers.
+These objects are entirely contained in the <at> structure.
+The other objects are called ``external'' because they need more memory
+than an <at> structure can provide. The <at> structure points
+to a memory block located outside the <at> structure.
+
+
+#? ** Lists
+
+Lists are a collection of linked pairs composed of
+.IP
+the ``Car'', a pointer to the first element of the list,
+.IP
+the ``Cdr'', a pointer the list of the remaining elements.
+.PP
+As described above, this information is directly stored in 
+two fields of the at structure located in the 
+branch <at_cons> of the union <at_union>.
+
+
+#? * Predicates
+
+Two macros have been defined to test if an <at*> pointer 
+references a list.
+
+
+#? int CONSP(at *p )
+.TYPE #define
+
+The macro <CONSP()> returns <1> if and only if 
+the pointer <p> references a non empty list.
+It indicates that you can access the fields <p->Car> and <p->Cdr>.
+
+#? int LISTP(at *p )
+.TYPE #define
+
+The macro <NEW_CONSP()> returns <1> if 
+the pointer <p> references a possibly empty list.
+A positive answer does not allow you to access the 
+fields <p->Car> and <p->Cdr>,
+because <p> might be pointer <NIL>.
+
+
+#? * Access
+
+As stated above, you must read section ``Locking Conventions'' before 
+attempting to alter the contents of the fields <p->Car> and <p->Cdr>.
+You can however safely read these fields and follow the list structure.
+For instance you can write directly:
+.VP
+/*  This code loops on the elements of a list <p> */
+while (CONSP(p)) {
+ at *q = p->Car;
+ /*  q now points to the current element of the list  */
+ p = p->Cdr;
+}
+.PP
+
+
+#? * Creation
+.SEE Locking Conventions.
+
+There are two functions for creating a list element: 
+<cons()> and <new_cons()>.
+Both functions are essentially similar to the Lush function <cons>.
+These functions differ only as described in section 
+``Locking Conventions''.
+.IP
+The function <new_cons()> follows the usual locking conventions.
+.IP
+The function <cons()> is often used for efficiency reasons.
+As described in section ``Locking Conventions'', 
+this function does not affect the reference counts of <p> and <q>.
+
+
+#? at *new_cons(at *p, at *q )
+
+The function <new_cons()> returns a new list
+by prepending element <p> in front of list <q>.
+The function <new_cons()> follows the usual locking conventions.
+
+#? at *cons(at *p, at *a )
+.SEE Locking Conventions.
+
+The function <cons()> returns a new list
+by prepending element <p> in front of list <q>.
+The function <cons()> is often used for efficiency reasons.
+As described in section ``Locking Conventions'', 
+this function does not affect the reference counts of <p> and <q>.
+
+
+#? * Utilities
+
+Two functions <rplaca()> and <rplacd()> are provided for 
+changing the pointers and adjust the reference counts at 
+the same time.
+
+Both functions return a new pointer to a structure <at>.
+According to the locking conventions described in section 
+``Locking Conventions'', this pointer is ``hot'':
+you must return it or unlock it with the <UNLOCK()> macro.
+
+#? at *rplaca(at *p, at *q )
+
+The function <rplaca> replaces the ``Car'' of the list element <p>
+by the object pointed to by <q>.
+It does not check its arguments but adjusts the reference counters
+and possibly frees the memory associated to the previous 
+``Car'' of list <p>.
+
+
+#? at *rplacd(at *p, at *q )
+
+The function <rplacd> replaces the ``Cdr'' of the list element <p>
+by the object pointed to by <q>.
+It does not check its arguments but adjusts the reference counters
+and possibly frees the memory associated to the previous 
+``Cdr'' of list <p>.
+
+
+#? ** Numbers
+
+This section describes the internal representation
+of the numbers used by the Lush interpreter.
+A Lush number is represented by a pointer to an <at> structure.
+Its value is stored in the member <at_number> of the union <at_union>.
+
+
+#? * Predicates
+
+The following macro tests if an <at*> pointer <p> 
+references a Lush number.
+
+
+#? int NUMBERP(at *p )
+.TYPE #define
+
+The macro function <NUMBERP()> returns 1
+if and only if the pointer <p> references a number.
+It indicates that you can access the fields p->Number.
+
+
+#? * Access
+
+Once you know that a pointer <p> references a Lush number, 
+you can access its value. The value of a Lush number is 
+stored as a real in the field <p->Number>.
+Therefore, you can write directly
+.VP
+my_real = p->Number;
+/* <p> is a pointer on an at structure, <my_real> is a real */
+.PP
+You should never change the value of the field <p->Number>
+because the same <at> structure might be used in different places.
+You must instead create a new Lush number with the 
+function <new_number()>.
+
+
+#? * Creation
+
+Lush numbers are easily created by the following functions or macros.
+The macro <NEW_NUMBER()> should be always prefered to 
+function <new_number()> unless a function pointer is required.
+
+
+#? at *new_number(real x)
+
+The function <new_number()> returns a new Lush number 
+representing number <x>.
+
+
+#? at *NEW_NUMBER(x)
+.TYPE #define
+
+The macro function <NEW_NUMBER> returns a new Lush number 
+representing number <x>. This macro casts number <x> to 
+type <real> and calls <new_number()>.
+This macro should be always prpreferrednless a function 
+pointer is required.
+
+
+#? ** External Objects
+
+All the other Lush objects are represented
+by an <at*> pointer <p> to an <at> structure whose field <p->Object>
+contains a <void*> pointer to an arbitrary C structure.
+Such objects are called ``external objects''.
+
+Therefore, any C structure can be made visible
+from the Lush level as an external object.
+This powerful feature raises two problems:
+.IP
+It is necessary to be able to check the type of a Lush object.
+There is little use in having an lisp object pointer <p> when
+we do not know what kind of C structure is pointed to by the 
+field <p->Object>.
+.IP
+The interpreter should be able to perform several essential actions
+on external objects, like evaluating an object, printing an object
+or interacting with the garbage collector.
+.PP
+Therefore field <p->Class> of the structure points to a structure class.
+There is a single structure class for each kind of external object.
+.IP
+For checking the type of an external object, it is sufficient to test
+that <p->Class> points to the right structure class.
+.IP
+The structure class itself describes how the the external object
+interacts with the Lush interpreter.
+.PP
+Sections ``Arrays and Matrices'', ``Strings'', ``Symbols'' 
+and ``Functions'' describe several kinds of external objects.
+Moreover, the TL/Open protocol allows you to define new Lush objects
+by defining a new structure class.
+This is described in section ``User Defined Classes''.
+
+
+#? * Predicates
+
+The following expression tests if an <at*> pointer <p> 
+references an external object.
+
+#? int EXTERNP(at *p, class *someclass )
+.TYPE #define
+
+The macro <EXTERNP()> returns <1> if and only if the pointer <p> 
+references an external object of class <someclass>.
+It indicates that you can access the field <p->Object>.
+
+
+#? * Access
+
+To access the C structure associated to an external object <p>,
+just cast the pointer <p->Object> to the right pointer type.
+Of course, you must first make sure that you are accessing
+an external object of the right type.
+.VP
+/* <pt_at1> is an <at*> pointer.
+ * <myptr> is a <struct anystruct *> pointer to a private C structure.
+ */
+my_ptr = (struct anystruct *) (pt_at1->Object);
+.PP
+
+
+#? * Creation
+
+External objects are usually created with type specific high level 
+functions. Lush strings, for example, are created with the C 
+function <new_string()>.
+These high level functions call the C function <new_extern()>.
+
+
+#? at *new_extern(class *cl , void *pt)
+
+The function <new_extern()> returns a new external object,
+using a pointer <cl> to a class structure and a pointer <pt> to an 
+arbitrary C structure. Of course, the type of the C structure must match 
+the class structure <cl>.
+
+
+#? *** Arrays/Matrices
+
+Arrays and matrices are implemented as external objects.
+The <p->Object> field always points to a C structure of type 
+<struct array> described below.
+
+There are several kind of array or matrices:
+.IP
+An array contains <at*> pointers to other Lush objects.
+It is associated to the class structure <array_class>.
+.IP
+A single precision matrix contain <flt> numbers, usually <float> numbers.
+It is associated to the class structure <matrix_class>.
+.IP
+A double precision matrix contain <real> numbers usually <double> numbers.
+It is associated to the class structure <dmatrix_class>.
+.IP
+An integer matrix contain <int> numbers.
+It is associated to the class structure <imatrix_class>.
+.IP
+A short integer matrix contain <short> numbers.
+It is associated to the class structure <smatrix_class>.
+.IP
+A byte matrix contain <unsigned char> numbers.
+It is associated to the class structure <bmatrix_class>.
+.IP
+A packed matrix contains small numbers encoded on a single byte.
+It is associated to the class structure <pmatrix_class>.
+.PP
+
+
+#? ** Predicates
+
+The predicates for matrices rely on the macro function <EXTERNP()>
+and the matrices class structures.
+The following expressions checks that an <at*> pointer <p> references
+one of the various class of Lush matrix:
+.VP
+EXTERNP(p, &array_class)   /* array             */
+EXTERNP(p, &matrix_class)  /* (standard) float matrix */
+EXTERNP(p, &dmatrix_class) /* double matrix    */
+EXTERNP(p, &imatrix_class) /* integer matrix    */
+EXTERNP(p, &smatrix_class) /* short matrix      */
+EXTERNP(p, &bmatrix_class) /* byte matrix       */
+EXTERNP(p, &pmatrix_class) /* packed matrix     */
+.PP
+
+
+#? ** Access
+
+Matrices and arrays are implemented as external objects pointing
+on a structure <struct array>.
+This structure stores a description of a matrix geometry
+and a pointer to a contiguous memory zone storing the data.
+Each datum is accessed by adding an offset to this pointer.
+
+An alternate access mode consists in using pointers of pointers 
+to access multidimensional arrays. This alternate access mode is 
+very convenient for interfacing numerical packages.
+.SEE Numerical Recipes Interface.
+
+
+#? * "struct array" Structure
+
+Consider an <at*> pointer <p> which references a Lush array or 
+a Lush matrix. The corresponding C structure can be accessed as:
+.VP
+struct array *arr = (struct array*)(p->Object);
+.PP
+This structure contains all information relevant to the array or matrix.
+Here are the main fields of this structure:
+.VP
+  short  ndim;
+  int    dim[MAXDIMS];
+  int    modulo[MAXDIMS];
+  ptr    data;
+.PP
+The <arr->ndim> field contains the number of dimensions.
+The sizes of dimensions are stored as 
+<arr->dim[0], ... , arr->dim[ndim-1]>.
+
+The <arr->data> field points to a contiguous zone of memory.
+This pointer is a generic <ptr> pointer and must 
+be cast to the appropriate type.
+.VP
+at  **x = (at  **)(arr->data)                  /* array */
+flt  *x = (flt  *)(arr->data)                  /* single matrix */
+int  *x = (int  *)(arr->data)                  /* integer matrix */
+int  *x = (short*)(arr->data)                  /* short integer matrix */
+real *x = (real *)(arr->data)                  /* double matrix */
+unsigned char *x = (unsigned char*)(arr->data) /* byte matrix */
+char *x = (char *)(arr->data)                  /* packed matrix */
+.PP
+The elements of the array or matrix can then be read or stored 
+as <x[offset]>. Offsets are computed using the information 
+located in the <arr->modulo> field.
+This is described in the next subsection.
+
+Accessing the elements of an array or of a packed matrix need
+some further operations:
+.IP
+While accessing an array, you get Lush objects.
+According to the locking conventions, you must lock the new object
+and unlock the old object before modifying an element of an array.
+.IP
+The elements of a packed matrix are small numbers encoded on single bytes.
+The function <pack()> converts a <real> to a byte. The function <unpack()>
+performs the opposite conversion.
+
+#? real unpack( unsigned char c )
+
+The function <unpack> converts a <real> to a byte.
+It is used to read packed matrices.
+
+#? unsigned char pack( real x )
+
+The function <pack> converts a byte to a <real> .
+It is used to write packed matrices.
+
+
+#? * Computing Offsets
+
+The offsets are computed using the following rules.
+.IP
+The offset of element <A(0,...,0)> is 0.
+.IP
+The offset of the element <A(i[0]...i[k]+1...i[ndim-1])> is obtained
+by adding <arr->modulo[k]> to the offset of 
+element <A(i[0],...,i[ndim-1])>.
+.IP
+The offset of the element <A(i[0]...i[k]-1...i[ndim-1])> is obtained
+by subtracting <arr->modulo[k]> to the offset of 
+element <A(i[0],...,i[ndim-1])>.
+.PP
+The offset of a random element A(i[0],...,i[ndim-1]) is thus given
+by the following multiplicative formula:
+.VP
+i[0] * arr->modulo[0] + ...
+   ... + i[ndim-1] * arr->modulo[ndim-1]
+.PP
+This later expression is a rather inefficient access method.
+In most cases, you just want to iterate over certain dimensions 
+of the matrix. You can perform efficient iterations on Lush matrices 
+using additive arithmetic.
+The following fragment of code, for instance, clears the second plane
+of a three dimensional matrix:
+.VP
+int i,j,off1,off2;
+flt *data = (flt*)(arr->data);
+for( i=0, off1=2*arr->modulo[0]; /* first element of second plane */
+     i<arr->dim[1];
+     i++, off1+=arr->modulo[1] ) /* move OFF1 to next line */
+ {
+  for( j=0, off2=off1;             /* first element of line */
+       j<arr->dim[2];
+       j++, off2+=arr->modulo[2] ) /* move OFF2 to next line */
+   {
+     data[off2] = Fzero;
+   }
+ }
+.PP
+
+The modulo (and so the offsets) of an array or a matrix may be negative. 
+Negative modulos are used when you want to access the same data 
+in a reverse order. They are needed for example if you want to rotate 
+an image of a quarter of a turn without duplicating it. 
+They are effectively used by function <rotate>. 
+
+Therefore you should make sure that your C functions properly 
+handle negative modulos.  The majority of problems occurs in code 
+looping over the elements of one of several matrices. Certain loops 
+depend on a stopping criterion based on pointer or offset
+inequalities (e.g. <for(p=start; p<start+len; p+=modulo)>) and 
+therefore do not support negative modulos. 
+Most programmers however will find that nothing has to be 
+changed in their code.
+
+
+#? ** Creation
+
+Each matrix class is provided with its creation function.
+
+It is also possible to create a sub-matrix or a sub-array,
+which designates a portion of a mother matrix or a mother array.
+Although sub-matrices and sub-arrays directly point
+into the data area of their base matrix or base array,
+the other fields of the structure array reflect their own 
+different geometry. Sub-matrices and sub-arrays are created with the C 
+function <submatrix()>, which is similar to the Lush function <submatrix>.
+
+
+It is also possible to duplicate a matrix or an array.
+Matrices and arrays are duplicated by functions <copy_matrix()> 
+and <copy_any_matrix()>.
+
+
+#? at *array(int ndim, int dim[])
+
+The function <array()> returns a pointer to a Lush array
+with ndim dimensions of sizes <dim[0],...,dim[n-1]>.
+This function is similar to the Lush function <array>.
+
+#? at *fmatrix(int ndim, int dim[])
+
+The function <fmatrix()> returns a pointer to a Lush single precision
+matrix with <ndim> dimensions of sizes <dim[0],...,dim[n-1]>.
+This function is similar to the Lush function <matrix>.
+
+#? at *imatrix(int ndim, int dim[])
+
+The function <imatrix()> returns a pointer to a Lush integer matrix
+with <ndim> dimensions of sizes <dim[0],...,dim[n-1]>.
+This function is similar to the Lush function <imatrix>.
+
+#? at *smatrix(int ndim, int dim[])
+
+The function <smatrix()> returns a pointer to a Lush short integer 
+matrix with <ndim> dimensions of sizes <dim[0],...,dim[n-1]>.
+This function is similar to the Lush function <smatrix>.
+
+#? at *dmatrix(int ndim, int dim[])
+
+The function <dmatrix()> returns a pointer to a Lush double precision 
+matrix with <ndim> dimensions of sizes <dim[0],...,dim[n-1]>.
+This function is similar to the Lush function <dmatrix>.
+
+#? at *pmatrix(int ndim, int dim[])
+
+The function <pmatrix()> returns a pointer to a Lush packed matrix
+with <ndim> dimensions of sizes <dim[0],...,dim[n-1]>.
+This function is similar to the Lush function <bmatrix>.
+
+#? at *submatrix(at *base, int mind[], int maxd[])
+
+The function <submatrix()> creates a submatrix or subarray
+of a given mother array or matrix.
+
+The tables <mind[]> and <maxd[]> specify, for each dimension,
+the limits of the part of the array or matrix mother referred to
+by the sub-matrix or sub-array.
+
+If <mind[k]> is stricly lower than <maxd[k]>, the submatrix starts 
+on plane <mind[k]> and finishes on plane <maxd[k]-1> in the <k>-th 
+dimension. This is equivalent to specify a list <(mind[k] maxd[k]-1)>
+as the <k>-th subscript specification of the Lush function <submatrix>.
+
+If <mind[k]> is equal to <maxd[k]>, the submatrix is restricted
+to plane <mind[k]> in the <k>-th dimension.
+This is equivalent to specify the number <mind[k]> as 
+the <k>-th subscript specification of the Lush function <submatrix>.
+
+
+#? at *copy_matrix(at *origin, at *target)
+
+The funcrtion <copy_matrix()> copies the contents of a source 
+matrix or array <origin> into a destination matrix or array <target>.
+The source and destination matrices or arrays may have different
+types but must have the same geometry.
+
+If argument <target> is equal to NIL, a destination matrix of 
+appropriate size is created. This function always returns the 
+destination matrix.
+
+
+#? at *copy_any_matrix(at *origin, at *target)
+
+The function <copy_any_matrix> is essentially similar 
+to <copy_matrix()>.  It is able however to copy data between 
+two matrices or array of different geometry,
+provided that they have the same number of elements.
+
+
+
+#? ** Utilities
+
+
+The following functions are extremely useful for parsing
+the arguments of a Lush function.
+They check the type and the dimension of their arguments
+and return the structure array.
+
+
+#? struct array *check_vector(at *p, int *n )
+
+The function <check_vector()> checks that the Lush object <p>
+is a one-dimensional matrix of flt numbers.
+It compares then the size of <p> with the integer <*n>.
+.IP
+If <*n> is equal to zero, <check_vector()> stores the 
+size of <p> into <*n>.
+.IP
+If <*n> is greater than zero, <check_vector()> compares the size 
+of <p> with <*n> and signals an error if they are different.
+.PP
+Finally, this function returns a pointer to the structure array of <p>.
+
+
+#? struct array *check_matrix(at *p, int *m, int *n)
+
+The function <check_matrix> first checks that the Lush object <p>
+is a two-dimensional matrix of <flt> numbers.
+It compares then the sizes of <p> with the integers <*m> and <*n>.
+.IP
+If either <*m> or <*n> is equal to zero, <check_matrix()> stores 
+the corresponding size of <p> into <*m> or <*n>.
+.IP
+If either <*m> or <*n> is greater than zero, <check_matrix()>
+compares the corresponding size with <*m> or <*n>
+and signals an error if they are different.
+.PP
+Finally, this function returns a pointer to the structure array of <p>.
+
+
+#? * Complete Example of Matrix Computation
+
+Here is a listing of the C code for the Lush function <m+m> 
+(matrix addition). This is a good example of using <check_matrix()>
+for checking the arguments and filtering the dimensions:
+.VP
+at *
+maddm(v1, v2, ans)
+at *v1, *v2, *ans;
+{
+ int n, m, i, j;
+ flt *f1, *f2, *fa, *ff1, *ff2, *ffa;
+ struct array *vv1, *vv2, *vva;
+
+ /* get the structure array for v1 and v2 */
+ n = m = 0;
+ vv1 = check_matrix(v1, &n, &m);
+ vv2 = check_matrix(v2, &n, &m);
+
+ /* create ans if NIL is provided */
+ if (ans)
+  LOCK(ans);   /* because we return ans */
+ else {
+  int dim[2]; dim[0]=n; dim[1]=m;
+  ans = matrix(2,dim);
+ }
+ /* get the structure array for ans */
+ vva = check_matrix(ans, &n, &m);
+
+ /* loop */
+ for( j=0, ff1 = vv1->data,
+           ff2 = vv2->data,
+           ffa = vva->data;
+      j<n;
+      j++, ffa += vva->modulo[0],
+           ff1 += vv1->modulo[0],
+           ff2 += vv2->modulo[0] ) 
+ {
+   for( i=0, f1 = ff1,
+             f2 = ff2,
+             fa = ffa;
+        i<m;
+        i++, fa += vva->modulo[1],
+             f1 += vv1->modulo[1],
+             f2 += vv2->modulo[1] ) 
+   {
+     *fa = Fadd(*f1, *f2);
+   }
+ }
+
+ /* return */
+ return ans;
+}
+.PP
+
+
+
+#? ** Numerical Recipes Interface
+
+
+Several functions help interfacing Lush with C routines
+using the vector and matrix formats suggested
+by the well known book "Numerical Recipes in C" (Press et al.).
+A TL/Open example shows how to interface various routines published
+in this book to the Lush interpreter.
+
+The pointer returned by these functions is stored in the <struct array>
+structure and is used by Lush. Therefore, it should not be altered.
+Of course this restriction deals with the pointers themselves,
+and do not restrict the usage of the contents of the matrices 
+they address.
+
+In "Numerical Recipes", a vector is represented by a pointer <u>
+to an array of <float>, <double>, <int> or <unsigned char>.
+The first element is most often referred to as <u[1]>.
+The functions prefixed with <get_nr1_XXXvector> 
+convert a Lush matrix into such a vector.
+
+In "Numerical Recipes", a matrix is represented by a pointer <u>
+to an array of pointers to an array of <float>, <int> or <double>.
+The first element of the first row of a matrix <u> is referred to 
+as <u[1][1]>. The functions <get_nr1_XXX> convert a Lush matrix 
+into such a matrix.
+
+The functions <get_nr0_XXX> are similar functions
+except the subscripts of the vectors and matrices they return
+range between <0> and <n-1> instead of <1> and <n>.
+
+
+#? float *get_nr1_vector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+single precision matrix (usually created with function <matrix>.)
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+
+#? double *get_nr1_dvector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+double precision matrix (usually created with function <dmatrix>).
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+
+#? int *get_nr1_ivector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+integer matrix (usually created with function <imatrix>).
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+
+#? short *get_nr1_svector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+short integer matrix (usually created with function <smatrix>).
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+
+#? unsigned char *get_nr1_bvector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+byte matrix (usually created with function <bmatrix>).
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+
+#? float **get_nr1_matrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+single precision matrix (usually created with function <matrix>.)
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+
+#? double **get_nr1_dmatrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+double precision matrix (usually created with function <dmatrix>).
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+
+#? int **get_nr1_imatrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+integer matrix (usually created with function <imatrix>).
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+
+#? short **get_nr1_smatrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+short integer matrix (usually created with function <smatrix>).
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+#? unsigned char **get_nr1_bmatrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+byte matrix (usually created with function <bmatrix>).
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Following the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <1> and <n>.
+
+
+#? float *get_nr0_vector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+single precision matrix (usually created with function <matrix>.)
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+
+#? double *get_nr0_dvector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+double precision matrix (usually created with function <dmatrix>).
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+
+#? int *get_nr0_ivector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+integer matrix (usually created with function <imatrix>).
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+
+#? short *get_nr0_svector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+short integer matrix (usually created with function <smatrix>).
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+
+#? unsigned char *get_nr0_bvector(at *p, int *n )
+
+This function checks that Lush object <p> is a one dimensional
+byte matrix (usually created with function <bmatrix>).
+It also checks that the elements are contiguous
+and returns a pointer under the Numerical Recipes format.
+It handles argument <n> like function <check_vector>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+
+#? float **get_nr0_matrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+single precision matrix (usually created with function <matrix>.)
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+
+#? double **get_nr0_dmatrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+double precision matrix (usually created with function <dmatrix>).
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+
+#? int **get_nr0_imatrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+integer matrix (usually created with function <imatrix>).
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+
+#? short **get_nr0_smatrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+short integer matrix (usually created with function <smatrix>).
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+#? unsigned char **get_nr0_bmatrix(at *p, int *m, int *n)
+
+This function checks that Lush object <p> is a two dimensional
+byte matrix (usually created with function <bmatrix>).
+It also checks that the elements of the rows are contiguous
+and returns a pointer to the data under the Numerical Recipes format.
+It handles arguments <n> and <m> like function <check_matrix>.
+
+Unlike the standard representation of matrices and vectors
+in ``Numerical Recipes'', the subscripts of the returned pointer
+range between <0> and <n-1>.
+
+
+
+
+#? *** Strings
+
+
+Strings are implemented as external objects of class <string_class>.
+Field <p->Object> always points to a C structure of 
+type <struct string>.
+
+
+#? ** Predicates
+
+The predicate for string rely on the <EXTERNP()> macro and the 
+string class structure. The following expression checks that 
+an <at*> pointer <p> references a Lush string:
+.VP
+EXTERNP(p, &string_class)
+.PP
+
+#? ** Access
+
+Accessing a Lush string is easily performed with the macro <SADD()>.
+
+#? char *SADD(at *p)
+.TYPE #define
+
+The macro function <SADD()> returns a pointer to a null terminated 
+array of characters. Since this macro function does not check the 
+type of <p>, you should use the string predicate described above 
+before using <SADD()>.
+
+Therefore, you can write:
+.VP
+if (EXTERNP(p, &string_class))
+  my_char_ptr = SADD(my_at->Object);
+else
+  error(NIL,"Not a string",p);
+.PP
+
+
+#? ** Creation
+
+It is seldom advisable to change the content
+of the array returned by the macro function <SAAD()>.
+If you want to return a string, you must create a new Lush string
+with <new_string()>.
+
+#? at *new_string(char *s)
+
+The function <new_string()> takes a C string <s>
+and returns an <at*> pointer to a Lush string.
+During the process, the string <s> is copied into a private buffer
+associated to the Lush object.
+Therefore, you may change the contents of <s> without affecting 
+the Lush string.
+
+
+#? *** Symbols
+
+Lush symbols are implemented as external objects of 
+class <symbol_class>. Their internal structure is rather complex 
+because they manage the locality of the Lush variables. 
+
+
+#? ** Predicates
+
+Predicates for symbols rely on the <EXTERNP()> macro and 
+the symbol class structure. The following expression checks that 
+an <at*> pointer <p> references a Lush symbol:
+.VP
+EXTERNP(p, &symbol_class)
+.PP
+
+#? ** Access
+
+#? at *var_get( at *symbol)
+
+The function <var_get()> returns the contents of the variable
+currently bound to symbol <symbol>.
+Please, remember that this function returns a pointer to a 
+structure <at>. According to the locking conventions described 
+in section ``Locking Conventions'', this pointer is ``hot''. 
+You must return it or unlock it with the macro function <UNLOCK()>.
+
+.SEE Locking Conventions.
+
+
+#? void var_set( at *symbol, at *value)
+
+The function <var_set()> stores the value value into the variable
+currently bound to symbol <symbol>.
+In fact, this function is equivalent to the Lush function <setq>.
+
+
+#? ** Creation
+
+#? at *named( char *s)
+
+The function <named()> returns a symbol whose name 
+is given by the string <s>.
+
+#? at *var_define( char *s)
+
+The function <var_define()> creates a global symbol during 
+the initialisation process. This function must be called from 
+an initialisation function, like <dx_define()>. 
+
+It returns a pointer to a symbol whose name is given by the string <s>.
+This pointer can only be used as a key for the functions <var_set()>
+or <var_get()> described above. Never lock or unlock this pointer.
+
+
+#? *** Functions
+
+Although they are the heart of the Lush kernel, the functions 
+are implemented as external objects. There are in fact many 
+classes of functions, like <de_class> or <dx_class>.
+A full description would exceed the purpose of this manual.
+
+Two functions are especially useful for dealing with functions:
+
+#? at *eval(at *p)
+
+The function <eval()> takes a Lush expression <p>
+and returns the result of its evaluation.
+For instance, the Lush function <if> is defined as follows:
+.VP
+DY(yif)
+{
+  register at *q;
+  ifn(CONSP(ARG_LIST) && CONSP(ARG_LIST->Cdr))
+    error(NIL, "bad 'if' syntax", NIL);
+  if (q=eval(ARG_LIST->Car)) {
+    UNLOCK(q);
+    return eval(ARG_LIST->Cdr->Car);
+  } else
+    return progn(ARG_LIST->Cdr->Cdr);
+}
+.PP
+
+#? at *apply( at *function, at *arglist )
+
+The function <apply()> returns the result of applying function <func>
+to the argument list arglist.
+For instance, the following function calls a Lush function <func>
+on a real number <x> and returns a real number as a result.
+.VP
+real callfunc( func, x )
+at *func;
+real x;
+{
+  at *arglist;
+  at *result;
+  /* build the argument list */
+  arglist = cons(new_number(x), NIL);
+  /* calls the function */
+  result = apply(func,arglist);
+  /* checks the result */
+  ifn (NUMBERP(result))
+    error(NIL,"Not a number",result);
+  /* unlock hot pointers */
+  x = result->Number;
+  UNLOCK(arglist);
+  UNLOCK(result);
+  return x;
+}
+.PP
+
+
+#? *** User Defined Classes
+
+It is possible to define a new primitive class in Lush.
+In other words, your data structure can be handled by 
+the Lush interpreter like a full featured external Lush object.
+The TL/Open example <"complex"> provides a full demonstration
+of this capability.
+
+To define a new primitive class,
+you must achieve a few simple tasks:
+.IP
+You must define a class descriptor structure of 
+type <struct class>. This class descriptor 
+contains a few function pointers 
+that describe how the Lush interpreter interacts
+with your data structures.
+.IP
+You must write a primitive Lush function for creating 
+a new instance of your data structures. 
+.IP
+You must declare the new class to the Lush kernel using
+function <class_define> in the initialization function.
+.PP
+We describe now these successive steps using the example
+of a class named <MYDATA> corresponding to a C structure
+type <struct mydata>.
+.VP
+struct mydata { at *pl; at *pr; char *s; double d; int i; };
+
+
+#? ** Class Structure Definition
+
+The class descriptor is defined by the TL/Open headers.
+You must declare a new instance of this structure and initialize
+its first components with pointers to various C functions.
+
+Assume that our new class is named <mydata>, 
+the class structure will be initialized 
+by the following C language idiom:
+.VP
+class mydata_class = {  /* This is C language */
+ mydata_dispose,
+ mydata_action,
+ mydata_name,
+ mydata_eval,
+ mydata_listeval,
+ mydata_serialize,
+ mydata_compare,
+ mydata_hash,
+};
+.PP
+This idiom is not a C++ class definition. The C identifier 
+<class> actually is a typedef name that refers to the type
+of the class descriptor structure.  The above idiom is nothing
+more than the definition and initialization of a class descriptor
+structure.  The first few fields of the class descriptor
+are initialized pointers to the functions <mydata_dispose>, 
+<mydata_action>, etc. 
+
+C++ programmers will be concerned by the fact that <class>
+is a reserved keyword in their preferred language. 
+This name <"class"> was chosen well before the advent 
+of C++ (or even ANSI C). To fix the consequences of this 
+unfortunate choice, we have introduced a new identifier
+<TLclass> available in both C and C++.
+.VP
+TLclass mydata_class = {  /* This is C++ language */
+ mydata_dispose, mydata_action,
+ mydata_name, mydata_eval, mydata_listeval,
+ mydata_serialize, mydata_compare, mydata_hash,
+};
+.PP
+The Lush interpreter processes objects by calling the appropriate
+function using the pointers specified by the class descriptor.
+This is a C implementation of the virtual function concept 
+popularized with the C++ language.
+
+Lush provides simple default functions for all the entries of the
+class descriptor. These functions are named <generic_dispose>, 
+<generic_action>, <generic_name>, etc.   All these functions 
+will be described in the next subsections.
+
+
+#? * Garbage Collection
+
+The first two function pointers of the class descriptor
+describe how the object interacts with the garbage collector.
+Their first argument <p> is always a pointer to a 
+Lush object of class <mydata_class>.
+
+#? void mydata_dispose(at *p)
+
+This function is called when the Lush object <p> is destroyed.
+
+If your data structure contains pointers to other Lush objects,
+this function must unlock all Lush objects referenced by your data 
+structure. It must also deallocate all the memory privately 
+allocated for your data structure.
+.VP
+void mydata_dispose(at *p)
+{
+  struct mydata *md = p->Object;
+  /* unlock all Lush objects pointed to by this object */
+  UNLOCK(md->pl);
+  UNLOCK(md->pr);
+  /* free all memory allocated for this data structure */
+  if (md->s) free(md->s);
+  free(md);
+}
+
+#? void mydata_action( at *p, void (* action) (q) )
+
+This function is called by the full garbage collection algorithm.
+This algorithm runs whenever an error occurs.
+.IP
+If your data structure contains pointers to other Lush objects,
+this function must call the C function <(*action)(q)> on all 
+Lush objects <q> referenced by your data structure.
+.IP
+If your data structure contains no such pointers,
+you may initialize the class structure
+with the function <generic_action()> which does nothing.
+.VP
+void mydata_action(at *p, void (*action)(at *))
+{
+  struct mydata *md = p->Object;
+  /* call action on all Lush objects pointed to by this object */
+  (*action)(md->pl);
+  (*action)(md->pr);
+}
+
+
+#? * Textual Representation
+
+The third function of the class descriptor must return the textual
+representation of the object returned by function <pname> and
+displayed by function <print>.  
+
+You can always use the default function <generic_name> which
+returns a simple name of the form <"::<classname>:<address>">.
+.VP
+char * mydata_name(at *p)
+{
+   static char buffer[80];
+   struct mydata *md = p->Object;
+   sprintf(buffer,"::MYDATA:<%s>", md->s);
+   return buffer;
+}
+.PP
+Defining this function only affects the output function.
+It does not allow the Lush reader to interpret this string
+as a Lush object. You can modify the behavior of the Lush reader
+however by defining macro-characters using function <dmc>.
+
+
+#? * Evaluation
+
+Two function pointers in the class structure lets you 
+define how user defined objects interact with the
+Lush evaluator.
+
+#? at *mydata_eval(at *p)
+
+This function returns the result of the evaluation of object <p>.
+For instance, the evaluation of a symbol returns the symbol value.
+This is implemented by the evaluation function pointed by
+the symbol class descriptor.
+
+It is generally adequate to use the default 
+function <generic_eval()> which returns the object itself.
+All Lush objects (except the symbols) use this default function.
+
+
+#? at *mydata_listeval (at *p,at *q)
+
+This function returns the result of the evaluation of a list <q>
+whose first member evaluates to object <p>.
+For instance the evaluation of a list whose first member is a
+function returns the result of the function call. 
+This is implemented by the list evaluation function pointed to
+by the function class.
+
+It is generally adequate to use the default 
+function <generic_listeval()> which displays an error message.
+All Lush objects (except functions and matrices) use this 
+default function.
+
+
+
+#? * Serialization
+
+The serialization is the process of converting a Lush object
+to (or from) a sequence of bytes. This conversion happens
+automatically when you call the Lush functions <bwrite> or <bread>.  
+New object types are serialized by means of the serialization 
+function defined by the class. 
+
+The object serialization is handled by function
+<mydata_serialize> pointed by the class descriptor structure.
+Serialization however is an optional feature. Specifying
+the default serialization function pointer <generic_serialize> 
+will simply cause an error if you attempt to write an object 
+of this class.
+.IP
+Writing a Lush object to a file consists in writing all
+specific information held by the object, including all Lush
+objects pointed to by this object. Circular references therefore
+must be detected and handled properly. This process
+requires several passes over the objects being written.
+.IP
+Reading a Lush object from a file sets similar problems.
+Circular references must be restored properly.
+.PP
+Although the serialization process is quite complex, 
+powerful utility functions, named <serialize_xxx> 
+help writing straightforward serialization functions.
+All serialization functions take an argument <code>
+that indicates which pass of the serialization process
+is active. All utility functions know how to handle
+elementary data types during each pass.
+
+
+
+
+#? void mydata_serialize(at **p, int code)
+
+This function is called to convert a Lush object 
+to (or from) a sequence of bytes. The responsibilities of 
+the serialization function depends on the value of integer <code>. 
+.IP
+When code is <SRZ_READ>, the serialization function
+must create an instance of the class and initialize
+the <at*> variable pointed to by <p> with a pointer
+to this object.
+.IP
+Regardless of the value of <code>, the serialization
+function must call once the appropriate <serialize_xxx> function
+on all fields that must be saved. The sequence of calls
+must be independent of the value of <code>.
+.PP
+Here is an example of serialization function.
+for the class <MYDATA> proposed above as an example.
+The functions <serialize_xxx> are described later
+in this section.
+.VP
+void mydata_serialize(at **p, int code)
+{
+  struct mydata *md;
+  /* Create object when <code> is <SRZ_READ> */
+  if (code == SRZ_READ) 
+  {
+    if (! (md = malloc(sizeof(struct mydata))) )
+      error(NIL,"Out of memory", NIL);
+    memset(md, 0, sizeof(struct mydata));
+    *p = new_extern(&mydata_class, md);
+  }
+  /* Obtain a pointer to the object */
+  md = (*p)->Object;
+  /* Call serialization function on all members */
+  serialize_atstar(&md->pl, code);
+  serialize_atstar(&md->pr, code);
+  serialize_string(&md->s, code, -1);
+  serialize_double(&md->d, code);
+  serialize_int(&md->i, code);
+}
+.PP
+The memory allocated for an object depends sometimes
+on the values stored in the object. The memory allocated
+for a vector of <at> objects, for instance, depends
+on the size of the vector. It is perfectly legal to
+read the vector size before allocating memory for the 
+vector data. You must make sure however that the 
+sequence of calls to functions <serialize_xxx> will not
+depend on the value of <code>.
+.VP
+void vector_serialize(at **p, int code)
+{
+  int i;
+  struct vector *v;
+  if (code == SRZ_READ)
+  {
+    /* Create vector when code is SRZ_READ */
+    int nelem, memsize;
+    serialize_int(&nelem, code);
+    memsize = sizeof(struct vector) + size * sizeof(at*);
+    if (! (v = malloc(memsize)) )
+      error(NIL,"Out of memory",NIL);
+    memset(v, 0, memsize);
+    v->nelem = nelem;
+    *p = new_extern(&vector_class, v);
+  }
+  else
+  {
+    /* Catch up with sequence of calls to <serialize_xxx> */
+    v = (*p)->Object;
+    serialize_int(&v->nelem, code);
+  }
+  /* Serialize the vector elements */
+  for (i=0; i<v->nelem; i++)
+    serialize_atstar(&v->vec[i], code);
+  }
+
+
+#? void serialize_char(char *data, int code)
+
+This function perform the serialization of a variable of
+type <char>.
+.IP
+When <code> is <SRZ_WRITE>, the character pointed by 
+argument <data> is encoded and written to the output file.
+.IP
+When <code> is <SRZ_READ>, the character variable
+pointed by argument <data> is read from the input file.
+.IP
+This function ignores all other values of argument <code>.
+
+#? void serialize_short(short int *data, int code)
+
+This function perform the serialization of a variable of
+type <short>.
+.IP
+When <code> is <SRZ_WRITE>, the short integer pointed by 
+argument <data> is encoded and written to the output file.
+.IP
+When <code> is <SRZ_READ>, the short integer variable
+pointed by argument <data> is read from the input file.
+.IP
+This function ignores all other values of argument <code>.
+
+#? void serialize_int(int *data, int code)
+
+This function perform the serialization of a variable of
+type <int>.
+.IP
+When <code> is <SRZ_WRITE>, the integer pointed by 
+argument <data> is encoded and written to the output file.
+.IP
+When <code> is <SRZ_READ>, the integer variable
+pointed by argument <data> is read from the input file.
+.IP
+This function ignores all other values of argument <code>.
+
+#? void serialize_float(float *data, int code)
+
+This function perform the serialization of a variable of
+type <float>.
+.IP
+When <code> is <SRZ_WRITE>, 
+the single precision floating point number 
+pointed by argument <data> is encoded and 
+written to the output file.
+.IP
+When <code> is <SRZ_READ>, 
+the single precision floating point variable
+pointed by argument <data> is read from the input file.
+.IP
+This function ignores all other values of argument <code>.
+
+#? void serialize_double(double *data, int code)
+
+This function perform the serialization of a variable of
+type <double>.
+.IP
+When <code> is <SRZ_WRITE>, 
+the double precision floating point number 
+pointed by argument <data> is encoded and 
+written to the output file.
+.IP
+When <code> is <SRZ_READ>, 
+the double precision floating point variable
+pointed by argument <data> is read from the input file.
+.IP
+This function ignores all other values of argument <code>.
+
+
+#? void serialize_string(char **data, int code, int maxlen)
+
+This function perform the serialization of a 
+zero terminated character string.
+.IP
+When <code> is <SRZ_WRITE>, 
+the zero terminated character string identified by the
+<char*> variable pointed by argument <data> is
+encoded and written to the output file.
+The value of argument <maxlen> is ignored.
+.IP
+When <code> is <SRZ_READ>, a zero terminated 
+character string is read from the input file.  
+
+If argument <maxlen> is negative, this string
+is copied into a memory buffer allocated with <malloc>.
+A pointer is stored into the <char*> variable
+pointed by argument <data>. 
+
+If argument <maxlen> is positive, an error is signaled if
+the string length exceeds <maxlen> character. The string
+is then copied into the memory buffer identified
+by the <char*> variable pointed by argument <data>. 
+.IP
+This function ignores all other values of argument <code>.
+
+
+#? int  serialize_atstar(at **data, int code)
+
+This function perform the serialization of a 
+zero terminated character string.
+.IP
+When <code> is <SRZ_SETFL> or <SRZ_CLRFL>
+function <serialize_atstar> cooperates with the 
+Lush kernel to identify circular references in the set of 
+objects being serialized.
+.IP
+When <code> is <SRZ_WRITE>, 
+function <serialize_atstar> writes a binary representation
+of the lisp object identified by the <at*> variable pointed
+by argument <data>. This binary representation may be
+an explicit description of the object contents or just
+a reference to an already saved object.
+.IP
+When <code> is <SRZ_READ>,
+function <serialize_atstar> reads the binary representation
+of a lisp object on the input file. 
+
+If this binary representation is an explicit description or 
+a reference of an already read object, function <serialize_atstar>
+will store a pointer to this object into the <at*> variable pointed
+by argument <data> and return <0>.
+
+This binary representation however may be a reference to an object
+that has not been read yet. Function <serialize_atstar> will record
+the address of the <at*> variable pointed to by argument <data> and
+return <1>.  The serialization routines will update this <at*> variable
+after reading the referenced object.
+.PP
+Unlike the other <serialize_xxx> functions, 
+calling function <serialize_atstar> with <code> equal to <SRZ_READ>
+does not ensure that the <at*> variable pointed by argument <data>
+will be a valid Lush object when the function returns.
+
+It is therefore forbidden to perform any action that may require
+that the <at*> pointers refer to valid Lush objects. 
+Special programming techniques are sometimes necessary:
+
+A Lush hash table object, for instance, records a collection
+of associations between keys and values. A hashing function
+computes a numerical quantity (named hash code) using the 
+information associated with each key. This numerical quantity 
+is used to decide where to store the association information in 
+the hash table data structure.  Since the keys are arbitrary 
+Lush objects, the hash table serialization function
+process them using <serialize_atstar>. When reading a hash table object
+from the disk, there is no way to compute the hash code within the 
+serialization function. Associations are stored into random locations.
+A flag however indicates that the hash table must be reorganized. 
+When a hash table function notices this flags, it recomputes all 
+hash codes and moves all associations to the location corresponding 
+to their hash codes.
+
+
+
+#? * Comparisons
+
+The logical comparison of two objects are handled by function
+<mydata_compare> pointed by the class descriptor structure.
+Equality tests are sometimes expedited using the hashing function
+<mydata_hash> pointed by the class descriptor structure.
+
+You may defined these two function as explained below.
+You can also use the default function pointers 
+<generic_compare> and <generic_hash> when initializing
+the class descriptor structure. These default pointer
+will just compare the object addresses in memory (physical equality).
+
+
+#? int mydata_compare(at *p, at *q, int order)
+
+The comparison function defined by the class descriptor is
+called whenever the Lush user performs a logical comparison
+of two instances of this class. 
+This function returns an integer representing the result 
+of the comparison of <p> and <q>.
+.IP
+When argument <order> is non zero, this function must
+return <-1> if <p> is less than <q>, <+1> if <p> is 
+greater than <q>, and <0> if <p> is (logically) equal to <q>. 
+.IP
+When argument <order> is zero, this function must return 
+<0> is <p> is logically equal to <q> and must return a non zero
+value otherwise.
+.PP
+It is not always possible to define an adequate order relation.
+There is no universaly accepted order relation for complex numbers,
+for instance. In such a case, function <mydata_compare> must signal
+an error when argument <order> is non zero.
+
+Example:
+.VP
+int mydata_compare(at *p, at *q, int order)
+{
+   struct mydata *mdp = p->Object;
+   struct mydata *mdq = q->Object;
+   /* Cannot perform ordering on these objects */
+   if (order)  
+     error(NIL,"Cannot rank objects of class |MYDATA|",NIL);
+   /* Compare objects <p> and <q> */
+   if (! eq_test(mdp->pl, mdq->pl)) return 1;
+   if (! eq_test(mdp->pr, mdq->pr)) return 1;
+   if (strcmp(mdp->s, mdq->s))      return 1;
+   if (mdp->d != mdq->d)            return 1;
+   if (mdp->i != mdq->i)            return 1;
+   /* Objects <p> and <q> are logically equal */
+   return 0;
+}
+
+
+
+
+#? unsigned long mydata_hash(at *p)
+
+The hashing function defined by a class descriptor
+is called whenever an instance of this class is used
+as a hash table key.
+This function must return a long integer number, named hash code,
+depending on the data represented by the object <p>.
+.IP
+Function <mydata_hash> must return the same hash code when called
+on two objects for which function <mydata_compare> returns <0>.
+.IP
+The best performance is achieved when function <mydata_hash>,
+as often as possible, returns different hash code for objects
+that are considered as different by function <mydata_compare>.
+.PP
+Function <mydata_hash> can use the utility functions
+<hash_value> and <hash_pointer> described later in this
+section.
+
+Example:
+.VP
+unsigned long mydata_hash(at *p)
+{  
+   char *s;
+   unsigned long x = 0;
+   struct mydata *md = p->Object;
+   s = md->s;
+   while (s && *s)
+     x = (x<<3) ^ (*s++);
+   x = x ^ hash_value(md->pl);
+   x = x ^ hash_value(md->pr);
+   x = (x<<3) ^ md->i ^ *(unsigned long*)&(md->d);
+   return x;
+}
+.PP
+It is particulary important that functions 
+<mydata_hash> and <mydata_compare>
+implement the same concept of logical equality.
+
+#? unsigned long hash_value(at *p)
+
+This function returns a hash code for the Lush object <p>.
+This function will return the same hash code when
+called on two logically equal objects (as tested by the Lush function <=>.)
+
+#? unsigned long hash_pointer(at *p)
+
+This function returns a hash code for the Lush object <p>.
+This function will return the same hash code when
+called on two physically equal objects (as tested by the Lush function <==>.)
+
+
+
+
+#? ** Creation Function Definition
+
+Then, you must define a C function which returns a new instance
+of the new class of Lush object.
+This function must allocate and initialize your data structure
+and return a Lush object created by the function <new_extern()>.
+.VP
+at *new_mydata(at *lp, at *rp, char *s, double d, int i)
+{
+ struct mydata *md;
+ /* Allocate */
+ if (! (md = malloc(sizeof(struct md)) ))
+   error(NIL,"no memory",NIL);
+ /* Initialize */
+ md->lp = lp; LOCK(lp);
+ md->rp = rp; LOCK(rp);
+ md->s = strdup(s);
+ md->d = d;
+ md->i = i;
+ /* Return <at*> pointer */
+ return new_extern( &mydata_class, md );
+}
+.PP
+You must also write an interface function for calling this 
+function as a Lush primitive.
+.VP
+DX(xnew_mydata)
+{
+ ALL_ARGS_EVAL;
+ ARG_NUMBER(5);
+ return new_mydata(APOINTER(1), APOINTER(2), 
+                   ASTRING(3), AREAL(4), AINTEGER(5));
+}
+.PP
+
+
+#? ** User Defined Classes Declaration
+
+During the initialization process, you must declare the new class
+by calling function <class_define()> and you must declare the 
+creation primitive by calling function <dx_define()>.
+.VP
+void init_myfile()
+{
+ class_define("MYDATA",&mydata_class,NIL);
+ dx_define("new_mydata", xnew_mydata);
+
+}
+.PP
+Your user defined class is useless unless you define
+other primitive functions that process the data 
+represented by your new object type.
+
+You can define these functions as usual via the DX or DY conventions.
+You can check that a Lush object <p> belongs to your new object class
+using the usual predicate for external objects:
+.VP
+EXTERNP(p, &mydata_class)
+.PP
+You can then access your data structure through pointer <p->Object>:
+.VP
+((struct mydata*)(p->Object))
+
+
+
+#? **** TL/Open Examples
+
+The directory <"<lushdir>/open/examples"> contains three
+TL/Open example that illustrate various techniques.
+
+
+#? *** String Capitalization
+.SEE Interfacing a C Function to Lush.
+
+The first example is the string capitalization function already 
+described in chapter ``Interfacing a C Function to Lush''.  This 
+example is located in directory <"<lushdir>/open/examples/capnth">. 
+This directory contains the following files:
+.IP
+File <"user_dll.c"> contains the function <capitalize_nth>
+described in chapter ``Interfacing a C Function to Lush''.
+Please refer to this chapter for detailled comments.
+.IP
+File <"tlopen.h"> is the main TL/Open header file.
+This file includes the appropriate TL/Open headers and libraries.
+Under Windows, you may have to edit the directory names
+in this file.
+.IP
+File <"capnth.lsh"> contains Lush code that loads the TL/Open extension, 
+provides documentation for the new function and runs a few tests.
+This file is commented later in this section.
+.IP
+File <"readme.txt"> provides information for compiling the TL/Open 
+extension under your operating system. The directory typically
+contains other files required by the compilation environment.
+
+
+#? ** File "capnth/capnth.lsh"
+.SEE Installing a TL/Open Extension as a Package.
+.SEE Adding Help.
+
+We suggest that all Lush extension should come with a 
+small Lush file. Loading file should perform several 
+valuable tasks:
+.IP
+Searching and loading the TL/Open extension.
+.IP
+Documenting the primitive functions implemented by 
+the TL/Open extension. The Lush file can contain 
+special comments that will be integrates in the
+online documentation system.
+.IP
+Testing that the new primitives are working properly.
+This feature is specially valuable during the 
+development of the TL/Open extension.
+.IP
+Possibly provinding additional functions that are more
+conveniently written using the Lush language.
+.PP
+File <capnth.lsh> illustrates this concept.
+The user of the string capitalization extension therefore
+only needs to load file <capnth.lsh>. This operation searches
+and loads the extension, incorporate some documentation 
+into the Lush online documentation, and finally performs 
+a few tests.
+
+The first lines of file <capnth.lsh> are reproduced below.
+They search and load a TL/Open extension whose
+name matches the name of the current Lush file.
+You can copy these lines verbatim into other files.
+.VP
+(let* ((here (dirname file-being-loaded))
+       (base (basename file-being-loaded "sn")) )
+  ;; Search along path
+  (let ((oldpath (path)))
+    (path (concat-fname here)
+	  (concat-fname here "Debug")
+	  (concat-fname here "Release") 
+	  (concat-fname lushdir "bin") )
+    (setq here (filepath base ".so|.sl|.dll"))
+    (apply path oldpath ) )
+  ;; Go
+  (when ~here 
+    (error 'mod-load "TL/Open extension not found" base) )
+  (when winlushp 
+    (setq here (upcase here)) )
+  (when (not (member here (mod-list)))
+    (printf " [+%s]\n" base)
+    (mod-load here) ) )
+
+
+#? *** Complex Numbers
+.SEE User Defined Classes.
+
+The complex number example illustrates more advanced techniques.
+Complex numbers are introduced as a TL/Open user defined class,
+as described by section ``User Defined Classes''.
+These new numbers are first class objects in Lush.
+You can type a complex number just as it is printed.
+You can use the usual operators (eg. <+>, <->, etc.)
+on complex numbers.
+
+This example is located in <"<lushdir>/open/examples/complex">. 
+This directory contains the following files:
+.IP
+File <"user_dll.c"> defines the new complex class and 
+provides a couple of functions working on complex numbers.
+.IP
+File <"tlopen.h"> is the main TL/Open header file.
+This file includes the appropriate TL/Open headers and libraries.
+Under Windows, you may have to edit the directory names
+in this file.
+.IP
+File <"complex.lsh"> loads the TL/Open extension, 
+defines a macro-character for directly typing complex
+numbers, override the usual operators with complex aware
+functions, define additional complex functions,
+provide some documentation and run a few tests.
+.IP
+File <"readme.txt"> provides information for compiling the TL/Open 
+extension under your operating system. The directory typically
+contains other files required by the compilation environment.
+.PP
+The following sections give a brief overview of these files.
+Extensive comments can be found in the files themselves.
+
+
+#? ** File "complex/user_dll.c"
+.SEE User Defined Classes.
+
+
+File <user_dll.c> is organized in six sections:
+
+.IP
+Section ``Header Section'' contains the traditional TL/Open
+preprocessor directives that include the master TL/Open
+include file and specify the TL/Open library.
+
+.IP
+Section ``Declarations'' first declares the C structure <COMPLEX>.
+Lush complex numbers are represented, either as a regular Lush
+number (when the imaginary part is zero), or as an external
+object pointing to an instance of this C structure
+(when the imaginary part is non zero).
+
+This section also defines and initializes a variable 
+names <complex_alloc>. This variable represents a pool
+of preallocated structures managed by the Lush fast 
+memory allocation routines <allocate> and <deallocate>.
+This system is just a fast alternative to the usual
+memory allocation functions <malloc> and <free>.
+
+.IP
+Section ``Class Definition'' defines the class structure
+as explained in section ``User Defined Classes''.
+Function <complex_name> in particular defines the 
+textual representation of complex numbers "#{ <real>, <imag> }".
+
+.IP
+Section ``Utilities'' defines a few functions that will
+be useful in the definition of the primitives.
+
+Function <new_complex> returns a Lush object representing
+the complex number specified by its argument. If the
+imaginary part is zero, this function returns a regular 
+Lush number. Otherwise, this function creates an instance 
+of class <complex_class>.
+
+Function <get_complex> takes either 
+a Lush regular number or an instance of class <complex_class>. 
+It returns the real and the imaginary part of this number.
+
+Function <polar_to_cartesian> and <cartesian_to_polar>
+perform the conversion between the cartesian and the
+polar representation of a complex number. This is used
+for implementing transcendental functions.
+
+.IP
+Section ``Primitives'' implement various primitives
+for handling complex numbers. You can find a complete
+documentation of these primitives in file <"complex.lsh">.
+
+This section defines in particular a number of operators
+working on complex numbers (eg. <complex+>, <complex->, etc.)
+The syntax of these operators is compatible with the syntax
+of the usual Lush operators (eg. <+>, <->, etc.). 
+File <"complex.lsh"> will redefine the usual operator as
+calls to these new operators. This redefinition allows
+the use of regular operators with complex numbers.
+
+.IP
+Finally the ``Initialization Section'' contains the
+usual function <init_user_dll>. This function declares
+the new class and the new primitives to the Lush kernel. 
+
+
+#? ** File "complex/complex.lsh"
+.SEE TL/Open Example: File "capnth/capnth.lsh".
+.SEE Adding Help.
+.SEE (dmc <symb> . <body>)
+.SEE (unlock-symbol <s1> ... <sn>)
+.SEE (lock-symbol <s1> ... <sn>)
+
+As explained with the previous example,
+the user of the complex number extension
+only needs to load file <capnth.lsh>.
+The bulk of the file <complex.lsh> consists of 
+the documentation of the new complex number functions.
+This feature relies heavily on the Lush online help 
+system.
+
+Besides providing this documentation,
+file <complex.lsh> performs the following tasks:
+
+.IP
+The first lines of this file are similar to the first
+lines of file <capnth.lsh>. These lines locate and load
+a TL/Open extension whose name match the filename.
+
+.IP
+A call to function <dmc> then defines macro-character <#{>
+This macro-character allows the user to directly type a
+complex number as it would be printed (eg. <#{2,1}>).
+Note: This technique requires that the first letters of the
+textual representation are a legal macro-character.
+
+.IP
+A number of simple functions are conveniently as Lush functions. 
+These functions are the complex number predicate <complexp>,
+the conjugation <cconj> and a number of transcendental
+functions derived from functions <clog> and <cexp>.
+
+.IP
+Most complex number functions (defined in C or in Lush)
+come with a simple testing code. This testing code
+is very helpful during the development stage. 
+Successfully loading file <complex.lsh> is a good indication
+that the extension is working adequately.
+
+.IP
+The value of the traditional operator symbols 
+(eg. <+>, <->, etc.) are saved into new variables 
+(eg. <real+>, <real->, etc.).
+These operators are then replaced by their complex
+equivalent functions. Note that the traditional operator
+symbols are protected against accidental redefinition.
+We must use functions <unlock-symbol> and <lock-symbol>
+to redefine and reprotect them.
+
+.PP
+File <complex.lsh> is therefore an important part
+of the complex number package. This file
+actually plugs the new primitives into the
+core functions of the Lush interpreter. 
+The cooperation of files <user_dll.c> and <complex.lsh>
+accounts for the seemless integration of complex numbers
+into the Lush language.
+
+
+#? *** Numerical Recipes Interface
+
+This example is an interface with various mathematical 
+routines from the book ``Numerical Recipes in C'' 
+(Press & al., Cambridge University Press).
+The ``Numerical Recipes'' routines are neither very efficient
+nor exempt of bugs. Yet this collection
+of mathematical routines covers numerous topics, is widely
+available, and is conveniently documented.
+
+The example is located in directory 
+<"<lushdir>/open/examples/nr">. 
+Copyright restrictions however prevent us to
+distribute the Numerical Recipes code together 
+with TL/Open. 
+
+The compilation scripts provided
+with this example assume that you have copied
+a copy of the first edition of the Numerical Recipes 
+source files into directory 
+<"<lushdir>/open/examples/nr/recipes">. 
+.IP
+If you have access to the first edition of the 
+Numerical Recipes source files, you can copy these
+files into directory <"<lushdir>/open/examples/nr/recipes">
+and create the TL/Open extension. This process is
+documented by file <"<lushdir>/open/examples/nr/readme.txt">.
+.IP
+If you have the book ``Numerical Recipes in C'' and are
+interested by just a few routines, you can type the routines
+listed in the book and create a TL/Open interface
+using the techniques demonstrated in this example.
+.PP
+As usual, we provide a Lush file, named <"nr.lsh">,
+that loads the TL/Open extension and provides some
+documentation. This file also defines a function
+<nr-lusolve> for solving systems of linear equations.
+
+Most of the interface however is located in 
+file <"user_dll.c"> commented below. 
+This file contains a few utility 
+functions and about fifty DX interfaces for
+numerical routines.
+
+
+#? ** File "nr/user_dll.c"
+
+
+File <"nr/user_dll.c"> is composed of five parts.
+.IP
+The ``Header Section'' of file <"user_dll.c"> is slightly
+different from the usual TL/Open extension header section.
+.IP
+The ``NR Utility Routines'' section implements various 
+utility routines used by the Numerical Recipes routines. 
+.IP
+The ``TL Utility Routines'' section contains subroutines 
+used by some DX interface functions for parsing arguments.
+The ``Primitive"" section contains about fifty DX interface 
+functions for the Numerical Recipes routines. 
+.IP
+The ``Initialisation section'' simply declares the
+DX interfaces to the Lush kernel.
+
+
+#? * File "nr/user_dll.c": Header Section
+
+The ``Header Section'' of file <"user_dll.c"> is slightly
+different from the usual TL/Open extension header section.
+There are indeed a few conflicts between names defined by
+the Numerical Recipes library and names defined by Lush
+(eg. <matrix>, <imatrix>, <dmatrix>, <erf>, and <rank>.)
+
+When compiling a dynamically linkable TL/Open extension,
+the linker will resolve these names with the NR routine
+rather than the Lush routine.  Including the Lush header
+file would however define the prototype for the Lush routine
+and not the NR routine. 
+
+The solution implemented by file <"user_dll.c"> consists
+in redefining temporarily the conflicting names before
+the inclusion of the Lush header files.
+
+
+#? * File "nr/user_dll.c": NR Utility Routines
+
+The ``NR Utility Routines'' section implements various 
+utility routines usually provided by the Numerical Recipes 
+file <"nrutil.c">.
+
+The Numerical Recipes routines call function <nrerror> 
+whenever they detect an error condition. Our version of
+this function calls the usual Lush function <error>.
+
+We also redefine a number of routines for allocating
+temporary vectors and matrices. These routines are
+widely used by the Numerical Recipes routines.
+The new allocation routines call the Lush function <error>
+when an error is detected.
+
+#? * File "nr/user_dll.c": TL Utility Routines
+.SEE AFLT( int i )
+.SEE Locking Conventions.
+
+The ``TL Utility Routines'' section contains subroutines 
+that help writing DX interfaces for the Numerical Recipes 
+routines.
+.IP
+Function <at_to_float> checks that a Lush object is a number
+and returns this number as a floating point number.
+This function is quite similar to macro <AFLT(n)>,
+but takes an arbitrary lisp object as argument instead
+of implicitly referring to a DX argument.
+.IP
+Function <var_to_float> gets the value of a Lush symbol,
+checks that this value is a number and returns the number
+as a float.
+.IP
+The standard method for setting the value of a symbol
+is function <var_set(at *symb, at *value)>. This
+function complies with the usual locking conventions.
+Writing <var_set(symb, NEW_NUMBER(3))> is not allowed
+because the object created by expression <NEW_NUMBER(3)>
+is still locked.  We have therefore defined a function
+<var_set_unlock> that calls <var_set> and unlocks the
+argument. This function is useful to set a variable with
+a Lush object returned by a Lush function.
+.IP
+Function <nr1_to_lush_vector> is called when we need
+to create a one dimensional Lush matrix using the data
+held by a Numerical Recipes vector. This function
+creates a Lush matrix containing a copy of the
+contents of the NR vector.
+.IP
+Function <lush_vector_to_nr1> copies the contents
+of a contiguous 1D Lush matrix into a Numerical Recipes vector.
+The implementation relies on function <get_nr1_vector>.
+
+
+#? * File "nr/user_dll.c": Primitive Section
+.SEE Numerical Recipes Interface.
+
+The ``Primitive"" section contains about fifty DX 
+interface functions for the Numerical Recipes routines. 
+We comment here some of the techniques used 
+by these interface functions.
+
+.IP
+A number of Numerical Recipes routines (eg. <caldat>)
+return their results using function arguments pointing
+to simple variables.  The corresponding Lush primitives 
+(eg. <nr-caldat>) expect symbol names as argument.
+The results are stored into these symbols using 
+function <var_set> or <var_set_unlock>.
+
+.IP
+Most functions illustrate the use of the functions
+<get_nr1_vector> and <get_nr1_matrix> documented
+in section ``Numerical Recipes Interface''. These functions
+return a Numerical Recipes vector or matrix identifier
+that directly address the data held by a Lush matrix.
+
+.IP
+Some Numerical Recipes routines take function pointers
+as argument (eg. <brent>). Some functions call specific 
+functions provided by the user (eg. <sparse> calls 
+functions <asub> and <atsub>).  The corresponding
+Lush primitives take Lush functions as argument. 
+
+This result is achieved by passing small stub functions 
+to the Numerical Routines. These stub functions create a
+Lush list with the function arguments, and use function
+<apply> to call the Lush function identified by 
+a global static variable.
+
+You may notice that these stubs are declared using old
+style prototypes (often referred to as K&R in reference
+to the authors of the initial C language, Kernighan 
+and Richie).  This is required because the Numerical Recipes
+routines (1st edition) use K&R prototypes everywhere, and
+because ANSI protoyped functions and K&R prototyped functions
+often use different argument passing conventions.
+
+
+
+
+#? **** TL/Open Extensions Installation
+
+
+This chapter addresses the installation and the
+distribution of TL/Open extensions.
+There are two ways for installing and distributing a TL/Open
+extension. 
+.IP
+The simplest way consists in installing the extension
+as a package. A Lush user can then ``load the package''
+and use your TL/Open extension. This is the best choice
+for small projects.
+.IP
+On the other hand, your TL/Open extensions may
+change the nature of Lush to such an extend that you consider
+it as a separate application.  When the user runs your application,
+a script launches Lush, loads all extensions and all
+required libraries. Your program then takes control.
+
+
+#? *** TL/Open Extension Installation as a Package.
+.SEE TL/Open Example: File "capnth/capnth.lsh".
+.SEE TL/Open Example: File "complex/complex.lsh".
+
+Installing a TL/Open extension as a package is 
+certainly the best solution when the extension
+has a general purpose and is self contained.
+.IP
+The first component of a package is of course the 
+dynamic library (extension <".dll"> under Windows,
+extension <".so"> under Unix) that contains your C code.
+.IP
+The main component of a package however is a 
+Lush file (named <"<extension-name>.lsh">) that loads the 
+dynamic library and provides the required documentation 
+and support functions.  All examples presented
+in the previous chapter come with such a file
+and illustrate the appropriate techniques.
+.PP
+The recommended installation procedure consists in copying 
+both the dynamic library and the Lush file into directory
+<"<lushdir>/packages">. This simple procedure does not
+require complex installation scripts.
+
+Directory <"<lushdir>/packages"> is automatically
+searched whenever you call function <load>.
+
+The user of a package named <"linpack"> would just type:
+.VP
+? (load "linpack")
+.PP
+to load the package.
+This simple action will attach the dynamic library and
+add the corresponding documentation into the help system.
+
+
+
+#? *** TL/Open Extension Installation as an Application.
+
+Your TL/Open extensions and your Lush programs
+may change radically the purpose and the audience of Lush.
+Such a project is no longer an extension of Lush,
+but rather is a separate application based on Lush.
+
+This viewpoint change has several consequences:
+.IP
+You want to install your product in a separate directory.
+This includes the dynamic libraries (DLL or SO files) 
+as well as the required Lush files (SN files).
+.IP
+You want to deliver your product with an installation script.
+This script will locate Lush and make sure that the Lush search
+path will include both your directories and the Lush directories.
+.PP
+Lush provides two ways to reach that objective.
+These solutions differ by the extend left to the user
+for reading your Lush files.
+.IP
+The ``open'' solution gives a maximal access to your Lush files. 
+The resulting product is very close to Lush itself. It appears
+as a Lisp interpreter enriched with specialized primitives 
+and libraries. The neural network simulator SN28 is a typical
+example of this philosophy.
+.IP
+The ``closed'' solution does not give 
+access to the underlying Lisp interpreter. All Lush functions
+are stored in a binary dump file that is loaded during
+the startup procedure. The statistical forecasting tool TL/Prevision
+is a typical example of this philosophy.
+
+
+#? ** Installation of an "Open" Application Based on Lush
+
+An ``open'' product based on Lush should be installed
+in a directory replicating the organization of the Lush
+directories. In particular, you should setup a subdirectory
+<"lib"> containing the Lush files (SN files) and a directory
+<"bin"> containing the dynamic libraries (DLL or SO files)
+and shell scripts.
+
+The user lauches your application using either a shell script
+(under Unix) or an item of the start menu (under Windows).
+This operation executes the following command:
+.VP
+<lushdir>/bin/winlush  <yourdir>/lib/stdenv.lsh
+.PP
+where <lushdir> is the Lush root directory and <yourdir> is
+the directory where your application is installed.
+
+File <"<yourdir>/lib/stdenv.lsh"> should be directly derived 
+from file <"<lushdir>/lib/stdenv.lsh">. This file must however 
+adjust the file search paths and start your application. 
+
+Here is a possible Lush code for this adjustment:
+This code stores the directory name of your application 
+into variable <mydir> and adds your <"lib"> directory in 
+the file search path. It defines then variables 
+<help-dir-list> and <help-book-list> that specify the 
+directories searched for help files and the
+list of precompiled help books.
+.VP
+;; Locate application directory.
+(setq mydir (dirname (dirname file-being-loaded)))
+
+;; Add application lib directory to file search path.
+(addpath (concat-fname mydir "lib"))
+
+;; Add application help directory to help file search path.
+(setq help-dir-list 
+  (list (concat-fname lushdir "help") 
+        (concat-fname mydir "help") ) )
+
+;; Define relevant help books.
+(setq help-book-list 
+  (list "lush.hlp" "ogre.hlp" "open.hlp" 
+        "myapp.hlp" "mytool.lsh" ) )
+
+
+#? ** Installation of a "Closed" Application Based on Lush
+
+.SEE Lush Runtime.
+.SEE (dump <fname> [<exec>])
+
+A ``closed'' product based on Lush should be installed
+in a directory hierarchy distinct from the Lush directories.
+This hierarchy should at least contain the required dynamic 
+library files (DLL or SO files) as well as a dump file
+created with function <dump>.
+
+The user lauches your application using either a shell script
+(under Unix) or an item of the start menu (under Windows).
+This operation executes the following command:
+.VP
+<lushdir>/bin/winlush @<yourdir>/myapp.dump
+.PP
+where <lushdir> is the Lush root directory and <yourdir> is
+the directory where your application is installed. 
+
+This command starts Lush and loads the dump file <"myapp.dump">
+that you have prepared using the command <dump>.
+During this process, the expression specified by the 
+second argument of command <dump> is executed. 
+This expression should load all required dynamic libraries
+(DLL or SO files).
+
+Here is a possible invocation of the <dump> command.
+The executable expression code stores the directory
+name of your application into variable <mydir> and loads
+the dynamic library <myapp.dll>.
+.VP
+(dump "myapp.dump"
+      '(progn
+          (setq mydir (dirname file-being-loaded))
+          (mod-load (concat-fname mydir "myapp.dll")) ) )
+.PP
+The Lush interpreter then restores the state of the session
+saved in the dump file. Function <startup> is then called.
+This function should define the file search paths according
+to your needs, possibly initialize the ogre library, and
+finally run your application.
+
+
+#? ** Installation Script Considerations
+
+The two proposed solutions for installing a Lush based
+application share a common quality. There is no need
+to specify which directories contain Lush or your application
+except in the command that launches the application.
+Installation problems however are radically different 
+under Unix and Windows. 
+
+.IP
+Installation scripts under Unix are usually written using the 
+Bourne shell. The directories used by both Lush and your 
+application can be provided as arguments to the installation 
+command.  These directory names should be used to generate
+the shell script that launches your application.
+
+.IP
+Installation scripts under Windows are subject to more
+stringent requirements.  Popular tools are available to
+design installation programs. The tool 
+``InstallShield SDK (tm)'', for instance, is an
+installation scripting language distributed for free
+with the Visual C++ CDROM.
+
+The tool usually provides a dialog window where the user
+can specify where the application should be installed.
+The installation program must however find by itself 
+where Lush has been installed. This information is used
+to create start menu entries that launch your application.
+
+This information is available in the Windows registry.
+The complete installation path of WinLush is available 
+by querying the following registry key:
+.VP
+   [HKEY_LOCAL_MACHINE]\Software\Neuristique\WinLush\Path
+.PP
+All installation scripting tools provide ways to 
+examine the registry. You can also manually explore the 
+Windows registry using the program <"regedit">
+usually located in the <"Windows"> directory.
+
+
+#? **** Conclusion
+
+Both Lush and TL/Open have been heavily used 
+as a convenient development platform
+for complex numerical applications. 
+This experience makes us confident that Lush and TL/Open 
+make a fast and robust tool for developping and debugging 
+such applications. 
+
+Let us finish this TL/Open documentation with a few
+good programming suggestions. 
+.IP
+Rather than aiming at the maximal performance,
+choose the best compromise between performance 
+and simplicity.  This is the price of reusable code.
+.IP
+Take time to decide which functions should be implemented
+in C and which functions are best implemented in Lush.
+The first one are very fast, but are difficult to modify.
+The second ones are slower, but are very easy to modify.
+.IP
+Write the online help before implementing the functions.
+You will discover that describing your ideas to other people
+is not obvious. Writing the online help will force you
+to select a conceptually clear architecture for your program.
+.IP
+Test your primitives as soon as you write them.
+The Lush interpreter makes this very easy: 
+just load your module and try your primitives.
+In particular, you should test your primitives
+for overlocks and underlocks as explained in this document.

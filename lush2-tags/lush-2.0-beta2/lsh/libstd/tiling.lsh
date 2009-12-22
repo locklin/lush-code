@@ -1,0 +1,354 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Organizing multiple windows with tilings
+;; A tiling is a partition of the screen area into rectangular
+;; regions, called 'slots'. The <tile> and <tile-at> command place
+;; windows on the screen in 'slots', according to the current tiling.
+;; Slots are numbered. For a 3x4 tiling, for example, the slots are
+;; arranged like this:
+;; {<pre>
+;;    ---------------------
+;;    |  1 |  2 |  3 |  4 |   
+;;    ---------------------
+;;    |  5 |  6 |  7 |  8 |   
+;;    ---------------------
+;;    |  9 | 10 | 11 | 12 |   
+;;    ---------------------
+;; </pre>}
+;; Command <new-tiling> creates a new tiling that covers the screen
+;; completely. New <new-tiling*> creates a new tiling 
+;; window in a tiling, and <make-current> changes the current
+;; tiling.
+;;
+;; If you find yourself using window tilings frequently, you 
+;; might want to add these lines to you <lushrc.lsh> file:
+;; {<code>
+;; (libload "tiling")
+;; (import all from tiling-)
+;; </code>}
+
+(defvar *current-tiling* ())
+
+(defvar *screen-size*
+  (let ((s (reading "| xdpyinfo | grep dimensions" (read-string))))
+    (mapcar val (regex-extract ".+ ([0-9]+)x([0-9]+) .+" s))))
+
+(defvar *tiling-decoration-width* 8)   ; window decoration width 
+(defvar *tiling-decoration-height* 25) ; and height per window
+(defvar *tiling-panel-width* 0)        ; width and height of
+(defvar *tiling-panel-height* 23)      ; desktop panel
+
+(defvar *tiling-resize-window* ())     ;
+
+;; some utilities
+
+(defun -find-free-slot (tl)
+  (let ((tl (idx-flatten tl)) (n 0))
+    (while (and (< n (length tl)) (tl n))
+      (incr n) )
+    (if (= n (length tl)) 
+	-1 
+      (tl n ())
+      n) ))
+
+(defun -calc-tiling-rects (n m)
+  (let* ((rects (atom-array (* n m)))
+	 (ew *tiling-decoration-width*) 
+	 (eh *tiling-decoration-height*)
+         (dw *tiling-panel-width*)
+         (dh *tiling-panel-height*)
+	 (pw (- (car *screen-size*) (* m ew) dw))
+	 (ph (- (cadr *screen-size*) (* n eh) dh))
+	 (width (/ m))
+	 (height (/ n)) )
+    (for* (k 0 (length rects))
+      (let* ((b (div k m)) (bottom (* height b))
+	     (l (mod k m)) (left (* width l)) )
+	(rects k (list
+		  (round (+ (* left pw) (* l ew) dw))
+		  (round (+ (* bottom ph) (* b eh) dh))
+		  (round (* width pw))
+		  (round (* height ph)) ))))
+    (let ((tl (atom-array n m)))
+      (putp tl 'rects rects)
+      tl)))
+
+(defun -calc-tiling-rects* (w h)
+  (let* ((ew *tiling-decoration-width*) 
+	 (eh *tiling-decoration-height*)
+         (dw *tiling-panel-width*)
+         (dh *tiling-panel-height*)
+         (w  (+ w ew))
+         (h  (+ h eh))
+         (sw (- (car *screen-size*) dw))
+         (sh (- (cadr *screen-size*) dh))
+         (m  (floor (/ sw w)))
+         (n  (floor (/ sh h))) )
+    (let ((*screen-size* (list (* m w) (* n h))))
+      (-calc-tiling-rects n m) )))
+
+
+#? (new-tiling <n> [<m>])
+;; {<see> tile, tile-at}
+;; Create a new empty tiling and return it.
+;;
+;; With one argument create a smallest possible tiling with at least
+;; <n> slots. With two arguments create an <n>x<m> tiling. If there
+;; is no current tiling, make the new tiling current.
+(defun new-tiling args
+  (let ((n -1) (m -1))
+    (selectq (length args)
+      (1 (setq n (floor (sqrt (car args)))  m (ceil (sqrt (car args))))
+	 (when (< (* m n) (car args))
+	   (setq n (ceil (sqrt (car args)))  m (ceil (sqrt (car args)))) ))
+      (2 (setq n (car args)  m (cadr args)))
+      (t (error "wrong number of arguments")) )
+    (let ((tl (-calc-tiling-rects n m)))
+      (when (null *current-tiling*)
+        (setq *current-tiling* tl) )
+      tl)))
+
+#? (new-tiling* <w> <h>)
+;; {<see> tile, tile-at}
+;; Create a new empty tiling for windows of width <w> and height <h>.
+
+#? (new-tiling* <win>)
+;; {<see> tile, tile-at}
+;; Create a new empty tiling for windows like <win> and return it.
+;;
+;; Create the biggest possible tiling for placing windows like <win>
+;; on the screen. If there is no current tiling, make the new tiling
+;; current.
+(defun new-tiling* args
+  (let ((w 0) (h 0))
+    (selectq (length args)
+      (1 (when (not (isa (car args) Window))
+           (error "not a window" win) )
+         (let ((window (car args))) (setq w (xsize)  h (ysize))) )
+      (2 (setq w (car args)  h (cadr args)))
+      (t (error "wrong number of arguments") ))
+    (let ((tl (-calc-tiling-rects* w h)))
+      (when (null *current-tiling*)
+        (setq *current-tiling* tl) )
+      tl)))
+
+
+#? ** Namespace tiling-
+;; The following commands are defined in namespace <tiling->.
+
+(in-namespace tiling-
+
+#? (tiling-tile <win> [<tl>])
+;; {<see> tile-at}
+;; Move window <win> to next free slot in tiling <tl>.
+
+#? (tiling-tile-at [<n> [<tl> [<win>]]])
+;; {<see> tile}
+;; Place window <win> in tiling <tl> at slot <n> and return the window.
+;; Hide <win> when <tiling> is not the current tiling and raise it otherwise.
+;; 
+;; When no window is given (or when <win> is <()>), create a new one. When no
+;; tiling is given (or when <tl> is <()>), use the current tiling. When no
+;; slot number is given (or when <n> is <()>), use the first free slot in 
+;; tiling. 
+;;
+;; <Tile-at> does not change the value of global <window>.
+(defun tile-at (&optional n tl win clear-slot)
+  (let ((tl* (if tl tl :*current-tiling*)) (rects ()))
+    (when (null tl*)
+      (error "there is no current tiling"))
+    (setq rects (getp tl* 'rects)  tl (idx-flatten tl*))
+    (assert rects)
+
+    (setq n (if n n (-find-free-slot tl)))
+    (when (< n 0)
+      (error "no free slots in tiling" tl))
+    (when (or (tl n)) 
+      (if clear-slot
+          (delete (tl n))
+        (error "slot already occupied" n)))
+    
+    (let ((window ())) ; protect global <window>
+      (setq win (if win win (apply new-window (rects n))))
+      (if (isa win Window)
+	  (tl n win)
+	(error "not a window" win))
+      (setq window win)
+      (if *tiling-resize-window*
+          (apply (gdriver-feature configure loose) t (rects n))
+        (let ((arg (list (car (rects n)) (cadr (rects n)) () ())))
+          (apply (gdriver-feature configure loose) t arg) ))
+      (when (<> tl* :*current-tiling*)
+        ((gdriver-feature #:hide loose)) ))
+    win))
+
+(defun tile (win &optional tl)
+  (let ((tl* (or tl *current-tiling*)))
+    (when (null tl*) (error "there is no current tiling"))
+    (let ((rects (getp tl* 'rects)) (tl ($- tl*)) (n 0))
+      (setq n (-find-free-slot tl))
+      (tile-at n tl* win) )))
+
+
+#? (tiling-tile-at! [<n> [<tl> [<win>]]])
+;; {<see> tile-at, tile}
+;; Similar to <tile-at>, but delete old window when slot <n> is occupied.
+(defmacro tile-at! (&optional n tl win)
+  `(tile-at ,n ,tl ,win t)
+  )
+
+#? (tiling-hide [<tl>])
+;; Iconify all windows in tiling <tl> and return <()>.
+;; When no tiling is given use default tiling.
+(defun hide (&optional tl)
+  (let ((tl (or tl :*current-tiling*)))
+    (when (null tl)
+      (error "there is no current tiling"))
+    (do ((win (idx-flatten tl)))
+      (when (or (win))
+	(let ((window (win))) 
+	  ((gdriver-feature #:hide loose)) ))))
+  ())
+
+#? (tiling-raise [<tl>])
+;; Place all windows in tiling <tl> on top and return <()>.
+;; When no tiling is given use default tiling.
+(defun raise (&optional tl)
+  (let* ((tl (or tl :*current-tiling*))
+	 (rects (getp tl 'rects)) )
+    (when (null tl)
+      (error "there is no current tiling"))
+    (do ((win (idx-flatten tl)) (rect rects))
+      (when (or (win))
+	(let ((window (win)))
+          (if *tiling-resize-window*
+              (apply (gdriver-feature configure loose) t (rect))
+            (let ((arg (list (car (rect)) (cadr (rect)) () ())))
+              (apply (gdriver-feature configure loose) t arg) ))))))
+  ())
+    
+#? (tiling-close <n> [<tl>])
+;; Close window in slot <n> of tiling <tl> and return <()>
+;; When no tiling is given use default tiling.
+
+#? (tiling-close all [<tl>])
+;; Close all windows in tiling <tl> and return <()>.
+;; When no tiling is given use default tiling.
+(df close (|_n_| &optional |_tl_|)
+  (let ((n (if (symbolp |_n_|) (if (= |_n_| 'all) -1 (eval |_n_|)) |_n_|))
+	(tl (or (eval |_tl_|) :*current-tiling*)) )
+    (when (not (numberp n))
+      (error "not a slot number" n))
+    (when tl
+      (when (> n (length ($- tl)))
+        (error "invalid slot number" n) )
+      (if (> n -1)
+          (delete (($- tl) n))
+        ;; close all
+        (do ((win ($- tl)))
+          (delete (win)) ))))
+  ())
+
+#? (tiling-make-current <tl>)
+;; Hide the current tiling, make <tl> current and raise it, return the
+;; old current tiling.
+(defun make-current (tl)
+  (if (== tl :*current-tiling*)
+      tl
+    (when :*current-tiling*
+      (hide :*current-tiling*))
+    (raise tl)
+    (prog1 :*current-tiling* 
+      (setq :*current-tiling* tl) )))
+
+#? (tiling-retile [<n> <m> [<tl>]])
+;; Reshape tiling <tl> to <n>x<m> and replace all windows to compactly
+;; fill the tiling. Return the reshaped tiling.
+;; 
+;; Note: If the number <n>*<m> of slots is reduced, there must remain enough
+;; slots for all the windows currently in <tl>.
+;; When no tiling is given, use the current tiling.
+(defun retile (&optional n m tl*)
+  (let* ((tl* (or tl* :*current-tiling*)) 
+         (new-rects (getp tl* 'rects)) )
+    (when (null tl*)
+      (error "there is no current tiling"))
+    (if m
+        (let ((tl2 (-calc-tiling-rects n m)))
+          (setq new-rects 'rects (getp tl2 'rects)) )
+      (setq n (idx-shape tl* 0)  m (idx-shape tl* 1)) )
+    
+    (let* ((count 0) (tl (idx-flatten tl*)) (remap (int-array (length tl))))
+      (array-clear remap -1)
+      (for* (i 0 (length tl)) 
+	(when (or (tl i)) (incr count)))
+      (when (> count (* n m))
+	(error "not enough slots in tiling of this shape" (list n m)) )
+      ;; replace windows
+      (for (i (- (length tl) 1) 0 -1)
+        (when (or (tl i))
+          (decr count)
+          (remap count i) ))
+      (for* (i 0 (length tl))
+        (if (> (remap i) -1)
+            (tl i (tl (remap i)))
+          (tl i ()) ))
+      ;; reshape
+      (when (> (* n m) (length tl))
+	(array-extend! tl 0 (* n m) ()) )
+      (when (< (* n m) (length tl))
+	(idx-trim! tl 0 0 (* n m)) )
+      (setq tl (idx-reshape tl (list n m)))
+      (putp tl 'rects new-rects)
+      (do ((win (idx-flatten tl)) (rect (getp tl 'rects)))
+        (when (or (win))
+          (let ((window (win)))
+            (if *tiling-resize-window*
+                (apply (gdriver-feature configure loose) () (rect))
+              (let ((arg (list (car (rect)) (cadr (rect)) () ())))
+                          (apply (gdriver-feature configure loose) () arg) )))))
+      (when (== tl* :*current-tiling*)
+        (raise (setq :*current-tiling* tl)) )
+      tl)))
+
+) ; namespace tiling-
+
+(defun -test-tiling ()
+  (in-namespace tiling-
+  (make-current (new-tiling 3 4))
+  (tile-at)
+  (tile-at)
+  (tile-at)
+  (tile-at)
+  (tile-at)
+  (delete (*current-tiling* 0 1))
+  (retile)
+  (retile 2 2)
+  (retile 2 8)
+  (retile 4 4)
+  (retile 3 4) ))
