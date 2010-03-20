@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nan.c,v 1.18 2009-04-22 23:00:21 leonb Exp $
+ * $Id: nan.c,v 1.19 2010-03-20 15:12:37 profshadoko Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -330,7 +330,7 @@ setup_fpu(int doINV, int doOFL)
   
 #define DO(c,f) mask=((c)?(mask|(f)):(mask&~(f)));
 
-#if defined(__i386__) || defined(__alpha__)
+#if defined(__i386__) || defined(__alpha__) || (defined(__sh__) && defined(__SH4__))
 #ifdef _FPU_MASK_IM
   DO(!doINV, _FPU_MASK_IM);
 #endif
