@@ -58,7 +58,7 @@ static void clear_storage(storage_t *st, size_t _)
 static void mark_storage(storage_t *st)
 {
    MM_MARK(st->backptr);
-   if (st->flags & STS_MANAGED)
+   if (st->flags&STS_MASK == STS_MANAGED)
       MM_MARK(st->data);
 }
 
@@ -971,7 +971,7 @@ void init_storage()
    dx_define("new-storage/managed", xnew_storage_managed);
    dx_define("new-storage/foreign", xnew_storage_foreign);
 #ifdef HAVE_MMAP
-   dx_define("new-storage-mmap",xnew_storage_mmap);
+   dx_define("new-storage/mmap",xnew_storage_mmap);
 #endif
    dx_define("storage-alloc",xstorage_alloc);
    dx_define("storage-realloc",xstorage_realloc);
