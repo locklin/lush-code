@@ -58,7 +58,7 @@ static void clear_storage(storage_t *st, size_t _)
 static void mark_storage(storage_t *st)
 {
    MM_MARK(st->backptr);
-   if (st->flags&STS_MASK == STS_MANAGED)
+   if ((st->flags&STS_MASK) == STS_MANAGED)
       MM_MARK(st->data);
 }
 
