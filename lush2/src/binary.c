@@ -840,10 +840,10 @@ static int local_write(at *p)
 
       } else {
          write_card8(TOK_MATRIX);
-         in_bwrite += save_matrix_len(arr);
+         in_bwrite += save_array_len(arr);
          if (arr->st->type == ST_GPTR)
             safe_error(NIL,"cannot save a gptr array", p);
-         save_matrix(arr, fout);
+         save_array(arr, fout);
          return 1;
       }
    }
@@ -1228,7 +1228,7 @@ again:
    
    case TOK_MATRIX:
    {
-      *pp = load_matrix(fin);
+      *pp = load_array(fin);
       return 0;
    }
    

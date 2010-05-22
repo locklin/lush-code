@@ -1760,14 +1760,14 @@ static void swap_buffer(char *b, int n, int m)
    }
 }
 
-/* -------- Saving a Matrix -------- */
+/* -------- Saving an array -------- */
 
 
-/* save_matrix_len(p)
- * returns the number of bytes written by a save_matrix!
+/* save_array_len(p)
+ * returns the number of bytes written by a save_array!
  */
 
-int save_matrix_len(index_t *ind)
+int save_array_len(index_t *ind)
 {
    size_t size, elsize;
    mode_check(ind, &size, &elsize);
@@ -1782,11 +1782,11 @@ int save_matrix_len(index_t *ind)
 
 
 /*
- * save_matrix(p,f) 
- * save_ascii_matrix(p,f)
+ * save_array(p,f) 
+ * save_array_text(p,f)
  */
 
-static void format_save_matrix(index_t *ind, FILE *f, bool with_header)
+static void format_save_array(index_t *ind, FILE *f, bool with_header)
 {
    /* validation */  
    compatible_p();
@@ -1830,52 +1830,56 @@ static void format_save_matrix(index_t *ind, FILE *f, bool with_header)
    test_file_error(f, errno);
 }
 
-void save_matrix(index_t *ind, FILE *f)
+void save_array(index_t *ind, FILE *f)
 {
-   format_save_matrix(ind, f, true);
+   format_save_array(ind, f, true);
 }
 
-void export_matrix(index_t *ind, FILE *f)
+void export_array(index_t *ind, FILE *f)
 {
-   format_save_matrix(ind, f, false);
+   format_save_array(ind, f, false);
 }
 
-DX(xsave_matrix)
+DX(xsave_array)
 {
    at *p, *ans;
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
-      p = OPEN_WRITE(ASTRING(2), "mat");
+      FILE *f = open_write(ASTRING(2), "mat"); // raises
+      save_array(AINDEX(1), f);
+      file_close(f);
       ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (WFILEP(p))
          RAISEFX("not a string or write descriptor", p);
+      save_array(AINDEX(1), Mptr(p));
       ans = p;
    }
-   save_matrix(AINDEX(1), Mptr(p));
    return ans;
 }
 
-DX(xexport_raw_matrix)
+DX(xexport_array)
 {
    at *p, *ans;
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
-      p = OPEN_WRITE(ASTRING(2), NULL);
+      FILE *f = open_write(ASTRING(2), NULL); // raises
+      export_array(AINDEX(1), f);
+      file_close(f);
       ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (WFILEP(p))
          RAISEFX("not a string or write descriptor", p);
+      export_array(AINDEX(1), Mptr(p));
       ans = p;
    }
-   export_matrix(AINDEX(1), Mptr(p));
    return ans;
 }
 
 
-static void format_save_ascii_matrix(index_t *ind, FILE *f, int mode)
+static void format_save_ascii_array(index_t *ind, FILE *f, int mode)
 {
    /* validation */  
    compatible_p();
@@ -1920,48 +1924,52 @@ static void format_save_ascii_matrix(index_t *ind, FILE *f, int mode)
    test_file_error(f, errno);
 }
 
-void save_ascii_matrix(index_t *ind, FILE *f)
+void save_array_text(index_t *ind, FILE *f)
 {
-   format_save_ascii_matrix(ind, f, (int)1);
+   format_save_ascii_array(ind, f, (int)1);
 }
 
-void export_ascii_matrix(index_t *ind, FILE *f)
+void export_array_text(index_t *ind, FILE *f)
 {
-   format_save_ascii_matrix(ind, f, (int)0);
+   format_save_ascii_array(ind, f, (int)0);
 }
 
-DX(xsave_ascii_matrix)
+DX(xsave_arrayOtext)
 {
    at *p, *ans;
    
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
-      p = OPEN_WRITE(ASTRING(2), NULL);
+      FILE *f = open_write(ASTRING(2), NULL); // raises
+      save_array_text(AINDEX(1), f);
+      file_close(f);
       ans = make_string(file_name);
    } else if ((p = APOINTER(2)) && WFILEP(p)) {
+      save_array_text(AINDEX(1), Mptr(p));
       ans = p;
    } else {
       error(NIL, "not a string or write descriptor", p);
   }
-   save_ascii_matrix(AINDEX(1), Mptr(p));
    return ans;
 }
 
-DX(xexport_text_matrix)
+DX(xexport_arrayOtext)
 {
    at *p, *ans;
    
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
-      p = OPEN_WRITE(ASTRING(2), "mat");
+      FILE *f = open_write(ASTRING(2), "mat"); // raises
+      export_array_text(AINDEX(1), f);
+      file_close(f);
       ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && WFILEP(p))
          error(NIL, "not a string or write descriptor", p);
+      export_array_text(AINDEX(1), Mptr(p));
       ans = p;
    }
-   export_ascii_matrix(AINDEX(1), Mptr(p));
    return ans;
 }
 
@@ -1971,27 +1979,24 @@ DX(xarray_export_tabular)
    
    ARG_NUMBER(2);
    if (ISSTRING(2)) {
-      p = OPEN_WRITE(ASTRING(2), "mat");
+      FILE *f = open_write(ASTRING(2), "mat"); // raises
+      format_save_ascii_array(AINDEX(1), f, 2);
+      file_close(f);
       ans = make_string(file_name);
    } else {
       p = APOINTER(2);
       ifn (p && WFILEP(p))
          error(NIL, "not a string or write descriptor", p);
+      format_save_ascii_array(AINDEX(1), Mptr(p), 2);
       ans = p;
    }
-   format_save_ascii_matrix(AINDEX(1), Mptr(p), 2);
    return ans;
 }
 
 
 /* -------- Loading a Matrix ------ */
 
-/*
- * import_raw_matrix(p,f,n) 
- * import_text_matrix(p,f)
- */
-
-void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
+void import_array(index_t *ind, FILE *f, size_t offset)
 {
    size_t size, elsize, rsize;
    int contiguous;
@@ -2042,7 +2047,7 @@ void import_raw_matrix(index_t *ind, FILE *f, size_t offset)
     }
 }
 
-DX(ximport_raw_matrix)
+DX(ximport_array)
 {
    size_t offset = 0;
    at *p;
@@ -2052,19 +2057,20 @@ DX(ximport_raw_matrix)
       ARG_NUMBER(2);
 
    if (ISSTRING(2)) {
-      p = OPEN_READ(ASTRING(2), NULL);
+      FILE *f = open_read(ASTRING(2), NULL); // raises
+      import_array(AINDEX(1),f,offset);
+      file_close(f);
    } else {
       p = APOINTER(2);
       ifn (p && RFILEP(p))
          error(NIL, "not a string or read file descriptor", p);
+      import_array(AINDEX(1),Mptr(p),offset);
    }
-   import_raw_matrix(AINDEX(1),Mptr(p),offset);
-   lush_delete(p); /* close file */
    return APOINTER(1);
 }
 
 
-void import_text_matrix(index_t *ind, FILE *f)
+void import_array_text(index_t *ind, FILE *f)
 {
    size_t size, elsize;
    real x;
@@ -2091,23 +2097,24 @@ void import_text_matrix(index_t *ind, FILE *f)
 }
 
 
-DX(ximport_text_matrix)
+DX(ximport_arrayOtext)
 {
    ARG_NUMBER(2);
    at *p;
    if (ISSTRING(2)) {
-      p = OPEN_READ(ASTRING(2), NULL);
+      FILE *f = open_read(ASTRING(2), NULL); // raises
+      import_array_text(AINDEX(1),f);
+      file_close(f);
    } else {
       p = APOINTER(2);
       ifn (p && RFILEP(p))
          error(NIL, "not a string or read descriptor", p);
+      import_array_text(AINDEX(1),Mptr(p));
    }
-   import_text_matrix(AINDEX(1),Mptr(p));
-   lush_delete(p); /* close file */
    return APOINTER(1);
 }
 
-static void load_matrix_header(FILE *f, int *magic_p, int *swap_p, shape_t *shp)
+static void load_array_header(FILE *f, int *magic_p, int *swap_p, shape_t *shp)
 {
    int swapflag = 0;
    int magic, ndim, i;
@@ -2209,7 +2216,7 @@ static void load_matrix_header(FILE *f, int *magic_p, int *swap_p, shape_t *shp)
 
 
 
-at *load_matrix(FILE *f)
+at *load_array(FILE *f)
 {
    int magic;
    shape_t shape;
@@ -2217,7 +2224,7 @@ at *load_matrix(FILE *f)
    index_t *ind;
 
    /* Header */
-   load_matrix_header(f, &magic, &swapflag, &shape);
+   load_array_header(f, &magic, &swapflag, &shape);
    /* Create */
    switch (magic) {
    case BINARY_MATRIX:
@@ -2246,9 +2253,9 @@ at *load_matrix(FILE *f)
    /* Import */
    if (shape.ndims >= 0) {
       if (magic==ASCII_MATRIX)
-         import_text_matrix(ind,f);
+         import_array_text(ind,f);
       else
-         import_raw_matrix(ind,f,0);
+         import_array(ind,f,0);
       /* Swap when needed */
       if (swapflag) {
          size_t size, elsize;
@@ -2260,33 +2267,36 @@ at *load_matrix(FILE *f)
    return ind->backptr;
 }
 
-DX(xload_matrix)
+DX(xload_array)
 {
    at *p, *ans;
    if (arg_number == 2) {
       ASYMBOL(1);
       if (ISSTRING(2)) {
-         p = OPEN_READ(ASTRING(2), "|.mat");
+	 FILE *f = open_read(ASTRING(2), "|.mat"); // raises
+	 ans = load_array(f);
+	 file_close(f);
       } else {
-      p = APOINTER(2);
-      ifn (p && RFILEP(p))
-         error(NIL, "not a string or read descriptor", p);
+	 p = APOINTER(2);
+	 ifn (p && RFILEP(p))
+	    error(NIL, "not a string or read descriptor", p);
+	 ans = load_array(Mptr(p));
       }
-      ans = load_matrix(Mptr(p));
       var_set(APOINTER(1), ans);
 
    } else {
       ARG_NUMBER(1);
       if (ISSTRING(1)) {
-         p = OPEN_READ(ASTRING(1), "|.mat");
+	 FILE *f = open_read(ASTRING(1), "|.mat");
+	 ans = load_array(f);
+	 file_close(f);
       } else {
          p = APOINTER(1);
          ifn (p && RFILEP(p))
             error(NIL, "not a string or read descriptor", p);
+	 ans = load_array(Mptr(p));
       }
-      ans = load_matrix(Mptr(p));
    }
-   lush_delete(p); /* close file */
    return ans;
 }
 
@@ -2297,7 +2307,7 @@ DX(xload_matrix)
 
 #ifdef HAVE_MMAP
 
-at *map_matrix(FILE *f)
+at *map_array(FILE *f)
 {
    int magic, swapflag;
 #ifdef HAVE_FTELLO
@@ -2308,7 +2318,7 @@ at *map_matrix(FILE *f)
 
    /* Header */
    shape_t shape;
-   load_matrix_header(f, &magic, &swapflag, &shape);
+   load_array_header(f, &magic, &swapflag, &shape);
    if (swapflag && magic!=BYTE_MATRIX && magic!=SHORT8_MATRIX)
       error(NIL,"cannot map this byteswapped matrix",NIL);
    /* Create storage */
@@ -2334,31 +2344,35 @@ at *map_matrix(FILE *f)
    return NEW_INDEX(st, &shape);
 }
 
-DX(xmap_matrix)
+DX(xmap_array)
 {
    at *p, *ans;
    
    if (arg_number == 2) {
       ASYMBOL(1);
       if (ISSTRING(2)) {
-         p = OPEN_READ(ASTRING(2), "|.mat");
+	 FILE *f = open_read(ASTRING(2), "|.mat");
+	 ans = map_array(f);
+	 file_close(f);
       } else {
          p = APOINTER(2);
          ifn (p && RFILEP(p))
             error(NIL, "not a string or read descriptor", p);
+	 ans = map_array(Mptr(p));
       }
-      ans = map_matrix(Mptr(p));
       var_set(APOINTER(1), ans);
    } else {
       ARG_NUMBER(1);
       if (ISSTRING(1)) {
-         p = OPEN_READ(ASTRING(1), "|.mat");
+	 FILE *f = open_read(ASTRING(1), "|.mat");
+	 ans = map_array(f);
+	 file_close(f);
       } else {
          p = APOINTER(1);
          ifn (p && RFILEP(p))
             error(NIL, "not a string or read descriptor", p);
+	 ans = map_array(Mptr(p));
       }
-      ans = map_matrix(Mptr(p));
    }
    return ans;
 }
@@ -3618,16 +3632,16 @@ void init_index(void)
    dx_define("as-uchar-array", xas_uchar_array);
 
    /* matrix files */
-   dx_define("save-matrix", xsave_matrix);
-   dx_define("save-ascii-matrix", xsave_ascii_matrix);
-   dx_define("export-raw-matrix", xexport_raw_matrix);
-   dx_define("export-text-matrix", xexport_text_matrix);
-   dx_define("import-raw-matrix", ximport_raw_matrix);
-   dx_define("import-text-matrix", ximport_text_matrix);
-   dx_define("load-matrix", xload_matrix);
+   dx_define("save-array", xsave_array);
+   dx_define("save-array/text", xsave_arrayOtext);
+   dx_define("export-array", xexport_array);
+   dx_define("export-array/text", xexport_arrayOtext);
+   dx_define("import-array", ximport_array);
+   dx_define("import-array/text", ximport_arrayOtext);
+   dx_define("load-array", xload_array);
    dx_define("array-export-tabular", xarray_export_tabular);
 #ifdef HAVE_MMAP
-   dx_define("map-matrix", xmap_matrix);
+   dx_define("map-array", xmap_array);
 #endif
 
 
