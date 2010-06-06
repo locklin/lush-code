@@ -105,6 +105,7 @@
 #define MIN_MANAGED     0x40000
 #define MIN_ROOTS       0x100
 #define MIN_STACK       0x1000
+#define MAX_STACK       0x10000
 #define MAX_VOLUME      (0x800000*sizeof(void *))    /* max volume threshold */
 #define MAX_BLOCKS      (150*sizeof(void *))
 #define NUM_TRANSFER    (PIPE_BUF/sizeof(void *))
@@ -832,10 +833,16 @@ static void collect_epilogue(void)
    assert(collect_in_progress);
 
    if (stack_overflowed2) {
-      /* only effective with synchronous collect */
-      stack_size *= 2;
-      debug("enlarging marking stack to %d\n", stack_size);
+      if (stack_size < MAX_STACK) {
+	 /* only effective with synchronous collect */
+	 stack_size *= 2;
+	 debug("enlarging marking stack to %d\n", stack_size);
+      }
       stack_overflowed2 = false;
+
+   } else if (stack_size > MIN_STACK) {
+      stack_size /= 2;
+      debug("shrinking marking stack to %d\n", stack_size);
    }
 
    marking_type = mt_undefined;

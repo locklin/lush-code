@@ -41,9 +41,9 @@ static void clear_at(at *a, size_t _)
 static void mark_at(at *a)
 {
    if (CONSP(a)) {
-      MM_MARK(Car(a));
       MM_MARK(Cdr(a));
-
+      MM_MARK(Car(a));
+ 
    } else if (Class(a)->managed)
       MM_MARK(Mptr(a));
 }
