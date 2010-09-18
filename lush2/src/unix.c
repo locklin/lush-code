@@ -1048,7 +1048,9 @@ void console_getline(char *prompt, char *buf, int size)
       return;
    if (feof(stdin))
       return;
-   fgets(buf,size-2,stdin);
+   errno = 0;
+   if (!fgets(buf,size-2,stdin))
+      fprintf(stderr, "*** Warning: %s\n", strerror(errno));
 }
 
 #endif

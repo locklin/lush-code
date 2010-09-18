@@ -1905,7 +1905,7 @@ static void format_save_ascii_array(index_t *ind, FILE *f, int mode)
       gptr base = IND_BASE(ind);
       begin_idx_aloop1(ind, off) {
          double x = (*getd)(base, off);
-         fprintf(f, "%10.5d\n", x);
+         fprintf(f, "%10.5f\n", x);
       } end_idx_aloop1(ind, off);
       FMODE_BINARY(f);
 
@@ -1914,7 +1914,7 @@ static void format_save_ascii_array(index_t *ind, FILE *f, int mode)
       gptr base = IND_BASE(ind);
       begin_idx_aloop1(ind, off) {
          double x = (*getd)(base, off);
-         fprintf(f, "%10.5d ", x);
+         fprintf(f, "%10.5f ", x);
          for (int i=0; i<d-1; i++)
             if ((off+1)%IND_MOD(ind, i)==0)
                fprintf(f, "\n");
