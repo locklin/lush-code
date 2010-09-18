@@ -1524,10 +1524,10 @@ index_t *array_copy(index_t *ind1, index_t *ind2)
 
    default:
    default_copy: {
-      flt (*getf)(gptr,size_t) = storage_getf[IND_STTYPE(ind1)];
-      void (*setf)(gptr,size_t,flt) = storage_setf[IND_STTYPE(ind2)];
+      double (*getd)(gptr,size_t) = storage_getd[IND_STTYPE(ind1)];
+      void (*setd)(gptr,size_t,double) = storage_setd[IND_STTYPE(ind2)];
       begin_idx_aloop2(ind1,ind2,p1,p2) {
-         (*setf)(IND_BASE(ind2), p2, (*getf)(IND_BASE(ind1), p1) );
+         (*setd)(IND_BASE(ind2), p2, (*getd)(IND_BASE(ind1), p1) );
       } end_idx_aloop2(ind1,ind2,p1,p2);
    }
    break;
@@ -1887,7 +1887,7 @@ static void format_save_ascii_array(index_t *ind, FILE *f, int mode)
       RAISEF("empty index", NIL);
 
    storage_type_t st = IND_STTYPE(ind);
-   flt (*getf)(gptr,size_t) = storage_getf[st];
+   double (*getd)(gptr,size_t) = storage_getd[st];
 
    /* header */
    FMODE_TEXT(f);
@@ -1904,8 +1904,8 @@ static void format_save_ascii_array(index_t *ind, FILE *f, int mode)
    if (mode<2) {
       gptr base = IND_BASE(ind);
       begin_idx_aloop1(ind, off) {
-         flt x = (*getf)(base, off);
-         fprintf(f, "%10.5f\n", x);
+         double x = (*getd)(base, off);
+         fprintf(f, "%10.5d\n", x);
       } end_idx_aloop1(ind, off);
       FMODE_BINARY(f);
 
@@ -1913,8 +1913,8 @@ static void format_save_ascii_array(index_t *ind, FILE *f, int mode)
       int d = IND_NDIMS(ind);
       gptr base = IND_BASE(ind);
       begin_idx_aloop1(ind, off) {
-         flt x = (*getf)(base, off);
-         fprintf(f, "%10.5f ", x);
+         double x = (*getd)(base, off);
+         fprintf(f, "%10.5d ", x);
          for (int i=0; i<d-1; i++)
             if ((off+1)%IND_MOD(ind, i)==0)
                fprintf(f, "\n");
