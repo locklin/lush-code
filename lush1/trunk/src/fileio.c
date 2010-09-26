@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: fileio.c,v 1.28 2009-10-16 16:07:05 leonb Exp $
+ * $Id: fileio.c,v 1.29 2010-09-26 18:29:02 leonb Exp $
  **********************************************************************/
 
 
@@ -323,7 +323,8 @@ lockfile(const char *filename)
 {
   int fd;
   time_t tl;
-
+  char *s = string_buffer;
+  ssize_t n;
 #ifdef WIN32
   fd = _open(filename, _O_RDWR|_O_CREAT|_O_EXCL, 0644);
 #else
@@ -363,7 +364,18 @@ lockfile(const char *filename)
 	    user, computer, time(&tl));
   }
 #endif
-  write(fd, string_buffer, strlen(string_buffer));
+  n = strlen(string_buffer);
+  while (n > 0)
+    {
+      ssize_t l = write(fd, s, n);
+      if (l <= 0)
+        {
+          close(fd);
+          test_file_error(NULL);
+        }
+      s += l;
+      n -= l;
+    }
   close(fd);
   return 1;
 }
