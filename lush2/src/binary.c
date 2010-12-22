@@ -1304,11 +1304,13 @@ at *bread(FILE *f, int opt)
    if (prep_safe_error()) {
       complete_safe_error();
    }
-      
+   
+   MM_NOGC;
    local_bread(&ans, opt);
    forbid_refd_reloc();
    in_bwrite = 0;
    safe_error_ready = false;
+   MM_NOGC_END;
 
    return ans;
 }
