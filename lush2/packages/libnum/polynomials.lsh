@@ -33,7 +33,6 @@
 (libload "overload")
 
 #? *** Polynomials
-;; Evaluating polynomials in various ways.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -52,11 +51,6 @@
       (v (to-double #{ gsl_poly_eval( IDX_PTR($p,double), $l, $(x)) #})) )
     vs))
 
-(dhc-make-with-libs ()
-                    (list libnum-libgslcblas libnum-libgsl)
-                    -poly-number
-                    -poly-vector)
-
 #? (poly <p> <x>)
 ;; Evaluate polynomial <p> at <x>.
 ;;
@@ -64,6 +58,26 @@
 ;; may be a number or a double vector.
 (defoverload poly -poly-number -poly-vector)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? (poly-solve <p>)
+;; Find the roots of polynomial <p> and return as a vector.
+;;
+;; Vectpr <p> holds the polynomial coefficients. The return value
+;; is technically an nx2-matrix which holds the all the roots.
+(defun poly-solve (p)
+  (declare (-idx1- (-double-)) p)
+  (let* ((n (length p))
+	 (roots (double-array (- n 1) 2)) )
+    (declare (-int-) n)
+    #{ gsl_poly_complex_workspace *ws = gsl_poly_complex_workspace_alloc($n); #}
+    (with-check-gsl-error
+     #{ gsl_poly_complex_solve(IDX_PTR($p, double), $(idx-dim p 0), ws, \
+                              (gsl_complex_packed_ptr)IDX_PTR($roots, double)) #} )
+    #{ gsl_poly_complex_workspace_free(ws); #}
+    roots))
 
+(dhc-make-with-libs ()
+                    (list gsl-libgslcblas gsl-libgsl)
+                    -poly-number
+                    -poly-vector
+		    poly-solve)
 
