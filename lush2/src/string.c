@@ -584,7 +584,7 @@ int str_find(const char *s1, const char *s2, int start)
 {
    int indx = 0;
    while (*s2) {
-      if (start <= 0) {
+      if (start-- <= 0) {
          const char *sa = s2;
          const char *sb = s1;
          while (*sb && *sb == *sa++)
