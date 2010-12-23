@@ -82,7 +82,8 @@ static at *at_destroy;
 static at *at_listeval;
 static at *at_emptyp;
 static at *at_unknown;
-object_t *unreachables = NULL;
+static at *at_pname;
+static object_t *unreachables = NULL;
 
 static struct hashelem *_getmethod(class_t *cl, at *prop);
 static at *call_method(at *obj, struct hashelem *hx, at *args);
@@ -1067,9 +1068,11 @@ at *send_message(at *classname, at *obj, at *method, at *args)
    ifn (SYMBOLP(method))
       error(NIL, "not a method name", method);
    struct hashelem *hx = _getmethod(cl, method);
-   if (hx) 
+   if (hx)
       return call_method(obj, hx, args);
-   
+   else if (method == at_pname) // special method?
+      return NEW_STRING(cl->name(obj));
+
    /* send -unknown */
    hx = _getmethod(cl, at_unknown);
    if (hx) {
@@ -1273,6 +1276,7 @@ void init_oostruct(void)
    at_emptyp = var_define("-emptyp"); 
    at_mexpand = var_define("macroexpand");
    at_unknown = var_define("-unknown");
+   at_pname = var_define("pname");
 }
 
 

@@ -236,6 +236,11 @@ DX(xunode_unify)
 
 /* -------- definitions for this module's classes -------- */
 
+static const char *number_name(at *p)
+{
+   return str_number(Number(p));
+}
+
 static const char *gptr_name(at *p)
 {
    sprintf(string_buffer, "::gptr:%p", Gptr(p));
@@ -290,6 +295,7 @@ void init_at(void)
 
    /* set up builtin classes */
    number_class = new_builtin_class(NIL);
+   number_class-> name = number_name;
    class_define("Number", number_class);
 
    gptr_class = new_builtin_class(NIL);
