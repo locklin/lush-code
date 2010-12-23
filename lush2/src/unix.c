@@ -1407,7 +1407,6 @@ FILE* unix_popen(const char *cmd, const char *mode)
 #ifndef NEED_POPEN
    return popen(cmd, mode);
 #else
-# define tst(a,b) (*mode=='r'? (b) : (a))
 
    /* Create pipe */
    int p[2];
@@ -1501,7 +1500,7 @@ int unix_pclose(FILE *f)
 }
 
 
-void filteropen(const char *cmd, FILE **pfw, FILE **pfr)
+pid_t filteropen(const char *cmd, FILE **pfw, FILE **pfr)
 {
    extern char string_buffer[];
    sprintf(string_buffer, "exec %s", cmd);
@@ -1574,6 +1573,7 @@ void filteropen(const char *cmd, FILE **pfw, FILE **pfr)
    errno = 0;
    ifn ((*pfr = fdopen(fd_dn[0], "r")))
       test_file_error(NULL, errno);
+   return pid;
 }
 
 
@@ -1594,18 +1594,18 @@ DX(xfilteropen)
 
    const char *cmd = ASTRING(1);
    FILE *str_up, *str_dn;
-   filteropen(cmd, &str_up, &str_dn);
+   pid_t pid = filteropen(cmd, &str_up, &str_dn);
    at *f1 = new_rfile(str_dn);
    at *f2 = new_wfile(str_up);
    if (p1)
       var_set(p1, f1);
    if (p2)
       var_set(p2, f2);
-   return new_cons(f2, f1);
+   return new_cons(f2, new_cons(f1, new_cons(NEW_NUMBER(pid), NULL)));
 }
 
 
-void filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
+pid_t filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
 {
 #if HAVE_OPENPTY
    extern char string_buffer[];
@@ -1668,6 +1668,7 @@ void filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
 #else
    RAISEF("filteropenpty is not supported on this system", NIL);
 #endif
+   return pid;
 }
 
 
@@ -1687,14 +1688,14 @@ DX(xfilteropenpty)
 
    const char *cmd = ASTRING(1);
    FILE *str_up, *str_dn;
-   filteropenpty(cmd, &str_up, &str_dn);
+   pid_t pid = filteropenpty(cmd, &str_up, &str_dn);
    at *f1 = new_rfile(str_dn);
    at *f2 = new_wfile(str_up);
    if (p1)
       var_set(p1, f1);
    if (p2)
       var_set(p2, f2);
-   return new_cons(f2, f1);
+   return new_cons(f2, new_cons(f1, new_cons(NEW_NUMBER(pid), NULL)));
 }
 
 

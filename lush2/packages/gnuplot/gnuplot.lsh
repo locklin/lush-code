@@ -84,6 +84,7 @@
   logfile        ; if not nil, open log file and log gnuplot session 
   fd-from        ; file descriptor for receiving output from gnuplot
   fd-to          ; file descriptor for sending input to gnuplot
+  pid            ; process id of gnuplot process
   )
 
 (in-namespace (class Gnuplot)
@@ -188,18 +189,22 @@
   (let ((option (parse-kwdargs args  'interactive t  'logfile ())))
     (setq logfile (option 'logfile))
     (setq interactive (option 'interactive))
-    (let (((to . from) (filteropen (sprintf "%s - 2>&1" *gnuplot-cmd*))))
+    (let (((to from pid) (filteropen (sprintf "%s - 2>&1" *gnuplot-cmd*))))
       (when logfile
 	(writing (open-append logfile)
-	  (printf "\n\n*** New gnuplot instance created (%s).\n" 
-		  (date-to-string (now)))
+	  (printf "\n\n*** New gnuplot process %d created (%s).\n" 
+		  pid (date-to-string (now)))
 	  (flush) ))
       (setq fd-to to)
       (setq fd-from from)
+      (setq :this:pid pid)
       (when *gnuplot-preamble* (this *gnuplot-preamble*))
       (==> this read-til-next-prompt) )
     (setq echo-on *gnuplot-echo-on*) ))
 
+(defmethod Gnuplot pname ()
+  (let ((s (==> this (object . pname))))
+    (concat (str-left s 10) "pid=" (str pid) ":" (str-right s -10)) ))
 
 #? (==> <Gnuplot> variables)
 ;; Return <Htable> of currently defined gnuplot variables.
@@ -317,9 +322,14 @@
 (defmethod Gnuplot -destructor ()
   (when logfile
     (writing (open-append logfile)
-      (printf "\n*** Terminating gnuplot instance (%s).\n" 
-	      (date-to-string (now)) )))
+      (printf "\n*** Terminating gnuplot process %d (%s).\n" 
+	      pid (date-to-string (now)) )))
+  (while (this) ())
   (this "exit")
+  (flush fd-to)
+  (flush fd-from)
+  (setq fd-from ())
+  (setq fd-to ())
   ())
 
 (defmethod Gnuplot send-binary (cmd . arrays)

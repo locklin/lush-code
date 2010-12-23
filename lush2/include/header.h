@@ -124,8 +124,8 @@ void console_getline(char *prompt, char *buf, int size);
 void init_user(void);
 int  init_user_dll(int major, int minor);
 /* replacement functions */
-LUSHAPI void  filteropen(const char *cmd, FILE **pfw, FILE **pfr);
-LUSHAPI void  filteropenpty(const char *cmd, FILE **pfw, FILE **pfr);
+LUSHAPI pid_t filteropen(const char *cmd, FILE **pfw, FILE **pfr);
+LUSHAPI pid_t filteropenpty(const char *cmd, FILE **pfw, FILE **pfr);
 LUSHAPI FILE* unix_popen(const char *cmd, const char *mode);
 LUSHAPI int   unix_pclose(FILE *f);
 LUSHAPI int   unix_setenv(const char *name, const char *value);
