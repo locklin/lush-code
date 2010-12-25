@@ -2448,10 +2448,10 @@ index_t *index_flatten(index_t *ind, int n)
       int r = IND_NDIMS(ind)-n;
       shp->ndims = r; 
       IND_DIM(shp, r-1) = IND_DIM(ind, IND_NDIMS(ind)-1);
-      for (int i=IND_NDIMS(ind)-2; i>=r-1; i--)
-         IND_DIM(shp, r-1) *= IND_DIM(ind, i);
-      for (int i=r-2; i>=0; i--)
-         IND_DIM(shp, i-r+2) = IND_DIM(ind, i);
+      for (int i=0; i<=r-2;i++) 
+	 IND_DIM(shp, i) = IND_DIM(ind, i);
+      for (int i=r-1; i<=IND_NDIMS(ind)-2;i++) 
+	 IND_DIM(shp, r-1) *= IND_DIM(ind, i);
 
       ind = index_reshape(ind, shp);
 
