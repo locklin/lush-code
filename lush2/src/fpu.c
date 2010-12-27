@@ -217,6 +217,7 @@ static at *unparse_excepts(int excepts)
    return es;
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
 static void warn_notrap(void)
 {
    static int not_warned = 3;
