@@ -27,8 +27,6 @@
 
 #include "header.h"
 
-#define NOWARN_DEPRECATED 1
-
 #if HAVE_LANGINFO_H
 # include <langinfo.h>
 #endif
