@@ -201,10 +201,11 @@
 ;; interactive : true triggers interactive mode (default is t)
 ;; </pre>}
 (defmethod Gnuplot Gnuplot args
-  (let ((option (parse-kwdargs args  'interactive t  'logfile ())))
+  (let ((option (parse-kwdargs args  'interactive t  'logfile ()))
+	(myopen (if *gnuplot-use-pty* filteropenpty filteropen)) )
     (setq logfile (option 'logfile))
     (setq interactive (option 'interactive))
-    (let (((to from pid) (filteropen (sprintf "%s - 2>&1" *gnuplot-cmd*))))
+    (let (((to from pid) (myopen (sprintf "%s - 2>&1" *gnuplot-cmd*))))
       (when logfile
 	(writing (open-append logfile)
 	  (printf "\n\n*** New gnuplot process %d created (%s).\n" 
@@ -413,8 +414,9 @@
 
 ;; auxiliary definitions
 
-(let ((gp (new Gnuplot 'interactive ())))
-
+(let* ((*gnuplot-use-pty* t)
+       (gp (new Gnuplot 'interactive ())) )
+  
 ;; test if gnuplot echos
 (let ((*gnuplot-echo-on* ())
       (r (gp "show terminal")))
@@ -435,6 +437,14 @@
 (defparameter *gnuplot-build-options*
   (str-join "" (str-split ((==> gp variables) "GPVAL_COMPILE_OPTIONS")
 			  "\\\\n")))
+
+;; Decide if gnuplot should use pseudo-terminals for communication.
+(defparameter *gnuplot-use-pty* (not (str-find "+LIBREADLINE" *gnuplot-build-options*)))
+(when :*gnuplot-use-pty*
+  (printf "*** Warning: The gnuplot build on this machine requires pseudo-terminals\n")
+  (printf "***        : for communication and causes the gnuplot interface to be slow.\n")
+  (printf "***        : Please see README.gnuplot in the lush directory for details.\n")
+  )
 
 #? *gnuplot-version-string*
 ;; Fully qualified version of gnuplot program.
