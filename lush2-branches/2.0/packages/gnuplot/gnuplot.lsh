@@ -84,6 +84,7 @@
   logfile        ; if not nil, open log file and log gnuplot session 
   fd-from        ; file descriptor for receiving output from gnuplot
   fd-to          ; file descriptor for sending input to gnuplot
+  pid            ; process id of gnuplot process
   )
 
 (in-namespace (class Gnuplot)
@@ -91,9 +92,24 @@
 (dm escape-%s (_ s)
   `(regex-subst "%" "%%%%" ,s))
 
+;; return <t> when string ends with prompt or <()> otherwise.
+(defun found-gnuplot-prompt-p (txt &optional (prompts (  )))
+  (let ((lt (length txt)) (last-two (str-right txt 2)))
+    (if (< lt 9)
+	()
+      (or (and (= last-two "> ")
+	       (or (str-endswith txt "gnuplot> ")
+		   (str-endswith txt "multiplot> ")
+		   (str-endswith txt "input data ('e' ends) > ") ))
+	  (and (= last-two ": ")
+	       (or (str-endswith txt "Press return for more: ") 
+		   (str-endswith txt "Help topic: ")
+		   (regex-match ".+Subtopic of (.+): $" txt) )))
+      )))
+ 
 ;; auxiliary for method 'read-til-next-prompt'
 ;; remove suffix from txt if it is a gnuplot prompt
-(defun remove-prompt (txt &optional (prompts ("gnuplot" "multiplot" "input data ('e' ends) ")) )
+(defun remove-prompt (txt &optional (prompts ("gnuplot> " "multiplot> " "input data ('e' ends) > ")))
   (if (null prompts)
       ()
     (let* ((prompt (car prompts))
@@ -109,41 +125,41 @@
 )
 	      
 (defmethod Gnuplot read-til-next-prompt ()
-  (let ((txt ()) (cur ()))
-    (reading fd-from (setq txt (read-string "~>:")))
-    (reading fd-from (setq cur (read-string 2)))
+  (let ((txt ""))
+    (while (not (found-gnuplot-prompt-p txt))
+      (flush fd-from)
+      (setq txt (concat txt (reading fd-from (read-string "~>:"))))
+      (setq txt (concat txt (reading fd-from (read-string 2)))) )
+    
     (when logfile
       (writing (open-append logfile) 
-        (printf "%s" (concat txt cur)) (flush)) )
-    
-    (selectq (str-left cur 1)
-      (":"  (cond 
-             ((= (str-right txt 21) "Press return for more")
+	(printf "%s" txt) ))
+
+    (selectq (str-right txt 2)
+      (": " (cond
+             ((= (str-right txt 23) "Press return for more: ")
               ;; send carriage-return and remove prompt text
               (writing fd-to (printf "\n"))
-              (concat (str-left txt -21) 
+              (concat (str-left txt -24)
                       (==> this read-til-next-prompt)))
              
-             ((= (str-right txt 10) "Help topic")
+             ((= (str-right txt 12) "Help topic: ")
               ;; send carriage-return and remove prompt text
               (writing fd-to (printf "\n"))
-              (concat (str-left txt -10) 
+              (concat (str-left txt -12) 
                       (==> this read-til-next-prompt)))
              
-             ((regex-match ".+Subtopic of (.+)$" txt)
+             ((regex-match ".+Subtopic of (.+): $" txt)
               ;; send carriage-return and remove prompt text
               (writing fd-to (printf "\n"))
-              (concat (car (regex-extract "(.+)\nSubtopic of (.+)$" txt))
-                      (==> this read-til-next-prompt)) )
+              (concat (or (car (regex-extract "(.+)\nSubtopic of (.+): $" txt)) "")
+		      (==> this read-til-next-prompt)) )
              (t 
-              (concat txt cur (==> this read-til-next-prompt)) )))
+              (concat txt (==> this read-til-next-prompt)) )))
       
-      (">" (let ((-txt (remove-prompt txt)))
-             (if -txt
-                 -txt
-               (concat txt cur (==> this read-til-next-prompt)) )))
+      ("> " (or (remove-prompt txt) (==> this read-til-next-prompt)))
       
-      (t   (error "Don't know how I got here:" (concat txt cur)) ))) )
+      (t   (error "Don't know how I got here:" txt) ))) )
 
 (defmethod Gnuplot print-array (m fd-log)
   (let* ((elt     (idx-element-type m))
@@ -185,21 +201,26 @@
 ;; interactive : true triggers interactive mode (default is t)
 ;; </pre>}
 (defmethod Gnuplot Gnuplot args
-  (let ((option (parse-kwdargs args  'interactive t  'logfile ())))
+  (let ((option (parse-kwdargs args  'interactive t  'logfile ()))
+	(myopen (if *gnuplot-use-pty* filteropenpty filteropen)) )
     (setq logfile (option 'logfile))
     (setq interactive (option 'interactive))
-    (let (((to . from) (filteropen (sprintf "%s - 2>&1" *gnuplot-cmd*))))
+    (let (((to from pid) (myopen (sprintf "%s - 2>&1" *gnuplot-cmd*))))
       (when logfile
 	(writing (open-append logfile)
-	  (printf "\n\n*** New gnuplot instance created (%s).\n" 
-		  (date-to-string (now)))
+	  (printf "\n\n*** New gnuplot process %d created (%s).\n" 
+		  pid (date-to-string (now)))
 	  (flush) ))
       (setq fd-to to)
       (setq fd-from from)
+      (setq :this:pid pid)
       (when *gnuplot-preamble* (this *gnuplot-preamble*))
       (==> this read-til-next-prompt) )
     (setq echo-on *gnuplot-echo-on*) ))
 
+(defmethod Gnuplot pname ()
+  (let ((s (==> this (object . pname))))
+    (concat (str-left s 10) (str pid) ":" (str-right s -10)) ))
 
 #? (==> <Gnuplot> variables)
 ;; Return <Htable> of currently defined gnuplot variables.
@@ -257,9 +278,11 @@
       (when logfile
 	(writing (open-append logfile) (printf "%s\n" arg)) )
       (writing fd-to 
-	(printf "%s\n" arg) (flush))
-      (when (not (or (str-find "binary" arg) (str-find "exit" arg) (str-find "quit" arg)))
+	(printf "%s\n" arg) )
+      (when (not (or (= "exit" (str-strip arg)) (= "quit" (str-strip arg))
+		     (and (str-find "plot" arg) (str-find "binary" arg)) ))
         (setq response (==> this read-til-next-prompt))
+	;; remove echo from response
         (when echo-on
           (setq response (str-right response 
                                  (- (min (1+ (length arg))
@@ -272,10 +295,10 @@
 	(setq response (this "e")) ))
      
      ((isa arg GnuplotBinary)
-      (export-raw-matrix :arg:data fd-to)
+      (export-array :arg:data fd-to)
       (when (null args)
         (writing fd-to
-          (printf "\n") (flush) )
+          (printf "\n") )
         (while (null (socketselect fd-from 0)) ()) ; wait for gnuplot to respond
         (==> this read-til-next-prompt)
         (setq response (==> this read-til-next-prompt)) ))
@@ -294,31 +317,37 @@
       response) ))
 
 (defmethod Gnuplot check-for-error (last-cmd last-ans)
-  (while (this) ())
-  (let* ((cmd "if (exists(\"GPVAL_ERRNO\")) print GPVAL_ERRNO; else print -1")
-         (errno (str-val (this cmd))) )
-    (while (null errno)
-      (setq errno (str-val (this))) )
-    (when (> errno 0)
-      (printf "\n")
-      (printf "*** An error occurred while processing gnuplot script:\n\n")
-      (printf "gnuplot> %s\n" last-cmd)
-      (printf "%s\n" last-ans)
-      (error "error in gnuplot script") )))
+  () )
+  ;; (when (> *gnuplot-version* 4.2)
+  ;;   (while (this) ())
+  ;;   (let* ((cmd "if (exists(\"GPVAL_ERRNO\")) print GPVAL_ERRNO; else print -1")
+  ;; 	   (errno (str-val (print (this cmd)))) )
+  ;;     (while (null errno)
+  ;; 	(setq errno (str-val (this))) )
+  ;;     (when (> errno 0)
+  ;; 	(printf "\n")
+  ;; 	(printf "*** An error occurred while processing gnuplot script:\n\n")
+  ;; 	(printf "gnuplot> %s\n" last-cmd)
+  ;; 	(printf "%s\n" last-ans)
+  ;; 	(error "error in gnuplot script") ))))
 
 #? (==> <Gnuplot> reset)
 ;; Reset gnuplot for new plot.
 (defmethod Gnuplot reset ()
-  (this "reset")
   (while (this) ())
+  (this "reset")
   ())
 
 (defmethod Gnuplot -destructor ()
   (when logfile
     (writing (open-append logfile)
-      (printf "\n*** Terminating gnuplot instance (%s).\n" 
-	      (date-to-string (now)) )))
-  (this "exit")
+      (printf "\n*** Terminating gnuplot process %d (%s).\n" 
+	      pid (date-to-string (now)) )))
+  (while (this) ())
+  (writing fd-to 
+    (printf "exit gnuplot\n") )
+  (setq fd-from ())
+  (setq fd-to ())
   ())
 
 (defmethod Gnuplot send-binary (cmd . arrays)
@@ -330,16 +359,15 @@
       (error "not an array" a) ))
   ;; send command
   (writing fd-to 
-    (printf "%s\n" cmd) (flush))
+    (printf "%s\n" cmd) )
   ;; send data
   (dolist (a arrays)
-    (export-raw-matrix a fd-to) )
+    (export-array a fd-to) )
   ;; get ready for next input
   (writing fd-to
-    (printf "\n") (flush))
+    (printf "\n") )
   (==> this read-til-next-prompt) 
   (==> this read-til-next-prompt) )
-
 
 (defun -mkfmt-4.2 (a)
   (str-join "x" (make-list (idx-rank a) "%d")) )
@@ -386,8 +414,9 @@
 
 ;; auxiliary definitions
 
-(let ((gp (new Gnuplot 'interactive ())))
-
+(let* ((*gnuplot-use-pty* t)
+       (gp (new Gnuplot 'interactive ())) )
+  
 ;; test if gnuplot echos
 (let ((*gnuplot-echo-on* ())
       (r (gp "show terminal")))
@@ -408,6 +437,14 @@
 (defparameter *gnuplot-build-options*
   (str-join "" (str-split ((==> gp variables) "GPVAL_COMPILE_OPTIONS")
 			  "\\\\n")))
+
+;; Decide if gnuplot should use pseudo-terminals for communication.
+(defparameter *gnuplot-use-pty* (not (str-find "+LIBREADLINE" *gnuplot-build-options*)))
+(when :*gnuplot-use-pty*
+  (printf "*** Warning: The gnuplot build on this machine requires pseudo-terminals\n")
+  (printf "***        : for communication and causes the gnuplot interface to be slow.\n")
+  (printf "***        : Please see README.gnuplot in the lush directory for details.\n")
+  )
 
 #? *gnuplot-version-string*
 ;; Fully qualified version of gnuplot program.

@@ -124,8 +124,8 @@ void console_getline(char *prompt, char *buf, int size);
 void init_user(void);
 int  init_user_dll(int major, int minor);
 /* replacement functions */
-LUSHAPI void  filteropen(const char *cmd, FILE **pfw, FILE **pfr);
-LUSHAPI void  filteropenpty(const char *cmd, FILE **pfw, FILE **pfr);
+LUSHAPI pid_t filteropen(const char *cmd, FILE **pfw, FILE **pfr);
+LUSHAPI pid_t filteropenpty(const char *cmd, FILE **pfw, FILE **pfr);
 LUSHAPI FILE* unix_popen(const char *cmd, const char *mode);
 LUSHAPI int   unix_pclose(FILE *f);
 LUSHAPI int   unix_setenv(const char *name, const char *value);
@@ -1059,15 +1059,14 @@ LUSHAPI index_t *array_put(index_t*, index_t *ss, index_t *vals);
 LUSHAPI index_t *array_range(double, double, double);
 LUSHAPI index_t *array_rangeS(double, double, double);
 
-LUSHAPI void import_raw_matrix(index_t*, FILE*, size_t);
-LUSHAPI void import_text_matrix(index_t*, FILE*);
-LUSHAPI int  save_matrix_len (index_t*);
-LUSHAPI void save_matrix(index_t*, FILE*);
-LUSHAPI void export_matrix(index_t*, FILE*);
-LUSHAPI void array_export(index_t*, FILE*);
-LUSHAPI void save_ascii_matrix(index_t*, FILE*);
-LUSHAPI void export_ascii_matrix(index_t*, FILE*);
-LUSHAPI at  *load_matrix(FILE*);
+LUSHAPI void import_array(index_t*, FILE*, size_t);
+LUSHAPI void import_array_text(index_t*, FILE*);
+LUSHAPI int  save_array_len (index_t*);
+LUSHAPI void save_array(index_t*, FILE*);
+LUSHAPI void export_array(index_t*, FILE*);
+LUSHAPI void save_array_text(index_t*, FILE*);
+LUSHAPI void export_array_text(index_t*, FILE*);
+LUSHAPI at  *load_array(FILE*);
 
 
 /* 

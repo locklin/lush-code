@@ -176,7 +176,6 @@ int isdump(const char *s)
 
 void undump(char *s)
 {
-   MM_NOGC;
    at *atf = OPEN_READ(s,0);
    FILE *f = Gptr(atf);
 
@@ -209,7 +208,6 @@ void undump(char *s)
    }
    /* define special symbols */
    at_NULL = var_get(named("NULL"));
-   MM_NOGC_END;
 }
 
 

@@ -37,10 +37,10 @@
   `(make-array (classof (idx-storage ,proto)) (shape ,proto) ,init) )
 
 (defmacro array-transpose args
-  `(copy-array (apply idx-transpose ,args)) )
+  `(copy-array (idx-transpose ,@args)) )
 
 (defmacro array-reverse args
-  `(copy-array (apply idx-reverse ,args)) )
+  `(copy-array (idx-reverse ,@args)) )
 
 (defmacro array-reduce (op m &optional (d -1))
   `(let* ((m ,m)
@@ -168,11 +168,8 @@
     (array-take m 0 (where ($- map))) ))
 
 (defun idx-squeeze-shape (m)
-  (let ((shp (cons () (shape m))))
-    (reshape m (cdr (prog1 shp
-                      (while (cdr shp)
-                        (when (= 1 (cadr shp)) (rplacd shp (cddr shp)))
-                        (setq shp (cdr shp))) )))))
+  (let ((shp (filter #\(> $1 1) (shape m))))
+    (reshape m shp) ))
 
 (dm as-contiguous-array (_ arg)
   `(let ((m ,arg))
@@ -235,7 +232,7 @@
          (sellist ())
          (lvar ())
          (tmpseed 0))
-    (each ((x vars)) 
+    (domapcar ((x vars)) 
       (selectq (length x)
         (3
          ;; a permutation syntax
@@ -248,8 +245,8 @@
         (2   (setq arglist (cons x arglist)))
         (t   (error "bad gloop construct"))))
     (if lvar
-        `(let* (( ,lvar 0))
-           ((-int-) ,lvar)
+        `(let* ((,lvar 0))
+           (declare (-int-) ,lvar)
            ,(list 'idx-bloop arglist 
                   (cons 'let 
                         (cons letlist 

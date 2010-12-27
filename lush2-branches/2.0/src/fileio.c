@@ -340,8 +340,17 @@ static int lockfile(const char *filename)
               user, computer, time(&tl));
   }
 #endif
-   if (0 > write(fd, string_buffer, strlen(string_buffer)))
-      fprintf(stderr, "*** Warning: %s\n", strerror(errno));
+   char *s = string_buffer;
+   size_t n = strlen(s);
+   while (n > 0) {
+      ssize_t l = write(fd, s, n);
+      if (l <= 0) {
+	 close(fd);
+	 test_file_error(NULL, errno);
+      }
+      s += l;
+      n -= l;
+   }
    close(fd);
    return 1;
 }

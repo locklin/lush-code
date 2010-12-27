@@ -321,8 +321,7 @@
          (tn-arg (car :tn:tn-list)) )
     (when (==> :tn-arg:type is-a-ptr)
       ;; make sure arg is bumped when mptr is bumped
-      (unode-unify :(unode-val :tn-arg:type:u-type):u-bump :tn:type:u-bump
-                   dhc-combine-u-bump) )
+      (==> (unode-val :tn-arg:type:u-type) unify-bump :tn:type) )
     (when (==> :tn-arg:type is-a-mptr)
       (dhc-unify-types :tn-arg:type :tn:type) )
     tn))
@@ -1034,18 +1033,26 @@
   (when (or ~(cdr source) ~(cddr source)
             (apply or (mapcar null (cddr source))))                     
     (dhc-error "selectq : Bad 'selectq' construction"))
-  (let ((conds (reverse (cddr source)))
-        (expr (if ~ignore '(error "one condition of the selectq must be true") ())) )
-    (while conds  
-      (setq expr `(if ,(if (= t (caar conds)) t
-                         (if (or (numberp (caar conds))
+  (let* ((conds (reverse (cddr source)))
+         (default (if ~ignore '(error "one condition of the selectq must be true") ()))
+         (expr ()) )
+    ;; find optional default case
+    (dolist (c conds)
+      (when (= (car c) t)
+        (setq default `(progn ,@(cdr c))) ))
+    (setq expr default)
+    (while conds
+      (when (<> (caar conds) t)
+        (setq expr `(if ,(if (or (symbolp (caar conds))
+                                 (numberp (caar conds))
                                  (stringp (caar conds)) )
                              `(= selectQTMP ,(caar conds))
                            (cons 'or (mapcar (lambda (x)
                                                `(= selectQTMP ,x))
-                                             (caar conds)))))
-                      ,(cons 'progn (cdar conds)) ,expr))
-      (setq conds (cdr conds)))
+                                             (caar conds))))
+                        ,(cons 'progn (cdar conds)) ,expr)
+              ))
+      (setq conds (cdr conds)) )
     (setq expr `(let ((selectQTMP ,(cadr source))) ,expr))
     (dhc-parse-replacement-source-t source expr)))
 
@@ -2483,7 +2490,7 @@
 (dhm-p array-extend (source)
   (let (((_ m d n . init) source))
     (let* ((init (if (consp init) (car init) ()))
-	   (source-init (if (null init) () `(array-clear (idx-trim mc d ed) ,init)) )
+	   (source-init (if (null init) () `(array-clear (idx-trim mc d ed) ,init))) )
       `(let ((m ,m) (d ,d) (n ,n))
 	 (declare (-int-) d n)
          (if (< n 0)
@@ -2496,7 +2503,7 @@
              (array-copy m (idx-trim mc d 0 ed))
              ,source-init
              mc)))
-      ))))
+      )))
 
 (dhm-p array-take (source)
   (let (((_ m d is) source))
@@ -2942,7 +2949,7 @@
          (lvar-syms ())
          (body-syms :treetype:symbol) )
     (while (null (getp body-syms 'loop-bumps))
-      (setq lvar-syms (cons (car body-syms) lvar-syms_))
+      (setq lvar-syms (cons (car body-syms) lvar-syms))
       (setq body-syms (cdr body-syms)) )
     (setq :treetype:symbol lvar-syms)  ; similar hack as in dhm-c for
     (dhc-push-scope-c

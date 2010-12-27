@@ -45,8 +45,8 @@
 
 static char table_c2lisp[256];
 static char table_lisp2c[256];
-static char* c_special    = "_DPS";
-static char* lisp_special = "-!?*";
+static char* c_special    = "_DPSO";
+static char* lisp_special = "-!?*/";
 
 void api_init_tables(void)
 {

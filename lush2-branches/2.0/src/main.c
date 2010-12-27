@@ -77,7 +77,7 @@ LUSHAPI int main(int argc, char **argv)
               " (built " __DATE__ ")"
 #endif
               "\n"
-              "   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.\n"
+              "   Copyright (C) 2010 Leon Bottou, Yann LeCun, Ralf Juengling.\n"
               "   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.\n"
               " Includes parts of TL3:\n"
               "   Copyright (C) 1987-1999 Leon Bottou and Neuristique.\n"

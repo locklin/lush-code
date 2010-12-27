@@ -1275,9 +1275,6 @@ static char *convert(char *s, at *list, char *end)
             error(NIL, "pname does not return a string", q);
          n = String(q);
          
-      } else if (NUMBERP(list)) {
-         n = str_number(Number(list));
-        
       } else if (Class(list)->name) {
          n = Class(list)->name(list);
 

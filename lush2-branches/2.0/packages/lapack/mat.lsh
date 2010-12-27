@@ -200,25 +200,43 @@
     `(.* (.* ,m1 ,m2) ,(car ms) ,@(cdr ms)) ))
 
 
-#? (mat-eigvals <A> [<evi>])
+#? (mat-eigvals <A>)
 ;; {<see> mat-singvals, mat-spectral}
 ;; Eigenvalues of square matrix <A>.
 ;;
-;; With one argument, assume <A> is symmetric and return the
-;; real eigenvalues in a vector. With the second argument
-;; <evi>, assume that <A> is nonsymmetric, return the real
-;; parts of the eigenvalues and write the corresponding
-;; imaginary parts to <evi>.
-;;
-;; Note: In the symmetric case <eigvals> does not check that
-;; <A> is actually symmetric and reads from the upper 
-;; triangular part of <A> only.
+;; Return the complex eigenvalues as a nx2-matrix with the
+;; real parts in the first column and the imaginary parts
+;; in the second column.
 (defmacro eigvals (A &optional (evi ()))
-  (if evi
-      `(lapack-geev/n! (copy-array ,A) ,evi)
-    `(lapack-gsyevd/n! (copy-array ,A))
-    ))
+  `(let* ((A ,A)
+	  (result (double-array 2 (length A))) )
+     (array-copy (lapack-geev/n! ##A ($*0 result 1)) ($*0 result 0))
+     ($t result))
+  )
 
+#? (mat-eigvals/symm <A>)
+;; {<see> mat-singvals, mat-eigvals}
+;; Eigenvalues of symmetric matrix <A>.
+;;
+;; Note: <eigvals/symm> does not check that <A> is actually 
+;; symmetric and reads from the upper triangular part of <A>
+;; only.
+(defmacro eigvals/symm (A)
+  `(lapack-gsyevd/n! (copy-array ,A))
+  )
+
+#? (mat-specrad <A>)
+;; {<see> mat-eigvals, mat-norm}
+;; Spectral radius of square matrix <A>.
+(defun specrad (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((ev (eigvals A))
+        (sr 0) )
+  (for* (i 0 (length ev))
+    (setq sr (max sr (+ (* (ev i 0) (ev i 0))
+			(* (ev i 1) (ev i 1)) )))
+    )
+  (sqrt sr)))
 
 #? (mat-exp <A>)
 ;; Exponential of square matrix <A>.
@@ -575,6 +593,7 @@
           mat-norm/frob
           -pade-approx
           mat-exp
+          mat-specrad
           mat-inv
           mat-perm
           mat-permute!
