@@ -1174,8 +1174,7 @@ again:
    case TOK_CONS:
    {
       *pp = new_cons(NIL,NIL);
-      //local_bread(&Car(*pp), opt);
-      local_bread((at **)&((*pp)->head.cl), opt);
+      local_bread((at **)&((*pp)->head.car), opt);
       SET_PTRBIT((*pp)->head.cl, CONS_BIT);
       pp = &Cdr(*pp);
       ret = 0;
