@@ -76,7 +76,7 @@
 # undef class
 #endif
 
-typedef unsigned int   uint;
+//typedef unsigned int   uint;
 
 /* ============================  X11DRIVER STRUCTURES */
 

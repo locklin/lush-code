@@ -2784,7 +2784,7 @@ index_t *index_lift(index_t *ind, shape_t *shp)
          parse_shape(APOINTER(N), S);           \
       }                                         \
    }                                            \
-   0
+   (void)0
 
 DX(xidx_liftD)
 {

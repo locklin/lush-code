@@ -938,12 +938,13 @@ void init_storage()
    assert(ST_FIRST==0);
    assert(sizeof(char)==sizeof(uchar));
 
-   mt_storage = MM_REGTYPE("storage", 
 #ifdef HAVE_MMAP                           
-                           offsetof(storage_t, mmap_addr),
+   size_t storage_size = offsetof(storage_t, mmap_addr);
 #else
-                           sizeof(storage_t),
+   size_t storage_size = sizeof(storage_t);
 #endif
+
+   mt_storage = MM_REGTYPE("storage", storage_size,
                            clear_storage, mark_storage, 0);
 
    /* set up storage_classes */
