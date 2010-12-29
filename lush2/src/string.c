@@ -377,6 +377,32 @@ DX(xstr_left)
    return p;
 }
 
+DX(xleft)
+{
+#ifndef NOWARN_DEPRECATED
+  static bool warned = false;
+   if (!warned) {
+      fprintf(stderr, "*** Warning: 'left' is deprecated, use 'str-left'\n");
+      warned = true;
+   }
+#endif
+   ARG_NUMBER(2);
+   const char *s = ASTRING(1);
+   int n = AINTEGER(2);
+   int l = strlen(s);
+ 
+   n = (n < 0) ? l+n : n;
+   if (n < 0)
+      RAISEFX(badarg, NEW_NUMBER(n));
+   if (n > l)
+      n = l;
+
+   at *p = make_string_of_length(n);
+   char *a = (char *)String(p);
+   strncpy(a,s,n);
+   a[n] = 0;
+   return p;
+}
 
 /*------------------------ */
 
@@ -396,6 +422,27 @@ DX(xstr_right)
    return make_string(s+l-n);
 }
 
+DX(xright)
+{
+#ifndef NOWARN_DEPRECATED
+  static bool warned = false;
+   if (!warned) {
+      fprintf(stderr, "*** Warning: 'right' is deprecated, use 'str-right'\n");
+      warned = true;
+   }
+#endif
+   ARG_NUMBER(2);
+   const char *s = ASTRING(1);
+   int n = AINTEGER(2);
+   int l = strlen(s);
+
+   n = (n < 0) ? l+n : n;
+   if (n < 0)
+      RAISEFX(badarg, NEW_NUMBER(n));
+   if (n > l)
+      n = l;
+   return make_string(s+l-n);
+}
 
 /*------------------------ */
 
@@ -556,7 +603,7 @@ static int str_index(const char *s1, const char *s2, int start)
    return 0;
 }
 
-DX(xstr_index)
+DX(xindex)
 {
 #ifndef NOWARN_DEPRECATED
    static bool warned = false;
@@ -882,6 +929,18 @@ DX(xstr_insert)
    return str_insert(ASTRING(1),AINTEGER(2),ASTRING(3));
 }
 
+DX(xstrins)
+{
+#ifndef NOWARN_DEPRECATED
+  static bool warned = false;
+   if (!warned) {
+      fprintf(stderr, "*** Warning: 'strins' is deprecated, use 'str-insert'\n");
+      warned = true;
+   }
+#endif
+   ARG_NUMBER(3);
+   return str_insert(ASTRING(1),AINTEGER(2),ASTRING(3));
+}
 
 
 /*------------------------ */
@@ -1545,7 +1604,10 @@ void init_string(void)
    /* deprecated functions */
    dx_define("mid", xmid);  
    dx_define("strdel", xstrdel);
-   dx_define("index", xstr_index);
+   dx_define("index", xindex);
+   dx_define("strins", xstrins);
+   dx_define("left", xleft);
+   dx_define("right", xright);
 }
 
 
