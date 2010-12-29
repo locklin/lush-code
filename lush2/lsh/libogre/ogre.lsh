@@ -1738,15 +1738,15 @@
 	(data ()) )
     (while (setq nidx (car (regex-seek "[\n ]" s idx)))
       (cond
-	((= "\n" (mid s nidx 1))
+	((= "\n" (str-mid s (- nidx 1) 1))
 	 (setq data (nconc1 data (str-left s (1- nidx))))
-	 (setq s (mid s (1+ nidx)))
+	 (setq s (str-mid s nidx))
 	 (setq idx 0) )
 	((and textmax (> nidx (1+ textmax)))
-	 (if (< idx (2/ textmax))
-	     (setq idx (1+ textmax)) )
+	 (when (< idx (2/ textmax))
+	   (setq idx (1+ textmax)) )
 	 (setq data (nconc1 data (str-left s (1- idx))))
-	 (setq s (mid s idx)) 
+	 (setq s (str-mid s (- idx 1)))
 	 (setq idx 0) )
 	(t
 	  (setq idx (1+ nidx)) ) ) )
@@ -1915,7 +1915,7 @@
 	  (fill-polygon x (- y 4) (+ x 4) y (+ x 4) (- y 8)) )
 	(incr x 8)
 	(incr cl -1) 
-	(setq s (mid s (1+ offset))) )
+	(setq s (str-mid s offset)) )
       (when (> (len s) cl)
 	(gsave
 	  (when ~activated (color color-gray))
@@ -1955,7 +1955,7 @@
 	(fill-polygon x (- y 4) (+ x 4) y (+ x 4) (- y 8))
 	(incr x 8)
 	(incr cl -1) 
-	(setq s (mid s (1+ offset))) )
+	(setq s (str-mid s offset)) )
       (when (> (len s) cl)
 	(fill-polygon xr (- y 4) (- xr 4) y (- xr 4) (- y 8)) 
 	(incr cl -1)
@@ -2108,7 +2108,7 @@
   (==> this expose rect) )
 
 (defmethod EditString kill args
-  (setq EditStringKillBuffer (mid data (1+ caret)))
+  (setq EditStringKillBuffer (str-mid data caret))
   (when ogre-text-to-clip 
     (ogre-text-to-clip EditStringKillBuffer) )
   (setq data (str-left data caret))
@@ -2117,10 +2117,10 @@
 (defmethod EditString yank args
   (when ogre-clip-to-text 
     (setq EditStringKillBuffer (or (ogre-clip-to-text) "")) )
-  (let ((i 1)(m ()))
-    (while (setq m (index "\n" EditStringKillBuffer i))
-      (setq i (1+ m)) )
-    (setq  EditStringKillBuffer (mid EditStringKillBuffer i)) )
+  (let ((i 0) (m ()))
+    (while (setq m (str-find "\n" EditStringKillBuffer i))
+      (setq i m) )
+    (setq  EditStringKillBuffer (str-mid EditStringKillBuffer i)) )
   (setq data (strins data caret EditStringKillBuffer))
   (incr caret (len EditStringKillBuffer))
   (==> this expose rect) )
@@ -4838,7 +4838,7 @@
 	  (c (- cline sline)) )
       (for (i 1 height)
 	(when d
-	  (draw-text (+ x 4) (+ y (* lh i)) (mid (car d) (1+ spos)))
+	  (draw-text (+ x 4) (+ y (* lh i)) (str-mid (car d) spos))
 	  (when (and (0= c) activated ~disabled)
 	    (gsave
 	      (when (not editable)
@@ -4864,7 +4864,7 @@
 	  (c (- cline sline)) )
       (for (i 1 height)
 	(when d
-	  (draw-text (+ x 4) (+ y (* lh i)) (mid (car d) (1+ spos)))
+	  (draw-text (+ x 4) (+ y (* lh i)) (str-mid (car d) spos))
 	  (when (and (0= c) activated ~disabled)
 	    (gsave
 	      (when (not editable)
@@ -4884,16 +4884,16 @@
     ((stringp d)
      (let ((pos ())
 	   (lst ()) )
-       (while (setq pos (index "\n" d))
-	 (setq lst (nconc1 lst (str-left d (1- pos))))
-	 (setq d (mid d (1+ pos))) )
+       (while (setq pos (str-find "\n" d))
+	 (setq lst (nconc1 lst (str-left d pos)))
+	 (setq d (str-mid d (+ pos 1))) )
        (setq data (nconc1 lst d)) ) ) )
   (let ((pos ())
 	(d data)
 	(l ()) )
     (while d
       (setq l (car d))
-      (while (setq pos (index "\t" l))
+      (while (setq pos (+ (str-find "\t" l) 1))
 	(let ((nextpos (1+ (* 8 (div (+ pos 7) 8)))))
 	  (setq l (strins (strdel l pos 1) (1- pos) 
 			  (str-left "         " (- nextpos pos)) ) ) ) )
@@ -4958,7 +4958,7 @@
 (defmethod TextPane insert-line(cl cp)
   (let* ((p (nthcdr cl data))
 	 (l (car p)) )
-    (rplacd p (cons (mid l (1+ cp)) (cdr p)))
+    (rplacd p (cons (str-mid l cp) (cdr p)))
     (rplaca p (str-left (car p) cp))
     (==> this advertize) 
     (setq modified t) ) )
@@ -5174,7 +5174,7 @@
       (cond
 	((> (len (car p)) cpos)
 	 (setq EditStringKillBuffer 
-	       (concat EditStringKillBuffer (mid (car p) (1+ cpos))))
+	       (concat EditStringKillBuffer (str-mid (car p) cpos)))
 	 (when ogre-text-to-clip
 	   (ogre-text-to-clip EditStringKillBuffer) )
 	 (setq modified t)
@@ -5196,14 +5196,14 @@
 	  (pos ())
 	  (lst ()) 
 	  (l ()) )
-      (while (setq pos (index "\n" d))
+      (while (setq pos (+ (str-find "\n" d) 1))
 	(setq lst (nconc1 lst (str-left d (1- pos))))
-	(setq d (mid d (1+ pos))) )
+	(setq d (str-mid d pos)) )
       (setq lst (nconc1 lst d))
       (setq d lst)
       (while d
 	(setq l (car d))
-	(while (setq pos (index "\t" l))
+	(while (setq pos (+ (str-find "\t" l) 1))
 	  (let ((nextpos (1+ (* 8 (div (+ pos 7) 8)))))
 	    (setq l (strins (strdel l pos 1) (1- pos) 
 			    (str-left "         " (- nextpos pos)) ) ) ) )
