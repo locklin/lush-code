@@ -1824,7 +1824,7 @@ dld_deallocate(void *x)
       a = arenas;
       while (a)
 	{
-	  while ((void*)a + a->size == (void*)a->next)
+	  while ((void**)a + a->size == (void**)a->next)
 	    {
 	      a->size += a->next->size;
 	      a->next = a->next->next;
@@ -2844,7 +2844,7 @@ link_archive_members(module_entry *module)
         while (cookie.again && dld_undefined_sym_count>0)
         {
             cookie.again = FALSE;
-            bfd_hash_traverse(&global_symbol_table, (void*)arlink_traverse, &cookie);
+            bfd_hash_traverse(&global_symbol_table, arlink_traverse, &cookie);
         }
     }
     CATCH(n)
@@ -3287,7 +3287,7 @@ dld_list_undefined_sym (void)
         cookie.syms = xmalloc( (dld_undefined_sym_count+1)*sizeof(char*) );
         cookie.current = 0;
         cookie.total = dld_undefined_sym_count;
-        bfd_hash_traverse(&global_symbol_table, (void*)list_undefined_traverse, &cookie);
+        bfd_hash_traverse(&global_symbol_table, list_undefined_traverse, &cookie);
         ASSERT(cookie.current = cookie.total);
         cookie.syms[cookie.current] = 0;
     }

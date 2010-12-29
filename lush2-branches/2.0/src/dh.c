@@ -235,9 +235,7 @@ int dht_from_cname(symbol_t *s)
    ifn (strlen(name)>2)
       goto invalid_error;
 
-   int c0 = tolower(name[0]);
-
-   switch (c0) {
+   switch (tolower(name[0])) {
    case 'd': 
       if (strcmp(name, "double"))
          goto invalid_error;
@@ -479,9 +477,6 @@ static at *dhinfo_record_temp(dhrecord *drec)
 /* Process generic records */
 static at *dhinfo_record(dhrecord *drec)
 {
-   at *p;
-   dhrecord *drec1;
-   dhclassdoc_t *cdoc;
    switch (drec->op) {
    case DHT_BOOL: 
       return new_cons(named("bool"),NIL);
@@ -511,54 +506,61 @@ static at *dhinfo_record(dhrecord *drec)
       return new_cons(named("bool"),NIL);
       
    case DHT_GPTR:
-      p = NIL;
+   {
+      at *p = NIL;
       if (drec->name)
          p = new_cons(make_string(strclean(drec->name)),NIL);
       return new_cons(named("gptr"), p);
-      
+   }
    case DHT_MPTR:
-      p = NIL;
+   {
+      at *p = NIL;
       if (drec->name)
          p = new_cons(make_string(strclean(drec->name)),NIL);
       return new_cons(named("mptr"), p);
-
+   }
    case DHT_LIST:
-      p = dhinfo_chain(drec+1, drec->ndim, dhinfo_record);
+   {
+      at *p = dhinfo_chain(drec+1, drec->ndim, dhinfo_record);
       p = new_cons(named("list"), p);
       return new_cons(named("ptr"), new_cons(p, NIL));
-      
-   case DHT_OBJ: 
-      cdoc = drec->arg;
-      p = new_cons(named("obj"),
+   }
+   case DHT_OBJ:
+   {
+      dhclassdoc_t *cdoc = drec->arg;
+      at *p = new_cons(named("obj"),
                    new_cons(named(strclean(cdoc->lispdata.lname)), 
                             new_cons(cdoc->lispdata.atclass, 
                                      NIL)));
       return new_cons(named("ptr"), new_cons(p, NIL));
-      
-   case DHT_SRG: 
-      p = new_cons(named("srg"), 
+   }
+   case DHT_SRG:
+   {
+      at *p = new_cons(named("srg"), 
                    new_cons(named((drec[1].access == DHT_READ) ? "r" : "w"),
                             new_cons(dhinfo_record(drec+1), 
                                      NIL)));
       return new_cons(named("ptr"), new_cons(p, NIL));
-      
-    case DHT_IDX:
-       drec1 = drec + 1;
-       p = new_cons(named("srg"), 
-                    new_cons(named((drec1->access == DHT_READ) ? "r" : "w"),
-                             new_cons(dhinfo_record(drec1 + 1), 
-                                      NIL)));
-       p = new_cons(named("idx"),
-                    new_cons(named((drec->access == DHT_READ) ? "r" : "w"),
-                             new_cons(NEW_NUMBER(drec->ndim),
-                                      new_cons(p, NIL))));
-       return new_cons(named("ptr"), new_cons(p, NIL));
-       
+   }
+   case DHT_IDX:
+   {
+      dhrecord *drec1 = drec + 1;
+      at *p = new_cons(named("srg"), 
+                   new_cons(named((drec1->access == DHT_READ) ? "r" : "w"),
+                            new_cons(dhinfo_record(drec1 + 1), 
+                                     NIL)));
+      p = new_cons(named("idx"),
+                   new_cons(named((drec->access == DHT_READ) ? "r" : "w"),
+                            new_cons(NEW_NUMBER(drec->ndim),
+                                     new_cons(p, NIL))));
+      return new_cons(named("ptr"), new_cons(p, NIL));
+   }
    case DHT_FUNC:
+   {
       if (! drec->name)
          next_record(drec);
       dhrecord *drec1 = (dhrecord*) drec->name;
-      p = dhinfo_chain(drec+1, drec->ndim, dhinfo_record);
+      at *p = dhinfo_chain(drec+1, drec->ndim, dhinfo_record);
       at *q = NIL;
       if (drec1->op == DHT_TEMPS) {
          q = dhinfo_chain(drec1+1, drec1->ndim, dhinfo_record_temp);
@@ -566,27 +568,31 @@ static at *dhinfo_record(dhrecord *drec)
       }
       p = new_cons(p, new_cons(q, new_cons(dhinfo_record(drec1 + 1), NIL)));
       return new_cons(named("func"), p);
-      
+   }  
    case DHT_NAME:
-      p = dhinfo_record(drec+1);
+   {
+      at *p = dhinfo_record(drec+1);
       return new_cons(named(strclean(drec->name)), new_cons(p,NIL));
-      
+   }
    case DHT_METHOD:
-      p = dhinfo_record( ((dhdoc_t*)(drec->arg))->argdata );
+   {
+      at *p = dhinfo_record( ((dhdoc_t*)(drec->arg))->argdata );
       return new_cons(make_string(strclean(drec->name)), new_cons(p,NIL));
-
+   }
    case DHT_CLASS:
-      cdoc = drec->arg;
-      drec1 = drec+1;
-      p = dhinfo_chain(drec1, drec->ndim, dhinfo_record);
+   {
+      dhclassdoc_t *cdoc = drec->arg;
+      dhrecord *drec1 = drec+1;
+      at *p = dhinfo_chain(drec1, drec->ndim, dhinfo_record);
       drec1 = drec->end;
-      q = dhinfo_chain(drec1, cdoc->lispdata.nmet, dhinfo_record);
+      at *q = dhinfo_chain(drec1, cdoc->lispdata.nmet, dhinfo_record);
       p = new_cons(p, new_cons( q, NIL));
       q = NIL;
       if (cdoc->lispdata.ksuper)
          q = make_string(strclean(cdoc->lispdata.ksuper->lispdata.cname));
       return new_cons(make_string(strclean(cdoc->lispdata.cname)),
                       new_cons(q, p));
+   }
    default:
       return new_cons(named("unk"), NIL);
    }

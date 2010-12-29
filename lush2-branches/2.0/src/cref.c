@@ -353,7 +353,8 @@ DX(xto_gptr)
       return NEW_GPTR(Mptr(p));
       
    } else if (STRINGP(p)) {
-      return NEW_GPTR((void *)String(p));
+      char *cp = (char *)String(p);
+      return NEW_GPTR((void *)cp);
 
    } else if (p && (Class(p) == dh_class)) {
       struct cfunction *cfunc = Gptr(p);
@@ -433,7 +434,8 @@ DX(xto_mptr)
       return NEW_MPTR(Mptr(p));
       
    } else if (STRINGP(p)) {
-      return NEW_MPTR((void *)String(p));
+      char *cp = (char *)String(p);
+      return NEW_MPTR((void *)cp);
 
    } else if (p && (Class(p) == dh_class)) {
       RAISEF("DH-functions are not in managed memory", p);

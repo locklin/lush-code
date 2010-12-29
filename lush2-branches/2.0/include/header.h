@@ -98,8 +98,11 @@ LUSHAPI void error(const char *prefix, const char *text, at *suffix) no_return;
 LUSHAPI char *api_translate_c2lisp(const char*);
 LUSHAPI char *api_translate_lisp2c(const char*);
 
+#ifdef __ICC
+#pragma warning (disable:279)
+#endif
 #define RAISE(caller, msg, p)   \
-  ((msg) ? (error(caller, msg, p),0) : 0) 
+   ((msg) ? (error(caller, msg, p),0) : 0) 
 
 #define RAISEF(msg, p) \
   ((msg) ? (error(api_translate_c2lisp(__func__), msg, p),0) : 0)
@@ -856,7 +859,7 @@ typedef enum dht_type storage_type_t;
 #define ST_AT         DHT_AT
 
 #define ST_FIRST      ST_BOOL
-#define ST_LAST       (ST_AT + 1)
+#define ST_LAST       ((storage_type_t)(ST_AT + 1))
 
 /*
  * The other flags define the nature of the storage (STS).
@@ -871,12 +874,12 @@ enum storage_kind {
 };
 
 #define STS_MASK      255
-#define STF_RDONLY    (1<<15)	/* read only storage */
+#define STF_RDONLY  (1<<15)  // FIXME
 
 struct storage {
    at    *backptr;
-   short  flags;
-   short  type;
+   enum storage_kind flags:16;
+   storage_type_t    type:16;
    size_t size;
    gptr   data;
 #ifdef HAVE_MMAP

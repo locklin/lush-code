@@ -412,10 +412,9 @@ DY(yselectq)
       CHECK_MACHINE("on");
       l = Cdr(l);
    }
-   if (!l)
-      return NIL;
-   
-   RAISEFX("not a proper list", ARG_LIST);
+   if (l)
+      RAISEFX("not a proper list", ARG_LIST);
+   return NIL;
 }
 
 
