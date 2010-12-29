@@ -1125,6 +1125,7 @@ DX(xstr_asc)
       return NEW_NUMBER(s[0] & 0xff);
 #endif
    RAISEFX("empty string",APOINTER(1));
+   return NIL; // make compiler happy
 }
 
 DX(xstr_chr)

@@ -355,7 +355,7 @@ static at *storage_listeval(at *p, at *q)
    ifn (CONSP(q) && Car(q) && NUMBERP(Car(q)))
       error(NIL, "illegal subscript", q);
    
-   size_t off = Number(Car(q));
+   ssize_t off = Number(Car(q));
    if (off<0 || off>=st->size)
       error(NIL, "subscript out of range", q);
    
@@ -400,7 +400,7 @@ static void storage_serialize(at **pp, int code)
 
    // Create storage if needed
    if (code == SRZ_READ) {
-      st = new_storage_managed(type, size, NIL);
+      st = new_storage_managed((storage_type_t)type, size, NIL);
       *pp = st->backptr;
    }
 
@@ -700,7 +700,7 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    
    if (init) {
       /* temporarily clear read only flag to allow initialization */
-      short flags = st->flags;
+      enum storage_kind flags = st->flags;
       st->flags &= ~STF_RDONLY;
       storage_clear(st, init, oldsize);
       st->flags = flags;
@@ -723,7 +723,7 @@ void storage_clear(storage_t *st, at *init, size_t from)
    /* don't need to check read-only status here because 
       it will be checked by the setat function below */
    int size = st->size;
-   if (from<0 || from>=size)
+   if (from>=size)
       RAISEF("invalid value for 'from'", NEW_NUMBER(from));
    
    /* clear from from to to */

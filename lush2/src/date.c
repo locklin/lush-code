@@ -661,10 +661,9 @@ DX(xdate_to_string)
       tm.tm_sec = buf.x[DATE_SECOND];
 
       int status = strftime(string_buffer,STRING_BUFFER,format,&tm);
-      if (status)
-         return make_string(string_buffer);
-      else
+      if (!status)
          RAISEFX("string too long",NIL);
+      return make_string(string_buffer);
    }
 }
 

@@ -286,6 +286,7 @@ DX(xlength)
       
    } else
       RAISEFX("object is not a sequence", APOINTER(1));
+   return NIL; // make compiler happy
 }
 
 

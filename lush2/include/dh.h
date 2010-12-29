@@ -361,7 +361,7 @@ extern LUSHAPI bool in_compiled_code;
 
 LUSHAPI at  *new_dh(at *name, dhdoc_t *kdata);
 LUSHAPI at  *new_dhclass(at *name, dhclassdoc_t *kdata);
-LUSHAPI int  dht_from_cname(symbol_t *);
+LUSHAPI enum dht_type dht_from_cname(symbol_t *);
 LUSHAPI void lush_error(const char *s);
 LUSHAPI struct CClass_object *new_cobject(dhclassdoc_t *cdoc);
 LUSHAPI index_t *new_empty_index(int);

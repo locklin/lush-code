@@ -1224,6 +1224,7 @@ err_printf0:
    RAISEFX("bad format string", NIL);
 err_printf1:
    RAISEFX("bad argument number", NIL);
+   return NIL; // make compiler happy
 }
 
 

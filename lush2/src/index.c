@@ -395,7 +395,6 @@ static unsigned long index_hash(at *p)
 static char *chk_index_consistent(index_t *ind)
 {
    static char *msg_offset_negative = "offset is negative";
-   static char *msg_extent_negative = "index is negative";
    static char *msg_storage_size =  "index references elements outside storage";
    
    if (ind->offset<0)
@@ -404,8 +403,6 @@ static char *chk_index_consistent(index_t *ind)
    ptrdiff_t size_min = ind->offset;
    ptrdiff_t size_max = ind->offset;
    for(int j=0; j<IND_NDIMS(ind); j++) {
-      if (IND_DIM(ind, j)<0)
-         return msg_extent_negative;
       if (IND_DIM(ind, j)>0) {
          if (IND_MOD(ind, j)<0)
             size_min += (IND_DIM(ind, j) - 1) * IND_MOD(ind, j);
@@ -602,10 +599,11 @@ DX(xidx_broadcastable_p)
  */
 index_t *index_broadcast1(index_t *blank, index_t *ref)
 {
+   index_t *b = NULL;
    ifn (IND_NDIMS(blank) <= IND_NDIMS(ref))
       goto cannot_broadcast_error;
    
-   index_t *b = copy_index(blank);
+   b = copy_index(blank);
    if (IND_NDIMS(b) < IND_NDIMS(ref)) {
       for (int d = IND_NDIMS(ref)-1; d >= 0; d--) {
          IND_NDIMS(b)--;
@@ -629,7 +627,7 @@ index_t *index_broadcast1(index_t *blank, index_t *ref)
 
 cannot_broadcast_error:
    error(NIL, "cannot broadcast index to desired shape", blank->backptr);
-   return b;
+   return b; // make compiler happy
 }
 
 DX(xidx_broadcast1)
@@ -1004,8 +1002,6 @@ static shape_t *parse_shape(at *atshp, shape_t *shp)
          real (*getd)(gptr,size_t) = storage_getd[IND_STTYPE(ind)];
          for (int i=0; i<shp->ndims; i++) {
             shp->dim[i] = (int)(*getd)(b, i*ind->mod[0]);
-            if (shp->dim[i]<0) 
-               error(NIL, errmsg_not_a_shape, atshp);
          }
       }
       }
@@ -2026,11 +2022,10 @@ void import_array(index_t *ind, FILE *f, size_t offset)
       /* fast read of contiguous matrices */
       errno = 0;
       rsize = fread(p, elsize, size, f);
-      if (rsize < 0)
+      if (rsize < size) {
          test_file_error(NULL, errno);
-      else if (rsize < size)
          error(NIL, "file is too short", NIL); 
-
+      }
    } else {
       /* must loop on each element */
       rsize = 1;
@@ -2038,13 +2033,13 @@ void import_array(index_t *ind, FILE *f, size_t offset)
          if (rsize == 1) {
             errno = 0;
             rsize = fread(p + (off * elsize), elsize, 1, f);
+            if (rsize < 1) {
+               test_file_error(NULL, errno);
+               error(NIL, "file too short", NIL);
+            }
          }
       } end_idx_aloop1(ind, off);
-      if (rsize < 0)
-         test_file_error(NULL, errno);
-      else if (rsize < 1)
-         error(NIL, "file too short", NIL); 
-    }
+   }
 }
 
 DX(ximport_array)
@@ -2863,7 +2858,7 @@ DX(xidx_sink)
 index_t *index_trimD(index_t *ind, int d, ptrdiff_t o, size_t sz)
 {
    d = validate_dimension(ind, d);
-   if (d<0 || d>=IND_NDIMS(ind) || sz<0 || o<0 || o>IND_DIM(ind, d))
+   if (d<0 || d>=IND_NDIMS(ind) || o<0 || o>IND_DIM(ind, d))
       RAISEF("illegal parameters", NIL);
    if (o+sz > ind->dim[d])
       RAISEF("specified interval is too large", NIL);
@@ -2978,7 +2973,7 @@ DX(xidx_narrowD)
    index_t *ind = AINDEX(1);
    int d = AINTEGER(2);
    size_t sz = AINTEGER(3);
-   size_t st = AINTEGER(4);
+   ssize_t st = AINTEGER(4);
    if (d<0 || d>=ind->ndim || sz<1 || st<0)
       error(NIL, "illegal parameters", NIL);
    if (st+sz > ind->dim[d])
@@ -3190,12 +3185,12 @@ index_t *array_take3(index_t *ind, int d, index_t *ss)
    for (int i=d; i<IND_NDIMS(ind); i++)
       shp->dim[i+IND_NDIMS(ss)] = IND_DIM(ind, i+1);
 
+   ptrdiff_t ii = 0;
+   ptrdiff_t ir = 0;
    if (index_emptyp(res))
       goto clean_up_and_return3;
 
    /* copy selected array contents */
-   ptrdiff_t ii = 0;
-   ptrdiff_t ir = 0;
    islice = index_select(ind, d, 0);
    rslice = index_select(res, d, 0);
    
@@ -3365,7 +3360,7 @@ index_t *index_transpose(index_t *ind, shape_t *perm) {
       perm->dim[i] = validate_dimension(ind, perm->dim[i]);
    }
    for (int i=0; i<perm->ndims; i++)
-      if (perm->dim[i]<0 || tmp[perm->dim[i]]) {
+      if (tmp[perm->dim[i]]) {
          RAISEF("Invalid permutation list", NIL);
       } else
          tmp[perm->dim[i]] = true;
@@ -3421,7 +3416,7 @@ DX(xidx_set_dim)
    ARG_NUMBER(3);
    index_t *ind = AINDEX(1);
    int d = validate_dimension(ind, AINTEGER(2)); 
-   size_t s = AINTEGER(3);
+   ssize_t s = AINTEGER(3);
    size_t olds = IND_DIM(ind, d);
    
    s = s<0 ? IND_DIM(ind, d)+s : s;
